@@ -398,7 +398,7 @@ test('T10 DependencyAudit_PasoParidad_OrdenYSalida @story-2.25 @ac-7 @ac-11 @ac-
   // los pasos de antes, en el mismo orden entre sí
   const before = ['Leer la configuración de la organización (operations.json y repos.json)', 'Registrar lo que se decidió en los pull requests',
     'Clonar los repos declarados', 'Volcar el estado de los pedidos de trabajo', 'Correr la revisión de dependencias', 'Crear los pedidos de trabajo',
-    'Entregar el resumen (si hay bot de Telegram)', 'Guardar el snapshot y las fichas en el repo de operaciones', 'Abrir un pull request por hallazgo (ahí se decide)',
+    'Probar el sitio sin sesión', 'Entregar el resumen', 'Guardar el snapshot y las fichas en el repo de operaciones', 'Abrir un pull request por hallazgo (ahí se decide)',
     'Denunciar que los pedidos no se intentaron'].map((n) => named(text, n));
   assert.ok(before.every((i, k) => i >= 0 && (k === 0 || i > before[k - 1])), `los pasos de siempre, en su orden: ${before.join(',')}`);
 });
@@ -555,3 +555,55 @@ test('T40 TableroGuarda_LaMarcaLlegaAOperaciones_DosVecesElMismoDia @story-2.29 
   const w1 = corrida(null, 1);
   corrida(w1.opsRemote, 2);
 });
+
+// ── la prueba sin sesión antes del aviso, el canal por notify.js, y las rutas protegidas (T26, T37) ───────────────────
+test('T26 DependencyAudit_PruebaSinSesionAntesDelAviso (Azure) @story-2.30 @ac-15 @ac-18 @ac-23', () => {
+  const t = read('dependency-audit.yml');
+  const prueba = named(t, 'Probar el sitio sin sesión');
+  const aviso = named(t, 'Entregar el resumen');
+  assert.ok(prueba >= 0 && aviso === prueba + 1, `la prueba justo antes del aviso (${prueba}, ${aviso})`);
+  const p = steps(t)[prueba];
+  assert.match(p, /scripts\/site\/check-deploy\.js --url "\$URL" --out "\$\{AGENT_TEMPDIRECTORY:-\$\{TMPDIR:-\/tmp\}\}\/site-check\.json"/);
+  assert.match(p, /c\.data\.site && c\.data\.site\.url/, 'sólo con site.url');
+  assert.match(p, /\n {10}exit 0\n {8}displayName:/, 'la prueba nunca frena la noche');
+  // un operations.json que no se pudo leer no es «sin site.url»: lo dice, y no prueba nada
+  const cuerpo = stepScript('dependency-audit.yml', 'Probar el sitio sin sesión', { 'Build.SourcesDirectory': '/x' });
+  const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-sitio-'));
+  try {
+    fs.symlinkSync(path.join(ROOT, 'scripts'), path.join(lab, 'scripts'));
+    fs.writeFileSync(path.join(lab, 'operations.json'), '{ roto');
+    const r = spawnSync('bash', ['-c', cuerpo.replace('cd "/x"', `cd "${lab}"`)], { encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH } });
+    assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /##vso\[task\.logissue type=warning\].*operations\.json no se pudo leer/);
+    assert.doesNotMatch(r.stdout, /sin site\.url/);
+  } finally { fs.rmSync(lab, { recursive: true, force: true }); }
+  const e = steps(t)[aviso];
+  const cond = (e.match(/^ {8}condition: (.*)$/m) || [])[1] || '';
+  assert.strictEqual(cond, "and(succeeded(), eq('${{ parameters.efectos }}', 'true'))", 'el aviso corre siempre que haya efectos, sin mirar el chat');
+  assert.match(e, /--operations "\$\(Build\.SourcesDirectory\)\/operations\.json"/);
+  assert.match(e, /--site-check "\$\{AGENT_TEMPDIRECTORY:-\$\{TMPDIR:-\/tmp\}\}\/site-check\.json"/);
+  assert.match(e, /^ {10}TYCON_NOTIFY_WEBHOOK_URL: \$\(TYCON_NOTIFY_WEBHOOK_URL\)$/m);
+  assert.match(e, /case "\$\{TYCON_NOTIFY_WEBHOOK_URL:-\}" in \*'\$\('\*\) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac/, 'el literal de Azure, como ausente');
+  // el webhook, sólo en el paso del aviso, y en ningún otro modelo
+  assert.deepStrictEqual(steps(t).map((x, i) => (/TYCON_NOTIFY_WEBHOOK_URL/.test(x) ? i : -1)).filter((i) => i >= 0), [aviso]);
+  for (const m of MODELS.filter((f) => f !== 'dependency-audit.yml')) assert.doesNotMatch(read(m), /TYCON_NOTIFY_WEBHOOK_URL/, `${m} no lleva el webhook`);
+});
+
+test('T37 Nocturnos_NoTocanLasRutasProtegidas (Azure) @story-2.30 @ac-22', () => {
+  let vistos = 0;
+  for (const m of [...MODELS, ...TEMPLATES.map((x) => `templates/${x}`)]) {
+    for (const g of read(m).matchAll(/push-nightly-data\.js (?:save|sync)[\s\S]*?\s--\s+([^\n|]+)/g)) {
+      vistos += 1;
+      for (const r of g[1].trim().split(/\s+/).filter((x) => !x.startsWith('2>'))) {
+        assert.ok(r !== 'operations.json' && !r.startsWith('pipelines/') && !r.startsWith('.github/workflows'), `${m} guarda ${r}, una ruta protegida`);
+      }
+    }
+  }
+  assert.ok(vistos >= 3, `se leyeron los guardados de los modelos (vistos: ${vistos})`);
+  const readme = read('README.md');
+  assert.match(readme, /Minimum number of reviewers/);
+  assert.match(readme, /Bypass policies when pushing/);
+  assert.match(readme, /Required reviewers/);
+  assert.match(readme, /archivo por archivo/);
+});
+

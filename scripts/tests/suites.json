@@ -1476,6 +1476,30 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.30: el workflow que publica la imagen del sitio — corre sólo en push a main con las rutas de lo que la imagen trae (cada COPY del Dockerfile), sin pull_request; los cuatro permisos y nada más; cada uses: fijado por el sha; ningún secreto salvo el token del workflow; etiquetas de versión y sha-, nunca latest; el nombre de la imagen sale del contexto. Lee el archivo por texto; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-image-workflow.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.30: la prueba sin sesión de un sitio instalado (check-deploy.js) — bien cerrado, abierto, frenado, dormido que despierta, detrás del candado de la plataforma, el inicio de GitHub sin response_type, /healthz que nombra un host, la gemela http; vocabulario cerrado sin la dirección. Servidores locales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-check-deploy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.30: las instalaciones del sitio — el alta en Azure Container Apps en dos fases (ensayo y aplicación contra fake-az: orden, entrada interna hasta el final, secretos sólo por archivo y tapados, rol sobre el contenedor, un inquilino, sin costo escondido, sin sesión de az, falla a mitad que sigue desde donde quedó), render.yaml y compose.yaml sin secretos, las sondas a /livez, ningún valor de una organización; la guía (parte común, tres recetas, en castellano e inglés) y el registro. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-deploy.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.30: el canal del aviso de los nocturnos (notify.js) — Telegram por su guion (manda y edita), Slack y Teams por webhook con el cuerpo de cada uno, 500, sin respuesta, dirección inválida o ausente, sin la dirección del webhook en ninguna salida; sin notify no manda aunque estén las variables de Telegram. Servidor local en otro proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/notify.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la imagen del sitio, armada de verdad: con un volumen con nombre NUEVO montado en /data (el comando de la guía), el usuario del sitio (node) crea la carpeta del clon y escribe su estado. Rojo previo (2026-10-16): el volumen nacía de root y el sitio se frenaba con Permission denied. Sin Docker se saltea y lo dice. Arma una imagen (~1-2 min).",
       "raiz": "arnes",
       "ruta": "tests/site-image.test.js",

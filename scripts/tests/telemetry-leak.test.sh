@@ -450,6 +450,90 @@ assert v['estado'] == 'medido' and v['valor'] == 3, ('vueltas', v)
 assert g['estado'] == 'medido' and g['valor'] == 1 and g['medidos'] == 4, ('gates_dur', g)
 PY
 
+# ── 2.30-T25 · Fuga_AvisoDeLaManana ───────────────────────────────────────────────────────────────────────────
+# El aviso de la mañana sale a un servicio de afuera (Telegram, Slack, Teams): lleva sólo cantidades y el enlace. Se
+# siembran marcadores en TODAS sus fuentes —un paquete y un repo en la foto de dependencias, un repo en un no medido,
+# un proyecto sin dueño único, un correo asignado, un id de ficha con el paquete, un motivo de texto libre, un
+# producto, un host y un diagnóstico del vigilante, un título y un autor de PR, la organización en el error de az— y
+# una dirección de webhook con forma real. Se corre la cadena real (open-prs.js → daily-summary.js de dependencias y
+# del vigilante → notify.js por Slack contra un servidor local, y el aviso del vigilante por hallazgo) y FALLA si un
+# marcador llega a un cuerpo mandado, o la dirección del webhook a la salida o a la constancia.
+A="${BASE}/aviso"; mkdir -p "${A}/deps/out" "${A}/deps/pend/pending" "${A}/deps/pend/promoted" "${A}/deps/pend/archived" "${A}/vig/out" "${A}/vig/pend/pending" "${A}/vig/pend/promoted" "${A}/vig/pend/archived" "${A}/fixaz"
+HOY_A=2026-09-20
+SUMMARY="${RAIZ}/scripts/nightly/dependencies/daily-summary.js"
+: > "${A}/cuerpos.jsonl"
+node -e '
+const http = require("http"), fs = require("fs");
+const [log, puertoF] = process.argv.slice(1);
+const srv = http.createServer((req, res) => { let b = ""; req.on("data", (d) => (b += d)).on("end", () => {
+  fs.appendFileSync(log, JSON.stringify({ ruta: req.url, cuerpo: b }) + "\n"); res.statusCode = 200; res.end("ok"); }); });
+srv.listen(0, "127.0.0.1", () => fs.writeFileSync(puertoF, String(srv.address().port)));' "${A}/cuerpos.jsonl" "${A}/puerto" &
+SRV_AVISO=$!
+for _ in $(seq 1 100); do [ -s "${A}/puerto" ] && break; sleep 0.05; done
+WEBHOOK="http://127.0.0.1:$(cat "${A}/puerto")/services/T0MARCAWH/B0MARCAWH/marcadorwebhookxyz123"
+printf '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "slack" } }\n' > "${A}/operations.json"
+printf '{ "repos": [ { "producto": "ProductoFugaDeps", "ruta": "RepoFuga/Marca", "tipo": "npm", "activo": true, "ado": "ProyectoFugaA/RepoFuga" } ] }\n' > "${A}/repos.json"
+echo '{ "rubros_sin_fuente": {} }' > "${A}/summary.json"
+printf 'id: fugaaa11\ndetectado: %s\nveredicto: pendiente\npaquete: paquete-fuga-marca\nseveridad: high\nnoches: 1\nrepos:\n  - RepoFuga/Marca\navisos:\n  - https://x/GHSA-fuga\n' "${HOY_A}" > "${A}/deps/pend/pending/fugaaa11.yaml"
+node -e '
+const [arch, hoy] = process.argv.slice(1);
+require("fs").writeFileSync(arch, JSON.stringify({ fecha: hoy, corrida_completa: true, linea_base: false, comparado_contra: null, repos_activos: 1, repos_apagados: 0, repos: [],
+  no_medidos: [{ ruta: "RepoNoMedidoFuga/X", motivo: "MotivoLibreFuga: el restore falló en RepoNoMedidoFuga" }, { ruta: "Otro/Y", motivo: "x" }],
+  hallazgos: [{ id: "fugaaa11", paquete: "paquete-fuga-marca", severidad: "high", repos: ["RepoFuga/Marca"], noches: 1 }], presencias: [], anunciados_hoy: ["fugaaa11"],
+  postergados_por_presupuesto: [], anexados: [], reaparecidos_ids: [], presupuesto: { tope: 2 }, resueltos_ids: [], descartados_ids: [], aceptadas_sin_resolver: [],
+  rechazadas_sin_deuda_ids: [], ignorados_ids: [],
+  pedidos: { simulado: false, creados: [{ ficha: "fugaaa11", proyecto: "ProyectoFugaA", id: 7788, asignado_a: "persona.fuga@cliente-secreto.example" }], adoptados: [],
+    fallidos: [], postergados: [], sin_iteracion: [], sin_dueno_unico: [{ proyecto: "ProyectoSinDuenoFuga", motivo: "dos dueños" }], deuda_avisada: [] } }, null, 2));' "${A}/deps/out/dependencias-${HOY_A}.json" "${HOY_A}"
+# los PR: az falla y nombra la organización en su error
+printf '#!/usr/bin/env bash\necho "ERROR: TF400813: la organización OrgFugaMarca rechazó el pedido" >&2\nexit 1\n' > "${A}/az-que-nombra"; chmod +x "${A}/az-que-nombra"
+TYCON_ADO_CMD="${A}/az-que-nombra" node "${RAIZ}/scripts/nightly/open-prs/open-prs.js" --today "${HOY_A}" --org https://dev.azure.com/OrgFugaMarca --out "${A}/prs.txt" > "${A}/prs.out" 2>&1
+env -u TELEGRAM_BOT_TOKEN -u TYCON_TELEGRAM_CHAT_ID TYCON_NOTIFY_WEBHOOK_URL="${WEBHOOK}" node "${SUMMARY}" deliver --source dependencies --today "${HOY_A}" \
+  --out "${A}/deps/out" --pending "${A}/deps/pend" --config "${A}/repos.json" --summary-config "${A}/summary.json" --watcher-out "${A}/vig/out" \
+  --operations "${A}/operations.json" > "${A}/deps.out" 2>&1; RC_D=$?
+node -e '
+require("fs").writeFileSync(process.argv[1], JSON.stringify({ fecha: process.argv[2], generado: process.argv[2] + "T08:00:00.000Z", productos: {}, conteos: {},
+  hallazgos: [{ id: process.argv[2] + "-ProductoFugaVig-abcd", producto: "ProductoFugaVig", regla: "ReglaFuga", severidad: "alta" }],
+  no_medido: ["host-fuga.cliente-secreto.com: sin respuesta"], nuevos: 1, repetidos: 0, marcados_ignorados: 0, ignorados_ids: [], modo: "normal", aviso: null, recordados: 0 }, null, 2));' "${A}/vig/out/vigilante-${HOY_A}.json" "${HOY_A}"
+printf 'id: "%s-ProductoFugaVig-abcd"\nfecha: "%s"\nproducto: "ProductoFugaVig"\nregla: "ReglaFuga"\nhuella: "abcd"\nseveridad: "alta"\nplugin: "PluginFuga"\ndiagnostico: "DiagnosticoFuga con datos de cliente"\nveredicto: pendiente\n' "${HOY_A}" "${HOY_A}" > "${A}/vig/pend/pending/${HOY_A}-ProductoFugaVig-abcd.yaml"
+env -u TELEGRAM_BOT_TOKEN -u TYCON_TELEGRAM_CHAT_ID TYCON_NOTIFY_WEBHOOK_URL="${WEBHOOK}" node "${SUMMARY}" deliver --source vigilante --today "${HOY_A}" \
+  --out "${A}/vig/out" --pending "${A}/vig/pend" --deps-out "${A}/deps/out" --extra "${A}/prs.txt" --operations "${A}/operations.json" > "${A}/vig.out" 2>&1; RC_V=$?
+# el aviso por hallazgo del vigilante, armado con su función y mandado por notify.js
+AVISO=$(node -e '
+const V = require(process.argv[1]);
+process.stdout.write(V.construirAviso("2026-09-20", [{ producto: "ProductoFugaVig", plugin: "PluginFuga", endpoint: "/api/EndpointFuga", severidad: "alta", diagnostico: "DiagnosticoFuga" }],
+  ["host-fuga.cliente-secreto.com: sin respuesta"], { max_hallazgos_por_aviso: 2 }, [{ edad: 4, campos: { id: "2026-09-16-ProductoFugaVig-ffff" } }]));' "${RAIZ}/scripts/nightly/watcher/vigilante.js")
+TYCON_NOTIFY_WEBHOOK_URL="${WEBHOOK}" node "${RAIZ}/scripts/lib/notify.js" --operations "${A}/operations.json" -- "${AVISO}" > "${A}/hallazgo.out" 2>&1; RC_H=$?
+kill "${SRV_AVISO}" 2>/dev/null
+[ "${RC_D}" = 0 ] && [ "${RC_V}" = 0 ] && [ "${RC_H}" = 0 ] && [ "$(grep -c . "${A}/cuerpos.jsonl")" = 3 ] \
+  && ok "2.30-T25 la cadena real mandó los tres avisos por el webhook (dependencias, vigilante y el aviso por hallazgo)" \
+  || mal "2.30-T25 la cadena no mandó los tres avisos: deps=${RC_D} vig=${RC_V} hallazgo=${RC_H} · cuerpos=$(grep -c . "${A}/cuerpos.jsonl") · $(head -c 300 "${A}/deps.out") · $(head -c 300 "${A}/vig.out")"
+python3 - "${A}/cuerpos.jsonl" <<'PY' && ok "2.30-T25 ningún marcador (paquete, repo, proyecto, correo, id, motivo, producto, host, diagnóstico, PR, organización) en ningún aviso" || mal "2.30-T25 🔴 un marcador llegó al aviso (arriba)"
+import json, sys
+marcas = ['paquete-fuga', 'RepoFuga', 'RepoNoMedidoFuga', 'ProyectoFugaA', 'ProyectoSinDuenoFuga', 'persona.fuga', 'cliente-secreto', 'fugaaa11', '7788',
+          'MotivoLibreFuga', 'ProductoFugaVig', 'ProductoFugaDeps', 'host-fuga', 'DiagnosticoFuga', 'PluginFuga', 'EndpointFuga', 'ReglaFuga', 'OrgFugaMarca', 'ffff']
+malos = []
+for l in open(sys.argv[1]):
+    t = json.loads(json.loads(l)['cuerpo']).get('text', '')
+    malos += [m for m in marcas if m in t]
+if malos: print('marcadores en el aviso:', sorted(set(malos)))
+sys.exit(1 if malos else 0)
+PY
+python3 - "${A}/cuerpos.jsonl" <<'PY' && ok "2.30-T25 control positivo: las cantidades sembradas sí llegan (fallos, vivas, pedidos creados, PR sin consultar, el vigilante)" || mal "2.30-T25 control positivo: faltan cantidades en el aviso"
+import json, sys
+textos = [json.loads(json.loads(l)['cuerpo']).get('text', '') for l in open(sys.argv[1])]
+deps, vig, hallazgo = textos
+ok = ('fallos: 3' in deps and 'vivas: 1 en 1 proyecto(s)' in deps and 'pedidos creados: 1' in deps
+      and 'PR abiertos hace más de 2 días: ? (no se pudo consultar)' in vig and '🌙 vigilante' in vig
+      and '1 hallazgo(s) nuevo(s), 1 sin medir, 1 borrador(es) esperando' in hallazgo)
+if not ok: print(textos)
+sys.exit(0 if ok else 1)
+PY
+FUGA_WH=0
+for f in "${A}/deps.out" "${A}/vig.out" "${A}/hallazgo.out" "${A}/deps/out/dependencias-${HOY_A}.json" "${A}/vig/out/vigilante-${HOY_A}.json"; do
+  grep -q 'T0MARCAWH\|marcadorwebhookxyz123' "${f}" && { FUGA_WH=1; echo "    la dirección del webhook en ${f#${BASE}/}"; }
+done
+[ "${FUGA_WH}" -eq 0 ] && ok "2.30-T25 la dirección del webhook no aparece en la salida ni en las constancias" || mal "2.30-T25 🔴 la dirección del webhook se filtró"
+
 echo
 [ "${FALLOS}" -eq 0 ] && { echo "todo verde"; exit 0; }
 echo "${FALLOS} fallo(s)"; exit 1

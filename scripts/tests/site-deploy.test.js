@@ -1,0 +1,470 @@
+'use strict';
+// site-deploy.test.js — las instalaciones del sitio de la organización: el alta en Azure Container Apps
+// en dos fases (T7 a T13, T29), los archivos de Render y de una máquina propia (T14, T36), las sondas y las variables
+// previstas (T38), que ninguna organización real quede escrita (T15), y la guía y el registro (T32, T33, T42).
+//
+// 🔴 NINGÚN CASO TOCA AZURE. El alta habla con `az` por TYCON_AZ_CMD, que acá es scripts/tests/lib/fake-az.sh: anota
+// cada orden y recuerda lo que «creó». La configuración es inventada; los secretos, marcadores sembrados en el entorno
+// que ninguna salida puede traer.
+
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+const ROOT = path.resolve(__dirname, '..', '..');
+const DEPLOY = path.join(ROOT, 'scripts', 'site', 'deploy');
+const ACA = path.join(DEPLOY, 'azure-container-apps.js');
+const FAKE_AZ = path.join(__dirname, 'lib', 'fake-az.sh');
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'site-deploy-'));
+test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// el doble no es ejecutable en el repo (se corre con bash): el alta lo lanza por un envoltorio
+const AZ_DOBLE = path.join(tmp, 'az');
+fs.writeFileSync(AZ_DOBLE, `#!/usr/bin/env bash\nexec bash ${JSON.stringify(FAKE_AZ)} "$@"\n`, { mode: 0o755 });
+
+// identificadores con la forma de un GUID, armados acá (no escritos enteros: un GUID suelto en un archivo es lo que T15 busca)
+const guid = (c) => [8, 4, 4, 4, 12].map((n) => c.repeat(n)).join('-');
+const CONFIG = () => ({
+  subscription: guid('1'), resourceGroup: 'rg-sitio-acme', location: 'eastus2',
+  environment: 'env-sitio-acme', app: 'sitio-acme', logAnalyticsWorkspace: 'registros-sitio-acme', logAnalyticsQuotaGb: 0.023,
+  storageAccount: 'acmesitiodatos', fileShare: 'sitio-datos', fileShareQuotaGb: 1,
+  image: `ghcr.io/acme/arnes@sha256:${'a'.repeat(64)}`,
+  tenantId: guid('2'), oidcClientId: guid('3'),
+  mailbox: { resourceGroup: 'rg-buzon-acme', account: 'acmebuzon', container: 'corridas' },
+  operationsRepo: 'https://git.acme.example/acme/operaciones', operationsIdentity: 'managed',
+  firstMaintainer: 'lead@acme.example',
+});
+// 🔴 los valores de mentira se arman por partes: escritos enteros, el freno del remoto público los toma por secretos reales
+const marca = (...p) => p.join('-');
+const SECRETOS = {
+  SITE_SESSION_KEY: marca('LLAVE', 'DE-SESION-QUE-NO-DEBE-APARECER-0123456789abcdef'),
+  SITE_OIDC_CLIENT_SECRET: marca('SECRETO', 'OIDC-QUE-NO-DEBE-APARECER'),
+  SITE_OPERATIONS_WRITE_TOKEN: marca('TOKEN', 'DE-ESCRITURA-QUE-NO-DEBE-APARECER'),
+};
+const MARCADORES = [...Object.values(SECRETOS), 'LLAVE-DEL-AREA-QUE-NO-DEBE-APARECER', 'LLAVE-DE-LA-CUENTA-QUE-NO-DEBE-APARECER'];
+
+let n = 0;
+/** Corre el alta en una carpeta nueva: { status, out, llamadas: [{ paso, args, archivos }], fix }. */
+function alta(args, { config = CONFIG(), env = SECRETOS, fixEnv = {}, fix = null } = {}) {
+  n += 1;
+  const dir = fix || path.join(tmp, `caso-${n}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const cfg = path.join(dir, 'sitio.json');
+  fs.writeFileSync(cfg, JSON.stringify(config, null, 2));
+  const r = spawnSync(process.execPath, [ACA, '--config', cfg, ...args], {
+    encoding: 'utf8', timeout: 60000,
+    env: { PATH: process.env.PATH, HOME: dir, FIXAZ: dir, TYCON_AZ_CMD: AZ_DOBLE, TYCON_CONTAINER_APPS_POLL_MS: '1', ...env, ...fixEnv },
+  });
+  let llamadas = [];
+  try {
+    llamadas = fs.readFileSync(path.join(dir, 'llamadas.log'), 'utf8').split('\n').filter(Boolean).map((l) => {
+      const [paso, json] = [l.slice(0, l.indexOf('\t')), l.slice(l.indexOf('\t') + 1)];
+      return { paso, ...JSON.parse(json) };
+    });
+  } catch { llamadas = []; }
+  return { status: r.status, out: `${r.stdout}${r.stderr}`, llamadas, fix: dir };
+}
+const sinMarcadores = (texto, donde) => { for (const m of MARCADORES) assert.ok(!texto.includes(m), `${donde} trae un secreto: ${m}`); };
+const escrituras = (ll) => ll.filter((l) => /\b(create|register|update|set|put)\b/.test(l.args.join(' ')) || l.paso === 'rest');
+
+test('T7 Aca_DosFasesEnOrdenYSinSecretosALaVista @story-2.30 @ac-5 @ac-8', () => {
+  const amb = alta(['--dry-run', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const o = amb.out;
+  const orden = ['provider register -n Microsoft.App', 'provider register -n Microsoft.OperationalInsights', 'group create', 'monitor log-analytics workspace create', 'managedEnvironments/env-sitio-acme'];
+  const pos = orden.map((x) => o.indexOf(x));
+  assert.ok(pos.every((p, i) => p >= 0 && (i === 0 || p > pos[i - 1])), `las órdenes de la fase ambiente, en orden: ${pos} · ${o}`);
+  assert.match(o, /https:\/\/sitio-acme\.<defaultDomain del ambiente>/, 'imprime la dirección que tendrá el sitio');
+  assert.match(o, /\/auth\/callback/);
+  assert.match(o, /\/\.auth\/login\/aad\/callback/);
+  assert.deepStrictEqual(amb.llamadas, [], '--dry-run no llama a az');
+  sinMarcadores(o, 'el plan de la fase ambiente');
+
+  const sit = alta(['--dry-run', '--phase', 'sitio']);
+  assert.strictEqual(sit.status, 0, sit.out);
+  const s = sit.out;
+  const ordenSitio = ['storage account create', 'storage share-rm create', 'managedEnvironments/env-sitio-acme/storages/', 'containerapp create', 'role assignment create', 'containerapp auth microsoft update', 'containerapp auth update', 'containerapp ingress update'];
+  const p2 = ordenSitio.map((x) => s.indexOf(x));
+  assert.ok(p2.every((p, i) => p >= 0 && (i === 0 || p > p2[i - 1])), `las órdenes de la fase sitio, en orden, la entrada externa al final: ${p2}`);
+  assert.match(s, /"external": false/, 'la aplicación nace con la entrada interna');
+  assert.deepStrictEqual(sit.llamadas, []);
+  sinMarcadores(s, 'el plan de la fase sitio');
+  assert.match(s, /<secreto: SITE_SESSION_KEY>/, 'el secreto, tapado y nombrado');
+
+  // sin SITE_SESSION_KEY: sale 1, la nombra, y no crea nada
+  const { SITE_SESSION_KEY, ...sinLlave } = SECRETOS;
+  const falta = alta(['--dry-run', '--phase', 'sitio'], { env: sinLlave });
+  assert.strictEqual(falta.status, 1, falta.out);
+  assert.match(falta.out, /SITE_SESSION_KEY/);
+  assert.deepStrictEqual(falta.llamadas, []);
+  const faltaApply = alta(['--apply', '--phase', 'sitio'], { env: sinLlave });
+  assert.strictEqual(faltaApply.status, 1);
+  assert.deepStrictEqual(escrituras(faltaApply.llamadas), [], 'sin la variable no se crea nada');
+});
+
+test('T8 Aca_EscalaACeroYUnaReplica @story-2.30 @ac-8', () => {
+  const s = alta(['--dry-run', '--phase', 'sitio']).out;
+  for (const x of ['"minReplicas": 0', '"maxReplicas": 1', '"cpu": 0.5', '"memory": "1Gi"', '"targetPort": 8080', '"allowInsecure": false',
+    '"workloadProfileName": "Consumption"', '"mountPath": "/data"', '"storageType": "AzureFile"', '"name": "SITE_DATA_DIR"',
+    '"value": "microsoft"', `"image": "ghcr.io/acme/arnes@sha256:${'a'.repeat(64)}"`, '"path": "/livez"', '"path": "/readyz"',
+    'storage account create -n acmesitiodatos', 'storage share-rm create --storage-account acmesitiodatos', '--quota 1',
+    'containerapp ingress update -g rg-sitio-acme -n sitio-acme --type external --allow-insecure false']) {
+    assert.ok(s.includes(x), `falta ${x}`);
+  }
+  assert.doesNotMatch(s, /acmebuzon[\s\S]*share-rm|share-rm[^\n]*acmebuzon/, 'el disco no va en la cuenta del buzón');
+  // la imagen por etiqueta, rechazada
+  const etiqueta = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), image: 'ghcr.io/acme/arnes:2026.10.1' } });
+  assert.strictEqual(etiqueta.status, 1);
+  assert.match(etiqueta.out, /image/);
+  // el disco en la cuenta del buzón, rechazado
+  const misma = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), storageAccount: 'acmebuzon' } });
+  assert.strictEqual(misma.status, 1);
+  assert.match(misma.out, /storageAccount/);
+});
+
+test('T9 Aca_SecretosPorReferencia @story-2.30 @ac-5 @ac-8', () => {
+  const s = alta(['--dry-run', '--phase', 'sitio']).out;
+  // cada secreto en `secrets` y su variable por `secretRef`; ninguno como valor común
+  for (const [v, sec] of [['SITE_SESSION_KEY', 'site-session-key'], ['SITE_OIDC_CLIENT_SECRET', 'site-oidc-client-secret'], ['SITE_OPERATIONS_WRITE_TOKEN', 'site-operations-write-token']]) {
+    assert.ok(s.includes(`"name": "${sec}"`), `el secreto ${sec}`);
+    assert.match(s, new RegExp(`"name": "${v}",\\s*"secretRef": "${sec}"`), `${v} por secretRef`);
+  }
+  assert.match(s, /"name": "SITE_OPERATIONS_IDENTITY",\s*"value": "managed"/);
+  assert.match(s, /"name": "SITE_MAILBOX_IDENTITY",\s*"value": "managed"/);
+  assert.doesNotMatch(s, /SITE_OPERATIONS_TOKEN/, 'con la identidad, sin el token');
+  assert.match(s, /"name": "SITE_FIRST_MAINTAINER",\s*"value": "lead@acme\.example"/, 'el primer mantenedor, variable común');
+  assert.doesNotMatch(s, /--client-secret /, 'nunca el secreto por línea de órdenes');
+  assert.doesNotMatch(s, /--secrets |--env-vars /, 'los secretos van en el archivo, no en la línea de órdenes');
+  // una clave con forma de secreto en el archivo de configuración: rechazado
+  for (const mala of [{ ...CONFIG(), sessionKey: 'x' }, { ...CONFIG(), mailbox: { ...CONFIG().mailbox, sas: 'x' } }, { ...CONFIG(), oidcClientSecret: 'x' }]) {
+    const r = alta(['--dry-run', '--phase', 'sitio'], { config: mala });
+    assert.strictEqual(r.status, 1, r.out);
+    assert.match(r.out, /secreto/);
+  }
+  // con la cuenta dedicada (token), el token sí, por secretRef
+  const tok = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), operationsIdentity: 'token' }, env: { ...SECRETOS, SITE_OPERATIONS_TOKEN: marca('TOKEN', 'DE-LECTURA-QUE-NO-DEBE-APARECER') } });
+  assert.strictEqual(tok.status, 0, tok.out);
+  assert.match(tok.out, /"name": "SITE_OPERATIONS_TOKEN",\s*"secretRef": "site-operations-token"/);
+  assert.ok(!tok.out.includes('TOKEN-DE-LECTURA-QUE-NO-DEBE-APARECER'));
+  const sinTok = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), operationsIdentity: 'token' } });
+  assert.strictEqual(sinTok.status, 1);
+  assert.match(sinTok.out, /SITE_OPERATIONS_TOKEN/);
+});
+
+test('T10 Aca_RolDeLecturaSobreElContenedor @story-2.30 @ac-5 @ac-8', () => {
+  const s = alta(['--dry-run', '--phase', 'sitio']).out;
+  const linea = s.split('\n').find((l) => l.includes('role assignment create'));
+  assert.ok(linea, s);
+  assert.match(linea, /--role "Storage Blob Data Reader"/);
+  assert.match(linea, /--scope \/subscriptions\/1{8}-1{4}-1{4}-1{4}-1{12}\/resourceGroups\/rg-buzon-acme\/providers\/Microsoft\.Storage\/storageAccounts\/acmebuzon\/blobServices\/default\/containers\/corridas( |$)/);
+  assert.match(linea, /--assignee-principal-type ServicePrincipal/);
+});
+
+test('T11 Aca_InicioIntegradoUnInquilino @story-2.30 @ac-8', () => {
+  const s = alta(['--dry-run', '--phase', 'sitio']).out;
+  const ms = s.split('\n').find((l) => l.includes('containerapp auth microsoft update'));
+  const au = s.split('\n').find((l) => /containerapp auth update/.test(l));
+  const t = guid('2');
+  assert.ok(ms && au, s);
+  assert.ok(ms.includes(`--tenant-id ${t}`) && ms.includes(`--issuer https://login.microsoftonline.com/${t}/v2.0`), ms);
+  assert.ok(ms.includes('--client-secret-name site-oidc-client-secret') && ms.includes(`--allowed-audiences ${guid('3')}`) && ms.includes(`--client-id ${guid('3')}`), ms);
+  assert.doesNotMatch(ms, /common|organizations/);
+  for (const x of ['--unauthenticated-client-action RedirectToLoginPage', '--require-https true', '--excluded-paths /healthz,/livez', '--enabled true']) assert.ok(au.includes(x), `falta ${x}: ${au}`);
+  assert.match(s, /"name": "SITE_OIDC_ISSUER",\s*"value": "https:\/\/login\.microsoftonline\.com\/2{8}-2{4}-2{4}-2{4}-2{12}\/v2\.0"/);
+});
+
+test('T12 Aca_SinCostoEscondido @story-2.30 @ac-9', () => {
+  const plan = `${alta(['--dry-run', '--phase', 'ambiente']).out}\n${alta(['--dry-run', '--phase', 'sitio']).out}`;
+  for (const prohibido of [/\bacr\b/, /keyvault/, /--infrastructure-subnet-resource-id/, /private-endpoint|privateEndpoint/, /workload-profile add/]) assert.doesNotMatch(plan, prohibido, `una orden de costo escondido: ${prohibido}`);
+  assert.strictEqual((plan.match(/monitor log-analytics workspace create/g) || []).length, 1, 'una sola área de registros');
+  assert.match(plan, /monitor log-analytics workspace create [^\n]*--retention-time 31 [^\n]*--quota 0\.023/);
+  assert.doesNotMatch(plan, /--quota -1/);
+  assert.strictEqual((plan.match(/storage account create/g) || []).length, 1, 'una sola cuenta de almacenamiento: la del disco');
+  assert.match(plan, /"destination": "log-analytics"/, 'el ambiente con los registros en el área, explícito');
+  assert.match(plan, /"customerId": "<customerId del área registros-sitio-acme>"/);
+  assert.match(plan, /"workloadProfileType": "Consumption"/);
+  assert.doesNotMatch(plan, /"workloadProfileType": "(?!Consumption)/, 'ningún perfil que no sea Consumption');
+  // un tope por debajo de 0,023 (Azure lo rechaza) o ilimitado: sale 1 sin imprimir el plan
+  for (const q of [0.02, -1, 0, 5]) {
+    const r = alta(['--dry-run', '--phase', 'ambiente'], { config: { ...CONFIG(), logAnalyticsQuotaGb: q } });
+    assert.strictEqual(r.status, 1, `tope ${q}: ${r.out}`);
+    assert.doesNotMatch(r.out, /workspace create/, `tope ${q}: sin el plan`);
+    assert.match(r.out, /logAnalyticsQuotaGb/);
+  }
+});
+
+test('T13 Aca_SinSesionDeAz_NoPregunta @story-2.30 @ac-8', () => {
+  const r = alta(['--apply', '--phase', 'ambiente'], { fixEnv: { TYCON_AZ_WITHOUT_SESSION: '1' } });
+  assert.strictEqual(r.status, 1, r.out);
+  assert.match(r.out, /az login/);
+  assert.deepStrictEqual(escrituras(r.llamadas), [], 'sin sesión no se crea nada');
+  assert.deepStrictEqual(r.llamadas.map((l) => l.paso), ['sesion'], 'pregunta sólo por la sesión');
+});
+
+test('T29 Aca_FallaAMitad_SinEntradaExterna @story-2.30 @ac-8', () => {
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  assert.match(amb.out, /https:\/\/sitio-acme\.cielo-verde-1a2b3c4d\.eastus2\.azurecontainerapps\.io/, 'la dirección que tendrá el sitio');
+  sinMarcadores(amb.out, 'la salida de la fase ambiente');
+  for (const l of amb.llamadas) sinMarcadores(l.args.join(' '), 'una orden de az');
+  // el cuerpo del ambiente lleva la llave del área en un archivo, nunca en la línea de órdenes
+  const rest = amb.llamadas.find((l) => l.paso === 'rest');
+  assert.ok(rest && Object.values(rest.archivos).some((t) => t.includes('LLAVE-DEL-AREA-QUE-NO-DEBE-APARECER')), 'la llave viaja en el archivo del cuerpo');
+  const sit = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, fixEnv: { TYCON_AZ_FAIL: 'rol:create' } });
+  assert.strictEqual(sit.status, 1, sit.out);
+  assert.match(sit.out, /Owner o User Access Administrator/);
+  assert.match(sit.out, /no es alcanzable desde afuera/);
+  assert.match(sit.out, /quedó creado/);
+  assert.ok(!sit.llamadas.some((l) => l.paso === 'entrada'), 'ninguna orden de entrada externa');
+  assert.ok(!sit.llamadas.some((l) => l.paso === 'inicio'), 'nada después del paso que falló');
+  sinMarcadores(sit.out, 'la salida de la fase sitio');
+  // la segunda corrida sigue desde donde quedó: no vuelve a crear la aplicación, y esta vez abre la entrada al final
+  const otra = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix });
+  assert.strictEqual(otra.status, 0, otra.out);
+  const nuevas = otra.llamadas.slice(sit.llamadas.length);
+  assert.ok(!nuevas.some((l) => l.paso === 'aplicacion' && l.args[1] === 'create'), 'la aplicación ya existía: no se crea de nuevo');
+  assert.ok(!nuevas.some((l) => l.paso === 'almacen' && l.args.includes('create')), 'la cuenta ya existía');
+  assert.strictEqual(nuevas[nuevas.length - 1].paso, 'entrada', 'la entrada externa, en el último paso');
+  for (const l of [...sit.llamadas, ...otra.llamadas]) sinMarcadores(l.args.join(' '), 'una orden de az');
+});
+
+test('T29b Aca_NoPudePreguntar_NoEsNoExiste @story-2.30 @ac-8', () => {
+  // la regla de la casa: una salida vacía puede ser un comando que falló. Un `show` que falla por otra cosa que «no existe»
+  // frena el alta con el motivo: no se crea de nuevo encima de lo que capaz ya está.
+  let r = alta(['--apply', '--phase', 'ambiente'], { fixEnv: { TYCON_AZ_FAIL: 'grupo-recursos:show' } });
+  assert.strictEqual(r.status, 1, r.out);
+  assert.match(r.out, /no pude saber si existe/);
+  assert.ok(!r.llamadas.some((l) => l.paso === 'grupo-recursos' && l.args.includes('create')), 'no crea el grupo a ciegas');
+  // la aplicación, igual: un show que falla no la manda a create sobre una existente
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  r = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, fixEnv: { TYCON_AZ_FAIL: 'aplicacion:show' } });
+  assert.strictEqual(r.status, 1, r.out);
+  assert.ok(!r.llamadas.slice(amb.llamadas.length).some((l) => l.paso === 'aplicacion' && l.args[1] === 'create'), 'no crea la aplicación a ciegas');
+  // `az` que no está: lo dice como tal, no como «sin sesión»
+  const sinAz = alta(['--apply', '--phase', 'ambiente'], { fixEnv: { TYCON_AZ_CMD: path.join(tmp, 'no-existe-az') } });
+  assert.strictEqual(sinAz.status, 1);
+  assert.match(sinAz.out, /no pude correr az/);
+  assert.doesNotMatch(sinAz.out, /no hay sesión/);
+  // una llave que vuelve vacía (o «None», lo que imprime -o tsv para un null) no viaja: frena antes de usarla
+  const vacia = alta(['--apply', '--phase', 'ambiente'], { fixEnv: { TYCON_AZ_EMPTY_KEY: '1' } });
+  assert.strictEqual(vacia.status, 1, vacia.out);
+  assert.match(vacia.out, /vino vacía/);
+  assert.ok(!vacia.llamadas.some((l) => l.paso === 'rest'), 'no crea el ambiente con una llave vacía');
+  // una dirección del perfil con usuario y clave adentro: rechazada, como la del repo de operaciones
+  const conClave = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), profileRepo: 'https://u:p@git.acme.example/acme/perfil' } });
+  assert.strictEqual(conClave.status, 1, conClave.out);
+  assert.match(conClave.out, /profileRepo/);
+});
+
+test('T14 Render_SecretosSinValor @story-2.30 @ac-5 @ac-12', () => {
+  const t = fs.readFileSync(path.join(DEPLOY, 'render.yaml'), 'utf8');
+  assert.match(t, /^\s+plan: free$/m);
+  assert.match(t, /^\s+runtime: image$/m);
+  assert.match(t, new RegExp(`url: ghcr\\.io/acme/arnes@sha256:[0-9a-f]{64}`));
+  assert.match(t, /^\s+healthCheckPath: \/livez$/m);
+  // cada variable secreta: sync: false y sin value
+  const bloques = t.split(/\n\s+- key: /).slice(1);
+  const secretas = ['SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS', 'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN'];
+  for (const k of secretas) {
+    const b = bloques.find((x) => x.split('\n')[0].trim() === k);
+    assert.ok(b, `falta ${k}`);
+    assert.match(b, /sync: false/, `${k} con sync: false`);
+    assert.doesNotMatch(b, /value:/, `${k} sin valor`);
+  }
+  assert.doesNotMatch(t, /\b(ghp_|github_pat_|sv=|sig=)/, 'ningún valor con forma de token');
+});
+
+test('T15 Alta_SinValoresDeUnaOrganizacion @story-2.30 @ac-23', () => {
+  const archivos = [ACA, path.join(DEPLOY, 'render.yaml'), path.join(DEPLOY, 'local', 'compose.yaml'), path.join(DEPLOY, 'local', 'sitio.env.example'),
+    path.join(ROOT, 'scripts', 'site', 'check-deploy.js'), path.join(ROOT, 'scripts', 'lib', 'notify.js'), path.join(ROOT, '.github', 'workflows', 'site-image.yml')];
+  const GUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+  for (const f of archivos) {
+    const t = fs.readFileSync(f, 'utf8');
+    assert.doesNotMatch(t, GUID, `${path.basename(f)}: un GUID`);
+    assert.doesNotMatch(t, /dev\.azure\.com\/(?!acme\b)[a-z0-9-]+|\.visualstudio\.com/i, `${path.basename(f)}: una organización de Azure DevOps`);
+    assert.doesNotMatch(t, /ghcr\.io\/(?!acme\/)[a-z0-9-]+\//i, `${path.basename(f)}: el nombre de una imagen real`);
+    // el nombre del repo público, el de la organización que lo publica, y el producto con que trabaja (los controles del nombre público)
+    assert.doesNotMatch(t, /tycon-harness|tycon-sa|tycon\.com|bizuit/i, `${path.basename(f)}: el nombre de una organización real o del repo público`);
+    assert.doesNotMatch(t, /chat_id=\d|\b\d{9,}\b/, `${path.basename(f)}: un chat`);
+  }
+});
+
+test('T36 Local_ComposeSinSecretosYSoloRedInterna @story-2.30 @ac-5 @ac-13', () => {
+  const c = fs.readFileSync(path.join(DEPLOY, 'local', 'compose.yaml'), 'utf8');
+  assert.match(c, new RegExp(`image: ghcr\\.io/acme/arnes@sha256:[0-9a-f]{64}`));
+  assert.match(c, /- "127\.0\.0\.1:8080:8080"/, 'el puerto sólo en 127.0.0.1');
+  assert.doesNotMatch(c, /- "?8080:8080"?$/m, 'nunca en todas las interfaces');
+  // el archivo de secretos llega por una variable que pone el arranque (start.js): nunca un sitio.env al lado, en el repo
+  assert.match(c, /env_file:\s*\n\s+- \$\{SITE_ENV_FILE:\?[^}]+\}/);
+  assert.doesNotMatch(c, /^\s+- sitio\.env$/m);
+  const gi = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8');
+  assert.match(gi, /^\*\*\/sitio\.env$/m, 'un sitio.env olvidado en el repo no se commitea');
+  assert.match(c, /- sitio-datos:\/data/);
+  assert.match(c, /^volumes:\n {2}sitio-datos:/m, 'un volumen con nombre');
+  assert.match(c, /SITE_DATA_DIR: \/data/);
+  const env = (c.match(/environment:\n((?: {6}.*\n)*)/) || [])[1] || '';
+  assert.doesNotMatch(env, /SESSION|SECRET|TOKEN|SAS/, 'ningún secreto en environment:');
+  const ej = fs.readFileSync(path.join(DEPLOY, 'local', 'sitio.env.example'), 'utf8');
+  const lineas = ej.split('\n').filter((l) => l.trim() && !l.trim().startsWith('#'));
+  const nombres = lineas.map((l) => l.split('=')[0]);
+  for (const v of ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS', 'SITE_FIRST_MAINTAINER']) {
+    assert.ok(nombres.includes(v), `el ejemplo trae ${v}`);
+  }
+  for (const l of lineas) assert.match(l, /^[A-Z_]+=$/, `sin valor: ${l}`);
+  // las opcionales de la configuración desde el sitio, comentadas
+  for (const v of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN']) {
+    assert.match(ej, new RegExp(`^# ${v}=$`, 'm'), `${v}, comentada y vacía`);
+  }
+});
+
+test('T36b Local_ArranqueSeNiegaConElArchivoEnUnRepo @story-2.30 @ac-5 @ac-13', () => {
+  const START = path.join(DEPLOY, 'local', 'start.js');
+  const correr = (args) => spawnSync(process.execPath, [START, ...args], { encoding: 'utf8', timeout: 30000, env: { PATH: process.env.PATH, HOME: tmp } });
+  // dentro de un repo git: se niega, y no arranca nada
+  const repo = path.join(tmp, 'un-repo');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'adentro'), { recursive: true });
+  const enRepo = path.join(repo, 'adentro', 'sitio.env');
+  fs.writeFileSync(enRepo, 'SITE_SESSION_KEY=\n', { mode: 0o600 });
+  let r = correr(['--secrets-file', enRepo, '--dry-run']);
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /dentro de un repo git/);
+  // un worktree (`.git` es un archivo) también es un repo
+  const wt = path.join(tmp, 'un-worktree');
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(wt, '.git'), 'gitdir: /x\n');
+  fs.writeFileSync(path.join(wt, 'sitio.env'), '', { mode: 0o600 });
+  assert.strictEqual(correr(['--secrets-file', path.join(wt, 'sitio.env'), '--dry-run']).status, 1);
+  // un enlace simbólico fuera del repo que apunta a un archivo DENTRO de un repo: se niega igual
+  const enlaceDir = path.join(tmp, 'enlaces');
+  fs.mkdirSync(enlaceDir, { recursive: true });
+  const enlace = path.join(enlaceDir, 'sitio.env');
+  fs.rmSync(enlace, { force: true });
+  fs.symlinkSync(enRepo, enlace);
+  r = correr(['--secrets-file', enlace, '--dry-run']);
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /dentro de un repo git/);
+  // un archivo que está pero no se puede abrir (una carpeta con ese nombre): lo dice, no «no lo encuentro»
+  const carpeta = path.join(tmp, 'carpeta-sitio');
+  fs.mkdirSync(path.join(carpeta, 'sitio.env'), { recursive: true });
+  r = correr(['--secrets-file', path.join(carpeta, 'sitio.env'), '--dry-run']);
+  assert.strictEqual(r.status, 1, r.stdout + r.stderr);
+  assert.doesNotMatch(r.stderr, /no encuentro/);
+  // fuera de todo repo, pero legible por otros: se niega
+  const fuera = path.join(tmp, 'secretos-del-sitio');
+  fs.mkdirSync(fuera, { recursive: true });
+  const abierto = path.join(fuera, 'sitio.env');
+  fs.writeFileSync(abierto, '');
+  fs.chmodSync(abierto, 0o644);
+  r = correr(['--secrets-file', abierto, '--dry-run']);
+  if (process.platform !== 'win32') { assert.strictEqual(r.status, 1, r.stdout + r.stderr); assert.match(r.stderr, /chmod 600/); }
+  // fuera de todo repo y sólo del dueño: arranca (en ensayo, dice la orden)
+  fs.chmodSync(abierto, 0o600);
+  r = correr(['--secrets-file', abierto, '--dry-run']);
+  assert.strictEqual(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /docker compose -f .*compose\.yaml up -d/);
+  assert.ok(r.stdout.includes(`SITE_ENV_FILE=${abierto}`));
+  // sin el archivo, o sin la opción: uso
+  assert.strictEqual(correr(['--secrets-file', path.join(fuera, 'no-esta.env'), '--dry-run']).status, 1);
+  assert.strictEqual(correr(['--dry-run']).status, 2);
+});
+
+test('T9b Aca_SecretosDeYProblemas_Directos @story-2.30 @ac-5 @ac-8', () => {
+  const { secretosDe, problemas } = require(ACA);
+  // con la identidad: pide la llave de la sesión y el secreto del inicio; las opcionales, sólo si vienen
+  let s = secretosDe(CONFIG(), { SITE_SESSION_KEY: 'x', SITE_PIPELINES_TOKEN: 'y' });
+  assert.deepStrictEqual(s.faltan, ['SITE_OIDC_CLIENT_SECRET']);
+  assert.ok(s.vinieron.some(([v]) => v === 'SITE_PIPELINES_TOKEN'));
+  assert.ok(s.apagadas.includes('SITE_OPERATIONS_WRITE_TOKEN') && !s.apagadas.includes('SITE_PIPELINES_TOKEN'));
+  // con la cuenta dedicada, también el token de lectura
+  s = secretosDe({ ...CONFIG(), operationsIdentity: 'token' }, {});
+  assert.deepStrictEqual(s.faltan, ['SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OPERATIONS_TOKEN']);
+  // la configuración inventada sirve; una clave de secreto, no
+  assert.deepStrictEqual(problemas(CONFIG(), 'sitio'), []);
+  assert.ok(problemas({ ...CONFIG(), webhookToken: 'x' }, 'sitio').some((p) => /no lleva secretos/.test(p)));
+});
+
+test('T38 Sondas_VidaContraLivez_VariablesPrevistas @story-2.30 @ac-4 @ac-5 @ac-8 @ac-12 @ac-13', () => {
+  const s = alta(['--dry-run', '--phase', 'sitio']).out;
+  assert.match(s, /"type": "Liveness",\s*"httpGet": \{\s*"path": "\/livez"/);
+  assert.match(s, /"type": "Readiness",\s*"httpGet": \{\s*"path": "\/readyz"/);
+  assert.doesNotMatch(s, /"type": "Liveness",\s*"httpGet": \{\s*"path": "\/healthz"/, 'nunca la vida contra /healthz');
+  const render = fs.readFileSync(path.join(DEPLOY, 'render.yaml'), 'utf8');
+  assert.doesNotMatch(render, /healthCheckPath: \/healthz/);
+  assert.match(render, /- key: SITE_FIRST_MAINTAINER\n\s+sync: false/);
+  // las opcionales de la configuración desde el sitio: sin valor en el plan cuando no vienen en el entorno
+  const { SITE_OPERATIONS_WRITE_TOKEN, ...sinOpcionales } = SECRETOS;
+  const p = alta(['--dry-run', '--phase', 'sitio'], { env: sinOpcionales }).out;
+  for (const v of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN']) {
+    assert.doesNotMatch(p, new RegExp(`"name": "${v}"`), `${v} apagada si no viene`);
+  }
+  assert.match(p, /apagadas.*SITE_OPERATIONS_WRITE_TOKEN/s, 'el plan dice cuáles quedan apagadas');
+});
+
+// ── la guía y el registro (T32, T33, T42) ───────────────────────────────────────────────────────────────────────
+const GUIA = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.md');
+const GUIA_EN = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.en.md');
+/** El texto de una sección `## <título>` hasta la próxima `## `. */
+const seccion = (t, titulo) => { const i = t.indexOf(`\n## ${titulo}`); if (i < 0) return null; const j = t.indexOf('\n## ', i + 4); return t.slice(i, j < 0 ? undefined : j); };
+const sub = (t, titulo) => { const i = t.indexOf(`\n### ${titulo}`); if (i < 0) return null; const j = t.slice(i + 5).search(/\n#{2,3} /); return t.slice(i, j < 0 ? undefined : i + 5 + j); };
+
+test('T32 Guia_ParteComunYUnaRecetaPorInstalacion @story-2.30 @ac-3 @ac-4 @ac-5 @ac-7 @ac-11 @ac-12 @ac-13', () => {
+  const t = fs.readFileSync(GUIA, 'utf8');
+  const comun = seccion(t, 'Lo común a cualquier instalación');
+  assert.ok(comun, 'la parte común');
+  for (const nube of ['az ', 'azurecontainerapps', 'render.com', 'Container Apps', 'Render']) assert.ok(!comun.includes(nube), `la parte común nombra una nube: ${nube}`);
+  for (const x of ['https', '8080', 'SITE_DATA_DIR', '1 GB', '/livez', '/readyz', '/healthz', 'SITE_FIRST_MAINTAINER', 'SITE_SESSION_KEY', 'SITE_OIDC_CLIENT_SECRET',
+    'SITE_OPERATIONS_TOKEN', 'SITE_MAILBOX_SAS', 'SITE_OPERATIONS_WRITE_TOKEN', 'docker run', 'node scripts/site/server.js', 'check-deploy.js', 'política de rama', 'hacerse mantenedor']) {
+    assert.ok(comun.includes(x), `la parte común no dice ${x}`);
+  }
+  const recetas = seccion(t, 'Las recetas');
+  assert.ok(recetas, 'las recetas');
+  for (const r of ['Azure Container Apps', 'Render', 'Una máquina propia']) {
+    const b = sub(recetas, r);
+    assert.ok(b, `la receta ${r}`);
+    for (const rubro of ['Inicio de sesión', 'Disco', 'Secretos', 'Se duerme']) assert.ok(b.includes(`**${rubro}`), `la receta ${r} no dice «${rubro}»`);
+  }
+  const local = sub(recetas, 'Una máquina propia');
+  const orden = ['red interna', 'VPN', 'túnel'].map((x) => local.indexOf(x));
+  assert.ok(orden.every((p, i) => p >= 0 && (i === 0 || p > orden[i - 1])), `las tres formas de llegar, en orden: ${orden}`);
+  const index = fs.readFileSync(path.join(ROOT, 'INDEX.md'), 'utf8');
+  assert.match(index, /\| [^|]*sitio de la organizaci[^|]*\| `guides\/sitio-de-la-organizacion\.md`/, 'la fila del INDEX');
+});
+
+test('T42 Guia_InstalacionCompletaYEnIngles @story-2.30 @ac-7', () => {
+  const es = fs.readFileSync(GUIA, 'utf8');
+  const en = fs.readFileSync(GUIA_EN, 'utf8');
+  const titulos = (t) => [...t.matchAll(/^(##+) /gm)].map((m) => m[1]);
+  assert.deepStrictEqual(titulos(en), titulos(es), 'las mismas secciones, en el mismo orden');
+  const orden = ['## Qué es y para qué sirve', '## Qué hace falta antes', '## Probarlo en tu máquina con Docker', '## Lo común a cualquier instalación', '## Las recetas'].map((x) => es.indexOf(x));
+  assert.ok(orden.every((p, i) => p >= 0 && (i === 0 || p > orden[i - 1])), `qué es, qué hace falta y la prueba local, antes de lo común y las recetas: ${orden}`);
+  const ordenEn = ['## What it is and what it is for', '## What you need first', '## Try it on your machine with Docker', '## Common to every installation', '## The recipes'].map((x) => en.indexOf(x));
+  assert.ok(ordenEn.every((p, i) => p >= 0 && (i === 0 || p > ordenEn[i - 1])), `lo mismo en inglés: ${ordenEn}`);
+  // lo no probado en real lo dice
+  assert.match(es, /no se probó en real/i);
+  assert.match(en, /not (been )?tested for real/i);
+  // los comandos de la prueba local son los que corren hoy
+  for (const t of [es, en]) {
+    assert.match(t, /docker buildx build -f scripts\/site\/Dockerfile -t sitio:local \./);
+    assert.match(t, /-p 127\.0\.0\.1:8080:8080/);
+    assert.match(t, /node scripts\/site\/check-deploy\.js --url/);
+  }
+  assert.doesNotMatch(es + en, /TYCON-SA|tycon-harness|story \d|2\.\d\d\b/i, 'sin nombres reales ni números de story');
+});
+
+test('T33 Registro_SuitesPiezasYReadmes @story-2.30 @ac-24', () => {
+  const suites = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8');
+  for (const s of ['site-image-workflow.test.js', 'site-check-deploy.test.js', 'site-deploy.test.js', 'notify.test.js']) assert.ok(suites.includes(`"tests/${s}"`), `suites.json no registra ${s}`);
+  const piezas = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
+  for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/sitio-de-la-organizacion.md']) assert.ok(piezas.includes(p), `piezas-del-arnes.md no nombra ${p}`);
+  const ficha = seccion(piezas, 'scripts/site/ — el sitio de la organización');
+  assert.ok(ficha && ficha.split('\n').length <= 25, `la ficha del sitio es corta (${ficha && ficha.split('\n').length} líneas)`);
+  for (const r of ['pipelines/operations/README.md', 'pipelines/operations/github/README.md']) {
+    const t = fs.readFileSync(path.join(ROOT, r), 'utf8');
+    assert.match(t, /Sin\s+`notify`, no se manda/, `${r}: sin notify, no se manda`);
+    assert.match(t, /política de rama|protección de `operations\.json`/i, `${r}: la política de rama`);
+  }
+});

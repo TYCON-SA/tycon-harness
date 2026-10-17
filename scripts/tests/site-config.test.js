@@ -267,18 +267,19 @@ function fuentesCon({ ops, perfil = null, config, informados = null, repos = nul
 
 /** El sitio con la pestaña; `entrar(correo)` da la cookie de una sesión real del emisor local. */
 async function conPestana({ fuentes, env = {}, opciones = {} }, fn) {
-  const emisor = await arrancarEmisor();
-  const envSitio = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...env });
-  const cfg = validarConfiguracion(envSitio).cfg;
-  const rutasExtra = TAB().crearRutas({ cfg, fuentes, versionImagen: '2026.10.15.48', ahora: () => AHORA, ...opciones });
+  let emisor = null;
   let h = null;
   try {
+    emisor = await arrancarEmisor();
+    const envSitio = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, ...env });
+    const cfg = validarConfiguracion(envSitio).cfg;
+    const rutasExtra = TAB().crearRutas({ cfg, fuentes, versionImagen: '2026.10.15.48', ahora: () => AHORA, ...opciones });
     h = await H.arrancarSitio({ env: envSitio, fuentes, rutasExtra });
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
     const token = async (cookie) => { const p = await h.pedir('/configuracion', { cookie }); const m = /<meta name="site-token" content="([^"]+)">/.exec(p.texto); return m ? m[1] : null; };
     const escribir = (ruta, cookie, tok, cuerpo, headers = {}) => h.pedir(ruta, { method: 'POST', cookie, body: typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo), headers: { origin: 'http://127.0.0.1', 'content-type': 'application/json', 'x-site-token': tok, ...headers } });
     await fn({ h, entrar, token, escribir, cfg });
-  } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
+  } finally { await cerrarTodos(h, emisor); }
 }
 const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/proponer']];
 
@@ -351,7 +352,9 @@ test('T4 Secciones_OchoEditablesYDosDeLectura_CanalSinSecretos_SinScriptEnLinea 
   const ops = clon({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
   const perfil = clon({ 'team-repos.json': { version: 1 }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
   const fuentes = fuentesCon({ ops, perfil });
-  for (const [lectores, canalEdita] of [[{}, false], [{ 'operations-config.js': OPS_FUTURO }, true]]) {
+  // el lector de hoy ya sabe `notify`; el «todavía no sabe leer» se prueba con uno de antes, sin la clave
+  const OPS_VIEJO = { ...OPS, KEYS: OPS.KEYS.filter((k) => k !== 'notify') };
+  for (const [lectores, canalEdita] of [[{ 'operations-config.js': OPS_VIEJO }, false], [{}, true], [{ 'operations-config.js': OPS_FUTURO }, true]]) {
     await conPestana({ fuentes, env: { SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' }, opciones: { lectores } }, async ({ h, entrar }) => {
       const lead = await entrar(LEAD);
       const r = (await h.pedir('/api/config', { cookie: lead })).json;
@@ -510,14 +513,15 @@ test('T30 Umbrales_SinMarcaDelNocturno_SoloLectura @story-2.29 @ac-11', async ()
 test('T8 Stages_PropuestosConLaCredencialDePipelines_NadaSinConfirmar @story-2.29 @ac-8', async () => {
   const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
   const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
-  const ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
-  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'producto' });
-  ado.st.timeline = [{ type: 'Stage', identifier: 'Deploy', name: 'Desplegar a staging' }, { type: 'Stage', identifier: 'DeployProd', name: 'Producción' }, { type: 'Job', identifier: 'j', name: 'x' }];
-  gh.st.environments = [{ name: 'staging' }, { name: 'production' }];
-  ado.st.builds = { 42: [{ id: 7 }], 43: [{ id: 8 }] };
-  const ops = clon({ 'operations.json': opsBase() });
-  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.example/acme/Proy/_git/ops' } };
+  let ado, gh;
   try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'producto' });
+    ado.st.timeline = [{ type: 'Stage', identifier: 'Deploy', name: 'Desplegar a staging' }, { type: 'Stage', identifier: 'DeployProd', name: 'Producción' }, { type: 'Job', identifier: 'j', name: 'x' }];
+    gh.st.environments = [{ name: 'staging' }, { name: 'production' }];
+    ado.st.builds = { 42: [{ id: 7 }], 43: [{ id: 8 }] };
+    const ops = clon({ 'operations.json': opsBase() });
+    const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.example/acme/Proy/_git/ops' } };
     await conPestana({ fuentes: fuentesCon({ ops }), env: { SITE_PIPELINES_TOKEN: 'pip' }, opciones: { remotos, urlBase: { azure: ado.base, github: gh.base } } }, async ({ entrar, token, escribir }) => {
       const lead = await entrar(LEAD); const tok = await token(lead);
       const r = (await escribir('/api/config/stages', lead, tok, { pipeline: '42' })).json;
@@ -535,7 +539,7 @@ test('T8 Stages_PropuestosConLaCredencialDePipelines_NadaSinConfirmar @story-2.2
       assert.match((await escribir('/api/config/stages', lead, tok, { pipeline: '42' })).json.message, /no configurado: escribí el stage a mano/);
       assert.match((await escribir('/api/config/stages', lead, tok, { pipeline: 'acme/producto' })).json.message, /no configurado: escribí el environment a mano/);
     });
-  } finally { await ado.cerrar(); await gh.cerrar(); }
+  } finally { await cerrarTodos(ado, gh); }
 });
 
 test('T14b Versiones_EnLaPestana_ConLaPersonaConfirmada @story-2.29 @ac-13', async () => {
@@ -618,17 +622,26 @@ async function opsPorHttp(archivos) {
   const r = await crearRepoHttp({ raiz, nombre: 'ops.git', archivos, cabecera: CAB });
   const dir = path.join(raiz, 'clon-del-sitio');
   // 🔴 asíncrono: el repo HTTP vive en este mismo proceso, y un git sincrónico lo dejaría sin bucle para contestar
-  await require('util').promisify(require('child_process').execFile)('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'clone', '-q', '--depth', '1', '--branch', 'main', r.url, dir]);
+  try {
+    await require('util').promisify(require('child_process').execFile)('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'clone', '-q', '--depth', '1', '--branch', 'main', r.url, dir]);
+  } catch (e) { await cerrarTodos(r); throw e; } // el clon falló: el servidor no queda abierto colgando la prueba
   return { r, dir };
+}
+
+/** Cierra todos los servidores que se llegaron a abrir, aunque uno falle al cerrar; el error de la prueba no se pisa. */
+async function cerrarTodos(...servidores) {
+  await Promise.allSettled(servidores.filter(Boolean).map((s) => s.cerrar()));
 }
 
 test('T16 Proponer_ArchivoCambio_NoCreaNada @story-2.29 @ac-16', { skip: SIN_BACKEND }, async () => {
   const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
-  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
-  gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
-  const { r, dir } = await opsPorHttp({ 'operations.json': opsBase() });
+  // 🔴 todo servidor nace dentro del try: si el clon falla, el finally los cierra y la prueba no se cuelga (Windows)
+  let gh, r, dir;
   const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
   try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase() }));
     await conPestana({ fuentes: fuentesCon({ ops: dir }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
       const lead = await entrar(LEAD); const tok = await token(lead);
       const abierta = (await h.pedir('/api/config', { cookie: lead })).json;
@@ -644,17 +657,66 @@ test('T16 Proponer_ArchivoCambio_NoCreaNada @story-2.29 @ac-16', { skip: SIN_BAC
       assert.strictEqual(g(dir, 'status', '--porcelain'), '', 'el clon limpio');
       assert.strictEqual(g(dir, 'symbolic-ref', 'HEAD'), 'refs/heads/main');
     });
-  } finally { await r.cerrar(); await gh.cerrar(); }
+  } finally { await cerrarTodos(r, gh); }
+});
+
+test('T39b Pestana_ProponerArchivoPorArchivo_ConElFiltroDeRuta @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
+  // con una «Required reviewers» que sólo cubre operations.json, la pantalla recibe el estado de cada archivo
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado, r, dir;
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.com/acme/Proy/_git/ops' } };
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+      settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo-de-quienes-mantienen'], filenamePatterns: ['/operations.json', '/pipelines/*'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase() }));
+    await conPestana({ fuentes: fuentesCon({ ops: dir }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base } } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const p = (await h.pedir('/api/config', { cookie: lead })).json.proponer.operaciones;
+      assert.strictEqual(p.porArchivo['operations.json'].habilitado, true, JSON.stringify(p));
+      const umbrales = p.porArchivo['scripts/nightly/dashboard/sources.json'];
+      assert.strictEqual(umbrales.habilitado, false, JSON.stringify(p));
+      assert.match(umbrales.motivo, /la política de main no cubre scripts\/nightly\/dashboard\/sources\.json/);
+      assert.strictEqual(p.habilitado, false, 'el estado del repo entero dice que no todo se propone');
+    });
+  } finally { await cerrarTodos(r, ado); }
+});
+
+test('T39c Pestana_ProponerPorArchivo_ConElNombreViejoDelPerfil @story-2.30 @ac-22b', async () => {
+  // el perfil todavía usa el nombre de antes (perfil-equipo.json): la sección lee y propone sobre ése, así que el estado de
+  // «Proponer» tiene que estar también con ese nombre (la pantalla lo busca con el archivo que la sección resolvió)
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  const ops = clon({ 'operations.json': opsBase() });
+  const perfil = clon({ 'team-repos.json': TR_BASE, 'team-layer.json': capa(ORG.MODELS_SINCE), 'perfil-equipo.json': {} });
+  const remotos = { perfil: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'perfil', web: 'https://dev.azure.com/acme/Proy/_git/perfil' } };
+  let ado;
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'perfil' });
+    ado.st.politicas = [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+      settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo-de-quienes-mantienen'], filenamePatterns: ['/perfil-equipo.json'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+    await conPestana({ fuentes: fuentesCon({ ops, perfil }), env: { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: 'w' }, opciones: { remotos, urlBase: { azure: ado.base } } }, async ({ h, entrar }) => {
+      const lead = await entrar(LEAD);
+      const r = (await h.pedir('/api/config', { cookie: lead })).json;
+      const sec = r.secciones.find((s) => s.id === 'paquetes');
+      assert.strictEqual(sec.archivo, 'perfil-equipo.json', 'la sección resolvió el nombre viejo');
+      const p = r.proponer.perfil;
+      assert.ok(p.porArchivo && p.porArchivo['perfil-equipo.json'], JSON.stringify(p));
+      assert.strictEqual(p.porArchivo['perfil-equipo.json'].habilitado, true, JSON.stringify(p));
+      // y el nombre nuevo, que el filtro no cubre, no sale habilitado
+      assert.strictEqual(p.porArchivo['team-profile.json'].habilitado, false, JSON.stringify(p));
+    });
+  } finally { await cerrarTodos(ado); }
 });
 
 test('T24 Github_MismaPestana_SegundoProveedor @story-2.29 @ac-22', { skip: SIN_BACKEND }, async () => {
   const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
-  const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
-  gh.st.reglas = [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
-  const { r, dir } = await opsPorHttp({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
   const perfil = clon({ 'team-repos.json': { version: 1 }, 'team-layer.json': { requires: { harness: `>= ${ORG.TEAM_REPOS_SINCE}` } } });
   const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' }, perfil: { platform: 'github', org: 'acme', repo: 'perfil', web: 'https://github.example/acme/perfil' } };
+  let gh, r, dir;
   try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.reglas = [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase(), 'scripts/nightly/dashboard/sources.json': SOURCES_ORG, '.dashboard/applied-config.json': { files: { 'scripts/nightly/dashboard/sources.json': 'x' } }, 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } }));
     await conPestana({ fuentes: fuentesCon({ ops: dir, perfil }), env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA, SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: 't' }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
       const lead = await entrar(LEAD); const tok = await token(lead);
       const r0 = (await h.pedir('/api/config', { cookie: lead })).json;
@@ -674,7 +736,7 @@ test('T24 Github_MismaPestana_SegundoProveedor @story-2.29 @ac-22', { skip: SIN_
       assert.deepStrictEqual(gh.prohibidas(), [], 'nunca merge ni auto-merge');
       assert.strictEqual(g(dir, 'status', '--porcelain'), '');
     });
-  } finally { await r.cerrar(); await gh.cerrar(); }
+  } finally { await cerrarTodos(r, gh); }
 });
 
 // ── vuelta 2 (revisores y pase adversarial de la 2.29) ───────────────────────────────────────────────────────────
@@ -725,6 +787,8 @@ test('T5b Lecturas_IlegiblesDicenElMotivo @story-2.29 @ac-5 @ac-7 @ac-11 @ac-25 
   // el espejo del buzón con una carpeta de registros que no se puede leer: la máquina sale «no medido», no desaparece.
   // Como administrador los permisos no frenan la lectura: ese caso no se puede armar y se dice, no pasa en silencio
   if (process.getuid && process.getuid() === 0) { t.diagnostic('NO MEDIDO: corriendo como root, una carpeta sin permisos se lee igual'); return; }
+  // en Windows chmod no quita el permiso de lectura: la carpeta «ilegible» no se puede armar, y se dice
+  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: en Windows chmod no saca la lectura, una carpeta «sin permisos» se lee igual'); return; }
   const espejo = tmp('site-config-espejo-');
   fs.mkdirSync(path.join(espejo, 'maq-z', 'registros'), { recursive: true });
   fs.chmodSync(path.join(espejo, 'maq-z', 'registros'), 0o000);

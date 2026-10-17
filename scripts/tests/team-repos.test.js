@@ -338,7 +338,8 @@ test('2.23-T4 OperationsConfig_SiteConSecretoEsProblema', () => {
     [{ mailbox: { provider: 'azure-blob' } }, ['site.mailbox.account', 'site.mailbox.container']],
     [{ mailbox: { ...goodSite().mailbox, threads: 'si' } }, ['site.mailbox.threads']],
     [{ mailbox: { ...goodSite().mailbox, password: 'x', SharedKey: 'y' } }, ['site.mailbox.SharedKey', 'site.mailbox.password']],
-    [{ url: 'https://x.example' }, ['site.url']],
+    // `site.url` existe, pero sólo https y sin usuario ni clave (T17 lo prueba entero)
+    [{ url: 'http://x.example' }, ['site.url']],
     ['no', ['site']],
   ];
   for (const [site, esperado] of casos) {
@@ -352,6 +353,51 @@ test('2.23-T4 OperationsConfig_SiteConSecretoEsProblema', () => {
   assert.match(sas.problems[0].message, /secreto/);
   // un comentario `__` con la palabra no es una clave de secreto
   assert.strictEqual(OPS.parse(JSON.stringify(opsWithSite({ __token_doc: 'se explica acá', ...goodSite() }))).ok, true);
+});
+
+// ── el canal del aviso (`notify`) y la dirección del sitio (`site.url`) ─────────────────────────────────────────────
+const opsWithExtra = (extra) => ({ version: 1, owners: { default: 'lead@acme.example' }, ...extra });
+
+test('T16 OperationsConfig_NotifyYSiteUrl @story-2.30 @ac-14', () => {
+  for (const channel of ['telegram', 'slack', 'teams']) {
+    const r = OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel } })));
+    assert.deepStrictEqual(r.problems, [], channel);
+    assert.strictEqual(r.data.notify.channel, channel);
+  }
+  const conUrl = OPS.parse(JSON.stringify(opsWithExtra({ site: { ...goodSite(), url: 'https://sitio.acme.example' } })));
+  assert.deepStrictEqual(conUrl.problems, []);
+  assert.strictEqual(conUrl.data.site.url, 'https://sitio.acme.example');
+  // un comentario `__` dentro de notify no es problema
+  assert.strictEqual(OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'slack', __doc: 'el webhook va en secretos' } }))).ok, true);
+  assert.ok(OPS.KEYS.includes('notify'), 'la clave nace con su lector');
+  assert.ok(OPS.SITE_KEYS.includes('url'));
+  assert.deepStrictEqual(OPS.NOTIFY_CHANNELS, ['telegram', 'slack', 'teams']);
+});
+
+test('T17 OperationsConfig_NotifySinSecretos @story-2.30 @ac-14', () => {
+  const casos = [
+    [{ notify: { channel: 'slack', webhook_url: 'https://hooks.example/x' } }, ['notify.webhook_url']],
+    [{ notify: { channel: 'telegram', token: 'x' } }, ['notify.token']],
+    [{ notify: { channel: 'telegram', chat_id: '123' } }, ['notify.chat_id']],
+    [{ notify: { channel: 'email' } }, ['notify.channel']],
+    [{ notify: {} }, ['notify.channel']],
+    [{ notify: { channel: 'slack', otra: 1 } }, ['notify.otra']],
+    [{ notify: 'telegram' }, ['notify']],
+    [{ site: { url: 'http://sitio.acme.example' } }, ['site.url']],
+    [{ site: { url: 'https://u:p@sitio.acme.example' } }, ['site.url']],
+    [{ site: { url: 'https://u@sitio.acme.example' } }, ['site.url']],
+    [{ site: { url: 'no es una dirección' } }, ['site.url']],
+    [{ site: { url: 42 } }, ['site.url']],
+  ];
+  for (const [extra, esperado] of casos) {
+    const r = OPS.parse(JSON.stringify(opsWithExtra(extra)));
+    assert.strictEqual(r.ok, false, JSON.stringify(extra));
+    assert.deepStrictEqual(paths(r), esperado, JSON.stringify(extra));
+  }
+  // el destino se nombra como secreto, no sólo como clave desconocida
+  const wh = OPS.parse(JSON.stringify(opsWithExtra({ notify: { channel: 'slack', webhook_url: 'https://hooks.example/x' } })));
+  assert.match(wh.problems[0].message, /secreto/);
+  assert.doesNotMatch(JSON.stringify(wh.problems), /hooks\.example/, 'el problema no repite el valor');
 });
 
 // ── story 7.28: dónde corren las suites completas al mergear (`merge_suites`) ─────────────────────────────────────────

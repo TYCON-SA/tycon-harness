@@ -78,6 +78,8 @@ mundo() { # <dir>
   { "producto": "B", "ruta": "B/B", "tipo": "npm", "activo": true, "ado": "Proy%20B/B" } ] }
 J
   echo '{ "rubros_sin_fuente": {} }' > "$D/resumen.json"
+  # sin `notify` no se manda nada; el mundo de siempre avisa por Telegram
+  echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" } }' > "$D/operations.json"
 }
 # snap <dir> <fecha> <json que pisa claves de la base>  — la forma REAL del snapshot (claves del 09-14)
 snap() {
@@ -127,10 +129,10 @@ armar() { # <dir> <fuente> <hoy> [args extra]  → JSON en stdout
 entregar() { # <dir> <fuente> <hoy> [args extra]  → stdout+stderr a $D/entregar.txt, devuelve el exit code
   local D="$1" F="$2" H="$3"; shift 3
   if [ "$F" = vigilante ]; then
-    node "$RES" deliver --source vigilante --today "$H" --out "$D/vig" --pending "$D/vigpend" --deps-out "$D/out" "$@" > "$D/entregar.txt" 2>&1
+    node "$RES" deliver --source vigilante --today "$H" --out "$D/vig" --pending "$D/vigpend" --deps-out "$D/out" --operations "${OPS_FILE:-$D/operations.json}" "$@" > "$D/entregar.txt" 2>&1
   else
     node "$RES" deliver --source dependencies --today "$H" --out "$D/out" --pending "$D/pend" --config "$D/repos.json" \
-      --summary-config "$D/resumen.json" --watcher-out "$D/vig" "$@" > "$D/entregar.txt" 2>&1
+      --summary-config "$D/resumen.json" --watcher-out "$D/vig" --operations "${OPS_FILE:-$D/operations.json}" "$@" > "$D/entregar.txt" 2>&1
   fi
   echo $?
 }
@@ -171,7 +173,7 @@ const srv = http.createServer((req, res) => {
     const p = qs.parse(b);
     fs.appendFileSync(log, JSON.stringify({ ruta: req.url.replace(/\/bot[^/]*\//, "/bot<token>/"),
       token_ok: req.url.includes("/bottok-de-prueba-que-no-debe-aparecer/"), chat_id: p.chat_id,
-      message_id: p.message_id || null, text: p.text }) + "\n");
+      message_id: p.message_id || null, text: p.text, raw: b }) + "\n");
     const lineas = fs.readFileSync(resp, "utf8").split("\n").map((l) => l.trim()).filter(Boolean);
     const r = lineas[0] || "";
     if (lineas.length > 1) fs.writeFileSync(resp, lineas.slice(1).join("\n") + "\n");
@@ -283,8 +285,9 @@ echo '{ "rubros_sin_fuente": { "rechazadas_sin_deuda": "la story 9.9 escribe la 
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 [ "$(q "$D/a.json" 'j.rubros.rechazadas_sin_deuda.valor === null && j.rubros.rechazadas_sin_deuda.motivo.includes("la story 9.9 escribe la clave nueva")')" = true ] \
   && ok "T3 un rubro declarado sin fuente sale null con ESE motivo, aunque el snapshot traiga el dato" || no "T3 declarado: $(q "$D/a.json" 'j.rubros.rechazadas_sin_deuda')"
-grep -q 'sin fuente todavía: la story 9.9 escribe la clave nueva' <<<"$(q "$D/a.json" 'j.texto')" \
-  && ok "T3 el texto lo dice «sin fuente todavía: <motivo>»" || no "T3 el texto no dice «sin fuente todavía»: $(q "$D/a.json" 'j.texto')"
+# el texto lo marca «?» sin el motivo (el motivo puede nombrar un repo); el motivo queda en el rubro
+[ "$(q "$D/a.json" '/^• rechazadas sin deuda: \?$/m.test(j.texto) && !j.texto.includes("la story 9.9")')" = true ] \
+  && ok "T3 el texto lo marca «rechazadas sin deuda: ?», sin el motivo" || no "T3 el texto no dice «?» o trae el motivo: $(q "$D/a.json" 'j.texto')"
 echo '{ "rubros_sin_fuente": {} }' > "$D/resumen.json"
 snap "$D" "$HOY" '{"rechazadas_sin_deuda_ids":"__BORRAR__"}'
 armar "$D" dependencias "$HOY" > "$D/b.json" 2>/dev/null
@@ -312,8 +315,8 @@ D="$TMP/t3b"; mundo "$D"; vsnap "$D" "$HOY" '{}'
 vficha "$D" pending 2026-09-05-globex-cccc3333 2026-09-05 pendiente
 echo '{ "rubros_sin_fuente": { "pendientes": "la story 9.9 trae la fuente de pendientes" } }' > "$D/resumen.json"
 armar "$D" vigilante "$HOY" --summary-config "$D/resumen.json" > "$D/a.json" 2>/dev/null
-[ "$(q "$D/a.json" 'j.rubros.pendientes.valor === null && /la story 9\.9 trae la fuente de pendientes/.test(j.rubros.pendientes.motivo || "") && /sin fuente todavía: la story 9\.9/.test(j.texto)')" = true ] \
-  && ok "T3b un rubro del vigilante declarado sin fuente sale null con su motivo y el texto lo dice" || no "T3b vigilante sin fuente: $(q "$D/a.json" '[j.rubros && j.rubros.pendientes, j.texto]')"
+[ "$(q "$D/a.json" 'j.rubros.pendientes.valor === null && /la story 9\.9 trae la fuente de pendientes/.test(j.rubros.pendientes.motivo || "") && /pendientes: \?/.test(j.texto) && !/story 9\.9/.test(j.texto)')" = true ] \
+  && ok "T3b un rubro del vigilante declarado sin fuente sale null con su motivo y el texto lo marca «?» sin el motivo" || no "T3b vigilante sin fuente: $(q "$D/a.json" '[j.rubros && j.rubros.pendientes, j.texto]')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
 # T4 (AC 4) cambio_desde_ayer_arriba
@@ -376,8 +379,8 @@ HALL=$(node -e 'const a=[];for(let i=0;i<60;i++)a.push({id:"n"+String(i).padStar
 snap "$D" "$HOY" "{\"hallazgos\":$HALL,\"anunciados_hoy\":$(node -e 'console.log(JSON.stringify(Array.from({length:60},(_, i)=>"n"+String(i).padStart(7,"0"))))'),\"postergados_por_presupuesto\":$(node -e 'console.log(JSON.stringify(Array.from({length:40},(_, i)=>"n"+String(i).padStart(7,"0"))))')}"
 for i in $(seq 0 59); do ficha "$D" pending "n$(printf '%07d' "$i")" "$HOY" pendiente A/A; done
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
-[ "$(q "$D/a.json" 'j.texto.split("\n").length <= 23 && j.texto.length <= 2000 && /\(\+\d+ más\)/.test(j.texto)')" = true ] \
-  && ok "T5b 60 hallazgos: la sección de dependencias cabe en su presupuesto (≤23 líneas, ≤2000 caracteres) y corta con «(+N más)»" \
+[ "$(q "$D/a.json" 'j.texto.split("\n").length <= 23 && j.texto.length <= 2000 && /^• nuevos: 60$/m.test(j.texto) && !/paquete-con-nombre-largo|n0000/.test(j.texto)')" = true ] \
+  && ok "T5b 60 hallazgos: la sección de dependencias cabe en su presupuesto (≤23 líneas, ≤2000 caracteres) y los cuenta sin listarlos" \
   || no "T5b tope: $(q "$D/a.json" 'j.texto.split("\n").length + " líneas, " + j.texto.length + " caracteres"')"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -389,8 +392,8 @@ snap "$D" "$HOY" '{"corrida_completa":false,"no_medidos":[{"ruta":"B/B","motivo"
 armar "$D" dependencias "$HOY" > "$D/a.json" 2>/dev/null
 [ "$(q "$D/a.json" 'j.fallos.length === 3 && j.fallos.some(f => /B\/B/.test(f) && /el restore falló/.test(f)) && j.fallos.some(f => /incompleta/.test(f)) && j.fallos.some(f => /no se entregó/.test(f) && /no hay token/.test(f))')" = true ] \
   && ok "T6 fallos: el repo no medido con su motivo, la corrida incompleta y el resumen de ayer que no se entregó" || no "T6 fallos: $(q "$D/a.json" 'j.fallos')"
-[ "$(q "$D/a.json" '(() => { const t = j.texto, a = t.indexOf("Fallos"), b = t.indexOf("Sigue igual ("); return a > 0 && (b === -1 || a < b) && t.includes("el restore falló"); })()')" = true ] \
-  && ok "T6 los fallos van en el texto antes de «Sigue igual»" || no "T6 lugar de los fallos: $(q "$D/a.json" 'j.texto')"
+[ "$(q "$D/a.json" '(() => { const t = j.texto, a = t.indexOf("fallos: " + j.fallos.length), b = t.indexOf("Sigue igual ("); return j.fallos.length > 0 && a > 0 && (b === -1 || a < b) && !t.includes("el restore falló"); })()')" = true ] \
+  && ok "T6 los fallos van en el texto antes de «Sigue igual», como cantidad («fallos: N»), sin el detalle" || no "T6 lugar de los fallos: $(q "$D/a.json" 'j.texto')"
 [ "$(q "$D/a.json" 'j.fallos.some(f => /pull request/i.test(f))')" = false ] \
   && ok "T6 ninguna línea fija sobre los pull requests en fallos" || no "T6 apareció una línea fija de PR: $(q "$D/a.json" 'j.fallos')"
 snap "$D" "$HOY" '{"pedidos":{"simulado":false,"tope":2,"fichas_vivas":1,"fichas_sin_pedido":1,"creados":[],"adoptados":[],"existentes":0,"fallidos":[{"ficha":"a1","proyecto":"ProyA","paso":"crear","motivo":"TF401027 sin permiso"},{"ficha":"a1","proyecto":"ProyA","paso":"comentario","motivo":"otro"}],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[{"proyecto":"ProyA","motivo":"tres administradores"}],"pagados_avisados":[],"deuda_avisada":[],"sin_pedido":[]}}'
@@ -497,7 +500,7 @@ reset_srv ok:777; RC=$(entregar "$D" dependencias "$HOY")
 [ "$RC" = 0 ] && ok "T10 entregar sale 0 cuando Telegram acepta" || no "T10 rc=$RC · $(cat "$D/entregar.txt")"
 [ "$(pedidos)" = 1 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/sendMessage" ] && [ "$(ultimo 'j.token_ok')" = true ] \
   && ok "T10 un solo POST a sendMessage con el token del canal" || no "T10 pedidos=$(pedidos) ruta=$(ultimo 'j.ruta')"
-[ "$(pedidos)" = 1 ] && [ "$(q "$D/a.json" 'typeof j.texto === "string" && j.texto.length > 0')" = true ] && [ "$(ultimo 'j.text')" = "$(q "$D/a.json" 'j.texto')" ] && ok "T10 el texto mandado es exactamente el de armar" || no "T10 el texto mandado difiere del de armar"
+[ "$(pedidos)" = 1 ] && [ "$(q "$D/a.json" 'typeof j.texto === "string" && j.texto.length > 0')" = true ] && [ "$(ultimo 'j.text')" = "$(q "$D/a.json" 'j.texto')"$'\n'"sitio: sin configurar" ] && ok "T10 el texto mandado es el de armar más la línea del sitio" || no "T10 el texto mandado difiere del de armar"
 [ "$(q "$D/out/dependencias-$HOY.json" 'JSON.stringify([j.resumen.canal, j.resumen.message_id, j.resumen.editado, j.resumen.motivo, typeof j.resumen.entregado_el])')" = '["telegram",777,null,null,"string"]' ] \
   && ok "T10 el snapshot guarda resumen {canal, message_id 777, editado null, motivo null, entregado_el}" || no "T10 resumen: $(q "$D/out/dependencias-$HOY.json" 'j.resumen')"
 if grep -q 'tok-de-prueba-que-no-debe-aparecer\|990011223344' "$D/entregar.txt" "$D/out/dependencias-$HOY.json"; then
@@ -535,8 +538,8 @@ D="$TMP/t11b"; mundo "$D"
 snap "$D" "$HOY" '{}'; sellar "$D" "$HOY" null "⚠ telegram-notify: no hay token — NO se mandó el aviso."
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:888; RC=$(entregar "$D" vigilante "$HOY")
-[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/sendMessage" ] && grep -q 'dependencias no entregó su resumen hoy' <<<"$(ultimo 'j.text.split("\n")[0]')" && grep -q 'no hay token' <<<"$(ultimo 'j.text.split("\n")[0]')" \
-  && ok "T11b dependencias no entregó: el vigilante manda uno NUEVO que lo dice en la primera línea, con el motivo" || no "T11b: rc=$RC ruta=$(ultimo 'j.ruta') · $(ultimo 'j.text')"
+[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/sendMessage" ] && [ "$(ultimo 'j.text.split("\n")[0]')" = "⚠️ dependencias no entregó su resumen hoy: no se entregó" ] && ! grep -q 'no hay token' <<<"$(ultimo 'j.text')" \
+  && ok "T11b dependencias no entregó: el vigilante manda uno NUEVO que lo dice en la primera línea, sin el motivo libre" || no "T11b: rc=$RC ruta=$(ultimo 'j.ruta') · $(ultimo 'j.text')"
 [ "$(q "$D/vig/vigilante-$HOY.json" 'j.resumen.editado')" = false ] && ok "T11b editado: false" || no "T11b editado: $(q "$D/vig/vigilante-$HOY.json" 'j.resumen')"
 rm -f "$D/out/dependencias-$HOY.json"; vsnap "$D" "$HOY" '{}'
 reset_srv ok:889; RC=$(entregar "$D" vigilante "$HOY")
@@ -582,7 +585,7 @@ reset_srv ok:700; entregar "$D" dependencias "$HOY" >/dev/null
 L04=$(tail -1 "$TMP/pedidos.jsonl" > "$TMP/p04.json"; q "$TMP/p04.json" 'j.text')
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:700; RC=$(entregar "$D" vigilante "$HOY")
-grep -q 'no se pudo leer summary.json' <<<"$L04" && [ "$RC" = 0 ] && grep -q 'no se pudo leer summary.json' <<<"$(ultimo 'j.text')" \
+grep -q '^fallos: 1$' <<<"$L04" && [ "$RC" = 0 ] && grep -q '^fallos: 1$' <<<"$(ultimo 'j.text')" && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.fallos.some(f => /summary\.json/.test(f))')" = true ] \
   && ok "T11f la edición de las 08:00 conserva los fallos que dijo el mensaje de las 04:00" || no "T11f fallos perdidos en la edición: rc=$RC · 04:00=[$L04] · 08:00=[$(ultimo 'j.text')]"
 
 # T11g (ADV-G) dependencias entregó pero sin message_id: el vigilante va aparte y NO dice que no entregó
@@ -748,6 +751,9 @@ sandbox() { # <dir> <fuente>
   ln -s "$RAIZ/scripts" "$S/scripts"
   node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({fecha:process.argv[2],corrida_completa:true,no_medidos:[],hallazgos:[],anunciados_hoy:[],postergados_por_presupuesto:[],reaparecidos_ids:[],rechazadas_sin_deuda_ids:[]},null,2)+"\n")' "$S/.dashboard/dependencias/dependencias-$HOY.json" "$HOY"
   node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({fecha:process.argv[2],hallazgos:[],no_medido:[],nuevos:0,marcados_ignorados:0,ignorados_ids:[]},null,2)+"\n")' "$S/.dashboard/vigilante/vigilante-$HOY.json" "$HOY"
+  # el canal sale de operations.json → notify (sin el segundo argumento «sin-notify»)
+  if [ "${2:-}" = sin-notify ]; then echo '{ "version": 1, "owners": { "default": "lead@acme.example" } }' > "$S/operations.json"
+  else echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" } }' > "$S/operations.json"; fi
 }
 BASE_OK=1; git -C "$RAIZ" rev-parse --verify --quiet origin/main >/dev/null || BASE_OK=0
 # story 8.9: el renombre de una opción o de un archivo del arnés a inglés (mapa de renombres) no es «tocar el paso»: los
@@ -798,15 +804,21 @@ igual_a_main() { # <yaml> <display> → true si el paso entero es idéntico al d
 # equipo, y sus casos siguen allá. Tampoco viaja el chequeo del grupo de variables `vigilante-prod-hosts`, que era del
 # pipeline del equipo: el modelo no carga grupos.
 for CASO in dependencias; do
-  T=T17; Y="$RAIZ/pipelines/operations/dependency-audit.yml"; YREL=pipelines/operations/dependency-audit.yml
+  # 2.30-T30: el paso real, por su nombre, sin condición sobre el chat de Telegram
+  T=2.30-T30; Y="$RAIZ/pipelines/operations/dependency-audit.yml"; YREL=pipelines/operations/dependency-audit.yml
   ANTES='Crear los pedidos de trabajo'; DESPUES='Guardar el snapshot y las fichas en el repo de operaciones'
   INTACTOS=("Abrir un pull request por hallazgo (ahí se decide)"); SNAP=".dashboard/dependencias/dependencias-$HOY.json"
-  DISP='Entregar el resumen (si hay bot de Telegram)'
+  DISP='Entregar el resumen'
   [ "$(orden "$Y" "$ANTES" "$DISP" "$DESPUES")" = true ] \
     && ok "$T el paso «${DISP}» está entre «${ANTES}» y «${DESPUES}»" || no "$T el paso «${DISP}» no está entre «${ANTES}» y «${DESPUES}»"
   REG=$(region "$Y" "$DISP" 2>/dev/null || true)
   grep -q 'continueOnError: true' <<<"$REG" && grep -q 'TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)' <<<"$REG" && grep -q 'TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)' <<<"$REG" \
-    && ok "$T el paso lleva continueOnError: true y las dos variables del canal en env" || no "$T al paso le falta continueOnError o las variables del canal"
+    && grep -q 'TYCON_NOTIFY_WEBHOOK_URL: $(TYCON_NOTIFY_WEBHOOK_URL)' <<<"$REG" \
+    && ok "$T el paso lleva continueOnError: true y las variables de los canales en env (Telegram y el webhook)" || no "$T al paso le falta continueOnError o las variables de los canales"
+  grep -q 'condition:' <<<"$REG" && ! grep -q 'TYCON_TELEGRAM_CHAT_ID' <<<"$(grep 'condition:' <<<"$REG")" \
+    && grep -Eq -- '--operations "\$\(Build\.SourcesDirectory\)/operations\.json"' <<<"$REG" \
+    && ok "$T la condición del paso no mira el chat de Telegram (la decisión la toma notify.js) y le pasa el operations.json del árbol" \
+    || no "$T el paso sigue atado al chat de Telegram o no pasa --operations: $(grep 'condition:' <<<"$REG")"
   VAL="$FUENTE_DEPS"
   grep -Eq -- "${FUENTE_OPC} ${VAL}( |\$)" <<<"$REG" && grep -q 'HOY_NOCTURNO' <<<"$REG" && ! grep -qE '\bdate\b' <<<"$REG" \
     && ok "$T el paso entrega --source $CASO con la fecha de la noche (HOY_NOCTURNO) y no calcula otra" || no "$T el paso no usa --source $CASO / HOY_NOCTURNO, o calcula su propia fecha"
@@ -840,6 +852,18 @@ for CASO in dependencias; do
   RC=$(correr_paso "$Y" "$DISP" "$S3" HOY_NOCTURNO="$HOY" TYCON_TELEGRAM_DIR="$TMP/canal-vacio" TELEGRAM_BOT_TOKEN="$TOK_PRUEBA" TYCON_TELEGRAM_CHAT_ID=990011223344)
   [ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/$RUTA_ESPERADA" ] && [ "$(q "$S3/$SNAP" 'j.resumen && j.resumen.message_id === 44')" = true ] \
     && ok "$T con las dos variables de verdad el paso entrega ($RUTA_ESPERADA) y sale 0" || no "$T paso con variables: rc=$RC pedidos=$(pedidos) ruta=$(ultimo 'j.ruta') · $(head -c 400 "$S3/paso.out")"
+  # sin `notify`, con las variables de Telegram puestas: no se manda, y el warning lo dice
+  S5="$TMP/sb5-$CASO"; sandbox "$S5" sin-notify; reset_srv ok:46
+  RC=$(correr_paso "$Y" "$DISP" "$S5" HOY_NOCTURNO="$HOY" TYCON_TELEGRAM_DIR="$TMP/canal-vacio" TELEGRAM_BOT_TOKEN="$TOK_PRUEBA" TYCON_TELEGRAM_CHAT_ID=990011223344)
+  [ "$RC" != 0 ] && [ "$(pedidos)" = 0 ] && grep 'task.logissue type=warning' "$S5/paso.out" | grep 'canal sin configurar' >/dev/null \
+    && [ "$(q "$S5/$SNAP" 'j.resumen && j.resumen.canal === null && /canal sin configurar en operations\.json → notify/.test(j.resumen.motivo)')" = true ] \
+    && ok "$T sin notify el paso no manda aunque estén las variables de Telegram, y la constancia dice «canal sin configurar»" \
+    || no "$T sin notify: rc=$RC pedidos=$(pedidos) · $(head -c 400 "$S5/paso.out") · $(q "$S5/$SNAP" 'j.resumen')"
+  # el literal del webhook sin definir es «ausente» (con notify slack)
+  S6="$TMP/sb6-$CASO"; sandbox "$S6"; echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "slack" } }' > "$S6/operations.json"; reset_srv ok:47
+  RC=$(correr_paso "$Y" "$DISP" "$S6" HOY_NOCTURNO="$HOY" 'TYCON_NOTIFY_WEBHOOK_URL=$(TYCON_NOTIFY_WEBHOOK_URL)')
+  [ "$RC" != 0 ] && [ "$(pedidos)" = 0 ] && [ "$(q "$S6/$SNAP" 'j.resumen && /falta la dirección del webhook/.test(j.resumen.motivo)')" = true ] \
+    && ok "$T con el literal \$(TYCON_NOTIFY_WEBHOOK_URL) el paso lo trata como ausente" || no "$T literal del webhook: rc=$RC pedidos=$(pedidos) · $(q "$S6/$SNAP" 'j.resumen')"
 done
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -859,8 +883,8 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
   && ok "T30 con cruce los rubros traen los pedidos cerrados con la vulnerabilidad viva y las resueltas con pedido abierto" || no "T30 valores: $(q "$D/a.json" '[j.rubros.pedidos_cerrados_con_vivas, j.rubros.resueltas_con_pedido_abierto]')"
 [ "$(q "$D/a.json" 'j.fallos.some(f => /^cruce: 1 pedido\(s\) no leído\(s\) — no pude leer el work item/.test(f)) && j.fallos.some(f => /^cruce: 1 Bug\(s\) del arnés que ninguna ficha nombra/.test(f))')" = true ] \
   && ok "T30 los fallos dicen los pedidos no leídos (con el motivo del primero) y los Bugs sueltos" || no "T30 fallos: $(q "$D/a.json" 'j.fallos')"
-[ "$(q "$D/a.json" 'j.texto.includes("pedidos cerrados con la vulnerabilidad viva: 1") && j.texto.includes("aaa11111 → ProyA (Bug 101")')" = true ] \
-  && ok "T30 el texto nombra la ficha, el proyecto y el Bug cerrado con la vulnerabilidad viva" || no "T30 texto: $(q "$D/a.json" 'j.texto')"
+[ "$(q "$D/a.json" 'j.texto.includes("pedidos cerrados con la vulnerabilidad viva: 1") && !/aaa11111|ProyA|Bug 101/.test(j.texto)')" = true ] \
+  && ok "T30 el texto cuenta el pedido cerrado con la vulnerabilidad viva, sin ficha, proyecto ni Bug" || no "T30 texto: $(q "$D/a.json" 'j.texto')"
 snap "$D" "$HOY" '{"cruce":{"consultado":true,"motivo":null,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[],"no_leidos":[],"huerfanos":[],"huerfanos_no_consultados":[{"proyecto":"Proy B","motivo":"no pude consultar los Bugs del arnés (salió 1)"}]}}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 [ "$(q "$D/a.json" 'j.fallos.some(f => /^cruce: no se pudo buscar Bugs sueltos en 1 proyecto\(s\) — Proy B/.test(f))')" = true ] \
@@ -885,8 +909,8 @@ for (const k of ["pedidos_creados", "pedidos_cerrados", "pedidos_reabiertos", "p
 fs.writeFileSync(f, JSON.stringify(s, null, 2) + "\n");' "$D/out/dependencias-$AYER.json"
 snap "$D" "$HOY" '{"pedidos":{"simulado":false,"tope":2,"creados":[{"ficha":"3788493d","proyecto":"ProyA","id":5173},{"ficha":"94dbbf29","proyecto":"Proy B","id":5174},{"ficha":"ea4e7794","proyecto":"ProyA","id":5175}],"adoptados":[],"fallidos":[],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[],"deuda_avisada":[],"pagados_avisados":[],"reabiertos":[],"sin_pedido":[]},"cruce":{"consultado":true,"motivo":null,"evaluados":0,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[],"no_leidos":[],"huerfanos":[],"huerfanos_no_consultados":[]}}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
-[ "$(q "$D/a.json" '["Bug 5173 (ProyA, 3788493d)", "Bug 5174 (Proy B, 94dbbf29)", "Bug 5175 (ProyA, ea4e7794)"].every(b => j.texto.includes(b))')" = true ] \
-  && ok "T31 🔴 el resumen nombra los Bugs que la noche creó, con proyecto y ficha" || no "T31 no nombra los Bugs creados: $(q "$D/a.json" 'j.texto') ($(head -c 200 "$D/a.err"))"
+[ "$(q "$D/a.json" '/^• pedidos creados: 3/m.test(j.texto) && !/5173|5174|5175|ProyA|Proy B|3788493d/.test(j.texto) && j.rubros.pedidos_creados.valor.length === 3')" = true ] \
+  && ok "T31 🔴 el resumen cuenta los Bugs que la noche creó (el detalle, en el snapshot)" || no "T31 no nombra los Bugs creados: $(q "$D/a.json" 'j.texto') ($(head -c 200 "$D/a.err"))"
 [ "$(q "$D/a.json" 'Array.isArray(j.cambios) && !j.cambios.includes("deuda_con_pedido_abierto") && !j.cambios.includes("proyectos_sin_iteracion") && /^Pedidos de trabajo: encendidos \(ayer estaban en simulado\)\.$/m.test(j.texto)')" = true ] \
   && ok "T31 🔴 pasar de simulado a real no es un cambio de cada rubro: es UNA línea «Pedidos de trabajo: encendidos»" || no "T31 modo: $(q "$D/a.json" '[j.cambios, j.texto]')"
 [ "$(q "$D/a.json" '!j.cambios.includes("pedidos_cerrados_con_vivas") && !j.cambios.includes("resueltas_con_pedido_abierto") && /^Empezó a medirse, sin novedad: Bugs cerrados por el arnés, Bugs reabiertos por el arnés, pedidos cerrados con la vulnerabilidad viva, resueltas con pedido abierto$/m.test(j.texto) && !/antes no medido/.test(j.texto)')" = true ] \
@@ -924,8 +948,8 @@ armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
 D="$TMP/t32"; mundo "$D"
 snap "$D" "$HOY" '{"pedidos":{"simulado":false,"creados":[],"adoptados":[],"fallidos":[],"postergados":[],"sin_iteracion":[],"deuda_avisada":[],"pagados_avisados":[{"ficha":"aaa11111","proyecto":"ProyA","id":301,"cerrado":true,"motivo_azure":"Fixed and verified"},{"ficha":"bbb22222","proyecto":"Proy B","id":302,"cerrado":false,"motivo_azure":null}],"reabiertos":[{"ficha":"ccc33333","proyecto":"ProyA","id":303}]},"cruce":{"consultado":true,"motivo":null,"evaluados":2,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[{"ficha":"aaa11111","proyecto":"ProyA","pedido":301,"dias":0},{"ficha":"bbb22222","proyecto":"Proy B","pedido":302,"dias":3}],"no_leidos":[],"huerfanos":[],"huerfanos_no_consultados":[]}}'
 armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
-[ "$(q "$D/a.json" 'JSON.stringify(j.rubros.pedidos_cerrados.valor) === JSON.stringify([{ ficha: "aaa11111", proyecto: "ProyA", id: 301 }]) && JSON.stringify(j.rubros.resueltas_con_pedido_abierto.valor.map(x => x.pedido)) === "[302]" && j.texto.includes("Bugs cerrados por el arnés: 1 — Bug 301 (ProyA, aaa11111)") && j.texto.includes("Bugs reabiertos por el arnés: 1 — Bug 303 (ProyA, ccc33333)")')" = true ] \
-  && ok "T32 el resumen nombra los Bugs que cerró y los que reabrió el arnés, y no repite los cerrados como «resueltas con pedido abierto»" || no "T32: $(q "$D/a.json" '[j.rubros.pedidos_cerrados, j.rubros.resueltas_con_pedido_abierto, j.texto]') ($(head -c 200 "$D/a.err"))"
+[ "$(q "$D/a.json" 'JSON.stringify(j.rubros.pedidos_cerrados.valor) === JSON.stringify([{ ficha: "aaa11111", proyecto: "ProyA", id: 301 }]) && JSON.stringify(j.rubros.resueltas_con_pedido_abierto.valor.map(x => x.pedido)) === "[302]" && j.texto.includes("Bugs cerrados por el arnés: 1") && j.texto.includes("Bugs reabiertos por el arnés: 1") && !/Bug 30[13]|ProyA|aaa11111/.test(j.texto)')" = true ] \
+  && ok "T32 el resumen cuenta los Bugs que cerró y los que reabrió el arnés (sin nombrarlos), y no repite los cerrados como «resueltas con pedido abierto»" || no "T32: $(q "$D/a.json" '[j.rubros.pedidos_cerrados, j.rubros.resueltas_con_pedido_abierto, j.texto]') ($(head -c 200 "$D/a.err"))"
 
 # ════════════════════════════════════════════════════════════════════════════════════════════════
 # T33 (story 4.6, AC 5) la_seccion_viaja_en_el_mismo_mensaje — los PR abiertos van al final del MISMO mensaje
@@ -938,16 +962,16 @@ vsnap "$D" "$HOY" '{}'
 printf 'PR abiertos hace más de 2 días: 1\n#2912 Acme/Backend — Autor — 13 días\n' > "$D/prs.txt"
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/prs.txt")
 [ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] \
-  && [ "$(ultimo 'j.text.split("\n").slice(-2).join("|")')" = "PR abiertos hace más de 2 días: 1|#2912 Acme/Backend — Autor — 13 días" ] \
+  && [ "$(ultimo 'j.text.split("\n").slice(-2).join("|")')" = "PR abiertos hace más de 2 días: 1|sitio: sin configurar" ] && ! grep -q '2912' <<<"$(ultimo 'j.text')" \
   && [ "$(ultimo 'j.text.split("\n")[0]')" = "$DEPS_L1" ] && grep -q '🌙 vigilante' <<<"$(ultimo 'j.text')" \
-  && ok "T33 la sección de PR va al FINAL del mismo mensaje editado, con dependencias y el vigilante intactos arriba" \
+  && ok "T33 la cantidad de PR va al final del mismo mensaje editado, antes de la línea del sitio, sin la lista" \
   || no "T33 con sección: rc=$RC pedidos=$(pedidos) ruta=$(ultimo 'j.ruta') · $(ultimo 'j.text') · $(head -c 300 "$D/entregar.txt")"
 [ "$(q "$D/vig/vigilante-$HOY.json" 'JSON.stringify(j.resumen.rubros).includes("2912")')" = false ] \
   && ok "T33 la sección no entra a los rubros ni al snapshot" || no "T33 la sección se coló en el snapshot"
 # Sin el archivo (el paso de los PR falló antes de escribirlo): el resumen sale igual y lo DICE.
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/no-existe.txt")
-[ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && [ "$(ultimo 'j.text.split("\n").pop()')" = "PR abiertos: no se pudo consultar (la sección no se generó)" ] \
+[ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "PR abiertos: ? (no se pudo consultar)" ] \
   && ok "T33 sin el archivo el resumen se entrega igual y la última línea dice que los PR no se consultaron" \
   || no "T33 sin archivo: rc=$RC pedidos=$(pedidos) · $(ultimo 'j.text') · $(head -c 300 "$D/entregar.txt")"
 # Sin --extra: nada cambia.
@@ -958,8 +982,8 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY")
 { echo 'PR abiertos hace más de 2 días: 40'; for i in $(seq 1 40); do echo "#$i ProyectoConNombreLargo/RepositorioConNombreLargo — Autor con nombre muy largo — $i días"; done; } > "$D/largo.txt"
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/largo.txt")
-[ "$RC" = 0 ] && [ "$(ultimo 'j.text.length <= 4096 && j.text.split("\n")[0] === '"$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$DEPS_L1")"' && j.text.includes("🌙 vigilante") && j.text.split("PR abiertos hace más de 2 días: 40")[1].split("\n").length <= 14')" = true ] \
-  && ok "T33 una sección enorme se acota sola (≤13 líneas), no recorta dependencias ni vigilante, y el total entra en 4096" \
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.length <= 4096 && j.text.split("\n")[0] === '"$(node -e 'console.log(JSON.stringify(process.argv[1]))' "$DEPS_L1")"' && j.text.includes("🌙 vigilante") && j.text.includes("PR abiertos hace más de 2 días: 40") && !j.text.includes("ProyectoConNombreLargo")')" = true ] \
+  && ok "T33 una sección enorme deja sólo su cantidad: no recorta dependencias ni vigilante, y el total entra en 4096" \
   || no "T33 sección enorme: rc=$RC · largo=$(ultimo 'j.text.length') · $(ultimo 'j.text')"
 
 # T33c (adversarial ADV-1, iter 2) nombres_largos_se_recortan_por_linea_entera — una sección que pasa el tope de
@@ -969,22 +993,128 @@ reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/largo.txt")
   echo '(+5 más)'; } > "$D/nombres-largos.txt"
 vsnap "$D" "$HOY" '{}'
 reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/nombres-largos.txt")
-SEC_JS='(() => { const i = j.text.indexOf("PR abiertos hace más de 2 días: 15"); return i < 0 ? null : j.text.slice(i).split("\n"); })()'
-[ "$RC" = 0 ] && [ "$(ultimo "(() => { const L = $SEC_JS; if (!L) return false; const ult = L[L.length - 1]; const m = ult.match(/^\\(\\+(\\d+) más\\)\$/); const cuerpo = L.slice(1, -1); return L.join(\"\\n\").length <= 590 && !!m && cuerpo.every(l => /^#29\\d+ .* días\$/.test(l)) && cuerpo.length + Number(m[1]) === 15; })()")" = true ] \
-  && ok "T33c con nombres largos la sección cabe en 590, no corta ninguna línea a la mitad y «(+N más)» cuenta los que faltan (listados + N = 15)" \
-  || no "T33c nombres largos: rc=$RC · $(ultimo "$SEC_JS")"
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.includes("PR abiertos hace más de 2 días: 15") && !/#29\d|Persona Inventada|acme-custom/.test(j.text)')" = true ] \
+  && ok "T33c con nombres largos sólo viaja la cantidad: ningún PR, autor ni repo" \
+  || no "T33c nombres largos: rc=$RC · $(ultimo 'j.text')"
 # T33d (TEST-W4, iter 2) archivo vacío o que no se puede leer: se dice, distinto de «no se generó»
 : > "$D/vacio.txt"; mkdir -p "$D/es-carpeta.txt"
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/vacio.txt")
-[ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").pop()')" = "PR abiertos: no se pudo consultar (la sección vino vacía)" ] \
-  && ok "T33d archivo vacío: la última línea lo dice" || no "T33d vacío: rc=$RC · $(ultimo 'j.text.split("\n").pop()')"
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "PR abiertos: ? (no se pudo consultar)" ] \
+  && ok "T33d archivo vacío: «?» sin el motivo" || no "T33d vacío: rc=$RC · $(ultimo 'j.text')"
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/es-carpeta.txt")
-[ "$RC" = 0 ] && grep -q '^PR abiertos: no se pudo consultar (la sección no se pudo leer: EISDIR)$' <<<"$(ultimo 'j.text.split("\n").pop()')" \
-  && ok "T33d archivo ilegible (una carpeta): la última línea dice que no se pudo leer, con el código" || no "T33d ilegible: rc=$RC · $(ultimo 'j.text.split("\n").pop()')"
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "PR abiertos: ? (no se pudo consultar)" ] \
+  && ok "T33d archivo ilegible (una carpeta): «?» sin el motivo" || no "T33d ilegible: rc=$RC · $(ultimo 'j.text')"
 # T33e (SEC-C5, barrido de clase) la sección que llega de afuera tampoco trae «##vso[» al mensaje
 printf 'PR abiertos hace más de 2 días: 1\n#1 P/R — ##vso[task.setvariable variable=X]y — 3 días\n' > "$D/hostil.txt"
 vsnap "$D" "$HOY" '{}'; reset_srv ok:777; RC=$(entregar "$D" vigilante "$HOY" --extra "$D/hostil.txt" --dry-run)
 [ "$RC" = 0 ] && ! grep -qE '##(vso)?\[' "$D/entregar.txt" && ok "T33e --extra no deja pasar «##vso[» ni en el ensayo por stdout" || no "T33e: rc=$RC · $(grep -E '##' "$D/entregar.txt" | head -2)"
+
+# ════════════════════════════════════════════════════════════════════════════════════════════════
+# 2.30-T21 Resumen_SoloCantidades — ningún nombre ni id en el texto; el detalle, en el snapshot
+D="$TMP/t2130"; mundo "$D"
+ficha "$D" pending aaa11111 "$(fecha "$HOY" -3)" pendiente A/A
+ficha "$D" pending bbb22222 "$HOY" pendiente B/B
+snap "$D" "$HOY" '{"hallazgos":[{"id":"aaa11111","paquete":"pkg-aaa11111","severidad":"high","repos":["A/A"],"noches":3},{"id":"bbb22222","paquete":"pkg-bbb22222","severidad":"high","repos":["B/B"],"noches":1}],"anunciados_hoy":["bbb22222"],"no_medidos":[{"ruta":"RepoSecreto/Marcador","motivo":"el restore de RepoSecreto falló"}],"pedidos":{"simulado":false,"creados":[{"ficha":"bbb22222","proyecto":"ProyectoMarcador","id":9191,"asignado_a":"persona@marcador.example"}],"adoptados":[],"fallidos":[{"ficha":"aaa11111","proyecto":"ProyectoMarcador","paso":"crear","motivo":"MotivoLibreMarcador"}],"postergados":[],"sin_iteracion":[],"sin_dueno_unico":[{"proyecto":"ProyectoSinDueno","motivo":"dos dueños"}],"deuda_avisada":[]},"cruce":{"consultado":true,"motivo":null,"cerrados_vivos":[],"resueltas_con_pedido_abierto":[],"no_leidos":[],"huerfanos":[{"id":4545,"proyecto":"ProyectoHuerfano","ficha":"aaa11111","estado":"Active"}]}}'
+echo '{ "rubros_sin_fuente": { "rechazadas_sin_deuda": "MotivoSinFuenteMarcador" } }' > "$D/resumen.json"
+armar "$D" dependencias "$HOY" > "$D/a.json" 2> "$D/a.err"
+T21TXT=$(q "$D/a.json" 'j.texto')
+FUGA=""; for M in aaa11111 bbb22222 pkg- A/A B/B RepoSecreto Marcador ProyectoSinDueno ProyectoHuerfano 9191 4545 persona@ MotivoLibre MotivoSinFuente ProyA "Proy B"; do grep -qF -- "$M" <<<"$T21TXT" && FUGA="$FUGA $M"; done
+[ -z "$FUGA" ] && [ -n "$T21TXT" ] && ok "2.30-T21 el texto no nombra paquetes, repos, proyectos, ids, personas ni motivos" || no "2.30-T21 🔴 se colaron en el texto:$FUGA · $T21TXT ($(head -c 200 "$D/a.err"))"
+grep -q '^• vivas: 2 en 2 proyecto(s)' <<<"$T21TXT" && grep -q '^fallos: [0-9]' <<<"$T21TXT" && grep -q '^• rechazadas sin deuda: ?$' <<<"$T21TXT" && grep -q '^• la viva más vieja: 3 día(s)$' <<<"$T21TXT" \
+  && ok "2.30-T21 las cantidades: «vivas: N en M proyectos», «fallos: N», «?» sin motivo donde no se midió, la edad sin id" || no "2.30-T21 cantidades: $T21TXT"
+[ "$(q "$D/a.json" 'j.fallos.some(f => f.includes("RepoSecreto")) && j.rubros.nuevos.valor.some(x => x.paquete === "pkg-bbb22222")')" = true ] \
+  && ok "2.30-T21 el detalle sigue en la salida de armar (rubros y fallos), que va al snapshot" || no "2.30-T21 se perdió el detalle: $(q "$D/a.json" '[j.fallos, j.rubros.nuevos]')"
+vsnap "$D" "$HOY" '{"hallazgos":[{"id":"2026-09-20-ProductoMarcador-abcd","producto":"ProductoMarcador","regla":"ReglaMarcador","severidad":"alta"}],"no_medido":["host-marcador.example: sin respuesta"],"ignorados_ids":["2026-09-19-ProductoMarcador-ffff"]}'
+vficha "$D" pending 2026-09-05-globex-cccc3333 2026-09-05 pendiente
+armar "$D" vigilante "$HOY" > "$D/v.json" 2> "$D/v.err"
+VTXT=$(q "$D/v.json" 'j.texto')
+FUGA=""; for M in ProductoMarcador ReglaMarcador host-marcador globex cccc3333 ffff DATO-DE-CLIENTE; do grep -qF -- "$M" <<<"$VTXT" && FUGA="$FUGA $M"; done
+[ -z "$FUGA" ] && grep -q '🌙 vigilante' <<<"$VTXT" && ok "2.30-T21 el texto del vigilante tampoco nombra productos, reglas, hosts ni ids" || no "2.30-T21 🔴 vigilante, se colaron:$FUGA · $VTXT"
+
+# 2.30-T22 Resumen_EnlaceSoloSiPasoLaPrueba
+D="$TMP/t2230"; mundo "$D"; snap "$D" "$HOY" '{}'
+echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" }, "site": { "url": "https://sitio.acme.example" } }' > "$D/ops-url.json"
+prueba() { node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ resultado: process.argv[2], motivo: process.argv[3] === "-" ? null : process.argv[3], hora: process.argv[4] }) + "\n")' "$D/check.json" "$1" "$2" "$3"; }
+ultima_linea() { ultimo 'j.text.split("\n").pop()'; }
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$RC" = 0 ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.sitio.resultado + "|" + j.resumen.sitio.linea')" = "paso|sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && ok "2.30-T22 pasó la prueba de esta mañana: la última línea es el enlace con la hora, y queda en la constancia" || no "2.30-T22 paso: rc=$RC · «$(ultima_linea)» · $(head -c 300 "$D/entregar.txt")"
+prueba fallo "el sitio está frenado" "${HOY}T04:12:30.000Z"; snap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$(ultima_linea)" = "sitio: no pasó la prueba sin sesión (el sitio está frenado) (probado 04:12 UTC)" ] && ! grep -q 'https://' <<<"$(ultimo 'j.text')" \
+  && ok "2.30-T22 no pasó: lo dice con el motivo del vocabulario, sin enlace" || no "2.30-T22 fallo: «$(ultima_linea)»"
+prueba fallo "https://sitio.acme.example/x contestó raro" "${HOY}T04:12:30.000Z"; snap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$(ultima_linea)" = "sitio: no se pudo probar desde el nocturno" ] && ok "2.30-T22 un motivo fuera del vocabulario no entra al texto: «no se pudo probar»" || no "2.30-T22 motivo libre: «$(ultima_linea)»"
+for CASO22 in "no_pudo:-:${HOY}T04:12:30.000Z" "paso:-:${AYER}T04:12:30.000Z"; do
+  IFS=: read -r R22 M22 H22 <<<"$CASO22"; H22="${CASO22#*:*:}"
+  prueba "$R22" "$M22" "$H22"; snap "$D" "$HOY" '{}'; reset_srv ok:1
+  RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+  [ "$(ultima_linea)" = "sitio: no se pudo probar desde el nocturno" ] && ! grep -q 'https://' <<<"$(ultimo 'j.text')" \
+    && ok "2.30-T22 ${R22} (${H22:0:10}): «no se pudo probar desde el nocturno», sin enlace" || no "2.30-T22 ${R22}: «$(ultima_linea)»"
+done
+snap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/no-existe.json")
+[ "$(ultima_linea)" = "sitio: no se pudo probar desde el nocturno" ] && ok "2.30-T22 sin el archivo de la prueba: «no se pudo probar»" || no "2.30-T22 sin archivo: «$(ultima_linea)»"
+snap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$(ultima_linea)" = "sitio: sin configurar" ] && ok "2.30-T22 sin site.url: «sitio: sin configurar», sin enlace" || no "2.30-T22 sin url: «$(ultima_linea)»"
+# un operations.json que no se pudo leer NO es «sin configurar»: no se sabe si hay sitio
+printf '{ "version": 1, roto' > "$D/ops-roto.json"; snap "$D" "$HOY" '{}'
+OPS_FILE="$D/ops-roto.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --dry-run >/dev/null
+grep -qx 'sitio: no se pudo probar desde el nocturno' "$D/entregar.txt" && ! grep -q 'sitio: sin configurar' "$D/entregar.txt" \
+  && ok "2.30-T22 operations.json ilegible: «no se pudo probar», nunca «sin configurar»" || no "2.30-T22 ops roto: $(head -c 400 "$D/entregar.txt")"
+# la cantidad de PR con otro plazo (--days 5) y con PR sin fecha legible sí entra, con su forma
+printf 'PR abiertos hace más de 5 días: 4\n' > "$D/prs5.txt"; printf 'PR abiertos hace más de 2 días: 1 (+2 sin fecha legible)\n' > "$D/prs-sf.txt"
+for P in prs5 prs-sf; do
+  snap "$D" "$HOY" '{}'; reset_srv ok:1; entregar "$D" dependencias "$HOY" --extra "$D/$P.txt" >/dev/null
+  [ "$(ultimo 'j.text.split("\n").slice(-2)[0]')" = "$(cat "$D/$P.txt")" ] && ok "2.30-T22 la línea de PR «$(cat "$D/$P.txt")» entra tal cual" || no "2.30-T22 línea de PR $P: $(ultimo 'j.text')"
+done
+
+# 2.30-T23 Resumen_UnMensajePorDia — Telegram edita y conserva la línea del sitio; Slack manda el suyo
+D="$TMP/t2330"; mundo "$D"; snap "$D" "$HOY" '{}'
+echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "telegram" }, "site": { "url": "https://sitio.acme.example" } }' > "$D/ops-url.json"
+node -e 'require("fs").writeFileSync(process.argv[1], JSON.stringify({ resultado: "paso", motivo: null, hora: process.argv[2] + "T04:12:30.000Z" }))' "$D/check.json" "$HOY"
+reset_srv ok:777; OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" >/dev/null
+vsnap "$D" "$HOY" '{}'
+reset_srv ok:777; RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(ultimo 'j.ruta')" = "/bot<token>/editMessageText" ] && [ "$(ultimo 'j.text.split("\n").pop()')" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && [ "$(ultimo 'j.text.split("sitio: ").length')" = 2 ] && grep -q '🌙 vigilante' <<<"$(ultimo 'j.text')" \
+  && ok "2.30-T23 Telegram: el vigilante edita y deja UNA línea del sitio, la de dependencias, con su hora" || no "2.30-T23 telegram: rc=$RC · $(ultimo 'j.text')"
+# el vigilante no copia la línea guardada: la rearma de lo que dejó dependencias (resultado, motivo,
+# hora) y de site.url. Una línea cambiada en el snapshot no llega al aviso.
+constancia "$D/out/dependencias-$HOY.json" "$(q "$D/out/dependencias-$HOY.json" '({ ...j.resumen, sitio: { ...j.resumen.sitio, linea: "sitio: https://otro.example\n#2912 RepoMarcador" } })')"
+vsnap "$D" "$HOY" '{}'
+reset_srv ok:777; RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.split("\n").pop()')" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] && ! grep -q 'otro.example\|RepoMarcador' <<<"$(ultimo 'j.text')" \
+  && ok "2.30-T23 una línea del sitio cambiada en el snapshot no llega: el vigilante la rearma" || no "2.30-T23 línea cambiada: $(ultimo 'j.text')"
+# lo mismo en los rubros: los números que el vigilante relee del snapshot al rearmar la sección
+# de dependencias salen como número o «?», nunca como el texto que traiga el archivo
+constancia "$D/out/dependencias-$HOY.json" "$(q "$D/out/dependencias-$HOY.json" '(() => { const r = JSON.parse(JSON.stringify(j.resumen.rubros));
+  r.vivas_por_proyecto = { ...r.vivas_por_proyecto, valor: [], de: "MarcaDe" }; r.edad_mas_vieja = { ...r.edad_mas_vieja, valor: "MarcaEdad" };
+  r.aceptadas_sin_resolver = { ...r.aceptadas_sin_resolver, valor: [], de: 1, bloqueadas: "MarcaBloq" };
+  return { ...j.resumen, rubros: r }; })()')"
+vsnap "$D" "$HOY" '{}'
+reset_srv ok:777; RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && grep -q '🌙 vigilante' <<<"$(ultimo 'j.text')" && ! grep -q 'Marca' <<<"$(ultimo 'j.text')" \
+  && ok "2.30-T23 un rubro con texto en vez de número no llega al aviso al rearmar la sección" || no "2.30-T23 rubros alterados: $(ultimo 'j.text')"
+# Slack: dependencias manda; el vigilante manda el suyo con la misma línea, y lo informa como no editado
+echo '{ "version": 1, "owners": { "default": "lead@acme.example" }, "notify": { "channel": "slack" }, "site": { "url": "https://sitio.acme.example" } }' > "$D/ops-slack.json"
+snap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(TYCON_NOTIFY_WEBHOOK_URL="$TYCON_TELEGRAM_API/hook/secreto" OPS_FILE="$D/ops-slack.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$RC" = 0 ] && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.canal + "|" + j.resumen.message_id')" = "slack|null" ] && [ "$(ultimo 'j.ruta')" = "/hook/secreto" ] \
+  && [ "$(ultimo 'JSON.parse(j.raw).text.split("\n").pop()')" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && ok "2.30-T23 Slack: dependencias sale por el webhook, con la línea del sitio y sin message_id" || no "2.30-T23 slack deps: rc=$RC · $(q "$D/out/dependencias-$HOY.json" 'j.resumen') · $(head -c 300 "$D/entregar.txt")"
+vsnap "$D" "$HOY" '{}'; reset_srv ok:1
+RC=$(TYCON_NOTIFY_WEBHOOK_URL="$TYCON_TELEGRAM_API/hook/secreto" OPS_FILE="$D/ops-slack.json" entregar "$D" vigilante "$HOY")
+[ "$RC" = 0 ] && [ "$(pedidos)" = 1 ] && [ "$(q "$D/vig/vigilante-$HOY.json" 'j.resumen.canal + "|" + j.resumen.editado')" = "slack|false" ] \
+  && [ "$(ultimo 'JSON.parse(j.raw).text.split("\n").pop()')" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && grep -q 'slack no edita' <<<"$(ultimo 'JSON.parse(j.raw).text.split("\n")[0]')" \
+  && ! grep -q 'hook/secreto' "$D/entregar.txt" "$D/vig/vigilante-$HOY.json" "$D/out/dependencias-$HOY.json" \
+  && ok "2.30-T23 Slack: el vigilante manda el suyo con la misma línea, editado false, y la dirección no queda en ningún lado" \
+  || no "2.30-T23 slack vigilante: rc=$RC pedidos=$(pedidos) · $(q "$D/vig/vigilante-$HOY.json" 'j.resumen') · $(head -c 300 "$D/entregar.txt")"
 
 # T33b (story 4.6, AC 5) — NO VIAJA al público: miraba el paso «Listar los PR abiertos» del pipeline del vigilante, que
 # es del repo del equipo (el vigilante de producción no se publica, story 8.30). El caso sigue en el repo privado; lo que

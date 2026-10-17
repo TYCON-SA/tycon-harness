@@ -278,10 +278,22 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!cred) return { habilitado: false, motivo: 'sin identidad de escritura: revisá, descargá el archivo y abrí el pedido a mano' };
     const remote = remoteDe(repo);
     if (!remote.platform) return { habilitado: false, motivo: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
-    try {
-      const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch });
-      return p.ok ? { habilitado: true, motivo: null } : { habilitado: false, motivo: p.message };
-    } catch (e) { return { habilitado: false, motivo: `no pude leer la política de la rama principal (${(e && e.name) || 'error'})` }; }
+    const una = async (archivo) => {
+      try {
+        const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo });
+        return p.ok ? { habilitado: true, motivo: null } : { habilitado: false, motivo: p.message };
+      } catch (e) { return { habilitado: false, motivo: `no pude leer la política de la rama principal (${(e && e.name) || 'error'})` }; }
+    };
+    // con una política con filtro de ruta, «Proponer» va archivo por archivo (`porArchivo`, que la
+    // pantalla prefiere al estado del repo)
+    // también el nombre de antes (`archivoViejo`): un repo que todavía lo usa lee y propone sobre ése, y la pantalla busca el
+    // estado con el archivo que resolvió la sección
+    const archivos = [...new Set(ORG.SECCIONES.filter((s) => s.repo === repo).flatMap((s) => [s.archivo, s.archivoViejo].filter(Boolean)))];
+    const porArchivo = {};
+    for (const a of archivos) porArchivo[a] = await una(a);
+    const todos = Object.values(porArchivo);
+    const r = todos.length && todos.every((x) => x.habilitado) ? { habilitado: true, motivo: null } : (todos.find((x) => !x.habilitado) || await una(null));
+    return { ...r, porArchivo };
   }
 
   /** Los productos (AC 7): `{ lista, motivo }` — una lista que no se pudo leer lo dice; no es «ningún producto». */

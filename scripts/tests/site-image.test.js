@@ -39,3 +39,22 @@ test('T1 Imagen_VolumenNuevoEscribiblePorElSitio', { skip: SIN_DOCKER }, () => {
     docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
   }
 });
+
+test('T2i Imagen_SinVersionJson_SeArmaIgual @story-2.30', { skip: SIN_DOCKER }, () => {
+  // 🔴 el árbol de la noche (lo privado con lo público encima) no trae version.json en la raíz —lo genera la
+  // publicación—: la imagen se arma igual, y el sitio dice la versión como desconocida.
+  const fs = require('fs');
+  const os = require('os');
+  const id = crypto.randomBytes(4).toString('hex');
+  const imagen = `site-prueba-sin-version:${id}`;
+  const ctx = fs.mkdtempSync(path.join(os.tmpdir(), 'site-ctx-'));
+  try {
+    for (const d of ['scripts', 'skills']) fs.cpSync(path.join(ROOT, d), path.join(ctx, d), { recursive: true, filter: (f) => !f.includes(`${path.sep}node_modules`) });
+    assert.ok(!fs.existsSync(path.join(ctx, 'version.json')), 'el contexto no trae version.json');
+    const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.'], { cwd: ctx });
+    assert.strictEqual(b.status, 0, `la imagen se arma sin version.json: ${(b.stderr || '').slice(-800)}`);
+  } finally {
+    docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
+    fs.rmSync(ctx, { recursive: true, force: true });
+  }
+});

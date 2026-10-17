@@ -185,3 +185,7 @@ skills/xlsx
 /qa/
 /specs/
 /tasks/
+
+# los secretos del sitio en una máquina propia van FUERA de todo repo (start.js se niega si no); por las dudas,
+# un sitio.env olvidado en el árbol no se commitea
+**/sitio.env

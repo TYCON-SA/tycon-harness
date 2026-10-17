@@ -5,6 +5,7 @@
     "default": "acme-lead",
     "by_project": { "acme/web-frontend": "acme-web-owner" }
   },
+  "notify": { "channel": "slack" },
   "people": {
     "machines": {
       "maq-uno-1a2b3c4d": {

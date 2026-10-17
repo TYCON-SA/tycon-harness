@@ -274,18 +274,39 @@ jobs:
           fi
           exit 0
 
-      - name: Entregar el resumen (si hay bot de Telegram)
-        if: env.EFFECTS == 'true' && vars.TYCON_TELEGRAM_CHAT_ID != ''
+      # La prueba sin sesión del sitio de la organización: el aviso lleva el enlace sólo si pasó ESTA mañana.
+      # Sin `site.url` en operations.json no se prueba. Nunca frena la noche: el resultado viaja al resumen (--site-check).
+      - name: Probar el sitio sin sesión
+        if: env.EFFECTS == 'true'
+        working-directory: harness
+        run: |
+          set -uo pipefail
+          set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
+          # un operations.json que no se pudo leer NO es «sin site.url»: el lector sale 3 y el aviso dirá «no se pudo probar»
+          URL=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); process.stdout.write(c.data.site && c.data.site.url ? c.data.site.url : "");')
+          LECTURA=$?
+          if [ "${LECTURA}" != 0 ]; then echo "::warning::operations.json no se pudo leer (código ${LECTURA}): el sitio no se prueba y el aviso dirá «no se pudo probar»."; exit 0; fi
+          if [ -z "${URL}" ]; then echo "sin site.url en operations.json: el sitio no se prueba (el aviso dirá «sitio: sin configurar»)"; exit 0; fi
+          node scripts/site/check-deploy.js --url "${URL}" --out "${RUNNER_TEMP}/site-check.json"
+          CODIGO=$?
+          [ "${CODIGO}" = 0 ] || echo "::warning::La prueba sin sesión del sitio no pasó (código ${CODIGO}): el aviso sale sin el enlace."
+          exit 0
+
+      # El canal lo decide notify.js con operations.json → notify: sin `notify` no se manda, y la constancia lo dice.
+      - name: Entregar el resumen
+        if: env.EFFECTS == 'true'
         continue-on-error: true
         working-directory: harness
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TYCON_TELEGRAM_CHAT_ID: ${{ vars.TYCON_TELEGRAM_CHAT_ID }}
+          TYCON_NOTIFY_WEBHOOK_URL: ${{ secrets.TYCON_NOTIFY_WEBHOOK_URL }}
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
           node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" \
-            --out .dashboard/dependencias --pending inbox/dependencies 2>&1 | bash pipelines/operations/github/annotate.sh
+            --out .dashboard/dependencias --pending inbox/dependencies \
+            --operations operations.json --site-check "${RUNNER_TEMP}/site-check.json" 2>&1 | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
           if [ "${CODIGO}" != 0 ]; then echo "::warning::El resumen NO se entregó (código ${CODIGO})"; exit 1; fi
 

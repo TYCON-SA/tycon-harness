@@ -287,8 +287,27 @@ jobs:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
       - script: |
-          # El resumen diario (opcional). Va después de los pedidos y antes de guardar: la constancia de entrega viaja en
-          # el mismo commit. Si no se entregó, la corrida queda naranja y guardar corre igual.
+          # La prueba sin sesión del sitio de la organización: el aviso lleva el enlace sólo si pasó ESTA
+          # mañana. Sin `site.url` en operations.json no se prueba. Nunca frena la noche: el resultado viaja al resumen
+          # (--site-check del paso siguiente).
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          # un operations.json que no se pudo leer NO es «sin site.url»: el lector sale 3 y el aviso dirá «no se pudo probar»
+          URL=$(node -e 'const c = require("./scripts/lib/operations-config.js").load("operations.json"); if (!c.ok) process.exit(3); process.stdout.write(c.data.site && c.data.site.url ? c.data.site.url : "");')
+          LECTURA=$?
+          if [ "$LECTURA" != 0 ]; then echo "##vso[task.logissue type=warning]operations.json no se pudo leer (código $LECTURA): el sitio no se prueba y el aviso dirá «no se pudo probar»."; exit 0; fi
+          if [ -z "$URL" ]; then echo "sin site.url en operations.json: el sitio no se prueba (el aviso dirá «sitio: sin configurar»)"; exit 0; fi
+          node scripts/site/check-deploy.js --url "$URL" --out "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json"
+          CODIGO=$?
+          [ "$CODIGO" = 0 ] || echo "##vso[task.logissue type=warning]La prueba sin sesión del sitio no pasó (código $CODIGO): el aviso sale sin el enlace."
+          exit 0
+        displayName: 'Probar el sitio sin sesión'
+        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'))
+
+      - script: |
+          # El resumen diario. Va después de los pedidos y antes de guardar: la constancia de entrega viaja en el mismo
+          # commit. Si no se entregó, la corrida queda naranja y guardar corre igual. El canal lo decide notify.js con
+          # operations.json → notify: sin `notify` no se manda, y la constancia lo dice.
           set -uo pipefail
           cd "$(Build.SourcesDirectory)"
           HOY="${HOY_NOCTURNO:-}"
@@ -300,22 +319,26 @@ jobs:
           # el motivo dice la verdad («no hay token»).
           case "${TELEGRAM_BOT_TOKEN:-}" in *'$('*) unset TELEGRAM_BOT_TOKEN ;; esac
           case "${TYCON_TELEGRAM_CHAT_ID:-}" in *'$('*) unset TYCON_TELEGRAM_CHAT_ID ;; esac
+          case "${TYCON_NOTIFY_WEBHOOK_URL:-}" in *'$('*) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac
           ERR=$(mktemp)
           node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" \
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
-            --pending "$(Build.SourcesDirectory)/inbox/dependencies" 2> "$ERR"
+            --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
+            --operations "$(Build.SourcesDirectory)/operations.json" \
+            --site-check "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json" 2> "$ERR"
           CODIGO=$?
           cat "$ERR" >&2
           if [ "$CODIGO" != "0" ]; then
             echo "##vso[task.logissue type=warning]El resumen NO se entregó (código $CODIGO): $(tail -n 1 "$ERR")"
             exit 1
           fi
-        displayName: 'Entregar el resumen (si hay bot de Telegram)'
+        displayName: 'Entregar el resumen'
         continueOnError: true
-        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'), ne(variables['TYCON_TELEGRAM_CHAT_ID'], ''))
+        condition: and(succeeded(), eq('${{ parameters.efectos }}', 'true'))
         env:
           TELEGRAM_BOT_TOKEN: $(TELEGRAM_BOT_TOKEN)
           TYCON_TELEGRAM_CHAT_ID: $(TYCON_TELEGRAM_CHAT_ID)
+          TYCON_NOTIFY_WEBHOOK_URL: $(TYCON_NOTIFY_WEBHOOK_URL)
 
       - script: |
           set -eu

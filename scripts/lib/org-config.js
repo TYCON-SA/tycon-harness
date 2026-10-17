@@ -1095,6 +1095,8 @@ function pantalla() {
     if (editor) { SOLO_LECTURA = !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = false; } }
     var n = S.notas[s.id];
     var prop = S.extras.proponer && S.extras.proponer[s.repo];
+    // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
+    if (prop && prop.porArchivo && prop.porArchivo[s.archivo]) prop = prop.porArchivo[s.archivo];
     var habilitado = prop && prop.habilitado;
     var confirmando = n && n.confirmar;
     if (!confirmando && n && n.text) {

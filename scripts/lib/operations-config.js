@@ -20,7 +20,13 @@
 //                            "account": <texto>, "container": <texto>, "threads": <bool> },  threads: true baja también
 //                                                            las conversaciones y los cambios de git para el detalle de
 //                                                            la pestaña Corridas, si el sitio tiene disco (story 2.27)
-//               "refresh_minutes": <5 a 120> } },             opcional — cada cuánto se releen las fuentes (story 2.23)
+//               "refresh_minutes": <5 a 120>,              opcional — cada cuánto se releen las fuentes
+//               "url": "https://…" } },                       opcional — la dirección del sitio, sólo https y sin usuario
+//                                                            ni clave: va en el aviso de la mañana
+//     "notify": { "channel": "telegram" | "slack" | "teams" }, opcional — por dónde sale el aviso de los nocturnos
+//                                                            Sin `notify` no se manda nada. El destino
+//                                                            (el chat, el token, la dirección del webhook) va en los
+//                                                            secretos del pipeline, nunca acá.
 //     "people": {                                            opcional — quién es quién (story 2.28)
 //       "machines": { "<máquina>": {                         opcional — cada máquina confirmada por un mantenedor
 //           "person": <correo>,                              la persona dueña de las corridas de esa máquina
@@ -56,7 +62,7 @@
 const fs = require('fs');
 
 const VERSION = 1;
-const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments'];
+const KEYS = ['version', 'owners', 'reviewers', 'site', 'people', 'deployments', 'notify'];
 // story 2.22: de qué sistema se leen los despliegues de cada producto. Sin nombres por defecto: todo lo declara la
 // organización (el identificador EXACTO de cada stage, o el environment de GitHub).
 const DEPLOYMENT_PROVIDERS = ['azure', 'github'];
@@ -67,8 +73,12 @@ const GITHUB_ENTRY_KEYS = ['repo', 'environment', 'workflow'];
 const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
-// story 2.23: el sitio de la organización. Todas opcionales; la 2.29 la edita desde el sitio, la 2.30 suma `url`.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes'];
+// el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url'];
+// el canal del aviso. Sin canal por defecto: sin `notify`, no se manda (un canal por defecto sería un valor de
+// una organización en el código). Lo lee scripts/lib/notify.js (`canalDe`).
+const NOTIFY_KEYS = ['channel'];
+const NOTIFY_CHANNELS = ['telegram', 'slack', 'teams'];
 const MAILBOX_KEYS = ['provider', 'account', 'container', 'threads'];
 const MAILBOX_PROVIDERS = ['azure-blob'];
 const REFRESH_MIN = 5;
@@ -144,6 +154,30 @@ function siteProblems(site) {
   if (rm !== undefined && (!Number.isInteger(rm) || rm < REFRESH_MIN || rm > REFRESH_MAX)) {
     problems.push({ path: 'site.refresh_minutes', message: `tiene que ser un entero de ${REFRESH_MIN} a ${REFRESH_MAX} (es ${JSON.stringify(rm)})` });
   }
+  if (site.url !== undefined && !siteUrlOk(site.url)) {
+    problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
+  }
+  return problems;
+}
+
+/** La dirección del sitio: https, con host, sin usuario ni clave (viaja en un aviso que lee cualquiera del chat). */
+function siteUrlOk(v) {
+  if (typeof v !== 'string') return false;
+  let u;
+  try { u = new URL(v); } catch { return false; }
+  return u.protocol === 'https:' && Boolean(u.hostname) && !u.username && !u.password;
+}
+
+function notifyProblems(notify) {
+  if (!isObject(notify)) return [{ path: 'notify', message: 'tiene que ser un objeto { "channel": … }' }];
+  const problems = [];
+  for (const k of Object.keys(notify)) {
+    if (comment(k) || NOTIFY_KEYS.includes(k)) continue;
+    // el chat, el token o la dirección del webhook: el destino es una credencial y va en los secretos del pipeline
+    if (SECRET_KEY.test(k) || /webhook|chat|url/i.test(k)) problems.push({ path: `notify.${k}`, message: 'clave con forma de secreto: el destino del aviso va en los secretos del pipeline, nunca en operations.json' });
+    else problems.push({ path: `notify.${k}`, message: 'clave desconocida' });
+  }
+  if (!NOTIFY_CHANNELS.includes(notify.channel)) problems.push({ path: 'notify.channel', message: `tiene que ser uno de: ${NOTIFY_CHANNELS.join(', ')}` });
   return problems;
 }
 
@@ -297,6 +331,7 @@ function validate(doc) {
   if (doc.site !== undefined) problems.push(...siteProblems(doc.site));
   if (doc.people !== undefined) problems.push(...peopleProblems(doc.people));
   if (doc.deployments !== undefined) problems.push(...deploymentsProblems(doc.deployments));
+  if (doc.notify !== undefined) problems.push(...notifyProblems(doc.notify));
   return problems;
 }
 
@@ -326,7 +361,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

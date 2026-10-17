@@ -51,6 +51,15 @@
 # · `corrida`: `pipelines runs show --id N --project P` → `corrida-N.json` (sin fixture sale 1).
 # · `timeline`: `devops invoke --area build --resource timeline --route-parameters project=P buildId=N`
 #   → `timeline-N.json` (sin fixture: `{records:[]}`, como una corrida que no llegó a correr nada).
+#
+# ── LO QUE SUMÓ LA 2.30 (la instalación del sitio en Azure Container Apps) ──────────────────────────────────────
+# Una familia aparte, que NO pasa por las trampas de `--org` ni de `-o json` (son de `devops`/`boards`): `account`,
+# `provider`, `group`, `monitor`, `storage`, `containerapp`, `role` y `rest`. Recuerda lo que crea en
+# `$FIXAZ/azure.json` (la segunda corrida tiene que saltear lo que ya existe) y contesta las consultas `--query … -o tsv`
+# con valores fijos de mentira (las llaves con un marcador que ninguna salida puede traer).
+#   Pasos: sesion proveedor grupo-recursos area ambiente almacen recurso-compartido llaves aplicacion rol inicio entrada rest
+#   TYCON_AZ_WITHOUT_SESSION=1   `account show` sale 1 con «Please run 'az login'» (como az sin sesión)
+#   TYCON_AZ_FAIL=rol       el rol sale 1 con un 403 de AuthorizationFailed (como sin Owner ni User Access Administrator)
 exec node - "$@" <<'JS'
 'use strict';
 const fs = require('fs');
@@ -90,7 +99,19 @@ args.forEach((x, i) => {
 });
 
 let paso = 'desconocido';
+// story 2.30: la familia de la instalación del sitio (sin las trampas de `--org` ni de `-o json`: son de devops/boards)
+const AZURE = { account: 'sesion', provider: 'proveedor', group: 'grupo-recursos', monitor: 'area', storage: 'almacen', containerapp: 'aplicacion', role: 'rol', rest: 'rest' };
+const familia = Object.prototype.hasOwnProperty.call(AZURE, args[0]);
 if (args[0] === '--version') paso = 'version';
+else if (familia) {
+  paso = AZURE[args[0]];
+  if (args[0] === 'containerapp' && args[1] === 'env') paso = 'ambiente';
+  if (args[0] === 'containerapp' && args[1] === 'auth') paso = 'inicio';
+  if (args[0] === 'containerapp' && args[1] === 'ingress') paso = 'entrada';
+  if (args[0] === 'storage' && args[1] === 'share-rm') paso = 'recurso-compartido';
+  if (args[0] === 'storage' && args[2] === 'keys') paso = 'llaves';
+  if (args[0] === 'monitor' && args.includes('get-shared-keys')) paso = 'llaves';
+}
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'ims') paso = 'identidad';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'wiql') paso = 'wiql';
 else if (tiene('devops', 'invoke') && String(arg('--area')).toLowerCase() === 'wit' && String(arg('--resource')).toLowerCase() === 'revisions') paso = 'revisiones';
@@ -128,10 +149,65 @@ const coincide = (spec) => String(spec || '').split(',').map((s) => s.trim()).fi
   const patron = resto.join(':');
   return !patron || JSON.stringify(args).includes(patron) || Object.values(archivos).some((t) => t.includes(patron));
 });
-if (coincide(process.env.TYCON_AZ_FAIL)) falla(`falla fabricada en el paso ${paso}`);
+if (coincide(process.env.TYCON_AZ_FAIL)) {
+  // story 2.30: el rol sin Owner ni User Access Administrator falla como Azure, con el 403
+  if (paso === 'rol') falla("(AuthorizationFailed) The client does not have authorization to perform action 'Microsoft.Authorization/roleAssignments/write' over scope (403)");
+  falla(`falla fabricada en el paso ${paso}`);
+}
 if (coincide(process.env.TYCON_AZ_GARBAGE)) { process.stdout.write('esto no es JSON, es lo que devuelve un proxy caído\n'); process.exit(0); }
 
 if (paso === 'version') { process.stdout.write('azure-cli 2.79.0 (doble de pruebas)\n'); process.exit(0); }
+
+if (familia) {
+  const EST = path.join(FIX, 'azure.json');
+  const estado = (() => { try { return JSON.parse(fs.readFileSync(EST, 'utf8')); } catch { return {}; } })();
+  const guardar = () => fs.writeFileSync(EST, JSON.stringify(estado, null, 2));
+  const tsv = (v) => { process.stdout.write(`${v}\n`); process.exit(0); };
+  const nombre = arg('--name') || arg('-n');
+  const verbo = args.find((x) => ['show', 'create', 'register', 'update', 'set', 'list', 'put'].includes(x)) || args[args.length - 1];
+  const clave = `${args.slice(0, args.indexOf(verbo)).join(' ')}|${nombre || arg('--url') || ''}`;
+  if (paso === 'sesion') {
+    if (process.env.TYCON_AZ_WITHOUT_SESSION === '1') falla("Please run 'az login' to setup account.");
+    out({ id: 'suscripcion-de-mentira', tenantId: 'inquilino-de-mentira', user: { name: 'quien-instala' } });
+  }
+  if (paso === 'proveedor') {
+    if (verbo === 'show') tsv(estado[clave] ? 'Registered' : (fs.existsSync(path.join(FIX, `sin-registrar-${nombre}`)) ? 'NotRegistered' : 'Registered'));
+    estado[clave.replace(' register', ' show')] = true; guardar(); process.exit(0);
+  }
+  if (paso === 'llaves') {
+    // TYCON_AZ_EMPTY_KEY=1: la llave vuelve como «None» (lo que imprime -o tsv para un null) con salida 0
+    if (process.env.TYCON_AZ_EMPTY_KEY === '1') tsv('None');
+    const q = String(arg('--query') || '');
+    if (/primarySharedKey/.test(q)) tsv('LLAVE-DEL-AREA-QUE-NO-DEBE-APARECER');
+    tsv('LLAVE-DE-LA-CUENTA-QUE-NO-DEBE-APARECER');
+  }
+  if (paso === 'rest') {
+    const u = String(arg('--url') || '');
+    estado[`rest|${u.replace(/\?.*$/, '')}`] = true; guardar(); out({ properties: { provisioningState: 'Succeeded' } });
+  }
+  const consulta = (q) => {
+    if (/customerId/.test(q)) return 'cliente-del-area';
+    if (/defaultDomain/.test(q)) return 'cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io';
+    if (/provisioningState/.test(q)) return 'Succeeded';
+    if (/principalId/.test(q)) return 'principal-del-sitio';
+    if (/length\(@\)/.test(q)) return estado.rol ? '1' : '0';
+    if (q === 'id') return `/subscriptions/suscripcion-de-mentira/resourceGroups/${arg('--resource-group') || arg('-g') || 'rg'}/providers/x/${nombre}`;
+    return 'valor-de-mentira';
+  };
+  if (verbo === 'show' || verbo === 'list') {
+    // un ambiente creado por `rest` existe para `containerapp env show`
+    const porRest = paso === 'ambiente' && Object.keys(estado).some((k) => k.startsWith('rest|') && k.endsWith(`/managedEnvironments/${nombre}`));
+    // el recurso compartido que no existe lo dice como lo dice Azure Files (ShareNotFound), no como ResourceNotFound
+    if (!(estado[clave] || porRest) && paso === 'recurso-compartido') falla(`ErrorCode:ShareNotFound — The specified share ${nombre || ''} does not exist.`, 3);
+    if (!(estado[clave] || porRest) && !(paso === 'rol' && verbo === 'list')) falla(`(ResourceNotFound) ${args[0]} ${nombre || ''} no existe`, 3);
+    const q = arg('--query');
+    if (q) tsv(consulta(String(q)));
+    process.exit(0);
+  }
+  if (paso === 'rol' && verbo === 'create') { estado.rol = true; guardar(); process.exit(0); }
+  // create / update / set: queda creado (la clave no lleva el verbo: `show` la encuentra)
+  estado[clave] = true; guardar(); process.exit(0);
+}
 if (paso === 'desconocido') falla(`doble-az: comando no reconocido: ${args.join(' ')}`, 2);
 if (!args.includes('--org') && !args.includes('--organization')) {
   falla('sin --org: el default de `az devops configure` apunta a un proyecto que ya no existe');
