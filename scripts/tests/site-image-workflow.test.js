@@ -112,3 +112,28 @@ test('T3b Imagen_VersionDelMergeYFirmaConLaSesionAbierta @story-2.30 @ac-1', () 
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8'), /^COPY version\.json\* \.tycon-release\.json\* \.\/$/m);
   assert.match(fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile.dockerignore'), 'utf8'), /^!\.tycon-release\.json$/m);
 });
+
+test('T3c Imagen_EscaneoQueFrenaAntesDePublicar_YBaseFijada @story-2.30 @ac-1', () => {
+  const t = read();
+  // Trivy fijado por versión Y por huella (una etiqueta sola se puede mover)
+  const trivy = (t.match(/TRIVY="([^"]+)"/) || [])[1] || '';
+  assert.match(trivy, /^aquasec\/trivy:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$/, `Trivy por versión y huella: ${trivy}`);
+  // frena con una HIGH o CRITICAL que tenga arreglo; las sin arreglo, aviso
+  assert.match(t, /--severity HIGH,CRITICAL/);
+  assert.match(t, /"\$\{ESCANEAR\[@\]\}" --ignore-unfixed --exit-code 1\n/, 'el escaneo que frena');
+  assert.match(t, /::warning::\$\{SIN_ARREGLO\} vulnerabilidad\(es\) HIGH o CRITICAL sin arreglo publicado/, 'las sin arreglo se avisan');
+  // el orden: armar → escanear → iniciar sesión → publicar (nada se sube si el escaneo frena)
+  const armar = t.indexOf('docker build -f scripts/site/Dockerfile');
+  const frena = t.indexOf('--ignore-unfixed --exit-code 1');
+  const login = t.indexOf('docker login ghcr.io');
+  const push = t.indexOf('docker push');
+  assert.ok(armar > 0 && armar < frena && frena < login && login < push, `orden armar ${armar} < escanear ${frena} < login ${login} < push ${push}`);
+  // la imagen le llega a Trivy como archivo: sin el socket de Docker adentro
+  assert.doesNotMatch(t, /docker\.sock/);
+  assert.match(t, /docker save "\$\{IMAGEN\}:\$\{VERSION\}" -o/);
+  // la base, por etiqueta y huella, con los paquetes al día y sin las herramientas de paquetes de Node
+  const docker = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8');
+  assert.match(docker, /^FROM node:\d+\.\d+\.\d+-alpine\d+\.\d+@sha256:[0-9a-f]{64}$/m, 'la base fijada por huella');
+  assert.match(docker, /apk upgrade --no-cache/);
+  for (const x of ['/usr/local/lib/node_modules/npm', '/usr/local/lib/node_modules/corepack', '/usr/local/bin/npx', '/usr/local/bin/yarn']) assert.ok(docker.includes(x), `la imagen saca ${x}`);
+});

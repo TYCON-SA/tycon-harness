@@ -7,7 +7,7 @@
 # Se arma con BuildKit (`docker buildx build`): es el que lee scripts/site/Dockerfile.dockerignore, la lista de lo que
 # entra. Con el constructor clásico se ignora esa lista y la imagen traería las pruebas.
 #
-# Node LTS sobre Alpine con la versión FIJADA, `git` adentro (el sitio clona el repo de operaciones), un usuario sin
+# Node LTS sobre Alpine con la versión FIJADA por etiqueta y por huella (sin npm, npx, yarn ni corepack), `git` adentro (el sitio clona el repo de operaciones), un usuario sin
 # privilegios, y sólo lo que el sitio ejecuta: scripts/site, los lectores que usa (scripts/lib, scripts/metrics,
 # scripts/nightly/dashboard, scripts/setup/harness, y de scripts/ci el lector de la paridad) y los títulos de los pasos del pipeline (los lee la vista de corridas,
 # 2.27). Ningún secreto en la imagen: llegan como variables de entorno desde el almacén de cada plataforma (2.30).
@@ -16,9 +16,14 @@
 # 🔴 Poné SITE_DATA_DIR en un VOLUMEN: `docker run -v sitio-datos:/data -e SITE_DATA_DIR=/data …`. Ahí quedan el espejo
 # del buzón, el clon de operaciones y el último bueno de la configuración. Sin volumen, cada reinicio vuelve a bajar
 # el buzón entero, y la pestaña Corridas dice «no medido» hasta que termina.
-FROM node:24.11.0-alpine3.22
+FROM node:24.22.0-alpine3.24@sha256:44fce696f38ba8c987c4db89954051000bbd05ffd8d8659ba15ed4a8602e937f
 
-RUN apk add --no-cache git
+# los paquetes del sistema al día (la base trae los de su fecha), git para leer los repos, y fuera lo que el sitio no
+# usa: npm, npx, yarn y corepack traen sus propios módulos (tar, glob…) y con ellos sus vulnerabilidades
+RUN apk upgrade --no-cache \
+ && apk add --no-cache git \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+      /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /opt/yarn-*
 
 WORKDIR /app
 # la versión, si está: .tycon-release.json lo escribe el workflow de la imagen con la etiqueta del merge, y el sitio lo
