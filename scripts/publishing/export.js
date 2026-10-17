@@ -160,14 +160,10 @@ function fijasConNombreViejo(fijas) {
 // Las otras tres carpetas de la tanda vivían en la raíz, fuera de todo «in»: una foto vieja las trae como entradas del
 // primer nivel sin clasificar y la exportación sale 2 sin escribir nada (no hace falta una clase para ellas).
 const NOCTURNO_DEPENDENCIAS = { fuente: 'arnes', glob: 'scripts/nightly/dependencies/**', motivo: 'la revisión nocturna de dependencias del equipo' };
-// La validación de cada pedido y sus plantillas (story 8.26, tanda C, AC 48): las únicas rutas de `pipelines/` que viajan.
-// Rutas exactas, nunca un glob: lo que no está nombrado acá sigue bajo la exclusión fija.
-const VALIDACION_PUBLICA = Object.freeze([
-  'pipelines/azure-pipelines-pr.yml',
-  'pipelines/templates/correr-suites.yml',
-  'pipelines/templates/fetch-snapshot.yml',
-  'pipelines/templates/traer-repos.yml',
-]);
+// La validación de cada pedido y sus plantillas viajaban en la copia (story 8.26, tanda C, AC 48); desde la story 8.41
+// (tanda F2) son del repo privado y ninguna ruta de `pipelines/` fuera de los modelos de operaciones viaja. Rutas exactas,
+// nunca un glob: lo que no está nombrado acá sigue bajo la exclusión fija.
+const VALIDACION_PUBLICA = Object.freeze([]);
 // Los modelos de los pipelines de operaciones que el arnés le da a cada organización: la carpeta existe SÓLO en el repo
 // público (el privado no tiene pipelines/operations/; los pipelines vivos del equipo están en su repo de operaciones),
 // así que todo lo que hay ahí ya es público por construcción. Es la única carpeta del `salvo`: sin ella, una guía pública
@@ -225,7 +221,7 @@ const EXCLUIDOS_SIEMPRE = Object.freeze([
   // story 8.26 (tanda C, AC 48): `salvo` la validación y sus plantillas, que después del corte viven en el repo público
   // (Azure sólo valida un pedido de GitHub si el YAML está en ese repo) y desde ya viajan, así el detector y el freno de
   // nombres de cada publicación las miran. La lista es cerrada y con nombre: un pipeline nuevo queda afuera solo.
-  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'la validación de cada pedido y sus plantillas, que después del corte viven en el repo público (story 8.26, tanda C), y los modelos de los pipelines de operaciones, que sólo existen ahí' },
+  { fuente: 'arnes', glob: 'pipelines/**', motivo: 'los pipelines del equipo en Azure DevOps y la plantilla que trae sus repos', salvo: [...VALIDACION_PUBLICA, MODELOS_DE_OPERACIONES], motivoSalvo: 'los modelos de los pipelines de operaciones, que sólo existen en el repo público (la validación de cada pedido y sus plantillas son del repo privado desde la story 8.41)' },
   // story 8.9: la tanda C1 mudó acá el ejecutable y la F, sus dos .json; la exclusión sigue al archivo. La carpeta vieja
   // (hoy, sólo reemplazos) queda excluida como clase, al final de esta lista: `carpetasFijasConNombreViejo`
   // 2026-10-14 (decisión 1 del dueño, story 8.30): el código de los dos nocturnos —dependencias y vigilante— es público.
@@ -1523,7 +1519,15 @@ const PRE_COMMIT = '.githooks/pre-commit';
 const HOOK_PARTS = Object.freeze({ arnes: `${PRE_COMMIT}-harness`, 'agent-skills': `${PRE_COMMIT}-skills` });
 function splitHooks(copia, ajustes) {
   const missing = FUENTES.filter((f) => !copia.has(`${f}/${HOOK_PARTS[f]}`)).map((f) => HOOK_PARTS[f]);
-  if (missing.length === FUENTES.length) return;   // sin las dos partes (el control único, o ningún pre-commit): nada que partir
+  if (missing.length === FUENTES.length) {   // sin las dos partes (el control único, o ningún pre-commit): nada que partir
+    // …pero el control único es un envoltorio que ejecuta .githooks/pre-commit-checks: sin él, la copia saldría con un
+    // pre-commit que llama a un archivo que no está (revisión de la F2: antes esto salía callado)
+    const hook = copia.get(`arnes/${PRE_COMMIT}`);
+    if (hook && hook.datos && hook.datos.toString('utf8').includes('pre-commit-checks') && !copia.has(`arnes/${PRE_COMMIT}-checks`)) {
+      throw new NoPudo(`split-hooks: sale arnes/${PRE_COMMIT} pero no arnes/${PRE_COMMIT}-checks, que es lo que ejecuta — la copia tendría un pre-commit que llama a un archivo que no está`);
+    }
+    return;
+  }
   if (missing.length) {
     throw new NoPudo(`split-hooks: falta ${missing.join(' y ')} en la copia — el repo unido trae el pre-commit partido en dos y la copia de dos repos necesita las dos partes (sin ella, el repo de esa fuente saldría con un pre-commit que llama a un archivo que no está)`);
   }

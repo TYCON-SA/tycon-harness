@@ -147,7 +147,8 @@ Nada de la máquina ni de la organización está escrito en el código. Cada val
    `TYCON_CODEGRAPH`, `TYCON_MAILBOX`, `TYCON_CODEX`, `TYCON_NIGHTLY` — `0`/`1`, y `detect` para Codex);
 2. **el archivo de tu máquina**, `~/.claude/tycon.json` (nunca versionado; lo ven todas las sesiones, también las de la
    extensión de VS Code, que no cargan el rc del shell);
-3. **el perfil del equipo**, team-profile.json en la raíz del arnés, si existe (versionado: sólo valores del equipo —
+3. **el perfil del equipo**, team-profile.json en la raíz del arnés, si existe: llega con la capa del equipo y su
+   original vive en el repo del perfil de tu organización, donde se edita (versionado: sólo valores del equipo —
    la organización de Azure DevOps y qué integraciones están prendidas; nada personal, el lector lo rechaza). El nombre
    de antes, perfil-equipo.json, sigue valiendo, con un aviso de una línea que dice cómo renombrarlo;
 4. si nada lo dice: **apagado** o sin valor.

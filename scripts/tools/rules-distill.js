@@ -47,8 +47,18 @@ const AGENTS_DIR = path.join(HOME, '.claude/agents');
 // los revisores de un paquete que trae este árbol (packs/<p>/agents/): citan reglas del catálogo igual que los del núcleo
 // (story 8.41, AC 26: con el paquete, una regla que sólo cita un revisor de paquete cuenta como cualquiera)
 const PACKS_DIR = path.join(GUIDES_DIR, 'packs');
-const packAgentDirs = () => (fs.existsSync(PACKS_DIR) ? fs.readdirSync(PACKS_DIR).sort()
-  .filter((p) => fs.existsSync(path.join(PACKS_DIR, p, 'pack.json')))
+// Una carpeta de paquete sin pack.json es un paquete roto, no uno ausente: se dice una vez por stderr (las reglas que sólo
+// citan sus revisores van a contar como no citadas). Uno sin agents/ es legítimo: un paquete puede traer sólo skills.
+const brokenPacksSaid = new Set();
+const packAgentDirs = () => (fs.existsSync(PACKS_DIR) ? fs.readdirSync(PACKS_DIR, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort()
+  .filter((p) => {
+    if (fs.existsSync(path.join(PACKS_DIR, p, 'pack.json'))) return true;
+    if (!brokenPacksSaid.has(p)) {
+      brokenPacksSaid.add(p);
+      process.stderr.write(`⚠ rules-distill: packs/${p}/ no trae pack.json — es un paquete roto: no leo sus revisores, y las reglas que sólo citan ellos cuentan como no citadas\n`);
+    }
+    return false;
+  })
   .map((p) => path.join(PACKS_DIR, p, 'agents')).filter((d) => fs.existsSync(d)) : []);
 const SKILLS_DIR = path.join(HOME, '.claude/agent-skills/skills');
 const TCG_SCRIPTS_DIR = path.join(GUIDES_DIR, 'scripts');

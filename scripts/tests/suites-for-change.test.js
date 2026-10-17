@@ -433,7 +433,7 @@ test('T13 SuiteDeps_WhenInDoubtRuns — cómo se elige, un borrado, una suite au
   const dir = depsRepo();
   const all = ['a.test.js', 'b.test.sh', 'c.test.js', 'd.test.js'];
   // (a) el cambio toca cómo se elige: corre todo, y lo dice
-  for (const f of ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json', 'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-pr.yml']) {
+  for (const f of ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json', 'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml']) {
     const p = depsPlan(dir, [f]);
     assert.deepStrictEqual(p.run.sort(), all, `(a) ${f}: corre todo`);
     assert.ok(p.err.includes(`toca cómo se eligen las suites (${f}): corre todo`), `(a) ${f}: con el motivo\n${p.err}`);

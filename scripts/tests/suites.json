@@ -1921,7 +1921,7 @@
       "requiere": []
     },
     {
-      "__nota": "story 8.18, tramo 1 (T13 y T15, contrato C2): la plantilla pipelines/templates/traer-repos.yml, corrida de verdad en una HOME de juguete con repos de juguete. En un checkout del repo unido enlaza ~/.claude/agent-skills al propio checkout en vez de clonar otro repo, con la historia entera; un checkout sin skills/tycon-pipeline, uno recortado que no se pudo completar o un enlace imposible salen rojos con el motivo. Y los dos pipelines (métricas y nocturno) no clonan agent-skills por su cuenta. Sin red.",
+      "__nota": "story 8.18, tramo 1 (T13 y T15, contrato C2): la plantilla pipelines/templates/fetch-repos.yml, corrida de verdad en una HOME de juguete con repos de juguete. En un checkout del repo unido enlaza ~/.claude/agent-skills al propio checkout en vez de clonar otro repo, con la historia entera; un checkout sin skills/tycon-pipeline, uno recortado que no se pudo completar o un enlace imposible salen rojos con el motivo. Y los dos pipelines (métricas y nocturno) no clonan agent-skills por su cuenta. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/fetch-repos-template.test.sh",
       "requiere": []
@@ -1975,7 +1975,7 @@
       "requiere": []
     },
     {
-      "__nota": "2026-10-04: la validación de los pedidos de merge (pipelines/azure-pipelines-pr.yml) corre sus suites en dos trabajos paralelos: era un solo job en serie y con rojos y reintentos se cortaba a los 60 min sin veredicto (corridas 11761 y 11788). Mira el YAML —el número de trabajos en un solo lugar, el reparto sobre la lista de las que corren (--only), cada trabajo publica lo que midió aunque lo corten, el veredicto corre siempre y un cambio de sólo documentación saltea todo sin fallar— y corre los pasos REALES sobre un arnés de juguete: la intermitente y la firme se siguen distinguiendo, y las suites de un trabajo que no publicó salen NO MEDIDAS en el veredicto, ni verdes ni rojo nuevo.",
+      "__nota": "2026-10-04: la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml) corre sus suites en dos trabajos paralelos: era un solo job en serie y con rojos y reintentos se cortaba a los 60 min sin veredicto (corridas 11761 y 11788). Mira el YAML —el número de trabajos en un solo lugar, el reparto sobre la lista de las que corren (--only), cada trabajo publica lo que midió aunque lo corten, el veredicto corre siempre y un cambio de sólo documentación saltea todo sin fallar— y corre los pasos REALES sobre un arnés de juguete: la intermitente y la firme se siguen distinguiendo, y las suites de un trabajo que no publicó salen NO MEDIDAS en el veredicto, ni verdes ni rojo nuevo.",
       "raiz": "arnes",
       "ruta": "tests/pr-suites-shards.test.js",
       "requiere": []
@@ -1994,12 +1994,6 @@
       "gate_only_when_touching": [
         "scripts/ci/**"
       ]
-    },
-    {
-      "__nota": "Story 8.26, tanda C (AC 45, T45): con un repo de GitHub como propio la validación escribe en un control público. Ningún aviso de Azure del YAML de la validación ni de sus plantillas interpola texto de afuera (un error, un nombre de repo, un motivo), y pr-verdict.js y suites-report.js con --public-notices no ponen en un aviso una marca inventada en nombres, motivos y rutas.",
-      "raiz": "arnes",
-      "ruta": "tests/validation-public-notices.test.js",
-      "requiere": []
     },
     {
       "__nota": "story 8.17, tanda W1 (medido en Windows, corrida 11694): una ruta de Windows llega como C:\\a\\b, C:/a/b o /c/a/b (la de Git Bash), y los portones del pipeline de stories la miran por UNA función (lib/path-shape.js) — en el despachador de Edit|Write y en el portón de la terminal. Con la plataforma inyectada: las tres formas dan la misma ruta, una ruta de red no es una unidad, y fuera de Windows no se toca nada. Que los portones frenen con las tres formas lo mide el banco en Windows (46-path-shapes.json).",

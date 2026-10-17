@@ -72,7 +72,7 @@
 //   node public-push-guard.js range --base <commit> --head <commit> [--branch <nombre>] [--title-file <archivo>]
 //        [--body-file <archivo>] [--json]       (tanda F2 · AC 23: un PEDIDO, en su validación — cada commit que suma a
 //        su rama destino, el nombre de la rama, el título y el cuerpo. No le pregunta nada al remoto y la lista es
-//        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-pr.yml)
+//        siempre obligatoria; lo llama el paso «El freno de publicación sobre el pedido» de pipelines/azure-pipelines-maintainers-pr.yml)
 //   node public-push-guard.js status [--fetch]                         (¿está puesto?, ¿de dónde sale la lista?, ¿está al
 //        día?; con `--fetch` se le pregunta además al remoto del clon de la lista. Su código no cambia por la frescura)
 //   node public-push-guard.js                                          (sin argumentos: el freno previo a la herramienta

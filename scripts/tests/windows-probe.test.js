@@ -95,7 +95,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   assert.match(bundle, /bash scripts\/tests\/windows\/build-bundle\.sh /, 'el trabajo de Linux arma el bundle con build-bundle.sh');
   // agent-skills de antes de la unión, clonado por el trabajo en una carpeta propia (no la plantilla: desde la 8.18
   // enlaza ~/.claude/agent-skills al arnés); sólo lo usa un commit de antes de la unión
-  assert.doesNotMatch(bundle, /template: \/pipelines\/templates\/traer-repos\.yml/, 'Bundle no toma agent-skills de la plantilla');
+  assert.doesNotMatch(bundle, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'Bundle no toma agent-skills de la plantilla');
   assert.match(bundle, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK" 2>&1\); then\s+echo "##vso\[task\.logissue type=error\]No se pudo clonar AgentSkills: [^\n]*\$ERR[^\n]*"\s+exit 1/, 'clona el repo viejo; un clon fallido sale rojo con su motivo');
   assert.match(bundle, /export TYCON_SKILLS_DIR="\$\(Agent\.TempDirectory\)\/agent-skills"/, 'y se lo pasa a build-bundle.sh');
   assert.match(windows, /run\.js init .*--bundle /, 'el agente crea el laboratorio desde el bundle');

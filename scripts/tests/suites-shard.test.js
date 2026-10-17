@@ -218,7 +218,7 @@ test('SuitesShard_Plan_SaysHowManySuitesAndSecondsEachShardCarries', () => {
 });
 
 // ── --only: el control de cada cambio reparte sólo las suites que de verdad corren ─────────────────────────────────
-// En la validación de los pedidos de merge (pipelines/azure-pipelines-pr.yml) algunas suites no corren si el cambio no
+// En la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml) algunas suites no corren si el cambio no
 // toca lo que miden (scripts/ci/suites-for-change.js). Si el reparto se hiciera sobre la lista entera, la copia pública
 // —la más pesada, casi siempre salteada— quedaría sola en un trabajo y el otro se llevaría todo lo demás.
 function onlyFile(dir, lines) {

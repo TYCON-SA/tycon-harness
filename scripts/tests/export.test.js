@@ -518,6 +518,13 @@ test('Export_SplitHooks_Direct_PartAlreadyThere_OneControl_NothingToSplit', () =
   const ajustesUnico = [];
   ex.splitHooks(unico, ajustesUnico);
   assert.deepStrictEqual([[...unico.keys()].sort(), ajustesUnico], [['arnes/.githooks/pre-commit', 'arnes/.githooks/pre-commit-checks'], []]);
+  // …salvo que el envoltorio salga sin la parte que ejecuta: NoPudo, no un pre-commit que llama a un archivo que no está
+  const cojo = new Map([['arnes/.githooks/pre-commit', b('#!/usr/bin/env bash\nexec .githooks/pre-commit-checks\n')]]);
+  assert.throws(() => ex.splitHooks(cojo, []), (e) => e instanceof ex.NoPudo && /no arnes\/\.githooks\/pre-commit-checks/.test(e.message));
+  // un pre-commit suelto que no llama a ninguna parte (el de un commit viejo) sale como está
+  const suelto = new Map([['arnes/.githooks/pre-commit', b(HARNESS_HOOK)]]);
+  ex.splitHooks(suelto, []);
+  assert.deepStrictEqual([...suelto.keys()], ['arnes/.githooks/pre-commit']);
   // los espejos: sin ningún pre-commit (una lista blanca que deja .githooks/ afuera) no hay nada que partir…
   const nada = new Map([['arnes/README.md', b('# x\n')]]);
   const ajustesNada = [];

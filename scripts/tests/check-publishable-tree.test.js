@@ -175,7 +175,8 @@ test('PipelinesSalvo_OperationsModelsShip_TeamPipelinesStayOut', () => {
   assert.ok(x, 'la exclusión fija de pipelines/ existe');
   const sale = (p) => !exporter.cubreFija(x, p);
   assert.ok(sale('pipelines/operations/team-dashboard.yml') && sale('pipelines/operations/examples/product-parity.json'), 'los modelos de operaciones salen');
-  assert.ok(sale('pipelines/azure-pipelines-pr.yml'), 'la validación nombrada sale');
+  // la validación de cada pedido es del repo privado desde la story 8.41 (tanda F2): ya no sale
+  assert.ok(!sale('pipelines/azure-pipelines-maintainers-pr.yml') && !sale('pipelines/templates/run-suites.yml'), 'la validación del privado no sale');
   assert.ok(!sale('pipelines/azure-pipelines-banco.yml'), 'un pipeline del equipo sigue afuera');
   assert.ok(!sale('pipelines/operationsX/a.yml') && !sale('pipelines/operations'), 'una carpeta que sólo empieza igual, o la ruta suelta, no');
 });

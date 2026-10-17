@@ -62,14 +62,19 @@ fi
 # Se busca por `$REPO_ROOT`: el repo del hook es el arnés. Sin el lint avisa y sigue.
 # Casos: scripts/tests/pre-commit-stories.test.sh
 FM_LINT="$REPO_ROOT/scripts/lib/lint-story-frontmatter.js"
-CHANGED_MD="$(grep -E '\.md$' <<<"$STAGED_ACMR" || true)"
-if [ -n "$CHANGED_MD" ]; then
+# Una ruta por renglón (core.quotePath=false: las tildes salen como son), a un arreglo y pasada entera entre comillas: sin
+# eso una story con espacios en el nombre se partía en pedazos que no existen y el lint la aprobaba sin leerla (pase
+# adversarial de la 8.41; el mismo arreglo que la 8.40 hizo en el hook del repo de stories).
+CHANGED_MD=()
+while IFS= read -r f; do
+  case "$f" in *.md) CHANGED_MD+=("$f") ;; esac
+done <<<"$STAGED_ACMR"
+if [ "${#CHANGED_MD[@]}" -gt 0 ]; then
   if [ ! -f "$FM_LINT" ]; then
     echo "⚠️  tycon: no encontré $FM_LINT — se saltea el lint de frontmatter de stories." >&2
   else
     echo "▸ pre-commit: lint de frontmatter de stories…"
-    # shellcheck disable=SC2086
-    if ! node "$FM_LINT" $CHANGED_MD; then
+    if ! node "$FM_LINT" "${CHANGED_MD[@]}"; then
       echo "" >&2
       echo "⛔ COMMIT RECHAZADO — hay stories que el harness no puede leer (motivo arriba)." >&2
       echo "   Una story con el frontmatter roto no da error: desaparece en silencio del validator," >&2
@@ -86,7 +91,7 @@ fi
 # Casos: scripts/tests/pre-commit-stories.test.sh C-06/C-07.
 GATE="$REPO_ROOT/scripts/ci/tycon-ci-gate.js"
 # el portón usa el detector del lint: sin el lint tampoco corre, y eso ya se avisó arriba
-if [ -n "$CHANGED_MD" ] && [ -f "$FM_LINT" ]; then
+if [ "${#CHANGED_MD[@]}" -gt 0 ] && [ -f "$FM_LINT" ]; then
   if [ ! -f "$GATE" ]; then
     echo "⚠️  tycon: no encontré $GATE — se saltea el portón del arnés (el del pull request igual lo mira)." >&2
   elif ! node "$GATE" --repo "$REPO_ROOT" --staged; then
@@ -305,7 +310,11 @@ if [ -n "$MAPA_TOCADO" ]; then
     MAPA_PUB="onboarding/mini-class/mapa-del-arnes.html"
     if ! git show ":$MAPA_PUB" 2>/dev/null | cmp -s - "$MAPA_TMP/publica.html"; then
       if echo "$MAPA_TOCADO" | grep -qvE "^$MAPA_PUB\$"; then
-        cp "$MAPA_TMP/publica.html" "$REPO_ROOT/$MAPA_PUB" && git add "$MAPA_PUB"
+        if ! { cp "$MAPA_TMP/publica.html" "$REPO_ROOT/$MAPA_PUB" && git add "$MAPA_PUB"; }; then
+          rm -rf "$MAPA_TMP"
+          echo "⛔ COMMIT RECHAZADO — la versión pública del mapa se regeneró pero no pude ponerla en este commit ($MAPA_PUB)." >&2
+          exit 1
+        fi
         echo "▸ pre-commit: la versión pública del mapa se regeneró y entra en este commit."
       else
         rm -rf "$MAPA_TMP"
@@ -447,6 +456,8 @@ if node "$CHECK" >"$LOG" 2>&1; then
   if [ -f "$VIDA" ]; then
     # shellcheck disable=SC2086
     node "$VIDA" $cambiados || exit 1
+  else
+    echo "⚠ pre-commit: no encontré scripts/hooks/advisor-liveness-on-change.js en $TCG: el chequeo de vida del revisor tocado NO corrió (no es un verde)." >&2
   fi
   exit 0
 fi

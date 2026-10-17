@@ -176,7 +176,7 @@ test('QueueValidation_NoKey_Exit2_NoCalls', async () => {
 });
 
 // Story 8.22, AC 6 — la validación completa de una rama se pide con `--all`: el pedido lleva el parámetro `runAll` de
-// la 170 (pipelines/azure-pipelines-pr.yml) en `true`. Sin `--all`, el pedido no lo lleva (lo de arriba exige el cuerpo exacto).
+// la 170 (pipelines/azure-pipelines-maintainers-pr.yml) en `true`. Sin `--all`, el pedido no lo lleva (lo de arriba exige el cuerpo exacto).
 test('T9 QueueValidation_AllPassesRunAll', async () => {
   const az = await fakeAzure({});
   try {

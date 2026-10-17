@@ -85,6 +85,20 @@ else
 fi
 rm -rf "$T"
 
+# ── caso 1b · la misma story ROTA con espacios y una tilde en el nombre → también FRENA ─────────
+# 🔴 rojo previo (pase adversarial de la 8.41): la lista iba sin comillas, el nombre se partía en pedazos que no existen y el
+# lint salía «0 revisadas · OK». Verificado contra el hook de antes: exit 0.
+T=$(mktemp -d); montar "$T"
+printf '%s' "$STORY_ROTA" > "$T/repo/specs/story 9.8 ñandú rota.md"
+( cd "$T/repo" && git add "specs/story 9.8 ñandú rota.md" )
+RC=$(correr_hook "$T")
+if [ "$RC" != "0" ] && grep -q "ñandú rota" "$T/out.txt"; then
+  ok "C-01b una story ilegible con espacios y tilde en el nombre frena el commit (exit $RC) y el hook la nombra"
+else
+  mal "C-01b una story ilegible con espacios en el nombre NO frenó (exit $RC) — la lista se parte"; sed -n '1,10p' "$T/out.txt"
+fi
+rm -rf "$T"
+
 # ── caso 2 · stories SANAS → NO frena ─────────────────────────────────────────────────────────
 # El espejo obligatorio: un control que frena lo legítimo se apaga, y se lleva puesto el caso 1.
 T=$(mktemp -d); montar "$T"

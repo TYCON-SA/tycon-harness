@@ -4,7 +4,7 @@
 /**
  * suites-for-change.js — qué suites de `scripts/tests/suites.json` corre el control de cada cambio en Azure.
  *
- * POR QUÉ (2026-10-02): el control de `main` (pipelines/azure-pipelines-pr.yml) corre las ~190 suites una por una y
+ * POR QUÉ (2026-10-02): el control de `main` (pipelines/azure-pipelines-maintainers-pr.yml) corre las ~190 suites una por una y
  * se pasó de su tope de 45 minutos. Dos suites se llevaban casi la mitad: la copia pública de verdad
  * (`export-real.test.sh`, ~14 min) y las skills de terceros reales (`third-party-real.test.sh`, ~2 min). Las dos ya
  * declaraban `gate_only_when_touching`, que respetaba el portón de cada story y el control de Azure no. Con esto, en
@@ -441,7 +441,7 @@ function main(argv) {
   // E, sí: corren si el cambio toca sus patrones, la red de `shared` o lo que usa su código (según su `deps`), y sin
   // `--deps` utilizable corren todas, porque sus patrones ya no alcanzan solos.
   const SELECTION_ITSELF = ['scripts/ci/suites-for-change.js', 'scripts/ci/suite-deps.js', 'scripts/ci/heavy-suites.json',
-    'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-pr.yml'];
+    'scripts/ci/suites-over-limit.json', 'pipelines/azure-pipelines-maintainers-pr.yml', 'pipelines/templates/run-suites.yml'];
   let depsSel = null;
   if (argv.includes('--deps') && listed.known && changed.known) {
     const files = listed.files.map((f) => f.replace(/\\/g, '/'));

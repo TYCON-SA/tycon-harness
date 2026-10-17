@@ -683,21 +683,21 @@ else
 fi
 rm -rf "$T"
 
-# C-22 · T12 SpanishNames_PrStep — el paso de lint del PR, con sus líneas de pipelines/azure-pipelines-pr.yml, suma a FALLAS.
+# C-22 · T12 SpanishNames_PrStep — el paso de lint del PR, con sus líneas de pipelines/azure-pipelines-maintainers-pr.yml, suma a FALLAS.
 # La copia pública no trae los pipelines del equipo (el exportador deja afuera pipelines/**): ahí se saltea con constancia.
-if [ ! -f "$RAIZ/pipelines/azure-pipelines-pr.yml" ]; then
-  echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
+if [ ! -f "$RAIZ/pipelines/azure-pipelines-maintainers-pr.yml" ]; then
+  echo "  ⏭   — C-22 (T12) NO verificado: no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo). No es un verde."
 else
 T=$(mktemp -d); montar_castellano "$T"
 BASE_LAB=$(git -C "$T/repo" rev-parse HEAD)
 ( cd "$T/repo" && git checkout -q -b cambio && printf 'const y = process.argv.includes("%s");\n' "$C_OPT" > scripts/english-tool.js \
   && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "rama con un nombre nuevo" )
-PASO="$(awk '/spanish-names\.js --range/{p=1} p{print} p&&/falla /{exit}' "$RAIZ/pipelines/azure-pipelines-pr.yml" | sed 's/^ *//')"
+PASO="$(awk '/spanish-names\.js --range/{p=1} p{print} p&&/falla /{exit}' "$RAIZ/pipelines/azure-pipelines-maintainers-pr.yml" | sed 's/^ *//')"
 FALLAS_LAB=$( cd "$T/repo" && FALLAS=0; falla() { FALLAS=$((FALLAS+1)); echo "❌ $1" >&2; }
   HOME="$T/casa" TYCON_SKILLS_DIR="$T/skills"; export HOME TYCON_SKILLS_DIR
   eval "$(printf '%s\n' "$PASO" | sed "s/\$(baseDelCambio)/${BASE_LAB}/g")" > "$T/pr.txt" 2>&1; echo "$FALLAS" )
 if [ -n "$PASO" ] && [ "$FALLAS_LAB" = "1" ]; then ok "C-22 T12 SpanishNames_PrStep: el paso del PR suma el nombre nuevo a FALLAS"
-else mal "C-22 T12 el paso del PR: FALLAS=${FALLAS_LAB:-?} (paso: ${PASO:-no está en pipelines/azure-pipelines-pr.yml})"; sed -n '1,8p' "$T/pr.txt" 2>/dev/null; fi
+else mal "C-22 T12 el paso del PR: FALLAS=${FALLAS_LAB:-?} (paso: ${PASO:-no está en pipelines/azure-pipelines-maintainers-pr.yml})"; sed -n '1,8p' "$T/pr.txt" 2>/dev/null; fi
 rm -rf "$T"
 fi
 
