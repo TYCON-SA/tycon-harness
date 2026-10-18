@@ -10,8 +10,8 @@ para una organización que vive en GitHub:
 | `dependency-audit.yml` | Busca dependencias con vulnerabilidades conocidas en los repos que declares, y abre un **issue** en el repo del producto por cada hallazgo. Antes de mirarlas, compara los workflows de tus productos (la paridad) | `.dashboard/dependencias/`, `inbox/dependencies/` y `.dashboard/paridad/paridad-<día>.json` en el repo de operaciones; los issues, en cada producto |
 | `team-dashboard.yml` | Arma una página con todo lo anterior | `artifacts/tablero-del-arnes.html` en el repo de operaciones |
 
-Esta página es para quien administra la organización de GitHub. Lleva una hora la primera vez. No hace falta instalar
-nada en una máquina: todo pasa en GitHub.
+Esta página es para quien administra la organización de GitHub. Lleva entre tres y cuatro horas la primera vez. No
+hace falta instalar nada en una máquina: todo pasa en GitHub.
 
 ## 1. Lo que necesitás antes
 
