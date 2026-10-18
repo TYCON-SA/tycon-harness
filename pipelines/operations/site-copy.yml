@@ -1,0 +1,85 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# La copia de operaciones para el sitio — MODELO para cualquier organización en Azure DevOps
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones de la organización y
+# se cambian DOS líneas: el `name:` del recurso `harness` y la conexión de servicio (`azureSubscription`), marcadas abajo.
+#
+# Copia lo que el sitio de la organización lee del repo de operaciones (la lista `RUTAS` de
+# scripts/site/operations-copy.js) a un contenedor de almacenamiento: primero la foto `fotos/<commit>.tar.gz`, al final el
+# índice `actual.json`. El sitio, con `SITE_OPERATIONS_SOURCE=copy`, lee de ahí con su identidad administrada: no necesita
+# ninguna credencial del repo. Si la foto no sube, el índice no se toca y el sitio sigue con la anterior; esta corrida sale
+# en rojo y lo dice.
+#
+# - CUÁNDO: en cada push a `main` (sin filtro de rutas: cualquier cambio de lo copiado cuenta; los nocturnos guardan sus
+#   datos con un push, y ese push también dispara) y una vez por día, de respaldo. Con el índice ya en ese commit, no sube
+#   nada. `batch: true`: un push que llega con otra corrida en curso espera y se junta con los siguientes.
+# - QUÉ COMMIT: siempre la punta de `main` traída al momento (nunca el commit que disparó, que puede ser viejo si la
+#   corrida esperó): la copia nunca vuelve atrás.
+# - LA CREDENCIAL: una conexión de servicio PROPIA (por identidad federada, sin secreto), con el rol «Storage Blob Data
+#   Contributor» sobre ESE contenedor y nada más. No es la del sitio (que sólo lee) ni la del buzón de corridas. Del repo
+#   de operaciones, sólo lee (`System.AccessToken`, para traer `main`).
+#
+# Variables de la definición (se cargan en Azure, en «Variables» del pipeline):
+#   SITE_COPY_ACCOUNT    — la cuenta de almacenamiento de la copia
+#   SITE_COPY_CONTAINER  — su contenedor
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger:
+  batch: true
+  branches:
+    include: [main]
+pr: none
+
+schedules:
+  - cron: '17 5 * * *'       # 05:17 UTC, de respaldo: el push ya copia cada cambio
+    displayName: 'Copia de operaciones (respaldo diario)'
+    branches:
+      include: [main]
+    always: true
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: Copy
+    displayName: 'Copiar lo que lee el sitio al contenedor'
+    timeoutInMinutes: 20
+    steps:
+      - checkout: harness
+        path: s
+        fetchDepth: 1
+        persistCredentials: false
+      - checkout: self
+        path: ops
+        fetchDepth: 1
+        persistCredentials: true
+
+      - task: UseNode@1
+        inputs:
+          version: '24.x'
+
+      - script: |
+          set -euo pipefail
+          OPS="$(Pipeline.Workspace)/ops"
+          git -C "$OPS" fetch --depth 1 --no-tags origin main
+          git -C "$OPS" checkout -q --detach FETCH_HEAD
+          echo "la punta de main: $(git -C "$OPS" rev-parse HEAD)"
+        displayName: 'Traer la punta de main del repo de operaciones'
+
+      - task: AzureCLI@2
+        displayName: 'Subir la foto y el índice'
+        inputs:
+          azureSubscription: 'site-copy'          # ← CAMBIAR: la conexión de servicio propia del trabajo que copia
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -euo pipefail
+            node "$(Build.SourcesDirectory)/scripts/site/operations-copy.js" subir \
+              --repo "$(Pipeline.Workspace)/ops" --account "$(SITE_COPY_ACCOUNT)" --container "$(SITE_COPY_CONTAINER)"

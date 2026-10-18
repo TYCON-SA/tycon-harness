@@ -639,3 +639,17 @@ test('T21 2.26-StageMetrics_ConcentracionEnElPasoDeLaFoto — el modelo público
   const ign = spawnSync('git', ['-C', ROOT, 'check-ignore', '-q', '.dashboard/author-concentration-2026-10-15.json']);
   assert.strictEqual(ign.status, 1, '.gitignore del privado deja pasar el archivo de concentración');
 });
+
+test('T25 2.34-Copia_DisparosYCredencial (Azure) @story-2.34 @ac-4 — cada push a main y una vez por día, con su conexión propia', () => {
+  // 🔴 rojo: la copia corre una vez por noche (un cambio tarda un día en verse) o usa la credencial de otro trabajo.
+  const t = read('site-copy.yml');
+  assert.match(t, /^trigger:\n {2}batch: true\n {2}branches:\n {4}include: \[main\]\n/m, 'cada push a main, sin filtro de rutas');
+  assert.doesNotMatch(t, /^ {2}paths:/m, 'sin filtro de rutas: cualquier cambio de lo copiado cuenta');
+  assert.match(t, /^schedules:\n {2}- cron: '[^']+'/m, 'una vez por día, de respaldo');
+  assert.match(t, /^ {4}always: true$/m);
+  assert.match(t, /azureSubscription: 'site-copy'/, 'su propia conexión de servicio');
+  assert.match(t, /operations-copy\.js" subir \\\n\s+--repo "\$\(Pipeline\.Workspace\)\/ops" --account "\$\(SITE_COPY_ACCOUNT\)" --container "\$\(SITE_COPY_CONTAINER\)"/);
+  assert.match(t, /fetch --depth 1 --no-tags origin main/, 'la punta de main, nunca el commit que disparó');
+  assert.doesNotMatch(t, /SITE_OPERATIONS_TOKEN|SITE_MAILBOX|\$\([A-Z_]*(KEY|SECRET|PASSWORD)\)/, 'ningún secreto ni la credencial del buzón');
+  assert.match(read('README.md'), /site-copy\.yml/, 'el README la da de alta');
+});

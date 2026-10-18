@@ -44,8 +44,11 @@ const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
 const rechazo = (status, message) => json(status, { ok: false, message });
 
-/** Un archivo de un clon: `{ estado: 'leido', texto, oid }` · `{ estado: 'nuevo' }` · `{ estado: 'ilegible', motivo }`. */
-function leer(dir, rel) {
+/**
+ * Un archivo de un clon: `{ estado: 'leido', texto, oid }` · `{ estado: 'nuevo' }` · `{ estado: 'ilegible', motivo }`.
+ * Con la copia de operaciones la carpeta no tiene git: la versión de cada archivo la dice el `indice` de la foto.
+ */
+function leer(dir, rel, indice = null) {
   const ruta = path.join(dir, rel);
   let texto;
   try {
@@ -54,6 +57,11 @@ function leer(dir, rel) {
   } catch (e) {
     if (e && e.code === 'ENOENT') return { estado: 'nuevo' };
     return { estado: 'ilegible', motivo: `${rel} no se pudo leer (${(e && e.code) || 'error'})` };
+  }
+  if (indice) {
+    const oid = isObject(indice.archivos) ? indice.archivos[rel] : null;
+    if (typeof oid !== 'string' || !/^[0-9a-f]{40,64}$/.test(oid)) return { estado: 'ilegible', motivo: `la copia de operaciones no trae la versión de ${rel}` };
+    return { estado: 'leido', texto, oid };
   }
   const r = spawnSync('git', ['-C', dir, 'rev-parse', `HEAD:${rel}`], { encoding: 'utf8', windowsHide: true });
   // sin la versión del archivo, «Proponer» no puede saber si cambió: se dice, no se sigue con null
@@ -176,6 +184,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return d && isObject(d.thresholds) ? { thresholds: d.thresholds, motivo: null } : { thresholds: {}, motivo: 'el sources.json del arnés no trae umbrales legibles' };
   };
   const clones = () => (typeof fuentes.clones === 'function' ? fuentes.clones() : { operaciones: null, perfil: null });
+  /** `leer` con la versión del índice cuando `dir` es la carpeta de la copia de operaciones. */
+  const leerDe = (dir, rel) => { const o = clones().operaciones; return leer(dir, rel, o && o.dir === dir && o.indice ? o.indice : null); };
   const urlDe = (repo) => (repo === 'perfil' ? cfg.profileRepo : cfg.operationsRepo);
   const remoteDe = (repo) => remotos[repo] || ORG.remoteOf(urlDe(repo));
 
@@ -222,7 +232,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       dir = cl.operaciones.dir;
     }
     base.archivo = archivoDe(s, dir);
-    const a = leer(dir, base.archivo);
+    const a = leerDe(dir, base.archivo);
     if (a.estado === 'ilegible') return { ...base, estado: 'ilegible', motivo: `${a.motivo}: se corrige a mano` };
     const doc = a.estado === 'leido' ? docDe(a.texto) : null;
     const v = { ...base, texto: a.texto || null, oid: a.estado === 'leido' ? a.oid : null };
@@ -232,7 +242,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const th = ar.thresholds;
       if (ar.motivo) return { ...v, soloLectura: true, motivo: `${ar.motivo}: sin los umbrales que conoce el arnés no se puede revisar ninguna fila`, borrador: doc && isObject(doc.thresholds) ? doc.thresholds : {} };
       if (a.estado === 'nuevo') return { ...v, soloLectura: true, motivo: 'tu organización no tiene su sources.json en el repo de operaciones: se muestran los umbrales del arnés, sin editar (crearlo copiaría también las fuentes)', borrador: th };
-      const marca = leer(dir, '.dashboard/applied-config.json');
+      const marca = leerDe(dir, '.dashboard/applied-config.json');
       const aplicado = marca.estado === 'leido' ? docDe(marca.texto) : null;
       if (marca.estado === 'ilegible' || (marca.estado === 'leido' && !aplicado)) return { ...v, soloLectura: true, motivo: 'la marca .dashboard/applied-config.json del nocturno no se pudo leer: sin ella no se sabe si tu nocturno lee este archivo', borrador: doc && isObject(doc.thresholds) ? doc.thresholds : th };
       const r = ORG.thresholdsParse(a.texto, { arnes: { thresholds: th }, tree: TREE });
@@ -245,7 +255,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'paridad') {
       if (a.estado === 'nuevo') return { ...v, estado: 'no_configurado', motivo: 'la lista de paridad no está en el repo de operaciones', vista: ORG.paridadPorProducto({ lista: null }) };
       if (!doc) return { ...v, estado: 'ilegible', motivo: 'la lista de paridad no se pudo leer: no es JSON válido' };
-      const res = leer(dir, `.dashboard/paridad/paridad-${dia()}.json`);
+      const res = leerDe(dir, `.dashboard/paridad/paridad-${dia()}.json`);
       const leido = res.estado === 'leido' ? docDe(res.texto) : null;
       const vp = ORG.paridadPorProducto({ lista: doc, resultado: leido, hoy: dia(), resultadoIlegible: res.estado === 'ilegible' || (res.estado === 'leido' && !leido) });
       if (vp.estado === 'sin_productos' || vp.estado === 'sin_lista') return { ...v, estado: 'no_configurado', motivo: vp.texto, vista: vp };
@@ -275,7 +285,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'respuesta') {
       v.extras = respuestaVigente(lec, doc);
       // con una capa que pide una versión que no lee `response`, se muestra y no se propone (decisión 7)
-      const capa = leer(dir, 'team-layer.json');
+      const capa = leerDe(dir, 'team-layer.json');
       const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { response: {} } });
       if (gate) { v.soloLectura = true; v.motivo = gate; }
     }
@@ -341,7 +351,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   /** Los productos (AC 7): `{ lista, motivo }` — una lista que no se pudo leer lo dice; no es «ningún producto». */
   function productos(dirOps, opsDoc) {
     const out = [];
-    const r = dirOps ? leer(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
+    const r = dirOps ? leerDe(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
     const d = r.estado === 'leido' ? docDe(r.texto) : null;
     let motivo = null;
     if (r.estado === 'ilegible' || (r.estado === 'leido' && (!d || !Array.isArray(d.repos)))) motivo = 'la lista de la revisión de dependencias (repos.json) no se pudo leer: los productos de ahí no se muestran';
@@ -359,7 +369,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   async function leerTodo() {
     const secciones = ORG.SECCIONES.map(vista);
     const cl = clones();
-    const opsDoc = cl.operaciones ? docDe((leer(cl.operaciones.dir, 'operations.json').texto) || '') : null;
+    const opsDoc = cl.operaciones ? docDe((leerDe(cl.operaciones.dir, 'operations.json').texto) || '') : null;
     const machines = (opsDoc || fuentes.config() || {}).people;
     const quien = Object.fromEntries(Object.entries(isObject(machines) && isObject(machines.machines) ? machines.machines : {}).filter(([, e]) => isObject(e)).map(([m, e]) => [m, norm(e.person)]));
     const prods = productos(cl.operaciones && cl.operaciones.dir, opsDoc);
@@ -426,7 +436,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (aparte.length) return `el lector rechaza esta parte del archivo: ${aparte.map((p) => `${p.path}: ${p.message}`).join(' · ')}`;
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña';
     if (s.repo === 'perfil') {
-      const capa = leer(clones().perfil.dir, 'team-layer.json');
+      const capa = leerDe(clones().perfil.dir, 'team-layer.json');
       const layerText = capa.estado === 'leido' ? capa.texto : '';
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
       // el perfil del equipo: una lista de paquetes y `response` piden su versión (story 2.31); team-repos.json, la suya
@@ -451,7 +461,15 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!cred) return { ok: false, message: 'sin identidad de escritura: descargá el archivo y abrí el pedido a mano' };
     const remote = remoteDe(s.repo);
     if (!remote.platform) return { ok: false, message: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
-    const dir = s.repo === 'perfil' ? clones().perfil.dir : clones().operaciones.dir;
+    let dir = s.repo === 'perfil' ? clones().perfil.dir : clones().operaciones.dir;
+    // con la copia de operaciones la carpeta de la foto no tiene git y nunca se escribe: la propuesta trae main en
+    // un clon de escritura aparte, compara contra esa punta y arma el commit ahí
+    if (s.repo === 'operaciones' && clones().operaciones.indice) {
+      if (typeof fuentes.clonDeEscritura !== 'function') return { ok: false, message: 'el sitio no tiene clon de escritura para la copia de operaciones: descargá el archivo y abrí el pedido a mano' };
+      const e = await fuentes.clonDeEscritura();
+      if (!e || !e.dir) return { ok: false, message: `${(e && e.motivo) || 'no se pudo armar el clon de escritura'}: descargá el archivo y abrí el pedido a mano` };
+      dir = e.dir;
+    }
     return RP.proponer({
       clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),

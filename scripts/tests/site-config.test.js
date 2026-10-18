@@ -255,11 +255,13 @@ function clon(archivos) {
 const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
 
 /** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
-function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {} }) {
+function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null }) {
   const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos } });
   const base = f.estado;
   f.estado = () => ({ ...base(), ...estado });
-  f.clones = () => ({ operaciones: ops ? { dir: ops } : null, perfil: perfil ? { dir: perfil } : null });
+  // con la copia de operaciones: la carpeta de la foto con su índice, y el clon de escritura aparte
+  f.clones = () => ({ operaciones: ops ? (indice ? { dir: ops, indice } : { dir: ops }) : null, perfil: perfil ? { dir: perfil } : null });
+  if (escritura) f.clonDeEscritura = escritura;
   f.dirBuzon = espejo || tmp('site-config-buzon-');
   f.exclusivo = (fn) => fn();
   return f;
@@ -1684,5 +1686,99 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
     const r = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json;
     const o = r.secciones.find((s) => s.id === 'organizacion');
     assert.deepStrictEqual([o.estado, o.motivo], ['no_reader', 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)']);
+  });
+});
+
+// ── la pestaña con la copia de operaciones ─────────────────────────────────────────────────────────
+const COPIA = require(path.join(H.SITE, 'operations-copy.js'));
+const { prepararClonDeEscritura } = require(path.join(H.SITE, 'sources.js'));
+// stable-data: la hora real sólo fecha las fotos del almacén en memoria; ninguna prueba compara contra ella
+/** La foto de `dir` (un clon con commit) abierta en una carpeta, como la deja `bajar`: `{ carpeta, indice }`. */
+async function fotoDe(dir) {
+  const blobs = new Map();
+  const al = {
+    async get(n) { const b = blobs.get(n); return b ? { status: 200, cuerpo: b } : { status: 404, cuerpo: Buffer.alloc(0) }; },
+    async put(n, c) { blobs.set(n, Buffer.from(c)); return { status: 201 }; },
+    async list(p) { return { status: 200, blobs: [...blobs.keys()].filter((k) => k.startsWith(p)).map((name) => ({ name, modificado: Date.now() })) }; },
+    async del(n) { blobs.delete(n); return { status: 202 }; },
+  };
+  const s = await COPIA.subir({ repo: dir, almacen: al });
+  assert.strictEqual(s.ok, true, s.motivo);
+  const b = await COPIA.bajar({ almacen: al, dir: tmp('site-config-copia-') });
+  assert.strictEqual(b.ok, true, b.motivo);
+  return b;
+}
+const huellaDeCarpeta = (d) => { const out = []; const ir = (x) => { for (const e of fs.readdirSync(x, { withFileTypes: true }).sort((a, z) => a.name.localeCompare(z.name))) { const p = path.join(x, e.name); if (e.isDirectory()) ir(p); else out.push(`${path.relative(d, p)}:${crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')}`); } }; ir(d); return out.join('\n'); };
+const ENV_COPIA = { SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia', SITE_OPERATIONS_TOKEN: '' };
+
+test('T18 2.34-Config_VersionDelIndice @story-2.34 @ac-10 — con la copia, la versión de cada archivo sale del índice', async () => {
+  // 🔴 rojo: la carpeta de la foto no tiene git, y cada sección queda «ilegible» sin versión.
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
+  const { carpeta, indice } = await fotoDe(ops);
+  assert.ok(!fs.existsSync(path.join(carpeta, '.git')));
+  await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice }), env: ENV_COPIA }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const r = (await h.pedir('/api/config', { cookie: lead })).json;
+    const resp = r.secciones.find((x) => x.id === 'responsables');
+    assert.strictEqual(resp.estado, 'cargado', JSON.stringify(resp));
+    assert.strictEqual(resp.oid, indice.archivos['operations.json']);
+    assert.strictEqual(resp.oid, g(ops, 'rev-parse', 'HEAD:operations.json'), 'la misma versión que da git en el repo');
+    const par = r.secciones.find((x) => x.archivo === 'scripts/ci/product-parity.json');
+    if (par) assert.strictEqual(par.oid, indice.archivos['scripts/ci/product-parity.json']);
+  });
+});
+
+test('T19 2.34-Proponer_ContraMainFresco @story-2.34 @ac-10 — «Proponer» compara contra main recién traído y arma ahí', { skip: SIN_BACKEND }, async () => {
+  // 🔴 rojo: la propuesta compara contra la foto (de hasta 15 minutos atrás) y pisa un cambio mergeado en el medio.
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
+  let gh, r, dir;
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.reglas = [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase() }));
+    const { carpeta, indice } = await fotoDe(dir);
+    const antes = huellaDeCarpeta(carpeta);
+    const dirEscritura = path.join(tmp('site-config-esc-'), 'operaciones-escritura');
+    const escritura = () => prepararClonDeEscritura({ dir: dirEscritura, url: r.url });
+    await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice, escritura }), env: { ...ENV_COPIA, SITE_OPERATIONS_REPO: r.url, SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const abierta = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(abierta.proponer.operaciones.habilitado, true, JSON.stringify(abierta.proponer));
+      const s = abierta.secciones.find((x) => x.id === 'responsables');
+      const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+      // main cambió después de la copia: «recargá», ninguna rama
+      r.cambiar({ 'operations.json': ORG.formatJson(opsBase({ owners: { default: 'alguien@acme.example' } })) });
+      const p1 = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(p1.ok, false);
+      assert.match(p1.message, /el archivo cambió desde que lo abriste: recargá/);
+      assert.deepStrictEqual(r.empujes, [], 'cero ramas');
+      // con la versión de main de ahora, el pedido se arma sobre esa punta
+      const oidMain = g(dirEscritura, 'rev-parse', 'FETCH_HEAD:operations.json');
+      const p2 = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: oidMain })).json;
+      assert.strictEqual(p2.ok, true, p2.message);
+      assert.strictEqual(r.empujes.length, 1);
+      const sha = r.empujes[0].despues;
+      assert.strictEqual(g(dirEscritura, 'rev-parse', `${sha}^`), g(dirEscritura, 'rev-parse', 'FETCH_HEAD'), 'el commit va sobre la punta recién traída');
+      assert.strictEqual(huellaDeCarpeta(carpeta), antes, 'la carpeta de la foto no cambió');
+      assert.ok(!fs.existsSync(path.join(carpeta, '.git')), 'la escritura nunca toca la carpeta de la foto');
+    });
+  } finally { await cerrarTodos(r, gh); }
+});
+
+test('T20 2.34-Proponer_SinCredencialDescarga @story-2.34 @ac-10 @ac-16 — la copia sin credencial de escritura: valida y descarga', async () => {
+  // 🔴 rojo: con la copia, «Proponer» queda prendido sin credencial, o «Revisar» deja de validar.
+  const ops = clon({ 'operations.json': opsBase() });
+  const { carpeta, indice } = await fotoDe(ops);
+  await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice }), env: ENV_COPIA }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const r = (await h.pedir('/api/config', { cookie: lead })).json;
+    assert.strictEqual(r.proponer.operaciones.habilitado, false);
+    assert.match(r.proponer.operaciones.motivo, /sin identidad de escritura/);
+    const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+    assert.strictEqual(rev.texto, ORG.formatJson({ ...opsBase(), owners: { default: 'otro@acme.example' } }), 'el JSON validado, para descargar');
+    const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: r.secciones.find((x) => x.id === 'responsables').oid })).json;
+    assert.strictEqual(p.ok, false);
+    assert.match(p.message, /sin identidad de escritura/);
   });
 });

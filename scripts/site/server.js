@@ -64,7 +64,8 @@ const PROVEEDORES = (() => {
 const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OIDC_ISSUER',
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
-  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN'];
+  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
+  'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS'];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const NEEDS = new Set(['maintainer', 'person']);
@@ -127,10 +128,32 @@ function validarConfiguracion(env) {
   if (!env.SITE_OPERATIONS_REPO) falta('SITE_OPERATIONS_REPO', 'falta: la dirección https del repo de operaciones');
   else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
   cfg.operationsRepo = env.SITE_OPERATIONS_REPO;
-  if (env.SITE_OPERATIONS_TOKEN && env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_IDENTITY', 'va una sola credencial del repo de operaciones: el token o la identidad administrada');
-  else if (env.SITE_OPERATIONS_IDENTITY && env.SITE_OPERATIONS_IDENTITY !== 'managed') falta('SITE_OPERATIONS_IDENTITY', 'el único valor es managed');
-  else if (!env.SITE_OPERATIONS_TOKEN && !env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_TOKEN', 'falta la credencial del repo de operaciones: SITE_OPERATIONS_TOKEN o SITE_OPERATIONS_IDENTITY=managed');
-  cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
+  // de dónde se lee operaciones: `repo` (lo de siempre, un clon) o `copy` (la foto que deja un trabajo en
+  // un contenedor de almacenamiento). Leer de la copia es una elección explícita: sin la variable, el repo
+  const fuente = env.SITE_OPERATIONS_SOURCE === undefined || env.SITE_OPERATIONS_SOURCE === '' ? 'repo' : env.SITE_OPERATIONS_SOURCE;
+  if (fuente !== 'repo' && fuente !== 'copy') falta('SITE_OPERATIONS_SOURCE', 'los valores son repo (o ausente) y copy');
+  cfg.operationsSource = fuente;
+  cfg.operationsCopy = null;
+  if (fuente === 'copy') {
+    // con la copia, el permiso del repo sobra: una sola credencial de lectura, como hoy
+    for (const v of ['SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY']) if (env[v]) falta(v, 'sobra: con SITE_OPERATIONS_SOURCE=copy el sitio lee la copia, no el repo; sacala');
+    const m = /^([a-z0-9]{3,24})\/([a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,62})$/.exec(env.SITE_OPERATIONS_COPY || '');
+    if (!m) falta('SITE_OPERATIONS_COPY', 'falta o no tiene forma: <cuenta>/<contenedor> de la copia de operaciones');
+    const sas = env.SITE_OPERATIONS_COPY_SAS;
+    if (sas) {
+      const q = new URLSearchParams(String(sas).replace(/^\?/, ''));
+      const sp = q.get('sp') || '';
+      if (q.get('sr') !== 'c' || !sp.includes('r') || /[^rl]/.test(sp) || !q.get('se') || !q.get('sig')) falta('SITE_OPERATIONS_COPY_SAS', 'tiene que ser una SAS del contenedor (sr=c) sólo de lectura (sp=r o rl), con vencimiento');
+    }
+    if (m) cfg.operationsCopy = { cuenta: m[1], contenedor: m[2], credencial: sas ? { sas: String(sas).replace(/^\?/, '') } : { managed: true } };
+    cfg.operationsCredencial = null;
+  } else {
+    for (const v of ['SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS']) if (env[v]) falta(v, 'sobra: sólo se usa con SITE_OPERATIONS_SOURCE=copy');
+    if (env.SITE_OPERATIONS_TOKEN && env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_IDENTITY', 'va una sola credencial del repo de operaciones: el token o la identidad administrada');
+    else if (env.SITE_OPERATIONS_IDENTITY && env.SITE_OPERATIONS_IDENTITY !== 'managed') falta('SITE_OPERATIONS_IDENTITY', 'el único valor es managed');
+    else if (!env.SITE_OPERATIONS_TOKEN && !env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_TOKEN', 'falta la credencial del repo de operaciones: SITE_OPERATIONS_TOKEN o SITE_OPERATIONS_IDENTITY=managed');
+    cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
+  }
 
   if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad administrada');
   else if (env.SITE_MAILBOX_IDENTITY && env.SITE_MAILBOX_IDENTITY !== 'managed') falta('SITE_MAILBOX_IDENTITY', 'el único valor es managed');

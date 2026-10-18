@@ -1,0 +1,340 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * operations-copy.js — la copia de lo que el sitio lee del repo de operaciones, en un contenedor de almacenamiento.
+ *
+ * Por qué: leer el repo de operaciones pide una credencial de la plataforma de git (un permiso personal que vence, o una
+ * licencia para la identidad del sitio). El sitio ya lee un contenedor con su identidad administrada, sin token y sin
+ * licencia. Un trabajo con su propia identidad copia ahí lo que el sitio necesita, y el sitio lo lee de ahí.
+ *
+ * Dos órdenes:
+ *   subir   (el trabajo que copia) arma la foto con las rutas de `RUTAS` del commit de `main`, sube primero
+ *           `fotos/<commit>.tar.gz` y recién al final el índice `actual.json` (commit, hora, huella sha256 de la foto y la
+ *           versión de git de cada archivo). Si el índice ya nombra ese commit, no sube nada. Borra las fotos de más de 7
+ *           días, salvo la que nombra el índice. Si falla la foto, el índice no se toca y el sitio sigue con la anterior.
+ *   bajar   (el sitio) baja el índice; si el commit cambió, baja la foto, comprueba la huella, la valida entera (sin
+ *           enlaces, sin rutas absolutas ni `..`, sólo lo de `RUTAS`) y recién entonces la abre en una carpeta nueva.
+ *           Una foto que no pasa no se abre: el sitio sigue con la carpeta anterior.
+ *
+ * La foto es un tar.gz armado acá, sin el `tar` del sistema (la imagen del sitio no lo garantiza). La lista de rutas es una
+ * sola: la usan el trabajo que copia y el sitio, y una prueba la compara con lo que leen sources.js y la pestaña
+ * Configuración (scripts/tests/site-operations-copy.test.js).
+ *
+ * El almacenamiento (`{ get, put, list, del }`) lo da el módulo de la nube en cloud/ (`almacenDeCopia`): este archivo no
+ * nombra a ninguna. La credencial: `{ lineaDeOrdenes: true }` (el trabajo que copia, con la sesión de la línea de órdenes
+ * de esa nube), `{ managed: true }` (la identidad administrada del sitio) o `{ sas }` (una SAS de servicio de sólo leer y
+ * listar). Nunca se escribe en el registro.
+ *
+ * Uso:  node operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--dry-run]
+ */
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const zlib = require('zlib');
+const crypto = require('crypto');
+const { spawnSync } = require('child_process');
+
+/** Lo que el sitio lee del repo de operaciones. Una ruta que termina en `/` es la carpeta entera (se lee por listado). */
+const RUTAS = Object.freeze([
+  'operations.json',
+  'scripts/nightly/dashboard/sources.json',
+  'scripts/nightly/dashboard/declared.json',
+  'scripts/nightly/dependencies/repos.json',
+  'scripts/ci/product-parity.json',
+  'artifacts/tablero-del-arnes.html',
+  '.dashboard/',
+]);
+const INDICE = 'actual.json';
+const CARPETA_FOTOS = 'fotos/';
+const VIDA_FOTOS_MS = 7 * 86400000;
+
+const enRutas = (rel) => RUTAS.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
+/** Una ruta de la foto: relativa, con `/`, sin segmentos vacíos ni `.` ni `..`, y de las que el sitio lee. */
+function rutaSana(rel) {
+  if (typeof rel !== 'string' || !rel || rel.length > 255) return false;
+  if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel) || rel.includes('\\') || rel.includes('\0')) return false;
+  if (rel.split('/').some((s) => s === '' || s === '.' || s === '..')) return false;
+  return enRutas(rel);
+}
+
+// ── la foto (tar ustar + gzip) ─────────────────────────────────────────────────────────────────────────────────
+// un nombre que no entra en la cabecera ustar (100 + 155 bytes) va en una cabecera extendida PAX con su `path`; el
+// lector la acepta sólo inmediatamente antes de un archivo, y valida esa ruta igual que cualquier otra
+const PAX_MAX = 4096;
+function cabeceraTar(rel, tam, tipo = '0') {
+  const h = Buffer.alloc(512);
+  let nombre = rel; let prefijo = '';
+  if (Buffer.byteLength(rel) > 100) {
+    const corte = rel.lastIndexOf('/', rel.length - 1);
+    prefijo = rel.slice(0, corte); nombre = rel.slice(corte + 1);
+    if (corte < 0 || Buffer.byteLength(nombre) > 100 || Buffer.byteLength(prefijo) > 155) return null;
+  }
+  h.write(nombre, 0, 100, 'utf8');
+  h.write('0000644\0', 100); h.write('0000000\0', 108); h.write('0000000\0', 116);
+  h.write(`${tam.toString(8).padStart(11, '0')}\0`, 124);
+  h.write('00000000000\0', 136);
+  h.write(tipo, 156);
+  h.write('ustar\0', 257); h.write('00', 263);
+  if (prefijo) h.write(prefijo, 345, 155, 'utf8');
+  h.fill(' ', 148, 156);
+  let suma = 0; for (const b of h) suma += b;
+  h.write(`${suma.toString(8).padStart(6, '0')}\0 `, 148);
+  return h;
+}
+
+/** `[{ rel, cuerpo }]` → el tar.gz. */
+function armarFoto(archivos) {
+  const partes = [];
+  const relleno = (n) => Buffer.alloc((512 - (n % 512)) % 512);
+  for (const a of archivos) {
+    let h = cabeceraTar(a.rel, a.cuerpo.length);
+    if (!h) {
+      // el registro PAX: «<largo> path=<ruta>\n», donde <largo> cuenta el registro entero (con sus propios dígitos)
+      const resto = ` path=${a.rel}\n`;
+      let largo = Buffer.byteLength(resto) + 1;
+      while (String(largo).length + Buffer.byteLength(resto) !== largo) largo = String(largo).length + Buffer.byteLength(resto);
+      const pax = Buffer.from(`${largo}${resto}`, 'utf8');
+      if (pax.length > PAX_MAX) throw new Error(`la ruta ${a.rel.slice(0, 120)} es demasiado larga para la foto`);
+      partes.push(cabeceraTar('PaxHeader', pax.length, 'x'), pax, relleno(pax.length));
+      h = cabeceraTar('PaxHeader', a.cuerpo.length);
+    }
+    partes.push(h, a.cuerpo, relleno(a.cuerpo.length));
+  }
+  partes.push(Buffer.alloc(1024));
+  return zlib.gzipSync(Buffer.concat(partes), { level: 9 });
+}
+
+const cadena = (b, desde, largo) => { const s = b.subarray(desde, desde + largo); const fin = s.indexOf(0); return (fin === -1 ? s : s.subarray(0, fin)).toString('utf8'); };
+
+/** El tar.gz → `{ ok: true, archivos: [{ rel, cuerpo }] }` o `{ ok: false, motivo }`. Valida TODO antes de devolver nada. */
+function leerFoto(gz) {
+  let tar;
+  try { tar = zlib.gunzipSync(gz); } catch (e) { return { ok: false, motivo: `la foto no se puede descomprimir (${e.code || e.message})` }; }
+  const archivos = [];
+  const vistos = new Set();
+  let rutaPax = null;
+  for (let i = 0; i + 512 <= tar.length;) {
+    const h = tar.subarray(i, i + 512);
+    if (h.every((b) => b === 0)) break;
+    let suma = 0; for (let k = 0; k < 512; k++) suma += k >= 148 && k < 156 ? 32 : h[k];
+    if (parseInt(cadena(h, 148, 8).trim(), 8) !== suma) return { ok: false, motivo: 'la foto tiene una cabecera rota' };
+    const prefijo = cadena(h, 345, 155);
+    const tipo = String.fromCharCode(h[156] || 48);
+    const tam = parseInt(cadena(h, 124, 12).trim() || '0', 8);
+    if (tipo === 'x') {
+      // una cabecera PAX: sólo `path`, chica, y seguida de un archivo (dos seguidas, o una al final, no se abren)
+      if (rutaPax !== null) return { ok: false, motivo: 'la foto trae dos cabeceras extendidas seguidas: no se abre' };
+      if (!Number.isFinite(tam) || tam <= 0 || tam > PAX_MAX || i + 512 + tam > tar.length) return { ok: false, motivo: 'la foto trae una cabecera extendida que no se abre' };
+      const m = /^(\d+) path=([^\n]*)\n$/s.exec(tar.subarray(i + 512, i + 512 + tam).toString('utf8'));
+      if (!m || Number(m[1]) !== tam) return { ok: false, motivo: 'la foto trae una cabecera extendida que no es sólo una ruta: no se abre' };
+      rutaPax = m[2];
+      i += 512 + tam + ((512 - (tam % 512)) % 512);
+      continue;
+    }
+    const rel = rutaPax !== null ? rutaPax : (prefijo ? `${prefijo}/${cadena(h, 0, 100)}` : cadena(h, 0, 100));
+    rutaPax = null;
+    if (tipo !== '0') return { ok: false, motivo: `la foto trae algo que no es un archivo (${rel}, tipo ${tipo}): no se abre` };
+    if (!rutaSana(rel)) return { ok: false, motivo: `la foto trae una ruta que no se abre (${rel.slice(0, 120)})` };
+    if (vistos.has(rel)) return { ok: false, motivo: `la foto trae ${rel} dos veces` };
+    if (!Number.isFinite(tam) || tam < 0 || i + 512 + tam > tar.length) return { ok: false, motivo: `la foto está cortada en ${rel}` };
+    vistos.add(rel);
+    archivos.push({ rel, cuerpo: Buffer.from(tar.subarray(i + 512, i + 512 + tam)) });
+    i += 512 + tam + ((512 - (tam % 512)) % 512);
+  }
+  if (rutaPax !== null) return { ok: false, motivo: 'la foto termina en una cabecera extendida sin su archivo: no se abre' };
+  if (!archivos.length) return { ok: false, motivo: 'la foto no trae ningún archivo' };
+  return { ok: true, archivos };
+}
+
+// ── lo que entra a la foto, del commit de main ─────────────────────────────────────────────────────────────────
+function gitDe(repo, args) {
+  const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 << 20, windowsHide: true });
+  if (r.status !== 0) throw new Error(`git ${args[0]} falló en ${repo}: ${String(r.stderr || '').trim().slice(0, 200)}`);
+  return r.stdout;
+}
+
+/** `{ commit, archivos: [{ rel, cuerpo, oid }] }` del HEAD del clon. Sin enlaces simbólicos ni nada fuera del clon. */
+function juntar(repo, log = () => {}) {
+  const commit = gitDe(repo, ['rev-parse', 'HEAD']).trim();
+  const lista = gitDe(repo, ['ls-tree', '-r', '-z', 'HEAD', '--', ...RUTAS.map((r) => r.replace(/\/$/, ''))]).split('\0').filter(Boolean);
+  const elegidos = [];
+  for (const linea of lista) {
+    const m = /^(\d+) (\w+) ([0-9a-f]+)\t(.+)$/s.exec(linea);
+    if (!m) { log(`una línea de git ls-tree que no se entiende (${linea.slice(0, 120)}): no entra a la foto`); continue; }
+    const [, modo, tipo, oid, rel] = m;
+    if (tipo !== 'blob') { log(`${rel}: es un ${tipo} de git, no un archivo: no entra a la foto`); continue; }
+    if (modo === '120000') { log(`${rel}: es un enlace simbólico, no entra a la foto`); continue; }
+    if (!rutaSana(rel)) { log(`${rel}: ruta que no entra a la foto`); continue; }
+    elegidos.push({ rel, oid });
+  }
+  // 🔴 el contenido sale de los OBJETOS del commit, nunca del árbol de trabajo: un cambio sin commitear en el clon (o en
+  //    un agente que reusa la carpeta) no puede publicarse con el sello de `main`
+  const archivos = [];
+  if (elegidos.length) {
+    const r = spawnSync('git', ['-C', repo, 'cat-file', '--batch'], { input: elegidos.map((e) => e.oid).join('\n') + '\n', maxBuffer: 1 << 30, windowsHide: true });
+    if (r.status !== 0) throw new Error(`git cat-file falló en ${repo}: ${String(r.stderr || '').trim().slice(0, 200)}`);
+    const out = r.stdout;
+    let i = 0;
+    for (const e of elegidos) {
+      const fin = out.indexOf(0x0a, i);
+      const cab = out.subarray(i, fin).toString('utf8').split(' ');
+      if (cab[0] !== e.oid || cab[1] !== 'blob') throw new Error(`git cat-file no devolvió el archivo ${e.rel} (${cab.join(' ').slice(0, 120)})`);
+      const tam = Number(cab[2]);
+      archivos.push({ rel: e.rel, oid: e.oid, cuerpo: Buffer.from(out.subarray(fin + 1, fin + 1 + tam)) });
+      i = fin + 1 + tam + 1;
+    }
+  }
+  return { commit, archivos };
+}
+
+// ── el almacenamiento ──────────────────────────────────────────────────────────────────────────────────────────
+/** Lo que contesta el almacenamiento, en un código del sitio. */
+function codigoDe(r) {
+  if (!r || r.error) return 'sin_red';
+  if (r.status === 404) return 'sin_foto';
+  if (r.status === 401 || r.status === 403) return 'sin_permiso';
+  return 'sin_red';
+}
+
+// ── subir ──────────────────────────────────────────────────────────────────────────────────────────────────────
+/** Borra las fotos de más de 7 días, salvo la que nombra el índice. `{ borradas }`. */
+async function borrarViejas({ almacen, ahora = Date.now, log = () => {} }) {
+  const idx = await almacen.get(INDICE);
+  let actual = null;
+  if (idx.status === 200) {
+    try { actual = JSON.parse(idx.cuerpo).commit; } catch { log('el índice de la copia no se lee: no se borra ninguna foto vieja (sin saber cuál nombra, podría ser ésa)'); return { borradas: [] }; }
+  }
+  const l = await almacen.list(CARPETA_FOTOS);
+  if (l.error || l.status !== 200) { log(`no se pudo listar las fotos viejas (${codigoDe(l)}): quedan para la próxima`); return { borradas: [] }; }
+  if (l.truncado) log('el listado de fotos se cortó antes del final: las que no se listaron quedan para la próxima');
+  const borradas = [];
+  for (const b of l.blobs) {
+    if (actual && b.name === `${CARPETA_FOTOS}${actual}.tar.gz`) continue;
+    if (!Number.isFinite(b.modificado)) { log(`${b.name}: sin fecha legible, no se borra`); continue; }
+    if (ahora() - b.modificado <= VIDA_FOTOS_MS) continue;
+    const r = await almacen.del(b.name);
+    if (r.error || (r.status !== 202 && r.status !== 200 && r.status !== 204)) log(`no se pudo borrar ${b.name} (${codigoDe(r)})`);
+    else borradas.push(b.name);
+  }
+  return { borradas };
+}
+
+/** `{ ok, subido, motivo, commit, bytes }`. Nunca deja un índice que nombre una foto que no se subió. */
+async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun = false }) {
+  let j;
+  try { j = juntar(repo, log); } catch (e) { return { ok: false, motivo: e.message }; }
+  if (!j.archivos.length) return { ok: false, motivo: 'el clon no trae ninguna de las rutas que lee el sitio' };
+  // sin operations.json el sitio no tiene configuración: una foto así no se publica (el sitio sigue con la anterior)
+  if (!j.archivos.some((a) => a.rel === 'operations.json')) return { ok: false, motivo: 'el commit de main no trae operations.json: no se sube una foto sin la configuración del sitio' };
+  let foto;
+  try { foto = armarFoto(j.archivos); } catch (e) { return { ok: false, motivo: e.message }; }
+  const huella = crypto.createHash('sha256').update(foto).digest('hex');
+  const indice = { version: 1, commit: j.commit, hora: new Date(ahora()).toISOString(), huella, bytes: foto.length, archivos: Object.fromEntries(j.archivos.map((a) => [a.rel, a.oid])) };
+  if (dryRun) return { ok: true, subido: false, motivo: `prueba: ${j.archivos.length} archivo(s), ${foto.length} bytes, commit ${j.commit.slice(0, 12)}`, commit: j.commit, bytes: foto.length, indice };
+  const previo = await almacen.get(INDICE);
+  if (previo.error || (previo.status !== 200 && previo.status !== 404)) return { ok: false, motivo: `no se pudo leer el índice de la copia (${codigoDe(previo)}${previo.status ? ` ${previo.status}` : ''})` };
+  if (previo.status === 200) {
+    let p = null; try { p = JSON.parse(previo.cuerpo); } catch { /* ilegible: se reemplaza */ }
+    if (p && p.commit === j.commit) {
+      // al día sólo si la foto que nombra el índice está: si se borró, se vuelve a subir (y el índice con ella)
+      const l = await almacen.list(`${CARPETA_FOTOS}${j.commit}.tar.gz`);
+      const esta = !l.error && l.status === 200 && l.blobs.some((b) => b.name === `${CARPETA_FOTOS}${j.commit}.tar.gz`);
+      if (l.error || l.status !== 200) return { ok: false, motivo: `no se pudo comprobar que la foto de ${j.commit.slice(0, 12)} siga en el contenedor (${codigoDe(l)})` };
+      if (esta) {
+        const b = await borrarViejas({ almacen, ahora, log });
+        if (b.borradas.length) log(`borradas ${b.borradas.length} foto(s) de más de 7 días`);
+        return { ok: true, subido: false, motivo: `la copia ya está al día con ${j.commit.slice(0, 12)}: no se sube nada`, commit: j.commit };
+      }
+      log(`el índice nombra ${j.commit.slice(0, 12)} y su foto no está: se vuelve a subir`);
+    }
+  }
+  const f = await almacen.put(`${CARPETA_FOTOS}${j.commit}.tar.gz`, foto, 'application/gzip');
+  if (f.error || (f.status !== 201 && f.status !== 200)) return { ok: false, motivo: `no se pudo subir la foto (${f.error ? f.error.code || f.error.message : f.status}): el índice queda como estaba` };
+  const i = await almacen.put(INDICE, Buffer.from(`${JSON.stringify(indice)}\n`), 'application/json');
+  if (i.error || (i.status !== 201 && i.status !== 200)) return { ok: false, motivo: `la foto se subió y el índice no (${i.error ? i.error.code || i.error.message : i.status}): el sitio sigue con la anterior` };
+  const b = await borrarViejas({ almacen, ahora, log });
+  if (b.borradas.length) log(`borradas ${b.borradas.length} foto(s) de más de 7 días`);
+  return { ok: true, subido: true, motivo: `subida la foto de ${j.commit.slice(0, 12)}: ${j.archivos.length} archivo(s), ${foto.length} bytes`, commit: j.commit, bytes: foto.length };
+}
+
+// ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * `{ ok: true, cambio, carpeta, indice }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, carpeta }` de la bajada
+ * anterior. Con el mismo commit no baja la foto. Con uno nuevo, la abre en `<dir>/copia-<commit>-<azar>` y recién entonces
+ * borra la carpeta anterior: quien lee nunca ve una mezcla.
+ */
+async function bajar({ almacen, dir, previo = null, log = () => {} }) {
+  const r = await almacen.get(INDICE);
+  if (r.error || r.status !== 200) return { ok: false, codigo: codigoDe(r), motivo: `el índice de la copia no se pudo bajar (${r.error ? r.error.code || r.error.message : r.status})` };
+  let indice;
+  try { indice = JSON.parse(r.cuerpo); } catch { return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia no es JSON' }; }
+  if (!indice || typeof indice.commit !== 'string' || !/^[0-9a-f]{7,64}$/.test(indice.commit) || !/^[0-9a-f]{64}$/.test(String(indice.huella)) || Number.isNaN(Date.parse(indice.hora))) {
+    return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia no tiene commit, hora y huella' };
+  }
+  // la versión de cada archivo: sin ella «Proponer» no sabe si el archivo cambió (Configuración lo pide)
+  const arch = indice.archivos;
+  if (!arch || typeof arch !== 'object' || Array.isArray(arch) || !Object.keys(arch).length || !Object.entries(arch).every(([k, v]) => rutaSana(k) && typeof v === 'string' && /^[0-9a-f]{40,64}$/.test(v))) {
+    return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia no trae la versión de cada archivo' };
+  }
+  if (previo && previo.commit === indice.commit && previo.carpeta && fs.existsSync(previo.carpeta)) return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
+  const f = await almacen.get(`${CARPETA_FOTOS}${indice.commit}.tar.gz`);
+  if (f.error || f.status !== 200) return { ok: false, codigo: f.status === 404 ? 'ilegible' : codigoDe(f), motivo: `la foto que nombra el índice no se pudo bajar (${f.error ? f.error.code || f.error.message : f.status})` };
+  if (crypto.createHash('sha256').update(f.cuerpo).digest('hex') !== indice.huella) return { ok: false, codigo: 'ilegible', motivo: 'la foto no tiene la huella que dice el índice: no se abre' };
+  const foto = leerFoto(f.cuerpo);
+  if (!foto.ok) return { ok: false, codigo: 'ilegible', motivo: foto.motivo };
+  fs.mkdirSync(dir, { recursive: true });
+  const abriendo = fs.mkdtempSync(path.join(dir, '.abriendo-'));
+  try {
+    for (const a of foto.archivos) {
+      const destino = path.join(abriendo, a.rel);
+      fs.mkdirSync(path.dirname(destino), { recursive: true });
+      fs.writeFileSync(destino, a.cuerpo);
+    }
+    const carpeta = path.join(dir, `copia-${indice.commit.slice(0, 12)}-${crypto.randomBytes(3).toString('hex')}`);
+    fs.renameSync(abriendo, carpeta);
+    log(`copia de operaciones: abierta la foto de ${indice.commit.slice(0, 12)} (${foto.archivos.length} archivo(s))`);
+    // la anterior se borra DESPUÉS: si el borrado falla, la foto nueva ya está abierta y es la que vale
+    if (previo && previo.carpeta && previo.carpeta !== carpeta && path.dirname(previo.carpeta) === dir) {
+      try { fs.rmSync(previo.carpeta, { recursive: true, force: true }); } catch (e) { log(`copia de operaciones: la carpeta anterior no se pudo borrar (${e.code || e.message}); queda para la próxima`); }
+    }
+    return { ok: true, cambio: true, carpeta, indice };
+  } catch (e) {
+    try { fs.rmSync(abriendo, { recursive: true, force: true }); } catch { /* lo dice el motivo de abajo */ }
+    return { ok: false, codigo: 'ilegible', motivo: `la foto no se pudo abrir en el disco (${e.code || e.message})` };
+  }
+}
+
+// ── la línea de órdenes (el trabajo que copia) ─────────────────────────────────────────────────────────────────
+/** El almacenamiento de la nube que sabe guardar la copia (un módulo de cloud/ con `almacenDeCopia`). */
+function almacenDeLaNube(opciones) {
+  const nube = require('./sources.js').nubes().find((n) => typeof n.almacenDeCopia === 'function');
+  if (!nube) throw new Error('ningún módulo de cloud/ sabe guardar la copia de operaciones');
+  return nube.almacenDeCopia(opciones);
+}
+
+async function main(argv) {
+  const [orden, ...resto] = argv;
+  const op = (k) => { const i = resto.indexOf(k); return i >= 0 ? resto[i + 1] : null; };
+  if (orden !== 'subir' || !op('--repo') || (!resto.includes('--dry-run') && (!op('--account') || !op('--container')))) {
+    process.stderr.write('uso: operations-copy.js subir --repo <clon de main> --account <c> --container <k> [--dry-run]\n');
+    return 2;
+  }
+  const log = (l) => process.stdout.write(`[copia] ${l}\n`);
+  if (resto.includes('--dry-run')) {
+    const r = await subir({ repo: op('--repo'), almacen: null, log, dryRun: true });
+    log(r.motivo);
+    return r.ok ? 0 : 1;
+  }
+  let almacen;
+  try { almacen = almacenDeLaNube({ cuenta: op('--account'), contenedor: op('--container'), credencial: { lineaDeOrdenes: true }, urlBase: op('--url-base') }); }
+  catch (e) { process.stderr.write(`[copia] ${e.message}\n`); return 1; }
+  const r = await subir({ repo: op('--repo'), almacen, log });
+  (r.ok ? process.stdout : process.stderr).write(`[copia] ${r.motivo}\n`);
+  return r.ok ? 0 : 1;
+}
+
+module.exports = { RUTAS, INDICE, rutaSana, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas };
+
+if (require.main === module) {
+  main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`[copia] falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });
+}

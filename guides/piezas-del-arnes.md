@@ -610,6 +610,10 @@ la configuración e instalarlo.
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
 
+**La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
+un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`) y el sitio lo lee con su identidad,
+sin permiso del repo; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`.
+
 ## guides/integrations/ado-cola-y-listados.md
 
 El porqué del bloque de Azure DevOps que se carga en cada sesión (`claude-md-blocks/ado-runs-list-lag.md`): sus **seis reglas** —un listado atrasado no prueba que el trigger no disparó, el listado no es la cola, cancelar la corrida no saca su pedido de trabajo, un vigilante avisa y no re-encola, una salida vacía puede ser un `az` que falló, y `succeeded` habla de staging— con sus comandos. **Poda del 2026-09-06**: el bloque pesaba 9.979 bytes (el 27 % del `CLAUDE.md`) y bajó a **4.134 sin perder una regla**; el `CLAUDE.md` completo pasó de 36.880 a **31.035**. Verificado frase por frase contra la versión anterior antes de pisarla. 🔴 Un bloque que nadie mide es también un bloque que nadie relee: la poda encontró una regla ya retirada que el bloque seguía repitiendo en cada sesión.

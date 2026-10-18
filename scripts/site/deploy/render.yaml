@@ -45,6 +45,14 @@ services:
         sync: false
       - key: SITE_MAILBOX_SAS
         sync: false
+      # Leer operaciones de la copia en un contenedor (la guía, «De dónde lee operaciones»): SITE_OPERATIONS_SOURCE=copy,
+      # la cuenta/contenedor y una SAS de sólo lectura; con la copia, SITE_OPERATIONS_TOKEN queda vacía. Vacías: el repo.
+      - key: SITE_OPERATIONS_SOURCE
+        sync: false
+      - key: SITE_OPERATIONS_COPY
+        sync: false
+      - key: SITE_OPERATIONS_COPY_SAS
+        sync: false
       # Las de la pestaña Configuración, apagadas por defecto: dejalas vacías salvo que decidas prenderlas.
       - key: SITE_OPERATIONS_WRITE_TOKEN
         sync: false
