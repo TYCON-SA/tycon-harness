@@ -454,6 +454,14 @@ const paginaSinRol = (ctx) => {
     `<p>${esc(T('sinRol.otraAntes'))}<a href="/auth/login?otra=1">${esc(T('sinRol.otraEnlace'))}</a>${esc(T('sinRol.otraDespues'))}</p>`,
   ].join(''));
 };
+// la vuelta de Salir: no redirige sola (con una sola puerta, entrar de nuevo sería automático) y ofrece las dos entradas
+const paginaSaliste = (ctx = {}) => {
+  const idioma = idiomaDe(ctx);
+  return layout({ idioma, url: ctx.url }, t(idioma, 'saliste.titulo'), [
+    `<p class="lede">${esc(t(idioma, 'saliste.texto'))}</p>`,
+    `<ul class="lista"><li><a href="/auth/login">${esc(t(idioma, 'saliste.entrarDeNuevo'))}</a></li><li><a href="/auth/login?otra=1">${esc(t(idioma, 'saliste.otraCuenta'))}</a></li></ul>`,
+  ].join(''));
+};
 const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien, idioma: idiomaDe(ctx), url: ctx.url }, t(idiomaDe(ctx), 'sinMantenedores.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'sinMantenedores.texto'))}</p>`);
 const paginaFrenado = ({ desde, idioma = POR_DEFECTO, url = null }) => layout({ idioma, url }, t(idioma, 'frenado.titulo'), `<p class="lede">${esc(t(idioma, 'frenado.texto', { desde: hora(desde, idioma) }))}</p>`);
 // se recarga sola cada 5 segundos hasta que el sitio tenga lo que necesita
@@ -462,6 +470,6 @@ const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(
 module.exports = {
   hora, FRASES, frasesEn, fraseDe, conFecha, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
   paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
-  paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
+  paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSaliste, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
   idiomaDe, selectorDeIdioma,
 };

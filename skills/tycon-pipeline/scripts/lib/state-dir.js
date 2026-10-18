@@ -12,9 +12,14 @@ const path = require('path');
 const TYCON_HOME_LIB = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
 const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null;
 
-/** La carpeta del estado (hoy, ~/.claude/.tycon-pipeline). */
-function stateDir(home) {
-  return tyconHome ? tyconHome.stateDir(home || os.homedir()) : path.join(home || os.homedir(), '.claude', '.tycon-pipeline');
+/** La carpeta de Claude Code en el HOME (la que tycon-home.js nombra; el respaldo es la ruta de siempre). */
+function claudeDir(home) {
+  return tyconHome ? tyconHome.claudeDir(home || os.homedir()) : path.join(home || os.homedir(), '.claude');
 }
 
-module.exports = { stateDir };
+/** La carpeta del estado (hoy, ~/.claude/.tycon-pipeline). */
+function stateDir(home) {
+  return tyconHome ? tyconHome.stateDir(home || os.homedir()) : path.join(claudeDir(home), '.tycon-pipeline');
+}
+
+module.exports = { stateDir, claudeDir };

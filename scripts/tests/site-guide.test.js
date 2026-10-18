@@ -45,10 +45,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // día» de cada receta, Kubernetes y otras nubes, y una red cerrada); y lo que pidió una instalación desde cero
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
-// SITE_OPERATIONS_REPO sigue siendo obligatoria; y, en «Por dentro», la tabla de textos en dos idiomas.
+// SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
+// inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas.
 const HUELLA_INSTALACION = {
-  es: '6429e51f49fb60cc847595c6750fd21276267de3e62c9765d1dd06a15b352f5d',
-  en: 'd12b8a130c1972f84ce1d59480f8fde4e9ef7822505dc929154c3abf4866ee0a',
+  es: '87fffb6c7e7b53286f22ec0f457f8efa37e96800432ec27bccdea5ae8522f262',
+  en: '1ece4af500e42c0e65260646f0b9899ddbf0d121610b72643000f4f4a8f93c57',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

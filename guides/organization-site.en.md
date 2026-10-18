@@ -72,6 +72,11 @@ anything on their machine to see it.
 Configuration tab proposes, and those go in only when someone approves them. It does not run pipelines, merge, deploy or
 touch any machine. What it shows is, at most, as old as the last night snapshot or the last download of the mailbox.
 
+**It is optional.** The harness works fully without the site: the configuration lives in the profile and operations
+repos, and without the site it is changed with a pull request to each one. What each case needs (a solo dev or a team,
+with or without the site), where each setting lives and what each machine can override, in the harness reference:
+`getting-started/reference.md`, "With or without the site".
+
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
@@ -234,11 +239,20 @@ is: **up to date** (*al día*), **to confirm** (*por confirmar*), **not configur
 
 **The cycle of a change.** Nothing is written directly. You change a section's fields and press **Review changes**
 (*Revisar cambios*): the site validates the change with the same rules the harness uses and says "Reviewed: it is well
-written" (*Revisado: está bien escrito*) or what is wrong. Then **Propose the change** (*Proponer el cambio*) shows
-today's file next to the file after the change, to look at it before confirming. The file is written in a format with
-braces and quotes; you do not need to understand all of it: check that the only difference between the two sides is
-what you changed (each side scrolls to show the whole file). **Confirm and propose** (*Confirmar y
+written" (*Revisado: está bien escrito*) or what is wrong. Then **Propose the change** (*Proponer el cambio*) shows,
+at the top, a plain-language summary of what changes ("You add x@acme.example as dev in Who gets into the site",
+"You change "Character limit" from 1300 to 1500") and, below it, only the lines that change, with three lines of
+context: what goes out is red with a `−`, what comes in is green with a `+` (the sign is there so it reads without
+relying on color), and the unchanged stretches are folded into "… N unchanged lines". **See the whole files** (*Ver los
+archivos enteros*) opens both files in full. The file is written in a format with braces and quotes; you do not need to
+understand it: check that the only thing that changes is what you changed. **Confirm and propose** (*Confirmar y
 proponer*) opens a change request (a pull request) in that section's repo, and the section shows the link to the request.
+It is sent only once: while the site works, the section's buttons and fields are switched off, and each proposal
+carries its own mark, so a double click does not create two requests. If the response is cut off (the network, a site
+restart in the middle of the request), the page does not show the error right away: it checks up to three times, after
+2, 5 and 10 seconds, whether the request for that proposal exists, and shows its link if it does. Only when it finds
+nothing does it show the error, which asks you to reload and check whether the request was opened before repeating it.
+The page never resends the proposal by itself.
 Someone on the team reviews it and merges it. The site picks up the change on the **next refresh** (every 15 minutes, if
 the organization did not choose another interval). **Download** (*Descargar*) downloads the changed file, for when the
 site cannot propose: you hand it to whoever has access to that repo, who uploads it with a change request.
@@ -275,6 +289,10 @@ The sections, in the order of the screen:
   repo, the profile repo and the mailbox again more often while it is awake: more reads to the cloud, which cost a bit
   more on an installation billed by use. It does not keep it awake: asleep it reads nothing, and on waking it reads
   everything.
+- **How often the site rereads its data** (`site.refresh_minutes`, also in "Who gets into the site"): how many minutes
+  pass before the site reads again the configuration (this operations repo), the runs mailbox and the team profile. It
+  goes from 5 to 120 minutes; if you do not declare it, it is 15. It does not install versions: that is "How the site
+  updates", in Installation and updating.
 - **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
   by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
@@ -535,6 +553,17 @@ your own machine, for trying it out. The same goes for the operations repo addre
    docker buildx build -f scripts/site/Dockerfile -t sitio:local .
    ```
 
+   **Or pull the image that is already published**, with nothing to build: `ghcr.io/<organization>/<repo>` (the organization and name of the harness public repo, in lowercase; the exact address is on the repo page, under "Packages"), with the
+   `stable` tag (the latest one that passed the scan and the signature) or with a version, `v<number>`, the same one the
+   site shows (for example `v2026.10.18.21`). There is never a `latest` tag.
+
+   ```bash
+   docker pull ghcr.io/<organization>/<repo>:stable
+   ```
+
+   The steps that follow work with either one: with the published image, replace `sitio:local` with
+   `ghcr.io/<organization>/<repo>:stable` (or the version you chose) in the `docker run`.
+
 2. **Start it**, with the port only on your machine and a volume for its disk:
 
    ```bash
@@ -621,16 +650,25 @@ enough.
 - **`google` and `github`** are limited to the organization: the domain (`SITE_AUTH_ALLOWED_DOMAINS`) or the GitHub
   organization (`SITE_AUTH_GITHUB_ORG`).
 - **`microsoft`, one tenant** (`SITE_AUTH_MICROSOFT_ACCOUNTS=organization`, the default): the accounts of the
-  organization's directory and its guests get in. `SITE_OIDC_ISSUER` is the tenant's.
+  organization's directory and its guests get in. `SITE_OIDC_ISSUER` is the tenant's. **This is the choice
+  when everyone who signs in is a member or guest of the directory:** a single door, your own tenant's issuer with
+  `SITE_AUTH_MICROSOFT_ACCOUNTS=organization`.
 - **`microsoft`, any account** (`SITE_AUTH_MICROSOFT_ACCOUNTS=any`): work or school accounts from any organization get
-  in, without inviting them to the directory. `SITE_OIDC_ISSUER` is `https://login.microsoftonline.com/common/v2.0` and
+  in, without inviting them to the directory. `SITE_OIDC_ISSUER` is `https://login.microsoftonline.com/organizations/v2.0` and
   `SITE_AUTH_MICROSOFT_TENANT` is the organization's tenant: its guests get in through it, with their own button. You get
   in only with an email verified by your organization. Microsoft personal accounts signing in directly are not accepted
-  yet: it could not be checked that their email is reliable (a guest with a personal account uses the guests' button).
+  yet: it could not be checked that their email is reliable (a guest with a personal account uses the guests' button). Use this form only to accept any work account from other
+  organizations, with the `organizations` issuer; never `common`. The measured case: an email that exists both as a
+  work account and as a personal account lands on the personal account with `common`, and on the work account of another
+  tenant with `organizations`. With neither does it reach the account in your own directory.
 - **The risk, plainly:** with "any account", the first door is open to any Microsoft account, and all the control is in
   the site's list. Whoever is not in the list sees a page with no data; no request answers them with data. That is why
   the list is guarded like a password: each change is a request with who proposed it and who approved it.
 - The site gets no permission on anybody's directory: it does not assign, invite or read users.
+- **Signing out.** The **Sign out** button ends the session and leads to a "You signed out" page, with "Sign in again"
+  and "Sign in with another account". With a single door, the site does not sign you back in by itself: the page waits
+  for your choice. Behind the platform's lock, the way back goes first through that lock's own sign-out. Signing out of
+  the Microsoft session stays off: it would also sign you out of the portal and of your organization's repos.
 
 ### The probes
 
@@ -757,6 +795,11 @@ there is something new:
   tell the updater which version is running, and without knowing it, it installs nothing (it never downgrades): the
   result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
   then on, the automatic mode carries on by itself.
+- **A one-time step when moving to a version with the "You signed out" page.** If the site sits behind the platform's
+  lock (the cloud's built-in sign-in), the "You signed out" page and what it loads have to stay outside that lock. The
+  updater changes the image, not the lock's configuration: without this step, after "Sign out" the lock lets the person
+  back in without asking, and nobody notices. It is done once, by hand, with the command in your environment's recipe
+  (under its "Sign-in"). New installations already include it.
 
 ### The two ways to start it
 
@@ -810,7 +853,9 @@ key. The profile repo is part of the normal installation: its address goes in `p
 Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
-  site's own, which decides with its list. `/healthz` and `/livez` stay outside the lock. `microsoftAccounts` in the
+  site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, after
+  "Sign out" the lock sends the person to Microsoft, which lets them back in without asking). A site already installed is fixed once:
+  `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. `microsoftAccounts` in the
   configuration file picks the mode:
   - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
     one by one in the portal (assigning a group needs an Entra ID P1/P2 license).

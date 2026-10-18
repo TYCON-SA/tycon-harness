@@ -134,6 +134,8 @@ const path = require('path');
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
 const { resolveSessionId } = require('./lib/session-id.js');
+// la carpeta de Claude Code (la de sus archivos de sesión) la sabe state-dir.js, con el mismo respaldo
+const { claudeDir: claudeDirOf } = require('./lib/state-dir.js');
 
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
@@ -1733,8 +1735,7 @@ function cmdSetFlag(flag, valRaw) {
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
 }
 
-// Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"` (`--motivo` llega
-// traducido por legacy-names). Sin motivo no se
+// Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"`. Sin motivo no se
 // escribe nada (nadie sabría después por qué se saltó el pase). Forzar a liviana una story que declara código queda en
 // bypass.log: es apagar el pase adversarial a sabiendas.
 function cmdSetSize(args) {
@@ -2699,11 +2700,11 @@ function cmdClearSession(sid) {
   process.stdout.write(`cleared: ${safe}.json\n`);
 }
 
-// ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (~/.claude/sessions/<pid>.json, con su
+// ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (la carpeta de sesiones, <pid>.json, con su
 // sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
 // sesión, así que no se la puede dar por muerta: se devuelve cuál.
 function sessionLiveness(sid) {
-  const dir = path.join(os.homedir(), '.claude', 'sessions');
+  const dir = path.join(claudeDirOf(os.homedir()), 'sessions');
   let names = [];
   try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
     if (e.code === 'ENOENT') return { alive: false };

@@ -1,8 +1,9 @@
 'use strict';
 // work-in-progress.test.js — the /wip table: work in progress on this machine, built from toy state folders.
 // Nothing here reads the real HOME: every folder comes in by argument.
-// stable-data: T21 reads the clock only to measure how long a hung query takes, and the program's cap for reading
-// repos reads it too (T21 sets it below zero); T23's commit fixes its dates and turns maintenance off; dates come in by --now.
+// stable-data: T22 reads the clock only to measure how long a hung query takes, and the program's cap for reading
+// repos reads it too (T22 sets it below zero); T24's commit fixes its dates and turns maintenance off; dates come in
+// by --now.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -276,6 +277,18 @@ test('T18 Wip_AdhocFechaDeRespaldo: lastTouch ilegible usa declaredAt', () => {
   assert.match(run(m).text, /ad-hoc «fecha rota» · bad00000 · limpiar: .*adhoc clear-orphan bad00000-c/);
 });
 
+test('T19 SesionesPorDefecto_LaCarpetaDeClaudeCode: sin --sessions-dir lee las sesiones de la carpeta de Claude Code del HOME', () => {
+  const m = toyMachine();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wip-home-'));
+  const sessions = path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  marker(m, 'dddddddd-4', { storyId: '9.4', storyPath: story(m.root, '9.4', 'Por defecto'), stepsCompleted: [0], stepsPending: [1] });
+  fs.writeFileSync(path.join(sessions, 'dddddddd-4.json'), JSON.stringify({ pid: process.pid, sessionId: 'dddddddd-4', status: 'busy', name: 'la-del-home' }));
+  const r = buildWip({ home, stateDir: m.state, now: NOW });
+  assert.ok(r.rows.some((x) => x.session === 'la-del-home'), JSON.stringify(r.rows));
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 // ── Entering the repos: the pipeline closed step 8 and the story waits for its pull requests ─────────────────────
 
 function gitRepo(root, name, branch, origin) {
@@ -298,7 +311,7 @@ const GH = 'https://github.com/acme/x.git';
 const at = (user, rest) => `${user}${'@'}${rest}`;
 const AZ = `https://${at('acme', 'dev.azure.com')}/acme/Proyecto%20Uno/_git/y`;
 
-test('T19 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fila y la sesión ocupada', () => {
+test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fila y la sesión ocupada', () => {
   const m = toyMachine();
   const repo = gitRepo(m.root, 'x', 'story/x', GH);
   entering(m, 'ent00000-1', { repoPath: repo });
@@ -314,7 +327,7 @@ test('T19 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fi
   for (const words of ['Entrando a los repos', 'GitHub', 'Azure DevOps', 'sólo lee']) assert.ok(command.includes(words), words);
 });
 
-test('T20 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y la sesión está libre', () => {
+test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y la sesión está libre', () => {
   const m = toyMachine();
   entering(m, 'ent00000-2', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
   const r = run(m, { prs: () => ({ prs: [] }) });
@@ -323,7 +336,7 @@ test('T20 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y
   assert.deepStrictEqual(r.unreadable, []);
 });
 
-test('T21 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa del tope se dice y la fila sale igual', { skip: process.platform === 'win32' ? 'el gh falso es un script de node con #!, que Windows no corre' : false }, async () => {
+test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa del tope se dice y la fila sale igual', { skip: process.platform === 'win32' ? 'el gh falso es un script de node con #!, que Windows no corre' : false }, async () => {
   const m = toyMachine();
   entering(m, 'ent00000-3', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
   const r = run(m, { prs: () => ({ error: 'gh: no está instalado' }) });
@@ -368,7 +381,7 @@ test('T21 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa de
   assert.match((await queryAll(q, withBin(`${denied}${path.delimiter}${process.env.PATH}`)))[0].error, /gh: gh auth login required/);
 });
 
-test('T22 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno con su pedido', () => {
+test('T23 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno con su pedido', () => {
   const m = toyMachine();
   const x = gitRepo(m.root, 'x', 'story/x', GH);
   const y = gitRepo(m.root, 'y', 'story/x', AZ);
@@ -384,7 +397,7 @@ test('T22 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno
   assert.deepStrictEqual(asked.sort(), ['vendor', 'x']);
 });
 
-test('T23 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no es repo no se consultan', () => {
+test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no es repo no se consultan', () => {
   const m = toyMachine();
   const loose = path.join(m.root, 'suelta');
   fs.mkdirSync(loose);
@@ -405,7 +418,7 @@ test('T23 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no 
   assert.deepStrictEqual([d.rows, d.unreadable], [[], []]);
 });
 
-test('T24 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión muerta, nada cambia', () => {
+test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión muerta, nada cambia', () => {
   const m = toyMachine();
   const repo = gitRepo(m.root, 'x', 'story/x', GH);
   marker(m, 'ent00000-6', { storyId: '5.2', storyPath: story(m.root, '5.2', 't'), repoPath: repo, stepsCompleted: [0, 4], stepsPending: [], lastTouch: NOW });
@@ -441,7 +454,7 @@ function fakeBin(root, name, body) {
 const { queryAll } = require(WIP);
 const onWindows = process.platform === 'win32' ? 'los gh/az falsos son scripts de node con #!, que Windows no corre' : false;
 
-test('T25 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el repo de origin', { skip: onWindows }, () => {
+test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el repo de origin', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-8', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
   const bin = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false }]));`);
@@ -452,7 +465,7 @@ test('T25 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el re
   assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
 });
 
-test('T26 ConsultaReal_AzFalso: el programa le pregunta a az con la organización, el proyecto y el repo', { skip: onWindows }, () => {
+test('T27 ConsultaReal_AzFalso: el programa le pregunta a az con la organización, el proyecto y el repo', { skip: onWindows }, () => {
   const m = toyMachine();
   entering(m, 'ent00000-9', { repoPath: gitRepo(m.root, 'y', 'story/x', AZ) });
   const bin = fakeBin(m.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false }]));`);
@@ -472,7 +485,7 @@ test('T26 ConsultaReal_AzFalso: el programa le pregunta a az con la organizació
   assert.strictEqual(shellSafe(['a" & calc']), false);
 });
 
-test('T27 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps se dice y no se consulta', () => {
+test('T28 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps se dice y no se consulta', () => {
   const m = toyMachine();
   entering(m, 'ent00000-a', { repoPath: gitRepo(m.root, 'z', 'story/x', 'https://git.acme.example/acme/z.git') });
   let asked = 0;

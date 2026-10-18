@@ -40,7 +40,7 @@ const path = require('path');
 const { execFile, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
-const { stateDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
 const { stepName } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
 const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js'));
 
@@ -307,7 +307,7 @@ function enteringState(m, prsOf, unreadable, wanted, ctx) {
 function buildWip(opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
-  const sessionsDir = opts.sessionsDir || path.join(home, '.claude', 'sessions');
+  const sessionsDir = opts.sessionsDir || path.join(claudeDir(home), 'sessions');
   const nowMs = opts.now ? Date.parse(opts.now) : Date.now();
   if (!Number.isFinite(nowMs)) {
     const err = new Error(`--now no es una fecha: ${opts.now}`);

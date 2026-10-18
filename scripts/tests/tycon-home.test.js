@@ -304,6 +304,10 @@ it('T5 StateWriters_AskStateDir_SamePaths_FrenoLeftForD', () => {
   const copy = path.join(sep, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js');
   fs.mkdirSync(path.dirname(copy), { recursive: true }); fs.copyFileSync(helper, copy);
   assert.strictEqual(inChild(`console.log(JSON.stringify(require(${JSON.stringify(copy)}).stateDir()))`, { home }), unified, 'el ayudante suelto da otra ruta');
+  // la carpeta de Claude Code (sus archivos de sesión), igual: unido y suelto dan la misma
+  const claudeUnified = inChild(`console.log(JSON.stringify(require(${JSON.stringify(helper)}).claudeDir()))`, { home });
+  assert.strictEqual(claudeUnified, path.join(home, '.claude'));
+  assert.strictEqual(inChild(`console.log(JSON.stringify(require(${JSON.stringify(copy)}).claudeDir()))`, { home }), claudeUnified, 'el claudeDir suelto da otra ruta');
   for (const d of [home, sep]) fs.rmSync(d, { recursive: true, force: true });
 });
 
