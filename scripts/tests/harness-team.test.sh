@@ -50,6 +50,10 @@ export TYCON_UPDATE_APPLY=auto
 # existe, a propósito, y con ella heredada T7 daba «buzón: prendida (perfil; llave AUSENTE)» en una máquina vacía, adentro
 # de la copia y en el interno (medido el 2026-10-10). En una máquina de verdad nadie la define.
 unset TYCON_MAILBOX_JSON
+# Lo mismo con el interruptor del buzón que pone el corredor de suites: T7 mide justo que el buzón quede prendido por la
+# llave de la capa, y con TYCON_MAILBOX=0 heredado daría «apagada (env)». TYCON_NO_UPLOAD_RUNS=1 queda: estas
+# instalaciones de laboratorio no tienen por qué subir nada.
+unset TYCON_MAILBOX TYCON_SUITE_RUNNER
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FALLOS=0
