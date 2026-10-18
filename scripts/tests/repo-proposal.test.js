@@ -394,6 +394,27 @@ test('T41 Politica_VotoDeQuienCrea_NoCuenta @story-2.30 @ac-22b', { skip: SIN_BA
   } finally { await m.cerrar(); }
 });
 
+test('Politica_AutorPuedeAprobar_DiceElAjuste @story-2.38 @ac-9', { skip: SIN_BACKEND }, async () => {
+  // la política existe y alcanzaría, pero deja que quien crea el pedido lo apruebe: el motivo lo dice, no «no tiene»
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json' };
+    m.api.st.politicas = [{ ...m.api.politicaDeRevisores(1), settings: { ...m.api.politicaDeRevisores(1).settings, creatorVoteCounts: true } }];
+    const p = await politicaDeRevision(args);
+    assert.deepStrictEqual([p.ok, p.codigo], [false, 'autor_aprueba'], textoDe(p));
+    assert.match(p.message, /Allow requestors to approve their own changes/);
+    assert.doesNotMatch(p.message, /no tiene una política/);
+    // también con «Required reviewers» que cubre el archivo: el motivo es el voto del autor, no «no cubre»
+    m.api.st.politicas = [requeridos(m.api, { votoDelAutor: true })];
+    const req = await politicaDeRevision(args);
+    assert.deepStrictEqual([req.ok, req.codigo], [false, 'autor_aprueba'], textoDe(req));
+    // sin ninguna política, sigue «no tiene»
+    m.api.st.politicas = [];
+    assert.strictEqual((await politicaDeRevision(args)).codigo, 'sin_politica');
+  } finally { await m.cerrar(); }
+});
+
 test('T43 Politica_LoQueNoSePuedeProbar_Apagado @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
   // La regla: «Proponer» se habilita sólo si se puede PROBAR que la política exige un revisor en ese archivo. Cualquier
   // forma que no se entiende queda apagada (no una lista de casos malos).

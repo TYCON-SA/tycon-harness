@@ -244,7 +244,10 @@ Las secciones, en el orden de la pantalla:
   repo de operaciones. Lo revisa quien mantiene.
 - **Quién mantiene el sitio**: quiénes ven la pestaña Configuración y pueden proponer cambios; también el buzón de
   corridas, el refresco y la dirección del sitio. Si te sacás de la lista, perdés el acceso cuando se apruebe. Queda en
-  `operations.json`, en el repo de operaciones. Lo revisa otra persona de la lista.
+  `operations.json`, en el repo de operaciones. Lo revisa otra persona de la lista. **«Cada cuánto se actualiza el
+  sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio vuelve a leer el
+  repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a la nube, que en una
+  instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y al despertar lee todo.
 - **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -412,13 +415,27 @@ credencial vencida o un permiso que cambió.
 
 **Por qué pasa:** el sitio sólo propone si el repo exige que otra persona apruebe cada cambio antes de sumarlo a la
 rama principal (una «política de revisión»); sin esa regla, el sitio podría cambiar el repo sin que nadie lo mire.
-También cuando el sitio no tiene permiso para escribir en ese repo, o cuando ya hay un pedido abierto sobre el mismo
-archivo (la sección muestra su enlace).
+También cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en
+Azure DevOps): el pedido lo crea el sitio, y se aprobaría solo. Y cuando el sitio no tiene permiso para escribir en ese
+repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la sección muestra su enlace).
 
 **Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
 pedir la política de revisión o el permiso de escritura. Con un pedido abierto, esperá a que se mergee o se cierre.
 
 ![«Proponer» apagado, con su motivo: el repo no tiene una política que pida revisión](sitio-de-la-organizacion/capturas/proponer-apagado.png)
+
+### Configuración dice que el sitio rechazó el pedido
+
+**Lo que se ve:** al revisar o proponer, un recuadro rojo con el motivo: «la sesión venció o se cerró: recargá la
+página», «tu cuenta … no está entre los que mantienen el sitio», «el sitio está cargando…», o «el pedido lo rechazó lo
+que está delante del sitio, no el sitio».
+
+**Por qué pasa:** la sesión venció; o entraste con otra cuenta (el mensaje dice con cuál); o el sitio se estaba
+reiniciando; o el inicio de sesión de la nube, delante del sitio, frenó el pedido.
+
+**Qué hacer:** recargá la página. Si dice que tu cuenta no mantiene el sitio, salí y entrá con la cuenta de la
+organización. Si dice que lo rechazó lo que está delante del sitio y sigue después de recargar, avisale a quien mantiene
+(la guía de instalación, en la receta de Azure, dice cómo se arregla).
 
 ### La primera página tarda en abrir
 
@@ -559,6 +576,18 @@ un proceso de la noche y llevarse sus secretos. Esa política es también la que
 Configuración. Cómo ponerla en Azure DevOps y en GitHub: los READMEs de los modelos de operaciones
 (`pipelines/operations/README.md` y `pipelines/operations/github/README.md`).
 
+### El permiso para «Proponer»
+
+«Proponer el cambio» abre un pedido de cambio en el repo de la sección. Para eso el sitio necesita escribir en ese repo:
+`SITE_OPERATIONS_WRITE_TOKEN` para las secciones del repo de operaciones y `SITE_PROFILE_WRITE_TOKEN` para las del
+perfil del equipo. En Azure DevOps, un permiso con *Code: Read & write* sobre esos repos, **sin** *Bypass policies when
+pushing* ni *Bypass policies when completing pull requests*: el sitio crea una rama y un pedido, nunca escribe `main`.
+Con un permiso personal, los pedidos salen a nombre de esa persona, y la política de la rama sigue pidiendo sus
+aprobaciones: la política tiene que tener apagado «Allow requestors to approve their own changes», o el sitio no
+propone (lo aprobaría el mismo autor). Sin el permiso, cada sección dice «Para
+proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
+mano».
+
 ### Las dos formas de arrancarlo
 
 La misma imagen con Docker (`docker run … sitio:local`, arriba), o con Node solo desde el clon, con las mismas
@@ -577,7 +606,7 @@ node scripts/site/check-deploy.js --url https://<dirección del sitio>
 ```
 
 Pide, sin sesión, lo que pediría un extraño. Sale 0 si no se ve nada; 1 con el motivo («el sitio responde sin iniciar
-sesión», «/api contesta con datos», «el sitio está frenado», «/healthz cuenta de más», «falta no-store», «acepta http»);
+sesión», «/api contesta con datos», «el sitio está frenado», «/healthz cuenta de más», «falta no-store», «acepta http», «sin Referer: el candado de la plataforma frenaría las escrituras de Configuración»);
 2 si no pudo preguntar. Espera hasta 90 segundos la primera respuesta: un sitio dormido tarda en despertar. El aviso de
 la mañana lleva el enlace sólo si pasó esa mañana.
 
@@ -611,6 +640,12 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID,
   de un solo inquilino y con «asignación requerida» (las personas se asignan una por una; asignar un grupo pide una
   licencia Entra ID P1/P2). Detrás, el del sitio. `/healthz` y `/livez` quedan fuera del candado.
+- **El candado y las escrituras:** el inicio integrado protege contra pedidos falsificados mirando el `Referer` del
+  navegador, no el `Origin`. Un POST con sesión sin `Referer` del propio sitio lo rechaza con 403, subestado 60 (se ve en
+  los registros del área, como `RequestCompleted` del intermediario). Para que «Revisar cambios» y «Proponer» pasen, el
+  sitio manda `Referrer-Policy: same-origin`: el `Referer` viaja dentro del sitio y nunca afuera. Una imagen de antes
+  mandaba `no-referrer` y la pestaña Configuración no podía escribir; la prueba sin sesión lo avisa. No hace falta tocar
+  el CORS ni la convención del proxy del candado.
 - **Disco:** un recurso compartido de Azure Files en una cuenta de almacenamiento propia del sitio (centavos por mes),
   nunca en la cuenta del buzón.
 - **Secretos:** secretos de la aplicación. Sus valores llegan por variables de entorno de quien corre el alta, con los

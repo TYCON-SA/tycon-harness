@@ -581,8 +581,17 @@ function pantalla() {
   function api(ruta, cuerpo) {
     var o = { method: cuerpo ? 'POST' : 'GET', headers: {}, credentials: 'same-origin' };
     if (cuerpo) { o.headers['Content-Type'] = 'application/json'; o.headers['X-Site-Token'] = TOKEN; o.body = JSON.stringify(cuerpo); }
-    // siempre termina con un mensaje: un pedido cortado no deja la nota en «proponiendo…» para siempre
-    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: 'respuesta ' + r.status }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = 'respuesta ' + r.status; return j; }); })
+    // siempre termina con un mensaje: un pedido cortado no deja la nota en «proponiendo…» para siempre. Un rechazo sin
+    // mensaje (un cuerpo vacío o que no es JSON: lo que está delante del sitio, o una versión vieja) dice qué hacer según
+    // su estado, nunca «respuesta N» suelto
+    var llano = function (status) {
+      if (status === 401) return 'la sesión venció o se cerró: recargá la página para entrar de nuevo';
+      // el sitio manda su motivo en cada 403: uno sin motivo lo dio lo que está delante (el inicio de sesión de la nube)
+      if (status === 403) return 'el pedido lo rechazó lo que está delante del sitio, no el sitio: recargá la página y probá de nuevo; si sigue, avisale a quien mantiene el arnés';
+      if (status === 503) return 'el sitio está cargando o frenado: probá de nuevo en unos segundos';
+      return 'el sitio contestó con un error (' + status + ')';
+    };
+    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: llano(r.status) }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = llano(r.status); return j; }); })
       .catch(function (e) { return { ok: false, message: 'no pude hablar con el sitio (' + (e && e.message ? e.message : 'sin respuesta') + '): si estabas proponiendo, recargá y mirá si el pedido se abrió antes de repetirlo' }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };

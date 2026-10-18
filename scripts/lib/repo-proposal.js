@@ -197,6 +197,11 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     // puede probar que exige revisor en este archivo no cuenta
     const cubren = validas.filter((p) => exigeRevisor(p, archivo));
     if (!cubren.length) {
+      // hay una política que cubre el archivo, pero deja que quien crea el pedido lo apruebe: ése es el motivo, y va antes
+      // que «no cubre» (que sería falso) y que «no hay»
+      if (validas.some((p) => p.settings.creatorVoteCounts === true && exigeRevisor({ ...p, settings: { ...p.settings, creatorVoteCounts: false } }, archivo))) {
+        return { ok: false, codigo: 'autor_aprueba', message: `la política de ${RAMA_PRINCIPAL} deja que quien crea el pedido lo apruebe, y el pedido lo crea la identidad del sitio: apagá «Allow requestors to approve their own changes» en esa política` };
+      }
       if (archivo && validas.some((p) => p.type.displayName === TIPO_REQUERIDOS_AZURE)) {
         return { ok: false, codigo: 'no_cubre', message: `la política de ${RAMA_PRINCIPAL} no cubre ${archivo}: su filtro de ruta no lo incluye, y sin revisión la identidad del sitio podría completar el pedido` };
       }

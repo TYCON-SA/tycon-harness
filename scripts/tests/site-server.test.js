@@ -449,3 +449,88 @@ test('T45 Marca_LogoSeguroBarraYPie', async () => {
     assert.ok(letra.headers.etag, 'con etiqueta: el navegador la guarda');
   } finally { await h.cerrar(); await emisor.cerrar(); fs.rmSync(perfil, { recursive: true, force: true }); fs.rmSync(afuera, { recursive: true, force: true }); }
 });
+
+// Un rechazo de /api/ dice por qué, en llano y con su código: sin eso, la pantalla de Configuración sólo puede mostrar
+// el número. Los códigos HTTP son los de siempre, y las páginas (fuera de /api/) no cambian.
+const MANTIENE = 'lead@acme.example';
+const PERSONA = 'ana@acme.example';
+const SIN_ROL = 'visita@acme.example';
+const configRoles = () => ({ version: 1, owners: { default: MANTIENE }, site: { maintainers: [MANTIENE] }, people: { machines: { 'mac-ana': { person: PERSONA, reported_sha256: null, confirmed_by: MANTIENE, confirmed_on: '2026-10-01' } } } });
+const soloMantenedores = { method: 'GET', path: '/api/solo-mantenedores', needs: ['maintainer'], handler: () => ({ status: 200, tipo: 'application/json; charset=utf-8', cuerpo: '{"ok":true}' }) };
+
+test('Api_SinRol_403ConMensaje @story-2.38 @ac-1', async () => {
+  const emisor = await arrancarEmisor();
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: configRoles() }), rutasExtra: [soloMantenedores] });
+  try {
+    const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
+    // sin rol: cualquier /api/
+    const sinRol = await h.pedir('/api/inicio', { cookie: await entrar(SIN_ROL) });
+    assert.strictEqual(sinRol.status, 403);
+    assert.strictEqual(sinRol.json && sinRol.json.codigo, 'sin_rol', sinRol.texto);
+    assert.match(sinRol.json.message, /visita@acme\.example/, 'el correo con que entró');
+    assert.match(sinRol.json.message, /no (tiene rol|está confirmada)|quien mantiene/);
+    // una persona pide lo que es sólo de quien mantiene
+    const persona = await h.pedir('/api/solo-mantenedores', { cookie: await entrar(PERSONA) });
+    assert.strictEqual(persona.status, 403);
+    assert.strictEqual(persona.json && persona.json.codigo, 'sin_rol', persona.texto);
+    assert.match(persona.json.message, /ana@acme\.example no está entre los que mantienen el sitio/);
+    // nunca nombra a nadie más (decisión 4)
+    for (const r of [sinRol, persona]) assert.ok(!r.texto.includes(MANTIENE), `el rechazo nombra a quien mantiene: ${r.texto}`);
+    // quien mantiene pasa; y la página (no /api/) sigue siendo la de siempre
+    assert.strictEqual((await h.pedir('/api/solo-mantenedores', { cookie: await entrar(MANTIENE) })).status, 200);
+    const pagina = await h.pedir('/', { cookie: await entrar(SIN_ROL) });
+    assert.strictEqual(pagina.status, 200);
+    assert.match(pagina.texto, /todavía no está confirmada/);
+  } finally { await h.cerrar(); await emisor.cerrar(); }
+});
+
+test('Api_SinMantenedores_NoMandaAPedirleANadie @story-2.38 @ac-1', async () => {
+  // sin lista de quienes mantienen ni primer mantenedor, no hay a quién pedirle: el mensaje dice quién lo resuelve
+  const emisor = await arrancarEmisor();
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: { version: 1, owners: { default: MANTIENE } } }) });
+  try {
+    const s = (await H.ingresar(h, emisor, { sub: 's-v', email: SIN_ROL, email_verified: true })).sesion;
+    const r = await h.pedir('/api/inicio', { cookie: s });
+    assert.deepStrictEqual([r.status, r.json && r.json.codigo], [403, 'sin_mantenedores'], r.texto);
+    assert.match(r.json.message, /todavía no tiene a nadie que lo mantenga.*quien instaló el sitio/);
+    assert.doesNotMatch(r.json.message, /pedíle|pedíselo/);
+  } finally { await h.cerrar(); await emisor.cerrar(); }
+});
+
+test('Api_SinSesion_401ConMensaje @story-2.38 @ac-2', async () => {
+  const h = await H.arrancarSitio({ env: H.envBase(), fuentes: H.fuentesFijas({ config: configRoles() }) });
+  try {
+    for (const cookie of [undefined, '__Host-site=una.sesion.firmada-con-otra-llave']) {
+      const r = await h.pedir('/api/inicio', { cookie });
+      assert.strictEqual(r.status, 401, `${cookie}: ${r.status}`);
+      assert.deepStrictEqual([r.json && r.json.codigo, r.json && r.json.ok], ['sesion_vencida', false], r.texto);
+      assert.match(r.json.message, /recargá la página/);
+    }
+  } finally { await h.cerrar(); }
+});
+
+test('Api_FrenadoYCargando_503ConMensaje @story-2.38 @ac-3', async () => {
+  const emisor = await arrancarEmisor();
+  try {
+    for (const [caso, fuentes, rx] of [
+      ['frenado', H.fuentesFijas({ config: configRoles(), frenado: { desde: Date.parse('2026-10-15T00:00:00Z') } }), /frenado desde 2026-10-15.*quien mantiene/],
+      ['cargando', H.fuentesFijas({ config: configRoles(), cargado: false, navegable: false }), /cargando.*probá de nuevo en unos segundos/],
+    ]) {
+      const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes });
+      try {
+        const guardado = { frenado: fuentes.st.frenado, cargado: fuentes.st.cargado, navegable: fuentes.st.navegable };
+        Object.assign(fuentes.st, { frenado: null, cargado: true, navegable: true });
+        const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: MANTIENE, email_verified: true })).sesion;
+        Object.assign(fuentes.st, guardado);
+        const r = await h.pedir('/api/inicio', { cookie: s });
+        assert.strictEqual(r.status, 503, caso);
+        assert.strictEqual(r.json && r.json.codigo, caso, r.texto);
+        assert.match(r.json.message, rx, caso);
+        // la página, la de siempre
+        const p = await h.pedir('/', { cookie: s });
+        assert.strictEqual(p.status, 503, `${caso}: la página`);
+        assert.doesNotMatch(p.headers['content-type'] || '', /json/);
+      } finally { await h.cerrar(); }
+    }
+  } finally { await emisor.cerrar(); }
+});
