@@ -352,9 +352,10 @@ guiada con Claude Code; con la línea npx, la elegís vos.
 
 - Tu agente te contesta en castellano, corto y con la conclusión primero.
 - En un repo que trabaja con historias, el agente no edita código sin pasar por el recorrido del arnés.
-- Git pasa a usar una carpeta global para sus controles al commitear (`core.hooksPath`). Desde ahí, git deja de correr
-  los controles propios de cada repo, los de `.git/hooks/`. La instalación la configura sólo si git no tiene ninguna, y
-  el plan te lo dice antes de tu «sí»; si ya tenés otra, no la toca.
+- Git pasa a usar una carpeta global para sus controles al commitear (`core.hooksPath`). Desde ahí, git deja de llamar
+  a los controles propios de cada repo, los de `.git/hooks/`: el arnés corre en su lugar los `pre-commit`, `post-commit`
+  y `pre-push` de esa carpeta (los de otro nombre, como `commit-msg`, no corren). La instalación la configura sólo si git
+  no tiene ninguna, y el plan te lo dice antes de tu «sí»; si ya tenés otra, no la toca.
 - Una vez por día lee el historial de git de tus repos de proyectos (encuentra su carpeta por dónde usás tu agente).
   Lo que anota queda en tu máquina.
 - Claude Code guarda tus conversaciones un año.
@@ -475,8 +476,9 @@ vez cada 6 horas. Si la hay, avisa y espera: no la aplica sin que se lo pidas de
   `core.hooksPath` global: si git no tiene ninguna, `install`, `apply` y el arranque (con la aplicación `auto`; con `ask`, el
   aviso la pide y la pone `update --yes`) la apuntan a esa carpeta (una que ya tengas no
   la tocan), y `uninstall` o el paso a la instalación mínima la sacan si sigue siendo ésa. Con un `core.hooksPath` global git
-  deja de correr los `.git/hooks/` de todos tus repos: el hook del arnés corre en su lugar el `.githooks/pre-commit` de
-  cada repo.
+  deja de llamar a los `.git/hooks/` de tus repos: el hook del arnés corre en su lugar el `.git/hooks/` y el `.githooks/`
+  de cada repo para `pre-commit`, `post-commit` y `pre-push` (los de otro nombre no corren). La primera vez que corre
+  uno lo dice, con la manera de dejarlo como estaba: borrarlo o sacarle el permiso de ejecución.
 - **Skills de terceros** bajadas de su origen a la carpeta `skills/` del clon: las que lista
   `scripts/publishing/third-party-skills.json`, cada una fijada a un commit (`TYCON_THIRD_PARTY=0` saltea el paso).
 - **Los archivos del propio mecanismo de instalación**: su estado y su copia fija de arranque en

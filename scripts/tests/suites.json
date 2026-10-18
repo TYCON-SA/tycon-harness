@@ -2390,6 +2390,12 @@
       "requiere": []
     },
     {
+      "__nota": "los ganchos propios del repo en .git/hooks/ (pre-commit, post-commit y pre-push), disparados por commits y empujes DE VERDAD con la carpeta global de ganchos puesta como la pone el instalador: su rechazo frena (salvo post-commit), corren en orden después del .local y antes de .githooks/ y del freno de publicación, no corren dos veces (enlace, copia del gancho del arnés, la carpeta global misma), no hacen lazo, avisan una sola vez por repo y gancho, y andan desde un worktree enlazado. Repos de laboratorio, sin red; unos 20 segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/githook-git-dir-chain.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.26, tanda F2 (T64): el título y el cuerpo de un pedido de GitHub, leídos de su API para que el freno de publicación los mire en la validación (scripts/ci/pr-texts.js). Contra una API de mentira en la propia máquina: los deja en dos archivos y no imprime ninguno; lo que no puede leer (403, 404, 500, algo que no es ese pedido, nadie que conteste) es 2 y no deja archivos, tampoco los de un intento anterior; la credencial sale del clon sólo si es la de GitHub, no aparece en ninguna salida y no viaja a donde mande una redirección; la base de la API va cifrada salvo hacia la propia máquina. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/pr-texts.test.js",

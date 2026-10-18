@@ -44,8 +44,9 @@ Bajar el arnés va siempre sin credencial y casi no pasa por la API: gasta una s
    (archivos, sin git).
 
 4. Los controles que corren al commitear (hooks globales de git). Si git no tenía una carpeta global de hooks, la
-   instalación la configuró (el plan lo decía): con ella git deja de correr los .git/hooks/ propios de cada uno de mis
-   repos, y el control del arnés corre en su lugar el .githooks/pre-commit de cada repo. Mirá cómo quedó:
+   instalación la configuró (el plan lo decía): con ella git deja de llamar a los .git/hooks/ propios de mis repos, y el
+   arnés los corre en su lugar (pre-commit, post-commit y pre-push; los de otro nombre no), junto con el
+   .githooks/pre-commit de cada repo. Mirá cómo quedó:
    git config --global --get core.hooksPath
    Si no devuelve nada, corré:  git config --global core.hooksPath "$env:USERPROFILE\.git-hooks"
    Si devuelve otra carpeta, NO la pises: mostrámela y decidimos.
