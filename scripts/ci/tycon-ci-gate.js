@@ -34,7 +34,10 @@
  *      pipeline en el repo (`.advisors/pipeline-runs/<id>-…`). Es el ADVISORS-GATE del pre-commit,
  *      en su mitad verificable desde el servidor (la otra mitad vive en el `gates.log` local).
  *
- * Los tres son MECÁNICOS: sin modelo, sin red, sin estado de sesión.
+ *   6. **Examen del revisor que cambia** — un cambio a `agents/<revisor>.md` trae el resultado del examen de ese revisor
+ *      sobre ese archivo exacto, con puntaje igual o mayor que la línea de base (`controls-bench/reviewer-change-check.js`).
+ *
+ * Los seis son MECÁNICOS: sin modelo, sin red, sin estado de sesión.
  *
  * ── ADOPCIÓN ────────────────────────────────────────────────────────────────────────────────────
  * Opt-in por repo. No se adoptó en ninguno todavía: meter un paso nuevo en 31 pipelines de cliente
@@ -706,6 +709,15 @@ function revisar({ repo, base, staged }) {
     for (const a of (mem.avisos || [])) avisos.push(a);
   }
 
+  // (6) el examen del revisor que cambia — a nivel REPO, sólo si el control está junto a este guion
+  const examenPath = path.join(__dirname, '..', 'controls-bench', 'reviewer-change-check.js');
+  if (fs.existsSync(examenPath)) {
+    const examen = require(examenPath).checkReviewerChange({ repo, base, staged });
+    if (examen.error) hallazgos.push({ archivo: 'agents/', regla: 'reviewer-exam-not-comparable', mensaje: `no pude comparar los cambios de revisores: ${examen.error}. Comando: \`node scripts/controls-bench/reviewer-change-check.js check\`` });
+    for (const h of examen.hallazgos) hallazgos.push({ archivo: h.archivo, regla: h.regla, mensaje: `${h.mensaje} Comando: \`${h.comando}\`` });
+    for (const a of examen.avisos) avisos.push(a);
+  }
+
   return { hallazgos, avisos, revisadas, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
 }
 
@@ -1183,7 +1195,7 @@ function main() {
     console.log(`tycon-ci-gate: ${r.revisadas.length} story(s) declarándose lista(s):`);
     for (const s of r.revisadas) console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story');
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla));
   // También el suyo (pase adversarial de la 1.17.1, tanda 2): bajo el encabezado de `review → done` decía que con
   // TYCON_REVIEW_A_DONE=block frenaba y que el pull request la frenaba, y ninguna de las dos es cierta.
   const avisosDeStoryId = (r.avisos || []).filter((h) => h.regla === 'storyid-sin-story');
@@ -1203,6 +1215,11 @@ function main() {
     console.error('   que vigila (la última frenó 5 stories sanas de un producto). Las otras');
     console.error('   reglas del registro —que exista, que se lea, que el autor no sea el revisor—');
     console.error('   siguen frenando. Vuelve a frenar con TYCON_ROSTER_NAMES=block.');
+  }
+  const avisosDeRevisores = (r.avisos || []).filter((h) => /^reviewer-/.test(h.regla));
+  if (avisosDeRevisores.length) {
+    console.error('\n⚠️  AVISO — cambios de revisores (no frena):');
+    for (const h of avisosDeRevisores) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
   }
   if (avisosDeStory.length) {
     console.error(`\n⚠️  AVISO — review → done sin evidencia completa (hoy avisa; con TYCON_REVIEW_A_DONE=block bloquea):`);

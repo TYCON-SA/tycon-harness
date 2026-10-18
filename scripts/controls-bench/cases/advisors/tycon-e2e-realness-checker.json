@@ -27,6 +27,14 @@
         "tests/e2e/incidencia-alta.spec.ts": "import { test, expect } from '@playwright/test';\n\ntest('registrar incidencia desde el modal de la orden', async ({ page, request }) => {\n  const seed = await request.post('/api/ordenes', {\n    data: { id: 187, cliente: 'Deposito Norte', estado: 'en-curso' },\n  });\n  expect(seed.ok()).toBe(true);\n\n  await page.goto('/panel/ordenes/187');\n  await page.getByTestId('orden-registrar-incidencia').click();\n  await expect(page.getByTestId('incidencia-modal')).toBeVisible();\n  await page.getByTestId('incidencia-motivo').selectOption('3');\n  await page.getByTestId('incidencia-detalle').fill('Bolsa abierta al recibir');\n  await page.getByTestId('incidencia-confirmar').click();\n  await expect(page.getByTestId('incidencia-modal')).toBeHidden();\n  await expect(page.getByTestId('incidencia-badge')).toBeVisible();\n  await expect(page.getByTestId('incidencia-badge')).toContainText('abierta');\n});\n"
       },
       "canario": true
+    },
+    {
+      "id": "real-c8-skip-si-el-backend-no-responde",
+      "type": "must-flag",
+      "rule": "REAL-C8",
+      "files": {
+        "tests/e2e/cuotas-cobro.spec.ts": "import { test, expect } from '@playwright/test';\n\ntest('el cobro de la cuota queda registrado en el historial', async ({ page, request }) => {\n  const salud = await request.get('/api/cuotas/pendientes');\n  test.skip(!salud.ok(), 'el backend de cuotas no responde: se saltea');\n\n  await page.goto('/panel/cuotas');\n  await page.getByTestId('cuota-cobrar-512').click();\n  await expect(page.getByTestId('cobro-modal')).toBeVisible();\n  await page.getByTestId('cobro-monto').fill('1500');\n  await page.getByTestId('cobro-confirmar').click();\n  await expect(page.getByTestId('cobro-modal')).toBeHidden();\n  await expect(page.getByTestId('historial-fila-512')).toContainText('Cobrada');\n});\n"
+      }
     }
   ],
   "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte."
