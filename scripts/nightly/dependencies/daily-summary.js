@@ -684,7 +684,8 @@ const limpiar = (t) => NOTIFY.limpiar(t);
  * sesión de ESTA mañana. `{ linea, resultado, motivo, hora }`. Sin `site.url`, «sin configurar»; con un operations.json
  * que no se pudo leer, o sin un resultado de hoy que se pueda leer, «no se pudo probar desde el nocturno» (no se sabe si
  * hay sitio: no es «sin configurar»). El motivo de una falla sale del vocabulario cerrado de check-deploy.js: cualquier
- * otro texto se toma como que no se pudo probar (puede traer la dirección).
+ * otro texto se toma como que no se pudo probar (puede traer la dirección). Un aviso del vocabulario de `AVISOS` en una
+ * prueba que pasó se suma al final de la línea; uno que no es de la lista se ignora.
  */
 function lineaDe({ operations, prueba, hoy }) {
   const ops = OPS.load(operations);
@@ -696,8 +697,12 @@ function lineaDe({ operations, prueba, hoy }) {
   const hora = r && typeof r.hora === 'string' && Number.isFinite(Date.parse(r.hora)) ? new Date(r.hora).toISOString() : null;
   if (!hora || hora.slice(0, 10) !== hoy) return noPudo;
   const cuando = `(probado ${hora.slice(11, 16)} UTC)`;
-  const { MOTIVOS } = require('../../site/check-deploy.js');
-  if (r.resultado === 'paso') return { linea: `sitio: ${url} ${cuando}`, resultado: 'paso', motivo: null, hora };
+  const { MOTIVOS, AVISOS } = require('../../site/check-deploy.js');
+  if (r.resultado === 'paso') {
+    // sólo un aviso del vocabulario cerrado entra a la línea: otro texto puede traer la dirección
+    const aviso = Array.isArray(r.avisos) ? AVISOS.find((a) => r.avisos.includes(a)) : null;
+    return { linea: `sitio: ${url} ${cuando}${aviso ? ` · aviso: ${aviso}` : ''}`, resultado: 'paso', motivo: null, hora };
+  }
   if (r.resultado === 'fallo' && MOTIVOS.includes(r.motivo)) return { linea: `sitio: no pasó la prueba sin sesión (${r.motivo}) ${cuando}`, resultado: 'fallo', motivo: r.motivo, hora };
   return { ...noPudo, hora };
 }

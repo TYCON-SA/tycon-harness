@@ -17,13 +17,18 @@
  *   es «el sitio responde sin iniciar sesión» (o «/api contesta con datos»).
  * · `Cache-Control: no-store` en `/`, sólo cuando la respuesta la dio el sitio (el destino no es `/.auth/`).
  * · `http://` de la misma dirección: redirige a https o no contesta.
+ * · `/saliste`, la página de salida: si la contesta el candado de la plataforma (una redirección a `/.auth/` del mismo
+ *   host, o un 401/403 que el candado reconoce), la prueba lo dice como AVISO y no como falla: tras «Salir» se vuelve a
+ *   entrar, y el paso de una sola vez que lo arregla es del candado, no de la imagen. Cualquier otra respuesta (200, 404 de
+ *   un sitio viejo, un error de red) no avisa nada.
  * El primer pedido espera hasta `--wake-timeout` (90 s por defecto): un sitio dormido tarda ~1 minuto en despertar.
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
  *   node scripts/site/check-deploy.js --url https://<dirección> [--out <archivo.json>] [--wake-timeout <segundos>]
  *   SALIDA: 0 pasa · 1 falla, con el motivo de la primera que falla (vocabulario cerrado, sin la dirección) · 2 no pudo
  *   preguntar (sin red, dirección inválida, no despertó a tiempo). Con `--out`: `{ resultado: "paso"|"fallo"|"no_pudo",
- *   motivo, hora, capas }`, donde `capas` dice qué contestó cada pedido (el código y adónde redirigió, sin la dirección).
+ *   motivo, hora, capas, avisos }`, donde `avisos` es una lista (vacía si no hay) del vocabulario cerrado `AVISOS`; un
+ *   aviso no cambia la salida: con aviso y lo demás bien, sale 0 y la línea `🟠 check-deploy: aviso: …` va antes de «pasa». `capas` dice qué contestó cada pedido (el código y adónde redirigió, sin la dirección).
  *   Sólo https; http sólo contra la propia máquina (las pruebas). La gemela http de una dirección local se prueba sólo
  *   si `TYCON_CHECK_DEPLOY_HTTP_URL` la da (las pruebas).
  */
@@ -31,6 +36,9 @@ const fs = require('fs');
 
 const MOTIVOS = Object.freeze(['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http',
   'sin Referer: el candado de la plataforma frenaría las escrituras de Configuración']);
+// lo que la prueba avisa sin fallar: la configuración del candado, no la imagen. Cerrado: el resumen de la mañana sólo repite lo de esta lista
+const AVISOS = Object.freeze(['la página de salida queda detrás del candado: tras «Salir» se vuelve a entrar; la receta de tu entorno trae la orden de una vez']);
+const [AVISO_SALIDA] = AVISOS;
 const [HEALTHZ_DE_MAS, FRENADO, SIN_SESION, API_CON_DATOS, SIN_NO_STORE, ACEPTA_HTTP, SIN_REFERER] = MOTIVOS;
 const WAKE_DEFAULT_S = 90;
 const PLAZO_MS = 15000;
@@ -124,6 +132,17 @@ async function sinSesion(base, ruta, { esApi, plazoMs }) {
   return { capa: pasos.join(' · '), falla: esApi ? API_CON_DATOS : SIN_SESION, primera: primeraDelSitio };
 }
 
+/** `/saliste` sin sesión: ¿la contesta el candado de la plataforma? Un error de red o cualquier otra respuesta no avisa. */
+async function salidaDetrasDelCandado(base) {
+  let r;
+  try { r = await pedir(new URL('/saliste', base), { plazoMs: PLAZO_MS, accept: 'text/html' }); } catch { return false; }
+  const loc = r.headers.get('location');
+  if (r.status >= 300 && r.status < 400 && loc) {
+    try { const d = new URL(loc, base); return d.origin === base.origin && d.pathname.startsWith('/.auth/'); } catch { return false; }
+  }
+  return (r.status === 401 || r.status === 403) && esDelCandado(r.headers);
+}
+
 /** La gemela http: redirige a https o no contesta. `{ capa, falla }`. */
 async function gemelaHttp(base) {
   let url = process.env.TYCON_CHECK_DEPLOY_HTTP_URL || null;
@@ -175,7 +194,9 @@ async function probar(base, { wakeMs }) {
   const g = await gemelaHttp(base);
   capas.http = g.capa;
   if (g.falla) return { motivo: g.falla, capas };
-  return { motivo: null, capas };
+  // 5. la página de salida: un aviso, nunca una falla
+  const avisos = (await salidaDetrasDelCandado(base)) ? [AVISO_SALIDA] : [];
+  return { motivo: null, capas, avisos };
 }
 
 function escribir(out, doc) {
@@ -206,8 +227,9 @@ async function main(argv) {
   }
   try {
     const r = await probar(base, { wakeMs: wake * 1000 });
-    escribir(out, { resultado: r.motivo ? 'fallo' : 'paso', motivo: r.motivo, hora: hora(), capas: r.capas });
+    escribir(out, { resultado: r.motivo ? 'fallo' : 'paso', motivo: r.motivo, hora: hora(), capas: r.capas, avisos: r.avisos || [] });
     if (r.motivo) { process.stdout.write(`🔴 check-deploy: falla: ${r.motivo}\n`); return 1; }
+    for (const a of r.avisos || []) process.stdout.write(`🟠 check-deploy: aviso: ${a}\n`);
     process.stdout.write('✅ check-deploy: pasa (sin sesión no se ve nada)\n');
     return 0;
   } catch (e) {
@@ -218,7 +240,7 @@ async function main(argv) {
   }
 }
 
-module.exports = { MOTIVOS };
+module.exports = { MOTIVOS, AVISOS };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => {

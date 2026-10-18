@@ -307,11 +307,13 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const nav = pest.length ? `<nav class="tabs" aria-label="${esc(T('barra.pestanas'))}">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
   // la cuenta con la que entró (una persona con varios correos ve cuál usó)
   const cuenta = quien ? quien.correoDeIngreso || quien.email : '';
-  const sesion = cuenta ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(cuenta)}</span> <button type="submit">${esc(T('barra.salir'))}</button></form>` : '';
+  const tokSesion = ctx && ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
+  const sesion = cuenta ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(cuenta)}</span> <input type="hidden" name="tok" value="${esc(tokSesion)}"> <button type="submit">${esc(T('barra.salir'))}</button></form>` : '';
   const bandas = [
     ctx && ctx.bandaConfig ? banda(T('banda.config', { desde: hora(ctx.bandaConfig.desde, idioma), motivo: ctx.bandaConfig.motivo })) : '',
     ctx && ctx.bandaRefresco ? banda(T('banda.refresco', { desde: hora(ctx.bandaRefresco.desde, idioma), motivo: fraseDeCodigo(ctx.bandaRefresco.estado, idioma) || ctx.bandaRefresco.estado })) : '',
     ctx && ctx.avisoVariable ? banda(T('banda.variable')) : '',
+    ctx && ctx.avisoSesiones ? banda(T('banda.sesiones')) : '',
     cartelVersionNueva(ctx),
   ].join('');
   // la barra de arriba: la marca de la organización (su logo, o su nombre), el producto y quién entró
@@ -448,7 +450,7 @@ const paginaSinRol = (ctx) => {
   const idioma = idiomaDe(ctx);
   const T = (k, v) => t(idioma, k, v);
   const cuenta = ctx.quien ? ctx.quien.correoDeIngreso || ctx.quien.email : '';
-  return layout({ quien: ctx.quien, idioma, url: ctx.url }, T('sinRol.titulo'), [
+  return layout({ quien: ctx.quien, sesion: ctx.sesion, idioma, url: ctx.url }, T('sinRol.titulo'), [
     `<p class="lede">${esc(T('sinRol.entraste', { cuenta }))}</p>`,
     `<p>${esc(T('sinRol.pedile'))}</p>`,
     `<p>${esc(T('sinRol.otraAntes'))}<a href="/auth/login?otra=1">${esc(T('sinRol.otraEnlace'))}</a>${esc(T('sinRol.otraDespues'))}</p>`,
@@ -459,10 +461,11 @@ const paginaSaliste = (ctx = {}) => {
   const idioma = idiomaDe(ctx);
   return layout({ idioma, url: ctx.url }, t(idioma, 'saliste.titulo'), [
     `<p class="lede">${esc(t(idioma, 'saliste.texto'))}</p>`,
+    ctx.sinInvalidar ? `<p class="q-note">${esc(t(idioma, 'saliste.sinInvalidar'))}</p>` : '',
     `<ul class="lista"><li><a href="/auth/login">${esc(t(idioma, 'saliste.entrarDeNuevo'))}</a></li><li><a href="/auth/login?otra=1">${esc(t(idioma, 'saliste.otraCuenta'))}</a></li></ul>`,
   ].join(''));
 };
-const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien, idioma: idiomaDe(ctx), url: ctx.url }, t(idiomaDe(ctx), 'sinMantenedores.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'sinMantenedores.texto'))}</p>`);
+const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien, sesion: ctx.sesion, idioma: idiomaDe(ctx), url: ctx.url }, t(idiomaDe(ctx), 'sinMantenedores.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'sinMantenedores.texto'))}</p>`);
 const paginaFrenado = ({ desde, idioma = POR_DEFECTO, url = null }) => layout({ idioma, url }, t(idioma, 'frenado.titulo'), `<p class="lede">${esc(t(idioma, 'frenado.texto', { desde: hora(desde, idioma) }))}</p>`);
 // se recarga sola cada 5 segundos hasta que el sitio tenga lo que necesita
 const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, t(idiomaDe(ctx), 'cargando.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'cargando.texto'))}</p>`);

@@ -37,7 +37,7 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que sin disco «Salir» avisa que no pudo invalidar la sesión; antes sumaba de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
@@ -48,8 +48,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas.
 const HUELLA_INSTALACION = {
-  es: '87fffb6c7e7b53286f22ec0f457f8efa37e96800432ec27bccdea5ae8522f262',
-  en: '1ece4af500e42c0e65260646f0b9899ddbf0d121610b72643000f4f4a8f93c57',
+  es: 'dac8d9d81c05816f354ce0540df764197ed0dd3412ea0ceb246a2a9040f6b928',
+  en: 'd950cb8638fcd04b80e3d7006a8dd82f412b3f96a8dbbfd2b01515d9ecd68a58',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -353,5 +353,16 @@ test('T12 Guia_ElSelectorDeIdioma @story-2.42 @ac-8', () => {
     const den = seccion(t, dentro);
     assert.ok(den, `${lado}: falta «${dentro}»`);
     for (const rx of deDentro) assert.match(den.replace(/\s+/g, ' '), rx, `${lado}: «${dentro}» no dice ${rx}`);
+  }
+});
+
+test('Guia_SalirCierraLaCopia @story-2.48 @ac-6', () => {
+  const dicen = {
+    es: [/copia de la cookie/i, /cerrada/i, /varias réplicas[^.]*disco[^.]*compartido/i, /«Saliste»[^.]*avisa/i, /la página de salida queda detrás del candado/],
+    en: [/cop(y|ies) of the cookie/i, /closed/i, /several replicas[^.]*shared/i, /"You signed out"[^.]*(warn|tell)/i, /sign-out page[\s\S]{0,200}lock/i],
+  };
+  for (const [lado, f] of [['es', GUIA], ['en', GUIA_EN]]) {
+    const t = leer(f);
+    for (const re of dicen[lado]) assert.match(t, re, `${lado}: la guía no dice ${re}`);
   }
 });

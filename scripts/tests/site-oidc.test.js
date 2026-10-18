@@ -244,7 +244,8 @@ test('T16 Logout_SoloPorPost', async () => {
     const get = await h.pedir('/auth/logout', { cookie: sesion });
     assert.ok(!get.cookies['__Host-site'], 'GET no toca la cookie');
     assert.notStrictEqual(get.status, 200);
-    const post = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion });
+    const tok = /name="tok" value="([^"]+)"/.exec((await h.pedir('/', { cookie: sesion })).texto)[1];
+    const post = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion, headers: { origin: 'http://127.0.0.1', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ tok }).toString() });
     assert.match(post.cookies['__Host-site'].crudo, /Max-Age=0/, 'POST la borra');
   });
 });
