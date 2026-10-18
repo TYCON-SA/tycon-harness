@@ -403,7 +403,9 @@ test('A6 2.33-Rev_SinLaVersionQueCorreNoInstala @story-2.33 @ac-12 — sin saber
     const az = azDeJuguete();
     const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: AZURE, correr: az.correr, probar: async () => ({ ok: true }) });
     assert.strictEqual(r.resultado, 'no_pudo', JSON.stringify(r));
-    assert.strictEqual(r.motivo, 'no se pudo leer la imagen que corre');
+    // lo que no se sabe es la VERSIÓN de la imagen que corre (una imagen de antes de que la imagen trajera su versión):
+    // el motivo lo dice y dice cómo salir
+    assert.strictEqual(r.motivo, 'no se sabe qué versión corre: la imagen que corre no trae su versión en el registro; la primera actualización va a mano');
     assert.deepStrictEqual(az.updates(), []);
   } finally { await reg.cerrar(); }
 });

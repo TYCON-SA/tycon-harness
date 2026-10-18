@@ -45,6 +45,7 @@ const RESULTADOS = Object.freeze(['al_dia', 'aviso', 'actualizado', 'vuelto_atra
 const MOTIVOS = Object.freeze([
   'no se pudo leer stable',
   'no se pudo leer la imagen que corre',
+  'no se sabe qué versión corre',
   'no se pudo cambiar la imagen',
   'la prueba sin sesión falló',
   'la huella de stable ya volvió atrás',
@@ -213,7 +214,7 @@ async function actualizar(o) {
   const desde = cv.ok ? cv.version : null;
   if (a.huella === st.huella) return fin('al_dia', desde, st.version);
   // 🔴 nunca se baja: sin saber qué versión corre, o con versiones que no se pueden comparar, no se instala nada
-  if (!desde) return fin(modo === 'auto' ? 'no_pudo' : 'aviso', null, st.version, modo === 'auto' ? 'no se pudo leer la imagen que corre' : null);
+  if (!desde) return fin(modo === 'auto' ? 'no_pudo' : 'aviso', null, st.version, modo === 'auto' ? 'no se sabe qué versión corre: la imagen que corre no trae su versión en el registro; la primera actualización va a mano' : null);
   const cmp = compararVersiones(desde, st.version);
   if (cmp === null) return fin('no_pudo', desde, st.version, 'no se pudieron comparar las versiones');
   if (cmp >= 0) return fin('al_dia', desde, st.version);

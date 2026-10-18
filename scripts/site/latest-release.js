@@ -79,6 +79,27 @@ const falla = (r, que, { esLaEtiqueta = false } = {}) => {
 };
 const json = (t) => { try { return JSON.parse(t); } catch { return null; } };
 
+/**
+ * Dónde pide el token el registro, según el `WWW-Authenticate: Bearer realm="…",service="…"` del 401 de `/v2/`.
+ * null: no lo anuncia (se usa `/token`, lo de GHCR); false: lo anuncia en otro origen, y no se pide afuera del registro.
+ */
+async function anuncioDelToken(base, repo, f) {
+  const r = await pedir(`${base}/v2/`, { fetch: f });
+  if (r.error || r.status !== 401 || !r.headers) return null;
+  const h = String(r.headers.get('www-authenticate') || '');
+  if (!/^bearer\s/i.test(h)) return null;
+  const par = (k) => { const m = new RegExp(`${k}="([^"]*)"`, 'i').exec(h); return m ? m[1] : null; };
+  const realm = par('realm');
+  if (!realm) return null;
+  let u;
+  try { u = new URL(realm); } catch { return false; }
+  if (u.origin !== new URL(base).origin) return false;
+  u.searchParams.set('scope', `repository:${repo}:pull`);
+  const servicio = par('service');
+  if (servicio) u.searchParams.set('service', servicio);
+  return u.toString();
+}
+
 /** La versión de `imagen:etiqueta`, sin credenciales. `urlBase`: el registro de las pruebas (http://127.0.0.1:…). */
 async function consultar({ imagen, etiqueta = 'stable', urlBase = null, fetch: f } = {}) {
   const partida = partirImagen(imagen);
@@ -86,7 +107,13 @@ async function consultar({ imagen, etiqueta = 'stable', urlBase = null, fetch: f
   const { host, repo } = partida;
   const base = urlBase ? String(urlBase).replace(/\/$/, '') : `https://${host}`;
   const servicio = host === 'registry-1.docker.io' ? 'registry.docker.io' : host;
-  const tokenUrl = host === 'registry-1.docker.io' && !urlBase ? `https://auth.docker.io/token?service=${servicio}&scope=repository:${repo}:pull` : `${base}/token?scope=repository:${repo}:pull&service=${servicio}`;
+  let tokenUrl = host === 'registry-1.docker.io' && !urlBase ? `https://auth.docker.io/token?service=${servicio}&scope=repository:${repo}:pull` : `${base}/token?scope=repository:${repo}:pull&service=${servicio}`;
+  if (!(host === 'registry-1.docker.io' && !urlBase)) {
+    // como docker: el 401 de /v2/ anuncia dónde se pide el token (un registro puede darlo en /oauth2/token; GHCR, en /token)
+    const anuncio = await anuncioDelToken(base, repo, f);
+    if (anuncio === false) return { ok: false, codigo: 'ilegible', motivo: 'el registro anuncia su token en otro origen' };
+    if (anuncio) tokenUrl = anuncio;
+  }
   const t = await pedir(tokenUrl, { fetch: f });
   if (t.error || t.status !== 200) return falla(t, 'el token anónimo del registro');
   const tok = json(t.cuerpo);

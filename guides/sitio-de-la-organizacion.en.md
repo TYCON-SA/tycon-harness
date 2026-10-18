@@ -735,6 +735,10 @@ there is something new:
   **by digest**, wakes the site up and runs the check without a session on it. If the check fails, it goes back to the
   previous digest and says so; that digest is not retried until `stable` moves. It never installs a version lower than
   the one running. Each environment runs it with its own tool: each recipe has its **Up to date** paragraph.
+- **From an old image, the first one goes by hand.** An image published before images carried their version does not
+  tell the updater which version is running, and without knowing it, it installs nothing (it never downgrades): the
+  result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
+  then on, the automatic mode carries on by itself.
 
 ### The two ways to start it
 
