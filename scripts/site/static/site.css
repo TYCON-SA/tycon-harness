@@ -15,16 +15,17 @@ a,a:visited{color:inherit;text-decoration-color:var(--line-strong);text-underlin
 
 /* ── armazón: menú al costado; en teléfono, arriba ── */
 .shell{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
-/* la barra de arriba: la marca de la organización, el producto y quién entró */
-.barra{position:sticky;top:0;z-index:40;height:var(--barra);box-sizing:border-box;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line)}
-.barra .logo{height:28px;width:auto;max-width:160px;object-fit:contain}
-.barra .org{font-weight:700;font-size:16px}
-.barra .sep{width:1px;height:26px;background:var(--line-strong)}
-.barra .producto{font-weight:700;font-size:19px}
-.barra .lema{font-size:13px;color:var(--ink-2)}
-.barra .esp,.pie .esp{flex:1}
-.barra .salir{display:flex;align-items:center;gap:12px}
-.barra .salir span{font-size:13px;color:var(--ink-2)}
+/* la barra de arriba: la marca de la organización, el producto y quién entró. Con su elemento: la pestaña Corridas
+   también usa «barra» (su columna de tiempo por paso) y «pie», y su hoja se carga encima de ésta */
+header.barra{position:sticky;top:0;z-index:40;height:var(--barra);box-sizing:border-box;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--line)}
+header.barra .logo{height:28px;width:auto;max-width:160px;object-fit:contain}
+header.barra .org{font-weight:700;font-size:16px}
+header.barra .sep{width:1px;height:26px;background:var(--line-strong)}
+header.barra .producto{font-weight:700;font-size:19px}
+header.barra .lema{font-size:13px;color:var(--ink-2)}
+header.barra .esp,footer.pie .esp{flex:1}
+header.barra .salir{display:flex;align-items:center;gap:12px}
+header.barra .salir span{font-size:13px;color:var(--ink-2)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .logo.invierte{filter:brightness(0) invert(.93)}}
 :root[data-theme="dark"] .logo.invierte{filter:brightness(0) invert(.93)}
 .side{position:sticky;top:var(--barra);align-self:start;height:calc(100vh - var(--barra));display:flex;flex-direction:column;padding:26px 16px 18px;border-right:1px solid var(--line);background:var(--surface-2)}
@@ -40,8 +41,8 @@ a,a:visited{color:inherit;text-decoration-color:var(--line-strong);text-underlin
 .theme button[aria-pressed="true"]{background:var(--ink);color:var(--page)}
 .salir{display:grid;gap:8px;margin:0;font-size:12.5px;color:var(--muted)}
 /* el pie de cada página: la versión, la licencia, los créditos y de quién es */
-.pie{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:48px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
-.pie a{color:var(--ink-2)}
+footer.pie{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:48px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+footer.pie a{color:var(--ink-2)}
 .salir span{overflow-wrap:anywhere}.salir b{color:var(--ink-2);font-weight:600}
 .salir button{justify-self:start;padding:5px 12px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);cursor:pointer;font-size:13px}
 .salir button:hover{background:var(--wash)}
@@ -93,13 +94,14 @@ h3.block{margin:34px 0 12px;display:flex;gap:10px;align-items:baseline;flex-wrap
 .lista .pieza{font-weight:600}.lista .estado{grid-column:1;font-size:13px;color:var(--ink-2)}
 .lista .marca{grid-row:1/span 2;grid-column:2}
 .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:4px 8px}
-.tabla{width:100%;border-collapse:collapse;margin:0;font-size:13.5px}
-.tabla th,.tabla td{border-bottom:1px solid var(--line);padding:9px 9px;text-align:left;vertical-align:top}
-.tabla thead th{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom-color:var(--line-strong);white-space:nowrap}
-.tabla tbody th{font-weight:600}
-.tabla tbody tr:last-child th,.tabla tbody tr:last-child td{border-bottom:0}
-.tabla tbody tr:hover{background:var(--wash)}
-.tabla td.nm{color:var(--nm-ink);font-style:italic;background-image:repeating-linear-gradient(135deg,transparent 0 7px,var(--hatch) 7px 8px)}
+/* table.tabla, con su elemento: en Corridas «tabla» es la caja que envuelve la tabla de corridas */
+table.tabla{width:100%;border-collapse:collapse;margin:0;font-size:13.5px}
+table.tabla th,table.tabla td{border-bottom:1px solid var(--line);padding:9px 9px;text-align:left;vertical-align:top}
+table.tabla thead th{font-size:11.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;border-bottom-color:var(--line-strong);white-space:nowrap}
+table.tabla tbody th{font-weight:600}
+table.tabla tbody tr:last-child th,table.tabla tbody tr:last-child td{border-bottom:0}
+table.tabla tbody tr:hover{background:var(--wash)}
+table.tabla td.nm{color:var(--nm-ink);font-style:italic;background-image:repeating-linear-gradient(135deg,transparent 0 7px,var(--hatch) 7px 8px)}
 .nota{font-size:12px;color:var(--muted);font-weight:400}
 .filtro{display:inline-flex;gap:8px;align-items:center;margin:0 0 12px;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
 .filtro input{padding:7px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface);font-size:14px;text-transform:none;letter-spacing:0;color:var(--ink)}
@@ -130,7 +132,9 @@ a.kpi:hover{background:var(--wash)}
 .fb-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .fb-head h4{margin:0;font:600 21px/1.2 var(--serif)}
 .fb-head .reach{margin:4px 0 0;font-size:13.5px;color:var(--ink-2);max-width:64ch}
-.sub{display:grid;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
+/* «sub» y «bar» son de la pantalla de Configuración; en Corridas los mismos nombres son otra cosa (la barra de tiempo por
+   paso, el renglón de abajo del título de una corrida) */
+#config-app .sub{display:grid;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
 .sub-t{font-size:14.5px;font-weight:600;margin:0}
 .sub-d{font-size:12.5px;color:var(--muted);margin:-6px 0 0}
 .campo{display:grid;gap:4px;font-size:12px;color:var(--muted);min-width:0}
@@ -145,13 +149,13 @@ input.bad{border-color:var(--bad)}
 .fila.quitar{grid-template-columns:minmax(0,1fr) auto}
 .fila.quitar3{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto}
 .k{font-weight:600;font-size:13.5px;align-self:center;overflow-wrap:anywhere}.k small{display:block;font-weight:400;color:var(--muted);font-size:12px}
-.form-block button,.bar button{padding:7px 13px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--page);cursor:pointer;font-size:13.5px;white-space:nowrap}
-.form-block button.sec,.bar button.sec{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
+.form-block button,#config-app .bar button{padding:7px 13px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--page);cursor:pointer;font-size:13.5px;white-space:nowrap}
+.form-block button.sec,#config-app .bar button.sec{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
 .form-block button.sec:hover{background:var(--wash)}
 .form-block button.mas{justify-self:start;border-style:dashed;background:transparent;color:var(--ink-2);border-color:var(--line-strong)}
 .form-block button:disabled{opacity:.45;cursor:not-allowed}
-.bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
-.bar .por-que{font-size:12.5px;color:var(--muted);flex:1 1 260px}
+#config-app .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding-top:14px;border-top:1px solid var(--line)}
+#config-app .bar .por-que{font-size:12.5px;color:var(--muted);flex:1 1 260px}
 .msg{padding:10px 13px;border-radius:10px;font-size:13.5px;display:grid;gap:2px}
 .msg b{color:var(--ink)}
 .msg.ok,.okmsg{background:color-mix(in srgb,var(--good) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--good) 35%,transparent)}
@@ -190,7 +194,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
 @media (max-width:900px){
   .shell{display:block}
   .side{position:sticky;z-index:30;height:auto;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px;padding:10px 16px;border-right:0;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--page) 92%,transparent);backdrop-filter:blur(10px)}
-  .barra{padding:0 16px;gap:10px}.barra .lema,.barra .salir span{display:none}.barra .producto{font-size:17px}
+  header.barra{padding:0 16px;gap:10px}header.barra .lema,header.barra .salir span{display:none}header.barra .producto{font-size:17px}
   .side-foot{grid-column:2;grid-row:1;margin:0;padding:0;border:0;display:flex;align-items:center;gap:8px}
   .side-foot .salir span,.side-foot .lab-tema{display:none}
   .theme button{padding:4px 8px;font-size:11.5px}
@@ -212,8 +216,8 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .form-block{padding:16px}
 }
 @media (max-width:420px){.grid{grid-template-columns:minmax(0,1fr)}}
-.tabla#proyectos{min-width:940px}.tabla#proyectos td:last-child{min-width:150px}
-.tabla#proyectos thead th{white-space:normal}
+table.tabla#proyectos{min-width:940px}table.tabla#proyectos td:last-child{min-width:150px}
+table.tabla#proyectos thead th{white-space:normal}
 
 /* ── Corridas: la vista de la noche adentro del sitio ── su hoja carga después; esto va con más peso para que la letra
    sea la del sitio (la de la noche pide una tipografía que el sitio no trae) y los gráficos no pasen del ancho */

@@ -1,29 +1,433 @@
-# El sitio de la organización: qué es, dónde vive y cómo se instala
+# El sitio de la organización: qué es, cómo se usa y cómo se instala
 
-Esta guía es para quien instala el sitio por primera vez y nunca lo vio. Dice qué es, qué hace falta, cómo probarlo en tu
-máquina, y cómo dejarlo andando en una nube, en un servicio gratis o en una máquina propia. Cómo se usa cada pestaña está
-en la guía de uso del sitio.
+Esta guía es para quien nunca vio el sitio. Sirve a quien lo usa todos los días y a quien lo instala por primera vez.
+Primero cuenta qué es y cómo se usa; después, cómo se instala.
+
+- **[Usar el sitio](#qué-es-y-para-qué-sirve):** qué es, el primer ingreso, cada pestaña, la configuración, qué ve
+  cada persona y los problemas comunes.
+- **[Instalarlo](#qué-hace-falta-antes):** qué hace falta, cómo probarlo en tu máquina y cómo dejarlo andando.
 
 Cada paso de esta guía sale del código o de una corrida real. Lo que todavía no se probó en real lo dice en la misma
 línea.
 
+Las capturas salen de un sitio de laboratorio con una organización inventada, **Acme**: sus personas, máquinas y
+productos no existen. Tu sitio se ve igual, con tus nombres.
+
 ## Qué es y para qué sirve
 
 Es una página web para toda la organización. Cada persona entra con la cuenta de la organización y ve lo suyo: sus
-pedidos, sus pull requests, sus corridas. Quienes mantienen el arnés ven todo, y además tienen la pestaña
+tareas, sus pedidos de cambio, sus corridas. Quienes mantienen el arnés ven todo, y además tienen la pestaña
 **Configuración**, donde se personaliza la organización (quién es responsable de qué, el canal del aviso, los umbrales).
 
-**Un día real.** A las 4 de la mañana corren los procesos de la noche y dejan su foto en el repo de operaciones. Al
-rato llega el aviso de la mañana (Telegram, Slack o Teams), con cantidades y el enlace al sitio. Quien mantiene abre el
-enlace y ve qué hay que decidir hoy. Un dev entra y ve sólo sus cosas. Nadie tiene que clonar nada ni correr nada en su
+**Las palabras que usa el sitio**, para quien no programa:
+
+- **El arnés:** el conjunto de reglas, controles y ayudantes con que el equipo programa con Claude. Este sitio muestra
+  lo que el arnés mide.
+- **Una story:** una tarea de programación descrita por escrito, con lo que tiene que cumplir.
+- **El pipeline y una corrida:** el pipeline es el recorrido por pasos con que el arnés acompaña a alguien a hacer una
+  story (validarla, planear, programar, probar, revisar). Una **corrida** es una vez que alguien hizo ese recorrido.
+- **Un repo:** la carpeta compartida donde vive el código o la configuración, con su historia de cambios. Su **rama
+  principal** es la versión que vale.
+- **Un pedido de cambio** (en inglés, *pull request*): una propuesta para cambiar un repo. Otra persona la mira y, si
+  está bien, la **mergea**: la suma a la rama principal.
+- **Los revisores** (también «agentes»): ayudantes automáticos que revisan el trabajo de cada corrida.
+- **Los tokens:** la medida de cuánto texto leyó y escribió el modelo; es lo que cuesta una corrida.
+- **La foto de la noche:** lo que los procesos de la noche midieron y dejaron guardado. En las fichas aparece como
+  «fuente del» y una fecha.
+- **El refresco:** cada cuánto el sitio vuelve a leer todo (15 minutos, salvo que la organización elija otro plazo).
+- **La mediana:** el valor del medio; la mitad de las corridas está por debajo y la otra mitad por encima.
+
+Cada máquina del equipo sube sus corridas a un lugar compartido, el **buzón de corridas**. Por la noche, unos procesos
+del arnés revisan las dependencias (los paquetes de otros que usa cada producto), las pruebas y los productos, y dejan
+lo que midieron en el **repo de operaciones** de la organización. El sitio lee esos dos lugares y los muestra.
+
+**Un día de quien mantiene.** A las 4 de la mañana corren los procesos de la noche y dejan su foto en el repo de
+operaciones. Al rato llega el aviso de la mañana (Telegram, Slack o Teams), con cantidades y el enlace al sitio. Quien
+mantiene abre el enlace y cae en **Inicio**, en «Qué decidir hoy»: una ficha amarilla es algo que espera una decisión
+(una dependencia nueva, una prueba que se puso roja anoche) y dice dónde se decide. Si una corrida de alguien quedó
+trabada, la busca en **Corridas** y abre su detalle: ahí ve en qué paso se fue el tiempo y qué control encontró algo.
+Si una máquina nueva empezó a mandar corridas, Inicio lo cuenta y **Configuración** pide confirmar de quién es: la
+confirma, el cambio se propone como un pedido al repo de operaciones, y cuando alguien lo aprueba, esa persona empieza a
+ver lo suyo.
+
+**Un día de un dev.** Entra desde el mismo enlace, o desde la dirección del sitio que guardó. En **Inicio** ve lo suyo:
+cuántas corridas hizo en la semana, sus pull requests abiertos y lo que tiene asignado. En **Corridas** ve sólo sus
+corridas, y en **Proyectos**, los productos en los que trabaja. Nadie tiene que clonar nada ni correr nada en su
 máquina para verlo.
 
 **Quién lo usa:**
 
 - **Quien mantiene el arnés:** lo instala una vez, lo actualiza a conciencia, y edita la configuración desde la pestaña
   Configuración.
-- **Cada persona de la organización:** entra y ve lo suyo.
+- **Cada persona de la organización que programa con el arnés:** entra y ve lo suyo. Quien no usa el arnés en una
+  máquina no tiene corridas propias: entra sin rol, salvo que quien mantiene lo sume a la lista de los que mantienen.
 - **Alguien de otra organización:** no entra. El sitio deja pasar sólo a la organización.
+
+**Lo que no hace.** El sitio muestra; no actúa. No escribe en ningún repo, salvo los pedidos de cambio que propone la
+pestaña Configuración, y esos entran sólo cuando alguien los aprueba. No corre pipelines, no mergea, no despliega y no
+toca ninguna máquina. Lo que muestra tiene, a lo sumo, el atraso de la última foto de la noche o de la última bajada del
+buzón.
+
+## El primer ingreso
+
+**La dirección.** La deja quien instaló el sitio: viene en el aviso de la mañana, y quien mantiene la tiene anotada en
+la configuración del sitio (para quien mantiene: `site.url`, en la sección «Quién mantiene el sitio»). Si no la tenés,
+pedísela a quien te pasó el enlace o a quien instaló el arnés en tu máquina.
+
+**El inicio de sesión.** El sitio pide la cuenta de la organización: la de Microsoft, Google o GitHub, según cómo se
+instaló. Si tu organización lo instaló en Azure, la primera pantalla es la de Microsoft. Después de entrar, el sitio te
+muestra Inicio. Arriba a la derecha está tu correo y el botón **Salir**;
+abajo a la izquierda, el **Tema** (automático, claro u oscuro).
+
+**Lo que ves la primera vez** depende de quién sos para el sitio:
+
+- **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
+- **Una persona confirmada** ve tres pestañas (Inicio, Corridas y Proyectos), con lo suyo.
+- **Alguien sin rol** ve sólo una página que dice que su cuenta todavía no está confirmada, sin el menú de la
+  izquierda.
+
+![La página de quien todavía no tiene rol: «tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés»](sitio-de-la-organizacion/capturas/sin-rol.png)
+
+**Tu máquina, todavía sin confirmar.** Cada máquina del equipo sube sus corridas con el correo de git de quien la usa.
+Quien mantiene tiene que confirmar que esa máquina es tuya. Hasta que te confirmen, tus corridas las ven sólo quienes
+mantienen; si es tu única máquina, además entrás sin rol y ves la página de arriba. Pedíselo a quien mantiene el arnés
+(si no sabés quién es, a quien te pasó el enlace o a quien instaló el arnés en tu máquina). Lo confirma en
+Configuración, el cambio entra cuando alguien lo aprueba, y a partir del próximo refresco (a lo sumo 15 minutos después)
+ves lo tuyo.
+
+## Las pestañas
+
+A la izquierda está el menú, con las pestañas numeradas. Cada pestaña contesta una pregunta.
+
+**«No medido».** Una ficha rayada y gris dice **no medido** y el motivo, por ejemplo «no hay foto de esta fuente».
+«No medido» no es cero ni es verde: quiere decir que hoy ese dato no se pudo saber. Si una ficha sigue así más de un
+día, avisale a quien mantiene: el motivo dice qué falta. Algunas no se pueden medir desde el sitio y lo dicen siempre
+(por ejemplo, «Retrospectivas pendientes»: viven en la máquina de quien mergeó); ésas no hace falta avisarlas.
+
+### Inicio
+
+**Qué contesta:** ¿qué espera una decisión mía hoy?
+
+Para **quien mantiene** es «Qué decidir hoy»: una ficha por cada cosa que la noche puede traer. Cada una tiene una
+etiqueta (**Decidir** en amarillo si hay algo, **Nada** en verde si no hay, **No medido** si no se pudo saber), una
+cantidad y la fecha de la foto de donde salió («fuente del»). Algunas traen el enlace «dónde se decide»; las otras se
+deciden en el repo de operaciones, donde la noche dejó su foto. Las fichas son:
+
+- **Dependencias:** las nuevas con una vulnerabilidad, las aceptadas que todavía no se arreglaron, y las rechazadas sin
+  una deuda declarada (una fecha para pagarla).
+- **Vigilante:** lo que el vigilante de producción (un proceso que mira los productos en producción) dejó pendiente, o
+  aceptado y sin story.
+- **Pull requests abiertos hace más de dos días** y **pedidos cerrados con la vulnerabilidad viva**.
+- **Suites rojas** y **casos del banco rojos esta noche:** las pruebas del arnés y los controles del arnés que se
+  pusieron rojos anoche.
+- **Datos declarados que vencen:** números que alguien anotó a mano con una fecha para revisarlos.
+- **Máquinas sin confirmar con corridas** y **retrospectivas pendientes**.
+
+![Inicio de quien mantiene: «Qué decidir hoy», con fichas en Decidir, Nada y No medido](sitio-de-la-organizacion/capturas/inicio-quien-mantiene.png)
+
+Para **una persona** es «Lo tuyo»: sus corridas de los últimos 7 días (con un enlace a Corridas), sus pedidos de cambio
+abiertos, lo que tiene asignado (con hasta un día de atraso, porque sale de la foto de la noche) y sus proyectos.
+
+![Inicio de una persona: tus corridas, tus pull requests abiertos, lo que tenés asignado y tus proyectos](sitio-de-la-organizacion/capturas/inicio-persona.png)
+
+**Qué hacer:** una ficha en Decidir se resuelve donde dice su enlace, no en el sitio. Cuando se resuelve, la ficha pasa
+a Nada con la foto de la noche siguiente.
+
+### Corridas
+
+**Qué contesta:** ¿cómo vienen las corridas del pipeline? ¿Dónde se fue el tiempo y qué encontraron los controles?
+
+Arriba, el alcance: cuántas corridas se leyeron y de qué máquinas. Después, «Lo que se mira primero» explica los dos
+resultados de un control: **encontró un error** (una prueba o la compilación no pasaron y se arreglaron ahí mismo) y
+**frenó** (el control no dejó pasar algo). Los dos son el control haciendo su trabajo, no un problema. Al lado de cada
+mediana, **n=** dice de cuántas corridas sale el número.
+
+Debajo hay un **filtro** (fechas, producto, máquina, sólo las que tienen consumo medido, sólo las que llegaron al último
+paso) y fichas con los números del filtro: cuántas llegaron al final, cuánto dura una corrida, en cuántas un control
+encontró un error, cuántos agentes se lanzaron y cuánto se consumió.
+
+![Corridas: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
+
+Más abajo está **«Corrida por corrida»**: una fila por corrida, de la más nueva a la más vieja. La barra de cada fila
+reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la story, 2 Armar
+el plan, 3 Aprobar el plan, 4 Implementar y correr las pruebas, 5 Revisores, 6 Hallazgos: el informe, 7 Hallazgos: la
+decisión y 8 Preparar el commit. «Sin marca» es un tramo que la corrida no anotó.
+
+![La leyenda de los pasos y la tabla «Corrida por corrida»](sitio-de-la-organizacion/capturas/corridas-leyenda.png)
+
+**Un clic en una fila** abre su detalle: la línea de tiempo con cada paso y cada control en su carril, qué encontraron
+los controles, los revisores que corrieron, el consumo en tokens por paso y los archivos que tocó. La leyenda de la
+línea de tiempo: un **círculo verde** es que el control miró y dejó pasar; un **triángulo rojo**, que encontró un
+error; un **cuadrado negro**, que no dejó pasar; un **círculo punteado**, que no quedó registrado cómo salió; una
+**raya naranja**, que arranca otra vuelta de revisores; una **raya vertical**, un paso marcado junto con el anterior; el
+**gris**, el tiempo entre pasos; y un **recuadro naranja**, el tiempo esperando a una persona (una pregunta sin
+contestar). Si el detalle muestra un comando para correr, es para quien mantiene el arnés. Los archivos se ven
+sólo si la organización decidió bajar las conversaciones (sección «Conversaciones de las corridas»).
+
+![El detalle de una corrida: la línea de tiempo, los controles, los revisores y el consumo](sitio-de-la-organizacion/capturas/corridas-detalle.png)
+
+**Qué hacer:** una corrida que «quedó en el 4» puede estar en curso o abandonada; su detalle dice hasta dónde llegó.
+Una persona ve sólo las corridas de sus máquinas confirmadas; quien mantiene ve todas.
+
+### Proyectos
+
+**Qué contesta:** ¿cómo va cada producto?
+
+Una fila por producto: las stories en curso (y cuántas en revisión), las paradas hace más de 30 días, las bloqueadas,
+qué versión está en prueba y cuál en producción, si espera una aprobación, si el vigilante lo mira, sus vulnerabilidades
+vivas y cómo da contra los otros productos (la paridad). Abajo, el total sin contar dos veces lo compartido. Una persona
+ve los productos en los que trabaja. La **paridad** compara cada producto con los otros: lo que uno hace y los demás no.
+
+![Proyectos: una fila por producto](sitio-de-la-organizacion/capturas/proyectos.png)
+
+**Qué hacer:** una story parada o bloqueada se destraba en su repo, con su equipo; el sitio sólo la muestra.
+
+### Arnés
+
+**Qué contesta:** ¿los controles del arnés andan? Sólo la ve quien mantiene.
+
+Muestra si cada foto de la noche llegó al día, cuántos casos del **banco de controles** (unas pruebas que confirman que
+cada freno del arnés frena lo que tiene que frenar) y cuántas **suites de prueba** (las pruebas del propio arnés) dieron
+rojo, el **examen de los revisores** (si los revisores automáticos siguen encontrando lo que tienen que encontrar), y la
+versión del arnés que corre el sitio. El
+enlace de abajo abre el tablero del arnés en seis preguntas.
+
+![Arnés: las fotos de la noche, el banco de controles, las suites y la versión del sitio](sitio-de-la-organizacion/capturas/arnes.png)
+
+**Qué hacer:** una foto que no llegó o un rojo nuevo se mira en el proceso de la noche que lo produjo.
+
+### Configuración
+
+**Qué contesta:** ¿cómo está configurada la organización, y cómo se cambia? Sólo la ve quien mantiene. La parte
+siguiente la cuenta sección por sección.
+
+Arriba hay cuatro fichas: las máquinas por confirmar, las secciones con algo para arreglar, las secciones al día y las
+máquinas con una versión vieja del arnés o «sin noticias» (que no mandan corridas hace un tiempo, así que no se sabe qué
+versión tienen). Debajo, cinco pestañas: **Personas**, **Repos y productos**, **Avisos y la
+noche**, **Cómo trabaja Claude** e **Instalación y actualización**. Un número al lado de una pestaña dice cuántas cosas
+esperan ahí.
+
+![Configuración: las cuatro fichas de arriba y la pestaña Personas](sitio-de-la-organizacion/capturas/configuracion-personas.png)
+
+## Configuración, sección por sección
+
+Cada sección es una parte de un archivo de configuración que vive en un repo de la organización: el **repo de
+operaciones** (lo de la noche y del sitio) o el **repo del perfil del equipo** (lo que llega a cada máquina). Cada una
+dice arriba a la derecha cómo está: **al día**, **por confirmar**, **sin configurar**, **sólo para mirar**, o
+**revisada** mientras tenés un cambio revisado sin proponer.
+
+**El ciclo de un cambio.** Nada se escribe directo. Cambiás los campos de una sección y apretás **Revisar cambios**: el
+sitio valida el cambio con las mismas reglas que usa el arnés y dice «Revisado: está bien escrito» o qué está mal.
+Después, **Proponer el cambio** muestra el archivo de hoy al lado del archivo después del cambio, para mirarlo antes de
+confirmar. El archivo está escrito en un formato con llaves y comillas; no hace falta entenderlo entero: mirá que lo
+único distinto entre los dos lados sea lo que cambiaste (cada lado se desplaza para ver el archivo entero). **Confirmar y proponer** abre un pedido de cambio (un pull request) en el repo de esa sección, y la sección
+muestra el enlace al pedido. Alguien del equipo lo revisa y lo mergea. El sitio toma el cambio en el **próximo
+refresco** (cada 15 minutos, si la organización no eligió otro plazo). **Descargar** baja el archivo cambiado, para
+cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
+
+![Una sección cambiada y revisada: «Revisado: está bien escrito»](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
+
+![Antes de proponer: el archivo de hoy y el archivo después del cambio, con «Confirmar y proponer»](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
+
+![El pedido abierto: la sección muestra su enlace](sitio-de-la-organizacion/capturas/configuracion-propuesto.png)
+
+**Lo que se ve «para mirar».** Algunas secciones se muestran sin poder cambiarse, y dicen por qué. Por ejemplo,
+«Azure DevOps» cuando el repo del perfil vive en GitHub, una sección que la versión del arnés que pide el perfil
+todavía no sabe leer (la sección dice qué versión pedir), o los umbrales mientras la noche todavía no lee el archivo de
+la organización. Para cambiarlas, primero hay que cumplir lo que dicen.
+
+Las secciones, en el orden de la pantalla:
+
+### Personas
+
+- **La organización**: el nombre y el logo que muestra la barra de arriba y el pie. Queda en `operations.json`, en el
+  repo de operaciones. Lo revisa quien mantiene.
+- **Quién mantiene el sitio**: quiénes ven la pestaña Configuración y pueden proponer cambios; también el buzón de
+  corridas, el refresco y la dirección del sitio. Si te sacás de la lista, perdés el acceso cuando se apruebe. Queda en
+  `operations.json`, en el repo de operaciones. Lo revisa otra persona de la lista.
+- **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
+  máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
+  Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
+- **A quién le llegan los avisos y los pedidos**: a quién se asigna lo que la noche encuentra (una dependencia vieja,
+  un hallazgo del vigilante). Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
+
+![Personas y máquinas: una máquina por confirmar y las confirmadas](sitio-de-la-organizacion/capturas/configuracion-confirmar-maquina.png)
+
+### Repos y productos
+
+- **Dónde vive cada repo**: dónde están el arnés, el perfil del equipo y el repo de operaciones. Llega a todas las
+  máquinas. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene el arnés.
+- **Despliegues de cada producto**: qué paso de cada pipeline es la prueba y cuál es producción, para que Proyectos
+  diga qué versión está afuera. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien conoce los
+  pipelines del producto.
+- **Diferencias aceptadas entre productos**: lo que un producto hace distinto a propósito, con una fecha para volver a
+  mirarlo; la noche no lo cuenta como diferencia. Queda en `scripts/ci/product-parity.json`, en el repo de operaciones.
+  Lo revisa quien mantiene el arnés.
+- **Azure DevOps**: la organización de Azure DevOps del equipo. Llega a cada máquina. Queda en `team-profile.json`, en
+  el repo del perfil. Lo revisa quien mantiene el arnés.
+
+Debajo están **Productos** (los que revisa la noche) y **Lo que trae la organización** (las skills, los revisores,
+las guías del alta y los paquetes del repo del perfil, cada uno con su enlace). Son para mirar: se cambian con un pedido
+en su repo.
+
+![Repos y productos](sitio-de-la-organizacion/capturas/configuracion-repos.png)
+
+### Avisos y la noche
+
+- **Dónde llega el resumen de cada mañana**: el canal del aviso (Telegram, Slack o Teams). Queda en `operations.json`,
+  en el repo de operaciones. Lo revisa quien mantiene.
+- **Aviso de espera**: cuántos minutos espera una corrida a una persona antes de avisar. Llega a todas las máquinas.
+  Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
+  amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
+
+![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
+
+### Cómo trabaja Claude
+
+- **Cómo contesta Claude**: el idioma, el estilo y el largo de las respuestas en todas las máquinas. Queda en
+  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Qué modelo usa cada trabajo del pipeline**: el modelo de los revisores, del pase adversarial, de los ayudantes y de
+  la sesión; lo que no se declara usa el de hoy. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien
+  mantiene, mirando el costo.
+- **Dónde corren las pruebas completas al mergear**: en la máquina o en el servidor, repo por repo. Queda en
+  `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
+  avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
+  puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
+  Corridas muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
+  mantiene.
+
+![Cómo trabaja Claude](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+
+### Instalación y actualización
+
+- **Cómo se actualizan las máquinas**: qué versión toma cada máquina y si se actualiza sola al arrancar. Queda en
+  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Perfil de instalación**: cuánto instala el arnés en cada máquina (mínimo o completo), con la lista de lo que trae
+  cada uno. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Paquetes de la organización**: qué paquetes del arnés (los revisores y las guías de un producto o de un cliente)
+  se activan en todas las máquinas. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+
+Debajo está **Qué versión del arnés tiene cada máquina**, la que informó cada una con su última corrida. Es para mirar:
+las máquinas se actualizan solas al arrancar.
+
+![Instalación y actualización](sitio-de-la-organizacion/capturas/configuracion-instalacion.png)
+
+## Qué ve cada rol
+
+El sitio decide quién sos por tu correo:
+
+| Rol | Inicio | Corridas | Proyectos | Arnés | Configuración |
+|---|---|---|---|---|---|
+| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las corridas | todos los productos | sí | sí, y propone cambios |
+| **Persona confirmada** | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no |
+| **Persona con la máquina sin confirmar** | «Lo tuyo», si tiene otra máquina confirmada; si no, la página «tu cuenta todavía no está confirmada» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no |
+| **Sin rol** | sólo la página «tu cuenta todavía no está confirmada» | no | no | no | no |
+
+**Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
+
+- Para ser **persona**, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»). Tu máquina
+  aparece sola en «Por confirmar» cuando sube su primera corrida.
+- Para **mantener**, tu correo tiene que estar en «Quién mantiene el sitio». La primera persona la pone quien instala,
+  antes de que exista la lista.
+- Para dejar de ver, se saca el correo o la máquina de esas mismas secciones.
+
+## Problemas comunes
+
+### No puedo entrar
+
+**Lo que se ve:** la página de inicio de sesión no te deja pasar, o dice que tu cuenta no tiene acceso a la
+aplicación.
+
+**Por qué pasa:** la organización puede dejar entrar sólo a las personas que habilitó una por una. En Microsoft eso se
+llama «asignar» a alguien a la aplicación del sitio. También pasa si el navegador entra con otra cuenta (una personal, o
+la de otra organización).
+
+**Qué hacer:** pedile a quien mantiene que te habilite («que te asigne a la aplicación del sitio», si es Microsoft). Si ya estás asignado, salí de la otra cuenta o
+abrí una ventana privada y entrá con la de la organización.
+
+### Entro y no veo nada
+
+**Lo que se ve:** la página «tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés».
+
+**Por qué pasa:** entraste bien, pero el sitio no te tiene ni como persona ni como quien mantiene: ninguna máquina
+confirmada está a tu nombre.
+
+**Qué hacer:** si programás con el arnés, hacé una story con él en tu máquina: al terminar, la máquina sube su corrida
+y se presenta. Después pedile a quien mantiene que la confirme. Si no usás el arnés en una máquina, el sitio no tiene
+nada tuyo para mostrar; si necesitás ver todo, pedile a quien mantiene que te sume a la lista de los que mantienen.
+
+### No veo mis corridas
+
+**Lo que se ve:** entrás, pero en Corridas faltan corridas tuyas.
+
+**Por qué pasa:** la máquina de donde salieron todavía no está confirmada a tu nombre. O el correo con que entrás no es
+el correo de git de esa máquina: por ejemplo, la cuenta de Microsoft tiene un nombre de usuario distinto del correo.
+
+**Qué hacer:** pedile a quien mantiene que confirme la máquina. Si el correo no coincide, quien mantiene puede anotar el
+otro como tuyo en la configuración de la organización.
+
+### El sitio está frenado
+
+**Lo que se ve:** la página «Sitio frenado», que dice desde cuándo.
+
+**Por qué pasa:** la configuración de la organización (`operations.json`, en el repo de operaciones) no valida hace más
+de 24 horas. Durante esas 24 horas el sitio sigue con la última configuración buena y quien mantiene ve un aviso; pasado
+el plazo, se frena para todos.
+
+**Qué hacer:** quien mantiene arregla el archivo con un pedido en el repo de operaciones. El sitio se destraba solo en
+el refresco siguiente.
+
+![El sitio frenado](sitio-de-la-organizacion/capturas/sitio-frenado.png)
+
+### Cargando las corridas
+
+**Lo que se ve:** «cargando las fuentes» o «cargando las corridas», y la página se recarga sola.
+
+**Por qué pasa:** el sitio acaba de arrancar y todavía está leyendo el repo de operaciones o bajando el buzón de
+corridas. La primera bajada del buzón puede tardar unos minutos.
+
+**Qué hacer:** esperar. Si sigue igual más de diez minutos, avisale a quien mantiene.
+
+![Corridas mientras el sitio baja el buzón](sitio-de-la-organizacion/capturas/cargando-corridas.png)
+
+### No se pudo actualizar
+
+**Lo que se ve:** una banda roja arriba, «no se pudo actualizar desde» una hora, con el motivo.
+
+**Por qué pasa:** el último refresco no pudo leer una fuente (el repo de operaciones o el buzón). El sitio sigue
+mostrando lo último que leyó bien.
+
+**Qué hacer:** nada, si se va en el refresco siguiente. Si sigue, quien mantiene mira el motivo: casi siempre es una
+credencial vencida o un permiso que cambió.
+
+![La banda «no se pudo actualizar»](sitio-de-la-organizacion/capturas/no-se-pudo-actualizar.png)
+
+### «Proponer» está apagado
+
+**Lo que se ve:** en una sección de Configuración, «Proponer el cambio» no está, o está gris, y al lado dice por qué.
+
+**Por qué pasa:** el sitio sólo propone si el repo exige que otra persona apruebe cada cambio antes de sumarlo a la
+rama principal (una «política de revisión»); sin esa regla, el sitio podría cambiar el repo sin que nadie lo mire.
+También cuando el sitio no tiene permiso para escribir en ese repo, o cuando ya hay un pedido abierto sobre el mismo
+archivo (la sección muestra su enlace).
+
+**Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
+pedir la política de revisión o el permiso de escritura. Con un pedido abierto, esperá a que se mergee o se cierre.
+
+![«Proponer» apagado, con su motivo: el repo no tiene una política que pida revisión](sitio-de-la-organizacion/capturas/proponer-apagado.png)
+
+### La primera página tarda en abrir
+
+**Lo que se ve:** después de un rato sin uso, la primera página tarda en abrir, a veces más de medio minuto.
+
+**Por qué pasa:** en una instalación que se duerme cuando nadie la usa (Azure Container Apps, Render), la primera
+visita la despierta.
+
+**Qué hacer:** esperar; las páginas siguientes abren rápido.
 
 ## Qué hace falta antes
 
