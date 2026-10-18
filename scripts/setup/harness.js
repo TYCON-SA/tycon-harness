@@ -104,7 +104,7 @@ const APPLIER_TIMEOUT_MS = 15 * 60 * 1000;
 
 // La tabla cerrada: subcomando → opciones (flag | value) y, si acepta, los valores sueltos (positional).
 const COMMANDS = {
-  install:   { opts: { '--channel': 'value', '--local': 'value', '--from-existing': 'flag', '--source': 'value', '--dry-run': 'flag', '--yes': 'flag', '--profile': 'value', '--integrations': 'value', '--packs': 'value', '--harness-clone': 'value', '--version': 'value', '--repo': 'value', '--tool': 'list', '--team': 'value' }, help: 'primera instalación desde un clon: pregunta lo que no puede decidir solo (con terminal), muestra el plan y pide conformidad (--dry-run sólo lo muestra; --yes lo acepta sin terminal pero no elige; --profile minimal|full elige cuánto se instala; --integrations <lista|none> y --packs all|none|<a,b> contestan las otras dos preguntas; --harness-clone <clon> dice de qué clon interno se lee la capa privada); después enlace, estado, copia fija de arranque, línea de arranque, @import, aplicador. --version <número|latest> (story 8.23, tanda B): en una máquina SIN arnés, baja esa versión publicada de GitHub como archivos verificados a ~/.tycon/harness, sin git (--repo <org/nombre> si el árbol no declara el repo). --tool claude|codex (repetible; story 8.23, tanda C): qué herramientas enchufar; sin la opción, las que detecta en la máquina (el plan las nombra). --team <org>/<repo> (story 8.25): baja también la capa del equipo —el perfil y la llave del buzón— de ese repo privado, con el mismo permiso, y la apila sobre la versión bajada; el estado la recuerda y update la lleva a cada versión nueva' },
+  install:   { opts: { '--channel': 'value', '--local': 'value', '--from-existing': 'flag', '--source': 'value', '--dry-run': 'flag', '--yes': 'flag', '--profile': 'value', '--integrations': 'value', '--packs': 'value', '--harness-clone': 'value', '--version': 'value', '--repo': 'value', '--tool': 'list', '--team': 'value', '--defaults': 'flag' }, help: 'primera instalación desde un clon: pregunta lo que no puede decidir solo (con terminal), muestra el plan y pide conformidad (--dry-run sólo lo muestra; --yes lo acepta sin terminal pero no elige; --defaults contesta solo lo que nadie fijó —instalación mínima, ninguna integración, sin paquete— y, con la versión bajada, muestra el plan corto de cinco renglones; lo fijado por opción, variable, archivo o perfil del equipo gana; --profile minimal|full elige cuánto se instala; --integrations <lista|none> y --packs all|none|<a,b> contestan las otras dos preguntas; --harness-clone <clon> dice de qué clon interno se lee la capa privada); después enlace, estado, copia fija de arranque, línea de arranque, @import, aplicador. --version <número|latest> (story 8.23, tanda B): en una máquina SIN arnés, baja esa versión publicada de GitHub como archivos verificados a ~/.tycon/harness, sin git (--repo <org/nombre> si el árbol no declara el repo). --tool claude|codex (repetible; story 8.23, tanda C): qué herramientas enchufar; sin la opción, las que detecta en la máquina (el plan las nombra). --team <org>/<repo> (story 8.25): baja también la capa del equipo —el perfil y la llave del buzón— de ese repo privado, con el mismo permiso, y la apila sobre la versión bajada; el estado la recuerda y update la lleva a cada versión nueva' },
   // `freeAfter: 2` (story 8.23, tanda G · AC 43): después del verbo y la clave, un valor suelto (`config set paths.maintained <ruta>`);
   // el secreto no va por ahí (cmdConfig lo rechaza con el motivo)
   // las claves de la tabla salen de github-auth.js (KEYS): una clave que cmdConfig acepta y la tabla no, se rechaza antes de llegar
@@ -719,7 +719,7 @@ function toolChoice(ctx, tree, { always = [], state = null, legacyDeploy = false
   const kept = before.filter((t) => !choice.tools.includes(t) && !offByKey(t));
   const unkept = before.filter((t) => !choice.tools.includes(t) && offByKey(t));
   const tools = T.TOOLS.filter((t) => choice.tools.includes(t) || kept.includes(t));
-  if (!tools.length) return { ok: false, code: 1, line: T.noneFound() };
+  if (!tools.length) return { ok: false, code: 1, line: T.noneFound(ctx.platform) };
   let line = T.planLine(Object.assign({}, choice, { tools: choice.tools }), detected);
   if (!choice.tools.length) line = 'herramientas a enchufar: ninguna nueva';
   if (kept.length) line += ` — ya ${kept.length === 1 ? 'enchufada, se conserva' : 'enchufadas, se conservan'}: ${T.names(kept)} (para sacarla: harness.js uninstall --tool ${kept[0]})`;
@@ -927,11 +927,12 @@ function installPlan(ctx, { pinned = null } = {}) {
  *     su variable de entorno, sale 2 sin preguntar nada);
  *   · el perfil se pregunta en una PRIMERA instalación cuando nadie lo dijo (ni `--profile`, ni variable, ni archivo, ni
  *     perfil del equipo): con terminal, sin valor por defecto; sin terminal sale 2 con las dos opciones, también con
- *     `--yes` (`--yes` acepta el plan, no elige). Una instalación que ya existe sigue con la regla de la tanda C (sin
- *     elegir se comporta como full) y `doctor` lo avisa;
+ *     `--yes` (`--yes` acepta el plan, no elige). Con `--defaults` no se pregunta: queda `minimal` («por defecto»). Una
+ *     instalación que ya existe sigue con la regla de la tanda C (sin elegir se comporta como full) y `doctor` lo avisa;
  *   · las integraciones y el paquete se preguntan en esa misma primera instalación con terminal, sólo si el perfil no lo
  *     fija la configuración (una máquina configurada —el perfil del equipo, el archivo, una variable— no se pregunta) y
- *     sólo lo que nadie fijó ni vino por opción.
+ *     sólo lo que nadie fijó ni vino por opción. Con `--defaults` no se preguntan: quedan como están (ninguna prendida,
+ *     sin paquete), igual que sin terminal.
  *
  * La misma lógica en cualquier sistema (T52). Nunca tira.
  * @returns {{ code?: number, lines?: string[], profile?: string, profileVia?: string, writes: object[], over: object,
@@ -978,7 +979,10 @@ function installQuestions(ctx, tree, existing) {
   const effects = mod('managed').readEffects(tree);
   const fixedByConfig = ['env', 'maquina', 'perfil'].includes(o[PR.KEY]);
   const first = !existing;
-  if (first && !ctx.opts.profile && !fixedByConfig) {
+  if (first && !ctx.opts.profile && !fixedByConfig && ctx.opts.defaults) {
+    out.profile = 'minimal';
+    out.profileVia = 'por defecto';
+  } else if (first && !ctx.opts.profile && !fixedByConfig) {
     const lines = Q.profileLines(effects.ok ? effects.effects : []);
     // sin terminal, o con `--yes` (el modo desatendido: no pregunta nada aunque haya terminal), no hay a quién preguntarle
     if (!P.isTerminal() || ctx.opts.yes) return Object.assign(out, { code: 2, lines: ['harness.js install: elegí el perfil: `--profile minimal` o `--profile full` (sin terminal, o con `--yes`, no pregunto: `--yes` acepta el plan pero no elige el perfil)', ...lines] });
@@ -995,7 +999,7 @@ function installQuestions(ctx, tree, existing) {
   const asked = {};
   // con `--yes` no se pregunta nada aunque haya terminal (decisión del dueño, 2026-10-05): lo que no vino por opción queda
   // como está, igual que sin terminal
-  if (out.guided && P.isTerminal() && !ctx.opts.yes) {
+  if (out.guided && P.isTerminal() && !ctx.opts.yes && !ctx.opts.defaults) {
     if (!wantI) {
       const open = offered.filter((x) => o[`integraciones.${x.key}`] === 'apagado');
       if (open.length) {

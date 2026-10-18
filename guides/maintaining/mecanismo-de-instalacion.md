@@ -397,6 +397,11 @@ se pregunta, en `installQuestions` de `harness.js`. El mismo código en cualquie
   dice cómo se prenden (`tycon-config.js set ado.org <url>`). `mailbox` y `nightly` no se ofrecen: son del equipo.
 - **El paquete del stack**: «¿Usás el paquete del stack en todos tus repos? [s/N]» → `packs.default` en `all` (con no,
   queda el de fábrica, `none`, sin escribir nada).
+- **Con `--defaults`** (lo que pasa `npx`): no pregunta ninguna de las tres. Lo que nadie fijó queda en su valor por
+  defecto —`minimal` («por defecto» en el plan), ninguna integración, sin paquete— y lo fijado por opción, variable,
+  archivo o perfil del equipo gana. Con `--yes` ya no sale 2 por el perfil. Con la versión bajada, el plan que se
+  muestra antes del «¿Instalo?» es el corto (`shortPlan` de `questions.js`, cinco renglones contados desde la lista de
+  efectos); `--dry-run` sigue mostrando el detallado.
 - **Cuándo no pregunta**: sobre una instalación que ya existe (sin perfil elegido sigue la regla de «Los perfiles»: se
   comporta como `full`, y `doctor` lo avisa); y las integraciones y el paquete tampoco cuando el perfil lo fija la
   configuración — una máquina configurada (el perfil del equipo, el archivo, una variable) no se pregunta nada; y con

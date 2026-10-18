@@ -148,9 +148,23 @@ function planLine(choice, detected) {
 /** «Claude Code y Codex», «Codex», … */
 function names(tools) { return tools.map((t) => LABELS[t]).join(' y '); }
 
-/** Lo que dice `install` cuando no hay ninguna (AC 21): sale 1 sin escribir. */
-function noneFound() {
-  return 'no encontré Claude Code ni Codex en esta máquina (ni su ejecutable en el PATH ni su configuración propia): instalá una de las dos, o decí cuál enchufar con --tool claude|codex. No escribí nada';
+/**
+ * Cómo se instala cada herramienta en ese sistema y cómo se inicia sesión: las órdenes de la documentación de cada una
+ * (code.claude.com/docs/en/setup y el README de openai/codex). Se muestran, nunca se corren. El paquete de npm tiene
+ * una copia (`agentLines` de scripts/setup/npm/index.js) y npm-package.test.js mide que digan lo mismo.
+ */
+function agentLines(platform = process.platform) {
+  const win = platform === 'win32';
+  return [
+    `  Claude Code: ${win ? 'irm https://claude.ai/install.ps1 | iex   (en PowerShell)' : 'curl -fsSL https://claude.ai/install.sh | bash'} — después corré claude y seguí el navegador para iniciar sesión`,
+    `  Codex: ${win ? 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"' : 'curl -fsSL https://chatgpt.com/codex/install.sh | sh'} — después corré codex y elegí «Sign in with ChatGPT»`,
+  ];
+}
+
+/** Lo que dice `install` cuando no hay ninguna (AC 21): sale 1 sin escribir, con cómo instalar cada una. */
+function noneFound(platform = process.platform) {
+  return ['no encontré Claude Code ni Codex en esta máquina (ni su ejecutable en el PATH ni su configuración propia). El arnés trabaja con uno de los dos; instalá uno y volvé a correr la misma línea:',
+    ...agentLines(platform), 'O decí cuál enchufar con --tool claude|codex. No escribí nada'].join('\n');
 }
 
 /** ¿El lado Codex de la máquina ya está desplegado? (un `hooks.json` o un perfil en su carpeta: lo que deja el arnés) */
@@ -365,7 +379,7 @@ function recorded(state) {
 
 module.exports = {
   TOOLS, LABELS, DETECT,
-  codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, noneFound, codexDeployed, plugged, recorded, same,
+  codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, agentLines, noneFound, codexDeployed, plugged, recorded, same,
   agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL,
   CODEX_TEAM_RECORD, TEAM_AGENT_NAME, codexTeamRecordPath, readCodexTeamRecord, writeCodexTeamRecord,
 };

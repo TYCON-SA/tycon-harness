@@ -35,7 +35,7 @@
 #         los paquetes, `--packs` con otro valor no se escribe y el plan lo dice en una línea (la instalación sigue);
 #         sin perfil se escribe como siempre, y cuando el perfil llega después los paquetes salen de él.
 #
-# Uso: bash scripts/tests/harness-questions.test.sh [--only T43|T44|T45|T46|REV|PACKS]
+# Uso: bash scripts/tests/harness-questions.test.sh [--only T43|T44|T45|T46|REV|PACKS|DEFAULTS]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
@@ -352,6 +352,90 @@ if corre PACKS; then
   { [ "$RC" = 0 ] && grep -q 'packs.default = all (perfil)' "$T/packs-explain.out" && [ "$(cksum < "$LAB_HOME/.claude/tycon.json")" = "$SUMA" ]; } \
     && ok "T8 …con el perfil del equipo después: los paquetes salen del perfil y tycon.json no cambió" \
     || mal "T8 con el perfil después: rc ${RC}; $(grep -m1 'packs.default' "$T/packs-explain.out")"
+fi
+
+# ══ DEFAULTS · `--defaults`: lo que nadie fijó se contesta solo; el plan corto, contado desde la lista de efectos ══════════
+if corre DEFAULTS; then
+  echo "8.46 · T4 Defaults_SinPreguntas · T5 PerfilDelEquipoGana · T6 OpcionExplicitaGana · T7 Clon_SinDefaultsPregunta · T8/T9 PlanCorto"
+  # (T4) con terminal y nada fijado: ninguna de las tres preguntas; queda minimal, ninguna conexión y sin paquete
+  qlab d4 || true
+  RC=0; harness_lab_pty "s" harness install --defaults > "$T/d4.out" 2>&1 || RC=$?
+  if [ "$RC" = 0 ] && [ "$(count 'Elegí 1, 2' "$T/d4.out")" = 0 ] && [ "$(count 'integraciones prendo' "$T/d4.out")" = 0 ] \
+     && [ "$(count 'paquete del stack en todos' "$T/d4.out")" = 0 ] && [ "$(cfg "sorted(d.keys())")" = "['install']" ] \
+     && [ "$(cfg "(d.get('install') or {}).get('profile')")" = minimal ]; then
+    ok "T4 --defaults con terminal: ninguna pregunta, sólo install.profile = minimal en tycon.json"
+  else mal "T4 --defaults: rc ${RC}; tycon.json $(cfg "d"); $(grep -m3 -e 'Elegí' -e 'integraciones prendo' -e 'paquete del stack' "$T/d4.out" | tr '\n' '|')"; fi
+  grep -q 'perfil: minimal (por defecto)' "$T/d4.out" && ok "T4 el plan dice que la mínima vino por defecto" || mal "T4 el plan: $(grep -m1 '^perfil' "$T/d4.out")"
+  # …y sin terminal con --yes: ya no frena pidiendo el perfil
+  qlab d4y || true
+  RC=0; harness install --defaults --yes > "$T/d4y.out" 2>&1 < /dev/null || RC=$?
+  { [ "$RC" = 0 ] && [ "$(cfg "(d.get('install') or {}).get('profile')")" = minimal ] && ! grep -q 'elegí el perfil' "$T/d4y.out"; } \
+    && ok "T4 --defaults --yes sin terminal: instala la mínima sin pedir --profile" || mal "T4 --defaults --yes: rc ${RC}; $(head -n 2 "$T/d4y.out" | tr '\n' ' ')"
+
+  # (T5) el perfil del equipo fija full y all: rige lo del equipo, nada se escribe en el archivo de la máquina
+  printf '{ "install": { "profile": "full" }, "packs": { "default": "all" } }\n' > "$T/profile-d5.json"
+  qlab d5 || true; export TYCON_PROFILE="$T/profile-d5.json"
+  RC=0; harness install --defaults --yes > "$T/d5.out" 2>&1 < /dev/null || RC=$?
+  STP="$(python3 -c "import json,sys; print((json.load(open(sys.argv[1])).get('profile') or {}).get('value'))" "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json" 2>/dev/null)"
+  { [ "$RC" = 0 ] && [ "$STP" = full ] && [ "$(cfg "(d.get('install') or {}).get('profile')")" != minimal ] && grep -q 'paquete del stack por defecto: all (perfil)' "$T/d5.out"; } \
+    && ok "T5 con el perfil del equipo en full y all: rige el equipo (full, all) y la mínima no se escribe" \
+    || mal "T5 perfil del equipo: rc ${RC}; estado ${STP}; tycon.json $(cfg "d"); $(grep -m1 'paquete del stack' "$T/d5.out")"
+  export TYCON_PROFILE=0
+
+  # (T6) una opción explícita gana sobre el defecto
+  qlab d6 || true
+  RC=0; harness install --defaults --profile full --packs all --integrations engram --yes > "$T/d6.out" 2>&1 < /dev/null || RC=$?
+  { [ "$RC" = 0 ] && [ "$(cfg "(d.get('install') or {}).get('profile')")" = full ] && [ "$(cfg "(d.get('packs') or {}).get('default')")" = all ] && [ "$(cfg "(d.get('integrations') or {}).get('engram')")" = True ]; } \
+    && ok "T6 --defaults --profile full --packs all --integrations engram: full, all y engram prendida" || mal "T6 opción explícita: rc ${RC}; tycon.json $(cfg "d")"
+
+  # (T7) el clon sin --defaults pregunta el perfil como hoy
+  qlab d7 || true
+  RC=0; harness_lab_pty "minimal${NL}${NL}${NL}n" harness install > "$T/d7.out" 2>&1 || RC=$?
+  { [ "$RC" = 0 ] && [ "$(count 'Elegí 1, 2, minimal o full' "$T/d7.out")" = 1 ] && grep -q 'no hay uno por defecto' "$T/d7.out"; } \
+    && ok "T7 sin --defaults el clon pregunta el perfil como hoy" || mal "T7 sin --defaults: rc ${RC}; $(grep -m1 'perfil' "$T/d7.out")"
+
+  # (T8) el plan corto: cinco renglones, con cómo cambiarlo y cómo sacarlo
+  PC="$(node -e '
+const Q = require(process.argv[1] + "/scripts/setup/harness/questions.js");
+const eff = require(process.argv[1] + "/scripts/setup/install-effects.json").effects;
+const L = Q.shortPlan({ effects: eff, profile: "minimal", version: "2026.10.18.1", tree: "/h/.tycon/harness", home: "/h", tools: ["claude"], integrations: [], packs: "none" });
+process.stdout.write(JSON.stringify(L));' "$RAIZ" 2>&1)"
+  N="$(printf '%s' "$PC" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).length)}catch(_){console.log(-1)}})')"
+  if [ "$N" = 5 ] && printf '%s' "$PC" | grep 'harness.js config' >/dev/null && printf '%s' "$PC" | grep 'harness.js uninstall' >/dev/null \
+     && printf '%s' "$PC" | grep '~/.tycon/harness' >/dev/null && printf '%s' "$PC" | grep 'Claude Code' >/dev/null && printf '%s' "$PC" | grep 'mínima' >/dev/null; then
+    ok "T8 el plan corto de la mínima: 5 renglones, carpeta con ~, Claude Code, cómo cambiarlo y cómo sacarlo"
+  else mal "T8 el plan corto: ${N} renglones; ${PC}"; fi
+  printf '%s' "$PC" | grep 'índice de guías del arnés' >/dev/null && printf '%s' "$PC" | grep 'no toca git ni las reglas de cómo te contesta' >/dev/null \
+    && ok "T8 la mínima de hoy: lee el índice de guías; no toca git ni las reglas de cómo contesta tu agente" || mal "T8 el renglón de lo que toca: ${PC}"
+
+  # (T9) contado, no escrito: una mínima de juguete con un hook global de git lo dice; la completa real dice lo que toca
+  PC9="$(node -e '
+const Q = require(process.argv[1] + "/scripts/setup/harness/questions.js");
+const eff = require(process.argv[1] + "/scripts/setup/install-effects.json").effects;
+const toy = [...eff, { kind: "git-hook", when: "always", profiles: ["minimal", "full"], id: "toy", blocks: "no" }];
+const a = Q.shortPlan({ effects: toy, profile: "minimal", version: "1", tree: "/h/t", home: "/h", tools: ["codex"], integrations: [], packs: "none" });
+const b = Q.shortPlan({ effects: eff, profile: "full", version: "1", tree: "/h/t", home: "/h", tools: ["claude", "codex"], integrations: ["engram"], packs: "all" });
+process.stdout.write(JSON.stringify({ a, b }));' "$RAIZ" 2>&1)"
+  if printf '%s' "$PC9" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const {a,b}=JSON.parse(s);const ok=a.length===5&&b.length===5&&/hooks globales de git/.test(a[2])&&!/no toca git/.test(a[2])&&/hooks globales de git/.test(b[2])&&/todos tus proyectos/.test(b[2])&&/engram/.test(b[3])&&/all|todos/.test(b[3])&&/Claude Code y Codex/.test(b[0]);process.exit(ok?0:1)})' 2>/dev/null; then
+    ok "T9 contado desde la lista: la mínima con un hook de git lo dice; la completa nombra hooks de git, bloques, conexiones y paquete"
+  else mal "T9 el plan corto contado: ${PC9}"; fi
+  # (T9) más casos: el repo del equipo, ninguna herramienta, un paquete activo con un bloque de reglas, configState
+  # directo, y sin la lista de efectos el plan corto no se arma (shortPlanOf da null: se muestra el detallado)
+  R9="$(node -e '
+const Q = require(process.argv[1] + "/scripts/setup/harness/questions.js");
+const RL = require(process.argv[1] + "/scripts/setup/harness/release.js");
+const eff = require(process.argv[1] + "/scripts/setup/install-effects.json").effects;
+const t = Q.shortPlan({ effects: eff, profile: "minimal", version: "1", tree: "/h/t", home: "/h", tools: [], team: "acme/equipo", integrations: [], packs: "none" });
+const pk = Q.shortPlan({ effects: [...eff, { kind: "block", id_pattern: "^TYCON_BLOCK:packs/x$", when: "always", profiles: ["minimal"] }], profile: "minimal", version: "1", tree: "/h/t", home: "/h", tools: ["claude"], integrations: [], packs: "bizuit" });
+const cs = Q.configState({ valores: { integraciones: { engram: true, codex: "detect" }, packs: { default: "all" } }, origenes: { "integraciones.engram": "maquina", "packs.default": "perfil" } }, { "integraciones.clockify": { value: true, via: "--integrations" } }, ["clockify", "engram", "codex", "codegraph"]);
+const H = { profileOf: () => ({ ok: false, reason: "rota" }) };
+const sinLista = RL.shortPlanOf({ opts: {}, home: "/h" }, H, "/no/existe", { version: "1", tree: "/h/t", tools: ["claude"], team: null, asked: {} });
+const sinPerfil = RL.shortPlanOf({ opts: {}, home: "/h" }, H, process.argv[1], { version: "1", tree: "/h/t", tools: ["claude"], team: null, asked: {} });
+const ok = /con el repo del equipo acme\/equipo/.test(t[0]) && /ninguna herramienta/.test(t[0]) && /bloques? de reglas/.test(pk[2]) && /bizuit/.test(pk[3])
+  && cs.on.map((x) => x.key).join() === "clockify,engram,codex" && /detect/.test(cs.on[2].text) && cs.off.join() === "codegraph" && cs.packs.value === "all"
+  && sinLista === null && sinPerfil === null;
+process.stdout.write(ok ? "ok" : JSON.stringify({ t, pk, cs, sinLista, sinPerfil }));' "$RAIZ" 2>&1)"
+  [ "$R9" = ok ] && ok "T9 equipo, ninguna herramienta, paquete activo, configState directo; sin lista o sin perfil, el plan corto no se arma" || mal "T9 casos extra: ${R9}"
 fi
 
 echo

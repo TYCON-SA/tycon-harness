@@ -22,12 +22,14 @@
 #   · T9  — el «no» al plan, o la entrada que se termina: «no se instaló nada», sale 0, sin arnés ni estado ni temporal
 #           (lo que install deja en ~/.tycon tras un «no» —carpetas vacías, la caché de terceros— se anota con ℹ️). Con la
 #           organización (3, o --audience org), el «no» y --dry-run salen 0 «no se instaló nada» sin arrancar el alta.
-#   · T17 — «¿Para quién es esta instalación?» sin valor por defecto: tres vacías salen 2 sin bajar nada; 1 sigue como
-#           hoy (T9); 2 pide el repo del perfil y lanza install --team; 3 instala sin capa y, si sale 0, corre
-#           harness.js team-init del árbol instalado en la misma terminal; la cadena completa, con el nombre contestado,
-#           deja los tres archivos del perfil. Con 2, una dirección vacía o que no es un repo vuelve a preguntar (a la
-#           tercera sale 2 sin bajar nada) y la URL de GitHub vale como en --team (pase adversarial, clases 7 y 2).
-#   · T18 — `--audience` y `--team` contestan sin preguntar; sin terminal vale «para mí».
+#   · T17 — no se pregunta para quién es: vale «para mí». `--team` lanza install --team (también con la
+#           URL de GitHub); `--audience org` instala sin capa y, si sale 0, corre harness.js team-init del árbol instalado
+#           en la misma terminal; la cadena completa, con el nombre contestado, deja los tres archivos del perfil.
+#   · T18 — `--audience` y `--team` eligen para quién es la instalación, sin preguntar.
+#   · 8.46 — un solo sí: sin opciones, la única lectura de la terminal es «¿Instalo?», después de un plan de cinco
+#           renglones (T1, T10); npx le pasa --defaults a install y las opciones de la persona llegan igual (T3); el plan
+#           detallado sigue en --dry-run (T11); sin Claude Code ni Codex sale 1 con las órdenes, sin bajar nada (T12); sin
+#           terminal y sin --yes sale 2 con la línea exacta, sin bajar nada, y con --yes instala la mínima (T14).
 #   · T35 — detrás de un proxy (HTTP_PROXY, o npm_config_proxy que pasa npx) baja por él; NO_PROXY lo saltea; un TLS que
 #           no se puede verificar nombra NODE_EXTRA_CA_CERTS.
 #
@@ -121,7 +123,7 @@ else no "T1 process.execPath (rc $RC, node de mentira: $(grep 'scripts/setup/har
 : > "$LAB_RELEASE_LOG"
 run_npx > "$BASE/t6.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'al día' "$BASE/t6.out" && grep -q '2026.10.08.1' "$BASE/t6.out" && grep -qF "$(TYCON_DIR)/harness" "$BASE/t6.out" && [ "$(requests 'info/refs')" = 1 ] && [ "$(requests '/tar.gz/')" = 0 ] && [ "$(grep -c '"host":"api"' "$LAB_RELEASE_LOG")" = 0 ]; then
-  ok "T6/T41 con el arnés ya instalado y la misma punta: dice «al día» con el lugar y la versión; una sola consulta (info/refs), nada bajado"
+  ok "T6/T41/8.46 T16 con el arnés ya instalado y la misma punta: dice «al día» con el lugar y la versión; una sola consulta (info/refs), nada bajado"
 else no "T6 máquina instalada al día (rc $RC, info/refs $(requests 'info/refs'), tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t6.out")"; fi
 STATE_F="$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
 state_commit() { node -e 'try{const s=require(process.argv[1]);console.log((s.sources.find((x)=>x.name==="harness")||{}).commit||"")}catch{console.log("")}' "$STATE_F"; }
@@ -212,41 +214,93 @@ if [ "$RC" -eq 0 ] && [ "$(harness_lab_home_hash)" = "$H0" ] && grep -q 'bajo ' 
   ok "T2 --profile full --integrations none --packs all --dry-run llegan a install tal cual (sin --) y la HOME queda idéntica"
 else no "T2 opciones y --dry-run (rc $RC, HOME $([ "$(harness_lab_home_hash)" = "$H0" ] && echo igual || echo cambió)): $(brief "$BASE/t2.out" 500)"; fi
 
-# ══ T9 · el «no» y la entrada que se termina (con la pregunta de para quién contestada «1») ══════════════════════
+# ══ T9 · el «no» y la entrada que se termina ═══════════════════════════════════════════════════════════════════════
 harness_lab_release_fresh_home
-LAB_PTY_DELAY=5 run_npx_tty $'1\nn' --profile minimal --integrations none --packs none > "$BASE/t9.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q 'Para quién es esta instalación' "$BASE/t9.out" && grep -q 'no se instaló nada' "$BASE/t9.out" && nothing_installed && [ "$(tmp_left)" = 0 ]; then
-  ok "T9/T17 en una terminal pregunta para quién es; con «1» sigue como hoy, y el «no» al plan sale 0 «no se instaló nada» sin arnés, sin estado y sin temporal"
+LAB_PTY_DELAY=5 run_npx_tty n --profile minimal --integrations none --packs none > "$BASE/t9.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && ! grep -q 'Para quién es' "$BASE/t9.out" && grep -q 'no se instaló nada' "$BASE/t9.out" && nothing_installed && [ "$(tmp_left)" = 0 ]; then
+  ok "T9/T17 en una terminal no pregunta para quién es, y el «no» al plan sale 0 «no se instaló nada» sin arnés, sin estado y sin temporal"
 else no "T9 el no (rc $RC, ~/.tycon: $(tycon_left)): $(brief "$BASE/t9.out" 500)"; fi
 tycon_note "$BASE/t9.out" "el «no»"
 harness_lab_release_fresh_home
-LAB_PTY_DELAY=5 run_ix_tty $'1\n\x04' --profile minimal --integrations none --packs none > "$BASE/t9b.out" 2>&1; RC=$?
+LAB_PTY_DELAY=5 run_ix_tty $'\x04' --profile minimal --integrations none --packs none > "$BASE/t9b.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'no se instaló nada' "$BASE/t9b.out" && nothing_installed && [ "$(tmp_left)" = 0 ]; then ok "T9 la entrada que se termina en el plan: «no se instaló nada», sale 0, sin arnés ni estado"
 else no "T9 entrada cerrada (rc $RC, ~/.tycon: $(tycon_left)): $(brief "$BASE/t9b.out" 400)"; fi
-# para la organización (la respuesta 3, o --audience org): install sale 0 SIN instalar (el «no», --dry-run) → sale 0 «no se
+# para la organización (--audience org): install sale 0 SIN instalar (el «no», --dry-run) → sale 0 «no se
 # instaló nada» y el alta NO arranca (no hay árbol instalado del que correrla)
 harness_lab_release_fresh_home
-LAB_PTY_DELAY=5 run_ix_tty $'3\nn' --profile minimal --integrations none --packs none > "$BASE/t9org.out" 2>&1; RC=$?
+LAB_PTY_DELAY=5 run_ix_tty n --audience org --profile minimal --integrations none --packs none > "$BASE/t9org.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'no se instaló nada' "$BASE/t9org.out" && nothing_installed && ! grep -q 'team-init\|nombre de la organización' "$BASE/t9org.out" && [ "$(tmp_left)" = 0 ]; then
-  ok "T9/T17 con «3» y el «no» al plan: sale 0 «no se instaló nada», sin arnés y sin arrancar el alta"
-else no "T9 «3» + no (rc $RC, ~/.tycon: $(tycon_left)): $(brief "$BASE/t9org.out" 400)"; fi
+  ok "T9/T17 con --audience org y el «no» al plan: sale 0 «no se instaló nada», sin arnés y sin arrancar el alta"
+else no "T9 org + no (rc $RC, ~/.tycon: $(tycon_left)): $(brief "$BASE/t9org.out" 400)"; fi
 harness_lab_release_fresh_home; H0="$(harness_lab_home_hash)"
 run_ix --audience org --profile minimal --integrations none --packs none --dry-run > "$BASE/t9orgdry.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'no se instaló nada' "$BASE/t9orgdry.out" && [ "$(harness_lab_home_hash)" = "$H0" ] && ! grep -q 'team-init\|nombre de la organización' "$BASE/t9orgdry.out"; then
   ok "T9/T18 --audience org con --dry-run: sale 0 «no se instaló nada», la HOME igual y sin arrancar el alta"
 else no "T9 --audience org --dry-run (rc $RC, HOME $([ "$(harness_lab_home_hash)" = "$H0" ] && echo igual || echo cambió)): $(brief "$BASE/t9orgdry.out" 400)"; fi
 
-# ══ T17 · la pregunta de para quién: sin valor por defecto; 2 lanza --team; 3 instala y sigue con el alta ════════════
-harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
-run_ix_tty $'\n\n' > "$BASE/t17a.out" 2>&1; RC=$?
-if [ "$RC" -eq 2 ] && [ "$(grep -o 'Para quién es esta instalación' "$BASE/t17a.out" | wc -l | tr -d ' ')" -ge 3 ] && grep -q 'sin elegir' "$BASE/t17a.out" && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
-  ok "T17 sin valor por defecto: tres respuestas vacías salen 2 «sin elegir» sin bajar nada"
-else no "T17 tres vacías (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t17a.out" 400)"; fi
-# la opción 3: instala sin capa y, con install en 0, corre team-init del árbol instalado en la misma terminal (la entrada
-# se termina en la primera pregunta del alta: sale 2 sin escribir el perfil, con la máquina ya instalada)
-LAB_PTY_DELAY=4 run_ix_tty $'3\n\x04' --profile minimal --integrations none --packs none --yes > "$BASE/t17c.out" 2>&1; RC=$?
-if [ "$RC" -eq 2 ] && installed_ok && grep -q 'alta de tu organización' "$BASE/t17c.out" && grep -q 'nombre de la organización' "$BASE/t17c.out"; then ok "T17 con «3»: instala sin capa y después corre harness.js team-init del árbol instalado, en la misma terminal"
-else no "T17 opción 3 (rc $RC, estado $(estado_kind)): $(brief "$BASE/t17c.out" 400)"; fi
+# ══ T17 / 8.46 · sin pregunta de para quién: un solo sí, después del plan corto ══════════════════════════════════════
+# una HOME sin arnés y sin la configuración que dejó una instalación anterior del laboratorio
+# y sin el perfil del equipo del laboratorio (fija full): una máquina de afuera, sin equipo
+fresh846() { harness_lab_release_fresh_home; rm -f "$LAB_HOME/.claude/tycon.json"; }
+PROFILE_BEFORE_846="${TYCON_PROFILE-}"; export TYCON_PROFILE=0
+# (T1, T10) sin opciones, con terminal: no pregunta nada salvo «¿Instalo?», y antes muestra los cinco renglones
+fresh846; : > "$LAB_RELEASE_LOG"
+LAB_PTY_DELAY=5 run_ix_tty n > "$BASE/t17a.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && ! grep -q 'Para quién es' "$BASE/t17a.out" && ! grep -q 'Elegí 1, 2' "$BASE/t17a.out" && ! grep -q 'integraciones prendo' "$BASE/t17a.out" \
+   && ! grep -q 'paquete del stack en todos' "$BASE/t17a.out" && [ "$(grep -o '¿Instalo? \[s/N\]' "$BASE/t17a.out" | wc -l | tr -d ' ')" = 1 ] && grep -q 'no se instaló nada' "$BASE/t17a.out" && nothing_installed && [ "$(tmp_left)" = 0 ]; then
+  ok "8.46 T1/T10 sin opciones: ninguna pregunta salvo «¿Instalo?»; el «no» sale 0 sin arnés ni temporal"
+else no "8.46 T1/T10 sin opciones (rc $RC): $(brief "$BASE/t17a.out" 500)"; fi
+PLAN5="$(python3 - "$BASE/t17a.out" <<'PY'
+import re,sys
+t=re.sub(r'\x1b\[[0-9;?]*[A-Za-z]','',open(sys.argv[1],encoding='utf-8',errors='replace').read()).replace('\r','')
+lines=t.split('\n'); i=next((k for k,l in enumerate(lines) if '¿Instalo?' in l),-1)
+j=next((k for k,l in enumerate(lines) if l.startswith('Instalo el arnés')),-1)
+print('ok' if j>=0 and i-j==5 and 'mínima' in lines[j+1] and 'harness.js uninstall' in lines[j+4] else f'j={j} i={i} {lines[max(j,0):i+1]}')
+PY
+)"
+[ "$PLAN5" = ok ] && ok "8.46 T10 el plan son cinco renglones justo antes de «¿Instalo?» (qué y dónde … cómo sacarlo)" || no "8.46 T10 el plan corto: $PLAN5"
+LAB_PTY_DELAY=5 run_ix_tty s > "$BASE/t10s.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && installed_ok && [ "$(node -e 'try{console.log(require(process.argv[1]).install.profile)}catch{console.log("")}' "$LAB_HOME/.claude/tycon.json")" = minimal ]; then ok "8.46 T10 con «s», el único sí: instala la mínima"
+else no "8.46 T10 el sí (rc $RC, estado $(estado_kind)): $(brief "$BASE/t10s.out" 400)"; fi
+# (T3) npx pasa --defaults y las opciones de la persona llegan: --packs all sin --profile, sin terminal con --yes
+fresh846
+run_ix --packs all --yes > "$BASE/t3.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && installed_ok && [ "$(node -e 'try{const c=require(process.argv[1]);console.log(c.install.profile+" "+c.packs.default)}catch{console.log("")}' "$LAB_HOME/.claude/tycon.json")" = "minimal all" ]; then
+  ok "8.46 T3/T14 sin terminal con --yes: instala la mínima por defecto sin pedir --profile, y --packs all llega a install"
+else no "8.46 T3 --defaults y las opciones (rc $RC): $(brief "$BASE/t3.out" 400)"; fi
+# (T11) el plan detallado sigue en --dry-run
+fresh846; H0="$(harness_lab_home_hash)"
+run_ix --dry-run > "$BASE/t11.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && grep -q 'se instalaría la versión' "$BASE/t11.out" && grep -q 'herramientas a enchufar' "$BASE/t11.out" && grep -q 'perfil: minimal (por defecto' "$BASE/t11.out" && [ "$(harness_lab_home_hash)" = "$H0" ]; then
+  ok "8.46 T11 --dry-run muestra el plan detallado (con la mínima por defecto) y no escribe"
+else no "8.46 T11 --dry-run (rc $RC): $(brief "$BASE/t11.out" 400)"; fi
+# (T14) sin terminal y sin --yes (las URL con credencial se arman con ${A}: escrita entera, el freno de publicación la lee como un correo): 2 con la línea exacta, sin bajar nada
+fresh846; : > "$LAB_RELEASE_LOG"
+run_ix --packs none > "$BASE/t14.out" 2>&1; RC=$?
+if [ "$RC" -eq 2 ] && grep -qF "corré npx @tyconsa/harness@latest --repo $REPO --packs none --yes" "$BASE/t14.out" && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+  ok "8.46 T14 sin terminal ni --yes: sale 2 con la línea exacta (con las opciones que vinieron), sin bajar nada"
+else no "8.46 T14 sin terminal (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t14.out" 400)"; fi
+A="@"; run_ix --team "https://persona:CREDENCIAL-DE-LAB${A}dev.azure.com/acme/proy/_git/perfil" > "$BASE/t14red.out" 2>&1; RC=$?
+if [ "$RC" -eq 2 ] && ! grep -q 'CREDENCIAL-DE-LAB' "$BASE/t14red.out" && grep -qF -- '--team https://dev.azure.com/acme/proy/_git/perfil' "$BASE/t14red.out"; then ok "8.46 T14 la línea exacta no repite la credencial de una URL"
+else no "8.46 T14 la línea con una URL con credencial (rc $RC): $(brief "$BASE/t14red.out" 300)"; fi
+run_ix "--team=https://persona:CLAVE${A}CON-ARROBA${A}dev.azure.com/acme/proy/_git/perfil" > "$BASE/t14eq.out" 2>&1; RC=$?
+run_ix --team "HTTPS://persona:CLAVE-MAYUS${A}github.com/acme/perfil" --packs "it's" > "$BASE/t14may.out" 2>&1; RC2=$?
+run_ix --repo "https://persona:CLAVE-REPO${A}github.com/acme/arnes" > "$BASE/t14repo.out" 2>&1; RC3=$?
+if ! grep -q 'CLAVE' "$BASE/t14eq.out" && [ "$RC" -eq 2 ] && grep -qF 'https://dev.azure.com/acme/proy/_git/perfil' "$BASE/t14eq.out" \
+   && ! grep -q 'CLAVE-REPO' "$BASE/t14repo.out" && [ "$RC3" -eq 2 ] && grep -qF 'https://github.com/acme/arnes' "$BASE/t14repo.out" \
+   && ! grep -q 'CLAVE-MAYUS' "$BASE/t14may.out" && [ "$RC2" -eq 2 ] && grep -qF "'it'\\''s'" "$BASE/t14may.out"; then ok "8.46 T14 tampoco con --team=URL, una clave con @ o el esquema en mayúsculas; una comilla simple queda bien entrecomillada"
+else no "8.46 T14 credencial en --team=URL, --repo o mayúsculas (rc $RC/$RC2/$RC3): $(brief "$BASE/t14eq.out" 200) | $(brief "$BASE/t14may.out" 200)"; fi
+# (T12) sin Claude Code ni Codex: 1 con las órdenes, sin bajar nada; con --tool no se mira
+harness_lab_tools none; harness_lab_tools_fresh_home; fresh846; : > "$LAB_RELEASE_LOG"
+run_ix --yes > "$BASE/t12.out" 2>&1; RC=$?
+if [ "$RC" -eq 1 ] && grep -q 'no encontré Claude Code ni Codex' "$BASE/t12.out" && grep -qF 'https://claude.ai/install' "$BASE/t12.out" && grep -qF 'chatgpt.com/codex/install' "$BASE/t12.out" && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
+  ok "8.46 T12 sin agente de código: sale 1 con las órdenes de Claude Code y Codex, sin bajar nada"
+else no "8.46 T12 sin agente (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t12.out" 400)"; fi
+run_ix --tool codex --dry-run > "$BASE/t12tool.out" 2>&1; RC=$?
+if ! grep -q 'no encontré Claude Code ni Codex' "$BASE/t12tool.out" || [ "$(log_lines)" -gt 0 ]; then ok "8.46 T12 con --tool, npx no mira: lo decide install"
+else no "8.46 T12 con --tool (rc $RC): $(brief "$BASE/t12tool.out" 300)"; fi
+harness_lab_tools claude; harness_lab_release_fresh_home
+if [ -n "$PROFILE_BEFORE_846" ]; then export TYCON_PROFILE="$PROFILE_BEFORE_846"; else unset TYCON_PROFILE; fi
 harness_lab_release_fresh_home
 run_ix --audience org --profile minimal --integrations none --packs none --yes > "$BASE/t18org.out" 2>&1; RC=$?
 if [ "$RC" -eq 2 ] && installed_ok && ! grep -q 'Para quién' "$BASE/t18org.out" && grep -q 'falta el nombre de la organización' "$BASE/t18org.out"; then ok "T18 --audience org contesta sin preguntar: instala y lanza el alta (sin terminal, el alta pide --name y sale 2)"
@@ -263,26 +317,17 @@ if [ "$RC" -eq 1 ] && grep -q "$ORG/example-team" "$BASE/t4team.out" && grep -q 
   ok "T4 con --team a un repo del equipo que no se lee, sin terminal: sale 1 nombrándolo con la acción, ANTES de bajar nada"
 else no "T4 --team privado sin permiso (rc $RC, tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t4team.out" 400)"; fi
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
-# (el permiso del equipo va por TYCON_GITHUB_TOKEN: las dos respuestas se tipean juntas, y lo que llega a la terminal
-# antes de que alguien lea sin eco la terminal lo muestra — el pedido sin eco lo mide T4 por terminal)
-LAB_PTY_DELAY=2 harness_lab_pty $'2\nexample-org/example-team' env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --profile minimal --yes > "$BASE/t17b.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q 'repo del perfil' "$BASE/t17b.out" && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -qF 'permiso-del-equipo-de-laboratorio' "$BASE/t17b.out"; then
-  ok "T17 con «2»: pide el repo del perfil y lanza install --team (el juguete anota las consultas al repo del equipo); el permiso no sale en pantalla"
-else no "T17 opción 2 (rc $RC; consultas al equipo $(requests 'example-team')): $(brief "$BASE/t17b.out" 500)"; fi
+env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --team example-org/example-team --profile minimal --yes < /dev/null > "$BASE/t17b.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -qF 'permiso-del-equipo-de-laboratorio' "$BASE/t17b.out"; then
+  ok "T17 --team lanza install --team (el juguete anota las consultas al repo del equipo); el permiso no sale en pantalla"
+else no "T17 --team (rc $RC; consultas al equipo $(requests 'example-team')): $(brief "$BASE/t17b.out" 500)"; fi
 if [ "$(node -e 'try{const s=require(process.argv[1]);console.log(s.team?s.team.repo:"")}catch{console.log("")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")" = "$ORG/example-team" ]; then ok "T17 la máquina quedó con la capa del equipo apilada (estado team)"
 else no "T17 el estado no tiene la capa del equipo: $(node -e 'try{const s=require(process.argv[1]);console.log(JSON.stringify(s.team))}catch(e){console.log(e.message)}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")"; fi
-# pase adversarial de la 8.40, clase 7: con «2», una dirección vacía (o que no es un repo) vuelve a preguntar, como la
-# pregunta de para quién; a la tercera sale 2 sin bajar nada (nunca sigue como «para mí» sin avisar)
+# clase 2 de la 8.40: --team acepta la URL de GitHub, no sólo org/repo
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
-LAB_PTY_DELAY=2 run_ix_tty $'2\n\nno es un repo\n' --profile minimal --yes > "$BASE/t17empty.out" 2>&1; RC=$?
-if [ "$RC" -eq 2 ] && [ "$(grep -o 'dirección del repo del perfil del equipo' "$BASE/t17empty.out" | wc -l | tr -d ' ')" -ge 3 ] && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then
-  ok "T17 (clase 7) con «2» y la dirección vacía o inválida: vuelve a preguntar y a la tercera sale 2 sin bajar nada"
-else no "T17 dirección vacía (rc $RC, pedidos $(log_lines)): $(brief "$BASE/t17empty.out" 400)"; fi
-# clase 2: la respuesta 2 acepta lo que acepta --team (la URL de GitHub, no sólo org/repo)
-harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
-LAB_PTY_DELAY=2 harness_lab_pty $'2\nhttps://github.com/example-org/example-team.git' env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --profile minimal --dry-run > "$BASE/t17url.out" 2>&1; RC=$?
-if [ "$RC" -eq 0 ] && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -q 'tiene que ser' "$BASE/t17url.out"; then ok "T17 (clase 2) con «2», la URL de GitHub del repo del perfil se acepta como en --team"
-else no "T17 URL de GitHub en la respuesta 2 (rc $RC): $(brief "$BASE/t17url.out" 400)"; fi
+env TYCON_GITHUB_TOKEN="$TEAM_PERM" "$REAL_NODE" "$PKG/index.js" --repo "$REPO" --team https://github.com/example-org/example-team.git --profile minimal --dry-run < /dev/null > "$BASE/t17url.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && grep -q 'example-team' "$LAB_RELEASE_LOG" && ! grep -q 'tiene que ser' "$BASE/t17url.out"; then ok "T17 (clase 2) --team con la URL de GitHub del repo del perfil se acepta"
+else no "T17 URL de GitHub en --team (rc $RC): $(brief "$BASE/t17url.out" 400)"; fi
 # el permiso PEDIDO para el repo del equipo no se usa para bajar el arnés público: el comprimido del instalador sigue por
 # codeload, sin credencial (la primera bajada del registro es la del instalador; las de install vienen después)
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
@@ -309,7 +354,7 @@ for bad in "--repo ../$NAME" "--repo $ORG/.." "--repo ./." "--team $ORG/.." "--t
 done
 if [ "$DOTS_OK" = 1 ] && [ "$(log_lines)" = 0 ] && [ ! -d "$(TYCON_DIR)" ]; then ok "T1 --repo/--team con un segmento «.» o «..» (GitHub y Azure) salen 2 sin tocar la red"
 else no "T1 segmentos de puntos (pedidos $(log_lines)):$DOTS_BAD"; fi
-# la cadena completa install → alta, con el nombre CONTESTADO en la terminal: «3» (y --audience org) instalan y el alta
+# la cadena completa install → alta, con el nombre CONTESTADO en la terminal: --audience org instala y el alta
 # escribe los tres archivos. El ejemplo del alta: el repo del equipo de juguete, ya público, con los tres archivos del
 # ejemplo publicado (los de fixtures/team-init-example/)
 cp "$RAIZ/scripts/tests/fixtures/team-init-example/"*.json "$LAB_AUTHOR_TEAM/" && harness_lab_team_publish "los tres archivos del ejemplo" \
@@ -323,7 +368,6 @@ chain() { # chain <nombre> <respuestas> <opciones…>
   else no "T17/T18 $name, la cadena install → alta (rc $rc, estado $(estado_kind), carpeta: $(ls "$d" 2>/dev/null | tr '\n' ' ')): $(brief "$BASE/chain-$name.out" 500)"; fi
 }
 # la última respuesta («no») es la del repo de historias, que el alta pregunta al final (el cierre, AC 38)
-chain tres $'3\nacme-tres\ngithub\nacme/harness-team-profile\n'"$BASE/perfil-tres"$'\nn\nno'
 chain org $'acme-org\ngithub\nacme/harness-team-profile\n'"$BASE/perfil-org"$'\nn\nno' --audience org
 
 # ══ T4 · el repo del arnés privado ════════════════════════════════════════════════════════════════════════════════

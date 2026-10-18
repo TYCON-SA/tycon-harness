@@ -5,15 +5,17 @@
 //   1. Los requisitos (`requisites`): Node NODE_FLOOR o más; fuera de Windows bash, tar y python3 (salvo sólo Codex; en una
 //      Mac sin las herramientas de línea de comandos el de /usr/bin no cuenta); en Windows pwsh 7 y tar. Lo que falta se
 //      dice con el comando sugerido, que se imprime y NUNCA se corre.
-//   2. Con terminal y sin --team ni --audience, «¿para quién es?» (sin valor por defecto). Con `--team` (o la respuesta 2,
-//      con el criterio de `--team`: `teamShape`) mira ANTES de bajar si el repo del equipo se lee y si no pide su permiso (en
-//      Azure: TYCON_AZURE_TOKEN, que se guarda; la guardada; la del gestor de git). Con la 3 (o `--audience org`), después
-//      de un install que sale 0, corre `harness.js team-init` del árbol YA instalado, en esta terminal.
+//   2. Para quién: «para mí» si no vino --team ni --audience. Con `--team` (con el criterio de `teamShape`) mira ANTES de
+//      bajar si el repo del equipo se lee y si no pide su permiso (en Azure: TYCON_AZURE_TOKEN, que se guarda; la
+//      guardada; la del gestor de git). Con `--audience org`, después de un install que sale 0, corre `harness.js
+//      team-init` del árbol YA instalado, en esta terminal. Sin Claude Code ni Codex (y sin --tool) sale 1 con cómo
+//      instalarlos, sin bajar nada; sin terminal y sin --yes ni --dry-run sale 2 con la línea exacta para confirmar.
 //   3. Baja la punta de main a una carpeta temporal por las rutas públicas (info/refs y codeload; con permiso, la API, la
 //      credencial sólo al mismo origen), con HTTPS_PROXY/NO_PROXY y los npm_config_*proxy (CONNECT; un proxy https://,
 //      por TLS) y NODE_EXTRA_CA_CERTS. Un enlace o una ruta que sale del comprimido lo rechazan entero.
 //   4. Con el MISMO Node (process.execPath) y en esta terminal, guarda el permiso pedido y corre `harness.js install
-//      --version latest --repo <repo>` con las demás opciones (la bajada VERIFICADA y el «¿Instalo?» son los de install).
+//      --version latest --repo <repo> --defaults` con las demás opciones (la bajada VERIFICADA, el plan corto y el único
+//      «¿Instalo?» son los de install).
 //      La carpeta temporal se borra siempre.
 // Una máquina que ya tiene el arnés nunca se reinstala (AC 35): compara su commit con la punta y dice «al día», o pregunta
 // «¿Actualizo?» y corre su `update`; si no pudo mirar, lo dice. Con --team sin capa delega en su install; con --audience
@@ -24,7 +26,7 @@ const http = require('http'); const https = require('https'); const { spawnSync 
 
 const REPO = 'TYCON-SA/tycon-harness';
 const NODE_FLOOR = 22;   // el piso para INSTALAR (el de la documentación); harness.js tolera 20 sólo para actualizar una instalación existente
-const PACKAGE = '@tyconsa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new', AUDIENCES = { 1: 'me', 2: 'team', 3: 'org' };
+const PACKAGE = '@tyconsa/harness', TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new';
 const GH_REPO = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 
 const say = (s) => process.stderr.write(`tycon-harness: ${s}\n`); class Stop extends Error { constructor(code, message) { super(message); this.code = code; } }
@@ -86,6 +88,19 @@ function requisites({ platform = process.platform, env = process.env, tools = nu
   if (!(major >= NODE_FLOOR)) out.unshift(`node ${nodeVersion} es viejo: el arnés pide Node ${NODE_FLOOR} o más — sugerido (no lo corro): ${suggest('node', platform, deb)}`);
   return out;
 }
+
+// Claude Code o Codex, con los criterios y las órdenes de tools.js (que el paquete no trae; T44 de npm-package.test.js mide
+// la paridad): su ejecutable en el PATH (TYCON_TOOLS_DETECT_PATH sólo en pruebas) o su configuración propia (~/.claude.json,
+// auth.json de Codex) en la carpeta personal del sistema (en Windows, USERPROFILE). Las órdenes se muestran, nunca se corren.
+function agentFound({ env = process.env, platform = process.platform, home = (platform === 'win32' ? env.USERPROFILE || env.HOME : env.HOME || env.USERPROFILE) || os.homedir() } = {}) {
+  const look = Object.prototype.hasOwnProperty.call(env, 'TYCON_TOOLS_DETECT_PATH') ? env.TYCON_TOOLS_DETECT_PATH : (env.PATH || env.Path || '');
+  const runs = (p) => { try { fs.accessSync(p, fs.constants.X_OK); if (fs.statSync(p).isFile()) return true; } catch (_) { /* abajo */ } try { return platform === 'win32' && !fs.lstatSync(p).isDirectory(); } catch (_) { return false; } };
+  const onPath = (n) => String(look).split(path.delimiter).filter(Boolean).some((d) => (platform === 'win32' ? ['.exe', '.cmd', '.bat', '.ps1', ''] : ['']).some((x) => runs(path.join(d, n + x))));
+  return ['claude', 'codex'].some(onPath) || fs.existsSync(path.join(home, '.claude.json')) || fs.existsSync(path.join(env.CODEX_HOME || path.join(home, '.codex'), 'auth.json'));
+}
+const agentLines = (platform = process.platform) => (platform === 'win32'
+  ? ['  Claude Code: irm https://claude.ai/install.ps1 | iex   (en PowerShell) — después corré claude y seguí el navegador para iniciar sesión', '  Codex: powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex" — después corré codex y elegí «Sign in with ChatGPT»']
+  : ['  Claude Code: curl -fsSL https://claude.ai/install.sh | bash — después corré claude y seguí el navegador para iniciar sesión', '  Codex: curl -fsSL https://chatgpt.com/codex/install.sh | sh — después corré codex y elegí «Sign in with ChatGPT»']);
 
 // ── la red: GET con proxy y redirecciones a mano ──────────────────────────────────────────────────────────────────
 function proxyFor(env, target) {
@@ -195,8 +210,6 @@ function askUntil(question, accept, wrong, none) {
   }
   throw new Stop(2, none);
 }
-const askAudience = () => askUntil('¿Para quién es esta instalación? 1 para mí · 2 para sumarme a un equipo que ya tiene su perfil · 3 para dar de alta mi organización',
-  (a) => AUDIENCES[a], 'eso no es una de las tres: contestá 1, 2 o 3', 'sin elegir para quién es la instalación: no bajé nada. Volvé a correrlo, o pasá --audience me|team|org');
 
 // ── la máquina ya instalada ─────────────────────────────────────────────────────────────────────────────────────────
 // las rutas del estado, de home-paths.json: las mismas de tycon-home.js, que acá no se puede cargar (T43 las compara)
@@ -251,18 +264,19 @@ async function main(argv, env = process.env) {
     if (own === '--repo') repo = v; else if (own === '--team') team = v; else audience = v;
   }
   if (help) {
-    process.stdout.write([`uso: npx ${PACKAGE}@latest [--repo <org/nombre>] [--team <repo del perfil>] [--audience me|team|org] [<opciones de harness.js install>]`,
+    process.stdout.write([`uso: npx ${PACKAGE}@latest [--repo <org/nombre>] [--team <repo del perfil>] [--audience team|org] [<opciones de harness.js install>]`,
       `corre desde: ${__filename}`,
-      'qué hace: 1) revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y dice lo que falta sin instalar nada;',
+      'qué hace: 1) revisa los requisitos (Node, tar; bash y python3, o pwsh 7 en Windows) y que haya Claude Code o Codex, y dice lo que falta sin instalar nada;',
       '  2) baja de GitHub, a una carpeta temporal, la versión publicada del arnés (el arnés NO viene en este paquete);',
-      '  3) corre harness.js install --version latest desde ahí: verifica lo bajado contra el commit, muestra el plan y pregunta «¿Instalo? [s/N]»; 4) borra la carpeta temporal.',
+      '  3) corre harness.js install --version latest --defaults desde ahí: verifica lo bajado, muestra un plan de cinco renglones y pregunta una sola vez «¿Instalo? [s/N]»; 4) borra la carpeta temporal.',
+      'sin preguntas: es para mí (--team <repo> para sumarte a un equipo, --audience org para dar de alta tu organización), con la instalación mínima, ninguna conexión opcional y sin paquete; --profile full, --integrations y --packs lo cambian, y lo que fije el perfil del equipo gana.',
       'con el arnés ya instalado no lo reinstala: dice si está al día, o pregunta «¿Actualizo? [s/N]» y corre su update.',
-      `sin nadie delante: npx ${PACKAGE}@latest --profile minimal --yes (ese --yes, después del nombre, acepta el plan)`,
+      `sin nadie delante: npx ${PACKAGE}@latest --yes (ese --yes, después del nombre, acepta el plan)`,
       `la procedencia del paquete: la pestaña «Provenance» de https://www.npmjs.com/package/${PACKAGE}, o npm view ${PACKAGE} dist.attestations`,
       'a mano, sin npm: scripts/setup/get-harness.sh (o get-harness.ps1) del repo público', ''].join('\n'));
     return 0;
   }
-  if (!GH_REPO.test(repo) || repo.split('/').some(dots)) throw new Stop(2, `--repo pide <org/nombre> (sin segmentos «.» ni «..»): ${repo}`);
+  if (!GH_REPO.test(repo) || repo.split('/').some(dots)) throw new Stop(2, `--repo pide <org/nombre> (sin segmentos «.» ni «..»): ${repo.replace(/(https?:\/\/)[^\s/]*@/gi, '$1')}`);
   if (audience && !['me', 'team', 'org'].includes(audience)) throw new Stop(2, `--audience es me, team u org: ${audience}`);
   const API = env.TYCON_RELEASE_API || 'https://api.github.com', GIT = env.TYCON_RELEASE_GIT || 'https://github.com', CODELOAD = env.TYCON_RELEASE_ARCHIVE || 'https://codeload.github.com';
   for (const [n, u] of [['API', API], ['GIT', GIT], ['ARCHIVE', CODELOAD]]) if (!/^https?:\/\//.test(u)) throw new Stop(2, `TYCON_RELEASE_${n} tiene que empezar con http:// o https:// (no sigo otros esquemas): ${u}`);
@@ -272,7 +286,7 @@ async function main(argv, env = process.env) {
   // el repo del perfil, con el criterio de --team; lo que sigue usa su forma normal (`src.repo`). Lo citado va sin `usuario@`
   const SHAPES = 'org/repo, https://github.com/<org>/<repo> o https://dev.azure.com/<org>/<proyecto>/_git/<repo>, sin segmentos «.» ni «..»';
   let src = team ? teamShape(team) : null;
-  if (team && !src) throw new Stop(2, `el repo del perfil tiene que ser ${SHAPES}: «${team.replace(/^(https?:\/\/)[^@/]+@/, '$1')}». No bajé nada.`);
+  if (team && !src) throw new Stop(2, `el repo del perfil tiene que ser ${SHAPES}: «${team.replace(/(https?:\/\/)[^\s/]*@/gi, '$1')}». No bajé nada.`);
   const refsOf = async (r, t, branch = 'main') => {   // github.com sin contestar no es «sin red»: se cae a la API, como get-harness.sh
     let res; try { res = await get(`${GIT}/${enc(r)}.git/info/refs?service=git-upload-pack`, { token: t, env, accept: '*/*' }); } catch (e) { if (/certificado/.test(e.message)) throw e; return { status: 0, sha: '', why: e.message.replace(/\.? No bajé nada\.$/, '') }; }
     const m = res.status === 200 && res.body.toString('latin1').startsWith('001e# service=git-upload-pack\n0000') && new RegExp(`([0-9a-f]{40}) refs/heads/${branch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\0\\n]`).exec(res.body.toString('latin1'));
@@ -294,13 +308,19 @@ async function main(argv, env = process.env) {
     process.stderr.write('tycon-harness: ¿Actualizo? [s/N] '); if (!/^(s|si|sí|y|yes)$/i.test(String(readLine() || '').trim())) { say(`no actualicé: para hacerlo, ${upd}`); return 0; }
     return own('update', ['update', '--yes']);   // la persona ya dijo que sí
   }
-  if (src) audience = 'team'; else if (!audience) audience = isTerminal() ? askAudience() : 'me';
-  if (audience === 'team' && !src) {   // la respuesta 2: vacía o que no es un repo vuelve a preguntar, como la de para quién
+  if (src) audience = 'team'; else if (!audience) audience = 'me';
+  if (audience === 'team' && !src) {
     if (!isTerminal()) throw new Stop(2, '--audience team pide --team <org/repo de GitHub, o la URL de Azure DevOps del repo del perfil>');
     src = askUntil('la dirección del repo del perfil del equipo (org/repo de GitHub, o https://dev.azure.com/<org>/<proyecto>/_git/<repo>)', teamShape,
       `esa dirección no es la de un repo: ${SHAPES}`, 'sin la dirección del repo del perfil: no bajé nada. Volvé a correrlo, o pasá --team <repo del perfil>');
   }
   team = src ? src.repo : '';
+  if (!rest.some((a) => a === '--tool' || a.startsWith('--tool=')) && !agentFound({ env }) && ![env.TYCON_CLAUDE, env.TYCON_CODEX].some((v) => ['1', 'true'].includes(String(v || '').toLowerCase()))) {
+    throw new Stop(1, ['no encontré Claude Code ni Codex en esta máquina: el arnés trabaja con uno de los dos. Instalá uno y volvé a correr la misma línea:', ...agentLines(), 'O decí cuál enchufar con --tool claude|codex. No bajé nada.'].join('\n'));
+  }
+  if (!isTerminal() && !rest.includes('--yes') && !rest.includes('--dry-run')) {
+    throw new Stop(2, `sin terminal no puedo preguntarte «¿Instalo?»: para instalar igual, corré npx ${PACKAGE}@latest ${[...argv.map((a) => a.replace(/(https?:\/\/)[^\s/]*@/gi, '$1')).map((a) => (/^[\w./:=@,+%-]+$/.test(a) ? a : `'${a.replace(/'/g, process.platform === 'win32' ? "''" : "'\\''")}'`)), '--yes'].join(' ')}. No bajé nada.`);
+  }
 
   // ── 2. el permiso, antes de bajar ───────────────────────────────────────────────────────────────────────────────
   // `token` es el del arnés (el de la variable o el guardado); el que se PIDE para el repo del equipo vive aparte
@@ -377,7 +397,7 @@ async function main(argv, env = process.env) {
     const keep = (key, value) => { if (launch(`harness.js config set ${key}`, process.execPath, [harness, 'config', 'set', key], { input: value, stdio: ['pipe', 'ignore', 'inherit'], env }).status !== 0) throw new Stop(1, `no pude guardar el permiso (${key})`); };
     const github = save && token ? token : (saveTeam ? teamToken : '');
     if (github) keep('github.token', github); if (azureToken) keep('azure.token', azureToken);
-    const args = ['install', '--version', 'latest', '--repo', repo, ...(team ? ['--team', team] : []), ...rest];
+    const args = ['install', '--version', 'latest', '--repo', repo, ...(team ? ['--team', team] : []), ...(rest.includes('--defaults') ? [] : ['--defaults']), ...rest];
     const run = launch('harness.js install', process.execPath, [harness, ...args], { stdio: 'inherit', env });
     if (audience !== 'org' || run.status !== 0) return run.status;
     // 3 «dar de alta mi organización»: instalado sin capa, el alta corre desde el árbol YA instalado (sus lectores), acá mismo.
@@ -396,4 +416,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { requisites, main, proxyFor, get, teamShape, tarCmd, ownRoot, HP, NODE_FLOOR, REPO, PACKAGE };
+module.exports = { requisites, main, proxyFor, get, teamShape, tarCmd, ownRoot, agentFound, agentLines, HP, NODE_FLOOR, REPO, PACKAGE };

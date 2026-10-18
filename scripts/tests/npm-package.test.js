@@ -6,7 +6,7 @@
  * El paquete (`scripts/setup/npm/`) es un INSTALADOR chico, no el arnés: un solo programa sin dependencias que baja la
  * versión publicada de GitHub y corre `harness.js install`. Lo que no se puede perder:
  *   · T3  — `npm pack --dry-run` lista exactamente package.json, index.js, home-paths.json, README.md y LICENSE (la copia el workflow);
- *           sin `dependencies`; el shebang en la línea 1; 400 líneas como mucho; el repo de fábrica escrito UNA vez; el
+ *           sin `dependencies`; el shebang en la línea 1; 420 líneas como mucho (con la detección de Claude Code y Codex); el repo de fábrica escrito UNA vez; el
  *           piso de Node para instalar en 22 (harness.js sigue en 20, sólo para actualizar); ningún hijo lanzado como `node` por nombre (siempre process.execPath);
  *           `--help` sale 0 sin red ni HOME y nombra el archivo que corre y dónde se ve la procedencia.
  *   · T5  — `requisites()` exportada: Windows pide pwsh 7 (con `winget install Microsoft.PowerShell`) y tar; fuera de
@@ -33,6 +33,10 @@
  *   · T35b — (clase 9) un proxy https:// se habla por TLS (como curl), para un destino https (CONNECT) y uno http.
  *   · T40 — (segunda vuelta) un config.json que está y no se lee sale 1 nombrándolo, sin bajar ni instalar ni tocarlo;
  *           uno que no existe es «sin permiso guardado».
+ *   · 8.46 T15 — la ayuda dice el defecto «para mí», `--audience team|org`, el plan corto y el único sí; no dice «sin
+ *           valor por defecto».
+ *   · 8.46 T44 — sin Claude Code ni Codex, la ayuda de index.js (que no puede cargar tools.js) es la misma que la de
+ *           noneFound para cada sistema, y la detección da lo mismo que tools.detect en los mismos casos.
  *
  * Sin red: npm pack --dry-run no la usa (y se le cierra con npm_config_offline). Repos de juguete con git de verdad.
  * Correr: node --test scripts/tests/npm-package.test.js
@@ -59,7 +63,7 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
   assert.strictEqual(pkg.devDependencies, undefined, 'sin devDependencies');
   const src = read(INDEX);
   assert.strictEqual(src.split('\n')[0], '#!/usr/bin/env node', 'el shebang en la línea 1');
-  assert.ok(src.split('\n').length <= 400, `index.js tiene ${src.split('\n').length} líneas (tope 400)`);
+  assert.ok(src.split('\n').length <= 420, `index.js tiene ${src.split('\n').length} líneas (tope 420)`);
   assert.strictEqual((src.match(/^const REPO = '[^']+';/gm) || []).length, 1, 'el repo de fábrica, una sola vez');
   // el piso para INSTALAR es 22 (decisión del dueño, 2026-10-16); harness.js sigue en 20: lo tolera sólo para actualizar
   const floorHarness = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
@@ -343,6 +347,7 @@ async function toyRun(box, args, extraEnv) {
   const base = `http://127.0.0.1:${srv.address().port}`;
   const home = fs.mkdtempSync(path.join(box, 'home-'));
   const log = path.join(home, 'fake.log');
+  fs.writeFileSync(path.join(home, '.claude.json'), '{}');   // Claude Code «instalado» por su configuración: el instalador no frena por falta de agente
   const env = Object.assign({ PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), FAKE_LOG: log,
     TYCON_RELEASE_API: base, TYCON_RELEASE_GIT: base, TYCON_RELEASE_ARCHIVE: base, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, 'gitconfig') }, extraEnv);
   if (process.platform === 'win32') for (const k of ['SystemRoot', 'PATHEXT']) env[k] = process.env[k];
@@ -365,6 +370,7 @@ test('T37 NpxInstaller_TeamForms_AzureCredential_Run', async () => {
       const r = await toyRun(box, ['--team', form, '--yes'], {});
       assert.strictEqual(r.code, 0, `${form}: ${r.out}`);
       assert.strictEqual(teamOf(r), 'acme/team-profile', form);
+      assert.ok(install(r).argv.includes('--defaults'), `${form}: install recibe --defaults (8.46 T3)`);
       assert.ok(r.seen.some((u) => u.startsWith('/acme/team-profile.git/info/refs')), `${form}: miró el repo del equipo antes de bajar`);
     }
     // clases 1 y 2: la URL de clonar de Azure (con usuario) y TYCON_AZURE_TOKEN: el permiso se guarda como azure.token
@@ -499,4 +505,52 @@ test('T43 NpmPackage_HomePaths_ParityWithTyconHome', () => {
   const src = read(INDEX);
   assert.match(src, /require\('\.\/home-paths\.json'\)/);
   assert.ok(!/'\.tycon-pipeline'|'harness-state\.json'|'config\.json'/.test(src), 'ninguna ruta del estado escrita a mano en index.js');
+});
+
+test('8.46 T15 NpxInstaller_Help_DefaultsForMe_OneYes', () => {
+  const h = spawnSync(process.execPath, [INDEX, '--help'], { encoding: 'utf8', env: Object.assign({}, process.env, { HOME: path.join(os.tmpdir(), 'no-existe-npm-help'), USERPROFILE: path.join(os.tmpdir(), 'no-existe-npm-help') }) });
+  assert.strictEqual(h.status, 0, h.stderr);
+  const out = h.stdout + h.stderr;
+  assert.match(out, /para m[ií]/, 'nombra «para mí» como defecto');
+  assert.match(out, /--audience team\|org/, 'nombra --audience team|org');
+  assert.match(out, /cinco renglones/, 'dice el plan corto');
+  assert.match(out, /¿Instalo\? \[s\/N\]/, 'dice el único sí');
+  assert.ok(!/sin valor por defecto/.test(out), 'no dice «sin valor por defecto»');
+});
+
+test('8.46 T44 NpxInstaller_AgentHelpAndDetection_SameAsTools', () => {
+  const I = require(INDEX);
+  const T = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js'));
+  for (const p of ['darwin', 'linux', 'win32']) {
+    assert.deepStrictEqual(I.agentLines(p), T.agentLines(p), `las órdenes de ${p}: las mismas en index.js y en tools.js`);
+    const text = I.agentLines(p).join('\n');
+    assert.match(text, /Claude Code/); assert.match(text, /Codex/);
+    assert.match(text, p === 'win32' ? /irm https:\/\/claude\.ai\/install\.ps1 \| iex/ : /curl -fsSL https:\/\/claude\.ai\/install\.sh \| bash/);
+    assert.match(text, p === 'win32' ? /chatgpt\.com\/codex\/install\.ps1/ : /curl -fsSL https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
+    assert.ok(T.noneFound(p).includes(I.agentLines(p)[0]), `noneFound(${p}) trae las órdenes`);
+  }
+  const box = tmp('agent-detect-');
+  try {
+    const bin = path.join(box, 'bin'); fs.mkdirSync(bin);
+    const cases = {
+      ninguna: () => {},
+      claudeEnElPath: (h) => { const f = path.join(bin, process.platform === 'win32' ? 'claude.exe' : 'claude'); fs.writeFileSync(f, ''); fs.chmodSync(f, 0o755); },
+      claudeJson: (h) => fs.writeFileSync(path.join(h, '.claude.json'), '{}'),
+      codexAuth: (h) => { fs.mkdirSync(path.join(h, '.codex')); fs.writeFileSync(path.join(h, '.codex', 'auth.json'), '{}'); },
+      soloLoDesplegado: (h) => { fs.mkdirSync(path.join(h, '.codex')); fs.writeFileSync(path.join(h, '.codex', 'hooks.json'), '{}'); fs.mkdirSync(path.join(h, '.claude')); fs.writeFileSync(path.join(h, '.claude', 'settings.json'), '{}'); },
+    };
+    for (const [name, make] of Object.entries(cases)) {
+      const home = path.join(box, name); fs.mkdirSync(home);
+      for (const f of fs.readdirSync(bin)) fs.rmSync(path.join(bin, f));
+      make(home);
+      const env = { TYCON_TOOLS_DETECT_PATH: bin, PATH: '' };
+      const d = T.detect({ home, env, platform: process.platform });
+      const want = d.claude.installed || d.codex.installed;
+      assert.strictEqual(I.agentFound({ home, env, platform: process.platform }), want, `${name}: index.js dice lo mismo que tools.detect (${want})`);
+    }
+    // en Windows la carpeta personal es USERPROFILE aunque HOME diga otra (como os.homedir())
+    const real = path.join(box, 'perfil-real'); fs.mkdirSync(real); fs.writeFileSync(path.join(real, '.claude.json'), '{}');
+    assert.strictEqual(I.agentFound({ env: { USERPROFILE: real, HOME: path.join(box, 'otra'), TYCON_TOOLS_DETECT_PATH: '' }, platform: 'win32' }), true, 'win32: mira USERPROFILE');
+    assert.strictEqual(I.agentFound({ env: { USERPROFILE: path.join(box, 'otra'), HOME: real, TYCON_TOOLS_DETECT_PATH: '' }, platform: 'linux' }), true, 'fuera de Windows: mira HOME');
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });

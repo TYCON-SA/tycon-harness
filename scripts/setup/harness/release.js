@@ -1321,6 +1321,22 @@ function makeSource({ repoInfo, ref, commit, tree, version }) {
 }
 
 /**
+ * El plan corto de una instalación con `--defaults`, sobre el árbol bajado: el perfil que va a quedar (el pedido, el
+ * contestado o el que fija la configuración), lo que queda prendido y el paquete, con `shortPlan` de questions.js.
+ * Sin la lista de efectos o sin poder leer el perfil devuelve null y se muestra el plan detallado: el corto cuenta lo
+ * que la instalación toca, y sin la lista diría que no toca nada.
+ */
+function shortPlanOf(ctx, H, dir, { version, tree, tools, team, asked }) {
+  const Q = require('./questions.js');
+  const effects = require('./managed.js').readEffects(dir);
+  const read = ctx.opts.profile ? { ok: true, value: ctx.opts.profile } : H.profileOf(ctx, dir);
+  if (!effects.ok || !read.ok || !read.value) return null;
+  const prof = read.value;
+  const st = Q.configState(asked.config, asked.over, asked.order || []);
+  return Q.shortPlan({ effects: effects.effects, profile: prof, version, tree, home: ctx.home, tools, team, integrations: st.on.map((x) => x.key), packs: st.packs.value });
+}
+
+/**
  * `install --version <número|latest>`: la primera instalación de una máquina sin arnés, bajando la versión. En una
  * máquina con estado `tree` (un clon) sale 2 sin escribir nada. Devuelve `{ code, lines }`.
  */
@@ -1430,7 +1446,8 @@ function cmdInstall(ctx, H) {
     if (ctx.opts.profile) return `perfil: ${ctx.opts.profile} (${via || '--profile'})`;
     const r = H.profileOf(ctx, dir || ctx.tree);
     if (!r.ok || r.chosen || read.status === 'ok') return PR.label(r);
-    if (dryRun && teamPlan) return 'perfil: el que fije el perfil del equipo; si no fija ninguno, install lo pregunta (o pasá --profile minimal|full)';
+    if (dryRun && teamPlan) return `perfil: el que fije el perfil del equipo; si no fija ninguno, ${ctx.opts.defaults ? 'minimal (por defecto)' : 'install lo pregunta (o pasá --profile minimal|full)'}`;
+    if (ctx.opts.defaults) return 'perfil: minimal (por defecto)';
     return 'perfil: sin elegir — install lo pregunta (sin terminal o con --yes: pasá --profile minimal|full)';
   };
   if (ctx.opts['dry-run']) {
@@ -1486,7 +1503,10 @@ function cmdInstall(ctx, H) {
     if (again.tools.includes('claude') === withClaude) tc = again;
   }
   if (!ctx.opts.yes) {
-    process.stdout.write(`${[`se instala ${what}`, tc.line, profileLine({ via: asked.profileVia, dir: d.dir }), ...teamLine, ...(target.note ? [target.note] : []), ...asked.head].join('\n')}\n`);
+    // con --defaults, el plan corto (cinco renglones contados desde la lista de efectos); si no, el detallado
+    const short = ctx.opts.defaults ? shortPlanOf(ctx, H, d.dir, { version: target.version, tree, tools: tc.tools, team: teamPlan ? teamRepo.repo : null, asked }) : null;
+    const shown = short || [`se instala ${what}`, tc.line, profileLine({ via: asked.profileVia, dir: d.dir }), ...teamLine, ...asked.head];
+    process.stdout.write(`${[...shown, ...(target.note ? [target.note] : [])].join('\n')}\n`);
     if (asked.eof || !P.ask('¿Instalo? [s/N] ')) { fs.rmSync(d.dir, { recursive: true, force: true }); undoOwnHome(); return { code: 0, lines: ['no se instaló nada'] }; }
   }
 
@@ -2457,7 +2477,7 @@ module.exports = {
   MANIFEST_NAME, MAIN_REF, SYNC_REF, API_DEFAULT,
   githubRepoOf, repoOf, apiBase, client, explainFailure, tokenExpired, EXPIRED_TOKEN_TEXT, refCommit, versionAt, resolveChannel, check, locateVersion,
   resolvePublic, numberAt, tagNumberOf, tagsByApi, tagsFor, tagCommit, pendingTag, PENDING_TAG_SAY_MS, trustedCache, fromCache, adoptTag, treeNumberOk,
-  download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource,
+  download, readManifest, restoreThirdParty, swap, swapBack, repair, cleanupDeferred, isNamed, makeSource, shortPlanOf,
   convertLayout, swapLinks, swapBackLinks, repairLinks,
   cmdInstall, update, rollback, auditTree, refreshTeam, refreshTeamWithNewCode,
 };
