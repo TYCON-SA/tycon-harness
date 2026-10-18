@@ -813,7 +813,7 @@ un dato). Es la configuración de la organización, no la de ninguna máquina.
   lector) y «Revisar», que aplica el borrador sobre el archivo tal como está y lo valida entero con el mismo lector que
   usa el arnés (`team-repos.js`, `operations-config.js`, la lectura que exporta `check-product-parity.js`). El resto del
   archivo queda byte por byte. No hay un validador propio: dos validadores se separan solos, y el proceso de la noche
-  juzga con el suyo. La página local `harness.js team-config` usa el mismo núcleo.
+  juzga con el suyo. La página local `harness.js team-config` usa el mismo núcleo para mostrar las secciones de los clones, de sólo lectura: no guarda ni propone.
 - **Las claves que llegaron después tienen su versión** (`TEAM_REPOS_SINCE`, `MERGE_SUITES_SINCE`, `MODELS_SINCE`,
   `WAIT_NOTICE_SINCE`, `RESPONSE_SINCE`): un cambio se propone sólo si el perfil del equipo pide una versión del arnés
   que lo sepa leer. Una sección cuyo lector todavía no sabe leer su clave dice «esta versión del arnés todavía no sabe

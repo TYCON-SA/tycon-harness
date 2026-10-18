@@ -583,8 +583,8 @@ en el nocturno del tablero, deja `.dashboard/deployments/deployments-<día>.json
 y si main está roto. 🔴 **El criterio es el stage**: cuenta una corrida si su timeline tiene el stage con el identificador
 **exacto** que declaró la organización y terminó `succeeded` (o `succeededWithIssues`, marcado); nunca por el nombre
 visible ni por un pedazo de texto como «Prod», que encuentra NONPROD y PREPROD y pierde Production. 🔴 **Ningún valor de
-una organización en el código**: proveedor, pipelines y stages se declaran en `operations.json → deployments` (la página
-`harness.js team-config` los propone leyendo la última corrida de main, y sólo se guarda lo que una persona confirma). El
+una organización en el código**: proveedor, pipelines y stages se declaran en `operations.json → deployments` (la pestaña
+Configuración del sitio los propone leyendo la última corrida de main, y sólo se guarda lo que una persona confirma). El
 segundo proveedor es GitHub (`github.js`: deployments y environments; «vencida» no se distingue y sale no medida).
 🔴 **No medido no es «sin despliegue»**: sin permiso, `az` caído o una respuesta ilegible dan «no medido» con un motivo de
 lista cerrada y el texto de la falla saneado (sin la identidad de un `TF400813`, direcciones ni correos). Lista blanca: del

@@ -834,7 +834,7 @@ data). It is the configuration of the organization, not that of any machine.
   reader) and "Revisar" (review), which applies the draft over the file as it is and validates all of it with the same
   reader the harness uses (`team-repos.js`, `operations-config.js`, the reading exported by `check-product-parity.js`).
   The rest of the file stays byte for byte. There is no validator of its own: two validators drift apart by themselves,
-  and the night process judges with its own. The local page `harness.js team-config` uses the same core.
+  and the night process judges with its own. The local page `harness.js team-config` uses the same core to show the sections of the clones, read-only: it saves and proposes nothing.
 - **Keys that came later have their version** (`TEAM_REPOS_SINCE`, `MERGE_SUITES_SINCE`, `MODELS_SINCE`,
   `WAIT_NOTICE_SINCE`, `RESPONSE_SINCE`): a change is proposed only if the team profile asks for a harness version that
   can read it. A section whose reader cannot read its key yet says so.
