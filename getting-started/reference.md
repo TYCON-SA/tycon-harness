@@ -230,6 +230,64 @@ git clone https://github.com/TYCON-SA/tycon-harness tycon-harness; node tycon-ha
 ```
 <!-- /install:clone-unattended -->
 
+## With or without the site
+
+**The harness works fully without the site.** The [organization site](../guides/organization-site.en.md) is optional:
+a page to see the runs of every machine and to change the configuration from forms. The configuration always lives in
+files in repos, and there are two ways to change it:
+
+- **Without the site:** you edit the file in your clone of the right repo and push it with a pull request.
+  `harness.js team-config` opens a page on your machine, read-only and with nothing on the internet, that shows how
+  things stand and the problems the harness's readers see.
+- **With the site:** the Configuration tab validates the change with those same readers and opens the pull request for
+  you. It never writes `main`: the change goes in when someone approves it, or on its own, if the organization chose
+  that for its maintainers' changes.
+
+### What each one needs
+
+| If you are… | You need | You don't need |
+|---|---|---|
+| A solo dev, without the site | the install on your machine | organization repos, or a GitHub or Azure DevOps account |
+| A solo dev, with the site | the install, a profile repo and an operations repo (an organization of one), and the site with its sign-in; the runs mailbox, if you want to see your runs there | the nightly jobs, unless you want the morning notice and the dashboard |
+| The admin of a team, without the site | the install and the profile repo, readable by the team; the operations repo, if you want the nightly jobs | the site |
+| The admin of a team, with the site | all of the above, the operations repo with `site.access` (who signs in to the site), the site and, to see everybody's runs, the mailbox | — |
+| A dev on a team that is already set up | the install with `--team <profile repo>` and read permission on that repo | nothing else: the team's part arrives with every update |
+
+### Where each setting lives
+
+| Where | What it holds | How it changes |
+|---|---|---|
+| Your machine: `~/.claude/tycon.json`, the `TYCON_…` variables and `~/.tycon/config.json` | what is personal (paths, the Telegram chat, read permissions) and your preferences (integrations, update channel and policy, install profile, how the assistant answers) | you change it, without a pull request; it is never versioned |
+| The team profile repo: `team-profile.json`, `team-repos.json`, `skills/` and `packs/` | what applies to every machine: integrations, updates, install profile, packs, how the assistant answers, where each repo lives, which model each job uses | a pull request, by hand or from the site; it reaches each machine with its next update |
+| The operations repo: `operations.json` | who gets the nightly notices, who reviews, the channel of the morning notice, who signs in to the site | a pull request, by hand or from the site; the nightly jobs and the site read it, never the machines |
+| The site | no configuration of its own: it reads both repos and proposes the changes | — |
+
+**What your machine can override.** For almost everything the order is `TYCON_…` variable › `~/.claude/tycon.json` ›
+team profile. So your machine can turn off, for itself only, an integration the profile turns on, or stay on `ask`
+while the profile says `auto`. Two keys belong to the team when the profile declares them: in `packs.default` the
+profile wins over your file and only `TYCON_PACKS_DEFAULT` overrides it; `adversarial.model_question` cannot be
+overridden by any machine. What is personal cannot go in the profile: the reader rejects it. What is in
+`team-repos.json` and `operations.json` cannot be overridden from a machine, except the test coverage threshold. `tycon-config.js explain` says where each value came from, and what is written in
+your file but not used.
+
+### Configure your machine without a site or a team
+
+A solo dev needs no repos and no site: their configuration lives in `~/.claude/tycon.json`, and `tycon-config.js` reads
+and writes it.
+
+```bash
+node ~/.claude/tycon-harness/scripts/lib/tycon-config.js explain
+node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set integrations.engram true
+node ~/.claude/tycon-harness/scripts/lib/tycon-config.js set response.style executive
+node ~/.claude/tycon-harness/scripts/setup/harness.js channel stable
+```
+
+`explain` shows each value and where it came from. `set` validates the key and the value before writing, and says it
+applies at the next startup or right away with `harness.js apply`. Read permissions do not go in that file:
+`harness.js config set github.token` asks for them without showing them and stores them in `~/.tycon/config.json`. The
+integrations are in "What is optional"; the install profiles, in "Profiles"; the channel and the policy, in "How it
+updates".
+
 ## Set up your organization
 
 For your whole team to install with the same configuration, the organization needs its **team profile repo**: a repo of

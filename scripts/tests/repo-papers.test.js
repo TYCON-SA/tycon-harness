@@ -102,6 +102,8 @@ const SECTIONS = [
   ['What it is and what it isn\'t', 'Qué es y qué no es'],
   ['Requirements', 'Requisitos'],
   ['Install by hand', 'Instalar a mano'],
+  // el arnés funciona sin sitio: qué necesita cada caso, dónde vive cada configuración y qué pisa cada máquina
+  ['With or without the site', 'Con sitio o sin sitio'],
   // story 8.40, tanda B: el alta guiada de la organización (harness.js team-init), después de las formas de instalar
   ['Set up your organization', 'Dar de alta tu organización'],
   ['Profiles', 'Perfiles'],

@@ -72,6 +72,11 @@ anything on their machine to see it.
 Configuration tab proposes, and those go in only when someone approves them. It does not run pipelines, merge, deploy or
 touch any machine. What it shows is, at most, as old as the last night snapshot or the last download of the mailbox.
 
+**It is optional.** The harness works fully without the site: the configuration lives in the profile and operations
+repos, and without the site it is changed with a pull request to each one. What each case needs (a solo dev or a team,
+with or without the site), where each setting lives and what each machine can override, in
+[With or without the site](https://github.com/TYCON-SA/tycon-harness/blob/main/getting-started/reference.md#with-or-without-the-site).
+
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
