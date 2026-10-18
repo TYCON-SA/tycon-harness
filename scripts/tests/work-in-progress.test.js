@@ -1,8 +1,8 @@
 'use strict';
 // work-in-progress.test.js — the /wip table: work in progress on this machine, built from toy state folders.
 // Nothing here reads the real HOME: every folder comes in by argument.
-// stable-data: T22 reads the clock only to measure how long a hung query takes, and the program's cap for reading
-// repos reads it too (T22 sets it below zero); T24's commit fixes its dates and turns maintenance off; dates come in
+// stable-data: T22 and T37 read the clock only to measure how long a hung query takes, and the program's cap for reading
+// repos reads it too (T22 sets it below zero); T24's and T39's commits fix their dates and turn maintenance off; dates come in
 // by --now.
 
 const test = require('node:test');
@@ -37,8 +37,9 @@ function marker(m, sid, fields) {
   fs.writeFileSync(path.join(m.state, 'active', `${sid}.json`), JSON.stringify({ sessionId: sid, ...fields }));
 }
 
-function session(m, pid, sid, name) {
-  const s = { pid, sessionId: sid, status: 'busy' };
+// A session file as Claude Code writes it. By default quiet for 20 minutes before NOW: free, unless it has work.
+function session(m, pid, sid, name, extra = {}) {
+  const s = { pid, sessionId: sid, status: 'idle', statusUpdatedAt: Date.parse(NOW) - 20 * 60000, ...extra };
   if (name) s.name = name;
   fs.writeFileSync(path.join(m.sessions, `${sid}.json`), JSON.stringify(s));
 }
@@ -529,4 +530,150 @@ test('T28 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps
   const n = run(m, { prs: () => ({ prs: [] }) });
   assert.strictEqual(n.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
   assert.ok(n.unreadable.some((u) => /no sé consultar pedidos en ningún servidor \(el repo no tiene origin\)/.test(u)), n.unreadable.join(' | '));
+});
+
+// ── Sessions working without a pipeline: their status, their last activity, and the ones unused for hours ─────────
+
+const minsBefore = (n) => Date.parse(NOW) - n * 60000;
+const localHhmm = (ms) => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+// The transcript of a toy session, in a toy projects folder, written `mins` minutes before NOW.
+function transcript(m, cwd, sid, mins) {
+  const dir = path.join(m.root, 'projects', cwd.replace(/[^A-Za-z0-9-]/g, '-'));
+  fs.mkdirSync(dir, { recursive: true });
+  const f = path.join(dir, `${sid}.jsonl`);
+  fs.writeFileSync(f, '{"contenido":"no se lee"}\n');
+  const t = new Date(minsBefore(mins));
+  fs.utimesSync(f, t, t);
+  return f;
+}
+const runP = (m, extra = {}) => run(m, { projectsDir: path.join(m.root, 'projects'), ...extra });
+
+test('T30 SinPipeline_Busy_Ocupada: una sesión busy sin marcador sale trabajando, con su última actividad', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'sp000000-1', 'videos', { status: 'busy', statusUpdatedAt: minsBefore(2) });
+  const r = runP(m);
+  assert.deepStrictEqual(r.rows, [{ work: '(sin pipeline)', state: `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`, end: 'sin estimación (no tiene pasos)', session: 'videos' }]);
+  assert.deepStrictEqual(r.free, []);
+});
+
+test('T31 SinPipeline_TranscripcionReciente_Ocupada: idle hace una hora pero con la transcripción de hace 2 minutos', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'sp000000-2', 'medicion', { statusUpdatedAt: minsBefore(60), cwd: '/acme/repo' });
+  transcript(m, '/acme/repo', 'sp000000-2', 2);
+  const r = runP(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`);
+  assert.deepStrictEqual(r.free, []);
+});
+
+test('T32 Idle_Hace20Min_Libre: quieta hace 20 minutos está libre', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'sp000000-3', 'quieta');
+  const r = runP(m);
+  assert.deepStrictEqual([r.rows, r.free, r.idle], [[], ['quieta'], []]);
+  assert.match(r.text, /Libres: quieta$/m);
+  // the edges: quiet for exactly 5 minutes is free; 4 minutes and 59 seconds is still working
+  const edge = toyMachine();
+  session(edge, process.pid, 'sp000000-b', 'cinco', { statusUpdatedAt: minsBefore(5) });
+  session(edge, process.pid, 'sp000000-c', 'casi', { statusUpdatedAt: minsBefore(5) + 1000 });
+  const e = runP(edge);
+  assert.deepStrictEqual([e.free, e.rows.map((x) => x.session)], [['cinco'], ['casi']]);
+});
+
+test('T33 SinUso_MasDeTresHoras_LineaAparte: sin actividad hace 6 horas no es libre: va aparte, con desde cuándo', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'sp000000-4', 'vieja', { statusUpdatedAt: minsBefore(360), updatedAt: minsBefore(361) });
+  const r = runP(m);
+  assert.deepStrictEqual([r.rows, r.free], [[], []]);
+  assert.deepStrictEqual(r.idle, [`vieja (desde ${localHhmm(minsBefore(360))})`]);
+  assert.match(r.text, new RegExp(`Sin uso hace más de 3 h: vieja \\(desde ${localHhmm(minsBefore(360))}\\)`));
+  assert.match(r.text, /Libres: ninguna/);
+  // the edge: exactly 3 hours is still free; a second more is unused
+  const edge = toyMachine();
+  session(edge, process.pid, 'sp000000-d', 'tres', { statusUpdatedAt: minsBefore(180) });
+  session(edge, process.pid, 'sp000000-e', 'pasada', { statusUpdatedAt: minsBefore(180) - 1000 });
+  const e = runP(edge);
+  assert.deepStrictEqual([e.free, e.idle.map((x) => x.split(' ')[0])], [['tres'], ['pasada']]);
+});
+
+test('T34 ConMarcadorOMuertaOSinDato_ComoAntes: con trabajo, una fila; muerta, nada; sin dato, libre y dicho', () => {
+  const m = toyMachine();
+  marker(m, 'sp000000-5', { storyId: '9.5', storyPath: story(m.root, '9.5', 'Con marcador'), stepsCompleted: [0], stepsPending: [1] });
+  session(m, process.pid, 'sp000000-5', 'con-story', { status: 'busy', statusUpdatedAt: minsBefore(1) });
+  session(m, DEAD_PID, 'sp000000-6', 'muerta', { status: 'busy', statusUpdatedAt: minsBefore(1) });
+  fs.writeFileSync(path.join(m.sessions, 'sp000000-7.json'), JSON.stringify({ pid: process.pid, sessionId: 'sp000000-7', name: 'sin-dato' }));
+  const r = runP(m);
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].session, 'con-story');
+  assert.ok(r.rows[0].work.startsWith('9.5'));
+  assert.deepStrictEqual([r.free, r.idle, r.halfway], [['sin-dato'], [], []]);
+  assert.match(r.text, /Libres: sin-dato \(sin dato de actividad\)/);
+  assert.ok(!r.text.includes('muerta'), r.text);
+  // a busy session with an ad-hoc declaration keeps its one ad-hoc row
+  const a = toyMachine();
+  fs.writeFileSync(path.join(a.state, 'adhoc', 'sp000000-f.json'), JSON.stringify({ reason: 'ajustes chicos' }));
+  session(a, process.pid, 'sp000000-f', 'suelta', { status: 'busy', statusUpdatedAt: minsBefore(1) });
+  const ra = runP(a);
+  assert.deepStrictEqual(ra.rows.map((x) => [x.session, x.state]), [['suelta', 'Trabajo suelto']]);
+});
+
+test('T35 Transcripcion_SoloFecha_NoContenido: una transcripción que no se puede leer da su fecha igual', { skip: process.platform === 'win32' ? 'chmod 000 no quita la lectura en Windows' : false }, () => {
+  const m = toyMachine();
+  session(m, process.pid, 'sp000000-8', 'cerrada-a-leer', { statusUpdatedAt: minsBefore(90), cwd: '/acme/otro' });
+  const f = transcript(m, '/acme/otro', 'sp000000-8', 3);
+  fs.chmodSync(f, 0o000);
+  try {
+    const r = runP(m);
+    assert.strictEqual(r.rows[0].state, `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(3))}`);
+  } finally { fs.chmodSync(f, 0o600); }
+});
+
+test('T36 Origin_CuatroFormasNuevas: puerto, ssh.github.com, «@» en la ruta y Azure sin proyecto', () => {
+  const { parseRemote } = require(WIP);
+  assert.deepStrictEqual(parseRemote(`ssh://${at('git', 'github.com')}:22/acme/x.git`), { kind: 'github', slug: 'acme/x', name: 'x' });
+  assert.deepStrictEqual(parseRemote(`ssh://${at('git', 'ssh.github.com')}:443/acme/x.git`), { kind: 'github', slug: 'acme/x', name: 'x' });
+  const withAt = parseRemote(`https://${at('acme', 'dev.azure.com')}/acme/P/_git/r${'@'}v2`);
+  assert.deepStrictEqual(withAt, { kind: null, host: 'Azure DevOps, con una organización, un proyecto o un repo que no reconozco' }, 'el servidor no sale de la ruta');
+  assert.deepStrictEqual(parseRemote(`https://${at('acme', 'github.com')}/acme/x${'@'}y`), { kind: null, host: 'GitHub, con un repo que no reconozco' }, 'un «@» en la ruta no corre el servidor');
+  assert.deepStrictEqual(parseRemote('https://dev.azure.com/acme/_git/y'), { kind: 'azure', org: 'acme', project: 'y', repo: 'y', name: 'y' });
+  // the forms of 2.49 still hold, passwords with «@» or «/» included, and no field carries the password
+  const secret = parseRemote(`https://${at(at('u:p', 'ss'), 'github.com')}/acme/x.git`);
+  assert.deepStrictEqual(secret, { kind: 'github', slug: 'acme/x', name: 'x' });
+  assert.ok(!JSON.stringify(secret).includes('u:p'), JSON.stringify(secret));
+  assert.deepStrictEqual(parseRemote(`https://${at('u:pa/ss', 'git.acme.example')}/x.git`), { kind: null, host: 'git.acme.example' });
+  assert.strictEqual(parseRemote('git@github.com:acme/x.git').slug, 'acme/x');
+});
+
+test('T37 GitFalso_SePasaDelTope: un git que no contesta se dice y la fila sale sin pedidos', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-g', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const bin = fakeBin(m.root, 'git', 'setTimeout(() => {}, 10000);');
+  const start = Date.now();
+  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.ok(Date.now() - start < 9000, 'el tope cortó a git');
+  const r = JSON.parse(out);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(r.unreadable.some((u) => /git se pasó del tope leyendo los repos/.test(u)), r.unreadable.join(' | '));
+});
+
+test('T39 SinPipeline_RamaDeStory_LaMuestra: la carpeta de la sesión en una rama de story la nombra', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'wt', 'story/8.48-algo', GH);
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  session(m, process.pid, 'sp000000-9', 'arrancando', { status: 'busy', statusUpdatedAt: minsBefore(1), cwd: wt });
+  session(m, process.pid, 'sp000000-a', 'en-main', { status: 'busy', statusUpdatedAt: minsBefore(1), cwd: main });
+  const r = runP(m);
+  const by = Object.fromEntries(r.rows.map((x) => [x.session, x.state]));
+  assert.strictEqual(by.arrancando, `Trabajando sin pipeline · story 8.48 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
+  assert.strictEqual(by['en-main'], `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`);
+  // another branch, a folder that is gone and a detached HEAD: no story
+  const other = gitRepo(m.root, 'otra', 'feature/x', GH);
+  const detached = gitRepo(m.root, 'suelto', 'main', GH);
+  const fixed = { ...process.env, GIT_AUTHOR_DATE: NOW, GIT_COMMITTER_DATE: NOW };
+  execFileSync('git', ['-C', detached, '-c', 'user.name=t', '-c', `user.email=${at('t', 'acme.example')}`, '-c', 'maintenance.auto=false', 'commit', '-q', '--allow-empty', '-m', 'x'], { env: fixed });
+  execFileSync('git', ['-C', detached, 'checkout', '-q', '--detach']);
+  const n = toyMachine();
+  for (const [i, cwd] of [other, path.join(m.root, 'no-existe'), detached].entries()) session(n, process.pid, `sp00000${i}-x`, `s${i}`, { status: 'busy', statusUpdatedAt: minsBefore(1), cwd });
+  for (const row of runP(n).rows) assert.strictEqual(row.state, `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`, row.session);
 });

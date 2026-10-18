@@ -13,6 +13,13 @@
  * se le descuenta lo que ya lleva, nunca por debajo de cero. Si algún paso que falta no tiene mediana, no hay hora:
  * se dice cuál.
  *
+ * Una sesión viva sin marcador ni ad-hoc también puede estar trabajando (un video, una medición, una story que todavía
+ * no armó su marcador): si su archivo de sesión dice `busy`, o tuvo actividad en los últimos 5 minutos, sale en la tabla
+ * como «Trabajando sin pipeline», con la hora de su última actividad y, si su carpeta está en una rama `story/<id>…`, la
+ * story. La última actividad es la más nueva de las fechas de su archivo de sesión y la de su transcripción, de la que
+ * sólo se mira la fecha. Libre es la que no hace nada hace más de 5 minutos; sin actividad hace más de 3 horas, va en
+ * una línea aparte («Sin uso»): el proceso vive, pero nadie la usa. Sin ningún dato de actividad, sigue libre y se dice.
+ *
  * En la tabla va sólo el trabajo con sesión viva. Lo que quedó de una sesión cerrada (proceso muerto) o sin rastro
  * (sin archivo de sesión: Claude lo borra al cerrar, y Codex no lo escribe) va abajo, en «Quedaron a medio camino»,
  * con la forma de limpiarlo (`clear-session` para un marcador, `adhoc clear-orphan` para un ad-hoc de más de 24 h).
@@ -28,9 +35,10 @@
  * cuenta como libre. Las consultas corren en paralelo, 5 s cada una y 6 s todas juntas: lo que no contesta se dice al
  * pie y la tabla sale igual.
  *
- * Sólo lee. No toca marcadores ni lee la configuración de la organización.
+ * Sólo lee. No toca marcadores ni sesiones, no lee el contenido de ninguna transcripción ni la configuración de la
+ * organización.
  *
- * Uso:  node scripts/tools/work-in-progress.js [--json] [--state-dir <dir>] [--sessions-dir <dir>] [--now <iso>]
+ * Uso:  node scripts/tools/work-in-progress.js [--json] [--state-dir <dir>] [--sessions-dir <dir>] [--projects-dir <dir>] [--now <iso>]
  * Sale: 0 con la tabla (aunque haya ilegibles: se dicen) · 2 si no existe la carpeta de estado.
  */
 
@@ -46,6 +54,10 @@ const { tiempos } = require(path.join(ROOT, 'scripts', 'metrics', 'step-times.js
 
 const TITLE_MAX = 50;
 const STALE_MS = 24 * 3600 * 1000;
+// una sesión con actividad más nueva que esto está trabajando aunque su archivo diga `idle` (entre dos pedidos)
+const WORKING_MS = 5 * 60 * 1000;
+// una sesión sin actividad hace más que esto no se ofrece como libre: el proceso vive, pero nadie la usa
+const IDLE_MS = 3 * 3600 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
@@ -108,7 +120,14 @@ function stepMedians(dir, unreadable) {
   return out;
 }
 
-function sessionsBySid(dir, unreadable) {
+// La fecha de la transcripción de una sesión (sólo la fecha: nunca se abre). Claude Code la guarda en una carpeta con el
+// nombre de la carpeta de la sesión, cada carácter que no es letra, número ni guion cambiado por un guion.
+function transcriptMs(projectsDir, cwd, sid) {
+  if (!projectsDir || typeof cwd !== 'string' || !cwd) return null;
+  try { return fs.statSync(path.join(projectsDir, cwd.replace(/[^A-Za-z0-9-]/g, '-'), `${sid}.jsonl`)).mtimeMs; } catch { return null; }
+}
+
+function sessionsBySid(dir, unreadable, projectsDir) {
   const out = new Map();
   for (const file of jsonFiles(dir, unreadable)) {
     let s;
@@ -118,9 +137,12 @@ function sessionsBySid(dir, unreadable) {
     if (!Number.isInteger(pid) || pid <= 0) { unreadable.push(`${file}: pid ilegible`); continue; }
     let alive = false;
     try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
-    // Dos archivos con la misma sesión: manda el vivo.
+    const dates = [Number(s.statusUpdatedAt), Number(s.updatedAt), transcriptMs(projectsDir, s.cwd, s.sessionId)].filter((v) => Number.isFinite(v) && v > 0);
+    const cur = { name: s.name || null, alive, busy: s.status === 'busy', cwd: typeof s.cwd === 'string' ? s.cwd : null, last: dates.length ? Math.max(...dates) : null };
+    // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
-    if (!prev || (!prev.alive && alive)) out.set(s.sessionId, { name: s.name || null, alive });
+    if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > (cur.last ?? -1) ? { ...cur, last: prev.last } : cur);
+    else if (prev.last == null || (cur.last != null && cur.last > prev.last)) prev.last = cur.last ?? prev.last;
   }
   return out;
 }
@@ -197,20 +219,26 @@ function storyRepos(m, failures, ctx) {
 // Adónde apunta `origin`: GitHub (dueño/repo), Azure DevOps (organización, proyecto, repo) u otro servidor. Del otro
 // servidor sólo se da el nombre: nunca la dirección, que puede traer usuario y contraseña.
 function parseRemote(url) {
-  // el servidor es lo que va después del último «@» (una contraseña puede traer «@» o «/» sin codificar); la ruta,
-  // lo que le sigue. Se reconoce por el servidor, nunca por un pedazo de la ruta.
+  // el servidor va después del último «@» de lo que está antes de la primera «/», así un «@» de la ruta no lo corre; si
+  // ahí no hay «@» (una contraseña con «/» sin codificar), después del último «@» de toda la dirección. La ruta es lo
+  // que le sigue, sin el puerto. Se reconoce por el servidor, nunca por un pedazo de la ruta.
   const rest = String(url || '').trim().replace(/^[a-z+]+:\/\//i, '');
-  const tail = rest.slice(rest.lastIndexOf('@') + 1);
+  const authority = rest.split('/')[0];
+  const tail = rest.slice((authority.includes('@') ? authority.lastIndexOf('@') : rest.lastIndexOf('@')) + 1);
   const host = tail.split(/[/:]/)[0].toLowerCase();
-  const route = tail.slice(host.length + 1);
+  const route = tail.slice(host.length).replace(/^:\d+\//, '/').slice(1);
   const plain = (v) => /^[\p{L}\p{N}][\p{L}\p{N}_ .-]*$/u.test(v) && !v.includes('..');
   const decode = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
-  if (host === 'github.com') {
+  if (host === 'github.com' || host === 'ssh.github.com') {
     const x = /^([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(route);
     return x && plain(x[1]) && plain(x[2]) ? { kind: 'github', slug: `${x[1]}/${x[2]}`, name: x[2] } : { kind: null, host: 'GitHub, con un repo que no reconozco' };
   }
   let x = null;
-  if (host === 'dev.azure.com') x = /^([^/]+)\/([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
+  if (host === 'dev.azure.com') {
+    // sin proyecto (`org/_git/repo`), Azure DevOps usa el proyecto que se llama como el repo
+    const y = /^([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
+    x = y ? [null, y[1], y[2], y[2]] : /^([^/]+)\/([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
+  }
   else if (host === 'ssh.dev.azure.com') x = /^v3\/([^/]+)\/([^/]+)\/([^/]+?)\/?$/.exec(route);
   else if (host.endsWith('.visualstudio.com')) {
     const y = /^(?:DefaultCollection\/)?([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
@@ -286,6 +314,15 @@ function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env
   return Promise.all(queries.map((q) => Promise.race([runQuery(q, perMs, env, children), late]))).finally(() => clearTimeout(timer));
 }
 
+// La story de la rama de la carpeta de una sesión (`story/<id>…`), o `null`: sin repo, en otra rama o sin respuesta de
+// git dentro del tope, la fila sale sin la story.
+function storyBranch(dir, ctx) {
+  if (!path.isAbsolute(dir) || !fs.existsSync(dir)) return null;
+  const head = git(dir, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
+  const x = !head.err && /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(head.out);
+  return x ? x[1] : null;
+}
+
 // El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
 function enteringState(m, prsOf, unreadable, wanted, ctx) {
   const shown = [];
@@ -320,7 +357,8 @@ function buildWip(opts = {}) {
     throw err;
   }
   const unreadable = [];
-  const sessions = sessionsBySid(sessionsDir, unreadable);
+  const projectsDir = opts.projectsDir || path.join(claudeDir(home), 'projects');
+  const sessions = sessionsBySid(sessionsDir, unreadable, projectsDir);
   const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable);
   const rows = [];
   const busy = new Set();
@@ -403,16 +441,31 @@ function buildWip(opts = {}) {
     }
   }
 
-  const free = [...sessions.entries()].filter(([sid, s]) => s.alive && !busy.has(sid)).map(([sid, s]) => s.name || shortId(sid));
-  return { rows, free, halfway, unreadable, wanted, text: render(rows, free, halfway, unreadable) };
+  const free = [];
+  const noData = [];
+  const idle = [];
+  for (const [sid, s] of sessions) {
+    if (!s.alive || busy.has(sid)) continue;
+    const label = s.name || shortId(sid);
+    if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
+      const story = s.cwd && storyBranch(s.cwd, gitCtx);
+      const parts = ['Trabajando sin pipeline', story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
+      rows.push({ work: '(sin pipeline)', state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+    } else if (s.last == null) { free.push(label); noData.push(label); }
+    else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
+    else free.push(label);
+  }
+  return { rows, free, idle, halfway, unreadable, wanted, text: render(rows, free, noData, idle, halfway, unreadable) };
 }
 
-function render(rows, free, halfway, unreadable) {
+function render(rows, free, noData, idle, halfway, unreadable) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
   const lines = ['| Trabajo | Estado | Fin estimado | Sesión |', '|---|---|---|---|'];
   if (!rows.length) lines.push('| (nada en curso) | | | |');
   for (const r of rows) lines.push(`| ${esc(r.work)} | ${esc(r.state)} | ${esc(r.end)} | ${esc(r.session)} |`);
-  lines.push('', `Libres: ${free.length ? free.join(', ') : 'ninguna'}`);
+  const freeText = free.map((f) => (noData.includes(f) ? `${f} (sin dato de actividad)` : f));
+  lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
+  if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
   if (halfway.length) lines.push('', `Quedaron a medio camino (sesión cerrada o sin rastro): ${halfway.length}`, ...halfway.map((h) => `- ${h}`));
   if (unreadable.length) lines.push('', 'No se pudo leer:', ...unreadable.map((u) => `- ${u}`));
   return lines.join('\n');
@@ -423,10 +476,10 @@ async function main(argv) {
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') opts.json = true;
-    else if (['--state-dir', '--sessions-dir', '--now'].includes(a)) {
+    else if (['--state-dir', '--sessions-dir', '--projects-dir', '--now'].includes(a)) {
       const v = argv[++i];
       if (!v || v.startsWith('--')) { process.stderr.write(`work-in-progress.js: ${a} pide un valor\n`); return 2; }
-      opts[{ '--state-dir': 'stateDir', '--sessions-dir': 'sessionsDir', '--now': 'now' }[a]] = v;
+      opts[{ '--state-dir': 'stateDir', '--sessions-dir': 'sessionsDir', '--projects-dir': 'projectsDir', '--now': 'now' }[a]] = v;
     } else { process.stderr.write(`work-in-progress.js: opción desconocida ${a}\n`); return 2; }
   }
   opts.gitCtx = { until: Date.now() + GIT_BUDGET_MS, cache: new Map() };
@@ -442,7 +495,7 @@ async function main(argv) {
     const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
     r = buildWip({ ...opts, prs: (q) => byRoot.get(q.root) });
   }
-  process.stdout.write(opts.json ? `${JSON.stringify({ rows: r.rows, free: r.free, halfway: r.halfway, unreadable: r.unreadable }, null, 2)}\n` : `${r.text}\n`);
+  process.stdout.write(opts.json ? `${JSON.stringify({ rows: r.rows, free: r.free, idle: r.idle, halfway: r.halfway, unreadable: r.unreadable }, null, 2)}\n` : `${r.text}\n`);
   return 0;
 }
 
