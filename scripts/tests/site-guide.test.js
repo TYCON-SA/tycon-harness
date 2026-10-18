@@ -14,8 +14,8 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const GUIA = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.md');
-const GUIA_EN = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.en.md');
+const GUIA = path.join(ROOT, 'guides', 'organization-site.md');
+const GUIA_EN = path.join(ROOT, 'guides', 'organization-site.en.md');
 const CAPTURAS = path.join(ROOT, 'guides', 'sitio-de-la-organizacion', 'capturas');
 const leer = (f) => fs.readFileSync(f, 'utf8');
 
@@ -186,14 +186,14 @@ test('T9 Capturas_SinNombresReales @story-2.32 @ac-13', (t) => {
 });
 
 test('T10 Portadas_EnlazanLaGuia @story-2.32 @ac-11', () => {
-  for (const [f, titulo, guia] of [['README.md', 'For an organization', 'guides/sitio-de-la-organizacion.en.md'], ['README.es.md', 'Para una organización', 'guides/sitio-de-la-organizacion.md']]) {
+  for (const [f, titulo, guia] of [['README.md', 'For an organization', 'guides/organization-site.en.md'], ['README.es.md', 'Para una organización', 'guides/organization-site.md']]) {
     const s = seccion(leer(path.join(ROOT, f)), titulo);
     assert.ok(s, `${f}: la sección «${titulo}»`);
     assert.ok(s.includes(`](${guia})`), `${f}: «${titulo}» no enlaza ${guia}`);
     assert.doesNotMatch(s, /piezas-del-arnes\.md#scriptssite/, `${f}: «${titulo}» todavía manda a la ficha técnica`);
   }
   const index = leer(path.join(ROOT, 'INDEX.md'));
-  assert.match(index, /\| [^|]*(usar|uso|se usa)[^|]*\| `guides\/sitio-de-la-organizacion\.md`/i, 'la fila del INDEX dice que la guía también cuenta cómo se usa');
+  assert.match(index, /\| [^|]*(usar|uso|se usa)[^|]*\| `guides\/organization-site\.md`/i, 'la fila del INDEX dice que la guía también cuenta cómo se usa');
 });
 
 test('T11 Instalacion_SinCambiosDeContenido @story-2.32 @ac-14', () => {

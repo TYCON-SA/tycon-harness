@@ -152,7 +152,7 @@ test('T10 2.33-Sitio_CartelSoloMantenedores @story-2.33 @ac-7 — quien mantiene
         assert.strictEqual(r.status, 200, ruta);
         assert.match(r.texto, /hay una versión nueva del sitio: 2026\.10\.18\.9 \(la tuya: 2026\.10\.15\.48\)/, `${ruta}: el cartel`);
         // sin site.update, el modo es sólo aviso: el enlace a cómo se actualiza (la receta de la guía, del repo de la imagen)
-        assert.match(r.texto, /cómo se actualiza: <a href="https:\/\/github\.example\/acme\/arnes\/blob\/main\/guides\/sitio-de-la-organizacion\.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa">/, `${ruta}: el modo`);
+        assert.match(r.texto, /cómo se actualiza: <a href="https:\/\/github\.example\/acme\/arnes\/blob\/main\/guides\/organization-site\.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa">/, `${ruta}: el modo`);
       }
       const arnes = (await h.pedir('/arnes', { cookie: lead })).texto;
       assert.match(arnes, /Última publicada<\/span><span class="estado">2026\.10\.18\.9 \(del 2026-10-18\)/);

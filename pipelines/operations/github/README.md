@@ -223,7 +223,7 @@ que esperaba.
 Si el sitio de la organización vive en Azure, puede leer este repo **sin ninguna credencial de GitHub**: el workflow
 `site-copy.yml` copia lo que el sitio lee a un contenedor de almacenamiento, y el sitio lo lee con su identidad
 administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene, y lo que cuesta cada una: la guía del sitio
-(`guides/sitio-de-la-organizacion.md`, «De dónde lee operaciones»).
+(`guides/organization-site.md`, «De dónde lee operaciones»).
 
 1. **El contenedor**: lo crea el alta del sitio (`azure-container-apps.js`), en una cuenta con la llave apagada.
 2. **La credencial federada**: una aplicación de Entra con una credencial federada para este repo y el entorno

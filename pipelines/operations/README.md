@@ -245,7 +245,7 @@ El modelo de ese pipeline todavía no está en esta carpeta: es lo siguiente.
 Si el sitio de la organización vive en Azure, puede leer el repo de operaciones **sin ninguna credencial del repo**: un
 pipeline más, `site-copy.yml`, copia lo que el sitio lee a un contenedor de almacenamiento, y el sitio lo lee con su
 identidad administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene según dónde vive el sitio, y lo que cuesta
-cada una: la guía del sitio (`guides/sitio-de-la-organizacion.md`, «De dónde lee operaciones»).
+cada una: la guía del sitio (`guides/organization-site.md`, «De dónde lee operaciones»).
 
 1. **El contenedor**: lo crea el alta del sitio (`azure-container-apps.js`), en una cuenta con la llave apagada.
 2. **La conexión de servicio del trabajo que copia** (*Project settings → Service connections → Azure Resource Manager,

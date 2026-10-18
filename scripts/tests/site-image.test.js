@@ -116,10 +116,10 @@ test('T7 Imagen_TraeLaGuiaDelSitio @story-2.41 @ac-1 — la ayuda sale de la gu�
   const dockerfile = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8');
   const fuera = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile.dockerignore'), 'utf8').split('\n').map((l) => l.trim());
   // con comodín: un árbol sin guides/ (el de la noche) arma la imagen igual (T2i)
-  for (const linea of ['COPY guide[s]/sitio-de-la-organizacion.md* guides/', 'COPY guide[s]/sitio-de-la-organizacion.en.md* guides/', 'COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organizacion/capturas/']) {
+  for (const linea of ['COPY guide[s]/organization-site.md* guides/', 'COPY guide[s]/organization-site.en.md* guides/', 'COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organizacion/capturas/']) {
     assert.ok(dockerfile.split('\n').includes(linea), `el Dockerfile no trae «${linea}»`);
   }
-  for (const ruta of ['guides/sitio-de-la-organizacion.md', 'guides/sitio-de-la-organizacion.en.md', 'guides/sitio-de-la-organizacion/capturas/']) {
+  for (const ruta of ['guides/organization-site.md', 'guides/organization-site.en.md', 'guides/sitio-de-la-organizacion/capturas/']) {
     assert.ok(fuera.includes(`!${ruta}`), `la lista de exclusiones deja afuera ${ruta}`);
   }
 });
@@ -134,7 +134,7 @@ test('T7b Imagen_LaGuiaEstaAdentro @story-2.41 @ac-1 — armada de verdad, la im
     const r = docker(['run', '--rm', imagen, 'node', '-e', "const fs=require('fs');console.log(JSON.stringify({guias:fs.readdirSync('/app/guides'),capturas:fs.readdirSync('/app/guides/sitio-de-la-organizacion/capturas').filter((f)=>f.endsWith('.png')).length}))"], { timeout: 120000 });
     assert.strictEqual(r.status, 0, r.stderr);
     const dentro = JSON.parse(r.stdout.trim().split('\n').pop());
-    assert.ok(dentro.guias.includes('sitio-de-la-organizacion.md') && dentro.guias.includes('sitio-de-la-organizacion.en.md'), JSON.stringify(dentro));
+    assert.ok(dentro.guias.includes('organization-site.md') && dentro.guias.includes('organization-site.en.md'), JSON.stringify(dentro));
     assert.ok(dentro.capturas > 0, 'las capturas');
   } finally {
     docker(['image', 'rm', '-f', imagen], { timeout: 60000 });

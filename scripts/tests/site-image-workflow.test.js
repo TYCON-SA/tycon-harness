@@ -19,7 +19,7 @@ const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
   "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/lib/**'", "'skills/tycon-pipeline/steps/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
   // la guía del sitio y sus capturas: la pestaña Ayuda la arma de la imagen
-  "'guides/sitio-de-la-organizacion.md'", "'guides/sitio-de-la-organizacion.en.md'", "'guides/sitio-de-la-organizacion/capturas/**'",
+  "'guides/organization-site.md'", "'guides/organization-site.en.md'", "'guides/sitio-de-la-organizacion/capturas/**'",
   // y el propio workflow: un cambio a cómo se arma la imagen la vuelve a armar
   "'.github/workflows/site-image.yml'"];
 

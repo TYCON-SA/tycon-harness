@@ -538,8 +538,8 @@ test('T38 Sondas_VidaContraLivez_VariablesPrevistas @story-2.30 @ac-4 @ac-5 @ac-
 });
 
 // ── la guía y el registro (T32, T33, T42) ───────────────────────────────────────────────────────────────────────
-const GUIA = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.md');
-const GUIA_EN = path.join(ROOT, 'guides', 'sitio-de-la-organizacion.en.md');
+const GUIA = path.join(ROOT, 'guides', 'organization-site.md');
+const GUIA_EN = path.join(ROOT, 'guides', 'organization-site.en.md');
 /** El texto de una sección `## <título>` hasta la próxima `## `. */
 const seccion = (t, titulo) => { const i = t.indexOf(`\n## ${titulo}`); if (i < 0) return null; const j = t.indexOf('\n## ', i + 4); return t.slice(i, j < 0 ? undefined : j); };
 const sub = (t, titulo) => { const i = t.indexOf(`\n### ${titulo}`); if (i < 0) return null; const j = t.slice(i + 5).search(/\n#{2,3} /); return t.slice(i, j < 0 ? undefined : i + 5 + j); };
@@ -564,7 +564,7 @@ test('T32 Guia_ParteComunYUnaRecetaPorInstalacion @story-2.30 @ac-3 @ac-4 @ac-5 
   const orden = ['red interna', 'VPN', 'túnel'].map((x) => local.indexOf(x));
   assert.ok(orden.every((p, i) => p >= 0 && (i === 0 || p > orden[i - 1])), `las tres formas de llegar, en orden: ${orden}`);
   const index = fs.readFileSync(path.join(ROOT, 'INDEX.md'), 'utf8');
-  assert.match(index, /\| [^|]*sitio de la organizaci[^|]*\| `guides\/sitio-de-la-organizacion\.md`/, 'la fila del INDEX');
+  assert.match(index, /\| [^|]*sitio de la organizaci[^|]*\| `guides\/organization-site\.md`/, 'la fila del INDEX');
 });
 
 test('T42 Guia_InstalacionCompletaYEnIngles @story-2.30 @ac-7', () => {
@@ -592,7 +592,7 @@ test('T33 Registro_SuitesPiezasYReadmes @story-2.30 @ac-24', () => {
   const suites = fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8');
   for (const s of ['site-image-workflow.test.js', 'site-check-deploy.test.js', 'site-deploy.test.js', 'notify.test.js']) assert.ok(suites.includes(`"tests/${s}"`), `suites.json no registra ${s}`);
   const piezas = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
-  for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/sitio-de-la-organizacion.md']) assert.ok(piezas.includes(p), `piezas-del-arnes.md no nombra ${p}`);
+  for (const p of ['scripts/lib/notify.js', 'scripts/site/check-deploy.js', 'scripts/site/deploy/', '.github/workflows/site-image.yml', 'guides/organization-site.md']) assert.ok(piezas.includes(p), `piezas-del-arnes.md no nombra ${p}`);
   const ficha = seccion(piezas, 'scripts/site/ — el sitio de la organización');
   assert.ok(ficha && ficha.split('\n').length <= 25, `la ficha del sitio es corta (${ficha && ficha.split('\n').length} líneas)`);
   for (const r of ['pipelines/operations/README.md', 'pipelines/operations/github/README.md']) {

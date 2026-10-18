@@ -48,7 +48,7 @@
  *   --dry-run imprime, en orden, las órdenes de esa fase y los archivos que mandaría (los secretos tapados), sin llamar
  *   a az. --apply las corre con la sesión de `az` de quien la lanza; sin sesión, sale 1 y lo dice (no abre un login).
  *   SALIDA: 0 hecho · 1 configuración o variable que falta, o un paso que falló (dice qué quedó creado) · 2 uso.
- *   El archivo de configuración (fuera de todo repo; ver guides/sitio-de-la-organizacion.md): subscription,
+ *   El archivo de configuración (fuera de todo repo; ver guides/organization-site.md): subscription,
  *   resourceGroup, location (la de la cuenta del buzón), environment, app, logAnalyticsWorkspace, logAnalyticsQuotaGb,
  *   storageAccount, fileShare, fileShareQuotaGb, image (por su huella), tenantId, oidcClientId,
  *   mailbox { resourceGroup, account, container }, operationsRepo, operationsIdentity (copy | managed | token; con copy,

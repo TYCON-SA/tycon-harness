@@ -9,7 +9,7 @@
 #   sitio.env.example y completalo. Este archivo no nombra ninguno: lo recibe por SITE_ENV_FILE, que pone start.js
 #   después de comprobar que el archivo no está dentro de un repo git y que no lo leen otros. Ningún valor va acá.
 # · Cómo se llega, en este orden (lo más seguro primero): sólo la red interna; la VPN de la organización; un túnel
-#   público con el candado del proveedor del túnel delante. La guía: guides/sitio-de-la-organizacion.md.
+#   público con el candado del proveedor del túnel delante. La guía: guides/organization-site.md.
 #
 # La imagen, por su huella (@sha256:…), nunca por etiqueta. La pone SITE_IMAGE (start.js --update la resuelve de `stable`
 # y recrea el contenedor; `harness.js update` también, con la etiqueta tycon.site=local); sin SITE_IMAGE, la de abajo:

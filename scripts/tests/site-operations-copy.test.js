@@ -373,8 +373,8 @@ test('T26 2.34-Guia_FormasYFueraDeAzure @story-2.34 @ac-12 @ac-13 @ac-17 — las
     const fin = resto.slice(4).search(/\n##+ /);
     return fin < 0 ? resto : resto.slice(0, fin + 4);
   };
-  const es = seccion('guides/sitio-de-la-organizacion.md', 'De dónde lee operaciones');
-  const en = seccion('guides/sitio-de-la-organizacion.en.md', 'Where it reads operations from');
+  const es = seccion('guides/organization-site.md', 'De dónde lee operaciones');
+  const en = seccion('guides/organization-site.en.md', 'Where it reads operations from');
   const orden = (t, formas) => formas.map((f) => { const i = t.indexOf(f); assert.ok(i >= 0, `falta ${f}`); return i; });
   const ies = orden(es, ['**Copia con la identidad de la plataforma, en Azure**', '**Copia con una SAS, fuera de Azure**', '**Lectura directa del repo**']);
   const ien = orden(en, ['**Copy with the platform identity, in Azure**', '**Copy with a SAS, outside Azure**', '**Reading the repo directly**']);

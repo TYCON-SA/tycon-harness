@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * site-guide-captures.js — saca las capturas de la guía del sitio (guides/sitio-de-la-organizacion.md) del sitio
+ * site-guide-captures.js — saca las capturas de la guía del sitio (guides/organization-site.md) del sitio
  * corriendo. Vive fuera de scripts/site/ a propósito: esa carpeta es lo que viaja en la imagen del sitio, y no nombra
  * ninguna nube ni valores de una organización; este guion arma un laboratorio con todo eso.
  *

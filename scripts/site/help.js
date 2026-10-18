@@ -3,7 +3,7 @@
  * help.js — LA AYUDA DEL SITIO: la guía del sitio de la organización, partida por rol y armada en el servidor.
  *
  * Qué resuelve: quien usa o configura el sitio tiene la guía adentro, en la pestaña «Ayuda», sin ir a buscarla al repo.
- * La fuente es UNA: la guía que viaja en la imagen (`guides/sitio-de-la-organizacion.md` y su versión en inglés, con la
+ * La fuente es UNA: la guía que viaja en la imagen (`guides/organization-site.md` y su versión en inglés, con la
  * carpeta de capturas). La página se arma al pedirla, así que no hay una segunda copia que se desactualice.
  *
  * Quién ve qué: cada sección `##` de la guía tiene sus roles en `SECCIONES`, una tabla cerrada. Una sección que la tabla
@@ -24,8 +24,8 @@ const path = require('path');
 const views = require('./views.js');
 
 // sin ninguna guía en la imagen, la página dice dónde está en el repo del arnés (el código del sitio no nombra organizaciones)
-const RUTA_DE_LA_GUIA = 'guides/sitio-de-la-organizacion.md';
-const ARCHIVO = { es: 'sitio-de-la-organizacion.md', en: 'sitio-de-la-organizacion.en.md' };
+const RUTA_DE_LA_GUIA = 'guides/organization-site.md';
+const ARCHIVO = { es: 'organization-site.md', en: 'organization-site.en.md' };
 // los textos de la página, juntos: los que dice la ayuda además de la guía
 const TEXTOS = Object.freeze({
   idioma: { es: 'castellano', en: 'inglés' },
