@@ -422,7 +422,9 @@ test('T15 Alta_SinValoresDeUnaOrganizacion @story-2.30 @ac-23', () => {
 
 test('T36 Local_ComposeSinSecretosYSoloRedInterna @story-2.30 @ac-5 @ac-13', () => {
   const c = fs.readFileSync(path.join(DEPLOY, 'local', 'compose.yaml'), 'utf8');
-  assert.match(c, new RegExp(`image: ghcr\\.io/acme/arnes@sha256:[0-9a-f]{64}`));
+  // la imagen por huella: la de SITE_IMAGE (la resuelve start.js --update) o la fija de abajo, nunca una etiqueta
+  assert.match(c, new RegExp(`image: \\$\\{SITE_IMAGE:-ghcr\\.io/acme/arnes@sha256:[0-9a-f]{64}\\}`));
+  assert.match(c, /labels:\n {6}tycon\.site: local\n/, 'la etiqueta con la que harness.js update lo reconoce');
   assert.match(c, /- "127\.0\.0\.1:8080:8080"/, 'el puerto sólo en 127.0.0.1');
   assert.doesNotMatch(c, /- "?8080:8080"?$/m, 'nunca en todas las interfaces');
   // el archivo de secretos llega por una variable que pone el arranque (start.js): nunca un sitio.env al lado, en el repo

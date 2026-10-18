@@ -278,6 +278,9 @@ The sections, in the order of the screen:
   `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
+- **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
+  harness version or only notifies (`site.update` in `operations.json`). Undeclared, notice only. Automatic needs the
+  update nightly and its permission: the recipe, in "How it keeps itself up to date".
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -692,6 +695,25 @@ with its vote, the request stays. The review policy of `main` has to let the vot
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
 leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
 
+### How it keeps itself up to date
+
+The harness publishes the site image with its version number and moves the `stable` tag to that image **only** when it
+passed the scanner and its signature was verified; `stable` never moves back. With that, each installation knows whether
+there is something new:
+
+- **The notice, the same for everyone.** Maintainers see at the top of every tab "there is a new version of the site: X
+  (yours: Y)", and the Harness tab adds "last published". The site looks at the registry once an hour at most, without
+  credentials; if it cannot look, it says so and never says "up to date" without having looked. The morning summary
+  brings the site line. The version is not visible without a session.
+- **Automatic or notice only**, in Configuration → People → "How the site is updated" (`site.update` in
+  `operations.json`). **Without the key, notice only**: automatic needs permissions the organization grants
+  deliberately. Before turning it on, a manual update that goes well, and the morning notice channel configured: a
+  rollback leaves the nightly green and is reported in that notice.
+- **Automatic** is done by the harness updater (`scripts/site/deploy/update-site.js`): it resolves `stable`, installs it
+  **by digest**, wakes the site up and runs the check without a session on it. If the check fails, it goes back to the
+  previous digest and says so; that digest is not retried until `stable` moves. It never installs a version lower than
+  the one running. Each environment runs it with its own tool: each recipe has its **Up to date** paragraph.
+
 ### The two ways to start it
 
 The same image with Docker (`docker run … sitio:local`, above), or with Node alone from the clone, with the same
@@ -778,6 +800,19 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Who runs it:** needs Contributor on the resource group and Owner or User Access Administrator on the mailbox account
   (only to grant the role). The region is that of the mailbox account.
 
+**Up to date**: a nightly of its own in the operations repo, `site-update.yml` (in `pipelines/operations/` for Azure
+DevOps and in `pipelines/operations/github/` for GitHub), one hour before the dependencies one. It uses **its own
+connection**, authorized only for that nightly, with **a custom role on the site application and nothing else**:
+
+```bash
+az role definition create --role-definition '{"Name": "Site updater", "Description": "Changes the site image and nothing else", "Actions": ["Microsoft.App/containerApps/read", "Microsoft.App/containerApps/write", "Microsoft.App/containerApps/revisions/read", "Microsoft.App/managedEnvironments/join/action"], "AssignableScopes": ["/subscriptions/<subscription>/resourceGroups/<group>"]}'
+az role assignment create --assignee-object-id <the connection identity> --assignee-principal-type ServicePrincipal --role "Site updater" --scope /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.App/containerApps/<application>
+```
+
+Container Apps sends traffic to the new revision only if it starts; the nightly checks it anyway. Negative check: with
+that identity, `az storage account keys list` on the disk account and an `update` on another application in the group
+must fail.
+
 ### Render
 
 Render's free plan, with `scripts/site/deploy/render.yaml` as the *Blueprint*. Replace the image with the digest of the
@@ -794,6 +829,11 @@ version you install.
 - **Sleeps:** after 15 minutes without traffic, and wakes in about a minute (the check without a session waits for it).
   750 hours per month per workspace: one service fits. Without a payment method, if it goes over, Render suspends the
   service until the next month: it does not charge.
+
+**Up to date**: with `site.update: "auto"`, the nightly (`SITE_PLATFORM=render`) asks for the redeploy through the Render
+hook with the `stable` digest (`imgURL=<image>@sha256:…`). The hook is a secret (`SITE_RENDER_DEPLOY_HOOK`): it never
+shows in the log. Render does it in the background; the next night's check without a session confirms it. If Render
+rejects the image (a 404), it has to be from the same registry and name as the service's.
 
 ### Your own machine
 
@@ -821,6 +861,17 @@ starting anything.
   probar desde el nocturno" (could not be checked from the night run), without a link, unless the organization runs the
   night process on its own agent inside the network.
 
+**Up to date**: first the harness script, with a `cron` or a systemd timer:
+
+```bash
+# every night at 03:00: resolves stable, recreates with SITE_IMAGE=<image>@<digest>, checks /livez and goes back if it fails
+0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organization>/<repo>
+```
+
+With systemd, a `oneshot` `.service` with the same command and a `.timer` with `OnCalendar=*-*-* 03:00`. **Watchtower**
+stays as an alternative (the community-maintained copy, limited to the site container with `--label-enable`): it does
+not check or go back, and it has the Docker socket, that is, it is administrator of the machine.
+
 **The operations copy outside Azure** (also for Render): the read-only SAS, tied to a stored access policy on the
 container so it can be revoked. The copy's account needs its key turned on to sign it:
 
@@ -828,6 +879,20 @@ container so it can be revoked. The copy's account needs its key turned on to si
 az storage container policy create --account-name <account> -c <container> -n site-read --permissions rl --expiry <date>
 az storage container generate-sas --account-name <account> -n <container> --policy-name site-read -o tsv
 ```
+
+### Kubernetes and other clouds
+
+**Not tested by the harness.** The image is pinned by digest and updated with the tools that follow tags: Argo CD Image
+Updater or Flux (with the strategy that resolves `stable` to its digest), or each cloud's own command to change a
+service image (Cloud Run: `gcloud run deploy --image <image>@<digest>`). After the change, the check without a session:
+`node scripts/site/check-deploy.js --url https://<address>`.
+
+### A closed network
+
+Without internet access, the site cannot look at the last published version and says so. The update is by hand: on a
+machine with access, `docker pull <image>:stable` and `docker save` of that digest; carry the file, `docker load`, and
+recreate the container with `SITE_IMAGE=<image>@<digest>`. Then, the check without a session against the internal
+address.
 
 ## Inside, for whoever maintains the harness
 

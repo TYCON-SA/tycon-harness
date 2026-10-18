@@ -2072,3 +2072,50 @@ test('T20 2.34-Proponer_SinCredencialDescarga @story-2.34 @ac-10 @ac-16 — la c
     assert.match(p.message, /sin identidad de escritura/);
   });
 });
+
+// ── cómo se actualiza el sitio (`site.update`) ──────────────────────────────────────────────────────
+test('T22 2.33-Clave_SiteUpdateValida @story-2.33 @ac-17 — "auto" y "notice" valen; otro valor, problema en site.update', () => {
+  for (const v of ['auto', 'notice']) assert.strictEqual(OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], update: v } }))).ok, true, `update: ${v}`);
+  assert.strictEqual(OPS.parse(ORG.formatJson(opsBase())).ok, true, 'sin la clave vale (y el modo es «sólo aviso»)');
+  for (const malo of ['si', true]) {
+    const r = OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], update: malo } })));
+    assert.strictEqual(r.ok, false, JSON.stringify(malo));
+    assert.deepStrictEqual(r.problems.map((p) => p.path), ['site.update']);
+  }
+  assert.ok(OPS.SITE_KEYS.includes('update'));
+  const { modoDe } = require(path.join(ROOT, 'scripts', 'site', 'deploy', 'update-site.js'));
+  const d = tmp('site-config-modo-');
+  fs.writeFileSync(path.join(d, 'operations.json'), ORG.formatJson(opsBase()));
+  assert.strictEqual(modoDe(path.join(d, 'operations.json')), 'notice', 'sin la clave, sólo aviso');
+});
+
+test('T23 2.33-Seccion_ProponeComoLasDemas @story-2.33 @ac-18 — «Cómo se actualiza el sitio» cambia sólo site.update', async () => {
+  const s = ORG.seccionPorId('aldia');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Cómo se actualiza el sitio', 'operations.json', 'operaciones', 'operations-config.js', ['site.update'], 'operations']);
+  const base = opsBase({ site: { maintainers: [LEAD], refresh_minutes: 15, auto_apply: false } });
+  const r = ORG.revisar({ seccion: 'aldia', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], auto_apply: true, update: 'auto' } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, update: 'auto' } }), 'sólo la hoja de la actualización');
+  const codigo = ORG.pantalla();
+  assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar', 'aldia',/);
+  assert.match(codigo, /aldia: editorActualizacionSitio/);
+  for (const t of ['sin declarar (sólo aviso)', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']) assert.ok(codigo.includes(t), t);
+  // la pestaña muestra el valor que hay
+  const ops = clon({ 'operations.json': opsBase({ site: { maintainers: [LEAD], update: 'auto' } }) });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
+    const sec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'aldia');
+    assert.ok(sec && sec.estado === 'cargado', JSON.stringify(sec));
+    assert.strictEqual(sec.borrador.site.update, 'auto');
+  });
+});
+
+test('T24 2.33-LectorSabe_RutaConPunto @story-2.33 @ac-18 — un lector sin `update` en SITE_KEYS no sabe leer la sección', () => {
+  const s = ORG.seccionPorId('aldia');
+  const sinUpdate = { ...OPS, SITE_KEYS: OPS.SITE_KEYS.filter((k) => k !== 'update') };
+  assert.strictEqual(ORG.lectorSabe(sinUpdate, s), false, 'la clave de arriba (site) existe, pero la hoja no');
+  assert.strictEqual(ORG.lectorSabe(OPS, s), true);
+  // la del interruptor de los cambios sigue sabiendo, y una sección sin rutas no cambia
+  assert.strictEqual(ORG.lectorSabe(OPS, ORG.seccionPorId('aplicar')), true);
+  assert.strictEqual(ORG.lectorSabe(sinUpdate, ORG.seccionPorId('aplicar')), true);
+});

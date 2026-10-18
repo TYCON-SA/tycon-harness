@@ -14,6 +14,7 @@
  *   · Los motivos que se ven son frases fijas de esta casa (la lista cerrada del AC 14); el motivo crudo va al registro.
  */
 const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
+const { compare: compararVersiones } = require('../setup/harness/version-order.js');
 
 const DIA = 86400000;
 const PARADA_DIAS = 30;
@@ -198,7 +199,7 @@ function filasProyectos(m) {
 }
 
 /** Arnés (AC 20): una línea por pieza. */
-function filasArnes(m, { ahora = Date.now(), version = null } = {}) {
+function filasArnes(m, { ahora = Date.now(), version = null, ultima = null } = {}) {
   const lineas = [];
   for (const s of (m.sources && Array.isArray(m.sources.lista) ? m.sources.lista : [])) {
     lineas.push({ clave: `fuente:${s.id}`, titulo: `Fuente ${s.id}`, estado: s.estado, texto: s.estado === 'medido' ? `al día (del ${s.fecha})` : conFecha(s) });
@@ -213,6 +214,11 @@ function filasArnes(m, { ahora = Date.now(), version = null } = {}) {
   const sello = medida(t) && t.sello ? t.sello : null;
   lineas.push({ clave: 'sello', titulo: 'La página de las seis preguntas', estado: sello ? 'medido' : 'no_medido', texto: sello ? `${String(sello.generado || '').slice(0, 10)} · ${sello.completo ? 'completa' : 'incompleta'}` : conFecha(t) });
   lineas.push({ clave: 'version', titulo: 'Versión del sitio', estado: version ? 'medido' : 'no_medido', texto: version || 'sin version.json' });
+  // la última publicada: nunca «al día» sin haber mirado
+  if (ultima) {
+    if (ultima.estado === 'medido') lineas.push({ clave: 'ultima', titulo: 'Última publicada', estado: 'medido', texto: `${ultima.version}${ultima.creada ? ` (del ${String(ultima.creada).slice(0, 10)})` : ''}` });
+    else lineas.push({ clave: 'ultima', titulo: 'Última publicada', estado: 'no_medido', texto: ultima.estado === 'no_pudo' ? `no se pudo mirar la última publicada (${ultima.motivo})` : 'todavía no se miró la última publicada' });
+  }
   void ahora;
   return lineas;
 }
@@ -225,6 +231,26 @@ function tile(f) {
 }
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
+
+/** ¿La última publicada es mayor que la del sitio? Sólo con las dos versiones con forma de número publicado. */
+function hayVersionNueva(ultima, version) {
+  if (!ultima || ultima.estado !== 'medido' || !version) return false;
+  return compararVersiones(ultima.version, version) === 1;
+}
+
+/**
+ * El cartel de versión nueva: sólo para quienes mantienen (el servidor no le pasa `ultima` a nadie más),
+ * con lo que hay que hacer según el modo. El enlace a la receta sale del repo que declara la imagen (su etiqueta
+ * `source`): sin ella, el texto sin enlace.
+ */
+function cartelVersionNueva(ctx) {
+  if (!ctx || !hayVersionNueva(ctx.ultima, ctx.version)) return '';
+  const u = ctx.ultima;
+  const que = `hay una versión nueva del sitio: ${esc(u.version)} (la tuya: ${esc(ctx.version)})`;
+  if (ctx.modoActualizacion === 'auto') return `<div class="banda">${que}; se instala sola con el próximo nocturno</div>`;
+  const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/sitio-de-la-organizacion.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa`)}">la receta de la guía</a>` : 'la receta de la guía (Cómo se mantiene al día)';
+  return `<div class="banda">${que}; cómo se actualiza: ${receta}</div>`;
+}
 
 /** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
 const TEMA = '<div class="theme" role="group" aria-label="Tema"><button type="button" data-tema="auto" aria-pressed="true">Auto</button><button type="button" data-tema="light" aria-pressed="false">Claro</button><button type="button" data-tema="dark" aria-pressed="false">Oscuro</button></div>';
@@ -247,6 +273,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
     ctx && ctx.bandaConfig ? banda(`la configuración de la organización no se pudo releer desde ${hora(ctx.bandaConfig.desde)}: ${ctx.bandaConfig.motivo}`) : '',
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
     ctx && ctx.avisoVariable ? banda('la variable de arranque sigue puesta: sacala de la configuración de la instalación (SITE_FIRST_MAINTAINER)') : '',
+    cartelVersionNueva(ctx),
   ].join('');
   // la barra de arriba: la marca de la organización (su logo, o su nombre), el producto y quién entró
   const m = (ctx && ctx.marca) || {};
@@ -319,7 +346,7 @@ function paginaProyectos(ctx) {
 }
 
 function paginaArnes(ctx) {
-  const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version });
+  const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version, ultima: ctx.ultima });
   const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}</span><span class="marca">${l.estado === 'medido' ? '<span class="pill">medido</span>' : '<span class="pill nm">no medido</span>'}</span></li>`).join('');
   return layout(ctx, 'Arnés', seccion('Cómo está el arnés', `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">La página de las seis preguntas →</a>`), 'Si los controles andan: lo que midió la noche y la versión que corre este sitio.');
 }

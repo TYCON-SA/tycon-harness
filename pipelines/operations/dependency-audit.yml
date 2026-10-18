@@ -321,7 +321,10 @@ jobs:
           case "${TYCON_TELEGRAM_CHAT_ID:-}" in *'$('*) unset TYCON_TELEGRAM_CHAT_ID ;; esac
           case "${TYCON_NOTIFY_WEBHOOK_URL:-}" in *'$('*) unset TYCON_NOTIFY_WEBHOOK_URL ;; esac
           ERR=$(mktemp)
-          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" \
+          # la versión del sitio, sólo si la organización tiene el nocturno que lo mantiene al día (site-update.yml)
+          SU=()
+          [ -d "$(Build.SourcesDirectory)/.dashboard/site-update" ] && SU=(--site-update "$(Build.SourcesDirectory)/.dashboard/site-update/site-update-$HOY.json")
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} \
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \

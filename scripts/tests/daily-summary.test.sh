@@ -1120,6 +1120,45 @@ RC=$(TYCON_NOTIFY_WEBHOOK_URL="$TYCON_TELEGRAM_API/hook/secreto" OPS_FILE="$D/op
 # es del repo del equipo (el vigilante de producción no se publica, story 8.30). El caso sigue en el repo privado; lo que
 # el guion hace con `--extra` lo prueban T33, T33c, T33d y T33e acá.
 
+# 2.33-T25 Manana_LineaDelSitio — la versión del sitio en la mañana, del resultado del nocturno que lo actualiza: una línea
+# fija antes de la del sitio, sólo con versiones y un motivo de la lista cerrada (nunca el texto libre del resultado)
+penultima() { ultimo 'j.text.split("\n").slice(-2)[0]'; }
+act() { printf '{"version":1,"plataforma":"azure","resultado":"%s","desde":%s,"hacia":%s,"hora":"%s","motivo":%s}\n' "$1" "$2" "$3" "$4" "$5" > "$D/su.json"; }
+H25="${HOY}T03:05:00.000Z"
+for caso in \
+  'actualizado|"2026.10.15.48"|"2026.10.18.9"|null|sitio: actualizado de 2026.10.15.48 a 2026.10.18.9' \
+  'al_dia|"2026.10.18.9"|"2026.10.18.9"|null|sitio: al día con la última publicada (2026.10.18.9)' \
+  'aviso|"2026.10.15.48"|"2026.10.18.9"|null|sitio: hay una versión nueva, 2026.10.18.9; se actualiza a mano' \
+  'pedido|null|"2026.10.18.9"|null|sitio: pedido de actualización a 2026.10.18.9 mandado' \
+  'vuelto_atras|"2026.10.15.48"|"2026.10.18.9"|"la prueba sin sesión falló (https://sitio.acme.example/healthz 503)"|sitio: no se pudo actualizar a 2026.10.18.9, sigue en 2026.10.15.48 (la prueba sin sesión falló)' \
+  'no_pudo|null|null|"no se pudo leer stable (sin red)"|sitio: no se pudo mirar la última publicada' \
+  'no_pudo|null|null|"no se pudo leer site.update"|sitio: no se pudo leer site.update; revisar operations.json' \
+  'no_pudo|null|null|"no se pudo leer el estado del actualizador"|sitio: no se pudo leer el estado del actualizador; no se tocó nada'; do
+  IFS='|' read -r R DE HA MO ESP <<<"$caso"
+  act "$R" "$DE" "$HA" "$H25" "$MO"; prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+  RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --site-update "$D/su.json")
+  [ "$RC" = 0 ] && [ "$(penultima)" = "$ESP" ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+    && ok "2.33-T25 ${R}: «${ESP}», antes de la línea del sitio" || no "2.33-T25 ${R}: rc=$RC · «$(penultima)» · última «$(ultima_linea)»"
+  # el caso que trae texto libre en el motivo: ese texto (una dirección) no llega al mensaje, sólo el de la lista
+  if [ "$R" = vuelto_atras ]; then
+    if grep -q 'sitio.acme.example/healthz' <<<"$(ultimo 'j.text')"; then no "2.33-T25 🔴 el texto libre del motivo se coló al mensaje"; else ok "2.33-T25 el motivo libre del resultado no entra al mensaje (sólo el de la lista)"; fi
+  fi
+done
+for sin in "$D/no-existe.json" ayer; do
+  if [ "$sin" = ayer ]; then act al_dia '"2026.10.18.9"' '"2026.10.18.9"' "2026-01-01T03:05:00.000Z" null; F25="$D/su.json"; else F25="$sin"; fi
+  prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+  RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --site-update "$F25")
+  [ "$(penultima)" = "sitio: sin el resultado del nocturno de hoy; el sitio dice al entrar si hay una versión nueva" ] \
+    && ok "2.33-T25 sin un resultado de hoy (${sin##*/}): lo dice, sin inventar" || no "2.33-T25 sin resultado ${sin}: «$(penultima)»"
+done
+printf '{ roto' > "$D/su.json"; prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --site-update "$D/su.json")
+[ "$(penultima)" = "sitio: el resultado del nocturno de hoy no se pudo leer" ] && ok "2.33-T25 un resultado ilegible no se confunde con «sin resultado»" || no "2.33-T25 ilegible: «$(penultima)»"
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$(penultima)" != "sitio: sin el resultado del nocturno de hoy; el sitio dice al entrar si hay una versión nueva" ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && ok "2.33-T25 sin --site-update (una organización sin el nocturno), el mensaje queda como antes" || no "2.33-T25 sin la opción cambió: «$(penultima)»"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1
