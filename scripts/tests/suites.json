@@ -619,6 +619,12 @@
       "requiere": []
     },
     {
+      "__nota": "un criterio de pantalla sólo cuenta como probado con una captura o una grabación del navegador real atada a ese criterio (la matriz, el portón E2E y smoke-run.sh --capture).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/visual-evidence.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-suites-json.test.js",
       "requiere": []

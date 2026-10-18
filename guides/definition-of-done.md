@@ -206,6 +206,24 @@ E2E_AUDIT_REQUIRED=1 npm run test:e2e
 
 - El **CI dedicado** que levanta toda la stack DEBE setear esa env var. Skipear silenciosamente en CI (cuando la infra está disponible) es inaceptable — esconde bugs hasta producción.
 
+### 2.bis. Un AC de pantalla se prueba con una imagen del navegador real
+
+Lo que el cliente ve no se da por probado porque una prueba salió verde: un **AC de pantalla** pide una **captura o una
+grabación** del navegador real, atada a ese AC. Sin ella la matriz de verificación runtime lo deja `SIN-EVIDENCIA`
+(bloquea, no se waivea), aunque el E2E o el humo hayan salido en verde.
+
+- **Qué es un AC de pantalla**: en una story que cablea interfaz, todo AC salvo el que lleva `@sin-pantalla` en su texto;
+  en una story sin interfaz, sólo el que lleva `@pantalla`. En duda, es de pantalla. Backend sigue con humo y medición.
+- **Con el E2E**: poné `@ac-N` en el título del test que abre la pantalla (`'la lista muestra el total @ac-2'`). El gate
+  E2E con el filtro de los specs de la story guarda la captura, y el `captures.json` de su carpeta la ata al AC. Una
+  grabación `.webm` de Playwright cuenta igual que una captura.
+- **Con un humo**: `smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N --pass-if '…' --capture <archivo.png|.webm>
+  -- <comando>`. La huella de la imagen queda en el registro y en el espejo; cambiarla después la saca de la cuenta.
+- **Datos de laboratorio**: la imagen es de un sitio de laboratorio o de prueba, con datos inventados; nunca de datos
+  reales de un cliente.
+- **Compatibilidad**: la regla rige para las stories que arrancan después de publicarla; una que ya estaba en curso recibe
+  un aviso en la matriz, sin rojo.
+
 ### 3. Verificación cruzada con stories dependientes
 
 - Si Story X declara `depends_on: [Y]` y Y está en `review`/`done`, validar runtime que los artifacts de Y siguen funcionando (no asumir).

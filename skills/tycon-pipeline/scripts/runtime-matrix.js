@@ -18,6 +18,15 @@
  *                ejercitó corriendo de verdad.
  *   - SIN-EVIDENCIA — ningún artefacto de ejecución lo respalda.
  *
+ * **Imagen de pantalla**: un AC de pantalla —lo que el cliente ve— sólo es RUNTIME con además una captura
+ * o una grabación (.webm) del navegador real atada a ese AC. Sin ella queda SIN-EVIDENCIA, con el motivo y cómo sacarla.
+ * Es "de pantalla" todo AC de una story que cablea interfaz (lib/ui-signal.js), salvo el marcado `@sin-pantalla`; en una
+ * story sin interfaz, sólo el marcado `@pantalla`. La imagen sale de dos lugares, los dos ya contados por la matriz:
+ *   - el portón E2E: `<clave>-captures-<ts>/captures.json` (lo escribe e2e-evidence.js) ata cada imagen a los `@ac-N`
+ *     del título del test que la sacó;
+ *   - el humo: `smoke-run.sh --capture <archivo>` la copia a la evidencia y sella su sha256 en el registro y en el espejo.
+ * Rige para las stories que arrancan después de VISUAL_EVIDENCE_FROM; las que arrancaron antes reciben un aviso.
+ *
  * **La regla**: la matriz está VERDE solo si cada AC es RUNTIME, o si el resto está declarado
  * materialmente imposible de verificar corriendo la app Y el USUARIO lo aprobó desde su terminal:
  *
@@ -59,6 +68,14 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 
 const os = require('os');
 const crypto = require('crypto');
 const smokeSecrets = require(path.join(__dirname, 'lib', 'smoke-secrets.js'));
+const uiSignal = require(path.join(__dirname, 'lib', 'ui-signal.js'));
+
+// Desde cuándo un AC de pantalla sin imagen bloquea: las stories que arrancaron antes de esta hora no se frenan a mitad
+// de su trabajo y reciben un aviso. Es la hora en que se publica la regla.
+const VISUAL_EVIDENCE_FROM = '2026-10-18T20:00:00Z';
+// Lo que vale como imagen en la carpeta del E2E (las capturas de Playwright y su video) y en la del humo.
+const VISUAL_E2E_FILE_RE = /\.(png|jpe?g|webp|gif|webm)$/i;
+const VISUAL_SMOKE_FILE_RE = /\.(png|webm)$/i;
 
 const RUNTIME_NIVEL_RE = /e2e|smoke|runtime|playwright/i;
 const CODE_FILE_RE = /\.(cs|ts|tsx|js|jsx|sql)$/i;
@@ -622,8 +639,10 @@ function readSmokeLedger(evidenceDirs, sid, gatesLogPath) {
       // una línea vieja. Las líneas sin `v` en los dos lados cuentan como siempre (AC 20).
       const v2 = e.v === 2 || confirmadas.some((l) => l.includes('"v":2'));
       const salidaProblema = v2 && mirrored ? problemaDeSalida(e, dir, confirmadas) : null;
+      // La imagen que el humo guardó con `--capture`, verificada contra el espejo como la salida.
+      const imagen = mirrored ? imagenDelHumo(e, dir, confirmadas) : { ruta: null, problema: null };
       entries.push({ ...e, path: f, tsMs: Date.parse(e.ts), mirrored, mutatesOk, evidenceKind: classifyCmd(e.cmd),
-        v2, salidaProblema });
+        v2, salidaProblema, visual: imagen.ruta, visualProblema: imagen.problema });
     }
   }
   return entries;
@@ -647,6 +666,155 @@ function problemaDeSalida(e, dir, confirmadas) {
   const shaDe = (v) => (typeof v === 'string' ? sha(v) : undefined);
   const calza = deLaSalida.some((m) => m.pass_if_sha === shaDe(e.pass_if) && m.fail_if_sha === shaDe(e.fail_if));
   return calza ? null : 'expectativa cambiada después de correr';
+}
+
+// ---------------------------------------------------------------- imagen de pantalla
+
+/**
+ * ¿Es este AC de pantalla? `@pantalla` en su texto: sí. `@sin-pantalla`: no. Sin marca, el de la story: en una story que
+ * cablea interfaz todo AC es de pantalla, en una que no, ninguno. Con las dos marcas hay duda, y la duda es de pantalla.
+ */
+function esDePantalla(acText, storyEsUi) {
+  const t = String(acText || '');
+  if (/@pantalla\b/i.test(t)) return true;
+  if (/@sin-pantalla\b/i.test(t)) return false;
+  return !!storyEsUi;
+}
+
+/** Cómo sacar la imagen de un AC: lo que dicen el motivo de la matriz y el aviso de las stories ya en curso. */
+function comoSacarLaImagen(n) {
+  return `Sacala del sitio de laboratorio (nunca con datos de un cliente): con el E2E, poniendo \`@ac-${n}\` en el título del test ` +
+    `que abre la pantalla (el portón guarda su captura y la ata al criterio), o con ` +
+    `\`smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs ${n} --pass-if '<qué tiene que pasar>' --capture <archivo.png|.webm> -- <comando>\`. ` +
+    `Si el criterio no es de pantalla, marcalo \`@sin-pantalla\` en su texto.`;
+}
+
+/** El motivo por el que un AC de pantalla no cuenta como probado, con lo que impidió contar una imagen si lo hubo. */
+function motivoSinImagen(n, problemas) {
+  const porque = problemas && problemas.length ? ` (${problemas.join('; ')})` : '';
+  return `falta la captura o la grabación del navegador${porque}. ${comoSacarLaImagen(n)}`;
+}
+
+/** La huella de un texto con los finales de línea normalizados (un checkout en Windows los reescribe). */
+function shaDeTexto(texto) {
+  return crypto.createHash('sha256').update(String(texto).replace(/\r\n/g, '\n')).digest('hex');
+}
+
+/** Las huellas de `captures.json` que el portón selló en el gates.log: Set de «<carpeta>|<sha256>». */
+function sellosDeCapturas(gatesLogPath) {
+  const sellos = new Set();
+  let texto = '';
+  try { texto = fs.readFileSync(gatesLogPath, 'utf8'); } catch { return sellos; }
+  for (const linea of texto.split('\n')) {
+    if (!linea.includes('"type":"e2e-captures"')) continue;
+    try { const l = JSON.parse(linea); if (l.type === 'e2e-captures') sellos.add(`${l.folder}|${l.sha256}`); } catch { /* línea rota */ }
+  }
+  return sellos;
+}
+
+/**
+ * Las imágenes que el portón E2E ató a cada AC: por cada gate fresco, en verde y con su espejo, el índice
+ * `<clave>-captures-<ts>/captures.json` que escribe `e2e-evidence.js captures`. El índice cuenta sólo si el gates.log del
+ * home (fuera del repo) trae su sello con la misma huella; cada imagen, sólo si es un archivo común, de la carpeta, con
+ * extensión de imagen o .webm y su sha256 es el del índice. Suma a los AC que el título de su test nombró con `@ac-N`.
+ * Un gate viejo, sin carpeta de capturas, no aporta imágenes y no es un problema; lo demás que no cuenta se dice.
+ * → { porAc: Map(AC → [ruta relativa a la carpeta de la evidencia]), problemas: [texto] }.
+ */
+function imagenesDelE2e(gates, key, sellos) {
+  const porAc = new Map();
+  const problemas = [];
+  for (const g of gates) {
+    const dir = path.join(path.dirname(g.path), `${key}-captures-${g.tsRaw}`);
+    const carpeta = path.basename(dir);
+    if (!isDir(dir)) continue;
+    let crudo;
+    let index;
+    try { crudo = fs.readFileSync(path.join(dir, 'captures.json'), 'utf8'); index = JSON.parse(crudo); } catch {
+      problemas.push(`captures.json ilegible en ${carpeta}: sus imágenes no cuentan.`);
+      continue;
+    }
+    if (!Array.isArray(index)) { problemas.push(`captures.json de ${carpeta} no es una lista: sus imágenes no cuentan.`); continue; }
+    if (!sellos.has(`${carpeta}|${shaDeTexto(crudo)}`)) {
+      problemas.push(`captures.json de ${carpeta} sin sello en el espejo (gates.log) o cambiado a mano: sus imágenes no cuentan. Volvé a correr el gate E2E con el filtro de los specs de la story.`);
+      continue;
+    }
+    for (const e of index) {
+      const nombre = e && typeof e.file === 'string' ? e.file : '';
+      if (!nombre || nombre !== path.basename(nombre) || !VISUAL_E2E_FILE_RE.test(nombre)) {
+        problemas.push(`captures.json de ${carpeta}: «${String(nombre).slice(0, 60)}» no es una imagen de la carpeta: no cuenta.`);
+        continue;
+      }
+      const abs = path.join(dir, nombre);
+      let st;
+      try { st = fs.lstatSync(abs); } catch { problemas.push(`${carpeta}/${nombre} no está en el disco: no cuenta.`); continue; }
+      if (!st.isFile() || typeof e.sha256 !== 'string' ||
+          crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex') !== e.sha256) {
+        problemas.push(`${carpeta}/${nombre} no es la imagen que selló el gate (cambiada, o sin huella): no cuenta.`);
+        continue;
+      }
+      for (const n of Array.isArray(e.acs) ? e.acs : []) {
+        if (!Number.isInteger(n)) continue;
+        if (!porAc.has(n)) porAc.set(n, []);
+        porAc.get(n).push(`${carpeta}/${nombre}`);
+      }
+    }
+  }
+  return { porAc, problemas };
+}
+
+/**
+ * La imagen que un humo guardó con `--capture`, o por qué no cuenta. La ruta es relativa a la carpeta del registro y no
+ * sale de ella; el archivo existe y es png o webm; y su sha256 es el del registro Y está en una línea CONFIRMADA del
+ * espejo (fuera del repo): el registro viaja con el código y se edita, el espejo no.
+ * → { ruta, problema }: `ruta` si cuenta; `problema` si el humo trae imagen y no cuenta; ambos null si no trae.
+ */
+function imagenDelHumo(e, dir, confirmadas) {
+  if (typeof e.capture_error === 'string' && e.capture === undefined) return { ruta: null, problema: `la captura no se pudo guardar: ${e.capture_error}` };
+  if (e.capture === undefined && e.capture_sha === undefined) return { ruta: null, problema: null };
+  const rel = typeof e.capture === 'string' ? e.capture : '';
+  if (!rel || path.isAbsolute(rel) || rel.split(/[\\/]/).includes('..') || !VISUAL_SMOKE_FILE_RE.test(rel)) return { ruta: null, problema: 'ruta de la imagen no válida' };
+  const abs = path.join(dir, rel);
+  if (!isFile(abs)) return { ruta: null, problema: 'imagen ausente' };
+  const sha = crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex');
+  const espejo = confirmadas.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+  if (sha !== e.capture_sha || !espejo.some((m) => m.capture_sha === sha)) return { ruta: null, problema: 'imagen cambiada después de correr' };
+  return { ruta: rel, problema: null };
+}
+
+/**
+ * Cuándo arrancó la story: { ms, fuente, problemas }. `ms` es null si no se sabe (y entonces la regla rige). Primero el
+ * dato que pasa quien llama (las pruebas); después el `startedAt` del marcador del pipeline (`<estado>/active/*.json`):
+ * se busca por la ruta de la story (con varios, el más antiguo) y por el número sólo si en ese repo hay UN único marcador
+ * con ese número; y por último el `created:` de la story, que con la fecha sola cuenta como el final de ese día. `fuente`
+ * dice de cuál salió. Un marcador que no se puede leer va en `problemas`.
+ */
+function arranqueDeLaStory({ startedAt, activeDir, storyPath, repoRoot, sid, fm }) {
+  const ms = (v) => { const t = v instanceof Date ? v.getTime() : typeof v === 'number' ? v : Date.parse(String(v || '')); return Number.isFinite(t) ? t : null; };
+  const problemas = [];
+  if (startedAt !== undefined && startedAt !== null) return { ms: ms(startedAt), fuente: 'dada por quien llamó', problemas };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const mia = real(storyPath);
+  const delRepo = repoRoot ? real(repoRoot) : null;
+  let dePath = null;
+  const delNumero = [];
+  for (const f of safeReaddir(activeDir).filter((x) => x.endsWith('.json'))) {
+    let m;
+    try { m = JSON.parse(fs.readFileSync(path.join(activeDir, f), 'utf8')); } catch { problemas.push(`marcador ilegible: ${f}`); continue; }
+    if (!m || typeof m !== 'object') { problemas.push(`marcador ilegible: ${f}`); continue; }
+    const t = ms(m.startedAt);
+    // `pipeline.js start` guarda la ruta relativa al repo: se resuelve contra el repo del marcador.
+    const coincidePath = typeof m.storyPath === 'string' && (path.isAbsolute(m.storyPath) || m.repoPath)
+      && real(path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath, m.storyPath)) === mia;
+    if (coincidePath && t !== null && (dePath === null || t < dePath)) dePath = t;
+    if (!coincidePath && m.storyId != null && String(m.storyId) === String(sid) && m.repoPath && delRepo && real(m.repoPath) === delRepo) delNumero.push(t);
+  }
+  if (dePath !== null) return { ms: dePath, fuente: 'el marcador del pipeline', problemas };
+  if (delNumero.length === 1 && delNumero[0] !== null) return { ms: delNumero[0], fuente: 'el marcador del pipeline (por el número de la story)', problemas };
+  const created = (String(fm || '').match(/^created:\s*["']?([0-9][0-9T:.+\-Z]*)/m) || [])[1];
+  if (!created) return { ms: null, fuente: null, problemas };
+  // Con la fecha sola no se sabe la hora: cuenta como el final de ese día, para que una story creada el día del corte rija.
+  const soloFecha = /^\d{4}-\d{2}-\d{2}$/.test(created);
+  return { ms: ms(soloFecha ? `${created}T23:59:59Z` : created), fuente: 'el `created:` de la story', problemas };
 }
 
 function compactTsToMs(compact) {
@@ -708,8 +876,8 @@ function compute(opts) {
     // el repo y los totales también en la exenta (story 7.27): el candado de la guía QA busca las pantallas desde
     // `repoRoot` y el generador de la guía lee `stats`; sin ellos, «la pantalla no está en el disco» y un TypeError
     const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
-    const stats = { total: 0, runtime: 0, notRun: 0, accionNoEjercida: 0, notVerifiable: 0, waived: 0, exentosC8: 0 };
-    return { sid, exempt: true, green: true, hash: 'exempt', perAc: {}, warnings: [], acs: [], repoRoot, stats };
+    const stats = { total: 0, runtime: 0, notRun: 0, sinImagen: 0, accionNoEjercida: 0, notVerifiable: 0, waived: 0, exentosC8: 0 };
+    return { sid, exempt: true, green: true, hash: 'exempt', perAc: {}, warnings: [], avisos: [], sinImagen: [], acs: [], repoRoot, stats };
   }
   // La CLAVE de la evidencia (story 1.17). Si no se puede decidir —no se pudo recorrer el repo entero para
   // saber si el número se repite— la matriz NO adivina: es un error estructural (fail-closed).
@@ -761,6 +929,8 @@ function compute(opts) {
   }
 
   const warnings = [];
+  // Avisos que no bloquean: un AC de pantalla sin imagen en una story que arrancó antes del corte.
+  const avisos = [];
   if (blockedAcs.size) {
     warnings.push(`ACs EXCLUIDOS del gate por tanda blocked (deuda declarada con blocked_by, no "sin correr"): ${blockedByPipeline.join(' · ')}. Se re-incorporan solos cuando esa tanda deje de estar blocked.`);
   }
@@ -850,6 +1020,12 @@ function compute(opts) {
   for (const e of ledger.filter((x) => x.mirrored && x.tsMs < maxCodeMtime)) {
     warnings.push(`Smoke ${e.ts} anterior al último edit de código → no cuenta. Re-correlo vía smoke-run.sh.`);
   }
+  // La imagen del humo que no es la que se selló al correr no cuenta: el humo sigue valiendo, sin imagen.
+  for (const e of ledger.filter((x) => x.mirrored && x.visualProblema)) {
+    warnings.push(`Smoke ${e.ts} (AC ${e.acs.join(',')}): ${e.visualProblema} → la imagen no cuenta. ` +
+      (e.capture_error !== undefined ? 'Re-correlo vía smoke-run.sh --capture con una imagen que sirva.'
+        : 'Lo que quedó en el repo no es lo que selló el espejo al correr: re-correlo vía smoke-run.sh --capture, no edites la evidencia.'));
+  }
   // Un smoke que NO ejercita la app no es evidencia runtime — se dice fuerte y con el comando a la
   // vista, porque el modo de falla que esto ataca es precisamente que pasara inadvertido.
   for (const e of freshSmokes.filter((x) => x.evidenceKind !== 'app-run')) {
@@ -863,6 +1039,11 @@ function compute(opts) {
   if (LEGACY_SMOKE_KINDS) {
     warnings.push('🚨 TYCON_RUNTIME_MATRIX_LEGACY=1 — todo smoke cuenta como RUNTIME sin mirar el comando. Es el bug que este gate vino a arreglar: la matriz PUEDE estar mintiendo. Sacá la variable en cuanto puedas.');
   }
+
+  // --- imagen de pantalla: de qué AC es cada captura o grabación que la matriz ya puede contar
+  const imagenesE2e = imagenesDelE2e(freshPassGates, evKey, sellosDeCapturas(gatesLogPath));
+  for (const m of imagenesE2e.problemas) avisos.push(m);
+  const storyEsUi = uiSignal.storyTouchesUi(content, repoRoot);
 
   // --- evidencia código: tests-result.json (staleness = WARNING: regenerar es full
   //     suite, y la full suite corre SOLO en el merge-gate por regla del equipo)
@@ -955,8 +1136,20 @@ function compute(opts) {
       else if (porDeclarado) mutacion = `smoke declarado --mutates ${porDeclarado.ts} (exit 0 vía smoke-run.sh, espejo verificado)`;
       else verdict = 'RUNTIME-PARCIAL';
     }
+    // ¿Es un AC de pantalla, y qué imágenes tiene? Las del portón E2E atadas por `@ac-N` y las de los humos
+    // que la matriz ya cuenta como corrida de la app.
+    const pantalla = esDePantalla(acTextsEnteros[n] != null ? acTextsEnteros[n] : acTexts[n], storyEsUi);
+    const visual = [...(imagenesE2e.porAc.get(n) || [])];
+    const visualProblemas = [];
+    for (const e of freshSmokes) {
+      if (!e.acs.includes(n) || !(e.evidenceKind === 'app-run' || LEGACY_SMOKE_KINDS)) continue;
+      if (e.visual) visual.push(e.visual);
+      else if (e.visualProblema) visualProblemas.push(`humo ${e.ts}: ${e.visualProblema}`);
+    }
+    // `pantalla` y `visual` sólo viajan en los AC de pantalla: un AC que no lo es no cambia de forma.
     perAc[n] = { verdict, runtime, code, text: acTexts[n] || null, mutacion,
-      exentoC8: ex.valida ? ex.motivo : null, fuentes };
+      exentoC8: ex.valida ? ex.motivo : null, fuentes,
+      ...(pantalla ? { pantalla, visual, ...(visualProblemas.length ? { visualProblemas } : {}) } : {}) };
     // (story 1.19) Qué esperaba cada humo `v:2` del AC y dónde está lo que salió. Va aparte y NO entra al hash: las
     // líneas viejas dan exactamente la misma matriz que antes (AC 20).
     const expectativas = freshSmokes.filter((e) => e.v2 && e.acs.includes(n))
@@ -1110,7 +1303,42 @@ function compute(opts) {
     warnings.push(`🔴 ${exentosValidos.length} ACs exentos de DODRT-C8 en una misma story (AC ${exentosValidos.map((e) => '#' + e.ac).join(', ')}). Puede ser legítimo —una story enteramente de lectura lo es—, pero es también la forma que tendría el abuso: revisá que ninguno de esos ACs describa algo que el usuario HACE.`);
   }
 
-  const notRun = acs.filter((n) => perAc[n].verdict === 'NOT-RUN');
+  // --- imagen de pantalla. Va DESPUÉS de la reclasificación de arriba, para que un AC que corrió y no tiene
+  // imagen no se convierta en NOT-RUN. Sólo mira lo que quedó RUNTIME (o RUNTIME-PARCIAL): un AC declarado imposible de
+  // verificar corriendo no pide imagen. Las stories que arrancaron antes del corte reciben un aviso y no bloquean.
+  const visualFrom = Date.parse(opts.visualFrom || VISUAL_EVIDENCE_FROM);
+  // Se busca cuándo arrancó la story sólo si hace falta (un AC de pantalla sin imagen): así no se leen los marcadores
+  // de la máquina para una story que no los necesita.
+  let arranqueCalculado = null;
+  const arranque = () => {
+    if (arranqueCalculado) return arranqueCalculado;
+    arranqueCalculado = arranqueDeLaStory({
+      startedAt: opts.startedAt, activeDir: opts.activeDir || path.join(stateDirOf(os.homedir()), 'active'),
+      storyPath: opts.keyStoryPath ? path.resolve(opts.keyStoryPath) : storyPath, repoRoot, sid, fm,
+    });
+    for (const m of arranqueCalculado.problemas) avisos.push(m);
+    return arranqueCalculado;
+  };
+  const sinImagen = [];
+  for (const n of acs) {
+    const a = perAc[n];
+    if (!a.pantalla || a.visual.length || (a.verdict !== 'RUNTIME' && a.verdict !== 'RUNTIME-PARCIAL')) continue;
+    const ar = arranque();
+    const yaEnCurso = ar.ms !== null && Number.isFinite(visualFrom) && ar.ms < visualFrom;
+    if (yaEnCurso) {
+      avisos.push(`AC#${n} (de pantalla): falta la captura o la grabación del navegador. Esta story arrancó antes del ${new Date(visualFrom).toISOString().slice(0, 10)} ` +
+        `(fecha de arranque tomada de ${ar.fuente}; desde el corte un AC de pantalla sin imagen bloquea), así que por ahora sólo avisa. ${comoSacarLaImagen(n)}`);
+      continue;
+    }
+    a.verdict = 'SIN-EVIDENCIA';
+    a.motivo = motivoSinImagen(n, a.visualProblemas);
+    sinImagen.push(n);
+  }
+  for (const w of avisos) warnings.push(w);
+
+  // Un AC de pantalla sin imagen bloquea como uno sin correr y tampoco se puede waivear: va también en `notRun`, que es la
+  // lista que imprimen el freno del commit y el cierre del paso 8. `sinImagen` dice cuáles son de pantalla.
+  const notRun = acs.filter((n) => perAc[n].verdict === 'NOT-RUN' || sinImagen.includes(n));
   const accionNoEjercida = acs.filter((n) => perAc[n].verdict === 'RUNTIME-PARCIAL');
   const notVerifiablePend = acs.filter((n) => perAc[n].verdict === 'NOT-VERIFIABLE');
   const pendientes = [...notRun, ...accionNoEjercida, ...notVerifiablePend].sort((a, b) => a - b);
@@ -1132,13 +1360,14 @@ function compute(opts) {
   return {
     sid, key: evKey, keyInfo: { topic: keyInfo.topic, repeated: keyInfo.repeated, siblings: keyInfo.siblings }, orphans,
     exempt: false, acs, perAc, pendientes, notRun, accionNoEjercida, notVerifiable: notVerifiablePend,
-    exencionesC8: exenciones,
+    exencionesC8: exenciones, sinImagen, avisos,
     hash, warnings, green, evidenceDirs, wsRoot, waivedAcs: [...waived], chainOk: chain.ok, waiverDiscarded,
     repoRoot,
     stats: {
       total: acs.length,
       runtime: acs.filter((n) => perAc[n].verdict === 'RUNTIME').length,
       notRun: notRun.length,
+      sinImagen: sinImagen.length,
       accionNoEjercida: accionNoEjercida.length,
       notVerifiable: notVerifiablePend.length,
       waived: acs.filter((n) => perAc[n].verdict === 'WAIVED-USER').length,
@@ -1157,7 +1386,11 @@ function renderMd(r) {
   const waivedTxt = r.stats.waived ? ` · ${r.stats.waived} waiveados por el usuario (TTY)` : '';
   const parcialTxt = r.stats.accionNoEjercida ? ` · ${r.stats.accionNoEjercida} con la ACCIÓN sin ejecutar (bloquean)` : '';
   const exentoTxt = r.stats.exentosC8 ? ` · ${r.stats.exentosC8} con el verbo exento por declaración (DODRT-C8)` : '';
-  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${r.stats.notRun} sin correr (bloquean)${parcialTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
+  const sinImagen = r.sinImagen || [];
+  // sinImagen va también dentro de notRun (lo imprimen los frenos), pero acá se cuenta aparte.
+  const sinImagenTxt = sinImagen.length ? ` · ${sinImagen.length} de pantalla sin captura ni grabación (bloquean)` : '';
+  const sinCorrer = (r.notRun || []).filter((n) => !sinImagen.includes(n));
+  L.push(`**Cobertura**: ${r.stats.runtime}/${r.stats.total} ACs corridos en runtime · ${sinCorrer.length} sin correr (bloquean)${sinImagenTxt}${parcialTxt} · ${r.stats.notVerifiable} imposibles-declarados (esperan waiver)${waivedTxt}${exentoTxt}`);
   L.push('');
   L.push('| AC | Veredicto | Evidencia runtime | Evidencia código | Razón (si imposible) |');
   L.push('|---|---|---|---|---|');
@@ -1172,15 +1405,17 @@ function renderMd(r) {
     const celda = (t) => String(t).replace(/\s+/g, ' ').replace(/\|/g, '\\|');
     const esperado = (a.expectativas || []).map((x) =>
       `🎯 smoke ${x.ts} pasa si: «${celda(x.pasaSi || '—')}»${x.fallaSi ? ` · falla si: «${celda(x.fallaSi)}»` : ''} · salida: \`${celda(x.output)}\``);
-    const ev = [a.runtime.join('; ') || '—', ...esperado, a.mutacion ? `✋ ${a.mutacion}` : null,
+    const imagen = a.visual && a.visual.length ? `🖼️ ${a.visual.length} imagen(es): ${a.visual.map((v) => `\`${v}\``).join(', ')}`
+      : a.motivo ? '🖼️ falta la captura o la grabación del navegador' : null;
+    const ev = [a.runtime.join('; ') || '—', ...esperado, imagen, a.mutacion ? `✋ ${a.mutacion}` : null,
       a.exentoC8 ? `⚖️ verbo exento: ${a.exentoC8}` : null].filter(Boolean).join(' · ');
     L.push(`| #${n} | ${icon} ${a.verdict} | ${ev} | ${a.code.join('; ') || '—'} | ${a.declReason || '—'} |`);
   }
   L.push('');
-  if (r.notRun && r.notRun.length) {
-    L.push(`## 🔴 ACs SIN CORRER — bloquean, NO se pueden waivear (${r.notRun.length})`);
+  if (sinCorrer.length) {
+    L.push(`## 🔴 ACs SIN CORRER — bloquean, NO se pueden waivear (${sinCorrer.length})`);
     L.push('');
-    L.push(`AC ${r.notRun.map((n) => '#' + n).join(', ')}`);
+    L.push(`AC ${sinCorrer.map((n) => '#' + n).join(', ')}`);
     L.push('');
     L.push('Estos NO están declarados como imposibles de verificar. El agente DEBE correrlos:');
     L.push('- E2E Playwright que asserte el AC contra la app real, corrido vía el gate (`run-check dod`).');
@@ -1189,6 +1424,16 @@ function renderMd(r) {
     L.push('Si de verdad es materialmente imposible verificarlo corriendo la app, declararlo en el');
     L.push('frontmatter `runtime_not_verifiable:` (con `reason:` y `covered_by:` un test que lo cubra) —');
     L.push('y ahí SÍ lo puede aprobar el usuario. Sin esa declaración, un waiver NO lo saltea.');
+  }
+  if (sinImagen.length) {
+    L.push('');
+    L.push(`## 🖼️ ACs de pantalla sin captura ni grabación — bloquean, NO se pueden waivear (${sinImagen.length})`);
+    L.push('');
+    L.push(`AC ${sinImagen.map((n) => '#' + n).join(', ')}`);
+    L.push('');
+    L.push('Lo que el cliente ve sólo se da por probado con una imagen del navegador real atada al criterio: que una prueba');
+    L.push('haya salido verde no alcanza. La imagen es de un sitio de laboratorio, nunca con datos de un cliente. Para cada uno:');
+    for (const n of sinImagen) L.push(`- **AC#${n}** — ${comoSacarLaImagen(n)}`);
   }
   if (r.accionNoEjercida && r.accionNoEjercida.length) {
     L.push('');
@@ -1362,7 +1607,7 @@ function main() {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas };
+module.exports = { compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM };
 
 if (require.main === module) {
   main();

@@ -33,7 +33,8 @@ montar() {
   [ "$cfg" = "con-config" ] && printf "export default { testDir: './tests', use: { trace: 'off' } };\n" > "$T/repo/front/playwright.config.ts"
   echo "// spec de juguete" > "$T/repo/front/tests/facturas.spec.ts"
   ( cd "$T/repo" && git add -A && git -c user.email=b@b -c user.name=b commit -q -m base )
-  printf 'png-a' > "$T/pw-out/a.png"; printf 'png-b' > "$T/pw-out/b.png"; printf 'zip' > "$T/pw-out/trace.zip"
+  # La firma de un PNG al principio: el portón no copia un archivo que no empiece como lo que su extensión dice.
+  printf '\211PNG\r\n\032\npng-a' > "$T/pw-out/a.png"; printf '\211PNG\r\n\032\npng-b' > "$T/pw-out/b.png"; printf 'zip' > "$T/pw-out/trace.zip"
   local salida_list=0; [ "$lista" = "list-falla" ] && salida_list=1
   # npx falso: anota sus argumentos; con --list sólo dice si "cargó" la config; si no, imprime un reporte con adjuntos.
   cat > "$T/bin/npx" <<NPX
@@ -54,7 +55,9 @@ NPX
 # correr <T> [filtro...] — imprime el exit code; la salida queda en $T/out.txt y la evidencia en $T/ev/
 correr() {
   local T="$1"; shift
-  ( cd "$T/repo/front" && PATH="$T/bin:$PATH" bash "$GATE" "$T/repo/front" 9.9 "$T/ev" "$@" ) > "$T/out.txt" 2>&1 < /dev/null
+  # HOME propio: el portón sella las capturas en el gates.log del home, y la prueba no escribe en el de quien la corre.
+  mkdir -p "$T/home"
+  ( cd "$T/repo/front" && HOME="$T/home" PATH="$T/bin:$PATH" bash "$GATE" "$T/repo/front" 9.9 "$T/ev" "$@" ) > "$T/out.txt" 2>&1 < /dev/null
   echo $?
 }
 evidencia() { cat "$1"/ev/*.md 2>/dev/null; }
