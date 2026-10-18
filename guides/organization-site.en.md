@@ -666,9 +666,12 @@ enough.
   the list is guarded like a password: each change is a request with who proposed it and who approved it.
 - The site gets no permission on anybody's directory: it does not assign, invite or read users.
 - **Signing out.** The **Sign out** button ends the session and leads to a "You signed out" page, with "Sign in again"
-  and "Sign in with another account". With a single door, the site does not sign you back in by itself: the page waits
-  for your choice. Behind the platform's lock, the way back goes first through that lock's own sign-out. Signing out of
-  the Microsoft session stays off: it would also sign you out of the portal and of your organization's repos.
+  and "Sign in with another account". **Sign out** does not go through the platform's lock or through Microsoft: the way
+  back stays on the site, and the Microsoft session stays open (closing it would also sign you out of the portal and of
+  your organization's repos). That is why, when you sign out, the site leaves a "signed out" mark in your browser (no data
+  about you, it lasts 30 days): while it is there, the site does not sign you back in without a click from you. Reloading,
+  going back or opening any page shows "You signed out", and both buttons ask you to choose the account at Microsoft.
+  The mark is removed when you sign in.
   "Sign out" ends the session for a copy of the cookie too: the session is recorded as closed on the site's disk until it
   expires, and a copy somebody kept stops working. If the disk fails, or the site has no disk (`SITE_DATA_DIR`),
   "You signed out" warns that the session could not be invalidated on the server instead of saying you signed out: after a
@@ -803,10 +806,10 @@ there is something new:
   result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
   then on, the automatic mode carries on by itself.
 - **A one-time step when moving to a version with the "You signed out" page.** If the site sits behind the platform's
-  lock (the cloud's built-in sign-in), the "You signed out" page and what it loads have to stay outside that lock. The
-  updater changes the image, not the lock's configuration: without this step, after "Sign out" the lock lets the person
-  back in without asking, and nobody notices. It is done once, by hand, with the command in your environment's recipe
-  (under its "Sign-in"). New installations already include it.
+  lock (the cloud's built-in sign-in), the "You signed out" page and what it loads should stay outside that lock: that
+  way it shows even after the lock's session expired, without going through its sign-in first. The updater changes the
+  image, not the lock's configuration. It is done once, by hand, with the command in your environment's recipe (under
+  its "Sign-in"). New installations already include it.
 
 ### The two ways to start it
 
@@ -832,8 +835,9 @@ site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up t
 while to wake up. The morning notice carries the link only if it passed that morning.
 
 It also asks for the sign-out page (`/saliste`) without a session. If the platform's lock answers it instead of the
-site, the check does not fail: it exits 0 and adds a warning, "la página de salida queda detrás del candado: tras
-«Salir» se vuelve a entrar; la receta de tu entorno trae la orden de una vez". It means the one-time lock step is
+site, the check does not fail: it exits 0 and adds a warning, "la página de salida queda detrás del candado: con el
+candado vencido, «Saliste» pasa antes por el inicio de sesión de la plataforma; la receta de tu entorno trae la orden de
+una vez" (with the lock's session expired, the sign-out page goes through the platform's sign-in first). It means the one-time lock step is
 missing (leave the sign-out page free); your environment's recipe has the command. The morning notice repeats it next
 to the link. What to fix is the lock's setting, not the image.
 
@@ -866,8 +870,8 @@ key. The profile repo is part of the normal installation: its address goes in `p
 Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
-  site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, after
-  "Sign out" the lock sends the person to Microsoft, which lets them back in without asking). A site already installed is fixed once:
+  site's own, which decides with its list. `/healthz`, `/livez`, the "You signed out" page with what it loads, and `/idioma` stay outside the lock (without that, with the
+  lock's session expired, the "You signed out" page goes through its sign-in first). A site already installed is fixed once:
   `az containerapp auth update -g <group> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. `microsoftAccounts` in the
   configuration file picks the mode:
   - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned

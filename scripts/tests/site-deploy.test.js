@@ -199,11 +199,18 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 
-test('PruebaSinSesion_SalidaDetrasDelCandado_AvisaSinFallar @story-2.48 @ac-7', async () => {
+test('PruebaSinSesion_SalidaDetrasDelCandado_AvisaSinFallar @story-2.48 @ac-7 @story-2.51 @ac-8', async () => {
   const http = require('http');
   const CHECK = require(path.join(ROOT, 'scripts', 'site', 'check-deploy.js'));
   assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 1, 'el aviso es un vocabulario cerrado exportado');
   const AVISO = CHECK.AVISOS[0];
+  // tras «Salir» el sitio no vuelve a entrar solo: el aviso dice lo que sí pasa, y las guías también
+  assert.doesNotMatch(AVISO, /se vuelve a entrar/, 'el aviso no dice que se vuelve a entrar');
+  assert.match(AVISO, /con el candado vencido, «Saliste» pasa antes por el inicio de sesión de la plataforma/);
+  for (const g of ['organization-site.md', 'organization-site.en.md']) {
+    const t = fs.readFileSync(path.join(ROOT, 'guides', g), 'utf8').replace(/\s+/g, ' ');
+    assert.doesNotMatch(t, /deja entrar de nuevo sin preguntar|se vuelve a entrar; la receta|lets the person back in without asking|lets them back in without asking/, `${g}: no dice que tras Salir se vuelve a entrar`);
+  }
   const EMISOR = 'https://login.acme.example/tenant/oauth2/v2.0/authorize';
   // un sitio de juguete bien cerrado; `/saliste` contesta lo que dice `salida`
   const levantar = (salida) => new Promise((resolve) => {

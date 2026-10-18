@@ -456,13 +456,17 @@ const paginaSinRol = (ctx) => {
     `<p>${esc(T('sinRol.otraAntes'))}<a href="/auth/login?otra=1">${esc(T('sinRol.otraEnlace'))}</a>${esc(T('sinRol.otraDespues'))}</p>`,
   ].join(''));
 };
-// la vuelta de Salir: no redirige sola (con una sola puerta, entrar de nuevo sería automático) y ofrece las dos entradas
+// la vuelta de Salir: no redirige sola (con una sola puerta, entrar de nuevo sería automático) y ofrece las entradas:
+// con más de una puerta (`ctx.vias`), cada puerta en vez de «Entrar de nuevo»
 const paginaSaliste = (ctx = {}) => {
   const idioma = idiomaDe(ctx);
+  const entradas = Array.isArray(ctx.vias) && ctx.vias.length > 1
+    ? ctx.vias.map((v) => `<li><a href="/auth/login${v.id ? `?via=${encodeURIComponent(v.id)}` : ''}">${esc(v.texto)}</a></li>`).join('')
+    : `<li><a href="/auth/login">${esc(t(idioma, 'saliste.entrarDeNuevo'))}</a></li>`;
   return layout({ idioma, url: ctx.url }, t(idioma, 'saliste.titulo'), [
     `<p class="lede">${esc(t(idioma, 'saliste.texto'))}</p>`,
     ctx.sinInvalidar ? `<p class="q-note">${esc(t(idioma, 'saliste.sinInvalidar'))}</p>` : '',
-    `<ul class="lista"><li><a href="/auth/login">${esc(t(idioma, 'saliste.entrarDeNuevo'))}</a></li><li><a href="/auth/login?otra=1">${esc(t(idioma, 'saliste.otraCuenta'))}</a></li></ul>`,
+    `<ul class="lista">${entradas}<li><a href="/auth/login?otra=1">${esc(t(idioma, 'saliste.otraCuenta'))}</a></li></ul>`,
   ].join(''));
 };
 const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien, sesion: ctx.sesion, idioma: idiomaDe(ctx), url: ctx.url }, t(idiomaDe(ctx), 'sinMantenedores.titulo'), `<p class="lede">${esc(t(idiomaDe(ctx), 'sinMantenedores.texto'))}</p>`);

@@ -314,8 +314,6 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
   const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
-  // los módulos de la plataforma, una vez: cada uno dice si el pedido llegó por su candado y por dónde se sale
-  const nubes = require('./sources.js').nubes();
   const estatico = leerEstatico();
   const consumidos = new Map();   // state → vencimiento: sólo para RECHAZAR repeticiones en este proceso
   const https = cfg.publicUrl.startsWith('https:');
@@ -468,6 +466,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   // es suya es la principal
   const vias = Array.isArray(proveedor.vias) && proveedor.vias.length > 1 ? proveedor.vias : null;
   const viaDe = (v) => (vias && vias.some((x) => x.id && x.id === v) ? v : null);
+  // las puertas con su texto en el idioma de la página; null con una sola
+  const puertas = (idioma) => (vias ? vias.map((v) => ({ ...v, texto: traducirMensaje(idioma, v.texto) })) : null);
 
   /**
    * Al emisor. `otraCuenta`: el proveedor pide elegir la cuenta (quien entró con una que no está en la lista);
@@ -515,7 +515,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const config = fuentes.estado().navegable || fuentes.estado().cargado ? fuentes.config() : null;
     const sinLista = config && access.quienPide(ident, { config, firstMaintainer: cfg.firstMaintainer }).rol === 'none';
     registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})${sinLista ? ' que no está en la lista del sitio: ve la página sin datos' : ''}`);
-    return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento] } });
+    return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento, session.borrar(session.MARCA)] } });
   }
 
   async function manejar(req, res) {
@@ -533,12 +533,19 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // el idioma antes de saber quién pide: la cookie y el navegador; con sesión, abajo, la persona primero
     let idioma = idiomaSinSesion(req, cookies);
     if (ruta === '/idioma') return cambiarIdioma(req, res, cookies);
-    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    // tras «Salir» (la marca), entrar pide siempre elegir la cuenta: el proveedor conserva su sesión
+    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1' || session.tieneMarca(cookies), via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
-    if (ruta === '/saliste') return req.method === 'GET' ? enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u, sinInvalidar: u.searchParams.get('sin_invalidar') === '1' }) }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    if (ruta === '/saliste') return req.method === 'GET' ? enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u, vias: puertas(idioma), sinInvalidar: u.searchParams.get('sin_invalidar') === '1' }) }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
       if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirTexto'), { idioma, url: u }), extra: { Allow: 'POST' } });
       const ses = sesionDe(cookies);
+      // desde otro sitio el navegador no manda la cookie de la sesión (SameSite=Lax): sin este freno, el sitio no ve sesión,
+      // contesta 303 y el navegador borra la sesión y guarda la marca igual
+      if (!ses && !delSitio(req)) {
+        registrar('salir: pedido rechazado, no viene del sitio');
+        return enviar(res, { status: 403, cuerpo: views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirNoValido'), { idioma, url: u }) });
+      }
       // con sesión, «Salir» exige que el pedido venga del sitio y que traiga el token de la sesión: otra página no puede sacar a nadie
       const form = ses ? await leerFormulario(req) : null;
       if (ses && !(delSitio(req) && mismoToken(ses, form.get('tok')))) {
@@ -553,10 +560,9 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       }
       const invalidada = ses ? cerradas.cerrar(ses) : true;
       if (!invalidada) registrar('salir: la sesión se cerró en el navegador pero no se pudo anotar como cerrada en el servidor');
-      const destino = invalidada ? '/saliste' : '/saliste?sin_invalidar=1';
-      // detrás del candado de la plataforma se cierra también su sesión; la vuelta es una página que no redirige sola
-      const salida = nubes.map((n) => typeof n.salidaDelCandado === 'function' && n.salidaDelCandado(req.headers)).find(Boolean);
-      return enviar(res, { status: 303, cuerpo: '', extra: { Location: salida ? `${salida}?post_logout_redirect_uri=${encodeURIComponent(destino)}` : destino, 'Set-Cookie': session.borrar(session.SESION) } });
+      // la vuelta se queda en el sitio: pasar por la salida del candado lleva al proveedor (otro origen), y el navegador corta
+      // la navegación de un formulario que sale del sitio; la marca hace que, sin sesión, nada vuelva a entrar solo
+      return enviar(res, { status: 303, cuerpo: '', extra: { Location: invalidada ? '/saliste' : '/saliste?sin_invalidar=1', 'Set-Cookie': [session.borrar(session.SESION), session.marcaDeSalida()] } });
     }
 
     const ses = sesionDe(cookies);
@@ -566,8 +572,11 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
     if (!ses) {
       if (esApi) return rechazoApi(401, 'sesion_vencida', texto(idioma, 'servidor.apiSesionVencida'));
+      // quien salió no vuelve a entrar sin un clic: al abrir una página, «Saliste» (con las puertas, si hay más de una);
+      // otro método sigue como sin la marca
+      if (session.tieneMarca(cookies) && (req.method === 'GET' || req.method === 'HEAD')) return enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u, vias: puertas(idioma) }) });
       // con más de una puerta, se elige en la página de entrada; con una, directo al emisor
-      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias.map((v) => ({ ...v, texto: traducirMensaje(idioma, v.texto) })), { idioma, url: u }) }) : irAlEmisor(res, { idioma, url: u });
+      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(puertas(idioma), { idioma, url: u }) }) : irAlEmisor(res, { idioma, url: u });
     }
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 

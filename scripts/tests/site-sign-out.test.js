@@ -139,9 +139,9 @@ test('T5 Salir_ElBoton_MandaElToken @story-2.48 @ac-5', async () => {
     const otra = await entrar(h, emisor);
     const detras = await salir(h, otra, await tokDeLaBarra(h, otra), { 'X-MS-CLIENT-PRINCIPAL-NAME': LEAD });
     assert.strictEqual(detras.status, 303);
-    assert.strictEqual(detras.headers.location, '/.auth/logout?post_logout_redirect_uri=%2Fsaliste');
+    assert.strictEqual(detras.headers.location, '/saliste', 'detrás del candado también se queda en el sitio');
     // sin sesión no se exige el token
-    const sin = await h.pedir('/auth/logout', { method: 'POST' });
+    const sin = await h.pedir('/auth/logout', { method: 'POST', headers: { origin: ORIGEN } });
     assert.strictEqual(sin.status, 303);
     assert.strictEqual(sin.headers.location, '/saliste');
   } finally { await h.cerrar(); await emisor.cerrar(); limpiar(dir); }

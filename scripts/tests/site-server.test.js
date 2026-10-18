@@ -576,9 +576,10 @@ test('T21 Salir_DetrasDelCandado_PasaPorAuthLogout @story-2.46 @ac-19', async ()
     const sesion = (await H.ingresar(h, emisor, { sub: 's-lead', email: LEAD, email_verified: true })).sesion;
     const detras = await salirComoElBoton(h, sesion, { 'X-MS-CLIENT-PRINCIPAL-NAME': LEAD });
     assert.strictEqual(detras.status, 303);
-    assert.strictEqual(detras.headers.location, '/.auth/logout?post_logout_redirect_uri=%2Fsaliste');
+    // la vuelta se queda en el sitio aunque el pedido llegue por el candado: su salida lleva al proveedor y el navegador la corta
+    assert.strictEqual(detras.headers.location, '/saliste');
     assert.match(String(detras.headers['set-cookie']), /__Host-site=;|Max-Age=0|Expires=Thu, 01 Jan 1970/, 'la cookie igual se borra');
-    const sin = await h.pedir('/auth/logout', { method: 'POST' });
+    const sin = await h.pedir('/auth/logout', { method: 'POST', headers: { origin: 'http://127.0.0.1' } });
     assert.strictEqual(sin.headers.location, '/saliste');
   });
 });

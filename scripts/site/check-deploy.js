@@ -18,8 +18,8 @@
  * · `Cache-Control: no-store` en `/`, sólo cuando la respuesta la dio el sitio (el destino no es `/.auth/`).
  * · `http://` de la misma dirección: redirige a https o no contesta.
  * · `/saliste`, la página de salida: si la contesta el candado de la plataforma (una redirección a `/.auth/` del mismo
- *   host, o un 401/403 que el candado reconoce), la prueba lo dice como AVISO y no como falla: tras «Salir» se vuelve a
- *   entrar, y el paso de una sola vez que lo arregla es del candado, no de la imagen. Cualquier otra respuesta (200, 404 de
+ *   host, o un 401/403 que el candado reconoce), la prueba lo dice como AVISO y no como falla: con el candado vencido, la
+ *   página «Saliste» pasa antes por su inicio de sesión, y el paso de una sola vez que lo arregla es del candado, no de la imagen. Cualquier otra respuesta (200, 404 de
  *   un sitio viejo, un error de red) no avisa nada.
  * El primer pedido espera hasta `--wake-timeout` (90 s por defecto): un sitio dormido tarda ~1 minuto en despertar.
  *
@@ -37,7 +37,7 @@ const fs = require('fs');
 const MOTIVOS = Object.freeze(['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http',
   'sin Referer: el candado de la plataforma frenaría las escrituras de Configuración']);
 // lo que la prueba avisa sin fallar: la configuración del candado, no la imagen. Cerrado: el resumen de la mañana sólo repite lo de esta lista
-const AVISOS = Object.freeze(['la página de salida queda detrás del candado: tras «Salir» se vuelve a entrar; la receta de tu entorno trae la orden de una vez']);
+const AVISOS = Object.freeze(['la página de salida queda detrás del candado: con el candado vencido, «Saliste» pasa antes por el inicio de sesión de la plataforma; la receta de tu entorno trae la orden de una vez']);
 const [AVISO_SALIDA] = AVISOS;
 const [HEALTHZ_DE_MAS, FRENADO, SIN_SESION, API_CON_DATOS, SIN_NO_STORE, ACEPTA_HTTP, SIN_REFERER] = MOTIVOS;
 const WAKE_DEFAULT_S = 90;

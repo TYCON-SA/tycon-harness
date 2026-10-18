@@ -1250,6 +1250,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.51: «Salir» no vuelve a entrar solo — la vuelta se queda en el sitio aunque el pedido llegue por el candado de la plataforma, deja la marca de «salió», con la marca y sin sesión toda página muestra «Saliste» y entrar pide elegir la cuenta, y la marca se borra al entrar bien. Contra un emisor OIDC local y una carpeta temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/site-sign-out-mark.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: el inicio de sesión del sitio — PKCE, state y nonce; cada chequeo del id_token con un token armado mal; la cookie firmada; y cada proveedor (oidc genérico, Entra ID, Google, GitHub) limitado a la organización. Contra un emisor y un GitHub locales.",
       "raiz": "arnes",
       "ruta": "tests/site-oidc.test.js",
