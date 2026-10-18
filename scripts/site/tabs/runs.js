@@ -296,11 +296,15 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const runs = require(RUNS);
   const access = require('../access.js');
   const views = require('../views.js');
+  const { t: tx } = require('../texts.js');
+  const idiomaDe = (ctx) => views.idiomaDe(ctx);
   const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}) });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
-  const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, 'Corridas', cuerpo, 'Cada corrida del pipeline: cuánto tardó, dónde esperó a una persona y qué encontraron los controles.'), ...(extra ? { extra } : {}) });
-  const gris = (t) => `<div class="tile blind"><div class="t-label">Corridas</div><div class="t-val">falta</div><div class="t-den">${runsEsc(t)}</div></div>`;
+  // lo que arma el sitio alrededor de la vista sale del idioma del pedido; el cuerpo lo arma la vista de la noche, que
+  // todavía es sólo castellano
+  const pagina = (ctx, cuerpo, status = 200, extra) => ({ status, tipo: 'text/html; charset=utf-8', cuerpo: views.layout(ctx, tx(idiomaDe(ctx), 'pestana.corridas'), cuerpo, tx(idiomaDe(ctx), 'corridas.lede')), ...(extra ? { extra } : {}) });
+  const gris = (ctx, t) => `<div class="tile blind"><div class="t-label">${runsEsc(tx(idiomaDe(ctx), 'pestana.corridas'))}</div><div class="t-val">${runsEsc(tx(idiomaDe(ctx), 'corridas.falta'))}</div><div class="t-den">${runsEsc(t)}</div></div>`;
   const runsEsc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   /** Lo que puede ver quien pide, o la respuesta que va en su lugar (`{ falla }`). */
@@ -313,7 +317,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     const M = vista.modelo();
     if (!M) {
       if (e.error) {
-        const t = `${FRASE_FALLA} (código ${e.error.codigo})`;
+        const t = tx(idiomaDe(ctx), 'corridas.fallaCodigo', { codigo: e.error.codigo });
         return { falla: esApi ? texto(503, t) : pagina(ctx, `<p class="lede">${runsEsc(t)}.</p>`, 503) };
       }
       // nunca hubo una bajada entera y la fuente dice por qué (credencial rechazada, sin red…): «no medido», no «cargando»
@@ -322,15 +326,15 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
       // todavía cargando (la primera lectura del buzón no terminó, o una pasada que cortó ya sigue, o se está armando): la
       // pestaña lo dice y se recarga sola; las demás pestañas del sitio ya se ven (la espera es por fuente)
       if ((c && c.codigo === 'cargando') || vista.bajada().siguiendo || vista.armando()) {
-        const t = 'cargando las corridas: esta página se recarga sola en unos segundos';
-        return { falla: esApi ? texto(503, t, { 'Retry-After': '5' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.layout({ ...ctx, recargar: 5 }, 'Corridas', `<p class="lede">${runsEsc(t)}.</p>`), extra: { 'Retry-After': '5' } } };
+        const t = tx(idiomaDe(ctx), 'corridas.cargando');
+        return { falla: esApi ? texto(503, t, { 'Retry-After': '5' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.layout({ ...ctx, recargar: 5 }, tx(idiomaDe(ctx), 'pestana.corridas'), `<p class="lede">${runsEsc(t)}.</p>`), extra: { 'Retry-After': '5' } } };
       }
       const sinArmar = !vista.armando() && !vista.bajada().completo;
       if ((vista.bajada().generacion === 0 && c && c.estado === 'no_medido' && c.codigo) || sinArmar) {
-        const t = `no medido: el buzón todavía no se pudo bajar entero${c && c.codigo ? ` (${c.codigo})` : ''}`;
-        return { falla: esApi ? texto(503, t, { 'Retry-After': '60' }) : pagina(ctx, gris(t)) };
+        const t = c && c.codigo ? tx(idiomaDe(ctx), 'corridas.buzonIncompletoCodigo', { codigo: c.codigo }) : tx(idiomaDe(ctx), 'corridas.buzonIncompleto');
+        return { falla: esApi ? texto(503, t, { 'Retry-After': '60' }) : pagina(ctx, gris(ctx, t)) };
       }
-      return { falla: esApi ? texto(503, '', { 'Retry-After': '10' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.paginaCargando(), extra: { 'Retry-After': '10' } } };
+      return { falla: esApi ? texto(503, '', { 'Retry-After': '10' }) : { status: 503, tipo: 'text/html; charset=utf-8', cuerpo: views.paginaCargando(ctx), extra: { 'Retry-After': '10' } } };
     }
     // lo de cada persona se filtra una vez por armado y por datos de fondo, no en cada clic: la configuración y el modelo
     // se reemplazan enteros al refrescar, y de las personas cambian sus dos partes
@@ -361,14 +365,15 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     {
       method: 'GET', path: '/corridas', needs: ['maintainer', 'person'], pestana: { id: 'corridas', titulo: 'Corridas', orden: 20 }, handler: (ctx) => {
         const r = loSuyo(ctx, false);
-        if (r.sinBuzon) return pagina(ctx, gris(FRASE_SIN_BUZON));
+        if (r.sinBuzon) return pagina(ctx, gris(ctx, tx(idiomaDe(ctx), 'corridas.sinBuzon')));
         if (r.falla) return r.falla;
         const V = r.vis;
         // el cuerpo de la página se arma una vez por persona y por modelo; el marco (pestañas, bandas) va en cada pedido
-        const llave = `pagina\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
+        const idioma = idiomaDe(ctx);
+        const llave = `pagina\0${idioma}\0${r.error ? `${r.error.codigo}\0${r.error.desde}` : ''}`;
         if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
         const opts = { sitio: { rol: ctx.quien.rol, version } };
-        const rearmado = r.error ? `<div class="banda gris"><b>No se pudo rearmar la vista de corridas desde ${runsEsc(hora(r.error.desde))} UTC (código ${runsEsc(r.error.codigo)}).</b> Se muestra la armada el ${runsEsc(hora(V.generado))} UTC, entera.</div>` : '';
+        const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
         const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V)}\n${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div><script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
@@ -378,7 +383,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     {
       method: 'GET', path: '/api/corridas', needs: ['maintainer', 'person'], handler: (ctx) => {
         const r = loSuyo(ctx, true);
-        if (r.sinBuzon) return json(200, { estado: 'no_medido', motivo: FRASE_SIN_BUZON, corridas: [] });
+        if (r.sinBuzon) return json(200, { estado: 'no_medido', motivo: tx(idiomaDe(ctx), 'corridas.sinBuzon'), corridas: [] });
         if (r.falla) return r.falla;
         if (!r.salidas.lista) r.salidas.lista = JSON.stringify({ ...r.vis, corridas: r.vis.corridas.map(runs.paraLista) });
         return { status: 200, tipo: 'application/json; charset=utf-8', cuerpo: r.salidas.lista };
@@ -402,7 +407,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (!c) return NO_EXISTE;
         const t = await vista.textos(c.id);
         // ilegibles no es «no hay»: el navegador dice «no se pudo abrir el cambio», nunca «no está»
-        return t ? json(200, t) : texto(500, 'los textos de esta corrida no se pudieron leer del disco del sitio');
+        return t ? json(200, t) : texto(500, tx(idiomaDe(ctx), 'corridas.textosIlegibles'));
       },
     },
     { method: 'GET', path: '/corridas/cliente.js', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: runs.CLIENTE }) },

@@ -24,6 +24,8 @@
  * proveedor `oidc` genérico vive acá: el correo de `SITE_OIDC_EMAIL_CLAIM` (por defecto `email`), con `email_verified:
  * true` si el emisor la publica, y el dominio en `SITE_AUTH_ALLOWED_DOMAINS` si está puesta. Nunca `preferred_username`.
  */
+// lo que este archivo le dice a una persona vive en la tabla del sitio (texts.js, `proveedor.*`); el servidor lo traduce al mostrarlo
+const TX = (clave, valores) => require('./texts.js').t('es', clave, valores);
 const crypto = require('crypto');
 const http = require('http');
 const https = require('https');
@@ -174,13 +176,13 @@ const dominioDe = (correo) => correo.slice(correo.lastIndexOf('@') + 1).toLowerC
 /** El correo de una claim, en minúsculas, o un rechazo con su frase. */
 function correoDe(claims, claim) {
   const v = claims[claim];
-  if (typeof v !== 'string' || !CORREO.test(v.trim())) throw new ErrorDeIngreso(`el emisor no mandó la claim ${claim} con un correo`, `sin la claim ${claim}`);
+  if (typeof v !== 'string' || !CORREO.test(v.trim())) throw new ErrorDeIngreso(TX('proveedor.sinClaim', { claim }), `sin la claim ${claim}`);
   return v.trim().toLowerCase();
 }
 
 function limitarDominio(correo, dominios) {
   if (dominios && dominios.length && !dominios.includes(dominioDe(correo))) {
-    throw new ErrorDeIngreso('tu cuenta no es de un dominio de esta organización', `dominio ${dominioDe(correo)} fuera de SITE_AUTH_ALLOWED_DOMAINS`);
+    throw new ErrorDeIngreso(TX('proveedor.otroDominio'), `dominio ${dominioDe(correo)} fuera de SITE_AUTH_ALLOWED_DOMAINS`);
   }
 }
 
@@ -219,9 +221,9 @@ function crearGenerico(cfg, { ahora }) {
     nombre: 'oidc', issuer: cfg.issuer, clientId: cfg.clientId, clientSecret: cfg.clientSecret, redirectUri: cfg.redirectUri, ahora,
     identidad(claims) {
       const email = correoDe(claims, claim);
-      if (claims.email_verified !== undefined && claims.email_verified !== true) throw new ErrorDeIngreso('el emisor dice que tu correo no está verificado', 'email_verified no es true');
+      if (claims.email_verified !== undefined && claims.email_verified !== true) throw new ErrorDeIngreso(TX('proveedor.sinVerificar'), 'email_verified no es true');
       limitarDominio(email, cfg.allowedDomains);
-      if (typeof claims.sub !== 'string' || !claims.sub) throw new ErrorDeIngreso('el emisor no mandó una identidad estable', 'sin sub');
+      if (typeof claims.sub !== 'string' || !claims.sub) throw new ErrorDeIngreso(TX('proveedor.sinIdentidad'), 'sin sub');
       return { email, sub: claims.sub };
     },
   });

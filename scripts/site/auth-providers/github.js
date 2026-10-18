@@ -13,6 +13,8 @@
  * Para las pruebas, `SITE_GITHUB_URL` y `SITE_GITHUB_API_URL` reemplazan a las direcciones fijas SÓLO con una dirección
  * http://127.0.0.1 (scripts/tests/lib/fake-github-oauth.js); cualquier otro valor no arranca.
  */
+// lo que este archivo le dice a una persona vive en la tabla del sitio (texts.js, `proveedor.*`); el servidor lo traduce al mostrarlo
+const TX = (clave, valores) => require('../texts.js').t('es', clave, valores);
 const { pedir, ErrorOidc, ErrorDeIngreso, limitarDominio, CORREO, codigoOAuth } = require('../oidc.js');
 
 const WEB = 'https://github.com';
@@ -73,12 +75,12 @@ function crear(cfg) {
       if (emails.status !== 200 || !Array.isArray(emails.json)) throw new ErrorOidc(`GET /user/emails contestó ${emails.status}`);
       const primario = emails.json.find((e) => e && e.primary === true);
       if (!primario || primario.verified !== true || typeof primario.email !== 'string' || !CORREO.test(primario.email.trim())) {
-        throw new ErrorDeIngreso('tu cuenta de GitHub no tiene un correo primario verificado', 'sin correo primario verificado');
+        throw new ErrorDeIngreso(TX('proveedor.githubSinCorreo'), 'sin correo primario verificado');
       }
       const email = primario.email.trim().toLowerCase();
       const m = await apiJson(api, `/user/memberships/orgs/${encodeURIComponent(cfg.githubOrg)}`, token);
       if (m.status !== 200 || !m.json || m.json.state !== 'active') {
-        throw new ErrorDeIngreso('tu cuenta de GitHub no es miembro activo de la organización', `membresía: ${m.status === 200 && m.json ? String(m.json.state).slice(0, 20) : m.status}`);
+        throw new ErrorDeIngreso(TX('proveedor.githubNoMiembro'), `membresía: ${m.status === 200 && m.json ? String(m.json.state).slice(0, 20) : m.status}`);
       }
       limitarDominio(email, cfg.allowedDomains);
       return { email, sub: `github:${user.json.id}` };
@@ -90,6 +92,6 @@ function crear(cfg) {
 function completarConfig(env, cfg) { cfg.github = direcciones(env); cfg.githubOrg = env.SITE_AUTH_GITHUB_ORG; }
 
 /** Con qué se entra, en palabras (Configuración lo muestra). */
-const describir = () => 'GitHub, con los miembros activos de la organización';
+const describir = () => TX('proveedor.github');
 
 module.exports = { WEB, API, direcciones, problemasDeConfig, completarConfig, describir, crear };

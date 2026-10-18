@@ -33,7 +33,12 @@ const people = require('../../lib/people.js');
 const access = require('../access.js');
 const { FICHAS: FICHAS_DEL_SITIO } = require('./cards.js');
 const views = require('../views.js');
+const TX = require('../texts.js');
+// los mensajes se arman en castellano (así los guarda el caché y los compara la página local) y se dicen en el idioma
+// del pedido al salir de cada ruta (texts.js, `traducirRespuesta`)
+const M = (clave, valores) => TX.t('es', clave, valores);
 const { dentroDe } = require('../sources.js');
+const LANG = require('../language.js');
 
 const TREE = path.join(__dirname, '..', '..', '..');
 const CUERPO_MAX = 256 * 1024;
@@ -44,7 +49,7 @@ const norm = (c) => String(c || '').trim().toLowerCase();
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 // la lista de quién entra: los correos de quienes mantienen, con la regla de people.js
 const mantenedoresDe = (site) => people.listaDeAcceso({ site }).entradas.filter((e) => e.role === 'maintainer').flatMap((e) => e.emails);
-const SIN_MANTENEDORES = 'la lista tiene que tener a alguien que mantenga el sitio: quedaría sin nadie que pueda entrar a esta pestaña';
+const SIN_MANTENEDORES = M('config.sinMantenedores');
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
 const rechazo = (status, message) => json(status, { ok: false, message });
 
@@ -56,20 +61,20 @@ function leer(dir, rel, indice = null) {
   const ruta = path.join(dir, rel);
   let texto;
   try {
-    if (fs.existsSync(ruta) && !dentroDe(dir, ruta)) return { estado: 'ilegible', motivo: `${rel} no es un archivo del repo` };
+    if (fs.existsSync(ruta) && !dentroDe(dir, ruta)) return { estado: 'ilegible', motivo: M('config.noEsDelRepo', { rel }) };
     texto = fs.readFileSync(ruta, 'utf8');
   } catch (e) {
     if (e && e.code === 'ENOENT') return { estado: 'nuevo' };
-    return { estado: 'ilegible', motivo: `${rel} no se pudo leer (${(e && e.code) || 'error'})` };
+    return { estado: 'ilegible', motivo: M('config.noSePudoLeer', { rel, codigo: (e && e.code) || 'error' }) };
   }
   if (indice) {
     const oid = isObject(indice.archivos) ? indice.archivos[rel] : null;
-    if (typeof oid !== 'string' || !/^[0-9a-f]{40,64}$/.test(oid)) return { estado: 'ilegible', motivo: `la copia de operaciones no trae la versión de ${rel}` };
+    if (typeof oid !== 'string' || !/^[0-9a-f]{40,64}$/.test(oid)) return { estado: 'ilegible', motivo: M('config.copiaSinVersion', { rel }) };
     return { estado: 'leido', texto, oid };
   }
   const r = spawnSync('git', ['-C', dir, 'rev-parse', `HEAD:${rel}`], { encoding: 'utf8', windowsHide: true });
   // sin la versión del archivo, «Proponer» no puede saber si cambió: se dice, no se sigue con null
-  if (r.status !== 0) return { estado: 'ilegible', motivo: `git no pudo leer la versión de ${rel} en el clon` };
+  if (r.status !== 0) return { estado: 'ilegible', motivo: M('config.gitSinVersion', { rel }) };
   return { estado: 'leido', texto, oid: r.stdout.trim() };
 }
 const docDe = (t) => { try { const v = JSON.parse(t); return isObject(v) ? v : null; } catch { return null; } };
@@ -136,17 +141,17 @@ function perfilesDeInstalacion() {
         .map(ficha).filter((f) => { const k = `${f.title}\0${f.does}`; if (vistas.has(k)) return false; vistas.add(k); return true; });
     };
     return { minimal: de('minimal'), full: de('full'), motivo: null };
-  } catch (e) { return { minimal: [], full: [], motivo: `no se pudo leer install-effects.json del arnés (${(e && e.code) || 'error'})` }; }
+  } catch (e) { return { minimal: [], full: [], motivo: M('config.sinEfectos', { codigo: (e && e.code) || 'error' }) }; }
 }
 /** Lo que trae la organización en el repo del perfil (story 2.31, AC 17): skills, revisores, guías de alta y paquetes. */
-const CONTENIDO = [['agents', 'revisor', (d, f) => f.endsWith('.md')], ['onboarding', 'guía de alta', (d, f) => f.endsWith('.md')], ['packs', 'paquete', (d, f) => fs.existsSync(path.join(d, f, 'pack.json'))]];
+const CONTENIDO = [['agents', M('config.tipoRevisor'), (d, f) => f.endsWith('.md')], ['onboarding', M('config.tipoGuia'), (d, f) => f.endsWith('.md')], ['packs', M('config.tipoPaquete'), (d, f) => fs.existsSync(path.join(d, f, 'pack.json'))]];
 // las skills: una carpeta con SKILL.md, hasta tres niveles bajo skills/ (`skills/<s>`, `skills/<grupo>/<s>`,
 // `skills/projects/<cliente>/<s>`), como las acepta la capa del equipo
 const PROFUNDIDAD_SKILLS = 3;
 function skillsDe(raiz, rel, nivel, out, enlace) {
   let nombres = [];
   try { nombres = fs.readdirSync(path.join(raiz, rel), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (e) {
-    if (e && e.code !== 'ENOENT') out.push({ tipo: `skill (no se pudo leer la carpeta: ${e.code || 'error'})`, ruta: rel, enlace: null });
+    if (e && e.code !== 'ENOENT') out.push({ tipo: M('config.carpetaIlegible', { tipo: 'skill', codigo: e.code || 'error' }), ruta: rel, enlace: null });
     return;
   }
   for (const n of nombres) {
@@ -163,7 +168,7 @@ function contenidoDelPerfil(dir, enlace) {
     let nombres = [];
     // una carpeta que no está es «no trae»; una que está y no se deja leer se dice (no es lo mismo que vacía)
     try { nombres = fs.readdirSync(path.join(dir, carpeta)).sort(); } catch (e) {
-      if (e && e.code !== 'ENOENT') out.push({ tipo: `${tipo} (no se pudo leer la carpeta: ${e.code || 'error'})`, ruta: carpeta, enlace: null });
+      if (e && e.code !== 'ENOENT') out.push({ tipo: M('config.carpetaIlegible', { tipo, codigo: e.code || 'error' }), ruta: carpeta, enlace: null });
       continue;
     }
     // el enlace lleva cada parte de la ruta escapada: un nombre con «?» o «#» no rompe la dirección
@@ -183,9 +188,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
   const arnes = () => {
     let texto = null;
-    try { texto = fs.readFileSync(path.join(TREE, 'scripts', 'nightly', 'dashboard', 'sources.json'), 'utf8'); } catch (e) { return { thresholds: {}, motivo: `no se pudo leer el sources.json del arnés (${(e && e.code) || 'error'})` }; }
+    try { texto = fs.readFileSync(path.join(TREE, 'scripts', 'nightly', 'dashboard', 'sources.json'), 'utf8'); } catch (e) { return { thresholds: {}, motivo: M('config.sinSources', { codigo: (e && e.code) || 'error' }) }; }
     const d = docDe(texto);
-    return d && isObject(d.thresholds) ? { thresholds: d.thresholds, motivo: null } : { thresholds: {}, motivo: 'el sources.json del arnés no trae umbrales legibles' };
+    return d && isObject(d.thresholds) ? { thresholds: d.thresholds, motivo: null } : { thresholds: {}, motivo: M('config.sourcesSinUmbrales') };
   };
   const clones = () => (typeof fuentes.clones === 'function' ? fuentes.clones() : { operaciones: null, perfil: null });
   /** `leer` con la versión del índice cuando `dir` es la carpeta de la copia de operaciones. */
@@ -196,22 +201,22 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // ── la defensa de las escrituras (AC 3) ──
   async function escritura(ctx) {
     const h = ctx.req.headers;
-    if (h.origin) { if (h.origin !== cfg.publicUrl) return { error: rechazo(403, 'el pedido viene de otro origen') }; }
-    else if (h['sec-fetch-site'] !== 'same-origin') return { error: rechazo(403, 'falta el origen del pedido') };
+    if (h.origin) { if (h.origin !== cfg.publicUrl) return { error: rechazo(403, M('config.otroOrigen')) }; }
+    else if (h['sec-fetch-site'] !== 'same-origin') return { error: rechazo(403, M('config.sinOrigen')) };
     const tok = h['x-site-token'];
-    if (!tok) return { error: rechazo(403, 'falta el token del sitio') };
+    if (!tok) return { error: rechazo(403, M('config.sinToken')) };
     const propio = ctx.sesion && typeof ctx.sesion.tok === 'string' ? Buffer.from(ctx.sesion.tok) : Buffer.alloc(0);
     const traido = Buffer.from(String(tok));
-    if (!propio.length || propio.length !== traido.length || !crypto.timingSafeEqual(propio, traido)) return { error: rechazo(403, 'el token no es el de tu sesión') };
-    if (!/^application\/json\b/.test(String(h['content-type'] || ''))) return { error: rechazo(415, 'se espera JSON') };
+    if (!propio.length || propio.length !== traido.length || !crypto.timingSafeEqual(propio, traido)) return { error: rechazo(403, M('config.otroToken')) };
+    if (!/^application\/json\b/.test(String(h['content-type'] || ''))) return { error: rechazo(415, M('config.esperaJson')) };
     const cuerpo = await new Promise((resolve) => {
       let size = 0; const partes = []; let listo = false;
       ctx.req.on('data', (c) => { size += c.length; if (size > CUERPO_MAX) { if (!listo) { listo = true; resolve({ grande: true }); } } else partes.push(c); });
       ctx.req.on('end', () => { if (!listo) { listo = true; resolve({ texto: Buffer.concat(partes).toString('utf8') }); } });
       ctx.req.on('error', () => { if (!listo) { listo = true; resolve({ grande: true }); } });
     });
-    if (cuerpo.grande) return { error: rechazo(400, 'el pedido es demasiado grande (más de 256 KB)') };
-    try { return { body: cuerpo.texto ? JSON.parse(cuerpo.texto) : {} }; } catch { return { error: rechazo(400, 'el cuerpo no es JSON') }; }
+    if (cuerpo.grande) return { error: rechazo(400, M('config.muyGrande')) };
+    try { return { body: cuerpo.texto ? JSON.parse(cuerpo.texto) : {} }; } catch { return { error: rechazo(400, M('config.noEsJson')) }; }
   }
 
   // ── la vista de una sección ──
@@ -226,54 +231,54 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     let dir = null;
     if (s.repo === 'perfil') {
       // `falta`: lo que hay que poner, dicho corto para la lista de secciones («falta el repo del perfil»)
-      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', falta: 'el repo del perfil', motivo: `falta el repo del perfil: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN (la instalación los pide, con un permiso de sólo lectura sobre el repo del perfil del equipo); ${s.archivo} se edita con un pedido al perfil` };
+      if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', falta: M('config.elRepoDelPerfil'), motivo: M('config.faltaPerfil', { archivo: s.archivo }) };
       // todavía bajándose (el primer refresco después de arrancar): no es «sin configurar», y se dice
-      if (!cl.perfil.dir && cl.perfil.estado === 'pendiente') return { ...base, estado: 'bajando', motivo: cl.perfil.motivo || 'el perfil del equipo todavía se está bajando' };
-      if (!cl.perfil.dir) return { ...base, estado: 'no_configurado', motivo: cl.perfil.motivo || 'el perfil del equipo todavía no se bajó' };
+      if (!cl.perfil.dir && cl.perfil.estado === 'pendiente') return { ...base, estado: 'bajando', motivo: cl.perfil.motivo || M('config.perfilBajando') };
+      if (!cl.perfil.dir) return { ...base, estado: 'no_configurado', motivo: cl.perfil.motivo || M('config.perfilSinBajar') };
       dir = cl.perfil.dir;
     } else {
-      if (!cl.operaciones) return { ...base, estado: 'ilegible', motivo: 'el repo de operaciones todavía no se bajó' };
+      if (!cl.operaciones) return { ...base, estado: 'ilegible', motivo: M('config.opsSinBajar') };
       dir = cl.operaciones.dir;
     }
     base.archivo = archivoDe(s, dir);
     const a = leerDe(dir, base.archivo);
-    if (a.estado === 'ilegible') return { ...base, estado: 'ilegible', motivo: `${a.motivo}: se corrige a mano` };
+    if (a.estado === 'ilegible') return { ...base, estado: 'ilegible', motivo: M('config.seCorrigeAMano', { motivo: a.motivo }) };
     const doc = a.estado === 'leido' ? docDe(a.texto) : null;
     const v = { ...base, texto: a.texto || null, oid: a.estado === 'leido' ? a.oid : null };
 
     if (s.id === 'umbrales') {
       const ar = arnes();
       const th = ar.thresholds;
-      if (ar.motivo) return { ...v, soloLectura: true, motivo: `${ar.motivo}: sin los umbrales que conoce el arnés no se puede revisar ninguna fila`, borrador: doc && isObject(doc.thresholds) ? doc.thresholds : {} };
-      if (a.estado === 'nuevo') return { ...v, soloLectura: true, motivo: 'tu organización no tiene su sources.json en el repo de operaciones: se muestran los umbrales del arnés, sin editar (crearlo copiaría también las fuentes)', borrador: th };
+      if (ar.motivo) return { ...v, soloLectura: true, motivo: M('config.sinUmbralesDelArnes', { motivo: ar.motivo }), borrador: doc && isObject(doc.thresholds) ? doc.thresholds : {} };
+      if (a.estado === 'nuevo') return { ...v, soloLectura: true, motivo: M('config.sinSourcesDeLaOrg'), borrador: th };
       const marca = leerDe(dir, '.dashboard/applied-config.json');
       const aplicado = marca.estado === 'leido' ? docDe(marca.texto) : null;
-      if (marca.estado === 'ilegible' || (marca.estado === 'leido' && !aplicado)) return { ...v, soloLectura: true, motivo: 'la marca .dashboard/applied-config.json del nocturno no se pudo leer: sin ella no se sabe si tu nocturno lee este archivo', borrador: doc && isObject(doc.thresholds) ? doc.thresholds : th };
+      if (marca.estado === 'ilegible' || (marca.estado === 'leido' && !aplicado)) return { ...v, soloLectura: true, motivo: M('config.marcaIlegible'), borrador: doc && isObject(doc.thresholds) ? doc.thresholds : th };
       const r = ORG.thresholdsParse(a.texto, { arnes: { thresholds: th }, tree: TREE });
       const borrador = doc && isObject(doc.thresholds) ? doc.thresholds : th;
-      if (!aplicado || !isObject(aplicado.files) || !aplicado.files[s.archivo]) return { ...v, soloLectura: true, motivo: 'tu nocturno todavía no lee este archivo: se edita cuando una noche verde deje la marca .dashboard/applied-config.json', borrador, avisos: r.avisos || [] };
+      if (!aplicado || !isObject(aplicado.files) || !aplicado.files[s.archivo]) return { ...v, soloLectura: true, motivo: M('config.nocturnoNoLee'), borrador, avisos: r.avisos || [] };
       if (r.soloLectura) return { ...v, soloLectura: true, motivo: r.problems[0].message, borrador };
       return { ...v, borrador, problems: r.problems, avisos: r.avisos || [] };
     }
 
     if (s.id === 'paridad') {
-      if (a.estado === 'nuevo') return { ...v, estado: 'no_configurado', motivo: 'la lista de paridad no está en el repo de operaciones', vista: ORG.paridadPorProducto({ lista: null }) };
-      if (!doc) return { ...v, estado: 'ilegible', motivo: 'la lista de paridad no se pudo leer: no es JSON válido' };
+      if (a.estado === 'nuevo') return { ...v, estado: 'no_configurado', motivo: M('org.paridadSinLista'), vista: ORG.paridadPorProducto({ lista: null }) };
+      if (!doc) return { ...v, estado: 'ilegible', motivo: M('config.paridadIlegible') };
       const res = leerDe(dir, `.dashboard/paridad/paridad-${dia()}.json`);
       const leido = res.estado === 'leido' ? docDe(res.texto) : null;
       const vp = ORG.paridadPorProducto({ lista: doc, resultado: leido, hoy: dia(), resultadoIlegible: res.estado === 'ilegible' || (res.estado === 'leido' && !leido) });
       if (vp.estado === 'sin_productos' || vp.estado === 'sin_lista') return { ...v, estado: 'no_configurado', motivo: vp.texto, vista: vp };
-      if (!lector('check-product-parity.js')) return { ...v, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer las diferencias declaradas', vista: vp };
+      if (!lector('check-product-parity.js')) return { ...v, estado: 'no_reader', motivo: M('org.noLeeDeclaradas'), vista: vp };
       return { ...v, vista: vp, borrador: {} };
     }
 
     const lec = lector(s.lector);
     // la marca es una parte de site que un lector anterior no conoce: la sección dice qué parte
-    if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
-    if (!ORG.lectorSabe(lec, s)) return { ...base, estado: 'no_reader', motivo: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${(s.rutas && s.rutas.length === 1 ? s.rutas : s.claves).join(', ')}` : ''}` };
+    if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
+    if (!ORG.lectorSabe(lec, s)) return { ...base, estado: 'no_reader', motivo: M('org.noLee', { que: `${s.archivo}${s.claves ? ` → ${(s.rutas && s.rutas.length === 1 ? s.rutas : s.claves).join(', ')}` : ''}` }) };
     if (a.estado === 'nuevo') v.estado = 'nuevo';
     // Personas tiene su propia regla con el archivo roto (abajo): el último bueno 24 horas
-    else if (!doc && s.id !== 'personas') return { ...v, estado: 'ilegible', motivo: `${s.archivo} no es un objeto JSON legible: se corrige a mano` };
+    else if (!doc && s.id !== 'personas') return { ...v, estado: 'ilegible', motivo: M('org.noEsObjeto', { archivo: s.archivo }) };
     const parsed = a.estado === 'leido' ? lec.parse(a.texto) : { ok: true, problems: [] };
     v.problems = (parsed.problems || []).filter((p) => !s.claves || s.claves.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)));
     // lo que el lector da aparte sin anular el archivo (un modelo mal escrito) se ve en su sección
@@ -281,7 +286,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     v.borrador = s.claves === null ? clone(doc || { version: 1 }) : Object.fromEntries(s.claves.filter((k) => doc && doc[k] !== undefined).map((k) => [k, clone(doc[k])]));
     if (s.id === 'sitio') v.campos = { url: Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('url') };
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
-    if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
+    if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
     // la lista de fichas es la de este sitio; un lector que no conoce la clave deja la sección en «no sabe leer»
     if (s.id === 'fichas') {
@@ -296,13 +301,13 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const lista = conAcceso && doc && !(isObject(doc.site) && Array.isArray(doc.site.access)) ? people.listaDeAcceso(doc) : null;
       // lo que no se pudo leer queda afuera de la lista: se dice, para que nadie quede sin entrar sin saberlo (también si
       // no quedó nadie y no hay lista para proponer)
-      const ojo = lista && lista.descartados ? `Ojo: ${lista.descartados} correo(s) de lo de hoy no tienen forma de correo y quedaron afuera; sumalos a mano si son de alguien.` : '';
+      const ojo = lista && lista.descartados ? M('config.ojoCorreos', { n: lista.descartados }) : '';
       if (lista && lista.entradas.length) {
         const site = clone(isObject(doc.site) ? doc.site : {});
         delete site.maintainers;
         site.access = lista.entradas;
         v.borrador = { site };
-        v.extras.migracion = `Esta lista se armó con lo de hoy: quienes mantienen el sitio y cada persona con una máquina confirmada. El sitio ya la usa así; se guarda en operations.json cuando proponés el pedido.${ojo ? ` ${ojo}` : ''}`;
+        v.extras.migracion = ojo ? M('config.migracionYOjo', { ojo }) : M('config.migracion');
       } else if (ojo) v.extras.migracion = ojo;
     }
     // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
@@ -318,14 +323,14 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     }
     if (s.id === 'ado') {
       v.extras = {
-        proyecto: 'el de cada repo, en su ado-config.yaml (ado_project): se cambia en cada repo',
-        pedidos: 'los pedidos de trabajo de las dependencias (work-items) van al proyecto de cada repo de scripts/nightly/dependencies/repos.json, en el repo de operaciones; a quién se asignan, en «Responsables»',
+        proyecto: M('config.adoProyecto'),
+        pedidos: M('config.adoPedidos'),
       };
-      if (remoteDe('perfil').platform === 'github') { v.soloLectura = true; v.motivo = 'no aplica: la organización trabaja en GitHub'; }
+      if (remoteDe('perfil').platform === 'github') { v.soloLectura = true; v.motivo = M('config.noAplicaGithub'); }
     }
     if (s.id === 'instalacion') v.extras = { perfiles: perfilesDeInstalacion() };
     if (s.id === 'hilos' && !(doc && isObject(doc.site) && isObject(doc.site.mailbox))) {
-      v.soloLectura = true; v.motivo = 'primero se configura el buzón de corridas en «El sitio»: sin buzón no hay conversaciones que bajar';
+      v.soloLectura = true; v.motivo = M('config.hilosSinBuzon');
     }
     if (s.id === 'personas') {
       // operations.json que no valida: el último bueno (24 h, la regla de la 2.28); el sitio frenado ya contesta 503
@@ -334,8 +339,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const extras = {};
       if (!base2) {
         base2 = fuentes.config();
-        if (est.bandaConfig) extras.ultimoBueno = `se muestra el último bueno: operations.json no valida desde ${views.hora(est.bandaConfig.desde)} (${est.bandaConfig.motivo})`;
-        else { extras.vencido = 'people venció: operations.json no valida hace más de 24 horas; se corrige a mano'; v.soloLectura = true; v.motivo = extras.vencido; }
+        if (est.bandaConfig) extras.ultimoBueno = M('config.ultimoBueno', { desde: views.hora(est.bandaConfig.desde), motivo: est.bandaConfig.motivo });
+        else { extras.vencido = M('config.peopleVencio'); v.soloLectura = true; v.motivo = extras.vencido; }
         v.borrador = { people: clone((base2 && base2.people) || {}) };
       }
       const { c, informados, pers } = contextoPersonas(base2);
@@ -358,16 +363,16 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
 
   async function estadoProponer(repo) {
     const cred = cfg.escritura && cfg.escritura[repo];
-    if (!cred) return { habilitado: false, motivo: 'sin identidad de escritura: revisá, descargá el archivo y abrí el pedido a mano' };
+    if (!cred) return { habilitado: false, motivo: M('config.sinIdentidad') };
     const remote = remoteDe(repo);
-    if (!remote.platform) return { habilitado: false, motivo: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
+    if (!remote.platform) return { habilitado: false, motivo: M('config.sinPlataforma') };
     const una = async (archivo) => {
       try {
         const solo = aplicarSolo();
         const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo, aplicarSolo: solo });
         if (!p.ok) return { habilitado: false, motivo: p.message };
         return solo ? { habilitado: true, motivo: null, aplicaSolo: p.aplicaSolo === true, motivoAplicar: p.motivoAplicar || null } : { habilitado: true, motivo: null };
-      } catch (e) { return { habilitado: false, motivo: `no pude leer la política de la rama principal (${(e && e.name) || 'error'})` }; }
+      } catch (e) { return { habilitado: false, motivo: M('config.sinPolitica', { codigo: (e && e.name) || 'error' }) }; }
     };
     // con una política con filtro de ruta, «Proponer» va archivo por archivo (`porArchivo`, que la
     // pantalla prefiere al estado del repo)
@@ -388,7 +393,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const r = dirOps ? leerDe(dirOps, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
     const d = r.estado === 'leido' ? docDe(r.texto) : null;
     let motivo = null;
-    if (r.estado === 'ilegible' || (r.estado === 'leido' && (!d || !Array.isArray(d.repos)))) motivo = 'la lista de la revisión de dependencias (repos.json) no se pudo leer: los productos de ahí no se muestran';
+    if (r.estado === 'ilegible' || (r.estado === 'leido' && (!d || !Array.isArray(d.repos)))) motivo = M('config.reposIlegible');
     for (const x of (d && Array.isArray(d.repos) ? d.repos : [])) {
       if (!isObject(x) || typeof x.producto !== 'string') continue;
       out.push({ producto: x.producto, origen: 'dependencias', repo: x.ado || x.github || x.ruta || null, activo: x.activo !== false, motivo: typeof x.motivo === 'string' ? x.motivo : null });
@@ -408,10 +413,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const quien = Object.fromEntries(Object.entries(isObject(machines) && isObject(machines.machines) ? machines.machines : {}).filter(([, e]) => isObject(e)).map(([m, e]) => [m, norm(e.person)]));
     const prods = productos(cl.operaciones && cl.operaciones.dir, opsDoc);
     let versionesMotivo = null;
-    try { fs.readdirSync(fuentes.dirBuzon); } catch (e) { if (e && e.code !== 'ENOENT') versionesMotivo = `el espejo del buzón no se pudo leer (${e.code || 'error'}): la versión de cada máquina no se sabe`; }
+    try { fs.readdirSync(fuentes.dirBuzon); } catch (e) { if (e && e.code !== 'ENOENT') versionesMotivo = M('config.espejoIlegible', { codigo: e.code || 'error' }); }
     return {
       ok: true, secciones,
-      proponer: { operaciones: await estadoProponer('operaciones'), perfil: cfg.profileRepo ? await estadoProponer('perfil') : { habilitado: false, motivo: 'el perfil del equipo no está configurado en el sitio' } },
+      proponer: { operaciones: await estadoProponer('operaciones'), perfil: cfg.profileRepo ? await estadoProponer('perfil') : { habilitado: false, motivo: M('config.perfilNoConfigurado') } },
       productos: prods.lista, productosMotivo: prods.motivo, versionesMotivo,
       productosEnlace: enlaceArchivo('scripts/nightly/dependencies/repos.json'),
       contenido: contenidoDelPerfil(cl.perfil && cl.perfil.dir, (rel) => RP.enlaceArchivo(remoteDe('perfil'), rel)),
@@ -443,11 +448,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (Array.isArray(site.access)) {
         const mant = mantenedoresDe(site);
         if (!mant.length) problemas.push({ path: 'site.access', message: SIN_MANTENEDORES });
-        else if (!suyos.some((m) => mant.includes(m))) advertencia = 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña';
+        else if (!suyos.some((m) => mant.includes(m))) advertencia = M('config.noEstas');
       } else {
         const lista = site.maintainers;
-        if (!Array.isArray(lista) || !lista.length) problemas.push({ path: 'site.maintainers', message: 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña' });
-        else if (!lista.map(norm).some((m) => suyos.includes(m))) advertencia = 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña';
+        if (!Array.isArray(lista) || !lista.length) problemas.push({ path: 'site.maintainers', message: M('config.listaVacia') });
+        else if (!lista.map(norm).some((m) => suyos.includes(m))) advertencia = M('config.noEstas');
       }
     }
     const r = ORG.revisar({ seccion: s, texto: v.texto, borrador, lectores: { [s.lector]: lector(s.lector) }, arnes: { thresholds: arnes().thresholds }, hoy: dia(), tree: TREE });
@@ -458,26 +463,26 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   /** El texto que llega a «Proponer» se vuelve a validar entero, con el lector de su archivo: nunca se confía en la pantalla. */
   function validarTexto(s, texto) {
     const doc = docDe(texto);
-    if (!doc || ORG.formatJson(doc) !== texto) return 'el archivo propuesto no es el que validó «Revisar»: revisá de nuevo';
+    if (!doc || ORG.formatJson(doc) !== texto) return M('config.noEsElRevisado');
     // el pedido cambia sólo la sección (AC 23): lo demás del archivo tiene que quedar como está en el clon
     if (s.claves) {
       const actual = docDe(vista(s).texto || '') || {};
       const ajenas = [...new Set([...Object.keys(actual), ...Object.keys(doc)])].filter((k) => !s.claves.includes(k) && JSON.stringify(actual[k]) !== JSON.stringify(doc[k]));
-      if (ajenas.length) return `el archivo propuesto cambia ${ajenas.join(', ')}, que no es de esta sección: revisá de nuevo desde su sección`;
+      if (ajenas.length) return M('config.cambiaAjenas', { claves: ajenas.join(', ') });
       // una sección con `rutas` cambia sólo esas hojas de su clave (story 2.31): las otras, como están en el clon
       const hojas = ORG.hojasAjenas(s, actual, doc);
-      if (hojas.length) return `el archivo propuesto cambia ${hojas.join(', ')}, que no es de esta sección: revisá de nuevo desde su sección`;
+      if (hojas.length) return M('config.cambiaAjenas', { claves: hojas.join(', ') });
     }
     if (s.id === 'umbrales') { const r = ORG.thresholdsParse(texto, { arnes: { thresholds: arnes().thresholds }, previas: Object.keys(((docDe(vista(s).texto || '') || {}).thresholds) || {}), tree: TREE }); return r.ok ? null : r.problems[0].message; }
-    if (s.id === 'paridad') { const l = lector('check-product-parity.js'); const r = l && l.leerDeclaradas(doc, dia()); return !r ? 'esta versión del arnés no sabe leer las diferencias declaradas' : (r.problemas.length ? r.problemas[0].message : null); }
+    if (s.id === 'paridad') { const l = lector('check-product-parity.js'); const r = l && l.leerDeclaradas(doc, dia()); return !r ? M('config.noLeeDeclaradas') : (r.problemas.length ? r.problemas[0].message : null); }
     const lec = lector(s.lector);
-    if (!ORG.lectorSabe(lec, s)) return `esta versión del arnés todavía no sabe leer ${s.archivo}`;
+    if (!ORG.lectorSabe(lec, s)) return M('org.noLee', { que: s.archivo });
     const r = lec.parse(texto);
-    if (!r.ok) return `el lector rechaza el archivo: ${(r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ')}`;
+    if (!r.ok) return M('config.lectorRechaza', { detalle: (r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ') });
     // el lector da por bueno un archivo con un modelo mal escrito (lo pone aparte): la sección que lo cambia no lo propone
     const aparte = ORG.problemasDeSeccion(s, r, docDe(vista(s).texto || ''), doc);
-    if (aparte.length) return `el lector rechaza esta parte del archivo: ${aparte.map((p) => `${p.path}: ${p.message}`).join(' · ')}`;
-    if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña';
+    if (aparte.length) return M('config.lectorRechazaParte', { detalle: aparte.map((p) => `${p.path}: ${p.message}`).join(' · ') });
+    if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return M('config.listaVacia');
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.access) && !mantenedoresDe(doc.site).length) return SIN_MANTENEDORES;
     if (s.repo === 'perfil') {
       const capa = leerDe(clones().perfil.dir, 'team-layer.json');
@@ -498,20 +503,20 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.id === 'personas' && v.extras && v.extras.vencido) return { ok: false, message: v.extras.vencido };
     const texto = typeof body.texto === 'string' ? body.texto : '';
     // sin la versión que abrió, no se puede saber si otro cambió el archivo (AC 16): no se propone a ciegas
-    if (body.oid === undefined) return { ok: false, message: 'falta la versión del archivo que abriste: recargá' };
+    if (body.oid === undefined) return { ok: false, message: M('config.faltaOid') };
     const problema = validarTexto(s, texto);
     if (problema) return { ok: false, message: problema };
     const cred = cfg.escritura && cfg.escritura[s.repo];
-    if (!cred) return { ok: false, message: 'sin identidad de escritura: descargá el archivo y abrí el pedido a mano' };
+    if (!cred) return { ok: false, message: M('config.sinIdentidad2') };
     const remote = remoteDe(s.repo);
-    if (!remote.platform) return { ok: false, message: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
+    if (!remote.platform) return { ok: false, message: M('config.sinPlataforma') };
     let dir = s.repo === 'perfil' ? clones().perfil.dir : clones().operaciones.dir;
     // con la copia de operaciones la carpeta de la foto no tiene git y nunca se escribe: la propuesta trae main en
     // un clon de escritura aparte, compara contra esa punta y arma el commit ahí
     if (s.repo === 'operaciones' && clones().operaciones.indice) {
-      if (typeof fuentes.clonDeEscritura !== 'function') return { ok: false, message: 'el sitio no tiene clon de escritura para la copia de operaciones: descargá el archivo y abrí el pedido a mano' };
+      if (typeof fuentes.clonDeEscritura !== 'function') return { ok: false, message: M('config.sinClonEscritura') };
       const e = await fuentes.clonDeEscritura();
-      if (!e || !e.dir) return { ok: false, message: `${(e && e.motivo) || 'no se pudo armar el clon de escritura'}: descargá el archivo y abrí el pedido a mano` };
+      if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
       dir = e.dir;
     }
     return RP.proponer({
@@ -529,7 +534,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!r || r.codigo !== 'aplicado') return r;
     try { await fuentes.refrescar(); } catch (e) { log(`después de aplicar ${s.archivo}, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); }
     const ya = vista(s).texto === texto;
-    return { ...r, message: ya ? 'Aplicado: el cambio ya está en la rama principal y el sitio lo usa.' : 'Aplicado: el pedido se completó y el cambio está en la rama principal; el sitio lo va a ver en el próximo refresco.' };
+    return { ...r, message: ya ? M('config.aplicadoYa') : M('config.aplicadoProximo') };
   }
 
   // ── la propuesta de stages (AC 8): sólo lee, con SITE_PIPELINES_TOKEN; lo de cada plataforma vive en repo-proposal.js ──
@@ -550,11 +555,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   async function nombresDePasos(pipeline) {
     const m = /^([^/]+)\/(.+)$/.exec(String(pipeline || ''));
     const org = (remoteDe('operaciones') || {}).org;
-    if (!m || !org) return { ok: false, message: 'no reconozco el pipeline guardado' };
+    if (!m || !org) return { ok: false, message: M('config.pipelineNoReconocido') };
     const lista = await pipelines(org, m[1]);
     if (!lista.ok) return { ok: false, message: lista.message };
     const def = lista.pipelines.find((x) => x.nombre === m[2]);
-    if (!def) return { ok: false, message: `el proyecto ${m[1]} ya no tiene un pipeline que se llame ${m[2]}` };
+    if (!def) return { ok: false, message: M('config.pipelineYaNo', { proyecto: m[1], nombre: m[2] }) };
     const pasos = await stages(`${m[1]}/${def.id}`);
     if (!pasos.ok) return { ok: false, message: pasos.message };
     return { ok: true, nombres: Object.fromEntries(pasos.propuestos.filter((x) => x.nombre).map((x) => [x.identificador, x.nombre])) };
@@ -563,9 +568,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // ── la página ──
   function pagina(ctx) {
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
-    const html = views.layout(ctx, 'Configuración', '<div id="config-app"><p class="q-note">Cargando…</p></div>', 'Lo que vale para toda la organización. Cada cambio se revisa antes de proponerlo, y entra cuando alguien lo aprueba. Lo de cada máquina no se toca desde acá.');
-    // el token de doble envío y el código de la pestaña, sin nada en línea (la CSP de la 2.23 no lo admite)
-    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js" defer></script></head>`);
+    const idioma = views.idiomaDe(ctx);
+    const html = views.layout(ctx, TX.t(idioma, 'pestana.configuracion'), `<div id="config-app"><p class="q-note">${TX.t(idioma, 'config.cargando')}</p></div>`, TX.t(idioma, 'config.lede'));
+    // el token de doble envío y el código de la pestaña en el idioma de la página, sin nada en línea (la CSP
+    // de la 2.23 no lo admite)
+    return html.replace('</head>', `<meta name="site-token" content="${tok.replace(/[^A-Za-z0-9_-]/g, '')}"><script src="/static/config.js?l=${idioma}" defer></script></head>`);
   }
 
   // lo que cuesta armar —cada sección leída de su clon y validada con su lector, y el permiso de proponer, que pregunta
@@ -583,46 +590,54 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   }
 
   const solo = ['maintainer'];
+  /** Una respuesta JSON de la pestaña, con sus mensajes en el idioma del pedido. */
+  const enIdioma = (handler) => async (ctx) => {
+    const r = await handler(ctx);
+    const idioma = views.idiomaDe(ctx);
+    if (idioma === LANG.POR_DEFECTO || !r || !/^application\/json/.test(String(r.tipo || ''))) return r;
+    // sin poder traducir, la respuesta va como está (en castellano), y se dice en el registro
+    try { return { ...r, cuerpo: JSON.stringify(TX.traducirRespuesta(idioma, JSON.parse(r.cuerpo))) }; } catch (e) { log(`configuración: una respuesta no se pudo pasar a ${idioma} (${(e && e.message) || e}): sale en castellano`); return r; }
+  };
   return [
     { method: 'GET', path: '/configuracion', needs: solo, pestana: { id: 'configuracion', titulo: 'Configuración', orden: 90 }, handler: (ctx) => ({ status: 200, tipo: 'text/html; charset=utf-8', cuerpo: pagina(ctx) }) },
-    { method: 'GET', path: '/static/config.js', needs: solo, handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: ORG.pantalla() }) },
-    { method: 'GET', path: '/api/config', needs: solo, handler: async () => json(200, await leerTodoGuardado()) },
+    { method: 'GET', path: '/static/config.js', needs: solo, handler: (ctx) => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: ORG.pantalla(LANG.valido(ctx.url && ctx.url.searchParams.get('l')) || views.idiomaDe(ctx)) }) },
+    { method: 'GET', path: '/api/config', needs: solo, handler: enIdioma(async () => json(200, await leerTodoGuardado())) },
     {
-      method: 'POST', path: '/api/config/revisar', needs: solo, handler: async (ctx) => {
+      method: 'POST', path: '/api/config/revisar', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
-        if (!s) return rechazo(400, 'sección desconocida');
+        if (!s) return rechazo(400, M('org.seccionDesconocida'));
         return json(200, revisarSeccion(s, e.body.borrador, ctx));
-      },
+      }),
     },
     {
-      method: 'POST', path: '/api/config/stages', needs: solo, handler: async (ctx) => {
+      method: 'POST', path: '/api/config/stages', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         return json(200, await stages(e.body && e.body.pipeline));
-      },
+      }),
     },
     {
-      method: 'POST', path: '/api/config/pipelines', needs: solo, handler: async (ctx) => {
+      method: 'POST', path: '/api/config/pipelines', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         const b = e.body || {};
         return json(200, await pipelines(String(b.org || '').trim(), String(b.project || '').trim()));
-      },
+      }),
     },
     {
-      method: 'POST', path: '/api/config/pasos', needs: solo, handler: async (ctx) => {
+      method: 'POST', path: '/api/config/pasos', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         return json(200, await nombresDePasos(e.body && e.body.pipeline));
-      },
+      }),
     },
     {
-      method: 'POST', path: '/api/config/proponer', needs: solo, handler: async (ctx) => {
+      method: 'POST', path: '/api/config/proponer', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
-        if (!s) return rechazo(400, 'sección desconocida');
+        if (!s) return rechazo(400, M('org.seccionDesconocida'));
         const r = await despuesDeAplicar(s, await proponer(s, e.body, ctx), e.body && e.body.texto);
         guardado = null;
         return json(200, r);
-      },
+      }),
     },
   ];
 }

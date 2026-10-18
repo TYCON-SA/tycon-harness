@@ -45,10 +45,10 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // día» de cada receta, Kubernetes y otras nubes, y una red cerrada); y lo que pidió una instalación desde cero
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
 // permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
-// SITE_OPERATIONS_REPO sigue siendo obligatoria.
+// SITE_OPERATIONS_REPO sigue siendo obligatoria; y, en «Por dentro», la tabla de textos en dos idiomas.
 const HUELLA_INSTALACION = {
-  es: '245a98d18d74f777a8e4da9373c93eeb068db515b6ebbcd3f6b5c1c855dde1dd',
-  en: '639030027ead62da76035883174d423c70d928f50a5145a56cb326967c78ad9b',
+  es: '6429e51f49fb60cc847595c6750fd21276267de3e62c9765d1dd06a15b352f5d',
+  en: 'd12b8a130c1972f84ce1d59480f8fde4e9ef7822505dc929154c3abf4866ee0a',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -98,7 +98,9 @@ test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
  */
 function subPestanas() {
   const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
-  const codigo = ORG.pantalla();
+  // los textos de la pantalla salen de la tabla: se ponen en castellano para leer sus títulos
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const codigo = ORG.pantalla().replace(/T\('(pantalla\.[A-Za-z0-9]+)'\)/g, (x, k) => `'${t('es', k).replace(/'/g, "\\'")}'`);
   const m = /var PESTANAS = (\[[^\n]*\]);/.exec(codigo);
   assert.ok(m, 'la pantalla declara sus sub-pestañas (PESTANAS)');
   const plano = /var PLANO = \{([\s\S]*?)\n {2}\};/.exec(codigo);
@@ -329,5 +331,26 @@ test('T15 2.40-Guia_InicioDeSesionYLista @story-2.40 @ac-11', () => {
     const ne = sub(t.noEntro);
     assert.doesNotMatch(ne, /asign|assign/i, `${lado}: «${t.noEntro}» todavía habla de asignar en el portal`);
     assert.match(ne, lado === 'es' ? /la lista/ : /the (site's\s+)?list/, `${lado}: «${t.noEntro}» no habla de la lista`);
+  }
+});
+
+// el selector de idioma, en las dos guías: cómo se elige y dónde vive la tabla de textos
+test('T12 Guia_ElSelectorDeIdioma @story-2.42 @ac-8', () => {
+  const lados = [
+    ['es', GUIA, 'El primer ingreso', 'Por dentro, para quien mantiene el arnés',
+      [/Español.{0,20}English/, /se recuerda por persona/i, /la primera vez/i, /navegador/i],
+      [/scripts\/site\/texts\.js/, /agrega(r)? un texto/i, /los dos idiomas/i]],
+    ['en', GUIA_EN, 'Signing in for the first time', 'Inside, for whoever maintains the harness',
+      [/Español.{0,20}English/, /remembered per person/i, /the first time/i, /browser/i],
+      [/scripts\/site\/texts\.js/, /add(ing)? a text/i, /both languages/i]],
+  ];
+  for (const [lado, f, primero, dentro, deIngreso, deDentro] of lados) {
+    const t = leer(f);
+    const ing = seccion(t, primero);
+    assert.ok(ing, `${lado}: falta «${primero}»`);
+    for (const rx of deIngreso) assert.match(ing.replace(/\s+/g, ' '), rx, `${lado}: «${primero}» no dice ${rx}`);
+    const den = seccion(t, dentro);
+    assert.ok(den, `${lado}: falta «${dentro}»`);
+    for (const rx of deDentro) assert.match(den.replace(/\s+/g, ' '), rx, `${lado}: «${dentro}» no dice ${rx}`);
   }
 });

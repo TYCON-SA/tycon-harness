@@ -16,6 +16,8 @@ const crypto = require('crypto');
 
 const ROOT = path.join(__dirname, '..', '..');
 const ORG = require(path.join(ROOT, 'scripts', 'lib', 'org-config.js'));
+// el código de pantalla pide sus textos a la tabla del sitio: para leer su forma, con cada texto en castellano
+const pantallaEnCastellano = () => { const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js')); return ORG.pantalla().replace(/T\('(pantalla\.[A-Za-z0-9]+)'(?:, \{[^}]*\})?\)/g, (x, k) => `'${t('es', k).replace(/'/g, "\\'")}'`); };
 const OPS = require(path.join(ROOT, 'scripts', 'lib', 'operations-config.js'));
 const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
 
@@ -371,7 +373,7 @@ test('T4 Secciones_OchoEditablesYDosDeLectura_CanalSinSecretos_SinScriptEnLinea 
       const pagina = await h.pedir('/configuracion', { cookie: lead });
       assert.strictEqual(pagina.status, 200);
       assert.doesNotMatch(pagina.texto, /<script(?![^>]*\bsrc=)[^>]*>/, 'ningún <script> en línea');
-      assert.match(pagina.texto, /<script src="\/static\/config\.js" defer><\/script>/);
+      assert.match(pagina.texto, /<script src="\/static\/config\.js\?l=es" defer><\/script>/);
       const js = await h.pedir('/static/config.js', { cookie: lead });
       assert.strictEqual(js.status, 200);
       assert.match(js.headers['content-type'], /javascript/);
@@ -1569,7 +1571,7 @@ test('Navegar_LoArmadoSeGuarda_HastaElRefrescoDeFondo', async () => {
 test('Perfil_LoQueApuntaElArchivo_ExisteEnElSitio — cada sección y pestaña que nombra install-effects.json es una de verdad', () => {
   const efectos = JSON.parse(texto('scripts/setup/install-effects.json')).effects;
   const secciones = ORG.SECCIONES.map((s) => s.id);
-  const pestanas = [...ORG.pantalla().matchAll(/\['([a-z]+)', '[^']+', \[[^\]]*\], \[[^\]]*\]\]/g)].map((m) => m[1]);
+  const pestanas = [...pantallaEnCastellano().matchAll(/\['([a-z]+)', '[^']+', \[[^\]]*\], \[[^\]]*\]\]/g)].map((m) => m[1]);
   assert.deepStrictEqual(pestanas, ['personas', 'repos', 'avisos', 'claude', 'instalacion'], 'las pestañas, leídas de la pantalla');
   for (const e of efectos) {
     if (e.site_section) assert.ok(secciones.includes(e.site_section), `${e.title}: la sección ${e.site_section}`);
@@ -1832,7 +1834,7 @@ test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
   assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
   assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, auto_apply: true } }), 'sólo la hoja del interruptor');
   // en la pestaña Personas, junto a «El sitio», con su editor de tres opciones
-  const codigo = ORG.pantalla();
+  const codigo = pantallaEnCastellano();
   assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar',/);
   assert.match(codigo, /aplicar: editorAplicar/);
   for (const t of ['sin declarar (no)', 'sí: se aplican solos', 'no: queda el pedido para aprobar']) assert.ok(codigo.includes(t), t);
@@ -2101,7 +2103,7 @@ test('T17 2.36-Seccion_FichasQueMuestraElSitio @story-2.36 @ac-2 — la sección
   // sacar todas las ocultas saca la clave, sin dejar un objeto vacío
   const vuelta = ORG.revisar({ seccion: 'fichas', texto: r.texto, borrador: { site: { maintainers: [LEAD], refresh_minutes: 15 } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(vuelta.texto, ORG.formatJson(base));
-  const codigo = ORG.pantalla();
+  const codigo = pantallaEnCastellano();
   assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas'\]/);
   assert.match(codigo, /fichas: editorFichas/);
   // en el sitio, la sección llega con las 25 fichas y su casilla
@@ -2164,7 +2166,7 @@ test('T23 2.33-Seccion_ProponeComoLasDemas @story-2.33 @ac-18 — «Cómo se act
   const r = ORG.revisar({ seccion: 'aldia', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], auto_apply: true, update: 'auto' } }, lectores: { 'operations-config.js': OPS } });
   assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
   assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, update: 'auto' } }), 'sólo la hoja de la actualización');
-  const codigo = ORG.pantalla();
+  const codigo = pantallaEnCastellano();
   assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar', 'aldia',/);
   assert.match(codigo, /aldia: editorActualizacionSitio/);
   for (const t of ['sin declarar (sólo aviso)', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']) assert.ok(codigo.includes(t), t);

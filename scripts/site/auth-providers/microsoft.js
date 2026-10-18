@@ -23,6 +23,8 @@
  *     (`SITE_AUTH_MICROSOFT_TENANT`), como el modo de un inquilino: así un invitado del directorio con una cuenta personal
  *     entra con su correo verificado.
  */
+// lo que este archivo le dice a una persona vive en la tabla del sitio (texts.js, `proveedor.*`); el servidor lo traduce al mostrarlo
+const TX = (clave, valores) => require('../texts.js').t('es', clave, valores);
 const { proveedorSobreOidc, correoDe, limitarDominio, ErrorDeIngreso } = require('../oidc.js');
 
 const MULTI = new Set(['common', 'organizations', 'consumers', '{tenantid}']);
@@ -31,7 +33,8 @@ const MODOS = ['organization', 'any'];
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // el inquilino de las cuentas personales de Microsoft (el emisor de `consumers`, medido en la parte A)
 const PERSONALES = '9188040d-6c67-4c5b-b112-36a304b66dad';
-const A_INVITADOS = { href: '/auth/login?via=invitado', texto: 'Entrar como invitado del directorio de la organización' };
+// se arma al usarse: la tabla de textos carga este archivo para sumar los suyos
+const aInvitados = () => ({ href: '/auth/login?via=invitado', texto: TX('proveedor.entrarInvitado') });
 
 /** El inquilino del emisor (el segmento antes de /v2.0), o null. */
 function inquilinoDe(issuer) {
@@ -78,15 +81,15 @@ function opcionesDe(env) {
 /** Con qué se entra, en palabras (Configuración lo muestra; sin el inquilino). */
 function describir(op) {
   return op && op.modo === 'any'
-    ? 'Microsoft, con cualquier cuenta de trabajo o escuela, de cualquier organización; los invitados del directorio de la organización entran por su propia puerta'
-    : 'Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados)';
+    ? TX('proveedor.microsoftCualquiera')
+    : TX('proveedor.microsoftInquilino');
 }
 
 /** Lo que pide Entra a cualquier cuenta: el correo verificado y una identidad estable. */
 function correoVerificado(claims, frase) {
   const email = correoDe(claims, 'email');
   if (!verdadero(claims.xms_edov)) throw new ErrorDeIngreso(frase, 'sin xms_edov: true');
-  if (typeof claims.oid !== 'string' || typeof claims.tid !== 'string' || !claims.oid || !claims.tid) throw new ErrorDeIngreso('el emisor no mandó una identidad estable', 'sin oid o tid');
+  if (typeof claims.oid !== 'string' || typeof claims.tid !== 'string' || !claims.oid || !claims.tid) throw new ErrorDeIngreso(TX('proveedor.sinIdentidad'), 'sin oid o tid');
   return email;
 }
 
@@ -100,8 +103,8 @@ function deUnInquilino(cfg, { ahora, issuer, nombre, fraseSinEdov }) {
     identidad(claims) {
       const email = correoVerificado(claims, fraseSinEdov);
       // aun con un inquilino mal instalado, una cuenta personal directa no entra por acá
-      if (claims.tid.toLowerCase() === PERSONALES) throw new ErrorDeIngreso('las cuentas personales de Microsoft no se aceptan en este sitio', 'una cuenta personal de Microsoft por la puerta de un inquilino');
-      if (tenant && claims.tid.toLowerCase() !== tenant.toLowerCase()) throw new ErrorDeIngreso('tu cuenta no es de esta organización', 'tid distinto del inquilino del emisor');
+      if (claims.tid.toLowerCase() === PERSONALES) throw new ErrorDeIngreso(TX('proveedor.personalNo'), 'una cuenta personal de Microsoft por la puerta de un inquilino');
+      if (tenant && claims.tid.toLowerCase() !== tenant.toLowerCase()) throw new ErrorDeIngreso(TX('proveedor.otraOrg'), 'tid distinto del inquilino del emisor');
       limitarDominio(email, cfg.allowedDomains);
       return { email, sub: `${claims.oid}:${claims.tid}` };
     },
@@ -120,7 +123,7 @@ function crear(cfg, { ahora }) {
     emisorDelToken: (claims) => (typeof claims.tid === 'string' && GUID.test(claims.tid) ? emisorDeInquilino(cfg.issuer, claims.tid) : null),
     identidad(claims) {
       if (typeof claims.tid === 'string' && claims.tid.toLowerCase() === PERSONALES) {
-        throw new ErrorDeIngreso('las cuentas personales de Microsoft no se aceptan en este sitio. Si sos invitado del directorio de la organización, entrá por la puerta de los invitados', 'una cuenta personal de Microsoft por la puerta principal', A_INVITADOS);
+        throw new ErrorDeIngreso(TX('proveedor.personalNoInvitado'), 'una cuenta personal de Microsoft por la puerta principal', aInvitados());
       }
       const email = correoVerificado(claims, 'tu cuenta no trae un correo verificado por su organización (la claim xms_edov), y sin él no se puede saber si el correo es tuyo');
       limitarDominio(email, cfg.allowedDomains);
@@ -133,7 +136,7 @@ function crear(cfg, { ahora }) {
     nombre: 'microsoft',
     emisor: cfg.issuer,
     // las dos puertas de la página de inicio
-    vias: [{ id: null, texto: 'Entrar con tu cuenta de Microsoft' }, { id: 'invitado', texto: 'Soy invitado del directorio de la organización' }],
+    vias: [{ id: null, texto: TX('proveedor.entrarMicrosoft') }, { id: 'invitado', texto: TX('proveedor.soyInvitado') }],
     preparar: () => Promise.all([principal.preparar(), invitados.preparar()]),
     listo: () => principal.listo() && invitados.listo(),
     urlDeInicio: (o) => de(o.via).urlDeInicio(o),
@@ -144,4 +147,13 @@ function crear(cfg, { ahora }) {
 // las variables propias de este proveedor (el registro de arranque dice si están, nunca su valor)
 const variables = ['SITE_AUTH_MICROSOFT_ACCOUNTS', 'SITE_AUTH_MICROSOFT_TENANT'];
 
-module.exports = { problemasDeConfig, opcionesDe, describir, crear, inquilinoDe, variables, PERSONALES };
+// lo que este proveedor le dice a una persona, en los dos idiomas: la tabla del sitio (texts.js) lo suma a la suya
+const TEXTOS = {
+  'proveedor.microsoftCualquiera': { es: 'Microsoft, con cualquier cuenta de trabajo o escuela, de cualquier organización; los invitados del directorio de la organización entran por su propia puerta', en: 'Microsoft, with any work or school account, from any organization; guests of the organization\'s directory sign in through their own door' },
+  'proveedor.microsoftInquilino': { es: 'Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados)', en: 'Microsoft, with the accounts of the organization\'s directory (a single tenant, with its guests)' },
+  'proveedor.personalNo': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio', en: 'personal Microsoft accounts are not accepted on this site' },
+  'proveedor.personalNoInvitado': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio. Si sos invitado del directorio de la organización, entrá por la puerta de los invitados', en: 'personal Microsoft accounts are not accepted on this site. If you are a guest of the organization\'s directory, sign in through the guests\' door' },
+  'proveedor.entrarMicrosoft': { es: 'Entrar con tu cuenta de Microsoft', en: 'Sign in with your Microsoft account' },
+};
+
+module.exports = { problemasDeConfig, opcionesDe, describir, crear, inquilinoDe, variables, PERSONALES, TEXTOS };

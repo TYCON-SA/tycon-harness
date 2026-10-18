@@ -39,6 +39,11 @@ header.barra .salir span{font-size:13px;color:var(--ink-2)}
 .theme{display:inline-flex;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;width:max-content}
 .theme button{border:0;background:transparent;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--ink-2)}
 .theme button[aria-pressed="true"]{background:var(--ink);color:var(--page)}
+/* el selector de idioma (story 2.42): un formulario con dos botones, igual que el tema; los colores salen de las variables, así anda en claro y oscuro */
+form.idioma{display:inline-flex;margin:0;border:1px solid var(--line-strong);border-radius:8px;overflow:hidden;width:max-content}
+form.idioma button{border:0;background:transparent;padding:4px 10px;font-size:12px;cursor:pointer;color:var(--ink-2)}
+form.idioma button[aria-pressed="true"]{background:var(--ink);color:var(--page)}
+form.idioma button:focus-visible,.theme button:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
 .salir{display:grid;gap:8px;margin:0;font-size:12.5px;color:var(--muted)}
 /* el pie de cada página: la versión, la licencia, los créditos y de quién es */
 footer.pie{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin-top:48px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
@@ -198,6 +203,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .side-foot{grid-column:2;grid-row:1;margin:0;padding:0;border:0;display:flex;align-items:center;gap:8px}
   .side-foot .salir span,.side-foot .lab-tema{display:none}
   .theme button{padding:4px 8px;font-size:11.5px}
+  form.idioma button{padding:4px 8px;font-size:11.5px}
   .tabs{grid-column:1/-1;flex-direction:row;overflow-x:auto;gap:4px;padding-bottom:2px}
   .tabs a{padding:6px 10px;white-space:nowrap;font-size:14px}.tabs a .ix{display:none}
   main{padding:20px 16px 60px}

@@ -37,6 +37,10 @@ const formatJson = (data) => `${JSON.stringify(data, null, 2)}\n`;
  * `idCorto` el identificador de la rama del pedido (AC 14); `necesita` claves que el lector tiene que conocer para que
  * esta versión del arnés «sepa leer» la sección (una versión anterior a la story que la crea no las trae).
  */
+// los mensajes de este archivo viven en la tabla del sitio (scripts/site/texts.js, `org.*`); acá se arman en castellano
+// y el sitio los dice en el idioma de cada pedido
+const M = (clave, valores) => require('../site/texts.js').t('es', clave, valores);
+
 const SECCIONES = Object.freeze([
   Object.freeze({ id: 'repos', titulo: 'Dónde vive cada repo', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: null, idCorto: 'repos', necesita: [] }),
   Object.freeze({ id: 'responsables', titulo: 'A quién se asignan avisos y pedidos', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['owners', 'reviewers'], idCorto: 'operations', necesita: ['owners'] }),
@@ -171,14 +175,14 @@ const versionAtLeast = (v, min) => {
 function profileGateProblem(layerText, doc) {
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
-    return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
+    return M('org.capaIlegible', { error: (e && e.message) || e });
   }
   const req = String(((decl || {}).requires || {}).harness || '');
   const m = /^>=\s*(\S+)$/.exec(req.trim());
   const { version, claves } = versionQuePide(doc);
   if (m && versionAtLeast(m[1], version)) return null;
-  if (claves.length) return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${version} no sabe leer ${claves.join(' ni ')} de team-repos.json y rechazaría la capa entera. Primero se sube requires.harness a «>= ${version}» (o más)`;
-  return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${TEAM_REPOS_SINCE} rechazaría la capa entera si trae team-repos.json. Primero se sube requires.harness a «>= ${TEAM_REPOS_SINCE}» (o más)`;
+  if (claves.length) return M('org.capaPideRepos', { req: req || M('org.nada'), version, claves: claves.join(' ni ') });
+  return M('org.capaSinRepos', { req: req || M('org.nada'), version: TEAM_REPOS_SINCE });
 }
 
 /**
@@ -201,12 +205,12 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
   if (!isObject(doc) || doc.response === undefined || !cambia('response')) return null;
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
-    return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
+    return M('org.capaIlegible', { error: (e && e.message) || e });
   }
   const req = String(((decl || {}).requires || {}).harness || '');
   const m = /^>=\s*(\S+)$/.exec(req.trim());
   if (m && versionAtLeast(m[1], RESPONSE_SINCE)) return null;
-  return `todavía no se puede proponer: el perfil pide «${req || 'nada'}» en team-layer.json, y una máquina con una versión anterior a la ${RESPONSE_SINCE} no sabe leer response de team-profile.json y rechazaría el perfil entero. Primero se sube requires.harness a «>= ${RESPONSE_SINCE}» (o más)`;
+  return M('org.capaSinResponse', { req: req || M('org.nada'), version: RESPONSE_SINCE });
 }
 
 /**
@@ -217,15 +221,15 @@ function teamProfileGateProblem({ layerText, versionImagen, doc, actual }) {
  */
 function packsListGateProblem({ layerText, versionImagen, valor }) {
   if (!Array.isArray(valor)) return null;
-  if (!versionImagen) return 'no sé la versión de este sitio, y una lista de paquetes sólo la lee un arnés que la conoce: se propone a mano';
+  if (!versionImagen) return M('org.sinVersionSitio');
   let decl;
   try { decl = JSON.parse(String(layerText)); } catch (e) {
-    return `no pude leer team-layer.json del perfil (${(e && e.message) || e}), y sin él no sé qué versión del arnés piden las máquinas`;
+    return M('org.capaIlegible', { error: (e && e.message) || e });
   }
   const req = String(((decl || {}).requires || {}).harness || '');
   const m = /^>=\s*(\S+)$/.exec(req.trim());
   if (m && versionAtLeast(m[1], versionImagen)) return null;
-  return `una lista de paquetes sólo la lee un arnés que la conoce: el perfil pide «${req || 'nada'}» en team-layer.json; primero se sube requires.harness a «>= ${versionImagen}» (o más), o se propone all o none`;
+  return M('org.listaDePaquetes', { req: req || M('org.nada'), version: versionImagen });
 }
 
 // ── los umbrales ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -253,12 +257,12 @@ function umbralValidoDe(opts) {
 function thresholdsParse(text, opts = {}) {
   let doc;
   try { doc = JSON.parse(String(text)); } catch (e) {
-    return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }], avisos: [], soloLectura: true };
+    return { ok: false, data: null, problems: [{ path: '', message: M('org.noEsJsonValido', { error: String((e && e.message) || e).split('\n')[0] }) }], avisos: [], soloLectura: true };
   }
-  if (!isObject(doc)) return { ok: false, data: null, problems: [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }], avisos: [], soloLectura: true };
-  if (formatJson(doc) !== String(text)) return { ok: false, data: null, problems: [{ path: '', message: 'el archivo no está en el formato que escribe el arnés (dos espacios y un salto final): se edita a mano, no desde acá' }], avisos: [], soloLectura: true };
+  if (!isObject(doc)) return { ok: false, data: null, problems: [{ path: '', message: M('org.tieneQueSerObjeto') }], avisos: [], soloLectura: true };
+  if (formatJson(doc) !== String(text)) return { ok: false, data: null, problems: [{ path: '', message: M('org.formatoDelArnes') }], avisos: [], soloLectura: true };
   const th = doc.thresholds === undefined ? {} : doc.thresholds;
-  if (!isObject(th)) return { ok: false, data: null, problems: [{ path: 'thresholds', message: 'tiene que ser un objeto { "<clave>": { direction, … } }' }], avisos: [], soloLectura: false };
+  if (!isObject(th)) return { ok: false, data: null, problems: [{ path: 'thresholds', message: M('org.umbralesObjeto') }], avisos: [], soloLectura: false };
   const valido = umbralValidoDe(opts);
   const conocidas = opts.arnes && isObject(opts.arnes.thresholds) ? Object.keys(opts.arnes.thresholds) : null;
   const problems = []; const avisos = [];
@@ -266,14 +270,14 @@ function thresholdsParse(text, opts = {}) {
     if (k.startsWith('__')) continue;
     if (conocidas && !conocidas.includes(k)) {
       // una fila que YA estaba en el archivo y el arnés dejó de usar no bloquea; una que se agrega, sí
-      if ((opts.previas || Object.keys(th)).includes(k)) { avisos.push({ path: `thresholds.${k}`, message: 'el arnés ya no usa esta clave' }); continue; }
-      problems.push({ path: `thresholds.${k}`, message: 'el arnés no conoce esta clave: no juzga nada con ella' });
+      if ((opts.previas || Object.keys(th)).includes(k)) { avisos.push({ path: `thresholds.${k}`, message: M('org.claveQueNoSeUsa') }); continue; }
+      problems.push({ path: `thresholds.${k}`, message: M('org.claveDesconocida') });
       continue;
     }
-    if (!valido(u)) { problems.push({ path: `thresholds.${k}`, message: 'falta elegir si es mejor más alto o más bajo, o alguno de los dos límites (el del verde y el del rojo)' }); continue; }
+    if (!valido(u)) { problems.push({ path: `thresholds.${k}`, message: M('org.faltaSentido') }); continue; }
     // con el verde del lado del rojo, el tablero pintaría un número de dos colores a la vez
-    if (u.direction === 'menor_es_mejor' && !(u.ok_max < u.bad_min)) problems.push({ path: `thresholds.${k}`, message: 'si es mejor más bajo, el límite del verde tiene que ser menor que el del rojo' });
-    if (u.direction === 'mayor_es_mejor' && !(u.ok_min > u.bad_max)) problems.push({ path: `thresholds.${k}`, message: 'si es mejor más alto, el límite del verde tiene que ser mayor que el del rojo' });
+    if (u.direction === 'menor_es_mejor' && !(u.ok_max < u.bad_min)) problems.push({ path: `thresholds.${k}`, message: M('org.menorEsMejor') });
+    if (u.direction === 'mayor_es_mejor' && !(u.ok_min > u.bad_max)) problems.push({ path: `thresholds.${k}`, message: M('org.mayorEsMejor') });
   }
   return { ok: problems.length === 0, data: problems.length ? null : th, problems, avisos, soloLectura: false };
 }
@@ -353,9 +357,9 @@ const docDe = (text) => { if (text === null || text === undefined) return null; 
  */
 function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = null, tree = null, umbralValido = null }) {
   const s = typeof seccion === 'string' ? seccionPorId(seccion) : seccion;
-  if (!s) return { ok: false, problems: [{ path: '', message: 'sección desconocida', sinCampo: true }], texto: null };
+  if (!s) return { ok: false, problems: [{ path: '', message: M('org.seccionDesconocida'), sinCampo: true }], texto: null };
   const actual = docDe(texto);
-  if (texto !== null && texto !== undefined && actual === null) return { ok: false, problems: [{ path: '', message: `${s.archivo} no es un objeto JSON legible: se corrige a mano`, sinCampo: true }], texto: null };
+  if (texto !== null && texto !== undefined && actual === null) return { ok: false, problems: [{ path: '', message: M('org.noEsObjeto', { archivo: s.archivo }), sinCampo: true }], texto: null };
 
   if (s.id === 'umbrales') {
     const previas = actual && isObject(actual.thresholds) ? Object.keys(actual.thresholds) : [];
@@ -367,8 +371,8 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
 
   if (s.id === 'paridad') {
     const lector = lectores['check-product-parity.js'] || loadReader(tree || '', 'check-product-parity.js', lectores);
-    if (!lector) return { ok: false, problems: [{ path: '', message: 'esta versión del arnés todavía no sabe leer las diferencias declaradas', sinCampo: true }], texto: null };
-    if (!actual) return { ok: false, problems: [{ path: '', message: 'la lista de paridad no está en el repo de operaciones', sinCampo: true }], texto: null };
+    if (!lector) return { ok: false, problems: [{ path: '', message: M('org.noLeeDeclaradas'), sinCampo: true }], texto: null };
+    if (!actual) return { ok: false, problems: [{ path: '', message: M('org.paridadSinLista'), sinCampo: true }], texto: null };
     const dia = hoy || new Date().toISOString().slice(0, 10);
     const b = isObject(borrador) ? borrador : {};
     const lista = Array.isArray(actual.diferencias_declaradas) ? actual.diferencias_declaradas : [];
@@ -377,7 +381,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
     const indices = [];
     for (const g of grupos) {
       const j = lista.findIndex((d) => isObject(d) && d.grupo === g && d.rasgo === b.rasgo);
-      if (j < 0) return { ok: false, problems: [{ path: 'diferencias_declaradas', message: `no hay una diferencia declarada ${g}/${b.rasgo}`, sinCampo: true }], texto: null };
+      if (j < 0) return { ok: false, problems: [{ path: 'diferencias_declaradas', message: M('org.sinDeclarada', { cual: `${g}/${b.rasgo}` }), sinCampo: true }], texto: null };
       indices.push(j);
     }
     const i = indices[0];
@@ -385,16 +389,16 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
     let aviso = null;
     if (b.accion === 'close') {
       for (const j of [...indices].sort((x, y) => y - x)) nueva.diferencias_declaradas.splice(j, 1);
-      aviso = 'si la diferencia sigue en los pipelines, vuelve a aparecer como divergencia la noche siguiente a la del merge';
+      aviso = M('org.avisoRenovar');
     } else if (b.accion === 'renew') {
       const problems = [];
-      if (!diaValido(b.revision)) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: 'la fecha de revisión tiene que ser un día con la forma AAAA-MM-DD' });
-      else if (b.revision <= dia) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: `la fecha de revisión tiene que ser posterior a hoy (${dia})` });
-      else if (b.revision > unAnioDespues(dia)) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: `la fecha de revisión es como mucho a un año (${unAnioDespues(dia)})` });
-      if (typeof b.motivo !== 'string' || !b.motivo.trim()) problems.push({ path: `diferencias_declaradas.${i}.motivo`, message: 'el motivo es obligatorio: por qué sigue valiendo la diferencia' });
+      if (!diaValido(b.revision)) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: M('org.fechaForma') });
+      else if (b.revision <= dia) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: M('org.fechaPosterior', { dia }) });
+      else if (b.revision > unAnioDespues(dia)) problems.push({ path: `diferencias_declaradas.${i}.revision`, message: M('org.fechaUnAnio', { dia: unAnioDespues(dia) }) });
+      if (typeof b.motivo !== 'string' || !b.motivo.trim()) problems.push({ path: `diferencias_declaradas.${i}.motivo`, message: M('org.motivoObligatorio') });
       if (problems.length) return { ok: false, problems, texto: null };
       for (const j of indices) nueva.diferencias_declaradas[j] = { ...nueva.diferencias_declaradas[j], motivo: b.motivo.trim(), fecha: dia, revision: b.revision };
-    } else return { ok: false, problems: [{ path: '', message: 'la acción tiene que ser renew (renovar) o close (cerrar)', sinCampo: true }], texto: null };
+    } else return { ok: false, problems: [{ path: '', message: M('org.accionRenovar'), sinCampo: true }], texto: null };
     // la validación es la del control (P7): la misma lectura que juzga de noche
     const r = lector.leerDeclaradas(nueva, dia);
     if (r.problemas && r.problemas.length) return { ok: false, problems: r.problemas.map((p) => ({ path: p.path || 'diferencias_declaradas', message: p.message })), texto: null };
@@ -402,7 +406,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   }
 
   const lector = lectores[s.lector] || loadReader(tree || '', s.lector, lectores);
-  if (!lectorSabe(lector, s)) return { ok: false, problems: [{ path: '', message: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${s.claves.join(', ')}` : ''}`, sinCampo: true }], texto: null };
+  if (!lectorSabe(lector, s)) return { ok: false, problems: [{ path: '', message: M('org.noLee', { que: `${s.archivo}${s.claves ? ` → ${s.claves.join(', ')}` : ''}` }), sinCampo: true }], texto: null };
   const ajenas = clavesAjenas(s, borrador);
   // un archivo que todavía no existe nace con lo mínimo que su lector pide (el perfil del equipo, vacío)
   const base = actual || (s.archivo === 'operations.json' ? { version: 1, owners: { default: '' } } : s.archivo === 'team-profile.json' ? {} : { version: 1 });
@@ -446,20 +450,20 @@ function canonico(v) {
 function modelosDeHoy(tree) { return buscarModelosDeHoy(tree).hoy; }
 function motivoDeHoy(tree) { return buscarModelosDeHoy(tree).motivo; }
 function buscarModelosDeHoy(tree) {
-  if (!tree) return { hoy: null, motivo: 'no sé dónde está el arnés de este sitio' };
+  if (!tree) return { hoy: null, motivo: M('org.sinArbol') };
   let skills = [];
   try { skills = fs.readdirSync(path.join(String(tree), 'skills')).sort(); } catch (e) {
-    return { hoy: null, motivo: e && e.code === 'ENOENT' ? 'esta versión del sitio no trae los skills' : `no pude leer la carpeta de los skills (${(e && e.code) || 'error'})` };
+    return { hoy: null, motivo: e && e.code === 'ENOENT' ? M('org.sinSkills') : M('org.skillsIlegibles', { codigo: (e && e.code) || 'error' }) };
   }
-  let motivo = 'esta versión del sitio no trae los modelos de hoy';
+  let motivo = M('org.sinModelosDeHoy');
   for (const n of skills) {
     const f = path.join(String(tree), 'skills', n, 'scripts', 'lib', 'models.js');
     if (!fs.existsSync(f)) continue;
     try {
       const m = require(f);
       if (isObject(m.DEFAULTS) && Array.isArray(m.MODELS)) return { hoy: clone(m.DEFAULTS), motivo: null };
-      motivo = `skills/${n}/scripts/lib/models.js no trae los valores de hoy`;
-    } catch (e) { motivo = `no pude cargar skills/${n}/scripts/lib/models.js (${String((e && e.message) || e).split('\n')[0]})`; }
+      motivo = M('org.modelsSinValores', { archivo: `skills/${n}/scripts/lib/models.js` });
+    } catch (e) { motivo = M('org.modelsNoCarga', { archivo: `skills/${n}/scripts/lib/models.js`, error: String((e && e.message) || e).split('\n')[0] }); }
   }
   return { hoy: null, motivo };
 }
@@ -481,7 +485,7 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     let carpetas = [];
     try { carpetas = fs.readdirSync(reg).filter((n) => CARPETA_CON_FECHA.test(n) && fs.existsSync(path.join(reg, n, 'place.json'))).sort(); } catch (e) {
       // sin registros no es una máquina; con registros que no se pueden leer, sí: sale «no medido», no desaparece
-      if (e && e.code !== 'ENOENT') { out.push({ maquina: m, persona: personas && personas[m] ? personas[m] : null, version: null, dia: null, diaTexto: 'sin fecha', estado: 'no_medido', texto: `no medido: sus registros no se pudieron leer (${e.code || 'error'})` }); continue; }
+      if (e && e.code !== 'ENOENT') { out.push({ maquina: m, persona: personas && personas[m] ? personas[m] : null, version: null, dia: null, diaTexto: M('org.sinFecha'), estado: 'no_medido', texto: M('org.registrosIlegibles', { codigo: e.code || 'error' }) }); continue; }
     }
     let ruta = null; let dia = null;
     if (carpetas.length) { const c = carpetas[carpetas.length - 1]; ruta = path.join(reg, c, 'place.json'); const d = CARPETA_CON_FECHA.exec(c); dia = `${d[1]}-${d[2]}-${d[3]}`; }
@@ -491,14 +495,14 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
     try { doc = JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch { doc = null; }
     const version = doc && isObject(doc.install) && typeof doc.install.version === 'string' ? doc.install.version : null;
     const persona = personas && typeof personas === 'object' && personas[m] ? personas[m] : null;
-    const fila = { maquina: m, persona, version, dia, diaTexto: dia || 'sin fecha', estado: 'no_medido', texto: '' };
-    if (!versionImagen) { fila.estado = 'no_medido'; fila.texto = 'no medido: la imagen no declara su versión'; }
-    else if (!doc) { fila.texto = 'no medido: su place.json no se pudo leer'; }
-    else if (!version) { fila.texto = 'no medido: su place.json no declara la versión del arnés'; }
-    else if (dia && (Date.parse(`${dia}T00:00:00Z`) < ahora - SIN_NOTICIAS_DIAS * 86400000)) { fila.estado = 'sin_noticias'; fila.texto = `sin noticias desde ${dia}`; }
-    else if (versionAtLeast(version, versionImagen)) { fila.estado = 'al_dia'; fila.texto = 'al día'; }
-    else if (versionParts(version)) { fila.estado = 'atrasada'; fila.texto = `atrasada (la imagen puede estar atrasada: compara contra ${versionImagen})`; }
-    else { fila.texto = `no medido: «${version}» no tiene forma de versión`; }
+    const fila = { maquina: m, persona, version, dia, diaTexto: dia || M('org.sinFecha'), estado: 'no_medido', texto: '' };
+    if (!versionImagen) { fila.estado = 'no_medido'; fila.texto = M('org.imagenSinVersion'); }
+    else if (!doc) { fila.texto = M('org.placeIlegible'); }
+    else if (!version) { fila.texto = M('org.placeSinVersion'); }
+    else if (dia && (Date.parse(`${dia}T00:00:00Z`) < ahora - SIN_NOTICIAS_DIAS * 86400000)) { fila.estado = 'sin_noticias'; fila.texto = M('org.sinNoticias', { dia }); }
+    else if (versionAtLeast(version, versionImagen)) { fila.estado = 'al_dia'; fila.texto = M('org.alDia'); }
+    else if (versionParts(version)) { fila.estado = 'atrasada'; fila.texto = M('org.atrasada', { version: versionImagen }); }
+    else { fila.texto = M('org.sinFormaDeVersion', { version }); }
     out.push(fila);
   }
   return out;
@@ -511,8 +515,8 @@ function versionesDeMaquinas({ espejo, versionImagen, ahora = Date.now(), person
  * archivo de hoy (o null). La definición (grupos y rasgos) se muestra y no se edita (P3).
  */
 function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }) {
-  if (!isObject(lista)) return { estado: 'sin_lista', texto: 'la lista de paridad no está en el repo de operaciones', productos: [], definicion: null };
-  if (typeof lista.sin_productos === 'string' && lista.sin_productos.trim()) return { estado: 'sin_productos', texto: `sin productos (${lista.sin_productos.trim()})`, productos: [], definicion: null };
+  if (!isObject(lista)) return { estado: 'sin_lista', texto: M('org.paridadSinLista'), productos: [], definicion: null };
+  if (typeof lista.sin_productos === 'string' && lista.sin_productos.trim()) return { estado: 'sin_productos', texto: M('org.paridadSinProductos', { motivo: lista.sin_productos.trim() }), productos: [], definicion: null };
   const grupos = isObject(lista.grupos) ? lista.grupos : {};
   const definicion = { grupos: clone(grupos), rasgos: Array.isArray(lista.rasgos) ? clone(lista.rasgos) : [] };
   const porProducto = new Map();
@@ -549,7 +553,7 @@ function paridadPorProducto({ lista, resultado, hoy, resultadoIlegible = false }
     };
     aplicar(resultado.declaradas, 'declaradas'); aplicar(resultado.vencidas, 'vencidas');
   }
-  const textos = { medido: 'medido', parcial: 'parcial: la noche no pudo medir todos los repos', no_medido: 'no medido', sin_productos: 'sin productos', sin_resultado: 'no medido: la noche no dejó la paridad', resultado_ilegible: 'no medido: no se pudo leer el resultado de hoy de la paridad' };
+  const textos = { medido: M('org.paridadMedido'), parcial: M('org.paridadParcial'), no_medido: M('org.paridadNoMedido'), sin_productos: M('org.paridadSinProductosCorto'), sin_resultado: M('org.paridadSinResultado'), resultado_ilegible: M('org.paridadIlegible') };
   return {
     estado, texto: textos[estado] || estado, fecha: isObject(resultado) ? resultado.fecha || null : null, definicion,
     productos: [...porProducto.values()].map((p) => ({ ...p, grupos: [...p.grupos], rutas: [...p.rutas] })),
@@ -571,12 +575,22 @@ const cuerpoDePropuesta = (secciones, quien) => `Secciones cambiadas: ${(seccion
  * escritura en `X-Site-Token` (AC 3). Habla con /api/config (leer), /api/config/revisar, /api/config/stages y
  * /api/config/proponer. «Descargar el archivo» no es una ruta: arma la descarga con el texto que «Revisar» devolvió.
  */
-function pantalla() {
+function pantalla(idioma = 'es') {
+  // los textos de la pantalla, en el idioma pedido: la tabla del sitio, `pantalla.*`. La página local
+  // (harness.js team-config) la pide sin idioma y sale en castellano, como siempre
+  const { textosCon } = require('../site/texts.js');
+  const textos = JSON.stringify(textosCon(idioma, 'pantalla.')).replace(/</g, '\\u003c');
   return String.raw`'use strict';
 // config.js — la pestaña Configuración del sitio de la organización (story 2.29). Lo sirve scripts/lib/org-config.js.
 // Sólo usa setAttribute, appendChild, addEventListener, textContent y replaceChildren: las pruebas lo corren sobre un
 // documento mínimo con eso nada más (lo del navegador —location, history, closest, scrollIntoView— se mira antes de usar).
 (function () {
+  // cada texto visible sale de TX, que el servidor arma en el idioma de la página; una clave que falta se ve como clave
+  var TX = ${textos};
+  function T(k, v) {
+    var s = Object.prototype.hasOwnProperty.call(TX, k.slice(9)) ? TX[k.slice(9)] : k;
+    return v ? s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }) : s;
+  }
   var meta = document.querySelector('meta[name="site-token"]');
   var TOKEN = meta ? meta.getAttribute('content') : '';
   var app = document.getElementById('config-app');
@@ -599,46 +613,46 @@ function pantalla() {
     // mensaje (un cuerpo vacío o que no es JSON: lo que está delante del sitio, o una versión vieja) dice qué hacer según
     // su estado, nunca «respuesta N» suelto
     var llano = function (status) {
-      if (status === 401) return 'la sesión venció o se cerró: recargá la página para entrar de nuevo';
+      if (status === 401) return T('pantalla.laSesionVencioOSe');
       // el sitio manda su motivo en cada 403: uno sin motivo lo dio lo que está delante (el inicio de sesión de la nube)
-      if (status === 403) return 'el pedido lo rechazó lo que está delante del sitio, no el sitio: recargá la página y probá de nuevo; si sigue, avisale a quien mantiene el arnés';
-      if (status === 503) return 'el sitio está cargando o frenado: probá de nuevo en unos segundos';
-      return 'el sitio contestó con un error (' + status + ')';
+      if (status === 403) return T('pantalla.elPedidoLoRechazoLo');
+      if (status === 503) return T('pantalla.elSitioEstaCargandoO');
+      return T('pantalla.elSitioContestoConUn') + status + ')';
     };
     return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: llano(r.status) }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = llano(r.status); return j; }); })
-      .catch(function (e) { return { ok: false, message: 'no pude hablar con el sitio (' + (e && e.message ? e.message : 'sin respuesta') + '): si estabas proponiendo, recargá y mirá si el pedido se abrió antes de repetirlo' }; });
+      .catch(function (e) { return { ok: false, message: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY') }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
   var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
 
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
-    organizacion: { t: 'La organización', d: 'El nombre y el logo que muestra la barra de arriba de cada página, y el nombre del pie. El logo es un archivo del repo de operaciones; acá se elige cuál.', corto: 'La organización' },
-    sitio: { t: 'Quién entra al sitio', d: 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los devs ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién entra al sitio' },
-    personas: { t: 'Personas y máquinas', d: 'Cada máquina que manda corridas tiene que estar a nombre de alguien. Así cada persona ve lo suyo en el sitio.', corto: 'Personas y máquinas' },
-    responsables: { t: 'A quién le llegan los avisos y los pedidos', d: 'Cuando algo de la noche necesita a una persona (una dependencia vieja, un hallazgo del vigilante) se le asigna a quien figure acá.', corto: 'Responsables' },
-    repos: { t: 'Dónde vive cada repo', d: 'Llega a todas las máquinas del equipo: con esto cada una sabe de dónde se instala el arnés y dónde queda lo de la noche.', corto: 'Repos' },
-    despliegues: { t: 'Despliegues de cada producto', d: 'Con esto el sitio sabe qué paso de cada pipeline es la prueba y cuál es producción, para decir qué versión está afuera.', corto: 'Despliegues' },
-    canal: { t: 'Dónde llega el resumen de cada mañana', d: 'El canal donde la noche deja su resumen.', corto: 'Aviso diario' },
-    umbrales: { t: 'Umbrales: cuándo algo se pinta verde o rojo', d: 'El tablero colorea cada número según estos límites. Entre los dos, se pinta amarillo.', corto: 'Umbrales' },
-    suites: { t: 'Dónde corren las pruebas completas al mergear', d: 'Llega a todas las máquinas. Al mergear, cada repo corre sus pruebas completas en la máquina o deja que las corra el servidor, según esta regla.', corto: 'Pruebas al mergear' },
-    modelos: { t: 'Qué modelo usa cada trabajo del pipeline', d: 'Llega a todas las máquinas. Lo que no se declara usa el modelo de hoy. Con techo obligatorio, ningún trabajo pasa de ese modelo.', corto: 'Modelos' },
-    paridad: { t: 'Diferencias aceptadas entre productos', d: 'Cada noche se comparan los productos entre sí. Lo que uno hace distinto a propósito se anota acá, con una fecha para volver a mirarlo.', corto: 'Diferencias entre productos' },
-    espera: { t: 'Aviso de espera', d: 'Llega a todas las máquinas. Cuando una corrida espera a una persona, avisa pasado este plazo.', corto: 'Aviso de espera' },
-    cobertura: { t: 'Cobertura de las pruebas', d: 'Llega a todas las máquinas. El control de pruebas avisa cuando las líneas nuevas de una story quedan por debajo de este porcentaje. Avisa, no frena; una máquina puede pedir otro con su propia variable de entorno.', corto: 'Cobertura de las pruebas' },
-    respuesta: { t: 'Cómo contesta Claude', d: 'El idioma, el estilo y el largo de las respuestas en todas las máquinas. Llega a cada una con su próxima actualización, sin que el dev haga nada.', corto: 'Cómo contesta Claude' },
-    integraciones: { t: 'Integraciones', d: 'Qué servicios usa cada máquina del equipo. Llega a cada una con su próxima actualización; una máquina puede apagar una para ella sola.', corto: 'Integraciones' },
-    ado: { t: 'Azure DevOps', d: 'La organización de Azure DevOps del equipo. Llega a cada máquina con su próxima actualización.', corto: 'Azure DevOps' },
-    actualizacion: { t: 'Cómo se actualizan las máquinas', d: 'Qué versión toma cada máquina y si se actualiza sola. Llega a cada una con su próxima actualización.', corto: 'Actualización' },
-    paquetes: { t: 'Paquetes de la organización', d: 'Qué paquetes del arnés (revisores y guías de un producto o de un cliente) se activan en todas las máquinas. Llega a cada una con su próxima actualización.', corto: 'Paquetes' },
-    instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
-    hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
-    fichas: { t: 'Fichas que muestra el sitio', d: 'Las fichas del tablero de la noche que el sitio muestra en Arnés, Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y se pueden volver a tildar cuando quieras.', corto: 'Fichas del sitio' },
-    aplicar: { t: 'Los cambios de un mantenedor', d: 'Si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para que lo apruebe otra persona. El cambio que prende esta opción no se aplica solo: la opción cuenta desde que entra.', corto: 'Los cambios de un mantenedor' },
-    aldia: { t: 'Cómo se actualiza el sitio', d: 'Si el sitio se pone al día solo con la versión nueva del arnés (el nocturno la instala, la prueba y vuelve atrás si falla), o sólo avisa y se instala a mano.', corto: 'Actualización del sitio' },
+    organizacion: { t: T('pantalla.laOrganizacion'), d: T('pantalla.elNombreYElLogo'), corto: T('pantalla.laOrganizacion') },
+    sitio: { t: T('pantalla.quienEntraAlSitio'), d: T('pantalla.laListaDeQuienEntra'), corto: T('pantalla.quienEntraAlSitio') },
+    personas: { t: T('pantalla.personasYMaquinas'), d: T('pantalla.cadaMaquinaQueMandaCorridas'), corto: T('pantalla.personasYMaquinas') },
+    responsables: { t: T('pantalla.aQuienLeLleganLos'), d: T('pantalla.cuandoAlgoDeLaNoche'), corto: T('pantalla.responsables') },
+    repos: { t: T('pantalla.dondeViveCadaRepo'), d: T('pantalla.llegaATodasLasMaquinas'), corto: T('pantalla.repos') },
+    despliegues: { t: T('pantalla.desplieguesDeCadaProducto'), d: T('pantalla.conEstoElSitioSabe'), corto: T('pantalla.despliegues') },
+    canal: { t: T('pantalla.dondeLlegaElResumenDe'), d: T('pantalla.elCanalDondeLaNoche'), corto: T('pantalla.avisoDiario') },
+    umbrales: { t: T('pantalla.umbralesCuandoAlgoSePinta'), d: T('pantalla.elTableroColoreaCadaNumero'), corto: T('pantalla.umbrales') },
+    suites: { t: T('pantalla.dondeCorrenLasPruebasCompletas'), d: T('pantalla.llegaATodasLasMaquinas2'), corto: T('pantalla.pruebasAlMergear') },
+    modelos: { t: T('pantalla.queModeloUsaCadaTrabajo'), d: T('pantalla.llegaATodasLasMaquinas3'), corto: T('pantalla.modelos') },
+    paridad: { t: T('pantalla.diferenciasAceptadasEntreProductos'), d: T('pantalla.cadaNocheSeComparanLos'), corto: T('pantalla.diferenciasEntreProductos') },
+    espera: { t: T('pantalla.avisoDeEspera'), d: T('pantalla.llegaATodasLasMaquinas4'), corto: T('pantalla.avisoDeEspera') },
+    cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
+    respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
+    integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
+    ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
+    actualizacion: { t: T('pantalla.comoSeActualizanLasMaquinas'), d: T('pantalla.queVersionTomaCadaMaquina'), corto: T('pantalla.actualizacion') },
+    paquetes: { t: T('pantalla.paquetesDeLaOrganizacion'), d: T('pantalla.quePaquetesDelArnesRevisores'), corto: T('pantalla.paquetes') },
+    instalacion: { t: T('pantalla.perfilDeInstalacion'), d: T('pantalla.cuantoInstalaElArnesEn'), corto: T('pantalla.instalacion') },
+    hilos: { t: T('pantalla.conversacionesDeLasCorridas'), d: T('pantalla.siElSitioBajaTambien'), corto: T('pantalla.conversaciones') },
+    fichas: { t: T('pantalla.fichasQueMuestraElSitio'), d: T('pantalla.lasFichasDelTablero'), corto: T('pantalla.fichas') },
+    aplicar: { t: T('pantalla.losCambiosDeUnMantenedor'), d: T('pantalla.siUnCambioQuePropone'), corto: T('pantalla.losCambiosDeUnMantenedor') },
+    aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -648,53 +662,53 @@ function pantalla() {
     if (!hit && id.indexOf('seccion-') === 0 && S.secciones.some(function (s) { return 'seccion-' + s.id === id; })) hit = PESTANAS[PESTANAS.length - 1][0];
     return hit;
   }
-  var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
+  var REPO_DE = { operaciones: T('pantalla.elRepoDeOperaciones'), perfil: T('pantalla.elRepoDelEquipo') };
   function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
   function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado' || s.estado === 'bajando'; }
   /** El estado de una sección en una palabra: [clase, texto]. */
   function estadoDe(s) {
-    if (s.estado === 'ilegible') return ['bad', 'hay que arreglarla a mano'];
-    if (s.estado === 'no_reader') return ['nm', 'todavía no disponible'];
-    if (s.estado === 'no_configurado') return ['nm', s.falta ? 'falta ' + s.falta : 'sin configurar'];
-    if (s.estado === 'bajando') return ['nm', 'bajando el repo del equipo'];
-    if (s.soloLectura) return ['nm', 'sólo para mirar'];
+    if (s.estado === 'ilegible') return ['bad', T('pantalla.hayQueArreglarlaAMano')];
+    if (s.estado === 'no_reader') return ['nm', T('pantalla.todaviaNoDisponible')];
+    if (s.estado === 'no_configurado') return ['nm', s.falta ? T('pantalla.falta') + s.falta : T('pantalla.sinConfigurar')];
+    if (s.estado === 'bajando') return ['nm', T('pantalla.bajandoElRepoDelEquipo')];
+    if (s.soloLectura) return ['nm', T('pantalla.soloParaMirar')];
     var n = (S.problemas[s.id] || []).length;
-    if (n) return ['warn', n + ' para corregir'];
-    if (S.textos[s.id]) return ['ok', 'revisada'];
-    if (s.estado === 'nuevo') return ['nm', 'se crea al proponer'];
-    if (s.id === 'personas' && s.extras && (s.extras.porConfirmar || []).length) return ['warn', s.extras.porConfirmar.length + ' por confirmar'];
-    return ['ok', 'al día'];
+    if (n) return ['warn', n + T('pantalla.paraCorregir')];
+    if (S.textos[s.id]) return ['ok', T('pantalla.revisada')];
+    if (s.estado === 'nuevo') return ['nm', T('pantalla.seCreaAlProponer')];
+    if (s.id === 'personas' && s.extras && (s.extras.porConfirmar || []).length) return ['warn', s.extras.porConfirmar.length + T('pantalla.porConfirmar')];
+    return ['ok', T('pantalla.alDia')];
   }
   // ── los mensajes de los lectores, en castellano llano: la ruta con nombres de la pantalla y sin claves del archivo ──
   var PALABRAS = {
-    site: 'el sitio', maintainers: 'quién mantiene el sitio', mailbox: 'dónde dejan sus corridas', provider: 'servicio', account: 'cuenta', container: 'carpeta', threads: 'conversaciones', refresh_minutes: 'cada cuánto se actualiza', url: 'dirección',
-    people: 'personas', machines: 'máquinas', projects: 'proyectos', person: 'persona', reported_sha256: 'correo informado', confirmed_by: 'confirmada por', confirmed_on: 'confirmada el', add: 'suma', remove: 'saca',
-    owners: 'responsables', reviewers: 'revisores', default: 'por defecto', by_project: 'por proyecto', dependencies: 'dependencias', watcher: 'vigilante',
-    deployments: 'despliegues', products: 'productos', staging: 'prueba', production: 'producción', pipeline: 'pipeline', stages: 'pasos', environment: 'entorno', workflow: 'workflow',
-    notify: 'aviso diario', channel: 'canal', thresholds: 'umbrales', direction: 'mejor si es', ok_min: 'verde desde', ok_max: 'verde hasta', bad_max: 'rojo hasta', bad_min: 'rojo desde',
-    merge_suites: 'pruebas al mergear', rule: 'regla', full_tests_pipeline: 'pipeline de las pruebas completas', models: 'modelos', mandatory_ceiling: 'techo obligatorio', ceiling: 'techo', reviewer: 'revisor', reviewers_reloop: 'revisores de la segunda vuelta', adversarial: 'pase adversarial', helpers: 'ayudantes', session: 'sesión', model: 'modelo', heavy: 'pesado', fable_question: 'pregunta antes de usar Fable', low: 'liviano', normal: 'normal',
-    wait_notice: 'aviso de espera', minutes: 'minutos', coverage: 'cobertura de las pruebas', min_touched_lines_pct: 'porcentaje mínimo de las líneas nuevas', public: 'repo público', profile: 'repo del equipo', operations: 'repo de operaciones', org: 'organización', project: 'proyecto', repo: 'repo', repos: 'repos', platform: 'plataforma',
-    response: 'cómo contesta Claude', integrations: 'integraciones', ado: 'Azure DevOps', update: 'actualización', install: 'instalación', packs: 'paquetes', diferencias_declaradas: 'diferencias declaradas', version: 'versión',
+    site: T('pantalla.elSitio'), maintainers: T('pantalla.quienMantieneElSitio'), mailbox: T('pantalla.dondeDejanSusCorridas'), provider: T('pantalla.servicio'), account: T('pantalla.cuenta'), container: T('pantalla.carpeta'), threads: T('pantalla.conversaciones2'), refresh_minutes: T('pantalla.cadaCuantoSeActualiza'), url: T('pantalla.direccion'),
+    people: T('pantalla.palabraPersonas'), machines: T('pantalla.maquinas'), projects: T('pantalla.proyectos'), person: T('pantalla.persona'), reported_sha256: T('pantalla.correoInformado'), confirmed_by: T('pantalla.confirmadaPor'), confirmed_on: T('pantalla.confirmadaEl'), add: T('pantalla.suma'), remove: T('pantalla.saca'),
+    owners: T('pantalla.palabraResponsables'), reviewers: T('pantalla.revisores'), default: T('pantalla.porDefecto'), by_project: T('pantalla.porProyecto'), dependencies: T('pantalla.dependencias'), watcher: T('pantalla.vigilante'),
+    deployments: T('pantalla.palabraDespliegues'), products: T('pantalla.palabraProductos'), staging: T('pantalla.prueba'), production: T('pantalla.produccion'), pipeline: T('pantalla.pipeline'), stages: T('pantalla.pasos'), environment: T('pantalla.entorno'), workflow: T('pantalla.workflow'),
+    notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
+    merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'),
+    wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    response: T('pantalla.comoContestaClaude2'), integrations: T('pantalla.palabraIntegraciones'), ado: 'Azure DevOps', update: T('pantalla.actualizacion2'), install: T('pantalla.instalacion2'), packs: T('pantalla.palabraPaquetes'), diferencias_declaradas: T('pantalla.diferenciasDeclaradas'), version: T('pantalla.version'),
   };
   /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
   function rutaLlana(ruta) {
     if (!ruta) return '';
-    return String(ruta).split('.').map(function (p) { return /^\d+$/.test(p) ? 'fila ' + (Number(p) + 1) : PALABRAS[p] || '«' + p + '»'; }).join(' › ');
+    return String(ruta).split('.').map(function (p) { return /^\d+$/.test(p) ? T('pantalla.fila') + (Number(p) + 1) : PALABRAS[p] || '«' + p + '»'; }).join(' › ');
   }
   // [patrón, frase]: los mensajes que nombran claves del archivo, dichos con las palabras de la pantalla
   var FRASES = [
-    [/^clave desconocida( \(secciones válidas:.*)?$/, 'el arnés no conoce este dato'],
-    [/^falta$/, 'falta completarlo'],
-    [/^tiene que ser (un objeto|una lista)\b.*$/, 'está escrito con una forma que el arnés no sabe leer: hay que corregirlo a mano en el archivo'],
-    [/^tiene que ser true o false.*$/, 'tiene que ser sí o no'],
-    [/^un techo sin «mandatory_ceiling: true» no limita nada$/, 'un techo que no es obligatorio no limita nada'],
-    [/^con techo obligatorio falta «ceiling»$/, 'con el techo obligatorio, falta elegir el modelo del techo'],
-    [/^este repo ya tiene una entrada en merge_suites\.repos$/, 'este repo ya está en la lista'],
-    [/^tiene que traer rule o full_tests_pipeline.*$/, 'tiene que decir la regla o el pipeline de las pruebas completas'],
-    [/^(«[^»]*») está en add y en remove: va en una sola$/, '$1 está para sumar y para sacar a la vez: va en uno solo'],
-    [/^tiene que declarar staging, production o los dos$/, 'tiene que tener el paso de prueba, el de producción o los dos'],
-    [/^sólo va en staging: (.*)$/, 'sólo va en el paso de prueba: $1'],
-    [/^tiene que ser «ask» o «never»(.*)$/, 'tiene que ser «preguntar» o «nunca»$1'],
+    [/^clave desconocida( \(secciones válidas:.*)?$/, T('pantalla.elArnesNoConoceEste')],
+    [/^falta$/, T('pantalla.faltaCompletarlo')],
+    [/^tiene que ser (un objeto|una lista)\b.*$/, T('pantalla.estaEscritoConUnaForma')],
+    [/^tiene que ser true o false.*$/, T('pantalla.tieneQueSerSiO')],
+    [/^un techo sin «mandatory_ceiling: true» no limita nada$/, T('pantalla.unTechoQueNoEs')],
+    [/^con techo obligatorio falta «ceiling»$/, T('pantalla.conElTechoObligatorioFalta')],
+    [/^este repo ya tiene una entrada en merge_suites\.repos$/, T('pantalla.esteRepoYaEstaEn')],
+    [/^tiene que traer rule o full_tests_pipeline.*$/, T('pantalla.tieneQueDecirLaRegla')],
+    [/^(«[^»]*») está en add y en remove: va en una sola$/, T('pantalla.1EstaParaSumarY')],
+    [/^tiene que declarar staging, production o los dos$/, T('pantalla.tieneQueTenerElPaso')],
+    [/^sólo va en staging: (.*)$/, T('pantalla.soloVaEnElPaso')],
+    [/^tiene que ser «ask» o «never»(.*)$/, T('pantalla.tieneQueSerPreguntarO')],
   ];
   function mensajeLlano(m) {
     var t = String(m == null ? '' : m);
@@ -706,7 +720,7 @@ function pantalla() {
   /** Un aviso con una frase llana arriba y el motivo exacto del arnés, plegado, abajo. */
   function aviso(clase, titulo, detalle) {
     var box = el('div', { class: 'msg ' + clase }, el('b', { text: titulo }));
-    if (detalle) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Detalle' }), el('span', { text: detalle })));
+    if (detalle) box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.detalle') }), el('span', { text: detalle })));
     return box;
   }
 
@@ -718,7 +732,7 @@ function pantalla() {
   // repetido) y el texto de la clave entera: sin eso, la sección diría «para corregir» sin decir qué ni dejar sacarlo
   function restoYTexto(s, d, pr, clave, titulo) {
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Editar como texto' }), editorGenerico(s, d, pr, clave, titulo)));
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.editarComoTexto') }), editorGenerico(s, d, pr, clave, titulo)));
     (pr || []).filter(function (x) { return !x.sinCampo && (x.path === clave || String(x.path).indexOf(clave + '.') === 0) && MOSTRADOS.indexOf(x) < 0; })
       .forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
     return box;
@@ -734,67 +748,67 @@ function pantalla() {
     mios.forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
-  function quitar(onclick) { return el('button', { class: 'sec', type: 'button', text: '✕', title: 'Quitar', 'aria-label': 'Quitar', onclick: onclick }); }
+  function quitar(onclick) { return el('button', { class: 'sec', type: 'button', text: '✕', title: T('pantalla.quitar'), 'aria-label': T('pantalla.quitar'), onclick: onclick }); }
   function listaDeTextos(titulo, ayuda, lista, set, p, problemas, nombre, agregar) {
     var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
-    if (!(lista || []).length) box.appendChild(el('p', { class: 'muted', text: 'Nadie todavía.' }));
+    if (!(lista || []).length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
     (lista || []).forEach(function (v, i) {
       box.appendChild(el('div', { class: 'fila quitar' }, campo('', v, function (nv) { lista[i] = nv; set(lista); }, p + '.' + i, problemas, { placeholder: nombre }), quitar(function () { lista.splice(i, 1); set(lista); render(); })));
     });
-    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ ' + (agregar || 'Agregar'), onclick: function () { lista.push(''); set(lista); render(); } }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ ' + (agregar || T('pantalla.agregar')), onclick: function () { lista.push(''); set(lista); render(); } }));
     problemasEn(problemas, p).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
   function repoFila(titulo, ayuda, repo, set, p, problemas) {
     var r = repo || { platform: 'azure', org: '', project: '', repo: '' };
-    var plat = el('select', { 'data-path': p + '.platform', 'aria-label': 'Dónde', onchange: function (e) { var v = e.target.value; var nr = { platform: v, org: r.org || '', repo: r.repo || '' }; if (v === 'azure') nr.project = r.project || ''; set(nr); render(); } },
-      el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: 'GitHub' }));
+    var plat = el('select', { 'data-path': p + '.platform', 'aria-label': T('pantalla.donde'), onchange: function (e) { var v = e.target.value; var nr = { platform: v, org: r.org || '', repo: r.repo || '' }; if (v === 'azure') nr.project = r.project || ''; set(nr); render(); } },
+      el('option', { value: 'azure', text: 'Azure DevOps' }), el('option', { value: 'github', text: T('pantalla.github') }));
     plat.value = r.platform === 'github' ? 'github' : 'azure';
     var upd = function (k) { return function (v) { r[k] = v; set(r); }; };
-    return el('div', { class: 'fila repo' }, el('div', { class: 'k', text: titulo }, el('small', { text: ayuda })), el('div', { class: 'campo' }, el('label', { text: 'Dónde' }), plat),
-      campo('Organización', r.org, upd('org'), p + '.org', problemas), r.platform === 'github' ? campo('Proyecto', '', function () {}, p + '.project', problemas, { disabled: 'disabled', placeholder: 'no aplica en GitHub' }) : campo('Proyecto', r.project, upd('project'), p + '.project', problemas), campo('Repo', r.repo, upd('repo'), p + '.repo', problemas));
+    return el('div', { class: 'fila repo' }, el('div', { class: 'k', text: titulo }, el('small', { text: ayuda })), el('div', { class: 'campo' }, el('label', { text: T('pantalla.donde') }), plat),
+      campo(T('pantalla.organizacion2'), r.org, upd('org'), p + '.org', problemas), r.platform === 'github' ? campo(T('pantalla.proyecto2'), '', function () {}, p + '.project', problemas, { disabled: 'disabled', placeholder: T('pantalla.noAplicaEnGithub') }) : campo(T('pantalla.proyecto2'), r.project, upd('project'), p + '.project', problemas), campo(T('pantalla.repo2'), r.repo, upd('repo'), p + '.repo', problemas));
   }
 
   // ── los editores por sección ──
-  var REPO_SLOTS = [['public', 'El arnés', 'el que se instala'], ['profile', 'El del equipo', 'llega a cada máquina'], ['operations', 'Operaciones', 'lo de la noche; no se instala'], ['maintainers', 'Mantenimiento', 'opcional']];
+  var REPO_SLOTS = [['public', T('pantalla.elArnes'), T('pantalla.elQueSeInstala')], ['profile', T('pantalla.elDelEquipo'), T('pantalla.llegaACadaMaquina')], ['operations', T('pantalla.operaciones'), T('pantalla.loDeLaNocheNo')], ['maintainers', T('pantalla.mantenimiento'), T('pantalla.opcional')]];
   function editorRepos(s, d, pr) {
     var box = el('div', {});
-    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar el repo de mantenimiento (opcional)', onclick: function () { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], par[2], d[k], function (v) { d[k] = v; }, k, pr)); });
+    REPO_SLOTS.forEach(function (par) { var k = par[0]; if (k === 'maintainers' && !d[k]) { box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarElRepoDeMantenimiento'), onclick: function () { d[k] = { platform: 'azure', org: '', project: '', repo: '' }; render(); } })); return; } box.appendChild(repoFila(par[1], par[2], d[k], function (v) { d[k] = v; }, k, pr)); });
     return box;
   }
   function editorResponsables(s, d, pr) {
     d.owners = d.owners || { default: '' }; d.reviewers = d.reviewers || {};
-    var box = el('div', { class: 'pila' }, campo('Responsable por defecto (su usuario en la plataforma)', d.owners.default, function (v) { d.owners.default = v; }, 'owners.default', pr));
+    var box = el('div', { class: 'pila' }, campo(T('pantalla.responsablePorDefectoSuUsuario'), d.owners.default, function (v) { d.owners.default = v; }, 'owners.default', pr));
     var byp = d.owners.by_project || {};
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Responsable por proyecto' }), el('p', { class: 'sub-d', text: 'Opcional. Un proyecto que no está acá va al responsable por defecto.' }));
-    Object.keys(byp).forEach(function (name) { sub.appendChild(el('div', { class: 'fila quitar3' }, campo('', name, function () {}, 'owners.by_project', pr, { disabled: 'disabled' }), campo('', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr, { placeholder: 'usuario' }), quitar(function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); }))); });
-    var np = el('input', { placeholder: 'nombre del proyecto', 'aria-label': 'Proyecto nuevo' });
-    sub.appendChild(el('div', { class: 'fila quitar' }, np, el('button', { class: 'sec', type: 'button', text: '+ Agregar proyecto', onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.responsablePorProyecto') }), el('p', { class: 'sub-d', text: T('pantalla.opcionalUnProyectoQueNo') }));
+    Object.keys(byp).forEach(function (name) { sub.appendChild(el('div', { class: 'fila quitar3' }, campo('', name, function () {}, 'owners.by_project', pr, { disabled: 'disabled' }), campo('', byp[name], function (v) { byp[name] = v; }, 'owners.by_project.' + name, pr, { placeholder: T('pantalla.usuario') }), quitar(function () { delete byp[name]; if (!Object.keys(byp).length) delete d.owners.by_project; render(); }))); });
+    var np = el('input', { placeholder: T('pantalla.nombreDelProyecto'), 'aria-label': T('pantalla.proyectoNuevo') });
+    sub.appendChild(el('div', { class: 'fila quitar' }, np, el('button', { class: 'sec', type: 'button', text: T('pantalla.agregarProyecto'), onclick: function () { var v = np.value.trim(); if (!v) return; d.owners.by_project = d.owners.by_project || {}; d.owners.by_project[v] = ''; render(); } })));
     box.appendChild(sub);
-    box.appendChild(listaDeTextos('Revisan los pedidos de dependencias', null, d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, 'usuario', 'Agregar persona'));
-    box.appendChild(listaDeTextos('Revisan los hallazgos del vigilante', null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, 'usuario', 'Agregar persona'));
+    box.appendChild(listaDeTextos(T('pantalla.revisanLosPedidosDeDependencias'), null, d.reviewers.dependencies = d.reviewers.dependencies || [], function (l) { d.reviewers.dependencies = l; }, 'reviewers.dependencies', pr, T('pantalla.usuario'), T('pantalla.agregarPersona')));
+    box.appendChild(listaDeTextos(T('pantalla.revisanLosHallazgosDelVigilante'), null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, T('pantalla.usuario'), T('pantalla.agregarPersona')));
     return box;
   }
   // quién entra al sitio y con qué rol (story 2.40): una fila por persona, con su rol y uno o más correos
   function editorAcceso(site, pr, ex) {
     var box = el('div', { class: 'pila' });
-    if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: 'Con qué se entra: ' + ex.inicioDeSesion.texto + '. Esto se cambia en la instalación, no acá.' }));
-    if (ex.migracion) box.appendChild(aviso('warn', 'La lista todavía no está guardada.', ex.migracion));
-    box.appendChild(el('p', { class: 'sub-d', text: 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.' }));
+    if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.conQueSeEntra') + ex.inicioDeSesion.texto + T('pantalla.estoSeCambiaEnLa') }));
+    if (ex.migracion) box.appendChild(aviso('warn', T('pantalla.laListaTodaviaNoEsta'), ex.migracion));
+    box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.nadieEntraSiNoEsta') }));
     var acc = site.access = site.access || [];
     acc.forEach(function (e, i) {
       e.emails = e.emails || [];
-      var fila = el('div', { class: 'sub' }, el('div', { class: 'fila quitar' }, selector('Rol', e.role, [['maintainer', 'Mantiene el sitio'], ['dev', 'Dev']], function (v) { e.role = v; }, 'site.access.' + i + '.role', pr),
+      var fila = el('div', { class: 'sub' }, el('div', { class: 'fila quitar' }, selector(T('pantalla.rol'), e.role, [['maintainer', T('pantalla.mantieneElSitio')], ['dev', T('pantalla.dev')]], function (v) { e.role = v; }, 'site.access.' + i + '.role', pr),
         quitar(function () { acc.splice(i, 1); render(); })));
       e.emails.forEach(function (m, j) {
-        fila.appendChild(el('div', { class: 'fila quitar' }, campo('', m, function (nv) { e.emails[j] = nv; }, 'site.access.' + i + '.emails.' + j, pr, { placeholder: 'correo' }), quitar(function () { e.emails.splice(j, 1); render(); })));
+        fila.appendChild(el('div', { class: 'fila quitar' }, campo('', m, function (nv) { e.emails[j] = nv; }, 'site.access.' + i + '.emails.' + j, pr, { placeholder: T('pantalla.correo') }), quitar(function () { e.emails.splice(j, 1); render(); })));
       });
-      fila.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar correo', onclick: function () { e.emails.push(''); render(); } }));
+      fila.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarCorreo'), onclick: function () { e.emails.push(''); render(); } }));
       problemasEn(pr, 'site.access.' + i + '.emails').forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
       box.appendChild(fila);
     });
-    if (!acc.length) box.appendChild(el('p', { class: 'muted', text: 'Nadie todavía.' }));
-    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar persona', onclick: function () { acc.push({ role: 'dev', emails: [''] }); render(); } }));
+    if (!acc.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarPersona2'), onclick: function () { acc.push({ role: 'dev', emails: [''] }); render(); } }));
     problemasEn(pr, 'site.access').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
@@ -805,21 +819,21 @@ function pantalla() {
     var lista = el('div', { class: 'pila' });
     if (ex.conAcceso) { delete site.maintainers; lista.appendChild(editorAcceso(site, pr, ex)); }
     else {
-      var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
+      var mant = listaDeTextos(T('pantalla.lasPersonas'), null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, T('pantalla.correo'), T('pantalla.agregarPersona'));
       mant.setAttribute('class', 'pila');
       lista.appendChild(mant);
     }
-    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
+    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
     lista.appendChild(refresco);
-    if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'La dirección del sitio' }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
+    if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.laDireccionDelSitio') }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
     var mb = site.mailbox || {};
-    var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Dónde dejan sus corridas las máquinas' }), el('p', { class: 'sub-d', text: 'Las contraseñas no van acá: se cargan en la nube.' }));
+    var buzon = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.dondeDejanSusCorridasLas') }), el('p', { class: 'sub-d', text: T('pantalla.lasContrasenasNoVanAca') }));
     var f = el('div', { class: 'fila' });
     var servicios = (s.extras && s.extras.servicios) || null;
     var SERVICIO = { 'azure-blob': 'Azure Blob Storage' };
-    [['provider', 'Servicio'], ['account', 'Cuenta'], ['container', 'Carpeta']].forEach(function (par) {
+    [['provider', T('pantalla.servicio2')], ['account', T('pantalla.cuenta2')], ['container', T('pantalla.carpeta2')]].forEach(function (par) {
       var k = par[0]; var poner = function (v) { site.mailbox = site.mailbox || {}; if (v === '') delete site.mailbox[k]; else site.mailbox[k] = v; };
-      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', 'elegí el servicio']].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
+      if (k === 'provider' && servicios) f.appendChild(selector(par[1], mb[k], [['', T('pantalla.elegiElServicio')]].concat(servicios.map(function (x) { return [x, SERVICIO[x] || x]; })), poner, 'site.mailbox.' + k, pr));
       else f.appendChild(campo(par[1], mb[k], function (v) { site.mailbox = site.mailbox || {}; site.mailbox[k] = v; }, 'site.mailbox.' + k, pr));
     });
     buzon.appendChild(f);
@@ -829,7 +843,7 @@ function pantalla() {
   }
   function editorGenerico(s, d, pr, clave, titulo) {
     // una sección sin formulario propio: se edita como texto de esa parte
-    var ta = el('textarea', { rows: '8', spellcheck: 'false', 'aria-label': titulo, 'data-path': clave, oninput: function (e) { try { d[clave] = JSON.parse(e.target.value); S.notas[s.id] = null; } catch (err) { S.notas[s.id] = { ok: false, text: 'El texto no está bien escrito: ' + err.message }; } } });
+    var ta = el('textarea', { rows: '8', spellcheck: 'false', 'aria-label': titulo, 'data-path': clave, oninput: function (e) { try { d[clave] = JSON.parse(e.target.value); S.notas[s.id] = null; } catch (err) { S.notas[s.id] = { ok: false, text: T('pantalla.elTextoNoEstaBien') + err.message }; } } });
     ta.value = JSON.stringify(d[clave] === undefined ? {} : d[clave], null, 2);
     var box = el('div', { class: 'pila' }, ta);
     problemasEn(pr, clave).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
@@ -842,45 +856,45 @@ function pantalla() {
       if (e.environment) return e.environment + (e.repo ? ' (' + e.repo + ')' : '');
       var nombres = pasosDe(e.pipeline);
       var pipe = e.pipeline ? String(e.pipeline).replace(/^[^/]+\//, '') : '';
-      return (e.stages || []).map(function (id) { return nombres[id] || id; }).join(', ') + (pipe ? ' (pipeline ' + pipe + ')' : '');
+      return (e.stages || []).map(function (id) { return nombres[id] || id; }).join(', ') + (pipe ? T('pantalla.pipeline2') + pipe + ')' : '');
     }).join(' · ') || '—';
   }
   function editorDespliegues(s, d, pr) {
     var box = el('div', { class: 'pila' });
     var prods = d.deployments && d.deployments.products && typeof d.deployments.products === 'object' ? d.deployments.products : {};
     var nombres = Object.keys(prods).filter(function (k) { return k.indexOf('__') !== 0; });
-    if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: 'Ningún producto todavía.' }));
+    if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.ningunProductoTodavia') }));
     nombres.forEach(function (n) {
       var p = prods[n] || {};
-      box.appendChild(el('div', { class: 'despliegue' }, el('div', {}, el('div', { class: 'lab', text: 'Producto' }), el('div', { class: 'prod', text: n })),
-        el('div', {}, el('div', { class: 'lab', text: 'Prueba' }), el('div', { text: textoDeEntradas(p.staging) })),
-        el('div', {}, el('div', { class: 'lab', text: 'Producción' }), el('div', { text: textoDeEntradas(p.production) }))));
+      box.appendChild(el('div', { class: 'despliegue' }, el('div', {}, el('div', { class: 'lab', text: T('pantalla.producto') }), el('div', { class: 'prod', text: n })),
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.prueba2') }), el('div', { text: textoDeEntradas(p.staging) })),
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.produccion2') }), el('div', { text: textoDeEntradas(p.production) }))));
     });
-    var producto = el('input', { placeholder: 'nombre del producto', 'aria-label': 'Producto' });
-    var sel = el('input', { placeholder: 'número del pipeline, o dueño/repo en GitHub', 'aria-label': 'Pipeline' });
-    var nombrePipeline = el('input', { placeholder: 'proyecto/nombre del pipeline (Azure)', 'aria-label': 'Nombre del pipeline' });
+    var producto = el('input', { placeholder: T('pantalla.nombreDelProducto'), 'aria-label': T('pantalla.producto') });
+    var sel = el('input', { placeholder: T('pantalla.numeroDelPipelineODueno'), 'aria-label': T('pantalla.pipeline3') });
+    var nombrePipeline = el('input', { placeholder: T('pantalla.proyectoNombreDelPipeline', { plataforma: 'Azure' }), 'aria-label': T('pantalla.nombreDelPipeline') });
     var nota = el('div', {});
     // con la lista del proyecto de operaciones, el pipeline se elige por su nombre y completa los dos campos de abajo
     var ex = s.extras || {};
     var lista = ex.plataforma === 'azure' ? listaDePipelines(pipelinesDe(ex.org, ex.proyecto)) : null;
-    var eleccion = lista ? selector('Pipeline', '', [['', 'elegí el pipeline']].concat(lista.map(function (x) { return [String(x.id), x.nombre]; })), function (v) {
+    var eleccion = lista ? selector(T('pantalla.pipeline3'), '', [['', T('pantalla.elegiElPipeline')]].concat(lista.map(function (x) { return [String(x.id), x.nombre]; })), function (v) {
       var x = lista.filter(function (y) { return String(y.id) === v; })[0];
       sel.value = x ? ex.proyecto + '/' + x.id : ''; nombrePipeline.value = x ? ex.proyecto + '/' + x.nombre : '';
     }, 'deployments.pipeline', pr) : null;
-    var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Agregar un producto' }), el('p', { class: 'sub-d', text: 'Elegís el pipeline y el sitio te muestra sus pasos para que marques cuál es la prueba y cuál producción.' }),
+    var agregar = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.agregarUnProducto') }), el('p', { class: 'sub-d', text: T('pantalla.elegisElPipelineYEl') }),
       eleccion,
-      el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: 'Escribirlo a mano' }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, el('button', { class: 'sec', type: 'button', text: 'Ver sus pasos', onclick: function () {
+      el('div', { class: 'fila' }, producto, lista ? el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.escribirloAMano') }), sel, nombrePipeline) : sel, lista ? null : nombrePipeline, el('button', { class: 'sec', type: 'button', text: T('pantalla.verSusPasos'), onclick: function () {
         api('/stages', { pipeline: sel.value }).then(function (r) {
           nota.replaceChildren();
           if (!r.ok) { nota.appendChild(el('div', { class: 'err', text: r.message })); return; }
           var ul = el('ul', { class: 'renglones' });
-          (r.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { class: 'quien', text: st.nombre || st.identificador }), el('span', { class: 'dato', text: st.nombre ? st.identificador : '' }), el('span', { class: 'acc' }, el('button', { class: 'sec', type: 'button', text: 'Es la prueba', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: 'Es producción', onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'production', st.identificador); } })))); });
-          nota.appendChild(el('p', { class: 'muted', text: 'Nada se guarda hasta que marques cada paso; después, revisá y proponé.' }));
+          (r.propuestos || []).forEach(function (st) { ul.appendChild(el('li', {}, el('span', { class: 'quien', text: st.nombre || st.identificador }), el('span', { class: 'dato', text: st.nombre ? st.identificador : '' }), el('span', { class: 'acc' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.esLaPrueba'), onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'staging', st.identificador); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.esProduccion'), onclick: function () { confirmarStage(d, producto.value, sel.value, nombrePipeline.value, 'production', st.identificador); } })))); });
+          nota.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaSeGuardaHastaQue') }));
           nota.appendChild(ul);
         });
       } })), nota);
     box.appendChild(agregar);
-    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Editar como texto' }), editorGenerico(s, d, pr, 'deployments', 'Despliegues, como texto')));
+    box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.editarComoTexto') }), editorGenerico(s, d, pr, 'deployments', T('pantalla.desplieguesComoTexto'))));
     return box;
   }
   // confirmar un stage arma la entrada en la forma del lector de la 2.22: Azure { pipeline, stages: [id] }; GitHub { repo, environment }
@@ -897,76 +911,76 @@ function pantalla() {
     d.people = d.people || {};
     var box = el('div', { class: 'pila' });
     var ex = (s.extras || {});
-    if (ex.vencido) box.appendChild(aviso('bad', 'La lista de personas está rota hace más de un día y hay que arreglarla a mano.', ex.vencido));
-    if (ex.ultimoBueno) box.appendChild(aviso('warn', 'Se muestra la última versión buena: la actual tiene un error.', ex.ultimoBueno));
+    if (ex.vencido) box.appendChild(aviso('bad', T('pantalla.laListaDePersonasEsta'), ex.vencido));
+    if (ex.ultimoBueno) box.appendChild(aviso('warn', T('pantalla.seMuestraLaUltimaVersion'), ex.ultimoBueno));
     var pc = el('ul', { class: 'renglones' });
     (ex.porConfirmar || []).forEach(function (m) {
-      var persona = el('input', { value: m.correo || '', placeholder: 'correo de la persona', 'aria-label': 'Correo de la persona' });
-      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? 'dice ser de ' + m.correo : 'no dice de quién es') + ' · última noticia ' + (m.dia || 'sin fecha') + ' · ' + (m.corridas == null ? 'corridas sin contar' : m.corridas + ' corridas') }),
-        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: 'Confirmar', onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
+      var persona = el('input', { value: m.correo || '', placeholder: T('pantalla.correoDeLaPersona'), 'aria-label': T('pantalla.correoDeLaPersona2') });
+      pc.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: (m.correo ? T('pantalla.diceSerDe') + m.correo : T('pantalla.noDiceDeQuienEs')) + T('pantalla.ultimaNoticia') + (m.dia || T('pantalla.sinFecha')) + ' · ' + (m.corridas == null ? T('pantalla.corridasSinContar') : m.corridas + T('pantalla.corridas')) }),
+        el('span', { class: 'acc' }, persona, el('button', { type: 'button', text: T('pantalla.confirmar'), onclick: function () { revisarSeccion(s, { accion: 'confirm', maquina: m.maquina, person: persona.value, people: d.people }); } }))));
     });
-    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'Por confirmar' }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: 'Ninguna.' })));
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.porConfirmar2') }), (ex.porConfirmar || []).length ? pc : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     // las que nunca dieron señales (sin place.json, sin fecha, sin corridas): suelen ser laboratorios o pruebas que
     // escribieron en el buzón; se nombran, sin ofrecer confirmarlas
     if ((ex.sinActividad || []).length) {
       var sa = el('ul', { class: 'renglones' });
-      ex.sinActividad.forEach(function (m) { sa.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: 'sin corridas, sin fecha y sin decir de quién es' }))); });
-      box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'Sin actividad (' + ex.sinActividad.length + ')' }),
-        el('p', { class: 'muted', text: 'Carpetas del buzón que nunca subieron una corrida ni dijeron de quién son: suelen ser de laboratorios o pruebas. No hay nada que confirmar; quien mantiene el buzón las puede borrar.' }), sa));
+      ex.sinActividad.forEach(function (m) { sa.appendChild(el('li', {}, el('span', { class: 'quien', text: m.maquina }), el('span', { class: 'dato', text: T('pantalla.sinCorridasSinFechaY') }))); });
+      box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.sinActividad') + ex.sinActividad.length + ')' }),
+        el('p', { class: 'muted', text: T('pantalla.carpetasDelBuzonQueNunca') }), sa));
     }
     var machines = d.people.machines || {};
     var conf = el('ul', { class: 'renglones' });
     Object.keys(machines).forEach(function (m) {
       var e = machines[m] || {};
-      var li = el('li', {}, el('span', { class: 'quien', text: m }), el('span', { class: 'dato', text: 'de ' + (e.person || 'sin persona') + ' · confirmada por ' + (e.confirmed_by || 'sin dato') + ' el ' + (e.confirmed_on || 'sin fecha') }), el('span', { class: 'acc' }, quitar(function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); })));
+      var li = el('li', {}, el('span', { class: 'quien', text: m }), el('span', { class: 'dato', text: T('pantalla.de') + (e.person || T('pantalla.sinPersona')) + T('pantalla.confirmadaPor2') + (e.confirmed_by || T('pantalla.sinDato')) + T('pantalla.el') + (e.confirmed_on || T('pantalla.sinFecha')) }), el('span', { class: 'acc' }, quitar(function () { delete machines[m]; if (!Object.keys(machines).length) delete d.people.machines; render(); })));
       problemasEn(pr, 'people.machines.' + m).concat(problemasEn(pr, 'people.machines.' + m + '.confirmed_on')).forEach(function (x) { li.appendChild(el('span', { class: 'err', text: x.message })); });
       conf.appendChild(li);
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Confirmadas' }), Object.keys(machines).length ? conf : el('p', { class: 'muted', text: 'Ninguna.' })));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.confirmadas') }), Object.keys(machines).length ? conf : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     var donde = el('ul', { class: 'renglones' });
     (ex.personas || []).forEach(function (p) {
       var fix = (d.people.projects || {})[p.correo] || {};
-      var agregar = el('input', { placeholder: 'producto', 'aria-label': 'Producto' });
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: 'deducido: ' + ((p.deducidos || []).join(', ') || 'nada') + ' · se agrega: ' + ((fix.add || []).join(', ') || 'nada') + ' · se quita: ' + ((fix.remove || []).join(', ') || 'nada') + (p.caida ? ' · sus máquinas no mandan noticias' : '') }),
+      var agregar = el('input', { placeholder: T('pantalla.producto2'), 'aria-label': T('pantalla.producto') });
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.deducido') + ((p.deducidos || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seAgrega') + ((fix.add || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seQuita') + ((fix.remove || []).join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }),
         el('span', { class: 'acc' }, agregar,
-          el('button', { class: 'sec', type: 'button', text: 'Agregar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
-          el('button', { class: 'sec', type: 'button', text: 'Quitar', onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } }))));
+          el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
+          el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } }))));
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'En qué proyectos trabaja cada uno' }), el('p', { class: 'sub-d', text: 'El sitio lo deduce de lo que cada uno hizo. Acá corregís lo que deduce mal.' }), (ex.personas || []).length ? donde : el('p', { class: 'muted', text: 'Nadie todavía.' })));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }), (ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') })));
     return box;
   }
   // los nombres de los umbrales, como los titula el tablero; uno que no está acá se muestra con su clave
   var UMBRAL = {
-    dod: 'Cierres que dejaron prueba de que anda', rework: 'Stories que vuelven con un seguimiento', mutacion: 'Puntaje de mutación de las pruebas',
-    cobertura_tocada_evaluo: 'Corridas que midieron la cobertura de lo tocado', qa_guia: 'Cierres con la guía para probar a mano', estilo: 'Respuestas dentro del largo pedido',
-    bloqueo: 'Turnos sin pasos largos que traben la conversación', vigilados: 'Productos con su producción vigilada', bus_factor_productos_en_riesgo: 'Productos que hizo casi una sola persona',
-    escapes_regla_dominante: 'Escapes concentrados en una sola regla', banco_rojos: 'Casos rojos del banco de controles', suites_rojas: 'Suites del arnés en rojo',
-    deps_hallazgos: 'Hallazgos de dependencias', contrato_v2: 'Registros por merge con el formato completo', corridas_al_final: 'Corridas que llegan al último paso', corridas_con_error: 'Corridas donde un control encontró un error',
+    dod: T('pantalla.cierresQueDejaronPruebaDe'), rework: T('pantalla.storiesQueVuelvenConUn'), mutacion: T('pantalla.puntajeDeMutacionDeLas'),
+    cobertura_tocada_evaluo: T('pantalla.corridasQueMidieronLaCobertura'), qa_guia: T('pantalla.cierresConLaGuiaPara'), estilo: T('pantalla.respuestasDentroDelLargoPedido'),
+    bloqueo: T('pantalla.turnosSinPasosLargosQue'), vigilados: T('pantalla.productosConSuProduccionVigilada'), bus_factor_productos_en_riesgo: T('pantalla.productosQueHizoCasiUna'),
+    escapes_regla_dominante: T('pantalla.escapesConcentradosEnUnaSola'), banco_rojos: T('pantalla.casosRojosDelBancoDe'), suites_rojas: T('pantalla.suitesDelArnesEnRojo'),
+    deps_hallazgos: T('pantalla.hallazgosDeDependencias'), contrato_v2: T('pantalla.registrosPorMergeConEl'), corridas_al_final: T('pantalla.corridasQueLleganAlUltimo'), corridas_con_error: T('pantalla.corridasDondeUnControlEncontro'),
   };
   var CANTIDADES = { bus_factor_productos_en_riesgo: 1, banco_rojos: 1, suites_rojas: 1, deps_hallazgos: 1 };
   function editorUmbrales(s, d, pr) {
-    var box = el('div', {}, el('div', { class: 'thr h' }, el('span', { text: 'Número' }), el('span', { text: 'Mejor si es' }), el('span', { text: 'Verde' }), el('span', { text: 'Rojo' })));
+    var box = el('div', {}, el('div', { class: 'thr h' }, el('span', { text: T('pantalla.numero') }), el('span', { text: T('pantalla.mejorSiEs2') }), el('span', { text: T('pantalla.verde') }), el('span', { text: T('pantalla.rojo') })));
     Object.keys(d).forEach(function (k) {
       if (k.charAt(0) === '_' || !d[k] || typeof d[k] !== 'object') return;
       var u = d[k];
       var mayor = u.direction !== 'menor_es_mejor';
       var verde = mayor ? 'ok_min' : 'ok_max'; var rojo = mayor ? 'bad_max' : 'bad_min';
-      var dir = el('select', { 'aria-label': 'Mejor si es', 'data-path': 'thresholds.' + k + '.direction', onchange: function (e) {
+      var dir = el('select', { 'aria-label': T('pantalla.mejorSiEs2'), 'data-path': 'thresholds.' + k + '.direction', onchange: function (e) {
         // cambiar el sentido mueve los dos números a sus claves del otro sentido
         var nuevo = e.target.value; if (nuevo === u.direction) return;
         var a = u[verde], b = u[rojo]; delete u[verde]; delete u[rojo]; u.direction = nuevo;
         if (nuevo === 'menor_es_mejor') { if (a !== undefined) u.ok_max = a; if (b !== undefined) u.bad_min = b; } else { if (a !== undefined) u.ok_min = a; if (b !== undefined) u.bad_max = b; }
         render();
-      } }, el('option', { value: 'mayor_es_mejor', text: 'más alto' }), el('option', { value: 'menor_es_mejor', text: 'más bajo' }));
+      } }, el('option', { value: 'mayor_es_mejor', text: T('pantalla.masAlto') }), el('option', { value: 'menor_es_mejor', text: T('pantalla.masBajo') }));
       dir.value = mayor ? 'mayor_es_mejor' : 'menor_es_mejor';
       var num = function (c, etiqueta) { var mios = problemasEn(pr, 'thresholds.' + k + '.' + c); var i = el('input', { value: u[c] == null ? '' : String(u[c]), inputmode: 'decimal', 'aria-label': etiqueta, 'data-path': 'thresholds.' + k + '.' + c, oninput: function (e) { var v = e.target.value; if (v === '') delete u[c]; else u[c] = numOTexto(v); } }); if (mios.length) i.setAttribute('class', 'bad'); return i; };
-      var fila = el('div', { class: 'thr' }, el('span', { text: UMBRAL[k] || k.replace(/_/g, ' ') }, el('span', { class: 'hint', text: CANTIDADES[k] ? 'una cantidad' : 'una proporción: 0.5 es la mitad' })), dir,
-        num(verde, mayor ? 'Verde desde' : 'Verde hasta'), num(rojo, mayor ? 'Rojo hasta' : 'Rojo desde'));
+      var fila = el('div', { class: 'thr' }, el('span', { text: UMBRAL[k] || k.replace(/_/g, ' ') }, el('span', { class: 'hint', text: CANTIDADES[k] ? T('pantalla.unaCantidad') : T('pantalla.unaProporcion05Es') })), dir,
+        num(verde, mayor ? T('pantalla.verdeDesde2') : T('pantalla.verdeHasta2')), num(rojo, mayor ? T('pantalla.rojoHasta2') : T('pantalla.rojoDesde2')));
       pr.filter(function (x) { return x.path === 'thresholds.' + k || String(x.path).indexOf('thresholds.' + k + '.') === 0; }).forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
       (S.avisos[s.id] || []).filter(function (a) { return a.path === 'thresholds.' + k; }).forEach(function (a) { fila.appendChild(el('div', { class: 'aviso', text: a.message })); });
       box.appendChild(fila);
     });
-    box.appendChild(el('p', { class: 'muted', text: 'Si es mejor más alto: verde desde el primer número, rojo hasta el segundo. Si es mejor más bajo, al revés.' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.siEsMejorMasAlto') }));
     return box;
   }
   function editorParidad(s, d, pr) {
@@ -976,15 +990,15 @@ function pantalla() {
     var QUE = {}; ((v.definicion && v.definicion.rasgos) || []).forEach(function (r) { if (r && r.id) QUE[r.id] = r.que || r.id; });
     function queDe(rasgo) { return QUE[rasgo] || String(rasgo || '').replace(/-/g, ' '); }
     function lista(xs, fmt, nada) { var vistos = {}; var out = []; (xs || []).forEach(function (x) { var t = fmt(x); if (!vistos[t]) { vistos[t] = true; out.push(t); } }); return out.join('; ') || nada; }
-    box.appendChild(el('p', { class: 'muted', text: 'Comparación de hoy: ' + (v.texto || 'no medida') + (v.fecha ? ' (' + v.fecha + ')' : '') }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.comparacionDeHoy') + (v.texto || T('pantalla.noMedida')) + (v.fecha ? ' (' + v.fecha + ')' : '') }));
     // sólo los productos con algo para mirar; los que coinciden (salvo lo aceptado) van en una línea
     var conAlgo = (v.productos || []).filter(function (p) { return (p.faltan || []).length || (p.tiene || []).length || (p.vencidas || []).length; });
     var enOrden = (v.productos || []).length - conAlgo.length;
-    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + ' producto' + (conAlgo.length === 1 ? '' : 's') + ' con algo para mirar' + (enOrden ? '; los otros ' + enOrden + ' coinciden con los demás' : '') + '.' : 'Los ' + enOrden + ' productos coinciden con los demás, salvo las diferencias aceptadas de abajo.' })));
+    if ((v.productos || []).length) box.appendChild(el('div', { class: 'msg ' + (conAlgo.length ? 'warn' : 'ok') }, el('b', { text: conAlgo.length ? conAlgo.length + T('pantalla.producto3') + (conAlgo.length === 1 ? '' : 's') + T('pantalla.conAlgoParaMirar') + (enOrden ? T('pantalla.losOtros') + enOrden + T('pantalla.coincidenConLosDemas') : '') + '.' : T('pantalla.los') + enOrden + T('pantalla.productosCoincidenConLosDemas') })));
     var prods = el('ul', { class: 'renglones' });
     conAlgo.forEach(function (p) {
       prods.appendChild(el('li', {}, el('span', { class: 'quien', text: p.producto + ' · ' + p.grupos.join(', ') }),
-        el('span', { class: 'dato', text: 'le falta: ' + lista(p.faltan, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, 'nada') + ' · hace algo que los demás no: ' + lista(p.tiene, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, 'nada') + ' · aceptadas: ' + lista(p.declaradas, function (x) { return queDe(x.rasgo) + ' (hasta ' + x.revision + ')'; }, 'ninguna') + ' · vencidas: ' + lista(p.vencidas, function (x) { return queDe(x.rasgo) + ' (' + x.revision + ')'; }, 'ninguna') })));
+        el('span', { class: 'dato', text: T('pantalla.leFalta') + lista(p.faltan, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.haceAlgoQueLosDemas') + lista(p.tiene, function (x) { return QUE[x.rasgo] || x.que || queDe(x.rasgo); }, T('pantalla.nada2')) + T('pantalla.aceptadas') + lista(p.declaradas, function (x) { return queDe(x.rasgo) + T('pantalla.hasta') + x.revision + ')'; }, T('pantalla.ninguna2')) + T('pantalla.vencidas') + lista(p.vencidas, function (x) { return queDe(x.rasgo) + ' (' + x.revision + ')'; }, T('pantalla.ninguna2')) })));
     });
     if (conAlgo.length) box.appendChild(prods);
     // la misma diferencia declarada en varios grupos va en un solo renglón; Renovar y Cerrar actúan sobre todos sus grupos
@@ -993,32 +1007,32 @@ function pantalla() {
     var dcl = el('ul', { class: 'renglones' });
     orden.forEach(function (rasgo) {
       var xs = porRasgo[rasgo]; var grupos = xs.map(function (x) { return x.grupo; });
-      var fechas = lista(xs, function (x) { return x.revision || 'sin fecha'; }, 'sin fecha');
-      var motivos = lista(xs, function (x) { return x.motivo || 'sin motivo'; }, 'sin motivo');
-      var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': 'Volver a mirar el' }); var motivo = el('input', { placeholder: 'por qué sigue valiendo', 'aria-label': 'Por qué' });
-      dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: queDe(rasgo) }), el('span', { class: 'dato' }, el('span', { text: 'en ' + grupos.join(' y ') + ' · volver a mirar el ' + fechas }), el('details', { class: 'mas-info' }, el('summary', { text: 'Por qué' }), el('span', { text: motivos }))), el('span', { class: 'acc' }, fecha, motivo,
-        el('button', { class: 'sec', type: 'button', text: 'Renovar', onclick: function () { revisarSeccion(s, { accion: 'renew', grupos: grupos, grupo: grupos[0], rasgo: rasgo, revision: fecha.value, motivo: motivo.value }); } }),
-        el('button', { class: 'sec', type: 'button', text: 'Cerrar', onclick: function () { revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); } }))));
+      var fechas = lista(xs, function (x) { return x.revision || T('pantalla.sinFecha'); }, T('pantalla.sinFecha'));
+      var motivos = lista(xs, function (x) { return x.motivo || T('pantalla.sinMotivo'); }, T('pantalla.sinMotivo'));
+      var fecha = el('input', { placeholder: 'AAAA-MM-DD', 'aria-label': T('pantalla.volverAMirarEl') }); var motivo = el('input', { placeholder: T('pantalla.porQueSigueValiendo'), 'aria-label': T('pantalla.porQue') });
+      dcl.appendChild(el('li', {}, el('span', { class: 'quien', text: queDe(rasgo) }), el('span', { class: 'dato' }, el('span', { text: T('pantalla.en') + grupos.join(' y ') + T('pantalla.volverAMirarEl2') + fechas }), el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.porQue') }), el('span', { text: motivos }))), el('span', { class: 'acc' }, fecha, motivo,
+        el('button', { class: 'sec', type: 'button', text: T('pantalla.renovar'), onclick: function () { revisarSeccion(s, { accion: 'renew', grupos: grupos, grupo: grupos[0], rasgo: rasgo, revision: fecha.value, motivo: motivo.value }); } }),
+        el('button', { class: 'sec', type: 'button', text: T('pantalla.cerrar'), onclick: function () { revisarSeccion(s, { accion: 'close', grupos: grupos, grupo: grupos[0], rasgo: rasgo }); } }))));
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Las diferencias aceptadas' }), orden.length ? dcl : el('p', { class: 'muted', text: 'Ninguna.' })));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.lasDiferenciasAceptadas') }), orden.length ? dcl : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
     if (v.definicion) {
-      var t = el('table', { class: 'tabla' }, el('thead', {}, el('tr', {}, el('th', { text: 'Qué se compara' }))));
+      var t = el('table', { class: 'tabla' }, el('thead', {}, el('tr', {}, el('th', { text: T('pantalla.queSeCompara') }))));
       var tb = el('tbody', {});
       ((v.definicion.rasgos) || []).forEach(function (r) { if (r && r.id) tb.appendChild(el('tr', {}, el('td', { text: queDe(r.id) }))); });
       t.appendChild(tb);
-      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: 'Qué se compara (se cambia en el repo, no acá)' }), el('div', { class: 'tbl-wrap' }, t)));
+      box.appendChild(el('details', { class: 'mas-info' }, el('summary', { text: T('pantalla.queSeComparaSeCambia') }), el('div', { class: 'tbl-wrap' }, t)));
     }
     return box;
   }
   function editorPaquetes(s, d, pr) {
     var box = el('div', {});
     var ex = s.extras || {};   // los paquetes de la versión del sitio y los que activa el valor de hoy
-    box.appendChild(el('p', { class: 'muted', text: 'Los paquetes suman revisores y guías de un producto o de un cliente. Activos hoy: ' + ((ex.activos || []).join(', ') || 'ninguno') + '.' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.losPaquetesSumanRevisoresY') + ((ex.activos || []).join(', ') || T('pantalla.ninguno')) + '.' }));
     d.packs = d.packs || {};
     var actual = Array.isArray(d.packs.default) ? d.packs.default.join(', ') : (d.packs.default || '');
     var val = d.packs.default;
     var modo = val === undefined ? '' : val === 'all' || val === 'none' ? val : 'some';
-    box.appendChild(selector('Qué paquetes se activan', modo, [['', 'sin declarar (ninguno)'], ['all', 'todos los instalados'], ['none', 'ninguno'], ['some', 'sólo los que marco']], function (v) {
+    box.appendChild(selector(T('pantalla.quePaquetesSeActivan'), modo, [['', T('pantalla.sinDeclararNinguno')], ['all', T('pantalla.todosLosInstalados')], ['none', T('pantalla.ninguno')], ['some', T('pantalla.soloLosQueMarco')]], function (v) {
       if (!v) delete d.packs.default; else if (v === 'some') d.packs.default = Array.isArray(val) ? val : []; else d.packs.default = v;
       render();
     }, 'packs.default', pr));
@@ -1032,7 +1046,7 @@ function pantalla() {
           d.packs.default = e.target.checked ? l.concat([n]) : l.filter(function (x) { return x !== n; });
         } });
         c.checked = marcados.indexOf(n) >= 0;
-        lista.appendChild(el('label', {}, c, el('span', { text: ' ' + n + ((ex.instalados || []).indexOf(n) < 0 ? ' (esta versión no lo trae)' : '') })));
+        lista.appendChild(el('label', {}, c, el('span', { text: ' ' + n + ((ex.instalados || []).indexOf(n) < 0 ? T('pantalla.estaVersionNoLoTrae') : '') })));
       });
       box.appendChild(lista);
     }
@@ -1056,76 +1070,76 @@ function pantalla() {
     if (!esObjeto(d[clave])) d[clave] = {};
     d[clave][k] = v;
   }
-  var ESTILOS = [['executive', 'ejecutivo: la conclusión primero y sin el cómo, con un tope corto'], ['detailed', 'detallado: la conclusión primero y después el porqué y el cómo'], ['neutral', 'neutro: claro y al punto, sin reglas propias de la organización']];
+  var ESTILOS = [['executive', T('pantalla.ejecutivoLaConclusionPrimeroY')], ['detailed', T('pantalla.detalladoLaConclusionPrimeroY')], ['neutral', T('pantalla.neutroClaroYAlPunto')]];
   function editorRespuesta(s, d, pr) {
     var r = d.response || {}; var ex = s.extras || {}; var vg = ex.vigente || {}; var og = ex.origen || {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('p', { class: 'muted', text: 'Hoy: ' + vg.style + ' · ' + vg.language + ' · ' + vg.max_chars + ' caracteres (' + (og.style === 'perfil' ? 'del perfil' : 'por defecto') + ')' }));
-    box.appendChild(selector('Idioma', r.language, [['', 'sin declarar (castellano)'], ['es', 'castellano'], ['en', 'inglés']], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
-    box.appendChild(selector('Estilo', r.style, [['', 'sin declarar (neutro)']].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
-    box.appendChild(campo('Largo máximo de prosa, en caracteres (300 a 4000; vacío: el del estilo)', r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.hoy') + vg.style + ' · ' + vg.language + ' · ' + vg.max_chars + T('pantalla.caracteres') + (og.style === 'perfil' ? T('pantalla.delPerfil') : T('pantalla.porDefecto')) + ')' }));
+    box.appendChild(selector(T('pantalla.idioma'), r.language, [['', T('pantalla.sinDeclararCastellano')], ['es', T('pantalla.castellano')], ['en', T('pantalla.ingles')]], function (v) { hoja(d, 'response', 'language', v); }, 'response.language', pr));
+    box.appendChild(selector(T('pantalla.estilo'), r.style, [['', T('pantalla.sinDeclararNeutro')]].concat(ESTILOS), function (v) { hoja(d, 'response', 'style', v); }, 'response.style', pr));
+    box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;
   }
-  var INTEGRACIONES = [['clockify', 'Clockify: registra las horas de cada story'], ['engram', 'Memoria entre sesiones (engram)'], ['mailbox', 'Buzón de corridas: cada máquina sube sus corridas al sitio'], ['codex', 'Codex: el arnés también se enchufa a Codex'], ['nightly', 'Procesos de la noche del equipo']];
+  var INTEGRACIONES = [['clockify', T('pantalla.clockifyRegistraLasHorasDe')], ['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')]];
   function editorIntegraciones(s, d, pr) {
     var i = d.integrations || {};
     var box = el('div', { class: 'pila' });
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
-      var opciones = [['', 'sin declarar (apagada)'], ['true', 'prendida'], ['false', 'apagada']].concat(k === 'codex' ? [['detect', 'prendida si Codex está instalado']] : []);
+      var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida')], ['false', T('pantalla.apagada')]].concat(k === 'codex' ? [['detect', T('pantalla.prendidaSiCodexEstaInstalado')]] : []);
       box.appendChild(selector(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, 'integrations.' + k, pr));
     });
-    box.appendChild(el('p', { class: 'muted', text: 'Telegram y CodeGraph se configuran en cada máquina: son de cada persona, no del equipo.' }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramYCodegraphSeConfiguran') }));
     return box;
   }
   function editorAdo(s, d, pr) {
     var ex = s.extras || {};
-    var box = el('div', { class: 'pila' }, campo('La organización (su dirección en Azure DevOps)', (d.ado || {}).org, function (v) { hoja(d, 'ado', 'org', v); }, 'ado.org', pr));
-    if (ex.proyecto) box.appendChild(el('p', { class: 'muted', text: 'El proyecto: ' + ex.proyecto + '.' }));
-    if (ex.pedidos) box.appendChild(el('p', { class: 'muted', text: 'Los pedidos de trabajo: ' + ex.pedidos + '.' }));
+    var box = el('div', { class: 'pila' }, campo(T('pantalla.laOrganizacionSuDireccionEn', { plataforma: 'Azure DevOps' }), (d.ado || {}).org, function (v) { hoja(d, 'ado', 'org', v); }, 'ado.org', pr));
+    if (ex.proyecto) box.appendChild(el('p', { class: 'muted', text: T('pantalla.elProyecto') + ex.proyecto + '.' }));
+    if (ex.pedidos) box.appendChild(el('p', { class: 'muted', text: T('pantalla.losPedidosDeTrabajo') + ex.pedidos + '.' }));
     return box;
   }
   function editorActualizacion(s, d, pr) {
     var u = d.update || {};
     return el('div', { class: 'pila' },
-      selector('Qué versión toma cada máquina', u.channel, [['', 'sin declarar (estable)'], ['latest', 'la última: cada máquina toma lo que entra a la rama principal'], ['stable', 'estable: sólo las versiones marcadas como estables']], function (v) { hoja(d, 'update', 'channel', v); }, 'update.channel', pr),
-      selector('Cómo se aplica', u.apply, [['', 'sin declarar (preguntando)'], ['auto', 'sola: la máquina se actualiza al arrancar, sin preguntar'], ['ask', 'preguntando: la máquina avisa y el dev decide cuándo']], function (v) { hoja(d, 'update', 'apply', v); }, 'update.apply', pr));
+      selector(T('pantalla.queVersionTomaCadaMaquina2'), u.channel, [['', T('pantalla.sinDeclararEstable')], ['latest', T('pantalla.laUltimaCadaMaquinaToma')], ['stable', T('pantalla.estableSoloLasVersionesMarcadas')]], function (v) { hoja(d, 'update', 'channel', v); }, 'update.channel', pr),
+      selector(T('pantalla.comoSeAplica'), u.apply, [['', T('pantalla.sinDeclararPreguntando')], ['auto', T('pantalla.solaLaMaquinaSeActualiza')], ['ask', T('pantalla.preguntandoLaMaquinaAvisaY')]], function (v) { hoja(d, 'update', 'apply', v); }, 'update.apply', pr));
   }
   function editorInstalacion(s, d, pr) {
     var ex = (s.extras || {}).perfiles || {};
-    var box = el('div', { class: 'pila' }, selector('Cuánto instala el arnés', (d.install || {}).profile, [['', 'sin declarar (completo)'], ['full', 'completo'], ['minimal', 'mínimo']], function (v) { hoja(d, 'install', 'profile', v); }, 'install.profile', pr));
-    if (ex.motivo) box.appendChild(aviso('bad', 'No se pudo leer qué trae cada perfil.', ex.motivo));
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.cuantoInstalaElArnes'), (d.install || {}).profile, [['', T('pantalla.sinDeclararCompleto')], ['full', T('pantalla.completo')], ['minimal', T('pantalla.minimo')]], function (v) { hoja(d, 'install', 'profile', v); }, 'install.profile', pr));
+    if (ex.motivo) box.appendChild(aviso('bad', T('pantalla.noSePudoLeerQue'), ex.motivo));
     var min = ex.minimal || []; var full = ex.full || [];
     var clave = function (f) { return f.title + '\u0000' + f.does; };
     var enMin = {}; min.forEach(function (f) { enMin[clave(f)] = true; });
     var suma = full.filter(function (f) { return !enMin[clave(f)]; });
-    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'El mínimo trae ' + min.length + ' cosas' }), porGrupo(min)));
-    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: 'El completo suma estas ' + suma.length }), porGrupo(suma)));
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.elMinimoTrae') + min.length + T('pantalla.cosas') }), porGrupo(min)));
+    box.appendChild(el('div', {}, el('p', { class: 'sub-t', text: T('pantalla.elCompletoSumaEstas') + suma.length }), porGrupo(suma)));
     return box;
   }
   // los grupos de lo que instala el arnés, en el orden en que se muestran; uno que la pantalla no conoce va al final
-  var GRUPOS = [['safety', 'Frenos de seguridad'], ['assistant', 'Cómo contesta y trabaja el asistente'], ['notices', 'Avisos al arrancar y al trabajar'], ['pipeline', 'Revisores y pipeline'],
-    ['memory', 'Memoria entre sesiones'], ['time', 'Registro de tiempo'], ['install', 'Instalación y actualización'], ['codex', 'Codex']];
+  var GRUPOS = [['safety', T('pantalla.frenosDeSeguridad')], ['assistant', T('pantalla.comoContestaYTrabajaEl')], ['notices', T('pantalla.avisosAlArrancarYAl')], ['pipeline', T('pantalla.revisoresYPipeline')],
+    ['memory', T('pantalla.memoriaEntreSesiones')], ['time', T('pantalla.registroDeTiempo')], ['install', T('pantalla.instalacionYActualizacion')], ['codex', T('pantalla.codex')]];
   /** Si viene prendida o apagada y dónde se cambia: lo de la organización, en Configuración; lo de una máquina, se dice. */
   function dondeSeCambia(f) {
     var pestana = function (idSeccion) { var t = PESTANAS.filter(function (p) { return p[2].indexOf(idSeccion) >= 0; })[0]; return t ? t[1] + ' → ' : ''; };
-    var base = f.default === 'off' ? 'Viene apagado. ' : String(f.when || '').indexOf('integration:') === 0 ? 'Viene con su integración. ' : 'Viene prendido. ';
-    if (f.site_section) return base + 'Se cambia en Configuración → ' + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].corto : f.site_section) + '.';
-    var resto = f.switch ? 'Sólo en tu máquina, con ' + f.switch + '.' : 'Es parte del arnés: no se apaga.';
-    var pend = f.site_pending ? ' Pendiente: que se pueda cambiar desde Configuración → ' + ((PESTANAS.filter(function (p) { return p[0] === f.site_pending; })[0] || [])[1] || f.site_pending) + '.' : '';
+    var base = f.default === 'off' ? T('pantalla.vieneApagado') : String(f.when || '').indexOf('integration:') === 0 ? T('pantalla.vieneConSuIntegracion') : T('pantalla.vienePrendido');
+    if (f.site_section) return base + T('pantalla.seCambiaEnConfiguracion') + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].corto : f.site_section) + '.';
+    var resto = f.switch ? T('pantalla.soloEnTuMaquinaCon') + f.switch + '.' : T('pantalla.esParteDelArnesNo');
+    var pend = f.site_pending ? T('pantalla.pendienteQueSePuedaCambiar') + ((PESTANAS.filter(function (p) { return p[0] === f.site_pending; })[0] || [])[1] || f.site_pending) + '.' : '';
     return base + resto + pend;
   }
   function porGrupo(lista) {
     var cont = el('div', { class: 'pila' });
     var conocidos = GRUPOS.map(function (g) { return g[0]; });
-    GRUPOS.concat([[null, 'Otras']]).forEach(function (g) {
+    GRUPOS.concat([[null, T('pantalla.otras')]]).forEach(function (g) {
       var xs = lista.filter(function (f) { return g[0] ? f.group === g[0] : conocidos.indexOf(f.group) < 0; });
       if (!xs.length) return;
       var ul = el('ul', { class: 'efectos' });
       xs.forEach(function (f) { ul.appendChild(el('li', {}, el('details', {}, el('summary', { text: f.title }), el('p', { text: f.does }), el('p', { class: 'muted', text: dondeSeCambia(f) })))); });
       cont.appendChild(el('details', { class: 'grupo' }, el('summary', { text: g[1] + ' (' + xs.length + ')' }), ul));
     });
-    if (!lista.length) cont.appendChild(el('p', { class: 'muted', text: 'Nada.' }));
+    if (!lista.length) cont.appendChild(el('p', { class: 'muted', text: T('pantalla.nada') }));
     return cont;
   }
   // la marca: nombre, logo (una ruta del repo de operaciones) y qué hacer con el logo en el tema oscuro
@@ -1138,16 +1152,16 @@ function pantalla() {
       d.site.brand[k] = v;
     };
     var box = el('div', { class: 'pila' },
-      campo('El nombre de la organización', b.name, function (v) { poner('name', String(v).trim()); }, 'site.brand.name', pr, { placeholder: 'como querés que se lea en la barra y en el pie' }),
-      campo('El logo: su ruta en el repo de operaciones (.png o .svg)', b.logo, function (v) { poner('logo', String(v).trim()); }, 'site.brand.logo', pr, { placeholder: 'marca/logo.png' }),
-      selector('En el tema oscuro', b.dark, [['', 'sin declarar (invertirlo)'], ['invert', 'invertirlo: para un logo oscuro sobre fondo claro'], ['keep', 'dejarlo como está: para un logo de colores']], function (v) { poner('dark', v); }, 'site.brand.dark', pr));
-    box.appendChild(el('p', { class: 'muted', text: 'El archivo del logo entra con un pedido al repo de operaciones; acá sólo se elige cuál se muestra. Sin logo, la barra muestra el nombre.' }));
-    if (b.logo) box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Así se ve hoy' }), el('img', { class: 'logo logo-previa' + (b.dark === 'keep' ? '' : ' invierte'), src: '/marca/logo', alt: b.name || 'el logo de la organización' })));
+      campo(T('pantalla.elNombreDeLaOrganizacion'), b.name, function (v) { poner('name', String(v).trim()); }, 'site.brand.name', pr, { placeholder: T('pantalla.comoQueresQueSeLea') }),
+      campo(T('pantalla.elLogoSuRutaEn'), b.logo, function (v) { poner('logo', String(v).trim()); }, 'site.brand.logo', pr, { placeholder: T('pantalla.marcaLogoPng') }),
+      selector(T('pantalla.enElTemaOscuro'), b.dark, [['', T('pantalla.sinDeclararInvertirlo')], ['invert', T('pantalla.invertirloParaUnLogoOscuro')], ['keep', T('pantalla.dejarloComoEstaParaUn')]], function (v) { poner('dark', v); }, 'site.brand.dark', pr));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.elArchivoDelLogoEntra') }));
+    if (b.logo) box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.asiSeVeHoy') }), el('img', { class: 'logo logo-previa' + (b.dark === 'keep' ? '' : ' invierte'), src: '/marca/logo', alt: b.name || T('pantalla.elLogoDeLaOrganizacion') })));
     return box;
   }
   function editorHilos(s, d, pr) {
     var mb = (d.site || {}).mailbox || {};
-    return el('div', { class: 'pila' }, selector('Bajar las conversaciones', mb.threads === undefined ? '' : String(mb.threads), [['', 'sin declarar (no)'], ['true', 'sí: baja también lo que se habló en cada corrida; ocupa más y muestra más'], ['false', 'no: sólo los números de cada corrida']], function (v) {
+    return el('div', { class: 'pila' }, selector(T('pantalla.bajarLasConversaciones'), mb.threads === undefined ? '' : String(mb.threads), [['', T('pantalla.sinDeclararNo')], ['true', T('pantalla.siBajaTambienLoQue')], ['false', T('pantalla.noSoloLosNumerosDe')]], function (v) {
       if (!esObjeto(d.site)) d.site = {};
       if (v === '') { if (esObjeto(d.site.mailbox)) delete d.site.mailbox.threads; return; }
       if (!esObjeto(d.site.mailbox)) d.site.mailbox = {};
@@ -1156,11 +1170,11 @@ function pantalla() {
   }
   function editorAplicar(s, d, pr) {
     var st = d.site || {};
-    return el('div', { class: 'pila' }, selector('Los cambios de quien mantiene el sitio', st.auto_apply === undefined ? '' : String(st.auto_apply), [['', 'sin declarar (no)'], ['true', 'sí: se aplican solos; el sitio aprueba y completa el pedido, si las políticas del repo lo dejan'], ['false', 'no: queda el pedido para aprobar']], function (v) {
+    return el('div', { class: 'pila' }, selector(T('pantalla.losCambiosDeQuienMantiene'), st.auto_apply === undefined ? '' : String(st.auto_apply), [['', T('pantalla.sinDeclararNo')], ['true', T('pantalla.siSeAplicanSolosEl')], ['false', T('pantalla.noQuedaElPedidoPara')]], function (v) {
       if (!esObjeto(d.site)) d.site = {};
       if (v === '') { delete d.site.auto_apply; return; }
       d.site.auto_apply = v === 'true';
-    }, 'site.auto_apply', pr), el('p', { class: 'muted', text: 'Queda escrito quién pidió cada cambio: en el pedido y en el registro del sitio.' }));
+    }, 'site.auto_apply', pr), el('p', { class: 'muted', text: T('pantalla.quedaEscritoQuienPidioCada') }));
   }
   // una casilla por ficha; tildada = se muestra. Lo destildado es site.hidden_cards, en el orden de la lista.
   function editorFichas(s, d, pr) {
@@ -1168,8 +1182,8 @@ function pantalla() {
     var todas = Array.isArray(ex.fichas) ? ex.fichas : [];
     var ocultas = ((d.site || {}).hidden_cards || []).slice();
     var box = el('div', { class: 'pila' });
-    if (!todas.length) { box.appendChild(el('p', { class: 'muted', text: 'Esta versión del sitio no trae la lista de fichas.' })); return box; }
-    var grupos = [['arnes', 'En Arnés'], ['proyectos', 'En Proyectos'], ['corridas', 'En Corridas']];
+    if (!todas.length) { box.appendChild(el('p', { class: 'muted', text: T('pantalla.sinListaDeFichas') })); return box; }
+    var grupos = [['arnes', T('pantalla.enArnes')], ['proyectos', T('pantalla.enProyectos')], ['corridas', T('pantalla.enCorridas')]];
     grupos.forEach(function (g) {
       var fs = todas.filter(function (f) { return f.pestana === g[0]; });
       if (!fs.length) return;
@@ -1188,24 +1202,24 @@ function pantalla() {
       });
     });
     var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });
-    if (raras.length) box.appendChild(el('p', { class: 'muted', text: 'Hay fichas ocultas que esta versión no conoce: ' + raras.join(', ') + '. Se conservan.' }));
+    if (raras.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.fichasOcultasDesconocidas', { ids: raras.join(', ') }) }));
     return box;
   }
 
   function editorActualizacionSitio(s, d, pr) {
     var st = d.site || {};
-    return el('div', { class: 'pila' }, selector('Cómo se actualiza el sitio', st.update === undefined ? '' : String(st.update), [['', 'sin declarar (sólo aviso)'], ['auto', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla'], ['notice', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']], function (v) {
+    return el('div', { class: 'pila' }, selector(T('pantalla.comoSeActualizaElSitio'), st.update === undefined ? '' : String(st.update), [['', T('pantalla.sinDeclararSoloAviso')], ['auto', T('pantalla.automaticoElNocturnoInstalaLa')], ['notice', T('pantalla.soloAvisoElSitioDice')]], function (v) {
       if (!esObjeto(d.site)) d.site = {};
       if (v === '') { delete d.site.update; return; }
       d.site.update = v;
-    }, 'site.update', pr), el('p', { class: 'muted', text: 'El automático pide el nocturno de actualización y su permiso, sólo sobre el sitio (la guía: Cómo se mantiene al día).' }));
+    }, 'site.update', pr), el('p', { class: 'muted', text: T('pantalla.elAutomaticoPideElNocturno') }));
   }
   // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
   function tablaDeContenido(filas) {
-    var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: 'Lo que trae la organización' }), el('p', { class: 'reach', text: 'Skills, revisores, guías de alta y paquetes del repo del equipo. Se cambian con un pedido en ese repo, no desde acá.' }))));
-    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: filas ? 'Nada que mostrar.' : 'El repo del equipo todavía no se bajó.' })); return sec; }
+    var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: T('pantalla.loQueTraeLaOrganizacion') }), el('p', { class: 'reach', text: T('pantalla.skillsRevisoresGuiasDeAlta') }))));
+    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: filas ? T('pantalla.nadaQueMostrar') : T('pantalla.elRepoDelEquipoTodavia') })); return sec; }
     var tabla = el('table', { class: 'tabla' }); var thead = el('thead', {}); var tr = el('tr', {});
-    ['Qué es', 'Dónde está'].forEach(function (t) { tr.appendChild(el('th', { text: t })); }); thead.appendChild(tr); tabla.appendChild(thead);
+    [T('pantalla.queEs'), T('pantalla.dondeEsta')].forEach(function (t) { tr.appendChild(el('th', { text: t })); }); thead.appendChild(tr); tabla.appendChild(thead);
     var tbody = el('tbody', {});
     filas.forEach(function (f) { var ruta = f.enlace ? el('a', { href: f.enlace, text: f.ruta }) : el('span', { text: f.ruta }); tbody.appendChild(el('tr', {}, el('td', { text: f.tipo }), el('td', {}, ruta))); });
     tabla.appendChild(tbody); sec.appendChild(el('div', { class: 'tbl-wrap' }, tabla));
@@ -1232,75 +1246,75 @@ function pantalla() {
   function campoPipeline(e, p, pr) {
     var r = e.repo || {};
     var escribir = function (v) { var t = String(v).trim(); if (!t) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(t) && r.platform === 'azure' ? Number(t) : t; };
-    if (r.platform !== 'azure') return campo('Control obligatorio de las pruebas completas', e.full_tests_pipeline, escribir, p, pr, { placeholder: 'el nombre del control en GitHub' });
+    if (r.platform !== 'azure') return campo(T('pantalla.controlObligatorioDeLasPruebas'), e.full_tests_pipeline, escribir, p, pr, { placeholder: T('pantalla.elNombreDelControlEn') });
     var L = pipelinesDe(r.org, r.project);
     var lista = listaDePipelines(L);
     var actual = e.full_tests_pipeline;
     if (lista) {
       var porNombre = lista.filter(function (x) { return x.nombre === actual; })[0];
       var valor = actual == null ? '' : porNombre ? String(porNombre.id) : String(actual);
-      var opciones = [['', 'ninguno']].concat(lista.map(function (x) { return [String(x.id), x.nombre + (x.carpeta ? ' · ' + x.carpeta : '')]; }));
-      if (valor && !lista.some(function (x) { return String(x.id) === valor; })) opciones.push([valor, (typeof actual === 'number' ? 'el pipeline ' + actual : actual) + ' (no está en el proyecto)']);
-      return selector('Pipeline de pruebas completas', valor, opciones, function (v) { if (!v) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(v) ? Number(v) : v; }, p, pr);
+      var opciones = [['', T('pantalla.ninguno')]].concat(lista.map(function (x) { return [String(x.id), x.nombre + (x.carpeta ? ' · ' + x.carpeta : '')]; }));
+      if (valor && !lista.some(function (x) { return String(x.id) === valor; })) opciones.push([valor, (typeof actual === 'number' ? T('pantalla.elPipeline') + actual : actual) + T('pantalla.noEstaEnElProyecto')]);
+      return selector(T('pantalla.pipelineDePruebasCompletas'), valor, opciones, function (v) { if (!v) delete e.full_tests_pipeline; else e.full_tests_pipeline = /^\d+$/.test(v) ? Number(v) : v; }, p, pr);
     }
-    var box = campo('Pipeline de pruebas completas (su número)', actual, escribir, p, pr, { placeholder: 'número del pipeline', inputmode: 'numeric' });
-    if (!L) box.appendChild(el('p', { class: 'muted', text: 'Completá la organización y el proyecto del repo y revisá: la lista de pipelines aparece sola.' }));
-    else if (L.estado === 'cargando') box.appendChild(el('p', { class: 'muted', text: 'buscando los pipelines del proyecto…' }));
-    else box.appendChild(el('div', { class: 'aviso', text: (L.r && L.r.message) || 'no se pudo traer la lista de pipelines: escribí el número' }));
+    var box = campo(T('pantalla.pipelineDePruebasCompletasSu'), actual, escribir, p, pr, { placeholder: T('pantalla.numeroDelPipeline'), inputmode: 'numeric' });
+    if (!L) box.appendChild(el('p', { class: 'muted', text: T('pantalla.completaLaOrganizacionYEl') }));
+    else if (L.estado === 'cargando') box.appendChild(el('p', { class: 'muted', text: T('pantalla.buscandoLosPipelinesDelProyecto') }));
+    else box.appendChild(el('div', { class: 'aviso', text: (L.r && L.r.message) || T('pantalla.noSePudoTraerLa') }));
     return box;
   }
-  var REGLAS = [['automatico', 'automático: el servidor, si la rama lo exige'], ['siempre-en-la-maquina', 'siempre en la máquina'], ['confiar-en-el-servidor', 'confiar en el servidor']];
+  var REGLAS = [['automatico', T('pantalla.automaticoElServidorSiLa')], ['siempre-en-la-maquina', T('pantalla.siempreEnLaMaquina')], ['confiar-en-el-servidor', T('pantalla.confiarEnElServidor')]];
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
     var box = el('div', { class: 'pila' });
     // con otra forma (no es un objeto, repos no es una lista, una entrada no es un objeto) se edita sólo como texto
     if ('merge_suites' in d && (!esObjeto(d.merge_suites) || (d.merge_suites.repos !== undefined && (!Array.isArray(d.merge_suites.repos) || d.merge_suites.repos.some(function (e) { return !esObjeto(e); }))))) {
-      box.appendChild(el('p', { class: 'muted', text: 'Esta parte del archivo no tiene la forma que entiende la pantalla: se corrige como texto.' }));
-      box.appendChild(restoYTexto(s, d, pr, 'merge_suites', 'Las suites al mergear, como texto'));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.estaParteDelArchivoNo') }));
+      box.appendChild(restoYTexto(s, d, pr, 'merge_suites', T('pantalla.lasSuitesAlMergearComo')));
       return box;
     }
     d.merge_suites = d.merge_suites || {};
     var ms = d.merge_suites;
-    box.appendChild(selector('La regla de la organización', ms.default, [['', 'sin declarar: automático']].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; }, 'merge_suites.default', pr));
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Por repo' }), el('p', { class: 'sub-d', text: 'Un repo que no sigue la regla de la organización, o que nombra su pipeline de pruebas completas.' }));
+    box.appendChild(selector(T('pantalla.laReglaDeLaOrganizacion'), ms.default, [['', T('pantalla.sinDeclararAutomatico')]].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; }, 'merge_suites.default', pr));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.porRepo') }), el('p', { class: 'sub-d', text: T('pantalla.unRepoQueNoSigue') }));
     ms.repos = ms.repos || [];
-    if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: 'Ningún repo todavía.' }));
+    if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: T('pantalla.ningunRepoTodavia') }));
     ms.repos.forEach(function (e, i) {
       var at = 'merge_suites.repos.' + i;
-      sub.appendChild(repoFila('Repo ' + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr));
+      sub.appendChild(repoFila(T('pantalla.repo3') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr));
       sub.appendChild(el('div', { class: 'fila quitar3' },
-        selector('Regla', e.rule, [['', 'la de la organización']].concat(REGLAS), function (v) { if (v) e.rule = v; else delete e.rule; }, at + '.rule', pr),
+        selector(T('pantalla.regla2'), e.rule, [['', T('pantalla.laDeLaOrganizacion')]].concat(REGLAS), function (v) { if (v) e.rule = v; else delete e.rule; }, at + '.rule', pr),
         campoPipeline(e, at + '.full_tests_pipeline', pr),
         quitar(function () { ms.repos.splice(i, 1); render(); })));
       problemasEn(pr, at).forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
     });
-    sub.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar repo', onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); render(); } }));
+    sub.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarRepo'), onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); render(); } }));
     box.appendChild(sub);
     problemasEn(pr, 'merge_suites.repos').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
-    box.appendChild(restoYTexto(s, d, pr, 'merge_suites', 'Las suites al mergear, como texto'));
+    box.appendChild(restoYTexto(s, d, pr, 'merge_suites', T('pantalla.lasSuitesAlMergearComo')));
     return box;
   }
   var MODELOS = ['haiku', 'sonnet', 'opus', 'fable'];
   // el nombre llano de cada revisor, por su identificador sin el prefijo de quien lo publica; uno que no está acá se
   // muestra con su identificador
   var REVISOR = {
-    'ac-coverage-checker': 'Que cada criterio de la story esté hecho', 'deferral-tracker': 'Lo que la story dejó para después',
-    'dod-runtime-checker': 'Que se probó andando, no sólo en el código', 'e2e-realness-checker': 'Que las pruebas de punta a punta prueben de verdad',
-    'plugin-security-basics': 'Seguridad básica del cambio', 'plugin-tests-coverage': 'Que las pruebas cubran lo pedido',
-    'retrospective-capturer': 'Lo aprendido después de cada merge', 'signed-scope-audit': 'El plan contra lo firmado con el cliente',
-    'silent-failure-hunter': 'Fallas que pasan en silencio', 'spec-first-checker': 'Que no se haga más que lo pedido',
-    'story-validator': 'Que la story esté completa antes de empezar', 'llm-cost-reviewer': 'Costo del uso de modelos de lenguaje',
-    'i18n-hardcoded-text-reviewer': 'Textos escritos fijos donde va la traducción',
-    'plugin-dotnet-conventions': 'Convenciones de los backends .NET', 'plugin-react-conventions': 'Convenciones de los formularios React',
-    'plugin-nextjs-conventions': 'Convenciones de Next.js', 'sibling-pattern-reviewer': 'Que siga lo que ya resolvieron los plugins hermanos',
-    'feature-wiring-checker': 'Que lo hecho esté conectado y se use',
+    'ac-coverage-checker': T('pantalla.queCadaCriterioDeLa'), 'deferral-tracker': T('pantalla.loQueLaStoryDejo'),
+    'dod-runtime-checker': T('pantalla.queSeProboAndandoNo'), 'e2e-realness-checker': T('pantalla.queLasPruebasDePunta'),
+    'plugin-security-basics': T('pantalla.seguridadBasicaDelCambio'), 'plugin-tests-coverage': T('pantalla.queLasPruebasCubranLo'),
+    'retrospective-capturer': T('pantalla.loAprendidoDespuesDeCada'), 'signed-scope-audit': T('pantalla.elPlanContraLoFirmado'),
+    'silent-failure-hunter': T('pantalla.fallasQuePasanEnSilencio'), 'spec-first-checker': T('pantalla.queNoSeHagaMas'),
+    'story-validator': T('pantalla.queLaStoryEsteCompleta'), 'llm-cost-reviewer': T('pantalla.costoDelUsoDeModelos'),
+    'i18n-hardcoded-text-reviewer': T('pantalla.textosEscritosFijosDondeVa'),
+    'plugin-dotnet-conventions': T('pantalla.convencionesDeLosBackendsNet'), 'plugin-react-conventions': T('pantalla.convencionesDeLosFormulariosReact'),
+    'plugin-nextjs-conventions': T('pantalla.convencionesDeNextJs'), 'sibling-pattern-reviewer': T('pantalla.queSigaLoQueYa'),
+    'feature-wiring-checker': T('pantalla.queLoHechoEsteConectado'),
   };
   function nombreRevisor(id) { var n = REVISOR[id] || REVISOR[String(id).slice(String(id).indexOf('-') + 1)]; return n ? n + ' (' + id + ')' : id; }
   // el modelo de un revisor en particular: una fila por revisor, elegido de los que conoce esta versión
   function editorPorRevisor(s, m, pr, hoy) {
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Un revisor en particular' }), el('p', { class: 'sub-d', text: 'Opcional: un revisor que usa otro modelo que el resto.' + (hoy && hoy.reviewer && Object.keys(hoy.reviewer).length ? ' Hoy: ' + Object.keys(hoy.reviewer).map(function (k) { return nombreRevisor(k) + ' → ' + hoy.reviewer[k]; }).join(', ') + '.' : '') }));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.unRevisorEnParticular') }), el('p', { class: 'sub-d', text: T('pantalla.opcionalUnRevisorQueUsa') + (hoy && hoy.reviewer && Object.keys(hoy.reviewer).length ? T('pantalla.hoy2') + Object.keys(hoy.reviewer).map(function (k) { return nombreRevisor(k) + ' → ' + hoy.reviewer[k]; }).join(', ') + '.' : '') }));
     var rv = m.reviewer && typeof m.reviewer === 'object' && !Array.isArray(m.reviewer) ? m.reviewer : null;
-    if (m.reviewer !== undefined && !rv) { sub.appendChild(editorGenerico(s, m, pr, 'reviewer', 'Revisor y modelo, como texto')); return sub; }
+    if (m.reviewer !== undefined && !rv) { sub.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto'))); return sub; }
     Object.keys(rv || {}).forEach(function (id) {
       sub.appendChild(el('div', { class: 'fila quitar3' }, el('span', { class: 'k', text: nombreRevisor(id) }),
         selector('', rv[id], MODELOS.map(function (x) { return [x, x]; }), function (v) { rv[id] = v; }, 'models.reviewer.' + id, pr),
@@ -1308,9 +1322,9 @@ function pantalla() {
     });
     var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return !rv || !(id in rv); });
     if (conocidos.length) {
-      var elegir = el('select', { 'aria-label': 'Revisor' }, el('option', { value: '', text: 'elegí un revisor' }));
+      var elegir = el('select', { 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
       conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
-      sub.appendChild(el('div', { class: 'fila quitar' }, elegir, el('button', { class: 'sec', type: 'button', text: '+ Agregar', onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
+      sub.appendChild(el('div', { class: 'fila quitar' }, elegir, el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar2'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
     }
     problemasEn(pr, 'models.reviewer').forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
     return sub;
@@ -1320,14 +1334,14 @@ function pantalla() {
     var hoy = (s.extras && s.extras.hoy) || null;
     var box = el('div', { class: 'pila' });
     if ('models' in d && !esObjeto(d.models)) {
-      box.appendChild(el('p', { class: 'muted', text: 'Esta parte del archivo no tiene la forma que entiende la pantalla: se corrige como texto.' }));
-      box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
+      box.appendChild(el('p', { class: 'muted', text: T('pantalla.estaParteDelArchivoNo') }));
+      box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
       return box;
     }
     d.models = d.models || {};
     var m = d.models;
-    if (!hoy) box.appendChild(el('p', { class: 'muted', text: 'No sé los modelos de hoy (' + ((s.extras && s.extras.motivoHoy) || 'sin motivo') + '): «sin declarar» usa los de cada máquina.' }));
-    function opciones(h) { return [['', 'sin declarar' + (h ? ' (hoy: ' + h + ')' : '')]].concat(MODELOS.map(function (x) { return [x, x]; })); }
+    if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
+    function opciones(h) { return [['', T('pantalla.sinDeclarar') + (h ? T('pantalla.hoy3') + h + ')' : '')]].concat(MODELOS.map(function (x) { return [x, x]; })); }
     function de(obj, k) { return obj && typeof obj === 'object' ? obj[k] : undefined; }
     function uno(label, k, sub) {
       var actual = sub ? de(m[k], sub) : m[k];
@@ -1339,27 +1353,27 @@ function pantalla() {
         if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
       }, p, pr);
     }
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Los revisores' }), uno('Primera vuelta', 'reviewers'), uno('Las vueltas siguientes', 'reviewers_reloop')));
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'El pase adversarial' }), uno('Una story normal', 'adversarial', 'model'), uno('Una story pesada', 'adversarial', 'heavy'),
-      selector('Preguntar antes de usar fable', de(m.adversarial, 'fable_question'), [['', 'sin declarar' + (de(de(hoy, 'adversarial'), 'fable_question') ? ' (hoy: ' + (de(de(hoy, 'adversarial'), 'fable_question') === 'ask' ? 'preguntar' : 'nunca') + ')' : '')], ['ask', 'preguntar'], ['never', 'nunca']], function (v) {
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.losRevisores') }), uno(T('pantalla.primeraVuelta'), 'reviewers'), uno(T('pantalla.lasVueltasSiguientes'), 'reviewers_reloop')));
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.elPaseAdversarial') }), uno(T('pantalla.unaStoryNormal'), 'adversarial', 'model'), uno(T('pantalla.unaStoryPesada'), 'adversarial', 'heavy'),
+      selector(T('pantalla.preguntarAntesDeUsarFable'), de(m.adversarial, 'fable_question'), [['', T('pantalla.sinDeclarar') + (de(de(hoy, 'adversarial'), 'fable_question') ? T('pantalla.hoy3') + (de(de(hoy, 'adversarial'), 'fable_question') === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) + ')' : '')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], function (v) {
         m.adversarial = m.adversarial && typeof m.adversarial === 'object' ? m.adversarial : {};
         if (v) m.adversarial.fable_question = v; else { delete m.adversarial.fable_question; if (!Object.keys(m.adversarial).length) delete m.adversarial; }
       }, 'models.adversarial.fable_question', pr)));
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Los ayudantes y la sesión' }), uno('Los ayudantes', 'helpers'), uno('Sesión, story liviana', 'session', 'low'), uno('Sesión, story normal', 'session', 'normal'), uno('Sesión, story pesada', 'session', 'heavy')));
-    var techo = el('input', { type: 'checkbox', 'aria-label': 'Techo obligatorio', 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.losAyudantesYLaSesion') }), uno(T('pantalla.losAyudantes'), 'helpers'), uno(T('pantalla.sesionStoryLiviana'), 'session', 'low'), uno(T('pantalla.sesionStoryNormal'), 'session', 'normal'), uno(T('pantalla.sesionStoryPesada'), 'session', 'heavy')));
+    var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.techoObligatorio2'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
     techo.checked = m.mandatory_ceiling === true;
-    var tbox = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Techo obligatorio' }), el('p', { class: 'sub-d', text: 'Lo paga la organización: ningún trabajo pasa de este modelo, aunque se pida.' }), el('label', {}, techo, el('span', { text: ' ningún trabajo pasa de…' })));
-    if (m.mandatory_ceiling === true) tbox.appendChild(selector('El techo', m.ceiling, [['', 'elegí uno']].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr));
+    var tbox = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.techoObligatorio2') }), el('p', { class: 'sub-d', text: T('pantalla.loPagaLaOrganizacionNingun') }), el('label', {}, techo, el('span', { text: T('pantalla.ningunTrabajoPasaDe') })));
+    if (m.mandatory_ceiling === true) tbox.appendChild(selector(T('pantalla.elTecho'), m.ceiling, [['', T('pantalla.elegiUno')]].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr));
     problemasEn(pr, 'models.mandatory_ceiling').forEach(function (x) { tbox.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(tbox);
     box.appendChild(editorPorRevisor(s, m, pr, hoy));
-    box.appendChild(restoYTexto(s, d, pr, 'models', 'Los modelos, como texto'));
+    box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
     return box;
   }
   // el plazo del aviso de espera (story 7.20): minutos enteros de 1 a 120; vacío, el de siempre (5)
   function editorEspera(s, d, pr) {
     var w = esObjeto(d.wait_notice) ? d.wait_notice : {};
-    return el('div', { class: 'pila' }, campo('Minutos que espera una corrida antes de avisar (1 a 120; vacío: 5)', w.minutes, function (v) {
+    return el('div', { class: 'pila' }, campo(T('pantalla.minutosQueEsperaUnaCorrida'), w.minutes, function (v) {
       if (v === '') { if (esObjeto(d.wait_notice)) { delete d.wait_notice.minutes; if (!Object.keys(d.wait_notice).length) delete d.wait_notice; } return; }
       if (!esObjeto(d.wait_notice)) d.wait_notice = {};
       d.wait_notice.minutes = numOTexto(v);
@@ -1368,13 +1382,13 @@ function pantalla() {
   // el umbral de cobertura: un porcentaje entero de 1 a 100; vacío, el de siempre (75)
   function editorCobertura(s, d, pr) {
     var c = esObjeto(d.coverage) ? d.coverage : {};
-    return el('div', { class: 'pila' }, campo('Porcentaje mínimo de las líneas nuevas cubiertas por pruebas (1 a 100; vacío: 75)', c.min_touched_lines_pct, function (v) {
+    return el('div', { class: 'pila' }, campo(T('pantalla.porcentajeMinimoDeLasLineas2'), c.min_touched_lines_pct, function (v) {
       if (v === '') { if (esObjeto(d.coverage)) { delete d.coverage.min_touched_lines_pct; if (!Object.keys(d.coverage).length) delete d.coverage; } return; }
       if (!esObjeto(d.coverage)) d.coverage = {};
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -1396,7 +1410,7 @@ function pantalla() {
       S.problemas[s.id] = llanos(r.problems); S.avisos[s.id] = llanos(r.avisos);
       if (r.borrador) S.borradores[s.id] = r.borrador;
       S.textos[s.id] = r.ok ? r.texto : null;
-      S.notas[s.id] = r.ok ? { ok: true, text: 'Revisado: está bien escrito.' + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || 'Hay que corregir lo marcado.' };
+      S.notas[s.id] = r.ok ? { ok: true, text: T('pantalla.revisadoEstaBienEscrito') + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado') };
       render();
       return r;
     });
@@ -1409,25 +1423,25 @@ function pantalla() {
   }
   /** Por qué no se puede proponer, en llano; el motivo exacto del sitio queda en el detalle. */
   function motivoProponer(m) {
-    if (!m || /identidad de escritura/.test(m)) return 'Para proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a mano.';
-    if (/plataforma/.test(m)) return 'El sitio no reconoce dónde vive el repo. Revisá, descargá y subilo a mano.';
-    return 'Proponer desde acá no está disponible: ' + m;
+    if (!m || /identidad de escritura|write identity/.test(m)) return T('pantalla.paraProponerDesdeAcaEl');
+    if (/plataforma|platform/.test(m)) return T('pantalla.elSitioNoReconoceDonde');
+    return T('pantalla.proponerDesdeAcaNoEsta') + m;
   }
   /** Qué pasa al proponer: se aplica solo (la opción de la organización, con políticas que el sitio cumple) o queda el pedido. */
   function textoProponer(s, prop) {
-    var repo = REPO_DE[s.repo] || 'su repo';
-    if (prop && prop.aplicaSolo) return 'Se aplica solo: el sitio aprueba y completa el pedido en ' + repo + '.';
-    return 'Se abre un pedido de cambio en ' + repo + '. ' + (prop && prop.motivoAplicar ? prop.motivoAplicar : 'Entra cuando alguien lo aprueba.');
+    var repo = REPO_DE[s.repo] || T('pantalla.suRepo');
+    if (prop && prop.aplicaSolo) return T('pantalla.seAplicaSoloElSitio') + repo + '.';
+    return T('pantalla.seAbreUnPedidoDe') + repo + '. ' + (prop && prop.motivoAplicar ? prop.motivoAplicar : T('pantalla.entraCuandoAlguienLoAprueba'));
   }
   function seccion(s) {
     var p = plano(s);
     var est = estadoDe(s);
     var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d })), el('span', { class: 'pill ' + est[0], text: est[1] })));
-    if (s.estado === 'no_reader') { sec.appendChild(aviso('nm', 'Esta versión del arnés todavía no sabe leer esta parte. Se habilita sola cuando el sitio se actualice.', s.motivo)); if (s.id !== 'paridad') return sec; }
-    if (s.estado === 'ilegible') { sec.appendChild(aviso('bad', 'Lo guardado en esta parte no se puede leer: hay que arreglarlo a mano en el repo.', s.motivo)); if (s.id !== 'paridad') return sec; }
-    if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', 'Esta parte todavía no está configurada.', s.motivo)); if (s.id !== 'paridad') return sec; }
-    if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: 'Todavía no hay nada guardado: se crea con el primer cambio que propongas.' }));
-    if (s.soloLectura) sec.appendChild(aviso('nm', 'Por ahora se puede mirar, pero no cambiar.', s.motivo));
+    if (s.estado === 'no_reader') { sec.appendChild(aviso('nm', T('pantalla.estaVersionDelArnesTodavia'), s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'ilegible') { sec.appendChild(aviso('bad', T('pantalla.loGuardadoEnEstaParte'), s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', T('pantalla.estaParteTodaviaNoEsta'), s.motivo)); if (s.id !== 'paridad') return sec; }
+    if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: T('pantalla.todaviaNoHayNadaGuardado') }));
+    if (s.soloLectura) sec.appendChild(aviso('nm', T('pantalla.porAhoraSePuedeMirar'), s.motivo));
     var pr = S.problemas[s.id] || [];
     var arriba = pr.filter(function (x) { return x.sinCampo; });
     if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); }); sec.appendChild(ul); }
@@ -1441,31 +1455,31 @@ function pantalla() {
     var confirmando = n && n.confirmar;
     if (!confirmando && n && n.text) {
       var nota = el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text }));
-      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: 'Ver el pedido de cambio' }));
+      if (n.enlace) nota.appendChild(el('a', { href: n.enlace, text: T('pantalla.verElPedidoDeCambio') }));
       sec.appendChild(nota);
     }
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
-      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: 'Revisar cambios', onclick: function () { revisarSeccion(s); } }));
-      bar.appendChild(el('button', { class: 'sec', type: 'button', text: 'Descargar', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
-      if (habilitado) bar.appendChild(el('button', { type: 'button', text: 'Proponer el cambio', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
-      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : 'Primero revisá: así sabés si está bien antes de proponerlo.') }));
+      var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
+      bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
+      if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
+      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
       if (!confirmando) sec.appendChild(bar);
     }
-    if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Proponer el cambio', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));
+    if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.proponerElCambio'), onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));
     if (confirmando) {
       sec.appendChild(el('div', { class: 'antes-despues' },
-        el('div', {}, el('div', { class: 'lab', text: 'Hoy' }), el('pre', { text: s.texto || '(todavía no hay nada guardado)' })),
-        el('div', {}, el('div', { class: 'lab', text: 'Después del cambio' }), el('pre', { text: S.textos[s.id] }))));
-      sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Confirmar y proponer', onclick: function () {
-        S.notas[s.id] = { ok: true, text: 'proponiendo…' }; render();
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.hoy4') }), el('pre', { text: s.texto || T('pantalla.todaviaNoHayNadaGuardado2') })),
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.despuesDelCambio') }), el('pre', { text: S.textos[s.id] }))));
+      sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), onclick: function () {
+        S.notas[s.id] = { ok: true, text: T('pantalla.proponiendo') }; render();
         api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: s.oid }).then(function (r) { S.notas[s.id] = { ok: r.ok, text: r.message, enlace: r.enlace || null }; render(); if (r.ok) cargar(); });
-      } }), el('button', { class: 'sec', type: 'button', text: 'Cancelar', onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: 'Mirá la diferencia antes de confirmar.' })));
+      } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
     }
     return sec;
   }
   function tablaDeMirar(titulo, ayuda, filas, columnas, id) {
     var sec = el('section', { class: 'card form-block', id: id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: titulo }), el('p', { class: 'reach', text: ayuda }))));
-    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: 'Nada que mostrar.' })); return sec; }
+    if (!filas || !filas.length) { sec.appendChild(el('p', { class: 'muted', text: T('pantalla.nadaQueMostrar') })); return sec; }
     var tabla = el('table', { class: 'tabla' }); var thead = el('thead', {}); var tr = el('tr', {});
     columnas.forEach(function (c) { tr.appendChild(el('th', { text: c[1] })); }); thead.appendChild(tr); tabla.appendChild(thead);
     var tbody = el('tbody', {});
@@ -1488,21 +1502,21 @@ function pantalla() {
     var alDia = S.secciones.filter(function (s) { return estadoDe(s)[0] === 'ok'; }).length;
     var viejas = (ex.versiones || []).filter(function (v) { return v.estado === 'atrasada' || v.estado === 'sin_noticias'; }).length;
     partes.push(el('div', { class: 'grid' },
-      kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', 'Máquinas por confirmar', porConfirmar, porConfirmar ? 'piden que digas de quién son' : 'todas a nombre de alguien'),
-      kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, 'Secciones con algo para arreglar', aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : 'ninguna'),
-      kpi('st-good', null, 'Secciones al día', alDia + ' de ' + S.secciones.length, 'sin nada pendiente'),
-      kpi(viejas ? 'st-warn' : '', '#versiones', 'Máquinas con una versión vieja o sin noticias', viejas, 'de ' + (ex.versiones || []).length + ' que informan')));
-    var prod = tablaDeMirar('Productos', 'Los que revisa la noche. Se agregan en la lista de la revisión de dependencias.', (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? 'Despliegues' : 'revisión de dependencias', repo: p.repo || p.ruta, estado: p.activo === false ? 'apagado' + (p.motivo ? ' (' + p.motivo + ')' : '') : 'activo', edita: p.origen === 'deployments' ? 'sí, en Despliegues' : 'no' }; }), [['producto', 'Producto'], ['origen', 'De dónde sale'], ['repo', 'Repo'], ['estado', 'Estado'], ['edita', 'Se cambia acá']], 'productos');
-    if (ex.productosMotivo) prod.appendChild(aviso('bad', 'La lista de productos no se pudo leer: los de la revisión de dependencias no se muestran.', ex.productosMotivo));
-    if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: 'Abrir la lista de la revisión de dependencias →' })));
-    var ver = tablaDeMirar('Qué versión del arnés tiene cada máquina', 'La que informó cada una con su última corrida. Se actualizan solas al arrancar.', (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || 'sin confirmar', version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', 'Máquina'], ['persona', 'Persona'], ['version', 'Versión'], ['dia', 'Última noticia'], ['texto', 'Estado']], 'versiones');
-    if (ex.versionesMotivo) ver.appendChild(aviso('bad', 'No se pudo leer lo que informan las máquinas: la versión de cada una no se sabe.', ex.versionesMotivo));
+      kpi(porConfirmar ? 'st-warn' : 'st-good', '#seccion-personas', T('pantalla.maquinasPorConfirmar'), porConfirmar, porConfirmar ? T('pantalla.pidenQueDigasDeQuienSon') : T('pantalla.todasANombreDeAlguien')),
+      kpi(aCorregir.length ? 'st-warn' : 'st-good', aCorregir.length ? '#seccion-' + aCorregir[0].id : null, T('pantalla.seccionesConAlgoParaArreglar'), aCorregir.length, aCorregir.length ? aCorregir.map(function (s) { return plano(s).corto; }).join(', ') : T('pantalla.ninguna2')),
+      kpi('st-good', null, T('pantalla.seccionesAlDia'), alDia + T('pantalla.de2') + S.secciones.length, T('pantalla.sinNadaPendiente')),
+      kpi(viejas ? 'st-warn' : '', '#versiones', T('pantalla.maquinasConUnaVersionVieja'), viejas, T('pantalla.de') + (ex.versiones || []).length + T('pantalla.queInforman'))));
+    var prod = tablaDeMirar(T('pantalla.productos'), T('pantalla.losQueRevisaLaNoche'), (ex.productos || []).map(function (p) { return { producto: p.producto, origen: p.origen === 'deployments' ? T('pantalla.despliegues') : T('pantalla.revisionDeDependencias'), repo: p.repo || p.ruta, estado: p.activo === false ? T('pantalla.apagado') + (p.motivo ? ' (' + p.motivo + ')' : '') : T('pantalla.activo'), edita: p.origen === 'deployments' ? T('pantalla.siEnDespliegues') : T('pantalla.no') }; }), [['producto', T('pantalla.producto')], ['origen', T('pantalla.deDondeSale')], ['repo', T('pantalla.repo2')], ['estado', T('pantalla.estado')], ['edita', T('pantalla.seCambiaAca')]], 'productos');
+    if (ex.productosMotivo) prod.appendChild(aviso('bad', T('pantalla.laListaDeProductosNo'), ex.productosMotivo));
+    if (ex.productosEnlace) prod.appendChild(el('p', {}, el('a', { class: 'enlace-fuerte', href: ex.productosEnlace, text: T('pantalla.abrirLaListaDeLa') })));
+    var ver = tablaDeMirar(T('pantalla.queVersionDelArnesTiene'), T('pantalla.laQueInformoCadaUna'), (ex.versiones || []).map(function (v) { return { maquina: v.maquina, persona: v.persona || T('pantalla.sinConfirmar'), version: v.version, dia: v.diaTexto, texto: v.texto }; }), [['maquina', T('pantalla.maquina')], ['persona', T('pantalla.persona2')], ['version', T('pantalla.version2')], ['dia', T('pantalla.ultimaNoticia2')], ['texto', T('pantalla.estado')]], 'versiones');
+    if (ex.versionesMotivo) ver.appendChild(aviso('bad', T('pantalla.noSePudoLeerLo'), ex.versionesMotivo));
     var tablas = { productos: prod, versiones: ver };
     if (ex.contenido !== undefined) tablas.contenido = tablaDeContenido(ex.contenido);
     // lo pendiente de las tablas para mirar: una lista que no se pudo leer, o máquinas atrasadas
     var pendTabla = { productos: ex.productosMotivo ? 1 : 0, versiones: (ex.versionesMotivo ? 1 : 0) + viejas, contenido: 0 };
     var activa = S.pestana || PESTANAS[0][0];
-    var barra = el('nav', { class: 'pestanas', role: 'tablist', 'aria-label': 'Partes de la configuración' });
+    var barra = el('nav', { class: 'pestanas', role: 'tablist', 'aria-label': T('pantalla.partesDeLaConfiguracion') });
     var paneles = [];
     var vistas = {};
     PESTANAS.forEach(function (p, i) {
@@ -1514,7 +1528,7 @@ function pantalla() {
       var malas = secs.filter(function (s) { return estadoDe(s)[0] === 'bad'; }).length;
       var pend = secs.filter(function (s) { var e = estadoDe(s)[0]; return e === 'warn' || e === 'bad'; }).length + p[3].reduce(function (n, t) { return n + (tablas[t] ? pendTabla[t] : 0); }, 0);
       var sel = p[0] === activa;
-      var marca = pend ? el('span', { class: 'cuenta ' + (malas ? 'bad' : 'warn'), title: pend + ' para mirar', text: String(pend) }) : null;
+      var marca = pend ? el('span', { class: 'cuenta ' + (malas ? 'bad' : 'warn'), title: pend + T('pantalla.paraMirar'), text: String(pend) }) : null;
       barra.appendChild(el('a', { href: '#pestana-' + p[0], id: 'tab-' + p[0], role: 'tab', 'aria-selected': sel ? 'true' : 'false', 'aria-controls': 'pestana-' + p[0], class: sel ? 'activa' : undefined }, el('span', { text: p[1] }), marca));
       var panel = el('div', { class: 'pestana-panel', id: 'pestana-' + p[0], role: 'tabpanel', 'aria-labelledby': 'tab-' + p[0], hidden: sel ? undefined : 'hidden' });
       var pila = el('div', { class: 'pila' });
@@ -1522,7 +1536,7 @@ function pantalla() {
       panel.appendChild(pila);
       var mirar = p[3].filter(function (t) { return tablas[t]; });
       if (mirar.length) {
-        panel.appendChild(el('h3', { class: 'block' }, el('span', { text: 'Para mirar' }), el('span', { class: 'aside', text: 'no se cambia desde acá' })));
+        panel.appendChild(el('h3', { class: 'block' }, el('span', { text: T('pantalla.paraMirar2') }), el('span', { class: 'aside', text: T('pantalla.noSeCambiaDesdeAca') })));
         var pm = el('div', { class: 'pila' });
         mirar.forEach(function (t) { pm.appendChild(tablas[t]); });
         panel.appendChild(pm);
@@ -1535,7 +1549,7 @@ function pantalla() {
   }
   function cargar() {
     return api('').then(function (r) {
-      if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No se pudo leer la configuración.' }), el('span', { text: r.message || '' }))); return; }
+      if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: T('pantalla.noSePudoLeerLa') }), el('span', { text: r.message || '' }))); return; }
       S.secciones = r.secciones; S.extras = r;
       r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = llanos(s.problems); S.textos[s.id] = null; S.avisos[s.id] = llanos(s.avisos); });
       if (!S.pestana) S.pestana = pestanaDe(ancla()) || PESTANAS[0][0];
@@ -1562,7 +1576,7 @@ function pantalla() {
     if (h.indexOf('#pestana-') === 0 && typeof history !== 'undefined' && history.replaceState) { e.preventDefault(); history.replaceState(null, '', h); irA(h); return; }
     if (h === ancla()) irA(h);
   });
-  cargar().then(function () { var h = ancla(); if (h && h.indexOf('#pestana-') !== 0) irA(h); }).catch(function (e) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: 'No pude cargar la pestaña.' }), el('span', { text: e.message }))); });
+  cargar().then(function () { var h = ancla(); if (h && h.indexOf('#pestana-') !== 0) irA(h); }).catch(function (e) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: T('pantalla.noPudeCargarLaPestana') }), el('span', { text: e.message }))); });
 })();
 `;
 }
