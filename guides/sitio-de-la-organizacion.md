@@ -293,6 +293,9 @@ en su repo.
   Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Umbrales: cuándo algo se pinta verde o rojo**: los límites con que el tablero colorea cada número; entre los dos,
   amarillo. Queda en `scripts/nightly/dashboard/sources.json`, en el repo de operaciones. Lo revisa quien mantiene.
+- **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
+  Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
+  Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

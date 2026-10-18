@@ -80,7 +80,7 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply'];
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'hidden_cards'];
 const BRAND_KEYS = ['name', 'logo', 'dark'];
 const BRAND_THEME_OPTIONS = ['invert', 'keep'];
 // el logo: una ruta relativa dentro del repo de operaciones, sin subir de carpeta, a un .png o un .svg
@@ -169,6 +169,8 @@ function siteProblems(site) {
     problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
   }
   if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
+  // las fichas del tablero que el sitio no muestra: una lista de identificadores de scripts/site/tabs/cards.js
+  if (site.hidden_cards !== undefined) problems.push(...hiddenCardsProblems(site.hidden_cards));
   const b = site.brand;
   if (b !== undefined) {
     if (!isObject(b)) problems.push({ path: 'site.brand', message: 'tiene que ser un objeto { name, logo, dark }' });
@@ -179,6 +181,29 @@ function siteProblems(site) {
       if (b.dark !== undefined && !BRAND_THEME_OPTIONS.includes(b.dark)) problems.push({ path: 'site.brand.dark', message: 'tiene que ser «invert» (invertir el logo en el tema oscuro) o «keep» (dejarlo como está)' });
     }
   }
+  return problems;
+}
+
+/** Los identificadores de ficha que el sitio sabe mostrar; sin la lista del sitio en este árbol, no se juzga cuáles hay. */
+function fichaIds() {
+  try { return require('../site/tabs/cards.js').FICHAS.map((f) => f.id); } catch (e) {
+    if (e && e.code === 'MODULE_NOT_FOUND' && String(e.message).includes('cards.js')) return null;
+    throw e;
+  }
+}
+
+function hiddenCardsProblems(v) {
+  if (!Array.isArray(v)) return [{ path: 'site.hidden_cards', message: 'tiene que ser una lista de identificadores de ficha' }];
+  const ids = fichaIds();
+  const problems = [];
+  const vistas = new Set();
+  v.forEach((id, i) => {
+    const at = `site.hidden_cards.${i}`;
+    if (typeof id !== 'string' || !id) problems.push({ path: at, message: 'tiene que ser el identificador de una ficha (un texto)' });
+    else if (ids && !ids.includes(id)) problems.push({ path: at, message: `«${id.slice(0, 60)}» no es una ficha del sitio` });
+    else if (vistas.has(id)) problems.push({ path: at, message: `«${id}» está repetida` });
+    else vistas.add(id);
+  });
   return problems;
 }
 

@@ -63,19 +63,37 @@ if (require.main === module) require('../../lib/legacy-names.js').aliasArgv('scr
 const args = process.argv.slice(2);
 const flag = (n) => args.includes(n);
 const valor = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
-const NOCTURNO = flag('--nightly');
+/**
+ * Lo que decide de dónde y cómo se mide: carpeta de las fotos, modo, buzón y registros. Sale de los argumentos de la línea de
+ * órdenes y `colectar(opts)` lo sobreescribe mientras mide (el sitio llama al mismo cálculo con su copia de
+ * operaciones y el espejo de su buzón, sin pasar por argv).
+ */
+const AMB_ARGV = {
+  nocturno: flag('--nightly'),
+  mailbox: valor('--mailbox', null),
+  mailboxState: valor('--mailbox-state', null),
+  logs: valor('--logs', null),
+  runsDir: valor('--runs-dir', undefined),
+  config: CONFIG,
+  raiz: RAIZ,   // de dónde salen repos.json, pipeline-debt.json, declared.json y lane-hypothesis.json (el sitio pasa su copia de operaciones)
+  hoy: null,
+  ahora: null,
+};
+let AMB = { ...AMB_ARGV };
 /**
  * El día de la página (AAAA-MM-DD, UTC): `TYCON_TODAY` si es una fecha, si no el reloj (story 2.21, AC 6 y 9). Es el que
  * usa el reductor, y así las pruebas fijan el mes en curso, el vencimiento de la observación y la ventana del equipo.
  */
 function hoyUTC() {
+  if (AMB.hoy) return AMB.hoy;
   const h = readEnv('TYCON_TODAY', { where: 'scripts/nightly/dashboard/dashboard.js' });
   return typeof h === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(h) && !Number.isNaN(Date.parse(`${h}T00:00:00Z`)) ? h : new Date().toISOString().slice(0, 10);
 }
 
 // `--dir` existe para poder PROBAR el camino gris: sin él, el único escenario que importa
 // (una fuente ausente o vieja) sólo se podría verificar rompiendo el repo de verdad.
-const DASHBOARD = path.resolve(valor('--dir', path.join(RAIZ, '.dashboard')));
+AMB_ARGV.dashboard = path.resolve(valor('--dir', path.join(RAIZ, '.dashboard')));
+AMB.dashboard = AMB_ARGV.dashboard;
 
 // ───────────────────────────── utilidades honestas ─────────────────────────────
 
@@ -84,7 +102,7 @@ function fechaDelNombre(f) { const m = f.match(/(\d{4}-\d{2}-\d{2})/); return m 
 // ───────────────────────────── el colector ─────────────────────────────
 
 function leerFuente(f) {
-  const dir = path.join(DASHBOARD, f.dir === '.' ? '' : f.dir);
+  const dir = path.join(AMB.dashboard, f.dir === '.' ? '' : f.dir);
   let archivos = [];
   try {
     const rx = new RegExp('^' + f.pattern.replace(/[.]/g, '\\.').replace(/\*/g, '.*') + '$');
@@ -109,9 +127,16 @@ function leerFuente(f) {
   };
 }
 
-function colectar() {
-  const hoy = Date.now();
-  const cfg = JSON.parse(fs.readFileSync(CONFIG, 'utf8'));
+function colectar(opts = {}) {
+  const previo = AMB;
+  AMB = { ...AMB_ARGV, ...Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) };
+  if (opts.dir) AMB.dashboard = path.resolve(opts.dir);
+  try { return colectarAhora(); } finally { AMB = previo; }
+}
+
+function colectarAhora() {
+  const hoy = Number.isFinite(AMB.ahora) ? AMB.ahora : Date.now();
+  const cfg = JSON.parse(fs.readFileSync(AMB.config, 'utf8'));
   // Las fuentes `local: true` son de la vista de corridas (story 2.14): viven fuera de .dashboard y
   // las lee runs.js. Acá se saltean; si no, la de seis preguntas las listaría como «no leída».
   const fuentes = cfg.sources.filter((f) => !f.local).map(leerFuente).map((f) => {
@@ -124,14 +149,14 @@ function colectar() {
   const faltantes = fuentes.filter((f) => f.required && !f.vigente);
 
   const ctx = contexto();
-  const buzon = !NOCTURNO ? { estado: 'no_aplica' }
-    : !valor('--mailbox', null) ? { estado: 'no_leido', motivo: 'no se le pasó la carpeta del buzón (--mailbox)' }
-      : estadoDelBuzon(valor('--mailbox-state', null));
+  const buzon = !AMB.nocturno ? { estado: 'no_aplica' }
+    : !AMB.mailbox ? { estado: 'no_leido', motivo: 'no se le pasó la carpeta del buzón (--mailbox)' }
+      : (AMB.estadoBuzon || estadoDelBuzon(AMB.mailboxState));
   const eq = equipo(cfg, buzon);
   const L = { ...local(buzon), ...localExtra(ctx, por, cfg), ...eq, pasos: pasosPorCorrida(cfg, buzon) };
   // story 2.21: en el nocturno la duración de la suite sale de los registros de todas las máquinas (el reductor); en una
   // máquina, de su propio gates.log, con la misma lectura de la línea
-  if (NOCTURNO) L.gates_dur = eq.suite_duracion;
+  if (AMB.nocturno) L.gates_dur = eq.suite_duracion;
   const paneles = { corriendo: fuentes.map(fuenteParaSalida), encuentra: encuentra(por), mejora: mejora(por), local: L, extra: extra(por, ctx, cfg), poda: podaPanel(buzon) };
   return { hoy, cfg, fuentes, por, faltantes, paneles, cobertura: cobertura(fuentes), buzon };
 }
@@ -233,7 +258,7 @@ function mejora(por) {
   // La familia del capturador: se reusa loadAll, no se reimplementa el parser.
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts } = dm.loadAll(DASHBOARD);
+    const { records, counts } = dm.loadAll(AMB.dashboard);
     m._capturer_cobertura = counts;
     m._capturer_fechas = records.filter((x) => x.date).length;
     m.revisores = {};
@@ -397,7 +422,7 @@ function jsonsDe(dir, malas, vistas = new Set()) {
 function corridasDelBuzon(buzon) {
   const todas = (n) => ({ corridas: n, agentes: n, vueltas: n, trabajo_espera: n, maquinas: null });
   if (buzon.estado !== 'leido') return todas(noLeido(buzon));
-  const dir = path.resolve(valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')));
+  const dir = path.resolve(AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'));
   let ents;
   try { ents = fs.readdirSync(dir, { withFileTypes: true }); }
   catch (e) { return todas(noMedida(`no se pudo leer la carpeta bajada del buzón (${e.code || 'error'}): no es un buzón vacío`)); }
@@ -414,7 +439,7 @@ function corridasDelBuzon(buzon) {
 }
 
 function local(buzon = { estado: 'no_aplica' }) {
-  if (NOCTURNO) {
+  if (AMB.nocturno) {
     return {
       // la duración de la suite la pone colectar() con la cuenta del equipo (story 2.21)
       freno: noAplica('el freno de mano anota en el disco de cada máquina'),
@@ -502,7 +527,7 @@ function local(buzon = { estado: 'no_aplica' }) {
 // con sus metadatos, no una estadística.
 function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   // story 2.12: en el nocturno, sin el buzón entero no hay fichas del equipo — nunca «ninguna máquina reportó».
-  if (NOCTURNO && buzon.estado !== 'leido') {
+  if (AMB.nocturno && buzon.estado !== 'leido') {
     const n = noLeido(buzon);
     return { bloqueos: n, escapes: n, escapes_dom: n, frenos: n, evidencia_cierre: n, carriles: n, cobertura_tocada: n, mutacion: n, qa_guia: n, suite_duracion: n, cobertura_maquinas: n.motivo, maquinas_equipo: null };
   }
@@ -511,8 +536,8 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
   try {
     j = reductor.juntar({
       // 🔴 El nocturno no lee registros del disco: el agente no es una máquina del equipo (story 2.12).
-      registros: NOCTURNO ? null : path.resolve(valor('--logs', path.join(stateDirOf(require('os').homedir())))),
-      buzon: path.resolve(valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'))),
+      registros: AMB.nocturno ? null : path.resolve(AMB.logs || stateDirOf(require('os').homedir())),
+      buzon: path.resolve(AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')),
       cfg, hoy: hoyUTC(),
     });
   } catch (e) {
@@ -752,7 +777,7 @@ function equipo(cfg, buzon = { estado: 'no_aplica' }) {
 //    cuatro «no medido» con cuatro motivos distintos. Las corridas sin consumo medido siguen en el
 //    denominador (`n de N`) y se dicen: ni se promedian como cero ni desaparecen.
 function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
-  const nocturno = opts.nocturno === undefined ? NOCTURNO : opts.nocturno;
+  const nocturno = opts.nocturno === undefined ? AMB.nocturno : opts.nocturno;
   // En el nocturno, sin el buzón ENTERO no hay ficha: la mitad de las máquinas no es el equipo (story 2.12).
   if (nocturno && buzon.estado !== 'leido') return noLeido(buzon);
   // 🔴 La fuente se BUSCA en la lista cerrada. Leer el buzón por su ruta fija sin mirar la lista dejaría la
@@ -765,7 +790,7 @@ function pasosPorCorrida(cfg, buzon = { estado: 'no_aplica' }, opts = {}) {
   catch (e) { return noMedida(`scripts/metrics/steps-per-run.js no se pudo cargar (${e.code || e.name || 'error'})`); }
   // La antigüedad máxima es parte de la declaración (AC 6): mal escrita no APAGA el control de vejez, lo frena.
   if (!Number.isFinite(fuente.max_age_days) || fuente.max_age_days <= 0) return noMedida('sources.json declara «pasos-corrida» sin una antigüedad máxima válida (max_age_days tiene que ser un número de días mayor que cero): sin ella no se puede saber si el número está al día');
-  const dir = path.resolve(opts.dir || valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')));
+  const dir = path.resolve(opts.dir || AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'));
   // El medidor trata una carpeta que no puede leer como vacía; acá se distingue: «no está» no es «no hay corridas».
   if (!fs.existsSync(dir)) return noMedida('no está la carpeta bajada del buzón de corridas (la llena download-runs.js en las máquinas con permiso de lectura)');
   let r;
@@ -816,20 +841,20 @@ function denominadorPoda(c) {
     + (c.corridas.descartadas_sin_hallazgos ? `; ${c.corridas.descartadas_sin_hallazgos} corrida(s) de las máquinas sin medir no se cuentan` : '');
 }
 function podaPanel(buzon = { estado: 'no_aplica' }) {
-  if (NOCTURNO && buzon.estado !== 'leido') {
+  if (AMB.nocturno && buzon.estado !== 'leido') {
     const n = noLeido(buzon);
     return { estado: 'no_medido', motivo: n.motivo, candidatas: n, probadas: n };
   }
   let r;
   try {
-    const registros = path.resolve(valor('--logs', path.join(stateDirOf(require('os').homedir()))));
+    const registros = path.resolve(AMB.logs || stateDirOf(require('os').homedir()));
     r = require('./prune').podar({
-      fuentes: CONFIG,
+      fuentes: AMB.config,
       hallazgos: path.join(registros, 'hallazgos.jsonl'),
-      buzon: path.resolve(valor('--mailbox', path.join(stateDirOf(require('os').homedir()), 'corridas-buzon'))),
-      historia: valor('--runs-dir', undefined),
+      buzon: path.resolve(AMB.mailbox || path.join(stateDirOf(require('os').homedir()), 'corridas-buzon')),
+      historia: AMB.runsDir,
       // story 2.12: las dos puntas del cruce salen sólo del buzón — el disco del agente no es una máquina.
-      sinLocal: NOCTURNO,
+      sinLocal: AMB.nocturno,
     });
   } catch (e) {
     // 🔴 El motivo propio del cruce (sus textos son fijos) se publica. Un error inesperado se nombra en la
@@ -866,14 +891,22 @@ function podaPanel(buzon = { estado: 'no_aplica' }) {
 // uno ya estaba viejo ("1 de 6 productos vigilados": el archivo real decía 3).
 
 function leerJson(ruta) { try { return JSON.parse(fs.readFileSync(ruta, 'utf8')); } catch (e) { return null; } }
+/**
+ * Un archivo de datos del arnés (repos.json, pipeline-debt.json, declared.json, lane-hypothesis.json): sólo del árbol que se
+ * mide (`AMB.raiz`: el repo de operaciones, o la copia que lee el sitio). Si ahí no está, la ficha que lo usa sale «no
+ * medida»: el del arnés que corre no es el de la organización.
+ */
+function datoDelArbol(...partes) {
+  return leerJson(path.join(AMB.raiz, ...partes));
+}
 const SRC = path.dirname(RAIZ); // la carpeta que contiene a todos los repos del equipo
 
 function contexto() {
-  const rj = leerJson(path.join(RAIZ, 'scripts', 'nightly', 'dependencies', 'repos.json'));
+  const rj = datoDelArbol('scripts', 'nightly', 'dependencies', 'repos.json');
   const repos = rj && Array.isArray(rj.repos) ? rj.repos : (Array.isArray(rj) ? rj : []);
   const productos = [...new Set(repos.map((r) => r.producto).filter(Boolean))];
-  const debt = leerJson(path.join(RAIZ, 'scripts', 'ci', 'pipeline-debt.json'));
-  const declarados = leerJson(path.join(__dirname, 'declared.json'));
+  const debt = datoDelArbol('scripts', 'ci', 'pipeline-debt.json');
+  const declarados = datoDelArbol('scripts', 'nightly', 'dashboard', 'declared.json');
   return { repos, productos, debt, declarados: (declarados && declarados.declared) || [] };
 }
 
@@ -909,7 +942,7 @@ function fichaDespliegues(doc, hoy) {
  */
 function fichaEdad(cfg, ctx) {
   const { stateAge } = require(path.join(__dirname, '..', 'projects', 'state-age.js'));
-  const r = stateAge({ photosDir: path.join(DASHBOARD, 'proyectos'), products: ctx.repos.length ? ctx.repos : null, today: hoyUTC(),
+  const r = stateAge({ photosDir: path.join(AMB.dashboard, 'proyectos'), products: ctx.repos.length ? ctx.repos : null, today: hoyUTC(),
     dias: cfg && cfg.params ? cfg.params.edad_en_estado_dias : undefined });
   if (r.estado !== 'medido') return noMedida(r.motivo);
   const [d1, d2] = r.dias; const t = r.titular;
@@ -1122,8 +1155,8 @@ function extra(por, ctx, cfg) {
   // 🔴 Bajo el mínimo el repo NO publica su proporción: dice cuánto falta. Y el resultado en contra
   //    del pipeline sale igual que el resultado a favor: la ficha no juzga, no tiene color.
   m.rework_por_carril = desde(sdlc, (d) => {
-    const rutaH = readEnv('TYCON_LANE_HYPOTHESIS', { where: 'scripts/nightly/dashboard/dashboard.js' }) || path.join(RAIZ, 'scripts', 'metrics', 'lane-hypothesis.json');
-    const h = leerJson(rutaH);
+    const rutaH = readEnv('TYCON_LANE_HYPOTHESIS', { where: 'scripts/nightly/dashboard/dashboard.js' });
+    const h = rutaH ? leerJson(rutaH) : datoDelArbol('scripts', 'metrics', 'lane-hypothesis.json');
     const nMin = h && Number.isInteger(h.min_n_per_group) && h.min_n_per_group >= 1 ? h.min_n_per_group : null;
     if (!h || !nMin) return noMedida('la hipótesis del reproceso por carril no está declarada (scripts/metrics/lane-hypothesis.json, con su mínimo por grupo): sin ella no se dibuja');
     const rs = (d.repos || []).filter((r) => r && Object.prototype.hasOwnProperty.call(r, 'rework_por_carril'));
@@ -1183,7 +1216,7 @@ function extra(por, ctx, cfg) {
   // La familia del capturador: contrato y fechas, con loadAll (no se reimplementa el parser).
   try {
     const dm = require(path.join(RAIZ, 'scripts', 'lib', 'dashboard-metrics.js'));
-    const { records, counts } = dm.loadAll(DASHBOARD);
+    const { records, counts } = dm.loadAll(AMB.dashboard);
     m.contrato_v2 = counts.total ? { ...ratio(counts.v2ok, counts.total), den_etiqueta: 'registros' } : noMedida('no hay registros del capturador');
     const fuentes = {};
     for (const r of records) inc(fuentes, r.date_source || 'ninguna');
@@ -1230,7 +1263,7 @@ function localExtra(ctx, por, cfg) {
   // Bus factor (story 2.26): la concentración del autor principal por producto DECLARADO, nunca el nombre. En el
   // nocturno la lee del archivo que deja el nocturno de métricas (la fuente `concentracion`); en una máquina, la calcula
   // con la MISMA función sobre los repos del disco (por `ruta`), así el número es el mismo.
-  if (NOCTURNO) {
+  if (AMB.nocturno) {
     const f = por && por.concentracion;
     if (f && f.vigente) m.bus_factor = fichaConcentracion(f.doc);
     else if (!ctx.repos.length) m.bus_factor = noMedida('la organización no declaró sus productos (repos.json)');
@@ -1361,18 +1394,18 @@ function tablaPoda(P) {
 function selloDe(d, ahora) {
   const sdlc = d.por && d.por['sdlc-stage'];
   const snapshot = sdlc && sdlc.leida && sdlc.ultimoArchivo ? fechaDelNombre(sdlc.ultimoArchivo) : null;
-  const corrida = NOCTURNO && /^\d{1,20}$/.test(process.env.BUILD_BUILDID || '') ? process.env.BUILD_BUILDID : null;
+  const corrida = AMB.nocturno && /^\d{1,20}$/.test(process.env.BUILD_BUILDID || '') ? process.env.BUILD_BUILDID : null;
   const b = d.buzon || { estado: 'no_aplica' };
   const maquinas = d.paneles && d.paneles.local ? d.paneles.local.maquinas_equipo : null;
   let buzon;
-  if (!NOCTURNO) buzon = { estado: 'no_aplica' };
+  if (!AMB.nocturno) buzon = { estado: 'no_aplica' };
   else if (b.estado !== 'leido') buzon = { estado: 'no_leido', motivo: String(b.motivo || 'sin motivo').slice(0, 300) };
   // Leído, pero la cuenta no pudo decir cuántas máquinas entraron: las fichas del equipo no tienen número.
   else if (!Number.isInteger(maquinas) || maquinas < 0) buzon = { estado: 'no_leido', motivo: 'la cuenta de los registros del buzón falló' };
   else buzon = { estado: 'leido', maquinas };
   return {
     // el modo del nocturno se graba con su nombre de siempre hasta el retiro (seal.js, story 8.9 tanda E)
-    esquema: 1, generado: ahora, snapshot: snapshot || null, modo: NOCTURNO ? require('./seal').NIGHTLY_RECORDED : 'local', corrida,
+    esquema: 1, generado: ahora, snapshot: snapshot || null, modo: AMB.nocturno ? require('./seal').NIGHTLY_RECORDED : 'local', corrida,
     fuentes: { esperadas: d.cobertura.esperadas, al_dia: d.cobertura.vigentes }, buzon,
   };
 }
@@ -1521,7 +1554,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('3', '¿Las pruebas prueban algo?', q3, q3 === 'bad' ? 'rojo' : q3 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">La pregunta que separa un tablero honesto de uno decorativo. Una suite en verde no dice nada por sí sola: lo que dice algo es <strong>si esas pruebas se rompen cuando el código se rompe</strong>. <em>La mutación, la cobertura y la guía de QA cuentan los registros de todas las máquinas que los suben, y cada ficha dice de cuántas sale su número; ${NOCTURNO ? 'la duración de la suite, también: sale del registro de controles que sube cada máquina' : 'la duración de la suite sale todavía de esta máquina'}.</em></p>
+  <p class="q-note">La pregunta que separa un tablero honesto de uno decorativo. Una suite en verde no dice nada por sí sola: lo que dice algo es <strong>si esas pruebas se rompen cuando el código se rompe</strong>. <em>La mutación, la cobertura y la guía de QA cuentan los registros de todas las máquinas que los suben, y cada ficha dice de cuántas sale su número; ${AMB.nocturno ? 'la duración de la suite, también: sale del registro de controles que sube cada máquina' : 'la duración de la suite sale todavía de esta máquina'}.</em></p>
   <div class="grid">
     ${F('mutacion', 'Puntaje de mutación: proporción de mutantes que las pruebas matan (mediana)', L.mutacion, pct, { bad: 'flojo', warn: 'hubo ceros', ok: 'bien' }, 'Un chequeo que <b>no pudo medir</b> —hoy el chequeo sólo sabe correr las pruebas de Node, así que en .NET y React no mide— se cuenta aparte y <b>nunca es un 0 %</b>.')}
     ${F('cobertura_tocada_evaluo', 'Corridas de pruebas que evaluaron el umbral del 75 % sobre las líneas tocadas', L.cobertura_tocada, pct, { bad: 'casi nunca mide', warn: 'parcial', ok: 'bien' }, 'La cobertura se mide sobre las <b>líneas que la story agregó o modificó</b>, no sólo sobre los archivos que creó (medido: casi ninguna story crea archivos, y el umbral no juzgaba nada). Una corrida no evalúa cuando su herramienta no produce cobertura o no hubo líneas de código tocadas. <b>En observación</b>: el detalle dice hasta cuándo y cuántas habrían frenado, y con ese número se decide si el 75 % pasa a frenar. Cuenta todas las máquinas.')}
@@ -1532,7 +1565,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('4', '¿Los controles sirven, o estorban?', q4, q4 === 'bad' ? 'una regla concentra todo' : q4 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${NOCTURNO ? notaCorridasNocturno : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de corridas de todas.'}</em></p>
+  <p class="q-note">Un catálogo de reglas sólo puede crecer si nadie mide cuáles frenan de verdad y cuáles se esquivan todos los días. <strong>Éste es el panel que decide qué regla se retira</strong>. <em>Frenos y escapes, de todas las máquinas: ${esc(L.cobertura_maquinas || 'sin cobertura de máquinas')}. ${AMB.nocturno ? notaCorridasNocturno : 'La duración, los agentes y las vueltas salen de los registros de esta máquina; los pasos, del buzón de corridas de todas.'}</em></p>
   <div class="grid">
     ${F('', 'Veces que un control del pipeline bloqueó una acción', L.bloqueos, entero, {}, 'Cuenta las evaluaciones de los <b>controles del pipeline</b> (el registro de controles, <code>gates.log</code>) que bloquearon. Los frenos previos a la herramienta —los que corren antes de cada comando— son otra cuenta, de otro registro: están en la ficha siguiente.')}
     ${F('', 'Los frenos previos a la herramienta: cuántas veces frenaron, y cuántas los saltearon', L.frenos, entero, {}, 'Los dos números de la misma regla, juntos: sin el primero, un freno que funcionó todo el mes se ve igual que uno que nunca se disparó. <b>El total es una cuenta, no un porcentaje</b>: los seis no comparten denominador —el freno de comandos peligrosos no cuenta los «dejé pasar», porque corre en cada comando de la terminal—, así que la proporción vive por freno, cada uno con el suyo.')}
@@ -1560,7 +1593,7 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
 
 <section class="q">
   ${cabecera('5', '¿De qué depende que esto siga funcionando?', q5, q5 === 'bad' ? 'riesgo dominante' : q5 === 'warn' ? 'atención' : 'bien')}
-  <p class="q-note">El riesgo de ingeniería no es el código: es <strong>quién es la única persona que sabe tocarlo</strong>. ${NOCTURNO ? 'Medido cada noche sobre los commits del último año de los repos declarados de la organización, con las identidades de una persona unidas y sin los commits de las máquinas.' : 'Medido sobre los commits del último año de los repos declarados que están en este disco, con la misma regla que el nocturno.'} <strong>Se publica la concentración, nunca el nombre.</strong></p>
+  <p class="q-note">El riesgo de ingeniería no es el código: es <strong>quién es la única persona que sabe tocarlo</strong>. ${AMB.nocturno ? 'Medido cada noche sobre los commits del último año de los repos declarados de la organización, con las identidades de una persona unidas y sin los commits de las máquinas.' : 'Medido sobre los commits del último año de los repos declarados que están en este disco, con la misma regla que el nocturno.'} <strong>Se publica la concentración, nunca el nombre.</strong></p>
   <div class="grid g2">
     ${F('bus_factor_productos_en_riesgo', 'Productos donde una sola persona hizo el 75 % o más de los commits del último año', L.bus_factor, entero, { bad: 'una persona', warn: 'atención', ok: 'repartido' }, 'La diferencia entre los concentrados y los repartidos no es el tamaño ni la antigüedad: es quién los arrancó.')}
     ${F('vigilados', 'Productos con algo mirando su producción todas las noches', E.vigilados, pct, { bad: 'casi ninguno', warn: 'parcial', ok: 'todos' })}
@@ -1607,9 +1640,9 @@ function main() {
     return;
   }
   // 🔴 Un solo escritor (story 2.12): sin --nightly, la página NO se escribe dentro del repo. Se decide ANTES de medir.
-  const salida = path.resolve(valor('--output', NOCTURNO ? SALIDA_DEFAULT : SALIDA_LOCAL_DEFAULT));
+  const salida = path.resolve(valor('--output', AMB.nocturno ? SALIDA_DEFAULT : SALIDA_LOCAL_DEFAULT));
   // Sólo si la raíz es un repo git: es lo que se commitea. Una copia suelta de los guiones (una prueba, un zip) no lo es.
-  if (!flag('--dry-run') && !NOCTURNO && fs.existsSync(path.join(RAIZ, '.git'))) {
+  if (!flag('--dry-run') && !AMB.nocturno && fs.existsSync(path.join(RAIZ, '.git'))) {
     let dentro = true;   // sin el detector no se puede afirmar que la ruta está afuera
     try { dentro = require('./runs').dentroDelRepoDelEquipo(salida); } catch (e) { dentro = true; }
     if (dentro) {

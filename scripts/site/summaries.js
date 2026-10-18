@@ -7,7 +7,7 @@
  * espejo en el hilo principal lo deja sin contestar y la plataforma reinicia el contenedor. Todo lo que recorre el
  * espejo va acá: la bajada (`bajarEnWorker`, con el módulo de la nube), el resumen de las conversaciones (`resumirEnWorker`: dashboard/runs.js →
  * resumirEspejo, lo que la tabla y el detalle sacan de ellas, y las borra del disco), la lectura de las corridas y de lo
- * informado por las máquinas (`leerEspejoEnWorker`), la huella del espejo (`huellaEnWorker`) y los textos de una
+ * informado por las máquinas (`leerEspejoEnWorker`), la huella del espejo (`huellaEnWorker`), las fichas del tablero (`fichasEnWorker`) y los textos de una
  * corrida a demanda (`textosEnWorker`). Con un techo de memoria y uno de tiempo se cae el hilo, nunca el sitio.
  */
 const path = require('path');
@@ -42,6 +42,14 @@ function bajarEnWorker({ modulo, log = () => {}, memoriaMb = 768, tiempoMs = nul
 /** Las corridas del espejo y lo informado por las máquinas, leídos en un hilo aparte: { corridas, informados }. */
 function leerEspejoEnWorker({ buzon, memoriaMb = 768, tiempoMs = 300000 }) {
   return enWorker({ __leerEspejo: true, buzon }, { memoriaMb, tiempoMs, frase: 'la lectura del espejo del buzón no terminó a tiempo' });
+}
+
+/**
+ * Las fichas del tablero nocturno (tabs/cards.js → fichasDelClon) en un hilo aparte: el cálculo común del tablero recorre
+ * el espejo del buzón, y eso no se hace en el hilo principal. `log` recibe las líneas del hilo.
+ */
+function fichasEnWorker({ memoriaMb = 768, tiempoMs = 300000, log = () => {}, ...opts }) {
+  return enWorker({ __fichas: true, opts }, { memoriaMb, tiempoMs, frase: 'las fichas del tablero no terminaron a tiempo', log });
 }
 
 /** La huella del espejo (tabs/runs.js → huellaDelEspejo) en un hilo aparte. */
@@ -80,7 +88,10 @@ if (!isMainThread && workerData && workerData.__leerEspejo) {
 if (!isMainThread && workerData && workerData.__huella) {
   trabajo(() => require('./tabs/runs.js').huellaDelEspejo(workerData.dir, workerData.extra));
 }
+if (!isMainThread && workerData && workerData.__fichas) {
+  trabajo(() => require('./tabs/cards.js').fichasDelClon({ ...workerData.opts, log: (l) => parentPort.postMessage({ __linea: String(l) }) }));
+}
 if (!isMainThread && workerData && workerData.__resumir) trabajo(() => resumirAca(workerData));
 if (!isMainThread && workerData && workerData.__textos) trabajo(() => require(RUNS).textosDeUnaCorrida(workerData.volcado, { skillsDir: workerData.skillsDir }));
 
-module.exports = { resumirEnWorker, resumirAca, textosEnWorker, bajarEnWorker, leerEspejoEnWorker, huellaEnWorker };
+module.exports = { fichasEnWorker, resumirEnWorker, resumirAca, textosEnWorker, bajarEnWorker, leerEspejoEnWorker, huellaEnWorker };

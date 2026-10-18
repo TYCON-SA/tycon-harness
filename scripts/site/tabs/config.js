@@ -31,6 +31,7 @@ const ORG = require('../../lib/org-config.js');
 const RP = require('../../lib/repo-proposal.js');
 const people = require('../../lib/people.js');
 const access = require('../access.js');
+const { FICHAS: FICHAS_DEL_SITIO } = require('./cards.js');
 const views = require('../views.js');
 const { dentroDe } = require('../sources.js');
 
@@ -277,6 +278,11 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
+    // la lista de fichas es la de este sitio; un lector que no conoce la clave deja la sección en «no sabe leer»
+    if (s.id === 'fichas') {
+      if (!(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('hidden_cards'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer las fichas que muestra el sitio (site.hidden_cards)' };
+      v.extras = { fichas: FICHAS_DEL_SITIO.map((f) => ({ id: f.id, titulo: f.titulo, paraQue: f.paraQue, pestana: f.pestana })) };
+    }
     if (s.id === 'sitio') v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null };
     // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
     if (s.id === 'despliegues') { const r = remoteDe('operaciones') || {}; v.extras = { plataforma: r.platform || null, org: r.org || null, proyecto: r.project || null }; }

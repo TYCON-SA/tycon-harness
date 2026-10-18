@@ -64,6 +64,8 @@ const SECCIONES = Object.freeze([
   // el interruptor de la organización: con `true`, «Proponer» aprueba y completa el pedido con la identidad del sitio si
   // las políticas de main lo dejan. Cuenta el valor de main, nunca el del cambio que se propone (scripts/site/tabs/config.js)
   Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
+  // las fichas del tablero nocturno que el sitio no muestra (la lista es la de scripts/site/tabs/cards.js)
+  Object.freeze({ id: 'fichas', titulo: 'Fichas que muestra el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.hidden_cards']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
   // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
@@ -622,10 +624,11 @@ function pantalla() {
     paquetes: { t: 'Paquetes de la organización', d: 'Qué paquetes del arnés (revisores y guías de un producto o de un cliente) se activan en todas las máquinas. Llega a cada una con su próxima actualización.', corto: 'Paquetes' },
     instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
+    fichas: { t: 'Fichas que muestra el sitio', d: 'Las fichas del tablero de la noche que el sitio muestra en Arnés, Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y se pueden volver a tildar cuando quieras.', corto: 'Fichas del sitio' },
     aplicar: { t: 'Los cambios de un mantenedor', d: 'Si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para que lo apruebe otra persona. El cambio que prende esta opción no se aplica solo: la opción cuenta desde que entra.', corto: 'Los cambios de un mantenedor' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1122,6 +1125,35 @@ function pantalla() {
       d.site.auto_apply = v === 'true';
     }, 'site.auto_apply', pr), el('p', { class: 'muted', text: 'Queda escrito quién pidió cada cambio: en el pedido y en el registro del sitio.' }));
   }
+  // story 2.36: una casilla por ficha; tildada = se muestra. Lo destildado es site.hidden_cards, en el orden de la lista.
+  function editorFichas(s, d, pr) {
+    var ex = s.extras || {};
+    var todas = Array.isArray(ex.fichas) ? ex.fichas : [];
+    var ocultas = ((d.site || {}).hidden_cards || []).slice();
+    var box = el('div', { class: 'pila' });
+    if (!todas.length) { box.appendChild(el('p', { class: 'muted', text: 'Esta versión del sitio no trae la lista de fichas.' })); return box; }
+    var grupos = [['arnes', 'En Arnés'], ['proyectos', 'En Proyectos'], ['corridas', 'En Corridas']];
+    grupos.forEach(function (g) {
+      var fs = todas.filter(function (f) { return f.pestana === g[0]; });
+      if (!fs.length) return;
+      box.appendChild(el('p', { class: 'sub-t', text: g[1] }));
+      fs.forEach(function (f) {
+        var c = el('input', { type: 'checkbox', 'aria-label': f.titulo, 'data-path': 'site.hidden_cards.' + f.id, onchange: function (e) {
+          var ya = ((d.site || {}).hidden_cards || []).filter(function (x) { return x !== f.id; });
+          if (!e.target.checked) ya.push(f.id);
+          var orden = todas.map(function (x) { return x.id; });
+          ya = ya.filter(function (x) { return orden.indexOf(x) >= 0; }).sort(function (a, b) { return orden.indexOf(a) - orden.indexOf(b); }).concat(ya.filter(function (x) { return orden.indexOf(x) < 0; }));
+          if (!esObjeto(d.site)) d.site = {};
+          if (ya.length) d.site.hidden_cards = ya; else { delete d.site.hidden_cards; if (!Object.keys(d.site).length) delete d.site; }
+        } });
+        c.checked = ocultas.indexOf(f.id) < 0;
+        box.appendChild(el('label', {}, c, el('span', { text: ' ' + f.titulo }), el('span', { class: 'muted', text: ' — ' + f.paraQue })));
+      });
+    });
+    var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });
+    if (raras.length) box.appendChild(el('p', { class: 'muted', text: 'Hay fichas ocultas que esta versión no conoce: ' + raras.join(', ') + '. Se conservan.' }));
+    return box;
+  }
   // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
   function tablaDeContenido(filas) {
     var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: 'Lo que trae la organización' }), el('p', { class: 'reach', text: 'Skills, revisores, guías de alta y paquetes del repo del equipo. Se cambian con un pedido en ese repo, no desde acá.' }))));
@@ -1296,7 +1328,7 @@ function pantalla() {
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, fichas: editorFichas, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

@@ -10,6 +10,7 @@
 !scripts/lib/
 !scripts/metrics/
 !scripts/nightly/dashboard/
+!scripts/nightly/projects/state-age.js
 !scripts/setup/harness/
 !scripts/setup/install-effects.json
 !scripts/ci/check-product-parity.js

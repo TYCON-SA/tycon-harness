@@ -14,6 +14,7 @@
  *   · Los motivos que se ven son frases fijas de esta casa (la lista cerrada del AC 14); el motivo crudo va al registro.
  */
 const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
+const fichasDelTablero = require('./tabs/cards.js');
 
 const DIA = 86400000;
 const PARADA_DIAS = 30;
@@ -316,7 +317,14 @@ function paginaProyectos(ctx) {
 function paginaArnes(ctx) {
   const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version });
   const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}</span><span class="marca">${l.estado === 'medido' ? '<span class="pill">medido</span>' : '<span class="pill nm">no medido</span>'}</span></li>`).join('');
-  return layout(ctx, 'Arnés', seccion('Cómo está el arnés', `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">La página de las seis preguntas →</a>`), 'Si los controles andan: lo que midió la noche y la versión que corre este sitio.');
+  // las fichas del tablero nocturno, por pregunta; sin el modelo de fichas (una prueba que no las pide) no hay nada
+  const m = ctx.modelo || {};
+  const porPregunta = fichasDelTablero.seccionesDe(m.fichas, 'arnes').map((s) => seccion(s.titulo, s.html)).join('');
+  const ocultas = fichasDelTablero.avisoDeOcultas(m.fichas);
+  // `null`: el sitio todavía no las calculó (el primer refresco); aparecen solas
+  const calculando = m.fichas === null ? '<p class="q-note" id="fichas-calculando">Las fichas del tablero se están calculando: aparecen en la próxima actualización.</p>' : '';
+  const fichas = calculando + porPregunta + (ocultas ? `<p class="q-note" id="fichas-ocultas">${esc(ocultas)}</p>` : '');
+  return layout(ctx, 'Arnés', seccion('Cómo está el arnés', `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">La página de las seis preguntas →</a>`) + fichas, 'Si los controles andan: lo que midió la noche y la versión que corre este sitio.');
 }
 
 /** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea (AC 20, 23). */

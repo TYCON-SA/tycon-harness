@@ -1967,3 +1967,83 @@ test('T20 2.34-Proponer_SinCredencialDescarga @story-2.34 @ac-10 @ac-16 — la c
     assert.match(p.message, /sin identidad de escritura/);
   });
 });
+
+// ── las fichas que muestra el sitio ──────────────────────────────────────────────────────────────────────
+test('T16 2.36-Clave_HiddenCardsValida @story-2.36 @ac-2 — site.hidden_cards: una lista de identificadores de la lista; lo demás, con su ruta', () => {
+  const FICHAS = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js')).FICHAS;
+  const con = (hidden_cards) => OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], hidden_cards } })));
+  assert.strictEqual(con([FICHAS[0].id, FICHAS[3].id]).ok, true);
+  assert.strictEqual(con([]).ok, true, 'una lista vacía vale: se muestran todas');
+  assert.strictEqual(OPS.parse(ORG.formatJson(opsBase())).ok, true, 'sin la clave vale');
+  const malas = con([FICHAS[0].id, 'no_existe', 7, FICHAS[0].id]);
+  assert.strictEqual(malas.ok, false);
+  assert.deepStrictEqual(malas.problems.map((p) => p.path), ['site.hidden_cards.1', 'site.hidden_cards.2', 'site.hidden_cards.3']);
+  assert.match(malas.problems[0].message, /no es una ficha del sitio/);
+  assert.match(malas.problems[2].message, /repetida/);
+  const forma = con('backlog');
+  assert.strictEqual(forma.ok, false);
+  assert.deepStrictEqual(forma.problems.map((p) => [p.path, p.message]), [['site.hidden_cards', 'tiene que ser una lista de identificadores de ficha']]);
+});
+
+test('T17 2.36-Seccion_FichasQueMuestraElSitio @story-2.36 @ac-2 — la sección está en «Avisos y la noche» y propone un cambio que toca sólo site.hidden_cards', async () => {
+  const s = ORG.seccionPorId('fichas');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Fichas que muestra el sitio', 'operations.json', 'operaciones', 'operations-config.js', ['site.hidden_cards'], 'operations']);
+  const base = opsBase({ site: { maintainers: [LEAD], refresh_minutes: 15 } });
+  const r = ORG.revisar({ seccion: 'fichas', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], refresh_minutes: 30, hidden_cards: ['backlog', 'pasos'] } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, hidden_cards: ['backlog', 'pasos'] } }), 'sólo la hoja de las fichas');
+  // sacar todas las ocultas saca la clave, sin dejar un objeto vacío
+  const vuelta = ORG.revisar({ seccion: 'fichas', texto: r.texto, borrador: { site: { maintainers: [LEAD], refresh_minutes: 15 } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(vuelta.texto, ORG.formatJson(base));
+  const codigo = ORG.pantalla();
+  assert.match(codigo, /\['avisos', 'Avisos y la noche', \['canal', 'espera', 'umbrales', 'fichas'\]/);
+  assert.match(codigo, /fichas: editorFichas/);
+  // en el sitio, la sección llega con las 25 fichas y su casilla
+  const ops = clon({ 'operations.json': opsBase() });
+  await conPestana({ fuentes: fuentesCon({ ops }) }, async ({ h, entrar }) => {
+    const sec = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'fichas');
+    assert.strictEqual(sec.estado, 'cargado');
+    assert.strictEqual(sec.extras.fichas.length, require(path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js')).FICHAS.length);
+    assert.deepStrictEqual(Object.keys(sec.extras.fichas[0]).sort(), ['id', 'paraQue', 'pestana', 'titulo']);
+  });
+});
+
+test('T17b 2.36-Editor_CasillaPorFicha @story-2.36 @ac-2 — una casilla por ficha, tildada si se muestra; destildar la agrega a site.hidden_cards en el borrador', async () => {
+  const REALES = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js')).FICHAS;
+  const fichas = ['backlog', 'mutacion', 'pasos'].map((id) => { const f = REALES.find((x) => x.id === id); assert.ok(f, `${id} está en la lista real`); return { id: f.id, titulo: f.titulo, paraQue: f.paraQue, pestana: f.pestana }; });
+  const sec = { id: 'fichas', titulo: 'Fichas que muestra el sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], extras: { fichas }, borrador: { site: { maintainers: [LEAD], hidden_cards: ['pasos', 'ficha_de_otra_version'] } } };
+  const p = await pantallaFalsa([sec]);
+  assert.strictEqual(p.error, null);
+  const casillas = p.todo(p.sec('fichas')).filter((n) => n.tag === 'input' && n.attrs.type === 'checkbox');
+  assert.deepStrictEqual(casillas.map((c) => c.attrs['data-path']), ['site.hidden_cards.mutacion', 'site.hidden_cards.backlog', 'site.hidden_cards.pasos'], 'agrupadas por pestaña: Arnés, Proyectos, Corridas');
+  assert.deepStrictEqual(casillas.map((c) => Boolean(c.checked)), [true, true, false], 'la oculta viene destildada');
+  assert.match(p.textoDe('fichas'), /ficha_de_otra_version/, 'una oculta que esta versión no conoce se nombra y se conserva');
+  // destildar una la agrega al borrador; volver a tildar la oculta la saca
+  casillas[0].checked = false; casillas[0].on.change({ target: casillas[0] });
+  casillas[2].checked = true; casillas[2].on.change({ target: casillas[2] });
+  await p.click('Revisar cambios', 'fichas');
+  const enviado = p.pedidos.filter((x) => x.cuerpo && x.cuerpo.borrador).pop();
+  assert.ok(enviado, 'Revisar manda el borrador');
+  assert.deepStrictEqual([...enviado.cuerpo.borrador.site.hidden_cards].sort(), ['ficha_de_otra_version', 'mutacion']);
+});
+
+test('2.36-HiddenCards_ErrorDeCargaNoApagaLaValidacion @story-2.36 @ac-2 — si la lista de fichas no carga por un error propio, el lector lo dice; sólo su ausencia apaga el juicio', () => {
+  const LECTOR = path.join(ROOT, 'scripts', 'lib', 'operations-config.js');
+  const FICHAS_JS = path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js');
+  const correr = (preparar) => spawnSync(process.execPath, ['-e', `
+    const Module = require('module');
+    const FICHAS_JS = ${JSON.stringify(FICHAS_JS)};
+    ${preparar}
+    const OPS = require(${JSON.stringify(LECTOR)});
+    const r = OPS.parse(JSON.stringify({ site: { maintainers: ['a@acme.example'], hidden_cards: ['no_existe'] } }));
+    process.stdout.write(JSON.stringify(r.problems.map((p) => p.path)));`], { encoding: 'utf8' });
+  // la lista no está en este árbol: no se juzga cuáles hay (no es un error)
+  const sinLista = correr(`const orig = Module._resolveFilename; Module._resolveFilename = function (req, ...a) { if (String(req).endsWith('cards.js')) { const e = new Error("Cannot find module '" + req + "'"); e.code = 'MODULE_NOT_FOUND'; throw e; } return orig.call(this, req, ...a); };`);
+  assert.strictEqual(sinLista.status, 0, sinLista.stderr);
+  assert.ok(!JSON.parse(sinLista.stdout).includes('site.hidden_cards.0'), 'sin la lista, no_existe no se marca');
+  // la lista está pero no carga por un error propio: el lector no lo tapa
+  const rota = correr(`require.cache[FICHAS_JS] = { id: FICHAS_JS, filename: FICHAS_JS, loaded: true, get exports() { throw new SyntaxError('cards.js roto'); } };`);
+  assert.notStrictEqual(rota.status, 0, 'un error de carga de cards.js pasó en silencio');
+  assert.match(rota.stderr, /cards\.js roto/);
+});

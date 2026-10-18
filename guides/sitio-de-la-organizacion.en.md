@@ -306,6 +306,10 @@ only: they are changed with a request in their repo.
 - **Thresholds: when something is painted green or red** (*Umbrales: cuándo algo se pinta verde o rojo*): the limits
   the dashboard uses to color each number; in between, yellow. It lives in `scripts/nightly/dashboard/sources.json`, in
   the operations repo. A maintainer reviews it.
+- **Cards the site shows** (*Fichas que muestra el sitio*): one checkbox per card of the night dashboard that the site
+  shows in Arnés, Proyectos and Corridas. Untick the ones you do not use: they stop being built and shown, and Arnés
+  says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
+  reviews it.
 
 ![Notices and the night](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
