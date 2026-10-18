@@ -4700,6 +4700,67 @@ function resolverFirmante(crudo, roster) {
   return { ...partes, tramo };
 }
 
+// El destino de un hallazgo frente a la constancia del verificador. Devuelve la `disposition` final y el resumen de la
+// constancia (o null). Un `refuted` sin constancia válida queda `open` con el motivo; con un verificador que
+// reprodujo el hallazgo, ni `refuted` ni `waived` se aceptan (se rechaza la escritura entera: `errores`).
+// «No existe» y «está rota» no son lo mismo: una constancia que está y no se lee podría decir «reproducido», así que
+// `refuted` y `waived` se rechazan igual que con «reproducido». Y lo que no se puede verificar (el registro de spawns, el
+// roster) se DICE y deja el `refuted` en `open`: nunca se apaga el chequeo en silencio.
+function judgeRefutation({ disposition, ruleId, advisor, file, line, runDir, roster, warnings, errores }) {
+  const lib = require('./lib/refutation.js');
+  const quien = `${ruleId} (${advisor || '?'}, ${file || '?'})`;
+  const hallazgo = lib.identity({ reviewer: advisor, rule: ruleId, file, line });
+  const leida = lib.readConstancia(runDir, hallazgo);
+  const avisar = (m) => { if (Array.isArray(warnings)) warnings.push(m); };
+  const aOpen = (m) => { avisar(`${m}${disposition === 'refuted' ? " → 'refuted' queda 'open'" : ''}.`); return { disposition: disposition === 'refuted' ? 'open' : disposition, refutation: null }; };
+  // LA regla (una sola, un solo lugar): un hallazgo con una constancia «reproducido», ilegible o mal escrita —en la línea que
+  // sea— no queda `refuted` ni `waived`. Va primero: lo que sigue sólo decide si un «refutado» vale.
+  if (disposition === 'refuted' || disposition === 'waived') {
+    const b = lib.blocksDismissal(runDir, hallazgo);
+    if (b.blocks) {
+      if (Array.isArray(errores)) {
+        errores.push(`${quien}: ${b.motivos.join('; ')}: no se puede dejar como '${disposition}'. Tiene que quedar 'fixed' (con su prueba) u 'open'. `
+          + "Si la constancia está rota, borrala y volvé a correr verify-finding / record-refutation.");
+      }
+      return { disposition, refutation: null };
+    }
+  }
+  if (leida.estado === 'rota') {
+    avisar(`constancia ilegible del verificador de ${quien} (${leida.motivo}): no se usa.`);
+    return { disposition, refutation: null };
+  }
+  const c = leida.constancia;
+  // La constancia vale para UN hallazgo (revisor, regla, archivo y línea): la de otro, o la de un hallazgo sin línea, no cuenta.
+  if (c && !lib.sameFinding(c.finding, hallazgo)) {
+    return aOpen(`la constancia hallada para ${quien} es de otro hallazgo o el hallazgo no trae línea (revisor, regla, archivo y línea tienen que coincidir)`);
+  }
+  if (!c) {
+    if (disposition !== 'refuted') return { disposition, refutation: null };
+    avisar(`'refuted' sin constancia del verificador en ${quien} → queda 'open': un "es falso" sólo vale si otro agente corrió el código `
+      + `y lo confirmó (pipeline.js verify-finding, y después record-refutation).`);
+    return { disposition: 'open', refutation: null };
+  }
+  const impl = roster && roster.implementer;
+  const v = lib.validate(c, { implementer: impl, finding: hallazgo });
+  if (!v.ok) {
+    const porque = [...v.errores, ...(v.faltan.length ? [`faltan: ${v.faltan.join(', ')}`] : [])].join('; ');
+    return aOpen(`la constancia del verificador de ${quien} no vale (${porque})`);
+  }
+  // El verificador se revalida acá contra el registro de spawns (lo mismo que record-refutation): una constancia escrita a
+  // mano con un agente que nunca se lanzó no vale.
+  const lanzado = launchInLedger(c.verifier.agent);
+  if (lanzado === LANZAMIENTO.ilegible) {
+    return aOpen(`no se pudo verificar quién verificó ${quien}: el registro de spawns no se pudo leer`);
+  }
+  if (lanzado === LANZAMIENTO.no) {
+    return aOpen(`el verificador '${c.verifier.agent}' de ${quien} no figura en el registro de spawns: sin un lanzamiento real de otro agente la constancia no vale`);
+  }
+  if (!impl || typeof impl !== 'object') {
+    return aOpen(`no se pudo verificar quién implementó ${quien}: el review-roster.json de la corrida falta, está ilegible o no trae el implementador`);
+  }
+  return { disposition, refutation: lib.summary(c) };
+}
+
 function normalizeFindingRecord(raw, warnings, ctx) {
   let severity = String(raw.severity || 'WARNING').toUpperCase().trim();
   if (!VALID_SEVERITY.has(severity)) severity = 'WARNING';
@@ -4723,6 +4784,22 @@ function normalizeFindingRecord(raw, warnings, ctx) {
   const ruleId = String(raw.rule_id || raw.ruleId || raw.rule || '?').trim();
   const crudo = String(raw.advisor || raw.owner || '').trim();
   const firmante = resolverFirmante(crudo, ctx && ctx.roster);
+  // Un «falso» sólo vale con la constancia de otro agente que corrió el código (lib/refutation.js). Sin `ctx.runDir`
+  // (quien normaliza un hallazgo suelto, fuera de write-findings) no hay dónde buscarla y no se evalúa.
+  let refutation = null;
+  if (ctx && ctx.runDir) {
+    const verdict = judgeRefutation({ disposition, ruleId, advisor: firmante.advisor, file: String(raw.file || '').trim(), line: Number.isInteger(raw.line) ? raw.line : undefined,
+      runDir: ctx.runDir, roster: ctx.roster, warnings, errores: ctx.errores });
+    disposition = verdict.disposition;
+    refutation = verdict.refutation;
+  }
+  // Con el veredicto «reproducido» el hallazgo es real: `fixed` exige la prueba que lo cubre (`test`: ruta o nombre).
+  const prueba = String(raw.test || raw.prueba || '').trim().replace(/\s+/g, ' ');
+  if (refutation && refutation.verdict === 'reproducido' && disposition === 'fixed' && !prueba) {
+    if (Array.isArray(warnings)) warnings.push(`${ruleId} (${firmante.advisor || '?'}): el verificador reprodujo el hallazgo y 'fixed' exige la prueba que lo cubre `
+      + "(`test`: la ruta o el nombre de la prueba) → queda 'open'.");
+    disposition = 'open';
+  }
   if (!crudo && Array.isArray(warnings)) {
     // Un hallazgo SIN firmante no es un firmante inválido (no hay nada contra qué validar), pero
     // tampoco es un hallazgo completo: no se sabe quién lo vio. Atravesaba la validación nueva sin
@@ -4749,6 +4826,7 @@ function normalizeFindingRecord(raw, warnings, ctx) {
     severity,
     advisor: firmante.advisor,
     file: String(raw.file || '').trim(),
+    ...(Number.isInteger(raw.line) && raw.line >= 0 ? { line: raw.line } : {}),
     disposition,
     reason: String(raw.reason || raw.summary || raw.title || '').trim().replace(/\s+/g, ' '),
     // La anotación no se pierde: se muda. Y el tramo dice contra qué lista compararlo.
@@ -4756,6 +4834,8 @@ function normalizeFindingRecord(raw, warnings, ctx) {
     ...(firmante.model ? { model: firmante.model } : {}),
     ...(firmante.nota ? { nota: firmante.nota } : {}),
     ...(firmante.tramo ? { tramo: firmante.tramo } : {}),
+    ...(prueba ? { test: prueba } : {}),
+    ...(refutation ? { refutation } : {}),
   };
 }
 
@@ -4841,7 +4921,7 @@ function writeFindings(args) {
     }
   }
   const errores = [];
-  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores }));
+  const records = arr.map((r) => normalizeFindingRecord(r, normWarnings, { roster, errores, runDir }));
   if (errores.length) {
     return { error: errores.join('\n'), firmantes_invalidos: errores.length, run_dir: runDir,
       note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
@@ -4850,6 +4930,16 @@ function writeFindings(args) {
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
   // Story en otro repo → el portón de CI de ESE repo va a pedir esta constancia (2026-09-05).
   const proyeccion = projectRunToStoryRepo(runDir, args.story);
+  // La tasa de falsas alarmas por revisor (últimas 20 corridas del repo): sólo cuentan los «falsos» que un verificador
+  // confirmó. Marcar no apaga a nadie; lo decide una persona.
+  const tasas = require('./lib/refutation.js').reviewerRates(path.dirname(runDir));
+  if (tasas.valor === null) normWarnings.push(`la tasa de falsas alarmas por revisor NO se midió: ${tasas.motivo}.`);
+  else if (tasas.no_leidas) normWarnings.push(`la tasa de falsas alarmas por revisor se midió sin ${tasas.no_leidas} corrida(s) cuyo findings.json no se pudo leer.`);
+  const marcados = (tasas.valor || []).filter((t) => t.flagged);
+  for (const t of marcados) {
+    normWarnings.push(`${t.reviewer}: marcado para revisión — ${t.refuted} de ${t.total} hallazgos en las últimas 20 corridas `
+      + `fueron falsos confirmados por un verificador (${Math.round(t.rate * 100)} %, el tope es 30 %).`);
+  }
   const counts = {
     critical: records.filter((f) => f.severity === 'CRITICAL').length,
     warning: records.filter((f) => f.severity === 'WARNING').length,
@@ -4861,11 +4951,126 @@ function writeFindings(args) {
   };
   return {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
+    ...(marcados.length ? { reviewers_flagged: marcados.map((t) => t.reviewer) } : {}),
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
     note: `findings.json escrito (${records.length} findings: ${counts.critical} CRITICAL / ${counts.warning} WARNING). `
       + `Siguiente: pipeline.js write-followups --story ${args.story} --findings ${outPath} (persiste los no-resueltos EN la story).`,
   };
+}
+
+// ── «Falso» lo confirma otro, corriendo el código ────────────────────────────────────────────────
+// verify-finding: arma el lanzamiento del verificador de UN hallazgo que el autor propone descartar. El texto sale del
+// guion del pase adversarial (modo `single-finding`, mismo criterio reproducir-o-refutar), corrido sólo para armarlo.
+// record-refutation: con lo que devolvió el verificador arma la constancia, la valida y la guarda en
+// `<corrida>/refutations/<id>.json`, que es lo que `write-findings` exige para dejar un hallazgo como `refuted`.
+function readJsonArg(file, nombre) {
+  if (!file) return { error: `falta ${nombre} <archivo.json>` };
+  try { return { value: JSON.parse(readText(file)) }; } catch (e) { return { error: `${nombre} no se pudo leer como JSON: ${e.message}` }; }
+}
+
+function findingFromInput(v) {
+  const x = v && typeof v === 'object' ? v : {};
+  const id = require('./lib/refutation.js').identity({ reviewer: String(x.reviewer || x.advisor || ''), rule: String(x.rule || x.rule_id || ''), file: String(x.file || '') });
+  return { reviewer: id.reviewer, rule: id.rule,
+    file: String(x.file || '').trim(), line: x.line, summary: String(x.summary || x.reason || '').trim(),
+    author_reason: String(x.author_reason || x.reason || '').trim() };
+}
+
+function workflowRequest(finding, model, repo) {
+  const source = readText(path.join(__dirname, 'adversarial-verify.workflow.js')).replace(/^export const meta =/m, 'const meta =');
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const fn = new AsyncFunction('args', 'log', 'agent', 'parallel', 'pipeline', source);
+  const noop = () => { throw new Error('el armado del pedido no lanza agentes'); };
+  return fn({ modo: 'single-finding', soloPedido: true, hallazgo: finding, files: [finding.file], model, repo }, () => {}, noop, noop, noop);
+}
+
+async function verifyFinding(args) {
+  const f = readJsonArg(args.finding, '--finding');
+  if (f.error) return { error: f.error };
+  const finding = findingFromInput(f.value);
+  const faltan = ['reviewer', 'rule', 'file', 'author_reason'].filter((k) => !finding[k]);
+  // La misma regla que record-refutation (`validate`): sin línea entera no hay constancia posible, así que no se arma el lanzamiento.
+  if (!Number.isInteger(finding.line) || finding.line < 0) faltan.push('line');
+  if (faltan.length) return { error: `--finding no trae: ${faltan.join(', ')}` };
+  // el modelo por defecto del verificador es el del pase adversarial (lib/models.js, el único lugar de los modelos)
+  const model = args.modelo || MODELOS.DEFAULTS.adversarial.model;
+  const pedido = await workflowRequest(finding, model, path.resolve(args.repo || process.cwd()));
+  const id = require('./lib/refutation.js').idOf(finding);
+  return {
+    id, subagent_type: 'general-purpose', model: pedido.model, prompt: pedido.prompt,
+    note: 'Lanzá UN agente general-purpose con este prompt y modelo (no lo hagas vos: el verificador tiene que ser otro agente que el que implementó). '
+      + `Con lo que devuelva: pipeline.js record-refutation --finding ${args.finding} --result <json con refuted, command, output> `
+      + '--verifier <agente@ts de su lanzamiento en el registro de spawns> --verifier-model <modelo> --run-dir <corrida>.',
+  };
+}
+
+// El lanzamiento del verificador en el registro de spawns del hook (`<agente>@<ts>`): sin esa línea no hubo un agente
+// distinto, sólo alguien que dice haberlo sido. Tres respuestas: figura, no figura, o el registro no se pudo leer
+// («no sé» no es «no figura»).
+const LANZAMIENTO = { si: 'si', no: 'no', ilegible: 'ilegible' };
+function launchInLedger(id) {
+  const m = String(id || '').match(/^(.+)@(\d{4}-\d{2}-\d{2}T[0-9:.]+Z)$/);
+  if (!m) return LANZAMIENTO.no;
+  const ledger = require('./lib/advisor-ledger.js');
+  let dir; let files;
+  try { dir = ledger.runsDirPath(); files = fs.readdirSync(dir); } catch (e) {
+    return e && e.code === 'ENOENT' ? LANZAMIENTO.no : LANZAMIENTO.ilegible; // sin carpeta nunca se lanzó nada; otro error, no se sabe
+  }
+  let ilegible = false;
+  for (const f of files) {
+    if (!f.endsWith('.jsonl')) continue;
+    let raw;
+    try { raw = fs.readFileSync(path.join(dir, f), 'utf8'); } catch { ilegible = true; continue; }
+    if (ledger.parseJsonl(raw).some((r) => r && r.advisor === m[1] && r.ts === m[2])) return LANZAMIENTO.si;
+  }
+  return ilegible ? LANZAMIENTO.ilegible : LANZAMIENTO.no;
+}
+
+function recordRefutation(args) {
+  const f = readJsonArg(args.finding, '--finding');
+  if (f.error) return { error: f.error };
+  const r = readJsonArg(args.resultado, '--result');
+  if (r.error) return { error: r.error };
+  const finding = findingFromInput(f.value);
+  if (!args.runDir) return { error: 'falta --run-dir <carpeta de la corrida>' };
+  if (!args.verificador) return { error: 'falta --verifier <agente@ts del lanzamiento del verificador>' };
+  const lib = require('./lib/refutation.js');
+  const lanzado = launchInLedger(args.verificador);
+  if (lanzado === LANZAMIENTO.ilegible) {
+    return { error: 'no se pudo leer el registro de spawns: no se puede verificar quién verificó, así que no hay constancia (reintentá cuando se pueda leer).' };
+  }
+  if (lanzado === LANZAMIENTO.no) {
+    return { error: `el verificador '${args.verificador}' no figura en el registro de spawns: sin un lanzamiento real de otro agente no hay constancia (el id es <agente>@<ts> de la línea que escribió el hook al lanzarlo).` };
+  }
+  // Sin roster legible la constancia se guarda igual (valen los nombres del orquestador) pero se DICE: write-findings
+  // es quien deja el `refuted` en `open` mientras no se pueda verificar quién implementó.
+  let implementer = null;
+  const avisos = [];
+  const rosterPath = path.join(args.runDir, 'review-roster.json');
+  if (!exists(rosterPath)) avisos.push('no se pudo verificar quién implementó: todavía no existe el review-roster.json de la corrida; write-findings no aceptará el refuted hasta que exista.');
+  else {
+    try { implementer = JSON.parse(readText(rosterPath)).implementer || null; } catch (e) { avisos.push(`no se pudo verificar quién implementó: el review-roster.json es ilegible (${String(e.message).slice(0, 80)}).`); }
+    if (!implementer && !avisos.length) avisos.push('no se pudo verificar quién implementó: el review-roster.json no trae el implementador.');
+  }
+  const c = lib.build({ finding, authorReason: finding.author_reason, verifier: { agent: args.verificador, model: args.modeloVerificador || '' },
+    verdict: lib.decide(r.value), command: r.value && r.value.command, output: r.value && r.value.output });
+  const v = lib.validate(c, { implementer });
+  if (!v.ok) return { error: `la constancia no vale: ${[...v.errores, ...(v.faltan.length ? [`faltan: ${v.faltan.join(', ')}`] : [])].join('; ')}` };
+  const dest = lib.constanciaPath(args.runDir, finding);
+  // Un «reproducido» (o una constancia que no se puede leer, que podría serlo) nunca se pisa: se resuelve con fixed u open.
+  if (c.verdict !== 'reproducido') {
+    const previa = lib.readConstancia(args.runDir, finding);
+    if (previa.estado === 'rota' || (previa.estado === 'ok' && previa.constancia.verdict !== 'refutado')) {
+      return { error: `ya hay una constancia ${previa.estado === 'rota' ? `ilegible (${previa.motivo})` : '«reproducido» (o mal escrita)'} de este hallazgo y no se pisa con un «refutado»: el reproducido se resuelve dejando el hallazgo 'fixed' (con su prueba) u 'open'. Si está rota, borrala a mano.` };
+    }
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, `${JSON.stringify(c, null, 2)}\n`, 'utf8');
+  return { recorded: true, path: dest, verdict: c.verdict, ...(avisos.length ? { warnings: avisos } : {}),
+    note: c.verdict === 'refutado'
+      ? "El verificador demostró que no se da: ahora write-findings acepta 'refuted' para este hallazgo."
+      : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
 // findings-status: pre-condición mecánica de Step 8 (BUG-PIPELINE-006). ¿El run tiene findings.json válido?
@@ -4925,6 +5130,11 @@ function parseArgs(argv) {
     else if (t === '--strict') a.strict = true;          // lint-config: exit 1 si hay hallazgos
     else if (t === '--specs-dir') a.specsDir = argv[++i];
     else if (t === '--findings') a.findings = argv[++i];
+    else if (t === '--finding') a.finding = argv[++i];             // verify-finding / record-refutation: el hallazgo propuesto como falso (JSON)
+    else if (t === '--result') a.resultado = argv[++i];            // record-refutation: lo que devolvió el verificador (JSON: refuted, command, output)
+    else if (t === '--verifier') a.verificador = argv[++i];        // record-refutation: el id del lanzamiento del verificador (<agente>@<ts> del registro de spawns)
+    else if (t === '--verifier-model') a.modeloVerificador = argv[++i];
+    else if (t === '--model') a.modelo = argv[++i];                // verify-finding: modelo del verificador (default sonnet)
     else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el step-05b (aun en LOW)
     else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el step-05b
     else if (t === '--deep-review-opus') a.deepReviewOpus = true;  // hunters/verifiers en Opus (default sonnet)
@@ -5630,6 +5840,18 @@ function main() {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
+  if (cmd === 'verify-finding') {
+    verifyFinding(args).then((result) => {
+      process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+      process.exit(result.error ? 1 : 0);
+    }, (e) => { process.stderr.write(`verify-finding: ${e.message}\n`); process.exit(1); });
+    return;
+  }
+  if (cmd === 'record-refutation') {
+    const result = recordRefutation(args);
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+    process.exit(result.error ? 1 : 0);
+  }
   if (cmd === 'findings-status') {
     const result = computeFindingsStatus(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
@@ -5765,6 +5987,13 @@ function main() {
     '       (Step 6 — escribe el findings.json machine-parseable en el run dir (auto-resuelto):\n' +
     '       array de {rule_id,severity,advisor,file,disposition,reason}. Valida schema. Es el\n' +
     '       insumo del retrospective-capturer — reemplaza el WRITE MANUAL olvidable (BUG-PIPELINE-006).)\n' +
+    '  node pipeline.js verify-finding    --finding <hallazgo.json> [--repo <dir>] [--model sonnet]\n' +
+    '       (un hallazgo que el autor propone descartar como falso: imprime el lanzamiento — prompt y modelo — de UN\n' +
+    '       verificador independiente que corre el código. {reviewer, rule, file, line, summary, author_reason}.)\n' +
+    '  node pipeline.js record-refutation --finding <hallazgo.json> --result <resultado.json> --verifier <agente@ts>\n' +
+    '                                     --verifier-model <modelo> --run-dir <corrida>\n' +
+    '       (valida lo que devolvió el verificador {refuted, command, output} y guarda <corrida>/refutations/<id>.json:\n' +
+    '       sin esa constancia write-findings no deja un hallazgo como refuted.)\n' +
     '  node pipeline.js findings-status   --story <spec.md> --repo <dir>\n' +
     '       (pre-condición de Step 8 — exit 3 si falta el findings.json del run. El orquestador lo\n' +
     '       corre antes del commit-prep y, si falta, lo escribe con write-findings.)\n' +

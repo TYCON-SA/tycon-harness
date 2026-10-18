@@ -51,6 +51,10 @@
  *   node daily-summary.js deliver  --source dependencies|vigilante --today <YYYY-MM-DD> [--dry-run] [--extra <archivo>]
  *     --extra: la línea de otro paso que va al FINAL del mismo mensaje (los PR abiertos). Sólo se toma su
  *       primera línea, y sólo si es la cantidad («PR abiertos hace más de 2 días: N»)
+ *     --runs: las carpetas de corrida del repo (`.advisors/pipeline-runs`, por defecto las de la raíz del árbol): de sus
+ *       `findings.json` de la última semana salen las dudas repetidas de los revisores. El mensaje lleva sólo la cantidad
+ *       («dudas de revisores: N», y nada si no hay); el revisor, la regla y cuántas veces quedan en `dudas_revisores` del
+ *       `--json` y de la constancia. Sin carpeta que leer es `null` con su motivo, nunca un 0
  *     --operations: el operations.json de donde salen el canal y `site.url` (por defecto, el de la raíz del árbol)
  *     --site-check: el resultado de scripts/site/check-deploy.js --out de esa mañana (sólo dependencias)
  *     [--out <snapshots>] [--pending <fichas>] [--config <repos.json>] [--summary-config <summary.json>]
@@ -606,6 +610,25 @@ function leerConfig(archivo, nombre, fallos) {
   }
 }
 
+/**
+ * Las dudas repetidas de los revisores, de las carpetas de corrida commiteadas del repo (`.advisors/pipeline-runs/*`,
+ * su `findings.json`) de la última semana: la misma (revisor, regla) con dos o más «falsos» confirmados por un
+ * verificador, o con dos o más desacuerdos (el verificador reprodujo lo que el autor quería descartar).
+ * `{ valor: [{ revisor, regla, falsos, desacuerdos }], motivo }`; sin carpeta que leer, `valor: null` con el motivo.
+ * El texto del mensaje lleva sólo la cantidad: el revisor y la regla quedan en el `--json` y en la constancia.
+ */
+function dudasDeRevisores(runs, hoy) {
+  if (!runs) return { valor: null, motivo: 'no se indicó la carpeta de corridas del repo', no_leidas: 0 };
+  // La librería vive con el pipeline: una copia del resumen sin ella al lado (un laboratorio, una instalación parcial)
+  // no tiene con qué leer las constancias, y eso es «no medido», no «sin dudas» ni una caída del resumen entero.
+  const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'refutation.js');
+  if (!fs.existsSync(lib)) return { valor: null, motivo: 'no está la librería de constancias del pipeline al lado del resumen', no_leidas: 0 };
+  const r = require(lib).repeatedDoubts(runs, hoy, 7);
+  // El revisor y la regla salen de un `findings.json` del repo: pasan por el mismo filtro de nombres que lineaRetros.
+  if (r.valor) r.valor = r.valor.map((d) => ({ ...d, revisor: nombreSeguro(d.revisor), regla: nombreSeguro(d.regla) }));
+  return r;
+}
+
 function armar(a) {
   // Sólo para la suite: prueba que un error inesperado llega en UNA línea y con constancia (T14b, T17, T18).
   if (process.env.TYCON_SUMMARY_INJECT_FAILURE === '1') throw new Error('falla inyectada por TYCON_SUMMARY_INJECT_FAILURE');
@@ -634,10 +657,13 @@ function armar(a) {
   if (!fichas) fallos.push(`no se pudieron leer las fichas en ${a.pending}`);
   else fallos.push(...fichas.ilegibles);
   const comp = comparar(a.fuente, a.out, a.hoy, rubros);
-  const t = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
+  const dudas = dudasDeRevisores(a.runs, a.hoy);
+  const base = texto({ fuente: a.fuente, rubros, cambios: comp.cambios, base: comp.base, fallos, comparadoCon: comp.comparado_con, hoy: a.hoy,
     empezaron: comp.empezaron, modo: comp.modo });
+  // Sin dudas, o sin fuente, el texto no cambia: la fuente que falta se dice en `dudas_revisores.motivo`, no con un 0.
+  const t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
   return { fuente: a.fuente, fecha: a.hoy, rubros, cambios: comp.cambios, cambios_motivo: comp.cambios_motivo,
-    comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, texto: t };
+    comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, dudas_revisores: dudas, texto: t };
 }
 
 /**
@@ -771,12 +797,14 @@ function seccionExtra(archivo) {
  * retrospectiva. Sólo números, nombres de repo con forma de nombre y shas: nada de texto libre del informe (los motivos
  * pueden nombrar una dirección). Sin informe, lo dice: no es «faltan 0».
  */
+// un nombre: letras (con acentos), números, espacios y . _ - (Azure acepta espacios); nada más pasa al mensaje ni a la constancia
+function nombreSeguro(x) { return typeof x === 'string' && /^[\p{L}\p{N}._ -]{1,80}$/u.test(x) && x.trim() === x ? x : '?'; }
+
 function lineaRetros(archivo) {
   let r;
   try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { return 'retros: ? (el barrido de la noche no dejó su informe)'; }
   const n = (x) => (Number.isInteger(x) && x >= 0 ? x : null);
-  // un nombre de repo: letras (con acentos), números, espacios y . _ - (Azure acepta espacios); nada más pasa al mensaje
-  const nombre = (x) => (typeof x === 'string' && /^[\p{L}\p{N}._ -]{1,80}$/u.test(x) && x.trim() === x ? x : '?');
+  const nombre = nombreSeguro;
   if (!r || !Array.isArray(r.repos)) return 'retros: ? (el informe del barrido no se pudo leer)';
   const t = { merges: 0, latido: 0, aprendizajes: 0, no_piden: 0 };
   const faltan = [];
@@ -871,6 +899,7 @@ function entregar(a) {
     motivo: intento.entregado ? null : limpiar(intento.motivo),
     rubros: res.rubros,
     fallos: res.fallos,
+    dudas_revisores: res.dudas_revisores,
     sitio: { linea: sitio.linea, resultado: sitio.resultado, motivo: sitio.motivo, hora: sitio.hora },
   };
   const nota = [notaArmado, intento.nota].filter(Boolean).join(' · ');
@@ -892,7 +921,7 @@ function entregar(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
+    vigOut: null, depsOut: null, extra: null, retros: null, runs: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -906,6 +935,7 @@ function parseArgs(argv) {
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--retros') a.retros = valor(++i);
+    else if (v === '--runs') a.runs = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
     else if (v === '--site-update') a.siteUpdate = valor(++i);
@@ -919,7 +949,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
 }
 
@@ -961,6 +991,7 @@ function main(argv) {
   a.fuente = FUENTE_DE_LA_OPCION[a.fuente];
   // el canal y la dirección del sitio, del operations.json de la raíz del árbol (como work-items.js)
   a.operations = a.operations || path.join(RAIZ, 'operations.json');
+  a.runs = a.runs || path.join(RAIZ, '.advisors', 'pipeline-runs');
   if (a.fuente === 'dependencias') {
     a.out = a.out || path.join(RAIZ, '.dashboard', 'dependencias');
     a.pending = a.pending || path.join(RAIZ, 'inbox', 'dependencies');

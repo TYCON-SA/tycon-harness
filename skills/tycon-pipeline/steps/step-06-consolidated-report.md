@@ -24,6 +24,34 @@ Para cada reporte de advisor, parsear:
 - Lista de items `WARNING`
 - Lista de items `OK` (opcional en el reporte final)
 
+## Cómo se refuta un hallazgo (un «falso» lo confirma otro, corriendo el código)
+
+Quien implementó puede proponer que un hallazgo es falso, pero no lo decide: `refuted` sólo se escribe con la constancia
+de un verificador independiente. Sin ella `write-findings` lo deja `open` y lo dice.
+
+1. Escribí el hallazgo en un JSON: `{reviewer, rule, file, line, summary, author_reason}` (el motivo es el tuyo).
+2. `pipeline.js verify-finding --finding <json> --repo <repo> [--model opus]` imprime el lanzamiento: lanzá UN agente
+   `general-purpose` con ese prompt y modelo. El verificador corre el código y devuelve `{refuted, command, output}`; ante
+   la duda, `refuted: false`.
+3. `pipeline.js record-refutation --finding <json> --result <json> --verifier <agente@ts> --verifier-model <m> --run-dir <corrida>`
+   valida la constancia (el verificador tiene que figurar en el registro de spawns y no ser quien implementó) y la guarda
+   en `<corrida>/refutations/`. `<agente@ts>` es el agente y la hora de su lanzamiento en ese registro.
+4. Después, `write-findings`: con veredicto `refutado` acepta `refuted`; con `reproducido` el hallazgo es real y queda
+   `fixed` u `open`, nunca `refuted` ni `waived` (la escritura se rechaza). El `fixed` de un hallazgo reproducido
+   exige su prueba: agregá al hallazgo `test` con la ruta o el nombre de la prueba que lo cubre (`"test": "tests/a.test.js::devuelve 403"`);
+   sin ella queda `open` y lo dice.
+
+`write-findings` vuelve a revisar la constancia, no confía en que `record-refutation` la haya dejado bien: el verificador tiene que
+figurar en el registro de spawns, y el roster tiene que poder leerse para saber quién implementó. Si cualquiera de los dos no se
+puede leer, lo dice («no se pudo verificar quién verificó / quién implementó») y el `refuted` queda `open`. Una constancia
+que está pero no se puede leer («constancia ilegible») no es «sin constancia»: `refuted` y `waived` se rechazan, porque no
+se puede descartar que diga «reproducido». En `findings.json` el comando va acotado a 200 caracteres y sin credenciales;
+la constancia completa queda en `<corrida>/refutations/`.
+
+Sin verificador disponible el hallazgo queda `open`: nunca «falso» por omisión. `write-findings` también avisa
+«marcado para revisión» cuando un revisor tiene más del 30 % de falsos confirmados en las últimas 20 corridas: ponelo en el
+informe de Hallazgos. No se apaga a nadie por eso; lo decide una persona.
+
 ## Formato del reporte consolidado (ARTEFACTO — no es el mensaje al chat)
 
 🔴 **Leer antes de usar este formato (regla COMM.ii del SKILL.md)**: lo que sigue es el formato del

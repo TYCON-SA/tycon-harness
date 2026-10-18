@@ -1208,6 +1208,77 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 T8d="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
 [ "$T8d" = "retros: ? (el informe del barrido no se pudo leer)" ] && ok "1.26-T8 un informe sin no_piden no se lee como cero" || no "1.26-T8 sin no_piden: «${T8d}»"
 
+# 1.21-T7 ResumenDiario_DudasRepetidas — las dudas de los revisores, de las carpetas de corrida commiteadas del repo
+# (`.advisors/pipeline-runs/*/findings.json`, `--runs`) de los últimos 7 días: la misma (revisor, regla) con dos o más
+# «falsos» confirmados por un verificador, o con dos o más desacuerdos (el verificador reprodujo lo que el autor
+# quería descartar). El texto sólo lleva la cantidad (regla del aviso: ningún nombre de regla sale a un servicio de
+# afuera); el revisor, la regla y cuántas veces quedan en el `--json` y en la constancia. Sin dudas no sale nada;
+# sin carpeta de corridas es `null` con su motivo, nunca «0».
+# 🔴 Sale rojo si el rubro no existe, si cuenta un solo falso como duda, si cuenta una corrida de hace más de 7 días,
+# si un `refuted` sin constancia del verificador suma, o si sin fuente dice 0 en vez de `null` con motivo.
+D="$TMP/t-dudas"; mundo "$D"; snap "$D" "$HOY" '{}'
+corrida_dudas() { # <dir-runs> <días atrás> <nombre> <json de findings>
+  local dir="$1/$3-$(fecha "$HOY" "-$2" | tr -d '-')120000"
+  mkdir -p "$dir"; printf '%s\n' "$4" > "$dir/findings.json"
+}
+# El resumen de la constancia sale de la lib (summary(build(...))), no escrito a mano: si cambia su forma, esta suite la sigue.
+resumen_constancia() { # <refutado|reproducido> → el JSON que findings.json guarda en `refutation`
+  node -e 'const R = require(process.argv[1] + "/skills/tycon-pipeline/scripts/lib/refutation.js");
+    console.log(JSON.stringify(R.summary(R.build({ finding: { reviewer: "rev", rule: "R-0", file: "a.js", line: 1 }, authorReason: "r",
+      verifier: { agent: "general-purpose@2026-09-20T10:00:00.000Z", model: "sonnet" }, verdict: process.argv[2], command: "node p.js", output: "salida" }))));' "$RAIZ" "$1"
+}
+FALSO="\"disposition\":\"refuted\",\"reason\":\"r\",\"refutation\":$(resumen_constancia refutado)"
+DESACUERDO="\"disposition\":\"fixed\",\"reason\":\"r\",\"refutation\":$(resumen_constancia reproducido)"
+mkdir -p "$D/runs"
+corrida_dudas "$D/runs" 1 1.1 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"a.js\",$FALSO},{\"rule_id\":\"R-2\",\"advisor\":\"rev-b\",\"file\":\"a.js\",$FALSO}]"
+corrida_dudas "$D/runs" 3 1.2 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"b.js\",$FALSO},{\"rule_id\":\"R-3\",\"advisor\":\"rev-c\",\"file\":\"b.js\",$DESACUERDO}]"
+corrida_dudas "$D/runs" 4 1.3 "[{\"rule_id\":\"R-3\",\"advisor\":\"rev-c\",\"file\":\"c.js\",$DESACUERDO},{\"rule_id\":\"R-4\",\"advisor\":\"rev-d\",\"file\":\"c.js\",\"disposition\":\"refuted\",\"reason\":\"sin constancia\"},{\"rule_id\":\"R-4\",\"advisor\":\"rev-d\",\"file\":\"d.js\",\"disposition\":\"refuted\",\"reason\":\"sin constancia\"}]"
+corrida_dudas "$D/runs" 20 1.4 "[{\"rule_id\":\"R-2\",\"advisor\":\"rev-b\",\"file\":\"z.js\",$FALSO},{\"rule_id\":\"R-2\",\"advisor\":\"rev-b\",\"file\":\"y.js\",$FALSO}]"
+armar "$D" dependencias "$HOY" --runs "$D/runs" > "$D/dudas.json" 2>"$D/dudas.err"
+DU="$(q "$D/dudas.json" 'j.dudas_revisores.valor.map((x) => [x.revisor, x.regla, x.falsos, x.desacuerdos].join("/")).sort().join(",")')"
+[ "$DU" = "rev-a/R-1/2/0,rev-c/R-3/0/2" ] \
+  && ok "1.21-T7 dos falsos confirmados (o dos desacuerdos) de la misma regla en la semana son una duda; uno solo, una corrida vieja o un refuted sin constancia, no" \
+  || no "1.21-T7 dudas: «${DU}» · $(head -c 300 "$D/dudas.err")"
+TX="$(q "$D/dudas.json" 'j.texto.split("\n").filter((l) => l.startsWith("dudas de revisores:")).join("|")')"
+[ "$TX" = "dudas de revisores: 2" ] && ok "1.21-T7 el texto lleva la cantidad y ningún nombre de revisor ni de regla" || no "1.21-T7 línea: «${TX}»"
+grep -qE 'rev-a|R-1' <<<"$(q "$D/dudas.json" 'j.texto')" && no "1.21-T7 🔴 un revisor o una regla se coló al texto" || ok "1.21-T7 ni el revisor ni la regla están en el texto"
+mkdir -p "$D/runs-sin"; corrida_dudas "$D/runs-sin" 1 1.1 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"a.js\",$FALSO}]"
+armar "$D" dependencias "$HOY" --runs "$D/runs-sin" > "$D/sin.json" 2>/dev/null
+[ "$(q "$D/sin.json" 'JSON.stringify(j.dudas_revisores.valor)')" = "[]" ] && [ "$(q "$D/sin.json" 'j.texto.includes("dudas de revisores")')" = "false" ] \
+  && ok "1.21-T7 sin dudas no sale nada" || no "1.21-T7 sin dudas: $(q "$D/sin.json" 'JSON.stringify(j.dudas_revisores)')"
+armar "$D" dependencias "$HOY" --runs "$D/no-existe" > "$D/nada.json" 2>/dev/null
+[ "$(q "$D/nada.json" 'j.dudas_revisores.valor')" = "null" ] && [ -n "$(q "$D/nada.json" 'j.dudas_revisores.motivo')" ] && [ "$(q "$D/nada.json" 'j.dudas_revisores.motivo')" != "null" ] \
+  && ok "1.21-T7 sin carpeta de corridas es null con su motivo, no 0" || no "1.21-T7 sin fuente: $(q "$D/nada.json" 'JSON.stringify(j.dudas_revisores)')"
+reset_srv ok:1; RC=$(entregar "$D" dependencias "$HOY" --runs "$D/runs")
+[ "$RC" = 0 ] && [ "$(ultimo 'j.text.includes("dudas de revisores: 2")')" = "true" ] \
+  && ok "1.21-T7 el resumen entregado trae la línea de las dudas" || no "1.21-T7 entrega rc=$RC"
+
+# 1.21 SEC-W8: el revisor y la regla salen de un findings.json del repo; pasan por el mismo filtro de nombres que lineaRetros.
+# 🔴 Sale rojo si un marcador en el revisor o en la regla llega tal cual al --json / a la constancia.
+mkdir -p "$D/runs-marca"
+corrida_dudas "$D/runs-marca" 1 1.1 "[{\"rule_id\":\"R-9\nGHP_MARCADOR_REGLA\",\"advisor\":\"rev-ok\",\"file\":\"a.js\",$FALSO},{\"rule_id\":\"R-8\",\"advisor\":\"rev;MARCADOR_REVISOR\",\"file\":\"a.js\",$FALSO}]"
+corrida_dudas "$D/runs-marca" 2 1.2 "[{\"rule_id\":\"R-9\nGHP_MARCADOR_REGLA\",\"advisor\":\"rev-ok\",\"file\":\"b.js\",$FALSO},{\"rule_id\":\"R-8\",\"advisor\":\"rev;MARCADOR_REVISOR\",\"file\":\"b.js\",$FALSO}]"
+armar "$D" dependencias "$HOY" --runs "$D/runs-marca" > "$D/marca.json" 2>/dev/null
+grep -qE 'MARCADOR_REVISOR|MARCADOR_REGLA' "$D/marca.json" && no "1.21-W8 🔴 un marcador del revisor o de la regla llegó al --json" \
+  || ok "1.21-W8 revisor y regla con caracteres raros salen como «?»"
+[ "$(q "$D/marca.json" 'j.dudas_revisores.valor.length')" = "2" ] && ok "1.21-W8 las dudas siguen contadas" || no "1.21-W8 dudas: $(q "$D/marca.json" 'JSON.stringify(j.dudas_revisores)')"
+
+# 1.21 SILENT-C2: un findings.json roto no es una corrida sin dudas. Se cuenta como «no leída»; si ninguna se pudo leer,
+# es null con su motivo.
+mkdir -p "$D/runs-mixto" "$D/runs-rotas"
+corrida_dudas "$D/runs-mixto" 1 1.1 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"a.js\",$FALSO}]"
+corrida_dudas "$D/runs-mixto" 2 1.2 "[{\"rule_id\":\"R-1\",\"advisor\":\"rev-a\",\"file\":\"b.js\",$FALSO}]"
+corrida_dudas "$D/runs-mixto" 3 1.3 '{ roto'
+armar "$D" dependencias "$HOY" --runs "$D/runs-mixto" > "$D/mixto.json" 2>/dev/null
+[ "$(q "$D/mixto.json" 'j.dudas_revisores.no_leidas')" = "1" ] && [ "$(q "$D/mixto.json" 'j.dudas_revisores.valor.length')" = "1" ] \
+  && ok "1.21-C2 una corrida rota se cuenta como no leída y las demás siguen valiendo" || no "1.21-C2 mixto: $(q "$D/mixto.json" 'JSON.stringify(j.dudas_revisores)')"
+corrida_dudas "$D/runs-rotas" 1 1.1 '{ roto'
+corrida_dudas "$D/runs-rotas" 2 1.2 '{"no":"un array"}'
+armar "$D" dependencias "$HOY" --runs "$D/runs-rotas" > "$D/rotas.json" 2>/dev/null
+[ "$(q "$D/rotas.json" 'j.dudas_revisores.valor')" = "null" ] && [ "$(q "$D/rotas.json" 'j.dudas_revisores.no_leidas')" = "2" ] \
+  && [ "$(q "$D/rotas.json" 'j.dudas_revisores.motivo')" != "null" ] \
+  && ok "1.21-C2 si ninguna corrida se pudo leer es null con motivo, no «sin dudas»" || no "1.21-C2 rotas: $(q "$D/rotas.json" 'JSON.stringify(j.dudas_revisores)')"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1
