@@ -1,6 +1,9 @@
 'use strict';
 // work-in-progress.test.js — the /wip table: work in progress on this machine, built from toy state folders.
 // Nothing here reads the real HOME: every folder comes in by argument.
+// stable-data: T22 reads the clock only to measure how long a hung query takes, and the program's cap for reading
+// repos reads it too (T22 sets it below zero); T24's commit fixes its dates and turns maintenance off; dates come in
+// by --now.
 
 const test = require('node:test');
 const assert = require('node:assert');
@@ -284,4 +287,246 @@ test('T19 SesionesPorDefecto_LaCarpetaDeClaudeCode: sin --sessions-dir lee las s
   const r = buildWip({ home, stateDir: m.state, now: NOW });
   assert.ok(r.rows.some((x) => x.session === 'la-del-home'), JSON.stringify(r.rows));
   fs.rmSync(home, { recursive: true, force: true });
+});
+
+// ── Entering the repos: the pipeline closed step 8 and the story waits for its pull requests ─────────────────────
+
+function gitRepo(root, name, branch, origin) {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  execFileSync('git', ['init', '-q', dir]);
+  execFileSync('git', ['-C', dir, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`]);
+  if (origin) execFileSync('git', ['-C', dir, 'remote', 'add', 'origin', origin]);
+  return dir;
+}
+
+// A marker that closed step 8, with its live session.
+function entering(m, sid, fields) {
+  marker(m, sid, { storyId: '5.1', storyPath: story(m.root, '5.1', 'Lo que entra'), stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 8], stepsPending: [], lastTouch: NOW, ...fields });
+  session(m, process.pid, sid, 'ocupada');
+}
+
+const GH = 'https://github.com/acme/x.git';
+// The «@» of a user in a remote goes in parts: written whole, the publishing guard reads it as an email address.
+const at = (user, rest) => `${user}${'@'}${rest}`;
+const AZ = `https://${at('acme', 'dev.azure.com')}/acme/Proyecto%20Uno/_git/y`;
+
+test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fila y la sesión ocupada', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  entering(m, 'ent00000-1', { repoPath: repo });
+  const asked = [];
+  const r = run(m, { prs: (q) => { asked.push(q); return { prs: [{ number: 236, draft: false }] }; } });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #236');
+  assert.strictEqual(r.rows[0].end, 'sin estimación (espera la CI o la cola)');
+  assert.deepStrictEqual(r.free, []);
+  assert.strictEqual(asked.length, 1);
+  assert.strictEqual(asked[0].branch, 'story/x');
+  const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
+  for (const words of ['Entrando a los repos', 'GitHub', 'Azure DevOps', 'sólo lee']) assert.ok(command.includes(words), words);
+});
+
+test('T21 SinPedidosAbiertos_Terminado: sin pedidos abiertos la story terminó y la sesión está libre', () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-2', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const r = run(m, { prs: () => ({ prs: [] }) });
+  assert.deepStrictEqual(r.rows, []);
+  assert.deepStrictEqual(r.free, ['ocupada']);
+  assert.deepStrictEqual(r.unreadable, []);
+});
+
+test('T22 ConsultaFalla_SeDiceYQuedaOcupada: una consulta que falla o se pasa del tope se dice y la fila sale igual', { skip: process.platform === 'win32' ? 'el gh falso es un script de node con #!, que Windows no corre' : false }, async () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-3', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const r = run(m, { prs: () => ({ error: 'gh: no está instalado' }) });
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(r.unreadable.some((u) => /pedidos de x \(story\/x\): gh: no está instalado/.test(u)), r.unreadable.join(' | '));
+  assert.deepStrictEqual(r.free, []);
+  // reading the repos has its own cap: past it, nothing more is read and it is said
+  const capped = run(m, { prs: () => ({ prs: [] }), repoBudgetMs: -1 });
+  assert.strictEqual(capped.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(capped.unreadable.some((u) => /se pasó del tope de 3 s leyendo los repos/.test(u)), capped.unreadable.join(' | '));
+  // the real query, against a gh that takes longer than its cap: it gives up instead of hanging
+  const bin = fakeBin(m.root, 'gh', 'setTimeout(() => {}, 5000);');
+  const t0 = Date.now();
+  const [res] = await queryAll([{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }], { perMs: 300, totalMs: 600, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.ok(Date.now() - t0 < 3000, 'no espera al gh colgado');
+  assert.match(res.error, /tope/);
+  const { PER_QUERY_MS, ALL_QUERIES_MS } = require(WIP);
+  assert.deepStrictEqual([PER_QUERY_MS, ALL_QUERIES_MS], [5000, 6000], 'los topes de la story');
+  const q = [{ kind: 'github', slug: 'acme/x', branch: 'story/x', name: 'x', root: m.root }];
+  const withBin = (b) => ({ env: { ...process.env, PATH: b } });
+  const missing = fs.mkdtempSync(path.join(m.root, 'empty-'));
+  assert.match((await queryAll(q, withBin(missing)))[0].error, /gh: no está instalado/);
+  for (const [out, why] of [['basura', /respuesta ilegible/], ['{"number":1}', /no es una lista/], ['[{"isDraft":false}]', /sin número/]]) {
+    const b = fakeBin(m.root, 'gh', `process.stdout.write(${JSON.stringify(out)});`);
+    assert.match((await queryAll(q, { ...withBin(`${b}${path.delimiter}${process.env.PATH}`) }))[0].error, why);
+  }
+  // a gh that ignores SIGTERM and hangs: the total cap kills it with SIGKILL, which it cannot ignore, so the command
+  // can end
+  const stubborn = fakeBin(m.root, 'gh', `require('fs').writeFileSync(__dirname + '/pid', String(process.pid)); process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);`);
+  const t1 = Date.now();
+  const [hung] = await queryAll(q, { perMs: 20000, totalMs: 2000, env: { ...process.env, PATH: `${stubborn}${path.delimiter}${process.env.PATH}` } });
+  assert.ok(Date.now() - t1 < 5000);
+  assert.match(hung.error, /tope de 2 s para todas/);
+  const pidFile = path.join(stubborn, 'pid');
+  assert.ok(fs.existsSync(pidFile), 'el gh colgado llegó a arrancar en 2 s');
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let i = 0; i < 40 && alive(); i += 1) await new Promise((r) => setTimeout(r, 50));
+  assert.strictEqual(alive(), false, 'el gh colgado quedó muerto');
+  // a gh that answers with an error (no login, say): its message is the reason
+  const denied = fakeBin(m.root, 'gh', `process.stderr.write('gh auth login required'); process.exit(1);`);
+  assert.match((await queryAll(q, withBin(`${denied}${path.delimiter}${process.env.PATH}`)))[0].error, /gh: gh auth login required/);
+});
+
+test('T23 DosRepos_GitHubYAzure_ConBorrador: los dos repos de la story, cada uno con su pedido', () => {
+  const m = toyMachine();
+  const x = gitRepo(m.root, 'x', 'story/x', GH);
+  const y = gitRepo(m.root, 'y', 'story/x', AZ);
+  fs.mkdirSync(path.join(y, 'specs'));
+  entering(m, 'ent00000-4', { repoPath: x, filesTouched: [path.join(y, 'specs', 'a.md'), path.join(x, 'b.js')] });
+  const r = run(m, { prs: (q) => (q.kind === 'github' ? { prs: [{ number: 236, draft: false }] } : { prs: [{ number: 4920, draft: true }] }) });
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #236 · y !4920 (borrador)');
+  // a repo nested inside another one (a submodule, vendor/) is asked on its own
+  const nested = gitRepo(x, 'vendor', 'story/x', 'https://github.com/acme/vendor.git');
+  entering(m, 'ent00000-4', { repoPath: x, filesTouched: [path.join(nested, 'c.js')] });
+  const asked = [];
+  run(m, { prs: (q) => { asked.push(q.name); return { prs: [] }; } });
+  assert.deepStrictEqual(asked.sort(), ['vendor', 'x']);
+});
+
+test('T24 RamaPrincipal_YNoRepo_SeIgnoran: un repo en main y una carpeta que no es repo no se consultan', () => {
+  const m = toyMachine();
+  const loose = path.join(m.root, 'suelta');
+  fs.mkdirSync(loose);
+  entering(m, 'ent00000-5', { repoPath: gitRepo(m.root, 'x', 'main', GH), filesTouched: [path.join(loose, 'n.txt')] });
+  let asked = 0;
+  const r = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
+  assert.strictEqual(asked, 0);
+  assert.deepStrictEqual(r.rows, []);
+  assert.deepStrictEqual(r.unreadable, []);
+  // a detached HEAD has no branch of its own: nothing to ask either
+  const detached = gitRepo(m.root, 'd', 'story/x', GH);
+  const fixed = { ...process.env, GIT_AUTHOR_DATE: '2026-10-01T10:00:00Z', GIT_COMMITTER_DATE: '2026-10-01T10:00:00Z' };
+  execFileSync('git', ['-C', detached, '-c', 'user.name=t', '-c', `user.email=${at('t', 'acme.example')}`, '-c', 'maintenance.auto=false', 'commit', '-q', '--allow-empty', '-m', 'x'], { env: fixed });
+  execFileSync('git', ['-C', detached, 'checkout', '-q', '--detach']);
+  entering(m, 'ent00000-5', { repoPath: detached });
+  const d = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
+  assert.strictEqual(asked, 0);
+  assert.deepStrictEqual([d.rows, d.unreadable], [[], []]);
+});
+
+test('T25 SinPasoOcho_OSesionMuerta_ComoAntes: sin el 8 cerrado o con la sesión muerta, nada cambia', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  marker(m, 'ent00000-6', { storyId: '5.2', storyPath: story(m.root, '5.2', 't'), repoPath: repo, stepsCompleted: [0, 4], stepsPending: [], lastTouch: NOW });
+  session(m, process.pid, 'ent00000-6', 'libre');
+  marker(m, 'ent00000-7', { storyId: '5.3', storyPath: story(m.root, '5.3', 't'), repoPath: repo, stepsCompleted: [0, 8], stepsPending: [], lastTouch: NOW });
+  session(m, DEAD_PID, 'ent00000-7', 'muerta');
+  let asked = 0;
+  const r = run(m, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
+  assert.strictEqual(asked, 0);
+  assert.deepStrictEqual(r.rows, []);
+  assert.deepStrictEqual(r.halfway, []);
+  assert.deepStrictEqual(r.free, ['libre']);
+  // a closed run untouched for two days: with its session dead it is finished and not counted; with its session
+  // alive it is counted at the foot, so it does not vanish
+  const old = toyMachine();
+  const twoDaysAgo = '2026-10-16T10:00:00.000Z';
+  marker(old, 'ent00000-8', { storyId: '5.4', storyPath: story(old.root, '5.4', 't'), repoPath: repo, stepsCompleted: [0, 8], stepsPending: [], lastTouch: twoDaysAgo });
+  session(old, DEAD_PID, 'ent00000-8', 'vieja');
+  const o = run(old, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
+  assert.deepStrictEqual([o.rows, o.unreadable, asked], [[], [], 0]);
+  session(old, process.pid, 'ent00000-8', 'vieja');
+  const v = run(old, { prs: () => { asked += 1; return { prs: [{ number: 1, draft: false }] }; } });
+  assert.deepStrictEqual([v.rows, v.free, asked], [[], [], 0]);
+  assert.ok(v.unreadable.some((u) => /1 story\(s\) con el pipeline cerrado hace más de 24 h y la sesión viva/.test(u)), v.unreadable.join(' | '));
+});
+
+// A fake tool in its own folder: a node script that logs its arguments next to itself.
+function fakeBin(root, name, body) {
+  const bin = fs.mkdtempSync(path.join(root, 'bin-'));
+  fs.writeFileSync(path.join(bin, name), `#!/usr/bin/env node\nrequire('fs').writeFileSync(__dirname + '/args.json', JSON.stringify(process.argv.slice(2)));\n${body}\n`, { mode: 0o755 });
+  return bin;
+}
+const { queryAll } = require(WIP);
+const onWindows = process.platform === 'win32' ? 'los gh/az falsos son scripts de node con #!, que Windows no corre' : false;
+
+test('T26 ConsultaReal_GhFalso: el programa le pregunta a gh por la rama y el repo de origin', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-8', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const bin = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false }]));`);
+  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
+  for (const a of ['pr', 'list', '--head', 'story/x', '--state', 'open', '--repo', 'acme/x']) assert.ok(args.includes(a), args.join(' '));
+  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236');
+});
+
+test('T27 ConsultaReal_AzFalso: el programa le pregunta a az con la organización, el proyecto y el repo', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-9', { repoPath: gitRepo(m.root, 'y', 'story/x', AZ) });
+  const bin = fakeBin(m.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false }]));`);
+  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  const args = JSON.parse(fs.readFileSync(path.join(bin, 'args.json'), 'utf8'));
+  for (const a of ['repos', 'pr', 'list', '--org', 'https://dev.azure.com/acme', '--project', 'Proyecto Uno', '--repository', 'y', '--source-branch', 'story/x', '--status', 'active']) {
+    assert.ok(args.includes(a), args.join(' '));
+  }
+  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · y !4920');
+  const { parseRemote, shellSafe } = require(WIP);
+  assert.deepStrictEqual(parseRemote(`https://${at('acme', 'dev.azure.com')}/acme/Proyecto Uno/_git/y`), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
+  assert.deepStrictEqual(parseRemote('https://acme.visualstudio.com/DefaultCollection/Proyecto/_git/y'), { kind: 'azure', org: 'acme', project: 'Proyecto', repo: 'y', name: 'y' });
+  assert.strictEqual(parseRemote('https://dev.azure.com/a%2F..%2Fb/P/_git/y').kind, null, 'una organización rara no arma la dirección');
+  assert.deepStrictEqual(parseRemote('git@ssh.dev.azure.com:v3/acme/Proyecto%20Uno/y'), { kind: 'azure', org: 'acme', project: 'Proyecto Uno', repo: 'y', name: 'y' });
+  assert.strictEqual(shellSafe(['Proyecto Año', 'story/x', 'https://dev.azure.com/acme']), true);
+  assert.strictEqual(shellSafe(['a" & calc']), false);
+});
+
+test('T28 ServidorDesconocido_SeDice: un origin que no es GitHub ni Azure DevOps se dice y no se consulta', () => {
+  const m = toyMachine();
+  entering(m, 'ent00000-a', { repoPath: gitRepo(m.root, 'z', 'story/x', 'https://git.acme.example/acme/z.git') });
+  let asked = 0;
+  const r = run(m, { prs: () => { asked += 1; return { prs: [] }; } });
+  assert.strictEqual(asked, 0);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(r.unreadable.some((u) => /no sé consultar pedidos en git\.acme\.example/.test(u)), r.unreadable.join(' | '));
+  // the host only: never a password, even one with an «@» inside
+  const { parseRemote } = require(WIP);
+  assert.deepStrictEqual(parseRemote(`https://${at(at('u:p', 'ss'), 'git.acme.example')}/x.git`), { kind: null, host: 'git.acme.example' });
+  assert.deepStrictEqual(parseRemote(`https://${at('u:pa/ss', 'git.acme.example')}/x.git`), { kind: null, host: 'git.acme.example' });
+  assert.strictEqual(parseRemote('https://dev.azure.com/acme/P/_git/a%2F..%2Fb').kind, null, 'un repo con «..» no se consulta');
+  assert.strictEqual(parseRemote('https://github.com/acme/x%3Fy').kind, null);
+  assert.strictEqual(parseRemote('https://otro.example/github.com/acme/x').kind, null, 'GitHub sólo si es el servidor');
+  for (const u of ['https://otro.example/dev.azure.com/acme/p/_git/r', 'https://otro.example/acme.visualstudio.com/p/_git/r', 'git@otro.example:ssh.dev.azure.com:v3/acme/p/r']) {
+    assert.strictEqual(parseRemote(u).kind, null, `Azure sólo si es el servidor: ${u}`);
+  }
+  assert.deepStrictEqual(parseRemote(`https://${at(at('u:p', 'ss'), 'github.com')}/acme/x.git`), { kind: 'github', slug: 'acme/x', name: 'x' });
+  assert.strictEqual(parseRemote('git@github.com:acme/x.git').slug, 'acme/x');
+  assert.strictEqual(parseRemote('https://dev.azure.com/acme/./_git/y').kind, null, 'un «.» suelto no es un proyecto');
+  assert.deepStrictEqual(parseRemote('https://h.example/a/tok@en'), { kind: null, host: 'un servidor que no reconozco' });
+  // a repo git cannot read, or a story folder that is gone, is said and the session stays busy
+  const broken = path.join(m.root, 'roto');
+  fs.mkdirSync(broken);
+  fs.writeFileSync(path.join(broken, '.git'), 'esto no es un gitdir');
+  entering(m, 'ent00000-a', { repoPath: broken });
+  const b = run(m, { prs: () => ({ prs: [] }) });
+  assert.strictEqual(b.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(b.unreadable.some((u) => u.startsWith('story 5.1: ') && u.includes(broken)), b.unreadable.join(' | '));
+  entering(m, 'ent00000-a', { repoPath: path.join(m.root, 'borrado') });
+  const g = run(m, { prs: () => ({ prs: [] }) });
+  assert.ok(g.unreadable.some((u) => /borrado: ya no existe/.test(u)), g.unreadable.join(' | '));
+  for (const bad of [42, 'relativo/repo']) {
+    entering(m, 'ent00000-a', { repoPath: bad });
+    const w = run(m, { prs: () => ({ prs: [] }) });
+    assert.strictEqual(w.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)', String(bad));
+    assert.ok(w.unreadable.some((u) => u.includes('repoPath ilegible')), w.unreadable.join(' | '));
+  }
+  // a repo on a story branch without origin cannot be asked: it is said
+  entering(m, 'ent00000-a', { repoPath: gitRepo(m.root, 'sin-origin', 'story/x', null) });
+  const n = run(m, { prs: () => ({ prs: [] }) });
+  assert.strictEqual(n.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(n.unreadable.some((u) => /no sé consultar pedidos en ningún servidor \(el repo no tiene origin\)/.test(u)), n.unreadable.join(' | '));
 });

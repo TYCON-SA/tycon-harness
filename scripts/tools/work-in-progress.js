@@ -21,6 +21,13 @@
  * Un marcador sin pasos pendientes está terminado y no se muestra. Uno sin tocar hace más de 24 h no cuenta, igual que
  * para `marker.js list-all`, que lo descarta; acá sólo se dice cuántos hay, sin borrarlos.
  *
+ * Excepción: si cerró el paso 8 y su sesión sigue viva, la story puede estar esperando entrar a los repos (la CI, la
+ * cola, un pedido en borrador). Se buscan sus repos (`repoPath` y la raíz git de cada archivo tocado, salvo los que
+ * están en su rama principal) y se pregunta por los pedidos abiertos de su rama: a GitHub con `gh`, a Azure DevOps
+ * con `az`. Con alguno abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no
+ * cuenta como libre. Las consultas corren en paralelo, 5 s cada una y 6 s todas juntas: lo que no contesta se dice al
+ * pie y la tabla sale igual.
+ *
  * Sólo lee. No toca marcadores ni lee la configuración de la organización.
  *
  * Uso:  node scripts/tools/work-in-progress.js [--json] [--state-dir <dir>] [--sessions-dir <dir>] [--now <iso>]
@@ -30,6 +37,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFile, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..', '..');
 const { stateDir, claudeDir } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
@@ -142,6 +150,160 @@ function estimateEnd(marker, medians, nowMs) {
   return approx ? `${hhmm(nowMs + left)} (aprox.)` : hhmm(nowMs + left);
 }
 
+const ENTERING = 'Entrando a los repos';
+const MAIN_BRANCHES = ['main', 'master'];
+const PER_QUERY_MS = 5000;
+const ALL_QUERIES_MS = 6000;
+const GIT_MS = 2000;
+const GIT_BUDGET_MS = 3000;
+const NOT_A_REPO = /not a git repository/i;
+
+// git con tope: `{ out }` si salió bien; si no, `{ err, status }` con el motivo. `ctx.until` es el tope de toda la
+// lectura de repos y `ctx.cache` guarda lo leído, para que la segunda pasada no vuelva a preguntar.
+function git(dir, args, ctx) {
+  const key = `${dir}\0${args.join(' ')}`;
+  if (ctx.cache.has(key)) return ctx.cache.get(key);
+  if (Date.now() > ctx.until) return { err: `se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`, status: null };
+  const res = gitNow(dir, args, Math.max(1, Math.min(GIT_MS, ctx.until - Date.now())));
+  ctx.cache.set(key, res);
+  return res;
+}
+
+// git en inglés (LC_ALL=C): los motivos «not a git repository» y «No such remote» se reconocen por su texto.
+function gitNow(dir, args, ms) {
+  const r = spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8', windowsHide: true, timeout: ms, env: { ...process.env, LC_ALL: 'C' } });
+  if (r.status === 0) return { out: r.stdout.trim() };
+  if (r.error) return { err: r.error.code === 'ETIMEDOUT' ? 'git se pasó del tope leyendo los repos' : `git: ${r.error.message}`, status: null };
+  return { err: oneLine(r.stderr || `git salió con ${r.status}`).slice(0, 200), status: r.status };
+}
+
+// Las raíces git de la story: su repoPath y la carpeta de cada archivo tocado. Lo que no existe o no es un repo se
+// saltea (un archivo tocado que se borró es normal: los temporales); un git que falla por otra cosa va a `failures`.
+function storyRepos(m, failures, ctx) {
+  const roots = [];
+  if (m.repoPath != null && (typeof m.repoPath !== 'string' || !path.isAbsolute(m.repoPath))) failures.push(`repoPath ilegible: ${JSON.stringify(m.repoPath)}`);
+  else if (m.repoPath && !fs.existsSync(m.repoPath)) failures.push(`${m.repoPath}: ya no existe`);
+  const touched = Array.isArray(m.filesTouched) ? m.filesTouched.map((f) => path.dirname(String(f))) : [];
+  for (const dir of new Set([m.repoPath, ...touched])) {
+    if (typeof dir !== 'string' || !path.isAbsolute(dir) || !fs.existsSync(dir)) continue;
+    const top = git(dir, ['rev-parse', '--show-toplevel'], ctx);
+    if (top.err) { if (!NOT_A_REPO.test(top.err)) failures.push(`${dir}: ${top.err}`); continue; }
+    const root = path.resolve(top.out);
+    if (!roots.includes(root)) roots.push(root);
+  }
+  return roots;
+}
+
+// Adónde apunta `origin`: GitHub (dueño/repo), Azure DevOps (organización, proyecto, repo) u otro servidor. Del otro
+// servidor sólo se da el nombre: nunca la dirección, que puede traer usuario y contraseña.
+function parseRemote(url) {
+  // el servidor es lo que va después del último «@» (una contraseña puede traer «@» o «/» sin codificar); la ruta,
+  // lo que le sigue. Se reconoce por el servidor, nunca por un pedazo de la ruta.
+  const rest = String(url || '').trim().replace(/^[a-z+]+:\/\//i, '');
+  const tail = rest.slice(rest.lastIndexOf('@') + 1);
+  const host = tail.split(/[/:]/)[0].toLowerCase();
+  const route = tail.slice(host.length + 1);
+  const plain = (v) => /^[\p{L}\p{N}][\p{L}\p{N}_ .-]*$/u.test(v) && !v.includes('..');
+  const decode = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
+  if (host === 'github.com') {
+    const x = /^([^/]+)\/([^/]+?)(?:\.git)?\/?$/.exec(route);
+    return x && plain(x[1]) && plain(x[2]) ? { kind: 'github', slug: `${x[1]}/${x[2]}`, name: x[2] } : { kind: null, host: 'GitHub, con un repo que no reconozco' };
+  }
+  let x = null;
+  if (host === 'dev.azure.com') x = /^([^/]+)\/([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
+  else if (host === 'ssh.dev.azure.com') x = /^v3\/([^/]+)\/([^/]+)\/([^/]+?)\/?$/.exec(route);
+  else if (host.endsWith('.visualstudio.com')) {
+    const y = /^(?:DefaultCollection\/)?([^/]+)\/_git\/([^/]+?)\/?$/.exec(route);
+    x = y && [null, host.slice(0, -'.visualstudio.com'.length), y[1], y[2]];
+  }
+  if (host === 'dev.azure.com' || host === 'ssh.dev.azure.com' || host.endsWith('.visualstudio.com')) {
+    const [org, project, repo] = x ? x.slice(1).map(decode) : [];
+    if (!x || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(org) || !plain(project) || !plain(repo)) {
+      return { kind: null, host: 'Azure DevOps, con una organización, un proyecto o un repo que no reconozco' };
+    }
+    return { kind: 'azure', org, project, repo, name: repo };
+  }
+  return { kind: null, host: /^[\w-]+(\.[\w-]+)+$/.test(host) ? host : 'un servidor que no reconozco' };
+}
+
+// Qué preguntar por cada raíz con rama propia: `null` si está en su rama principal o sin rama (HEAD suelto).
+function repoQuery(root, failures, ctx) {
+  const head = git(root, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
+  if (head.err) { if (head.status !== 1) failures.push(`${root}: ${head.err}`); return null; }
+  if (MAIN_BRANCHES.includes(head.out)) return null;
+  const origin = git(root, ['remote', 'get-url', 'origin'], ctx);
+  if (origin.err) return { root, branch: head.out, kind: null, host: /no such remote/i.test(origin.err) ? 'ningún servidor (el repo no tiene origin)' : `ningún servidor (no pude leer origin: ${origin.err})` };
+  return { root, branch: head.out, ...parseRemote(origin.out) };
+}
+
+function commandFor(q) {
+  if (q.kind === 'github') return ['gh', ['pr', 'list', '--repo', q.slug, '--head', q.branch, '--state', 'open', '--json', 'number,isDraft']];
+  return ['az', ['repos', 'pr', 'list', '--org', `https://dev.azure.com/${encodeURIComponent(q.org)}`, '--project', q.project,
+    '--repository', q.repo, '--source-branch', q.branch, '--status', 'active', '--output', 'json']];
+}
+
+// En Windows `az` es az.cmd, que node sólo corre por la consola: sólo con letras, números y . _ : / - y espacio.
+const shellSafe = (args) => args.every((a) => /^[\p{L}\p{N}_ .:/-]+$/u.test(a));
+
+function runQuery(q, perMs, env, children) {
+  return new Promise((resolve) => {
+    let [cmd, args] = commandFor(q);
+    const options = { encoding: 'utf8', windowsHide: true, timeout: perMs, killSignal: 'SIGKILL', env };
+    if (process.platform === 'win32' && cmd === 'az') {
+      if (!shellSafe(args)) { resolve({ error: 'az: argumentos con caracteres no seguros para la consola' }); return; }
+      args = args.map((a) => `"${a}"`);
+      options.shell = true;
+    }
+    children.push(execFile(cmd, args, options, (err, stdout, stderr) => {
+      if (err) {
+        const why = err.killed ? `se pasó del tope de ${perMs / 1000} s`
+          : err.code === 'ENOENT' ? 'no está instalado' : oneLine(stderr || err.message).slice(0, 200);
+        resolve({ error: `${cmd}: ${why}` });
+        return;
+      }
+      try {
+        const list = JSON.parse(stdout);
+        if (!Array.isArray(list)) throw new Error('no es una lista');
+        const prs = list.map((p) => ({ number: p && (p.number ?? p.pullRequestId), draft: Boolean(p && p.isDraft === true) }));
+        if (!prs.every((p) => Number.isInteger(p.number))) throw new Error('un pedido sin número');
+        resolve({ prs });
+      } catch (e) { resolve({ error: `${cmd}: respuesta ilegible (${e.message})` }); }
+    }));
+  });
+}
+
+// Todas las consultas a la vez, cada una con su tope y todas juntas con otro; al vencer el total se matan las que
+// siguen vivas, para que el comando termine. Lo que no contesta es un error.
+function queryAll(queries, { perMs = PER_QUERY_MS, totalMs = ALL_QUERIES_MS, env = process.env } = {}) {
+  const children = [];
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      for (const c of children) c.kill('SIGKILL');
+      resolve({ error: `se pasó del tope de ${totalMs / 1000} s para todas las consultas` });
+    }, totalMs);
+  });
+  return Promise.all(queries.map((q) => Promise.race([runQuery(q, perMs, env, children), late]))).finally(() => clearTimeout(timer));
+}
+
+// El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
+function enteringState(m, prsOf, unreadable, wanted, ctx) {
+  const shown = [];
+  const failures = [];
+  for (const root of storyRepos(m, failures, ctx)) {
+    const q = repoQuery(root, failures, ctx);
+    if (!q) continue;
+    if (!q.kind) { failures.push(`pedidos de ${path.basename(root)} (${q.branch}): no sé consultar pedidos en ${q.host}`); continue; }
+    wanted.push(q);
+    const res = prsOf ? prsOf(q) : { error: 'no se consultó' };
+    if (!res || res.error) { failures.push(`pedidos de ${q.name} (${q.branch}): ${res ? res.error : 'sin respuesta'}`); continue; }
+    for (const p of res.prs) shown.push(`${q.name} ${q.kind === 'github' ? '#' : '!'}${p.number}${p.draft ? ' (borrador)' : ''}`);
+  }
+  unreadable.push(...failures.map((f) => `story ${m.storyId || '?'}: ${f}`));
+  if (shown.length) return `${ENTERING} · ${shown.join(' · ')}`;
+  return failures.length ? `${ENTERING} (no se pudo consultar los pedidos)` : null;
+}
+
 function buildWip(opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
@@ -162,6 +324,8 @@ function buildWip(opts = {}) {
   const medians = stepMedians(path.join(sdir, 'timing-history'), unreadable);
   const rows = [];
   const busy = new Set();
+  const wanted = [];
+  const gitCtx = opts.gitCtx || { until: Date.now() + (opts.repoBudgetMs ?? GIT_BUDGET_MS), cache: new Map() };
 
   const halfway = [];
   const liveName = (sid) => {
@@ -170,32 +334,49 @@ function buildWip(opts = {}) {
   };
 
   let stale = 0;
+  let staleWaiting = 0;
   for (const file of jsonFiles(path.join(sdir, 'active'), unreadable)) {
     let m;
     try { m = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     if (!Array.isArray(m.stepsPending)) { unreadable.push(`${file}: sin lista de pasos pendientes`); continue; }
-    if (!m.stepsPending.length) continue;
+    const closed = !m.stepsPending.length;
+    if (closed && !(Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String).includes('8')) continue;
     // Sin lastTouch legible, la fecha del archivo; si tampoco se lee, se dice y no se lo da por reciente.
     let touched = Date.parse(m.lastTouch);
     if (!Number.isFinite(touched)) {
       try { touched = fs.statSync(file).mtimeMs; } catch (e) { unreadable.push(`${file}: sin fecha legible (${e.message})`); continue; }
     }
-    if (nowMs - touched > STALE_MS) { stale += 1; continue; }
+    // un cerrado viejo con la sesión muerta es una corrida terminada; con la sesión viva no se sabe si sus pedidos
+    // entraron: la sesión cuenta como ocupada y se dice al pie
+    if (nowMs - touched > STALE_MS) {
+      const sid = m.sessionId || path.basename(file, '.json');
+      if (!closed) stale += 1;
+      else if (liveName(sid)) { staleWaiting += 1; busy.add(sid); }
+      continue;
+    }
     const sid = m.sessionId || path.basename(file, '.json');
+    // Con el paso 8 cerrado sólo cuenta si la sesión vive y la story todavía no entró a sus repos.
+    let entering = null;
+    if (closed) {
+      if (!liveName(sid)) continue;
+      entering = enteringState(m, opts.prs, unreadable, wanted, gitCtx);
+      if (!entering) continue;
+    }
     busy.add(sid);
     let title;
     try { title = storyTitle(m.storyPath); } catch (e) {
       title = '(título ilegible)';
       unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
     }
-    const step = stateOf(m.stepsPending[0]);
+    const step = entering || stateOf(m.stepsPending[0]);
     const work = `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`;
     const label = liveName(sid);
-    if (label) rows.push({ work, state: step, end: estimateEnd(m, medians, nowMs), session: label });
+    if (label) rows.push({ work, state: step, end: entering ? 'sin estimación (espera la CI o la cola)' : estimateEnd(m, medians, nowMs), session: label });
     else halfway.push(`${work} · ${shortId(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);
+  if (staleWaiting) unreadable.push(`${staleWaiting} story(s) con el pipeline cerrado hace más de 24 h y la sesión viva: no consulté sus pedidos, la sesión cuenta como ocupada`);
 
   for (const file of jsonFiles(path.join(sdir, 'adhoc'), unreadable)) {
     const sid = path.basename(file, '.json');
@@ -223,7 +404,7 @@ function buildWip(opts = {}) {
   }
 
   const free = [...sessions.entries()].filter(([sid, s]) => s.alive && !busy.has(sid)).map(([sid, s]) => s.name || shortId(sid));
-  return { rows, free, halfway, unreadable, text: render(rows, free, halfway, unreadable) };
+  return { rows, free, halfway, unreadable, wanted, text: render(rows, free, halfway, unreadable) };
 }
 
 function render(rows, free, halfway, unreadable) {
@@ -237,7 +418,7 @@ function render(rows, free, halfway, unreadable) {
   return lines.join('\n');
 }
 
-function main(argv) {
+async function main(argv) {
   const opts = {};
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -248,15 +429,28 @@ function main(argv) {
       opts[{ '--state-dir': 'stateDir', '--sessions-dir': 'sessionsDir', '--now': 'now' }[a]] = v;
     } else { process.stderr.write(`work-in-progress.js: opción desconocida ${a}\n`); return 2; }
   }
+  opts.gitCtx = { until: Date.now() + GIT_BUDGET_MS, cache: new Map() };
   let r;
   try { r = buildWip(opts); } catch (e) {
     if (e.code === 'NO_STATE' || e.code === 'BAD_ARG') { process.stderr.write(`work-in-progress.js: ${e.message}\n`); return 2; }
     throw e;
   }
+  // Primero se ve qué preguntar; las preguntas van todas juntas y la tabla se arma otra vez con las respuestas.
+  if (r.wanted.length) {
+    const unique = [...new Map(r.wanted.map((q) => [q.root, q])).values()];
+    const answers = await queryAll(unique);
+    const byRoot = new Map(unique.map((q, i) => [q.root, answers[i]]));
+    r = buildWip({ ...opts, prs: (q) => byRoot.get(q.root) });
+  }
   process.stdout.write(opts.json ? `${JSON.stringify({ rows: r.rows, free: r.free, halfway: r.halfway, unreadable: r.unreadable }, null, 2)}\n` : `${r.text}\n`);
   return 0;
 }
 
-if (require.main === module) process.exitCode = main(process.argv.slice(2));
+if (require.main === module) {
+  main(process.argv.slice(2)).then((code) => { process.exitCode = code; }, (e) => {
+    process.stderr.write(`work-in-progress.js: ${e && e.stack ? e.stack : e}\n`);
+    process.exitCode = 1;
+  });
+}
 
-module.exports = { buildWip, median };
+module.exports = { buildWip, median, queryAll, parseRemote, shellSafe, PER_QUERY_MS, ALL_QUERIES_MS };

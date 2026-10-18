@@ -27,5 +27,9 @@ La salida **tal cual**: la tabla (trabajo, estado, fin estimado, sesión), la l�
 aparecen, «Quedaron a medio camino» y «No se pudo leer». No agregues listas de terminados, ni resúmenes de lo que hace
 cada sesión, ni horas que la tabla no trae: «sin datos» se deja como está.
 
+«Entrando a los repos» es una story que cerró el pipeline y espera que entren sus pedidos (la CI, la cola, un
+pedido en borrador): su sesión sigue ocupada. Para saberlo, el programa pregunta a GitHub o a Azure DevOps (sólo lee,
+con topes de unos segundos); si no pudo, lo dice al pie.
+
 Si hay trabajo a medio camino, la salida trae el comando para limpiar cada uno. **No lo corras**: limpiar lo decide
 quien lee.
