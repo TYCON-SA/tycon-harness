@@ -21,7 +21,7 @@
  *   node scripts/tools/site-guide-captures.js --list                                          # los nombres
  *
  * Lo que pide la máquina: Node 20 o más, git con `git http-backend` (viene con git), y playwright-core con su Chromium.
- * Si playwright-core no se encuentra, se instala una vez en ~/.cache/tycon-harness/playwright (fuera del repo) con su
+ * Si playwright-core no se encuentra, se instala una vez en ~/.cache/site-guide-captures/playwright (fuera del repo) con su
  * navegador; el repo no lo trae. Salida: 0 si sacó todas, 1 si alguna falló (dice cuál), 2 si falta algo de la máquina.
  */
 const fs = require('fs');
@@ -236,7 +236,7 @@ function puertoLibre() {
 }
 
 // ── el navegador ────────────────────────────────────────────────────────────────────────────────────────────────────
-const CACHE_PW = path.join(os.homedir(), '.cache', 'tycon-harness', 'playwright');
+const CACHE_PW = path.join(os.homedir(), '.cache', 'site-guide-captures', 'playwright');
 const VERSION_PW = '1.63.0';
 function playwright() {
   try { return require('playwright-core'); } catch { /* abajo */ }
