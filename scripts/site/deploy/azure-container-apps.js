@@ -83,6 +83,8 @@ const COMUN = 'https://login.microsoftonline.com/common/v2.0';
 // el inquilino de las cuentas personales de Microsoft (el emisor de `consumers`): nunca es el de una organización. Lo
 // define el proveedor del sitio; acá no se repite
 const { PERSONALES } = require('../auth-providers/microsoft.js');
+// las rutas que el candado deja pasar sin sesión: la lista la define el sitio, para que no se escriba dos veces
+const { RUTAS_SIN_SESION } = require('../server.js');
 // Los secretos de la aplicación: la variable del sitio y el nombre del secreto en Container Apps. Los de la pestaña
 // Configuración van sólo si vienen en el entorno (apagados por defecto).
 const SECRETOS = [['SITE_SESSION_KEY', 'site-session-key'], ['SITE_OIDC_CLIENT_SECRET', 'site-oidc-client-secret']];
@@ -444,8 +446,8 @@ function faseSitio(c, run, salida, env, sec) {
   run.paso({ que: cualquiera ? 'el inicio integrado de Microsoft (cualquier cuenta)' : 'el inicio integrado de Microsoft (un inquilino)', args: ['containerapp', 'auth', 'microsoft', 'update', ...g, '-n', c.app, '--client-id', c.oidcClientId,
     '--client-secret-name', 'site-oidc-client-secret', '--issuer', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`,
     '--allowed-audiences', c.oidcClientId, '--yes', '-o', 'none', ...SUB(c)] });
-  run.paso({ que: 'el candado delante del sitio (fuera: /healthz y /livez)', args: ['containerapp', 'auth', 'update', ...g, '-n', c.app, '--enabled', 'true',
-    '--unauthenticated-client-action', 'RedirectToLoginPage', '--require-https', 'true', '--excluded-paths', '/healthz,/livez', '-o', 'none', ...SUB(c)] });
+  run.paso({ que: `el candado delante del sitio (fuera: ${RUTAS_SIN_SESION.join(', ')})`, args: ['containerapp', 'auth', 'update', ...g, '-n', c.app, '--enabled', 'true',
+    '--unauthenticated-client-action', 'RedirectToLoginPage', '--require-https', 'true', '--excluded-paths', RUTAS_SIN_SESION.join(','), '-o', 'none', ...SUB(c)] });
   // por último, la entrada externa
   run.paso({ que: 'abrir la entrada externa (sólo HTTPS) — el último paso', args: ['containerapp', 'ingress', 'update', ...g, '-n', c.app, '--type', 'external', '--allow-insecure', 'false', '-o', 'none', ...SUB(c)] });
   salida(`\nEl sitio: ${publica}`);

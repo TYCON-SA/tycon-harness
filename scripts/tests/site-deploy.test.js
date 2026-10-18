@@ -173,8 +173,30 @@ test('T11 Aca_InicioIntegradoUnInquilino @story-2.30 @ac-8', () => {
   assert.doesNotMatch(ms, /--tenant-id/, 'sin --tenant-id junto al emisor');
   assert.ok(ms.includes('--client-secret-name site-oidc-client-secret') && ms.includes(`--allowed-audiences ${guid('3')}`) && ms.includes(`--client-id ${guid('3')}`), ms);
   assert.doesNotMatch(ms, /common|organizations/);
-  for (const x of ['--unauthenticated-client-action RedirectToLoginPage', '--require-https true', '--excluded-paths /healthz,/livez', '--enabled true']) assert.ok(au.includes(x), `falta ${x}: ${au}`);
+  for (const x of ['--unauthenticated-client-action RedirectToLoginPage', '--require-https true', '--enabled true']) assert.ok(au.includes(x), `falta ${x}: ${au}`);
   assert.match(s, /"name": "SITE_OIDC_ISSUER",\s*"value": "https:\/\/login\.microsoftonline\.com\/2{8}-2{4}-2{4}-2{4}-2{12}\/v2\.0"/);
+});
+
+test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
+  const au = alta(['--dry-run', '--phase', 'sitio']).out.split('\n').find((l) => /containerapp auth update/.test(l));
+  const libres = (/--excluded-paths (\S+)/.exec(au || '') || [])[1];
+  assert.ok(libres, `la orden del candado lleva rutas libres: ${au}`);
+  const rutas = libres.split(',');
+  for (const r of ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2']) assert.ok(rutas.includes(r), `falta ${r} entre las rutas libres: ${libres}`);
+  assert.ok(rutas.every((r) => r.startsWith('/') && !r.includes('*')), `rutas exactas, sin comodines: ${libres}`);
+  // cada ruta libre existe en el sitio sin sesión: ninguna manda a la persona al emisor
+  const H = require('./lib/site-harness.js');
+  const { arrancarEmisor } = require('./lib/fake-oidc.js');
+  const emisor = await arrancarEmisor();
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({}) });
+  try {
+    for (const r of rutas) {
+      const res = await h.pedir(r);
+      assert.ok(!res.headers.location, `${r} no redirige (${res.status} → ${res.headers.location})`);
+      if (r === '/idioma') assert.strictEqual(res.status, 405, '/idioma acepta sólo POST sin sesión');
+      else assert.strictEqual(res.status, 200, `${r} contesta sin sesión`);
+    }
+  } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 
 test('T12 Aca_SinCostoEscondido @story-2.30 @ac-9', () => {

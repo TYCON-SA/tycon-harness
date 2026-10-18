@@ -1560,6 +1560,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.46: «Proponer» usable en la pestaña Configuración, la parte del servidor — la diferencia por renglones (sólo lo que cambia con tres de contexto, y un archivo enorme no cuelga), el resumen en castellano o inglés de lo que se cambia, la marca de cada propuesta (dos envíos con la misma marca crean un solo pedido y reciben la misma respuesta), la marca en el cuerpo del pedido, buscar el pedido de una marca en Azure DevOps y GitHub (abierto o completado en las últimas 24 horas, nunca uno abandonado) y la ruta de consulta, sólo para quien mantiene, que devuelve sólo el estado y el enlace. Levanta el servidor del sitio con una sesión inyectada, repos git locales por HTTP y una API falsa de Azure DevOps y de GitHub en el proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/site-propose.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",

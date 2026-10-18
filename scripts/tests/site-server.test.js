@@ -7,6 +7,9 @@
  * T6  Imagen_DockerfileSinPrivilegiosNiPruebas     T39 Nucleo_SinNube
  * T7  Codigo_SinValoresDeUnaOrganizacion           T42 Vida_NoDependeDelFreno
  *
+ * T20 Salir_UnaPuerta_NoVuelveAEntrar            T21 Salir_DetrasDelCandado_PasaPorAuthLogout
+ * T22 Saliste_SinSesion_SinRedireccion_EnElIdioma
+ *
  * Y de la story 2.28: T29 2.28-Healthz_FrenadoSinUltimoBueno.
  * T6b Imagen_TodoLoQueCargaElSitioEstaAdentro: lo que el sitio carga (sus módulos y los lectores de Configuración) está
  *     en lo que copia la imagen (caso 2026-10-16: el lector de la paridad quedó afuera y la sección decía «no sabe leer»).
@@ -534,4 +537,62 @@ test('Api_FrenadoYCargando_503ConMensaje @story-2.38 @ac-3', async () => {
       } finally { await h.cerrar(); }
     }
   } finally { await emisor.cerrar(); }
+});
+
+// ── Salir: la vuelta no entra sola ───────────────────────────────────────────────────────────────────────
+// Con una sola puerta, `/` sin sesión va directo al emisor; por eso Salir vuelve a una página que no redirige.
+const LEAD = 'lead@acme.example';
+async function conUnaPuerta(fn) {
+  const emisor = await arrancarEmisor();
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: configRoles() }) });
+  try { await fn({ h, emisor }); } finally { await h.cerrar(); await emisor.cerrar(); }
+}
+
+test('T20 Salir_UnaPuerta_NoVuelveAEntrar @story-2.46 @ac-18', async () => {
+  await conUnaPuerta(async ({ h, emisor }) => {
+    const sesion = (await H.ingresar(h, emisor, { sub: 's-lead', email: LEAD, email_verified: true })).sesion;
+    const r = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion });
+    assert.strictEqual(r.status, 303);
+    assert.strictEqual(r.headers.location, '/saliste');
+    assert.match(String(r.headers['set-cookie']), /__Host-site=;|Max-Age=0|Expires=Thu, 01 Jan 1970/, 'borra la sesión');
+    const p = await h.pedir('/saliste');
+    assert.strictEqual(p.status, 200);
+    assert.strictEqual(p.headers.location, undefined);
+    // lo de siempre no cambia: sin sesión, `/` va al emisor
+    assert.strictEqual((await h.pedir('/')).status, 302);
+  });
+});
+
+test('T21 Salir_DetrasDelCandado_PasaPorAuthLogout @story-2.46 @ac-19', async () => {
+  await conUnaPuerta(async ({ h, emisor }) => {
+    const sesion = (await H.ingresar(h, emisor, { sub: 's-lead', email: LEAD, email_verified: true })).sesion;
+    const detras = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion, headers: { 'X-MS-CLIENT-PRINCIPAL-NAME': LEAD } });
+    assert.strictEqual(detras.status, 303);
+    assert.strictEqual(detras.headers.location, '/.auth/logout?post_logout_redirect_uri=%2Fsaliste');
+    assert.match(String(detras.headers['set-cookie']), /__Host-site=;|Max-Age=0|Expires=Thu, 01 Jan 1970/, 'la cookie igual se borra');
+    const sin = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion });
+    assert.strictEqual(sin.headers.location, '/saliste');
+  });
+});
+
+test('T22 Saliste_SinSesion_SinRedireccion_EnElIdioma @story-2.46 @ac-20', async () => {
+  const verificar = async (h) => {
+    for (const [idioma, titulo, otra] of [['es', 'Saliste', 'Entrar con otra cuenta'], ['en', 'You signed out', 'Sign in with another account']]) {
+      const r = await h.pedir('/saliste', { headers: { 'accept-language': idioma } });
+      assert.strictEqual(r.status, 200, idioma);
+      assert.strictEqual(r.headers.location, undefined, 'nunca redirige');
+      assert.doesNotMatch(r.texto, /http-equiv="refresh"/i);
+      assert.ok(r.texto.includes(titulo), `${idioma}: ${titulo}`);
+      assert.ok(r.texto.includes(otra), `${idioma}: ${otra}`);
+      assert.match(r.texto, /href="\/auth\/login"/);
+      assert.match(r.texto, /href="\/auth\/login\?otra=1"/);
+    }
+    assert.strictEqual((await h.pedir('/saliste', { method: 'POST' })).status, 405);
+    assert.strictEqual((await h.pedir('/saliste', { method: 'POST' })).headers.allow, 'GET');
+  };
+  await conUnaPuerta(({ h }) => verificar(h));
+  const { arrancarEmisorMicrosoft } = require('./lib/fake-oidc.js');
+  const emisor = await arrancarEmisorMicrosoft();
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: '11111111-2222-4333-8444-555555555555', SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: configRoles() }) });
+  try { await verificar(h); } finally { await h.cerrar(); await emisor.cerrar(); }
 });

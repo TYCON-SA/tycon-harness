@@ -228,10 +228,18 @@ dice arriba a la derecha cómo está: **al día**, **por confirmar**, **sin conf
 
 **El ciclo de un cambio.** Nada se escribe directo. Cambiás los campos de una sección y apretás **Revisar cambios**: el
 sitio valida el cambio con las mismas reglas que usa el arnés y dice «Revisado: está bien escrito» o qué está mal.
-Después, **Proponer el cambio** muestra el archivo de hoy al lado del archivo después del cambio, para mirarlo antes de
-confirmar. El archivo está escrito en un formato con llaves y comillas; no hace falta entenderlo entero: mirá que lo
-único distinto entre los dos lados sea lo que cambiaste (cada lado se desplaza para ver el archivo entero). **Confirmar y proponer** abre un pedido de cambio (un pull request) en el repo de esa sección, y la sección
-muestra el enlace al pedido. Alguien del equipo lo revisa y lo mergea. El sitio toma el cambio en el **próximo
+Después, **Proponer el cambio** muestra, arriba, un resumen en castellano de lo que cambia («Sumás a x@acme.example como
+dev en Quién entra al sitio», «Cambiás “Tope de caracteres” de 1300 a 1500») y, debajo, sólo los renglones que cambian,
+con tres de contexto: lo que sale va en rojo con un `−`, lo que entra va en verde con un `+` (el signo está para que se
+lea sin depender del color), y los tramos iguales se juntan en «… N renglones iguales». Si querés ver los dos archivos
+enteros, **Ver los archivos enteros** los abre. El archivo está escrito en un formato con llaves y comillas; no hace
+falta entenderlo: mirá que lo único que cambie sea lo que cambiaste. **Confirmar y proponer** abre un pedido de cambio
+(un pull request) en el repo de esa sección, y la sección muestra el enlace al pedido. El envío se hace **una sola
+vez**: mientras el sitio trabaja, los botones y los campos de la sección quedan apagados, y cada propuesta lleva una
+marca propia, así que un doble clic no crea dos pedidos. Si la respuesta se corta (la red, un reinicio del sitio en
+medio del pedido), la página no da el error enseguida: consulta hasta tres veces, a los 2, 5 y 10 segundos, si el pedido
+de esa propuesta existe, y si existe muestra su enlace. Sólo si no lo encuentra dice el error, que pide recargar y mirar
+si el pedido se abrió antes de repetirlo. La página nunca reenvía la propuesta sola. Alguien del equipo lo revisa y lo mergea. El sitio toma el cambio en el **próximo
 refresco** (cada 15 minutos, si la organización no eligió otro plazo). **Descargar** baja el archivo cambiado, para
 cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
 
@@ -266,6 +274,10 @@ Las secciones, en el orden de la pantalla:
   vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
   la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
   al despertar lee todo.
+- **Cada cuánto el sitio relee sus datos** (`site.refresh_minutes`, también en «Quién entra al sitio»): cada cuántos
+  minutos el sitio vuelve a leer la configuración (este repo de operaciones), el buzón de corridas y el perfil del
+  equipo. Va de 5 a 120 minutos; si no lo declarás, son 15. No instala versiones: eso es «Cómo se actualiza el sitio»,
+  en Instalación y actualización.
 - **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
   que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. Prendida («sí», `site.auto_apply` en
   `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
@@ -512,6 +524,17 @@ Acá la dirección del sitio es `http://127.0.0.1`: el sitio exige `https://` en
    docker buildx build -f scripts/site/Dockerfile -t sitio:local .
    ```
 
+   **O bajar la imagen ya publicada**, sin armar nada: `ghcr.io/<organización>/<repo>` (la organización y el nombre del repo público del arnés, en minúsculas; la dirección exacta está en la página del repo, en «Packages»), con la etiqueta `stable` (la
+   última que pasó el escaneo y la firma) o con una versión, `v<número>`, la misma que dice el sitio (por ejemplo
+   `v2026.10.18.21`). Nunca hay una etiqueta `latest`.
+
+   ```bash
+   docker pull ghcr.io/<organización>/<repo>:stable
+   ```
+
+   Los pasos que siguen sirven con cualquiera de las dos: con la imagen publicada, reemplazá `sitio:local` por
+   `ghcr.io/<organización>/<repo>:stable` (o la versión que elegiste) en el `docker run`.
+
 2. **Arrancarla**, con el puerto sólo en tu máquina y un volumen para su disco:
 
    ```bash
@@ -599,18 +622,27 @@ inicio de sesión no alcanza.
 - **`google` y `github`** se limitan a la organización: el dominio (`SITE_AUTH_ALLOWED_DOMAINS`) o la organización de
   GitHub (`SITE_AUTH_GITHUB_ORG`).
 - **`microsoft`, un inquilino** (`SITE_AUTH_MICROSOFT_ACCOUNTS=organization`, por defecto): entran las cuentas del
-  directorio de la organización y sus invitados. `SITE_OIDC_ISSUER` es el del inquilino.
+  directorio de la organización y sus invitados. `SITE_OIDC_ISSUER` es el del inquilino. **Es la elección cuando todos
+  los que entran son miembros o invitados del directorio:** una sola puerta, el emisor del inquilino propio con
+  `SITE_AUTH_MICROSOFT_ACCOUNTS=organization`.
 - **`microsoft`, cualquier cuenta** (`SITE_AUTH_MICROSOFT_ACCOUNTS=any`): entran las cuentas de trabajo o escuela de
   cualquier organización, sin invitarlas al directorio. `SITE_OIDC_ISSUER` es
-  `https://login.microsoftonline.com/common/v2.0` y `SITE_AUTH_MICROSOFT_TENANT` es el inquilino de la organización:
+  `https://login.microsoftonline.com/organizations/v2.0` y `SITE_AUTH_MICROSOFT_TENANT` es el inquilino de la organización:
   por ahí entran sus invitados, con su propio botón. Se entra sólo con un correo verificado por su organización. Las
   cuentas personales de Microsoft que entran directo no se aceptan todavía: no se pudo comprobar que su correo sea
-  confiable (un invitado con cuenta personal entra por el botón de los invitados).
+  confiable (un invitado con cuenta personal entra por el botón de los invitados). Esta forma es sólo para aceptar
+  cualquier cuenta de trabajo de otras organizaciones, con el emisor `organizations`; nunca `common`. El caso medido: un
+  correo que existe como cuenta de trabajo y como cuenta personal cae en la cuenta personal con `common`, y con
+  `organizations` cae en la cuenta de trabajo de otro inquilino. Con ninguno de los dos entra a la del directorio propio.
 - **El riesgo, en llano:** con «cualquier cuenta», la primera puerta queda abierta a cualquier cuenta de Microsoft, y
   todo el control está en la lista del sitio. Quien no está en la lista ve una página sin datos; ningún pedido le
   contesta un dato. Por eso la lista se cuida como una contraseña: cada cambio es un pedido con quién lo propuso y quién
   lo aprobó.
 - El sitio no recibe ningún permiso sobre el directorio de nadie: ni asigna, ni invita, ni lee usuarios.
+- **Salir.** El botón **Salir** cierra la sesión y lleva a una página «Saliste», con «Entrar de nuevo» y «Entrar con otra
+  cuenta». Con una sola puerta, el sitio no vuelve a entrar solo: la página espera a que elijas. Detrás del candado de la
+  plataforma, la vuelta pasa antes por el cierre de ese candado. El cierre de la sesión de Microsoft queda apagado: te
+  sacaría también del portal y de los repos de tu organización.
 
 ### Las sondas
 
@@ -787,7 +819,9 @@ en la instalación normal: su dirección en `profileRepo` del archivo, y su toke
 quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configuración dice «falta el repo del perfil».
 
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
-  Detrás, el del sitio, que decide con su lista. `/healthz` y `/livez` quedan fuera del candado. Con `microsoftAccounts`
+  Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, tras
+  «Salir» el candado manda a Microsoft, que deja entrar de nuevo sin preguntar). Un sitio ya instalado se corrige una vez:
+  `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
     asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).

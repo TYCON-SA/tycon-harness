@@ -321,6 +321,56 @@ async function pedidoAbierto({ remote, credencial, idCorto, urlBase, fetch: f })
   return p ? { enlace: p.html_url, rama: p.head.ref } : null;
 }
 
+// La línea con que el cuerpo de un pedido lleva la marca de su propuesta: `propuesta: <32 hex en minúscula>`.
+const LINEA_DE_MARCA = 'propuesta: ';
+const FORMA_DE_MARCA = /^[0-9a-f]{32}$/;
+const VENTANA_MARCA_MS = 24 * 3600 * 1000;
+const lineasDe = (cuerpo) => String(cuerpo || '').split('\n').map((l) => l.replace(/\r$/, ''));
+
+/**
+ * El cuerpo del pedido. La marca de la propuesta va en la PRIMERA línea: Azure DevOps corta la descripción al listar
+ * pedidos y una marca al final se perdería con un cuerpo largo; quien busca el pedido por su marca la lee de ahí.
+ */
+function cuerpoDelPedido({ secciones = [], quien, aplicarSolo = false, marca = null }) {
+  const resto = `Secciones cambiadas: ${secciones.length ? secciones.join(', ') : 'sin detallar'}. Pedido por ${quien || 'alguien'} desde el sitio.${aplicarSolo ? ' Lo aplica el sitio solo: la organización tiene prendida «los cambios de un mantenedor se aplican solos» (site.auto_apply en operations.json).' : ''}`;
+  return marca ? `${LINEA_DE_MARCA}${marca}\n${resto}` : resto;
+}
+
+/**
+ * El pedido de una propuesta, por su marca: `{ estado: 'abierto' | 'aplicado', enlace }`, null si no hay, o `{ error }`
+ * si la API no contesta bien («no pude mirar» no es «no hay»). Mira los pedidos hacia la rama principal que salen de una
+ * rama `team-config/…`, activos o completados en las últimas 24 horas (uno cerrado sin mergear no cuenta), y sólo
+ * devuelve el que trae EXACTAMENTE la línea `propuesta: <marca>` en su cuerpo: no hay búsqueda por prefijo ni por título.
+ * `ahora`: la hora en milisegundos (o un Date); por defecto, la del reloj.
+ */
+async function pedidoDeMarca({ remote, credencial, marca, urlBase, fetch: f, ahora }) {
+  if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return null;
+  if (typeof marca !== 'string' || !FORMA_DE_MARCA.test(marca)) return null;
+  const cred = credenciales(credencial);
+  const secretos = secretosDe(cred);
+  const base = baseDe(remote, urlBase);
+  const t = ahora instanceof Date ? ahora.getTime() : (Number.isFinite(ahora) ? ahora : Date.now());
+  const linea = `${LINEA_DE_MARCA}${marca}`;
+  const reciente = (fecha) => { const v = Date.parse(fecha); return Number.isFinite(v) && Math.abs(t - v) <= VENTANA_MARCA_MS; };
+  const lleva = (cuerpo) => lineasDe(cuerpo).includes(linea);
+  if (remote.platform === 'azure') {
+    const r = await llamar({ url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?searchCriteria.status=all&searchCriteria.targetRefName=${encodeURIComponent(`refs/heads/${RAMA_PRINCIPAL}`)}&$top=100&${API_AZURE}`, remote, cred, fetch: f, secretos });
+    if (r.status !== 200 || !r.doc || !Array.isArray(r.doc.value)) return { error: motivoCorto(r) };
+    const hallados = r.doc.value.filter((x) => x && x.targetRefName === `refs/heads/${RAMA_PRINCIPAL}` && String(x.sourceRefName || '').startsWith('refs/heads/team-config/') && lleva(x.description));
+    const activo = hallados.find((x) => x.status === 'active');
+    const hecho = hallados.find((x) => x.status === 'completed' && reciente(x.closedDate));
+    const p = activo || hecho;
+    return p ? { estado: activo ? 'abierto' : 'aplicado', enlace: `${remote.web}/pullrequest/${p.pullRequestId}` } : null;
+  }
+  const r = await llamar({ url: `${base}/pulls?state=all&base=${RAMA_PRINCIPAL}&sort=updated&direction=desc&per_page=100`, remote, cred, fetch: f, secretos });
+  if (r.status !== 200 || !Array.isArray(r.doc)) return { error: motivoCorto(r) };
+  const hallados = r.doc.filter((x) => x && x.base && x.base.ref === RAMA_PRINCIPAL && x.head && String(x.head.ref || '').startsWith('team-config/') && lleva(x.body));
+  const activo = hallados.find((x) => x.state === 'open');
+  const hecho = hallados.find((x) => x.state === 'closed' && x.merged_at && reciente(x.merged_at));
+  const p = activo || hecho;
+  return p ? { estado: activo ? 'abierto' : 'aplicado', enlace: p.html_url } : null;
+}
+
 /** Abre el pedido por REST: { ok, enlace } | { ok: false, motivo }. Nunca auto-completar ni merge (decisión 1). */
 async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos }) {
   const base = baseDe(remote, urlBase);
@@ -406,7 +456,7 @@ function enlaceManual(remote, rama) {
  * { ok: true, codigo: 'aplicado' | 'no_aplica_solo' } o { ok: false, codigo: 'quedo_abierto' } (ver `aplicarPedido`).
  * `esperar(ms)` se inyecta para las pruebas.
  */
-async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, marca = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: M('rp.sinPlataforma') };
   const cred = credenciales(credencial);
   if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: M('rp.sinCredencial') };
@@ -493,7 +543,7 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
 
     // 6. el pedido (decisión 10: uno por archivo, con las secciones)
     // con la opción de aplicar solo, el pedido dice quién lo pidió y que lo aplica el sitio (el registro de quién lo hizo)
-    const cuerpo = `Secciones cambiadas: ${secciones.length ? secciones.join(', ') : 'sin detallar'}. Pedido por ${quien || 'alguien'} desde el sitio.${aplicarSolo ? ' Lo aplica el sitio solo: la organización tiene prendida «los cambios de un mantenedor se aplican solos» (site.auto_apply en operations.json).' : ''}`;
+    const cuerpo = cuerpoDelPedido({ secciones, quien, aplicarSolo, marca });
     const pedido = await abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos });
     if (!pedido.ok) {
       const manual = enlaceManual(remote, rama);
@@ -609,4 +659,4 @@ async function pipelinesDelProyecto({ org, project, token, urlBase = {}, fetch =
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, enlaceArchivo, politicaDeRevision, pedidoAbierto, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

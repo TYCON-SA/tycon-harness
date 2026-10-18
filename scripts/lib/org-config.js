@@ -567,6 +567,98 @@ const ramaDePropuesta = (idCorto, now = new Date()) => `team-config/${idCorto}-$
 const tituloDePropuesta = (archivo) => `Configuración de la organización: ${archivo}`;
 const cuerpoDePropuesta = (secciones, quien) => `Secciones cambiadas: ${(secciones || []).join(', ') || '(sin nombrar)'}. Pedido por ${quien} desde el sitio.`;
 
+// ── la diferencia por renglones ──────────────────────────────────────────────────────────────────────────────────
+// Por encima de este producto de renglones (medio de antes × medio de después) no se busca la subsecuencia común: el
+// medio entero se marca como cambiado, así un archivo enorme nunca cuelga la página.
+const TOPE_DE_CELDAS = 4000000;
+
+/** Los renglones de un texto; el salto final no abre un renglón vacío. */
+function renglonesDe(texto) {
+  const t = String(texto == null ? '' : texto);
+  if (t === '') return [];
+  const l = t.split('\n');
+  if (l[l.length - 1] === '') l.pop();
+  return l;
+}
+
+/**
+ * La diferencia entre dos textos, por renglones y sin librerías: una lista de tramos que la pantalla dibuja.
+ *   · `{ renglones: [{ tipo: 'igual' | 'sale' | 'entra', linea, a, b }] }` — un tramo: cada cambio con `contexto`
+ *     renglones iguales alrededor. `a` es el número (desde 1) del renglón en `antes` y `b` en `despues`; el que sale
+ *     no tiene `b` y el que entra no tiene `a` (null).
+ *   · `{ iguales: N }` — entre dos tramos, los N renglones iguales que se saltan.
+ * Dos textos iguales dan una lista vacía. Se recorta primero lo igual del principio y del final; del medio se saca la
+ * subsecuencia común más larga, salvo que pase de TOPE_DE_CELDAS: entonces todo el medio cuenta como cambiado.
+ * Va escrita en ES5 simple para poder viajar tal cual dentro del código de pantalla.
+ */
+function diferencia(antes, despues, contexto) {
+  var ctx = contexto === undefined ? 3 : contexto;
+  var A = renglonesDe(antes);
+  var B = renglonesDe(despues);
+  var ini = 0;
+  while (ini < A.length && ini < B.length && A[ini] === B[ini]) ini += 1;
+  var finA = A.length;
+  var finB = B.length;
+  while (finA > ini && finB > ini && A[finA - 1] === B[finB - 1]) { finA -= 1; finB -= 1; }
+  if (ini === A.length && ini === B.length) return [];
+  var na = finA - ini;
+  var nb = finB - ini;
+  // las filas del resultado, en orden: [tipo, índice en A o -1, índice en B o -1]
+  var filas = [];
+  var i;
+  var j;
+  for (i = 0; i < ini; i += 1) filas.push(['igual', i, i]);
+  if (na * nb > TOPE_DE_CELDAS) {
+    for (i = 0; i < na; i += 1) filas.push(['sale', ini + i, -1]);
+    for (j = 0; j < nb; j += 1) filas.push(['entra', -1, ini + j]);
+  } else {
+    // largo[i][j]: la subsecuencia común más larga de A[ini+i..] y B[ini+j..]
+    var ancho = nb + 1;
+    var largo = new Uint32Array((na + 1) * ancho);
+    for (i = na - 1; i >= 0; i -= 1) {
+      for (j = nb - 1; j >= 0; j -= 1) {
+        largo[i * ancho + j] = A[ini + i] === B[ini + j] ? largo[(i + 1) * ancho + j + 1] + 1 : Math.max(largo[(i + 1) * ancho + j], largo[i * ancho + j + 1]);
+      }
+    }
+    i = 0; j = 0;
+    while (i < na && j < nb) {
+      if (A[ini + i] === B[ini + j]) { filas.push(['igual', ini + i, ini + j]); i += 1; j += 1; }
+      else if (largo[(i + 1) * ancho + j] >= largo[i * ancho + j + 1]) { filas.push(['sale', ini + i, -1]); i += 1; }
+      else { filas.push(['entra', -1, ini + j]); j += 1; }
+    }
+    while (i < na) { filas.push(['sale', ini + i, -1]); i += 1; }
+    while (j < nb) { filas.push(['entra', -1, ini + j]); j += 1; }
+  }
+  for (i = finA; i < A.length; i += 1) filas.push(['igual', i, finB + (i - finA)]);
+  // los tramos: cada renglón que cambia arrastra `ctx` de cada lado; lo que queda entre dos tramos se cuenta
+  var cerca = [];
+  var k;
+  for (k = 0; k < filas.length; k += 1) cerca.push(false);
+  for (k = 0; k < filas.length; k += 1) {
+    if (filas[k][0] === 'igual') continue;
+    for (j = Math.max(0, k - ctx); j <= Math.min(filas.length - 1, k + ctx); j += 1) cerca[j] = true;
+  }
+  var out = [];
+  var tramo = null;
+  var saltados = 0;
+  for (k = 0; k < filas.length; k += 1) {
+    if (!cerca[k]) { saltados += 1; continue; }
+    if (!tramo) {
+      if (saltados > 0 && out.length) out.push({ iguales: saltados });
+      tramo = { renglones: [] };
+      out.push(tramo);
+    } else if (saltados > 0) {
+      out.push({ iguales: saltados });
+      tramo = { renglones: [] };
+      out.push(tramo);
+    }
+    saltados = 0;
+    var f = filas[k];
+    tramo.renglones.push({ tipo: f[0], linea: f[1] >= 0 && f[0] !== 'entra' ? A[f[1]] : B[f[2]], a: f[1] >= 0 ? f[1] + 1 : null, b: f[2] >= 0 ? f[2] + 1 : null });
+  }
+  return out;
+}
+
 // ── el código de pantalla ────────────────────────────────────────────────────────────────────────────────────────
 /**
  * El JS de la pestaña Configuración, servido por el sitio como `/static/config.js` (AC 4): un solo archivo, sin nada de
@@ -609,7 +701,7 @@ function pantalla(idioma = 'es') {
   function api(ruta, cuerpo) {
     var o = { method: cuerpo ? 'POST' : 'GET', headers: {}, credentials: 'same-origin' };
     if (cuerpo) { o.headers['Content-Type'] = 'application/json'; o.headers['X-Site-Token'] = TOKEN; o.body = JSON.stringify(cuerpo); }
-    // siempre termina con un mensaje: un pedido cortado no deja la nota en «proponiendo…» para siempre. Un rechazo sin
+    // siempre termina con un mensaje (un cuerpo JSON que no es un objeto, como null, cuenta como un cuerpo sin mensaje): un pedido cortado no deja la nota en «proponiendo…» para siempre. Un rechazo sin
     // mensaje (un cuerpo vacío o que no es JSON: lo que está delante del sitio, o una versión vieja) dice qué hacer según
     // su estado, nunca «respuesta N» suelto
     var llano = function (status) {
@@ -619,11 +711,22 @@ function pantalla(idioma = 'es') {
       if (status === 503) return T('pantalla.elSitioEstaCargandoO');
       return T('pantalla.elSitioContestoConUn') + status + ')';
     };
-    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: llano(r.status) }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = llano(r.status); return j; }); })
-      .catch(function (e) { return { ok: false, message: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY') }; });
+    // «sinRespuesta» marca lo que no vino del sitio (la red caída, un cuerpo que no es JSON, un 5xx sin su mensaje): quien
+    // propuso consulta entonces si el pedido se abrió antes de dar el error. «pista» dice que el mensaje ya trae el consejo
+    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().then(function (j) { if (!j || typeof j !== 'object' || Array.isArray(j)) return { ok: false, sinRespuesta: true, message: llano(r.status) }; if (r.status >= 500 && j && !j.message) j.sinRespuesta = true; if (r.status >= 400 && j && !j.message) j.message = llano(r.status); return j; }, function () { return { ok: false, sinRespuesta: true, message: llano(r.status) }; }); })
+      .catch(function (e) { return { ok: false, sinRespuesta: true, pista: true, message: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY') }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null };
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {} };
+  // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
+  var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
+  /** La marca de una propuesta: 16 bytes al azar, en 32 caracteres hexadecimales en minúscula. */
+  function nuevaMarca() {
+    var b = [], i;
+    if (typeof crypto !== 'undefined' && crypto && crypto.getRandomValues) { var a = new Uint8Array(16); crypto.getRandomValues(a); for (i = 0; i < 16; i++) b.push(a[i]); }
+    else for (i = 0; i < 16; i++) b.push(Math.floor(Math.random() * 256));
+    return b.map(function (x) { return (x < 16 ? '0' : '') + x.toString(16); }).join('');
+  }
 
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
@@ -823,7 +926,7 @@ function pantalla(idioma = 'es') {
       mant.setAttribute('class', 'pila');
       lista.appendChild(mant);
     }
-    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
+    var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.cadaCuantoSeActualizaEl') }), el('p', { class: 'sub-d', text: T('pantalla.queReleeElSitio') }), campo(T('pantalla.minutosEntre5Y120'), site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }), el('p', { class: 'sub-d', text: T('pantalla.siNoLoDeclarasQuinceMinutos') }));
     lista.appendChild(refresco);
     if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.laDireccionDelSitio') }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
     var mb = site.mailbox || {};
@@ -1410,6 +1513,7 @@ function pantalla(idioma = 'es') {
       S.problemas[s.id] = llanos(r.problems); S.avisos[s.id] = llanos(r.avisos);
       if (r.borrador) S.borradores[s.id] = r.borrador;
       S.textos[s.id] = r.ok ? r.texto : null;
+      S.diferencias[s.id] = r.ok ? (r.diferencia || []) : []; S.resumenes[s.id] = r.ok ? (r.resumen || []) : [];
       S.notas[s.id] = r.ok ? { ok: true, text: T('pantalla.revisadoEstaBienEscrito') + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado') };
       render();
       return r;
@@ -1433,7 +1537,68 @@ function pantalla(idioma = 'es') {
     if (prop && prop.aplicaSolo) return T('pantalla.seAplicaSoloElSitio') + repo + '.';
     return T('pantalla.seAbreUnPedidoDe') + repo + '. ' + (prop && prop.motivoAplicar ? prop.motivoAplicar : T('pantalla.entraCuandoAlguienLoAprueba'));
   }
+  /** Lo que cambia, para mirar antes de confirmar: el resumen, los renglones que difieren y, cerrados, los archivos enteros. */
+  function vistaDeLaDiferencia(s) {
+    var caja = el('div', { class: 'propuesta' });
+    var res = S.resumenes[s.id] || [];
+    if (res.length) { var ul = el('ul', { class: 'resumen' }); res.forEach(function (f) { ul.appendChild(el('li', { text: f })); }); caja.appendChild(ul); }
+    var dif = el('div', { class: 'dif', role: 'group' });
+    (S.diferencias[s.id] || []).forEach(function (tr) {
+      if (tr.iguales !== undefined) { dif.appendChild(el('div', { class: 'dif-salto', text: T('pantalla.nRenglonesIguales', { n: tr.iguales }) })); return; }
+      (tr.renglones || []).forEach(function (r) {
+        var tipo = r.tipo === 'sale' ? 'sale' : r.tipo === 'entra' ? 'entra' : 'igual';
+        dif.appendChild(el('div', { class: 'dif-r dif-' + tipo }, el('span', { class: 'dif-signo', text: tipo === 'sale' ? '\u2212' : tipo === 'entra' ? '+' : ' ' }), el('span', { class: 'dif-texto', text: r.linea })));
+      });
+    });
+    caja.appendChild(dif);
+    caja.appendChild(el('details', { class: 'archivos-enteros' }, el('summary', { text: T('pantalla.verLosArchivosEnteros') }),
+      el('div', { class: 'antes-despues' },
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.hoy4') }), el('pre', { text: s.texto || T('pantalla.todaviaNoHayNadaGuardado2') })),
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.despuesDelCambio') }), el('pre', { text: S.textos[s.id] })))));
+    return caja;
+  }
+  function empezarAProponer(s) { S.marcas[s.id] = nuevaMarca(); S.notas[s.id] = { confirmar: true }; render(); }
+  /** Termina la propuesta de una marca: la primera respuesta buena la cierra y ninguna posterior la pisa. */
+  function terminarPropuesta(s, marca, nota, bien) {
+    if (S.terminadas[marca]) { delete S.proponiendo[s.id]; render(); return; }
+    delete S.proponiendo[s.id];
+    if (bien) S.terminadas[marca] = true;
+    S.notas[s.id] = nota; render();
+    if (bien) cargar();
+  }
+  /** Pregunta hasta tres veces si el pedido de la marca existe; da la respuesta que lo encuentra o null. */
+  function buscarElPedido(s, marca, i) {
+    if (i >= ESPERAS.length) return Promise.resolve(null);
+    return new Promise(function (ok) { setTimeout(ok, ESPERAS[i]); }).then(function () {
+      return api('/propuesta?seccion=' + encodeURIComponent(s.id) + '&marca=' + marca);
+    }).then(function (r) {
+      if (r && r.ok && (r.estado === 'abierto' || r.estado === 'aplicado')) return r;
+      if (r && !r.ok && !r.sinRespuesta) return null;
+      return buscarElPedido(s, marca, i + 1);
+    });
+  }
+  function confirmarPropuesta(s) {
+    if (S.proponiendo[s.id]) return;
+    var marca = S.marcas[s.id] || (S.marcas[s.id] = nuevaMarca());
+    S.proponiendo[s.id] = marca; render();
+    api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: s.oid, marca: marca }).then(function (r) {
+      if (!r.sinRespuesta || S.terminadas[marca]) return terminarPropuesta(s, marca, { ok: r.ok, text: r.message, enlace: r.enlace || null }, r.ok);
+      return buscarElPedido(s, marca, 0).then(function (h) {
+        if (h) return terminarPropuesta(s, marca, { ok: true, text: h.estado === 'aplicado' ? T('pantalla.pedidoAplicado') : T('pantalla.pedidoAbierto'), enlace: h.enlace || null }, true);
+        terminarPropuesta(s, marca, { ok: false, text: r.message + (r.pista ? '' : ' ' + T('pantalla.recargaYMiraSiElPedidoSeAbrio')), enlace: null }, false);
+      });
+    }).catch(function (e) {
+      // lo inesperado también cierra la propuesta: sin esto la sección quedaría en «proponiendo…» con todo apagado
+      terminarPropuesta(s, marca, { ok: false, text: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY'), enlace: null }, false);
+    });
+  }
+  /** Dibuja la sección; mientras propone, todo lo que tiene nace apagado (un solo envío). */
   function seccion(s) {
+    var antes = SOLO_LECTURA;
+    SOLO_LECTURA = antes || !!S.proponiendo[s.id];
+    try { return dibujarSeccion(s); } finally { SOLO_LECTURA = antes; }
+  }
+  function dibujarSeccion(s) {
     var p = plano(s);
     var est = estadoDe(s);
     var sec = el('section', { class: 'card form-block', id: 'seccion-' + s.id }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: p.t }), el('p', { class: 'reach', text: p.d })), el('span', { class: 'pill ' + est[0], text: est[1] })));
@@ -1446,7 +1611,7 @@ function pantalla(idioma = 'es') {
     var arriba = pr.filter(function (x) { return x.sinCampo; });
     if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); }); sec.appendChild(ul); }
     var editor = EDITORES[s.id];
-    if (editor) { SOLO_LECTURA = !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = false; } }
+    if (editor) { var previa = SOLO_LECTURA; SOLO_LECTURA = previa || !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = previa; } }
     var n = S.notas[s.id];
     var prop = S.extras.proponer && S.extras.proponer[s.repo];
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
@@ -1461,19 +1626,16 @@ function pantalla(idioma = 'es') {
     if (!s.soloLectura && !bloqueada(s) && s.id !== 'paridad') {
       var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.revisarCambios'), onclick: function () { revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.descargar'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
-      if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
+      if (habilitado) bar.appendChild(el('button', { type: 'button', text: T('pantalla.proponerElCambio'), disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { empezarAProponer(s); } }));
       bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : T('pantalla.primeroRevisaAsiSabesSi')) }));
       if (!confirmando) sec.appendChild(bar);
     }
-    if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.proponerElCambio'), onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));
+    if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.proponerElCambio'), onclick: function () { empezarAProponer(s); } })));
     if (confirmando) {
-      sec.appendChild(el('div', { class: 'antes-despues' },
-        el('div', {}, el('div', { class: 'lab', text: T('pantalla.hoy4') }), el('pre', { text: s.texto || T('pantalla.todaviaNoHayNadaGuardado2') })),
-        el('div', {}, el('div', { class: 'lab', text: T('pantalla.despuesDelCambio') }), el('pre', { text: S.textos[s.id] }))));
-      sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), onclick: function () {
-        S.notas[s.id] = { ok: true, text: T('pantalla.proponiendo') }; render();
-        api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: s.oid }).then(function (r) { S.notas[s.id] = { ok: r.ok, text: r.message, enlace: r.enlace || null }; render(); if (r.ok) cargar(); });
-      } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
+      var proponiendo = !!S.proponiendo[s.id];
+      sec.appendChild(vistaDeLaDiferencia(s));
+      if (proponiendo) sec.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
+      sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
     }
     return sec;
   }
@@ -1584,6 +1746,6 @@ function pantalla(idioma = 'es') {
 module.exports = {
   SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
-  thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla,
+  thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia,
   SIN_NOTICIAS_DIAS,
 };
