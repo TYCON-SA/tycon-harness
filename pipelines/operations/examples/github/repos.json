@@ -3,7 +3,7 @@
     "EJEMPLO para una organización en GitHub. Qué repos mira la revisión nocturna de dependencias (pipelines/operations/github/dependency-audit.yml).",
     "En tu repo de operaciones va en scripts/nightly/dependencies/repos.json. Agregar un repo es una entrada acá, no código.",
     "`ruta` es la etiqueta del repo (la carpeta donde el workflow lo clona); `github` es <dueño>/<repo>. Se mira la rama main.",
-    "`tipo`: npm (npm audit contra el package-lock.json) o nuget (dotnet list package --vulnerable, sobre el .sln de la raíz).",
+    "`tipo`: npm (npm audit contra el package-lock.json), nuget (dotnet list package --vulnerable, sobre el .sln de la raíz) o pip (pip-audit contra el requirements.txt fijado, o el archivo que diga `proyecto`; pip-audit no da la gravedad y cada vulnerabilidad cuenta como alta). El proceso de la noche instala .NET sólo si hay algún repo nuget, y Python con pip-audit sólo si hay alguno pip.",
     "`activo: false` lo saca de la corrida sin borrarlo. `subruta` (opcional): audita una subcarpeta con su propio lockfile.",
     "Bloque `github`: `issues_enabled` (true abre un issue en el repo del producto por cada hallazgo; false, no se habla con GitHub) e",
     "`identity`: la cuenta con la que corre la noche. Con una GitHub App, obligatoria: `<nombre-corto-de-la-app>[bot]` (su token no la deja leer). Con un usuario de máquina, opcional.",

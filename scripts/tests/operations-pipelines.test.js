@@ -688,3 +688,33 @@ test('T9 1.26-Nocturno_BarridoAntesDelResumen @story-1.26 @ac-6: el barrido de l
   const save = all.find((x) => /push-nightly-data\.js save/.test(x) && /\.dashboard\/dependencias/.test(x));
   assert.match(save, /\.dashboard\/retros/, 'guardar lleva .dashboard/retros');
 });
+
+// ── Lo que se instala cada noche sale de repos.json ─────────────────────────────────────────────────────────────────────
+// .NET sólo con algún repo nuget activo; Python y pip-audit sólo con alguno pip activo. El paso de la configuración lo
+// decide corriendo de verdad sobre un árbol de juguete.
+test('T7 ProcesoAzure_InstalaSegunRepos @story-8.50 @ac-5: el paso de la configuración decide .NET y Python; cada instalación lleva su condición', () => {
+  const text = read('dependency-audit.yml');
+  // el bloque que repite .NET por versión no es un paso para `steps()`: el orden y las condiciones se leen del texto
+  const at = (re) => { const i = text.search(re); assert.ok(i >= 0, `falta ${re}`); return i; };
+  const conf = at(/displayName: 'Leer la configuración de la organización \(operations\.json y repos\.json\)'/);
+  const dotnet = at(/- task: UseDotNet@2\n {12}displayName: 'SDK \.NET \$\{\{ sdk \}\}'\n {12}condition: and\(succeeded\(\), eq\(variables\.HAS_NUGET, '1'\)\)\n/);
+  const python = at(/- task: UsePythonVersion@0\n {8}displayName: [^\n]+\n {8}condition: and\(succeeded\(\), eq\(variables\.HAS_PIP, '1'\)\)\n/);
+  const pipAudit = at(/- script: python -m pip install [^\n]*pip-audit==2\.10\.1\n {8}displayName: [^\n]+\n {8}condition: and\(succeeded\(\), eq\(variables\.HAS_PIP, '1'\)\)\n/);
+  const review = at(/displayName: 'Correr la revisión de dependencias'/);
+  assert.ok(conf < dotnet && conf < python && python < pipAudit && pipAudit < review && dotnet < review, `orden: configuración ${conf} < .NET ${dotnet}, Python ${python} < pip-audit ${pipAudit} < revisión ${review}`);
+  const run = (repos) => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ops-kinds-'));
+    dirs.push(base);
+    fs.mkdirSync(path.join(base, 'scripts', 'nightly', 'dependencies'), { recursive: true });
+    fs.writeFileSync(path.join(base, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos }));
+    const body = stepScript('dependency-audit.yml', 'Leer la configuración de la organización (operations.json y repos.json)', { 'Build.SourcesDirectory': base });
+    const r = spawnSync('bash', ['-c', body], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const v = (k) => (r.stdout.match(new RegExp(`##vso\\[task\\.setvariable variable=${k}\\](\\d)`)) || [])[1];
+    return `${v('HAS_NUGET')}${v('HAS_PIP')}`;
+  };
+  assert.strictEqual(run([{ tipo: 'npm' }, { tipo: 'nuget' }]), '10');
+  assert.strictEqual(run([{ tipo: 'npm' }, { tipo: 'pip' }]), '01');
+  assert.strictEqual(run([{ tipo: 'nuget', activo: false }, { tipo: 'pip', activo: false }]), '00', 'un repo apagado no pide su herramienta');
+  assert.strictEqual(run([{ tipo: 'nuget' }, { tipo: 'pip' }]), '11');
+});

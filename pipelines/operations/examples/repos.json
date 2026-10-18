@@ -3,7 +3,7 @@
     "EJEMPLO. Qué repos mira la revisión nocturna de dependencias (pipelines/operations/dependency-audit.yml).",
     "En tu repo de operaciones va en scripts/nightly/dependencies/repos.json. Agregar un repo es una entrada acá, no código.",
     "`ruta` es la etiqueta del repo (la carpeta donde el pipeline lo clona); `ado` es <proyecto>/<repo> de Azure DevOps.",
-    "`tipo`: npm (npm audit contra el package-lock.json) o nuget (dotnet list package --vulnerable, sobre el .sln de la raíz).",
+    "`tipo`: npm (npm audit contra el package-lock.json), nuget (dotnet list package --vulnerable, sobre el .sln de la raíz) o pip (pip-audit contra el requirements.txt fijado, o el archivo que diga `proyecto`; pip-audit no da la gravedad y cada vulnerabilidad cuenta como alta). El proceso de la noche instala .NET sólo si hay algún repo nuget, y Python con pip-audit sólo si hay alguno pip.",
     "`activo: false` lo saca de la corrida sin borrarlo: queda declarado y la foto lo cuenta aparte.",
     "`subruta` (opcional): audita una subcarpeta del repo, con su propio lockfile. `ruta` sigue siendo la raíz.",
     "Bloque `azure`: `org` (la dirección de tu organización), `pedidos_activos` (true crea un pedido de trabajo por proyecto",

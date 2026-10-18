@@ -740,3 +740,37 @@ test('T28 2.33-Nocturno_ConexionPropiaYOrden (GitHub) @story-2.33 @ac-10 @ac-11 
   assert.deepStrictEqual(check(t).filter((b) => ['pull-request-target', 'uses-by-sha'].includes(b.rule)), []);
   assert.match(fs.readFileSync(path.join(DIR, 'README.md'), 'utf8'), /site-update\.yml/);
 });
+
+// ── Lo que se instala cada noche sale de repos.json ─────────────────────────────────────────────────────────────────────
+test('T8 ProcesoGitHub_InstalaSegunRepos @story-8.50 @ac-5: setup-dotnet y setup-python con su if, después de leer repos.json', () => {
+  const t = read('dependency-audit.yml');
+  const all = steps(t);
+  const conf = all.findIndex((s) => /name: Leer la configuración de la organización \(repos\.json\)/.test(s));
+  const dotnet = all.findIndex((s) => /uses: actions\/setup-dotnet@/.test(s));
+  const python = all.findIndex((s) => /uses: actions\/setup-python@/.test(s));
+  const pipAudit = all.findIndex((s) => /pip install [^\n]*pip-audit==2\.10\.1/.test(s));
+  assert.ok(conf >= 0 && dotnet > conf && python > conf && pipAudit > python, `orden: configuración ${conf} < .NET ${dotnet}, Python ${python} < pip-audit ${pipAudit}`);
+  assert.match(all[dotnet], /if: env\.HAS_NUGET == '1'/);
+  for (const i of [python, pipAudit]) assert.match(all[i], /if: env\.HAS_PIP == '1'/);
+  assert.match(all[python], /uses: actions\/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7\.0\.0/);
+  // el paso de la configuración, corrido de verdad sobre un árbol de juguete
+  const m = all[conf].match(/run: \|\n([\s\S]*)$/);
+  assert.ok(m, 'el paso de la configuración es un run: |');
+  const body = m[1].split('\n').map((l) => l.replace(/^ {10}/, '')).join('\n');
+  const run = (repos) => {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), 'gh-kinds-'));
+    try {
+      fs.mkdirSync(path.join(base, 'scripts', 'nightly', 'dependencies'), { recursive: true });
+      fs.writeFileSync(path.join(base, 'scripts', 'nightly', 'dependencies', 'repos.json'), JSON.stringify({ repos }));
+      const env = path.join(base, 'env.txt');
+      fs.writeFileSync(env, '');
+      const r = spawnSync('bash', ['-c', body], { cwd: base, encoding: 'utf8', env: { ...process.env, GITHUB_ENV: env } });
+      assert.strictEqual(r.status, 0, r.stderr);
+      const e = fs.readFileSync(env, 'utf8');
+      const v = (k) => (e.match(new RegExp(`^${k}=(\\d)$`, 'm')) || [])[1];
+      return `${v('HAS_NUGET')}${v('HAS_PIP')}`;
+    } finally { fs.rmSync(base, { recursive: true, force: true }); }
+  };
+  assert.strictEqual(run([{ tipo: 'nuget' }]), '10');
+  assert.strictEqual(run([{ tipo: 'pip' }, { tipo: 'nuget', activo: false }]), '01');
+});
