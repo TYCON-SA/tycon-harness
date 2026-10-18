@@ -124,7 +124,7 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
    `node ~/.tycon/harness/scripts/setup/harness.js team-init`. El repo de operaciones se crea aparte (abajo, «Los
    procesos de la noche»).
 2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
-   la pestaña **Configuración** del [sitio de la organización](guides/piezas-del-arnes.md#scriptssite--el-sitio-de-la-organización) (sólo para los que mantienen): valida con los
+   la pestaña **Configuración** del [sitio de la organización](guides/sitio-de-la-organizacion.md) (sólo para los que mantienen): valida con los
    mismos lectores del arnés y propone cada cambio con un pull request, nunca escribe `main`. Mientras ACME no tiene su
    sitio desplegado, la alternativa es la página local: `node ~/.tycon/harness/scripts/setup/harness.js team-config`,
    que se abre en su máquina, sin nada en internet, y también le ofrece el pull request.

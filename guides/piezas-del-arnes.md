@@ -603,9 +603,11 @@ decidir; en la pestaña **Configuración** se personaliza la organización sin c
 **Quién lo usa:** cada persona de la organización, para ver lo suyo; quienes mantienen el arnés, para verlo todo, editar
 la configuración e instalarlo.
 
-**Dónde leer más:** cómo se instala, qué secretos lleva y cómo está hecho por dentro, en
+**Dónde leer más:** para personas, la guía: cómo se usa cada pestaña, la configuración sección por sección, qué ve
+cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro, en
 [guides/sitio-de-la-organizacion.md](sitio-de-la-organizacion.md) (en inglés,
-[guides/sitio-de-la-organizacion.en.md](sitio-de-la-organizacion.en.md)). Las piezas que lo acompañan: la imagen
+[guides/sitio-de-la-organizacion.en.md](sitio-de-la-organizacion.en.md)). Sus capturas las saca
+`scripts/tools/site-guide-captures.js` del sitio corriendo con una organización de laboratorio. Las piezas que lo acompañan: la imagen
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.

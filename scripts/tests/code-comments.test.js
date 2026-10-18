@@ -615,3 +615,23 @@ test('T21 CommentGuard_OnlyPublishedTree — en el repo del equipo no aplica; en
   assert.strictEqual(run.status, 0, `${run.stdout}${run.stderr}`);
   assert.match(run.stdout, /fin/, 'un repo sin el guion del freno sigue de largo');
 });
+
+test('T23 CommentGuard_ThinOverlay_PrivateChangesStayPrivate — en el árbol armado del adelgazado, lo privado que cambia el commit no se publica', () => {
+  // la punta del privado: la lista del adelgazado y un pipeline propio
+  const l = publicLab();
+  stage(l.repo, { '.tycon/internal-forms.json': { layout: 'thin', own: {} }, 'pipelines/private.yml': 'steps:\n  # Corre el lote.\n  - script: echo ok\n' });
+  commit(l.repo, 'privado');
+  // la superposición encima: trae un guion del público
+  stage(l.repo, { 'scripts/public.js': '// Lo trae el público.\nmodule.exports = 1;\n' });
+  commit(l.repo, 'arnés de GitHub [superposición local, no se empuja]');
+  // el commit sobre el árbol armado cambia lo privado (y suma un archivo propio): eso no sale, no es del freno
+  stage(l.repo, { 'pipelines/private.yml': `steps:\n  # Corre el lote ${RED['story-number']}.\n  - script: echo ok\n`, 'scripts/own-new.js': `// ${RED.date}\n` });
+  const quiet = guard(l);
+  assert.strictEqual(quiet.code, 0, `lo privado del commit se tomó como publicado: ${quiet.out}`);
+  // lo que trajo el público sí se mira: cambiarlo con historia frena
+  stage(l.repo, { 'scripts/public.js': `// Lo trae el público ${RED.date}.\nmodule.exports = 1;\n` });
+  const red = guard(l);
+  assert.strictEqual(red.code, 1, red.out);
+  assert.match(red.out, /scripts\/public\.js:1/);
+  assert.doesNotMatch(red.out, /pipelines\/private\.yml|scripts\/own-new\.js/);
+});
