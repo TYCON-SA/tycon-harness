@@ -25,13 +25,17 @@ const A = 'ana@acme.example';
 const T0 = Date.parse('2026-10-18T12:00:00Z');
 
 /** Un registro de juguete. `estado`: 'ok' | 401 | 'manifiesto-roto' | 'sin-version' | 'indice'. Anota cada pedido. */
-async function registro({ version = '2026.10.18.9', estado = 'ok', source = 'https://github.example/acme/arnes' } = {}) {
+async function registro({ version = '2026.10.18.9', estado = 'ok', source = 'https://github.example/acme/arnes', realm = null } = {}) {
   const config = JSON.stringify({ created: '2026-10-18T03:49:45Z', config: { Labels: estado === 'sin-version' ? {} : { 'org.opencontainers.image.version': version, 'org.opencontainers.image.revision': 'abc123', 'org.opencontainers.image.source': source, 'org.opencontainers.image.created': '2026-10-18T03:49:45Z' } } });
   const dConfig = `sha256:${crypto.createHash('sha256').update(config).digest('hex')}`;
   const huella = `sha256:${'c'.repeat(64)}`;
   const pedidos = [];
   const srv = http.createServer((req, res) => {
     pedidos.push({ url: req.url, auth: req.headers.authorization || null });
+    // `realm`: el registro anuncia su token en otra ruta (en /oauth2/token) y /token no existe
+    if (realm && req.url === '/v2/') { res.writeHead(401, { 'www-authenticate': realm(srv.address().port) }); res.end(); return; }
+    if (realm && req.url.startsWith('/token')) { res.writeHead(404); res.end(); return; }
+    if (realm && req.url.startsWith('/oauth2/token')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"access_token":"anonimo"}'); return; }
     if (req.url.startsWith('/token')) {
       if (estado === 401) { res.writeHead(401); res.end(); return; }
       res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"token":"anonimo"}'); return;
@@ -68,7 +72,8 @@ test('T7 2.33-Ultima_AnonimaDelRegistro @story-2.33 @ac-8 — la versión, la hu
       assert.strictEqual(r.creada, '2026-10-18T03:49:45Z');
       assert.ok(reg.pedidos.every((p) => p.auth === null || p.auth === 'Bearer anonimo'), 'sólo el token anónimo');
       assert.ok(!reg.pedidos.some((p) => /\/blobs\//.test(p.url) && !p.url.includes('sha256:')), 'ninguna capa');
-      assert.ok(reg.pedidos.length <= 4, `pocos pedidos: ${reg.pedidos.length}`);
+      // el anuncio del token (/v2/), el token, el manifiesto (o el índice y su imagen) y la configuración
+      assert.ok(reg.pedidos.length <= 5, `pocos pedidos: ${reg.pedidos.length}`);
     } finally { await reg.cerrar(); }
   }
 });
@@ -181,4 +186,23 @@ test('T11 2.33-Sitio_SinMirarNuncaAlDia @story-2.33 @ac-8 @ac-20 — con el regi
     const lz = await h.pedir('/livez');
     assert.doesNotMatch(lz.texto, /2026\./, 'ninguna versión sin sesión');
   });
+});
+
+test('T7b 2.33-Ultima_TokenDondeLoAnunciaElRegistro @story-2.33 @ac-8 — el token donde lo anuncia el 401 del registro, sólo del mismo origen', async () => {
+  // 🔴 rojo: con un registro que da el token en /oauth2/token (Azure), el lector pide /token y no lee nada.
+  const reg = await registro({ realm: (port) => `Bearer realm="http://127.0.0.1:${port}/oauth2/token",service="lab.example"` });
+  try {
+    const r = await LR.consultar({ imagen: 'lab.example/acme/arnes', urlBase: reg.base });
+    assert.strictEqual(r.ok, true, JSON.stringify(r));
+    assert.strictEqual(r.version, '2026.10.18.9');
+    const tok = reg.pedidos.find((p) => p.url.startsWith('/oauth2/token'));
+    assert.ok(tok && /service=lab\.example/.test(tok.url) && /scope=repository%3Aacme%2Farnes%3Apull|scope=repository:acme\/arnes:pull/.test(tok.url), JSON.stringify(reg.pedidos));
+  } finally { await reg.cerrar(); }
+  // un token anunciado en otro origen no se pide: la consulta no manda nada afuera del registro elegido
+  const ajeno = await registro({ realm: () => 'Bearer realm="https://otro.example/oauth2/token",service="lab.example"' });
+  try {
+    const r = await LR.consultar({ imagen: 'lab.example/acme/arnes', urlBase: ajeno.base });
+    assert.strictEqual(r.ok, false);
+    assert.strictEqual(r.codigo, 'ilegible');
+  } finally { await ajeno.cerrar(); }
 });

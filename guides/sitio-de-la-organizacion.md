@@ -721,6 +721,10 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   instala **por huella**, despierta el sitio y le corre la prueba sin sesión. Si la prueba falla, vuelve a la huella
   anterior y lo deja dicho; esa huella no se reintenta hasta que `stable` se mueva. Nunca instala una versión menor que
   la que corre. Cada entorno lo corre con su herramienta: la receta de cada uno trae su párrafo **Al día**.
+- **Desde una imagen vieja, la primera va a mano.** Una imagen publicada antes de que la imagen trajera su versión no
+  le dice al actualizador qué versión corre, y sin saberlo no instala nada (nunca baja): el resultado dice «no se sabe
+  qué versión corre» y la primera actualización va a mano, con la receta de tu entorno. Desde ahí, el automático sigue
+  solo.
 
 ### Las dos formas de arrancarlo
 
