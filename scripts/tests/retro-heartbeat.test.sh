@@ -233,7 +233,7 @@ fi
 TCG="${BASE}/tcg"
 mkdir -p "${TCG}/scripts/metrics" "${TCG}/scripts/lib" "${TCG}/scripts/hooks" "${TCG}/.dashboard"
 cp "${LATIDO}" "${TCG}/scripts/metrics/"
-cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${TCG}/scripts/lib/"
+cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${TCG}/scripts/lib/"
 cp "${RAIZ}/scripts/hooks/retro-pending.js" "${TCG}/scripts/hooks/"
 node "${TCG}/scripts/metrics/retro-heartbeat.js" --repo "${REPO}" --merge "${SHA1}" --story 9.9 > "${BASE}/stdout" 2> "${BASE}/stderr"
 RC=$?
@@ -464,7 +464,7 @@ fi
   cp "${RAIZ}/scripts/hooks/retro-pending.js" "${H20}/scripts/hooks/"
   cp "${LATIDO}" "${H20}/scripts/metrics/"
   cp "${LIB}" "${RAIZ}/scripts/lib/az-pr.js" "${RAIZ}/scripts/lib/gh-pr.js" "${RAIZ}/scripts/lib/git-target.js" "${RAIZ}/scripts/lib/shell-parse.js" \
-     "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${H20}/scripts/lib/"
+     "${RAIZ}/scripts/lib/harness-repo.js" "${RAIZ}/scripts/lib/legacy-names.js" "${RAIZ}/scripts/lib/retro-coverage.js" "${H20}/scripts/lib/"
   G20() { git -C "${P20}" -c user.email=p@example.invalid -c user.name=p "$@"; }
   git init -q -b main "${P20}"
   echo uno > "${P20}/a.txt"; G20 add -A; G20 commit -q -m base
