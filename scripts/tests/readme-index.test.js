@@ -80,7 +80,7 @@ test('Readme_IndiceCompleto (T6): cada ruta del «Qué contiene» de la base sig
   assert.ok(Array.isArray(rutas) && rutas.length >= 100, `la lista de la base tiene ${rutas && rutas.length} rutas; se esperaban las ~110 del índice`);
   // el índice se partió en dos: lo de uso diario queda en el README (se carga en cada sesión) y lo de quien mantiene el
   // arnés pasó a guides/maintaining/mantener-el-arnes.md (a demanda), que el README nombra en su última fila
-  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/mantener-el-arnes.md');
+  const donde = leer('guides/piezas-del-arnes.md') + '\n' + leer('guides/maintaining/piezas-en-detalle.md') + '\n' + leer('INDEX.md') + '\n' + leer('guides/maintaining/mantener-el-arnes.md');
   const faltan = rutas.filter((r) => !nombrada(r, donde));
   assert.deepEqual(faltan, [], `rutas del índice de la base que ya no nombra ni la guía de piezas, ni el README, ni la guía de mantener: ${faltan.join(', ')}`);
   assert.ok(nombrada('guides/maintaining/mantener-el-arnes.md', leer('INDEX.md')), 'el índice (INDEX.md) nombra la guía de mantener el arnés');

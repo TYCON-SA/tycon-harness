@@ -1293,6 +1293,12 @@
       "requiere": []
     },
     {
+      "__nota": "la guía de piezas se lee rápido: cada ficha con sus cuatro partes y bajo el tope, sin casos con fecha, con sus anclas y su detalle.",
+      "raiz": "arnes",
+      "ruta": "tests/pieces-cards.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: los pedidos abiertos asignados a cada persona, de cada noche, con lista blanca (sin títulos) y «no medido» si la consulta falla. Azure es fake-az.sh.",
       "raiz": "arnes",
       "ruta": "tests/assigned-items.test.js",
