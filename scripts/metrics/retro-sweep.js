@@ -36,6 +36,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const RC = require(path.join(__dirname, '..', 'lib', 'retro-coverage.js'));
+const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
 
 const HEARTBEAT = process.env.TYCON_RETRO_SWEEP_HEARTBEAT || path.join(__dirname, 'retro-heartbeat.js');
 const CONFIG = path.join(__dirname, 'retro-sweep.json');
@@ -234,7 +235,8 @@ function walk(repo, got, ctx, desde, history) {
 function main() {
   const a = args(process.argv.slice(2));
   if (a.error) { console.error(`retro-sweep: ${a.error}`); return 2; }
-  const today = process.env.TYCON_TODAY || new Date().toISOString().slice(0, 10);
+  // TYCON_TODAY tiene nombre viejo en el mapa de renombres: se lee por readEnv, que acepta los dos
+  const today = readEnv('TYCON_TODAY', { where: 'scripts/metrics/retro-sweep.js' }) || new Date().toISOString().slice(0, 10);
   let rules; let repos;
   try {
     rules = loadConfig(a.config);
