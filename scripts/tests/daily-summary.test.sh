@@ -1159,6 +1159,44 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 [ "$(penultima)" != "sitio: sin el resultado del nocturno de hoy; el sitio dice al entrar si hay una versión nueva" ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && ok "2.33-T25 sin --site-update (una organización sin el nocturno), el mensaje queda como antes" || no "2.33-T25 sin la opción cambió: «$(penultima)»"
 
+# 1.26-T7 Resumen_LatidoYRetroPorSeparado y 1.26-T8 Resumen_Faltan_LoDice — la línea de las retrospectivas, del informe
+# que deja el barrido de la noche (`retro-sweep.js --report`, pasado con `--retros`): latido sin modelo y retro con
+# aprendizajes por separado, lo que no pide retro y lo que falta. Sin `--retros`, el resumen no tiene esa línea.
+retros() { # <archivo> <json de totales/repos>
+  node -e 'const [f, j] = process.argv.slice(1); const r = JSON.parse(j);
+    require("fs").writeFileSync(f, JSON.stringify({ schema: 1, hecho: "'"$HOY"'T03:30:00.000Z", desde: "'"$AYER"'", ...r }) + "\n")' "$1" "$2"
+}
+retros "$D/retros.json" '{"repos":[{"nombre":"acme-a","mirado":true,"merges":9,"latido":5,"aprendizajes":1,"no_piden":{"subida de versión":2},"faltan":[]},{"nombre":"acme-b","mirado":true,"merges":1,"latido":1,"aprendizajes":0,"no_piden":{},"faltan":[]}]}'
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/retros.json")
+T7="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
+[ "$RC" = 0 ] && [ "$T7" = "retros: 10 merges a main · latido sin modelo 6 · retro con aprendizajes 1 · no piden retro 2 · faltan 0" ] \
+  && ok "1.26-T7 latido sin modelo y retro con aprendizajes, por separado y con esos nombres" || no "1.26-T7 rc=$RC · «${T7}» · $(tail -2 "$D/entregar.txt")"
+retros "$D/retros.json" '{"repos":[{"nombre":"acme-a","mirado":true,"merges":3,"latido":1,"aprendizajes":0,"no_piden":{},"faltan":[{"sha":"abcdef1234567890","motivo":"el latido falló"}]},{"nombre":"acme-b","mirado":false,"motivo":"no se pudo bajar"}]}'
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/retros.json")
+T8="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
+[ "$RC" = 0 ] && [ "$T8" = "retros: 3 merges a main · latido sin modelo 1 · retro con aprendizajes 0 · no piden retro 0 · faltan 1 (acme-a abcdef1) · sin mirar: acme-b" ] \
+  && ok "1.26-T8 lo que falta y el repo que no se miró salen en el resumen" || no "1.26-T8 rc=$RC · «${T8}»"
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/no-existe.json")
+T8b="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
+[ "$RC" = 0 ] && [ "$T8b" = "retros: ? (el barrido de la noche no dejó su informe)" ] \
+  && ok "1.26-T8 sin el informe del barrido lo dice, no es «faltan 0»" || no "1.26-T8 sin informe: «${T8b}»"
+
+# 1.26-T8 (iteración 2): nombres con espacios o acentos salen tal cual; un informe sin `no_piden` no se lee como «0».
+retros "$D/retros.json" '{"repos":[{"nombre":"área ventas","mirado":true,"merges":1,"latido":0,"aprendizajes":0,"no_piden":{},"faltan":[{"sha":"abcdef1234567890","motivo":"x"}]},{"nombre":"Arnés del equipo","mirado":false}]}'
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/retros.json")
+T8c="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
+[ "$T8c" = "retros: 1 merges a main · latido sin modelo 0 · retro con aprendizajes 0 · no piden retro 0 · faltan 1 (área ventas abcdef1) · sin mirar: Arnés del equipo" ] \
+  && ok "1.26-T8 nombres con espacios y acentos, tal cual" || no "1.26-T8 nombres: «${T8c}»"
+retros "$D/retros.json" '{"repos":[{"nombre":"acme-a","mirado":true,"merges":2,"latido":1,"aprendizajes":0,"faltan":[]}]}'
+prueba paso - "${HOY}T04:12:30.000Z"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json" --retros "$D/retros.json")
+T8d="$(ultimo 'j.text.split("\n").find((l) => l.startsWith("retros:")) || ""')"
+[ "$T8d" = "retros: ? (el informe del barrido no se pudo leer)" ] && ok "1.26-T8 un informe sin no_piden no se lee como cero" || no "1.26-T8 sin no_piden: «${T8d}»"
+
 echo
 if [ "$FALLOS" -eq 0 ]; then echo "✅ resumen-diario: $TOTAL/$TOTAL"; exit 0; fi
 echo "❌ resumen-diario: $FALLOS de $TOTAL en rojo"; exit 1

@@ -287,6 +287,27 @@ jobs:
           AZURE_DEVOPS_EXT_PAT: $(System.AccessToken)
 
       - script: |
+          # El barrido de las retrospectivas: cada merge a main de los repos del arnés de la organización
+          # (team-repos.json: public, maintainers, operations) sin su archivo de métricas recibe su latido, sin modelo. Los
+          # archivos van a .dashboard/retros (se guardan con el resto) y el informe del día, al resumen (--retros). Un repo
+          # que no se pudo bajar no corta la noche: el informe lo dice y el resumen también.
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          HOY="${HOY_NOCTURNO:-$(date -u +%Y-%m-%d)}"
+          node scripts/metrics/retro-sweep.js \
+            --team-repos "$(Build.SourcesDirectory)/team-repos.json" \
+            --clone-dir "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/retro-sweep" \
+            --out "$(Build.SourcesDirectory)/.dashboard/retros" \
+            --report "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json"
+          CODIGO=$?
+          [ "$CODIGO" = 0 ] || echo "##vso[task.logissue type=warning]El barrido de las retrospectivas no pudo mirar todo (código $CODIGO): el resumen dice qué faltó."
+          exit 0
+        displayName: 'Barrer las retrospectivas de los merges a main'
+        condition: succeeded()
+        env:
+          CLONE_TOKEN: $(System.AccessToken)
+
+      - script: |
           # La prueba sin sesión del sitio de la organización: el aviso lleva el enlace sólo si pasó ESTA
           # mañana. Sin `site.url` en operations.json no se prueba. Nunca frena la noche: el resultado viaja al resumen
           # (--site-check del paso siguiente).
@@ -328,7 +349,8 @@ jobs:
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \
-            --site-check "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json" 2> "$ERR"
+            --site-check "${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/site-check.json" \
+            --retros "$(Build.SourcesDirectory)/.dashboard/retros/barrido/retro-sweep-$HOY.json" 2> "$ERR"
           CODIGO=$?
           cat "$ERR" >&2
           if [ "$CODIGO" != "0" ]; then
@@ -351,7 +373,7 @@ jobs:
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \
             --require-daily '.dashboard/dependencias/dependencias-{day}.json' \
-            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad
+            -- .dashboard/dependencias inbox/dependencies .dashboard/paridad .dashboard/retros
         displayName: 'Guardar el snapshot y las fichas en el repo de operaciones'
         condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))
 

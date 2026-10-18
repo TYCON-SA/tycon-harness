@@ -1,0 +1,9 @@
+{
+  "__doc": "Lo que NO pide retrospectiva (story 1.26): cada entrada con su motivo. Un merge a main se cuenta acá si su autor y su asunto calzan con la entrada (expresiones regulares; `asunto_no` lo descarta). Nada se excluye fuera de esta lista. Lo lee scripts/metrics/retro-sweep.js.",
+  "version": 1,
+  "no_piden_retro": [
+    { "motivo": "subida de versión", "asunto": "^chore(\\([^)]*\\))?: bump version .*\\[skip ci\\]" },
+    { "motivo": "proceso nocturno", "autor": "^(Azure Pipelines|Project Collection Build Service.*|github-actions\\[bot\\])$", "asunto_no": "^Merge (pull request|branch)" },
+    { "motivo": "resultado del examen de revisores", "asunto": "^chore\\(examen\\): resultado" }
+  ]
+}
