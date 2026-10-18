@@ -15,7 +15,8 @@
  *
  * En la tabla va sólo el trabajo con sesión viva. Lo que quedó de una sesión cerrada (proceso muerto) o sin rastro
  * (sin archivo de sesión: Claude lo borra al cerrar, y Codex no lo escribe) va abajo, en «Quedaron a medio camino»,
- * con la forma de limpiarlo. El programa no limpia nada.
+ * con la forma de limpiarlo (`clear-session` para un marcador, `adhoc clear-orphan` para un ad-hoc de más de 24 h).
+ * El programa no limpia nada.
  *
  * Un marcador sin pasos pendientes está terminado y no se muestra. Uno sin tocar hace más de 24 h no cuenta, igual que
  * para `marker.js list-all`, que lo descarta; acá sólo se dice cuántos hay, sin borrarlos.
@@ -204,7 +205,21 @@ function buildWip(opts = {}) {
     const work = cut(String(a.reason || '(sin motivo)'), TITLE_MAX);
     const label = liveName(sid);
     if (label) rows.push({ work, state: 'Trabajo suelto', end: 'sin estimación (no tiene pasos)', session: label });
-    else halfway.push(`ad-hoc «${work}» · ${shortId(sid)} · limpiar: borrar ${file}`);
+    else {
+      // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
+      let touched = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      if (touched === undefined) {
+        try { touched = fs.statSync(file).mtimeMs; } catch (e) {
+          unreadable.push(`${file}: sin fecha legible (${e.message})`);
+          halfway.push(`ad-hoc «${work}» · ${shortId(sid)} · fecha ilegible: no se sabe desde cuándo se puede limpiar`);
+          continue;
+        }
+      }
+      const how = nowMs - touched > STALE_MS
+        ? `limpiar: node ${MARKER_JS} adhoc clear-orphan ${sid}`
+        : `se podrá limpiar después de las ${hhmm(touched + STALE_MS)}`;
+      halfway.push(`ad-hoc «${work}» · ${shortId(sid)} · ${how}`);
+    }
   }
 
   const free = [...sessions.entries()].filter(([sid, s]) => s.alive && !busy.has(sid)).map(([sid, s]) => s.name || shortId(sid));

@@ -54,7 +54,9 @@
  *   marker.js find-by-story <storyId>           → JSON array con markers que matcheen
  *                                                  ese storyId (cualquier sesión)
  *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
- *                                                  (recovery / admin)
+ *                                                  (recovery / admin); sin marker, lo dice y sale 1
+ *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
+ *                                                  y lleva más de 24 h sin tocarse
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -2633,10 +2635,82 @@ function cmdClearSession(sid) {
   }
   const safe = String(sid).replace(/[/\\]/g, '_');
   const p = path.join(ACTIVE_DIR, `${safe}.json`);
-  if (fs.existsSync(p)) {
-    try { fs.unlinkSync(p); } catch (_e) { /* ignore */ }
+  if (!fs.existsSync(p)) {
+    console.error(`marker.js clear-session: no había marcador de esa sesión (${safe}): no se borró nada.`);
+    process.exit(1);
+  }
+  try { fs.unlinkSync(p); } catch (e) {
+    console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
+    process.exit(1);
   }
   process.stdout.write(`cleared: ${safe}.json\n`);
+}
+
+// ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (~/.claude/sessions/<pid>.json, con su
+// sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
+// sesión, así que no se la puede dar por muerta: se devuelve cuál.
+function sessionLiveness(sid) {
+  const dir = path.join(os.homedir(), '.claude', 'sessions');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code === 'ENOENT') return { alive: false };
+    return { unknown: `${dir}: ${e.message}` };
+  }
+  for (const n of names) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
+    if (!s || s.sessionId !== sid) continue;
+    const pid = Number(s.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
+    try { process.kill(pid, 0); return { alive: true, pid }; } catch (e) { if (e.code === 'EPERM') return { alive: true, pid }; }
+  }
+  return { alive: false };
+}
+
+// `adhoc clear-orphan <sid>`: el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
+// y el ad-hoc lleva más de STALE_HOURS sin tocarse; cada borrado y cada negativa quedan en adhoc.log.
+function cmdAdhocClearOrphan(sid) {
+  if (!sid) {
+    console.error('marker.js adhoc clear-orphan: falta el id de la sesión — uso: adhoc clear-orphan <sessionId>');
+    process.exit(2);
+  }
+  const io = require('./lib/story-gate-io.js');
+  // El id se compara ya saneado, igual que el nombre del archivo: un id con separadores no esquiva las comprobaciones.
+  sid = String(sid).replace(/[/\\]/g, '_');
+  const deny = (motivo, code = 3) => {
+    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR_ORPHAN_DENIED', sessionId: sid, motivo, by: SID });
+    console.error(`marker.js adhoc clear-orphan: no se borró — ${motivo}`);
+    process.exit(code);
+  };
+  if (sid === String(SID).replace(/[/\\]/g, '_')) deny('es el ad-hoc de esta misma sesión: se termina con `marker.js adhoc clear`');
+  const file = io.adhocPath(STATE_DIR, sid);
+  if (!fs.existsSync(file)) deny('no hay ad-hoc de esa sesión: no se borró nada', 1);
+  let a = null;
+  try { a = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { a = null; }
+  const reason = a && typeof a === 'object' ? a.reason || null : '(ilegible)';
+  // La última vez tocado: la primera fecha legible entre lastTouch y declaredAt; sin ninguna, la del archivo.
+  let touched = [a && a.lastTouch, a && a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+  if (touched === undefined) {
+    try { touched = fs.statSync(file).mtimeMs; } catch (e) { deny(`no pude leer la fecha del ad-hoc: ${e.message}`); }
+  }
+  const live = sessionLiveness(sid);
+  if (live.unknown) deny(`no pude verificar que la sesión no esté viva (${live.unknown})`);
+  if (live.alive) deny(`la sesión está viva (pid ${live.pid})`);
+  const until = touched + STALE_HOURS * 3600 * 1000;
+  if (Date.now() < until) {
+    const d = new Date(until);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    deny(`lleva menos de ${STALE_HOURS} h sin tocarse: se podrá después de las ${hhmm} del ${d.toISOString().slice(0, 10)}`);
+  }
+  try { fs.unlinkSync(file); } catch (e) { deny(`no pude borrar ${file}: ${e.message}`, 1); }
+  // appendLog no frena si no puede escribir: se mira que la línea haya quedado y, si no, se avisa.
+  const logFile = path.join(STATE_DIR, 'adhoc.log');
+  const size = () => { try { return fs.statSync(logFile).size; } catch (_e) { return -1; } };
+  const before = size();
+  appendLog('adhoc.log', { kind: 'ADHOC_CLEAR_ORPHAN', sessionId: sid, reason, lastTouch: new Date(touched).toISOString(), by: SID });
+  if (size() <= before) console.error(`marker.js adhoc clear-orphan: ⚠ se borró, pero no pude dejar la constancia en ${logFile}`);
+  process.stdout.write(`adhoc: borrado el de la sesión ${sid} («${reason}»)\n`);
+  process.exit(0);
 }
 
 /**
@@ -2987,6 +3061,7 @@ function cmdRuntimeWaiver(storyArg) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 function cmdAdhoc(sub, payloadJson) {
+  if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
   const existing = io.readAdhoc(STATE_DIR, SID);
   if (sub === 'get') {
@@ -3125,7 +3200,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 

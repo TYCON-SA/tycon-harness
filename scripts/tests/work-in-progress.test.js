@@ -133,7 +133,7 @@ test('T5 Sesion_NombreIdCortoYMedioCamino: sólo lo vivo en la tabla; lo demás 
   assert.match(r.text, /Quedaron a medio camino \(sesión cerrada o sin rastro\): 3/);
   assert.match(r.text, /7\.2 · titulo 7\.2 · 22222222 · quedó en: Implementar y correr las pruebas · limpiar: node .*marker\.js clear-session 22222222-bbbb/);
   assert.match(r.text, /7\.3 · titulo 7\.3 · 33333333 · .*clear-session 33333333-cccc/);
-  assert.ok(r.text.includes(`ad-hoc «ajuste viejo» · 44444444 · limpiar: borrar ${adhoc}`), r.text);
+  assert.match(r.text, /ad-hoc «ajuste viejo» · 44444444 · se podrá limpiar después de las \d\d:\d\d/);
   assert.ok(fs.existsSync(adhoc), 'no limpia nada solo');
   assert.strictEqual(fs.readdirSync(path.join(m.state, 'active')).length, 3);
 });
@@ -253,4 +253,23 @@ test('T16 MarcadorSinPasos_YPasoPasado: sin lista de pasos se dice; paso pasado 
   assert.ok(r.unreadable.some((u) => /nolist00\.json: sin lista de pasos pendientes/.test(u)), r.unreadable.join(' | '));
   const end = new Date(Date.parse(NOW) + 6 * 60000);
   assert.strictEqual(r.rows[0].end, `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`);
+});
+
+test('T17 Wip_AdhocRecomiendaClearOrphan: el viejo trae el comando; el nuevo, desde cuándo', () => {
+  const m = toyMachine();
+  const at = (h) => new Date(Date.parse(NOW) - h * 3600 * 1000).toISOString();
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'old00000-a.json'), JSON.stringify({ reason: 'viejo', lastTouch: at(30) }));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'new00000-b.json'), JSON.stringify({ reason: 'nuevo', lastTouch: at(2) }));
+  const r = run(m);
+  assert.match(r.text, /ad-hoc «viejo» · old00000 · limpiar: node .*marker\.js adhoc clear-orphan old00000-a/);
+  const when = new Date(Date.parse(NOW) + 22 * 3600 * 1000);
+  const hhmm = `${String(when.getHours()).padStart(2, '0')}:${String(when.getMinutes()).padStart(2, '0')}`;
+  assert.ok(r.text.includes(`ad-hoc «nuevo» · new00000 · se podrá limpiar después de las ${hhmm}`), r.text);
+});
+
+test('T18 Wip_AdhocFechaDeRespaldo: lastTouch ilegible usa declaredAt', () => {
+  const m = toyMachine();
+  const at = (h) => new Date(Date.parse(NOW) - h * 3600 * 1000).toISOString();
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'bad00000-c.json'), JSON.stringify({ reason: 'fecha rota', lastTouch: 'ayer', declaredAt: at(30) }));
+  assert.match(run(m).text, /ad-hoc «fecha rota» · bad00000 · limpiar: .*adhoc clear-orphan bad00000-c/);
 });
