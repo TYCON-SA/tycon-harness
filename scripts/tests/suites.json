@@ -2426,6 +2426,18 @@
       "requiere": []
     },
     {
+      "__nota": "el examen de UN revisor y su portón (scripts/controls-bench/reviewer-change-check.js): la huella del archivo, el examen completo o nada, el puntaje recalculado desde los casos contra la línea de base de la base del cambio, y el bloque del portón de CI. El corredor de casos se inyecta: sin modelo, sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/reviewer-change-check.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el control del registro de incidentes (scripts/controls-bench/incident-cases.js) sobre registros y bancos de juguete: cada incidente con su caso, «pendiente» con su deuda abierta, o «ninguno» con su motivo; y la fila de la guía. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/incident-cases.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.31 (T1 a T8): los workflows modelo de GitHub Actions para los procesos de la noche (pipelines/operations/github/) — los archivos en su lugar, las reglas de seguridad (sin pull_request_target, acciones por sha, permisos mínimos, secretos sólo en el env de un paso, ninguna expresión dentro de un run:) con una copia alterada por regla, los efectos que valen en una corrida programada, y prepare-tree.sh, operations-auth.sh, el bloque que elige el arnés y clone-repos.sh corridos de verdad sobre repos de juguete; T9, la credencial por GitHub App; T10, los repos privados que ve la credencial (installation/repositories con la App, user/repos con el usuario de máquina) y cero repos vistos como aviso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/operations-github-workflows.test.js",

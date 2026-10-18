@@ -33,6 +33,15 @@
     "tycon-retrospective-capturer::retro-captura-decision": true,
     "tycon-retrospective-capturer::retro-correlacion-canario": true,
     "tycon-retrospective-capturer::retro-gemelo-limpio": true,
-    "tycon-retrospective-capturer::retro-umbral-alerta": true
+    "tycon-retrospective-capturer::retro-umbral-alerta": true,
+    "tycon-ac-coverage-checker::accov-c5-ac-sin-test-dedicado": true,
+    "tycon-ac-coverage-checker::accov-c4-diferidos-abiertos-al-pasar-a-done": true,
+    "tycon-ac-coverage-checker::accov-c7-checklist-manual-al-cerrar": true,
+    "tycon-dod-runtime-checker::dodrt-c5-smoke-driven-parcial": true,
+    "tycon-dod-runtime-checker::dodrt-c8-accion-solo-mirada": true,
+    "tycon-e2e-realness-checker::real-c8-skip-si-el-backend-no-responde": true,
+    "tycon-story-validator::val-c8-patron-de-referencia-por-asuncion": true,
+    "tycon-story-validator::val-w9-p-numbering-sin-calificar": true,
+    "tycon-story-validator::val-w10-backlink-faltante-en-la-padre": true
   }
 }
