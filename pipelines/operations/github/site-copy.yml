@@ -1,0 +1,104 @@
+# La copia de operaciones para el sitio — MODELO para una organización con el repo de operaciones en GitHub.
+#
+# Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones.
+#
+# Copia lo que el sitio de la organización lee del repo de operaciones (la lista `RUTAS` de
+# scripts/site/operations-copy.js) a un contenedor de almacenamiento de Azure: primero la foto, al final el índice. El
+# sitio, con `SITE_OPERATIONS_SOURCE=copy`, lee de ahí con su identidad administrada, sin ninguna credencial del repo.
+#
+# - CUÁNDO: en cada `push` a `main`, al terminar cada nocturno (`workflow_run`: un empuje hecho con `github.token` no
+#   dispara otro workflow, así que el guardado de los nocturnos no llega por `push`) y una vez por día, de respaldo. Con el
+#   índice ya en ese commit, no sube nada. `concurrency` de a uno y sin cancelar: la que corre termina.
+# - QUÉ COMMIT: siempre la punta de `main` al momento de correr: la copia nunca vuelve atrás.
+# - LA CREDENCIAL: federada (`azure/login` con OIDC, `id-token: write`), sin ningún secreto guardado en GitHub. La
+#   aplicación de Entra tiene una credencial federada atada a este repo y al entorno `site-copy`, y el rol «Storage Blob
+#   Data Contributor» sobre ESE contenedor y nada más. Del repo, sólo lee (`contents: read`).
+#
+# Variables del repo (Settings → Secrets and variables → Actions → Variables; no son secretos):
+#   SITE_COPY_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID — la aplicación de Entra con la credencial federada
+#   SITE_COPY_ACCOUNT, SITE_COPY_CONTAINER                         — la cuenta de la copia y su contenedor
+name: site-copy
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: [dependency-audit, stage-metrics, team-dashboard]
+    types: [completed]
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: harness-site-copy
+  cancel-in-progress: false
+
+jobs:
+  copy:
+    name: Copiar lo que lee el sitio al contenedor
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: site-copy
+    steps:
+      - name: El repo de operaciones (la punta de main)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: ops
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Qué arnés corre (team-repos.json del repo de operaciones)
+        id: harness
+        working-directory: ops
+        env:
+          VAR_REF: ${{ vars.HARNESS_REF }}
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const red = (m) => { console.log(`::error::${m} — no se copia nada`); process.exit(1); };
+          let t;
+          try { t = JSON.parse(fs.readFileSync('team-repos.json', 'utf8')); } catch (e) { red(`el repo de operaciones no trae un team-repos.json legible (${e.message})`); }
+          const p = t && t.public;
+          if (!p || p.platform !== 'github') red('team-repos.json: public tiene que ser el repo del arnés en GitHub (platform «github»)');
+          const name = /^[A-Za-z0-9._-]+$/;
+          if (!name.test(String(p.org || '')) || !name.test(String(p.repo || ''))) red('team-repos.json: public.org o public.repo no es un nombre de GitHub');
+          const ref = process.env.VAR_REF || 'main';
+          if (!/^[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..') || /^refs\/pull\//.test(ref) || ref.startsWith('-')) red(`la referencia del arnés «${ref}» no es una rama, un tag ni un commit`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${p.org}/${p.repo}\nref=${ref}\n`);
+          console.log(`el arnés: ${p.org}/${p.repo} @ ${ref}`);
+          JS
+
+      - name: El arnés
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.harness.outputs.repository }}
+          ref: ${{ steps.harness.outputs.ref }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Entrar a Azure con la credencial federada
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.SITE_COPY_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Subir la foto y el índice
+        env:
+          SITE_COPY_ACCOUNT: ${{ vars.SITE_COPY_ACCOUNT }}
+          SITE_COPY_CONTAINER: ${{ vars.SITE_COPY_CONTAINER }}
+        run: |
+          set -euo pipefail
+          node harness/scripts/site/operations-copy.js subir --repo ops --account "$SITE_COPY_ACCOUNT" --container "$SITE_COPY_CONTAINER"

@@ -37,11 +37,12 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma los cambios que se aplican solos: su permiso
-// (Contribute to pull requests, nunca Bypass policies), la política que deja votar al autor y el orden para encenderla.
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
+// contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
+// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla.
 const HUELLA_INSTALACION = {
-  es: 'efd79078ee89491cd0008e22cd8f7e3ddc6fe8b8f5d625da4498194d81254466',
-  en: '6a6e344b194beb2dad61cfcefed9f090b8d124df2ef3de564c36fe1890c37720',
+  es: '57a47700cbe22be640e1fac7c162916c87bfc1b5909926b47dee920b591bceef',
+  en: 'cab57c60ffd95d12f1176edd8ba6be8aed9acc872a723a2010425d077bd56c5f',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

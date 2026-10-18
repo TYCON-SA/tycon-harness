@@ -238,3 +238,23 @@ Viene apagado: sin configuración no mira nada, lo dice en una línea y sale 0. 
   `--pending inbox/watcher`, y las credenciales como variables secretas.
 
 El modelo de ese pipeline todavía no está en esta carpeta: es lo siguiente.
+
+## 9. La copia para el sitio de la organización (opcional)
+
+Si el sitio de la organización vive en Azure, puede leer el repo de operaciones **sin ninguna credencial del repo**: un
+pipeline más, `site-copy.yml`, copia lo que el sitio lee a un contenedor de almacenamiento, y el sitio lo lee con su
+identidad administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene según dónde vive el sitio, y lo que cuesta
+cada una: la guía del sitio (`guides/sitio-de-la-organizacion.md`, «De dónde lee operaciones»).
+
+1. **El contenedor**: lo crea el alta del sitio (`azure-container-apps.js`), en una cuenta con la llave apagada.
+2. **La conexión de servicio del trabajo que copia** (*Project settings → Service connections → Azure Resource Manager,
+   Workload identity federation*), con el rol «Storage Blob Data Contributor» sobre **ese contenedor** y nada más. Es
+   propia: ni la del sitio, que sólo lee, ni ninguna que vea el buzón de corridas.
+3. **El pipeline**: copiá `site-copy.yml` a `pipelines/` del repo de operaciones, cambiá las dos líneas marcadas (el
+   recurso `harness` y `azureSubscription` con el nombre de la conexión) y cargá las variables `SITE_COPY_ACCOUNT` y
+   `SITE_COPY_CONTAINER`. Corre en cada push a `main` (también el que hacen los nocturnos al guardar) y una vez por día.
+4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
+   `SITE_OPERATIONS_SOURCE=copy`.
+
+Si una corrida falla, el índice queda como estaba y el sitio sigue con la copia anterior. Con una copia de más de 24
+horas, quienes mantienen ven la banda; con más de 48, el sitio se frena, como cuando el repo no se puede leer.

@@ -591,6 +591,37 @@ Each installation says where each one is stored and how its value gets in. **No 
 `SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the list of
 maintainers (`site.maintainers` in `operations.json`) does not exist. Remove it afterwards.
 
+### Where it reads operations from
+
+The site reads its configuration and what the night leaves from the operations repo. There are three ways, depending on
+where the site lives and where the repo lives. Pick only one: with `SITE_OPERATIONS_SOURCE=copy`,
+`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set.
+
+1. **Copy with the platform identity, in Azure** (`SITE_OPERATIONS_SOURCE=copy`,
+   `SITE_OPERATIONS_COPY=<account>/<container>`). A job in the operations repo (`site-copy.yml`, in
+   `pipelines/operations/` for Azure DevOps and in `pipelines/operations/github/` for GitHub) copies what the site reads
+   to a container, on every change to `main` and once a day. The site reads it with its identity and a reader role on
+   that container. The Azure setup creates the account with the key turned off: only identities with their role get in.
+   What it costs: one more pipeline and its identity, with the write role on the container. No secret that expires, and
+   no Azure DevOps license for the site. A change takes as long as the job plus one refresh to show.
+2. **Copy with a SAS, outside Azure** (another cloud or your own machine): the same copy, and the site reads it with
+   `SITE_OPERATIONS_COPY_SAS`, a read-only container SAS (`sp=r` or `rl`), tied to a stored access policy on the
+   container so it can be revoked (the commands, in the recipe for your own machine).
+   What it costs: the SAS is signed with the account key, so that account needs the account key turned on, and that key
+   opens the whole account (read, write and delete everything). That is why the copy goes in its own account, never the
+   mailbox's; and the SAS expires (6 months at most) and is renewed by hand.
+3. **Reading the repo directly** (`SITE_OPERATIONS_SOURCE` empty or `repo`, as always): the site clones the repo with
+   `SITE_OPERATIONS_TOKEN`. In GitHub, an app installed on that one repo with `contents: read`, or a fine-grained token
+   for one repo; in Azure DevOps, the site's identity added to the organization (`SITE_OPERATIONS_IDENTITY=managed`) or a
+   personal access token with read-only code access.
+   What it costs: the personal token expires (90 days) and belongs to a person; the identity in Azure DevOps takes a
+   license. In exchange, a change shows on the next refresh, with no copy job.
+
+With the copy, if the job stops running the site says so: with a copy older than 24 hours, maintainers see the last-good
+banner ("the operations copy is N hours old"); older than 48, the site stops, as when the repo cannot be read. "Propose",
+in the Configuration tab, still uses `SITE_OPERATIONS_WRITE_TOKEN`: it fetches a fresh `main` into a separate clone and
+builds the pull request on that tip.
+
 ### Whoever can edit the installation can read its secrets
 
 Whoever has permission to change the installation (its variables, its image) can read all its secrets and make
@@ -749,6 +780,14 @@ starting anything.
 - **The night check:** it runs on a cloud agent and cannot reach an internal network. The notice says "sitio: no se pudo
   probar desde el nocturno" (could not be checked from the night run), without a link, unless the organization runs the
   night process on its own agent inside the network.
+
+**The operations copy outside Azure** (also for Render): the read-only SAS, tied to a stored access policy on the
+container so it can be revoked. The copy's account needs its key turned on to sign it:
+
+```bash
+az storage container policy create --account-name <account> -c <container> -n site-read --permissions rl --expiry <date>
+az storage container generate-sas --account-name <account> -n <container> --policy-name site-read -o tsv
+```
 
 ## Inside, for whoever maintains the harness
 

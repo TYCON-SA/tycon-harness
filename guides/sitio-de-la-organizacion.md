@@ -573,6 +573,37 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 `SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista de
 mantenedores (`site.maintainers` de `operations.json`) no existe. Sacala después.
 
+### De dónde lee operaciones
+
+El sitio lee del repo de operaciones su configuración y lo que deja la noche. Hay tres formas, según dónde vive el sitio
+y dónde vive el repo. Se elige una sola: con `SITE_OPERATIONS_SOURCE=copy`, `SITE_OPERATIONS_TOKEN` y
+`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están.
+
+1. **Copia con la identidad de la plataforma, en Azure** (`SITE_OPERATIONS_SOURCE=copy`,
+   `SITE_OPERATIONS_COPY=<cuenta>/<contenedor>`). Un trabajo del repo de operaciones (`site-copy.yml`, en
+   `pipelines/operations/` para Azure DevOps y en `pipelines/operations/github/` para GitHub) copia lo que el sitio lee a
+   un contenedor, en cada cambio de `main` y una vez por día. El sitio lo lee con su identidad y un rol de lectura sobre
+   ese contenedor. El alta de Azure crea la cuenta con la llave apagada: sólo entran identidades con su rol.
+   Lo que cuesta: un pipeline más y su identidad, con el rol de escritura sobre el contenedor. Ningún secreto que venza,
+   ni una licencia de Azure DevOps para el sitio. Un cambio tarda en verse lo que tarda el trabajo más un refresco.
+2. **Copia con una SAS, fuera de Azure** (otra nube o una máquina propia): la misma copia, y el sitio la lee con
+   `SITE_OPERATIONS_COPY_SAS`, una SAS del contenedor de sólo leer (`sp=r` o `rl`), atada a una política guardada del
+   contenedor para poder revocarla (las órdenes, en la receta de una máquina propia).
+   Lo que cuesta: la SAS se firma con la llave de la cuenta, así que esa cuenta necesita la llave de la cuenta prendida,
+   y esa llave abre la cuenta entera (leer, escribir y borrar todo). Por eso la copia va en una cuenta propia, nunca la
+   del buzón; y la SAS vence (6 meses como máximo) y se renueva a mano.
+3. **Lectura directa del repo** (`SITE_OPERATIONS_SOURCE` vacía o `repo`, lo de siempre): el sitio clona el repo con
+   `SITE_OPERATIONS_TOKEN`. En GitHub, una aplicación instalada en ese solo repo con `contents: read`, o un permiso de
+   grano fino de un solo repo; en Azure DevOps, la identidad del sitio agregada a la organización
+   (`SITE_OPERATIONS_IDENTITY=managed`) o un permiso personal de sólo lectura de código.
+   Lo que cuesta: el permiso personal vence (90 días) y es de una persona; la identidad en Azure DevOps ocupa una
+   licencia. A cambio, un cambio se ve en el refresco siguiente, sin trabajo de copia.
+
+Con la copia, si el trabajo deja de correr el sitio lo dice: con una copia de más de 24 horas, quienes mantienen ven la
+banda del último bueno («la copia de operaciones tiene N horas»); con más de 48, el sitio se frena, como cuando el repo
+no se puede leer. «Proponer», en la pestaña Configuración, sigue usando `SITE_OPERATIONS_WRITE_TOKEN`: trae `main` recién
+en un clon aparte y arma el pedido sobre esa punta.
+
 ### Quien puede editar la instalación puede leer sus secretos
 
 Quien tiene permiso para cambiar la instalación (sus variables, su imagen) puede leer todos sus secretos y hacerse
@@ -730,6 +761,14 @@ sin arrancar nada.
 - **La prueba de la noche:** corre en un agente de la nube y no alcanza una red interna. El aviso dice «sitio: no se pudo
   probar desde el nocturno», sin enlace, salvo que la organización corra el proceso de la noche en un agente propio
   dentro de la red.
+
+**La copia de operaciones fuera de Azure** (vale también para Render): la SAS de sólo lectura, atada a una política
+guardada del contenedor para poder revocarla. La cuenta de la copia necesita la llave prendida para firmarla:
+
+```bash
+az storage container policy create --account-name <cuenta> -c <contenedor> -n lectura-sitio --permissions rl --expiry <fecha>
+az storage container generate-sas --account-name <cuenta> -n <contenedor> --policy-name lectura-sitio -o tsv
+```
 
 ## Por dentro, para quien mantiene el arnés
 
