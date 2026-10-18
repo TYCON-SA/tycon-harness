@@ -1281,6 +1281,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.41: la pestaña Ayuda arma la guía del sitio por rol en el servidor; markdown escapado, capturas sólo de la guía, guía ilegible ≠ «no está». El emisor y el sitio corren en el proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/site-help.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: la prueba de fuga del sitio — marcadores de otra persona, de una máquina sin confirmar y texto libre en las fuentes; ninguna ruta de la tabla los trae a quien no corresponde, y los motivos crudos (blobs, rutas) no llegan a ninguna pantalla.",
       "raiz": "arnes",
       "ruta": "tests/site-leak.test.js",
