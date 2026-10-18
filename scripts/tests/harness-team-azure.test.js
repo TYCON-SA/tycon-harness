@@ -41,6 +41,11 @@ const git = (args, cwd) => { const r = spawnSync('git', args, { cwd, encoding: '
 const PROFILE = '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": true, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }\n';
 
 /** Un repo del equipo de juguete (bare) y el Azure de juguete que lo atiende. */
+// El reloj de la bajada que le da producción (team.js): 120 s, o 3 s por archivo que falta. Sin él, `fetch` corre contra el
+// reloj de 15 s del cliente, que arranca al crearlo y cuenta también la resolución: con 114 archivos, un proceso por
+// pedido, una máquina con carga lo pasa y la prueba falla por tiempo y no por lo que mide.
+const DOWN = { deadlineFor: (pending) => Date.now() + Math.max(120, Math.ceil(pending) * 3) * 1000 };
+
 async function lab(name, { pat = 'pat-lab' } = {}) {
   const dir = casa(name);
   const work = path.join(dir, 'work');
@@ -272,7 +277,7 @@ test('TA5 TeamAzure_Fetch_ItemsToCacheWithManifest_SecondTimeFromCacheWithoutReq
     const c = AZ.client(L.src, AZ.credential(L.src, { env: L.env }), { env: L.env });
     const r = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(r.ok, true, r.reason);
-    const f = AZ.fetch(c, r, { env: L.env });
+    const f = AZ.fetch(c, r, { env: L.env, ...DOWN });
     assert.equal(f.ok, true, f.reason);
     assert.equal(f.fromCache, false);
     assert.equal(f.cacheDir, TEAM.cacheDirOf(L.env, r.commit));
@@ -280,7 +285,7 @@ test('TA5 TeamAzure_Fetch_ItemsToCacheWithManifest_SecondTimeFromCacheWithoutReq
     assert.equal(m.commit, r.commit); assert.equal(m.repo, L.src.url); assert.equal(m.host, 'azure'); assert.equal(m.files.length, 2);
     assert.equal(fs.readFileSync(path.join(f.cacheDir, 'perfil-equipo.json'), 'utf8'), PROFILE);
     const before = L.requests().length;
-    const again = AZ.fetch(c, r, { env: L.env });
+    const again = AZ.fetch(c, r, { env: L.env, ...DOWN });
     assert.equal(again.ok, true); assert.equal(again.fromCache, true);
     assert.equal(L.requests().length, before, 'la segunda vez no pidió nada');
     // lo bajado se apila con el mismo stackTeam que la fuente de GitHub (el manifiesto apilado dice el repo de Azure)
@@ -307,7 +312,7 @@ test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequeste
     const r1 = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(r1.ok, true, r1.reason);
     assert.equal(r1.files.length, 114);
-    const f1 = AZ.fetch(c, r1, { env: L.env });
+    const f1 = AZ.fetch(c, r1, { env: L.env, ...DOWN });
     assert.equal(f1.ok, true, f1.reason);
     // instalada: la capa apilada en harness/ (la casa del arnés de juguete)
     const harness = path.join(L.env.TYCON_HOME, 'harness');
@@ -321,13 +326,13 @@ test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequeste
     fs.rmSync(f1.cacheDir, { recursive: true, force: true });
     L.publish('README.md', '# el repo del equipo de juguete, otra vez\n', 'un papel de la raíz');
     const r1b = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
-    assert.equal(AZ.fetch(c, r1b, { env: L.env }).ok, true);
+    assert.equal(AZ.fetch(c, r1b, { env: L.env, ...DOWN }).ok, true);
     // (a) una punta que sólo cambia el perfil: la lista y UN item (el perfil)
     L.publish('perfil-equipo.json', PROFILE.replace('"latest"', '"stable"'), 'sólo el perfil');
     const before = L.requests().length;
     const r2 = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(r2.ok, true, r2.reason);
-    const f2 = AZ.fetch(c, r2, { env: L.env });
+    const f2 = AZ.fetch(c, r2, { env: L.env, ...DOWN });
     assert.equal(f2.ok, true, f2.reason);
     const asked = L.requests().slice(before).map((q) => q.path);
     const items = asked.filter((p) => /\/items\?/.test(p));
@@ -344,7 +349,7 @@ test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequeste
     L.publish(`${skill}/refs/nueva.md`, extra, 'una referencia que otra caché ya tiene');
     const b2 = L.requests().length;
     const r3 = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
-    const f3 = AZ.fetch(c, r3, { env: L.env });
+    const f3 = AZ.fetch(c, r3, { env: L.env, ...DOWN });
     assert.equal(f3.ok, true, f3.reason);
     assert.deepEqual(L.requests().slice(b2).filter((q) => /\/items\?/.test(q.path)), [], 'nada se pidió por items');
     assert.equal(fs.readFileSync(path.join(f3.cacheDir, ...skill.split('/'), 'refs', 'nueva.md'), 'utf8'), extra);
@@ -353,7 +358,7 @@ test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequeste
     for (const d of fs.readdirSync(path.join(L.env.TYCON_HOME, 'team'))) if (d !== 'abcabcabcabc') fs.rmSync(path.join(L.env.TYCON_HOME, 'team', d), { recursive: true, force: true });
     const b3 = L.requests().length;
     const r4 = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
-    const f4 = AZ.fetch(c, r4, { env: L.env });
+    const f4 = AZ.fetch(c, r4, { env: L.env, ...DOWN });
     assert.equal(f4.ok, true, f4.reason);
     assert.ok(L.requests().slice(b3).some((q) => /refs%2Fr0\.md/.test(q.path)), 'el editado se pide al servidor');
     assert.equal(fs.readFileSync(path.join(f4.cacheDir, ...skill.split('/'), 'refs', 'r0.md'), 'utf8'), '# referencia 0\n');
