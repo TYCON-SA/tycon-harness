@@ -33,6 +33,11 @@ COPY version.json* .tycon-release.json* ./
 # la licencia y los créditos: el pie de cada página los abre (/licencia, /creditos)
 COPY LICENSE* NOTICE* ./
 COPY scripts/site/ scripts/site/
+# la guía del sitio y sus capturas: la pestaña Ayuda la arma de acá, con lo que le toca a cada rol (help.js). Con el
+# comodín, un árbol sin guides/ (el de la noche) arma la imagen igual, y la ayuda dice que esta versión no la trae
+COPY guide[s]/sitio-de-la-organizacion.md* guides/
+COPY guide[s]/sitio-de-la-organizacion.en.md* guides/
+COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organizacion/capturas/
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/

@@ -7,6 +7,9 @@
 !NOTICE
 !.tycon-release.json
 !scripts/site/
+!guides/sitio-de-la-organizacion.md
+!guides/sitio-de-la-organizacion.en.md
+!guides/sitio-de-la-organizacion/capturas/
 !scripts/lib/
 !scripts/metrics/
 !scripts/nightly/dashboard/
