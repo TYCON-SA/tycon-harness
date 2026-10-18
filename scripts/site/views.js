@@ -249,7 +249,7 @@ function cartelVersionNueva(ctx) {
   const u = ctx.ultima;
   const que = `hay una versión nueva del sitio: ${esc(u.version)} (la tuya: ${esc(ctx.version)})`;
   if (ctx.modoActualizacion === 'auto') return `<div class="banda">${que}; se instala sola con el próximo nocturno</div>`;
-  const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/sitio-de-la-organizacion.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa`)}">la receta de la guía</a>` : 'la receta de la guía (Cómo se mantiene al día)';
+  const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/organization-site.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa`)}">la receta de la guía</a>` : 'la receta de la guía (Cómo se mantiene al día)';
   return `<div class="banda">${que}; cómo se actualiza: ${receta}</div>`;
 }
 

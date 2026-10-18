@@ -19,7 +19,7 @@ const H = require('./lib/site-harness.js');
 
 const ROOT = path.resolve(H.SITE, '..', '..');
 const HELP = require(path.join(H.SITE, 'help.js'));
-const GUIA = { es: path.join(ROOT, 'guides', 'sitio-de-la-organizacion.md'), en: path.join(ROOT, 'guides', 'sitio-de-la-organizacion.en.md') };
+const GUIA = { es: path.join(ROOT, 'guides', 'organization-site.md'), en: path.join(ROOT, 'guides', 'organization-site.en.md') };
 const leer = (f) => fs.readFileSync(f, 'utf8');
 const MANTIENE = 'lead@acme.example';
 const PERSONA = 'ana@acme.example';
@@ -173,12 +173,12 @@ test('T6 Ayuda_SinSesionYSinGuia_YElIdioma @story-2.41 @ac-1 @ac-5 @ac-6', async
     const r = await h.pedir('/ayuda', { cookie: await entrar(PERSONA) });
     assert.strictEqual(r.status, 200);
     assert.match(r.texto, /esta versión del sitio no trae la ayuda/);
-    assert.ok(r.texto.includes('<code>guides/sitio-de-la-organizacion.md</code>'), 'dice dónde está la guía en el repo del arnés');
+    assert.ok(r.texto.includes('<code>guides/organization-site.md</code>'), 'dice dónde está la guía en el repo del arnés');
   });
   // sin la guía del idioma del sitio: la del otro, con el aviso
   const raiz = tmp('ayuda-solo-en-');
   fs.mkdirSync(path.join(raiz, 'guides'), { recursive: true });
-  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'sitio-de-la-organizacion.en.md'));
+  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'organization-site.en.md'));
   await conAyuda({ raiz }, async ({ h, entrar }) => {
     const r = await h.pedir('/ayuda', { cookie: await entrar(PERSONA) });
     assert.match(r.texto, /no trae la ayuda en castellano: se muestra en inglés/);
@@ -205,7 +205,7 @@ test('T5b Ayuda_CapturaFalsaOIlegible @story-2.41 @ac-5', async () => {
   const raiz = tmp('ayuda-capturas-');
   const dir = path.join(raiz, 'guides', 'sitio-de-la-organizacion', 'capturas');
   fs.mkdirSync(dir, { recursive: true });
-  fs.copyFileSync(GUIA.es, path.join(raiz, 'guides', 'sitio-de-la-organizacion.md'));
+  fs.copyFileSync(GUIA.es, path.join(raiz, 'guides', 'organization-site.md'));
   fs.writeFileSync(path.join(dir, 'falsa.png'), 'no soy un png');
   fs.mkdirSync(path.join(dir, 'carpeta.png'));
   const registro = [];
@@ -223,17 +223,17 @@ test('T5b Ayuda_CapturaFalsaOIlegible @story-2.41 @ac-5', async () => {
 test('T6b Ayuda_GuiaIlegible_NoPasaPorQueNoEsta @story-2.41 @ac-1', () => {
   // la del idioma del sitio existe pero no se puede leer: no se muestra la otra con un aviso falso, se dice el motivo
   const raiz = tmp('ayuda-ilegible-');
-  fs.mkdirSync(path.join(raiz, 'guides', 'sitio-de-la-organizacion.md'), { recursive: true });
-  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'sitio-de-la-organizacion.en.md'));
-  assert.deepStrictEqual(HELP.guiaDe(raiz, 'es'), { error: 'EISDIR', archivo: 'sitio-de-la-organizacion.md' });
+  fs.mkdirSync(path.join(raiz, 'guides', 'organization-site.md'), { recursive: true });
+  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'organization-site.en.md'));
+  assert.deepStrictEqual(HELP.guiaDe(raiz, 'es'), { error: 'EISDIR', archivo: 'organization-site.md' });
   // la del idioma del sitio no está y la otra no se puede leer: tampoco «no está»
   const raiz2 = tmp('ayuda-ilegible2-');
-  fs.mkdirSync(path.join(raiz2, 'guides', 'sitio-de-la-organizacion.en.md'), { recursive: true });
-  assert.deepStrictEqual(HELP.guiaDe(raiz2, 'es'), { error: 'EISDIR', archivo: 'sitio-de-la-organizacion.en.md' });
+  fs.mkdirSync(path.join(raiz2, 'guides', 'organization-site.en.md'), { recursive: true });
+  assert.deepStrictEqual(HELP.guiaDe(raiz2, 'es'), { error: 'EISDIR', archivo: 'organization-site.en.md' });
   // y al revés: el sitio en inglés sin su guía usa la castellana, con el aviso
   const raiz3 = tmp('ayuda-solo-es-');
   fs.mkdirSync(path.join(raiz3, 'guides'), { recursive: true });
-  fs.copyFileSync(GUIA.es, path.join(raiz3, 'guides', 'sitio-de-la-organizacion.md'));
+  fs.copyFileSync(GUIA.es, path.join(raiz3, 'guides', 'organization-site.md'));
   const g = HELP.guiaDe(raiz3, 'en');
   assert.deepStrictEqual([g.idioma, g.otroIdioma], ['es', true]);
   assert.strictEqual(HELP.guiaDe(raiz3, 'es').otroIdioma, false);
@@ -243,8 +243,8 @@ test('T6b Ayuda_GuiaIlegible_NoPasaPorQueNoEsta @story-2.41 @ac-1', () => {
 
 test('T6c Ayuda_GuiaIlegible_LaPaginaLoDice @story-2.41 @ac-1', async () => {
   const raiz = tmp('ayuda-ilegible-pagina-');
-  fs.mkdirSync(path.join(raiz, 'guides', 'sitio-de-la-organizacion.md'), { recursive: true });
-  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'sitio-de-la-organizacion.en.md'));
+  fs.mkdirSync(path.join(raiz, 'guides', 'organization-site.md'), { recursive: true });
+  fs.copyFileSync(GUIA.en, path.join(raiz, 'guides', 'organization-site.en.md'));
   const registro = [];
   const emisor = await arrancarEmisor();
   const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: config() }), rutasExtra: HELP.crearRutas({ raiz, log: (l) => registro.push(l) }) });
@@ -253,7 +253,7 @@ test('T6c Ayuda_GuiaIlegible_LaPaginaLoDice @story-2.41 @ac-1', async () => {
     const r = await h.pedir('/ayuda', { cookie: c });
     assert.match(r.texto, /No pude leer la guía del sitio \(EISDIR\)/);
     assert.ok(!/se muestra en inglés/.test(r.texto), 'sin el aviso falso del otro idioma');
-    assert.ok(registro.some((l) => /no pude leer guides\/sitio-de-la-organizacion\.md \(EISDIR\)/.test(l)), registro.join('\n'));
+    assert.ok(registro.some((l) => /no pude leer guides\/organization-site\.md \(EISDIR\)/.test(l)), registro.join('\n'));
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 
@@ -278,7 +278,7 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
   // una guía con una sección que la tabla no conoce y un enlace que no va: los dos quedan en el registro
   const raiz = tmp('ayuda-registro-');
   fs.mkdirSync(path.join(raiz, 'guides', 'sitio-de-la-organizacion', 'capturas'), { recursive: true });
-  fs.writeFileSync(path.join(raiz, 'guides', 'sitio-de-la-organizacion.md'), `${leer(GUIA.es)}\n[relativo](otra-guia.md)\n\n## Una sección nueva\n\nTexto.\n`);
+  fs.writeFileSync(path.join(raiz, 'guides', 'organization-site.md'), `${leer(GUIA.es)}\n[relativo](otra-guia.md)\n\n## Una sección nueva\n\nTexto.\n`);
   const una = fs.readdirSync(path.join(ROOT, 'guides', 'sitio-de-la-organizacion', 'capturas')).find((f) => f.endsWith('.png'));
   fs.copyFileSync(path.join(ROOT, 'guides', 'sitio-de-la-organizacion', 'capturas', una), path.join(raiz, 'guides', 'sitio-de-la-organizacion', 'capturas', una));
   const registro = [];

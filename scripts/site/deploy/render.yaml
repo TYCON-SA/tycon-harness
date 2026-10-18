@@ -1,6 +1,6 @@
 # render.yaml — el sitio de la organización en Render, plan gratis (un ejemplo con nombres inventados: un Blueprint).
 #
-# Lo que cambia respecto de cualquier otra instalación (la guía: guides/sitio-de-la-organizacion.md, receta de Render):
+# Lo que cambia respecto de cualquier otra instalación (la guía: guides/organization-site.md, receta de Render):
 # · Inicio de sesión: sólo el del sitio (SITE_AUTH_PROVIDER y su registro); Render no pone un candado delante.
 # · Disco: el plan gratis no tiene. Sin SITE_DATA_DIR el sitio usa una carpeta temporal y lo dice: lo que sale de las
 #   conversaciones en la pestaña Corridas queda «no medido», y un reinicio reinicia el plazo de 24 horas de una

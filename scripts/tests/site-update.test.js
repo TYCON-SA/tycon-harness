@@ -314,8 +314,8 @@ test('T27 2.33-Update_NoTocaLoAjeno @story-2.33 @ac-16 — sin la etiqueta, sin 
 test('T30 2.33-Guia_RecetasYTextosNuevos @story-2.33 @ac-15 @ac-21 — la parte común y una receta por entorno, en los dos idiomas', () => {
   // 🔴 rojo: la guía sigue diciendo que el sitio lo actualiza una persona, o una receta falta en uno de los idiomas.
   const leer = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8');
-  const es = leer('guides/sitio-de-la-organizacion.md');
-  const en = leer('guides/sitio-de-la-organizacion.en.md');
+  const es = leer('guides/organization-site.md');
+  const en = leer('guides/organization-site.en.md');
   const comun = { es: '### Cómo se mantiene al día', en: '### How it keeps itself up to date' };
   assert.ok(es.includes(`\n${comun.es}\n`) && en.includes(`\n${comun.en}\n`), 'la parte común en los dos idiomas');
   const RECETAS = {
@@ -339,7 +339,7 @@ test('T30 2.33-Guia_RecetasYTextosNuevos @story-2.33 @ac-15 @ac-21 — la parte 
   assert.match(es, /start\.js --secrets-file [^\n]* --update/, 'el guion del arnés para una máquina propia');
   assert.match(es, /Watchtower/, 'Watchtower, como alternativa');
   assert.match(es, /Microsoft\.App\/containerApps\/read/, 'el rol propio de Azure');
-  for (const f of ['scripts/site/deploy/local/compose.yaml', 'scripts/site/deploy/render.yaml', 'guides/sitio-de-la-organizacion.md']) {
+  for (const f of ['scripts/site/deploy/local/compose.yaml', 'scripts/site/deploy/render.yaml', 'guides/organization-site.md']) {
     assert.doesNotMatch(leer(f), /la actualiza una\s+persona/, `${f}: queda el texto de la 2.30`);
   }
 });

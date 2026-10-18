@@ -1671,7 +1671,7 @@ test('Nombres_PaquetesModelosBuzonParidad_SinClavesDelArchivo — casillas, fila
 });
 
 test('Nombres_Guia_DiceElPermisoDeLosPipelines — la instalación normal cuenta qué permiso pide SITE_PIPELINES_TOKEN y qué se ve sin él', () => {
-  for (const [f, sin] of [['sitio-de-la-organizacion.md', /Sin él, la pestaña pide el número del pipeline a mano/], ['sitio-de-la-organizacion.en.md', /Without it, the tab asks for the pipeline number by hand/]]) {
+  for (const [f, sin] of [['organization-site.md', /Sin él, la pestaña pide el número del pipeline a mano/], ['organization-site.en.md', /Without it, the tab asks for the pipeline number by hand/]]) {
     const fila = texto(`guides/${f}`).split('\n').find((l) => l.startsWith('| `SITE_PIPELINES_TOKEN` |'));
     assert.ok(fila, `${f}: la fila propia de SITE_PIPELINES_TOKEN`);
     assert.match(fila, /\*Build: Read\*/, `${f}: el permiso`);

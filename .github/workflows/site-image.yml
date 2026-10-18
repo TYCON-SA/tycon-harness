@@ -33,8 +33,8 @@ on:
       - 'packs/**'
       - 'LICENSE*'
       - 'NOTICE*'
-      - 'guides/sitio-de-la-organizacion.md'
-      - 'guides/sitio-de-la-organizacion.en.md'
+      - 'guides/organization-site.md'
+      - 'guides/organization-site.en.md'
       - 'guides/sitio-de-la-organizacion/capturas/**'
       - '.github/workflows/site-image.yml'
 concurrency:

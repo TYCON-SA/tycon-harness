@@ -128,7 +128,7 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
    installed, the same is `node ~/.tycon/harness/scripts/setup/harness.js team-init`. The operations repo is created
    separately (below, "The nightly jobs").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
-   **Configuration** tab of the [organization site](guides/sitio-de-la-organizacion.en.md) (maintainers only): it validates with the harness's own
+   **Configuration** tab of the [organization site](guides/organization-site.en.md) (maintainers only): it validates with the harness's own
    readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no site
    deployed, the files are edited with a pull request to the operations repo. The local page
    (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on the internet, what
