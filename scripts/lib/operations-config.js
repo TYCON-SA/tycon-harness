@@ -222,23 +222,26 @@ function siteProblems(site) {
   return problems;
 }
 
-/** Los identificadores de ficha que el sitio sabe mostrar; sin la lista del sitio en este árbol, no se juzga cuáles hay. */
-function fichaIds() {
-  try { return require('../site/tabs/cards.js').FICHAS.map((f) => f.id); } catch (e) {
-    if (e && e.code === 'MODULE_NOT_FOUND' && String(e.message).includes('cards.js')) return null;
-    throw e;
-  }
-}
+/**
+ * Los identificadores de ficha que el sitio sabe mostrar. Es una copia de los de scripts/site/tabs/cards.js porque el
+ * lector viaja solo (no carga nada fuera de fs); una prueba compara las dos listas (Casos: scripts/tests/site-config.test.js).
+ */
+const CARD_IDS = Object.freeze([
+  'contrato_v2', 'fechas_declaradas', 'backlog', 'estados_sin_diccionario', 'tiempo_por_etapa', 'edad_estado', 'dod', 'rework',
+  'rework_por_causa', 'rework_por_carril', 'mutacion', 'cobertura_tocada_evaluo', 'qa_guia', 'gates_dur', 'bloqueos', 'frenos',
+  'evidencia_cierre', 'escapes_regla_dominante', 'reglas_candidatas', 'reglas_probadas', 'corridas', 'pasos', 'carriles',
+  'bus_factor', 'sin_pipeline_de_prod',
+]);
 
 function hiddenCardsProblems(v) {
   if (!Array.isArray(v)) return [{ path: 'site.hidden_cards', message: 'tiene que ser una lista de identificadores de ficha' }];
-  const ids = fichaIds();
+  const ids = CARD_IDS;
   const problems = [];
   const vistas = new Set();
   v.forEach((id, i) => {
     const at = `site.hidden_cards.${i}`;
     if (typeof id !== 'string' || !id) problems.push({ path: at, message: 'tiene que ser el identificador de una ficha (un texto)' });
-    else if (ids && !ids.includes(id)) problems.push({ path: at, message: `«${id.slice(0, 60)}» no es una ficha del sitio` });
+    else if (!ids.includes(id)) problems.push({ path: at, message: `«${id.slice(0, 60)}» no es una ficha del sitio` });
     else if (vistas.has(id)) problems.push({ path: at, message: `«${id}» está repetida` });
     else vistas.add(id);
   });
@@ -446,7 +449,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

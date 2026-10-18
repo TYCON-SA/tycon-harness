@@ -2133,24 +2133,11 @@ test('T17b 2.36-Editor_CasillaPorFicha @story-2.36 @ac-2 — una casilla por fic
   assert.deepStrictEqual([...enviado.cuerpo.borrador.site.hidden_cards].sort(), ['ficha_de_otra_version', 'mutacion']);
 });
 
-test('2.36-HiddenCards_ErrorDeCargaNoApagaLaValidacion @story-2.36 @ac-2 — si la lista de fichas no carga por un error propio, el lector lo dice; sólo su ausencia apaga el juicio', () => {
-  const LECTOR = path.join(ROOT, 'scripts', 'lib', 'operations-config.js');
-  const FICHAS_JS = path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js');
-  const correr = (preparar) => spawnSync(process.execPath, ['-e', `
-    const Module = require('module');
-    const FICHAS_JS = ${JSON.stringify(FICHAS_JS)};
-    ${preparar}
-    const OPS = require(${JSON.stringify(LECTOR)});
-    const r = OPS.parse(JSON.stringify({ site: { maintainers: ['a@acme.example'], hidden_cards: ['no_existe'] } }));
-    process.stdout.write(JSON.stringify(r.problems.map((p) => p.path)));`], { encoding: 'utf8' });
-  // la lista no está en este árbol: no se juzga cuáles hay (no es un error)
-  const sinLista = correr(`const orig = Module._resolveFilename; Module._resolveFilename = function (req, ...a) { if (String(req).endsWith('cards.js')) { const e = new Error("Cannot find module '" + req + "'"); e.code = 'MODULE_NOT_FOUND'; throw e; } return orig.call(this, req, ...a); };`);
-  assert.strictEqual(sinLista.status, 0, sinLista.stderr);
-  assert.ok(!JSON.parse(sinLista.stdout).includes('site.hidden_cards.0'), 'sin la lista, no_existe no se marca');
-  // la lista está pero no carga por un error propio: el lector no lo tapa
-  const rota = correr(`require.cache[FICHAS_JS] = { id: FICHAS_JS, filename: FICHAS_JS, loaded: true, get exports() { throw new SyntaxError('cards.js roto'); } };`);
-  assert.notStrictEqual(rota.status, 0, 'un error de carga de cards.js pasó en silencio');
-  assert.match(rota.stderr, /cards\.js roto/);
+test('2.36-HiddenCards_ListaDelLectorIgualAlSitio @story-2.36 @ac-2 — el lector viaja solo con su copia de los identificadores: es la misma lista que muestra el sitio, y un desconocido es un problema', () => {
+  const FICHAS = require(path.join(ROOT, 'scripts', 'site', 'tabs', 'cards.js')).FICHAS;
+  assert.deepStrictEqual([...OPS.CARD_IDS], FICHAS.map((f) => f.id), 'la copia del lector no es la lista de cards.js');
+  const r = OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], hidden_cards: ['no_existe'] } })));
+  assert.deepStrictEqual(r.problems.map((p) => p.path), ['site.hidden_cards.0']);
 });
 
 // ── cómo se actualiza el sitio (`site.update`) ──────────────────────────────────────────────────────
