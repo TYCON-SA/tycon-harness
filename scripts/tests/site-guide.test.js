@@ -189,7 +189,7 @@ test('T9 Capturas_SinNombresReales @story-2.32 @ac-13', (t) => {
 });
 
 test('T10 Portadas_EnlazanLaGuia @story-2.32 @ac-11', () => {
-  for (const [f, titulo, guia] of [['README.md', 'For an organization', 'guides/organization-site.en.md'], ['README.es.md', 'Para una organización', 'guides/organization-site.md']]) {
+  for (const [f, titulo, guia] of [['README.md', 'For teams', 'guides/organization-site.en.md'], ['README.es.md', 'Para equipos', 'guides/organization-site.md']]) {
     const s = seccion(leer(path.join(ROOT, f)), titulo);
     assert.ok(s, `${f}: la sección «${titulo}»`);
     assert.ok(s.includes(`](${guia})`), `${f}: «${titulo}» no enlaza ${guia}`);
