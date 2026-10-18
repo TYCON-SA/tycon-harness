@@ -130,7 +130,10 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
    **Configuration** tab of the [organization site](guides/organization-site.en.md) (maintainers only): it validates with the harness's own
    readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no site
-   deployed, the files are edited with a pull request to the operations repo. The local page
+   deployed, each file is edited with a pull request to its repo: what reaches the machines, to the profile repo;
+   what is for the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case
+   needs and where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
+   The local page
    (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on the internet, what
    is in his clones and the problems the readers see; it saves and proposes nothing.
 3. Juan installs with npx and the profile: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
