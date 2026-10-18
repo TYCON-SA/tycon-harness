@@ -213,6 +213,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (s.repo === 'perfil') {
       // `falta`: lo que hay que poner, dicho corto para la lista de secciones («falta el repo del perfil»)
       if (!cfg.profileRepo || !cl.perfil) return { ...base, estado: 'no_configurado', falta: 'el repo del perfil', motivo: `falta el repo del perfil: el sitio no tiene SITE_PROFILE_REPO y SITE_PROFILE_TOKEN (la instalación los pide, con un permiso de sólo lectura sobre el repo del perfil del equipo); ${s.archivo} se edita con un pedido al perfil` };
+      // todavía bajándose (el primer refresco después de arrancar): no es «sin configurar», y se dice
+      if (!cl.perfil.dir && cl.perfil.estado === 'pendiente') return { ...base, estado: 'bajando', motivo: cl.perfil.motivo || 'el perfil del equipo todavía se está bajando' };
       if (!cl.perfil.dir) return { ...base, estado: 'no_configurado', motivo: cl.perfil.motivo || 'el perfil del equipo todavía no se bajó' };
       dir = cl.perfil.dir;
     } else {
@@ -376,7 +378,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // ── revisar ──
   function revisarSeccion(s, borradorIn, ctx) {
     const v = vista(s);
-    if (['no_reader', 'no_configurado', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, problems: [{ path: '', message: v.motivo, sinCampo: true }], texto: null };
+    if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, problems: [{ path: '', message: v.motivo, sinCampo: true }], texto: null };
     let borrador = clone(borradorIn);
     const problemas = [];
     let advertencia = null;
@@ -438,7 +440,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
 
   async function proponer(s, body, ctx) {
     const v = vista(s);
-    if (['no_reader', 'no_configurado', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, message: v.motivo };
+    if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, message: v.motivo };
     if (s.id === 'personas' && v.extras && v.extras.vencido) return { ok: false, message: v.extras.vencido };
     const texto = typeof body.texto === 'string' ? body.texto : '';
     // sin la versión que abrió, no se puede saber si otro cambió el archivo (AC 16): no se propone a ciegas

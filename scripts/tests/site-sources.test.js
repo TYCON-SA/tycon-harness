@@ -365,6 +365,39 @@ test('2.23-R2 Repo_EstadosDeGitYRemotoCambiado', { skip: SIN_BACKEND }, async ()
   } finally { await m.cerrar(); }
 });
 
+test('T21c Perfil_AntesQueElBuzon_ConSuLineaYSuMotivo', { skip: SIN_BACKEND }, async () => {
+  // el perfil del equipo se baja antes que el buzón (la pestaña Configuración no espera a las corridas), deja una línea
+  // en el registro cuando se baja, y mientras tanto dice «pendiente», no «sin configurar»; una falla dice su motivo sin
+  // la credencial
+  const m = await montar({ blobs: { 'b.json': '{}' } });
+  try {
+    repoConArchivos(m.raiz, 'perfil.git', { 'team-profile.json': JSON.stringify({ version: 1 }) }, path.join(m.raiz, 'trabajo-perfil'));
+    const registro = [];
+    let buzonAlClonar = null;
+    const spawn = (cmd, args, opts) => { if (args.includes('clone') && args.some((a) => a.endsWith('perfil.git'))) buzonAlClonar = m.buzon.pedidos.length; return correr(cmd, args, opts); };
+    const cfg = { ...m.cfg, profileRepo: m.git.url('perfil.git'), profileCredencial: { token: TOKEN } };
+    const f = crearFuentes({ cfg, dataDir: tmp('site-data-perfil-'), log: (l) => registro.push(l), spawn, urlBuzon: m.buzon.base });
+    assert.strictEqual(f.clones().perfil.estado, 'pendiente', 'antes del primer refresco: pendiente, no sin configurar');
+    await f.refrescar();
+    assert.strictEqual(buzonAlClonar, 0, 'el perfil se clona antes de pedirle nada al buzón');
+    assert.ok(f.clones().perfil.dir, 'el perfil quedó bajado');
+    assert.strictEqual(f.clones().perfil.estado, 'medido');
+    assert.ok(registro.includes('perfil del equipo: bajado'), `una línea en el registro: ${registro.join(' | ')}`);
+    await f.refrescar();
+    assert.strictEqual(registro.filter((l) => l === 'perfil del equipo: bajado').length, 1, 'una vez, no en cada refresco');
+    f.detener();
+    // la credencial que no vale: el motivo en el registro, sin el token ni la cabecera
+    const reg2 = [];
+    const f2 = crearFuentes({ cfg: { ...cfg, profileRepo: m.git.url('no-existe.git') }, dataDir: tmp('site-data-perfil2-'), log: (l) => reg2.push(l), urlBuzon: m.buzon.base });
+    await f2.refrescar();
+    assert.notStrictEqual(f2.clones().perfil.estado, 'medido');
+    const linea = reg2.find((l) => /del perfil del equipo falló/.test(l));
+    assert.ok(linea, `la falla dice su motivo: ${reg2.join(' | ')}`);
+    assert.ok(!reg2.join('\n').includes(TOKEN) && !reg2.join('\n').includes(CABECERA.split(' ')[1]), 'sin la credencial');
+    f2.detener();
+  } finally { await m.cerrar(); }
+});
+
 test('2.23-R3 Clon_SinEnlacesNiRutasDeAfuera', { skip: SIN_BACKEND }, async () => {
   const afuera = path.join(tmp('site-r3-afuera-'), 'secreto.txt');
   fs.writeFileSync(afuera, 'SECRETO-DE-AFUERA');

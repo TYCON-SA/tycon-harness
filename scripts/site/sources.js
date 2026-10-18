@@ -481,7 +481,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: { estado: 'sin_configurar', motivo: 'todavía no se leyó' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false } };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false } };
   // story 2.27: quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -560,7 +560,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (!cfg.profileRepo || !cfg.profileCredencial || !cfg.profileCredencial.token) { st.perfil = { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }; return; }
     const cab = `Basic ${Buffer.from(`x-access-token:${cfg.profileCredencial.token}`).toString('base64')}`;
     const r = await actualizarClon({ url: cfg.profileRepo, dir: dirPerfil, cab, nombre: 'perfil del equipo' });
-    if (r.ok) st.perfil = { estado: 'medido', motivo: null };
+    // el registro dice cada cambio: bajado la primera vez y cuando vuelve, y cada falla con su motivo (sin la credencial)
+    if (r.ok) { if (st.perfil.estado !== 'medido') log('perfil del equipo: bajado'); st.perfil = { estado: 'medido', motivo: null }; }
     else { log(r.motivo); st.perfil = { estado: r.estado, motivo: `el perfil del equipo no se pudo leer (${r.estado})` }; }
   }
 
@@ -699,6 +700,8 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       st.fallas.repo = st.fallas.repo || { desde: t, estado: repo.estado };
       aplicarConfig({ ok: false, motivo: 'el repo de operaciones no se pudo leer', rutas: 'el repo de operaciones no se pudo leer' }, t);
       if (!st.modelo) st.modelo = fs.existsSync(path.join(clon, '.git')) ? construir({ corridas: noMedida(repo.estado), carpetas: null, t }) : modeloVacio(repo.estado, t);
+      // el perfil no depende del repo de operaciones: se baja igual
+      await actualizarPerfil();
       st.cargado = true;
       return;
     }
@@ -708,13 +711,14 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     const repos = leerRepos(clon);
     if (repos.repos) st.personas.repos = repos.repos;
     else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
+    // el perfil del equipo antes que el buzón: es un clon chico, y la pestaña Configuración no espera a las corridas
+    await actualizarPerfil();
     // la espera es POR FUENTE (2026-10-16): con el repo leído, el sitio ya se navega; lo lento es el buzón. Hasta la primera
     // lectura del buzón, las corridas dicen «cargando» (nunca cero), y sólo la pestaña Corridas espera
     if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
     st.navegable = true;
     const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
     st.modelo = construir({ corridas, carpetas: await leerCarpetas(), t });
-    await actualizarPerfil();
     st.cargado = true;
     for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }
   }
