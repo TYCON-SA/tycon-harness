@@ -4993,7 +4993,8 @@ async function verifyFinding(args) {
   // La misma regla que record-refutation (`validate`): sin línea entera no hay constancia posible, así que no se arma el lanzamiento.
   if (!Number.isInteger(finding.line) || finding.line < 0) faltan.push('line');
   if (faltan.length) return { error: `--finding no trae: ${faltan.join(', ')}` };
-  const model = args.modelo || 'sonnet';
+  // el modelo por defecto del verificador es el del pase adversarial (lib/models.js, el único lugar de los modelos)
+  const model = args.modelo || MODELOS.DEFAULTS.adversarial.model;
   const pedido = await workflowRequest(finding, model, path.resolve(args.repo || process.cwd()));
   const id = require('./lib/refutation.js').idOf(finding);
   return {

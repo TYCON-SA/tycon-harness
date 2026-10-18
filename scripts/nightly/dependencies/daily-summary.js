@@ -619,7 +619,11 @@ function leerConfig(archivo, nombre, fallos) {
  */
 function dudasDeRevisores(runs, hoy) {
   if (!runs) return { valor: null, motivo: 'no se indicó la carpeta de corridas del repo', no_leidas: 0 };
-  const r = require('../../../skills/tycon-pipeline/scripts/lib/refutation.js').repeatedDoubts(runs, hoy, 7);
+  // La librería vive con el pipeline: una copia del resumen sin ella al lado (un laboratorio, una instalación parcial)
+  // no tiene con qué leer las constancias, y eso es «no medido», no «sin dudas» ni una caída del resumen entero.
+  const lib = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'refutation.js');
+  if (!fs.existsSync(lib)) return { valor: null, motivo: 'no está la librería de constancias del pipeline al lado del resumen', no_leidas: 0 };
+  const r = require(lib).repeatedDoubts(runs, hoy, 7);
   // El revisor y la regla salen de un `findings.json` del repo: pasan por el mismo filtro de nombres que lineaRetros.
   if (r.valor) r.valor = r.valor.map((d) => ({ ...d, revisor: nombreSeguro(d.revisor), regla: nombreSeguro(d.regla) }));
   return r;
