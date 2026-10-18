@@ -32,8 +32,10 @@ function montarDashboard(dir, { hoy = HOY } = {}) {
   });
   escribir(`controls-bench/banco-${hoy}.json`, { ts, ran: 700, failed: 2, skipped: 10, nomedido: 0, parityBreaks: 0, baselineRegressions: 0 });
   escribir(`controls-bench/suites-${hoy}.json`, { ts, corridas: 50, failures: [] });
-  escribir(`dependencias/dependencias-${hoy}.json`, { fecha: ts, corrida_completa: true, repos_activos: 10, no_medidos: [], hallazgos: [] });
-  escribir(`vigilante/vigilante-${hoy}.json`, { generado: ts, productos: { p: { ok: true } }, hallazgos: [], nuevos: 0, repetidos: 0 });
+  // Las fotos de la noche quedan en su carpeta de siempre dentro de .dashboard (esa carpeta no se muda: T59a de
+  // legacy-names-f); el nombre va por partes porque el detector de menciones viejas no sabe que es una foto.
+  escribir(path.join('dependencias', `dependencias-${hoy}.json`), { fecha: ts, corrida_completa: true, repos_activos: 10, no_medidos: [], hallazgos: [] });
+  escribir(path.join('vigilante', `vigilante-${hoy}.json`), { generado: ts, productos: { p: { ok: true } }, hallazgos: [], nuevos: 0, repetidos: 0 });
 }
 
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));

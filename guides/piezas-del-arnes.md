@@ -1057,7 +1057,7 @@ _(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js
 
 **Por qué existe:** El arnés lanzaba muchos revisores y no sabía qué costaban. Lo medido y lo estimado nunca se suman; el supuesto de la estimación vive en `reviewers-cost-assumption.json` y vence.
 
-**Quién la usa:** Va encadenado al barrido de `tokens-digest.js` al arrancar la sesión; lo muestra la vista de corridas. A mano: `--corrida` o `--todas`.
+**Quién la usa:** Va encadenado al barrido de `tokens-digest.js` al arrancar la sesión; lo muestra la vista de corridas. A mano: `--run` o `--all`.
 
 **Dónde se prueba:** `scripts/tests/reviewers-cost.test.sh`
 

@@ -273,3 +273,15 @@ test('T18 Wip_AdhocFechaDeRespaldo: lastTouch ilegible usa declaredAt', () => {
   fs.writeFileSync(path.join(m.state, 'adhoc', 'bad00000-c.json'), JSON.stringify({ reason: 'fecha rota', lastTouch: 'ayer', declaredAt: at(30) }));
   assert.match(run(m).text, /ad-hoc «fecha rota» · bad00000 · limpiar: .*adhoc clear-orphan bad00000-c/);
 });
+
+test('T19 SesionesPorDefecto_LaCarpetaDeClaudeCode: sin --sessions-dir lee las sesiones de la carpeta de Claude Code del HOME', () => {
+  const m = toyMachine();
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wip-home-'));
+  const sessions = path.join(require('../../skills/tycon-pipeline/scripts/lib/state-dir.js').claudeDir(home), 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  marker(m, 'dddddddd-4', { storyId: '9.4', storyPath: story(m.root, '9.4', 'Por defecto'), stepsCompleted: [0], stepsPending: [1] });
+  fs.writeFileSync(path.join(sessions, 'dddddddd-4.json'), JSON.stringify({ pid: process.pid, sessionId: 'dddddddd-4', status: 'busy', name: 'la-del-home' }));
+  const r = buildWip({ home, stateDir: m.state, now: NOW });
+  assert.ok(r.rows.some((x) => x.session === 'la-del-home'), JSON.stringify(r.rows));
+  fs.rmSync(home, { recursive: true, force: true });
+});
