@@ -56,11 +56,12 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los pipelines. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Dos
-caminos: la página local `harness.js team-config` (en la máquina de quien mantiene, con los clones) o, con el sitio de
-la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
-(`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
-(`SITE_OPERATIONS_WRITE_TOKEN`). La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
+**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Con
+el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos
+lectores (`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
+(`SITE_OPERATIONS_WRITE_TOKEN`). Sin sitio, se edita el archivo y se abre el pedido a mano; la página local
+`harness.js team-config` (en la máquina de quien mantiene, con los clones) muestra lo que hay, de sólo lectura, con los
+problemas que ven los lectores. La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
 revisor (punto 3). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
 cuando la plantilla `ops-data.yml` dejó la marca `.dashboard/applied-config.json` con ese archivo adentro: la marca dice
 qué archivos de configuración aplicó la noche de verdad, con su identificador de objeto, y se guarda sólo al final de
@@ -147,8 +148,8 @@ del proyecto. Esa identidad necesita, en *Pipelines → Security* de **cada proy
 `sin_permiso`, nunca «sin despliegue».
 
 Qué declarar: el proveedor y, por producto, los pipelines de `staging` y de `production` con el **identificador
-exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La página
-`harness.js team-config` los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
+exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La pestaña
+Configuración del sitio los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
 ejemplo `examples/operations.json` trae la forma. Un producto sin declarar sale «no medido».
 
 ## 4. Dar de alta los tres pipelines

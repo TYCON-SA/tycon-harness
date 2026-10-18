@@ -130,8 +130,9 @@ An example: at ACME, Pedro is the administrator and Juan writes code.
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
    **Configuration** tab of the [organization site](guides/sitio-de-la-organizacion.en.md) (maintainers only): it validates with the harness's own
    readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no site
-   deployed, the alternative is the local page: `node ~/.tycon/harness/scripts/setup/harness.js team-config`, which
-   opens on his machine, with nothing on the internet, and also offers him the pull request.
+   deployed, the files are edited with a pull request to the operations repo. The local page
+   (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on the internet, what
+   is in his clones and the problems the readers see; it saves and proposes nothing.
 3. Juan installs with npx and the profile: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
    is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read

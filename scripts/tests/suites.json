@@ -1512,7 +1512,7 @@
       "requiere": []
     },
     {
-      "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
+      "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
       "requiere": []
