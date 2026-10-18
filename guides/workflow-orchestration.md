@@ -430,7 +430,8 @@ La sesión A implementa una task de backend de una story, con build verde y spec
 ```bash
 node marker.js list-all                       # JSON array con TODOS los markers activos (no-stale, <24h)
 node marker.js find-by-story <N.M>            # JSON array con markers que tengan storyId==<N.M>
-node marker.js clear-session <sessionId>      # Borra marker de OTRA sesión (recovery/admin)
+node marker.js clear-session <sessionId>      # Borra marker de OTRA sesión (recovery/admin); sin marker, lo dice y sale 1
+node marker.js adhoc clear-orphan <sessionId> # Borra el ad-hoc de OTRA sesión: sólo si no está viva y lleva >24 h sin tocarse
 node marker.js update-story-status <path> <s> # Muta frontmatter status: atómicamente
 ```
 
