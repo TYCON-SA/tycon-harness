@@ -878,16 +878,21 @@ function teamOrPublic(repo, ref = 'HEAD') {
 }
 /**
  * Lo que se publica de un árbol del repo adelgazado: lo que trae el público. En un árbol armado, HEAD es el commit de
- * la superposición (su asunto lleva OVERLAY_MARK) y su primer padre es la punta del privado: se publica cada archivo que
- * no está en esa punta o que la superposición cambió. Las versiones propias del privado («own») quedan iguales a la
- * punta y no cuentan: la del público se mide en su CI. Sin superposición, el árbol es sólo lo privado y no se publica nada.
+ * la superposición (su asunto lleva OVERLAY_MARK) y su primer padre es la punta del privado: se publica cada ruta que la
+ * superposición trajo (en HEAD distinta de esa punta, o que la punta no tiene). Lo que un commit sobre el árbol armado
+ * cambia o agrega de lo privado sigue siendo privado: en la revisión de un pedido, el índice es el pedido sobre ese HEAD.
+ * Las versiones propias del privado («own») quedan iguales a la punta y no cuentan: la del público se mide en su CI. Sin
+ * superposición, el árbol es sólo lo privado y no se publica nada.
  */
 function publishedThin(repo, tree, config) {
   const head = commitOf(repo, 'HEAD');
   const subject = git(repo, ['log', '-1', '--format=%s', head]).stdout;
-  const base = subject.includes(OVERLAY_MARK) ? treeOf(repo, commitOf(repo, `${head}^`)) : tree;
-  const privateBlobs = new Map(base.filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
-  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj), config);
+  const brought = new Set();
+  if (subject.includes(OVERLAY_MARK)) {
+    const privateBlobs = new Map(treeOf(repo, commitOf(repo, `${head}^`)).filter((e) => e.tipo === 'blob').map((e) => [e.ruta, e.obj]));
+    for (const e of treeOf(repo, head)) if (e.tipo === 'blob' && privateBlobs.get(e.ruta) !== e.obj) brought.add(e.ruta);
+  }
+  return publishedPublic(repo, tree.filter((e) => e.tipo === 'blob' && brought.has(e.ruta)), config);
 }
 const published = (kind, repo, tree, name, config, strict) => {
   if (kind === 'team') return publishedTeam(repo, tree, name, { strict });
