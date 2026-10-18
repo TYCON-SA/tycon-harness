@@ -11,8 +11,15 @@ tuyo, el **repo de operaciones**:
 
 Si tu organización vive en GitHub, los mismos tres corren como GitHub Actions: [esta otra página](github/README.md).
 
-Esta página es para quien administra Azure DevOps. Lleva una hora la primera vez. No hace falta instalar nada en una
-máquina: todo pasa en Azure.
+Esta página es para quien administra Azure DevOps. Lleva entre tres y cuatro horas la primera vez. No hace falta
+instalar nada en una máquina: todo pasa en Azure.
+
+> **Antes de empezar: dos casillas del proyecto.** Un proyecto nuevo de Azure DevOps trae prendidas *Protect access to
+> repositories in YAML pipelines* y *Limit job authorization scope to current project for non-release pipelines*, en
+> *Project settings → Pipelines → Settings*. Prendidas, la noche corre sin error pero no mide nada: los resultados salen
+> «NO MEDIDO». Apagá la primera siempre, y la segunda si los repos a medir están en otros proyectos. Las dos valen para
+> todo el proyecto: si comparte pipelines con otros equipos, conviene un proyecto propio para la noche. El detalle está
+> en [los permisos](#3-permisos-de-la-identidad-de-los-pipelines).
 
 ## 1. Lo que necesitás antes
 

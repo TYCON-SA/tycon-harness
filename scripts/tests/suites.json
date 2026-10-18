@@ -1262,6 +1262,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.49: la guía de los procesos de la noche (Azure DevOps y GitHub) dice cuánto lleva la primera vez y, en Azure DevOps, avisa antes de empezar las dos casillas del proyecto que dejan la noche en «NO MEDIDO».",
+      "raiz": "arnes",
+      "ruta": "tests/operations-guide.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: el inicio de sesión del sitio — PKCE, state y nonce; cada chequeo del id_token con un token armado mal; la cookie firmada; y cada proveedor (oidc genérico, Entra ID, Google, GitHub) limitado a la organización. Contra un emisor y un GitHub locales.",
       "raiz": "arnes",
       "ruta": "tests/site-oidc.test.js",
