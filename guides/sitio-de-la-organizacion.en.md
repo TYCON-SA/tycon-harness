@@ -657,7 +657,9 @@ Each installation says where each one is stored and how its value gets in. **No 
 
 The site reads its configuration and what the night leaves from the operations repo. There are three ways, depending on
 where the site lives and where the repo lives. Pick only one: with `SITE_OPERATIONS_SOURCE=copy`,
-`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set.
+`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set. `SITE_OPERATIONS_REPO`, though, is still
+required with the copy: it is the address of the repo where «Propose» opens its pull requests, and without it the site
+does not start.
 
 1. **Copy with the platform identity, in Azure** (`SITE_OPERATIONS_SOURCE=copy`,
    `SITE_OPERATIONS_COPY=<account>/<container>`). A job in the operations repo (`site-copy.yml`, in

@@ -50,16 +50,39 @@ async function registro({ imagenes = { [VIEJA]: '2026.10.15.48', [NUEVA]: '2026.
 }
 
 /** Un `az` de esta prueba: contesta la imagen que corre y anota cada `update` (en memoria, sin procesos). */
-function azDeJuguete(corre = `${IMAGEN}@${VIEJA}`) {
+/**
+ * Un `az` de juguete con revisiones, como Container Apps en modo de una sola revisión: cada `update` crea una revisión
+ * nueva con su imagen. `listaTras`: cuántas preguntas tarda la revisión nueva en quedar lista y con todo el tráfico
+ * (0, enseguida; Infinity, nunca). Mientras no está lista, el tráfico sigue en la anterior.
+ */
+function azDeJuguete(corre = `${IMAGEN}@${VIEJA}`, { listaTras = 0 } = {}) {
   const ordenes = [];
-  let imagen = corre;
+  const revs = [{ nombre: 'sitio-acme--0000001', imagen: corre }];
+  let lista = 0;
+  let falta = 0;
+  const actual = () => revs[revs.length - 1];
   const correr = (args) => {
     ordenes.push(args);
-    if (args[0] === 'containerapp' && args[1] === 'show') return { status: 0, stdout: `${imagen}\n`, stderr: '' };
-    if (args[0] === 'containerapp' && args[1] === 'update') { imagen = args[args.indexOf('--image') + 1]; return { status: 0, stdout: '', stderr: '' }; }
+    if (args[0] === 'containerapp' && args[1] === 'show' && args.join(' ').includes('latestReadyRevisionName')) {
+      if (falta > 0) falta -= 1;
+      if (falta === 0) lista = revs.length - 1;
+      const sirve = revs[lista].nombre;
+      return { status: 0, stdout: JSON.stringify({ ultima: actual().nombre, lista: sirve, trafico: [{ revisionName: sirve, weight: 100 }] }), stderr: '' };
+    }
+    if (args[0] === 'containerapp' && args[1] === 'revision' && args[2] === 'show') {
+      const r = revs.find((x) => x.nombre === args[args.indexOf('--revision') + 1]);
+      return r ? { status: 0, stdout: JSON.stringify({ imagen: r.imagen, estado: 'Running' }), stderr: '' } : { status: 1, stdout: '', stderr: 'no existe' };
+    }
+    if (args[0] === 'containerapp' && args[1] === 'show') return { status: 0, stdout: `${actual().imagen}\n`, stderr: '' };
+    if (args[0] === 'containerapp' && args[1] === 'update') {
+      revs.push({ nombre: `sitio-acme--000000${revs.length + 1}`, imagen: args[args.indexOf('--image') + 1] });
+      // volver a la anterior (la revisión ya existió) se ve enseguida; la nueva tarda lo que diga `listaTras`
+      falta = revs.length > 2 && revs[revs.length - 1].imagen === revs[0].imagen ? 0 : listaTras;
+      return { status: 0, stdout: '', stderr: '' };
+    }
     return { status: 1, stdout: '', stderr: 'orden no prevista' };
   };
-  return { ordenes, correr, updates: () => ordenes.filter((a) => a[1] === 'update'), imagen: () => imagen };
+  return { ordenes, correr, updates: () => ordenes.filter((a) => a[1] === 'update'), imagen: () => actual().imagen, sirve: () => revs[lista].imagen };
 }
 const AZURE = { grupo: 'rg-sitio-acme', app: 'sitio-acme', url: 'https://sitio.acme.example' };
 const base = (reg, extra = {}) => ({ imagen: IMAGEN, urlRegistro: reg.base, estadoDir: tmp(), ahora: () => T0, log: () => {}, ...extra });
@@ -474,5 +497,32 @@ test('A11 2.33-Rev_EstadoIlegibleNoSePisa @story-2.33 @ac-12 — el estado corru
     assert.strictEqual(r.motivo, 'no se pudo leer el estado del actualizador');
     assert.deepStrictEqual(az.updates(), []);
     assert.strictEqual(fs.readFileSync(path.join(estadoDir, 'site-update-estado.json'), 'utf8'), '{ esto no es JSON', 'no se pisó');
+  } finally { await reg.cerrar(); }
+});
+
+test('A12 2.33-Rev_PruebaLaRevisionNueva @story-2.33 @ac-10 @ac-12 — prueba recién cuando la revisión nueva sirve todo; si no llega, vuelve atrás', async () => {
+  // 🔴 rojo (medido en un laboratorio real): la prueba sin sesión le pegó a la revisión vieja, todavía con el tráfico,
+  //    y el actualizador dijo «actualizado» con una imagen que no pasaba la prueba.
+  const reg = await registro();
+  try {
+    const espera = { cadaMs: 0, plazoMs: 50, dormir: async () => {} };
+    // tarda dos preguntas en quedar lista: la prueba corre recién cuando la nueva sirve, y contra la nueva
+    const az = azDeJuguete(undefined, { listaTras: 2 });
+    const vistas = [];
+    const r = await UP.actualizar({ ...base(reg), plataforma: 'azure', modo: 'auto', azure: { ...AZURE, espera }, correr: az.correr, probar: async () => { vistas.push(az.sirve()); return { ok: true }; } });
+    assert.strictEqual(r.resultado, 'actualizado', JSON.stringify(r));
+    assert.deepStrictEqual(vistas, [`${IMAGEN}@${NUEVA}`], 'la prueba ve la imagen nueva');
+
+    // nunca queda lista: cuenta como prueba fallida, vuelve a la anterior y no se reintenta
+    const lenta = azDeJuguete(undefined, { listaTras: Infinity });
+    let probadas = 0;
+    const estadoDir = tmp();
+    const r2 = await UP.actualizar({ ...base(reg, { estadoDir }), plataforma: 'azure', modo: 'auto', azure: { ...AZURE, espera }, correr: lenta.correr, probar: async () => { probadas += 1; return { ok: true }; } });
+    assert.strictEqual(r2.resultado, 'vuelto_atras', JSON.stringify(r2));
+    assert.match(r2.motivo, /^la prueba sin sesión falló \(la revisión nueva no quedó lista/);
+    assert.strictEqual(lenta.imagen(), `${IMAGEN}@${VIEJA}`, 'vuelve a la anterior por huella');
+    assert.strictEqual(probadas, 1, 'sólo se prueba la anterior, ya de vuelta');
+    const est = JSON.parse(fs.readFileSync(path.join(estadoDir, 'site-update-estado.json'), 'utf8'));
+    assert.ok(est.fallidas[NUEVA], 'la huella nueva queda anotada');
   } finally { await reg.cerrar(); }
 });

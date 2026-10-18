@@ -44,10 +44,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`); y cómo se mantiene al día (la parte común, el párrafo «Al
 // día» de cada receta, Kubernetes y otras nubes, y una red cerrada); y lo que pidió una instalación desde cero
 // siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
-// permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano.
+// permisos de GitHub; y que desde una imagen sin versión la primera actualización va a mano; y que con la copia de operaciones
+// SITE_OPERATIONS_REPO sigue siendo obligatoria.
 const HUELLA_INSTALACION = {
-  es: '739339fb9463f2e92108b57ac6afc2fea6731a6429e146cc99134d21901b549e',
-  en: '54c1fa340fe06ea838358315755ea384b88a2e521109a01f174c65d643a86a76',
+  es: '245a98d18d74f777a8e4da9373c93eeb068db515b6ebbcd3f6b5c1c855dde1dd',
+  en: '639030027ead62da76035883174d423c70d928f50a5145a56cb326967c78ad9b',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
