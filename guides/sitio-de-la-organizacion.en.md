@@ -262,7 +262,22 @@ The sections, in the order of the screen:
   list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
   account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
   installation. The runs mailbox, the refresh and the site's address go here too. It lives in `operations.json`, in the
-  operations repo. Another maintainer reviews it.
+  operations repo. Another maintainer reviews it. **"How often the site updates"** (*Cada cuánto se actualiza el
+  sitio*) takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows sooner, but the site reads the operations
+  repo, the profile repo and the mailbox again more often while it is awake: more reads to the cloud, which cost a bit
+  more on an installation billed by use. It does not keep it awake: asleep it reads nothing, and on waking it reads
+  everything.
+- **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
+  by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
+  On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
+  and completes it; right after, the site reads the repo again and the section says "Applied" (*Aplicado*). It only
+  happens if the main branch's policies are met with that vote: if they ask for more (another reviewer, a named
+  reviewer, a build), the site says what is missing and leaves the request to be approved. On GitHub the request always
+  stays: whoever opens a request cannot approve it. Before proposing, next to the button, the section says what will
+  happen. Who did it stays written: the request's description names who asked for it, and the site's log records
+  `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
+  turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
+  `operations.json`, in the operations repo.
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -442,13 +457,29 @@ why.
 
 **Why it happens:** the site only proposes if the repo requires another person to approve each change before adding it
 to the main branch (a "review policy"); without that rule, the site could change the repo without anyone looking. Also
-when the site has no permission to write to that repo, or when there is already an open request on the same file (the
-section shows its link).
+when the policy lets whoever creates the request approve it ("Allow requestors to approve their own changes", on Azure
+DevOps): the site creates the request, and it would approve itself; unless the organization turns on "A maintainer's
+changes", which is meant for exactly that. And when the site has no permission to write to that
+repo, or when there is already an open request on the same file (the section shows its link).
 
 **What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can ask for
 the review policy or the write permission. With an open request, wait until it is merged or closed.
 
 !["Propose" off, with its reason: the repo has no policy requiring review](sitio-de-la-organizacion/capturas/proponer-apagado.png)
+
+### Configuration says the site rejected the request
+
+**What you see:** when reviewing or proposing, a red box with the reason: "the session expired or was closed: reload
+the page" (*la sesión venció o se cerró: recargá la página*), "your account … is not among those who maintain the
+site", "the site is loading…", or "the request was rejected by what stands in front of the site, not the site" (*el
+pedido lo rechazó lo que está delante del sitio*).
+
+**Why it happens:** the session expired; or you signed in with another account (the message says which one); or the
+site was restarting; or the cloud's sign-in, in front of the site, stopped the request.
+
+**What to do:** reload the page. If it says your account does not maintain the site, sign out and sign in with the
+organization's account. If it says it was rejected by what stands in front of the site and it persists after reloading,
+tell a maintainer (the installation guide, in the Azure recipe, says how to fix it).
 
 ### The first page is slow to open
 
@@ -589,6 +620,37 @@ Each installation says where each one is stored and how its value gets in. **No 
 `SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the site's list
 (`site.access` in `operations.json`) has nobody who maintains. Remove it afterwards.
 
+### Where it reads operations from
+
+The site reads its configuration and what the night leaves from the operations repo. There are three ways, depending on
+where the site lives and where the repo lives. Pick only one: with `SITE_OPERATIONS_SOURCE=copy`,
+`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set.
+
+1. **Copy with the platform identity, in Azure** (`SITE_OPERATIONS_SOURCE=copy`,
+   `SITE_OPERATIONS_COPY=<account>/<container>`). A job in the operations repo (`site-copy.yml`, in
+   `pipelines/operations/` for Azure DevOps and in `pipelines/operations/github/` for GitHub) copies what the site reads
+   to a container, on every change to `main` and once a day. The site reads it with its identity and a reader role on
+   that container. The Azure setup creates the account with the key turned off: only identities with their role get in.
+   What it costs: one more pipeline and its identity, with the write role on the container. No secret that expires, and
+   no Azure DevOps license for the site. A change takes as long as the job plus one refresh to show.
+2. **Copy with a SAS, outside Azure** (another cloud or your own machine): the same copy, and the site reads it with
+   `SITE_OPERATIONS_COPY_SAS`, a read-only container SAS (`sp=r` or `rl`), tied to a stored access policy on the
+   container so it can be revoked (the commands, in the recipe for your own machine).
+   What it costs: the SAS is signed with the account key, so that account needs the account key turned on, and that key
+   opens the whole account (read, write and delete everything). That is why the copy goes in its own account, never the
+   mailbox's; and the SAS expires (6 months at most) and is renewed by hand.
+3. **Reading the repo directly** (`SITE_OPERATIONS_SOURCE` empty or `repo`, as always): the site clones the repo with
+   `SITE_OPERATIONS_TOKEN`. In GitHub, an app installed on that one repo with `contents: read`, or a fine-grained token
+   for one repo; in Azure DevOps, the site's identity added to the organization (`SITE_OPERATIONS_IDENTITY=managed`) or a
+   personal access token with read-only code access.
+   What it costs: the personal token expires (90 days) and belongs to a person; the identity in Azure DevOps takes a
+   license. In exchange, a change shows on the next refresh, with no copy job.
+
+With the copy, if the job stops running the site says so: with a copy older than 24 hours, maintainers see the last-good
+banner ("the operations copy is N hours old"); older than 48, the site stops, as when the repo cannot be read. "Propose",
+in the Configuration tab, still uses `SITE_OPERATIONS_WRITE_TOKEN`: it fetches a fresh `main` into a separate clone and
+builds the pull request on that tip.
+
 ### Whoever can edit the installation can read its secrets
 
 Whoever has permission to change the installation (its variables, its image) can read all its secrets and make
@@ -602,6 +664,29 @@ author. Without it, anyone who can push to `main` can make themselves a site mai
 a night process and take its secrets. That policy is also what enables "Proponer" (propose) in the Configuration tab.
 How to set it on Azure DevOps and on GitHub: the READMEs of the operations models (`pipelines/operations/README.md` and
 `pipelines/operations/github/README.md`).
+
+### The permission for "Propose"
+
+"Propose the change" opens a change request in the section's repo. For that the site needs to write to that repo:
+`SITE_OPERATIONS_WRITE_TOKEN` for the sections of the operations repo and `SITE_PROFILE_WRITE_TOKEN` for those of the
+team profile. On Azure DevOps, a token with *Code: Read & write* on those repos, **without** *Bypass policies when
+pushing* or *Bypass policies when completing pull requests*: the site creates a branch and a request, it never writes
+`main`. With a personal token, the requests come out in that person's name, and the branch policy keeps asking for its
+approvals: the policy must have "Allow requestors to approve their own changes" turned off, or the site does not propose
+(the author would approve it), except with "A maintainer's changes" on (below). Without the permission, each section says
+"To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
+hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
+### Changes that apply by themselves
+
+With `site.auto_apply: true` in `operations.json` ("A maintainer's changes", in People), the site approves and completes
+each request a maintainer proposes. For that its write identity needs, on Azure DevOps, *Code: Read & write* and
+*Contribute to pull requests* on the repo, and never *Bypass policies*: the site skips no policy, and if one is not met
+with its vote, the request stays. The review policy of `main` has to let the vote of whoever creates the request count
+("Allow requestors to approve their own changes" on) and ask for one reviewer. With no policy at all on `main`,
+"Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
+know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
+leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
 
 ### The two ways to start it
 
@@ -622,7 +707,8 @@ node scripts/site/check-deploy.js --url https://<site address>
 
 It asks, without a session, what a stranger would ask. It exits 0 if nothing is visible; 1 with the reason ("el sitio
 responde sin iniciar sesión", "/api contesta con datos", "el sitio está frenado", "/healthz cuenta de más", "falta
-no-store", "acepta http"); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
+no-store", "acepta http", "sin Referer: el candado de la plataforma frenaría las escrituras de Configuración" — the
+site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
 while to wake up. The morning notice carries the link only if it passed that morning.
 
 ## The recipes
@@ -663,6 +749,12 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
     required assignment and puts the platform's lock on the common issuer. Your `az` session does it, and it has to own
     the registration; the site gets no new permission. Before running it, the site's list has to have everyone who gets
     in today (the section builds it by itself from what there was before: propose it and have it approved).
+- **The lock and the writes:** the built-in sign-in protects against forged requests by looking at the browser's
+  `Referer`, not the `Origin`. A POST with a session and without a `Referer` from the site itself is rejected with 403,
+  sub-status 60 (it shows in the environment's logs, as the middleware's `RequestCompleted`). For "Review changes" and
+  "Propose" to go through, the site sends `Referrer-Policy: same-origin`: the `Referer` travels within the site and never
+  outside it. An earlier image sent `no-referrer` and the Configuration tab could not write; the session-less check warns
+  about it. There is no need to touch the lock's CORS or proxy convention.
 - **Disk:** an Azure Files share in a storage account of the site's own (cents per month), never in the mailbox
   account.
 - **Secrets:** application secrets. Their values come from environment variables of whoever runs the installation, with
@@ -724,6 +816,14 @@ starting anything.
 - **The night check:** it runs on a cloud agent and cannot reach an internal network. The notice says "sitio: no se pudo
   probar desde el nocturno" (could not be checked from the night run), without a link, unless the organization runs the
   night process on its own agent inside the network.
+
+**The operations copy outside Azure** (also for Render): the read-only SAS, tied to a stored access policy on the
+container so it can be revoked. The copy's account needs its key turned on to sign it:
+
+```bash
+az storage container policy create --account-name <account> -c <container> -n site-read --permissions rl --expiry <date>
+az storage container generate-sas --account-name <account> -n <container> --policy-name site-read -o tsv
+```
 
 ## Inside, for whoever maintains the harness
 

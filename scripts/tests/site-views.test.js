@@ -154,7 +154,9 @@ test('T31 Cabeceras_EnCadaRespuestaConDatos', async () => {
       assert.strictEqual(res.headers['cache-control'], 'no-store', `${r.path}: no-store`);
       assert.strictEqual(res.headers['content-security-policy'], CSP, `${r.path}: la política`);
       assert.strictEqual(res.headers['x-content-type-options'], 'nosniff', r.path);
-      assert.strictEqual(res.headers['referrer-policy'], 'no-referrer', r.path);
+      // el Referer viaja sólo dentro del sitio, nunca afuera. Con `no-referrer`, el candado de la plataforma toma cada POST
+      // de Configuración por falsificado (403, subestado 60): su anti-CSRF mira el Referer
+      assert.strictEqual(res.headers['referrer-policy'], 'same-origin', r.path);
       assert.match(res.headers['strict-transport-security'] || '', /max-age=\d+/, `${r.path}: HSTS con dirección https`);
       if (/html/.test(res.headers['content-type'])) {
         // lo que se CARGA (src, srcset, <link href>, url() de un estilo) nunca viene de afuera; un <a href> a la

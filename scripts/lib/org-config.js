@@ -61,6 +61,9 @@ const SECCIONES = Object.freeze([
   // la marca de la organización en el sitio (el nombre, el logo del repo de operaciones y qué hacer con él en oscuro)
   Object.freeze({ id: 'organizacion', titulo: 'La organización', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.brand.name', 'site.brand.logo', 'site.brand.dark']), idCorto: 'operations', necesita: ['site'] }),
   Object.freeze({ id: 'hilos', titulo: 'Conversaciones de las corridas', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.mailbox.threads']), idCorto: 'operations', necesita: ['site'] }),
+  // el interruptor de la organización: con `true`, «Proponer» aprueba y completa el pedido con la identidad del sitio si
+  // las políticas de main lo dejan. Cuenta el valor de main, nunca el del cambio que se propone (scripts/site/tabs/config.js)
+  Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
   // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
@@ -581,8 +584,17 @@ function pantalla() {
   function api(ruta, cuerpo) {
     var o = { method: cuerpo ? 'POST' : 'GET', headers: {}, credentials: 'same-origin' };
     if (cuerpo) { o.headers['Content-Type'] = 'application/json'; o.headers['X-Site-Token'] = TOKEN; o.body = JSON.stringify(cuerpo); }
-    // siempre termina con un mensaje: un pedido cortado no deja la nota en «proponiendo…» para siempre
-    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: 'respuesta ' + r.status }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = 'respuesta ' + r.status; return j; }); })
+    // siempre termina con un mensaje: un pedido cortado no deja la nota en «proponiendo…» para siempre. Un rechazo sin
+    // mensaje (un cuerpo vacío o que no es JSON: lo que está delante del sitio, o una versión vieja) dice qué hacer según
+    // su estado, nunca «respuesta N» suelto
+    var llano = function (status) {
+      if (status === 401) return 'la sesión venció o se cerró: recargá la página para entrar de nuevo';
+      // el sitio manda su motivo en cada 403: uno sin motivo lo dio lo que está delante (el inicio de sesión de la nube)
+      if (status === 403) return 'el pedido lo rechazó lo que está delante del sitio, no el sitio: recargá la página y probá de nuevo; si sigue, avisale a quien mantiene el arnés';
+      if (status === 503) return 'el sitio está cargando o frenado: probá de nuevo en unos segundos';
+      return 'el sitio contestó con un error (' + status + ')';
+    };
+    return fetch('/api/config' + ruta, o).then(function (r) { return r.json().catch(function () { return { ok: false, message: llano(r.status) }; }).then(function (j) { if (r.status >= 400 && j && !j.message) j.message = llano(r.status); return j; }); })
       .catch(function (e) { return { ok: false, message: 'no pude hablar con el sitio (' + (e && e.message ? e.message : 'sin respuesta') + '): si estabas proponiendo, recargá y mirá si el pedido se abrió antes de repetirlo' }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
@@ -610,9 +622,10 @@ function pantalla() {
     paquetes: { t: 'Paquetes de la organización', d: 'Qué paquetes del arnés (revisores y guías de un producto o de un cliente) se activan en todas las máquinas. Llega a cada una con su próxima actualización.', corto: 'Paquetes' },
     instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
+    aplicar: { t: 'Los cambios de un mantenedor', d: 'Si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para que lo apruebe otra persona. El cambio que prende esta opción no se aplica solo: la opción cuenta desde que entra.', corto: 'Los cambios de un mantenedor' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1128,6 +1141,14 @@ function pantalla() {
       d.site.mailbox.threads = v === 'true';
     }, 'site.mailbox.threads', pr));
   }
+  function editorAplicar(s, d, pr) {
+    var st = d.site || {};
+    return el('div', { class: 'pila' }, selector('Los cambios de quien mantiene el sitio', st.auto_apply === undefined ? '' : String(st.auto_apply), [['', 'sin declarar (no)'], ['true', 'sí: se aplican solos; el sitio aprueba y completa el pedido, si las políticas del repo lo dejan'], ['false', 'no: queda el pedido para aprobar']], function (v) {
+      if (!esObjeto(d.site)) d.site = {};
+      if (v === '') { delete d.site.auto_apply; return; }
+      d.site.auto_apply = v === 'true';
+    }, 'site.auto_apply', pr), el('p', { class: 'muted', text: 'Queda escrito quién pidió cada cambio: en el pedido y en el registro del sitio.' }));
+  }
   // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
   function tablaDeContenido(filas) {
     var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: 'Lo que trae la organización' }), el('p', { class: 'reach', text: 'Skills, revisores, guías de alta y paquetes del repo del equipo. Se cambian con un pedido en ese repo, no desde acá.' }))));
@@ -1302,7 +1323,7 @@ function pantalla() {
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -1341,6 +1362,12 @@ function pantalla() {
     if (/plataforma/.test(m)) return 'El sitio no reconoce dónde vive el repo. Revisá, descargá y subilo a mano.';
     return 'Proponer desde acá no está disponible: ' + m;
   }
+  /** Qué pasa al proponer: se aplica solo (la opción de la organización, con políticas que el sitio cumple) o queda el pedido. */
+  function textoProponer(s, prop) {
+    var repo = REPO_DE[s.repo] || 'su repo';
+    if (prop && prop.aplicaSolo) return 'Se aplica solo: el sitio aprueba y completa el pedido en ' + repo + '.';
+    return 'Se abre un pedido de cambio en ' + repo + '. ' + (prop && prop.motivoAplicar ? prop.motivoAplicar : 'Entra cuando alguien lo aprueba.');
+  }
   function seccion(s) {
     var p = plano(s);
     var est = estadoDe(s);
@@ -1370,7 +1397,7 @@ function pantalla() {
       var bar = el('div', { class: 'bar' }, el('button', { class: 'sec', type: 'button', text: 'Revisar cambios', onclick: function () { revisarSeccion(s); } }));
       bar.appendChild(el('button', { class: 'sec', type: 'button', text: 'Descargar', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { descargar(s); } }));
       if (habilitado) bar.appendChild(el('button', { type: 'button', text: 'Proponer el cambio', disabled: S.textos[s.id] ? undefined : 'disabled', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } }));
-      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? 'Se abre un pedido de cambio en ' + (REPO_DE[s.repo] || 'su repo') + '. Entra cuando alguien lo aprueba.' : 'Primero revisá: así sabés si está bien antes de proponerlo.') }));
+      bar.appendChild(el('span', { class: 'por-que', text: !habilitado ? motivoProponer(prop && prop.motivo) : (S.textos[s.id] ? textoProponer(s, prop) : 'Primero revisá: así sabés si está bien antes de proponerlo.') }));
       if (!confirmando) sec.appendChild(bar);
     }
     if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: 'Proponer el cambio', onclick: function () { S.notas[s.id] = { confirmar: true }; render(); } })));

@@ -1251,6 +1251,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.34: la copia de operaciones para el sitio — la foto y su índice en un contenedor (sólo lo que el sitio lee, sin enlaces ni rutas fuera), la bajada que cambia de carpeta de una vez, los códigos de falla, la edad de la copia como banda y freno, y la guía con las tres formas. Almacenamiento en memoria y un servidor local con la forma de Azure Blob.",
+      "raiz": "arnes",
+      "ruta": "tests/site-operations-copy.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el sitio con las conversaciones prendidas sobre un disco chico: la bajada por tandas con tope de bytes, el resumen de cada corrida y el borrado de su conversación, la poda del espejo, y los textos a demanda en un hilo aparte con tope de tiempo. Buzón y repo por HTTP locales (sin git http-backend, T48 se saltea con constancia).",
       "raiz": "arnes",
       "ruta": "tests/site-mailbox-summaries.test.js",

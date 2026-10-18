@@ -255,11 +255,13 @@ function clon(archivos) {
 const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
 
 /** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
-function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {} }) {
+function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null }) {
   const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos } });
   const base = f.estado;
   f.estado = () => ({ ...base(), ...estado });
-  f.clones = () => ({ operaciones: ops ? { dir: ops } : null, perfil: perfil ? { dir: perfil } : null });
+  // con la copia de operaciones: la carpeta de la foto con su índice, y el clon de escritura aparte
+  f.clones = () => ({ operaciones: ops ? (indice ? { dir: ops, indice } : { dir: ops }) : null, perfil: perfil ? { dir: perfil } : null });
+  if (escritura) f.clonDeEscritura = escritura;
   f.dirBuzon = espejo || tmp('site-config-buzon-');
   f.exclusivo = (fn) => fn();
   return f;
@@ -853,7 +855,27 @@ test('T4b Pantalla_UnPedidoCortadoNoQuedaColgado @story-2.29 @ac-18 — la llama
   const cortado = await correrPantalla(() => Promise.reject(new Error('se cortó la red')));
   assert.match(cortado, /no pude hablar con el sitio \(se cortó la red\)/);
   const noJson = await correrPantalla(() => Promise.resolve({ status: 502, json: () => Promise.reject(new Error('no es JSON')) }));
-  assert.match(noJson, /respuesta 502/);
+  assert.match(noJson, /el sitio contestó con un error \(502\)/);
+});
+
+test('Pantalla_RechazoEnLlano_NuncaRespuestaN @story-2.38 @ac-4 — un rechazo dice por qué y qué hacer', async () => {
+  const vacio = (status) => () => Promise.resolve({ status, json: () => Promise.reject(new Error('cuerpo vacío')) });
+  const casos = [
+    [vacio(401), /la sesión venció o se cerró: recargá la página/],
+    // el sitio manda su motivo en cada 403: uno vacío lo dio lo que está delante (el candado de la nube)
+    [vacio(403), /lo rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
+    [vacio(503), /el sitio está cargando o frenado: probá de nuevo en unos segundos/],
+    [vacio(418), /el sitio contestó con un error \(418\)/],
+    // con el mensaje del servidor, ése (aunque el JSON no traiga `ok`)
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false, codigo: 'sin_rol', message: 'tu cuenta ana@acme.example no está entre los que mantienen el sitio' }) }), /tu cuenta ana@acme\.example no está entre los que mantienen el sitio/],
+    // un JSON sin `message`: el llano de su estado
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /lo rechazó lo que está delante del sitio/],
+  ];
+  for (const [f, rx] of casos) {
+    const t = await correrPantalla(f);
+    assert.match(t, rx);
+    assert.doesNotMatch(t, /respuesta \d{3}/, 'nunca «respuesta N» suelto');
+  }
 });
 
 test('T8c Stages_NombresDePuntos_Rechazados @story-2.29 @ac-8 — un proyecto, dueño o repo «.» o «..» no arma una ruta que sube de nivel', async () => {
@@ -1689,6 +1711,7 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
 
 // ── quién entra al sitio lo decide la lista (AC 5 y 6), y el inicio de sesión elegido se ve (AC 8) ─────────
 test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
+  // (la lista vive en operations.json como las demás secciones de Personas)
   const M = 'mant@acme.example';
   const conLista = { version: 1, owners: { default: LEAD }, reviewers: { watcher: ['w@acme.example'] },
     site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV, 'dev.a.casa@mail.example'] }], refresh_minutes: 20, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } },
@@ -1789,4 +1812,263 @@ test('T10 2.40-InicioDeSesion_Visible @story-2.40 @ac-8', async () => {
   assert.match(p.textoDe('sitio'), /se cambia en la instalación/);
   // (el único «provider» de la sección es el servicio del buzón, site.mailbox.provider)
   assert.ok(!p.todo(p.sec('sitio')).some((n) => /inicio|auth|^(?!site\.mailbox\.).*provider/i.test(n.attrs['data-path'] || '')), 'sin un campo para cambiarlo');
+});
+
+// ── los cambios de un mantenedor se aplican solos ───────────────────────────────────────────────────────────
+test('T1 Lector_AutoApply_SoloSiONo @story-2.39 @ac-1', () => {
+  for (const v of [true, false]) assert.strictEqual(OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], auto_apply: v } }))).ok, true, `auto_apply: ${v}`);
+  assert.strictEqual(OPS.parse(ORG.formatJson(opsBase())).ok, true, 'sin la clave vale');
+  const r = OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], auto_apply: 'si' } })));
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.problems.map((p) => [p.path, p.message]), [['site.auto_apply', 'tiene que ser true o false']]);
+});
+
+test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
+  const s = ORG.seccionPorId('aplicar');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Los cambios de un mantenedor', 'operations.json', 'operaciones', 'operations-config.js', ['site.auto_apply'], 'operations']);
+  const base = opsBase({ site: { maintainers: [LEAD], refresh_minutes: 15 } });
+  const r = ORG.revisar({ seccion: 'aplicar', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], refresh_minutes: 30, auto_apply: true } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, auto_apply: true } }), 'sólo la hoja del interruptor');
+  // en la pestaña Personas, junto a «El sitio», con su editor de tres opciones
+  const codigo = ORG.pantalla();
+  assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar',/);
+  assert.match(codigo, /aplicar: editorAplicar/);
+  for (const t of ['sin declarar (no)', 'sí: se aplican solos', 'no: queda el pedido para aprobar']) assert.ok(codigo.includes(t), t);
+});
+
+/** El repo de operaciones por HTTP, Azure de juguete que deja completar y mueve main, y la pestaña encima. */
+async function conAplicar({ autoApply, politica = 'autor', ops = null, masPoliticas = () => [], log = () => {} }, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado, r, dir;
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.com/acme/Proy/_git/ops' } };
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
+    const pol = { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: politica === 'autor', scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } };
+    ado.st.politicas = [pol, ...masPoliticas(ado)];
+    const doc = ops || opsBase({ site: { maintainers: [LEAD], ...(autoApply === undefined ? {} : { auto_apply: autoApply }) } });
+    ({ r, dir } = await opsPorHttp({ 'operations.json': doc }));
+    ado.st.permitirCompletar = true;
+    ado.st.alCompletar = (p) => { const s = r.ref(p.sourceRefName); spawnSync('git', ['update-ref', 'refs/heads/main', s], { cwd: r.bare }); };
+    const f = fuentesCon({ ops: dir, config: doc });
+    // el candado de la propuesta y el refresco: la prueba anota si se releyó con el candado tomado
+    let dentro = false;
+    const refrescos = [];
+    f.exclusivo = async (fn2) => { dentro = true; try { return await fn2(); } finally { dentro = false; } };
+    f.releerDeVerdad = true;
+    f.refrescar = async () => {
+      refrescos.push({ dentro });
+      if (!f.releerDeVerdad) return;
+      const ex = require('util').promisify(require('child_process').execFile);
+      await ex('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'fetch', '-q', '--depth', '1', 'origin', 'main'], { cwd: dir });
+      await ex('git', ['reset', '-q', '--hard', 'FETCH_HEAD'], { cwd: dir });
+    };
+    await conPestana({ fuentes: f, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base }, log } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+      const proponer = async (id, texto) => { const s = (await estado()).secciones.find((x) => x.id === id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+      await fn({ ...ctx, ado, r, dir, f, refrescos, estado, revisar, proponer });
+    });
+  } finally { await cerrarTodos(r, ado); }
+}
+const parches = (ado) => ado.llamadas.filter((l) => l.method === 'PATCH');
+
+test('T8 Interruptor_ElQueCuentaEsElDeMain @story-2.39 @ac-8', { skip: SIN_BACKEND }, async () => {
+  // apagada en main: prenderla se propone y queda el pedido
+  await conAplicar({ autoApply: false }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: true } });
+    assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+    const antes = r.ref('refs/heads/main');
+    const p = await proponer('aplicar', rev.texto);
+    // con la opción apagada, la política que deja votar al autor apaga «Proponer»: no se aplica solo
+    assert.strictEqual(p.ok, false, JSON.stringify(p));
+    assert.match(p.message, /Allow requestors to approve their own changes/);
+    assert.deepStrictEqual(parches(ado), []);
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+  });
+  await conAplicar({ autoApply: false, politica: 'otro' }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: true } });
+    const antes = r.ref('refs/heads/main');
+    const p = await proponer('aplicar', rev.texto);
+    assert.strictEqual(p.ok, true, JSON.stringify(p));
+    assert.match(p.message, /^Pedido abierto: /);
+    assert.deepStrictEqual(parches(ado), [], 'prenderla nunca se aplica sola');
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+  });
+  // prendida en main: apagarla se aplica solo
+  await conAplicar({ autoApply: true }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: false } });
+    const p = await proponer('aplicar', rev.texto);
+    assert.strictEqual(p.codigo, 'aplicado', JSON.stringify(p));
+    assert.strictEqual(parches(ado).length, 1);
+    assert.strictEqual(JSON.parse(r.archivoEn('refs/heads/main', 'operations.json')).site.auto_apply, false);
+  });
+});
+
+test('T9 Pestana_Aplicado_RelleeYLoMuestra @story-2.39 @ac-9', { skip: SIN_BACKEND }, async () => {
+  await conAplicar({ autoApply: true }, async ({ revisar, proponer, refrescos }) => {
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+    assert.deepStrictEqual(refrescos, [{ dentro: false }], 'releyó una vez, con el candado suelto');
+    assert.match(p.message, /^Aplicado: el cambio ya está en la rama principal y el sitio lo usa/);
+    assert.ok(p.enlace, 'con el enlace del pedido');
+  });
+  await conAplicar({ autoApply: true }, async ({ f, revisar, proponer, refrescos }) => {
+    f.releerDeVerdad = false;
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.strictEqual(p.codigo, 'aplicado', JSON.stringify(p));
+    assert.strictEqual(refrescos.length, 1);
+    assert.match(p.message, /se completó.*próximo refresco/);
+  });
+  // lo que no queda aplicado pasa tal cual, sin releer
+  await conAplicar({ autoApply: true }, async ({ ado, revisar, proponer, refrescos }) => {
+    ado.st.evaluaciones = () => [{ configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Build' } }, status: 'rejected' }];
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.strictEqual(p.codigo, 'no_aplica_solo', JSON.stringify(p));
+    assert.deepStrictEqual(refrescos, [], 'sin releer');
+    assert.match(p.message, /^No se pudo aplicar solo: .*«Build»/);
+  });
+});
+
+test('T11 EstadoProponer_DiceSiSeAplicaSolo @story-2.39 @ac-10', { skip: SIN_BACKEND }, async () => {
+  await conAplicar({ autoApply: true }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, true], JSON.stringify(p));
+  });
+  await conAplicar({ autoApply: true, politica: 'otro' }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], JSON.stringify(p));
+    assert.match(p.motivoAplicar, /queda el pedido para aprobar/);
+  });
+  await conAplicar({ autoApply: false }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.strictEqual(p.habilitado, false, JSON.stringify(p));
+    assert.match(p.motivo, /Allow requestors to approve their own changes/);
+  });
+  // la pantalla dice qué va a pasar antes de tocar «Proponer»
+  const codigo = ORG.pantalla();
+  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pedido'), 'el texto de «se aplica solo»');
+});
+
+test('T19 Pestana_RefrescoFalla_LoAnotaYSigue @story-2.39 @ac-9', { skip: SIN_BACKEND }, async () => {
+  const registro = [];
+  await conAplicar({ autoApply: true, log: (l) => registro.push(l) }, async ({ f, revisar, proponer }) => {
+    f.refrescar = async () => { throw new Error('el repo no contestó'); };
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+    assert.match(p.message, /próximo refresco/);
+    assert.ok(registro.some((l) => /el refresco falló/.test(l)), registro.join('\n'));
+  });
+});
+
+test('T20 EstadoProponer_UnArchivoQueNoSeAplicaSolo_ElRepoTampoco @story-2.39 @ac-10', { skip: SIN_BACKEND }, async () => {
+  // la del mínimo de revisores deja votar al autor en toda la rama; otra, con filtro, pide un revisor distinto para operations.json
+  const requeridaParaOps = (ado) => [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+    settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo-de-quienes-mantienen'], filenamePatterns: ['/operations.json'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+  await conAplicar({ autoApply: true, masPoliticas: requeridaParaOps }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.strictEqual(p.porArchivo['operations.json'].aplicaSolo, false, JSON.stringify(p));
+    assert.strictEqual(p.porArchivo['scripts/nightly/dashboard/sources.json'].aplicaSolo, true, JSON.stringify(p));
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], 'el repo entero no se aplica solo si un archivo no');
+  });
+});
+
+// ── la pestaña con la copia de operaciones ─────────────────────────────────────────────────────────
+const COPIA = require(path.join(H.SITE, 'operations-copy.js'));
+const { prepararClonDeEscritura } = require(path.join(H.SITE, 'sources.js'));
+// stable-data: la hora real sólo fecha las fotos del almacén en memoria; ninguna prueba compara contra ella
+/** La foto de `dir` (un clon con commit) abierta en una carpeta, como la deja `bajar`: `{ carpeta, indice }`. */
+async function fotoDe(dir) {
+  const blobs = new Map();
+  const al = {
+    async get(n) { const b = blobs.get(n); return b ? { status: 200, cuerpo: b } : { status: 404, cuerpo: Buffer.alloc(0) }; },
+    async put(n, c) { blobs.set(n, Buffer.from(c)); return { status: 201 }; },
+    async list(p) { return { status: 200, blobs: [...blobs.keys()].filter((k) => k.startsWith(p)).map((name) => ({ name, modificado: Date.now() })) }; },
+    async del(n) { blobs.delete(n); return { status: 202 }; },
+  };
+  const s = await COPIA.subir({ repo: dir, almacen: al });
+  assert.strictEqual(s.ok, true, s.motivo);
+  const b = await COPIA.bajar({ almacen: al, dir: tmp('site-config-copia-') });
+  assert.strictEqual(b.ok, true, b.motivo);
+  return b;
+}
+const huellaDeCarpeta = (d) => { const out = []; const ir = (x) => { for (const e of fs.readdirSync(x, { withFileTypes: true }).sort((a, z) => a.name.localeCompare(z.name))) { const p = path.join(x, e.name); if (e.isDirectory()) ir(p); else out.push(`${path.relative(d, p)}:${crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex')}`); } }; ir(d); return out.join('\n'); };
+const ENV_COPIA = { SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia', SITE_OPERATIONS_TOKEN: '' };
+
+test('T18 2.34-Config_VersionDelIndice @story-2.34 @ac-10 — con la copia, la versión de cada archivo sale del índice', async () => {
+  // 🔴 rojo: la carpeta de la foto no tiene git, y cada sección queda «ilegible» sin versión.
+  const ops = clon({ 'operations.json': opsBase(), 'scripts/ci/product-parity.json': { grupos: {}, rasgos: [], diferencias_declaradas: [] } });
+  const { carpeta, indice } = await fotoDe(ops);
+  assert.ok(!fs.existsSync(path.join(carpeta, '.git')));
+  await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice }), env: ENV_COPIA }, async ({ h, entrar }) => {
+    const lead = await entrar(LEAD);
+    const r = (await h.pedir('/api/config', { cookie: lead })).json;
+    const resp = r.secciones.find((x) => x.id === 'responsables');
+    assert.strictEqual(resp.estado, 'cargado', JSON.stringify(resp));
+    assert.strictEqual(resp.oid, indice.archivos['operations.json']);
+    assert.strictEqual(resp.oid, g(ops, 'rev-parse', 'HEAD:operations.json'), 'la misma versión que da git en el repo');
+    const par = r.secciones.find((x) => x.archivo === 'scripts/ci/product-parity.json');
+    if (par) assert.strictEqual(par.oid, indice.archivos['scripts/ci/product-parity.json']);
+  });
+});
+
+test('T19 2.34-Proponer_ContraMainFresco @story-2.34 @ac-10 — «Proponer» compara contra main recién traído y arma ahí', { skip: SIN_BACKEND }, async () => {
+  // 🔴 rojo: la propuesta compara contra la foto (de hasta 15 minutos atrás) y pisa un cambio mergeado en el medio.
+  const { arrancarGithubFalso } = require('./lib/fake-github-api.js');
+  const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'ops', web: 'https://github.example/acme/ops' } };
+  let gh, r, dir;
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.reglas = [{ type: 'pull_request', parameters: { required_approving_review_count: 1 } }];
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase() }));
+    const { carpeta, indice } = await fotoDe(dir);
+    const antes = huellaDeCarpeta(carpeta);
+    const dirEscritura = path.join(tmp('site-config-esc-'), 'operaciones-escritura');
+    const escritura = () => prepararClonDeEscritura({ dir: dirEscritura, url: r.url });
+    await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice, escritura }), env: { ...ENV_COPIA, SITE_OPERATIONS_REPO: r.url, SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { github: gh.base } } }, async ({ h, entrar, token, escribir }) => {
+      const lead = await entrar(LEAD); const tok = await token(lead);
+      const abierta = (await h.pedir('/api/config', { cookie: lead })).json;
+      assert.strictEqual(abierta.proponer.operaciones.habilitado, true, JSON.stringify(abierta.proponer));
+      const s = abierta.secciones.find((x) => x.id === 'responsables');
+      const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+      // main cambió después de la copia: «recargá», ninguna rama
+      r.cambiar({ 'operations.json': ORG.formatJson(opsBase({ owners: { default: 'alguien@acme.example' } })) });
+      const p1 = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: s.oid })).json;
+      assert.strictEqual(p1.ok, false);
+      assert.match(p1.message, /el archivo cambió desde que lo abriste: recargá/);
+      assert.deepStrictEqual(r.empujes, [], 'cero ramas');
+      // con la versión de main de ahora, el pedido se arma sobre esa punta
+      const oidMain = g(dirEscritura, 'rev-parse', 'FETCH_HEAD:operations.json');
+      const p2 = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: oidMain })).json;
+      assert.strictEqual(p2.ok, true, p2.message);
+      assert.strictEqual(r.empujes.length, 1);
+      const sha = r.empujes[0].despues;
+      assert.strictEqual(g(dirEscritura, 'rev-parse', `${sha}^`), g(dirEscritura, 'rev-parse', 'FETCH_HEAD'), 'el commit va sobre la punta recién traída');
+      assert.strictEqual(huellaDeCarpeta(carpeta), antes, 'la carpeta de la foto no cambió');
+      assert.ok(!fs.existsSync(path.join(carpeta, '.git')), 'la escritura nunca toca la carpeta de la foto');
+    });
+  } finally { await cerrarTodos(r, gh); }
+});
+
+test('T20 2.34-Proponer_SinCredencialDescarga @story-2.34 @ac-10 @ac-16 — la copia sin credencial de escritura: valida y descarga', async () => {
+  // 🔴 rojo: con la copia, «Proponer» queda prendido sin credencial, o «Revisar» deja de validar.
+  const ops = clon({ 'operations.json': opsBase() });
+  const { carpeta, indice } = await fotoDe(ops);
+  await conPestana({ fuentes: fuentesCon({ ops: carpeta, indice }), env: ENV_COPIA }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const r = (await h.pedir('/api/config', { cookie: lead })).json;
+    assert.strictEqual(r.proponer.operaciones.habilitado, false);
+    assert.match(r.proponer.operaciones.motivo, /sin identidad de escritura/);
+    const rev = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } } })).json;
+    assert.strictEqual(rev.texto, ORG.formatJson({ ...opsBase(), owners: { default: 'otro@acme.example' } }), 'el JSON validado, para descargar');
+    const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'responsables', texto: rev.texto, oid: r.secciones.find((x) => x.id === 'responsables').oid })).json;
+    assert.strictEqual(p.ok, false);
+    assert.match(p.message, /sin identidad de escritura/);
+  });
 });

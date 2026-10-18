@@ -254,7 +254,21 @@ Las secciones, en el orden de la pantalla:
   Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
   próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
   sitio; eso se cambia en la instalación. También van acá el buzón de corridas, el refresco y la dirección del sitio.
-  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene.
+  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
+  actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
+  vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
+  la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
+  al despertar lee todo.
+- **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
+  que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. Prendida («sí», `site.auto_apply` en
+  `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
+  vuelve a leer el repo y la sección dice «Aplicado». Sólo pasa si las políticas de la rama principal quedan cumplidas
+  con ese voto: si piden algo más (otro revisor, un revisor nombrado, un build), el sitio dice qué falta y deja el
+  pedido para aprobar. En GitHub siempre queda el pedido: quien abre un pedido no puede aprobarlo. Antes de proponer, al
+  lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
+  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
+  que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
+  entran solos. Queda en `operations.json`, en el repo de operaciones.
 - **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -423,13 +437,28 @@ credencial vencida o un permiso que cambió.
 
 **Por qué pasa:** el sitio sólo propone si el repo exige que otra persona apruebe cada cambio antes de sumarlo a la
 rama principal (una «política de revisión»); sin esa regla, el sitio podría cambiar el repo sin que nadie lo mire.
-También cuando el sitio no tiene permiso para escribir en ese repo, o cuando ya hay un pedido abierto sobre el mismo
-archivo (la sección muestra su enlace).
+También cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en
+Azure DevOps): el pedido lo crea el sitio, y se aprobaría solo; salvo que la organización prenda «Los cambios de un
+mantenedor», que es justamente para eso. Y cuando el sitio no tiene permiso para escribir en ese
+repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la sección muestra su enlace).
 
 **Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
 pedir la política de revisión o el permiso de escritura. Con un pedido abierto, esperá a que se mergee o se cierre.
 
 ![«Proponer» apagado, con su motivo: el repo no tiene una política que pida revisión](sitio-de-la-organizacion/capturas/proponer-apagado.png)
+
+### Configuración dice que el sitio rechazó el pedido
+
+**Lo que se ve:** al revisar o proponer, un recuadro rojo con el motivo: «la sesión venció o se cerró: recargá la
+página», «tu cuenta … no está entre los que mantienen el sitio», «el sitio está cargando…», o «el pedido lo rechazó lo
+que está delante del sitio, no el sitio».
+
+**Por qué pasa:** la sesión venció; o entraste con otra cuenta (el mensaje dice con cuál); o el sitio se estaba
+reiniciando; o el inicio de sesión de la nube, delante del sitio, frenó el pedido.
+
+**Qué hacer:** recargá la página. Si dice que tu cuenta no mantiene el sitio, salí y entrá con la cuenta de la
+organización. Si dice que lo rechazó lo que está delante del sitio y sigue después de recargar, avisale a quien mantiene
+(la guía de instalación, en la receta de Azure, dice cómo se arregla).
 
 ### La primera página tarda en abrir
 
@@ -573,6 +602,37 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 `SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista del sitio
 (`site.access` de `operations.json`) no tiene a nadie que mantenga. Sacala después.
 
+### De dónde lee operaciones
+
+El sitio lee del repo de operaciones su configuración y lo que deja la noche. Hay tres formas, según dónde vive el sitio
+y dónde vive el repo. Se elige una sola: con `SITE_OPERATIONS_SOURCE=copy`, `SITE_OPERATIONS_TOKEN` y
+`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están.
+
+1. **Copia con la identidad de la plataforma, en Azure** (`SITE_OPERATIONS_SOURCE=copy`,
+   `SITE_OPERATIONS_COPY=<cuenta>/<contenedor>`). Un trabajo del repo de operaciones (`site-copy.yml`, en
+   `pipelines/operations/` para Azure DevOps y en `pipelines/operations/github/` para GitHub) copia lo que el sitio lee a
+   un contenedor, en cada cambio de `main` y una vez por día. El sitio lo lee con su identidad y un rol de lectura sobre
+   ese contenedor. El alta de Azure crea la cuenta con la llave apagada: sólo entran identidades con su rol.
+   Lo que cuesta: un pipeline más y su identidad, con el rol de escritura sobre el contenedor. Ningún secreto que venza,
+   ni una licencia de Azure DevOps para el sitio. Un cambio tarda en verse lo que tarda el trabajo más un refresco.
+2. **Copia con una SAS, fuera de Azure** (otra nube o una máquina propia): la misma copia, y el sitio la lee con
+   `SITE_OPERATIONS_COPY_SAS`, una SAS del contenedor de sólo leer (`sp=r` o `rl`), atada a una política guardada del
+   contenedor para poder revocarla (las órdenes, en la receta de una máquina propia).
+   Lo que cuesta: la SAS se firma con la llave de la cuenta, así que esa cuenta necesita la llave de la cuenta prendida,
+   y esa llave abre la cuenta entera (leer, escribir y borrar todo). Por eso la copia va en una cuenta propia, nunca la
+   del buzón; y la SAS vence (6 meses como máximo) y se renueva a mano.
+3. **Lectura directa del repo** (`SITE_OPERATIONS_SOURCE` vacía o `repo`, lo de siempre): el sitio clona el repo con
+   `SITE_OPERATIONS_TOKEN`. En GitHub, una aplicación instalada en ese solo repo con `contents: read`, o un permiso de
+   grano fino de un solo repo; en Azure DevOps, la identidad del sitio agregada a la organización
+   (`SITE_OPERATIONS_IDENTITY=managed`) o un permiso personal de sólo lectura de código.
+   Lo que cuesta: el permiso personal vence (90 días) y es de una persona; la identidad en Azure DevOps ocupa una
+   licencia. A cambio, un cambio se ve en el refresco siguiente, sin trabajo de copia.
+
+Con la copia, si el trabajo deja de correr el sitio lo dice: con una copia de más de 24 horas, quienes mantienen ven la
+banda del último bueno («la copia de operaciones tiene N horas»); con más de 48, el sitio se frena, como cuando el repo
+no se puede leer. «Proponer», en la pestaña Configuración, sigue usando `SITE_OPERATIONS_WRITE_TOKEN`: trae `main` recién
+en un clon aparte y arma el pedido sobre esa punta.
+
 ### Quien puede editar la instalación puede leer sus secretos
 
 Quien tiene permiso para cambiar la instalación (sus variables, su imagen) puede leer todos sus secretos y hacerse
@@ -586,6 +646,30 @@ el autor. Sin ella, cualquiera que pueda empujar a `main` puede hacerse mantened
 un proceso de la noche y llevarse sus secretos. Esa política es también la que habilita «Proponer» en la pestaña
 Configuración. Cómo ponerla en Azure DevOps y en GitHub: los READMEs de los modelos de operaciones
 (`pipelines/operations/README.md` y `pipelines/operations/github/README.md`).
+
+### El permiso para «Proponer»
+
+«Proponer el cambio» abre un pedido de cambio en el repo de la sección. Para eso el sitio necesita escribir en ese repo:
+`SITE_OPERATIONS_WRITE_TOKEN` para las secciones del repo de operaciones y `SITE_PROFILE_WRITE_TOKEN` para las del
+perfil del equipo. En Azure DevOps, un permiso con *Code: Read & write* sobre esos repos, **sin** *Bypass policies when
+pushing* ni *Bypass policies when completing pull requests*: el sitio crea una rama y un pedido, nunca escribe `main`.
+Con un permiso personal, los pedidos salen a nombre de esa persona, y la política de la rama sigue pidiendo sus
+aprobaciones: la política tiene que tener apagado «Allow requestors to approve their own changes», o el sitio no
+propone (lo aprobaría el mismo autor), salvo con «Los cambios de un mantenedor» prendida (abajo). Sin el permiso, cada sección dice «Para
+proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
+mano».
+
+### Los cambios que se aplican solos
+
+Con `site.auto_apply: true` en `operations.json` («Los cambios de un mantenedor», en Personas), el sitio aprueba y
+completa cada pedido que propone quien mantiene. Para eso su identidad de escritura necesita, en Azure DevOps, *Code:
+Read & write* y *Contribute to pull requests* sobre el repo, y nunca *Bypass policies*: el sitio no saltea ninguna
+política, y si una no se cumple con su voto, el pedido queda. La política de revisión de `main` tiene que dejar que
+cuente el voto de quien crea el pedido («Allow requestors to approve their own changes» prendido) y pedir un revisor.
+Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
+imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
+(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
+pidió; es la única línea del registro que lleva un correo.
 
 ### Las dos formas de arrancarlo
 
@@ -605,7 +689,7 @@ node scripts/site/check-deploy.js --url https://<dirección del sitio>
 ```
 
 Pide, sin sesión, lo que pediría un extraño. Sale 0 si no se ve nada; 1 con el motivo («el sitio responde sin iniciar
-sesión», «/api contesta con datos», «el sitio está frenado», «/healthz cuenta de más», «falta no-store», «acepta http»);
+sesión», «/api contesta con datos», «el sitio está frenado», «/healthz cuenta de más», «falta no-store», «acepta http», «sin Referer: el candado de la plataforma frenaría las escrituras de Configuración»);
 2 si no pudo preguntar. Espera hasta 90 segundos la primera respuesta: un sitio dormido tarda en despertar. El aviso de
 la mañana lleva el enlace sólo si pasó esa mañana.
 
@@ -646,6 +730,12 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
     el candado de la plataforma en el emisor común. Lo hace tu sesión de `az`, que tiene que ser dueña del registro; el
     sitio no recibe ningún permiso nuevo. Antes de correrlo, la lista del sitio tiene que tener a todos los que hoy
     entran (la sección la arma sola con lo de antes: proponela y que se apruebe).
+- **El candado y las escrituras:** el inicio integrado protege contra pedidos falsificados mirando el `Referer` del
+  navegador, no el `Origin`. Un POST con sesión sin `Referer` del propio sitio lo rechaza con 403, subestado 60 (se ve en
+  los registros del área, como `RequestCompleted` del intermediario). Para que «Revisar cambios» y «Proponer» pasen, el
+  sitio manda `Referrer-Policy: same-origin`: el `Referer` viaja dentro del sitio y nunca afuera. Una imagen de antes
+  mandaba `no-referrer` y la pestaña Configuración no podía escribir; la prueba sin sesión lo avisa. No hace falta tocar
+  el CORS ni la convención del proxy del candado.
 - **Disco:** un recurso compartido de Azure Files en una cuenta de almacenamiento propia del sitio (centavos por mes),
   nunca en la cuenta del buzón.
 - **Secretos:** secretos de la aplicación. Sus valores llegan por variables de entorno de quien corre el alta, con los
@@ -707,6 +797,14 @@ sin arrancar nada.
 - **La prueba de la noche:** corre en un agente de la nube y no alcanza una red interna. El aviso dice «sitio: no se pudo
   probar desde el nocturno», sin enlace, salvo que la organización corra el proceso de la noche en un agente propio
   dentro de la red.
+
+**La copia de operaciones fuera de Azure** (vale también para Render): la SAS de sólo lectura, atada a una política
+guardada del contenedor para poder revocarla. La cuenta de la copia necesita la llave prendida para firmarla:
+
+```bash
+az storage container policy create --account-name <cuenta> -c <contenedor> -n lectura-sitio --permissions rl --expiry <fecha>
+az storage container generate-sas --account-name <cuenta> -n <contenedor> --policy-name lectura-sitio -o tsv
+```
 
 ## Por dentro, para quien mantiene el arnés
 

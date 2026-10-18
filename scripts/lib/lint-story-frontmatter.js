@@ -190,6 +190,15 @@ const NOT_A_STORY_NAME = /^_|^(?:template|plantilla|ejemplo|example)[-_.]|[-_.](
 /** La clave de identidad. Case-insensitive y tolerante a indentación: el detector tolera. */
 const DECLARES_STORY = /^[ \t]*story[ \t]*:/mi;
 
+/**
+ * La evidencia de QA de una story (`specs/qa/<sid>-legibilidad.md` y su par de la pantalla) declara a qué story
+ * pertenece y su veredicto, pero no es una story: no tiene epic ni status. Se reconoce por las DOS cosas juntas —vivir en
+ * una carpeta `qa/` y traer `veredicto:` en el encabezado—, para que una story de verdad que alguien deja en una
+ * carpeta `qa/` se siga linteando.
+ */
+const DECLARES_VERDICT = /^[ \t]*veredicto[ \t]*:/mi;
+const isQaEvidence = (abs, zone) => path.basename(path.dirname(abs)).toLowerCase() === 'qa' && zone !== null && DECLARES_VERDICT.test(zone);
+
 /** Forma de story sin identidad declarada (`epic:` sin `story:`) — no bloquea, se AVISA. */
 const STORY_SHAPED = /^[ \t]*epic[ \t]*:/mi;
 
@@ -226,7 +235,7 @@ function looksLikeStory(abs, storyDirSet, aviso) {
   }
   const zone = frontmatterZone(head);
 
-  if (zone !== null && DECLARES_STORY.test(zone) && !NOT_A_STORY_NAME.test(path.basename(abs))) {
+  if (zone !== null && DECLARES_STORY.test(zone) && !NOT_A_STORY_NAME.test(path.basename(abs)) && !isQaEvidence(abs, zone)) {
     return true;
   }
 

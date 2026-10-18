@@ -65,7 +65,9 @@ test('T8 Login_RedirigeConPkceStateYNonce', async () => {
 
     const api = await h.pedir('/api/inicio');
     assert.strictEqual(api.status, 401);
-    assert.strictEqual(api.texto, '', 'sin cuerpo con datos');
+    // sin datos: sólo el motivo y qué hacer
+    assert.deepStrictEqual(Object.keys(api.json || {}).sort(), ['codigo', 'message', 'ok'], api.texto);
+    assert.deepStrictEqual([api.json.ok, api.json.codigo], [false, 'sesion_vencida']);
 
     // mientras carga: sano pero no listo
     assert.deepStrictEqual([(await h.pedir('/healthz')).status, (await h.pedir('/healthz')).json], [200, { ok: true }]);

@@ -112,6 +112,34 @@ test('lint: por argumentos, filtra lo que NO es story (el hook puede pasarle tod
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('lint: la evidencia de QA (specs/qa/<sid>-legibilidad.md, con «veredicto:») no es una story, aunque declare `story:`', () => {
+  const root = mkRepo('lint-qa-');
+  story(root, 'specs/story-2.1-primera.md', ['epic: 2', 'story: "2.1"', 'status: done']);
+  // lo que deja la revisión de legibilidad: la identidad de la story a la que pertenece y el veredicto, nada de epic ni status
+  const legibilidad = story(root, 'specs/qa/2.1-legibilidad.md', ['story: "2.1"', 'veredicto: OK', 'marcas: 3', 'resueltas: 3']);
+  const ui = story(root, 'specs/qa/2.1-legibilidad-ui.md', ['story: "2.1"', 'veredicto: OK']);
+
+  const todo = run([], root);
+  assert.equal(todo.code, 0, `el repo con una revisión de legibilidad está sano:\n${todo.out}`);
+  assert.match(todo.out, /1 revisadas/, 'sólo la story cuenta, no su evidencia de QA');
+  const porArgumentos = run([legibilidad, ui], root);
+  assert.equal(porArgumentos.code, 0, `pasada por argumento tampoco se lintea:\n${porArgumentos.out}`);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('lint: una story de verdad dentro de una carpeta qa/ (sin «veredicto:») sigue linteándose', () => {
+  const root = mkRepo('lint-qa2-');
+  const rota = story(root, 'qa/3-1-roto.md', ['story: "3.1"', 'status: ready-for-dev']);   // le falta epic:
+  const sin = story(root, 'specs/qa/3.2-sin-veredicto.md', ['story: "3.2"', 'marcas: 1']);   // declara story: y no es evidencia
+
+  const r = run([rota, sin], root);
+  assert.equal(r.code, 1, `sin «veredicto:» sigue siendo una story, y está rota:\n${r.out}`);
+  assert.match(r.out, /epic/);
+
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('lint: un archivo pasado por argumento que SÍ declara campos de story se lintea igual', () => {
   const root = mkRepo('lint-args2-');
   // Sin vecinas legibles: la única señal es que declara `story:`. Y le falta `epic:`.

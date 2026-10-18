@@ -6,6 +6,9 @@
  * T15b Credencial_NuncaEnDiscoNiEnRegistro                T27  Proponer_RamaPrincipalSinPolitica_Apagado
  * T18  FallaAMitad_DiceLoQueQuedo                         T16b Proponer_ArchivoCambio_NoCreaNada
  *
+ * Los cambios que se aplican solos: T3 a T7, T10 y T13 a T18 — apagada, prendida, la política que pide
+ * más, la falla a mitad, GitHub, el registro de quién, el último que empuja, la revisión en curso y los motivos.
+ *
  * Sin red: el repo de operaciones es un repo git local por HTTP que anota cada empuje (lib/git-http-repo.js); las APIs
  * de Azure DevOps y de GitHub son servidores falsos en el proceso (lib/fake-ado-api.js, lib/fake-github-api.js) que
  * anotan cada llamada. Correos, organizaciones y repos inventados.
@@ -394,6 +397,27 @@ test('T41 Politica_VotoDeQuienCrea_NoCuenta @story-2.30 @ac-22b', { skip: SIN_BA
   } finally { await m.cerrar(); }
 });
 
+test('Politica_AutorPuedeAprobar_DiceElAjuste @story-2.38 @ac-9', { skip: SIN_BACKEND }, async () => {
+  // la política existe y alcanzaría, pero deja que quien crea el pedido lo apruebe: el motivo lo dice, no «no tiene»
+  const m = await montar({ plataforma: 'azure', politica: false });
+  try {
+    const b = m.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json' };
+    m.api.st.politicas = [{ ...m.api.politicaDeRevisores(1), settings: { ...m.api.politicaDeRevisores(1).settings, creatorVoteCounts: true } }];
+    const p = await politicaDeRevision(args);
+    assert.deepStrictEqual([p.ok, p.codigo], [false, 'autor_aprueba'], textoDe(p));
+    assert.match(p.message, /Allow requestors to approve their own changes/);
+    assert.doesNotMatch(p.message, /no tiene una política/);
+    // también con «Required reviewers» que cubre el archivo: el motivo es el voto del autor, no «no cubre»
+    m.api.st.politicas = [requeridos(m.api, { votoDelAutor: true })];
+    const req = await politicaDeRevision(args);
+    assert.deepStrictEqual([req.ok, req.codigo], [false, 'autor_aprueba'], textoDe(req));
+    // sin ninguna política, sigue «no tiene»
+    m.api.st.politicas = [];
+    assert.strictEqual((await politicaDeRevision(args)).codigo, 'sin_politica');
+  } finally { await m.cerrar(); }
+});
+
 test('T43 Politica_LoQueNoSePuedeProbar_Apagado @story-2.30 @ac-22b', { skip: SIN_BACKEND }, async () => {
   // La regla: «Proponer» se habilita sólo si se puede PROBAR que la política exige un revisor en ese archivo. Cualquier
   // forma que no se entiende queda apagada (no una lista de casos malos).
@@ -452,4 +476,257 @@ test('T16c Proponer_SinVersion_NoPropone @story-2.29 @ac-16 — la librería tam
   const res = await proponer({ clon: '/no/existe', archivo: 'operations.json', contenido: '{}\n', idCorto: 'operations', credencial: 'x', remote: REMOTO_GITHUB });
   assert.strictEqual(res.ok, false);
   assert.strictEqual(res.codigo, 'sin_version');
+});
+
+// ── los cambios de un mantenedor se aplican solos ───────────────────────────────────────
+/** La política que deja contar el voto de quien crea el pedido, con un revisor: el voto del sitio la cumple. */
+const votoDelAutorCuenta = (api) => { const p = api.politicaDeRevisores(1); p.settings = { ...p.settings, creatorVoteCounts: true }; return p; };
+/** El Azure de juguete deja completar y, al completar, mueve main del repo a la punta de la rama del pedido. */
+function dejarCompletar(m) {
+  m.api.st.permitirCompletar = true;
+  m.api.st.alCompletar = (p) => { const sha = m.r.ref(p.sourceRefName); assert.ok(sha, 'la rama del pedido existe'); assert.strictEqual(gitSync(m.r.bare, ['update-ref', 'refs/heads/main', sha]).status, 0); };
+}
+const aplicando = (m, extra = {}) => ({ ...m.base(), aplicarSolo: true, esperar: async () => {}, ...extra });
+const llamadasA = (m, metodo, re) => m.api.llamadas.filter((l) => l.method === metodo && re.test(l.ruta));
+
+test('T3 Proponer_ApagadoPorDefecto_DejaElPedido @story-2.39 @ac-3', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [m.api.politicaDeRevisores(1)];
+    dejarCompletar(m);
+    const puntaAntes = m.r.ref('refs/heads/main');
+    const res = await proponer(m.base());
+    assert.deepStrictEqual([res.ok, res.codigo], [true, undefined], textoDe(res));
+    assert.ok(res.message.startsWith('Pedido abierto: '), res.message);
+    assert.deepStrictEqual(llamadasA(m, 'PUT', /reviewers/), [], 'ningún voto');
+    assert.deepStrictEqual(llamadasA(m, 'GET', /policy\/evaluations/), [], 'ninguna evaluación');
+    assert.deepStrictEqual(m.api.llamadas.filter((l) => l.method === 'PATCH'), [], 'ningún cambio del pedido');
+    assert.strictEqual(m.r.ref('refs/heads/main'), puntaAntes, 'main sin mover');
+    assert.ok(!m.api.st.pedidos[0].description.includes('Lo aplica el sitio solo'), 'la descripción no dice que se aplica solo');
+  } finally { await m.cerrar(); }
+});
+
+test('T4 Proponer_Encendido_ApruebaCompletaYDiceAplicado @story-2.39 @ac-4 @ac-6', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+    dejarCompletar(m);
+    const res = await proponer(aplicando(m));
+    assert.deepStrictEqual([res.ok, res.codigo], [true, 'aplicado'], textoDe(res));
+    assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
+    // el voto, de la identidad que creó el pedido
+    const votos = llamadasA(m, 'PUT', /reviewers\/id-del-sitio$/);
+    assert.strictEqual(votos.length, 1, textoDe(m.api.llamadas));
+    assert.strictEqual(votos[0].cuerpo.vote, 10);
+    // el completar, sin saltear ninguna política, después del voto y de la evaluación
+    const parches = m.api.llamadas.filter((l) => l.method === 'PATCH');
+    assert.strictEqual(parches.length, 1);
+    assert.strictEqual(parches[0].cuerpo.status, 'completed');
+    assert.ok(!parches[0].cuerpo.completionOptions || !parches[0].cuerpo.completionOptions.bypassPolicy, 'nunca bypassPolicy');
+    assert.strictEqual(parches[0].cuerpo.completionOptions.deleteSourceBranch, true);
+    assert.strictEqual(parches[0].cuerpo.lastMergeSourceCommit.commitId, m.r.ref(`refs/heads/${res.rama}`));
+    const orden = m.api.llamadas.map((l) => `${l.method} ${l.ruta}`);
+    const i = (re) => orden.findIndex((x) => re.test(x));
+    assert.ok(i(/^PUT .*reviewers/) < i(/^GET .*policy\/evaluations/) && i(/^GET .*policy\/evaluations/) < i(/^PATCH /), orden.join('\n'));
+    assert.deepStrictEqual(m.api.prohibidas(), []);
+    // main tiene el cambio; ningún empuje del sitio fue a main
+    assert.strictEqual(m.r.archivoEn('refs/heads/main', 'operations.json'), CONTENIDO_NUEVO);
+    assert.deepStrictEqual(m.r.empujes.map((e) => e.ref), [`refs/heads/${res.rama}`]);
+    // la descripción dice quién lo pidió y que lo aplica el sitio
+    const d = m.api.st.pedidos[0].description;
+    assert.ok(d.includes(`Pedido por ${QUIEN} desde el sitio`) && d.includes('Lo aplica el sitio solo'), d);
+    clonLimpio(m.clon);
+  } finally { await m.cerrar(); }
+});
+
+test('T5 Proponer_PoliticaPideMas_DejaElPedidoYLoDice @story-2.39 @ac-3 @ac-5', { skip: SIN_BACKEND }, async () => {
+  // a) la política pide dos revisores: el voto del sitio no alcanza
+  // b) un build bloqueante queda en cola aunque la revisión quede aprobada
+  const casos = {
+    'pide dos revisores': (m) => { const p = votoDelAutorCuenta(m.api); p.settings.minimumApproverCount = 2; m.api.st.politicas = [p]; },
+    'un build en cola': (m) => {
+      m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+      m.api.st.evaluaciones = () => [
+        { configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' } }, status: 'approved' },
+        { configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Build' } }, status: 'queued' },
+        { configuration: { isEnabled: true, isBlocking: false, type: { displayName: 'Comment requirements' } }, status: 'rejected' },
+      ];
+    },
+  };
+  for (const [nombre, preparar] of Object.entries(casos)) {
+    const m = await montar();
+    try {
+      preparar(m);
+      dejarCompletar(m);
+      const puntaAntes = m.r.ref('refs/heads/main');
+      const res = await proponer(aplicando(m));
+      assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], `${nombre}: ${textoDe(res)}`);
+      assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
+      assert.match(res.message, /no se pudo aplicar solo/i);
+      assert.match(res.message, /queda para aprobar/);
+      assert.match(res.message, nombre === 'un build en cola' ? /«Build»/ : /«Minimum number of reviewers»/);
+      assert.ok(!/Comment requirements/.test(res.message), 'lo que no bloquea no se nombra');
+      assert.deepStrictEqual(m.api.llamadas.filter((l) => l.method === 'PATCH'), [], `${nombre}: ningún completar`);
+      assert.strictEqual(m.r.ref('refs/heads/main'), puntaAntes, `${nombre}: main sin mover`);
+    } finally { await m.cerrar(); }
+  }
+});
+
+test('T6 Proponer_CompletarFalla_DiceLoQueQuedo @story-2.39 @ac-7', { skip: SIN_BACKEND }, async () => {
+  const casos = {
+    'el completar contesta 409': (m) => { m.api.st.fallarCompletar = 409; },
+    'el pedido sigue activo al vencer el plazo': (m) => { m.api.st.completarTarde = true; },
+    'el voto falla': (m) => { m.api.st.fallarVoto = 403; },
+    'la evaluación no se puede leer': (m) => { m.api.st.fallarEvaluacion = 500; },
+  };
+  for (const [nombre, preparar] of Object.entries(casos)) {
+    const m = await montar();
+    try {
+      m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+      dejarCompletar(m);
+      preparar(m);
+      const puntaAntes = m.r.ref('refs/heads/main');
+      const res = await proponer(aplicando(m));
+      assert.strictEqual(res.ok, false, `${nombre}: ${textoDe(res)}`);
+      assert.notStrictEqual(res.codigo, 'aplicado');
+      assert.ok(res.enlace && res.message.includes(res.enlace), `${nombre}: ${res.message}`);
+      assert.match(res.message, /quedó abierto/, nombre);
+      assert.ok(!/^Aplicado/.test(res.message), nombre);
+      if (nombre === 'el voto falla') assert.match(res.message, /sin aprobar|no pudo aprobarlo/, nombre);
+      else assert.match(res.message, /aprobado/, nombre);
+      assert.strictEqual(m.r.ref('refs/heads/main'), puntaAntes, `${nombre}: main sin mover`);
+      assert.ok(llamadasA(m, 'PUT', /reviewers/).length <= 1 && m.api.llamadas.filter((l) => l.method === 'PATCH').length <= 1, `${nombre}: no repite nada`);
+    } finally { await m.cerrar(); }
+  }
+});
+
+test('T7 Proponer_GitHubEncendido_DejaElPedido @story-2.39 @ac-5', { skip: SIN_BACKEND }, async () => {
+  const m = await montar({ plataforma: 'github' });
+  try {
+    const res = await proponer(aplicando(m));
+    assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
+    assert.match(res.message, /en GitHub quien abre el pedido no puede aprobarlo/);
+    assert.ok(res.enlace && res.message.includes(res.enlace), res.message);
+    assert.deepStrictEqual(m.api.prohibidas(), [], 'ni merge ni auto-merge');
+    assert.deepStrictEqual(m.api.llamadas.filter((l) => /reviews/.test(l.ruta)), [], 'ninguna revisión');
+  } finally { await m.cerrar(); }
+});
+
+test('T10 Registro_Aplicado_NombraQuienYElPedido @story-2.39 @ac-6', { skip: SIN_BACKEND }, async () => {
+  const aplicado = await montar();
+  try {
+    aplicado.api.st.politicas = [votoDelAutorCuenta(aplicado.api)];
+    dejarCompletar(aplicado);
+    const res = await proponer(aplicando(aplicado));
+    assert.strictEqual(res.codigo, 'aplicado', textoDe(res));
+    const lineas = aplicado.registro.filter((l) => l.includes(QUIEN));
+    assert.deepStrictEqual(lineas, [`cambio aplicado: operations.json por ${QUIEN}, pedido ${res.enlace}`], aplicado.registro.join('\n'));
+  } finally { await aplicado.cerrar(); }
+  const queda = await montar();
+  try {
+    const p = votoDelAutorCuenta(queda.api); p.settings.minimumApproverCount = 2; queda.api.st.politicas = [p];
+    dejarCompletar(queda);
+    const res = await proponer(aplicando(queda));
+    assert.strictEqual(res.codigo, 'no_aplica_solo', textoDe(res));
+    assert.ok(!queda.registro.join('\n').includes(QUIEN), 'lo que queda para aprobar no lleva el correo al registro');
+  } finally { await queda.cerrar(); }
+});
+
+test('T13 Politica_ElUltimoQueEmpujaNoVota_NoPrometeAplicarSolo @story-2.39 @ac-10 — el caso que confirmó el pase adversarial', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    const p = votoDelAutorCuenta(m.api); p.settings.blockLastPusherVote = true; m.api.st.politicas = [p];
+    const b = m.base();
+    const r = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json', aplicarSolo: true });
+    assert.deepStrictEqual([r.ok, r.aplicaSolo], [true, false], textoDe(r));
+    assert.match(r.motivoAplicar, /no deja aprobar a quien empujó el último cambio, y lo empuja el sitio/);
+    // sin esa opción, la misma política sí se aplica sola
+    delete p.settings.blockLastPusherVote;
+    assert.strictEqual((await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json', aplicarSolo: true })).aplicaSolo, true);
+  } finally { await m.cerrar(); }
+});
+
+test('T14 Aplicar_RevisionEnCurso_ReintentaYCompleta @story-2.39 @ac-4', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+    dejarCompletar(m);
+    let vueltas = 0;
+    m.api.st.evaluaciones = () => { vueltas += 1; return [{ configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' } }, status: vueltas < 3 ? 'running' : 'approved' }]; };
+    const pausas = [];
+    const res = await proponer(aplicando(m, { esperar: async (ms) => { pausas.push(ms); } }));
+    assert.strictEqual(res.codigo, 'aplicado', textoDe(res));
+    assert.strictEqual(vueltas, 3, 'volvió a mirar mientras la revisión corría');
+    assert.ok(pausas.length >= 2, 'esperó entre vistas');
+  } finally { await m.cerrar(); }
+});
+
+test('T15 Aplicar_RevisionQueNoTermina_DiceQueSigueEvaluando @story-2.39 @ac-5', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+    dejarCompletar(m);
+    m.api.st.evaluaciones = () => [{ configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' } }, status: 'queued' }];
+    const res = await proponer(aplicando(m));
+    assert.deepStrictEqual([res.ok, res.codigo], [true, 'no_aplica_solo'], textoDe(res));
+    assert.match(res.message, /todavía no terminó de evaluar la revisión/);
+    assert.ok(!/pide «/.test(res.message), 'no dice que la rama pide algo más');
+    assert.deepStrictEqual(m.api.llamadas.filter((l) => l.method === 'PATCH'), []);
+  } finally { await m.cerrar(); }
+});
+
+test('T16 Aplicar_SinIdentidadDelCreador_QuedaSinAprobar @story-2.39 @ac-7', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+    dejarCompletar(m);
+    m.api.st.creadorId = null;
+    const res = await proponer(aplicando(m));
+    assert.deepStrictEqual([res.ok, res.codigo], [false, 'quedo_abierto'], textoDe(res));
+    assert.match(res.message, /quedó abierto, sin aprobar/);
+    assert.deepStrictEqual(llamadasA(m, 'PUT', /reviewers/), [], 'ningún voto a ciegas');
+  } finally { await m.cerrar(); }
+});
+
+test('T17 Aplicar_NoPudeConfirmar_LoDice @story-2.39 @ac-7 — «no pude mirar» no es «no se completó»', { skip: SIN_BACKEND }, async () => {
+  const m = await montar();
+  try {
+    m.api.st.politicas = [votoDelAutorCuenta(m.api)];
+    dejarCompletar(m);
+    m.api.st.completarTarde = true;
+    m.api.st.fallarLecturaPedido = 500;
+    const res = await proponer(aplicando(m));
+    assert.deepStrictEqual([res.ok, res.codigo], [false, 'quedo_abierto'], textoDe(res));
+    assert.match(res.message, /no pude confirmar si se completó/);
+    assert.ok(res.enlace && res.message.includes(res.enlace));
+    assert.ok(m.registro.some((l) => l.includes('no pude confirmar si se completó')), 'el motivo también va al registro');
+  } finally { await m.cerrar(); }
+});
+
+test('T18 Politica_AplicarSolo_MotivosGithubYSinPolitica @story-2.39 @ac-4 @ac-5 @ac-10', { skip: SIN_BACKEND }, async () => {
+  const az = await montar();
+  try {
+    const b = az.base();
+    const args = { remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, archivo: 'operations.json', aplicarSolo: true };
+    az.api.st.politicas = [requeridos(az.api, { votoDelAutor: true })];
+    const r = await politicaDeRevision(args);
+    assert.deepStrictEqual([r.ok, r.aplicaSolo], [true, false], textoDe(r));
+    assert.match(r.motivoAplicar, /pide revisores nombrados/);
+    const dos = votoDelAutorCuenta(az.api); dos.settings.minimumApproverCount = 2; az.api.st.politicas = [dos];
+    assert.match((await politicaDeRevision(args)).motivoAplicar, /pide 2 revisores y el sitio da uno/);
+    az.api.st.politicas = [az.api.politicaDeRevisores(1)];
+    assert.match((await politicaDeRevision(args)).motivoAplicar, /pide un revisor que no sea quien crea el pedido/);
+    az.api.st.politicas = [];
+    const sin = await politicaDeRevision(args);
+    assert.deepStrictEqual([sin.ok, sin.codigo], [false, 'sin_politica'], 'sin ninguna política, «Proponer» sigue apagado con la opción prendida');
+  } finally { await az.cerrar(); }
+  const gh = await montar({ plataforma: 'github' });
+  try {
+    const b = gh.base();
+    const r = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase, aplicarSolo: true });
+    assert.deepStrictEqual([r.ok, r.aplicaSolo], [true, false], textoDe(r));
+    assert.match(r.motivoAplicar, /en GitHub quien abre el pedido no puede aprobarlo/);
+    const apagada = await politicaDeRevision({ remote: b.remote, credencial: b.credencial, urlBase: b.urlBase });
+    assert.ok(!('aplicaSolo' in apagada), 'con la opción apagada, la respuesta es la de siempre');
+  } finally { await gh.cerrar(); }
 });

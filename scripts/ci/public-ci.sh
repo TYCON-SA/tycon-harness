@@ -206,6 +206,9 @@ elif [ -f "${ROOT}/scripts/lib/skills-dir.js" ] && command -v node >/dev/null 2>
 fi
 export TYCON_GUIDES_DIR="${ROOT}"
 [ -z "${SKILLS_REPO}" ] || export TYCON_SKILLS_DIR="${SKILLS_REPO}/skills"
+# El buzón apagado para cada suite: ninguna sube a un buzón real, aunque se equivoque. La llave apunta a un archivo que
+# no existe; una suite que prueba la subida pone sus propias variables y su destino de prueba.
+export TYCON_MAILBOX=0 TYCON_NO_UPLOAD_RUNS=1 TYCON_MAILBOX_JSON="${WORK}/sin-llave-del-buzon/corridas-buzon.json" TYCON_SUITE_RUNNER=public-ci
 
 # ── los veredictos ─────────────────────────────────────────────────────────────────────────────────
 STEP=0; RED_COUNT=0; RED_NAMES=""

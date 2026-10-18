@@ -659,3 +659,96 @@ test('T26b BajadaEnParalelo_YSiCortaLaSiguienteEnseguida @story-2.27 @ac-18', { 
     assert.ok(m.fuentes.proximoRefrescoMs() >= 5 * 60000, 'sin avance: el refresco de siempre');
   } finally { await m.cerrar(); }
 });
+
+// ── la copia de operaciones ─────────────────────────────────────────────────────────────────────────
+const COPIA = require(path.join(H.SITE, 'operations-copy.js'));
+/** Un almacén en memoria con la forma de `almacenDeCopia` de cloud/ (get, put, list, del). */
+function almacenEnMemoria() {
+  const blobs = new Map();
+  return {
+    blobs,
+    async get(n) { const b = blobs.get(n); return b ? { status: 200, cuerpo: b.cuerpo } : { status: 404, cuerpo: Buffer.alloc(0) }; },
+    async put(n, c) { blobs.set(n, { cuerpo: Buffer.from(c), modificado: Date.now() }); return { status: 201 }; },
+    async list(p) { return { status: 200, blobs: [...blobs].filter(([k]) => k.startsWith(p)).map(([name, b]) => ({ name, modificado: b.modificado })) }; },
+    async del(n) { blobs.delete(n); return { status: 202 }; },
+  };
+}
+const sinGenerado = (m) => { const { generado, ...resto } = m; return resto; };
+const envCopia = (m, extra = {}) => {
+  const env = { ...m.env, SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia', ...extra };
+  delete env.SITE_OPERATIONS_TOKEN;
+  return env;
+};
+
+test('T21 2.34-Arranque_CredencialQueSobra @story-2.34 @ac-7 — con la copia, el token o la identidad del repo sobran', () => {
+  // 🔴 rojo: el sitio arranca con `copy` y además el permiso del repo, y sigue dependiendo de él.
+  const base = H.envBase({ SITE_OPERATIONS_SOURCE: 'copy', SITE_OPERATIONS_COPY: 'acmeops/copia' });
+  for (const [sobra, valor] of [['SITE_OPERATIONS_TOKEN', 'tok-x'], ['SITE_OPERATIONS_IDENTITY', 'managed']]) {
+    const env = { ...base }; delete env.SITE_OPERATIONS_TOKEN; env[sobra] = valor;
+    const v = validarConfiguracion(env);
+    assert.strictEqual(v.ok, false, `${sobra} con copy no arranca`);
+    assert.ok(v.problemas.some((p) => p.variable === sobra && /sobra/.test(p.motivo)), JSON.stringify(v.problemas));
+  }
+  const ok = { ...base }; delete ok.SITE_OPERATIONS_TOKEN;
+  const v = validarConfiguracion(ok);
+  assert.strictEqual(v.ok, true, JSON.stringify(v.problemas));
+  assert.deepStrictEqual(v.cfg.operationsCopy, { cuenta: 'acmeops', contenedor: 'copia', credencial: { managed: true } }, 'en Azure: la identidad administrada');
+  const conSas = validarConfiguracion({ ...ok, SITE_OPERATIONS_COPY_SAS: 'sv=2021-08-06&sr=c&sp=rl&se=2099-01-01T00:00:00Z&sig=x' });
+  assert.strictEqual(conSas.ok, true, JSON.stringify(conSas.problemas));
+  assert.deepStrictEqual(conSas.cfg.operationsCopy.credencial, { sas: 'sv=2021-08-06&sr=c&sp=rl&se=2099-01-01T00:00:00Z&sig=x' });
+  for (const [k, val] of [['SITE_OPERATIONS_COPY', ''], ['SITE_OPERATIONS_COPY', 'Cuenta Mal/x'], ['SITE_OPERATIONS_SOURCE', 'otra'], ['SITE_OPERATIONS_COPY_SAS', 'sr=c&sp=rwl&se=2099-01-01&sig=x'], ['SITE_OPERATIONS_COPY_SAS', 'sr=b&sp=r&se=2099-01-01&sig=x'], ['SITE_OPERATIONS_COPY_SAS', 'sr=c&sp=r&sig=x'], ['SITE_OPERATIONS_COPY_SAS', 'sr=c&sp=r&se=2099-01-01']]) {
+    const r = validarConfiguracion({ ...ok, [k]: val });
+    assert.strictEqual(r.ok, false, `${k}=${val} no arranca`);
+    assert.ok(r.problemas.some((p) => p.variable === k), JSON.stringify(r.problemas));
+  }
+  // la SAS sin la copia elegida: sobra también (una credencial que nadie usa no se deja puesta)
+  const sasSola = validarConfiguracion(H.envBase({ SITE_OPERATIONS_COPY_SAS: 'sr=c&sp=r&se=2099-01-01&sig=x' }));
+  assert.ok(sasSola.problemas.some((p) => p.variable === 'SITE_OPERATIONS_COPY_SAS'), JSON.stringify(sasSola.problemas));
+});
+
+test('T22 2.34-Fuente_RepoIgualQueHoy @story-2.34 @ac-16 — sin la variable y con `repo`, lo de hoy', { skip: SIN_BACKEND }, async () => {
+  // 🔴 rojo: la copia cambia algo del sitio que no la eligió.
+  const hoy = await montar();
+  const conRepo = await montar({ envExtra: { SITE_OPERATIONS_SOURCE: 'repo' } });
+  try {
+    assert.strictEqual(hoy.cfg.operationsSource, 'repo');
+    assert.strictEqual(conRepo.cfg.operationsSource, 'repo');
+    assert.strictEqual(hoy.cfg.operationsCopy, null);
+    await hoy.fuentes.refrescar(); await conRepo.fuentes.refrescar();
+    assert.deepStrictEqual(sinGenerado(conRepo.fuentes.modelo()), sinGenerado(hoy.fuentes.modelo()));
+    assert.deepStrictEqual(conRepo.fuentes.estado(), hoy.fuentes.estado());
+    for (const m of [hoy, conRepo]) {
+      assert.ok(fs.existsSync(path.join(m.fuentes.clones().operaciones.dir, '.git')), 'lee de un clon de git, como hoy');
+      assert.ok(m.git.pedidos.length > 0, 'clonó por HTTP');
+      assert.ok(!fs.existsSync(path.join(m.dataDir, 'operaciones-copia')), 'ninguna carpeta de la copia');
+    }
+  } finally { await hoy.cerrar(); await conRepo.cerrar(); }
+});
+
+test('T23 2.34-Fuente_MismoModeloQueElRepo @story-2.34 @ac-6 @ac-16 — el mismo repo, directo y por la copia', { skip: SIN_BACKEND }, async () => {
+  // 🔴 rojo: la copia deja afuera algo que el sitio lee, y una pestaña muestra otra cosa.
+  const m = await montar({ archivos: { 'artifacts/tablero-del-arnes.html': '<html><body>tablero</body></html>' } });
+  try {
+    await m.fuentes.refrescar();
+    const directo = m.fuentes.modelo();
+    const al = almacenEnMemoria();
+    const sub = await COPIA.subir({ repo: m.repo.trabajo, almacen: al, log: () => {} });
+    assert.strictEqual(sub.ok, true, sub.motivo);
+    const v = validarConfiguracion(envCopia(m));
+    assert.ok(v.ok, JSON.stringify(v.problemas));
+    const pedidosAntes = m.git.pedidos.length;
+    const dataDir = tmp('site-data-copia-');
+    const f = crearFuentes({ cfg: v.cfg, dataDir, log: () => {}, ahora: () => T0, urlBuzon: m.buzon.base, almacenCopia: al });
+    try {
+      await f.refrescar();
+      assert.strictEqual(m.git.pedidos.length, pedidosAntes, 'con la copia no se clona nada');
+      assert.deepStrictEqual(sinGenerado(f.modelo()), sinGenerado(directo), 'el mismo modelo, campo por campo');
+      assert.deepStrictEqual(f.config(), m.fuentes.config());
+      assert.deepStrictEqual(f.estado(), m.fuentes.estado());
+      const op = f.clones().operaciones;
+      assert.ok(op && !fs.existsSync(path.join(op.dir, '.git')), 'una carpeta para leer, sin git');
+      assert.ok((fs.realpathSync(op.dir) + path.sep).startsWith(fs.realpathSync(dataDir) + path.sep), 'la foto se abre dentro de SITE_DATA_DIR');
+      assert.strictEqual(op.indice.commit, sub.commit);
+    } finally { f.detener(); }
+  } finally { await m.cerrar(); }
+});

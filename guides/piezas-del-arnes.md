@@ -601,10 +601,7 @@ suyo (sus pedidos, sus pull requests, sus corridas), y quienes mantienen el arn�
 decidir; en la pestaña **Configuración** se personaliza la organización sin clonar nada.
 
 **Quién lo usa:** cada persona de la organización, para ver lo suyo; quienes mantienen el arnés, para verlo todo, editar
-la configuración e instalarlo. Quién entra y qué ve lo decide sólo la lista del sitio (`site.access` de
-`operations.json`, editable en Configuración → Personas), con cualquier inicio de sesión; cada organización elige en la
-instalación con qué se entra (con Microsoft, también «cualquier cuenta de trabajo o escuela», con la puerta de los
-invitados del directorio aparte).
+la configuración e instalarlo. Quién entra lo decide sólo la lista `site.access`, con el inicio de sesión que elija.
 
 **Dónde leer más:** para personas, la guía: cómo se usa cada pestaña, la configuración sección por sección, qué ve
 cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro, en
@@ -614,6 +611,10 @@ cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro
 (`.github/workflows/site-image.yml`), las instalaciones (`scripts/site/deploy/`: Azure Container Apps en dos fases,
 Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy.js`) y el canal del aviso
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
+
+**La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
+un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`) y el sitio lo lee con su identidad,
+sin permiso del repo; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`.
 
 ## guides/integrations/ado-cola-y-listados.md
 
@@ -768,6 +769,16 @@ De cada corrida del pipeline quedaban los tiempos, los frenos y cuántos agentes
 **Quién es quién: el correo de git y la carpeta propia de cada máquina** (2026-10-15). `place.json` trae ahora un dato de la persona: `owner`, el correo de git de quien usa la máquina (`user.email` de su configuración **global** de git, leída como archivo y en el orden de git, sin seguir los `include` y sin invocar git), o `no_medido` con un motivo por caso. Lo leen sólo quienes mantienen (el espejo del buzón y el sitio de la organización); la página del equipo no lo abre (`telemetry-leak.test.sh`, T20). 🔴 **Dos máquinas con el mismo nombre ya no comparten carpeta**: cada máquina sube a `<nombre>-<código>`, con un código de 8 hexadecimales **al azar** que se genera una vez y se guarda en `machine-code.json` de la carpeta de estado — nunca un dato de hardware. La carpeta se lee del archivo, así que renombrar el equipo no la mueve; si el archivo se borra o se rompe, se genera otra, `place.json` lo dice (`folder.code_regenerated`) y nombra la carpeta con código que reemplaza (`superseded_folders`), para que se una a la nueva; si no se puede leer por un error pasajero, no se pisa. `place.json` trae `folder` (la carpeta, el código, la carpeta vieja que reemplaza y el día de la mudanza). La primera pasada con la carpeta nueva vuelve a subir ahí lo que hay en el disco. Las carpetas viejas no se tocan: la bajada calcula cuál es la historia de cuál (`carpetasDeMaquina`, una sola definición) y deja `.carpetas-de-maquina.json` en el espejo, sin correos. Una declaración vale sólo con forma (la carpeta es exactamente `<vieja>-<código>`, la mudanza es una fecha real no posterior a hoy) y con la **huella** de las corridas que la máquina subió a la vieja, sacada de su registro de subidas: el buzón lo escribe cualquiera con la llave, pero la llave no deja listarlo, así que otra máquina no puede saber esa huella. Una vieja se **une** a su nueva sólo si una sola carpeta la declara y no recibió nada después de la mudanza; si la declaran dos, queda `compartida`, y si siguió recibiendo, `siguio_recibiendo`: no se une y la ven sólo quienes mantienen. El reductor, la poda y la vista de corridas leen ese archivo y cuentan una sola vez lo repetido (la vista muestra «antes, <vieja>»); el contador de pasos del tablero no entra a `registros/`. Con `TYCON_MACHINE` (las pruebas) la carpeta es ese nombre, sin código. Red: casos `2.28` de `upload-runs.test.sh`, `download-runs.test.sh`, `reducer.test.sh`, `prune.test.sh`, `dashboard-runs.test.sh`, `steps-per-run.test.js` y T20 de `telemetry-leak.test.sh`.
 
 **Tu correo de git, dicho una vez** (2026-10-15). La máquina que sube al buzón informa en `place.json` el correo global de git de quien la usa, para que un mantenedor confirme de quién es cada máquina y la persona vea sus corridas en el sitio de la organización. `scripts/hooks/owner-email-notice.js` (al arrancar sesión, con la integración del buzón prendida) se lo dice al dev en un renglón, con cómo verlo y cómo cambiarlo, y deja un sello en la carpeta de estado con la **huella** del correo, nunca el correo: no lo repite, y lo vuelve a decir sólo si el correo cambia. Lee el correo con la misma función que arma `owner`, sin invocar git. Sin correo, en un agente de compilación o con la subida apagada, calla y no sella; si no puede sellar, también calla, para no repetirlo en cada arranque. Se apaga con `TYCON_OWNER_EMAIL_NOTICE=0`.
+
+**Ninguna prueba sube al buzón real.** La llave de escritura vive en el árbol del equipo, y las pruebas corren en ese
+árbol. Por eso hay tres capas. En cada validación de Azure, la guarda de antes de medir (`check-tree.yml`, en el repo
+del equipo) le quita la firma a la llave en el disco: la cuenta, el contenedor y el inquilino quedan, porque los
+nocturnos bajan el buzón con ellos y con `az`, y ningún nocturno sube. Los cuatro lugares que lanzan suites —el lazo de
+la validación, el del banco, la CI pública (`scripts/ci/public-ci.sh`) y el de una máquina (`test-gate.sh`)— le ponen a
+cada suite `TYCON_MAILBOX=0`, `TYCON_NO_UPLOAD_RUNS=1` y `TYCON_MAILBOX_JSON` apuntando a un archivo que no existe.
+Y `upload-runs.js` no sube con una marca de CI ni desde una HOME de laboratorio. Una prueba que mide la subida pone sus
+propias variables y un destino de prueba (`TYCON_MAILBOX_URL_BASE`). Lo fija un canario del repo del equipo
+(`mailbox-canary.test.js`): falla si la firma aparece en el árbol medido, por la vía que sea.
 
 ## scripts/lib/people.js
 

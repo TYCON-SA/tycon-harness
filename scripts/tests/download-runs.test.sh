@@ -328,12 +328,16 @@ printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'ba
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'subida ' + process.argv.slice(2).join(' ') + '\\\\n'), 300);\n" > "${T}/scripts/metrics/upload-runs.js"
 printf "require('fs').appendFileSync(process.env.ORDER_LOG, 'bajada ' + process.argv.slice(2).join(' ') + '\\\\n');\n" > "${T}/scripts/metrics/download-runs.js"
 mkdir -p "${T}/bin"; printf '#!/bin/sh\necho "$@" >> "%s/git.log"\nexit 0\n' "${T}" > "${T}/bin/git"; chmod +x "${T}/bin/git"
+# Las llaves de cada paso del bloque se sacan del ambiente heredado: el corredor de suites apaga el buzón para toda suite
+# (TYCON_NO_UPLOAD_RUNS=1, entre otras), y estos casos prueban el bloque con cada llave puesta a propósito. El interruptor
+# del buzón queda en el TYCON_MAILBOX=1 que esta suite fija arriba.
+SIN_LLAVES=(-u TF_BUILD -u TYCON_NO_UPLOAD_RUNS -u TYCON_NO_DOWNLOAD_RUNS -u TYCON_NO_THREAD_RESCUE -u TYCON_NO_COLLECT_FINDINGS -u TYCON_MAILBOX_JSON)
 instalar9() {  # <líneas esperadas> <VAR=valor>...
   local esperadas="$1"; shift
   : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
   # TYCON_INTEG_MAILBOX=1: el bloque extraído lee la llave del buzón que el instalador resuelve más arriba (story 8.3); acá es un
   # dato de entrada, y el caso de abajo la apaga para probar que apaga sólo lo suyo.
-  env -u TF_BUILD HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
+  env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
     bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
   local n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge "${esperadas}" ] && break; sleep 0.25; n=$((n+1)); done
   sleep 1   # por si aparece algo que no debía
@@ -433,7 +437,7 @@ grep -q 'const esFallaDeRegistro = (x) => REGISTROS.some(' "${RAIZ}/scripts/metr
 mkdir -p "${T}/home/.claude/.tycon-pipeline"; : > "${T}/orden.txt"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/download-runs.log"
-env -u TF_BUILD HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 # Sin PROFILE_FULL el bloque lanza la subida y la bajada, no el barrido: son DOS líneas. Esperar tres agotaba los 10 s del
 # tope en cada una de estas dos corridas (story 8.22, tramo F: 21 de los ~57 s de la suite).
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
@@ -442,7 +446,7 @@ grep -q 'LINEA-DE-LA-SESION-ANTERIOR' "${T}/home/.claude/.tycon-pipeline/upload-
 # pasado el tope (~512 KB) el registro viejo se mueve a .1 y el nuevo arranca de cero (tests-coverage iter 5)
 # 🔴 rojo previo: sin rotación, un registro que se agrega crece para siempre.
 : > "${T}/orden.txt"; head -c 600000 /dev/zero | tr '\0' 'x' > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
-env -u TF_BUILD HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
+env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
 [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null | tr -d ' ')" = "600000" ] && [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log" | tr -d ' ')" -lt 1000 ] && ok "T9 registro de más de 512 KB → pasa a .1 entero y el nuevo arranca chico" || mal "T9 rotación: .1=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null) actual=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log")"
 

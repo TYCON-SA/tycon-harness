@@ -36,13 +36,15 @@ const PARTES = [
 ];
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
-// La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final) tal como quedó en main antes de
-// sumar las partes de uso. Si la instalación cambia a propósito, se cambia acá con el motivo en el mismo commit.
-// Cambió a propósito: el inicio de sesión de la organización (los dos modos de Microsoft y la lista),
-// el candado de la receta de Azure (`microsoftAccounts`), SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`).
+// La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
+// contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
+// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
+// organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
+// SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`).
 const HUELLA_INSTALACION = {
-  es: 'e8076a9ad7d65eee8d9db2da753a55dbb95c49b42ff58a12498f2a0ad70612ad',
-  en: '530c34f76465d8a561169731829eabdf87c12ebf3b693c678dd3b8c1ca434dfd',
+  es: '1303a8ac38d43a7cc0c3dc281be6f162b3dd1f6bf2152fc48142511c7bef10c2',
+  en: '6444b14d05784cca803f70eb72fb7501353b6a672efbc4aff314d597919e8ef9',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -233,6 +235,44 @@ test('T13 SitioCss_SinChoquesConCorridas @story-2.32 @ac-15', () => {
     }
   }
   assert.deepStrictEqual([...new Set(sueltas)], [], 'reglas de site.css con un nombre que también usa Corridas, sin limitar a su lugar');
+});
+
+test('Guia_PermisoCandadoYRefresco @story-2.38 @ac-8 — lo que el dueño pidió que quede escrito', () => {
+  for (const [lado, f, inst, refresco] of [
+    ['es', GUIA, INSTALACION.es, /«Cada cuánto se actualiza el sitio».*5 a 120 minutos.*15/s],
+    ['en', GUIA_EN, INSTALACION.en, /"How often the site updates".*5 to 120 minutes.*15/s],
+  ]) {
+    const t = leer(f);
+    const instalacion = t.slice(t.indexOf(`\n## ${inst}`));
+    for (const x of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'Code: Read & write', 'Bypass policies', '403', '60', 'Referrer-Policy', 'same-origin']) {
+      assert.ok(instalacion.includes(x), `${lado}: la instalación no dice «${x}»`);
+    }
+    assert.match(t.slice(0, t.indexOf(`\n## ${inst}`)).replace(/\s+/g, ' '), refresco, `${lado}: el campo del refresco, con su rango`);
+    // el rechazo de Configuración, en «Problemas comunes», con lo que se ve, por qué pasa y qué hacer
+    const titulo = lado === 'es' ? '### Configuración dice que el sitio rechazó el pedido' : '### Configuration says the site rejected the request';
+    const i = t.indexOf(titulo);
+    assert.ok(i > 0 && i < t.indexOf(`\n## ${inst}`), `${lado}: el problema del rechazo, en la parte de uso`);
+    const bloque = t.slice(i, t.indexOf('\n### ', i + 5));
+    for (const rubro of lado === 'es' ? ['Lo que se ve', 'Por qué pasa', 'Qué hacer'] : ['What you see', 'Why it happens', 'What to do']) assert.ok(bloque.includes(`**${rubro}`), `${lado}: el rechazo sin «${rubro}»`);
+  }
+});
+
+test('T12 Guia_LosCambiosSeAplicanSolos @story-2.39 @ac-11 — la opción, su permiso, su registro y el orden para encenderla', () => {
+  for (const [lado, f, inst, opcion, apagada] of [
+    ['es', GUIA, INSTALACION.es, '**Los cambios de un mantenedor**', /viene apagada/i],
+    ['en', GUIA_EN, INSTALACION.en, '"A maintainer\'s changes"', /off by default/i],
+  ]) {
+    const t = leer(f);
+    const i = t.indexOf(`\n## ${inst}`);
+    const uso = t.slice(0, i);
+    const instalacion = t.slice(i);
+    assert.ok(uso.includes(opcion), `${lado}: Configuración no nombra la opción`);
+    assert.match(uso, apagada, `${lado}: no dice que viene apagada`);
+    assert.ok(uso.includes('site.auto_apply'), `${lado}: no nombra la clave`);
+    for (const x of ['Contribute to pull requests', 'Bypass policies', 'site.auto_apply']) assert.ok(instalacion.includes(x), `${lado}: la instalación no dice «${x}»`);
+    assert.match(instalacion.replace(/\s+/g, ' '), lado === 'es' ? /primero la imagen nueva.*después la clave/i : /first the new image.*then the key/i, `${lado}: el orden para encenderla`);
+    assert.match(uso.replace(/\s+/g, ' '), lado === 'es' ? /cambio aplicado/ : /cambio aplicado/, `${lado}: el registro de quién lo hizo`);
+  }
 });
 
 test('T3 Capturas_DelSitioCorriendo @story-2.32 @ac-5 @ac-6', () => {

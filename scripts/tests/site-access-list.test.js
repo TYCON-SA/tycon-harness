@@ -221,7 +221,13 @@ test('T11 2.40-SinLista_PaginaClaraSinDatos @story-2.40 @ac-9', async () => {
     assert.ok(h.sitio.rutas.length >= 5, 'se recorrió la tabla entera');
     for (const r of rutas) {
       const res = await h.pedir(r.ruta, { method: r.method, cookie: s, headers: r.method === 'POST' ? { origin: h.base, 'content-type': 'application/json' } : {}, body: r.method === 'POST' ? '{}' : undefined });
-      if (r.ruta.startsWith('/api/')) assert.ok(res.status === 403 && res.texto === '', `${r.method} ${r.ruta}: 403 vacío (dio ${res.status})`);
+      // la API dice el motivo (sólo con la cuenta de la propia sesión), nunca un dato
+      if (r.ruta.startsWith('/api/')) {
+        assert.strictEqual(res.status, 403, `${r.method} ${r.ruta}`);
+        assert.deepStrictEqual(Object.keys(res.json || {}).sort(), ['codigo', 'message', 'ok'], `${r.method} ${r.ruta}: sólo el motivo`);
+        assert.match(res.json.message, /no está en la lista/);
+        for (const marca of [LEAD, A, 'CORRIDA-DE-A', 'Proyecto X']) assert.ok(!res.texto.includes(marca), `${r.method} ${r.ruta}: sin ${marca}`);
+      }
       else for (const marca of [LEAD, A, 'CORRIDA-DE-A', 'Proyecto X']) assert.ok(!res.texto.includes(marca), `${r.method} ${r.ruta}: sin ${marca}`);
     }
     // «entrar con otra cuenta» va al emisor pidiendo elegir la cuenta

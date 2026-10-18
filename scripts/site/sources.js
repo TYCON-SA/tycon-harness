@@ -54,6 +54,7 @@ const path = require('path');
 const childProcess = require('child_process');
 const OPS = require('../lib/operations-config.js');
 const people = require('../lib/people.js');
+const COPIA = require('./operations-copy.js');
 
 /** Un proceso sin bloquear: { status, stdout, stderr, error }. Nunca rechaza; con `timeout`, lo corta. */
 function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
@@ -71,6 +72,8 @@ function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
 
 const DIA = 86400000;
 const PLAZO_CONFIG_MS = people.PLAZO_MS;
+// la edad de la copia de operaciones que todavía no cuenta como falla (decisión 7)
+const PLAZO_COPIA_MS = 24 * 3600000;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
 const ARCHIVO_ESTADO = 'configuracion-estado.json';
@@ -129,6 +132,25 @@ function dentroDe(raiz, ruta) {
     const p = fs.realpathSync(ruta);
     return p === r || p.startsWith(r + path.sep);
   } catch { return false; }
+}
+
+/**
+ * El clon de escritura de operaciones con la copia (decisión 8): un repo vacío con `origin` en `url`, donde
+ * «Proponer» trae `main` fresco y arma su commit. Nunca es la carpeta de la foto. `{ dir }` o `{ motivo }`.
+ */
+function prepararClonDeEscritura({ dir, url, git = 'git' }) {
+  const g = (...a) => childProcess.spawnSync(git, ['-C', dir, ...a], { encoding: 'utf8', windowsHide: true, env: { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0' } });
+  try {
+    if (!fs.existsSync(path.join(dir, '.git'))) {
+      fs.mkdirSync(dir, { recursive: true });
+      const r = g('init', '-q');
+      if (r.status !== 0) return { motivo: `no se pudo armar el clon de escritura (${String(r.stderr || r.error || '').trim().slice(0, 200)})` };
+    }
+    const actual = g('config', '--get', 'remote.origin.url');
+    const r = actual.status === 0 ? (String(actual.stdout).trim() === url ? { status: 0 } : g('remote', 'set-url', 'origin', url)) : g('remote', 'add', 'origin', url);
+    if (r.status !== 0) return { motivo: `no se pudo poner el remoto del clon de escritura (${String(r.stderr || r.error || '').trim().slice(0, 200)})` };
+    return { dir };
+  } catch (e) { return { motivo: `no se pudo armar el clon de escritura (${e.code || e.message})` }; }
 }
 
 /** Los módulos de cloud/ (lo de cada nube): el núcleo les pide el buzón o un token sin nombrar a ninguna. */
@@ -464,7 +486,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o) }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), almacenCopia = null, urlCopia = null }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -472,7 +494,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   // los clones, en el disco del contenedor y nunca en SITE_DATA_DIR: git hace chmod al clonar, y un disco montado por
   // SMB lo rechaza y deja el sitio frenado. Son copias que se vuelven a armar: no necesitan persistir
   const raizClones = dirClones || fs.mkdtempSync(path.join(os.tmpdir(), 'site-clones-'));
-  const clon = path.join(raizClones, 'operaciones');
+  // con la copia no hay clon: `clon` es la carpeta de la última foto abierta, dentro de SITE_DATA_DIR (no
+  // lleva git, así que el disco montado no la rechaza). Cambia de una vez cuando llega una foto nueva
+  const conCopia = cfg.operationsSource === 'copy';
+  let clon = path.join(raizClones, 'operaciones');
+  const dirCopias = path.join(dataDir, 'operaciones-copia');
   const dirBuzon = path.join(dataDir, 'buzon');
   const dirPerfil = path.join(raizClones, 'perfil');
   // el candado de los clones (AC 14 de la 2.29): una cola de promesas; un trabajo que falla no traba a los siguientes
@@ -481,7 +507,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
   // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
-  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false } };
+  const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false }, copia: null, copiaHora: null };
   // story 2.27: quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
@@ -495,10 +521,11 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (r && r.ok) st.ultimoBueno = r.data;
     else if (g.ultimoBueno) log('el último bueno guardado en SITE_DATA_DIR ya no valida: se descarta');
     if (Number.isFinite(g.fallaDesde)) { st.fallaDesde = g.fallaDesde; st.fallaMotivo = texto(g.fallaMotivo, 2000); st.fallaRutas = texto(g.fallaRutas, 500); }
+    if (conCopia && Number.isFinite(g.copiaHora)) st.copiaHora = g.copiaHora;
   } else if (guardado.codigo !== 'sin_foto') log('el estado de la configuración guardado en SITE_DATA_DIR no se pudo leer: se arranca sin último bueno');
 
   function guardarEstado() {
-    try { escribirAtomico(rutaEstado, `${JSON.stringify({ ultimoBueno: st.ultimoBueno, fallaDesde: st.fallaDesde, fallaMotivo: st.fallaMotivo, fallaRutas: st.fallaRutas })}\n`); }
+    try { escribirAtomico(rutaEstado, `${JSON.stringify({ ultimoBueno: st.ultimoBueno, fallaDesde: st.fallaDesde, fallaMotivo: st.fallaMotivo, fallaRutas: st.fallaRutas, ...(conCopia ? { copiaHora: st.copiaHora } : {}) })}\n`); }
     catch (e) { log(`no se pudo guardar el estado de la configuración en SITE_DATA_DIR (${e.code || e.message})`); }
   }
 
@@ -549,7 +576,28 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return { ok: true };
   }
 
+  // la copia de operaciones: el índice en cada refresco; la foto sólo si cambió el commit
+  let almacen = almacenCopia;
+  async function actualizarCopia() {
+    if (!almacen) {
+      const nube = lasNubes().find((n) => typeof n.almacenDeCopia === 'function');
+      if (!nube) return { estado: 'sin_configurar', motivo: 'ningún módulo de cloud/ sabe leer la copia de operaciones' };
+      try { almacen = nube.almacenDeCopia({ ...cfg.operationsCopy, urlBase: urlCopia }); }
+      catch (e) { return { estado: 'sin_configurar', motivo: `la copia de operaciones no está configurada (${e.message})` }; }
+    }
+    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, carpeta: st.copia.carpeta } : null, log });
+    if (!r.ok) return { estado: r.codigo, motivo: `copia de operaciones: ${r.motivo}` };
+    st.copia = { carpeta: r.carpeta, indice: r.indice };
+    const hora = Date.parse(r.indice.hora);
+    if (Number.isFinite(hora) && hora !== st.copiaHora) { st.copiaHora = hora; guardarEstado(); }
+    clon = r.carpeta;
+    return { ok: true };
+  }
+  /** ¿Hay algo de operaciones para leer? El clon con su .git, o una foto abierta. */
+  const hayLectura = () => (conCopia ? Boolean(st.copia) && fs.existsSync(clon) : fs.existsSync(path.join(clon, '.git')));
+
   async function actualizarRepo() {
+    if (conCopia) return actualizarCopia();
     const cab = await cabecera();
     if (!cab.valor) return { estado: cab.estado || 'sin_configurar', motivo: cab.motivo };
     return actualizarClon({ url: cfg.operationsRepo, dir: clon, cab: cab.valor, nombre: 'repo de operaciones' });
@@ -568,6 +616,27 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   // ── operations.json ────────────────────────────────────────────────────────────────────────────────────────────
   // La banda de quienes mantienen trae las RUTAS de los problemas (AC 15); el texto entero —que puede repetir un valor del
   // archivo, como un correo— va sólo al registro (revisión de seguridad de la 2.23).
+  /**
+   * La falla que cuenta para la banda y el freno: la de operations.json y, con la copia, su edad (decisión 7). Una copia
+   * de más de 24 horas cuenta como una falla desde sus 24 horas: la banda enseguida y el freno a las 48, con la misma
+   * cuenta de `estadoDeLaConfiguracion`.
+   */
+  function fallaEfectiva(t) {
+    let fallaDesde = st.fallaDesde;
+    let fallaRutas = st.fallaRutas;
+    // la hora de la última copia abierta, guardada en SITE_DATA_DIR: un reinicio no le da a una copia vieja un plazo nuevo
+    const hora = st.copiaHora;
+    if (conCopia && Number.isFinite(hora) && Number.isFinite(t) && t - hora > PLAZO_COPIA_MS) {
+      // +1 ms: la cuenta compartida frena con «24 h o más» desde la falla, y la copia se frena con MÁS de 48 h
+      const desde = hora + PLAZO_COPIA_MS + 1;
+      if (fallaDesde === null || desde < fallaDesde) fallaDesde = desde;
+      const edad = `la copia de operaciones tiene ${Math.floor((t - hora) / 3600000)} horas`;
+      fallaRutas = fallaRutas ? `${fallaRutas} · ${edad}` : edad;
+    }
+    return { fallaDesde, fallaRutas };
+  }
+  const recontar = (t) => Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), ...fallaEfectiva(t), ahora: t }));
+
   function aplicarConfig(r, t) {
     if (r.ok) {
       if (st.fallaDesde !== null) log('operations.json vuelve a validar: se saca la banda y el freno');
@@ -585,7 +654,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       log(`operations.json no se pudo releer o no valida (desde ${new Date(st.fallaDesde).toISOString()}): ${r.motivo}`);
     }
     guardarEstado();
-    Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, fallaRutas: st.fallaRutas, ahora: t }));
+    recontar(t);
     if (st.frenado) log(`el sitio está FRENADO desde ${new Date(st.frenado.desde).toISOString()}: ${st.fallaMotivo || 'sin último bueno'}`);
   }
 
@@ -705,7 +774,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       log(repo.motivo || 'el repo de operaciones no se pudo leer');
       st.fallas.repo = st.fallas.repo || { desde: t, estado: repo.estado };
       aplicarConfig({ ok: false, motivo: 'el repo de operaciones no se pudo leer', rutas: 'el repo de operaciones no se pudo leer' }, t);
-      if (!st.modelo) st.modelo = fs.existsSync(path.join(clon, '.git')) ? construir({ corridas: noMedida(repo.estado), carpetas: null, t }) : modeloVacio(repo.estado, t);
+      if (!st.modelo) st.modelo = hayLectura() ? construir({ corridas: noMedida(repo.estado), carpetas: null, t }) : modeloVacio(repo.estado, t);
       // el perfil no depende del repo de operaciones: se baja igual
       await actualizarPerfil();
       st.cargado = true;
@@ -765,7 +834,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const banda = fallas.length ? { desde: Math.min(...fallas.map((f) => f.desde)), estado: fallas[0].estado } : null;
       // el freno se cuenta con la hora de CADA pedido, no sólo al refrescar: si el repo deja de bajarse después del
       // primer fallo, el sitio igual se frena a las 24 horas (revisores de la 2.28)
-      if (st.cargado && st.fallaDesde !== null) Object.assign(st, estadoDelSitio({ hayUltimoBueno: Boolean(st.ultimoBueno), fallaDesde: st.fallaDesde, fallaRutas: st.fallaRutas, ahora: ahora() }));
+      if (st.cargado && (st.fallaDesde !== null || conCopia)) recontar(ahora());
       // `navegable`: ya se leyó el repo de operaciones (el sitio se navega); `cargado`: además, el buzón (lo que espera /readyz)
       return { cargado: st.cargado, navegable: Boolean(st.navegable) || st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
     },
@@ -774,11 +843,16 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     /** Lo que la regla de quién es quién necesita y el modelo no lleva: `{ informados, repos }` (nunca a una vista). */
     personas: () => st.personas,
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
-    /** Los clones que lee la pestaña Configuración (2.29): `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`. */
+    /**
+     * Los clones que lee la pestaña Configuración (2.29): `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.
+     * Con la copia, `operaciones` es la carpeta de la foto, sin git, y trae su índice (`{ dir, indice }`).
+     */
     clones: () => ({
-      operaciones: fs.existsSync(path.join(clon, '.git')) ? { dir: clon } : null,
+      operaciones: !hayLectura() ? null : (conCopia ? { dir: clon, indice: st.copia.indice } : { dir: clon }),
       perfil: cfg.profileRepo ? { dir: fs.existsSync(path.join(dirPerfil, '.git')) ? dirPerfil : null, estado: st.perfil.estado, motivo: st.perfil.motivo } : null,
     }),
+    /** Con la copia: el clon aparte donde «Proponer» trae `main` (en el disco del contenedor, como los clones). */
+    clonDeEscritura: conCopia ? () => prepararClonDeEscritura({ dir: path.join(raizClones, 'operaciones-escritura'), url: cfg.operationsRepo, git }) : undefined,
     exclusivo,
     dirBuzon,
     /** Story 2.27: ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
@@ -804,4 +878,4 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   };
 }
 
-module.exports = { crearFuentes, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };
+module.exports = { crearFuentes, nubes, prepararClonDeEscritura, construirDesdeClon, estadoDeLaConfiguracion, estadoDelSitio, leerRepos, estadoDeGit, limpiarLinea, leerCorridas, ultimaFoto, correr, dentroDe, PLAZO_CONFIG_MS };

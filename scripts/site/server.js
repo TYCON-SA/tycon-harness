@@ -65,6 +65,7 @@ const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
   'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
+  'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
   // las propias de cada proveedor, que las declara su archivo (`variables`)
   ...new Set(Object.values(PROVEEDORES).flatMap((p) => (Array.isArray(p.variables) ? p.variables : [])))];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
@@ -134,10 +135,32 @@ function validarConfiguracion(env) {
   if (!env.SITE_OPERATIONS_REPO) falta('SITE_OPERATIONS_REPO', 'falta: la dirección https del repo de operaciones');
   else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
   cfg.operationsRepo = env.SITE_OPERATIONS_REPO;
-  if (env.SITE_OPERATIONS_TOKEN && env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_IDENTITY', 'va una sola credencial del repo de operaciones: el token o la identidad administrada');
-  else if (env.SITE_OPERATIONS_IDENTITY && env.SITE_OPERATIONS_IDENTITY !== 'managed') falta('SITE_OPERATIONS_IDENTITY', 'el único valor es managed');
-  else if (!env.SITE_OPERATIONS_TOKEN && !env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_TOKEN', 'falta la credencial del repo de operaciones: SITE_OPERATIONS_TOKEN o SITE_OPERATIONS_IDENTITY=managed');
-  cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
+  // de dónde se lee operaciones: `repo` (lo de siempre, un clon) o `copy` (la foto que deja un trabajo en
+  // un contenedor de almacenamiento). Leer de la copia es una elección explícita: sin la variable, el repo
+  const fuente = env.SITE_OPERATIONS_SOURCE === undefined || env.SITE_OPERATIONS_SOURCE === '' ? 'repo' : env.SITE_OPERATIONS_SOURCE;
+  if (fuente !== 'repo' && fuente !== 'copy') falta('SITE_OPERATIONS_SOURCE', 'los valores son repo (o ausente) y copy');
+  cfg.operationsSource = fuente;
+  cfg.operationsCopy = null;
+  if (fuente === 'copy') {
+    // con la copia, el permiso del repo sobra: una sola credencial de lectura, como hoy
+    for (const v of ['SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY']) if (env[v]) falta(v, 'sobra: con SITE_OPERATIONS_SOURCE=copy el sitio lee la copia, no el repo; sacala');
+    const m = /^([a-z0-9]{3,24})\/([a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){2,62})$/.exec(env.SITE_OPERATIONS_COPY || '');
+    if (!m) falta('SITE_OPERATIONS_COPY', 'falta o no tiene forma: <cuenta>/<contenedor> de la copia de operaciones');
+    const sas = env.SITE_OPERATIONS_COPY_SAS;
+    if (sas) {
+      const q = new URLSearchParams(String(sas).replace(/^\?/, ''));
+      const sp = q.get('sp') || '';
+      if (q.get('sr') !== 'c' || !sp.includes('r') || /[^rl]/.test(sp) || !q.get('se') || !q.get('sig')) falta('SITE_OPERATIONS_COPY_SAS', 'tiene que ser una SAS del contenedor (sr=c) sólo de lectura (sp=r o rl), con vencimiento');
+    }
+    if (m) cfg.operationsCopy = { cuenta: m[1], contenedor: m[2], credencial: sas ? { sas: String(sas).replace(/^\?/, '') } : { managed: true } };
+    cfg.operationsCredencial = null;
+  } else {
+    for (const v of ['SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS']) if (env[v]) falta(v, 'sobra: sólo se usa con SITE_OPERATIONS_SOURCE=copy');
+    if (env.SITE_OPERATIONS_TOKEN && env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_IDENTITY', 'va una sola credencial del repo de operaciones: el token o la identidad administrada');
+    else if (env.SITE_OPERATIONS_IDENTITY && env.SITE_OPERATIONS_IDENTITY !== 'managed') falta('SITE_OPERATIONS_IDENTITY', 'el único valor es managed');
+    else if (!env.SITE_OPERATIONS_TOKEN && !env.SITE_OPERATIONS_IDENTITY) falta('SITE_OPERATIONS_TOKEN', 'falta la credencial del repo de operaciones: SITE_OPERATIONS_TOKEN o SITE_OPERATIONS_IDENTITY=managed');
+    cfg.operationsCredencial = env.SITE_OPERATIONS_TOKEN ? { token: env.SITE_OPERATIONS_TOKEN } : (env.SITE_OPERATIONS_IDENTITY === 'managed' ? { managed: true } : null);
+  }
 
   if (env.SITE_MAILBOX_SAS && env.SITE_MAILBOX_IDENTITY) falta('SITE_MAILBOX_IDENTITY', 'va una sola credencial del buzón: la SAS de lectura o la identidad administrada');
   else if (env.SITE_MAILBOX_IDENTITY && env.SITE_MAILBOX_IDENTITY !== 'managed') falta('SITE_MAILBOX_IDENTITY', 'el único valor es managed');
@@ -288,7 +311,10 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'no-referrer');
+    // el Referer viaja sólo dentro del sitio (nunca a otro). Con `no-referrer`, el candado de la plataforma (el inicio de
+    // sesión integrado de una nube) tomaba cada POST de Configuración por falsificado: su anti-CSRF mira el Referer, no el
+    // Origin (403, subestado 60)
+    res.setHeader('Referrer-Policy', 'same-origin');
     if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   function enviar(res, { status, tipo = 'text/html; charset=utf-8', cuerpo = '', extra = {} }) {
@@ -420,28 +446,32 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
 
     const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
     const esApi = ruta.startsWith('/api/');
+    // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraba «respuesta 403»).
+    // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
+    const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
     if (!ses) {
-      if (esApi) return enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
+      if (esApi) return rechazoApi(401, 'sesion_vencida', 'la sesión venció o se cerró: recargá la página para entrar de nuevo');
       // con más de una puerta, se elige en la página de entrada; con una, directo al emisor
       return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias) }) : irAlEmisor(res);
     }
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
-    if (st.frenado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
+    if (st.frenado) return esApi ? rechazoApi(503, 'frenado', `el sitio está frenado desde ${views.hora(st.frenado.desde)}: la configuración de la organización no valida; lo arregla quien mantiene el arnés`) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
     // la espera es POR FUENTE: con el repo de operaciones leído (`navegable`) el sitio se navega aunque el buzón siga
     // bajando; cada pestaña dice lo suyo (Corridas, «cargando las corridas»). /readyz, arriba, sigue esperando todo
-    if (!st.cargado && !st.navegable) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': '5' } }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
+    if (!st.cargado && !st.navegable) return esApi ? rechazoApi(503, 'cargando', 'el sitio está cargando sus fuentes: probá de nuevo en unos segundos', { 'Retry-After': '5' }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
 
     const config = fuentes.config();
     const quien = access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer });
     if (quien.rol === 'none') {
-      if (esApi) return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
+      if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', 'el sitio todavía no tiene a nadie que lo mantenga: lo resuelve quien instaló el sitio, que pone el primero en su configuración');
+      if (esApi) return rechazoApi(403, 'sin_rol', `tu cuenta ${quien.correoDeIngreso || quien.email} no está en la lista de quién entra a este sitio: si tenés otra cuenta, salí y entrá con esa; si no, pedile a quien mantiene el sitio de tu organización que te sume`);
       return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien }) : views.paginaSinRol({ quien }) });
     }
     let params = null;
     const r = rutas.find((x) => x.method === req.method && (params = x.coincide(ruta)) !== null);
     if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple('No existe', 'Esa página no existe.', { quien, pestanas: pestanasPara(quien.rol) }) });
-    if (!r.needs.includes(quien.rol)) return esApi ? enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
+    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', `tu cuenta ${quien.email} no está entre los que mantienen el sitio: si entraste con otra cuenta, salí y entrá con la de la organización; si es ésa, pedíselo a quien mantiene el arnés`) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
 
     // la regla de quién es quién (people.js) en cada pedido, con la configuración vigente y lo informado por las
     // máquinas, que viaja aparte del modelo: ningún correo informado llega a una vista

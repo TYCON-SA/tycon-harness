@@ -202,7 +202,8 @@ if (familia) {
     if (/defaultDomain/.test(q)) return 'cielo-verde-1a2b3c4d.eastus2.azurecontainerapps.io';
     if (/provisioningState/.test(q)) return 'Succeeded';
     if (/principalId/.test(q)) return 'principal-del-sitio';
-    if (/length\(@\)/.test(q)) return estado.rol ? '1' : '0';
+    // el rol se recuerda por su alcance (el del buzón no tapa el de la copia)
+    if (/length\(@\)/.test(q)) return estado[`rol|${arg('--scope')}`] ? '1' : '0';
     if (q === 'id') return `/subscriptions/suscripcion-de-mentira/resourceGroups/${arg('--resource-group') || arg('-g') || 'rg'}/providers/x/${nombre}`;
     return 'valor-de-mentira';
   };
@@ -220,7 +221,7 @@ if (familia) {
     const demora = Number(process.env.TYCON_AZ_GRAPH_DELAY) || 0;
     estado.rolIntentos = (estado.rolIntentos || 0) + 1; guardar();
     if (estado.rolIntentos <= demora) falla(`(PrincipalNotFound) Cannot find user or service principal in graph database for '${arg('--assignee-object-id')}'.`);
-    estado.rol = true; guardar(); process.exit(0);
+    estado.rol = true; estado[`rol|${arg('--scope')}`] = true; guardar(); process.exit(0);
   }
   // la aplicación creada o actualizada con --yaml: se recuerda lo que lleva (sin los valores de los secretos)
   if (paso === 'aplicacion' && (verbo === 'create' || verbo === 'update') && args.includes('--yaml')) {

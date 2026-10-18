@@ -78,6 +78,22 @@ test('T4b Prueba_CandadoDeLaPlataforma_401SinRedireccion @story-2.30 @ac-6', asy
   } finally { await s.cerrar(); await s2.cerrar(); }
 });
 
+test('CheckDeploy_ReferrerApagado_Falla @story-2.38 @ac-7', async () => {
+  // con `Referrer-Policy: no-referrer` el navegador no manda el Referer, y el candado de Azure toma cada escritura de
+  // Configuración por falsificada (403, subestado 60): la prueba sin sesión lo dice antes de que alguien lo sufra
+  const conPolitica = (valor) => (req, res) => sitioCerrado(req, res, { healthz: (r) => json(r, 200, { ok: true }, valor ? { 'Referrer-Policy': valor } : {}) });
+  // una lista vale por su último valor; «never» es el nombre viejo de no-referrer; las demás dejan el Referer del mismo origen
+  for (const [valor, esperado] of [['no-referrer', 1], ['same-origin', 0], [null, 0], ['strict-origin-when-cross-origin', 0],
+    ['no-referrer-when-downgrade', 0], ['no-referrer, same-origin', 0], ['same-origin, no-referrer', 1], ['never', 1], ['NO-REFERRER', 1]]) {
+    const s = await servidor(conPolitica(valor));
+    const out = path.join(tmp, `referrer-${valor}.json`);
+    const r = await correr(['--url', s.url, '--out', out]);
+    await s.cerrar();
+    assert.strictEqual(r.status, esperado, `${valor}: ${r.stdout}${r.stderr}`);
+    if (esperado) assert.match(JSON.parse(fs.readFileSync(out, 'utf8')).motivo, /frenaría las escrituras de Configuración/);
+  }
+});
+
 test('T4 Prueba_SitioBienCerrado @story-2.30 @ac-6', async () => {
   const s = await servidor((req, res) => sitioCerrado(req, res));
   const out = path.join(tmp, 't4.json');
@@ -129,7 +145,8 @@ test('T5 Prueba_SitioAbierto @story-2.30 @ac-6', async () => {
   }
   // el vocabulario es cerrado y lo exporta el módulo
   const { MOTIVOS } = require(CHECK);
-  assert.deepStrictEqual(MOTIVOS, ['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http']);
+  assert.deepStrictEqual(MOTIVOS, ['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http',
+    'sin Referer: el candado de la plataforma frenaría las escrituras de Configuración']);
 });
 
 test('T6 Prueba_NoPudoPreguntar @story-2.30 @ac-6', async () => {

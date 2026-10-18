@@ -599,3 +599,56 @@ test('T33 Registro_SuitesPiezasYReadmes @story-2.30 @ac-24', () => {
     assert.match(t, /política de rama|protección de `operations\.json`/i, `${r}: la política de rama`);
   }
 });
+
+test('T24 2.34-Alta_CopiaSinTokenNiLlave @story-2.34 @ac-11 — la copia: cuenta sin llave, contenedor, rol de lector y `copy`', () => {
+  // 🔴 rojo: el alta deja la llave de la cuenta prendida, o sigue pidiendo SITE_OPERATIONS_TOKEN o la identidad en Azure DevOps.
+  const COPIA = { resourceGroup: 'rg-sitio-acme', account: 'acmecopiaops', container: 'operaciones' };
+  const conf = { ...CONFIG(), operationsIdentity: 'copy', operationsCopy: COPIA };
+  const r = alta(['--dry-run', '--phase', 'sitio'], { config: conf });
+  assert.strictEqual(r.status, 0, r.out);
+  assert.deepStrictEqual(r.llamadas.filter((l) => escrituras([l]).length), [], 'el ensayo no escribe nada en az');
+  const lineas = r.out.split('\n');
+  const cuenta = lineas.find((l) => l.includes('storage account create') && l.includes(COPIA.account));
+  assert.ok(cuenta, r.out);
+  assert.match(cuenta, /--allow-shared-key-access false/, 'la llave apagada');
+  assert.match(cuenta, /--allow-blob-public-access false/);
+  const cont = lineas.find((l) => l.includes('storage container-rm create'));
+  assert.ok(cont && cont.includes(`--storage-account ${COPIA.account}`) && cont.includes(`-n ${COPIA.container}`), r.out);
+  const alcance = `/storageAccounts/${COPIA.account}/blobServices/default/containers/${COPIA.container}`;
+  const rol = lineas.find((l) => l.includes('role assignment create') && l.includes(alcance));
+  assert.ok(rol, `el rol de lector sobre el contenedor de la copia: ${r.out}`);
+  assert.match(rol, /--role "Storage Blob Data Reader"/);
+  assert.match(r.out, /"name": "SITE_OPERATIONS_SOURCE",\s*"value": "copy"/);
+  assert.match(r.out, new RegExp(`"name": "SITE_OPERATIONS_COPY",\\s*"value": "${COPIA.account}/${COPIA.container}"`));
+  assert.doesNotMatch(r.out, /SITE_OPERATIONS_TOKEN|SITE_OPERATIONS_IDENTITY/, 'ni el token ni la identidad en Azure DevOps');
+  assert.match(r.out, /Storage Blob Data Contributor/, 'dice la orden del rol de escritura del trabajo que copia');
+  sinMarcadores(r.out, 'el plan');
+  // una copia mal escrita, o en la cuenta del disco o del buzón: no
+  for (const mala of [{ ...COPIA, account: 'Mal' }, { ...COPIA, account: CONFIG().storageAccount }, { ...COPIA, account: CONFIG().mailbox.account }]) {
+    const m = alta(['--dry-run', '--phase', 'sitio'], { config: { ...conf, operationsCopy: mala } });
+    assert.strictEqual(m.status, 1, m.out);
+    assert.match(m.out, /operationsCopy/);
+  }
+  // con `--apply`, el doble recuerda los dos roles por su alcance: el del buzón no tapa el de la copia
+  const amb = alta(['--apply', '--phase', 'ambiente'], { config: conf });
+  assert.strictEqual(amb.status, 0, amb.out);
+  const ap = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, config: conf });
+  assert.strictEqual(ap.status, 0, ap.out);
+  const roles = ap.llamadas.filter((l) => l.paso === 'rol' && l.args.includes('create')).map((l) => l.args[l.args.indexOf('--scope') + 1]);
+  assert.ok(roles.some((s) => s.endsWith(alcance)) && roles.some((s) => s.includes(CONFIG().mailbox.account)), JSON.stringify(roles));
+});
+
+test('A10 2.34-Adv_CuentaExistenteQuedaSinLlave @story-2.34 @ac-11 — una cuenta de la copia que ya existe queda con la llave apagada', () => {
+  // 🔴 rojo: la cuenta ya existía con la llave prendida y el alta la acepta: quien tenga la llave puede escribir la copia.
+  const COPIA = { resourceGroup: 'rg-sitio-acme', account: 'acmecopiaops', container: 'operaciones' };
+  const conf = { ...CONFIG(), operationsIdentity: 'copy', operationsCopy: COPIA };
+  const amb = alta(['--apply', '--phase', 'ambiente'], { config: conf });
+  assert.strictEqual(amb.status, 0, amb.out);
+  const uno = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, config: conf });
+  assert.strictEqual(uno.status, 0, uno.out);
+  const dos = alta(['--apply', '--phase', 'sitio'], { fix: amb.fix, config: conf });
+  assert.strictEqual(dos.status, 0, dos.out);
+  const upd = dos.llamadas.filter((l) => l.args.slice(0, 3).join(' ') === 'storage account update' && l.args.includes(COPIA.account));
+  assert.strictEqual(upd.length, 1, dos.out);
+  assert.ok(upd[0].args.join(' ').includes('--allow-shared-key-access false'));
+});

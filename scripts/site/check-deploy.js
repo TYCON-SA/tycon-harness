@@ -29,8 +29,9 @@
  */
 const fs = require('fs');
 
-const MOTIVOS = Object.freeze(['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http']);
-const [HEALTHZ_DE_MAS, FRENADO, SIN_SESION, API_CON_DATOS, SIN_NO_STORE, ACEPTA_HTTP] = MOTIVOS;
+const MOTIVOS = Object.freeze(['/healthz cuenta de más', 'el sitio está frenado', 'el sitio responde sin iniciar sesión', '/api contesta con datos', 'falta no-store', 'acepta http',
+  'sin Referer: el candado de la plataforma frenaría las escrituras de Configuración']);
+const [HEALTHZ_DE_MAS, FRENADO, SIN_SESION, API_CON_DATOS, SIN_NO_STORE, ACEPTA_HTTP, SIN_REFERER] = MOTIVOS;
 const WAKE_DEFAULT_S = 90;
 const PLAZO_MS = 15000;
 const PLAZO_HTTP_MS = 5000;
@@ -153,6 +154,11 @@ async function probar(base, { wakeMs }) {
   if (h.status === 503) return { motivo: FRENADO, capas };
   if (h.status !== 200 || !doc || typeof doc !== 'object') throw new NoPudo('/healthz no contestó como el sitio');
   if (doc.ok !== true || Object.keys(doc).length !== 1) return { motivo: HEALTHZ_DE_MAS, capas };
+  // el sitio que no deja viajar el Referer ni dentro de sí mismo: el anti-CSRF del candado de la plataforma lo mira, y sin él
+  // rechaza cada escritura de Configuración (403, subestado 60). /healthz lo contesta el sitio también detrás del candado
+  // una lista vale por su último valor; «never» es el nombre viejo de no-referrer (no-referrer-when-downgrade sí lo manda)
+  const politica = String(h.headers.get('referrer-policy') || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean).pop();
+  if (politica === 'no-referrer' || politica === 'never') return { motivo: SIN_REFERER, capas };
   // 2. / sin sesión. Un error que no es de la red (una redirección que no es una dirección) es una respuesta rara del
   // sitio, no «sin conexión»: el motivo dice cuál de las dos fue
   const motivoDe = (e) => (!(e instanceof NoPudo) ? 'respuesta inesperada del sitio' : e.message === 'timeout' ? 'el sitio dejó de contestar' : 'sin conexión con el sitio');
