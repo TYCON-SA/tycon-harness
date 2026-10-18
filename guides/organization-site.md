@@ -71,8 +71,8 @@ buzón.
 
 **Es opcional.** El arnés funciona entero sin sitio: la configuración vive en los repos del perfil y de operaciones, y
 sin sitio se cambia con un pull request a cada uno. Qué necesita cada caso (un dev solo o un equipo, con sitio o sin
-él), dónde vive cada configuración y qué puede pisar cada máquina, en
-[Con sitio o sin sitio](https://github.com/TYCON-SA/tycon-harness/blob/main/getting-started/reference.es.md#con-sitio-o-sin-sitio).
+él), dónde vive cada configuración y qué puede pisar cada máquina, en la referencia del arnés:
+`getting-started/reference.es.md`, «Con sitio o sin sitio».
 
 ## El primer ingreso
 

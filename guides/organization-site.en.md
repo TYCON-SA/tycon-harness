@@ -74,8 +74,8 @@ touch any machine. What it shows is, at most, as old as the last night snapshot 
 
 **It is optional.** The harness works fully without the site: the configuration lives in the profile and operations
 repos, and without the site it is changed with a pull request to each one. What each case needs (a solo dev or a team,
-with or without the site), where each setting lives and what each machine can override, in
-[With or without the site](https://github.com/TYCON-SA/tycon-harness/blob/main/getting-started/reference.md#with-or-without-the-site).
+with or without the site), where each setting lives and what each machine can override, in the harness reference:
+`getting-started/reference.md`, "With or without the site".
 
 ## Signing in for the first time
 
