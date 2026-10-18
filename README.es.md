@@ -51,7 +51,7 @@ La instalación completa suma los frenos en los repos que trabajan con el arnés
 1. Abrí tu agente de código en la carpeta de tu repo (si estaba abierto, cerralo y abrilo de nuevo: las reglas entran al abrirlo).
 2. La primera vez, el agente te pide permiso para leer la carpeta del arnés. Se acepta una vez.
 3. Pedí la historia: «creá una story con `tycon-create-story` para agregar un filtro por fecha». Leela y ajustala.
-4. Hoy esa skill espera la carpeta `_bmad/` de un proyecto: sin ella te pide más datos. Si te traba, pedile que escriba la historia con el formato de `story-format.md`.
+4. Si tu repo no tiene `_bmad/`, te hace tres preguntas en llano y arma los criterios y las pruebas. Si no hay git o estás en `main`, el recorrido crea la rama solo.
 5. Pedí «implementemos la story» con la ruta del archivo: la frase va así. Te muestra el plan, espera tu visto bueno, programa y corre las pruebas y los revisores.
 6. Deja el commit preparado: nunca commitea ni sube cambios sin tu permiso.
 
