@@ -37,12 +37,12 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma el permiso para «Proponer», el candado de
-// Azure y las escrituras (Referrer-Policy), el motivo nuevo de la prueba sin sesión, y de dónde lee operaciones (la
-// copia en un contenedor, con su SAS fuera de Azure).
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
+// contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
+// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla.
 const HUELLA_INSTALACION = {
-  es: 'b2c069ade07ee0f040c51c69bb38a71a872235d9cd675f913090297849834dc9',
-  en: '85dd5ecb80b8f0033fa33df9dcd3e1a10d9301b6f8b5cd03ca9d5498b45b4c8c',
+  es: '57a47700cbe22be640e1fac7c162916c87bfc1b5909926b47dee920b591bceef',
+  en: 'cab57c60ffd95d12f1176edd8ba6be8aed9acc872a723a2010425d077bd56c5f',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -252,6 +252,24 @@ test('Guia_PermisoCandadoYRefresco @story-2.38 @ac-8 — lo que el dueño pidió
     assert.ok(i > 0 && i < t.indexOf(`\n## ${inst}`), `${lado}: el problema del rechazo, en la parte de uso`);
     const bloque = t.slice(i, t.indexOf('\n### ', i + 5));
     for (const rubro of lado === 'es' ? ['Lo que se ve', 'Por qué pasa', 'Qué hacer'] : ['What you see', 'Why it happens', 'What to do']) assert.ok(bloque.includes(`**${rubro}`), `${lado}: el rechazo sin «${rubro}»`);
+  }
+});
+
+test('T12 Guia_LosCambiosSeAplicanSolos @story-2.39 @ac-11 — la opción, su permiso, su registro y el orden para encenderla', () => {
+  for (const [lado, f, inst, opcion, apagada] of [
+    ['es', GUIA, INSTALACION.es, '**Los cambios de un mantenedor**', /viene apagada/i],
+    ['en', GUIA_EN, INSTALACION.en, '"A maintainer\'s changes"', /off by default/i],
+  ]) {
+    const t = leer(f);
+    const i = t.indexOf(`\n## ${inst}`);
+    const uso = t.slice(0, i);
+    const instalacion = t.slice(i);
+    assert.ok(uso.includes(opcion), `${lado}: Configuración no nombra la opción`);
+    assert.match(uso, apagada, `${lado}: no dice que viene apagada`);
+    assert.ok(uso.includes('site.auto_apply'), `${lado}: no nombra la clave`);
+    for (const x of ['Contribute to pull requests', 'Bypass policies', 'site.auto_apply']) assert.ok(instalacion.includes(x), `${lado}: la instalación no dice «${x}»`);
+    assert.match(instalacion.replace(/\s+/g, ' '), lado === 'es' ? /primero la imagen nueva.*después la clave/i : /first the new image.*then the key/i, `${lado}: el orden para encenderla`);
+    assert.match(uso.replace(/\s+/g, ' '), lado === 'es' ? /cambio aplicado/ : /cambio aplicado/, `${lado}: el registro de quién lo hizo`);
   }
 });
 

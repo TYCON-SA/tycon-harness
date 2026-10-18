@@ -325,6 +325,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return v;
   }
 
+  // la opción de la organización «los cambios de un mantenedor se aplican solos»: la de main, la que el sitio ya leyó,
+  // nunca la del cambio que se propone (así prenderla nunca se aplica sola)
+  const aplicarSolo = () => { const c = fuentes.config(); return Boolean(c && isObject(c.site) && c.site.auto_apply === true); };
+
   async function estadoProponer(repo) {
     const cred = cfg.escritura && cfg.escritura[repo];
     if (!cred) return { habilitado: false, motivo: 'sin identidad de escritura: revisá, descargá el archivo y abrí el pedido a mano' };
@@ -332,8 +336,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (!remote.platform) return { habilitado: false, motivo: 'no reconozco la plataforma del repo: descargá el archivo y abrí el pedido a mano' };
     const una = async (archivo) => {
       try {
-        const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo });
-        return p.ok ? { habilitado: true, motivo: null } : { habilitado: false, motivo: p.message };
+        const solo = aplicarSolo();
+        const p = await RP.politicaDeRevision({ remote, credencial: cred, urlBase, fetch, archivo, aplicarSolo: solo });
+        if (!p.ok) return { habilitado: false, motivo: p.message };
+        return solo ? { habilitado: true, motivo: null, aplicaSolo: p.aplicaSolo === true, motivoAplicar: p.motivoAplicar || null } : { habilitado: true, motivo: null };
       } catch (e) { return { habilitado: false, motivo: `no pude leer la política de la rama principal (${(e && e.name) || 'error'})` }; }
     };
     // con una política con filtro de ruta, «Proponer» va archivo por archivo (`porArchivo`, que la
@@ -344,7 +350,8 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const porArchivo = {};
     for (const a of archivos) porArchivo[a] = await una(a);
     const todos = Object.values(porArchivo);
-    const r = todos.length && todos.every((x) => x.habilitado) ? { habilitado: true, motivo: null } : (todos.find((x) => !x.habilitado) || await una(null));
+    // con la opción de aplicar solo, el repo entero «se aplica solo» sólo si cada archivo se aplica solo
+    const r = todos.length && todos.every((x) => x.habilitado) ? (todos.find((x) => x.aplicaSolo === false) || todos[0]) : (todos.find((x) => !x.habilitado) || await una(null));
     return { ...r, porArchivo };
   }
 
@@ -473,8 +480,19 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return RP.proponer({
       clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
-      now: new Date(ahora()), fetch, log,
+      now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(),
     });
+  }
+
+  /**
+   * Después de aplicar solo, el sitio relee sus fuentes enseguida —fuera del candado de la propuesta, que el refresco
+   * también toma— y dice si ya usa el cambio.
+   */
+  async function despuesDeAplicar(s, r, texto) {
+    if (!r || r.codigo !== 'aplicado') return r;
+    try { await fuentes.refrescar(); } catch (e) { log(`después de aplicar ${s.archivo}, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); }
+    const ya = vista(s).texto === texto;
+    return { ...r, message: ya ? 'Aplicado: el cambio ya está en la rama principal y el sitio lo usa.' : 'Aplicado: el pedido se completó y el cambio está en la rama principal; el sitio lo va a ver en el próximo refresco.' };
   }
 
   // ── la propuesta de stages (AC 8): sólo lee, con SITE_PIPELINES_TOKEN; lo de cada plataforma vive en repo-proposal.js ──
@@ -564,7 +582,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
         if (!s) return rechazo(400, 'sección desconocida');
-        const r = await proponer(s, e.body, ctx);
+        const r = await despuesDeAplicar(s, await proponer(s, e.body, ctx), e.body && e.body.texto);
         guardado = null;
         return json(200, r);
       },
