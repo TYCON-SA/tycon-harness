@@ -82,6 +82,13 @@ organización. Pasar el inicio de sesión no alcanza: entrás sólo si estás en
 sitio te muestra Inicio. Arriba a la derecha está tu correo y el botón **Salir**;
 abajo a la izquierda, el **Tema** (automático, claro u oscuro).
 
+**El idioma.** Abajo a la izquierda, junto al Tema, está el selector **Español / English**, en todas las páginas
+(también en la de quien no está en la lista). La primera vez, el sitio sale en el idioma de tu navegador: inglés si
+tu navegador está en inglés, castellano si está en castellano o en cualquier otro idioma. Cuando elegís uno, se
+recuerda por persona: entrás desde otra máquina o desde otro navegador y lo ves igual. El sitio guarda sólo una huella
+de tu correo y el idioma, nunca el correo, y la borra si salís de la lista. Lo que viene de afuera del sitio (nombres de
+repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ayuda sale en el idioma que elegiste.
+
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
 - **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
@@ -940,6 +947,14 @@ de Codex.
   leído, las pestañas se ven, y sólo Corridas espera el buzón. Toda página de carga se recarga sola cada 5 segundos.
 - **Las pestañas** (`views.js`) las arma el servidor, sin JavaScript de afuera y sin `<script>` en línea. «No medido»
   nunca es 0.
+- **Los textos, en los dos idiomas** (`scripts/site/texts.js`): todo texto que el sitio muestra vive en esa tabla, una
+  clave con su castellano y su inglés. Para agregar un texto se suma su clave con los dos idiomas y la vista la pide con
+  `t(idioma, 'la.clave')`; nunca se escribe en la vista. `site-texts.test.js` frena una clave sin uno de los dos idiomas
+  y una página armada en inglés que trae castellano. El idioma de cada pedido lo decide `language.js`: la preferencia
+  guardada de la persona (en `SITE_DATA_DIR/idiomas.json`, por huella del correo), la cookie `sitio-idioma`, el
+  navegador y, al final, castellano. Los mensajes que el servidor de Configuración arma en castellano se traducen al
+  salir con el mismo molde de la tabla. El cuerpo de Corridas y el catálogo de lo que instala el arnés todavía salen en
+  castellano.
 - **Lo que no hace:** no escribe en ningún repo salvo los pedidos de la pestaña Configuración, no acciona nada, y no
   baja conversaciones salvo para la pestaña Corridas, con `site.mailbox.threads` y un disco.
 

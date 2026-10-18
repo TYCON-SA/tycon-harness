@@ -237,8 +237,10 @@ test('T6b Ayuda_GuiaIlegible_NoPasaPorQueNoEsta @story-2.41 @ac-1', () => {
   const g = HELP.guiaDe(raiz3, 'en');
   assert.deepStrictEqual([g.idioma, g.otroIdioma], ['es', true]);
   assert.strictEqual(HELP.guiaDe(raiz3, 'es').otroIdioma, false);
-  // el idioma de cada pedido lo decide un solo lugar: hoy, el del sitio
-  assert.strictEqual(HELP.idiomaDe({}), require(path.join(H.SITE, 'views.js')).IDIOMA);
+  // el idioma de cada pedido lo decide un solo lugar: el de la página; sin él, castellano
+  assert.strictEqual(HELP.idiomaDe({}), 'es');
+  assert.strictEqual(HELP.idiomaDe({ idioma: 'en' }), 'en');
+  assert.strictEqual(HELP.idiomaDe({ idioma: 'xx' }), 'es');
 });
 
 test('T6c Ayuda_GuiaIlegible_LaPaginaLoDice @story-2.41 @ac-1', async () => {
@@ -287,11 +289,11 @@ test('T3b Ayuda_RegistroYBajadaPorRol @story-2.41 @ac-2 @ac-5', async () => {
   try {
     const entrar = async (email) => (await H.ingresar(h, emisor, { sub: `s-${email}`, email, email_verified: true })).sesion;
     const mantiene = await h.pedir('/ayuda', { cookie: await entrar(MANTIENE) });
-    assert.ok(mantiene.texto.includes(HELP.TEXTOS.ledeMantiene), 'la bajada de quien mantiene');
+    assert.ok(mantiene.texto.includes(HELP.TEXTOS.ledeMantiene('es')), 'la bajada de quien mantiene');
     assert.ok(registro.some((l) => /secciones que la tabla no conoce.*Una sección nueva/.test(l)), registro.join('\n'));
     assert.ok(registro.some((l) => /no se muestran: enlace que no es https ni un ancla: otra-guia\.md/.test(l)), registro.join('\n'));
     const c = await entrar(PERSONA);
-    assert.ok((await h.pedir('/ayuda', { cookie: c })).texto.includes(HELP.TEXTOS.ledePersona), 'la bajada de una persona');
+    assert.ok((await h.pedir('/ayuda', { cookie: c })).texto.includes(HELP.TEXTOS.ledePersona('es')), 'la bajada de una persona');
     const img = await h.pedir(`/ayuda/capturas/${una}`, { cookie: c });
     assert.strictEqual(img.headers['cache-control'], 'private, max-age=3600', 'la captura se guarda sólo en el navegador de la sesión');
   } finally { await h.cerrar(); await emisor.cerrar(); }

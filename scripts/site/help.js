@@ -22,22 +22,24 @@
 const fs = require('fs');
 const path = require('path');
 const views = require('./views.js');
+const { t } = require('./texts.js');
+const LANG = require('./language.js');
 
 // sin ninguna guía en la imagen, la página dice dónde está en el repo del arnés (el código del sitio no nombra organizaciones)
 const RUTA_DE_LA_GUIA = 'guides/organization-site.md';
 const ARCHIVO = { es: 'organization-site.md', en: 'organization-site.en.md' };
-// los textos de la página, juntos: los que dice la ayuda además de la guía
+// los textos de la página, los que dice la ayuda además de la guía: viven en la tabla del sitio (texts.js, `ayuda.*`)
 const TEXTOS = Object.freeze({
-  idioma: { es: 'castellano', en: 'inglés' },
-  otroIdioma: (falta, se) => `esta versión del sitio no trae la ayuda en ${falta}: se muestra en ${se}`,
-  sinGuia: (ruta) => `Falta la ayuda: esta versión del sitio no trae la ayuda. La guía está en el repo del arnés, en <code>${esc(ruta)}</code>.`,
-  noSePudoLeer: (codigo) => `No pude leer la guía del sitio (${esc(codigo)}): la ayuda no se puede mostrar. Quedó en el registro del sitio; lo resuelve quien mantiene el sitio.`,
-  ledeMantiene: 'La guía del sitio entera: cómo se usa, cómo se configura y cómo se instala.',
-  ledePersona: 'La guía del sitio: cómo se usa. Lo de instalar y configurar lo ve quien mantiene el sitio.',
+  idioma: (de, i) => t(de, `ayuda.idioma.${i}`),
+  otroIdioma: (de, falta, se) => t(de, 'ayuda.otroIdioma', { falta, se }),
+  sinGuia: (de, ruta) => `${esc(t(de, 'ayuda.sinGuiaAntes'))}<code>${esc(ruta)}</code>${esc(t(de, 'ayuda.sinGuiaDespues'))}`,
+  noSePudoLeer: (de, codigo) => esc(t(de, 'ayuda.noSePudoLeer', { codigo })),
+  ledeMantiene: (de) => t(de, 'ayuda.ledeMantiene'),
+  ledePersona: (de) => t(de, 'ayuda.ledePersona'),
 });
 
-/** El idioma de la ayuda en este pedido: el del sitio. Es el único lugar que lo decide. */
-const idiomaDe = () => views.IDIOMA;
+/** El idioma de la ayuda en este pedido: el de la página. Es el único lugar que lo decide. */
+const idiomaDe = (ctx) => LANG.valido(ctx && ctx.idioma) || LANG.POR_DEFECTO;
 const CAPTURAS = path.join('guides', 'sitio-de-la-organizacion', 'capturas');
 const CAPTURA = /^[a-z0-9][a-z0-9-]*\.png$/;
 const TODOS = Object.freeze(['maintainer', 'person']);
@@ -284,10 +286,11 @@ function crearRutas({ raiz = path.join(__dirname, '..', '..'), log = () => {} } 
       handler: (ctx) => {
         const idioma = idiomaDe(ctx);
         const g = guiaDe(raiz, idioma);
-        if (!g) return html(views.layout(ctx, 'Ayuda', `<section class="card form-block"><p>${TEXTOS.sinGuia(RUTA_DE_LA_GUIA)}</p></section>`));
+        const titulo = t(idioma, 'pestana.ayuda');
+        if (!g) return html(views.layout(ctx, titulo, `<section class="card form-block"><p>${TEXTOS.sinGuia(idioma, RUTA_DE_LA_GUIA)}</p></section>`));
         if (g.error) {
           log(`ayuda: no pude leer guides/${g.archivo} (${g.error})`);
-          return html(views.layout(ctx, 'Ayuda', `<section class="card form-block"><p>${TEXTOS.noSePudoLeer(g.error)}</p></section>`));
+          return html(views.layout(ctx, titulo, `<section class="card form-block"><p>${TEXTOS.noSePudoLeer(idioma, g.error)}</p></section>`));
         }
         const rol = ctx.quien && ctx.quien.rol;
         const { partes, desconocidas } = paraRol(g.texto, g.idioma, rol);
@@ -295,8 +298,8 @@ function crearRutas({ raiz = path.join(__dirname, '..', '..'), log = () => {} } 
         const rechazos = [];
         const cuerpo = aHtml(partes.map((p) => p.texto).join('\n'), { alRechazar: (m) => rechazos.push(m) });
         if (rechazos.length) log(`ayuda: ${rechazos.length} enlace(s) o imagen(es) de la guía no se muestran: ${[...new Set(rechazos)].slice(0, 5).join(' · ')}`);
-        const aviso = g.otroIdioma ? `<div class="banda">${esc(TEXTOS.otroIdioma(TEXTOS.idioma[idioma], TEXTOS.idioma[g.idioma]))}</div>` : '';
-        return html(views.layout(ctx, 'Ayuda', `${aviso}<article class="ayuda" lang="${esc(g.idioma)}">${cuerpo}</article>`, rol === 'maintainer' ? TEXTOS.ledeMantiene : TEXTOS.ledePersona));
+        const aviso = g.otroIdioma ? `<div class="banda">${esc(TEXTOS.otroIdioma(idioma, TEXTOS.idioma(idioma, idioma), TEXTOS.idioma(idioma, g.idioma)))}</div>` : '';
+        return html(views.layout(ctx, titulo, `${aviso}<article class="ayuda" lang="${esc(g.idioma)}">${cuerpo}</article>`, rol === 'maintainer' ? TEXTOS.ledeMantiene(idioma) : TEXTOS.ledePersona(idioma)));
       },
     },
     {

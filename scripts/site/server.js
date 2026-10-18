@@ -18,6 +18,8 @@
  *             configuración de la organización (AC 15). El motivo nunca nombra direcciones, hosts, rutas ni cuentas; dice
  *             desde cuándo no valida (el primer refresco fallido), y la página del freno, desde cuándo está frenado.
  *   /readyz   503 con Retry-After hasta la primera lectura de las fuentes; después 200 (también frenado).
+ *   /idioma   POST: cambia el idioma de las páginas, con y sin sesión, con el candado de origen de las
+ *             escrituras; vuelve a la página en la que estaba (sólo una ruta propia).
  *
  * LA IDENTIDAD sale sólo del inicio de sesión del propio sitio (decisión 9): ninguna cabecera de un proxy o de la
  * plataforma cambia quién pide. El rol se recalcula en CADA pedido con la configuración vigente (decisión 12).
@@ -50,6 +52,8 @@ const session = require('./session.js');
 const oidc = require('./oidc.js');
 const access = require('./access.js');
 const views = require('./views.js');
+const LANG = require('./language.js');
+const { t: texto, traducirMensaje } = require('./texts.js');
 const { limpiarLinea, dentroDe } = require('./sources.js');
 const { BRAND_LOGO } = require('../lib/operations-config.js');
 
@@ -57,7 +61,7 @@ const { BRAND_LOGO } = require('../lib/operations-config.js');
 // SITE_AUTH_PROVIDER). El núcleo no nombra a ninguno: lo propio de cada uno vive en su archivo.
 const PROVEEDORES = (() => {
   const dir = path.join(__dirname, 'auth-providers');
-  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico, describir: () => 'un proveedor OpenID Connect propio de la organización' } };
+  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico, describir: () => texto('es', 'proveedor.oidc') } };
   for (const f of fs.readdirSync(dir).filter((x) => /^[a-z][a-z0-9-]*\.js$/.test(x)).sort()) out[f.slice(0, -3)] = require(path.join(dir, f));
   return out;
 })();
@@ -124,7 +128,7 @@ function validarConfiguracion(env) {
     cfg.opciones = typeof PROVEEDORES[prov].opcionesDe === 'function' ? PROVEEDORES[prov].opcionesDe(env) : null;
     // con qué se entra, en palabras: Configuración lo muestra de sólo lectura (se cambia en la instalación)
     cfg.inicioDeSesion = { proveedor: prov, modo: cfg.opciones && cfg.opciones.modo ? cfg.opciones.modo : null,
-      texto: typeof PROVEEDORES[prov].describir === 'function' ? PROVEEDORES[prov].describir(cfg.opciones || {}) : `el proveedor «${prov}»` };
+      texto: typeof PROVEEDORES[prov].describir === 'function' ? PROVEEDORES[prov].describir(cfg.opciones || {}) : texto('es', 'proveedor.otro', { prov }) };
     // un proveedor con lo suyo fijo (emisor, direcciones, organización) lo completa él; los demás usan SITE_OIDC_ISSUER
     if (typeof PROVEEDORES[prov].completarConfig === 'function') PROVEEDORES[prov].completarConfig(env, cfg);
     else if (env.SITE_OIDC_ISSUER) {
@@ -379,8 +383,65 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return { status: 200, tipo, cuerpo: datos, extra: { 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox", 'Cache-Control': 'private, max-age=300' } };
   }
 
-  function pestanasPara(rol) {
-    return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, path: r.path })).sort((a, b) => a.orden - b.orden);
+  function pestanasPara(rol, idioma) {
+    // una pestaña sin su clave en la tabla se ve con su título de la tabla de rutas, y se dice en el registro
+    const titulo = (p) => { try { return texto(idioma, `pestana.${p.id}`); } catch (e) { registrar(`idioma: la pestaña ${p.id} no tiene su título en la tabla de textos (${e.message})`); return p.titulo; } };
+    return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, titulo: titulo(r.pestana), path: r.path })).sort((a, b) => a.orden - b.orden);
+  }
+
+  // ── el idioma de cada pedido y dónde se recuerda (language.js) ──
+  const preferencias = LANG.crearPreferencias({ dataDir: cfg.dataDir, llave: cfg.sessionKey, log: (l) => registrar(l) });
+  /** El idioma de un pedido sin sesión (o antes de saber quién es): la cookie, después el navegador. */
+  const idiomaSinSesion = (req, cookies) => LANG.elegir({ cookie: cookies[LANG.COOKIE] || null, navegador: req.headers['accept-language'] });
+  /** Con sesión: la preferencia guardada de la persona va primero. */
+  const idiomaDePersona = (req, cookies, quien) => LANG.elegir({ persona: quien && quien.rol !== 'none' ? preferencias.leer(quien.correos || [quien.email]) : null, cookie: cookies[LANG.COOKIE] || null, navegador: req.headers['accept-language'] });
+  // quien sale de la lista del sitio pierde su preferencia: se poda cada vez que el sitio lee una lista nueva
+  let configPodada = null;
+  function podarSiCambio(config) {
+    if (!config || config === configPodada || !preferencias.disponible) return;
+    const correos = access.listaDeAcceso(config).entradas.flatMap((e) => e.emails || []);
+    if (cfg.firstMaintainer) correos.push(cfg.firstMaintainer);
+    const borradas = preferencias.podar(correos);
+    // una poda que no pudo (el archivo ilegible, el disco) se vuelve a probar en el próximo pedido
+    if (borradas < 0) return;
+    configPodada = config;
+    if (borradas) registrar(`idioma: se borró la preferencia de ${borradas} persona(s) que salieron de la lista del sitio`);
+  }
+  /** El candado de origen de las escrituras: el `Origin` del sitio; sin él, un `Referer` del sitio o `Sec-Fetch-Site`. */
+  function delSitio(req) {
+    const h = req.headers;
+    if (h.origin) return h.origin === cfg.publicUrl;
+    if (h.referer) return h.referer === cfg.publicUrl || h.referer.startsWith(`${cfg.publicUrl}/`);
+    return h['sec-fetch-site'] === 'same-origin';
+  }
+  /** El cuerpo de un formulario chico (hasta 2 KB). */
+  const leerFormulario = (req) => new Promise((resolve) => {
+    let n = 0; const partes = [];
+    req.on('data', (c) => { n += c.length; if (n <= 2048) partes.push(c); });
+    req.on('end', () => { try { resolve(n > 2048 ? new URLSearchParams() : new URLSearchParams(Buffer.concat(partes).toString('utf8'))); } catch { resolve(new URLSearchParams()); } });
+    req.on('error', () => resolve(new URLSearchParams()));
+  });
+  /** POST /idioma: elegir el idioma (con sesión se guarda por persona; siempre, la cookie) y volver a la página. */
+  async function cambiarIdioma(req, res, cookies) {
+    if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'POST' } });
+    if (!delSitio(req)) { registrar('idioma: cambio rechazado, el pedido viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
+    const form = await leerFormulario(req);
+    const pedida = String(form.get('volver') || '');
+    // sólo una ruta propia, en caracteres que una cabecera admite: nada de otra dirección (`//x`, `/\x`), de controles ni
+    // de un carácter fuera de ASCII (la cabecera Location lo rechaza y el pedido terminaba en la página de error)
+    const volver = /^\/(?![/\\])[\x21-\x7e]{0,500}$/.test(pedida) ? pedida : '/';
+    const idioma = LANG.valido(form.get('idioma'));
+    if (!idioma) return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver } });
+    const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
+    if (ses) {
+      const st = fuentes.estado();
+      const config = st.navegable || st.cargado ? fuentes.config() : null;
+      const quien = config ? access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer }) : null;
+      if (quien && quien.rol !== 'none') preferencias.guardar(quien.email, idioma);
+      // sin la lista leída no se sabe quién es: vale la cookie, y se dice (lo guardado antes podría volver a ganar)
+      else if (!config) registrar('idioma: el sitio todavía no leyó la lista: la elección vale sólo en la cookie del navegador');
+    }
+    return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver, 'Set-Cookie': LANG.cookieDe(idioma, { https }) } });
   }
 
   // las puertas de un proveedor que tiene más de una (la de los invitados del directorio); una vía que no
@@ -392,38 +453,42 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
    * Al emisor. `otraCuenta`: el proveedor pide elegir la cuenta (quien entró con una que no está en la lista);
    * `via`: por cuál de sus puertas (queda en el intento firmado, y la vuelta la usa).
    */
-  function irAlEmisor(res, { otraCuenta = false, via = null } = {}) {
-    if (!proveedor.listo()) return enviar(res, { status: 503, cuerpo: views.paginaSimple('El inicio de sesión todavía no está listo', 'El sitio no pudo hablar con el proveedor de la organización. Probá de nuevo en unos segundos.'), extra: { 'Retry-After': '10' } });
+  function irAlEmisor(res, { otraCuenta = false, via = null, idioma = LANG.POR_DEFECTO, url = null } = {}) {
+    if (!proveedor.listo()) return enviar(res, { status: 503, cuerpo: views.paginaSimple(texto(idioma, 'servidor.loginNoListoTitulo'), texto(idioma, 'servidor.loginNoListo'), { idioma, url }), extra: { 'Retry-After': '10' } });
     const t = ahora();
     const nuevo = session.nuevoIntento(cfg.sessionKey, t, { via: viaDe(via) });
     return enviar(res, { status: 302, cuerpo: '', extra: { Location: proveedor.urlDeInicio({ state: nuevo.intento.state, nonce: nuevo.intento.nonce, challenge: nuevo.challenge, otraCuenta, via: nuevo.intento.via }), 'Set-Cookie': nuevo.cookie } });
   }
 
   async function vuelta(req, res, u, cookies) {
+    const idioma = idiomaSinSesion(req, cookies);
+    const T = (k, v) => texto(idioma, k, v);
     const borrarIntento = session.borrar(session.INTENTO);
     const rechazo = (status, pantalla, motivo, enlace = null) => {
       registrar(`inicio de sesión rechazado: ${motivo}`);
-      return enviar(res, { status, cuerpo: views.paginaNoEntro(pantalla, enlace), extra: { 'Set-Cookie': borrarIntento } });
+      // lo que dice el proveedor, en el idioma de la página
+      const link = enlace ? { ...enlace, texto: traducirMensaje(idioma, enlace.texto) } : null;
+      return enviar(res, { status, cuerpo: views.paginaNoEntro(pantalla, link, { idioma, url: u }), extra: { 'Set-Cookie': borrarIntento } });
     };
     const t = ahora();
     for (const [s, exp] of consumidos) if (exp <= t) consumidos.delete(s);
     const li = session.leerIntento(cookies, cfg.sessionKey, t);
-    if (!li.intento) return rechazo(400, 'El intento de inicio de sesión no es válido o venció. Volvé a entrar.', li.motivo);
+    if (!li.intento) return rechazo(400, T('servidor.intentoVencido'), li.motivo);
     const it = li.intento;
     const state = u.searchParams.get('state');
-    if (!state || state !== it.state) return rechazo(400, 'El intento de inicio de sesión no es válido o venció. Volvé a entrar.', 'el state no es el del intento');
-    if (consumidos.has(state)) return rechazo(400, 'El intento de inicio de sesión no es válido o venció. Volvé a entrar.', 'el state ya se usó');
+    if (!state || state !== it.state) return rechazo(400, T('servidor.intentoVencido'), 'el state no es el del intento');
+    if (consumidos.has(state)) return rechazo(400, T('servidor.intentoVencido'), 'el state ya se usó');
     consumidos.set(state, it.exp);
     const code = u.searchParams.get('code');
     // el `error` de la vuelta lo controla cualquiera: al registro va sólo con la forma de un código de OAuth
     const errorDelEmisor = String(u.searchParams.get('error') || '').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 60);
-    if (!code) return rechazo(400, 'El proveedor no devolvió un código. Volvé a entrar.', `sin código${errorDelEmisor ? ` (${errorDelEmisor})` : ''}`);
+    if (!code) return rechazo(400, T('servidor.sinCodigo'), `sin código${errorDelEmisor ? ` (${errorDelEmisor})` : ''}`);
     let ident;
     try {
       ident = await proveedor.completar({ code, verifier: it.verifier, nonce: it.nonce, via: viaDe(it.via) });
     } catch (e) {
-      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, `No se pudo entrar: ${e.pantalla}.`, e.motivo, e.enlace);
-      return rechazo(400, 'No se pudo completar el inicio de sesión. Volvé a entrar.', (e && e.motivo) || (e && e.message) || String(e));
+      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, T('servidor.noSePudoEntrar', { pantalla: traducirMensaje(idioma, e.pantalla) }), e.motivo, e.enlace);
+      return rechazo(400, T('servidor.noSeCompleto'), (e && e.motivo) || (e && e.message) || String(e));
     }
     const ses = session.nuevaSesion({ ...ident, prov: proveedor.nombre, iss: proveedor.emisor }, cfg.sessionKey, ahora());
     // el porqué de una página sin datos, sin el correo: la lista se lee con la configuración vigente
@@ -445,10 +510,13 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
 
     const cookies = session.leerCookies(req.headers.cookie);
-    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via') }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    // el idioma antes de saber quién pide: la cookie y el navegador; con sesión, abajo, la persona primero
+    let idioma = idiomaSinSesion(req, cookies);
+    if (ruta === '/idioma') return cambiarIdioma(req, res, cookies);
+    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
-      if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple('Salir', 'Para salir, usá el botón «Salir».'), extra: { Allow: 'POST' } });
+      if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirTexto'), { idioma, url: u }), extra: { Allow: 'POST' } });
       return enviar(res, { status: 303, cuerpo: '', extra: { Location: '/', 'Set-Cookie': session.borrar(session.SESION) } });
     }
 
@@ -458,28 +526,31 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
     const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
     if (!ses) {
-      if (esApi) return rechazoApi(401, 'sesion_vencida', 'la sesión venció o se cerró: recargá la página para entrar de nuevo');
+      if (esApi) return rechazoApi(401, 'sesion_vencida', texto(idioma, 'servidor.apiSesionVencida'));
       // con más de una puerta, se elige en la página de entrada; con una, directo al emisor
-      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias) }) : irAlEmisor(res);
+      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias.map((v) => ({ ...v, texto: traducirMensaje(idioma, v.texto) })), { idioma, url: u }) }) : irAlEmisor(res, { idioma, url: u });
     }
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
-    if (st.frenado) return esApi ? rechazoApi(503, 'frenado', `el sitio está frenado desde ${views.hora(st.frenado.desde)}: la configuración de la organización no valida; lo arregla quien mantiene el arnés`) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
+    // la preferencia de la persona, si el sitio ya sabe quién es (con la configuración leída)
+    const configLeida = st.navegable || st.cargado ? fuentes.config() : null;
+    if (configLeida) { podarSiCambio(configLeida); idioma = idiomaDePersona(req, cookies, access.quienPide(ses, { config: configLeida, firstMaintainer: cfg.firstMaintainer })); }
+    if (st.frenado) return esApi ? rechazoApi(503, 'frenado', texto(idioma, 'servidor.apiFrenado', { desde: views.hora(st.frenado.desde, idioma) })) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde, idioma, url: u }), extra: { 'Retry-After': '60' } });
     // la espera es POR FUENTE: con el repo de operaciones leído (`navegable`) el sitio se navega aunque el buzón siga
     // bajando; cada pestaña dice lo suyo (Corridas, «cargando las corridas»). /readyz, arriba, sigue esperando todo
-    if (!st.cargado && !st.navegable) return esApi ? rechazoApi(503, 'cargando', 'el sitio está cargando sus fuentes: probá de nuevo en unos segundos', { 'Retry-After': '5' }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
+    if (!st.cargado && !st.navegable) return esApi ? rechazoApi(503, 'cargando', texto(idioma, 'servidor.apiCargando'), { 'Retry-After': '5' }) : enviar(res, { status: 503, cuerpo: views.paginaCargando({ idioma, url: u }), extra: { 'Retry-After': '5' } });
 
     const config = fuentes.config();
     const quien = access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer });
     if (quien.rol === 'none') {
-      if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', 'el sitio todavía no tiene a nadie que lo mantenga: lo resuelve quien instaló el sitio, que pone el primero en su configuración');
-      if (esApi) return rechazoApi(403, 'sin_rol', `tu cuenta ${quien.correoDeIngreso || quien.email} no está en la lista de quién entra a este sitio: si tenés otra cuenta, salí y entrá con esa; si no, pedile a quien mantiene el sitio de tu organización que te sume`);
-      return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien }) : views.paginaSinRol({ quien }) });
+      if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', texto(idioma, 'servidor.apiSinMantenedores'));
+      if (esApi) return rechazoApi(403, 'sin_rol', texto(idioma, 'servidor.apiSinRol', { cuenta: quien.correoDeIngreso || quien.email }));
+      return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien, idioma, url: u }) : views.paginaSinRol({ quien, idioma, url: u }) });
     }
     let params = null;
     const r = rutas.find((x) => x.method === req.method && (params = x.coincide(ruta)) !== null);
-    if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple('No existe', 'Esa página no existe.', { quien, pestanas: pestanasPara(quien.rol) }) });
-    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', `tu cuenta ${quien.email} no está entre los que mantienen el sitio: si entraste con otra cuenta, salí y entrá con la de la organización; si es ésa, pedíselo a quien mantiene el arnés`) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
+    if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple(texto(idioma, 'servidor.noExisteTitulo'), texto(idioma, 'servidor.noExiste'), { quien, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
+    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', texto(idioma, 'servidor.apiNoMantiene', { cuenta: quien.email })) : enviar(res, { status: 403, cuerpo: views.paginaSimple(texto(idioma, 'servidor.sinPermisoTitulo'), texto(idioma, 'servidor.sinPermiso'), { quien, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
 
     // la regla de quién es quién (people.js) en cada pedido, con la configuración vigente y lo informado por las
     // máquinas, que viaja aparte del modelo: ningún correo informado llega a una vista
@@ -487,7 +558,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const modelo = access.filtrar(fuentes.modelo(), quien, access.crearReglas({ config, modelo: fuentes.modelo(), personas }));
     const ctx = {
       req, sesion: ses, params: params || {}, url: u,
-      modelo, quien, pestanas: pestanasPara(quien.rol), activa: r.pestana ? r.pestana.id : null, marca: marcaDe(config),
+      modelo, quien, idioma, pestanas: pestanasPara(quien.rol, idioma), activa: r.pestana ? r.pestana.id : null, marca: marcaDe(config),
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
@@ -506,7 +577,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   const server = http.createServer((req, res) => {
     Promise.resolve(manejar(req, res)).catch((e) => {
       registrar(`error inesperado en ${req.method} ${String(req.url).split('?')[0]}: ${e && e.stack ? e.stack : e}`);
-      if (!res.headersSent) enviar(res, { status: 500, cuerpo: views.paginaSimple('Error', 'Algo falló en el sitio. Quedó en el registro.') });
+      if (!res.headersSent) { const i = LANG.elegir({ cookie: session.leerCookies(req.headers.cookie)[LANG.COOKIE] || null, navegador: req.headers['accept-language'] }); enviar(res, { status: 500, cuerpo: views.paginaSimple(texto(i, 'servidor.errorTitulo'), texto(i, 'servidor.error'), { idioma: i }) }); }
       else res.end();
     });
   });

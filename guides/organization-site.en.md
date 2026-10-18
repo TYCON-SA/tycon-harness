@@ -84,6 +84,14 @@ screen has two buttons: one for your Microsoft account and one for guests of the
 the sign-in is not enough: you get in only if you are in the site's list. After you sign in, the site shows you Home. At the top right are your email and the **Sign out** button (*Salir*); at
 the bottom left, the **Theme** (*Tema*: automatic, light or dark).
 
+**The language.** At the bottom left, next to the Theme, there is the **Español / English** selector, on every page
+(also on the page for someone who is not in the list). The first time, the site comes up in your browser's language:
+English if your browser is in English, Spanish if it is in Spanish or any other language. Once you choose one, it is
+remembered per person: you sign in from another machine or another browser and you see the same. The site stores only a
+fingerprint of your email and the language, never the email, and deletes it if you leave the list. What comes from
+outside the site (names of repos, products and machines, what each person wrote) shows as it is. The help comes up in
+the language you chose.
+
 **What you see the first time** depends on who you are for the site:
 
 - **A maintainer** sees the five tabs, and in Home what is waiting for a decision across the organization.
@@ -965,6 +973,14 @@ Claude or Codex.
   seconds.
 - **The tabs** (`views.js`) are built by the server, with no outside JavaScript and no inline `<script>`. "Not measured"
   is never 0.
+- **The texts, in both languages** (`scripts/site/texts.js`): every text the site shows lives in that table, a key with
+  its Spanish and its English. Adding a text means adding its key with both languages, and the view asks for it with
+  `t(idioma, 'the.key')`; it is never written in the view. `site-texts.test.js` stops a key missing one of the two
+  languages and a page built in English that carries Spanish. The language of each request is decided by `language.js`:
+  the person's stored preference (in `SITE_DATA_DIR/idiomas.json`, by a fingerprint of the email), the `sitio-idioma`
+  cookie, the browser and, last, Spanish. The messages the Configuration server builds in Spanish are translated on the
+  way out with the same template from the table. The body of Runs and the catalog of what the harness installs still
+  come out in Spanish.
 - **What it does not do:** it writes to no repo except the requests of the Configuration tab, triggers nothing, and does
   not download conversations except for the Runs tab, with `site.mailbox.threads` and a disk.
 

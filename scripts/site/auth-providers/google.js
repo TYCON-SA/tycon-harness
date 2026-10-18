@@ -12,6 +12,8 @@
  * Para las pruebas, `SITE_OIDC_ISSUER` puede reemplazar al emisor fijo SÓLO con una dirección http://127.0.0.1 (el
  * emisor local de scripts/tests/lib/fake-oidc.js); cualquier otro valor no arranca.
  */
+// lo que este archivo le dice a una persona vive en la tabla del sitio (texts.js, `proveedor.*`); el servidor lo traduce al mostrarlo
+const TX = (clave, valores) => require('../texts.js').t('es', clave, valores);
 const { proveedorSobreOidc, correoDe, ErrorDeIngreso, dominioDe } = require('../oidc.js');
 
 const EMISOR = 'https://accounts.google.com';
@@ -33,11 +35,11 @@ function crear(cfg, { ahora }) {
     nombre: 'google', issuer: cfg.issuer, clientId: cfg.clientId, clientSecret: cfg.clientSecret, redirectUri: cfg.redirectUri, ahora,
     identidad(claims) {
       const email = correoDe(claims, 'email');
-      if (claims.email_verified !== true) throw new ErrorDeIngreso('Google dice que tu correo no está verificado', 'email_verified no es true');
+      if (claims.email_verified !== true) throw new ErrorDeIngreso(TX('proveedor.googleSinVerificar'), 'email_verified no es true');
       const hd = typeof claims.hd === 'string' ? claims.hd.toLowerCase() : null;
-      if (!hd || !cfg.allowedDomains.includes(hd)) throw new ErrorDeIngreso('tu cuenta de Google no es de esta organización', hd ? `hd ${hd} fuera de SITE_AUTH_ALLOWED_DOMAINS` : 'sin hd: una cuenta personal');
-      if (dominioDe(email) !== hd) throw new ErrorDeIngreso('tu cuenta de Google no es de esta organización', 'el dominio del correo no es el hd');
-      if (typeof claims.sub !== 'string' || !claims.sub) throw new ErrorDeIngreso('el emisor no mandó una identidad estable', 'sin sub');
+      if (!hd || !cfg.allowedDomains.includes(hd)) throw new ErrorDeIngreso(TX('proveedor.googleOtraOrg'), hd ? `hd ${hd} fuera de SITE_AUTH_ALLOWED_DOMAINS` : 'sin hd: una cuenta personal');
+      if (dominioDe(email) !== hd) throw new ErrorDeIngreso(TX('proveedor.googleOtraOrg'), 'el dominio del correo no es el hd');
+      if (typeof claims.sub !== 'string' || !claims.sub) throw new ErrorDeIngreso(TX('proveedor.sinIdentidad'), 'sin sub');
       return { email, sub: claims.sub };
     },
   });
@@ -47,6 +49,6 @@ function crear(cfg, { ahora }) {
 function completarConfig(env, cfg) { cfg.issuer = emisorDe(env); }
 
 /** Con qué se entra, en palabras (Configuración lo muestra). */
-const describir = () => 'Google, con las cuentas del dominio de la organización';
+const describir = () => TX('proveedor.google');
 
 module.exports = { EMISOR, emisorDe, problemasDeConfig, completarConfig, describir, crear };

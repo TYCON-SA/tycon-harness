@@ -1287,6 +1287,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.42: el idioma del sitio — de dónde sale en cada pedido (la persona, la cookie, el navegador), la preferencia guardada por huella sin el correo, el cambio por POST con candado de origen y el selector en todas las páginas.",
+      "raiz": "arnes",
+      "ruta": "tests/site-language.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.42: la tabla única de textos del sitio — cada clave en castellano y en inglés, y ninguna página armada en inglés trae texto en castellano.",
+      "raiz": "arnes",
+      "ruta": "tests/site-texts.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: la prueba de fuga del sitio — marcadores de otra persona, de una máquina sin confirmar y texto libre en las fuentes; ninguna ruta de la tabla los trae a quien no corresponde, y los motivos crudos (blobs, rutas) no llegan a ninguna pantalla.",
       "raiz": "arnes",
       "ruta": "tests/site-leak.test.js",
