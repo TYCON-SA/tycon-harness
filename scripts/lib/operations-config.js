@@ -23,6 +23,9 @@
 //               "refresh_minutes": <5 a 120>,              opcional — cada cuánto se releen las fuentes
 //               "url": "https://…",                           opcional — la dirección del sitio, sólo https y sin usuario
 //                                                            ni clave: va en el aviso de la mañana
+//               "auto_apply": <bool>,                       opcional — true: «Proponer» de quien mantiene el sitio
+//                                                            aprueba y completa el pedido con la identidad del sitio, si
+//                                                            las políticas de main lo dejan; sin la clave, false
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
 //                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
 //                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
@@ -77,7 +80,7 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand'];
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply'];
 const BRAND_KEYS = ['name', 'logo', 'dark'];
 const BRAND_THEME_OPTIONS = ['invert', 'keep'];
 // el logo: una ruta relativa dentro del repo de operaciones, sin subir de carpeta, a un .png o un .svg
@@ -165,6 +168,7 @@ function siteProblems(site) {
   if (site.url !== undefined && !siteUrlOk(site.url)) {
     problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
   }
+  if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
   const b = site.brand;
   if (b !== undefined) {
     if (!isObject(b)) problems.push({ path: 'site.brand', message: 'tiene que ser un objeto { name, logo, dark }' });

@@ -23,6 +23,12 @@
  *        `GIT_CONFIG_*` (`http.<origen>/.extraheader`, el patrón de sources.js) y a la API en `Authorization`; nunca en
  *        la dirección, en un argumento, en el disco, en el registro ni en un mensaje (se reemplaza por `[credencial]`).
  *
+ * Con la opción de la organización «los cambios de un mantenedor se aplican solos» (`aplicarSolo`), después de abrir el
+ * pedido el sitio lo aprueba con su propia identidad (la que lo creó), mira que todas las políticas bloqueantes del
+ * pedido queden cumplidas y recién entonces lo completa, sin saltear ninguna (nunca `bypassPolicy`, nunca un empuje a
+ * main). Si falta algo que el voto del sitio no da, lo dice y deja el pedido. Es lo único que este módulo cambia de un
+ * pedido; sin la opción, nada de eso ocurre.
+ *
  * Sin dependencias fuera de Node: child_process, fs, path, os, crypto y el `fetch` global (Node 20+). Todo lo que habla
  * con afuera (git, fetch, el reloj, el candado) se inyecta para las pruebas (scripts/tests/repo-proposal.test.js).
  */
@@ -47,6 +53,14 @@ const TIPO_REVISORES_AZURE = 'Minimum number of reviewers';
 const TIPO_REQUERIDOS_AZURE = 'Required reviewers';
 const URL_BASE = { azure: 'https://dev.azure.com', github: 'https://api.github.com' };
 const API_AZURE = 'api-version=7.1';
+// la evaluación de las políticas de un pedido todavía sale en la versión preliminar de la API
+const API_EVALUACIONES = 'api-version=7.1-preview.1';
+// aplicar solo: cuánto se vuelve a mirar la evaluación de los revisores (que tarda un instante en ver el voto) y el
+// pedido hasta que queda completado (el merge corre aparte)
+const PAUSA_MS = 2000;
+const INTENTOS_EVALUACION = 5;
+const INTENTOS_COMPLETADO = 15;
+const LISTO = ['approved', 'notApplicable'];
 
 /** ¿El rechazo es por permisos? La misma lista que team-config.js (los textos de git, de GitHub y de Azure DevOps). */
 const NO_PERMISSION = /\b403\b|permission|denied|not authorized|unauthori[sz]ed|insufficient|TF401027|TF401019|forbidden|Write access/i;
@@ -178,7 +192,7 @@ function exigeRevisor(p, archivo) {
  * `archivo`, una política con filtro no alcanza). GitHub: la protección de la rama
  * (`required_pull_request_reviews.required_approving_review_count >= 1`) o una regla `pull_request` que la pida.
  */
-async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null }) {
+async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archivo = null, aplicarSolo = false }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: 'no reconozco la plataforma del remoto: abrí el pedido a mano' };
   const cred = credenciales(credencial);
   const secretos = secretosDe(cred);
@@ -196,6 +210,21 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     // el voto de quien crea el pedido no puede contar (si no, la identidad que propone se aprobaría sola), y lo que no se
     // puede probar que exige revisor en este archivo no cuenta
     const cubren = validas.filter((p) => exigeRevisor(p, archivo));
+    // con la opción de aplicar solo, la política que deja votar a quien crea el pedido también es revisión: la aprueba el
+    // sitio, a pedido de la organización. Se dice antes si su voto alcanza
+    if (aplicarSolo) {
+      const delAutor = validas.filter((p) => p.settings.creatorVoteCounts === true && exigeRevisor({ ...p, settings: { ...p.settings, creatorVoteCounts: false } }, archivo));
+      const todas = [...cubren, ...delAutor];
+      if (todas.length) {
+        const n = Math.max(...todas.map((p) => Number(p.settings.minimumApproverCount)));
+        // el sitio empuja la rama y vota con la misma identidad: «Prohibit the most recent pusher from approving» le anula el voto
+        const porQue = todas.some((p) => p.settings.creatorVoteCounts !== true) ? 'la política de main pide un revisor que no sea quien crea el pedido'
+          : todas.some((p) => p.settings.blockLastPusherVote === true) ? 'la política de main no deja aprobar a quien empujó el último cambio, y lo empuja el sitio'
+          : todas.some((p) => p.type.displayName !== TIPO_REVISORES_AZURE) ? 'la política de main pide revisores nombrados'
+            : n > 1 ? `la política de main pide ${n} revisores y el sitio da uno` : null;
+        return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}`, aplicaSolo: !porQue, motivoAplicar: porQue ? `Con la opción prendida, igual queda el pedido para aprobar: ${porQue}.` : null };
+      }
+    }
     if (!cubren.length) {
       // hay una política que cubre el archivo, pero deja que quien crea el pedido lo apruebe: ése es el motivo, y va antes
       // que «no cubre» (que sería falso) y que «no hay»
@@ -211,16 +240,19 @@ async function politicaDeRevision({ remote, credencial, urlBase, fetch: f, archi
     return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
   }
   const prot = await llamar({ url: `${base}/branches/${RAMA_PRINCIPAL}/protection`, remote, cred, fetch: f, secretos });
+  // en GitHub quien abre un pedido no puede aprobarlo: con la opción de aplicar solo, igual queda el pedido
+  const enGithub = (n) => ({ ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}`, ...(aplicarSolo ? { aplicaSolo: false, motivoAplicar: SIN_APLICAR_GITHUB } : {}) });
   if (prot.status === 200) {
     const n = Number((((prot.doc || {}).required_pull_request_reviews || {}).required_approving_review_count) || 0);
-    if (n >= 1) return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
+    if (n >= 1) return enGithub(n);
   } else if (prot.status !== 404) return noLeida(prot);
   const reglas = await llamar({ url: `${base}/rules/branches/${RAMA_PRINCIPAL}`, remote, cred, fetch: f, secretos });
   if (reglas.status !== 200 || !Array.isArray(reglas.doc)) return noLeida(reglas);
   const n = Math.max(0, ...reglas.doc.filter((r) => r && r.type === 'pull_request' && r.parameters).map((r) => Number(r.parameters.required_approving_review_count) || 0));
-  if (n >= 1) return { ok: true, detalle: `al menos ${n} revisor${n === 1 ? '' : 'es'}` };
+  if (n >= 1) return enGithub(n);
   return sinPolitica;
 }
+const SIN_APLICAR_GITHUB = 'Con la opción prendida, igual queda el pedido para aprobar: en GitHub quien abre el pedido no puede aprobarlo.';
 
 /**
  * El pedido activo hacia main desde una rama `team-config/<idCorto>-*`: `{ enlace, rama }`, o null si no hay. Si la API
@@ -249,7 +281,9 @@ async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch:
   const base = baseDe(remote, urlBase);
   if (remote.platform === 'azure') {
     const r = await llamar({ method: 'POST', url: `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { sourceRefName: `refs/heads/${rama}`, targetRefName: `refs/heads/${RAMA_PRINCIPAL}`, title: titulo, description: cuerpo } });
-    if (r.status === 201 && r.doc && r.doc.pullRequestId != null) return { ok: true, enlace: `${remote.web}/pullrequest/${r.doc.pullRequestId}` };
+    if (r.status === 201 && r.doc && r.doc.pullRequestId != null) {
+      return { ok: true, enlace: `${remote.web}/pullrequest/${r.doc.pullRequestId}`, id: r.doc.pullRequestId, creador: (r.doc.createdBy || {}).id || null, proyecto: ((r.doc.repository || {}).project || {}).id || null };
+    }
     return { ok: false, motivo: motivoDePedido(r) };
   }
   const r = await llamar({ method: 'POST', url: `${base}/pulls`, remote, cred, fetch: f, secretos, cuerpo: { title: titulo, head: rama, base: RAMA_PRINCIPAL, body: cuerpo } });
@@ -257,6 +291,59 @@ async function abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch:
   return { ok: false, motivo: motivoDePedido(r) };
 }
 const motivoDePedido = (r) => (r.status === 403 || r.status === 401 ? 'la identidad de escritura del sitio no tiene permiso para abrir pedidos en ese repo' : r.motivo || `HTTP ${r.status}`);
+
+const motivoDeEscritura = (r) => (r.status === 401 || r.status === 403 ? 'la identidad del sitio no tiene permiso' : r.motivo || `HTTP ${r.status}`);
+
+/**
+ * Aplica solo un pedido de Azure DevOps recién abierto: el voto «aprobado» de la identidad que lo creó, la evaluación de
+ * sus políticas y, si todas las bloqueantes quedaron cumplidas, el completar (sin saltear ninguna) y la espera hasta que
+ * quede completado. Devuelve { ok: true, codigo: 'aplicado' } · { ok: true, codigo: 'no_aplica_solo' } (falta algo que
+ * el sitio no da: el pedido queda) · { ok: false, codigo: 'quedo_abierto' } (algo falló a mitad). Nunca repite un paso.
+ */
+async function aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, quien, rama, esperar }) {
+  const base = baseDe(remote, urlBase);
+  const { enlace } = pedido;
+  const rutaPedido = `${base}/git/repositories/${encodeURIComponent(remote.repo)}/pullrequests/${encodeURIComponent(pedido.id)}`;
+  const queda = (message) => ({ ok: false, codigo: 'quedo_abierto', rama, enlace, message });
+  if (!pedido.creador || !pedido.proyecto) return queda(`El pedido quedó abierto, sin aprobar: la plataforma no dijo con qué identidad lo creó el sitio. Queda para aprobar: ${enlace}`);
+
+  const voto = await llamar({ method: 'PUT', url: `${rutaPedido}/reviewers/${encodeURIComponent(pedido.creador)}?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { vote: 10 } });
+  if (voto.status !== 200) return queda(`El pedido quedó abierto, sin aprobar: el sitio no pudo aprobarlo (${motivoDeEscritura(voto)}). Queda para aprobar: ${enlace}`);
+
+  const artefacto = `vstfs:///CodeReview/CodeReviewId/${pedido.proyecto}/${pedido.id}`;
+  let pendientes = [];
+  let soloRevisores = false;
+  for (let i = 0; i < INTENTOS_EVALUACION; i += 1) {
+    if (i) await esperar(PAUSA_MS);
+    const ev = await llamar({ url: `${base}/policy/evaluations?artifactId=${encodeURIComponent(artefacto)}&${API_EVALUACIONES}`, remote, cred, fetch: f, secretos });
+    if (ev.status !== 200 || !ev.doc || !Array.isArray(ev.doc.value)) return queda(`El pedido quedó abierto y aprobado por el sitio, pero no pude leer si sus políticas se cumplen (${motivoCorto(ev)}): no lo completé. ${enlace}`);
+    pendientes = ev.doc.value.filter((e) => e && e.configuration && e.configuration.isEnabled !== false && e.configuration.isBlocking === true && !LISTO.includes(e.status));
+    // la de revisores tarda un instante en ver el voto: se vuelve a mirar sólo si lo único pendiente es eso
+    soloRevisores = pendientes.length > 0 && pendientes.every((e) => ['queued', 'running'].includes(e.status) && [TIPO_REVISORES_AZURE, TIPO_REQUERIDOS_AZURE].includes(((e.configuration || {}).type || {}).displayName));
+    if (!soloRevisores) break;
+  }
+  // la revisión todavía evaluándose no es «la rama pide algo más»: puede ser sólo lentitud
+  if (soloRevisores) return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: `No se pudo aplicar solo: la plataforma todavía no terminó de evaluar la revisión después del voto del sitio. El pedido queda para aprobar: ${enlace}` };
+  if (pendientes.length) {
+    const nombres = [...new Set(pendientes.map((e) => ((e.configuration || {}).type || {}).displayName || 'una política sin nombre'))];
+    return { ok: true, codigo: 'no_aplica_solo', rama, enlace, message: `No se pudo aplicar solo: además del voto del sitio, la rama principal pide ${nombres.map((x) => `«${x}»`).join(', ')}. El pedido queda para aprobar: ${enlace}` };
+  }
+
+  // 🔴 sin bypassPolicy: si una política no se cumple, la plataforma no completa
+  const completar = await llamar({ method: 'PATCH', url: `${rutaPedido}?${API_AZURE}`, remote, cred, fetch: f, secretos, cuerpo: { status: 'completed', lastMergeSourceCommit: { commitId: sha }, completionOptions: { deleteSourceBranch: true, mergeCommitMessage: `${titulo} (aplicado por el sitio)` } } });
+  if (completar.status !== 200) return queda(`El pedido quedó abierto y aprobado por el sitio, pero no pude completarlo (${motivoDeEscritura(completar)}): ${enlace}`);
+  let estado = completar.doc && completar.doc.status;
+  let ultimaLectura = 'leida';
+  for (let i = 0; estado !== 'completed' && i < INTENTOS_COMPLETADO; i += 1) {
+    await esperar(PAUSA_MS);
+    const g = await llamar({ url: `${rutaPedido}?${API_AZURE}`, remote, cred, fetch: f, secretos });
+    if (g.status === 200 && g.doc) { estado = g.doc.status; ultimaLectura = 'leida'; } else ultimaLectura = motivoCorto(g);
+  }
+  // «no pude mirar» no es «no se completó»: si la última lectura falló, se dice eso
+  if (estado !== 'completed' && ultimaLectura !== 'leida') return queda(`El pedido quedó aprobado por el sitio y se pidió completarlo, pero no pude confirmar si se completó (${ultimaLectura}): miralo en ${enlace}`);
+  if (estado !== 'completed') return queda(`El pedido quedó abierto y aprobado por el sitio, pero todavía no se completó (${estado || 'sin estado'}): miralo en ${enlace}`);
+  return { ok: true, codigo: 'aplicado', rama, enlace, message: `Aplicado: el cambio entró en la rama principal. Pedido: ${enlace}` };
+}
 
 /** El enlace para abrir el pedido a mano (el mismo que `proposalPlan` de team-config.js). */
 function enlaceManual(remote, rama) {
@@ -270,9 +357,11 @@ function enlaceManual(remote, rama) {
  * Propone `contenido` como el nuevo `archivo` del repo de operaciones: rama + commit + empuje + pedido, dentro de
  * `exclusivo` (el candado compartido con el refresco de sources.js). Devuelve { ok: true, rama, enlace, message } o
  * { ok: false, codigo, message, rama?, manual?, enlace? }. Códigos: plataforma_desconocida · sin_credencial · cambio ·
- * pedido_abierto · sin_politica · no_se_pudo_leer · sin_permiso · git · pedido_no_abierto.
+ * pedido_abierto · sin_politica · no_se_pudo_leer · sin_permiso · git · pedido_no_abierto. Con `aplicarSolo`, además
+ * { ok: true, codigo: 'aplicado' | 'no_aplica_solo' } o { ok: false, codigo: 'quedo_abierto' } (ver `aplicarPedido`).
+ * `esperar(ms)` se inyecta para las pruebas.
  */
-async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {} }) {
+async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: 'no reconozco la plataforma del remoto: abrí el pedido a mano' };
   const cred = credenciales(credencial);
   if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: 'el sitio no tiene identidad de escritura: descargá el archivo y abrí el pedido a mano' };
@@ -318,7 +407,7 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     if (abierto) return { ok: false, codigo: 'pedido_abierto', enlace: abierto.enlace, rama: abierto.rama, message: `ya hay un pedido abierto sobre este archivo: ${abierto.enlace}; esperá a que se mergee o cerralo` };
 
     // 4. la política de la rama principal, para ESTE archivo (un filtro de ruta puede no cubrirlo)
-    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo });
+    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo, aplicarSolo });
     if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
 
     // 5. el commit, sin tocar el árbol ni el índice del clon
@@ -358,7 +447,8 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     registrar(`propuesta de ${archivo}: rama ${rama} empujada`);
 
     // 6. el pedido (decisión 10: uno por archivo, con las secciones)
-    const cuerpo = `Secciones cambiadas: ${secciones.length ? secciones.join(', ') : 'sin detallar'}. Pedido por ${quien || 'alguien'} desde el sitio.`;
+    // con la opción de aplicar solo, el pedido dice quién lo pidió y que lo aplica el sitio (el registro de quién lo hizo)
+    const cuerpo = `Secciones cambiadas: ${secciones.length ? secciones.join(', ') : 'sin detallar'}. Pedido por ${quien || 'alguien'} desde el sitio.${aplicarSolo ? ' Lo aplica el sitio solo: la organización tiene prendida «los cambios de un mantenedor se aplican solos» (site.auto_apply en operations.json).' : ''}`;
     const pedido = await abrirPedido({ remote, cred, urlBase, rama, titulo, cuerpo, fetch: f, secretos });
     if (!pedido.ok) {
       const manual = enlaceManual(remote, rama);
@@ -366,7 +456,11 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
       return { ok: false, codigo: 'pedido_no_abierto', rama, manual, message: `El cambio subió a la rama ${rama}, pero no pude abrir el pedido (${tapar(pedido.motivo, secretos)}). Abrilo desde: ${manual}` };
     }
     registrar(`propuesta de ${archivo}: pedido abierto ${pedido.enlace}`);
-    return { ok: true, rama, enlace: pedido.enlace, message: `Pedido abierto: ${pedido.enlace}` };
+    if (!aplicarSolo) return { ok: true, rama, enlace: pedido.enlace, message: `Pedido abierto: ${pedido.enlace}` };
+    if (remote.platform === 'github') return { ok: true, codigo: 'no_aplica_solo', rama, enlace: pedido.enlace, message: `No se pudo aplicar solo: en GitHub quien abre el pedido no puede aprobarlo. El pedido queda para aprobar: ${pedido.enlace}` };
+    const aplicado = await aplicarPedido({ remote, cred, urlBase, fetch: f, secretos, pedido, sha, titulo, quien, rama, esperar });
+    registrar(aplicado.codigo === 'aplicado' ? `cambio aplicado: ${archivo} por ${quien || 'alguien'}, pedido ${pedido.enlace}` : `propuesta de ${archivo}: no se aplicó sola (${aplicado.codigo}): ${aplicado.message}`);
+    return aplicado;
   });
 }
 

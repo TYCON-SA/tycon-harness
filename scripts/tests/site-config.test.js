@@ -1706,3 +1706,168 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
     assert.deepStrictEqual([o.estado, o.motivo], ['no_reader', 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)']);
   });
 });
+
+// ── los cambios de un mantenedor se aplican solos ───────────────────────────────────────────────────────────
+test('T1 Lector_AutoApply_SoloSiONo @story-2.39 @ac-1', () => {
+  for (const v of [true, false]) assert.strictEqual(OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], auto_apply: v } }))).ok, true, `auto_apply: ${v}`);
+  assert.strictEqual(OPS.parse(ORG.formatJson(opsBase())).ok, true, 'sin la clave vale');
+  const r = OPS.parse(ORG.formatJson(opsBase({ site: { maintainers: [LEAD], auto_apply: 'si' } })));
+  assert.strictEqual(r.ok, false);
+  assert.deepStrictEqual(r.problems.map((p) => [p.path, p.message]), [['site.auto_apply', 'tiene que ser true o false']]);
+});
+
+test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
+  const s = ORG.seccionPorId('aplicar');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.rutas, s.idCorto], ['Los cambios de un mantenedor', 'operations.json', 'operaciones', 'operations-config.js', ['site.auto_apply'], 'operations']);
+  const base = opsBase({ site: { maintainers: [LEAD], refresh_minutes: 15 } });
+  const r = ORG.revisar({ seccion: 'aplicar', texto: ORG.formatJson(base), borrador: { site: { maintainers: ['otro@acme.example'], refresh_minutes: 30, auto_apply: true } }, lectores: { 'operations-config.js': OPS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.strictEqual(r.texto, ORG.formatJson({ ...base, site: { ...base.site, auto_apply: true } }), 'sólo la hoja del interruptor');
+  // en la pestaña Personas, junto a «El sitio», con su editor de tres opciones
+  const codigo = ORG.pantalla();
+  assert.match(codigo, /\['personas', 'Personas', \['organizacion', 'sitio', 'aplicar',/);
+  assert.match(codigo, /aplicar: editorAplicar/);
+  for (const t of ['sin declarar (no)', 'sí: se aplican solos', 'no: queda el pedido para aprobar']) assert.ok(codigo.includes(t), t);
+});
+
+/** El repo de operaciones por HTTP, Azure de juguete que deja completar y mueve main, y la pestaña encima. */
+async function conAplicar({ autoApply, politica = 'autor', ops = null, masPoliticas = () => [], log = () => {} }, fn) {
+  const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
+  let ado, r, dir;
+  const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.com/acme/Proy/_git/ops' } };
+  try {
+    ado = await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: 'ops' });
+    const pol = { isEnabled: true, isBlocking: true, type: { displayName: 'Minimum number of reviewers' }, settings: { minimumApproverCount: 1, creatorVoteCounts: politica === 'autor', scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } };
+    ado.st.politicas = [pol, ...masPoliticas(ado)];
+    const doc = ops || opsBase({ site: { maintainers: [LEAD], ...(autoApply === undefined ? {} : { auto_apply: autoApply }) } });
+    ({ r, dir } = await opsPorHttp({ 'operations.json': doc }));
+    ado.st.permitirCompletar = true;
+    ado.st.alCompletar = (p) => { const s = r.ref(p.sourceRefName); spawnSync('git', ['update-ref', 'refs/heads/main', s], { cwd: r.bare }); };
+    const f = fuentesCon({ ops: dir, config: doc });
+    // el candado de la propuesta y el refresco: la prueba anota si se releyó con el candado tomado
+    let dentro = false;
+    const refrescos = [];
+    f.exclusivo = async (fn2) => { dentro = true; try { return await fn2(); } finally { dentro = false; } };
+    f.releerDeVerdad = true;
+    f.refrescar = async () => {
+      refrescos.push({ dentro });
+      if (!f.releerDeVerdad) return;
+      const ex = require('util').promisify(require('child_process').execFile);
+      await ex('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'fetch', '-q', '--depth', '1', 'origin', 'main'], { cwd: dir });
+      await ex('git', ['reset', '-q', '--hard', 'FETCH_HEAD'], { cwd: dir });
+    };
+    await conPestana({ fuentes: f, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base }, log } }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
+      const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
+      const proponer = async (id, texto) => { const s = (await estado()).secciones.find((x) => x.id === id); return (await ctx.escribir('/api/config/proponer', lead, tok, { seccion: id, texto, oid: s.oid })).json; };
+      await fn({ ...ctx, ado, r, dir, f, refrescos, estado, revisar, proponer });
+    });
+  } finally { await cerrarTodos(r, ado); }
+}
+const parches = (ado) => ado.llamadas.filter((l) => l.method === 'PATCH');
+
+test('T8 Interruptor_ElQueCuentaEsElDeMain @story-2.39 @ac-8', { skip: SIN_BACKEND }, async () => {
+  // apagada en main: prenderla se propone y queda el pedido
+  await conAplicar({ autoApply: false }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: true } });
+    assert.strictEqual(rev.ok, true, JSON.stringify(rev.problems));
+    const antes = r.ref('refs/heads/main');
+    const p = await proponer('aplicar', rev.texto);
+    // con la opción apagada, la política que deja votar al autor apaga «Proponer»: no se aplica solo
+    assert.strictEqual(p.ok, false, JSON.stringify(p));
+    assert.match(p.message, /Allow requestors to approve their own changes/);
+    assert.deepStrictEqual(parches(ado), []);
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+  });
+  await conAplicar({ autoApply: false, politica: 'otro' }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: true } });
+    const antes = r.ref('refs/heads/main');
+    const p = await proponer('aplicar', rev.texto);
+    assert.strictEqual(p.ok, true, JSON.stringify(p));
+    assert.match(p.message, /^Pedido abierto: /);
+    assert.deepStrictEqual(parches(ado), [], 'prenderla nunca se aplica sola');
+    assert.strictEqual(r.ref('refs/heads/main'), antes);
+  });
+  // prendida en main: apagarla se aplica solo
+  await conAplicar({ autoApply: true }, async ({ ado, revisar, proponer, r }) => {
+    const rev = await revisar('aplicar', { site: { auto_apply: false } });
+    const p = await proponer('aplicar', rev.texto);
+    assert.strictEqual(p.codigo, 'aplicado', JSON.stringify(p));
+    assert.strictEqual(parches(ado).length, 1);
+    assert.strictEqual(JSON.parse(r.archivoEn('refs/heads/main', 'operations.json')).site.auto_apply, false);
+  });
+});
+
+test('T9 Pestana_Aplicado_RelleeYLoMuestra @story-2.39 @ac-9', { skip: SIN_BACKEND }, async () => {
+  await conAplicar({ autoApply: true }, async ({ revisar, proponer, refrescos }) => {
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+    assert.deepStrictEqual(refrescos, [{ dentro: false }], 'releyó una vez, con el candado suelto');
+    assert.match(p.message, /^Aplicado: el cambio ya está en la rama principal y el sitio lo usa/);
+    assert.ok(p.enlace, 'con el enlace del pedido');
+  });
+  await conAplicar({ autoApply: true }, async ({ f, revisar, proponer, refrescos }) => {
+    f.releerDeVerdad = false;
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.strictEqual(p.codigo, 'aplicado', JSON.stringify(p));
+    assert.strictEqual(refrescos.length, 1);
+    assert.match(p.message, /se completó.*próximo refresco/);
+  });
+  // lo que no queda aplicado pasa tal cual, sin releer
+  await conAplicar({ autoApply: true }, async ({ ado, revisar, proponer, refrescos }) => {
+    ado.st.evaluaciones = () => [{ configuration: { isEnabled: true, isBlocking: true, type: { displayName: 'Build' } }, status: 'rejected' }];
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.strictEqual(p.codigo, 'no_aplica_solo', JSON.stringify(p));
+    assert.deepStrictEqual(refrescos, [], 'sin releer');
+    assert.match(p.message, /^No se pudo aplicar solo: .*«Build»/);
+  });
+});
+
+test('T11 EstadoProponer_DiceSiSeAplicaSolo @story-2.39 @ac-10', { skip: SIN_BACKEND }, async () => {
+  await conAplicar({ autoApply: true }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, true], JSON.stringify(p));
+  });
+  await conAplicar({ autoApply: true, politica: 'otro' }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], JSON.stringify(p));
+    assert.match(p.motivoAplicar, /queda el pedido para aprobar/);
+  });
+  await conAplicar({ autoApply: false }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.strictEqual(p.habilitado, false, JSON.stringify(p));
+    assert.match(p.motivo, /Allow requestors to approve their own changes/);
+  });
+  // la pantalla dice qué va a pasar antes de tocar «Proponer»
+  const codigo = ORG.pantalla();
+  assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pedido'), 'el texto de «se aplica solo»');
+});
+
+test('T19 Pestana_RefrescoFalla_LoAnotaYSigue @story-2.39 @ac-9', { skip: SIN_BACKEND }, async () => {
+  const registro = [];
+  await conAplicar({ autoApply: true, log: (l) => registro.push(l) }, async ({ f, revisar, proponer }) => {
+    f.refrescar = async () => { throw new Error('el repo no contestó'); };
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+    assert.match(p.message, /próximo refresco/);
+    assert.ok(registro.some((l) => /el refresco falló/.test(l)), registro.join('\n'));
+  });
+});
+
+test('T20 EstadoProponer_UnArchivoQueNoSeAplicaSolo_ElRepoTampoco @story-2.39 @ac-10', { skip: SIN_BACKEND }, async () => {
+  // la del mínimo de revisores deja votar al autor en toda la rama; otra, con filtro, pide un revisor distinto para operations.json
+  const requeridaParaOps = (ado) => [{ isEnabled: true, isBlocking: true, type: { displayName: 'Required reviewers' },
+    settings: { minimumApproverCount: 1, creatorVoteCounts: false, addedFilesOnly: false, requiredReviewerIds: ['grupo-de-quienes-mantienen'], filenamePatterns: ['/operations.json'], scope: [{ refName: 'refs/heads/main', matchKind: 'Exact', repositoryId: ado.st.repoId }] } }];
+  await conAplicar({ autoApply: true, masPoliticas: requeridaParaOps }, async ({ estado }) => {
+    const p = (await estado()).proponer.operaciones;
+    assert.strictEqual(p.porArchivo['operations.json'].aplicaSolo, false, JSON.stringify(p));
+    assert.strictEqual(p.porArchivo['scripts/nightly/dashboard/sources.json'].aplicaSolo, true, JSON.stringify(p));
+    assert.deepStrictEqual([p.habilitado, p.aplicaSolo], [true, false], 'el repo entero no se aplica solo si un archivo no');
+  });
+});

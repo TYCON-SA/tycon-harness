@@ -248,6 +248,16 @@ Las secciones, en el orden de la pantalla:
   sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio vuelve a leer el
   repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a la nube, que en una
   instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y al despertar lee todo.
+- **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
+  que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. Prendida («sí», `site.auto_apply` en
+  `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
+  vuelve a leer el repo y la sección dice «Aplicado». Sólo pasa si las políticas de la rama principal quedan cumplidas
+  con ese voto: si piden algo más (otro revisor, un revisor nombrado, un build), el sitio dice qué falta y deja el
+  pedido para aprobar. En GitHub siempre queda el pedido: quien abre un pedido no puede aprobarlo. Antes de proponer, al
+  lado del botón, la sección dice qué va a pasar. Queda escrito quién lo hizo: la descripción del pedido nombra a quien
+  lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
+  que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
+  entran solos. Queda en `operations.json`, en el repo de operaciones.
 - **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -416,7 +426,8 @@ credencial vencida o un permiso que cambió.
 **Por qué pasa:** el sitio sólo propone si el repo exige que otra persona apruebe cada cambio antes de sumarlo a la
 rama principal (una «política de revisión»); sin esa regla, el sitio podría cambiar el repo sin que nadie lo mire.
 También cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en
-Azure DevOps): el pedido lo crea el sitio, y se aprobaría solo. Y cuando el sitio no tiene permiso para escribir en ese
+Azure DevOps): el pedido lo crea el sitio, y se aprobaría solo; salvo que la organización prenda «Los cambios de un
+mantenedor», que es justamente para eso. Y cuando el sitio no tiene permiso para escribir en ese
 repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la sección muestra su enlace).
 
 **Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
@@ -584,9 +595,21 @@ perfil del equipo. En Azure DevOps, un permiso con *Code: Read & write* sobre es
 pushing* ni *Bypass policies when completing pull requests*: el sitio crea una rama y un pedido, nunca escribe `main`.
 Con un permiso personal, los pedidos salen a nombre de esa persona, y la política de la rama sigue pidiendo sus
 aprobaciones: la política tiene que tener apagado «Allow requestors to approve their own changes», o el sitio no
-propone (lo aprobaría el mismo autor). Sin el permiso, cada sección dice «Para
+propone (lo aprobaría el mismo autor), salvo con «Los cambios de un mantenedor» prendida (abajo). Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
+
+### Los cambios que se aplican solos
+
+Con `site.auto_apply: true` en `operations.json` («Los cambios de un mantenedor», en Personas), el sitio aprueba y
+completa cada pedido que propone quien mantiene. Para eso su identidad de escritura necesita, en Azure DevOps, *Code:
+Read & write* y *Contribute to pull requests* sobre el repo, y nunca *Bypass policies*: el sitio no saltea ninguna
+política, y si una no se cumple con su voto, el pedido queda. La política de revisión de `main` tiene que dejar que
+cuente el voto de quien crea el pedido («Allow requestors to approve their own changes» prendido) y pedir un revisor.
+Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
+imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
+(se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
+pidió; es la única línea del registro que lleva un correo.
 
 ### Las dos formas de arrancarlo
 

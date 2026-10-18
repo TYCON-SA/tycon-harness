@@ -256,6 +256,17 @@ The sections, in the order of the screen:
   sooner, but the site reads the operations repo, the profile repo and the mailbox again more often while it is awake:
   more reads to the cloud, which cost a bit more on an installation billed by use. It does not keep it awake: asleep it
   reads nothing, and on waking it reads everything.
+- **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
+  by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
+  On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
+  and completes it; right after, the site reads the repo again and the section says "Applied" (*Aplicado*). It only
+  happens if the main branch's policies are met with that vote: if they ask for more (another reviewer, a named
+  reviewer, a build), the site says what is missing and leaves the request to be approved. On GitHub the request always
+  stays: whoever opens a request cannot approve it. Before proposing, next to the button, the section says what will
+  happen. Who did it stays written: the request's description names who asked for it, and the site's log records
+  `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
+  turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
+  `operations.json`, in the operations repo.
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -433,7 +444,8 @@ why.
 **Why it happens:** the site only proposes if the repo requires another person to approve each change before adding it
 to the main branch (a "review policy"); without that rule, the site could change the repo without anyone looking. Also
 when the policy lets whoever creates the request approve it ("Allow requestors to approve their own changes", on Azure
-DevOps): the site creates the request, and it would approve itself. And when the site has no permission to write to that
+DevOps): the site creates the request, and it would approve itself; unless the organization turns on "A maintainer's
+changes", which is meant for exactly that. And when the site has no permission to write to that
 repo, or when there is already an open request on the same file (the section shows its link).
 
 **What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can ask for
@@ -601,9 +613,20 @@ team profile. On Azure DevOps, a token with *Code: Read & write* on those repos,
 pushing* or *Bypass policies when completing pull requests*: the site creates a branch and a request, it never writes
 `main`. With a personal token, the requests come out in that person's name, and the branch policy keeps asking for its
 approvals: the policy must have "Allow requestors to approve their own changes" turned off, or the site does not propose
-(the author would approve it). Without the permission, each section says
+(the author would approve it), except with "A maintainer's changes" on (below). Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
+### Changes that apply by themselves
+
+With `site.auto_apply: true` in `operations.json` ("A maintainer's changes", in People), the site approves and completes
+each request a maintainer proposes. For that its write identity needs, on Azure DevOps, *Code: Read & write* and
+*Contribute to pull requests* on the repo, and never *Bypass policies*: the site skips no policy, and if one is not met
+with its vote, the request stays. The review policy of `main` has to let the vote of whoever creates the request count
+("Allow requestors to approve their own changes" on) and ask for one reviewer. With no policy at all on `main`,
+"Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
+know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
+leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
 
 ### The two ways to start it
 
