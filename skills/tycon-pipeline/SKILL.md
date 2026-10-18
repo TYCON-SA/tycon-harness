@@ -69,10 +69,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   corriendo, no leído; qué quedó pendiente), la acción del dev en UNA línea, el detalle diferido (vive en
   `.advisors/pipeline-runs/<run>/`). NUNCA volcar el informe consolidado al chat. El detalle
   sube solo si hay CRITICAL sin resolver, algo falló y el dev necesita el error crudo, o el dev lo pidió.
-- **COMM.iii — pasos largos**: anunciar antes de todo paso ≥30s qué corre y cuánto (test-gate ~90s,
-  advisor 3-7 min, pase adversarial 20-40 min); todo paso ≥2 min en segundo plano salvo gates cortos que alimentan
-  `run-check`; al volver de una espera, contestar PRIMERO lo que el dev escribió. **Toda invocación
-  `Agent(...)` del pipeline corre en segundo plano** (jamás `run_in_background: false`).
+- **COMM.iii — pasos largos**: anunciar todo paso ≥30s y cuánto tarda (test-gate ~90s, advisor 3-7 min, pase
+  adversarial 20-40 min); ≥2 min va en segundo plano salvo gates cortos de `run-check`; al volver, contestar
+  PRIMERO lo que el dev escribió. **Todo `Agent(...)` del pipeline corre en segundo plano** (jamás
+  `run_in_background: false`).
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-05b-adversarial-verify.md`): reproduce-or-refute que
   EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
@@ -101,14 +101,11 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
     en un re-loop = foto mal fechada; con `suspect_late_snapshot: true` el delta ya se recalculó.
   - **Model hints en re-loops (mandatory)**: pasar `model:` de `reviewer_models` (o `reloop_model_hints`) a
     cada `Agent()`, salvo que el delta toque specs (`first_round`, anunciarlo) o `--cost-tier deep`.
-  - **D.i.2 — cerrá la CLASE**: un finding de clase (mismo hazard en varios sitios) se cierra en TODOS los
+  - **D.i.2 — cerrá la CLASE**: un finding de clase (mismo hazard, varios sitios) se cierra en TODOS los
     sitios en un batch antes del re-loop; si el reporte trae un solo sitio, pedir el barrido.
-  - **D.i.3 — gating**: re-loop por CRITICAL o WARNING dentro del diff de la story; un WARNING de
-    probabilidad ínfima FUERA del diff es follow-up documentado (engram `type: project` + nota en la
-    spec, obligatorio), no re-loop.
-  - **D.i.4 — tercera vuelta, repensar**: desde la tercera vuelta `smart-reloop` no devuelve el set sin la nota de esa
-    vuelta (`marker.js rethink --iter N --repeated … --change … | --keep …`); cada vuelta siguiente pide la suya. Ver
-    `steps/step-07b-rerun-advisors-if-fixes.md`.
+  - **D.i.3 — gating**: re-loop por CRITICAL o WARNING dentro del diff de la story; un WARNING ínfimo FUERA
+    del diff es follow-up documentado (engram `type: project` + nota en la spec), no re-loop.
+  - **D.i.4 — tercera vuelta**: sin su nota (`marker.js rethink --iter N`) no hay set (step 7b).
 - **E.i — no-skip-by-inference (HARD)**: ningún paso se saltea por inferencia conversacional ("no lo
   mencionó", "arrancá rápido", "parece molesto"). Sólo por la skip-condition documentada en el paso y
   verificable; si la condición tiene un gap, se arregla el paso, no se saltea.
