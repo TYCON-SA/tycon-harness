@@ -1133,7 +1133,7 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 
 _(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
 
-**Qué es:** El comando `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos, las sesiones libres y lo que quedó a medio camino.
+**Qué es:** El comando `/wip`: una tabla con el trabajo en curso de la máquina (story, paso, hora de fin y sesión), lo que espera entrar a los repos, las sesiones que trabajan sin pipeline, las libres, las que nadie usa hace horas y lo que quedó a medio camino.
 
 **Por qué existe:** Con varias sesiones trabajando a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin sale de la mediana de los pasos medidos en las corridas anteriores de la máquina; sin datos, lo dice en vez de inventar una hora.
 
