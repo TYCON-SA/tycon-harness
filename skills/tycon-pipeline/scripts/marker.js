@@ -3276,6 +3276,68 @@ function cmdStorySkillBypass(reasonRaw) {
   process.stdout.write(JSON.stringify(mark, null, 2) + '\n');
 }
 
+// La nota de «repensar el enfoque» de una vuelta de revisores (desde la tercera la exige `pipeline.js smart-reloop`).
+// Uso: marker.js rethink --iter N --repeated "<qué se repitió>" (--change "<qué cambia>" | --keep "<por qué sigue igual>")
+//        [--story-change "<qué cambia de la story>"] [--repo <repo> --story <spec.md>] [--run-dir <corrida>]
+// Se guarda en <corrida>/rethink/iter-N.json con su hora. La corrida sale del marcador de la sesión o de --repo/--story,
+// con el mismo criterio que usa pipeline.js para elegir la carpeta.
+function cmdRethink(argv) {
+  const rt = require('./lib/rethink.js');
+  const flag = (k) => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] === undefined ? '' : argv[i + 1]) : undefined; };
+  const iterRaw = flag('--iter');
+  const note = { iter: /^\d+$/.test(String(iterRaw)) ? Number(iterRaw) : iterRaw };
+  for (const [key, opt] of [['repeated', '--repeated'], ['change', '--change'], ['keep', '--keep'], ['story_change', '--story-change']]) {
+    const v = flag(opt);
+    if (v !== undefined) note[key] = rt.clean(v);
+  }
+  const errors = rt.validateNote(note);
+  if (errors.length) {
+    console.error('marker.js rethink: la nota no se guardó.');
+    for (const e of errors) console.error(`  - ${e}`);
+    console.error('  Uso: marker.js rethink --iter N --repeated "<qué se repitió>" (--change "<qué cambia del enfoque>" | --keep "<por qué sigue igual>") [--story-change "<qué cambia de la story>"]');
+    process.exit(2);
+  }
+  let marker = null;
+  try { marker = readMarker(); } catch (e) { marker = null; console.error(`marker.js rethink: no pude leer el marcador de la sesión (${String(e && e.message).slice(0, 80)}); sigo con lo que pasaste por argumento.`); }
+  const repoArg = flag('--repo') || (marker && marker.repoPath);
+  const storyArg = flag('--story') || (marker && marker.storyPath);
+  const runDirArg = flag('--run-dir') || null;
+  let runDir = null;
+  // 🔴 Con o sin --run-dir, la carpeta es la que `resolveRunDir` da para esta story y este repo: --run-dir sólo la confirma.
+  if (!repoArg || !storyArg) {
+    console.error('marker.js rethink: no sé de qué corrida es la nota. Pasá --repo <repo> --story <spec.md>, o corré el comando dentro de la sesión del pipeline.');
+    process.exit(2);
+  }
+  {
+    const repo = path.resolve(repoArg);
+    const storyPath = path.isAbsolute(storyArg) ? storyArg : path.join(repo, storyArg);
+    const { resolveRunDir, deriveStoryId } = require('./pipeline.js');
+    const storyId = deriveStoryId(storyPath) || (marker && marker.storyId ? String(marker.storyId) : null);
+    if (!storyId) {
+      console.error(`marker.js rethink: no pude leer la story ${storyPath}, así que no sé en qué carpeta guardar la nota.`);
+      process.exit(2);
+    }
+    runDir = resolveRunDir(repo, storyId, !runDirArg, storyPath);
+    if (!runDir) {
+      console.error(runDirArg
+        ? `marker.js rethink: --run-dir ${runDirArg} no es la carpeta de corrida de esta story (${storyId}): esta story todavía no tiene carpeta de corrida. Quitá --run-dir.`
+        : 'marker.js rethink: no pude resolver la carpeta de la corrida bajo .advisors/pipeline-runs/ (si el número de la story se repite en su repo, la carpeta lleva la clave: `pipeline.js evidence-key --story <ruta>` dice por qué no se pudo calcular).');
+      process.exit(2);
+    }
+    if (runDirArg) {
+      const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
+      if (real(path.resolve(runDirArg)) !== real(runDir)) {
+        console.error(`marker.js rethink: --run-dir ${runDirArg} no es la carpeta de corrida de esta story (${storyId}): la que corresponde es ${runDir}. Quitá --run-dir o pasá esa.`);
+        process.exit(2);
+      }
+    }
+  }
+  const file = rt.notePath(runDir, note.iter);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ ...note, at: nowIso() }, null, 2) + '\n', 'utf8');
+  process.stdout.write(`${file}\n`);
+}
+
 // story 8.9 (tanda B3b): las opciones viejas siguen andando hasta el retiro (también desde una sesión abierta con las
 // instrucciones de antes en la memoria)
 require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/marker.js');
@@ -3380,6 +3442,9 @@ switch (cmd) {
   case 'approve-mockup':
     cmdApproveMockup(process.argv.slice(3));
     break;
+  case 'rethink':
+    cmdRethink(process.argv.slice(3));
+    break;
   default:
     console.error(`marker.js: comando desconocido '${cmd}'`);
     console.error(
@@ -3387,7 +3452,7 @@ switch (cmd) {
         'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
         'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
-        'approve-mockup> [arg] [arg2]',
+        'approve-mockup|rethink> [arg] [arg2]',
     );
     process.exit(2);
 }

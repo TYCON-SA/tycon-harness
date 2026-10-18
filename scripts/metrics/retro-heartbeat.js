@@ -17,7 +17,10 @@
  * scripts/lib/dashboard-metrics.js ANTES de escribir:
  *   · identidad: repo (absoluto), merge_commit (completo), project, captured_at, story, run_dir;
  *   · advisor_rerun_loop_iterations = la ÚLTIMA vuelta de revisores de la corrida de esa story;
- *   · las otras cinco en null, cada una con quién la cubre.
+ *   · las otras cinco en null, cada una con quién la cubre;
+ *   · `rethink_notes`: las notas de «repensar el enfoque» de la corrida (`marker.js rethink`), si las hay; sin notas el
+ *     campo no aparece. Se validan con lib/rethink.js (la misma regla de la nota) y se sanean; las que están y no cumplen
+ *     los mínimos van en `rethink_notes_rotas` (no cuentan como nota) y se avisan.
  *
  * 🔴 DE DÓNDE SALEN LAS VUELTAS (salvaguarda de la story, decisión del dev 2026-09-16). La story
  * suponía «una sola cuenta», la de la vista de corridas. Hay tres y no coinciden: la columna de la
@@ -313,6 +316,77 @@ function vueltaDeVolcado(d) {
   return null;
 }
 
+// La regla de la nota (los mínimos, qué es válida) vive en lib/rethink.js del pipeline: se usa ESA, no una copia. Se busca
+// al lado del arnés y en las skills instaladas; si no aparece, las notas no se aceptan «tal cual» (ACCOV-C3): se dice.
+function cargarRethink() {
+  const candidatos = [
+    path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'rethink.js'),
+    path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'rethink.js'),
+  ];
+  for (const c of candidatos) {
+    try { if (fs.existsSync(c)) return require(c); } catch { /* siguiente */ }
+  }
+  return null;
+}
+
+// La carpeta de la corrida de ESTA story, por la clave exacta: `<clave>-<14 dígitos>` (o `<tema>__<clave>-<14 dígitos>`).
+// Un prefijo no alcanza (`9.9-` también abre `9.9-1-…`). Entre varias, gana la que tiene archivos y luego la más reciente,
+// como `resolveRunDir` del pipeline: una carpeta vacía más nueva no tapa a la corrida real.
+function carpetaExactaDeNotas(repo, story) {
+  if (!story) return null;
+  const base = path.join(repo, '.advisors', 'pipeline-runs');
+  const re = new RegExp(`^(?:.+__)?${String(story).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{14}$`);
+  let nombres = [];
+  try { nombres = fs.readdirSync(base, { withFileTypes: true }).filter((d) => d.isDirectory() && re.test(d.name)).map((d) => d.name); } catch { return null; }
+  let mejor = null; let tiene = -1; let reciente = -1;
+  for (const n of nombres) {
+    let has = 0; let newest = 0;
+    try {
+      for (const f of fs.readdirSync(path.join(base, n))) {
+        has = 1;
+        try { newest = Math.max(newest, fs.statSync(path.join(base, n, f)).mtimeMs); } catch { /* sigue */ }
+      }
+    } catch { /* sigue */ }
+    if (!has) { try { newest = fs.statSync(path.join(base, n)).mtimeMs; } catch { newest = 0; } }
+    if (has > tiene || (has === tiene && newest > reciente)) { tiene = has; reciente = newest; mejor = n; }
+  }
+  return mejor ? `.advisors/pipeline-runs/${mejor}/` : null;
+}
+
+// Las notas de «repensar el enfoque» que la corrida guardó (`<corrida>/rethink/iter-N.json`, las escribe
+// `marker.js rethink`): una story con notas no convergió en tres vueltas. Sin notas devuelve null y el campo no aparece:
+// un 0 pintado donde no hubo notas diría «miré y no hay». Una nota que está y no cumple los mínimos de lib/rethink.js
+// (ilegible, o de menos de 40 caracteres por campo) NO cuenta como nota: va aparte, en `rotas`, para que se diga.
+// Los textos pasan por `sanear` de tokens-digest.js: el archivo de la retro viaja por git.
+function notasDeRepensar(repo, runDirAprox, story) {
+  // 🔴 sale rojo si la retro lee las notas de otra corrida u otra story de prefijo parecido, o de una carpeta vacía más
+  // nueva que la corrida real: la carpeta se busca por la clave EXACTA de la story (y su sello), igual que el pipeline.
+  const runDir = carpetaExactaDeNotas(repo, story) || runDirAprox;
+  if (!runDir) return null;
+  const rt = cargarRethink();
+  const dir = path.join(repo, runDir, 'rethink');
+  let nombres = [];
+  try { nombres = fs.readdirSync(dir); } catch { return null; }
+  if (!rt) {
+    const hay = nombres.filter((n) => /^iter-\d+\.json$/.test(n)).map((n) => Number(/\d+/.exec(n)[0])).sort((x, y) => x - y);
+    return hay.length ? { notas: [], rotas: hay.map((iter) => ({ iter, reason: 'no se encontró lib/rethink.js para validarla' })) } : null;
+  }
+  const { notes, broken } = rt.readAll(path.join(repo, runDir));
+  if (!notes.length && !broken.length) return null;
+  const notas = notes.map((n0) => {
+    const n = rt.sanearNota(n0);
+    return {
+      iter: n.iter,
+      ...(n.at ? { at: n.at } : {}),
+      repeated: n.repeated,
+      ...(n.change ? { change: n.change } : {}),
+      ...(n.keep ? { keep: n.keep } : {}),
+      ...(n.story_change ? { story_change: n.story_change } : {}),
+    };
+  });
+  return { notas, rotas: broken.map((b) => ({ iter: b.iter, aviso: rt.brokenWarning(b) })) };
+}
+
 function salir(motivo) {
   process.stderr.write(`retro-latido: ${motivo}\n`);
   process.exit(2);
@@ -366,6 +440,13 @@ function main() {
     generated_by: ['retro', 'latido.js'].join('-'),
     metrics,
   };
+  const repensar = notasDeRepensar(repo, doc.run_dir, story);
+  if (repensar && repensar.notas.length) doc.rethink_notes = repensar.notas;
+  if (repensar && repensar.rotas.length) {
+    // 🔴 sale rojo si una nota rota se descarta sin avisar: queda dicho en el archivo y en la salida de error.
+    doc.rethink_notes_rotas = repensar.rotas.map((r) => ({ iter: r.iter, aviso: r.aviso || `nota ilegible/incompleta de la vuelta ${r.iter}: ${r.reason}` }));
+    for (const r of doc.rethink_notes_rotas) process.stderr.write(`retro-latido: ${r.aviso}\n`);
+  }
 
   const v = validate(doc);
   if (!v.ok) salir(`el validador de dashboard-metrics.js rechazó el archivo, no se escribió nada: ${v.errors.join(' · ')}`);

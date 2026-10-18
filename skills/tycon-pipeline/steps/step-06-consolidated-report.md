@@ -149,6 +149,8 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js write-find
   --story <story_path> --repo <repo> --findings <array.json | ->
 ```
 
+`write-findings` también copia al informe las notas de «repensar el enfoque» de la corrida (`rethink`, ya saneadas) y la cantidad de vueltas de revisores (`rethink.rounds`); una nota ilegible o incompleta sale en `warnings` y no cuenta.
+
 ### 🔴 El `advisor` se ELIGE de los que corrieron — no se escribe libre
 
 `write-findings` valida el firmante de cada hallazgo contra el `review-roster.json` de ESA corrida.

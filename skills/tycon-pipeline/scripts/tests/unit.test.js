@@ -3192,6 +3192,14 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   assert.equal(conservada.ultimo_revisor, T_ULTIMO_REVISOR);
   assert.ok(conservada.posteriores.some((p) => p.path === reductor), 'y dice QUÉ archivo no vio ningún revisor');
 
+  // La vuelta 12 es de las que piden la nota de «repensar el enfoque» (de la 3 en adelante), y pedir otra vez la 12 cuenta como la 13.
+  for (const it of ['12', '13']) {
+    const nota = correr('marker.js', ['rethink', '--iter', it, '--repo', repo, '--story', storyPath,
+      '--repeated', 'Volvió el mismo hallazgo de seguridad en las vueltas anteriores, siempre sobre el mismo archivo',
+      '--keep', 'Sigue igual: el arreglo es chico y el diseño de fondo no cambia entre vueltas']);
+    assert.equal(nota.status, 0, nota.stderr);
+  }
+
   // ── La consecuencia: el re-loop de la iteración 12 vuelve a mirar seguridad ──
   const rl = correr('pipeline.js', ['smart-reloop', '--iter', '12', '--repo', repo, '--story', storyPath, '--files', reductor]);
   assert.equal(rl.status, 0, rl.stderr);

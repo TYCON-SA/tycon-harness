@@ -4678,6 +4678,103 @@ function resolveRunDir(repo, storyId, create, storyPath) {
   return dir;
 }
 
+// El marcador de la sesión, con su estado: `ausente` (no existe), `ilegible` (existe y no se puede leer como objeto) u `ok`.
+// 🔴 «no existe» y «no se puede leer» no son lo mismo: lo primero lo cubre la carpeta de la corrida, lo segundo frena.
+function readSessionMarkerStrict() {
+  const markerPath = path.join(stateDirOf(os.homedir()), 'active', `${sessionIdFileKey()}.json`);
+  if (!fs.existsSync(markerPath)) return { estado: 'ausente', marcador: null };
+  try {
+    const m = JSON.parse(fs.readFileSync(markerPath, 'utf8'));
+    if (m && typeof m === 'object' && !Array.isArray(m)) return { estado: 'ok', marcador: m };
+    return { estado: 'ilegible', marcador: null, motivo: 'no es un objeto' };
+  } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
+}
+
+// El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
+// Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
+// resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
+function rethinkGate(args) {
+  const rt = require('./lib/rethink.js');
+  // La vuelta que vale es la MAYOR entre la que declara quien llama, la que cuenta el marcador (las fotos de iteración
+  // guardadas: la última + 1, o el `iter` que lleve alguna) y la de la propia carpeta de la corrida: si ya se sirvió alguna
+  // vuelta, la pedida cuenta como mínimo la siguiente a la última servida (repetir una vuelta servida es una vuelta nueva). Un `--iter` menor, o ninguno, no
+  // esquiva la nota, tampoco sin marcador.
+  const declarada = args.iter === undefined ? 1 : Number(args.iter);
+  const { estado, marcador, motivo } = readSessionMarkerStrict();
+  if (estado === 'ilegible') {
+    return `🛑 El marcador de la sesión existe y no se puede leer (${motivo}): sin él no sé cuántas vueltas de revisores lleva la corrida, y ante la duda no devuelvo el set. Arreglá o borrá el marcador (marker.js) y volvé a pedirlo.\n`;
+  }
+  const fotos = Object.entries((marcador && marcador.iterations) || {});
+  const delMarcador = fotos.reduce((m, [k, v]) => {
+    const n = Number(k);
+    const propio = v && Number.isInteger(v.iter) ? v.iter : 0;
+    return Math.max(m, Number.isInteger(n) ? n + 1 : 0, propio);
+  }, 0);
+  // --story relativa se resuelve contra --repo, igual que `marker.js rethink`: los dos tienen que dar la misma carpeta.
+  // Sin --story vale la del marcador de la sesión (igual que `marker.js rethink`); sin ninguna de las dos no se sabe de qué
+  // corrida es la vuelta, y ante la duda el freno frena.
+  const repoAbs = path.resolve(args.repo || (marcador && marcador.repoPath) || '.');
+  const storyArg = args.story || (marcador && typeof marcador.storyPath === 'string' && marcador.storyPath) || null;
+  const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
+  const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
+  const propia = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+  // El freno es de las corridas del pipeline: hay corrida si el marcador trae story, o si --story resuelve una carpeta de
+  // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
+  const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
+  if (!marcadorConStory && !propia) {
+    if (Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador) >= rt.FIRST_ITER) {
+      return `🛑 Pediste la vuelta ${Math.max(declarada, delMarcador)} de revisores pero no hay corrida del pipeline que la respalde: ni el marcador de la sesión trae la story ni --story da una carpeta de corrida${storyId ? ` («${storyId}»)` : ''}. Sin carpeta de corrida no se pueden contar las vueltas, y ante la duda no devuelvo el set. Pasá --story <spec.md> (y --repo <repo>) de una corrida abierta, o corré pipeline.js run-dir --story <spec> --repo <repo> --create.\n`;
+    }
+    return null;
+  }
+  let runDir = propia;
+  let ajena = null;
+  if (args.runDir) {
+    // --run-dir tiene que ser EXACTAMENTE la carpeta que `resolveRunDir` da para esta story y este repo (mismo realpath):
+    // otra corrida de la misma story, aunque lleve el mismo número, no vale.
+    const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
+    const rd = path.resolve(args.runDir);
+    if (propia && real(rd) === real(propia)) runDir = propia; else { ajena = rd; runDir = null; }
+  }
+  const servidas = rt.readServed(runDir);
+  if (!servidas.ok) {
+    return `🛑 El registro de vueltas servidas de la corrida (${rt.servedPath(runDir)}) existe y no se puede leer: ${servidas.reason}. Sin él no sé cuántas vueltas de revisores lleva, y ante la duda no devuelvo el set. Corregilo o borralo.\n`;
+  }
+  const pedida = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
+  // Pedir una vuelta que ya se sirvió (o una menor) cuenta como una vuelta NUEVA: max(declarada, marcador, última servida + 1).
+  const iter = servidas.last > 0 ? Math.max(pedida, servidas.last + 1) : pedida;
+  if (iter >= rt.FIRST_ITER) {
+    const dice = [];
+    if (iter !== declarada) {
+      dice.push(`Pediste la vuelta ${args.iter === undefined ? '(sin --iter)' : declarada}, pero ${iter === pedida
+        ? `el marcador de la sesión lleva ${iter - 1} vuelta(s) cerrada(s)`
+        : `ya se sirvió la vuelta ${servidas.last} en esta corrida`}: vale la mayor, la ${iter}.`);
+    }
+    const diceAmbas = dice.length ? `\n${dice.join(' ')}` : '';
+    const leida = rt.readNote(runDir, iter);
+    if (!leida.ok) {
+      if (ajena) {
+        return `🛑 --run-dir ${ajena} no es la carpeta de corrida de esta story${storyId ? ` (${storyId})` : ''}: no vale para decidir si la nota existe. Quitá --run-dir o pasá la carpeta de .advisors/pipeline-runs/ de esta story.${diceAmbas}\n`;
+      }
+      const why = leida.reason === 'no existe' || leida.reason === 'no hay carpeta de corrida' ? null : leida.reason;
+      return rt.blockMessage({ iter, runDir, repeated: rt.repeatedFindings(runDir), why }) + (diceAmbas ? diceAmbas.slice(1) + '\n' : '');
+    }
+  } else if (ajena) {
+    return `🛑 --run-dir ${ajena} no es la carpeta de corrida de esta story${storyId ? ` (${storyId})` : ''}: quitá --run-dir o pasá la carpeta de .advisors/pipeline-runs/ de esta story.\n`;
+  }
+  // Pasó: se anota la vuelta servida en la carpeta de la corrida (la crea si todavía no existe).
+  const donde = runDir || (storyId && !ajena ? resolveRunDir(repoAbs, storyId, true, storyAbs) : null);
+  if (donde) {
+    const anotada = rt.recordServed(donde, iter);
+    if (!anotada.ok) return `🛑 No pude anotar la vuelta ${iter} en la carpeta de la corrida (${rt.servedPath(donde)}): ${anotada.reason}. Sin ese registro la próxima vuelta no se puede contar, y ante la duda no devuelvo el set.\n`;
+  } else {
+    // Sin carpeta de corrida no hay dónde contar las vueltas: un `--iter 1` repetido podría ser la tercera. Ante la duda,
+    // no se devuelve el set.
+    return `🛑 No hay carpeta de corrida donde contar las vueltas (la story no da una clave de corrida${storyId ? `: «${storyId}»` : ''}). Sin ella no se puede saber si ésta es la tercera vuelta, y ante la duda no devuelvo el set. Corré pipeline.js run-dir --story <spec> --repo <repo> --create, o arreglá el número de la story.\n`;
+  }
+  return null;
+}
+
 // ── El firmante de un hallazgo se ELIGE, no se tipea (story 7.13, 2026-09-22) ──────────────────
 // El nombre del revisor se escribía en DOS lados con dos criterios: el roster lo proyecta un hook
 // desde el ledger de spawns (id pelado, kebab-case) y el `advisor` de acá lo tipeaba el orquestador
@@ -4830,7 +4927,9 @@ function normalizeFindingRecord(raw, warnings, ctx) {
     disposition,
     reason: String(raw.reason || raw.summary || raw.title || '').trim().replace(/\s+/g, ' '),
     // La anotación no se pierde: se muda. Y el tramo dice contra qué lista compararlo.
-    ...(firmante.iter !== undefined ? { iter: firmante.iter } : {}),
+    // 🔴 sale rojo si se pierde el `iter` que trae el hallazgo: sin él `repeatedFindings` no sabe qué volvió. Gana la
+    // anotación del firmante («… (iter 2)»); si no hay, el campo `iter` del propio hallazgo.
+    ...(firmante.iter !== undefined ? { iter: firmante.iter } : (Number.isInteger(raw.iter) && raw.iter >= 1 ? { iter: raw.iter } : {})),
     ...(firmante.model ? { model: firmante.model } : {}),
     ...(firmante.nota ? { nota: firmante.nota } : {}),
     ...(firmante.tramo ? { tramo: firmante.tramo } : {}),
@@ -4949,12 +5048,31 @@ function writeFindings(args) {
     open: records.filter((f) => f.disposition === 'open').length,
     refuted: records.filter((f) => f.disposition === 'refuted').length,
   };
+  // Las notas de «repensar el enfoque» de la corrida, con la cantidad de vueltas: van al informe de «Hallazgos».
+  // Las vueltas salen de lo más alto que se sepa: la vuelta anotada en los hallazgos, las notas y las fotos del marcador.
+  const rt = require('./lib/rethink.js');
+  const { notes: notas, broken: notasRotas } = rt.readAll(runDir);
+  for (const b of notasRotas) normWarnings.push(rt.brokenWarning(b));
+  let vueltas = null;
+  if (notas.length) {
+    const marcador = readSessionMarker();
+    const deFotos = Object.keys((marcador && marcador.iterations) || {}).map(Number).filter(Number.isInteger);
+    const todas = [...records.map((f) => f.iter), ...notas.map((n) => n.iter), ...deFotos].filter(Number.isInteger);
+    vueltas = Math.max(...todas);
+  }
+  const rethink = notas.length ? {
+    rounds: vueltas,
+    notes_count: notas.length,
+    notes: notas.map((n0) => { const n = rt.sanearNota(n0); return { iter: n.iter, at: n.at, repeated: n.repeated, ...(n.change ? { change: n.change } : {}), ...(n.keep ? { keep: n.keep } : {}), ...(n.story_change ? { story_change: n.story_change } : {}) }; }),
+  } : null;
   return {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
+    ...(rethink ? { rethink } : {}),
     ...(marcados.length ? { reviewers_flagged: marcados.map((t) => t.reviewer) } : {}),
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
     note: `findings.json escrito (${records.length} findings: ${counts.critical} CRITICAL / ${counts.warning} WARNING). `
+      + (rethink ? `La corrida lleva ${rethink.rounds} vueltas de revisores y ${rethink.notes_count} ${rethink.notes_count === 1 ? 'nota' : 'notas'} de repensar el enfoque (vueltas ${rethink.notes.map((n) => n.iter).join(', ')}): van al informe de «Hallazgos». ` : '')
       + `Siguiente: pipeline.js write-followups --story ${args.story} --findings ${outPath} (persiste los no-resueltos EN la story).`,
   };
 }
@@ -5175,8 +5293,13 @@ function main() {
   if (cmd === 'advisors') {
     // FIX auditoría 2026-06-11: files fantasma (shell quoting roto) degradaban el set
     // a onlyDocs y PERSISTÍAN un expected[] corrupto. Abort explícito, no fail-open.
+    // 🔴 La vuelta 3 en adelante pide su nota también por acá: `advisors --iter N` devuelve el set completo y es el
+    // fallback del re-loop; sin este freno la nota se esquivaba pidiendo el set por este camino.
+    // El freno corre DESPUÉS de las validaciones propias del comando: sus errores salen como siempre.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const rethinkBlock = rethinkGate(args);
+    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const set = computeAdvisorSet(args);
     // MECH-2: descuento automático de advisors cubiertos por mech-check (coherente
     // con el expected[] que se persiste abajo — check-count valida contra el set
@@ -5278,10 +5401,14 @@ function main() {
   //      corre solo `rerun` + anuncia `skipped` con razones (regla B verbosity).
   //   5. marker.js snapshot-iter 2 (si hay más iters previstas).
   if (cmd === 'smart-reloop') {
+    // Desde la tercera vuelta (y en cada una de las siguientes) hace falta la nota de «repensar el enfoque» de ESA vuelta,
+    // también con --force-full-reloop. Sin ella no se devuelve ningún set.
     // FIX auditoría 2026-06-11: misma validación que `advisors` — files fantasma
     // corrompían el recompute de force-full-reloop (devolvió 3 en vez de 13 en 9.4).
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
+    const rethinkBlock = rethinkGate(args);
+    if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];

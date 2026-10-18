@@ -59,6 +59,7 @@
             "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-2.jsonl",
             "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
             "CLAUDE_CODE_SESSION_ID=foto-2 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js snapshot-iter 11 > snap.out 2> snap.err",
+            "CLAUDE_CODE_SESSION_ID=foto-2 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js rethink --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --repeated 'la vuelta 11 volvió a marcar el mismo reductor sin cambiar el enfoque' --keep 'el caso mide la foto de la iteración, no el enfoque de la story' > rethink.out 2> rethink.err",
             "CLAUDE_CODE_SESSION_ID=foto-2 node ${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --files src/reductor.js > reloop.json 2> reloop.err",
             "node _resumen.js reloop.json reloop-resumen.json"
           ],
@@ -323,6 +324,7 @@
             "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/foto-10.json",
             "cp _ledger.jsonl ${SANDBOX_HOME}/.claude/.tycon-pipeline/advisor-runs/foto-10.jsonl",
             "node _utimes.js src/reductor.js 2026-09-15T16:58:16.000Z",
+            "CLAUDE_CODE_SESSION_ID=foto-10 node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js rethink --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --repeated 'la vuelta 11 volvió a marcar el mismo reductor sin cambiar el enfoque' --keep 'el caso mide la foto de la iteración, no el enfoque de la story' > rethink.out 2> rethink.err",
             "CLAUDE_CODE_SESSION_ID=foto-10 node ${SKILLS}/skills/tycon-pipeline/scripts/pipeline.js smart-reloop --iter 12 --repo ${FIXTURE} --story ${FIXTURE}/specs/story.md --files src/reductor.js > reloop.json 2> reloop.err",
             "node _resumen.js reloop.json reloop-resumen.json"
           ],

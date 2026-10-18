@@ -562,8 +562,10 @@ test('T13 ConTecho_ValoresArriba_SeBajanYAvisanUnaVez @story-7.29 @ac-12', () =>
   assert.ok(!(dos.json.models_warnings || []).some((w) => /tycon-spec-first-checker/.test(w)), 'la segunda vez no avisa');
   // sin marcador: en cada salida
   const h3 = tmp('home');
+  // otro repo: el de arriba ya tiene su corrida con dos vueltas servidas, y una tercera pediría la nota de repensar
+  const repo3 = labRepo();
   for (let i = 0; i < 2; i++) {
-    const r = conConfig('advisors', 'normal', [], null, { home: h3, repo, tree });
+    const r = conConfig('advisors', 'normal', [], null, { home: h3, repo: repo3, tree });
     assert.ok(r.json.models_warnings.some((w) => /tycon-spec-first-checker/.test(w)), `vuelta ${i}`);
   }
   // el pase en una pesada y la sesión pesada también bajan y avisan
