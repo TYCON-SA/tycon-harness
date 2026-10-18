@@ -37,7 +37,7 @@ const PARTES = [
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
-// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que sin disco «Salir» avisa que no pudo invalidar la sesión; antes sumaba de dónde lee operaciones (la copia en un
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma que «Salir» no pasa por el candado ni por Microsoft y deja la marca de «salió», y que la página «Saliste» libre del candado se ve aunque el candado haya vencido; antes sumaba que sin disco «Salir» avisa que no pudo invalidar la sesión, y de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
@@ -48,8 +48,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas.
 const HUELLA_INSTALACION = {
-  es: 'dac8d9d81c05816f354ce0540df764197ed0dd3412ea0ceb246a2a9040f6b928',
-  en: 'd950cb8638fcd04b80e3d7006a8dd82f412b3f96a8dbbfd2b01515d9ecd68a58',
+  es: '3f2f8c5fe7e280244d3eb01b86f77de3bcdf949e13fcbc55dfa88e2ae8fd5809',
+  en: 'f0f72cfbf1c6ec3f95f1a4f99b6e48af39aafbd6718accb34054b2156029c68b',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

@@ -12,6 +12,9 @@
  *                 `X-Site-Token` (la cookie es HttpOnly: el script de otro sitio no lo puede leer). NO lleva el rol: el rol
  *                 se recalcula en cada pedido con la configuración vigente.
  *   __Host-login  el intento de inicio, 10 minutos: state, nonce y el verificador PKCE. Se borra en la vuelta.
+ *   __Host-salio  la marca de «salió», 30 días, valor fijo `1` (sin firma ni datos de la persona). La deja «Salir» y la
+ *                 borra la vuelta que crea una sesión. Con ella y sin sesión, el sitio no vuelve a entrar solo: muestra
+ *                 «Saliste» y, al entrar, pide elegir la cuenta (Casos: scripts/tests/site-sign-out-mark.test.js).
  *
  * Una cookie alterada, sin firma, firmada con otra llave, vencida, o de otro proveedor o emisor, es «sin sesión».
  * Atributos: `__Host-` exige Secure, Path=/ y sin Domain; HttpOnly y SameSite=Lax.
@@ -24,6 +27,8 @@ const SESION = '__Host-site';
 const INTENTO = '__Host-login';
 const DURACION_SESION_MS = 8 * 60 * 60 * 1000;
 const DURACION_INTENTO_MS = 10 * 60 * 1000;
+const MARCA = '__Host-salio';
+const DURACION_MARCA_MS = 30 * 24 * 60 * 60 * 1000;
 
 const b64u = (b) => Buffer.from(b).toString('base64url');
 
@@ -63,6 +68,8 @@ function cookie(nombre, valor, maxAgeSeg) {
   return `${nombre}=${valor}; Max-Age=${Math.max(0, Math.floor(maxAgeSeg))}; Path=/; HttpOnly; Secure; SameSite=Lax`;
 }
 const borrar = (nombre) => `${nombre}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;
+const marcaDeSalida = () => cookie(MARCA, '1', DURACION_MARCA_MS / 1000);
+const tieneMarca = (cookies) => Boolean(cookies) && cookies[MARCA] === '1';
 
 /** La cookie de una sesión nueva. `ident` = { email, sub, prov, iss }. */
 function nuevaSesion(ident, llave, ahora) {
@@ -199,4 +206,4 @@ function crearCerradas({ dataDir = null, ahora = Date.now, log = () => {} } = {}
   };
 }
 
-module.exports = { CARPETA_CERRADAS, crearCerradas, SESION, INTENTO, DURACION_SESION_MS, DURACION_INTENTO_MS, firmar, verificar, leerCookies, cookie, borrar, nuevaSesion, leerSesion, nuevoIntento, leerIntento };
+module.exports = { CARPETA_CERRADAS, crearCerradas, SESION, INTENTO, MARCA, DURACION_SESION_MS, DURACION_INTENTO_MS, DURACION_MARCA_MS, marcaDeSalida, tieneMarca, firmar, verificar, leerCookies, cookie, borrar, nuevaSesion, leerSesion, nuevoIntento, leerIntento };

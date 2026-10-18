@@ -645,9 +645,11 @@ inicio de sesión no alcanza.
   lo aprobó.
 - El sitio no recibe ningún permiso sobre el directorio de nadie: ni asigna, ni invita, ni lee usuarios.
 - **Salir.** El botón **Salir** cierra la sesión y lleva a una página «Saliste», con «Entrar de nuevo» y «Entrar con otra
-  cuenta». Con una sola puerta, el sitio no vuelve a entrar solo: la página espera a que elijas. Detrás del candado de la
-  plataforma, la vuelta pasa antes por el cierre de ese candado. El cierre de la sesión de Microsoft queda apagado: te
-  sacaría también del portal y de los repos de tu organización.
+  cuenta». «Salir» no pasa por el candado de la plataforma ni por Microsoft: la vuelta se queda en el sitio, y la sesión de
+  Microsoft sigue abierta (cerrarla te sacaría también del portal y de los repos de tu organización). Por eso, al salir,
+  el sitio deja en tu navegador una marca de «salió» (sin datos tuyos, dura 30 días): mientras está, el sitio no vuelve a
+  entrar sin un clic tuyo. Recargar, volver con «atrás» o abrir cualquier página muestra «Saliste», y los dos botones te
+  piden elegir la cuenta en Microsoft. La marca se borra cuando entrás.
   «Salir» cierra la sesión también para una copia de la cookie: la sesión queda anotada como cerrada en el disco del
   sitio hasta que vence, y una copia que alguien guardó deja de valer. Si el disco falla, o el sitio no tiene disco
   (`SITE_DATA_DIR`), «Saliste» avisa que no se pudo invalidar la sesión en el servidor en vez de decir que saliste: tras un
@@ -781,10 +783,10 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   qué versión corre» y la primera actualización va a mano, con la receta de tu entorno. Desde ahí, el automático sigue
   solo.
 - **Un paso de una sola vez al pasar a una versión con la página «Saliste».** Si el sitio está detrás del candado de la
-  plataforma (el inicio de sesión integrado de la nube), la página «Saliste» y lo que carga tienen que quedar fuera de
-  ese candado. El actualizador cambia la imagen, no la configuración del candado: sin este paso, después de «Salir» el
-  candado deja entrar de nuevo sin preguntar, y nadie se entera. Se hace una vez, a mano, con la orden de la receta de tu
-  entorno (en su «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
+  plataforma (el inicio de sesión integrado de la nube), conviene que la página «Saliste» y lo que carga queden fuera de
+  ese candado: así se ve aunque el candado haya vencido, sin pasar antes por su inicio de sesión. El actualizador cambia
+  la imagen, no la configuración del candado. Se hace una vez, a mano, con la orden de la receta de tu entorno (en su
+  «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
 
 ### Las dos formas de arrancarlo
 
@@ -809,8 +811,8 @@ sesión», «/api contesta con datos», «el sitio está frenado», «/healthz c
 la mañana lleva el enlace sólo si pasó esa mañana.
 
 También pide sin sesión la página de salida (`/saliste`). Si la contesta el candado de la plataforma en vez del sitio,
-la prueba no falla: sale 0 y suma un aviso, «la página de salida queda detrás del candado: tras «Salir» se vuelve a
-entrar; la receta de tu entorno trae la orden de una vez». Quiere decir que falta el paso de una sola vez del candado
+la prueba no falla: sale 0 y suma un aviso, «la página de salida queda detrás del candado: con el candado vencido,
+«Saliste» pasa antes por el inicio de sesión de la plataforma; la receta de tu entorno trae la orden de una vez». Quiere decir que falta el paso de una sola vez del candado
 (dejar libre la página de salida); la receta de tu entorno trae la orden. El aviso de la mañana lo repite junto al enlace.
 
 ## Las recetas
@@ -841,8 +843,8 @@ en la instalación normal: su dirección en `profileRepo` del archivo, y su toke
 quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configuración dice «falta el repo del perfil».
 
 - **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
-  Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, tras
-  «Salir» el candado manda a Microsoft, que deja entrar de nuevo sin preguntar). Un sitio ya instalado se corrige una vez:
+  Detrás, el del sitio, que decide con su lista. `/healthz`, `/livez`, la página «Saliste» con lo que carga y `/idioma` quedan fuera del candado (sin eso, con el
+  candado vencido, «Saliste» pasa antes por su inicio de sesión). Un sitio ya instalado se corrige una vez:
   `az containerapp auth update -g <grupo> -n <app> --excluded-paths /healthz,/livez,/saliste,/idioma,/static/site.css,/static/site.js,/static/fonts/lato-400.woff2,/static/fonts/lato-700.woff2`. Con `microsoftAccounts`
   en el archivo de configuración se elige el modo:
   - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
