@@ -193,6 +193,17 @@ ul.efectos summary{cursor:pointer;font-size:14px;padding:3px 0}
 ul.efectos p{margin:2px 0 8px 18px;font-size:13.5px;max-width:72ch}
 .antes-despues{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .antes-despues .lab{font-size:12px;color:var(--muted);margin-bottom:4px}
+.propuesta{margin:10px 0}
+.propuesta .resumen{margin:0 0 10px;padding-left:20px}
+.dif{display:grid;grid-template-columns:minmax(max-content,1fr);font-family:var(--mono);font-size:12.5px;line-height:1.5;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);overflow-x:auto;max-width:100%;margin:0 0 10px}
+.dif-r{display:flex;color:var(--ink)}
+.dif-signo{flex:0 0 2ch;padding:0 6px;text-align:center;font-weight:700;user-select:none}
+.dif-texto{white-space:pre;padding-right:10px}
+.dif-sale{background:color-mix(in srgb,var(--bad) 14%,var(--surface))}.dif-sale .dif-signo{color:var(--bad-ink)}
+.dif-entra{background:color-mix(in srgb,var(--good) 14%,var(--surface))}.dif-entra .dif-signo{color:var(--good-ink)}
+.dif-salto{padding:2px 8px;color:var(--muted);font-style:italic;border-top:1px dashed var(--line);border-bottom:1px dashed var(--line)}
+.archivos-enteros{margin:0 0 10px}.archivos-enteros summary{cursor:pointer;color:var(--ink-2)}
+.archivos-enteros .antes-despues{margin-top:8px}.archivos-enteros pre{overflow-x:auto;max-width:100%}
 pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font:12.5px/1.5 var(--mono);overflow:auto;max-height:360px;white-space:pre}
 
 /* ── teléfono ── */

@@ -156,4 +156,8 @@ const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
 // la reconoce así y no le pide el no-store del sitio (el sitio ni la vio)
 const esDelCandado = (headers) => Boolean(headers && typeof headers.get === 'function' && headers.get('x-ms-middleware-request-id'));
 
-module.exports = { tokenDeIdentidad, almacenDeCopia, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };
+// por dónde sale quien entró por el candado de la plataforma: si el pedido trae la cabecera con el nombre de quien
+// pasó el candado, hay que cerrar también su sesión ahí (si no, la plataforma lo vuelve a dejar entrar); si no, null
+const salidaDelCandado = (headers) => (headers && headers['x-ms-client-principal-name'] ? '/.auth/logout' : null);
+
+module.exports = { tokenDeIdentidad, almacenDeCopia, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado, salidaDelCandado };

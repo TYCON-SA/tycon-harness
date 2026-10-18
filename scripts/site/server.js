@@ -270,6 +270,12 @@ function etiquetaDe(cuerpo) {
   return e;
 }
 
+/**
+ * Las rutas que contestan sin sesión y que un candado delante del sitio tiene que dejar pasar: la vida y la salud, la
+ * página de salida con lo que carga (hoja de estilo, código y letra) y el selector de idioma. Rutas exactas, sin comodines.
+ */
+const RUTAS_SIN_SESION = ['/healthz', '/livez', '/saliste', '/idioma', '/static/site.css', '/static/site.js', '/static/fonts/lato-400.woff2', '/static/fonts/lato-700.woff2'];
+
 function leerEstatico() {
   const { CSS_BASE, CSS_CHIPS } = require('../nightly/dashboard/common.js');
   const dir = path.join(__dirname, 'static');
@@ -308,6 +314,8 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
   const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
   const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
+  // los módulos de la plataforma, una vez: cada uno dice si el pedido llegó por su candado y por dónde se sale
+  const nubes = require('./sources.js').nubes();
   const estatico = leerEstatico();
   const consumidos = new Map();   // state → vencimiento: sólo para RECHAZAR repeticiones en este proceso
   const https = cfg.publicUrl.startsWith('https:');
@@ -515,9 +523,12 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (ruta === '/idioma') return cambiarIdioma(req, res, cookies);
     if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    if (ruta === '/saliste') return req.method === 'GET' ? enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u }) }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
       if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirTexto'), { idioma, url: u }), extra: { Allow: 'POST' } });
-      return enviar(res, { status: 303, cuerpo: '', extra: { Location: '/', 'Set-Cookie': session.borrar(session.SESION) } });
+      // detrás del candado de la plataforma se cierra también su sesión; la vuelta es una página que no redirige sola
+      const salida = nubes.map((n) => typeof n.salidaDelCandado === 'function' && n.salidaDelCandado(req.headers)).find(Boolean);
+      return enviar(res, { status: 303, cuerpo: '', extra: { Location: salida ? `${salida}?post_logout_redirect_uri=%2Fsaliste` : '/saliste', 'Set-Cookie': session.borrar(session.SESION) } });
     }
 
     const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
@@ -647,6 +658,6 @@ async function main() {
   process.on('SIGINT', salir);
 }
 
-module.exports = { crearSitio, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES, VERSION };
+module.exports = { RUTAS_SIN_SESION, crearSitio, validarConfiguracion, validarRutas, lineasDeArranque, RUTAS, CSP, VARIABLES, VERSION };
 
 if (require.main === module) main();

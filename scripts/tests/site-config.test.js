@@ -285,7 +285,7 @@ async function conPestana({ fuentes, env = {}, opciones = {} }, fn) {
     await fn({ h, entrar, token, escribir, cfg });
   } finally { await cerrarTodos(h, emisor); }
 }
-const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/pipelines'], ['POST', '/api/config/pasos'], ['POST', '/api/config/proponer']];
+const RUTAS = [['GET', '/configuracion'], ['GET', '/static/config.js'], ['GET', '/api/config'], ['POST', '/api/config/revisar'], ['POST', '/api/config/stages'], ['POST', '/api/config/pipelines'], ['POST', '/api/config/pasos'], ['POST', '/api/config/proponer'], ['GET', '/api/config/propuesta']];
 
 test('T1 Dev_403EnTodasLasRutas_SinDatos @story-2.29 @ac-1', async () => {
   const ops = clon({ 'operations.json': opsBase({ owners: { default: 'marcador-owner@acme.example' } }) });

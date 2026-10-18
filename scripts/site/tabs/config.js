@@ -21,7 +21,8 @@
  *
  * Rutas: GET /configuracion (la página) · GET /static/config.js (su código, sin nada en línea) · GET /api/config (las
  * secciones) · POST /api/config/revisar · POST /api/config/stages (la propuesta de stages, sólo lee) ·
- * POST /api/config/proponer. Casos: scripts/tests/site-config.test.js.
+ * POST /api/config/proponer · GET /api/config/propuesta (si el pedido de una propuesta ya existe, por su marca).
+ * Casos: scripts/tests/site-config.test.js y scripts/tests/site-propose.test.js.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -176,6 +177,63 @@ function contenidoDelPerfil(dir, enlace) {
   }
   return out;
 }
+
+// ── el resumen de lo que cambia una propuesta ──
+/** Las hojas de un valor: la ruta de cada valor escalar (y de cada lista u objeto vacío) y lo que vale. */
+function hojasDe(valor, ruta, out) {
+  if (isObject(valor) && Object.keys(valor).length) for (const k of Object.keys(valor)) hojasDe(valor[k], ruta ? `${ruta}.${k}` : k, out);
+  else if (Array.isArray(valor) && valor.length) valor.forEach((x, i) => hojasDe(x, `${ruta}.${i}`, out));
+  else out.set(ruta, valor);
+  return out;
+}
+// los valores con nombre propio: la ruta de la hoja y el texto de la pantalla con que se la llama
+const ETIQUETAS = { 'response.max_chars': 'pantalla.largoMaximoDeProsaEn' };
+// el título que la pantalla le pone a cada sección sale de su propio código (`PLANO`), para que el resumen diga lo mismo
+let clavesDeTitulo = null;
+function tituloVisible(s, idioma) {
+  if (!clavesDeTitulo) {
+    clavesDeTitulo = {};
+    const rx = /\n\s+([a-z]+): \{ t: T\('(pantalla\.[A-Za-z0-9]+)'\)/g;
+    const fuente = ORG.pantalla.toString();
+    let m;
+    while ((m = rx.exec(fuente))) clavesDeTitulo[m[1]] = m[2];
+  }
+  return clavesDeTitulo[s.id] ? TX.t(idioma, clavesDeTitulo[s.id]) : s.titulo;
+}
+/**
+ * Las frases de lo que cambia una sección, en el idioma pedido: quién se suma o se saca de la lista de acceso, cada valor
+ * con nombre propio, y «Cambiás N valores» para el resto. `antes` y `despues` son los archivos enteros, ya leídos.
+ */
+function resumenDe(s, antes, despues, idioma) {
+  const dec = (clave, valores) => TX.t(idioma, clave, valores);
+  const seccion = tituloVisible(s, idioma);
+  const frases = [];
+  const aparte = [];
+  if (s.id === 'sitio') {
+    const c = people.cambiosDeAcceso(antes, despues);
+    for (const x of c.altas) frases.push(dec('config.resumenSuma', { correo: x.email, rol: x.role, seccion }));
+    for (const x of c.bajas) frases.push(dec('config.resumenSaca', { correo: x.email, seccion }));
+    for (const x of c.roles) frases.push(dec('config.resumenRol', { correo: x.email, de: x.de, a: x.a, seccion }));
+    aparte.push('site.access', 'site.maintainers');
+  }
+  const ha = hojasDe(antes, '', new Map());
+  const hd = hojasDe(despues, '', new Map());
+  const mostrar = (v) => (v === undefined ? dec('config.resumenSinValor') : String(typeof v === 'string' ? v : JSON.stringify(v)).replace(/\s+/g, ' ').slice(0, 80));
+  let sueltos = 0;
+  for (const k of [...new Set([...ha.keys(), ...hd.keys()])]) {
+    if (!k || JSON.stringify(ha.get(k)) === JSON.stringify(hd.get(k)) || aparte.some((p) => k === p || k.startsWith(`${p}.`))) continue;
+    if (ETIQUETAS[k]) frases.push(dec('config.resumenCambia', { etiqueta: dec(ETIQUETAS[k]).split(' (')[0], antes: mostrar(ha.get(k)), despues: mostrar(hd.get(k)) }));
+    else sueltos += 1;
+  }
+  if (sueltos) frases.push(sueltos === 1 ? dec('config.resumenUnValor', { seccion }) : dec('config.resumenValores', { n: sueltos, seccion }));
+  return frases;
+}
+
+// ── las marcas de las propuestas ──
+// cada propuesta lleva una marca (16 bytes al azar, en 32 caracteres hexadecimales en minúscula)
+const FORMA_DE_MARCA = RP.FORMA_DE_MARCA;
+// cuántas propuestas terminadas recuerda el sitio, con su respuesta
+const MARCAS_RECORDADAS = 200;
 
 /**
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
@@ -457,7 +515,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     }
     const r = ORG.revisar({ seccion: s, texto: v.texto, borrador, lectores: { [s.lector]: lector(s.lector) }, arnes: { thresholds: arnes().thresholds }, hoy: dia(), tree: TREE });
     const problems = [...problemas, ...r.problems];
-    return { ...r, ok: r.ok && !problemas.length, problems, texto: r.ok && !problemas.length ? r.texto : null, borrador, advertencia };
+    const bueno = r.ok && !problemas.length;
+    // lo que cambia, para mostrarlo antes de proponer: la diferencia por renglones y el resumen en palabras
+    const cambia = bueno && typeof r.texto === 'string';
+    const resumen = cambia ? resumenDe(s, docDe(v.texto || '') || {}, docDe(r.texto) || {}, views.idiomaDe(ctx)) : [];
+    const diferencia = cambia ? ORG.diferencia(v.texto || '', r.texto) : [];
+    return { ...r, ok: bueno, problems, texto: bueno ? r.texto : null, borrador, advertencia, resumen, diferencia };
   }
 
   /** El texto que llega a «Proponer» se vuelve a validar entero, con el lector de su archivo: nunca se confía en la pantalla. */
@@ -522,8 +585,46 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return RP.proponer({
       clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
-      now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(),
+      now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(), marca: body.marca || null,
     });
+  }
+
+  // ── la marca de cada propuesta: un solo pedido por marca, y la forma de encontrarlo después ──
+  // en memoria: las propuestas en curso (la promesa, que comparte quien repite la marca) y las últimas terminadas
+  const marcasEnCurso = new Map();
+  const marcasHechas = new Map();
+  const claveDe = (seccion, marca) => `${seccion}\0${marca}`;
+  /** Corre `fn` una vez por marca: repetirla mientras corre espera el mismo resultado y después devuelve el mismo. */
+  function unaVezPorMarca(seccion, marca, fn) {
+    const k = claveDe(seccion, marca);
+    if (marcasHechas.has(k)) return Promise.resolve(marcasHechas.get(k));
+    if (marcasEnCurso.has(k)) return marcasEnCurso.get(k);
+    const promesa = fn().then((r) => {
+      marcasEnCurso.delete(k);
+      marcasHechas.set(k, r);
+      while (marcasHechas.size > MARCAS_RECORDADAS) marcasHechas.delete(marcasHechas.keys().next().value);
+      return r;
+    }, (e) => { marcasEnCurso.delete(k); throw e; });
+    marcasEnCurso.set(k, promesa);
+    return promesa;
+  }
+  /** Qué pasó con la propuesta de una marca: lo que recuerda este sitio o, si no la recuerda, lo que dice el repo. */
+  async function estadoDeLaMarca(s, marca) {
+    const k = claveDe(s.id, marca);
+    if (marcasEnCurso.has(k)) return { ok: true, estado: 'en_curso' };
+    if (marcasHechas.has(k)) {
+      const r = marcasHechas.get(k);
+      // un «ya hay un pedido abierto» habla del pedido de otra propuesta, no de esta
+      if (r && r.enlace && r.codigo !== 'pedido_abierto' && (r.ok || r.codigo === 'quedo_abierto')) return { ok: true, estado: r.codigo === 'aplicado' ? 'aplicado' : 'abierto', enlace: r.enlace };
+      return { ok: true, estado: 'no_hay' };
+    }
+    const cred = cfg.escritura && cfg.escritura[s.repo];
+    const remote = remoteDe(s.repo);
+    if (!cred || !remote || !remote.platform) return { ok: true, estado: 'no_se_pudo_mirar' };
+    let r;
+    try { r = await RP.pedidoDeMarca({ remote, credencial: cred, marca, urlBase, fetch, ahora: ahora() }); } catch (e) { r = { error: (e && e.name) || 'error' }; }
+    if (r && r.error) { log(`configuración: no pude mirar si existe el pedido de una propuesta (${r.error})`); return { ok: true, estado: 'no_se_pudo_mirar' }; }
+    return r ? { ok: true, estado: r.estado, enlace: r.enlace } : { ok: true, estado: 'no_hay' };
   }
 
   /**
@@ -634,9 +735,25 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
         if (!s) return rechazo(400, M('org.seccionDesconocida'));
-        const r = await despuesDeAplicar(s, await proponer(s, e.body, ctx), e.body && e.body.texto);
-        guardado = null;
-        return json(200, r);
+        const marca = e.body && e.body.marca;
+        if (marca !== undefined && !(typeof marca === 'string' && FORMA_DE_MARCA.test(marca))) return rechazo(400, M('config.marcaInvalida'));
+        const trabajo = async () => {
+          const r = await despuesDeAplicar(s, await proponer(s, e.body, ctx), e.body && e.body.texto);
+          guardado = null;
+          return r;
+        };
+        return json(200, marca === undefined ? await trabajo() : await unaVezPorMarca(s.id, marca, trabajo));
+      }),
+    },
+    {
+      // sólo el estado y el enlace del pedido de ESA marca, y nada más (ni la rama, ni el cuerpo, ni quién lo pidió)
+      method: 'GET', path: '/api/config/propuesta', needs: solo, handler: enIdioma(async (ctx) => {
+        const q = ctx.url && ctx.url.searchParams;
+        const s = ORG.seccionPorId(q && q.get('seccion'));
+        if (!s) return rechazo(400, M('org.seccionDesconocida'));
+        const marca = q.get('marca');
+        if (typeof marca !== 'string' || !FORMA_DE_MARCA.test(marca)) return rechazo(400, M('config.marcaInvalida'));
+        return json(200, await estadoDeLaMarca(s, marca));
       }),
     },
   ];
