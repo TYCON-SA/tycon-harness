@@ -467,7 +467,7 @@ test('T10b DependencyAudit_PasoParidad_Corre @story-2.25 @ac-7: clona lo que fal
 
 test('T11 DependencyAudit_GuardaLaParidad @story-2.25 @ac-7: guardar lleva .dashboard/paridad', () => {
   const s = steps(read('dependency-audit.yml')).find((x) => /push-nightly-data\.js save/.test(x));
-  assert.match(s, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad\s*$/m);
+  assert.match(s, /-- \.dashboard\/dependencias inbox\/dependencies \.dashboard\/paridad( \.dashboard\/retros)?\s*$/m);
 });
 
 test('T12 OpsData_TraeLaListaDeLaOrganizacion @story-2.25 @ac-9: la lista de productos de operaciones va encima; sin ella queda la del arnés', () => {
@@ -668,4 +668,23 @@ test('T28 2.33-Nocturno_ConexionPropiaYOrden (Azure) @story-2.33 @ac-10 @ac-11 �
   assert.doesNotMatch(t, /https:\/\/api\.render\.com\/deploy/, 'ningún hook escrito');
   assert.match(t, /push-nightly-data\.js save[\s\S]*-- \.dashboard\/site-update/, 'el resultado se guarda en operaciones');
   assert.match(read('README.md'), /site-update\.yml/);
+});
+
+test('T9 1.26-Nocturno_BarridoAntesDelResumen @story-1.26 @ac-6: el barrido de las retros corre antes del resumen, le pasa su informe y se guarda', () => {
+  const all = steps(read('dependency-audit.yml'));
+  const at = (re) => all.findIndex((s) => re.test(s));
+  const sweep = at(/retro-sweep\.js/);
+  const deliver = at(/daily-summary\.js deliver/);
+  assert.ok(sweep >= 0, 'un paso corre retro-sweep.js');
+  assert.ok(sweep < deliver, 'antes de entregar el resumen');
+  assert.ok(sweep > at(/displayName: 'Clonar los repos declarados'/), 'después de clonar');
+  const s = all[sweep];
+  assert.match(s, /--team-repos "\$\(Build\.SourcesDirectory\)\/team-repos\.json"/, 'los repos, de team-repos.json');
+  assert.match(s, /--out "\$\(Build\.SourcesDirectory\)\/\.dashboard\/retros"/, 'los latidos en .dashboard/retros de operaciones');
+  assert.match(s, /--report "[^"]*retro-sweep-\$HOY\.json"/, 'deja su informe del día');
+  assert.match(s, /CLONE_TOKEN: \$\(System\.AccessToken\)/, 'clona con la credencial de la corrida');
+  assert.match(s, /exit 0\s*$/m, 'un repo que no se pudo mirar no corta la noche: lo dice el resumen');
+  assert.match(all[deliver], /--retros "[^"]*retro-sweep-\$HOY\.json"/, 'el resumen recibe el informe');
+  const save = all.find((x) => /push-nightly-data\.js save/.test(x) && /\.dashboard\/dependencias/.test(x));
+  assert.match(save, /\.dashboard\/retros/, 'guardar lleva .dashboard/retros');
 });

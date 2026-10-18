@@ -187,6 +187,46 @@ perfil a la versión que trae este lector: una máquina con el lector anterior r
 
 ---
 
+## El tamaño de la corrida: liviana o completa
+
+`pipeline.js start` clasifica cada story antes de lanzar nada (`lib/run-size.js`) y lo dice en una línea: tamaño,
+motivo y tiempo estimado.
+
+- **Liviana**: todos los archivos que la story declara (`files_to_create`, `files_to_modify`) son documentación o
+  texto (`.md`, `.txt`, imágenes y capturas) o lo acompañan: las pruebas (`*.test.*`, fixtures), la lista de
+  suites, `tasks/` y NOTICE/LICENSE. Una carpeta cuenta por sus archivos. Ninguno vive en una ruta de seguridad,
+  de producción, del instalador o de la CI.
+- Todo otro JSON es código; el que es un **control** (denegación, excepciones, renombres, lo que decide qué se
+  publica) lo dice en el motivo. Un `.md` que el agente ejecuta (SKILL.md, CLAUDE.md, los pasos, los revisores) y
+  un helper bajo `tests/` también son código.
+- Cuenta lo declarado y lo que el cambio toca de verdad: una story que declara un `.md` y toca código es completa.
+- **Completa**: todo lo demás. También una story sin archivos declarados, y una que toca la superficie compartida del
+  repo (`deep_review_always_paths`) o un repo con `deep_review: always`.
+
+Cuántos archivos o cuántos ACs ya no cambian el tamaño. En una completa siguen eligiendo el modelo, como antes.
+
+Qué cambia en una liviana:
+
+| Paso | Liviana |
+|---|---|
+| Implementar | las tandas de la story van juntas, en una sola corrida |
+| Pruebas | `test-gate.sh` corre sólo las suites que leen algún archivo tocado; las demás quedan «diferidas por corrida liviana», con la lista |
+| Revisores | todos en el modelo barato; los de completitud corren igual |
+| Pase adversarial | no corre (el portón dice «corrida liviana») |
+| Cierre | no se pide la validación pesada del repo, salvo que el dev la nombre (`marker.js set-flag heavyValidationRequested true`) |
+
+Siguen igual: validar la story, aprobar el plan, los revisores de completitud y la prueba de la guía.
+
+**El tiempo estimado** es la mediana de las corridas del mismo tamaño archivadas en esta máquina
+(`~/.claude/.tycon-pipeline/timing-history/`). Las corridas anteriores a esta regla se clasifican por lo que
+tocaron. Sin ninguna, un número fijo (45 min la liviana, 180 la completa), dicho como «estimado sin historia».
+
+**Forzar a mano**: `marker.js set-size liviana|completa --reason "<por qué>"`. Sin motivo no se escribe. Forzar a
+liviana una story que declara código apaga el pase adversarial a sabiendas: queda en `bypass.log`
+(`SIZE_FORCED_LIGHT_WITH_CODE`).
+
+---
+
 ## Roadmap de adopción (sin compromiso de fechas)
 
 | Fase | Qué se hace | Cuándo |

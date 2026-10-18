@@ -760,6 +760,35 @@ function seccionExtra(archivo) {
   return /^PR abiertos hace más de \d+ días: (\d+( \(\+\d+ sin fecha legible\))?|\? \((no se pudo consultar|Azure DevOps apagado|GitHub todavía no se lee)\))$/.test(primera) ? primera : SIN;
 }
 
+/**
+ * La línea de las retrospectivas, del informe del barrido de la noche (scripts/metrics/retro-sweep.js
+ * `--report`). «Latido sin modelo» y «retro con aprendizajes» van por separado: un latido de un segundo no es una
+ * retrospectiva. Sólo números, nombres de repo con forma de nombre y shas: nada de texto libre del informe (los motivos
+ * pueden nombrar una dirección). Sin informe, lo dice: no es «faltan 0».
+ */
+function lineaRetros(archivo) {
+  let r;
+  try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch { return 'retros: ? (el barrido de la noche no dejó su informe)'; }
+  const n = (x) => (Number.isInteger(x) && x >= 0 ? x : null);
+  // un nombre de repo: letras (con acentos), números, espacios y . _ - (Azure acepta espacios); nada más pasa al mensaje
+  const nombre = (x) => (typeof x === 'string' && /^[\p{L}\p{N}._ -]{1,80}$/u.test(x) && x.trim() === x ? x : '?');
+  if (!r || !Array.isArray(r.repos)) return 'retros: ? (el informe del barrido no se pudo leer)';
+  const t = { merges: 0, latido: 0, aprendizajes: 0, no_piden: 0 };
+  const faltan = [];
+  const sinMirar = [];
+  for (const x of r.repos) {
+    if (!x || x.mirado !== true) { sinMirar.push(nombre(x && x.nombre)); continue; }
+    const vals = [n(x.merges), n(x.latido), n(x.aprendizajes)];
+    // cada cuenta tiene que estar: una que falta no es «0» (el informe vino incompleto)
+    const np = x.no_piden && typeof x.no_piden === 'object' && !Array.isArray(x.no_piden) ? Object.values(x.no_piden).map(n) : null;
+    if (vals.includes(null) || !np || np.includes(null) || !Array.isArray(x.faltan)) return 'retros: ? (el informe del barrido no se pudo leer)';
+    t.merges += vals[0]; t.latido += vals[1]; t.aprendizajes += vals[2]; t.no_piden += np.reduce((a, b) => a + b, 0);
+    for (const f of x.faltan) faltan.push(`${nombre(x.nombre)} ${f && typeof f.sha === 'string' && /^[0-9a-f]{7,40}$/.test(f.sha) ? f.sha.slice(0, 7) : '?'}`);
+  }
+  const lista = faltan.length ? ` (${faltan.slice(0, 3).join(', ')}${faltan.length > 3 ? ` y ${faltan.length - 3} más` : ''})` : '';
+  return `retros: ${t.merges} merges a main · latido sin modelo ${t.latido} · retro con aprendizajes ${t.aprendizajes} · no piden retro ${t.no_piden} · faltan ${faltan.length}${lista}${sinMirar.length ? ` · sin mirar: ${sinMirar.join(', ')}` : ''}`;
+}
+
 function entregar(a) {
   let res;
   try { res = armar(a); } catch (e) {
@@ -804,6 +833,7 @@ function entregar(a) {
   }
   final = acotar(final, TOPE_MENSAJE);
   if (a.extra !== null) final = `${final}\n\n${seccionExtra(a.extra)}`;
+  if (a.retros !== null) final = `${final}\n${lineaRetros(a.retros)}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
   if (a.siteUpdate) {
     let actualizacion = null;
@@ -857,7 +887,7 @@ function entregar(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
+    vigOut: null, depsOut: null, extra: null, retros: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -870,6 +900,7 @@ function parseArgs(argv) {
     else if (v === '--watcher-out') a.vigOut = valor(++i);
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
+    else if (v === '--retros') a.retros = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
     else if (v === '--site-update') a.siteUpdate = valor(++i);
@@ -883,7 +914,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
 }
 

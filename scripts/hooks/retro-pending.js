@@ -255,53 +255,17 @@ function dashboardsDe(entry) {
   }
   return out;
 }
-// Cada .dashboard/ se lee y se parsea UNA vez por proceso (2026-09-18): se releían los ~190
-// metrics-*.json (5 MB) por CADA entrada del ledger, dos veces en el arranque (pendientes + cuenta de
-// la ventana) — 12 a 17 s de aviso, creciendo con entradas × archivos. El criterio de «cubierto» no
-// cambió: la misma lectura de campos, en el mismo orden, sólo que memorizada. null = directorio
-// ilegible (se saltea, como antes).
-const metricasMemo = new Map();
-function metricasDe(dir) {
-  if (metricasMemo.has(dir)) return metricasMemo.get(dir);
-  let lista = null;
-  try {
-    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
-    lista = [];
-    for (const f of files) {
-      let d;
-      try { d = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); } catch { continue; }
-      // Un archivo que es `null` hacía reventar la lectura de campos (y el fail-open global callaba el
-      // aviso). Se conserva tal cual —cambio de rendimiento, no de conducta—: revienta al llegar a él.
-      if (d === null) { lista.push({ roto: true }); continue; }
-      const repo = d.repo || d.repo_path || d.repoPath;
-      const sha = String(d.merge_commit || d.mergeCommit || d.commit || '');
-      if (!repo || !sha) continue;
-      lista.push({ repoStr: String(repo), sha });
-    }
-  } catch { lista = null; }
-  metricasMemo.set(dir, lista);
-  return lista;
-}
+// Cada .dashboard/ se lee y se parsea UNA vez por proceso; la lectura y la regla de «cubierto» (repo por ruta real o por
+// sufijo, sha que empieza como el del merge) viven en scripts/lib/retro-coverage.js, la misma copia que usa el barrido
+// de cada noche (scripts/metrics/retro-sweep.js). Un archivo que es `null` revienta al llegar a él, como siempre.
+const RETRO_COVERAGE = require(path.join(__dirname, '..', 'lib', 'retro-coverage.js'));
 function coveredByMetrics(entry) {
-  const repoReal = real(entry.repoPath);
-  const repoRealBarras = repoReal.replace(/\\/g, '/');
   for (const dir of dashboardsDe(entry)) {
-    const lista = metricasDe(dir);
+    const lista = RETRO_COVERAGE.metricsIn(dir);
     if (!lista) continue;
     for (const m of lista) {
       if (m.roto) throw new TypeError(`metrics null en ${dir}`);
-      const { repoStr, sha } = m;
-      // El contrato pide `repo` ABSOLUTO, pero capturers viejos escribieron paths relativos
-      // ("Lapacho/Backend") — se aceptan por sufijo con corte en separador (medido 2026-08-28:
-      // sin esto, retros reales quedaban invisibles y el pendiente se reclamaba para siempre).
-      const matchesRepo = path.isAbsolute(repoStr)
-        ? real(repoStr) === repoReal
-        // Separadores normalizados a "/" en los dos lados: un `repo` relativo escrito con "/" nunca
-        // matcheaba contra `path.sep` en Windows → la cobertura por metrics quedaba invisible y el
-        // pendiente se reclamaba para siempre (pase adversarial 2026-08-31).
-        : repoRealBarras.endsWith('/' + repoStr.replace(/[\\/]+$/, '').replace(/\\/g, '/'));
-      if (!matchesRepo) continue;
-      if (sha.startsWith(entry.sha) || String(entry.sha).startsWith(sha)) return true;
+      if (RETRO_COVERAGE.sameRepo(m, entry.repoPath) && RETRO_COVERAGE.sameSha(m.sha, String(entry.sha))) return true;
     }
   }
   return false;

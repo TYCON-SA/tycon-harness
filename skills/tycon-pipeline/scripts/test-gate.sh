@@ -492,11 +492,20 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   else
     echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story ($(head -1 "$RESULTS_DIR/touched.err")): corren todas las suites" >&2
   fi
+  # Story 7.32: en una corrida liviana (sólo documentación) corren sólo las suites que leen lo tocado; las demás quedan
+  # «diferidas por corrida liviana», con la lista en el resumen. El tamaño lo dice el marcador de la sesión; sin
+  # marcador legible, todo como siempre. Sin saber qué toca la story, el runner corre todo igual.
+  LIGHT_ARGS=()
+  _TG_SIZE="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).size||""))}catch(e){process.stderr.write("[test-gate] no pude leer el tamaño de la corrida del marcador: corren las suites de siempre\n")}})' || true)"
+  if [[ "$_TG_SIZE" == "liviana" ]]; then
+    LIGHT_ARGS=(--light)
+    echo "[test-gate] corrida liviana: sólo las suites que leen algún archivo tocado (las demás, diferidas por corrida liviana)"
+  fi
   # Con la cobertura pedida, cada suite corre bajo el medidor de Node y deja su lcov; el informe lee el
   # juntado ($RESULTS_DIR/coverage/lcov.info) para las líneas tocadas.
   echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo, con cobertura (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
-      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+      node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
 elif [[ "$RUNNER" == "jest" ]]; then
   # `--maxWorkers` capado por default: jest paraleliza en ~cores-1 y cada worker carga jsdom + el
   # grafo de módulos. En una 8-core/16GB eso es el swap thrash que `test-execution-discipline.md`

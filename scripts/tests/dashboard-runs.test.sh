@@ -113,10 +113,15 @@ const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m
 if (!modelo || !scripts.length) { console.error('la página no trae modelo o cliente'); process.exit(2); }
 const cliente = scripts[scripts.length - 1];
 const nodos = {};
-const el = () => ({ innerHTML: '', textContent: '', value: '', checked: false, min: '', max: '', hidden: false, rows: [],
-  addEventListener() {}, set onclick(f) {}, querySelectorAll: () => [], querySelector: () => el(), classList: { add() {}, remove() {}, contains: () => false } });
+const el = () => ({ innerHTML: '', textContent: '', value: '', checked: false, min: '', max: '', hidden: false, rows: [], oyentes: {},
+  addEventListener(t, f) { (this.oyentes[t] = this.oyentes[t] || []).push(f); }, set onclick(f) {}, querySelectorAll: () => [], querySelector: () => el(), classList: { add() {}, remove() {}, contains: () => false } });
 global.window = global; global.window.parent = global.window;
-global.location = { search: '', hash: '' };
+// La dirección y el «ahora» de la prueba vienen del entorno: CL_SEARCH (la parte «?…» de la dirección) y CL_NOW (un instante ISO).
+// history.replaceState guarda la dirección que el cliente escribe en global.__url (null = no escribió nada).
+global.location = { pathname: '/corridas', search: process.env.CL_SEARCH || '', hash: '' };
+global.__url = null;
+global.history = { replaceState(s, t, u) { global.__url = u; } };
+if (process.env.CL_NOW) { const R = Date, ahora = R.parse(process.env.CL_NOW); global.Date = class extends R { constructor(...a) { super(...(a.length ? a : [ahora])); } static now() { return ahora; } }; }
 global.document = { addEventListener() {}, querySelectorAll: () => [], createElement: () => el(),
   getElementById: (id) => id === 'modelo' ? { textContent: modelo } : (nodos[id] = nodos[id] || el()) };
 eval(cliente);
@@ -127,6 +132,17 @@ else if (op === 'all') console.log(M.corridas.map((c) => window.__detalle(c)).jo
 else if (op === 'impossible-filter') { nodos['f-desde'].value = '2030-01-01'; nodos['f-hasta'].value = '2030-12-31'; window.__aplicar(); console.log(nodos['fichas'].innerHTML); }
 else if (op === 'usage-filter') { nodos['fc'].checked = true; window.__aplicar(); console.log(nodos['fichas'].innerHTML); }
 else if (op === 'machine-filter') { nodos['f-maquina'].value = arg; window.__aplicar(); console.log(nodos['fichas'].innerHTML + '\n' + nodos['cuenta'].textContent); }
+else if (op === 'link') console.log(JSON.stringify(window.__enlace()));
+else if (['state', 'set', 'change', 'preset', 'clear'].includes(op)) {
+  // set «campo=valor;campo=valor» cambia campos y aplica; preset «hoy|semana|mes»; clear «limpiar»; state sólo lo lee.
+  if (op === 'set') { for (const par of arg.split(';')) { const [k, ...v] = par.split('='); nodos[k].value = v.join('='); } window.__aplicar(); }
+  // change «campo=valor»: como la persona, dispara los oyentes de «change» del campo (los que el código registró).
+  if (op === 'change') { const [k, ...v] = arg.split('='); nodos[k].value = v.join('='); (nodos[k].oyentes.change || []).forEach((f) => f()); }
+  if (op === 'preset') window.__atajo(arg);
+  if (op === 'clear') window.__limpiar();
+  const g = (id) => nodos[id] ? nodos[id].value : null;
+  console.log(JSON.stringify({ desde: g('f-desde'), hasta: g('f-hasta'), repo: g('f-repo'), maquina: g('f-maquina'), cuenta: nodos['cuenta'].textContent, vistas: ((/n=(\d+) de (\d+) corridas/.exec(nodos['fichas'].innerHTML) || [])[0] || 'ninguna').replace(/ corridas/, ''), url: global.__url }));
+}
 else { console.error('op desconocida'); process.exit(2); }
 JS
 cliente() { node "${CL}" "$@"; }
@@ -1700,8 +1716,138 @@ console.log([/class="tile/.test(nodos.fichas.innerHTML)?"fichas":"sin-fichas",d.
 [ "${R}" = "fichas detalle embebida pedidos=0 embebida" ] && ok "2.27-T23 la página local trae su fuente embebida y no pide nada por la red" || mal "2.27-T23 fuente embebida: ${R}"
 rm -rf "${T}"
 
+# ═══════════════════════ story 2.45 · filtros por fecha y máquina en la dirección; «no anotó sus pasos» ═══════════════════════
+# Dos corridas de dos productos (15/08 y 20/08). El cliente real corre con CL_NOW (el «ahora»), CL_SEARCH (la dirección) y TZ.
+S7="77777777-7777-4777-8777-777777777777"; S8="88888888-8888-4888-8888-888888888888"
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-15T10:00:00Z" '{"marker":{"storyId":"F1"}}'
+volcado "${T}/r" "${S2}" "2026-08-20T10:00:00Z" '{"marker":{"storyId":"F2","repoPath":"/Users/dev/SourceCode/Otro/FrontEnd"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+PROD_A="$(modelo_json "${T}/r" | python3 -c "import json,sys; print([c['producto'] for c in json.load(sys.stdin)['corridas'] if c['story']=='F1'][0])")"
+PROD_B="$(modelo_json "${T}/r" | python3 -c "import json,sys; print([c['producto'] for c in json.load(sys.stdin)['corridas'] if c['story']=='F2'][0])")"
+campo() { python3 -c "import json,sys; v=json.loads(sys.argv[1])[sys.argv[2]]; print('' if v is None else v)" "$1" "$2"; }
+estado() { CL_NOW="$1" CL_SEARCH="$2" TZ="${3:-UTC}" cliente "${T}/o.html" "${@:4}"; }
+
+# ── 2.45-T1 · AtajosLlenanDesdeHasta: hoy / esta semana (lunes a hoy) / este mes (día 1 a hoy) ──
+# 🔴 rojo previo: sin botones ni __atajo, o la semana contada desde el domingo (el domingo 18/10 quedaría en su propio día).
+for caso in "hoy|2026-10-14T15:00:00Z|2026-10-14|2026-10-14" "semana|2026-10-14T15:00:00Z|2026-10-12|2026-10-14" "mes|2026-10-14T15:00:00Z|2026-10-01|2026-10-14" "semana|2026-10-18T15:00:00Z|2026-10-12|2026-10-18" "semana|2026-10-12T15:00:00Z|2026-10-12|2026-10-12"; do
+  IFS='|' read -r nom ahora d h <<< "${caso}"
+  E="$(estado "${ahora}" "" UTC preset "${nom}")"
+  [ "$(campo "${E}" desde)|$(campo "${E}" hasta)" = "${d}|${h}" ] && ok "2.45-T1 «${nom}» el ${ahora%%T*} → ${d} a ${h}" || mal "2.45-T1 «${nom}» el ${ahora%%T*}: ${E}"
+done
+for id in f-hoy f-semana f-mes; do grep -q "id=\"${id}\"" "${T}/o.html" && ok "2.45-T1 el botón #${id} está en la página" || mal "2.45-T1 falta el botón #${id}"; done
+grep -q '>hoy<' "${T}/o.html" && grep -q '>esta semana<' "${T}/o.html" && grep -q '>este mes<' "${T}/o.html" && ok "2.45-T1 los botones dicen hoy / esta semana / este mes" || mal "2.45-T1 los botones no dicen sus nombres"
+
+# ── 2.45-T2 · FiltroEscribeLaDireccion: sólo lo que difiere del default; limpiar la vacía ──
+# 🔴 sale rojo si no escribe nada, o si escribe también los campos en su valor por defecto (desde=hasta= siempre).
+E="$(estado "2026-10-14T15:00:00Z" "?abrir=0&ver=2" UTC set "f-desde=2026-08-18")"
+U="$(campo "${E}" url)"
+case "${U}" in *desde=2026-08-18*) ok "2.45-T2 cambiar «desde» lo escribe en la dirección (${U})";; *) mal "2.45-T2 «desde» no llegó a la dirección: ${E}";; esac
+case "${U}" in *hasta=*|*producto=*|*maquina=*) mal "2.45-T2 la dirección lleva campos que están en su valor por defecto: ${U}";; *) ok "2.45-T2 los campos en su default no se escriben";; esac
+case "${U}" in *abrir=0*ver=2*|*ver=2*abrir=0*) ok "2.45-T2 conserva abrir y ver";; *) mal "2.45-T2 perdió abrir/ver: ${U}";; esac
+E="$(estado "2026-10-14T15:00:00Z" "" UTC set "f-repo=${PROD_B}")"
+case "$(campo "${E}" url)" in *producto=*) ok "2.45-T2 cambiar el producto lo escribe";; *) mal "2.45-T2 el producto no llegó a la dirección: ${E}";; esac
+E="$(estado "2026-10-14T15:00:00Z" "?solo=0&desde=2026-08-18&producto=${PROD_B}" UTC clear)"
+U="$(campo "${E}" url)"
+case "${U}" in *desde=*|*producto=*|*hasta=*|*maquina=*) mal "2.45-T2 limpiar dejó parámetros del filtro: ${U}";; *) ok "2.45-T2 limpiar vacía los parámetros del filtro";; esac
+case "${U}" in *solo=0*) ok "2.45-T2 limpiar conserva solo";; *) mal "2.45-T2 limpiar perdió solo: ${U}";; esac
+E="$(estado "2026-10-14T15:00:00Z" "" UTC set "f-hasta=2026-08-19")"
+case "$(campo "${E}" url)" in *hasta=2026-08-19*) ok "2.45-T2 cambiar «hasta» lo escribe";; *) mal "2.45-T2 «hasta» no llegó a la dirección: ${E}";; esac
+# 🔴 sale rojo si «hoy», el día de la última corrida, no escribe «hasta» por coincidir con el rango: el enlace compartido,
+# abierto al día siguiente, trae también las corridas nuevas.
+E="$(estado "2026-08-20T15:00:00Z" "" UTC preset hoy)"
+case "$(campo "${E}" url)" in *desde=2026-08-20*hasta=2026-08-20*) ok "2.45-T2 un atajo escribe desde y hasta aunque coincidan con el rango";; *) mal "2.45-T2 el atajo no fijó el rango en la dirección: ${E}";; esac
+E="$(estado "2026-10-14T15:00:00Z" "" UTC change "f-hasta=2026-08-20")"
+case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 «hasta» puesto a mano en el último día con corridas se escribe igual";; *) mal "2.45-T2 «hasta» a mano en el borde del rango no llegó: ${E}";; esac
+E="$(estado "2026-10-14T15:00:00Z" "?hasta=2026-08-20" UTC set "f-repo=${PROD_B}")"
+case "$(campo "${E}" url)" in *hasta=2026-08-20*) ok "2.45-T2 un «hasta» que vino en la dirección se conserva al cambiar otro filtro";; *) mal "2.45-T2 se perdió el «hasta» de la dirección: ${E}";; esac
+
+# ── 2.45-T3 · DireccionFiltraAlCargar: filtra; un valor inválido se ignora y la página carga ──
+# 🔴 sale rojo si no lee la dirección (la página sale sin filtrar) o si falla con una fecha mal escrita.
+E="$(estado "2026-10-14T15:00:00Z" "?desde=2026-08-18&hasta=2026-08-30&producto=${PROD_B}" UTC state)"
+[ "$(campo "${E}" desde)|$(campo "${E}" hasta)|$(campo "${E}" repo)" = "2026-08-18|2026-08-30|${PROD_B}" ] && ok "2.45-T3 la dirección pone desde, hasta y producto" || mal "2.45-T3 no leyó la dirección: ${E}"
+case "$(campo "${E}" vistas)" in "n=1 de 1") ok "2.45-T3 la vista carga filtrada (una corrida)";; *) mal "2.45-T3 la vista no quedó filtrada: ${E}";; esac
+[ -z "$(campo "${E}" url)" ] && ok "2.45-T3 cargar no reescribe la dirección" || mal "2.45-T3 cargar escribió la dirección: ${E}"
+E="$(estado "2026-10-14T15:00:00Z" "?desde=2026-13-45&hasta=abc&producto=NoExiste&maquina=zzz" UTC state)"; RC=$?
+[ "${RC}" -eq 0 ] && [ "$(campo "${E}" desde)|$(campo "${E}" hasta)|$(campo "${E}" repo)" = "2026-08-15|2026-08-20|" ] && ok "2.45-T3 valores inválidos → el filtro queda en todos y la página carga" || mal "2.45-T3 con valores inválidos: rc=${RC} ${E}"
+E="$(estado "2026-10-14T15:00:00Z" "?desde=2026-02-30" UTC state)"
+[ "$(campo "${E}" desde)" = "2026-08-15" ] && ok "2.45-T3 una fecha imposible (30 de febrero) se ignora" || mal "2.45-T3 aceptó el 30 de febrero: ${E}"
+rm -rf "${T}"
+
+# ── 2.45-T5 · FechaLocalDelNavegador: una corrida de las 23:30 locales entra en su día local ──
+# 🔴 sale rojo si compara el ISO en UTC: 23:30 en Buenos Aires (02:30Z del día siguiente) cae en «mañana».
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "2026-08-16T02:30:00Z" '{"marker":{"storyId":"L1"}}'
+generar "${T}/r" "${T}/o.html" "${T}/log"
+E="$(CL_NOW="2026-08-16T01:00:00Z" CL_SEARCH="?desde=2026-08-15&hasta=2026-08-15" TZ=America/Argentina/Buenos_Aires cliente "${T}/o.html" state)"
+[ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 la corrida de las 23:30 locales entra en su día local (15/08)" || mal "2.45-T5 la corrida de las 23:30 locales quedó fuera de su día: ${E}"
+E="$(CL_NOW="2026-08-16T01:00:00Z" TZ=America/Argentina/Buenos_Aires cliente "${T}/o.html" preset hoy)"
+[ "$(campo "${E}" desde)" = "2026-08-15" ] && [ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T5 «hoy» a las 22 h locales es el día local y trae la corrida" || mal "2.45-T5 «hoy» usó la fecha UTC: ${E}"
+rm -rf "${T}"
+
+# ── 2.45-T6 · SinPasosAnotadosLoDice: sólo el paso 0 pero trabajó → «no anotó sus pasos» ──
+# 🔴 sale rojo si falta el campo: la fila dice «quedó en el 0» y parece una corrida abandonada.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"marker":{"stepsCompleted":[0]}}'
+J="$(modelo_json "${T}/r")"
+python3 -c "
+import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['sin_pasos_anotados'] is True and not c['llego_al_final'], c.get('sin_pasos_anotados')" "${J}" && ok "2.45-T6 el modelo marca sin_pasos_anotados y no cuenta como llegada al 8" || mal "2.45-T6 el modelo no marca sin_pasos_anotados"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+CELDA="$(grep -o '<td class="pasos-n">.*</td>' "${T}/o.html")"
+grep -q 'no anotó sus pasos' <<< "${CELDA}" && ok "2.45-T6 la fila dice «no anotó sus pasos»" || mal "2.45-T6 la fila no lo dice: ${CELDA}"
+grep -q 'quedó en el 0' <<< "${CELDA}" && mal "2.45-T6 la fila sigue diciendo «quedó en el 0»" || ok "2.45-T6 ya no dice «quedó en el 0»"
+grep -q 'title="[^"]*no es una corrida abandonada' <<< "${CELDA}" && ok "2.45-T6 la explicación al pasar el mouse está" || mal "2.45-T6 falta la explicación (title)"
+D="$(cliente "${T}/o.html" detail 0)"
+grep -q 'no anotó sus pasos' <<< "${D}" && ! grep -q 'quedó en el paso 0' <<< "${D}" && ok "2.45-T6 el chip del detalle dice «no anotó sus pasos»" || mal "2.45-T6 el detalle: $(echo "${D}" | grep -o 'quedó en el paso [0-9?]*\|no anotó sus pasos' | head -1)"
+grep -q '"sin_pasos_anotados":true' "${T}/o.html" && ok "2.45-T6 el campo está en el modelo que va al cliente" || mal "2.45-T6 falta en el modelo embebido"
+rm -rf "${T}"
+
+# 2.45-T6 · sólo consumo: sin archivos, pero con consumo fuera del paso 0 → también trabajó
+# 🔴 sale rojo si cuenta sólo archivos: una corrida que leyó y razonó sin escribir diría «quedó en el 0».
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"marker":{"stepsCompleted":[0],"filesTouched":[],"fileEvents":[]},"consumo":{"por_paso":{"0":1000,"1":null,"4":null,"5":null,"8":null},"fuera_de_ventana":5000}}'
+python3 -c "
+import json,sys; c=json.loads(sys.argv[1])['corridas'][0]; assert c['sin_pasos_anotados'] is True, c.get('sin_pasos_anotados')" "$(modelo_json "${T}/r")" && ok "2.45-T6 sólo con consumo fuera del paso 0 también se marca" || mal "2.45-T6 el consumo solo no la marcó"
+rm -rf "${T}"
+
+# ── 2.45-T7 · PasoCeroSinTrabajoSigueIgual: el paso 0 sin archivos ni consumo, o sin ningún paso, sigue «quedó en el 0» / «—» ──
+# 🔴 sale rojo si marca toda corrida con [0]: una abandonada de verdad diría «no anotó» y se escondería.
+T=$(mktemp -d)
+volcado "${T}/r" "${S1}" "" '{"marker":{"stepsCompleted":[0],"filesTouched":[],"fileEvents":[]},"consumo":{"por_paso":{"0":1000,"1":null,"4":null,"5":null,"8":null},"fuera_de_ventana":0}}'
+volcado "${T}/r" "${S2}" "2026-08-16T05:53:47Z" '{"marker":{"stepsCompleted":[]}}'
+J="$(modelo_json "${T}/r")"
+python3 -c "
+import json,sys; c=json.loads(sys.argv[1])['corridas']
+por={x['inicio'][:10]: x for x in c}
+assert por['2026-08-15']['sin_pasos_anotados'] is False, por['2026-08-15'].get('sin_pasos_anotados')
+assert por['2026-08-16']['sin_pasos_anotados'] is False, 'sin ningún paso no es «sólo el paso 0»'" "${J}" && ok "2.45-T7 el 0 sin trabajo y la corrida sin pasos NO se marcan" || mal "2.45-T7 se marcó una corrida que no cumple"
+generar "${T}/r" "${T}/o.html" "${T}/log"
+CELDAS="$(grep -o '<td class="pasos-n">[^/]*</span></td>' "${T}/o.html")"
+grep -q 'quedó en el 0' <<< "${CELDAS}" && ok "2.45-T7 la corrida en el 0 sin trabajo sigue diciendo «quedó en el 0»" || mal "2.45-T7 ya no dice «quedó en el 0»: ${CELDAS}"
+grep -q 'no anotó sus pasos' <<< "${CELDAS}" && mal "2.45-T7 dice «no anotó sus pasos» sin que haya trabajado" || ok "2.45-T7 no dice «no anotó sus pasos»"
+rm -rf "${T}"
+
+# ── 2.45-T8 · PermalinksViejosSiguen: solo, abrir y maquina andan como antes ──
+# 🔴 sale rojo si la lectura de la dirección pisa ENLACE (solo/abrir) o el valor de ?maquina=.
+T=$(mktemp -d); C="${T}/buzon"; R="${T}/local"
+volcado "${C}/maq-a" "${S1}" "2026-08-20T10:00:00Z" '{"marker":{"storyId":"A1"}}'
+volcado "${C}/maq-b" "${S3}" "2026-08-22T10:00:00Z" '{"marker":{"storyId":"B3"}}'
+mkdir -p "${R}"
+TYCON_MACHINE=maq-a node "${TABLERO}" --view runs --runs-dir "${R}" --mailbox "${C}" --output "${T}/o.html" >/dev/null 2>&1
+E="$(CL_SEARCH="?maquina=maq-b" cliente "${T}/o.html" state)"
+[ "$(campo "${E}" maquina)" = "maq-b" ] && [ "$(campo "${E}" vistas)" = "n=1 de 1" ] && ok "2.45-T8 ?maquina= filtra como antes" || mal "2.45-T8 ?maquina=: ${E}"
+E="$(CL_SEARCH="?maquina=NoExiste" cliente "${T}/o.html" state)"
+[ -z "$(campo "${E}" maquina)" ] && [ "$(campo "${E}" vistas)" = "n=2 de 2" ] && ok "2.45-T8 una máquina que no está se ignora" || mal "2.45-T8 máquina inexistente: ${E}"
+E="$(CL_SEARCH="" cliente "${T}/o.html" set "f-maquina=maq-b")"
+case "$(campo "${E}" url)" in *maquina=maq-b*) ok "2.45-T2 cambiar la máquina la escribe en la dirección";; *) mal "2.45-T2 la máquina no llegó a la dirección: ${E}";; esac
+ENL="$(CL_SEARCH="?abrir=1&ver=3&git=2" cliente "${T}/o.html" link)"
+[ "${ENL}" = '{"abrir":1,"ver":3,"git":2,"solo":null,"maquina":null}' ] && ok "2.45-T8 abrir, ver y git se leen como antes" || mal "2.45-T8 el enlace salió: ${ENL}"
+ENL="$(CL_SEARCH="?solo=1&desde=2026-08-20" cliente "${T}/o.html" link)"
+[ "${ENL}" = '{"abrir":1,"ver":null,"git":null,"solo":1,"maquina":null}' ] && ok "2.45-T8 solo sigue andando junto a un filtro nuevo" || mal "2.45-T8 solo: ${ENL}"
+rm -rf "${T}"
+
 # ── T15 · esta suite NO toca los entregables commiteados (gemelo del C-27) ─────────────────────
-# 🔴 rojo previo: un caso generando sobre artifacts/ en vez de sobre un temporal.
+# 🔴 sale rojo si un caso genera sobre artifacts/ en vez de sobre un temporal.
 [ "$(huella "${ENTREGABLE_CORRIDAS}")" = "${HUELLA_CORRIDAS_ANTES}" ] && ok "T15 la suite no escribió artifacts/runs-dashboard.html (no se commitea)" || mal "T15 la suite ESCRIBIÓ artifacts/runs-dashboard.html"
 [ "$(huella "${ENTREGABLE_SEIS}")" = "${HUELLA_SEIS_ANTES}" ] && ok "T15 la suite no tocó artifacts/tablero-del-arnes.html" || mal "T15 la suite REESCRIBIÓ artifacts/tablero-del-arnes.html"
 

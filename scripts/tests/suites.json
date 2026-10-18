@@ -352,6 +352,13 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
+      "requiere": [
+        "agent-skills"
+      ]
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/write-findings-signer.test.js",
       "requiere": [
         "agent-skills"
@@ -467,6 +474,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/story-gate-cli.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/adhoc-orphan.test.js",
       "requiere": []
     },
     {
@@ -869,6 +881,11 @@
     {
       "raiz": "arnes",
       "ruta": "tests/step-times.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
+      "ruta": "tests/work-in-progress.test.js",
       "requiere": []
     },
     {
@@ -2394,6 +2411,12 @@
       "__nota": "story 8.30 (T1 a T5): los modelos de pipelines de operaciones para cualquier organización (pipelines/operations/) — los archivos en su lugar, ningún literal del equipo, todo paso con efectos atado a efectos (y a main si empuja), y la plantilla ops-data.yml corrida de verdad sobre dos repos de juguete. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/operations-pipelines.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "el barrido de las retrospectivas (scripts/metrics/retro-sweep.js): repos de juguete con git de verdad y el latido real; lo cubierto, lo que no pide retro, «no pude mirar», el reintento de lo que faltó, el clon por url y la regla de scripts/lib/retro-coverage.js. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-sweep.test.js",
       "requiere": []
     },
     {

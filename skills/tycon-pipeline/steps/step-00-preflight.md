@@ -264,6 +264,18 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js set-autonomo
 
 **Si `set-autonomous` falla** (sin marker, permisos): WARNING, NO bloquear — el pipeline sigue en modo HITL normal (el hook deja parar sin `autonomous:true`).
 
+## El tamaño de la corrida — se anuncia antes de lanzar nada
+
+`start` clasifica la story en **liviana** (sólo documentación o textos) o **completa** (lo demás) y estima el tiempo
+con las corridas anteriores de la máquina. En `--brief`: `tamano`, `tamano_por`, `estimado_min`, `estimado_de`; en el
+marcador: `size`, `size_reason`, `estimate_min`. El orquestador lo dice en UNA línea antes del primer lanzamiento:
+
+> Corrida liviana: sólo documentación (12 archivos). Estimado: 40 min (mediana de 6 corridas livianas de esta máquina).
+
+Sin historia el número es fijo y se dice «estimado sin historia». Para cambiarlo: `marker.js set-size
+liviana|completa --reason "<por qué>"` (a liviana con código queda en `bypass.log`). Qué cambia en cada paso:
+`guides/harness-cost-tiering.md` §El tamaño de la corrida.
+
 ## PIPE-C8 — Sugerencia de modelo + effort de sesión por complejidad
 
 **Advisory — NUNCA bloquea.** Los Steps 2–4 (plan BMAD + implementación) corren INLINE en el main loop → su modelo es el **de la sesión**, y solo el user puede cambiarlo con `/model`. El output de `pipeline.js start` ya incluye `model_hint` (también disponible standalone: `pipeline.js model-hint --story <spec>`):

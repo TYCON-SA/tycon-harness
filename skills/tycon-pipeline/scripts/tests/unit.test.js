@@ -6830,3 +6830,154 @@ test('next: el salteo del 0c sin pedido de trabajo sigue siendo un salteo (no pi
   assert.ok(d.steps.find((s) => s.step === '0c').skip_mechanical);
   fs.rmSync(home, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
+
+// ── el tamaño de la corrida: liviana (sólo documentación) o completa ─────────────────────────────────
+function story732(files, extra = '') {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 's732-'));
+  const story = path.join(repo, 'story.md');
+  const lista = (k, xs) => (xs.length ? `${k}:\n${xs.map((f) => `  - ${f}`).join('\n')}\n` : '');
+  fs.writeFileSync(story, `---\nstory: "9.32"\nstatus: ready-for-dev\n${lista('files_to_modify', files)}${extra}---\n# x\n\n## Acceptance Criteria\n\n1. a\n`);
+  for (const f of files) {
+    fs.mkdirSync(path.dirname(path.join(repo, f)), { recursive: true });
+    fs.writeFileSync(path.join(repo, f), 'x\n');
+  }
+  return { repo, story };
+}
+
+test('7.32-Portón_LivianaSinPase: el portón del pase da run:false con «corrida liviana»', () => {
+  const { repo, story } = story732(['guides/a.md', 'guides/b.md', 'guides/c.md', 'guides/d.md', 'guides/e.md', 'guides/f.md', 'guides/g.md']);
+  const g = computeDeepReviewGate({ story, repo, files: ['guides/a.md'], filesDeclarado: true });
+  assert.equal(g.run, false);
+  assert.match(g.reason, /corrida liviana/);
+  // el kill-switch y el forzado siguen mandando
+  assert.equal(computeDeepReviewGate({ story, repo, files: ['guides/a.md'], filesDeclarado: true, deepReview: true }).run, true);
+});
+
+test('7.32-Revisores_Baratos: en una liviana todos los revisores van en el modelo barato y los de completitud quedan', () => {
+  const { repo, story } = story732(['guides/a.md']);
+  const { aplicarTamanoALosRevisores } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const set = { all: ['tycon-ac-coverage-checker', 'tycon-deferral-tracker', 'tycon-plugin-security-basics'] };
+  aplicarTamanoALosRevisores(set, { story, repo });
+  assert.equal(set.run_size, 'liviana');
+  assert.deepEqual(Object.values(set.model_hints), ['haiku', 'haiku', 'haiku']);
+  assert.ok(set.all.includes('tycon-ac-coverage-checker') && set.all.includes('tycon-deferral-tracker'), 'completitud en el set');
+  // con modelos por revisor de la organización, el mismo modelo barato
+  const conOrg = { all: ['tycon-ac-coverage-checker'], reviewer_models: { 'tycon-ac-coverage-checker': { model: 'opus', origin: 'organization' } } };
+  aplicarTamanoALosRevisores(conOrg, { story, repo });
+  assert.equal(conOrg.reviewer_models['tycon-ac-coverage-checker'].model, 'haiku');
+  // por línea de comandos: el set sale con los modelos baratos y la completitud adentro
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-adv-'));
+  const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'advisors', '--repo', repo, '--story', story, '--files', 'guides/a.md'],
+    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'adv-732' } });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.run_size, 'liviana');
+  for (const a of out.all) assert.equal(out.model_hints[a] || (out.reviewer_models && out.reviewer_models[a].model), 'haiku', `${a} en el barato`);
+  assert.ok(out.all.includes('tycon-ac-coverage-checker'), 'la completitud corre igual');
+});
+
+test('7.32-Arranque_AnunciaYGuarda: start --brief dice tamaño, motivo y tiempo, y quedan en el marcador', () => {
+  const { repo, story } = story732(['guides/a.md']);
+  for (const c of [['init', '-q'], ['config', 'user.email', 't@t.co'], ['config', 'user.name', 't'], ['add', '.'], ['commit', '-qm', 'base'], ['checkout', '-qb', 'feat/x']]) {
+    execFileSync('git', ['-C', repo, ...c], { stdio: 'ignore' });
+  }
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-start-'));
+  fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+  fs.symlinkSync(path.resolve(SCRIPTS, '..', '..', '..'), path.join(home, '.claude', 'agent-skills'));
+  const r = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'start', '--repo', repo, '--story', story, '--brief'],
+    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'start-732', TYCON_LANE_LLM: '0' } });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const b = JSON.parse(r.stdout);
+  assert.equal(b.tamano, 'liviana');
+  assert.match(b.tamano_por, /sólo documentación/);
+  assert.equal(b.estimado_min, 45);
+  assert.match(b.estimado_de, /estimado sin historia/);
+  assert.ok(b.acciones.some((a) => /^TAMAÑO: corrida liviana .* estimado 45 min/.test(a)), 'el anuncio en una línea');
+  const m = JSON.parse(fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'active', 'start-732.json'), 'utf8'));
+  assert.equal(m.size, 'liviana');
+  assert.match(m.size_reason, /sólo documentación/);
+  assert.equal(m.estimate_min, 45);
+});
+
+test('7.32-Forzado_ConMotivo: set-size sin motivo rechaza, con motivo guarda, a liviana con código deja bypass.log', () => {
+  const { story } = story732(['scripts/x.js']);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-size-'));
+  writeFakeMarker(home, 'size-732', { storyPath: story, repoPath: path.dirname(story), size: 'completa' });
+  const run = (...a) => require('node:child_process').spawnSync(process.execPath, [MARKER, 'set-size', ...a], markerEnv('size-732', home));
+  const sinMotivo = run('liviana');
+  assert.equal(sinMotivo.status, 2);
+  assert.match(sinMotivo.stderr, /falta el motivo/);
+  const file = path.join(home, '.claude', '.tycon-pipeline', 'active', 'size-732.json');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).size, 'completa', 'sin motivo no escribe');
+  const ok = run('liviana', '--reason', 'sólo cambia un comentario');
+  assert.equal(ok.status, 0, ok.stderr);
+  const m = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(m.size, 'liviana');
+  assert.equal(m.sizeForced.reason, 'sólo cambia un comentario');
+  assert.ok(m.sizeForced.by, 'quién');
+  const log = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
+  assert.match(log, /SIZE_FORCED_LIGHT_WITH_CODE/);
+  // el forzado manda en el portón por línea de comandos
+  const g = require('node:child_process').spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'deep-review-gate', '--repo', path.dirname(story), '--story', story, '--files', 'scripts/x.js'],
+    { encoding: 'utf8', env: { ...process.env, HOME: home, CLAUDE_CODE_SESSION_ID: 'size-732' } });
+  assert.equal(JSON.parse(g.stdout).run, false, g.stderr);
+});
+
+test('7.32-CodigoComoHoy: una story de código sale con el mismo riesgo, modelo y pase que antes', () => {
+  const chica = story732(['scripts/a.js', 'scripts/b.js']);
+  const grande = story732(['scripts/a.js', 'scripts/b.js', 'scripts/c.js', 'scripts/d.js', 'scripts/e.js', 'scripts/f.js', 'scripts/g.js']);
+  const rcC = computeRiskClass({ story: chica.story, repo: chica.repo, files: [] });
+  assert.equal(rcC.risk, 'LOW');
+  const rcG = computeRiskClass({ story: grande.story, repo: grande.repo, files: [] });
+  assert.equal(rcG.risk, 'NORMAL');
+  assert.equal(rcG.criteria.find((c) => c.name === 'superficie-chica').detail, '7 archivos en scope (límite 6; 0 archivos = scope no declarado → NORMAL)');
+  assert.equal(computeModelHint({ story: grande.story, repo: grande.repo, files: [] }).recommended_session_model, 'opus');
+  const g = computeDeepReviewGate({ story: grande.story, repo: grande.repo, files: ['scripts/a.js', 'scripts/b.js', 'scripts/c.js', 'scripts/d.js', 'scripts/e.js', 'scripts/f.js', 'scripts/g.js'], filesDeclarado: true });
+  assert.equal(g.run, true);
+  assert.match(g.reason, /risk-class NORMAL/);
+  // y una de texto con más de 12 archivos y muchos ACs no pide el modelo mayor
+  const texto = story732(Array.from({ length: 14 }, (_, i) => `guides/g${i}.md`));
+  const mh = computeModelHint({ story: texto.story, repo: texto.repo, files: [] });
+  assert.equal(mh.signals.find((s) => s.name === 'superficie-grande').hit, false);
+  assert.equal(computeRiskClass({ story: texto.story, repo: texto.repo, files: [] }).risk, 'LOW');
+});
+
+test('7.32-Paso4_TandasJuntas: next en el paso 4 de una liviana dice que las tandas van juntas', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-next-'));
+  const sid = 'next-732';
+  markerDe27(home, sid, { size: 'liviana', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 6, 7, 8] });
+  const r = correr27(home, sid, 'pipeline.js', ['next']);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.next_step, '4');
+  assert.match(out.note, /las tandas van juntas en esta corrida/);
+  // en una completa, nada
+  const home2 = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-next2-'));
+  markerDe27(home2, sid, { size: 'completa', stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 6, 7, 8] });
+  assert.doesNotMatch(JSON.parse(correr27(home2, sid, 'pipeline.js', ['next']).stdout).note, /tandas van juntas/);
+});
+
+test('7.32-Cierre_SinLa170: el cierre de una liviana no pide la validación pesada salvo que el dev la nombre', () => {
+  const { notaDelTamano } = require(path.join(SCRIPTS, 'pipeline.js'));
+  const paso8 = { step: '8' };
+  assert.match(notaDelTamano({ size: 'liviana' }, paso8), /no pidas la validación pesada/);
+  assert.match(notaDelTamano({ size: 'liviana', heavyValidationRequested: true }, paso8), /pedila antes del merge/);
+  assert.equal(notaDelTamano({ size: 'completa' }, paso8), null);
+  // la bandera la escribe set-flag
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'h732-flag-'));
+  writeFakeMarker(home, 'flag-732', { size: 'liviana' });
+  const r = require('node:child_process').spawnSync(process.execPath, [MARKER, 'set-flag', 'heavyValidationRequested', 'true'], markerEnv('flag-732', home));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('7.32-DiffReal_Manda: una story que declara un .md y un diff que toca código no sale liviana', () => {
+  const { repo, story } = story732(['guides/a.md']);
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'x\n');
+  const g = computeDeepReviewGate({ story, repo, files: [path.join(repo, 'guides/a.md'), path.join(repo, 'src/a.js')], filesDeclarado: true });
+  assert.notEqual(g.risk, 'liviana');
+  assert.doesNotMatch(String(g.reason), /corrida liviana/);
+  const rc = computeRiskClass({ story, repo, files: Array.from({ length: 10 }, (_, i) => `src/f${i}.js`) });
+  assert.equal(rc.run_size, 'completa');
+  assert.equal(rc.criteria.find((c) => c.name === 'superficie-chica').pass, false);
+});

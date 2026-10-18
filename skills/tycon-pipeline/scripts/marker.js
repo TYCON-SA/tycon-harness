@@ -54,7 +54,9 @@
  *   marker.js find-by-story <storyId>           → JSON array con markers que matcheen
  *                                                  ese storyId (cualquier sesión)
  *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
- *                                                  (recovery / admin)
+ *                                                  (recovery / admin); sin marker, lo dice y sale 1
+ *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
+ *                                                  y lleva más de 24 h sin tocarse
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
  *                                                  filesTouched/iterations/checks/dodRuntimeChecked
@@ -346,6 +348,8 @@ function cmdSet(payloadJson) {
       // story 7.30: la maqueta aprobada y la decisión del paso 3 son de la story. Heredadas, la story B usaría la
       // maqueta de A (o su «sin pantalla») en el paso 8.
       mockupApproval, mockupDecision,
+      // el tamaño de la corrida (y su forzado a mano) es de la story.
+      size, size_reason, estimate_min, estimate_source, sizeForced,
       ...carryOver
     } = existing;
     console.error(
@@ -438,6 +442,15 @@ function cmdSet(payloadJson) {
     // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
     // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
     fileEvents: payload.fileEvents || existing?.fileEvents || [],
+    // el tamaño de la corrida y su estimado los anota `pipeline.js start`. Un forzado a mano
+    // (`set-size`) gana sobre un `start` re-corrido de la misma story: re-clasificar no deshace una decisión con motivo.
+    ...(() => {
+      const keep = existing && existing.sizeForced;
+      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : (payload[k] ?? existing?.[k]));
+      const out = {};
+      for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
+      return out;
+    })(),
   };
   // story 2.7: el paso 0 arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
   // enseguida), así que sin esto el paso 0 salía siempre «estimado» y toda corrida real «parcial».
@@ -1694,7 +1707,7 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // pase adversarial lo cerraron con la bandera y sin anotar qué encontró, y 3 de esas 4 pasaron el paso 8 igual.
 // Ahora la escriben sólo los dos comandos que cierran el 5b con constancia: `mark-adversarial-result` (el pase
 // corrió y se anota su resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
-const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman'];
+const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
 
 function cmdSetFlag(flag, valRaw) {
   if (flag === 'deepReviewDone') {
@@ -1718,6 +1731,48 @@ function cmdSetFlag(flag, valRaw) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
+}
+
+// Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"` (`--motivo` llega
+// traducido por legacy-names). Sin motivo no se
+// escribe nada (nadie sabría después por qué se saltó el pase). Forzar a liviana una story que declara código queda en
+// bypass.log: es apagar el pase adversarial a sabiendas.
+function cmdSetSize(args) {
+  const SIZES = ['liviana', 'completa'];
+  const size = args[0];
+  const i = args.indexOf('--reason');
+  const reason = i >= 0 ? String(args[i + 1] || '').trim() : '';
+  if (!SIZES.includes(size)) {
+    console.error(`marker.js set-size: tamaño inválido '${size || ''}' — válidos: ${SIZES.join(' | ')}`);
+    process.exit(2);
+  }
+  if (!reason) {
+    console.error('marker.js set-size: falta el motivo — marker.js set-size <liviana|completa> --reason "<por qué>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-size: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const by = process.env.USER || process.env.USERNAME || marker.sessionId || 'desconocido';
+  let declared = null;
+  try {
+    declared = require('./pipeline.js').computeRunSize({ story: marker.storyPath, repo: marker.repoPath });
+  } catch (e) {
+    console.error(`marker.js set-size: no pude clasificar lo que declara la story (${String(e.message || e).split('\n')[0]}); se guarda igual`);
+  }
+  const prev = marker.size || null;
+  marker.size = size;
+  marker.size_reason = `forzado a mano: ${reason}`;
+  marker.sizeForced = { by, reason, at: nowIso(), from: prev };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  if (size === 'liviana' && declared && declared.size === 'completa') {
+    appendLog('bypass.log', { kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: marker.storyId, by, reason, declared: declared.reason });
+    console.error(`⚠️  la story declara algo que no es documentación (${declared.reason}): forzarla a liviana apaga el pase adversarial — queda en bypass.log`);
+  }
+  process.stdout.write(`size: ${size} (${reason})\n`);
 }
 
 // story 7.29 — el pedido del dev para esta corrida: `set-models <trabajo>=<modelo> … | --clear`. `<trabajo>` es
@@ -2633,10 +2688,82 @@ function cmdClearSession(sid) {
   }
   const safe = String(sid).replace(/[/\\]/g, '_');
   const p = path.join(ACTIVE_DIR, `${safe}.json`);
-  if (fs.existsSync(p)) {
-    try { fs.unlinkSync(p); } catch (_e) { /* ignore */ }
+  if (!fs.existsSync(p)) {
+    console.error(`marker.js clear-session: no había marcador de esa sesión (${safe}): no se borró nada.`);
+    process.exit(1);
+  }
+  try { fs.unlinkSync(p); } catch (e) {
+    console.error(`marker.js clear-session: no pude borrar ${p}: ${e.message}`);
+    process.exit(1);
   }
   process.stdout.write(`cleared: ${safe}.json\n`);
+}
+
+// ¿Está viva la sesión? Lo dicen los archivos de sesión de Claude Code (~/.claude/sessions/<pid>.json, con su
+// sessionId): viva si alguno la nombra y su proceso existe. Un archivo que no se puede leer podría ser el de esa
+// sesión, así que no se la puede dar por muerta: se devuelve cuál.
+function sessionLiveness(sid) {
+  const dir = path.join(os.homedir(), '.claude', 'sessions');
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code === 'ENOENT') return { alive: false };
+    return { unknown: `${dir}: ${e.message}` };
+  }
+  for (const n of names) {
+    let s;
+    try { s = JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8')); } catch (e) { return { unknown: `${path.join(dir, n)}: ${e.message}` }; }
+    if (!s || s.sessionId !== sid) continue;
+    const pid = Number(s.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return { unknown: `${path.join(dir, n)}: pid ilegible` };
+    try { process.kill(pid, 0); return { alive: true, pid }; } catch (e) { if (e.code === 'EPERM') return { alive: true, pid }; }
+  }
+  return { alive: false };
+}
+
+// `adhoc clear-orphan <sid>`: el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
+// y el ad-hoc lleva más de STALE_HOURS sin tocarse; cada borrado y cada negativa quedan en adhoc.log.
+function cmdAdhocClearOrphan(sid) {
+  if (!sid) {
+    console.error('marker.js adhoc clear-orphan: falta el id de la sesión — uso: adhoc clear-orphan <sessionId>');
+    process.exit(2);
+  }
+  const io = require('./lib/story-gate-io.js');
+  // El id se compara ya saneado, igual que el nombre del archivo: un id con separadores no esquiva las comprobaciones.
+  sid = String(sid).replace(/[/\\]/g, '_');
+  const deny = (motivo, code = 3) => {
+    appendLog('adhoc.log', { kind: 'ADHOC_CLEAR_ORPHAN_DENIED', sessionId: sid, motivo, by: SID });
+    console.error(`marker.js adhoc clear-orphan: no se borró — ${motivo}`);
+    process.exit(code);
+  };
+  if (sid === String(SID).replace(/[/\\]/g, '_')) deny('es el ad-hoc de esta misma sesión: se termina con `marker.js adhoc clear`');
+  const file = io.adhocPath(STATE_DIR, sid);
+  if (!fs.existsSync(file)) deny('no hay ad-hoc de esa sesión: no se borró nada', 1);
+  let a = null;
+  try { a = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_e) { a = null; }
+  const reason = a && typeof a === 'object' ? a.reason || null : '(ilegible)';
+  // La última vez tocado: la primera fecha legible entre lastTouch y declaredAt; sin ninguna, la del archivo.
+  let touched = [a && a.lastTouch, a && a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+  if (touched === undefined) {
+    try { touched = fs.statSync(file).mtimeMs; } catch (e) { deny(`no pude leer la fecha del ad-hoc: ${e.message}`); }
+  }
+  const live = sessionLiveness(sid);
+  if (live.unknown) deny(`no pude verificar que la sesión no esté viva (${live.unknown})`);
+  if (live.alive) deny(`la sesión está viva (pid ${live.pid})`);
+  const until = touched + STALE_HOURS * 3600 * 1000;
+  if (Date.now() < until) {
+    const d = new Date(until);
+    const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    deny(`lleva menos de ${STALE_HOURS} h sin tocarse: se podrá después de las ${hhmm} del ${d.toISOString().slice(0, 10)}`);
+  }
+  try { fs.unlinkSync(file); } catch (e) { deny(`no pude borrar ${file}: ${e.message}`, 1); }
+  // appendLog no frena si no puede escribir: se mira que la línea haya quedado y, si no, se avisa.
+  const logFile = path.join(STATE_DIR, 'adhoc.log');
+  const size = () => { try { return fs.statSync(logFile).size; } catch (_e) { return -1; } };
+  const before = size();
+  appendLog('adhoc.log', { kind: 'ADHOC_CLEAR_ORPHAN', sessionId: sid, reason, lastTouch: new Date(touched).toISOString(), by: SID });
+  if (size() <= before) console.error(`marker.js adhoc clear-orphan: ⚠ se borró, pero no pude dejar la constancia en ${logFile}`);
+  process.stdout.write(`adhoc: borrado el de la sesión ${sid} («${reason}»)\n`);
+  process.exit(0);
 }
 
 /**
@@ -2987,6 +3114,7 @@ function cmdRuntimeWaiver(storyArg) {
 // tiene prioridad sobre él aunque siga existiendo.
 // ============================================================
 function cmdAdhoc(sub, payloadJson) {
+  if (sub === 'clear-orphan') return cmdAdhocClearOrphan(payloadJson);
   const io = require('./lib/story-gate-io.js');
   const existing = io.readAdhoc(STATE_DIR, SID);
   if (sub === 'get') {
@@ -3125,7 +3253,7 @@ function cmdAdhoc(sub, payloadJson) {
     process.stdout.write(JSON.stringify(obj, null, 2) + '\n');
     process.exit(0);
   }
-  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear');
+  console.error('marker.js adhoc: uso — adhoc set \'{"reason":"…","maxFiles":N}\' | adhoc get | adhoc clear | adhoc clear-orphan <sessionId>');
   process.exit(2);
 }
 
@@ -3212,6 +3340,9 @@ switch (cmd) {
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
     break;
+  case 'set-size':
+    cmdSetSize(process.argv.slice(3));
+    break;
   case 'set-models':
     cmdSetModels(process.argv.slice(3));
     break;
@@ -3253,7 +3384,7 @@ switch (cmd) {
     console.error(
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
         'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
-        'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|snapshot-iter|' +
+        'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
         'approve-mockup> [arg] [arg2]',
     );

@@ -167,6 +167,14 @@ Recién entonces implementar hasta verde. El gate verde final pasa a ser: **los 
 
 > **Escape hatch (manual, NO automático)**: para ese caso existe el skill `bmad-testarch-atdd`, que **deriva** la estrategia de tests desde los ACs (elige nivel E2E/API/component/unit/integration/contract, arma fixtures) en vez de leerla de la tabla. No está cableado al pipeline a propósito: (a) con tabla `### Tests` es redundante — Mary ya hizo ese trabajo; (b) requiere `_bmad/tea/config.yaml` + `test_artifacts`, que hoy ningún repo TYCON tiene; (c) no conoce el contrato de T-IDs/traits `@story-N.M`/`@ac-n` que consume `tycon-ac-coverage-checker`, así que si se usa hay que agregar los traits a mano. Invocarlo sólo si el dev lo pide explícitamente.
 
+## Corrida liviana — las tandas van juntas
+
+Si el marcador dice `size: liviana` (`pipeline.js next` lo recuerda en la nota), las tandas de la story se hacen en
+UNA sola implementación y una sola vuelta de pruebas: no se corta por tanda. `test-gate.sh` corre sólo las suites que
+leen algún archivo tocado (las que lo nombran, la suite misma, o las de su carpeta); las demás quedan en
+`deferred_suites` como «diferida por corrida liviana». El lanzamiento temprano del pase adversarial no aplica: el
+portón dice «corrida liviana».
+
 ## Acción — ejecución
 
 Invocar el skill BMAD nuevamente, esta vez en modo ejecución (no plan):

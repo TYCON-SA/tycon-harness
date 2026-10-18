@@ -643,6 +643,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
+## skills/tycon-pipeline/scripts/lib/run-size.js — el tamaño de la corrida
+
+**Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.
+
+**Por qué existe:** Una story que sólo reescribía una guía salía con pase adversarial y cuatro horas estimadas: el riesgo contaba archivos, no lo que tocan.
+
+**Quién la usa:** `pipeline.js` (el arranque, el riesgo, la sugerencia de modelo, el portón del pase y los revisores), `marker.js set-size` y `test-gate.sh` (las suites de una liviana).
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/run-size.test.js` y los casos `7.32` de `unit.test.js`
+
+**Guía:** [harness-cost-tiering](harness-cost-tiering.md#el-tamaño-de-la-corrida-liviana-o-completa)
+
 ## skills/tycon-pipeline/scripts/lib/runtime-waiver.js — el registro de firmas de la matriz
 
 **Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.
@@ -1116,6 +1128,18 @@ _(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpu
 **Dónde se prueba:** `scripts/tests/step-times.test.sh`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
+
+## scripts/tools/work-in-progress.js
+
+_(scripts/tools/work-in-progress.js + el comando commands/wip.md)_
+
+**Qué es:** Es el comando `/wip`: una tabla con el trabajo en curso de esta máquina (story, paso, hora estimada de fin y sesión), las sesiones libres y lo que quedó a medio camino de sesiones que ya cerraron.
+
+**Por qué existe:** Con varias sesiones trabajando a la vez, saber qué hace cada una pedía leer los marcadores a mano. La hora de fin sale de la mediana de los pasos medidos en las corridas anteriores de la máquina; sin datos, lo dice en vez de inventar una hora.
+
+**Quién la usa:** Quien coordina varias sesiones en la misma máquina. Sólo lee: no limpia ni adopta nada.
+
+**Dónde se prueba:** `scripts/tests/work-in-progress.test.js`
 
 ## scripts/metrics/upload-runs.js
 
