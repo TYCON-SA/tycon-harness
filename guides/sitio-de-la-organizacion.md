@@ -478,13 +478,19 @@ visita la despierta.
   que trae. También la podés armar vos (abajo).
 - **Una forma de iniciar sesión de la organización:** Entra ID, Google Workspace, GitHub, o cualquier proveedor OIDC
   (Okta, Keycloak). En ese proveedor se registra una aplicación para el sitio.
-- **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo).
+- **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo). Si todavía no lo
+  tenés: cómo se crea y qué archivos lleva, en `pipelines/operations/README.md` §2 del arnés (los ejemplos, en
+  `pipelines/operations/examples/`). Para el sitio alcanza con `operations.json`; lo mínimo, en la prueba con Docker.
 - **Opcional: el buzón de corridas**, si la organización junta las corridas de las máquinas.
 - **Un lugar donde correr un contenedor** con HTTPS delante: una nube, un servicio gratis o una máquina propia.
 
 ## Probarlo en tu máquina con Docker
 
-Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto y el clon del repo público del arnés.
+Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto, el clon del repo público del arnés y
+Node 22 o más nuevo (para la prueba del paso 3).
+
+Acá la dirección del sitio es `http://127.0.0.1`: el sitio exige `https://` en cualquier otra dirección, pero acepta
+`http` en la propia máquina, para probar. Lo mismo vale para la dirección del repo de operaciones.
 
 1. **Armar la imagen** (desde la raíz del clon; corrido de verdad: unos 2 minutos la primera vez):
 
@@ -517,6 +523,24 @@ Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto 
    inventados (un repo que no existe), lo medimos: el sitio arranca, `/livez` da 200, `/` redirige al inicio de sesión de
    GitHub, `/api/inicio` da 401, y el sitio queda **frenado** porque no puede leer el repo (`/healthz` da 503 y la prueba
    dice «el sitio está frenado»). Con el repo de verdad y su token, el sitio carga.
+
+   **Lo mínimo del repo de operaciones.** Para que el sitio arranque sin quedar frenado, `operations.json`, en la raíz
+   de `main`, necesita al menos esto (con tu correo en lugar del de ejemplo). Medido: con este archivo, `/healthz` da 200
+   y la prueba sin sesión pasa.
+
+   ```json
+   {
+     "version": 1,
+     "owners": { "default": "vos@acme.example" },
+     "reviewers": { "dependencies": ["vos@acme.example"] },
+     "site": { "access": [{ "role": "maintainer", "emails": ["vos@acme.example"] }] }
+   }
+   ```
+
+   `owners` y `reviewers` son de los procesos de la noche, pero el archivo no valida sin ellos (el registro del
+   contenedor dice qué falta: «owners: falta»). Si el sitio queda frenado, el motivo exacto está en ese registro, no en
+   `/healthz`. Con un repo así, el registro dice además «el repo de operaciones no trae repos.json» y «sin_foto»: es lo
+   normal mientras la noche no corrió.
 
 4. **Entrar.** Abrí http://127.0.0.1:8080 y entrá con tu cuenta. Para eso hace falta registrar antes la aplicación en
    GitHub (*Settings → Developer settings → OAuth Apps → New OAuth App*, con la dirección `http://127.0.0.1:8080` y la
@@ -582,7 +606,9 @@ Si tu plataforma tiene sondas, **las dos van contra `/livez`**, con un plazo de 
   de vida contra él reiniciaría el contenedor en un lazo, y reiniciar no arregla la configuración.
 - **La de lista, tampoco contra `/readyz`.** La plataforma no manda tráfico hasta que esa sonda pasa, y `/readyz`
   espera todas las fuentes, el buzón entero incluido. El sitio ya sirve cada pestaña apenas la puede armar: la que
-  todavía espera dice «cargando» y se recarga sola, y la frenada explica por qué. `/readyz` queda para quien quiera saber
+  todavía espera dice «cargando» y se recarga sola, y la frenada explica por qué. `/readyz` da 200 apenas leyó todas las
+  fuentes una vez, **también con el sitio frenado**: es a propósito, para que el sitio siga a la vista y explique por qué
+  está frenado. El freno se mira en `/healthz`. `/readyz` queda para quien quiera saber
   si terminó de cargar todo.
 
 ### Los secretos, con el menor permiso
@@ -593,7 +619,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | Secreto | Para qué | Alcance mínimo |
 |---|---|---|
 | `SITE_SESSION_KEY` | firmar la sesión | 32 bytes al azar, sólo del sitio |
-| `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile`; vence en 6 meses como máximo |
+| `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile` (con `github`, que no es OIDC, el sitio pide `read:user user:email read:org`: leer la cuenta, sus correos y si es de la organización); vence en 6 meses como máximo |
 | `SITE_OPERATIONS_TOKEN` (o la identidad de la plataforma, `SITE_OPERATIONS_IDENTITY=managed`, sin secreto) | leer el repo de operaciones | una identidad propia con lectura sólo en ese repo; si es un token, de una organización, sólo lectura de código, 90 días; en GitHub, de grano fino, de un solo repo, `contents: read` |
 | `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las corridas del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
