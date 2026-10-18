@@ -639,7 +639,8 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 
 El sitio lee del repo de operaciones su configuración y lo que deja la noche. Hay tres formas, según dónde vive el sitio
 y dónde vive el repo. Se elige una sola: con `SITE_OPERATIONS_SOURCE=copy`, `SITE_OPERATIONS_TOKEN` y
-`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están.
+`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están. `SITE_OPERATIONS_REPO`, en cambio, sigue siendo
+obligatoria con la copia: es la dirección del repo donde «Proponer» arma sus pedidos, y sin ella el sitio no arranca.
 
 1. **Copia con la identidad de la plataforma, en Azure** (`SITE_OPERATIONS_SOURCE=copy`,
    `SITE_OPERATIONS_COPY=<cuenta>/<contenedor>`). Un trabajo del repo de operaciones (`site-copy.yml`, en

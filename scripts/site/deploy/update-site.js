@@ -116,6 +116,27 @@ function plataformaDe(o) {
         const r = correr(['containerapp', 'update', '-g', a.grupo, '-n', a.app, '--image', ref, '-o', 'none', ...sub]);
         return r && r.status === 0 ? { ok: true } : { error: `no se pudo cambiar la imagen (${breve(r)})` };
       },
+      // `update` vuelve antes de que la revisión nueva sirva: probar antes le pega a la anterior, que todavía tiene el
+      // tráfico. Se espera a que la última revisión sea la lista, tenga esa imagen y se lleve todo el tráfico.
+      async esperar(ref) {
+        const { cadaMs = 10000, plazoMs = 600000, dormir = (ms) => new Promise((r) => setTimeout(r, ms)) } = a.espera || {};
+        const hasta = Date.now() + plazoMs;
+        for (;;) {
+          const r = correr(['containerapp', 'show', '-g', a.grupo, '-n', a.app, '--query', '{ultima:properties.latestRevisionName,lista:properties.latestReadyRevisionName,trafico:properties.configuration.ingress.traffic}', '-o', 'json', ...sub]);
+          let v = null;
+          try { v = r && r.status === 0 ? JSON.parse(r.stdout) : null; } catch { v = null; }
+          if (v && v.ultima && v.ultima === v.lista) {
+            const t = Array.isArray(v.trafico) ? v.trafico : [];
+            const todo = t.length === 1 && Number(t[0].weight) === 100 && (t[0].latestRevision === true || t[0].revisionName === v.ultima);
+            const rv = todo ? correr(['containerapp', 'revision', 'show', '-g', a.grupo, '-n', a.app, '--revision', v.ultima, '--query', '{imagen:properties.template.containers[0].image,estado:properties.runningState}', '-o', 'json', ...sub]) : null;
+            let d = null;
+            try { d = rv && rv.status === 0 ? JSON.parse(rv.stdout) : null; } catch { d = null; }
+            if (d && String(d.imagen).trim() === ref) return { ok: true };
+          }
+          if (Date.now() >= hasta) return { error: 'la revisión nueva no quedó lista con todo el tráfico' };
+          await dormir(cadaMs);
+        }
+      },
     };
   }
   if (o.plataforma === 'local') {
@@ -235,14 +256,16 @@ async function actualizar(o) {
     const atras = p.aplicar(anterior);
     return fin('no_pudo', desde, st.version, atras.error ? `${cambio.error}; y ${atras.error}` : cambio.error);
   }
-  const prueba = await probar(p.url);
+  const lista = p.esperar ? await p.esperar(ref) : { ok: true };
+  const prueba = lista.error ? { ok: false, motivo: `la prueba sin sesión falló (${lista.error})` } : await probar(p.url);
   if (prueba.ok) return fin('actualizado', desde, st.version);
   // la prueba falló: vuelve a la huella que corría y la prueba otra vez; la huella nueva no se reintenta
   const motivo = prueba.motivo && prueba.motivo.startsWith('la prueba sin sesión falló') ? prueba.motivo : `la prueba sin sesión falló (${prueba.motivo || 'sin motivo'})`;
   estado.fallidas[st.huella] = motivo;
   const atras = p.aplicar(anterior);
   if (atras.error) return fin('no_pudo', desde, st.version, `${motivo}; y ${atras.error}`);
-  const otra = await probar(p.url);
+  const devuelta = p.esperar ? await p.esperar(anterior) : { ok: true };
+  const otra = devuelta.error ? { ok: false } : await probar(p.url);
   return fin('vuelto_atras', desde, st.version, otra.ok ? motivo : `${motivo}; la anterior tampoco pasó la prueba`);
 }
 
