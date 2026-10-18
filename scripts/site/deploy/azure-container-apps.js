@@ -51,7 +51,8 @@
  *   El archivo de configuración (fuera de todo repo; ver guides/sitio-de-la-organizacion.md): subscription,
  *   resourceGroup, location (la de la cuenta del buzón), environment, app, logAnalyticsWorkspace, logAnalyticsQuotaGb,
  *   storageAccount, fileShare, fileShareQuotaGb, image (por su huella), tenantId, oidcClientId,
- *   mailbox { resourceGroup, account, container }, operationsRepo, operationsIdentity (managed | token),
+ *   mailbox { resourceGroup, account, container }, operationsRepo, operationsIdentity (copy | managed | token; con copy,
+ *   operationsCopy { resourceGroup, account, container }: la cuenta de la copia con la llave apagada),
  *   firstMaintainer (opcional), profileRepo (opcional). Ningún secreto.
  *   `TYCON_AZ_CMD` cambia el `az` (las pruebas usan un doble).
  */
@@ -114,7 +115,16 @@ function problemas(c, fase) {
     let repo = null;
     try { repo = new URL(c.operationsRepo); } catch { repo = null; }
     if (!repo || repo.protocol !== 'https:' || repo.username || repo.password) p.push('operationsRepo: la dirección https del repo de operaciones, sin credencial');
-    if (!['managed', 'token'].includes(c.operationsIdentity)) p.push('operationsIdentity: managed (la identidad del sitio) o token (una cuenta dedicada)');
+    if (!['managed', 'token', 'copy'].includes(c.operationsIdentity)) p.push('operationsIdentity: copy (la copia de operaciones en un contenedor), managed (la identidad del sitio en Azure DevOps) o token (una cuenta dedicada)');
+    if (c.operationsIdentity === 'copy') {
+      // la cuenta de la copia, con la llave apagada; nunca la del disco (su llave está prendida) ni la del buzón
+      const oc = c.operationsCopy;
+      if (!oc || typeof oc !== 'object' || !/^[A-Za-z0-9._()-]{1,90}$/.test(oc.resourceGroup || '') || !CUENTA.test(oc.account || '') || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(oc.container || '')) {
+        p.push('operationsCopy: { resourceGroup, account, container } de la copia de operaciones');
+      } else if (oc.account === c.storageAccount || (c.mailbox && oc.account === c.mailbox.account)) {
+        p.push('operationsCopy: la copia va en una cuenta propia, ni la del disco del sitio (su llave está prendida) ni la del buzón');
+      }
+    } else if (c.operationsCopy !== undefined) p.push('operationsCopy: sólo con operationsIdentity «copy»');
     if (c.firstMaintainer !== undefined && !(typeof c.firstMaintainer === 'string' && CORREO.test(c.firstMaintainer))) p.push('firstMaintainer: un correo');
     if (c.profileRepo !== undefined) {
       let u = null;
@@ -282,6 +292,23 @@ function faseSitio(c, run, salida, env, sec) {
     run.paso({ que: 'crear el recurso compartido de Azure Files (el disco)', args: ['storage', 'share-rm', 'create', '--storage-account', c.storageAccount, ...g, '-n', c.fileShare,
       '--quota', String(c.fileShareQuotaGb), '-o', 'none', ...SUB(c)] });
   }
+  // la copia de operaciones: una cuenta propia con la LLAVE APAGADA (sólo entran identidades con su rol) y el
+  // contenedor por el plano de gestión (`container-rm`: no hace falta un rol de datos para crearlo)
+  if (c.operationsIdentity === 'copy') {
+    const oc = c.operationsCopy;
+    const gc = ['-g', oc.resourceGroup];
+    if (!run.existe(['storage', 'account', 'show', '-n', oc.account, ...gc, ...SUB(c)])) {
+      run.paso({ que: 'crear la cuenta de la copia de operaciones, con la llave apagada', args: ['storage', 'account', 'create', '-n', oc.account, ...gc, '-l', c.location,
+        '--sku', 'Standard_LRS', '--kind', 'StorageV2', '--min-tls-version', 'TLS1_2', '--allow-blob-public-access', 'false', '--allow-shared-key-access', 'false', '-o', 'none', ...SUB(c)] });
+    } else {
+      // una cuenta que ya existía (o a la que alguien le volvió a prender la llave): cada corrida la deja apagada
+      run.paso({ que: 'dejar la llave de la cuenta de la copia apagada (y sin acceso público)', args: ['storage', 'account', 'update', '-n', oc.account, ...gc,
+        '--allow-shared-key-access', 'false', '--allow-blob-public-access', 'false', '-o', 'none', ...SUB(c)] });
+    }
+    if (!run.existe(['storage', 'container-rm', 'show', '--storage-account', oc.account, ...gc, '-n', oc.container, ...SUB(c)])) {
+      run.paso({ que: 'crear el contenedor de la copia', args: ['storage', 'container-rm', 'create', '--storage-account', oc.account, ...gc, '-n', oc.container, '--public-access', 'off', '-o', 'none', ...SUB(c)] });
+    }
+  }
   const llaveCuenta = run.leerSecreto(['storage', 'account', 'keys', 'list', '-n', c.storageAccount, ...g, '--query', '[0].value', '-o', 'tsv', ...SUB(c)], 'la llave de la cuenta del disco');
   run.paso({
     que: 'agregar el disco al ambiente',
@@ -296,6 +323,7 @@ function faseSitio(c, run, salida, env, sec) {
     const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', `https://login.microsoftonline.com/${c.tenantId}/v2.0`],
       ['SITE_OIDC_CLIENT_ID', c.oidcClientId], ['SITE_OPERATIONS_REPO', c.operationsRepo], ['SITE_MAILBOX_IDENTITY', 'managed'], ['SITE_DATA_DIR', DISCO],
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
+      ...(c.operationsIdentity === 'copy' ? [['SITE_OPERATIONS_SOURCE', 'copy'], ['SITE_OPERATIONS_COPY', `${c.operationsCopy.account}/${c.operationsCopy.container}`]] : []),
       ...(c.firstMaintainer ? [['SITE_FIRST_MAINTAINER', c.firstMaintainer]] : []),
       ...(c.profileRepo ? [['SITE_PROFILE_REPO', c.profileRepo]] : [])];
     const yaml = {
@@ -358,15 +386,23 @@ function faseSitio(c, run, salida, env, sec) {
       run.paso({ que: 'actualizar la aplicación (imagen, secretos y variables), con los secretos en el archivo', args: ['containerapp', 'update', ...g, '-n', c.app, '--yaml', 'ARCHIVO', '-o', 'none', ...SUB(c)], archivo: yaml, nombreArchivo: 'aplicacion.yaml' });
     }
   }
-  // el rol de lectura del buzón, sobre el contenedor (no sobre la cuenta)
+  // el rol de lectura del buzón (y, con la copia, el de su contenedor), sobre el contenedor (no sobre la cuenta)
   const principal = run.leer(['containerapp', 'show', ...g, '-n', c.app, '--query', 'identity.principalId', '-o', 'tsv', ...SUB(c)], '<la identidad del sitio>');
-  const alcance = `/subscriptions/${c.subscription}/resourceGroups/${c.mailbox.resourceGroup}/providers/Microsoft.Storage/storageAccounts/${c.mailbox.account}/blobServices/default/containers/${c.mailbox.container}`;
-  const yaHay = run.leer(['role', 'assignment', 'list', '--assignee', principal, '--role', 'Storage Blob Data Reader', '--scope', alcance, '--query', 'length(@)', '-o', 'tsv', ...SUB(c)], '0');
-  if (yaHay === '0') {
+  const contenedor = (rg, cuenta, k) => `/subscriptions/${c.subscription}/resourceGroups/${rg}/providers/Microsoft.Storage/storageAccounts/${cuenta}/blobServices/default/containers/${k}`;
+  const lecturas = [['la lectura del contenedor del buzón', contenedor(c.mailbox.resourceGroup, c.mailbox.account, c.mailbox.container)]];
+  if (c.operationsIdentity === 'copy') lecturas.push(['la lectura del contenedor de la copia de operaciones', contenedor(c.operationsCopy.resourceGroup, c.operationsCopy.account, c.operationsCopy.container)]);
+  for (const [que, alcance] of lecturas) {
+    const yaHay = run.leer(['role', 'assignment', 'list', '--assignee', principal, '--role', 'Storage Blob Data Reader', '--scope', alcance, '--query', 'length(@)', '-o', 'tsv', ...SUB(c)], '0');
+    if (yaHay !== '0') continue;
     // la identidad recién creada tarda en llegar a Entra ID: «Cannot find user or service principal in graph database»
     // es esa demora, y se reintenta con espera; cualquier otro error frena
-    run.paso({ que: 'dar a la identidad del sitio la lectura del contenedor del buzón', args: ['role', 'assignment', 'create', '--assignee-object-id', principal, '--assignee-principal-type', 'ServicePrincipal',
+    run.paso({ que: `dar a la identidad del sitio ${que}`, args: ['role', 'assignment', 'create', '--assignee-object-id', principal, '--assignee-principal-type', 'ServicePrincipal',
       '--role', 'Storage Blob Data Reader', '--scope', alcance, '-o', 'none', ...SUB(c)], reintentar: { si: /Cannot find user or service principal in graph database/i, veces: 12 } });
+  }
+  if (c.operationsIdentity === 'copy') {
+    // la escritura es del trabajo que copia, con SU identidad (no la del sitio): el alta no la conoce, la da quien la creó
+    const alcance = contenedor(c.operationsCopy.resourceGroup, c.operationsCopy.account, c.operationsCopy.container);
+    salida(`\nEl trabajo que copia (pipelines/operations/site-copy.yml) escribe con su propia identidad. Dale el rol sobre ESTE contenedor y nada más:\n  az role assignment create --assignee-object-id <la identidad del trabajo que copia> --assignee-principal-type ServicePrincipal --role "Storage Blob Data Contributor" --scope ${alcance}`);
   }
   // el inicio integrado: un inquilino, el secreto por su nombre. El inquilino va en el emisor: az no acepta --issuer y
   // --tenant-id juntos («cannot be configured to non empty strings at the same time»)

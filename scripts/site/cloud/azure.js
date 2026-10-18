@@ -14,6 +14,8 @@
  *     2026-10-15). La identidad se agrega a la organización de Azure DevOps una vez (2.30).
  *   · La lectura de Azure Blob la hace `bajar()` de scripts/metrics/download-runs.js, con la credencial que le pasa el
  *     sitio: la SAS de sólo lectura o este token.
+ *   · `almacenDeCopia()`: el contenedor de la copia de operaciones, para `operations-copy.js` (el sitio lee,
+ *     el trabajo que copia escribe con la sesión de `az`).
  *
  * El token nunca se escribe en disco ni en el registro: vive en la memoria del proceso lo que dura un refresco.
  */
@@ -61,6 +63,90 @@ function bajarUnaCorrida({ cuenta, contenedor, credencial, urlBase, maquina, bas
 /** El token de la identidad administrada para leer el repo de operaciones en Azure DevOps. */
 const tokenParaRepo = () => tokenDeIdentidad(RECURSO_AZURE_DEVOPS);
 
+// ── La copia de operaciones: el contenedor donde la deja el trabajo que copia ─────────────────────────
+const X_MS_VERSION = '2021-08-06';
+
+/** El token de almacenamiento de la sesión de `az` (el trabajo que copia). `TYCON_AZ_CMD` cambia el ejecutable. */
+function tokenDeLineaDeOrdenes(env = process.env) {
+  const r = require('child_process').spawnSync(env.TYCON_AZ_CMD || 'az', ['account', 'get-access-token', '--resource', RECURSO_ALMACENAMIENTO, '--query', 'accessToken', '-o', 'tsv'], { encoding: 'utf8', windowsHide: true });
+  const t = String(r.stdout || '').trim();
+  if (r.status !== 0 || !t) return { estado: 'sin_permiso', motivo: `az no dio un token de almacenamiento (${String(r.stderr || r.error || '').trim().slice(0, 200)})` };
+  return { token: t };
+}
+
+/**
+ * El contenedor `cuenta/contenedor` de Azure Blob: `{ get, put, list, del }`, cada uno resuelve `{ status, cuerpo }` o
+ * `{ error }` (nunca rechaza). La credencial: `{ token }`, `{ sas }`, `{ managed: true }` (la identidad administrada) o
+ * `{ lineaDeOrdenes: true }` (la sesión de `az`, una vez por almacén). `urlBase` (las pruebas, Azurite): la base sin la
+ * cuenta en el host.
+ */
+function almacenDeCopia({ cuenta, contenedor, credencial, urlBase = null, timeoutMs = 60000 }) {
+  if (!/^[a-z0-9]{3,24}$/.test(String(cuenta)) || !/^[a-z0-9](?:[a-z0-9-]{1,61})[a-z0-9]$/.test(String(contenedor))) {
+    throw new Error('la cuenta o el contenedor de la copia no tienen la forma de Azure Storage');
+  }
+  const base = urlBase ? `${String(urlBase).replace(/\/$/, '')}/${cuenta}/${contenedor}` : `https://${cuenta}.blob.core.windows.net/${contenedor}`;
+  let deLaSesion = null;
+  async function cabeceras() {
+    if (credencial && typeof credencial.token === 'string') return { headers: { Authorization: `Bearer ${credencial.token}` } };
+    if (credencial && typeof credencial.sas === 'string') return { headers: {}, sas: credencial.sas.replace(/^\?/, '') };
+    if (credencial && credencial.managed === true) {
+      const t = await tokenDeIdentidad(RECURSO_ALMACENAMIENTO);
+      return t.token ? { headers: { Authorization: `Bearer ${t.token}` } } : { falla: t };
+    }
+    if (credencial && credencial.lineaDeOrdenes === true) {
+      if (!deLaSesion) deLaSesion = tokenDeLineaDeOrdenes();
+      return deLaSesion.token ? { headers: { Authorization: `Bearer ${deLaSesion.token}` } } : { falla: deLaSesion };
+    }
+    return { falla: { estado: 'sin_configurar', motivo: 'la copia necesita una credencial: { token }, { managed: true }, { sas } o { lineaDeOrdenes: true }' } };
+  }
+  async function pedirBlob(metodo, nombre, { query = '', cuerpo = null, extra = {} } = {}) {
+    const c = await cabeceras();
+    if (c.falla) return { error: Object.assign(new Error(c.falla.motivo), { code: c.falla.estado }) };
+    const ruta = nombre ? `/${nombre.split('/').map(encodeURIComponent).join('/')}` : '';
+    const consulta = [query, c.sas].filter(Boolean).join('&');
+    const u = new URL(`${base}${ruta}${consulta ? `?${consulta}` : ''}`);
+    const headers = { 'x-ms-version': X_MS_VERSION, ...c.headers, ...extra };
+    if (cuerpo) headers['content-length'] = String(cuerpo.length);
+    return new Promise((resolve) => {
+      let hecho = false;
+      const fin = (r) => { if (!hecho) { hecho = true; resolve(r); } };
+      const req = (u.protocol === 'http:' ? require('http') : require('https')).request(u, { method: metodo, headers, timeout: timeoutMs }, (res) => {
+        const trozos = [];
+        res.on('data', (t) => trozos.push(t));
+        res.on('end', () => fin({ status: res.statusCode, cuerpo: Buffer.concat(trozos) }));
+        res.on('error', (e) => fin({ error: e }));
+      });
+      req.on('timeout', () => req.destroy(Object.assign(new Error('timeout'), { code: 'ETIMEDOUT' })));
+      req.on('error', (e) => fin({ error: e }));
+      if (cuerpo) req.write(cuerpo);
+      req.end();
+    });
+  }
+  return {
+    get: (nombre) => pedirBlob('GET', nombre),
+    put: (nombre, cuerpo, tipo = 'application/octet-stream') => pedirBlob('PUT', nombre, { cuerpo, extra: { 'x-ms-blob-type': 'BlockBlob', 'content-type': tipo } }),
+    del: (nombre) => pedirBlob('DELETE', nombre),
+    async list(prefijo) {
+      const blobs = [];
+      let marca = '';
+      for (let vuelta = 0; vuelta < 100; vuelta++) {
+        const r = await pedirBlob('GET', '', { query: `restype=container&comp=list&prefix=${encodeURIComponent(prefijo)}${marca ? `&marker=${encodeURIComponent(marca)}` : ''}` });
+        if (r.error || r.status !== 200) return r;
+        const xml = r.cuerpo.toString('utf8');
+        for (const m of xml.matchAll(/<Blob>([\s\S]*?)<\/Blob>/g)) {
+          const nombre = (/<Name>([\s\S]*?)<\/Name>/.exec(m[1]) || [])[1];
+          const fecha = Date.parse((/<Last-Modified>([\s\S]*?)<\/Last-Modified>/.exec(m[1]) || [])[1] || '');
+          if (nombre) blobs.push({ name: nombre.replace(/&amp;/g, '&'), modificado: fecha });
+        }
+        marca = (/<NextMarker>([\s\S]*?)<\/NextMarker>/.exec(xml) || [])[1] || '';
+        if (!marca) break;
+      }
+      // `truncado`: quedaron páginas sin pedir (más de 100): quien lista lo dice, no lo da por completo
+      return { status: 200, blobs, truncado: Boolean(marca) };
+    },
+  };
+}
+
 // los hosts de esta nube que una respuesta sin sesión del sitio nunca puede nombrar (el almacenamiento y el repo):
 // la prueba sin sesión (check-deploy.js) los busca en /healthz
 const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
@@ -70,4 +156,4 @@ const HOSTS_QUE_NO_SE_NOMBRAN = /\.windows\.net|dev\.azure\.com/i;
 // la reconoce así y no le pide el no-store del sitio (el sitio ni la vio)
 const esDelCandado = (headers) => Boolean(headers && typeof headers.get === 'function' && headers.get('x-ms-middleware-request-id'));
 
-module.exports = { tokenDeIdentidad, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };
+module.exports = { tokenDeIdentidad, almacenDeCopia, tokenParaRepo, bajarBuzon, bajarUnaCorrida, PROVEEDORES_DE_BUZON, RECURSO_ALMACENAMIENTO, RECURSO_AZURE_DEVOPS, HOSTS_QUE_NO_SE_NOMBRAN, esDelCandado };

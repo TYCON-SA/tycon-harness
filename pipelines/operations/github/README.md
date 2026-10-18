@@ -217,6 +217,24 @@ que esperaba.
   `operations`, o el repo de operaciones sin rama `main`. Lo que en Azure es «naranja» acá es un aviso amarillo con la
   corrida en verde: mirá los avisos.
 
+## 7. La copia para el sitio de la organización (opcional)
+
+Si el sitio de la organización vive en Azure, puede leer este repo **sin ninguna credencial de GitHub**: el workflow
+`site-copy.yml` copia lo que el sitio lee a un contenedor de almacenamiento, y el sitio lo lee con su identidad
+administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene, y lo que cuesta cada una: la guía del sitio
+(`guides/sitio-de-la-organizacion.md`, «De dónde lee operaciones»).
+
+1. **El contenedor**: lo crea el alta del sitio (`azure-container-apps.js`), en una cuenta con la llave apagada.
+2. **La credencial federada**: una aplicación de Entra con una credencial federada para este repo y el entorno
+   `site-copy` (*Certificates & secrets → Federated credentials → GitHub Actions*), y el rol «Storage Blob Data
+   Contributor» sobre **ese contenedor** y nada más. **Ningún secreto en GitHub.**
+3. **El workflow**: copiá `site-copy.yml` a `.github/workflows/`, creá el entorno `site-copy` (*Settings → Environments*)
+   y cargá las variables `SITE_COPY_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_COPY_ACCOUNT` y
+   `SITE_COPY_CONTAINER`. Corre en cada push a `main`, al terminar cada nocturno (su guardado no dispara un `push`) y
+   una vez por día.
+4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
+   `SITE_OPERATIONS_SOURCE=copy`.
+
 ## Diferencias con los pipelines de Azure DevOps
 
 - Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards, y **no hay pull request por

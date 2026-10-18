@@ -705,3 +705,21 @@ test('T37 Nocturnos_NoTocanLasRutasProtegidas (GitHub) @story-2.30 @ac-22', () =
   assert.match(readme, /el sitio no propone/i);
 });
 
+
+test('T25 2.34-Copia_DisparosYCredencial (GitHub) @story-2.34 @ac-4 — push, al terminar cada nocturno y una vez por día, con credencial federada', () => {
+  // 🔴 rojo: el guardado de un nocturno (un empuje con github.token) no dispara la copia, o va un secreto de Azure guardado.
+  const t = read('site-copy.yml');
+  const on = t.match(/^on:\n((?: {2}.*\n|\n)*)/m)[1];
+  assert.deepStrictEqual([...on.matchAll(/^ {2}([a-z_]+):/gm)].map((x) => x[1]).sort(), ['push', 'schedule', 'workflow_dispatch', 'workflow_run']);
+  assert.match(on, /push:\n {4}branches: \[main\]/);
+  const nocturnos = WORKFLOWS.map((f) => read(f).match(/^name: (\S+)$/m)[1]).sort();
+  assert.match(on, new RegExp(`workflow_run:\\n {4}workflows: \\[${nocturnos.join(', ')}\\]\\n {4}types: \\[completed\\]`), 'al terminar cada nocturno');
+  assert.match(t, /^permissions:\n {2}contents: read\n {2}id-token: write\n(?! {2}\S)/m, 'sólo lee el repo; el token federado');
+  assert.match(t, /^concurrency:\n {2}group: [^\n]+\n {2}cancel-in-progress: false$/m, 'de a uno, sin cancelar');
+  assert.doesNotMatch(t, /secrets\./, 'ningún secreto guardado en GitHub');
+  assert.match(t, /uses: azure\/login@[0-9a-f]{40} # v\d/, 'azure/login con OIDC, fijado por sha');
+  assert.match(t, /client-id: \$\{\{ vars\.SITE_COPY_CLIENT_ID \}\}/);
+  assert.match(t, /^ {6}- name: El repo de operaciones \(la punta de main\)\n.*\n {8}with:\n {10}ref: main\n/m, 'la punta de main');
+  assert.deepStrictEqual(check(t).filter((b) => ['pull-request-target', 'uses-by-sha'].includes(b.rule)), [], 'las reglas del ci.yml');
+  assert.match(fs.readFileSync(path.join(DIR, 'README.md'), 'utf8'), /site-copy\.yml/, 'el README la da de alta');
+});
