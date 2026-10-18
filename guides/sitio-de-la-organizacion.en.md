@@ -499,13 +499,19 @@ wakes it up.
   something it carries changes. You can also build it yourself (below).
 - **A way to sign in to the organization:** Entra ID, Google Workspace, GitHub, or any OIDC provider (Okta, Keycloak).
   An application for the site is registered in that provider.
-- **The organization's operations repo**, and an identity that can read it (that repo only).
+- **The organization's operations repo**, and an identity that can read it (that repo only). If you do not have it
+  yet: how to create it and which files it holds, in the harness's `pipelines/operations/README.md` §2 (the examples, in
+  `pipelines/operations/examples/`). The site only needs `operations.json`; the minimum, in the Docker trial.
 - **Optional: the runs mailbox**, if the organization collects the runs of its machines.
 - **A place to run a container** with HTTPS in front: a cloud, a free service or your own machine.
 
 ## Try it on your machine with Docker
 
-About ten minutes, most of it building the image. You need Docker running and a clone of the harness public repo.
+About ten minutes, most of it building the image. You need Docker running, a clone of the harness public repo and
+Node 22 or newer (for the check in step 3).
+
+Here the site address is `http://127.0.0.1`: the site requires `https://` for any other address, but accepts `http` on
+your own machine, for trying it out. The same goes for the operations repo address.
 
 1. **Build the image** (from the root of the clone; run for real: about 2 minutes the first time):
 
@@ -538,6 +544,24 @@ About ten minutes, most of it building the image. You need Docker running and a 
    With made-up values (a repo that does not exist) we measured it: the site starts, `/livez` gives 200, `/` redirects to
    the GitHub sign-in, `/api/inicio` gives 401, and the site is **stopped** because it cannot read the repo (`/healthz`
    gives 503 and the check says "el sitio está frenado"). With the real repo and its token, the site loads.
+
+   **The minimum operations repo.** For the site to start without being stopped, `operations.json`, at the root of
+   `main`, needs at least this (with your email instead of the example one). Measured: with this file, `/healthz` gives
+   200 and the check without a session passes.
+
+   ```json
+   {
+     "version": 1,
+     "owners": { "default": "you@acme.example" },
+     "reviewers": { "dependencies": ["you@acme.example"] },
+     "site": { "access": [{ "role": "maintainer", "emails": ["you@acme.example"] }] }
+   }
+   ```
+
+   `owners` and `reviewers` belong to the night processes, but the file does not validate without them (the container
+   log says what is missing: "owners: falta"). If the site is stopped, the exact reason is in that log, not in
+   `/healthz`. With a repo like this, the log also says "el repo de operaciones no trae repos.json" and "sin_foto":
+   that is normal until the night has run.
 
 4. **Sign in.** Open http://127.0.0.1:8080 and sign in with your account. For that you first register the application
    on GitHub (*Settings → Developer settings → OAuth Apps → New OAuth App*, with the address `http://127.0.0.1:8080` and
@@ -600,7 +624,9 @@ If your platform has probes, **both go against `/livez`**, with a response timeo
   liveness probe against it would restart the container in a loop, and restarting does not fix the configuration.
 - **Readiness, not against `/readyz` either.** The platform sends no traffic until that probe passes, and `/readyz`
   waits for every source, the whole mailbox included. The site already serves each tab as soon as it can build it: one
-  that is still waiting says «loading» and reloads itself, and a stopped one explains why. `/readyz` is for whoever wants
+  that is still waiting says «loading» and reloads itself, and a stopped one explains why. `/readyz` gives 200 as soon as it read every
+  source once, **also with the site stopped**: on purpose, so the site stays visible and explains why it is stopped. The
+  stop shows in `/healthz`. `/readyz` is for whoever wants
   to know whether everything finished loading.
 
 ### The secrets, with the least privilege
@@ -611,7 +637,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | Secret | What for | Minimum scope |
 |---|---|---|
 | `SITE_SESSION_KEY` | signing the session | 32 random bytes, only for the site |
-| `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile`; expires in 6 months at most |
+| `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile` (with `github`, which is not OIDC, the site asks for `read:user user:email read:org`: read the account, its emails and whether it belongs to the organization); expires in 6 months at most |
 | `SITE_OPERATIONS_TOKEN` (or the platform identity, `SITE_OPERATIONS_IDENTITY=managed`, no secret) | reading the operations repo | an identity of its own with read access to that repo only; if it is a token, for one organization, code read only, 90 days; on GitHub, fine-grained, one repo, `contents: read` |
 | `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container |
 | the notice channel | sending the morning notice | it does not reach the site: the night process uses it. Telegram: the token is for the whole bot, use a dedicated one. Slack or Teams: the webhook address IS the credential |

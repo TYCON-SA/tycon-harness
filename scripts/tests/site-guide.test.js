@@ -42,10 +42,12 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
 // SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`); y cómo se mantiene al día (la parte común, el párrafo «Al
-// día» de cada receta, Kubernetes y otras nubes, y una red cerrada).
+// día» de cada receta, Kubernetes y otras nubes, y una red cerrada); y lo que pidió una instalación desde cero
+// siguiendo sólo la guía: el repo de operaciones mínimo, Node, http en la propia máquina, /readyz frenado y los
+// permisos de GitHub.
 const HUELLA_INSTALACION = {
-  es: '182509fa8dea5087c680fc5d8ae4ef0a054649b4502ff7f5b1a0595c0ec56297',
-  en: '5b857a193a63b9cfd671be3dc7c76ff4efdc2d4cbff6dd1007ad2de9192373e0',
+  es: 'dd5bd4f4ad3ccdac6efdea06af34aacc8ac88d89d5d592fe000192568f025f48',
+  en: '56ebdc17fac6868ae7a501f6c0c554d65ffcf8278678304cb160b1b7ab02da97',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

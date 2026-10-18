@@ -138,7 +138,7 @@ function validarConfiguracion(env) {
   let repo = null;
   try { repo = new URL(env.SITE_OPERATIONS_REPO || ''); } catch { /* abajo */ }
   if (!env.SITE_OPERATIONS_REPO) falta('SITE_OPERATIONS_REPO', 'falta: la dirección https del repo de operaciones');
-  else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
+  else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https:// (o http en la propia máquina, para probar), sin usuario ni credencial adentro');
   cfg.operationsRepo = env.SITE_OPERATIONS_REPO;
   // de dónde se lee operaciones: `repo` (lo de siempre, un clon) o `copy` (la foto que deja un trabajo en
   // un contenedor de almacenamiento). Leer de la copia es una elección explícita: sin la variable, el repo
@@ -181,7 +181,7 @@ function validarConfiguracion(env) {
   if (env.SITE_PROFILE_REPO) {
     let perfil = null;
     try { perfil = new URL(env.SITE_PROFILE_REPO); } catch { /* abajo */ }
-    if (!perfil || !(perfil.protocol === 'https:' || esLoopback(perfil)) || perfil.username || perfil.password) falta('SITE_PROFILE_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
+    if (!perfil || !(perfil.protocol === 'https:' || esLoopback(perfil)) || perfil.username || perfil.password) falta('SITE_PROFILE_REPO', 'tiene que ser una dirección https:// (o http en la propia máquina, para probar), sin usuario ni credencial adentro');
     else if (!env.SITE_PROFILE_TOKEN) falta('SITE_PROFILE_TOKEN', 'falta: la credencial de lectura del perfil del equipo (SITE_PROFILE_REPO está puesta)');
     cfg.profileRepo = env.SITE_PROFILE_REPO;
     cfg.profileCredencial = env.SITE_PROFILE_TOKEN ? { token: env.SITE_PROFILE_TOKEN } : null;
