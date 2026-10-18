@@ -103,7 +103,9 @@ args.forEach((x, i) => {
 
 let paso = 'desconocido';
 // story 2.30: la familia de la instalación del sitio (sin las trampas de `--org` ni de `-o json`: son de devops/boards)
-const AZURE = { account: 'sesion', provider: 'proveedor', group: 'grupo-recursos', monitor: 'area', storage: 'almacen', containerapp: 'aplicacion', role: 'rol', rest: 'rest' };
+// story 2.40: `ad` (el registro de Entra ID: `ad app show` lee sus claims opcionales, `ad sp update` cambia su principal
+// de servicio). Las claims que «tiene» el registro: TYCON_AZ_CLAIMS (separadas por coma; por defecto email y xms_edov)
+const AZURE = { account: 'sesion', provider: 'proveedor', group: 'grupo-recursos', monitor: 'area', storage: 'almacen', containerapp: 'aplicacion', role: 'rol', rest: 'rest', ad: 'registro' };
 const familia = Object.prototype.hasOwnProperty.call(AZURE, args[0]);
 if (args[0] === '--version') paso = 'version';
 else if (familia) {
@@ -184,6 +186,7 @@ if (familia) {
     if (/primarySharedKey/.test(q)) tsv('LLAVE-DEL-AREA-QUE-NO-DEBE-APARECER');
     tsv('LLAVE-DE-LA-CUENTA-QUE-NO-DEBE-APARECER');
   }
+  if (paso === 'registro' && args[1] === 'app' && args[2] === 'show') tsv((process.env.TYCON_AZ_CLAIMS || 'email,xms_edov').split(',').filter(Boolean).join('\t'));
   if (paso === 'rest') {
     const u = String(arg('--url') || '');
     estado[`rest|${u.replace(/\?.*$/, '')}`] = true; guardar(); out({ properties: { provisioningState: 'Succeeded' } });

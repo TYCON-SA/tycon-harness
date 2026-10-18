@@ -41,6 +41,9 @@ const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x)
 const VIGENCIA_MS = 15 * 60 * 1000;
 const norm = (c) => String(c || '').trim().toLowerCase();
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+// la lista de quién entra: los correos de quienes mantienen, con la regla de people.js
+const mantenedoresDe = (site) => people.listaDeAcceso({ site }).entradas.filter((e) => e.role === 'maintainer').flatMap((e) => e.emails);
+const SIN_MANTENEDORES = 'la lista tiene que tener a alguien que mantenga el sitio: quedaría sin nadie que pueda entrar a esta pestaña';
 const json = (status, obj) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj) });
 const rechazo = (status, message) => json(status, { ok: false, message });
 
@@ -277,7 +280,23 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
-    if (s.id === 'sitio') v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null };
+    if (s.id === 'sitio') {
+      // la lista de quién entra (si el lector la conoce) y con qué se entra, de sólo lectura
+      const conAcceso = Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('access');
+      v.extras = { servicios: Array.isArray(lec.MAILBOX_PROVIDERS) ? lec.MAILBOX_PROVIDERS : null, conAcceso, inicioDeSesion: cfg.inicioDeSesion || null };
+      // sin la lista, la sección arranca con la armada con lo de hoy y la propone en lugar de site.maintainers (AC 5)
+      const lista = conAcceso && doc && !(isObject(doc.site) && Array.isArray(doc.site.access)) ? people.listaDeAcceso(doc) : null;
+      // lo que no se pudo leer queda afuera de la lista: se dice, para que nadie quede sin entrar sin saberlo (también si
+      // no quedó nadie y no hay lista para proponer)
+      const ojo = lista && lista.descartados ? `Ojo: ${lista.descartados} correo(s) de lo de hoy no tienen forma de correo y quedaron afuera; sumalos a mano si son de alguien.` : '';
+      if (lista && lista.entradas.length) {
+        const site = clone(isObject(doc.site) ? doc.site : {});
+        delete site.maintainers;
+        site.access = lista.entradas;
+        v.borrador = { site };
+        v.extras.migracion = `Esta lista se armó con lo de hoy: quienes mantienen el sitio y cada persona con una máquina confirmada. El sitio ya la usa así; se guarda en operations.json cuando proponés el pedido.${ojo ? ` ${ojo}` : ''}`;
+      } else if (ojo) v.extras.migracion = ojo;
+    }
     // la plataforma, la organización y el proyecto del repo de operaciones: ahí se elige por nombre el pipeline de un despliegue
     if (s.id === 'despliegues') { const r = remoteDe('operaciones') || {}; v.extras = { plataforma: r.platform || null, org: r.org || null, proyecto: r.project || null }; }
     if (s.id === 'paquetes') v.extras = paquetesDe(doc && isObject(doc.packs) ? doc.packs.default : undefined, cl.perfil && cl.perfil.dir);
@@ -410,9 +429,18 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       borrador = { people: peopleDoc };
     }
     if (s.id === 'sitio') {
-      const lista = isObject(borrador) && isObject(borrador.site) ? borrador.site.maintainers : undefined;
-      if (!Array.isArray(lista) || !lista.length) problemas.push({ path: 'site.maintainers', message: 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña' });
-      else if (!lista.map(norm).includes(norm(ctx.sesion.email))) advertencia = 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña';
+      const site = isObject(borrador) && isObject(borrador.site) ? borrador.site : {};
+      // quien propone, con todos sus correos de la lista vigente
+      const suyos = people.correosDe(ctx.sesion.email, people.contexto({ operations: fuentes.config() || {} }));
+      if (Array.isArray(site.access)) {
+        const mant = mantenedoresDe(site);
+        if (!mant.length) problemas.push({ path: 'site.access', message: SIN_MANTENEDORES });
+        else if (!suyos.some((m) => mant.includes(m))) advertencia = 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña';
+      } else {
+        const lista = site.maintainers;
+        if (!Array.isArray(lista) || !lista.length) problemas.push({ path: 'site.maintainers', message: 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña' });
+        else if (!lista.map(norm).some((m) => suyos.includes(m))) advertencia = 'no estás en la lista que proponés: al mergear perdés el acceso a esta pestaña';
+      }
     }
     const r = ORG.revisar({ seccion: s, texto: v.texto, borrador, lectores: { [s.lector]: lector(s.lector) }, arnes: { thresholds: arnes().thresholds }, hoy: dia(), tree: TREE });
     const problems = [...problemas, ...r.problems];
@@ -442,6 +470,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const aparte = ORG.problemasDeSeccion(s, r, docDe(vista(s).texto || ''), doc);
     if (aparte.length) return `el lector rechaza esta parte del archivo: ${aparte.map((p) => `${p.path}: ${p.message}`).join(' · ')}`;
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return 'la lista de los que mantienen no puede quedar vacía: quedaría sin nadie que pueda entrar a esta pestaña';
+    if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.access) && !mantenedoresDe(doc.site).length) return SIN_MANTENEDORES;
     if (s.repo === 'perfil') {
       const capa = leerDe(clones().perfil.dir, 'team-layer.json');
       const layerText = capa.estado === 'leido' ? capa.texto : '';

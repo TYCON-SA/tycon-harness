@@ -197,6 +197,80 @@ test('T12 Aca_SinCostoEscondido @story-2.30 @ac-9', () => {
   }
 });
 
+// con «cualquier cuenta», lo que pide Azure: el registro con tokens v2, sin asignación requerida y el emisor común
+test('T12b 2.40-Instalacion_CualquierCuenta_DryRun @story-2.40 @ac-10', () => {
+  const t = guid('2'); const app = guid('3');
+  const r = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), microsoftAccounts: 'any' } });
+  assert.strictEqual(r.status, 0, r.out);
+  const s = r.out;
+  const linea = (rx) => s.split('\n').find((l) => rx.test(l));
+  // el registro: varios inquilinos y cuentas personales, con tokens v2 en el mismo cambio (sin v2, Azure lo rechaza)
+  const reg = linea(/az rest --method patch --url "?https:\/\/graph\.microsoft\.com\/v1\.0\/applications\(appId=/);
+  assert.ok(reg && reg.includes(`applications(appId='${app}')`), s);
+  assert.match(s, /"requestedAccessTokenVersion": 2/);
+  assert.match(s, /"signInAudience": "AzureADandPersonalMicrosoftAccount"/);
+  // antes, que el registro pida el correo verificado (sin eso nadie entra): se lee, no se pisa
+  assert.ok(linea(new RegExp(`az ad app show --id ${app} --query "?optionalClaims\\.idToken\\[\\]\\.name`)), s);
+  // la asignación requerida, fuera: quién entra lo decide la lista del sitio
+  assert.ok(linea(new RegExp(`az ad sp update --id ${app} --set appRoleAssignmentRequired=false`)), s);
+  // el candado de la plataforma en el emisor común; el sitio, con su modo y el inquilino de los invitados
+  const ms = linea(/containerapp auth microsoft update/);
+  assert.ok(ms.includes('--issuer https://login.microsoftonline.com/common/v2.0'), ms);
+  assert.match(s, /"name": "SITE_OIDC_ISSUER",\s*"value": "https:\/\/login\.microsoftonline\.com\/common\/v2\.0"/);
+  assert.match(s, /"name": "SITE_AUTH_MICROSOFT_ACCOUNTS",\s*"value": "any"/);
+  assert.match(s, new RegExp(`"name": "SITE_AUTH_MICROSOFT_TENANT",\\s*"value": "${t}"`));
+  // el orden: primero el sitio nuevo (con la lista), después se abre la puerta, y la entrada externa al final
+  const pos = (rx) => s.search(rx);
+  const orden = [/containerapp (create|update) /, /applications\(appId=/, /appRoleAssignmentRequired=false/, /containerapp auth microsoft update/, /containerapp ingress update/].map(pos);
+  assert.ok(orden.every((p) => p >= 0), JSON.stringify(orden));
+  assert.deepStrictEqual([...orden].sort((a, b) => a - b), orden, `el orden de los pasos: ${orden}`);
+  // ningún permiso nuevo para el sitio: ni sobre el directorio ni otro rol que la lectura del buzón
+  assert.doesNotMatch(s, /appRoleAssignedTo|AppRoleAssignment\.ReadWrite|User\.Invite|Directory\.|ad app permission|--api-permissions|requiredResourceAccess/);
+  assert.deepStrictEqual(s.split('\n').filter((l) => /az role assignment create/.test(l)).map((l) => /--role (Storage Blob Data Reader|\S+)/.exec(l.replace(/['"]/g, ''))[1]), ['Storage Blob Data Reader']);
+  sinMarcadores(s, 'el plan');
+  // el inquilino escrito en mayúsculas sale en minúsculas (Entra lo publica así y el sitio compara letra por letra), y el
+  // de las cuentas personales no es el de una organización
+  const mayus = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), microsoftAccounts: 'any', tenantId: guid('a').toUpperCase() } });
+  assert.strictEqual(mayus.status, 0, mayus.out);
+  assert.match(mayus.out, new RegExp(`"name": "SITE_AUTH_MICROSOFT_TENANT",\\s*"value": "${guid('a')}"`));
+  const personales = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), tenantId: ['9188040d', '6c67', '4c5b', 'b112', '36a304b66dad'].join('-') } });
+  assert.strictEqual(personales.status, 1, personales.out);
+  assert.match(personales.out, /tenantId: .*cuentas personales/);
+  // un modo que no existe no imprime el plan
+  const mal = alta(['--dry-run', '--phase', 'sitio'], { config: { ...CONFIG(), microsoftAccounts: 'todas' } });
+  assert.strictEqual(mal.status, 1);
+  assert.match(mal.out, /microsoftAccounts/);
+  assert.doesNotMatch(mal.out, /containerapp create/);
+});
+
+// los pasos de «cualquier cuenta» corridos (contra el doble de az): el registro, la asignación y el candado se cambian
+// después de la aplicación; sin las claims en el registro, frena antes de abrir nada
+test('2.40-T12c Instalacion_CualquierCuenta_Aplica @story-2.40 @ac-10', () => {
+  const app = guid('3');
+  const amb = alta(['--apply', '--phase', 'ambiente']);
+  assert.strictEqual(amb.status, 0, amb.out);
+  const r = alta(['--apply', '--phase', 'sitio'], { config: { ...CONFIG(), microsoftAccounts: 'any' }, fix: amb.fix });
+  assert.strictEqual(r.status, 0, r.out);
+  const orden = ['aplicacion', 'rest', 'registro', 'inicio', 'entrada'];
+  const idx = (pred) => r.llamadas.findIndex(pred);
+  const reg = idx((l) => l.paso === 'rest' && l.args.includes('patch') && l.args.some((a) => a.includes(`applications(appId='${app}')`)));
+  const asig = idx((l) => l.paso === 'registro' && l.args.join(' ').includes('sp update') && l.args.includes('appRoleAssignmentRequired=false'));
+  const cand = idx((l) => l.paso === 'inicio' && l.args.includes('microsoft') && l.args.includes('https://login.microsoftonline.com/common/v2.0'));
+  const crear = idx((l) => l.paso === 'aplicacion' && /create|update/.test(l.args[1]));
+  const ext = idx((l) => l.paso === 'entrada');
+  assert.ok([crear, reg, asig, cand, ext].every((i) => i >= 0), JSON.stringify({ crear, reg, asig, cand, ext, orden }));
+  assert.ok(crear < reg && reg < asig && asig < cand && cand < ext, 'la aplicación nueva primero, la entrada externa al final');
+  const cuerpo = Object.values(r.llamadas[reg].archivos || {})[0] || '';
+  assert.match(cuerpo, /"requestedAccessTokenVersion":\s*2/);
+  assert.match(cuerpo, /AzureADandPersonalMicrosoftAccount/);
+  // un registro sin xms_edov: frena antes de cambiar el registro, y dice qué falta
+  const amb2 = alta(['--apply', '--phase', 'ambiente']);
+  const sin = alta(['--apply', '--phase', 'sitio'], { config: { ...CONFIG(), microsoftAccounts: 'any' }, fixEnv: { TYCON_AZ_CLAIMS: 'email' }, fix: amb2.fix });
+  assert.strictEqual(sin.status, 1, sin.out);
+  assert.match(sin.out, /no pide xms_edov/);
+  assert.ok(!sin.llamadas.some((l) => l.paso === 'rest' && l.args.includes('patch')), 'no tocó el registro');
+});
+
 test('T13 Aca_SinSesionDeAz_NoPregunta @story-2.30 @ac-8', () => {
   const r = alta(['--apply', '--phase', 'ambiente'], { fixEnv: { TYCON_AZ_WITHOUT_SESSION: '1' } });
   assert.strictEqual(r.status, 1, r.out);

@@ -10,8 +10,10 @@
  *     otro correo: la confirmación se cae entera, decisión 4) y `sin_correo`; más `compartida` para una carpeta vieja
  *     que no se une a una sola nueva (AC 27-28). Una carpeta vieja `unida` sigue a su nueva: una entrada con su nombre
  *     viejo no confirma nada (AC 26).
- *   · Ve una máquina quien mantiene (`site.maintainers`) o la persona para la que está confirmada (AC 8). Es persona quien
- *     tiene alguna entrada en `people.machines`, confirmada o caída (decisión 10).
+ *   · Quién entra y con qué rol lo dice la lista del sitio, `site.access`: una entrada por persona, con su
+ *     rol y uno o más correos; sin la lista, se arma con `site.maintainers` y las personas de `people.machines`
+ *     (`listaDeAcceso`). Ve una máquina quien mantiene o la persona para la que está confirmada, con cualquiera de sus
+ *     correos (`correosDe`). Es persona quien tiene una entrada `dev`.
  *   · «Dónde trabaja» se cuenta en productos de `repos.json` (decisión 8), deducidos de sus corridas confirmadas y de
  *     sus pedidos asignados, y se corrige con `people.projects.<correo>` (`add`, `remove`). Lo que no da UN solo
  *     producto queda «sin ubicar», con el motivo: no se adivina.
@@ -99,17 +101,87 @@ function leerCorreosInformados(espejoDir) {
  * El contexto de la regla: la configuración vigente (o el último bueno) y lo informado. `operations` es el objeto de
  * operations.json ya validado; `informados`, lo de `leerCorreosInformados`.
  */
+// las claves `__…` son comentarios para el lector de operations.json: acá tampoco cuentan (pase adversarial)
+const sinComentarios = (o) => (o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('__'))) : {});
+const ROLES_DE_ACCESO = ['maintainer', 'dev'];
+
+/**
+ * La lista de quién entra al sitio: `{ origen, entradas: [{ role, emails }] }`, con los correos ya
+ * normalizados. `origen: 'lista'` es `site.access` de operations.json; sin ella, `'migracion'`: la lista armada con lo de
+ * antes, para que nadie que entraba pierda el acceso (cada correo de `site.maintainers` como maintainer, y cada persona
+ * de `people.machines` que no mantiene, como dev; sin repetir). Una entrada sin rol válido o sin correos no cuenta (el
+ * lector de operations.json ya la rechaza; esto no la adivina).
+ */
+function listaDeAcceso(operations) {
+  const site = (operations && operations.site) || {};
+  // `descartados`: cuántos correos (o entradas) no se pudieron leer y quedaron afuera; quien muestra la lista lo dice
+  let descartados = 0;
+  const correos = (l) => {
+    const todos = (Array.isArray(l) ? l : []).map(normalizarCorreo);
+    const buenos = todos.filter((m) => FORMA_CORREO.test(m));
+    descartados += todos.length - buenos.length;
+    return [...new Set(buenos)];
+  };
+  if (Array.isArray(site.access)) {
+    const entradas = [];
+    // un correo es de una sola persona: si aparece en dos entradas (el lector lo rechaza), queda en la primera
+    const usados = new Set();
+    for (const e of site.access) {
+      if (!e || typeof e !== 'object' || !ROLES_DE_ACCESO.includes(e.role)) { descartados += 1; continue; }
+      const emails = correos(e.emails).filter((m) => { if (usados.has(m)) { descartados += 1; return false; } usados.add(m); return true; });
+      if (emails.length) entradas.push({ role: e.role, emails });
+    }
+    return { origen: 'lista', entradas, descartados };
+  }
+  const vistos = new Set();
+  const entradas = [];
+  const sumar = (role, m) => { if (!vistos.has(m)) { vistos.add(m); entradas.push({ role, emails: [m] }); } };
+  for (const m of correos(site.maintainers)) sumar('maintainer', m);
+  for (const e of Object.values(sinComentarios((operations && operations.people && operations.people.machines) || {}))) {
+    const m = normalizarCorreo(e && e.person);
+    if (FORMA_CORREO.test(m)) sumar('dev', m);
+    else if (m) descartados += 1;   // una máquina sin persona no es un correo mal escrito
+  }
+  return { origen: 'migracion', entradas, descartados };
+}
+
+/**
+ * Qué cambió de una lista de quién entra a otra (las dos, operations.json; sin `site.access`, su migración): altas y bajas
+ * por correo, y cambios de rol. Lo usa el registro del sitio para decir cuándo entra en vigor cada cambio.
+ */
+function cambiosDeAcceso(antes, despues) {
+  const roles = (ops) => { const m = new Map(); for (const e of listaDeAcceso(ops).entradas) for (const x of e.emails) m.set(x, e.role); return m; };
+  const a = roles(antes); const d = roles(despues);
+  return {
+    altas: [...d].filter(([x]) => !a.has(x)).map(([email, role]) => ({ email, role })),
+    bajas: [...a].filter(([x]) => !d.has(x)).map(([email, role]) => ({ email, role })),
+    roles: [...d].filter(([x, r]) => a.has(x) && a.get(x) !== r).map(([email, r]) => ({ email, de: a.get(email), a: r })),
+  };
+}
+const textoDeCambios = (c) => [...c.altas.map((x) => `alta ${x.email} (${x.role})`), ...c.bajas.map((x) => `baja ${x.email}`), ...c.roles.map((x) => `${x.email}: ${x.de} → ${x.a}`)].join(' · ');
+
 function contexto({ operations, informados }) {
   const people = (operations && operations.people) || {};
-  const site = (operations && operations.site) || {};
-  // las claves `__…` son comentarios para el lector de operations.json: acá tampoco cuentan (pase adversarial)
-  const sinComentarios = (o) => (o && typeof o === 'object' ? Object.fromEntries(Object.entries(o).filter(([k]) => !k.startsWith('__'))) : {});
+  const acceso = listaDeAcceso(operations);
+  // cada correo de la lista → todos los correos de su persona (lo suyo se calcula con todos)
+  const personaDe = new Map();
+  for (const e of acceso.entradas) for (const m of e.emails) if (!personaDe.has(m)) personaDe.set(m, e);
   return {
     machines: sinComentarios(people.machines),
     projects: sinComentarios(people.projects),
-    maintainers: new Set((Array.isArray(site.maintainers) ? site.maintainers : []).map(normalizarCorreo).filter(Boolean)),
+    acceso,
+    personaDe,
+    maintainers: new Set(acceso.entradas.filter((e) => e.role === 'maintainer').flatMap((e) => e.emails)),
     informados: informados || { maquinas: {}, uniones: { carpetas: {}, regeneradas: {} } },
   };
+}
+
+/** Todos los correos de la persona de `sesion` (el primero, el suyo); un correo fuera de la lista es sólo él mismo. */
+function correosDe(sesion, c) {
+  const correo = normalizarCorreo(sesion);
+  if (!correo) return [];
+  const e = c.personaDe && c.personaDe.get(correo);
+  return e ? [...e.emails] : [correo];
 }
 
 const uniones = (c) => ((c.informados && c.informados.uniones && c.informados.uniones.carpetas) || {});
@@ -123,15 +195,16 @@ function estadoDeMaquina(maquina, c) {
     if (uniones(c)[u.nueva]) return { estado: 'compartida', motivo: 'la unión de carpetas encadena dos carpetas viejas: no se une' };
     const nueva = { ...estadoDeMaquina(u.nueva, c), antes_de: u.nueva };
     // la vieja confirmada para OTRA persona que la de su nueva: la unión pasaría sus corridas de una persona a otra — no
-    // se aplica (segunda vuelta de seguridad). La misma persona, o sin entrada, sigue a la nueva.
+    // se aplica (segunda vuelta de seguridad). La misma persona, o sin entrada, sigue a la nueva. La misma persona es
+    // cualquiera de sus correos de la lista de quién entra: dos correos de una entrada son la misma persona
     const propia = Object.prototype.hasOwnProperty.call(c.machines, maquina) ? c.machines[maquina] : null;
-    if (propia && nueva.person && normalizarCorreo(propia.person) !== nueva.person) {
+    if (propia && nueva.person && !correosDe(nueva.person, c).includes(normalizarCorreo(propia.person))) {
       return { estado: 'compartida', motivo: 'la carpeta vieja está confirmada para otra persona que la nueva: no se une' };
     }
-    // la vieja informa OTRO correo que su nueva: no hereda la confirmación (tercera vuelta de seguridad)
+    // la vieja informa el correo de OTRA persona que su nueva: no hereda la confirmación (tercera vuelta de seguridad)
     const infVieja = c.informados.maquinas[maquina];
     const infNueva = c.informados.maquinas[u.nueva];
-    if (infVieja && infVieja.estado === 'informa' && (!infNueva || infNueva.estado !== 'informa' || infNueva.correo !== infVieja.correo)) {
+    if (infVieja && infVieja.estado === 'informa' && (!infNueva || infNueva.estado !== 'informa' || !correosDe(infNueva.correo, c).includes(normalizarCorreo(infVieja.correo)))) {
       return { estado: 'compartida', motivo: 'la carpeta vieja informa otro correo que la nueva: no se une' };
     }
     return nueva;
@@ -154,18 +227,19 @@ function estadoDeMaquina(maquina, c) {
 
 /** ¿Esta sesión ve las corridas de esa máquina? (AC 8). `maquina: null` = una corrida sin máquina: sólo quien mantiene. */
 function puedeVer(sesion, maquina, c) {
-  const correo = normalizarCorreo(sesion);
-  if (!correo) return false;
-  if (c.maintainers.has(correo)) return true;
+  const suyos = correosDe(sesion, c);
+  if (!suyos.length) return false;
+  if (suyos.some((m) => c.maintainers.has(m))) return true;
   if (!maquina) return false;
   const e = estadoDeMaquina(maquina, c);
-  return e.estado === 'confirmada' && e.person === correo;
+  return e.estado === 'confirmada' && suyos.includes(e.person);
 }
 
-/** ¿Es persona? Quien tiene alguna entrada en `people.machines`, confirmada o caída (decisión 10). */
+/** ¿Es persona? Quien tiene una entrada `dev` en la lista de quién entra (o en su migración). */
 function esPersona(sesion, c) {
   const correo = normalizarCorreo(sesion);
-  return Boolean(correo) && Object.values(c.machines).some((e) => e && normalizarCorreo(e.person) === correo);
+  const e = correo && c.personaDe ? c.personaDe.get(correo) : null;
+  return Boolean(e) && e.role === 'dev';
 }
 
 /**
@@ -304,11 +378,12 @@ function motivoSinUbicar(intentos, fotos) {
  * sin_ubicar: [{ clave, motivo }], pedidos_no_medidos: [{ proyecto, motivo }] }`.
  */
 function dondeTrabaja(sesion, c, datos = {}) {
-  const correo = normalizarCorreo(sesion);
-  const corr = Object.prototype.hasOwnProperty.call(c.projects, correo) ? c.projects[correo]
-    : Object.entries(c.projects).find(([k]) => normalizarCorreo(k) === correo)?.[1];
-  const add = Array.isArray(corr && corr.add) ? corr.add : [];
-  const remove = new Set(Array.isArray(corr && corr.remove) ? corr.remove : []);
+  // la persona con todos sus correos: sus máquinas, sus pedidos y su corrección pueden estar a nombre de
+  // cualquiera de ellos
+  const suyos = correosDe(sesion, c);
+  const correcciones = Object.entries(c.projects).filter(([k]) => suyos.includes(normalizarCorreo(k))).map(([, v]) => v);
+  const add = correcciones.flatMap((corr) => (Array.isArray(corr && corr.add) ? corr.add : []));
+  const remove = new Set(correcciones.flatMap((corr) => (Array.isArray(corr && corr.remove) ? corr.remove : [])));
   const ent = entradasDeRepos(datos.repos);
   const productos = new Map();   // producto → { de: Set, agregado }
   const sinUbicar = [];
@@ -321,7 +396,7 @@ function dondeTrabaja(sesion, c, datos = {}) {
     for (const r of Array.isArray(datos.corridas) ? datos.corridas : []) {
       if (!r || !r.maquina) continue;
       const e = estadoDeMaquina(r.maquina, c);
-      if (e.estado !== 'confirmada' || e.person !== correo) continue;
+      if (e.estado !== 'confirmada' || !suyos.includes(e.person)) continue;
       const repos = r.cambio && Array.isArray(r.cambio.repos) ? r.cambio.repos : [];
       const principal = repos.find((x) => x && x.principal) || repos[0] || null;
       const intentos = [];
@@ -348,7 +423,7 @@ function dondeTrabaja(sesion, c, datos = {}) {
         if (asignado) pedidosNoMedidos.push({ proyecto: p.proyecto || null, motivo: 'el asignado no tiene forma de correo (un usuario de la plataforma): no se cruza con la persona' });
         continue;
       }
-      if (asignado !== correo) continue;
+      if (!suyos.includes(asignado)) continue;
       const delProyecto = unicos(ent.filter((e) => low(e.proyecto) === low(dec(p.proyecto))).map((e) => e.producto));
       if (delProyecto.length === 1) { sumar(delProyecto[0], 'pedidos'); continue; }
       const clave = `pedido del proyecto ${dec(p.proyecto)}`;
@@ -367,16 +442,16 @@ function dondeTrabaja(sesion, c, datos = {}) {
 
 /** La vista de una persona (AC 17): sólo sus máquinas, sus productos y sus repos sin ubicar. Nada de otro. */
 function vistaDePersona(sesion, c, datos = {}) {
-  const correo = normalizarCorreo(sesion);
+  const suyos = correosDe(sesion, c);
   const maquinas = Object.entries(c.machines)
-    .filter(([m, e]) => e && normalizarCorreo(e.person) === correo && !(uniones(c)[m]))
+    .filter(([m, e]) => e && suyos.includes(normalizarCorreo(e.person)) && !(uniones(c)[m]))
     .map(([m]) => ({ maquina: m, estado: estadoDeMaquina(m, c).estado }))
     .sort((a, b) => (a.maquina < b.maquina ? -1 : 1));
-  const d = dondeTrabaja(correo, c, datos);
+  const d = dondeTrabaja(sesion, c, datos);
   return { maquinas, productos: d.productos, sin_ubicar: d.sin_ubicar, estado: d.estado, ...(d.motivo ? { motivo: d.motivo } : {}) };
 }
 
 module.exports = {
-  normalizarCorreo, huellaDeCorreo, leerCorreosInformados, contexto, estadoDeMaquina, puedeVer, esPersona,
+  normalizarCorreo, huellaDeCorreo, leerCorreosInformados, contexto, listaDeAcceso, cambiosDeAcceso, textoDeCambios, correosDe, estadoDeMaquina, puedeVer, esPersona,
   estadoDeLaConfiguracion, maquinasPorConfirmar, maquinasSinActividad, dondeTrabaja, vistaDePersona, PLAZO_MS,
 };

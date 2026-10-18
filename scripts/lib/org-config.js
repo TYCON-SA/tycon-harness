@@ -603,7 +603,7 @@ function pantalla() {
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
     organizacion: { t: 'La organización', d: 'El nombre y el logo que muestra la barra de arriba de cada página, y el nombre del pie. El logo es un archivo del repo de operaciones; acá se elige cuál.', corto: 'La organización' },
-    sitio: { t: 'Quién mantiene el sitio', d: 'Sólo estas personas ven esta pestaña y pueden proponer cambios. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién mantiene el sitio' },
+    sitio: { t: 'Quién entra al sitio', d: 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los devs ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién entra al sitio' },
     personas: { t: 'Personas y máquinas', d: 'Cada máquina que manda corridas tiene que estar a nombre de alguien. Así cada persona ve lo suyo en el sitio.', corto: 'Personas y máquinas' },
     responsables: { t: 'A quién le llegan los avisos y los pedidos', d: 'Cuando algo de la noche necesita a una persona (una dependencia vieja, un hallazgo del vigilante) se le asigna a quien figure acá.', corto: 'Responsables' },
     repos: { t: 'Dónde vive cada repo', d: 'Llega a todas las máquinas del equipo: con esto cada una sabe de dónde se instala el arnés y dónde queda lo de la noche.', corto: 'Repos' },
@@ -762,13 +762,40 @@ function pantalla() {
     box.appendChild(listaDeTextos('Revisan los hallazgos del vigilante', null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, 'usuario', 'Agregar persona'));
     return box;
   }
+  // quién entra al sitio y con qué rol (story 2.40): una fila por persona, con su rol y uno o más correos
+  function editorAcceso(site, pr, ex) {
+    var box = el('div', { class: 'pila' });
+    if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: 'Con qué se entra: ' + ex.inicioDeSesion.texto + '. Esto se cambia en la instalación, no acá.' }));
+    if (ex.migracion) box.appendChild(aviso('warn', 'La lista todavía no está guardada.', ex.migracion));
+    box.appendChild(el('p', { class: 'sub-d', text: 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.' }));
+    var acc = site.access = site.access || [];
+    acc.forEach(function (e, i) {
+      e.emails = e.emails || [];
+      var fila = el('div', { class: 'sub' }, el('div', { class: 'fila quitar' }, selector('Rol', e.role, [['maintainer', 'Mantiene el sitio'], ['dev', 'Dev']], function (v) { e.role = v; }, 'site.access.' + i + '.role', pr),
+        quitar(function () { acc.splice(i, 1); render(); })));
+      e.emails.forEach(function (m, j) {
+        fila.appendChild(el('div', { class: 'fila quitar' }, campo('', m, function (nv) { e.emails[j] = nv; }, 'site.access.' + i + '.emails.' + j, pr, { placeholder: 'correo' }), quitar(function () { e.emails.splice(j, 1); render(); })));
+      });
+      fila.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar correo', onclick: function () { e.emails.push(''); render(); } }));
+      problemasEn(pr, 'site.access.' + i + '.emails').forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
+      box.appendChild(fila);
+    });
+    if (!acc.length) box.appendChild(el('p', { class: 'muted', text: 'Nadie todavía.' }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar persona', onclick: function () { acc.push({ role: 'dev', emails: [''] }); render(); } }));
+    problemasEn(pr, 'site.access').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    return box;
+  }
   function editorSitio(s, d, pr) {
     d.site = d.site || {};
     var site = d.site;
+    var ex = s.extras || {};
     var lista = el('div', { class: 'pila' });
-    var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
-    mant.setAttribute('class', 'pila');
-    lista.appendChild(mant);
+    if (ex.conAcceso) { delete site.maintainers; lista.appendChild(editorAcceso(site, pr, ex)); }
+    else {
+      var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
+      mant.setAttribute('class', 'pila');
+      lista.appendChild(mant);
+    }
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
     lista.appendChild(refresco);
     if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'La dirección del sitio' }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));

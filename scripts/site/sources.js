@@ -640,6 +640,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   function aplicarConfig(r, t) {
     if (r.ok) {
       if (st.fallaDesde !== null) log('operations.json vuelve a validar: se saca la banda y el freno');
+      // cuándo entra en vigor un cambio de la lista de quién entra (la cuenta, alta, baja o cambio de rol): el pedido que
+      // lo propuso dice quién y quién lo aprobó; esto dice desde cuándo vale en el sitio
+      if (st.ultimoBueno) {
+        const cambios = people.textoDeCambios(people.cambiosDeAcceso(st.ultimoBueno, r.data));
+        if (cambios) log(`la lista de quién entra cambió y vale desde ahora: ${cambios}`);
+      }
       st.ultimoBueno = r.data; st.fallaDesde = null; st.fallaMotivo = null; st.fallaRutas = null;
     } else {
       if (st.fallaDesde === null) st.fallaDesde = t;

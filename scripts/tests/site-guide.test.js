@@ -39,10 +39,12 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
 // propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
-// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla.
+// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
+// organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
+// SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`).
 const HUELLA_INSTALACION = {
-  es: '57a47700cbe22be640e1fac7c162916c87bfc1b5909926b47dee920b591bceef',
-  en: 'cab57c60ffd95d12f1176edd8ba6be8aed9acc872a723a2010425d077bd56c5f',
+  es: '1303a8ac38d43a7cc0c3dc281be6f162b3dd1f6bf2152fc48142511c7bef10c2',
+  en: '6444b14d05784cca803f70eb72fb7501353b6a672efbc4aff314d597919e8ef9',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -301,4 +303,27 @@ test('T3b Capturas_OnlyVacioORepetido_NoPasaPorBueno @story-2.32 @ac-5', () => {
     assert.strictEqual(desconocido.status, 2, 'un nombre que no está en la lista frena antes de abrir nada');
     assert.match(desconocido.stderr, /no conozco: no-existe/);
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
+});
+
+// con qué se entra, la lista del sitio y el riesgo de la primera puerta abierta, en las dos guías
+test('T15 2.40-Guia_InicioDeSesionYLista @story-2.40 @ac-11', () => {
+  const lados = [
+    ['es', GUIA, { inicio: 'El inicio de sesión de la organización', noEntro: 'No puedo entrar' },
+      [/SITE_AUTH_MICROSOFT_ACCOUNTS/, /cualquier cuenta/i, /la primera puerta queda abierta/i, /todo el control está en la lista/i, /invitad/i, /cuentas personales/i, /se elige en la instalación/i],
+      [/Configuración, en Personas, «Quién entra al sitio»/, /sin el portal de Microsoft/i, /sale de la lista/i]],
+    ['en', GUIA_EN, { inicio: "The organization's sign-in", noEntro: 'I cannot sign in' },
+      [/SITE_AUTH_MICROSOFT_ACCOUNTS/, /any account/i, /the first door is open/i, /all the control is in\s+the\s+(site's\s+)?list/i, /guest/i, /personal accounts/i, /chosen at installation/i],
+      [/Configuration, in People, "Who gets into\s+the site"/, /without the Microsoft\s+portal/i, /leaves the\s+list/i]],
+  ];
+  for (const [lado, f, t, inicio, lista] of lados) {
+    const g = leer(f);
+    const sub = (titulo) => { const i = g.indexOf(`\n### ${titulo}`); assert.ok(i >= 0, `${lado}: falta «${titulo}»`); const j = g.slice(i + 5).search(/\n#{2,3} /); return g.slice(i, j < 0 ? undefined : i + 5 + j); };
+    const ini = sub(t.inicio);
+    for (const rx of inicio) assert.match(ini, rx, `${lado}: «${t.inicio}» no dice ${rx}`);
+    for (const rx of lista) assert.match(g, rx, `${lado}: la guía no dice ${rx}`);
+    // «No puedo entrar» cuenta lo de ahora: la lista, no la asignación en el portal
+    const ne = sub(t.noEntro);
+    assert.doesNotMatch(ne, /asign|assign/i, `${lado}: «${t.noEntro}» todavía habla de asignar en el portal`);
+    assert.match(ne, lado === 'es' ? /la lista/ : /the (site's\s+)?list/, `${lado}: «${t.noEntro}» no habla de la lista`);
+  }
 });
