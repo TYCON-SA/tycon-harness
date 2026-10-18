@@ -15,6 +15,7 @@
  */
 const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
 const fichasDelTablero = require('./tabs/cards.js');
+const { compare: compararVersiones } = require('../setup/harness/version-order.js');
 
 const DIA = 86400000;
 const PARADA_DIAS = 30;
@@ -199,7 +200,7 @@ function filasProyectos(m) {
 }
 
 /** Arnés (AC 20): una línea por pieza. */
-function filasArnes(m, { ahora = Date.now(), version = null } = {}) {
+function filasArnes(m, { ahora = Date.now(), version = null, ultima = null } = {}) {
   const lineas = [];
   for (const s of (m.sources && Array.isArray(m.sources.lista) ? m.sources.lista : [])) {
     lineas.push({ clave: `fuente:${s.id}`, titulo: `Fuente ${s.id}`, estado: s.estado, texto: s.estado === 'medido' ? `al día (del ${s.fecha})` : conFecha(s) });
@@ -214,6 +215,11 @@ function filasArnes(m, { ahora = Date.now(), version = null } = {}) {
   const sello = medida(t) && t.sello ? t.sello : null;
   lineas.push({ clave: 'sello', titulo: 'La página de las seis preguntas', estado: sello ? 'medido' : 'no_medido', texto: sello ? `${String(sello.generado || '').slice(0, 10)} · ${sello.completo ? 'completa' : 'incompleta'}` : conFecha(t) });
   lineas.push({ clave: 'version', titulo: 'Versión del sitio', estado: version ? 'medido' : 'no_medido', texto: version || 'sin version.json' });
+  // la última publicada: nunca «al día» sin haber mirado
+  if (ultima) {
+    if (ultima.estado === 'medido') lineas.push({ clave: 'ultima', titulo: 'Última publicada', estado: 'medido', texto: `${ultima.version}${ultima.creada ? ` (del ${String(ultima.creada).slice(0, 10)})` : ''}` });
+    else lineas.push({ clave: 'ultima', titulo: 'Última publicada', estado: 'no_medido', texto: ultima.estado === 'no_pudo' ? `no se pudo mirar la última publicada (${ultima.motivo})` : 'todavía no se miró la última publicada' });
+  }
   void ahora;
   return lineas;
 }
@@ -227,8 +233,31 @@ function tile(f) {
 
 function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
 
+/** ¿La última publicada es mayor que la del sitio? Sólo con las dos versiones con forma de número publicado. */
+function hayVersionNueva(ultima, version) {
+  if (!ultima || ultima.estado !== 'medido' || !version) return false;
+  return compararVersiones(ultima.version, version) === 1;
+}
+
+/**
+ * El cartel de versión nueva: sólo para quienes mantienen (el servidor no le pasa `ultima` a nadie más),
+ * con lo que hay que hacer según el modo. El enlace a la receta sale del repo que declara la imagen (su etiqueta
+ * `source`): sin ella, el texto sin enlace.
+ */
+function cartelVersionNueva(ctx) {
+  if (!ctx || !hayVersionNueva(ctx.ultima, ctx.version)) return '';
+  const u = ctx.ultima;
+  const que = `hay una versión nueva del sitio: ${esc(u.version)} (la tuya: ${esc(ctx.version)})`;
+  if (ctx.modoActualizacion === 'auto') return `<div class="banda">${que}; se instala sola con el próximo nocturno</div>`;
+  const receta = u.fuente ? `<a href="${esc(`${u.fuente}/blob/main/guides/sitio-de-la-organizacion.md#c%C3%B3mo-se-mantiene-al-d%C3%ADa`)}">la receta de la guía</a>` : 'la receta de la guía (Cómo se mantiene al día)';
+  return `<div class="banda">${que}; cómo se actualiza: ${receta}</div>`;
+}
+
 /** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
 const TEMA = '<div class="theme" role="group" aria-label="Tema"><button type="button" data-tema="auto" aria-pressed="true">Auto</button><button type="button" data-tema="light" aria-pressed="false">Claro</button><button type="button" data-tema="dark" aria-pressed="false">Oscuro</button></div>';
+
+// el idioma del sitio: el de sus páginas, y el de la guía que muestra la pestaña Ayuda (help.js)
+const IDIOMA = 'es';
 
 /** El armazón de toda página: el menú al costado (arriba en teléfono) y el encabezado con su bajada (`lede`, opcional). */
 function layout(ctx, titulo, cuerpo, lede = null) {
@@ -238,11 +267,14 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const recargar = ctx && Number.isInteger(ctx.recargar) && ctx.recargar > 0 ? `<meta http-equiv="refresh" content="${ctx.recargar}">` : '';
   const pest = (ctx && ctx.pestanas) || [];
   const nav = pest.length ? `<nav class="tabs" aria-label="Pestañas">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
-  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(quien.email)}</span> <button type="submit">Salir</button></form>` : '';
+  // la cuenta con la que entró (una persona con varios correos ve cuál usó)
+  const cuenta = quien ? quien.correoDeIngreso || quien.email : '';
+  const sesion = cuenta ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(cuenta)}</span> <button type="submit">Salir</button></form>` : '';
   const bandas = [
     ctx && ctx.bandaConfig ? banda(`la configuración de la organización no se pudo releer desde ${hora(ctx.bandaConfig.desde)}: ${ctx.bandaConfig.motivo}`) : '',
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
     ctx && ctx.avisoVariable ? banda('la variable de arranque sigue puesta: sacala de la configuración de la instalación (SITE_FIRST_MAINTAINER)') : '',
+    cartelVersionNueva(ctx),
   ].join('');
   // la barra de arriba: la marca de la organización (su logo, o su nombre), el producto y quién entró
   const m = (ctx && ctx.marca) || {};
@@ -250,7 +282,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const barra = `<header class="barra">${org}${org ? '<span class="sep" aria-hidden="true"></span>' : ''}<span class="producto">Arnés</span><span class="lema">Sitio de la organización</span><span class="esp"></span>${sesion}</header>`;
   // el pie: la versión que corre, su licencia, sus créditos y de quién es el sitio
   const pie = `<footer class="pie"><span>Arnés${ctx && ctx.version ? ` v${esc(ctx.version)}` : ''}</span><a href="/licencia">Licencia Apache 2.0</a><a href="/creditos">Créditos y componentes de terceros</a><span class="esp"></span>${m.nombre ? `<span>© ${esc(m.nombre)}</span>` : ''}</footer>`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body>${barra}<div class="shell"><aside class="side">${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}${pie}</main></div></body></html>`;
+  return `<!doctype html><html lang="${IDIOMA}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body>${barra}<div class="shell"><aside class="side">${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}${pie}</main></div></body></html>`;
 }
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
@@ -315,7 +347,7 @@ function paginaProyectos(ctx) {
 }
 
 function paginaArnes(ctx) {
-  const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version });
+  const lineas = filasArnes(ctx.modelo || {}, { ahora: ctx.ahora, version: ctx.version, ultima: ctx.ultima });
   const li = lineas.map((l) => `<li class="${l.estado === 'medido' ? '' : 'nm'}"><span class="pieza">${esc(l.titulo)}</span><span class="estado">${esc(l.texto)}</span><span class="marca">${l.estado === 'medido' ? '<span class="pill">medido</span>' : '<span class="pill nm">no medido</span>'}</span></li>`).join('');
   // las fichas del tablero nocturno, por pregunta; sin el modelo de fichas (una prueba que no las pide) no hay nada
   const m = ctx.modelo || {};
@@ -352,14 +384,30 @@ function inicioJson(ctx) {
 }
 
 function paginaSimple(titulo, texto, ctx = {}) { return layout(ctx, titulo, `<p class="lede">${esc(texto)}</p>`); }
-const paginaSinRol = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés.</p>');
+// la entrada de un proveedor con más de una puerta (la de los invitados del directorio). Sólo direcciones del
+// propio sitio: `id` elige la vía
+const paginaEntrar = (vias) => layout({}, 'Entrar', `<ul class="lista">${vias.map((v) => `<li><a href="/auth/login${v.id ? `?via=${encodeURIComponent(v.id)}` : ''}">${esc(v.texto)}</a></li>`).join('')}</ul>`,
+  'Elegí con qué cuenta entrás. Quién ve qué lo decide la lista del sitio.');
+// un ingreso rechazado, con la frase del proveedor y, si la hay, por dónde seguir (una dirección del propio sitio)
+const paginaNoEntro = (pantalla, enlace) => layout({}, 'No se pudo entrar', `<p class="lede">${esc(pantalla)}</p>${enlace && /^\/[^/\\]/.test(enlace.href) ? `<p><a href="${esc(enlace.href)}">${esc(enlace.texto)}</a></p>` : ''}`);
+// quien pasó el proveedor y no está en la lista del sitio: con qué cuenta entró, a quién
+// pedírselo (sin nombrar a nadie: no ve ningún dato) y cómo entrar con otra
+const paginaSinRol = (ctx) => {
+  const cuenta = ctx.quien ? ctx.quien.correoDeIngreso || ctx.quien.email : '';
+  return layout({ quien: ctx.quien }, 'Tu cuenta no está en la lista', [
+    `<p class="lede">Entraste con ${esc(cuenta)}. Esa cuenta no está en la lista de quién entra a este sitio.</p>`,
+    '<p>Pedile a quien mantiene el sitio de tu organización que te sume: se hace en Configuración, en Personas.</p>',
+    '<p>Si tenés otra cuenta de la organización, <a href="/auth/login?otra=1">entrá con esa</a>, o salí con el botón de arriba.</p>',
+  ].join(''));
+};
 const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">este sitio todavía no tiene mantenedores: quien lo instaló tiene que poner SITE_FIRST_MAINTAINER.</p>');
 const paginaFrenado = ({ desde }) => layout({}, 'Sitio frenado', `<p class="lede">el sitio está frenado desde ${esc(hora(desde))}: la configuración de la organización no valida; se destraba cuando un refresco la lee bien.</p>`);
 // se recarga sola cada 5 segundos hasta que el sitio tenga lo que necesita
 const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, 'Cargando', '<p class="lede">cargando las fuentes: esta página se recarga sola en unos segundos.</p>');
 
 module.exports = {
+  IDIOMA,
   hora, FRASES, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
   paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
-  paginaSimple, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
+  paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
 };

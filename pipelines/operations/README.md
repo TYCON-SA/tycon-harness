@@ -56,11 +56,12 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los pipelines. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Dos
-caminos: la página local `harness.js team-config` (en la máquina de quien mantiene, con los clones) o, con el sitio de
-la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
-(`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
-(`SITE_OPERATIONS_WRITE_TOKEN`). La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
+**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Con
+el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos
+lectores (`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
+(`SITE_OPERATIONS_WRITE_TOKEN`). Sin sitio, se edita el archivo y se abre el pedido a mano; la página local
+`harness.js team-config` (en la máquina de quien mantiene, con los clones) muestra lo que hay, de sólo lectura, con los
+problemas que ven los lectores. La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
 revisor (punto 3). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
 cuando la plantilla `ops-data.yml` dejó la marca `.dashboard/applied-config.json` con ese archivo adentro: la marca dice
 qué archivos de configuración aplicó la noche de verdad, con su identificador de objeto, y se guarda sólo al final de
@@ -113,7 +114,7 @@ Y en *Project settings → Pipelines → Settings* del proyecto donde corren los
 ### La política de rama de `main` del repo de operaciones
 
 Ponela **antes** de publicar el sitio de la organización. Sin ella, cualquiera que pueda empujar a `main` se hace
-mantenedor del sitio (cambia la lista `site.maintainers`) o cambia el YAML de un nocturno y se lleva sus secretos.
+mantenedor del sitio (cambia la lista `site.access`) o cambia el YAML de un nocturno y se lleva sus secretos.
 
 **La receta recomendada.** En *Project settings → Repositories → el repo de operaciones → Policies → Branch Policies →
 main*:
@@ -147,8 +148,8 @@ del proyecto. Esa identidad necesita, en *Pipelines → Security* de **cada proy
 `sin_permiso`, nunca «sin despliegue».
 
 Qué declarar: el proveedor y, por producto, los pipelines de `staging` y de `production` con el **identificador
-exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La página
-`harness.js team-config` los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
+exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La pestaña
+Configuración del sitio los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
 ejemplo `examples/operations.json` trae la forma. Un producto sin declarar sale «no medido».
 
 ## 4. Dar de alta los tres pipelines
@@ -258,3 +259,19 @@ cada una: la guía del sitio (`guides/sitio-de-la-organizacion.md`, «De dónde 
 
 Si una corrida falla, el índice queda como estaba y el sitio sigue con la copia anterior. Con una copia de más de 24
 horas, quienes mantienen ven la banda; con más de 48, el sitio se frena, como cuando el repo no se puede leer.
+
+## 10. El sitio al día con stable (opcional)
+
+Un pipeline más, `site-update.yml`, mantiene el sitio de la organización al día con la etiqueta `stable` de su imagen
+(la que el arnés mueve sólo cuando la imagen pasó el escáner y tiene su firma). Corre cada noche a las 03:00 UTC, una
+hora antes de dependencias, que prueba el sitio y arma el resumen de la mañana. Qué hace en cada caso y cómo se elige
+automático o sólo aviso: la guía del sitio («Cómo se mantiene al día»).
+
+1. **La conexión de servicio del nocturno** («site-update», Workload identity federation), autorizada sólo para este
+   pipeline, con un **rol propio** sobre la aplicación del sitio y nada más. La guía trae el rol y la orden que lo crea.
+   Es propia: ni la de la copia de operaciones, ni la del buzón, ni la de dependencias.
+2. **El pipeline**: copiá `site-update.yml` a `pipelines/` del repo de operaciones y cambiá las dos líneas marcadas. Las
+   variables son `SITE_PLATFORM` (`azure`), `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`. En
+   Render: `SITE_PLATFORM=render` y la variable secreta `SITE_RENDER_DEPLOY_HOOK`.
+3. **El modo**: sin `site.update` en `operations.json`, sólo aviso. `"auto"` se elige desde la pestaña Configuración,
+   después de una actualización a mano que salió bien.

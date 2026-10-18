@@ -57,7 +57,7 @@ const { BRAND_LOGO } = require('../lib/operations-config.js');
 // SITE_AUTH_PROVIDER). El núcleo no nombra a ninguno: lo propio de cada uno vive en su archivo.
 const PROVEEDORES = (() => {
   const dir = path.join(__dirname, 'auth-providers');
-  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico } };
+  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico, describir: () => 'un proveedor OpenID Connect propio de la organización' } };
   for (const f of fs.readdirSync(dir).filter((x) => /^[a-z][a-z0-9-]*\.js$/.test(x)).sort()) out[f.slice(0, -3)] = require(path.join(dir, f));
   return out;
 })();
@@ -65,7 +65,9 @@ const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
   'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
-  'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS'];
+  'SITE_OPERATIONS_SOURCE', 'SITE_OPERATIONS_COPY', 'SITE_OPERATIONS_COPY_SAS',
+  // las propias de cada proveedor, que las declara su archivo (`variables`)
+  ...new Set(Object.values(PROVEEDORES).flatMap((p) => (Array.isArray(p.variables) ? p.variables : [])))];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const NEEDS = new Set(['maintainer', 'person']);
@@ -77,6 +79,11 @@ const VERSION = (() => {
     try { const v = JSON.parse(fs.readFileSync(path.join(raiz, f), 'utf8')).version; if (v) return v; } catch { /* el siguiente */ }
   }
   return null;
+})();
+// de qué imagen es este sitio (el nombre en el registro, sin etiqueta): lo deja el workflow que la arma, adentro. Contra
+// esa imagen se compara `stable`; una imagen armada por la organización desde su copia compara contra la suya
+const IMAGEN = (() => {
+  try { const i = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.tycon-release.json'), 'utf8')).image; return typeof i === 'string' && i ? i : null; } catch { return null; }
 })();
 
 const esLoopback = (u) => u.protocol === 'http:' && u.hostname === '127.0.0.1';
@@ -113,6 +120,11 @@ function validarConfiguracion(env) {
 
   if (PROVEEDORES[prov]) {
     problemas.push(...PROVEEDORES[prov].problemasDeConfig(env, { dominios }));
+    // lo propio de un proveedor que el sitio muestra (su modo), sin valores secretos
+    cfg.opciones = typeof PROVEEDORES[prov].opcionesDe === 'function' ? PROVEEDORES[prov].opcionesDe(env) : null;
+    // con qué se entra, en palabras: Configuración lo muestra de sólo lectura (se cambia en la instalación)
+    cfg.inicioDeSesion = { proveedor: prov, modo: cfg.opciones && cfg.opciones.modo ? cfg.opciones.modo : null,
+      texto: typeof PROVEEDORES[prov].describir === 'function' ? PROVEEDORES[prov].describir(cfg.opciones || {}) : `el proveedor «${prov}»` };
     // un proveedor con lo suyo fijo (emisor, direcciones, organización) lo completa él; los demás usan SITE_OIDC_ISSUER
     if (typeof PROVEEDORES[prov].completarConfig === 'function') PROVEEDORES[prov].completarConfig(env, cfg);
     else if (env.SITE_OIDC_ISSUER) {
@@ -126,7 +138,7 @@ function validarConfiguracion(env) {
   let repo = null;
   try { repo = new URL(env.SITE_OPERATIONS_REPO || ''); } catch { /* abajo */ }
   if (!env.SITE_OPERATIONS_REPO) falta('SITE_OPERATIONS_REPO', 'falta: la dirección https del repo de operaciones');
-  else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
+  else if (!repo || !(repo.protocol === 'https:' || esLoopback(repo)) || repo.username || repo.password) falta('SITE_OPERATIONS_REPO', 'tiene que ser una dirección https:// (o http en la propia máquina, para probar), sin usuario ni credencial adentro');
   cfg.operationsRepo = env.SITE_OPERATIONS_REPO;
   // de dónde se lee operaciones: `repo` (lo de siempre, un clon) o `copy` (la foto que deja un trabajo en
   // un contenedor de almacenamiento). Leer de la copia es una elección explícita: sin la variable, el repo
@@ -169,7 +181,7 @@ function validarConfiguracion(env) {
   if (env.SITE_PROFILE_REPO) {
     let perfil = null;
     try { perfil = new URL(env.SITE_PROFILE_REPO); } catch { /* abajo */ }
-    if (!perfil || !(perfil.protocol === 'https:' || esLoopback(perfil)) || perfil.username || perfil.password) falta('SITE_PROFILE_REPO', 'tiene que ser una dirección https://, sin usuario ni credencial adentro');
+    if (!perfil || !(perfil.protocol === 'https:' || esLoopback(perfil)) || perfil.username || perfil.password) falta('SITE_PROFILE_REPO', 'tiene que ser una dirección https:// (o http en la propia máquina, para probar), sin usuario ni credencial adentro');
     else if (!env.SITE_PROFILE_TOKEN) falta('SITE_PROFILE_TOKEN', 'falta: la credencial de lectura del perfil del equipo (SITE_PROFILE_REPO está puesta)');
     cfg.profileRepo = env.SITE_PROFILE_REPO;
     cfg.profileCredencial = env.SITE_PROFILE_TOKEN ? { token: env.SITE_PROFILE_TOKEN } : null;
@@ -282,10 +294,13 @@ function textoDeLaRaiz(nombre, anexos = []) {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las stories 2.27 y 2.29 suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [] } = {}) {
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null } = {}) {
   const v = validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
+  // la última publicada en `stable`: una vez por hora como máximo, sin credenciales, guardada en el disco.
+  // Nunca frena un pedido: se mira de fondo y la página dice lo que se sabe hasta ahí
+  const ultima = vigia || require('./latest-release.js').crearVigia({ imagen: IMAGEN, dataDir: cfg.dataDir, ahora, log: (l) => log(l) });
   const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
   const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
@@ -368,18 +383,27 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, path: r.path })).sort((a, b) => a.orden - b.orden);
   }
 
-  function irAlEmisor(res) {
+  // las puertas de un proveedor que tiene más de una (la de los invitados del directorio); una vía que no
+  // es suya es la principal
+  const vias = Array.isArray(proveedor.vias) && proveedor.vias.length > 1 ? proveedor.vias : null;
+  const viaDe = (v) => (vias && vias.some((x) => x.id && x.id === v) ? v : null);
+
+  /**
+   * Al emisor. `otraCuenta`: el proveedor pide elegir la cuenta (quien entró con una que no está en la lista);
+   * `via`: por cuál de sus puertas (queda en el intento firmado, y la vuelta la usa).
+   */
+  function irAlEmisor(res, { otraCuenta = false, via = null } = {}) {
     if (!proveedor.listo()) return enviar(res, { status: 503, cuerpo: views.paginaSimple('El inicio de sesión todavía no está listo', 'El sitio no pudo hablar con el proveedor de la organización. Probá de nuevo en unos segundos.'), extra: { 'Retry-After': '10' } });
     const t = ahora();
-    const nuevo = session.nuevoIntento(cfg.sessionKey, t);
-    return enviar(res, { status: 302, cuerpo: '', extra: { Location: proveedor.urlDeInicio({ state: nuevo.intento.state, nonce: nuevo.intento.nonce, challenge: nuevo.challenge }), 'Set-Cookie': nuevo.cookie } });
+    const nuevo = session.nuevoIntento(cfg.sessionKey, t, { via: viaDe(via) });
+    return enviar(res, { status: 302, cuerpo: '', extra: { Location: proveedor.urlDeInicio({ state: nuevo.intento.state, nonce: nuevo.intento.nonce, challenge: nuevo.challenge, otraCuenta, via: nuevo.intento.via }), 'Set-Cookie': nuevo.cookie } });
   }
 
   async function vuelta(req, res, u, cookies) {
     const borrarIntento = session.borrar(session.INTENTO);
-    const rechazo = (status, pantalla, motivo) => {
+    const rechazo = (status, pantalla, motivo, enlace = null) => {
       registrar(`inicio de sesión rechazado: ${motivo}`);
-      return enviar(res, { status, cuerpo: views.paginaSimple('No se pudo entrar', pantalla), extra: { 'Set-Cookie': borrarIntento } });
+      return enviar(res, { status, cuerpo: views.paginaNoEntro(pantalla, enlace), extra: { 'Set-Cookie': borrarIntento } });
     };
     const t = ahora();
     for (const [s, exp] of consumidos) if (exp <= t) consumidos.delete(s);
@@ -396,13 +420,16 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (!code) return rechazo(400, 'El proveedor no devolvió un código. Volvé a entrar.', `sin código${errorDelEmisor ? ` (${errorDelEmisor})` : ''}`);
     let ident;
     try {
-      ident = await proveedor.completar({ code, verifier: it.verifier, nonce: it.nonce });
+      ident = await proveedor.completar({ code, verifier: it.verifier, nonce: it.nonce, via: viaDe(it.via) });
     } catch (e) {
-      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, `No se pudo entrar: ${e.pantalla}.`, e.motivo);
+      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, `No se pudo entrar: ${e.pantalla}.`, e.motivo, e.enlace);
       return rechazo(400, 'No se pudo completar el inicio de sesión. Volvé a entrar.', (e && e.motivo) || (e && e.message) || String(e));
     }
     const ses = session.nuevaSesion({ ...ident, prov: proveedor.nombre, iss: proveedor.emisor }, cfg.sessionKey, ahora());
-    registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})`);
+    // el porqué de una página sin datos, sin el correo: la lista se lee con la configuración vigente
+    const config = fuentes.estado().navegable || fuentes.estado().cargado ? fuentes.config() : null;
+    const sinLista = config && access.quienPide(ident, { config, firstMaintainer: cfg.firstMaintainer }).rol === 'none';
+    registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})${sinLista ? ' que no está en la lista del sitio: ve la página sin datos' : ''}`);
     return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento] } });
   }
 
@@ -418,7 +445,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
 
     const cookies = session.leerCookies(req.headers.cookie);
-    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via') }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
       if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple('Salir', 'Para salir, usá el botón «Salir».'), extra: { Allow: 'POST' } });
@@ -430,7 +457,11 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraba «respuesta 403»).
     // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
     const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
-    if (!ses) return esApi ? rechazoApi(401, 'sesion_vencida', 'la sesión venció o se cerró: recargá la página para entrar de nuevo') : irAlEmisor(res);
+    if (!ses) {
+      if (esApi) return rechazoApi(401, 'sesion_vencida', 'la sesión venció o se cerró: recargá la página para entrar de nuevo');
+      // con más de una puerta, se elige en la página de entrada; con una, directo al emisor
+      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias) }) : irAlEmisor(res);
+    }
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
     if (st.frenado) return esApi ? rechazoApi(503, 'frenado', `el sitio está frenado desde ${views.hora(st.frenado.desde)}: la configuración de la organización no valida; lo arregla quien mantiene el arnés`) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
@@ -442,7 +473,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const quien = access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer });
     if (quien.rol === 'none') {
       if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', 'el sitio todavía no tiene a nadie que lo mantenga: lo resuelve quien instaló el sitio, que pone el primero en su configuración');
-      if (esApi) return rechazoApi(403, 'sin_rol', `tu cuenta ${quien.email} todavía no tiene rol en el sitio: si entraste con otra cuenta, salí y entrá con la de la organización; si es ésa, pedíle a quien mantiene el arnés que te confirme`);
+      if (esApi) return rechazoApi(403, 'sin_rol', `tu cuenta ${quien.correoDeIngreso || quien.email} no está en la lista de quién entra a este sitio: si tenés otra cuenta, salí y entrá con esa; si no, pedile a quien mantiene el sitio de tu organización que te sume`);
       return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien }) : views.paginaSinRol({ quien }) });
     }
     let params = null;
@@ -461,8 +492,12 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
-      version: VERSION, ahora: ahora(),
+      version, ahora: ahora(),
+      // sólo quienes mantienen saben de la última publicada (los que pueden actuar); el modo sale de site.update
+      ultima: quien.rol === 'maintainer' ? ultima.estado() : null,
+      modoActualizacion: config && config.site && config.site.update === 'auto' ? 'auto' : 'notice',
     };
+    if (quien.rol === 'maintainer') ultima.mirar();
     // una ruta puede ser asíncrona y leer el pedido (las escrituras de la pestaña Configuración, story 2.29)
     const salida = await r.handler(ctx);
     return enviar(res, salida);
@@ -525,6 +560,8 @@ async function main() {
       ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas (story 2.27): arma su vista en un hilo aparte con el espejo del buzón
       ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
+      // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
+      ...require('./help.js').crearRutas({ log }),
     ];
     sitio = crearSitio({ env, fuentes, log, rutasExtra });
     await sitio.iniciar();

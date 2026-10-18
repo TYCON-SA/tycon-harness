@@ -59,9 +59,10 @@ máquina para verlo.
 
 - **Quien mantiene el arnés:** lo instala una vez, lo actualiza a conciencia, y edita la configuración desde la pestaña
   Configuración.
-- **Cada persona de la organización que programa con el arnés:** entra y ve lo suyo. Quien no usa el arnés en una
-  máquina no tiene corridas propias: entra sin rol, salvo que quien mantiene lo sume a la lista de los que mantienen.
-- **Alguien de otra organización:** no entra. El sitio deja pasar sólo a la organización.
+- **Cada persona de la organización que programa con el arnés:** entra y ve lo suyo, si está en la lista del sitio.
+  Quien no usa el arnés en una máquina no tiene corridas propias, pero ve igual lo demás que es suyo.
+- **Alguien que no está en la lista:** no ve nada. Con «cualquier cuenta de Microsoft» puede pasar el inicio de sesión,
+  pero el sitio le muestra sólo una página sin datos.
 
 **Lo que no hace.** El sitio muestra; no actúa. No escribe en ningún repo, salvo los pedidos de cambio que propone la
 pestaña Configuración, y esos entran sólo cuando alguien los aprueba. No corre pipelines, no mergea, no despliega y no
@@ -71,26 +72,28 @@ buzón.
 ## El primer ingreso
 
 **La dirección.** La deja quien instaló el sitio: viene en el aviso de la mañana, y quien mantiene la tiene anotada en
-la configuración del sitio (para quien mantiene: `site.url`, en la sección «Quién mantiene el sitio»). Si no la tenés,
+la configuración del sitio (para quien mantiene: `site.url`, en la sección «Quién entra al sitio»). Si no la tenés,
 pedísela a quien te pasó el enlace o a quien instaló el arnés en tu máquina.
 
-**El inicio de sesión.** El sitio pide la cuenta de la organización: la de Microsoft, Google o GitHub, según cómo se
-instaló. Si tu organización lo instaló en Azure, la primera pantalla es la de Microsoft. Después de entrar, el sitio te
-muestra Inicio. Arriba a la derecha está tu correo y el botón **Salir**;
+**El inicio de sesión.** El sitio pide la cuenta que eligió tu organización al instalarlo: Microsoft, Google o GitHub.
+Si tu organización lo instaló en Azure, la primera pantalla es la de Microsoft. Con «cualquier cuenta de Microsoft», la
+primera pantalla tiene dos botones: uno para tu cuenta de Microsoft y otro para los invitados del directorio de la
+organización. Pasar el inicio de sesión no alcanza: entrás sólo si estás en la lista del sitio. Después de entrar, el
+sitio te muestra Inicio. Arriba a la derecha está tu correo y el botón **Salir**;
 abajo a la izquierda, el **Tema** (automático, claro u oscuro).
 
 **Lo que ves la primera vez** depende de quién sos para el sitio:
 
 - **Quien mantiene** ve las cinco pestañas, y en Inicio lo que espera una decisión de toda la organización.
 - **Una persona confirmada** ve tres pestañas (Inicio, Corridas y Proyectos), con lo suyo.
-- **Alguien sin rol** ve sólo una página que dice que su cuenta todavía no está confirmada, sin el menú de la
-  izquierda.
+- **Alguien que no está en la lista** ve sólo una página que dice con qué cuenta entró, que esa cuenta no está en la
+  lista, a quién pedírselo y cómo entrar con otra. No ve el menú de la izquierda ni ningún dato.
 
-![La página de quien todavía no tiene rol: «tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés»](sitio-de-la-organizacion/capturas/sin-rol.png)
+![La página de quien no está en la lista: «Tu cuenta no está en la lista»](sitio-de-la-organizacion/capturas/sin-rol.png)
 
 **Tu máquina, todavía sin confirmar.** Cada máquina del equipo sube sus corridas con el correo de git de quien la usa.
 Quien mantiene tiene que confirmar que esa máquina es tuya. Hasta que te confirmen, tus corridas las ven sólo quienes
-mantienen; si es tu única máquina, además entrás sin rol y ves la página de arriba. Pedíselo a quien mantiene el arnés
+mantienen; vos entrás igual, si estás en la lista, y ves lo demás. Pedíselo a quien mantiene el arnés
 (si no sabés quién es, a quien te pasó el enlace o a quien instaló el arnés en tu máquina). Lo confirma en
 Configuración, el cambio entra cuando alguien lo aprueba, y a partir del próximo refresco (a lo sumo 15 minutos después)
 ves lo tuyo.
@@ -242,12 +245,20 @@ Las secciones, en el orden de la pantalla:
 
 - **La organización**: el nombre y el logo que muestra la barra de arriba y el pie. Queda en `operations.json`, en el
   repo de operaciones. Lo revisa quien mantiene.
-- **Quién mantiene el sitio**: quiénes ven la pestaña Configuración y pueden proponer cambios; también el buzón de
-  corridas, el refresco y la dirección del sitio. Si te sacás de la lista, perdés el acceso cuando se apruebe. Queda en
-  `operations.json`, en el repo de operaciones. Lo revisa otra persona de la lista. **«Cada cuánto se actualiza el
-  sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio vuelve a leer el
-  repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a la nube, que en una
-  instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y al despertar lee todo.
+- **Quién entra al sitio**: la lista de quién entra y qué ve, una fila por persona, con su rol («Mantiene el sitio» o
+  «Dev») y uno o más correos. Nadie entra si no está acá, con cualquier inicio de sesión. Quienes mantienen ven la
+  pestaña Configuración y proponen cambios; los devs ven lo suyo. Una persona entra con cualquiera de sus correos y ve lo
+  mismo. Para sumar a alguien: Configuración, en Personas, «Quién entra al sitio» → **+ Agregar persona**, su correo y su
+  rol; se hace acá, sin el portal de Microsoft. La primera vez la sección trae la lista armada con lo de antes (quienes
+  mantenían y cada persona con una máquina confirmada) y avisa que todavía no está guardada: se guarda al proponerla.
+  Si alguien sale de la lista, en cuanto se aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos), su
+  próxima página es la de «Tu cuenta no está en la lista», sin datos. Arriba de la lista se ve con qué se entra al
+  sitio; eso se cambia en la instalación. También van acá el buzón de corridas, el refresco y la dirección del sitio.
+  Queda en `operations.json`, en el repo de operaciones. Lo revisa otra persona que mantiene. **«Cada cuánto se
+  actualiza el sitio»** acepta de 5 a 120 minutos; sin declarar, 15. Más corto, un cambio se ve antes, pero el sitio
+  vuelve a leer el repo de operaciones, el del perfil y el buzón más seguido mientras está despierto: más lecturas a
+  la nube, que en una instalación que cobra por uso cuestan algo más. No lo mantiene despierto: dormido no lee nada, y
+  al despertar lee todo.
 - **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
   que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. Prendida («sí», `site.auto_apply` en
   `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
@@ -258,6 +269,9 @@ Las secciones, en el orden de la pantalla:
   lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
   entran solos. Queda en `operations.json`, en el repo de operaciones.
+- **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
+  de `operations.json`). Sin declarar, sólo aviso. «Automático» pide el nocturno de actualización y su permiso: la receta,
+  en «Cómo se mantiene al día».
 - **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -334,47 +348,52 @@ las máquinas se actualizan solas al arrancar.
 
 ## Qué ve cada rol
 
-El sitio decide quién sos por tu correo:
+El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra al sitio»:
 
 | Rol | Inicio | Corridas | Proyectos | Arnés | Configuración |
 |---|---|---|---|---|---|
 | **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las corridas | todos los productos | sí | sí, y propone cambios |
-| **Persona confirmada** | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no |
-| **Persona con la máquina sin confirmar** | «Lo tuyo», si tiene otra máquina confirmada; si no, la página «tu cuenta todavía no está confirmada» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no |
-| **Sin rol** | sólo la página «tu cuenta todavía no está confirmada» | no | no | no | no |
+| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no |
+| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no |
+| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no |
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 
-- Para ser **persona**, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»). Tu máquina
-  aparece sola en «Por confirmar» cuando sube su primera corrida.
-- Para **mantener**, tu correo tiene que estar en «Quién mantiene el sitio». La primera persona la pone quien instala,
-  antes de que exista la lista.
-- Para dejar de ver, se saca el correo o la máquina de esas mismas secciones.
+- Para entrar como **dev**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Dev». Para ver tus corridas,
+  además, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»): aparece sola en «Por
+  confirmar» cuando sube su primera corrida.
+- Para **mantener**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Mantiene el sitio». La primera
+  persona la pone quien instala el sitio, mientras la lista no tiene a nadie que mantenga.
+- Para dejar de ver, se saca el correo de la lista.
+
+**La ayuda, adentro.** Esta guía está también dentro del sitio, en la pestaña «Ayuda», y cada rol ve lo que le toca: un
+dev ve cómo se usa el sitio y sus problemas comunes; quien mantiene ve además la configuración sección por sección y
+cómo se instala. Sale de esta misma guía, en el idioma del sitio.
 
 ## Problemas comunes
 
 ### No puedo entrar
 
-**Lo que se ve:** la página de inicio de sesión no te deja pasar, o dice que tu cuenta no tiene acceso a la
-aplicación.
+**Lo que se ve:** «No se pudo entrar», con el porqué; o la página de Microsoft, Google o GitHub no te deja pasar.
 
-**Por qué pasa:** la organización puede dejar entrar sólo a las personas que habilitó una por una. En Microsoft eso se
-llama «asignar» a alguien a la aplicación del sitio. También pasa si el navegador entra con otra cuenta (una personal, o
-la de otra organización).
+**Por qué pasa:** el sitio pide un correo que tu proveedor garantice. Casos comunes: tu cuenta no tiene un correo cargado
+en su directorio; tu organización no verificó el dominio de tu correo; o entraste con una cuenta personal de Microsoft
+por el botón principal (las cuentas personales que entran directo no se aceptan todavía). También pasa si el navegador
+entra solo con otra cuenta.
 
-**Qué hacer:** pedile a quien mantiene que te habilite («que te asigne a la aplicación del sitio», si es Microsoft). Si ya estás asignado, salí de la otra cuenta o
-abrí una ventana privada y entrá con la de la organización.
+**Qué hacer:** si sos invitado del directorio de la organización, entrá por el botón de los invitados. Si no, entrá con
+la cuenta de tu organización: salí de la otra o abrí una ventana privada. Si el mensaje habla del correo, pedile a quien
+administra tu directorio que cargue o verifique tu correo. Para estar en la lista del sitio, pedíselo a quien mantiene.
 
 ### Entro y no veo nada
 
-**Lo que se ve:** la página «tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés».
+**Lo que se ve:** la página «Tu cuenta no está en la lista», con la cuenta con la que entraste.
 
-**Por qué pasa:** entraste bien, pero el sitio no te tiene ni como persona ni como quien mantiene: ninguna máquina
-confirmada está a tu nombre.
+**Por qué pasa:** pasaste el inicio de sesión, pero esa cuenta no está en la lista de «Quién entra al sitio». Quizás
+estás con otro correo que el de la lista.
 
-**Qué hacer:** si programás con el arnés, hacé una story con él en tu máquina: al terminar, la máquina sube su corrida
-y se presenta. Después pedile a quien mantiene que la confirme. Si no usás el arnés en una máquina, el sitio no tiene
-nada tuyo para mostrar; si necesitás ver todo, pedile a quien mantiene que te sume a la lista de los que mantienen.
+**Qué hacer:** si tenés otra cuenta, usá «entrá con esa». Si no, pedile a quien mantiene el sitio que te sume, con el
+correo con que entrás. Entra cuando alguien aprueba el pedido y el sitio se actualiza (a lo sumo 15 minutos).
 
 ### No veo mis corridas
 
@@ -466,13 +485,19 @@ visita la despierta.
   que trae. También la podés armar vos (abajo).
 - **Una forma de iniciar sesión de la organización:** Entra ID, Google Workspace, GitHub, o cualquier proveedor OIDC
   (Okta, Keycloak). En ese proveedor se registra una aplicación para el sitio.
-- **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo).
+- **El repo de operaciones** de la organización, y una identidad que lo pueda leer (sólo ese repo). Si todavía no lo
+  tenés: cómo se crea y qué archivos lleva, en `pipelines/operations/README.md` §2 del arnés (los ejemplos, en
+  `pipelines/operations/examples/`). Para el sitio alcanza con `operations.json`; lo mínimo, en la prueba con Docker.
 - **Opcional: el buzón de corridas**, si la organización junta las corridas de las máquinas.
 - **Un lugar donde correr un contenedor** con HTTPS delante: una nube, un servicio gratis o una máquina propia.
 
 ## Probarlo en tu máquina con Docker
 
-Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto y el clon del repo público del arnés.
+Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto, el clon del repo público del arnés y
+Node 22 o más nuevo (para la prueba del paso 3).
+
+Acá la dirección del sitio es `http://127.0.0.1`: el sitio exige `https://` en cualquier otra dirección, pero acepta
+`http` en la propia máquina, para probar. Lo mismo vale para la dirección del repo de operaciones.
 
 1. **Armar la imagen** (desde la raíz del clon; corrido de verdad: unos 2 minutos la primera vez):
 
@@ -505,6 +530,24 @@ Son unos diez minutos, la mayoría armando la imagen. Necesitás Docker abierto 
    inventados (un repo que no existe), lo medimos: el sitio arranca, `/livez` da 200, `/` redirige al inicio de sesión de
    GitHub, `/api/inicio` da 401, y el sitio queda **frenado** porque no puede leer el repo (`/healthz` da 503 y la prueba
    dice «el sitio está frenado»). Con el repo de verdad y su token, el sitio carga.
+
+   **Lo mínimo del repo de operaciones.** Para que el sitio arranque sin quedar frenado, `operations.json`, en la raíz
+   de `main`, necesita al menos esto (con tu correo en lugar del de ejemplo). Medido: con este archivo, `/healthz` da 200
+   y la prueba sin sesión pasa.
+
+   ```json
+   {
+     "version": 1,
+     "owners": { "default": "vos@acme.example" },
+     "reviewers": { "dependencies": ["vos@acme.example"] },
+     "site": { "access": [{ "role": "maintainer", "emails": ["vos@acme.example"] }] }
+   }
+   ```
+
+   `owners` y `reviewers` son de los procesos de la noche, pero el archivo no valida sin ellos (el registro del
+   contenedor dice qué falta: «owners: falta»). Si el sitio queda frenado, el motivo exacto está en ese registro, no en
+   `/healthz`. Con un repo así, el registro dice además «el repo de operaciones no trae repos.json» y «sin_foto»: es lo
+   normal mientras la noche no corrió.
 
 4. **Entrar.** Abrí http://127.0.0.1:8080 y entrá con tu cuenta. Para eso hace falta registrar antes la aplicación en
    GitHub (*Settings → Developer settings → OAuth Apps → New OAuth App*, con la dirección `http://127.0.0.1:8080` y la
@@ -541,9 +584,26 @@ el sitio se frene (y levanta el freno hasta que vuelva a vencer).
 ### El inicio de sesión de la organización
 
 El sitio hace su propio inicio de sesión (`SITE_AUTH_PROVIDER`): `oidc` genérico (Okta, Keycloak u otro con
-descubrimiento), `microsoft`, `google` o `github`. Cada uno se limita a la organización: un inquilino, el dominio
-(`SITE_AUTH_ALLOWED_DOMAINS`) o la organización de GitHub. En el proveedor se registra una aplicación con la vuelta
-`<dirección del sitio>/auth/callback` y un secreto de 6 meses como máximo.
+descubrimiento), `microsoft`, `google` o `github`. Se elige en la instalación, y Configuración lo muestra. En el
+proveedor se registra una aplicación con la vuelta `<dirección del sitio>/auth/callback` y un secreto de 6 meses como
+máximo. Con cualquier proveedor, quién entra y qué ve lo decide la lista del sitio («Quién entra al sitio»): pasar el
+inicio de sesión no alcanza.
+
+- **`google` y `github`** se limitan a la organización: el dominio (`SITE_AUTH_ALLOWED_DOMAINS`) o la organización de
+  GitHub (`SITE_AUTH_GITHUB_ORG`).
+- **`microsoft`, un inquilino** (`SITE_AUTH_MICROSOFT_ACCOUNTS=organization`, por defecto): entran las cuentas del
+  directorio de la organización y sus invitados. `SITE_OIDC_ISSUER` es el del inquilino.
+- **`microsoft`, cualquier cuenta** (`SITE_AUTH_MICROSOFT_ACCOUNTS=any`): entran las cuentas de trabajo o escuela de
+  cualquier organización, sin invitarlas al directorio. `SITE_OIDC_ISSUER` es
+  `https://login.microsoftonline.com/common/v2.0` y `SITE_AUTH_MICROSOFT_TENANT` es el inquilino de la organización:
+  por ahí entran sus invitados, con su propio botón. Se entra sólo con un correo verificado por su organización. Las
+  cuentas personales de Microsoft que entran directo no se aceptan todavía: no se pudo comprobar que su correo sea
+  confiable (un invitado con cuenta personal entra por el botón de los invitados).
+- **El riesgo, en llano:** con «cualquier cuenta», la primera puerta queda abierta a cualquier cuenta de Microsoft, y
+  todo el control está en la lista del sitio. Quien no está en la lista ve una página sin datos; ningún pedido le
+  contesta un dato. Por eso la lista se cuida como una contraseña: cada cambio es un pedido con quién lo propuso y quién
+  lo aprobó.
+- El sitio no recibe ningún permiso sobre el directorio de nadie: ni asigna, ni invita, ni lee usuarios.
 
 ### Las sondas
 
@@ -553,7 +613,9 @@ Si tu plataforma tiene sondas, **las dos van contra `/livez`**, con un plazo de 
   de vida contra él reiniciaría el contenedor en un lazo, y reiniciar no arregla la configuración.
 - **La de lista, tampoco contra `/readyz`.** La plataforma no manda tráfico hasta que esa sonda pasa, y `/readyz`
   espera todas las fuentes, el buzón entero incluido. El sitio ya sirve cada pestaña apenas la puede armar: la que
-  todavía espera dice «cargando» y se recarga sola, y la frenada explica por qué. `/readyz` queda para quien quiera saber
+  todavía espera dice «cargando» y se recarga sola, y la frenada explica por qué. `/readyz` da 200 apenas leyó todas las
+  fuentes una vez, **también con el sitio frenado**: es a propósito, para que el sitio siga a la vista y explique por qué
+  está frenado. El freno se mira en `/healthz`. `/readyz` queda para quien quiera saber
   si terminó de cargar todo.
 
 ### Los secretos, con el menor permiso
@@ -564,7 +626,7 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | Secreto | Para qué | Alcance mínimo |
 |---|---|---|
 | `SITE_SESSION_KEY` | firmar la sesión | 32 bytes al azar, sólo del sitio |
-| `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile`; vence en 6 meses como máximo |
+| `SITE_OIDC_CLIENT_SECRET` | el inicio de sesión | un registro sólo para el sitio, sin permisos de API más allá de `openid email profile` (con `github`, que no es OIDC, el sitio pide `read:user user:email read:org`: leer la cuenta, sus correos y si es de la organización); vence en 6 meses como máximo |
 | `SITE_OPERATIONS_TOKEN` (o la identidad de la plataforma, `SITE_OPERATIONS_IDENTITY=managed`, sin secreto) | leer el repo de operaciones | una identidad propia con lectura sólo en ese repo; si es un token, de una organización, sólo lectura de código, 90 días; en GitHub, de grano fino, de un solo repo, `contents: read` |
 | `SITE_MAILBOX_SAS` (o `SITE_MAILBOX_IDENTITY=managed`) | leer las corridas del buzón | una SAS de sólo leer y listar (`rl`) atada a una política guardada del contenedor, 6 meses como máximo; o la identidad de la plataforma con un rol de lectura sobre el contenedor |
 | el canal del aviso | mandar el aviso de la mañana | no llega al sitio: lo usa el proceso de la noche. Telegram: el token sirve para todo el bot, usá uno dedicado. Slack o Teams: la dirección del webhook ES la credencial |
@@ -573,14 +635,15 @@ Cada instalación dice dónde se guarda cada uno y por dónde entra su valor. **
 | `SITE_PIPELINES_TOKEN` | leer los pipelines, para elegirlos por nombre en la pestaña Configuración («Pruebas al mergear» y «Despliegues») y ver el nombre de cada paso | parte de la instalación normal en Azure DevOps: sólo *Build: Read*, de la organización, 90 días; puede ser el mismo permiso que el del repo de operaciones con *Build: Read* sumado. Sin él, la pestaña pide el número del pipeline a mano y dice qué falta, y los pasos guardados se ven por su identificador |
 | `SITE_PROFILE_WRITE_TOKEN` | proponer cambios al perfil del equipo | apagada por defecto: vacía o comentada, nunca con un valor; una identidad dedicada y un repo por credencial |
 
-`SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista de
-mantenedores (`site.maintainers` de `operations.json`) no existe. Sacala después.
+`SITE_FIRST_MAINTAINER` no es un secreto: es el correo de quien entra primero como mantenedor, mientras la lista del sitio
+(`site.access` de `operations.json`) no tiene a nadie que mantenga. Sacala después.
 
 ### De dónde lee operaciones
 
 El sitio lee del repo de operaciones su configuración y lo que deja la noche. Hay tres formas, según dónde vive el sitio
 y dónde vive el repo. Se elige una sola: con `SITE_OPERATIONS_SOURCE=copy`, `SITE_OPERATIONS_TOKEN` y
-`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están.
+`SITE_OPERATIONS_IDENTITY` sobran y el sitio no arranca si están. `SITE_OPERATIONS_REPO`, en cambio, sigue siendo
+obligatoria con la copia: es la dirección del repo donde «Proponer» arma sus pedidos, y sin ella el sitio no arranca.
 
 1. **Copia con la identidad de la plataforma, en Azure** (`SITE_OPERATIONS_SOURCE=copy`,
    `SITE_OPERATIONS_COPY=<cuenta>/<contenedor>`). Un trabajo del repo de operaciones (`site-copy.yml`, en
@@ -645,6 +708,28 @@ imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply`
 (se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
 pidió; es la única línea del registro que lleva un correo.
 
+### Cómo se mantiene al día
+
+El arnés publica la imagen del sitio con su número de versión y mueve la etiqueta `stable` a esa imagen **sólo** cuando
+pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso, cada instalación sabe si hay algo nuevo:
+
+- **El aviso, igual para todos.** Quienes mantienen ven arriba de cada pestaña «hay una versión nueva del sitio: X (la
+  tuya: Y)», y la pestaña Arnés suma «última publicada». El sitio mira el registro una vez por hora como máximo, sin
+  credenciales; si no puede mirar, lo dice y nunca dice «al día» sin haber mirado. El resumen de la mañana trae la línea
+  del sitio. La versión no se ve sin sesión.
+- **Automático o sólo aviso**, en Configuración → Personas → «Cómo se actualiza el sitio» (`site.update` de
+  `operations.json`). **Sin la clave, sólo aviso**: el automático pide permisos que la organización da a conciencia.
+  Antes de prenderlo, una actualización a mano que salga bien, y el canal del aviso de la mañana configurado: una
+  vuelta atrás deja el nocturno en verde y se cuenta en ese aviso.
+- **El automático** lo hace el actualizador del arnés (`scripts/site/deploy/update-site.js`): resuelve `stable`, la
+  instala **por huella**, despierta el sitio y le corre la prueba sin sesión. Si la prueba falla, vuelve a la huella
+  anterior y lo deja dicho; esa huella no se reintenta hasta que `stable` se mueva. Nunca instala una versión menor que
+  la que corre. Cada entorno lo corre con su herramienta: la receta de cada uno trae su párrafo **Al día**.
+- **Desde una imagen vieja, la primera va a mano.** Una imagen publicada antes de que la imagen trajera su versión no
+  le dice al actualizador qué versión corre, y sin saberlo no instala nada (nunca baja): el resultado dice «no se sabe
+  qué versión corre» y la primera actualización va a mano, con la receta de tu entorno. Desde ahí, el automático sigue
+  solo.
+
 ### Las dos formas de arrancarlo
 
 La misma imagen con Docker (`docker run … sitio:local`, arriba), o con Node solo desde el clon, con las mismas
@@ -694,9 +779,16 @@ su huella y el identificador del cliente, y ningún secreto; la cabecera del gui
 en la instalación normal: su dirección en `profileRepo` del archivo, y su token en `SITE_PROFILE_TOKEN`, en el entorno de
 quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configuración dice «falta el repo del perfil».
 
-- **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID,
-  de un solo inquilino y con «asignación requerida» (las personas se asignan una por una; asignar un grupo pide una
-  licencia Entra ID P1/P2). Detrás, el del sitio. `/healthz` y `/livez` quedan fuera del candado.
+- **Inicio de sesión:** dos candados. Delante, el inicio integrado de la plataforma con el mismo registro de Entra ID.
+  Detrás, el del sitio, que decide con su lista. `/healthz` y `/livez` quedan fuera del candado. Con `microsoftAccounts`
+  en el archivo de configuración se elige el modo:
+  - `organization` (por defecto): un solo inquilino. Si el registro tiene «asignación requerida», las personas se
+    asignan una por una en el portal (asignar un grupo pide una licencia Entra ID P1/P2).
+  - `any`: después de poner la aplicación, el guion lee que el registro pida `email` y `xms_edov`, lo pasa a cualquier
+    cuenta de Microsoft con tokens de acceso v2 (Azure no acepta el cambio sin eso), saca la asignación requerida y pone
+    el candado de la plataforma en el emisor común. Lo hace tu sesión de `az`, que tiene que ser dueña del registro; el
+    sitio no recibe ningún permiso nuevo. Antes de correrlo, la lista del sitio tiene que tener a todos los que hoy
+    entran (la sección la arma sola con lo de antes: proponela y que se apruebe).
 - **El candado y las escrituras:** el inicio integrado protege contra pedidos falsificados mirando el `Referer` del
   navegador, no el `Origin`. Un POST con sesión sin `Referer` del propio sitio lo rechaza con 403, subestado 60 (se ve en
   los registros del área, como `RequestCompleted` del intermediario). Para que «Revisar cambios» y «Proponer» pasen, el
@@ -722,6 +814,19 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Quién la corre:** necesita Contributor sobre el grupo de recursos y Owner o User Access Administrator sobre la
   cuenta del buzón (sólo para dar el rol). La región es la de la cuenta del buzón.
 
+**Al día**: un nocturno propio en el repo de operaciones, `site-update.yml` (en `pipelines/operations/` para Azure
+DevOps y en `pipelines/operations/github/` para GitHub), una hora antes del de dependencias. Usa **su propia conexión**,
+autorizada sólo para ese nocturno, con **un rol propio sobre la aplicación del sitio y nada más**:
+
+```bash
+az role definition create --role-definition '{"Name": "Actualizador del sitio", "Description": "Cambia la imagen del sitio y nada más", "Actions": ["Microsoft.App/containerApps/read", "Microsoft.App/containerApps/write", "Microsoft.App/containerApps/revisions/read", "Microsoft.App/managedEnvironments/join/action"], "AssignableScopes": ["/subscriptions/<suscripción>/resourceGroups/<grupo>"]}'
+az role assignment create --assignee-object-id <la identidad de la conexión> --assignee-principal-type ServicePrincipal --role "Actualizador del sitio" --scope /subscriptions/<suscripción>/resourceGroups/<grupo>/providers/Microsoft.App/containerApps/<aplicación>
+```
+
+Container Apps pasa el tráfico a la revisión nueva sólo si arranca; igual el nocturno la prueba. Verificación en negativo:
+con esa identidad, `az storage account keys list` sobre la cuenta del disco y un `update` sobre otra aplicación del
+grupo tienen que fallar.
+
 ### Render
 
 El plan gratis de Render, con `scripts/site/deploy/render.yaml` como plano (*Blueprint*). Cambiá la imagen por la
@@ -738,6 +843,11 @@ huella de la versión que instalás.
 - **Se duerme:** a los 15 minutos sin tráfico, y despierta en un minuto, más o menos (la prueba sin sesión lo espera).
   750 horas por mes por espacio de trabajo: un solo servicio entra. Sin medio de pago, si se pasa, Render suspende el
   servicio hasta el mes siguiente: no cobra.
+
+**Al día**: con `site.update: "auto"`, el nocturno (`SITE_PLATFORM=render`) pide el redespliegue por el hook de Render con la
+huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_RENDER_DEPLOY_HOOK`): nunca sale en el
+registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
+404), tiene que ser del mismo registro y nombre que la del servicio.
 
 ### Una máquina propia
 
@@ -765,6 +875,17 @@ sin arrancar nada.
   probar desde el nocturno», sin enlace, salvo que la organización corra el proceso de la noche en un agente propio
   dentro de la red.
 
+**Al día**: primero el guion del arnés, con un `cron` o un temporizador de systemd:
+
+```bash
+# todas las noches a las 03:00: resuelve stable, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla
+0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
+```
+
+Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
+queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no
+prueba ni vuelve atrás, y tiene el socket de Docker, o sea, es administrador de la máquina.
+
 **La copia de operaciones fuera de Azure** (vale también para Render): la SAS de sólo lectura, atada a una política
 guardada del contenedor para poder revocarla. La cuenta de la copia necesita la llave prendida para firmarla:
 
@@ -772,6 +893,19 @@ guardada del contenedor para poder revocarla. La cuenta de la copia necesita la 
 az storage container policy create --account-name <cuenta> -c <contenedor> -n lectura-sitio --permissions rl --expiry <fecha>
 az storage container generate-sas --account-name <cuenta> -n <contenedor> --policy-name lectura-sitio -o tsv
 ```
+
+### Kubernetes y otras nubes
+
+**No probada por el arnés.** La imagen se fija por huella y se actualiza con las herramientas que siguen etiquetas:
+Argo CD Image Updater o Flux (con la estrategia que resuelve `stable` a su huella), o la misma orden de cada nube para
+cambiar la imagen de un servicio (Cloud Run: `gcloud run deploy --image <imagen>@<huella>`). Después del cambio, la prueba
+sin sesión: `node scripts/site/check-deploy.js --url https://<dirección>`.
+
+### Una red cerrada
+
+Sin salida a internet, el sitio no puede mirar la última publicada y lo dice. La actualización es a mano: en una máquina
+con salida, `docker pull <imagen>:stable` y `docker save` de esa huella; se lleva el archivo, `docker load`, y se recrea el
+contenedor con `SITE_IMAGE=<imagen>@<huella>`. Después, la prueba sin sesión contra la dirección interna.
 
 ## Por dentro, para quien mantiene el arnés
 
@@ -787,9 +921,11 @@ de Codex.
   verifica `crypto` (sólo RS256 y ES256), y cada chequeo tiene su prueba con un token armado mal. Cada proveedor se
   limita a la organización a su manera. **La identidad nunca sale de una cabecera** de un proxy o de la plataforma.
 - **La sesión vive en una cookie firmada**, de 8 horas fijas, igual que el intento de inicio: el sitio puede reiniciarse
-  o tener varias réplicas. **El rol se recalcula en cada pedido** (`access.js`). Mantenedor es quien está en
-  `site.maintainers` de `operations.json` (o el primer mantenedor de la instalación mientras esa lista no existe).
-  Persona es quien tiene una máquina en `people` de `operations.json`. El resto queda sin rol y ve una página sin datos.
+  o tener varias réplicas. **El rol se recalcula en cada pedido** (`access.js`) y sale sólo de la lista `site.access`
+  de `operations.json` (la regla vive en `scripts/lib/people.js`): mantenedor es quien tiene una entrada `maintainer` (o
+  el primer mantenedor de la instalación mientras la lista no tiene ninguno); persona, quien tiene una entrada `dev`.
+  Sin `site.access`, la lista se arma con lo de antes (`site.maintainers` y las personas de `people.machines`). Una
+  persona puede tener varios correos: lo suyo se calcula con todos. El resto queda sin rol y ve una página sin datos.
 - **Un solo camino para los datos**: la tabla de rutas de `server.js`. Una ruta que no declara quién puede verla hace
   que el sitio no arranque, y cada ruta recibe el modelo ya filtrado para quien pide.
 - **Lee directo de las fuentes** (`sources.js`): el repo de operaciones, clonado con la credencial en una cabecera

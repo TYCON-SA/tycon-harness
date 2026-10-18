@@ -53,7 +53,12 @@
  *   storageAccount, fileShare, fileShareQuotaGb, image (por su huella), tenantId, oidcClientId,
  *   mailbox { resourceGroup, account, container }, operationsRepo, operationsIdentity (copy | managed | token; con copy,
  *   operationsCopy { resourceGroup, account, container }: la cuenta de la copia con la llave apagada),
- *   firstMaintainer (opcional), profileRepo (opcional). Ningún secreto.
+ *   firstMaintainer (opcional), profileRepo (opcional), microsoftAccounts (opcional: organization, por defecto, o any).
+ *   Ningún secreto.
+ *   Con `microsoftAccounts: any`, después de poner la aplicación: lee que el registro pida `email` y
+ *   `xms_edov`, lo pasa a cualquier cuenta de Microsoft con tokens v2 (`az rest` contra Graph, con la sesión de quien
+ *   instala, dueña del registro), saca la asignación requerida del principal de servicio y pone el candado en el emisor
+ *   común. El sitio no recibe ningún permiso nuevo.
  *   `TYCON_AZ_CMD` cambia el `az` (las pruebas usan un doble).
  */
 const fs = require('fs');
@@ -72,6 +77,12 @@ const NOMBRE = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/;
 const CUENTA = /^[a-z0-9]{3,24}$/;
 const IMAGEN = /^[a-z0-9.-]+(?::\d+)?\/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$/;
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+// con qué cuentas de Microsoft se entra (el modo del proveedor del sitio)
+const MODOS_MICROSOFT = ['organization', 'any'];
+const COMUN = 'https://login.microsoftonline.com/common/v2.0';
+// el inquilino de las cuentas personales de Microsoft (el emisor de `consumers`): nunca es el de una organización. Lo
+// define el proveedor del sitio; acá no se repite
+const { PERSONALES } = require('../auth-providers/microsoft.js');
 // Los secretos de la aplicación: la variable del sitio y el nombre del secreto en Container Apps. Los de la pestaña
 // Configuración van sólo si vienen en el entorno (apagados por defecto).
 const SECRETOS = [['SITE_SESSION_KEY', 'site-session-key'], ['SITE_OIDC_CLIENT_SECRET', 'site-oidc-client-secret']];
@@ -107,6 +118,7 @@ function problemas(c, fase) {
     if (!Number.isInteger(c.fileShareQuotaGb) || c.fileShareQuotaGb < 1 || c.fileShareQuotaGb > 100) p.push('fileShareQuotaGb: la cuota del disco, de 1 a 100 GB');
     pide('image', IMAGEN, 'la imagen por su huella (<registro>/<nombre>@sha256:…), nunca por etiqueta');
     pide('tenantId', GUID, 'el inquilino de Entra ID');
+    if (typeof c.tenantId === 'string' && c.tenantId.toLowerCase() === PERSONALES) p.push('tenantId: es el inquilino de las cuentas personales de Microsoft, no el de la organización');
     pide('oidcClientId', GUID, 'el identificador del cliente del registro de Entra ID');
     const mb = c.mailbox;
     if (!mb || typeof mb !== 'object' || !/^[A-Za-z0-9._()-]{1,90}$/.test(mb.resourceGroup || '') || !CUENTA.test(mb.account || '') || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(mb.container || '')) {
@@ -126,6 +138,7 @@ function problemas(c, fase) {
       }
     } else if (c.operationsCopy !== undefined) p.push('operationsCopy: sólo con operationsIdentity «copy»');
     if (c.firstMaintainer !== undefined && !(typeof c.firstMaintainer === 'string' && CORREO.test(c.firstMaintainer))) p.push('firstMaintainer: un correo');
+    if (c.microsoftAccounts !== undefined && !MODOS_MICROSOFT.includes(c.microsoftAccounts)) p.push('microsoftAccounts: organization (un solo inquilino, por defecto) o any (cualquier cuenta de Microsoft; quién entra lo decide la lista del sitio)');
     if (c.profileRepo !== undefined) {
       let u = null;
       try { u = new URL(c.profileRepo); } catch { u = null; }
@@ -280,6 +293,9 @@ function esperarAmbiente(c, run, ensayo) {
 
 function faseSitio(c, run, salida, env, sec) {
   const g = ['-g', c.resourceGroup];
+  const cualquiera = c.microsoftAccounts === 'any';
+  // en minúsculas: Entra publica así el emisor de un inquilino, y el sitio lo compara letra por letra
+  const tenant = c.tenantId.toLowerCase();
   const dominio = run.leer(['containerapp', 'env', 'show', ...g, '-n', c.environment, '--query', 'properties.defaultDomain', '-o', 'tsv', ...SUB(c)], '<defaultDomain del ambiente>');
   const idAmbiente = run.leer(['containerapp', 'env', 'show', ...g, '-n', c.environment, '--query', 'id', '-o', 'tsv', ...SUB(c)], `<id del ambiente ${c.environment}>`);
   const publica = `https://${c.app}.${dominio}`;
@@ -320,7 +336,8 @@ function faseSitio(c, run, salida, env, sec) {
   // y variables), así volver a correr la fase aplica los cambios en vez de saltearlos
   const yaExiste = run.existe(['containerapp', 'show', ...g, '-n', c.app, ...SUB(c)]);
   {
-    const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', `https://login.microsoftonline.com/${c.tenantId}/v2.0`],
+    const comunes = [['SITE_PUBLIC_URL', publica], ['SITE_AUTH_PROVIDER', 'microsoft'], ['SITE_OIDC_ISSUER', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`],
+      ...(cualquiera ? [['SITE_AUTH_MICROSOFT_ACCOUNTS', 'any'], ['SITE_AUTH_MICROSOFT_TENANT', tenant]] : []),
       ['SITE_OIDC_CLIENT_ID', c.oidcClientId], ['SITE_OPERATIONS_REPO', c.operationsRepo], ['SITE_MAILBOX_IDENTITY', 'managed'], ['SITE_DATA_DIR', DISCO],
       ...(c.operationsIdentity === 'managed' ? [['SITE_OPERATIONS_IDENTITY', 'managed']] : []),
       ...(c.operationsIdentity === 'copy' ? [['SITE_OPERATIONS_SOURCE', 'copy'], ['SITE_OPERATIONS_COPY', `${c.operationsCopy.account}/${c.operationsCopy.container}`]] : []),
@@ -404,10 +421,28 @@ function faseSitio(c, run, salida, env, sec) {
     const alcance = contenedor(c.operationsCopy.resourceGroup, c.operationsCopy.account, c.operationsCopy.container);
     salida(`\nEl trabajo que copia (pipelines/operations/site-copy.yml) escribe con su propia identidad. Dale el rol sobre ESTE contenedor y nada más:\n  az role assignment create --assignee-object-id <la identidad del trabajo que copia> --assignee-principal-type ServicePrincipal --role "Storage Blob Data Contributor" --scope ${alcance}`);
   }
-  // el inicio integrado: un inquilino, el secreto por su nombre. El inquilino va en el emisor: az no acepta --issuer y
-  // --tenant-id juntos («cannot be configured to non empty strings at the same time»)
-  run.paso({ que: 'el inicio integrado de Microsoft (un inquilino)', args: ['containerapp', 'auth', 'microsoft', 'update', ...g, '-n', c.app, '--client-id', c.oidcClientId,
-    '--client-secret-name', 'site-oidc-client-secret', '--issuer', `https://login.microsoftonline.com/${c.tenantId}/v2.0`,
+  if (cualquiera) {
+    // «cualquier cuenta», después de poner el sitio nuevo: la puerta se abre con la lista ya en la imagen.
+    // Lo hace la sesión de quien instala, dueña del registro; el sitio no recibe ningún permiso sobre el directorio.
+    // Medido en la parte A: el registro tiene que pedir el correo verificado, y pasar a cuentas personales exige los
+    // tokens de acceso v2 en el MISMO cambio.
+    const leerClaims = ['ad', 'app', 'show', '--id', c.oidcClientId, '--query', 'optionalClaims.idToken[].name', '-o', 'tsv'];
+    salida(`• revisar que el registro pida el correo verificado (email y xms_edov): sólo lee\n  az ${leerClaims.map(comillas).join(' ')}`);
+    const claims = run.leer(leerClaims, 'email\txms_edov');
+    const pide = String(claims).split(/\s+/).filter(Boolean);
+    const faltan = ['email', 'xms_edov'].filter((x) => !pide.includes(x));
+    if (faltan.length) throw new Falla(`el registro de Entra ID no pide ${faltan.join(' ni ')} en el token: sin el correo verificado nadie entra. Agregalas (Token configuration → Add optional claim → ID) y volvé a correr`);
+    run.paso({ que: 'el registro de Entra ID acepta cualquier cuenta de Microsoft (con los tokens v2)', args: ['rest', '--method', 'patch', '--url', `https://graph.microsoft.com/v1.0/applications(appId='${c.oidcClientId}')`,
+      '--headers', 'Content-Type=application/json', '--body', '@ARCHIVO', '-o', 'none'],
+    archivo: { api: { requestedAccessTokenVersion: 2 }, signInAudience: 'AzureADandPersonalMicrosoftAccount' }, nombreArchivo: 'registro.json' });
+    run.paso({ que: 'sin asignación requerida: quién entra lo decide la lista del sitio', args: ['ad', 'sp', 'update', '--id', c.oidcClientId, '--set', 'appRoleAssignmentRequired=false', '-o', 'none'] });
+  }
+  // el inicio integrado, el secreto por su nombre. Con un inquilino, el emisor es el suyo; con cualquier cuenta, el común
+  // (la plataforma no mira de qué inquilino viene: deja pasar cualquier cuenta de Microsoft y decide el sitio). El
+  // inquilino va en el emisor: az no acepta --issuer y --tenant-id juntos («cannot be configured to non empty strings at
+  // the same time»)
+  run.paso({ que: cualquiera ? 'el inicio integrado de Microsoft (cualquier cuenta)' : 'el inicio integrado de Microsoft (un inquilino)', args: ['containerapp', 'auth', 'microsoft', 'update', ...g, '-n', c.app, '--client-id', c.oidcClientId,
+    '--client-secret-name', 'site-oidc-client-secret', '--issuer', cualquiera ? COMUN : `https://login.microsoftonline.com/${tenant}/v2.0`,
     '--allowed-audiences', c.oidcClientId, '--yes', '-o', 'none', ...SUB(c)] });
   run.paso({ que: 'el candado delante del sitio (fuera: /healthz y /livez)', args: ['containerapp', 'auth', 'update', ...g, '-n', c.app, '--enabled', 'true',
     '--unauthenticated-client-action', 'RedirectToLoginPage', '--require-https', 'true', '--excluded-paths', '/healthz,/livez', '-o', 'none', ...SUB(c)] });

@@ -66,6 +66,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
   // las fichas del tablero nocturno que el sitio no muestra (la lista es la de scripts/site/tabs/cards.js)
   Object.freeze({ id: 'fichas', titulo: 'Fichas que muestra el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.hidden_cards']), idCorto: 'operations', necesita: ['site'] }),
+  // cómo se mantiene al día el sitio: «automático» o «sólo aviso», en la misma pestaña que el sitio
+  Object.freeze({ id: 'aldia', titulo: 'Cómo se actualiza el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.update']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
   // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
@@ -102,7 +104,14 @@ function lectorSabe(lector, seccion) {
   if (!lector) return false;
   if (seccion.lector === 'check-product-parity.js') return typeof lector.leerDeclaradas === 'function';
   if (!seccion.necesita.length || !Array.isArray(lector.KEYS)) return true;
-  return seccion.necesita.every((k) => lector.KEYS.includes(k));
+  if (!seccion.necesita.every((k) => lector.KEYS.includes(k))) return false;
+  // una sección sobre una hoja de `site` pide además que el lector conozca esa hoja: si no, un lector viejo
+  // daría por buena una sección sobre una clave que rechaza, y el sitio se frenaría al leer el archivo
+  for (const ruta of seccion.rutas || []) {
+    const [arriba, hoja] = ruta.split('.');
+    if (arriba === 'site' && hoja && Array.isArray(lector.SITE_KEYS) && !lector.SITE_KEYS.includes(hoja)) return false;
+  }
+  return true;
 }
 
 // ── la plataforma del remoto ─────────────────────────────────────────────────────────────────────────────────────
@@ -605,7 +614,7 @@ function pantalla() {
   // ── lo que ve la persona de cada sección: el nombre llano, para qué sirve, y en qué bloque va ──
   var PLANO = {
     organizacion: { t: 'La organización', d: 'El nombre y el logo que muestra la barra de arriba de cada página, y el nombre del pie. El logo es un archivo del repo de operaciones; acá se elige cuál.', corto: 'La organización' },
-    sitio: { t: 'Quién mantiene el sitio', d: 'Sólo estas personas ven esta pestaña y pueden proponer cambios. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién mantiene el sitio' },
+    sitio: { t: 'Quién entra al sitio', d: 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los devs ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.', corto: 'Quién entra al sitio' },
     personas: { t: 'Personas y máquinas', d: 'Cada máquina que manda corridas tiene que estar a nombre de alguien. Así cada persona ve lo suyo en el sitio.', corto: 'Personas y máquinas' },
     responsables: { t: 'A quién le llegan los avisos y los pedidos', d: 'Cuando algo de la noche necesita a una persona (una dependencia vieja, un hallazgo del vigilante) se le asigna a quien figure acá.', corto: 'Responsables' },
     repos: { t: 'Dónde vive cada repo', d: 'Llega a todas las máquinas del equipo: con esto cada una sabe de dónde se instala el arnés y dónde queda lo de la noche.', corto: 'Repos' },
@@ -626,9 +635,10 @@ function pantalla() {
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
     fichas: { t: 'Fichas que muestra el sitio', d: 'Las fichas del tablero de la noche que el sitio muestra en Arnés, Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y se pueden volver a tildar cuando quieras.', corto: 'Fichas del sitio' },
     aplicar: { t: 'Los cambios de un mantenedor', d: 'Si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para que lo apruebe otra persona. El cambio que prende esta opción no se aplica solo: la opción cuenta desde que entra.', corto: 'Los cambios de un mantenedor' },
+    aldia: { t: 'Cómo se actualiza el sitio', d: 'Si el sitio se pone al día solo con la versión nueva del arnés (el nocturno la instala, la prueba y vuelve atrás si falla), o sólo avisa y se instala a mano.', corto: 'Actualización del sitio' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -765,13 +775,40 @@ function pantalla() {
     box.appendChild(listaDeTextos('Revisan los hallazgos del vigilante', null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, 'usuario', 'Agregar persona'));
     return box;
   }
+  // quién entra al sitio y con qué rol (story 2.40): una fila por persona, con su rol y uno o más correos
+  function editorAcceso(site, pr, ex) {
+    var box = el('div', { class: 'pila' });
+    if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: 'Con qué se entra: ' + ex.inicioDeSesion.texto + '. Esto se cambia en la instalación, no acá.' }));
+    if (ex.migracion) box.appendChild(aviso('warn', 'La lista todavía no está guardada.', ex.migracion));
+    box.appendChild(el('p', { class: 'sub-d', text: 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.' }));
+    var acc = site.access = site.access || [];
+    acc.forEach(function (e, i) {
+      e.emails = e.emails || [];
+      var fila = el('div', { class: 'sub' }, el('div', { class: 'fila quitar' }, selector('Rol', e.role, [['maintainer', 'Mantiene el sitio'], ['dev', 'Dev']], function (v) { e.role = v; }, 'site.access.' + i + '.role', pr),
+        quitar(function () { acc.splice(i, 1); render(); })));
+      e.emails.forEach(function (m, j) {
+        fila.appendChild(el('div', { class: 'fila quitar' }, campo('', m, function (nv) { e.emails[j] = nv; }, 'site.access.' + i + '.emails.' + j, pr, { placeholder: 'correo' }), quitar(function () { e.emails.splice(j, 1); render(); })));
+      });
+      fila.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar correo', onclick: function () { e.emails.push(''); render(); } }));
+      problemasEn(pr, 'site.access.' + i + '.emails').forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
+      box.appendChild(fila);
+    });
+    if (!acc.length) box.appendChild(el('p', { class: 'muted', text: 'Nadie todavía.' }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: '+ Agregar persona', onclick: function () { acc.push({ role: 'dev', emails: [''] }); render(); } }));
+    problemasEn(pr, 'site.access').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+    return box;
+  }
   function editorSitio(s, d, pr) {
     d.site = d.site || {};
     var site = d.site;
+    var ex = s.extras || {};
     var lista = el('div', { class: 'pila' });
-    var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
-    mant.setAttribute('class', 'pila');
-    lista.appendChild(mant);
+    if (ex.conAcceso) { delete site.maintainers; lista.appendChild(editorAcceso(site, pr, ex)); }
+    else {
+      var mant = listaDeTextos('Las personas', null, site.maintainers = site.maintainers || [], function (l) { site.maintainers = l; }, 'site.maintainers', pr, 'correo', 'Agregar persona');
+      mant.setAttribute('class', 'pila');
+      lista.appendChild(mant);
+    }
     var refresco = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'Cada cuánto se actualiza el sitio' }), campo('Minutos, entre 5 y 120', site.refresh_minutes, function (v) { site.refresh_minutes = v === '' ? undefined : numOTexto(v); }, 'site.refresh_minutes', pr, { inputmode: 'numeric' }));
     lista.appendChild(refresco);
     if (s.campos && s.campos.url) lista.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: 'La dirección del sitio' }), campo('', site.url, function (v) { site.url = v || undefined; }, 'site.url', pr)));
@@ -1125,7 +1162,7 @@ function pantalla() {
       d.site.auto_apply = v === 'true';
     }, 'site.auto_apply', pr), el('p', { class: 'muted', text: 'Queda escrito quién pidió cada cambio: en el pedido y en el registro del sitio.' }));
   }
-  // story 2.36: una casilla por ficha; tildada = se muestra. Lo destildado es site.hidden_cards, en el orden de la lista.
+  // una casilla por ficha; tildada = se muestra. Lo destildado es site.hidden_cards, en el orden de la lista.
   function editorFichas(s, d, pr) {
     var ex = s.extras || {};
     var todas = Array.isArray(ex.fichas) ? ex.fichas : [];
@@ -1153,6 +1190,15 @@ function pantalla() {
     var raras = ocultas.filter(function (id) { return !todas.some(function (f) { return f.id === id; }); });
     if (raras.length) box.appendChild(el('p', { class: 'muted', text: 'Hay fichas ocultas que esta versión no conoce: ' + raras.join(', ') + '. Se conservan.' }));
     return box;
+  }
+
+  function editorActualizacionSitio(s, d, pr) {
+    var st = d.site || {};
+    return el('div', { class: 'pila' }, selector('Cómo se actualiza el sitio', st.update === undefined ? '' : String(st.update), [['', 'sin declarar (sólo aviso)'], ['auto', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla'], ['notice', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']], function (v) {
+      if (!esObjeto(d.site)) d.site = {};
+      if (v === '') { delete d.site.update; return; }
+      d.site.update = v;
+    }, 'site.update', pr), el('p', { class: 'muted', text: 'El automático pide el nocturno de actualización y su permiso, sólo sobre el sitio (la guía: Cómo se mantiene al día).' }));
   }
   // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
   function tablaDeContenido(filas) {
@@ -1328,7 +1374,7 @@ function pantalla() {
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, fichas: editorFichas, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

@@ -15,7 +15,12 @@
 //                 "by_project": { "<proyecto>": <identidad> } },  opcional — el responsable de cada proyecto
 //     "reviewers": { "dependencies": [<identidad>, …],      opcional — quiénes revisan los pedidos de dependencias
 //                    "watcher": [<identidad>, …] },         opcional — y los del vigilante
-//     "site": { "maintainers": [<correo>, …],                opcional — quiénes mantienen el sitio de la organización
+//     "site": { "access": [ { "role": "maintainer" | "dev",  opcional — quién entra al sitio y qué ve: una
+//                             "emails": [<correo>, …] }, … ],   entrada por persona, con uno o más correos; un correo no
+//                                                            está en dos entradas. Sin ella, el sitio la arma con
+//                                                            `maintainers` y las personas de `people.machines`
+//               "maintainers": [<correo>, …],                la forma de antes: quiénes mantienen. Con `access` puesta,
+//                                                            no va (una sola fuente)
 //               "mailbox": { "provider": "azure-blob",        opcional — el buzón de corridas que lee el sitio
 //                            "account": <texto>, "container": <texto>, "threads": <bool> },  threads: true baja también
 //                                                            las conversaciones y los cambios de git para el detalle de
@@ -26,6 +31,9 @@
 //               "auto_apply": <bool>,                       opcional — true: «Proponer» de quien mantiene el sitio
 //                                                            aprueba y completa el pedido con la identidad del sitio, si
 //                                                            las políticas de main lo dejan; sin la clave, false
+//               "update": "auto" | "notice",               opcional — cómo se mantiene al día el sitio:
+//                                                            "auto", el nocturno instala la versión nueva de stable, la
+//                                                            prueba y vuelve atrás si falla; sin la clave, "notice"
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
 //                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
 //                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
@@ -80,7 +88,10 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'hidden_cards'];
+const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards'];
+// la lista de quién entra al sitio (el rol de cada uno sale sólo de ahí, con cualquier proveedor)
+const ACCESS_KEYS = ['role', 'emails'];
+const ACCESS_ROLES = ['maintainer', 'dev'];
 const BRAND_KEYS = ['name', 'logo', 'dark'];
 const BRAND_THEME_OPTIONS = ['invert', 'keep'];
 // el logo: una ruta relativa dentro del repo de operaciones, sin subir de carpeta, a un .png o un .svg
@@ -139,6 +150,28 @@ function siteKeyProblems(obj, allowed, at) {
   return problems;
 }
 
+/** La lista de quién entra al sitio: cada problema con su ruta; un correo en dos entradas, con la otra. */
+function accessProblems(list) {
+  if (!Array.isArray(list)) return [{ path: 'site.access', message: 'tiene que ser una lista de entradas { role, emails }' }];
+  const problems = [];
+  const visto = new Map();   // correo → índice de su entrada
+  list.forEach((e, i) => {
+    const at = `site.access.${i}`;
+    if (!isObject(e)) { problems.push({ path: at, message: 'tiene que ser un objeto { role, emails }' }); return; }
+    problems.push(...siteKeyProblems(e, ACCESS_KEYS, at));
+    if (e.role === undefined) problems.push({ path: `${at}.role`, message: 'falta: maintainer (mantiene el sitio) o dev' });
+    else if (!ACCESS_ROLES.includes(e.role)) problems.push({ path: `${at}.role`, message: `tiene que ser «maintainer» o «dev» (es ${JSON.stringify(e.role)})` });
+    if (!Array.isArray(e.emails) || !e.emails.length) { problems.push({ path: `${at}.emails`, message: 'tiene que ser una lista con al menos un correo' }); return; }
+    e.emails.forEach((m, j) => {
+      if (typeof m !== 'string' || !EMAIL.test(m.trim())) { problems.push({ path: `${at}.emails.${j}`, message: `«${typeof m === 'string' ? m : JSON.stringify(m)}» no es un correo` }); return; }
+      const k = m.trim().toLowerCase();
+      if (visto.has(k)) problems.push({ path: `${at}.emails.${j}`, message: `«${m}» ya está en site.access.${visto.get(k)}: un correo es de una sola persona` });
+      else visto.set(k, i);
+    });
+  });
+  return problems;
+}
+
 function siteProblems(site) {
   if (!isObject(site)) return [{ path: 'site', message: 'tiene que ser un objeto' }];
   const problems = siteKeyProblems(site, SITE_KEYS, 'site');
@@ -147,6 +180,10 @@ function siteProblems(site) {
     else site.maintainers.forEach((m, i) => {
       if (typeof m !== 'string' || !EMAIL.test(m)) problems.push({ path: `site.maintainers.${i}`, message: `«${typeof m === 'string' ? m : JSON.stringify(m)}» no es un correo` });
     });
+  }
+  if (site.access !== undefined) {
+    problems.push(...accessProblems(site.access));
+    if (site.maintainers !== undefined) problems.push({ path: 'site.maintainers', message: 'no va con site.access: la lista de site.access la reemplaza (quien mantiene es una entrada con role «maintainer»)' });
   }
   const mb = site.mailbox;
   if (mb !== undefined) {
@@ -171,6 +208,7 @@ function siteProblems(site) {
   if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
   // las fichas del tablero que el sitio no muestra: una lista de identificadores de scripts/site/tabs/cards.js
   if (site.hidden_cards !== undefined) problems.push(...hiddenCardsProblems(site.hidden_cards));
+  if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {
     if (!isObject(b)) problems.push({ path: 'site.brand', message: 'tiene que ser un objeto { name, logo, dark }' });
@@ -408,7 +446,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

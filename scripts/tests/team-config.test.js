@@ -40,15 +40,13 @@ const toyReader = {
 };
 const GOOD = { version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' } };
 
-/** Un clon con un remoto bare local (y el nombre de rama main), listo para proponer. */
+/** Un clon con un remoto bare local (y el nombre de rama main). */
 function cloneWithRemote() {
   const bare = tmp('bare');
   g(bare, 'init', '-q', '--bare', '-b', 'main');
   const dir = tmp('clone');
   g(dir, 'init', '-q', '-b', 'main');
   fs.writeFileSync(path.join(dir, 'README.md'), 'perfil\n');
-  // el perfil ya pide una versión que admite team-repos.json en la capa: sin eso la página no propone el cambio (T6b)
-  fs.writeFileSync(path.join(dir, 'team-layer.json'), `${JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: `>= ${TC.TEAM_REPOS_SINCE}` } })}\n`);
   g(dir, 'add', '-A'); g(dir, 'commit', '-q', '-m', 'base');
   g(dir, 'remote', 'add', 'origin', bare);
   g(dir, 'push', '-q', '-u', 'origin', 'main');
@@ -104,7 +102,7 @@ test('T2 Page_RejectsOtherHost_OtherOrigin_NoKey_NonJson', async () => {
     assert.strictEqual(foreign.status, 403, 'un POST desde otro origen');
     const form = await request(p.port, { method: 'POST', pathname: '/api/save', headers: { 'x-harness-key': p.token, 'content-type': 'text/plain' }, body: 'x' });
     assert.strictEqual(form.status, 415, 'sólo JSON');
-    const big = await request(p.port, { method: 'POST', pathname: '/api/check', headers: { 'x-harness-key': p.token, 'content-type': 'application/json' }, body: JSON.stringify({ target: 'repos', data: { x: 'a'.repeat(300 * 1024) } }) }).catch(() => ({ status: 400 }));
+    const big = await request(p.port, { method: 'POST', pathname: '/api/clone', headers: { 'x-harness-key': p.token, 'content-type': 'application/json' }, body: JSON.stringify({ target: 'repos', dir: 'a'.repeat(300 * 1024) }) }).catch(() => ({ status: 400 }));
     assert.strictEqual(big.status, 400, 'un cuerpo más grande que el tope');
   });
 });
@@ -151,108 +149,11 @@ test('T4 Clone_AskedOnce_ValidatedAndSavedByTheCaller', async () => {
   });
 });
 
-test('T5 Save_OnlyWhatTheReaderAccepts_TwoSpacesAndNewline', async () => {
-  const { dir } = cloneWithRemote();
-  const file = path.join(dir, 'team-repos.json');
-  await withPage({ readers: { repos: toyReader, operations: null }, clones: { repos: dir } }, async (p) => {
-    const bad = (await api(p, 'save', { target: 'repos', data: { version: 1, owners: ['x'] } })).json;
-    assert.strictEqual(bad.ok, false);
-    assert.deepStrictEqual(bad.problems.map((x) => x.path).sort(), ['owners', 'public.repo']);
-    assert.ok(!fs.existsSync(file), 'lo que el lector rechaza no se escribe');
-    const chk = (await api(p, 'check', { target: 'repos', data: GOOD })).json;
-    assert.deepStrictEqual(chk, { ok: true, problems: [] });
-    assert.ok(!fs.existsSync(file), 'revisar no escribe');
-    const ok = (await api(p, 'save', { target: 'repos', data: { __doc: 'se conserva', ...GOOD } })).json;
-    assert.strictEqual(ok.ok, true);
-    assert.strictEqual(fs.readFileSync(file, 'utf8'), `${JSON.stringify({ __doc: 'se conserva', ...GOOD }, null, 2)}\n`);
-    assert.deepStrictEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp')), [], 'sin temporales');
-    const none = (await api(p, 'save', { target: 'operations', data: { version: 1 } })).json;
-    assert.strictEqual(none.ok, false, 'sin lector no se guarda');
-  });
-});
-
-test('T6 Plan_OnlyThisFile_NothingToPropose_PlatformFromOrigin', () => {
-  const t = TC.TARGETS[0];
-  const { dir } = cloneWithRemote();
-  assert.match(TC.proposalPlan(t, dir, { env: ENV }).message, /no tiene cambios/);
-  fs.writeFileSync(path.join(dir, t.file), TC.formatJson(GOOD));
-  fs.writeFileSync(path.join(dir, 'otro.txt'), 'x');
-  assert.match(TC.proposalPlan(t, dir, { env: ENV }).message, /otros cambios sin commitear \(otro\.txt\)/, 'el pedido no lleva lo que no se ve');
-  fs.rmSync(path.join(dir, 'otro.txt'));
-  const now = new Date('2026-10-13T23:30:05Z');
-  const plain = TC.proposalPlan(t, dir, { env: ENV, now });
-  assert.strictEqual(plain.ok, true);
-  assert.strictEqual(plain.branch, 'team-config/repos-20261013-233005');
-  assert.deepStrictEqual(plain.commands.map((c) => c.slice(0, 2).join(' ')), ['git switch', 'git add', 'git commit', 'git push']);
-  assert.strictEqual(plain.pr, null, 'un remoto que no es de GitHub ni de Azure: sin pedido automático');
-  g(dir, 'remote', 'set-url', 'origin', 'https://github.com/acme/team-profile.git');
-  const gh = TC.proposalPlan(t, dir, { env: ENV, now });
-  assert.deepStrictEqual(gh.pr.slice(0, 7), ['gh', 'pr', 'create', '--base', 'main', '--head', gh.branch]);
-  assert.strictEqual(gh.manual, `https://github.com/acme/team-profile/compare/main...${gh.branch}?expand=1`);
-  g(dir, 'remote', 'set-url', 'origin', 'https://dev.azure.com/acme/Mi%20Proyecto/_git/team-profile');
-  const az = TC.proposalPlan(t, dir, { env: ENV, now });
-  assert.deepStrictEqual(az.pr.slice(0, 5), ['az', 'repos', 'pr', 'create', '--detect']);
-  assert.ok(az.manual.startsWith('https://dev.azure.com/acme/Mi%20Proyecto/_git/team-profile/pullrequestcreate?sourceRef=team-config%2Frepos-'));
-});
-
-test('T6b Plan_ProfileMustRequireAVersionThatAdmitsTeamRepos — sin eso, cada máquina anterior rechazaría la capa entera', () => {
-  const t = TC.TARGETS[0];
-  const { dir } = cloneWithRemote();
-  fs.writeFileSync(path.join(dir, t.file), TC.formatJson(GOOD));
-  const first = TC.proposalPlan(t, dir, { env: ENV });
-  assert.strictEqual(first.ok, true, `con el perfil pidiendo la versión, se propone: ${first.message}`);
-  for (const [req, why] of [['>= 2026.10.13.9', 'una anterior'], ['', 'sin pedir'], ['cualquiera', 'ilegible']]) {
-    fs.writeFileSync(path.join(dir, 'team-layer.json'), `${JSON.stringify({ schema: 1, name: 'equipo', requires: { harness: req } })}\n`);
-    g(dir, 'add', 'team-layer.json'); g(dir, 'commit', '-q', '-m', why);
-    const r = TC.proposalPlan(t, dir, { env: ENV });
-    assert.strictEqual(r.ok, false, `${why}: no se propone`);
-    assert.match(r.message, /todavía no se puede proponer: .*rechazaría la capa entera/, why);
-  }
-  g(dir, 'rm', '-q', 'team-layer.json'); g(dir, 'commit', '-q', '-m', 'sin declaración');
-  assert.match(TC.proposalPlan(t, dir, { env: ENV }).message, /no pude leer team-layer\.json/);
-  // operations.json no llega a las máquinas: su propuesta no depende de la versión
-  const o = TC.TARGETS[1];
-  fs.writeFileSync(path.join(dir, o.file), '{"version":1,"owners":{"default":"a@b.example"}}\n');
-  fs.rmSync(path.join(dir, t.file));
-  const op = TC.proposalPlan(o, dir, { env: ENV });
-  assert.strictEqual(op.ok, true, `operations: ${op.message}`);
-});
-
-test('T7 Propose_RealPushToTheRemote_PermissionSaidPlainly_MissingToolGivesTheLink', () => {
-  const t = TC.TARGETS[0];
-  const { dir, bare } = cloneWithRemote();
-  fs.writeFileSync(path.join(dir, t.file), TC.formatJson(GOOD));
-  const r = TC.runProposal(t, dir, { env: ENV });
-  assert.strictEqual(r.ok, true, r.message);
-  assert.match(r.message, /abrí el pedido a mano/);
-  assert.strictEqual(g(bare, 'show', `${r.branch}:${t.file}`), TC.formatJson(GOOD).trim(), 'el archivo llegó a la rama del remoto');
-  assert.strictEqual(g(bare, 'rev-parse', 'main'), g(dir, 'rev-parse', 'origin/main'), 'main del remoto no se tocó');
-  // un rechazo por permisos, con el texto de Azure DevOps
-  const fake = (fail) => (cmd) => (cmd[1] === fail ? { ok: false, err: "remote: TF401027: You need the Git 'GenericContribute' permission to perform this action." } : { ok: true, out: '' });
-  fs.writeFileSync(path.join(dir, 'team-repos.json'), TC.formatJson({ ...GOOD, version: 1, profile: GOOD.public }));
-  const denied = TC.runProposal(t, dir, { env: ENV, run: fake('push') });
-  assert.strictEqual(denied.ok, false);
-  assert.match(denied.message, /^No tenés permiso para escribir en el repo de harness-team-profile/);
-  assert.match(denied.message, /quedó guardado en tu clon, en la rama team-config\/repos-/);
-  // sin gh: el cambio subió y la página da el enlace para abrir el pedido
-  g(dir, 'remote', 'set-url', 'origin', 'https://github.com/acme/team-profile.git');
-  const noTool = TC.runProposal(t, dir, { env: ENV, run: (cmd) => (cmd[0] === 'gh' ? { ok: false, missing: true, err: 'spawn gh ENOENT' } : { ok: true, out: '' }) });
-  assert.strictEqual(noTool.ok, false);
-  assert.match(noTool.message, /no encontré «gh» en esta máquina\)\. Abrilo desde: https:\/\/github\.com\/acme\/team-profile\/compare\/main\.\.\./);
-});
-
 test('T8 Browser_OpenOnMac_StartOnWindows_XdgOpenElsewhere', () => {
   const u = 'http://127.0.0.1:5/?k=ab';
   assert.deepStrictEqual(TC.browserCommand('darwin', u), ['open', [u]]);
   assert.deepStrictEqual(TC.browserCommand('win32', u), ['cmd', ['/c', 'start', '""', u]]);
   assert.deepStrictEqual(TC.browserCommand('linux', u), ['xdg-open', [u]]);
-});
-
-test('T9 Remote_GithubAzureVisualStudio_UnknownIsNull', () => {
-  assert.deepStrictEqual(TC.remoteOf('git@github.com:acme/team-profile.git'), { platform: 'github', org: 'acme', repo: 'team-profile', web: 'https://github.com/acme/team-profile' });
-  assert.strictEqual(TC.remoteOf('https://dev.azure.com/acme/Proj/_git/ops').platform, 'azure');
-  assert.deepStrictEqual(TC.remoteOf('https://acme.visualstudio.com/Mi%20Proyecto/_git/ops'), { platform: 'azure', org: 'acme', project: 'Mi Proyecto', repo: 'ops', web: 'https://dev.azure.com/acme/Mi%20Proyecto/_git/ops' });
-  assert.deepStrictEqual(TC.remoteOf('/tmp/bare'), { platform: null, web: null });
 });
 
 test('T10 Quit_ClosesThePage', async () => {
@@ -271,54 +172,30 @@ test('T11 RealReaders_PickedFromTheTree_ExampleLoads_ProblemsCarryTheFieldPath',
   const team = cloneWithRemote().dir;
   const ops = cloneWithRemote().dir;
   const azure = (repo) => ({ platform: 'azure', org: 'acme', project: 'Arnés del equipo', repo });
+  const fmt = (d) => `${JSON.stringify(d, null, 2)}\n`;
   const repos = { __doc: 'de prueba', version: 1, public: { platform: 'github', org: 'acme', repo: 'harness' }, profile: azure('team-profile'), operations: azure('team-operations'), harness_copies: [azure('old-copy')] };
   const opsData = { version: 1, owners: { default: 'owner@acme.example', by_project: { 'Proyecto A': 'lead@acme.example' } }, reviewers: { dependencies: ['rev@acme.example'] } };
+  fs.writeFileSync(path.join(team, 'team-repos.json'), fmt(repos));
+  fs.writeFileSync(path.join(ops, 'operations.json'), fmt(opsData));
   await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
-    assert.deepStrictEqual((await api(p, 'save', { target: 'repos', data: repos })).json.ok, true);
-    assert.deepStrictEqual((await api(p, 'save', { target: 'operations', data: opsData })).json.ok, true);
     const s = (await api(p, 'state')).json.targets;
     assert.deepStrictEqual(s.map((t) => [t.state, t.problems.length]), [['loaded', 0], ['loaded', 0]]);
-    assert.deepStrictEqual(s[0].data, repos, 'lo guardado se vuelve a leer igual, con su comentario');
-    // la lista de responsables no va en el archivo que llega a todas las máquinas
-    const owners = (await api(p, 'check', { target: 'repos', data: { ...repos, owners: ['x'] } })).json;
-    assert.deepStrictEqual(owners.problems.map((x) => x.path), ['owners']);
-    // un proyecto de Azure que falta y un nombre con un carácter que no va: cada uno en la ruta de su campo
-    const bad = (await api(p, 'check', { target: 'repos', data: { ...repos, operations: { platform: 'azure', org: 'acme', repo: 'ops' }, harness_copies: [azure('mal/nombre')] } })).json;
-    assert.deepStrictEqual(bad.problems.map((x) => x.path).sort(), ['harness_copies.0.repo', 'operations.project']);
-    const noDefault = (await api(p, 'check', { target: 'operations', data: { version: 1, owners: {} } })).json;
-    assert.deepStrictEqual(noDefault.problems.map((x) => x.path), ['owners.default']);
+    assert.deepStrictEqual(s[0].data, repos, 'lo escrito se vuelve a leer igual, con su comentario');
   });
-});
-
-// story 2.28 (AC 19): la página no dibuja `people` (quién es quién), pero tampoco la pierde. Se hace lo que hace la
-// página: lee el estado, cambia el responsable por defecto en el borrador y guarda el borrador entero.
-test('T24 GuardarOwners_ConservaPeople', async () => {
-  const tree = path.join(__dirname, '..', '..');
-  const ops = cloneWithRemote().dir;
-  const file = path.join(ops, 'operations.json');
-  const people = {
-    machines: {
-      'maq-uno-1a2b3c4d': { person: 'dev.uno@acme.example', reported_sha256: 'a'.repeat(64), confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' },
-      'maq-dos-5e6f7a8b': { person: 'dev.dos@acme.example', reported_sha256: null, confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' },
-    },
-    projects: { 'dev.uno@acme.example': { add: ['Gama'], remove: ['Beta'] } },
-  };
-  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' }, people }));
+  // la lista de responsables no va en el archivo que llega a todas las máquinas; un proyecto de Azure que falta y un nombre
+  // con un carácter que no va: cada problema en la ruta de su campo
+  fs.writeFileSync(path.join(team, 'team-repos.json'), fmt({ ...repos, owners: ['x'] }));
+  await withPage({ tree, clones: { repos: team } }, async (p) => {
+    assert.deepStrictEqual((await api(p, 'state')).json.targets[0].problems.map((x) => x.path), ['owners']);
+  });
+  fs.writeFileSync(path.join(team, 'team-repos.json'), fmt({ ...repos, operations: { platform: 'azure', org: 'acme', repo: 'ops' }, harness_copies: [azure('mal/nombre')] }));
+  await withPage({ tree, clones: { repos: team } }, async (p) => {
+    assert.deepStrictEqual((await api(p, 'state')).json.targets[0].problems.map((x) => x.path).sort(), ['harness_copies.0.repo', 'operations.project']);
+  });
+  fs.writeFileSync(path.join(ops, 'operations.json'), fmt({ version: 1, owners: {} }));
   await withPage({ tree, clones: { operations: ops } }, async (p) => {
-    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
-    assert.deepStrictEqual([t.state, t.problems], ['loaded', []], 'el lector acepta people');
-    const draft = JSON.parse(JSON.stringify(t.data));
-    draft.owners.default = 'otro-lead@acme.example';
-    const r = (await api(p, 'save', { target: 'operations', data: draft })).json;
-    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.deepStrictEqual((await api(p, 'state')).json.targets[1].problems.map((x) => x.path), ['owners.default']);
   });
-  const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-  assert.strictEqual(saved.owners.default, 'otro-lead@acme.example', 'el cambio de owners se guardó');
-  assert.deepStrictEqual(saved.people, people, 'people sigue igual');
-  // y el texto de alcance ya no dice que lo leen sólo los procesos de la noche: lo lee también el sitio de la organización
-  const reach = TC.TARGETS.find((x) => x.id === 'operations').reach;
-  assert.doesNotMatch(reach, /sólo los procesos de la noche/);
-  assert.match(reach, /el sitio de la organización/);
 });
 
 // story 2.24 (AC 23): el buzón de corridas de la organización, en un panel de sólo lectura. La llave es una credencial y la
@@ -376,157 +253,6 @@ test('T22 2.24-TeamConfig_SinBuzon_DiceQueNoSeSube', async () => {
   });
 });
 
-// story 2.23: la página no dibuja `site`, pero el borrador es una copia del archivo que el lector aceptó: guardar
-// `owners` lo conserva igual. Rojo previo: el lector rechazaba `site`, el estado venía sin datos y el borrador nacía vacío.
-test('2.23-T5 TeamConfig_ConservaSite', async () => {
-  const tree = path.join(__dirname, '..', '..');
-  const ops = cloneWithRemote().dir;
-  const site = { maintainers: ['lead@acme.example'], mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' }, refresh_minutes: 20 };
-  const file = path.join(ops, 'operations.json');
-  fs.writeFileSync(file, `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, site }, null, 2)}\n`);
-  await withPage({ tree, clones: { operations: ops } }, async (p) => {
-    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
-    assert.strictEqual(t.state, 'loaded');
-    assert.deepStrictEqual(t.problems, []);
-    assert.deepStrictEqual(t.data.site, site, 'el borrador de la página trae site');
-    const draft = JSON.parse(JSON.stringify(t.data));
-    draft.owners.default = 'other@acme.example';
-    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
-    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-    assert.strictEqual(saved.owners.default, 'other@acme.example');
-    assert.deepStrictEqual(saved.site, site, 'site sigue igual en el archivo guardado');
-  });
-});
-
-// ── story 2.22: la sección de despliegues y la ayuda que propone los stages (AC 1 y 18) ─────────────────────────────
-const AZ_FAKE = path.join(__dirname, 'lib', 'fake-az.sh');
-function fakeAz() {
-  const d = tmp('az');
-  const fix = path.join(d, 'fix'); fs.mkdirSync(fix);
-  const az = path.join(d, 'az'); fs.copyFileSync(AZ_FAKE, az); fs.chmodSync(az, 0o755);
-  const w = (n, v) => fs.writeFileSync(path.join(fix, n), JSON.stringify(v));
-  return { fix, az, w };
-}
-const DEPLOY = { provider: 'azure', products: { Acme: { production: [{ pipeline: 'Proy/Acme Prod', stages: ['DeployProd'] }] } } };
-
-test('2.22-T3 TeamConfig_SeccionDespliegues', async () => {
-  const tree = path.join(__dirname, '..', '..');
-  const ops = cloneWithRemote().dir;
-  const file = path.join(ops, 'operations.json');
-  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' }, deployments: DEPLOY }));
-  await withPage({ tree, clones: { operations: ops } }, async (p) => {
-    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
-    assert.deepStrictEqual([t.state, t.problems], ['loaded', []], 'el lector real acepta deployments');
-    assert.deepStrictEqual(t.data.deployments, DEPLOY);
-    // un problema se marca en su campo, con la ruta del lector real (sin validador propio)
-    const bad = (await api(p, 'check', { target: 'operations', data: { ...t.data, deployments: { provider: 'azure', products: { Acme: { production: [{ pipeline: 'Proy/Acme Prod', stages: [] }] } } } } })).json;
-    assert.deepStrictEqual(bad.problems.map((x) => x.path), ['deployments.products.Acme.production.0.stages']);
-    const draft = JSON.parse(JSON.stringify(t.data)); draft.owners.default = 'otro@acme.example';
-    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
-    const page = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
-    assert.match(page, /Despliegues por producto/);
-  });
-  assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).deployments, DEPLOY, 'guardar no pierde deployments');
-});
-
-test('2.22-T23 TeamConfig_ProponeStagesDelPipeline', async () => {
-  const tree = path.join(__dirname, '..', '..');
-  const ops = cloneWithRemote().dir;
-  const file = path.join(ops, 'operations.json');
-  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' } }));
-  const antes = fs.readFileSync(file);
-  const { fix, az, w } = fakeAz();
-  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }, { id: 8, name: 'Acme Prod Viejo' }, { id: 7, name: 'Sin Corridas' }]);
-  w('builds-9.json', [
-    { id: 51, status: 'inProgress', result: null, sourceBranch: 'refs/heads/main', queueTime: '2026-10-15T00:00:00Z' },
-    { id: 50, status: 'completed', result: 'succeeded', sourceBranch: 'refs/heads/main', queueTime: '2026-10-14T00:00:00Z' },
-  ]);
-  w('timeline-50.json', { records: [
-    { type: 'Stage', identifier: 'DeployNonProd', name: 'Staging visible', state: 'completed', result: 'succeeded' },
-    { type: 'Stage', identifier: 'DeployProd', name: 'Producción visible', state: 'completed', result: 'skipped' },
-    { type: 'Job', identifier: 'UnJob', name: 'job' },
-  ] });
-  const env = { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az };
-  await withPage({ tree, clones: { operations: ops }, env }, async (p) => {
-    const r = (await api(p, 'propose-stages', { target: 'operations', provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba' })).json;
-    assert.strictEqual(r.ok, true, r.message);
-    assert.deepStrictEqual(r.proposals, [{ id: 'DeployNonProd', name: 'Staging visible', state: 'propuesto' }, { id: 'DeployProd', name: 'Producción visible', state: 'propuesto' }]);
-    const sin = (await api(p, 'propose-stages', { target: 'operations', provider: 'azure', pipeline: 'Proy/Sin Corridas', org: 'https://dev.azure.com/prueba' })).json;
-    assert.strictEqual(sin.ok, false);
-    assert.deepStrictEqual(sin.proposals, []);
-    assert.match(sin.message, /main/);
-  });
-  assert.ok(fs.readFileSync(file).equals(antes), 'la propuesta no se guarda: operations.json byte a byte igual');
-  const pasos = fs.readFileSync(path.join(fix, 'llamadas.log'), 'utf8');
-  assert.match(pasos, /timeline/, 'los stages salen del timeline de la última corrida terminada de main');
-  assert.doesNotMatch(pasos, /buildId=51/, 'nunca de una corrida sin terminar');
-});
-
-test('2.22-T24 TeamConfig_SoloLoConfirmadoSeGuarda', async () => {
-  const tree = path.join(__dirname, '..', '..');
-  const ops = cloneWithRemote().dir;
-  const file = path.join(ops, 'operations.json');
-  fs.writeFileSync(file, TC.formatJson({ version: 1, owners: { default: 'lead@acme.example' } }));
-  await withPage({ tree, clones: { operations: ops } }, async (p) => {
-    // la persona confirma DeployProd en production; DeployNonProd quedó propuesto y sin confirmar
-    const draft = { version: 1, owners: { default: 'lead@acme.example' }, deployments: TC.confirmStage({}, { provider: 'azure', product: 'Acme', side: 'production', pipeline: 'Proy/Acme Prod', stage: 'DeployProd' }) };
-    assert.strictEqual((await api(p, 'save', { target: 'operations', data: draft })).json.ok, true);
-  });
-  const saved = JSON.parse(fs.readFileSync(file, 'utf8')).deployments;
-  assert.deepStrictEqual(saved, DEPLOY, 'sólo lo confirmado');
-  // y la foto: sin staging confirmado, staging sale no medido
-  const out = tmp('foto');
-  const reposFile = path.join(out, 'repos.json');
-  fs.writeFileSync(reposFile, JSON.stringify({ azure: { org: 'https://dev.azure.com/prueba' }, repos: [{ producto: 'Acme', ado: 'Proy/a' }] }));
-  const { fix, az, w } = fakeAz();
-  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }]);
-  execFileSync(process.execPath, [path.join(tree, 'scripts', 'nightly', 'deployments', 'deployments.js'), '--today', '2026-10-15', '--out', out, '--repos', reposFile, '--operations', file],
-    { env: { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az, TF_BUILD: '' } });
-  const foto = JSON.parse(fs.readFileSync(path.join(out, 'deployments-2026-10-15.json'), 'utf8'));
-  assert.strictEqual(foto.productos.Acme.staging.estado, 'no_medido');
-  assert.strictEqual(foto.productos.Acme.staging.motivo, 'sin_declarar');
-});
-
-test('2.22-T25 TeamConfig_AyudaSinAcceso_DiceElMotivo', async () => {
-  const { fix, az, w } = fakeAz();
-  w('definiciones-Proy.json', [{ id: 9, name: 'Acme Prod' }]);
-  w('builds-9.json', [{ id: 50, status: 'completed', result: 'succeeded', sourceBranch: 'refs/heads/main', queueTime: '2026-10-14T00:00:00Z' }]);
-  const falla = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba', env: { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az, TYCON_AZ_FAIL: 'timeline' } });
-  assert.strictEqual(falla.ok, false);
-  assert.deepStrictEqual(falla.proposals, []);
-  assert.match(falla.message, /no pude leer el pipeline/);
-  assert.match(falla.message, /a mano/);
-  const sinAz = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://dev.azure.com/prueba', env: { ...ENV, TYCON_ADO_CMD: path.join(tmp('nada'), 'az-que-no-existe') } });
-  assert.strictEqual(sinAz.ok, false);
-  assert.deepStrictEqual(sinAz.proposals, []);
-  assert.match(sinAz.message, /no pude leer el pipeline/);
-  // la cabecera dice que también sale a la red al pedir la propuesta
-  const src = fs.readFileSync(path.join(__dirname, '..', 'setup', 'harness', 'team-config.js'), 'utf8').split('\n').slice(0, 30).join('\n');
-  assert.match(src, /propuesta/);
-});
-
-test('2.22-T25b TeamConfig_OrgYRepoValidados (revisores)', () => {
-  const { fix, az } = fakeAz();
-  const env = { ...ENV, FIXAZ: fix, TYCON_ADO_CMD: az };
-  const org = TC.proposeStages({ provider: 'azure', pipeline: 'Proy/Acme Prod', org: 'https://host-ajeno.example/x', env });
-  assert.strictEqual(org.ok, false);
-  assert.match(org.message, /dev\.azure\.com/);
-  assert.ok(!fs.existsSync(path.join(fix, 'llamadas.log')), 'az no se llamó con una organización ajena');
-  const repo = TC.proposeStages({ provider: 'github', repo: '../..', env });
-  assert.strictEqual(repo.ok, false);
-  assert.match(repo.message, /dueño\/repo/);
-});
-
-// Chequeo textual a propósito: la página no se ejecuta en un navegador en esta suite. El servidor, en cambio, se prueba
-// de verdad en T23/T25b: con la organización del pedido propone, con una ajena no llama a az.
-test('2.22-A11 TeamConfig_LaPaginaMandaLaOrganizacion (pase adversarial)', async () => {
-  await withPage({ tree: path.join(__dirname, '..', '..') }, async (p) => {
-    const page = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
-    assert.match(page, /dev\.azure\.com\/<organización>/, 'la página pide la organización');
-    assert.match(page, /org: gh \? undefined : \(org\.value\.trim\(\) \|\| undefined\)/, 'y la manda en el pedido');
-  });
-});
-
 test('T39 PaginaLocal_ModelsConProblema_NoSePierde @story-2.29 @ac-21 (tanda C) — un modelo mal escrito no desaparece del borrador al leer team-repos.json', () => {
   const TR = require(path.join(__dirname, '..', 'lib', 'team-repos.js'));
   const { dir } = cloneWithRemote();
@@ -538,4 +264,204 @@ test('T39 PaginaLocal_ModelsConProblema_NoSePierde @story-2.29 @ac-21 (tanda C) 
   assert.strictEqual(t.state, 'loaded');
   assert.deepStrictEqual(t.data, doc, 'el borrador trae models tal como está, para corregirlo; guardar no lo borra en silencio');
   assert.deepStrictEqual(t.problems.map((x) => x.path), ['models.reviewers'], 'y el problema a la vista');
+});
+
+// La página local es de sólo lectura: muestra las secciones del núcleo común de los archivos de sus dos clones (las del
+// sitio y las de personas incluidas) con los problemas que dan los lectores; no tiene control para guardar; las cinco
+// rutas de edición contestan 410 sin escribir nada; las tres que quedan siguen andando.
+test('2.29-T21 PaginaLocal_SoloLectura_AvisoDelSitio', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const fmt = (d) => `${JSON.stringify(d, null, 2)}\n`;
+  const team = cloneWithRemote().dir;
+  const ops = cloneWithRemote().dir;
+  const gh = (repo) => ({ platform: 'github', org: 'acme', repo });
+  fs.writeFileSync(path.join(team, 'team-repos.json'), fmt({ version: 1, public: gh('harness'), profile: gh('profile'), operations: gh('ops') }));
+  const people = { machines: { 'maq-uno-1a2b3c4d': { person: 'dev.uno@acme.example', reported_sha256: 'a'.repeat(64), confirmed_by: 'lead@acme.example', confirmed_on: '2026-10-15' } } };
+  const opsDoc = { version: 1, owners: { default: 'lead@acme.example' }, people, site: { maintainers: ['lead@acme.example'], url: 'https://sitio.acme.example' } };
+  fs.writeFileSync(path.join(ops, 'operations.json'), fmt(opsDoc));
+  const before = { team: g(team, 'status', '--porcelain'), ops: g(ops, 'status', '--porcelain'), opsFile: fs.readFileSync(path.join(ops, 'operations.json'), 'utf8') };
+  await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+    const s = (await api(p, 'state')).json;
+    const opsT = s.targets.find((x) => x.id === 'operations');
+    const reposT = s.targets.find((x) => x.id === 'repos');
+    // las secciones del núcleo, con sus datos, también las del sitio y las de personas
+    const ids = (t) => t.sections.map((x) => x.id);
+    assert.ok(ids(reposT).includes('repos'), 'el perfil muestra la sección de los repos');
+    assert.ok(['responsables', 'sitio', 'personas'].every((x) => ids(opsT).includes(x)), `operaciones muestra responsables, sitio y personas: ${ids(opsT)}`);
+    assert.strictEqual(opsT.sections.find((x) => x.id === 'sitio').data.site.url, 'https://sitio.acme.example');
+    assert.deepStrictEqual(opsT.sections.find((x) => x.id === 'personas').data, { people });
+    assert.deepStrictEqual(opsT.problems, [], 'los lectores aceptan el archivo');
+    // la dirección del sitio llega a la página y el aviso la dice
+    assert.strictEqual(s.site, 'https://sitio.acme.example');
+    assert.strictEqual(s.notice, 'la configuración de la organización se edita en el sitio: https://sitio.acme.example');
+    const html = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
+    assert.doesNotMatch(html, /Guardar|api\('(save|check|plan|propose|propose-stages)'/, 'ningún control ni llamada de edición');
+    // las cinco rutas retiradas contestan 410 y no dejan archivo, rama ni pedido
+    for (const name of ['check', 'save', 'plan', 'propose', 'propose-stages']) {
+      const r = await api(p, name, { target: 'operations', data: { ...opsDoc, owners: { default: 'otro@acme.example' } } });
+      assert.strictEqual(r.status, 410, name);
+      assert.match(r.json.message, /la configuración se mudó al sitio/);
+    }
+    assert.strictEqual(fs.readFileSync(path.join(ops, 'operations.json'), 'utf8'), before.opsFile, 'el archivo no se tocó');
+    assert.strictEqual(g(ops, 'status', '--porcelain'), before.ops);
+    assert.strictEqual(g(team, 'status', '--porcelain'), before.team);
+    assert.strictEqual(g(ops, 'branch', '--list'), '* main', 'ninguna rama nueva');
+    // las tres que quedan siguen andando
+    assert.strictEqual((await api(p, 'clone', { target: 'repos', dir: team })).json.ok, true);
+    assert.strictEqual((await api(p, 'state')).status, 200);
+  });
+  // sin la dirección del sitio, el aviso manda al repo de operaciones
+  fs.writeFileSync(path.join(ops, 'operations.json'), fmt({ version: 1, owners: { default: 'lead@acme.example' } }));
+  await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+    const s = (await api(p, 'state')).json;
+    assert.strictEqual(s.site, null);
+    assert.strictEqual(s.notice, 'sin sitio: se edita con un pedido al repo de operaciones');
+  });
+  // un problema de los lectores se muestra en su sección
+  fs.writeFileSync(path.join(ops, 'operations.json'), fmt({ version: 1, owners: {} }));
+  await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
+    assert.deepStrictEqual(t.sections.find((x) => x.id === 'responsables').problems.map((x) => x.path), ['owners.default']);
+  });
+  // el núcleo se carga del árbol que se le pasa, o se inyecta: nunca por una ruta fija
+  const core = { SECCIONES: [{ id: 'unica', titulo: 'La única', archivo: 'operations.json', repo: 'operaciones', claves: ['owners'] }] };
+  await withPage({ tree: tmp('arbol-vacio'), core, readers: { repos: toyReader, operations: null }, clones: { operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'operations');
+    assert.deepStrictEqual(t.sections.map((x) => x.id), ['unica'], 'las secciones salen del núcleo inyectado');
+  });
+  await withPage({ tree: tmp('arbol-sin-nucleo'), readers: { repos: toyReader, operations: null } }, async (p) => {
+    const s = (await api(p, 'state')).json;
+    assert.ok(s.targets.every((x) => Array.isArray(x.sections) && x.sections.length === 0), 'un árbol sin el núcleo no muestra secciones y no se cae');
+    assert.match(s.coreProblem, /org-config\.js/, 'y lo dice');
+  });
+});
+
+// El script de la página se corre de verdad contra un DOM mínimo (no hay navegador): sin el texto «null» de un nodo ausente,
+// «Cerrar la página» que dice el error si el servidor no cierra, y el botón de la carpeta del clon que dice si no pudo volver
+// a cargar. El HTML solo no lo prueba: un error en el script se vería recién en el navegador.
+class FakeNode {
+  constructor(tag) { this.tag = tag; this.kids = []; this.attrs = {}; this.textContent = ''; this.value = ''; this.listeners = {}; }
+  append(...k) { this.kids.push(...k); }
+  replaceChildren(...k) { this.kids = k; }
+  setAttribute(k, v) { this.attrs[k] = v; }
+  addEventListener(e, f) { this.listeners[e] = f; }
+  text() { return [this.textContent, ...this.kids.map((c) => (c instanceof FakeNode ? c.text() : String(c)))].join(' '); }
+  find(fn) { if (fn(this)) return this; for (const c of this.kids) { const r = c instanceof FakeNode ? c.find(fn) : null; if (r) return r; } return null; }
+}
+async function runPageScript(p, fetchFor) {
+  const html = (await request(p.port, { pathname: `/?k=${p.token}` })).text;
+  const src = /<script nonce="[^"]+">([\s\S]*?)<\/script>/.exec(html)[1];
+  const app = new FakeNode('div'); const quit = new FakeNode('button');
+  const document = { getElementById: (id) => (id === 'app' ? app : quit), createElement: (t) => new FakeNode(t) };
+  const real = async (u, o) => { const r = await request(p.port, { method: o.method, pathname: u, headers: o.headers, body: o.body }); return { json: async () => r.json }; };
+  new Function('document', 'location', 'history', 'fetch', 'URLSearchParams', src)(document, { search: `?k=${p.token}` }, { replaceState() {} }, (u, o) => fetchFor(u, o, real), URLSearchParams);
+  await new Promise((r) => setTimeout(r, 300));
+  return { app, quit };
+}
+test('2.29-T21c PaginaLocal_ElScriptDeLaPagina_CorreContraUnDomMinimo', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  fs.writeFileSync(path.join(ops, 'operations.json'), `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], url: 'https://sitio.acme.example' } }, null, 2)}\n`);
+  await withPage({ tree, clones: { operations: ops } }, async (p) => {
+    // sin problema del núcleo no queda un «null» suelto; el aviso y el clon que falta se dicen
+    const { app, quit } = await runPageScript(p, (u, o, real) => real(u, o));
+    assert.doesNotMatch(app.text(), /\bnull\b/, 'ningún nodo ausente se escribe como texto');
+    assert.match(app.text(), /se edita en el sitio: https:\/\/sitio\.acme\.example/);
+    assert.match(app.text(), /Falta saber dónde está tu clon/, 'el clon que falta se pide');
+    // «Cerrar la página» dice el error si el servidor no contesta ok
+    const sinCerrar = await runPageScript(p, (u, o, real) => (u === '/api/quit' ? { json: async () => ({ ok: false, message: 'no contesta' }) } : real(u, o)));
+    await sinCerrar.quit.listeners.click();
+    assert.match(sinCerrar.app.text(), /No pude cerrar la página: no contesta/);
+    // el botón de la carpeta: si guarda y después no puede volver a cargar, lo dice en la página
+    let estados = 0;
+    const recarga = await runPageScript(p, (u, o, real) => {
+      if (u === '/api/clone') return { json: async () => ({ ok: true }) };
+      if (u === '/api/state' && ++estados > 1) return Promise.reject(new Error('sin red'));
+      return real(u, o);
+    });
+    const boton = recarga.app.find((n) => n.tag === 'button' && n.textContent === 'Usar esta carpeta');
+    assert.ok(boton, 'hay botón para indicar el clon');
+    await boton.listeners.click();
+    await new Promise((r) => setTimeout(r, 100));
+    assert.match(recarga.app.text(), /No pude volver a cargar la página: no pude hablar con la página local \(sin red\)/);
+    // una llamada que falla de verdad (no contesta, o no es JSON) se dice y no deja el botón sin respuesta
+    const sinServidor = await runPageScript(p, (u, o, real) => (u === '/api/quit' ? Promise.reject(new Error('conexión cerrada')) : real(u, o)));
+    await sinServidor.quit.listeners.click();
+    assert.match(sinServidor.app.text(), /No pude cerrar la página: no pude hablar con la página local \(conexión cerrada\)/);
+    const noJson = await runPageScript(p, (u, o, real) => (u === '/api/clone' ? { json: async () => { throw new SyntaxError('Unexpected token <'); } } : real(u, o)));
+    const boton2 = noJson.app.find((n) => n.tag === 'button' && n.textContent === 'Usar esta carpeta');
+    await boton2.listeners.click();
+    assert.match(noJson.app.text(), /no pude hablar con la página local \(Unexpected token </);
+    assert.ok(quit, 'el botón de cerrar existe');
+  });
+});
+
+// Lo que la página no puede leer se dice; nunca se reemplaza en silencio ni se confunde con «no hay». Casos de cada rama de error:
+// un archivo nuevo roto no se cambia por el viejo, uno ilegible se nombra, «sin sitio» sólo si se pudo leer
+// operations.json, una dirección que no sirve no cuenta como sitio, y un núcleo roto o sin secciones no tira la página.
+test('2.29-T21b PaginaLocal_LoQueNoSePuedeLeer_SeDice', async () => {
+  const tree = path.join(__dirname, '..', '..');
+  const fmt = (d) => `${JSON.stringify(d, null, 2)}\n`;
+  const team = cloneWithRemote().dir;
+  const ops = cloneWithRemote().dir;
+  const gh = (repo) => ({ platform: 'github', org: 'acme', repo });
+  fs.writeFileSync(path.join(team, 'team-repos.json'), fmt({ version: 1, public: gh('harness'), profile: gh('profile'), operations: gh('ops') }));
+  // team-profile.json roto y perfil-equipo.json (el nombre de antes) sano: gana el nuevo, y se dice que está roto
+  fs.writeFileSync(path.join(team, 'team-profile.json'), '{ roto');
+  fs.writeFileSync(path.join(team, 'perfil-equipo.json'), fmt({ packs: { default: 'all' } }));
+  await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+    const t = (await api(p, 'state')).json.targets.find((x) => x.id === 'repos');
+    const paquetes = t.sections.find((x) => x.id === 'paquetes');
+    assert.strictEqual(paquetes.data, null, 'los datos del archivo viejo no se muestran como vigentes');
+    assert.match(paquetes.problems[0].message, /team-profile\.json no es un objeto JSON válido/);
+    // sólo el nombre de antes: se muestra
+    fs.rmSync(path.join(team, 'team-profile.json'));
+    const viejo = (await api(p, 'state')).json.targets.find((x) => x.id === 'repos').sections.find((x) => x.id === 'paquetes');
+    assert.deepStrictEqual(viejo.data, { packs: { default: 'all' } });
+    assert.deepStrictEqual(viejo.problems, []);
+    // ninguno de los dos: sin datos y sin problema (es lo normal de un perfil sin esa clave)
+    fs.rmSync(path.join(team, 'perfil-equipo.json'));
+    const ninguno = (await api(p, 'state')).json.targets.find((x) => x.id === 'repos').sections.find((x) => x.id === 'paquetes');
+    assert.deepStrictEqual([ninguno.data, ninguno.problems], [null, []]);
+  });
+  // un archivo que existe y no se puede leer (es una carpeta) se nombra con su código
+  fs.mkdirSync(path.join(team, 'team-profile.json'));
+  await withPage({ tree, clones: { repos: team } }, async (p) => {
+    const paquetes = (await api(p, 'state')).json.targets.find((x) => x.id === 'repos').sections.find((x) => x.id === 'paquetes');
+    assert.match(paquetes.problems[0].message, /no pude leer team-profile\.json \(EISDIR\)/);
+  });
+  // «sin sitio» sólo cuando operations.json se leyó: roto o sin clon, el aviso dice que no sabe
+  fs.writeFileSync(path.join(ops, 'operations.json'), '{ roto');
+  await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+    const s = (await api(p, 'state')).json;
+    assert.strictEqual(s.site, null);
+    assert.match(s.notice, /^no sé dónde se edita la configuración: no se pudo leer operations\.json/);
+  });
+  await withPage({ tree, clones: { repos: team } }, async (p) => {
+    assert.match((await api(p, 'state')).json.notice, /^no sé dónde se edita/, 'sin el clon de operaciones tampoco se sabe');
+  });
+  // una dirección que no es https, con usuario, con espacios o larguísima no cuenta como sitio
+  for (const url of ['http://sitio.acme.example', 'https://confiable@otro.example', 'https://sitio acme.example', `https://${'a'.repeat(400)}.example`, 'sitio.acme.example', 'https://']) {
+    fs.writeFileSync(path.join(ops, 'operations.json'), fmt({ version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], url } }));
+    await withPage({ tree, clones: { repos: team, operations: ops } }, async (p) => {
+      const s = (await api(p, 'state')).json;
+      assert.strictEqual(s.site, null, `«${url.slice(0, 40)}» no es un sitio`);
+      assert.match(s.notice, /^la dirección del sitio de operations\.json \(site\.url\) no sirve/, 'una dirección declarada que no sirve no es «sin sitio»');
+    });
+  }
+  // el núcleo que no carga o que no trae SECCIONES no tira la página y se dice
+  const sinSecciones = tmp('arbol-sin-secciones');
+  fs.mkdirSync(path.join(sinSecciones, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(sinSecciones, 'scripts', 'lib', 'org-config.js'), 'module.exports = {};\n');
+  const noCarga = tmp('arbol-nucleo-roto');
+  fs.mkdirSync(path.join(noCarga, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(noCarga, 'scripts', 'lib', 'org-config.js'), 'module.exports = {;\n');
+  for (const [arbol, esperado] of [[sinSecciones, /no trae las secciones/], [noCarga, /no se pudo cargar scripts\/lib\/org-config\.js \(SyntaxError\)/]]) {
+    await withPage({ tree: arbol, readers: { repos: toyReader, operations: null }, clones: { repos: team } }, async (p) => {
+      const s = (await api(p, 'state')).json;
+      assert.match(s.coreProblem, esperado);
+      assert.ok(s.targets.every((x) => x.sections.length === 0));
+      assert.strictEqual((await request(p.port, { pathname: `/?k=${p.token}` })).status, 200, 'la página sigue andando');
+    });
+  }
 });

@@ -33,15 +33,17 @@ function repoQueLoContiene(archivo) {
 }
 
 function main(argv) {
-  let envFile = null; let ensayo = false; let error = null;
+  let envFile = null; let ensayo = false; let actualizar = false; let imagenDada = null; let error = null;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--secrets-file') envFile = argv[++i];
     else if (argv[i] === '--dry-run') ensayo = true;
+    else if (argv[i] === '--update') actualizar = true;
+    else if (argv[i] === '--image') imagenDada = argv[++i];
     else error = `opción desconocida: ${argv[i]}`;
   }
   if (error || !envFile) {
     if (error) process.stderr.write(`${error}\n`);
-    process.stderr.write('uso: start.js --secrets-file <ruta fuera de todo repo>/sitio.env [--dry-run]\n');
+    process.stderr.write('uso: start.js --secrets-file <ruta fuera de todo repo>/sitio.env [--update --image <registro/repo>] [--dry-run]\n');
     return 2;
   }
   const archivo = path.resolve(envFile);
@@ -61,6 +63,16 @@ function main(argv) {
   if (process.platform !== 'win32' && (st.mode & 0o077) !== 0) {
     process.stderr.write('🔴 el archivo de secretos lo pueden leer otros usuarios de la máquina: chmod 600 y volvé a lanzarlo\n');
     return 1;
+  }
+  if (actualizar) {
+    // --update: resuelve `stable`, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla; para
+    // un cron o un temporizador de systemd (la receta, en la guía). 🔴 La imagen la dice quien instala (`--image`): nunca
+    // sale del ejemplo de compose.yaml, que es de una organización inventada
+    const imagen = imagenDada && require('../../latest-release.js').partirImagen(imagenDada) ? require('../../latest-release.js').nombreSinEtiqueta(imagenDada) : null;
+    if (!imagen) { process.stderr.write('🔴 --update necesita --image <registro/repo> (la imagen del sitio de tu organización, sin etiqueta)\n'); return 2; }
+    const up = ['--platform', 'local', '--mode', 'auto', '--compose', COMPOSE, '--site-url', 'http://127.0.0.1:8080', '--image', imagen, ...(ensayo ? ['--dry-run'] : [])];
+    const r = spawnSync(process.execPath, [path.join(__dirname, '..', 'update-site.js'), ...up], { stdio: 'inherit', env: { ...process.env, SITE_ENV_FILE: archivo } });
+    return r.status === 0 ? 0 : 1;
   }
   const args = ['compose', '-f', COMPOSE, 'up', '-d'];
   if (ensayo) {

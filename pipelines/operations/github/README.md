@@ -101,11 +101,12 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los workflows. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pull request revisado, nunca escribiendo `main`. Dos
-caminos: la página local `harness.js team-config` (en la máquina de quien mantiene, con los clones) o, con el sitio de
-la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
-(`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano fino sobre este
-repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). La pestaña no habilita «Proponer» si
+**Cómo se edita `operations.json` después del alta.** Siempre por pull request revisado, nunca escribiendo `main`.
+Con el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los
+mismos lectores (`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano
+fino sobre este repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). Sin sitio, se edita el
+archivo y se abre el pull request a mano; la página local `harness.js team-config` (en la máquina de quien mantiene, con
+los clones) muestra lo que hay, de sólo lectura, con los problemas que ven los lectores. La pestaña no habilita «Proponer» si
 `main` no tiene una protección o una regla que pida revisión. Los umbrales del tablero
 (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién cuando la noche dejó la marca
 `.dashboard/applied-config.json` con ese archivo adentro (qué configuración aplicó de verdad, con su identificador de
@@ -234,6 +235,18 @@ administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene, y lo que cues
    una vez por día.
 4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
+
+## 8. El sitio al día con stable (opcional)
+
+El workflow `site-update.yml` mantiene el sitio de la organización al día con la etiqueta `stable` de su imagen. Corre
+cada noche, antes de dependencias. Qué hace y cómo se elige automático o sólo aviso: la guía del sitio («Cómo se
+mantiene al día»).
+
+1. **Azure**: una aplicación de Entra propia con una credencial federada para este repo y el entorno `site-update`, y
+   un rol propio sobre la aplicación del sitio y nada más (la guía trae el rol). Variables: `SITE_UPDATE_CLIENT_ID`,
+   `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`.
+2. **Render**: `SITE_PLATFORM=render`, `SITE_IMAGE_NAME` y el secreto `SITE_RENDER_DEPLOY_HOOK`, el único secreto.
+3. **El workflow**: copiá `site-update.yml` a `.github/workflows/` y creá el entorno `site-update`.
 
 ## Diferencias con los pipelines de Azure DevOps
 

@@ -2273,7 +2273,23 @@ function cmdUpdate(ctx, state, H, { log, asked = null }) {
   else if (['new', 'applied', 'up_to_date', 'older'].includes(u.status)) state.token_expired_notice = null;
   S.write(ctx.home, state);
   if (mode === 'check' && u.status === 'new' && !ctx.opts.check) return { code: 3, lines: [...u.lines, `la política es «ask»: aplicá con ${H.applyHint}`] };
+  // el sitio de prueba local: después de aplicar una versión nueva, si corre el contenedor que lanzó el
+  // arnés (`tycon.site=local`), se pone al día con `stable`. Nunca cambia el código de salida de `update`
+  if (u.status === 'applied' || (mode === 'dry-run' && u.status === 'new')) u.lines = [...(u.lines || []), ...sitioDePruebaLineas(own.harness, mode === 'dry-run', ctx.home)];
   return { code: u.code, lines: u.lines };
+}
+
+/** Las líneas del sitio de prueba local, con el actualizador de la versión que quedó en el disco (en un proceso aparte). */
+function sitioDePruebaLineas(tree, dryRun, home) {
+  // sólo en la máquina de verdad: un laboratorio (otra HOME) nunca toca los contenedores de quien corre las pruebas
+  let real = null;
+  try { real = os.userInfo().homedir; } catch { real = null; }
+  if (!home || !real || path.resolve(home) !== path.resolve(real)) return [];
+  const guion = path.join(tree, 'scripts', 'site', 'deploy', 'update-site.js');
+  if (!fs.existsSync(guion)) return [];
+  const r = require('child_process').spawnSync(process.execPath, [guion, '--test-site', ...(dryRun ? ['--dry-run'] : [])], { encoding: 'utf8', windowsHide: true, timeout: 300000 });
+  if (r.status !== 0) return [`no se pudo actualizar el sitio de prueba (${r.error ? r.error.code || 'no se pudo correr' : `salió ${r.status}`})`];
+  return String(r.stdout || '').split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 3);
 }
 
 /**

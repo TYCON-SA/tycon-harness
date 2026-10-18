@@ -10,8 +10,9 @@
 #   ignora: rotar un secreto se hace en el panel del servicio (Environment). Ningún valor va acá.
 # · Se duerme a los 15 minutos sin tráfico y despierta en ~1 minuto (la prueba sin sesión de la noche lo espera).
 #
-# Cambiá la imagen por la huella (@sha256:…) de la versión que vas a instalar: nunca una etiqueta. La actualiza una
-# persona, a conciencia.
+# La imagen, por su huella (@sha256:…), nunca por etiqueta. Con `site.update: "auto"`, el nocturno que mantiene el sitio
+# al día (pipelines/operations/site-update.yml) pide el redespliegue con la huella de `stable` por el hook de Render; en
+# «sólo aviso», cambiala vos por la huella de la versión nueva cuando el sitio lo diga.
 services:
   - type: web
     name: sitio-de-acme

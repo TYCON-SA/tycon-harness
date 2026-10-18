@@ -1239,9 +1239,27 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.40: quién entra al sitio lo decide la lista (site.access de operations.json): el lector con cada problema y su ruta, el rol sólo de la lista, varios correos por persona, la migración desde lo de antes, y la página sin datos de quien no está en la lista (cada ruta, recorrida).",
+      "raiz": "arnes",
+      "ruta": "tests/site-access-list.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: las fuentes del sitio — el repo de operaciones por HTTP con la credencial en una cabecera (nunca en el disco), el buzón sólo con una SAS de lectura o la identidad administrada, el refresco que conserva el último bueno, y la regla de las 24 horas de operations.json guardada en SITE_DATA_DIR. Repo git local con git http-backend (si falta, se saltea con constancia).",
       "raiz": "arnes",
       "ruta": "tests/site-sources.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.33: la última imagen publicada en stable, leída sin credenciales (el token anónimo, el manifiesto y la configuración, sin capas), una vez por hora y guardada en el disco, y lo que el sitio dice con ella: el cartel sólo para quienes mantienen y la línea de Arnés. Registro local con la forma de la API v2.",
+      "raiz": "arnes",
+      "ruta": "tests/site-latest-release.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.33: el actualizador del sitio — resuelve stable, compara con lo que corre, aplica por huella en Azure, Render y una máquina propia, prueba y vuelve atrás, nunca baja de versión y no reintenta una huella que falló; el sitio de prueba local de harness.js update. Registro, az, docker y el hook de Render, dobles en la prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/site-update.test.js",
       "requiere": []
     },
     {
@@ -1260,6 +1278,12 @@
       "__nota": "story 2.23: las pestañas Inicio (las dos), Proyectos (con la paridad de la 2.25) y Arnés: leen, no miden; «no medido» nunca es 0; las cabeceras y ningún script en línea.",
       "raiz": "arnes",
       "ruta": "tests/site-views.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.41: la pestaña Ayuda arma la guía del sitio por rol en el servidor; markdown escapado, capturas sólo de la guía, guía ilegible ≠ «no está». El emisor y el sitio corren en el proceso.",
+      "raiz": "arnes",
+      "ruta": "tests/site-help.test.js",
       "requiere": []
     },
     {
@@ -1506,7 +1530,7 @@
       "requiere": []
     },
     {
-      "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
+      "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
       "requiere": []

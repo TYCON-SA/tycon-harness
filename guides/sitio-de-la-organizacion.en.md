@@ -62,10 +62,11 @@ anything on their machine to see it.
 
 - **Whoever maintains the harness:** installs it once, updates it deliberately, and edits the configuration from the
   Configuration tab.
-- **Each person in the organization who programs with the harness:** signs in and sees their own things. Whoever
-  does not use the harness on a machine has no runs of their own: they come in without a role, unless a maintainer adds
-  them to the maintainers list.
-- **Someone from another organization:** does not get in. The site only lets the organization in.
+- **Each person in the organization who programs with the harness:** signs in and sees their own things, if they are
+  in the site's list. Whoever does not use the harness on a machine has no runs of their own, but still sees the rest of
+  what is theirs.
+- **Someone who is not in the list:** sees nothing. With "any Microsoft account" they can get past the sign-in, but the
+  site shows them only a page with no data.
 
 **What it does not do.** The site shows; it does not act. It writes to no repo, except the change requests that the
 Configuration tab proposes, and those go in only when someone approves them. It does not run pipelines, merge, deploy or
@@ -74,25 +75,27 @@ touch any machine. What it shows is, at most, as old as the last night snapshot 
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
-site's configuration (for maintainers: `site.url`, in the "Who maintains the site" section, *Quién mantiene el sitio*).
+site's configuration (for maintainers: `site.url`, in the "Who gets into the site" section, *Quién entra al sitio*).
 If you do not have it, ask whoever sent you the link or whoever installed the harness on your machine.
 
-**Signing in.** The site asks for the organization's account: Microsoft, Google or GitHub, depending on how it was
-installed. If your organization installed it on Azure, the first screen is Microsoft's. After you sign in, the site shows
-you Home. At the top right are your email and the **Sign out** button (*Salir*); at
+**Signing in.** The site asks for the account your organization chose when installing it: Microsoft, Google or GitHub.
+If your organization installed it on Azure, the first screen is Microsoft's. With "any Microsoft account", the first
+screen has two buttons: one for your Microsoft account and one for guests of the organization's directory. Getting past
+the sign-in is not enough: you get in only if you are in the site's list. After you sign in, the site shows you Home. At the top right are your email and the **Sign out** button (*Salir*); at
 the bottom left, the **Theme** (*Tema*: automatic, light or dark).
 
 **What you see the first time** depends on who you are for the site:
 
 - **A maintainer** sees the five tabs, and in Home what is waiting for a decision across the organization.
 - **A confirmed person** sees three tabs (Home, Runs and Projects), with their own things.
-- **Someone without a role** sees only a page saying their account is not confirmed yet, without the menu on the left.
+- **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
+  not in the list, whom to ask and how to sign in with another one. They see neither the menu on the left nor any data.
 
-![The page for someone without a role yet: "your account is not confirmed yet; ask whoever maintains the harness"](sitio-de-la-organizacion/capturas/sin-rol.png)
+![The page for someone who is not in the list: "Your account is not in the list" (*Tu cuenta no está en la lista*)](sitio-de-la-organizacion/capturas/sin-rol.png)
 
 **Your machine, not confirmed yet.** Each team machine uploads its runs with the git email of whoever uses it. A
-maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; if it is your only
-machine, you also come in without a role and see the page above. Ask whoever maintains the harness (if you do not know
+maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; you still get in,
+if you are in the list, and see the rest. Ask whoever maintains the harness (if you do not know
 who, whoever sent you the link or whoever installed the harness on your machine). They confirm it in Configuration, the
 change goes in when someone approves it, and from the next refresh on (at most 15 minutes later) you see your own
 things.
@@ -249,13 +252,21 @@ The sections, in the order of the screen:
 
 - **The organization** (*La organización*): the name and logo shown in the top bar and the footer. It lives in
   `operations.json`, in the operations repo. A maintainer reviews it.
-- **Who maintains the site** (*Quién mantiene el sitio*): who sees the Configuration tab and can propose changes; also
-  the runs mailbox, the refresh and the site's address. If you remove yourself from the list, you lose access when it is
-  approved. It lives in `operations.json`, in the operations repo. Another person on the list reviews it. **"How often the
-  site updates"** (*Cada cuánto se actualiza el sitio*) takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows
-  sooner, but the site reads the operations repo, the profile repo and the mailbox again more often while it is awake:
-  more reads to the cloud, which cost a bit more on an installation billed by use. It does not keep it awake: asleep it
-  reads nothing, and on waking it reads everything.
+- **Who gets into the site** (*Quién entra al sitio*): the list of who gets in and what they see, one row per person,
+  with their role ("Maintains the site", *Mantiene el sitio*, or "Dev") and one or more emails. Nobody gets in if they
+  are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
+  A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
+  the site" → **+ Add person** (*+ Agregar persona*), their email and their role; it is done here, without the Microsoft
+  portal. The first time, the section brings the list built from what there was before (the maintainers and each person
+  with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
+  list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
+  account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
+  installation. The runs mailbox, the refresh and the site's address go here too. It lives in `operations.json`, in the
+  operations repo. Another maintainer reviews it. **"How often the site updates"** (*Cada cuánto se actualiza el
+  sitio*) takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows sooner, but the site reads the operations
+  repo, the profile repo and the mailbox again more often while it is awake: more reads to the cloud, which cost a bit
+  more on an installation billed by use. It does not keep it awake: asleep it reads nothing, and on waking it reads
+  everything.
 - **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
   by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
@@ -267,6 +278,9 @@ The sections, in the order of the screen:
   `cambio aplicado: <file> por <email>, pedido <link>`. What counts is the option already in the repo: the change that
   turns it on is left to be approved like any other, and only after that do changes go in by themselves. It lives in
   `operations.json`, in the operations repo.
+- **"How the site is updated"** (*Cómo se actualiza el sitio*): whether the site brings itself up to date with the new
+  harness version or only notifies (`site.update` in `operations.json`). Undeclared, notice only. Automatic needs the
+  update nightly and its permission: the recipe, in "How it keeps itself up to date".
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -350,47 +364,54 @@ reported with its last run. It is view only: the machines update themselves on s
 
 ## What each role sees
 
-The site decides who you are by your email:
+The site decides who you are by your email, and only with the "Who gets into the site" list:
 
 | Role | Home | Runs | Projects | Harness | Configuration |
 |---|---|---|---|---|---|
 | **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes |
-| **Confirmed person** | "Your things" | those of their confirmed machines | the products they work on | no | no |
-| **Person with an unconfirmed machine** | "Your things", if they have another confirmed machine; if not, the page "your account is not confirmed yet" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no |
-| **No role** | only the page "your account is not confirmed yet" | no | no | no | no |
+| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no |
+| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no |
+| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no |
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
 
-- To be a **person**, a machine of yours has to be confirmed in your name ("People and machines"). Your machine shows up
-  by itself in "To confirm" when it uploads its first run.
-- To **maintain**, your email has to be in "Who maintains the site". Whoever installs puts the first person, before the
-  list exists.
-- To stop seeing, the email or the machine is removed from those same sections.
+- To get in as a **dev**, your email has to be in "Who gets into the site" with the role "Dev". To see your runs, a
+  machine of yours also has to be confirmed in your name ("People and machines"): it shows up by itself in "To confirm"
+  when it uploads its first run.
+- To **maintain**, your email has to be in "Who gets into the site" with the role "Maintains the site". Whoever installs
+  puts the first person, while the list has nobody who maintains.
+- To stop seeing, the email is removed from the list.
+
+**The help, inside.** This guide is also inside the site, in the "Help" tab (*Ayuda*), and each role sees its part: a dev
+sees how the site is used and its common problems; whoever maintains also sees the configuration section by section and
+how it is installed. It comes from this same guide, in the site's language.
 
 ## Common problems
 
 ### I cannot sign in
 
-**What you see:** the sign-in page does not let you through, or it says your account has no access to the application.
+**What you see:** "Could not sign in" (*No se pudo entrar*), with the reason; or the Microsoft, Google or GitHub page
+does not let you through.
 
-**Why it happens:** the organization can let in only the people it enabled one by one. In Microsoft that is called
-"assigning" someone to the site's application. It also happens if the browser signs in with another account (a personal
-one, or another organization's).
+**Why it happens:** the site asks for an email your provider vouches for. Common cases: your account has no email in its
+directory; your organization did not verify your email's domain; or you signed in with a personal Microsoft account
+through the main button (personal accounts signing in directly are not accepted yet). It also happens if the browser
+signs in by itself with another account.
 
-**What to do:** ask a maintainer to enable you ("to assign you to the site's application", if it is Microsoft). If you are already assigned, sign out of the other
-account or open a private window and sign in with the organization's.
+**What to do:** if you are a guest of the organization's directory, sign in through the guests' button. If not, sign in
+with your organization's account: sign out of the other one or open a private window. If the message is about the email,
+ask whoever runs your directory to add or verify your email. To be in the site's list, ask a maintainer.
 
 ### I sign in and see nothing
 
-**What you see:** the page "your account is not confirmed yet; ask whoever maintains the harness".
+**What you see:** the page "Your account is not in the list", with the account you signed in with.
 
-**Why it happens:** you signed in fine, but the site has you neither as a person nor as a maintainer: no confirmed
-machine is in your name.
+**Why it happens:** you got past the sign-in, but that account is not in the "Who gets into the site" list. Maybe you
+are using another email than the one in the list.
 
-**What to do:** if you program with the harness, do a story with it on your machine: when it ends, the machine uploads
-its run and introduces itself. Then ask a maintainer to confirm it. If you do not use the harness on a machine, the site
-has nothing of yours to show; if you need to see everything, ask a maintainer to add you to the maintainers list.
+**What to do:** if you have another account, use "sign in with that one". If not, ask a maintainer to add you, with the
+email you sign in with. It goes in when someone approves the request and the site refreshes (at most 15 minutes).
 
 ### I do not see my runs
 
@@ -486,13 +507,19 @@ wakes it up.
   something it carries changes. You can also build it yourself (below).
 - **A way to sign in to the organization:** Entra ID, Google Workspace, GitHub, or any OIDC provider (Okta, Keycloak).
   An application for the site is registered in that provider.
-- **The organization's operations repo**, and an identity that can read it (that repo only).
+- **The organization's operations repo**, and an identity that can read it (that repo only). If you do not have it
+  yet: how to create it and which files it holds, in the harness's `pipelines/operations/README.md` §2 (the examples, in
+  `pipelines/operations/examples/`). The site only needs `operations.json`; the minimum, in the Docker trial.
 - **Optional: the runs mailbox**, if the organization collects the runs of its machines.
 - **A place to run a container** with HTTPS in front: a cloud, a free service or your own machine.
 
 ## Try it on your machine with Docker
 
-About ten minutes, most of it building the image. You need Docker running and a clone of the harness public repo.
+About ten minutes, most of it building the image. You need Docker running, a clone of the harness public repo and
+Node 22 or newer (for the check in step 3).
+
+Here the site address is `http://127.0.0.1`: the site requires `https://` for any other address, but accepts `http` on
+your own machine, for trying it out. The same goes for the operations repo address.
 
 1. **Build the image** (from the root of the clone; run for real: about 2 minutes the first time):
 
@@ -525,6 +552,24 @@ About ten minutes, most of it building the image. You need Docker running and a 
    With made-up values (a repo that does not exist) we measured it: the site starts, `/livez` gives 200, `/` redirects to
    the GitHub sign-in, `/api/inicio` gives 401, and the site is **stopped** because it cannot read the repo (`/healthz`
    gives 503 and the check says "el sitio está frenado"). With the real repo and its token, the site loads.
+
+   **The minimum operations repo.** For the site to start without being stopped, `operations.json`, at the root of
+   `main`, needs at least this (with your email instead of the example one). Measured: with this file, `/healthz` gives
+   200 and the check without a session passes.
+
+   ```json
+   {
+     "version": 1,
+     "owners": { "default": "you@acme.example" },
+     "reviewers": { "dependencies": ["you@acme.example"] },
+     "site": { "access": [{ "role": "maintainer", "emails": ["you@acme.example"] }] }
+   }
+   ```
+
+   `owners` and `reviewers` belong to the night processes, but the file does not validate without them (the container
+   log says what is missing: "owners: falta"). If the site is stopped, the exact reason is in that log, not in
+   `/healthz`. With a repo like this, the log also says "el repo de operaciones no trae repos.json" and "sin_foto":
+   that is normal until the night has run.
 
 4. **Sign in.** Open http://127.0.0.1:8080 and sign in with your account. For that you first register the application
    on GitHub (*Settings → Developer settings → OAuth Apps → New OAuth App*, with the address `http://127.0.0.1:8080` and
@@ -560,9 +605,24 @@ before the site stops (and lifts the stop until it expires again).
 ### The organization's sign-in
 
 The site does its own sign-in (`SITE_AUTH_PROVIDER`): generic `oidc` (Okta, Keycloak or another with discovery),
-`microsoft`, `google` or `github`. Each one is limited to the organization: one tenant, the domain
-(`SITE_AUTH_ALLOWED_DOMAINS`) or the GitHub organization. In the provider you register an application with the callback
-`<site address>/auth/callback` and a secret of 6 months at most.
+`microsoft`, `google` or `github`. It is chosen at installation, and Configuration shows it. In the provider you register
+an application with the callback `<site address>/auth/callback` and a secret of 6 months at most. With any provider, who
+gets in and what they see is decided by the site's list ("Who gets into the site"): getting past the sign-in is not
+enough.
+
+- **`google` and `github`** are limited to the organization: the domain (`SITE_AUTH_ALLOWED_DOMAINS`) or the GitHub
+  organization (`SITE_AUTH_GITHUB_ORG`).
+- **`microsoft`, one tenant** (`SITE_AUTH_MICROSOFT_ACCOUNTS=organization`, the default): the accounts of the
+  organization's directory and its guests get in. `SITE_OIDC_ISSUER` is the tenant's.
+- **`microsoft`, any account** (`SITE_AUTH_MICROSOFT_ACCOUNTS=any`): work or school accounts from any organization get
+  in, without inviting them to the directory. `SITE_OIDC_ISSUER` is `https://login.microsoftonline.com/common/v2.0` and
+  `SITE_AUTH_MICROSOFT_TENANT` is the organization's tenant: its guests get in through it, with their own button. You get
+  in only with an email verified by your organization. Microsoft personal accounts signing in directly are not accepted
+  yet: it could not be checked that their email is reliable (a guest with a personal account uses the guests' button).
+- **The risk, plainly:** with "any account", the first door is open to any Microsoft account, and all the control is in
+  the site's list. Whoever is not in the list sees a page with no data; no request answers them with data. That is why
+  the list is guarded like a password: each change is a request with who proposed it and who approved it.
+- The site gets no permission on anybody's directory: it does not assign, invite or read users.
 
 ### The probes
 
@@ -572,7 +632,9 @@ If your platform has probes, **both go against `/livez`**, with a response timeo
   liveness probe against it would restart the container in a loop, and restarting does not fix the configuration.
 - **Readiness, not against `/readyz` either.** The platform sends no traffic until that probe passes, and `/readyz`
   waits for every source, the whole mailbox included. The site already serves each tab as soon as it can build it: one
-  that is still waiting says «loading» and reloads itself, and a stopped one explains why. `/readyz` is for whoever wants
+  that is still waiting says «loading» and reloads itself, and a stopped one explains why. `/readyz` gives 200 as soon as it read every
+  source once, **also with the site stopped**: on purpose, so the site stays visible and explains why it is stopped. The
+  stop shows in `/healthz`. `/readyz` is for whoever wants
   to know whether everything finished loading.
 
 ### The secrets, with the least privilege
@@ -583,7 +645,7 @@ Each installation says where each one is stored and how its value gets in. **No 
 | Secret | What for | Minimum scope |
 |---|---|---|
 | `SITE_SESSION_KEY` | signing the session | 32 random bytes, only for the site |
-| `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile`; expires in 6 months at most |
+| `SITE_OIDC_CLIENT_SECRET` | the sign-in | a registration only for the site, with no API permissions beyond `openid email profile` (with `github`, which is not OIDC, the site asks for `read:user user:email read:org`: read the account, its emails and whether it belongs to the organization); expires in 6 months at most |
 | `SITE_OPERATIONS_TOKEN` (or the platform identity, `SITE_OPERATIONS_IDENTITY=managed`, no secret) | reading the operations repo | an identity of its own with read access to that repo only; if it is a token, for one organization, code read only, 90 days; on GitHub, fine-grained, one repo, `contents: read` |
 | `SITE_MAILBOX_SAS` (or `SITE_MAILBOX_IDENTITY=managed`) | reading the runs in the mailbox | a read-and-list SAS (`rl`) tied to a stored access policy of the container, 6 months at most; or the platform identity with a read role on the container |
 | the notice channel | sending the morning notice | it does not reach the site: the night process uses it. Telegram: the token is for the whole bot, use a dedicated one. Slack or Teams: the webhook address IS the credential |
@@ -592,14 +654,16 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_PIPELINES_TOKEN` | read the pipelines, to choose them by name in the Configuration tab («Tests at merge» and «Deployments») and to see the name of each stage | part of the normal installation on Azure DevOps: only *Build: Read*, for the organization, 90 days; it can be the same token as the operations repo's with *Build: Read* added. Without it, the tab asks for the pipeline number by hand and says what is missing, and the saved stages show their identifier |
 | `SITE_PROFILE_WRITE_TOKEN` | propose changes to the team profile | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
 
-`SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the list of
-maintainers (`site.maintainers` in `operations.json`) does not exist. Remove it afterwards.
+`SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the site's list
+(`site.access` in `operations.json`) has nobody who maintains. Remove it afterwards.
 
 ### Where it reads operations from
 
 The site reads its configuration and what the night leaves from the operations repo. There are three ways, depending on
 where the site lives and where the repo lives. Pick only one: with `SITE_OPERATIONS_SOURCE=copy`,
-`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set.
+`SITE_OPERATIONS_TOKEN` and `SITE_OPERATIONS_IDENTITY` are left over and the site does not start if they are set. `SITE_OPERATIONS_REPO`, though, is still
+required with the copy: it is the address of the repo where «Propose» opens its pull requests, and without it the site
+does not start.
 
 1. **Copy with the platform identity, in Azure** (`SITE_OPERATIONS_SOURCE=copy`,
    `SITE_OPERATIONS_COPY=<account>/<container>`). A job in the operations repo (`site-copy.yml`, in
@@ -663,6 +727,29 @@ with its vote, the request stays. The review policy of `main` has to let the vot
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
 leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
 
+### How it keeps itself up to date
+
+The harness publishes the site image with its version number and moves the `stable` tag to that image **only** when it
+passed the scanner and its signature was verified; `stable` never moves back. With that, each installation knows whether
+there is something new:
+
+- **The notice, the same for everyone.** Maintainers see at the top of every tab "there is a new version of the site: X
+  (yours: Y)", and the Harness tab adds "last published". The site looks at the registry once an hour at most, without
+  credentials; if it cannot look, it says so and never says "up to date" without having looked. The morning summary
+  brings the site line. The version is not visible without a session.
+- **Automatic or notice only**, in Configuration → People → "How the site is updated" (`site.update` in
+  `operations.json`). **Without the key, notice only**: automatic needs permissions the organization grants
+  deliberately. Before turning it on, a manual update that goes well, and the morning notice channel configured: a
+  rollback leaves the nightly green and is reported in that notice.
+- **Automatic** is done by the harness updater (`scripts/site/deploy/update-site.js`): it resolves `stable`, installs it
+  **by digest**, wakes the site up and runs the check without a session on it. If the check fails, it goes back to the
+  previous digest and says so; that digest is not retried until `stable` moves. It never installs a version lower than
+  the one running. Each environment runs it with its own tool: each recipe has its **Up to date** paragraph.
+- **From an old image, the first one goes by hand.** An image published before images carried their version does not
+  tell the updater which version is running, and without knowing it, it installs nothing (it never downgrades): the
+  result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
+  then on, the automatic mode carries on by itself.
+
 ### The two ways to start it
 
 The same image with Docker (`docker run … sitio:local`, above), or with Node alone from the clone, with the same
@@ -714,9 +801,16 @@ key. The profile repo is part of the normal installation: its address goes in `p
 `SITE_PROFILE_TOKEN`, in the environment of whoever runs the setup, like the other secrets. Without both, the
 Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 
-- **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration, single tenant
-  and with "assignment required" (people are assigned one by one; assigning a group needs an Entra ID P1/P2 license).
-  Behind it, the site's own. `/healthz` and `/livez` stay outside the lock.
+- **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
+  site's own, which decides with its list. `/healthz` and `/livez` stay outside the lock. `microsoftAccounts` in the
+  configuration file picks the mode:
+  - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
+    one by one in the portal (assigning a group needs an Entra ID P1/P2 license).
+  - `any`: after setting up the application, the script reads that the registration asks for `email` and `xms_edov`,
+    moves it to any Microsoft account with v2 access tokens (Azure does not accept the change without them), removes the
+    required assignment and puts the platform's lock on the common issuer. Your `az` session does it, and it has to own
+    the registration; the site gets no new permission. Before running it, the site's list has to have everyone who gets
+    in today (the section builds it by itself from what there was before: propose it and have it approved).
 - **The lock and the writes:** the built-in sign-in protects against forged requests by looking at the browser's
   `Referer`, not the `Origin`. A POST with a session and without a `Referer` from the site itself is rejected with 403,
   sub-status 60 (it shows in the environment's logs, as the middleware's `RequestCompleted`). For "Review changes" and
@@ -742,6 +836,19 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Who runs it:** needs Contributor on the resource group and Owner or User Access Administrator on the mailbox account
   (only to grant the role). The region is that of the mailbox account.
 
+**Up to date**: a nightly of its own in the operations repo, `site-update.yml` (in `pipelines/operations/` for Azure
+DevOps and in `pipelines/operations/github/` for GitHub), one hour before the dependencies one. It uses **its own
+connection**, authorized only for that nightly, with **a custom role on the site application and nothing else**:
+
+```bash
+az role definition create --role-definition '{"Name": "Site updater", "Description": "Changes the site image and nothing else", "Actions": ["Microsoft.App/containerApps/read", "Microsoft.App/containerApps/write", "Microsoft.App/containerApps/revisions/read", "Microsoft.App/managedEnvironments/join/action"], "AssignableScopes": ["/subscriptions/<subscription>/resourceGroups/<group>"]}'
+az role assignment create --assignee-object-id <the connection identity> --assignee-principal-type ServicePrincipal --role "Site updater" --scope /subscriptions/<subscription>/resourceGroups/<group>/providers/Microsoft.App/containerApps/<application>
+```
+
+Container Apps sends traffic to the new revision only if it starts; the nightly checks it anyway. Negative check: with
+that identity, `az storage account keys list` on the disk account and an `update` on another application in the group
+must fail.
+
 ### Render
 
 Render's free plan, with `scripts/site/deploy/render.yaml` as the *Blueprint*. Replace the image with the digest of the
@@ -758,6 +865,11 @@ version you install.
 - **Sleeps:** after 15 minutes without traffic, and wakes in about a minute (the check without a session waits for it).
   750 hours per month per workspace: one service fits. Without a payment method, if it goes over, Render suspends the
   service until the next month: it does not charge.
+
+**Up to date**: with `site.update: "auto"`, the nightly (`SITE_PLATFORM=render`) asks for the redeploy through the Render
+hook with the `stable` digest (`imgURL=<image>@sha256:…`). The hook is a secret (`SITE_RENDER_DEPLOY_HOOK`): it never
+shows in the log. Render does it in the background; the next night's check without a session confirms it. If Render
+rejects the image (a 404), it has to be from the same registry and name as the service's.
 
 ### Your own machine
 
@@ -785,6 +897,17 @@ starting anything.
   probar desde el nocturno" (could not be checked from the night run), without a link, unless the organization runs the
   night process on its own agent inside the network.
 
+**Up to date**: first the harness script, with a `cron` or a systemd timer:
+
+```bash
+# every night at 03:00: resolves stable, recreates with SITE_IMAGE=<image>@<digest>, checks /livez and goes back if it fails
+0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organization>/<repo>
+```
+
+With systemd, a `oneshot` `.service` with the same command and a `.timer` with `OnCalendar=*-*-* 03:00`. **Watchtower**
+stays as an alternative (the community-maintained copy, limited to the site container with `--label-enable`): it does
+not check or go back, and it has the Docker socket, that is, it is administrator of the machine.
+
 **The operations copy outside Azure** (also for Render): the read-only SAS, tied to a stored access policy on the
 container so it can be revoked. The copy's account needs its key turned on to sign it:
 
@@ -792,6 +915,20 @@ container so it can be revoked. The copy's account needs its key turned on to si
 az storage container policy create --account-name <account> -c <container> -n site-read --permissions rl --expiry <date>
 az storage container generate-sas --account-name <account> -n <container> --policy-name site-read -o tsv
 ```
+
+### Kubernetes and other clouds
+
+**Not tested by the harness.** The image is pinned by digest and updated with the tools that follow tags: Argo CD Image
+Updater or Flux (with the strategy that resolves `stable` to its digest), or each cloud's own command to change a
+service image (Cloud Run: `gcloud run deploy --image <image>@<digest>`). After the change, the check without a session:
+`node scripts/site/check-deploy.js --url https://<address>`.
+
+### A closed network
+
+Without internet access, the site cannot look at the last published version and says so. The update is by hand: on a
+machine with access, `docker pull <image>:stable` and `docker save` of that digest; carry the file, `docker load`, and
+recreate the container with `SITE_IMAGE=<image>@<digest>`. Then, the check without a session against the internal
+address.
 
 ## Inside, for whoever maintains the harness
 
@@ -807,10 +944,12 @@ Claude or Codex.
   `crypto` (only RS256 and ES256), and each check has its test with a badly built token. Each provider is limited to the
   organization in its own way. **The identity never comes from a header** of a proxy or of the platform.
 - **The session lives in a signed cookie**, for a fixed 8 hours, like the sign-in attempt: the site can restart or have
-  several replicas. **The role is recomputed on every request** (`access.js`). A maintainer is whoever is in
-  `site.maintainers` of `operations.json` (or the installation's first maintainer while that list does not exist). A
-  person is whoever has a machine in `people` of `operations.json`. Everyone else has no role and sees a page with no
-  data.
+  several replicas. **The role is recomputed on every request** (`access.js`) and comes only from the `site.access` list
+  of `operations.json` (the rule lives in `scripts/lib/people.js`): a maintainer is whoever has a `maintainer` entry (or
+  the installation's first maintainer while the list has none); a person, whoever has a `dev` entry. Without
+  `site.access`, the list is built from what there was before (`site.maintainers` and the people of `people.machines`).
+  A person can have several emails: their things are computed with all of them. Everyone else has no role and sees a
+  page with no data.
 - **A single path for the data**: the routes table in `server.js`. A route that does not declare who may see it keeps
   the site from starting, and each route gets the model already filtered for whoever asks.
 - **It reads straight from the sources** (`sources.js`): the operations repo, cloned with the credential in a header

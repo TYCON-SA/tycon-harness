@@ -37,9 +37,12 @@ const CORREO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 class ErrorOidc extends Error {
   constructor(motivo) { super(motivo); this.motivo = motivo; }
 }
-/** Un rechazo de la identidad: `pantalla` es una frase fija que puede ver quien intentó entrar; `motivo`, el registro. */
+/**
+ * Un rechazo de la identidad: `pantalla` es una frase fija que puede ver quien intentó entrar; `motivo`, el registro;
+ * `enlace` (opcional, `{ href, texto }`, una dirección del propio sitio), por dónde seguir.
+ */
 class ErrorDeIngreso extends Error {
-  constructor(pantalla, motivo) { super(motivo || pantalla); this.pantalla = pantalla; this.motivo = motivo || pantalla; }
+  constructor(pantalla, motivo, enlace = null) { super(motivo || pantalla); this.pantalla = pantalla; this.motivo = motivo || pantalla; this.enlace = enlace; }
 }
 
 /** Un pedido HTTP(S) que nunca rechaza: { status, cuerpo (texto), cabeceras } o { error }. */
@@ -81,7 +84,11 @@ const pkceChallenge = (verifier) => crypto.createHash('sha256').update(verifier)
  *   descubrir() · listo() · urlDeInicio({ state, nonce, challenge, scope }) · canjear(code, verifier) ·
  *   verificarIdToken(token, { nonce })
  */
-function crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora = Date.now }) {
+function crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora = Date.now, emisorDelDescubrimiento = issuer, emisorDelToken = () => issuer }) {
+  // `emisorDelDescubrimiento` y `emisorDelToken(claims)`: un emisor de varios inquilinos publica en su
+  // descubrimiento una plantilla (Entra: `…/{tenantid}/v2.0`), y cada token trae el emisor de SU inquilino. Quien arma el
+  // cliente dice qué plantilla espera y qué emisor exacto le corresponde a cada token; null = ninguno. Por defecto, el
+  // emisor configurado, idéntico (OpenID Connect Discovery §4).
   let doc = null;
   let claves = [];
   let ultimaRebajada = -Infinity;
@@ -95,7 +102,7 @@ function crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora = Dat
   async function descubrir() {
     const r = await pedirJson(`${issuer}/.well-known/openid-configuration`);
     if (r.status !== 200 || !r.json) throw new ErrorOidc(`el descubrimiento del emisor contestó ${r.status}`);
-    if (r.json.issuer !== issuer) throw new ErrorOidc('el issuer del descubrimiento no es idéntico al emisor configurado');
+    if (r.json.issuer !== emisorDelDescubrimiento) throw new ErrorOidc('el issuer del descubrimiento no es el que corresponde al emisor configurado');
     for (const k of ['authorization_endpoint', 'token_endpoint', 'jwks_uri']) {
       if (typeof r.json[k] !== 'string') throw new ErrorOidc(`el descubrimiento no trae ${k}`);
     }
@@ -146,7 +153,8 @@ function crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora = Dat
       ? crypto.verify('sha256', datos, { key: clave, dsaEncoding: 'ieee-p1363' }, firma)
       : crypto.verify('sha256', datos, clave, firma);
     if (!ok) throw new ErrorOidc('la firma del id_token no es válida');
-    if (claims.iss !== issuer) throw new ErrorOidc('el iss del id_token no es exactamente el emisor configurado');
+    const esperado = emisorDelToken(claims);
+    if (typeof esperado !== 'string' || claims.iss !== esperado) throw new ErrorOidc('el iss del id_token no es exactamente el emisor que le corresponde');
     const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!aud.includes(clientId)) throw new ErrorOidc('el aud del id_token no es este cliente');
     if ((aud.length > 1 || claims.azp !== undefined) && claims.azp !== clientId) throw new ErrorOidc('varias audiencias y el azp no es este cliente');
@@ -180,14 +188,15 @@ function limitarDominio(correo, dominios) {
  * Un proveedor OIDC armado sobre el cliente: `identidad(claims)` → { email, sub } (o tira ErrorDeIngreso) es lo único
  * que cambia de un proveedor a otro.
  */
-function proveedorSobreOidc({ nombre, issuer, clientId, clientSecret, redirectUri, ahora, scope, identidad }) {
-  const cliente = crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora });
+function proveedorSobreOidc({ nombre, issuer, clientId, clientSecret, redirectUri, ahora, scope, identidad, emisorDelDescubrimiento, emisorDelToken }) {
+  const cliente = crearCliente({ issuer, clientId, clientSecret, redirectUri, ahora, emisorDelDescubrimiento, emisorDelToken });
   return {
     nombre,
     emisor: issuer,
     preparar: () => cliente.descubrir(),
     listo: () => cliente.listo(),
-    urlDeInicio: ({ state, nonce, challenge }) => cliente.urlDeInicio({ state, nonce, challenge, scope }),
+    // `otraCuenta`: que el emisor pida elegir la cuenta en vez de entrar solo con la que ya tiene abierta
+    urlDeInicio: ({ state, nonce, challenge, otraCuenta }) => cliente.urlDeInicio({ state, nonce, challenge, scope, extra: otraCuenta ? { prompt: 'select_account' } : {} }),
     async completar({ code, verifier, nonce }) {
       const tokens = await cliente.canjear(code, verifier);
       const claims = await cliente.verificarIdToken(tokens.id_token, { nonce });

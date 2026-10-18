@@ -1,0 +1,123 @@
+# El sitio al día con stable — MODELO para una organización con el repo de operaciones en GitHub.
+#
+# Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones.
+#
+# Cada noche, antes del nocturno de dependencias: resuelve la etiqueta `stable` de la imagen del sitio, la compara con lo
+# que corre y, con `operations.json → site.update: "auto"`, la instala POR HUELLA, prueba el sitio sin sesión y, si falla,
+# vuelve a la anterior. En «sólo aviso» no toca nada. El resultado queda en `.dashboard/site-update/`.
+#
+# - Azure: entra con una credencial federada propia (`azure/login` con OIDC, `id-token: write`), sin ningún secreto
+#   guardado. Su aplicación de Entra tiene un rol propio sobre LA APLICACIÓN del sitio y nada más; no es la de la copia.
+# - Render: el hook de redespliegue es el único secreto (SITE_RENDER_DEPLOY_HOOK); nunca sale en el registro.
+#
+# Variables del repo (no son secretos): SITE_PLATFORM (azure o render), SITE_IMAGE_NAME, SITE_RESOURCE_GROUP, SITE_APP,
+# SITE_URL, y para Azure SITE_UPDATE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+name: site-update
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: harness-site-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Comparar con stable y, si corresponde, actualizar el sitio
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: site-update
+    env:
+      BUILD_BUILDID: ${{ github.run_id }}
+      SYSTEM_JOBATTEMPT: ${{ github.run_attempt }}
+    steps:
+      - name: El repo de operaciones
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: ops
+          persist-credentials: false
+
+      - name: Qué arnés corre (team-repos.json del repo de operaciones)
+        id: harness
+        working-directory: ops
+        env:
+          VAR_REF: ${{ vars.HARNESS_REF }}
+        run: |
+          set -euo pipefail
+          node - <<'JS'
+          const fs = require('fs');
+          const red = (m) => { console.log(`::error::${m} — no se actualiza nada`); process.exit(1); };
+          let t;
+          try { t = JSON.parse(fs.readFileSync('team-repos.json', 'utf8')); } catch (e) { red(`el repo de operaciones no trae un team-repos.json legible (${e.message})`); }
+          const p = t && t.public;
+          if (!p || p.platform !== 'github') red('team-repos.json: public tiene que ser el repo del arnés en GitHub (platform «github»)');
+          const name = /^[A-Za-z0-9._-]+$/;
+          if (!name.test(String(p.org || '')) || !name.test(String(p.repo || ''))) red('team-repos.json: public.org o public.repo no es un nombre de GitHub');
+          const ref = process.env.VAR_REF || 'main';
+          if (!/^[A-Za-z0-9._\/-]+$/.test(ref) || ref.includes('..') || /^refs\/pull\//.test(ref) || ref.startsWith('-')) red(`la referencia del arnés «${ref}» no es una rama, un tag ni un commit`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `repository=${p.org}/${p.repo}\nref=${ref}\n`);
+          console.log(`el arnés: ${p.org}/${p.repo} @ ${ref}`);
+          JS
+
+      - name: El arnés
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ steps.harness.outputs.repository }}
+          ref: ${{ steps.harness.outputs.ref }}
+          path: harness
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: bash harness/pipelines/operations/github/prepare-tree.sh
+
+      - name: Entrar a Azure con la credencial federada
+        if: vars.SITE_PLATFORM != 'render'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.SITE_UPDATE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Comparar con stable y, si corresponde, actualizar el sitio
+        working-directory: harness
+        env:
+          SITE_PLATFORM: ${{ vars.SITE_PLATFORM || 'azure' }}
+          SITE_IMAGE_NAME: ${{ vars.SITE_IMAGE_NAME }}
+          SITE_RESOURCE_GROUP: ${{ vars.SITE_RESOURCE_GROUP }}
+          SITE_APP: ${{ vars.SITE_APP }}
+          SITE_URL: ${{ vars.SITE_URL }}
+          SITE_RENDER_DEPLOY_HOOK: ${{ secrets.SITE_RENDER_DEPLOY_HOOK }}
+        run: |
+          set -uo pipefail
+          node scripts/site/deploy/update-site.js --platform "$SITE_PLATFORM" --image "$SITE_IMAGE_NAME" \
+            --resource-group "$SITE_RESOURCE_GROUP" --app "$SITE_APP" --site-url "$SITE_URL" \
+            --operations-json operations.json --state-dir .dashboard/site-update
+          rc=$?
+          [ $rc -eq 0 ] || echo "::warning::el sitio no se actualizó (ver el resultado en .dashboard/site-update)"
+          exit 0
+
+      - name: Guardar el resultado en el repo de operaciones
+        if: github.ref == 'refs/heads/main'
+        working-directory: harness
+        env:
+          OPS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . pipelines/operations/github/operations-auth.sh
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(sitio): el sitio al día $(date -u +%Y-%m-%d) [nocturno]" \
+            --require-daily '.dashboard/site-update/site-update-{day}.json' \
+            -- .dashboard/site-update 2>&1 | bash pipelines/operations/github/annotate.sh

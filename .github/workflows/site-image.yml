@@ -33,6 +33,9 @@ on:
       - 'packs/**'
       - 'LICENSE*'
       - 'NOTICE*'
+      - 'guides/sitio-de-la-organizacion.md'
+      - 'guides/sitio-de-la-organizacion.en.md'
+      - 'guides/sitio-de-la-organizacion/capturas/**'
       - '.github/workflows/site-image.yml'
 concurrency:
   group: site-image
@@ -70,9 +73,14 @@ jobs:
             echo "publicar=no" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          printf '{ "version": "%s" }\n' "$VERSION" > .tycon-release.json
+          printf '{ "version": "%s", "image": "%s" }\n' "$VERSION" "$IMAGEN" > .tycon-release.json
           echo "publicar=si" >> "$GITHUB_OUTPUT"
-          docker build -f scripts/site/Dockerfile -t "${IMAGEN}:${VERSION}" -t "${IMAGEN}:sha-${GITHUB_SHA}" .
+          # las etiquetas OCI: la versión se lee del registro sin bajar capas (latest-release.js); todo sale del contexto
+          CREADA=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          docker build -f scripts/site/Dockerfile -t "${IMAGEN}:${VERSION}" -t "${IMAGEN}:sha-${GITHUB_SHA}" \
+            --label "org.opencontainers.image.version=$VERSION" --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --label "org.opencontainers.image.created=$CREADA" \
+            --label "tycon.image=site" .
           # el escaneo, ANTES de publicar: una vulnerabilidad HIGH o CRITICAL con arreglo publicado frena todo (exit 1, nada
           # se sube); las que todavía no tienen arreglo se avisan. Trivy fijado por versión y por huella; la imagen le llega
           # como archivo, sin el socket de Docker
@@ -90,6 +98,7 @@ jobs:
           HUELLA=$(docker inspect --format '{{index .RepoDigests 0}}' "${IMAGEN}:${VERSION}" | sed 's/^.*@//')
           echo "imagen=${IMAGEN}" >> "$GITHUB_OUTPUT"
           echo "huella=${HUELLA}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "Publicada: ${IMAGEN}@${HUELLA} (etiquetas ${VERSION} y sha-${GITHUB_SHA})"
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         if: steps.imagen.outputs.publicar == 'si'
@@ -97,6 +106,36 @@ jobs:
           subject-name: ${{ steps.imagen.outputs.imagen }}
           subject-digest: ${{ steps.imagen.outputs.huella }}
           push-to-registry: true
+      # la firma recién subida se verifica antes de mover stable: una imagen sin su constancia no llega a ningún sitio
+      - name: Verificar la firma de la imagen
+        id: firma
+        if: steps.imagen.outputs.publicar == 'si'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGEN: ${{ steps.imagen.outputs.imagen }}
+          HUELLA: ${{ steps.imagen.outputs.huella }}
+        run: gh attestation verify "oci://${IMAGEN}@${HUELLA}" --repo "$GITHUB_REPOSITORY" --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/site-image.yml"
+      # stable, al final y nunca hacia atrás: apunta a la huella ya subida (sin volver a subir capas). Si falló el escaneo,
+      # la publicación, la firma o su verificación, este paso no corre y stable queda donde estaba
+      - name: Mover stable a la imagen nueva
+        if: steps.imagen.outputs.publicar == 'si' && steps.firma.outcome == 'success'
+        env:
+          IMAGEN: ${{ steps.imagen.outputs.imagen }}
+          HUELLA: ${{ steps.imagen.outputs.huella }}
+          VERSION: ${{ steps.imagen.outputs.version }}
+        run: |
+          set -euo pipefail
+          # sin poder leer stable no se mueve a ciegas: el paso falla y dice por qué
+          SALIDA=$(node scripts/site/latest-release.js stable-decision --image "$IMAGEN" --version "$VERSION") || { echo "$SALIDA"; echo "::error::stable no se movió: $(printf '%s\n' "$SALIDA" | tail -n 1)"; exit 1; }
+          echo "$SALIDA"
+          DECISION=$(printf '%s\n' "$SALIDA" | sed -n 's/^decision=//p')
+          if [ "$DECISION" = crear ] || [ "$DECISION" = mover ]; then
+            docker buildx imagetools create -t "${IMAGEN}:stable" "${IMAGEN}@${HUELLA}"
+            echo "stable → ${VERSION} (${HUELLA})" >> "$GITHUB_STEP_SUMMARY"
+          else
+            printf 'stable no se movió: %s\n' "$(printf '%s\n' "$SALIDA" | tail -n 1)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::stable no se movió: $(printf '%s\n' "$SALIDA" | tail -n 1)"
+          fi
       - name: Cerrar la sesión del registro
         if: always()
         run: docker logout ghcr.io
