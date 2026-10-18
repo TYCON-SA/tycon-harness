@@ -421,6 +421,10 @@ TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u
 # los que la story declaraba, corridos a mano. La única corrida completa salió en rojo con 13
 # fallas, dos de la propia story. Un verde parcial no puede pasar por control.
 export TYCON_TEST_GATE=1
+# El buzón apagado para cada prueba: ninguna sube al buzón real del equipo, aunque se equivoque (la llave de esta
+# máquina está en el árbol). La llave apunta a un archivo que no existe; una prueba que mide la subida pone sus propias
+# variables y su destino de prueba.
+export TYCON_MAILBOX=0 TYCON_NO_UPLOAD_RUNS=1 TYCON_MAILBOX_JSON="${TMPDIR:-/tmp}/sin-llave-del-buzon-$$/corridas-buzon.json" TYCON_SUITE_RUNNER=test-gate
 
 if [[ "$RUNNER" == "dotnet" ]]; then
   # Fix auditoría 9.4 (2026-06-11) — race bi-assembly: `dotnet test` a nivel solución
