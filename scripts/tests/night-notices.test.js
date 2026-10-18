@@ -506,7 +506,10 @@ test('T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen', () => {
   const guide = fs.readFileSync(path.join(ROOT, 'guides', 'piezas-del-arnes.md'), 'utf8');
   const i = guide.indexOf('## scripts/lib/night-data.js');
   assert.ok(i >= 0, 'guides/piezas-del-arnes.md no tiene la ficha de scripts/lib/night-data.js');
-  const section = guide.slice(i, guide.indexOf('\n## ', i + 5) < 0 ? undefined : guide.indexOf('\n## ', i + 5));
+  // la ficha corta y su detalle (guides/maintaining/piezas-en-detalle.md, mismo título) se leen juntos
+  const cut = (txt) => { const k = txt.indexOf('## scripts/lib/night-data.js'); if (k < 0) return ''; const e = txt.indexOf('\n## ', k + 5); return txt.slice(k, e < 0 ? undefined : e); };
+  const detailPath = path.join(ROOT, 'guides', 'maintaining', 'piezas-en-detalle.md');
+  const section = cut(guide) + '\n' + (fs.existsSync(detailPath) ? cut(fs.readFileSync(detailPath, 'utf8')) : '');
   assert.match(section, /Quién trae ese clon/i);
   assert.match(section, /nightly-dod-notice\.sh/);
   assert.match(section, /paths\.maintainers/);

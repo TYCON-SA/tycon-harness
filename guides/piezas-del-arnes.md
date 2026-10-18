@@ -1,33 +1,9 @@
-# Las piezas del arnés, en detalle
+# Las piezas del arnés
 
-Este archivo es el **detalle** de cada pieza del arnés: qué hace, por qué existe, cómo se
-midió y con qué red de pruebas entró. Es **lectura a demanda** — no se importa en ninguna sesión.
-
-**Este archivo es también el índice de las piezas** (desde 2026-09-19): el índice de guías, [INDEX.md](../INDEX.md)
-(hasta 2026-10-14, el README), se importa entero en cada sesión y en cada subagente —la línea `@…/INDEX.md` vive en el
-`~/.claude/CLAUDE.md` personal de cada dev, así que viaja a todos los repos— y ya no lista las piezas:
-su sección «Qué contiene» apunta acá. Las piezas se buscan con los títulos `## <nombre>` de este
-archivo. El índice conserva lo que se usa en cada sesión (la tabla «Cuándo leer cada guía», las reglas
-siempre activas y los comandos del día a día) y tiene **techo medido** en
-`claude-md-blocks/budget.json` (sección `imported`).
-
-**Para agregar una pieza**: una sección `## <nombre>` en este archivo, con la línea en cursiva de las
-rutas que la componen, y —si cambia cuándo hay que leer algo— una fila en la tabla «Cuándo leer cada
-guía» del índice (`INDEX.md`). Un enlace del índice a una sección que no existe sigue frenando el commit.
-
-**Por qué el índice salió del README**: medido en laboratorio,
-el hilo principal de cada corrida relee el piso en cada respuesta, y el índice de 110 líneas era la
-mitad del README. `scripts/tests/readme-index.test.js` verifica que cada ruta que el índice nombraba
-siga nombrada acá.
-
-**Por qué se partió en dos** (2026-09-17): el README había crecido ×10 en cuatro meses
-—105 fichas, 211 KB, el 90 % del archivo— contra la regla escrita en `INSTALL.md` («el README es el
-índice operativo», «agregar **una línea**»). Medido: ~76 mil tokens, el **61 %** del piso de ~125 mil
-con el que arrancaba un revisor **antes de leer un archivo**, y ningún revisor lo usaba (ninguno de
-los 16 `agents/tycon-*.md` lo cita; 2 de 154 transcripciones lo abrieron). Las 105 fichas se mudaron
-acá **textuales**, sin perder una palabra.
-
----
+Cada ficha dice, en pocas líneas, **qué es** la pieza, **por qué existe**, **quién la usa** y **dónde se prueba**,
+con su guía si la tiene. Los títulos `## <ruta>` son las piezas: se buscan por nombre.
+El detalle de cada pieza (cómo se calibra, qué mide, su red de pruebas) está en
+[la guía de detalle](maintaining/piezas-en-detalle.md), bajo el mismo título; el porqué de cada línea, en la cabecera del código.
 
 ## Dónde vive cada cosa
 
@@ -83,514 +59,701 @@ nueva, hasta que se retire.
 
 ## guides/piezas-del-arnes.md
 
-Este archivo. Nace el 2026-09-17: el README se importa ENTERO en cada sesión y en cada
-subagente —la línea `@…/README.md` vive en el `~/.claude/CLAUDE.md` personal de cada dev, así que viaja
-a todos los repos— y había crecido a 235.771 bytes, de los que **211.378 (el 90 %)** eran las fichas de
-las piezas. Medido: **~76 mil tokens, el 61 % del piso de ~125 mil** con el que arrancaba un revisor
-antes de leer un archivo, y **ningún revisor lo usaba** (ninguno de los 16 `agents/tycon-*.md` lo cita;
-2 de 154 transcripciones lo abrieron). Las 105 fichas se mudaron acá **textuales** y el README quedó
-como índice: 235.771 → 57.195 bytes, y el A/B con `claude -p` midió **18.948 tokens** contra ~76.000.
-El par índice↔guía lo sostiene el pre-commit: techo en bytes y tope por entrada en
-`claude-md-blocks/budget.json` → `imported`, y las anclas exigidas en las dos direcciones.
+**Qué es:** El índice de las fichas largas de cada pieza del arnés, con el detalle de cada una.
+
+**Por qué existe:** El README se importa entero en cada sesión y en cada revisor; con las fichas adentro era enorme, y casi nadie las usaba. Acá viven completas y el README quedó como índice.
+
+**Quién la usa:** Quien busca el detalle de una pieza; el pre-commit sostiene el par índice y guía con `claude-md-blocks/budget.json`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidespiezas-del-arnesmd)
 
 ## guides/que-hace-el-arnes.md
 
-🧭 **Empezá por acá si querés
-  entender o EXPLICAR el arnés entero.** Este README lista **piezas**, ordenadas por archivo: sirve
-  para buscar, no para contar. Ese documento es el **recorrido** — qué se activa en cada momento de
-  un día de trabajo (abrís la sesión → escribís un prompt → pedís una story → tocás código → tests →
-  commit → merge → cierre → lo que corre sin vos), qué te evita cada cosa, y **por qué
-  existe**, uno por momento. Arranca antes del arnés propiamente dicho, en la spec, porque sin
-  ella no habría contra qué verificar. Trae los tres principios que explican cada pieza, la
-  "escalera" de quién vigila a los vigilantes, un glosario, y **tres guiones listos para decir en voz
-  alta** (30 segundos, 3 minutos, 15 minutos). Por qué: sin el recorrido escrito, ni quien mantiene el
-  arnés podía explicar en detalle qué hace.
+**Qué es:** El recorrido del arnés entero: qué se activa en cada momento de un día de trabajo y por qué existe.
+
+**Por qué existe:** El README lista piezas ordenadas por archivo y sirve para buscar, no para contar. Sin el recorrido escrito, nadie podía explicar el arnés en detalle.
+
+**Quién la usa:** Quien quiere entender o explicar el arnés; trae tres guiones listos para decir en voz alta.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesque-hace-el-arnesmd)
 
 ## artifacts/mapa-arnes.html
 
-**El mapa del arnés en bloques** (interno, 2026-09-15): de dónde entra el trabajo, las siete etapas en orden, quién vigila a los controles, la spec como piso, lo que corre sin el dev y la vuelta que convierte cada incidente en regla. Cada caja lleva su nombre, la pregunta que contesta y cómo se llama en el código, y las que tienen orden lo muestran. Un censo (en la suite nocturna) exige que toda pieza del arnés —hooks, scripts de CI, pipelines, skills— esté citada en alguna ficha o declarada en `fuera-del-mapa.json` con su motivo: el día que se armó, las fichas citaban 82 de 189. Cada ficha lleva además su **tipo** (revisor, skill, control de sesión, guía, bloque, comando, pipeline, script, especificación, configuración o externo), que no se tipea: lo deriva y lo escribe el mismo censo a partir de la ruta de su primer archivo, y el pre-commit frena un tipo distinto del derivado o una ruta sin regla. Abre una ficha con qué pasaría sin ella, por qué está, qué modelo usa, dónde corre (máquina de cada dev, máquina del admin del arnés o Azure DevOps), cuándo, y en qué repo y archivo vive. Tiene una **versión pública** en la mini-clase ([verla](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html)) que **no se edita a mano**: se genera sin horarios ni detalles de la máquina del admin (los repos, las rutas y los nombres en el código sí van), y el pre-commit la regenera cuando cambia la interna. Si la interna cambia un texto que en la pública está reescrito, o algo interno se filtraría, el commit frena y dice qué.
+**Qué es:** El mapa visual del arnés en bloques: entrada del trabajo, etapas en orden, quién vigila a los controles y lo que corre sin el dev. Tiene una versión pública que se genera sola.
+
+**Por qué existe:** Un censo exige que toda pieza esté citada en una ficha o declarada en `fuera-del-mapa.json` con su motivo, así el mapa no se desactualiza.
+
+**Quién la usa:** Quien necesita ver dónde corre y en qué archivo vive un componente; el pre-commit regenera la versión pública.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#artifactsmapa-arneshtml)
 
 ## story-format.md
 
-Formato Mary+GOLD para escribir stories implementables sin ambigüedad. Incluye §1.1 (`pipelines:` para entregas en tandas) y §1.2 (back-links bidireccionales `followup_of:` / `followed_up_by:` para trazar follow-ups que modifican stories firmadas — patrón Ceibo Sprint 3, ver §11 para tabla derivada opcional)
+**Qué es:** El formato Mary+GOLD para escribir stories implementables sin ambigüedad, con entregas en tandas y vínculos entre stories de seguimiento.
+
+**Por qué existe:** Una story ambigua se implementa mal. El formato fija qué lleva y cómo se enlazan las que corrigen a otra.
+
+**Quién la usa:** Quien crea, valida o implementa stories.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#story-formatmd)
 
 ## guides/integrations/engram-workflow.md
 
-Setup, regla del `project name`, ciclo de sesión con engram
+**Qué es:** La guía de setup, la regla del nombre de proyecto y el ciclo de sesión con la memoria persistente engram.
+
+**Por qué existe:** La memoria sólo sirve si se guarda con el proyecto correcto y en el momento justo.
+
+**Quién la usa:** Quien usa engram, si la integración está prendida.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsengram-workflowmd)
 
 ## guides/git-commit-conventions.md
 
-NO COMMIT sin consentimiento, formato HEREDOC, Co-Authored-By, `/tycon-merge-to-main`
+**Qué es:** La guía de commits: no se commitea sin consentimiento, formato HEREDOC, línea Co-Authored-By y `/tycon-merge-to-main`.
+
+**Por qué existe:** Un commit sin permiso o mal armado ensucia la historia compartida.
+
+**Quién la usa:** Quien hace commit, push o merge, persona o agente.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesgit-commit-conventionsmd)
 
 ## guides/workflow-orchestration.md
 
-6 reglas de workflow, principios fundamentales, estructura `tasks/`, integración BMAD+advisors
+**Qué es:** La guía de las seis reglas de workflow, los principios, la estructura de `tasks/` y la integración de BMAD con los revisores.
+
+**Por qué existe:** Un cambio no trivial sin plan se desvía; la guía fija cómo planificar y registrar.
+
+**Quién la usa:** Quien planifica cambios no triviales.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesworkflow-orchestrationmd)
 
 ## packs/bizuit/guides/bizuit-plugin-dotnet.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) Stack .NET para plugins Bizuit: IBackendPlugin, SafeQueryBuilder, transacciones, orquestador
+**Qué es:** La guía del stack .NET para plugins Bizuit: `IBackendPlugin`, `SafeQueryBuilder`, transacciones y orquestador. Es del paquete bizuit, que viaja con el perfil del equipo.
+
+**Por qué existe:** Fija las convenciones del backend de plugins para que todos escriban igual.
+
+**Quién la usa:** Quien escribe o revisa backend .NET de plugins Bizuit.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-plugin-react.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) Stack React/TS para plugins Bizuit frontend: Tailwind prod limitations, inputs text-gray-900, modales patrón fijo, iconos, SDK auth Bearer, testing vitest
+**Qué es:** La guía del stack React/TS para plugins Bizuit: límites de Tailwind en producción, inputs `text-gray-900`, patrón fijo de modales, iconos, autenticación Bearer del SDK y pruebas con vitest. Es del paquete bizuit.
+
+**Por qué existe:** Fija las convenciones del frontend de plugins para que todos escriban igual.
+
+**Quién la usa:** Quien escribe o revisa frontend React de plugins Bizuit.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-plugin-nextjs.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) Stack Next.js (App Router) para plugins Bizuit frontend: Server vs Client boundary, data fetching, metadata API, Server Actions con validación, env vars scope, Route Handlers, hydration safety
+**Qué es:** La guía del stack Next.js (App Router) para plugins Bizuit: frontera servidor/cliente, carga de datos, API de metadata, Server Actions con validación, variables de entorno, Route Handlers y seguridad de hidratación. Es del paquete bizuit.
+
+**Por qué existe:** Fija las convenciones de Next.js para que todos escriban igual.
+
+**Quién la usa:** Quien escribe o revisa frontend Next.js de plugins Bizuit.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## packs/bizuit/guides/bizuit-bpmn-spec-contract.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) El contrato de las specs de proceso BPMN de BIZUIT: se escriben con la tool del producto (`write_spec`), no con el editor de archivos. El formato NO se copia acá a propósito (vive en `mcp/skill/templates/`), y no hace falta conocerlo: el control rechaza con el motivo y el agente corrige. Lo que la guía sí deja escrito es por qué escribir el archivo directo es **peor que escribirlo mal** — un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». La regla: **un control que hay que acordarse de invocar es un control que no corre**.
+**Qué es:** La guía del contrato de las specs de proceso BPMN de BIZUIT: se escriben con la herramienta del producto (`write_spec`), no con el editor de archivos. Es del paquete bizuit.
+
+**Por qué existe:** Escribir el archivo directo es peor que escribirlo mal: un documento sin tabla de reglas no da error, da silencio, y «0 hallazgos» se lee como «salió limpio». Un control que hay que acordarse de invocar no corre.
+
+**Quién la usa:** Quien escribe o revisa la spec de un proceso BPMN.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## guides/agent-architecture.md
 
-Arquitectura de advisors TYCON (wrappers sobre BMAD) con pipeline HITL, severity levels, shadow mode, dashboard
+**Qué es:** La guía de la arquitectura de revisores TYCON: envoltorios sobre BMAD con pipeline con humano en el circuito, niveles de severidad, modo sombra y tablero.
+
+**Por qué existe:** Sin una arquitectura común, cada revisor se define a su manera.
+
+**Quién la usa:** Quien invoca revisores o integra BMAD.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesagent-architecturemd)
 
 ## packs/ (agent-skills) — paquetes de revisores
 
-*`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»*
+_`packs/<paquete>/pack.json` (en el perfil del equipo) · `skills/tycon-pipeline/scripts/lib/packs.js` · `pipeline.js validators` · `scripts/lib/installed-packs.js` (arnés) · `guides/agent-architecture.md` §«Paquetes de revisores»_
 
-**Los revisores de un producto o de un cliente salen del código del pipeline a manifiestos**
-(2026-09-26). Hasta ese día `pipeline.js` tenía escritos a mano, en cuatro tablas y en la prosa del paso 1,
-a los tres revisores de convenciones de plugins Bizuit, al de plugins hermanos y al del adaptador de comercio electrónico de un cliente. Para publicar
-el núcleo había que sacarlos, y sacarlos a mano tiene el modo de falla
-más silencioso del arnés: un revisor que deja de correr no da error, da MENOS hallazgos. Ahora viven en dos
-paquetes de agent-skills —`bizuit` (público) y `clientes` (privado)—, cada uno un `pack.json` con
-vocabulario **cerrado** (`when`: `all`/`any`/`no`/`detection`/`files`/`added`) que dice en
-qué grupo entra cada revisor, con qué condición, qué superficie mira en las vueltas y con qué profundidad
-de modelo. **Lo que frena** (exit 2 con archivo · revisor · motivo): manifiesto ilegible, clave o bandera
-fuera del vocabulario, agente sin `.md`, revisor repetido, paquete nombrado en `packs:` del repo y no
-instalado. Nunca degrada a «sin ese paquete». **Lo que se ve**: la salida de `advisors` lleva `packs`, y
-`packs: []` se anuncia («sin paquetes instalados, corre sólo el núcleo»): que el equipo corra sin su
-paquete se ve en la primera corrida, no al mes. Los revisores de validación del paso 1 salen de
-`pipeline.js validators`. Del lado del arnés, `harness-audit.js` e `instinct-draft.js` leen los
-manifiestos con un lector liviano en vez de una lista escrita. **Medido, no supuesto**: el pipeline de
-`main` anterior al cambio (por `git archive`) y el nuevo con los paquetes dan el mismo set por grupo, la
-misma superficie de vuelta y las mismas indicaciones de modelo sobre 21 casos armados y los últimos 30
-commits de cada repo de la máquina; el banco de controles
-de los cinco revisores se re-corrió igual. Red: `tycon-pipeline/scripts/tests/packs.test.js`,
-`package-equivalence.test.js` (contra la foto dorada de `main`, `tests/fixtures/equivalence-main.json`)
-y `scripts/tests/installed-packs.test.js`.
+**Qué es:** Los paquetes de revisores: los de un producto o cliente viven en manifiestos `pack.json` con vocabulario cerrado, no en el código del pipeline.
+
+**Por qué existe:** Un revisor que deja de correr no da error, da menos hallazgos. Un manifiesto malo frena con motivo y nunca degrada a «sin ese paquete».
+
+**Quién la usa:** `pipeline.js` (`advisors`, `validators`), `harness-audit.js` e `instinct-draft.js`.
+
+**Dónde se prueba:** `tycon-pipeline/scripts/tests/packs.test.js`, `package-equivalence.test.js`, `scripts/tests/installed-packs.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#packs-agent-skills--paquetes-de-revisores)
 
 ## scripts/lib/tycon-config.js + team-profile.json — la configuración del arnés
 
-*`scripts/lib/tycon-config.js` · el perfil del equipo · `~/.claude/tycon.json` · el enlace `~/.claude/tycon-harness`
-(`scripts/lib/canonical-path.js --ensure-link`) · agent-skills `skills/tycon-pipeline/scripts/lib/harness-path.js` ·
-`scripts/lib/repos-root.js` · `scripts/lib/harness-repo.js` · `scripts/publishing/profile-equivalence.js` · INSTALL.md §4b*
+_`scripts/lib/tycon-config.js` · el perfil del equipo · `~/.claude/tycon.json` · el enlace `~/.claude/tycon-harness` (`scripts/lib/canonical-path.js --ensure-link`) · agent-skills `skills/tycon-pipeline/scripts/lib/harness-path.js` · `scripts/lib/repos-root.js` · `scripts/lib/harness-repo.js` · `scripts/publishing/profile-equivalence.js` · INSTALL.md §4b_
 
-**Nada de la máquina ni de la organización vive en el código, y cada integración nace apagada**
-(2026-09-26). Por qué: con esos valores fijos el arnés no se instalaba
-fuera de TYCON. Medido: la carpeta del clon (`~/SourceCode/…`) en 38 + 44 archivos, la organización de Azure DevOps en
-siete, el chat de Telegram de una persona en uno, y un instalador que registraba los hooks de Clockify y de engram
-siempre, refrescaba la lista de proyectos con `az` con sólo tenerlo instalado y subía corridas al buzón con sólo
-encontrar la llave. Afuera eso son hooks que llaman a herramientas que no existen y avisos que dicen «0» sin haber
-mirado. **Una sola cadena** para todo valor: variable de entorno › `~/.claude/tycon.json` (la máquina) ›
-el perfil del equipo (versionado, sólo valores del equipo: lo personal lo invalida con el motivo) ›
-apagado. `explicar` muestra cada valor con su origen. **El arnés se nombra por el enlace** `~/.claude/tycon-harness`,
-que el instalador crea y repara (nunca mueve uno que apunta a otro clon válido: sólo `--link`): un prompt no puede
-leer una variable, pero sí una ruta estable. **Lo que frena** (exit 2 con archivo · clave · motivo): un archivo ilegible,
-una clave fuera del vocabulario, un tipo equivocado — nunca se lee como «todo apagado», que es justo la falla que
-dejaría al equipo sin integraciones sin enterarse; un hook lo dice en cada corrida, sale 0 y no hace su parte (un
-`PreToolUse` que sale 2 deja la sesión sin Bash). **Lo que se ve**: apagada, cada comando termina bien y dice en una
-línea qué integración falta y cómo se prende («PR abiertos: Azure DevOps apagado en esta máquina», nunca «PR abiertos:
-0»); el instalador resume las ocho al final. **Medido, no supuesto**: `profile-equivalence.js` compara el código de
-`main` anterior al cambio (por `git archive`) con el nuevo con el perfil del equipo —los hooks que registra el
-instalador por nombre, la raíz de repos, la ruta canónica, qué repos son del arnés, la organización, el chat y el
-estado de las ocho integraciones por sondas mecánicas— y una sola diferencia es rojo.
-Criterio: para el equipo no cambia nada y no hay
-más espera; afuera nada reclama, lo no configurado queda apagado. Red: `scripts/tests/tycon-config.test.js`,
-`no-hardcoded-paths.test.js` (el enlace, el barrido de rutas fijas en los dos repos, la equivalencia),
-`integrations-off.test.sh` (las ocho apagadas sin llamar a nada; cada comando lo dice),
-`config-shell-consumers.test.sh`, `suites-coverage.test.js` (cada suite declara `requiere`) y, a mano,
-`portable-suites.test.sh` (las portables en una HOME vacía sin `az`/`engram`/`codegraph`/`codex`/`claude`);
-en agent-skills, `harness-path.test.js`.
+**Qué es:** La configuración del arnés en una cadena: entorno, `~/.claude/tycon.json`, perfil del equipo, apagado.
+
+**Por qué existe:** Con valores fijos de máquina y organización, el arnés no se instalaba afuera. Un archivo ilegible frena con motivo y no se lee como «todo apagado».
+
+**Quién la usa:** Los hooks, el instalador y los comandos del arnés.
+
+**Dónde se prueba:** `scripts/tests/tycon-config.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibtycon-configjs--team-profilejson--la-configuración-del-arnés)
 
 ## guides/reglas-para-revisores.md
 
-**Las reglas del repo que el revisor verifica** (2026-09-19). Cada repo de producto declara sus reglas de revisión en la sección `## Reglas para revisores` de su `CLAUDE.md`; `pipeline.js` la recorta (`lib/reviewer-rules.js` de tycon-pipeline) y la pega **al principio del contexto de cada revisor** —el compartido y el del validador— como «reglas a verificar», y `pipeline.js advisors` informa `reglas_revisores.estado` para que el orquestador avise en una línea cuando el repo no la tiene. Los 26 revisores del paso 5 declaran `omitClaudeMd: true` y ya no cargan el `CLAUDE.md` global ni el del repo; los 5 con `Bash` traen sus «Límites de ejecución» en su definición (antes les llegaban sólo por el `CLAUDE.md` global). Quedan sin el campo, a propósito y por nombre en su test, `tycon-retrospective-capturer` y `tycon-dod-runtime-checker`. **Por qué**: con el `CLAUDE.md` entero el revisor VE la regla pero no la controla —10 de 20 violaciones plantadas— y con la sección pegada detecta 17 de 20 con la mitad de tokens. **El aviso al commitear** (`scripts/ci/reviewer-rules.js`, desde el pre-commit global): una línea nueva del `CLAUDE.md` fuera de la sección se avisa —con `TYPESAFE_API_KEY` filtrada por TypeSafe y tachada antes de salir; sin llave, toda— y **nunca frena**. En Codex no hay `omitClaudeMd`: la sección en el contexto sí llega (`codex-divergence-inventory.md`). Red: `tycon-pipeline/scripts/tests/reviewer-rules.test.js` + `scripts/tests/reviewer-rules.test.sh` + caso C-12 de `githook-livefire.test.sh`.
+**Qué es:** La sección `## Reglas para revisores` del `CLAUDE.md` de cada repo, que `pipeline.js` recorta y pega al principio del contexto de cada revisor.
+
+**Por qué existe:** Con el `CLAUDE.md` entero el revisor ve la regla pero no la controla; con sólo la sección la detecta mucho mejor y gasta menos.
+
+**Quién la usa:** `pipeline.js advisors` y los revisores del paso 5; el pre-commit avisa (sin frenar) de líneas nuevas fuera de la sección con `scripts/ci/reviewer-rules.js`.
+
+**Dónde se prueba:** `tycon-pipeline/scripts/tests/reviewer-rules.test.js`, `scripts/tests/reviewer-rules.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesreglas-para-revisoresmd)
 
 ## guides/maintaining/bmad-contract.md
 
-Contrato de inputs/outputs entre advisors TYCON y skills BMAD. Mapa para detectar breaking changes al upgradear BMAD
+**Qué es:** El contrato de entradas y salidas entre los revisores TYCON y las skills BMAD.
+
+**Por qué existe:** Al actualizar BMAD hace falta un mapa para detectar cambios que rompen a los revisores.
+
+**Quién la usa:** Quien actualiza BMAD.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingbmad-contractmd)
 
 ## guides/advisor-rules-catalog.md
 
-Catálogo maestro de reglas de advisors con IDs estables (`SEC-C1`, `DOTNET-W3`, `TEST-C2`, `SIGNALR-C1`, `MIGRATION-C1`, etc.). Cada finding de los advisors cita su rule ID
+**Qué es:** El catálogo maestro de reglas de revisores, con identificadores estables (por ejemplo `SEC-C1`, `DOTNET-W3`).
+
+**Por qué existe:** Cada hallazgo cita su identificador, así se puede explicar, agregar o retirar una regla.
+
+**Quién la usa:** Los revisores y quien quiere saber por qué uno reportó algo.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesadvisor-rules-catalogmd)
 
 ## guides/maintaining/incident-log.md
 
-Memoria institucional del harness: el incidente concreto que motivó cada regla/hook/advisor (la "cerca de Chesterton"). Vive en el repo del equipo y no se publica: las guías que se publican dicen la regla y su porqué; el caso queda en el registro, que anota qué guía y qué sección lo citaba — consultar ANTES de retirar o relajar una regla
+**Qué es:** El registro de incidentes del arnés: el caso concreto que motivó cada regla, hook o revisor. No se publica.
+
+**Por qué existe:** Las guías publicadas dicen la regla y su porqué; el caso queda acá, con la guía y la sección que lo citaban.
+
+**Quién la usa:** Quien va a retirar o relajar una regla, antes de hacerlo.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingincident-logmd)
 
 ## guides/accov-governance-protocol.md
 
-Protocolo de CIERRE de story (ACCOV-C7..C10: self-audit, meta-audit, convergencia, checklist-manual prohibido). Extraído del advisor ac-coverage 2026-06-09; lo lee el orquestador (step-07c/step-08) on-demand al transicionar a `review`/`done`
+**Qué es:** El protocolo de cierre de story (`ACCOV-C7` a `ACCOV-C10`): autoauditoría, meta-auditoría, convergencia y prohibición del checklist manual.
+
+**Por qué existe:** Cerrar una story sin verificar cada criterio deja huecos invisibles.
+
+**Quién la usa:** El orquestador del pipeline, al pasar una story a `review` o `done`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesaccov-governance-protocolmd)
 
 ## guides/guide-update-proposals.md
 
-Inbox de propuestas de cambio a guías/catálogo generadas por `tycon-retrospective-capturer`. Cada entrada requiere OK del dev antes de aplicarse; al aplicar se marca `✅ IMPLEMENTADO` (no se borra — es el rastro)
+**Qué es:** El buzón de propuestas de cambio a guías y catálogo que genera `tycon-retrospective-capturer`.
+
+**Por qué existe:** Ningún cambio a una guía se aplica sin OK del dev; al aplicarlo se marca como implementado y no se borra, para dejar rastro.
+
+**Quién la usa:** El dev que revisa y aprueba propuestas.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesguide-update-proposalsmd)
 
 ## packs/bizuit/guides/dotnet-hooks.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) Bloque copy-pasteable de hooks `.claude/settings.json` para proyectos .NET TYCON: bloqueo de migraciones SQL ya commiteadas + `dotnet format` automático sobre `.cs`
+**Qué es:** Un bloque de hooks de `.claude/settings.json` para proyectos .NET TYCON: bloquea migraciones SQL ya commiteadas y corre `dotnet format` sobre los `.cs`. Es del paquete bizuit.
+
+**Por qué existe:** Una migración ya commiteada no se debe editar, y el formato debe ser parejo.
+
+**Quién la usa:** Quien configura un proyecto .NET TYCON (se copia y pega).
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## guides/definition-of-done.md
 
-Gate obligatorio antes de pasar una story de `review` → `done`: smoke check runtime de endpoints (curl real contra DevHost), E2E con env var fail-loud (anti `skip-on-not-ok`), verificación cruzada de dependencias. **Build verde NO alcanza.**
+**Qué es:** La guía de la definición de terminado: el portón obligatorio para pasar una story de `review` a `done`, con humo de endpoints reales, E2E que falla fuerte y verificación cruzada.
+
+**Por qué existe:** Que el build esté verde no alcanza para saber que la feature anda.
+
+**Quién la usa:** Quien cierra una story.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesdefinition-of-donemd)
 
 ## guides/test-execution-discipline.md
 
-Cómo correr tests sin fundir la máquina del dev: solo el archivo tocado durante la iteración, suite completa en el portón de `/tycon-merge-to-main`, cuando el dev la pide o una vez al cierre del Step 4 del pipeline (nunca 2x seguidas, nunca en paralelo con un fan-out de subagentes), y el fix técnico durable (cap `maxWorkers: '50%'` en `vitest.config`). Por qué: `npm test` de la suite completa en 8-core/16GB congela la máquina (swap thrash; medido: collect 822s).
+**Qué es:** La guía de cómo correr tests sin congelar la máquina: sólo el archivo tocado al iterar, la suite completa en el portón del merge, y el tope `maxWorkers: '50%'` en `vitest.config`.
+
+**Por qué existe:** La suite completa en una máquina chica la deja sin memoria y congela al dev.
+
+**Quién la usa:** Cualquiera que corra tests, persona o agente.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidestest-execution-disciplinemd)
 
 ## guides/git-worktrees.md
 
-*(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)*
+_(guides/git-worktrees.md + scripts/tools/tycon-worktree.sh)_
 
-Git worktrees en el harness: análisis de factibilidad (2026-08-03) + convención de adopción. Se adoptan para 3 casos: (a) **2 pipelines de stories distintas en paralelo en el mismo repo** — un worktree por story (compartir working tree contamina cruzado el `git diff HEAD` que arma el set de advisors, y pisa `.advisors/tests-result.json`); (b) **`/tycon-merge-to-main` sin congelar el working tree del dev** — worktree persistente `<Repo>--merge` que conserva `node_modules`/`bin`/`obj` entre merges (opción (c) del Step 0 del skill); (c) **fan-outs con agentes que escriben en paralelo** — `isolation: 'worktree'`. NO se adoptan como default de cada run (costo `npm install`/restore + sin codegraph) ni para advisors (read-only). Naming obligatorio `<RepoName>--wt-<slug>` (clocki matchea proyecto por basename del cwd). La regla de recursos suma ENTRE worktrees: full suite en uno a la vez, 2do pipeline con `TYCON_5B_EARLY=0`, gates runtime (:5001) no simultáneos. Prohibido worktree-ar `agent-skills`/el arnés (safety-guard matchea path literal; SessionStart pullea solo la ruta fija).
+**Qué es:** La guía de git worktrees: un worktree por story en paralelo, un worktree de merge persistente y aislamiento de agentes que escriben en paralelo. Nombre obligatorio `<RepoName>--wt-<slug>`.
+
+**Por qué existe:** Compartir un árbol de trabajo contamina el diff de los revisores y pisa resultados; el worktree evita congelar el árbol del dev.
+
+**Quién la usa:** Quien corre dos pipelines en el mismo repo o mergea sin congelar su árbol.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesgit-worktreesmd)
 
 ## scripts/lib/tycon-telegram-notify.sh
 
-Avisar por Telegram desde **cualquiera** de las dos herramientas (Claude Code y Codex), sin depender del plugin. Se invoca y termina: `tycon-telegram-notify.sh "texto"` imprime el `message_id`, y `--edit <id> "texto"` reescribe ese mismo aviso — que es lo que sostiene la regla de **un aviso por tanda** en tareas largas, en vez de una catarata de mensajes. 🔴 **Es solo SALIDA a propósito, no por limitación**: recibir mensajes exige long-polling, cada update lo toma UN solo consumidor, y un segundo consumidor del mismo bot le devuelve `409 Conflict` al otro. Un canal de entrada "para Codex" rompería el de Claude, que hoy anda. Token y destinatario salen del mismo `~/.claude/channels/telegram/` que ya usa el plugin (nada se hardcodea, nada se commitea); sin config **no falla en silencio**: sale 3 y lo dice, porque un aviso perdido sin enterarse es peor que ninguno. Red: `scripts/tests/telegram-notify.test.sh` (13 casos, ninguno toca la red; dos verifican que el token no se filtre por la salida ni por los errores). Cierra la mitad saliente de la asimetría ③ del inventario de la migración Codex.
+**Qué es:** Un guion que avisa por Telegram desde Claude Code o Codex: imprime el `message_id`, y `--edit <id>` reescribe el mismo aviso.
+
+**Por qué existe:** Permite un aviso por tanda en vez de una catarata. Es sólo de salida a propósito: un segundo consumidor de entrada le rompería el canal al otro. Sin configuración sale con código 3 y lo dice.
+
+**Quién la usa:** Cualquier sesión o proceso del arnés que deba avisar.
+
+**Dónde se prueba:** `scripts/tests/telegram-notify.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibtycon-telegram-notifysh)
 
 ## scripts/ci/release-notes.sh
 
-El **canónico** de las notas de versión que lee el administrador que instala un plugin. Por qué uno solo: copiado en cada repo (eran 8), nada mantiene iguales las copias, y a la que le falta un filtro (`^Merged PR`) le publica *"Merged PR <id>: …"* a quien instala el plugin. 🔴 **La medición que destrabó la unificación**: las 8 copias tenían **78 líneas de código exactas** y diferían entre **0 y 4** dentro de cada variante; la única diferencia real entre "plugin" y "formulario" son **6 líneas** —a qué dirección del host le pregunta qué versión está publicada—, y eso lo resuelve **una bandera** (`--type plugin|formulario`, con `plugin` por default para que las invocaciones que ya existen no se toquen). Las otras tres diferencias se unifican **sumando**, sin decidir nada: los patrones de ruido de más son inofensivos y el mensaje de error se escribe genérico. Red: `scripts/tests/release-notes.test.sh` (14 casos; dos documentan una conducta no obvia — un marcador de build **en el medio** corta la lista ahí, porque lo anterior ya se publicó y no puede volver a anunciarse).
+**Qué es:** El `release-notes.sh` canónico: arma las notas de versión que lee el administrador que instala un plugin. La bandera `--type plugin|formulario` elige el caso.
+
+**Por qué existe:** Copiado en cada repo, nada mantiene iguales las copias, y a la que le falta un filtro le publica «Merged PR…» al administrador.
+
+**Quién la usa:** Los pipelines de los productos.
+
+**Dónde se prueba:** `scripts/tests/release-notes.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirelease-notessh)
 
 ## scripts/ci/recompute-zip-notes.sh
 
-El paso de DESPLIEGUE de los formularios: por cada ZIP le pregunta al host qué versión de ESE formulario está publicada y reescribe la nota adentro del paquete para que conteste *"qué cambia respecto de lo instalado"* — no respecto del build anterior, que puede no haberse publicado nunca. Canónico único desde el 2026-08-31, mismo día que `release-notes.sh`. 🔴 **Por qué sale 3 cuando no pudo**: si no encuentra a `release-notes.sh` en el artefacto plano `arnes-ci/`, o lo llama sin `--type form` (pregunta por plugins), y **sale 0**, un formulario con cambios se publica con *"Sin cambios desde el build anterior"*, en verde. Resuelve al hermano en **su misma carpeta**, pasa la bandera, y **sale 3 cuando no pudo** —falta el hermano, faltan credenciales, o una nota quedó contra el build anterior— para que el paso quede naranja y no verde (los 5 pipelines que lo llaman tienen `continueOnError: true`, verificado). Red: `scripts/tests/recompute-zip-notes.test.sh` (12 casos sobre el layout plano del artefacto; el caso 6 reproduce esa falla).
+**Qué es:** El paso de despliegue de formularios: por cada ZIP pregunta al host qué versión está publicada y reescribe la nota adentro del paquete.
+
+**Por qué existe:** La nota debe decir qué cambia respecto de lo instalado, no del build anterior. Sale con código 3 cuando no pudo, para que el paso quede naranja y no verde.
+
+**Quién la usa:** Los pipelines de formularios de los productos.
+
+**Dónde se prueba:** `scripts/tests/recompute-zip-notes.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirecompute-zip-notessh)
 
 ## scripts/tools/release-notes-parity.js
 
-Las notas de versión de cada plugin las arma un `release-notes.sh` que está **copiado en 8 repos**, y nada las mantiene iguales. Por qué: una copia que queda **sin filtrar `^Merged PR`** le anuncia *"Merged PR <id>: …"* al administrador que instala el plugin, y un filtro escrito ANTES de un cambio de flujo nadie lo vuelve a mirar. 🔴 **No compara texto, compara COMPORTAMIENTO**: comparar byte a byte no sirve —las copias difieren legítimamente (la variante de formularios tiene lógica propia) y difieren en comentarios—, así que extrae el filtro de ruido de cada copia y le pasa un corpus fijo de mensajes de commit **por `grep -E`, el motor real, no una reimplementación en otro lenguaje**. Y juzga contra lo **esperado**, no contra la mayoría: siete copias mal y una bien se darían a sí mismas por buenas. Distingue las dos fallas —*deja pasar ruido a la nota* y *🔴 borra un cambio real de la nota*—, porque la segunda es peor y se ve igual. Una copia que no se puede leer **falla**: ilegible no es aprobado. Red: `scripts/tests/release-notes-parity.test.sh` (10 casos; dos prueban que sabe ponerse **rojo** reproduciendo esa falla, y otro que una raíz inexistente pasada a mano no se lee como "todo bien"). Corre en la suite diaria desde `install-tycon-hooks.sh`.
+**Qué es:** Un control que compara el comportamiento del filtro de ruido de cada copia de `release-notes.sh` contra un corpus fijo de mensajes de commit.
+
+**Por qué existe:** Una copia sin filtrar deja pasar ruido a la nota, o peor, borra un cambio real. Juzga contra lo esperado, no contra la mayoría, y una copia ilegible falla.
+
+**Quién la usa:** La suite diaria, que lanza `install-tycon-hooks.sh`.
+
+**Dónde se prueba:** `scripts/tests/release-notes-parity.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolsrelease-notes-parityjs)
 
 ## scripts/ci/publish-bump.sh
 
-El paso que **commitea y publica el bump de versión de los formularios**, en UN guion para los cinco productos (2026-09-06). Nace de leer los cinco `azure-pipelines.yml`: cuando dos construcciones terminan cerca, la segunda encuentra `main` movido y su push rebota, y cada producto lo resolvía distinto y ninguno bien (rebase pelado que muere con el árbol sucio que deja el build). Conserva la marca `Commit: <sha>` que `forms-to-version.sh` lee como base y la deja también cuando no hay cambios (commit vacío), reintenta con `rebase --autostash`, reconoce que «lo mío ya está en el remoto» (la idea de otro producto) y sale 1 con motivo (`##vso`) si no puede publicar. 🔴 **Por qué anota la marca y deja la vacía**: sin ellas, con dos merges agrupados el formulario del primero no se versiona nunca, en verde. Red: `scripts/tests/publish-bump.test.sh` (10 casos; remoto bare local, sin red). **Los 5 PR no se abren sin avisar.**
+**Qué es:** El guion único que commitea y publica el aumento de versión de los formularios para los cinco productos.
+
+**Por qué existe:** Cuando dos construcciones terminan cerca, el segundo push rebota. Conserva la marca `Commit: <sha>`; sin ella un formulario puede no versionarse nunca.
+
+**Quién la usa:** Los pipelines de los cinco productos, vía `forms-to-version.sh`.
+
+**Dónde se prueba:** `scripts/tests/publish-bump.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipublish-bumpsh)
 
 ## scripts/lib/meter-backup.sh
 
-Una sola función: ¿el respaldo local del medidor de etapas del SDLC **debe correr ahora**? No antes de las 05:00, para que el nocturno de Azure (06:00 UTC) tenga su turno; si corre antes deja un archivo suelto en `.dashboard/` que rompe el `pull` del arranque de la mañana. El instalador la carga; se probó como función pura para no simular un SessionStart entero. Red: `scripts/tests/meter-backup.test.sh`.
+**Qué es:** Una función que decide si el respaldo local del medidor de etapas del SDLC debe correr ahora.
+
+**Por qué existe:** Si corre antes de que el nocturno de Azure tenga su turno, deja un archivo suelto en `.dashboard/` que rompe el `pull` del arranque.
+
+**Quién la usa:** El instalador, que la carga.
+
+**Dónde se prueba:** `scripts/tests/meter-backup.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmeter-backupsh)
 
 ## packs/bizuit/guides/deuda-de-pruebas-formularios.md
 
-(Del paquete bizuit, que viaja con el perfil del equipo.) Cómo dejar un formulario **sin pruebas** sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión, y se borra la entrada el día que se le ponen pruebas, en el mismo pull request. Escrita para cualquier dev, en tres pasos. Por qué en el mismo pull request: borrar la entrada sin agregar pruebas deja `main` rojo.
+**Qué es:** La guía para dejar un formulario sin pruebas sin que el pipeline falle: se declara en `pruebas-pendientes.json` con motivo y fecha de revisión. Es del paquete bizuit.
+
+**Por qué existe:** Borrar la entrada sin agregar pruebas deja `main` rojo, por eso se borra en el mismo pull request.
+
+**Quién la usa:** Cualquier dev que declare o pague una deuda de pruebas.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md)
 
 ## scripts/ci/affected-forms.js
 
-Qué formularios hay que **probar y construir** por un cambio. Probar sólo lo que cambió y construir todos están mal los **dos** (medido, cada uno en un producto distinto). **Probar sólo lo cambiado pierde roturas** — en Totora los 4 formularios se importan entre sí, así que tocar uno puede romper otro sin que su prueba corra; allá lo habían resuelto **escribiendo las dependencias a mano en el YAML**, correcto ese día y desactualizado el día que alguien agregue un import, sin que nada avise. **Construir todos desperdicia** — en FRESNO son 33 formularios sin una sola dependencia entre ellos, y en el pull request se tiran las 33 porque ahí no se publica nada: el pull request no fabrica nada que se despliegue. Lo correcto en los dos casos es lo mismo: **lo afectado** = lo que cambió **más su cono de dependientes**, en cadena, y todos si cambia algo de afuera de los formularios — y el grafo se **deriva de los imports reales**, que es lo que evita que se desactualice. 🔴 **En `main` no cambia nada: se prueba y se construye todo**, y no por prudencia sino por necesidad — ahí se empaquetan todos, así que todos tienen que estar construidos, y las pruebas completas certifican la corrida que produjo *ese* paquete. 🔴 **Y construir en `main` también los que NO suben de versión no es desperdicio: es lo que pone al día producción (2026-09-29)**. Producción no se despliega por corrida: usa los paquetes de **una** corrida de CI, la que alguien aprueba, y sube cada formulario que allá esté **atrasado** (compara versión del ZIP contra la activa). Ejemplo: el lunes un merge sube el tablero a 1.0.36 y nadie aprueba producción (la aprobación vence); el martes otro merge sube sólo `pedidos` y se aprueba esa corrida. Como la del martes construyó todos, trae también el tablero 1.0.36 y producción se pone al día. Si sólo se construyera lo que sube de versión, el paquete del martes no traería el tablero y producción quedaría en 1.0.35 **sin que nada avise**. En staging no hace falta (despliega cada corrida), pero el paquete es el mismo. Por eso se descartó «construir y empaquetar sólo lo que sube de versión»; si alguna vez se retoma, el requisito es preservar esa puesta al día —p. ej. construir lo que sube **más lo que en producción esté atrasado**—, no ahorrar minutos a costa de ella. 🔴 **Falla hacia más trabajo, nunca hacia menos**: carpeta ilegible o lista de cambios ausente → devuelve **todos**; construir de más cuesta minutos, construir de menos deja pasar una rotura. 🔴 **Salvo un caso (desde el 2026-09-02)**: "no encontré ningún formulario" no devuelve vacío con exit 0 —se vería igual que "nada afectado", y un repo mal resuelto dejaría el pull request VERDE sin construir nada—: sale **3** y quien llama decide (todos, o rojo si "todos" también es vacío). Y un formulario **borrado o renombrado** no afecta a todos (sus rutas viejas serían "de afuera" por posición: 33 bumps en FRESNO por borrar uno). Efecto medido tocando un formulario: Totora **2 de 4**, URUTAU 1 de 8, Lapacho 1 de 1, Ceibo 1 de 2, FRESNO **1 de 33**. 🔴 **Y un archivo puede ser inerte para una pregunta y decisivo para otra (2026-09-05)**: `pruebas-pendientes.json` —donde se declara qué formulario puede quedarse sin pruebas— está entre los archivos que no afectan a nadie, y con razón: no cambia una línea de lo construido, y sin esa entrada tocarlo redesplegaría los 33 formularios de FRESNO. Pero un pull request que sólo **borra una entrada de ese archivo**, sin agregar una sola prueba, no juzga a nadie y sale **verde** si el archivo no afecta a ningún formulario; el rojo llega en `main`, con el merge hecho. **"A quién construyo"** y **"a quién juzgo"** no llevan la misma respuesta. La declaración que **entra o sale** suma ese formulario a lo que hay que **probar**, y sólo a eso: el bump de versión llama con `--sin-deuda` y sigue sin redesplegar nada. Como el guion es único y los pipelines lo bajan en cada corrida, llegó a los **8 repos de formularios sin tocar un solo pipeline**. Y no al revés: editar la prosa del archivo no manda a probar a nadie —un control que hace trabajo de más por nada es el que alguien apaga—, mientras que no poder saber qué decía antes (sin git, JSON ilegible) devuelve **todos**. Red: `scripts/tests/affected-forms.test.sh` (19 casos; los que más pesan son el de la **cadena completa** A→B→C —no un salto—, el de la carpeta común, el que exige juzgar lo de afuera **por posición** y no por una lista de nombres, los dos que obligan a devolver todos ante cualquier duda, y desde el 2026-09-05 el que exige que borrar la deuda mande a probar, junto a su espejo, el que exige que editar la prosa del archivo NO mande a probar a nadie).
+**Qué es:** El cálculo de qué formularios probar y construir por un cambio: lo cambiado más su cono de dependientes, derivado de los imports reales.
+
+**Por qué existe:** Probar sólo lo cambiado pierde roturas; construir todos desperdicia. En `main` se prueba y construye todo. Ante cualquier duda devuelve todos, y si no encuentra formularios sale con código 3.
+
+**Quién la usa:** Los pipelines de formularios y `forms-to-version.sh`.
+
+**Dónde se prueba:** `scripts/tests/affected-forms.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciaffected-formsjs)
 
 ## scripts/ci/forms-to-version.sh
 
-¿A qué formularios hay que **subirles la versión** en esta corrida? Por qué no alcanza con `git diff HEAD~1 HEAD` y mirar sólo la carpeta **tocada**: con `batch: true` una corrida junta varios merges y `HEAD~1` es el merge anterior: el formulario del **primer** merge del lote no sube de versión, el host lo deduplica y el cambio **nunca llega, en verde**. Y se construye lo **afectado** (lo cambiado más lo que depende de ello): si se versiona sólo lo tocado, un dependiente reconstruido sale con código nuevo y **versión vieja** → el despliegue lo saltea como "al día". 🔴 **La lógica va en UN guion que los cinco llaman**, no copiada en cinco YAML — el arnés ya pagó ese patrón con `release-notes.sh` (8 copias que divergieron) — y eso es lo que hace verificable la corrida **"dos merges agrupados"**, que en Azure DevOps **no se puede provocar a voluntad** (hace falta un run en curso cuando entra el segundo merge, con 2 carriles para toda la organización): se reproduce en local con una historia git sintética. Base = el último commit de versiones que escribió el bot (los dos mensajes reales), `HEAD~1` si no hay; `--base` la expone para que el pipeline lea la versión **anterior** desde ahí (si no, un bump manual del primer merge del lote se pisa). El conjunto = `affected-forms.js` sobre ese diff, el mismo criterio que pruebas y construcción. Comportamiento **declarado, no descubierto**: un archivo de la raíz que no sea el pipeline ni `.md` versiona a todos; cualquier archivo dentro de un formulario lo versiona; un formulario borrado no versiona a nadie. **Nunca sale 0 sin poder decidir** (sin guion hermano, sin formularios, sin diff → 1): un "vacío" que en realidad es "no sé" deja un despliegue sin versión y todo verde. Red: su suite de pruebas (11 casos; el primero es el de los dos merges, con el control de que `HEAD~1` sólo habría visto uno). Corre en la suite diaria desde `install-tycon-hooks.sh`.
+**Qué es:** El cálculo de a qué formularios subirles la versión en una corrida.
+
+**Por qué existe:** Mirar sólo `HEAD~1` pierde el primer merge de un lote agrupado y el cambio nunca llega. Nunca sale 0 sin poder decidir.
+
+**Quién la usa:** Los pipelines de los cinco productos; corre en la suite diaria desde `install-tycon-hooks.sh`.
+
+**Dónde se prueba:** su propia suite de pruebas, bajo `scripts/tests/`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciforms-to-versionsh)
 
 ## scripts/ci/label-prs.sh
 
-*(scripts/ci/label-prs.sh + scripts/ci/run-base.sh)*
+_scripts/ci/label-prs.sh + scripts/ci/run-base.sh_
 
-La corrida de `main` **dice qué pull requests trae** (2026-09-15). En Azure DevOps la corrida del pull request tiene título y enlace, pero la que dispara el push a `main` se titulaba «Merge pull request N from dev into main» y no enlazaba a nada; con `batch: true` una corrida junta varios merges y el título muestra, a lo sumo, el último. Dos capas: el skill `tycon-merge-to-main` fija el mensaje de merge **«Merged PR <id>: <título>»** (con un update después de crear el PR, las cuatro opciones de cierre juntas — verificado sobre un PR de prueba), y este guion, llamado en el job de construcción de la corrida de `main` de cada producto, pone una etiqueta **`PR-<id>`** por cada pull request y un **resumen** en la página de la corrida con el enlace a cada uno. Qué trae una corrida = los merges de la **línea de main** (`--first-parent`: sin eso se cuelan los PR que entraron a `dev`) desde la base; reconoce los tres formatos reales (`Merged PR N:`, `Merge PR #N:`, `Merge pull request N from`) y cuenta aparte los merges sin número. La base sale de **`run-base.sh`**, que ahora comparten este guion y `forms-to-version.sh` (la marca `Commit: <sha>` del commit de versión del bot, que un rebase no mueve): la lógica es una, los mensajes son de cada guion, y formularios quedó **byte a byte igual** (su suite sin tocar y 60 pares de salida sobre seis repos reales). 🔴 **No es un control, es trazabilidad**: sale 0 siempre, pero «no etiqueté» se dice con un aviso (clon sin historia, sin base, sin su hermano). 🔴 **Un título de PR es texto de afuera**: Azure interpreta `##vso[…]` en stdout y stderr, así que los títulos van sólo al resumen, escapados. No se renombra la corrida: pasos posteriores leen su número. Red: `scripts/tests/label-prs.test.sh` (dos merges agrupados con su control, los tres formatos, PR a `dev`, bump rebasado, clon shallow, inyección por el título, enlace con espacios) y los merges reales (`--no-ff`) que suma `release-notes.test.sh`: el camino de respaldo de las notas publicaba «Merge pull request…» y «Merge PR #…» al administrador, y ahora el filtro los reconoce.
+**Qué es:** El guion que etiqueta cada corrida de `main` con `PR-<id>` y escribe un resumen con el enlace a cada pull request. Comparte la base con `forms-to-version.sh` a través de `scripts/ci/run-base.sh`.
+
+**Por qué existe:** Con `batch: true` la corrida junta varios merges y su título no dice cuáles. Es trazabilidad, no un control: sale 0 y avisa si no pudo etiquetar.
+
+**Quién la usa:** El job de construcción de `main` de cada producto.
+
+**Dónde se prueba:** `scripts/tests/label-prs.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscilabel-prssh)
 
 ## scripts/ci/nightly-dod-notice.sh
 
-El aviso por Telegram de la **evidencia DoD** que mide el nocturno: compara el snapshot de hoy con el anterior y avisa sólo si se movió. Lo lanza un LaunchAgent en la Mac del dev (03:43). 🔴 **Lee lo PUBLICADO (`origin/main`), nunca el disco, y no toca el checkout** (2026-09-15): leer el disco de un checkout compartido tras un `merge` con el error tapado avisa «NO corrió» con el snapshot ya publicado (el checkout puede estar en otra rama), y cuando el merge anda le mete `main` encima a la rama del dev. Dice lo que vio —«no está publicado en main», «no pude mirar» con el motivo, «no pude comparar»—, nombra los repos que aparecen o salen, y un envío que no llega reintenta, queda en el registro con fecha y se manda en la corrida siguiente. Red: `scripts/tests/nightly-dod-notice.test.sh` (27 casos, HOME falso, repo temporal con su origin y un doble del envío).
+**Qué es:** El aviso por Telegram de la evidencia DoD que mide el nocturno: compara el snapshot de hoy con el anterior y avisa sólo si se movió.
+
+**Por qué existe:** Lee lo publicado en `origin/main` y no toca el checkout; leer el disco avisaba «no corrió» por error. Un envío que no llega se reintenta en la corrida siguiente.
+
+**Quién la usa:** Un LaunchAgent en la Mac del dev.
+
+**Dónde se prueba:** `scripts/tests/nightly-dod-notice.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscinightly-dod-noticesh)
 
 ## scripts/ci/sql-compile.js
 
-Antes de cada commit, **compila sin ejecutar** cada migración SQL nueva o modificada (`database/` o `BD/`) y **avisa, no frena** (2026-09-14). Por qué: una migración con un error de sintaxis —una subconsulta dentro de un `PRINT`— frena el despliegue entero, y ni los revisores ni los tests tocan un `.sql` suelto. Lo corre el pre-commit **global de git**, así que vale desde la terminal, VS Code, Claude o Codex. Compila lo **stageado** con `SET NOEXEC ON` adelante; no manda un archivo que menciona `NOEXEC` ni uno con comandos de `sqlcmd` (`!!`, `:r`). La base se declara por ambiente (`TYCON_SQL_COMPILE_SERVER`, `_DATABASE`, `_USER` y `SQLCMDPASSWORD`), nunca en el repo. 🔴 **«Sin compilar» nunca se lee como «compila»**: sin base, sin `sqlcmd` o sin conexión lo dice con el motivo, y un login rechazado no se acusa de error de sintaxis. **Límite a medir**: no ejecuta los lotes anteriores, así que una tabla creada en un lote y usada en el siguiente puede dar un error que al desplegar no existe; por eso cada resultado queda en `~/.claude/.tycon-pipeline/sql-compile.jsonl` y se decide después si frena. Off: `TYCON_SQL_COMPILE=0`. Red: `scripts/tests/sql-compile.test.sh` (13 casos, `sqlcmd` doblado, ninguno toca una base; el que más pesa compila lo stageado y no el disco, y otro exige que la contraseña no aparezca en ningún lado).
+**Qué es:** Un control que compila sin ejecutar cada migración SQL nueva o modificada (`database/` o `BD/`) antes del commit, y avisa sin frenar.
 
+**Por qué existe:** Un error de sintaxis frena el despliegue entero y nada más toca un `.sql` suelto. «Sin compilar» nunca se lee como «compila». Se apaga con `TYCON_SQL_COMPILE=0`.
+
+**Quién la usa:** El pre-commit global de git.
+
+**Dónde se prueba:** `scripts/tests/sql-compile.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisql-compilejs)
 
 ## scripts/ci/check-bash32-quoting.sh
 
-**[scripts/ci/check-bash32-quoting.sh](../scripts/ci/check-bash32-quoting.sh)** — En el bash 3.2 de macOS —el
-único que corre en producción en la máquina del dev, bajo LaunchAgent—, `$VAR` pegado a un carácter que no es
-ASCII **parte la variable**: el intérprete lee el nombre byte a byte y se come el primer byte del carácter que
-sigue. Reproducido con `/bin/bash` 3.2.57 el 2026-09-18: `X=3; echo "«$X»"` imprime `«�`, y `echo "$X→"`
-imprime `��`; con `${X}` no pasa. **No es sólo «»**: cualquier carácter fuera de ASCII (`→`, `…`, `⏎`, `·`)
-rompe igual. En el bash 5 de Homebrew y en el agente Linux del nocturno no se reproduce, así que las suites
-salen verdes en todos lados menos donde importa. Medido: **16 apariciones latentes en 5 guiones** del
-repo, cazadas por nadie: hace falta un control y no una regla que
-recordar. 🔴 **Por qué es un lint y no «correr las suites con `/bin/bash`»**:
-las suites ya no corren en la máquina del dev (van al nocturno de Azure desde el 05-09, Linux,
-bash 5), así que esa instrucción hoy no cazaría nada; y un control que hay que acordarse de correr con el
-intérprete viejo no corre. Esto es un `perl -ne` sobre bytes: corre en cualquier bash, en el pre-commit
-sobre lo **stageado** (`--staged`; un `.sh` que no se puede leer del índice frena también: no medido no es
-verde) y a mano sobre el repo entero. Marca `$nombre` seguido inmediatamente de un byte fuera de ASCII; no
-marca `${nombre}`, ni `$nombre` seguido de ASCII, ni comentarios. Red: `scripts/tests/bash32-quoting.test.sh`
-(7 chequeos; el primero corre el bash 3.2 real de la máquina y exige que rompa, para que el lint no marque
-algo que nadie vio romperse; con el lint ausente, 4 salen rojos).
+**Qué es:** Un lint que marca `$variable` pegada a un carácter fuera de ASCII en guiones de shell.
+
+**Por qué existe:** El bash 3.2 de macOS parte la variable y rompe el texto, y las suites no lo ven en otros intérpretes. Es una regla que no se puede recordar, necesita un control.
+
+**Quién la usa:** El pre-commit (sobre lo stageado) y a mano sobre el repo.
+
+**Dónde se prueba:** `scripts/tests/bash32-quoting.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-bash32-quotingsh)
 
 ## scripts/ci/public-ci.sh
 
-*(scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de la copia)*
+_scripts/ci/public-ci.sh + scripts/ci/check-public-workflow.js + el `ci.yml` de la copia_
 
-**La CI del repo público, en un guion que cualquiera corre en su máquina** (2026-10-03). El repo
-público acepta cambios de desconocidos, y lo que les corre encima no puede ser una lista de comandos escrita en un YAML
-que nadie prueba. `public-ci.sh` corre, en orden y con una línea por paso, lo mismo que mira el equipo: que cada `.js`
-versionado compile, `build/check.js`, `generate.js --check`, la cobertura de suites, las portables, las suites que piden
-sólo agent-skills (de a cuatro, cada una en su HOME vacía), el banco de controles y —con sus opciones— el freno de
-nombres en castellano sobre el rango y la máquina limpia. 🔴 **No corta en el primer rojo** (una corrida muestra todos)
-y **un paso que no pudo correr es rojo con «no pude correr», nunca un salto**: un paso salteado se ve igual que uno que
-pasó. No corre el detector (necesita la lista privada) ni lee secretos. Sirve en la copia (un solo repo) y en el repo
-del equipo (dos): por eso la prueba nocturna de la copia corre el mismo guion en los dos lados y compara los veredictos.
-El workflow (`.github/workflows/ci.yml` en la copia) sólo lo llama, con
-Node 24 y partido en trabajos que corren a la vez (2026-10-14: entero tardaba ~30 min por Node; la parte `checks`
-y cinco partes de las portables, repartidas con los pesos medidos en GitHub (juego `github` de suites-weights.json), `TYCON_PUBLIC_CI_PART`). **Un trabajo chico aparte, `installer-floor`, corre con Node
-22**, el más viejo que acepta el instalador, sólo las suites de lo que corre con el Node del sistema antes de que el
-arnés tenga el suyo: el arranque, la actualización, el Node propio, la versión bajada y su número (2026-10-16). Por qué: desde que el arnés corre con su propio Node 24, todo lo demás corre siempre con 24 y la matriz de
-dos versiones costaba el doble sin medir nada; lo único que de verdad ve otro Node es lo que corre antes. Es
-obligatorio como los demás. **Cuándo se saca**: cuando el piso del instalador suba a 24 (o cuando suba, se cambia la
-versión del trabajo), junto con su regla en el control. La corrida termina en **un job llamado `public-ci`**: es el chequeo con nombre estable que las reglas de la rama
-exigen, y renombrarlo deja los merges esperando un chequeo que no llega. `check-public-workflow.js` lee ese YAML **por
-texto** y verifica catorce reglas: trece que dicen por qué algo está mal (los disparadores, ningún secreto, cada acción fijada
-por el sha de su commit, permiso de sólo lectura, la historia completa, la matriz, `--range` en un pull request,
-los controles de la base en un pedido y en la cola, `--clean-machine` siempre, el job agregador que falla si alguno falló,
-las partes, todas, y el salteo tras la cola) y una, `shape`, que es la red: el control lleva
-adentro **la forma exacta** del `ci.yml` —sus líneas de código, una por una y en orden— y cualquier línea de más, de
-menos o distinta es rojo. 🔴 Por qué la forma exacta: una regla por texto no ve
-otra forma de escribir lo prohibido (una opción dentro de un comentario, un
-`|| true`, un job en estilo flujo, un retorno de carro suelto). **Cambiar el `ci.yml` obliga a cambiar la forma en el
-control, en el mismo commit**: es el punto, no un descuido. El guion, por su parte, saca al arrancar el entorno de git de
-quien llama (`GIT_DIR` y compañía): el repo lo decide `--root`. Detalle y tabla de reglas:
-[publicacion-espejo.md](maintaining/publicacion-espejo.md) §«La CI pública». Red: `scripts/tests/public-ci.test.sh` (portable: el
-guion sobre un repo de mentira, y el `ci.yml` real más copias alteradas, una por regla y una por cada una de esas formas;
-cada caso verificado con un mutante a mano).
+**Qué es:** La CI del repo público en un guion que cualquiera corre en su máquina, más `scripts/ci/check-public-workflow.js`, que verifica la forma exacta del `ci.yml`. La corrida termina en un job estable llamado `public-ci`.
+
+**Por qué existe:** El repo público acepta cambios de desconocidos y la CI no puede ser una lista de comandos sin prueba. No corta en el primer rojo, y un paso que no pudo correr es rojo.
+
+**Quién la usa:** El workflow `ci.yml` de la copia, la prueba nocturna y quien contribuye.
+
+**Dónde se prueba:** `scripts/tests/public-ci.test.sh`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipublic-cish)
 
 ## scripts/ci/run-base-controls.sh
 
-*(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + el paso `repo-lint` de public-ci.sh con `--base`)*
+_(scripts/ci/run-base-controls.sh + scripts/ci/controls-from-base.json + el paso `repo-lint` de public-ci.sh con `--base`)_
 
-**La revisión de un pedido juzga lo que trae con los controles de la base, no con los del pedido** (2026-10-17). Antes,
-la revisión corría el pre-commit y sus guiones tal como venían en el propio pedido: uno que vaciaba el pre-commit,
-borraba el guion de un control, sumaba su excepción a una lista o bajaba un modo de `block` a `warn` se salteaba el
-control que lo tenía que frenar. Ahora el control y su regla salen de la **base** (la punta de la rama destino; en la
-cola de merge, la base del grupo: así un control nuevo de `main` alcanza también a los pedidos viejos) y el contenido,
-del pedido.
+**Qué es:** El guion que revisa un pedido con los controles de la base y no con los que trae el propio pedido, según el inventario `scripts/ci/controls-from-base.json`.
 
-Cómo: un **commit armado**, el árbol del pedido con cada archivo de regla en su versión de la base, en el disco y en el
-índice (hay controles que leen su regla del índice), sobre el ancestro común armado igual. Los archivos de regla son los
-que nombra el inventario `controls-from-base.json`: el pre-commit, cada guion de control, sus listas, modos y umbrales,
-y los `require` relativos de cada guion, que se suman solos. Sobre ese commit corren los controles de la base: el
-pre-commit en modo índice, como al commitear, el control de forma de `ci.yml` y el de la versión. La pasada del pedido,
-con sus propios guiones, corre **además**: un control nuevo del pedido también frena. Si el pedido no cambia ninguna
-regla, es una sola pasada y no cuesta tiempo.
+**Por qué existe:** Un pedido podía vaciar o aflojar el control que lo tenía que frenar y así saltearlo. Aflojar un control exige la constancia del dueño; si no se puede correr, es rojo.
 
-**El cambio de control.** Endurecer un control entra solo: la base y el pedido pasan. **Aflojarlo** (la base frena, el
-pedido pasa con su regla nueva) es rojo salvo la **constancia del dueño** en `.tycon/control-changes.jsonl`, anclada al
-hash del cambio: la ruta y el blob de cada archivo de regla cambiado, así que otro cambio a la misma regla vuelve a
-rojo. La firma es `run-base-controls.sh approve`, que pide una terminal de verdad, como `marker.js runtime-waiver`. Cada
-cambio a una regla queda listado archivo por archivo, con lo que se suma, se saca o cambia, aunque no frene. Como
-`ci.yml` tiene control de forma exacta, cualquier cambio a `ci.yml` pide la constancia, también uno que lo endurece.
+**Quién la usa:** La CI de GitHub (`ci.yml` vía `public-ci.sh --base`) y la validación de pedidos del repo de mantenimiento.
 
-**La alarma a posteriori.** Lo que entró a la base mientras el pedido estaba abierto: un workflow del inventario
-cambiado sin constancia del dueño **avisa** (no frena: ya está en `main`), con el commit y cómo firmarlo, y las sumas a
-los archivos de regla se cuentan.
+**Dónde se prueba:** `scripts/tests/base-controls.test.sh`, `scripts/tests/public-ci.test.sh`
 
-🔴 **«No pude correr» nunca cae a los controles del pedido.** Una base que no se lee, que no trae el inventario o el
-guion, es rojo «no pude correr». Un inventario que no cuadra también es rojo: un guion que la base no trae, un guion
-que el pre-commit llama sin su entrada (`check-inventory`), o un archivo de datos que nombra un control sin clasificar
-como regla o como contenido.
-
-**Lo que no cubre, y por qué.** (1) **El propio workflow** corre del pedido: GitHub corre el `ci.yml` del pedido (y el
-del grupo, en la cola) y Azure, el yml del pedido. Un pedido que cambia a propósito su workflow para no llamar a la base
-no corre nada de la base. GitHub cerraría eso con un workflow obligatorio desde otro repo, que el plan de la
-organización no tiene; `pull_request_target` no cubre la cola y no se usa. Lo frena el control de los workflows mientras
-el workflow todavía llame a la base, y la alarma lo dice en el pedido siguiente. (2) **Las pruebas** (suites, banco) son
-del código del pedido y corren del pedido: quitar un caso no lo frena esto. (3) **El contenido de un archivo de regla**
-que el pedido cambia lo juzga sólo la pasada del pedido: la de la base lo ve en su versión de la base.
-
-Dónde corre: en GitHub, `ci.yml` saca el `public-ci.sh` de la base con `git show` y lo corre con `--base` sobre el
-checkout del pedido, con el rango desde esa misma base (en la cola, desde `main` se colarían los cambios del grupo de
-adelante). Mientras la base no traiga este guion, `ci.yml` corre los controles del pedido con un aviso: es la **rama de
-arranque**, sólo para el pedido que lo agrega. Se retira con el primer pedido en verde después de ese merge (cambia
-`ci.yml`: pide la constancia del dueño); dejada, sería una puerta si un día `main` perdiera el guion. Las constancias
-viven en `.github/control-changes.jsonl` en el público y en `.tycon/control-changes.jsonl` en el repo de mantenimiento.
-En GitHub, lo que se suma a las reglas, la alarma y la constancia aprobada quedan a la vista en el registro del paso,
-también en verde. En la validación de pedidos del repo de mantenimiento, ese repo arma `main` aparte con lo público
-encima y corre este guion desde ahí. Sin `--base` (una máquina, el push a `main`) `public-ci.sh` corre los controles de
-su propio árbol, como siempre, y lo dice. Red: `scripts/tests/base-controls.test.sh` (portable: repos de juguete con
-git, sin red) y las reglas del workflow en `scripts/tests/public-ci.test.sh`.
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirun-base-controlssh)
 
 ## scripts/tests/clean-machine.test.sh
 
-*(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/tests/fixtures/example-repo/)*
+_(scripts/tests/clean-machine.test.sh + scripts/tests/clean-machine/ + scripts/tests/fixtures/example-repo/)_
 
-**La instalación de afuera, probada en una máquina que tiene sólo lo que la portada pide**
-(2026-10-03). Hasta acá «instala limpio» se medía en una HOME temporal de la máquina de un dev (la T21 de
-`export-real.test.sh`). Una HOME vacía no es una máquina vacía: esa máquina tiene todo lo que un dev tiene instalado, y
-lo que el arnés usa sin declararlo sólo se ve donde no está. Esta prueba arma un contenedor con la imagen oficial de
-Node 22 más `git`, `python3` y certificados —**la lista de requisitos de la portada hecha ejecutable**: los dos
-`Dockerfile` de `scripts/tests/clean-machine/`, fijados por el digest del índice de las dos arquitecturas—, con un
-usuario sin privilegios y una HOME vacía, y adentro hace lo que haría alguien de afuera: corre el bloque de instalación
-de la portada **tal cual**. No trae Claude Code; su papel lo cumple la prueba, que lanza cada hook de arranque con el
-payload de su evento.
+**Qué es:** La prueba que instala el arnés en un contenedor con sólo lo que pide la portada y comprueba que todo anda.
 
-Qué mide: que cada requisito declarado esté y que ninguna herramienta de la lista vigilada (`jq`, `az`, `engram`,
-`codegraph`, `codex`, `claude`, `docker`) esté ni sea llamada; que la instalación salga 0 y deje los cuatro enlaces, el
-estado, la línea de arranque y el `@import`, con las ocho integraciones apagadas y `doctor` sin fallas, también cuando
-`~/.claude/skills` y `~/.claude/agents` ya son carpetas con algo propio; que `uninstall` deje la máquina como estaba; el
-esqueleto mecánico del pipeline sobre un repo de ejemplo (`scripts/tests/fixtures/example-repo/`) y, con el paquete del
-stack, sobre el plugin de ejemplo clonado de GitHub, con `dotnet test`; que el núcleo solo, frente a un repo que pide el
-paquete, frene nombrándolo; que sin red instale igual, lo diga y el arranque diga «sin red»; y que sin `python3` o sin
-`node` salga con UNA línea que nombra lo que falta, sin escribir nada.
+**Por qué existe:** Una carpeta de usuario vacía no es una máquina vacía: lo que el arnés usa sin declararlo sólo se ve donde no está. Si no puede medir, lo dice y no da verde.
 
-Cómo se corre: `TYCON_CLEAN_MACHINE=1 bash scripts/tests/clean-machine.test.sh` (modo **interno**: exporta las dos copias
-de un solo repo desde el árbol de trabajo) o `bash scripts/ci/public-ci.sh --clean-machine` (modo **público**: sobre ese
-repo, que es lo que corre la CI pública). Con `--keep` no mide: deja un contenedor vivo, instalado y con el repo de
-ejemplo, para correr una vez el pipeline con modelo; lo deja sin Claude Code y sin credenciales.
+**Quién la usa:** El proceso nocturno, la CI pública y quien la corre a mano con `TYCON_CLEAN_MACHINE=1`.
 
-🔴 **Cuándo NO mide, y lo dice**: sin la variable mide sólo en el nocturno por horario —en una corrida a mano del
-nocturno se la pide tildando el parámetro `cleanMachine` al encolar—; en la máquina de un dev y en el control de
-cada cambio corre lo que no usa Docker (sus propias compuertas y la lectura de la portada, 3 s) y sale NO MEDIDO con su
-motivo, salida 0. Pedida y sin Docker sale 1. Sin `docker buildx` no puede leer el índice de las bases, y en modo
-público el caso del núcleo solo no aplica: esas dos verificaciones salen NO MEDIDO por su cuenta. Nunca un verde sin
-haber medido. Cada paso corre bajo un tope (`clean-machine/run-capped.js`: en macOS no hay `timeout`; al vencer mata el
-grupo y saca el contenedor) y hay un presupuesto total: un Docker que no contesta es un rojo con el nombre del paso, no
-un job del nocturno sin reporte. La copia entra a la imagen en una capa con su dueño, nunca montada —en Linux un montaje
-da «dubious ownership» y la prueba sería verde sólo en la Mac—, y el listado privado de reemplazos nunca entra.
+**Dónde se prueba:** `scripts/tests/clean-machine.test.sh`
 
-Duración medida (2026-10-03, arm64, con las imágenes base ya bajadas): **263 s** el modo interno (dos exportaciones,
-seis escenarios, 115 verificaciones, con la versión estampada adentro). Antes de sumarla: 415 s en amd64 (la
-del nocturno, 108 verificaciones) y entre **50 y 142 s** el modo público (107, y una NO MEDIDA por diseño). La primera
-corrida de una máquina suma la bajada de las dos bases (~1 GB).
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
 
-La copia del modo interno sale **estampada** con un número de laboratorio
-(`export.js --stamp-version`) y la prueba exige que `harness.js version` lo dé exacto; y el escenario del núcleo suma
-«versión nueva que no se aplica»: con una versión nueva servida por la copia y la política `ask`, `startup` no mueve el
-clon y deja el aviso con `update --yes`. En modo público la versión esperada es la del `version.json` del árbol; si no
-lo trae, esa verificación sale NO MEDIDO. El camino del clon del público —la rama que se reescribe, «no bajar» por
-número— no se puede ejercitar ahí (dentro del contenedor el remoto es una carpeta local): lo mide
-`scripts/tests/harness-channel.test.sh` en laboratorio.
-
-Lo que sólo se ve en una máquina limpia, cada cosa con su prueba: `harness.js install` sobre
-una HOME sin `settings.json` que no deja la línea de arranque; una prueba de agent-skills que corre al instalar y depende
-del reloj real (en un Linux rápido da rojo y la instalación sale 1); el SDK de .NET copiado a la imagen de Node, que no
-arranca sin la biblioteca ICU; y un `--check` del instalador que escribe en cinco lugares. Detalle:
-[publicacion-espejo.md](maintaining/publicacion-espejo.md) §«La máquina limpia» y la cabecera de la prueba. Red: sus compuertas se prueban a sí mismas sin Docker en toda máquina (PATH sin `docker`, fuera del nocturno,
-el control de cada cambio y un `docker` de mentira que no termina); `suites-coverage.test.js` exige su registro
-(`requiere: ["docker", "red"]`, sola).
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstestsclean-machinetestsh)
 
 ## scripts/ci/check-artifact-paths.js
 
-Un pipeline no puede **LEER de una carpeta que él nunca LLENA**. Por qué: un pipeline de producción que baja su artefacto con `- download: ci` lo deja en `$(Pipeline.Workspace)/ci`; si un paso —por ejemplo el que sube el paquete al host— lo busca en `$(System.ArtifactsDirectory)`, que ahí nadie llena, el despliegue a producción falla **siempre**, después de la aprobación humana y después de que el freno de retroceso ya interrogó al host: cada intento **quema una aprobación**. 🔴 Es lo que deja una **migración a medias** (se actualizan nueve referencias y una no). Lo que falla dos veces igual falla una tercera, y por eso es un control y no un arreglo más. **No juzga cuál carpeta es la correcta** —las dos lo son, según cómo baje el artefacto—: marca sólo la incoherencia dentro de un mismo archivo, así que un pipeline que baja a `System.ArtifactsDirectory` y lee de ahí no se toca. Un comentario que la nombre **no** es una lectura (marcar por eso es como se apaga un control). **Medido antes de gatear**: sobre los 14 pipelines levantó exactamente las 2 líneas reales, cero falsos positivos. Red: `scripts/tests/artifact-paths.test.sh` (8 casos; el 1 y el 2 son el defecto real y su gemelo correcto — sin ese par, un verde no significaría nada; el 6 y el 7 exigen que "no pude mirar" salga 2).
+**Qué es:** Un control que marca los pipelines que LEEN de una carpeta que nunca LLENAN.
+
+**Por qué existe:** Un despliegue a producción que busca su artefacto donde nadie lo deja falla siempre y gasta una aprobación en cada intento. El control no juzga cuál carpeta es la correcta: sólo la incoherencia dentro de un archivo.
+
+**Quién la usa:** La CI y la suite diaria, sobre los pipelines publicados.
+
+**Dónde se prueba:** `scripts/tests/artifact-paths.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-artifact-pathsjs)
 
 ## scripts/ci/rollback-guard.sh
 
-El freno que impide **promover a producción un paquete MENOR que el instalado**. Por qué: encolar a mano el pipeline de producción eligiendo un run de CI **viejo** promueve ese paquete, los backends lo suben con `setAsDefault=true` y el humo compara contra la versión del ZIP —no contra la que estaba—, así que el retroceso termina en **verde**. Corre **antes** de subir nada, en los 4 pipelines de producción: pregunta al host qué versión está instalada (backends: la marcada como default; formularios: `currentVersion` de cada uno, con la versión del paquete leída del manifest de su ZIP, como el humo) y se **niega** (sale 2, con el detalle) si la del paquete es menor. Igual o mayor pasa. 🔴 **No existe "forzar retroceso"**: no se verificó con el host que subir una versión menor la deje como actual, y prometer un forzado que quizá no funciona es peor que no tenerlo — retroceder es una acción de una persona desde el panel del host. Fail-closed: un freno que no pudo mirar (login caído, respuesta ilegible, manifest roto) sale 1 y no deja pasar. Red: `scripts/tests/rollback-guard.test.sh` (21 casos, sin red; los que pesan son el retroceso por versión y no por texto —`1.0.9 < 1.0.214`—, y el que exige mirar la versión **default** y no la más alta cargada). Corre en la suite diaria.
+**Qué es:** El freno que impide promover a producción un paquete de versión menor que el instalado.
+
+**Por qué existe:** Encolar a mano un run viejo promovía ese paquete y el humo salía verde igual. Corre antes de subir nada, compara con la versión instalada en el host y sale 2 si el paquete es menor. Si no puede mirar, tampoco deja pasar. No existe forzar el retroceso.
+
+**Quién la usa:** Los cuatro pipelines de producción.
+
+**Dónde se prueba:** `scripts/tests/rollback-guard.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscirollback-guardsh)
 
 ## scripts/ci/smoke-plugin.sh
 
-*(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)*
+_(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
-**El nombre no se mete crudo en una consulta al servidor** (2026-09-17). Los humos son la única prueba del circuito que toca el paquete INSTALADO, y el nombre del plugin (`plugin.json` del ZIP) y el de cada formulario (`manifest.json` del ZIP) iban tal cual a la URL —`../` cambia la ruta, `?` le agrega parámetros— y a cada línea de salida, donde Azure interpreta `##vso[` esté donde esté: con el host contestando «todo bien», el humo **aprobaba**. Ahora se valida contra una lista blanca **elegida midiendo** (`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`, sin `..`, comparando la cadena entera y no línea por línea): acepta los 9 plugins y los 65 formularios publicados en `main` de los 17 repos. 🔴 **Un nombre que no pasa NO se consulta** —ni se entra al host— y el humo sale rojo diciendo por qué, con el nombre mostrado sin sus caracteres raros: no verificar nunca es verde. El nombre va además codificado a la URL (segunda barrera), el identificador que devuelve el host pasa por el mismo criterio, y `smoke-forms.sh` dejó de recorrer texto separado por espacios (un espacio partía un nombre en dos, un comodín se expandía contra la carpeta). El criterio va **copiado en los dos humos** y no en un tercer archivo, a propósito: el artefacto puede llegar incompleto y eso no puede ser un modo nuevo de tumbar un despliegue; una prueba exige que las dos copias sean byte a byte iguales. No hubo que tocar ningún repo de producto: los 17 pipelines publican `scripts/ci` entera desde `main` del arnés. Red: los casos `SEC-C1` de `scripts/tests/smoke.test.sh` (diez nombres hostiles por guion, con rojo previo contra `origin/main`, y la no-regresión con los 74 nombres reales). 🔴 **Lo demás que trae el paquete también se valida**: no se validaba, y el **peso** declarado en el manifest entraba a una cuenta `$(( ))`, donde bash **ejecuta** lo que venga adentro — medido en bash 3.2 y 5.2: con `SIZE[$(orden)]` como peso, la orden corría en el agente; con una variable inexistente `set -u` cortaba el guion y en bash 3.2 **salía 0 sin verificar nada**. Regla: **lo del PAQUETE se valida** —versión con la misma forma que ya exige el registro de despliegues (las 74 publicadas son `N.N.N`), identificador de compilación con forma de commit, peso numérico y leído en base 10— y si no pasa no se consulta y es rojo; **lo que dice el HOST no se valida** (si no coincide el humo ya es rojo) pero **se muestra saneado**: versiones, banderas e identificadores sin nada fuera de su juego, y los textos libres (el motivo de degradación, el cuerpo de un login fallido) en una línea y sin `#`, que es con lo que Azure arma una orden. Lección de método: un `.` en lugar de una letra acentuada en un patrón no matchea sin UTF-8; en la Mac pasa y en Linux con bash 5.2 da rojo. Red: sección «SEC-C1, segunda parte» de `smoke.test.sh` (65 rojos contra `origin/main`, entre ellos la orden ejecutada). Y el otro lado de la misma cuenta: los bytes que cuenta `curl` tampoco se miraban, y con un valor no numérico el humo **salía 0** (con peso declarado moría sin imprimir nada; sin peso, aprobaba «abc bytes») — ahora es «no pude mirar», rojo y dicho.
+**Qué es:** Los humos que verifican el paquete instalado en el servidor y validan todo lo que trae el paquete antes de consultar.
 
-**Cuando un formulario no pasa, el humo dice por qué** (2026-10-14). `smoke-forms.sh` decía «falló» y nada más; un día
-lo rompió el host de pruebas con su circuit breaker abierto y hubo que averiguarlo a mano. Ahora cada falla al consultar
-el host muestra el código HTTP y un recorte del cuerpo (hasta 500 caracteres, en una línea, con lo que parezca una
-llave tapado). Agrega una línea que dice si parece del host (5xx, breaker, tiempo agotado) o nuestro (404, 401/403, un
-formulario sin código). El veredicto y el código de salida no cambian. Lo prueba `scripts/tests/smoke-forms-reason.test.sh`,
-contra un host de verdad en 127.0.0.1.
+**Por qué existe:** El nombre, la versión o el peso que vienen en el ZIP podían alterar la URL, ejecutar comandos o dar verde sin haber verificado. Lo que no pasa la lista blanca no se consulta y el humo sale rojo; cuando un formulario falla, dice por qué.
+
+**Quién la usa:** Los pipelines de despliegue de cada producto, que publican `scripts/ci` desde `main`.
+
+**Dónde se prueba:** `scripts/tests/smoke.test.sh`, `scripts/tests/smoke-forms-reason.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscismoke-pluginsh)
 
 ## scripts/ci/deploy-record.sh
 
-**Cada despliegue queda anotado en su propia corrida** (2026-09-16). Hasta acá el humo aprobaba un despliegue y la corrida terminaba verde sin dejar nada que se pudiera contar: el arnés no sabía qué le llegó a cada servidor ni cuándo. Ahora, dentro de una corrida de Azure, un humo aprobado imprime una línea `[registro-despliegue] {json}` —qué artefacto, qué versión, qué commit, qué entorno, qué stage y job, y una `clave` que identifica el **despliegue** y no la corrida— y le pone a la corrida las etiquetas `desplegado` y `<artefacto>-<version>`; `deploy-plugin.sh` marca además `despliegue-intentado` al entrar al host, así una corrida con esa etiqueta y sin `desplegado` es un despliegue que falló. Es un ayudante que cargan los tres guiones, sin tocar uno solo de los **28 pipelines** que los llaman. 🔴 **Tres cosas que salieron de medir**: los humos **no saben el entorno** —sólo `deploy-plugin.sh` lo recibe—, así que el entorno declarado en el mismo job manda, el derivado (`ENVIRONMENT_NAME` / `RESOURCES_PIPELINE_CI_RUNID`, nombres de la documentación nunca vistos en una corrida real) se usa sólo si no hay, y si discrepan **se avisa**, que es como la primera corrida real verifica la regla; el humo de formularios **verifica todos** los ZIP y la mayoría ya estaba, así que se anota sólo lo que el host dice que publicó **ese commit** (`/api/custom-forms/<f>/versions`), y lo que no se puede saber se cuenta y se avisa, nunca se anota — 🔴 con un límite: el host **vuelve a publicar** una versión que ya tenía (no da 409), así que Ceibo, que sube todo, anota sus formularios en cada corrida; la línea significa «publicado por esta corrida» y quien lee cuenta un **cambio** por la primera aparición de la versión; y un agente de Azure no tiene memoria entre corridas, así que la deduplicación entre corridas es de quien lee, por `clave`. 🔴 **La dirección del servidor, el usuario y la clave no llegan al ayudante**, y texto de afuera no puede fijar comandos de la corrida. **Anotar nunca cambia el veredicto**: sin el ayudante, sin `jq` o sin herramienta de huella, el humo sale igual y lo dice. Fuera de Azure la salida es byte a byte la de antes. Producción lo recibe cuando se promueve un CI construido después del merge. Red: `scripts/tests/deploy-record.test.sh` (37) y los casos `2.10` de `smoke.test.sh` y `deploy-plugin.test.sh`, con cinco sabotajes verificados en rojo. Contrato en la cabecera del ayudante.
+**Qué es:** El ayudante que anota cada despliegue aprobado en su propia corrida, con una línea de registro y etiquetas.
+
+**Por qué existe:** Sin esto el arnés no sabía qué llegó a cada servidor ni cuándo. Anotar nunca cambia el veredicto del humo.
+
+**Quién la usa:** Los humos y `deploy-plugin.sh`, que lo cargan dentro de una corrida de Azure.
+
+**Dónde se prueba:** `scripts/tests/deploy-record.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscideploy-recordsh)
 
 ## scripts/ci/check-product-parity.js
 
-¿Los pipelines de los cinco productos hacen **lo mismo**? Por qué: comparar a mano no alcanza. Medido: a un producto dado por alineado con otro —comparando a mano, dos veces— le faltaban **once** cosas, y 🔴 **ninguna la encontró una revisión**; la peor, un pipeline que **no se disparaba cuando el cambio tocaba sólo las pruebas**, o sea que la prueba nueva no corría hasta que alguien tocara código. Este control existe para que «¿hacen lo mismo?» tenga respuesta con evidencia sin que nadie la pregunte. **No juzga cuál es el comportamiento correcto**, juzga que los cinco hagan lo mismo: si divergen, decide una persona, y si la diferencia es legítima **se declara** con motivo y fecha de revisión (una diferencia sin motivo no es una decisión, es un descuido; una declaración vencida vuelve a frenar). 🔴 **Se compara lo PUBLICADO, no el disco** (2026-09-03): la pregunta es qué CORRE, o sea `origin/main`. Leyendo el árbol de trabajo, un checkout parado en otra rama —lo normal, el dev trabaja en `dev`— se reporta como divergencia del producto; medido: el backend de un producto 29 commits atrás producía **cuatro** divergencias que en `origin/main` no existen, y un control que da falsas alarmas se apaga. El disco sigue siendo el plan B, pero **avisando**: *"no pude leer lo publicado"* y *"leí lo publicado"* no son lo mismo. 🔴 Un repo que no está en la máquina **no se lee como "coincide"**: se cuenta aparte y se dice, porque *no medido* y *medido y coincide* son cosas distintas. Los rasgos y los repos se declaran en `scripts/ci/product-parity.json`; agregar uno es una entrada, no código. 🔴 **Un rasgo se acota a su bloque (2026-09-02)**: buscar `- tests/**` en el archivo ENTERO lo encuentra también dentro del bloque `pr:`, que para Azure Repos es inerte — si el `trigger:` no lo tiene, un merge sólo de pruebas no construye en main y el control dice "los cinco coinciden". Por eso un rasgo puede acotarse a un bloque de nivel raíz (`bloque: "trigger"`), y un grupo puede leer OTRO archivo (`archivo: azure-pipelines-prod.yml`): si los pipelines de **producción** no se leen, ningún rasgo de producción puede ponerse rojo. Medido: con los rasgos de producción cargados (bump por afectados, publicar sólo en main, guarda de retroceso, reintentos en prod) el control dio **7 divergencias** ANTES de arreglar nada — que es como se sabe que sabe detectar el atraso. 🔴 **Corre cada noche y deja su resultado con fecha (2026-10-15)**: hasta ese día sólo lo corrían las pruebas, ningún pipeline lo llamaba. Ahora va dentro de la revisión nocturna de dependencias (Azure y GitHub), que ya clona los repos de producto sobre `main` con la misma `ruta`; clona además lo que la lista declara con `ado`/`github` y la revisión no trae (`clone-list`), y deja `.dashboard/paridad/paridad-<día>.json` (`--out`) para el sitio de la organización: `estado` (`medido`, `parcial`, `no_medido`, `sin_productos`) y, por `ruta`, sólo cantidades y un motivo de lista cerrada (el texto de los rasgos no va al sitio). Lo que imprime y el código de salida no cambian; el aviso de la noche sale de lo que dice el archivo, porque un «parcial» sin divergencias sale 0. Nunca pone roja la noche. Una declaración vencida ya no corta la comparación: cuenta como divergencia y se sigue con el resto. La lista es de cada organización (`scripts/ci/product-parity.json` de su repo de operaciones; el arnés trae un ejemplo con ese nombre entre los modelos de los pipelines de operaciones); sin ella, «sin productos». Red: `scripts/tests/product-parity.test.sh` (45 casos; el 2 **reproduce la divergencia real**, el 4 y el 5 impiden que una excepción sin motivo o vencida tape el hallazgo, el 6 y el 7 exigen que "no pude medir" **nunca** salga verde, y T1-T18 y A1-A7 cubren el resultado fechado, `clone-list`, el contrato con el sitio y lo que confirmó la revisión adversarial) y T10-T14 de `operations-pipelines.test.js` y `operations-github-workflows.test.js` (el paso corrido de verdad). Corre en la suite diaria desde `install-tycon-hooks.sh`.
+**Qué es:** Un control que compara los pipelines de los productos y dice si hacen lo mismo, leyendo lo publicado en `origin/main`.
+
+**Por qué existe:** Comparar a mano no alcanza y ninguna revisión encontraba las diferencias. Una diferencia legítima se declara con motivo y fecha de revisión; lo que no se pudo medir nunca sale verde.
+
+**Quién la usa:** La revisión nocturna y la suite diaria; la lista de productos vive en `scripts/ci/product-parity.json`.
+
+**Dónde se prueba:** `scripts/tests/product-parity.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-product-parityjs)
 
 ## scripts/ci/check-trigger-without-docs.js
 
-¿Un merge de **sólo documentación** construye, despliega y pide producción? Por qué: un pull request sin una línea de código —una story, su evidencia y la guía del tester— que entra a `main` hace que el CI compile, despliegue a staging, **suba la versión** y encole el pedido de aprobación de **producción** sin que nadie lo pida. Parchar a mano un pipeline es el arreglo en un repo con el problema en todos. 🔴 Dos causas, ninguna de un repo: `.tycon/**` en `paths.include` —por paridad y no por necesidad: ningún paso del build lee `.tycon/`, y el pipeline TYCON escribe `.tycon/runtime-waivers.jsonl` en casi toda story— y los sitios **sin filtro de rutas**, que construyen con cualquier commit (para Azure, sin filtro la raíz está incluida). El control toma el `trigger:` de push de cada pipeline **publicado** (`origin/main`, como el de paridad) y le enfrenta el juego de archivos de un merge de sólo documentación —la lista **real** de un pull request así, más lo que toca un commit de documentación en un sitio— aplicando las reglas de Azure citadas en su cabecera (raíz incluida por defecto, gana el patrón más específico, `*` no cruza carpetas); si algún archivo queda incluido, dice **por cuál y por qué patrón**, y qué cambiar. 🔴 Después la **contra-prueba**: el mismo pipeline tiene que disparar con código; un filtro que apaga todo también está roto, y sin esa mitad un `include` vacío saldría verde. `trigger: none` (producción) no se mide: lo encola el CI, así que hereda su veredicto. Un repo ausente se **dice**, no se cuenta como «no construye». Los repos salen de `product-parity.json` (los sitios entran como grupo `sitio`). Casos en `scripts/tests/trigger-without-docs.test.sh` (suite diaria). El arreglo en los repos va en un pull request por repo: sacar `.tycon/**` del include, o agregar el `paths.exclude` canónico donde no hay filtro.
+**Qué es:** Un control que prueba si un merge de sólo documentación dispararía build, despliegue y pedido de producción, y si el mismo pipeline sí dispara con código.
+
+**Por qué existe:** Un cambio sin una línea de código subía la versión y pedía aprobación de producción, por rutas de `.tycon/**` en el filtro o por pipelines sin filtro de rutas.
+
+**Quién la usa:** La suite diaria, sobre el disparador publicado de cada pipeline; los repos salen de `product-parity.json`.
+
+**Dónde se prueba:** `scripts/tests/trigger-without-docs.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
-Los valores de hoy del modelo de cada trabajo (revisores, vueltas siguientes, pase adversarial, ayudantes sueltos y
-la sugerencia de la sesión) en un solo lugar, y su resolución con la configuración de la organización
-(`team-repos.json → models`, que valida `scripts/lib/team-repos.js`). Por qué: estaban escritos en seis lugares y
-ninguna organización podía decir «paga cada dev» o «paga la organización». 🔴 Con `mandatory_ceiling: true` nada pasa
-el `ceiling`: se baja y se avisa una vez por corrida, nunca frena. 🔴 `readOrgModels` es el **único** lector de
-`models` (pipeline, control de lanzamientos, despliegue de Codex y paridad): un archivo ilegible o un error dentro de
-`models` dan los valores de hoy **y lo dicen**; un error ahí no anula el resto de `team-repos.json` (`sectionProblems`).
-Las funciones que deciden reciben la configuración por argumento: las pruebas nunca leen la de la máquina. La sección
-«Modelos» de la pestaña Configuración del sitio (`org-config.js`) la edita, con «sin declarar (hoy: …)» desde `DEFAULTS`;
-su portón es `MODELS_SINCE`. Detalle y tabla de claves:
-`guides/harness-cost-tiering.md` §«De dónde sale cada modelo». Red: `skills/tycon-pipeline/scripts/tests/models.test.js`
-(la foto de las salidas sin configuración, T2), `team-repos.test.js` T20-T21, `harness-team-codex.test.js` T24-T25 y
-`harness-parity.test.sh` T26.
+**Qué es:** El único lugar donde se define el modelo de cada trabajo del pipeline (revisores, vueltas, pase adversarial, ayudantes y sugerencia de sesión) y cómo se resuelve con la configuración de la organización (`team-repos.json → models`).
+
+**Por qué existe:** Estaba escrito en seis lugares y una organización no podía decir quién paga. Con `mandatory_ceiling: true` el tope baja el modelo y avisa, sin frenar.
+
+**Quién la usa:** El pipeline, el control de lanzamientos, el despliegue de Codex, la paridad y la pestaña Configuración del sitio.
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/models.test.js`
+
+**Guía:** [harness-cost-tiering](harness-cost-tiering.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
 ## skills/tycon-pipeline/scripts/lib/runtime-waiver.js — el registro de firmas de la matriz
 
-La única puerta para perdonar un criterio que no se puede verificar corriendo (DODRT-C6): lo aprueba el dev
-desde su terminal (`marker.js runtime-waiver`, lee de `/dev/tty`, que el agente no tiene) y queda en
-`.tycon/runtime-waivers.jsonl` del repo, que se commitea. Cada firma lleva una cadena de hash que detecta una
-edición a mano; no es un secreto, así que una firma fabricada a propósito no se puede impedir con ella. 🔴
-La cadena se lee como **árbol**:
-dos ramas que firmaron en paralelo y se unen valen las dos, y cada firma nueva va sin padre, así no la rompen ni
-un revert ni un cherry-pick. Una firma descartada **se dice**: la matriz, el paso 8 y el freno del commit nombran
-quién firmó, la línea y por qué no cuenta, con el comando para volver a firmar. Red: las pruebas `Waiver_*` de
-`unit.test.js`, T12-T18 de `test-runtime-matrix.js`, el caso 9 de `dod-hook-smoke-test.sh` y
-`controls-bench/cases/hooks/48-firmas-en-paralelo.json`.
+**Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.
+
+**Por qué existe:** Perdonar sin firma abriría la puerta a saltear la matriz. La firma sale de la terminal del dev y lleva una cadena de hash que detecta ediciones a mano. Una firma descartada se dice, con el motivo.
+
+**Quién la usa:** El comando `marker.js runtime-waiver`, la matriz, el paso 8 y el freno del commit.
+
+**Dónde se prueba:** `unit.test.js`, `test-runtime-matrix.js`, `dod-hook-smoke-test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibruntime-waiverjs--el-registro-de-firmas-de-la-matriz)
 
 ## scripts/ci/check-stage-dependencies.js
 
-Verifica que la condición de cada etapa de un pipeline **diga la verdad sobre de qué depende**. En Azure DevOps hay dos maneras de dejar una etapa mal enganchada y **ninguna da error**: el pipeline corre, se ve verde, y se rompe el día que alguien reordena las etapas. **(a)** La condición **nombra una etapa de la que no depende** — anda de casualidad, porque ADO resuelve dependencias *indirectas*; el día que el eslabón del medio cambie, la condición pasa a evaluar contra la nada. **(b)** 🔴 La peor: **depende de una etapa que su condición no nombra** — un `condition:` explícito **reemplaza** al `succeeded()` implícito y `dependsOn` a secas sólo *ordena*, así que un `Build` que depende de las pruebas y no las nombra **empaqueta con las pruebas en rojo**, que es exactamente el agujero que el flujo canónico existe para cerrar, y se ve idéntico a un pipeline correcto. Sin condición explícita **no hay hallazgo**: ahí rige `succeeded()`, que es lo correcto por default — marcarlo sería ruido en los 19 pipelines. **Medido antes de gatear** (regla de la casa): los 18 pipelines de los seis productos están limpios en los dos sentidos, así que entra bloqueante sin deuda previa. 🔴 **Tercera regla (2026-09-02)**: `succeeded()` —implícito o explícito— sobre una dependencia que **tiene condición propia**. Si ésa queda `Skipped`, el dependiente se saltea también y nada se pone rojo: un humo en un job que depende del reciclado, que sólo corre si el upload devolvió 200, no corre con un 409 y el stage queda VERDE. Aplica a etapas y a **jobs** — y es la ÚNICA regla que se aplica a jobs, a propósito: las dos de etapas copiadas a jobs dan falsos positivos (un job sin `dependsOn` corre en paralelo, no cuelga del anterior; `condition: succeeded()` explícito SÍ honra dependencias). Medida sobre los 14 volcados antes de gatear: levantó exactamente ese caso y nada más. Red: `scripts/tests/stage-dependencies.test.sh` (13 casos; el caso 2 **reproduce el defecto real** y el 3 su gemelo peor — sin esos dos, un verde no significaría nada; los casos 4 a 7 son los falsos positivos que lo harían apagar, y el 8 exige que una condición ilegible salga **2** y no 0). Corre en la suite diaria desde `install-tycon-hooks.sh`.
+**Qué es:** Un control que verifica que la condición de cada etapa de un pipeline diga de qué depende de verdad.
+
+**Por qué existe:** En Azure DevOps una etapa mal enganchada no da error: puede empaquetar con las pruebas en rojo o quedar verde con la etapa anterior saltada. Sin condición explícita no hay hallazgo.
+
+**Quién la usa:** La CI y la suite diaria, sobre los pipelines de los productos.
+
+**Dónde se prueba:** `scripts/tests/stage-dependencies.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-stage-dependenciesjs)
 
 ## scripts/nightly/dependencies/
 
-*(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)*
+_(scripts/nightly/dependencies/ + scripts/ci/audit-dependencies.js)_
 
-La **revisión nocturna de dependencias** (2026-09-01). Los pipelines tienen tres controles de seguridad —dependencias, secretos y código— y **sólo el primero pregunta afuera**: compara los paquetes contra la base pública de avisos de GitHub, en vivo. Los otros dos miran sólo el repo, así que el mismo código da siempre el mismo resultado. De ahí la propiedad que nadie había puesto en palabras: **el veredicto del primero puede cambiar sin que cambie una línea de código** — y ese análisis **sólo corre en los pull requests**. Medido: el pipeline del frontend de un producto pasó en verde a las 15:56 del 2026-09-01 y a las 16:42 se publicó CVE-2026-73089 sobre `browserslist`; mismo código, veredicto opuesto, y nadie se enteraba hasta que a alguien se le ocurriera abrir un PR. Ahora los 10 repos se miran sobre `main` a la 1 de la mañana y cada hallazgo nuevo **abre un pull request** — que tiene dueño y estado, y donde **rechazar obliga a escribir el motivo**. 🔴 **Avisa, no frena**: el código no cambió, no hay nada que bloquear, y frenar hoy lo que ayer estaba bien —sin que nadie haya hecho nada— es la vía rápida a que se apague; el control del PR sigue frenando y no se toca. El criterio **no es propio**: vive en `audit-dependencies.js`, el mismo guión para las dos consecuencias, porque estaba **copiado adentro de los diez pipelines** (la misma deuda que ya mordió con `release-notes.sh` en 8 repos). Tres decisiones que lo sostienen: **lo declarado no despierta y lo vencido vuelve a contar** (una deuda sin fecha, o ilegible, no ampara) · **el tope de ruido no PIERDE hallazgos** — lo que no entra hoy entra *primero* mañana, porque un tope que entierra lo que mañana ya no es "nuevo" es el modo de falla más silencioso que puede tener · **"no medido" nunca es "limpio"**, y una corrida incompleta no puede volverse la línea base de mañana. 🔴 **Un escaneo puede dar VERDE sin haber mirado.** Tres defectos que se tapan entre sí: no restaurar antes de escanear (sin eso `dotnet list --vulnerable` no mira nada), perder ese fallo en un `| tee`, y sólo avisar aunque se viera. Medido al correr el análisis a mano en los 10 repos antes de encender nada: un backend con 4 vulnerabilidades altas y su pipeline en verde. Red: `scripts/tests/audit-dependencies.test.sh` (14 casos) y `nightly-dependencies.test.sh` (14) — todos verificados por **rojo previo**; el más elocuente imprime `crít 0 · alta 0` sobre un repo con 4 altas. 🔴 **Audita lo PUBLICADO, no la rama que quedó en el disco (2026-09-03)**: mira `main` —es lo que corre en producción— y no el árbol de trabajo, o sea la rama en la que quedó el checkout de cada repo, que suele ser `dev`: se reportarían vulnerabilidades que producción no tiene, o peor, se **perderían las que sí**. Prepara un árbol temporal parado en `origin/main` y lo borra al terminar, sin tocar el checkout del dev; si no lo puede preparar, el repo sale **NO MEDIDO**, nunca "limpio". Consecuencia que hay que saber: **una declaración de deuda sin commitear ya no ampara**. 🔴 **Y «resuelto» no significaba resuelto (2026-09-10)**: la pieza contaba como *trabajo real* toda ficha cuyo pull request alguien mergeó — pero mergearlo quiere decir *«sí, hay que arreglarlo»*, no *«está arreglado»*. Medido el 09-09 sobre las tres fichas aceptadas que había: **una sola** tenía fecha de arreglo, y **la había escrito una persona a mano**; las otras dos no la iban a recibir nunca. Eran **tres** defectos que se tapaban entre sí, los tres reproducidos contra el guion anterior antes de escribir una línea: **(1)** la ficha aceptada **no la volvía a mirar nadie** —el recorrido iba por hallazgo y sólo miraba la carpeta de pendientes—, así que sus datos quedaban congelados en la primera noche; **(2)** 🔴 **declarar la deuda salía como haberla pagado** — lo declarado se descuenta *antes* de comparar, el identificador desaparecía de la lista de hallazgos y eso se leía como «ya no está»: la ficha se cerraba con el motivo «(se pagó)» mientras la vulnerabilidad seguía ahí; **(3)** **el identificador se movía solo** — la huella es `paquete|severidad|avisos`, así que un aviso nuevo sobre el mismo paquete crea **otro** id: el viejo se daba por resuelto (falso) y el nuevo nacía como ficha nueva **con un segundo pull request**. Ahora la vigilancia va **por ficha y no por hallazgo**, alcanza también a las aceptadas, y decide en cuatro ramas **por orden**: algún repo sin medir o apagado → no se decide nada (*«no medido» nunca es «limpio»*, y el repo apagado se **dice** en la ficha, como estado y no como alarma, con el marcador que se borra solo cuando vuelve) · ningún identificador presente en ningún repo → **`resuelto:`**, que es lo único que lo escribe: ni un pull request mergeado, ni una declaración, ni un id que cambió · presente pero **declarada en todos** sus repos → archivada como descartada por deuda, con los vencimientos, y **fuera del denominador** de las reglas de retiro · presente sin declarar en alguno → viva, con los datos de hoy. Antes de crear una ficha se busca en las **tres** carpetas: un aviso nuevo del mismo paquete **en el mismo proyecto** se anexa a la que ya está (y **no consume el tope de ruido**: no es una novedad, es el mismo problema con otro nombre), y una ficha cerrada que reaparece se **reactiva con su historia** (`resuelto_antes:`, `reaparecido:`) en vez de nacer de nuevo. 🔴 **Dos fichas del mismo paquete en proyectos distintos de Azure siguen siendo dos** —el pedido de trabajo es uno por proyecto y fundirlas le daría un dueño equivocado—: con el snapshot real del 09-09 esa regla produce **0 anexos**, y eso se publica. Y **`report` pasó a contar arreglos**: de *«3 de 3 trabajo real»* a **1 real y 2 aceptadas sin resolver**, el número que salió de la corrida. Red: **20 casos nuevos** en `nightly-dependencies.test.sh` (**49 chequeos**, 29 antes), con el rojo previo verificado poniendo el guion de `origin/main` en su lugar y volviendo a correr: **19 se ponen rojos**; los **tres que no** están escritos uno por uno con su motivo, porque son de no-regresión —impiden que el arreglo resuelva o funda **de más**— y un caso que no puede ponerse rojo antes no prueba nada por sí solo. Lo que **no** se tocó: el pipeline, el criterio compartido con el control del pull request, la huella y la etiqueta de un repo (si cambiaran, la noche siguiente todo parecería nuevo y se comería el tope de ruido). Si el nocturno deja de correr, `scripts/hooks/dependencies-notice.js` lo denuncia al arranque y **calla los números viejos**. 🔴 **Rechazar un pull request no lo devuelve a la mañana siguiente (2026-09-10)**: los dos nocturnos reintentan el pull request de toda ficha pendiente que no tenga uno **activo** —un reintento que existe por una buena razón: una ficha anunciada cuando la identidad del pipeline no puede crear ramas queda esperando decisión sin un lugar donde decidirse— pero **un pull request rechazado tampoco está activo**. Medido: en el vigilante pasó **cinco veces en cuatro días**, y la rama de un mismo hallazgo acumuló **tres** pull requests seguidos (dos rechazados y un tercero) para una decisión ya tomada. Por eso **cada ficha recuerda cuál es su pull request** (`pr:`) y se abre uno nuevo sólo cuando nunca tuvo ninguno; sin `pr:` se pregunta por la rama y se **adopta** lo que haya, que es lo que migró las 8 fichas abiertas sin tocarlas a mano. La consecuencia del rechazo la decide **cada cola**, y son distintas a propósito: en dependencias se anota (`rechazado:`, `motivo_rechazo:`) y la ficha **sigue viva** —la vulnerabilidad es un hecho medido, rechazar el aviso no la saca de `main`, y una rechazada tampoco puede volverse `ignorado`: rechazar ES mirarla—; en el vigilante archiva el borrador como descartado con el comentario de motivo, que es exactamente lo que `/tycon-vigilante reject` ya hacía a mano. 🔴 **Y las consultas perdieron los silenciadores**: `|| true` y `2>/dev/null` convertían un `az` que falló en «no hay ninguno» —cuatro veces entre los dos pipelines—, así que ahora una consulta fallida no abre nada, imprime el error crudo, deja seguir a las demás fichas y termina la noche en rojo. 🔴 **Y va en UN guion que los dos YAML llaman** (`scripts/ci/open-pr-per-finding.sh`): los dos bloques nacieron iguales y en **cinco días** ya se habían separado en tres lugares —entre ellos la guarda del literal `$(…)` de los revisores, arreglada en una copia y nunca llevada a la otra—, la misma deuda que este repo ya pagó con `release-notes.sh` en 8 repos. Red: su suite, que extrae el paso **real** de cada YAML por su `displayName` y lo corre contra un remoto bare y un `az` doblado —cero red—; el caso que más pesa reproduce un pull request rechazado y vuelto a abrir, con sus hilos reales, y el que le sigue exige que una consulta fallida **no** abra nada. 🔴 **Lo decidido se registra antes de contar (2026-09-18)**: si el rechazo se registra en el último paso, después de contar y de mandar el resumen, el resumen cuenta borradores ya rechazados y alguno queda archivado como «nadie lo miró» con el motivo escrito en su pull request. Por eso cada noche ARRANCA con la pasada `--record-only` del mismo guion, que registra sin abrir nada.
+**Qué es:** La revisión nocturna de dependencias: mira `main` de cada repo y abre un pull request por cada hallazgo nuevo.
+
+**Por qué existe:** El veredicto del control de dependencias cambia sin que cambie el código, y sólo corría en pull requests. Avisa y no frena. Lo declarado no despierta, lo vencido vuelve a contar, y no medido nunca es limpio.
+
+**Quién la usa:** Los pipelines nocturnos de Azure y GitHub, y el dev que decide cada pull request.
+
+**Dónde se prueba:** `scripts/tests/audit-dependencies.test.sh`, `scripts/tests/nightly-dependencies.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependencies)
 
 ## scripts/nightly/dependencies/work-items.js
 
-**El pedido de trabajo del líder** (2026-09-13): cada vulnerabilidad viva de la revisión nocturna llega como **un Bug en el proyecto de Azure DevOps del equipo dueño**, asignado a quien lo administra, con el dev mencionado, la misma noche y **nunca dos veces**. Hasta acá el único aviso era el pull request del arnés, que ve sólo quien mantiene el arnés. 🔴 **Nace SIMULADO y se enciende con `azure.pedidos_activos: true` en `repos.json`** (encendido desde el 2026-09-14), tras una prueba manual: la identidad del pipeline lee los administradores y crea un Bug de prueba en cada proyecto, y llegan los dos mails —la asignación a otro dev y la mención al dev con el comentario entero—. **El dueño se deduce de Azure** —el único administrador del proyecto además del dev—, y cero, varios o un grupo ilegible caen en el dev **con el motivo en el comentario**. **Dos identidades por pedido** —el id en la ficha y la etiqueta `arnes:<id>` en Azure—: si el push de anoche se perdió, la noche siguiente **adopta** en vez de duplicar; si la consulta falla, **no se crea nada**. Lo que la medición contra Azure obligó a decidir, con el código de salida mirado en cada comando: **8 proyectos** para 20 repos; **0 de 8** con una iteración «actual» vigente (5 sin fechas, 3 terminadas) → una iteración terminada no es actual y el pedido va a la raíz, dicho; `az boards query` con 0 resultados **imprime 0 bytes y sale 0**, igual que nada → los duplicados se consultan por WIQL REST, **con `[System.TeamProject] = @project`**, porque la ruta del proyecto sola **no acota** (183 work items contra 0); 🔴 **el formulario del Bug no muestra Descripción** (medido en Agile y Scrum) → el texto va a **Repro Steps**, en HTML, del **mismo generador** que el texto del pull request (que no cambió un byte); y `az` 2.79 **lee como archivo** todo lo que siga a `=@` → el texto viaja siempre por archivo, y etiquetas y texto van en **un solo** `--fields` (repetido, gana el último). El paso nuevo corre **antes** del commit de la noche (si no, el id no viaja a `main`) y **no lo tumba**: si no pudo intentar nada, el rojo lo pone un paso final, después de commitear y abrir los pull requests. Con los pedidos encendidos, una ficha **sin pedido** no puede archivarse como `ignorado` (nadie pudo mirarla). El aviso de arranque grita si la sección `pedidos` **falta** del snapshot. Red: su suite (74 chequeos; en la primera versión, **49 de 51 rojos** con el guion ausente y los dos verdes de no-regresión) sobre un `az` de mentira compartido (`scripts/tests/lib/fake-az.sh`) que recuerda lo que creó y reproduce las trampas medidas; `P23`/`P23b` en la suite del nocturno.
+**Qué es:** El paso que crea un Bug en el proyecto de Azure DevOps del equipo dueño por cada vulnerabilidad viva, asignado y con el dev mencionado.
+
+**Por qué existe:** El único aviso era el pull request del arnés, que ve sólo quien mantiene. Se enciende con `azure.pedidos_activos: true` en `repos.json`; nunca crea dos veces el mismo pedido y, si no pudo consultar, no crea nada.
+
+**Quién la usa:** La revisión nocturna de dependencias, antes del commit de la noche.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependencieswork-itemsjs)
 
 ## work-items.js state
 
-*(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-dependencies.js)*
+_(work-items.js state + el cruce de scripts/nightly/dependencies/nightly-dependencies.js)_
 
-**El cruce «pedido cerrado, vulnerabilidad viva»** (2026-09-14). Con el pedido de trabajo hay dos fuentes sobre el mismo hecho: el **estado del Bug** (lo que una persona decidió) y la **medición** de cada noche. Nada las comparaba, así que un Bug cerrado por error o antes del merge quedaba cerrado para siempre con la vulnerabilidad viva — el tablero decía «listo». Ahora un paso nuevo del pipeline **vuelca** el estado de cada pedido a `bugs-<fecha>.json` (sólo lecturas) **antes** de la revisión, y el nocturno lo **cruza por proyecto** sin tocar la red: una noche de gracia, después **un** comentario en el Bug con el dev mencionado (*«no lo reabro: decidilo vos»*), y nunca un cambio de estado. Lo que la medición contra Azure del 2026-09-10 obligó a decidir: **«cerrado» se lee por categoría** y no por nombre (`Closed` en Agile y `Done` en Scrum son lo mismo; `Removed` sólo existe en Scrum) · **«arreglado» es un vocabulario declarado** (`azure.motivos_arreglado`, comparado exacto) — sin él no se clasifica nada · **persona = descriptor que no empieza con `svc.`**, porque un comentario del pipeline es una revisión más y con `System.ChangedDate` a secas `ignorado` no dispararía nunca (ahora `ignorado` exige 7 días sin cambios de una persona en el pedido) · **se lee de a uno**, porque «no existe» y «sin permiso» son el mismo `TF401232` y los dos son «no leído», nunca «sin pedido» · `az boards work-item show --fields` falla con `--expand`, así que se lee sin `--fields` y el volcado guarda una **lista blanca** de campos (ni títulos, ni descripciones, ni comentarios: viaja por git). 🔴 **«No leído» nunca es «coincide»**: sin volcado, con `az` caído o con un id ilegible, el par va a `no_leidos` y sus marcadores no se tocan. Dos cosas más: el **resumen diario** lee el cruce (suma dos rubros y dos fallos), y un **Bug suelto** —creado, con el id perdido y la ficha cerrada la noche siguiente— se busca por su etiqueta en cada proyecto (WIQL con `@project`) y se adopta en su ficha. La fecha de la noche pasó a nacer en el paso del volcado. Red: su suite (14 casos, sobre el `az` de mentira compartido, extendido con revisiones y categorías) + 17 casos del cruce en `nightly-dependencies.test.sh` + T30 en `daily-summary.test.sh` + 2 casos del banco en `22-dependencias-notice.json`, todos con su rojo previo contra `origin/main`.
+**Qué es:** El cruce entre el estado de cada Bug de dependencias y la medición de la noche.
+
+**Por qué existe:** Un Bug cerrado por error dejaba la vulnerabilidad viva y el tablero decía listo. Tras una noche de gracia deja un comentario al dev y nunca cambia el estado. Un pedido no leído nunca cuenta como coincidencia.
+
+**Quién la usa:** El nocturno de dependencias y el resumen diario.
+
+**Dónde se prueba:** `scripts/tests/nightly-dependencies.test.sh`, `scripts/tests/daily-summary.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#work-itemsjs-state)
 
 ## scripts/nightly/dependencies/daily-summary.js
 
-**El resumen diario del dev y su red** (2026-09-14): **un solo mensaje por día** en Telegram con lo que dejaron las dos colas nocturnas —dependencias lo manda a las 04:00 UTC y el vigilante **lo edita** a las 08:00 agregando su sección, así que el teléfono suena una vez—, con **lo que cambió desde el último resumen arriba**, los fallos de la noche después, *«Sigue igual (N rubros)»* en una línea, y **tres líneas también la noche sin cambios**: si callara cuando no hay novedad, *«no llegó»* y *«no había nada»* serían el mismo silencio. Nace de medir qué no le llegaba a nadie (2026-09-10): el aviso del arranque leía sólo `pending/`, así que las **aceptadas sin resolver** (dos, del 09-09) y **lo postergado por el tope de ruido** (seis hallazgos esa noche) no salían en ningún canal; el vigilante **no tenía aviso de arranque** y su Telegram nunca se había prendido (6 borradores, el más viejo de 9 días, y un aceptado **sin story** hace 7); y **«aceptado sin story» no se podía leer** porque `approve` no escribía una clave fija — ahora escribe `story_creada:` (no `story:`, que dispara el freno de crear stories a mano). 🔴 **Por qué Telegram y no un work item de Azure** (decidido midiendo las dos precondiciones): el work item pedía un Epic a mano, permisos de edición y resolver un mail a una identidad, con una suscripción de mail que nadie puede verificar desde el código; Telegram pide **dos variables** en `vigilante-prod-hosts` (cargadas el 2026-09-14) y cuando falla **sale 3 y lo dice**. Es **un aviso, no un seguimiento**: la ficha, el pull request y el pedido de trabajo siguen siendo donde se decide. 🔴 **La red**: el snapshot se commitea antes de hablar con nadie, así que una noche que midió perfecto y no pudo entregar el resumen salía **«✅ no hay nada esperando decisión»**. Ahora el resumen deja `resumen: { canal, message_id, editado, entregado_el, motivo, rubros }` en el snapshot **después** de intentar (nunca el destinatario, que viaja por git), y `dependencies-notice.js` —el hook que ya estaba registrado en todas las máquinas, no uno nuevo que el instalador podría no enchufar— cobra en rojo *«la noche corrió pero el resumen NO consta»* o *«NO se entregó: <motivo>»*, para las dos colas; la noche buena no suma una línea al arranque. Cuatro reglas que la sostienen: **lee, no mide** (`nightly-dependencies.js`, `work-items.js`, `vigilante.js` y `tycon-telegram-notify.sh` no se tocaron); **un rubro sin fuente es `null` con motivo, nunca 0** (mecánico si la clave falta del snapshot, o declarado en `resumen.json` → `rubros_sin_fuente`, que nace **vacío**); **se compara por identidad y no por número** (dos fichas nuevas que reemplazan a dos resueltas son un cambio, y la edad de la más vieja —que crece sola— se compara por QUIÉN es, o nunca habría «sin cambios»); y **la única salida a la red es el script** (el guion no tiene cliente HTTP ni token). Red: su suite (104 chequeos; con el guion ausente, **76 de 80 en rojo** y los 4 verdes eran guardas de no-regresión) sobre un **Telegram de mentira local** —nunca la API real: la suite exporta la API y el canal de prueba antes del primer caso— que corre los **pasos REALES de los dos pipelines** extraídos por su nombre, incluido el literal `$(TELEGRAM_BOT_TOKEN)` que Azure deja cuando la variable no está; y 10 casos nuevos del banco en `22-dependencias-notice.json` (los 7 primeros, rojos contra el hook de `origin/main`; los 3 de un snapshot que no es un objeto, contra la primera versión). Tres cosas que la suite cuida con su caso: una noche sin constancia no desaparece cuando la siguiente entrega, un snapshot `null` no calla el aviso de arranque ENTERO, y la edición de las 08:00 no borra el mensaje de las 04:00.
+**Qué es:** El resumen diario: un único mensaje de Telegram con lo que dejaron las dos colas nocturnas, con lo que cambió arriba.
+
+**Por qué existe:** Varias cosas no llegaban a ningún canal. Y una noche que midió bien pero no entregó el resumen se leía como que no había nada. Deja constancia de la entrega en el snapshot y el hook de arranque cobra si falta.
+
+**Quién la usa:** Las colas de dependencias y del vigilante, y el hook `dependencies-notice.js`.
+
+**Dónde se prueba:** `scripts/tests/daily-summary.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydependenciesdaily-summaryjs)
 
 ## scripts/nightly/open-prs/open-prs.js
 
-**El pull request trabado** (2026-09-17): el resumen diario de Telegram termina con los PR de **toda la organización** que llevan más de 2 días abiertos, uno por línea (`#id proyecto/repo — autor — N días`), los 10 más nuevos y «(+N más)». Por qué: un pull request creado **con auto-completar** cuyo build falla porque `main` está roto queda esperando un verde imposible aunque el arreglo entre por otro lado (medido: **13 días**). El freno de auto-completar no alcanza: el hueco es que nadie se entera. Versión chica: **el criterio es la antigüedad** (no se diagnostica por qué está trabado: medido, `mergeStatus` dice `succeeded` en un PR trabado y el log del build se borra a los ~8 días), **sólo avisa al dev**, y quedan fuera los borradores y las ramas de las colas del arnés (`vigilante/*`, `dependencias/*`), que ya tienen su rubro. Lo corre el pipeline del vigilante en un paso propio antes de la entrega, y `daily-summary.js deliver --extra <archivo>` lo pega **al final del mismo mensaje**, acotado aparte (13 líneas, 590 caracteres) para no recortarle nada al resto y quedar bajo los 4096 de Telegram. 🔴 **No medido no es cero**: si Azure no contesta, la sección dice «no se pudo consultar (<motivo>)» y el paso queda naranja; si el paso ni llegó a escribirla, el resumen sale igual con esa línea. Paginado de a 100 hasta una página incompleta (el endpoint corta en 101 sin avisar). El `az` de mentira compartido (`scripts/tests/lib/fake-az.sh`) escribe sincrónico: si termina el proceso antes de vaciar la salida, corta toda respuesta de más de ~64 KB. Tres reglas más, cada una con su caso: los nombres de proyecto, repo y autor pasan sin `##` (Azure interpreta `##vso[` en cualquier línea de la consola del paso: un nombre así fijaba variables de la corrida), la sección se recorta por **líneas enteras** y las suma a «(+N más)» (el recorte por caracteres se comía PR con nombres largos sin avisar), y un PR sin fecha legible se **cuenta** en vez de desaparecer. Red: `scripts/tests/open-prs.test.sh` (15 chequeos) y T33–T33e en `daily-summary.test.sh` (12 chequeos).
+**Qué es:** El paso que lista los pull requests de toda la organización con más de 2 días abiertos y los pega al final del resumen diario.
 
-También deja, con `--json <archivo>`, lo que lee el sitio de la organización: por PR, número,
-proyecto, repo, días, la identidad única del autor y el enlace, **nunca el título ni el nombre para mostrar**. Lo corre el
-nocturno del tablero y lo guarda en `.dashboard/open-prs/` del repo de operaciones; en GitHub declara «no medido».
+**Por qué existe:** Un pull request con auto-completar y el build roto queda esperando un verde imposible y nadie se entera. Avisa por antigüedad, sólo al dev. Si Azure no contesta, lo dice: no medido no es cero.
+
+**Quién la usa:** El pipeline del vigilante y `daily-summary.js deliver --extra`; con `--json` lo lee el sitio.
+
+**Dónde se prueba:** `scripts/tests/open-prs.test.sh`, `scripts/tests/daily-summary.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlyopen-prsopen-prsjs)
 
 ## scripts/nightly/assigned/assigned-items.js
 
-**Lo que cada persona tiene asignado, de cada noche.** El sitio de la organización le muestra a
-cada dev sus pedidos abiertos sin consultar la plataforma en vivo (eso le pediría una credencial con lectura de toda la
-organización): este guion, en el nocturno del tablero, deja `.dashboard/assigned/assigned-<día>.json` con id, proyecto,
-tipo, estado, la identidad del asignado, días en el estado, enlace y si es un Bug de dependencias del arnés. Lista blanca:
-**nunca el título**. Una WIQL acotada a cada proyecto de `repos.json` y los campos en lotes de 200. 🔴 **No medido no es
-cero**: si una consulta falla, el archivo dice `no_medido` con el motivo y el guion sale 1; en GitHub declara «los pull
-requests y los pedidos de GitHub todavía no se leen». Red: `scripts/tests/assigned-items.test.js` (con `fake-az.sh`, que
-suma el lote de work items).
+**Qué es:** El guion que deja cada noche lo asignado a cada persona en `.dashboard/assigned/`.
+
+**Por qué existe:** El sitio de la organización muestra a cada dev sus pedidos abiertos sin consultar la plataforma en vivo. Guarda una lista blanca (nunca el título) y, si una consulta falla, dice no medido con el motivo.
+
+**Quién la usa:** El nocturno del tablero y el sitio de la organización.
+
+**Dónde se prueba:** `scripts/tests/assigned-items.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlyassignedassigned-itemsjs)
 
 ## scripts/nightly/deployments/deployments.js
 
-**Qué llegó a staging y qué a producción, en cada producto.** Una corrida `succeeded` no prueba nada sobre producción:
-producción va detrás de una aprobación manual y, si nadie aprueba, vence, el stage queda `skipped` y la corrida igual dice
-`succeeded` (medido en el pipeline de producción de un producto del equipo: tres corridas así en una semana). Este guion,
-en el nocturno del tablero, deja `.dashboard/deployments/deployments-<día>.json` con el último despliegue a cada entorno
-(fecha, corrida, commit), si producción quedó atrás de staging, la aprobación (pendiente, vencida, no aprobada o ninguna)
-y si main está roto. 🔴 **El criterio es el stage**: cuenta una corrida si su timeline tiene el stage con el identificador
-**exacto** que declaró la organización y terminó `succeeded` (o `succeededWithIssues`, marcado); nunca por el nombre
-visible ni por un pedazo de texto como «Prod», que encuentra NONPROD y PREPROD y pierde Production. 🔴 **Ningún valor de
-una organización en el código**: proveedor, pipelines y stages se declaran en `operations.json → deployments` (la pestaña
-Configuración del sitio los propone leyendo la última corrida de main, y sólo se guarda lo que una persona confirma). El
-segundo proveedor es GitHub (`github.js`: deployments y environments; «vencida» no se distingue y sale no medida).
-🔴 **No medido no es «sin despliegue»**: sin permiso, `az` caído o una respuesta ilegible dan «no medido» con un motivo de
-lista cerrada y el texto de la falla saneado (sin la identidad de un `TF400813`, direcciones ni correos). Lista blanca: del
-timeline sólo identificador, resultado, estado y fechas; nunca quién aprobó. La leen la ficha de despliegues del tablero
-y la pestaña Proyectos del sitio de la organización; el lector de Azure (`azure.js`) queda para la serie histórica de
-compilaciones. Red: `scripts/tests/nightly-deployments.test.js` (con `fake-az.sh` y `fake-gh.js`).
+**Qué es:** El guion `deployments.js` que registra qué llegó a staging y qué a producción en cada producto, leyendo el timeline de cada corrida.
+
+**Por qué existe:** Una corrida `succeeded` no prueba nada sobre producción: sin aprobación el stage queda `skipped`. Cuenta por el identificador exacto del stage declarado en `operations.json → deployments`, nunca por texto. Sin permiso o con `az` caído, dice no medido.
+
+**Quién la usa:** El nocturno del tablero, la ficha de despliegues y la pestaña Proyectos del sitio; la prueba corre con `nightly-deployments`.
+
+**Dónde se prueba:** `scripts/tests/nightly-deployments.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydeploymentsdeploymentsjs)
 
 ## scripts/site/ — el sitio de la organización
 
@@ -618,666 +781,1258 @@ sin permiso del repo; la edad de la copia frena como `operations.json`. Red: `si
 
 ## guides/integrations/ado-cola-y-listados.md
 
-El porqué del bloque de Azure DevOps que se carga en cada sesión (`claude-md-blocks/ado-runs-list-lag.md`): sus **seis reglas** —un listado atrasado no prueba que el trigger no disparó, el listado no es la cola, cancelar la corrida no saca su pedido de trabajo, un vigilante avisa y no re-encola, una salida vacía puede ser un `az` que falló, y `succeeded` habla de staging— con sus comandos. **Poda del 2026-09-06**: el bloque pesaba 9.979 bytes (el 27 % del `CLAUDE.md`) y bajó a **4.134 sin perder una regla**; el `CLAUDE.md` completo pasó de 36.880 a **31.035**. Verificado frase por frase contra la versión anterior antes de pisarla. 🔴 Un bloque que nadie mide es también un bloque que nadie relee: la poda encontró una regla ya retirada que el bloque seguía repitiendo en cada sesión.
+**Qué es:** La guía `guides/integrations/ado-cola-y-listados.md` con el porqué de las seis reglas del bloque de Azure DevOps de cada sesión.
+
+**Por qué existe:** Un listado atrasado, vacío o fallido no es evidencia de lo que no muestra; las acciones con efectos se disparan por evidencia positiva. Explica cada regla con sus comandos.
+
+**Quién la usa:** El agente y el dev cuando actúan sobre colas y corridas de Azure.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsado-cola-y-listadosmd)
 
 ## guides/integrations/clockify-mcp.md
 
-Setup opcional del MCP server de Clockify (tracking de horas) en Claude Code. Scripts `.sh` (mac/linux) y `.ps1` (Windows) en `scripts/`, user-scope, key personal por dev.
+**Qué es:** La guía `guides/integrations/clockify-mcp.md` para instalar el MCP de Clockify en Claude Code (opcional).
+
+**Por qué existe:** Permite el seguimiento de horas desde la sesión. Trae scripts `.sh` y `.ps1` en `scripts/`, instala a nivel de usuario y usa una clave personal por dev.
+
+**Quién la usa:** Cada dev que quiere seguimiento de horas.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsclockify-mcpmd)
 
 ## guides/integrations/clocki-tracking.md
 
-Skill `clocki` + hooks para tracking automático en Clockify: abre time entry cuando arrancás trabajo (story via `tycon-pipeline`, fix/refactor ad-hoc con confirmación), cierra al detectar idle >15min (retroactivando end-time al último activity). Auto-match cwd → project. Cross-platform.
+**Qué es:** La guía `guides/integrations/clocki-tracking.md` del seguimiento automático de horas en Clockify.
+
+**Por qué existe:** Abre la entrada de tiempo al arrancar trabajo y la cierra al detectar más de 15 minutos de inactividad, con la hora de fin retroactiva. Asocia carpeta y proyecto solo.
+
+**Quién la usa:** La skill `clocki` y sus hooks, en cada máquina que la instala.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsclocki-trackingmd)
 
 ## guides/integrations/codegraph-mcp.md
 
-Setup opcional de CodeGraph como MCP server: índice semántico del codebase (tree-sitter → SQLite local) para que los agentes consulten símbolos/call graph/dependencias sin escanear archivos con `grep`. Scripts `.sh`/`.ps1` en `scripts/` (autodetectan repo-suelto vs contenedor) + hook `SessionStart` que auto-configura cada repo nuevo (se corre una vez por máquina).
+**Qué es:** La guía `guides/integrations/codegraph-mcp.md` para instalar CodeGraph como MCP (opcional).
+
+**Por qué existe:** Es un índice del código en una base local para consultar símbolos, llamadores y dependencias sin escanear archivos. Los scripts autodetectan repo suelto o contenedor; un hook de arranque configura cada repo nuevo.
+
+**Quién la usa:** Los agentes de la sesión y cada dev que lo instala.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationscodegraph-mcpmd)
 
 ## guides/signed-scope-guardrails.md
 
-4 mecanismos anti-regresión del firmado del cliente: frontmatter `signed_for_sprint`, CR registry obligatorio, validator VAL-C7, audit periódico. Stories que cubren ACs firmados no pueden moverse a otros sprints sin aprobación escrita. Por qué: sin nada que cruce el plan contra lo que el cliente firmó, un corrimiento de sprint no autorizado pasa días sin detectarse.
+**Qué es:** La guía `guides/signed-scope-guardrails.md` con cuatro mecanismos contra el corrimiento no autorizado de lo firmado por el cliente.
+
+**Por qué existe:** Sin nada que cruce el plan con lo firmado, un corrimiento de sprint pasa días sin detectarse. Usa el frontmatter `signed_for_sprint`, un registro obligatorio de cambios, el validador VAL-C7 y una auditoría periódica.
+
+**Quién la usa:** Quien arma el plan de sprints, el validador de stories y el advisor de alcance firmado.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidessigned-scope-guardrailsmd)
 
 ## guides/integrations/ado-projects.md
 
-Integración Azure DevOps: al crear una story Mary+GOLD se crea automáticamente su work item en ADO. Cubre el hook `on-story-create.js` + el skill `tycon-ado-story-wi`, el schema de `.tycon/ado-config.yaml`, la auto-detección de tipo de WI por process template, el linkeo al Epic, y el ciclo de vida ADO completo (crear → Active → Closed).
+**Qué es:** La guía `guides/integrations/ado-projects.md` de la integración con Azure DevOps.
+
+**Por qué existe:** Al crear una story se crea sola su work item. Cubre el hook `on-story-create.js`, la skill `tycon-ado-story-wi`, el esquema de `.tycon/ado-config.yaml`, el tipo de work item por plantilla, el vínculo al Epic y el ciclo de vida.
+
+**Quién la usa:** El hook de creación de stories y el dev que configura un repo.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsado-projectsmd)
 
 ## guides/safety-guard.md
 
-Freno de mano del harness: hook `PreToolUse` matcher `Bash|PowerShell` (2026-10-04: por la herramienta PowerShell de Windows también) que bloquea comandos destructivos irreversibles (`rm -rf /`, `git push --force` a main, `curl|bash`, `DROP DATABASE`, `npm publish`, lectura de `.ssh`/`.aws`/`.env`, etc.). **Prendido por default**, opt-out vía `TYCON_SAFETY_GUARD=0`. Override de emergencia por comando: `TYCON_SAFETY_OFF=1 <cmd>`. Inspirado en ECC safety-guard, adaptado al stack TYCON.
+**Qué es:** La guía `guides/safety-guard.md` del freno de mano: un hook que bloquea comandos destructivos irreversibles en Bash y PowerShell.
+
+**Por qué existe:** Frena `rm -rf /`, el push forzado a main, `curl|bash`, el borrado de bases de datos, `npm publish` o leer `.ssh`. Está prendido por defecto; se apaga con `TYCON_SAFETY_GUARD=0` y hay una salida de emergencia por comando con `TYCON_SAFETY_OFF=1`.
+
+**Quién la usa:** El hook `PreToolUse` en cada sesión.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidessafety-guardmd)
 
 ## guides/maintaining/context-budget.md
 
-Auditoría de tokens del harness: script Node que mide cuántos tokens consume el harness (skills + agents + MCPs + CLAUDE.md) en CADA sesión nueva, antes de empezar a trabajar. Identifica heavy hitters + propone recortes ranqueados por ahorro. Medido (2026-05-23): 35% del window usado por harness, 83% del cual = MCPs irrelevantes para TYCON (Anthropic Connectors prendidos por default). Inspirado en ECC context-budget.
+**Qué es:** La guía `guides/maintaining/context-budget.md` de la auditoría de tokens del arnés.
+
+**Por qué existe:** Un script de Node mide cuántos tokens gasta el arnés (skills, agentes, MCPs, `CLAUDE.md`) al abrir cada sesión, señala los que más pesan y propone recortes ordenados por ahorro.
+
+**Quién la usa:** Quien mantiene el arnés.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcontext-budgetmd)
 
 ## guides/maintaining/skill-scout.md
 
-Skill TYCON que se auto-dispara antes de crear una skill/agent/guide/hook nuevo. Busca primero en el catálogo local (skills + agents + guides + hooks + advisor-rules-catalog), ranquea matches, ofrece 3 caminos: USAR existing / EXTENDER existing / CREAR nuevo. Anti-pattern raíz que ataca: tejido cicatrizal del harness (capas duplicadas que dividen conocimiento). Scope local-only — no busca en GitHub/web. Inspirado en ECC skill-scout, adaptado al stack TYCON.
+**Qué es:** La guía `guides/maintaining/skill-scout.md` de la skill que se dispara antes de crear una skill, agente, guía o hook.
+
+**Por qué existe:** Evita capas duplicadas que dividen el conocimiento. Busca en el catálogo local y ofrece tres caminos: usar lo que existe, extenderlo o crear algo nuevo. No busca en GitHub ni en la web.
+
+**Quién la usa:** Quien va a crear una pieza nueva del arnés.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingskill-scoutmd)
 
 ## guides/maintaining/rules-distill.md
 
-Auditoría estructural del catálogo de reglas vs los advisors que las enforcean. Script Node determinístico (no LLM, aprovecha rule IDs estables `SEC-C1`/`DOTNET-W3`/etc) que detecta 5 categorías de drift: BROKEN-REFS (catalog miente sobre owner), ORPHANS (advisor cita regla no documentada), ZOMBIES (catalog declara regla con owner advisor que no la cita), OWNER-MISMATCH (asignación incorrecta), NON-ADVISOR ENFORCED (regla owned by hook/skill, informativo). Primer corrida 2026-05-23: 74 orphans + 3 zombies — la cobertura real del harness es ~30-40% mayor que la documentada; **al 2026-09-16, 0 y 0**. 🔴 **El dueño de cada regla sale de `scripts/lib/rules-catalog.js`** (ver abajo): antes su filtro sólo aceptaba letras en el prefijo y las 7 reglas del área `I18N` eran invisibles — publicaba 351 identificadores donde hay 359. Inspirado en ECC rules-distill.
+**Qué es:** La guía `guides/maintaining/rules-distill.md` de la auditoría del catálogo de reglas contra los revisores que las aplican.
+
+**Por qué existe:** Un script de Node determinista detecta cinco clases de desajuste: referencias rotas, huérfanas, zombis, dueño equivocado y reglas aplicadas por hooks. El dueño de cada regla sale de `scripts/lib/rules-catalog.js`.
+
+**Quién la usa:** Quien mantiene el catálogo de reglas.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingrules-distillmd)
 
 ## guides/maintaining/harness-audit.md
 
-Check-up reproducible del harness contra 7 categorías con score 0-10: Advisor Coverage, Context Efficiency, Quality Gates, Memory Persistence, Catalog Integrity, Security Guardrails, Pipeline Wiring. Score total + top 5 acciones priorizadas. Reemplaza la auditoría manual ad-hoc. Primer corrida 2026-05-23: 58/70 (83%). Inspirado en ECC harness-audit.
+**Qué es:** La guía `guides/maintaining/harness-audit.md` del chequeo reproducible del arnés.
+
+**Por qué existe:** Puntúa de 0 a 10 siete categorías (cobertura de revisores, eficiencia de contexto, controles de calidad, memoria, integridad del catálogo, guardas de seguridad, cableado del pipeline) y lista las cinco acciones prioritarias. Reemplaza la auditoría manual.
+
+**Quién la usa:** Quien mantiene el arnés.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingharness-auditmd)
 
 ## guides/integrations/instinct-mining.md
 
-Grabador silencioso del harness: PostToolUse hook graba tool calls sanitizadas a JSONL local; SessionStart hook (throttle 12h) dispara observer que llama Haiku via `claude` CLI (sin API key separada, usa tu suscripción) y propone instincts (reglas atómicas trigger/action). Vos aprobás/rechazás vía `/tycon-instincts`; lo aprobado va a engram y, si aplica, genera draft para catálogo/skill/hook/guide que vos commiteás a mano. Setup multi-máquina 50/50 vía hash dedup. Desde el 2026-09-14 lo que pasa el umbral se revisa en una segunda llamada contra los instintos ya decididos y el catálogo detallado del arnés (qué audita cada revisor, pre-commit, CI): lo que repite algo va a la carpeta de descartados del buzón de instintos y `/tycon-instincts review` lo muestra — medido, la semana del 11 al 14 de septiembre 11 de 14 propuestas repetían algo, y poner la lista en el prompt que propone empeoraba (el modelo la copiaba). Desde el 2026-10-09 una sola pieza, `scripts/instincts/instinct-dirs.js`, dice dónde viven las propuestas: en el buzón de instintos del árbol si el árbol lo trae (tiene su `README.md`: el clon de quien mantiene el arnés) y, si no, en la carpeta de usuario de la persona (`<estado>/inbox/instincts/`); se lee en todos los lugares y nadie crea una carpeta por leer o ensayar: si el observador la creara también en `--dry-run`, una prueba que mide «nadie escribe en el árbol» fallaría siempre sobre la copia pública. Pruebas: `instinct-dirs.test.js`, `instinct-outside-tree.test.sh`. Inspirado en ECC continuous-learning-v2.
+**Qué es:** La guía `guides/integrations/instinct-mining.md` del grabador silencioso que propone reglas atómicas (instintos).
+
+**Por qué existe:** Un hook graba llamadas de herramientas saneadas; un observador propone instintos con el modelo y una segunda pasada descarta lo que repite algo ya decidido. El dev aprueba con `/tycon-instincts`. `scripts/instincts/instinct-dirs.js` dice dónde viven las propuestas.
+
+**Quién la usa:** Los hooks de grabación y arranque, y el dev que revisa.
+
+**Dónde se prueba:** `instinct-dirs.test.js`, `instinct-outside-tree.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesintegrationsinstinct-miningmd)
 
 ## guides/harness-cost-tiering.md
 
-Patrón Anthropic *Advisor Strategy* aplicado al pipeline TYCON: executor barato (Haiku) corre la inspección mecánica, advisor caro (Opus) entra solo en juicio sintético. 4 movimientos: (a) `tycon-ac-coverage-checker` bajado de `opus` a `sonnet` (downgrade moderado conservador; los otros 2 advisors deterministas `feature-wiring` y `deferral-tracker` se mantienen en Sonnet); (b) `pipeline.js advisors --cost-tier lean` agrega `model_hints: haiku` opt-in con default sin cambios — Haiku como escape hatch para devs que quieran experimentar velocidad; (c) un script standalone que demostraba el patrón end-to-end vía `claude` CLI subshell (no wireado al pipeline — sandbox experimental; se retiró porque nadie lo llamaba); (d) **effort hint por complejidad de story** (2026-07-11, extensión PIPE-C8): el orquestador mapea el output ya-mecánico de `pipeline.js model-hint` a un reasoning effort de sesión sugerido (LOW→`medium` · NORMAL→`high` · heavy→`xhigh` · `max` nunca automático), anunciado en la misma línea advisory del model hint — docs-only, cero código nuevo. Cada movimiento es reversible independiente. Fuente: slide Anthropic *Advisor Strategy — Give agents a cost-effective intelligence boost* 2026-05-27.
+**Qué es:** La guía `guides/harness-cost-tiering.md` para bajar el costo del pipeline: ejecutor barato para lo mecánico, modelo caro sólo para el juicio.
+
+**Por qué existe:** Reparte el modelo por trabajo: baja un revisor de nivel, `pipeline.js advisors --cost-tier lean` pide Haiku como opción y el orquestador sugiere un esfuerzo de sesión según la complejidad de la story. Cada movimiento se revierte por separado.
+
+**Quién la usa:** El orquestador del pipeline y quien elige el modelo de la sesión.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesharness-cost-tieringmd)
 
 ## scripts/nightly/watcher/vigilante.js
 
-*(scripts/nightly/watcher/vigilante.js + inbox/watcher/)*
+_(scripts/nightly/watcher/vigilante.js + inbox/watcher/)_
 
-El **vigilante de producción** (2026-08-31): mira producción todas las noches, agrupa lo que huele mal y deja un borrador para que a la mañana una persona decida. **No toca nada** — sin humano en el disparo, con humano en toda acción. Lee sólo la API de administración del host (con las credenciales que ya usa el deploy: no hay conexión de servicio a Azure en la organización) y aplica cuatro reglas: **goteo** (errores persistentes por debajo del umbral de ráfaga que alerta Azure), **desagregación** (el total está sano pero una cuenta concentra los fallos), **salud/latido** (un plugin caído, o una serie que dejó de tener actividad) y **deriva** (un tipo de error que nunca se había visto, o que coincide con un despliegue). Calibrado contra los 11 incidentes de producción reales: **habría levantado 6; las alertas de Azure, 1; y no se solapan** — la frontera no es "otra métrica", es lo **sub-umbral**. Regla permanente: si un problema se puede expresar como "una métrica que Azure ya tiene cruzó un número", no es del vigilante, es una alerta que falta crear. Trae su presupuesto de ruido escrito (máx. 2 hallazgos por aviso, ≥1 noche muda de cada 2), se mide a sí mismo (`report`, desglosado por regla: `ignorado` cuenta **peor** que `descartado`) y tiene **criterio de retiro con fecha**. Tres fallas que lo dejarían inútil en silencio, las tres con su caso: snapshots que caen en el `.gitignore` (línea base imposible), auto-silenciar a los 7 días un problema que sigue vivo, y filtrar datos de clientes al repo y a Telegram. Revisión y aprobación: `/tycon-vigilante`. 🔴 **Rechazar un pull request no lo devuelve a la mañana siguiente (2026-09-10)**: los dos nocturnos reintentan el pull request de toda ficha pendiente que no tenga uno **activo** —un reintento que existe por una buena razón: una ficha anunciada cuando la identidad del pipeline no puede crear ramas queda esperando decisión sin un lugar donde decidirse— pero **un pull request rechazado tampoco está activo**. Medido: en el vigilante pasó **cinco veces en cuatro días**, y la rama de un mismo hallazgo acumuló **tres** pull requests seguidos (dos rechazados y un tercero) para una decisión ya tomada. Por eso **cada ficha recuerda cuál es su pull request** (`pr:`) y se abre uno nuevo sólo cuando nunca tuvo ninguno; sin `pr:` se pregunta por la rama y se **adopta** lo que haya, que es lo que migró las 8 fichas abiertas sin tocarlas a mano. La consecuencia del rechazo la decide **cada cola**, y son distintas a propósito: en dependencias se anota (`rechazado:`, `motivo_rechazo:`) y la ficha **sigue viva** —la vulnerabilidad es un hecho medido, rechazar el aviso no la saca de `main`, y una rechazada tampoco puede volverse `ignorado`: rechazar ES mirarla—; en el vigilante archiva el borrador como descartado con el comentario de motivo, que es exactamente lo que `/tycon-vigilante reject` ya hacía a mano. 🔴 **Y las consultas perdieron los silenciadores**: `|| true` y `2>/dev/null` convertían un `az` que falló en «no hay ninguno» —cuatro veces entre los dos pipelines—, así que ahora una consulta fallida no abre nada, imprime el error crudo, deja seguir a las demás fichas y termina la noche en rojo. 🔴 **Y va en UN guion que los dos YAML llaman** (`scripts/ci/open-pr-per-finding.sh`): los dos bloques nacieron iguales y en **cinco días** ya se habían separado en tres lugares —entre ellos la guarda del literal `$(…)` de los revisores, arreglada en una copia y nunca llevada a la otra—, la misma deuda que este repo ya pagó con `release-notes.sh` en 8 repos. Red: su suite, que extrae el paso **real** de cada YAML por su `displayName` y lo corre contra un remoto bare y un `az` doblado —cero red—; el caso que más pesa reproduce un pull request rechazado y vuelto a abrir, con sus hilos reales, y el que le sigue exige que una consulta fallida **no** abra nada. 🔴 **Lo decidido se registra antes de contar (2026-09-18)**: si el rechazo se registra en el último paso, después de contar y de mandar el resumen, el resumen cuenta borradores ya rechazados y alguno queda archivado como «nadie lo miró» con el motivo escrito en su pull request. Por eso cada noche ARRANCA con la pasada `--record-only` del mismo guion, que registra sin abrir nada.
+**Qué es:** El vigilante de producción: mira producción cada noche y deja un borrador con lo que huele mal para decidir a la mañana.
+
+**Por qué existe:** Cubre lo que quedó bajo el umbral de las alertas de Azure, con cuatro reglas (goteo, desagregación, salud y deriva). No toca nada. Cada ficha recuerda su pull request (`pr:`) y lo rechazado no vuelve a abrirse. Lo decidido se registra antes de contar.
+
+**Quién la usa:** El nocturno del vigilante y el dev, con `/tycon-vigilante`; los dos YAML llaman a `scripts/ci/open-pr-per-finding.sh`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlywatchervigilantejs)
 
 ## scripts/controls-bench/periodic-exam.js
 
-El examen de los 28 revisores **corre solo**, en la máquina del examen, martes y viernes a las 2 de la mañana — y cuando NO corre, eso se **denuncia**. Por qué: un lanzador enterrado bajo **tres** condiciones anidadas —cinco líneas adentro de `install-tycon-hooks.sh`— deja de correr sin que nadie lo note, y el aviso del arranque sigue mostrando una foto vieja (medido: siete días seguidos). La condición de afuera era el sello DIARIO de *otro* banco: si ése ya había corrido hoy, el examen semanal ni se evaluaba. La de más adentro, `TYCON_CODEX=1`, es una llave que la máquina del dev puede no tener puesta. 🔴 **Y sellaba la semana ANTES de correr**, así que una corrida cancelada se comía igual el turno. Por eso esta pieza no es "una tarea programada más": el lanzador viejo se **extrajo** acá, sin esos tres defectos — dos programadores para lo mismo gastarían la cuota dos veces y escribirían los dos en el mismo archivo. Las tres decisiones que la sostienen: **el sello se escribe al terminar** y sólo si la corrida fue completa · **hay dos archivos de resultado, no uno** (el que viaja por git sólo se pisa con una corrida completa; el intento fallido va aparte, con su motivo — si fueran uno, una corrida abortada borraría la última medición buena *y su fecha*, que es lo único que sostiene la denuncia) · **sale 0 cuando midió, aunque encuentre rojos; ≠ 0 sólo cuando NO PUDO medir**. Quién corre y cada cuánto se declara en `exam-config.json` por nombre de máquina, y el disparador del sistema se **genera** desde ahí: cambiar un día no toca una línea de código, y una máquina que deja de ser la designada **pierde** su disparador. Sin máquina designada no corre nadie (fail-closed: una de más gasta la cuota del dev dos veces). El aviso del arranque cambió con ella: lee el reporte **fuera de `.bench/`** —que git ignora, así que un resultado ahí no lo ve ninguna otra máquina— y **habla aunque no haya una sola falla**, porque hasta ahora "no corrió" y "corrió verde hace nueve días" eran el mismo silencio. Pasados 8 días denuncia y **calla los números viejos** a propósito: una foto vieja hace perseguir rojos que quizá ya se arreglaron. Ese umbral está definido **una sola vez** y no toca el que el aviso ya usaba para otra cosa. 🔴 **Y desde el 2026-09-10 lo que la corrida NO pudo medir se dice, no se pinta de cero** ([`unmeasured-categories.js`](../scripts/controls-bench/unmeasured-categories.js)): el trabajo nocturno es el chequeo de vida —una corrida por caso, una herramienta, 12 min en vez de 3 h—, y un reporte así no puede publicar `inestables: 0 · paridad rota 0` al lado de los rubros que sí se midieron. Con UNA corrida el revisor no puede «contestar distinto entre corridas», y con UNA herramienta «las dos» no pueden coincidir: esos ceros decían «no miré». Ahora el corredor los deja en `null` con el motivo y el comando que sí los mediría (`--runs 2`, `--tool both`), y el aviso lo deriva de `tool`/`runs` —que todo reporte trae— para que el reporte que ya estaba en disco se corrija en el arranque siguiente y no el martes. El criterio vive en un archivo aparte por lo mismo que `report-name.js`: requerir el corredor arranca el banco. Cuatro casos, dos de ellos espejo (con dos herramientas y tres corridas un cero SÍ es un cero; un reporte que no declara cómo se produjo no se juzga) — sin los espejos el arreglo podría pintar todo de «no medido» y el aviso no diría nada nunca. Apagado: `TYCON_NO_NIGHTLY_EXAM=1`. Diagnóstico sin gastar nada: `node scripts/controls-bench/periodic-exam.js --dry-run`. 🔴 **En la versión bajada, la máquina designada y el resultado vienen del clon de mantenimiento (2026-10-13)**: la copia pública trae `exam-config.json` sin máquina designada, y cuando la máquina del examen pasó a la versión bajada el instalador leyó esa copia, retiró el disparador y el examen dejó de correr; el arranque, que buscaba el reporte en el árbol instalado, tomaba el sello de la última corrida por uno escrito a mano. Ahora una sola función (`lugarDelExamen`) decide de dónde se leen la configuración y el reporte: la del árbol si designa una máquina; si no, la del clon que la máquina declara en `paths.maintainers`. La usan el disparador, la corrida y el aviso. Casos: T73 a T76 de `periodic-exam.test.js`.
+**Qué es:** El examen periódico de los revisores: corre solo en la máquina designada por `exam-config.json` y denuncia cuando no corre.
+
+**Por qué existe:** Un lanzador con condiciones anidadas dejaba de correr sin que nadie lo notara. Sella la semana al terminar, guarda dos archivos de resultado y sale 0 si midió. Lo que no pudo medir lo dice, no lo pinta de cero.
+
+**Quién la usa:** El disparador del sistema que genera desde `exam-config.json` y el aviso de arranque; `--dry-run` diagnostica sin gastar.
+
+**Dónde se prueba:** `periodic-exam.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscontrols-benchperiodic-examjs)
 
 ## scripts/ci/push-nightly-data.js
 
-**Cómo guardan los nocturnos lo que escribieron** (2026-10-11). Cada nocturno guardaba con `git push origin HEAD:main` y, si lo rechazaban, rebasaba sobre `origin/main`: eso empuja **todo lo que haya debajo de `HEAD`**. Mientras el código del arnés salía del mismo repo no importaba. Cuando sale de otro repo y se pone encima del checkout, debajo de `HEAD` queda un commit **local** —lo de afuera superpuesto, con sus borrados— que no existe en el remoto: ese empuje lo subía entero. Eran **seis pasos** en los pipelines y un **séptimo adentro de un guion**, `open-pr-per-finding.sh`, que corre cuatro veces por noche y además devolvía el checkout a `origin/main` (`checkout -B`, `reset --hard`): la noche seguía **en verde midiendo otro código**, y ningún ensayo sin efectos lo mostraba, porque esos pasos sólo corren con efectos. Ahora hay **un solo camino**, el mismo con las dos fuentes, así corre de verdad todas las noches. 🔴 **La regla: el checkout no se mueve.** `HEAD` y el índice quedan como estaban; lo que la noche escribió vive en el disco. `save` arma un commit con **sólo las rutas del paso** —tomadas con fuerza: lo nuevo sin seguimiento, lo borrado y **lo que el `.gitignore` ignora** viajan igual, que es justo donde un `git add <carpeta>` no fallaba y no agregaba nada—, lo traslada a la punta de la rama recién traída con una fusión de tres vías que no toca el checkout, y lo empuja por su sha. Antes de empujar comprueba cuatro cosas, y si alguna falla **no empuja nada**: que lo que cambia cae adentro de las rutas del paso; que **el archivo del día está** (el de hoy, o el de ayer si el paso lo escribió: una corrida que cruza la medianoche; el de ayer que ya estaba no cuenta); la verificación propia del paso, sobre **lo que se va a publicar** y no sobre el disco (el sello del tablero, contra el snapshot que la rama trae en ese momento); y que el código de `HEAD` sigue siendo el que se armó (la guarda de antes de guardar, más abajo: sin con qué compararlo tampoco empuja). Tres rechazos: sale 1 diciendo que **no viajó**. 🔴 **«Nada nuevo» no es «todo bien»**: si el paso no escribió nada, el archivo del día tiene que estar ya en la rama (una corrida repetida) y lo publicado tiene que pasar la verificación del paso; si no, la noche no midió y sale rojo — la primera versión decía «nada nuevo» y salía verde, y lo encontró un revisor antes del merge. Y **«no pude» nunca es «no hay»**: un `git` que falla al listar, una constancia que está y no se puede leer, o una rama que no se pudo traer salen 1 con su motivo. Lo único que no viaja aunque caiga en una carpeta del paso es la basura de la máquina (`.DS_Store`, `*.swp`, `*.bak`). Dos decisiones que lo sostienen: **lo guardado se encadena aparte, nunca en `HEAD`** —el segundo guardado de un mismo trabajo lleva sólo lo que cambió desde el primero, y si el primero no viajó, lo lleva; así vuelve a ser cierto el respaldo que `open-pr-per-finding.sh` promete cuando su pasada de la mañana no puede publicar— y **esa constancia vale para una corrida**: otra que reuse la carpeta no puede devolver en la rama lo que la anterior guardó. `sync` es la otra mitad, para el tablero: trae de la rama **los datos, no el código** (lo que la rama borró, se borra), sin mover `HEAD`; después de un `sync`, guardar una ruta que no se trajo es un error de uso, porque devolvería lo que otros cambiaron. Y `open-pr-per-finding.sh` arma la rama de cada pull request **sin copia de trabajo**. Red: `scripts/tests/push-nightly-data.test.js` (remoto y clones de mentira, con git de verdad: el commit local debajo, la carrera, el archivo ignorado, el binario, el otro trabajo en la misma carpeta, el choque, el archivo del día, el sello); `nightly-publishes-report.test.sh`, `nightly-dashboard.test.sh` y `open-pr-per-finding.test.sh`, que extraen **el paso real** de cada pipeline y lo corren con ese commit local debajo; y `pipelines-push-guard.test.js`, que no deja volver a un nocturno a empujar `HEAD` ni a rebasar, y cuenta la llamada al guion como lo que es: subir a `main`, con su condición de rama. Rojo previo verificado sobre el guion anterior: el checkout termina en `origin/main` y el archivo de código vuelve a ser el de antes. **La guarda de antes de guardar** vive adentro de `save`: llama a `overlay-harness.js --check-tree`, que compara el código de `HEAD` con la huella que la plantilla que trae el arnés dejó en `HARNESS_TREE`. Si el árbol cambió no se guarda, y si la variable falta tampoco (no hay contra qué comparar): sale 1 diciendo que no viajó, también cuando no había nada nuevo. Corre el guion que la plantilla guardó para la corrida (`<Agent.TempDirectory>/arnes-guion/`), si lo guardó, y si no el del checkout: con el arnés traído de GitHub y antes del corte, el del disco es el del commit del que salió la copia y puede ser más viejo que el que calculó la huella (hoy ese cruce no llega a guardar: ahí no se corre con efectos; la huella y su comparación salen del mismo guion por diseño). Por eso las suites que corren el paso real de un YAML fijan la variable, no heredan la carpeta temporal del agente y llevan una guarda de mentira.
+**Qué es:** El guion que guarda en `main` lo que escribieron los nocturnos, con `save` y `sync`.
+
+**Por qué existe:** Empujar `HEAD` subía un commit local que no existía en el remoto y movía el checkout. Ahora el checkout no se mueve: arma un commit sólo con las rutas del paso y no empuja si alguna comprobación falla. Nada nuevo no es todo bien, y no pude no es no hay.
+
+**Quién la usa:** Los pipelines nocturnos y `open-pr-per-finding.sh`.
+
+**Dónde se prueba:** `scripts/tests/push-nightly-data.test.js`, `scripts/tests/pipelines-push-guard.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscipush-nightly-datajs)
 
 ## pipelines/azure-pipelines-banco.yml
 
-El **banco de controles corre de noche en Azure DevOps** (2026-09-05), no en las máquinas. Hasta esa noche el banco determinista (`runner.js`, ~380 casos que corren los hooks reales contra archivos de prueba, **sin llamar a ningún modelo**) lo lanzaba el arranque de sesión en cada máquina, de fondo. Medido: en la máquina del dev corría **dos veces por arranque** —una para Claude, otra para las dos herramientas, porque `TYCON_CODEX=1` está en su `.zshrc` aunque el instalador asumía lo contrario— y la segunda se relanzaba en **cada sesión**, porque su gatillo era el sello verde y un caso frágil lo tenía en rojo desde el 1/9. Dos bancos superpuestos agotaban el tiempo de los casos, el banco los contaba como rojos y como regresiones, y el aviso del arranque gritó "regresiones" durante días **sin un solo defecto real detrás** — la forma más rápida de que se le deje de creer. 🔴 Lo que se movió es lo que se puede mover: el banco no necesita ni modelo ni las herramientas instaladas (verificado: cero invocaciones), sólo Node, bash, Python y una copia de AgentSkills, que el pipeline trae. `live-fire.js` —el disparo real dentro de Claude y de Codex— sí las necesita y sigue local, con **su propio sello diario** (antes heredaba el del banco). El reporte viaja por git (un archivo fuera de `.bench/`, que git ignora, más el histórico en `.dashboard/controls-bench/`) para que todas las máquinas lean la **misma** foto; `bench-notice.js` lo lee, **denuncia si tiene más de dos días y calla los números viejos**, y deja de mostrar una foto local más vieja que el nocturno. Contrato del paso: sale 0 cuando midió aunque haya rojos (se cobran en el reporte y en el aviso), ≠ 0 sólo cuando no pudo medir; un **NO MEDIDO** (tiempo agotado dos veces, con reintento) es aviso naranja, nunca verde. Red: 5 casos nuevos en `08-bench-notice.json` (rojo previo verificado en los tres que pueden detectar la ausencia) y `scripts/tests/bench-unmeasured.test.sh` (4 chequeos, los 4 en rojo sin el arreglo). La identidad de un caso es `<script>::<id>`, con test propio. 🔴 **Y desde esa misma noche el mismo pipeline corre las 35 suites de prueba del arnés** (job `Suites`, en paralelo): la lista vive en `scripts/tests/suites.json` —un solo lugar, para el instalador y para el pipeline—, se clonan los 14 repos de los productos porque cuatro suites leen los pipelines reales y sin ellos se saltean diciéndolo, y el reporte viaja por git en su propio archivo — desde el 2026-09-14 con el **motivo** saneado de cada suite roja además del nombre (`scripts/ci/suites-report.js`), que el aviso de arranque muestra al lado. `tolerant-steps` lee `origin/main` y no el **disco del dev**: leyendo el disco daba rojo con 9 hallazgos que en `main` no existen (6 de ramas `dev`, 3 de repos ajenos al arnés). El instalador ya no lanza ni el banco ni las suites en las máquinas. 🔴 **Desde el 2026-10-04 las suites corren repartidas en trabajos paralelos** (hoy dos, porque la organización tiene dos carriles; el número vive en un solo lugar, el parámetro `suiteShards`): cada trabajo corre su parte y publica lo que midió, y un job aparte (`SuitesReport`) junta lo de todos y escribe el mismo reporte de siempre — ver `scripts/ci/suites-shard.js`, abajo.
+**Qué es:** El pipeline `pipelines/azure-pipelines-banco.yml` que corre de noche el banco de controles y las suites de prueba del arnés.
+
+**Por qué existe:** Lanzarlos desde el arranque de cada máquina los superponía y el aviso gritaba regresiones sin un defecto real. El reporte viaja por git para que todas las máquinas lean la misma foto. Un no medido es aviso naranja, nunca verde.
+
+**Quién la usa:** El nocturno de Azure; `bench-notice.js` lee el reporte. La lista de suites vive en `scripts/tests/suites.json`.
+
+**Dónde se prueba:** `scripts/tests/bench-unmeasured.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-bancoyml)
 
 ## scripts/ci/suites-shard.js
 
-*(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)*
+_(scripts/ci/suites-shard.js + scripts/ci/suites-weights.json)_
 
-**El reparto de las suites del nocturno en trabajos paralelos**, y lo que junta sus resultados (2026-10-04). El job de suites corría las 213 suites una detrás de otra en un solo trabajo: medido en una corrida de `main`, **62 minutos** con un tope de 75 —más de una hora ocupando un carril de Azure—, y un trabajo que pasa el tope se corta **sin escribir el reporte**. Una sola suite, la copia pública de verdad (`export-real.test.sh`), se lleva 24 de esos minutos; las ~175 más cortas suman menos de 8. Ahora el job es una matriz y cada trabajo le pide **su** lista a este guion (`list --shard <i> --of <n>`). El reparto es por **peso** y siempre da lo mismo con la misma entrada: los segundos medidos de cada suite de más de ~15 s viven en `suites-weights.json`, las demás —también una suite nueva que nadie midió— llevan un peso por defecto, y cada suite, de la más pesada a la más liviana, va al trabajo que hasta ahí lleva menos. Con dos trabajos, ~32 minutos cada uno; con tres, la copia pública sola (~24 min) y dos de ~108 suites y ~20 min (`plan --of <n>` lo muestra sin correr nada). 🔴 **El número se decide con los carriles, no con lo que dura cada trabajo**: cada trabajo de suites, el banco y el reporte piden un carril, y a una corrida le tocan dos en la práctica _(medido en la cola: la organización tiene 4 carriles hospedados)_. Medido con tres trabajos (24, 13 y 20 min; 27,5 de reloj): cuatro pedidos sobre dos carriles hacen cola y los ocupan a los dos casi todo ese rato; con dos trabajos queda uno libre a los ~35 minutos. Con cuatro carriles conviene 3 o 4. 🔴 **Las dos garantías que importan, las dos con prueba**: la unión de los trabajos es **exactamente** la lista y ninguna suite corre dos veces; y un pedido mal hecho (`--shard` fuera de rango, `--of` inválido, `suites.json` ilegible) **sale 2 sin imprimir lista** — una lista vacía se leería como «no hay suites» y daría una noche verde con cero corridas. 🔴 **Un trabajo que no terminó no se da por verde**: `merge` cruza lo que publicó cada trabajo contra lo que **tenía** que correr (se lo vuelve a preguntar a este guion, no le cree al artefacto), y las suites de un trabajo que se cortó, no publicó o dejó su marca de terminado sin pasar por toda su lista entran al reporte como fallas `<suite>(no-medida)`, con el motivo «no medida: el trabajo <i> no terminó», y la corrida lo denuncia como error. De un trabajo cortado a mitad de camino se conserva lo que sí midió; la suite que estaba corriendo cuando lo cortaron cuenta como no medida. 🔴 **Y a lo publicado no se le cree sin mirar** (una bajada a medias deja la carpeta con su marca y sin la lista de fallas, y «no hay archivo» se leería como «no hubo fallas»): si a la carpeta de un trabajo le falta un archivo, nombra suites que no eran suyas o su marca de terminado —que lleva la cuenta, «corridas fallas»— no coincide con lo que trae, nada de ese trabajo se da por bueno. El artefacto lleva el intento en el nombre (`suites-shard-<i>-a<intento>`) y `merge` lee el más alto: reintentar un trabajo desde Azure arregla la noche en vez de chocar al publicar. Tres casos no escriben reporte y dejan la foto de anoche como estaba: la corrida fue cancelada, la bajada de artefactos tuvo problemas, o ningún trabajo corrió ni una suite. La marca va pegada al nombre, como `(ausente)`, a propósito: el control de cada cambio (`pr-verdict.js`) perdona un rojo que ya estaba rojo en la foto nocturna, y una suite que anoche no se midió no puede servirle de excusa a un rojo de verdad. **«No medida» no es «roja», y quien lee el reporte lo sabe por un campo, no por la marca**: `suites-report.js` las deja en `failures` y además en `unmeasured`, con `complete: false`; el aviso de arranque nombra las rojas y a las no medidas las **cuenta** en una cláusula («108 suite(s) no medidas: el trabajo 2 no terminó» — listadas eran 8.328 caracteres en cada arranque de cada máquina), el tablero muestra esa noche con trama en vez de «108 de 109», y `pr-verdict.js` avisa que la foto quedó incompleta. La marca de terminado, además, **se gana**: el paso la escribe sólo si su lazo pasó por todas las líneas de su lista; y cada suite corre con la entrada estándar cerrada (`< /dev/null`), porque sin eso la entrada de la suite era la lista misma y una suite que leía una línea se comía a la siguiente. Red: `scripts/tests/suites-shard.test.js` (el reparto, lo que se niega y cómo junta; sin bash ni red) y la suite de los pasos del nocturno (corre los pasos **reales** del YAML, extraídos por su `displayName`, sobre un arnés de juguete; además frena un peso que nombre una suite que ya no existe, porque la renombrada caería al peso por defecto sin avisar). 🔴 **Y desde el mismo día lo usa también la validación de los pedidos de merge** (la del repo privado, donde viven sus YAML): era UN job en serie —lint, banco, ~217 suites con su reintento y el veredicto— con un tope de 60 minutos, y con rojos y reintentos ya no entraba (se cortaba sin veredicto; un job cortado no dice nada). Ahora son cuatro: `Validar` (el lint, siempre, y la lista de suites que corren), el banco en su propio trabajo, las suites en una matriz de **dos** trabajos (**40 min** de tope cada uno desde el 2026-10-08, con lo medido a la vista —el trabajo más largo dura 26,0 min con un cambio de un archivo y 31,4 en una validación que corre casi todo—; lo fija T33 de `pr-suites-shards.test.js`) y `Verdict` (10 min), que corre aunque los otros hayan fallado, junta con `merge` y da el veredicto de siempre. Dos cosas propias de ese pipeline: el reparto se hace **sólo sobre las suites que corren** (`--only`, la lista de `suites-for-change.js`; sobre la lista entera, la copia pública —casi siempre salteada— se quedaba un trabajo para ella sola), y cada trabajo publica también las **dos pasadas** de cada roja (`retries.json`), que `merge` junta y no le cree si no cuadran con lo publicado. Las suites de un trabajo que no terminó llegan al veredicto como **no medidas**: `pr-verdict.js` no las cuenta como rojo nuevo ni como verde, las nombra y sale 2 («no medido no es verde»). Un cambio de sólo documentación sigue salteando todo: los tres jobs de después dependen de la salida `hayCodigo` del paso «Qué trae este cambio». Red: `scripts/tests/pr-suites-shards.test.js`. 🔴 **Las dos suites más largas corren ahí sólo si el cambio toca lo que miden**: la copia pública de verdad (`export-real.test.sh`, ~24 min en el nocturno) y la máquina limpia (`clean-machine.test.sh`, ~7). El criterio vive en **un** archivo, `scripts/ci/heavy-suites.json` (suite → patrones, con su motivo; armado leyendo qué guiones ejecutan y qué archivos leen las dos pruebas, más las carpetas de la publicación y del instalador — ante la duda, la ruta entra), lo aplica `suites-for-change.js --heavy` y, para esas dos, manda sobre su `gate_only_when_touching`, que es más angosto y sigue siendo el del portón de cada story. Sin lista de cambios (un `git diff` que falló) corren las dos; un archivo roto corre todo. Una suite salteada así no es verde ni roja: el reporte la anota en `notRun` (`suites-report.js --not-run`) y el veredicto la lista como «no corrió: el cambio no toca lo que mide». El nocturno no lee ese archivo y las corre siempre. Red: su suite (frena si una de las dos se renombra o desaparece).
+**Qué es:** El guion que reparte las suites en trabajos paralelos por peso y junta sus resultados.
 
-**En la validación de cada rama, las suites que corren solas corren en el trabajo del banco** (2026-10-08). Seis suites de `suites.json` son `exclusive`: comparten estado con otras y no pueden correr a la vez que ninguna. Corrían de a una al final de un trabajo de suites, y la que pesa es `export-real`, la copia pública de verdad. Medido con cuatro validaciones de un solo archivo: 370 a 383 s ella sola, con un núcleo del agente sin hacer nada, mientras el trabajo del banco terminaba a los ~5 min y dejaba su carril ocioso el resto de la validación. Ninguna de las cuatro llegaba a la meta de 15 min (16,8 · 17,4 · 22,0 · 37,5). Con `--exclusive-apart`, el repartidor saca las exclusivas del reparto de los trabajos de suites y se las da al trabajo del banco (`list --shard bench`), que las corre de a una después del banco. Cuántos trabajos de suites hacen falta se calcula con el peso de las que quedan. No se saca ninguna prueba ni se pide un carril más.
+**Por qué existe:** Un solo trabajo largo se cortaba sin escribir el reporte. Un trabajo que no terminó nunca se da por verde: sus suites quedan como no medidas. Un pedido mal formado sale 2 sin lista.
 
-Los pasos que bajan la lista, corren las suites de un trabajo y publican lo que midió viven en una plantilla de la validación (en el repo privado), que usan los dos trabajos: dos copias de ese lazo —topes, reintentos, lo que lee el veredicto— se separan solas. El veredicto junta lo del trabajo del banco con las mismas exigencias que a cualquier otro: si no publica, o lo cortan antes de terminar su lista, sus suites son «no medidas» y el veredicto no es verde. Un rojo del banco no las saltea, y un banco colgado tampoco: su paso corre con tope propio de 10 min (`run-capped.js`), porque si llegara al tope del trabajo Azure cancelaría las suites que siguen. Un plan sin exclusivas da el reparto de antes, y el nocturno no cambia. Lo miden `suites-shard.test.js` (T47: la unión es el plan entero y ninguna suite está dos veces) y `pr-suites-shards.test.js` (T48 y T49, con los pasos reales sobre un clon de juguete).
+**Quién la usa:** El nocturno, la validación de pedidos de merge y el veredicto `pr-verdict.js`.
+
+**Dónde se prueba:** `scripts/tests/suites-shard.test.js`, `scripts/tests/pr-suites-shards.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisuites-shardjs)
 
 ## scripts/ci/suites-over-limit.json
 
-*(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts/tests/lib/suite-parts.sh)*
+_(scripts/ci/suites-over-limit.json + scripts/tests/lib/suite-parts.js + scripts/tests/lib/suite-parts.sh)_
 
-**Ninguna suite pasa de 45 s en la validación de una rama sin que alguien lo haya decidido** (2026-10-07). La meta es una validación de 15 minutos; medido, 28 suites pasaban de 45 s en el agente y entre todas sumaban ~93 min de trabajo. Cada una tiene una de tres salidas:
+**Qué es:** La lista de decisiones sobre las suites que pasan de 45 segundos en la validación de una rama.
 
-- **Partirla sin mover sus pruebas.** El archivo de la suite queda entero y, corrido a mano, corre todo. Cada parte es un archivo de una línea, `<suite>.p<k>.test.<js|sh>`, que es lo que se registra en `suites.json`. En Node la suite toma `test` de `lib/suite-parts.js` (una línea cambiada) y las pruebas se reparten por su duración medida, que vive en `scripts/tests/suite-parts.json`. En consola la suite carga `lib/suite-parts.sh`, dice cuántas partes tiene (`suite_parts <n>`) y envuelve cada tramo en `if suite_part <k>; then … fi`; lo que queda fuera de los bloques corre en todas las partes. Cortar a mano un archivo de 4.500 líneas en diez era el cambio más riesgoso posible: así no se mueve ninguna prueba, y el conteo de las partes tiene que dar el del archivo entero.
-- **Mandarla al nocturno**: `"nightly": true` en `suites-over-limit.json`, con su motivo. `suites-for-change.js --over-limit` la saltea en la rama aunque el cambio la toque («pasa de 45 s: la corre el nocturno»).
-- **Una excepción firmada**: quién, cuándo y por qué. También la lleva una parte que es un solo paso largo y no se puede partir más. La firma la pone el dueño del arnés, nunca quien escribe el archivo; una excepción sin firma deja el archivo entero sin leer, y entonces no se saltea ninguna.
+**Por qué existe:** Sin decisión la validación se alarga. Cada suite se parte en partes, se manda al nocturno o lleva una excepción firmada por el dueño. Las del laboratorio del instalador corren en la rama sólo si el cambio toca el instalador, según `scripts/ci/heavy-suites.json`.
 
-**Las suites del laboratorio del instalador corren en la rama sólo cuando el cambio toca el instalador** (2026-10-08). Son las `harness-*` que arman una máquina de juguete y `installer-repeated-hooks` —14 suites—, pasan de 45 s y eran casi la mitad del trabajo de una validación típica (3292 s de 7036 s para un cambio de un solo archivo en `scripts/lib/`). Preparar el laboratorio una sola vez no ahorra: medido, armar un laboratorio tarda 0,85 s y el tiempo está en los casos (instalar 1,8 s, actualizar 2,2 s, decenas por suite). Por eso lo que cambia es qué las hace correr. «Tocar el instalador» es `scripts/setup/**`, `scripts/install-tycon-hooks.*`, el laboratorio (`scripts/tests/lib/**` y, de `scripts/tests/fixtures/`, sólo los datos que el instalador y su laboratorio leen) o el archivo de la suite: lo dice el grupo `installer` de `scripts/ci/heavy-suites.json`, que cada una nombra con `"group": "installer"`. Una suite con grupo no hereda `shared` ni se elige por lo que usa su código. **El costo aceptado:** una regresión del instalador por un cambio que no lo toca —una biblioteca de `scripts/lib/` que el instalador carga, un hook que el aplicador instala— se ve en el nocturno, a la mañana siguiente, y no en la rama. Si no se sabe qué cambió, o no hay foto nocturna completa, corren. Lo mide su suite (T30 a T32): una suite del laboratorio nueva que pase de 45 s y no nombre el grupo, o que no tenga peso medido, frena. **La excepción vale para la clase entera**: una suite del laboratorio nueva que pase de 45 s entra al grupo y lleva la misma excepción en `suites-over-limit.json`, sin otra firma. Quien la suma le da peso en el juego `pr`, la agrega con `"group": "installer"` y anota su excepción; la prueba dice qué falta. **De la carpeta de datos de prueba, sólo lo que se lee** (2026-10-08). En `scripts/tests/fixtures/**` viven los datos de muchas otras suites: con la carpeta entera en el grupo, un solo archivo que el laboratorio no lee hace correr las 15 suites del grupo (medido: ~55 min de trabajo en serie, en un cambio que no tocaba el instalador). Por eso el grupo nombra uno por uno los datos que nombra el código que la regla ya mira (el mecanismo, el aplicador, el laboratorio y los archivos de las suites del grupo): diez de los 27 de la carpeta, cuatro de ellos leídos por el instalador mismo al correr (`scripts/setup/harness/managed.js` y `layer.js`). Medido con el selector de verdad sobre los archivos de ese cambio: el plan baja de 6940 a 3479 s de trabajo en serie. Lo cuida T51 en los dos sentidos: quien hace que el instalador, el laboratorio o una suite del grupo lea un dato nuevo de esa carpeta lo suma a `groups.installer.patterns` (la prueba frena y dice cuál), y un dato que ya nadie nombra se saca (también frena). «Leer» es nombrar: el nombre del archivo en el texto, entero o sin la extensión; una carpeta, con su ruta. Lo que la prueba no ve es un nombre armado entero al correr en un archivo que además nombra algún otro dato; si un archivo nombra la carpeta, de la forma que sea, y no nombra ningún dato, frena. Quien la nombra sin leer nada de ahí lo declara en el archivo con `@fixtures-exempt: <motivo>`. Otras pesadas que no son del grupo (`installer-ps1`, `integrations-off`, `installer-shared-pieces`, `install-guard`, `prod-access-guard`, las del tablero, `harness-questions`) siguen trayendo la carpeta entera en sus propios patrones.
+**Quién la usa:** La validación de ramas, `suites-for-change.js` y quien suma una suite nueva.
 
-Antes de partir conviene mirar dónde se va el tiempo. En tres suites lo lento era un solo paso de una herramienta y no la prueba: el control de menciones viejas probaba cada ruta del mapa contra cada archivo sin mirar antes si el archivo la nombraba (41 s → 6 s), y el exportador compilaba los ~400 `.js` de la copia con un proceso cada uno (52 s → 37 s la copia entera). Acelerar eso ahorra minutos de verdad; partir sólo reparte mejor el trabajo entre los trabajos en paralelo.
+**Dónde se prueba:** `scripts/tests/suite-parts.test.js`, `suites-coverage.test.js`
 
-Lo miden la suite del límite (una suite que pasa del límite sin decisión frena; una decisión que sobra, también), `scripts/tests/suite-parts.test.js` (las partes no se pisan, entre todas corren todo, y cada suite partida tiene sus partes 1 a N registradas y livianas) y `suites-coverage.test.js` (el archivo entero de una suite partida no se registra). Las `legacy-names-*` quedan afuera: se retiran con sus nombres viejos. En la copia pública, una suite partida que no viaja sale con su archivo entero y todas sus partes (`suitesOutside` nombra los dos lados).
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscisuites-over-limitjson)
 
 ## scripts/metrics/sdlc-stage-metrics.js
 
-*(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js + scripts/nightly/projects/snapshot.js + scripts/nightly/projects/state-age.js + scripts/metrics/author-concentration.js)*
+_(scripts/metrics/sdlc-stage-metrics.js + scripts/nightly/dashboard/dashboard.js + scripts/nightly/projects/snapshot.js + scripts/nightly/projects/state-age.js + scripts/metrics/author-concentration.js)_
 
-**El medidor de etapas del SDLC y el tablero que lo muestra.** El medidor corre en el nocturno de las 06:00, clona los repos de la organización **livianos** (`--filter=blob:none`), mide sólo los que tienen huella del arnés y escribe un punto de serie por día en `.dashboard/sdlc-stage-<fecha>.json`. Regla de la casa en todo lo que publica: **un número sin denominador es el problema que existe para arreglar**, y `null` con motivo en castellano nunca se sustituye por `0`. 🔴 **Desde el 2026-09-05 deriva además el TIEMPO POR ETAPA leyendo el historial de git**, con cuatro meses de historia retroactiva y sin un hook nuevo: cada cambio de `status:` fue un commit, así que la serie ya estaba escrita y nadie la leía. Se descartó a propósito extender `on-frontmatter-write.js` (que ya calcula la transición en vivo y la tira): daría resolución intradía pero está **atado a la herramienta** — una edición desde VS Code, desde Codex o desde la web de Azure DevOps no lo dispara **y nada lo dice**. 🔴 **Lo que hace verificable a esta pieza es una medición previa, no una intuición**: el bosquejo original (`git log -p --follow -G'^status:'` por story) tardó **142 s para SÓLO 20 stories** y bajó 20 MB en **51 viajes de red**, porque en un clon sin blobs cada versión de archivo se baja de a una — extrapolado, media hora larga contra un presupuesto de 60 s. La forma que entra son tres pasos y el orden es lo que los hace baratos: **una** consulta `git log --raw` que saca los identificadores de las versiones **de los árboles** (0,14 s, cero red), **un** `git fetch` por lote de esos identificadores (7,3 s, 3 viajes) y `git cat-file --batch` ya sin red — **7,5 s por repo**. El renombre (que el `--follow` descartado resolvía) se cierra **por construcción**: la serie se agrupa por la **identidad declarada** (`story:` del frontmatter) y no por la ruta, que es el mismo criterio que `lib/story-discovery.js` ya usa para decidir qué es una story. Y lo que no conoce **no lo descarta**: un estado fuera del diccionario (`scripts/metrics/states.json`, lista cerrada a propósito) se publica en `estados_desconocidos`. Una etapa **saltada** no recibe 0 y una story sin transiciones **no sale del denominador**: un cero donde hubo ausencia baja la mediana en silencio. Presupuesto por repo (`--transiciones-budget-ms`, default 60 s) chequeado **entre lotes**: agotado, ese repo sale `tiempo_por_etapa: null` con su motivo y los demás se miden igual — el paso nunca se cuelga. Red: `scripts/tests/sdlc-transitions.test.js` (13 casos con repos git efímeros y commits retro-fechados; los que más pesan son el de la mudanza de carpeta, el de la etapa saltada y el del presupuesto agotado) + `sdlc-transitions-nightly.test.sh` (que el nocturno no haya sumado un paso ni un clon, comparado contra `origin/main`) + 9 chequeos nuevos en `dashboard.test.sh`, uno de ellos dedicado a que el gráfico mensual **no cambie**. 🔴 **Desde el 2026-09-05 el vocabulario de estados es UNO y está en [`scripts/metrics/states.json`](../scripts/metrics/states.json)** — con sus alias, sus grupos y el **motivo escrito** de cada decisión no obvia. Cierra dos agujeros que se tapaban entre sí. El primero: el arnés tenía **dos** diccionarios —el archivo decía que seis valores eran de cierre y el código decidía con una lista fija de tres (`DONE_STATUSES`)—, y dos listas que nada obliga a moverse juntas ya se habían separado una vez. Ahora «cerrado» sale de `groups.cerrado`, igual que «en curso», y un caso impide que la lista reaparezca en el código. 🔴 **Y ese arreglo obligaba a otro**: sin guarda, un `states.json` ilegible publicaría «0 cerradas» en los 20 repos con `rework` y `dod` diciendo «sin stories done», todo en verde — así que un diccionario que no valida deja `done_total` y el contador en **`null` con motivo, jamás 0**, por los **cinco** caminos que llevan al mismo cero (y el tercero es *el archivo de ayer*: JSON válido sin la clave `groups`). El segundo agujero: el tablero publicaba **una resta**, «449 stories abiertas», que mezclaba una story que alguien está desarrollando ahora con una escrita en mayo que nadie va a tocar — su propio pie lo admitía. Ahora son **tres números con denominador** (en curso · backlog · desconocidas) que salen del snapshot **ya sumado**, no de leer el diccionario del disco: el tablero se renderiza con una foto que pudo generarse ayer, y si alguien mueve un canónico de grupo, esas stories desaparecerían de los tres números sin que nada lo delate. 🔴 **Lo que la medición mostró y la ficha deja ver**: de las **224 en curso** (sobre 1234 stories, 20 repos), **187 están en revisión** y sólo 37 en desarrollo — no es trabajo fluyendo, es una cola de cierres; por eso «en curso» se **desglosa** en el pie. Los **27** estados que ningún diccionario reconocía bajaron a **1**, y ése se deja visible a propósito: `updated` no dice en qué punto del ciclo está la story, así que se declara «no es un estado» en vez de adivinarlo. 🔴 **El censo del que salió todo esto es SALIDA DEL MEDIDOR, no una lista tipeada** (vive en el repo del equipo): una lista a mano sólo mide lo que alguien se acordó de anotar, y pierde estados vivos. Cubre la **unión de dos contadores distintos** —el estado de hoy y el que apareció alguna vez en una transición—: cuatro valores existen **sólo** en el histórico, que es la prueba de que los dos hacían falta. Y la inyección de diccionario que los casos necesitan (`TYCON_STATES_PATH`) **deja rastro**: el snapshot publica ruta y hash del archivo que realmente usó, para que no se convierta en un interruptor invisible. Red: 6 casos en la suite del diccionario, 9 en `sdlc-transitions.test.js` y 19 chequeos en `dashboard.test.sh`, todos con su rojo previo verificado. 🔴 **Desde el 2026-09-05 el tablero contesta además POR QUÉ volvió una story**, que es lo que vuelve accionable al porcentaje de reproceso que ya publicaba: hoy *«nos equivocamos»* y *«el cliente cambió de idea»* se ven idénticos. Una story que declara `followup_of:` escribe la causa en **`followup_reason:`**, con un vocabulario **cerrado** de cuatro valores que vive en [`scripts/metrics/rework-causes.json`](../scripts/metrics/rework-causes.json) —`defecto-propio` · `cambio-de-requisito` · `deuda-declarada` · `descubrimiento`, cada uno con su motivo escrito— y que `story-format.md` §1.2 **copia** con un caso que compara los dos (dos listas del mismo vocabulario en dos archivos se separan solas: ya pasó con los dos diccionarios de estados). El medidor publica `rework_por_causa` y la ficha *«Por qué volvió»* deja la trama y dibuja **cinco barras**: las cuatro causas —**presentes aunque valgan 0**, porque una barra ausente y una barra en cero no son lo mismo— más **«sin declarar»**, que lleva la palabra. 🔴 **Lo que hace viable a esta pieza es a quién NO se le exige el campo**: medido con el descubridor canónico sobre 16 repos y 981 stories, **285** declaran `followup_of:` en 9 repos —137 sólo en Ceibo—, así que exigírselo a todas habría puesto en rojo el pre-commit de todo el equipo el día del merge, o sea **apagado el lint en una semana**. El lint lo exige **sólo a la story que NACE** en ese commit (sin historial en git; y un valor fuera del vocabulario frena siempre, nueva o vieja, sin normalizar mayúsculas — un vocabulario que acepta variantes deja de ser cerrado); a las 285 les **avisa y no las frena**. Y no se rellenan: una causa derivada sería una adivinanza y contaminaría la línea base contra la que se mide la alarma escrita en el pie —**`cambio-de-requisito` subiendo mientras `defecto-propio` baja**—, así que «sin declarar» se **desglosa** por el `type` que esas stories ya traen, rotulado *derivado, no declarado*. 🔴 **El campo es NUEVO y no reusa el `type:` que ya existía** dentro de `followup_of[]`: `type` dice **qué clase** de cambio es y la causa dice **por qué** hubo que volver — medido, `extension` está en 136 de las 285 y **no es reproceso**, así que sobre `type` la ficha no hablaría de calidad. El denominador son las **hijas** (las que hacen el seguimiento), no las padres: la ficha vecina «lo que vuelve» (**165 de 496** — el universo del nocturno, que es el que la ficha muestra; el 166 de 508 es la medición del disco de un dev) contesta otra pregunta y **no se toca**. Y como todo lo que este medidor publica, un vocabulario ilegible deja `rework_por_causa` en **`null` con motivo, jamás cuatro ceros** —que se leerían como «no volvió nada»—, y el snapshot registra ruta y hash del archivo que realmente usó. Red: `scripts/tests/followup-reason-lint.test.sh` (**26** chequeos; el que más pesa es el de la story que **ya existía**, que impide que 285 empiecen a fallar), **9** casos en `sdlc-transitions.test.js` y 22 chequeos en `dashboard.test.sh` — contados de la corrida, no estimados. 🔴 **Desde el 2026-09-09 el tablero tiene una SEGUNDA página, la vista de corridas** ([`scripts/nightly/dashboard/runs.js`](../scripts/nightly/dashboard/runs.js), `node scripts/nightly/dashboard/dashboard.js --view runs` → `~/.claude/.tycon-pipeline/runs-dashboard.html`; **no se commitea** desde el 2026-09-17: la copia commiteada mostraba sólo las corridas de la máquina que la había armado —232 o 18 según quién—, y la completa sale de la carpeta bajada del buzón, que llena sola cualquier máquina con la sesión de Azure de quien tiene permiso): **una fila por corrida del pipeline** —tiempo por paso, qué control encontró un error o frenó, vueltas, agentes, tokens— y una capa ejecutiva arriba que el filtro **recalcula** (por eso se dibuja en el cliente, no en el generador: dos implementaciones se separan solas). Lee el registro global del archivador (`~/.claude/.tycon-pipeline/timing-history/`, declarado en `sources.json` como fuente **local y no obligatoria**: una máquina sin pipeline corrido sale gris con motivo, exit 0), una corrida por sesión (medido: 216 corridas en 231 archivos, 15 duplicadas por archivado repetido). 🔴 **Del hilo lee sólo los archivos que tocó cada corrida y su cambio** (desde el 2026-09-17, [`scripts/nightly/dashboard/changes.js`](../scripts/nightly/dashboard/changes.js)): mientras la página se commiteaba no iban, porque los cambios traen código de cliente; al dejar de commitearse, el detalle de cada corrida los muestra en orden, con su paso y los commits, rutas relativas al repo, credenciales tapadas por el mismo saneado de `tokens-digest.js`, cada cambio **entero** (el tope del prototipo, 6.000 caracteres, cortaba 895 de 4.295 cambios; queda sólo un límite de seguridad de 200.000 por cambio, dicho en pantalla), y en el gráfico un carril «Archivos tocados» con barritas por momento que, al hacer clic, filtran la lista. Debajo, otro carril dibuja el **consumo minuto a minuto** (tokens nuevos, una vez por respuesta) y un clic dice en qué se fue esa ventana: sólo nombres de herramienta y tipos de agente, nunca el comando ni el prompt. Y cada corrida **dice de qué fue**: el título de su story (leído del hilo: 103 de 120), el asunto de su primer commit, o el nombre del archivo de la story; nunca el prompt del dev, que medido suele ser «listo» o «seguí». La tabla suma la columna **«archivos»**, y 🔴 una corrida que cambió sus archivos **desde la consola** (14 de 120; una de ellas: 3,8 M tokens, 0 ediciones, 8 archivos en su commit) no dice «0»: dice cuántos llevaron sus commits, «por consola», y el detalle aclara que de eso no queda un antes y después. Los combos van en orden alfabético. 🔴 **Y la consola no es la excepción, es la mayoría** (medido el mismo día): 3.829 cambios con las herramientas de edición contra **7.294 por consola**, y en 82 de 121 corridas la consola supera a las herramientas (en una: 21 contra 246) — en los modos automático y sin permisos, Claude Code le indica al agente trabajar por consola. La vista los muestra «por consola», con el comando saneado y **entero** como cambio (un script de reemplazos trae adentro el antes y después de cada uno; uno que escribe varios archivos guarda el texto una vez), y acota todo al tiempo de la corrida: la conversación sigue después con otro trabajo (una corrida traía los archivos de la story siguiente). La página queda en 12,2 MB. 🔴 **Y la espera se lee también de la conversación**: la cuenta por pasos sólo sabe que el 3 y el 7 esperan. Medido: una corrida que preguntó en el paso 5 y tuvo respuesta ocho horas después salía como «10,4 h, trabajo 9,8 h, espera 5 min» y eran 79 min de trabajo y 8,5 h de espera. Una pregunta con opciones (hasta su respuesta) y un turno que terminó esperando un mensaje del dev (2 min o más) pasan de trabajo a espera (`step-times.js#conEsperas`, sólo horas, ni la pregunta ni la respuesta), y el gráfico los dibuja rayados (`ESPERA-T1`). El antes y después exacto de todo cambio, venga de donde venga, sale de git (desde el 2026-09-17): arriba de esa lista va «Cómo quedó cada archivo · según git» —los commits que la corrida creó y lo que dejó sin commitear, con su parche— y la de la conversación queda abajo para el «cuándo», con lo de la consola marcado `≈ aproximado` (`scripts/metrics/run-change.js`). Van comprimidos aparte y se abren a pedido: medido sobre 280 corridas (120 con hilo), la página pasó de 2,2 a 7,9 MB. Una corrida sin hilo dice «sin hilo», nunca «no tocó nada» (`CAMBIOS-T1`). Y el filtro agrupa por **repo**, no por la carpeta donde estaba clonado: el mismo repo salía partido por máquina, worktree y clon descartable, 52 entradas que son 22 (`PRODUCTO-T1`). Los números de las fichas siguen saliendo sólo del `consumo` y el `gates[].mensaje` que el resumen de consumo deja en el volcado, y publica una **lista blanca** construida campo por campo — nunca un spread del volcado, que trae el prompt del dev (`planApproval.text`), rutas del scratchpad (`gates[].cmd`) e identificadores de sesión. Y lo que sí publica de afuera de la lista —el mensaje rescatado y hasta los MOTIVOS— pasa otra vez por `sanear` de `tokens-digest.js` (importado, no copiado): medido, **144 identificadores de sesión** entraban por el motivo de «conversación borrada», un campo que parecía prosa inocente. La presentación compartida de las dos páginas (ficha con denominador, chip con glifo, juicio por umbral, CSS del tema) se **movió** a [`scripts/nightly/dashboard/common.js`](../scripts/nightly/dashboard/common.js) sin cambiar un byte (la de seis preguntas regenerada antes y después es idéntica, huella normalizada `6ea61a56faf5f2a9`). Cuatro decisiones de la presentación: «sin estado» **nunca** cuenta como «pasó» (340 evaluaciones entraban como verdes); los rebotes idénticos **y consecutivos** se agrupan (`×5`) pero dos iguales separados por otro evento no — el caso T11b cuida que no se agrupe después de filtrar, que fundiría dos frenos separados; las notas («+108 k tokens después del último paso», «3 evaluaciones anteriores al inicio») van **fuera del SVG**; y los nombres de los pasos se **leen** de los `step-0N-*.md` del skill (sin skill, números con motivo). Se verifica **con los ojos**: `?solo=N` deja la ficha de una corrida arriba de todo y Chrome headless la fotografía (desplazar la página deja la captura en blanco; se midió). Red: `scripts/tests/dashboard-runs.test.sh` (26 casos, 63 chequeos, registro sintético con marcadores en cada campo prohibido; el que más pesa es el anti-fuga T4, y T7b es el de los 144 identificadores) — sin tocar los dos entregables commiteados (gemelo del C-27).
+**Qué es:** El medidor de etapas del SDLC y el tablero que lo muestra.
 
-**La foto por proyecto** (`scripts/nightly/projects/snapshot.js`, 2026-10-07). El medidor publica **conteos**; el control de proyectos de un producto del equipo necesita **la lista**: qué stories tiene cada proyecto, en qué estado y en qué sprint, sus épicas con título, los documentos de plan, la evidencia de cierre de cada una y qué está trabado. En el mismo paso del nocturno, después de medir, este guion recorre los mismos clones y deja `.dashboard/proyectos/<Proyecto>__<Repo>.json` por cada repo con stories —uno por repo, **reemplazado** cada noche: la historia la guarda git— y viaja en el mismo commit que el snapshot del día. Ese producto lo baja por la API de git de Azure DevOps y **no vuelve a parsear ningún `.md`**. 🔴 **Proyecta, no mide**: qué es una story lo dice el descubridor, qué estado es cerrado el diccionario de estados, cuántos días lleva una story en su estado las transiciones del medidor, qué archivo es evidencia y con qué clave el portón; nada de eso se copia. Para importarlas sin duplicarlas, dos reglas que vivían adentro del medidor se volvieron funciones exportadas: `dirsDeEvidencia` (la carpeta propia y la de los hermanos del mismo proyecto) y `tieneHuellaDelArnes` (el criterio de `--only-harness`). 🔴 **Las métricas se copian, no se miden dos veces**: con `--sdlc` toma la entrada del repo en el snapshot que el medidor acaba de escribir; medido el día que nació, `measureRepo` tardaba 11,8 s en un repo de 140 stories y descubrir más derivar las transiciones, 1,2 s. 🔴 **Lista blanca en dos capas**, el molde del reductor: viajan 16 campos por story elegidos por el código —nunca el frontmatter entero, que trae rutas de máquina, ni el cuerpo— y todo texto pasa además por un filtro que saca correos y rutas absolutas. Lo que no puede decidir lo dice: evidencia `null` si el recorrido fue parcial, días `null` si las transiciones no se midieron (y entonces ninguna alerta de «estancada»), título de épica `null` antes que inventarlo desde el nombre del archivo; los frontmatters rotos se **cuentan** y alertan, no se saltean. Seis alertas, lista cerrada: cerrada sin evidencia, sin work item, estado desconocido, frontmatter ilegible, dependencia rota y en curso hace más de 14 días. Una foto que falla avisa y no apaga el snapshot SDLC. Red: `scripts/tests/projects-snapshot.test.sh` (16 casos sobre repos de juguete; el escaneo parcial y el historial ilegible se fuerzan con una precarga del test, sin llaves de prueba en el código).
+**Por qué existe:** Un número sin denominador es el problema que existe; `null` con motivo nunca se cambia por 0. Deriva el tiempo por etapa del historial de git y usa los estados de `scripts/metrics/states.json`.
 
-**La edad en el estado** (`scripts/nightly/projects/state-age.js`, 2026-10-17). La auditoría de los tableros encontró más de cien stories en revisión y una página que no decía cuántas llevaban semanas ahí; el dato ya estaba en cada foto (`dias_en_estado`). `stateAge` lo **suma, no lo mide**: por producto y por estado, cuántas pasan el primer y el segundo umbral (`sources.json → params.edad_en_estado_dias`, por defecto 30 y 60; sin ellos, «no medido») y cuántas no tienen el dato, que nunca cuentan como «menos de 30». El titular cuenta sólo lo empezado (en curso y bloqueado): una story de backlog vieja no está parada. El producto de una foto sale del `repos.json` de la organización por el proyecto decodificado; un proyecto de dos productos cuenta en los dos y el titular lo cuenta una vez, la misma regla que usa el sitio. Una foto de más de dos días o ilegible no suma. Sólo conteos: ningún id ni título. Lo muestra la pregunta 1 del tablero, sin color. Red: `scripts/tests/state-age.test.js`.
+**Quién la usa:** El nocturno de métricas y el tablero del equipo.
 
-**La concentración por persona** (`scripts/metrics/author-concentration.js`, 2026-10-17). Antes la medía sólo la máquina que generaba el tablero, contando por **nombre** (dos alias de una persona la partían en dos) y con los commits de los pipelines adentro (medido: la identidad del pipeline era el 17-21 % del año en tres backends, y sacarla cruzaba un producto del 70 al 85 %). Ahora corre en el nocturno de métricas, en el mismo paso que la foto y sobre las mismas copias: une las identidades que comparten nombre o correo, aplica el `.mailmap` leído del objeto (la copia es sin árbol de trabajo), saca las identidades de máquina declaradas en `params.identidades_de_maquina` y sigue la regla de siempre (20 commits o más en 12 meses, el máximo por producto, en riesgo desde 0,75). 🔴 **Ningún nombre ni correo toca el disco**: lee `git log` en memoria, publica sólo proporciones **por producto** (cada repo, sólo su estado) y un error de git se dice con su código, nunca con su salida. La corrida local del tablero usa la misma función. Red: `scripts/tests/author-concentration.test.sh` (con prueba de fuga, también por el camino del error) y un caso de fuga en `telemetry-leak.test.sh` (un autor sembrado que no puede llegar a la página).
+**Dónde se prueba:** `scripts/tests/sdlc-transitions.test.js`, `scripts/tests/dashboard.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricssdlc-stage-metricsjs)
 
 ## scripts/metrics/tokens-digest.js
 
-De cada corrida del pipeline quedaban los tiempos, los frenos y cuántos agentes lanzó… y **nada de lo que explica por qué costó lo que costó**: el consumo y el hilo de la conversación viven sólo en la transcripción de Claude Code, que se borra a los 30 días. 🔴 **La medición que fundó la pieza fue también su reloj**: al 2026-09-09 había **230 corridas archivadas y sólo 73 conservaban su conversación** — 157 perdidas, el **68 %**, y cada semana que pasaba se iban las de esa semana. Ahora el archivador del cierre (`marker.js`) llama a este rescate solo, y el arranque de sesión repasa lo que creció; el hilo comprimido pesa **~375 KB por corrida** (79 MB las 73 salvadas), así que no había motivo para guardar un resumen y tirar el material. 🔴 **Tres cosas se midieron ANTES de escribirlas.** (a) El mismo `usage` se repite en cada línea de una respuesta —Claude Code parte una respuesta en hasta 8 líneas, todas con el mismo `message.id`—, así que sumar por línea infla **3,22×**: se deduplica por respuesta. (b) 🔴 **La marca de un freno es la hora en que el comando TERMINA, no la que empieza** (`run-check` toma `t0`, ejecuta, y recién entonces escribe la línea, con su `durationMs`), o sea que la ejecución está *antes* de la marca — 36 de 37 casos, mediana 0,8 s. Mirar **hacia adelante** rescata 22 y en **21 de esos 22 agarra la re-ejecución posterior**, la que suele estar en verde — publicar el texto de la corrida que salió bien bajo el rótulo de error es el peor resultado posible. (c) La **igualdad exacta** de comando rescata **cero**: el registro guarda el comando ya resuelto y la conversación el de la terminal, con un `cd` adelante y `~` sin expandir. Con la regla corregida —contención dirigida, ventana `[marca − 2 min, marca + 15 s]`, la más cercana— salen **37 mensajes de error reales** donde el registro sólo decía «salida 2» (31 de la matriz de verificación runtime, 3 de compilación, 2 de terminado, 1 de los revisores). 🔴 **Y el número publicado es el de la corrida real, no el de un script de exploración**: dos implementaciones independientes coinciden en 37. **Nunca un cero donde hubo ausencia**: sin conversación el resumen sale con `estado` y motivo en castellano y **sin la clave `tokens`**, y «no la encontré» distingue dos causas que no son la misma (`projects/` ilegible es *no medido*; ausente con `projects/` legible es *borrada*). 🔴 **No viaja por git, y eso es deliberado**: el hilo tiene prompts, rutas del disco y código de cliente. Que las corridas estén disponibles para más de una persona es otra pieza (el buzón de corridas) — nunca este repo, que lo clona todo el equipo. Red: `scripts/tests/tokens-digest.test.sh` (17 casos; los que más pesan son el de la respuesta partida en 4 líneas, el de las marcas de paso **invertidas** —que pasan de verdad: 20 de 230 volcados— y el par que exige que la ventana mire hacia atrás) + `marker-archive-rescue.test.js` en `agent-skills` (3 casos, y el que más pesa es el del **arnés atrasado**: con `tokens-digest.js` ausente el volcado se escribe igual, porque si el archivado dependiera de un script de OTRO repo esa máquina dejaría de archivar también los tiempos y los frenos, que hoy guarda bien). 🔴 **Y desde el 2026-09-14 el rescate por conversación no encontraba nada (2026-09-17)**: 0 de 43 frenos en rojo con mensaje, medido sobre los volcados locales y del buzón. En los 43 el comando registrado lo lanza un script (`test-gate.sh`, `runtime-matrix.js`) y 26 corrían en segundo plano, donde la conversación sólo dice «Command running in background». Ahora `marker.js run-check` guarda en rojo la **cola** de su salida en `gates.log`, saneada con `colaDeSalida` de este archivo y con el mismo tope; el rescate la usa primero y la conversación queda para las corridas viejas. Sin este archivo a mano, run-check **no** guarda la salida cruda: deja el motivo. El reductor del tablero no lee ese campo (`telemetry-leak.test.sh` lo siembra con correo, ruta y cliente). Red: T34–T37 y `controls-bench/cases/hooks/43-run-check-cola.json`.
+**Qué es:** Rescata de cada corrida del pipeline su consumo y el hilo comprimido de la conversación, y los guarda junto al volcado de la corrida.
+
+**Por qué existe:** La conversación de Claude Code se borra sola, y sin ella no se sabe por qué costó cada corrida. El rescate la conserva, cuenta el consumo una vez por respuesta y recupera el mensaje de error de cada freno en rojo.
+
+**Quién la usa:** El archivador del cierre (`marker.js`), el arranque de sesión y `marker.js run-check`, que guarda la cola de la salida en `gates.log`.
+
+**Dónde se prueba:** `scripts/tests/tokens-digest.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricstokens-digestjs)
 
 ## scripts/metrics/reviewers-cost.js
 
-**Lo que gastan los revisores** de cada corrida (2026-09-10): cuántos se lanzaron, de qué tipo, con qué modelo y en qué vuelta; y por revisor cuánto **tardó**, cuánto **devolvió** y cuánto **consumió**. Nace de un agujero que apareció al armar la vista de corridas: el arnés sabía que lanzaba ~15 revisores por corrida y **no sabía qué costaban**. 🔴 **El consumo de un revisor sí está en la conversación del padre**: no en el `tool_result` del lanzamiento, que sólo dice «agente lanzado»; el resultado real llega después, como notificación con el identificador del lanzamiento y —al final— un bloque de uso con `subagent_tokens`, `tool_uses` y `duration_ms`: **338 de 341** sobre las 600 conversaciones más recientes. O sea que el consumo de los revisores lanzados en segundo plano (la forma obligatoria desde julio) **se mide**; el estimado del baseline (60.000–100.000 por lanzamiento, medido el 2026-07-28) queda para lo que no lo trae. 🔴 **Y una notificación puede llegar encolada**: cuando un revisor termina mientras el padre está ocupado, su notificación **no llega como mensaje sino encolada**, en líneas `queue-operation` y `attachment` — justo los dos tipos que el hilo guardado descarta por peso. Medido sobre 300 conversaciones: 273 notificaciones de agente como mensaje y **173 sólo encoladas, el 39 %**. El medidor las lee de los tres lugares (la misma cuenta UNA vez, con la hora más temprana) y el hilo guardado conserva la línea encolada (~2 KB, máximo 16): los «sin resultado» bajaron de 769 a **3**, sobre 1930 lanzamientos. **La regla que ordena la pieza: lo medido y lo estimado no se suman en el mismo número** — ni entre sí, ni al consumo del hilo del padre, que es otro consumo. `verificarSeparacion()` lo chequea (y `--corrida` sale 2 si no pasa); el supuesto vive en `reviewers-cost-assumption.json` con su fuente y su fecha, y **vence**: pasado `review_before`, el estimado sale `no_medido` con el motivo. Se empareja por **identificador de lanzamiento**, nunca por orden (los revisores corren en paralelo y las notificaciones llegan en cualquier orden); el registro `advisor-runs` es el padrón cuando existe, la conversación cuando el registro ya se resumió, y el conteo del archivador cuando no queda nada — y un revisor que no volvió es `sin_resultado`, nunca duración cero. Lee la conversación viva o, si ya no está, el hilo guardado (`fuente` lo dice). Corre **encadenado al barrido de tokens-digest**: toda corrida nueva queda medida sola al arrancar la sesión; sin el medidor en la máquina, el rescate del hilo se escribe igual y `revisores` queda con motivo. La vista de corridas muestra lo medido con su número y denominador (`n=k de N`) y lo estimado con la palabra, en otra marca; el pie dice qué se mide de un revisor. 🔴 **Lo que dio la medición real (esta máquina, 233 corridas, 2026-09-10)**: 76 con duración y tokens medidos, 31 sólo con estimación, 126 sin nada que medir ni estimar (anteriores al conteo de agentes), 3 revisores que no volvieron. Por revisor, sobre **1485 medidos**: mediana **110.152 tokens** (p10 ≈76.000 · p90 ≈160.000), **95 s**, informe de ~1 KB; por corrida, mediana **2,06 M tokens** de revisión. **El supuesto del baseline quedó por debajo de lo medido** (su techo, 100.000, estaba bajo la mediana real) y se **renovó el mismo día con la medición**: 75.000–165.000, el p10–p90 de 1513 revisores, con vencimiento el 2027-02-10; el archivo guarda el rango anterior en `renewals`. 🔴 **Cuatro reglas que salen de defectos reproducidos, cada una con su caso**: el uso se busca por posición, sólo después del ÚLTIMO cierre (un informe de revisor que contenga literalmente `</result>` rompería el parseo); el emparejado registro↔conversación es de cardinalidad máxima (uno greedy puede dejar «sin ubicar» a un revisor con pareja válida); los lanzamientos que la conversación muestra y el registro no anotó entran al padrón y la vista lo dice; y el fallback del encadenado no pisa un estado terminal. Red: `scripts/tests/reviewers-cost.test.sh` (33 chequeos, cada uno con su rojo escrito; los que más pesan: T2 —por orden de llegada dos revisores concurrentes se cruzan sin error—, T2b —la notificación encolada—, T4 —el que no volvió no es cero—, T5/T5b —el estimado sumado al consumo o a lo medido se detecta, y sin huella no pasa en silencio—, T6 —el supuesto vencido no ampara—, T13 —informe con texto libre— y T14 —emparejado óptimo). A mano: `--corrida <volcado>` | `--todas`.
+**Qué es:** Mide, por corrida y por revisor, cuántos revisores se lanzaron, cuánto tardó cada uno, cuánto devolvió y cuánto consumió.
+
+**Por qué existe:** El arnés lanzaba muchos revisores y no sabía qué costaban. Lo medido y lo estimado nunca se suman; el supuesto de la estimación vive en `reviewers-cost-assumption.json` y vence.
+
+**Quién la usa:** Va encadenado al barrido de `tokens-digest.js` al arrancar la sesión; lo muestra la vista de corridas. A mano: `--corrida` o `--todas`.
+
+**Dónde se prueba:** `scripts/tests/reviewers-cost.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsreviewers-costjs)
 
 ## scripts/metrics/run-change.js
 
-**Lo que cambió cada corrida, según git** (2026-09-17). La vista de corridas sabía qué archivos tocó una corrida leyendo su conversación, y eso deja afuera la mayor parte: medido sobre 121 corridas, **7.294 cambios por consola contra 3.829 con las herramientas de edición**; de la consola la conversación guarda el comando, no el cambio, y lo de los subagentes no está. Ahora el archivador del cierre (`marker.js clear`, agent-skills) llama a este guion y deja `<volcado>.cambio.json.gz` al lado del volcado: **los commits que la corrida creó y lo que dejó sin commitear, en cada repo donde escribió**, con su parche saneado (`sanear` de `tokens-digest.js`, importado) y topes dichos (200.000 caracteres por archivo, 5 MB por corrida). 🔴 **No es el diff desde el commit en que arrancó, y se decidió midiendo**: la copia se pone al día a mitad de camino (un `pull`, un `reset` a `origin/main`) y eso mete commits de otros en la línea principal — medido en una corrida, 15 de sus 16 commits no eran suyos, así que separarlos con `--first-parent` no ve nada. Los commits propios los da el **reflog** de la copia, que anota qué se creó ahí (`commit`, `amend`, `rebase (pick)`) y qué llegó de afuera. 🔴 **Y lo sin commitear se acota a lo modificado durante la corrida**: una corrida real de un repo del equipo cargaba 241 archivos sin commitear de corridas anteriores; lo previo se cuenta aparte, no se atribuye. **Qué repos**: el de la story más la carpeta git de cada archivo que la corrida escribió — de 297 corridas, 123 tocaron otro repo —, con las herramientas o **por consola**: la puerta de la consola (`on-bash-write-gate.js`) anota dónde escribe cada comando en `console-writes/<sesión>.jsonl`, separado de `file-events/` porque ése lo leen los frenos de ATDD. 🔴 **En una copia que escribió también otra sesión, el reflog anota los commits de todas** (2026-09-18; sin esto una corrida publica como propios los commits de otras sesiones hechos en el checkout compartido): cada commit se atribuye con el **hilo de la conversación** — si en ese segundo no corría ninguna herramienta de la sesión es de otra y se lista aparte con su asunto; si la que corría no lo nombra, queda marcado «sin confirmar»; sin hilo, todo marcado. Los archivos anotados por sesión no sirven para esto: una sesión sin pipeline casi no deja constancia. «No pude mirar» nunca es «no cambió nada». Viaja al buzón de corridas con la misma forma de archivo en la subida y la bajada. **La vista** muestra arriba «Cómo quedó cada archivo · según git» (una fila por archivo, sus partes por commit, el parche coloreado a pedido) y deja abajo la lista de la conversación para el «cuándo», con la consola marcada `≈ N min · aproximado` y sin los nombres que git no confirma (`p.Id` salía como archivo por un `p => p.Id`). Fuera de alcance, a propósito: recuperar corridas viejas (4 de 20 tenían algo) y minutos exactos por consola. Peso medido: ~40 KB por corrida en la página. Red: `scripts/tests/run-change.test.sh` (13 casos: lo ajeno por pull y reset, amend y rebase, la consola en otro repo, la clave tapada, topes, otra sesión, no poder mirar, lo sucio de antes), `marker-archive-change.test.js` y `console-writes.test.js` en agent-skills, los casos `2.19` de `dashboard-runs`, `upload-runs` y `download-runs`, y T17 en `telemetry-leak.test.sh`.
+**Qué es:** Registra qué cambió cada corrida según git: los commits que creó y lo que dejó sin commitear, en cada repo donde escribió.
+
+**Por qué existe:** La conversación guarda el comando de consola pero no el cambio que hizo, así que dejaba afuera la mayor parte. Git sí lo sabe.
+
+**Quién la usa:** El archivador del cierre (`marker.js clear`) lo llama y deja `<volcado>.cambio.json.gz`; lo muestra la vista de corridas.
+
+**Dónde se prueba:** `scripts/tests/run-change.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsrun-changejs)
 
 ## scripts/metrics/retro-heartbeat.js
 
-**La retrospectiva de cada merge a main, sin modelo** (2026-09-16). El paso 10b de `/tycon-merge-to-main` lanzaba el `tycon-retrospective-capturer` por cada merge: medido en 30 días, **87 lanzamientos, 8,3 h y 12,5 M tokens**, para archivos con casi todo en null; 4 de sus 6 métricas ya las publicaban otras piezas, una se confabulaba leyendo un archivo que no existe, y aguas abajo el archivo tiene **dos** consumidores: `first_pass_ratio` del nocturno SDLC y `retro-pending.js`. Ahora el 10b pregunta `retro-pending.js --judge` y, si el push no está exento, corre este script, que en **~150 ms** escribe el archivo 2.0 validado: la identidad del merge, **la última vuelta de revisión** de la corrida de esa story y las otras cinco en null con quién las cubre. El agente queda a pedido («retro con modelo»). 🔴 **Y el Stop-gate de `retro-pending.js` se recortó, no se borró**: dejó de emparejar agentes lanzados y exige el archivo — un agente lanzado ya no paga la deuda, la paga el archivo (rojo previo contra `origin/main`). 🔴 **Las vueltas tenían tres cuentas que no coincidían**: contra los revisores medidos por vuelta, la columna de la vista acertó 17 de 43, la foto más alta 39; el latido usa los revisores por vuelta y, si faltan, la foto más alta. Y **15 de las 28 corridas** del arnés guardan como repo un clon descartable ya borrado: se reconoce por la carpeta de sesión y se exige que la story exista en el repo del merge, porque en esas carpetas también hay proyectos de prueba con el mismo número de story. Cinco clases más, todas con su prueba en rojo antes del arreglo: worktrees del arnés (`--wt-`, `--merge`) que salían «sin volcado», rutas relativas de volcados viejos que cambiaban el resultado según la carpeta del comando, mayúsculas en macOS, un volcado ilegible de otra story con id más largo (`1.3-B-frontend`) que anulaba la métrica, y la foto del banco con los casos retirados. Nunca un 0 donde no hubo corrida, un volcado ilegible no se salta para tomar uno más viejo, y del volcado no sale nada más que números de vuelta y la fecha. Red: su suite (T1–T6, T8, T10, T11 y los modos de falla — 34 chequeos —, con 8 mutaciones y 6 regresiones verificadas en rojo). **La columna «vueltas» de la vista de corridas usa la MISMA función que el latido** (`vueltaDeVolcado`, exportada): contar las veces que se calculó el set de revisores acertaba 17 de 43 contra lo medido; el conteo viejo queda a la vista con su nombre («set de revisores calculado N veces»); la serie `first_pass_ratio` del nocturno lleva una `nota` con la fecha del cambio de método (`dashboard-runs.test.sh` 7.1-T1/T1b, rojo previo), un caso en `telemetry-leak.test.sh` y 4 casos nuevos del gate en `14-retro-pending.json` (8 de spawns retirados).
+**Qué es:** Escribe, sin modelo y en una fracción de segundo, el archivo de retrospectiva de cada merge a main.
 
-**Los repos de laboratorio no deben retrospectiva** (2026-10-14). Una sesión probó una story con un repo de juguete en su carpeta de trabajo temporal (con `.tycon/` y `origin` a un repo de prueba en GitHub), empujó tres veces a main, y el cierre del turno quedó frenado por tres «merges sin retrospectiva». Ahora `retro-pending.js` no anota un push a main desde un repo de laboratorio, y lo dice con el comando del latido por si era de verdad; el freno y el aviso de arranque tampoco reclaman las entradas viejas de un repo de laboratorio que sigue en pie. Laboratorio es **las dos cosas**: vive en una carpeta temporal (la del sistema, `/tmp`, `/var/tmp`, `/var/folders` — ahí van las carpetas de trabajo de las sesiones; nunca el HOME) **y** su `origin` no lleva a un repo de verdad. 🔴 El cuidado de la regla es el clon descartable de un repo real, que también vive en el temporal: si su `origin` es una ruta que sale de las temporales, o si alguna copia de trabajo bajo la raíz de repos tiene su mismo remoto, se anota como siempre. Sin raíz de repos, con un remoto ilegible o con una carpeta que ya no existe, también: la duda va hacia más control. `--judge` informa `laboratorio` y su motivo. `TYCON_RETRO_LAB_DIRS` reemplaza la lista de carpetas temporales (vacía: ninguna; así miden sus repos las suites que los arman en el temporal). Red: 7 casos en `14-retro-pending.json` (3 con rojo previo y 4 guardas) y T11c de `retro-heartbeat.test.sh`.
+**Por qué existe:** Lanzar el capturador con modelo en cada merge costaba mucho tiempo y consumo para archivos casi vacíos. Acá sale la identidad del merge y la última vuelta de revisión; el resto queda en null con quién lo cubre.
+
+**Quién la usa:** El paso 10b de `/tycon-merge-to-main`, tras consultar `retro-pending.js --judge`. El capturador queda a pedido («retro con modelo»).
+
+**Dónde se prueba:** `scripts/tests/retro-heartbeat.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsretro-heartbeatjs)
 
 ## pipeline.js dod-checker-needed
 
-*(pipeline.js dod-checker-needed · deferrals-open · qa-legibilidad (AgentSkills) + la ficha «los hooks del cierre»)*
+_(pipeline.js dod-checker-needed · deferrals-open · qa-legibilidad (AgentSkills) + la ficha «los hooks del cierre»)_
 
-**El cierre de una story suelta lo que relee con modelo y se queda con lo que corre código** (2026-09-16). Medido en tres máquinas: la matriz por AC frenó **206 de 451** corridas y el gate E2E **87 de 331**, mientras el `tycon-dod-runtime-checker` dejó **1 hallazgo en 286** (y era la regla que la matriz ya corre) y el meta-audit ACCOV-C9, **0**. 🔴 **Primero la medición, después el recorte**: el número que dice si el cierre mínimo alcanza —cuántas evidencias rechazan los hooks del cierre— no existía, así que `on-frontmatter-write`, `on-pre-commit` y `on-dod-evidence-guard` pasaron a anotar cada decisión en `frenos.jsonl` (lista cerrada de motivos, sólo la huella, sin cambiar lo que deciden; ayudante `lib/constancia-cierre.js`), el reductor la publica como `evidencia_rechazada_por_hook` y el tablero la muestra en la pregunta 4. Después: el checker con modelo se invoca **sólo por superficie** —`dod-checker-needed` mira worker en el diff, transacción compleja en los ACs y tandas en vuelo, y ante la duda invoca—; el step 9 cambia los dos revisores por `deferrals-open`; **ACCOV-C9 retirada** (fila tachada) y **ACCOV-C8 opcional** (incompleto avisa; C10 sigue); el merge no lanza la suite E2E completa hasta que el gate tenga aislamiento por worker; y la capa 4 de la guía de QA deja su marca. Lo que no se tocó: la matriz, el gate E2E, `run-check`, el portón de CI. 🔴 **Cada métrica declara `values_only`**: las métricas de los frenos previos y la nueva comparten fuente y el reductor publica lo que no está en la lista como `otro`; sin eso los hooks del cierre se colarían en la ficha de los frenos previos. Red: su suite (T3–T5, T8–T12, con el banco de los tres hooks corriendo contra el agent-skills bajo prueba), 7.2-T1/T2 en `guard-record.test.sh`, 7.2-T6 en `reducer.test.sh` y C-57 en `dashboard.test.sh`, todos con su rojo previo.
+**Qué es:** Decide si el cierre de una story necesita el revisor de DoD con modelo, y anota cada decisión de los hooks del cierre.
+
+**Por qué existe:** El cierre releía con modelo lo que ya corre código y casi nunca encontraba algo. Ahora el revisor se invoca sólo si el diff trae un worker, una transacción compleja o tandas en vuelo; ante la duda, invoca.
+
+**Quién la usa:** El pipeline en el cierre; los hooks del cierre dejan constancia en `frenos.jsonl`, que cuenta el reductor del tablero.
+
+**Dónde se prueba:** `scripts/tests/guard-record.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinejs-dod-checker-needed)
 
 ## scripts/lib/validator-verdict.js
 
-*(scripts/lib/validator-verdict.js + el re-loop del validador en pipeline.js (AgentSkills))*
+_(scripts/lib/validator-verdict.js + el re-loop del validador en pipeline.js (AgentSkills))_
 
-**El validador de stories deja su veredicto, y los re-loops lo sueltan después de dos limpios seguidos** (2026-09-17). Era el revisor más caro: 508 lanzamientos y 65,8 M tokens en 30 días. Medido: con dos veredictos limpios seguidos después de implementar trajo algo nuevo en 2 de 24 lanzamientos, ninguno bloqueante; antes, en 62 de 125. Ahora cierra cada informe con `Veredicto:`, que cuentan el medidor de revisores y la vista de corridas por fase, y `pipeline.js` lo saca del re-loop con dos limpios seguidos e invoca ante cualquier duda (línea `validador-reloop` en `gates.log`). Nueva VAL-W15: la story no dice lo que se implementó. Red: `validator-verdict.test.sh`, casos 7.3 de `reviewers-cost` y `dashboard-runs`, `expect_veredicto` en el banco y `validator-reloop.test.js`.
+**Qué es:** Deja el veredicto del validador de stories al cierre de cada informe y saca al validador del re-loop tras dos veredictos limpios seguidos.
+
+**Por qué existe:** Era el revisor más caro y los re-loops casi nunca traían algo nuevo. Ante cualquier duda se invoca igual.
+
+**Quién la usa:** `pipeline.js` (línea `validador-reloop` en `gates.log`), el medidor de revisores y la vista de corridas.
+
+**Dónde se prueba:** `scripts/tests/validator-verdict.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibvalidator-verdictjs)
 
 ## scripts/metrics/step-times.js
 
-*(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpushed-work-notice.js)*
+_(scripts/metrics/step-times.js + el carril de cada commit en scripts/hooks/unpushed-work-notice.js)_
 
-**Cuánto trabajó y cuánto esperó una corrida, y por qué carril entró cada commit** (2026-09-16). El agente marcaba cada paso del pipeline al **terminarlo** y nadie anotaba cuándo empezaba: la duración de un paso era «del fin del anterior al fin de éste», así que el tiempo muerto antes de arrancar caía entero en el paso siguiente (medido: **208 de 237** corridas con pasos «marcados juntos»; un paso 8 real aparentaba 3,3 h con 2,7 h sin un solo evento). Ahora `pipeline.js next` anota el **arranque** del paso que devuelve (`marker.js start-step N` a mano) y `complete-step` lo conserva; `step-times.js` es la **única** cuenta —la usan la vista de corridas y el tablero— y separa **trabajo**, **espera humana** (pasos 3 y 7) y **tiempo entre pasos**, que nunca se le cobra a un paso. 🔴 **Se calcula al leer, no al cerrar**: `marker.js` sólo mide, y la cuenta trata igual a la corrida nueva y a las 237 viejas, que salen **estimadas por diferencia** y lo dicen (espera y hueco `null` con motivo, nunca 0). El hook que ya registraba cada commit de una sesión anota además su **carril** (`pipeline` con su story, `adhoc`, `ninguno`) y deja una constancia durable y **sin rutas**, `carriles.jsonl`, que viaja al buzón como cuarto registro; el reductor la cuenta por lista blanca (sólo el carril: la story nunca sale). Los commits hechos fuera de una sesión no pasan por ningún hook y la página lo dice como «no medido». Y el **reproceso por carril de la story**: el nocturno separa, por repo, las stories cerradas desde la primera corrida guardada en `.advisors/pipeline-runs/` en «con corrida» y «sin constancia de corrida» (nunca «a mano»: una corrida no guardada cae ahí), y el tablero lo dibuja **sólo por repo** y sólo donde los dos grupos llegan al mínimo de [`lane-hypothesis.json`](../scripts/metrics/lane-hypothesis.json) —commiteado **antes** de mirar un número—, publicando el resultado aunque salga en contra del pipeline. Hoy guardan corridas 5 repos, desde el 2026-09-05: casi todo sale «todavía no se compara», y eso es el resultado honesto. Red: `scripts/tests/step-times.test.sh`, `lane-per-commit.test.sh`, casos `2.7-*` de `dashboard-runs`, `upload-runs`, `reducer` y `sdlc-transitions`, C-41 a C-43 de `dashboard.test.sh`, la fuga extendida y `constancia-2.7-carril` del banco; los del arranque en `agent-skills` (`unit.test.js`, «2.7 …»).
+**Qué es:** Es la única cuenta de cuánto trabajó y cuánto esperó una corrida, separando trabajo, espera humana y tiempo entre pasos; además anota por qué carril entró cada commit.
+
+**Por qué existe:** Antes sólo se marcaba el fin de cada paso, y el tiempo muerto antes de arrancar caía entero en el paso siguiente. También permite comparar el reproceso entre carriles, con el criterio fijado en `scripts/metrics/lane-hypothesis.json`.
+
+**Quién la usa:** La vista de corridas y el tablero; `pipeline.js next` anota el arranque de cada paso.
+
+**Dónde se prueba:** `scripts/tests/step-times.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsstep-timesjs)
 
 ## scripts/metrics/upload-runs.js
 
-*(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)*
+_(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
-**Las corridas del pipeline de TODO el equipo, en un buzón donde todos escriben y sólo leen quienes tienen el rol de lectura** (2026-09-15). Lo que `tokens-digest.js` rescata en cada máquina —el volcado de cada corrida y su **hilo comprimido**— sube a un **contenedor privado de Azure Storage** (cuenta `cuentabuzon`, contenedor `corridas`, suscripción «Pago por uso»). 🔴 **Nunca al arnés**: el hilo trae prompts, rutas del disco y código de cliente, y este repo lo clona todo el equipo. **Por qué no un repo git**: para empujar hay que poder leer —el push trae lo del remoto antes—, así que quien sube vería lo de todos. **Subir (todas las máquinas, nada que configurar)**: `upload-runs.js` usa la llave del buzón (un archivo del repo del equipo), una SAS atada a una **política guardada con permiso `c`, «sólo crear»** (desde 2026-10-15): crea blobs nuevos y **no pisa uno que ya está, no lista, no lee, no borra** —medido en un contenedor de laboratorio: nombre nuevo 201; el mismo nombre 403 `UnauthorizedBlobOverwrite`—. Cada PUT lleva además `If-None-Match: *`, así «no pisar» vale aunque una organización deje su política en «crear y escribir». **Nada se pisa**: la primera subida de una corrida va a `<maquina>/<archivo>` (máquina = hostname en minúsculas y sin `.local`) y **lo que se vuelve a subir porque cambió va a una versión**, `<maquina>/v<AAAAMMDDTHHMMSSmmmZ>/<archivo>` (el inicio de la pasada, en UTC, que nunca retrocede); la bajada toma la versión más nueva y deja el espejo con la ruta de siempre, así los lectores no cambian. Como la llave no deja preguntar qué hay, lo ya subido lo recuerda un **registro local** (`~/.claude/.tycon-pipeline/mailbox-uploads.json`, con el blob y la versión) que se anota **sólo después del 201**: un corte a mitad nunca queda como subido. «Ya existe» (409 `BlobAlreadyExists` o 403 `UnauthorizedBlobOverwrite`) se reintenta **una vez** con una versión nueva; la política que no deja crear (403 `AuthorizationPermissionMismatch`) es `llave_sin_permiso`; «llave vencida o revocada» (403 `AuthenticationFailed`, 404) y «sin red» son motivos distintos y ninguno marca nada. 🔴 **Síntoma**: `llave_invalida` con un 403 `UnauthorizedBlobOverwrite` en una máquina sin esta story = código de antes, no llave vencida: actualizar el arnés. Desde una máquina, `upload-runs.js --check-create-only` vuelve a subir los mismos bytes de su blob confirmado más chico y dice si la política deja pisar; y quien tiene el rol de lectura mide las re-subidas sin bajar contenido con `download-runs.js --overwrites-report` (por tipo y por alias, y qué máquinas ya traen esta versión); 30 días antes del vencimiento lo avisa una vez por día. Se **niega** (exit 2) a usar una SAS que lea, liste o borre, o una de cuenta. **Bajar (sólo quien tiene el rol)**: `download-runs.js` pide un token con la sesión de `az` que la persona ya tiene —con el tenant del buzón, porque una cuenta puede ser invitada—, lista el contenedor y baja lo nuevo o cambiado a `~/.claude/.tycon-pipeline/corridas-buzon/<maquina>/`. En una máquina sin `az`, sin sesión o sin el rol (403) **no hace nada**, no crea la carpeta, sale 0 y lo anota una vez por día; `az` corre sin entrada: **nunca abre un login**. El rol «Storage Blob Data Reader» sobre el contenedor lo tienen **sólo quienes fueron autorizados**, leído del servidor. Lo tiene también **la identidad del nocturno del tablero**, por una conexión de servicio autorizada sólo para ese pipeline: quien pueda cambiar su YAML en `main` puede leer el buzón a través de ella. **Salvedades que no se cierran y se dicen**: los dueños de la suscripción pueden darse acceso (hoy, los mismos lectores con otras cuentas) y el escáner de datos de Microsoft Defender de la suscripción lee todos los contenedores. El instalador lanza, en una tanda de fondo y en este orden, el barrido de `tokens-digest.js` → la subida → la bajada (registros `upload-runs.log` y `download-runs.log`; apagado `TYCON_NO_UPLOAD_RUNS=1` · `TYCON_NO_DOWNLOAD_RUNS=1`). 🔴 **En Windows, sólo la subida** (2026-10-15): el aplicador de PowerShell no la lanzaba, y las corridas de una máquina Windows nunca llegaban al buzón ni al tablero. Ahora la lanza en cada arranque, de fondo y con la ventana oculta, con las mismas llaves; como un proceso de fondo de PowerShell no puede agregar a un archivo, la subida agrega ella misma a su registro (`--log`, con la misma rotación). La subida también manda, **una vez por día y primero en la cola**, los registros de frenos y escapes comprimidos (`gates.log.gz`, `bypass.log.gz` y su `cobertura.json`) como **un juego entero** bajo `<maquina>/registros/v<momento de la preparación>/`, que cuenta el reductor del tablero; un «ya existe» en un archivo del juego no se reintenta: el juego se re-prepara y sube entero en la pasada siguiente, y la bajada toma el juego más nuevo que está completo. La **vista de corridas** lee esa carpeta bajada cuando existe: columna y filtro por máquina, un pie que dice qué máquinas cubre y cuántas corridas de cada una, y lo que no se puede atribuir sale «sin declarar» con el motivo; la página va a `~/.claude/.tycon-pipeline/corridas-buzon/runs-dashboard.html` y **se niega a escribirse dentro de este repo**, con o sin buzón (`--local-only` = sólo las corridas de esta máquina). Desde el 2026-09-17 la tabla entra a lo ancho a 1400 px, verificado con Chrome real (`ANCHO-T1`). 🔴 **La llave se commitea, y es una excepción escrita** a la política de credenciales de este repo: no sirve para leer, vence (`vence` en el archivo) y se **revoca borrando la política** del contenedor, sin rotar la cuenta. Lo que sí permite es **crear**: cualquiera con el repo puede subir blobs nuevos al buzón, nunca pisar los de otra máquina — aceptado, acotado por el vencimiento. Cómo rotarla: los pasos están en el propio archivo (`"rotar"`, con la política en `c`). **Retención: sin vencimiento**: el buzón guarda la conversación entera, porque sólo la leen quienes mantienen el arnés; borrar es decisión de una persona. Red: `scripts/tests/upload-runs.test.sh` y `download-runs.test.sh` (buzón de mentira en `node:http`, sin red, HOME falso) y los casos `2.16-*` de `dashboard-runs.test.sh`. 🔴 **Las dos suites corren con HOME falso**: una prueba que lee la configuración REAL de la máquina puede empujar datos de prueba al buzón de verdad.
+**Qué es:** Sube las corridas de cada máquina a un buzón privado de Azure Storage donde todos escriben y sólo leen quienes tienen el rol de lectura; `download-runs.js` las baja.
 
-**Quién es quién: el correo de git y la carpeta propia de cada máquina** (2026-10-15). `place.json` trae ahora un dato de la persona: `owner`, el correo de git de quien usa la máquina (`user.email` de su configuración **global** de git, leída como archivo y en el orden de git, sin seguir los `include` y sin invocar git), o `no_medido` con un motivo por caso. Lo leen sólo quienes mantienen (el espejo del buzón y el sitio de la organización); la página del equipo no lo abre (`telemetry-leak.test.sh`, T20). 🔴 **Dos máquinas con el mismo nombre ya no comparten carpeta**: cada máquina sube a `<nombre>-<código>`, con un código de 8 hexadecimales **al azar** que se genera una vez y se guarda en `machine-code.json` de la carpeta de estado — nunca un dato de hardware. La carpeta se lee del archivo, así que renombrar el equipo no la mueve; si el archivo se borra o se rompe, se genera otra, `place.json` lo dice (`folder.code_regenerated`) y nombra la carpeta con código que reemplaza (`superseded_folders`), para que se una a la nueva; si no se puede leer por un error pasajero, no se pisa. `place.json` trae `folder` (la carpeta, el código, la carpeta vieja que reemplaza y el día de la mudanza). La primera pasada con la carpeta nueva vuelve a subir ahí lo que hay en el disco. Las carpetas viejas no se tocan: la bajada calcula cuál es la historia de cuál (`carpetasDeMaquina`, una sola definición) y deja `.carpetas-de-maquina.json` en el espejo, sin correos. Una declaración vale sólo con forma (la carpeta es exactamente `<vieja>-<código>`, la mudanza es una fecha real no posterior a hoy) y con la **huella** de las corridas que la máquina subió a la vieja, sacada de su registro de subidas: el buzón lo escribe cualquiera con la llave, pero la llave no deja listarlo, así que otra máquina no puede saber esa huella. Una vieja se **une** a su nueva sólo si una sola carpeta la declara y no recibió nada después de la mudanza; si la declaran dos, queda `compartida`, y si siguió recibiendo, `siguio_recibiendo`: no se une y la ven sólo quienes mantienen. El reductor, la poda y la vista de corridas leen ese archivo y cuentan una sola vez lo repetido (la vista muestra «antes, <vieja>»); el contador de pasos del tablero no entra a `registros/`. Con `TYCON_MACHINE` (las pruebas) la carpeta es ese nombre, sin código. Red: casos `2.28` de `upload-runs.test.sh`, `download-runs.test.sh`, `reducer.test.sh`, `prune.test.sh`, `dashboard-runs.test.sh`, `steps-per-run.test.js` y T20 de `telemetry-leak.test.sh`.
+**Por qué existe:** El hilo trae prompts, rutas del disco y código de cliente, así que no puede viajar por git. La llave de subida sólo crea blobs nuevos: no lee, no lista, no pisa ni borra.
 
-**Tu correo de git, dicho una vez** (2026-10-15). La máquina que sube al buzón informa en `place.json` el correo global de git de quien la usa, para que un mantenedor confirme de quién es cada máquina y la persona vea sus corridas en el sitio de la organización. `scripts/hooks/owner-email-notice.js` (al arrancar sesión, con la integración del buzón prendida) se lo dice al dev en un renglón, con cómo verlo y cómo cambiarlo, y deja un sello en la carpeta de estado con la **huella** del correo, nunca el correo: no lo repite, y lo vuelve a decir sólo si el correo cambia. Lee el correo con la misma función que arma `owner`, sin invocar git. Sin correo, en un agente de compilación o con la subida apagada, calla y no sella; si no puede sellar, también calla, para no repetirlo en cada arranque. Se apaga con `TYCON_OWNER_EMAIL_NOTICE=0`.
+**Quién la usa:** El instalador lo lanza de fondo en cada arranque, tras el barrido de `tokens-digest.js`. La vista de corridas lee lo bajado.
 
-**Ninguna prueba sube al buzón real.** La llave de escritura vive en el árbol del equipo, y las pruebas corren en ese
-árbol. Por eso hay tres capas. En cada validación de Azure, la guarda de antes de medir (`check-tree.yml`, en el repo
-del equipo) le quita la firma a la llave en el disco: la cuenta, el contenedor y el inquilino quedan, porque los
-nocturnos bajan el buzón con ellos y con `az`, y ningún nocturno sube. Los cuatro lugares que lanzan suites —el lazo de
-la validación, el del banco, la CI pública (`scripts/ci/public-ci.sh`) y el de una máquina (`test-gate.sh`)— le ponen a
-cada suite `TYCON_MAILBOX=0`, `TYCON_NO_UPLOAD_RUNS=1` y `TYCON_MAILBOX_JSON` apuntando a un archivo que no existe.
-Y `upload-runs.js` no sube con una marca de CI ni desde una HOME de laboratorio. Una prueba que mide la subida pone sus
-propias variables y un destino de prueba (`TYCON_MAILBOX_URL_BASE`). Lo fija un canario del repo del equipo
-(`mailbox-canary.test.js`): falla si la firma aparece en el árbol medido, por la vía que sea.
+**Dónde se prueba:** `scripts/tests/upload-runs.test.sh`, `scripts/tests/download-runs.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsmetricsupload-runsjs)
 
 ## scripts/lib/people.js
 
-**Quién ve qué: la regla del sitio de la organización** (2026-10-15). Una sola regla que el sitio llama en cada pedido y no copia. Cada máquina informa el correo de git de su dev; **un mantenedor confirma** de quién es en `operations.json` → `people.machines.<carpeta>` (`person` y la **huella** del correo que la máquina informaba, `reported_sha256`; nunca el correo en claro, porque ese archivo queda en la historia de git para siempre). Hasta confirmarla, sus corridas las ven sólo quienes mantienen (`site.maintainers`). Si la máquina empieza a informar otro correo, la confirmación se cae entera («cambio»): una máquina que cambió de manos no le muestra a nadie las corridas del otro. Es persona quien tiene alguna entrada, confirmada o caída. «Dónde trabaja» se cuenta en productos de `repos.json`, deducidos de las corridas confirmadas (el repo de Azure del cambio; si no, la carpeta del volcado) y de los pedidos asignados, con `people.projects.<correo>` (`add`, `remove`) para corregir; lo que no da un solo producto queda «sin ubicar» con el motivo, nunca adivinado. Una `operations.json` que no valida vale como la última buena **24 horas**, con aviso a los mantenedores, y después el sitio se frena (`estadoDeLaConfiguracion`). Los correos se comparan sin mayúsculas ni espacios. Sólo lee el espejo; sin red y sin valores de ninguna organización. La conexión con el sitio (rol persona, filtro, Proyectos, la banda y el freno) llega cuando el núcleo del sitio esté en `main`. Cómo se escribe una confirmación: `pipelines/operations/README.md`, clave `people`. Red: `scripts/tests/people.test.js` (16 casos) y los casos de `people` de `team-repos.test.js`.
+**Qué es:** Es la regla única de quién ve qué corridas en el sitio de la organización.
+
+**Por qué existe:** Cada máquina informa el correo de git de su dev, y hasta que un mantenedor confirma de quién es (en `operations.json`, sólo con la huella del correo) sus corridas las ven sólo quienes mantienen. Así una máquina que cambió de manos no muestra corridas ajenas.
+
+**Quién la usa:** El sitio de la organización, en cada pedido.
+
+**Dónde se prueba:** `scripts/tests/people.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibpeoplejs)
 
 ## scripts/lib/guard-record.js
 
-**Los frenos previos a la herramienta dejan constancia de lo que deciden** (2026-09-16). El tablero sabía cuántas veces se **salteó** un freno y no cuántas **frenó**: un freno que funcionó todo el mes se veía igual que uno que nunca se disparó —ausente—, y ése es el número que decide si una regla se retira. Medido antes de escribir nada: de los seis frenos que corren antes de cada comando, **dos** anotaban sólo el escape, **uno** sólo los bloqueos —y **con el comando en claro**, por eso la prueba de fuga le prohíbe al reductor abrir ese archivo— y **tres** no anotaban nada; el único completo era el de producción, cuyo patrón se generaliza acá en vez de inventar uno. Ahora cada uno deja **una línea** por decisión (`frenos.jsonl`): qué freno, qué regla y qué decidió —`bloqueo`, `paso`, `escape` o `aviso`—, y del comando **sólo la huella**: ni ruta, ni contraseña, ni prosa (el motivo es un código de una lista cerrada; uno libre sale `otra` y la línea se escribe igual, porque perder la decisión es peor que perder su etiqueta). 🔴 **Es ayuda, no evidencia**: si no se puede escribir, el freno decide igual y sale igual — un freno que se rompe por no poder anotar es peor que uno sin constancia. 🔴 **Y el denominador se declara**: `safety-guard` **no** anota los «dejé pasar» —corre en cada comando de la terminal—, así que su número es *«de las veces que una regla peligrosa saltó, frenó N»*, no *«de todos los comandos»*; anotarlo todo serían medio disco de no-eventos, ~50 ms por comando y un 0,03 % que no contesta si el freno sirve. La ficha del tablero lo dice. **La ficha nueva pone los dos números de la misma regla juntos** y el pie explica el escape dominante: medido, **469 de 583 escapes (80 %) son correr la suite completa**, que está permitido y se declara — una declaración esperada, no un freno esquivado. 🔴 **Dos ceros falsos que la medición encontró en el tablero**: **489 bloqueos contados como cero** (las pruebas y la compilación escriben `red:exit=1` y la cuenta buscaba `red` exacto — la ficha decía «0 % de bloqueos» sobre 816 evaluaciones de las que 226 salieron en rojo) y **1.460 líneas «sin nombre» que tenían nombre**, en un cuarto campo que nadie leía. Sin arreglarlos, instrumentar los seis frenos habría dejado la ficha igual de falsa. 🔴 **La bajada y la subida derivan de una sola lista**: con dos listas de nombres separadas, un registro nuevo viajaría al buzón sin que nadie lo bajara, en verde; y el nombre de la fuente en la cobertura se verifica **en las dos direcciones** (con `.log` a secas, `frenos.jsonl` se declaraba como «frenos.jsonl» mientras la cuenta lo buscaba como «frenos», y esa máquina quedaba «no medida» para siempre). Red: `scripts/tests/guard-record.test.sh` (6 casos; los que más pesan son el que exige que **no** se anote lo que al freno no le compete —si no, el denominador se infla y el número deja de significar algo— y el que siembra una contraseña, una ruta y un comando y exige que no salgan), más 6 casos en `reducer.test.sh`, 3 en `dashboard.test.sh` (C-38, C-38b, C-39), 3 en las suites de subida y bajada, la prueba de fuga extendida y un caso de constancia por freno en el banco.
+**Qué es:** Hace que cada freno previo a la herramienta deje una línea por decisión (bloqueo, paso, escape o aviso) en `frenos.jsonl`, con sólo la huella del comando.
+
+**Por qué existe:** El tablero sabía cuántas veces se salteó un freno, pero no cuántas veces frenó, y ése es el dato que decide si una regla se retira. Si no puede escribir, el freno decide igual.
+
+**Quién la usa:** Los frenos que corren antes de cada comando; el reductor y el tablero cuentan lo que dejan.
+
+**Dónde se prueba:** `scripts/tests/guard-record.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibguard-recordjs)
 
 ## scripts/nightly/dashboard/reducer.js
 
-**Los frenos y los escapes de TODAS las máquinas, contados desde el buzón y publicados sin persona** (2026-09-15). El tablero contaba los bloqueos del pipeline y los escapes declarados leyendo el disco de quien generaba la página: eran «una máquina». Ahora cada máquina sube sus dos registros completos al **buzón de corridas** —`upload-runs.js` prepara una vez por día `gates.log.gz`, `bypass.log.gz` y una `cobertura.json` que dice si pudo leer cada uno, y los manda primero en la cola, con la cobertura al final como marca de completo—, la bajada los deja en `corridas-buzon/<maquina>/registros/`, y el reductor los **cuenta** donde el buzón está bajado, junto con los de esta máquina leídos del disco, **recalculando cada vez**: la misma máquina en el disco y en el buzón cuenta una, las máquinas se suman por numerador y denominador —nunca promediando— y la pregunta 4 dice «reportaron N de M máquinas esperadas» (se declaran en `sources.json → reductor.maquinas_esperadas`; la ausente, la atrasada y la no declarada se nombran por alias). 🔴 **Lo que sale del reductor lo ve todo el equipo**, así que va por lista blanca en dos capas: qué CAMPOS se leen lo decide el código (del `gates.log`, nombre del control y estado; del `bypass.log`, `type` o `kind`) y qué VALORES puede publicar una dimensión, una lista cerrada en `sources.json`; lo demás sale `otro`, y una métrica sin lista o con una fuente, dimensión o tipo que el código no conoce hace que **se niegue** (exit 2). **Piso de 3** sobre lo publicado —no por máquina ni por día: medido, la mutación llega a 3 eventos sólo 5 días de 11—; lo chico va a «otras». **Alias sin persona**: `maq-` + 6 hexadecimales de la huella del nombre (`--alias`, `--alias-of <nombre>`). «No medido» nunca es 0: una fuente declarada `no_medido` o un `.gz` roto sacan a esa máquina de esa métrica («midieron k de n»). 🔴 **Dos decisiones que ordenan la pieza**: el transporte es el buzón y no git (medido: en 60 días commitearon en este repo sólo el dev y el CI), y se suben los registros completos y se cuenta desde ahí, en vez de subir sólo la cuenta — el buzón ya guarda la conversación entera de cada corrida, que es más sensible, y la cuenta en un solo lugar es más simple que un reductor en cada arranque; lo que sale hacia la página sigue siendo sólo la cuenta. 🔴 **La prueba de fuga es condición de entrega**: `scripts/tests/telemetry-leak.test.sh` siembra un correo, una ruta, un nombre de cliente, un comando, un prompt, un identificador de sesión y un nombre de máquina con nombre de persona —en campos leídos, no leídos y en archivos que no se deben abrir, con un espía de `fs`—, corre la preparación real de la subida, el reductor y el tablero, y falla si uno aparece; tiene control positivo. Medido contra el tablero anterior: roja, porque **la página publicaba el nombre crudo del control y del tipo de escape**. Red: `reducer.test.sh`, `telemetry-leak.test.sh`, los casos `2.5-*` de `upload-runs.test.sh` y `download-runs.test.sh`, y C-29 a C-32 de `dashboard.test.sh`, con sus rojos previos verificados por mutación. El equipo fue avisado (2026-09-15) de que también se guardan esos dos registros. 🔴 **Desde el 2026-09-16 cuenta también la mutación y la guía de QA de la pregunta 3**, que leían sólo el disco de quien generaba la página. Dos cosas nuevas en la cuenta: un tipo que **junta** valores en vez de sumarlos —la mediana del puntaje de mutación se calcula sobre la unión de las máquinas, nunca promediando medianas— y tipos que ignoran las líneas de otros controles. Un chequeo que no pudo medir (`structural`: el chequeo sólo corre `node --test`) se cuenta aparte y **nunca es una muestra de 0**: medido, 16 puntajes sobre 110 chequeos en la ventana, todos de una máquina, y la ficha lo dice. 🔴 **La guía de QA publicaba «0 de 109» por construcción**: el aviso sólo anotaba las guías que faltaban o estaban viejas. Ahora (agent-skills, `on-pre-commit.js`) anota los cuatro resultados con `esquema: 2`, y la proporción se arma **sólo** con esas líneas; sin ninguna, sale «no medida» con los avisos contados. 🔴 **Y cuenta cierres, no intentos**: el aviso escribe su línea en cada intento de commit, antes de frenos que pueden cortarlo, así que cada línea lleva una `clave` —huella de repo, story y contenido— y el reductor cuenta cada cierre una sola vez, con su último resultado; medido en el registro real, 112 líneas de guía eran 44 cierres. El mínimo y el máximo de la mutación no se calculan pasando cada muestra como argumento: con más de ~100 mil muestras eso tira la página entera. Y la ficha no publica el **estado crudo** de cada línea: lo cuida la prueba de fuga, extendida. No se filtra por máquina: toda máquina que sube cuenta, esté o no declarada. Red: `2.8-T1` a `2.8-T7` en `reducer.test.sh`, C-50 a C-56 en `dashboard.test.sh`, `2.8-T20` en `dashboard-runs.test.sh` (la vista de corridas ya reconoce `presente` y `no-aplica`), el control positivo 2.8 de `telemetry-leak.test.sh` y los cuatro casos de `42-qa-guide-registro.json` en el banco.
+**Qué es:** Cuenta los frenos y los escapes de todas las máquinas desde el buzón de corridas y publica sólo las cuentas.
+
+**Por qué existe:** El tablero contaba una sola máquina. Como lo publicado lo ve todo el equipo, el reductor usa una lista blanca de campos y de valores (en `sources.json`), un piso mínimo y alias sin persona.
+
+**Quién la usa:** El tablero nocturno (`dashboard.js`).
+
+**Dónde se prueba:** `scripts/tests/reducer.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydashboardreducerjs)
 
 ## test-gate.sh
 
-*(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)*
+_(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_
 
-**La cobertura se mide sobre las LÍNEAS TOCADAS** (2026-09-16). El control de pruebas exigía el 75 % sólo sobre los archivos **nuevos**, y medido el 2026-09-05 en 14 de 16 resultados no había ninguno: la regla existía y no juzgaba casi nada, con el tablero diciendo «2 de 16». Ahora `test-gate.sh` cruza con la cobertura **las líneas que la story agregó o modificó** —las commiteadas durante la corrida y las que no— y publica `touched_lines_pct` con su denominador; el 75 % se evalúa sobre ese número (`threshold_basis`). Lo que el reporte no lista como ejecutable (vacías, comentarios, llaves) no entra al denominador, un archivo tocado sin datos se nombra aparte, y sin base, sin diff, sin reporte o con una herramienta que no produce cobertura (`node --test`, `suites.json`) sale **`null` con motivo, nunca 0**. 🔴 **La base se decidió midiendo**: `HEAD` pierde lo commiteado en la corrida y la base de `main` mete stories ajenas en los repos que trabajan en `dev`; es **el commit en el que arrancó la corrida**, que `pipeline.js start` anota en el marcador (`lib/coverage-base.js`: `TYCON_COVERAGE_BASE` → marcador del mismo repo y ancestro de HEAD → `HEAD`, con lo descartado y su motivo en el artefacto). **No frena: observación hasta el 2026-10-06.** Cada corrida deja en `gates.log` una línea `cobertura-tocada` (`cumple` · `habria-frenado` · `no-medido`, sin porcentajes ni rutas), el reductor la cuenta en todas las máquinas y la ficha del tablero dice cuántas corridas evaluaron el umbral y cuántas habrían frenado; ya no camina el disco de quien genera la página. Red: 26 chequeos nuevos en `tycon-pipeline/scripts/tests/test-coverage-parser.js` (que entra al nocturno), `2.4-T12` en `reducer.test.sh`, C-47 a C-49 en `dashboard.test.sh` y dos casos del revisor de cobertura en el banco.
+**Qué es:** Mide la cobertura de pruebas sobre las líneas que la story agregó o modificó y evalúa el 75 % sobre ese número.
 
-**El arnés también tiene su número** (2026-10-17). En el repo del arnés el control de pruebas corre `scripts/tests/suites.json` con `lib/run-suites-json.js`, que lanzaba suites sueltas sin medir: todas las stories del arnés salían «no medido». Antes de conectar nada se midió si el medidor que trae Node servía, en tres suites reales: marca bien qué líneas corren (28 de 28 en un caso conocido), cuenta lo que corre en procesos hijos (así corre casi todo el código del arnés), tarda entre ×0,9 y ×1,2 lo de sin medir, y da lo mismo en Mac y en Windows. Ahora `test-gate.sh` le pide la cobertura al corredor (`--coverage`): cada suite, `.js` o `.sh`, corre bajo `lib/coverage-wrapper.js`, una prueba de Node que la lanza como hijo con el medidor prendido (el medidor sólo arranca con una prueba de `node:test` en marcha), con su misma salida y su mismo código. Cada una deja su lcov y quedan juntos en `coverage/lcov.info`, sin el envoltorio ni las propias suites (Node 20 no los excluye solo). `lib/node-coverage.js` lo lee con el mismo mapa archivo → línea → cubierta que salía de `coverage-final.json`: rutas resueltas contra la carpeta de la corrida, y lo de fuera de ella se descarta, porque una suite que hace `git commit` corre los hooks del arnés **instalado**. Una suite sin datos (una de bash que no lanza `node`) queda «sin datos», nunca 0 %; un lcov vacío o cortado es «sin cruce» con su motivo. **El umbral dice de dónde salió** (`coverage.threshold_source`): `TYCON_COVERAGE_MIN` de la máquina, si sirve › `coverage.min_touched_lines_pct` de la organización en `team-repos.json` (lector `scripts/lib/team-repos.js`, sección aparte: un valor mal escrito no deja sin el archivo) › 75. El valor descartado queda en `coverage.threshold_problems`. TEST-W2 sigue siendo un aviso. El de la organización se edita desde la pestaña Configuración del sitio, sección «Cobertura de las pruebas» en «Cómo trabaja Claude»; se propone sólo si el perfil pide al menos la versión que trae la clave al lector (`COVERAGE_SINCE` de `scripts/lib/org-config.js`).
+**Por qué existe:** Exigirlo sólo sobre archivos nuevos casi nunca juzgaba nada. Sin base, diff o reporte, el resultado es `null` con motivo, nunca 0. El umbral sale de `TYCON_COVERAGE_MIN`, de `team-repos.json` o del valor por defecto.
+
+**Quién la usa:** El control de pruebas del pipeline; el reductor y el tablero cuentan las corridas. En el arnés usa `lib/coverage-wrapper.js` y `lib/node-coverage.js`.
+
+**Dónde se prueba:** `tycon-pipeline/scripts/tests/test-coverage-parser.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#test-gatesh)
 
 ## scripts/nightly/dashboard/prune.js
 
-*(scripts/nightly/dashboard/prune.js + scripts/metrics/collect-findings.js + scripts/lib/rules-catalog.js)*
+_(scripts/nightly/dashboard/prune.js + scripts/metrics/collect-findings.js + scripts/lib/rules-catalog.js)_
 
-**El criterio de poda: qué regla no encontró nada nunca, y si sabe ponerse roja** (2026-09-16). El catálogo de reglas sólo podía crecer: se contaba el numerador (los hallazgos) y no el denominador (las oportunidades), así que «esta regla nunca encontró nada» y «a esta regla nunca la miró nadie» se veían idénticos. Tres piezas nuevas. **El parser único del catálogo** cuenta definiciones (la primera columna en negrita de una fila) y no menciones, admite dígitos en el prefijo y clavea por **(dueño, regla)**: publica **363 filas · 362 reglas · 360 identificadores** (al 2026-09-18), tres números a propósito, porque `SEC-C1` y `SEC-C2` están definidos por dos dueños sin relación (el revisor de seguridad y el freno de mano) y `PIPE-C5` dos veces por el mismo. Lo que está dentro de un bloque de código es un ejemplo, no una definición ni una retirada (el ejemplo de la guía escondía a `SEC-W4`, una regla viva), y `rules-distill.js` usa la misma gramática. Antes, tres censos del mismo día dieron 341, 357 y 358. **El recolector** recorre los repos de la máquina bajando **dos niveles** (los tres de nivel uno son justo los que ya commitean `.advisors/`), proyecta cada hallazgo a **seis claves** —fecha, una **huella** de la corrida, regla, dueño, gravedad y qué se hizo; el motivo y el archivo son prosa y rutas, y no salen—, anota qué corridas leyó, y deja `~/.claude/.tycon-pipeline/hallazgos.jsonl` con un **sello**, que la subida manda como **un registro más**, en la misma carpeta y con la misma cobertura (la bajada no cambió una línea). Lo lanza el instalador en cada arranque, entre el barrido del hilo y la subida, con tope de 60 s (`TYCON_NO_COLLECT_FINDINGS=1`). 🔴 **La serie cuenta como medida con UNA regla** (`estadoDeLaSerie`: el sello dice que se recolectó, con al menos un repo, hace no más de `poda.max_dias_hallazgos` días), y la usan la subida y el cruce: un archivo vacío o congelado —el recolector apagado— se declaraba medido todos los días. 🔴 **«Sin evidencia» nunca es «cero hallazgos»**: medido, **201 de 338 corridas no dejaron el archivo** y 133 de ésas sí tienen los reportes de los revisores; se lee el archivo canónico de cada corrida y no la suma de sus iteraciones (sumarlas contaba copias de más); y lo que no está en el catálogo (523 hallazgos con identificadores escritos a mano) se **cuenta, no se lista**. **El cruce** junta esos hallazgos con las veces que corrió el revisor dueño de cada regla —leído de los volcados de corridas, no de `advisor-runs/`, que se borra a los 7 días— y con el banco, y reparte cada regla en **siete estados** por precedencia: sin revisor · rota · revisión humana · activa · sin probar · candidata a retiro · sin recorrido suficiente. 🔴 **La decisión que lo ordena**: las 68 reglas con caso tienen TODAS un caso «debe marcar», así que «probada» y «sabe ponerse roja» son el mismo conjunto y una cubeta «disuade» separada de «candidata» no se llenaría nunca; el discriminador es el **recorrido acumulado** (20 corridas de su revisor en 2 meses, commiteado en `sources.json → poda` antes de mirar el resultado), y «disuade» pasó a ser la advertencia pegada a cada candidata. Sin piso de 3 (acá 1 hallazgo y 0 son la diferencia entre dejar y retirar), la misma ventana para las dos puntas, y sin un examen del banco completo y reciente **ninguna** regla sale candidata. 🔴 **Y las dos puntas cuentan el mismo universo**: una máquina entra sólo con sus hallazgos medidos —la serie tiene que coincidir con su sello, de los dos lados del buzón—, las corridas de las que no entran se descartan y la página las nombra por alias; y dentro de una máquina cuenta sólo la corrida que el recolector **leyó**, porque él empareja cada volcado de `timing-history/` con su carpeta de corrida y nombra en la serie los que leyó (medido: 49 de 113 corridas sin archivo legible sumaban oportunidades con cero hallazgos). Sin ninguna máquina medida el cruce **se niega**. La misma corrida vista desde dos clones cuenta una vez (por su huella) y una sesión archivada dos veces también. `rota` es sólo una falla de criterio del revisor: si falló la corrida, el caso no concluye. **Nunca retira nada**: marca y decide una persona. **Medido** (una máquina medida y tres sin medir): de 362 reglas, **3 candidatas** (`SEC-C9`, `TEST-W10` y `DODRT-C1`, que sale en cero por construcción: sus veredictos viven en `dod-runtime/`), 1 rota (una regla del paquete de clientes: grita cuando no corresponde), 102 activas, 206 sin probar, 35 sin revisor, 14 sin recorrido; el denominador sale de 59 de 90 corridas leídas; y sólo **29 de 326** reglas con revisor están probadas de verdad (9 %). El tablero lo muestra en la pregunta 4 —dos fichas y una tabla desplegable con las filas que piden una decisión— en lugar del hueco declarado. Red: `rules-catalog.test.sh`, `collect-findings.test.sh`, `prune.test.sh` (con **unas 70 mutaciones** que se ponen rojas entre el cruce, el recolector, la subida, el reductor y el tablero), los casos `2.9` de `upload-runs.test.sh`, `reducer.test.sh` (T15/T16) y `download-runs.test.sh` (T9b), C-40 a C-43 de `dashboard.test.sh`, y la **prueba de fuga extendida** (un identificador de regla con nombre de cliente y forma válida, que sólo frena la lista cerrada; el espía exige que ni el reductor ni el cruce abran los `findings.json` originales).
+**Qué es:** Reparte cada regla del catálogo en estados (candidata a retiro, rota, activa, sin probar…) cruzando hallazgos, corridas de su revisor y el banco.
+
+**Por qué existe:** El catálogo sólo podía crecer: «nunca encontró nada» y «nadie la miró» se veían igual. Nunca retira nada: marca, y decide una persona.
+
+**Quién la usa:** El tablero (pregunta 4). Lo alimentan `scripts/metrics/collect-findings.js`, que lanza el instalador, y `scripts/lib/rules-catalog.js`.
+
+**Dónde se prueba:** `scripts/tests/prune.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydashboardprunejs)
 
 ## pipelines/azure-pipelines-tablero.yml
 
-*(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + scripts/hooks/dashboard-notice.js)*
+_(pipelines/azure-pipelines-tablero.yml + scripts/nightly/dashboard/seal.js + scripts/hooks/dashboard-notice.js)_
 
-**El tablero lo genera el nocturno, lo publica, y el arranque dice de cuándo es** (2026-09-17). La página del tablero se generaba a mano en la máquina de alguien y se commiteaba: medido, la publicada tenía una semana, con las preguntas 3 y 4 salidas del disco de **una** máquina, y nada lo decía. Ahora tiene **un solo escritor**, un pipeline propio de Azure DevOps (`tablero-del-arnes`, 05:30 de Argentina, después de los otros cuatro nocturnos): baja del buzón de corridas los registros y los volcados de **todas** las máquinas —nunca las conversaciones (`download-runs.js --no-threads`)—, genera con `dashboard.js --nightly`, comprueba que la página sea de hoy y del snapshot más nuevo, la commitea y **verifica lo publicado** en `main`. Es un pipeline aparte y no un paso del nocturno de métricas porque una conexión de servicio rota no deja arrancar el YAML entero: adentro se llevaría puesto el snapshot de esa noche. 🔴 **La premisa, medida antes de escribir**: casi toda la pregunta 4 sale del buzón, y **la identidad de un pipeline no podía leerlo** —el rol lo tenían sólo personas y el proyecto no tenía ninguna conexión de servicio—. Simulado, el nocturno habría publicado 11 fichas del equipo en gris y una con número falso («20 de 1» repos, contados en la carpeta de un agente). Por eso el nocturno recibe el rol de lectura por una conexión con identidad federada, sin contraseña y autorizada sólo para ese pipeline (**tarea humana**). Mientras la bajada no sea completa, las fichas del equipo salen en gris con un motivo de lista cerrada: **nunca se publica la página de una máquina como si fuera la del equipo**, y en el nocturno las fichas de «esta máquina» dicen que no aplican, porque un agente de Azure no es una máquina del equipo. Una corrida local ya no escribe en el repo: va a `~/.claude/.tycon-pipeline/tablero-del-arnes.html` y adentro del repo **se niega**. La página trae un **sello** (`seal.js`: fecha, modo, corrida, fuentes al día y estado del buzón, sin rutas ni nombres) y el aviso de arranque lo lee de `origin/main`: una línea con «completo», «parcial» y por qué, o —con más de dos días— «NO SE ESTÁ GENERANDO» **sin sus números**. 🔴 **La fecha sale del contenido, nunca del mtime**: un `git pull` le pone al archivo la hora del pull y una página de hace una semana se vería de hoy. Habla también en verde, porque si callara «el nocturno anda» y «el nocturno se detuvo» serían el mismo silencio. Off: `TYCON_DASHBOARD_NOTICE=0`. 🔴 **Un agente de CI no sube al buzón como si fuera del equipo**: una suite que corre el instalador real con el `HOME` del agente del banco nocturno sube cada noche una carpeta `runnervm…` con hallazgos de repos clonados. Por eso el instalador no lanza su tanda dentro de una corrida de Azure (`TF_BUILD`), la subida sale `agente_ci` sin tocar el buzón y la suite corre con `HOME` falso. 🔴 **Quien pueda cambiar el YAML en `main` puede leer el buzón a través de la conexión**: medido: sólo quienes ya lo leen; se revisa antes de darle ese permiso a alguien más. Red: su suite (extrae los pasos reales del YAML y los corre contra un remoto bare), los casos `2.12` de `download-runs`, `upload-runs`, `prune` e `installer-cleanup-period`, y `43-tablero-notice.json` en el banco (15 casos; los que más pesan son una página de hace cuatro días —uno con el archivo recién tocado, como queda después de un pull— y una fechada en el futuro, con su espejo de tolerancia de reloj).
+**Qué es:** Es el pipeline nocturno de Azure DevOps que genera y publica la página del tablero del equipo, con un sello de fecha y fuentes.
 
-**Lo que la página del equipo dejó de esconder, y lo que el nocturno mide del buzón**. Una auditoría de la página encontró siete cosas que había que corregir en la cabeza al leerla; cada una tiene ahora su regla y su prueba. 🔴 **La ficha de suites cuenta las rojas aunque falte alguna**: una sola suite sin medir la ponía gris y escondía las 24 rojas que el aviso de arranque sí mostraba. La regla es una sola para todo reporte —`failures` menos `unmeasured`— y el detalle nombra las que faltan; un reporte incompleto que no dice cuáles faltan, o una noche sin ninguna suite medida, sigue «no medido» con su motivo. 🔴 **«Se mide en otro lado»**: una entrada de `scripts/tests/suites.json` puede declarar `measured_elsewhere` con el dónde y el porqué (hoy, la máquina limpia: la mide la CI del repo público en cada pedido). `scripts/ci/suites-report.js` saca esa suite de `failures` y de `unmeasured` **sólo cuando llega no medida** —corrida y roja, sigue roja—, la pone en `measuredElsewhere` y no vuelve incompleta la noche; un registro ilegible o una declaración sin texto no reclasifica nada (`measuredElsewhereProblem`). Y la máquina limpia, en el árbol de mantenimiento corrido en Azure, sale NO MEDIDO con cualquier motivo de la corrida: la corrida a mano del banco la llevaba roja. 🔴 **Cinco errores de presentación, cada uno con su regla**: el mes en curso se dibuja «en curso» y la nota habla del último mes cerrado (el día sale de `TYCON_TODAY` o del reloj UTC); «donde se queda parado el trabajo» excluye los estados terminales del diccionario (`cerrado` y `sin_entrega`) y las etapas con menos stories que el piso del reductor (con los datos de ese día, `backlog` con 2 stories le ganaba por milésimas a `review` con 344); el reproceso por carril se arma como texto plano y sale una vez (salía dos, una con `<b>` a la vista); la fecha de la observación de cobertura sale de **una** definición (`OBS_HASTA` de `test-gate-report.js`) y vencida se dice; y la ficha de los controles del pipeline se llama por lo que cuenta —no son los frenos previos a la herramienta, que tienen la suya—. 🔴 **Lo que decía «no aplica en el nocturno» y el nocturno sí puede medir**: la duración, los agentes, las vueltas y el trabajo/espera de una corrida salen de los volcados del buzón con la **misma** función que la página de una máquina usa sobre `timing-history/` (`leerCorridas`), y la duración de la suite sale de las líneas `tests` de `gates.log` —que ya sube entero al buzón— con la métrica `suite_duracion` del reductor (una distribución sobre la unión de las máquinas, dentro de la ventana; la lectura de la línea es `duracionSuite`, la misma para la ficha local). La métrica entra en dos pasos: primero el público y sus dos `sources.json`; el `sources.json` del equipo, recién con el público en `main` (al revés, `validarConfig` niega la configuración entera y la página pierde todas las fichas del equipo). 🔴 **Los repos declarados contra el disco salieron de la página** y los dice `harness.js doctor`: la lista de la organización (`repos.json` del clon de operaciones, `paths.operations`) contra los repos bajo la raíz de `repos-root.js`, por el `origin` y no por la carpeta; nunca en rojo y sin correr bajo la comprobación de salud. La cobertura de máquinas dice dónde se declara una que reporta sin estar en la lista. Y una fuente declarada que no se
-puede leer se nombra por su id y su carpeta relativa: el motivo publicaba la ruta absoluta del disco de quien generaba la
-página. Red: `dashboard.test.sh` (C-11b y C-60 a C-69), `reducer.test.sh` (2.21-T15 y T18), `suites-report.test.sh` (R10 a R12), `telemetry-leak.test.sh` (2.21-T20: marcadores en un volcado y en una línea `tests`, con control positivo), `harness-doctor.test.sh` (T21 y T22), `clean-machine.test.sh` (T34 «pedida a mano») y, en el repo de mantenimiento, `nightly-dashboard.test.sh` (T5, T24 y T26: ningún alias del equipo en el código).
+**Por qué existe:** La página se generaba a mano en una máquina, quedaba vieja y mostraba datos de una sola máquina sin avisarlo.
+
+**Quién la usa:** Azure DevOps cada noche; `scripts/hooks/dashboard-notice.js` lee el sello (`seal.js`) al arrancar la sesión y dice de cuándo es.
+
+**Dónde se prueba:** `scripts/tests/dashboard.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-tableroyml)
 
 ## scripts/controls-bench/report-name.js
 
-Una corrida acotada del examen (`--only`, tres revisores) escribía en el **mismo archivo** que la foto completa de los 28 y la pisaba: el aviso leía ese archivo fresco y lo mostraba como el estado general, con los otros 25 desaparecidos y sin que nada lo dijera. Había salida —pasar `--json`— y **ésa era exactamente la falla**: un control que depende de que alguien se acuerde no corre. Ahora el nombre del archivo lo decide el **alcance** de la corrida, por mecánica; pisar la foto completa se sigue pudiendo, pero hay que pedirlo. Vive en su propio archivo porque `advisor-runner.js` no tiene guarda de "sólo si me ejecutan": requerirlo **arranca el banco entero** —el mismo motivo por el que `advisor-runner.js --help` dispara una corrida completa en vez de imprimir ayuda—, así que la lógica que hay que poder probar barato tenía que vivir afuera.
+**Qué es:** Decide el nombre del archivo de la foto del banco según el alcance de la corrida.
+
+**Por qué existe:** Una corrida acotada escribía en el mismo archivo que la foto completa y la pisaba, y el aviso la mostraba como el estado general. Depender de que alguien pase `--json` es un control que no corre. Vive aparte porque requerir `advisor-runner.js` arranca el banco entero.
+
+**Quién la usa:** El banco de controles (`advisor-runner.js`).
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscontrols-benchreport-namejs)
 
 ## scripts/install-tycon-hooks.sh
 
-*(scripts/install-tycon-hooks.sh y scripts/install-tycon-hooks.ps1)*
+_(scripts/install-tycon-hooks.sh y scripts/install-tycon-hooks.ps1)_
 
-Auto-instalador idempotente del set canónico de hooks TYCON en `~/.claude/settings.json` (clocki on-prompt + touch-activity + enforce, tycon-pipeline on-prompt + on-edit + on-write-collision, tycon-ado-story-wi + tycon-story-followup-link en PostToolUse Write). Invocado desde el `SessionStart` hook tras `git pull` — cada vez que el equipo agrega un hook nuevo, llega al dev sin acción manual. Backup automático antes del primer cambio. Opt-out via `TYCON_NO_AUTOINSTALL=1`. Hooks opt-in (ej: `TYCON_SAFETY_GUARD=1` → safety-guard) se agregan/remueven en base a env vars. Al final delega en `sync-claude-md-blocks.sh` (ver abajo). Por qué: sin él, cada hook nuevo necesita registración manual en la máquina de cada dev del equipo.
+**Qué es:** Es el auto-instalador idempotente del set canónico de hooks TYCON en `~/.claude/settings.json`; en Windows, `scripts/setup/applier-batch.js` agrupa varios pasos en un solo proceso.
 
-**La tanda de Node en Windows** (`scripts/setup/applier-batch.js`, 2026-10-14). El aplicador corre en cada arranque, y el de Windows lanzaba 17 procesos de Node por corrida: medido en un agente Windows, unos 3 s por corrida del aplicador y unos 4 s por arranque, y PowerShell gasta ~50-100 ms en lanzar cada proceso. La tanda corre varios pasos en **un** proceso: la lectura (el lugar del arnés, el enlace de agent-skills, el aviso de «el arnés no está donde cree», dónde están las skills y de dónde salió esa carpeta, qué integraciones están prendidas, el perfil, las piezas del lugar) y la aplicación (las skills de terceros, los enlaces de agents y skills, los nombres viejos y los hooks de `settings.json`, que además lee la configuración sin lanzar Node). Con `-Link` no hay tanda de lectura: un `-Link` imposible sale 2 antes de tocar nada más, como siempre. El sync de bloques recibe lo que el aplicador ya leyó y no vuelve a preguntar. Cada paso llama a la misma función que corre su guion como programa (`cli`), así que contesta lo mismo, y el `.ps1` reimprime lo que escribió en el lugar donde antes estaba su llamada suelta, por su canal y en su orden. 🔴 **Si la tanda falta o no deja su resultado, el `.ps1` hace las llamadas sueltas de antes**: la tanda no saca ningún respaldo. Un paso que tira o llama a `process.exit` cuenta como ese Node caído, y los demás corren. Red: `applier-batch.test.js` (cada paso, en cada estado, igual que suelto) y la sección (ab) de `installer-ps1.test.sh`, que cuenta cada Node con `NODE_OPTIONS=--require` y compara la corrida con la tanda contra la misma sin ella: la misma salida en el mismo orden, el mismo `settings.json`, el mismo reporte y el mismo `CLAUDE.md`, byte a byte (en la Mac, 3 procesos por corrida en vez de 15). La línea del índice en `CLAUDE.md` (`import-line.js`) sigue suelta, después del sync de bloques: dentro de la tanda correría antes, y la copia de respaldo del `CLAUDE.md` saldría distinta. El aplicador de Mac y Linux no usa la tanda: en Mac lanzar un proceso cuesta ~30-40 ms, y el ahorro no paga el cambio.
+**Por qué existe:** Sin él, cada hook nuevo habría que registrarlo a mano en la máquina de cada dev. Hace backup antes del primer cambio y delega en `sync-claude-md-blocks.sh`.
+
+**Quién la usa:** El hook de `SessionStart`, tras el `git pull`. Se apaga con `TYCON_NO_AUTOINSTALL=1`.
+
+**Dónde se prueba:** `scripts/tests/applier-batch.test.js`, `scripts/tests/installer-ps1.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsinstall-tycon-hookssh)
 
 ## .githooks/pre-commit
 
-*(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-commit-global.sh)*
+_(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-commit-global.sh)_
 
-**Un solo control de commit, con dos partes.** `.githooks/pre-commit` sólo llama a `.githooks/pre-commit-checks` con la raíz del repo como arnés. Ahí viven las dos partes, cada una en su proceso: una salida temprana de una (un «no me toca») no saltea a la otra, y el commit se crea sólo si pasan las dos. La parte del arnés mira el árbol entero: el frontmatter de las stories, el portón de cierre, los frenos de nombres y de historia interna, el mapa de renombres, el quoting de bash 3.2, lo que rompería la versión bajada, las reglas de la CI pública, el presupuesto de lo que se carga en cada sesión, la versión pública del mapa y la paridad. La parte de las skills corre los frenos de nombres con la fuente de las skills, las skills de terceros sin declarar y la paridad y el chequeo de vida de un revisor tocado. Los comentarios de los dos archivos siguen la regla de `guides/maintaining/estilo-de-codigo.md` y lo mide `scripts/tests/hook-comments.test.js`. La CI pública corre el mismo control sobre lo que trae un pedido (`public-ci.sh`, paso `repo-lint`), en su versión de la base y además en la del pedido (`run-base-controls.sh`). Red: las suites de cada control (`githook-livefire`, `githook-renames`, `pre-commit-stories` y las de cada freno).
+**Qué es:** Es el único control de commit, en dos partes: la del arnés y la de las skills, que viven en `.githooks/pre-commit-checks`.
 
-El gate de **paridad Claude↔Codex** en el pre-commit. Corre `build/check.js`, que verifica tres cosas: los `.toml` de los advisors al día con su markdown canónico · todo hook del banco registrado del lado Codex o su divergencia declarada · **una pieza nueva entra CON sus casos en el banco o no entra** (`build/check-bank-coverage.js` — los dos primeros cuidan la migración, el tercero cuida el después: el advisor #29 que alguien cree cuando nadie recuerde la regla). Sólo corre si el commit toca `adapters/`, `build/`, `agents/` o los casos del banco: un gate que se siente impuesto en cada commit se termina salteando con `--no-verify`, y ahí se pierde también donde importaba. Probado rompiendo los tres a propósito + un commit de docs que no lo dispara. 🔴 **Un agujero silencioso del arnés entero**: con `core.hooksPath` global (que el sync de engram necesita), git **ignora los `.githooks/` de cada repo** — o sea que el lint de frontmatter de stories, el de la wiki y este gate estarían escritos, documentados, adoptados… y **nunca se ejecutarían**. El hook global versionado acá lo cierra **delegando** en el del repo antes de su propia tarea; lo instala `install-tycon-hooks.sh` con backup (opt-out `TYCON_NO_GIT_HOOKS=1`), y si git no tiene `core.hooksPath` global, `harness.js` la apunta a `~/.git-hooks`: `install` (el plan lo dice antes del «sí»), `apply`, la mudanza y, en una máquina ya instalada, el arranque con la política `auto` (lo dice una vez en el aviso) o `update --yes` con `ask` (el aviso lo pide); si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner; una que ya apunte a otra carpeta no se toca, sólo se avisa. `uninstall` y el paso al perfil mínimo la sacan si sigue siendo la que puso el arnés (2026-10-14: una máquina mudada quedaba con los hooks en `~/.git-hooks` y git sin mirarlos, y `doctor` mandaba a un `apply` que sólo avisaba).
+**Por qué existe:** Cada parte corre en su proceso, así que una salida temprana no saltea a la otra. Con `core.hooksPath` global git ignora los `.githooks/` de cada repo, y `git-pre-commit-global.sh` lo cierra delegando en el del repo. Incluye el control de paridad Claude-Codex (`build/check.js`).
+
+**Quién la usa:** Git en cada commit; la CI pública corre el mismo control (`public-ci.sh`).
+
+**Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#githookspre-commit)
 
 ## scripts/hooks/git-post-commit-global.sh
 
-Después de CADA commit, **una línea si quedó algo afuera**: `⚠️ quedaron afuera del commit: a.md, b.js (+3 más) — 4 modificados, 1 nuevo sin ignorar` (2026-09-06). Por qué: con staging selectivo, un commit no dice nada de lo que deja atrás, y el trabajo sin commitear queda en el checkout sin que nadie lo diga —la evidencia de cierre de una story, o un archivo modificado que bloquea el `pull` del arranque durante días—. 🔴 Lo dispara **git** (`~/.git-hooks/post-commit`, la misma carpeta del `core.hooksPath` global que ya usa el pre-commit), no la herramienta: habla igual desde la terminal, VS Code, Claude o Codex. **Nunca frena**, no commitea por vos (los `bmad-*` de agent-skills jamás entran) y no decide qué es basura: sólo lo nombra, para que quien commiteó decida en el momento y no seis días después. Lo ignorado por git no cuenta; lo que un repo quiere excluir del aviso se declara en `.tycon/post-commit-ignore` (un glob por línea). Delega en el `.githooks/post-commit` del repo si existe, como el pre-commit global. Lo instala `install-tycon-hooks.sh` en cada arranque (Windows: el `.ps1` no instala hooks de git, deuda declarada — la misma del pre-commit). Off: `TYCON_POST_COMMIT_NOTICE=0`. Red: 10 casos en `21-hooks-sueltos.json` (el rojo previo: dos archivos tocados, uno commiteado → sin el hook, silencio; más 2 del pre-commit global, que ahora conserva e invoca el hook propio del dev) y tres commits DE VERDAD en `githook-livefire.test.sh` (C-09 nombra lo que quedó y no lo que entró; C-10b prueba que sin el hook el mismo commit es mudo).
+**Qué es:** Después de cada commit avisa, en una línea, qué archivos quedaron afuera.
+
+**Por qué existe:** Con staging selectivo, un commit no dice nada de lo que deja atrás. Nunca frena ni commitea por vos. Lo que un repo quiere excluir se declara en `.tycon/post-commit-ignore`.
+
+**Quién la usa:** Git, desde `~/.git-hooks/post-commit`, que instala `install-tycon-hooks.sh`. Se apaga con `TYCON_POST_COMMIT_NOTICE=0`.
+
+**Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksgit-post-commit-globalsh)
 
 ## scripts/hooks/session-collision-guard.js
 
-🔴 **RETIRADO del set canónico el 2026-09-07, 48 h después de entrar**: medido, en dos días frenó tres veces trabajo legítimo y no evitó ningún accidente. Queda **opt-in apagado**: `TYCON_SESSION_GUARD=1` lo vuelve a registrar, y el script y sus 16 casos siguen en el repo. Del lado Codex siguió registrado hasta el 2026-09-15, cuando se retiró también. La regla que lo reemplaza es de disciplina: una sola sesión toca git por checkout, y la segunda trabaja en un clon descartable **de punta a punta**. Lo que hacía: dos sesiones sobre el **mismo checkout** no tocan git a la vez (2026-09-05). Por qué: con dos chats en el mismo clon, un `git add <mis archivos>` + `commit` de uno puede llevarse una **deleción que el otro tenía en el índice**, un `--amend` caer sobre el commit del otro, y el commit siguiente caer en la **rama de story** a la que el otro acaba de cambiar. Sin un solo error de git: hace exactamente lo pedido sobre un estado que otra sesión está moviendo. 🔴 **Por qué un freno y no una regla**: ninguna sesión sabe de la otra ni puede saberlo —cada chat arranca sin historia de los demás y, aunque la tuviera, la otra se sigue moviendo—, así que un control que dependa de acordarse no corre. Éste mira el **disco** al momento de tocar git: cada sesión deja su transcripción en `~/.claude/projects/<carpeta-del-cwd>/`, y el mtime dice si está viva. Antes de `commit`, `checkout`, `switch`, `rebase`, `stash`, `reset`, `merge`, `cherry-pick`, `pull` o `revert`, si otra sesión tuvo actividad en los últimos 3 minutos sobre ese repo, **bloquea** y la nombra: quién, hace cuánto, y qué pidió su último prompt. La lectura (`status`, `log`, `diff`, `fetch`) y el `push` pasan; `merge-base` y `stash list` también, que son las trampas del regex. Al **abrir** una sesión donde ya hay otra viva, avisa (abrir no rompe nada; tocar git sí). En el arnés y `agent-skills` **no propone worktree** —ahí está prohibido a propósito—: una sola sesión toca git a la vez; en el resto manda a `scripts/tools/tycon-worktree.sh`. Escape pegado al comando con constancia (`TYCON_SESSION_GUARD_OK=1 git …`, va a `bypass.log`); ventana `TYCON_SESSION_GUARD_MIN`; off `TYCON_SESSION_GUARD=0`. Red: `controls-bench/cases/hooks/38-session-collision-guard.json` (16 casos; los que pesan son los de **no frenar** —sola, transcripción vieja, git de lectura, la propia— porque sin ellos el control se apaga a la semana; con el freno apagado los 3 que detectan se ponen rojos, verificado). 🔴 **La regla es sobre el repo DESTINO del comando, no sobre el de la sesión**: una sesión que trabaja desde un clon descartable —justamente para no tocar el checkout compartido— no tiene que ser frenada. Si `cd "$D" || exit 9` no cuenta como `cd`, `$D` no se resuelve y las sesiones se buscan mezclando el cwd de la sesión, cualquier destino «ve» las de este checkout. Y el mismo defecto es un agujero al revés: un destino irresoluble (`git -C "$VAR" commit` sobre este checkout) **pasaría sin mirar**. Por eso se resuelve cada git que escribe (su `-C`, o el `cd` que lo precede en la cadena, con las variables definidas en el mismo comando), se buscan las sesiones vivas de ESE repo, y lo que no se puede resolver se asume que es el checkout de la sesión. Seis casos, cuatro con rojo previo: dos frenaban de más y dos dejaban pasar.
+**Qué es:** Impide que dos sesiones sobre el mismo checkout toquen git a la vez. Hoy está fuera del set canónico y sólo se prende con `TYCON_SESSION_GUARD=1`.
+
+**Por qué existe:** Con dos chats en el mismo clon, un commit de uno puede llevarse cambios del otro o caer en la rama que el otro acaba de cambiar, sin un solo error de git.
+
+**Quién la usa:** Hook previo a los comandos de git de escritura, sólo si se prende; mira el disco, no la salida.
+
+**Dónde se prueba:** `controls-bench/cases/hooks/38-session-collision-guard.json`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookssession-collision-guardjs)
 
 ## scripts/lib/canonical-path.js
 
-¿El arnés está donde el resto del arnés cree que está? (2026-09-05). `INSTALL.md` mandaba clonar este repo en una carpeta fija, y esa ruta está escrita en ~50 lugares: la línea de arranque, **15 procedimientos de revisores** que leen las guías de ahí, la ruta por defecto del pipeline y la lista de lo que los revisores pueden leer bajo el banco. Sólo una parte honra `TYCON_GUIDES_DIR`; los revisores, ninguno. 🔴 **Todo se instala solo… menos el clon**: ése lo pone una persona, una vez, a mano, y nadie miraba ese paso. Si quedó en otra carpeta NADA falla —los hooks se resuelven desde donde está el script, por eso «anda»— pero los revisores no encuentran las guías que su procedimiento les manda leer y el pipeline arranca con la ruta equivocada: leen menos, callados. El instalador lo llama en cada arranque: si el clon no es la ruta canónica (comparadas por ruta REAL: un symlink cuenta), avisa por stdout nombrando las dos y diciendo que la variable cubre pipeline y scripts pero **no** a los revisores. Nunca frena. El `.ps1` de Windows también lo llama (verificado por lectura: en el Mac no hay `pwsh`). Red: `scripts/tests/canonical-path.test.sh` (8 casos de selftest + 2 de caja negra, en la suite diaria). Off: `TYCON_NO_CANONICAL_PATH=1`. El nombre del lugar del arnés sale de `scripts/setup/harness/place.js` (una sola definición; las copias que no pueden importarla están declaradas en `scripts/tests/fixtures/harness-place-names.json`) y `--ensure-link` aplica la regla de nacimiento: el lugar nace hacia el arnés que la máquina ya tiene, nunca hacia el clon que corre el instalador. Red: `scripts/tests/harness-place.test.js` y `harness-place-operations.test.js` (Node: la corre también el agente Windows).
+**Qué es:** Avisa si el clon del arnés no está en la ruta canónica donde el resto del arnés cree que está.
+
+**Por qué existe:** Si el clon queda en otra carpeta nada falla, pero los revisores no encuentran las guías que su procedimiento les manda leer y leen menos, callados. Nunca frena.
+
+**Quién la usa:** El instalador en cada arranque (el `.ps1` de Windows también). Se apaga con `TYCON_NO_CANONICAL_PATH=1`.
+
+**Dónde se prueba:** `scripts/tests/canonical-path.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs)
 
 ## scripts/lib/harness-repo.js
 
-¿Este repo es uno de los repos DEL arnés? Lo dice su **remoto `origin`**, no la carpeta (2026-09-17). Los repos del arnés se trabajan directo en main, así que varios controles los excluyen — y esa exclusión estaba escrita **tres veces** (`retro-pending.js`, `unpushed-work-notice.js` y `lib/story-gate.js` de agent-skills), las tres mirando si algún segmento de la RUTA se llamaba `agent-skills` o el arnés. El mismo repo era o no «del arnés» según desde dónde se trabajaba: un clon descartable (`…/scratchpad/tcg`, que es como se trabaja con otra sesión viva en el checkout) **no** quedaba excluido, y 🔴 un repo de **producto** clonado debajo de una carpeta con ese nombre pasaba el portón de carril sin story ni revisores, no avisaba su trabajo sin subir y no pedía retrospectiva — en silencio. Ahora se compara (org, proyecto, repo) de Azure **exacto** en cualquier forma de URL (nunca por substring: un repo que sólo empieza con el mismo nombre no es el arnés), un `origin` que es una ruta local se sigue hasta el repo de verdad, y la carpeta decide **sólo** cuando no hay `origin` que leer. Un remoto ilegible no es el arnés: la duda va hacia más control. El portón de agent-skills la carga por ruta y, si la lib no está (arnés atrasado), decide la carpeta como siempre — nunca rompe un Edit. A mano: `node scripts/lib/harness-repo.js [dir|archivo]` dice qué decidió y por qué. Red: su suite (12 chequeos; con el criterio viejo, 8 rojos), 7 casos con rojo previo en `14-retro-pending.json` y `23-unpushed-notice.json`, y 4 pruebas del portón en agent-skills. **Tres cosas más**: la lib dice también cómo se LLAMA el repo (`nombreDeRepo`) y el latido nombra su archivo por el repo del remoto, no por la carpeta del clon (salía `metrics-…-tcg-adhoc-…`; el campo `repo` no cambia, es la ruta con la que el freno de cierre empareja) · `retro-pending.js --judge` informa `arnes` y `registraria` —antes decía qué trajo el push, no si el hook lo anotaría— sin tocar `exento` · y el cuerpo de un heredoc que **no** va a un shell dejó de analizarse como comandos: un `node - <<EOF` con un texto con forma de `cd ${dir} && … git push … main` disparaba «no pude resolver a qué repo fue ese push» sin que hubiera ningún push (`sinHeredocs(cmd, { salvoShell: true })` en `shell-parse.js`; su guarda exige que un `bash <<EOF` con un push adentro se siga anotando). Rojo previo: 1 caso del banco, 4 chequeos de `retro-heartbeat.test.sh` y 1 de la lib.
+**Qué es:** Dice si un repo es uno de los repos del arnés, según su remoto `origin` y no según la carpeta.
 
-**Lo que declara la máquina.** Quien mantiene el arnés desde un clon del repo público declara su clon privado (`paths.maintainers`), y el remoto de ese clon suma a la referencia, también cuando el arnés que corre es una versión instalada, que no es un clon y no tiene remoto propio (ahí la referencia quedaba vacía y decidía el nombre de la carpeta: un clon descartable del repo del arnés salía «no»). Con esa clave, los controles que excluyen a los repos del arnés dejan de correr en todo clon de esos repos, esté donde esté. Sólo cuenta si la carpeta declarada es la raíz de su clon; una declaración que no sirve no suma nada y la orden a mano la nombra. Y git se llama sin las variables que deja un hook de git: con ellas, adentro de un `pre-commit` leía el remoto del repo del hook. `esPublicoDeclarado` dice cuál de los repos del arnés es el público. Cómo se comprueba en una máquina: `node scripts/lib/harness-repo.js <carpeta>` contesta `arnes: true` y `por: remoto` para un clon del repo público, y nombra la declaración que leyó (`declaracion_de_maquina`).
+**Por qué existe:** La exclusión estaba escrita tres veces mirando el nombre de la carpeta: un repo de producto clonado bajo una carpeta con ese nombre pasaba sin controles. Ante un remoto ilegible, la duda va hacia más control.
+
+**Quién la usa:** `retro-pending.js`, `unpushed-work-notice.js` y `lib/story-gate.js`. Quien mantiene declara su clon privado en `paths.maintainers`.
+
+**Dónde se prueba:** `controls-bench/cases/hooks/14-retro-pending.json`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibharness-repojs)
 
 ## scripts/lib/night-data.js
 
-¿Dónde están en ESTA máquina los datos de la noche, y de cuándo es la copia que se lee? (2026-10-13). Quien mantiene el arnés usa la versión instalada y tiene dos clones: el del repo público (el código) y el del repo de mantenimiento, donde los procesos nocturnos dejan lo suyo (`.dashboard/`, la página del tablero, los reportes del banco y de las suites). Los avisos de arranque buscaban esos datos en el clon que la máquina «mantiene» (`paths.maintained`), que es el del público y no los trae. 🔴 **Cinco nocturnos sanos y una sola línea en el arranque** («el tablero no está publicado»): los otros cuatro callaban, y una pieza muerta se veía igual que una sana. Y lo que la máquina escribe —el registro de cada merge— caía en `.dashboard/` del clon del público, una carpeta ignorada que no viaja a ningún repo.
+**Qué es:** Dice en qué clon están, en esta máquina, los datos de la noche y de cuándo es la copia que se lee.
 
-**Qué decide.** Un solo lugar contesta dos preguntas, y los avisos (`dependencies-notice.js`, `bench-notice.js`, `dashboard-notice.js`) y los que escriben o leen los registros de la máquina (`retro-heartbeat.js`, `retro-pending.js`, `retro-staleness-notice.js`, `dashboard-series.js`, `sdlc-stage-metrics.js`) se lo preguntan:
+**Por qué existe:** Los avisos buscaban en el clon equivocado, y una pieza muerta se veía igual que una sana. `resolve()` contesta por el clon de mantenimiento (`paths.maintainers`) y `resolveOperations()` por el de operaciones (`paths.operations`).
 
-| Máquina | De dónde se lee la noche | Dónde escribe la máquina lo suyo |
-|---|---|---|
-| corre desde un clon | de su propio árbol, como siempre | en su `.dashboard/` |
-| versión instalada que declara su clon de mantenimiento (`paths.maintainers`) | de lo publicado en ese clon (`origin/main`, sin salir a la red) | en `.dashboard/` de ese clon |
-| versión instalada que mantiene un clon y no declara el de mantenimiento, o declara uno que no sirve | de ningún lado: **una** línea por arranque lo dice, con el comando (la dice el aviso de dependencias; si está apagado, el del banco) | en la carpeta del estado, diciendo que no viaja |
-| versión instalada que no mantiene el arnés, o con los nocturnos apagados | de ningún lado, sin decir nada | en la carpeta del estado |
+**Quién la usa:** Los avisos `dependencies-notice.js`, `bench-notice.js` y `dashboard-notice.js`, y los que escriben o leen los registros de la máquina. `scripts/ci/nightly-dod-notice.sh` trae los clones cada noche.
 
-**Dos repos de datos.** Dependencias, el vigilante, el resumen diario, las métricas y el tablero guardan en el **repo de operaciones** de la organización; el banco, las suites y el examen guardan en el de mantenimiento. Leídos todos del clon de mantenimiento, los avisos mostraban la noche anterior con la de hoy ya guardada, y al día siguiente decían «foto vieja» con los nocturnos sanos. Por eso hay dos preguntas: `resolve()` (el clon de mantenimiento: banco, suites, examen) y `resolveOperations()` (el clon de operaciones, que la máquina declara en `paths.operations`: dependencias, vigilante, resumen y tablero, y las métricas que lee el aviso de evidencia). Las filas de la tabla valen igual para las dos. Una máquina que mantiene el arnés y no declara el clon de operaciones lo oye en la misma línea única del arranque, con `harness.js config set paths.operations <carpeta>`; la de un dev, que no mantiene nada, no tiene estos avisos. A mano: `node scripts/lib/night-data.js --operations`.
+**Dónde se prueba:** `scripts/tests/night-notices.test.js`
 
-«Que sirve» es la raíz de un clon de git que no es el clon del código (`paths.maintained`) ni un clon del repo público (se reconoce por su remoto): los dos clones de quien mantiene se cruzan fácil, y declarar el del público dejaba cinco líneas rojas sin causa a la vista.
-
-**Una línea por nocturno.** La máquina que declara su clon de mantenimiento ESPERA los nocturnos, y ahí cada uno dice siempre una línea con la fecha de su foto: dependencias, vigilante, banco, suites y tablero. Sin ninguna foto, con la foto que no se lee y con la foto vencida se dice, cada caso con su texto; y ninguna dice ✅ con la noche incompleta (el vigilante sin su resumen entregado, el banco sin ningún caso corrido, las suites con alguna que desapareció). Lo que sale de una foto va saneado a la pantalla. Y si no se puede saber de qué clon leer, o una cola no se puede evaluar, se dice: «no pude saber» nunca sale con la forma de «esta máquina no mantiene el arnés» (ni los que escriben vuelven callados a la ruta de antes: sin saber dónde, el registro no se escribe). Una línea que falta en el arranque es una pieza rota. En cualquier otra máquina nada cambia: una foto fresca y limpia sigue siendo silencio.
-
-**Quién trae ese clon, y cuándo.** Ningún aviso sale a la red: leen `origin/main` como lo dejó la última traída. La trae quien le haga `git fetch` o `git pull` a ese clon, y cada noche el aviso de evidencia (`scripts/ci/nightly-dod-notice.sh`) en la máquina que lo tenga programado: trae los dos clones, el de operaciones (del que lee las métricas) y el de mantenimiento. Por eso cada aviso mira de cuándo es su copia: la última traída que consta en `FETCH_HEAD` **de la rama principal** (una traída de otra rama o de la referencia de un pedido reescribe ese archivo con fecha de hoy y no mueve `origin/main`: contada, un nocturno sano se acusaba igual): con la foto vencida —o sin ninguna foto— y el clon sin traer desde antes dice «no sé si corrió», con esa fecha, y una vez por arranque el comando para traerlo. Con el clon traído después y la foto igual de vieja, ahí sí: «no está corriendo».
-
-**Lo que no va a ese clon.** El respaldo local de la foto diaria del medidor (`sdlc-stage-<fecha>.json`) no es un dato de la máquina: es la copia de algo que escribe un nocturno, con el mismo nombre. Escrito en el clon de mantenimiento pisa la foto del nocturno o deja un archivo suelto que traba el `pull` siguiente (pasó: una foto vacía de 939 bytes sobre una de 49.945). En una versión instalada ese respaldo no corre (`scripts/lib/meter-backup.sh`), y el medidor se niega a escribir ahí si nadie le dice dónde.
-
-**No vive en `tycon-home.js` a propósito**: a ese archivo lo copia el freno de producción a su carpeta protegida, y un cambio suyo le pide a cada máquina reinstalar el freno con contraseña. A mano: `node scripts/lib/night-data.js` dice de qué árbol lee esta máquina y dónde escribe. Pruebas: `scripts/tests/night-notices.test.js`.
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibnight-datajs)
 
 ## scripts/lib/repos-root.js
 
-¿Dónde cree el arnés que están los repos de ESTA persona? Es la raíz que recorren las auditorías de memoria (`engram-autoheal`, `harness-audit`) y bajo la que los revisores buscan plugins hermanos. Hasta el 2026-09-05 había **dos variables para la misma idea** (`TYCON_REPOS_ROOT` para las auditorías, `TYCON_SIBLINGS_ROOT` para los revisores) y una deducción que asumía «el arnés está clonado al lado de los proyectos» — falsa en la máquina de quien clona el arnés en otra carpeta, donde elegía una carpeta con UN solo repo (el arnés) y las auditorías leían «cero repos» como «todo bien». Ahora es **una** variable, y la deducción sale de **lo que la persona hace**: cada sesión deja su transcripción en `~/.claude/projects/<cwd>/` y la cabeza dice el `cwd`; se toman los que son repos git —sin sandboxes del banco ni temporales, sin `~/.claude`, sin el arnés ni agent-skills— y la raíz es el ancestro más alto bajo el home que contiene a la mayoría. El vecino del arnés cuenta sólo si tiene vecinos; el default se dice como default (`fuente`), porque «raíz deducida de tus sesiones (7 repos)» y «raíz por default» no son lo mismo. `node scripts/lib/repos-root.js` imprime la raíz y de dónde salió. El banco sigue apuntando la variable a su corral en cada corrida. Red: `scripts/tests/repos-root.test.sh` (8 casos sobre casas fabricadas; el que pesa es el del arnés solo en su carpeta, que ya NO se elige).
+**Qué es:** Deduce dónde están los repos de esta persona.
+
+**Por qué existe:** Había dos variables para la misma idea y una deducción que suponía el arnés clonado al lado de los proyectos; las auditorías leían «cero repos» como «todo bien». Ahora hay una sola variable, `TYCON_REPOS_ROOT`, y la deducción sale de las sesiones de la persona.
+
+**Quién la usa:** Las auditorías de memoria (`engram-autoheal`, `harness-audit`) y los revisores que buscan plugins hermanos.
+
+**Dónde se prueba:** `scripts/tests/repos-root.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibrepos-rootjs)
 
 ## scripts/hooks/worktree-sweep.js
 
-Las carpetas de trabajo (worktrees de git) que ya se mergearon **se borran solas** (2026-10-16): ese día una máquina
-tenía 30 carpetas `<repo>-wt-*` y 28 ya estaban en main — cada story abre la suya y nadie la cierra. Al arrancar sesión,
-una vez por día, recorre los repos conocidos (la raíz de `repos-root.js`, dos niveles, y el del cwd) y borra
-(`git worktree remove` sin `--force` + `git branch -d`) las que están limpias y con su HEAD en origin/main; las que tienen
-cambios o commits sin mergear sólo las nombra en una línea. Nunca toca el checkout principal, una carpeta con cambios
-(incluidos los archivos sin seguimiento), una bloqueada ni la del cwd; al arrancar tampoco una usada en las últimas 4
-horas (puede ser de otra sesión viva que acaba de mergear) ni una recién creada sin trabajo propio, y no hace `fetch`:
-con los refs viejos borra de menos, nunca de más. El cierre de la story (`/tycon-pipeline close`, paso 9) lo llama con
-`--story <N.M>`: trae origin y limpia sólo las carpetas cuya rama nombra la story. Mac, Linux y Windows (Node y git, sin
-shell). Apagar: `TYCON_WORKTREE_SWEEP=0`. Red: `scripts/tests/worktree-sweep.test.js` y el caso
-`57-worktree-sweep.json` del banco.
+**Qué es:** Borra solas las carpetas de trabajo (worktrees de git) que ya se mergearon y están limpias.
+
+**Por qué existe:** Cada story abre la suya y nadie la cierra. No toca el checkout principal ni carpetas con cambios, bloqueadas o recientes; las que tienen trabajo sin mergear sólo las nombra.
+
+**Quién la usa:** El arranque de sesión, una vez por día, y el cierre de la story (`/tycon-pipeline close`, paso 9) con `--story`. Se apaga con `TYCON_WORKTREE_SWEEP=0`.
+
+**Dónde se prueba:** `scripts/tests/worktree-sweep.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksworktree-sweepjs)
 
 ## scripts/hooks/missing-path-notice.js
 
-Un `ls` a la carpeta equivocada devuelve **vacío**, y ese vacío se lee como *«este proyecto no tiene documentación»*: sobre una premisa así se diseña una funcionalidad entera, reinventando un circuito ya implementado. 🔴 **El fallo queda silenciado por triplicado**, y el tercer silenciador es el que invalida la defensa obvia: `2>/dev/null` mata el mensaje de error, el `| head` hace que el comando **reporte éxito** (medido: `ls` solo sale 1; con el pipe sale 0), y un `stdout` vacío es idéntico al de una carpeta que existe y está vacía — o sea que un control de *«salida vacía + el comando falló»* **tampoco lo atraparía**. Por eso este control **no mira la salida: mira el disco.** Avisa cuando un comando de LECTURA nombró una ruta que no está, e ignora todo lo demás —crear, buscar, chequear ausencia a propósito, el plan B de un `||`, los sondeos multi-ruta— porque nombrar algo inexistente ahí es normal, y un aviso que suena en 1 de cada 9 comandos se apaga solo. Ante un comando que no puede tokenizar con certeza, **se calla y pierde el caso**: hablar ante la duda es cómo mueren estos controles. Portable a las dos herramientas a propósito. El eslabón restante —el `cd` que quedaba pegado entre llamadas, exclusivo de Claude Code— se cierra aparte con la variable canónica `CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR` (Codex ya arranca cada comando en la raíz; verificado en vivo), declarada en `guides/maintaining/codex-divergence-inventory.md`.
+**Qué es:** Avisa cuando un comando de lectura nombró una ruta que no existe.
+
+**Por qué existe:** Un `ls` a la carpeta equivocada devuelve vacío, y ese vacío se lee como «no hay documentación». El fallo queda silenciado por varias vías, así que el control mira el disco y no la salida. Ante la duda, calla.
+
+**Quién la usa:** El hook que corre tras cada comando de terminal, en Claude Code y en Codex.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksmissing-path-noticejs)
 
 ## scripts/hooks/failed-query-notice.js
 
-«No lo veo» no es «no hay»: una consulta a un servicio que devolvió **vacío con el código de salida enmascarado** no se puede leer como «no hay nada» (2026-09-06). Por qué: un `az` que **falla** —el proyecto no se llama `Acme`, se llama `Acme Logistica`— con un `| sed` al final se come el error y deja la salida vacía, idéntica a «no hay ninguno»; sobre esa premisa se afirma «ese repo no tiene pull request abierto» y se actúa. Es el listado vacío de `missing-path-notice.js`, una capa más arriba. Dos miradas, después de cada Bash: **(1)** corta el comando en segmentos —por salto de línea, `;`, `&&`, `||`, `|`, `$(`, sin los cuerpos de heredoc— y, en cada consulta (`az … list/show`, `gh api/pr list`, `curl` sin escritura, `npm view`, `git ls-remote`) cuya salida va a la pantalla, avisa si lo que le es atribuible quedó vacío **y el código de salida no se podía ver**: un filtro sin `pipefail`, un `|| true`, un `$(…)`, o un comando más después. 🔴 `2>/dev/null` solo **no** cuenta: esconde el mensaje, no el fallo (el harness devuelve «Exit code N» igual), y avisar ahí era ruido sobre vacíos legítimos. **(2)** en `az repos|pipelines|boards|devops …` —y sólo ahí— compara el `--project` con la lista de la organización que `--refresh` cachea (el instalador la refresca cada 7 días en segundo plano; vencida a los 30 no juzga), sugiere hasta tres parecidos y **no vuelca la lista**. 🔴 **Lo que sus casos cuidan**: que la segunda mirada no lea cualquier `-p` de cualquier comando con «az» en el texto —imprimiría la contraseña de `az login -p`, marcaría `mkdir -p`, o se dispararía sobre una tabla markdown dentro de un heredoc volcando la lista de proyectos al contexto—, que la primera vea consultas fuera de la primera línea y calle en segundo plano, y que un `echo` de cabecera no la apague. Son `controls-bench/cases/hooks/39-consulta-fallida-notice.json` (54 casos). **Windows** (2026-10-16): corre también tras la herramienta PowerShell, y ahí entiende lo de PowerShell: `Invoke-RestMethod`/`irm`/`Invoke-WebRequest`/`iwr` sin método de escritura son consultas; tapan el fallo `-ErrorAction SilentlyContinue` (o `-EA 0`), un `try { … } catch { }` y una tubería a un cmdlet (`Select-String`, `Where-Object`, `findstr`…); llega `az.cmd` en vez de `az`, y el consejo nombra `$LASTEXITCODE`. Trece de los casos son de PowerShell. Off: `TYCON_FAILED_QUERY_NOTICE=0`.
+**Qué es:** Avisa cuando una consulta a un servicio devolvió vacío con el código de salida enmascarado, y cuando el `--project` de un comando `az` no existe.
+
+**Por qué existe:** «No lo veo» no es «no hay»: un `az` que falla con un filtro al final deja la salida vacía, igual a «no hay ninguno».
+
+**Quién la usa:** El hook que corre tras cada comando de terminal; en Windows también tras PowerShell. Se apaga con `TYCON_FAILED_QUERY_NOTICE=0`.
+
+**Dónde se prueba:** `controls-bench/cases/hooks/39-consulta-fallida-notice.json`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksfailed-query-noticejs)
 
 ## scripts/hooks/wait-notice.js
 
-**La corrida avisa cuando queda esperando a una persona** (2026-10-17). La espera por una persona es el 38 % del reloj de las corridas medidas (el 48 % en producto) y ningún control avisaba: quien deja corriendo una story se enteraba una hora después de que había una pregunta sin contestar. Con una corrida del pipeline activa (marcador con pasos sin cerrar), el cierre de turno, una pregunta a la persona (`AskUserQuestion`, `ExitPlanMode`, la pregunta por voz) o un pedido de permiso (`Notification`) abren **una espera por sesión**. Un proceso desprendido y oculto (`detached` + `windowsHide`; lo lanza el hook, nunca el arranque) duerme el plazo —5 minutos, `wait_notice.minutes` de `team-repos.json` (de 1 a 120), `TYCON_WAIT_NOTICE_MS` en la máquina— y, si nadie se movió, manda **un mensaje** por `tycon-telegram-notify.sh` con el id de la story, el paso por su nombre llano y una línea de 200 caracteres con las credenciales tapadas. 🔴 **«Siguió» se cuenta, no se mide por tamaño**: los registros de verdad del hilo (prompts genuinos, mensajes del agente con texto o herramienta); el hilo recibe `attachment`, `ai-title`, `system`… que no son de nadie. 🔴 **Cada espera nueva es un mensaje nuevo** que lista todas las abiertas de la máquina, y el anterior se reescribe con «ver el mensaje siguiente»: una edición de Telegram no hace sonar el teléfono. Un `--dry-run` previo separa `no-channel` (falta el bot) de `failed` (Telegram rechazó); no reintenta. **Sin Telegram prendido no hace nada**, ni archivos ni procesos. Cada espera cerrada deja una línea en `wait-notice/log.jsonl` (story, paso, inicio, si avisó, resultado, vuelta): es lo que permite medir al mes si sirvió. Codex: sólo `Stop` (`guides/maintaining/codex-divergence-inventory.md`). Nunca frena: todo error sale 0 sin salida. Red: `scripts/tests/wait-notice.test.js` (26 casos, contra un Telegram local; entiende también el hilo de Codex, y una tarea de fondo sin terminar no cuenta como espera por la persona) y `controls-bench/cases/hooks/58-wait-notice.json` (5). Off: `TYCON_WAIT_NOTICE=0`.
+**Qué es:** Avisa por Telegram cuando una corrida activa del pipeline queda esperando a una persona.
+
+**Por qué existe:** La espera por una persona es buena parte del reloj de una corrida y nada avisaba: quien la dejaba corriendo se enteraba tarde de una pregunta sin contestar. Cada espera nueva es un mensaje nuevo; sin Telegram prendido no hace nada.
+
+**Quién la usa:** Los hooks de cierre de turno, de pregunta a la persona y de pedido de permiso; manda con `tycon-telegram-notify.sh`. El plazo es `wait_notice.minutes` de `team-repos.json`.
+
+**Dónde se prueba:** `scripts/tests/wait-notice.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookswait-noticejs)
 
 ## scripts/hooks/prod-access-guard.js
 
-*(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)*
+_(scripts/hooks/prod-access-guard.js + scripts/production/ + guides/produccion-con-permiso.md)_
 
-**Producción con permiso** (2026-09-15): cada consulta a una base de producción **la aprueba una persona, de a una**, y la contraseña del Llavero **no pasa por la conversación**. Por qué: autorizada UNA lectura de producción, **en el turno siguiente el asistente puede correr más consultas sin pedir permiso** y hasta **abrir una regla de firewall** que queda viva. Que la regla —«cada sentencia se aprueba»— esté escrita en la memoria del asistente no alcanza: *un control que hay que acordarse de invocar es un control que no corre*. 🔴 **Todo lo que decidió el diseño está MEDIDO en vivo, no supuesto**: una regla `ask` pregunta en bypass y en auto, y le gana a un `allow` general · un hook que sale 2 frena en bypass · **pero en la configuración del usuario se esquiva de tres formas** (la herramienta `Monitor`, `disableAllHooks` por archivo y por bandera, y otra sesión con `--setting-sources project`) y en la **administrada** resiste las tres, incluso apagando los hooks a mitad de sesión · un **`timeout` vencido DEJA PASAR** el comando (8 s con `timeout: 3`), así que el freno lleva **reloj propio que vence antes** · el cuadro del Llavero con `-T ""` aparece en **cada** consulta y **se aprueba por reflejo** (medido: aprobado las dos veces, una habiéndose pedido denegar) · y elegir «el snapshot de shell más nuevo» **le erra a 2 de 3** con tres sesiones vivas. Por eso: **una sola puerta** de root por ruta absoluta (`/opt/tycon/bin/tycon-prod-sql`, con su regla de preguntar), el **freno en la configuración administrada** sin variable de apagado (se saca con `sudo`: acción de una persona), y **lo que ningún proyecto declaró se trata como producción**. Cada proyecto declara sus servidores en `<repo>/.tycon/production.json` —**nunca un catálogo central**, que le mostraría los servidores de todos los clientes a cualquiera que clone el arnés— con lista blanca de tres claves que el pre-commit verifica (el usuario de la base no va: vive junto a la contraseña). **Producción es pegajosa**: reescribir el catálogo o borrar el índice no destraba un host; sólo `--reclasificar`, que pasa por el cuadro. 🔴 **Tres cosas que el diseño daba por resueltas y la medición corrigió**: no hay identidad de firma en la Mac (0 identidades), así que el **ayudante compilado salió del alcance** —con firma casera su huella cambia en cada recompilación y rompe la confianza de la entrada—; `node` y `sqlcmd` viven en **carpetas escribibles por el usuario**, o sea que un `cp /bin/true node` apagaba el freno **en silencio** y un `sqlcmd` impostor se llevaba la contraseña (ahora los copia el instalador a `/opt/tycon/bin` con su huella); y la referencia `origin/main` de un clon **la puede mover el asistente**, así que el instalador hace su propio `fetch`. Y una decisión de método: el parseo de comandos estaba **copiado en dos frenos**, así que salió a `scripts/lib/shell-parse.js`. Red: `scripts/tests/prod-access-guard.test.sh` (37 chequeos), `tycon-prod-sql.test.sh` (15) e `install-guard.test.sh` (17), más `40-prod-access-guard.json` (23 casos, uno de ellos de Codex) y `41-produccion-notice.json` (6) en el banco. Lo que **no** cubre está dicho, no prometido: la contraseña también vive en el App Service, en `user-secrets` y en un `appsettings.Production.json`; un programa que se conecta por dentro no nombra el servidor; y la regla del firewall es **de cortesía** (se esquiva partiendo una palabra), así que ahí el control es el hook. 🔴 **La puerta corre el cliente con `HOME` vacío**: el cliente (`go-sqlcmd`) lee `~/.sqlcmd/sqlconfig` y, si hay un contexto actual con usuario guardado, **manda la clave guardada ahí e ignora `SQLCMDPASSWORD`** aunque reciba `-S` y `-U` — da «Login failed» con la clave bien cargada. Se midió con un servidor SQL de mentira que decodifica el login (`scripts/tests/lib/tds-spy.py`, caso T32 con el cliente real y su control); `--verificar` avisa si esa config existe. Y en Azure SQL no hay `USE`, así que sin una `base` declarada el cliente entra a `master` y toda tabla es «Invalid object name»: el catálogo acepta `"base"`. 🔴 **Sin snapshot de shell, el freno pregunta en vivo** (2026-09-16, Claude Code 2.1.272): las sesiones de la extensión de VS Code ya no escriben el snapshot de shell que el freno exigía mirar, y frenar «no hay snapshot» como «no pude mirar» dejaba la puerta cerrada para siempre. Medido con `ps` sobre el propio comando: esa versión corre cada comando como `zsh -c -l …`, sin sourcear nada. Sin snapshot, el freno le pregunta al shell de login **en vivo**, arrancado igual, qué es cada nombre secuestrable (`whence -w`): y ese shell lee `.zlogin` y lo sourceado desde `.zshenv`, que el barrido estático no alcanzaba — un alias con la **ruta absoluta** de la puerta como nombre se queda con la invocación canónica, medido. Un shell que se cuelga, no contesta o no sé leer sigue frenando. Red: T30a–T30i (T30a/h rojos contra el freno anterior; los otros seis, con la pregunta quitada).
+**Qué es:** Exige que una persona apruebe, de a una, cada consulta a una base de producción, y mantiene la contraseña del Llavero fuera de la conversación.
+
+**Por qué existe:** Autorizada una lectura, el asistente podía seguir con más consultas sin pedir permiso. Un control que hay que acordarse de invocar no corre, así que el freno vive en la configuración administrada.
+
+**Quién la usa:** El hook previo a cada comando. Cada proyecto declara sus servidores en `.tycon/production.json`; lo no declarado se trata como producción.
+
+**Dónde se prueba:** `scripts/tests/prod-access-guard.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksprod-access-guardjs)
 
 ## claude-md-blocks/budget.json
 
-*(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)*
+_(claude-md-blocks/budget.json + scripts/ci/check-claude-md-blocks.js)_
 
-El **presupuesto de los bloques del CLAUDE.md** que cada máquina carga en cada sesión (2026-09-06). Nada medía cuánto pesaban: el bloque de estilo llegó a 17.034 bytes con la misma regla escrita seis veces y la poda lo dejó en 6.270 sin perder una; `ado-runs-list-lag` creció de 4.634 a 9.979 en una madrugada por la misma vía. El archivo declara el techo en **bytes** de cada bloque, un `default` para los nuevos, un `total` y un `total_codex` (las variantes `names/<bloque>.codex.md` reemplazan al bloque en las máquinas con `TYCON_CODEX=1` y se miden contra el techo de su bloque, o el propio como `<bloque>.codex`); el pre-commit del arnés lo verifica con `--staged` y **frena** el commit que se pasa. Subir un techo es una decisión que se escribe ahí, con el motivo al lado, **en el mismo commit**; 🔴 el margen para un bloque nuevo no es el `default`: es lo que queda del `total`. Además avisa, sin frenar, cuando lo que el commit agrega tiene forma de historia (el rótulo de un caso, una pasada numerada, una cita del dev). 🔴 **En `--staged` todo sale del índice** —el techo, la lista de bloques y su contenido—: leído del disco, un techo subido sin stagear deja entrar un bloque que en la máquina de cualquier otro está en rojo; sin git, o con un techo 0, sale **2**, no verde. Red: `scripts/tests/claude-md-blocks.test.sh` (20 casos; los C-10 a C-20 son los de las revisiones adversariales, con rojo previo verificado en los que podían ponerse rojos — C-11 fija una conducta que ya existía).
+**Qué es:** Fija el techo, en bytes, de cada bloque del CLAUDE.md que cada máquina carga en cada sesión.
+
+**Por qué existe:** Nada medía cuánto pesaban esos bloques. Subir un techo se escribe acá, con el motivo, en el mismo commit. En `--staged` todo se lee del índice.
+
+**Quién la usa:** El pre-commit del arnés, con `scripts/ci/check-claude-md-blocks.js`, que frena el commit que se pasa.
+
+**Dónde se prueba:** `scripts/tests/claude-md-blocks.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#claude-md-blocksbudgetjson)
 
 ## scripts/hooks/harness-bootstrap-heal.sh
 
-La pieza que arregla al que arregla a los demás. Todo el arnés se propaga por `git pull` + `install-tycon-hooks.sh`, y esa segunda mitad la dispara **una línea** del `settings.json` de cada dev; las instalaciones viejas tienen una variante de esa línea que hace los pull pero **no llama al instalador**. Esa máquina entonces **baja** todo el código nuevo y no **enchufa** nada — para siempre, y sin un error: la única señal es la ausencia de unas entradas en un archivo que nadie abre (medido 2026-08-27: **9 controles ausentes** con el clon al día y los archivos en el disco). 🔴 Lo que hace a este caso distinto de cualquier otro hook roto: **el arreglo no puede viajar por el camino que está roto**. El `INSTALL.md` ya lo documentaba y proponía *"corré esto una vez a mano"* — o sea, la deuda estaba escrita y abierta, esperando a que alguien se acordara. La salida es entrar por una puerta que esas máquinas sí tienen abierta: los hooks ya registrados que viven en este repo, cuyo código sí se actualiza con el pull que sí hacen. Repara por **append** (lo que el dev escribió en esa línea se conserva), con backup, y sale en un grep si ya está sano. Off: `TYCON_NO_BOOTSTRAP_HEAL=1`.
+**Qué es:** Repara la línea de arranque vieja del `settings.json` que hace los pull pero no llama al instalador.
+
+**Por qué existe:** Esa máquina baja todo el código nuevo y no enchufa nada, sin ningún error. El arreglo no puede viajar por el camino roto, así que entra por los hooks ya registrados que viven en este repo. Repara por append, con backup.
+
+**Quién la usa:** Los hooks ya registrados de las máquinas con la línea vieja. Se apaga con `TYCON_NO_BOOTSTRAP_HEAL=1`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksharness-bootstrap-healsh)
 
 ## tycon-pipeline/scripts/lib/guides-heal.js
 
-*(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)*
+_(tycon-pipeline/scripts/lib/guides-heal.js (en agent-skills) + scripts/hooks/branch-guard-notice.js)_
 
-El arnés que **se bloquea a sí mismo** (2026-09-03). La línea de arranque hace `git pull` de este repo y después corre el instalador que vive **adentro**; ese pull se niega a avanzar si un archivo modificado localmente también cambió en origin — y hay un archivo que **modifica el capturador de retrospectivas**, sin commitear, en la máquina donde corre. Como ese archivo cambia seguido, el pull falla cada día; el error se descarta a propósito (una red caída no puede romper el arranque), así que **el instalador sigue corriendo cada día, en su versión vieja, reportando todo bien**. Medido: 272 commits atrás en seis días, `agent-skills` al día — porque su pull llevaba `--autostash` y el de este repo no. **Una palabra**. Efecto visible: un freno llega (viaja por agent-skills) sin el hook que lo abre (lo registra el instalador), y desde adentro de una máquina atrasada no hay forma de saberlo. 🔴 **El arreglo durable no puede viajar por el camino roto** (mismo callejón que `harness-bootstrap-heal.sh`): la línea canónica con `--autostash` en los dos pulls y el instalador que **normaliza la línea de cada máquina** (agrega sólo lo que falta, con backup) llegan por el pull… que está bloqueado. Por eso la sanadora vive en `agent-skills` y se invoca desde `on-prompt.js`, enchufado en todas las máquinas desde mayo: una vez por sesión, **en local** (`merge --ff-only` contra el `origin/main` que el arranque ya trajo — el pull hace el fetch aunque el merge falle; sale a la red sólo si nadie hizo fetch en 3 días, con tope de 15 s), si el clon está atrás y no divergió guarda aparte lo local, avanza, lo reaplica y corre el instalador **nuevo** en segundo plano; si divergió, no toca y avisa. `branch-guard-notice.js` pasa a gritar también con un clon **en main pero atrasado**, nombrando el archivo que traba: "clon válido" es "en main **y** al día". 🔴 **La línea de arranque ya protegida tiene su propia puerta de trabarse**: la primera vez que lo local no se puede reaplicar sobre lo nuevo, git guarda lo tuyo en el stash **y deja el archivo con marcadores de conflicto** (`UU`); desde ahí ningún pull entra ("unmerged files"), con cero commits atrás, y el consejo obvio (`git stash`) git lo rechaza. La sanadora detecta ese estado y limpia **sólo los archivos en conflicto** (checkout de HEAD sobre ellos, después de verificar que están en ese stash y tienen los marcadores adentro) — nunca un `reset --hard`: el reset borra lo que el dev siguió editando después de quedar trabado, que no está en ningún stash. Un conflicto ajeno (un merge del dev) o uno resuelto a mano sin `git add` no se toca. En ese estado el pull del arranque muere antes de fetchear, así que ahí la sanadora sí sale a la red. El consejo manual de las dos piezas es el que funciona en cada estado. Windows: el `.ps1` **no normaliza** la línea (deuda declarada — la cubre la sanadora en cada choque, y el instalador lo lanza sólo si hay `pwsh`, que es lo que el `.ps1` requiere). Los hooks nuevos quedan activos en la sesión **siguiente** (Claude Code lee `settings.json` al arrancar); el aviso lo dice. Off: `TYCON_GUIDES_HEAL=0`. Red: `controls-bench/cases/hooks/37-guides-heal.json` (13 — los que pesan: el clon trabado por el arranque, el conflicto ajeno que NO se toca, el no-trackeado que lo publicado agrega, y el que se pone rojo si se borra la limpieza del conflicto) + `03-session-start.json` (+3 de branch-guard).
+**Qué es:** Es la sanadora que pone al día un clon del arnés trabado.
+
+**Por qué existe:** El pull del arranque se niega a avanzar si un archivo modificado localmente también cambió en origin, y el instalador viejo sigue corriendo sin avisar. El arreglo no puede viajar por el camino roto. Limpia solo los archivos en conflicto y nunca hace `reset --hard`.
+
+**Quién la usa:** `on-prompt.js` (en agent-skills), una vez por sesión; `branch-guard-notice.js` avisa. Se apaga con `TYCON_GUIDES_HEAL=0`.
+
+**Dónde se prueba:** `controls-bench/cases/hooks/37-guides-heal.json`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#tycon-pipelinescriptslibguides-healjs)
 
 ## mods/harness-mods/
 
-*(mods/harness-mods/ + scripts/setup/harness/plugin-dirs.js)*
+_(mods/harness-mods/ + scripts/setup/harness/plugin-dirs.js)_
 
-**El cartel de la corrida, para todo el equipo** (2026-10-15). Un plugin de Claude Code que dibuja arriba del prompt en
-qué paso va la corrida del pipeline de la sesión (story, paso, cuántos de 9, minutos del paso y del total, contexto, y
-«te espera» en amarillo con un aviso una vez por paso), más `/pipeline` (la tabla de pasos) y `/mods` (listar los mods
-del arnés; `hide`/`show` en la sesión; `off`/`on` para siempre, guardado en el almacén propio del plugin). **Sin dinero**:
-el dueño lo sacó a propósito. Por qué: el cartel vivía en una sola Mac, sin repo ni pruebas, y se perdió. El instalador
-**suma** su carpeta a `CLAUDE_CODE_PLUGIN_DIRS` (las carpetas del dev quedan; la desinstalación saca sólo la propia).
-Los pasos son una copia de `STEP_SEQUENCE` de `pipeline.js` (el plugin corre sin Node): si se separan, la prueba frena.
-Sólo Claude Code (Codex no tiene mods: declarado en `adapters/codex/hooks.json`). Red:
-`scripts/tests/harness-mods.test.js` (17 casos con node, sin red) y `scripts/tests/harness-mods-plugin.test.sh`
-(`claude plugin validate` + `claude plugin test` en el motor real; sin un `claude` que traiga `plugin test`, se saltea con
-constancia). Corren en la suite diaria.
+**Qué es:** Es un plugin de Claude Code que dibuja arriba del prompt en qué paso va la corrida del pipeline, con los comandos `/pipeline` y `/mods`.
+
+**Por qué existe:** El cartel vivía en una sola Mac, sin repo ni pruebas, y se perdió. Los pasos son una copia de `STEP_SEQUENCE` de `pipeline.js`.
+
+**Quién la usa:** Todo el equipo, sólo en Claude Code. El instalador suma su carpeta a `CLAUDE_CODE_PLUGIN_DIRS` (`scripts/setup/harness/plugin-dirs.js`).
+
+**Dónde se prueba:** `scripts/tests/harness-mods.test.js`, `scripts/tests/harness-mods-plugin.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#modsharness-mods)
 
 ## claude-md-blocks/
 
-*(claude-md-blocks/ + scripts/setup/sync-claude-md-blocks.sh / `scripts/setup/sync-claude-md-blocks.ps1`)*
+_(claude-md-blocks/ + scripts/setup/sync-claude-md-blocks.sh / `scripts/setup/sync-claude-md-blocks.ps1`)_
 
-Bloques team-wide de `~/.claude/CLAUDE.md`, versionados acá y sincronizados a cada máquina. **Por qué hace falta un mecanismo aparte**: `~/.claude/CLAUDE.md` NO está versionado (es un archivo suelto en el home de cada dev — sin backup, sin propagación), y las guías de este repo son lectura **on-demand**, así que una regla que tiene que estar **siempre cargada** (estilo de respuesta, convenciones de comunicación) no puede vivir en `guides/`. El sync es **quirúrgico**: solo reemplaza lo que está entre sus marcadores `TYCON_BLOCK:<nombre>`; todo lo que el dev escribió a mano — y el bloque `CODEGRAPH`, que no es nuestro — queda intacto. Idempotente, backup antes del primer cambio, atomic write, silencioso si no hubo cambios, fail-open total (nunca rompe el arranque de sesión). Lo invoca `install-tycon-hooks.sh`, que ya corre en cada `SessionStart` tras el `git pull` → **el bloque se actualiza solo en el primer arranque de sesión posterior al push, sin acción del dev**. Agregar un bloque nuevo = crear `claude-md-blocks/<nombre>.md` y commitear. Opt-out: `TYCON_NO_CLAUDEMD_SYNC=1`. Bloques al 2026-09-03: `response-style.md` (podado ese día de 17.034 a 6.270 bytes; historia en `guides/response-style.md`), `background-execution.md`, `ado-runs-list-lag.md`, `tool-names.md`. **Bloques con variantes**: cada bloque sigue siendo un `.md` de la raíz (el contrato que leen el instalador, la desinstalación y sus pruebas); uno puede declarar `<!-- variants: response -->` entre sus marcadores y tomar su texto de la carpeta del mismo nombre (`response-style/<estilo>.<idioma>.md`, seis textos: `executive`, `detailed`, `neutral` en `es` y `en`). Primero cuentan sus condiciones (perfil, integración), como en cualquier bloque; prendido, el sincronizador elige la variante que dice `response` de la configuración (`tycon-config.js response --json`; sin valor, `neutral`/`es`) y escribe el tope en `{{max_chars}}`. Con la configuración rota no inventa un texto: deja el bloque que había y lo dice. Una fila de tabla que termina en `<!-- integration: <x> -->` se escribe sólo con esa integración prendida (la tabla de nombres: Telegram, Clockify, engram, CodeGraph); si no se pudo saber, la fila queda como estaba. Los títulos van sin fecha ni historia: `check-claude-md-blocks.js` frena un título con `AAAA-MM-DD`, «podada», «promovida», «cableado» o «actualizado», y mide cada variante con el tope más largo (4000).
+**Qué es:** Son los bloques team-wide de `~/.claude/CLAUDE.md`, versionados acá y sincronizados a cada máquina entre marcadores `TYCON_BLOCK:<nombre>`.
+
+**Por qué existe:** `~/.claude/CLAUDE.md` no está versionado y las guías se leen a demanda, así que una regla que debe estar siempre cargada no puede vivir en `guides/`. El sync sólo reemplaza lo que está entre sus marcadores.
+
+**Quién la usa:** `install-tycon-hooks.sh`, en cada arranque de sesión, vía `scripts/setup/sync-claude-md-blocks.sh`. Se apaga con `TYCON_NO_CLAUDEMD_SYNC=1`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#claude-md-blocks)
 
 ## scripts/setup/harness/tools.js
 
-*(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scripts/setup/agents-md-blocks.js` + `scripts/hooks/harness-startup.js`)*
+_(scripts/setup/harness/tools.js + `scripts/setup/harness/tool-change.js` + `scripts/setup/agents-md-blocks.js` + `scripts/hooks/harness-startup.js`)_
 
-Cada herramienta, sus enchufes (2026-10-06). Por qué: quien sólo usa Codex **no podía instalar el arnés** — el instalador escribía en la carpeta de Claude Code aunque no estuviera, la actualización la disparaba sólo el arranque de Claude Code, y el lado Codex se armaba leyendo archivos de Claude (`AGENTS.md` era una copia entera del `CLAUDE.md`; los servidores MCP salían de `~/.claude.json`, y si faltaba, silencio). Ahora `install` **detecta** qué herramientas hay (el ejecutable en el `PATH` o la configuración propia de la herramienta — lo que el arnés despliega no cuenta: «ya desplegado» no es «instalada»), las nombra en el plan, y `--tool claude|codex` las fija; lo que enchufa queda **escrito en el estado**, porque el `PATH` de un arranque no es el de la persona. El enchufe de Codex corre en Node, el mismo camino en Mac, Linux y Windows: `agents-md-blocks.js` deja los bloques de `claude-md-blocks/` en `AGENTS.md` **entre sus marcas** (lo de la persona fuera de las marcas no se toca, y no viaja ningún `@import`), y `harness-startup.js` es el hook de arranque de Codex que corre la copia fija y **actualiza** el arnés, como la línea de arranque de Claude Code. Una máquina sin Claude Code vive entera en `~/.tycon` (su estado en `~/.tycon/state`) y nada se escribe en `~/.claude`. `tool-change.js` suma una herramienta después (`install --tool`) o saca una sola (`uninstall --tool`) sin tocar la otra. La comprobación de salud, que lanza hooks de verdad, los lanza con una carpeta de usuario temporal: si no, deja una carpeta del reloj en `~/.claude` durante la instalación. Pruebas: `scripts/tests/harness-tools.test.sh`, `agents-md-blocks.test.js`, los casos del banco de `harness-startup.js`, y en Windows el escenario `codex-only`. Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«Cada herramienta, sus enchufes».
+**Qué es:** Detecta qué herramientas hay en la máquina (Claude Code, Codex) y enchufa el arnés a cada una.
+
+**Por qué existe:** Quien sólo usa Codex no podía instalar el arnés. Cada herramienta tiene sus enchufes: `agents-md-blocks.js` deja los bloques en `AGENTS.md`.
+
+**Quién la usa:** `install`, `scripts/setup/harness/tool-change.js` (sumar o sacar una herramienta) y `scripts/hooks/harness-startup.js`.
+
+**Dónde se prueba:** `scripts/tests/harness-tools.test.sh`, `scripts/tests/agents-md-blocks.test.js`
+
+**Guía:** [mecanismo-de-instalacion](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnesstoolsjs)
 
 ## scripts/setup/harness/harness-node.js — el Node propio del arnés
 
-*(scripts/setup/harness/harness-node.js + `scripts/lib/harness-node.sh` + `scripts/production/node-official.json`)*
+_(scripts/setup/harness/harness-node.js + `scripts/lib/harness-node.sh` + `scripts/production/node-official.json`)_
 
-El arnés corre con su propio Node 24 (2026-10-16). Por qué: cada hook se registraba como `node "<guion>"` y
-arrancaba con el primer `node` del PATH de la herramienta, el que tuviera la máquina; una del equipo corría con Node 20,
-que la CI pública no prueba, y nadie lo sabía hasta que algo fallaba. Ahora `runApplierOnly` (el punto por el que pasan
-`install`, `update`, `apply` y el arranque) baja el Node oficial de la lista —seis plataformas, una sola versión, la
-misma lista del freno de producción—, verifica el comprimido y el binario contra las huellas que viajan en el árbol, lo
-arma aparte y cambia el enlace `~/.tycon/node/current`. Los hooks `.js` se escriben con la ruta de `current` sin
-comillas (con comillas en Mac y Linux si la carpeta trae espacios), lo que corre igual en bash, sh, cmd y PowerShell
-(medido en Windows, por los cinco lanzadores con que se dispara un hook); qué intérprete se escribe lo decide `interpreter` mirando el disco, para Claude Code,
-Codex y la paridad. Los guiones de shell lo toman de `harness-node.sh` sin tocar el PATH: los proyectos del dev siguen
-con su Node. Si no lo puede bajar, el arnés sigue con el del PATH y lo dice (`doctor`, el aviso del arranque); nunca un
-rojo. `download-runs.js --harness-node-report` dice cuándo todas las máquinas lo tienen, que es cuándo sacar Node 22 de
-la CI. Pruebas: `harness-node.test.sh` (con un servidor local que hace de nodejs.org), `apply-hooks.test.js` (T16 a
-T18) y, en Windows, `node-form-spike.js` dentro del escenario `no-clone`.
+**Qué es:** Baja y mantiene el Node 24 oficial que usa el arnés, aparte del de la máquina.
+
+**Por qué existe:** Cada hook arrancaba con el primer `node` del PATH, a veces uno viejo que la CI no prueba. Si no puede bajarlo, el arnés sigue con el del PATH y lo dice; nunca es un rojo.
+
+**Quién la usa:** `runApplierOnly` (`install`, `update`, `apply` y el arranque); los guiones de shell lo toman de `harness-node.sh`. La lista está en `scripts/production/node-official.json`.
+
+**Dónde se prueba:** `scripts/tests/harness-node.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessharness-nodejs--el-node-propio-del-arnés)
 
 ## scripts/setup/harness/release.js — el cambio de versión con enlaces (Windows)
 
-*(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstrap-fallback.ps1`)*
+_(scripts/setup/harness/release.js + `tycon-home.js` + `bootstrap.js` + `bootstrap-fallback.ps1`)_
 
-En Windows la versión bajada vive en `~/.tycon/versions/<versión>/`, y `~/.tycon/harness` y `~/.tycon/previous` son
-uniones (enlaces de carpeta) a la activa y a la anterior. Actualizar es cambiar la unión: ninguna carpeta en uso se mueve.
-Por qué: renombrar una carpeta en Windows falla si otro programa tiene un archivo abierto adentro, está parado adentro o
-la vigila. Con otra sesión de Claude Code o un VS Code abiertos, un cambio de versión que renombra carpetas espera al
-próximo arranque, y el próximo arranque encuentra lo mismo: la máquina queda atrasada sin saberlo. Medido en un agente de
-Windows antes de escribir el código: con la carpeta vieja tomada de esas tres formas, la unión se cambia en un milisegundo
-y los programas que la tenían siguen andando.
+**Qué es:** Cambia la versión del arnés en Windows moviendo uniones (enlaces de carpeta) entre las versiones de `~/.tycon/versions/<versión>/`.
 
-- **Mac y Linux no cambian**: ahí renombrar una carpeta en uso funciona, y cambiar algo que anda no paga el riesgo. Las
-  pruebas de Mac recorren la forma de Windows con `TYCON_RELEASE_LINKS=1` (sólo de pruebas).
-- **El diario es otro archivo** (`~/.tycon/link-swap.json`): una copia fija de arranque más vieja borra `swap.json` si
-  `harness` existe. Un corte en cualquier etapa vuelve las dos uniones a donde estaban: el estado todavía dice esa versión.
-- **Nada escribe la ruta numerada.** Node resuelve la unión en `__dirname` (da `versions/<v>`); escrita en un archivo, ataría
-  la máquina a esa versión. El lugar de `~/.claude` y los enlaces de skills nombran `~/.tycon/harness`, y el aplicador y
-  el enchufe de Codex corren con `--preserve-symlinks`. PowerShell ya da la ruta del enlace.
-- **La limpieza** borra de `versions/` lo que ningún enlace usa, después de un arranque sano. Primero lo intenta renombrar:
-  en Windows eso falla entera si algo la tiene abierta, así nunca borra a medias una versión en uso. Lo tomado queda
-  anotado con su fecha; `doctor` lo lista, y el arranque avisa qué cerrar cuando la más vieja lleva 7 días.
-- **Una máquina Windows ya instalada se convierte una vez** (mover `harness/` a `versions/`): es el mismo renombre que fallaba.
-  Se intenta en silencio en cada arranque (la primera sesión del día suele arrancar con todo cerrado). Trabada, la versión
-  nueva espera en `versions/`; el aviso, con qué cerrar, el comando y reiniciar como último recurso, sale UNA vez recién a
-  los 3 días o 10 arranques. La conversión es de las dos carpetas: a medias cuenta como trabada.
+**Por qué existe:** Renombrar una carpeta en uso falla en Windows, y la máquina quedaba atrasada sin saberlo. Mac y Linux no cambian.
 
-Red: `scripts/tests/harness-release-links.test.sh` (Mac, con la variable) y el escenario `no-clone` del 182, que mide todo
-con la versión activa tomada de verdad (`scripts/tests/windows/no-clone-probe.js` y `links-spike.js`).
+**Quién la usa:** El aplicador del arnés (`install`, `update`, el arranque) en Windows.
+
+**Dónde se prueba:** `scripts/tests/harness-release-links.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessreleasejs--el-cambio-de-versión-con-enlaces-windows)
 
 ## scripts/lib/canonical-path.js — las carpetas de skills y agentes, siempre reales
 
-*(scripts/lib/canonical-path.js `ensureRepoLinks` + `scripts/hooks/branch-guard-notice.js`)*
+_(scripts/lib/canonical-path.js `ensureRepoLinks` + `scripts/hooks/branch-guard-notice.js`)_
 
-`~/.claude/skills` y `~/.claude/agents` son carpetas del dev, con un enlace por cada skill y cada revisor del arnés. Nunca
-un enlace a la carpeta entera del árbol. Por qué: Claude Code sincroniza las skills de la cuenta en `~/.claude/skills/synced`
-cada pocos minutos, y el dev crea sus propias skills y agentes en esas carpetas. Con un enlace entero, todo eso caía adentro
-del arnés, y la actualización —que deja sólo lo que la versión trae— lo perdía: lo de la cuenta vuelve solo, lo propio no.
+**Qué es:** Mantiene `~/.claude/skills` y `~/.claude/agents` como carpetas reales, con un enlace por cada skill y cada revisor del arnés.
 
-- **Instalación nueva:** carpeta real y un enlace por entrada (en Windows, uniones para las skills; enlace de archivo o, sin
-  permiso, enlace duro para los revisores).
-- **La forma vieja se convierte sola** cada vez que corre el aplicador (en cada arranque): lo que no es del arnés —lo que no
-  nombran el manifiesto de la versión, git en un clon, terceros ni la capa del equipo— se mueve a una carpeta temporal al
-  lado, se quita el enlace (nunca un borrado a través de él: en Windows se borraría el arnés) y la temporal pasa a ser la
-  carpeta. Algo en uso no frena: todo vuelve a su lugar y se reintenta en el arranque siguiente. Un corte deja la
-  temporal, que la corrida siguiente retoma; si Claude Code recreó la carpeta en el medio, se juntan sin pisar nada.
-- **La primera conversión llega con una actualización**, y corre después del cambio de versión: lo que el dev escribió
-  por el enlace entero quedó en la versión que pasó a ser la anterior. Por eso se recorre también esa versión (sólo
-  entre dos versiones bajadas, con su manifiesto).
-- **Lo que está dos veces con distinto contenido** (un corte y Claude Code que lo volvió a bajar) no traba nada: una
-  versión queda en `~/.claude/skills.tycon-aparte` (o `agents.tycon-aparte`), que Claude Code no lee, y se avisa una
-  vez. Dos archivos iguales quedan en uno. `doctor` dice lo apartado y la temporal de un corte.
-- **Un enlace colgado** (a un clon borrado, a una versión ya limpiada) pasa a carpeta real en la primera corrida.
-- **No se convierte** un enlace entero a OTRO clon del arnés (lo eligió la persona).
-- **PowerShell 7:** en Windows la línea de arranque es `pwsh`; sin él, el arnés no arranca ni se actualiza, y antes sólo
-  `doctor` lo decía. El hook de arranque (que corre con Node) avisa una vez qué instalar; si `pwsh` vuelve y falta otra
-  vez, avisa de nuevo.
+**Por qué existe:** Con un enlace a la carpeta entera, lo que el dev o su cuenta creaban caía adentro del arnés y la actualización lo perdía. La forma vieja se convierte sola.
 
-Red: `scripts/tests/repo-links-real-folders.test.sh`, `scripts/tests/branch-guard-notice.test.sh` (T12-T13) y el escenario
-`no-clone` del 182, que convierte la forma vieja con el aplicador de PowerShell de verdad.
+**Quién la usa:** El aplicador en cada arranque; `scripts/hooks/branch-guard-notice.js` avisa si falta PowerShell 7.
+
+**Dónde se prueba:** `scripts/tests/repo-links-real-folders.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibcanonical-pathjs--las-carpetas-de-skills-y-agentes-siempre-reales)
 
 ## scripts/lib/maintainers-sync.js — el arranque pone al día el clon de mantenimiento
 
-*(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)*
+_(scripts/lib/maintainers-sync.js + `scripts/hooks/branch-guard-notice.js`)_
 
-Sólo en una máquina que declara el clon del repo de mantenimiento (`paths.maintainers`). De ahí cada sesión carga la
-portada privada y los avisos leen la noche; el arranque ponía al día el clon del arnés y no ése, que quedaba días atrás
-en silencio. Ahora el aviso de arranque lanza, de fondo y sin esperarla, una puesta al día: trae `origin/main` y avanza
-con `merge --ff-only` sólo si el clon está en `main`, sin cambios rastreados, sin operación a medias y atrás. Cualquier
-otra cosa (otra rama, cambios propios, commits sin empujar, divergido, archivos sin seguimiento que lo nuevo agrega) no
-se toca: un cambio en ese checkout es trabajo de alguien y no se aparta con un stash. El resultado queda en
-`maintainers-sync.json`, en la carpeta del estado, y la sesión siguiente lo dice en una línea, una vez, sólo si pide
-algo a la persona; «avanzó», «al día» y «sin red» callan. Por qué de fondo: medido, Claude Code lee los `@import` al
-arrancar en paralelo con los hooks, sin esperarlos; la bajada la ve la sesión siguiente. Sólo en el perfil completo; en
-Windows corre detrás de un relevo con `windowsHide`, como el arranque. Off: `TYCON_MAINTAINERS_SYNC=0`.
+**Qué es:** Pone al día, al arrancar y de fondo, el clon del repo de mantenimiento, con `merge --ff-only` y sólo si es seguro.
 
-Red: `scripts/tests/maintainers-sync.test.js` (clones de laboratorio con el origen en una carpeta local) y el escenario
-`update` del 182.
+**Por qué existe:** Ese clon aporta la portada privada y los avisos de la noche, y quedaba días atrás en silencio. Si hay otra rama, cambios propios o divergencia, no lo toca.
+
+**Quién la usa:** `scripts/hooks/branch-guard-notice.js`, sólo en una máquina que declara `paths.maintainers`. Se apaga con `TYCON_MAINTAINERS_SYNC=0`.
+
+**Dónde se prueba:** `scripts/tests/maintainers-sync.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmaintainers-syncjs--el-arranque-pone-al-día-el-clon-de-mantenimiento)
 
 ## guides/response-style.md
 
-El porqué del bloque de estilo de respuesta que se carga en cada sesión (`claude-md-blocks/response-style.md`): la regla madre completa con su plantilla de avance, por qué el detalle tiene un destino obligatorio, por qué el reporte de un subagente también es una respuesta, el medidor en detalle (por qué cuenta caracteres y no líneas, por qué no bloquea, umbrales, opt-out), y **qué quedó en el bloque a propósito** para que la próxima poda no lo saque. Nació de la poda del 2026-09-03: el bloque pesaba 17.034 bytes —el 36% del `CLAUDE.md` que cada máquina carga en cada sesión— y bajó a 6.270 sin perder una regla (el `CLAUDE.md` completo, de 46.706 a ≈35.942, −23%). 🔴 Una poda verifica que cada frase que saca del bloque esté en su destino: sin el objetivo de ~10 líneas, el único número que queda es el umbral del medidor (13), y el objetivo sube sin que nadie lo decida. Tras esa poda el bloque más pesado pasó a ser el de ADO (`ado-runs-list-lag.md`), y el 2026-09-06 se le aplicó el mismo patrón: 9.979 → 4.134 bytes (ver la entrada de `guides/integrations/ado-cola-y-listados.md`).
+**Qué es:** El porqué del bloque de estilo de respuesta (`claude-md-blocks/response-style.md`) que se carga en cada sesión.
+
+**Por qué existe:** Explica la regla madre, el destino obligatorio del detalle y el medidor, y deja escrito qué se dejó en el bloque a propósito para que una poda futura no lo saque.
+
+**Quién la usa:** Quien poda o edita el bloque de estilo, y el medidor de respuestas.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesresponse-stylemd)
 
 ## engram-version
 
-*(engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-engram-version.ps1`)*
+_engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-engram-version.ps1`_
 
-Mantiene a todo el equipo en la **misma** versión de engram: la anotada en `engram-version`, que la decide una persona. **Por qué**: las memorias de `.engram/` viajan por git; si una máquina corre una versión que escribe otro formato, el resto no las lee y **no da error** (`sync --import` dice "no new chunks"). Lo que hace falta no es "todos en la última", es "todos en la misma". Tres comportamientos: **atrasado** → en macOS/Linux **actualiza solo** a la versión del equipo (≠ "a la última": el juicio queda en el commit del número, la convergencia es mecánica); **adelantado** → avisa, nunca hace downgrade; **salió una más nueva que la del equipo** → avisa 1 vez cada 7 días, porque un aviso en cada arranque se vuelve ruido que se ignora. El update automático corre sólo si la versión difiere (casi nunca) y elige el método por lo que hay instalado: **`go install ...@vX.Y.Z`** si engram vive en el bin de Go (el método del equipo en Windows), **`brew upgrade gentleman-programming/tap/engram`** si es la fórmula de Homebrew, y aviso manual con cualquier otro setup. 🔴 **Gotcha de Mac (2026-07-25)**: upstream tuvo un *cask* además de la fórmula y lo **abandonó clavado en la v1.0.0**. `brew upgrade --cask engram` no falla — simplemente nunca sube de versión, y `brew outdated` dice que está todo al día: una máquina queda meses en una versión vieja creyendo estar actualizada. El script detecta esa instalación vieja y **hace la migración solo** (`brew uninstall --cask` + `brew install` de la fórmula) en vez de intentar un upgrade que no puede funcionar. Es la única rama que desinstala algo, así que va con red: **pre-chequea que la fórmula esté disponible ANTES de desinstalar** (si no lo puede verificar, no toca nada), y si aun así queda a medias avisa a los gritos con el comando exacto de recuperación — y **sigue avisando en cada arranque** mientras engram no esté, porque un dev sin engram pierde memoria sin enterarse. **Windows quedó con el camino más preciso**: `go install @vX.Y.Z` instala la versión EXACTA, mientras que Homebrew siempre pone la última y por eso no puede acertarle a una versión anterior a la última — si eso pasa, el script lo dice y sugiere el `go install`. Si un intento deja una versión distinta a la pedida, **no se reintenta** hasta que la versión del equipo cambie (si no, correría un upgrade lento en cada arranque sin llegar nunca). Cambiar la versión del equipo = editar `engram-version` y commitear. Opt-outs: `TYCON_NO_ENGRAM_VERSION_CHECK=1` (todo) · `TYCON_ENGRAM_AUTO_UPGRADE=0` (deja el aviso, saca el update). 🔴 **Gotcha real**: el comando que imprime el propio engram (`brew upgrade engram`) resuelve a la **fórmula**, que es otro paquete y suele estar sin instalar — el binario se distribuye como **cask**, así que va `brew update && brew upgrade --cask engram`. Fail-open total, opt-out `TYCON_NO_ENGRAM_VERSION_CHECK=1`. Lo invoca `install-tycon-hooks.sh`.
+**Qué es:** Chequeo que mantiene a todo el equipo en la misma versión de engram, la anotada en `engram-version`.
+
+**Por qué existe:** Si una máquina corre otra versión, escribe un formato que el resto no lee y no da error. Atrasada actualiza sola, adelantada avisa, y si hay una más nueva avisa una vez por semana.
+
+**Quién la usa:** `install-tycon-hooks.sh`, en cada arranque.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#engram-version)
 
 ## scripts/setup/check-engram-project.sh
 
-El nombre de proyecto de engram tiene que ser UNO por repo, y vive en DOS archivos que nadie obliga a coincidir: `.engram/config.json → project_name` (lo usa la sesión) y `.engram-project` (lo usa el hook de commit). Cuando desacuerdan la falla es silenciosa — lo guardado cae en un cajón y lo buscado mira otro, y "sin resultados" se lee como "no hay historia". Medido (2026-08-25): los 6 repos de un producto, días después de consolidar el nombre, seguían sincronizando cada commit bajo los nombres viejos. Corre en cada `SessionStart` desde `install-tycon-hooks.sh`, AVISA (nunca bloquea), silencioso si coinciden o el repo no usa engram; `--strict` sale 1 (para gates); opt-out `TYCON_NO_ENGRAM_PROJECT_CHECK=1`. Red: `scripts/tests/engram-project-check.test.sh` (suite diaria).
+**Qué es:** Chequeo de que `.engram/config.json` y `.engram-project` declaran el mismo nombre de proyecto de engram.
+
+**Por qué existe:** Cuando los dos archivos difieren, lo guardado y lo buscado caen en cajones distintos y la falla es silenciosa.
+
+**Quién la usa:** El hook de arranque de sesión, instalado por `install-tycon-hooks.sh`. Avisa, nunca bloquea; con `--strict` sale 1.
+
+**Dónde se prueba:** `scripts/tests/engram-project-check.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupcheck-engram-projectsh)
 
 ## scripts/setup/install-effects.json
 
-La lista declarada de lo que la instalación cambia en la máquina y en cómo trabaja el asistente (2026-10-03). Por qué: escrita a mano, la portada presentaba como completa una lista de «qué escribe en tu máquina» a la que le faltaban dos ajustes de `settings.json`, los comandos copiados, un barrido diario de los repos vecinos y lo que queda guardado bajo `~/.claude/`; y que los tres bloques que cambian cómo contesta el asistente en todos los proyectos salían como «bloques entre sus marcadores». La portada, el cierre de `install` y `doctor` eran textos sueltos que nadie cruzaba con el instalador. Una entrada por hook, bloque, ajuste, pieza y tarea que corre sola, con `does` (qué cambia para la persona), `blocks`, `when`, `switch`, `network`, `stores`, `windows` y `front_page`. La leen las portadas (por su prueba), el cierre de `harness.js install` y el plan. Red: `scripts/tests/install-effects.test.js` (el cruce con el instalador en los dos sentidos —hooks, bloques, ajustes, piezas, lanzamientos de fondo y sus pasos, `windows` contra el `.ps1`, `stores` contra el script de cada hook y contra `uninstall`—, con un espejo rojo por regla) y `effectProblems` en `scripts/setup/harness/managed.js` (forma y vocabulario). Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«Lo que la instalación cambia, declarado».
+**Qué es:** La lista declarada de lo que la instalación cambia en la máquina y en cómo trabaja el asistente: `scripts/setup/install-effects.json`.
+
+**Por qué existe:** Escrita a mano, la portada presentaba como completa una lista a la que le faltaban cosas. Ahora cada hook, bloque, ajuste, pieza y tarea tiene una entrada con lo que cambia para la persona.
+
+**Quién la usa:** Las portadas, el cierre de `harness.js install`, el plan y `doctor`.
+
+**Dónde se prueba:** `scripts/tests/install-effects.test.js`
+
+**Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupinstall-effectsjson)
 
 ## scripts/setup/harness/plan.js y prompt.js
 
-El plan que `install` muestra antes de escribir, y la única pregunta del programa (2026-10-03). Por qué: `install` cambia cómo contesta el asistente en todos los proyectos de la persona, así que nada se escribe sin decírselo antes y sin su conformidad. `plan.js` junta el plan del aplicador (`install-tycon-hooks.sh --check --plan-json`), las piezas del propio programa y la lista de efectos, y lo dice en ocho secciones (escribe · cambia en cómo trabaja tu asistente · corre solo · red · guarda en disco · no toca · copia de respaldo · quita), sin nombres de implementación; también la diferencia de comportamiento que `update` muestra antes de preguntar. `prompt.js`: «hay terminal» es `isTTY` y nada más; sí es `s`/`si`/`sí`/`y`/`yes` y todo lo demás es no; una terminal sin nada escrito todavía se espera (una lectura sin bloqueo dice EAGAIN y se tomaría como «no»: lo cuida la prueba con la respuesta demorada). Red: `scripts/tests/harness-prompt.test.js`, `harness-plan.test.js` (datos puros, también con la lista de efectos real) y `harness-plan.test.sh` (el aplicador real sin escribir nada, el plan contra lo que `install --yes` deja, las salidas sin conformidad con la HOME igual por hash, el candado). Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«El plan antes de escribir».
+**Qué es:** `plan.js` arma el plan que `install` muestra antes de escribir; `prompt.js` hace la única pregunta del programa.
+
+**Por qué existe:** `install` cambia cómo contesta el asistente en todos los proyectos, así que nada se escribe sin decirlo antes y sin conformidad de la persona.
+
+**Quién la usa:** `harness.js install` y `update`.
+
+**Dónde se prueba:** `scripts/tests/harness-prompt.test.js`, `scripts/tests/harness-plan.test.js` y `scripts/tests/harness-plan.test.sh`
+
+**Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessplanjs-y-promptjs)
 
 ## scripts/setup/harness/profile.js
 
-El perfil de instalación: `minimal` o `full` (2026-10-03). Por qué: la instalación traía todo o nada
-—los frenos, los tres bloques que cambian cómo contesta el
-asistente en todos los proyectos, los dos ajustes de Claude Code, los hooks de git y las tareas de fondo—, y quien
-viene de afuera tiene que poder elegir. Qué trae cada perfil lo dice `install-effects.json` (`profiles`), y lo
-obedecen el aplicador (`.sh` y `.ps1`), el sync de bloques (`<!-- requires-profile: full -->`) y las piezas compartidas.
-`profile.js` es lo que `harness.js` necesita para elegirlo y cambiarlo: cuál vale (`install.profile`: variable ›
-`~/.claude/tycon.json` › perfil del equipo; sin valor es `full`; roto no es `full`), cómo se dice, si `--profile`
-contradice a su variable, y qué se quita al cambiar de perfil (lo registrado que el reporte del perfil nuevo ya no trae,
-con `removePieces`: la mecánica de la vuelta atrás). La clave la escribe `setKey` de `scripts/lib/tycon-config.js`, que
-avisa si el freno de producción instalado no conoce la sección. Red: `scripts/tests/harness-profile.test.sh` (el
-aplicador real en minimal y en full, rota, la variable que manda, `install --profile`, el cambio de perfil por opción y por
-archivo, los inválidos, y el perfil del equipo contra el aplicador anterior), `tycon-config.test.js` (T29,
-T30), `claude-md-blocks.test.sh` (T34), `installer-ps1.test.sh` (sección w) y `harness-doctor.test.sh` (T38). Detalle:
-`guides/maintaining/mecanismo-de-instalacion.md` §«Los perfiles».
+**Qué es:** El perfil de instalación, `minimal` o `full`, y cómo se elige y se cambia.
+
+**Por qué existe:** La instalación traía todo o nada, y quien viene de afuera tiene que poder elegir. `install-effects.json` dice qué trae cada perfil.
+
+**Quién la usa:** `harness.js`, el aplicador (`.sh` y `.ps1`) y el sync de bloques.
+
+**Dónde se prueba:** `scripts/tests/harness-profile.test.sh`
+
+**Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
 
 ## scripts/setup/harness/questions.js
 
-Las preguntas de la instalación. Por qué: con los perfiles, quien no decía nada recibía
-`full`, y las integraciones y el paquete del stack se prendían editando `~/.claude/tycon.json` a mano:
-la persona elige al instalar. En una primera instalación, `install` pregunta el perfil **sin valor por defecto** (Enter
-vuelve a preguntar; a la tercera, o con fin de entrada, sale 2 sin escribir), qué integraciones prender (sólo las que
-`install-effects.json` ofrece en `integrations`, ninguna marcada) y si el paquete del stack va en todos los repos. Sin
-terminal no pregunta: sin perfil sale 2, también con `--yes` (`--yes` acepta el plan, no elige). Las tres se contestan
-también con `--profile`, `--integrations` y `--packs`. Lo contestado se escribe recién después de la conformidad, con
-`setKey`; una máquina cuyo perfil fija la configuración (el perfil del equipo, el archivo, una variable) no se pregunta.
-`questions.js` tiene el texto y la lectura de cada respuesta (sin mirar la plataforma); cuándo se pregunta lo decide
-`installQuestions` en `harness.js`. Va con `tycon-config.js set` (lo que antes se editaba a mano) y con `doctor`, que
-dice el perfil, las integraciones, el paquete y los frenos registrados. Red: `scripts/tests/harness-questions.test.sh`
-(T43 a T46, en una terminal de juguete), `harness-prompt.test.js` (las piezas y T52), `tycon-config.test.js` (T47),
-`harness-channel.test.sh` (T48) y `harness-doctor.test.sh` (T49). Detalle: `guides/maintaining/mecanismo-de-instalacion.md`
-§«Las preguntas».
+**Qué es:** Las preguntas de la instalación: perfil, integraciones y paquete del stack.
+
+**Por qué existe:** Sin ellas, quien no decía nada recibía `full` y las integraciones se prendían editando `~/.claude/tycon.json` a mano. Ahora la persona elige al instalar.
+
+**Quién la usa:** `installQuestions` en `harness.js`, en una primera instalación con terminal.
+
+**Dónde se prueba:** `scripts/tests/harness-questions.test.sh`
+
+**Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessquestionsjs)
 
 ## scripts/publishing/public-files/scripts/setup/get-harness.sh y get-harness.ps1
 
-Los guiones de entrada de la portada pública: se bajan, se leen y se corren —tres líneas a la vista por sistema, nunca una tubería hacia un shell, que el propio freno de comandos bloquea con `SUP-C1`—. Por qué: para entrar había que saber elegir una carpeta y leer un error de git; otros instaladores lo resuelven con una línea que baja un guion y lo corre con tubería, y eso el arnés no lo puede pedir. Revisan los requisitos (git, node con el piso de `harness.js`, bash y python3; en Windows, PowerShell 7) y, si falta algo, sugieren el comando sin correrlo; clonan el repo entero en `~/<repo>` (o `--dir`), usan tal cual un clon propio que ya está y no tocan una carpeta ajena; y terminan en `harness.js install` con la entrada estándar intacta, para que las preguntas de la instalación le lleguen a la persona. Viven entre los papeles con la dirección por marcadores y llegan a `scripts/setup/` de la copia por dos sintéticos: en el interno no existen ahí. Red: `scripts/tests/get-harness.test.sh` (el de bash, por ejecución, sin red), la sección de `get-harness.ps1` en `scripts/tests/installer-ps1.test.sh` (parseo, BOM y un PATH de mentira, con `pwsh`), `Papers_ScriptBlock_ThreeVisibleLines_NoPipeToShell_GitStillRequired` en la suite de los papeles públicos y `Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo` en `scripts/tests/export.test.js`. Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«Los guiones de entrada». **Sin el tope de la API**: sin permiso guardado, ni estos guiones ni la versión bajada le piden nada a la API de GitHub para mirar o bajar —leen las ramas de `info/refs` (sin git), el número del raw de cada commit y el comprimido de codeload—; a la API le queda una consulta por actualización, la que verifica lo bajado. Por qué: sin permiso esa API tiene un tope de 60 consultas por hora por conexión, aunque el repo sea público, y el 2026-10-14 dos máquinas que compartían conexión se quedaron sin actualizar dos veces en dos horas. Al tope, la versión nueva espera la hora que dice GitHub, se avisa una vez y no cuenta como fallo; el permiso queda para los repos privados. Red: `scripts/tests/release-api-count.test.sh` (los pedidos a la API contados por operación, y con permiso iguales a la línea de base) y el escenario `no-clone` de la 182 contra el GitHub real. Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«La versión bajada, sin git».
+**Qué es:** Los guiones `get-harness.sh` y `get-harness.ps1`, la puerta de entrada de la portada pública.
+
+**Por qué existe:** Para entrar había que saber elegir una carpeta y leer un error de git. Se bajan, se leen y se corren, nunca con tubería a un shell. Revisan requisitos, clonan el repo y terminan en `harness.js install`.
+
+**Quién la usa:** Quien instala el arnés por primera vez.
+
+**Dónde se prueba:** `scripts/tests/get-harness.test.sh`
+
+**Guía:** [mecanismo-de-instalacion.md](maintaining/mecanismo-de-instalacion.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingpublic-filesscriptssetupget-harnesssh-y-get-harnessps1)
 
 ## scripts/tools/tycon-backfill-followups.js
 
-Script Node 0-deps que sincroniza back-links bidireccionales `followed_up_by:` en stories Mary+GOLD basándose en el `followup_of:` declarado por las hijas (convención §1.2 de `story-format.md`). 3 modos: (a) dry-run default — reporta missing back-links + orphans + desync + types inválidos; (b) `--apply` — edita los frontmatters de las padres in-place (idempotente); (c) `--render-table --story <id>` — imprime tabla markdown con la cascada de follow-ups de una story (para pegar en el body de la padre o entregar al cliente). Complementa al hook `tycon-story-followup-link` (que previene drift al crear) y al validator `tycon-story-validator` regla VAL-W10 (que lo atrapa retroactivamente). Por qué: una story firmada puede juntar follow-ups en otra épica sin un back-link visible desde la padre. 🔴 **Desde 2026-08-15 NO tiene buscador propio**: las stories las descubre `lib/story-discovery.js` del skill `tycon-pipeline` (referencia-por-path, override `TYCON_SKILLS_DIR`, fail-open ruidoso al escaneo plano si el skill no está). Un `readdir` PLANO, contra un repo con las stories en una subcarpeta de `specs/`, avisa "0 stories Mary+GOLD encontradas"; y con dos buscadores en repos distintos, arreglar uno deja el otro roto. Red que lo sostiene: `scripts/tests/backfill-discovery.test.js`, corrido 1 vez por día desde `install-tycon-hooks.sh`.
+**Qué es:** Script Node sin dependencias que sincroniza los back-links `followed_up_by:` de las stories padre a partir del `followup_of:` de las hijas. Tiene modo de ensayo, `--apply` y `--render-table`.
+
+**Por qué existe:** Una story firmada puede juntar follow-ups en otra épica sin un back-link visible desde la padre.
+
+**Quién la usa:** Quien mantiene stories; complementa al hook `tycon-story-followup-link` y a la regla del validador de stories.
+
+**Dónde se prueba:** `scripts/tests/backfill-discovery.test.js`
+
+**Guía:** [story-format.md](../story-format.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolstycon-backfill-followupsjs)
 
 ## scripts/lib/lint-story-frontmatter.js
 
-Script Node 0-deps que verifica que el frontmatter de cada story sea **legible por el harness**. Chequea (a) que el frontmatter cierre con `---`, (b) que `story`/`epic`/`status` se puedan leer con **el mismo regex** que usan las tools (no con un parser distinto — si el lint pasa, las tools la ven), y (c) bonus si hay PyYAML, que parsee como YAML (fail-open si no está). Adopción **sin copiar el script**: vive solo acá y los repos lo referencian por path desde su `.githooks/pre-commit` (snippet exacto en la cabecera del script, con override `TYCON_GUIDES_DIR` y fail-open ruidoso si falta). Se puede porque el onboarding clona este repo en una ruta fija y el `SessionStart` le hace `git pull` en cada arranque, y porque un pre-commit corre siempre en local, nunca en CI. Corre solo sobre las stories del commit. **Por qué importa**: cuando el parseo del frontmatter falla, las tools no dan error — saltean la story EN SILENCIO, y desaparece del validator, del backfill de back-links, de los scripts de status y del hook de DoD. Medido (2026-07-24): 4 stories invisibles ~2 meses (una tapando una deuda de evidencia DoD), + 2 rotas por comillas dobles en el comentario inline del `status`. Convención y anti-patrón documentados en `story-format.md` §1.0. 🔴 **Desde 2026-08-23 decide por IDENTIDAD DECLARADA** (`story:` dentro del frontmatter) y no por `story:`/`epic:`/`status:` como antes: medido, el criterio viejo habría **rechazado 331 de los 1608 `.md` de un repo del equipo** — los documentos de planning (PRD, arquitectura, épicos, briefs, reportes) declaran `status:` y viven en la MISMA carpeta que las stories, así que los agarraban las dos reglas. Un gate que rechaza commits legítimos se apaga, y se lleva puestos los casos donde sí importaba. Lo que **no** se usa como requisito, a propósito: el nombre del archivo y los headers del cuerpo — 463 stories reales se llaman `story-N.M-slug.md` y 62 escriben `## Acceptance criteria` en minúscula, así que exigir cualquiera de los dos dejaría esas stories afuera del lint (story rota, ✅ OK, exit 0). La zona donde se busca la identidad **se agranda** cuando el frontmatter no cierra: la rotura no puede esconder la evidencia. Y nada se descarta en silencio — lo no linteado se imprime. Criterio elegido por un panel de 3 propuestas + 9 escépticos contra 12 repos reales; red: `scripts/tests/lint-story-detector.test.sh`, cuyos casos positivos son los contraejemplos de los criterios descartados.
+**Qué es:** Script Node sin dependencias que verifica que el frontmatter de cada story sea legible por el arnés, con el mismo criterio que usan las demás herramientas.
+
+**Por qué existe:** Cuando el frontmatter no se puede leer, las herramientas saltean la story en silencio. Decide por la identidad declarada, no por el nombre del archivo.
+
+**Quién la usa:** El `.githooks/pre-commit` de cada repo, sobre las stories del commit.
+
+**Dónde se prueba:** `scripts/tests/lint-story-detector.test.sh`
+
+**Guía:** [story-format.md](../story-format.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsliblint-story-frontmatterjs)
 
 ## guides/wiki-topics.md
 
-*(guides/wiki-topics.md + scripts/tools/lint-wiki.sh)*
+_guides/wiki-topics.md + scripts/tools/lint-wiki.sh_
 
-Patrón Karpathy "wiki por temas": resumen vivo de un repo de specs organizado por tema (`specs/wiki/topics/<slug>.md`), con alineación bidireccional story↔topic enforada por `lint-wiki.sh` + pre-commit hook. La versión de la guía es la **performante**: índice en 1 pasada `awk` (O(stories), bash-3.2-safe) — la ingenua (`grep -lE` por cada related_id) era O(topics×ids×stories) y colgaba el pre-commit con ~270 stories. Opt-in por repo, **sin copiar el script**: vive solo acá y los repos lo referencian por path desde su `.githooks/pre-commit` (resuelve el `specs/` desde la raíz del repo git donde corre; override por argumento o env `SPECS_DIR`). Promovido de CeiboProject 2026-06-27 tras el fix del cuelgue; unificado a referencia-por-path el 2026-07-24 (antes se copiaba a cada repo y había que sincronizar las copias a mano).
+**Qué es:** Patrón de wiki por temas: un resumen vivo del repo de specs, con alineación en ambos sentidos entre story y tema, controlada por `lint-wiki.sh`.
+
+**Por qué existe:** Mantiene el resumen del repo alineado con sus stories sin copiar el script a cada repo.
+
+**Quién la usa:** El `.githooks/pre-commit` de los repos de specs que lo adoptan.
+
+**Dónde se prueba:** sin suite propia
+
+**Guía:** [wiki-topics.md](wiki-topics.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guideswiki-topicsmd)
 
 ## scripts/hooks/engram-pre-commit.sh
 
-Hook `PreToolUse` matcher=`Bash|PowerShell` que, antes de `git commit`, corre `engram sync --project <name>` y stagea `.engram/` para que los chunks de memoria persistente viajen con el commit — automatiza la regla team-wide de `guides/integrations/engram-workflow.md` ("el commit de `.engram/` es parte del workflow, no un detalle opcional"). **Instalado por default** vía `install-tycon-hooks.sh` desde 2026-07-13 (opt-out: `TYCON_ENGRAM_HOOK=0`); el instalador además migra la entry legacy que apuntaba a `~/.claude/hooks/`. Doble freno: **opt-in por repo** (solo actúa si la raíz tiene un archivo `.engram-project` con el project name) + fail-open total (no bloquea el commit si engram no está; `jq` no hace falta: sin él lee con `node`, y sin ninguno de los dos lo dice y sale `1`, que no frena). Binario de engram autodetectado vía PATH (override con env `ENGRAM_BIN=`). Debug con `ENGRAM_HOOK_DEBUG=1` → `/tmp/engram-hook.log`. 🔴 **Desde el 2026-09-16 en `git push` no hace nada**: sincronizar ahí dejaba el índice de memoria modificado sin commit, el `pull --autostash` del arranque siguiente chocaba en la lista de chunks y la limpieza del conflicto descartaba las entradas nuevas: medido, **5 chunks sin entrada en el índice, 3 de ellos ya publicados en `main`** —memoria que las otras máquinas no importan y que ningún error delata—. Lo pendiente se exporta y se commitea junto en el commit siguiente: se pierde latencia, no memoria. El instalador retira además la variante inline escrita a mano de ese hook, que hacía lo mismo por duplicado. 🔴 **Y desde el 2026-09-17 CRUZA el índice contra sus archivos**: si este commit está por perder una entrada que `HEAD` declara, o por meter un archivo de memoria sin declararlo, sale `2` y nombra el comando de reparación. El criterio no vive acá: lo decide `scripts/lib/manifest-engram.js`, el mismo que usan el aviso diario y el portón de CI.
+**Qué es:** Hook `PreToolUse` que, antes de `git commit`, corre `engram sync --project <name>` y agrega `.engram/` al commit.
+
+**Por qué existe:** Para que los chunks de memoria viajen con el commit. Sólo actúa si el repo tiene `.engram-project`, y falla abierto. En `git push` no hace nada. Cruza el índice contra sus archivos con `scripts/lib/manifest-engram.js`.
+
+**Quién la usa:** El instalador `install-tycon-hooks.sh` lo registra; corre solo ante cada commit.
+
+**Dónde se prueba:** sin suite propia
+
+**Guía:** [engram-workflow.md](integrations/engram-workflow.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshooksengram-pre-commitsh)
 
 ## scripts/lib/manifest-engram.js
 
-**El criterio único: ¿el índice de memoria declara todos sus archivos?** (2026-09-17). La memoria del equipo viaja por git en dos piezas —los archivos (`.engram/chunks/<id>.jsonl.gz`) y el índice (`.engram/manifest.json`)— y `engram sync --import` lee **el índice**: un archivo sin entrada **no existe para las demás máquinas y no da error**, con el síntoma tranquilizador `no new chunks`. Por qué: con dos sesiones sobre el mismo checkout, un commit puede entrar a `main` con entradas de menos (medido: **205 entradas para 210 archivos**; las huérfanas las declaró la OTRA sesión, y el escritor de engram agrega al final del archivo que leyó), y **una entrada perdida no vuelve sola** (verificado: ni `sync`, ni `--import`, ni tener el archivo en disco la recuperan). Medición previa de 20 repos: 18 sanos, 1 sin sincronizar y **1 en deriva desde hacía tres semanas, con 18 recuerdos de otro dev invisibles**. **Tres consumidores, un solo archivo** —el hook del commit, el audit/aviso diario y el chequeo 5 del portón de CI—: escrito tres veces, la copia que quede vieja miente en silencio. **Qué frena**: sólo lo que ESE cambio rompe (entradas que la referencia declaraba y el índice nuevo ya no, o archivos nuevos sin entrada); lo heredado y lo no medible **avisan** — un freno que muerde por algo que rompió otro se apaga en una semana. **La reparación es un comando, no un efecto secundario**: rescata la entrada **exacta** de la historia de git (todas las referencias: también el otro lado de un merge y las ramas sin mergear) y sólo reconstruye desde el propio archivo si nadie la tuvo nunca; **nunca inventa, nunca borra, no reordena**, y escribe con el formato de engram **byte a byte** (sin salto final — el `--reindex` viejo lo agregaba y cada sync posterior lo sacaba, ensuciando el árbol en cada commit). Sale `0` sano · `1` deriva · `3` no medido, **nunca 2** (ése es el código con el que los hooks bloquean). Red: su suite (37 comprobaciones, con el índice REAL de este repo como fixture del round-trip) + 10 casos del banco en `04-rebuild-engram.json` + 5 en el `--selftest` del portón.
+**Qué es:** `scripts/lib/manifest-engram.js`, el criterio único de si el índice de memoria declara todos sus archivos.
+
+**Por qué existe:** Un archivo de memoria sin entrada en el índice no existe para las demás máquinas y no da error. Tiene un comando de reparación que rescata la entrada exacta de la historia de git.
+
+**Quién la usa:** El hook del commit, el aviso diario y el chequeo del portón de CI.
+
+**Dónde se prueba:** su propia suite y el caso `04-rebuild-engram.json` del banco
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptslibmanifest-engramjs)
 
 ## guides/ci-gate.md
 
-*(guides/ci-gate.md + scripts/ci/tycon-ci-gate.js)*
+_guides/ci-gate.md + scripts/ci/tycon-ci-gate.js_
 
-Los controles del arnés que SÍ pueden correr del lado del servidor. Nace de una medición del 2026-08-25: **31 pipelines de CI en los repos del equipo y NINGUNO corre un control del arnés**, o sea que toda la protección es **condicional a la máquina** — alguien sin el arnés instalado, un merge hecho desde la web de Azure DevOps, o un repo sin `core.hooksPath` global commitean sin ningún control. Chequea únicamente lo que se decide **con el repo y nada más**: frontmatter de story legible, evidencia de cierre en `.advisors/dod-runtime/`, y constancia de que los revisores auditaron la story (`.advisors/pipeline-runs/`). Lo que necesita el estado de la sesión NO corre acá, y fingir que sí sería peor que no tenerlo. 🔴 El detector de "esto es una story" **se importa del lint local**, no se reescribe — con un detector propio dio un falso positivo. Adoptado en los **cinco productos**, cada uno sobre su repo de especificaciones. 🔴 **Y desde el 2026-09-04 el mismo control corre también ANTES del commit** (`--staged`, en el `.githooks/pre-commit` del repo): el freno local equivalente vive en un hook de Claude Code, así que un commit hecho desde la terminal, desde el botón de VS Code, desde Codex o desde la web de Azure DevOps se lo saltea **sin enterarse** — ni error, ni rastro. Así una story entra declarándose `review` con su código sin pushear a ningún repo, y el rojo llega recién al pull request. Lo que ya está commiteado **no se vuelve a reclamar** (un freno que muerde en cada commit por una story cerrada hace semanas se apaga en una semana), y `--staged` ignora `--base` a propósito. El snippet de ADO, el del pre-commit y las dos trampas de la adopción (el `--base` correcto, y entrar avisando antes que bloqueando) están en la guía. 🔴 **Y desde el 2026-09-05 la evidencia NACE en el repo de la story, aunque el código viva en otro**: cuando las stories viven en un repo y el código en otros, el pipeline dejaba la evidencia donde corría y este portón —que sólo mira su checkout— daba rojo en cada PR que cerraba una story. Medido: los cinco repos de specs tenían el mismo muro, y para `done` un segundo (el registro de revisores no viajaba en ninguno). Ahora `pipeline.js evidence-dir` resuelve el destino, el roster y los hallazgos se proyectan solos al repo de la story, el `.gitignore` canónico los deja viajar, y el portón dejó de aceptar la matriz o el self-audit como evidencia. 🔴 **Y desde el 2026-09-22 el firmante de un hallazgo se ELIGE, no se tipea**: el nombre del revisor se escribía en DOS lados con dos criterios —el registro lo proyecta una máquina desde el rastro de subagentes (`tycon-silent-failure-hunter`, pelado) y el firmante de cada hallazgo lo escribía el orquestador con la vuelta o el modelo pegados (`tycon-silent-failure-hunter (iter <n>)`)— y el cruce comparaba esos dos textos letra por letra. Que coincidieran era suerte: medido en un pull request, frenó **cinco stories sanas y cuatro de los cinco hallazgos eran del propio control**. Ahora el comando que escribe los hallazgos valida el firmante contra los revisores de esa corrida y guarda el id pelado, con la anotación mudada a campos propios. **Y el hallazgo dice de qué TRAMO viene**: el registro cubre la ronda de revisión y los hallazgos cubren toda la corrida, así que uno del primer paso (la validación de la story) caía siempre como «revisor ausente» — la ventana NO se ensancha (adentro está el agente que implementa) sino que se agrega la lista que faltaba, y el cruce compara tramo contra tramo. El cruce corre además **en la máquina**, que era la única regla del portón que no tenía contraparte local: se sabía recién con el pull request abierto. Avisa y no frena en los dos lados; frena en los dos con `TYCON_ROSTER_NAMES=block`. El recorte del paréntesis se conserva con su razón escrita: 54 hallazgos ya commiteados lo necesitan.
+**Qué es:** El portón de CI: los controles del arnés que se pueden decidir con el repo y nada más.
+
+**Por qué existe:** Los controles locales dependen de la máquina; un commit desde la web o sin el arnés los saltea. Chequea frontmatter, evidencia de cierre y constancia de revisores.
+
+**Quién la usa:** Los pipelines de los repos de specs y su `.githooks/pre-commit` (con `--staged`).
+
+**Dónde se prueba:** sin suite propia
+
+**Guía:** [ci-gate.md](ci-gate.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesci-gatemd)
 
 ## scripts/hooks/lane-llm-notice.js
 
-El medidor del clasificador por modelo del portón de carril (2026-08-27; el clasificador es el **JUEZ** del `adhoc set`, no el desempate — el regex `detectLane` se borró; la medición y los eventos son los mismos, más el veto `ADHOC_LLM_DENIED_LANE`). Contexto: el portón decide por expresiones regulares sobre lo que escribió el dev — rápido, gratis y siempre igual— pero el castellano no se deja regexear: en una sola tarde se midieron dos clases enteras de fuga (la negación no adyacente —*"no quiero saltear el pipeline"* leído como *"salteemos el pipeline"*— y los sinónimos de "ajuste chico" que ningún patrón reconocía), y cada fuga termina con la persona **frenada sin saber qué contestar**. Entonces, **sólo** en los dos puntos donde el camino mecánico ya decidió denegar —nunca en cada prompt, que sería latencia y costo en cada *"dale"*— se le pregunta a Haiku si el USER autorizó el atajo, leyendo **sus prompts reales** (`lane.recentPrompts`, que sólo escribe el hook de prompt; el agente no puede inyectar ahí, y por eso el clasificador contesta *¿qué autorizó el humano?* y no *¿qué le conviene al agente?*). 🔴 **Este archivo no es el clasificador: es el que lo vigila.** La pieza nació sin medidor, y una que decide sola y deja su rastro en un archivo que nadie lee es, en la práctica, una pieza sin verificar — todo el resto del arnés funciona porque cada control tiene otro que lo mira. Grita al arranque **sólo** cuando hubo overrides nuevos (el modelo abrió lo que el freno había cerrado: el único evento que merece revisión humana, porque un override mal decidido es código que se saltó los revisores) y `--report` contesta la pregunta que decide el futuro de la pieza: ¿se llega al desempate?, ¿cuántas veces abre? **Si casi nunca se usa, el modelo sobra y se saca** — el medidor está escrito para poder concluir eso. Falla siempre hacia el comportamiento viejo: sin binario, apagado, timeout, respuesta ambigua o excepción → deniega igual que antes. Off: `TYCON_LANE_LLM=0` (el desempate) · `TYCON_LANE_LLM_NOTICE=0` (el aviso).
+**Qué es:** El medidor del clasificador por modelo del portón de carril, con `--report`.
+
+**Por qué existe:** El clasificador decide solo y deja su rastro en un archivo que nadie leería. Este medidor grita sólo cuando el modelo abrió lo que el freno había cerrado.
+
+**Quién la usa:** El hook de arranque y quien decide si el clasificador se queda. Se apaga con `TYCON_LANE_LLM_NOTICE=0`.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookslane-llm-noticejs)
 
 ## guides/maintaining/controls-bench.md
 
-*(guides/maintaining/controls-bench.md + scripts/controls-bench/)*
+_guides/maintaining/controls-bench.md + scripts/controls-bench/_
 
-Banco de pruebas de controles del arnés (2026-08-21): verifica que los ~20 hooks hacen lo que dicen, en Claude Code Y en Codex. Dos capas: `runner.js` (86 casos deterministas contra los scripts reales en sandbox, 3 tipos por control — debe-bloquear / no-debe-bloquear / debe-dejar-constancia, con "salió limpio sin constancia = falla" cableado) y `live-fire.js` (disparo REAL dentro de cada herramienta con hooks marcadores + canary de matcher-que-no-matchea + `--prove-detection` como autotest). Línea de base Claude commiteada (`baseline/claude.json`) con chequeo diario desde el instalador; reporte local en `.bench/` cobrado por `bench-notice.js` al arranque (grita solo en rojo). Lado Codex tras `TYCON_CODEX=1`. Regla que implementa: un control que hay que acordarse de invocar es un control que no corre — ahora los controles tienen su propio control. Suma además dos capas: `advisor-runner.js` (casos quirúrgicos de advisors contra el advisor REAL en ambas herramientas — veredicto por regla objetivo §2.2, N=3 con unanimidad, semanal tras `TYCON_CODEX=1`) y `live-fire-guard.js` (el safety-guard real frenando de verdad dentro de cada herramienta: se asserta el EFECTO — el commit no se crea). 🔴 **Desde 2026-08-31 el examen de advisors ya NO lo lanza el instalador** — ver la entrada de `periodic-exam.js`, justo abajo. 🔴 **Un test que pasa sólo en la máquina del autor no es un test (2026-09-05)**: corrido desde OTRA máquina, el banco dio cuatro rojos que en la del autor no existían — casos de `bench-notice` que copiaban al sandbox un archivo que requiere a un hermano (15 rojos falsos), un test del examen que exigía tener `codex` instalado, un autotest del encierro que exigía tener clonado un repo de producto, y una auditoría de silencio que acusaba un COMENTARIO que mencionaba `spawnSync('claude', …)`. Los cuatro se reproducen simulando esa máquina (sin `codex`, sin ese repo).
+**Qué es:** El banco de pruebas de los controles del arnés, en Claude Code y en Codex.
+
+**Por qué existe:** Un control que hay que acordarse de invocar no corre; los controles necesitan su propio control. Corre casos deterministas (`runner.js`) y disparo real (`live-fire.js`).
+
+**Quién la usa:** Quien mantiene el arnés; el instalador lo chequea a diario y `bench-notice.js` avisa al arranque.
+
+**Dónde se prueba:** `scripts/controls-bench/`
+
+**Guía:** [controls-bench.md](maintaining/controls-bench.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcontrols-benchmd)
 
 ## build/
 
-*(build/ + adapters/)*
+_build/ + adapters/_
 
-El generador de la migración Codex (2026-08-21): `build/generate.js` traduce advisors canónicos (`agents/*.md`) a config-overlays TOML de Codex (`adapters/codex/agents/*.toml`, desplegados como `$CODEX_HOME/<name>.config.toml` e invocados `codex exec -p <name>`); `build/equivalences.json` es LA tabla de nombres (modelos, eventos, permisos→sandbox — un solo archivo, categoría ② del inventario); `build/check.js` verifica frescura (pre-commit + diario vía instalador; desde 2026-08-23 lo corre TAMBIÉN el pre-commit de AgentSkills cuando un commit toca `agents/*.md` — quien cambie el contrato de salida de check.js tiene un segundo consumidor colgado). 🔴 **Desde 2026-08-25 son CUATRO controles, y el cuarto es el único que mira el disco**: `build/check-hook-coverage.js` censa `scripts/hooks/`, los `on-*`/`hook-*` del pipeline y los de clocki (**43 hooks** al 2026-08-28 — el número lo emite el propio comando, no se copia de acá) y exige casos en el banco. Los otros tres comparan contra listas escritas a mano — o sea que sólo encontraban las piezas que alguien ya se acordó de anotar, justo lo contrario del caso que la regla existe para atrapar; y el pre-commit **ni siquiera se disparaba al editar su propia lista de disparo**. Arrancó con **deuda declarada** (`scripts/controls-bench/hook-debt.json`, 9 entradas con motivo y fecha) y quedó en **0 esa misma tarde**: bloquear a todo el equipo el primer día es la vía rápida a que alguien apague el control. El archivo se deja (casi) vacío a propósito — es donde una pieza nueva declara su deuda: al 2026-09-06 tiene UNA, `advisor-liveness-on-change.js` (01-09), que no es un hook por stdin sino un ayudante del pre-commit y cuya tabla de decisión la cubre su propio `--selftest`. Una deuda sin motivo de verdad bloquea igual — una deuda sin motivo es un permiso. Un advisor entra al manifest CON sus casos en el banco (regla B2). Claude no tiene adapter: consume el canónico tal cual (ver `adapters/README.md`).
+**Qué es:** El generador de la migración a Codex: `build/generate.js` traduce los advisors canónicos a configuraciones de Codex.
+
+**Por qué existe:** Los advisors se escriben una vez y Codex los consume traducidos. `build/equivalences.json` es la única tabla de nombres.
+
+**Quién la usa:** El pre-commit del arnés y del repo de skills; `build/check.js` verifica la frescura y `build/check-hook-coverage.js` exige casos en el banco.
+
+**Dónde se prueba:** sin suite propia
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#build)
 
 ## guides/maintaining/codex-divergence-inventory.md
 
-El inventario pieza por pieza que hace ejecutable al plan anterior: cada hook, advisor, paso del pipeline, servidor MCP, guía y skill clasificado en **① envoltorio** (lo resuelve el traductor) · **② nombre** (lo resuelve una tabla de equivalencias, en un solo archivo) · **③ no existe** (hay que decidir: nivelar hacia abajo, sacarlo afuera, o **declarar** la asimetría — lo que no se acepta es que exista y no esté escrita). Hallazgos que cambiaron el plan: los nombres de las tools MCP cambian al dejar de venir por plugin y **rompen en silencio** · 14 de 20 hooks dependen de que stdout se inyecte como contexto, sin verificar · los 5 eventos que usamos y el bloqueo por exit 2 **sí** existen en Codex (los frenos duros son lo más portable) · la deuda de "criterio en prosa" está concentrada en **5 advisors**, no repartida en 28. Consultarlo **antes** de portar cualquier pieza concreta.
+**Qué es:** El inventario pieza por pieza de lo que cambia entre Claude Code y Codex: hooks, advisors, pasos, servidores MCP, guías y skills.
+
+**Por qué existe:** Clasifica cada pieza como envoltorio, nombre o inexistente, para que ninguna asimetría exista sin estar escrita.
+
+**Quién la usa:** Quien porta una pieza a Codex, antes de portarla.
+
+**Dónde se prueba:** sin suite propia
+
+**Guía:** [codex-divergence-inventory.md](maintaining/codex-divergence-inventory.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingcodex-divergence-inventorymd)
 
 ## scripts/publishing/detector.js
 
-*(scripts/publishing/ — 2026-09-26)*
+_scripts/publishing/_
 
-El detector de lo que no puede salir en una publicación del arnés como código abierto. Recorre una lista de archivos y frena si encuentra términos de la lista de denegación (clientes, personas, máquinas, hosts internos — una lista **privada**: nunca se publica y el detector no se escanea a sí mismo) o patrones genéricos (credenciales con formato conocido, variables `…_API_KEY=`/`…SECRET=` con valor, rutas de máquina de una persona, emails que no son de ejemplo, binarios que no puede leer). Sale 0 limpio, 1 con hallazgos, 2 si no pudo mirar — nunca «limpio» por no haber mirado. Los secretos salen enmascarados, así el informe se puede pegar. Las imágenes cuentan como «sin leer» a propósito: una captura puede mostrar datos de un cliente. Por qué: revisarlo a ojo antes de cada publicación no escala (medido el 2026-09-26: ~6.700 menciones de clientes y dos credenciales vivas). Línea base: 17.801 hallazgos en el arnés entero, 3.774 en lo que sería el núcleo. Pruebas: `scripts/tests/publishing-detector.test.js`. Lo usan el exportador y la CI del repo público.
+**Qué es:** El detector de lo que no puede salir en una publicación de código abierto: términos de la lista de denegación privada y patrones genéricos como credenciales, rutas de máquina y emails reales.
+
+**Por qué existe:** Revisarlo a ojo antes de cada publicación no escala. Sale 0 limpio, 1 con hallazgos, 2 si no pudo mirar.
+
+**Quién la usa:** El exportador, la CI del repo público y los frenos de publicación.
+
+**Dónde se prueba:** `scripts/tests/publishing-detector.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingdetectorjs)
 
 ## scripts/publishing/third-party-skills.json
 
-*(scripts/publishing/ + guides/maintaining/publicacion-espejo.md §«Las skills de terceros» — 2026-09-29)*
+_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
-El manifiesto de las skills de terceros: de quién es cada cosa versionada en agent-skills (`own`, `derived`, `third_party`) y, para lo ajeno, de dónde viene —una entrada por carpeta, con el repo de origen, el commit exacto y el hash de árbol de git de lo que tiene que quedar—. Lo ajeno se referencia, no se copia: la copia pública no puede llevarlo (cuatro de esas skills tienen licencia propietaria) y cada máquina tiene que seguir teniendo, carpeta por carpeta, el mismo contenido, medido por contenido y no por nombre. Tres piezas lo leen: `third-party-coverage.js` (sin red: cada ruta en un solo universo, ninguna declaración muerta, ningún enlace simbólico versionado, y el árbol de cada carpeta mientras siga en el repo; lo corre el pre-commit de agent-skills cuando un commit toca skills, así una skill de internet copiada sin declarar frena el día que se copia), `install-third-party.js` (el paso de `install-tycon-hooks.sh` y su gemelo `.ps1`: restituye desde la historia de git del clon sin red, o desde el origen verificando el árbol antes de escribir; nunca borra ni pisa lo que no escribió; temporal y renombre, cerrojo, tope de red de 20 s; apagado con `TYCON_THIRD_PARTY=0`, y lo dice; si el pull del retiro dejó agent-skills trabado por un archivo ajeno que el dev había modificado, lo destraba sin perder ese archivo) y `pipeline.js tooling-expected` (avisa si falta una skill que el pipeline invoca). El detector suma el patrón `foreign-license`. Medido: ~85 % de agent-skills era ajeno, casi todo sin su licencia en el árbol (2026-09-26); y contra los nueve orígenes, 71 de 73 carpetas idénticas a un commit de su origen, las otras dos subconjuntos (2026-09-28). Pruebas: `third-party-skills.test.js`, `install-third-party.test.sh`, `third-party-real.test.sh` (el manifiesto contra el agent-skills real) y `third-party-origin.test.sh` (nocturna, con red: cada entrada contra su origen; sin red, NO MEDIDO).
+**Qué es:** El manifiesto `third-party-skills.json` de las skills de terceros: de quién es cada carpeta y, para lo ajeno, repo de origen, commit y hash de árbol.
+
+**Por qué existe:** Lo ajeno se referencia y no se copia, porque la copia pública no puede llevarlo (algunas tienen licencia propietaria) y cada máquina debe tener el mismo contenido.
+
+**Quién la usa:** `third-party-coverage.js`, `install-third-party.js` (dentro de `install-tycon-hooks.sh`) y `pipeline.js tooling-expected`.
+
+**Dónde se prueba:** `third-party-skills.test.js`, `install-third-party.test.sh`, `third-party-real.test.sh` y `third-party-origin.test.sh`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingthird-party-skillsjson)
 
 ## scripts/publishing/export.js
 
-*(scripts/publishing/ + guides/maintaining/publicacion-espejo.md — 2026-09-27)*
+_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
-El exportador de la copia pública, con **espejo**: los repos internos siguen siendo la fuente y lo público es una copia que se arma cada vez, en una carpeta local — no publica nada (eso es `mirror.js`) y el equipo no usa la copia. Lee los **objetos** de git del commit pedido (nunca el árbol de trabajo ni `git archive`, que aplica atributos locales de cada clon), copia sólo lo que cubre `allowlist.json` (pública) menos sus exclusiones fijas y los `out` de la lista y los `afuera` privados de `replacements.json`, adapta por transformaciones con nombre lo que describe cosas que no viajan (revisores de otro paquete, suites cuyo código queda afuera, la máquina del examen, el `.gitignore`), reemplaza nombres reales por anónimos con una forma por caja (`AcmeCorp`→`ClienteA`: un identificador sigue siendo un identificador; la prosa con espacio sólo en `.md`), regenera las traducciones a Codex desde los `.md` ya reemplazados y controla nombres pegados, que todo compile, comandos que mandan correr algo que no viaja y el detector sobre contenido, rutas y metadatos. Con todo en cero deja cada fuente como un repo nuevo con **un** commit armado por plomería, idéntico en cualquier máquina. Sale 0 copia lista · 1 hallazgos (no deja copia) · 2 no pudo mirar — incluidas una entrada del primer nivel sin clasificar, un glob muerto o una exclusión fija que ya no coincide con nada (un renombre no publica en silencio). Por qué: hay miles de líneas con nombres de clientes y el historial no se puede publicar; de ahí el diseño: objetos y plomería, formas por caja, derivados regenerados. `--explicar` imprime la tabla del primer nivel. La tabla real (2026-09-28) anonimiza clientes, personas, máquinas, la organización de Azure DevOps por forma y los servidores internos; las excepciones del detector nombran el valor exacto que permiten, con su motivo. Pruebas: `scripts/tests/export.test.js` (repos y configuraciones de mentira) y la prueba de la copia real (los repos reales: detector en cero, la copia del núcleo instala y arranca limpia en una HOME de afuera, pasa sus propias pruebas —la parte larga sólo en el nocturno y el gate del commit— y bizuit se superpone al núcleo).
+**Qué es:** El exportador de la copia pública: arma en una carpeta local una copia sin nombres reales, a partir de los objetos de git. No publica.
+
+**Por qué existe:** Los repos internos siguen siendo la fuente y la historia no se puede publicar. Copia sólo lo que cubre `allowlist.json` y reemplaza nombres reales por anónimos según `replacements.json`.
+
+**Quién la usa:** `mirror.js` y la CI del repo público.
+
+**Dónde se prueba:** `scripts/tests/export.test.js`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingexportjs)
 
 ## scripts/publishing/mirror.js
 
-*(scripts/publishing/ + guides/maintaining/publicacion-espejo.md §«La publicación» — 2026-10-03)*
+_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
-El mecanismo que lleva la copia del exportador al repo público de GitHub y la mantiene, por un solo camino: sin pushes a mano, sin nombres que se cuelen y con una salida escrita para lo que cambie del otro lado. Cuatro subcomandos: `plan` (el ensayo: corre el exportador con la exportación que se publica —una constante, `--package core,bizuit --single-repo`—, lee la punta del `main` público y dice `unpublished`, `unchanged`, `changes` o `foreign-changes`; nunca escribe), `first` (la primera publicación: un commit raíz por plomería, con la identidad fija que exporta `export.js`, en un repo sin ninguna ref, y después `verify --strict`), `sync` (un commit con el árbol exportado **sobre la punta del `main` público**, empujado sólo a la rama `mirror/sync`, y de ahí **un único** pull request que se actualiza con cada merge del interno y que aprueba y mergea una persona; fuera de `first`, ningún camino del código empuja a `main`) y `verify` (clona lo publicado y lo revisa con el detector y la lista privada: el contenido y cada blob de la historia, las rutas, la identidad y el mensaje de cada commit, los textos del repo y del pull request, los cambios ajenos, las alertas abiertas del escaneo de secretos y el reporte privado de vulnerabilidades; la salida nunca trae el texto hallado, y lo que no pudo mirar sale «NO MEDIDO», nunca callado). Antes de escribir frena con 2 si la exportación trae pendientes, más de un repo, un papel de menos o una carpeta que no se publica; si el árbol trae un valor con forma de secreto de un proveedor (sin excepciones: el escaneo de GitHub no lee la lista del equipo); si el contenido y la configuración no salen del mismo commit; o si `main` no tiene las reglas que impiden un push directo. Un commit del `main` público que no salió de una sincronización —un **cambio ajeno**— frena con 1 hasta que la historia interna lo absorbe con la marca `Public-Commit:` (traído o descartado; mientras no haya comandos que la escriban, se pone a mano). El nombre del repo público no está en el código: sale de `public-repos.json` por el lector del exportador. El token se toma sólo de `TYCON_MIRROR_TOKEN` —nunca de las credenciales de la máquina—, viaja a git por el ambiente y no aparece en ninguna salida; lo emite **`scripts/publishing/github-app-token.js`**, que con la llave privada de la GitHub App de la organización firma un JWT y pide, una vez por corrida, un token de instalación limitado a ese repo y a los permisos de la sincronización, y lo imprime solo por la salida estándar (toda falla sale 2, sin la llave ni el token). Sale 0 bien · 1 hallazgos · 2 no pudo o falta una precondición. **Empujar es publicar** —lo que llega a `mirror/sync` ya es público: el filtro corre antes del empuje, la aprobación decide qué entra a `main`— y además **empujar es instalar**: `mirror/sync` es el canal «al día» y `main` el «estable». Tres cosas que ordenan el diseño: el merge de una persona queda en la historia pública, un cambio mergeado en GitHub no puede trabar la sincronización para siempre, y la llave de la App no puede servir desde cualquier rama. Lo corre el pipeline de publicación (abajo). Pruebas: `scripts/tests/mirror.test.js`, sin red —un repo `--bare` local hace de repo público y un servidor en la propia máquina, de API de GitHub—, que trae también las dos pruebas de `github-app-token.js` y la que lee la guía (§«Si `verify` da 1»). Desde que el arnés se mantiene directo en el público, `verify` mira además **lo publicado que no es git** —las versiones, el título y el cuerpo de todos los pedidos e issues, las etiquetas y los hitos, y los comentarios de las cuatro clases—, cada lista hasta su última página; no cuenta como hallazgo el correo `noreply` de GitHub de una identidad (la regla es del detector, la misma del freno antes de publicar); y dice **qué hacer** con cada hallazgo según hasta dónde llegó: un secreto se rota primero, lo que cuelga sólo de una rama, una marca o una versión se borra, y lo que llegó a `main`, a un pedido, a un issue o a un comentario, además, se pide purgar. `--direct` (el público es la fuente) deja en «no aplica» las tres partes atadas a la sincronización, y `--report <archivo>` deja el informe del que sale el aviso.
+**Qué es:** `mirror.js` lleva la copia del exportador al repo público de GitHub por un solo camino, con los subcomandos `plan`, `first`, `sync` y `verify`.
+
+**Por qué existe:** Evita pushes a mano y nombres que se cuelen. El nombre del repo público sale de `public-repos.json`; el token, de `TYCON_MIRROR_TOKEN`.
+
+**Quién la usa:** El pipeline de publicación, con su token emitido por `scripts/publishing/github-app-token.js`.
+
+**Dónde se prueba:** `scripts/tests/mirror.test.js`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingmirrorjs)
 
 ## pipelines/azure-pipelines-public-leak-check.yml
 
-*(pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline.test.sh + scripts/ci/verify-notice.js + guides/maintaining/publicacion-espejo.md §«El pipeline de publicación» — 2026-10-03)*
+_pipelines/azure-pipelines-public-leak-check.yml + scripts/tests/mirror-pipeline.test.sh + scripts/ci/verify-notice.js + guides/maintaining/publicacion-espejo.md_
 
-Quien corre `mirror.js`: nadie publica desde su máquina ni tiene la credencial. Corre con cada merge a `main` del arnés o de agent-skills, una vez por día (a las 09:00 UTC: sincroniza y después verifica lo publicado con el token, la única medición de las alertas del escaneo de secretos) y a mano, con `mode` = `sync`, `verify`, `plan` o `first`. Tiene **dos etapas a propósito**: la primera no baja nada ni toca la llave, y decide —sale 2 fuera de `refs/heads/main` y si `first` o `plan` no se encolaron a mano; una corrida automática termina ahí con «publicación apagada» si `TYCON_MIRROR_ENABLED` no es `1`—; la segunda, la única que usa el entorno con candado exclusivo y el archivo seguro de la llave, sólo arranca si la primera dijo que sí, para que una corrida apagada no haga fila. Antes de bajar la llave comprueba **en el clon** que el commit del arnés está en `main`: en una corrida disparada por agent-skills, la rama y el commit que informa Azure son de ese repo, y por eso tampoco se le pasa el commit a `mirror.js`. No le pasa configuración por opción, no escribe en ningún repo interno (una foto antes y otra después) y no sube artefactos: el listado de reemplazos no sale de la corrida. **La credencial, sellada**: los dos guiones que la usan corren con una lista cerrada de variables —lo que alguien cargue al encolar no les llega, ni otra base de la API o de git por donde saldrían la firma de la llave o el token—; el token viaja por una tubería y no en un argumento; la llave se borra apenas se usó, también si el paso falla o lo cortan; y el encendido se mira dos veces, en la primera etapa y en el paso que corre `mirror.js`, para que relanzar una etapa vieja no reuse el «sí» de aquella vez. Lo que el yml no puede cuidar lo cuidan los permisos del alta: sólo el dueño encola, edita el pipeline y administra el grupo de variables, el archivo seguro y el entorno. **Medición**: la prueba no sólo lee el yml: **corre sus pasos reales**, sacados por `displayName`, con un `node` de mentira —el molde es `nightly-publishes-report.test.sh`—, y por eso los guiones del yml no llevan macros de Azure adentro. Además **fija la forma del yml por listas cerradas** (las claves de cada nivel y los pasos de cada trabajo, uno por uno): lo que no reconoce frena, así que agregar un paso al pipeline obliga a tocar la prueba. Son 61 verificaciones, probadas con 184 copias alteradas —del yml y del recorrido del nombre público—: cada una pone en rojo la verificación que le toca. La misma prueba cuida que el nombre del repo público viva sólo en `public-repos.json`: mira todo lo versionado menos los `.md` y los binarios, con doce excepciones declaradas con motivo (etiquetas del instalador y carpetas de pruebas que ya existían). No viaja en la copia: el yml que prueba queda afuera. **Lo que la prueba no ve**: un `git` armado por partes, y Azure. Si la etapa salteada de verdad no pide el candado, si agent-skills dispara la corrida y si una etapa relanzada lee el valor de hoy del encendido se miden en las primeras corridas (la guía lista qué se ve en cuál). Apagada, la corrida diaria no verifica: las alertas se miden con `mode: verify` a mano. **No tiene ficha en el mapa todavía**: está en `fuera-del-mapa.json` como pendiente. **El modo directo** (`TYCON_MIRROR_DIRECT=1` en el grupo, o el parámetro `direct` de una corrida a mano) es el de después del corte: la corrida diaria no sincroniza y sólo verifica, con `--direct`, aunque la publicación esté apagada; `sync` a mano, `first` y `plan` salen 2. **El aviso**: un paso que corre aunque `mirror.js` haya fallado le manda al dueño por Telegram lo que la verificación encontró —cada lugar y qué hacer, nunca el texto hallado—; calla en verde, avisa también un «no pude mirar», y si había algo que avisar y no salió, es rojo. El texto lo arma `scripts/ci/verify-notice.js`, con el ambiente sellado, del informe que deja `verify --report`.
+**Qué es:** El pipeline que corre `mirror.js`, en dos etapas: una decide y otra publica o verifica.
+
+**Por qué existe:** Nadie publica desde su máquina ni tiene la credencial. La etapa que usa la llave sólo arranca si la primera lo autoriza.
+
+**Quién la usa:** Cada merge a `main`, la corrida diaria y quien lo encola a mano. `scripts/ci/verify-notice.js` arma el aviso por Telegram.
+
+**Dónde se prueba:** `scripts/tests/mirror-pipeline.test.sh`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#pipelinesazure-pipelines-public-leak-checkyml)
 
 ## scripts/hooks/public-push-guard.js
 
-*(scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + scripts/lib/gh-pr.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md §«El freno antes de publicar»)*
+_scripts/hooks/public-push-guard.js + scripts/hooks/git-pre-push-global.sh + .githooks/pre-push + scripts/lib/gh-pr.js + scripts/ci/pr-texts.js + guides/maintaining/publicacion-espejo.md_
 
-El freno antes de publicar. Con el arnés mantenido directo en su repo público, una rama empujada ya es pública y no hay exportador en el medio: esto es lo único que hay antes. Dos mitades con el mismo guion. **El `pre-push` de git** mira cada commit nuevo de un empuje del arnés a un remoto público (todo el que no es de Azure DevOps ni una carpeta local) —es del arnés por el árbol de trabajo, por lo que se empuja o por el repo al que va—: contenido y rutas con el detector completo, mensajes, identidad (el correo tiene que ser un `noreply` de GitHub), nombres de rama y de marca, números de pedido y rutas vedadas; no la diferencia neta. Lo deja el instalador en la carpeta global de hooks de git (`git-pre-push-global.sh`), porque con esa carpeta puesta el `.githooks/` de un repo no corre: así frena desde cualquier clon, y si el empuje no es del arnés no hace nada. **El freno de `gh`** (un hook previo a la herramienta, de Claude Code y de Codex) mira el texto de todo `gh` que no sea de lectura y apunte al repo público: lo que un pedido, un comentario o una versión publican sin empujar; lo lee `scripts/lib/gh-pr.js`, armado sobre el lector de `az-pr.js`. Lo que no se puede leer —una sustitución, una variable, la entrada estándar— no sale, y lo que no se sabe a qué repo va se mira como si fuera al público. La lista privada sale del clon de mantenimiento que declara la máquina, nunca del árbol que se empuja; en una máquina del equipo sin lista, «no pude mirar» no es «limpio». No tiene variable que lo apague: de un freno falso se sale con una excepción con motivo en la lista. Tres razones del diseño: un `pre-push` del repo no lo correría nadie (git mira la carpeta global), el freno necesita de dónde leer la lista, y mirar «los términos de la lista» sobre la diferencia neta dejaría salir secretos y nombres en commits intermedios. Medición: `scripts/tests/public-push-guard.test.js` (la lógica, cada rojo con su verde), `scripts/tests/githook-pre-push.test.sh` (empujes de verdad con la carpeta global puesta), `scripts/tests/gh-pr.test.js` (el lector) y los casos del banco `51-public-push-guard.json`. Estado en una máquina: `node scripts/hooks/public-push-guard.js status`. **En la validación de cada pedido** corre una tercera vez, en su modo de rango (`range --base <commit> --head <commit>`), en el trabajo que corre siempre: cada commit que el pedido suma a su rama destino, el nombre de la rama, y el título y el cuerpo, que `scripts/ci/pr-texts.js` trae de la API de GitHub (si no puede leerlos sale 2 y no deja archivos: dos archivos vacíos se leerían como «limpios»). Ahí la lista es siempre obligatoria —llega del repo privado a una carpeta temporal de ese trabajo, nunca a un artefacto, y el paso la borra al terminar—, y como la rama de un pedido ya es pública, el paso no frena la publicación sino el merge, y dice qué hacer: cerrar el pedido, borrar la rama y pedir la purga. Con el repo propio en Azure dice «no aplica» y no juzga. Medido en `public-push-guard.test.js` (el modo), `pr-texts.test.js` (el lector, contra una API de mentira) y `pr-suites-shards.test.js` (el paso real del YAML).
+**Qué es:** El freno antes de publicar: un `pre-push` de git y un freno de `gh` que revisan lo que va a un remoto público.
 
-**La lista atrasada.** La lista se lee del disco de un clon, y un clon que nadie trae se queda viejo: el freno frena lo que una excepción ya publicada dejaba pasar. El freno lo mide —el archivo del disco contra el de la rama principal remota como la conoce el clon, los días desde la última traída y, sólo al empujar, la punta del remoto— y lo avisa en el empuje, en `status` y en `doctor`, sin cambiar el veredicto y sin citar asuntos ni ramas del repo privado. `doctor` dice además si el `pre-push` está en la carpeta global de hooks y de dónde sale la lista, siempre como dato o aviso, y durante una instalación o una actualización no lo mira. Los dos instaladores avisan cuando la carpeta global de hooks de git no es la que llenan.
+**Por qué existe:** Con el arnés escrito directo en el repo público, una rama empujada ya es pública y no hay exportador en el medio.
+
+**Quién la usa:** Git en cada empuje (hook global), el freno de `gh` y la validación de cada pedido, en modo `range`.
+
+**Dónde se prueba:** `scripts/tests/public-push-guard.test.js`, `scripts/tests/githook-pre-push.test.sh` y `scripts/tests/gh-pr.test.js`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptshookspublic-push-guardjs)
 
 ## scripts/tools/merge-pr.js
 
-*(scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge-to-main/steps/step-09c-create-pr-github.md + scripts/setup/harness/version-order.js)*
+_scripts/tools/merge-pr.js + scripts/tests/merge-pr.test.js + skills/tycon-merge-to-main/steps/step-09c-create-pr-github.md + scripts/setup/harness/version-order.js_
 
-Lo que el skill de merge necesita cuando el repo vive en GitHub. En Azure DevOps el servidor completa un pedido cuando sus controles dan verde; en GitHub eso depende del plan y de la configuración del repo, un pedido trae **varios** controles (el de la corrida de la validación, uno por cada trabajo y los de otras herramientas), y el número de versión —lo que una máquina instalada compara para saber si hay algo nuevo— lo pone el merge si `version.json` trae `"numbering": "merge-tag"` (ver `scripts/ci/version-tag.js`); sin esa marca, sube con cada pedido. Seis órdenes, cada una con su JSON y su código de salida: `plan` dice de qué servidor es `origin` y qué paso del skill sigue (el modo y el control los **declara** el repo en `.tycon/advisors.yaml`: `merge.mode` y `merge.check`; sin el control declarado, el pedido se crea y no se mergea); `update-branch` trae la rama destino (lo único que resuelve solo es un choque en `version.json`: toma el de la destino); `bump-version` calcula el número que sigue —la fecha sale del commit, nunca del reloj, y el número no baja— y con `--write` cambia sólo ese valor (con la marca, no hace nada); `wait-checks` espera el control declarado sobre la punta del pedido y sale con un código por desenlace (verde sólo con ese control en `SUCCESS`, sobre la punta esperada y con el número mayor que el de la destino; «no pude preguntar» nunca es verde); `message` arma el título «asunto (#N)» y el cuerpo del commit de merge sin marcas que salteen la CI; `check-version` dice si el número de un pedido es mayor que el de su base, o —con la marca— que el pedido no tocó `version.json` (sólo lee: sirve de control en una validación). **No crea el pedido ni lo mergea**: esos dos `gh` los escribe el agente en la terminal, a la vista del freno antes de publicar. La cuenta del número que sigue vive en `version-order.js`, compartida con la sincronización del repo público.
+**Qué es:** Herramienta con seis órdenes (`plan`, `update-branch`, `bump-version`, `wait-checks`, `message`, `check-version`) que el skill de merge usa cuando el repo vive en GitHub. No crea ni mergea el pedido.
 
-**Dónde corren las suites completas**: `plan` dice además si las corre el servidor (`suites: "server"`) o esta máquina (`"machine"`), con qué regla y por qué, en una línea (`suitesReason`). La regla la fija el admin de la organización en `team-repos.json → merge_suites` (lector `scripts/lib/team-repos.js`), para toda la organización o por repo: `automatico` (por defecto), `siempre-en-la-maquina` o `confiar-en-el-servidor`, con «el pipeline de pruebas completas» de cada repo (`full_tests_pipeline`: en Azure por nombre o id, en GitHub el nombre del control obligatorio). Con `automatico` el plan le **pregunta a la plataforma**: las políticas de la rama en Azure DevOps (una de build que cuenta: activa, obligatoria, sin filtros de archivos, con un alcance que cubre el repo y la rama) o las reglas de la rama en GitHub (el control obligatorio; la cola de merge sola no alcanza). Sólo si la rama exige el pipeline declarado las corre el servidor, y el merge va por pedido. «No pude preguntar» (sin `az`/`gh`, sin sesión, algo que no es JSON, el tope de 30 s por llamada o 90 s por plan) nunca es `server` con `automatico`; un `team-repos.json` ilegible tampoco frena el merge: `machine` con el motivo. Un empuje directo es siempre `machine`. Sin `merge_suites`, `merge.mode: pr` del repo vale como `confiar-en-el-servidor` y el plan lo avisa como forma vieja (`legacyNote`). En Windows `az` se lanza por el bash de Git (`runCheckLaunch` de `portable-tools.js`), nunca por `cmd /c`. `--keep-mode` es para los planes posteriores al paso 0 del skill: el modo no cambia y `suites` sólo puede bajar a `machine`. La clave se edita en la sección «Dónde corren las suites completas al mergear» de la pestaña Configuración del sitio (`org-config.js`), con su portón `MERGE_SUITES_SINCE`: no se propone si el perfil no pide esa versión.
+**Por qué existe:** En GitHub el servidor no completa solo un pedido y el número de versión lo pone el merge. Además dice dónde corren las suites completas, según `merge_suites` en `team-repos.json`.
 
-**El clon del público no trae la configuración del merge**: para ese repo —y sólo para ése— `merge.mode` y `merge.check` se leen del clon privado que la máquina declara (`paths.maintainers`), de lo commiteado en su rama principal remota y no de su árbol de trabajo. No encontrarla sale 2 con el motivo y el comando que la arregla; nunca termina en un empuje directo. `plan` dice de dónde leyó (`configFrom`). Un repo de producto sin el archivo sigue como siempre.
+**Quién la usa:** El skill `tycon-merge-to-main`.
 
-Medición: `node --test scripts/tests/merge-pr.test.js` (repos de juguete con git de verdad y un `az`, un `gh` y un `team-repos.json` de mentira, sin red: ninguna prueba llama al `az` ni al `gh` de la máquina) y `node --test scripts/tests/team-repos.test.js` (la clave `merge_suites`). El aviso de retrospectiva pendiente (`scripts/hooks/retro-pending.js`) anota un `gh pr create` hacia la rama principal igual que uno de Azure DevOps, leyéndolo con `scripts/lib/gh-pr.js`.
+**Dónde se prueba:** `scripts/tests/merge-pr.test.js` y `scripts/tests/team-repos.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptstoolsmerge-prjs)
 
 ## scripts/ci/version-tag.js
 
-*(scripts/ci/version-tag.js + .github/workflows/version-tag.yml + scripts/setup/harness/version-order.js + scripts/tests/version-by-merge.test.js)*
+_scripts/ci/version-tag.js + .github/workflows/version-tag.yml + scripts/setup/harness/version-order.js + scripts/tests/version-by-merge.test.js_
 
-El número de versión lo pone **el merge**, no cada pedido. Cuando cada pedido subía `version.json` por encima de `main`, dos pedidos en paralelo tomaban el mismo número: la cola de merge los combinaba sin choque (el mismo cambio en la misma línea) y `main` quedaba dos veces con el mismo número; una máquina sin clon, que con número igual se da por al día, no bajaba el segundo. Ahora, cuando un merge entra a `main`, el workflow `version-tag.yml` corre `version-tag.js tag`: si ese commit sigue siendo la punta y no tiene etiqueta, le pone `v<número>` y la empuja. No empuja a ninguna rama: lo que entra a `main` entra por la cola. Corre una corrida por vez (GitHub deja una sola esperando y cada una numera la punta, así que la reemplazada no hace falta; si la de la punta no existió, se corre a mano desde Actions); la fecha es la de hoy en UTC pero nunca anterior a la última etiqueta ni al piso, y `N` es 1 más el mayor del día: dos merges nunca toman el mismo número y el número no baja. Es el único workflow con permiso de escritura, sólo en su job; `check-public-workflow.js --tagger` le controla la forma exacta, y en `.github/workflows/` no puede haber otro que éste, `ci.yml` y `npm-publish.yml`.
+**Qué es:** `version-tag.js tag` pone la etiqueta `v<número>` en la punta de `main` cuando entra un merge.
 
-**La transición sin dejar a nadie atrás.** `version.json` trae `"numbering": "merge-tag"` y su `version` queda fijo: es el **piso**. Una máquina con el código de antes sólo mira ese archivo; el pedido que trajo la marca subió el piso una última vez, así esa máquina ve un número mayor, baja, y lo que baja ya lee etiquetas. Las máquinas leen la etiqueta en lo que ya consultan: el clon, en el mismo `fetch`; la máquina sin clon, en el mismo `info/refs` (con permiso guardado, una consulta a la API más, sólo si la punta trae la marca). Una punta con la marca y sin etiqueta todavía (el merge recién entró) es «al día» en silencio y no queda recordada con el piso; si pasan horas sin etiqueta, la máquina lo dice, porque eso deja a todas sin actualizarse. La bajada verificada acepta un árbol cuyo `version.json` dice el piso, siempre que traiga la marca y el piso no pase a la etiqueta. `check-pr` es el paso `version` de la CI pública: con la marca en la base, el pedido no toca el número ni la marca; sin ella, el número sube, como antes.
+**Por qué existe:** El número de versión lo pone el merge y no cada pedido: así dos pedidos en paralelo nunca toman el mismo número.
 
-Medición: `node --test scripts/tests/version-by-merge.test.js` (repos de juguete con git de verdad y clientes de mentira, sin red) y T79 de `merge-pr.test.js`. En la copia real: después del merge, `git ls-remote --tags origin 'v*'` muestra la etiqueta del merge.
+**Quién la usa:** El workflow `version-tag.yml`; las máquinas instaladas leen la etiqueta al buscar novedades.
+
+**Dónde se prueba:** `scripts/tests/version-by-merge.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsciversion-tagjs)
 
 ## scripts/setup/npm/index.js
 
-*(scripts/setup/npm/index.js + home-paths.json + package.json + README.md — el paquete de npm `@tyconsa/harness`, binario `tycon-harness`)*
+_scripts/setup/npm/index.js + home-paths.json + package.json + README.md_
 
-El instalador que corre `npx @tyconsa/harness@latest`: una sola línea, igual en Windows, Mac y Linux, para quien prueba el arnés desde otra organización. **El paquete no trae el arnés**: trae este archivo, sin dependencias y de 400 líneas como mucho, que hace lo mismo que `get-harness.sh` y termina en el `harness.js install --version latest` de siempre, con su plan y su «¿Instalo? [s/N]». Por qué así y no el árbol entero en npm: serían dos distribuciones del mismo código que divergen en cada merge; el arnés sigue llegando de GitHub, verificado contra el árbol del commit. Revisa los requisitos de este sistema (Node con el piso de `harness.js`; fuera de Windows bash, tar y python3; en Windows PowerShell 7 y el tar de System32, por ruta absoluta) y sugiere el comando sin correrlo; con terminal y sin opciones pregunta para quién es la instalación (para mí · sumarme a un equipo, que lanza `install --team` · dar de alta mi organización, que al terminar corre `harness.js team-init` del árbol instalado; en una máquina que ya tiene el arnés, `--audience org` va directo al alta). Baja por las rutas públicas (info/refs y codeload, sin la API), con proxy (`HTTPS_PROXY`, `NO_PROXY` y las `npm_config_*proxy` que pasa npx) y la CA de la organización en `NODE_EXTRA_CA_CERTS`; mira el listado del comprimido antes de abrirlo; corre todo hijo con el mismo Node (`process.execPath`) y dice cuándo uno no arrancó o lo cortó una señal. Los nombres de repo se validan sin segmentos «.» ni «..» y se codifican en cada URL. El permiso que pide para un repo del equipo privado no se usa para bajar el arnés público. Un estado del arnés que está pero no se lee sale 1: nunca se instala encima. **Una máquina que ya tiene el arnés nunca se reinstala**: compara su commit con la punta de su rama y dice «al día», o pregunta «¿Actualizo? [s/N]» y corre el `update` del árbol instalado; si no pudo mirar la punta, lo dice y nunca afirma «al día». Las rutas del estado que necesita antes de que haya arnés viven en `home-paths.json`, porque no puede cargar `tycon-home.js`; una prueba de paridad las compara con él. Red: `scripts/tests/npx-installer.test.sh` (el paquete armado con `npm pack` y corrido con `npx` contra el GitHub de juguete, en una HOME de juguete, con una terminal de juguete), `scripts/tests/npm-package.test.js` (la forma del paquete, los requisitos por plataforma y la paridad de las rutas), el escenario `npx` de la máquina limpia de Linux (`scripts/tests/clean-machine/scenarios/npx.sh`, en cada pedido) y el escenario `npx` del ensayo de Windows (`scripts/tests/windows/npx-probe.js`). Lo publicado se mide aparte, con el registro y el GitHub reales: el escenario `npx-published` de Windows (la misma sonda con `--from registry`: instala, el doctor sin rojos, y la segunda corrida dice «al día»; sin red, «no medido») y `scripts/tests/npm-published.test.js` (la constancia de procedencia y la versión `latest`).
+**Qué es:** El instalador del paquete de npm `@tyconsa/harness` (binario `tycon-harness`), que corre con `npx`.
+
+**Por qué existe:** Da una sola línea de instalación igual en Windows, Mac y Linux. El paquete no trae el arnés: lo baja de GitHub y termina en `harness.js install`.
+
+**Quién la usa:** Quien prueba el arnés desde otra organización.
+
+**Dónde se prueba:** `scripts/tests/npx-installer.test.sh` y `scripts/tests/npm-package.test.js`
+
+**Guía:** [paquete-npm.md](maintaining/paquete-npm.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupnpmindexjs)
 
 ## .github/workflows/npm-publish.yml
 
-*(.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publisher` + scripts/tests/npm-publish-workflow.test.js)*
+_.github/workflows/npm-publish.yml + scripts/ci/check-public-workflow.js `--publisher` + scripts/tests/npm-publish-workflow.test.js_
 
-Publica el paquete del instalador desde la CI pública, **sin ningún token guardado**: trusted publishing (OIDC), con la constancia de procedencia que npm genera sola para un repo y un paquete públicos. Corre en un push a `main` que toca `scripts/setup/npm/**` y a mano sólo sobre `main`; nunca en un pedido. Es el único workflow que pide la identidad de la corrida (`id-token: write`), y sólo en su job. Se **habilita** con la variable de repositorio `NPM_PUBLISH_ENABLED=true` (no es un secreto): sin ella, el job que publica sale salteado, en verde, con un aviso que dice qué falta configurar (la organización de npm, el publicador de confianza y la variable). Por qué una variable y no «avisar en verde ante cualquier error de identidad»: un aviso en verde se pierde, y una vez configurado todo, un E401/E403 es una rotura que tiene que verse en rojo. Con la variable puesta, cualquier error es rojo. Instala npm en una versión exacta (11.15.0 o más: la pide la publicación en etapas; nunca `@latest`), pregunta al registro la lista de versiones del paquete (un E404 es la primera publicación y sigue; otra falla, o una respuesta que no se entiende, es rojo), y si la versión ya está compara la integridad: la misma sale 0 «ya publicada», otra es rojo «subí version». Publica **en etapas** (`npm stage publish`): la versión queda esperando hasta que una persona la aprueba con 2FA. `check-public-workflow.js --publisher` le controla la forma exacta y las razones (cuándo corre, la habilitación, los permisos, qué npm instala, cómo publica); la prueba corre sus pasos de shell con un npm de mentira. Lo que quedó publicado lo mide de noche `scripts/tests/npm-published.test.js`: la versión del `package.json` con su constancia de procedencia y como `latest`, y, con una sesión de npm, la cuenta con el segundo factor también para escribir; sin red, sin sesión o con la versión sin aprobar dice «no medido». Cómo sale una versión, cómo se aprueba y cómo se retira: `guides/maintaining/paquete-npm.md`.
+**Qué es:** Workflow que publica el paquete del instalador desde la CI pública, sin token guardado, con la constancia de procedencia de npm.
+
+**Por qué existe:** Evita guardar credenciales. Publica en etapas: la versión espera la aprobación de una persona con 2FA. Se habilita con la variable `NPM_PUBLISH_ENABLED`.
+
+**Quién la usa:** La CI pública, en cada push a `main` que toca `scripts/setup/npm/**` o a mano.
+
+**Dónde se prueba:** `scripts/tests/npm-publish-workflow.test.js`
+
+**Guía:** [paquete-npm.md](maintaining/paquete-npm.md)
+
+**Guía:** [guides/maintaining/paquete-npm.md](maintaining/paquete-npm.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#githubworkflowsnpm-publishyml)
 
 ## scripts/ci/npm-package-version.js
 
-*(scripts/ci/npm-package-version.js + el paso `version` de scripts/ci/public-ci.sh)*
+_scripts/ci/npm-package-version.js + el paso `version` de scripts/ci/public-ci.sh_
 
-La versión del paquete de npm sube cuando cambia lo que el paquete trae. El paquete tiene su propia versión semver, que no es el número del arnés (ése cambia en cada merge y no es semver): npm rechaza republicar una versión, y el workflow que publica sale rojo si la encuentra publicada con otro contenido. Para que eso no se descubra después del merge, la CI pública lo exige en el pedido: si el rango toca `scripts/setup/npm/`, la `version` de su `package.json` tiene que ser mayor que la de la base; un pedido que no toca la carpeta no la mira. Las prereleases se comparan como dice semver (identificador por identificador, los numéricos por número). Un repo que trae el paquete y no trae esta regla es rojo «no pude correr», nunca un salto. Red: T10, T10b y T11 de `scripts/tests/npm-package.test.js` (repos de juguete con git de verdad) y el caso del paquete sin regla de `scripts/tests/public-ci.test.sh`.
+**Qué es:** Regla que exige subir la versión semver del paquete de npm cuando un pedido toca `scripts/setup/npm/`.
+
+**Por qué existe:** npm rechaza republicar una versión, y conviene enterarse en el pedido y no después del merge.
+
+**Quién la usa:** El paso `version` de la CI pública.
+
+**Dónde se prueba:** `scripts/tests/npm-package.test.js` y `scripts/tests/public-ci.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscinpm-package-versionjs)
 
 ## scripts/setup/harness/team-init.js
 
-*(scripts/setup/harness/team-init.js + el comando `harness.js team-init` + getting-started/reference.md §«Set up your organization»)*
+_scripts/setup/harness/team-init.js + el comando `harness.js team-init` + getting-started/reference.md_
 
-El alta guiada de una organización: arma el repo del perfil del equipo (los tres archivos obligatorios de la capa: `team-layer.json`, `team-profile.json`, `team-repos.json`) desde el ejemplo publicado, con lo que la persona contesta (nombre, plataforma GitHub o Azure DevOps, dirección del repo, carpeta). Por qué: copiar el ejemplo a mano y cambiar el nombre en cada lugar es fácil de romper, y el error aparece recién al instalar con `--team`. Baja el ejemplo por las rutas públicas (sin git ni permiso), y **valida los tres con los mismos lectores** con que el arnés apila la capa, cargados del árbol instalado: nada se escribe si algo no valida, y un ejemplo que trae una clave que esta versión no conoce se dice, no se adivina. No crea repos ni pide permisos de escritura: dice dónde crear el repo vacío; si hay git y la persona dice que sí, lo sube con el git de la máquina; con el push hecho, ofrece instalar esta máquina con el perfil. Para el resto del equipo imprime la línea de npx con `--team`, y los guiones de entrada como el camino a mano. Al final ofrece **el repo de historias del equipo con su portón**: las plantillas genéricas de `scripts/setup/harness/team-stories/` (el `CLAUDE.md` con las reglas para revisores, el hook que lee el frontmatter, la config del arnés y el portón de controles, en su versión de Azure DevOps o de GitHub Actions), llenas y en su lugar, al lado de la carpeta del perfil; tampoco crea ese repo, imprime los comandos y la política de rama. Por qué en el alta: el portón tiene que vivir en el repo de historias, no en los de código, o sale verde vigilando nada. Lo de la noche (las operaciones) queda para después, con el enlace a su página. `--dry-run` muestra qué escribiría; sin arnés instalado sale 2. Red: `scripts/tests/harness-team-init.test.sh` (en una HOME de juguete, con el ejemplo de juguete servido por el GitHub de juguete y un repo bare como remoto; con red, el ejemplo de juguete se compara byte a byte con el publicado) y `scripts/tests/team-stories-templates.test.js` (las plantillas no nombran ningún producto y cada marcador lo llena el alta).
+**Qué es:** El alta guiada de una organización: arma el repo del perfil del equipo con `team-layer.json`, `team-profile.json` y `team-repos.json`.
+
+**Por qué existe:** Copiar el ejemplo a mano es fácil de romper y el error aparece recién al instalar con `--team`. Valida con los mismos lectores que apilan la capa y no escribe nada si algo falla.
+
+**Quién la usa:** Quien da de alta una organización.
+
+**Dónde se prueba:** `scripts/tests/harness-team-init.test.sh` y `scripts/tests/team-stories-templates.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessteam-initjs)
 
 ## scripts/publishing/new-names.js
 
-*(scripts/publishing/ + guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres» — 2026-09-28)*
+_scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
 
-El freno de nombres reales **nuevos** en lo que se publica. Corre en el pre-commit del arnés y en el de agent-skills (y sobre el diff de cada pull request del arnés): un commit que mete un nombre de cliente, persona, servidor o máquina en un archivo que sale en la copia pública **no se crea**, y el mensaje dice `archivo:línea`, la categoría, lo encontrado, el nombre inventado que le da la tabla y las salidas en orden —el nombre inventado; el caso sin el nombre, enlazado al incident-log; y sólo si lo decide una persona, en un commit aparte, un `out` o una excepción—. Mira lo **neto**: por archivo, una categoría y texto que aparece más veces después que antes (en un merge, más que en cualquiera de los padres), así que retocar, mover o renombrar lo que ya estaba no frena —medido en el mes: mirar sólo las líneas agregadas habría frenado 26 commits que no traían ningún nombre nuevo, que es el camino por el que un freno se apaga—. Qué sale y con qué contenido no lo decide él: se lo pregunta al exportador (`whatShips`), con la misma lista blanca, exclusiones, paquetes y transformaciones que arman la copia. Lee el índice que git le pasa al hook (`GIT_INDEX_FILE`), porque con `git commit -a` o `git commit <ruta>` no es el de siempre y el git aislado del exportador no lo vería. Frena también una carpeta nueva de primer nivel sin clasificar, un término de la lista sin su par, un producto del registro de paridad que la lista no ve, el techo del termómetro que sube sin un término nuevo, y una excepción que viaja en el mismo commit que el nombre que la necesita. «No pude mirar» frena; sin la lista ni el perfil del equipo (la copia pública) calla; apagado con `TYCON_NEW_NAMES=0` lo dice en cada commit. Cada commit que tuvo algo que mirar deja una línea de conteos, nunca un texto, en `new-names.jsonl` y en el registro de frenos que sube al buzón. Lo acompaña el **termómetro** (`scripts/publishing/names-ceiling.json`, que `export-real.test.sh` compara cada noche con el exportador y la tabla vacía): lo que entra por donde el freno no mira lo pone en rojo esa noche. Por qué: sin él, ningún commit ni pull request llamaba al detector; medido (2026-09-28), entraron 2.803 menciones netas en 30 días. Pruebas: `scripts/tests/new-names.test.js` (laboratorio con configuración sintética), C-13 a C-15 de `githook-livefire.test.sh` (commits de verdad) y T25-T29 del exportador.
+**Qué es:** El freno de nombres reales nuevos en lo que se publica.
 
-**En un clon del repo público** el árbol no trae lista ni tabla, y no hay exportador que saque nada: todo lo que se commitea se publica tal cual. Ahí el freno —que antes callaba— reconoce la forma publicada por una señal positiva (`scripts/setup/public-remotes.json`, que sólo existe en la copia), busca la lista **de la máquina** en los lugares del freno antes de publicar (nunca en el árbol que se commitea) y mira lo que el commit agrega en cualquier archivo, también bajo `tasks/` o `specs/`. Sólo nombres: secretos, correos, binarios y enlaces los mira el freno al empujar. Declarada y sin lista es «no pude mirar» (sale 2); sin declarar, en una máquina del equipo lo dice en una línea y deja pasar, y en la de alguien de afuera calla. Si la lista sale de un clon atrasado, lo avisa. Medido en `new-names.test.js`, con el hook de verdad en un clon de juguete.
+**Por qué existe:** Un commit que mete un nombre de cliente, persona, servidor o máquina en un archivo público no se crea. Mira lo neto por archivo, para no frenar retoques. Se apaga con `TYCON_NEW_NAMES=0`.
+
+**Quién la usa:** El pre-commit del arnés y de agent-skills, y el diff de cada pedido. Qué sale lo decide el exportador.
+
+**Dónde se prueba:** `scripts/tests/new-names.test.js`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingnew-namesjs)
 
 ## scripts/lib/legacy-names.js
 
-*(scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/nombres-en-ingles.md §«Cómo se renombra» — 2026-09-30)*
+_scripts/lib/legacy-names.js/.sh/.ps1 + scripts/lib/renames.json + guides/maintaining/nombres-en-ingles.md_
 
-Que un nombre viejo siga andando mientras dura el renombre a inglés. Cada renombre es una entrada del **mapa** (`renames.json`: `kind`, `old`, `new`, `where`, `batch`, `callers`); la biblioteca hace que el viejo haga lo mismo que el nuevo, sin decir nada, hasta `retire_after`: variables (`readEnv` · `legacy_env` · `Get-LegacyEnv`: sólo la vieja, vale la vieja; un interruptor de apagado viejo sigue apagando), opciones, subcomandos y valores (`aliasOptions` · `legacy_args` · `Get-LegacyArgs`), archivos de configuración y de estado y claves (`resolveFile`, `readKeys`, `prepareStateWrite`), y **reemplazos** generados (`--write-shims`) en la ruta vieja de todo archivo que llaman de afuera, también cuando cambia de carpeta (la carpeta vieja se recrea si desapareció): el `.js` lanza el nuevo como proceso aparte y su `require` devuelve el módulo nuevo; `.sh`, `.command` y sin extensión, `exec` del nuevo; `.ps1`, `&` del nuevo; una guía `.md`, dos líneas («Movida a …» y la marca). Lo que nombra un pipeline de Azure DevOps va con `callers: ado`, sin reemplazo (tarea humana). Las rutas del mapa se validan (relativas, sin `..`, con caracteres de ruta) y una entrada todavía no movida es válida: no hace nada hasta la mudanza. La cobertura del banco y la paridad Codex reconocen la marca del reemplazo y no le piden nada. Cada uso de un nombre viejo se anota una vez por nombre, script y día en `legacy-names.jsonl` (sin valores ni rutas); en Azure DevOps, además, un warning en la corrida. **El instalador** (`.sh` y `.ps1`) llama a `--migrate-machine` antes de registrar los hooks: reescribe las rutas viejas en `settings.json` (hooks y permisos), `settings.local.json`, `~/.codex/hooks.json`, `~/.git-hooks/*` (y sus `.local`) y los LaunchAgents, comparando la ruta **completa** (`runs.js` está dentro de `upload-runs.js`), sin duplicar, con respaldo, recargando un LaunchAgent sólo si estaba cargado y nunca con una HOME que no es la real; el reporte suma `RENAMED:<n>`. El mapa lo valida `spanish-names.js --check-map` (también en el pre-commit cuando cambia). La copia pública no trae el mapa ni los reemplazos. `guard-record.js` está en `ARCHIVOS` y T25 verifica que todo `require` de lo que se copia a `/opt` se copie: sin eso, la copia instalada del freno de producción no anota sus decisiones. Pruebas: `scripts/tests/legacy-names.test.js` (T16-T23, T25), `legacy-names-install.test.sh` (bash 3.2, PowerShell si hay `pwsh`, la migración de la máquina y la máquina atrasada por la línea de arranque), C-25 de `githook-livefire.test.sh` y T24 de `export-real.test.sh`.
+**Qué es:** Biblioteca que hace que un nombre viejo siga andando mientras dura el renombre a inglés, según el mapa `renames.json`.
+
+**Por qué existe:** Renombrar sin romper a nadie: variables, opciones, archivos y claves viejos hacen lo mismo que los nuevos hasta `retire_after`.
+
+**Quién la usa:** Los guiones renombrados y el instalador, que reescribe las rutas viejas de la máquina con `--migrate-machine`.
+
+**Dónde se prueba:** `scripts/tests/legacy-names.test.js` y `scripts/tests/legacy-names-install.test.sh`
+
+**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsliblegacy-namesjs)
 
 ## scripts/ci/legacy-options.sh y legacy-options.js
 
-*(scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md §«El traductor de scripts/ci» — 2026-09-30)*
+_scripts/ci/legacy-options.sh/.js + guides/maintaining/nombres-en-ingles.md_
 
-Que las opciones viejas que los pipelines de los productos les pasan a los guiones de `scripts/ci` sigan andando hasta el retiro, **también desde el artefacto `arnes-ci`**, que es sólo esa carpeta (sin `scripts/lib` ni el mapa: en producción la biblioteca general no alcanza). Cada guion declara sus pares viejo:nuevo (`legacy_options '…'` en bash, `aliasLegacyOptions(argv, '…', where)` en JS); el traductor pasa `--viejo` y `--viejo=x` a `--nuevo` hasta un `--`, con la vieja y la nueva juntas sale con el código de «opción desconocida» del guion, deja el warning de la corrida en Azure DevOps (salvo que quien llama esté guardando la salida como dato: se juntan stdout y stderr) y, donde está el arnés completo, anota el uso con `legacy-names.js --log-use`. En bash no lanza node: ~3 ms por llamada con los nombres nuevos, ~27 ms con uno viejo (lo que cuesta anotarlo de fondo). `spanish-names.js --check-map` verifica que el mapa y los pares declarados digan lo mismo; `--stale-mentions` mira el `--viejo` en su guion y en lo que lo nombra. Medido: 14 opciones en castellano en 6 guiones que llaman 14 repos de producto, y el artefacto de producción no lleva la biblioteca. Pruebas: T31 (cada opción vieja contra la nueva, las dos juntas, el warning, la copia del artefacto, los rasgos de paridad y el mapa contra los pares) y T32 (las líneas reales de un pipeline de producto, despersonalizado, con el árbol anterior y con el actual).
+**Qué es:** Traductor que pasa las opciones viejas de los pipelines de producto a las nuevas en los guiones de `scripts/ci`.
+
+**Por qué existe:** Las opciones viejas siguen andando hasta el retiro, también desde el artefacto `arnes-ci`, que no lleva la biblioteca general.
+
+**Quién la usa:** Los guiones de `scripts/ci` llamados por los pipelines de los productos.
+
+**Dónde se prueba:** sin suite propia
+
+**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscilegacy-optionssh-y-legacy-optionsjs)
 
 ## scripts/publishing/spanish-names.js
 
-*(scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombres-en-ingles.md — 2026-09-29)*
+_scripts/publishing/ + scripts/lib/spanish-words.json + guides/maintaining/nombres-en-ingles.md_
 
-El freno de nombres **nuevos en castellano** en lo que ejecuta la máquina. Corre en el pre-commit del arnés y en el de agent-skills (y sobre el diff de cada pull request del arnés): un commit que mete una ruta, una opción `--x`, un subcomando, una variable de entorno o una clave de configuración en castellano que **no existía en ninguna parte de lo que se publica** no se crea; el mensaje dice dónde, la categoría, las palabras en castellano, la propuesta en inglés que arma el glosario y las dos salidas (el nombre en inglés; o un `allowed` con motivo, aparte y decidido por una persona). Un nombre castellano que ya existe pasa: todavía no tiene reemplazo, y se renombra por tandas. Qué sale lo decide el exportador (reusa las fotos de `new-names.js`); de eso mira ejecutables, configuración y pruebas, nunca `.md` ni casos del banco. Qué es castellano lo dicen la lista (`spanish-words.json`: `words`, `ambiguous`, `allowed`, `glossary`, `schemaFiles`) y el diccionario inglés del sistema, con plurales y formas inglesas. En la copia pública (sin el perfil del equipo) todo lo del repo cuenta como que sale. «No pude mirar» frena; apagado con `TYCON_SPANISH_NAMES=0` lo dice y deja constancia. Lo acompaña su **termómetro** propio (`spanishNames` del `--json` del exportador contra `scripts/publishing/spanish-names-ceiling.json`, en `export-real.test.sh`), aparte del de nombres reales. Por qué: alguien de afuera tiene que poder usar el núcleo sin leer castellano; medido (2026-09-29): 87 ejecutables, 121 opciones, 114 variables en castellano en el núcleo. Pruebas: `scripts/tests/spanish-names.test.js`, C-16 a C-24 de `githook-livefire.test.sh` (commits de verdad, la copia exportada, el paso del PR, el presupuesto de tiempo) y T14 de `export-real.test.sh`.
+**Qué es:** El freno de nombres nuevos en castellano en lo que ejecuta la máquina: rutas, opciones, subcomandos, variables y claves.
+
+**Por qué existe:** Alguien de afuera tiene que poder usar el núcleo sin leer castellano. Un nombre castellano que ya existía pasa y se renombra por tandas. Se apaga con `TYCON_SPANISH_NAMES=0`.
+
+**Quién la usa:** El pre-commit del arnés y de agent-skills, y el diff de cada pedido.
+
+**Dónde se prueba:** `scripts/tests/spanish-names.test.js`
+
+**Guía:** [nombres-en-ingles.md](maintaining/nombres-en-ingles.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishingspanish-namesjs)
 
 ## scripts/publishing/internal-history.js
 
-*(scripts/publishing/internal-history.js + internal-history.json + guides/maintaining/publicacion-espejo.md §«La historia interna»)*
+_scripts/publishing/internal-history.js + internal-history.json + guides/maintaining/publicacion-espejo.md_
 
-El control de **historia interna en la prosa que se publica**. Una guía pública explica la regla y su porqué; el número de una story, el código de una tanda, el caso que la motivó con su enlace al registro de incidentes, una rama, un commit o una corrida no llevan a nada desde afuera. Mientras el arnés se publicaba como copia, parte de eso lo tapaba el exportador al armarla; escribiendo directo en un repo público, lo que se escribe es lo que sale. Corre en el pre-commit y sobre el diff de cada pedido de cambio, y mira lo que el commit **agrega** a los `.md` de guías, portadas, bloques, skills y revisores: cuenta por archivo, así retocar o renombrar no frena y lo que llega desde un archivo que no era prosa sí. En el repo del equipo lee el texto como sale (sin los bloques internos, un papel con la ruta de su destino); en el público, todo lo versionado. Sale 0, 1 con hallazgos o 2 si no pudo mirar, y nunca imprime el texto encontrado: archivo, línea y forma. **Frena** (`internal-history.json` → `mode`; la variable `TYCON_INTERNAL_HISTORY` lo pisa, y bajarlo se dice): la prosa que se publica mide cero, la cuenta la da `--all`, y cada commit que tocó prosa deja su decisión en el registro de frenos. Un dato o un ejemplo que tiene que quedar se declara con su valor exacto en `scripts/tests/fixtures/internal-history-allowed.json`, la misma lista que usa `scripts/tests/internal-history.test.js` para los números de pull request en todo lo publicado. Exporta `scan(text, zone)` para el freno que mira ramas y mensajes antes de publicarlos. Pruebas: `scripts/tests/internal-history-guard.test.js` (commits de verdad en repos de juguete con las dos formas de repo) y los casos `52-internal-history` del banco.
+**Qué es:** El control de historia interna en la prosa que se publica, y en los comentarios con `--zone comment`.
 
-**La zona de los comentarios** (`--zone comment`, una segunda llamada en el pre-commit y, por eso mismo, en la revisión de cada pedido del público): mira lo que el commit agrega a los **comentarios** de los guiones, las pruebas y el YAML del árbol que se publica, con la regla de `guides/maintaining/estilo-de-codigo.md`. `commentsOf(text, ruta)` deja sólo el texto de los comentarios en su línea (nunca el código ni las cadenas, y tapa las marcas `@story-N @ac-K` que lee la matriz por criterio). Las formas son las de la prosa que aplican, más la fecha y el relato («antes era…», «rojo previo», «caso real»); el modo de cada una salió de una muestra de 30 hallazgos por forma sobre lo que agregaron 300 commits, y vive en `internal-history.json` → `zones.comment`. La misma cuenta neta por archivo: un comentario viejo con historia que el commit no suma no frena. En el repo del equipo dice que no aplica. Pruebas: `scripts/tests/code-comments.test.js`.
+**Por qué existe:** Un número de story, un código de tanda o un caso con su enlace no llevan a nada desde afuera. Al escribir directo en el repo público, lo escrito es lo que sale.
+
+**Quién la usa:** El pre-commit y el diff de cada pedido de cambio.
+
+**Dónde se prueba:** `scripts/tests/internal-history-guard.test.js` y `scripts/tests/code-comments.test.js`
+
+**Guía:** [publicacion-espejo.md](maintaining/publicacion-espejo.md)
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptspublishinginternal-historyjs)
