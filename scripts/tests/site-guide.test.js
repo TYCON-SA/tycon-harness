@@ -41,10 +41,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
 // nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y el inicio de sesión de la
 // organización (los dos modos de Microsoft y la lista), el candado de la receta de Azure (`microsoftAccounts`),
-// SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`).
+// SITE_FIRST_MAINTAINER y el rol por dentro (`site.access`); y cómo se mantiene al día (la parte común, el párrafo «Al
+// día» de cada receta, Kubernetes y otras nubes, y una red cerrada).
 const HUELLA_INSTALACION = {
-  es: '1303a8ac38d43a7cc0c3dc281be6f162b3dd1f6bf2152fc48142511c7bef10c2',
-  en: '6444b14d05784cca803f70eb72fb7501353b6a672efbc4aff314d597919e8ef9',
+  es: '182509fa8dea5087c680fc5d8ae4ef0a054649b4502ff7f5b1a0595c0ec56297',
+  en: '5b857a193a63b9cfd671be3dc7c76ff4efdc2d4cbff6dd1007ad2de9192373e0',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {

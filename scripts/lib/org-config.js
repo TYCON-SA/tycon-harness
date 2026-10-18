@@ -64,6 +64,8 @@ const SECCIONES = Object.freeze([
   // el interruptor de la organización: con `true`, «Proponer» aprueba y completa el pedido con la identidad del sitio si
   // las políticas de main lo dejan. Cuenta el valor de main, nunca el del cambio que se propone (scripts/site/tabs/config.js)
   Object.freeze({ id: 'aplicar', titulo: 'Los cambios de un mantenedor', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.auto_apply']), idCorto: 'operations', necesita: ['site'] }),
+  // cómo se mantiene al día el sitio: «automático» o «sólo aviso», en la misma pestaña que el sitio
+  Object.freeze({ id: 'aldia', titulo: 'Cómo se actualiza el sitio', archivo: 'operations.json', repo: 'operaciones', lector: 'operations-config.js', claves: ['site'], rutas: Object.freeze(['site.update']), idCorto: 'operations', necesita: ['site'] }),
   // dos partes de team-repos.json con su propia sección (tanda C): dónde corren las suites al mergear (story 7.28) y el
   // modelo de cada trabajo del pipeline (story 7.29). Un lector anterior no las conoce: la sección dice «no sabe leer».
   // Comparten el identificador de rama con «repos»: un pedido abierto sobre el archivo frena los otros (un pedido por archivo)
@@ -100,7 +102,14 @@ function lectorSabe(lector, seccion) {
   if (!lector) return false;
   if (seccion.lector === 'check-product-parity.js') return typeof lector.leerDeclaradas === 'function';
   if (!seccion.necesita.length || !Array.isArray(lector.KEYS)) return true;
-  return seccion.necesita.every((k) => lector.KEYS.includes(k));
+  if (!seccion.necesita.every((k) => lector.KEYS.includes(k))) return false;
+  // una sección sobre una hoja de `site` pide además que el lector conozca esa hoja: si no, un lector viejo
+  // daría por buena una sección sobre una clave que rechaza, y el sitio se frenaría al leer el archivo
+  for (const ruta of seccion.rutas || []) {
+    const [arriba, hoja] = ruta.split('.');
+    if (arriba === 'site' && hoja && Array.isArray(lector.SITE_KEYS) && !lector.SITE_KEYS.includes(hoja)) return false;
+  }
+  return true;
 }
 
 // ── la plataforma del remoto ─────────────────────────────────────────────────────────────────────────────────────
@@ -623,9 +632,10 @@ function pantalla() {
     instalacion: { t: 'Perfil de instalación', d: 'Cuánto instala el arnés en cada máquina. Llega a cada una con su próxima actualización.', corto: 'Instalación' },
     hilos: { t: 'Conversaciones de las corridas', d: 'Si el sitio baja también lo que se habló en cada corrida, además de sus números.', corto: 'Conversaciones' },
     aplicar: { t: 'Los cambios de un mantenedor', d: 'Si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para que lo apruebe otra persona. El cambio que prende esta opción no se aplica solo: la opción cuenta desde que entra.', corto: 'Los cambios de un mantenedor' },
+    aldia: { t: 'Cómo se actualiza el sitio', d: 'Si el sitio se pone al día solo con la versión nueva del arnés (el nocturno la instala, la prueba y vuelve atrás si falla), o sólo avisa y se instala a mano.', corto: 'Actualización del sitio' },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', 'Personas', ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', 'Repos y productos', ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', 'Avisos y la noche', ['canal', 'espera', 'umbrales'], []], ['claude', 'Cómo trabaja Claude', ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', 'Instalación y actualización', ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -1149,6 +1159,14 @@ function pantalla() {
       d.site.auto_apply = v === 'true';
     }, 'site.auto_apply', pr), el('p', { class: 'muted', text: 'Queda escrito quién pidió cada cambio: en el pedido y en el registro del sitio.' }));
   }
+  function editorActualizacionSitio(s, d, pr) {
+    var st = d.site || {};
+    return el('div', { class: 'pila' }, selector('Cómo se actualiza el sitio', st.update === undefined ? '' : String(st.update), [['', 'sin declarar (sólo aviso)'], ['auto', 'automático: el nocturno instala la versión nueva, la prueba y vuelve atrás si falla'], ['notice', 'sólo aviso: el sitio dice que hay una versión nueva y se instala a mano']], function (v) {
+      if (!esObjeto(d.site)) d.site = {};
+      if (v === '') { delete d.site.update; return; }
+      d.site.update = v;
+    }, 'site.update', pr), el('p', { class: 'muted', text: 'El automático pide el nocturno de actualización y su permiso, sólo sobre el sitio (la guía: Cómo se mantiene al día).' }));
+  }
   // lo que trae la organización en el repo del equipo (AC 17): se mira y se abre en el repo, no se edita acá
   function tablaDeContenido(filas) {
     var sec = el('section', { class: 'card form-block', id: 'contenido' }, el('div', { class: 'fb-head' }, el('div', {}, el('h4', { text: 'Lo que trae la organización' }), el('p', { class: 'reach', text: 'Skills, revisores, guías de alta y paquetes del repo del equipo. Se cambian con un pedido en ese repo, no desde acá.' }))));
@@ -1323,7 +1341,7 @@ function pantalla() {
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  var EDITORES = { organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', 'El canal, como texto'); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada

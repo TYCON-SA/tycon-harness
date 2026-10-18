@@ -1251,6 +1251,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.33: la última imagen publicada en stable, leída sin credenciales (el token anónimo, el manifiesto y la configuración, sin capas), una vez por hora y guardada en el disco, y lo que el sitio dice con ella: el cartel sólo para quienes mantienen y la línea de Arnés. Registro local con la forma de la API v2.",
+      "raiz": "arnes",
+      "ruta": "tests/site-latest-release.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 2.33: el actualizador del sitio — resuelve stable, compara con lo que corre, aplica por huella en Azure, Render y una máquina propia, prueba y vuelve atrás, nunca baja de versión y no reintenta una huella que falló; el sitio de prueba local de harness.js update. Registro, az, docker y el hook de Render, dobles en la prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/site-update.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.34: la copia de operaciones para el sitio — la foto y su índice en un contenedor (sólo lo que el sitio lee, sin enlaces ni rutas fuera), la bajada que cambia de carpeta de una vez, los códigos de falla, la edad de la copia como banda y freno, y la guía con las tres formas. Almacenamiento en memoria y un servidor local con la forma de Azure Blob.",
       "raiz": "arnes",
       "ruta": "tests/site-operations-copy.test.js",

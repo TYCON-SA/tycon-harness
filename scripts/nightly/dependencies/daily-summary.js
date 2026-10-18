@@ -702,6 +702,34 @@ function lineaDe({ operations, prueba, hoy }) {
   return { ...noPudo, hora };
 }
 
+/**
+ * La línea de la versión del sitio: con el resultado del nocturno que lo mantiene al día (`--site-update`, de
+ * scripts/site/deploy/update-site.js). Sólo versiones con forma de número publicado y un motivo de la lista cerrada del
+ * actualizador (el comienzo del texto: lo que sigue puede nombrar una dirección y no entra). Sin un resultado de hoy, no
+ * inventa: dice que el sitio lo cuenta al entrar.
+ */
+function lineaVersion({ actualizacion, hoy }) {
+  const sinResultado = 'sitio: sin el resultado del nocturno de hoy; el sitio dice al entrar si hay una versión nueva';
+  if (actualizacion && actualizacion.ilegible) return 'sitio: el resultado del nocturno de hoy no se pudo leer';
+  const r = actualizacion;
+  const hora = r && typeof r.hora === 'string' && Number.isFinite(Date.parse(r.hora)) ? new Date(r.hora).toISOString() : null;
+  if (!hora || hora.slice(0, 10) !== hoy) return sinResultado;
+  const ver = (v) => (typeof v === 'string' && /^\d{4}\.\d{2}\.\d{2}\.\d+$/.test(v) ? v : null);
+  const desde = ver(r.desde);
+  const hacia = ver(r.hacia);
+  const { MOTIVOS } = require('../../site/deploy/update-site.js');
+  const motivo = typeof r.motivo === 'string' ? MOTIVOS.find((m) => r.motivo.startsWith(m)) || null : null;
+  if (r.resultado === 'actualizado' && hacia) return desde ? `sitio: actualizado de ${desde} a ${hacia}` : `sitio: actualizado a ${hacia}`;
+  if (r.resultado === 'al_dia' && hacia) return `sitio: al día con la última publicada (${hacia})`;
+  if (r.resultado === 'aviso' && hacia) return `sitio: hay una versión nueva, ${hacia}; se actualiza a mano`;
+  if (r.resultado === 'pedido' && hacia) return `sitio: pedido de actualización a ${hacia} mandado`;
+  if (motivo === 'no se pudo leer stable') return 'sitio: no se pudo mirar la última publicada';
+  if (motivo === 'no se pudo leer site.update') return 'sitio: no se pudo leer site.update; revisar operations.json';
+  if (motivo === 'no se pudo leer el estado del actualizador') return 'sitio: no se pudo leer el estado del actualizador; no se tocó nada';
+  if ((r.resultado === 'vuelto_atras' || r.resultado === 'no_pudo') && hacia) return `sitio: no se pudo actualizar a ${hacia}${desde ? `, sigue en ${desde}` : ''}${motivo ? ` (${motivo})` : ''}`;
+  return sinResultado;
+}
+
 /** La línea del sitio de dependencias: con el resultado de check-deploy.js de esta mañana (`--site-check`). */
 function lineaSitio(a) {
   let prueba = null;
@@ -776,6 +804,17 @@ function entregar(a) {
   }
   final = acotar(final, TOPE_MENSAJE);
   if (a.extra !== null) final = `${final}\n\n${seccionExtra(a.extra)}`;
+  // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
+  if (a.siteUpdate) {
+    let actualizacion = null;
+    try { actualizacion = JSON.parse(fs.readFileSync(a.siteUpdate, 'utf8')); }
+    catch (e) {
+      actualizacion = null;
+      // ausente es «sin resultado»; uno que está y no se lee se dice aparte (no es lo mismo que un nocturno que no corrió)
+      if (!(e && e.code === 'ENOENT')) { console.error(`resumen-diario: el resultado del nocturno del sitio no se pudo leer (${(e && e.code) || 'no es JSON'})`); actualizacion = { ilegible: true }; }
+    }
+    final = `${final}\n${lineaVersion({ actualizacion, hoy: a.hoy })}`;
+  }
   final = `${final}\n${sitio.linea}`;
 
   if (a.dryRun) {
@@ -818,7 +857,7 @@ function entregar(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, operations: null, siteCheck: null, json: false, dryRun: false, ayuda: false, error: null };
+    vigOut: null, depsOut: null, extra: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -833,6 +872,7 @@ function parseArgs(argv) {
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
+    else if (v === '--site-update') a.siteUpdate = valor(++i);
     else if (v === '--json') a.json = true;
     else if (v === '--dry-run') a.dryRun = true;
     else if (v === '-h' || v === '--help') a.ayuda = true;
@@ -844,7 +884,7 @@ function parseArgs(argv) {
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
     '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>]\n' +
-    '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>]');
+    '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
 }
 
 // El nombre de la fuente en la línea de comandos (story 8.9, en inglés) → el de adentro, que no cambia: nombra los

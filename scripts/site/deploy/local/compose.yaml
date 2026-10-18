@@ -11,10 +11,14 @@
 # · Cómo se llega, en este orden (lo más seguro primero): sólo la red interna; la VPN de la organización; un túnel
 #   público con el candado del proveedor del túnel delante. La guía: guides/sitio-de-la-organizacion.md.
 #
-# Cambiá la imagen por la huella (@sha256:…) de la versión que vas a instalar: nunca una etiqueta.
+# La imagen, por su huella (@sha256:…), nunca por etiqueta. La pone SITE_IMAGE (start.js --update la resuelve de `stable`
+# y recrea el contenedor; `harness.js update` también, con la etiqueta tycon.site=local); sin SITE_IMAGE, la de abajo:
+# cambiala por la huella de la versión que vas a instalar.
 services:
   sitio:
-    image: ghcr.io/acme/arnes@sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe
+    image: ${SITE_IMAGE:-ghcr.io/acme/arnes@sha256:cafecafecafecafecafecafecafecafecafecafecafecafecafecafecafecafe}
+    labels:
+      tycon.site: local
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"

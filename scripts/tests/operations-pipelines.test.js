@@ -653,3 +653,19 @@ test('T25 2.34-Copia_DisparosYCredencial (Azure) @story-2.34 @ac-4 — cada push
   assert.doesNotMatch(t, /SITE_OPERATIONS_TOKEN|SITE_MAILBOX|\$\([A-Z_]*(KEY|SECRET|PASSWORD)\)/, 'ningún secreto ni la credencial del buzón');
   assert.match(read('README.md'), /site-copy\.yml/, 'el README la da de alta');
 });
+
+test('T28 2.33-Nocturno_ConexionPropiaYOrden (Azure) @story-2.33 @ac-10 @ac-11 — su conexión, antes de dependencias, sin secretos escritos', () => {
+  // 🔴 rojo: el nocturno que cambia producción usa la conexión de otro (la del buzón o la de dependencias), o corre después.
+  const t = read('site-update.yml');
+  const cron = (f) => { const m = read(f).match(/- cron: '(\d+) (\d+) \* \* \*'/); return Number(m[2]) * 60 + Number(m[1]); };
+  assert.ok(cron('site-update.yml') < cron('dependency-audit.yml'), 'antes del de dependencias (que prueba el sitio y avisa a la mañana)');
+  assert.match(t, /^trigger: none\b/m, 'sólo programado');
+  assert.match(t, /azureSubscription: 'site-update'/, 'su propia conexión de servicio');
+  assert.doesNotMatch(t, /azureSubscription: '(?!site-update')/, 'ninguna otra conexión');
+  assert.match(t, /scripts\/site\/deploy\/update-site\.js --platform "\$\(SITE_PLATFORM\)"/);
+  assert.match(t, /--operations-json operations\.json --state-dir \.dashboard\/site-update/, 'el modo sale de operations.json; el resultado, a los datos');
+  assert.match(t, /SITE_RENDER_DEPLOY_HOOK: \$\(SITE_RENDER_DEPLOY_HOOK\)/, 'el hook de Render, de una variable secreta (nunca escrito)');
+  assert.doesNotMatch(t, /https:\/\/api\.render\.com\/deploy/, 'ningún hook escrito');
+  assert.match(t, /push-nightly-data\.js save[\s\S]*-- \.dashboard\/site-update/, 'el resultado se guarda en operaciones');
+  assert.match(read('README.md'), /site-update\.yml/);
+});

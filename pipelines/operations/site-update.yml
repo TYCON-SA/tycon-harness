@@ -1,0 +1,103 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# El sitio al día con stable — MODELO para cualquier organización en Azure DevOps
+#
+# Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones de la organización y
+# se cambian DOS líneas: el `name:` del recurso `harness` y la conexión de servicio (`azureSubscription`), marcadas abajo.
+#
+# Cada noche, una hora antes del nocturno de dependencias (que prueba el sitio sin sesión y arma el resumen de la mañana):
+# resuelve la etiqueta `stable` de la imagen del sitio en el registro, la compara con lo que corre y, si
+# `operations.json → site.update` es "auto", la instala POR HUELLA, despierta el sitio y le corre la prueba sin sesión. Si
+# la prueba falla, vuelve a la huella anterior. En «sólo aviso» (sin la clave, o "notice") no toca nada: deja dicho que
+# hay una versión nueva. El resultado queda en `.dashboard/site-update/` del repo de operaciones y lo lee la mañana.
+#
+# - LA CREDENCIAL: una conexión de servicio PROPIA (identidad federada, sin secreto), autorizada sólo para este pipeline,
+#   con un rol propio sobre LA APLICACIÓN del sitio y nada más (la guía trae el rol y la orden que lo crea). No es la de
+#   la copia de operaciones ni la del buzón.
+# - RENDER: con `SITE_PLATFORM=render`, no usa la conexión: llama al hook de redespliegue, que va en la variable secreta
+#   SITE_RENDER_DEPLOY_HOOK (nunca escrito acá; nunca sale en el registro).
+#
+# Variables de la definición (se cargan en Azure, en «Variables» del pipeline):
+#   SITE_PLATFORM        — azure (por defecto) o render
+#   SITE_IMAGE_NAME      — la imagen del sitio en el registro, sin etiqueta (ghcr.io/<organización>/<repo>)
+#   SITE_RESOURCE_GROUP, SITE_APP, SITE_URL — dónde corre el sitio en Azure (con render, no hacen falta)
+#   SITE_RENDER_DEPLOY_HOOK (secreta) — sólo con render
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+trigger: none   # nunca por push: sólo programado (o a mano)
+pr: none
+
+schedules:
+  - cron: '0 3 * * *'        # 03:00 UTC: una hora antes de dependencias (04:00), que prueba el sitio y avisa
+    displayName: 'El sitio al día (nocturno)'
+    branches:
+      include: [main]
+    always: true
+
+parameters:
+  - name: efectos
+    displayName: 'Con efectos (actualizar el sitio si corresponde y guardar el resultado)'
+    type: boolean
+    default: true
+
+resources:
+  repositories:
+    - repository: harness
+      type: git                         # o `github`, con `endpoint: <conexión de servicio de GitHub>`
+      name: my-project/harness          # ← CAMBIAR: dónde está el arnés (en GitHub, la organización/repo público)
+      ref: refs/heads/main
+
+variables:
+  SITE_PLATFORM: azure
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+jobs:
+  - job: Update
+    displayName: 'Comparar con stable y, si corresponde, actualizar el sitio'
+    timeoutInMinutes: 30
+    steps:
+      - template: pipelines/operations/templates/fetch-harness.yml@harness
+      - template: pipelines/operations/templates/ops-data.yml@harness
+
+      - task: AzureCLI@2
+        displayName: 'El sitio en Azure: comparar, actualizar y probar'
+        condition: and(succeeded(), eq(variables['SITE_PLATFORM'], 'azure'))
+        inputs:
+          azureSubscription: 'site-update'        # ← CAMBIAR: la conexión de servicio propia de este nocturno
+          scriptType: bash
+          scriptLocation: inlineScript
+          inlineScript: |
+            set -uo pipefail
+            cd "$(Build.SourcesDirectory)"
+            SECO=$([ "${{ parameters.efectos }}" = "True" ] || echo --dry-run)
+            node scripts/site/deploy/update-site.js --platform "$(SITE_PLATFORM)" --image "$(SITE_IMAGE_NAME)" \
+              --resource-group "$(SITE_RESOURCE_GROUP)" --app "$(SITE_APP)" --site-url "$(SITE_URL)" \
+              --operations-json operations.json --state-dir .dashboard/site-update $SECO
+            rc=$?
+            [ $rc -eq 0 ] || echo "##vso[task.logissue type=warning]el sitio no se actualizó (ver el resultado en .dashboard/site-update)"
+            exit 0
+
+      - script: |
+          set -uo pipefail
+          cd "$(Build.SourcesDirectory)"
+          node scripts/site/deploy/update-site.js --platform "$(SITE_PLATFORM)" --image "$(SITE_IMAGE_NAME)" \
+            --operations-json operations.json --state-dir .dashboard/site-update
+          rc=$?
+          [ $rc -eq 0 ] || echo "##vso[task.logissue type=warning]el sitio no se actualizó (ver el resultado en .dashboard/site-update)"
+          exit 0
+        displayName: 'El sitio en Render: comparar y pedir el redespliegue'
+        condition: and(succeeded(), eq(variables['SITE_PLATFORM'], 'render'), eq('${{ parameters.efectos }}', 'true'))
+        env:
+          SITE_RENDER_DEPLOY_HOOK: $(SITE_RENDER_DEPLOY_HOOK)
+
+      - script: |
+          set -eu
+          cd "$(Build.SourcesDirectory)"
+          # a main del repo de operaciones llega SÓLO el resultado de esta noche, sobre la punta recién traída
+          node scripts/ci/push-nightly-data.js save \
+            --message "chore(sitio): el sitio al día $(date -u +%Y-%m-%d) [nocturno]" \
+            --require-daily '.dashboard/site-update/site-update-{day}.json' \
+            -- .dashboard/site-update
+        displayName: 'Guardar el resultado en el repo de operaciones'
+        condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), eq('${{ parameters.efectos }}', 'true'))

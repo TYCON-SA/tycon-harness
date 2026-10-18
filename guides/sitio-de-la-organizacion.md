@@ -269,6 +269,9 @@ Las secciones, en el orden de la pantalla:
   lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`. Cuenta la opción
   que ya está en el repo: el cambio que la prende queda para aprobar como cualquier otro, y recién después los cambios
   entran solos. Queda en `operations.json`, en el repo de operaciones.
+- **Cómo se actualiza el sitio**: si el sitio se pone al día solo con la versión nueva del arnés o sólo avisa (`site.update`
+  de `operations.json`). Sin declarar, sólo aviso. «Automático» pide el nocturno de actualización y su permiso: la receta,
+  en «Cómo se mantiene al día».
 - **Personas y máquinas**: de quién es cada máquina que manda corridas, y en qué proyectos trabaja cada persona. Una
   máquina nueva aparece en «Por confirmar» con el correo que dice ser; **Confirmar** la pone a nombre de esa persona.
   Queda en `operations.json`, en el repo de operaciones. Lo revisa quien mantiene.
@@ -671,6 +674,24 @@ imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply`
 (se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
 pidió; es la única línea del registro que lleva un correo.
 
+### Cómo se mantiene al día
+
+El arnés publica la imagen del sitio con su número de versión y mueve la etiqueta `stable` a esa imagen **sólo** cuando
+pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso, cada instalación sabe si hay algo nuevo:
+
+- **El aviso, igual para todos.** Quienes mantienen ven arriba de cada pestaña «hay una versión nueva del sitio: X (la
+  tuya: Y)», y la pestaña Arnés suma «última publicada». El sitio mira el registro una vez por hora como máximo, sin
+  credenciales; si no puede mirar, lo dice y nunca dice «al día» sin haber mirado. El resumen de la mañana trae la línea
+  del sitio. La versión no se ve sin sesión.
+- **Automático o sólo aviso**, en Configuración → Personas → «Cómo se actualiza el sitio» (`site.update` de
+  `operations.json`). **Sin la clave, sólo aviso**: el automático pide permisos que la organización da a conciencia.
+  Antes de prenderlo, una actualización a mano que salga bien, y el canal del aviso de la mañana configurado: una
+  vuelta atrás deja el nocturno en verde y se cuenta en ese aviso.
+- **El automático** lo hace el actualizador del arnés (`scripts/site/deploy/update-site.js`): resuelve `stable`, la
+  instala **por huella**, despierta el sitio y le corre la prueba sin sesión. Si la prueba falla, vuelve a la huella
+  anterior y lo deja dicho; esa huella no se reintenta hasta que `stable` se mueva. Nunca instala una versión menor que
+  la que corre. Cada entorno lo corre con su herramienta: la receta de cada uno trae su párrafo **Al día**.
+
 ### Las dos formas de arrancarlo
 
 La misma imagen con Docker (`docker run … sitio:local`, arriba), o con Node solo desde el clon, con las mismas
@@ -755,6 +776,19 @@ quien corre el alta, como los otros secretos. Sin los dos, la pestaña Configura
 - **Quién la corre:** necesita Contributor sobre el grupo de recursos y Owner o User Access Administrator sobre la
   cuenta del buzón (sólo para dar el rol). La región es la de la cuenta del buzón.
 
+**Al día**: un nocturno propio en el repo de operaciones, `site-update.yml` (en `pipelines/operations/` para Azure
+DevOps y en `pipelines/operations/github/` para GitHub), una hora antes del de dependencias. Usa **su propia conexión**,
+autorizada sólo para ese nocturno, con **un rol propio sobre la aplicación del sitio y nada más**:
+
+```bash
+az role definition create --role-definition '{"Name": "Actualizador del sitio", "Description": "Cambia la imagen del sitio y nada más", "Actions": ["Microsoft.App/containerApps/read", "Microsoft.App/containerApps/write", "Microsoft.App/containerApps/revisions/read", "Microsoft.App/managedEnvironments/join/action"], "AssignableScopes": ["/subscriptions/<suscripción>/resourceGroups/<grupo>"]}'
+az role assignment create --assignee-object-id <la identidad de la conexión> --assignee-principal-type ServicePrincipal --role "Actualizador del sitio" --scope /subscriptions/<suscripción>/resourceGroups/<grupo>/providers/Microsoft.App/containerApps/<aplicación>
+```
+
+Container Apps pasa el tráfico a la revisión nueva sólo si arranca; igual el nocturno la prueba. Verificación en negativo:
+con esa identidad, `az storage account keys list` sobre la cuenta del disco y un `update` sobre otra aplicación del
+grupo tienen que fallar.
+
 ### Render
 
 El plan gratis de Render, con `scripts/site/deploy/render.yaml` como plano (*Blueprint*). Cambiá la imagen por la
@@ -771,6 +805,11 @@ huella de la versión que instalás.
 - **Se duerme:** a los 15 minutos sin tráfico, y despierta en un minuto, más o menos (la prueba sin sesión lo espera).
   750 horas por mes por espacio de trabajo: un solo servicio entra. Sin medio de pago, si se pasa, Render suspende el
   servicio hasta el mes siguiente: no cobra.
+
+**Al día**: con `site.update: "auto"`, el nocturno (`SITE_PLATFORM=render`) pide el redespliegue por el hook de Render con la
+huella de `stable` (`imgURL=<imagen>@sha256:…`). El hook es un secreto (`SITE_RENDER_DEPLOY_HOOK`): nunca sale en el
+registro. Render lo hace de fondo; la prueba sin sesión de la noche siguiente lo confirma. Si Render rechaza la imagen (un
+404), tiene que ser del mismo registro y nombre que la del servicio.
 
 ### Una máquina propia
 
@@ -798,6 +837,17 @@ sin arrancar nada.
   probar desde el nocturno», sin enlace, salvo que la organización corra el proceso de la noche en un agente propio
   dentro de la red.
 
+**Al día**: primero el guion del arnés, con un `cron` o un temporizador de systemd:
+
+```bash
+# todas las noches a las 03:00: resuelve stable, recrea con SITE_IMAGE=<imagen>@<huella>, prueba /livez y vuelve atrás si falla
+0 3 * * * node /opt/arnes/scripts/site/deploy/local/start.js --secrets-file /etc/sitio/sitio.env --update --image ghcr.io/<organización>/<repo>
+```
+
+Con systemd, un `.service` de tipo `oneshot` con la misma orden y un `.timer` con `OnCalendar=*-*-* 03:00`. **Watchtower**
+queda como alternativa (la copia que mantiene la comunidad, limitada al contenedor del sitio con `--label-enable`): no
+prueba ni vuelve atrás, y tiene el socket de Docker, o sea, es administrador de la máquina.
+
 **La copia de operaciones fuera de Azure** (vale también para Render): la SAS de sólo lectura, atada a una política
 guardada del contenedor para poder revocarla. La cuenta de la copia necesita la llave prendida para firmarla:
 
@@ -805,6 +855,19 @@ guardada del contenedor para poder revocarla. La cuenta de la copia necesita la 
 az storage container policy create --account-name <cuenta> -c <contenedor> -n lectura-sitio --permissions rl --expiry <fecha>
 az storage container generate-sas --account-name <cuenta> -n <contenedor> --policy-name lectura-sitio -o tsv
 ```
+
+### Kubernetes y otras nubes
+
+**No probada por el arnés.** La imagen se fija por huella y se actualiza con las herramientas que siguen etiquetas:
+Argo CD Image Updater o Flux (con la estrategia que resuelve `stable` a su huella), o la misma orden de cada nube para
+cambiar la imagen de un servicio (Cloud Run: `gcloud run deploy --image <imagen>@<huella>`). Después del cambio, la prueba
+sin sesión: `node scripts/site/check-deploy.js --url https://<dirección>`.
+
+### Una red cerrada
+
+Sin salida a internet, el sitio no puede mirar la última publicada y lo dice. La actualización es a mano: en una máquina
+con salida, `docker pull <imagen>:stable` y `docker save` de esa huella; se lleva el archivo, `docker load`, y se recrea el
+contenedor con `SITE_IMAGE=<imagen>@<huella>`. Después, la prueba sin sesión contra la dirección interna.
 
 ## Por dentro, para quien mantiene el arnés
 

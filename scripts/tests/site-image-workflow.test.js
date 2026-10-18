@@ -82,8 +82,9 @@ test('T2 Imagen_PermisosYAccionesFijadas @story-2.30 @ac-2', () => {
 
 test('T3 Imagen_EtiquetasSinLatestYNombreDelContexto @story-2.30 @ac-1', () => {
   const t = read();
-  // ninguna etiqueta `latest` (el `ubuntu-latest` del corredor no es una etiqueta de la imagen)
-  assert.doesNotMatch(codigo(t).filter((l) => !/runs-on:/.test(l)).join('\n'), /latest/, 'nunca latest');
+  // ninguna etiqueta `latest` (el `ubuntu-latest` del corredor no es una etiqueta de la imagen, ni el guion
+  // `latest-release.js` que lee `stable`)
+  assert.doesNotMatch(codigo(t).filter((l) => !/runs-on:/.test(l)).join('\n').replace(/latest-release\.js/g, ''), /latest/, 'nunca latest');
   assert.doesNotMatch(t, /ghcr\.io\/[a-z0-9-]+\//i, 'ningún ghcr.io/<org>/ escrito');
   assert.match(t, /IMAGEN="ghcr\.io\/\$\{GITHUB_REPOSITORY,,\}"/, 'el nombre sale del contexto, en minúsculas');
   assert.match(t, /-t "\$\{IMAGEN\}:\$\{VERSION\}"/);
@@ -103,7 +104,7 @@ test('T3b Imagen_VersionDelMergeYFirmaConLaSesionAbierta @story-2.30 @ac-1', () 
   // con `set -o pipefail`, un awk que sale antes de leer todo corta la tubería (código 141) y tumba el paso: lee hasta el final
   const programa = (t.match(/awk -v s="\$GITHUB_SHA" '([^']*)'/) || [])[1] || '';
   assert.ok(programa && !/\bexit\b/.test(programa), `el awk no sale antes de tiempo: ${programa}`);
-  assert.match(t, /printf '\{ "version": "%s" \}\\n' "\$VERSION" > \.tycon-release\.json/, 'la versión viaja adentro de la imagen');
+  assert.match(t, /printf '\{ "version": "%s", "image": "%s" \}\\n' "\$VERSION" "\$IMAGEN" > \.tycon-release\.json/, 'la versión viaja adentro de la imagen');
   // sin etiqueta no se publica una imagen con otro número: se dice y no se firma
   assert.match(t, /::warning::este commit no recibió la etiqueta del merge/);
   assert.match(t, /echo "publicar=no" >> "\$GITHUB_OUTPUT"\n {12}exit 0/);
@@ -142,4 +143,109 @@ test('T3c Imagen_EscaneoQueFrenaAntesDePublicar_YBaseFijada @story-2.30 @ac-1', 
   assert.match(docker, /^FROM node:\d+\.\d+\.\d+-alpine\d+\.\d+@sha256:[0-9a-f]{64}$/m, 'la base fijada por huella');
   assert.match(docker, /apk upgrade --no-cache/);
   for (const x of ['/usr/local/lib/node_modules/npm', '/usr/local/lib/node_modules/corepack', '/usr/local/bin/npx', '/usr/local/bin/yarn']) assert.ok(docker.includes(x), `la imagen saca ${x}`);
+});
+
+// ── la etiqueta móvil `stable` ───────────────────────────────────────────────────────────────────────
+const http = require('http');
+const { spawn } = require('child_process');
+/** El bloque `run:` de un paso por su nombre (sin sangría), o null. */
+function paso(t, nombre) {
+  const i = t.indexOf(`- name: ${nombre}`);
+  if (i < 0) return null;
+  const resto = t.slice(i);
+  const fin = resto.slice(2).search(/\n {6}- /);
+  return fin < 0 ? resto : resto.slice(0, fin + 2);
+}
+
+test('T2 2.33-Imagen_EtiquetasOciDelContexto @story-2.33 @ac-3 — las etiquetas OCI y el nombre adentro, del contexto', () => {
+  // 🔴 rojo: la imagen sale sin versión legible desde el registro, o con un nombre de registro escrito en el código.
+  const t = read();
+  for (const [k, v] of [['version', '\\$VERSION'], ['revision', '\\$GITHUB_SHA'], ['source', '\\$\\{GITHUB_SERVER_URL\\}/\\$\\{GITHUB_REPOSITORY\\}'], ['created', '\\$CREADA']]) {
+    assert.match(t, new RegExp(`--label "org\\.opencontainers\\.image\\.${k}=${v}"`), `la etiqueta OCI ${k}`);
+  }
+  assert.match(t, /CREADA=\$\(date -u \+%Y-%m-%dT%H:%M:%SZ\)/, 'created en UTC');
+  assert.match(t, /printf '\{ "version": "%s", "image": "%s" \}\\n' "\$VERSION" "\$IMAGEN" > \.tycon-release\.json/, 'el nombre de la imagen viaja adentro');
+  assert.doesNotMatch(codigo(t).join('\n'), /ghcr\.io\/[a-z0-9-]+\/[a-z0-9-]+/i, 'ningún nombre de registro escrito');
+});
+
+test('T3 2.33-Stable_SeMueveAlFinal @story-2.33 @ac-4 — stable se mueve después de firmar y verificar, antes de cerrar la sesión', () => {
+  // 🔴 rojo: un `-t …:stable` en el docker build mueve la etiqueta antes del escaneo y de la firma.
+  const t = read();
+  assert.doesNotMatch(t, /docker build [^\n]*:stable/, 'stable nunca en el build');
+  assert.doesNotMatch(t, /docker push[^\n]*:stable/, 'stable nunca se sube aparte (se apunta a la huella ya subida)');
+  const firma = t.indexOf('actions/attest-build-provenance@');
+  const verif = t.indexOf('gh attestation verify');
+  const mover = t.indexOf('docker buildx imagetools create');
+  const cierre = t.indexOf('docker logout ghcr.io');
+  assert.ok(firma > 0 && verif > firma && mover > verif && cierre > mover, `el orden: firma ${firma}, verificación ${verif}, stable ${mover}, cierre ${cierre}`);
+  assert.match(t, /gh attestation verify "oci:\/\/\$\{IMAGEN\}@\$\{HUELLA\}" --repo "\$GITHUB_REPOSITORY"/);
+  assert.match(t, /docker buildx imagetools create -t "\$\{IMAGEN\}:stable" "\$\{IMAGEN\}@\$\{HUELLA\}"/, 'sin volver a subir capas: la misma huella');
+});
+
+test('T4 2.33-Stable_NoSeMueveSiFallaLaFirma @story-2.33 @ac-4 — mover stable depende de la publicación, la firma y la verificación', () => {
+  const t = read();
+  const verif = paso(t, 'Verificar la firma de la imagen');
+  const mover = paso(t, 'Mover stable a la imagen nueva');
+  assert.ok(verif && mover, 'los dos pasos existen');
+  assert.match(verif, /\n {8}id: firma\n/);
+  assert.match(verif, /\n {8}if: steps\.imagen\.outputs\.publicar == 'si'\n/);
+  assert.match(mover, /\n {8}if: steps\.imagen\.outputs\.publicar == 'si' && steps\.firma\.outcome == 'success'\n/, 'sólo con la verificación en verde (y por lo tanto la firma y la publicación)');
+  assert.match(mover, /GITHUB_STEP_SUMMARY/, 'el resumen del workflow dice qué pasó con stable');
+});
+
+/** Un registro de juguete: el token anónimo, el manifiesto de `stable` (o 404) y su configuración con la etiqueta. */
+async function registro({ stable = null } = {}) {
+  const config = stable ? JSON.stringify({ config: { Labels: { 'org.opencontainers.image.version': stable } } }) : null;
+  const dConfig = config ? `sha256:${require('crypto').createHash('sha256').update(config).digest('hex')}` : null;
+  const srv = http.createServer((req, res) => {
+    if (req.url.startsWith('/token')) { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"token":"anonimo"}'); return; }
+    if (req.headers.authorization !== 'Bearer anonimo') { res.writeHead(401); res.end(); return; }
+    if (/\/manifests\/stable$/.test(req.url)) {
+      if (!stable) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'application/vnd.docker.distribution.manifest.v2+json', 'docker-content-digest': `sha256:${'b'.repeat(64)}` });
+      res.end(JSON.stringify({ schemaVersion: 2, mediaType: 'application/vnd.docker.distribution.manifest.v2+json', config: { digest: dConfig } }));
+      return;
+    }
+    if (dConfig && req.url.endsWith(`/blobs/${dConfig}`)) { res.writeHead(200); res.end(config); return; }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${srv.address().port}`, cerrar: () => new Promise((r) => srv.close(r)) };
+}
+const decidir = (args) => new Promise((resolve) => {
+  const p = spawn(process.execPath, [path.join(ROOT, 'scripts', 'site', 'latest-release.js'), 'stable-decision', ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = ''; p.stdout.on('data', (d) => { out += d; }); p.stderr.on('data', (d) => { out += d; });
+  p.on('close', (status) => resolve({ status, out }));
+});
+
+test('T5 2.33-Stable_NuncaRetrocede @story-2.33 @ac-5 — sin stable la crea; mayor la mueve; igual o menor la deja y lo dice', async () => {
+  // 🔴 rojo: una corrida vieja (re-ejecutada a mano) devuelve stable a una versión anterior y todos los sitios bajan.
+  for (const [actual, nueva, esperado] of [[null, '2026.10.18.7', 'crear'], ['2026.10.18.7', '2026.10.18.8', 'mover'], ['2026.10.18.7', '2026.10.18.7', 'queda'], ['2026.10.18.7', '2026.10.17.40', 'queda']]) {
+    const reg = await registro({ stable: actual });
+    try {
+      const r = await decidir(['--image', 'ghcr.io/acme/arnes', '--version', nueva, '--registry-url', reg.base]);
+      assert.strictEqual(r.status, 0, r.out);
+      assert.match(r.out, new RegExp(`^decision=${esperado}$`, 'm'), `${actual} → ${nueva}: ${r.out}`);
+      if (esperado === 'queda') assert.match(r.out, /no es mayor que la de stable/);
+    } finally { await reg.cerrar(); }
+  }
+  // sin poder leer stable no se mueve a ciegas: sale distinto de 0 y lo dice
+  const r = await decidir(['--image', 'ghcr.io/acme/arnes', '--version', '2026.10.18.8', '--registry-url', 'http://127.0.0.1:9']);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.out, /no se pudo leer stable/);
+  assert.match(read(), /node scripts\/site\/latest-release\.js stable-decision --image "\$IMAGEN" --version "\$VERSION"/, 'el workflow decide con esta orden');
+});
+
+test('T6 2.33-SinNumero_NoPublicaNiMueve @story-2.33 @ac-6 — un commit sin número no publica ni mueve stable', () => {
+  const t = read();
+  assert.match(t, /echo "publicar=no" >> "\$GITHUB_OUTPUT"\n {12}exit 0/);
+  for (const n of ['Verificar la firma de la imagen', 'Mover stable a la imagen nueva']) assert.match(paso(t, n), /if: steps\.imagen\.outputs\.publicar == 'si'/, `${n} no corre sin número`);
+});
+
+test('T4b 2.33-Rev_StableDiceQuePasoYLaFirmaEsDeEsteWorkflow @story-2.33 @ac-4 — el motivo de un rojo y de un «queda» se ve', () => {
+  const t = read();
+  assert.match(t, /\|\| \{ echo "\$SALIDA"; echo "::error::stable no se movió/, 'sin poder leer stable: el paso falla con el motivo a la vista');
+  assert.match(t, /echo "::warning::stable no se movió/, 'un «queda» (igual, menor o incomparable) deja un aviso');
+  assert.match(t, /--signer-workflow "\$\{GITHUB_REPOSITORY\}\/\.github\/workflows\/site-image\.yml"/, 'la firma tiene que ser de este workflow');
+  assert.match(t, /--label "tycon\.image=site"/, 'la etiqueta con la que harness.js update reconoce la imagen del sitio');
 });

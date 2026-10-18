@@ -304,7 +304,10 @@ jobs:
         run: |
           set -uo pipefail
           set +e   # GitHub corre el paso con bash -e: el código de salida se lee abajo, no corta acá
-          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" \
+          # la versión del sitio, sólo si la organización tiene el nocturno que lo mantiene al día (site-update.yml)
+          SU=()
+          [ -d .dashboard/site-update ] && SU=(--site-update ".dashboard/site-update/site-update-${HOY_NOCTURNO}.json")
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "${HOY_NOCTURNO}" ${SU[@]+"${SU[@]}"} \
             --out .dashboard/dependencias --pending inbox/dependencies \
             --operations operations.json --site-check "${RUNNER_TEMP}/site-check.json" 2>&1 | bash pipelines/operations/github/annotate.sh
           CODIGO=${PIPESTATUS[0]}
