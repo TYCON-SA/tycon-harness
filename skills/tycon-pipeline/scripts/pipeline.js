@@ -1458,6 +1458,27 @@ function aplicarModelosDeRevisores(out, list, args, fullSet = list) {
 }
 
 /**
+ * Corrida liviana: el modelo barato para TODOS los revisores del set, lo de `--cost-tier lean` ampliado.
+ * Con `--cost-tier deep` (la auditoría a pedido) no se toca. En una completa no cambia nada.
+ */
+function aplicarTamanoALosRevisores(set, args) {
+  if (args.costTier === 'deep') return;
+  const runSize = computeRunSize(args);
+  set.run_size = runSize.size;
+  if (runSize.size !== 'liviana') return;
+  const barato = TIER_TO_MODEL.lean;
+  if (set.reviewer_models) {
+    for (const r of set.all) set.reviewer_models[r] = { ...(set.reviewer_models[r] || {}), model: barato, origin: 'run-size' };
+  } else {
+    set.model_hints = Object.fromEntries(set.all.map((r) => [r, barato]));
+    delete set.reloop_model_hints;
+    delete set.reloop_model_hints_note;
+  }
+  set.cost_tier = 'liviana';
+  set.run_size_note = `corrida liviana (${runSize.reason}): todos los revisores en ${barato}`;
+}
+
+/**
  * Lo que la línea de comandos dice de los modelos: `models_problem` (la configuración no se pudo leer) y
  * `models_warnings` (lo que se bajó al techo, un pedido que no aplica…), cada aviso una sola vez por corrida: con
  * marcador, lo ya avisado queda en `modelsWarned` (la misma lógica que `marker.js mark-models-warned`); sin marcador,
@@ -2666,6 +2687,22 @@ function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   };
 }
 
+/**
+ * Lo que cambia en el paso por el tamaño de la corrida, o null. Paso 4 de una liviana: las tandas van
+ * juntas. Paso 8 de una liviana: no se pide la validación pesada del repo, salvo que el dev la haya nombrado
+ * (`marker.js set-flag heavyValidationRequested true`).
+ */
+function notaDelTamano(marker, nextStep) {
+  if (!marker || marker.size !== 'liviana' || !nextStep) return null;
+  if (String(nextStep.step) === '4') return 'Corrida liviana: las tandas van juntas en esta corrida (una sola implementación, una sola vuelta de pruebas).';
+  if (String(nextStep.step) === '8') {
+    return marker.heavyValidationRequested
+      ? 'Corrida liviana, pero el dev nombró la validación pesada del repo: pedila antes del merge.'
+      : 'Corrida liviana: no pidas la validación pesada del repo; se corre sólo si el dev la nombra (marker.js set-flag heavyValidationRequested true).';
+  }
+  return null;
+}
+
 function computeNext() {
   const marker = readSessionMarker();
   if (!marker || !marker.storyId) {
@@ -2752,10 +2789,11 @@ function computeNext() {
     steps: stepState,
     ...(pending ? { pending_action: pending } : {}),
     ...(pase.adversarial_note ? { adversarial_note: pase.adversarial_note } : {}),
+    ...(notaDelTamano(marker, nextStep) ? { run_size_note: notaDelTamano(marker, nextStep) } : {}),
     note: exempt7c
       ? `Sigue «${nextStep.name}». ${NOTA_7C_EXENTA}`
       : nextStep
-      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? notaCierre3(marker) : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}`
+      ? `${pending && ['consultar-porton', 'lanzar-pase'].includes(pending.kind) ? `ANTES, pase adversarial: ${pending.message} ` : ''}Sigue «${nextStep.name}». Leé SOLO ${path.basename(nextStep.file)} y ejecutalo. Los skips listados son mecánicos (verificables) — no infieras otros (regla E.i). Al completar: ${nextStep.step === '5b' ? NOTA_CIERRE_5B : nextStep.step === '7c' ? NOTA_CIERRE_7C : SUBSTEP_FLAG[nextStep.step] ? `marker.js set-flag ${SUBSTEP_FLAG[nextStep.step]} true` : nextStep.step === '3' ? notaCierre3(marker) : nextStep.step === '5' ? 'marker.js run-check advisors -- pipeline.js check-count … y recién después marker.js complete-step 5 (bloquea sin el verde real)' : `marker.js complete-step ${nextStep.step}`}.${pending && pending.kind.endsWith('-pase-ajeno') ? ` ⚠️ ${pending.message} Regla: ${pending.rule} (${pending.why}).` : ''}${notaDelTamano(marker, nextStep) ? ` ${notaDelTamano(marker, nextStep)}` : ''}`
       : 'No quedan pasos pendientes — cerrá con marker.js clear (o step-09-ado-story-closure.md si vas a cerrar la story en ADO: «Cerrar en ADO»).',
   };
 }
@@ -2918,6 +2956,12 @@ function computeStart(args) {
     return { ready: false, story_id: storyId, branch, pauses, actions_done: actions, note: 'NADA mutado (salvo .gitignore idempotente). Resolvé las pausas y re-corré start.' };
   }
 
+  // el tamaño de la corrida y su tiempo estimado, ANTES de lanzar nada; quedan en el marcador.
+  const sizeCls = computeRunSize({ story: storyPath, repo, runSize: args.runSize });
+  const est = runSizeLib.estimate({ size: sizeCls.size, historyDir: path.join(stateDirOf(os.homedir()), 'timing-history') });
+  const runSize = { size: sizeCls.size, reason: sizeCls.reason, estimate_min: est.minutes, estimate_source: est.source };
+  actions.push(`TAMAÑO: corrida ${runSize.size} (${runSize.reason}) · estimado ${runSize.estimate_min} min (${runSize.estimate_source})`);
+
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
   const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   try {
@@ -2941,6 +2985,7 @@ function computeStart(args) {
         }
       })(),
       stepsPending: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+      size: runSize.size, size_reason: runSize.reason, estimate_min: runSize.estimate_min, estimate_source: runSize.estimate_source,
     })], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     execFileSync(process.execPath, [markerJs, 'complete-step', '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     actions.push('PIPE-C4: marker seteado (step 0 completado)');
@@ -2980,8 +3025,9 @@ function computeStart(args) {
     ready: true,
     story_id: storyId,
     branch,
-    risk: computeRiskClass({ story: storyPath, files: [] }),
-    model_hint: computeModelHint({ story: storyPath, files: [], orgModels: args.orgModels, sessionModel: args.sessionModel }),
+    run_size: runSize,
+    risk: computeRiskClass({ story: storyPath, files: [], repo, runSize: args.runSize }),
+    model_hint: computeModelHint({ story: storyPath, files: [], repo, runSize: args.runSize, orgModels: args.orgModels, sessionModel: args.sessionModel }),
     // story 7.29: el modelo de los ayudantes sueltos (SPAWN-1), con configuración de la organización o pedido
     ...((args.orgModels && args.orgModels.declared) || args.modelRequests
       ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
@@ -3035,6 +3081,12 @@ function recortarStart(result) {
       breve.riesgo_por = (result.risk.criteria || []).filter((c) => !c.pass).map((c) => c.name);
     }
   }
+  if (result.run_size) {
+    breve.tamano = result.run_size.size;
+    breve.tamano_por = result.run_size.reason;
+    breve.estimado_min = result.run_size.estimate_min;
+    breve.estimado_de = result.run_size.estimate_source;
+  }
   if (result.models) breve.models = result.models;
   if (result.models_problem) breve.models_problem = result.models_problem;
   if (result.models_warnings) breve.models_warnings = result.models_warnings;
@@ -3067,6 +3119,39 @@ function recortarStart(result) {
 // git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
 // Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
 // pre-requisito del flujo — Step 1 corre antes que Step 3, no se re-evalúa acá).
+// ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
+// lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
+// manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial (decisión 7).
+const runSizeLib = require('./lib/run-size.js');
+function computeRunSize(args) {
+  if (args.runSize && runSizeLib.SIZES.includes(args.runSize.size)) {
+    return { size: args.runSize.size, reason: `forzado a mano: ${args.runSize.reason || '(sin motivo)'}`, first_code_file: null, forced: true };
+  }
+  const content = args.story && fs.existsSync(args.story) ? readText(args.story) : '';
+  const repo = args.repo && fs.existsSync(args.repo) ? args.repo : null;
+  // Lo declarado Y lo que el cambio toca de verdad (`--files`, el diff): una story que declara un .md y toca código no
+  // puede salir liviana (pase adversarial). Sin story no hay tamaño: sólo con el diff no se sabe qué faltó declarar.
+  const declared = runSizeLib.declaredFiles(content);
+  const rel = (f) => (repo && path.isAbsolute(f) && !path.relative(repo, f).startsWith('..') ? path.relative(repo, f) : f);
+  const touched = Array.isArray(args.files) ? args.files.map(rel) : [];
+  if (!declared.length) return runSizeLib.classifyStory({ files: [] });
+  const files = [...new Set([...declared, ...touched])];
+  return runSizeLib.classifyStory({
+    files,
+    alwaysPaths: repo ? deepReviewAlwaysPaths(repo) : [],
+    deepReviewCfg: repo ? deepReviewConfig(repo) : null,
+    roots: repo ? [repo] : [],
+  });
+}
+
+/** El tamaño forzado a mano en el marcador de esta sesión, si es de la misma story: `{ size, reason }` o null. */
+function runSizeDelMarcador(storyPath) {
+  const m = readSessionMarker();
+  if (!m || !m.sizeForced || !runSizeLib.SIZES.includes(m.size)) return null;
+  if (storyPath && m.storyPath && path.resolve(m.storyPath) !== path.resolve(storyPath)) return null;
+  return { size: m.size, reason: m.sizeForced.reason };
+}
+
 function computeRiskClass(args) {
   const storyPath = args.story;
   if (!storyPath || !fs.existsSync(storyPath)) {
@@ -3085,8 +3170,15 @@ function computeRiskClass(args) {
     'migraciones de schema cambian datos — siempre plan HITL');
   add('sin-scope-firmado', !fm.signed_for_sprint && !fm.signed_ac_ref,
     `signed_for_sprint=${fm.signed_for_sprint || '(ausente)'} signed_ac_ref=${fm.signed_ac_ref || '(ausente)'} — stories firmadas con cliente siempre plan HITL`);
-  add('superficie-chica', scopeFiles.length > 0 && scopeFiles.length <= 6,
-    `${scopeFiles.length} archivos en scope (límite 6; 0 archivos = scope no declarado → NORMAL)`);
+  // en una corrida liviana (sólo documentación) el tamaño solo no sube el riesgo.
+  const runSize = computeRunSize(args);
+  if (runSize.size === 'liviana') {
+    add('superficie-chica', scopeFiles.length > 0,
+      `${scopeFiles.length} archivos en scope, todos documentación: corrida liviana, el tamaño no cuenta`);
+  } else {
+    add('superficie-chica', scopeFiles.length > 0 && scopeFiles.length <= 6,
+      `${scopeFiles.length} archivos en scope (límite 6; 0 archivos = scope no declarado → NORMAL)`);
+  }
   add('sin-paths-sensibles', !scopeFiles.some((f) => /auth|security|payment|crypto|secret|credential/i.test(f)),
     'archivos de auth/seguridad/pagos siempre plan HITL');
   add('sin-pipelines-multi-tanda', !/^pipelines:/m.test(content),
@@ -3095,6 +3187,7 @@ function computeRiskClass(args) {
   const allPass = criteria.every((c) => c.pass);
   return {
     risk: allPass ? 'LOW' : 'NORMAL',
+    run_size: runSize.size,
     auto_approve_plan: allPass,
     criteria,
     note: allPass
@@ -3370,8 +3463,10 @@ function computeModelHint(args) {
 
   const signals = [];
   const add = (name, hit, detail) => signals.push({ name, hit, detail });
-  add('superficie-grande', scopeFiles.length > 12, `${scopeFiles.length} archivos en scope (umbral >12)`);
-  add('muchos-acs', acCount >= 10, `${acCount} ACs (umbral ≥10)`);
+  // en la liviana, cuántos archivos o ACs no piden un modelo mayor; en la completa, como siempre.
+  const liviana = rc.run_size === 'liviana';
+  add('superficie-grande', !liviana && scopeFiles.length > 12, `${scopeFiles.length} archivos en scope (umbral >12)${liviana ? ' — corrida liviana: no cuenta' : ''}`);
+  add('muchos-acs', !liviana && acCount >= 10, `${acCount} ACs (umbral ≥10)${liviana ? ' — corrida liviana: no cuenta' : ''}`);
   add('codigo-nuevo-amplio', /CREATE/i.test(fm.approach || '') && created.length >= 5,
     `approach=${fm.approach || '(ausente)'} + ${created.length} files_to_create (umbral: CREATE y ≥5)`);
   add('multi-tanda', /^pipelines:/m.test(content), 'bloque pipelines: — entregas en tandas con interdependencias');
@@ -3670,6 +3765,12 @@ function computeDeepReviewGate(args) {
     };
   }
 
+  // 4c) Corrida liviana: sólo documentación → sin pase adversarial. Las superficies del repo ya
+  //     decidieron arriba y además vuelven completa la corrida (lib/run-size.js, decisión 7).
+  const runSize = computeRunSize(args);
+  if (runSize.size === 'liviana') {
+    return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
+  }
   // 5) Default: gate por risk-class (decisión "siempre en NORMAL").
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
@@ -4927,6 +5028,9 @@ function main() {
       }
       for (const r of Object.keys(set.reviewer_models)) if (!set.all.includes(r)) delete set.reviewer_models[r];
     }
+    // en una corrida liviana todos los revisores van en el modelo barato (los de completitud siguen en el
+    // set: el descuento mecánico de arriba no mira el tamaño).
+    aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
     decirModelos(set, conModelos.orgModels, avisosModelos);
     logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // CF-2 + expected persistido (post-descuento)
     salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
@@ -5282,7 +5386,7 @@ function main() {
     // Story 7.25: tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    const result = computeRiskClass(args);
+    const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story) });
     // Story 7.30 (decisión 8 del dueño): una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
     // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
@@ -5302,7 +5406,7 @@ function main() {
   if (cmd === 'model-hint') {
     // Sugerencia de modelo de SESIÓN por complejidad (2026-07-06). Advisory puro:
     // exit 0 siempre; el orquestador compara con su propio modelo y sugiere /model.
-    const conModelos = conModelosDeLaCorrida(args);
+    const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
     const result = computeModelHint(conModelos);
     if (result.session_warning) process.stderr.write(`model-hint: ${result.session_warning}\n`);
     decirModelos(result, conModelos.orgModels, result._avisos || []);
@@ -5322,7 +5426,7 @@ function main() {
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     // story 7.29 (decisión 24): sólo esta rama lee la máquina —la configuración de la organización, el pedido de la
     // corrida y la clave de la 7.19— y se los pasa al portón; la línea de gates.log y el aviso también salen de acá.
-    const conModelos = conModelosDeLaCorrida(args);
+    const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
     const pregunta = preguntaDelModelo();
     if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
     conModelos.modelQuestion = pregunta;
@@ -5717,6 +5821,9 @@ module.exports = {
   buildAdvisorContext,
   parseFrontmatterList,
   computeRiskClass,
+  computeRunSize,
+  aplicarTamanoALosRevisores,
+  notaDelTamano,
   // fixes auditoría 2026-06-11 — exportadas para unit tests (lógica sutil: fail-open
   // por familia, orden mutación-vs-log, precedencia de tiers).
   validateFilesExist,

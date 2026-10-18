@@ -113,6 +113,13 @@ Doble seguro anti-relanzamiento: `deepReviewDone` (ya procesado) y el guard de `
 (ya lanzado en esta sesión → exit 2). La única re-invocación legítima es la adopción de un huérfano
 cross-session (ver §JOIN arriba).
 
+### Corrida liviana
+
+Con la story liviana (sólo documentación), el portón da `run: false` con «corrida liviana» y el pase se cierra con
+`marker.js mark-adversarial-skipped --files …`, como cualquier skip del portón. Mandan antes: el kill-switch,
+`deep_review: off|always`, `--deep-review` y la superficie compartida (que además vuelve completa la corrida). Para
+correrlo igual: `--deep-review`, o `marker.js set-size completa --reason "<por qué>"`.
+
 ## Acción — invocar el Workflow
 
 Si `run: true`, armar `args.decisions` con las decisiones de diseño ya APROBADas de esta story (del bloque de

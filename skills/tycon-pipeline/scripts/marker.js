@@ -346,6 +346,8 @@ function cmdSet(payloadJson) {
       // story 7.30: la maqueta aprobada y la decisión del paso 3 son de la story. Heredadas, la story B usaría la
       // maqueta de A (o su «sin pantalla») en el paso 8.
       mockupApproval, mockupDecision,
+      // el tamaño de la corrida (y su forzado a mano) es de la story.
+      size, size_reason, estimate_min, estimate_source, sizeForced,
       ...carryOver
     } = existing;
     console.error(
@@ -438,6 +440,15 @@ function cmdSet(payloadJson) {
     // pierden, computeSmartReloop elige el path fileEvents con datos truncados y
     // SUPRIME el fallback por mtime (re-ediciones caen del delta en silencio).
     fileEvents: payload.fileEvents || existing?.fileEvents || [],
+    // el tamaño de la corrida y su estimado los anota `pipeline.js start`. Un forzado a mano
+    // (`set-size`) gana sobre un `start` re-corrido de la misma story: re-clasificar no deshace una decisión con motivo.
+    ...(() => {
+      const keep = existing && existing.sizeForced;
+      const pick = (k) => (keep && k !== 'estimate_min' && k !== 'estimate_source' ? existing[k] : (payload[k] ?? existing?.[k]));
+      const out = {};
+      for (const k of ['size', 'size_reason', 'estimate_min', 'estimate_source']) if (pick(k) !== undefined) out[k] = pick(k);
+      return out;
+    })(),
   };
   // story 2.7: el paso 0 arranca cuando nace la corrida. Nadie lo pide con `next` (start lo cierra
   // enseguida), así que sin esto el paso 0 salía siempre «estimado» y toda corrida real «parcial».
@@ -1694,7 +1705,7 @@ function registrarRunCheck(name, cmdArgv, marker, exitCode, durationMs, salida) 
 // pase adversarial lo cerraron con la bandera y sin anotar qué encontró, y 3 de esas 4 pasaron el paso 8 igual.
 // Ahora la escriben sólo los dos comandos que cierran el 5b con constancia: `mark-adversarial-result` (el pase
 // corrió y se anota su resultado) y `mark-adversarial-skipped` (el portón decidió que no corre).
-const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman'];
+const VALID_FLAGS = ['clockiStarted', 'adoMarkedActive', 'atddBypass', 'waitingForHuman', 'heavyValidationRequested'];
 
 function cmdSetFlag(flag, valRaw) {
   if (flag === 'deepReviewDone') {
@@ -1718,6 +1729,48 @@ function cmdSetFlag(flag, valRaw) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(`${flag}: ${marker[flag]}\n`);
+}
+
+// Forzar el tamaño de la corrida a mano: `set-size liviana|completa --reason "<texto>"` (`--motivo` llega
+// traducido por legacy-names). Sin motivo no se
+// escribe nada (nadie sabría después por qué se saltó el pase). Forzar a liviana una story que declara código queda en
+// bypass.log: es apagar el pase adversarial a sabiendas.
+function cmdSetSize(args) {
+  const SIZES = ['liviana', 'completa'];
+  const size = args[0];
+  const i = args.indexOf('--reason');
+  const reason = i >= 0 ? String(args[i + 1] || '').trim() : '';
+  if (!SIZES.includes(size)) {
+    console.error(`marker.js set-size: tamaño inválido '${size || ''}' — válidos: ${SIZES.join(' | ')}`);
+    process.exit(2);
+  }
+  if (!reason) {
+    console.error('marker.js set-size: falta el motivo — marker.js set-size <liviana|completa> --reason "<por qué>"');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) {
+    console.error('marker.js set-size: no hay marker activo para esta sesión');
+    process.exit(1);
+  }
+  const by = process.env.USER || process.env.USERNAME || marker.sessionId || 'desconocido';
+  let declared = null;
+  try {
+    declared = require('./pipeline.js').computeRunSize({ story: marker.storyPath, repo: marker.repoPath });
+  } catch (e) {
+    console.error(`marker.js set-size: no pude clasificar lo que declara la story (${String(e.message || e).split('\n')[0]}); se guarda igual`);
+  }
+  const prev = marker.size || null;
+  marker.size = size;
+  marker.size_reason = `forzado a mano: ${reason}`;
+  marker.sizeForced = { by, reason, at: nowIso(), from: prev };
+  marker.lastTouch = nowIso();
+  writeMarker(marker);
+  if (size === 'liviana' && declared && declared.size === 'completa') {
+    appendLog('bypass.log', { kind: 'SIZE_FORCED_LIGHT_WITH_CODE', storyId: marker.storyId, by, reason, declared: declared.reason });
+    console.error(`⚠️  la story declara algo que no es documentación (${declared.reason}): forzarla a liviana apaga el pase adversarial — queda en bypass.log`);
+  }
+  process.stdout.write(`size: ${size} (${reason})\n`);
 }
 
 // story 7.29 — el pedido del dev para esta corrida: `set-models <trabajo>=<modelo> … | --clear`. `<trabajo>` es
@@ -3212,6 +3265,9 @@ switch (cmd) {
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
     break;
+  case 'set-size':
+    cmdSetSize(process.argv.slice(3));
+    break;
   case 'set-models':
     cmdSetModels(process.argv.slice(3));
     break;
@@ -3253,7 +3309,7 @@ switch (cmd) {
     console.error(
       'Usage: marker.js <set|get|touch|complete-step|append-file|clear|is-active|' +
         'list-all|find-by-story|clear-session|adopt-session|update-story-status|' +
-        'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|snapshot-iter|' +
+        'mark-dod-runtime-checked|set-autonomous|set-check|run-check|set-flag|set-size|snapshot-iter|' +
         'mark-adversarial-launched|mark-adversarial-result|mark-adversarial-skipped|mark-adversarial-gate|promote-probe|adhoc|story-skill-bypass|' +
         'approve-mockup> [arg] [arg2]',
     );

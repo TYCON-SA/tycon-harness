@@ -163,12 +163,29 @@ function ownPaths(repo, ruta) {
   return out;
 }
 
+/**
+ * Corrida liviana: ¿la suite lee algún archivo tocado? Sí si es ella misma, si vive en la carpeta del
+ * archivo (o debajo), o si su texto lo nombra —por su ruta relativa o por su nombre—. Una suite ilegible corre.
+ */
+function readsTouched(repo, ruta, files) {
+  const own = ownPaths(repo, ruta);
+  let text = null;
+  try { text = fs.readFileSync(ruta, 'utf8'); } catch (_) { return true; }
+  const suiteDir = own[0].includes('/') ? path.posix.dirname(own[0]) : '';
+  return files.some((f) => {
+    if (own.includes(f)) return true;
+    const dir = path.posix.dirname(f);
+    if (dir !== '.' && (suiteDir === dir || suiteDir.startsWith(`${dir}/`))) return true;
+    return text.includes(f) || text.includes(path.posix.basename(f));
+  });
+}
+
 function main(argv, env = process.env) {
   const [repo, out] = argv;
   const iSk = argv.indexOf('--skills');
   const iCov = argv.indexOf('--coverage');
   if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1])) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>]');
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light]');
     return Promise.resolve(2);
   }
   const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
@@ -204,6 +221,15 @@ function main(argv, env = process.env) {
   if (warning) console.error(`[suites.json] ⚠️  ${warning}`);
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1';
   const touched = readTouched(touchedFile);
+  let light = argv.includes('--light');
+  // el tamaño se fijó al arrancar: si el cambio real toca código, la corrida ya no es liviana y corre lo de siempre
+  if (light && touched.known) {
+    const code = touched.files.find((f) => require('./run-size.js').classifyFile(f).kind === 'code');
+    if (code) {
+      console.log(`[suites.json] corrida liviana, pero el cambio toca código (${code}): corren las suites de siempre`);
+      light = false;
+    }
+  }
 
   // Plan: por cada entrada, en el orden de la lista → ausente · diferida · exclusiva · paralela.
   const plan = suites.map((s, idx) => {
@@ -224,7 +250,7 @@ function main(argv, env = process.env) {
     return { idx, ruta, name, exclusive, gate, fromSkills: s.raiz === 'agent-skills' };
   });
 
-  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot };
+  const resumen = { corridas: 0, verdes: 0, fallas: [], ausentes: [], suites: [], workers, wall_ms: 0, deferred_suites: [], unmeasured_suites: [], skills_root: skillsRoot, ...(light ? { light: true } : {}) };
   const results = new Array(plan.length).fill(null);
   const parallel = [];
   const exclusives = [];
@@ -255,6 +281,12 @@ function main(argv, env = process.env) {
         console.log(`[suites.json] no pude saber qué archivos toca la story (${touched.reason || 'sin motivo'}): corre todo`);
         unknownSaid = true;
       }
+    }
+    if (light && touched.known && !allSuites && !readsTouched(repo, p.ruta, touched.files)) {
+      const reason = 'diferida por corrida liviana: no lee ningún archivo tocado';
+      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      console.log(`DIFERIDA ${p.name} — ${reason}`);
+      continue;
     }
     (p.exclusive ? exclusives : parallel).push(p);
   }

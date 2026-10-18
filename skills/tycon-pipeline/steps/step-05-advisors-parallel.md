@@ -88,6 +88,13 @@ El script además:
 - **Persiste `expected[]`** en la línea `step5-start` del log — es contra eso que
   `check-count` valida después.
 
+## Corrida liviana — todos los revisores en el modelo barato
+
+Con la story liviana, `advisors` devuelve `run_size: liviana`, `cost_tier: liviana` y el modelo barato para TODOS
+los revisores del set (`model_hints`, o `reviewer_models` con la configuración de la organización). Pasarlo como
+`model:` a cada `Agent()`. El set no se achica: los revisores de completitud corren igual (un texto puede contradecir
+el código). Anunciarlo en la línea de la regla B: «corrida liviana: N revisores en <modelo>».
+
 ## Paso PREVIO al fan-out — `mech-check` (determinista, ~ms, 0 tokens)
 
 **ANTES de invocar cualquier subagente**, corré:
