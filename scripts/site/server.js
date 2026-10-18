@@ -57,14 +57,16 @@ const { BRAND_LOGO } = require('../lib/operations-config.js');
 // SITE_AUTH_PROVIDER). El núcleo no nombra a ninguno: lo propio de cada uno vive en su archivo.
 const PROVEEDORES = (() => {
   const dir = path.join(__dirname, 'auth-providers');
-  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico } };
+  const out = { oidc: { problemasDeConfig: oidc.problemasDeConfig, crear: oidc.crearGenerico, describir: () => 'un proveedor OpenID Connect propio de la organización' } };
   for (const f of fs.readdirSync(dir).filter((x) => /^[a-z][a-z0-9-]*\.js$/.test(x)).sort()) out[f.slice(0, -3)] = require(path.join(dir, f));
   return out;
 })();
 const VARIABLES = ['SITE_PUBLIC_URL', 'SITE_SESSION_KEY', 'SITE_AUTH_PROVIDER', 'SITE_OIDC_CLIENT_ID', 'SITE_OIDC_CLIENT_SECRET', 'SITE_OIDC_ISSUER',
   'SITE_OIDC_EMAIL_CLAIM', 'SITE_AUTH_ALLOWED_DOMAINS', 'SITE_AUTH_GITHUB_ORG', 'SITE_OPERATIONS_REPO', 'SITE_OPERATIONS_TOKEN', 'SITE_OPERATIONS_IDENTITY',
   'SITE_MAILBOX_SAS', 'SITE_MAILBOX_IDENTITY', 'SITE_FIRST_MAINTAINER', 'SITE_DATA_DIR', 'PORT',
-  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN'];
+  'SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_REPO', 'SITE_PROFILE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'SITE_PIPELINES_TOKEN',
+  // las propias de cada proveedor, que las declara su archivo (`variables`)
+  ...new Set(Object.values(PROVEEDORES).flatMap((p) => (Array.isArray(p.variables) ? p.variables : [])))];
 const CORREO = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const DOMINIO = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
 const NEEDS = new Set(['maintainer', 'person']);
@@ -112,6 +114,11 @@ function validarConfiguracion(env) {
 
   if (PROVEEDORES[prov]) {
     problemas.push(...PROVEEDORES[prov].problemasDeConfig(env, { dominios }));
+    // lo propio de un proveedor que el sitio muestra (su modo), sin valores secretos
+    cfg.opciones = typeof PROVEEDORES[prov].opcionesDe === 'function' ? PROVEEDORES[prov].opcionesDe(env) : null;
+    // con qué se entra, en palabras: Configuración lo muestra de sólo lectura (se cambia en la instalación)
+    cfg.inicioDeSesion = { proveedor: prov, modo: cfg.opciones && cfg.opciones.modo ? cfg.opciones.modo : null,
+      texto: typeof PROVEEDORES[prov].describir === 'function' ? PROVEEDORES[prov].describir(cfg.opciones || {}) : `el proveedor «${prov}»` };
     // un proveedor con lo suyo fijo (emisor, direcciones, organización) lo completa él; los demás usan SITE_OIDC_ISSUER
     if (typeof PROVEEDORES[prov].completarConfig === 'function') PROVEEDORES[prov].completarConfig(env, cfg);
     else if (env.SITE_OIDC_ISSUER) {
@@ -342,18 +349,27 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     return rutas.filter((r) => r.pestana && r.needs.includes(rol)).map((r) => ({ ...r.pestana, path: r.path })).sort((a, b) => a.orden - b.orden);
   }
 
-  function irAlEmisor(res) {
+  // las puertas de un proveedor que tiene más de una (la de los invitados del directorio); una vía que no
+  // es suya es la principal
+  const vias = Array.isArray(proveedor.vias) && proveedor.vias.length > 1 ? proveedor.vias : null;
+  const viaDe = (v) => (vias && vias.some((x) => x.id && x.id === v) ? v : null);
+
+  /**
+   * Al emisor. `otraCuenta`: el proveedor pide elegir la cuenta (quien entró con una que no está en la lista);
+   * `via`: por cuál de sus puertas (queda en el intento firmado, y la vuelta la usa).
+   */
+  function irAlEmisor(res, { otraCuenta = false, via = null } = {}) {
     if (!proveedor.listo()) return enviar(res, { status: 503, cuerpo: views.paginaSimple('El inicio de sesión todavía no está listo', 'El sitio no pudo hablar con el proveedor de la organización. Probá de nuevo en unos segundos.'), extra: { 'Retry-After': '10' } });
     const t = ahora();
-    const nuevo = session.nuevoIntento(cfg.sessionKey, t);
-    return enviar(res, { status: 302, cuerpo: '', extra: { Location: proveedor.urlDeInicio({ state: nuevo.intento.state, nonce: nuevo.intento.nonce, challenge: nuevo.challenge }), 'Set-Cookie': nuevo.cookie } });
+    const nuevo = session.nuevoIntento(cfg.sessionKey, t, { via: viaDe(via) });
+    return enviar(res, { status: 302, cuerpo: '', extra: { Location: proveedor.urlDeInicio({ state: nuevo.intento.state, nonce: nuevo.intento.nonce, challenge: nuevo.challenge, otraCuenta, via: nuevo.intento.via }), 'Set-Cookie': nuevo.cookie } });
   }
 
   async function vuelta(req, res, u, cookies) {
     const borrarIntento = session.borrar(session.INTENTO);
-    const rechazo = (status, pantalla, motivo) => {
+    const rechazo = (status, pantalla, motivo, enlace = null) => {
       registrar(`inicio de sesión rechazado: ${motivo}`);
-      return enviar(res, { status, cuerpo: views.paginaSimple('No se pudo entrar', pantalla), extra: { 'Set-Cookie': borrarIntento } });
+      return enviar(res, { status, cuerpo: views.paginaNoEntro(pantalla, enlace), extra: { 'Set-Cookie': borrarIntento } });
     };
     const t = ahora();
     for (const [s, exp] of consumidos) if (exp <= t) consumidos.delete(s);
@@ -370,13 +386,16 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (!code) return rechazo(400, 'El proveedor no devolvió un código. Volvé a entrar.', `sin código${errorDelEmisor ? ` (${errorDelEmisor})` : ''}`);
     let ident;
     try {
-      ident = await proveedor.completar({ code, verifier: it.verifier, nonce: it.nonce });
+      ident = await proveedor.completar({ code, verifier: it.verifier, nonce: it.nonce, via: viaDe(it.via) });
     } catch (e) {
-      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, `No se pudo entrar: ${e.pantalla}.`, e.motivo);
+      if (e instanceof oidc.ErrorDeIngreso) return rechazo(403, `No se pudo entrar: ${e.pantalla}.`, e.motivo, e.enlace);
       return rechazo(400, 'No se pudo completar el inicio de sesión. Volvé a entrar.', (e && e.motivo) || (e && e.message) || String(e));
     }
     const ses = session.nuevaSesion({ ...ident, prov: proveedor.nombre, iss: proveedor.emisor }, cfg.sessionKey, ahora());
-    registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})`);
+    // el porqué de una página sin datos, sin el correo: la lista se lee con la configuración vigente
+    const config = fuentes.estado().navegable || fuentes.estado().cargado ? fuentes.config() : null;
+    const sinLista = config && access.quienPide(ident, { config, firstMaintainer: cfg.firstMaintainer }).rol === 'none';
+    registrar(`inicio de sesión: entró una cuenta (${proveedor.nombre})${sinLista ? ' que no está en la lista del sitio: ve la página sin datos' : ''}`);
     return enviar(res, { status: 302, cuerpo: '', extra: { Location: '/', 'Set-Cookie': [ses, borrarIntento] } });
   }
 
@@ -392,7 +411,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (estatico[ruta] && req.method === 'GET') return enviar(res, { status: 200, ...estatico[ruta] });
 
     const cookies = session.leerCookies(req.headers.cookie);
-    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via') }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
       if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple('Salir', 'Para salir, usá el botón «Salir».'), extra: { Allow: 'POST' } });
@@ -401,7 +420,11 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
 
     const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
     const esApi = ruta.startsWith('/api/');
-    if (!ses) return esApi ? enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : irAlEmisor(res);
+    if (!ses) {
+      if (esApi) return enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
+      // con más de una puerta, se elige en la página de entrada; con una, directo al emisor
+      return vias ? enviar(res, { status: 200, cuerpo: views.paginaEntrar(vias) }) : irAlEmisor(res);
+    }
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
     if (st.frenado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });

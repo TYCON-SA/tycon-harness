@@ -62,10 +62,11 @@ anything on their machine to see it.
 
 - **Whoever maintains the harness:** installs it once, updates it deliberately, and edits the configuration from the
   Configuration tab.
-- **Each person in the organization who programs with the harness:** signs in and sees their own things. Whoever
-  does not use the harness on a machine has no runs of their own: they come in without a role, unless a maintainer adds
-  them to the maintainers list.
-- **Someone from another organization:** does not get in. The site only lets the organization in.
+- **Each person in the organization who programs with the harness:** signs in and sees their own things, if they are
+  in the site's list. Whoever does not use the harness on a machine has no runs of their own, but still sees the rest of
+  what is theirs.
+- **Someone who is not in the list:** sees nothing. With "any Microsoft account" they can get past the sign-in, but the
+  site shows them only a page with no data.
 
 **What it does not do.** The site shows; it does not act. It writes to no repo, except the change requests that the
 Configuration tab proposes, and those go in only when someone approves them. It does not run pipelines, merge, deploy or
@@ -74,25 +75,27 @@ touch any machine. What it shows is, at most, as old as the last night snapshot 
 ## Signing in for the first time
 
 **The address.** Whoever installed the site gives it out: it comes in the morning notice, and maintainers have it in the
-site's configuration (for maintainers: `site.url`, in the "Who maintains the site" section, *Quién mantiene el sitio*).
+site's configuration (for maintainers: `site.url`, in the "Who gets into the site" section, *Quién entra al sitio*).
 If you do not have it, ask whoever sent you the link or whoever installed the harness on your machine.
 
-**Signing in.** The site asks for the organization's account: Microsoft, Google or GitHub, depending on how it was
-installed. If your organization installed it on Azure, the first screen is Microsoft's. After you sign in, the site shows
-you Home. At the top right are your email and the **Sign out** button (*Salir*); at
+**Signing in.** The site asks for the account your organization chose when installing it: Microsoft, Google or GitHub.
+If your organization installed it on Azure, the first screen is Microsoft's. With "any Microsoft account", the first
+screen has two buttons: one for your Microsoft account and one for guests of the organization's directory. Getting past
+the sign-in is not enough: you get in only if you are in the site's list. After you sign in, the site shows you Home. At the top right are your email and the **Sign out** button (*Salir*); at
 the bottom left, the **Theme** (*Tema*: automatic, light or dark).
 
 **What you see the first time** depends on who you are for the site:
 
 - **A maintainer** sees the five tabs, and in Home what is waiting for a decision across the organization.
 - **A confirmed person** sees three tabs (Home, Runs and Projects), with their own things.
-- **Someone without a role** sees only a page saying their account is not confirmed yet, without the menu on the left.
+- **Someone who is not in the list** sees only a page saying which account they signed in with, that the account is
+  not in the list, whom to ask and how to sign in with another one. They see neither the menu on the left nor any data.
 
-![The page for someone without a role yet: "your account is not confirmed yet; ask whoever maintains the harness"](sitio-de-la-organizacion/capturas/sin-rol.png)
+![The page for someone who is not in the list: "Your account is not in the list" (*Tu cuenta no está en la lista*)](sitio-de-la-organizacion/capturas/sin-rol.png)
 
 **Your machine, not confirmed yet.** Each team machine uploads its runs with the git email of whoever uses it. A
-maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; if it is your only
-machine, you also come in without a role and see the page above. Ask whoever maintains the harness (if you do not know
+maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; you still get in,
+if you are in the list, and see the rest. Ask whoever maintains the harness (if you do not know
 who, whoever sent you the link or whoever installed the harness on your machine). They confirm it in Configuration, the
 change goes in when someone approves it, and from the next refresh on (at most 15 minutes later) you see your own
 things.
@@ -249,9 +252,17 @@ The sections, in the order of the screen:
 
 - **The organization** (*La organización*): the name and logo shown in the top bar and the footer. It lives in
   `operations.json`, in the operations repo. A maintainer reviews it.
-- **Who maintains the site** (*Quién mantiene el sitio*): who sees the Configuration tab and can propose changes; also
-  the runs mailbox, the refresh and the site's address. If you remove yourself from the list, you lose access when it is
-  approved. It lives in `operations.json`, in the operations repo. Another person on the list reviews it.
+- **Who gets into the site** (*Quién entra al sitio*): the list of who gets in and what they see, one row per person,
+  with their role ("Maintains the site", *Mantiene el sitio*, or "Dev") and one or more emails. Nobody gets in if they
+  are not here, with any sign-in. Maintainers see the Configuration tab and propose changes; devs see their own things.
+  A person gets in with any of their emails and sees the same. To add someone: Configuration, in People, "Who gets into
+  the site" → **+ Add person** (*+ Agregar persona*), their email and their role; it is done here, without the Microsoft
+  portal. The first time, the section brings the list built from what there was before (the maintainers and each person
+  with a confirmed machine) and warns that it is not saved yet: it is saved when you propose it. If someone leaves the
+  list, as soon as the request is approved and the site refreshes (at most 15 minutes), their next page is "Your
+  account is not in the list", with no data. Above the list you see how people sign in to the site; that is changed at
+  installation. The runs mailbox, the refresh and the site's address go here too. It lives in `operations.json`, in the
+  operations repo. Another maintainer reviews it.
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -331,47 +342,50 @@ reported with its last run. It is view only: the machines update themselves on s
 
 ## What each role sees
 
-The site decides who you are by your email:
+The site decides who you are by your email, and only with the "Who gets into the site" list:
 
 | Role | Home | Runs | Projects | Harness | Configuration |
 |---|---|---|---|---|---|
 | **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes |
-| **Confirmed person** | "Your things" | those of their confirmed machines | the products they work on | no | no |
-| **Person with an unconfirmed machine** | "Your things", if they have another confirmed machine; if not, the page "your account is not confirmed yet" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no |
-| **No role** | only the page "your account is not confirmed yet" | no | no | no | no |
+| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no |
+| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no |
+| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no |
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
 
-- To be a **person**, a machine of yours has to be confirmed in your name ("People and machines"). Your machine shows up
-  by itself in "To confirm" when it uploads its first run.
-- To **maintain**, your email has to be in "Who maintains the site". Whoever installs puts the first person, before the
-  list exists.
-- To stop seeing, the email or the machine is removed from those same sections.
+- To get in as a **dev**, your email has to be in "Who gets into the site" with the role "Dev". To see your runs, a
+  machine of yours also has to be confirmed in your name ("People and machines"): it shows up by itself in "To confirm"
+  when it uploads its first run.
+- To **maintain**, your email has to be in "Who gets into the site" with the role "Maintains the site". Whoever installs
+  puts the first person (`SITE_FIRST_MAINTAINER`), while the list has nobody who maintains.
+- To stop seeing, the email is removed from the list.
 
 ## Common problems
 
 ### I cannot sign in
 
-**What you see:** the sign-in page does not let you through, or it says your account has no access to the application.
+**What you see:** "Could not sign in" (*No se pudo entrar*), with the reason; or the Microsoft, Google or GitHub page
+does not let you through.
 
-**Why it happens:** the organization can let in only the people it enabled one by one. In Microsoft that is called
-"assigning" someone to the site's application. It also happens if the browser signs in with another account (a personal
-one, or another organization's).
+**Why it happens:** the site asks for an email your provider vouches for. Common cases: your account has no email in its
+directory; your organization did not verify your email's domain; or you signed in with a personal Microsoft account
+through the main button (personal accounts signing in directly are not accepted yet). It also happens if the browser
+signs in by itself with another account.
 
-**What to do:** ask a maintainer to enable you ("to assign you to the site's application", if it is Microsoft). If you are already assigned, sign out of the other
-account or open a private window and sign in with the organization's.
+**What to do:** if you are a guest of the organization's directory, sign in through the guests' button. If not, sign in
+with your organization's account: sign out of the other one or open a private window. If the message is about the email,
+ask whoever runs your directory to add or verify your email. To be in the site's list, ask a maintainer.
 
 ### I sign in and see nothing
 
-**What you see:** the page "your account is not confirmed yet; ask whoever maintains the harness".
+**What you see:** the page "Your account is not in the list", with the account you signed in with.
 
-**Why it happens:** you signed in fine, but the site has you neither as a person nor as a maintainer: no confirmed
-machine is in your name.
+**Why it happens:** you got past the sign-in, but that account is not in the "Who gets into the site" list. Maybe you
+are using another email than the one in the list.
 
-**What to do:** if you program with the harness, do a story with it on your machine: when it ends, the machine uploads
-its run and introduces itself. Then ask a maintainer to confirm it. If you do not use the harness on a machine, the site
-has nothing of yours to show; if you need to see everything, ask a maintainer to add you to the maintainers list.
+**What to do:** if you have another account, use "sign in with that one". If not, ask a maintainer to add you, with the
+email you sign in with. It goes in when someone approves the request and the site refreshes (at most 15 minutes).
 
 ### I do not see my runs
 
@@ -525,9 +539,24 @@ before the site stops (and lifts the stop until it expires again).
 ### The organization's sign-in
 
 The site does its own sign-in (`SITE_AUTH_PROVIDER`): generic `oidc` (Okta, Keycloak or another with discovery),
-`microsoft`, `google` or `github`. Each one is limited to the organization: one tenant, the domain
-(`SITE_AUTH_ALLOWED_DOMAINS`) or the GitHub organization. In the provider you register an application with the callback
-`<site address>/auth/callback` and a secret of 6 months at most.
+`microsoft`, `google` or `github`. It is chosen at installation, and Configuration shows it. In the provider you register
+an application with the callback `<site address>/auth/callback` and a secret of 6 months at most. With any provider, who
+gets in and what they see is decided by the site's list ("Who gets into the site"): getting past the sign-in is not
+enough.
+
+- **`google` and `github`** are limited to the organization: the domain (`SITE_AUTH_ALLOWED_DOMAINS`) or the GitHub
+  organization (`SITE_AUTH_GITHUB_ORG`).
+- **`microsoft`, one tenant** (`SITE_AUTH_MICROSOFT_ACCOUNTS=organization`, the default): the accounts of the
+  organization's directory and its guests get in. `SITE_OIDC_ISSUER` is the tenant's.
+- **`microsoft`, any account** (`SITE_AUTH_MICROSOFT_ACCOUNTS=any`): work or school accounts from any organization get
+  in, without inviting them to the directory. `SITE_OIDC_ISSUER` is `https://login.microsoftonline.com/common/v2.0` and
+  `SITE_AUTH_MICROSOFT_TENANT` is the organization's tenant: its guests get in through it, with their own button. You get
+  in only with an email verified by your organization. Microsoft personal accounts signing in directly are not accepted
+  yet: it could not be checked that their email is reliable (a guest with a personal account uses the guests' button).
+- **The risk, plainly:** with "any account", the first door is open to any Microsoft account, and all the control is in
+  the site's list. Whoever is not in the list sees a page with no data; no request answers them with data. That is why
+  the list is guarded like a password: each change is a request with who proposed it and who approved it.
+- The site gets no permission on anybody's directory: it does not assign, invite or read users.
 
 ### The probes
 
@@ -557,8 +586,8 @@ Each installation says where each one is stored and how its value gets in. **No 
 | `SITE_PIPELINES_TOKEN` | read the pipelines, to choose them by name in the Configuration tab («Tests at merge» and «Deployments») and to see the name of each stage | part of the normal installation on Azure DevOps: only *Build: Read*, for the organization, 90 days; it can be the same token as the operations repo's with *Build: Read* added. Without it, the tab asks for the pipeline number by hand and says what is missing, and the saved stages show their identifier |
 | `SITE_PROFILE_WRITE_TOKEN` | propose changes to the team profile | off by default: empty or commented out, never with a value; one dedicated identity and one repo per credential |
 
-`SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the list of
-maintainers (`site.maintainers` in `operations.json`) does not exist. Remove it afterwards.
+`SITE_FIRST_MAINTAINER` is not a secret: it is the email of whoever signs in first as maintainer, while the site's list
+(`site.access` in `operations.json`) has nobody who maintains. Remove it afterwards.
 
 ### Whoever can edit the installation can read its secrets
 
@@ -624,9 +653,16 @@ key. The profile repo is part of the normal installation: its address goes in `p
 `SITE_PROFILE_TOKEN`, in the environment of whoever runs the setup, like the other secrets. Without both, the
 Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 
-- **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration, single tenant
-  and with "assignment required" (people are assigned one by one; assigning a group needs an Entra ID P1/P2 license).
-  Behind it, the site's own. `/healthz` and `/livez` stay outside the lock.
+- **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration. Behind it, the
+  site's own, which decides with its list. `/healthz` and `/livez` stay outside the lock. `microsoftAccounts` in the
+  configuration file picks the mode:
+  - `organization` (the default): a single tenant. If the registration has "assignment required", people are assigned
+    one by one in the portal (assigning a group needs an Entra ID P1/P2 license).
+  - `any`: after setting up the application, the script reads that the registration asks for `email` and `xms_edov`,
+    moves it to any Microsoft account with v2 access tokens (Azure does not accept the change without them), removes the
+    required assignment and puts the platform's lock on the common issuer. Your `az` session does it, and it has to own
+    the registration; the site gets no new permission. Before running it, the site's list has to have everyone who gets
+    in today (the section builds it by itself from what there was before: propose it and have it approved).
 - **Disk:** an Azure Files share in a storage account of the site's own (cents per month), never in the mailbox
   account.
 - **Secrets:** application secrets. Their values come from environment variables of whoever runs the installation, with
@@ -703,10 +739,12 @@ Claude or Codex.
   `crypto` (only RS256 and ES256), and each check has its test with a badly built token. Each provider is limited to the
   organization in its own way. **The identity never comes from a header** of a proxy or of the platform.
 - **The session lives in a signed cookie**, for a fixed 8 hours, like the sign-in attempt: the site can restart or have
-  several replicas. **The role is recomputed on every request** (`access.js`). A maintainer is whoever is in
-  `site.maintainers` of `operations.json` (or the installation's first maintainer while that list does not exist). A
-  person is whoever has a machine in `people` of `operations.json`. Everyone else has no role and sees a page with no
-  data.
+  several replicas. **The role is recomputed on every request** (`access.js`) and comes only from the `site.access` list
+  of `operations.json` (the rule lives in `scripts/lib/people.js`): a maintainer is whoever has a `maintainer` entry (or
+  the installation's first maintainer while the list has none); a person, whoever has a `dev` entry. Without
+  `site.access`, the list is built from what there was before (`site.maintainers` and the people of `people.machines`).
+  A person can have several emails: their things are computed with all of them. Everyone else has no role and sees a
+  page with no data.
 - **A single path for the data**: the routes table in `server.js`. A route that does not declare who may see it keeps
   the site from starting, and each route gets the model already filtered for whoever asks.
 - **It reads straight from the sources** (`sources.js`): the operations repo, cloned with the credential in a header

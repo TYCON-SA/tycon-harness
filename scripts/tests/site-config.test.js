@@ -1686,3 +1686,107 @@ test('Marca_LaOrganizacionEnPersonas_ConVistaPrevia — se edita en Configuraci�
     assert.deepStrictEqual([o.estado, o.motivo], ['no_reader', 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)']);
   });
 });
+
+// ── quién entra al sitio lo decide la lista (AC 5 y 6), y el inicio de sesión elegido se ve (AC 8) ─────────
+test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
+  const M = 'mant@acme.example';
+  const conLista = { version: 1, owners: { default: LEAD }, reviewers: { watcher: ['w@acme.example'] },
+    site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV, 'dev.a.casa@mail.example'] }], refresh_minutes: 20, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs' } },
+    people: { machines: { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } } } };
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': conLista }), config: conLista }) }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const s = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'sitio');
+    assert.deepStrictEqual(s.borrador.site.access, conLista.site.access, 'la sección trae la lista');
+    assert.strictEqual(s.extras.migracion, undefined, 'con la lista puesta, sin aviso de migración');
+    const rev = async (access) => (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: { site: { ...conLista.site, access } } })).json;
+    // sumar a alguien, sumar un correo, cambiar el rol: cada pedido cambia sólo esa entrada; el resto, byte por byte
+    const cambios = [
+      ['sumar a alguien', [...conLista.site.access, { role: 'maintainer', emails: [M] }]],
+      ['sumar un correo', [conLista.site.access[0], { role: 'dev', emails: [DEV, 'dev.a.casa@mail.example', 'dev.a.otra@mail.example'] }]],
+      ['cambiar el rol', [conLista.site.access[0], { role: 'maintainer', emails: [DEV, 'dev.a.casa@mail.example'] }]],
+      ['sacar un correo', [conLista.site.access[0], { role: 'dev', emails: [DEV] }]],
+      ['sacar a alguien', [conLista.site.access[0]]],
+    ];
+    for (const [caso, access] of cambios) {
+      const r = await rev(access);
+      assert.strictEqual(r.ok, true, `${caso}: ${JSON.stringify(r.problems)}`);
+      assert.strictEqual(r.texto, ORG.formatJson({ ...conLista, site: { ...conLista.site, access } }), caso);
+    }
+    // sin nadie que mantenga no se propone; un correo repetido, con su ruta
+    const sinMant = await rev([{ role: 'dev', emails: [DEV] }]);
+    assert.strictEqual(sinMant.ok, false);
+    assert.ok(sinMant.problems.some((p) => p.path === 'site.access' && /quedaría sin nadie que pueda entrar a esta pestaña/.test(p.message)), JSON.stringify(sinMant.problems));
+    const repetido = await rev([{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: ['LEAD@acme.example'] }]);
+    assert.ok(repetido.problems.some((p) => p.path === 'site.access.1.emails.0'));
+    const sinMi = await rev([{ role: 'maintainer', emails: [M] }]);
+    assert.match(sinMi.advertencia, /no estás en la lista que proponés: al mergear perdés el acceso/);
+    // proponer revalida: un texto sin ningún maintainer no se propone aunque se arme a mano
+    const aMano = ORG.formatJson({ ...conLista, site: { ...conLista.site, access: [{ role: 'dev', emails: [DEV] }] } });
+    const p = (await escribir('/api/config/proponer', lead, tok, { seccion: 'sitio', texto: aMano, oid: 'x' })).json;
+    assert.strictEqual(p.ok, false);
+    assert.match(p.message, /sin nadie que pueda entrar/);
+  });
+  // la migración: sin site.access, la sección arranca con la lista armada con lo de hoy y la propone sin site.maintainers
+  const hoy = { version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD], refresh_minutes: 20 }, people: conLista.people };
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': hoy }), config: hoy }) }, async ({ h, entrar, token, escribir }) => {
+    const lead = await entrar(LEAD); const tok = await token(lead);
+    const s = (await h.pedir('/api/config', { cookie: lead })).json.secciones.find((x) => x.id === 'sitio');
+    assert.deepStrictEqual(s.borrador.site, { refresh_minutes: 20, access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] });
+    assert.match(s.extras.migracion, /se armó con lo de hoy/);
+    const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: s.borrador })).json;
+    assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+    assert.strictEqual(r.texto, ORG.formatJson({ ...hoy, site: s.borrador.site }), 'el pedido cambia sólo site');
+  });
+  // si todo lo de hoy está mal escrito, la sección igual avisa que quedó afuera (aunque no haya lista para proponer)
+  const basura = { version: 1, owners: { default: LEAD }, site: { maintainers: ['no es un correo'] } };
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': basura }), config: opsBase() }) }, async ({ h, entrar }) => {
+    const s = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'sitio');
+    assert.match(String(s.extras.migracion), /1 correo\(s\) .*quedaron afuera/, JSON.stringify(s.extras));
+  });
+  // la pantalla: sumar a alguien, sumar un correo y elegir el rol, sin JSON a mano
+  const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [],
+    borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }] } }, extras: { servicios: ['azure-blob'], conAcceso: true, migracion: 'la lista se armó con lo de hoy' } };
+  const pant = await pantallaFalsa([sec]);
+  assert.strictEqual(pant.error, null);
+  const campos = () => pant.todo(pant.sec('sitio')).filter((n) => ['input', 'select'].includes(n.tag)).map((n) => n.attrs['data-path']).filter((x) => /^site\.access/.test(x || ''));
+  assert.deepStrictEqual(campos(), ['site.access.0.role', 'site.access.0.emails.0']);
+  assert.match(pant.textoDe('sitio'), /la lista se armó con lo de hoy/);
+  await pant.click('+ Agregar persona', 'sitio');
+  assert.deepStrictEqual(campos(), ['site.access.0.role', 'site.access.0.emails.0', 'site.access.1.role', 'site.access.1.emails.0']);
+  await pant.click('+ Agregar correo', 'sitio');
+  assert.ok(campos().includes('site.access.0.emails.1'), campos().join(' '));
+  const rol = pant.todo(pant.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.access.0.role');
+  assert.deepStrictEqual(rol.hijos.map((o) => o.textContent), ['Mantiene el sitio', 'Dev']);
+  assert.ok(!pant.todo(pant.sec('sitio')).some((n) => n.attrs['data-path'] === 'site.maintainers'), 'con la lista, la forma de antes no se edita');
+});
+
+test('T10 2.40-InicioDeSesion_Visible @story-2.40 @ac-8', async () => {
+  const org = crypto.randomUUID();
+  const textoDe = (env) => validarConfiguracion(H.envBase(env)).cfg.inicioDeSesion;
+  const casos = [
+    [{}, 'oidc', null, /OpenID Connect/],
+    [{ SITE_AUTH_PROVIDER: 'microsoft', SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${org}/v2.0` }, 'microsoft', 'organization', /Microsoft.*directorio de la organización/],
+    [{ SITE_AUTH_PROVIDER: 'microsoft', SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org, SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' }, 'microsoft', 'any', /cualquier cuenta de trabajo o escuela.*invitados/],
+    [{ SITE_AUTH_PROVIDER: 'google', SITE_AUTH_ALLOWED_DOMAINS: 'acme.example' }, 'google', null, /Google/],
+    [{ SITE_AUTH_PROVIDER: 'github', SITE_AUTH_GITHUB_ORG: 'acme' }, 'github', null, /GitHub/],
+  ];
+  for (const [env, proveedor, modo, rx] of casos) {
+    const i = textoDe(env);
+    assert.ok(i, proveedor);
+    assert.deepStrictEqual([i.proveedor, i.modo], [proveedor, modo], proveedor);
+    assert.match(i.texto, rx, proveedor);
+    assert.doesNotMatch(i.texto, new RegExp(org), 'sin el inquilino');
+  }
+  // la pestaña lo trae en la sección del sitio, y la pantalla lo muestra sin un campo para cambiarlo
+  await conPestana({ fuentes: fuentesCon({ ops: clon({ 'operations.json': opsBase() }) }) }, async ({ h, entrar }) => {
+    const s = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((x) => x.id === 'sitio');
+    assert.match(s.extras.inicioDeSesion.texto, /OpenID Connect/);
+  });
+  const sec = { id: 'sitio', titulo: 'sitio', repo: 'operaciones', estado: 'cargado', soloLectura: false, problems: [], avisos: [], borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }] } },
+    extras: { conAcceso: true, inicioDeSesion: { proveedor: 'microsoft', modo: 'any', texto: 'Microsoft, con cualquier cuenta de trabajo o escuela' } } };
+  const p = await pantallaFalsa([sec]);
+  assert.match(p.textoDe('sitio'), /Con qué se entra: Microsoft, con cualquier cuenta de trabajo o escuela/);
+  assert.match(p.textoDe('sitio'), /se cambia en la instalación/);
+  // (el único «provider» de la sección es el servicio del buzón, site.mailbox.provider)
+  assert.ok(!p.todo(p.sec('sitio')).some((n) => /inicio|auth|^(?!site\.mailbox\.).*provider/i.test(n.attrs['data-path'] || '')), 'sin un campo para cambiarlo');
+});

@@ -46,4 +46,7 @@ function crear(cfg, { ahora }) {
 /** Lo fijo de Google en la configuración del sitio: su emisor. */
 function completarConfig(env, cfg) { cfg.issuer = emisorDe(env); }
 
-module.exports = { EMISOR, emisorDe, problemasDeConfig, completarConfig, crear };
+/** Con qué se entra, en palabras (Configuración lo muestra). */
+const describir = () => 'Google, con las cuentas del dominio de la organización';
+
+module.exports = { EMISOR, emisorDe, problemasDeConfig, completarConfig, describir, crear };

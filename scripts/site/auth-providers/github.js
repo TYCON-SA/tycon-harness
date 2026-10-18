@@ -52,9 +52,9 @@ function crear(cfg) {
     emisor: web,
     preparar: async () => {},
     listo: () => true,
-    urlDeInicio({ state, challenge }) {
+    urlDeInicio({ state, challenge, otraCuenta }) {
       const u = new URL(`${web}/login/oauth/authorize`);
-      const p = { client_id: cfg.clientId, redirect_uri: cfg.redirectUri, scope: 'read:user user:email read:org', state, code_challenge: challenge, code_challenge_method: 'S256', allow_signup: 'false' };
+      const p = { client_id: cfg.clientId, redirect_uri: cfg.redirectUri, scope: 'read:user user:email read:org', state, code_challenge: challenge, code_challenge_method: 'S256', allow_signup: 'false', ...(otraCuenta ? { prompt: 'select_account' } : {}) };
       for (const [k, v] of Object.entries(p)) u.searchParams.set(k, v);
       return u.toString();
     },
@@ -89,4 +89,7 @@ function crear(cfg) {
 /** Lo fijo de GitHub en la configuración del sitio: sus direcciones y la organización. */
 function completarConfig(env, cfg) { cfg.github = direcciones(env); cfg.githubOrg = env.SITE_AUTH_GITHUB_ORG; }
 
-module.exports = { WEB, API, direcciones, problemasDeConfig, completarConfig, crear };
+/** Con qué se entra, en palabras (Configuración lo muestra). */
+const describir = () => 'GitHub, con los miembros activos de la organización';
+
+module.exports = { WEB, API, direcciones, problemasDeConfig, completarConfig, describir, crear };

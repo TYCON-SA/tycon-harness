@@ -77,8 +77,9 @@ function leerSesion(cookies, llave, ahora, { prov, iss }) {
 }
 
 /** Un intento nuevo: state, nonce y verificador PKCE al azar, con su cookie. */
-function nuevoIntento(llave, ahora) {
-  const it = { state: b64u(crypto.randomBytes(24)), nonce: b64u(crypto.randomBytes(24)), verifier: b64u(crypto.randomBytes(32)), exp: ahora + DURACION_INTENTO_MS };
+function nuevoIntento(llave, ahora, { via = null } = {}) {
+  // `via`: por cuál puerta del proveedor salió el intento; va firmado, y la vuelta usa ésa
+  const it = { state: b64u(crypto.randomBytes(24)), nonce: b64u(crypto.randomBytes(24)), verifier: b64u(crypto.randomBytes(32)), exp: ahora + DURACION_INTENTO_MS, via: typeof via === 'string' ? via : null };
   return { intento: it, challenge: b64u(crypto.createHash('sha256').update(it.verifier).digest()), cookie: cookie(INTENTO, firmar(it, llave), DURACION_INTENTO_MS / 1000) };
 }
 

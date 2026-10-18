@@ -601,7 +601,10 @@ suyo (sus pedidos, sus pull requests, sus corridas), y quienes mantienen el arn�
 decidir; en la pestaña **Configuración** se personaliza la organización sin clonar nada.
 
 **Quién lo usa:** cada persona de la organización, para ver lo suyo; quienes mantienen el arnés, para verlo todo, editar
-la configuración e instalarlo.
+la configuración e instalarlo. Quién entra y qué ve lo decide sólo la lista del sitio (`site.access` de
+`operations.json`, editable en Configuración → Personas), con cualquier inicio de sesión; cada organización elige en la
+instalación con qué se entra (con Microsoft, también «cualquier cuenta de trabajo o escuela», con la puerta de los
+invitados del directorio aparte).
 
 **Dónde leer más:** para personas, la guía: cómo se usa cada pestaña, la configuración sección por sección, qué ve
 cada rol, los problemas comunes, cómo se instala y cómo está hecho por dentro, en

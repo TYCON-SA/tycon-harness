@@ -113,7 +113,7 @@ Y en *Project settings → Pipelines → Settings* del proyecto donde corren los
 ### La política de rama de `main` del repo de operaciones
 
 Ponela **antes** de publicar el sitio de la organización. Sin ella, cualquiera que pueda empujar a `main` se hace
-mantenedor del sitio (cambia la lista `site.maintainers`) o cambia el YAML de un nocturno y se lleva sus secretos.
+mantenedor del sitio (cambia la lista `site.access`) o cambia el YAML de un nocturno y se lleva sus secretos.
 
 **La receta recomendada.** En *Project settings → Repositories → el repo de operaciones → Policies → Branch Policies →
 main*:
