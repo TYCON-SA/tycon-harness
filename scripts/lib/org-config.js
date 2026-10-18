@@ -624,12 +624,13 @@ function pantalla() {
   }
   var REPO_DE = { operaciones: 'el repo de operaciones', perfil: 'el repo del equipo' };
   function plano(s) { return PLANO[s.id] || { t: s.titulo, d: '', corto: s.titulo }; }
-  function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado'; }
+  function bloqueada(s) { return s.estado === 'no_reader' || s.estado === 'ilegible' || s.estado === 'no_configurado' || s.estado === 'bajando'; }
   /** El estado de una sección en una palabra: [clase, texto]. */
   function estadoDe(s) {
     if (s.estado === 'ilegible') return ['bad', 'hay que arreglarla a mano'];
     if (s.estado === 'no_reader') return ['nm', 'todavía no disponible'];
     if (s.estado === 'no_configurado') return ['nm', s.falta ? 'falta ' + s.falta : 'sin configurar'];
+    if (s.estado === 'bajando') return ['nm', 'bajando el repo del equipo'];
     if (s.soloLectura) return ['nm', 'sólo para mirar'];
     var n = (S.problemas[s.id] || []).length;
     if (n) return ['warn', n + ' para corregir'];
