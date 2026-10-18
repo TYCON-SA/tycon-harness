@@ -768,6 +768,11 @@ pasó el escáner y su firma se verificó; `stable` nunca vuelve atrás. Con eso
   le dice al actualizador qué versión corre, y sin saberlo no instala nada (nunca baja): el resultado dice «no se sabe
   qué versión corre» y la primera actualización va a mano, con la receta de tu entorno. Desde ahí, el automático sigue
   solo.
+- **Un paso de una sola vez al pasar a una versión con la página «Saliste».** Si el sitio está detrás del candado de la
+  plataforma (el inicio de sesión integrado de la nube), la página «Saliste» y lo que carga tienen que quedar fuera de
+  ese candado. El actualizador cambia la imagen, no la configuración del candado: sin este paso, después de «Salir» el
+  candado deja entrar de nuevo sin preguntar, y nadie se entera. Se hace una vez, a mano, con la orden de la receta de tu
+  entorno (en su «Inicio de sesión»). Las instalaciones nuevas ya lo traen.
 
 ### Las dos formas de arrancarlo
 

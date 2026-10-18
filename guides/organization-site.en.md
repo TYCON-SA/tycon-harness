@@ -790,6 +790,11 @@ there is something new:
   tell the updater which version is running, and without knowing it, it installs nothing (it never downgrades): the
   result says "no se sabe qué versión corre" and the first update goes by hand, with your environment's recipe. From
   then on, the automatic mode carries on by itself.
+- **A one-time step when moving to a version with the "You signed out" page.** If the site sits behind the platform's
+  lock (the cloud's built-in sign-in), the "You signed out" page and what it loads have to stay outside that lock. The
+  updater changes the image, not the lock's configuration: without this step, after "Sign out" the lock lets the person
+  back in without asking, and nobody notices. It is done once, by hand, with the command in your environment's recipe
+  (under its "Sign-in"). New installations already include it.
 
 ### The two ways to start it
 

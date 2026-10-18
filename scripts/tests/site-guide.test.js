@@ -48,8 +48,8 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // SITE_OPERATIONS_REPO sigue siendo obligatoria; y la imagen ya publicada como alternativa a armarla, el emisor de un
 // inquilino como única puerta, la página «Saliste» y las rutas que el candado deja libres para que «Salir» no reabra la sesión; y, en «Por dentro», la tabla de textos en dos idiomas.
 const HUELLA_INSTALACION = {
-  es: '501e69ddc36f69c46797e737063fe6ce0addc1f4ce7f330aaa0dd8ce6216a106',
-  en: 'f92da135aeb8ff0ffd020ac5c4070b307ac37debae9832869dcfe6afc1cdadcc',
+  es: '87fffb6c7e7b53286f22ec0f457f8efa37e96800432ec27bccdea5ae8522f262',
+  en: '1ece4af500e42c0e65260646f0b9899ddbf0d121610b72643000f4f4a8f93c57',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
