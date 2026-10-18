@@ -36,7 +36,7 @@ lee el arnés (los ejemplos están en `pipelines/operations/examples/` del arné
 | Ruta en el repo de operaciones | Qué es | Obligatorio |
 |---|---|---|
 | `operations.json` | A quién se asignan los pedidos de trabajo y quiénes revisan los pull requests; y, si querés, quién es quién en el sitio de la organización (`people`, más abajo). Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
-| `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm` o `nuget`) | Sí, para la revisión de dependencias |
+| `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`ado`: `<proyecto>/<repo>`; `tipo`: `npm`, `nuget` o `pip`) | Sí, para la revisión de dependencias |
 | `team-repos.json` | Opcional. Dónde vive cada repo del arnés de tu organización (forma: `scripts/lib/team-repos.js`). Si está, tiene que validar: con `operations.platform: github` los avisos de dependencias son issues de GitHub, no pedidos de trabajo; y si tu organización tiene copias del repo del arnés con stories, van en `harness_copies` (las métricas no las miden, salvo la de `maintainers` si está en la lista) | No |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el ejemplo: el del arnés espera fuentes que tu organización no tiene | Sí, para el tablero |
 | `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo en su pipeline, qué se compara y las diferencias declaradas (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `ado: "<proyecto>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |

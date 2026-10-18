@@ -10,7 +10,7 @@
 # Esta revisión mira cada noche la rama `main` de los repos declarados y AVISA (no frena: el código no cambió).
 #
 # QUÉ MIRA Y A QUIÉN AVISA — todo en el repo de operaciones, nada en este YAML:
-#   · `scripts/nightly/dependencies/repos.json` — los repos (proyecto/repo de Azure DevOps, tipo npm o nuget), el tope de
+#   · `scripts/nightly/dependencies/repos.json` — los repos (proyecto/repo de Azure DevOps, tipo npm, nuget o pip), el tope de
 #     avisos por noche y, en su bloque `azure`, si se crean pedidos de trabajo (`pedidos_activos`). Ejemplo:
 #     pipelines/operations/examples/repos.json del arnés.
 #   · `operations.json` — a quién se asigna un pedido de trabajo cuando no se deduce un dueño (`owners`) y quiénes revisan
@@ -46,7 +46,7 @@ parameters:
     type: boolean
     default: true
   - name: dotnetSdks
-    displayName: 'Versiones del SDK de .NET a instalar (para los repos nuget; vacío si no hay ninguno)'
+    displayName: 'Versiones del SDK de .NET a instalar (sólo se instalan si algún repo es nuget)'
     type: object
     default: ['9.0.x', '10.0.x']
 
@@ -72,13 +72,6 @@ jobs:
       - template: pipelines/operations/templates/fetch-harness.yml@harness
       - template: pipelines/operations/templates/ops-data.yml@harness
 
-      # Cada repo declara su SDK en su global.json; con uno solo instalado, un repo que pide otra versión mayor saldría
-      # «NO MEDIDO» todas las noches. Se instalan los de la lista.
-      - ${{ each sdk in parameters.dotnetSdks }}:
-          - task: UseDotNet@2
-            displayName: 'SDK .NET ${{ sdk }}'
-            inputs: { packageType: 'sdk', version: '${{ sdk }}' }
-
       - script: |
           set -euo pipefail
           # Los revisores de los pull requests, de operations.json (reviewers.dependencies). Sin el archivo o sin la clave:
@@ -99,6 +92,14 @@ jobs:
             || { echo "##vso[task.logissue type=error]scripts/nightly/dependencies/repos.json no es JSON válido"; exit 1; }
           echo "pedidos de trabajo: $([ "$WI" = 1 ] && echo prendidos || echo 'apagados (azure.pedidos_activos no es true)')"
           echo "##vso[task.setvariable variable=WORK_ITEMS_ON]$WI"
+          # Qué herramienta hace falta: .NET sólo con algún repo nuget activo, Python y pip-audit sólo con alguno pip.
+          KINDS=$(node -e 'const c = JSON.parse(require("fs").readFileSync("scripts/nightly/dependencies/repos.json", "utf8")); const t = new Set((c.repos || []).filter((r) => r && r.activo !== false).map((r) => r.tipo)); process.stdout.write(`${t.has("nuget") ? 1 : 0} ${t.has("pip") ? 1 : 0}`);') \
+            || { echo "##vso[task.logissue type=error]no se pudo leer qué tipos de repo hay en scripts/nightly/dependencies/repos.json"; exit 1; }
+          HAS_NUGET=${KINDS% *}
+          HAS_PIP=${KINDS#* }
+          echo "se instala: .NET $([ "$HAS_NUGET" = 1 ] && echo sí || echo 'no (ningún repo nuget)') · Python y pip-audit $([ "$HAS_PIP" = 1 ] && echo sí || echo 'no (ningún repo pip)')"
+          echo "##vso[task.setvariable variable=HAS_NUGET]$HAS_NUGET"
+          echo "##vso[task.setvariable variable=HAS_PIP]$HAS_PIP"
           # La primera noche de una organización no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar
           # lleva al repo de operaciones). Una cola que existe a medias (sin pending/) NO se completa acá: eso es una
           # mudanza a medias, y el guion de los pull requests la frena con su motivo.
@@ -107,6 +108,23 @@ jobs:
             echo "primera noche: se crea la cola inbox/dependencies (pending, promoted, archived)"
           fi
         displayName: 'Leer la configuración de la organización (operations.json y repos.json)'
+
+      # Cada repo declara su SDK en su global.json; con uno solo instalado, un repo que pide otra versión mayor saldría
+      # «NO MEDIDO» todas las noches. Se instalan los de la lista, y sólo si algún repo es nuget.
+      - ${{ each sdk in parameters.dotnetSdks }}:
+          - task: UseDotNet@2
+            displayName: 'SDK .NET ${{ sdk }}'
+            condition: and(succeeded(), eq(variables.HAS_NUGET, '1'))
+            inputs: { packageType: 'sdk', version: '${{ sdk }}' }
+
+      # pip-audit, fijado, sólo si algún repo es pip.
+      - task: UsePythonVersion@0
+        displayName: 'Python 3.12 (para los repos pip)'
+        condition: and(succeeded(), eq(variables.HAS_PIP, '1'))
+        inputs: { versionSpec: '3.12' }
+      - script: python -m pip install --disable-pip-version-check pip-audit==2.10.1
+        displayName: 'pip-audit 2.10.1'
+        condition: and(succeeded(), eq(variables.HAS_PIP, '1'))
 
       - script: |
           # Lo que una persona decidió AYER en un pull request se registra ANTES de la revisión: una ficha rechazada no

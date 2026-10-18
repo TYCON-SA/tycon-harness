@@ -78,7 +78,7 @@ los lee el arnés (los ejemplos están en `pipelines/operations/examples/github/
 |---|---|---|
 | `team-repos.json` | Dónde vive cada repo del arnés de tu organización. `public`: el repo público del arnés (de ahí lo traen los workflows); `operations`: este repo (si no coincide, la noche sale en rojo); `profile`: el perfil de tu equipo (si no tenés uno, poné este repo). Forma: `scripts/lib/team-repos.js` | Sí |
 | `operations.json` | A quién se asignan los issues (`owners.default`, y `owners.by_project` con la clave `<dueño>/<repo>`). Identidades: usuarios de GitHub. Y, si querés, quién es quién en el sitio de la organización (`people`, más abajo). Forma: `scripts/lib/operations-config.js` | Sí, para la revisión de dependencias |
-| `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`github`: `<dueño>/<repo>`; `tipo`: `npm` o `nuget`) y el bloque `github` (`issues_enabled`, `identity`) | Sí, para la revisión de dependencias |
+| `scripts/nightly/dependencies/repos.json` | Qué repos mira la revisión de dependencias (`github`: `<dueño>/<repo>`; `tipo`: `npm`, `nuget` o `pip`) y el bloque `github` (`issues_enabled`, `identity`) | Sí, para la revisión de dependencias |
 | `scripts/nightly/dashboard/sources.json` | Qué fuentes espera el tablero. Usá el de `pipelines/operations/examples/sources.json` | Sí, para el tablero |
 | `scripts/ci/product-parity.json` | Opcional. Los productos que tienen que hacer lo mismo, con `archivo: ".github/workflows/<nombre>.yml"` en cada grupo (ejemplo: `pipelines/operations/examples/product-parity.json`). Un repo que la revisión de dependencias no clona lleva `github: "<dueño>/<repo>"`. Sin el archivo, la paridad sale «sin productos» | No |
 | `.github/workflows/stage-metrics.yml`, `.github/workflows/dependency-audit.yml`, `.github/workflows/team-dashboard.yml` | Copias de los tres workflows de esta carpeta, **sin cambiar nada** | Sí |
@@ -174,8 +174,8 @@ los nocturnos; ponerle de excepción a GitHub Actions dejaría a cualquiera con 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
 protección, el token del workflow tiene que poder empujar ahí (o los guardados salen en rojo). Si la organización
-restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet` y
-`actions/create-github-app-token` (van fijadas por el commit).
+restringe qué acciones se pueden usar, permití `actions/checkout`, `actions/setup-node`, `actions/setup-dotnet`, `actions/setup-python` (sólo la usa
+si algún repo es pip) y `actions/create-github-app-token` (van fijadas por el commit).
 
 ## 4. La primera corrida: sin efectos
 

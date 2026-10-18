@@ -34,14 +34,17 @@
  * silencio — no apaga el control.
  *
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
- *   node audit-dependencies.js --repo <dir> --type npm|nuget [--project <rel>]
+ * pip: `pip-audit` sobre el archivo de requisitos fijado, sin instalar nada; pip-audit
+ * no da la gravedad y cada vulnerabilidad cuenta como alta (ver `auditarPip`).
+ *
+ *   node audit-dependencies.js --repo <dir> --type npm|nuget|pip [--project <rel>]
  *                                [--declared <rel>] [--json] [--block]
  *   node audit-dependencies.js --help
  *
  * Exit: 0 = midió (haya o no hallazgos) · 1 = midió y hay altas/críticas no declaradas, SÓLO con
  *       `--block` · 2 = NO PUDO MEDIR (falta el lockfile, el restore falló, la salida es ilegible)
  *
- * Inyección para pruebas: TYCON_DEP_CMD (ruta a un comando que reemplaza a npm/dotnet).
+ * Inyección para pruebas: TYCON_DEP_CMD (ruta a un comando que reemplaza a npm/dotnet/pip-audit).
  */
 
 const fs = require('fs');
@@ -90,8 +93,9 @@ function parseArgs(argv0) {
 const AYUDA = `audit-dependencies.js — el criterio del análisis de dependencias, en un solo lugar.
 
   --repo <dir>          raíz del repo a analizar (obligatorio)
-  --type npm|nuget      qué gestor de paquetes (obligatorio)
-  --project <rel>       el .sln/.csproj a analizar (sólo nuget; por defecto, el .sln de la raíz)
+  --type npm|nuget|pip  qué gestor de paquetes (obligatorio)
+  --project <rel>       nuget: el .sln/.csproj a analizar (por defecto, el .sln de la raíz);
+                        pip: el archivo de requisitos fijado (por defecto, requirements.txt)
   --declared <rel>      archivo de deuda declarada (por defecto vulnerabilidades-pendientes.json)
   --json                emite el informe completo en JSON por stdout
   --block               sale 1 si hay altas/críticas NO declaradas (el modo del pull request)
@@ -223,6 +227,12 @@ function auditarNpm(repo) {
   };
 }
 
+// `--project` viene de la configuración: una ruta absoluta o con `..` que sale del repo no se mide.
+function dentroDelRepo(repo, rel) {
+  const r = path.relative(path.resolve(repo), path.resolve(repo, rel));
+  return r !== '' && !r.startsWith('..') && !path.isAbsolute(r);
+}
+
 // ── NuGet ──────────────────────────────────────────────────────────────────────────────────────
 
 function proyectoNuget(repo, explicito) {
@@ -242,6 +252,7 @@ function proyectoNuget(repo, explicito) {
 function auditarNuget(repo, proyectoRel) {
   const proy = proyectoNuget(repo, proyectoRel);
   if (!proy) return { medido: false, motivo: 'no se encontró un .sln en la raíz y no se indicó --project' };
+  if (!dentroDelRepo(repo, proy)) return { medido: false, motivo: `--project ${proy} sale de la carpeta del repo: sólo se mide un proyecto del repo` };
   if (!fs.existsSync(path.join(repo, proy))) return { medido: false, motivo: `no existe el proyecto ${proy}` };
 
   const rest = correr('dotnet', ['restore', proy, '--nologo'], repo);
@@ -292,13 +303,64 @@ function auditarNuget(repo, proyectoRel) {
   return { medido: true, hallazgos, resumen, proyecto: proy };
 }
 
+// ── pip ────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `pip-audit -r <archivo> --no-deps --disable-pip --format json` contra el archivo de requisitos
+ * fijado (`requirements.txt`, o el de `--project`). Como `npm audit` contra el lockfile: no instala
+ * nada ni resuelve dependencias. Un requisito sin fijar pip-audit lo rechaza, y eso es «no medido».
+ *
+ * 🔴 Igual que npm, el exit code no decide: pip-audit sale 1 tanto si encuentra algo como si falla.
+ * Decide si el JSON se pudo leer y trae la lista de dependencias.
+ *
+ * 🔴 pip-audit no informa la gravedad. Cada vulnerabilidad cuenta como ALTA y el hallazgo lo dice
+ * (`gravedad_sin_dato`): bajarla a moderada sería callar lo que no se sabe. Si el ruido molesta, la
+ * gravedad se le puede pedir a OSV por aviso.
+ */
+function auditarPip(repo, archivoRel) {
+  const archivo = archivoRel || 'requirements.txt';
+  if (!dentroDelRepo(repo, archivo)) return { medido: false, motivo: `--project ${archivo} sale de la carpeta del repo: sólo se mide un archivo del repo` };
+  if (!fs.existsSync(path.join(repo, archivo))) {
+    return { medido: false, motivo: `no hay ${archivo}: pip-audit mide el archivo de requisitos fijado (declaralo con --project si tiene otro nombre)` };
+  }
+  const r = correr('pip-audit', ['-r', archivo, '--no-deps', '--disable-pip', '--format', 'json'], repo, Number(process.env.TYCON_DEP_TIMEOUT_MS || 30000));
+  if (!r.ok) return { medido: false, motivo: r.motivo };
+  let j;
+  try { j = JSON.parse(r.stdout); } catch (e) {
+    const pista = (r.salida || '').split('\n').filter(Boolean).slice(-3).join(' | ').slice(0, 300);
+    return { medido: false, motivo: `pip-audit no devolvió un JSON legible (exit ${r.code}): ${pista || e.message}` };
+  }
+  if (!j || !Array.isArray(j.dependencies)) return { medido: false, motivo: 'la salida de pip-audit no trae la lista de dependencias' };
+  // Un paquete que pip-audit no pudo revisar viene con `skip_reason` y sin vulnerabilidades: contarlo como limpio sería
+  // dar por medido lo que no se miró.
+  const salteados = j.dependencies.filter((d) => d && d.skip_reason);
+  if (salteados.length) {
+    return { medido: false, motivo: `pip-audit no pudo revisar ${salteados.length} paquete(s): ${salteados.slice(0, 5).map((d) => `${d.name} (${String(d.skip_reason).slice(0, 120)})`).join('; ')}` };
+  }
+  // Una entrada con otra forma (sin nombre, o sin la lista de vulnerabilidades) tampoco se da por limpia.
+  // Y una vulnerabilidad sin identificador quedaría «sin aviso propio», amparada por el nombre del paquete.
+  const raras = j.dependencies.filter((d) => !d || typeof d.name !== 'string' || !d.name || !Array.isArray(d.vulns)
+    || d.vulns.some((v) => !v || typeof v.id !== 'string' || !v.id.trim()));
+  if (raras.length) return { medido: false, motivo: `la salida de pip-audit trae ${raras.length} entrada(s) sin nombre, sin la lista de vulnerabilidades o con una vulnerabilidad sin identificador` };
+  // Un archivo sin paquetes (`dependencies: []`) sí está medido: no hay nada que revisar.
+  const hallazgos = [];
+  for (const dep of j.dependencies) {
+    const vulns = dep.vulns;
+    if (!vulns.length) continue;
+    const advisories = [...new Set(vulns.map((v) => String((v && v.id) || '')).filter(Boolean))].sort();
+    hallazgos.push({ paquete: String(dep.name), severidad: 'high', gravedad_sin_dato: true, advisories, directa: false });
+  }
+  hallazgos.sort((a, b) => a.paquete.localeCompare(b.paquete));
+  return { medido: true, hallazgos, resumen: { critical: 0, high: hallazgos.length, moderate: 0, low: 0 }, proyecto: archivo };
+}
+
 // ── El informe ─────────────────────────────────────────────────────────────────────────────────
 
 function auditar({ repo, tipo, proyecto, declaradas, hoy }) {
   const base = { repo, tipo, medido: false, motivo_no_medido: null, hallazgos: [], no_declaradas: [], resumen: { critical: 0, high: 0, moderate: 0, low: 0 } };
   if (!fs.existsSync(repo)) return { ...base, motivo_no_medido: `no existe el repo ${repo}` };
 
-  const bruto = tipo === 'npm' ? auditarNpm(repo) : auditarNuget(repo, proyecto);
+  const bruto = tipo === 'npm' ? auditarNpm(repo) : tipo === 'pip' ? auditarPip(repo, proyecto) : auditarNuget(repo, proyecto);
   if (!bruto.medido) return { ...base, motivo_no_medido: bruto.motivo };
 
   const decl = leerDeclaracion(repo, declaradas, hoy);
@@ -376,7 +438,7 @@ function imprimirHumano(inf) {
   else if (inf.declaracion.existe && inf.declaracion.vencida) console.log(`   ⚠️ la deuda declarada venció el ${inf.declaracion.vence || '<sin fecha>'}: todo vuelve a contar como nuevo.`);
   else if (inf.declaracion.existe) console.log(`   ${inf.declaracion.paquetes} declarada(s) como deuda hasta el ${inf.declaracion.vence}.`);
   for (const h of inf.hallazgos.filter((x) => SEVERIDADES_GRAVES.includes(x.severidad))) {
-    console.log(`   ${h.declarada ? '·' : '🔴'} ${h.paquete} [${h.severidad}]${h.declarada ? ' (declarada)' : ''} ${h.advisories[0] || ''}`);
+    console.log(`   ${h.declarada ? '·' : '🔴'} ${h.paquete} [${h.severidad}${h.gravedad_sin_dato ? ', gravedad sin dato: pip-audit no la informa' : ''}]${h.declarada ? ' (declarada)' : ''} ${h.advisories[0] || ''}`);
   }
   if (inf.no_declaradas.length) console.log(`   NO declaradas: ${inf.no_declaradas.join(', ')}`);
 }
@@ -386,7 +448,7 @@ function main() {
   if (a.help) { console.log(AYUDA); return 0; }
   if (a.error) { console.error(`error: ${a.error}\n\n${AYUDA}`); return 2; }
   if (!a.repo || !a.tipo) { console.error(`error: faltan --repo y/o --type\n\n${AYUDA}`); return 2; }
-  if (!['npm', 'nuget'].includes(a.tipo)) { console.error(`error: --type tiene que ser npm o nuget\n\n${AYUDA}`); return 2; }
+  if (!['npm', 'nuget', 'pip'].includes(a.tipo)) { console.error(`error: --type tiene que ser npm, nuget o pip\n\n${AYUDA}`); return 2; }
 
   const hoy = readEnv('TYCON_DEP_TODAY', { where: WHERE }) || new Date().toISOString().slice(0, 10);
   const inf = auditar({ repo: path.resolve(a.repo), tipo: a.tipo, proyecto: a.proyecto, declaradas: a.declaradas, hoy });

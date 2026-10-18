@@ -99,13 +99,6 @@ jobs:
         with:
           node-version: 24
 
-      # Cada repo nuget declara su SDK en su global.json: se instalan los de esta lista (cambiala si tus repos piden otro).
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: |
-            9.0.x
-            10.0.x
-
       - name: Armar el árbol (los datos y la configuración de operaciones, encima del arnés)
         env:
           OPS_TOKEN: ${{ github.token }}
@@ -120,6 +113,11 @@ jobs:
             || { echo "::error::scripts/nightly/dependencies/repos.json no es JSON válido"; exit 1; }
           echo "issues: $([ "${ON}" = 1 ] && echo prendidos || echo 'apagados (github.issues_enabled no es true)')"
           echo "ISSUES_ON=${ON}" >> "${GITHUB_ENV}"
+          # Qué herramienta hace falta: .NET sólo con algún repo nuget activo, Python y pip-audit sólo con alguno pip.
+          KINDS=$(node -e 'const c = JSON.parse(require("fs").readFileSync("scripts/nightly/dependencies/repos.json", "utf8")); const t = new Set((c.repos || []).filter((r) => r && r.activo !== false).map((r) => r.tipo)); process.stdout.write(`${t.has("nuget") ? 1 : 0} ${t.has("pip") ? 1 : 0}`);') \
+            || { echo "::error::no se pudo leer qué tipos de repo hay en scripts/nightly/dependencies/repos.json"; exit 1; }
+          echo "se instala: .NET $([ "${KINDS% *}" = 1 ] && echo sí || echo 'no (ningún repo nuget)') · Python y pip-audit $([ "${KINDS#* }" = 1 ] && echo sí || echo 'no (ningún repo pip)')"
+          { echo "HAS_NUGET=${KINDS% *}"; echo "HAS_PIP=${KINDS#* }"; } >> "${GITHUB_ENV}"
           # La primera noche de una organización no hay cola: se crea con sus tres carpetas (y su .gitkeep, que guardar
           # lleva al repo de operaciones). Una cola a medias no se completa acá.
           if [ ! -e inbox/dependencies ]; then
@@ -130,6 +128,24 @@ jobs:
       # La credencial de la GitHub App, si está configurada, para clonar y leer los issues: un token de instalación
       # sólo de lectura y sólo de los repos donde la App está instalada. Se revoca antes de correr código de los
       # productos (por eso no lo revoca la acción al final). Sin la App, el paso no corre y vale HARNESS_ORG_TOKEN.
+      # Cada repo nuget declara su SDK en su global.json: se instalan los de esta lista (cambiala si tus repos piden otro),
+      # y sólo si algún repo es nuget.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: env.HAS_NUGET == '1'
+        with:
+          dotnet-version: |
+            9.0.x
+            10.0.x
+
+      # pip-audit, fijado, sólo si algún repo es pip.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: env.HAS_PIP == '1'
+        with:
+          python-version: '3.12'
+      - name: pip-audit 2.10.1
+        if: env.HAS_PIP == '1'
+        run: python -m pip install --disable-pip-version-check pip-audit==2.10.1
+
       - name: La credencial de la organización para leer (GitHub App, si está configurada)
         id: org-token
         if: vars.HARNESS_APP_CLIENT_ID != ''

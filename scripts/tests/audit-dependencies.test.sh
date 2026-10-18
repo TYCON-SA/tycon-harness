@@ -27,6 +27,9 @@ case "${TYCON_DEP_REAL}:$1" in
   npm:audit)      [ -f "$FIX/npm.json" ] && cat "$FIX/npm.json";     exit "${NPM_EXIT:-0}" ;;
   dotnet:restore) exit "${RESTORE_EXIT:-0}" ;;
   dotnet:list)    [ -f "$FIX/nuget.json" ] && cat "$FIX/nuget.json"; exit "${LIST_EXIT:-0}" ;;
+  pip-audit:*)    printf '%s\n' "$@" > "$FIX/pip-args.txt"
+                  [ -n "${PIP_ERR:-}" ] && echo "$PIP_ERR" >&2
+                  [ -f "$FIX/pip.json" ] && cat "$FIX/pip.json"; exit "${PIP_EXIT:-0}" ;;
 esac
 exit 0
 DOBLE
@@ -318,5 +321,96 @@ hall=${salida%% *}; bytes=${salida##* }
 { [ "$hall" -eq 60 ] && [ "$bytes" -gt 8192 ]; } \
   && ok "el informe largo llega ENTERO por una tubería ($bytes bytes, 60 hallazgos)" \
   || no "🔴 el informe se cortó al salir por la tubería: hallazgos=$hall bytes=$bytes (con -1, el JSON no parseó)"
+
+# ── pip: pip-audit sobre el requirements fijado, sin instalar nada ─────────────────
+# pip-audit no da la gravedad: cada vulnerabilidad cuenta como alta y el informe lo dice. Y como npm,
+# su exit 1 es tanto «encontré» como «fallé»: decide si el JSON se pudo leer.
+pipRepo(){ rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/requirements.txt"; rm -f "$TMP/pip.json" "$TMP/pip-args.txt"; }
+conPip='{"dependencies":[{"name":"jinja2","version":"3.1.2","vulns":[{"id":"GHSA-h5c8-rqwp-cp95","fix_versions":["3.1.3"],"aliases":["CVE-2024-22195"]}]},{"name":"requests","version":"2.31.0","vulns":[{"id":"PYSEC-2024-1","fix_versions":["2.32.0"],"aliases":[]},{"id":"GHSA-9wx4-h78v-vm56","fix_versions":["2.32.0"],"aliases":[]}]},{"name":"flask","version":"3.0.0","vulns":[]}],"fixes":[]}'
+
+# T1 — los hallazgos: uno por paquete, sus avisos, alta con la gravedad sin dato
+pipRepo; echo "$conPip" > "$TMP/pip.json"
+rc=$(PIP_EXIT=1 corre --type pip --json)
+salida=$(node -e '
+  const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const h = Object.fromEntries(j.hallazgos.map((x) => [x.paquete, x]));
+  const ok = j.medido && j.hallazgos.length === 2 && h.requests.advisories.length === 2 && h.jinja2.advisories[0] === "GHSA-h5c8-rqwp-cp95"
+    && j.hallazgos.every((x) => x.severidad === "high" && x.gravedad_sin_dato === true) && j.resumen.high === 2 && j.resumen.critical === 0;
+  console.log(ok ? "si" : JSON.stringify(j));' "$TMP/out.txt" 2>&1)
+{ [ "$rc" -eq 0 ] && [ "$salida" = si ]; } && ok "T1 pip: un hallazgo por paquete con sus avisos, alta y con la gravedad sin dato (el exit 1 es «encontré»)" || no "T1 pip salió $rc: $salida"
+pipRepo; echo "$conPip" > "$TMP/pip.json"
+rc=$(corre --type pip)
+grep -q "gravedad sin dato" "$TMP/out.txt" && ok "T1 pip: el informe humano dice «gravedad sin dato»" || no "T1 el informe humano no dice la gravedad sin dato: $(cat "$TMP/out.txt")"
+
+# T2 — sin el archivo de requisitos no se mide
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; echo "$conPip" > "$TMP/pip.json"
+rc=$(corre --type pip --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "requirements.txt" "$TMP/out.txt"; } \
+  && ok "T2 pip sin requirements.txt sale 2 y lo nombra" || no "T2 sin requirements salió $rc: $(cat "$TMP/out.txt")"
+
+# T3 — un requisito sin fijar, una salida sin la lista y pip-audit ausente: los tres, no medidos
+pipRepo
+rc=$(PIP_EXIT=1 PIP_ERR='ERROR:pip_audit._cli:requirement flask is not pinned' corre --type pip --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "not pinned" "$TMP/out.txt"; } \
+  && ok "T3 pip con un requisito sin fijar sale 2 con el motivo de pip-audit" || no "T3 sin fijar salió $rc: $(cat "$TMP/out.txt")"
+pipRepo; echo '{"fixes":[]}' > "$TMP/pip.json"
+rc=$(corre --type pip --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt"; } && ok "T3 pip con un JSON sin dependencies sale 2" || no "T3 JSON sin dependencies salió $rc: $(cat "$TMP/out.txt")"
+pipRepo; echo '{"dependencies":[{"name":"flask","version":"3.0.0","vulns":[]},{"name":"interno","skip_reason":"Dependency not found on PyPI and could not be audited: interno (1.0)"}],"fixes":[]}' > "$TMP/pip.json"
+rc=$(corre --type pip --block)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt" && grep -q "interno" "$TMP/out.txt"; } \
+  && ok "T3 pip con un paquete salteado por pip-audit sale 2 y lo nombra (no se da por limpio)" || no "T3 salteado salió $rc: $(cat "$TMP/out.txt")"
+for rara in '{"dependencies":[{"version":"1.0","vulns":[]}]}' '{"dependencies":[{"name":"flask","version":"3.0.0","vulns":"ninguna"}]}' '{"dependencies":[null]}' \
+            '{"dependencies":[{"name":"jinja2","version":"3.1.2","vulns":[{"fix_versions":["3.1.3"]}]}]}' '{"dependencies":[{"name":"jinja2","version":"3.1.2","vulns":[null]}]}'; do
+  pipRepo; echo "$rara" > "$TMP/pip.json"
+  rc=$(corre --type pip --block)
+  { [ "$rc" -eq 2 ] && grep -q "sin nombre, sin la lista de vulnerabilidades o con una vulnerabilidad sin identificador" "$TMP/out.txt"; } \
+    && ok "T3 pip con una entrada de otra forma sale 2: ${rara}" || no "T3 entrada rara salió $rc: ${rara} → $(cat "$TMP/out.txt")"
+done
+pipRepo; echo '{"dependencies":[],"fixes":[]}' > "$TMP/pip.json"
+rc=$(corre --type pip --block)
+[ "$rc" -eq 0 ] && ok "T3 un requirements sin paquetes está medido: no hay nada que revisar" || no "T3 sin paquetes salió $rc: $(cat "$TMP/out.txt")"
+pipRepo
+rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/no-existe" node "$GUION" --repo "$TMP/repo" --type pip --block >"$TMP/out.txt" 2>&1; echo $?)
+{ [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt"; } && ok "T3 pip-audit ausente sale 2" || no "T3 sin pip-audit salió $rc: $(cat "$TMP/out.txt")"
+
+# T4 — lo que se le pide a pip-audit: el archivo, sin dependencias ni pip, en JSON
+pipRepo; echo '{"dependencies":[],"fixes":[]}' > "$TMP/pip.json"
+corre --type pip >/dev/null
+a1=$(tr '\n' ' ' < "$TMP/pip-args.txt")
+mkdir -p "$TMP/repo/deps"; : > "$TMP/repo/deps/prod.txt"
+corre --type pip --project deps/prod.txt >/dev/null
+a2=$(tr '\n' ' ' < "$TMP/pip-args.txt")
+{ [ "$a1" = "-r requirements.txt --no-deps --disable-pip --format json " ] && [ "$a2" = "-r deps/prod.txt --no-deps --disable-pip --format json " ]; } \
+  && ok "T4 pip-audit recibe el archivo (o el de --project), --no-deps --disable-pip --format json" || no "T4 argumentos: «${a1}» / «${a2}»"
+# un --project que sale del repo no se mide, ni en pip ni en nuget
+: > "$TMP/fuera.txt"; : > "$TMP/fuera.sln"
+rc1=$(corre --type pip --project ../fuera.txt); m1=$(cat "$TMP/out.txt")
+rc2=$(corre --type nuget --project "$TMP/fuera.sln"); m2=$(cat "$TMP/out.txt")
+{ [ "$rc1" -eq 2 ] && [ "$rc2" -eq 2 ] && echo "$m1" | grep "sale de la carpeta del repo" >/dev/null && echo "$m2" | grep "sale de la carpeta del repo" >/dev/null; } \
+  && ok "T4 un --project fuera del repo (relativo o absoluto) sale 2, en pip y en nuget" || no "T4 --project fuera: pip $rc1 «${m1}» · nuget $rc2 «${m2}»"
+
+# T5 — la deuda declarada ampara por paquete y aviso, como en npm
+pipRepo; echo "$conPip" > "$TMP/pip.json"
+decl '{"revision":"2026-12-31","paquetes":[{"paquete":"jinja2","advisories":["GHSA-h5c8-rqwp-cp95"]}]}'
+rc=$(corre --type pip --block --json)
+nd=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).no_declaradas.join(","))' "$TMP/out.txt" 2>&1)
+{ [ "$rc" -eq 1 ] && [ "$nd" = requests ]; } && ok "T5 pip: lo declarado no despierta; lo otro frena con --block" || no "T5 salió $rc, no declaradas: $nd"
+
+# T6 — limpio de verdad
+pipRepo; echo '{"dependencies":[{"name":"flask","version":"3.0.0","vulns":[]}],"fixes":[]}' > "$TMP/pip.json"
+rc=$(corre --type pip --block)
+{ [ "$rc" -eq 0 ] && grep -q "alta 0" "$TMP/out.txt"; } && ok "T6 pip limpio sale 0 con --block" || no "T6 limpio salió $rc: $(cat "$TMP/out.txt")"
+
+# T9 — la ayuda nombra pip; un tipo desconocido es error de uso y nombra los tres
+node "$GUION" --help > "$TMP/out.txt" 2>&1
+rc=$(node "$GUION" --repo "$TMP/repo" --type cargo > "$TMP/out2.txt" 2>&1; echo $?)
+{ grep -q "npm|nuget|pip" "$TMP/out.txt" && [ "$rc" -eq 2 ] && grep -q "npm, nuget o pip" "$TMP/out2.txt"; } \
+  && ok "T9 la ayuda nombra pip y un tipo desconocido sale 2 nombrando los tres" || no "T9 ayuda/tipo: rc=$rc $(cat "$TMP/out2.txt")"
+# y la documentación de `tipo` lo nombra: los dos ejemplos de repos.json y las dos guías de operaciones
+faltan=""
+for f in pipelines/operations/examples/repos.json pipelines/operations/examples/github/repos.json; do grep -q 'o pip (pip-audit' "$AQUI/$f" || faltan="$faltan $f"; done
+for f in pipelines/operations/README.md pipelines/operations/github/README.md; do grep -q '`npm`, `nuget` o `pip`' "$AQUI/$f" || faltan="$faltan $f"; done
+[ -z "$faltan" ] && ok "T9 los ejemplos y las guías de operaciones nombran pip en «tipo»" || no "T9 no nombran pip:$faltan"
 
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }
