@@ -226,3 +226,11 @@ table.tabla#proyectos thead th{white-space:normal}
 .shell .corridas .card{min-width:0;max-width:100%}
 @media (max-width:640px){.shell .corridas .dos{grid-template-columns:minmax(0,1fr)}.shell .corridas .pfila{grid-template-columns:minmax(0,1fr) 60px 70px}.shell .corridas .pfila .pb{grid-column:1/-1;order:9}}
 .logo-previa{max-height:56px;max-width:240px;width:auto;object-fit:contain;padding:10px;border:1px dashed var(--line-strong);border-radius:8px}
+/* la pestaña Ayuda: la guía del sitio, con lo que le toca a cada rol (help.js) */
+.ayuda{max-width:72ch;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px 24px;box-shadow:var(--shadow);overflow-wrap:anywhere}
+.ayuda h2{font-family:var(--serif);font-size:24px;margin:22px 0 8px}.ayuda h3{font-family:var(--serif);font-size:20px;margin:26px 0 8px;padding-top:14px;border-top:1px solid var(--line)}.ayuda h4{font-size:16px;margin:18px 0 6px}
+.ayuda p,.ayuda li{color:var(--ink);line-height:1.6}.ayuda blockquote{margin:12px 0;padding:8px 14px;border-left:3px solid var(--line-strong);background:var(--surface-2);color:var(--ink-2)}
+.ayuda img{display:block;max-width:100%;height:auto;margin:12px 0;border:1px solid var(--line);border-radius:8px}
+.ayuda table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:12px 0;font-size:14px}.ayuda th,.ayuda td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}.ayuda th{background:var(--surface-2)}
+.ayuda pre{max-width:100%;overflow-x:auto;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px 14px;font:13px/1.5 var(--mono)}.ayuda code{font-family:var(--mono);font-size:.92em}
+@media (max-width:640px){.ayuda{padding:14px 16px}}

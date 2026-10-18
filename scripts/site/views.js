@@ -229,6 +229,9 @@ function banda(texto) { return `<div class="banda">${esc(texto)}</div>`; }
 /** El selector de tema: lo atiende site.js (sin él, la página queda con el tema del sistema). */
 const TEMA = '<div class="theme" role="group" aria-label="Tema"><button type="button" data-tema="auto" aria-pressed="true">Auto</button><button type="button" data-tema="light" aria-pressed="false">Claro</button><button type="button" data-tema="dark" aria-pressed="false">Oscuro</button></div>';
 
+// el idioma del sitio: el de sus páginas, y el de la guía que muestra la pestaña Ayuda (help.js)
+const IDIOMA = 'es';
+
 /** El armazón de toda página: el menú al costado (arriba en teléfono) y el encabezado con su bajada (`lede`, opcional). */
 function layout(ctx, titulo, cuerpo, lede = null) {
   const quien = ctx && ctx.quien;
@@ -251,7 +254,7 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const barra = `<header class="barra">${org}${org ? '<span class="sep" aria-hidden="true"></span>' : ''}<span class="producto">Arnés</span><span class="lema">Sitio de la organización</span><span class="esp"></span>${sesion}</header>`;
   // el pie: la versión que corre, su licencia, sus créditos y de quién es el sitio
   const pie = `<footer class="pie"><span>Arnés${ctx && ctx.version ? ` v${esc(ctx.version)}` : ''}</span><a href="/licencia">Licencia Apache 2.0</a><a href="/creditos">Créditos y componentes de terceros</a><span class="esp"></span>${m.nombre ? `<span>© ${esc(m.nombre)}</span>` : ''}</footer>`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body>${barra}<div class="shell"><aside class="side">${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}${pie}</main></div></body></html>`;
+  return `<!doctype html><html lang="${IDIOMA}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${recargar}<title>${esc(titulo)} · Sitio de la organización</title><link rel="stylesheet" href="/static/site.css"><script src="/static/site.js"></script></head><body>${barra}<div class="shell"><aside class="side">${nav}<div class="side-foot"><span class="lab-tema">Tema</span>${TEMA}</div></aside><main><header class="s-head"><div><h1>${esc(titulo)}</h1>${lede ? `<p>${esc(lede)}</p>` : ''}</div></header>${bandas}${cuerpo}${pie}</main></div></body></html>`;
 }
 
 function seccion(titulo, html, aparte = null, id = null) { return `<section class="q"${id ? ` id="${esc(id)}"` : ''}><div class="q-head"><h2>${esc(titulo)}</h2>${aparte ? `<span class="aside">${esc(aparte)}</span>` : ''}</div>${html}</section>`; }
@@ -368,6 +371,7 @@ const paginaFrenado = ({ desde }) => layout({}, 'Sitio frenado', `<p class="lede
 const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, 'Cargando', '<p class="lede">cargando las fuentes: esta página se recarga sola en unos segundos.</p>');
 
 module.exports = {
+  IDIOMA,
   hora, FRASES, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
   paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
   paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,

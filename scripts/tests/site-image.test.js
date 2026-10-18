@@ -110,3 +110,33 @@ test('T2i Imagen_SinVersionJson_SeArmaIgual @story-2.30', { skip: SIN_DOCKER }, 
     fs.rmSync(ctx, { recursive: true, force: true });
   }
 });
+
+test('T7 Imagen_TraeLaGuiaDelSitio @story-2.41 @ac-1 — la ayuda sale de la guía que viaja en la imagen', () => {
+  const fs = require('fs');
+  const dockerfile = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile'), 'utf8');
+  const fuera = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'Dockerfile.dockerignore'), 'utf8').split('\n').map((l) => l.trim());
+  // con comodín: un árbol sin guides/ (el de la noche) arma la imagen igual (T2i)
+  for (const linea of ['COPY guide[s]/sitio-de-la-organizacion.md* guides/', 'COPY guide[s]/sitio-de-la-organizacion.en.md* guides/', 'COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organizacion/capturas/']) {
+    assert.ok(dockerfile.split('\n').includes(linea), `el Dockerfile no trae «${linea}»`);
+  }
+  for (const ruta of ['guides/sitio-de-la-organizacion.md', 'guides/sitio-de-la-organizacion.en.md', 'guides/sitio-de-la-organizacion/capturas/']) {
+    assert.ok(fuera.includes(`!${ruta}`), `la lista de exclusiones deja afuera ${ruta}`);
+  }
+});
+
+test('T7b Imagen_LaGuiaEstaAdentro @story-2.41 @ac-1 — armada de verdad, la imagen trae las dos guías y las capturas', { skip: SIN_DOCKER }, () => {
+  const id = crypto.randomBytes(4).toString('hex');
+  const imagen = `site-prueba-ayuda:${id}`;
+  try {
+    const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.']);
+    assert.strictEqual(b.status, 0, `la imagen se arma: ${(b.stderr || '').slice(-800)}`);
+    // el node de la imagen lista lo que trae (el mismo comando que usa T2k para su sonda)
+    const r = docker(['run', '--rm', imagen, 'node', '-e', "const fs=require('fs');console.log(JSON.stringify({guias:fs.readdirSync('/app/guides'),capturas:fs.readdirSync('/app/guides/sitio-de-la-organizacion/capturas').filter((f)=>f.endsWith('.png')).length}))"], { timeout: 120000 });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const dentro = JSON.parse(r.stdout.trim().split('\n').pop());
+    assert.ok(dentro.guias.includes('sitio-de-la-organizacion.md') && dentro.guias.includes('sitio-de-la-organizacion.en.md'), JSON.stringify(dentro));
+    assert.ok(dentro.capturas > 0, 'las capturas');
+  } finally {
+    docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
+  }
+});

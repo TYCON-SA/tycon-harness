@@ -51,6 +51,8 @@ const CAPTURAS = [
   { nombre: 'corridas-leyenda', sitio: 'normal', quien: LEAD, ruta: '/corridas', pasos: 'leyenda', espera: 'Corrida por corrida', barras: true },
   { nombre: 'proyectos', sitio: 'normal', quien: LEAD, ruta: '/proyectos', espera: 'Cómo va cada producto' },
   { nombre: 'arnes', sitio: 'normal', quien: LEAD, ruta: '/arnes', espera: 'Cómo está el arnés' },
+  { nombre: 'ayuda-persona', sitio: 'normal', quien: ANA, ruta: '/ayuda', espera: 'Problemas comunes' },
+  { nombre: 'ayuda-quien-mantiene', sitio: 'normal', quien: LEAD, ruta: '/ayuda#las-recetas', espera: 'Las recetas' },
   { nombre: 'configuracion-personas', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-personas', pasos: 'config', espera: 'Quién entra al sitio' },
   { nombre: 'configuracion-confirmar-maquina', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-personas', pasos: 'config', espera: 'Por confirmar' },
   { nombre: 'configuracion-repos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-repos', pasos: 'config', espera: 'Dónde vive cada repo' },
@@ -196,7 +198,8 @@ async function laboratorio(variante) {
   const rutasConfig = req('scripts/site/tabs/config.js').crearRutas({ cfg, fuentes, versionImagen: VERSION, remotos, urlBase: { github: gh.base } });
   const rutasCorridas = req('scripts/site/tabs/runs.js').crearRutas({ cfg, fuentes, version: VERSION, skillsDir: path.join(ROOT, 'skills') });
   const { crearSitio } = req('scripts/site/server.js');
-  const sitio = crearSitio({ env, fuentes, log: () => {}, rutasExtra: [...rutasConfig, ...rutasCorridas] });
+  const rutasAyuda = req('scripts/site/help.js').crearRutas({ raiz: ROOT });
+  const sitio = crearSitio({ env, fuentes, log: () => {}, rutasExtra: [...rutasConfig, ...rutasCorridas, ...rutasAyuda] });
   await sitio.iniciar();
   await new Promise((r) => sitio.server.listen(puerto, '127.0.0.1', r));
   const h = { base: `http://127.0.0.1:${puerto}`, pedir: (ruta, o) => H.pedirA(`http://127.0.0.1:${puerto}`, ruta, o), cerrar: () => sitio.cerrar() };

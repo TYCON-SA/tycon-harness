@@ -373,8 +373,12 @@ approves the request:
   machine of yours also has to be confirmed in your name ("People and machines"): it shows up by itself in "To confirm"
   when it uploads its first run.
 - To **maintain**, your email has to be in "Who gets into the site" with the role "Maintains the site". Whoever installs
-  puts the first person (`SITE_FIRST_MAINTAINER`), while the list has nobody who maintains.
+  puts the first person, while the list has nobody who maintains.
 - To stop seeing, the email is removed from the list.
+
+**The help, inside.** This guide is also inside the site, in the "Help" tab (*Ayuda*), and each role sees its part: a dev
+sees how the site is used and its common problems; whoever maintains also sees the configuration section by section and
+how it is installed. It comes from this same guide, in the site's language.
 
 ## Common problems
 

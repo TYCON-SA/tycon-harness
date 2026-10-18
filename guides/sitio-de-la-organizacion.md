@@ -357,8 +357,12 @@ El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra
   además, una máquina tuya tiene que estar confirmada a tu nombre («Personas y máquinas»): aparece sola en «Por
   confirmar» cuando sube su primera corrida.
 - Para **mantener**, tu correo tiene que estar en «Quién entra al sitio» con el rol «Mantiene el sitio». La primera
-  persona la pone quien instala (`SITE_FIRST_MAINTAINER`), mientras la lista no tiene a nadie que mantenga.
+  persona la pone quien instala el sitio, mientras la lista no tiene a nadie que mantenga.
 - Para dejar de ver, se saca el correo de la lista.
+
+**La ayuda, adentro.** Esta guía está también dentro del sitio, en la pestaña «Ayuda», y cada rol ve lo que le toca: un
+dev ve cómo se usa el sitio y sus problemas comunes; quien mantiene ve además la configuración sección por sección y
+cómo se instala. Sale de esta misma guía, en el idioma del sitio.
 
 ## Problemas comunes
 
