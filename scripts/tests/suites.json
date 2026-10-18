@@ -400,6 +400,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.51: la historia sin proyecto BMAD — el modo lo decide el guion, la escribe el guion (valida, no pisa, deja constancia), las instrucciones de las tres preguntas y la portada.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-create-story/scripts/tests/story-without-bmad.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []

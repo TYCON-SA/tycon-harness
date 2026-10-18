@@ -119,6 +119,12 @@ Opciones:
 
 **Si la rama es feature/dev/bugfix/etc**: OK, continuar sin pausar.
 
+**La historia de primera vez** (escrita por el modo primera vez de `tycon-create-story`: marca `origin: first-time` Y
+la constancia que deja su guion en la carpeta de estado) no pausa: `pipeline.js start` hace `git init` si no hay git,
+crea `story/<número>` en `main`/`master` y lo dice en `actions_done`. Si esa rama ya existe, pausa nombrándola. La
+marca sola (escrita a mano) no alcanza: en un checkout que comparten varias sesiones, cambiar de rama solo rompe el
+trabajo de la otra.
+
 ### PIPE-C2 — `.gitignore`: lo efímero no viaja, la evidencia de cierre SÍ
 
 Lo hace `pipeline.js start` solo, preguntándole a GIT (`check-ignore`, no al texto), y en DOS repos si
