@@ -1265,7 +1265,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Qué es:** Es el único control de commit, en dos partes: la del arnés y la de las skills, que viven en `.githooks/pre-commit-checks`.
 
-**Por qué existe:** Cada parte corre en su proceso, así que una salida temprana no saltea a la otra. Con `core.hooksPath` global git ignora los `.githooks/` de cada repo, y `git-pre-commit-global.sh` lo cierra delegando en el del repo. Incluye el control de paridad Claude-Codex (`build/check.js`).
+**Por qué existe:** Cada parte corre en su proceso, así que una salida temprana no saltea a la otra. Con `core.hooksPath` global git ignora los `.githooks/` y los `.git/hooks/` de cada repo, y los tres ganchos globales (`pre-commit`, `post-commit`, `pre-push`) lo cierran corriendo los del repo. Incluye el control de paridad Claude-Codex (`build/check.js`).
 
 **Quién la usa:** Git en cada commit; la CI pública corre el mismo control (`public-ci.sh`).
 
@@ -1279,7 +1279,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Por qué existe:** Con staging selectivo, un commit no dice nada de lo que deja atrás. Nunca frena ni commitea por vos. Lo que un repo quiere excluir se declara en `.tycon/post-commit-ignore`.
 
-**Quién la usa:** Git, desde `~/.git-hooks/post-commit`, que instala `install-tycon-hooks.sh`. Se apaga con `TYCON_POST_COMMIT_NOTICE=0`.
+**Quién la usa:** Git, desde `~/.git-hooks/post-commit`, que instala `install-tycon-hooks.sh`. El aviso se apaga con `TYCON_POST_COMMIT_NOTICE=0`; los post-commit de la persona y del repo corren igual.
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 

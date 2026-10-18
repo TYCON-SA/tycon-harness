@@ -360,9 +360,10 @@ Code leaves; with the npx line, you choose.
 - **Your agent answers you in Spanish**, briefly and with the conclusion first. All command output, hook messages and
   rules are in Spanish too; there is no English option today.
 - In a repo that works with stories, the agent does not edit code without going through the harness's workflow.
-- Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
-  repo's own checks, the ones in `.git/hooks/`. The installation sets it only if git has none, and the plan tells you
-  before your "yes"; if you already have another one, it leaves it alone.
+- Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git no longer calls each
+  repo's own checks, the ones in `.git/hooks/`: the harness runs that folder's `pre-commit`, `post-commit` and
+  `pre-push` instead (hooks with other names, like `commit-msg`, do not run). The installation sets it only if git has
+  none, and the plan tells you before your "yes"; if you already have another one, it leaves it alone.
 - Once a day it reads the git history of your project repos (it finds their folder from where you use your agent).
   What it records stays on your machine.
 - Claude Code keeps your conversations for a year.
@@ -482,8 +483,9 @@ terminal (`node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes`).
   `core.hooksPath`: if git has none, `install`, `apply` and startup (with `auto` apply; with `ask`, the notice asks for it
   and `update --yes` sets it) point it to that folder (one you already have is left alone),
   and `uninstall` or the switch to the minimal install remove it if it is still that one. With a global
-  `core.hooksPath` git stops running the `.git/hooks/` of all your repos: the harness hook runs each repo's
-  `.githooks/pre-commit` instead.
+  `core.hooksPath` git no longer calls the `.git/hooks/` of your repos: the harness hook runs each repo's `.git/hooks/`
+  and `.githooks/` instead, for `pre-commit`, `post-commit` and `pre-push` (hooks with other names do not run). The
+  first time one runs it says so, with how to leave it as it was: delete it or remove its execute permission.
 - **Third-party skills** downloaded from their origins into the `skills/` folder of the clone: the ones listed in
   `scripts/publishing/third-party-skills.json`, each pinned to a commit (`TYCON_THIRD_PARTY=0` skips the step).
 - **The install mechanism's own files**: its state and its pinned startup copy in `~/.claude/.tycon-pipeline/`, the
