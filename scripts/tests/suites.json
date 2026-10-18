@@ -873,6 +873,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/work-in-progress.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/adversarial-launch-delay.test.sh",
       "requiere": []
     },
