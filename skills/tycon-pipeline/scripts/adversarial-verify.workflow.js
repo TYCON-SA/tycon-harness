@@ -223,6 +223,42 @@ SI CONFIRMÁS, GUARDÁ LA PRUEBA ANTES DE BORRARLA (obligatorio — es lo único
    guardar, devolvé probe_dir = "" y decí por qué en reasoning — no inventes una ruta.`
 }
 
+// El pedido al verificador de UN hallazgo que el autor propone descartar como falso. Es el mismo criterio del pase
+// (reproducir o refutar; ante la duda, reproducido) con la salida pedida como constancia: el comando que corrió y lo
+// que vio. Lo usa el modo `single-finding` de abajo y `pipeline.js verify-finding` (que corre este guion sólo para
+// armar el texto, `soloPedido`).
+function pedidoUnHallazgo(h) {
+  const f = h || {}
+  return `${COMMON}\n\nQuien implementó propone descartar este hallazgo de un revisor como FALSO. Tu trabajo es decidir con una` +
+    ` prueba REAL si se da o no: intentá REPRODUCIRLO (bundleá/compilá/corré el código tal como está en disco). Sólo si corriste` +
+    ` algo y observaste que el comportamiento incorrecto NO se da, devolvé refuted = true, con el comando EXACTO que corriste` +
+    ` y la parte de la salida que lo muestra. Si lo reprodujiste, si no pudiste correr nada, o si no podés demostrar que no` +
+    ` se da → refuted = false (ante la duda, el hallazgo es real). No te fíes del motivo del autor: es lo que tenés que comprobar.` +
+    `\n\nHALLAZGO (revisor ${f.reviewer || '?'}, regla ${f.rule || '?'}):\nfile=${f.file || '?'}${f.line ? ':' + f.line : ''}\n` +
+    `summary=${f.summary || '(sin resumen)'}\n\nMOTIVO DEL AUTOR PARA DESCARTARLO:\n${f.author_reason || '(sin motivo)'}`
+}
+
+const REFUTE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    refuted: { type: 'boolean' },
+    command: { type: 'string' },
+    output: { type: 'string' },
+    reasoning: { type: 'string' },
+  },
+  required: ['refuted', 'command', 'output', 'reasoning'],
+}
+
+// Modo «un hallazgo»: sin cazadores ni lentes, un solo verificador independiente. Con `soloPedido` no lanza nada y
+// devuelve el texto y el modelo, que es lo que imprime `pipeline.js verify-finding`.
+if (A && A.modo === 'single-finding') {
+  const pedido = pedidoUnHallazgo(A.hallazgo)
+  if (A.soloPedido === true) return { prompt: pedido, model: MODEL }
+  const v = await agent(pedido, { label: 'verify:single-finding', phase: 'Verify', schema: REFUTE_SCHEMA, agentType: 'general-purpose', model: MODEL })
+  return { refuted: !!(v && v.refuted === true), command: (v && v.command) || '', output: (v && v.output) || '', reasoning: (v && v.reasoning) || '' }
+}
+
 // ===== NUCLEO-AGRUPAR: INICIO =====
 // 🔴 Este bloque está COPIADO LITERAL dentro de adversarial-verify.workflow.js: el pase corre en
 // una caja sin `require`, así que no puede importarlo. `tests/test-group-findings.js` compara las

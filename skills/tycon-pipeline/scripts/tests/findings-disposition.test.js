@@ -47,17 +47,34 @@ function lab() {
   return { d, spec, runDir };
 }
 
+// Un `refuted` sólo se escribe con la constancia de un verificador que no es quien implementó: el
+// laboratorio la deja en la carpeta de la corrida, con el mismo armado que usa `record-refutation`.
+function dejarConstancia(runDir, { reviewer, rule, file }) {
+  const refutation = require(path.join(__dirname, '..', 'lib', 'refutation.js'));
+  const finding = { reviewer, rule, file, line: 1 };
+  const c = refutation.build({ finding, authorReason: 'falso', verifier: { agent: 'general-purpose@2026-01-01T00:00:00Z', model: 'sonnet' },
+    verdict: 'refutado', command: 'node probe.js', output: 'no se da' });
+  fs.mkdirSync(path.join(runDir, 'refutations'), { recursive: true });
+  fs.writeFileSync(path.join(runDir, 'refutations', `${refutation.idOf(finding)}.json`), JSON.stringify(c));
+  // write-findings revalida al verificador contra el registro de lanzamientos (el HOME de juguete del laboratorio):
+  // una constancia sola no alcanza, el agente tiene que figurar como lanzado.
+  const ledger = path.join(path.dirname(path.dirname(path.dirname(runDir))), 'home', '.claude', '.tycon-pipeline', 'advisor-runs');
+  fs.mkdirSync(ledger, { recursive: true });
+  fs.writeFileSync(path.join(ledger, 's1.jsonl'), `${JSON.stringify({ ts: '2026-01-01T00:00:00Z', advisor: 'general-purpose', model: 'sonnet' })}\n`);
+}
+
 function writeFindings(labDir, spec, findings) {
   const fj = path.join(labDir, 'in.json');
   fs.writeFileSync(fj, JSON.stringify(findings));
-  const out = execFileSync('node', [PIPELINE, 'write-findings', '--repo', labDir, '--story', spec, '--findings', fj], { encoding: 'utf8' });
+  const out = execFileSync('node', [PIPELINE, 'write-findings', '--repo', labDir, '--story', spec, '--findings', fj], { encoding: 'utf8', env: { ...process.env, HOME: path.join(labDir, 'home'), USERPROFILE: path.join(labDir, 'home') } });
   return JSON.parse(out);
 }
 
 test('refuted se conserva, cuenta aparte, y NO queda como open', () => {
-  const { d, spec } = lab();
+  const { d, spec, runDir } = lab();
+  dejarConstancia(runDir, { reviewer: 'a', rule: 'VAL-C1', file: 'x.cs' });
   const r = writeFindings(d, spec, [
-    { rule_id: 'VAL-C1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', disposition: 'refuted', reason: 'falso positivo: releído de disco, el bloque no está' },
+    { rule_id: 'VAL-C1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', line: 1, disposition: 'refuted', reason: 'falso positivo: releído de disco, el bloque no está' },
     { rule_id: 'W-1', severity: 'WARNING', advisor: 'a', file: 'y.cs', disposition: 'open', reason: 'r' },
   ]);
   assert.strictEqual(r.counts.refuted, 1);
@@ -81,7 +98,7 @@ test('disposition desconocida coacciona a open PERO avisa (fin del aplanado mudo
 test('refuted SIN reason degrada a open con aviso — la refutación se documenta o no vale', () => {
   const { d, spec } = lab();
   const r = writeFindings(d, spec, [
-    { rule_id: 'Q-1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', disposition: 'refuted' },
+    { rule_id: 'Q-1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', line: 1, disposition: 'refuted' },
   ]);
   assert.strictEqual(r.counts.refuted, 0);
   assert.strictEqual(r.counts.open, 1);
@@ -89,9 +106,10 @@ test('refuted SIN reason degrada a open con aviso — la refutación se document
 });
 
 test('write-followups: refuted queda [x] (cerrado), no deuda fantasma [ ]', () => {
-  const { d, spec } = lab();
+  const { d, spec, runDir } = lab();
+  dejarConstancia(runDir, { reviewer: 'a', rule: 'VAL-C1', file: 'x.cs' });
   const r = writeFindings(d, spec, [
-    { rule_id: 'VAL-C1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', disposition: 'refuted', reason: 'falso, refutado con evidencia' },
+    { rule_id: 'VAL-C1', severity: 'CRITICAL', advisor: 'a', file: 'x.cs', line: 1, disposition: 'refuted', reason: 'falso, refutado con evidencia' },
     { rule_id: 'W-1', severity: 'WARNING', advisor: 'a', file: 'y.cs', disposition: 'open', reason: 'deuda real' },
   ]);
   execFileSync('node', [PIPELINE, 'write-followups', '--story', spec, '--findings', r.path], { encoding: 'utf8' });
@@ -119,4 +137,17 @@ test('normalizeFindingRecord: «false-positive» SIN reason degrada a open, igua
   const r = normalizeFindingRecord({ rule_id: 'ACCOV-C1', severity: 'CRITICAL', disposition: 'false-positive', reason: '' }, warnings);
   assert.equal(r.disposition, 'open');
   assert.ok(warnings.some((w) => /sin reason/.test(w)), 'la refutación se documenta o no vale');
+});
+
+// ── Lo de antes sigue igual ────────────────────────────────────────────────────
+// Guarda de no regresión: `fixed`, `waived`, `deferred` y `open` sin constancia se escriben tal cual.
+test('Disposiciones_LoDeAntesSigueIgual', () => {
+  const { d, spec } = lab();
+  const r = writeFindings(d, spec, ['fixed', 'waived', 'deferred', 'open'].map((disposition, i) => (
+    { rule_id: `K-${i}`, severity: 'WARNING', advisor: 'a', file: 'z.cs', disposition, reason: 'r' })));
+  assert.deepStrictEqual([r.counts.fixed, r.counts.waived, r.counts.deferred, r.counts.open, r.counts.refuted], [1, 1, 1, 1, 0]);
+  assert.ok(!r.warnings, 'sin avisos');
+  const written = JSON.parse(fs.readFileSync(r.path, 'utf8'));
+  assert.deepStrictEqual(written.map((f) => f.disposition), ['fixed', 'waived', 'deferred', 'open']);
+  assert.ok(written.every((f) => !('refutation' in f)), 'ninguno trae constancia');
 });
