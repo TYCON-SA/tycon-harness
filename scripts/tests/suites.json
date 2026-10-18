@@ -1536,6 +1536,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.32: la guía del sitio para quien nunca lo vio — las partes de uso antes de la instalación (qué es con un día real, primer ingreso, cada pestaña con captura, Configuración con las secciones de la pantalla y en su orden, la tabla de los cuatro roles, los ocho problemas), las dos guías con las mismas partes y las mismas capturas, cada captura PNG de menos de 400 KB y ninguna de más, el HTML de cada una sin correos fuera de acme.example ni términos de la lista privada (sin la lista, NO MEDIDO), las portadas que enlazan la guía, la instalación sin cambio de contenido por su huella, y cada captura nombrada en la lista del guion. Lee archivos; sin red ni navegador.",
+      "raiz": "arnes",
+      "ruta": "tests/site-guide.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.30: el canal del aviso de los nocturnos (notify.js) — Telegram por su guion (manda y edita), Slack y Teams por webhook con el cuerpo de cada uno, 500, sin respuesta, dirección inválida o ausente, sin la dirección del webhook en ninguna salida; sin notify no manda aunque estén las variables de Telegram. Servidor local en otro proceso; sin red.",
       "raiz": "arnes",
       "ruta": "tests/notify.test.js",
