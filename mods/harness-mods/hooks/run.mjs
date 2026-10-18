@@ -77,6 +77,7 @@ export function readRun(text, now) {
   const waiting = m.waitingForHuman === true || Boolean(current && ASKS_DEV.includes(current.id) && m.autonomous !== true);
   return {
     storyId: m.storyId,
+    title: typeof m.storyTitle === 'string' && m.storyTitle.trim() !== '' ? m.storyTitle.trim() : null,
     current: current ? { id: current.id, name: current.name } : null,
     done: STEPS.filter((s) => isMain(s.id) && finished(s.id)).length,
     total: MAIN_TOTAL,
@@ -87,20 +88,73 @@ export function readRun(text, now) {
   };
 }
 
-/** El renglón del cartel. `contextPercent` puede faltar. El paso va por su nombre, sin el id (story 7.23). */
-export function boardLine(run, contextPercent) {
-  const step = run.current ? run.current.name : 'sin paso abierto';
+/**
+ * La ruta de la story del marker: `storyPath` tal cual si es absoluta, si no contra `repoPath`. `null` si falta.
+ */
+export function storyPathOf(text) {
+  let m;
+  try { m = JSON.parse(text); } catch (_) { return null; }
+  if (!m || typeof m.storyPath !== 'string' || m.storyPath === '') return null;
+  const p = m.storyPath;
+  if (p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)) return p;
+  return typeof m.repoPath === 'string' && m.repoPath !== '' ? `${m.repoPath.replace(/[\\/]+$/, '')}/${p}` : null;
+}
+
+/** El `title:` del frontmatter de la story, sin comillas. `null` si no hay frontmatter o no trae título. */
+export function specTitle(text) {
+  if (typeof text !== 'string') return null;
+  const fm = /^﻿?---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!fm) return null;
+  const line = /^title:[ \t]*(.+)$/m.exec(fm[1]);
+  if (!line) return null;
+  let t = line[1].trim();
+  if (t.length >= 2 && (t[0] === '"' || t[0] === "'") && t[t.length - 1] === t[0]) t = t.slice(1, -1).replace(/\\"/g, '"');
+  return t.trim() === '' ? null : t.trim();
+}
+
+/**
+ * El título corto del cartel: hasta el primer «:» o « — » si deja algo legible, y nunca más de `max` caracteres
+ * (se corta en una palabra). Lleva «…» cuando se sacó algo.
+ */
+export function shortTitle(title, max = 40) {
+  if (typeof title !== 'string' || title.trim() === '') return null;
+  const full = title.trim();
+  let t = full;
+  const cut = t.search(/:\s| — /);
+  if (cut >= 8) t = t.slice(0, cut);
+  if (t.length > max) {
+    const space = t.lastIndexOf(' ', max);
+    t = t.slice(0, space >= 8 ? space : max);
+  }
+  t = t.replace(/[\s,;.:—-]+$/, '');
+  return t.length < full.length ? `${t}…` : t;
+}
+
+/** Los pedazos del renglón del cartel: la story, su título corto (o `null`), el paso y el resto. */
+export function boardParts(run, contextPercent) {
   const pct = typeof contextPercent === 'number' && Number.isFinite(contextPercent) ? Math.round(contextPercent) : null;
-  const parts = [
-    `Story ${run.storyId}`,
-    step,
+  const rest = [
     `${run.done} de ${run.total} hechos`,
     `${show(run.minutesStep)} min en este paso`,
     `${show(run.minutesTotal)} min en total`,
     `contexto usado ${show(pct)} %`,
   ];
-  if (run.waiting) parts.push('te espera');
-  return parts.join(' · ');
+  if (run.waiting) rest.push('te espera');
+  return {
+    story: `Story ${run.storyId}`,
+    title: shortTitle(run.title),
+    step: run.current ? run.current.name : 'sin paso abierto',
+    rest,
+  };
+}
+
+/**
+ * El renglón del cartel. `contextPercent` puede faltar. El paso va por su nombre, sin el id (story 7.23); con el
+ * título de la story, va corto después del número.
+ */
+export function boardLine(run, contextPercent) {
+  const p = boardParts(run, contextPercent);
+  return [p.story, ...(p.title ? [p.title] : []), p.step, ...p.rest].join(' · ');
 }
 
 /**
@@ -143,7 +197,8 @@ export function stateDirs(vars) {
 /** El texto del aviso «te espera»: el paso por su nombre, sin el id (story 7.23). */
 export function waitingToast(run) {
   const step = run && run.current ? run.current.name : 'El pipeline';
-  return `Story ${run ? run.storyId : '?'}: ${step} te espera — contestá en el chat`;
+  const title = run ? shortTitle(run.title) : null;
+  return `Story ${run ? run.storyId : '?'}${title ? ` (${title})` : ''}: ${step} te espera — contestá en el chat`;
 }
 
 /** La clave del aviso «te espera» si corresponde darlo ahora; `null` si no espera o ya se avisó. */
@@ -155,7 +210,8 @@ export function warnKey(run, warned) {
 
 /** La respuesta de /pipeline: un resumen y la tabla de pasos (en Markdown). */
 export function pipelineTable(run) {
-  const head = `Story ${run.storyId} — ${run.current ? run.current.name : 'sin paso abierto'}` +
+  const title = typeof run.title === 'string' && run.title !== '' ? ` «${run.title}»` : '';
+  const head = `Story ${run.storyId}${title} — ${run.current ? run.current.name : 'sin paso abierto'}` +
     ` · ${run.done} de ${run.total} pasos hechos · ${show(run.minutesTotal)} min en total${run.waiting ? ' · te espera' : ''}`;
   const lines = [head, '', '| Paso | Estado | Tiempo |', '|---|---|---|'];
   for (const r of run.rows) lines.push(`| ${r.name} | ${r.state} | ${r.minutes === null ? '—' : `${r.minutes} min`} |`);

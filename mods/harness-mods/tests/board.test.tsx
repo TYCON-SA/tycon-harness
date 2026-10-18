@@ -101,3 +101,23 @@ test('sin corrida en la sesión no dibuja y /pipeline lo dice', async ($, on) =>
   const r = await $.command.run({ command: 'pipeline', args: '', ...RUN })
   expect((r as any).text).toMatch(/No hay una corrida del pipeline/)
 })
+
+test('el cartel trae el título corto de la story desde su spec, y el completo abajo', async ($, on) => {
+  const spec = '/repo/specs/story-9.9.md'
+  const marker = JSON.stringify({ ...JSON.parse(MARKER), storyPath: 'specs/story-9.9.md', repoPath: '/repo' })
+  world(on, { [MARKER_PATH]: marker, [spec]: '---\nstory: "9.9"\ntitle: "El video de 0 a 100: del arnés instalado al primer código"\n---\n# 9.9\n' })
+  await start($)
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /El video de 0 a 100…/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /del arnés instalado al primer código/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Implementar y correr las pruebas/ })).toBeDefined()
+})
+
+test('sin la spec, el cartel sigue con el número solo', async ($, on) => {
+  const marker = JSON.stringify({ ...JSON.parse(MARKER), storyPath: '/no/esta.md' })
+  world(on, { [MARKER_PATH]: marker })
+  await start($)
+  const ui = await mount($)
+  expect(await ui.find({ type: 'Text', text: /Story 9\.9/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /…/ })).toBeUndefined()
+})

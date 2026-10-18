@@ -4,6 +4,8 @@ export type BoardRow = { id: string; name: string; state: string; minutes: numbe
 
 export type Run = {
   storyId: string
+  /** El título de la story (del marker o del frontmatter de su spec); `null` si no se encontró. */
+  title?: string | null
   current: { id: string; name: string } | null
   done: number
   total: number

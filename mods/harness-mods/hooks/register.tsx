@@ -10,7 +10,7 @@ import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
 import type { Snapshot } from '../types'
-import { readRun, boardLine, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
+import { readRun, boardParts, storyPathOf, specTitle, pipelineTable, warnKey, waitingToast, stickyWaiting, addWarned, stateDirs, NO_RUN_TEXT } from './run.mjs'
 import { runModsCommand, isActive, isShown } from './mods.mjs'
 
 const BOARD = 'pipeline-board'
@@ -44,6 +44,25 @@ async function markerText($: any): Promise<{ text: string | null; error: string 
   return { text: null, error: null }
 }
 
+// el título de cada story leída: la spec no se vuelve a leer en cada refresco (una recarga del módulo la olvida)
+const titles = new Map<string, string | null>()
+
+/** El título de la story desde el frontmatter de su spec; `null` si no hay ruta o no se pudo leer. */
+async function titleFromSpec($: any, markerTextValue: string | null): Promise<string | null> {
+  const file = markerTextValue ? storyPathOf(markerTextValue) : null
+  if (!file) return null
+  if (titles.has(file)) return titles.get(file) ?? null
+  // sin la spec el cartel sigue con el número solo; se recuerda sólo lo leído, para volver a probar si aparece
+  try {
+    if (!(await $.fs.exists(file))) return null
+    const title = specTitle(await $.fs.read(file))
+    titles.set(file, title)
+    return title
+  } catch (_) {
+    return null
+  }
+}
+
 async function refresh($: any): Promise<void> {
   // apagado: no lee nada, y no deja una foto vieja que /pipeline o el cartel muestren como actual (clase 9)
   if (!isActive(BOARD, { off: await read($, off) })) {
@@ -53,7 +72,7 @@ async function refresh($: any): Promise<void> {
   const marker = await markerText($)
   const sticky = stickyWaiting(readRun(marker.text, await $.clock.now()), await read($, waitingFor))
   await update($, waitingFor, () => sticky.remember)
-  const run = sticky.run
+  const run = sticky.run && !sticky.run.title ? { ...sticky.run, title: await titleFromSpec($, marker.text) } : sticky.run
   // el contexto es un dato más del renglón: si la sesión no lo da, se muestra «—»
   let context: number | null = null
   try {
@@ -152,22 +171,27 @@ export const register: Register = on => {
 
     const { Box, Button, Text } = $.ui.resolve(e)
     const run = snap.run
-    const line = boardLine(run, snap.context ?? undefined)
-    const [story, step, ...rest] = line.split(' · ')
+    const { story, title, step, rest } = boardParts(run, snap.context ?? undefined)
+    // el título completo va abajo sólo si arriba quedó recortado
+    const full = title && run.title && title !== run.title ? run.title : null
     return (
-      <Box>
-        <Text bold>{story}</Text>
-        <Text dimColor> · </Text>
-        <Text color={run.waiting ? 'yellow' : undefined}>{step}</Text>
-        <Text dimColor> · {rest.join(' · ')} </Text>
-        <Button
-          key="hide"
-          label="Ocultar"
-          onPress={async () => {
-            await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
-            $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
-          }}
-        />
+      <Box flexDirection="column">
+        <Box>
+          <Text bold>{story}</Text>
+          {title ? <Text> · {title}</Text> : null}
+          <Text dimColor> · </Text>
+          <Text color={run.waiting ? 'yellow' : undefined}>{step}</Text>
+          <Text dimColor> · {rest.join(' · ')} </Text>
+          <Button
+            key="hide"
+            label="Ocultar"
+            onPress={async () => {
+              await update($, hidden, (h) => (asList(h).includes(BOARD) ? asList(h) : [...asList(h), BOARD]))
+              $.ui.toast(`El cartel quedó oculto en esta sesión. Para verlo de nuevo: /mods show ${BOARD}`)
+            }}
+          />
+        </Box>
+        {full ? <Text dimColor wrap="truncate-end">{full}</Text> : null}
       </Box>
     )
   })
