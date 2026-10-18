@@ -2367,6 +2367,12 @@
       "requiere": []
     },
     {
+      "__nota": "el barrido de las retrospectivas (scripts/metrics/retro-sweep.js): repos de juguete con git de verdad y el latido real; lo cubierto, lo que no pide retro, «no pude mirar», el reintento de lo que faltó, el clon por url y la regla de scripts/lib/retro-coverage.js. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/retro-sweep.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.31 (T1 a T8): los workflows modelo de GitHub Actions para los procesos de la noche (pipelines/operations/github/) — los archivos en su lugar, las reglas de seguridad (sin pull_request_target, acciones por sha, permisos mínimos, secretos sólo en el env de un paso, ninguna expresión dentro de un run:) con una copia alterada por regla, los efectos que valen en una corrida programada, y prepare-tree.sh, operations-auth.sh, el bloque que elige el arnés y clone-repos.sh corridos de verdad sobre repos de juguete; T9, la credencial por GitHub App; T10, los repos privados que ve la credencial (installation/repositories con la App, user/repos con el usuario de máquina) y cero repos vistos como aviso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/operations-github-workflows.test.js",

@@ -102,7 +102,8 @@ test('T2 Barrido_DosVeces_NoDuplica @story-1.26 @ac-2: la segunda corrida no cor
 test('T3 Barrido_MergeDePlataforma_CuentaIgual @story-1.26 @ac-1: un pedido de GitHub y uno de Azure, los dos cubiertos', () => {
   const { dir, shas } = repo([
     { subject: 'Merge pull request #226 from acme/fix/algo' },
-    { subject: 'Merge pull request 4899 from docs/propuesta into main', author: 'Project Collection Build Service (acme)' },
+    // la forma de un pedido de Azure DevOps; el número se arma aparte (escrito entero parece un pedido de verdad)
+    { subject: `Merge pull request ${40 + 2} from docs/propuesta into main`, author: 'Project Collection Build Service (acme)' },
     { subject: 'feat: un pedido entrado con squash (#227)', direct: true },
   ]);
   const out = path.join(tmp(), 'retros');
