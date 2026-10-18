@@ -1,81 +1,79 @@
-# TYCON Harness for Claude Code and Codex
+# TYCON Harness
 
 English · [Castellano](README.es.md)
 
-**An AI software development life cycle (AI SDLC), from spec to production and beyond**, for Claude Code and Codex.
+**A development cycle for coding agents: complete, consistent, controlled and adaptable.**
 
-1. **Spec:** you and the agent write the story for the change: what has to be done and how it is tested. For a small
-   fix, asking for it in your own words is enough.
-2. **Code:** the agent makes the plan, waits for your go-ahead, and writes the code and the tests.
-3. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
-4. **Delivery:** the commit and the merge go through checks. For BIZUIT plugins it brings the scripts that deploy to
-   test and to production.
-5. **After:** every merge to main leaves its metrics file. The cycle dashboard and the nightly jobs (vulnerable
-   dependencies, rule pruning) run only at TYCON today and are being published.
+- **Complete:** it goes from the request to production and to measurement; it does not stop at writing code.
+- **Consistent:** every story follows the same workflow, on every machine of the team.
+- **Controlled:** the checks block, they do not just warn: they do not rely on the model remembering the rules. The
+  minimal install brings one (against destructive commands); the full install adds the rest.
+- **Adaptable:** each organization adds its own reviewers, skills and configuration.
 
-**It watches itself.** A test bench checks, on every change to the harness, that each control still blocks what it says
-it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
+Your coding agent writes fast; the harness makes it work with method. It works with Claude Code and with Codex. The
+AI software development life cycle (AI SDLC), step by step:
 
-With the full profile, the checks block, they do not just warn: it does not rely on the model remembering the rules.
-Most of them were born from a real incident.
+1. **Request and story:** you say what you want and the agent writes it as a story: what has to be done and how it is
+   tested. For a small fix, asking for it in your own words is enough.
+2. **Approved plan:** the agent makes the plan and waits for your go-ahead.
+3. **Tests and code:** it writes the tests and the code, and runs the tests.
+4. **Review:** specialized reviewers (security, conventions, coverage) check the change before the commit.
+5. **Delivery:** the commit and the merge go through checks. Nothing is committed or pushed without your permission.
+6. **Operation and measurement:** every merge to main leaves its metrics file, and your organization's nightly jobs
+   review the dependencies and build the cycle dashboard.
 
-**Each organization brings its own.** Its reviewers, skills and configuration travel in its team profile. TYCON brings
-its own for BIZUIT plugins.
+The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
+machine](#start-on-your-own), or [for your team](#for-teams).
 
-## Before you install: what changes on your machine
+## Start on your own
 
-If you install with Claude, as described below, you get the full profile (`full`); the command by hand asks you which
-one you want. The full profile changes things in all your projects, not just one:
+**It works today for .NET and JavaScript/TypeScript**: the test step runs `dotnet test`, vitest, jest and
+`node --test`. In other languages that step does not recognize your tests yet and does not turn green on its own.
 
-- **Claude answers you in Spanish**, briefly and with the conclusion first. All command output, hook messages and
-  rules are in Spanish too; there is no English option today.
-- In a repo that works with stories, Claude does not edit code without going through the harness's story process.
-- Git starts using a global folder for its commit checks (`core.hooksPath`). From then on, git stops running each
-  repo's own checks, the ones in `.git/hooks/`. The installation sets it only if git has none, and the plan tells you
-  before your "yes"; if you already have another one, it leaves it alone.
-- Once a day it reads the git history of your project repos (it finds their folder from where you use Claude Code). What it records stays on your machine.
-- Claude Code keeps your conversations for a year.
-
-If you don't want this, ask for the minimal profile (`minimal`). It brings the guides, the reviewers and the story process.
-It does not change how Claude answers you and it does not touch git. It keeps a single guard: the one against destructive
-commands.
-To remove the harness, `harness.js uninstall --dry-run` shows what it would remove, and `harness.js uninstall --yes` removes it.
-
-## What you need
-
-- Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
-- Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
-- Claude Code (or Codex), installed and signed in: it is where you use the harness.
-- Git is **not** needed to use the harness: it is downloaded as files, not cloned.
-  A GitHub account is not needed either: this repository is public.
-- Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
-  its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
-- To build BIZUIT extensions, your plugin's .NET SDK. Without it, the implementation stops at the build.
-
-If something is missing, the installer tells you what and installs nothing.
-
-## Install in one line
-
-This line checks the requirements, downloads the published version of the harness and installs it; it is the same on
-Windows, Mac and Linux, and it is the standard path: you do not need Claude. Open the terminal (on Windows, PowerShell
-7) and type:
+Open the terminal (on Windows, PowerShell 7) and type:
 
 ```bash
 npx @tyconsa/harness@latest
 ```
 
-Answer its questions (they are in Spanish): who the install is for (`1`, for you), the profile (`full` or `minimal`),
-the integrations (Enter, none) and whether you use the stack pack (`s`, yes). Before it writes anything it shows you
-the plan of what will change on your machine and asks "¿Instalo? [s/N]" (install?): with a "no", nothing is left
-behind.
+Answer its questions (they are in Spanish) like this: `1` (for you), `minimal` (the minimal install), Enter (no optional
+connection) and `n` (no reviewers for a stack). Before it writes anything it shows you the plan and asks "¿Instalo?
+[s/N]" (install?): with a "no", nothing is left behind. The minimal install adds the harness's guide index to your
+agent in every session; it does not touch git or the rules on how the agent answers you. To remove it, `harness.js uninstall --dry-run` shows what it would remove and
+`harness.js uninstall --yes` removes it.
 
-By hand, without npm: the three lines that download the install script, show it and run it are in the
-[Reference](getting-started/reference.md), under "Download and install".
+The full install adds the guards in the repos that work with the harness and changes how the agent answers you in all your projects:
+[what it changes](getting-started/reference.md#what-the-full-install-changes).
+
+## Your first story
+
+1. Open your coding agent in your repo's folder (if it was open, close it and open it again: the rules load when it starts).
+2. The first time, the agent asks for permission to read the folder where the harness lives. You accept it once.
+3. Ask for the story: "create a story with `tycon-create-story` to add a date filter". Read it and adjust it.
+4. Today that skill expects a project's `_bmad/` folder: without it, it asks for more details. If it gets stuck, ask the agent to write the story in the format of `story-format.md`.
+5. Ask "implementemos la story" (let's implement the story) with the file path: the phrase stays in Spanish. It shows you the plan, waits for your go-ahead, writes the code and runs the tests and reviewers.
+6. It leaves the commit ready: it never commits or pushes without your permission.
+
+If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, without changing anything.
+
+## What you need
+
+- Your coding agent, Claude Code or Codex, installed and signed in: it is where you use the harness.
+- Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
+- Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
+- Git is **not** needed to use the harness: it is downloaded as files, not cloned.
+  A GitHub account is not needed either: this repository is public.
+- Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
+  its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
+- What your project needs to build (for example, the .NET SDK). Without it, the implementation stops at the build.
+
+If something is missing, the installer tells you what and installs nothing. To install by hand, without npm, or with
+nobody at the keyboard: [Install by hand](getting-started/reference.md#install-by-hand).
 
 ## Install with Claude Code
 
-It is the easier alternative, if you would rather be guided, and it takes about 10 minutes. Claude runs most of the
-commands; the install runs in your own terminal.
+It is the alternative if you would rather be guided, and it takes about 10 minutes. Claude runs most of the commands;
+the install runs in your own terminal. This path gives you the full install (`full`).
 
 1. Open the instructions for your system: [Windows](getting-started/windows.md), [Mac](getting-started/mac.md) or [Linux](getting-started/linux.md).
 2. The instructions are in Spanish. Copy the whole "Parte 1" block (part 1). Open Claude Code in any folder and paste it into a new conversation.
@@ -88,67 +86,67 @@ If you install a tool along the way, Claude asks you to close and reopen the ter
 says "NO OK", keep it: it is what to show when you ask for help.
 
 The harness lives in `~/.tycon/harness`, as downloaded files (no git). `~/.claude/tycon-harness` is a shortcut to that
-same folder, and the commands on this page use it. Don't delete or move that folder: Claude Code
-uses it from there, and it updates itself in place. Using the harness never needs a clone of this repository.
+same folder, and the commands on this page use it. Don't delete or move that folder: your agent uses it from there,
+and it updates itself in place. Using the harness never needs a clone of this repository.
 
-**Minimal profile.** When you paste the block, write "quiero el perfil mínimo" (I want the minimal profile) above it.
-Claude installs `minimal` and does not touch `core.hooksPath`.
+**The minimal install.** When you paste the block, write "quiero el perfil mínimo" (I want the minimal profile) above
+it. Claude installs `minimal` and does not touch `core.hooksPath`.
 
-## Start working
-
-1. Close Claude Code and open it again in your extension's repo folder: the rules load when it starts.
-2. Ask for a story: "create a story with `tycon-create-story` to add a date filter". Read it and adjust it.
-3. Ask "implementemos la story" (let's implement the story) with the file path. The phrase stays in Spanish.
-4. The first time, Claude Code asks for permission to read the folder where the harness lives. You accept it once.
-5. Claude shows you the plan, waits for your go-ahead, writes the code and runs the tests and reviewers.
-6. It leaves the commit ready: it never commits or pushes without your permission.
-
-If something doesn't work, type `/tycon-harness` in Claude Code (which version you have, whether it is installed correctly and whether there is a new one), or run `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor`, which says what is missing. Neither one changes anything.
-
-## For an organization
+## For teams
 
 **Try it alone first.** Install it on your machine as described above: nothing from your organization is needed. If it
-works for you, it is set up for the team with two repos of the organization, which only your team can see, besides this one, which
-is the same for everybody:
+works for you, it is set up for the team with two repos of the organization, which only your team can see, besides
+this one, which is the same for everybody:
 
 | Repo | What it holds | Does it reach every machine? |
 |---|---|---|
 | This one (public) | the harness | Yes |
-| The **team profile** (for example `harness-team-profile`) | the configuration the team shares and the list of where each repo of the organization lives (`team-repos.json`) | Yes, every machine that installs with `--team` |
+| The **team repo** (for example `harness-team-profile`) | the configuration the team shares and the list of where each repo of the organization lives (`team-repos.json`) | Yes, every machine that installs with `--team` |
 | The **team operations** (for example `harness-team-operations`) | what runs at night for the organization (dependencies, dashboard, retrospectives) and who gets its notices (`operations.json`) | No: only those jobs read it |
 
-An example: at ACME, Pedro is the administrator and Juan writes code.
+An example: at ACME, Pedro is the admin and Juan writes code.
 
 1. Pedro sets ACME up with `npx @tyconsa/harness@latest --audience org` (or answers `3` to "¿para quién es esta
    instalación?", who the install is for). The line installs his machine and goes on with `harness.js team-init`: it
-   asks for the name, the platform and the address of the profile repo, builds its three files (`team-layer.json`,
-   `team-profile.json` and `team-repos.json`) from [an example profile](https://github.com/TYCON-SA/harness-team-profile-example)
+   asks for the name, the platform and the address of the team repo, builds its three files (`team-layer.json`,
+   `team-profile.json` and `team-repos.json`) from [an example](https://github.com/TYCON-SA/harness-team-profile-example)
    and validates them before writing. It creates no repos and asks for no credentials: it tells him where to create the
    empty repo, with access only for the team, and if he says yes it pushes it with his git. With the harness already
    installed, the same is `node ~/.tycon/harness/scripts/setup/harness.js team-init`. The operations repo is created
    separately (below, "The nightly jobs").
 2. Everything that is customized —where each repo lives, who gets the notices, the thresholds— is configured from the
-   **Configuration** tab of the [organization site](guides/organization-site.en.md) (maintainers only): it validates with the harness's own
-   readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no site
-   deployed, each file is edited with a pull request to its repo: what reaches the machines, to the profile repo;
-   what is for the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case
-   needs and where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
-   The local page
-   (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on the internet, what
-   is in his clones and the problems the readers see; it saves and proposes nothing.
-3. Juan installs with npx and the profile: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
+   **Configuration** tab of the [team site](guides/organization-site.en.md) (admins only): it validates with the
+   harness's own readers and proposes every change as a pull request, never a direct write to `main`. While ACME has no
+   site, each file is changed with a pull request to its repo: what reaches the machines, to the team repo; what is for
+   the nightly jobs and the site, to the operations repo. The harness works fully that way: what each case needs and
+   where each setting lives, in [With or without the site](getting-started/reference.md#with-or-without-the-site).
+   The local page (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) shows, read-only and with nothing on
+   the internet, what is in his clones and the problems the readers see; it saves and proposes nothing.
+3. Juan installs with npx and the team repo: `npx @tyconsa/harness@latest --team acme/harness-team-profile` if it is on
    GitHub, or `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<project>/_git/harness-team-profile` if it
    is on Azure DevOps. Since only the team sees that repo, before downloading anything the line checks that it can read
    it and, if not, asks him for read permission. From then on, every update also brings him what belongs to the team.
 
-How the harness extends for your organization —the layers, the configuration page and a worked example— in an
+How the harness extends for your organization —what each organization adds, the configuration page and a worked example— in an
 [interactive map](https://www.bizuit.com/sdd-harness/more/mapa-del-arnes.html).
 
 **The nightly jobs.** On Azure DevOps, the dependency review, the cycle metrics and the dashboard run in your
-organization with three model pipelines and your operations repo: [how to set them up](pipelines/operations/README.md)
+organization with three model jobs and your operations repo: [how to set them up](pipelines/operations/README.md)
 (in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
-each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish). The production watcher is not
-published: it is still TYCON's own.
+each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish).
+
+## What else it does
+
+- **It watches itself.** A test bench checks, on every change to the harness, that each check still blocks what it
+  says it blocks. If you turn it on, it also watches your sessions and proposes new rules for you to approve.
+- **Checks born from incidents.** With the full install, the checks block, they do not just warn. Most of them were
+  born from a real incident.
+- **Reviewers for your stack.** Each organization adds its own in its team repo. TYCON brings its own for BIZUIT
+  plugins, with the scripts that deploy to test and to production.
+- **What is still TYCON's own:** the production watcher is not published.
+
+The harness's words (story, workflow, guard, nightly jobs…), one line each, in
+[The harness's words](getting-started/reference.md#the-harnesss-words).
 
 ## Where to go next
 
@@ -158,6 +156,7 @@ published: it is still TYCON's own.
 | Know what it writes on your machine and how to turn each thing off | [What it writes on your machine](getting-started/reference.md#what-it-writes-on-your-machine-and-what-it-does-on-its-own) |
 | Update, go back or uninstall | [How it updates](getting-started/reference.md#how-it-updates) |
 | Use it with Codex | [What is optional](getting-started/reference.md#what-is-optional) |
+| Understand a word of the harness | [The harness's words](getting-started/reference.md#the-harnesss-words) |
 | Change the harness | [CONTRIBUTING.md](.github/CONTRIBUTING.md) |
 
 ## License and trademarks

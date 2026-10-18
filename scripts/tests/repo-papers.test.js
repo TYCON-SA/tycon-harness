@@ -83,37 +83,38 @@ const LICENSE_LINES = 202;
 const CONTACT = 'info@tycon.com.ar';
 const MIT_PERMISSION = 'Permission is hereby granted, free of charge, to any person obtaining a copy';
 
-// T13: las secciones de las dos portadas, en orden (inglés, castellano). Desde 2026-10-06 (portada clara) la parte de
-// arriba lleva al lector de lo que gana a tenerlo instalado y trabajando: qué cambia antes de instalar, qué necesita,
-// instalar con Claude Code y empezar a trabajar. Todo lo demás va debajo de «Referencia», sin cambios de contenido.
+// T13: las secciones de las dos portadas, en orden (inglés, castellano). La portada abre con el ciclo y su frase (sin
+// título: va antes del primer `##`) y sigue con el camino del dev solo —instalar y su primera historia—, lo que hace
+// falta, la instalación guiada, el camino del equipo y lo demás. Debajo, la referencia, con las palabras del arnés
+// primero y lo que cambia la instalación completa junto a la elección de la instalación.
 const SECTIONS = [
-  ['Before you install: what changes on your machine', 'Antes de instalar: qué cambia en tu máquina'],
+  ['Start on your own', 'Empezá solo'],
+  ['Your first story', 'Tu primera historia'],
   ['What you need', 'Qué necesitás'],
-  // story 8.40 (AC 15): con el paquete publicado, la entrada principal es la línea npx, antes del camino con Claude
-  ['Install in one line', 'Instalar en una línea'],
   ['Install with Claude Code', 'Instalar con Claude Code'],
-  ['Start working', 'Empezar a trabajar'],
-  // 2026-10-13 (pedido del dueño): la sección para quien arma el arnés en una organización, y una tabla de a dónde seguir
-  ['For an organization', 'Para una organización'],
+  ['For teams', 'Para equipos'],
+  ['What else it does', 'Qué más hace'],
   ['Where to go next', 'Dónde seguir'],
   ['License and trademarks', 'Licencia y marcas'],
-  // 2026-10-14 (pedido del dueño): la «Referencia» se mudó entera a getting-started/reference(.es).md, con los bloques de
-  // instalación. Las pruebas leen la portada y la referencia juntas (readCover): de acá para abajo, la referencia
+  // la referencia, en getting-started/reference(.es).md, con los bloques de instalación. Las pruebas leen la portada y la
+  // referencia juntas (readCover): de acá para abajo, la referencia
   ['What it is and what it isn\'t', 'Qué es y qué no es'],
+  ['The harness\'s words', 'Las palabras del arnés'],
   ['Requirements', 'Requisitos'],
   ['Install by hand', 'Instalar a mano'],
   // el arnés funciona sin sitio: qué necesita cada caso, dónde vive cada configuración y qué pisa cada máquina
   ['With or without the site', 'Con sitio o sin sitio'],
-  // story 8.40, tanda B: el alta guiada de la organización (harness.js team-init), después de las formas de instalar
+  // el alta guiada de la organización (harness.js team-init), después de las formas de instalar
   ['Set up your organization', 'Dar de alta tu organización'],
-  ['Profiles', 'Perfiles'],
-  // story 8.41: el núcleo no trae paquetes; la sección dice que llegan con el perfil del equipo
-  ['Your team\'s packs', 'Los paquetes de tu equipo'],
+  ['Minimal or full install', 'Instalación mínima o completa'],
+  ['What the full install changes', 'Qué cambia la instalación completa'],
+  // el núcleo no trae paquetes: llegan con el repo del equipo
+  ['Reviewers for your stack', 'Revisores para tu tecnología'],
   ['What is optional', 'Qué es opcional'],
   ['What it writes on your machine and what it does on its own', 'Qué escribe en tu máquina y qué hace solo'],
   ['Your product repo', 'El repo del producto'],
   ['Offline', 'Sin red'],
-  // story 8.40 (AC 43): cómo pasar por un proxy o por la CA de la empresa, y cómo desinstalar
+  // cómo pasar por un proxy o por la CA de la empresa, y cómo desinstalar
   ['With a proxy or your company\'s CA', 'Con un proxy o la CA de tu empresa'],
   ['Uninstall', 'Desinstalar'],
   ['How it updates', 'Cómo se actualiza'],
@@ -586,7 +587,7 @@ const FRONT_PAGE_KEYWORDS = [
     en: ['20 is tolerated only to update an existing installation; it is not tested'],
     es: ['20 se tolera sólo para actualizar una instalación existente; no se prueba'],
   }),
-  keywordPoint('empezar a trabajar: el permiso de lectura que Claude Code pide la primera vez (D5)', sectionOf(at('Start working')), {
+  keywordPoint('tu primera historia: el permiso de lectura que Claude Code pide la primera vez (D5)', sectionOf(at('Your first story')), {
     en: ['permission to read the folder', 'You accept it once'],
     es: ['permiso para leer la carpeta', 'Se acepta una vez'],
   }),
@@ -760,7 +761,7 @@ test('Papeles_LoQueRecibeLa88', async (t) => {
 // ajuste, el interruptor de la pieza o la ruta donde guarda. Lo demás va por palabras clave, como el AC 27 de la 8.13.
 const { readEffects } = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'managed.js'));
 const IN_WHAT_IT_IS = sectionOf(at('What it is and what it isn\'t'));
-const IN_FIRST_USE = sectionOf(at('Start working'));
+const IN_FIRST_USE = sectionOf(at('Your first story'));
 const IN_WRITES = sectionOf(at('What it writes on your machine and what it does on its own'));
 const IN_PRODUCT = sectionOf(at('Your product repo'));
 // El orden de la sección (AC 5): primero cómo contesta el asistente; después lo que frena, lo que corre solo, lo que
@@ -853,7 +854,7 @@ const GUIDED_INSTALL_KEYWORDS = [
     both: ['1300'], en: ['in all your projects', 'plain Spanish'], es: ['en todos tus proyectos', 'castellano llano'],
   }),
   keywordPoint('AC 5 · (b) lo que frena sólo en un repo que trabaja con el arnés, con la tabla', IN_WRITES, {
-    both: ['`.tycon/`', '(../INSTALL.md#los-hooks-que-instala)'], en: ['works with the harness', 'stories created with the skill'], es: ['trabaja con el arnés', 'stories creadas con la skill'],
+    both: ['`.tycon/`', '(../INSTALL.md#los-hooks-que-instala)'], en: ['works with the harness', 'stories created with the skill'], es: ['trabaja con el arnés', 'historias creadas con la skill'],
   }),
   keywordPoint('AC 5 · (c) el barrido diario de los repos vecinos', IN_WRITES, { both: ['200'], en: ['Once a day', 'parent folder'], es: ['Una vez por día', 'carpeta madre'] }),
   keywordPoint('AC 5 · (d) lo que guarda en disco', IN_WRITES, {
@@ -885,7 +886,7 @@ const GUIDED_INSTALL_KEYWORDS = [
   // AC 7
   keywordPoint('AC 7 · qué pone un repo bajo el arnés (la carpeta .tycon/, la primera story o .advisors/) y sus dos apagados', IN_PRODUCT, {
     both: ['`.tycon/`', '`.advisors/`', 'TYCON_STORY_GATE=off', '`pipeline.story_gate: false`', 'TYCON_RETRO_PENDING=0'],
-    en: ['the first story', 'is denied'], es: ['la primera story', 'se deniega'],
+    en: ['the first story', 'is denied'], es: ['la primera historia', 'se deniega'],
   }),
   // AC 10
   keywordPoint('AC 10 · Windows, en los requisitos', IN_REQUIREMENTS, { both: ['PowerShell 7', 'WSL'], en: [WINDOWS_PHRASE.requirements.en], es: [WINDOWS_PHRASE.requirements.es] }),
@@ -898,7 +899,7 @@ function guidedLeftovers(text, lang) {
   const out = [];
   if (/deshace todo|undoes all of it/.test(text)) out.push('AC 6 · uninstall no «deshace todo»: quita sólo lo que el mecanismo registró');
   const firstUse = IN_FIRST_USE(text, lang).split('\n').filter((l) => l.trim());
-  if (firstUse.length > FIRST_USE_MAX_LINES) out.push(`AC 6 · «Empezar a trabajar» tiene ${firstUse.length} renglones (tope ${FIRST_USE_MAX_LINES})`);
+  if (firstUse.length > FIRST_USE_MAX_LINES) out.push(`AC 6 · «Tu primera historia» tiene ${firstUse.length} renglones (tope ${FIRST_USE_MAX_LINES})`);
   // AC 10: en la «Referencia», todo párrafo que nombra Windows nombra WSL (WSL sigue sin probar, y lo dice). Arriba
   // alcanza con una mención en «Qué necesitás»: la regla, aplicada a toda la página, llenaba de WSL el camino recomendado
   // (revisión del lector interno, 2026-10-06).
@@ -981,7 +982,7 @@ test('Papers_FrontPage_GuidedInstall_TandaA', async (t) => {
       const real = text[lang];
       const failsWith = (toy, needle, what) => assert.ok(guidedProblems(toy, lang, effects).some((m) => m.includes(needle)), `${README[lang]}: ${what} tenía que fallar con «${needle}»`);
       failsWith(`${real}\n\`harness.js uninstall\` ${lang === 'en' ? 'undoes all of it' : 'deshace todo'}.\n`, 'deshace todo', 'la promesa vieja de uninstall');
-      const title = `## ${titleOf(at('Start working'), lang)}`;
+      const title = `## ${titleOf(at('Your first story'), lang)}`;
       failsWith(real.replace(title, `${title}\n\n${Array.from({ length: 9 }, (_, i) => `${i + 1}. paso`).join('\n')}`), 'renglones', 'un «Primer uso» largo');
       failsWith(`${real}\n\nWindows 11.\n`, 'Windows sin WSL', 'un párrafo que nombra Windows sin WSL');
     }
@@ -1100,7 +1101,7 @@ test('Papeles_UnattendedBlock_BothLanguages (T24)', () => {
 // efectos, no escritos a mano), qué se queda sólo en `full` (los frenos, los bloques que cambian cómo contesta el
 // asistente, los hooks de git, las tareas de fondo), cómo se elige y qué pasa si no se elige.
 const PROFILES_MAX_LINES = 12;
-const IN_PROFILES = sectionOf(at('Profiles'));
+const IN_PROFILES = sectionOf(at('Minimal or full install'));
 const NUMBER_WORDS = { en: ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'], es: ['cero', 'uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'] };
 const PROFILES_KEYWORDS = {
   both: ['`minimal`', '`full`', '--profile', 'install.profile', 'TYCON_INSTALL_PROFILE'],
@@ -1109,10 +1110,10 @@ const PROFILES_KEYWORDS = {
 };
 function profilesProblems(text, lang, effects) {
   const where = IN_PROFILES(text, lang);
-  if (!where.trim()) return [`«${titleOf(at('Profiles'), lang)}»: falta la sección`];
+  if (!where.trim()) return [`«${titleOf(at('Minimal or full install'), lang)}»: falta la sección`];
   const out = [];
   const lines = where.split('\n').filter((l) => l.trim());
-  if (lines.length > PROFILES_MAX_LINES) out.push(`AC 22 · «${titleOf(at('Profiles'), lang)}» tiene ${lines.length} renglones (tope ${PROFILES_MAX_LINES})`);
+  if (lines.length > PROFILES_MAX_LINES) out.push(`AC 22 · «${titleOf(at('Minimal or full install'), lang)}» tiene ${lines.length} renglones (tope ${PROFILES_MAX_LINES})`);
   for (const k of [...PROFILES_KEYWORDS.both, ...PROFILES_KEYWORDS[lang]]) if (!says(where, k)) out.push(`AC 22 · falta «${k}»`);
   // cuántos hooks trae minimal (sin los de una integración ni el freno de sesiones, que nace apagado en los dos)
   const n = effects.filter((e) => e.kind === 'hook' && Array.isArray(e.profiles) && e.profiles.includes('minimal') && !/^integration:/.test(e.when) && e.when !== 'optin:TYCON_SESSION_GUARD').length;
@@ -1126,7 +1127,7 @@ test('Papers_ProfilesSection_BothLanguages (T31)', () => {
     const text = readCover(lang);
     assert.deepStrictEqual(profilesProblems(text, lang, effects), [], `${README[lang]}: la sección de los perfiles`);
     // el espejo: un renglón de más, o sin una palabra clave, falla
-    const title = `## ${titleOf(at('Profiles'), lang)}`;
+    const title = `## ${titleOf(at('Minimal or full install'), lang)}`;
     const long = text.replace(title, `${title}\n\n${Array.from({ length: 13 }, (_, i) => `${i + 1}. renglón`).join('\n')}`);
     assert.ok(profilesProblems(long, lang, effects).some((m) => m.includes('renglones')), `${README[lang]}: una sección de 13 renglones más tenía que fallar`);
     const where = IN_PROFILES(text, lang);
@@ -1256,7 +1257,7 @@ test('Papers_ProfilesAndQuestions_UnattendedCarriesProfile_BothLanguages (T50)',
 // máquina mudada quedaba sin el freno antes de publicar), saben pedir el perfil mínimo y piden el mismo Node que
 // «Requisitos». Ninguno de los cuatro papeles dice «v20» (la portada pedía 22 en los requisitos y v20 en los pasos:
 // revisión del lector interno, F1).
-const IN_BEFORE = sectionOf(at('Before you install: what changes on your machine'));
+const IN_BEFORE = sectionOf(at('What the full install changes'));
 const BEFORE_KEYWORDS = {
   both: ['`full`', '`minimal`', '`core.hooksPath`', '`.git/hooks/`', 'harness.js uninstall --dry-run'],
   en: ['in all your projects', 'in Spanish', 'for a year'],
@@ -1577,7 +1578,7 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
       ['P1', 'mac.md', (t) => must(must(t, '2. Ver el plan de instalación', `${OLD_STEP}\n2. Ver el plan de instalación`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P2', 'linux.md', (t) => must(t, NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P3', 'windows.md', (t) => must(t, 'No hace falta cuenta de GitHub ni permiso: el arnés se baja de un repo público.', 'Antes, aceptá la invitación al repo que te llegó por mail de GitHub.')],
-      ['P4', 'README.md', (t) => must(must(t, '- Claude Code (or Codex), installed and signed in', `${OLD_COVER_BULLET}- Claude Code (or Codex), installed and signed in`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
+      ['P4', 'README.md', (t) => must(must(t, '- Your coding agent, Claude Code or Codex, installed and signed in', `${OLD_COVER_BULLET}- Your coding agent, Claude Code or Codex, installed and signed in`), NEW_BASH_DOWNLOAD, OLD_BASH_DOWNLOAD)],
       ['P5', 'README.es.md', (t) => must(t, '### 2. Bajar e instalar', '**En todos los sistemas**, creá antes un token de GitHub de sólo lectura con tu cuenta y dejalo a mano: el instalador lo va a pedir.\n\n### 2. Bajar e instalar')],
       ['P6', 'README.es.md', (t) => { const i = t.indexOf('<!-- install:unattended -->'); const j = t.indexOf(NEW_BASH_DOWNLOAD, i); assert.ok(i >= 0 && j > i, 'la mutación no encuentra el bloque sin terminal'); return `${t.slice(0, j)}${OLD_BASH_DOWNLOAD}${t.slice(j + NEW_BASH_DOWNLOAD.length)}`; }],
       ['P7', 'mac.md', (t) => must(t, 'Baja la versión a una carpeta temporal y muestra el plan.', 'Baja la versión a una carpeta temporal, guarda mi token en ~/.tycon/config.json y muestra el plan.')],
@@ -1606,4 +1607,130 @@ test('T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission —
       assert.ok(problems.length > 0, `${id} (${file}): la mutación de la revisión quedó en verde`);
     }
   });
+});
+
+// ── La primera pantalla de la portada: el ciclo, su frase y el primer paso ──────────────────────────────────────────
+// Antes del primer `##` va la frase del ciclo, literal, con una línea por cada una de sus cuatro palabras; la portada
+// habla de «agentes de código» y nombra una vez cada herramienta con la que funciona; el título no nombra ninguna; BIZUIT
+// no aparece arriba. En «Empezá solo», qué lenguajes sirven hoy va antes de la línea npx: quien programa en otro lo sabe
+// antes de instalar.
+const COVER_PHRASE = {
+  en: 'A development cycle for coding agents: complete, consistent, controlled and adaptable.',
+  es: 'Un ciclo de desarrollo para agentes de código: completo, consistente, controlado y adaptable.',
+};
+const COVER_WORDS = { en: ['Complete', 'Consistent', 'Controlled', 'Adaptable'], es: ['Completo', 'Consistente', 'Controlado', 'Adaptable'] };
+const COVER_AGENT = { en: 'coding agent', es: 'agente de código' };
+const STACKS_LINE = { en: 'It works today for .NET and JavaScript/TypeScript', es: 'Sirve hoy para .NET y JavaScript/TypeScript' };
+// lo que vale en otros lenguajes, dicho junto a la línea de arriba
+const OTHER_STACKS = { en: 'that step does not recognize your tests yet', es: 'ese paso todavía no reconoce tus pruebas' };
+// los seis pasos del ciclo, en orden, cada uno en negrita con su número
+const CYCLE_STEPS = {
+  en: ['Request and story', 'Approved plan', 'Tests and code', 'Review', 'Delivery', 'Operation and measurement'],
+  es: ['Pedido e historia', 'Plan aprobado', 'Pruebas y código', 'Revisión', 'Entrega', 'Operación y medición'],
+};
+// el primer paso del dev solo: qué contestar hoy, cómo se saca, y la salida si la skill de historias se traba
+const FIRST_STEP_SAYS = {
+  start: ['`1`', '`minimal`', '`n`', 'harness.js uninstall --yes'],
+  story: ['`_bmad/`', '`story-format.md`', 'implementemos la story'],
+};
+const coverTop = (text) => { const i = text.search(/^## /m); return i < 0 ? text : text.slice(0, i); };
+const countOf = (text, word) => text.split(word).length - 1;
+function coverTopProblems(text, lang) {
+  const out = [];
+  const top = coverTop(text);
+  const title = (top.match(/^# .*$/m) || [''])[0];
+  if (/Claude|Codex/.test(title)) out.push(`el título nombra una herramienta: «${title}»`);
+  if (!top.includes(`**${COVER_PHRASE[lang]}**`)) out.push('falta la frase del ciclo, literal y en negrita');
+  for (const w of COVER_WORDS[lang]) if (!new RegExp(`^- \\*\\*${w}:\\*\\* \\S`, 'm').test(top)) out.push(`falta la línea de «${w}»`);
+  if (!top.includes(COVER_AGENT[lang])) out.push(`no dice «${COVER_AGENT[lang]}»`);
+  for (const tool of ['Claude Code', 'Codex']) if (countOf(top, tool) !== 1) out.push(`nombra ${tool} ${countOf(top, tool)} veces arriba (una)`);
+  if (/BIZUIT|Bizuit/.test(top)) out.push('nombra BIZUIT arriba');
+  const steps = [...top.matchAll(/^\d+\. \*\*([^*:]+):\*\*/gm)].map((m) => m[1]);
+  if (JSON.stringify(steps) !== JSON.stringify(CYCLE_STEPS[lang])) out.push(`los pasos del ciclo o su orden: ${steps.join(', ') || 'ninguno'}`);
+  const startSection = section(text, titleOf(at('Start on your own'), lang));
+  if (startSection === null) out.push(`falta la sección «${titleOf(at('Start on your own'), lang)}»`);
+  const storySection = section(text, titleOf(at('Your first story'), lang));
+  if (storySection === null) out.push(`falta la sección «${titleOf(at('Your first story'), lang)}»`);
+  if (startSection === null || storySection === null) return out;
+  const start = startSection;
+  const stacks = start.indexOf(STACKS_LINE[lang]);
+  const npx = start.indexOf('npx @tyconsa/harness@latest');
+  if (npx < 0) out.push('«Empezá solo» no trae la línea npx');
+  if (stacks < 0) out.push('«Empezá solo» no dice qué lenguajes sirven hoy');
+  else if (npx >= 0 && stacks > npx) out.push('qué lenguajes sirven hoy va después de la línea npx');
+  if (!says(start, OTHER_STACKS[lang])) out.push(`«Empezá solo» no dice qué pasa en otros lenguajes («${OTHER_STACKS[lang]}»)`);
+  for (const k of FIRST_STEP_SAYS.start) if (!start.includes(k)) out.push(`«Empezá solo» no dice ${k}`);
+  for (const k of FIRST_STEP_SAYS.story) if (!storySection.includes(k)) out.push(`«Tu primera historia» no dice ${k}`);
+  return out;
+}
+test('Papeles_Portada_CicloYPrimerPaso', async (t) => {
+  for (const lang of ['en', 'es']) {
+    const real = readPaper(README[lang]);
+    await t.test(`${README[lang]}: la primera pantalla`, () => assert.deepStrictEqual(coverTopProblems(real, lang), []));
+    await t.test(`${README[lang]}: el espejo, cada condición rota falla`, () => {
+      const fails = (toy, needle, what) => {
+        assert.notStrictEqual(toy, real, `${what}: la portada de juguete es igual a la real`);
+        assert.ok(coverTopProblems(toy, lang).some((m) => m.includes(needle)), `${what} tenía que fallar con «${needle}»`);
+      };
+      fails(real.replace(COVER_PHRASE[lang], COVER_PHRASE[lang].replace('adapt', 'ad')), 'la frase del ciclo', 'sin la frase');
+      fails(real.replace(`- **${COVER_WORDS[lang][2]}:**`, '- **x:**'), COVER_WORDS[lang][2], 'sin una palabra');
+      fails(real.replace(/^# (.*)$/m, '# $1 para Claude Code'), 'el título', 'el título con la herramienta');
+      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** BIZUIT`), 'BIZUIT', 'BIZUIT arriba');
+      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Codex`), 'Codex', 'una herramienta dos veces');
+      fails(real.replace(`**${COVER_PHRASE[lang]}**`, `**${COVER_PHRASE[lang]}** Claude Code`), 'nombra Claude Code', 'Claude Code dos veces');
+      const top = coverTop(real);
+      fails(real.replace(top, () => top.split(COVER_AGENT[lang]).join('x')), COVER_AGENT[lang], 'sin «agente de código»');
+      const noStart = real.replace(`## ${titleOf(at('Start on your own'), lang)}`, '## x');
+      fails(noStart, 'falta la sección', 'sin la sección del primer paso');
+      const start = section(real, titleOf(at('Start on your own'), lang));
+      const moved = start.replace(STACKS_LINE[lang], 'x') + `\n${STACKS_LINE[lang]}\n`;
+      fails(real.replace(start, () => moved), 'después de la línea npx', 'los lenguajes después de npx');
+      fails(real.replace(start, () => start.split('npx @tyconsa/harness@latest').join('npm')), 'no trae la línea npx', 'sin la línea npx');
+      fails(real.replace(start, () => start.replace(loose(OTHER_STACKS[lang]), 'x')), 'otros lenguajes', 'sin lo que pasa en otros lenguajes');
+      fails(real.replace(`**${CYCLE_STEPS[lang][3]}:**`, '**x:**'), 'los pasos del ciclo', 'sin un paso del ciclo');
+      for (const k of FIRST_STEP_SAYS.start) fails(real.replace(start, () => start.split(k).join('x')), k, `«Empezá solo» sin ${k}`);
+      const story = section(real, titleOf(at('Your first story'), lang));
+      for (const k of FIRST_STEP_SAYS.story) fails(real.replace(story, () => story.split(k).join('x')), k, `«Tu primera historia» sin ${k}`);
+    });
+  }
+});
+
+// ── Las palabras del arnés: la sección de la referencia y el enlace de la portada ────────────────────────────────────
+// Diez palabras, una viñeta de un renglón cada una, en los dos idiomas; la portada enlaza la sección.
+const HARNESS_WORDS = {
+  en: ['Story', 'Workflow', 'Plan', 'Reviewers', 'Guard', 'Run', 'Pull request', 'Team repo', 'Nightly jobs', 'Team site'],
+  es: ['Historia', 'Recorrido', 'Plan', 'Revisores', 'Freno', 'Corrida', 'Pedido de cambio', 'Repo del equipo', 'Procesos de la noche', 'Sitio del equipo'],
+};
+const WORDS_ANCHOR = { en: 'getting-started/reference.md#the-harnesss-words', es: 'getting-started/reference.es.md#las-palabras-del-arnés' };
+function harnessWordsProblems(cover, reference, lang) {
+  const out = [];
+  const sec = section(reference, titleOf(at('The harness\'s words'), lang));
+  if (!sec) return ['falta la sección de las palabras'];
+  const lines = sec.split('\n').filter((l) => l.trim());
+  const bullets = lines.filter((l) => l.startsWith('- '));
+  const named = bullets.map((l) => (l.match(/^- \*\*([^*]+)\*\*/) || [])[1]);
+  if (JSON.stringify(named) !== JSON.stringify(HARNESS_WORDS[lang])) out.push(`las palabras o su orden: ${named.join(', ')}`);
+  // de la primera viñeta en adelante, todo renglón es una viñeta: uno que no lo es (con o sin sangría) continúa una palabra
+  const first = lines.findIndex((l) => l.startsWith('- '));
+  if (first >= 0 && lines.slice(first).some((l) => !l.startsWith('- '))) out.push('una palabra ocupa más de un renglón');
+  if (!cover.includes(`](${WORDS_ANCHOR[lang]})`)) out.push('la portada no enlaza la sección de las palabras');
+  return out;
+}
+test('Papeles_Referencia_SeccionDePalabras', async (t) => {
+  for (const lang of ['en', 'es']) {
+    const cover = readPaper(README[lang]);
+    const reference = readPaper(REFERENCE[lang]);
+    await t.test(`${REFERENCE[lang]}: las diez palabras`, () => assert.deepStrictEqual(harnessWordsProblems(cover, reference, lang), []));
+    await t.test(`${REFERENCE[lang]}: el espejo`, () => {
+      const word = HARNESS_WORDS[lang][5];
+      const without = reference.replace(new RegExp(`^- \\*\\*${word}\\*\\*.*\\n`, 'm'), '');
+      assert.notStrictEqual(without, reference);
+      assert.ok(harnessWordsProblems(cover, without, lang).some((m) => m.includes('las palabras')), 'sin una palabra tenía que fallar');
+      const wrapped = reference.replace(new RegExp(`^(- \\*\\*${word}\\*\\*.*)$`, 'm'), '$1\n  sigue');
+      assert.ok(harnessWordsProblems(cover, wrapped, lang).some((m) => m.includes('renglón')), 'una palabra en dos renglones tenía que fallar');
+      const flush = reference.replace(new RegExp(`^(- \\*\\*${word}\\*\\*.*)$`, 'm'), '$1\nsigue sin sangría');
+      assert.ok(harnessWordsProblems(cover, flush, lang).some((m) => m.includes('renglón')), 'un renglón sin sangría tenía que fallar');
+      assert.ok(harnessWordsProblems(cover.split(WORDS_ANCHOR[lang]).join('x'), reference, lang).some((m) => m.includes('enlaza')), 'sin el enlace tenía que fallar');
+    });
+  }
 });
