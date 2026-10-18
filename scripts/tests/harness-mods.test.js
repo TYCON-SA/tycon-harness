@@ -383,3 +383,35 @@ test('T18 Codex_DeclaresNoMods — Codex no tiene mods, y queda declarado', () =
   assert.ok(d, 'una entrada en divergences nombra mods/harness-mods');
   assert.match(JSON.stringify(d), /SOLO Claude Code/);
 });
+
+test('T19 Board_ShowsShortStoryTitle — el cartel trae el título corto de la story; /pipeline y el aviso, también', async () => {
+  const { readRun, boardLine, pipelineTable, waitingToast, shortTitle, specTitle, storyPathOf } = await mod('run.mjs');
+  const LARGO = 'El video de 0 a 100: del arnés instalado al primer código, en capítulos cortos';
+  // del frontmatter de la spec, con comillas y sin ellas
+  assert.strictEqual(specTitle(`---\nepic: 2\ntitle: "${LARGO}"\nstatus: in-progress\n---\n# x\n`), LARGO);
+  assert.strictEqual(specTitle('---\ntitle: Corto y claro\n---\n'), 'Corto y claro');
+  assert.strictEqual(specTitle('# sin frontmatter\ntitle: no\n'), null);
+  assert.strictEqual(specTitle('---\nepic: 2\n---\ntitle: fuera\n'), null);
+  // recorte: hasta los dos puntos; si no hay, en una palabra y nunca más de 40; sin recorte no lleva «…»
+  assert.strictEqual(shortTitle(LARGO), 'El video de 0 a 100…');
+  assert.strictEqual(shortTitle('Corto y claro'), 'Corto y claro');
+  const sinPuntos = shortTitle('Toda retrospectiva sale sola aunque el merge entre por un pedido de la plataforma');
+  assert.ok(sinPuntos.length <= 41 && sinPuntos.endsWith('…') && !/\s…$/.test(sinPuntos), sinPuntos);
+  assert.strictEqual(shortTitle(''), null);
+  // la ruta de la spec: absoluta tal cual, relativa contra el repo
+  assert.strictEqual(storyPathOf(JSON.stringify({ storyPath: '/r/specs/s.md', repoPath: '/otro' })), '/r/specs/s.md');
+  assert.strictEqual(storyPathOf(JSON.stringify({ storyPath: 'specs/s.md', repoPath: '/r/' })), '/r/specs/s.md');
+  assert.strictEqual(storyPathOf(JSON.stringify({ storyPath: 'C:\\r\\s.md' })), 'C:\\r\\s.md');
+  assert.strictEqual(storyPathOf(JSON.stringify({ storyPath: 'specs/s.md' })), null);
+  // el título que trae el marker gana; el renglón queda «Story · título corto · paso · …»
+  const run = readRun(markerEnPaso4({ storyTitle: LARGO }), NOW);
+  assert.strictEqual(run.title, LARGO);
+  assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar y correr las pruebas · 4 de 9 hechos · /);
+  assert.ok(pipelineTable(run).split('\n')[0].startsWith(`Story 9.9 «${LARGO}» — `), pipelineTable(run));
+  // sin título, igual que antes
+  const sin = readRun(markerEnPaso4(), NOW);
+  assert.strictEqual(sin.title, null);
+  assert.match(boardLine(sin, 20), /^Story 9\.9 · Implementar y correr las pruebas · /);
+  const en3 = JSON.stringify({ storyId: '9.9', storyTitle: LARGO, startedAt: at(0), stepsCompleted: [0, 1, 2], autonomous: false, stepTimings: { 3: { startedAt: at(20) } } });
+  assert.strictEqual(waitingToast(readRun(en3, NOW)), 'Story 9.9 (El video de 0 a 100…): Aprobar el plan te espera — contestá en el chat');
+});
