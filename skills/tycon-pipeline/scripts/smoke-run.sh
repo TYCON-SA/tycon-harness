@@ -19,9 +19,17 @@
 #     (≤ 8 KB) y tapada en <evidence-dir>/<story>-smoke-outputs/, con su sha256 en el registro Y el espejo;
 #   · la línea lleva `"v":2`: la matriz exige la salida intacta para contarla.
 #
+# Imagen de pantalla — el humo de un criterio de pantalla deja su imagen:
+#   · `--capture <archivo.png|.webm>` guarda en <evidence-dir>/<story>-smoke-captures/ una captura o una grabación del
+#     navegador real, atada a los criterios del humo (`--acs`). Su sha256 va en el registro (`capture_sha`, junto a la
+#     ruta `capture`) y en el espejo: la matriz sólo la cuenta si la imagen sigue siendo la que se selló al correr.
+#     La imagen se saca ANTES (el E2E, o Playwright suelto) y se pasa acá; un archivo que no existe o que no es png ni
+#     webm hace fallar el humo sin correr el comando. Siempre del sitio de laboratorio, nunca con datos de un cliente.
+#
 # Uso:
 #   smoke-run.sh <evidence-dir> <ruta-de-la-story.md | story-id> --acs 8,9 \
-#     --pass-if '<qué tiene que pasar>' [--fail-if '<qué lo da por malo>'] -- <comando...>
+#     --pass-if '<qué tiene que pasar>' [--fail-if '<qué lo da por malo>'] [--capture <archivo.png|.webm>] \
+#     -- <comando...>
 #   (con la ruta, la clave del registro la calcula lib/evidence-key.js — story 1.17)
 # Ejemplo:
 #   smoke-run.sh .../.advisors/dod-runtime 10.4 --acs 9 \
@@ -68,6 +76,7 @@ ACS=""
 MUTATES=0
 PASA_SI=""; PASA_SI_SET=0
 FALLA_SI=""; FALLA_SI_SET=0
+CAPTURE=""; CAPTURE_SET=0
 # Flags opcionales en cualquier orden antes del `--`.
 # --mutates (DODRT-C8, 2026-08-13 — caso Story 4.34 de un repo del equipo): declara que este smoke
 # EJECUTA una mutación de estado. Es la vía para productos sin superficie HTTP ni navegador
@@ -89,6 +98,13 @@ while true; do
     # Story 1.19: la expectativa, escrita antes de correr. Texto libre: no la evalúa este envoltorio (para eso
     # están `curl -f` / `jq -e` dentro del comando); la lee el revisor de cierre contra la salida guardada
     # (DODRT-W4). Vacía, sólo blancos, o con `--` como «valor» → exit 2 sin correr nada.
+    # La imagen del navegador real que prueba un criterio de pantalla. Sin valor, o con `--` como «valor» → exit 2.
+    --capture)
+      if [ $# -lt 2 ] || [ "$2" = "--" ]; then
+        echo "smoke-run.sh: --capture necesita la ruta de una captura (.png) o de una grabación (.webm) del navegador (ej: --capture pantalla.png)" >&2
+        exit 2
+      fi
+      CAPTURE="$2"; CAPTURE_SET=1; shift 2 ;;
     --pass-if|--fail-if)
       if [ $# -lt 2 ] || [ "$2" = "--" ] || [ -z "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then
         echo "smoke-run.sh: $1 necesita un texto: qué tiene que pasar para dar el humo por bueno (ej: $1 'responde 201 con el id del pedido')" >&2
@@ -111,6 +127,33 @@ if [ -n "$ACS" ] && [ "$PASA_SI_SET" != 1 ]; then
   echo "  forma: smoke-run.sh <evidence-dir> <story> --acs $ACS --pass-if '<qué tiene que pasar>' [--fail-if '<…>'] -- <comando…>" >&2
   echo "  (sembrar las precondiciones de un AC va sin --acs)" >&2
   exit 2
+fi
+
+# ── La imagen, validada ANTES de correr ──
+# Un archivo que no sirve de prueba no se descubre después de correr un comando que puede haber escrito: el humo falla acá
+# y no corre nada. lib/capture-file.js mira la extensión (png o webm), que exista, que no sea un enlace simbólico, que no
+# pase de 50 MB y que sus primeros bytes sean los del formato. La huella se calcula al copiarlo, después del comando.
+CAPTURE_EXT=""
+CAPTURE_JS="$(cd "$(dirname "$0")" && pwd)/lib/capture-file.js"
+if [ "$CAPTURE_SET" = 1 ]; then
+  CAPTURE_EXT="$(printf '%s' "${CAPTURE##*.}" | tr 'A-Z' 'a-z')"
+  case "$CAPTURE_EXT" in
+    png|webm) ;;
+    *)
+      echo "smoke-run.sh: --capture sólo acepta una captura .png o una grabación .webm del navegador (recibí: $CAPTURE) — no se corre el humo." >&2
+      exit 2 ;;
+  esac
+  if [ ! -f "$CAPTURE" ] && [ ! -L "$CAPTURE" ]; then
+    echo "smoke-run.sh: --capture: el archivo no existe: $CAPTURE — no se corre el humo. Sacá la imagen (.png o .webm) antes, con el E2E o con Playwright, y pasala acá." >&2
+    exit 2
+  fi
+  if ! CAPTURE_PROBLEM="$(node "$CAPTURE_JS" check "$CAPTURE" png,webm)"; then
+    echo "smoke-run.sh: --capture: $CAPTURE no sirve como captura (.png) ni como grabación (.webm): ${CAPTURE_PROBLEM:-no se pudo revisar} — no se corre el humo." >&2
+    exit 2
+  fi
+  if [ -z "$ACS" ]; then
+    echo "[smoke-run] ⚠️ --capture sin --acs: la imagen no queda atada a ningún criterio y no cuenta para ninguno." >&2
+  fi
 fi
 
 TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -214,6 +257,26 @@ else
   LEDGER_EXTRA="$LEDGER_EXTRA"',"output":null,"output_sha":null'
   MIRROR_EXTRA=''
   echo "[smoke-run] ⚠️ no se pudo correr el tapado de secretos ($SECRETS_JS): ni la expectativa ni la salida se escriben en la evidencia." >&2
+fi
+
+# ── La imagen, copiada a la evidencia con su huella ──
+# Después del comando: si el humo la produce o la rehace, queda la de ahora. Se vuelve a revisar al copiar (el comando
+# pudo borrarla o cambiarla por un enlace). La huella es la de la COPIA que viaja con el repo; la misma va al espejo
+# (fuera del repo), que es contra lo que la matriz la verifica. Si no se puede copiar, el humo sigue (el comando ya corrió
+# y su código de salida manda) pero el registro anota `capture_error` con el motivo y la matriz lo dice en el criterio.
+if [ "$CAPTURE_SET" = 1 ]; then
+  CAP_OUT="$(node "$CAPTURE_JS" copy "$CAPTURE" png,webm "$EVIDENCE_DIR" "$STORY_ID" "$TS")"
+  case "$CAP_OUT" in
+    "OK "*)
+      CAP_REST="${CAP_OUT#OK }"
+      LEDGER_EXTRA="$LEDGER_EXTRA"',"capture":"'"${CAP_REST%% *}"'","capture_sha":"'"${CAP_REST##* }"'"'
+      MIRROR_EXTRA="$MIRROR_EXTRA"',"capture_sha":"'"${CAP_REST##* }"'"' ;;
+    *)
+      CAP_MOTIVO='"no se pudo guardar la imagen"'
+      case "$CAP_OUT" in "ERR "*) CAP_MOTIVO="${CAP_OUT#ERR }" ;; esac
+      LEDGER_EXTRA="$LEDGER_EXTRA"',"capture_error":'"$CAP_MOTIVO"
+      echo "[smoke-run] ⚠️ no pude guardar la imagen $CAPTURE en la evidencia: el humo queda sin imagen y la matriz no la cuenta." >&2 ;;
+  esac
 fi
 
 ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s}' \

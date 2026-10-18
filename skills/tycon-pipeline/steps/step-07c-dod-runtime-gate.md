@@ -74,6 +74,29 @@ un criterio de lectura y no deben disparar la regla. Escotilla con rastro:
 aprieta el botón y verifica qué pasó de verdad. Un `expect(boton).toBeVisible()` no cubre
 un AC de acción.
 
+## Un AC de pantalla se prueba con una imagen del navegador real
+
+**Por qué**: lo que el cliente ve no se da por probado porque una prueba salió verde. Una pantalla puede pasar todos los
+controles y verse ilegible; una imagen del navegador real lo muestra, el resultado de un test no.
+
+**La regla (mecánica, en `runtime-matrix.js`)**: un **AC de pantalla** sólo es `RUNTIME` si además tiene una **captura o
+una grabación** (`.png` o `.webm`) del navegador real, atada a ese AC. Si corrió pero no tiene imagen queda
+`SIN-EVIDENCIA` (🔴, bloquea y no se puede waivear), con el motivo «falta la captura o la grabación del navegador».
+
+- **Qué es un AC de pantalla**: en una story que cablea interfaz, todo AC, salvo el que lleva `@sin-pantalla` en su texto.
+  En una story sin interfaz, sólo el que lleva `@pantalla`. En duda, es de pantalla. Un AC de backend no pide imagen: sigue
+  con el humo y la medición.
+- **Del gate E2E**: poné `@ac-N` en el título del test que abre la pantalla. El gate, corrido con el filtro de los specs de
+  la story, guarda la captura (y el video, si el repo los graba) en `<id>-captures-<ts>/` con un `captures.json` que dice de
+  qué AC es cada una. Las capturas nunca cambian el veredicto del gate; lo que cambia es la matriz.
+- **De un humo**: `smoke-run.sh <evidence-dir> <ruta-de-la-story.md> --acs N --pass-if '<qué tiene que pasar>'
+  --capture <archivo.png|.webm> -- <comando>`. La imagen se saca antes (Playwright suelto, por ejemplo) y se pasa acá: el
+  humo la copia a la evidencia y sella su huella en el registro y en el espejo; si después se cambia, deja de contar. Un
+  archivo que no existe o que no es png ni webm hace fallar el humo sin correr el comando.
+- **Siempre del sitio de laboratorio o de prueba**, con datos inventados: nunca una pantalla con datos reales de un cliente.
+- **Las stories que ya estaban en curso** cuando se publicó la regla (por la fecha de arranque de su marcador, o el
+  `created:` de la story) no se frenan por esto: la matriz les muestra un aviso con cómo sacar la captura.
+
 ## Por qué este step existe
 
 Sin un step explícito para verificar el gate DoD declarado en

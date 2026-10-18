@@ -13,14 +13,24 @@
  *      de los repos (que mantienen el suyo por razones legítimas, p.ej. levantar servers).
  *   2) VERIFICAR — `verify <evidencia.md>`: dice si una evidencia cumple el contrato y qué
  *      le falta. Sirve para chequear a CUALQUIER gate, sea del harness o del repo.
- *   3) CAPTURAS — `captures <playwright.json> <carpeta>` (story 7.24): copia las imágenes adjuntas de la
- *      corrida a la evidencia y las lista; el cierre se las muestra al dev antes de pedir el commit.
+ *   3) CAPTURAS — `captures <playwright.json> <carpeta>`: copia las imágenes y las grabaciones (.webm)
+ *      adjuntas de la corrida a la evidencia y las lista; el cierre se las muestra al dev antes de pedir el commit.
+ *      Deja además `captures.json` en la carpeta: de qué test y de qué criterio (`@ac-N` del título) vino cada una, con
+ *      la huella de cada archivo, y sella el índice en el gates.log del home (fuera del repo): es lo que la matriz lee
+ *      para dar por visto un criterio de pantalla, y sólo lo cuenta si el sello y las huellas coinciden.
  *
  * Exit de `verify`: 0 cumple · 1 le falta algo (lista los campos) · 2 error de uso.
  */
 'use strict';
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+const captureFile = require('./capture-file.js');
+const { stateDir } = require('./state-dir.js');
+
+// Lo que el portón guarda como captura o grabación: las imágenes de Playwright y su video.
+const CAPTURE_EXTS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'webm'];
 
 /** Títulos de los tests que PASARON en un reporter JSON de Playwright. */
 function passedTitles(reportJson) {
@@ -140,16 +150,31 @@ function verify(texto) {
 }
 
 /**
- * Las capturas de una corrida (story 7.24): los adjuntos de imagen del reporte JSON de Playwright — la captura que
- * `screenshot: 'on'` deja al terminar cada test y las que el spec adjunta por su cuenta con `testInfo.attach`.
- * Devuelve [{ title, name, path }] en el orden del reporte. Un trace, un video o un adjunto sin archivo no cuentan.
+ * Los criterios que el título de un test nombra con `@ac-N` (pueden ser varios: `@ac-2 @ac-3`). Se mira sólo el título del
+ * test, no el del `describe` ni el de la suite: el criterio lo declara el test que lo ejerce.
+ */
+function acTags(title) {
+  const out = new Set();
+  for (const m of String(title || '').matchAll(/@ac-(\d+)\b/g)) out.add(parseInt(m[1], 10));
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
+ * Las capturas de una corrida: los adjuntos de imagen del reporte JSON de Playwright — la captura que
+ * `screenshot: 'on'` deja al terminar cada test y las que el spec adjunta por su cuenta con `testInfo.attach` — y las
+ * grabaciones de video (`video/webm`). Devuelve [{ title, name, path, acs }] en el orden del reporte; `acs` son los
+ * criterios que nombra el título del test, y sólo si el intento que sacó la imagen PASÓ: la captura de un intento
+ * fallido (aunque el reintento pase) o de un test salteado se copia, pero no se ata a ningún criterio. Un trace o un
+ * adjunto sin archivo no cuentan.
  */
 function imageAttachments(reportJson) {
   const out = [];
   const walk = (suites) => (suites || []).forEach((s) => {
     (s.specs || []).forEach((sp) => (sp.tests || []).forEach((t) => (t.results || []).forEach((r) => {
       for (const a of r.attachments || []) {
-        if (a && a.path && /^image\//.test(a.contentType || '')) out.push({ title: sp.title || '', name: a.name || '', path: a.path });
+        if (a && a.path && /^(image\/|video\/webm$)/.test(a.contentType || '')) {
+          out.push({ title: sp.title || '', name: a.name || '', path: a.path, acs: r.status === 'passed' ? acTags(sp.title) : [] });
+        }
       }
     })));
     walk(s.suites);
@@ -158,27 +183,56 @@ function imageAttachments(reportJson) {
   return out;
 }
 
+const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
+
 /**
- * Copia las capturas a `destDir` como `NN-<test>.<ext>`. Devuelve { copied, missing }: una imagen que el reporte
- * nombra y no está (o que no se pudo copiar) se DEVUELVE con su motivo — callada, salía como «ningún test corrió».
+ * Copia las capturas a `destDir` como `NN-<test>.<ext>`. Devuelve { copied, missing, index }: una imagen que el reporte
+ * nombra y no está (o que no se pudo copiar, o que no sirve: enlace simbólico, extensión o primeros bytes que no son de
+ * una imagen, más de 50 MB) se DEVUELVE con su motivo — callada, salía como «ningún test corrió».
+ * `index` es lo que va a `captures.json`: [{ file, title, acs, sha256 }], con `file` relativo a `destDir`.
  */
 function copyCaptures(reportJson, destDir) {
   const slug = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'test';
-  const copied = []; const missing = [];
+  const copied = []; const missing = []; const index = [];
   for (const a of imageAttachments(reportJson)) {
     if (!fs.existsSync(a.path)) { missing.push({ path: a.path, motivo: 'no está en el disco' }); continue; }
+    const motivo = captureFile.problem(a.path, CAPTURE_EXTS);
+    if (motivo) { missing.push({ path: a.path, motivo }); continue; }
     try {
       fs.mkdirSync(destDir, { recursive: true });
       const n = String(copied.length + 1).padStart(2, '0');
-      const dest = path.join(destDir, `${n}-${slug(a.title)}${path.extname(a.path) || '.png'}`);
-      fs.copyFileSync(a.path, dest);
-      copied.push(dest);
+      const file = `${n}-${slug(a.title)}.${captureFile.extOf(a.path)}`;
+      fs.copyFileSync(a.path, path.join(destDir, file));
+      copied.push(path.join(destDir, file));
+      index.push({ file, title: a.title, acs: a.acs, sha256: sha256(fs.readFileSync(path.join(destDir, file))) });
     } catch (e) { missing.push({ path: a.path, motivo: `no se pudo copiar: ${e.code || e.message}` }); }
   }
-  return { copied, missing };
+  return { copied, missing, index };
 }
 
-module.exports = { passedTitles, totals, veredicto, filtrosNoEncontrados, verify, imageAttachments, copyCaptures, CONTRATO };
+/**
+ * Escribe `captures.json` en `destDir` y sella su huella en el gates.log del home (el espejo que ya lee la matriz, fuera
+ * del repo): una línea `e2e-captures` con la carpeta y el sha256 del índice. Sin la línea, el índice no cuenta. Devuelve
+ * el texto de lo que no pudo (o null).
+ */
+function sealCaptures(index, destDir, home) {
+  const text = JSON.stringify(index, null, 2) + '\n';
+  try { fs.writeFileSync(path.join(destDir, 'captures.json'), text); } catch (e) {
+    return `no se escribió captures.json (${e.code || e.message}): la matriz no sabrá de qué criterio es cada imagen`;
+  }
+  try {
+    const dir = stateDir(home || os.homedir());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'gates.log'), JSON.stringify({
+      type: 'e2e-captures', ts: new Date().toISOString(), folder: path.basename(destDir), sha256: sha256(text),
+    }) + '\n');
+  } catch (e) {
+    return `no se selló captures.json en el gates.log (${e.code || e.message}): la matriz no lo va a contar`;
+  }
+  return null;
+}
+
+module.exports = { passedTitles, totals, veredicto, filtrosNoEncontrados, verify, imageAttachments, copyCaptures, sealCaptures, CONTRATO };
 
 if (require.main === module) {
   const [cmd, file] = process.argv.slice(2);
@@ -199,8 +253,13 @@ if (require.main === module) {
     }
     // Un JSON que se lee pero no trae `suites` no es «ningún test corrió»: es otra forma de reporte (revisores, vuelta 2).
     if (j && Object.keys(j).length && !Array.isArray(j.suites)) console.error('el reporte de Playwright no tiene la forma esperada (sin `suites`): no hay de dónde sacar capturas');
-    const { copied, missing } = copyCaptures(j, dest);
+    const { copied, missing, index } = copyCaptures(j, dest);
     if (copied.length) console.log(copied.map((c) => `- ${c}`).join('\n'));
+    // El índice no cambia el listado ni el veredicto: si no se puede escribir o sellar, las imágenes quedan y la matriz no las ata.
+    if (index.length) {
+      const falla = sealCaptures(index, dest);
+      if (falla) console.error(falla);
+    }
     for (const m of missing) console.error(`no se copió ${m.path}: ${m.motivo}`);
     process.exit(0);
   }
