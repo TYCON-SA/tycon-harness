@@ -258,3 +258,19 @@ cada una: la guía del sitio (`guides/sitio-de-la-organizacion.md`, «De dónde 
 
 Si una corrida falla, el índice queda como estaba y el sitio sigue con la copia anterior. Con una copia de más de 24
 horas, quienes mantienen ven la banda; con más de 48, el sitio se frena, como cuando el repo no se puede leer.
+
+## 10. El sitio al día con stable (opcional)
+
+Un pipeline más, `site-update.yml`, mantiene el sitio de la organización al día con la etiqueta `stable` de su imagen
+(la que el arnés mueve sólo cuando la imagen pasó el escáner y tiene su firma). Corre cada noche a las 03:00 UTC, una
+hora antes de dependencias, que prueba el sitio y arma el resumen de la mañana. Qué hace en cada caso y cómo se elige
+automático o sólo aviso: la guía del sitio («Cómo se mantiene al día»).
+
+1. **La conexión de servicio del nocturno** («site-update», Workload identity federation), autorizada sólo para este
+   pipeline, con un **rol propio** sobre la aplicación del sitio y nada más. La guía trae el rol y la orden que lo crea.
+   Es propia: ni la de la copia de operaciones, ni la del buzón, ni la de dependencias.
+2. **El pipeline**: copiá `site-update.yml` a `pipelines/` del repo de operaciones y cambiá las dos líneas marcadas. Las
+   variables son `SITE_PLATFORM` (`azure`), `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`. En
+   Render: `SITE_PLATFORM=render` y la variable secreta `SITE_RENDER_DEPLOY_HOOK`.
+3. **El modo**: sin `site.update` en `operations.json`, sólo aviso. `"auto"` se elige desde la pestaña Configuración,
+   después de una actualización a mano que salió bien.

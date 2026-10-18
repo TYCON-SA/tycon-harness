@@ -26,6 +26,9 @@
 //               "auto_apply": <bool>,                       opcional — true: «Proponer» de quien mantiene el sitio
 //                                                            aprueba y completa el pedido con la identidad del sitio, si
 //                                                            las políticas de main lo dejan; sin la clave, false
+//               "update": "auto" | "notice",               opcional — cómo se mantiene al día el sitio:
+//                                                            "auto", el nocturno instala la versión nueva de stable, la
+//                                                            prueba y vuelve atrás si falla; sin la clave, "notice"
 //               "brand": { "name": <texto>,                 opcional — la marca del sitio: el nombre de la organización,
 //                          "logo": <ruta en este repo, .png o .svg>, el logo (vive acá, en el repo de operaciones) y
 //                          "dark": "invert" | "keep" } },     qué hacer con él en el tema oscuro (por defecto, invertirlo)
@@ -80,7 +83,7 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply'];
+const SITE_KEYS = ['maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update'];
 const BRAND_KEYS = ['name', 'logo', 'dark'];
 const BRAND_THEME_OPTIONS = ['invert', 'keep'];
 // el logo: una ruta relativa dentro del repo de operaciones, sin subir de carpeta, a un .png o un .svg
@@ -169,6 +172,7 @@ function siteProblems(site) {
     problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
   }
   if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
+  if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {
     if (!isObject(b)) problems.push({ path: 'site.brand', message: 'tiene que ser un objeto { name, logo, dark }' });

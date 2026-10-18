@@ -10,7 +10,8 @@
     "maintainers": ["lider@acme.example"],
     "mailbox": { "provider": "azure-blob", "account": "acmeruns", "container": "runs" },
     "refresh_minutes": 15,
-    "url": "https://sitio.acme.example"
+    "url": "https://sitio.acme.example",
+    "update": "notice"
   },
   "people": {
     "machines": {

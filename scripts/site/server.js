@@ -78,6 +78,11 @@ const VERSION = (() => {
   }
   return null;
 })();
+// de qué imagen es este sitio (el nombre en el registro, sin etiqueta): lo deja el workflow que la arma, adentro. Contra
+// esa imagen se compara `stable`; una imagen armada por la organización desde su copia compara contra la suya
+const IMAGEN = (() => {
+  try { const i = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '.tycon-release.json'), 'utf8')).image; return typeof i === 'string' && i ? i : null; } catch { return null; }
+})();
 
 const esLoopback = (u) => u.protocol === 'http:' && u.hostname === '127.0.0.1';
 
@@ -282,10 +287,13 @@ function textoDeLaRaiz(nombre, anexos = []) {
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
  * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las stories 2.27 y 2.29 suman las suyas.
  */
-function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [] } = {}) {
+function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null } = {}) {
   const v = validarConfiguracion(env);
   if (!v.ok) throw Object.assign(new Error(v.problemas.map((p) => `${p.variable}: ${p.motivo}`).join('\n')), { problemas: v.problemas });
   const cfg = v.cfg;
+  // la última publicada en `stable`: una vez por hora como máximo, sin credenciales, guardada en el disco.
+  // Nunca frena un pedido: se mira de fondo y la página dice lo que se sabe hasta ahí
+  const ultima = vigia || require('./latest-release.js').crearVigia({ imagen: IMAGEN, dataDir: cfg.dataDir, ahora, log: (l) => log(l) });
   const rutas = validarRutas([...RUTAS, ...rutasExtra]).map((r) => ({ ...r, coincide: patronDe(r.path) }));
   if (!fuentes) throw new Error('crearSitio necesita las fuentes (scripts/site/sources.js)');
   const proveedor = PROVEEDORES[cfg.provider].crear(cfg, { ahora });
@@ -461,8 +469,12 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
-      version: VERSION, ahora: ahora(),
+      version, ahora: ahora(),
+      // sólo quienes mantienen saben de la última publicada (los que pueden actuar); el modo sale de site.update
+      ultima: quien.rol === 'maintainer' ? ultima.estado() : null,
+      modoActualizacion: config && config.site && config.site.update === 'auto' ? 'auto' : 'notice',
     };
+    if (quien.rol === 'maintainer') ultima.mirar();
     // una ruta puede ser asíncrona y leer el pedido (las escrituras de la pestaña Configuración, story 2.29)
     const salida = await r.handler(ctx);
     return enviar(res, salida);

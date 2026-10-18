@@ -264,7 +264,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     }
 
     const lec = lector(s.lector);
-    if (!ORG.lectorSabe(lec, s)) return { ...base, estado: 'no_reader', motivo: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${s.claves.join(', ')}` : ''}` };
+    // la marca es una parte de site que un lector anterior no conoce: la sección dice qué parte
+    if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer la marca de la organización (site.brand)' };
+    if (!ORG.lectorSabe(lec, s)) return { ...base, estado: 'no_reader', motivo: `esta versión del arnés todavía no sabe leer ${s.archivo}${s.claves ? ` → ${(s.rutas && s.rutas.length === 1 ? s.rutas : s.claves).join(', ')}` : ''}` };
     if (a.estado === 'nuevo') v.estado = 'nuevo';
     // Personas tiene su propia regla con el archivo roto (abajo): el último bueno 24 horas
     else if (!doc && s.id !== 'personas') return { ...v, estado: 'ilegible', motivo: `${s.archivo} no es un objeto JSON legible: se corrige a mano` };

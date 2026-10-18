@@ -235,6 +235,18 @@ administrada (`SITE_OPERATIONS_SOURCE=copy`). Qué forma conviene, y lo que cues
 4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
 
+## 8. El sitio al día con stable (opcional)
+
+El workflow `site-update.yml` mantiene el sitio de la organización al día con la etiqueta `stable` de su imagen. Corre
+cada noche, antes de dependencias. Qué hace y cómo se elige automático o sólo aviso: la guía del sitio («Cómo se
+mantiene al día»).
+
+1. **Azure**: una aplicación de Entra propia con una credencial federada para este repo y el entorno `site-update`, y
+   un rol propio sobre la aplicación del sitio y nada más (la guía trae el rol). Variables: `SITE_UPDATE_CLIENT_ID`,
+   `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `SITE_IMAGE_NAME`, `SITE_RESOURCE_GROUP`, `SITE_APP` y `SITE_URL`.
+2. **Render**: `SITE_PLATFORM=render`, `SITE_IMAGE_NAME` y el secreto `SITE_RENDER_DEPLOY_HOOK`, el único secreto.
+3. **El workflow**: copiá `site-update.yml` a `.github/workflows/` y creá el entorno `site-update`.
+
 ## Diferencias con los pipelines de Azure DevOps
 
 - Los avisos de dependencias son **issues en el repo del producto**, no Bugs de Azure Boards, y **no hay pull request por

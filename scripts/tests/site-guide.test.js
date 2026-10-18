@@ -39,10 +39,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
 // propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma de dónde lee operaciones (la copia en un
 // contenedor, con su SAS fuera de Azure) y los cambios que se aplican solos: su permiso (Contribute to pull requests,
-// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla.
+// nunca Bypass policies), la política que deja votar al autor y el orden para encenderla; y cómo se mantiene al día
+// (la parte común, el párrafo «Al día» de cada receta, Kubernetes y otras nubes, y una red cerrada).
 const HUELLA_INSTALACION = {
-  es: '57a47700cbe22be640e1fac7c162916c87bfc1b5909926b47dee920b591bceef',
-  en: 'cab57c60ffd95d12f1176edd8ba6be8aed9acc872a723a2010425d077bd56c5f',
+  es: 'c7d18af59d8f304fa3e33ab30f626dd2fd4e024062f7568627e7d54234bdabd2',
+  en: '1bc9dc7a343912a8f7847b087d08d6c3e78954adba0482d578bbdaa4c6fce23a',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
