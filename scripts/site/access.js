@@ -3,12 +3,14 @@
  * access.js — EL ROL DE QUIEN PIDE Y EL FILTRO POR PERSONA (story 2.23, AC 10 a 12; decisiones 14, 18 y 22).
  *
  * Todo dato que el sitio muestra pasa por `filtrar()` antes de llegar a una vista: la pantalla nunca recibe lo que la
- * persona no puede ver (S6). El rol se decide en CADA pedido con la configuración vigente:
- *   · mantenedor  el correo está en `site.maintainers` de operations.json; o, SÓLO mientras esa lista no existe o está
- *                 vacía, es `SITE_FIRST_MAINTAINER` (decisión 14). Con la lista puesta, la variable no cuenta y quien
- *                 mantiene ve un aviso para sacarla.
- *   · persona     el correo tiene ALGUNA entrada en `people.machines` (2.28), confirmada o caída.
- *   · sin rol     lo demás: una página sin datos (decisión 22).
+ * persona no puede ver (S6). El rol se decide en CADA pedido con la configuración vigente, y sale SÓLO de la lista de
+ * quién entra (`site.access` de operations.json; sin ella, la lista armada con lo de antes):
+ *   · mantenedor  su entrada tiene `role: maintainer`; o, SÓLO mientras la lista no tiene ningún maintainer, es
+ *                 `SITE_FIRST_MAINTAINER` (decisión 14). Con alguno, la variable no cuenta y quien mantiene ve un aviso
+ *                 para sacarla.
+ *   · persona     su entrada tiene `role: dev`.
+ *   · sin rol     lo demás: una página que dice que su cuenta no está en la lista, sin datos y con cómo entrar con otra cuenta.
+ * Una persona puede tener varios correos: entra con cualquiera y lo suyo se calcula con todos.
  *
  * QUÉ ES DE QUIÉN (AC 12):
  *   · una corrida es de la persona confirmada para su máquina. La máquina es su carpeta nueva del buzón; una carpeta
@@ -38,22 +40,31 @@ const FRASE_PROYECTOS = 'todavía no se sabe en qué proyectos trabajás: lo con
 /** El contexto de la regla: la configuración vigente (o el último bueno) y lo informado por las máquinas. */
 const contextoDe = (config, personas) => people.contexto({ operations: isObject(config) ? config : {}, informados: personas && isObject(personas.informados) ? personas.informados : null });
 
-/** La lista de mantenedores vigente y de dónde sale. */
+/** La lista de quién entra: `site.access`, o la migración desde lo de antes. La regla vive en people.js. */
+const listaDeAcceso = (config) => people.listaDeAcceso(isObject(config) ? config : {});
+
+/** Los correos de quienes mantienen y de dónde salen: la lista, o `SITE_FIRST_MAINTAINER` mientras la lista no tiene ninguno. */
 function mantenedores(config, firstMaintainer) {
-  const lista = config && isObject(config.site) && Array.isArray(config.site.maintainers) ? config.site.maintainers.map(norm).filter((c) => CORREO.test(c)) : [];
+  const lista = listaDeAcceso(config).entradas.filter((e) => e.role === 'maintainer').flatMap((e) => e.emails);
   if (lista.length) return { lista: new Set(lista), origen: 'lista', variableSobrante: Boolean(firstMaintainer) };
-  if (firstMaintainer) return { lista: new Set([norm(firstMaintainer)]), origen: 'variable', variableSobrante: false };
+  if (firstMaintainer && CORREO.test(norm(firstMaintainer))) return { lista: new Set([norm(firstMaintainer)]), origen: 'variable', variableSobrante: false };
   return { lista: new Set(), origen: 'ninguno', variableSobrante: false };
 }
 
-/** Quién pide: { email, sub, rol, sinMantenedores, variableSobrante }. La sesión no trae rol: se calcula acá. */
+/**
+ * Quién pide: { email, correos, correoDeIngreso, sub, rol, sinMantenedores, variableSobrante }. La sesión no trae rol:
+ * sale SÓLO de la lista, con cualquier proveedor. `email` es el primer correo de su entrada (el de la persona), así entra
+ * con cualquiera de los suyos y ve lo mismo; `correoDeIngreso`, con el que entró.
+ */
 function quienPide(ses, { config, firstMaintainer } = {}) {
-  const email = norm(ses.email);
+  const correoDeIngreso = norm(ses.email);
+  const c = contextoDe(config, null);
+  const correos = people.correosDe(correoDeIngreso, c);
   const m = mantenedores(config, firstMaintainer);
   let rol = 'none';
-  if (m.lista.has(email)) rol = 'maintainer';
-  else if (people.esPersona(email, contextoDe(config, null))) rol = 'person';
-  return { email, sub: ses.sub, rol, sinMantenedores: m.origen === 'ninguno', variableSobrante: rol === 'maintainer' && m.variableSobrante };
+  if (correos.some((x) => m.lista.has(x))) rol = 'maintainer';
+  else if (people.esPersona(correoDeIngreso, c)) rol = 'person';
+  return { email: correos[0] || correoDeIngreso, correos, correoDeIngreso, sub: ses.sub, rol, sinMantenedores: m.origen === 'ninguno', variableSobrante: rol === 'maintainer' && m.variableSobrante };
 }
 
 /** Las reglas de qué es de quién para una configuración, un modelo y lo informado (`personas`, de sources.js). */
@@ -76,12 +87,12 @@ function crearReglas({ config, modelo, personas } = {}) {
     return { carpeta: e.antes_de || nombre, estado: e.estado, motivo: e.motivo || null, person: e.person || null };
   }
 
-  /** Las identidades de la plataforma de una persona: su correo y sus alias confirmados. */
+  /** Las identidades de la plataforma de una persona: todos sus correos de la lista y sus alias confirmados. */
   function identidades(email) {
-    const e = norm(email);
-    const p = peopleCfg[e] || Object.entries(peopleCfg).find(([k]) => norm(k) === e)?.[1];
-    const alias = isObject(p) && Array.isArray(p.identities) ? p.identities.map(norm).filter(Boolean) : [];
-    return { todas: new Set([e, ...alias]), conAlias: alias.length > 0 };
+    const suyos = people.correosDe(email, c);
+    const alias = Object.entries(peopleCfg).filter(([k, p]) => suyos.includes(norm(k)) && isObject(p) && Array.isArray(p.identities))
+      .flatMap(([, p]) => p.identities.map(norm).filter(Boolean));
+    return { todas: new Set([...suyos, ...alias]), conAlias: alias.length > 0 };
   }
 
   /** Los productos de una persona según `dondeTrabaja`; null (la frase) si no se sabe o no hay ninguno. */
@@ -106,9 +117,9 @@ function crearReglas({ config, modelo, personas } = {}) {
     quienEsQuienMedido: informadosOk,
     /** Las máquinas confirmadas de una persona (la ficha gris de quien todavía no tiene corridas, story 2.27 AC 11). */
     maquinasDe: (email) => {
-      const e = norm(email);
+      const suyos = people.correosDe(email, c);
       if (!informadosOk) return [];
-      return Object.keys(c.machines).filter((k) => { const x = people.estadoDeMaquina(k, c); return x.estado === 'confirmada' && x.person === e; }).sort();
+      return Object.keys(c.machines).filter((k) => { const x = people.estadoDeMaquina(k, c); return x.estado === 'confirmada' && suyos.includes(x.person); }).sort();
     },
     /** ¿Ve `email` esta corrida? La regla de people.js sobre la carpeta real de la corrida. */
     puedeVer: (email, corrida) => informadosOk && people.puedeVer(email, carpetaDe(corrida), c),
@@ -245,4 +256,4 @@ function filtrarCorridas(M, quien, reglas) {
   return out;
 }
 
-module.exports = { quienPide, mantenedores, crearReglas, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };
+module.exports = { quienPide, mantenedores, listaDeAcceso, crearReglas, filtrar, filtrarCorridas, FRASE_IDENTIDAD, FRASE_PROYECTOS };

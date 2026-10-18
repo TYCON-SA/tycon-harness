@@ -1239,6 +1239,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.40: quién entra al sitio lo decide la lista (site.access de operations.json): el lector con cada problema y su ruta, el rol sólo de la lista, varios correos por persona, la migración desde lo de antes, y la página sin datos de quien no está en la lista (cada ruta, recorrida).",
+      "raiz": "arnes",
+      "ruta": "tests/site-access-list.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: las fuentes del sitio — el repo de operaciones por HTTP con la credencial en una cabecera (nunca en el disco), el buzón sólo con una SAS de lectura o la identidad administrada, el refresco que conserva el último bueno, y la regla de las 24 horas de operations.json guardada en SITE_DATA_DIR. Repo git local con git http-backend (si falta, se saltea con constancia).",
       "raiz": "arnes",
       "ruta": "tests/site-sources.test.js",
@@ -1518,7 +1524,7 @@
       "requiere": []
     },
     {
-      "__nota": "la página local de configuración de la organización (`harness.js team-config`): sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; valida con los lectores del árbol (team-repos.js y operations-config.js) y no escribe lo que rechazan; la carpeta de cada clon la valida y la guarda quien la lanzó; el pedido no lleva otros cambios del clon, sube la rama de verdad a un remoto de juguete, y un rechazo por permisos o una herramienta que falta se dicen en llano con el enlace para abrirlo a mano; cómo se abre el navegador en Mac, Windows y Linux.",
+      "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",
       "requiere": []

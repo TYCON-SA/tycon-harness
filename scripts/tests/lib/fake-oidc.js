@@ -122,4 +122,61 @@ async function arrancarEmisor({ prefijo = '', clientId = 'site-client', clientSe
   return emisor;
 }
 
-module.exports = { arrancarEmisor, firmarJwt, claveNueva };
+/**
+ * Un emisor con la forma de Microsoft para varios inquilinos, la que publica Entra: `/common/v2.0` y
+ * `/organizations/v2.0` publican un descubrimiento cuyo `issuer`
+ * es la plantilla `<base>/{tenantid}/v2.0`; `/<inquilino>/v2.0` publica el suyo con el inquilino puesto. Las dos usan el
+ * mismo JWKS. El id_token sale con `iss` = `<base>/<tid de sus claims>/v2.0`, salvo que las claims traigan su `iss`.
+ * `emisor.issuer` es el de `common`; `emisor.base`, la raíz; `emisor.deInquilino(t)`, el emisor de un inquilino.
+ */
+async function arrancarEmisorMicrosoft({ clientId = 'site-client', clientSecret = 'site-secret' } = {}) {
+  const clave = claveNueva('RS256');
+  const codigos = new Map();
+  const cuantas = { jwks: 0, descubrimiento: 0, canjes: 0, autorizaciones: [] };
+  const emisor = { clientId, clientSecret, cuantas };
+  const server = http.createServer(async (req, res) => {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const responder = (status, cuerpo, tipoCont = 'application/json') => { res.writeHead(status, { 'content-type': tipoCont }); res.end(typeof cuerpo === 'string' ? cuerpo : JSON.stringify(cuerpo)); };
+    if (u.pathname === '/common/discovery/v2.0/keys') { cuantas.jwks += 1; return responder(200, { keys: [jwkDe(clave)] }); }
+    const m = /^\/([^/]+)\/v2\.0(\/.*)$/.exec(u.pathname);
+    if (!m) return responder(404, { error: 'no' });
+    const [, segPedido, ruta] = m;
+    // Entra publica el inquilino en minúsculas aunque se lo pida en mayúsculas
+    const seg = segPedido.toLowerCase();
+    const propio = `${emisor.base}/${seg}/v2.0`;
+    if (ruta === '/.well-known/openid-configuration') {
+      cuantas.descubrimiento += 1;
+      const multi = seg === 'common' || seg === 'organizations';
+      return responder(200, { issuer: multi ? `${emisor.base}/{tenantid}/v2.0` : propio, authorization_endpoint: `${propio}/authorize`, token_endpoint: `${propio}/token`,
+        jwks_uri: `${emisor.base}/common/discovery/v2.0/keys`, response_types_supported: ['code'], id_token_signing_alg_values_supported: ['RS256'], code_challenge_methods_supported: ['S256'] });
+    }
+    if (ruta === '/authorize') { cuantas.autorizaciones.push(seg); return responder(200, 'autorización', 'text/plain'); }
+    if (ruta === '/token' && req.method === 'POST') {
+      cuantas.canjes += 1;
+      const p = new URLSearchParams(await leerCuerpo(req));
+      const intento = codigos.get(p.get('code'));
+      codigos.delete(p.get('code'));
+      if (!intento) return responder(400, { error: 'invalid_grant' });
+      if (p.get('client_id') !== clientId || p.get('client_secret') !== clientSecret) return responder(401, { error: 'invalid_client' });
+      if (intento.challenge && b64u(crypto.createHash('sha256').update(p.get('code_verifier') || '').digest()) !== intento.challenge) return responder(400, { error: 'invalid_grant' });
+      const ahora = Math.floor(Date.now() / 1000);
+      const claims = { iss: `${emisor.base}/${intento.claims.tid}/v2.0`, aud: clientId, iat: ahora, exp: ahora + 3600, nonce: intento.nonce, ...intento.claims };
+      return responder(200, { access_token: 'a', token_type: 'Bearer', id_token: intento.idToken || firmarJwt(claims, { kid: clave.kid, clave: clave.privada }) });
+    }
+    return responder(404, { error: 'no' });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  emisor.base = `http://127.0.0.1:${server.address().port}`;
+  emisor.issuer = `${emisor.base}/common/v2.0`;
+  emisor.deInquilino = (t) => `${emisor.base}/${t}/v2.0`;
+  emisor.emitirCodigo = ({ claims, nonce, challenge, idToken }) => {
+    const code = crypto.randomBytes(12).toString('hex');
+    codigos.set(code, { claims, nonce, challenge, idToken });
+    return code;
+  };
+  emisor.firmar = (claims, opts = {}) => firmarJwt(claims, { kid: opts.kid === undefined ? clave.kid : opts.kid, clave: opts.clave || clave.privada });
+  emisor.cerrar = () => new Promise((r) => server.close(() => r()));
+  return emisor;
+}
+
+module.exports = { arrancarEmisor, arrancarEmisorMicrosoft, firmarJwt, claveNueva };

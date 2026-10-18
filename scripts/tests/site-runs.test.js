@@ -441,7 +441,7 @@ test('T11 PersonaSinCorridasTodavia_FichaGris_SinRolComoLa2_23 @story-2.27 @ac-1
     const sinRol = await entrar('nadie@ejemplo.test');
     assert.strictEqual((await h.pedir('/api/corridas', { cookie: sinRol })).status, 403);
     const pag = await h.pedir('/corridas', { cookie: sinRol });
-    assert.match(pag.texto, /todavía no está confirmada/);
+    assert.match(pag.texto, /Tu cuenta no está en la lista/);
     assert.doesNotMatch(pag.texto, /maq-a|3\.1/);
   });
 });

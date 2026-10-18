@@ -19,8 +19,8 @@
 //   version [--json]             · doctor [--json] [--fetch]              · channel [latest|stable]
 //   rollback [--to <copia>] [--list] [--release]  · uninstall [--dry-run] [--yes]   (llegan en la tanda C)
 //   link --local <clon> [--allow-temporary] | link --managed
-//   team-config [--no-open] [--team-clone <c>] [--operations-clone <c>]   (la página local de configuración de la
-//                                organización; harness/team-config.js)
+//   team-config [--no-open] [--team-clone <c>] [--operations-clone <c>]   (la página local, de sólo lectura, de la
+//                                configuración de la organización; harness/team-config.js)
 //   relocate [--check]           (story 8.19: muda a mano lo registrado por el nombre viejo del lugar; harness/relocate.js)
 //   layer [--check] [--list] [--json] [--public <copia>] [--harness-clone <clon>]   (story 8.13.1: la capa privada, sólo
 //                                leyendo; harness/layer.js) · install --harness-clone <clon> (de dónde se lee la capa)
@@ -121,7 +121,7 @@ const COMMANDS = {
   link:      { opts: { '--local': 'value', '--allow-temporary': 'flag', '--managed': 'flag' }, help: 'modo desarrollador: el enlace apunta a un clon propio (--local) o vuelve a managed (--managed)' },
   migrate:   { opts: { '--to-home': 'flag', '--dry-run': 'flag', '--repo': 'value', '--team': 'value' }, help: `muda esta máquina del clon a ~/.tycon: la versión bajada en ~/.tycon/harness, el estado y la configuración en ~/.tycon, los enchufes al árbol nuevo, el clon intacto (story 8.23, tanda D); --dry-run dice el plan sin escribir; --team <org>/<repo> (story 8.25) apila la capa del equipo sobre la versión bajada (sin la opción, la clave team de public-repos.json del clon; con capa, el perfil del clon no se funde en la configuración)` },
   relocate:  { opts: { '--check': 'flag' }, help: `muda a mano lo registrado por el nombre viejo ~/.claude/${PLACE.LEGACY_PLACE_NAME} al lugar ~/.claude/${PLACE.PLACE_NAME} (--check dice qué cambiaría, sin escribir)` },
-  'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local para configurar la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo) y a quién se asignan los avisos (operations.json, en el clon de operaciones); valida, guarda y ofrece el pedido. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
+  'team-config': { opts: { '--no-open': 'flag', '--team-clone': 'value', '--operations-clone': 'value' }, help: 'abre en el navegador la página local que muestra, de sólo lectura, la configuración de la organización: dónde vive cada repo (team-repos.json, en el clon del perfil del equipo), a quién se asignan los avisos (operations.json, en el clon de operaciones) y el resto de sus secciones, con los problemas que ven los lectores. Se edita en el sitio de la organización, o con un pedido al repo de operaciones si no hay sitio. Las carpetas de los clones se guardan como paths.team y paths.operations; --team-clone y --operations-clone las usan sólo esta vez, sin guardarlas. --no-open imprime la dirección sin abrir el navegador' },
   'team-init': { opts: { '--dir': 'value', '--name': 'value', '--platform': 'value', '--profile-repo': 'value', '--dry-run': 'flag', '--stories': 'value', '--no-stories': 'flag', '--stories-only': 'flag' }, help: 'da de alta tu organización (story 8.40): pregunta el nombre, la plataforma (github|azure), la dirección del repo del perfil y la carpeta (lo que no vino por opción), baja el ejemplo publicado y deja en la carpeta los tres archivos obligatorios del perfil del equipo, validados con los lectores de la versión instalada; después dice cómo crear el repo vacío, ofrece subirlo con git y ofrece instalar esta máquina con --team. Al final ofrece el repo de historias del equipo con su portón (las plantillas de scripts/setup/harness/team-stories/, al lado de la carpeta del perfil): --stories <nombre> lo arma sin preguntar, --no-stories lo saltea y --stories-only arma sólo ese repo (en --dir). No crea repos ni pide credenciales. --dry-run muestra los archivos sin escribir. Sin arnés instalado sale 2' },
   layer:     { opts: { '--check': 'flag', '--list': 'flag', '--json': 'flag', '--public': 'value', '--harness-clone': 'value' }, help: 'la capa privada, sólo leyendo: qué agregó, qué pisó, qué está editado a mano (--check sale 0 si está entera, 1 si falta o sobra algo, 3 si no hay capa; --list nombra cada archivo; --public <copia> y --harness-clone <clon> calculan contra esa copia y ese clon sin tocar el estado)' },
 };
@@ -4711,7 +4711,7 @@ function cmdConfig(ctx) {
 }
 
 /**
- * `team-config` — la página local de configuración de la organización (harness/team-config.js). Arranca un servidor en
+ * `team-config` — la página local que muestra, de sólo lectura, la configuración de la organización (harness/team-config.js). Arranca un servidor en
  * 127.0.0.1, imprime la dirección (con su llave) y abre el navegador; el proceso sigue vivo hasta que la página se cierra
  * (botón «Cerrar la página») o Ctrl+C. Las carpetas de los clones salen de `--team-clone`/`--operations-clone` (sólo esta
  * vez) o de `paths.team`/`paths.operations`; si faltan, la página las pide y se guardan con `config set` (el mismo

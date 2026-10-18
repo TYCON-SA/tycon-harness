@@ -12,6 +12,10 @@
  * T12 Microsoft_EmisorDeCualquierOrganizacion_NoArranca T36 Google_SoloElDominioDeLaOrganizacion
  * T37 GitHub_CorreoVerificadoYMiembroDeLaOrganizacion  T38 Oidc_Generico_DominioPermitido
  *
+ * Y las de Microsoft con cualquier cuenta, contra un emisor con la forma de varios inquilinos:
+ * T7  2.40-Microsoft_CualquierCuenta_CorreoVerificado  T9  2.40-Microsoft_UnInquilino_ComoHoy
+ * T8  2.40-Microsoft_EmisorDeOtroInquilino_FirmaValidada T16 2.40-Microsoft_InvitadoDelDirectorio
+ *
  * stable-data: cada prueba arranca su reloj controlado (`t`) desde la hora real, porque el emisor de mentira firma con
  * ella; lo que se prueba son plazos (±5 minutos, 10 minutos, 8 horas) sobre ese reloj, nunca una fecha fija.
  */
@@ -318,4 +322,188 @@ test('T38 Oidc_Generico_DominioPermitido', async () => {
     assert.ok((await H.ingresar(h, emisor, { sub: 'u1', email: 'dev@acme.example', email_verified: true })).sesion, '@acme.example entra');
     assert.strictEqual((await H.ingresar(h, emisor, { sub: 'u2', email: 'dev@otra.example', email_verified: true })).sesion, null, '@otra.example no');
   });
+});
+
+// ── Microsoft con cualquier cuenta, y los invitados del directorio ───────────────────────────────────────
+// La forma que publica Entra: el descubrimiento de `common` publica
+// el emisor `…/{tenantid}/v2.0`; cada token trae el emisor de su inquilino; las cuentas personales vienen del inquilino
+// 9188040d-6c67-4c5b-b112-36a304b66dad.
+const { arrancarEmisorMicrosoft } = require('./lib/fake-oidc.js');
+const PERSONALES = '9188040d-6c67-4c5b-b112-36a304b66dad';
+
+async function conMicrosoft({ tenant, config = MANT, env = {} }, fn) {
+  const emisor = await arrancarEmisorMicrosoft();
+  let h = null;
+  try {
+    const e = H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: tenant, SITE_OIDC_ISSUER: emisor.issuer, ...env });
+    h = await H.arrancarSitio({ env: e, fuentes: H.fuentesFijas({ config }) });
+    await fn({ emisor, h });
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); }
+}
+/** El viaje entero desde una dirección de inicio (`/auth/login` o la de los invitados). */
+async function ingresarPor(h, emisor, ruta, claims, { idToken } = {}) {
+  const ida = await h.pedir(ruta);
+  if (ida.status !== 302) return { res: ida, sesion: null, ida };
+  const it = H.intentoDe(ida);
+  const code = emisor.emitirCodigo({ claims, nonce: it.nonce, challenge: it.challenge, idToken: idToken && idToken(it) });
+  const res = await h.pedir(`/auth/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(it.state)}`, { cookie: it.cookie });
+  const s = res.cookies['__Host-site'];
+  return { res, ida, sesion: s && s.valor ? `__Host-site=${s.valor}` : null };
+}
+
+test('T7 2.40-Microsoft_CualquierCuenta_CorreoVerificado @story-2.40 @ac-7', async () => {
+  const org = UUID();
+  const otra = UUID();
+  await conMicrosoft({ tenant: org }, async ({ emisor, h }) => {
+    // la página de inicio ofrece las dos puertas
+    const inicio = await h.pedir('/');
+    assert.strictEqual(inicio.status, 200);
+    assert.match(inicio.texto, /href="\/auth\/login"/);
+    assert.match(inicio.texto, /href="\/auth\/login\?via=invitado"/);
+    assert.match(inicio.texto, /invitado del directorio de la organización/);
+    // la puerta principal va al emisor de varios inquilinos
+    const ida = await h.pedir('/auth/login');
+    assert.strictEqual(ida.status, 302);
+    assert.ok(ida.headers.location.startsWith(`${emisor.base}/common/v2.0/authorize`), ida.headers.location);
+    // una cuenta de trabajo de otro inquilino con el correo verificado: entra, con oid:tid
+    const oid = UUID();
+    const bien = await ingresarPor(h, emisor, '/auth/login', { sub: 's', oid, tid: otra, email: 'Dev@Otra.example', xms_edov: true });
+    assert.ok(bien.sesion, bien.res.texto);
+    assert.strictEqual(cargaDe(bien.sesion).email, 'dev@otra.example');
+    assert.strictEqual(cargaDe(bien.sesion).sub, `${oid}:${otra}`);
+    // sin xms_edov, o con xms_edov false: no entra, y dice por qué
+    for (const edov of [undefined, false]) {
+      const r = await ingresarPor(h, emisor, '/auth/login', { sub: 's', oid: UUID(), tid: otra, email: 'dev@otra.example', ...(edov === undefined ? {} : { xms_edov: edov }) });
+      assert.strictEqual(r.sesion, null);
+      assert.strictEqual(r.res.status, 403);
+      assert.match(r.res.texto, /correo verificado/);
+    }
+    // una cuenta personal que entra directo: no se acepta (parte A), y la página la manda a la puerta de los invitados
+    const personal = await ingresarPor(h, emisor, '/auth/login', { sub: 's', oid: UUID(), tid: PERSONALES, email: 'alguien@hotmail.example', xms_edov: true });
+    assert.strictEqual(personal.sesion, null);
+    assert.match(personal.res.texto, /cuentas personales de Microsoft/);
+    assert.match(personal.res.texto, /href="\/auth\/login\?via=invitado"/);
+    assert.ok(h.registro.some((l) => /cuenta personal/.test(l) && !l.includes('hotmail')), h.registro.join('\n'));
+  });
+});
+
+test('T8 2.40-Microsoft_EmisorDeOtroInquilino_FirmaValidada @story-2.40 @ac-7', async () => {
+  const org = UUID();
+  const t1 = UUID();
+  const t2 = UUID();
+  await conMicrosoft({ tenant: org }, async ({ emisor, h }) => {
+    const ahora = Math.floor(Date.now() / 1000);
+    const base = (it, extra) => ({ aud: emisor.clientId, iat: ahora, exp: ahora + 3600, nonce: it.nonce, sub: 's', oid: UUID(), email: 'dev@otra.example', xms_edov: true, ...extra });
+    const casos = [
+      ['el iss de otro inquilino que su tid', (it) => emisor.firmar(base(it, { tid: t1, iss: emisor.deInquilino(t2) }))],
+      ['el iss con la plantilla sin reemplazar', (it) => emisor.firmar(base(it, { tid: t1, iss: `${emisor.base}/{tenantid}/v2.0` }))],
+      ['un tid que no es un inquilino', (it) => emisor.firmar(base(it, { tid: 'common', iss: emisor.deInquilino('common') }))],
+      ['firmado con otra llave', (it) => emisor.firmar(base(it, { tid: t1, iss: emisor.deInquilino(t1) }), { clave: claveNuevaRsa() })],
+      ['el iss de otro emisor', (it) => emisor.firmar(base(it, { tid: t1, iss: `https://otro.example/${t1}/v2.0` }))],
+    ];
+    for (const [caso, armar] of casos) {
+      const r = await ingresarPor(h, emisor, '/auth/login', { tid: t1 }, { idToken: armar });
+      assert.strictEqual(r.sesion, null, caso);
+      assert.notStrictEqual(r.res.status, 302, caso);
+    }
+    // y el mismo token bien armado entra: los rechazos son por lo que cambia
+    const ok = await ingresarPor(h, emisor, '/auth/login', { tid: t1 }, { idToken: (it) => emisor.firmar(base(it, { tid: t1, iss: emisor.deInquilino(t1) })) });
+    assert.ok(ok.sesion, ok.res.texto);
+  });
+});
+function claveNuevaRsa() { return crypto.generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey; }
+
+test('T9 2.40-Microsoft_UnInquilino_ComoHoy @story-2.40 @ac-7 @ac-12', () => {
+  const { validarConfiguracion } = require(path.join(SITE, 'server.js'));
+  const org = UUID();
+  const ms = (extra) => validarConfiguracion(H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', ...extra }));
+  // el modo de hoy, explícito o por defecto: los emisores de varios inquilinos no arrancan
+  for (const modo of [undefined, 'organization']) {
+    const r = ms({ SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0', ...(modo ? { SITE_AUTH_MICROSOFT_ACCOUNTS: modo } : {}) });
+    assert.strictEqual(r.ok, false, String(modo));
+    assert.ok(r.problemas.some((p) => p.variable === 'SITE_OIDC_ISSUER'), String(modo));
+    assert.strictEqual(ms({ SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${org}/v2.0`, ...(modo ? { SITE_AUTH_MICROSOFT_ACCOUNTS: modo } : {}) }).ok, true, `${modo}: un inquilino arranca`);
+  }
+  // el modo nuevo pide un emisor de varios inquilinos y el inquilino de la organización (los invitados)
+  assert.strictEqual(ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org, SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' }).ok, true);
+  assert.strictEqual(ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org, SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/organizations/v2.0' }).ok, true);
+  const sinInquilino = ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' });
+  assert.ok(sinInquilino.problemas.some((p) => p.variable === 'SITE_AUTH_MICROSOFT_TENANT'));
+  const deUnInquilino = ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org, SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${org}/v2.0` });
+  assert.ok(deUnInquilino.problemas.some((p) => p.variable === 'SITE_OIDC_ISSUER' && /common|organizations/.test(p.motivo)));
+  const personales = ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org, SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/consumers/v2.0' });
+  assert.strictEqual(personales.ok, false, 'sólo cuentas personales: no');
+  assert.ok(ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'cualquiera', SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${org}/v2.0` }).problemas.some((p) => p.variable === 'SITE_AUTH_MICROSOFT_ACCOUNTS'));
+  assert.ok(ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: 'no-es-un-inquilino', SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' }).problemas.some((p) => p.variable === 'SITE_AUTH_MICROSOFT_TENANT'));
+});
+
+test('T16 2.40-Microsoft_InvitadoDelDirectorio @story-2.40 @ac-7b @ac-12', async () => {
+  const org = UUID();
+  const INVITADO = 'invitada@personal.example';
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { access: [{ role: 'maintainer', emails: ['lead@acme.example'] }, { role: 'dev', emails: [INVITADO] }] } };
+  await conMicrosoft({ tenant: org, config }, async ({ emisor, h }) => {
+    // la puerta de los invitados va al emisor del inquilino de la organización
+    const ida = await h.pedir('/auth/login?via=invitado');
+    assert.ok(ida.headers.location.startsWith(`${emisor.deInquilino(org)}/authorize`), ida.headers.location);
+    // un invitado con cuenta personal entra por ahí, con el correo verificado, como hoy
+    const oid = UUID();
+    const r = await ingresarPor(h, emisor, '/auth/login?via=invitado', { sub: 's', oid, tid: org, email: 'Invitada@Personal.example', xms_edov: true, acct: 1 });
+    assert.ok(r.sesion, r.res.texto);
+    assert.strictEqual(cargaDe(r.sesion).sub, `${oid}:${org}`);
+    const ini = await h.pedir('/', { cookie: r.sesion });
+    assert.match(ini.texto, /href="\/proyectos"/, 'la lista lo reconoce por su correo: es dev');
+    // por la puerta de los invitados sólo entra el inquilino de la organización
+    const deOtro = await ingresarPor(h, emisor, '/auth/login?via=invitado', { sub: 's', oid: UUID(), tid: UUID(), email: INVITADO, xms_edov: true });
+    assert.strictEqual(deOtro.sesion, null);
+    // y por la principal, la misma persona con su cuenta personal es personal: no entra, y la página le dice por dónde
+    const personal = await ingresarPor(h, emisor, '/auth/login', { sub: 's', oid: UUID(), tid: PERSONALES, email: INVITADO, xms_edov: true });
+    assert.strictEqual(personal.sesion, null);
+    assert.match(personal.res.texto, /invitado/);
+    // una vía desconocida es la principal, no un error
+    assert.ok((await h.pedir('/auth/login?via=otra')).headers.location.startsWith(`${emisor.base}/common/v2.0/authorize`));
+  });
+});
+
+// Entra publica el inquilino en minúsculas aunque se lo pida en mayúsculas: el inquilino de la organización escrito en
+// mayúsculas no puede dejar al sitio sin poder entrar (las dos puertas tienen que estar listas)
+test('2.40-R1 Microsoft_InquilinoEnMayusculas_EntraIgual @story-2.40 @ac-7b', async () => {
+  const org = UUID();
+  const { validarConfiguracion } = require(path.join(SITE, 'server.js'));
+  const env = H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: org.toUpperCase(), SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' });
+  assert.strictEqual(validarConfiguracion(env).cfg.opciones.tenant, org, 'el inquilino queda en minúsculas');
+  const config = { version: 1, owners: { default: 'lead@acme.example' }, site: { access: [{ role: 'maintainer', emails: ['lead@acme.example'] }] } };
+  await conMicrosoft({ tenant: org.toUpperCase(), config }, async ({ emisor, h }) => {
+    const ida = await h.pedir('/auth/login?via=invitado');
+    assert.strictEqual(ida.status, 302, 'la puerta de los invitados arrancó');
+    assert.ok(ida.headers.location.startsWith(`${emisor.deInquilino(org)}/authorize`), ida.headers.location);
+    const r = await ingresarPor(h, emisor, '/auth/login?via=invitado', { sub: 's', oid: UUID(), tid: org, email: 'lead@acme.example', xms_edov: true });
+    assert.ok(r.sesion, r.res.texto);
+  });
+  // en el modo de un inquilino, un emisor con el inquilino en mayúsculas no arranca (y dice por qué)
+  const una = validarConfiguracion(H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${org.toUpperCase()}/v2.0` }));
+  assert.ok(una.problemas.some((p) => p.variable === 'SITE_OIDC_ISSUER' && /minúsculas/.test(p.motivo)), JSON.stringify(una.problemas));
+});
+
+// El inquilino de las cuentas personales nunca es el de la organización: ni como inquilino de los invitados ni como emisor
+// de un solo inquilino. Y la puerta de los invitados tampoco deja entrar a una cuenta personal directa.
+test('2.40-R2 Microsoft_InquilinoDeCuentasPersonales_NoArranca @story-2.40 @ac-7 @ac-7b', async () => {
+  const { validarConfiguracion } = require(path.join(SITE, 'server.js'));
+  const ms = (extra) => validarConfiguracion(H.envBase({ SITE_AUTH_PROVIDER: 'microsoft', ...extra }));
+  const any = ms({ SITE_AUTH_MICROSOFT_ACCOUNTS: 'any', SITE_AUTH_MICROSOFT_TENANT: PERSONALES, SITE_OIDC_ISSUER: 'https://login.microsoftonline.com/common/v2.0' });
+  assert.ok(any.problemas.some((p) => p.variable === 'SITE_AUTH_MICROSOFT_TENANT' && /cuentas personales/.test(p.motivo)), JSON.stringify(any.problemas));
+  for (const t of [PERSONALES, PERSONALES.toUpperCase()]) {
+    const una = ms({ SITE_OIDC_ISSUER: `https://login.microsoftonline.com/${t}/v2.0` });
+    assert.ok(una.problemas.some((p) => p.variable === 'SITE_OIDC_ISSUER'), t);
+  }
+  // aun mal instalado, la puerta de los invitados no acepta el inquilino de las cuentas personales
+  const microsoft = require(path.join(SITE, 'auth-providers', 'microsoft.js'));
+  const emisor = await arrancarEmisorMicrosoft();
+  try {
+    const cfg = { issuer: emisor.issuer, clientId: emisor.clientId, clientSecret: emisor.clientSecret, redirectUri: 'http://127.0.0.1/auth/callback', allowedDomains: [], opciones: { modo: 'any', tenant: PERSONALES } };
+    const p = microsoft.crear(cfg, { ahora: Date.now });
+    await p.preparar();
+    const it = { state: 's', nonce: 'n', challenge: 'c' };
+    const code = emisor.emitirCodigo({ claims: { sub: 's', oid: UUID(), tid: PERSONALES, email: 'lead@acme.example', xms_edov: true }, nonce: 'n' });
+    await assert.rejects(() => p.completar({ code, verifier: 'v', nonce: it.nonce, via: 'invitado' }), (e) => /cuentas personales/.test(e.pantalla));
+  } finally { await emisor.cerrar(); }
 });

@@ -1,5 +1,5 @@
 {
-  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps. site (story 2.23): el sitio de la organización — site.maintainers son los correos de quienes mantienen el arnés y ven todo; site.mailbox, el buzón de corridas que lee el sitio (la credencial NO va acá: va en las variables de la plataforma del sitio); site.refresh_minutes, cada cuánto relee las fuentes (5 a 120, 15 si no está). people (opcional): quién es quién en el sitio de la organización; lo escribe un mantenedor, ver el README. deployments (opcional, story 2.22): de dónde lee la foto de despliegues de cada noche — provider azure o github; por producto, los pipelines de staging y de production con el identificador EXACTO de cada stage (en GitHub, el environment y, en staging, el workflow de main). Sin declarar, el producto sale «no medido».",
+  "__doc": "EJEMPLO. Va en la raíz de tu repo de operaciones. Lector y forma: scripts/lib/operations-config.js. owners.default es el responsable de respaldo: se le asigna un pedido de trabajo cuando no se deduce un dueño, y se lo menciona en cada pedido. owners.by_project asigna directo los pedidos de un proyecto. reviewers.dependencies: quiénes revisan los pull requests de la revisión de dependencias. Identidades: el principalName de Azure DevOps. site (story 2.23): el sitio de la organización — site.access (story 2.40) es la lista de quién entra al sitio y qué ve: una entrada por persona, con su rol (maintainer: mantiene el arnés y ve todo; dev: ve lo suyo) y uno o más correos; site.mailbox, el buzón de corridas que lee el sitio (la credencial NO va acá: va en las variables de la plataforma del sitio); site.refresh_minutes, cada cuánto relee las fuentes (5 a 120, 15 si no está). people (opcional): quién es quién en el sitio de la organización; lo escribe un mantenedor, ver el README. deployments (opcional, story 2.22): de dónde lee la foto de despliegues de cada noche — provider azure o github; por producto, los pipelines de staging y de production con el identificador EXACTO de cada stage (en GitHub, el environment y, en staging, el workflow de main). Sin declarar, el producto sale «no medido».",
   "version": 1,
   "owners": {
     "default": "lider@acme.example",
@@ -7,7 +7,7 @@
   },
   "reviewers": { "dependencies": ["lider@acme.example"] },
   "site": {
-    "maintainers": ["lider@acme.example"],
+    "access": [{ "role": "maintainer", "emails": ["lider@acme.example"] }],
     "mailbox": { "provider": "azure-blob", "account": "acmeruns", "container": "runs" },
     "refresh_minutes": 15,
     "url": "https://sitio.acme.example",

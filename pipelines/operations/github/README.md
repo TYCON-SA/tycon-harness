@@ -101,11 +101,12 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los workflows. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pull request revisado, nunca escribiendo `main`. Dos
-caminos: la página local `harness.js team-config` (en la máquina de quien mantiene, con los clones) o, con el sitio de
-la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos lectores
-(`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano fino sobre este
-repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). La pestaña no habilita «Proponer» si
+**Cómo se edita `operations.json` después del alta.** Siempre por pull request revisado, nunca escribiendo `main`.
+Con el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los
+mismos lectores (`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano
+fino sobre este repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). Sin sitio, se edita el
+archivo y se abre el pull request a mano; la página local `harness.js team-config` (en la máquina de quien mantiene, con
+los clones) muestra lo que hay, de sólo lectura, con los problemas que ven los lectores. La pestaña no habilita «Proponer» si
 `main` no tiene una protección o una regla que pida revisión. Los umbrales del tablero
 (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién cuando la noche dejó la marca
 `.dashboard/applied-config.json` con ese archivo adentro (qué configuración aplicó de verdad, con su identificador de

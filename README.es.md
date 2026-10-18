@@ -126,8 +126,9 @@ Un ejemplo: en ACME, Pedro administra y Juan programa.
 2. Todo lo que se personaliza —dónde vive cada repo, a quién se le asignan los avisos, los umbrales— se configura desde
    la pestaña **Configuración** del [sitio de la organización](guides/sitio-de-la-organizacion.md) (sólo para los que mantienen): valida con los
    mismos lectores del arnés y propone cada cambio con un pull request, nunca escribe `main`. Mientras ACME no tiene su
-   sitio desplegado, la alternativa es la página local: `node ~/.tycon/harness/scripts/setup/harness.js team-config`,
-   que se abre en su máquina, sin nada en internet, y también le ofrece el pull request.
+   sitio desplegado, se edita con un pull request al repo de operaciones. La página local
+   (`node ~/.tycon/harness/scripts/setup/harness.js team-config`) muestra, de sólo lectura y sin nada en internet, lo que
+   hay en sus clones y los problemas que ven los lectores; no guarda ni propone nada.
 3. Juan instala con npx y el perfil: `npx @tyconsa/harness@latest --team acme/harness-team-profile` si está en GitHub,
    o `npx @tyconsa/harness@latest --team https://dev.azure.com/acme/<proyecto>/_git/harness-team-profile` si está en
    Azure DevOps. Como ese repo lo ve sólo el equipo, antes de bajar nada la línea mira si lo puede leer y, si no, le

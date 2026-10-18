@@ -167,8 +167,9 @@ test('T7 Codigo_SinValoresDeUnaOrganizacion', () => {
   const recorrer = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) recorrer(p); else archivos.push(p); } };
   recorrer(SITE);
   recorrer(path.join(ROOT, 'scripts', 'nightly', 'assigned'));
-  // el único GUID admitido es el id PÚBLICO de la aplicación de Azure DevOps en Entra (el mismo para todas las organizaciones)
-  const GUID_PUBLICO = new Set(['499b84ac-1321-427f-aa17-267ca6975798']);
+  // los únicos GUID admitidos son ids PÚBLICOS de Microsoft, los mismos para todas las organizaciones: la aplicación de
+  // Azure DevOps en Entra, y el inquilino de las cuentas personales (el emisor de `consumers`)
+  const GUID_PUBLICO = new Set(['499b84ac-1321-427f-aa17-267ca6975798', '9188040d-6c67-4c5b-b112-36a304b66dad']);
   const terminos = (() => {
     const deny = path.join(ROOT, 'scripts', 'publishing', 'denylist.json');
     if (!fs.existsSync(deny)) return [];
@@ -480,7 +481,7 @@ test('Api_SinRol_403ConMensaje @story-2.38 @ac-1', async () => {
     assert.strictEqual((await h.pedir('/api/solo-mantenedores', { cookie: await entrar(MANTIENE) })).status, 200);
     const pagina = await h.pedir('/', { cookie: await entrar(SIN_ROL) });
     assert.strictEqual(pagina.status, 200);
-    assert.match(pagina.texto, /todavía no está confirmada/);
+    assert.match(pagina.texto, /Tu cuenta no está en la lista/);
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 

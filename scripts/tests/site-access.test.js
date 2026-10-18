@@ -54,7 +54,7 @@ test('T17 Rol_SeRecalculaEnCadaPedido', async () => {
     const r = await h.pedir('/arnes', { cookie: s });
     assert.doesNotMatch(r.texto, /Cómo está el arnés/, 'la misma cookie ya no abre Arnés');
     assert.doesNotMatch(r.texto, /href="\/arnes"/, 'ni dibuja la pestaña');
-    assert.match((await h.pedir('/', { cookie: s })).texto, /todavía no está confirmada/, 'sin rol: la página sin datos');
+    assert.match((await h.pedir('/', { cookie: s })).texto, /Tu cuenta no está en la lista/, 'sin rol: la página sin datos');
   });
 });
 
@@ -70,7 +70,7 @@ test('T18 Rol_SinRol_PaginaSinDatos', async () => {
   await conSitio(H.fuentesFijas({ config, modelo, personas }), async ({ h, entrar }) => {
     const sinRol = await h.pedir('/', { cookie: await entrar(A) });
     assert.strictEqual(sinRol.status, 200);
-    assert.match(sinRol.texto, /tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés/);
+    assert.match(sinRol.texto, /Esa cuenta no está en la lista de quién entra a este sitio/);
     for (const marca of ['Producto X', 'Proyecto X', LEAD, B, 'CORRIDA-DE-B']) assert.ok(!sinRol.texto.includes(marca), `sin datos ni nombres: ${marca}`);
     assert.doesNotMatch(sinRol.texto, /href="\/proyectos"/, 'sin pestañas');
     // B tiene una entrada, pero su única máquina está caída: es persona, sin corridas de esa máquina
@@ -214,7 +214,7 @@ test('T26 2.28-Rol_PersonaSaleDePeople', async () => {
     const iniC = await h.pedir('/', { cookie: sC });
     assert.match(iniC.texto, /href="\/proyectos"/, 'C es persona aunque su única máquina esté caída');
     assert.match(iniC.texto, /0 corridas en 7 días/, 'de una máquina caída no ve nada');
-    assert.match((await h.pedir('/', { cookie: sD })).texto, /tu cuenta todavía no está confirmada/, 'sin entrada: sin rol');
+    assert.match((await h.pedir('/', { cookie: sD })).texto, /Tu cuenta no está en la lista/, 'sin entrada: sin rol');
     // el primer refresco fallido fue hace 25 horas: freno para todos, la persona incluida
     const falla = haceHoras(25);
     Object.assign(fuentes.st, sources.estadoDelSitio({ hayUltimoBueno: true, fallaDesde: falla, fallaRutas: 'problemas en people.machines', ahora: Date.now() }));

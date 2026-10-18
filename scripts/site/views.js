@@ -263,7 +263,9 @@ function layout(ctx, titulo, cuerpo, lede = null) {
   const recargar = ctx && Number.isInteger(ctx.recargar) && ctx.recargar > 0 ? `<meta http-equiv="refresh" content="${ctx.recargar}">` : '';
   const pest = (ctx && ctx.pestanas) || [];
   const nav = pest.length ? `<nav class="tabs" aria-label="Pestañas">${pest.map((p, i) => `<a href="${esc(p.path)}"${ctx.activa === p.id ? ' class="activa" aria-current="page"' : ''}><span class="ix">${String(i + 1).padStart(2, '0')}</span>${esc(p.titulo)}</a>`).join('')}</nav>` : '';
-  const sesion = quien && quien.email ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(quien.email)}</span> <button type="submit">Salir</button></form>` : '';
+  // la cuenta con la que entró (una persona con varios correos ve cuál usó)
+  const cuenta = quien ? quien.correoDeIngreso || quien.email : '';
+  const sesion = cuenta ? `<form class="salir" method="post" action="/auth/logout"><span>${esc(cuenta)}</span> <button type="submit">Salir</button></form>` : '';
   const bandas = [
     ctx && ctx.bandaConfig ? banda(`la configuración de la organización no se pudo releer desde ${hora(ctx.bandaConfig.desde)}: ${ctx.bandaConfig.motivo}`) : '',
     ctx && ctx.bandaRefresco ? banda(`no se pudo actualizar desde ${hora(ctx.bandaRefresco.desde)}: ${FRASES[ctx.bandaRefresco.estado] || ctx.bandaRefresco.estado}`) : '',
@@ -371,7 +373,22 @@ function inicioJson(ctx) {
 }
 
 function paginaSimple(titulo, texto, ctx = {}) { return layout(ctx, titulo, `<p class="lede">${esc(texto)}</p>`); }
-const paginaSinRol = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">tu cuenta todavía no está confirmada; pedíselo a quien mantiene el arnés.</p>');
+// la entrada de un proveedor con más de una puerta (la de los invitados del directorio). Sólo direcciones del
+// propio sitio: `id` elige la vía
+const paginaEntrar = (vias) => layout({}, 'Entrar', `<ul class="lista">${vias.map((v) => `<li><a href="/auth/login${v.id ? `?via=${encodeURIComponent(v.id)}` : ''}">${esc(v.texto)}</a></li>`).join('')}</ul>`,
+  'Elegí con qué cuenta entrás. Quién ve qué lo decide la lista del sitio.');
+// un ingreso rechazado, con la frase del proveedor y, si la hay, por dónde seguir (una dirección del propio sitio)
+const paginaNoEntro = (pantalla, enlace) => layout({}, 'No se pudo entrar', `<p class="lede">${esc(pantalla)}</p>${enlace && /^\/[^/\\]/.test(enlace.href) ? `<p><a href="${esc(enlace.href)}">${esc(enlace.texto)}</a></p>` : ''}`);
+// quien pasó el proveedor y no está en la lista del sitio: con qué cuenta entró, a quién
+// pedírselo (sin nombrar a nadie: no ve ningún dato) y cómo entrar con otra
+const paginaSinRol = (ctx) => {
+  const cuenta = ctx.quien ? ctx.quien.correoDeIngreso || ctx.quien.email : '';
+  return layout({ quien: ctx.quien }, 'Tu cuenta no está en la lista', [
+    `<p class="lede">Entraste con ${esc(cuenta)}. Esa cuenta no está en la lista de quién entra a este sitio.</p>`,
+    '<p>Pedile a quien mantiene el sitio de tu organización que te sume: se hace en Configuración, en Personas.</p>',
+    '<p>Si tenés otra cuenta de la organización, <a href="/auth/login?otra=1">entrá con esa</a>, o salí con el botón de arriba.</p>',
+  ].join(''));
+};
 const paginaSinMantenedores = (ctx) => layout({ quien: ctx.quien }, 'Bienvenida', '<p class="lede">este sitio todavía no tiene mantenedores: quien lo instaló tiene que poner SITE_FIRST_MAINTAINER.</p>');
 const paginaFrenado = ({ desde }) => layout({}, 'Sitio frenado', `<p class="lede">el sitio está frenado desde ${esc(hora(desde))}: la configuración de la organización no valida; se destraba cuando un refresco la lee bien.</p>`);
 // se recarga sola cada 5 segundos hasta que el sitio tenga lo que necesita
@@ -380,5 +397,5 @@ const paginaCargando = (ctx = {}) => layout({ ...ctx, recargar: 5 }, 'Cargando',
 module.exports = {
   hora, FRASES, filasInicioMantenedor, inicioDev, filasProyectos, filasArnes,
   paginaInicio, paginaProyectos, paginaArnes, tableroServido, inicioJson,
-  paginaSimple, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
+  paginaSimple, paginaEntrar, paginaNoEntro, paginaSinRol, paginaSinMantenedores, paginaFrenado, paginaCargando, layout, umbralValido,
 };
