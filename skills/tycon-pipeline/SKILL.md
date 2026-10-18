@@ -106,6 +106,9 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   - **D.i.3 — gating**: re-loop por CRITICAL o WARNING dentro del diff de la story; un WARNING de
     probabilidad ínfima FUERA del diff es follow-up documentado (engram `type: project` + nota en la
     spec, obligatorio), no re-loop.
+  - **D.i.4 — tercera vuelta, repensar**: desde la tercera vuelta `smart-reloop` no devuelve el set sin la nota de esa
+    vuelta (`marker.js rethink --iter N --repeated … --change … | --keep …`); cada vuelta siguiente pide la suya. Ver
+    `steps/step-07b-rerun-advisors-if-fixes.md`.
 - **E.i — no-skip-by-inference (HARD)**: ningún paso se saltea por inferencia conversacional ("no lo
   mencionó", "arrancá rápido", "parece molesto"). Sólo por la skip-condition documentada en el paso y
   verificable; si la condición tiene un gap, se arregla el paso, no se saltea.

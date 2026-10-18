@@ -32,6 +32,31 @@ del set cuando ya devolvió **dos veredictos limpios seguidos** después de impl
 decide invocarlo. No lo agregues a mano: si los chequeos sin modelo de VAL-C5/VAL-C6 encuentran algo,
 o no se pueden leer sus veredictos, el script ya lo deja adentro. Con `--force-full-reloop` corre siempre.
 
+## La tercera vuelta: repensar el enfoque antes de seguir arreglando
+
+Desde la **tercera vuelta** de revisores (`--iter 3`, o sea después de dos re-loops) `smart-reloop` no devuelve el set
+mientras la corrida no tenga la nota de esa vuelta; sale con código distinto de cero, dice qué hallazgos volvieron en las
+vueltas anteriores y cuál es el comando. Vale también con `--force-full-reloop`. Cada vuelta siguiente (4, 5…) pide su
+propia nota: la de la vuelta anterior no sirve. Las vueltas 1 y 2 siguen como siempre. Pedir otra vez una vuelta que ya se sirvió cuenta como una vuelta nueva (vale la mayor entre la declarada, el marcador y la última servida + 1), y el freno es de las corridas del pipeline: sin corrida (ni story en el marcador ni `--story` con carpeta de corrida) las vueltas 1 y 2 pasan como siempre y desde la 3 frena, porque no hay vueltas que contar. Corre después de las validaciones propias del comando (un `--story` inexistente da su error de siempre).
+
+**Repensar** no es arreglar el próximo hallazgo: es parar y mirar por qué vuelven. Si los mismos hallazgos reaparecen
+vuelta tras vuelta, el problema suele estar en el enfoque (o en la story), no en cada parche. La nota la escribe el agente,
+no hay interrupción a una persona:
+
+```
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js rethink --iter N \
+  --repeated "<qué hallazgos volvieron en las vueltas anteriores>" \
+  (--change "<qué cambia del enfoque>" | --keep "<por qué el enfoque sigue igual>") \
+  [--story-change "<qué cambia de la story>"]
+```
+
+- `--repeated` y uno de `--change` / `--keep` son obligatorios; cada campo pide al menos 40 caracteres. Una nota vacía o
+  corta se rechaza con el motivo.
+- Si hace falta cambiar la story, **la story va primero** (con su registro de cambios) y la nota lo dice en `--story-change`.
+- La nota queda en `<corrida>/rethink/iter-N.json`, con su hora. `write-findings` la suma al informe de «Hallazgos» junto
+  con la cantidad de vueltas, y el archivo de la retrospectiva la lleva como `rethink_notes`: una story con notas es una
+  story que no convergió.
+
 ## Al salir del loop: ¿el verde de la suite completa sigue midiendo ESTE código?
 
 Antes de continuar a Step 7c, correr (barato — ~50ms, no ejecuta ningún test):

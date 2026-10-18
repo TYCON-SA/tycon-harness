@@ -106,6 +106,22 @@ function mkHome(repo, pasos, { marker = {}, conversacion = true, lineasCrudas = 
 
 function correr(home, repo, args, envExtra = {}, { sinStory = false } = {}) {
   const story = sinStory ? [] : ['--story', path.join(repo, 'specs', 'story-9.9-algo.md')];
+  // Desde la tercera vuelta el re-loop exige la nota de «repensar el enfoque»: estos casos miden la decisión del
+  // validador, no el freno, así que la nota va puesta (el freno se prueba en reloop-rethink.test.js).
+  // La vuelta que cuenta es la mayor entre la declarada y la que lleva el marcador (sus fotos de iteración + 1).
+  let delMarcador = 0;
+  try {
+    const m = JSON.parse(fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'active', `${SID}.json`), 'utf8'));
+    delMarcador = Math.max(0, ...Object.keys(m.iterations || {}).map((k) => Number(k) + 1));
+  } catch { /* sin marcador legible: vale la declarada */ }
+  const declarada = args.includes('--iter') ? Number(args[args.indexOf('--iter') + 1]) : 1;
+  const iter = ['smart-reloop', 'advisors'].includes(args[0]) ? Math.max(declarada, delMarcador) : 0;
+  if (iter >= 3 && !sinStory) {
+    const dicho = 'Nota de prueba: el enfoque se revisó y sigue igual, solo cambia el detalle del caso';
+    const n = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'rethink', '--iter', String(iter), '--repeated', dicho, '--keep', dicho, '--repo', repo, ...story],
+      { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID } });
+    assert.equal(n.status, 0, `no se pudo dejar la nota de la vuelta ${iter}: ${n.stderr}`);
+  }
   const r = spawnSync(process.execPath, [PIPELINE, ...args, '--repo', repo, ...story, '--files', 'src/a.js'],
     { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra } });
   let json = null;
@@ -152,9 +168,10 @@ test('T8 · dos veredictos limpios seguidos después de implementar → el re-lo
   assert.deepEqual([g[0].invoca, g[0].limpias_seguidas, g[0].iter, g[0].storyId], [false, 2, 3, '9.9']);
   assert.equal(path.resolve(g[0].repoPath), path.resolve(repo));
 
-  const r2 = correr(home, repo, ['advisors', '--iter', '2']);
+  // La vuelta 3 ya se sirvió: pedir otra cuenta como la 4 (el helper le pone su nota).
+  const r2 = correr(home, repo, ['advisors', '--iter', '4']);
   assert.equal(r2.status, 0, r2.stderr);
-  assert.ok(!r2.json.all.includes(VAL), `advisors --iter 2 tampoco: ${JSON.stringify(r2.json.all)}`);
+  assert.ok(!r2.json.all.includes(VAL), `advisors en la vuelta siguiente tampoco: ${JSON.stringify(r2.json.all)}`);
   assert.equal(r2.json.validador_reloop.invoca, false);
 });
 
@@ -265,7 +282,8 @@ test('T11 · la vuelta 1 no decide nada y el re-loop forzado invoca', (t) => {
   assert.equal(r1.json.validador_reloop, undefined, 'la vuelta 1 no anota decisión');
   assert.equal(lineasValidador(home).length, 0);
 
-  const r3 = correr(home, repo, ['smart-reloop', '--iter', '3', '--force-full-reloop']);
+  // El marcador ya lleva dos fotos: la primera llamada fue la vuelta 3, así que la forzada es la 4.
+  const r3 = correr(home, repo, ['smart-reloop', '--iter', '4', '--force-full-reloop']);
   assert.equal(r3.status, 0, r3.stderr);
   assert.ok(r3.json.rerun.includes(VAL), 'forzado → el validador está');
   const g = lineasValidador(home);
