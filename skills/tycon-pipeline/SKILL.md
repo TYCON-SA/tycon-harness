@@ -75,10 +75,10 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   `Agent(...)` del pipeline corre en segundo plano** (jamás `run_in_background: false`).
 - **A.i**: siempre corren los advisors aplicables; no hay flag para saltear advisors individuales.
 - **H.ii — pase adversarial** (`steps/step-05b-adversarial-verify.md`): reproduce-or-refute que
-  EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW → skip. Overrides:
+  EJECUTA el código. Gate `pipeline.js deep-review-gate`: NORMAL → corre; LOW o liviana → skip. Overrides:
   `--no-deep-review`/`TYCON_NO_DEEP_REVIEW=1`, `.tycon/advisors.yaml deep_review: always|off|auto`,
   `--deep-review`/`--ultracode`. Modelo `sonnet`; story pesada → `opus` (anunciado); **`fable` NUNCA
-  automático** (`fable_upsell` → preguntar en 1 línea; `adversarial.model_question: never` no pregunta). UNA vez por
+  automático** (`fable_upsell` → preguntar; `adversarial.model_question: never` no pregunta). UNA vez por
   corrida. Se lanza temprano al cerrar la implementación (`early_launch`; kill-switch `TYCON_5B_EARLY=0`)
   y su paso es el JOIN. Los CONFIRMED se foldean a «Hallazgos» y disparan D.i. La prueba que confirmó cada hallazgo
   se promueve a la suite: `marker.js promote-probe`; `mark-adversarial-result` exige `--tests k`
@@ -134,13 +134,6 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **J.i — tamaño de la corrida**: `start` clasifica la story en **liviana** (todo lo declarado es
-  documentación o texto) o **completa** (lo demás, o sin archivos declarados, o superficie compartida) y lo ANUNCIA en
-  una línea con el tiempo estimado (mediana de las corridas de la máquina; sin historia, «estimado sin historia»).
-  Liviana: tandas juntas, sólo las suites que leen lo tocado, revisores en el modelo barato (completitud incluida), sin
-  pase adversarial, sin la validación pesada del repo salvo que el dev la nombre. El tamaño solo (archivos, ACs) ya no
-  sube el riesgo. Forzar: `marker.js set-size liviana|completa --reason "<por qué>"`. Detalle:
-  `guides/harness-cost-tiering.md` §El tamaño de la corrida.
 - **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → plan auto-aprobado con anuncio;
   NORMAL → HITL. `git push` y scope firmado son siempre human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con

@@ -647,7 +647,7 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.
 
-**Por qué existe:** Una story que sólo reescribía una guía salía con pase adversarial y cuatro horas estimadas, porque el riesgo se medía por cantidad de archivos. Ahora cuenta lo que la story toca, no cuántos archivos son.
+**Por qué existe:** Una story que sólo reescribía una guía salía con pase adversarial y cuatro horas estimadas: el riesgo contaba archivos, no lo que tocan.
 
 **Quién la usa:** `pipeline.js` (el arranque, el riesgo, la sugerencia de modelo, el portón del pase y los revisores), `marker.js set-size` y `test-gate.sh` (las suites de una liviana).
 
