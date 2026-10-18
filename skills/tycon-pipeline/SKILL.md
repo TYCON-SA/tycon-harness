@@ -134,6 +134,13 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
+- **J.i — tamaño de la corrida**: `start` clasifica la story en **liviana** (todo lo declarado es
+  documentación o texto) o **completa** (lo demás, o sin archivos declarados, o superficie compartida) y lo ANUNCIA en
+  una línea con el tiempo estimado (mediana de las corridas de la máquina; sin historia, «estimado sin historia»).
+  Liviana: tandas juntas, sólo las suites que leen lo tocado, revisores en el modelo barato (completitud incluida), sin
+  pase adversarial, sin la validación pesada del repo salvo que el dev la nombre. El tamaño solo (archivos, ACs) ya no
+  sube el riesgo. Forzar: `marker.js set-size liviana|completa --reason "<por qué>"`. Detalle:
+  `guides/harness-cost-tiering.md` §El tamaño de la corrida.
 - **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → plan auto-aprobado con anuncio;
   NORMAL → HITL. `git push` y scope firmado son siempre human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con

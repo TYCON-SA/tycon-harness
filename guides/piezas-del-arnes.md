@@ -643,6 +643,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibmodelsjs--el-modelo-de-cada-trabajo-del-pipeline)
 
+## skills/tycon-pipeline/scripts/lib/run-size.js — el tamaño de la corrida
+
+**Qué es:** Decide si una corrida del pipeline es liviana (la story sólo declara documentación o textos) o completa (lo demás), y estima cuánto va a tardar con las corridas anteriores de la máquina.
+
+**Por qué existe:** Una story que sólo reescribía una guía salía con pase adversarial y cuatro horas estimadas, porque el riesgo se medía por cantidad de archivos. Ahora cuenta lo que la story toca, no cuántos archivos son.
+
+**Quién la usa:** `pipeline.js` (el arranque, el riesgo, la sugerencia de modelo, el portón del pase y los revisores), `marker.js set-size` y `test-gate.sh` (las suites de una liviana).
+
+**Dónde se prueba:** `skills/tycon-pipeline/scripts/tests/run-size.test.js` y los casos `7.32` de `unit.test.js`
+
+**Guía:** [harness-cost-tiering](harness-cost-tiering.md#el-tamaño-de-la-corrida-liviana-o-completa)
+
 ## skills/tycon-pipeline/scripts/lib/runtime-waiver.js — el registro de firmas de la matriz
 
 **Qué es:** El registro de firmas con el que el dev perdona un criterio que no se puede verificar corriendo, en `.tycon/runtime-waivers.jsonl`.
