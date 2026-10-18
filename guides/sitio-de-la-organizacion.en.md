@@ -251,7 +251,11 @@ The sections, in the order of the screen:
   `operations.json`, in the operations repo. A maintainer reviews it.
 - **Who maintains the site** (*Quién mantiene el sitio*): who sees the Configuration tab and can propose changes; also
   the runs mailbox, the refresh and the site's address. If you remove yourself from the list, you lose access when it is
-  approved. It lives in `operations.json`, in the operations repo. Another person on the list reviews it.
+  approved. It lives in `operations.json`, in the operations repo. Another person on the list reviews it. **"How often the
+  site updates"** (*Cada cuánto se actualiza el sitio*) takes 5 to 120 minutes; undeclared, 15. Shorter, a change shows
+  sooner, but the site reads the operations repo, the profile repo and the mailbox again more often while it is awake:
+  more reads to the cloud, which cost a bit more on an installation billed by use. It does not keep it awake: asleep it
+  reads nothing, and on waking it reads everything.
 - **People and machines** (*Personas y máquinas*): whose each machine that sends runs is, and which projects each
   person works on. A new machine shows up in "To confirm" (*Por confirmar*) with the email it claims; **Confirm**
   (*Confirmar*) puts it in that person's name. It lives in `operations.json`, in the operations repo. A maintainer
@@ -428,13 +432,28 @@ why.
 
 **Why it happens:** the site only proposes if the repo requires another person to approve each change before adding it
 to the main branch (a "review policy"); without that rule, the site could change the repo without anyone looking. Also
-when the site has no permission to write to that repo, or when there is already an open request on the same file (the
-section shows its link).
+when the policy lets whoever creates the request approve it ("Allow requestors to approve their own changes", on Azure
+DevOps): the site creates the request, and it would approve itself. And when the site has no permission to write to that
+repo, or when there is already an open request on the same file (the section shows its link).
 
 **What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can ask for
 the review policy or the write permission. With an open request, wait until it is merged or closed.
 
 !["Propose" off, with its reason: the repo has no policy requiring review](sitio-de-la-organizacion/capturas/proponer-apagado.png)
+
+### Configuration says the site rejected the request
+
+**What you see:** when reviewing or proposing, a red box with the reason: "the session expired or was closed: reload
+the page" (*la sesión venció o se cerró: recargá la página*), "your account … is not among those who maintain the
+site", "the site is loading…", or "the request was rejected by what stands in front of the site, not the site" (*el
+pedido lo rechazó lo que está delante del sitio*).
+
+**Why it happens:** the session expired; or you signed in with another account (the message says which one); or the
+site was restarting; or the cloud's sign-in, in front of the site, stopped the request.
+
+**What to do:** reload the page. If it says your account does not maintain the site, sign out and sign in with the
+organization's account. If it says it was rejected by what stands in front of the site and it persists after reloading,
+tell a maintainer (the installation guide, in the Azure recipe, says how to fix it).
 
 ### The first page is slow to open
 
@@ -574,6 +593,18 @@ a night process and take its secrets. That policy is also what enables "Proponer
 How to set it on Azure DevOps and on GitHub: the READMEs of the operations models (`pipelines/operations/README.md` and
 `pipelines/operations/github/README.md`).
 
+### The permission for "Propose"
+
+"Propose the change" opens a change request in the section's repo. For that the site needs to write to that repo:
+`SITE_OPERATIONS_WRITE_TOKEN` for the sections of the operations repo and `SITE_PROFILE_WRITE_TOKEN` for those of the
+team profile. On Azure DevOps, a token with *Code: Read & write* on those repos, **without** *Bypass policies when
+pushing* or *Bypass policies when completing pull requests*: the site creates a branch and a request, it never writes
+`main`. With a personal token, the requests come out in that person's name, and the branch policy keeps asking for its
+approvals: the policy must have "Allow requestors to approve their own changes" turned off, or the site does not propose
+(the author would approve it). Without the permission, each section says
+"To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
+hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
+
 ### The two ways to start it
 
 The same image with Docker (`docker run … sitio:local`, above), or with Node alone from the clone, with the same
@@ -593,7 +624,8 @@ node scripts/site/check-deploy.js --url https://<site address>
 
 It asks, without a session, what a stranger would ask. It exits 0 if nothing is visible; 1 with the reason ("el sitio
 responde sin iniciar sesión", "/api contesta con datos", "el sitio está frenado", "/healthz cuenta de más", "falta
-no-store", "acepta http"); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
+no-store", "acepta http", "sin Referer: el candado de la plataforma frenaría las escrituras de Configuración" — the
+site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
 while to wake up. The morning notice carries the link only if it passed that morning.
 
 ## The recipes
@@ -627,6 +659,12 @@ Configuration tab says "falta el repo del perfil" (the profile repo is missing).
 - **Sign-in:** two locks. In front, the platform's built-in sign-in with the same Entra ID registration, single tenant
   and with "assignment required" (people are assigned one by one; assigning a group needs an Entra ID P1/P2 license).
   Behind it, the site's own. `/healthz` and `/livez` stay outside the lock.
+- **The lock and the writes:** the built-in sign-in protects against forged requests by looking at the browser's
+  `Referer`, not the `Origin`. A POST with a session and without a `Referer` from the site itself is rejected with 403,
+  sub-status 60 (it shows in the environment's logs, as the middleware's `RequestCompleted`). For "Review changes" and
+  "Propose" to go through, the site sends `Referrer-Policy: same-origin`: the `Referer` travels within the site and never
+  outside it. An earlier image sent `no-referrer` and the Configuration tab could not write; the session-less check warns
+  about it. There is no need to touch the lock's CORS or proxy convention.
 - **Disk:** an Azure Files share in a storage account of the site's own (cents per month), never in the mailbox
   account.
 - **Secrets:** application secrets. Their values come from environment variables of whoever runs the installation, with

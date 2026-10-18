@@ -36,11 +36,12 @@ const PARTES = [
 ];
 const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
-// La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final) tal como quedó en main antes de
-// sumar las partes de uso. Si la instalación cambia a propósito, se cambia acá con el motivo en el mismo commit.
+// La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
+// propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma el permiso para «Proponer», el candado de
+// Azure y las escrituras (Referrer-Policy), y el motivo nuevo de la prueba sin sesión.
 const HUELLA_INSTALACION = {
-  es: 'b00e5060ba319bcfc7123b269bc6c1ba6a82e631a6dbd05da9f757efe0aaf4c1',
-  en: 'a31e73941983e8b41afc7368b0f5189a96d3baaefd248759ed0653932a671ca9',
+  es: '92e2285c4e2fcc46fafeaed4a4fd59a403064f057c367a4ff0dd6fde604b02d0',
+  en: '2589d7e84ea0587cac035a53a2d7be85fdf8d4b249f3d97b937ed2f906068d18',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
@@ -231,6 +232,26 @@ test('T13 SitioCss_SinChoquesConCorridas @story-2.32 @ac-15', () => {
     }
   }
   assert.deepStrictEqual([...new Set(sueltas)], [], 'reglas de site.css con un nombre que también usa Corridas, sin limitar a su lugar');
+});
+
+test('Guia_PermisoCandadoYRefresco @story-2.38 @ac-8 — lo que el dueño pidió que quede escrito', () => {
+  for (const [lado, f, inst, refresco] of [
+    ['es', GUIA, INSTALACION.es, /«Cada cuánto se actualiza el sitio».*5 a 120 minutos.*15/s],
+    ['en', GUIA_EN, INSTALACION.en, /"How often the site updates".*5 to 120 minutes.*15/s],
+  ]) {
+    const t = leer(f);
+    const instalacion = t.slice(t.indexOf(`\n## ${inst}`));
+    for (const x of ['SITE_OPERATIONS_WRITE_TOKEN', 'SITE_PROFILE_WRITE_TOKEN', 'Code: Read & write', 'Bypass policies', '403', '60', 'Referrer-Policy', 'same-origin']) {
+      assert.ok(instalacion.includes(x), `${lado}: la instalación no dice «${x}»`);
+    }
+    assert.match(t.slice(0, t.indexOf(`\n## ${inst}`)).replace(/\s+/g, ' '), refresco, `${lado}: el campo del refresco, con su rango`);
+    // el rechazo de Configuración, en «Problemas comunes», con lo que se ve, por qué pasa y qué hacer
+    const titulo = lado === 'es' ? '### Configuración dice que el sitio rechazó el pedido' : '### Configuration says the site rejected the request';
+    const i = t.indexOf(titulo);
+    assert.ok(i > 0 && i < t.indexOf(`\n## ${inst}`), `${lado}: el problema del rechazo, en la parte de uso`);
+    const bloque = t.slice(i, t.indexOf('\n### ', i + 5));
+    for (const rubro of lado === 'es' ? ['Lo que se ve', 'Por qué pasa', 'Qué hacer'] : ['What you see', 'Why it happens', 'What to do']) assert.ok(bloque.includes(`**${rubro}`), `${lado}: el rechazo sin «${rubro}»`);
+  }
 });
 
 test('T3 Capturas_DelSitioCorriendo @story-2.32 @ac-5 @ac-6', () => {

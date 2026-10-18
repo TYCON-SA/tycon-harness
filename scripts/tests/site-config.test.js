@@ -853,7 +853,27 @@ test('T4b Pantalla_UnPedidoCortadoNoQuedaColgado @story-2.29 @ac-18 — la llama
   const cortado = await correrPantalla(() => Promise.reject(new Error('se cortó la red')));
   assert.match(cortado, /no pude hablar con el sitio \(se cortó la red\)/);
   const noJson = await correrPantalla(() => Promise.resolve({ status: 502, json: () => Promise.reject(new Error('no es JSON')) }));
-  assert.match(noJson, /respuesta 502/);
+  assert.match(noJson, /el sitio contestó con un error \(502\)/);
+});
+
+test('Pantalla_RechazoEnLlano_NuncaRespuestaN @story-2.38 @ac-4 — un rechazo dice por qué y qué hacer', async () => {
+  const vacio = (status) => () => Promise.resolve({ status, json: () => Promise.reject(new Error('cuerpo vacío')) });
+  const casos = [
+    [vacio(401), /la sesión venció o se cerró: recargá la página/],
+    // el sitio manda su motivo en cada 403: uno vacío lo dio lo que está delante (el candado de la nube)
+    [vacio(403), /lo rechazó lo que está delante del sitio, no el sitio: recargá la página.*quien mantiene/],
+    [vacio(503), /el sitio está cargando o frenado: probá de nuevo en unos segundos/],
+    [vacio(418), /el sitio contestó con un error \(418\)/],
+    // con el mensaje del servidor, ése (aunque el JSON no traiga `ok`)
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false, codigo: 'sin_rol', message: 'tu cuenta ana@acme.example no está entre los que mantienen el sitio' }) }), /tu cuenta ana@acme\.example no está entre los que mantienen el sitio/],
+    // un JSON sin `message`: el llano de su estado
+    [() => Promise.resolve({ status: 403, json: () => Promise.resolve({ ok: false }) }), /lo rechazó lo que está delante del sitio/],
+  ];
+  for (const [f, rx] of casos) {
+    const t = await correrPantalla(f);
+    assert.match(t, rx);
+    assert.doesNotMatch(t, /respuesta \d{3}/, 'nunca «respuesta N» suelto');
+  }
 });
 
 test('T8c Stages_NombresDePuntos_Rechazados @story-2.29 @ac-8 — un proyecto, dueño o repo «.» o «..» no arma una ruta que sube de nivel', async () => {

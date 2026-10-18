@@ -281,7 +281,10 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'no-referrer');
+    // el Referer viaja sólo dentro del sitio (nunca a otro). Con `no-referrer`, el candado de la plataforma (el inicio de
+    // sesión integrado de una nube) tomaba cada POST de Configuración por falsificado: su anti-CSRF mira el Referer, no el
+    // Origin (403, subestado 60)
+    res.setHeader('Referrer-Policy', 'same-origin');
     if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
   function enviar(res, { status, tipo = 'text/html; charset=utf-8', cuerpo = '', extra = {} }) {
@@ -401,24 +404,28 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
 
     const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
     const esApi = ruta.startsWith('/api/');
-    if (!ses) return esApi ? enviar(res, { status: 401, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : irAlEmisor(res);
+    // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraba «respuesta 403»).
+    // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
+    const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
+    if (!ses) return esApi ? rechazoApi(401, 'sesion_vencida', 'la sesión venció o se cerró: recargá la página para entrar de nuevo') : irAlEmisor(res);
     if (ruta === '/marca/logo' && req.method === 'GET') return enviar(res, logo());
 
-    if (st.frenado) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
+    if (st.frenado) return esApi ? rechazoApi(503, 'frenado', `el sitio está frenado desde ${views.hora(st.frenado.desde)}: la configuración de la organización no valida; lo arregla quien mantiene el arnés`) : enviar(res, { status: 503, cuerpo: views.paginaFrenado({ desde: st.frenado.desde }), extra: { 'Retry-After': '60' } });
     // la espera es POR FUENTE: con el repo de operaciones leído (`navegable`) el sitio se navega aunque el buzón siga
     // bajando; cada pestaña dice lo suyo (Corridas, «cargando las corridas»). /readyz, arriba, sigue esperando todo
-    if (!st.cargado && !st.navegable) return esApi ? enviar(res, { status: 503, tipo: 'text/plain; charset=utf-8', cuerpo: '', extra: { 'Retry-After': '5' } }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
+    if (!st.cargado && !st.navegable) return esApi ? rechazoApi(503, 'cargando', 'el sitio está cargando sus fuentes: probá de nuevo en unos segundos', { 'Retry-After': '5' }) : enviar(res, { status: 503, cuerpo: views.paginaCargando(), extra: { 'Retry-After': '5' } });
 
     const config = fuentes.config();
     const quien = access.quienPide(ses, { config, firstMaintainer: cfg.firstMaintainer });
     if (quien.rol === 'none') {
-      if (esApi) return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' });
+      if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', 'el sitio todavía no tiene a nadie que lo mantenga: lo resuelve quien instaló el sitio, que pone el primero en su configuración');
+      if (esApi) return rechazoApi(403, 'sin_rol', `tu cuenta ${quien.email} todavía no tiene rol en el sitio: si entraste con otra cuenta, salí y entrá con la de la organización; si es ésa, pedíle a quien mantiene el arnés que te confirme`);
       return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien }) : views.paginaSinRol({ quien }) });
     }
     let params = null;
     const r = rutas.find((x) => x.method === req.method && (params = x.coincide(ruta)) !== null);
     if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple('No existe', 'Esa página no existe.', { quien, pestanas: pestanasPara(quien.rol) }) });
-    if (!r.needs.includes(quien.rol)) return esApi ? enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
+    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', `tu cuenta ${quien.email} no está entre los que mantienen el sitio: si entraste con otra cuenta, salí y entrá con la de la organización; si es ésa, pedíselo a quien mantiene el arnés`) : enviar(res, { status: 403, cuerpo: views.paginaSimple('Sin permiso', 'Esta página es para quienes mantienen el arnés.', { quien, pestanas: pestanasPara(quien.rol) }) });
 
     // la regla de quién es quién (people.js) en cada pedido, con la configuración vigente y lo informado por las
     // máquinas, que viaja aparte del modelo: ningún correo informado llega a una vista
