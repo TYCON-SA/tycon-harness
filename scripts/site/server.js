@@ -430,6 +430,18 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     req.on('error', () => resolve(new URLSearchParams()));
   });
   /** POST /idioma: elegir el idioma (con sesión se guarda por persona; siempre, la cookie) y volver a la página. */
+  const cerradas = session.crearCerradas({ dataDir: cfg.dataDir, ahora, log: (l) => registrar(l) });
+  /** La sesión de la cookie, o null: vencida, de otro proveedor, alterada o cerrada con «Salir» es «sin sesión». */
+  const sesionDe = (cookies) => {
+    const s = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
+    return s && !cerradas.cerrada(s) ? s : null;
+  };
+  /** ¿El token del formulario es el de la sesión? Tiempo constante. */
+  const mismoToken = (ses, recibido) => {
+    const a = Buffer.from(typeof ses.tok === 'string' ? ses.tok : '');
+    const b = Buffer.from(String(recibido || ''));
+    return a.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
   async function cambiarIdioma(req, res, cookies) {
     if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'POST' } });
     if (!delSitio(req)) { registrar('idioma: cambio rechazado, el pedido viene de otro origen'); return enviar(res, { status: 403, tipo: 'text/plain; charset=utf-8', cuerpo: '' }); }
@@ -440,7 +452,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const volver = /^\/(?![/\\])[\x21-\x7e]{0,500}$/.test(pedida) ? pedida : '/';
     const idioma = LANG.valido(form.get('idioma'));
     if (!idioma) return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver } });
-    const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
+    const ses = sesionDe(cookies);
     if (ses) {
       const st = fuentes.estado();
       const config = st.navegable || st.cargado ? fuentes.config() : null;
@@ -523,15 +535,31 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (ruta === '/idioma') return cambiarIdioma(req, res, cookies);
     if (ruta === '/auth/login') return req.method === 'GET' ? irAlEmisor(res, { otraCuenta: u.searchParams.get('otra') === '1', via: u.searchParams.get('via'), idioma, url: u }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/callback') return req.method === 'GET' ? vuelta(req, res, u, cookies) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
-    if (ruta === '/saliste') return req.method === 'GET' ? enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u }) }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
+    if (ruta === '/saliste') return req.method === 'GET' ? enviar(res, { status: 200, cuerpo: views.paginaSaliste({ idioma, url: u, sinInvalidar: u.searchParams.get('sin_invalidar') === '1' }) }) : enviar(res, { status: 405, cuerpo: '', extra: { Allow: 'GET' } });
     if (ruta === '/auth/logout') {
       if (req.method !== 'POST') return enviar(res, { status: 405, cuerpo: views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirTexto'), { idioma, url: u }), extra: { Allow: 'POST' } });
+      const ses = sesionDe(cookies);
+      // con sesión, «Salir» exige que el pedido venga del sitio y que traiga el token de la sesión: otra página no puede sacar a nadie
+      const form = ses ? await leerFormulario(req) : null;
+      if (ses && !(delSitio(req) && mismoToken(ses, form.get('tok')))) {
+        registrar('salir: pedido rechazado, no viene del sitio o no trae el token de la sesión');
+        // la página trae la barra con «Salir» y el token vigente (base64url, sin nada que escapar): quien tenía una pestaña vieja sale desde acá
+        const cfgLeida = st.navegable || st.cargado ? fuentes.config() : null;
+        const quienSalir = cfgLeida ? access.quienPide(ses, { config: cfgLeida, firstMaintainer: cfg.firstMaintainer }) : null;
+        const cuerpo403 = quienSalir
+          ? views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirNoValido'), { quien: quienSalir, sesion: ses, pestanas: pestanasPara(quienSalir.rol, idioma), idioma, url: u })
+          : views.paginaSimple(texto(idioma, 'servidor.salirTitulo'), texto(idioma, 'servidor.salirNoValido'), { idioma, url: u }).replace('</main>', `<form class="salir" method="post" action="/auth/logout"><input type="hidden" name="tok" value="${ses.tok}"> <button type="submit">${texto(idioma, 'barra.salir')}</button></form></main>`);
+        return enviar(res, { status: 403, cuerpo: cuerpo403 });
+      }
+      const invalidada = ses ? cerradas.cerrar(ses) : true;
+      if (!invalidada) registrar('salir: la sesión se cerró en el navegador pero no se pudo anotar como cerrada en el servidor');
+      const destino = invalidada ? '/saliste' : '/saliste?sin_invalidar=1';
       // detrás del candado de la plataforma se cierra también su sesión; la vuelta es una página que no redirige sola
       const salida = nubes.map((n) => typeof n.salidaDelCandado === 'function' && n.salidaDelCandado(req.headers)).find(Boolean);
-      return enviar(res, { status: 303, cuerpo: '', extra: { Location: salida ? `${salida}?post_logout_redirect_uri=%2Fsaliste` : '/saliste', 'Set-Cookie': session.borrar(session.SESION) } });
+      return enviar(res, { status: 303, cuerpo: '', extra: { Location: salida ? `${salida}?post_logout_redirect_uri=${encodeURIComponent(destino)}` : destino, 'Set-Cookie': session.borrar(session.SESION) } });
     }
 
-    const ses = session.leerSesion(cookies, cfg.sessionKey, ahora(), { prov: proveedor.nombre, iss: proveedor.emisor });
+    const ses = sesionDe(cookies);
     const esApi = ruta.startsWith('/api/');
     // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraba «respuesta 403»).
     // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
@@ -556,12 +584,12 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     if (quien.rol === 'none') {
       if (esApi && quien.sinMantenedores) return rechazoApi(403, 'sin_mantenedores', texto(idioma, 'servidor.apiSinMantenedores'));
       if (esApi) return rechazoApi(403, 'sin_rol', texto(idioma, 'servidor.apiSinRol', { cuenta: quien.correoDeIngreso || quien.email }));
-      return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien, idioma, url: u }) : views.paginaSinRol({ quien, idioma, url: u }) });
+      return enviar(res, { status: 200, cuerpo: quien.sinMantenedores ? views.paginaSinMantenedores({ quien, sesion: ses, idioma, url: u }) : views.paginaSinRol({ quien, sesion: ses, idioma, url: u }) });
     }
     let params = null;
     const r = rutas.find((x) => x.method === req.method && (params = x.coincide(ruta)) !== null);
-    if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple(texto(idioma, 'servidor.noExisteTitulo'), texto(idioma, 'servidor.noExiste'), { quien, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
-    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', texto(idioma, 'servidor.apiNoMantiene', { cuenta: quien.email })) : enviar(res, { status: 403, cuerpo: views.paginaSimple(texto(idioma, 'servidor.sinPermisoTitulo'), texto(idioma, 'servidor.sinPermiso'), { quien, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
+    if (!r) return esApi ? enviar(res, { status: 404, tipo: 'text/plain; charset=utf-8', cuerpo: '' }) : enviar(res, { status: 404, cuerpo: views.paginaSimple(texto(idioma, 'servidor.noExisteTitulo'), texto(idioma, 'servidor.noExiste'), { quien, sesion: ses, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
+    if (!r.needs.includes(quien.rol)) return esApi ? rechazoApi(403, 'sin_rol', texto(idioma, 'servidor.apiNoMantiene', { cuenta: quien.email })) : enviar(res, { status: 403, cuerpo: views.paginaSimple(texto(idioma, 'servidor.sinPermisoTitulo'), texto(idioma, 'servidor.sinPermiso'), { quien, sesion: ses, pestanas: pestanasPara(quien.rol, idioma), idioma, url: u }) });
 
     // la regla de quién es quién (people.js) en cada pedido, con la configuración vigente y lo informado por las
     // máquinas, que viaja aparte del modelo: ningún correo informado llega a una vista
@@ -573,6 +601,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       bandaRefresco: st.bandaRefresco || null,
       bandaConfig: quien.rol === 'maintainer' ? (st.bandaConfig || null) : null,
       avisoVariable: quien.rol === 'maintainer' && quien.variableSobrante,
+      avisoSesiones: quien.rol === 'maintainer' && !cerradas.verificable(),
       enlaceOperaciones: quien.rol === 'maintainer' ? enlaceOperaciones : null,
       version, ahora: ahora(),
       // sólo quienes mantienen saben de la última publicada (los que pueden actuar); el modo sale de site.update

@@ -648,6 +648,13 @@ inicio de sesión no alcanza.
   cuenta». Con una sola puerta, el sitio no vuelve a entrar solo: la página espera a que elijas. Detrás del candado de la
   plataforma, la vuelta pasa antes por el cierre de ese candado. El cierre de la sesión de Microsoft queda apagado: te
   sacaría también del portal y de los repos de tu organización.
+  «Salir» cierra la sesión también para una copia de la cookie: la sesión queda anotada como cerrada en el disco del
+  sitio hasta que vence, y una copia que alguien guardó deja de valer. Si el disco falla, o el sitio no tiene disco
+  (`SITE_DATA_DIR`), «Saliste» avisa que no se pudo invalidar la sesión en el servidor en vez de decir que saliste: tras un
+  reinicio, una copia de la cookie volvería a valer. Con varias réplicas, el disco tiene que ser compartido: si no, una
+  réplica no sabe lo que cerró otra.
+  Si la carpeta de las sesiones cerradas no se puede leer, el sitio deja entrar igual (cerrarle la puerta a todos sería
+  peor) y quien mantiene ve arriba de las pestañas «no se pueden verificar las sesiones cerradas».
 
 ### Las sondas
 
@@ -800,6 +807,11 @@ Pide, sin sesión, lo que pediría un extraño. Sale 0 si no se ve nada; 1 con e
 sesión», «/api contesta con datos», «el sitio está frenado», «/healthz cuenta de más», «falta no-store», «acepta http», «sin Referer: el candado de la plataforma frenaría las escrituras de Configuración»);
 2 si no pudo preguntar. Espera hasta 90 segundos la primera respuesta: un sitio dormido tarda en despertar. El aviso de
 la mañana lleva el enlace sólo si pasó esa mañana.
+
+También pide sin sesión la página de salida (`/saliste`). Si la contesta el candado de la plataforma en vez del sitio,
+la prueba no falla: sale 0 y suma un aviso, «la página de salida queda detrás del candado: tras «Salir» se vuelve a
+entrar; la receta de tu entorno trae la orden de una vez». Quiere decir que falta el paso de una sola vez del candado
+(dejar libre la página de salida); la receta de tu entorno trae la orden. El aviso de la mañana lo repite junto al enlace.
 
 ## Las recetas
 

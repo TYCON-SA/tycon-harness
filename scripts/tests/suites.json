@@ -1244,6 +1244,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.48: «Salir» cierra la sesión de verdad — una copia de la cookie no entra después de salir (también tras reiniciar), otra sesión sigue, la lista de cerradas se borra al vencer, el botón exige el origen y el token de la sesión, y si el disco no escribe «Salir» lo avisa. Contra un emisor OIDC local y una carpeta temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/site-sign-out.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 2.23: el inicio de sesión del sitio — PKCE, state y nonce; cada chequeo del id_token con un token armado mal; la cookie firmada; y cada proveedor (oidc genérico, Entra ID, Google, GitHub) limitado a la organización. Contra un emisor y un GitHub locales.",
       "raiz": "arnes",
       "ruta": "tests/site-oidc.test.js",

@@ -1041,6 +1041,17 @@ RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "
 [ "$RC" = 0 ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && [ "$(q "$D/out/dependencias-$HOY.json" 'j.resumen.sitio.resultado + "|" + j.resumen.sitio.linea')" = "paso|sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
   && ok "2.30-T22 pasó la prueba de esta mañana: la última línea es el enlace con la hora, y queda en la constancia" || no "2.30-T22 paso: rc=$RC · «$(ultima_linea)» · $(head -c 300 "$D/entregar.txt")"
+# 2.48 un aviso del vocabulario de check-deploy se suma al final de la línea; uno libre (puede traer la dirección) se ignora
+AVISO48=$(node -e 'process.stdout.write(require(process.argv[1]).AVISOS[0])' "$RAIZ/scripts/site/check-deploy.js")
+avisar() { node -e 'const f=process.argv[1]; const j=JSON.parse(require("fs").readFileSync(f,"utf8")); j.avisos=[process.argv[2]]; require("fs").writeFileSync(f, JSON.stringify(j)+"\n")' "$D/check.json" "$1"; }
+prueba paso - "${HOY}T04:12:30.000Z"; avisar "$AVISO48"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$RC" = 0 ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC) · aviso: $AVISO48" ] \
+  && ok "2.48-T22 pasó con el aviso de la salida: la línea lo suma al final" || no "2.48-T22 aviso: rc=$RC · «$(ultima_linea)»"
+prueba paso - "${HOY}T04:12:30.000Z"; avisar "https://sitio.acme.example/x dice algo"; reset_srv ok:1
+RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
+[ "$RC" = 0 ] && [ "$(ultima_linea)" = "sitio: https://sitio.acme.example (probado 04:12 UTC)" ] \
+  && ok "2.48-T22 un aviso fuera del vocabulario se ignora" || no "2.48-T22 aviso libre: rc=$RC · «$(ultima_linea)»"
 prueba fallo "el sitio está frenado" "${HOY}T04:12:30.000Z"; snap "$D" "$HOY" '{}'; reset_srv ok:1
 RC=$(OPS_FILE="$D/ops-url.json" entregar "$D" dependencias "$HOY" --site-check "$D/check.json")
 [ "$(ultima_linea)" = "sitio: no pasó la prueba sin sesión (el sitio está frenado) (probado 04:12 UTC)" ] && ! grep -q 'https://' <<<"$(ultimo 'j.text')" \

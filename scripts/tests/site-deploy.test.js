@@ -199,6 +199,57 @@ test('T23 Candado_DejaLibreLaPaginaDeSalida @story-2.46 @ac-18', async () => {
   } finally { await h.cerrar(); await emisor.cerrar(); }
 });
 
+test('PruebaSinSesion_SalidaDetrasDelCandado_AvisaSinFallar @story-2.48 @ac-7', async () => {
+  const http = require('http');
+  const CHECK = require(path.join(ROOT, 'scripts', 'site', 'check-deploy.js'));
+  assert.ok(Array.isArray(CHECK.AVISOS) && CHECK.AVISOS.length === 1, 'el aviso es un vocabulario cerrado exportado');
+  const AVISO = CHECK.AVISOS[0];
+  const EMISOR = 'https://login.acme.example/tenant/oauth2/v2.0/authorize';
+  // un sitio de juguete bien cerrado; `/saliste` contesta lo que dice `salida`
+  const levantar = (salida) => new Promise((resolve) => {
+    const s = http.createServer((req, res) => {
+      const ruta = req.url.split('?')[0];
+      if (ruta === '/healthz') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end('{"ok":true}'); }
+      if (ruta === '/saliste') return salida(res);
+      if (ruta.startsWith('/api/')) { res.writeHead(401, { 'Cache-Control': 'no-store' }); return res.end(); }
+      res.writeHead(302, { Location: `${EMISOR}?response_type=code&client_id=x&state=s`, 'Cache-Control': 'no-store' });
+      return res.end();
+    });
+    s.listen(0, '127.0.0.1', () => resolve({ url: `http://127.0.0.1:${s.address().port}`, cerrar: () => new Promise((r) => { s.closeAllConnections(); s.close(r); }) }));
+  });
+  // asíncrono: el sitio de juguete vive en este proceso y un spawnSync lo dejaría sin contestar
+  const correr = (url, out) => new Promise((resolve) => {
+    require('child_process').execFile(process.execPath, [path.join(ROOT, 'scripts', 'site', 'check-deploy.js'), '--url', url, '--out', out], { encoding: 'utf8', timeout: 60000 },
+      (err, stdout, stderr) => resolve({ status: err ? (typeof err.code === 'number' ? err.code : null) : 0, stdout, stderr }));
+  });
+  const casos = [
+    ['redirección al inicio de sesión de la plataforma', (res) => { res.writeHead(302, { Location: '/.auth/login/aad?post_login_redirect_uri=%2Fsaliste' }); res.end(); }, true],
+    ['200 de la propia página', (res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<html></html>'); }, false],
+    ['404 de un sitio viejo', (res) => { res.writeHead(404); res.end(); }, false],
+  ];
+  for (const [nombre, salida, avisa] of casos) {
+    const s = await levantar(salida);
+    try {
+      const out = path.join(tmp, `salida-${avisa}-${nombre.length}.json`);
+      const r = await correr(s.url, out);
+      const doc = JSON.parse(fs.readFileSync(out, 'utf8'));
+      assert.strictEqual(r.status, 0, `${nombre}: la salida no cambia: ${r.stdout}${r.stderr}`);
+      assert.strictEqual(doc.resultado, 'paso', nombre);
+      if (avisa) {
+        assert.deepStrictEqual(doc.avisos, [AVISO], nombre);
+        assert.match(r.stdout, /🟠 check-deploy: aviso: la página de salida queda detrás del candado/);
+        assert.match(r.stdout, /pasa/, 'sigue diciendo que pasa');
+      } else {
+        assert.ok(!doc.avisos || doc.avisos.length === 0, `${nombre}: sin aviso`);
+        assert.doesNotMatch(r.stdout, /aviso/);
+      }
+    } finally { await s.cerrar(); }
+  }
+  // lo que se prueba es el código de salida: 0 con aviso (el actualizador no corre acá). El actualizador toma el 0 como bien
+  const upd = fs.readFileSync(path.join(DEPLOY, 'update-site.js'), 'utf8');
+  assert.match(upd, /r\.status === 0 \? \{ ok: true \}/, 'el código de salida 0 que esta prueba da con aviso es el que el actualizador toma como bien');
+});
+
 test('T12 Aca_SinCostoEscondido @story-2.30 @ac-9', () => {
   const plan = `${alta(['--dry-run', '--phase', 'ambiente']).out}\n${alta(['--dry-run', '--phase', 'sitio']).out}`;
   for (const prohibido of [/\bacr\b/, /keyvault/, /--infrastructure-subnet-resource-id/, /private-endpoint|privateEndpoint/, /workload-profile add/]) assert.doesNotMatch(plan, prohibido, `una orden de costo escondido: ${prohibido}`);

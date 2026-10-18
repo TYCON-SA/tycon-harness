@@ -17,6 +17,8 @@
  * Atributos: `__Host-` exige Secure, Path=/ y sin Domain; HttpOnly y SameSite=Lax.
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const SESION = '__Host-site';
 const INTENTO = '__Host-login';
@@ -90,4 +92,111 @@ function leerIntento(cookies, llave, ahora) {
   return { intento: it };
 }
 
-module.exports = { SESION, INTENTO, DURACION_SESION_MS, DURACION_INTENTO_MS, firmar, verificar, leerCookies, cookie, borrar, nuevaSesion, leerSesion, nuevoIntento, leerIntento };
+const CARPETA_CERRADAS = 'sesiones-cerradas';
+const PODA_CADA_MS = 10 * 60 * 1000;
+const AVISO_CADA_MS = 60 * 1000;
+// el aviso a quien mantiene sigue arriba de las pestañas hasta 5 minutos después del último fallo: no parpadea con cada pedido
+const VERIFICABLE_TRAS_MS = 5 * 60 * 1000;
+const huellaDe = (tok) => crypto.createHash('sha256').update(String(tok)).digest('hex');
+const ES_HUELLA = /^[0-9a-f]{64}$/;
+
+/**
+ * La lista de sesiones cerradas: «Salir» crea un archivo en `<dataDir>/sesiones-cerradas/` cuyo nombre es la huella (sha256)
+ * del `tok` de la sesión y cuyo contenido es su vencimiento. Una cookie cuyo `tok` tiene archivo no entra aunque su firma
+ * valga. Un archivo por sesión: dos cierres a la vez (de una o de varias réplicas sobre el mismo disco) no se pisan, y
+ * cada pedido mira un solo archivo en vez de recorrer la lista. Un archivo que existe pero no se puede leer cuenta como
+ * cerrado. Al cerrar se borran, como mucho cada diez minutos, los archivos vencidos. Sin `dataDir` la lista vive en
+ * memoria: bloquea en este proceso, pero `cerrar` devuelve false porque un reinicio la pierde.
+ */
+function crearCerradas({ dataDir = null, ahora = Date.now, log = () => {} } = {}) {
+  const carpeta = dataDir ? path.join(dataDir, CARPETA_CERRADAS) : null;
+  const memoria = new Map();
+  let ultimaPoda = -Infinity;
+  let ultimoAviso = -Infinity;
+  // si la última consulta pudo mirar la carpeta: con la carpeta ilegible la sesión entra igual (abrir es mejor que dejar
+  // el sitio sin entrada) y quien mantiene lo ve arriba de las pestañas
+  let ultimoFallo = -Infinity;
+
+  // a lo sumo una línea por minuto: un disco caído no llena el registro con un renglón por pedido
+  function avisar(linea) {
+    const t = ahora();
+    if (t - ultimoAviso < AVISO_CADA_MS) return;
+    ultimoAviso = t;
+    log(linea);
+  }
+
+  // el vencimiento de un archivo: sólo un entero positivo vale (Number('') es 0, y un archivo vacío no es «vencido en 1970»);
+  // cualquier otra cosa es ilegible: la sesión sigue cerrada y el archivo se poda por su fecha
+  const venceEn = (archivo) => {
+    try { const t = fs.readFileSync(archivo, 'utf8').trim(); return /^[1-9]\d*$/.test(t) ? Number(t) : null; } catch { return null; }
+  };
+
+  function podar() {
+    const t = ahora();
+    if (t - ultimaPoda < PODA_CADA_MS) return;
+    ultimaPoda = t;
+    let nombres;
+    try { nombres = fs.readdirSync(carpeta); } catch (e) {
+      if (e && e.code !== 'ENOENT') avisar(`la lista de sesiones cerradas no se pudo podar (${e.code || 'error'}): los vencidos quedan en el disco`);
+      return;
+    }
+    for (const n of nombres) {
+      const archivo = path.join(carpeta, n);
+      try {
+        if (ES_HUELLA.test(n)) {
+          const exp = venceEn(archivo);
+          if (exp !== null ? exp <= t : fs.statSync(archivo).mtimeMs < t - DURACION_SESION_MS) fs.rmSync(archivo, { force: true });
+        } else if (n.endsWith('.tmp') && fs.statSync(archivo).mtimeMs < t - DURACION_SESION_MS) fs.rmSync(archivo, { force: true });
+      } catch (e) {
+        if (e && e.code !== 'ENOENT') avisar(`la lista de sesiones cerradas no se pudo podar (${e.code || 'error'}): los vencidos quedan en el disco`);
+      }
+    }
+  }
+
+  return {
+    /** Anota la sesión como cerrada. true sólo si el archivo quedó en el disco; false = no se pudo (la cookie del navegador se borra igual). */
+    cerrar(ses) {
+      if (!ses || typeof ses.tok !== 'string' || !ses.tok || !Number.isFinite(ses.exp)) return false;
+      const huella = huellaDe(ses.tok);
+      if (!carpeta) { memoria.set(huella, ses.exp); return false; }
+      const destino = path.join(carpeta, huella);
+      const tmp = `${destino}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+      try {
+        fs.mkdirSync(carpeta, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(tmp, String(ses.exp), { mode: 0o600 });
+        fs.renameSync(tmp, destino);
+        if (!fs.existsSync(destino)) throw Object.assign(new Error('falta'), { code: 'falta' });
+      } catch (e) {
+        try { fs.rmSync(tmp, { force: true }); } catch { /* ya no está */ }
+        avisar(`la lista de sesiones cerradas no se pudo escribir (${(e && e.code) || 'error'}): una sesión cerrada podría seguir valiendo con una copia de la cookie`);
+        return false;
+      }
+      podar();
+      return true;
+    },
+    /** ¿La sesión salió? Mira sólo el archivo de su huella. Si la carpeta no se puede leer, no se sabe: vale como no cerrada. */
+    cerrada(ses) {
+      if (!ses || typeof ses.tok !== 'string' || !ses.tok) return false;
+      const huella = huellaDe(ses.tok);
+      if (!carpeta) {
+        const exp = memoria.get(huella);
+        if (exp === undefined) return false;
+        if (exp <= ahora()) { memoria.delete(huella); return false; }
+        return true;
+      }
+      const archivo = path.join(carpeta, huella);
+      try { fs.statSync(archivo); } catch (e) {
+        if (!e || e.code !== 'ENOENT') { ultimoFallo = ahora(); avisar(`la lista de sesiones cerradas no se pudo leer (${(e && e.code) || 'error'}): no se sabe qué sesiones salieron`); }
+        return false;
+      }
+      // existe: cerrada, aunque su contenido no se lea; sólo un vencimiento legible y pasado la deja entrar a podar
+      const exp = venceEn(archivo);
+      if (exp !== null && exp <= ahora()) { try { fs.rmSync(archivo, { force: true }); } catch { /* otro proceso */ } return false; }
+      return true;
+    },
+    /** ¿La última consulta pudo mirar la lista? false = una sesión cerrada podría estar entrando. */
+    verificable() { return ahora() - ultimoFallo >= VERIFICABLE_TRAS_MS; },
+  };
+}
+
+module.exports = { CARPETA_CERRADAS, crearCerradas, SESION, INTENTO, DURACION_SESION_MS, DURACION_INTENTO_MS, firmar, verificar, leerCookies, cookie, borrar, nuevaSesion, leerSesion, nuevoIntento, leerIntento };

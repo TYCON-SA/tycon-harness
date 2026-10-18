@@ -669,6 +669,13 @@ enough.
   and "Sign in with another account". With a single door, the site does not sign you back in by itself: the page waits
   for your choice. Behind the platform's lock, the way back goes first through that lock's own sign-out. Signing out of
   the Microsoft session stays off: it would also sign you out of the portal and of your organization's repos.
+  "Sign out" ends the session for a copy of the cookie too: the session is recorded as closed on the site's disk until it
+  expires, and a copy somebody kept stops working. If the disk fails, or the site has no disk (`SITE_DATA_DIR`),
+  "You signed out" warns that the session could not be invalidated on the server instead of saying you signed out: after a
+  restart, a copy of the cookie would work again. With several replicas, the disk has to be shared: otherwise one replica
+  does not know what another closed.
+  If the folder of closed sessions cannot be read, the site lets people in anyway (locking everyone out would be worse)
+  and maintainers see "closed sessions cannot be verified" above the tabs.
 
 ### The probes
 
@@ -823,6 +830,12 @@ responde sin iniciar sesión", "/api contesta con datos", "el sitio está frenad
 no-store", "acepta http", "sin Referer: el candado de la plataforma frenaría las escrituras de Configuración" — the
 site sends `Referrer-Policy: no-referrer`); 2 if it could not ask. It waits up to 90 seconds for the first answer: a sleeping site takes a
 while to wake up. The morning notice carries the link only if it passed that morning.
+
+It also asks for the sign-out page (`/saliste`) without a session. If the platform's lock answers it instead of the
+site, the check does not fail: it exits 0 and adds a warning, "la página de salida queda detrás del candado: tras
+«Salir» se vuelve a entrar; la receta de tu entorno trae la orden de una vez". It means the one-time lock step is
+missing (leave the sign-out page free); your environment's recipe has the command. The morning notice repeats it next
+to the link. What to fix is the lock's setting, not the image.
 
 ## The recipes
 

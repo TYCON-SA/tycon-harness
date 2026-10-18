@@ -430,7 +430,7 @@ test('T45 Marca_LogoSeguroBarraYPie', async () => {
     fuentes.st.config = config({ name: 'Acme Ingeniería', logo: 'marca/logo.png' });
     let p = (await h.pedir('/', { cookie: s })).texto;
     assert.match(p, /<header class="barra"><img class="logo invierte" src="\/marca\/logo" alt="Acme Ingeniería"><span class="sep" aria-hidden="true"><\/span><span class="producto">Arnés<\/span><span class="lema">Sitio de la organización<\/span>/);
-    assert.match(p, /<form class="salir"[^>]*><span>lead@acme\.example<\/span> <button type="submit">Salir<\/button><\/form><\/header>/, 'quién entró y Salir, a la derecha de la barra');
+    assert.match(p, /<form class="salir"[^>]*><span>lead@acme\.example<\/span> <input type="hidden" name="tok" value="[^"]+"> <button type="submit">Salir<\/button><\/form><\/header>/, 'quién entró y Salir, a la derecha de la barra');
     assert.match(p, /<footer class="pie"><span>Arnés( v[^<]+)?<\/span><a href="\/licencia">Licencia Apache 2\.0<\/a><a href="\/creditos">Créditos y componentes de terceros<\/a><span class="esp"><\/span><span>© Acme Ingeniería<\/span><\/footer>/);
     assert.doesNotMatch(p, /class="brand"/, 'el menú, sin la marca');
     fuentes.st.config = config({ name: 'Acme Ingeniería', logo: 'marca/logo.png', dark: 'keep' });
@@ -542,16 +542,24 @@ test('Api_FrenadoYCargando_503ConMensaje @story-2.38 @ac-3', async () => {
 // ── Salir: la vuelta no entra sola ───────────────────────────────────────────────────────────────────────
 // Con una sola puerta, `/` sin sesión va directo al emisor; por eso Salir vuelve a una página que no redirige.
 const LEAD = 'lead@acme.example';
+/** «Salir» como lo manda el botón: el origen del sitio y el token de la sesión que la barra trae en el formulario. */
+async function salirComoElBoton(h, sesion, headers = {}) {
+  const barra = await h.pedir('/', { cookie: sesion });
+  const tok = /name="tok" value="([^"]+)"/.exec(barra.texto)[1];
+  return h.pedir('/auth/logout', { method: 'POST', cookie: sesion, headers: { origin: 'http://127.0.0.1', 'content-type': 'application/x-www-form-urlencoded', ...headers }, body: new URLSearchParams({ tok }).toString() });
+}
 async function conUnaPuerta(fn) {
   const emisor = await arrancarEmisor();
-  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: H.fuentesFijas({ config: configRoles() }) });
-  try { await fn({ h, emisor }); } finally { await h.cerrar(); await emisor.cerrar(); }
+  // con disco: «Salir» anota la sesión cerrada ahí (sin disco avisa que no pudo invalidarla)
+  const disco = fs.mkdtempSync(path.join(os.tmpdir(), 'site-una-puerta-'));
+  const h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, SITE_DATA_DIR: disco }), fuentes: H.fuentesFijas({ config: configRoles() }) });
+  try { await fn({ h, emisor }); } finally { await h.cerrar(); await emisor.cerrar(); fs.rmSync(disco, { recursive: true, force: true }); }
 }
 
 test('T20 Salir_UnaPuerta_NoVuelveAEntrar @story-2.46 @ac-18', async () => {
   await conUnaPuerta(async ({ h, emisor }) => {
     const sesion = (await H.ingresar(h, emisor, { sub: 's-lead', email: LEAD, email_verified: true })).sesion;
-    const r = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion });
+    const r = await salirComoElBoton(h, sesion);
     assert.strictEqual(r.status, 303);
     assert.strictEqual(r.headers.location, '/saliste');
     assert.match(String(r.headers['set-cookie']), /__Host-site=;|Max-Age=0|Expires=Thu, 01 Jan 1970/, 'borra la sesión');
@@ -566,11 +574,11 @@ test('T20 Salir_UnaPuerta_NoVuelveAEntrar @story-2.46 @ac-18', async () => {
 test('T21 Salir_DetrasDelCandado_PasaPorAuthLogout @story-2.46 @ac-19', async () => {
   await conUnaPuerta(async ({ h, emisor }) => {
     const sesion = (await H.ingresar(h, emisor, { sub: 's-lead', email: LEAD, email_verified: true })).sesion;
-    const detras = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion, headers: { 'X-MS-CLIENT-PRINCIPAL-NAME': LEAD } });
+    const detras = await salirComoElBoton(h, sesion, { 'X-MS-CLIENT-PRINCIPAL-NAME': LEAD });
     assert.strictEqual(detras.status, 303);
     assert.strictEqual(detras.headers.location, '/.auth/logout?post_logout_redirect_uri=%2Fsaliste');
     assert.match(String(detras.headers['set-cookie']), /__Host-site=;|Max-Age=0|Expires=Thu, 01 Jan 1970/, 'la cookie igual se borra');
-    const sin = await h.pedir('/auth/logout', { method: 'POST', cookie: sesion });
+    const sin = await h.pedir('/auth/logout', { method: 'POST' });
     assert.strictEqual(sin.headers.location, '/saliste');
   });
 });
