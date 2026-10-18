@@ -905,6 +905,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     c.id = idEstable(multi ? maquina : null, sid);
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);
+    c.sin_pasos_anotados = sinPasosAnotados(c, d.marker);
     // de qué volcado salió (para bajar su detalle a demanda): sólo del lado del servidor, nunca en lo que se sirve
     Object.defineProperty(c, '_volcado', { value: rutas[0], enumerable: false });
     if (opts.sinHilos && c.tiempos) c.tiempos.espera_del_hilo_ms = null;
@@ -914,6 +915,24 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   }
   out.corridas.sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || '')));
   return out;
+}
+
+/**
+ * ¿La corrida arrancó el pipeline, trabajó, y el marcador anotó sólo el arranque (el paso 0)? Eso no es una corrida
+ * abandonada: es una que no anotó sus pasos. Hace falta que `stepsCompleted` sea exactamente [0] (vacío no vale) y que
+ * haya trabajo: archivos cambiados, o consumo fuera del paso 0 (en un paso posterior o después del último anotado).
+ */
+function sinPasosAnotados(c, marker) {
+  const hechos = Array.isArray(marker && marker.stepsCompleted) ? marker.stepsCompleted.map(Number) : [];
+  if (hechos.length !== 1 || hechos[0] !== 0) return false;
+  const x = c.cambios;
+  const enGit = x && x.git && x.git.estado === 'medido' ? Number(x.git.total_archivos) || 0 : 0;
+  const enHilo = x && x.estado === 'leido' && Array.isArray(x.archivos) ? x.archivos.filter((a) => !/^script por consola/.test(a.f)).length : 0;
+  const enMarcador = (Array.isArray(marker.filesTouched) ? marker.filesTouched.length : 0) + (Array.isArray(marker.fileEvents) ? marker.fileEvents.length : 0);
+  const k = c.consumo && c.consumo.estado === 'medido' ? c.consumo : null;
+  const porPaso = k && k.por_paso && typeof k.por_paso === 'object' ? Object.keys(k.por_paso).filter((p) => p !== '0').reduce((a, p) => a + (Number(k.por_paso[p]) || 0), 0) : 0;
+  const fuera = k ? Number(k.fuera_de_ventana) || 0 : 0;
+  return enGit + enHilo + enMarcador > 0 || porPaso + fuera > 0;
 }
 
 function umbrales(archivo = path.join(__dirname, 'sources.json')) {
@@ -1020,7 +1039,7 @@ const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(c
 function paraLista(c) {
   return {
     id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
-    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso,
+    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true,
     tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
     tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
     controles: elegir(c.controles, ['total', 'error', 'freno', 'por_control']),
@@ -1075,6 +1094,8 @@ function colEspera(c) {
   }
   return hilo ? `<span title="incluye ${dur(hilo)} esperando una respuesta fuera de los pasos de aprobación (una pregunta o un turno que esperó al dev)">${dur(t.espera_humana_ms)}</span>` : dur(t.espera_humana_ms);
 }
+
+const TITULO_SIN_PASOS = 'la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada';
 
 function colArchivos(c) {
   const x = c.cambios;
@@ -1160,7 +1181,15 @@ function cabecera(M, opts = {}) {
 }
 
 /** La capa ejecutiva: el glosario, el filtro y los contenedores que dibuja el cliente (las fichas y los gráficos). */
-function ejecutiva(M) {
+const TEXTOS_FILTRO = {
+  filtro: 'Filtro', desde: 'desde', hasta: 'hasta', producto: 'producto', maquina: 'máquina',
+  sinConsumo: 'sólo con consumo medido', llegaron: 'sólo las que llegaron al paso 8',
+  limpiar: 'limpiar', hoy: 'hoy', semana: 'esta semana', mes: 'este mes', cuenta: '{n} de {t} corridas a la vista',
+};
+
+/** `opts.textos`: las etiquetas del filtro en otro idioma (el sitio las pone en el idioma elegido); sin ellas, en castellano. */
+function ejecutiva(M, opts = {}) {
+  const X = { ...TEXTOS_FILTRO, ...((opts && opts.textos) || {}) };
   return `<section id="ejecutiva">
   <div class="q-head"><span class="q-n">01</span><h2>Lo que se mira primero</h2></div>
   <div class="claves">
@@ -1169,13 +1198,14 @@ function ejecutiva(M) {
     <div><b>Trama</b><span>«no medido»: esa corrida no registró ese dato. <b>No es cero ni es verde.</b></span></div>
     <div><b>n=</b><span>al lado de cada mediana: de cuántas corridas sale el número, sobre cuántas hay.</span></div>
   </div>
-  <div class="filtrera"><span class="fl">Filtro</span>
-    <label>desde <input type="date" id="f-desde"></label><label>hasta <input type="date" id="f-hasta"></label>
-    <label>producto <select id="f-repo"></select></label>${M.varias_maquinas ? `
-    <label>máquina <select id="f-maquina"></select></label>` : ''}
-    <label><input type="checkbox" id="fc"> sólo con consumo medido</label>
-    <label><input type="checkbox" id="ff"> sólo las que llegaron al paso 8</label>
-    <button id="f-limpiar">limpiar</button><span class="fcount" id="cuenta"></span></div>
+  <div class="filtrera"><span class="fl">${esc(X.filtro)}</span>
+    <label>${esc(X.desde)} <input type="date" id="f-desde"></label><label>${esc(X.hasta)} <input type="date" id="f-hasta"></label>
+    <button type="button" id="f-hoy">${esc(X.hoy)}</button><button type="button" id="f-semana">${esc(X.semana)}</button><button type="button" id="f-mes">${esc(X.mes)}</button>
+    <label>${esc(X.producto)} <select id="f-repo"></select></label>${M.varias_maquinas ? `
+    <label>${esc(X.maquina)} <select id="f-maquina"></select></label>` : ''}
+    <label><input type="checkbox" id="fc"> ${esc(X.sinConsumo)}</label>
+    <label><input type="checkbox" id="ff"> ${esc(X.llegaron)}</label>
+    <button id="f-limpiar">${esc(X.limpiar)}</button><span class="fcount" id="cuenta" data-molde="${esc(X.cuenta)}"></span></div>
   <div class="grid" id="fichas"></div>
   <div class="dos">
     <div class="card"><h3>Corridas por semana</h3><div id="gsem"></div><p>Semana ISO. Una semana sin corridas se dibuja en cero: una barra ausente y una barra en cero no son lo mismo.</p></div>
@@ -1203,7 +1233,7 @@ function tabla(M) {
       <td class="dur">${dur(c.dur_ms)}</td>
       <td class="dur tr">${colTrabajo(c)}</td>
       <td class="dur es">${colEspera(c)}</td>
-      <td class="pasos-n">${c.llego_al_final ? '<span class="ok9">llegó al 8</span>' : `<span class="parcial">quedó en el ${c.ultimo_paso === null ? '—' : c.ultimo_paso}</span>`}</td>
+      <td class="pasos-n">${c.llego_al_final ? '<span class="ok9">llegó al 8</span>' : c.sin_pasos_anotados ? `<span class="parcial" title="${esc(TITULO_SIN_PASOS)}">no anotó sus pasos</span>` : `<span class="parcial">quedó en el ${c.ultimo_paso === null ? '—' : c.ultimo_paso}</span>`}</td>
       <td class="ag">${c.costo ? c.costo.agentes : '<span class="nd" title="no registra agentes lanzados — no es cero">—</span>'}</td>
       <td class="vu">${c.costo && c.costo.vueltas !== null ? c.costo.vueltas : '<span class="nd">—</span>'}</td>
       <td class="tk">${tk}</td>
@@ -1912,7 +1942,7 @@ const CLIENTE = String.raw`(function () {
   // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
   function detalle(c, idx) {
     if (idx === undefined) idx = C.indexOf(c);
-    var chips = '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
+    var chips = '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : c.sin_pasos_anotados ? 'no anotó sus pasos' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + c.controles.error + ' con error</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>frenó ' + c.controles.freno + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + c.costo.vueltas + ' vueltas</span>' : '')
@@ -2149,15 +2179,19 @@ const CLIENTE = String.raw`(function () {
   var elMaq = (M.varias_maquinas !== undefined ? M.varias_maquinas : M.multi) ? $('f-maquina') : null;
   var maqDe = function (c) { return c.maquina || '(sin declarar)'; };
   var elDesde = $('f-desde'), elHasta = $('f-hasta'), elRepo = $('f-repo'), elFc = $('fc'), elFf = $('ff'), elCuenta = $('cuenta'), elLimpiar = $('f-limpiar'), cuerpo = $('cuerpo');
-  var fechas = C.map(function (c) { return (c.inicio || '').slice(0, 10); }).filter(Boolean).sort();
+  // La fecha de una corrida es la del navegador de quien mira, no la UTC: a las 22 h de Argentina, «hoy» ya es mañana en UTC.
+  var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+  var ymd = function (d) { return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); };
+  var diaLocal = function (iso) { if (!iso) return ''; var d = new Date(iso); return isNaN(d.getTime()) ? '' : ymd(d); };
+  var fechas = C.map(function (c) { return diaLocal(c.inicio); }).filter(Boolean).sort();
   var RANGO = [fechas[0] || '', fechas[fechas.length - 1] || ''];
   var cuentaRepo = {};
   // Los combos van en orden alfabético (sin distinguir mayúsculas): se busca un nombre, no un ranking. Lo «sin…», al final.
   var alfabetico = function (a, b) { var sa = a.charAt(0) === '(' || a.indexOf('sin ') === 0, sb = b.charAt(0) === '(' || b.indexOf('sin ') === 0; return (sa - sb) || a.localeCompare(b, 'es', { sensitivity: 'base' }); };
   C.forEach(function (c) { var r = c.producto || '(sin producto)'; cuentaRepo[r] = (cuentaRepo[r] || 0) + 1; });
   elRepo.innerHTML = '<option value="">todos (' + C.length + ')</option>' + Object.keys(cuentaRepo).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + cuentaRepo[r] + ')</option>'; }).join('');
+  var cuentaMaq = {};
   if (elMaq) {
-    var cuentaMaq = {};
     C.forEach(function (c) { cuentaMaq[maqDe(c)] = (cuentaMaq[maqDe(c)] || 0) + 1; });
     elMaq.innerHTML = '<option value="">todas (' + C.length + ')</option>' + Object.keys(cuentaMaq).sort(alfabetico).map(function (r) { return '<option value="' + esc(r) + '">' + esc(r) + ' (' + cuentaMaq[r] + ')</option>'; }).join('');
   }
@@ -2180,13 +2214,24 @@ const CLIENTE = String.raw`(function () {
   var ENLACE = { abrir: SOLO !== null ? SOLO : filaDe(leer('abrir')), ver: numero('ver'), git: numero('git'), solo: SOLO, maquina: null };
   // '?maquina=<nombre>' deja el filtro por máquina puesto al cargar (story 2.16): el mismo permalink
   // que '?solo=N', y lo que permite fotografiar el filtro aplicado sin un clic.
-  var mMaq = qs.match(/[?&]maquina=([^&]+)/);
-  if (elMaq && mMaq) { try { elMaq.value = ENLACE.maquina = decodeURIComponent(mMaq[1]); } catch (e) { /* un nombre mal escrito deja el filtro en «todas» */ } }
+  // '?desde=&hasta=&producto=&maquina=': lo que no sirve —una fecha que no existe, un producto o una máquina
+  // que no aparecen— se ignora y ese filtro queda en «todos». El filtro cambia la dirección sin recargar (escribirDireccion).
+  var param = function (nombre) { var v = leer(nombre); if (v === null) return null; try { return decodeURIComponent(v.replace(/\+/g, ' ')); } catch (e) { return null; } };
+  var fechaValida = function (v) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && ymd(new Date(+v.slice(0, 4), +v.slice(5, 7) - 1, +v.slice(8, 10))) === v; };
+  var esta = function (cuenta, v) { return v !== null && Object.prototype.hasOwnProperty.call(cuenta, v); };
+  var qDesde = param('desde'), qHasta = param('hasta'), qRepo = param('producto'), qMaq = param('maquina');
+  // Una fecha que puso la persona (a mano, con un atajo o desde la dirección) se escribe siempre, aunque coincida con el
+  // rango: el enlace compartido tiene que mostrar lo mismo mañana, cuando el rango ya creció.
+  var FIJADA = { desde: false, hasta: false };
+  if (fechaValida(qDesde)) { elDesde.value = qDesde; FIJADA.desde = true; }
+  if (fechaValida(qHasta)) { elHasta.value = qHasta; FIJADA.hasta = true; }
+  if (esta(cuentaRepo, qRepo)) elRepo.value = qRepo;
+  if (elMaq && esta(cuentaMaq, qMaq)) elMaq.value = ENLACE.maquina = qMaq;
   if (typeof window !== 'undefined') window.__enlace = function () { return ENLACE; };
   if (SOLO !== null && typeof document !== 'undefined' && document.body && document.body.classList) document.body.classList.add('solo');
   function pasa(c) {
     if (SOLO !== null && C.indexOf(c) !== SOLO) return false;
-    var f = (c.inicio || '').slice(0, 10);
+    var f = diaLocal(c.inicio);
     if (elDesde.value && f && f < elDesde.value) return false;
     if (elHasta.value && f && f > elHasta.value) return false;
     if (elRepo.value && (c.producto || '(sin producto)') !== elRepo.value) return false;
@@ -2219,11 +2264,34 @@ const CLIENTE = String.raw`(function () {
       if (tr.classList.contains('fila-det')) { tr.hidden = tr.previousElementSibling.hidden; continue; }
       var k = enC(tr), ok = k !== null && pasa(C[k]); tr.hidden = !ok; if (ok) n++;
     }
-    elCuenta.textContent = n + ' de ' + C.length + ' corridas a la vista';
+    var molde = (elCuenta.dataset && elCuenta.dataset.molde) || '{n} de {t} corridas a la vista';
+    elCuenta.textContent = molde.replace('{n}', n).replace('{t}', C.length);
   }
-  if (typeof window !== 'undefined') window.__aplicar = aplicar;
-  [elDesde, elHasta, elRepo, elFc, elFf].concat(elMaq ? [elMaq] : []).forEach(function (el) { el.addEventListener('change', aplicar); });
-  elLimpiar.onclick = function () { elDesde.value = RANGO[0]; elHasta.value = RANGO[1]; elRepo.value = ''; if (elMaq) elMaq.value = ''; elFc.checked = false; elFf.checked = false; aplicar(); };
+  // Escribe en la dirección los filtros que difieren de su valor por defecto; lo demás (solo, abrir, ver, git) queda como estaba.
+  function escribirDireccion() {
+    if (typeof history === 'undefined' || !history || typeof history.replaceState !== 'function' || typeof location === 'undefined') return;
+    var resto = qs.replace(/^\?/, '').split('&').filter(function (x) { return x && !/^(desde|hasta|producto|maquina)=/.test(x); });
+    if (elDesde.value && (FIJADA.desde || elDesde.value !== RANGO[0])) resto.push('desde=' + encodeURIComponent(elDesde.value));
+    if (elHasta.value && (FIJADA.hasta || elHasta.value !== RANGO[1])) resto.push('hasta=' + encodeURIComponent(elHasta.value));
+    if (elRepo.value) resto.push('producto=' + encodeURIComponent(elRepo.value));
+    if (elMaq && elMaq.value) resto.push('maquina=' + encodeURIComponent(elMaq.value));
+    try { history.replaceState(null, '', (location.pathname || '') + (resto.length ? '?' + resto.join('&') : '') + (location.hash || '')); } catch (e) { /* sin historial, el filtro sigue andando */ }
+  }
+  function alCambiar() { aplicar(); escribirDireccion(); }
+  // Los atajos llenan desde y hasta con la fecha local: hoy; esta semana, del lunes a hoy; este mes, del día 1 a hoy.
+  function atajo(nombre) {
+    var h = new Date(), fin = ymd(h), ini = fin;
+    if (nombre === 'semana') ini = ymd(new Date(h.getFullYear(), h.getMonth(), h.getDate() - ((h.getDay() + 6) % 7)));
+    else if (nombre === 'mes') ini = fin.slice(0, 8) + '01';
+    elDesde.value = ini; elHasta.value = fin; FIJADA.desde = FIJADA.hasta = true; alCambiar();
+  }
+  function limpiar() { FIJADA.desde = FIJADA.hasta = false; elDesde.value = RANGO[0]; elHasta.value = RANGO[1]; elRepo.value = ''; if (elMaq) elMaq.value = ''; elFc.checked = false; elFf.checked = false; alCambiar(); }
+  if (typeof window !== 'undefined') { window.__aplicar = alCambiar; window.__atajo = atajo; window.__limpiar = limpiar; }
+  elDesde.addEventListener('change', function () { FIJADA.desde = true; });
+  elHasta.addEventListener('change', function () { FIJADA.hasta = true; });
+  [elDesde, elHasta, elRepo, elFc, elFf].concat(elMaq ? [elMaq] : []).forEach(function (el) { el.addEventListener('change', alCambiar); });
+  [['f-hoy', 'hoy'], ['f-semana', 'semana'], ['f-mes', 'mes']].forEach(function (b) { var bt = $(b[0]); if (bt) bt.addEventListener('click', function () { atajo(b[1]); }); });
+  elLimpiar.onclick = limpiar;
   aplicar();
 
   // ─── abrir / cerrar el detalle ───

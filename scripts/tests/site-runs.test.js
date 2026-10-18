@@ -197,6 +197,9 @@ async function clienteDelSitio(h, cookie, { search = '', alterar = null } = {}) 
   const { nodos, rows, documento } = domMinimo(tbody);
   const fuente = /<div id="fuente-corridas"[^>]*data-api="([^"]+)"[^>]*data-generado="([^"]*)"/.exec(pagina.texto);
   nodos['fuente-corridas'] = { dataset: { api: fuente && fuente[1], generado: fuente && fuente[2] } };
+  // el molde de la cuenta viaja en un atributo de la página (el cliente lo lee de ahí)
+  const molde = /<span[^>]*id="cuenta"[^>]*data-molde="([^"]*)"/.exec(pagina.texto);
+  nodos.cuenta = { innerHTML: '', textContent: '', value: '', dataset: molde ? { molde: molde[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>') } : {} };
   const w = { location: { search, hash: '', reload() { w.recargo = true; } } };
   const pendientes = [];
   // `alterar(url, json)`: cambia lo que contesta el sitio (para probar un detalle que no se puede dibujar)
@@ -248,6 +251,28 @@ test('T2 CapaEjecutiva_FiltrosYDiezFichas @story-2.27 @ac-2', async () => {
     c.nodos.fc.checked = false;
     c.nodos['f-desde'].value = '2030-01-01'; c.nodos['f-hasta'].value = '2030-12-31'; c.w.__aplicar();
     assert.strictEqual((c.nodos.fichas.innerHTML.match(/class="tile/g) || []).length, 1, 'con el filtro imposible, la ficha gris única');
+  });
+});
+
+test('2.45-T4 FiltroSaleEnElIdioma @story-2.45 @ac-4', async () => {
+  const filtro = (html) => (/<div class="filtrera">[\s\S]*?<\/div>\s*<div class="grid"/.exec(html) || [''])[0];
+  await conPestana({ fuentes: fuentesCon({ espejo: mundo() }) }, async ({ h, entrar }) => {
+    const ses = await entrar(LEAD);
+    const en = filtro((await h.pedir('/corridas', { cookie: `${ses}; sitio-idioma=en` })).texto);
+    const visibleEn = sinTags(en);
+    for (const t of ['from', 'to', 'product', 'machine', 'today', 'this week', 'this month', 'clear']) assert.match(visibleEn, new RegExp(`(^| )${t}( |$)`), `en inglés: «${t}»`);
+    assert.doesNotMatch(visibleEn, /desde|hasta|máquina|esta semana|este mes|limpiar|\bhoy\b/, 'ni una etiqueta en castellano');
+    assert.match(en, /id="f-hoy"[\s\S]*id="f-semana"[\s\S]*id="f-mes"/, 'los tres atajos');
+    assert.match(en, /data-molde="\{n\} of \{t\} runs in view"/, 'el molde de la cuenta, en inglés');
+    const es = filtro((await h.pedir('/corridas', { cookie: `${ses}; sitio-idioma=es` })).texto);
+    for (const t of ['desde', 'hasta', 'producto', 'máquina', 'hoy', 'esta semana', 'este mes', 'limpiar']) assert.match(sinTags(es), new RegExp(`(^| )${t}( |$)`), `en castellano: «${t}»`);
+    assert.match(es, /data-molde="\{n\} de \{t\} corridas a la vista"/);
+    // el cliente dibuja la cuenta con el molde del idioma
+    const c = await clienteDelSitio(h, `${ses}; sitio-idioma=en`);
+    c.w.__aplicar();
+    assert.match(c.nodos.cuenta.textContent, /^\d+ of \d+ runs in view$/, c.nodos.cuenta.textContent);
+    // y la caché por idioma no mezcla: pedir en castellano después de inglés devuelve castellano
+    assert.match(filtro((await h.pedir('/corridas', { cookie: ses })).texto), /limpiar/);
   });
 });
 
@@ -487,7 +512,7 @@ test('T14 Fuga_NingunMarcadorDeOtroLlegaAlDev @story-2.27 @ac-14', async () => {
 
 // ── lo que viaja y cuándo ─────────────────────────────────────────────────────────────────────────────────────────
 
-const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo'];
+const LISTA_BLANCA = ['id', 'story', 'producto', 'maquina', 'maquina_motivo', 'inicio', 'semana', 'dur_ms', 'llego_al_final', 'ultimo_paso', 'tramos', 'sin_marca', 'tiempos', 'controles', 'costo', 'validador', 'consumo', 'sin_pasos_anotados'];
 
 test('T15 Lista_ListaBlancaExacta @story-2.27 @ac-15', () => {
   const espejo = mundo({ marcadores: false });

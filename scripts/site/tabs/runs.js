@@ -298,6 +298,8 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
   const views = require('../views.js');
   const { t: tx } = require('../texts.js');
   const idiomaDe = (ctx) => views.idiomaDe(ctx);
+  // las etiquetas del filtro de la vista, en el idioma del pedido (la cuenta queda como molde: la llena el cliente)
+  const textosFiltro = (idioma) => Object.fromEntries(['filtro', 'desde', 'hasta', 'producto', 'maquina', 'sinConsumo', 'llegaron', 'limpiar', 'hoy', 'semana', 'mes', 'cuenta'].map((k) => [k, tx(idioma, `corridas.filtro.${k}`)]));
   const vista = crearVista({ cfg, fuentes, armar, skillsDir, demora, log, ahora, ...(topeCacheBytes ? { topeCacheBytes } : {}) });
   const json = (status, obj, extra) => ({ status, tipo: 'application/json; charset=utf-8', cuerpo: JSON.stringify(obj), ...(extra ? { extra } : {}) });
   const texto = (status, t, extra) => ({ status, tipo: 'text/plain; charset=utf-8', cuerpo: t, ...(extra ? { extra } : {}) });
@@ -374,7 +376,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
         if (r.salidas[llave]) return pagina(ctx, r.salidas[llave]);
         const opts = { sitio: { rol: ctx.quien.rol, version } };
         const rearmado = r.error ? `<div class="banda gris"><b>${runsEsc(tx(idioma, 'corridas.rearmado', { desde: hora(r.error.desde), codigo: r.error.codigo }))}</b>${runsEsc(tx(idioma, 'corridas.rearmadoSeMuestra', { generado: hora(V.generado) }))}</div>` : '';
-        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V)}\n${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
+        const cuerpo = `<link rel="stylesheet" href="/corridas/vista.css"><div class="corridas">${rearmado}${runs.cabecera(V, opts)}\n${runs.ejecutiva(V, { textos: textosFiltro(idioma) })}\n${runs.tabla(V)}\n${runs.pie(V, opts)}</div>`
           + `<div id="fuente-corridas" data-api="/api/corridas" data-generado="${runsEsc(V.generado)}" hidden></div><script src="/corridas/cliente.js"></script>`;
         r.salidas[llave] = cuerpo;
         return pagina(ctx, cuerpo);
