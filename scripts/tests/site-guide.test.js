@@ -38,10 +38,11 @@ const INSTALACION = { es: 'Qué hace falta antes', en: 'What you need first' };
 
 // La huella de la parte de instalación (desde «Qué hace falta antes» hasta el final). Si la instalación cambia a
 // propósito, se cambia acá con el motivo en el mismo commit. La de hoy suma el permiso para «Proponer», el candado de
-// Azure y las escrituras (Referrer-Policy), y el motivo nuevo de la prueba sin sesión.
+// Azure y las escrituras (Referrer-Policy), el motivo nuevo de la prueba sin sesión, y de dónde lee operaciones (la
+// copia en un contenedor, con su SAS fuera de Azure).
 const HUELLA_INSTALACION = {
-  es: '92e2285c4e2fcc46fafeaed4a4fd59a403064f057c367a4ff0dd6fde604b02d0',
-  en: '2589d7e84ea0587cac035a53a2d7be85fdf8d4b249f3d97b937ed2f906068d18',
+  es: 'b2c069ade07ee0f040c51c69bb38a71a872235d9cd675f913090297849834dc9',
+  en: '85dd5ecb80b8f0033fa33df9dcd3e1a10d9301b6f8b5cd03ca9d5498b45b4c8c',
 };
 
 test('T5 Guia_LasPartesDeUso @story-2.32 @ac-3 @ac-4 @ac-5 @ac-7 @ac-8', () => {
