@@ -15,6 +15,9 @@
  *     «ninguna»; nombres separados por coma; un nombre que no se ofrece vuelve a preguntar;
  *   · el paquete del stack: un sí o no (`packs.default` en `all` o `none`).
  *
+ * Con `--defaults` (lo que pasa `npx`) `harness.js` no pregunta ninguna: lo que nadie fijó queda en su valor por defecto,
+ * y el plan es el corto de `shortPlan`, contado desde la lista de efectos.
+ *
  * Las mismas preguntas en cualquier sistema: nada de esto mira la plataforma (T52). La lectura y la escritura se
  * inyectan (las da `prompt.js`), así se prueba sin una terminal de verdad. No lee ni escribe archivos.
  */
@@ -179,13 +182,8 @@ function machineFileOf(config) {
   return f.startsWith(home + path.sep) ? `~/${f.slice(home.length + 1).split(path.sep).join('/')}` : f;
 }
 
-/**
- * Las dos líneas de la configuración que acompañan al perfil en la cabecera del plan y en el cierre: las integraciones
- * prendidas con su origen (y las apagadas por nombre) y el paquete del stack por defecto con el suyo. `config` es lo
- * que devuelve `cargar()` de scripts/lib/tycon-config.js; `over` lo que se va a escribir, con de dónde vino
- * (`{ 'integraciones.engram': { value: true, via: 'respuesta' } }`).
- */
-function configLines(config, over = {}, order = []) {
+/** Lo que hay prendido y el paquete por defecto, cada uno con de dónde vino (lo que dicen configLines y shortPlan). */
+function configState(config, over = {}, order = []) {
   const v = (config && config.valores) || {};
   const o = (config && config.origenes) || {};
   const vars = (config && config.variables) || {};
@@ -196,19 +194,80 @@ function configLines(config, over = {}, order = []) {
     const ruta = k === 'ado' ? 'ado.org' : (k === 'telegram' ? 'telegram.chat_id' : `integraciones.${k}`);
     const val = over[ruta] ? over[ruta].value : (k === 'ado' ? (v.ado || {}).org : (k === 'telegram' ? (v.telegram || {}).chat_id : (v.integraciones || {})[k]));
     const via = over[ruta] ? over[ruta].via : originLabel(o[ruta], vars[ruta], machineFile);
-    if (val === 'detect') on.push(`${k} en detect (${via})`);
-    else if (val === true || (typeof val === 'string' && val.trim())) on.push(`${k} (${via})`);
+    if (val === 'detect') on.push({ key: k, text: `${k} en detect (${via})` });
+    else if (val === true || (typeof val === 'string' && val.trim())) on.push({ key: k, text: `${k} (${via})` });
     else off.push(k);
   }
   const packs = over['packs.default'] ? over['packs.default'] : { value: (v.packs || {}).default || 'none', via: originLabel(o['packs.default'], vars['packs.default'], machineFile) };
+  return { on, off, packs };
+}
+
+/**
+ * Las dos líneas de la configuración que acompañan al perfil en la cabecera del plan y en el cierre: las integraciones
+ * prendidas con su origen (y las apagadas por nombre) y el paquete del stack por defecto con el suyo. `config` es lo
+ * que devuelve `cargar()` de scripts/lib/tycon-config.js; `over` lo que se va a escribir, con de dónde vino
+ * (`{ 'integraciones.engram': { value: true, via: 'respuesta' } }`).
+ */
+function configLines(config, over = {}, order = []) {
+  const { on, off, packs } = configState(config, over, order);
   return [
-    `integraciones: ${on.length ? on.join(', ') : 'ninguna prendida'}${off.length ? ` · apagadas: ${off.join(', ')}` : ''}`,
+    `integraciones: ${on.length ? on.map((x) => x.text).join(', ') : 'ninguna prendida'}${off.length ? ` · apagadas: ${off.join(', ')}` : ''}`,
     `paquete del stack por defecto: ${packsText(packs.value)} (${packs.via})`,
+  ];
+}
+
+const SHORT_WHAT = Object.freeze({
+  minimal: 'las guías, las skills, los revisores y el recorrido de una historia (plan, pruebas, revisión y commit preparado)',
+  full: 'todo lo de la mínima y los frenos de los repos que trabajan con el arnés',
+});
+
+/** Una carpeta como se le dice a una persona: con `~` por su carpeta personal. */
+function homeRelative(dir, home) {
+  if (!home || !dir) return dir;
+  return dir === home ? '~' : (dir.startsWith(home + path.sep) ? `~/${dir.slice(home.length + 1).split(path.sep).join('/')}` : dir);
+}
+
+/**
+ * El plan corto de la instalación con valores por defecto: cinco renglones, en este orden —qué versión, dónde y para
+ * qué herramienta; qué instalación y qué trae; qué toca y qué no; las conexiones opcionales y los revisores para tu
+ * tecnología; cómo cambiarlo, sacarlo y ver el detalle—. Lo que toca se cuenta desde la lista de efectos: si la
+ * instalación trae bloques de reglas o hooks globales de git, el renglón lo dice en vez de negarlo. Los bloques de un
+ * paquete cuentan sólo con un paquete activo (sin paquete, no se escribe ninguno).
+ * `tools`: las herramientas a enchufar (`claude`, `codex`); `integrations`: los nombres prendidos; `packs`: el valor de
+ * `packs.default`.
+ */
+function shortPlan({ effects, profile, version, tree, home = null, tools = [], team = null, integrations = [], packs = 'none' }) {
+  const inP = (e) => e && Array.isArray(e.profiles) && e.profiles.includes(profile);
+  const list = (Array.isArray(effects) ? effects : []).filter(inP);
+  const always = (e) => e.when === 'always';
+  const noPacks = packsText(packs) === 'none';
+  const blocks = list.filter((e) => e.kind === 'block' && always(e) && !(noPacks && /packs/.test(String(e.id_pattern || e.id || '')))).length;
+  const gitHooks = list.some((e) => e.kind === 'git-hook' && always(e));
+  const settings = list.filter((e) => e.kind === 'setting').length;
+  const reads = list.some((e) => e.kind === 'import');
+  const adds = [
+    blocks ? `${plural(blocks, 'bloque de reglas', 'bloques de reglas')} que cambian cómo te contesta tu agente en todos tus proyectos` : null,
+    gitHooks ? 'hooks globales de git' : null,
+    settings ? plural(settings, 'ajuste de Claude Code', 'ajustes de Claude Code') : null,
+  ].filter(Boolean);
+  const keeps = [gitHooks ? null : 'git', blocks ? null : 'las reglas de cómo te contesta'].filter(Boolean);
+  const touch = [reads ? 'tu agente lee el índice de guías del arnés en cada sesión' : null,
+    adds.length ? `suma ${adds.length > 1 ? `${adds.slice(0, -1).join(', ')} y ${adds[adds.length - 1]}` : adds[0]}` : null,
+    keeps.length ? `no toca ${keeps.join(' ni ')}` : null].filter(Boolean).join('; ');
+  const label = { claude: 'Claude Code', codex: 'Codex' };
+  const where = homeRelative(tree, home);
+  const packsSay = noPacks ? 'ninguno' : (packsText(packs) === 'all' ? 'todos los instalados (all)' : packsText(packs));
+  return [
+    `Instalo el arnés ${version} en ${where}, para ${tools.map((t) => label[t] || t).join(' y ') || 'ninguna herramienta'}${team ? `, con el repo del equipo ${team}` : ''}.`,
+    `Instalación ${profile === 'full' ? 'completa' : 'mínima'}: ${SHORT_WHAT[profile] || SHORT_WHAT.minimal}.`,
+    `${touch.charAt(0).toUpperCase()}${touch.slice(1)}.`,
+    `Conexiones opcionales: ${integrations.length ? integrations.join(', ') : 'ninguna'} · revisores para tu tecnología: ${packsSay}.`,
+    `Para cambiarlo, harness.js config; para sacarlo, harness.js uninstall (los dos en ${where}/scripts/setup); el detalle completo, con --dry-run.`,
   ];
 }
 
 module.exports = {
   PROFILES, ASK_PROFILE, ASK_INTEGRATIONS, PACKS_QUESTION, MAX_TRIES, CHANGE_HINT,
   profileCounts, profileLines, parseProfile, askProfile, offeredIntegrations, parseIntegrations, askIntegrations,
-  checkIntegrationsOption, checkPacksOption, packsText, samePacks, originLabel, configLines,
+  checkIntegrationsOption, checkPacksOption, packsText, samePacks, originLabel, configLines, configState, shortPlan,
 };

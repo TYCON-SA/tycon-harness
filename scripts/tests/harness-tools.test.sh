@@ -19,7 +19,7 @@
 # herramientas de mentira de `harness_lab_tools`). Nunca ~/.claude, ~/.codex ni ~/.tycon de verdad.
 # 🔴 Sin pipes sobre el comando medido.
 #
-# Uso: bash scripts/tests/harness-tools.test.sh [--only T21|T22|T23|T26|T26b]
+# Uso: bash scripts/tests/harness-tools.test.sh [--only T21|T22|T23|T26|T26b|T13]
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/tests/lib/harness-lab.sh"
@@ -42,6 +42,22 @@ STATE_FILE() {
 state() { j "$(STATE_FILE)" "$1"; }
 requests() { local n; n="$(grep -c -- "$1" "$LAB_RELEASE_LOG" 2>/dev/null)"; printf '%s' "${n:-0}"; }
 tools_line() { printf '%s\n' "$1" | grep -- 'herramientas a enchufar' || true; }
+
+# ─────────────────────────── T13 · sin agente de código ───────────────────────────
+if runs T13; then
+  echo "8.46 T13 · sin Claude Code ni Codex: la orden de las dos para cada sistema y cómo iniciar sesión, sin correr nada"
+  for P in darwin linux win32; do
+    OUT="$(node -e 'process.stdout.write(require(process.argv[1]).noneFound(process.argv[2]))' "$ROOT/scripts/setup/harness/tools.js" "$P" 2>&1)"
+    case "$OUT" in *"no encontré Claude Code ni Codex"*) ok "$P: empieza diciendo qué falta" ;; *) bad "$P: no dice qué falta: $OUT" ;; esac
+    if [ "$P" = win32 ]; then
+      case "$OUT" in *"irm https://claude.ai/install.ps1 | iex"*"chatgpt.com/codex/install.ps1"*) ok "$P: las órdenes de PowerShell de las dos" ;; *) bad "$P: sin las órdenes de Windows: $OUT" ;; esac
+    else
+      case "$OUT" in *"curl -fsSL https://claude.ai/install.sh | bash"*"curl -fsSL https://chatgpt.com/codex/install.sh | sh"*) ok "$P: las órdenes de la terminal de las dos" ;; *) bad "$P: sin las órdenes de Mac/Linux: $OUT" ;; esac
+    fi
+    case "$OUT" in *"corré claude"*"corré codex"*) ok "$P: cómo iniciar sesión en cada una" ;; *) bad "$P: no dice cómo iniciar sesión: $OUT" ;; esac
+    case "$OUT" in *"No escribí nada"*) ok "$P: no escribió nada" ;; *) bad "$P: no dice que no escribió nada: $OUT" ;; esac
+  done
+fi
 
 # ───────────────────────────────────────────── T21 ─────────────────────────────────────────────
 if runs T21; then

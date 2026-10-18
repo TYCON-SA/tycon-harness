@@ -36,9 +36,10 @@ Abrí la terminal (en Windows, PowerShell 7) y escribí:
 npx @tyconsa/harness@latest
 ```
 
-Contestá sus preguntas así: `1` (para vos), `minimal` (la instalación mínima), Enter (ninguna conexión opcional) y `n`
-(sin revisores para una tecnología). Antes de escribir nada te muestra el plan y pregunta «¿Instalo? [s/N]»: con un
-«no», no queda nada. La instalación mínima suma a tu agente el índice de guías del arnés en cada sesión; no toca git
+No te pregunta nada antes del plan: instala para vos, con la instalación mínima, sin conexiones opcionales y sin
+revisores para una tecnología. Te muestra en cinco renglones qué va a cambiar y pregunta una sola vez
+«¿Instalo? [s/N]»: con un «no», no queda nada. Si no tenés Claude Code ni Codex, te dice cómo instalarlos y no baja
+nada. La instalación mínima suma a tu agente el índice de guías del arnés en cada sesión; no toca git
 ni las reglas de cómo te contesta. Para sacarla,
 `harness.js uninstall --dry-run` muestra qué quitaría y `harness.js uninstall --yes` la quita.
 
@@ -106,8 +107,7 @@ todos:
 
 Un ejemplo: en ACME, Pedro es el admin y Juan programa.
 
-1. Pedro da de alta ACME con `npx @tyconsa/harness@latest --audience org` (o contesta `3` a «¿para quién es esta
-   instalación?»). La línea instala su máquina y sigue con `harness.js team-init`: pregunta el nombre, la plataforma y
+1. Pedro da de alta ACME con `npx @tyconsa/harness@latest --audience org`. La línea instala su máquina y sigue con `harness.js team-init`: pregunta el nombre, la plataforma y
    la dirección del repo del equipo, arma sus tres archivos (`team-layer.json`, `team-profile.json` y `team-repos.json`)
    a partir de [un ejemplo](https://github.com/TYCON-SA/harness-team-profile-example) y los valida antes de escribir. No
    crea repos ni pide credenciales: le dice dónde crear el repo vacío, con acceso sólo para el equipo, y si dice que sí

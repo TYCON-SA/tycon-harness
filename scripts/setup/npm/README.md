@@ -8,8 +8,13 @@ npx @tyconsa/harness@latest
 
 - **Qué hace**: revisa los requisitos, baja de GitHub la versión publicada del arnés a una carpeta temporal y corre su
   `harness.js install`. El arnés **no viene en el paquete**: llega de GitHub y se verifica contra el árbol del commit.
-- **Pregunta antes de escribir**: muestra el plan de lo que va a cambiar en tu máquina y espera tu `¿Instalo? [s/N]`.
-  Con un «no», no queda nada.
+- **Un solo sí**: no pregunta nada antes del plan. Instala para vos, con la instalación mínima, sin conexiones
+  opcionales y sin paquete; muestra en cinco renglones lo que va a cambiar en tu máquina y espera tu
+  `¿Instalo? [s/N]`. Con un «no», no queda nada. `--profile full`, `--integrations` y `--packs` lo cambian; `--team
+  <repo>` te suma a un equipo y `--audience org` da de alta tu organización. El detalle completo, con `--dry-run`.
+- **Sin Claude Code ni Codex**: te dice la orden para instalar cada uno en tu sistema y cómo iniciar sesión, y no baja
+  nada. No instala ninguno por vos.
+- **Sin terminal** (un guion, la CI): no pregunta; te da la línea para confirmar, `npx @tyconsa/harness@latest --yes`.
 - **La procedencia**: este paquete lo publica la CI pública del repo, con constancia de procedencia. Se ve en la pestaña
   «Provenance» de su página en npmjs.com, o con `npm view @tyconsa/harness dist.attestations`, **desde la 1.0.2** (la
   1.0.1 se publicó a mano y no la tiene). Ojo: **npx no comprueba la firma al instalar**; se mira en la página o con
