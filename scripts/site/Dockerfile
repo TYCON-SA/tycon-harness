@@ -41,6 +41,7 @@ COPY guide[s]/sitio-de-la-organizacion/capturas/*.png guides/sitio-de-la-organiz
 COPY scripts/lib/ scripts/lib/
 COPY scripts/metrics/ scripts/metrics/
 COPY scripts/nightly/dashboard/ scripts/nightly/dashboard/
+COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
 COPY scripts/setup/harness/ scripts/setup/harness/
 # qué trae cada perfil de instalación: lo muestra la pestaña Configuración
 COPY scripts/setup/install-effects.json scripts/setup/

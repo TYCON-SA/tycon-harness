@@ -265,7 +265,7 @@ const DIR_SEGURO = /^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9.
 const PATRON_SEGURO = /^(?!(?:[^*]*\*){3})[A-Za-z0-9._*-]{1,80}$/;
 
 // ── El modelo (lista blanca), desde un clon del repo de operaciones ───────────────────────────────────────────────
-function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, log: logCrudo = () => {} } = {}) {
+function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin_buzon'), carpetas = null, fichas, log: logCrudo = () => {} } = {}) {
   const log = (l) => logCrudo(limpiarLinea(l));   // los nombres de archivo del repo pueden traer saltos de línea
   const t = ahora;
   const hoy = diaUtc(t);
@@ -465,6 +465,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   m.umbrales = umbralesProyectados(sourcesCfg.thresholds);
   m.corridas = corridas;
   m.carpetas = carpetasProyectadas(carpetas);
+  // las fichas del tablero nocturno, ya calculadas aparte (refrescarUnaVez → calcularFichas). `null` = todavía no
+  // se calcularon; sin la clave (las pruebas que no las piden) el modelo no las trae.
+  if (fichas !== undefined) m.fichas = fichas;
   return m;
 }
 
@@ -486,7 +489,7 @@ function estadoDeGit(stderr) {
 /** Saca los caracteres de control de una línea que va al registro (saltos, escape de la consola). */
 function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}, ahora = Date.now, spawn = correr, urlBuzon, git = 'git', nubes: nubesDadas, presupuestoBuzonMs = 120000,
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
-  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), almacenCopia = null, urlCopia = null }) {
+  leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
   //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
   const log = (l) => logCrudo(limpiarLinea(l));
@@ -759,7 +762,21 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return r.doc && isObject(r.doc) ? r.doc : null;
   }
 
-  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, log });
+  const construir = ({ corridas, carpetas, t }) => construirDesdeClon(clon, { ahora: t, corridas, carpetas, fichas: st.fichas || null, log });
+
+  /**
+   * Las fichas del tablero nocturno: el mismo cálculo que arma la página, en un hilo aparte porque recorre el espejo
+   * del buzón. Las que `site.hidden_cards` oculta no entran. Si el hilo se cae, queda la última lista buena (o todas no medidas).
+   */
+  async function calcularFichas(corridas, t) {
+    const ocultas = st.ultimoBueno && st.ultimoBueno.site && Array.isArray(st.ultimoBueno.site.hidden_cards) ? st.ultimoBueno.site.hidden_cards : [];
+    try {
+      return await calcularFichasEn({ clon, dirBuzon, buzonLeido: Boolean(corridas && corridas.estado === 'medido'), ocultas, ahora: t, log: (l) => log(`fichas: ${l}`) });
+    } catch (e) {
+      log(`las fichas del tablero no se pudieron calcular (${(e && e.code) || (e && e.name) || 'error'}): ${st.fichas ? 'queda la última lista buena' : 'salen no medidas'}`);
+      return st.fichas || require('./tabs/cards.js').fichasNoMedidas(ocultas);
+    }
+  }
 
   /** Lo que se puede armar sin el repo (la primera lectura sin clon): todo «no medido» con el estado. */
   function modeloVacio(codigo, t, corridas) {
@@ -793,6 +810,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
     st.navegable = true;
     const corridas = await leerBuzon(st.ultimoBueno, st.modelo && st.modelo.corridas && st.modelo.corridas.codigo !== 'cargando' ? st.modelo.corridas : null, t);
+    st.fichas = await calcularFichas(corridas, t);
     st.modelo = construir({ corridas, carpetas: await leerCarpetas(), t });
     st.cargado = true;
     for (const fn of oyentes) { try { fn(); } catch (e) { log(`un aviso de refresco falló: ${e && e.message ? e.message : e}`); } }

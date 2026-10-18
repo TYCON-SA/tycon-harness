@@ -88,7 +88,7 @@ const GITHUB_REPO = /^(?!\.+\/)[A-Za-z0-9_.-]+\/(?!\.+$)[A-Za-z0-9_.-]+$/;
 const OWNER_KEYS = ['default', 'by_project'];
 const REVIEWER_KEYS = ['dependencies', 'watcher'];
 // el sitio de la organización. Todas opcionales; la pestaña Configuración del sitio la edita.
-const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update'];
+const SITE_KEYS = ['access', 'maintainers', 'mailbox', 'refresh_minutes', 'url', 'brand', 'auto_apply', 'update', 'hidden_cards'];
 // la lista de quién entra al sitio (el rol de cada uno sale sólo de ahí, con cualquier proveedor)
 const ACCESS_KEYS = ['role', 'emails'];
 const ACCESS_ROLES = ['maintainer', 'dev'];
@@ -206,6 +206,8 @@ function siteProblems(site) {
     problems.push({ path: 'site.url', message: 'tiene que ser una dirección https://, sin usuario ni clave' });
   }
   if (site.auto_apply !== undefined && typeof site.auto_apply !== 'boolean') problems.push({ path: 'site.auto_apply', message: 'tiene que ser true o false' });
+  // las fichas del tablero que el sitio no muestra: una lista de identificadores de scripts/site/tabs/cards.js
+  if (site.hidden_cards !== undefined) problems.push(...hiddenCardsProblems(site.hidden_cards));
   if (site.update !== undefined && site.update !== 'auto' && site.update !== 'notice') problems.push({ path: 'site.update', message: 'tiene que ser "auto" o "notice"' });
   const b = site.brand;
   if (b !== undefined) {
@@ -217,6 +219,32 @@ function siteProblems(site) {
       if (b.dark !== undefined && !BRAND_THEME_OPTIONS.includes(b.dark)) problems.push({ path: 'site.brand.dark', message: 'tiene que ser «invert» (invertir el logo en el tema oscuro) o «keep» (dejarlo como está)' });
     }
   }
+  return problems;
+}
+
+/**
+ * Los identificadores de ficha que el sitio sabe mostrar. Es una copia de los de scripts/site/tabs/cards.js porque el
+ * lector viaja solo (no carga nada fuera de fs); una prueba compara las dos listas (Casos: scripts/tests/site-config.test.js).
+ */
+const CARD_IDS = Object.freeze([
+  'contrato_v2', 'fechas_declaradas', 'backlog', 'estados_sin_diccionario', 'tiempo_por_etapa', 'edad_estado', 'dod', 'rework',
+  'rework_por_causa', 'rework_por_carril', 'mutacion', 'cobertura_tocada_evaluo', 'qa_guia', 'gates_dur', 'bloqueos', 'frenos',
+  'evidencia_cierre', 'escapes_regla_dominante', 'reglas_candidatas', 'reglas_probadas', 'corridas', 'pasos', 'carriles',
+  'bus_factor', 'sin_pipeline_de_prod',
+]);
+
+function hiddenCardsProblems(v) {
+  if (!Array.isArray(v)) return [{ path: 'site.hidden_cards', message: 'tiene que ser una lista de identificadores de ficha' }];
+  const ids = CARD_IDS;
+  const problems = [];
+  const vistas = new Set();
+  v.forEach((id, i) => {
+    const at = `site.hidden_cards.${i}`;
+    if (typeof id !== 'string' || !id) problems.push({ path: at, message: 'tiene que ser el identificador de una ficha (un texto)' });
+    else if (!ids.includes(id)) problems.push({ path: at, message: `«${id.slice(0, 60)}» no es una ficha del sitio` });
+    else if (vistas.has(id)) problems.push({ path: at, message: `«${id}» está repetida` });
+    else vistas.add(id);
+  });
   return problems;
 }
 
@@ -421,7 +449,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
