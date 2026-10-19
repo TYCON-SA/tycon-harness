@@ -1561,6 +1561,10 @@
     {
       "words": ["cov", "junit", "junitfile", "junitxml"],
       "reason": "nombres de herramientas de prueba ajenas: el formato de reporte JUnit, las opciones `--junitxml` y `--cov` de pytest (pytest-cov) y `--junitfile` de gotestsum. Aprobadas por el dueño el 2026-10-19 (story 8.48, tanda B1)."
+    },
+    {
+      "words": ["basetemp", "confcutdir", "deselect", "maxfail", "numprocesses", "rootdir"],
+      "reason": "opción de pytest: `--basetemp`, `--confcutdir`, `--deselect`, `--maxfail`, `--rootdir` y `--numprocesses` (pytest-xdist), que el freno de suites sin alcance reconoce para saltear su valor. Aprobadas por el dueño el 2026-10-19 (story 8.48, tanda B2)."
     }
   ],
   "schemaFiles": [
