@@ -1821,6 +1821,11 @@ async function main() {
   if (PACK) {
     const mal = suites.map((s, i) => suiteDePaqueteProblema(s, path.join(casesDir, archivosDeCasos[i]))).find(Boolean);
     if (mal) { console.error(mal); return 2; }
+    // el veredicto de cada caso se guarda por `advisor::id`: con dos casos de la misma clave (en un archivo o en dos), el
+    // segundo pisaría al primero y un rojo quedaría tapado por un verde
+    const claves = suites.flatMap((s) => s.cases.map((c) => `${s.advisor}::${c.id}`));
+    const repetidas = [...new Set(claves.filter((k, i) => claves.indexOf(k) !== i))];
+    if (repetidas.length) { console.error(`--pack: casos con el mismo revisor y el mismo id: ${repetidas.join(', ')}; cada caso necesita su propio id (el veredicto de uno pisaría al del otro)`); return 2; }
     const sinAgente = [...new Set(suites.map((s) => s.advisor))].filter((a) => !fs.existsSync(advisorFile(a)));
     if (sinAgente.length) { console.error(`--pack: casos de un revisor sin su .md en ${PACK.agentsDir}: ${sinAgente.join(', ')}`); return 2; }
     const informe = JSON_OUT || path.join(OUT_DIR, nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK.reportPrefix }).nombre);
