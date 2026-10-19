@@ -363,6 +363,24 @@ Debe ser especifica, no generica. Malos ejemplos: "Como usuario quiero hacer cos
 - **AC cross-story cuando hay integracion**: si la story depende de otra (`depends_on`) y comparten un contrato de datos (campos, body shape, eventos), incluir AC explicito de "Story A escribe X, Story B lo lee como Y". Sin esto se generan bugs de integracion silenciosos (un lado escribe el campo, el otro lado nunca lo lee).
 - **AC con response discriminated union obligatorio enumerar comportamiento por status** (rule 2026-05-13): cuando un endpoint declarado devuelve un envelope con campo `status: 'A' | 'B' | 'C' | ...` (discriminated union), el AC que lista el endpoint DEBE enumerar el comportamiento esperado del frontend/consumer **para cada valor del discriminator**, incluso si N-1 de esos comportamientos estan definidos en otros ACs. La enumeracion debe estar O bien (a) en el mismo AC con bullets `status === 'X' → comportamiento Y`, O bien (b) via referencia cruzada explicita `ver AC #X para status='Y'`. NUNCA dejar implicito "los demas statuses estan cubiertos por AC #N" sin nombrar el status. Sin esta enumeracion, el advisor `tycon-spec-first-checker` no puede aplicar SPEC-W3 (que detecta consumers que ignoran el discriminator), y advisors AC-coverage no detectan dead-code UX (un componente que implementa el happy path 'ok' pero ignora `fallback-pdf-memory` pierde el PDF in-memory en un escenario real con la impresora inaccesible).
 
+**Qué títulos y qué formas lee el arnés.** El formato de arriba es el recomendado; el arnés lee además lo que
+escriben otros equipos, en un solo lugar (`skills/tycon-pipeline/scripts/lib/story-checks.js`):
+
+- **Títulos**: `Acceptance Criteria` o `Criterios de aceptación`, y `Tests` para la tabla, con cualquier mayúscula o
+  minúscula y con `##` o `###` (la tabla, de `##` a `######`). `Tests corridos` es un título de la evidencia, no la tabla.
+- **Formas de criterio**, cada una con su nombre:
+  - `titulo-ac`: `### AC-1 — título`
+  - `numerada`: `1. **Given** … **When** … **Then** …` (la recomendada)
+  - `vineta-ac`: `- **AC1**: texto`
+  - `ac-negrita`: `**AC-1: título**`, sin viñeta
+  - `ac-vineta-titulada`: `- **AC1 — título**: texto`
+  - `gherkin`: `GIVEN` / `WHEN` / `THEN`, suelto o dentro de un bloque `gherkin`; cada `GIVEN` abre un criterio
+  - `dado`: `**Dado** … **Cuando** … **Entonces** …`; cada `Dado` abre un criterio
+- Las tres primeras mandan: las otras sólo cuentan si la story no usa ninguna de ellas. `gherkin` y `dado` se numeran
+  1, 2, 3… en el orden en que aparecen.
+- Lo que no entra en ninguna deja la story **sin criterios**: entra siempre el revisor de cobertura de criterios, y el
+  commit que la pasa a `review` o `done` frena con el motivo.
+
 ### 6. Tests (tabla)
 
 ```markdown

@@ -632,6 +632,9 @@ const REGLA_DE_MOTIVO = {
   'no-evidence': 'evidencia-ausente', 'evidence-failed': 'evidencia-fallida', 'incomplete-evidence': 'evidencia-incompleta',
   'no-playwright-evidence': 'sin-playwright', 'matrix-red': 'matriz-roja', 'matrix-structural': 'matriz-estructural',
   'not-converged': 'convergencia',
+  // una story que cierra sin criterios: la misma regla que la matriz sin criterios legibles, así el
+  // vocabulario cerrado de guard-record.js —que comparte el freno de producción— no cambia
+  'no-criteria': 'matriz-estructural',
 };
 function anotarDecisionesDelCierre({ violations, soloAviso, pasos, estadoDe, avisosSelfAudit = [] }) {
   let anotarCierre;
@@ -786,40 +789,25 @@ function extractGapsFromSelfAudit(content) {
 // fix 2026-07-10): la copia local solo matcheaba `N. **Given**` y en la Story 10.4 contó
 // 8 de 22 ACs (los de error/regresión son `N. **Etiqueta:** texto`) → el check por-AC
 // de la evidencia validaba contra un universo SUBCONTADO en silencio. La lib une los
-// patrones (Given + bold-label + bullets). Fallback a la copia vieja si la lib no carga
-// (consistente con la filosofía fail-open del hook — pero LOGUEADO).
-function parseAcsFromSpec(specContent) {
+// patrones (Given + bold-label + bullets).
+// Si la lib no carga devuelve `null` («no pude leer»), nunca una cuenta propia: una copia local de la expresión queda
+// atrás cuando el lector cambia, y una cuenta de menos es un verde falso. Quien llama trata `null` como «sin criterios» y frena el cierre; el error queda en el registro.
+// `opts.cargar` y `opts.logPath` existen para la prueba de ese camino.
+function parseAcsFromSpec(specContent, opts = {}) {
   if (!specContent) return [];
+  const cargar = opts.cargar || (() => require(path.join(__dirname, 'lib', 'story-checks.js')));
   try {
-    const sc = require(path.join(__dirname, 'lib', 'story-checks.js'));
-    return sc.parseAcsFromSpec(specContent).map((n) => `#${n}`);
+    return cargar().parseAcsFromSpec(specContent).map((n) => `#${n}`);
   } catch (e) {
     try {
       fs.appendFileSync(
-        path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
-        `[${new Date().toISOString()}] on-pre-commit.js: lib/story-checks.js no cargó (${e.message}) — parser de ACs degradado al canónico local (subcuenta stories con ACs bold-label).\n`,
+        opts.logPath || path.join(stateDirOf(os.homedir()), 'hook-errors.log'),
+        `[${new Date().toISOString()}] on-pre-commit.js: lib/story-checks.js no cargó (${e.message}) — sin lector de criterios: la story cuenta como sin criterios.\n`,
         'utf8',
       );
     } catch { /* best effort */ }
+    return null;
   }
-  // Fallback degradado (solo si la lib no cargó). Dos correcciones al copiar del original
-  // (2026-07-25): (1) `\Z` NO es un anchor en JS — es la letra `Z` literal, así que con el
-  // cuantificador lazy la sección se cortaba en la primera `Z` mayúscula del texto cuando no
-  // venía un `\n## ` después; (2) el heading se ancla a principio de línea y se saltea el
-  // frontmatter, que es donde el literal aparece citado en backticks y secuestraba la sección.
-  const body = specContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
-  const acSectionMatch = body.match(
-    /^##[ \t]+Acceptance Criteria[^\n]*\n([\s\S]*?)(?=\n##[ \t]|\n#{3,6}[ \t]+Tests\b|(?![\s\S]))/m);
-  if (!acSectionMatch) return [];
-  const section = acSectionMatch[1];
-  const acs = new Set();
-  // Sigue siendo más pobre que la lib (solo el canónico GWT) — por eso el error se loguea.
-  const pat = /^\s*(\d+)\.\s+\*\*Given\*\*/gm;
-  let m;
-  while ((m = pat.exec(section)) !== null) {
-    acs.add(`#${m[1]}`);
-  }
-  return [...acs].sort((a, b) => parseInt(a.slice(1)) - parseInt(b.slice(1)));
 }
 
 // Parsea ACs que la evidencia DoD declara haber verificado.
@@ -1138,7 +1126,8 @@ function main() {
           const storyAbs = path.join(repoRoot, rel);
           if (!fs.existsSync(storyAbs)) continue;
           const content = fs.readFileSync(storyAbs, 'utf8');
-          if (!/^##\s+Acceptance Criteria/m.test(content)) continue;
+          // el título de criterios lo encuentra story-checks.js, con cualquier forma
+          if (!require('./lib/story-checks.js').storySection(content, 'criteria')) continue;
 
           // Mismo disparador que el gate de evidencia: la guía se exige cuando la story se
           // declara lista, no en el commit donde recién se la escribe.
@@ -1207,7 +1196,7 @@ function main() {
           const storyAbs = path.join(repoRoot, rel);
           if (!fs.existsSync(storyAbs)) continue;
           const content = fs.readFileSync(storyAbs, 'utf8');
-          if (!/^##\s+Acceptance Criteria/m.test(content)) continue;
+          if (!require('./lib/story-checks.js').storySection(content, 'criteria')) continue;
 
           const evGate = require('./lib/story-evidence-gate.js');
           // Sólo cuando alguien AFIRMA que la story está lista (review/done). En cada commit
@@ -1409,6 +1398,19 @@ function main() {
     // (`pipelines.X → done`), ésa nunca se juzgó y bloquea como siempre.
     if (internaDone && !critica && !pipelineTransition && !llaveFrena(process.env.TYCON_REVIEW_A_DONE)) soloAviso.add(specRel);
 
+    // Falla cerrada: una story que se cierra sin criterios detectados no tiene contra qué medir la evidencia —con 0
+    // criterios no le falta ninguno— y los portones de abajo la darían por buena. Frena acá, una sola
+    // vez, antes que ellos. Sólo mira la story del commit que se cierra: una vieja que nadie tocó no frena a nadie.
+    if (statusTransition || pipelineTransition) {
+      const acsCierre = parseAcsFromSpec(staged);
+      if (!acsCierre || !acsCierre.length) {
+        let motivo = 'no pude cargar el lector de criterios (lib/story-checks.js)';
+        if (acsCierre) { try { motivo = require('./lib/story-checks.js').criteriaOf(staged).reason; } catch { /* queda el de arriba */ } }
+        violations.push({ specRel, storyId, statusTransition, pipelineTransition, reason: 'no-criteria', motivo });
+        continue;
+      }
+    }
+
     // ADVISORS-GATE (2026-08-24): a `done` no se llega sin constancia de advisors EN ESTE repo.
     // Va ANTES de la exención de DoD: una story sin superficie runtime (docs/config) igual pasa
     // por advisors (spec-first, validator, security…) cuando corre el pipeline. Escapes del dev:
@@ -1497,7 +1499,7 @@ function main() {
     // exigía que UN archivo nombrara todos; las stories que reparten la evidencia rebotaban y la salida era que el
     // agente redactara un `-cierre.md` con la lista — más falsificable que las tres fuentes que reemplazaba.
     // Si la matriz no corre, se mira sólo el archivo (lo de antes) y el mensaje lo dice.
-    const acsInSpec = parseAcsFromSpec(staged);
+    const acsInSpec = parseAcsFromSpec(staged) || [];
     const acsInEvidence = new Set(evidence.esRegistro ? [] : parseAcsFromEvidence(evidence.content));
     const calc = matrizDe(specRel, staged);
     const union = calc.matrix ? coberturaDeLaUnion(calc.matrix) : { porAc: new Map(), cubiertos: new Set() };
@@ -1721,6 +1723,10 @@ function main() {
       lines.push('                  "sin_testigo": "<motivo>" }');
       lines.push('           Viaja en el commit y se ve en el PR — a diferencia de un interruptor, deja rastro y se puede contar.');
       lines.push('       (c) Kill-switch de emergencia: TYCON_ROSTER_GATE=off (queda sin rastro en el diff: usalo sólo si (b) no aplica).');
+    } else if (v.reason === 'no-criteria') {
+      lines.push(`     No encontré los criterios de ${v.specRel}: ${v.motivo}.`);
+      lines.push('     Sin criterios no hay contra qué medir la evidencia del cierre. Arreglo: un título `## Acceptance Criteria`');
+      lines.push('     (o `## Criterios de aceptación`) y cada criterio en una de las formas de story-format.md §6.');
     } else if (v.reason === 'no-evidence') {
       if (v.evidenceKeyError) lines.push(`     No se pudo calcular la clave de la evidencia: ${v.evidenceKeyError}`);
       else lines.push(`     Buscado: .advisors/dod-runtime/${v.evidenceKey || v.storyId}-*.md (no encontrado)`);
@@ -1814,7 +1820,7 @@ function main() {
 module.exports = {
   prepararIndiceConLosAdd,
   isGitCommit, parseAcsFromSpec, parseAcsFromEvidence, findDodEvidence, evidenciaDeclaraFail, findAdvisorsEvidence,
-  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit,
+  looksLikeStorySpec, selectStorySpecs, revisarRosterLocal, checkSelfAudit, REGLA_DE_MOTIVO,
 };
 
 if (require.main === module) {

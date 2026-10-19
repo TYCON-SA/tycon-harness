@@ -188,11 +188,12 @@ function parsePasosSequence(md) {
   return seq;
 }
 
-// Tabla ### Tests → filas con TODAS las columnas por header (Escenario/Esperado incluidos).
+// Tabla de pruebas → filas con TODAS las columnas por header (Escenario/Esperado incluidos). El título lo encuentra
+// story-checks.js, con cualquier mayúscula y nivel.
 function parseTestsFull(content) {
-  const m = content.match(/### Tests[^\n]*\n([\s\S]*?)(?=\n#{1,3} |$)/);
-  if (!m) return [];
-  const lines = m[1].split('\n').filter((l) => /^\s*\|/.test(l));
+  const sec = require(path.join(__dirname, 'lib', 'story-checks.js')).storySection(content, 'tests');
+  if (!sec) return [];
+  const lines = sec.text.split('\n').filter((l) => /^\s*\|/.test(l));
   if (lines.length < 2) return [];
   const split = (l) => l.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((c) => c.trim());
   const header = split(lines[0]).map((h) => h.toLowerCase().replace(/\*/g, ''));
