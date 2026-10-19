@@ -11,6 +11,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');
 
+// Una máquina sin la configuración de la organización (la CI) no sabe qué paquetes de revisores activar y el cálculo
+// de revisores frena: esta suite cuenta con «todos los instalados», como unit.test.js.
+process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all';
+
 const SCRIPTS = path.resolve(__dirname, '..');
 const LIB = path.join(SCRIPTS, 'lib');
 const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');

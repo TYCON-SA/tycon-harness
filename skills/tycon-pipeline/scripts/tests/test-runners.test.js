@@ -44,7 +44,9 @@ test('@story-8.48 @ac-7 @ac-35 TestRunners_Factory_Detected', () => {
     const r = runners.resolve(d, { results: '/tmp/res' });
     assert.ok(r, `${Object.keys(archivos)[0]} detecta un corredor`);
     assert.equal(r.name, nombre, Object.keys(archivos)[0]);
-    assert.equal(r.tool, herramienta, `${nombre}: herramienta`);
+    // pytest usa `python`, o `python3` si es el único que hay en esta máquina
+    if (herramienta === 'python') assert.match(r.tool, /^python3?$/, `${nombre}: herramienta`);
+    else assert.equal(r.tool, herramienta, `${nombre}: herramienta`);
     assert.ok(!/\{results\}/.test(r.command), `${nombre}: {results} reemplazado`);
     assert.ok(r.results && r.results.format === 'junit', `${nombre}: reporte junit`);
   }
@@ -52,15 +54,26 @@ test('@story-8.48 @ac-7 @ac-35 TestRunners_Factory_Detected', () => {
   const tabla = {
     go: ['gotestsum --junitfile /tmp/res/junit.xml -- -coverprofile=/tmp/res/cover.out ./...', '/tmp/res/junit.xml', 'go-cover'],
     maven: ['mvn -B -q test', 'target/surefire-reports/*.xml', 'jacoco'],
-    gradle: ['gradle test', 'build/test-results/test/*.xml', 'jacoco'],
+    gradle: ['gradle cleanTest test', 'build/test-results/test/*.xml', 'jacoco'],
     karma: ['npx karma start --single-run', '**/TESTS-*.xml', 'lcov'],
     pytest: ['python -m pytest --junitxml=/tmp/res/junit.xml --cov --cov-report=xml:/tmp/res/coverage.xml', '/tmp/res/junit.xml', 'cobertura'],
   };
   const det = { go: { 'go.mod': '' }, maven: { 'pom.xml': '' }, gradle: { 'build.gradle': '' }, karma: { 'karma.conf.js': '' }, pytest: { 'pytest.ini': '' } };
   for (const [nombre, [cmd, rep, cov]] of Object.entries(tabla)) {
     const r = runners.resolve(proyecto(det[nombre]), { results: '/tmp/res' });
-    assert.deepEqual([r.command, r.results.path, r.coverage.format], [cmd, rep, cov], nombre);
+    const esperado = nombre === 'pytest' ? cmd.replace(/^python /, `${r.tool} `) : cmd;
+    assert.deepEqual([r.command, r.results.path, r.coverage.format], [esperado, rep, cov], nombre);
   }
+  // sin `python` y con `python3`, pytest usa python3 (en una Mac viene sólo python3)
+  const soloPy3 = fs.mkdtempSync(path.join(os.tmpdir(), 'runners-py3-'));
+  fs.writeFileSync(path.join(soloPy3, 'python3'), '#!/bin/sh\n'); fs.chmodSync(path.join(soloPy3, 'python3'), 0o755);
+  const antes = process.env.PATH;
+  try {
+    process.env.PATH = soloPy3;
+    const py3 = runners.resolve(proyecto({ 'pytest.ini': '' }), { results: '/tmp/res' });
+    assert.equal(py3.tool, 'python3');
+    assert.equal(py3.commandWithoutCoverage, 'python3 -m pytest --junitxml=/tmp/res/junit.xml');
+  } finally { process.env.PATH = antes; }
   // un pyproject.toml que no menciona pytest no es un proyecto de pytest
   assert.equal(runners.resolve(proyecto({ 'pyproject.toml': '[project]\nname = "x"\n' }), { results: '/tmp/r' }), null);
   // nada conocido: null (la puerta sigue con las detecciones de siempre)
