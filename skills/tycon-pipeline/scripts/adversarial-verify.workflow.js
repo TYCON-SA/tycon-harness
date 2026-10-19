@@ -65,6 +65,18 @@ const AGRUPAR = (A && A.agrupar === false)
   ? false
   : !(typeof process !== 'undefined' && process && process.env && process.env.TYCON_5B_GROUP === '0')
 
+// 🔴 Copia LITERAL de `SALIDA_APROBADA` de lib/adversarial-verdict.js (la caja no tiene `require`). La prueba T9 de
+// tests/adversarial-unmeasured.test.js compara las dos: si una cambia, se cambia la otra.
+const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-05b-adversarial-verify.md §«Sin Codex ni Workflow»)'
+
+// El aviso de un pase que no revisó todo. Nunca «limpio»: no medido, con qué faltó y cómo seguir.
+function avisoNoMedido(sinMedir, sinVeredicto) {
+  const partes = []
+  if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) SIN MEDIR (${sinMedir.join(', ')}): su cazador no contestó`)
+  if (sinVeredicto) partes.push(`${sinVeredicto} hallazgo(s) SIN VEREDICTO: su verificador no contestó (el texto está en detalle)`)
+  return `adversarial-verify: 🔴 pase NO MEDIDO — ${partes.join('; ')}. No es verde ni «sin hallazgos»: relanzá el pase, o ${SALIDA_APROBADA}.`
+}
+
 const COMMON = `
 Repo: ${REPO}
 Story: ${STORY}
@@ -438,8 +450,9 @@ function agrupar(hallazgos, opts) {
 // ===== NUCLEO-AGRUPAR: FIN =====
 
 if (FILES.length === 0) {
-  log('adversarial-verify: sin archivos de código en args.files → nada que auditar.')
-  return { confirmed: [], all_lenses: [] }
+  log('adversarial-verify: sin archivos de código en args.files → nada que auditar (pase NO MEDIDO).')
+  return { confirmed: [], all_lenses: [], lentes: [], lentes_sin_medir: [], detalle: [], medido: false,
+    aviso: 'adversarial-verify: 🔴 pase NO MEDIDO — sin archivos de código en args.files, no se revisó nada.' }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -463,17 +476,39 @@ const hunts = await parallel(
   )
 )
 
+// 🔴 UN CAZADOR MUERTO NO ES UNA LENTE LIMPIA. `agent()` devuelve null cuando el agente
+// muere o no contesta lo pedido —en la herramienta Workflow y en workflow-lite.js por igual—, y acá se leía como
+// «cero hallazgos»: con Codex en su tope el pase salió «6 lentes limpias» sin haber revisado nada. Una lente vale
+// `medida` sólo con una respuesta que trae su lista de hallazgos (vacía o no); si no, `sin-medir`.
+const lentes = LENSES.map((lens, i) => {
+  const r = hunts[i]
+  const ok = !!(r && r.hunt && Array.isArray(r.hunt.findings))
+  return { lens: lens.key, estado: ok ? 'medida' : 'sin-medir', count: ok ? r.hunt.findings.length : 0 }
+})
+const lentesSinMedir = lentes.filter((l) => l.estado === 'sin-medir').map((l) => l.lens)
+
 // Los hallazgos de todas las lentes, en una sola lista. `idxEnLente` conserva la numeración por
 // lente: es la que nombra la carpeta de la prueba (`<lente>-<n>`), contrato del step-05b.
 const todos = []
 for (const r of hunts.filter(Boolean)) {
-  const fs = (r.hunt && r.hunt.findings) || []
+  const fs = (r.hunt && Array.isArray(r.hunt.findings)) ? r.hunt.findings : []
   fs.forEach((f, i) => todos.push({ ...f, lens: r.lens, idxEnLente: i + 1 }))
 }
 
+// El texto de un hallazgo, tal cual lo reportó su cazador: lo que queda en `detalle`.
+const textoDe = (f) => ({ lens: f.lens, idxEnLente: f.idxEnLente, severity: f.severity, file: f.file, line: f.line ?? null,
+  summary: f.summary, repro: f.repro, confidence: f.confidence })
+
 if (todos.length === 0) {
-  log('adversarial-verify: 6 lentes limpias, nada que verificar.')
-  return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: hunts.filter(Boolean).map((r) => ({ lens: r.lens, count: 0 })), hallazgos: 0, clases: 0, agentes_ahorrados: 0 }
+  if (lentesSinMedir.length) {
+    const aviso = avisoNoMedido(lentesSinMedir, 0)
+    log(aviso)
+    return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: [], lentes, lentes_sin_medir: lentesSinMedir, detalle: [], medido: false, aviso,
+      hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 }
+  }
+  log(`adversarial-verify: ${LENSES.length} lentes medidas y limpias, nada que verificar.`)
+  return { confirmed: [], probes_dir: PROBES_DIR, all_lenses: lentes.map((l) => ({ lens: l.lens, count: 0 })), lentes, lentes_sin_medir: [], detalle: [], medido: true,
+    hallazgos: 0, clases: 0, agentes_ahorrados: 0, sin_veredicto: 0, hallazgos_sin_veredicto: 0, a_verificar_aparte: 0 }
 }
 
 // Fase 1b — agrupar por causa. Con el agrupamiento apagado, cada hallazgo es su propia clase y el
@@ -564,7 +599,7 @@ const veredictos = await runWindow(
 // hallazgos de lentes distintas desaparecen del reporte y el pase sale igual de verde. El default
 // sigue siendo REFUTED (no se confirma lo que no se reprodujo), pero AHORA SE CUENTA Y SE DICE.
 const sinVeredicto = []
-veredictos.forEach((v, k) => { if (!v || !v.verdict) sinVeredicto.push(grupos.clases[k]) })
+veredictos.forEach((v, k) => { if (!v || (v.verdict !== 'CONFIRMED' && v.verdict !== 'REFUTED')) sinVeredicto.push(grupos.clases[k]) })
 if (sinVeredicto.length) {
   log(`adversarial-verify: 🔴 ${sinVeredicto.length} clase(s) SIN VEREDICTO — el verificador no contestó` +
     ` (arrastran ${sinVeredicto.reduce((a, c) => a + c.miembros.length, 0)} hallazgo(s), que quedan sin confirmar).` +
@@ -601,6 +636,32 @@ grupos.clases.forEach((c, k) => {
   }
 })
 
+// El detalle de cada hallazgo: su texto, su estado y lo que dijo el verificador de su clase, si
+// contestó. Un verificador muerto deja `sin-veredicto` —nunca refutado— y el pase no medido.
+const detalle = []
+grupos.clases.forEach((c, k) => {
+  const v = veredictos[k]
+  // Contestó sólo con un veredicto de los dos que existen: `confirmed` en minúscula, `UNSURE` o basura no son un
+  // refutado: quedan sin veredicto y el pase no medido.
+  const contesto = !!(v && (v.verdict === 'CONFIRMED' || v.verdict === 'REFUTED'))
+  const rep = todos[c.representante]
+  const verificador = contesto
+    ? { verdict: v.verdict, reasoning: v.reasoning || '', adjusted_severity: v.adjusted_severity || null, probe_dir: v.probe_dir || '',
+        todos_el_mismo_defecto: v.todos_el_mismo_defecto === true, verificado_via: `${rep.lens}-${rep.idxEnLente}` }
+    : null
+  for (const m of c.miembros) {
+    let estadoH
+    if (!contesto) estadoH = 'sin-veredicto'
+    else if (v.verdict === 'CONFIRMED') estadoH = (v.todos_el_mismo_defecto !== true && m !== c.representante) ? 'a-verificar-aparte' : 'confirmado'
+    else estadoH = 'refutado'
+    detalle.push({ ...textoDe(todos[m]), clase: c.id, estado: estadoH, verificador })
+  }
+})
+const hallazgosSinVeredicto = detalle.filter((d) => d.estado === 'sin-veredicto').length
+const medido = lentesSinMedir.length === 0 && hallazgosSinVeredicto === 0
+const aviso = medido ? null : avisoNoMedido(lentesSinMedir, hallazgosSinVeredicto)
+if (aviso) log(aviso)
+
 const porLente = new Map()
 for (const f of todos) porLente.set(f.lens, (porLente.get(f.lens) || 0) + 1)
 const results = [...porLente.entries()].map(([lens, count]) => ({ lens, count }))
@@ -630,4 +691,11 @@ return {
   hallazgos_sin_veredicto: sinVeredicto.reduce((a, c) => a + c.miembros.length, 0),
   // Hallazgos que el verificador declaró distintos del que reprodujo: no heredan su veredicto.
   a_verificar_aparte: aVerificarAparte.length,
+  // Qué se revisó de verdad. `medido: false` si alguna lente quedó sin su cazador o algún hallazgo sin
+  // su verificador; `detalle` guarda el texto de cada hallazgo y la constancia del verificador.
+  lentes,
+  lentes_sin_medir: lentesSinMedir,
+  detalle,
+  medido,
+  aviso,
 }

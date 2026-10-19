@@ -167,10 +167,16 @@ const CONTROLES = {
 // La nota se arma SÓLO con enteros: el `motivo` del diferido es prosa del dev y no se publica.
 function resultadoAdversarial(g) {
   if (String(g.check || g.name || g.gate || '') !== 'adversarial-pass' || g.status !== undefined) return null;
-  const cls = g.veredicto === 'listo' ? 'paso' : g.veredicto === 'no-listo' ? 'error' : 'sin_estado';
+  // `no-medido`: el pase no revisó todo —alguna lente sin su cazador o algún hallazgo sin verificador—.
+  // No es verde ni «sin estado»: es un pase que falta.
+  const cls = g.veredicto === 'listo' ? 'paso' : (g.veredicto === 'no-listo' || g.veredicto === 'no-medido') ? 'error' : 'sin_estado';
   const n = (k) => (Number.isInteger(g[k]) && g[k] >= 0 ? g[k] : null);
   const c = n('confirmados');
   let nota = null;
+  if (g.veredicto === 'no-medido') {
+    const sm = Array.isArray(g.lentes_sin_medir) ? g.lentes_sin_medir.length : 0, sv = n('hallazgos_sin_veredicto') ?? 0;
+    return { cls, nota: `no medido · ${sm} lente${sm === 1 ? '' : 's'} sin medir · ${sv} hallazgo${sv === 1 ? '' : 's'} sin veredicto` };
+  }
   if (c !== null) {
     nota = `${c} confirmado${c === 1 ? '' : 's'}`;
     if (c > 0) {
@@ -185,6 +191,12 @@ function resultadoAdversarial(g) {
     }
   }
   return { cls, nota };
+}
+
+/** La clase con que se pinta una línea `adversarial-pass` (`paso` · `error` · `sin_estado`), o null si no es una. */
+function estadoDelPaseAdversarial(g) {
+  const r = resultadoAdversarial(g || {});
+  return r ? r.cls : null;
 }
 
 // La nota del salteo del 5b (story 1.8): sale de los BOOLEANOS de la línea, nunca de su `motivo` — el `reason`
@@ -2489,7 +2501,9 @@ module.exports = { main, modelo, leerRegistro, modeloDeCorrida, clasificar, agru
   // story 2.27: lo que usa la pestaña Corridas del sitio
   idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
-  RESUMEN, resumirEspejo, textosDeUnaCorrida };
+  RESUMEN, resumirEspejo, textosDeUnaCorrida,
+  // el pase no medido se pinta como error
+  estadoDelPaseAdversarial, resultadoAdversarial };
 
 if (require.main === module) {
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dashboard/runs.js');

@@ -54,8 +54,25 @@ function entorno(home, sid, extra) {
   return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, ...(extra || {}) };
 }
 
+// El 5b se anota con `--result <archivo>` (el JSON del pase). Estas pruebas miden otras cosas: a
+// una anotación 5b sin el archivo se le pasa uno medido con sus N confirmados. La exigencia en sí la fija
+// tests/adversarial-unmeasured.test.js (T10).
+function conResultado(home, args) {
+  if (args[0] !== 'mark-adversarial-result' || args.includes('--result')) return args;
+  const i = args.indexOf('--type');
+  if (i >= 0 && String(args[i + 1]).toLowerCase() !== '5b') return args;
+  const n = /^\d+$/.test(String(args[1])) ? parseInt(args[1], 10) : 0;
+  const archivo = path.join(home, `resultado-${process.hrtime.bigint()}.json`);
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(archivo, JSON.stringify({
+    confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+  }));
+  return [...args, '--result', archivo];
+}
+
 function correr(home, sid, args, { env, cwd } = {}) {
-  const r = spawnSync(process.execPath, [MARKER, ...args], { encoding: 'utf8', env: entorno(home, sid, env), cwd: cwd || os.tmpdir() });
+  const r = spawnSync(process.execPath, [MARKER, ...conResultado(home, args)], { encoding: 'utf8', env: entorno(home, sid, env), cwd: cwd || os.tmpdir() });
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
 }
 
@@ -93,7 +110,10 @@ function writeFakeMarker(fakeHome, sid, extra) {
  * `run: null`) + un archivo de código chico + una prueba.
  */
 function mkRepo({ codigo = 1, runDir = false } = {}) {
-  const r = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'res-adv-')));
+  // En una carpeta propia: el paso 8 mira las carpetas vecinas del repo, y la carpeta temporal de una máquina de
+  // trabajo puede tener cientos de miles de entradas (medido: 517.471, ~40 s por llamada).
+  const r = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'res-adv-'))), 'repo');
+  fs.mkdirSync(r);
   spawnSync('git', ['init', '-q', r]);
   fs.mkdirSync(path.join(r, 'specs'), { recursive: true });
   fs.mkdirSync(path.join(r, 'scripts'), { recursive: true });
@@ -439,7 +459,7 @@ test('T23 Paso8_LanzadoSinResultado_Bloquea @story-1.8 @ac-16', () => {
   const r = correr(home, SID, ['complete-step', '8']);
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /el pase adversarial se lanzó \(wf_SIN/);
-  assert.match(r.stderr, /mark-adversarial-result <N confirmados> --type 5b --run wf_SIN/);
+  assert.match(r.stderr, /mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>\/step-05b-adversarial\.json --run wf_SIN/);
   const l = lineaDelFreno(home);
   assert.equal(l.length, 1);
   assert.equal(l[0].status, 'blocked');

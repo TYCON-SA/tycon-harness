@@ -22,6 +22,8 @@ const path = require('path');
  * anotado aunque nadie haya registrado el lanzamiento (`resultado-sin-lanzamiento`), y si no, `no-atendido`:
  * la bandera `deepReviewDone` de una corrida vieja NO cuenta, porque es justo lo que cualquiera escribía a mano.
  * «No lo pude leer» no es «está»: un registro que no es lista o un lanzamiento sin fecha bloquean con su nombre.
+ * Un último resultado `no-medido` (alguna lente sin medir o algún hallazgo sin veredicto) bloquea como
+ * `pase-no-medido`: el pase que no revisó todo es un pase que falta.
  */
 function veredictoPaseAdversarial(marker) {
   const m = marker || {};
@@ -38,15 +40,22 @@ function veredictoPaseAdversarial(marker) {
     const desde = Date.parse(launchedAt);
     if (!Number.isFinite(desde)) return res('bloqueo', 'lanzamiento-sin-fecha', { campo: 'adversarial.launchedAt' });
     const del5b = pases.filter((p) => p && p.tipo === '5b');
-    if (del5b.some((p) => Date.parse(p.ts) >= desde)) return res('paso', 'resultado');
+    const vigentes = del5b.filter((p) => Date.parse(p.ts) >= desde);
+    // El abandono de ESTE lanzamiento con el interruptor es la decisión del dev y gana: es la salida que el propio
+    // freno del pase no medido ofrece (con el orden al revés, no destrababa). Casos: tests/adversarial-unmeasured.test.js.
     if (skip && skip.abandonado === true && skip.runId === runId) return res('paso', 'abandonado');
+    // Un pase que no revisó todo es un pase que falta: cuenta el ÚLTIMO resultado del lanzamiento.
+    if (vigentes.length && vigentes[vigentes.length - 1].veredicto === 'no-medido') return res('bloqueo', 'pase-no-medido', { pase: vigentes[vigentes.length - 1] });
+    if (vigentes.length) return res('paso', 'resultado');
     if (del5b.length) return res('bloqueo', 'resultado-de-otro-lanzamiento');
     return res('bloqueo', 'sin-resultado');
   }
   if (skip) return res('paso', skip.forzado === true || skip.abandonado === true ? 'salteado-forzado' : 'salteado');
   // Resultado 5b anotado sin lanzamiento registrado (decisión D6 del dev, hallazgo del pase adversarial de la 1.8):
   // el resultado ES la constancia que el paso pide; queda con su propio motivo, visible en el registro.
-  if (pases.some((p) => p && p.tipo === '5b')) return res('paso', 'resultado-sin-lanzamiento');
+  const del5b = pases.filter((p) => p && p.tipo === '5b');
+  if (del5b.length && del5b[del5b.length - 1].veredicto === 'no-medido') return res('bloqueo', 'pase-no-medido', { pase: del5b[del5b.length - 1] });
+  if (del5b.length) return res('paso', 'resultado-sin-lanzamiento');
   return res('bloqueo', 'no-atendido');
 }
 
@@ -126,7 +135,40 @@ function reglaPaseAjeno(adv, opts = {}) {
   };
 }
 
+// La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow.
+// 🔴 El guion del pase lleva una copia LITERAL (corre en una caja sin `require`):
+// `tests/adversarial-unmeasured.test.js` T9 compara las dos.
+const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código, juicio con Opus, nunca Fable (workflow-lite.js --agents-dir, step-05b-adversarial-verify.md §«Sin Codex ni Workflow»)';
+
+/**
+ * ¿El resultado del pase revisó todo? Pura: recibe el objeto que devolvió el guion y devuelve
+ * `{ medido, confirmados, lentes_sin_medir, hallazgos_sin_veredicto, motivo }`. Medido = todas las lentes con su
+ * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin `lentes` (un formato anterior) o sin lentes
+ * (sin archivos que auditar) no está medido: «no revisé nada» nunca es «limpio».
+ */
+function medicionDelResultado(obj) {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) throw new Error('el resultado no es un objeto JSON');
+  // Sin la lista de confirmados no se sabe cuántos hubo: no se cuenta 0 (un `<N>` de 0 pasaría como `listo`).
+  if (!Array.isArray(obj.confirmed)) throw new Error('el resultado no trae la lista `confirmed`: no se sabe cuántos hallazgos confirmó');
+  const confirmados = obj.confirmed.length;
+  if (!Array.isArray(obj.lentes)) {
+    return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0,
+      motivo: 'el resultado no trae el estado de cada lente (un formato anterior): no se sabe qué se revisó' };
+  }
+  if (!obj.lentes.length) {
+    return { medido: false, confirmados, lentes_sin_medir: [], hallazgos_sin_veredicto: 0, motivo: 'el pase no revisó ninguna lente (sin archivos de código)' };
+  }
+  const sinMedir = obj.lentes.filter((l) => !l || l.estado !== 'medida').map((l) => (l && l.lens) || '?');
+  const detalle = Array.isArray(obj.detalle) ? obj.detalle : [];
+  const sinVeredicto = detalle.filter((d) => d && d.estado === 'sin-veredicto').length;
+  const partes = [];
+  if (sinMedir.length) partes.push(`${sinMedir.length} lente(s) sin medir (${sinMedir.join(', ')}): su cazador no contestó`);
+  if (sinVeredicto) partes.push(`${sinVeredicto} hallazgo(s) sin veredicto: su verificador no contestó`);
+  return { medido: partes.length === 0, confirmados, lentes_sin_medir: sinMedir, hallazgos_sin_veredicto: sinVeredicto, motivo: partes.join('; ') || null };
+}
+
 module.exports = {
+  SALIDA_APROBADA, medicionDelResultado,
   veredictoPaseAdversarial, paseAtendido, reglaPaseAjeno, minutosDesdeElHilo, horaCorta,
   ESPERA_MAX_MIN, HILO_VIVO_MIN, REGLA_PASE_AJENO,
 };

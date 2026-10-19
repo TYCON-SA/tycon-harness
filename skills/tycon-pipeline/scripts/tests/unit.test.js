@@ -1526,12 +1526,21 @@ function gatesLines(fakeHome) {
   const f = path.join(fakeHome, '.claude', '.tycon-pipeline', 'gates.log');
   return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 }
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+function resultadoMedido(dir, n) {
+  const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  fs.writeFileSync(archivo, JSON.stringify({
+    confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+  }));
+  return archivo;
+}
 
 test('mark-adversarial-result: deja el pase en gates.log con su veredicto, y lo suma al marker', () => {
   const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-adv-res-'));
   const SID = 'adv-res';
   writeFakeMarker(fakeHome, SID);
-  execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '3', '--type', '5b', '--run', 'wf_9', '--model', 'sonnet', '--tests', '0', '--deferred', '3', '--reason', 'código preexistente, story aparte'], markerEnv(SID, fakeHome));
+  execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '3', '--type', '5b', '--result', resultadoMedido(fakeHome, 3), '--run', 'wf_9', '--model', 'sonnet', '--tests', '0', '--deferred', '3', '--reason', 'código preexistente, story aparte'], markerEnv(SID, fakeHome));
   execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '0', '--type', 'revision'], markerEnv(SID, fakeHome));
   const pases = gatesLines(fakeHome).filter((g) => g.name === 'adversarial-pass');
   assert.equal(pases.length, 2, 'una línea por pase');
@@ -6325,18 +6334,18 @@ test('mark-adversarial-result con confirmados exige pruebas + diferidos = N, mot
   ];
   for (const args of malos) {
     assert.throws(
-      () => execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', ...args], { ...markerEnv(SID, fakeHome), stdio: 'pipe' }),
+      () => execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', ...args, '--result', resultadoMedido(fakeHome, 3)], { ...markerEnv(SID, fakeHome), stdio: 'pipe' }),
       (e) => e.status === 2, `${JSON.stringify(args)} → exit 2`,
     );
   }
   assert.equal(gatesLines(fakeHome).filter((g) => g.name === 'adversarial-pass').length, 0, 'ningún pase anotado');
   execFileSync(process.execPath, [MARKER, 'promote-probe', probeDir, '--file', 'ZZProbeRutas.cs.txt', '--a', 'tests/R.cs'], markerEnv(SID, fakeHome));
-  const ok = JSON.parse(execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '3', '--type', '5b', '--tests', '1', '--deferred', '2', '--reason', 'código preexistente → story 10.2'], markerEnv(SID, fakeHome)));
+  const ok = JSON.parse(execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '3', '--type', '5b', '--result', resultadoMedido(fakeHome, 3), '--tests', '1', '--deferred', '2', '--reason', 'código preexistente → story 10.2'], markerEnv(SID, fakeHome)));
   assert.equal(ok.pruebas, 1); assert.equal(ok.diferidos, 2); assert.equal(ok.veredicto, 'no-listo');
   const linea = gatesLines(fakeHome).find((g) => g.name === 'adversarial-pass');
   assert.equal(linea.motivo, 'código preexistente → story 10.2', 'el motivo del diferido queda en el registro');
   // cero confirmados: nada que exigir
-  execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '0', '--type', '5b'], markerEnv(SID, fakeHome));
+  execFileSync(process.execPath, [MARKER, 'mark-adversarial-result', '0', '--type', '5b', '--result', resultadoMedido(fakeHome, 0)], markerEnv(SID, fakeHome));
   fs.rmSync(fakeHome, { recursive: true, force: true }); fs.rmSync(repo, { recursive: true, force: true });
 });
 
