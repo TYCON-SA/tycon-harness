@@ -234,6 +234,9 @@ function resumenDe(s, antes, despues, idioma) {
 const FORMA_DE_MARCA = RP.FORMA_DE_MARCA;
 // cuántas propuestas terminadas recuerda el sitio, con su respuesta
 const MARCAS_RECORDADAS = 200;
+// «releé ya» (`GET /api/config?releer=1`): una relectura a la vez y no más de una cada RELECTURA_MS, para que muchas
+// páginas abiertas no golpeen el repo
+const RELECTURA_MS = 30 * 1000;
 
 /**
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
@@ -483,9 +486,41 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   }
 
   // ── revisar ──
-  function revisarSeccion(s, borradorIn, ctx) {
+  // ── la base que abrió la página y la mezcla con lo que cambió afuera ──
+  /** La base que manda la página, si es de verdad la versión que dice (`oid`): `{ texto, doc }`; null si no. */
+  function baseVerificada(body) {
+    if (!isObject(body) || typeof body.base !== 'string') return null;
+    if (body.oid === null) return body.base === '' ? { texto: null, doc: {} } : null;
+    if (typeof body.oid !== 'string' || !/^([0-9a-f]{40}|[0-9a-f]{64})$/.test(body.oid)) return null;
+    if (ORG.versionDeTexto(body.base, body.oid.length) !== body.oid) return null;
+    const doc = docDe(body.base);
+    return doc ? { texto: body.base, doc } : null;
+  }
+  /** El borrador de la sección que sale de un documento, con la forma que le da `vista`. */
+  function borradorDe(s, doc) {
+    if (s.id === 'umbrales') return isObject(doc) && isObject(doc.thresholds) ? clone(doc.thresholds) : {};
+    if (s.claves === null) return clone(isObject(doc) ? doc : { version: 1 });
+    return Object.fromEntries(s.claves.filter((k) => isObject(doc) && doc[k] !== undefined).map((k) => [k, clone(doc[k])]));
+  }
+  // Diferencias entre productos no es una parte del archivo (su borrador es una acción): no se mezcla. «Confirmar máquina»
+  // tampoco al revisar, porque se arma siempre sobre la versión de hoy; al proponer, su texto se mezcla como los demás
+  const mezclable = (s, borrador) => s.id !== 'paridad' && !(isObject(borrador) && borrador.accion !== undefined);
+  /** Cada choque con el camino dentro del borrador de la sección (Umbrales lo tiene sin `thresholds`). */
+  const choquesDe = (s, conflictos) => conflictos.map((c) => ({ ...c, camino: s.id === 'umbrales' && c.camino[0] === 'thresholds' ? c.camino.slice(1) : c.camino }));
+  const revisarCon = (s, texto, borrador) => ORG.revisar({ seccion: s, texto, borrador, lectores: { [s.lector]: lector(s.lector) }, arnes: { thresholds: arnes().thresholds }, hoy: dia(), tree: TREE });
+
+  function revisarSeccion(s, borradorIn, ctx, body = {}) {
     const v = vista(s);
     if (['no_reader', 'no_configurado', 'bajando', 'ilegible'].includes(v.estado) || v.soloLectura) return { ok: false, problems: [{ path: '', message: v.motivo, sinCampo: true }], texto: null };
+    // la página carga sobre su versión (la base): se revisa sobre ésa aunque el sitio tenga otra, más vieja o más nueva.
+    // Aplicar el borrador entero sobre otra versión pisaría en silencio lo que cambió en el medio; si el archivo cambió en
+    // main, la mezcla la hace «Proponer» contra la punta (decisión 11)
+    let texto = v.texto;
+    if (body.oid !== undefined && body.oid !== v.oid && mezclable(s, borradorIn)) {
+      const b = baseVerificada(body);
+      if (!b) return { ok: false, problems: [{ path: '', message: M('config.baseNoCoincide'), sinCampo: true }], texto: null };
+      texto = b.texto;
+    }
     let borrador = clone(borradorIn);
     const problemas = [];
     let advertencia = null;
@@ -513,37 +548,40 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         else if (!lista.map(norm).some((m) => suyos.includes(m))) advertencia = M('config.noEstas');
       }
     }
-    const r = ORG.revisar({ seccion: s, texto: v.texto, borrador, lectores: { [s.lector]: lector(s.lector) }, arnes: { thresholds: arnes().thresholds }, hoy: dia(), tree: TREE });
+    const r = revisarCon(s, texto, borrador);
     const problems = [...problemas, ...r.problems];
     const bueno = r.ok && !problemas.length;
     // lo que cambia, para mostrarlo antes de proponer: la diferencia por renglones y el resumen en palabras
     const cambia = bueno && typeof r.texto === 'string';
-    const resumen = cambia ? resumenDe(s, docDe(v.texto || '') || {}, docDe(r.texto) || {}, views.idiomaDe(ctx)) : [];
-    const diferencia = cambia ? ORG.diferencia(v.texto || '', r.texto) : [];
-    return { ...r, ok: bueno, problems, texto: bueno ? r.texto : null, borrador, advertencia, resumen, diferencia };
+    const resumen = cambia ? resumenDe(s, docDe(texto || '') || {}, docDe(r.texto) || {}, views.idiomaDe(ctx)) : [];
+    const diferencia = cambia ? ORG.diferencia(texto || '', r.texto) : [];
+    // la versión sobre la que se armó el texto: la de la página, o la del sitio para lo que se arma siempre sobre la versión
+    // de hoy («Confirmar máquina»). «Proponer» la necesita para comparar contra la misma
+    const version = { texto, oid: texto === v.texto ? v.oid : body.oid };
+    return { ...r, ok: bueno, problems, texto: bueno ? r.texto : null, borrador, advertencia, resumen, diferencia, version };
   }
 
   /** El texto que llega a «Proponer» se vuelve a validar entero, con el lector de su archivo: nunca se confía en la pantalla. */
-  function validarTexto(s, texto) {
+  function validarTexto(s, texto, actualTexto = vista(s).texto) {
     const doc = docDe(texto);
     if (!doc || ORG.formatJson(doc) !== texto) return M('config.noEsElRevisado');
     // el pedido cambia sólo la sección (AC 23): lo demás del archivo tiene que quedar como está en el clon
     if (s.claves) {
-      const actual = docDe(vista(s).texto || '') || {};
+      const actual = docDe(actualTexto || '') || {};
       const ajenas = [...new Set([...Object.keys(actual), ...Object.keys(doc)])].filter((k) => !s.claves.includes(k) && JSON.stringify(actual[k]) !== JSON.stringify(doc[k]));
       if (ajenas.length) return M('config.cambiaAjenas', { claves: ajenas.join(', ') });
       // una sección con `rutas` cambia sólo esas hojas de su clave (story 2.31): las otras, como están en el clon
       const hojas = ORG.hojasAjenas(s, actual, doc);
       if (hojas.length) return M('config.cambiaAjenas', { claves: hojas.join(', ') });
     }
-    if (s.id === 'umbrales') { const r = ORG.thresholdsParse(texto, { arnes: { thresholds: arnes().thresholds }, previas: Object.keys(((docDe(vista(s).texto || '') || {}).thresholds) || {}), tree: TREE }); return r.ok ? null : r.problems[0].message; }
+    if (s.id === 'umbrales') { const r = ORG.thresholdsParse(texto, { arnes: { thresholds: arnes().thresholds }, previas: Object.keys(((docDe(actualTexto || '') || {}).thresholds) || {}), tree: TREE }); return r.ok ? null : r.problems[0].message; }
     if (s.id === 'paridad') { const l = lector('check-product-parity.js'); const r = l && l.leerDeclaradas(doc, dia()); return !r ? M('config.noLeeDeclaradas') : (r.problemas.length ? r.problemas[0].message : null); }
     const lec = lector(s.lector);
     if (!ORG.lectorSabe(lec, s)) return M('org.noLee', { que: s.archivo });
     const r = lec.parse(texto);
     if (!r.ok) return M('config.lectorRechaza', { detalle: (r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ') });
     // el lector da por bueno un archivo con un modelo mal escrito (lo pone aparte): la sección que lo cambia no lo propone
-    const aparte = ORG.problemasDeSeccion(s, r, docDe(vista(s).texto || ''), doc);
+    const aparte = ORG.problemasDeSeccion(s, r, docDe(actualTexto || ''), doc);
     if (aparte.length) return M('config.lectorRechazaParte', { detalle: aparte.map((p) => `${p.path}: ${p.message}`).join(' · ') });
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.maintainers) && !doc.site.maintainers.length) return M('config.listaVacia');
     if (s.archivo === 'operations.json' && isObject(doc.site) && Array.isArray(doc.site.access) && !mantenedoresDe(doc.site).length) return SIN_MANTENEDORES;
@@ -553,7 +591,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       // la sección Paquetes vive en un archivo que cualquier versión lee; sólo una LISTA pide una versión que la conozca
       // el perfil del equipo: una lista de paquetes y `response` piden su versión (story 2.31); team-repos.json, la suya
       const gate = s.archivo === 'team-profile.json'
-        ? ORG.teamProfileGateProblem({ layerText, versionImagen, doc, actual: docDe(vista(s).texto || '') })
+        ? ORG.teamProfileGateProblem({ layerText, versionImagen, doc, actual: docDe(actualTexto || '') })
         : ORG.profileGateProblem(layerText, doc);
       if (gate) return gate;
     }
@@ -567,7 +605,13 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const texto = typeof body.texto === 'string' ? body.texto : '';
     // sin la versión que abrió, no se puede saber si otro cambió el archivo (AC 16): no se propone a ciegas
     if (body.oid === undefined) return { ok: false, message: M('config.faltaOid') };
-    const problema = validarTexto(s, texto);
+    // lo propuesto se arma sobre la base que abrió la página: «no toca otras partes» se mira contra esa base. Que la base
+    // sea la punta de main lo comprueba RP.proponer; si no lo es, se mezcla abajo
+    const base = body.oid !== v.oid ? baseVerificada(body) : null;
+    // una base que no es la versión que dice se rechaza, como en «Revisar»: controlar contra la copia del sitio dejaría
+    // pasar un texto que deshace lo que ya entró en main
+    if (body.oid !== v.oid && typeof body.base === 'string' && !base) return { ok: false, message: M('config.baseNoCoincide') };
+    const problema = validarTexto(s, texto, base ? base.texto : v.texto);
     if (problema) return { ok: false, message: problema };
     const cred = cfg.escritura && cfg.escritura[s.repo];
     if (!cred) return { ok: false, message: M('config.sinIdentidad2') };
@@ -582,11 +626,39 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       if (!e || !e.dir) return { ok: false, message: M('config.clonFallo', { motivo: (e && e.motivo) || M('config.noSeArmoClon') }) };
       dir = e.dir;
     }
-    return RP.proponer({
+    const r = await RP.proponer({
       clon: dir, archivo: v.archivo, contenido: texto, oidEsperado: body.oid, idCorto: s.idCorto,
       secciones: [s.titulo], quien: norm(ctx.sesion.email), credencial: cred, remote, urlBase, exclusivo: fuentes.exclusivo || ((fn) => fn()),
       now: new Date(ahora()), fetch, log, aplicarSolo: aplicarSolo(), marca: body.marca || null,
     });
+    if (!r || r.codigo !== 'cambio') return r;
+    const { textoActual, oidActual, ...cambio } = r;
+    // la punta tiene el archivo pero no se pudo leer: mezclar contra un archivo vacío borraría el resto al proponer
+    if (oidActual && typeof textoActual !== 'string') { log(`propuesta de ${v.archivo}: no pude leer la versión de main para mezclar; queda el «cambió» de siempre`); return cambio; }
+    return reaplicarSobreLaPunta(s, body, texto, { texto: oidActual ? textoActual : null, oid: oidActual || null }, ctx) || cambio;
+  }
+
+  /**
+   * El archivo cambió en main desde la base de la página: lo propuesto se pone encima de la punta. Sin choques, la
+   * propuesta nueva para confirmar de nuevo (`reaplicado`); con choques, cada valor con las dos versiones (`se_pisan`);
+   * sin choques pero con lo mezclado que no pasa la revisión, el motivo y la base nueva (`no_valida`). null si no se puede mezclar (sin base verificada, o una sección que no se mezcla): queda el «cambió» de siempre.
+   */
+  function reaplicarSobreLaPunta(s, body, texto, punta, ctx) {
+    const b = baseVerificada(body);
+    if (!b || !mezclable(s, body.borrador) || (punta.texto !== null && !docDe(punta.texto))) return null;
+    const actual = punta.texto === null ? {} : docDe(punta.texto);
+    const m = ORG.reaplicar({ base: b.doc, mio: docDe(texto) || {}, actual });
+    const seccion = { texto: punta.texto, oid: punta.oid, borrador: borradorDe(s, actual) };
+    const borrador = borradorDe(s, m.doc);
+    if (m.conflictos.length) return { ok: false, codigo: 'se_pisan', message: M('config.sePisan'), conflictos: choquesDe(s, m.conflictos), borrador, seccion };
+    const r = revisarCon(s, punta.texto, clone(borrador));
+    if (!r.ok || typeof r.texto !== 'string') return { ok: false, codigo: 'no_valida', message: M('config.reaplicadoNoValida', { detalle: (r.problems || []).map((p) => `${p.path || '(el archivo)'}: ${p.message}`).join(' · ') }), conflictos: [], borrador, seccion };
+    const problema = validarTexto(s, r.texto, punta.texto);
+    if (problema) return { ok: false, codigo: 'no_valida', message: problema, conflictos: [], borrador, seccion };
+    return {
+      ok: false, codigo: 'reaplicado', message: M('config.reaplicado'), texto: r.texto, borrador, seccion,
+      diferencia: ORG.diferencia(punta.texto || '', r.texto), resumen: resumenDe(s, actual, docDe(r.texto) || {}, views.idiomaDe(ctx)),
+    };
   }
 
   // ── la marca de cada propuesta: un solo pedido por marca, y la forma de encontrarlo después ──
@@ -615,16 +687,26 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     if (marcasHechas.has(k)) {
       const r = marcasHechas.get(k);
       // un «ya hay un pedido abierto» habla del pedido de otra propuesta, no de esta
-      if (r && r.enlace && r.codigo !== 'pedido_abierto' && (r.ok || r.codigo === 'quedo_abierto')) return { ok: true, estado: r.codigo === 'aplicado' ? 'aplicado' : 'abierto', enlace: r.enlace };
-      return { ok: true, estado: 'no_hay' };
+      const propia = r && r.enlace && r.codigo !== 'pedido_abierto' && (r.ok || r.codigo === 'quedo_abierto');
+      if (!propia) return { ok: true, estado: 'no_hay' };
+      if (r.codigo === 'aplicado') return { ok: true, estado: 'aplicado', enlace: r.enlace };
+      // abierta cuando se propuso: si ya entró o se cerró lo sabe la plataforma (decisión 10); si no contesta, sigue abierta
+      const ahoraEn = await pedidoEnLaPlataforma(s, marca);
+      return ahoraEn && !ahoraEn.error ? { ok: true, estado: ahoraEn.estado, ...(ahoraEn.enlace ? { enlace: ahoraEn.enlace } : {}) } : { ok: true, estado: 'abierto', enlace: r.enlace };
     }
+    const r = await pedidoEnLaPlataforma(s, marca);
+    if (r.error) return { ok: true, estado: 'no_se_pudo_mirar' };
+    return r.enlace ? { ok: true, estado: r.estado, enlace: r.enlace } : { ok: true, estado: r.estado };
+  }
+  /** El pedido de una marca según la plataforma: `{ estado, enlace? }` (`no_hay` si no está) o `{ error }`. */
+  async function pedidoEnLaPlataforma(s, marca) {
     const cred = cfg.escritura && cfg.escritura[s.repo];
     const remote = remoteDe(s.repo);
-    if (!cred || !remote || !remote.platform) return { ok: true, estado: 'no_se_pudo_mirar' };
+    if (!cred || !remote || !remote.platform) return { error: 'sin_credencial' };
     let r;
     try { r = await RP.pedidoDeMarca({ remote, credencial: cred, marca, urlBase, fetch, ahora: ahora() }); } catch (e) { r = { error: (e && e.name) || 'error' }; }
-    if (r && r.error) { log(`configuración: no pude mirar si existe el pedido de una propuesta (${r.error})`); return { ok: true, estado: 'no_se_pudo_mirar' }; }
-    return r ? { ok: true, estado: r.estado, enlace: r.enlace } : { ok: true, estado: 'no_hay' };
+    if (r && r.error) { log(`configuración: no pude mirar si existe el pedido de una propuesta (${r.error})`); return { error: r.error }; }
+    return r ? { estado: r.estado, enlace: r.enlace } : { estado: 'no_hay' };
   }
 
   /**
@@ -681,6 +763,18 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   // y la configuración se reemplazan en cada pasada), hasta que pasa VIGENCIA_MS o hasta que alguien propone un cambio.
   // Dos pedidos a la vez comparten el mismo armado
   let guardado = null;
+  // «releé ya» (decisión 10): las fuentes enseguida, con una relectura a la vez y no más de una cada RELECTURA_MS
+  let relectura = null;
+  let ultimaRelectura = -Infinity;
+  function releer() {
+    if (relectura) return relectura;
+    if (ahora() - ultimaRelectura < RELECTURA_MS) return Promise.resolve();
+    ultimaRelectura = ahora();
+    relectura = Promise.resolve().then(() => fuentes.refrescar())
+      .catch((e) => log(`configuración: la relectura pedida por la página falló (${(e && e.name) || 'error'}): queda lo que había`))
+      .finally(() => { relectura = null; guardado = null; });
+    return relectura;
+  }
   function leerTodoGuardado() {
     const marca = [fuentes.modelo(), fuentes.config()];
     if (guardado && guardado.marca.every((m, i) => m === marca[i]) && ahora() - guardado.t < VIGENCIA_MS) return guardado.promesa;
@@ -702,13 +796,18 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   return [
     { method: 'GET', path: '/configuracion', needs: solo, pestana: { id: 'configuracion', titulo: 'Configuración', orden: 90 }, handler: (ctx) => ({ status: 200, tipo: 'text/html; charset=utf-8', cuerpo: pagina(ctx) }) },
     { method: 'GET', path: '/static/config.js', needs: solo, handler: (ctx) => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: ORG.pantalla(LANG.valido(ctx.url && ctx.url.searchParams.get('l')) || views.idiomaDe(ctx)) }) },
-    { method: 'GET', path: '/api/config', needs: solo, handler: enIdioma(async () => json(200, await leerTodoGuardado())) },
+    {
+      method: 'GET', path: '/api/config', needs: solo, handler: enIdioma(async (ctx) => {
+        if (ctx.url && ctx.url.searchParams.get('releer') === '1') await releer();
+        return json(200, await leerTodoGuardado());
+      }),
+    },
     {
       method: 'POST', path: '/api/config/revisar', needs: solo, handler: enIdioma(async (ctx) => {
         const e = await escritura(ctx); if (e.error) return e.error;
         const s = ORG.seccionPorId(e.body && e.body.seccion);
         if (!s) return rechazo(400, M('org.seccionDesconocida'));
-        return json(200, revisarSeccion(s, e.body.borrador, ctx));
+        return json(200, revisarSeccion(s, e.body.borrador, ctx, e.body));
       }),
     },
     {

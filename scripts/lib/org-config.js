@@ -581,6 +581,78 @@ function renglonesDe(texto) {
   return l;
 }
 
+/** La versión de un texto como la da git (`git hash-object`): con eso se sabe si la base que manda la página es la que dice. */
+function versionDeTexto(texto, largo = 40) {
+  const cuerpo = Buffer.from(String(texto), 'utf8');
+  const algoritmo = largo === 64 ? 'sha256' : 'sha1';
+  return require('crypto').createHash(algoritmo).update(Buffer.concat([Buffer.from(`blob ${cuerpo.length}\0`), cuerpo])).digest('hex');
+}
+
+/**
+ * Lo propuesto sobre una base vieja, puesto encima de lo actual, hoja por hoja (la ruta de cada valor; una lista o un
+ * objeto vacío cuenta como un valor). Lo mío son las hojas que cambian de `base` a `mio`; lo de afuera, de `base` a
+ * `actual`. Se pisan si la misma ruta, o una que la contiene, cambia en los dos con valores distintos. Devuelve
+ * `{ doc, conflictos: [{ camino, ruta, tuyo, ahora }] }`: `doc` es lo actual con todo lo mío encima (también en los
+ * choques: lo escrito no se pierde) y cada choque trae la ruta más corta con los dos valores (`undefined` = sacado).
+ */
+// cada clave se escribe como propia (también `__proto__`, `constructor` o `prototype`, que pueden ser el nombre de una
+// máquina o de un producto): con `=`, `__proto__` cambiaría el prototipo del objeto en vez de guardar el valor
+const ponerPropia = (o, k, v) => Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+function reaplicar({ base, mio, actual }) {
+  const hojas = (v, camino, out) => {
+    if (isObject(v) && Object.keys(v).length) for (const k of Object.keys(v)) hojas(v[k], [...camino, k], out);
+    else out.set(JSON.stringify(camino), camino);
+    return out;
+  };
+  const en = (doc, camino) => camino.reduce((o, k) => (isObject(o) && Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined), doc);
+  // un valor sacado no es lo mismo que un null: `canonico` los iguala, la mezcla no
+  const firma = (v) => (v === undefined ? '(ausente)' : canonico(v));
+  /** El tramo más corto de `camino` que en `doc` no existe (lo que se sacó entero); `camino` si existe todo. */
+  const ausente = (doc, camino) => { for (let i = 1; i <= camino.length; i += 1) if (en(doc, camino.slice(0, i)) === undefined) return camino.slice(0, i); return camino; };
+  // lo que alguien sacó entero cuenta como un cambio en lo que sacó, no hoja por hoja: así choca con lo que otro sumó
+  // adentro, en vez de borrarlo en silencio
+  const cambios = (a, b) => {
+    const todas = new Map([...hojas(a, [], new Map()), ...hojas(b, [], new Map())]);
+    const out = new Map();
+    // la ruta raíz (`[]`) sale sólo de un documento vacío: no es una hoja
+    for (const c of todas.values()) {
+      if (!c.length || firma(en(a, c)) === firma(en(b, c))) continue;
+      const camino = ausente(b, c);
+      out.set(JSON.stringify(camino), camino);
+    }
+    return [...out.values()];
+  };
+  const mios = cambios(base, mio);
+  const suyos = cambios(base, actual);
+  const contiene = (corto, largo) => corto.length <= largo.length && corto.every((k, i) => k === largo[i]);
+  const choques = new Map();
+  for (const m of mios) {
+    for (const s of suyos) {
+      if (!contiene(m, s) && !contiene(s, m)) continue;
+      const camino = m.length <= s.length ? m : s;
+      if (firma(en(mio, camino)) === firma(en(actual, camino))) continue;
+      choques.set(JSON.stringify(camino), camino);
+    }
+  }
+  // un choque que cae dentro de otro más corto se dice una vez, en el más corto
+  const caminos = [...choques.values()].filter((c, _, todos) => !todos.some((o) => o !== c && o.length < c.length && contiene(o, c)));
+  const doc = isObject(actual) ? clone(actual) : {};
+  for (const camino of [...mios].sort((a, b) => a.length - b.length)) {
+    const valor = en(mio, camino);
+    let o = doc;
+    for (const k of camino.slice(0, -1)) {
+      const hijo = Object.prototype.hasOwnProperty.call(o, k) ? o[k] : undefined;
+      if (!isObject(hijo)) { if (valor === undefined) { o = null; break; } ponerPropia(o, k, {}); }
+      o = o[k];
+    }
+    if (!o) continue;
+    const hoja = camino[camino.length - 1];
+    if (valor === undefined) delete o[hoja]; else ponerPropia(o, hoja, clone(valor));
+  }
+  const conflictos = caminos.map((camino) => ({ camino, ruta: camino.join('.'), tuyo: clone(en(mio, camino)), ahora: clone(en(actual, camino)) }));
+  return { doc, conflictos };
+}
+
 /**
  * La diferencia entre dos textos, por renglones y sin librerías: una lista de tramos que la pantalla dibuja.
  *   · `{ renglones: [{ tipo: 'igual' | 'sale' | 'entra', linea, a, b }] }` — un tramo: cada cambio con `contexto`
@@ -717,9 +789,55 @@ function pantalla(idioma = 'es') {
       .catch(function (e) { return { ok: false, sinRespuesta: true, pista: true, message: T('pantalla.noPudeHablarConEl') + (e && e.message ? e.message : T('pantalla.sinRespuesta')) + T('pantalla.siEstabasProponiendoRecargaY') }; });
   }
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {} };
+  // bases: la versión de cada sección sobre la que se carga ({ texto, oid }); conflictos: los valores que se pisaron con
+  // un cambio de afuera; recuperar: lo que quedó guardado de antes de recargar, hasta que la persona elige
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {} };
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
+  // con el pedido abierto, cada cuánto pregunta si ya entró y cuántas veces (10 s, hasta 10 minutos); la prueba pasa los suyos
+  var SEGUIR = typeof seguimientoPedido !== 'undefined' && seguimientoPedido ? seguimientoPedido : { cada: 10000, vueltas: 60 };
+
+  // ── lo cargado sin proponer, por sección, en sessionStorage (vive lo que la pestaña) ──
+  // todo acceso puede fallar (navegador privado, almacén bloqueado o lleno): entonces la página sigue sin guardarlo y no
+  // dice nada, porque no hay nada que la persona pueda hacer
+  var PREFIJO = 'configuracion-del-sitio:';
+  function almacen() { try { return typeof sessionStorage !== 'undefined' && sessionStorage ? sessionStorage : null; } catch (e) { return null; } }
+  function guardadoDe(id) {
+    try { var a = almacen(); var t = a ? a.getItem(PREFIJO + id) : null; var v = t ? JSON.parse(t) : null; return v && typeof v === 'object' && 'borrador' in v ? v : null; } catch (e) { return null; }
+  }
+  function guardar(id, v) { try { var a = almacen(); if (a) a.setItem(PREFIJO + id, JSON.stringify(v)); } catch (e) { return; } }
+  function olvidar(id) { try { var a = almacen(); if (a) a.removeItem(PREFIJO + id); } catch (e) { return; } }
+  /** El valor como texto con las claves ordenadas: sacar un campo y volver a ponerlo cambia el orden, no el valor. */
+  function canonDe(v) {
+    if (Array.isArray(v)) return '[' + v.map(canonDe).join(',') + ']';
+    if (esObjeto(v)) return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canonDe(v[k]); }).join(',') + '}';
+    return JSON.stringify(v === undefined ? null : v);
+  }
+  function mismo(a, b) { return canonDe(a) === canonDe(b); }
+  function cambiada(id) { return !mismo(S.borradores[id], S.originales[id]); }
+  function guardarBorradores() {
+    S.secciones.forEach(function (s) {
+      // lo guardado de antes de recargar espera que la persona elija: no se pisa
+      if (S.recuperar[s.id] || !S.bases[s.id]) return;
+      if (cambiada(s.id)) guardar(s.id, { oid: S.bases[s.id].oid, base: S.bases[s.id].texto, borrador: S.borradores[s.id], original: S.originales[s.id] });
+      else olvidar(s.id);
+    });
+  }
+  /** La base de la sección: la versión sobre la que se cargó lo que hay en sus campos. */
+  function baseDe(s) { return S.bases[s.id] || { texto: s.texto, oid: s.oid }; }
+  /** Lo que el servidor dice que es la versión de hoy de la sección: la base nueva y su borrador sin tocar. */
+  function ponerBase(s, sec) {
+    S.bases[s.id] = { texto: sec.texto === undefined ? null : sec.texto, oid: sec.oid === undefined ? null : sec.oid };
+    S.originales[s.id] = copia(sec.borrador === undefined ? {} : sec.borrador);
+  }
+
+  // ── la pestaña oculta no pregunta: lo pendiente espera a que vuelva a verse ──
+  var alVerse = [];
+  function oculta() { return document.hidden === true; }
+  function cuandoSeVea(fn) { if (oculta()) alVerse.push(fn); else fn(); }
+  if (document.addEventListener) document.addEventListener('visibilitychange', function () { if (oculta()) return; var l = alVerse; alVerse = []; l.forEach(function (f) { f(); }); });
+  /** Un setTimeout que no retiene al proceso cuando la página corre en una prueba de Node. */
+  function despues(ms, fn) { var t = setTimeout(fn, ms); if (t && t.unref) t.unref(); return t; }
   /** La marca de una propuesta: 16 bytes al azar, en 32 caracteres hexadecimales en minúscula. */
   function nuevaMarca() {
     var b = [], i;
@@ -791,6 +909,8 @@ function pantalla(idioma = 'es') {
     notify: T('pantalla.avisoDiario2'), channel: T('pantalla.palabraCanal'), thresholds: T('pantalla.palabraUmbrales'), direction: T('pantalla.mejorSiEs'), ok_min: T('pantalla.verdeDesde'), ok_max: T('pantalla.verdeHasta'), bad_max: T('pantalla.rojoHasta'), bad_min: T('pantalla.rojoDesde'),
     merge_suites: T('pantalla.pruebasAlMergear2'), rule: T('pantalla.regla'), full_tests_pipeline: T('pantalla.pipelineDeLasPruebasCompletas'), models: T('pantalla.palabraModelos'), mandatory_ceiling: T('pantalla.techoObligatorio'), ceiling: T('pantalla.techo'), reviewer: T('pantalla.revisor'), reviewers_reloop: T('pantalla.revisoresDeLaSegundaVuelta'), adversarial: T('pantalla.paseAdversarial'), helpers: T('pantalla.ayudantes'), session: T('pantalla.sesion'), model: T('pantalla.modelo'), heavy: T('pantalla.pesado'), fable_question: T('pantalla.preguntaAntesDeUsarFable'), low: T('pantalla.liviano'), normal: T('pantalla.normal'),
     wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
+    // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
+    style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
     response: T('pantalla.comoContestaClaude2'), integrations: T('pantalla.palabraIntegraciones'), ado: 'Azure DevOps', update: T('pantalla.actualizacion2'), install: T('pantalla.instalacion2'), packs: T('pantalla.palabraPaquetes'), diferencias_declaradas: T('pantalla.diferenciasDeclaradas'), version: T('pantalla.version'),
   };
   /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
@@ -1509,9 +1629,14 @@ function pantalla(idioma = 'es') {
     return o;
   }
   function revisarSeccion(s, borrador) {
-    return api('/revisar', { seccion: s.id, borrador: sinVacios(s, borrador === undefined ? S.borradores[s.id] : borrador) }).then(function (r) {
+    var b = baseDe(s);
+    return api('/revisar', { seccion: s.id, borrador: sinVacios(s, borrador === undefined ? S.borradores[s.id] : borrador), base: b.texto === null || b.texto === undefined ? '' : b.texto, oid: b.oid === undefined ? null : b.oid }).then(function (r) {
       S.problemas[s.id] = llanos(r.problems); S.avisos[s.id] = llanos(r.avisos);
       if (r.borrador) S.borradores[s.id] = r.borrador;
+      // revisado sin problemas: lo que quedaba por elegir de un choque se toma como está en los campos
+      if (r.ok) delete S.conflictos[s.id];
+      // el texto revisado se armó sobre otra versión (lo que se arma siempre sobre la de hoy): «Proponer» manda ésa
+      if (r.ok && r.version && r.version.oid !== baseDe(s).oid) S.bases[s.id] = { texto: r.version.texto === undefined ? null : r.version.texto, oid: r.version.oid === undefined ? null : r.version.oid };
       S.textos[s.id] = r.ok ? r.texto : null;
       S.diferencias[s.id] = r.ok ? (r.diferencia || []) : []; S.resumenes[s.id] = r.ok ? (r.resumen || []) : [];
       S.notas[s.id] = r.ok ? { ok: true, text: T('pantalla.revisadoEstaBienEscrito') + (r.aviso ? ' ' + r.aviso : '') + (r.advertencia ? ' ' + r.advertencia : '') } : { ok: false, text: mensajeLlano(r.message) || T('pantalla.hayQueCorregirLoMarcado') };
@@ -1553,7 +1678,7 @@ function pantalla(idioma = 'es') {
     caja.appendChild(dif);
     caja.appendChild(el('details', { class: 'archivos-enteros' }, el('summary', { text: T('pantalla.verLosArchivosEnteros') }),
       el('div', { class: 'antes-despues' },
-        el('div', {}, el('div', { class: 'lab', text: T('pantalla.hoy4') }), el('pre', { text: s.texto || T('pantalla.todaviaNoHayNadaGuardado2') })),
+        el('div', {}, el('div', { class: 'lab', text: T('pantalla.hoy4') }), el('pre', { text: baseDe(s).texto || T('pantalla.todaviaNoHayNadaGuardado2') })),
         el('div', {}, el('div', { class: 'lab', text: T('pantalla.despuesDelCambio') }), el('pre', { text: S.textos[s.id] })))));
     return caja;
   }
@@ -1562,10 +1687,82 @@ function pantalla(idioma = 'es') {
   function terminarPropuesta(s, marca, nota, bien) {
     if (S.terminadas[marca]) { delete S.proponiendo[s.id]; render(); return; }
     delete S.proponiendo[s.id];
-    if (bien) S.terminadas[marca] = true;
+    if (bien) { S.terminadas[marca] = true; S.originales[s.id] = copia(S.borradores[s.id]); delete S.conflictos[s.id]; olvidar(s.id); }
     S.notas[s.id] = nota; render();
-    if (bien) cargar();
+    if (!bien) return;
+    // aplicado: la versión nueva ya está; abierto: se pregunta hasta que entre o se cierre, y entonces se relee (decisión 10)
+    if (nota.codigo === 'aplicado') { cargar(true).catch(alFallarLaRelectura(s)); return; }
+    cargar().catch(alFallarLaRelectura(s));
+    seguir(s, marca, 0);
   }
+  /** Lo inesperado al dibujar lo releído se dice en la sección que propuso, sin tapar el enlace de su pedido. */
+  function alFallarLaRelectura(s) {
+    return function (e) {
+      var n = S.notas[s.id] || {};
+      S.notas[s.id] = { ok: false, text: (n.text ? n.text + ' · ' : '') + T('pantalla.noPudeCargarLaPestana') + ' ' + (e && e.message ? e.message : ''), enlace: n.enlace || null };
+      render();
+    };
+  }
+  /** Con el pedido abierto, pregunta cada tanto si sigue abierto; cuando entra o se cierra, el sitio relee y la página también. */
+  function seguir(s, marca, vuelta) {
+    if (vuelta >= SEGUIR.vueltas) return;
+    despues(SEGUIR.cada, function () {
+      cuandoSeVea(function () {
+        api('/propuesta?seccion=' + encodeURIComponent(s.id) + '&marca=' + marca).then(function (r) {
+          if (r && r.ok && (r.estado === 'aplicado' || r.estado === 'no_hay')) return cargar(true).catch(alFallarLaRelectura(s));
+          seguir(s, marca, vuelta + 1);
+        });
+      });
+    });
+  }
+  /** El archivo cambió en main desde la base: la propuesta vuelve puesta encima de la versión nueva, o con lo que se pisa. */
+  function otraVersion(s, r) {
+    delete S.proponiendo[s.id];
+    if (r.seccion) ponerBase(s, r.seccion);
+    if (r.borrador) S.borradores[s.id] = copia(r.borrador);
+    if (r.codigo === 'reaplicado') {
+      S.textos[s.id] = r.texto; S.diferencias[s.id] = r.diferencia || []; S.resumenes[s.id] = r.resumen || [];
+      delete S.conflictos[s.id];
+      // es otra propuesta: la de antes quedó contestada con esta respuesta
+      S.marcas[s.id] = nuevaMarca();
+      S.notas[s.id] = { confirmar: true, ok: true, text: r.message };
+    } else {
+      S.conflictos[s.id] = copia(r.conflictos || []); S.textos[s.id] = null; S.diferencias[s.id] = []; S.resumenes[s.id] = [];
+      S.notas[s.id] = { ok: false, text: r.message };
+    }
+    guardarBorradores(); render();
+  }
+  function mostrarValor(v) { return v === undefined ? T('pantalla.sacado') : JSON.stringify(v, null, 2); }
+  /** Pone v en camino dentro de obj (undefined lo saca). */
+  function poner(obj, camino, v) {
+    // cada clave como propia: una máquina o un producto puede llamarse __proto__, y con «=» se tocaría el prototipo
+    var propia = function (o, k, x) { Object.defineProperty(o, k, { value: x, enumerable: true, writable: true, configurable: true }); };
+    var tiene = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+    var o = obj;
+    for (var i = 0; i < camino.length - 1; i++) { if (!(tiene(o, camino[i]) && esObjeto(o[camino[i]]))) { if (v === undefined) return; propia(o, camino[i], {}); } o = o[camino[i]]; }
+    if (v === undefined) delete o[camino[camino.length - 1]]; else propia(o, camino[camino.length - 1], copia(v));
+  }
+  /** La persona elige, para un valor que se pisó, el suyo o el de ahora. */
+  function elegir(s, i, cual) {
+    var c = (S.conflictos[s.id] || [])[i]; if (!c) return;
+    if (!c.camino || !c.camino.length) S.borradores[s.id] = c[cual] === undefined ? {} : copia(c[cual]);
+    else poner(S.borradores[s.id], c.camino, c[cual]);
+    S.conflictos[s.id].splice(i, 1);
+    S.textos[s.id] = null;
+    if (!S.conflictos[s.id].length) { delete S.conflictos[s.id]; S.notas[s.id] = { ok: true, text: T('pantalla.elegisteTodoRevisa') }; }
+    guardarBorradores(); render();
+  }
+  function recuperar(s) {
+    var g = S.recuperar[s.id]; if (!g) return;
+    S.borradores[s.id] = copia(g.borrador === undefined ? {} : g.borrador);
+    if (g.original !== undefined) S.originales[s.id] = copia(g.original);
+    S.bases[s.id] = { texto: typeof g.base === 'string' ? g.base : null, oid: g.oid === undefined ? null : g.oid };
+    delete S.recuperar[s.id];
+    S.textos[s.id] = null;
+    S.notas[s.id] = { ok: true, text: T('pantalla.recuperadoRevisa') };
+    guardarBorradores(); render();
+  }
+  function descartar(s) { delete S.recuperar[s.id]; olvidar(s.id); render(); }
   /** Pregunta hasta tres veces si el pedido de la marca existe; da la respuesta que lo encuentra o null. */
   function buscarElPedido(s, marca, i) {
     if (i >= ESPERAS.length) return Promise.resolve(null);
@@ -1580,11 +1777,13 @@ function pantalla(idioma = 'es') {
   function confirmarPropuesta(s) {
     if (S.proponiendo[s.id]) return;
     var marca = S.marcas[s.id] || (S.marcas[s.id] = nuevaMarca());
+    var b = baseDe(s);
     S.proponiendo[s.id] = marca; render();
-    api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: s.oid, marca: marca }).then(function (r) {
-      if (!r.sinRespuesta || S.terminadas[marca]) return terminarPropuesta(s, marca, { ok: r.ok, text: r.message, enlace: r.enlace || null }, r.ok);
+    api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: b.oid === undefined ? null : b.oid, base: b.texto === null || b.texto === undefined ? '' : b.texto, marca: marca }).then(function (r) {
+      if (!r.sinRespuesta && !S.terminadas[marca] && (r.codigo === 'reaplicado' || r.codigo === 'se_pisan' || r.codigo === 'no_valida')) return otraVersion(s, r);
+      if (!r.sinRespuesta || S.terminadas[marca]) return terminarPropuesta(s, marca, { ok: r.ok, text: r.message, enlace: r.enlace || null, codigo: r.codigo }, r.ok);
       return buscarElPedido(s, marca, 0).then(function (h) {
-        if (h) return terminarPropuesta(s, marca, { ok: true, text: h.estado === 'aplicado' ? T('pantalla.pedidoAplicado') : T('pantalla.pedidoAbierto'), enlace: h.enlace || null }, true);
+        if (h) return terminarPropuesta(s, marca, { ok: true, text: h.estado === 'aplicado' ? T('pantalla.pedidoAplicado') : T('pantalla.pedidoAbierto'), enlace: h.enlace || null, codigo: h.estado }, true);
         terminarPropuesta(s, marca, { ok: false, text: r.message + (r.pista ? '' : ' ' + T('pantalla.recargaYMiraSiElPedidoSeAbrio')), enlace: null }, false);
       });
     }).catch(function (e) {
@@ -1607,11 +1806,25 @@ function pantalla(idioma = 'es') {
     if (s.estado === 'no_configurado') { sec.appendChild(aviso('nm', T('pantalla.estaParteTodaviaNoEsta'), s.motivo)); if (s.id !== 'paridad') return sec; }
     if (s.estado === 'nuevo') sec.appendChild(el('p', { class: 'muted', text: T('pantalla.todaviaNoHayNadaGuardado') }));
     if (s.soloLectura) sec.appendChild(aviso('nm', T('pantalla.porAhoraSePuedeMirar'), s.motivo));
+    if (S.recuperar[s.id]) {
+      sec.appendChild(el('div', { class: 'msg recuperar' }, el('b', { text: T('pantalla.teniasCambiosSinProponer') }),
+        el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.recuperarLoQueEstabas'), onclick: function () { recuperar(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.descartar'), onclick: function () { descartar(s); } }))));
+    }
     var pr = S.problemas[s.id] || [];
     var arriba = pr.filter(function (x) { return x.sinCampo; });
     if (arriba.length) { var ul = el('ul', { class: 'renglones' }); arriba.forEach(function (x) { ul.appendChild(el('li', { class: 'err', text: (x.donde ? x.donde + ': ' : '') + x.message })); }); sec.appendChild(ul); }
     var editor = EDITORES[s.id];
     if (editor) { var previa = SOLO_LECTURA; SOLO_LECTURA = previa || !!s.soloLectura; try { sec.appendChild(editor(s, S.borradores[s.id], pr)); } finally { SOLO_LECTURA = previa; } }
+    var choques = S.conflictos[s.id] || [];
+    if (choques.length) {
+      var caja = el('div', { class: 'conflictos', role: 'group' }, el('b', { text: T('pantalla.sePisanElegi') }));
+      choques.forEach(function (c, i) {
+        caja.appendChild(el('div', { class: 'conflicto' }, el('div', { class: 'lab', text: rutaLlana(c.ruta) }),
+          el('div', { class: 'dos' }, el('div', {}, el('span', { class: 'lab', text: T('pantalla.loTuyo') }), el('pre', { text: mostrarValor(c.tuyo) })), el('div', {}, el('span', { class: 'lab', text: T('pantalla.loDeAhora') }), el('pre', { text: mostrarValor(c.ahora) }))),
+          el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.quedarmeConElMio'), onclick: function () { elegir(s, i, 'tuyo'); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.tomarElDeAhora'), onclick: function () { elegir(s, i, 'ahora'); } }))));
+      });
+      sec.appendChild(caja);
+    }
     var n = S.notas[s.id];
     var prop = S.extras.proponer && S.extras.proponer[s.repo];
     // story 2.30: con una política con filtro de ruta, el estado del archivo de la sección manda sobre el del repo
@@ -1633,6 +1846,7 @@ function pantalla(idioma = 'es') {
     if (s.id === 'paridad' && S.textos[s.id] && habilitado && !confirmando) sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.proponerElCambio'), onclick: function () { empezarAProponer(s); } })));
     if (confirmando) {
       var proponiendo = !!S.proponiendo[s.id];
+      if (n.text && !proponiendo) sec.appendChild(el('div', { class: 'msg ' + (n.ok ? 'ok' : 'bad') }, el('b', { text: n.text })));
       sec.appendChild(vistaDeLaDiferencia(s));
       if (proponiendo) sec.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.proponiendo') })));
       sec.appendChild(el('div', { class: 'bar' }, el('button', { type: 'button', text: T('pantalla.confirmarYProponer'), onclick: function () { confirmarPropuesta(s); } }), el('button', { class: 'sec', type: 'button', text: T('pantalla.cancelar'), onclick: function () { S.notas[s.id] = null; render(); } }), el('span', { class: 'por-que', text: T('pantalla.miraLaDiferenciaAntesDe') })));
@@ -1708,12 +1922,27 @@ function pantalla(idioma = 'es') {
     partes.push(barra);
     paneles.forEach(function (x) { partes.push(x); });
     app.replaceChildren.apply(app, partes);
+    guardarBorradores();
   }
-  function cargar() {
-    return api('').then(function (r) {
+  /** Lee la configuración; con releer, el sitio relee antes sus fuentes (tras un pedido que entró). */
+  function cargar(releer) {
+    return api(releer ? '?releer=1' : '').then(function (r) {
+      // una relectura que falla después de la primera no borra la pantalla (la nota con el enlace, lo cargado): queda
+      // lo que había, y la próxima propuesta se pone encima de la versión de main igual
+      if (!r.ok && S.secciones.length) return;
       if (!r.ok) { app.replaceChildren(el('div', { class: 'msg bad' }, el('b', { text: T('pantalla.noSePudoLeerLa') }), el('span', { text: r.message || '' }))); return; }
+      var primera = !S.secciones.length;
       S.secciones = r.secciones; S.extras = r;
-      r.secciones.forEach(function (s) { S.borradores[s.id] = copia(s.borrador === undefined ? {} : s.borrador); S.originales[s.id] = copia(S.borradores[s.id]); S.problemas[s.id] = llanos(s.problems); S.textos[s.id] = null; S.avisos[s.id] = llanos(s.avisos); });
+      r.secciones.forEach(function (s) {
+        var fresco = copia(s.borrador === undefined ? {} : s.borrador);
+        // lo cargado sin proponer se queda con su base: al revisar, el servidor lo pone encima de la versión de hoy
+        var n = S.notas[s.id];
+        var conservar = !primera && S.bases[s.id] && (cambiada(s.id) || S.proponiendo[s.id] || (S.conflictos[s.id] || []).length || (n && n.confirmar));
+        if (!conservar) { S.borradores[s.id] = fresco; S.originales[s.id] = copia(fresco); S.bases[s.id] = { texto: s.texto === undefined ? null : s.texto, oid: s.oid === undefined ? null : s.oid }; S.textos[s.id] = null; }
+        S.problemas[s.id] = llanos(s.problems); S.avisos[s.id] = llanos(s.avisos);
+        // al abrir la página: lo que quedó cargado antes de recargar se ofrece, si es distinto de lo de hoy
+        if (primera) { var g = guardadoDe(s.id); if (g && !mismo(g.borrador, fresco)) S.recuperar[s.id] = g; else if (g) olvidar(s.id); }
+      });
       if (!S.pestana) S.pestana = pestanaDe(ancla()) || PESTANAS[0][0];
       render();
     });
@@ -1731,6 +1960,9 @@ function pantalla(idioma = 'es') {
   }
   if (typeof window !== 'undefined' && window && window.addEventListener) window.addEventListener('hashchange', function () { irA(ancla()); });
   // un enlace de pestaña no salta la página hasta el panel; un enlace al ancla que ya está puesta igual abre su pestaña
+  // cada cambio de un campo deja lo cargado guardado (el evento sube desde el campo hasta la pestaña)
+  app.addEventListener('input', guardarBorradores);
+  app.addEventListener('change', guardarBorradores);
   app.addEventListener('click', function (e) {
     var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
     if (!a) return;
@@ -1746,6 +1978,6 @@ function pantalla(idioma = 'es') {
 module.exports = {
   SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
-  thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia,
+  thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

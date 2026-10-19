@@ -247,8 +247,20 @@ vez**: mientras el sitio trabaja, los botones y los campos de la sección quedan
 marca propia, así que un doble clic no crea dos pedidos. Si la respuesta se corta (la red, un reinicio del sitio en
 medio del pedido), la página no da el error enseguida: consulta hasta tres veces, a los 2, 5 y 10 segundos, si el pedido
 de esa propuesta existe, y si existe muestra su enlace. Sólo si no lo encuentra dice el error, que pide recargar y mirar
-si el pedido se abrió antes de repetirlo. La página nunca reenvía la propuesta sola. Alguien del equipo lo revisa y lo mergea. El sitio toma el cambio en el **próximo
-refresco** (cada 15 minutos, si la organización no eligió otro plazo). **Descargar** baja el archivo cambiado, para
+si el pedido se abrió antes de repetirlo. La página nunca reenvía la propuesta sola. Alguien del equipo lo revisa y lo mergea.
+
+No hace falta recargar la página. Mientras el pedido está abierto, la página pregunta cada 10 segundos si ya entró, hasta
+10 minutos; con la pestaña oculta deja de preguntar y retoma al volver. Cuando el pedido entra o se cierra, el sitio
+relee el repo y la página toma la versión nueva. Si mientras cargabas alguien cambió **otra parte** del mismo archivo,
+tu cambio se pone encima de la versión nueva y la diferencia lo muestra antes de que confirmes de nuevo. Si cambió **lo
+mismo** que vos, la sección muestra cada valor con las dos versiones: **Quedarme con el mío** o **Tomar el de ahora**, y
+lo que cargaste no se pierde. Una lista cuenta como un solo valor: si los dos tocaron la misma lista, se elige la lista
+entera. Si recargás la página con algo sin proponer, la sección ofrece **Recuperar lo que estabas cargando**. Lo cargado
+vive en tu navegador mientras la pestaña está abierta, nunca va al sitio. En un navegador que no deja guardar (una
+ventana privada, por ejemplo) la página anda igual, sin esa oferta. Las diferencias aceptadas entre productos no se
+mezclan: si su archivo cambió, piden recargar como antes.
+
+**Descargar** baja el archivo cambiado, para
 cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo, que lo sube con un pedido de cambio.
 
 ![Una sección cambiada y revisada: «Revisado: está bien escrito»](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
