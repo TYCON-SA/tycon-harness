@@ -61,9 +61,9 @@ A story is your request in writing, with its criteria and its tests: the agent f
 
 1. **Open your coding agent in your repo's folder**, so it loads the harness's rules (if it was open, close it and open it again: the rules load when it starts).
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
-3. **Ask for the story**, so the change is written down before any code: "create a story with `tycon-create-story` to add a date filter".
-4. **Answer what is missing.** If your repo has no `_bmad/`, it asks you three plain questions: what it must do, how you can tell it works, and what it must not touch; what you already said it does not ask again. It shows you the story, writes it on your "yes" and gives you the phrase to go on.
-5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story the plan approves itself; in the others it waits for your go-ahead. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
+3. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
+4. **Review the story.** If your repo has no `_bmad/`, it builds it from three plain questions (what it must do, how you can tell it works, and what it must not touch) that it answers from your request, and it marks what it assumed. It shows it to you and writes it on your "yes".
+5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
 6. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
 
 If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, without changing anything.
