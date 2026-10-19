@@ -13,8 +13,12 @@
  *           versión de git de cada archivo). Si el índice ya nombra ese commit, no sube nada. Borra las fotos de más de 7
  *           días, salvo la que nombra el índice. Si falla la foto, el índice no se toca y el sitio sigue con la anterior.
  *   bajar   (el sitio) baja el índice; si el commit cambió, baja la foto, comprueba la huella, la valida entera (sin
- *           enlaces, sin rutas absolutas ni `..`, sólo lo de `RUTAS`) y recién entonces la abre en una carpeta nueva.
- *           Una foto que no pasa no se abre: el sitio sigue con la carpeta anterior.
+ *           enlaces, sin rutas absolutas ni `..`) y recién entonces la abre en una carpeta nueva. Una foto que no pasa
+ *           no se abre: el sitio sigue con la carpeta anterior. Una ruta sana que el sitio no lee se ignora (no se
+ *           escribe y queda en el registro): un archivo nuevo en la copia no deja al sitio sin datos frescos.
+ *
+ * Además de `RUTAS`, la foto trae el logo que declara `site.brand.logo` del `operations.json` del mismo commit (la ruta
+ * la elige cada organización, así que no puede estar en la lista fija), validado con `BRAND_LOGO`.
  *
  * La foto es un tar.gz armado acá, sin el `tar` del sistema (la imagen del sitio no lo garantiza). La lista de rutas es una
  * sola: la usan el trabajo que copia y el sitio, y una prueba la compara con lo que leen sources.js y la pestaña
@@ -33,6 +37,7 @@ const path = require('path');
 const zlib = require('zlib');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
+const { BRAND_LOGO } = require('../lib/operations-config.js');
 
 /** Lo que el sitio lee del repo de operaciones. Una ruta que termina en `/` es la carpeta entera (se lee por listado). */
 const RUTAS = Object.freeze([
@@ -49,12 +54,20 @@ const CARPETA_FOTOS = 'fotos/';
 const VIDA_FOTOS_MS = 7 * 86400000;
 
 const enRutas = (rel) => RUTAS.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
-/** Una ruta de la foto: relativa, con `/`, sin segmentos vacíos ni `.` ni `..`, y de las que el sitio lee. */
-function rutaSana(rel) {
+/** La forma de una ruta de la foto: relativa, con `/`, sin segmentos vacíos ni `.` ni `..`. */
+function rutaSegura(rel) {
   if (typeof rel !== 'string' || !rel || rel.length > 255) return false;
   if (rel.startsWith('/') || /^[A-Za-z]:/.test(rel) || rel.includes('\\') || rel.includes('\0')) return false;
-  if (rel.split('/').some((s) => s === '' || s === '.' || s === '..')) return false;
-  return enRutas(rel);
+  return !rel.split('/').some((s) => s === '' || s === '.' || s === '..');
+}
+/** Una ruta segura y de las que el sitio lee. */
+const rutaSana = (rel) => rutaSegura(rel) && enRutas(rel);
+
+/** El logo que declara un operations.json (`site.brand.logo`), si pasa `BRAND_LOGO`; si no, `null`. */
+function logoDe(cuerpo) {
+  let ops; try { ops = JSON.parse(cuerpo.toString('utf8')); } catch { return null; }
+  const logo = ops && ops.site && ops.site.brand ? ops.site.brand.logo : undefined;
+  return typeof logo === 'string' && BRAND_LOGO.test(logo) && rutaSegura(logo) ? logo : null;
 }
 
 // ── la foto (tar ustar + gzip) ─────────────────────────────────────────────────────────────────────────────────
@@ -106,7 +119,11 @@ function armarFoto(archivos) {
 
 const cadena = (b, desde, largo) => { const s = b.subarray(desde, desde + largo); const fin = s.indexOf(0); return (fin === -1 ? s : s.subarray(0, fin)).toString('utf8'); };
 
-/** El tar.gz → `{ ok: true, archivos: [{ rel, cuerpo }] }` o `{ ok: false, motivo }`. Valida TODO antes de devolver nada. */
+/**
+ * El tar.gz → `{ ok: true, archivos: [{ rel, cuerpo }], ignorados: [rel] }` o `{ ok: false, motivo }`. Valida TODO antes
+ * de devolver nada. Lo peligroso rechaza la foto entera; una ruta segura que el sitio no lee (ni es el logo que declara
+ * el operations.json de la misma foto) va a `ignorados` y no se devuelve.
+ */
 function leerFoto(gz) {
   let tar;
   try { tar = zlib.gunzipSync(gz); } catch (e) { return { ok: false, motivo: `la foto no se puede descomprimir (${e.code || e.message})` }; }
@@ -134,7 +151,7 @@ function leerFoto(gz) {
     const rel = rutaPax !== null ? rutaPax : (prefijo ? `${prefijo}/${cadena(h, 0, 100)}` : cadena(h, 0, 100));
     rutaPax = null;
     if (tipo !== '0') return { ok: false, motivo: `la foto trae algo que no es un archivo (${rel}, tipo ${tipo}): no se abre` };
-    if (!rutaSana(rel)) return { ok: false, motivo: `la foto trae una ruta que no se abre (${rel.slice(0, 120)})` };
+    if (!rutaSegura(rel)) return { ok: false, motivo: `la foto trae una ruta que no se abre (${rel.slice(0, 120)})` };
     if (vistos.has(rel)) return { ok: false, motivo: `la foto trae ${rel} dos veces` };
     if (!Number.isFinite(tam) || tam < 0 || i + 512 + tam > tar.length) return { ok: false, motivo: `la foto está cortada en ${rel}` };
     vistos.add(rel);
@@ -142,8 +159,13 @@ function leerFoto(gz) {
     i += 512 + tam + ((512 - (tam % 512)) % 512);
   }
   if (rutaPax !== null) return { ok: false, motivo: 'la foto termina en una cabecera extendida sin su archivo: no se abre' };
-  if (!archivos.length) return { ok: false, motivo: 'la foto no trae ningún archivo' };
-  return { ok: true, archivos };
+  const ops = archivos.find((a) => a.rel === 'operations.json');
+  const logo = ops ? logoDe(ops.cuerpo) : null;
+  const sirve = (a) => enRutas(a.rel) || a.rel === logo;
+  const ignorados = archivos.filter((a) => !sirve(a)).map((a) => a.rel);
+  const abiertos = archivos.filter(sirve);
+  if (!abiertos.length) return { ok: false, motivo: archivos.length ? `la foto no trae ningún archivo que el sitio lea (${archivos.length} ignorado(s))` : 'la foto no trae ningún archivo' };
+  return { ok: true, archivos: abiertos, ignorados };
 }
 
 // ── lo que entra a la foto, del commit de main ─────────────────────────────────────────────────────────────────
@@ -151,6 +173,27 @@ function gitDe(repo, args) {
   const r = spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', maxBuffer: 64 << 20, windowsHide: true });
   if (r.status !== 0) throw new Error(`git ${args[0]} falló en ${repo}: ${String(r.stderr || '').trim().slice(0, 200)}`);
   return r.stdout;
+}
+
+/** Suma a `elegidos` el logo que declara el operations.json del commit, si es un archivo de git (no un enlace). */
+function sumarLogo(repo, elegidos, log) {
+  const ops = elegidos.find((e) => e.rel === 'operations.json');
+  if (!ops) return;
+  const r = spawnSync('git', ['-C', repo, 'cat-file', 'blob', ops.oid], { maxBuffer: 64 << 20, windowsHide: true });
+  if (r.status !== 0) throw new Error(`git cat-file falló en ${repo}: ${String(r.stderr || '').trim().slice(0, 200)}`);
+  let declarado;
+  try { const o = JSON.parse(r.stdout.toString('utf8')); declarado = o && o.site && o.site.brand ? o.site.brand.logo : undefined; }
+  catch (e) { log(`operations.json no se lee como JSON (${e.message.slice(0, 120)}): el logo no entra a la foto`); return; }
+  if (declarado === undefined) return;
+  const logo = logoDe(r.stdout);
+  if (!logo) { log(`site.brand.logo (${String(declarado).slice(0, 120)}) no es la ruta de un .png o un .svg dentro del repo: no entra a la foto`); return; }
+  if (elegidos.some((e) => e.rel === logo)) return;
+  const linea = gitDe(repo, ['ls-tree', '-z', 'HEAD', '--', logo]).split('\0').filter(Boolean)[0];
+  const m = linea && /^(\d+) (\w+) ([0-9a-f]+)\t(.+)$/s.exec(linea);
+  if (!m || m[4] !== logo) { log(`el logo ${logo} no está en el commit: no entra a la foto`); return; }
+  if (m[2] !== 'blob') { log(`el logo ${logo} es un ${m[2]} de git, no un archivo: no entra a la foto`); return; }
+  if (m[1] === '120000') { log(`el logo ${logo} es un enlace simbólico, no entra a la foto`); return; }
+  elegidos.push({ rel: logo, oid: m[3] });
 }
 
 /** `{ commit, archivos: [{ rel, cuerpo, oid }] }` del HEAD del clon. Sin enlaces simbólicos ni nada fuera del clon. */
@@ -167,6 +210,7 @@ function juntar(repo, log = () => {}) {
     if (!rutaSana(rel)) { log(`${rel}: ruta que no entra a la foto`); continue; }
     elegidos.push({ rel, oid });
   }
+  sumarLogo(repo, elegidos, log);
   // 🔴 el contenido sale de los OBJETOS del commit, nunca del árbol de trabajo: un cambio sin commitear en el clon (o en
   //    un agente que reusa la carpeta) no puede publicarse con el sello de `main`
   const archivos = [];
@@ -273,7 +317,7 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   }
   // la versión de cada archivo: sin ella «Proponer» no sabe si el archivo cambió (Configuración lo pide)
   const arch = indice.archivos;
-  if (!arch || typeof arch !== 'object' || Array.isArray(arch) || !Object.keys(arch).length || !Object.entries(arch).every(([k, v]) => rutaSana(k) && typeof v === 'string' && /^[0-9a-f]{40,64}$/.test(v))) {
+  if (!arch || typeof arch !== 'object' || Array.isArray(arch) || !Object.keys(arch).length || !Object.entries(arch).every(([k, v]) => rutaSegura(k) && typeof v === 'string' && /^[0-9a-f]{40,64}$/.test(v))) {
     return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia no trae la versión de cada archivo' };
   }
   if (previo && previo.commit === indice.commit && previo.carpeta && fs.existsSync(previo.carpeta)) return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
@@ -282,6 +326,7 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   if (crypto.createHash('sha256').update(f.cuerpo).digest('hex') !== indice.huella) return { ok: false, codigo: 'ilegible', motivo: 'la foto no tiene la huella que dice el índice: no se abre' };
   const foto = leerFoto(f.cuerpo);
   if (!foto.ok) return { ok: false, codigo: 'ilegible', motivo: foto.motivo };
+  if (foto.ignorados.length) log(`copia de operaciones: ${foto.ignorados.length} archivo(s) de la foto que el sitio no lee, ignorados: ${foto.ignorados.slice(0, 10).join(', ').slice(0, 400)}`);
   fs.mkdirSync(dir, { recursive: true });
   const abriendo = fs.mkdtempSync(path.join(dir, '.abriendo-'));
   try {
@@ -333,7 +378,7 @@ async function main(argv) {
   return r.ok ? 0 : 1;
 }
 
-module.exports = { RUTAS, INDICE, rutaSana, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas };
+module.exports = { RUTAS, INDICE, rutaSana, rutaSegura, logoDe, armarFoto, leerFoto, juntar, almacenDeLaNube, codigoDe, subir, bajar, borrarViejas };
 
 if (require.main === module) {
   main(process.argv.slice(2)).then((c) => process.exit(c), (e) => { process.stderr.write(`[copia] falló: ${e && e.stack ? e.stack : e}\n`); process.exit(1); });

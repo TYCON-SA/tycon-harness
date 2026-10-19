@@ -65,6 +65,8 @@ function almacenDeJuguete({ fallaPut = null, inicial = {} } = {}) {
 }
 
 const sinLog = () => {};
+/** Un .png con su firma: lo que el sitio sirve como logo. */
+const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(32, 1)]);
 
 test('T5 2.34-Subir_SoloLasRutasDelSitio @story-2.34 @ac-2 — la foto trae sólo lo de RUTAS', async () => {
   // 🔴 rojo: la foto trae pipelines/ o inbox/, que el sitio no muestra.
@@ -164,6 +166,15 @@ test('T11 2.34-Lista_IgualALasLecturas @story-2.34 @ac-5 — RUTAS cubre lo que 
   assert.ok(leidas.size >= 7, `pocas lecturas encontradas: ${[...leidas].join(', ')}`);
   const cubre = (r) => COPIA.RUTAS.some((p) => (p.endsWith('/') ? r.startsWith(p) || r === p : r === p));
   assert.deepStrictEqual([...leidas].filter((r) => !cubre(r)), [], 'lecturas que la copia no trae');
+  // la lectura del logo vive en server.js (logo()): el archivo que declara site.brand.logo, de la carpeta de operaciones.
+  // No está en RUTAS (la ruta la elige cada organización): la copia tiene que traer el que declara operations.json.
+  const servidor = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'server.js'), 'utf8');
+  assert.match(servidor, /site\.brand\.logo/, 'server.js dejó de leer site.brand.logo: actualizar esta prueba');
+  assert.match(servidor, /operaciones\.dir/, 'server.js dejó de leer el logo de la carpeta de operaciones: actualizar esta prueba');
+  const repo = repoDeJuguete({ 'operations.json': '{"version":1,"site":{"brand":{"logo":"marca/acme.png"}}}\n', 'marca/acme.png': PNG });
+  const foto = COPIA.leerFoto(COPIA.armarFoto(COPIA.juntar(repo).archivos));
+  assert.ok(foto.ok, foto.motivo);
+  assert.ok(foto.archivos.some((a) => a.rel === 'marca/acme.png'), 'la lectura del logo: la copia no lo trae');
 });
 
 // ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -291,6 +302,7 @@ test('T16b 2.34-Almacen_FormaDeAzureBlob @story-2.34 @ac-7 @ac-8 — subir y baj
 
 // ── el sitio con la copia (T12, T17) ────────────────────────────────────────────────────────────────────────────
 const H = require('./lib/site-harness.js');
+const { arrancarEmisor } = require('./lib/fake-oidc.js');
 const { crearFuentes } = require(path.join(ROOT, 'scripts', 'site', 'sources.js'));
 const { validarConfiguracion } = require(path.join(ROOT, 'scripts', 'site', 'server.js'));
 const OPS_VALIDO = '{"version":1,"owners":{"default":"lead@acme.example"},"site":{"maintainers":["lead@acme.example"]}}\n';
@@ -568,4 +580,105 @@ test('T17b 2.34-SinCredencialesNiCuenta @story-2.34 @ac-17 — ni el índice ni 
     assert.match(banda, /la copia de operaciones tiene 25 horas/);
     assert.doesNotMatch(banda, /acmeops|\/copia\b/, 'la banda no nombra la cuenta ni el contenedor');
   } finally { f.detener(); }
+});
+
+// ── el logo de la organización ────────────────────────────────────────────────────────────────────────────────
+const opsConLogo = (logo) => `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'], brand: { name: 'Acme', logo } } })}\n`;
+
+test('T1 2.54-Subir_SumaElLogoDeclarado @story-2.54 @ac-1 — la foto y el índice traen el logo que declara operations.json', async () => {
+  // 🔴 rojo: la foto sale sin el logo y /marca/logo no lo encuentra.
+  const repo = repoDeJuguete({ 'operations.json': opsConLogo('marca/logo.png'), 'marca/logo.png': PNG, 'marca/otro.png': PNG });
+  const al = almacenDeJuguete();
+  const r = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(r.ok, true, r.motivo);
+  const idx = JSON.parse(al.blobs.get('actual.json').cuerpo);
+  assert.ok(idx.archivos['marca/logo.png'], 'el índice nombra el logo con su versión');
+  const foto = COPIA.leerFoto(al.blobs.get(`fotos/${idx.commit}.tar.gz`).cuerpo);
+  assert.ok(foto.ok, foto.motivo);
+  const logo = foto.archivos.find((a) => a.rel === 'marca/logo.png');
+  assert.ok(logo && logo.cuerpo.equals(PNG), 'la foto trae el logo, con su contenido');
+  assert.ok(!foto.archivos.some((a) => a.rel === 'marca/otro.png'), 'sólo el archivo exacto, no la carpeta');
+  // un logo que ya cae en RUTAS (la carpeta .dashboard/) entra una sola vez
+  const repo2 = repoDeJuguete({ 'operations.json': opsConLogo('.dashboard/logo.svg'), '.dashboard/logo.svg': '<svg xmlns="http://www.w3.org/2000/svg"/>' });
+  const al2 = almacenDeJuguete();
+  assert.strictEqual((await COPIA.subir({ repo: repo2, almacen: al2, log: sinLog })).ok, true);
+  const idx2 = JSON.parse(al2.blobs.get('actual.json').cuerpo);
+  const foto2 = COPIA.leerFoto(al2.blobs.get(`fotos/${idx2.commit}.tar.gz`).cuerpo);
+  assert.ok(foto2.ok, foto2.motivo);
+  assert.strictEqual(foto2.archivos.filter((a) => a.rel === '.dashboard/logo.svg').length, 1, 'una sola vez');
+});
+
+test('T2 2.54-Subir_LogoInvalidoAusenteOEnlace @story-2.54 @ac-1 — un logo que no vale, que falta o que es un enlace: la foto sale igual, sin él, y lo dice', async () => {
+  const afuera = path.join(tmp(), 'secreto.png');
+  fs.writeFileSync(afuera, PNG);
+  const casos = [
+    ['gif', 'marca/logo.gif', { 'marca/logo.gif': PNG }, /site\.brand\.logo.*no entra a la foto/],
+    ['sube', '../afuera.png', {}, /site\.brand\.logo.*no entra a la foto/],
+    ['falta', 'marca/falta.png', {}, /marca\/falta\.png.*no está en el commit/],
+    ['enlace', 'marca/enlace.png', {}, /marca\/enlace\.png.*enlace simbólico/],
+    ['ilegible', null, { 'operations.json': '{roto', 'marca/logo.png': PNG }, /operations\.json no se lee como JSON.*el logo no entra/],
+    ['carpeta', 'marca/logo.png', { 'marca/logo.png/adentro.txt': 'una carpeta con nombre de logo' }, /marca\/logo\.png es un tree de git, no un archivo/],
+  ];
+  for (const [que, logo, extra, mensaje] of casos) {
+    const repo = repoDeJuguete({ 'operations.json': opsConLogo(logo), ...extra });
+    if (que === 'enlace') {
+      fs.mkdirSync(path.join(repo, 'marca'), { recursive: true });
+      fs.symlinkSync(afuera, path.join(repo, 'marca', 'enlace.png'));
+      git(repo, 'add', '-A'); git(repo, 'commit', '-qm', 'enlace');
+    }
+    const al = almacenDeJuguete();
+    const lineas = [];
+    const r = await COPIA.subir({ repo, almacen: al, log: (l) => lineas.push(l) });
+    assert.strictEqual(r.ok, true, `${que}: ${r.motivo}`);
+    const idx = JSON.parse(al.blobs.get('actual.json').cuerpo);
+    const foto = COPIA.leerFoto(al.blobs.get(`fotos/${idx.commit}.tar.gz`).cuerpo);
+    assert.ok(foto.ok, `${que}: ${foto.motivo}`);
+    assert.ok(!foto.archivos.some((a) => /\.(png|gif)$/.test(a.rel)), `${que}: la foto no trae el logo`);
+    assert.ok(lineas.some((l) => mensaje.test(l)), `${que}: el registro lo dice (${lineas.join(' | ')})`);
+  }
+});
+
+test('T3 2.54-Bajar_IgnoraLoQueNoConoce @story-2.54 @ac-2 — una ruta sana que el sitio no lee se ignora; el resto se abre', async () => {
+  // 🔴 rojo: hoy el sitio rechaza la foto entera y se queda sin datos frescos.
+  const foto = fotoCon([
+    { nombre: 'operations.json', datos: '{"version":1,"site":{"brand":{"logo":"marca/logo.png"}}}' },
+    { nombre: 'pipelines/acme.yml', datos: 'trigger: none' },
+    { nombre: 'marca/otro.png', datos: 'no lo declara operations.json' },
+  ]);
+  const huella = crypto.createHash('sha256').update(foto).digest('hex');
+  const commit = 'd'.repeat(40);
+  const al = almacenDeJuguete({ inicial: { 'actual.json': JSON.stringify({ version: 1, commit, hora: new Date().toISOString(), huella, archivos: { 'operations.json': 'a'.repeat(40), 'pipelines/acme.yml': 'b'.repeat(40) } }), [`fotos/${commit}.tar.gz`]: foto } });
+  const dir = tmp();
+  const lineas = [];
+  const r = await COPIA.bajar({ almacen: al, dir, previo: null, log: (l) => lineas.push(l) });
+  assert.strictEqual(r.ok, true, r.motivo);
+  assert.ok(fs.existsSync(path.join(r.carpeta, 'operations.json')), 'lo que el sitio lee, abierto');
+  assert.ok(!fs.existsSync(path.join(r.carpeta, 'pipelines')), 'lo que no lee no se escribe');
+  assert.ok(!fs.existsSync(path.join(r.carpeta, 'marca')), 'un .png que operations.json no declara no se escribe');
+  assert.ok(lineas.some((l) => /ignorad/.test(l) && l.includes('pipelines/acme.yml') && l.includes('marca/otro.png')), `el registro nombra lo ignorado (${lineas.join(' | ')})`);
+  // una foto en la que todo se ignora no se abre, y el motivo dice que hubo archivos ignorados (no «ningún archivo»)
+  const nada = COPIA.leerFoto(fotoCon([{ nombre: 'pipelines/acme.yml', datos: 'x' }, { nombre: 'inbox/acme.md', datos: 'x' }]));
+  assert.strictEqual(nada.ok, false);
+  assert.match(nada.motivo, /ningún archivo que el sitio lea \(2 ignorado\(s\)\)/);
+});
+
+test('T4 2.54-Bajar_ElLogoLlegaAlSitio @story-2.54 @ac-4 — el sitio abre la foto con el logo y lo deja donde /marca/logo lo lee', async () => {
+  // 🔴 rojo: la carpeta de operaciones del sitio no trae el logo.
+  const repo = repoDeJuguete({ 'operations.json': opsConLogo('marca/logo.png'), 'marca/logo.png': PNG });
+  const al = almacenDeJuguete();
+  assert.strictEqual((await COPIA.subir({ repo, almacen: al, log: sinLog })).ok, true);
+  const { f } = fuentesConCopia(al, () => T0);
+  const emisor = await arrancarEmisor();
+  let h = null;
+  try {
+    await f.refrescar();
+    const dir = f.clones().operaciones.dir;
+    assert.ok(fs.readFileSync(path.join(dir, 'marca', 'logo.png')).equals(PNG), 'el logo, en la carpeta de operaciones');
+    assert.strictEqual(f.config().site.brand.logo, 'marca/logo.png');
+    // y la ruta del sitio lo sirve, leyendo la carpeta de la copia
+    h = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor.issuer }), fuentes: f });
+    const s = (await H.ingresar(h, emisor, { sub: 's-lead', email: 'lead@acme.example', email_verified: true })).sesion;
+    const logo = await h.pedir('/marca/logo', { cookie: s });
+    assert.deepStrictEqual([logo.status, logo.headers['content-type']], [200, 'image/png'], '/marca/logo responde con el logo de la copia');
+  } finally { if (h) await h.cerrar(); await emisor.cerrar(); f.detener(); }
 });

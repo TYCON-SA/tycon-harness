@@ -800,8 +800,8 @@ Render y una máquina propia), la prueba sin sesión (`scripts/site/check-deploy
 (`scripts/lib/notify.js`). Red: las suites `site-*` y `notify` de `scripts/tests/`.
 
 **La copia de operaciones**: con `SITE_OPERATIONS_SOURCE=copy`, `pipelines/operations/site-copy.yml` sube a
-un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`) y el sitio lo lee con su identidad,
-sin permiso del repo; la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`.
+un contenedor sólo lo que el sitio lee (`RUTAS` de `scripts/site/operations-copy.js`, más el logo de `site.brand.logo`)
+y el sitio lo lee con su identidad, sin permiso del repo (lo sano que no lee lo ignora; lo peligroso rechaza la foto); la edad de la copia frena como `operations.json`. Red: `site-operations-copy.test.js`. **Al día con `stable`**: la imagen llega a `stable` sólo escaneada y firmada; `scripts/site/deploy/update-site.js` la instala por huella, prueba y vuelve atrás (`site.update`). Red: `site-latest-release.test.js` y `site-update.test.js`.
 
 ## guides/integrations/ado-cola-y-listados.md
 
