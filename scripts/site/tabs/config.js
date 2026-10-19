@@ -117,6 +117,25 @@ function respuestaVigente(lector, doc) {
  * los de sus paquetes (`reviewers` de cada pack.json), sin repetir y ordenados. Para elegir el modelo de un revisor por
  * nombre y no escribirlo a mano.
  */
+// las herramientas que la puerta de pruebas corre por dentro, con su propia lógica: se muestran, no se cambian
+const RUNNERS_INTERNOS = Object.freeze(['dotnet', 'vitest', 'jest', 'node']);
+/** Lo de fábrica para la sección «Tu tecnología»; sin la tabla en esta versión, `fabrica: null` y el motivo. */
+function tecnologiaDeFabrica() {
+  try {
+    // la skill que la trae se busca por su archivo, como los modelos de hoy (org-config.js, buscarModelosDeHoy)
+    let skills = [];
+    try { skills = fs.readdirSync(path.join(TREE, 'skills')).sort(); } catch (_) { skills = []; }
+    for (const n of skills) {
+      const f = path.join(TREE, 'skills', n, 'scripts', 'lib', 'test-runners.js');
+      if (!fs.existsSync(f)) continue;
+      const t = require(f);
+      if (typeof t.factoryTable === 'function') return { fabrica: t.factoryTable(), internos: RUNNERS_INTERNOS };
+    }
+    return { fabrica: null, internos: RUNNERS_INTERNOS, motivo: 'esta versión del arnés no trae la lista de fábrica' };
+  } catch (e) {
+    return { fabrica: null, internos: RUNNERS_INTERNOS, motivo: `no pude leer la lista de fábrica (${(e && e.message) || e})` };
+  }
+}
 function revisoresDelArbol(perfilDir) {
   const ids = new Set();
   for (const raiz of [TREE, perfilDir].filter(Boolean)) {
@@ -349,6 +368,9 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
+    // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
+    // corre por dentro se listan sin poder cambiarse
+    if (s.id === 'tecnologia') v.extras = tecnologiaDeFabrica();
     // la lista de fichas es la de este sitio; un lector que no conoce la clave deja la sección en «no sabe leer»
     if (s.id === 'fichas') {
       if (!(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('hidden_cards'))) return { ...base, estado: 'no_reader', motivo: 'esta versión del arnés todavía no sabe leer las fichas que muestra el sitio (site.hidden_cards)' };

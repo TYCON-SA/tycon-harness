@@ -380,6 +380,11 @@ only: they are changed with a request in their repo.
   server, repo by repo. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Test coverage** (*Cobertura de las pruebas*): the percentage of covered new lines below which the test control gives
   notice (it warns, it does not stop). It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
+- **Your technology** (*Tu tecnología*): what the harness already recognizes, the file endings your team adds as code,
+  the test tools (the built-in ones, and the ones your organization changed or added) and three rules: the test name
+  style, which screens need a browser test and the application's language. Without saying anything, the harness does
+  not impose any team's style. It lives in `team-repos.json` → `stack`, in the profile repo. A maintainer reviews it. A
+  tool that is not on the list is requested with «Ask your agent» (below, §Your technology).
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night); a machine can turn one off for itself. It lives in `team-profile.json`, in the profile repo. A maintainer
   reviews it.
@@ -388,6 +393,29 @@ only: they are changed with a request in their repo.
   maintainer reviews it.
 
 ![How Claude works](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+
+### Your technology
+
+What the person sees in the section, and what the agent does when asked for a tool that is not there.
+
+- **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
+  the three rules. The ones the test gate runs internally (.NET, Vitest, Jest and Node) show as «built in · the
+  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle and Karma can be changed: the form arrives filled with the
+  built-in one, and saving leaves an organization copy with the same name that replaces it. «Back to the built-in one»
+  deletes the copy. A tool's command runs on every team member's computer.
+- **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes
+  it into their coding agent, opened in the project.
+- **What the agent does** with that sentence:
+  1. Looks at the project: which tool runs the tests, the **file that detects it** (the one in the project folder, for
+     example `Cargo.toml`), the command, which report it leaves (JUnit or the Vitest/Jest JSON) and where, and whether it
+     measures coverage and in what format (Cobertura, lcov, istanbul, JaCoCo or the Go profile). `{results}` is the
+     run's folder.
+  2. Writes the `stack.test_runners` entry in `team-repos.json` of the profile repo: `name` (lowercase and hyphens),
+     `detect`, `command`, `results` and, if it measures, `coverage`.
+  3. Validates it with the machines' reader before proposing:
+     `node -e 'console.log(JSON.stringify(require("<harness>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
+     With no problems in `stack`, it proposes it as a request to the profile repo.
+  4. An admin approves the request and the tool shows up in the list, where it can be changed.
 
 ### Installation and updates (Instalación y actualización)
 

@@ -171,7 +171,36 @@ function detectorFiles(stack) {
   ];
 }
 
-module.exports = { FACTORY, RESULT_FORMATS, COVERAGE_FORMATS, NAME_RE, validateRunners, resolve, inspect, detectorFiles };
+// el archivo que se usa para declarar una copia de la de fábrica (una herramienta de la organización se detecta por un
+// solo archivo) y la herramienta que se escribe en su comando
+const DECLARE_AS = Object.freeze({
+  pytest: { detect: 'pyproject.toml', tool: 'python' }, go: { detect: 'go.mod' }, maven: { detect: 'pom.xml' },
+  gradle: { detect: 'build.gradle', tool: './gradlew' }, karma: { detect: 'karma.conf.js' },
+});
+
+/**
+ * Las de fábrica como las ve quien configura: nombre, los archivos que la detectan, y la forma de una herramienta de la
+ * organización (detect, command, results, coverage) para que «Cambiar» arranque desde ella. La lee el sitio.
+ */
+function factoryTable() {
+  const files = detectorFiles(undefined);
+  return FACTORY.map((f) => {
+    const d = DECLARE_AS[f.name] || {};
+    const tool = d.tool || f.tool('.');
+    const strip = (x) => (x ? { format: x.format, path: x.path } : undefined);
+    const out = {
+      name: f.name,
+      files: files.filter((x) => x.name === f.name).map((x) => x.file),
+      detect: d.detect || files.find((x) => x.name === f.name).file,
+      command: f.command.split('{tool}').join(tool),
+      results: strip(f.results),
+    };
+    if (f.coverage) out.coverage = strip(f.coverage);
+    return out;
+  });
+}
+
+module.exports = { FACTORY, RESULT_FORMATS, COVERAGE_FORMATS, NAME_RE, validateRunners, resolve, inspect, detectorFiles, factoryTable };
 
 // CLI para test-gate.sh: `node test-runners.js resolve <carpeta> [--results <carpeta>]` → JSON `{ runner, problems }`,
 // con la configuración de la organización leída del árbol del arnés (stack-config.js), nunca del repo probado.
