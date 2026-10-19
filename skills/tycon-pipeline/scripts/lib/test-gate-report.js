@@ -415,6 +415,14 @@ function informe(argv) {
       const sj = path.join(resultsDir, 'suites.json');
       if (existe(sj)) {
         const r = leerJson(sj);
+        // «Sin acotar» (salida 7): la corrida del repo hermano no pudo acotarse a lo tocado y no corrió nada. No es verde
+        // (suite_green ya es false) ni un rojo de pruebas: la cubre la CI del pedido, y el merge la exige en verde.
+        const sinAcotar = get(r, 'unscoped', null);
+        if (suiteExit === 7 && sinAcotar) {
+          result.unscoped = true;
+          result.unscoped_reason = get(sinAcotar, 'reason', null);
+          result.merge_requires_ci = true;
+        }
         if (get(r, 'no_medido')) {
           result.totals_error = r.no_medido;
         } else {

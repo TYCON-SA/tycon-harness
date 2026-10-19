@@ -2804,7 +2804,9 @@ function computeNext() {
     preconditions.push({ id: 'dodRuntimeChecked', satisfied: marker.dodRuntimeChecked === true, detail: '«Probar en vivo» debe haber pasado (marker.dodRuntimeChecked)' });
     const checks = marker.checks || {};
     for (const c of ['build', 'tests', 'advisors']) {
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green', detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})` });
+      // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step 4 lo dijo y lo anotó).
+      const sinAcotar = c === 'tests' && checks[c] === 'sin-acotar';
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}` });
     }
   }
 

@@ -21,6 +21,11 @@
  *     `TYCON_GATE_ALL_SUITES=1`, corre todo: «no pude mirar» nunca se lee como «no toca».
  *   Esos dos campos los lee SÓLO este runner; el nocturno y el control del PR los ignoran.
  *
+ * LA CORRIDA CRUZADA (`--only-touched`: la del repo hermano, o un repo con la story de otro): corre sólo las suites que
+ * prueban algo tocado (`namesTouched`: la suite misma, o su texto nombra un archivo tocado), aunque lo tocado sea código; las demás quedan diferidas: la completa la corre la CI del pedido. Si no
+ * se sabe qué se tocó, o ninguna suite lo lee, no corre nada y sale 7 («sin acotar»), con el motivo en `unscoped`: correr
+ * las ~400 suites del hermano en la máquina del dev no es la alternativa. `TYCON_GATE_ALL_SUITES=1` corre todo.
+ *
  * LA RAÍZ `agent-skills` LA DICE EL REPO QUE SE MIDE (story 8.18 del arnés, 2026-10-03): los dos repos
  * internos se unieron y esas suites viven en `<repo>/skills`. Este runner las buscaba en
  * `TYCON_SKILLS_DIR` o en `~/.claude/agent-skills/skills`: en un clon de trabajo del repo unido corría
@@ -66,12 +71,19 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
 
 /**
- * Cómo se lanza una suite: `[ejecutable, args, env]`. Con cobertura, bajo el envoltorio: sin la variable que anida
+ * Cómo se lanza una suite: `[ejecutable, args, env]`, sin las variables internas del portón. Con cobertura, bajo el envoltorio: sin la variable que anida
  * corridas de `node --test` (con ella el medidor no escribe su reporte) ni una carpeta de V8 de afuera (cada suite mide
  * en la suya).
  */
-function launch(p, covDir, env) {
+// Las variables con que test-gate.sh describe ESTA corrida (la clave de la copia sellada, las marcas del hermano y de la
+// corrida cruzada): una suite que corre su propio portón de juguete las tomaba como suyas.
+const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
+  'TYCON_TEST_GATE_CROSS_REPO'];
+
+function launch(p, covDir, env0) {
   const ej = p.ruta.endsWith('.js') ? process.execPath : 'bash';
+  const env = { ...env0 };
+  for (const k of DEL_PORTON) delete env[k];
   if (!covDir) return [ej, [p.ruta], env];
   const e = { ...env };
   delete e.NODE_TEST_CONTEXT;
@@ -164,6 +176,41 @@ function ownPaths(repo, ruta) {
 }
 
 /**
+ * Corrida cruzada: ¿la suite prueba algo tocado? Sí si es ella misma, o si su texto nombra un archivo tocado que no es
+ * otra suite (por su ruta relativa o por su nombre). Más estricta que la corrida liviana: sin la regla de la carpeta,
+ * tocar una suite de `scripts/tests/` arrastraba a las ~400 que viven ahí.
+ */
+function namesTouched(repo, ruta, files) {
+  const own = ownPaths(repo, ruta);
+  if (files.some((f) => own.includes(f))) return true;
+  let text = null;
+  try { text = fs.readFileSync(ruta, 'utf8'); } catch (_) { return true; }
+  return files.some((f) => !esSuite(f) && nombres(f).some((n) => text.includes(n)));
+}
+
+// Cómo puede nombrar una suite a un archivo: su ruta, su nombre, y como lo carga `require` —sin la extensión, con su
+// carpeta («lib/acme» por lib/acme.js) y, para un index, por la carpeta («lib/gen» por lib/gen/index.js)—.
+function nombres(f) {
+  const p = path.posix;
+  const sinExt = f.replace(/\.(c|m)?(js|ts)$/, '');
+  const out = [f, p.basename(f)];
+  if (sinExt !== f) {
+    const dir = p.dirname(sinExt);
+    const base = p.basename(sinExt);
+    if (dir !== '.') out.push(`${p.basename(dir)}/${base}`);
+    if (base === 'index' && dir !== '.') {
+      const arriba = p.dirname(dir);
+      out.push(arriba !== '.' ? `${p.basename(arriba)}/${p.basename(dir)}` : p.basename(dir));
+    }
+  }
+  return out;
+}
+
+// «Otra suite»: un archivo con `.test.` o uno dentro de una carpeta `tests/`. Un archivo de código que empieza con
+// «test-» (test-gate.sh, lib/test-gate-report.js) es código, y una suite que lo nombra lo prueba.
+function esSuite(f) { return /\.test\.(js|sh)$/.test(f) || /(^|\/)tests\//.test(f); }
+
+/**
  * Corrida liviana: ¿la suite lee algún archivo tocado? Sí si es ella misma, si vive en la carpeta del
  * archivo (o debajo), o si su texto lo nombra —por su ruta relativa o por su nombre—. Una suite ilegible corre.
  */
@@ -185,7 +232,7 @@ function main(argv, env = process.env) {
   const iSk = argv.indexOf('--skills');
   const iCov = argv.indexOf('--coverage');
   if (!repo || !out || (iSk >= 0 && !argv[iSk + 1]) || (iCov >= 0 && !argv[iCov + 1])) {
-    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light]');
+    console.error('uso: run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>] [--light] [--only-touched]');
     return Promise.resolve(2);
   }
   const covDir = iCov >= 0 ? path.resolve(argv[iCov + 1]) : null;
@@ -222,6 +269,7 @@ function main(argv, env = process.env) {
   const allSuites = env.TYCON_GATE_ALL_SUITES === '1';
   const touched = readTouched(touchedFile);
   let light = argv.includes('--light');
+  const onlyTouched = argv.includes('--only-touched') && !allSuites;
   // el tamaño se fijó al arrancar: si el cambio real toca código, la corrida ya no es liviana y corre lo de siempre
   if (light && touched.known) {
     const code = touched.files.find((f) => require('./run-size.js').classifyFile(f).kind === 'code');
@@ -282,6 +330,12 @@ function main(argv, env = process.env) {
         unknownSaid = true;
       }
     }
+    if (onlyTouched && touched.known && !namesTouched(repo, p.ruta, touched.files)) {
+      const reason = 'la corrida cruzada (la del repo hermano, o con la story en otro repo) corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido';
+      resumen.deferred_suites.push({ suite: p.ruta, reason });
+      console.log(`DIFERIDA ${p.name} — ${reason}`);
+      continue;
+    }
     if (light && touched.known && !allSuites && !readsTouched(repo, p.ruta, touched.files)) {
       const reason = 'diferida por corrida liviana: no lee ningún archivo tocado';
       resumen.deferred_suites.push({ suite: p.ruta, reason });
@@ -291,8 +345,22 @@ function main(argv, env = process.env) {
     (p.exclusive ? exclusives : parallel).push(p);
   }
 
+  // Sin acotar (salida 7): no se sabe qué se tocó, o ninguna suite lo lee. No se corre nada y no es verde ni rojo.
+  if (onlyTouched && (!touched.known || (!parallel.length && !exclusives.length && !resumen.ausentes.length))) {
+    const reason = !touched.known
+      ? `no sé qué archivos tocó la story en este repo (${touched.reason || 'sin motivo'}): la cubre la CI del pedido`
+      : 'ninguna suite lee lo que la story tocó en este repo: la cubre la CI del pedido';
+    console.error(`[suites.json] sin acotar — ${reason}`);
+    escribir(out, { ...resumen, deferred_suites: [], unscoped: { reason } });
+    return Promise.resolve(7);
+  }
+
   if (!parallel.length && !exclusives.length) {
-    const motivo = resumen.ausentes.length ? 'todas las suites declaradas están ausentes' : 'no quedó ninguna suite para correr después de diferir';
+    // El motivo dice lo que pasó: con suites diferidas, no «todas ausentes» (una ausente sigue siendo rojo).
+    const nDif = resumen.deferred_suites.length;
+    const motivo = !resumen.ausentes.length ? 'no quedó ninguna suite para correr después de diferir'
+      : nDif ? `${resumen.ausentes.length} ausente(s) y ${nDif} diferida(s): no quedó ninguna suite para correr`
+        : 'todas las suites declaradas están ausentes';
     console.error(`[suites.json] ${motivo} — «0 corridas» no es un verde`);
     escribir(out, { ...resumen, no_medido: motivo });
     return Promise.resolve(resumen.ausentes.length ? 1 : 3);

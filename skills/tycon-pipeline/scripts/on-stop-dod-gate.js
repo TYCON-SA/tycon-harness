@@ -80,7 +80,8 @@ function computeGate(marker) {
   const checks = marker.checks || {};
   const failures = [];
   for (const [name, status] of Object.entries(checks)) {
-    if (status !== 'green') failures.push(`${name} → ${status}`);
+    // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
+    if (status !== 'green' && !(name === 'tests' && status === 'sin-acotar')) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };

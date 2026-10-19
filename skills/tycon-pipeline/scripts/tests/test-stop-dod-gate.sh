@@ -177,6 +177,37 @@ else
   echo "✗ N2 — la pista del waiver apareció con otros rojos, o no bloqueó"; fail=1
 fi
 
+# T8) tests «sin-acotar» (el repo hermano no se pudo acotar: la cubre la CI del pedido) → no frena el cierre del
+# turno, y complete-step 4 lo deja pasar avisando que el merge exige la CI completa en verde, con constancia en gates.log.
+# 🔴 rojo: el hook frenaba todo lo que no es 'green', y el agente quedaba en un lazo sin salida (la única era la completa).
+echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"build":"green","tests":"sin-acotar"}}' > "$MK"
+[ -z "$(run)" ] && echo "✓ T8 sin-acotar → deja cerrar el turno" || { echo "✗ T8 — sin-acotar frenó el cierre del turno"; fail=1; }
+echo '{"storyId":"X","storyPath":"","autonomous":false,"stepsCompleted":[0,1,2,3],"stepsPending":[4,5,6,7,8],"checks":{"tests":"sin-acotar"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
+OUT8=$(CLAUDE_CODE_SESSION_ID=$SID TYCON_MUTATION_CHECK=off node marker.js complete-step 4 --no-atdd 2>&1); RC8=$?
+if [ "$RC8" -eq 0 ] && echo "$OUT8" | grep -q 'el merge exige la CI completa en verde' \
+  && grep -q '"name":"tests-unscoped"' ~/.claude/.tycon-pipeline/gates.log; then
+  echo "✓ T8 complete-step 4 con sin-acotar → pasa, avisa y lo anota"
+else
+  echo "✗ T8 — complete-step 4 con sin-acotar (rc $RC8): $OUT8"; fail=1
+fi
+
+# T19) mark-tests-not-scoped sólo lo usa test-gate.sh y sólo cambia la salida 7 que puso el portón: no tapa otro rojo.
+# 🔴 rojo: sin estas negativas, cualquiera podía convertir un rojo en «sin-acotar» y dejar de frenar.
+echo '{"storyId":"X","checks":{"tests":"red:exit=7"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
+CLAUDE_CODE_SESSION_ID=$SID node marker.js mark-tests-not-scoped "x" >/dev/null 2>&1; RA=$?
+echo '{"storyId":"X","checks":{"tests":"red:exit=1"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
+CLAUDE_CODE_SESSION_ID=$SID TYCON_TEST_GATE=1 node marker.js mark-tests-not-scoped "x" >/dev/null 2>&1; RB=$?
+grep -q '"red:exit=1"' "$MK"; KB=$?
+echo '{"storyId":"X","checks":{"tests":"red:exit=7"},"checksProvenance":{"tests":"run-check"}}' > "$MK"
+CLAUDE_CODE_SESSION_ID=$SID TYCON_TEST_GATE=1 node marker.js mark-tests-not-scoped "x" >/dev/null 2>&1; RC9=$?
+echo '{"storyId":"X","checks":{"tests":"red:exit=7"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
+CLAUDE_CODE_SESSION_ID=$SID TYCON_TEST_GATE=1 node marker.js mark-tests-not-scoped "x" >/dev/null 2>&1; RD=$?
+if [ "$RA" -eq 2 ] && [ "$RB" -eq 2 ] && [ "$KB" -eq 0 ] && [ "$RC9" -eq 2 ] && [ "$RD" -eq 0 ] && grep -q '"sin-acotar"' "$MK"; then
+  echo "✓ T19 mark-tests-not-scoped: sin el portón, con otro rojo o con otra procedencia, no cambia nada; con la salida 7 del portón, sí"
+else
+  echo "✗ T19 mark-tests-not-scoped: sin portón=$RA otro rojo=$RB(intacto=$KB) otra procedencia=$RC9 el bueno=$RD"; fail=1
+fi
+
 rm -f ~/.claude/.tycon-pipeline/STOP_AUTONOMY
 rm -f "$MK"
 [ "$fail" -eq 0 ] && echo "=== TODOS OK ===" || { echo "=== HUBO FALLOS ==="; exit 1; }

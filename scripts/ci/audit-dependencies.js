@@ -36,6 +36,7 @@
  * ── USO ─────────────────────────────────────────────────────────────────────────────────────────
  * pip: `pip-audit` sobre el archivo de requisitos fijado, sin instalar nada; pip-audit
  * no da la gravedad y cada vulnerabilidad cuenta como alta (ver `auditarPip`).
+ * npm y nuget: una gravedad vacía o desconocida también cuenta como alta, con la misma marca (ver `gravedad`).
  *
  *   node audit-dependencies.js --repo <dir> --type npm|nuget|pip [--project <rel>]
  *                                [--declared <rel>] [--json] [--block]
@@ -64,6 +65,19 @@ const { aliasLegacyOptions, LegacyOptionsError } = (() => {
 
 const WHERE = 'scripts/ci/audit-dependencies.js';
 const SEVERIDADES_GRAVES = ['high', 'critical'];
+const GESTOR = { npm: 'npm', nuget: 'nuget', pip: 'pip-audit' };
+const SEVERIDADES_CONOCIDAS = ['critical', 'high', 'moderate', 'low', 'info'];
+
+/**
+ * La gravedad de una vulnerabilidad de npm o nuget. Una vacía o que no es de las conocidas cuenta como ALTA, con la marca
+ * `gravedad_sin_dato` y lo que vino en `gravedad_informada`, igual que pip: bajarla o descartarla sería callar lo que no
+ * se sabe, y el repo salía limpio sin aviso.
+ */
+function gravedad(sev) {
+  const s = String(sev == null ? '' : sev).trim().toLowerCase();
+  if (SEVERIDADES_CONOCIDAS.includes(s)) return { severidad: s };
+  return { severidad: 'high', gravedad_sin_dato: true, gravedad_informada: sev == null ? '' : String(sev) };
+}
 
 // ── Interpretación de argumentos ───────────────────────────────────────────────────────────────
 
@@ -211,19 +225,22 @@ function auditarNpm(repo) {
   if (!j) return { medido: false, motivo: `${ultimo} — tras ${INTENTOS} intento(s)` };
 
   const hallazgos = [];
+  let sinDato = 0;
   for (const [nombre, v] of Object.entries(j.vulnerabilities || {})) {
-    const sev = String(v.severity || '').toLowerCase();
+    const g = gravedad(v.severity);
+    if (g.gravedad_sin_dato) sinDato++;
     const advisories = [];
     for (const via of Array.isArray(v.via) ? v.via : []) {
       if (via && typeof via === 'object' && via.url) advisories.push(String(via.url));
     }
-    hallazgos.push({ paquete: nombre, severidad: sev, advisories: [...new Set(advisories)].sort(), directa: !!v.isDirect });
+    hallazgos.push({ paquete: nombre, ...g, advisories: [...new Set(advisories)].sort(), directa: !!v.isDirect });
   }
   const m = (j.metadata && j.metadata.vulnerabilities) || {};
   return {
     medido: true,
     hallazgos: hallazgos.sort((a, b) => a.paquete.localeCompare(b.paquete)),
-    resumen: { critical: m.critical || 0, high: m.high || 0, moderate: m.moderate || 0, low: m.low || 0 },
+    // las de gravedad sin dato no están en el resumen de npm: se suman a las altas, que es como cuentan
+    resumen: { critical: m.critical || 0, high: (m.high || 0) + sinDato, moderate: m.moderate || 0, low: m.low || 0 },
   };
 }
 
@@ -281,14 +298,20 @@ function auditarNuget(repo, proyectoRel) {
       for (const grupo of ['topLevelPackages', 'transitivePackages']) {
         for (const pkg of fw[grupo] || []) {
           for (const vul of pkg.vulnerabilities || []) {
-            const sev = String(vul.severity || '').toLowerCase();
+            const g = gravedad(vul.severity);
+            const sev = g.severidad;
             const clave = pkg.id;
             const prev = porPaquete.get(clave);
             const adv = vul.advisoryurl ? [String(vul.advisoryurl)] : [];
             if (!prev) {
-              porPaquete.set(clave, { paquete: clave, severidad: sev, advisories: adv, directa: grupo === 'topLevelPackages' });
+              porPaquete.set(clave, { paquete: clave, ...g, advisories: adv, directa: grupo === 'topLevelPackages' });
             } else {
-              if ((orden[sev] || 0) > (orden[prev.severidad] || 0)) prev.severidad = sev;
+              // la más grave gana; con empate, una informada gana a la de gravedad sin dato
+              if ((orden[sev] || 0) > (orden[prev.severidad] || 0) || ((orden[sev] || 0) === (orden[prev.severidad] || 0) && prev.gravedad_sin_dato && !g.gravedad_sin_dato)) {
+                prev.severidad = sev;
+                delete prev.gravedad_sin_dato; delete prev.gravedad_informada;
+                if (g.gravedad_sin_dato) Object.assign(prev, g);
+              }
               prev.advisories = [...new Set([...prev.advisories, ...adv])].sort();
               prev.directa = prev.directa || grupo === 'topLevelPackages';
             }
@@ -438,7 +461,7 @@ function imprimirHumano(inf) {
   else if (inf.declaracion.existe && inf.declaracion.vencida) console.log(`   ⚠️ la deuda declarada venció el ${inf.declaracion.vence || '<sin fecha>'}: todo vuelve a contar como nuevo.`);
   else if (inf.declaracion.existe) console.log(`   ${inf.declaracion.paquetes} declarada(s) como deuda hasta el ${inf.declaracion.vence}.`);
   for (const h of inf.hallazgos.filter((x) => SEVERIDADES_GRAVES.includes(x.severidad))) {
-    console.log(`   ${h.declarada ? '·' : '🔴'} ${h.paquete} [${h.severidad}${h.gravedad_sin_dato ? ', gravedad sin dato: pip-audit no la informa' : ''}]${h.declarada ? ' (declarada)' : ''} ${h.advisories[0] || ''}`);
+    console.log(`   ${h.declarada ? '·' : '🔴'} ${h.paquete} [${h.severidad}${h.gravedad_sin_dato ? `, gravedad sin dato: ${GESTOR[inf.tipo] || inf.tipo} no la informa` : ''}]${h.declarada ? ' (declarada)' : ''} ${h.advisories[0] || ''}`);
   }
   if (inf.no_declaradas.length) console.log(`   NO declaradas: ${inf.no_declaradas.join(', ')}`);
 }
