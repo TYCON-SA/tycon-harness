@@ -531,6 +531,29 @@ El plan que `install` muestra antes de escribir, y la única pregunta del progra
 
 El perfil de instalación: `minimal` o `full`. Por qué: la instalación traía todo o nada —los frenos, los tres bloques que cambian cómo contesta el asistente en todos los proyectos, los dos ajustes de Claude Code, los hooks de git y las tareas de fondo—, y quien viene de afuera tiene que poder elegir. Qué trae cada perfil lo dice `install-effects.json` (`profiles`), y lo obedecen el aplicador (`.sh` y `.ps1`), el sync de bloques (`<!-- requires-profile: full -->`) y las piezas compartidas. `profile.js` es lo que `harness.js` necesita para elegirlo y cambiarlo: cuál vale (`install.profile`: variable › `~/.claude/tycon.json` › perfil del equipo; sin valor es `full`; roto no es `full`), cómo se dice, si `--profile` contradice a su variable, y qué se quita al cambiar de perfil (lo registrado que el reporte del perfil nuevo ya no trae, con `removePieces`: la mecánica de la vuelta atrás). La clave la escribe `setKey` de `scripts/lib/tycon-config.js`, que avisa si el freno de producción instalado no conoce la sección. Red: `scripts/tests/harness-profile.test.sh` (el aplicador real en minimal y en full, rota, la variable que manda, `install --profile`, el cambio de perfil por opción y por archivo, los inválidos, y el perfil del equipo contra el aplicador anterior), `tycon-config.test.js` (T29, T30), `claude-md-blocks.test.sh` (T34), `installer-ps1.test.sh` (sección w) y `harness-doctor.test.sh` (T38). Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«Los perfiles».
 
+## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
+
+El lector de «¿es la primera historia de esta máquina?» y la oferta de la instalación completa. **El lector**:
+`closedStories` cuenta las corridas terminadas del historial (`timing-history/`: volcados con story, sin pasos pendientes
+y con pasos hechos); es la cuenta cruda. `isFirstStory` decide: «primera» ⟺ `status: 'ok'` y `first: true`, y exige
+tres evidencias juntas: el estado de la instalación trae `first_install.fresh` (lo escribe el instalador sólo al crear
+el estado de cero, y es falso si la carpeta del estado ya tenía volcados, `gates.log` o `advisor-runs/`), no hay
+corridas cerradas y no hay registro de un cierre anterior. 🔴 **Cero volcados no alcanza**: una máquina instalada antes
+de que existiera `first_install`, una instalación no fresca, un estado ilegible o un historial podado (registro de un
+cierre y ningún volcado) dan `no_medido`, y con `no_medido` nadie decide: ni la corrida de primera vez ni la oferta.
+**La oferta** sale del cierre mecánico (`marker.js clear`, después de archivar el volcado), nunca del modelo, y sólo si
+el cierre fue la primera historia de una máquina nueva con la mínima elegida y la oferta nunca se mostró. Sus tres
+renglones (`upgradeOffer` de `questions.js`) se cuentan de la lista de efectos como la diferencia entre la completa y la
+mínima: qué suma, dónde rige y la orden exacta para volver. Con «sí», `offer accept` corre
+`harness.js install --profile full --yes` del árbol instalado; con «no», `offer decline` lo anota. **Una sola vez**:
+mostrada, queda anotada en `first-story.json` aunque nadie conteste. **Sin persona** no pregunta: en una sesión no
+atendida del agente (`CLAUDE_CODE_SESSION_ATTENDED=0`, o el punto de entrada `sdk-*` de `claude -p`) o con `CI`,
+`TF_BUILD` o `GITHUB_ACTIONS`, imprime un renglón con la orden. El modo autónomo del pipeline no cuenta como «sin
+persona»: viene prendido por defecto. Lo que no detecta: una sesión sin persona de Codex (no tiene esa marca); ahí la
+oferta se muestra y queda anotada sin respuesta, que no rompe nada. Un error de la oferta se dice en un renglón y nunca
+frena el cierre. Red: `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de
+`harness-questions.test.sh`.
+
 ## scripts/setup/harness/questions.js
 
 Las preguntas de la instalación. Por qué: con los perfiles, quien no decía nada recibía `full`, y las integraciones y el paquete del stack se prendían editando `~/.claude/tycon.json` a mano: la persona elige al instalar. En una primera instalación, `install` pregunta el perfil **sin valor por defecto** (Enter vuelve a preguntar; a la tercera, o con fin de entrada, sale 2 sin escribir), qué integraciones prender (sólo las que `install-effects.json` ofrece en `integrations`, ninguna marcada) y si el paquete del stack va en todos los repos. Sin terminal no pregunta: sin perfil sale 2, también con `--yes` (`--yes` acepta el plan, no elige). Las tres se contestan también con `--profile`, `--integrations` y `--packs`, y con `--defaults` (lo que pasa `npx`) se contestan solas: instalación mínima, ninguna integración, sin paquete, y lo que fija la configuración gana. Con `--defaults` y la versión bajada, el plan es el corto de `shortPlan`: cinco renglones —qué y dónde, qué instalación, qué toca y qué no, conexiones y paquete, cómo cambiarlo y sacarlo— contados desde la lista de efectos, así que nunca niega algo que la instalación trae. Lo contestado se escribe recién después de la conformidad, con `setKey`; una máquina cuyo perfil fija la configuración (el perfil del equipo, el archivo, una variable) no se pregunta. `questions.js` tiene el texto y la lectura de cada respuesta (sin mirar la plataforma); cuándo se pregunta lo decide `installQuestions` en `harness.js`. Va con `tycon-config.js set` (lo que antes se editaba a mano) y con `doctor`, que dice el perfil, las integraciones, el paquete y los frenos registrados. Red: `scripts/tests/harness-questions.test.sh` (T43 a T46 y el bloque DEFAULTS, en una terminal de juguete), `harness-prompt.test.js` (las piezas y T52), `tycon-config.test.js` (T47), `harness-channel.test.sh` (T48) y `harness-doctor.test.sh` (T49). Detalle: `guides/maintaining/mecanismo-de-instalacion.md` §«Las preguntas».

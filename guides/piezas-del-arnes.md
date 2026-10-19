@@ -629,6 +629,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
+## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
+
+**Qué es:** Dice si una historia es la primera que cierra la máquina, por evidencia, y al cerrarla ofrece una sola vez la instalación completa en tres renglones.
+
+**Por qué existe:** La instalación por defecto es la mínima: quien no lee la portada nunca veía un freno. La oferta llega cuando ya vio funcionar el arnés.
+
+**Quién la usa:** `marker.js clear` (la oferta, después de archivar el volcado), el paso «preparar el commit» (la respuesta) y la corrida de primera vez (`isFirstStory`).
+
+**Dónde se prueba:** `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de `harness-questions.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
+
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
 **Qué es:** El único lugar donde se define el modelo de cada trabajo del pipeline (revisores, vueltas, pase adversarial, ayudantes y sugerencia de sesión) y cómo se resuelve con la configuración de la organización (`team-repos.json → models`).

@@ -312,6 +312,22 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js clear
 
 Si el flujo va straight a Step 9 (ADO closure) sin pausa, el clear ocurre allá. Si el flujo termina en Step 8 (commit prep + dev decide commitear/no commitear manualmente), clear acá.
 
+### Si el cierre ofreció la instalación completa
+
+La primera vez que una máquina nueva con la instalación mínima cierra una historia, `marker.js clear` imprime una
+oferta: un título, tres renglones (qué cambia, dónde, cómo se vuelve atrás) y las dos órdenes para contestar. Sale una
+sola vez por máquina y la decide el cierre, no vos.
+
+1. Mostrá el título y los tres renglones **tal cual**, sin resumirlos ni agregarles nada, y preguntá sí o no (con
+   `AskUserQuestion` bajo Claude Code; con una pregunta llana en otra herramienta). La recomendación no la das vos: es
+   decisión de la persona.
+2. Con «sí», corré la orden de `offer accept` que imprimió el cierre (instala la completa; la salida dice si terminó).
+   Con «no», la de `offer decline` (queda anotado y no se vuelve a ofrecer).
+3. Sin respuesta, no insistas: la oferta ya quedó anotada como mostrada.
+
+No se ofrece ni se pregunta en otro momento: si el cierre no imprimió la oferta, no hay nada que hacer. Si imprimió un
+solo renglón con la orden (sesión sin persona delante), no se pregunta: se deja el renglón en el cierre.
+
 **Salteable** si el dev pidió pausa explícita ("dejá el marker, voy a iterar más") — pero entonces el marker queda activo y los hooks van a seguir recordando los steps pendientes hasta que se complete el flujo o se cleane manualmente.
 
 ## 🟢 Setear `status: review` en el frontmatter (MANDATORY fix robusto 2026-05-20)

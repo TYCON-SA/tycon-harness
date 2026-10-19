@@ -490,6 +490,39 @@ test('T2 · defaults trae los campos de §Cómo funciona con schema 1; write es 
   assert.ok(fs.readFileSync(p.file, 'utf8').endsWith('\n'), 'el archivo termina sin salto de línea');
 });
 
+test('8.54 T7 FirstInstall_SoloAlCrear · first_install {at, version, fresh}: fresca en una carpeta sin uso, no fresca con rastros del pipeline', () => {
+  const state = mod('state');
+  // el estado de cero trae el campo vacío: lo llena quien instala, y una actualización no lo toca
+  assert.strictEqual(state.defaults({ tree: '/t', sources: [] }).first_install, null);
+  const limpia = path.join(BASE, 't7-limpia');
+  fs.mkdirSync(path.join(limpia, '.claude', '.tycon-pipeline', 'harness'), { recursive: true });   // lo que el propio install crea
+  const a = state.firstInstall(limpia, '2026.10.18.50');
+  assert.strictEqual(a.fresh, true, 'una carpeta sin uso del pipeline no es instalación nueva');
+  assert.strictEqual(a.version, '2026.10.18.50');
+  assert.ok(!Number.isNaN(Date.parse(a.at)), `at no es una fecha: ${a.at}`);
+  // cada rastro de uso, por separado, la vuelve no fresca: un volcado de corrida, el registro de portones, los revisores
+  for (const [nombre, armar] of [
+    ['volcado', (d) => { fs.mkdirSync(path.join(d, 'timing-history'), { recursive: true }); fs.writeFileSync(path.join(d, 'timing-history', '1.1-2026-01-01T0000.json'), '{}'); }],
+    ['gates', (d) => fs.writeFileSync(path.join(d, 'gates.log'), '{}\n')],
+    ['revisores', (d) => fs.mkdirSync(path.join(d, 'advisor-runs'), { recursive: true })],
+  ]) {
+    const h = path.join(BASE, `t7-${nombre}`);
+    const d = path.join(h, '.claude', '.tycon-pipeline');
+    fs.mkdirSync(d, { recursive: true });
+    armar(d);
+    assert.strictEqual(state.firstInstall(h, '1').fresh, false, `con ${nombre} la instalación se dijo nueva`);
+  }
+  // lo que no se puede mirar cuenta como rastro: «no pude leer» nunca es «instalación nueva»
+  const ilegible = path.join(BASE, 't7-ilegible');
+  fs.mkdirSync(path.join(ilegible, '.claude', '.tycon-pipeline'), { recursive: true });
+  fs.writeFileSync(path.join(ilegible, '.claude', '.tycon-pipeline', 'timing-history'), 'no soy una carpeta');
+  assert.strictEqual(state.firstInstall(ilegible, '1').fresh, false, 'una carpeta de volcados ilegible se tomó como sin uso');
+  // una carpeta de volcados vacía no es uso (la puede haber creado cualquiera)
+  const vacia = path.join(BASE, 't7-vacia');
+  fs.mkdirSync(path.join(vacia, '.claude', '.tycon-pipeline', 'timing-history'), { recursive: true });
+  assert.strictEqual(state.firstInstall(vacia, '1').fresh, true);
+});
+
 test('T2 · candado: mkdir con pid; el segundo no entra y dice «otra sesión»; release lo suelta; LOCK_HELD=1 no toma nada', () => {
   const lock = mod('lock');
   const state = mod('state');
