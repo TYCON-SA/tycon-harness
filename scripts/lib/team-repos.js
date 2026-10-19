@@ -266,6 +266,39 @@ function modelsProblems(value) {
   return out;
 }
 
+/**
+ * Los trabajos que la organización declaró por encima de su tope obligatorio: `[{ path, message }]`. Sólo con
+ * `mandatory_ceiling: true` y un `ceiling` válido, y sólo lo declarado: un trabajo sin declarar usa el valor por defecto,
+ * que el pipeline baja al tope. NO entra en `modelsProblems`: con un problema ahí, cada máquina descarta toda la
+ * configuración de modelos (también el tope); en las máquinas un modelo por encima se baja al tope y se avisa. Lo usa el
+ * sitio, que no deja proponerlo.
+ */
+function modelsAboveCeiling(value) {
+  if (!isObject(value) || value.mandatory_ceiling !== true || !MODEL_NAMES.includes(value.ceiling)) return [];
+  const tope = MODEL_NAMES.indexOf(value.ceiling);
+  const out = [];
+  const ver = (m, at) => { if (MODEL_NAMES.includes(m) && MODEL_NAMES.indexOf(m) > tope) out.push({ path: at, message: `pasa el tope obligatorio (${value.ceiling})` }); };
+  for (const k of ['reviewers', 'reviewers_reloop', 'helpers']) ver(value[k], `models.${k}`);
+  for (const k of Object.keys(MODELS_SUBKEYS)) {
+    if (!isObject(value[k])) continue;
+    for (const s of MODELS_SUBKEYS[k]) if (s !== 'fable_question') ver(value[k][s], `models.${k}.${s}`);
+  }
+  if (isObject(value.reviewer)) for (const [r, m] of Object.entries(value.reviewer)) if (REVIEWER_NAME.test(r)) ver(m, `models.reviewer.${r}`);
+  return out;
+}
+
+/**
+ * Qué pasa con las suites completas de un repo SIN pipeline declarado, según su regla: `'machine'` (corren
+ * en la máquina del dev) o `'server-if-any-check'` (las corre el servidor si la rama exige un control; si no, la
+ * máquina); `null` con una regla desconocida. Es lo que decide `suitesDecision` de scripts/tools/merge-pr.js antes de
+ * preguntarle a la plataforma; una prueba de merge-pr.test.js compara las dos.
+ */
+function suitesWithoutPipeline(rule) {
+  if (rule === 'automatico' || rule === 'siempre-en-la-maquina') return 'machine';
+  if (rule === 'confiar-en-el-servidor') return 'server-if-any-check';
+  return null;
+}
+
 /** Los problemas de `wait_notice` (story 7.20); `[]` si está bien. */
 function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
@@ -470,7 +503,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, modelsAboveCeiling, suitesWithoutPipeline, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
