@@ -637,10 +637,20 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
   - **AC imposible de verificar en runtime** → se declara en el frontmatter de la story con
     `runtime_not_verifiable:` (`reason:` + `covered_by:`), se le presenta al dev **uno por
     uno en el chat** con el resumen llano ("probado corriendo: N de T; solo tests de
-    código: M; sin evidencia: K"), y la firma la pone **el dev desde su terminal**:
-    `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>` (pide confirmación AC
-    por AC; es TTY-only, el agente no la puede producir) + re-correr el `run-check acmatrix`
-    (ahora verde).
+    código: M; sin evidencia: K"), y decide una persona. **El agente nunca firma por su
+    cuenta.** Tres caminos, en este orden:
+    1. **El ok del dev en el chat** (el principal): con su respuesta,
+       `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>" --quote "<sus palabras, textuales>"`.
+       El arnés busca la cita en un mensaje escrito por el dev en esta conversación (no en lo que escribiste vos,
+       una herramienta, un subagente u otra sesión) y queda manual, con la cita y su hora.
+    2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session`: lo
+       mismo con `--relayed-by <sesión>`; la cita tiene que llegar textual en un mensaje de esa sesión. Queda
+       automático, por delegación del dev.
+    3. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>`
+       (pide confirmación criterio por criterio).
+
+    Después, re-correr el `run-check acmatrix` (ahora verde). El límite: comprobar la cita prueba que el mensaje
+    está en la conversación; no prueba quién está detrás de la sesión que reenvía.
   - 🔴 **NO se escribe `runtime_verification_ack` en el frontmatter**: el ack escribible por
     el agente fue el agujero que se cerró el 2026-07-10 y no se reintroduce. La firma vive
     en `.tycon/runtime-waivers.jsonl` del repo de la story, anclada al hash de la
@@ -665,9 +675,16 @@ la matriz en las transiciones a review/done (el .md escrito no se confía).
 **Dos categorías (DODRT-C6, 2026-07-10)**: la matriz separa `NOT-RUN` (sin evidencia y NO
 declarado imposible → **el agente DEBE correrlo**, no waiveable) de `NOT-VERIFIABLE` (declarado
 en el frontmatter `runtime_not_verifiable:` con `reason:`+`covered_by:` → imposible de ejercer
-corriendo la app → waiveable por el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
-conversación (razón + test que lo cubre) y el usuario decide AC por AC; el waiver TTY
-(`marker.js runtime-waiver`) pide confirmación por-AC (no un rubber-stamp). Ver SKILL.md F.ii.
+corriendo la app → lo decide el usuario). El agente presenta CADA `NOT-VERIFIABLE` en la
+conversación (razón + test que lo cubre) y el usuario decide AC por AC: con su ok escrito en el chat
+(`runtime-waiver … --approved-by --quote`) o desde su terminal. Ver SKILL.md F.ii.
+
+**Un crítico de este paso también lo decide una persona**. Si el revisor de la prueba en vivo marca un
+CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: le pregunta al dev y, con el ok del dev escrito
+en el chat, `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"
+--quote "<sus palabras>"` (o `--relayed-by <sesión>`, o el dev desde su terminal con `--terminal`). Recién ahí el
+hallazgo se anota `waived`. El límite es el mismo: la cita prueba que el mensaje está en la conversación, no prueba
+quién está detrás de la sesión que reenvía.
 
 #### 7c.6.1 — Sembrar el «Given», no escribir el «Then» (DODRT-C10, 2026-10-15)
 

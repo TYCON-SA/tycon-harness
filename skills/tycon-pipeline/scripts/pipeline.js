@@ -5148,6 +5148,25 @@ function writeFindings(args) {
     return { error: errores.join('\n'), firmantes_invalidos: errores.length, run_dir: runDir,
       note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
   }
+  // Un crítico lo decide una persona: un CRITICAL `waived` necesita la constancia del ok
+  // (`marker.js waive-critical`). El agente solo no se exime, se firme como se firme.
+  {
+    const cw = require('./lib/critical-waivers.js');
+    const rev = cw.revisar(records, runDir, { reverificar: true, story: storyId });
+    const faltan = rev.faltan;
+    if (faltan.length) {
+      const rs = cw.sesionQueReenvia();
+      const relay = rs.valor;
+      const marker = path.join(__dirname, 'marker.js');
+      const lineas = [`Un crítico lo decide una persona: ${faltan.length} CRITICAL marcado(s) como waived sin el ok de una persona:`];
+      lineas.push(...cw.renglonesDeFaltantes(rev));
+      lineas.push('Arreglalo, o pedile el ok al dev y anotalo antes de escribir los hallazgos. Los caminos:');
+      for (const f of faltan) lineas.push(...cw.caminos({ marker, ruleId: f.rule_id, file: f.file || '<archivo>', relaySession: relay }));
+      if (rs.aviso) lineas.push(`   (sin reenvío: ${rs.aviso})`);
+      return { error: lineas.join('\n'), criticos_sin_ok: faltan, run_dir: runDir,
+        note: 'No se escribió nada: el findings.json se escribe entero o no se escribe.' };
+    }
+  }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
   // Story en otro repo → el portón de CI de ESE repo va a pedir esta constancia (2026-09-05).

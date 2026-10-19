@@ -4,7 +4,9 @@
  * persona con nombre (manual) o un agente o una regla (automática).
  *
  * Una línea JSON por aprobación en `<carpeta de la corrida>/approvals.jsonl`:
- *   { que, cuando, commit, tipo: 'manual' | 'automatica', quien, via, delegacion? }
+ *   { que, cuando, commit, tipo: 'manual' | 'automatica', quien, via, delegacion?, cita?, cita_cuando? }
+ * `cita` y `cita_cuando`: las palabras de la persona tal como están en la conversación, y la hora de ese
+ * mensaje, cuando la aprobación salió de un ok escrito en el chat.
  *
  * La regla del tipo, la que el portón de CI vuelve a mirar:
  *   - manual exige una persona con nombre (su correo o su usuario);
@@ -35,7 +37,8 @@ const ES_AGENTE = [
 ];
 // Los agentes que trae Claude Code y no viven en una carpeta `agents/`.
 const AGENTES_DE_FABRICA = ['general-purpose', 'explore', 'plan', 'statusline-setup', 'claude-code-guide'];
-const NOREPLY = /^(no-?reply|noreply\+?[^@]*|.*bot)@/i;
+// un bot se nombra «bot» como palabra (`ci-bot@`, `bot@`, `release.bot@`), no por terminar en esas letras (`talbot@`)
+const NOREPLY = /^(no-?reply|noreply\+?[^@]*|(?:[^@]*[-_.+])?bot)@/i;
 const CORREO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 let conocidos = null;
@@ -100,6 +103,11 @@ function normalizar(e) {
     via: texto(e && e.via) || null,
   };
   if (delegacion) out.delegacion = delegacion;
+  const cita = texto(e && e.cita);
+  if (cita) {
+    out.cita = cita;
+    if (texto(e && e.cita_cuando)) out.cita_cuando = texto(e.cita_cuando);
+  }
   return out;
 }
 

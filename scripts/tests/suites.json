@@ -461,6 +461,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.63: el ok de una persona se busca textual en lo que la persona escribió en la conversación — nunca en lo que escribió el agente, una herramienta, un subagente u otra sesión.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/person-ok.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.63: un crítico lo decide una persona — write-findings y los cierres 7 y 8 frenan un CRITICAL eximido sin la constancia del ok; la firma de criterios con el ok del dev; el humo dice contra qué commit corrió.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/critical-waiver.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/models.test.js",
       "requiere": []

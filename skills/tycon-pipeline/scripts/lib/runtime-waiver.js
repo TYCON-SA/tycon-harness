@@ -99,6 +99,9 @@ function canonical(e) {
   if (e.declHashByAc !== undefined) {
     base.push(Object.keys(e.declHashByAc).sort((a, b) => Number(a) - Number(b)).map((k) => [Number(k), e.declHashByAc[k]]));
   }
+  // la firma con el ok de una persona escrito en el chat (sin terminal) lleva el ok adentro del hash; las
+  // firmas por terminal no lo traen y siguen verificando igual
+  if (e.ok !== undefined) base.push([e.tty === true, e.ok]);
   return JSON.stringify(base);
 }
 
@@ -395,7 +398,7 @@ function verifyChain(logPath) {
 
 // Escribe un waiver TTY-confirmado con hash-chain. Sólo lo llama el comando marker.js
 // runtime-waiver, DESPUÉS de que promptTty() confirmó al humano.
-function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc, logPath, migratedFrom }) {
+function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc, logPath, migratedFrom, ok }) {
   const destino = logPath || waiverLogPath();
   fs.mkdirSync(path.dirname(destino), { recursive: true });
   // 🔴 Story 7.17: la firma nueva va SIN padre (raíz). Antes enganchaba con la última línea, y así un revert
@@ -405,6 +408,9 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
   const e = { ts: nowIso, story: String(story), acs: [...acs].sort((a, b) => a - b), matrixHash, approvedBy: approvedBy || null, tty: true };
   if (declHashByAc !== undefined) e.declHashByAc = declHashByAc;
   if (migratedFrom !== undefined) e.migratedFrom = migratedFrom;
+  // firmada con el ok de una persona escrito en el chat (marker.js runtime-waiver --approved-by --quote), no
+  // por terminal: `tty` queda en false y `ok` dice quién, cómo, con qué palabras y a qué hora
+  if (ok !== undefined) { e.tty = false; e.ok = ok; }
   e.chain = sha(prev + canonical(e)).slice(0, 16);
   // Si el archivo quedó sin salto final (recortado a mano en un editor, o una resolución de conflicto), la firma nueva
   // se pegaba a la última línea y se perdían las dos, sin aviso (pase adversarial de la 7.17).

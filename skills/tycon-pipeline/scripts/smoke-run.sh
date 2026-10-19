@@ -279,20 +279,41 @@ if [ "$CAPTURE_SET" = 1 ]; then
   esac
 fi
 
-ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s}' \
-  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA")
-
-printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
-
-MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
-mkdir -p "$MIRROR_DIR"
 # repoPath: namespace por repo (GATESLOG-STORYID-NS-1) — el espejo es global por máquina y los ids
 # cortos de story se repiten entre repos. El repo es el dueño del evidence-dir (<repo>/.advisors/...);
 # si no es un repo git, cae al cwd. Misma key que marker.js para que el capturer agrupe igual.
 REPO_PATH="$(git -C "$EVIDENCE_DIR" rev-parse --show-toplevel 2>/dev/null || git rev-parse --show-toplevel 2>/dev/null || pwd)"
 REPO_JSON="$(node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$REPO_PATH")"
-printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s}\n' \
-  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" >> "$MIRROR_DIR/gates.log"
+
+# ── Contra qué corrió (DODRT-C9) ──
+# La procedencia del repo de la evidencia, anotada sola: el commit servido (o «sin commits todavía», la primera
+# historia de un repo recién creado) y si ese commit está en el remoto («si», «no» o «sin-remoto»). El revisor de la
+# prueba en vivo la lee; antes la tenía que escribir a mano quien corría el humo.
+TGT_ESTADO="sin-repo"; TGT_COMMIT=""; TGT_REMOTO="sin-remoto"; TGT_SUCIO="false"
+if git -C "$REPO_PATH" rev-parse --git-dir >/dev/null 2>&1; then
+  TGT_COMMIT="$(git -C "$REPO_PATH" rev-parse --verify -q HEAD 2>/dev/null || true)"
+  if [ -n "$TGT_COMMIT" ]; then TGT_ESTADO="con-commit"; else TGT_ESTADO="sin-commits"; fi
+  # lo servido no es sólo el commit: con cambios sin commitear, se dice
+  [ -n "$(git -C "$REPO_PATH" status --porcelain 2>/dev/null)" ] && TGT_SUCIO="true"
+  if [ -n "$(git -C "$REPO_PATH" remote 2>/dev/null)" ]; then
+    TGT_REMOTO="no"
+    if [ -n "$TGT_COMMIT" ] && [ -n "$(git -C "$REPO_PATH" branch -r --contains "$TGT_COMMIT" 2>/dev/null)" ]; then TGT_REMOTO="si"; fi
+  fi
+fi
+TARGET_JSON="$(node -e 'const [r,c,e,o,x]=process.argv.slice(1);process.stdout.write(JSON.stringify({repo:r,commit:c||null,estado:e,en_remoto:o,sin_commitear:x==="true"}))' "$REPO_PATH" "$TGT_COMMIT" "$TGT_ESTADO" "$TGT_REMOTO" "$TGT_SUCIO")"
+# sin node que conteste, la línea igual tiene que ser JSON válido: la procedencia queda «no se pudo anotar» (null)
+[ -n "$TARGET_JSON" ] || TARGET_JSON=null
+
+ENTRY=$(printf '{"ts":"%s","story":"%s","acs":%s,"cmd":%s,"exit":%d,"via":"smoke-run.sh"%s,"v":2%s,"target":%s}' \
+  "$TS" "$STORY_ID" "$ACS_JSON" "$CMD_JSON" "$EXIT" "$MUT_FIELD" "$LEDGER_EXTRA" "$TARGET_JSON")
+
+printf '%s\n' "$ENTRY" >> "$EVIDENCE_DIR/$STORY_ID-smoke-ledger.jsonl"
+
+MIRROR_DIR="$HOME/.claude/.tycon-pipeline"
+mkdir -p "$MIRROR_DIR"
+# la procedencia también va al espejo (fuera del repo): editarla en el registro del repo se nota al compararlos
+printf '{"type":"smoke-run","ts":"%s","repoPath":%s,"story":"%s","acs":%s,"exit":%d%s,"v":2%s,"target":%s}\n' \
+  "$TS" "$REPO_JSON" "$STORY_ID" "$ACS_JSON" "$EXIT" "$MUT_FIELD" "$MIRROR_EXTRA" "$TARGET_JSON" >> "$MIRROR_DIR/gates.log"
 
 echo "[smoke-run] story=$STORY_ID acs=$ACS exit=$EXIT mutates=$MUTATES → ledger + gates.log" >&2
 exit $EXIT

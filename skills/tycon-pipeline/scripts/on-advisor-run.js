@@ -248,6 +248,11 @@ function main() {
         JSON.stringify({ ts: new Date().toISOString(), event: 'auto-snapshot', iter: r.iter }) + '\n',
         'utf8',
       );
+    } else if (r.completa && r.yaFotografiada && !ADHOC.has(advisor)) {
+      // 🔴 Un revisor llamado DESPUÉS del sello (el de la prueba en vivo del paso 7c, o una vuelta manual) también entra
+      // al registro de autoría: sin eso, `write-findings` lo rechaza como firmante y su hallazgo termina firmado como
+      // «orquestador». La escritura mezcla con el registro anterior.
+      escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
     }
   } catch { /* fail-open: nada de esto puede romper un spawn — el freno real vive en el portón */ }
 

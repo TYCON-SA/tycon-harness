@@ -2864,3 +2864,39 @@ test('T3 Repos_PipelineNoUsado_HojaConTema @story-2.59.1 @ac-4', () => {
   assert.ok(reglas.length >= 2, `las reglas del pipeline atenuado (${reglas.length})`);
   for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, r.trim().slice(0, 80));
 });
+
+// ── Quién puede reenviar el ok de un dev (approvals.relay_session) ─────────────────────────────────────
+test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja Claude»', () => {
+  const s = ORG.seccionPorId('aprobaciones');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'aprobaciones', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ approvals: { relay_session: 'coordinadora' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, approvals: { relay_session: 'coordinadora' } }));
+  const malo = rev({ approvals: { relay_session: 42 } });
+  assert.strictEqual(malo.ok, false);
+  assert.ok(malo.problems.some((p) => p.path === 'approvals.relay_session'), JSON.stringify(malo.problems));
+  // la pantalla la dibuja en «Cómo trabaja Claude», con sus textos en las dos lenguas
+  for (const idioma of ['es', 'en']) {
+    const js = ORG.pantalla(idioma);
+    assert.match(js, /aprobaciones: editorAprobaciones/);
+    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'tecnologia', 'aprobaciones'/);
+  }
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
+    assert.ok(textos.t('es', k, { req: 'x', version: 'y' }) !== textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
+  }
+});
+
+test('8.63 Perfil_ApprovalsPideSuVersion @story-8.63 @ac-12 — con approvals en el perfil, la capa tiene que pedir la versión que la lee', () => {
+  const CON = { ...PERFIL_TYCON, approvals: { relay_session: 'coordinadora' } };
+  const viejo = JSON.stringify(capa(ORG.RESPONSE_SINCE));
+  assert.ok(ORG.versionAtLeast(ORG.APPROVALS_SINCE, ORG.STACK_SINCE) && ORG.APPROVALS_SINCE !== ORG.STACK_SINCE);
+  const bajo = ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /approvals/); assert.ok(bajo.includes(`>= ${ORG.APPROVALS_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.APPROVALS_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: PERFIL_TYCON }), null, 'sin approvals, cualquier versión lee el perfil');
+  // con el archivo actual, sólo frena si el pedido cambia approvals
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: { ...CON, ado: { org: 'https://dev.azure.com/otra' } }, actual: CON }), null);
+});

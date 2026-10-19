@@ -1817,3 +1817,39 @@ test('Response_ClosedVocabulary_IntegerRange_DefaultsByStyle @story-2.31 @ac-1 @
   assert.equal(rota.status, 2); assert.equal(rota.stdout, '');
 });
 
+
+// ── Quién puede reenviar el ok de un dev (approvals.relay_session) ─────────────────────────────────────
+// Vale SÓLO desde el perfil del equipo (versionado, se cambia por pedido): si la leyera de una variable o del archivo de
+// la máquina, el agente que implementa podría abrirse él mismo la puerta de la exención de un crítico.
+test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
+  // en el perfil: vale
+  let c = cargar({ home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.approvals.relay_session, c.origenes['approvals.relay_session']], ['coordinadora', 'perfil']);
+  // sin nada: nadie
+  c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual([c.valores.approvals.relay_session, c.origenes['approvals.relay_session']], [null, 'sin-valor']);
+  // en el archivo de la máquina: no la abre, no rompe la configuración, y se dice
+  const home = casa();
+  maquina(home, { approvals: { relay_session: 'yo-mismo' } });
+  c = cargar({ home, arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.approvals.relay_session, null);
+  assert.deepEqual(c.shadowed['approvals.relay_session'], { value: 'yo-mismo', origin: 'maquina', by: 'solo-perfil' });
+  assert.match(lib().explicar({ env: {}, home, arnes: arnesCon(null) }), /approvals\.relay_session = sin valor.*vale sólo desde el perfil del equipo/);
+  // no hay variable que la cambie (VARIABLES no la declara), y TYCON_PROFILE tampoco: sale del perfil del árbol
+  assert.equal(lib().VARIABLES['approvals.relay_session'], undefined);
+  const otro = path.join(tmp('tcfg-perfil-'), 'perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({ approvals: { relay_session: 'yo-mismo' } }));
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual([c.valores.approvals.relay_session, c.shadowed['approvals.relay_session'].origin], [null, 'TYCON_PROFILE']);
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora' } }) });
+  assert.equal(c.valores.approvals.relay_session, 'coordinadora', 'el del árbol, no el de la variable');
+  c = cargar({ env: { TYCON_PROFILE: '0' }, home: casa(), arnes: arnesCon({ approvals: { relay_session: 'coordinadora' } }) });
+  assert.equal(c.valores.approvals.relay_session, 'coordinadora', 'TYCON_PROFILE=0 tampoco la apaga');
+  // `set` no la escribe en la máquina
+  const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session']);
+});

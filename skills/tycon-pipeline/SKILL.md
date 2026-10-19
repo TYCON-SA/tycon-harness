@@ -121,9 +121,16 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `complete-step 8` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
   `scripts/smoke-run.sh`, que es lo único que cuenta como evidencia); `NOT-VERIFIABLE` (declarado en
-  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → lo aprueba el USUARIO con `marker.js
-  runtime-waiver <spec>` (TTY; se registra en `<repo>/.tycon/runtime-waivers.jsonl`, que se commitea,
-  anclado a la declaración). El agente JAMÁS aprueba. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
+  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → lo decide una persona; el agente nunca firma por su
+  cuenta. Caminos, en orden: el ok del dev escrito en el chat (`marker.js runtime-waiver <spec> --acs n,m
+  --approved-by "<dev>" --quote "<cita>"`: la cita se busca en un mensaje del dev); la variante reenviada por la sesión
+  que declara la organización (`--relayed-by <sesión>`, `approvals.relay_session`); o el dev desde su terminal
+  (`marker.js runtime-waiver <spec>`). Se registra en `<repo>/.tycon/runtime-waivers.jsonl` (se commitea, anclado a la
+  declaración). **Un CRITICAL de los revisores, igual**: el agente nunca se exime solo; con el ok del dev en el chat,
+  `marker.js waive-critical --rule <r> --file <f> --reason "<por qué>" --approved-by "<dev>" --quote "<cita>"` (o
+  `--relayed-by`, o `--terminal` en la terminal del dev); sin esa constancia `write-findings` no escribe un CRITICAL
+  `waived` y los pasos 7 y 8 frenan. Límite: la cita prueba que el mensaje está en la conversación, no prueba quién
+  está detrás de la sesión que reenvía. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
   con razón y test que lo cubre, y pedir decisión AC por AC — nunca sólo el comando o un link. El checkpoint
   de «Hallazgos» lleva el resumen: «Corrido de verdad: N de T. Sin correr (bloquean, los corro yo): [lista].
   Imposibles-declarados (esperan tu decisión): [lista]». Narrar «listo / probado» con la matriz roja es la violación. Un verbo de

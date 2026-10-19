@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-dod-runtime-checker.md
-# source_sha256: e8b4b405a74a345dfef9a07d8cfd651271375bc0aa87740d7c29ccb64c4d3605
+# source_sha256: 85e970d70cb3d6ba8141df1a42dd3dbb51e87cee1f905296262c8bb454f4d4ea
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-dod-runtime-checker.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-dod-runtime-checker").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -265,6 +265,23 @@ una feature pusheada sin mergear NO es finding de C9). Comandos para generarlo:
    agujero por omisión).
 4. Path de un repo declarado NO existe en esta máquina → **W: \"procedencia no verificable acá\"** —
    NUNCA silencio (el skip mudo es el falso negativo multi-máquina).
+5. **El repo de la propia historia, sin commits todavía** (la primera historia de un repo recién creado: el modo
+   primera vez hace `git init`) → **NO es C9**. Lo que se probó es el diff de esta historia, que en ninguna historia
+   tiene commit durante la prueba en vivo (se commitea después). Procedencia válida: el bloque `## Target` dice
+   «sin commits todavía» para ese repo, o el registro del humo (`<clave>-smoke-ledger.jsonl`) trae
+   `\"target\": { \"estado\": \"sin-commits\", … }` con el `repo` de la historia (lo anota `smoke-run.sh` solo). Si el
+   path existe, se confirma con `git -C <repo> rev-parse --verify -q HEAD` (sale vacío). Se informa como línea en
+   «✅ OK» («procedencia: repo de la historia sin commits todavía, sólo en este disco»), sin corchetes de regla.
+   🔴 **No se extiende a un repo del que se depende**: un backend u otro repo que la historia ejercita y no tiene
+   commits, o tiene un commit que no está en el remoto, sigue siendo C9 (es exactamente el caso «verde contra la
+   laptop»). Tampoco cubre la evidencia sin procedencia: sin bloque ni `target`, sigue siendo C9 por la heurística 1.
+
+**La procedencia que anota el humo**: cada línea de `<clave>-smoke-ledger.jsonl` escrita por
+`smoke-run.sh` trae `target: { repo, commit, estado: con-commit | sin-commits | sin-repo, en_remoto: si | no |
+sin-remoto, sin_commitear }` (también en el espejo de `gates.log`). Vale como el bloque `## Target` para el repo de la
+evidencia; los repos de los que se depende se siguen declarando en el bloque. `sin_commitear: true` en el repo de la
+propia historia es lo normal (el diff se commitea después) y no es C9; en un repo del que se depende, lo servido no está
+en el remoto: C9.
 
 **Límite honesto (declarado)**: el bloque lo escribe el auditado — el advisor verifica el SHA
 ANOTADO, no el SHA del binario que realmente corrió. v2 futura: el smoke-runner estampa la
@@ -362,7 +379,7 @@ correr; esta regla juzga si el texto y la salida sostienen el AC.
 5. **DODRT-C3**: grep patterns transaccionales en files modificados. Para cada match, buscar test de rollback en tests del feature.
 6. **DODRT-C4**: leer frontmatter `pipelines:` block. Por cada E2E name en `tests_done` listas, localizar el spec en `tests/e2e/*.spec.ts` y aplicar reglas de `tycon-e2e-realness-checker` (REAL-C1..C3). Si algún spec falla → emit DODRT-C4.
 7. **DODRT-C5**: si el diff cablea UI nueva (`.tsx` montados) Y sus E2E están diferidos (`tests_pending`), verificar que exista un smoke DRIVEN por-AC (`.advisors/dod-runtime/<story>-ui-smoke-*.md`) real (no mocks) que asserte CADA AC de UI. Cruzar lo AFIRMADO por el orquestador (narración / guía \"cómo probar\") vs lo EJECUTADO (sub-check anti pre-claim). Ausente / parcial / mockeado / claim-sin-ejecución → emit DODRT-C5.
-8. **DODRT-C9**: por cada evidencia de smoke en `.advisors/dod-runtime/`, exigir el bloque `## Target` (path + SHA + presencia en origin por repo involucrado); si el path existe acá, verificar el SHA con `git branch -r --contains`; sin bloque / SHA ausente de origin / smoke localhost de story frontend sin backend declarado → emit C9; path no verificable → W explícito.
+8. **DODRT-C9**: por cada evidencia de smoke en `.advisors/dod-runtime/`, exigir el bloque `## Target` (path + SHA + presencia en origin por repo involucrado) o el `target` que anota `smoke-run.sh` en el registro; si el path existe acá, verificar el SHA con `git branch -r --contains`; sin bloque / SHA ausente de origin / smoke localhost de story frontend sin backend declarado → emit C9; path no verificable → W explícito. El repo de la propia historia sin commits todavía NO es C9 (heurística 5); un repo del que se depende sin commits, sí.
 9. **DODRT-W3**: grep URLs no-localhost en evidencia de smoke/scripts/specs; si target es host Bizuit y el path es `/api/` sin `/api/plugins/` → emit.
 10. **DODRT-C10**: leer el registro de humos, las salidas guardadas, los `.md`/`.sql`/scripts de la carpeta de evidencia y el Debug Log; por AC, una escritura del dato del «Then» verificada después sin acción de la app en el medio → emit (sembrar el «Given» no es finding).
 11. **DODRT-W4**: por cada línea `\"v\":2` con `acs`, leer `pass_if` contra el «Then» del AC y contra su salida guardada → emit si está vacío de contenido, no habla del AC, o la salida no lo muestra.
