@@ -130,7 +130,7 @@ del anuncio es `step-00-preflight.md` §PIPE-C8):
 |---|---|---|
 | LOW | `sonnet` (opus ok) | `medium` (`low` ok si es casi-mecánica) |
 | NORMAL común | `opus` | `high` ← **default de facto del pipeline** |
-| NORMAL + heavy | `fable` | `xhigh` (el anuncio ya advierte el costo) |
+| NORMAL + heavy | `opus` (`fable` sólo si la organización lo declara en `session.heavy`) | `xhigh` (el anuncio ya advierte el costo) |
 | — | — | `max`: **NUNCA automático** — decisión explícita del dev (debugging gnarly, arquitectura ambigua) |
 
 **Por qué advisory y no auto**: la metadata de la story es un proxy débil de dificultad de
@@ -160,7 +160,7 @@ El `model:` de cada `agents/*.md`, el `MODEL` de `adversarial-verify.workflow.js
 | Pase adversarial (común / story pesada) | `sonnet` / `opus` | `adversarial.model` / `adversarial.heavy` |
 | Preguntar por Fable en el pase | `ask` | `adversarial.fable_question` (`ask` \| `never`) |
 | Ayudantes sueltos de búsqueda (SPAWN-1) | `haiku` | `helpers` |
-| Sugerencia de la sesión (liviana / común / pesada) | `sonnet` / `opus` / `fable` | `session.low` / `session.normal` / `session.heavy` |
+| Sugerencia de la sesión (liviana / común / pesada) | `sonnet` / `opus` / `opus` (el arnés no sugiere `fable` solo: la organización lo elige en `session.heavy`) | `session.low` / `session.normal` / `session.heavy` |
 
 **Quién paga decide quién manda**: con `mandatory_ceiling: true` y un `ceiling` (paga la organización), nada pasa el
 techo —un pedido del dev, un valor de la organización o uno de hoy se baja al techo y se avisa una vez por corrida,

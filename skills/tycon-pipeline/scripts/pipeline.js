@@ -3565,11 +3565,11 @@ function computeToolingExpected(repo, opts = {}) {
 //
 // Tiers (razón: el plan es el punto de mayor apalancamiento — un plan malo
 // cascadea a re-loops del Step 5 — y la implementación es el mayor consumidor
-// de tokens; fable cuesta ~2x opus, opus ~1.7x sonnet):
+// de tokens; opus ~1.7x sonnet):
 //   LOW           → sonnet alcanza (opus también ok — no molestar si ya está ahí)
 //   NORMAL común  → opus
-//   NORMAL pesada → fable (≥2 señales pesadas: la diferencia de modelo se paga
-//                   sola si evita UNA iteración de re-loop)
+//   NORMAL pesada → opus, con más esfuerzo (≥2 señales pesadas). Fable sólo si la organización lo declara
+//                   (models.session.heavy): el arnés no lo sugiere solo.
 // SIEMPRE advisory: el orquestador sugiere en 1 línea, el user decide, NUNCA bloquea.
 function computeModelHint(args) {
   const rc = computeRiskClass(args);
@@ -3603,7 +3603,7 @@ function computeModelHint(args) {
   // vacío); con techo obligatorio, recortados. La configuración llega por argumento: esta función no lee la máquina.
   const band = rc.risk === 'LOW' ? 'low' : (heavy ? 'heavy' : 'normal');
   const S = MODELOS.DEFAULTS.session;
-  const hoy = { recommended: S[band], also_ok: band === 'normal' ? [] : [S.normal] };
+  const hoy = { recommended: S[band], also_ok: band === 'normal' || S.normal === S[band] ? [] : [S.normal] };
   const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
   const avisos = [];
   const ses = org ? MODELOS.resolveSession({ org, band, today: hoy, warnings: avisos }) : { ...hoy, origin: 'default' };
@@ -3631,8 +3631,8 @@ function computeModelHint(args) {
     reason: rc.risk === 'LOW'
       ? 'risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más'
       : heavy
-        ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → fable paga si evita re-loops`
-        : 'NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)',
+        ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → ${recommended} con más esfuerzo`
+        : 'NORMAL común → opus (sonnet se queda corto en el plan)',
     note: (deLaOrg ? `la sugerencia sale de la configuración de la organización (session.${band}${MODELOS.ceilingOf(org) ? `, techo ${MODELOS.ceilingOf(org)}` : ''}): ${recommended}. ` : '') +
       'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
     ...extra,

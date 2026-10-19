@@ -603,3 +603,52 @@ test('T2b OperationsConfig_DeploymentsRepoConPuntosYProductoVacio (2.22, revisor
   } })));
   assert.deepStrictEqual(paths(r), ['deployments.products.Acme.production.0.repo', 'deployments.products.Acme.production.1.repo', 'deployments.products.Vacio']);
 });
+
+test('T12 OperationsConfig_UnderscoreComment_NotUnknown @story-7.35 @ac-7 — un «_» en un objeto de campos fijos es un comentario; en un nombre de dato, no', () => {
+  // campos fijos: el lado de un producto y la raíz de deployments
+  const r = OPS.parse(JSON.stringify(opsWithDeployments({ _comment: 'dónde se despliega', provider: 'github', products: {
+    Acme: { _comment: 'el sitio', production: [{ repo: 'acme/app', environment: 'prd' }] },
+  } })));
+  assert.deepStrictEqual(paths(r), []);
+  // un nombre de producto es un dato: «_x» se sigue leyendo (y un producto vacío sigue siendo un problema)
+  const dato = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: { _x: {} } })));
+  assert.deepStrictEqual(paths(dato), ['deployments.products._x']);
+  // la clave con forma de secreto no se esconde detrás de un «_»
+  const secreto = OPS.parse(JSON.stringify({ version: 1, owners: { default: 'octocat' }, notify: { channel: 'telegram', _token: 'x' } }));
+  assert.deepStrictEqual(paths(secreto), ['notify._token']);
+  // ni el destino del aviso: un «_webhook» o un «_chat» con texto es una credencial, no un comentario
+  const destino = OPS.parse(JSON.stringify({ version: 1, owners: { default: 'octocat' }, notify: { channel: 'telegram', _webhook: 'x', _chat: 'y' } }));
+  assert.deepStrictEqual(paths(destino), ['notify._chat', 'notify._webhook']);
+  // un «_» con forma de secreto, o que guarda un objeto, se revisa como cualquier clave (revisor de seguridad, vuelta 1)
+  const tokenEnCampos = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
+    Acme: { _token: 'x', production: [{ repo: 'acme/app', environment: 'prd' }] },
+  } })));
+  assert.deepStrictEqual(paths(tokenEnCampos), ['deployments.products.Acme._token']);
+  const objetoEnSitio = OPS.parse(JSON.stringify({ version: 1, owners: { default: 'octocat' }, site: { _comment: { token: 'x' } } }));
+  assert.ok(paths(objetoEnSitio).includes('site._comment.token'), JSON.stringify(objetoEnSitio.problems));
+  // «__» sigue siendo comentario con cualquier valor, como antes (pase adversarial: la primera versión lo rompía)...
+  const viejo = OPS.parse(JSON.stringify(opsWithDeployments({ __doc: { a: 1 }, __notas_sobre_tasas: 3, provider: 'github', products: {
+    Acme: { __doc: null, production: [{ repo: 'acme/app', environment: 'prd' }] },
+  } })));
+  assert.deepStrictEqual(paths(viejo), []);
+  // (con «__» un nombre que nombra la palabra sigue siendo un comentario: lo cuida 2.23-T4 de este archivo)
+});
+
+test('T13 TeamRepos_UnderscoreComment_NotUnknown @story-7.35 @ac-8 — un «_» en coverage, wait_notice, stack y la raíz es un comentario', () => {
+  const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), {
+    _lea_esto_primero: 'x',
+    coverage: { min_touched_lines_pct: 80, _comment: 'x' },
+    wait_notice: { minutes: 10, _comment: 'x' },
+    stack: { code_extensions: ['.ex'], _comment: 'x', rules: { _comment: 'x' } },
+  })));
+  assert.deepStrictEqual(r.problems, []);
+  assert.strictEqual(r.ok, true);
+  // un «_» con forma de secreto, o que guarda un objeto, se revisa como cualquier clave (cazador de fallas silenciosas)
+  const malas = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { coverage: { min_touched_lines_pct: 80, _token: 'x', _x: { a: 1 } } })));
+  // los problemas de una sección van aparte (sectionProblems): una sección mal escrita no invalida el archivo entero
+  assert.deepStrictEqual(((malas.sectionProblems || {}).coverage || []).map((p) => p.path).sort(), ['coverage._token', 'coverage._x']);
+  // «__» con cualquier valor sigue siendo comentario
+  const viejo = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { __meta: { a: 1 }, coverage: { min_touched_lines_pct: 80, __nota: 3 } })));
+  assert.deepStrictEqual(viejo.problems, []);
+  assert.strictEqual(viejo.sectionProblems, undefined, JSON.stringify(viejo.sectionProblems));
+});

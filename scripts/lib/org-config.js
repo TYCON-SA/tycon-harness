@@ -26,6 +26,11 @@ const fs = require('fs');
 const path = require('path');
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+// Un comentario en un archivo de la organización: la clave empieza con «_» (`_comment`, `_note`, `__doc`) y su valor es
+// texto. Vale donde las claves son nombres de campos; donde son datos (productos, personas) se sigue mirando «__», para no
+// tapar un nombre. Un «_» solo con forma de secreto, o que guarda un objeto, se revisa como cualquier clave; «__» sigue
+// siendo comentario con cualquier valor, como antes.
+const esComentario = (k, v) => k.startsWith('__') || (k.startsWith('_') && !/token|secret|sas|password|passwd|pwd|key|credential/i.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 
 /** Cómo queda escrito un archivo: dos espacios y un salto final (lo que espera el diff de quien revisa el pedido). */
@@ -272,7 +277,7 @@ function thresholdsParse(text, opts = {}) {
   const conocidas = opts.arnes && isObject(opts.arnes.thresholds) ? Object.keys(opts.arnes.thresholds) : null;
   const problems = []; const avisos = [];
   for (const [k, u] of Object.entries(th)) {
-    if (k.startsWith('__')) continue;
+    if (esComentario(k, u)) continue;
     if (conocidas && !conocidas.includes(k)) {
       // una fila que YA estaba en el archivo y el arnés dejó de usar no bloquea; una que se agrega, sí
       if ((opts.previas || Object.keys(th)).includes(k)) { avisos.push({ path: `thresholds.${k}`, message: M('org.claveQueNoSeUsa') }); continue; }
@@ -296,9 +301,9 @@ const unAnioDespues = (hoy) => { const d = new Date(`${hoy}T00:00:00Z`); d.setUT
 function aplicarSeccion(doc, seccion, borrador) {
   const base = isObject(doc) ? clone(doc) : {};
   if (seccion.claves === null) {
-    // el archivo entero, pero los comentarios `__` del archivo se conservan si el borrador no los trae
+    // el archivo entero, pero los comentarios del archivo se conservan si el borrador no los trae
     const out = clone(isObject(borrador) ? borrador : {});
-    for (const k of Object.keys(base)) if (k.startsWith('__') && out[k] === undefined) out[k] = base[k];
+    for (const k of Object.keys(base)) if (esComentario(k, base[k]) && out[k] === undefined) out[k] = base[k];
     return out;
   }
   const b = isObject(borrador) ? borrador : {};
@@ -346,10 +351,25 @@ function hojasAjenas(seccion, actual, doc) {
   return out;
 }
 
+/**
+ * Los umbrales del borrador con los comentarios del archivo que el borrador no trae: los del bloque y los de cada fila
+ * que sigue. El borrador reemplaza el bloque entero; la pantalla no muestra los comentarios, así que no los manda.
+ */
+function conComentarios(previo, borrador) {
+  if (!isObject(previo)) return borrador;
+  const out = clone(borrador);
+  for (const [k, v] of Object.entries(previo)) {
+    if (esComentario(k, v)) { if (out[k] === undefined) out[k] = clone(v); continue; }
+    if (!isObject(v) || !isObject(out[k])) continue;
+    for (const [c, nota] of Object.entries(v)) if (esComentario(c, nota) && out[k][c] === undefined) out[k][c] = clone(nota);
+  }
+  return out;
+}
+
 /** Las claves del borrador que la sección no edita (una clave que no tiene campo en la pantalla va arriba). */
 function clavesAjenas(seccion, borrador) {
   if (!isObject(borrador) || seccion.claves === null) return [];
-  return Object.keys(borrador).filter((k) => !seccion.claves.includes(k) && !k.startsWith('__'));
+  return Object.keys(borrador).filter((k) => !seccion.claves.includes(k) && !esComentario(k, borrador[k]));
 }
 
 /** El texto de un archivo como objeto, o null. */
@@ -369,7 +389,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   if (s.id === 'umbrales') {
     const previas = actual && isObject(actual.thresholds) ? Object.keys(actual.thresholds) : [];
     const base = texto === null || texto === undefined ? { sources: [], thresholds: {} } : actual;
-    const salida = formatJson(aplicarSeccion(base, s, { thresholds: isObject(borrador) ? borrador : {} }));
+    const salida = formatJson(aplicarSeccion(base, s, { thresholds: conComentarios(base.thresholds, isObject(borrador) ? borrador : {}) }));
     const r = thresholdsParse(salida, { arnes, previas, tree, umbralValido });
     return { ok: r.ok, problems: r.problems, avisos: r.avisos, texto: r.ok ? salida : null, soloLectura: r.soloLectura };
   }

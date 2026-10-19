@@ -5,6 +5,8 @@
   "suite_cap": { "factor": 2, "floor": 180 },
   "default": 3,
   "weights": {
+    "test-mutation-check.js": 41,
+    "reloop-rethink.test.js": 16,
     "harness-update.test.sh": 869,
     "harness-doctor.test.sh": 274,
     "installer-ps1.p1.test.sh": 131,
@@ -124,6 +126,8 @@
     "__per_suite": "Tope propio (decisión del dueño, 2026-10-11) para las dos suites que corren solas y casi no tardan en la validación: instinct-executor (1 s medido en las validaciones #12776 y #12781) y clean-machine (3 s: en la validación dice «corre en el nocturno» y no mide). Con el piso tenían 180 s cada una, y el trabajo del banco —que corre las que van solas— ya no entraba en su tope: 10 min del banco más la suma de los topes de las siete daba 43,6 min contra 40. Con 60 s cada una da 39,6. El tope de 40 min del trabajo no se toca (ninguna corrida pasa de 40 minutos). La cuenta la vuelve a hacer la prueba T48 de scripts/tests/pr-suites-shards.test.js con los archivos de verdad: si una suite más pasa a correr sola y la cuenta deja de entrar, se pone roja. Sólo vale en este juego: en el nocturno clean-machine tarda minutos.",
     "suite_cap": { "factor": 2, "floor": 180, "per_suite": { "clean-machine.test.sh": 60, "instinct-executor.test.sh": 60 } },
     "weights": {
+      "test-mutation-check.js": 41,
+      "reloop-rethink.test.js": 16,
       "installer-ps1.p1.test.sh": 209,
       "installer-ps1.p2.test.sh": 209,
       "mirror.p1.test.js": 33,
@@ -259,6 +263,7 @@
     "__doc": "Los pesos de la CI pública de GitHub (.github/workflows/ci.yml, partes suites-<i>-of-<n>; los pide portable-suites.test.sh con TYCON_PORTABLE_SHARD). Medidos en GitHub, no en Azure: con los de `pr` las tres partes tardaban 6, 10 y 8 min. Cada peso es la mediana, en segundos, de lo que cada suite tardó con Node 24 en las corridas de ci.yml del 2026-10-14 al 2026-10-16 que volcaron su salida (las que quedaron en rojo; la salida de las verdes no se publica). Trae las suites de 10 s o más; las demás, el `default`. Una suite que no está acá toma el peso de `weights` de arriba.",
     "default": 3,
     "weights": {
+      "test-mutation-check.js": 41,
       "harness-update.test.sh": 350,
       "harness-install.test.sh": 348,
       "installer-ps1.p2.test.sh": 347,

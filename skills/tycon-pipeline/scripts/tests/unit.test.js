@@ -739,7 +739,7 @@ pipelines:
 1. x
 `;
 
-test('computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→fable', () => {
+test('ModelHint_HeavyStory_SuggestsOpus @story-7.35 @ac-13 — computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→opus', () => {
   const low = path.join(os.tmpdir(), `mh-low-${process.pid}.md`);
   const normal = path.join(os.tmpdir(), `mh-normal-${process.pid}.md`);
   const heavy = path.join(os.tmpdir(), `mh-heavy-${process.pid}.md`);
@@ -756,7 +756,8 @@ test('computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→fabl
     assert.equal(h.heavy, false);
 
     h = computeModelHint({ story: heavy, files: [] });
-    assert.equal(h.recommended_session_model, 'fable', 'NORMAL con ≥2 señales pesadas → fable');
+    assert.equal(h.recommended_session_model, 'opus', 'NORMAL con ≥2 señales pesadas → opus: el arnés no sugiere fable solo');
+    assert.doesNotMatch(h.reason, /fable/i, h.reason);
     assert.equal(h.heavy, true);
     assert.ok(h.heavy_signal_count >= 2, `esperaba ≥2 señales, hubo ${h.heavy_signal_count}`);
   } finally { fs.unlinkSync(low); fs.unlinkSync(normal); fs.unlinkSync(heavy); }

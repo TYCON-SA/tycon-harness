@@ -49,7 +49,8 @@ function agentesConocidos() {
   // Una carpeta ausente es normal (un checkout sin paquetes). Cualquier otro error achica la lista y deja pasar a un
   // agente conocido sólo por su nombre: se dice, una vez (los patrones de arriba siguen valiendo).
   const avisar = (donde, e) => { process.stderr.write(`⚠️  approvals: no pude leer ${donde} (${e.code || e.message}): la lista de agentes conocidos queda incompleta.\n`); };
-  try { for (const p of fs.readdirSync(path.join(raiz, 'packs'))) carpetas.push(path.join(raiz, 'packs', p, 'agents')); } catch (e) { if (e.code !== 'ENOENT') avisar('packs/', e); }
+  // Sólo las carpetas: un archivo suelto de packs/ (su README) no es un paquete.
+  try { for (const p of fs.readdirSync(path.join(raiz, 'packs'), { withFileTypes: true })) if (p.isDirectory()) carpetas.push(path.join(raiz, 'packs', p.name, 'agents')); } catch (e) { if (e.code !== 'ENOENT') avisar('packs/', e); }
   for (const c of carpetas) {
     try { for (const f of fs.readdirSync(c)) if (f.endsWith('.md')) conocidos.add(f.slice(0, -3).toLowerCase()); } catch (e) { if (e.code !== 'ENOENT') avisar(path.relative(raiz, c) || c, e); }
   }

@@ -256,7 +256,8 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
     reviewers_reloop: 'sonnet',
     adversarial: { model: 'sonnet', heavy: 'opus', fable_question: 'ask' },
     helpers: 'haiku',
-    session: { low: 'sonnet', normal: 'opus', heavy: 'fable' },
+    // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con session.heavy
+    session: { low: 'sonnet', normal: 'opus', heavy: 'opus' },
   });
   assert.deepStrictEqual(M.TIERS, { lean: 'haiku', standard: 'sonnet', deep: 'opus' });
   // el model: de cada agents/*.md del público es el que da defaultFor
@@ -478,11 +479,30 @@ test('T9 Sesion_SugerenciaPorPesoYAlsoOk @story-7.29 @ac-10', () => {
     assert.match(r.json.note, /configuración de la organización/);
   }
   const sinSession = conConfig('model-hint', 'heavy', [], { helpers: 'haiku' });
-  assert.equal(sinSession.json.recommended_session_model, 'fable');
-  assert.deepStrictEqual(sinSession.json.also_ok, ['opus']);
+  assert.equal(sinSession.json.recommended_session_model, 'opus');
+  assert.deepStrictEqual(sinSession.json.also_ok, [], 'sin repetir el recomendado');
   const techo = conConfig('model-hint', 'heavy', [], { mandatory_ceiling: true, ceiling: 'opus' });
   assert.equal(techo.json.recommended_session_model, 'opus');
   assert.ok(!techo.json.also_ok.includes('fable'));
+});
+
+test('ModelHint_OrgDeclaresFable_SuggestsFable @story-7.35 @ac-13 — fable sólo si la organización lo declara', () => {
+  const r = conConfig('model-hint', 'heavy', [], { session: { heavy: 'fable' } });
+  assert.equal(r.json.recommended_session_model, 'fable');
+  assert.match(r.json.note, /configuración de la organización/);
+  const sin = conConfig('model-hint', 'heavy', [], { helpers: 'haiku' });
+  assert.equal(sin.json.recommended_session_model, 'opus');
+  assert.doesNotMatch(sin.json.reason, /fable/i, sin.json.reason);
+});
+
+test('Guides_HeavySessionIsOpus @story-7.35 @ac-14 — las guías dicen opus para la story pesada', () => {
+  const leer = (rel) => fs.readFileSync(path.join(RAIZ, rel), 'utf8');
+  const guias = ['skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-00-preflight.md', 'guides/harness-cost-tiering.md', 'guides/advisor-rules-catalog.md'];
+  for (const rel of guias) {
+    const txt = leer(rel);
+    assert.doesNotMatch(txt, /pesada\s*(?:→|->)\s*`?fable|heavy\s*(?:→|->)\s*`?fable|NORMAL \+ heavy \| `fable`|\/ `fable` \| `session\.low`/i, `${rel}: todavía sugiere fable de fábrica`);
+    assert.match(txt, /fable[^\n]{0,160}(?:organizaci[oó]n|organization)|(?:organizaci[oó]n|organization)[^\n]{0,160}fable/i, `${rel}: dice que fable es sólo si la organización lo declara`);
+  }
 });
 
 // ── el pedido del dev y el techo ─────────────────────────────────────────────────────────────────────────────────
