@@ -4,6 +4,7 @@
   "no_piden_retro": [
     { "motivo": "subida de versión", "asunto": "^chore(\\([^)]*\\))?: bump version .*\\[skip ci\\]" },
     { "motivo": "proceso nocturno", "autor": "^(Azure Pipelines|Project Collection Build Service.*|github-actions\\[bot\\])$", "asunto_no": "^Merge (pull request|branch)" },
-    { "motivo": "resultado del examen de revisores", "asunto": "^chore\\(examen\\): resultado" }
+    { "motivo": "resultado del examen de revisores", "asunto": "^chore\\(examen\\): resultado" },
+    { "motivo": "propuestas de la revisión de la semana", "asunto": "^chore\\(revision-semanal\\): propuestas" }
   ]
 }

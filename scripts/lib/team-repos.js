@@ -31,6 +31,9 @@
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
 //   <modelo> = «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES, copia de models.js del skill). Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
+//     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
+//       "enabled"?: <bool>, "budget_usd"?: <número, más de 0 y hasta 100>, "max_chars"?: <entero, 10.000 a 2.000.000> }
+//                                       por defecto prendida, US$5 y 600.000; uno mal escrito cae al de por defecto
 //   <repo> = { "platform": "azure", "org", "project", "repo" } o { "platform": "github", "org", "repo" }.
 //   Las claves que empiezan con `__` son comentarios. Cualquier otra clave es un problema, en su propia ruta: así un
 //   nombre mal escrito no queda ignorado en silencio.
@@ -61,7 +64,14 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'stack'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'stack', 'weekly_review'];
+// La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
+// caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
+// entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
+const WEEKLY_REVIEW_KEYS = ['enabled', 'budget_usd', 'max_chars'];
+const WEEKLY_REVIEW_DEFAULTS = Object.freeze({ enabled: true, budget_usd: 5, max_chars: 600000 });
+const WEEKLY_REVIEW_MAX_USD = 100;
+const WEEKLY_REVIEW_CHARS = [10000, 2000000];
 // El plazo del aviso de espera (story 7.20, AC 14): minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
@@ -262,6 +272,23 @@ function waitNoticeProblems(value) {
   return out;
 }
 
+/** Los problemas de `weekly_review`; `[]` si está bien. Casos: scripts/tests/weekly-review.test.js T12. */
+function weeklyReviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'weekly_review', message: 'tiene que ser un objeto (la revisión de la semana)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!comment(k) && !WEEKLY_REVIEW_KEYS.includes(k)) out.push({ path: `weekly_review.${k}`, message: 'clave desconocida' });
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') out.push({ path: 'weekly_review.enabled', message: `tiene que ser true o false (es ${JSON.stringify(value.enabled)})` });
+  const b = value.budget_usd;
+  if (b !== undefined && !(typeof b === 'number' && Number.isFinite(b) && b > 0 && b <= WEEKLY_REVIEW_MAX_USD)) {
+    out.push({ path: 'weekly_review.budget_usd', message: `tiene que ser un monto en dólares mayor que 0 y hasta ${WEEKLY_REVIEW_MAX_USD} (es ${JSON.stringify(b)})` });
+  }
+  const c = value.max_chars;
+  if (c !== undefined && !(Number.isInteger(c) && c >= WEEKLY_REVIEW_CHARS[0] && c <= WEEKLY_REVIEW_CHARS[1])) {
+    out.push({ path: 'weekly_review.max_chars', message: `tiene que ser un número entero de caracteres, de ${WEEKLY_REVIEW_CHARS[0]} a ${WEEKLY_REVIEW_CHARS[1]} (es ${JSON.stringify(c)})` });
+  }
+  return out;
+}
+
 /** Los problemas de `coverage`; `[]` si está bien. */
 function coverageProblems(value) {
   if (!isObject(value)) return [{ path: 'coverage', message: 'tiene que ser un objeto (el umbral de cobertura de las líneas tocadas)' }];
@@ -370,11 +397,14 @@ function parse(text) {
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
   // y con `stack`: se descarta sólo la subclave con el problema, el resto de la sección sigue
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];
+  // y con `weekly_review`: un tope mal escrito deja la revisión con los valores por defecto, y lo dice
+  const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionStack.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionStack.length || sectionWeekly.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
+    if (sectionWeekly.length) delete data.weekly_review;
     if (sectionCoverage.length) delete data.coverage;
     if (sectionStack.length) {
       if (isObject(doc.stack)) data.stack = stackSinProblemas(doc.stack, sectionStack);
@@ -386,6 +416,7 @@ function parse(text) {
     ...(sectionWait.length ? { wait_notice: sectionWait } : {}),
     ...(sectionCoverage.length ? { coverage: sectionCoverage } : {}),
     ...(sectionStack.length ? { stack: sectionStack } : {}),
+    ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -433,7 +464,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, modelsProblems, stackProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

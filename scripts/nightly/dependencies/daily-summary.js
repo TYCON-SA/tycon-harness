@@ -51,6 +51,9 @@
  *   node daily-summary.js deliver  --source dependencies|vigilante --today <YYYY-MM-DD> [--dry-run] [--extra <archivo>]
  *     --extra: la línea de otro paso que va al FINAL del mismo mensaje (los PR abiertos). Sólo se toma su
  *       primera línea, y sólo si es la cantidad («PR abiertos hace más de 2 días: N»)
+ *     --weekly: el informe de la revisión de la semana (`.dashboard/weekly-review/latest.json` del clon de
+ *       mantenimiento): las dos mañanas siguientes a su semana, cuántas propuestas por forma, dónde se deciden y la línea en
+ *       llano del patrón más repetido (filtrada de nombres); fuera de esa ventana, nada
  *     --runs: las carpetas de corrida del repo (`.advisors/pipeline-runs`, por defecto las de la raíz del árbol): de sus
  *       `findings.json` de la última semana salen las dudas repetidas de los revisores. El mensaje lleva sólo la cantidad
  *       («dudas de revisores: N», y nada si no hay); el revisor, la regla y cuántas veces quedan en `dudas_revisores` del
@@ -663,7 +666,8 @@ function armar(a) {
   // Sin dudas, o sin fuente, el texto no cambia: la fuente que falta se dice en `dudas_revisores.motivo`, no con un 0.
   const t = dudas.valor && dudas.valor.length ? `${base}\ndudas de revisores: ${dudas.valor.length}` : base;
   return { fuente: a.fuente, fecha: a.hoy, rubros, cambios: comp.cambios, cambios_motivo: comp.cambios_motivo,
-    comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, dudas_revisores: dudas, texto: t };
+    comparado_con: comp.comparado_con, empezaron: comp.empezaron, modo_pedidos: comp.modo, fallos, dudas_revisores: dudas,
+    ...(a.weekly ? { revision_semanal: semanalDetalle(a.weekly) } : {}), texto: t };
 }
 
 /**
@@ -822,6 +826,69 @@ function lineaRetros(archivo) {
   return `retros: ${t.merges} merges a main · latido sin modelo ${t.latido} · retro con aprendizajes ${t.aprendizajes} · no piden retro ${t.no_piden} · faltan ${faltan.length}${lista}${sinMirar.length ? ` · sin mirar: ${sinMirar.join(', ')}` : ''}`;
 }
 
+/**
+ * La línea de la revisión de la semana (casos: scripts/tests/weekly-review.test.js T8), del informe que deja scripts/nightly/weekly-review/weekly-review.js
+ * en el clon de mantenimiento (`--weekly`). Sale las dos mañanas siguientes a la semana que revisó (corre el martes a las
+ * 02:00 hora de la máquina; el resumen de las 04:00 UTC de ese día puede llegar antes) y después no. Lleva cantidades por
+ * forma, de dónde se deciden y la línea en llano del patrón más repetido, que el informe trae ya filtrada de nombres
+ * (`lineaLlana`) y que acá se vuelve a filtrar con el mismo filtro. `null` fuera de la ventana o sin informe.
+ */
+// por qué no pudo, en una frase fija por causa (el motivo libre del informe no sale: puede nombrar un repo)
+const SEMANAL_NO_PUDO = Object.freeze({ sin_lista: 'no está la lista de propuestas', lista_sucia: 'la lista de propuestas tiene cambios sin commitear',
+  tope_vacio: 'ningún merge entró en el tope', retros_ilegibles: 'hay retros que no se pudieron leer' });
+
+/** El informe de la revisión de la semana: `{ informe }`, `{ ilegible: true }` o `{ ausente: true }`. */
+function leerSemanal(archivo) {
+  let r;
+  try { r = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { return e && e.code === 'ENOENT' ? { ausente: true } : { ilegible: true }; }
+  if (!r || typeof r !== 'object' || !/^\d{4}-\d{2}-\d{2}$/.test(r.hasta || '')) return { ilegible: true };
+  return { informe: r };
+}
+
+function lineaSemanal(archivo, hoy) {
+  const l = leerSemanal(archivo);
+  if (l.ausente) return null;
+  if (l.ilegible) return 'revisión semanal: ? (su informe no se pudo leer)';
+  const r = l.informe;
+  const dias = Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${r.hasta}T12:00:00Z`)) / 864e5);
+  // más de una semana sin informe nuevo: la revisión dejó de correr, y se dice cada mañana hasta que vuelva
+  if (dias > 8) return `revisión semanal: la última es de hace ${dias} días (no corrió esta semana)`;
+  if (!(dias >= 1 && dias <= 2)) return null;
+  const n0 = (x) => (Number.isInteger(x) && x > 0 ? x : 0);
+  const noLeidos = Array.isArray(r.merges_no_leidos) && r.merges_no_leidos.length ? ` · ${r.merges_no_leidos.length} merges no entraron en el tope` : '';
+  const ilegibles = Array.isArray(r.retros_ilegibles) ? r.retros_ilegibles.length : 0;
+  const sinMirar = (n0(r.repos_sin_mirar) ? ` · ${n0(r.repos_sin_mirar)} repo${n0(r.repos_sin_mirar) === 1 ? '' : 's'} sin mirar` : '')
+    + (ilegibles ? ` · ${ilegibles} lugar${ilegibles === 1 ? '' : 'es'} con retros ilegibles` : '');
+  if (r.estado === 'sin_retros') return `revisión semanal: no hay retros de la semana; no propuso nada${sinMirar}`;
+  if (r.estado !== 'hecho') {
+    const por = r.estado === 'sin_agente' ? 'sin agente' : r.estado === 'respuesta_ilegible' ? 'respuesta ilegible' : SEMANAL_NO_PUDO[r.motivo_corto] || 'no pudo leer la semana';
+    return `revisión semanal: no pudo correr (${por})${sinMirar}`;
+  }
+  const ps = Array.isArray(r.propuestas) ? r.propuestas : [];
+  if (!ps.length) return `revisión semanal: ningún patrón se repitió en la semana${noLeidos}${sinMirar}`;
+  const n = (f) => ps.filter((p) => p && p.forma === f).length;
+  let llana = null;
+  try { llana = require(path.join(__dirname, '..', 'weekly-review', 'weekly-review.js')).lineaLlana(r.linea_llana); } catch { llana = null; }
+  return `revisión semanal: ${ps.length} propuesta${ps.length === 1 ? '' : 's'} (${n('regla')} regla de revisor · ${n('prueba')} prueba · ${n('guia')} línea de guía), `
+    + `se deciden en la lista de propuestas del repo de mantenimiento${noLeidos}${sinMirar}${llana ? ` · lo más repetido: ${llana}` : ''}`;
+}
+
+/**
+ * La revisión de la semana para el `--json` y la constancia (que viajan al repo de operaciones, no a un servicio de
+ * afuera): el estado, la semana y el patrón y la forma de cada propuesta. `null` sin `--weekly` o sin informe.
+ */
+function semanalDetalle(archivo) {
+  if (!archivo) return null;
+  const l = leerSemanal(archivo);
+  if (l.ausente) return null;
+  if (l.ilegible) return { ilegible: true };
+  const r = l.informe;
+  const recorte = (t) => (typeof t === 'string' ? t.slice(0, 300) : null);
+  return { estado: typeof r.estado === 'string' ? r.estado : null, desde: r.desde || null, hasta: r.hasta,
+    propuestas: (Array.isArray(r.propuestas) ? r.propuestas : []).map((p) => ({ patron: recorte(p && p.patron), forma: p && typeof p.forma === 'string' ? p.forma : null })),
+    merges_no_leidos: Array.isArray(r.merges_no_leidos) ? r.merges_no_leidos.length : null, repos_sin_mirar: Number.isInteger(r.repos_sin_mirar) ? r.repos_sin_mirar : null };
+}
+
 function entregar(a) {
   let res;
   try { res = armar(a); } catch (e) {
@@ -867,6 +934,8 @@ function entregar(a) {
   final = acotar(final, TOPE_MENSAJE);
   if (a.extra !== null) final = `${final}\n\n${seccionExtra(a.extra)}`;
   if (a.retros !== null) final = `${final}\n${lineaRetros(a.retros)}`;
+  const semanal = a.weekly !== null ? lineaSemanal(a.weekly, a.hoy) : null;
+  if (semanal) final = `${final}\n${semanal}`;
   // la versión del sitio, en su lugar fijo: antes de la línea del sitio, que sigue siendo la última
   if (a.siteUpdate) {
     let actualizacion = null;
@@ -900,6 +969,7 @@ function entregar(a) {
     rubros: res.rubros,
     fallos: res.fallos,
     dudas_revisores: res.dudas_revisores,
+    ...(res.revision_semanal !== undefined ? { revision_semanal: res.revision_semanal } : {}),
     sitio: { linea: sitio.linea, resultado: sitio.resultado, motivo: sitio.motivo, hora: sitio.hora },
   };
   const nota = [notaArmado, intento.nota].filter(Boolean).join(' · ');
@@ -921,7 +991,7 @@ function entregar(a) {
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const a = { cmd: argv[0], fuente: null, hoy: null, out: null, pending: null, config: null, resumenConfig: null,
-    vigOut: null, depsOut: null, extra: null, retros: null, runs: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
+    vigOut: null, depsOut: null, extra: null, retros: null, weekly: null, runs: null, operations: null, siteCheck: null, siteUpdate: null, json: false, dryRun: false, ayuda: false, error: null };
   const valor = (i) => { if (i >= argv.length || String(argv[i]).startsWith('--')) { a.error = `falta el valor de ${argv[i - 1]}`; return null; } return argv[i]; };
   for (let i = 1; i < argv.length; i++) {
     const v = argv[i];
@@ -935,6 +1005,7 @@ function parseArgs(argv) {
     else if (v === '--deps-out') a.depsOut = valor(++i);
     else if (v === '--extra') a.extra = valor(++i);
     else if (v === '--retros') a.retros = valor(++i);
+    else if (v === '--weekly') a.weekly = valor(++i);
     else if (v === '--runs') a.runs = valor(++i);
     else if (v === '--operations') a.operations = valor(++i);
     else if (v === '--site-check') a.siteCheck = valor(++i);
@@ -949,7 +1020,7 @@ function parseArgs(argv) {
 
 function uso() {
   console.error('uso: daily-summary.js build|deliver --source dependencies|vigilante --today <YYYY-MM-DD> [--json] [--dry-run]\n' +
-    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--runs <.advisors/pipeline-runs>]\n' +
+    '       [--out <dir>] [--pending <dir>] [--config <repos.json>] [--summary-config <summary.json>] [--watcher-out <dir>] [--deps-out <dir>] [--extra <archivo>] [--retros <informe de retro-sweep.js>] [--weekly <informe de weekly-review.js>] [--runs <.advisors/pipeline-runs>]\n' +
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
 }
 

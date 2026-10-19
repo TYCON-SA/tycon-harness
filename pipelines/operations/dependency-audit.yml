@@ -363,7 +363,32 @@ jobs:
           # la versión del sitio, sólo si la organización tiene el nocturno que lo mantiene al día (site-update.yml)
           SU=()
           [ -d "$(Build.SourcesDirectory)/.dashboard/site-update" ] && SU=(--site-update "$(Build.SourcesDirectory)/.dashboard/site-update/site-update-$HOY.json")
-          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} \
+          # la revisión de la semana (scripts/nightly/weekly-review/): su informe vive en main del repo de mantenimiento, que el barrido de las
+          # retrospectivas ya bajó. Sin ese repo en team-repos.json, o sin informe todavía, el resumen no lleva la línea.
+          SEM=()
+          # sale 3 si team-repos.json no se pudo leer o es inválido (se avisa); sin `maintainers` declarado, vacío (es legítimo)
+          if ! MANT=$(node -e 'const r=require("./scripts/lib/team-repos.js").load(process.argv[1]);if(!r.ok)process.exit(3);const m=r.data.maintainers;process.stdout.write(m?m.repo.replace(/[^\w.-]/g,"_"):"")' "$(Build.SourcesDirectory)/team-repos.json"); then
+            MANT=""
+            echo "##vso[task.logissue type=warning]No pude leer team-repos.json para la revisión de la semana: el resumen va sin ella."
+          fi
+          CLON="${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/retro-sweep/$MANT"
+          SEMF="${AGENT_TEMPDIRECTORY:-${TMPDIR:-/tmp}}/weekly-review.json"
+          if [ -n "$MANT" ] && [ -d "$CLON/.git" ] && ! git -C "$CLON" rev-parse --verify --quiet origin/main >/dev/null; then
+            echo "##vso[task.logissue type=warning]El clon del repo de mantenimiento no tiene origin/main legible: el resumen va sin la revisión de la semana."
+          elif [ -n "$MANT" ] && [ -d "$CLON/.git" ]; then
+            # con main legible, sin el archivo todavía no hubo revisión (no es una falla); con el archivo, leerlo tiene que andar
+            HAY=0; git -C "$CLON" cat-file -e origin/main:.dashboard/weekly-review/latest.json 2>/dev/null || HAY=$?
+            if [ "$HAY" = 0 ]; then
+              if git -C "$CLON" show origin/main:.dashboard/weekly-review/latest.json > "$SEMF"; then SEM=(--weekly "$SEMF")
+              else echo "##vso[task.logissue type=warning]No pude leer el informe de la revisión de la semana: el resumen va sin ella."; fi
+            elif [ "$HAY" != 1 ] && [ "$HAY" != 128 ] || ! git -C "$CLON" ls-tree --name-only origin/main >/dev/null 2>&1; then
+              # 1 o 128 con el árbol de main legible: el archivo no está (todavía no hubo revisión); otra cosa es un git roto
+              echo "##vso[task.logissue type=warning]No pude ver si hay informe de la revisión de la semana (git salió $HAY): el resumen va sin ella."
+            fi
+          elif [ -n "$MANT" ]; then
+            echo "##vso[task.logissue type=warning]No está el clon del repo de mantenimiento: el resumen va sin la revisión de la semana."
+          fi
+          node scripts/nightly/dependencies/daily-summary.js deliver --source dependencies --today "$HOY" ${SU[@]+"${SU[@]}"} ${SEM[@]+"${SEM[@]}"} \
             --out "$(Build.SourcesDirectory)/.dashboard/dependencias" \
             --pending "$(Build.SourcesDirectory)/inbox/dependencies" \
             --operations "$(Build.SourcesDirectory)/operations.json" \
