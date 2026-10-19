@@ -1557,6 +1557,10 @@
     {
       "words": ["submodules"],
       "reason": "de git, no un nombre del arnés: la opción `--ignore-submodules=none` de `git diff-tree`. Sin ella git obedece el `ignore` del `.gitmodules` del árbol y saltea el submódulo, y el freno antes de publicar (scripts/hooks/public-push-guard.js) lo daba por limpio (story 8.26, tanda F2, pase adversarial). Sumada el 2026-10-10 con el plan de la tanda aprobado, a confirmar por el dueño; precedentes iguales del 2026-10-03 y de la tanda F1."
+    },
+    {
+      "words": ["fastapi"],
+      "reason": "nombre propio de un framework ajeno (FastAPI), no un nombre del arnés: lo usan el paquete de ejemplo examples/packs/svelte-fastapi y su revisor example-fastapi-reviewer (story 8.59). Decisión del dueño, 2026-10-19."
     }
   ],
   "schemaFiles": [
