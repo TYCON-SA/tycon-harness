@@ -61,7 +61,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 1. **Abrí tu agente de código en la carpeta de tu repo**, para que cargue las reglas del arnés (si estaba abierto, cerralo y abrilo de nuevo: las reglas entran al abrirlo).
 2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
 3. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
-4. **Revisá la historia.** Si tu repo no tiene `_bmad/`, la arma con tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar) que contesta con tu pedido, y te marca lo que supuso. Te la muestra y la escribe con tu «sí».
+4. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trabaja con su propio proyecto BMAD (la carpeta `_bmad/`), la arma con ese proyecto.
 5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
 6. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 

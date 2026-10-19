@@ -62,7 +62,7 @@ A story is your request in writing, with its criteria and its tests: the agent f
 1. **Open your coding agent in your repo's folder**, so it loads the harness's rules (if it was open, close it and open it again: the rules load when it starts).
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
 3. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
-4. **Review the story.** If your repo has no `_bmad/`, it builds it from three plain questions (what it must do, how you can tell it works, and what it must not touch) that it answers from your request, and it marks what it assumed. It shows it to you and writes it on your "yes".
+4. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already works with its own BMAD project (the `_bmad/` folder), it builds it with that project.
 5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. It shows you the plan and you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
 6. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
 
