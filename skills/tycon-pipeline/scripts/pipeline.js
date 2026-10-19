@@ -1025,6 +1025,67 @@ function computeAdvisorSet({ repo, story, files }) {
   };
 }
 
+// ── Los revisores del núcleo, declarados ──
+// Las condiciones de arriba son código; esta tabla las dice como datos, para mostrarlas («Cómo trabaja», en el sitio de la
+// organización). Una fila por revisor: el grupo (`always`: siempre que hay código · `story`: según la historia · `change`:
+// según lo que toca el cambio), la clave del texto de «cuándo» (los textos viven en scripts/site/texts.js) y un caso
+// que lo hace entrar: archivos con su contenido, una historia y, si hace falta, el `.tycon/advisors.yaml` del repo.
+// `coreReviewersDrift` corre cada caso por `computeAdvisorSet` y frena si la tabla y el cálculo se separan.
+const STORY_GOLD = '---\nstory: "9.9"\n---\n\n## Acceptance Criteria\n\n1. algo\n\n### Tests\n\n| # | Nombre | AC |\n|---|---|---|\n| T1 | `Algo` | 1 |\n';
+const CORE_REVIEWERS = Object.freeze([
+  { agent: 'tycon-plugin-tests-coverage', group: 'always', whenKey: 'revisorCuando.codigo', probe: { files: { 'src/a.js': 'module.exports = 1;\n' } } },
+  { agent: 'tycon-plugin-security-basics', group: 'always', whenKey: 'revisorCuando.codigoOSecretos', probe: { files: { 'src/a.js': 'module.exports = 1;\n' } } },
+  { agent: 'tycon-story-validator', group: 'story', whenKey: 'revisorCuando.hayHistoria', probe: { files: { 'README.md': '# x\n' }, story: STORY_GOLD } },
+  { agent: 'tycon-spec-first-checker', group: 'story', whenKey: 'revisorCuando.hayHistoria', probe: { files: { 'README.md': '# x\n' }, story: STORY_GOLD } },
+  { agent: 'tycon-ac-coverage-checker', group: 'story', whenKey: 'revisorCuando.criteriosOPruebas', probe: { files: { 'README.md': '# x\n' }, story: STORY_GOLD } },
+  { agent: 'tycon-deferral-tracker', group: 'story', whenKey: 'revisorCuando.dejaParaDespues', probe: { files: { 'README.md': '# x\n' }, story: `${STORY_GOLD.replace('---\n\n', 'pipelines:\n  - name: A\n    status: in-progress\n---\n\n')}` } },
+  { agent: 'tycon-e2e-realness-checker', group: 'change', whenKey: 'revisorCuando.puntaAPunta', probe: { files: { 'tests/e2e/a.spec.ts': "test('a', async () => {});\n" } } },
+  { agent: 'tycon-silent-failure-hunter', group: 'change', whenKey: 'revisorCuando.manejaErrores', probe: { files: { 'src/a.js': 'try { x(); } catch (e) {}\n' } } },
+  { agent: 'llm-cost-reviewer', group: 'change', whenKey: 'revisorCuando.modelos', probe: { files: { 'src/a.ts': "import Anthropic from '@anthropic-ai/sdk';\n" } } },
+  { agent: 'i18n-hardcoded-text-reviewer', group: 'change', whenKey: 'revisorCuando.textosTraducibles', probe: { files: { 'src/a.tsx': 'export const A = () => <p>Hola</p>;\n' }, advisorsYaml: 'i18n:\n  required: true\n' } },
+]);
+
+/** Los nombres de revisor que el cálculo del núcleo puede devolver: los literales de las tres funciones que lo arman. */
+function coreReviewerNames() {
+  const fuente = [computeBase, computeCompletitud, computeConditional].map((f) => f.toString()).join('\n');
+  return [...new Set([...fuente.matchAll(/'([a-z0-9]+(?:-[a-z0-9]+){2,})'/g)].map((m) => m[1]))].sort();
+}
+
+/**
+ * Si la tabla del núcleo y `computeAdvisorSet` dicen lo mismo: `missing` (el cálculo lo puede devolver y la tabla no lo
+ * tiene), `extra` (la tabla lo nombra y el cálculo nunca lo devuelve) y `notTriggered` (el caso de la fila no lo hace
+ * entrar). Los casos corren en carpetas aparte, sin paquetes: sólo cuenta el núcleo.
+ */
+function coreReviewersDrift({ table = CORE_REVIEWERS } = {}) {
+  const nombres = coreReviewerNames();
+  const enTabla = table.map((r) => r.agent);
+  const notTriggered = [];
+  const prev = process.env.TYCON_PACKS_DIR;
+  const sinPaquetes = fs.mkdtempSync(path.join(os.tmpdir(), 'core-reviewers-packs-'));
+  process.env.TYCON_PACKS_DIR = sinPaquetes;
+  try {
+    for (const r of table) {
+      const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'core-reviewers-'));
+      try {
+        const files = Object.keys(r.probe.files || {});
+        for (const f of files) { fs.mkdirSync(path.dirname(path.join(repo, f)), { recursive: true }); fs.writeFileSync(path.join(repo, f), r.probe.files[f]); }
+        if (r.probe.advisorsYaml) { fs.mkdirSync(path.join(repo, '.tycon'), { recursive: true }); fs.writeFileSync(path.join(repo, '.tycon', 'advisors.yaml'), r.probe.advisorsYaml); }
+        let story = null;
+        if (r.probe.story) { story = path.join(repo, 'story.md'); fs.writeFileSync(story, r.probe.story); }
+        if (!computeAdvisorSet({ repo, story, files }).all.includes(r.agent)) notTriggered.push(r.agent);
+      } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+    }
+  } finally {
+    if (prev === undefined) delete process.env.TYCON_PACKS_DIR; else process.env.TYCON_PACKS_DIR = prev;
+    fs.rmSync(sinPaquetes, { recursive: true, force: true });
+  }
+  return {
+    missing: nombres.filter((n) => !enTabla.includes(n)),
+    extra: enTabla.filter((n) => !nombres.includes(n)),
+    notTriggered,
+  };
+}
+
 // ── SPEED-1 (2026-05-27) — Smart re-loop advisors (refinement de regla D.i) ──
 //
 // Cuando iter N>1 del Step 5 corre (fix-loop post-HITL), regla D.i.1 obliga el set
@@ -6347,6 +6408,13 @@ module.exports = {
   advisorsRunSinceStart,
   computeAdvisorSet,
   detectStack,
+  // los revisores del núcleo declarados («Cómo trabaja», en el sitio): tests/how-it-works.test.js T4 y T5
+  CORE_REVIEWERS,
+  coreReviewersDrift,
+  coreReviewerNames,
+  storyRequiresRuntimeEvidenceCheck,
+  parseFrontmatterPipeline,
+  revisoresDelNucleo,
   // tests/code-files.test.js — la densidad cuenta todos los archivos fuente
   densidadDelDiff,
   // story 8.2 — paquetes de revisores: tests/packs.test.js y package-equivalence.js.

@@ -136,29 +136,32 @@ const CHAINS = {
   'pre-edit': [
     // Portón de CARRIL (2026-08-19): deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
-    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js') },
+    // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el
+    // despachador: los muestra «Cómo trabaja», en el sitio de la organización, en lugar del despachador mismo.
+    { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['3', '4'], effect: 'blocks' },
     // Freno de STORY A MANO (2026-08-30): deniega CREAR un .md con identidad de story sin constancia
     // de tycon-create-story en la sesión (la deja on-skill-invoke.js, PostToolUse Skill). Editar una
     // story existente pasa siempre. Ver lib/story-skill-gate.js. Caso: stories AS-1 / PERF-1 de un producto del equipo — guides/maintaining/incident-log.md#story-a-mano-sin-skill-2026-08-30.
-    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js') },
-    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js') },
-    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js') },
+    { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['1'], effect: 'blocks' },
+    { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['7c'], effect: 'blocks' },
+    { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['7c', '8'], effect: 'blocks' },
     // Portón ATDD preventivo (2026-07-30): deniega el PRIMER archivo de código de una corrida de
     // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step 4, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
-    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js') },
-    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js') },
-    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js') },
+    { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['4'], effect: 'blocks' },
+    { name: 'on-write-collision', path: path.join(PIPELINE_SCRIPTS, 'on-write-collision.js'), steps: ['4'], effect: 'warns' },
+    { name: 'on-planning-artifact', path: path.join(PIPELINE_SCRIPTS, 'on-planning-artifact.js'), steps: ['2'], effect: 'warns' },
   ],
   'post-edit': [
-    { name: 'clocki-enforce', path: path.join(CLOCKI_SCRIPTS, 'clocki-enforce.js') },
-    { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js') },
+    // sin la integración clockify no corre (`saltarClocki`, más abajo): `integration` lo dice para «Cómo trabaja»
+    { name: 'clocki-enforce', path: path.join(CLOCKI_SCRIPTS, 'clocki-enforce.js'), steps: ['all'], effect: 'warns', integration: 'clockify' },
+    { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js'), steps: ['all'], effect: 'records' },
     // Lint de la config del repo (FIX-4(c), 2026-08-25): `.tycon/advisors.yaml` es la única
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
-    { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js') },
-    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event) },
-    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite },
+    { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
+    { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['1'], effect: 'records' },
+    { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['1'], effect: 'records' },
   ],
 };
 
@@ -287,7 +290,7 @@ function dispatch(mode) {
   process.exit(0);
 }
 
-module.exports = { dispatch, prepareEvents };
+module.exports = { dispatch, prepareEvents, CHAINS };
 
 // CLI: `node dispatch.js pre-edit|post-edit` (los entry-scripts hook-*.js lo llaman).
 if (require.main === module) {

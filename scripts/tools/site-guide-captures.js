@@ -160,7 +160,9 @@ const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operatio
  *   falla        todo se leyó una vez y después el buzón dejó de contestar: la banda «no se pudo actualizar»
  * `opciones.access`: la lista de quién entra (site.access) del repo de operaciones; sin ella, la de antes
  * (site.maintainers), que la pestaña Configuración muestra migrada. `opciones.repos`: claves que se suman a
- * `team-repos.json` del perfil (por ejemplo `models` y `merge_suites`).
+ * `team-repos.json` del perfil (por ejemplo `models` y `merge_suites`). `opciones.profileFiles`: archivos de más en el
+ * repo del perfil (`ruta → contenido`), por ejemplo un paquete de revisores de la organización. `opciones.sinPerfil`: el
+ * sitio arranca sin el repo del perfil configurado (lo que ve una organización que todavía no lo declaró).
  */
 async function laboratorio(variante, opciones = {}) {
   const ORG = req('scripts/lib/org-config.js');
@@ -182,6 +184,7 @@ async function laboratorio(variante, opciones = {}) {
   const perfil = await crearRepoHttp({ raiz: path.join(raiz, 'perfil'), nombre: 'perfil.git', cabecera: CAB, archivos: {
     'team-profile.json': json(PERFIL), 'team-repos.json': json({ ...REPOS, ...(opciones.repos || {}) }), 'team-layer.json': json({ requires: { harness: `>= ${ORG.RESPONSE_SINCE}` } }),
     'skills/acme-guia/SKILL.md': '# una skill de la organización\n', 'agents/acme-revisor.md': '# un revisor de la organización\n', 'onboarding/step-0-mac.md': '# el alta\n',
+    ...Object.fromEntries(Object.entries(opciones.profileFiles || {}).map(([k, v]) => [k, json(v)])),
   } });
   const gh = await arrancarGithubFalso({ owner: 'acme', repo: 'perfil' });
   if (variante !== 'sinPolitica') gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
@@ -195,7 +198,7 @@ async function laboratorio(variante, opciones = {}) {
   const env = H.envBase({
     SITE_PUBLIC_URL: `http://127.0.0.1:${puerto}`,
     SITE_OIDC_ISSUER: emisor.issuer, SITE_OPERATIONS_REPO: ops.url, SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(),
-    SITE_PROFILE_REPO: perfil.url, SITE_PROFILE_TOKEN: TOKEN, SITE_PROFILE_WRITE_TOKEN: TOKEN, SITE_DATA_DIR: dataDir,
+    ...(opciones.sinPerfil ? {} : { SITE_PROFILE_REPO: perfil.url, SITE_PROFILE_TOKEN: TOKEN, SITE_PROFILE_WRITE_TOKEN: TOKEN }), SITE_DATA_DIR: dataDir,
   });
   const cfg = validarConfiguracion(env).cfg;
   const fuentes = crearFuentes({ cfg, dataDir, log: process.env.GUIDE_CAPTURES_DEBUG ? (l) => process.stderr.write(`[sitio] ${l}\n`) : () => {}, urlBuzon: buzon.base });
@@ -204,7 +207,8 @@ async function laboratorio(variante, opciones = {}) {
   const rutasCorridas = req('scripts/site/tabs/runs.js').crearRutas({ cfg, fuentes, version: VERSION, skillsDir: path.join(ROOT, 'skills') });
   const { crearSitio } = req('scripts/site/server.js');
   const rutasAyuda = req('scripts/site/help.js').crearRutas({ raiz: ROOT });
-  const sitio = crearSitio({ env, fuentes, log: () => {}, rutasExtra: [...rutasConfig, ...rutasCorridas, ...rutasAyuda] });
+  const rutasComoTrabaja = req('scripts/site/tabs/how-it-works.js').crearRutas({ cfg, fuentes, versionImagen: VERSION, remotos, urlBase: { github: gh.base } });
+  const sitio = crearSitio({ env, fuentes, log: () => {}, rutasExtra: [...rutasConfig, ...rutasComoTrabaja, ...rutasCorridas, ...rutasAyuda] });
   await sitio.iniciar();
   await new Promise((r) => sitio.server.listen(puerto, '127.0.0.1', r));
   const h = { base: `http://127.0.0.1:${puerto}`, pedir: (ruta, o) => H.pedirA(`http://127.0.0.1:${puerto}`, ruta, o), cerrar: () => sitio.cerrar() };
@@ -222,6 +226,8 @@ async function laboratorio(variante, opciones = {}) {
   const sesiones = new Map();
   return {
     base: h.base,
+    // el GitHub de juguete del perfil (sus pedidos) y el repo del perfil (lo que se empujó): la prueba en vivo los lee
+    gh, perfil,
     async entrar(correo) {
       if (!sesiones.has(correo)) sesiones.set(correo, (await H.ingresar(h, emisor, { sub: `s-${correo}`, email: correo, email_verified: true })).sesion);
       return sesiones.get(correo);

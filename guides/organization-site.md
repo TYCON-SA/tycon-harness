@@ -214,6 +214,43 @@ enlace de abajo abre el tablero del arnés en seis preguntas.
 
 **Qué hacer:** una foto que no llegó o un rojo nuevo se mira en el proceso de la noche que lo produjo.
 
+### Cómo trabaja
+
+**Qué contesta:** ¿qué hace el agente con una historia, paso por paso, en esta organización? Sólo la ve quien mantiene.
+
+Arriba, **Tu organización**: las integraciones prendidas y apagadas (tachadas), los paquetes de revisores activos y las
+reglas (cómo se nombran las pruebas, qué pantallas piden prueba de punta a punta, en qué idioma está la aplicación).
+Debajo, los pasos del recorrido en orden, y aparte los dos que quedan fuera (otra vuelta de revisores y el cierre en
+Azure DevOps). Al elegir un paso se ve:
+
+- **Guías que cita:** el archivo del paso y las guías que nombra.
+- **Según la historia:** lo que se suma sólo en algunas historias, con su condición. Por ejemplo, en una historia que
+  toca una pantalla: la maqueta en «Armar el plan», su aprobación en «Aprobar el plan», y la prueba con navegador, las
+  capturas y la revisión de legibilidad en «Probar en vivo».
+- **Revisores:** los del arnés, agrupados por cuándo entran, y los de cada paquete, con su condición.
+- **Controles:** los que frenan, avisan o sólo anotan en ese paso. Abajo de todo, los que actúan en cualquier paso.
+
+Cada pieza dice si es **del arnés** o **de tu organización**. Lo que depende de una integración apagada se ve
+**apagado en tu organización**.
+
+Todo sale de lo mismo con que corre el arnés: la tabla de pasos, el cálculo de revisores, la lista de controles, los
+detectores que deciden cada pieza y el perfil de tu organización. Si una de esas fuentes cambia, la pestaña cambia sola.
+
+**Mejorar una pieza del arnés.** El arnés no se edita desde el sitio. «Ver el código» abre el archivo en el repo público;
+«Proponer una mejora» abre un cuadro donde escribís, con tus palabras, qué cambiarías y por qué. «Abrir el pedido en
+GitHub» abre un pedido nuevo del repo público con tu texto, la pieza, el paso y la versión ya escritos: lo enviás con tu
+cuenta de GitHub. El sitio no guarda ninguna clave para esto.
+
+**Editar un revisor de tu organización.** Los revisores de los paquetes que viven en el repo del perfil llevan «Editar»,
+y cada paquete lleva «+ Agregar revisor». Se cambia el nombre, cuándo entra, si el cambio toca qué, qué archivos mira, el
+prefijo de sus reglas y sus instrucciones. «Revisar» lo pasa por el mismo lector con que el arnés carga los paquetes: con
+un problema, lo dice y «Proponer» queda apagado. «Proponer» arma un solo pedido al repo del perfil con el paquete y las
+instrucciones del revisor, y lo aprueba otro mantenedor, como en Configuración. Borrar un revisor se hace a mano en el
+repo del perfil.
+
+**Qué hacer:** si una pieza no se entiende o falta algo, «Proponer una mejora». Si un paquete de tu organización dice
+que no se puede usar, se arregla a mano en el repo del perfil: hasta entonces el arnés tampoco lo carga.
+
 ### Configuración
 
 **Qué contesta:** ¿cómo está configurada la organización, y cómo se cambia? Sólo la ve quien mantiene. La parte
@@ -421,12 +458,12 @@ las máquinas se actualizan solas al arrancar.
 
 El sitio decide quién sos por tu correo, y sólo con la lista de «Quién entra al sitio»:
 
-| Rol | Inicio | Corridas | Proyectos | Arnés | Configuración |
-|---|---|---|---|---|---|
-| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las corridas | todos los productos | sí | sí, y propone cambios |
-| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no |
-| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no |
-| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no |
+| Rol | Inicio | Corridas | Proyectos | Arnés | Cómo trabaja | Configuración |
+|---|---|---|---|---|---|---|
+| **Quien mantiene** | «Qué decidir hoy», de toda la organización | todas las corridas | todos los productos | sí | sí, y propone cambios a sus revisores | sí, y propone cambios |
+| **Persona confirmada** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas | los productos en los que trabaja | no | no | no |
+| **Persona con la máquina sin confirmar** (dev de la lista) | «Lo tuyo» | las de sus máquinas confirmadas; las de la máquina nueva, todavía no | los productos en los que trabaja | no | no | no |
+| **Sin rol** (no está en la lista) | sólo la página «Tu cuenta no está en la lista» | no | no | no | no | no |
 
 **Cómo se pasa de un rol a otro.** Lo decide quien mantiene, en Configuración, y entra cuando alguien aprueba el pedido:
 

@@ -280,25 +280,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   const remoteDe = (repo) => remotos[repo] || ORG.remoteOf(urlDe(repo));
 
   // ── la defensa de las escrituras (AC 3) ──
-  async function escritura(ctx) {
-    const h = ctx.req.headers;
-    if (h.origin) { if (h.origin !== cfg.publicUrl) return { error: rechazo(403, M('config.otroOrigen')) }; }
-    else if (h['sec-fetch-site'] !== 'same-origin') return { error: rechazo(403, M('config.sinOrigen')) };
-    const tok = h['x-site-token'];
-    if (!tok) return { error: rechazo(403, M('config.sinToken')) };
-    const propio = ctx.sesion && typeof ctx.sesion.tok === 'string' ? Buffer.from(ctx.sesion.tok) : Buffer.alloc(0);
-    const traido = Buffer.from(String(tok));
-    if (!propio.length || propio.length !== traido.length || !crypto.timingSafeEqual(propio, traido)) return { error: rechazo(403, M('config.otroToken')) };
-    if (!/^application\/json\b/.test(String(h['content-type'] || ''))) return { error: rechazo(415, M('config.esperaJson')) };
-    const cuerpo = await new Promise((resolve) => {
-      let size = 0; const partes = []; let listo = false;
-      ctx.req.on('data', (c) => { size += c.length; if (size > CUERPO_MAX) { if (!listo) { listo = true; resolve({ grande: true }); } } else partes.push(c); });
-      ctx.req.on('end', () => { if (!listo) { listo = true; resolve({ texto: Buffer.concat(partes).toString('utf8') }); } });
-      ctx.req.on('error', () => { if (!listo) { listo = true; resolve({ grande: true }); } });
-    });
-    if (cuerpo.grande) return { error: rechazo(400, M('config.muyGrande')) };
-    try { return { body: cuerpo.texto ? JSON.parse(cuerpo.texto) : {} }; } catch { return { error: rechazo(400, M('config.noEsJson')) }; }
-  }
+  const escritura = (ctx) => defensaDeEscritura(cfg, ctx);
 
   // ── la vista de una sección ──
   function contextoPersonas(doc) {
@@ -885,4 +867,28 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   ];
 }
 
-module.exports = { crearRutas };
+/**
+ * La defensa de una escritura de la pestaña: mismo origen, el token de la sesión, JSON y un cuerpo
+ * chico. `{ body }` con el cuerpo leído, o `{ error }` con la respuesta de rechazo. La usa también «Cómo trabaja».
+ */
+async function defensaDeEscritura(cfg, ctx) {
+  const h = ctx.req.headers;
+  if (h.origin) { if (h.origin !== cfg.publicUrl) return { error: rechazo(403, M('config.otroOrigen')) }; }
+  else if (h['sec-fetch-site'] !== 'same-origin') return { error: rechazo(403, M('config.sinOrigen')) };
+  const tok = h['x-site-token'];
+  if (!tok) return { error: rechazo(403, M('config.sinToken')) };
+  const propio = ctx.sesion && typeof ctx.sesion.tok === 'string' ? Buffer.from(ctx.sesion.tok) : Buffer.alloc(0);
+  const traido = Buffer.from(String(tok));
+  if (!propio.length || propio.length !== traido.length || !crypto.timingSafeEqual(propio, traido)) return { error: rechazo(403, M('config.otroToken')) };
+  if (!/^application\/json\b/.test(String(h['content-type'] || ''))) return { error: rechazo(415, M('config.esperaJson')) };
+  const cuerpo = await new Promise((resolve) => {
+    let size = 0; const partes = []; let listo = false;
+    ctx.req.on('data', (c) => { size += c.length; if (size > CUERPO_MAX) { if (!listo) { listo = true; resolve({ grande: true }); } } else partes.push(c); });
+    ctx.req.on('end', () => { if (!listo) { listo = true; resolve({ texto: Buffer.concat(partes).toString('utf8') }); } });
+    ctx.req.on('error', () => { if (!listo) { listo = true; resolve({ grande: true }); } });
+  });
+  if (cuerpo.grande) return { error: rechazo(400, M('config.muyGrande')) };
+  try { return { body: cuerpo.texto ? JSON.parse(cuerpo.texto) : {} }; } catch { return { error: rechazo(400, M('config.noEsJson')) }; }
+}
+
+module.exports = { crearRutas, defensaDeEscritura };

@@ -63,6 +63,8 @@ const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
 const WHEN_RE = /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/;
 const NEEDS = new Set(['telegram-plugin']);
+const STEP_RE = /^(all|\d+[a-z]?)$/;
+const EFFECTS = ['blocks', 'warns', 'records'];
 const ASYNC_ALLOWED = true;
 
 class ApplyError extends Error {}
@@ -103,6 +105,11 @@ function validateList(list) {
     if (h.override !== undefined && !(typeof h.override === 'string' && /^TYCON_[A-Z_]+$/.test(h.override) && String(h.when).startsWith('integration:'))) out.push(`${who}: override es una variable TYCON_ y sólo va en un hook de integración`);
     if (h.async !== undefined && (h.async !== true || !ASYNC_ALLOWED)) out.push(`${who}: async sólo puede ser true`);
     if (!h.platforms || typeof h.platforms !== 'object' || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
+    // en qué pasos del pipeline actúa y qué hace: no cambian lo que se registra; los muestra «Cómo trabaja» del sitio
+    // (que cada id sea un paso de verdad lo cruza la prueba del sitio contra la tabla de pasos). Sin ellos la lista se
+    // aplica igual: son datos para mostrar, y que la lista real los traiga lo exige su prueba
+    if (h.steps !== undefined && (!Array.isArray(h.steps) || !h.steps.length || !h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${who}: steps tiene que ser una lista de pasos del pipeline («4», «7c»…) o ["all"]`);
+    if (h.effect !== undefined && !EFFECTS.includes(h.effect)) out.push(`${who}: effect «${h.effect}» fuera del vocabulario (${EFFECTS.join(', ')})`);
     const key = `${h.event}|${normMatcher(h.matcher)}|${h.spec}`;
     if (seen.has(key)) out.push(`${who}: registro repetido (${h.event}, ${h.matcher || 'sin matcher'})`);
     seen.add(key);
