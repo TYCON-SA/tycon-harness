@@ -277,6 +277,35 @@ test('@story-8.59 @ac-6 8.59-Runner_Pack_FrenaLoQueNoAplica', () => {
   }
 });
 
+// dos casos con la misma clave `advisor::id` guardarían el veredicto con esa clave: el segundo pisaría al primero y un
+// rojo quedaría tapado por un verde, con el conteo «juzgados == planeados» cuadrando igual
+test('@story-8.60 @ac-1 @ac-2 8.60-Runner_Pack_FrenaIdsRepetidos', () => {
+  const SVELTE = 'example-svelte-reviewer';
+  const copia = (prefijo, cambiar) => { const dir = tmp(prefijo); fs.cpSync(EXAMPLE, dir, { recursive: true }); cambiar(path.join(dir, 'exam')); return dir; };
+  // en un mismo archivo: el must-not-flag de SVELTE-C1 con el id del must-flag
+  const enUnArchivo = copia('example-pack-dupid-', (exam) => {
+    const f = path.join(exam, `${SVELTE}.json`); const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+    j.cases[1].id = j.cases[0].id; fs.writeFileSync(f, JSON.stringify(j));
+  });
+  // en dos archivos del mismo revisor
+  const enDosArchivos = copia('example-pack-dupfile-', (exam) => {
+    const j = JSON.parse(fs.readFileSync(path.join(exam, `${SVELTE}.json`), 'utf8'));
+    j.cases = [j.cases.find((c) => c.id === 'svelte-w1-cancelada-en-ondestroy')];
+    j.cases[0].id = 'svelte-w1-subscribe-sin-cancelar';
+    fs.writeFileSync(path.join(exam, `${SVELTE}-2.json`), JSON.stringify(j));
+  });
+  for (const [dir, id] of [[enUnArchivo, 'svelte-c1-html-de-una-prop'], [enDosArchivos, 'svelte-w1-subscribe-sin-cancelar']]) {
+    for (const extra of [[], ['--list']]) {
+      const args = ['--pack', dir, ...extra];
+      const r = runner(args);
+      assert.notStrictEqual(r.status, 0, `${args.join(' ')} tiene que frenar`);
+      assert.ok(r.stderr.includes(`${SVELTE}::${id}`), `${args.join(' ')}: nombra la clave repetida (${r.stderr.trim()})`);
+      assert.deepStrictEqual(listedIds(r.stdout), [], `${args.join(' ')}: no lista ningún caso`);
+      assert.ok(!/advisor-bench:/.test(r.stdout), `${args.join(' ')}: no corre ningún caso`);
+    }
+  }
+});
+
 test('@story-8.59 @ac-7 @ac-8 8.59-Ejemplo_NoSeInstala', () => {
   // packs/ del público trae sólo su README; en el árbol armado de los nocturnos trae además los del perfil del equipo. En
   // ninguno de los dos está el ejemplo.
