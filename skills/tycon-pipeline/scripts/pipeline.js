@@ -108,6 +108,8 @@ const { reglasRevisores, bloqueParaContexto, resumen: resumenReglas } = require(
 // El bloque canónico de `.advisors`, copiado del `.gitignore` del arnés. Es UNO y se
 // escribe entero: `.advisors/` a secas es exactamente la línea del incidente — excluye el
 // directorio y con eso ANULA cualquier negación, así que la evidencia deja de viajar.
+// El registro de aprobaciones de la corrida viaja también: el portón de CI lo lee.
+const LINEA_APROBACIONES = '!**/.advisors/pipeline-runs/*/approvals.jsonl';
 const GITIGNORE_ADVISORS = [
   '# TYCON — los artefactos efimeros de advisors NO viajan, pero la evidencia de cierre SI:',
   '# es auditable y el medidor SDLC la lee desde el servidor (si no viaja, mide 0% y miente).',
@@ -122,6 +124,7 @@ const GITIGNORE_ADVISORS = [
   '**/.advisors/pipeline-runs/*/*',
   '!**/.advisors/pipeline-runs/*/review-roster.json',
   '!**/.advisors/pipeline-runs/*/findings.json',
+  LINEA_APROBACIONES,
 ];
 
 /** Las sondas: rutas que NO existen en el disco, sólo para preguntarle a git qué haría con ellas. */
@@ -135,6 +138,7 @@ const SONDA_EVIDENCIA = '.advisors/dod-runtime/__sonda-pipe-c2__';
 const SONDA_DASHBOARD = '.dashboard/__sonda-pipe-c2__';
 // Lo que el portón de CI exige para `done`: el registro de revisores de la corrida (2026-09-05).
 const SONDA_ROSTER = '.advisors/pipeline-runs/__sonda-pipe-c2__/review-roster.json';
+const SONDA_APROBACIONES = '.advisors/pipeline-runs/__sonda-pipe-c2__/approvals.jsonl';
 
 /**
  * PIPE-C2 · qué le falta al `.gitignore`, preguntándole a GIT y no al texto.
@@ -168,7 +172,13 @@ function computeGitignoreNeeds(probe) {
     // todo lo que falta (2026-09-05: el registro de revisores también viaja, por el `done` por PR).
     const traga = [];
     if (probe(SONDA_EVIDENCIA) === true) traga.push('`.advisors/dod-runtime/` (la evidencia de cierre de cada story NO viaja y el medidor SDLC la lee como 0%)');
-    if (probe(SONDA_ROSTER) === true) traga.push('`.advisors/pipeline-runs/*/review-roster.json` + `findings.json` (el registro de revisores NO viaja y el portón de CI no deja pasar la story a `done`)');
+    if (probe(SONDA_ROSTER) === true) traga.push('`.advisors/pipeline-runs/*/review-roster.json` + `findings.json` + `approvals.jsonl` (el registro de revisores y el de aprobaciones NO viajan y el portón de CI no deja pasar la story)');
+    // Un repo con el bloque estándar de antes (el registro de revisores viaja) y sin la línea del registro
+    // de aprobaciones. Agregar esa única negación es aditivo —no cambia lo que el repo decidió ignorar— y corre antes
+    // de toda aprobación, así que la línea llega en el mismo commit que el primer registro.
+    if (probe(SONDA_ROSTER) === false && probe(SONDA_APROBACIONES) === true) {
+      append.push('# ...y el registro de aprobaciones de la corrida (manual o automática), que el portón de CI lee:', LINEA_APROBACIONES);
+    }
     if (traga.length) {
       notices.push('PIPE-C2 AVISO: el .gitignore de este repo ignora TAMBIÉN '
         + traga.join(' y ') + '. El bloque correcto es el de GITIGNORE_ADVISORS '
