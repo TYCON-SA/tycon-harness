@@ -5,7 +5,8 @@
  * scripts/lib/team-repos.js (`team-repos.json`, en el perfil del equipo: dónde vive cada repo del arnés) y
  * scripts/lib/operations-config.js (`operations.json`, en el repo de operaciones: responsables, revisores y, desde la
  * story 2.28, quién es quién — `people`, con la huella del correo informado y nunca el correo en claro). Desde la story
- * 7.28, `team-repos.json` trae además `merge_suites`: dónde corren las suites completas al mergear cada repo.
+ * 7.28, `team-repos.json` trae además `merge_suites`: dónde corren las suites completas al mergear cada repo. El lector
+ * dice además qué trabajo declarado pasa el tope obligatorio y qué pasa con un repo sin pipeline.
  *
  * Lo que no se puede perder: un archivo válido da sus datos; uno con problemas no da datos a medias y cada problema
  * trae la ruta de su clave (la página de configuración marca cada campo con ella); «no pude leer» no es «no hay repo»;
@@ -651,4 +652,37 @@ test('T13 TeamRepos_UnderscoreComment_NotUnknown @story-7.35 @ac-8 — un «_» 
   const viejo = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { __meta: { a: 1 }, coverage: { min_touched_lines_pct: 80, __nota: 3 } })));
   assert.deepStrictEqual(viejo.problems, []);
   assert.strictEqual(viejo.sectionProblems, undefined, JSON.stringify(viejo.sectionProblems));
+});
+
+test('T4 Modelos_PorEncimaDelTope @story-2.59 @ac-4 — el lector dice qué trabajo declarado pasa el tope, sin anular el archivo', () => {
+  const conTope = { mandatory_ceiling: true, ceiling: 'opus' };
+  const models = { ...conTope, reviewers: 'sonnet', reviewers_reloop: 'fable', helpers: 'haiku', adversarial: { model: 'opus', heavy: 'fable', fable_question: 'ask' },
+    session: { low: 'sonnet', heavy: 'fable' }, reviewer: { 'tycon-silent-failure-hunter': 'fable', 'tycon-spec-first-checker': 'opus' } };
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling(models).map((p) => p.path).sort(),
+    ['models.adversarial.heavy', 'models.reviewer.tycon-silent-failure-hunter', 'models.reviewers_reloop', 'models.session.heavy']);
+  for (const p of TEAM.modelsAboveCeiling(models)) assert.match(p.message, /^pasa el tope obligatorio \(opus\)$/, p.path);
+  // un trabajo que no se declara (queda el por defecto) no se marca; sin tope, o con el tope apagado, nada
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling({ ...conTope }), []);
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling({ reviewers: 'fable' }), []);
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling({ mandatory_ceiling: false, ceiling: 'haiku', reviewers: 'fable' }), []);
+  // lo que el lector no entiende (un modelo inventado, otra forma) lo dicen sus otros problemas, no éste
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling({ ...conTope, reviewers: 'gpt', session: 'opus', adversarial: { heavy: 3 } }), []);
+  assert.deepStrictEqual(TEAM.modelsAboveCeiling('opus'), []);
+  // no-regresión de las máquinas: el archivo con un modelo por encima del tope sigue siendo válido y se lee entero
+  const doc = Object.assign(goodTeam(), { models: { ...conTope, adversarial: { heavy: 'fable' } } });
+  const r = TEAM.parse(JSON.stringify(doc));
+  assert.deepStrictEqual([r.ok, r.problems, r.sectionProblems], [true, [], undefined]);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tope-'));
+  fs.writeFileSync(path.join(dir, 'team-repos.json'), JSON.stringify(doc));
+  const MOD = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js'));
+  assert.deepStrictEqual(MOD.readOrgModels({ dir, teamRepos: TEAM }), { declared: true, data: doc.models, problem: null }, 'la máquina lee lo mismo y baja al tope');
+});
+
+test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13 — qué pasa sin pipeline, por regla', () => {
+  assert.strictEqual(TEAM.suitesWithoutPipeline('automatico'), 'machine');
+  assert.strictEqual(TEAM.suitesWithoutPipeline('siempre-en-la-maquina'), 'machine');
+  assert.strictEqual(TEAM.suitesWithoutPipeline('confiar-en-el-servidor'), 'server-if-any-check');
+  assert.strictEqual(TEAM.suitesWithoutPipeline(undefined), null);
+  // cada regla que el lector acepta tiene su respuesta
+  for (const r of TEAM.MERGE_RULES) assert.notStrictEqual(TEAM.suitesWithoutPipeline(r), null, r);
 });

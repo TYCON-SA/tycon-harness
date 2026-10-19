@@ -440,7 +440,7 @@ function revisar({ seccion, texto, borrador, lectores = {}, arnes = null, hoy = 
   for (const k of ajenas) doc[k] = clone(borrador[k]);
   const salida = formatJson(doc);
   const r = lector.parse(salida);
-  const problems = [...(r.problems || []), ...problemasDeSeccion(s, r, actual, doc)].map((p) => ({ ...p, sinCampo: ajenas.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)) || p.path === '' }));
+  const problems = [...(r.problems || []), ...problemasDeSeccion(s, r, actual, doc), ...problemasDelTope(s, lector, doc)].map((p) => ({ ...p, sinCampo: ajenas.some((k) => p.path === k || String(p.path).startsWith(`${k}.`)) || p.path === '' }));
   return { ok: Boolean(r.ok) && problems.length === 0, problems, texto: r.ok && problems.length === 0 ? salida : null };
 }
 
@@ -458,6 +458,24 @@ function problemasDeSeccion(seccion, r, actual, doc) {
     if (toca && Array.isArray(ps)) out.push(...ps);
   }
   return out;
+}
+
+/**
+ * Los trabajos de la sección de modelos declarados por encima del tope obligatorio: problemas para el sitio,
+ * que no deja proponerlos. Los da el lector del árbol (`modelsAboveCeiling`); uno anterior que no la trae, ninguno.
+ */
+function problemasDelTope(seccion, lector, doc) {
+  if (!seccion || seccion.id !== 'modelos' || !lector || typeof lector.modelsAboveCeiling !== 'function' || !isObject(doc)) return [];
+  return lector.modelsAboveCeiling(doc.models);
+}
+
+/**
+ * Qué pasa con las suites de un repo sin pipeline, por regla: `{ <regla>: 'machine' | 'server-if-any-check' }`
+ * del lector del árbol, para la pantalla (corre en el navegador y no carga el lector); `null` con un lector anterior.
+ */
+function sinPipelinePorRegla(lector) {
+  if (!lector || typeof lector.suitesWithoutPipeline !== 'function' || !Array.isArray(lector.MERGE_RULES)) return null;
+  return Object.fromEntries(lector.MERGE_RULES.map((r) => [r, lector.suitesWithoutPipeline(r)]));
 }
 
 /** El valor como texto con las claves ordenadas: el orden en que vienen no es un cambio. */
@@ -961,6 +979,7 @@ function pantalla(idioma = 'es') {
     [/^tiene que declarar staging, production o los dos$/, T('pantalla.tieneQueTenerElPaso')],
     [/^sólo va en staging: (.*)$/, T('pantalla.soloVaEnElPaso')],
     [/^tiene que ser «ask» o «never»(.*)$/, T('pantalla.tieneQueSerPreguntarO')],
+    [/^pasa el tope obligatorio \(([a-z]+)\)$/, T('pantalla.pasaElTopeObligatorio')],
   ];
   function mensajeLlano(m) {
     var t = String(m == null ? '' : m);
@@ -1384,16 +1403,46 @@ function pantalla(idioma = 'es') {
     return box;
   }
   var INTEGRACIONES = [['clockify', T('pantalla.clockifyRegistraLasHorasDe')], ['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')]];
+  // story 2.59: un renglón por integración, el nombre y su descripción a la izquierda y un selector corto a la derecha
   function editorIntegraciones(s, d, pr) {
     var i = d.integrations || {};
     var box = el('div', { class: 'pila' });
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramYCodegraphSeConfiguran') }));
+    var t = tabla('integ', T('pantalla.integraciones'));
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
-      var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida')], ['false', T('pantalla.apagada')]].concat(k === 'codex' ? [['detect', T('pantalla.prendidaSiCodexEstaInstalado')]] : []);
-      box.appendChild(selector(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, 'integrations.' + k, pr));
+      var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida2')], ['false', T('pantalla.apagada2')]].concat(k === 'codex' ? [['detect', T('pantalla.siEstaInstalado')]] : []);
+      var p = 'integrations.' + k;
+      var c = corto(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, p, pr);
+      // «Nombre: qué hace» → el nombre en negrita; sin dos puntos, todo es el nombre
+      var dos = par[1].indexOf(': ');
+      var que = el('div', { class: 'que', role: 'cell' }, el('b', { text: dos < 0 ? par[1] : par[1].slice(0, dos) }), dos < 0 ? null : el('span', { text: par[1].slice(dos) }));
+      t.appendChild(renglon([que, el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
     });
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramYCodegraphSeConfiguran') }));
+    box.appendChild(t);
     return box;
+  }
+  // ── story 2.59: las tablas de renglones de Modelos, Repos e Integraciones ──
+  // cada renglón es «contents» en la hoja: sus celdas caen en la grilla de la tabla y en teléfono bajan a dos líneas
+  function tabla(clase, titulo, columnas) {
+    var t = el('div', { class: 'tabla2 ' + clase, role: 'table', 'aria-label': titulo });
+    if (columnas) { var h = el('div', { class: 'h', role: 'row' }); columnas.forEach(function (c) { h.appendChild(el('span', { role: 'columnheader', text: c })); }); t.appendChild(h); }
+    return t;
+  }
+  // un selector corto: lo declarado se ve en negrita; con un problema en su ruta, en rojo (sus mensajes los dibuja el renglón)
+  function corto(label, valor, opciones, onChange, p, problemas) {
+    var mios = problemasEn(problemas, p);
+    var sel = el('select', { class: 'corto' + (valor ? ' declarado' : '') + (mios.length ? ' bad' : ''), 'aria-label': label, 'data-path': p, onchange: function (e) { onChange(e.target.value); } });
+    opciones.forEach(function (o) { sel.appendChild(el('option', { value: o[0], text: o[1] })); });
+    sel.value = valor == null ? '' : String(valor);
+    return { sel: sel, mios: mios };
+  }
+  // un renglón: sus celdas y, debajo, los mensajes de sus problemas
+  function renglon(celdas, mios, clase) {
+    var fila = el('div', { class: 'r' + (clase ? ' ' + clase : '') + (mios.length ? ' mal' : ''), role: 'row' });
+    celdas.forEach(function (c) { fila.appendChild(c); });
+    mios.forEach(function (x) { fila.appendChild(el('div', { class: 'err err-fila', text: x.message })); });
+    return fila;
   }
   function editorAdo(s, d, pr) {
     var ex = s.extras || {};
@@ -1569,6 +1618,22 @@ function pantalla(idioma = 'es') {
     return box;
   }
   var REGLAS = [['automatico', T('pantalla.automaticoElServidorSiLa')], ['siempre-en-la-maquina', T('pantalla.siempreEnLaMaquina')], ['confiar-en-el-servidor', T('pantalla.confiarEnElServidor')]];
+  var REGLAS_CORTAS = [['automatico', T('pantalla.automatico2')], ['siempre-en-la-maquina', T('pantalla.siempreEnLaMaquina')], ['confiar-en-el-servidor', T('pantalla.confiarEnElServidor')]];
+  // los repos abiertos con ✎, por su lugar en la lista; sacar uno los cierra a todos (los lugares se corren)
+  var ABIERTOS = {};
+  // las pruebas completas de un repo: su pipeline; sin pipeline, qué pasa con la regla que le toca (la suya; si no, la
+  // de la organización; si no, automático), con la respuesta del lector que el servidor manda en «sinPipeline»
+  function pruebasDe(e, r, ms, sp) {
+    var pl = e.full_tests_pipeline;
+    if (pl != null && pl !== '') {
+      var lista = typeof pl === 'number' ? listaDePipelines(pipelinesDe(r.org, r.project)) : null;
+      var nombre = lista && lista.filter(function (x) { return String(x.id) === String(pl); })[0];
+      return { declarado: true, texto: nombre ? nombre.nombre : typeof pl === 'number' ? T('pantalla.elPipeline') + pl : String(pl) };
+    }
+    var regla = e.rule != null ? e.rule : ms.default != null ? ms.default : 'automatico';
+    var que = sp && sp[regla];
+    return { declarado: false, texto: que === 'machine' ? T('pantalla.correnEnLaMaquinaDelDev') : que === 'server-if-any-check' ? T('pantalla.elServidorSiLaRama') : T('pantalla.sinPipeline') };
+  }
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
     var box = el('div', { class: 'pila' });
@@ -1580,20 +1645,37 @@ function pantalla(idioma = 'es') {
     }
     d.merge_suites = d.merge_suites || {};
     var ms = d.merge_suites;
-    box.appendChild(selector(T('pantalla.laReglaDeLaOrganizacion'), ms.default, [['', T('pantalla.sinDeclararAutomatico')]].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; }, 'merge_suites.default', pr));
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.porRepo') }), el('p', { class: 'sub-d', text: T('pantalla.unRepoQueNoSigue') }));
+    box.appendChild(selector(T('pantalla.laReglaDeLaOrganizacion'), ms.default, [['', T('pantalla.sinDeclararAutomatico')]].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; render(); }, 'merge_suites.default', pr));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.porRepo') }), el('p', { class: 'sub-d', text: T('pantalla.cadaRepoUsaLaRegla') }));
     ms.repos = ms.repos || [];
     if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: T('pantalla.ningunRepoTodavia') }));
+    // story 2.59: un renglón por repo (dónde, el repo entero, la regla, las pruebas completas, ✎ y ✕); ✎ abre los campos
+    // debajo. Se abre solo un repo con un problema en su ruta o sin organización o nombre (el recién agregado)
+    var t = tabla('repos', T('pantalla.porRepo'), [T('pantalla.donde'), T('pantalla.repo2'), T('pantalla.regla2'), T('pantalla.pruebasCompletas'), '']);
+    var sp = s.extras && s.extras.sinPipeline;
     ms.repos.forEach(function (e, i) {
       var at = 'merge_suites.repos.' + i;
-      sub.appendChild(repoFila(T('pantalla.repo3') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr));
-      sub.appendChild(el('div', { class: 'fila quitar3' },
-        selector(T('pantalla.regla2'), e.rule, [['', T('pantalla.laDeLaOrganizacion')]].concat(REGLAS), function (v) { if (v) e.rule = v; else delete e.rule; }, at + '.rule', pr),
-        campoPipeline(e, at + '.full_tests_pipeline', pr),
-        quitar(function () { ms.repos.splice(i, 1); render(); })));
-      problemasEn(pr, at).forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
+      var r = esObjeto(e.repo) ? e.repo : {};
+      var gh = r.platform === 'github';
+      var texto = [r.org, gh ? null : r.project, r.repo].filter(function (x) { return x != null && x !== ''; }).join(' / ');
+      var suyos = (pr || []).filter(function (x) { return x.path === at || String(x.path).indexOf(at + '.') === 0; });
+      var abierto = ABIERTOS[i] === true || suyos.length > 0 || !r.org || !r.repo;
+      var regla = corto(T('pantalla.regla2') + ' · ' + texto, e.rule, [['', T('pantalla.laDeLaOrganizacion')]].concat(REGLAS_CORTAS), function (v) { if (v) e.rule = v; else delete e.rule; render(); }, at + '.rule', pr);
+      var pc = pruebasDe(e, r, ms, sp);
+      var editar = el('button', { class: 'editar', type: 'button', text: '✎', title: T('pantalla.editarElRepo'), 'aria-label': T('pantalla.editarElRepo') + ' ' + texto, 'aria-expanded': abierto ? 'true' : 'false', onclick: function () { ABIERTOS[i] = !abierto; render(); } });
+      var sacar = el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarElRepo'), 'aria-label': T('pantalla.quitarElRepo') + ' ' + texto, onclick: function () { ms.repos.splice(i, 1); ABIERTOS = {}; render(); } });
+      var celdas = [el('div', { class: 'donde', role: 'cell' }, el('span', { class: 'ic', role: 'img', title: gh ? 'GitHub' : 'Azure DevOps', 'aria-label': gh ? 'GitHub' : 'Azure DevOps', text: gh ? 'GH' : 'Az' })),
+        el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel),
+        el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];
+      // los campos se arman antes que los mensajes del renglón: los que se dibujan junto a su campo no se repiten abajo
+      if (abierto) celdas.push(el('div', { class: 'edit' }, repoFila(T('pantalla.repo3') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr),
+        campoPipeline(e, at + '.full_tests_pipeline', pr), el('div', { class: 'listo' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.listo'), onclick: function () { ABIERTOS[i] = false; render(); } }))));
+      var resto = suyos.filter(function (x) { return MOSTRADOS.indexOf(x) < 0 || regla.mios.indexOf(x) >= 0; });
+      MOSTRADOS = MOSTRADOS.concat(resto);
+      t.appendChild(renglon(celdas, resto.map(function (x) { return { message: (x.donde && regla.mios.indexOf(x) < 0 ? x.donde + ': ' : '') + x.message }; }), abierto ? 'abierto' : ''));
     });
-    sub.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarRepo'), onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); render(); } }));
+    sub.appendChild(t);
+    sub.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarRepo'), onclick: function () { ms.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' }); ABIERTOS[ms.repos.length - 1] = true; render(); } }));
     box.appendChild(sub);
     problemasEn(pr, 'merge_suites.repos').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(restoYTexto(s, d, pr, 'merge_suites', T('pantalla.lasSuitesAlMergearComo')));
@@ -1615,25 +1697,9 @@ function pantalla(idioma = 'es') {
     'feature-wiring-checker': T('pantalla.queLoHechoEsteConectado'),
   };
   function nombreRevisor(id) { var n = REVISOR[id] || REVISOR[String(id).slice(String(id).indexOf('-') + 1)]; return n ? n + ' (' + id + ')' : id; }
-  // el modelo de un revisor en particular: una fila por revisor, elegido de los que conoce esta versión
-  function editorPorRevisor(s, m, pr, hoy) {
-    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.unRevisorEnParticular') }), el('p', { class: 'sub-d', text: T('pantalla.opcionalUnRevisorQueUsa') + (hoy && hoy.reviewer && Object.keys(hoy.reviewer).length ? T('pantalla.hoy2') + Object.keys(hoy.reviewer).map(function (k) { return nombreRevisor(k) + ' → ' + hoy.reviewer[k]; }).join(', ') + '.' : '') }));
-    var rv = m.reviewer && typeof m.reviewer === 'object' && !Array.isArray(m.reviewer) ? m.reviewer : null;
-    if (m.reviewer !== undefined && !rv) { sub.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto'))); return sub; }
-    Object.keys(rv || {}).forEach(function (id) {
-      sub.appendChild(el('div', { class: 'fila quitar3' }, el('span', { class: 'k', text: nombreRevisor(id) }),
-        selector('', rv[id], MODELOS.map(function (x) { return [x, x]; }), function (v) { rv[id] = v; }, 'models.reviewer.' + id, pr),
-        quitar(function () { delete rv[id]; if (!Object.keys(rv).length) delete m.reviewer; render(); })));
-    });
-    var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return !rv || !(id in rv); });
-    if (conocidos.length) {
-      var elegir = el('select', { 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
-      conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
-      sub.appendChild(el('div', { class: 'fila quitar' }, elegir, el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar2'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
-    }
-    problemasEn(pr, 'models.reviewer').forEach(function (x) { sub.appendChild(el('div', { class: 'err', text: x.message })); });
-    return sub;
-  }
+  // story 2.59: tres tablas (revisores; pase adversarial; ayudantes y sesión), un renglón por trabajo: el trabajo, su
+  // valor por defecto y un selector corto. Los revisores en particular son renglones de la tabla de revisores; el tope,
+  // un renglón al pie. Un trabajo por encima del tope llega como problema de su ruta y su renglón se ve en rojo
   function editorModelos(s, d, pr) {
     MOSTRADOS = [];
     var hoy = (s.extras && s.extras.hoy) || null;
@@ -1646,32 +1712,76 @@ function pantalla(idioma = 'es') {
     d.models = d.models || {};
     var m = d.models;
     if (!hoy) box.appendChild(el('p', { class: 'muted', text: T('pantalla.noSeLosModelosDe') + ((s.extras && s.extras.motivoHoy) || T('pantalla.sinMotivo')) + T('pantalla.sinDeclararUsaLosDe') }));
-    function opciones(h) { return [['', T('pantalla.sinDeclarar') + (h ? T('pantalla.hoy3') + h + ')' : '')]].concat(MODELOS.map(function (x) { return [x, x]; })); }
+    var DE_MODELOS = [['', T('pantalla.elPorDefecto')]].concat(MODELOS.map(function (x) { return [x, x]; }));
     function de(obj, k) { return obj && typeof obj === 'object' ? obj[k] : undefined; }
-    function uno(label, k, sub) {
-      var actual = sub ? de(m[k], sub) : m[k];
-      var h = sub ? de(de(hoy, k), sub) : de(hoy, k);
-      var p = 'models.' + k + (sub ? '.' + sub : '');
-      return selector(label, actual, opciones(h), function (v) {
-        if (!sub) { if (v) m[k] = v; else delete m[k]; return; }
-        m[k] = m[k] && typeof m[k] === 'object' ? m[k] : {};
-        if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
-      }, p, pr);
+    function cabeza(titulo) { box.appendChild(el('p', { class: 'sub-t', text: titulo })); return tabla('modelos', titulo, [T('pantalla.trabajo'), T('pantalla.porDefecto2'), T('pantalla.tuOrganizacionUsa')]); }
+    // pone o saca una hoja de models («sub»: dentro de un objeto, que sale si queda vacío)
+    function poner(k, sub, v) {
+      if (!sub) { if (v) m[k] = v; else delete m[k]; return; }
+      m[k] = esObjeto(m[k]) ? m[k] : {};
+      if (v) m[k][sub] = v; else { delete m[k][sub]; if (!Object.keys(m[k]).length) delete m[k]; }
     }
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.losRevisores') }), uno(T('pantalla.primeraVuelta'), 'reviewers'), uno(T('pantalla.lasVueltasSiguientes'), 'reviewers_reloop')));
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.elPaseAdversarial') }), uno(T('pantalla.unaStoryNormal'), 'adversarial', 'model'), uno(T('pantalla.unaStoryPesada'), 'adversarial', 'heavy'),
-      selector(T('pantalla.preguntarAntesDeUsarFable'), de(m.adversarial, 'fable_question'), [['', T('pantalla.sinDeclarar') + (de(de(hoy, 'adversarial'), 'fable_question') ? T('pantalla.hoy3') + (de(de(hoy, 'adversarial'), 'fable_question') === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) + ')' : '')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], function (v) {
-        m.adversarial = m.adversarial && typeof m.adversarial === 'object' ? m.adversarial : {};
-        if (v) m.adversarial.fable_question = v; else { delete m.adversarial.fable_question; if (!Object.keys(m.adversarial).length) delete m.adversarial; }
-      }, 'models.adversarial.fable_question', pr)));
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.losAyudantesYLaSesion') }), uno(T('pantalla.losAyudantes'), 'helpers'), uno(T('pantalla.sesionStoryLiviana'), 'session', 'low'), uno(T('pantalla.sesionStoryNormal'), 'session', 'normal'), uno(T('pantalla.sesionStoryPesada'), 'session', 'heavy')));
-    var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.techoObligatorio2'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
+    // un renglón de modelo: «que» es el contenido de la primera celda; «quitarlo», la ✕ de un revisor en particular
+    function fila(t, que, label, k, sub, opciones, h, quitarlo) {
+      var p = 'models.' + k + (sub ? '.' + sub : '');
+      var c = corto(label, sub ? de(m[k], sub) : m[k], opciones, function (v) { poner(k, sub, v); }, p, pr);
+      var acc = el('div', { class: 'acc', role: 'cell' }, c.sel);
+      if (quitarlo) acc.appendChild(el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarEsteRevisor'), 'aria-label': T('pantalla.quitarEsteRevisor') + ': ' + label, onclick: quitarlo }));
+      var celda = el('div', { class: 'que', role: 'cell' });
+      [].concat(que).forEach(function (n) { celda.appendChild(n); });
+      t.appendChild(renglon([celda, el('div', { class: 'hoy', role: 'cell', text: h == null ? '—' : h }), acc], c.mios));
+    }
+    function trabajo(t, label, k, sub) { fila(t, el('span', { text: label }), label, k, sub, DE_MODELOS, sub ? de(de(hoy, k), sub) : de(hoy, k)); }
+
+    var rev = cabeza(T('pantalla.losRevisores'));
+    trabajo(rev, T('pantalla.primeraVuelta'), 'reviewers');
+    trabajo(rev, T('pantalla.lasVueltasSiguientes'), 'reviewers_reloop');
+    // los revisores en particular: los declarados (con su ✕) y los que tienen un valor por defecto propio
+    var rv = esObjeto(m.reviewer) ? m.reviewer : null;
+    var conHoy = Object.keys(de(hoy, 'reviewer') || {});
+    if (m.reviewer !== undefined && !rv) box.appendChild(rev);
+    else {
+      Object.keys(rv || {}).concat(conHoy.filter(function (id) { return !rv || !(id in rv); })).forEach(function (id) {
+        var nombre = nombreRevisor(id);
+        var declarado = !!rv && (id in rv);
+        fila(rev, [el('span', { text: nombre }), el('small', { text: ' · ' + T('pantalla.unRevisorEnParticular2') })], nombre, 'reviewer', id, DE_MODELOS, de(de(hoy, 'reviewer'), id),
+          declarado ? function () { delete m.reviewer[id]; if (!Object.keys(m.reviewer).length) delete m.reviewer; render(); } : null);
+      });
+      box.appendChild(rev);
+      var conocidos = ((s.extras && s.extras.revisores) || []).filter(function (id) { return (!rv || !(id in rv)) && conHoy.indexOf(id) < 0; });
+      if (conocidos.length) {
+        var elegir = el('select', { class: 'corto', 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
+        conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
+        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'sonnet'; render(); } })));
+      }
+    }
+    if (m.reviewer !== undefined && !rv) box.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto')));
+    problemasEn(pr, 'models.reviewer').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
+
+    var adv = cabeza(T('pantalla.elPaseAdversarial'));
+    trabajo(adv, T('pantalla.unaStoryNormal'), 'adversarial', 'model');
+    trabajo(adv, T('pantalla.unaStoryPesada'), 'adversarial', 'heavy');
+    var fq = de(de(hoy, 'adversarial'), 'fable_question');
+    fila(adv, el('span', { text: T('pantalla.preguntarAntesDeUsarFable') }), T('pantalla.preguntarAntesDeUsarFable'), 'adversarial', 'fable_question',
+      [['', T('pantalla.elPorDefecto')], ['ask', T('pantalla.preguntar')], ['never', T('pantalla.nunca')]], fq ? (fq === 'ask' ? T('pantalla.preguntar') : T('pantalla.nunca')) : null);
+    box.appendChild(adv);
+
+    var ayu = cabeza(T('pantalla.losAyudantesYLaSesion'));
+    trabajo(ayu, T('pantalla.losAyudantes'), 'helpers');
+    trabajo(ayu, T('pantalla.sesionStoryLiviana'), 'session', 'low');
+    trabajo(ayu, T('pantalla.sesionStoryNormal'), 'session', 'normal');
+    trabajo(ayu, T('pantalla.sesionStoryPesada'), 'session', 'heavy');
+    box.appendChild(ayu);
+
+    // el tope obligatorio, un renglón al pie: la casilla, «ningún trabajo pasa de» y el modelo
+    var techo = el('input', { type: 'checkbox', 'aria-label': T('pantalla.topeObligatorio'), 'data-path': 'models.mandatory_ceiling', onchange: function (e) { if (e.target.checked) m.mandatory_ceiling = true; else { delete m.mandatory_ceiling; delete m.ceiling; } render(); } });
     techo.checked = m.mandatory_ceiling === true;
-    var tbox = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.techoObligatorio2') }), el('p', { class: 'sub-d', text: T('pantalla.loPagaLaOrganizacionNingun') }), el('label', {}, techo, el('span', { text: T('pantalla.ningunTrabajoPasaDe') })));
-    if (m.mandatory_ceiling === true) tbox.appendChild(selector(T('pantalla.elTecho'), m.ceiling, [['', T('pantalla.elegiUno')]].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr));
-    problemasEn(pr, 'models.mandatory_ceiling').forEach(function (x) { tbox.appendChild(el('div', { class: 'err', text: x.message })); });
-    box.appendChild(tbox);
-    box.appendChild(editorPorRevisor(s, m, pr, hoy));
+    var c = corto(T('pantalla.topeObligatorio'), m.ceiling, [['', T('pantalla.elegiUno')]].concat(MODELOS.map(function (x) { return [x, x]; })), function (v) { if (v) m.ceiling = v; else delete m.ceiling; }, 'models.ceiling', pr);
+    if (m.mandatory_ceiling !== true) c.sel.setAttribute('disabled', 'disabled');
+    var tope = el('div', { class: 'tope' }, el('label', {}, techo, el('b', { text: ' ' + T('pantalla.topeObligatorio') + ':' })), el('span', { text: T('pantalla.ningunTrabajoPasaDe2') }), c.sel,
+      el('span', { class: 'muted', text: T('pantalla.loPagaLaOrganizacionNingun') }));
+    c.mios.concat(problemasEn(pr, 'models.mandatory_ceiling')).forEach(function (x) { tope.appendChild(el('div', { class: 'err', text: x.message })); });
+    box.appendChild(tope);
     box.appendChild(restoYTexto(s, d, pr, 'models', T('pantalla.losModelosComoTexto')));
     return box;
   }
@@ -2152,7 +2262,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, STACK_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

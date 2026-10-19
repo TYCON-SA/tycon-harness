@@ -1135,12 +1135,15 @@ test('7.29-T22 Config_Modelos_SeccionPorLosDosTransportes @story-7.29 @ac-5 — 
   fs.writeFileSync(path.join(roto, 'skills', 'x', 'scripts', 'lib', 'models.js'), 'throw new Error("roto a propósito");\n');
   assert.strictEqual(ORG.modelosDeHoy(roto), null);
   assert.match(ORG.motivoDeHoy(roto), /no pude cargar skills\/x\/scripts\/lib\/models\.js \(roto a propósito\)/);
-  // la pantalla dibuja «sin declarar (hoy: …)» con los de hoy que le da la vista (pantallaFalsa está más abajo)
+  // la pantalla dibuja el valor de hoy de cada trabajo con los que le da la vista (pantallaFalsa está más abajo), en la
+  // columna «Por defecto» de su renglón
   const p = await pantallaFalsa([{ id: 'modelos', titulo: 'm', repo: 'perfil', estado: 'cargado', borrador: {}, problems: [], avisos: [], extras: { hoy: MOD.DEFAULTS } }]);
-  const opciones = p.todo(p.sec('modelos')).filter((n) => n.tag === 'option').map((n) => n.textContent);
-  assert.ok(opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.reviewers})`) && opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.session.heavy})`), opciones.join(' · '));
-  // la sesión de una story pesada dice opus de fábrica; fable sólo si la organización lo declara
-  assert.ok(opciones.includes('sin declarar (hoy: opus)') && !opciones.some((o) => /hoy: fable/.test(o)), opciones.join(' · '));
+  const porDefecto = Object.fromEntries(p.todo(p.sec('modelos')).filter((n) => String(n.attrs.class || '').split(' ').includes('r'))
+    .map((f) => [f.hijos[0].hijos.map((x) => x.textContent).join(''), f.hijos[1].textContent]));
+  assert.strictEqual(porDefecto['Primera vuelta'], MOD.DEFAULTS.reviewers, JSON.stringify(porDefecto));
+  assert.strictEqual(porDefecto['Sesión, historia pesada'], MOD.DEFAULTS.session.heavy, JSON.stringify(porDefecto));
+  // la sesión de una historia pesada dice opus de fábrica; fable sólo si la organización lo declara
+  assert.ok(porDefecto['Sesión, historia pesada'] === 'opus' && !Object.values(porDefecto).includes('fable'), JSON.stringify(porDefecto));
   await conPerfil({}, async ({ seccion, revisar, proponer }) => {
     const v = await seccion('modelos');
     assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));
@@ -1665,6 +1668,10 @@ test('Nombres_PruebasAlMergear_ElPipelineSeEligePorNombre_YSeGuardaElNumero — 
   const pipes = { ok: true, pipelines: [{ id: 123, nombre: 'Ventas-Backend-CI', carpeta: null }, { id: 9, nombre: 'Ventas-Frontend-CI', carpeta: null }] };
   const conLista = await pantallaFalsa([seccionPerfil('suites', { merge_suites: { repos: [{ repo: AZ('acme', 'Ventas', 'backend'), full_tests_pipeline: 123 }] } })], { '/api/config/pipelines': () => pipes });
   assert.strictEqual(conLista.error, null);
+  // 2.59: el renglón cerrado ya dice el pipeline por su nombre; los campos se abren con ✎
+  assert.strictEqual(conLista.todo(conLista.sec('suites')).find((n) => String(n.attrs.class || '').split(' ').includes('pc')).textContent, 'Ventas-Backend-CI', 'cerrado, por nombre');
+  conLista.todo(conLista.sec('suites')).find((n) => n.tag === 'button' && n.textContent === '✎').on.click({});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   assert.deepStrictEqual(conLista.pedidos.filter((x) => x.ruta === '/api/config/pipelines').map((x) => x.cuerpo), [{ org: 'acme', project: 'Ventas' }], 'una sola vez por proyecto');
   const sel = conLista.todo(conLista.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.repos.0.full_tests_pipeline');
   assert.ok(sel, 'el pipeline se elige de una lista');
@@ -1673,7 +1680,9 @@ test('Nombres_PruebasAlMergear_ElPipelineSeEligePorNombre_YSeGuardaElNumero — 
   // sin permiso: el número a mano y por qué
   const sinPermiso = { ok: false, codigo: 'sin_permiso', message: 'el sitio no puede leer los pipelines: falta su permiso de lectura de pipelines (SITE_PIPELINES_TOKEN). Mientras tanto, escribí el número del pipeline' };
   const sinLista = await pantallaFalsa([seccionPerfil('suites', { merge_suites: { repos: [{ repo: AZ('acme', 'Ventas', 'backend'), full_tests_pipeline: 123 }] } })], { '/api/config/pipelines': () => sinPermiso });
-  const inp = sinLista.todo(sinLista.sec('suites')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'merge_suites.repos.0.full_tests_pipeline');
+  sinLista.todo(sinLista.sec('suites')).find((n) => n.tag === 'button' && n.textContent === '✎').on.click({});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  const inp =sinLista.todo(sinLista.sec('suites')).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'merge_suites.repos.0.full_tests_pipeline');
   assert.ok(inp, 'a mano');
   assert.strictEqual(inp.attrs.value, '123');
   assert.match(sinLista.textoDe('suites'), /falta su permiso de lectura de pipelines/);
@@ -1703,7 +1712,8 @@ test('Nombres_PaquetesModelosBuzonParidad_SinClavesDelArchivo — casillas, fila
   assert.doesNotMatch(p.textoDe('paquetes'), /packs\.default|all, none/);
   const tm = p.textoDe('modelos');
   assert.match(tm, /Fallas que pasan en silencio \(acme-silent-failure-hunter\)/, 'el revisor con su nombre llano');
-  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'option' && n.textContent === 'Que la story esté completa antes de empezar (acme-story-validator)'), 'y los demás, para agregar');
+  // la pantalla dice «historia» en castellano
+  assert.ok(p.todo(p.sec('modelos')).some((n) => n.tag === 'option' && n.textContent === 'Que la historia esté completa antes de empezar (acme-story-validator)'), 'y los demás, para agregar');
   assert.ok(!p.todo(p.sec('modelos')).some((n) => n.tag === 'textarea' && n.attrs['data-path'] === 'reviewer'), 'sin JSON para un revisor');
   const serv = p.todo(p.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.mailbox.provider');
   assert.ok(serv && serv.hijos.some((o) => o.textContent === 'Azure Blob Storage'), 'el servicio del buzón, de una lista');
@@ -2560,4 +2570,259 @@ test('T11 Personas_TextosDelDuenoEnIngles @story-2.56 @ac-10', () => {
   assert.strictEqual(t('es', 'pantalla.conQueSeEntra') + MS.TEXTOS['proveedor.microsoftInquilino'].es + t('es', 'pantalla.estoSeCambiaEnLa'),
     'Con qué se entra: Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados). Esto se cambia en la instalación, no acá.');
   assert.strictEqual(t('es', 'pantalla.nadieEntraSiNoEsta'), 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.');
+});
+
+// ── 2.59: Modelos, Repos e Integraciones en renglones ─────────────────────────────────────────────────────────────────
+const MOD_DEFAULTS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js')).DEFAULTS;
+const AZR = (project, repo) => ({ platform: 'azure', org: 'acme', project, repo });
+const MODELOS_2 = { reviewers_reloop: 'haiku', adversarial: { heavy: 'fable' }, session: { heavy: 'opus' },
+  reviewer: { 'tycon-silent-failure-hunter': 'opus', 'tycon-spec-first-checker': 'sonnet' }, mandatory_ceiling: true, ceiling: 'opus' };
+const SUITES_5 = { default: 'siempre-en-la-maquina', repos: [
+  { repo: AZR('Cobranzas', 'CobranzasBackend'), rule: 'automatico', full_tests_pipeline: 'Cobranzas/pruebas-completas' },
+  { repo: AZR('Cobranzas', 'CobranzasFormularios'), full_tests_pipeline: 'Cobranzas/formularios-completas' },
+  { repo: GH('portal-clientes'), rule: 'confiar-en-el-servidor', full_tests_pipeline: 'full-tests' },
+  { repo: AZR('Plataforma', 'herramientas-internas-del-equipo-de-plataforma-con-un-nombre-muy-largo'), rule: 'automatico' },
+  { repo: GH('sitio-publico'), rule: 'confiar-en-el-servidor' },
+] };
+const INTEG = { clockify: true, engram: true, codex: 'detect', nightly: false };
+const SIN_PIPE = { automatico: 'machine', 'siempre-en-la-maquina': 'machine', 'confiar-en-el-servidor': 'server-if-any-check' };
+const secModelos = (models, problems = []) => ({ id: 'modelos', titulo: 'm', repo: 'perfil', archivo: 'team-repos.json', estado: 'cargado', soloLectura: false, motivo: null,
+  borrador: models === undefined ? {} : { models: clon2(models) }, problems, avisos: [], extras: { hoy: MOD_DEFAULTS, revisores: ['tycon-silent-failure-hunter', 'tycon-spec-first-checker', 'tycon-story-validator'] } });
+const secSuites = (ms, problems = [], extras = { sinPipeline: SIN_PIPE }) => ({ id: 'suites', titulo: 's', repo: 'perfil', archivo: 'team-repos.json', estado: 'cargado', soloLectura: false, motivo: null,
+  borrador: { merge_suites: clon2(ms) }, problems, avisos: [], extras });
+const secInteg = (i, problems = []) => ({ id: 'integraciones', titulo: 'i', repo: 'perfil', archivo: 'team-profile.json', estado: 'cargado', soloLectura: false, motivo: null,
+  borrador: { integrations: clon2(i) }, problems, avisos: [] });
+/** Una de las tres secciones sobre la pantalla falsa: sus tablas, sus renglones y lo que viaja al revisar. */
+async function compacta(seccion) {
+  const p = await pantallaFalsa([seccion], { '/api/config/revisar': () => ({ ok: true, texto: '', diferencias: [] }) });
+  assert.strictEqual(p.error, null);
+  const clases = (x) => String(x.attrs.class || '').split(' ');
+  const de = (n, clase) => p.todo(n).filter((x) => clases(x).includes(clase));
+  const tablas = () => de(p.sec(seccion.id), 'tabla2');
+  const renglones = (tabla) => tabla.hijos.filter((x) => clases(x).includes('r'));
+  const texto = (n) => p.todo(n).map((x) => x.textContent).join(' | ');
+  const revisado = async () => { await p.click('Revisar cambios', seccion.id); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador; };
+  const esperar = async () => { for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r)); };
+  return { ...p, clases, de, tablas, renglones, texto, revisado, esperar };
+}
+
+test('T1 Modelos_TresTablasUnRenglonPorTrabajo @story-2.59 @ac-1', async () => {
+  const p = await compacta(secModelos(MODELOS_2));
+  const t = p.tablas();
+  assert.strictEqual(t.length, 3, 'una tabla por grupo');
+  assert.ok(t.every((x) => p.clases(x).includes('modelos')));
+  const [rev, adv, ayu] = t.map((x) => p.renglones(x));
+  assert.deepStrictEqual([rev.length, adv.length, ayu.length], [4, 3, 4], 'revisores: 2 vueltas + 2 particulares · pase: normal, pesada, preguntar · ayudantes + 3 sesiones');
+  for (const fila of [...rev, ...adv, ...ayu]) {
+    assert.strictEqual(p.de(fila, 'hoy').length, 1, `${p.texto(fila)}: su valor por defecto`);
+    assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'select').length, 1, `${p.texto(fila)}: un selector`);
+  }
+  assert.match(p.texto(rev[0]), /Primera vuelta \| sonnet/);
+  assert.match(p.texto(adv[1]), /pesada \| opus/);
+  assert.match(p.texto(ayu[3]), /pesada \| opus/, 'la sesión pesada: opus por defecto (7.35)');
+  // los particulares: su ✕; las vueltas, no
+  assert.deepStrictEqual(rev.map((f) => p.de(f, 'quitar-fila').length), [0, 0, 1, 1]);
+  assert.match(p.texto(rev[2]) + p.texto(rev[3]), /silent-failure-hunter/);
+  // el tope, un renglón al pie, fuera de las tablas
+  const tope = p.de(p.sec('modelos'), 'tope');
+  assert.strictEqual(tope.length, 1);
+  assert.ok(p.todo(tope[0]).some((n) => n.tag === 'input' && n.attrs.type === 'checkbox'));
+  assert.ok(p.todo(tope[0]).some((n) => n.tag === 'select' && n.value === 'opus'));
+});
+
+test('T2 Modelos_TextosDelDueno @story-2.59 @ac-2', async () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.deepStrictEqual([t('es', 'pantalla.porDefecto2'), t('es', 'pantalla.tuOrganizacionUsa'), t('es', 'pantalla.elPorDefecto')], ['Por defecto', 'Tu organización usa', 'el por defecto']);
+  assert.deepStrictEqual([t('en', 'pantalla.porDefecto2'), t('en', 'pantalla.tuOrganizacionUsa'), t('en', 'pantalla.elPorDefecto')], ['Default', 'Your organization uses', 'the default']);
+  const p = await compacta(secModelos(MODELOS_2));
+  const cab = p.de(p.tablas()[0], 'h')[0];
+  assert.deepStrictEqual(p.todo(cab).filter((n) => n.tag === 'span').map((n) => n.textContent).slice(0, 3), ['Trabajo', 'Por defecto', 'Tu organización usa']);
+  const primera = p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select');
+  assert.deepStrictEqual([primera.hijos[0].attrs.value, primera.hijos[0].textContent], ['', 'el por defecto']);
+  assert.match(p.textoDe('modelos'), /«el por defecto»/, 'la ayuda de arriba dice qué hace «el por defecto»');
+  // «historia», nunca «story», en castellano (los identificadores de los revisores, entre paréntesis, no son texto)
+  const s = await compacta(secSuites(SUITES_5)); const i = await compacta(secInteg(INTEG));
+  for (const [id, x] of [['modelos', p], ['suites', s], ['integraciones', i]]) assert.doesNotMatch(x.textoDe(id).replace(/\(tycon-[a-z0-9-]+\)/g, ''), /\bstor(y|ies)\b/i, id);
+  assert.match(p.textoDe('modelos'), /Sesión, historia pesada/);
+});
+
+test('T3 Modelos_CambiarYVolverAlPorDefecto @story-2.59 @ac-3', async () => {
+  const sel = (p, tabla, fila) => p.todo(p.renglones(p.tablas()[tabla])[fila]).find((n) => n.tag === 'select');
+  let p = await compacta(secModelos(MODELOS_2));
+  sel(p, 2, 0).on.change({ target: { value: 'sonnet' } });   // los ayudantes
+  assert.deepStrictEqual((await p.revisado()).models, { ...clon2(MODELOS_2), helpers: 'sonnet' });
+  p = await compacta(secModelos(MODELOS_2));
+  sel(p, 1, 1).on.change({ target: { value: '' } });        // la historia pesada vuelve al por defecto: adversarial queda vacío y sale
+  const sinPesada = clon2(MODELOS_2); delete sinPesada.adversarial;
+  assert.deepStrictEqual((await p.revisado()).models, sinPesada);
+  p = await compacta(secModelos(MODELOS_2));
+  p.de(p.renglones(p.tablas()[0])[2], 'quitar-fila')[0].on.click({}); await p.esperar();
+  const sinUno = clon2(MODELOS_2); delete sinUno.reviewer[Object.keys(MODELOS_2.reviewer)[0]];
+  assert.deepStrictEqual((await p.revisado()).models, sinUno, 'sacar un revisor particular');
+});
+
+test('T4 Modelos_PorEncimaDelTope @story-2.59 @ac-4', async () => {
+  const TEAM = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
+  const rev = (models) => ORG.revisar({ seccion: 'modelos', texto: ORG.formatJson(TR_BASE), borrador: { models }, lectores: { 'team-repos.js': TEAM } });
+  const malo = rev(MODELOS_2);
+  assert.strictEqual(malo.ok, false, 'no se puede proponer');
+  assert.strictEqual(malo.texto, null);
+  assert.deepStrictEqual(malo.problems.map((x) => x.path), ['models.adversarial.heavy']);
+  assert.strictEqual(rev({ ...MODELOS_2, adversarial: { heavy: 'opus' } }).ok, true, 'igual al tope: se propone');
+  assert.strictEqual(rev({ mandatory_ceiling: true, ceiling: 'sonnet' }).ok, true, 'el por defecto (opus) por encima del tope no se marca');
+  const { mandatory_ceiling: _m, ceiling: _c, ...sinTope } = MODELOS_2;
+  assert.strictEqual(rev(sinTope).ok, true, 'sin tope, nada');
+  // la pantalla: el renglón en rojo con su mensaje; los demás, no
+  const p = await compacta(secModelos(MODELOS_2, [{ path: 'models.adversarial.heavy', message: 'pasa el tope obligatorio (opus)' }]));
+  const filas = p.tablas().flatMap((x) => p.renglones(x));
+  const malas = filas.filter((f) => p.clases(f).includes('mal'));
+  assert.strictEqual(malas.length, 1);
+  assert.match(p.texto(malas[0]), /pesada/);
+  assert.match(p.texto(malas[0]), /pasa el tope obligatorio \(opus\): elegí uno igual o menor/);
+  assert.ok(p.clases(p.todo(malas[0]).find((n) => n.tag === 'select')).includes('bad'));
+  // al cargar, el sitio ya lo marca (la vista trae el problema) y «revisar» no deja proponer
+  await conPerfil({ repos: { ...TR_BASE, models: MODELOS_2 } }, async ({ seccion, revisar }) => {
+    const v = await seccion('modelos');
+    assert.deepStrictEqual(v.problems.map((x) => x.path), ['models.adversarial.heavy'], JSON.stringify(v.problems));
+    const r = await revisar('modelos', { models: MODELOS_2 });
+    assert.strictEqual(r.ok, false);
+  });
+});
+
+test('T5 Repos_UnRenglonPorRepo @story-2.59 @ac-5', async () => {
+  const p = await compacta(secSuites(SUITES_5));
+  const t = p.tablas();
+  assert.strictEqual(t.length, 1);
+  const filas = p.renglones(t[0]);
+  assert.strictEqual(filas.length, 5, 'un renglón por repo');
+  const textos = ['acme / Cobranzas / CobranzasBackend', 'acme / Cobranzas / CobranzasFormularios', 'acme / portal-clientes',
+    'acme / Plataforma / herramientas-internas-del-equipo-de-plataforma-con-un-nombre-muy-largo', 'acme / sitio-publico'];
+  filas.forEach((f, i) => {
+    const ic = p.de(f, 'ic')[0];
+    assert.strictEqual(ic.attrs['aria-label'], SUITES_5.repos[i].repo.platform === 'github' ? 'GitHub' : 'Azure DevOps');
+    const rt = p.de(f, 'repo-t')[0];
+    assert.deepStrictEqual([rt.textContent, rt.attrs.title], [textos[i], textos[i]], 'el repo entero, y entero en su título');
+    assert.strictEqual(p.todo(p.de(f, 'regla')[0]).filter((n) => n.tag === 'select').length, 1);
+    const pc = p.de(f, 'pc')[0];
+    assert.strictEqual(pc.attrs.title, pc.textContent, 'las pruebas completas, enteras en su título');
+    assert.deepStrictEqual(p.todo(p.de(f, 'acc')[0]).filter((n) => n.tag === 'button').map((n) => n.textContent), ['✎', '✕']);
+    assert.strictEqual(p.todo(f).filter((n) => n.tag === 'input').length, 0, 'cerrado: sin campos de texto');
+  });
+  assert.strictEqual(p.de(filas[0], 'pc')[0].textContent, 'Cobranzas/pruebas-completas');
+  assert.match(p.textoDe('suites'), /Cada repo usa la regla de la organización, salvo que elijas otra para él\./);
+  const { t: tx } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.strictEqual(tx('en', 'pantalla.cadaRepoUsaLaRegla'), "Each repo uses the organization's rule, unless you pick another one for it.");
+});
+
+test('T6 Repos_EditarAgregarSacar @story-2.59 @ac-6', async () => {
+  let p = await compacta(secSuites(SUITES_5));
+  const fila = (i) => p.renglones(p.tablas()[0])[i];
+  const boton = (f, txt) => p.todo(f).find((n) => n.tag === 'button' && n.textContent === txt);
+  boton(fila(1), '✎').on.click({}); await p.esperar();
+  assert.strictEqual(boton(fila(1), '✎').attrs['aria-expanded'], 'true');
+  const edit = p.de(fila(1), 'edit')[0];
+  assert.ok(edit, '✎ abre los campos debajo del renglón');
+  const repo = p.todo(edit).find((n) => n.tag === 'input' && n.attrs['data-path'] === 'merge_suites.repos.1.repo.repo');
+  repo.on.input({ target: { value: 'CobranzasFront' } });
+  p.todo(p.de(fila(1), 'regla')[0]).find((n) => n.tag === 'select').on.change({ target: { value: 'confiar-en-el-servidor' } }); await p.esperar();
+  let esperado = clon2(SUITES_5); esperado.repos[1].repo.repo = 'CobranzasFront'; esperado.repos[1].rule = 'confiar-en-el-servidor';
+  assert.deepStrictEqual((await p.revisado()).merge_suites, esperado, 'editar: sólo ese repo');
+  boton(fila(1), 'Listo').on.click({}); await p.esperar();
+  assert.strictEqual(p.de(fila(1), 'edit').length, 0, '«Listo» lo cierra');
+  // ✕ saca sólo ese repo
+  p = await compacta(secSuites(SUITES_5));
+  boton(fila(2), '✕').on.click({}); await p.esperar();
+  esperado = clon2(SUITES_5); esperado.repos.splice(2, 1);
+  assert.deepStrictEqual((await p.revisado()).merge_suites, esperado);
+  // + agrega la entrada de hoy, abierta
+  p = await compacta(secSuites(SUITES_5));
+  await p.click('+ Agregar repo', 'suites');
+  assert.strictEqual(p.renglones(p.tablas()[0]).length, 6);
+  assert.strictEqual(p.de(fila(5), 'edit').length, 1, 'el nuevo, abierto');
+  esperado = clon2(SUITES_5); esperado.repos.push({ repo: { platform: 'azure', org: '', project: '', repo: '' }, rule: 'automatico' });
+  assert.deepStrictEqual((await p.revisado()).merge_suites, esperado);
+  // un repo con problema se dibuja abierto y con su mensaje
+  p = await compacta(secSuites(SUITES_5, [{ path: 'merge_suites.repos.3.repo.org', message: 'falta' }, { path: 'merge_suites.repos.0.extra', message: 'clave desconocida' }]));
+  assert.strictEqual(p.de(fila(3), 'edit').length, 1, 'abierto por su problema');
+  assert.strictEqual(p.de(fila(0), 'edit').length, 1, 'también uno con una clave que no tiene campo');
+  assert.match(p.texto(fila(0)), /no conoce|clave desconocida/i);
+  assert.strictEqual(p.de(fila(2), 'edit').length, 0, 'los demás, cerrados');
+});
+
+test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
+  const pc = (p, i) => p.de(p.renglones(p.tablas()[0])[i], 'pc')[0].textContent;
+  const MAQ = 'corren en la máquina del dev';
+  const SRV = 'el servidor, si la rama exige un control; si no, la máquina del dev';
+  // regla propia: automático y confiar, sin pipeline (los repos 3 y 4); con pipeline se ve el pipeline
+  let p = await compacta(secSuites(SUITES_5));
+  assert.deepStrictEqual([pc(p, 3), pc(p, 4), pc(p, 0)], [MAQ, SRV, 'Cobranzas/pruebas-completas']);
+  // siempre en la máquina propio; y la de la organización cuando el repo no elige otra
+  p = await compacta(secSuites({ default: 'confiar-en-el-servidor', repos: [{ repo: GH('a'), rule: 'siempre-en-la-maquina' }, { repo: GH('b'), full_tests_pipeline: 'ci' }, { repo: GH('c') }] }));
+  assert.deepStrictEqual([pc(p, 0), pc(p, 1), pc(p, 2)], [MAQ, 'ci', SRV]);
+  // cambiar la regla de la organización cambia el texto; sin declarar, automático
+  const orgSel = p.todo(p.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.default');
+  orgSel.on.change({ target: { value: 'siempre-en-la-maquina' } }); await p.esperar();
+  assert.strictEqual(pc(p, 2), MAQ, 'la de la organización cambió');
+  orgSel.on.change({ target: { value: '' } }); await p.esperar();
+  assert.strictEqual(pc(p, 2), MAQ, 'sin declarar: automático');
+  // y cambiar la regla del repo también
+  p.todo(p.de(p.renglones(p.tablas()[0])[2], 'regla')[0]).find((n) => n.tag === 'select').on.change({ target: { value: 'confiar-en-el-servidor' } }); await p.esperar();
+  assert.strictEqual(pc(p, 2), SRV);
+  // un sitio que no manda qué pasa no lo inventa
+  const w = await compacta(secSuites({ repos: [{ repo: GH('c'), rule: 'automatico' }] }, [], null));
+  assert.strictEqual(pc(w, 0), 'sin pipeline');
+  // el servidor manda el mapa con el lector del árbol
+  await conPerfil({ repos: { ...TR_BASE, merge_suites: SUITES_5 } }, async ({ seccion }) => {
+    assert.deepStrictEqual((await seccion('suites')).extras.sinPipeline, SIN_PIPE);
+  });
+});
+
+test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
+  let p = await compacta(secInteg(INTEG));
+  const filas = p.renglones(p.tablas()[0]);
+  assert.strictEqual(filas.length, 5);
+  assert.ok(p.clases(p.tablas()[0]).includes('integ'));
+  filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
+  assert.match(p.texto(filas[0]), /Clockify/);
+  assert.deepStrictEqual(p.todo(filas[3]).find((n) => n.tag === 'select').hijos.map((o) => o.attrs.value), ['', 'true', 'false', 'detect'], 'codex suma «si está instalado»');
+  p.todo(filas[2]).find((n) => n.tag === 'select').on.change({ target: { value: 'true' } });
+  assert.deepStrictEqual((await p.revisado()).integrations, { ...INTEG, mailbox: true });
+  p = await compacta(secInteg(INTEG));
+  p.todo(p.renglones(p.tablas()[0])[0]).find((n) => n.tag === 'select').on.change({ target: { value: '' } });
+  const { clockify: _c, ...sinClockify } = INTEG;
+  assert.deepStrictEqual((await p.revisado()).integrations, sinClockify, '«sin declarar» saca la hoja');
+});
+
+test('T8 Compacta_SinTocarNadaNoCambia @story-2.59 @ac-8', async () => {
+  for (const [s, k, v] of [[secModelos(MODELOS_2), 'models', MODELOS_2], [secSuites(SUITES_5), 'merge_suites', SUITES_5], [secInteg(INTEG), 'integrations', INTEG]]) {
+    const p = await compacta(s);
+    const va = (await p.revisado())[k];
+    assert.strictEqual(JSON.stringify(va), JSON.stringify(v), `${s.id}: mismo orden y mismas claves`);
+  }
+});
+
+test('T9 Compacta_HojaConTemaYTelefono @story-2.59 @ac-9 @ac-10', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const reglas = css.match(/[^{}]*\.(tabla2|tope|repo-t|ic|pc|integ)\b[^{}]*\{[^{}]*\}/g) || [];
+  assert.ok(reglas.length >= 8, `las reglas de las tablas (${reglas.length})`);
+  for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, `sin colores fijos: ${r.trim().slice(0, 80)}`);
+  // las columnas de Modelos: el mismo ancho fijo en las tres tablas
+  assert.match(css, /\.tabla2\.modelos\{[^}]*grid-template-columns:minmax\(0,1fr\) \d+px \d+px/);
+  // nada cortado en Repos: sin puntos suspensivos
+  for (const r of reglas.filter((x) => /\.(repo-t|pc)\b/.test(x))) assert.doesNotMatch(r, /text-overflow:ellipsis/, r.trim().slice(0, 80));
+  const tel = /@media \(max-width:640px\)\{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(tel && /\.tabla2/.test(tel[1]), 'el teléfono baja los renglones a dos líneas');
+});
+
+test('T10 Compacta_TextosEnLosDosIdiomas @story-2.59 @ac-10', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = ['pantalla.porDefecto2', 'pantalla.tuOrganizacionUsa', 'pantalla.elPorDefecto', 'pantalla.llegaATodasLasMaquinas3', 'pantalla.cadaRepoUsaLaRegla',
+    'pantalla.correnEnLaMaquinaDelDev', 'pantalla.elServidorSiLaRama', 'pantalla.sinPipeline', 'pantalla.pasaElTopeObligatorio', 'pantalla.editarElRepo',
+    'pantalla.quitarElRepo', 'pantalla.listo', 'pantalla.pruebasCompletas', 'pantalla.unRevisorEnParticular2'];
+  for (const k of claves) {
+    assert.notStrictEqual(t('es', k), k, `${k} en castellano`);
+    assert.notStrictEqual(t('en', k), k, `${k} en inglés`);
+    assert.notStrictEqual(t('en', k), t('es', k), `${k} distinto en cada idioma`);
+    assert.ok(ORG.pantalla().includes(`'${k}'`), `${k} lo usa la pantalla`);
+  }
 });
