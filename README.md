@@ -27,10 +27,15 @@ machine](#start-on-your-own), or [for your team](#for-teams).
 
 ## Start on your own
 
-**It works today for .NET and JavaScript/TypeScript**: the test step runs `dotnet test`, vitest, jest and
-`node --test`. In other languages that step does not recognize your tests yet and does not turn green on its own.
+**It works today for .NET, JavaScript, TypeScript, Python, Go and Java**: out of the box the test step runs .NET,
+Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle and Karma. With another tool, that step does not recognize
+your tests yet until your team declares it in its configuration ("Your technology", on the site).
 
-Open the terminal (on Windows, PowerShell 7) and type:
+Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
+is in [What you need](#what-you-need).
+
+For your agent to follow the cycle, install the harness on your machine. Open the terminal (on Windows, PowerShell 7)
+and type:
 
 ```bash
 npx @tyconsa/harness@latest
@@ -39,21 +44,27 @@ npx @tyconsa/harness@latest
 It asks nothing before the plan: it installs for you, with the minimal install, no optional connections and no
 reviewers for a stack. It shows you in five lines (in Spanish) what will change and asks once "¿Instalo? [s/N]"
 (install?): with a "no", nothing is left behind. Without Claude Code or Codex it tells you how to install them and
-downloads nothing. The minimal install adds the harness's guide index to your
-agent in every session; it does not touch git or the rules on how the agent answers you. To remove it, `harness.js uninstall --dry-run` shows what it would remove and
-`harness.js uninstall --yes` removes it.
+downloads nothing. After the "s" (yes) it takes less than a minute and ends with "arnés instalado" (harness
+installed) and the version. The minimal install adds the harness's guide index to your agent in every session; it
+does not touch git or the rules on how the agent answers you. To remove it, `harness.js uninstall --dry-run` shows
+what it would remove and `harness.js uninstall --yes` removes it.
+
+If you use Codex, one step is left: the last line asks you to open `codex`, run `/hooks` and approve them once. Codex
+approves its hooks one by one; without that step the harness's controls do not run in Codex, and nothing warns you.
 
 The full install adds the guards in the repos that work with the harness and changes how the agent answers you in all your projects:
 [what it changes](getting-started/reference.md#what-the-full-install-changes).
 
 ## Your first story
 
-1. Open your coding agent in your repo's folder (if it was open, close it and open it again: the rules load when it starts).
-2. The first time, the agent asks for permission to read the folder where the harness lives. You accept it once.
-3. Ask for the story: "create a story with `tycon-create-story` to add a date filter". Read it and adjust it.
-4. If your repo has no `_bmad/`, it asks you three plain questions and writes the criteria and the tests. If there is no git or you are on `main`, the run creates the branch on its own.
-5. Ask "implementemos la story" (let's implement the story) with the file path: the phrase stays in Spanish. It shows you the plan, waits for your go-ahead, writes the code and runs the tests and reviewers.
-6. It leaves the commit ready: it never commits or pushes without your permission.
+A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes.
+
+1. **Open your coding agent in your repo's folder**, so it loads the harness's rules (if it was open, close it and open it again: the rules load when it starts).
+2. **Accept the permission**: the first time, the agent asks for permission to read the folder where the harness lives, with its guides. You accept it once.
+3. **Ask for the story**, so the change is written down before any code: "create a story with `tycon-create-story` to add a date filter".
+4. **Answer what is missing.** If your repo has no `_bmad/`, it asks you three plain questions: what it must do, how you can tell it works, and what it must not touch; what you already said it does not ask again. It shows you the story, writes it on your "yes" and gives you the phrase to go on.
+5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story the plan approves itself; in the others it waits for your go-ahead. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
+6. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
 
 If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, without changing anything.
 
@@ -62,8 +73,9 @@ If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/
 - Your coding agent, Claude Code or Codex, installed and signed in: it is where you use the harness.
 - Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
 - Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
-- Git is **not** needed to use the harness: it is downloaded as files, not cloned.
-  A GitHub account is not needed either: this repository is public.
+- Git is **not** needed to install the harness: it is downloaded as files, not cloned.
+  A GitHub account is not needed either: this repository is public. To commit your stories you do need git, with
+  your name and email set (`git config --global user.name` and `user.email`).
 - Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
   its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
 - What your project needs to build (for example, the .NET SDK). Without it, the implementation stops at the build.
