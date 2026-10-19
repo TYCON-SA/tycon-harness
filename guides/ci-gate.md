@@ -33,6 +33,7 @@ sería peor que no tenerlo.
 
 | **Índice de memoria** (2026-09-17) | Un cambio que deja la memoria de engram a medio declarar: entradas que la rama base declara y este cambio ya no, o archivos de memoria nuevos sin entrada. `engram sync --import` lee el ÍNDICE, no la carpeta, así que un archivo sin entrada **no existe para las demás máquinas y no da error**; y una entrada perdida no vuelve sola. Mismo criterio que el freno del commit (`scripts/lib/manifest-engram.js`) y misma asimetría: lo que este cambio ROMPE frena, lo heredado y lo no comparable avisan. Sólo lee algo si el diff toca `.engram/`. **Acá importa especialmente**: es lo único que ve los commits hechos fuera del asistente — la web de Azure, otra máquina, un hook salteado. |
 | **Registro de autoría** (2026-08-30) | Una story que pasa a `done` sin decir **quién la implementó y quiénes la revisaron** — o diciéndolo mal. Es la respuesta del arnés al *play* del playbook "que un revisor con IA mire cada PR en CI": acá la revisión ya ocurre antes del PR y con más contexto, así que en vez de re-revisar en el servidor se **verifica** que la hizo otro. Frena si: falta el `review-roster.json` del run (a partir del corte), si el que implementó figura como revisor, o si el archivo no se puede leer. **Un advisor con hallazgos que el registro no lista AVISA y no frena desde el 2026-09-22**: en sus dos apariciones falló la regla y no lo que vigila —una vez con las fuentes que escribe el propio pipeline; otra, con la vuelta o el modelo pegados al nombre del revisor, frenando 5 stories sanas de un pull request—, y cero atrapadas reales. Se baja y no se borra porque un control cuyas únicas fallas son propias termina apagado entero con `advisors_exempt: true`, y ahí se pierden las tres que sí sirven. Vuelve a frenar con `TYCON_ROSTER_NAMES=block`; la causa se ataca eligiendo el firmante de los revisores que corrieron, en vez de tipearlo, y con eso se revisa si vuelve a frenar o si sobra. Escape: el mismo `advisors_exempt: true` + razón. |
+| **Registro de aprobaciones** (2026-10-19) | Una story que pasa a `review`/`done` con una aprobación de un **agente anotada como de una persona**. Cada corrida deja `approvals.jsonl`: qué se aprobó (el plan, la maqueta, cada AC imposible de verificar, la exención de un CRITICAL), cuándo, el commit, el tipo y quién. Dos tipos: **manual** (una persona con nombre, `--approved-by <correo o usuario>`) y **automática** (un agente con cuál y su modelo, o una regla). Lo que aprueba un agente por delegación de una persona es automático y nombra la delegación (`--delegated-by <persona> --agent "<nombre> (<modelo>)"`); sin tipo o sin quién, automática «sin nombrar». Frena siempre si una línea manual nombra a un agente, una regla, una delegación o a nadie, o si el registro no se lee. Frena también si una corrida que llegó a los revisores **y declara anotar aprobaciones** (su `review-roster.json` trae `registro_aprobaciones`, que pone el arnés desde que anota aprobaciones) no trae el registro, o lo trae sin la línea del plan. Sin esa marca —un dev con el arnés de antes, cuyo portón en CI ya es el nuevo— la falta avisa y no frena: la fecha no dice qué arnés corrió en la máquina. Lista cuántas fueron manuales y cuántas automáticas. Ante la duda, automática: quien es persona se nombra con su correo. **Límite**: el registro distingue tipos, no prueba identidad — un agente que escribe el correo de una persona en `--approved-by` queda manual; lo único firmado de verdad es lo que pasa por la terminal (la matriz, `runtime-waiver`). `advisors_exempt: true` + razón perdona que falte el registro, no una línea mala. |
 
 🔴 **El corte por fecha es mecánico y sin configuración**: el nombre del run dir trae su timestamp
 (`<id>-YYYYMMDD…`). Un run anterior al estreno de la pieza no puede tener registro, así que su
@@ -91,7 +92,7 @@ divergen. El pipeline lo resuelve solo (`pipeline.js evidence-dir --story <spec>
 runners (macro, gate E2E, smoke-run). Para el freno local no cambia nada: la evidencia del repo
 de la story es "propia" por definición. Para `done`, el arnés **proyecta** al repo de la story
 sólo `review-roster.json` y `findings.json` de la corrida (`write-findings` y el hook
-`on-advisor-run.js`), que es lo que este portón exige; los reportes pesados de cada advisor se
+`on-advisor-run.js`), y `approvals.jsonl` (marker.js), que es lo que este portón exige; los reportes pesados de cada advisor se
 quedan donde corrió el pipeline.
 
 **Lo que tiene que dejar viajar el `.gitignore` del repo de specs** (es el bloque canónico que el
@@ -107,6 +108,7 @@ AVISA, no se lo pisa):
 **/.advisors/pipeline-runs/*/*
 !**/.advisors/pipeline-runs/*/review-roster.json
 !**/.advisors/pipeline-runs/*/findings.json
+!**/.advisors/pipeline-runs/*/approvals.jsonl
 .dashboard/
 ```
 

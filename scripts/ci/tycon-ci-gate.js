@@ -357,6 +357,69 @@ function revisarAutoria(repo, storyId, storyPath) {
   return hallazgos;
 }
 
+// ── Regla 4b: el registro de aprobaciones ─────────────────────────────────────────
+// Cada aprobación de una corrida queda en `approvals.jsonl`: manual (una persona con nombre) o automática (un agente o
+// una regla). Lo escribe marker.js; la regla del tipo vive en lib/approvals.js del skill, que el portón carga igual que
+// evidence-key (está en este mismo checkout). Frena SIEMPRE una aprobación de agente anotada como manual (dato malo).
+// La ausencia frena sólo si la corrida DECLARA que la hizo un arnés que anota aprobaciones: su `review-roster.json`
+// trae `registro_aprobaciones` (lo pone el hook al cerrar la ronda de revisores). Toda corrida así pasó por la
+// aprobación del plan, así que se exige esa línea, no sólo el archivo. Sin la marca —un dev con el arnés de antes,
+// cuyo portón en CI ya es el nuevo— la falta avisa y no frena: no hizo nada mal. Sin corte por fecha a propósito: la
+// fecha no dice qué arnés corrió en la máquina.
+let approvalsLib = null;
+let approvalsFalta = null;
+try {
+  const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
+  approvalsLib = require(path.join(skills, 'tycon-pipeline', 'scripts', 'lib', 'approvals.js'));
+} catch (e) { approvalsFalta = e.message; }
+
+function revisarAprobaciones(repo, storyId, storyPath) {
+  const hallazgos = [];
+  const avisos = [];
+  const resumen = { manual: 0, automatica: 0, sinNombrar: 0 };
+  const dirs = runDirsDeStory(repo, storyId, storyPath);
+  if (!dirs.length) return { hallazgos, avisos, resumen };
+  // Sin la biblioteca el portón no puede juzgar el registro: falla cerrado, con el motivo.
+  if (!approvalsLib) {
+    hallazgos.push({ regla: 'registro-de-aprobaciones-sin-revisar',
+      mensaje: `no pude cargar lib/approvals.js del skill tycon-pipeline (${approvalsFalta}): sin ella no sé si alguna aprobación de un agente figura como de una persona. No es «está bien»: es «no lo pude revisar».` });
+    return { hallazgos, avisos, resumen };
+  }
+  for (const { dir, nombre } of dirs) {
+    const reg = approvalsLib.leer(dir);
+    let roster = null;
+    try { roster = JSON.parse(fs.readFileSync(path.join(dir, 'review-roster.json'), 'utf8')); } catch (_e) { /* la regla 4 juzga el roster */ }
+    const llegoARevisores = fs.existsSync(path.join(dir, 'review-roster.json'));
+    const exigible = !!(roster && roster.registro_aprobaciones);
+    if (reg.error || reg.ilegibles) {
+      hallazgos.push({ regla: 'registro-de-aprobaciones-invalido',
+        mensaje: `\`${nombre}/${approvalsLib.FILE}\` ${reg.error ? `no se puede leer (${reg.error})` : `tiene ${reg.ilegibles} línea(s) que no son JSON`}. Un registro ilegible no es un registro.` });
+    }
+    if (!reg.existe) {
+      if (exigible) {
+        hallazgos.push({ regla: 'sin-registro-de-aprobaciones',
+          mensaje: `\`${nombre}/\` llegó a los revisores y no trae \`${approvalsLib.FILE}\` (qué se aprobó, cuándo y si fue una persona o un agente). Lo escribe marker.js al aprobar el plan. Si está en disco y no en el commit, el \`.gitignore\` lo traga: falta \`!**/.advisors/pipeline-runs/*/approvals.jsonl\` (el arranque del pipeline la agrega). Si la story se cerró sin pipeline, declaralo con \`advisors_exempt: true\` + su razón.` });
+      } else if (llegoARevisores) {
+        avisos.push({ regla: 'sin-registro-de-aprobaciones',
+          mensaje: `\`${nombre}/\` no trae \`${approvalsLib.FILE}\`, y su registro de revisores no declara que la corrida anote aprobaciones (un arnés anterior al registro de aprobaciones): no se sabe quién aprobó el plan. Avisa y no frena.` });
+      }
+      continue;
+    }
+    for (const l of reg.lineas) {
+      for (const p of approvalsLib.validar(l)) {
+        hallazgos.push({ regla: p.regla, mensaje: `\`${nombre}/${approvalsLib.FILE}\`: ${p.detalle}. La aprobación de un agente nunca cuenta como la de una persona: va \`automatica\`, con la delegación nombrada.` });
+      }
+    }
+    const r = approvalsLib.resumir(reg.lineas);
+    resumen.manual += r.manual; resumen.automatica += r.automatica; resumen.sinNombrar += r.sinNombrar;
+    if (exigible && !reg.lineas.some((l) => l && l.que === 'plan')) {
+      hallazgos.push({ regla: 'sin-aprobacion-del-plan',
+        mensaje: `\`${nombre}/${approvalsLib.FILE}\` existe pero no trae la aprobación del plan, y la corrida llegó a los revisores: el plan se aprobó (marker.js no deja pasar sin eso) y no quedó anotado quién lo aprobó.` });
+    }
+  }
+  return { hallazgos, avisos, resumen };
+}
+
 /**
  * Validación del roster. Es una COPIA deliberada de `lib/review-roster.js → validate` del skill:
  * el portón corre en un agente de CI que sólo hace checkout de este repo y del repo del producto,
@@ -574,6 +637,7 @@ function revisar({ repo, base, staged }) {
   const hallazgos = [];
   const avisos = [];
   const revisadas = [];
+  const aprobaciones = [];
   const { files, error } = mdDelDiff(repo, base, staged);
   if (error) return { error, hallazgos, revisadas };
 
@@ -660,6 +724,17 @@ function revisar({ repo, base, staged }) {
 
     // (3) constancia de que los revisores auditaron la story, EN ESTE repo
     const exentaAdv = /^advisors_exempt:\s*true\b/m.test(fmNuevo);
+
+    // (2b) el registro de aprobaciones: manual o automática, y un agente nunca como persona. Corre aun con
+    // `advisors_exempt`: la exención perdona que FALTE el registro (una story cerrada sin pipeline), no un registro
+    // presente y malo — un agente anotado como persona frena siempre.
+    {
+      const apr = revisarAprobaciones(repo, idBruto, path.join(repo, rel));
+      const POR_FALTA = new Set(['sin-registro-de-aprobaciones', 'sin-aprobacion-del-plan']);
+      for (const h of apr.hallazgos) if (!(exentaAdv && POR_FALTA.has(h.regla))) destino.push({ archivo: rel, story: idBruto, ...h });
+      if (!exentaAdv) for (const a of apr.avisos) avisos.push({ archivo: rel, story: idBruto, ...a });
+      aprobaciones.push({ story: idBruto, archivo: rel, ...apr.resumen });
+    }
     if (estadoNuevo === 'done' && !exentaAdv && !hayEvidencia(repo, 'pipeline-runs', idBruto, path.join(repo, rel), prefijoDeLaStory())) {
       const pref = prefijoDeLaStory();
       // Sin clave el portón NO miró (falla cerrado): el hallazgo lo dice, no sólo el aviso por stderr (pase de fallos
@@ -718,7 +793,7 @@ function revisar({ repo, base, staged }) {
     for (const a of examen.avisos) avisos.push(a);
   }
 
-  return { hallazgos, avisos, revisadas, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
+  return { hallazgos, avisos, revisadas, aprobaciones, archivos: files.length, ...(mem && mem.engram ? { engram: mem.engram } : {}) };
 }
 
 // ── selftest ────────────────────────────────────────────────────────────────────────────────────
@@ -1195,7 +1270,17 @@ function main() {
     console.log(`tycon-ci-gate: ${r.revisadas.length} story(s) declarándose lista(s):`);
     for (const s of r.revisadas) console.log(`   · ${s.story} (${s.de} → ${s.a}) — ${s.archivo}`);
   }
-  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla));
+  for (const a of r.aprobaciones || []) {
+    const total = a.manual + a.automatica;
+    if (!total) continue;
+    console.log(`   aprobaciones de ${a.story}: ${a.manual} ${a.manual === 1 ? 'manual' : 'manuales'} · ${a.automatica} ${a.automatica === 1 ? 'automática' : 'automáticas'}${a.sinNombrar ? ` (${a.sinNombrar} sin nombrar)` : ''}`);
+  }
+  const avisosDeStory = (r.avisos || []).filter((h) => !/^indice-de-memoria/.test(h.regla) && h.regla !== 'roster-incoherente' && h.regla !== 'storyid-sin-story' && !/^reviewer-/.test(h.regla) && h.regla !== 'sin-registro-de-aprobaciones');
+  const avisosDeAprobaciones = (r.avisos || []).filter((h) => h.regla === 'sin-registro-de-aprobaciones');
+  if (avisosDeAprobaciones.length) {
+    console.error('\n⚠️  AVISO — corridas sin registro de aprobaciones (no frena):');
+    for (const h of avisosDeAprobaciones) console.error(`   · [${h.regla}] ${h.archivo}: ${h.mensaje}`);
+  }
   // También el suyo (pase adversarial de la 1.17.1, tanda 2): bajo el encabezado de `review → done` decía que con
   // TYCON_REVIEW_A_DONE=block frenaba y que el pull request la frenaba, y ninguna de las dos es cierta.
   const avisosDeStoryId = (r.avisos || []).filter((h) => h.regla === 'storyid-sin-story');
@@ -1268,4 +1353,4 @@ if (require.main === module) process.exitCode = main();
 // `mdDelDiff` y `contenidoEn` se exportan desde 2026-09-22 para que `cierre-recortado` T12 pueda
 // EJECUTARLAS en vez de comparar sus bytes contra `main`. Comparar texto no distinguía una mejora
 // de un deterioro: cualquier cambio salía rojo, y así se fueron desfrizando funciones de a una.
-module.exports = { llaveFrena, revisar, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
+module.exports = { llaveFrena, revisar, revisarAprobaciones, frontmatter, declaraSerStory, escalar, hayEvidencia, prefijoDeEvidencia, runDirsDeStory, validarRoster, advisoresEnFindings, FUENTES_SINTETICAS, esEvidenciaDeCierre, NO_ES_EVIDENCIA_DE_CIERRE, ES_EVIDENCIA_ADEMAS, mdDelDiff, contenidoEn };
