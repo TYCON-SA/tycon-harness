@@ -68,7 +68,7 @@ test('@story-8.48 @ac-6 StackConfig_SameExtensionShape_BothReaders', () => {
   const team = require(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'team-repos.js'));
   const { EXT_RE } = require(path.join(LIB, 'code-files.js'));
   assert.equal(String(team.STACK_EXT_RE), String(EXT_RE));
-  assert.deepEqual(team.STACK_KEYS, ['code_extensions']);
+  assert.deepEqual(team.STACK_KEYS, ['code_extensions', 'test_runners']);
   // una terminación mala no apaga el archivo: sale aparte y la sección queda sin esa subclave
   const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
   const r = team.parse(JSON.stringify({ ...base, stack: { code_extensions: ['GD'] } }));

@@ -363,6 +363,24 @@
       "requiere": []
     },
     {
+      "__nota": "los totales de un reporte JUnit (pytest, Go, Maven, Gradle, Karma).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/junit-report.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la cobertura de pytest, JaCoCo y Go, a la forma del lcov.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/coverage-readers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las herramientas de prueba de fábrica y las de la organización.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-runners.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [
