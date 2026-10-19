@@ -364,6 +364,11 @@ en su repo.
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
   avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Tu tecnología**: lo que el arnés ya reconoce, las terminaciones de archivo que tu equipo suma como código, las
+  herramientas de prueba (las de fábrica, las que tu organización cambió o agregó) y tres reglas: el estilo de los
+  nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
+  arnés no impone el estilo de ningún equipo. Queda en `team-repos.json` → `stack`, en el repo del perfil. Lo revisa quien
+  mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
   puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
@@ -371,6 +376,30 @@ en su repo.
   mantiene.
 
 ![Cómo trabaja Claude](sitio-de-la-organizacion/capturas/configuracion-claude.png)
+
+### Tu tecnología
+
+Lo que la persona ve en la sección y lo que hace el agente cuando le piden una herramienta que no está.
+
+- **En el sitio**: los lenguajes que el arnés ya reconoce, las terminaciones que suma tu equipo, la tabla de
+  herramientas de prueba y las tres reglas. Las que la puerta de pruebas corre por dentro (.NET, Vitest, Jest y Node)
+  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle y Karma se pueden
+  cambiar: el formulario llega lleno con la de fábrica, y al guardar queda una copia de la organización con el mismo
+  nombre que la reemplaza. «Volver a la de fábrica» borra la copia. El comando de una herramienta lo corre la
+  computadora de cada persona del equipo.
+- **«Pedíselo a tu agente»** deja la frase «configurá las pruebas de mi proyecto en la configuración del arnés». La
+  persona la pega en su agente de código, abierto en el proyecto.
+- **Lo que hace el agente** con esa frase:
+  1. Mira el proyecto: qué herramienta corre las pruebas, el **archivo que la detecta** (el que está en la carpeta del
+     proyecto, por ejemplo `Cargo.toml`), el comando, qué reporte deja (JUnit o el JSON de Vitest/Jest) y dónde, y si
+     mide la cobertura y en qué formato (Cobertura, lcov, istanbul, JaCoCo o el perfil de Go). `{results}` es la
+     carpeta de la corrida.
+  2. Arma la entrada de `stack.test_runners` en `team-repos.json` del repo del perfil: `name` (minúsculas y guiones),
+     `detect`, `command`, `results` y, si mide, `coverage`.
+  3. La valida con el lector de las máquinas antes de proponer:
+     `node -e 'console.log(JSON.stringify(require("<arnés>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
+     Sin problemas en `stack`, la propone como pedido al repo del perfil.
+  4. Un admin aprueba el pedido y la herramienta aparece en la lista, donde se puede cambiar.
 
 ### Instalación y actualización
 

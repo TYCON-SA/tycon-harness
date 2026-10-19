@@ -81,6 +81,8 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'espera', titulo: 'Aviso de espera', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['wait_notice'], idCorto: 'repos', necesita: ['wait_notice'] }),
   // el umbral de cobertura de las líneas nuevas: el control de pruebas avisa por debajo de este porcentaje
   Object.freeze({ id: 'cobertura', titulo: 'Cobertura de las pruebas', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['coverage'], idCorto: 'repos', necesita: ['coverage'] }),
+  // la tecnología de la organización: terminaciones que también son código, herramientas de prueba y las reglas
+  Object.freeze({ id: 'tecnologia', titulo: 'Tu tecnología', archivo: 'team-repos.json', repo: 'perfil', lector: 'team-repos.js', claves: ['stack'], idCorto: 'repos', necesita: ['stack'] }),
 ]);
 const seccionPorId = (id) => SECCIONES.find((s) => s.id === id) || null;
 
@@ -149,7 +151,10 @@ const MODELS_SINCE = '2026.10.16.10';
 const WAIT_NOTICE_SINCE = '2026.10.17.8';
 // `coverage`: la etiqueta del merge que lo trajo al lector
 const COVERAGE_SINCE = '2026.10.17.45';
-const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE]]);
+// `stack`: la etiqueta del merge que trajo `stack.rules` al lector (las terminaciones y las herramientas llegaron antes;
+// se pide la versión que lee la clave entera)
+const STACK_SINCE = '2026.10.19.11';
+const CLAVES_CON_VERSION = Object.freeze([['merge_suites', MERGE_SUITES_SINCE], ['models', MODELS_SINCE], ['wait_notice', WAIT_NOTICE_SINCE], ['coverage', COVERAGE_SINCE], ['stack', STACK_SINCE]]);
 /** La versión que tiene que pedir el perfil para este `team-repos.json` (sin archivo, la de siempre), y las claves por las que la pide. */
 function versionQuePide(doc) {
   let version = TEAM_REPOS_SINCE; const claves = [];
@@ -861,6 +866,7 @@ function pantalla(idioma = 'es') {
     paridad: { t: T('pantalla.diferenciasAceptadasEntreProductos'), d: T('pantalla.cadaNocheSeComparanLos'), corto: T('pantalla.diferenciasEntreProductos') },
     espera: { t: T('pantalla.avisoDeEspera'), d: T('pantalla.llegaATodasLasMaquinas4'), corto: T('pantalla.avisoDeEspera') },
     cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
+    tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
@@ -873,7 +879,7 @@ function pantalla(idioma = 'es') {
     aldia: { t: T('pantalla.comoSeActualizaElSitio'), d: T('pantalla.siElSitioSePone'), corto: T('pantalla.actualizacionDelSitio') },
   };
   // las pestañas: [id, nombre, secciones, tablas para mirar]. Se ve una por vez; el resumen de arriba, en todas
-  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
+  var PESTANAS = [['personas', T('pantalla.personas'), ['organizacion', 'sitio', 'aplicar', 'aldia', 'personas', 'responsables'], []], ['repos', T('pantalla.reposYProductos'), ['repos', 'despliegues', 'paridad', 'ado'], ['productos']], ['avisos', T('pantalla.avisosYLaNoche'), ['canal', 'espera', 'umbrales', 'fichas'], []], ['claude', T('pantalla.comoTrabajaClaude'), ['respuesta', 'modelos', 'suites', 'cobertura', 'tecnologia', 'integraciones', 'hilos'], []], ['instalacion', T('pantalla.instalacionYActualizacion'), ['actualizacion', 'instalacion', 'paquetes'], ['contenido', 'versiones']]];
   /** La pestaña de un ancla (#pestana-x, #seccion-x o una tabla para mirar); null si no es de ninguna. */
   function pestanaDe(ancla) {
     var id = String(ancla || '').replace(/^#/, '');
@@ -911,6 +917,7 @@ function pantalla(idioma = 'es') {
     wait_notice: T('pantalla.avisoDeEspera2'), minutes: T('pantalla.minutos'), coverage: T('pantalla.coberturaDeLasPruebas2'), min_touched_lines_pct: T('pantalla.porcentajeMinimoDeLasLineas'), public: T('pantalla.repoPublico'), profile: T('pantalla.repoDelEquipo'), operations: T('pantalla.repoDeOperaciones'), org: T('pantalla.organizacion'), project: T('pantalla.proyecto'), repo: T('pantalla.repo'), repos: T('pantalla.palabraRepos'), platform: T('pantalla.plataforma'),
     // las hojas de «Cómo contesta Claude» y «Cómo se actualizan»: con el nombre de su campo, también en un valor que se pisó
     style: T('pantalla.estilo'), language: T('pantalla.idioma'), max_chars: T('pantalla.largoMaximoDeProsaEn').split(' (')[0], apply: T('pantalla.comoSeAplica'),
+    stack: T('pantalla.tecTuTecnologia2'), code_extensions: T('pantalla.tecTerminaciones'), test_runners: T('pantalla.tecHerramientasDePrueba'), rules: T('pantalla.tecReglas'), test_names: T('pantalla.tecEstiloDeNombres2'), screen_test: T('pantalla.tecPantallasConPrueba'), ui_language: T('pantalla.tecIdiomaDeLaApp2'), name: T('pantalla.tecNombre2'), detect: T('pantalla.tecArchivoQueLaDetecta2'), command: T('pantalla.tecComando2'), results: T('pantalla.tecReporte'), format: T('pantalla.tecFormato'), path: T('pantalla.tecRuta'),
     response: T('pantalla.comoContestaClaude2'), integrations: T('pantalla.palabraIntegraciones'), ado: 'Azure DevOps', update: T('pantalla.actualizacion2'), install: T('pantalla.instalacion2'), packs: T('pantalla.palabraPaquetes'), diferencias_declaradas: T('pantalla.diferenciasDeclaradas'), version: T('pantalla.version'),
   };
   /** La ruta de un problema con los nombres de la pantalla: «personas › máquinas › «mac-1»»; un número es la fila. */
@@ -1611,7 +1618,100 @@ function pantalla(idioma = 'es') {
       d.coverage.min_touched_lines_pct = numOTexto(v);
     }, 'coverage.min_touched_lines_pct', pr, { inputmode: 'numeric' }));
   }
-  var EDITORES = { fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
+  // «Tu tecnología»: lo que el arnés ya conoce, las terminaciones de la organización, las herramientas de prueba (de
+  // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
+  var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
+  var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
+  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)' };
+  var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
+  function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
+  function limpiarStack(d) {
+    if (!esObjeto(d.stack)) return;
+    ['code_extensions', 'test_runners'].forEach(function (k) { if (Array.isArray(d.stack[k]) && !d.stack[k].length) delete d.stack[k]; });
+    if (esObjeto(d.stack.rules) && !Object.keys(d.stack.rules).length) delete d.stack.rules;
+    if (!Object.keys(d.stack).length) delete d.stack;
+  }
+  function guardarRunner(d, r) {
+    var l = (Array.isArray(stackDe(d).test_runners) ? d.stack.test_runners : []).filter(function (x) { return !x || x.name !== r.name; });
+    l.push(r); d.stack.test_runners = l;
+  }
+  function quitarRunner(d, name) {
+    if (!esObjeto(d.stack) || !Array.isArray(d.stack.test_runners)) return;
+    d.stack.test_runners = d.stack.test_runners.filter(function (x) { return !x || x.name !== name; });
+    limpiarStack(d);
+  }
+  function boton(texto, onclick) { return el('button', { class: 'sec', type: 'button', text: texto, onclick: onclick }); }
+  function formRunner(d) {
+    var f = TEC_FORM; var r = f.r;
+    var upd = function (k) { return function (v) { r[k] = v; }; };
+    var dentro = function (o, k) { return function (v) { if (!esObjeto(r[o])) r[o] = {}; r[o][k] = v; }; };
+    var res = esObjeto(r.results) ? r.results : {}; var cov = esObjeto(r.coverage) ? r.coverage : null;
+    return el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecCambiarLaHerramienta', { nombre: TEC_NOMBRES[r.name] || r.name }) }),
+      el('div', { class: 'msg warn' }, el('b', { text: T('pantalla.tecElComandoCorreEnCadaComputadora') })),
+      campo(T('pantalla.tecArchivoQueLaDetecta'), r.detect, upd('detect'), 'runner.detect', []),
+      campo(T('pantalla.tecComando'), r.command, upd('command'), 'runner.command', []),
+      selector(T('pantalla.tecQueReporteDeja'), res.format, [['junit', T('pantalla.tecReporteJunit')], ['jest-json', T('pantalla.tecReporteJest')]], dentro('results', 'format'), 'runner.results.format', []),
+      campo(T('pantalla.tecDondeQuedaElReporte'), res.path, dentro('results', 'path'), 'runner.results.path', []),
+      selector(T('pantalla.tecMideLaCobertura'), cov ? cov.format : '', [['', T('pantalla.tecNoMide')], ['cobertura', 'Cobertura'], ['lcov', 'lcov'], ['istanbul-json', 'istanbul'], ['jacoco', 'JaCoCo'], ['go-cover', 'Go']], function (v) {
+        if (!v) delete r.coverage; else { if (!esObjeto(r.coverage)) r.coverage = { path: '' }; r.coverage.format = v; }
+        render();
+      }, 'runner.coverage.format', []),
+      cov ? campo(T('pantalla.tecDondeQuedaLaCobertura'), cov.path, dentro('coverage', 'path'), 'runner.coverage.path', []) : null,
+      f.fabrica ? el('p', { class: 'sub-d', text: T('pantalla.tecAlGuardarUsaEsta') }) : null,
+      el('div', { class: 'fila' }, el('button', { type: 'button', text: T('pantalla.tecGuardar'), onclick: function () { guardarRunner(d, r); TEC_FORM = null; render(); } }), boton(T('pantalla.tecCancelar'), function () { TEC_FORM = null; render(); })));
+  }
+  function editorTecnologia(s, d, pr) {
+    var ex = s.extras || {};
+    var st = esObjeto(d.stack) ? d.stack : {};
+    var box = el('div', { class: 'pila' }, el('p', { class: 'sub-d', text: T('pantalla.tecYaReconoce') }));
+    // 1. las terminaciones que también son código
+    var exts = Array.isArray(st.code_extensions) ? st.code_extensions.slice() : [];
+    box.appendChild(listaDeTextos(T('pantalla.tecLenguajesQueNoConoce'), T('pantalla.tecLenguajesAyuda'), exts, function (l) { stackDe(d).code_extensions = l; limpiarStack(d); }, 'stack.code_extensions', pr, T('pantalla.tecTerminacionEjemplo'), T('pantalla.tecAgregarTerminacion')));
+    // 2. las herramientas de prueba
+    var org = Array.isArray(st.test_runners) ? st.test_runners : [];
+    var deOrg = {}; org.forEach(function (r) { if (r && r.name) deOrg[r.name] = r; });
+    var fabrica = ex.fabrica || [];
+    var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
+    (ex.internos || []).forEach(function (n) {
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecDeFabricaLaCorreLaPuerta') })));
+    });
+    // el motivo exacto, plegado: lo arma el servidor y no está traducido
+    if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
+    fabrica.forEach(function (f) {
+      var mia = deOrg[f.name];
+      var acciones = el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: f.name, r: copia(mia || { name: f.name, detect: f.detect, command: f.command, results: f.results, coverage: f.coverage }), fabrica: f }; if (!TEC_FORM.r.coverage) delete TEC_FORM.r.coverage; render(); }));
+      if (mia) acciones.appendChild(boton(T('pantalla.tecVolverALaDeFabrica'), function () { quitarRunner(d, f.name); render(); }));
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': f.name }, el('span', { text: TEC_NOMBRES[f.name] || f.name }), el('span', { class: 'muted', text: (f.files || []).join(', ') }), el('span', { text: mia ? T('pantalla.tecCambiadaPorTuOrganizacion') : T('pantalla.tecDeFabrica') }), acciones));
+    });
+    org.forEach(function (r) {
+      if (!r || !r.name || fabrica.some(function (f) { return f.name === r.name; })) return;
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': r.name }, el('span', { text: r.name }), el('span', { class: 'muted', text: r.detect || '' }), el('span', { text: T('pantalla.tecAgregadaPorTuOrganizacion') }),
+        el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: r.name, r: copia(r), fabrica: null }; render(); }), boton(T('pantalla.tecBorrar'), function () { quitarRunner(d, r.name); render(); }))));
+    });
+    (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
+    tabla.appendChild(el('p', { class: 'sub-d', text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
+    box.appendChild(tabla);
+    if (TEC_FORM) box.appendChild(formRunner(d));
+    // pedirle al agente una herramienta que no está: la frase, y qué pasa después
+    var frase = T('pantalla.tecFraseParaElAgente');
+    var agente = el('div', { class: 'sub' }, el('p', { class: 'sub-d', text: T('pantalla.tecUsanOtraHerramienta') }), boton(T('pantalla.tecPediseloATuAgente'), function () {
+      TEC_AGENTE = true;
+      try { if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(frase).catch(function () {}); } catch (e) { /* sin portapapeles, la frase queda a la vista */ }
+      render();
+    }));
+    if (TEC_AGENTE) agente.appendChild(el('div', { class: 'msg ok' }, el('b', { text: T('pantalla.tecPegaEstaFrase') }), el('p', { text: '«' + frase + '»' }), el('p', { text: T('pantalla.tecElAgenteMira') })));
+    box.appendChild(agente);
+    // 3. las reglas del equipo
+    var reglas = esObjeto(st.rules) ? st.rules : {};
+    var regla = function (k) { return function (v) { var x = stackDe(d); if (!esObjeto(x.rules)) x.rules = {}; if (v === '') delete x.rules[k]; else x.rules[k] = v; limpiarStack(d); }; };
+    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecReglasDeTuEquipo') }),
+      selector(T('pantalla.tecEstiloDeNombres'), reglas.test_names, [['', T('pantalla.tecSinDeclararCualquiera')], ['any', T('pantalla.tecCualquierNombre')], ['pascal', T('pantalla.tecPascal')], ['snake', T('pantalla.tecSnake')]], regla('test_names'), 'stack.rules.test_names', pr),
+      selector(T('pantalla.tecQuePantallas'), reglas.screen_test, [['', T('pantalla.tecSinDeclararTodas')], ['ui', T('pantalla.tecTodas')], ['react', T('pantalla.tecSoloReact')], ['off', T('pantalla.tecNinguna')]], regla('screen_test'), 'stack.rules.screen_test', pr),
+      campo(T('pantalla.tecIdiomaDeLaApp'), reglas.ui_language, regla('ui_language'), 'stack.rules.ui_language', pr, { placeholder: T('pantalla.tecIdiomaEjemplo') }),
+      el('p', { class: 'sub-d', text: T('pantalla.tecIdiomaVacio') })));
+    return box;
+  }
+  var EDITORES = { tecnologia: editorTecnologia, fichas: editorFichas, organizacion: editorOrganizacion, espera: editorEspera, cobertura: editorCobertura, respuesta: editorRespuesta, integraciones: editorIntegraciones, ado: editorAdo, actualizacion: editorActualizacion, instalacion: editorInstalacion, hilos: editorHilos, aplicar: editorAplicar, aldia: editorActualizacionSitio, suites: editorSuites, modelos: editorModelos, paquetes: editorPaquetes, repos: editorRepos, responsables: editorResponsables, despliegues: editorDespliegues, canal: function (s, d, pr) { return editorGenerico(s, d, pr, 'notify', T('pantalla.elCanalComoTexto')); }, personas: editorPersonas, sitio: editorSitio, umbrales: editorUmbrales, paridad: editorParidad };
 
   // los editores de suites y modelos arman objetos vacíos para tener dónde escribir: no se mandan. Una clave vacía en el
   // archivo pediría al perfil una versión más nueva sin cambiar nada
@@ -1976,7 +2076,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, STACK_SINCE, RESPONSE_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, hojasAjenas, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

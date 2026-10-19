@@ -919,14 +919,14 @@ test('T28c Umbrales_SoloLectura_ControlesApagados — una sección «sólo para 
 });
 
 /** La pestaña con pestañas: corre la pantalla con `secciones` y `extras`, el ancla dada, y devuelve los nodos creados. */
-async function pantallaConPestanas({ secciones, extras = {}, hash = '' }) {
+async function pantallaConPestanas({ secciones, extras = {}, hash = '', idioma = 'es' }) {
   const creados = [];
   const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; creados.push(n); return n; };
   const app = nodo('div');
   const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : creados.find((n) => n.attrs.id === id) || null), createElement: (t) => nodo(t) };
   const respuesta = Object.assign({ ok: true, secciones, proponer: {}, versiones: [], productos: [] }, extras);
   const llamadas = [];
-  new Function('document', 'fetch', 'location', ORG.pantalla())(document, (ruta, opts) => { llamadas.push({ ruta, cuerpo: opts && opts.body ? JSON.parse(opts.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }); }, { hash });
+  new Function('document', 'fetch', 'location', ORG.pantalla(idioma))(document, (ruta, opts) => { llamadas.push({ ruta, cuerpo: opts && opts.body ? JSON.parse(opts.body) : null }); return Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }); }, { hash });
   for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
   const dentro = (n) => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(n); return out; };
   const visibles = dentro(app).filter((n) => n.attrs.role === 'tabpanel' && !n.attrs.hidden).map((n) => n.attrs.id);
@@ -2187,4 +2187,166 @@ test('T24 2.33-LectorSabe_RutaConPunto @story-2.33 @ac-18 — un lector sin `upd
   // la del interruptor de los cambios sigue sabiendo, y una sección sin rutas no cambia
   assert.strictEqual(ORG.lectorSabe(OPS, ORG.seccionPorId('aplicar')), true);
   assert.strictEqual(ORG.lectorSabe(sinUpdate, ORG.seccionPorId('aplicar')), true);
+});
+
+// ── «Tu tecnología»: la clave `stack` de team-repos.json ──
+const RUNNERS = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'test-runners.js'));
+const TEC_EXTRAS = { fabrica: RUNNERS.factoryTable(), internos: ['dotnet', 'vitest', 'jest', 'node'] };
+const GO_ORG = { name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/junit.xml' } };
+const CARGO = { name: 'cargo', detect: 'Cargo.toml', command: 'cargo nextest run', results: { format: 'junit', path: '{results}/junit.xml' } };
+async function pantallaTec(borrador, idioma = 'es', respuesta = {}) {
+  const sec = SEC('tecnologia', { repo: 'perfil', borrador, extras: TEC_EXTRAS });
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), sec], idioma, hash: '#seccion-tecnologia', extras: respuesta });
+  const caja = () => r.creados.filter((n) => n.attrs.id === 'seccion-tecnologia').pop();
+  const todos = () => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(caja()); return out; };
+  const texto = () => todos().map((n) => n.textContent || '').join(' | ');
+  const boton = (re) => todos().filter((n) => n.tag === 'button' && re.test(n.textContent)).pop();
+  const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x)); };
+  const revisado = async () => {
+    boton(/^(Revisar cambios|Review changes)$/).on.click(); await esperar();
+    return r.llamadas.filter((l) => /revisar/.test(l.ruta)).pop().cuerpo.borrador;
+  };
+  return { r, caja, todos, texto, boton, esperar, revisado };
+}
+
+test('T27 TeamRepos_StackKey_SinceVersion @story-8.48 @ac-27 @ac-33 — `stack` no se propone a una organización con un arnés anterior', async () => {
+  // 🔴 rojo: la sección no existe, se propone a un perfil que pide un arnés que no lee `stack.rules`, o cambia otra cosa del archivo.
+  const s = ORG.seccionPorId('tecnologia');
+  assert.ok(s, 'hay una sección «Tu tecnología»');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['team-repos.json', 'perfil', 'team-repos.js', ['stack'], 'repos']);
+  assert.ok(ORG.versionAtLeast(ORG.STACK_SINCE, ORG.COVERAGE_SINCE) && ORG.STACK_SINCE !== ORG.COVERAGE_SINCE, 'la versión de `stack` es posterior a la de cobertura');
+  const borrador = { stack: { code_extensions: ['.ex'], rules: { test_names: 'snake' } } };
+  for (const [v, espera] of [[ORG.COVERAGE_SINCE, new RegExp(`todavía no se puede proponer.*stack.*${ORG.STACK_SINCE.replace(/\./g, '\\.')}`)], [ORG.STACK_SINCE, PASO_EL_PORTON]]) {
+    await conPerfil({ layer: capa(v) }, async ({ seccion, revisar, proponer }) => {
+      const sec = await seccion('tecnologia');
+      assert.strictEqual(sec.estado, 'cargado');
+      assert.ok(sec.extras && sec.extras.fabrica.some((f) => f.name === 'pytest'), 'la sección trae la lista de fábrica');
+      const r = await revisar('tecnologia', borrador);
+      assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+      assert.deepStrictEqual(JSON.parse(r.texto), { ...TR_BASE, ...borrador }, 'el resto del archivo igual');
+      assert.match((await proponer('tecnologia', r.texto)).message, espera);
+    });
+  }
+});
+
+test('T28 SiteConfig_StackSection_ShowsCurrentAndDefault @story-8.48 @ac-25 — lo de fábrica y lo de la organización, en castellano y en inglés', async () => {
+  // 🔴 rojo: la sección no muestra los lenguajes que ya conoce, las herramientas con su origen o las reglas; o falta un idioma.
+  const con = await pantallaTec({ stack: { code_extensions: ['.ex'], test_runners: [GO_ORG, CARGO], rules: { test_names: 'pascal' } } });
+  const t = con.texto();
+  for (const re of [/Python/, /Svelte/, /pytest/, /de fábrica/, /cambiada por tu organización/, /agregada por tu organización/, /el arnés la corre por dentro/, /Vitest/]) assert.match(t, re);
+  assert.ok(con.todos().some((n) => n.tag === 'input' && n.attrs.value === '.ex'), 'la terminación de la organización');
+  const regla = con.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.test_names');
+  assert.strictEqual(regla.value, 'pascal');
+  assert.ok(con.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.screen_test'));
+  assert.ok(con.todos().some((n) => n.attrs['data-path'] === 'stack.rules.ui_language'));
+  // las de la puerta no se cambian desde acá: una línea dice cómo reemplazar una
+  assert.match(t, /herramienta propia.*mismo archivo/);
+  const sin = await pantallaTec({});
+  assert.match(sin.texto(), /no tenés que configurar nada/);
+  const en = await pantallaTec({ stack: { test_runners: [CARGO] } }, 'en');
+  const te = en.texto();
+  for (const re of [/built in/i, /added by your organization/i, /Ask your agent/]) assert.match(te, re);
+  assert.doesNotMatch(te, /pantalla\./, 'ninguna clave sin traducir');
+});
+
+test('T29 SiteConfig_StackSection_ValidatesAndProposes @story-8.48 @ac-26 — el lector de las máquinas decide, y lo malo no se propone', async () => {
+  // 🔴 rojo: un valor inválido llega al pedido, o el problema no dice cuál ni cómo corregirlo.
+  const malo = ORG.revisar({ seccion: 'tecnologia', texto: ORG.formatJson(TR_BASE), borrador: { stack: { code_extensions: ['EX'] } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(malo.ok, false);
+  assert.deepStrictEqual(malo.problems.map((p) => p.path), ['stack.code_extensions.0']);
+  assert.match(malo.problems[0].message, /con punto y en minúsculas.*"\.ex"/);
+  const bien = ORG.revisar({ seccion: 'tecnologia', texto: ORG.formatJson(TR_BASE), borrador: { stack: { code_extensions: ['.ex'] } }, lectores: { 'team-repos.js': TR } });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  // en la pantalla: la terminación nueva llega al lector tal cual, y vaciar todo saca la clave
+  const p = await pantallaTec({});
+  p.boton(/Agregar terminación/).on.click(); await p.esperar();
+  p.todos().filter((n) => n.tag === 'input' && n.attrs['data-path'] === 'stack.code_extensions.0').pop().on.input({ target: { value: 'EX' } });
+  assert.deepStrictEqual((await p.revisado()).stack, { code_extensions: ['EX'] });
+  p.todos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.test_names').pop().on.change({ target: { value: 'snake' } });
+  assert.deepStrictEqual((await p.revisado()).stack.rules, { test_names: 'snake' });
+  p.todos().filter((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.test_names').pop().on.change({ target: { value: '' } });
+  assert.strictEqual((await p.revisado()).stack.rules, undefined, 'sin regla, sin la clave');
+  // lo que el lector rechaza se ve en la pantalla, junto al campo, en llano
+  const conProblema = await pantallaTec({ stack: { code_extensions: ['EX'] } }, 'es', { problems: malo.problems });
+  await conProblema.revisado();
+  const err = conProblema.todos().filter((n) => n.attrs.class === 'err').map((n) => n.textContent).join(' | ');
+  assert.match(err, /con punto y en minúsculas.*"\.ex"/, 'la pantalla dice cuál y cómo corregirlo');
+});
+
+test('T30 SiteConfig_FactoryRunner_ChangeAndRevert @story-8.48 @ac-28 — «Cambiar» trae la de fábrica, guardar la copia, volver la borra', async () => {
+  // 🔴 rojo: el formulario llega vacío, la copia sale con otro nombre, «Volver» no la borra o falta el aviso del comando.
+  const p = await pantallaTec({});
+  const fila = p.todos().find((n) => n.attrs['data-runner'] === 'go');
+  assert.ok(fila, 'go está en la tabla');
+  const cambiar = (() => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(fila); return out.find((n) => n.tag === 'button' && /^Cambiar$/.test(n.textContent)); })();
+  cambiar.on.click(); await p.esperar();
+  const valor = (k) => (p.todos().filter((n) => n.attrs['data-path'] === `runner.${k}`).pop() || { attrs: {} });
+  assert.match(valor('command').attrs.value, /^gotestsum /, 'el comando de fábrica');
+  assert.strictEqual(valor('detect').attrs.value, 'go.mod');
+  assert.match(p.texto(), /va a correr este comando en su computadora/);
+  valor('command').on.input({ target: { value: 'go test -json ./... | go-junit-report > {results}/junit.xml' } });
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardado = (await p.revisado()).stack.test_runners;
+  assert.strictEqual(guardado.length, 1);
+  assert.strictEqual(guardado[0].name, 'go', 'misma nombre: reemplaza a la de fábrica');
+  assert.match(guardado[0].command, /go-junit-report/);
+  assert.match(p.texto(), /cambiada por tu organización/);
+  p.boton(/Volver a la de fábrica/).on.click(); await p.esperar();
+  assert.strictEqual((await p.revisado()).stack, undefined, 'sin la copia, `stack` vacío no se propone');
+  // las cuatro que corre la puerta por dentro no tienen «Cambiar»
+  const dotnet = p.todos().find((n) => n.attrs['data-runner'] === 'dotnet');
+  const deDotnet = (() => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(dotnet); return out; })();
+  assert.ok(!deDotnet.some((n) => n.tag === 'button'), '.NET sin botones');
+});
+
+test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíselo a tu agente» deja la frase y la guía dice qué hace el agente', async () => {
+  // 🔴 rojo: el botón no deja la frase a mano, o la guía no tiene la sección que el agente sigue.
+  const p = await pantallaTec({});
+  // el portapapeles del navegador, de prueba: la frase tiene que llegar ahí
+  const antes = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  let copiado = null;
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: (t) => { copiado = t; return Promise.resolve(); } } }, configurable: true, writable: true });
+  try {
+    p.boton(/Pedíselo a tu agente/).on.click(); await p.esperar();
+  } finally {
+    if (antes) Object.defineProperty(globalThis, 'navigator', antes); else delete globalThis.navigator;
+  }
+  assert.strictEqual(copiado, 'configurá las pruebas de mi proyecto en la configuración del arnés');
+  assert.match(p.texto(), /configurá las pruebas de mi proyecto en la configuración del arnés/);
+  assert.match(p.texto(), /después la herramienta aparece en esta lista/i);
+  const guia = fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.md'), 'utf8');
+  const sec = guia.split(/\n### Tu tecnología\n/)[1];
+  assert.ok(sec, 'la guía tiene §Tu tecnología');
+  assert.match(sec, /team-repos\.js/);
+  assert.match(sec, /archivo que la detecta|detect/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
+});
+
+test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 — la sección en su pestaña, al lado de Cobertura, de punta a punta', async () => {
+  // 🔴 rojo: la sección no está en «Cómo trabaja Claude» o el recorrido se corta.
+  const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura', 'tecnologia'].map((id) => SEC(id, id === 'tecnologia' ? { repo: 'perfil', extras: TEC_EXTRAS } : {})) });
+  const panel = r.panelDe('seccion-tecnologia');
+  assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
+  const orden = []; const walk = (x) => { if (/^seccion-/.test(x.attrs.id || '')) orden.push(x.attrs.id); (x.hijos || []).forEach(walk); }; walk(panel);
+  assert.deepStrictEqual(orden.slice(orden.indexOf('seccion-cobertura'), orden.indexOf('seccion-cobertura') + 2), ['seccion-cobertura', 'seccion-tecnologia']);
+  const p = await pantallaTec({ stack: { test_runners: [CARGO] } });
+  const carga = p.todos().find((n) => n.attrs['data-runner'] === 'cargo');
+  assert.ok(carga, 'la agregada por la organización se ve');
+  assert.ok(p.boton(/^Borrar esta herramienta$/), 'y se puede borrar');
+  // el recorrido: cambiar una de fábrica (llega llena, con el aviso del comando), guardarla, y volver a la de fábrica
+  const goFila = p.todos().find((n) => n.attrs['data-runner'] === 'go');
+  const deGo = []; (function walk(x) { deGo.push(x); (x.hijos || []).forEach(walk); })(goFila);
+  deGo.find((n) => n.tag === 'button' && n.textContent === 'Cambiar').on.click(); await p.esperar();
+  assert.match(p.texto(), /va a correr este comando en su computadora/);
+  assert.ok(p.todos().some((n) => n.attrs['data-path'] === 'runner.command' && /^gotestsum /.test(n.attrs.value)), 'el formulario llega lleno');
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).stack.test_runners.map((x) => x.name), ['cargo', 'go']);
+  p.boton(/Volver a la de fábrica/).on.click(); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).stack.test_runners.map((x) => x.name), ['cargo'], 'volver deja la agregada');
+  p.boton(/Pedíselo a tu agente/).on.click(); await p.esperar();
+  assert.match(p.texto(), /configurá las pruebas de mi proyecto/);
+  // revisado y bien escrito: la pantalla dice que no se aplica solo, que se abre un pedido que alguien aprueba
+  const q = await pantallaTec({ stack: { code_extensions: ['.ex'] } }, 'es', { texto: '{}\n', proponer: { perfil: { habilitado: true } } });
+  await q.revisado();
+  assert.match(q.texto(), /Se abre un pedido de cambio en .*Entra cuando alguien lo aprueba/);
 });
