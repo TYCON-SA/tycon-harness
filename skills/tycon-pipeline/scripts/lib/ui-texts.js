@@ -32,27 +32,31 @@ const HIDDEN_ATTRS = ['className', 'class', 'data-testid', 'key', 'id', 'href', 
 function listEntries(fm, key) {
   const m = fm.match(new RegExp(`^${key}:[ \\t]*\\r?\\n((?:[ \\t]+-[^\\n]*\\r?\\n?|[ \\t]*#[^\\n]*\\r?\\n?)*)`, 'm'));
   if (!m) return [];
-  return m[1].split('\n').map((l) => l.match(/^\s*-\s*["']?([^\s#"']+)/)).filter(Boolean).map((x) => x[1]);
+  // `(<repo>) ruta` es una entrada: el repo entre paréntesis dice dónde vive la ruta.
+  return m[1].split('\n').map((l) => l.match(/^\s*-\s*["']?((?:\([^()\n]+\)\s+)?[^\s#"']+)/)).filter(Boolean).map((x) => x[1]);
 }
 // Rutas de la sección `### File List` del Dev Agent Record (o `## File List`).
 function fileListEntries(body) {
   const m = body.match(/^#{2,3}\s+File List\s*\n([\s\S]*?)(?=^#{1,3}\s|(?![\s\S]))/m);
   if (!m) return [];
-  return m[1].split('\n').map((l) => l.match(/^\s*[-*]\s*`?([^\s`]+)`?/)).filter(Boolean).map((x) => x[1]);
+  return m[1].split('\n').map((l) => l.match(/^\s*[-*]\s*`?((?:\([^()\n]+\)\s+)?[^\s`]+)`?/)).filter(Boolean).map((x) => x[1]);
 }
 
 /** Las pantallas que declara la story. `roots`: dónde buscarlas, en orden (repo de la story, workspace, acompañantes). */
-function screenFiles(fm, body, roots) {
+function screenFiles(fm, body, roots, resolve) {
   const declared = [...listEntries(fm, 'files_to_create'), ...listEntries(fm, 'files_to_modify'), ...fileListEntries(body)]
-    .map((r) => r.replace(/^\(([^)]*)\)\s*/, '').trim())
-    .filter((r) => SCREEN_RE.test(r));
+    .map((raw) => ({ raw: raw.trim(), rel: raw.replace(/^\(([^)]*)\)\s*/, '').trim() }))
+    .filter((d) => SCREEN_RE.test(d.rel));
   const found = []; const missing = []; const seen = new Set();
-  for (const rel of declared) {
-    if (seen.has(rel)) continue;
-    seen.add(rel);
-    const abs = path.isAbsolute(rel) ? rel : (roots || []).filter(Boolean).map((r) => path.join(r, rel)).find((p) => {
-      try { return fs.statSync(p).isFile(); } catch { return false; }
-    });
+  const isFile = (p) => { try { return fs.statSync(p).isFile(); } catch { return false; } };
+  for (const { raw, rel } of declared) {
+    // `(A) x` y `(B) x` son dos pantallas: la clave es la entrada entera, con su repo.
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    // `resolve(entrada)`: la ruta donde vive la entrada, `null` si es de un repo que no la tiene, `undefined` si no sabe.
+    const decidida = typeof resolve === 'function' ? resolve(raw) : undefined;
+    if (decidida === null) { missing.push(rel); continue; }
+    const abs = typeof decidida === 'string' ? decidida : path.isAbsolute(rel) ? rel : (roots || []).filter(Boolean).map((r) => path.join(r, rel)).find(isFile);
     if (abs && fs.existsSync(abs)) found.push({ rel, abs }); else missing.push(rel);
   }
   return { found, missing };

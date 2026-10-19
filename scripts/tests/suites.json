@@ -712,6 +712,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.34: la guía del tester y su chequeo cuentan los pasos con la misma regla (pasos numerados y «Usuario:» suelto).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/qa-guide-steps.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/step-7c-macro.test.js",
       "requiere": []
