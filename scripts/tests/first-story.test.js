@@ -173,6 +173,25 @@ test('8.54 T8 Oferta_PrimerCierre · el clear de la primera corrida cerrada impr
   assert.strictEqual(fs.readdirSync(path.join(dirOf(home), 'timing-history')).filter((f) => /^9\.9-.*\.json$/.test(f)).length, 1);
 });
 
+test('8.62 Oferta_RecortadaSeVuelveAVer @story-8.62 @ac-10 · si el cierre se leyó recortado, offer show la muestra entera', () => {
+  // medido: el agente leyó la salida del cierre con «| tail -2» y la oferta se perdió
+  const home = casa();
+  const r = clear(home);
+  assert.strictEqual(r.rc, 0, r.err);
+  const ultimo = r.out.trim().split('\n').pop();
+  assert.match(ultimo, /offer show/, `el último renglón dice cómo verla entera:\n${ultimo}`);
+  const s = spawnSync(process.execPath, [LIB, 'offer', 'show'], { encoding: 'utf8', env: ENV(home), timeout: 30000 });
+  assert.strictEqual(s.status, 0, s.stderr);
+  for (const l of Q.upgradeOffer({ effects: EFFECTS, tree: RAIZ, home })) assert.ok(s.stdout.includes(l), `falta «${l}» en:\n${s.stdout}`);
+  assert.match(s.stdout, /offer accept/);
+  assert.strictEqual(record(home).offer.status, 'offered', 'mostrarla otra vez no la contesta');
+  // contestada, ya no hay oferta que mostrar
+  spawnSync(process.execPath, [LIB, 'offer', 'decline'], { encoding: 'utf8', env: ENV(home), timeout: 30000 });
+  const otra = spawnSync(process.execPath, [LIB, 'offer', 'show'], { encoding: 'utf8', env: ENV(home), timeout: 30000 });
+  assert.strictEqual(otra.status, 2, otra.stdout);
+  assert.match(otra.stderr, /no hay una oferta pendiente/);
+});
+
 test('8.54 T10 Accept_CorreLaCompleta · corre install --profile full --yes del árbol; si sale distinto de 0, failed', () => {
   const toy = path.join(BASE, 'toy-harness.js');
   fs.writeFileSync(toy, "require('fs').writeFileSync(process.env.TOY_ARGS, JSON.stringify(process.argv.slice(2))); process.exit(Number(process.env.TOY_RC || 0));\n");

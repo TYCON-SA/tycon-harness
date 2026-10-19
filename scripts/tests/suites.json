@@ -450,6 +450,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.62: el plan que se aprueba solo (riesgo bajo) se muestra igual — sin plan escrito no cierra el paso 3, con plan lo imprime; los pasos 2, 3 y 8 y la nota de risk-class lo dicen.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/plan-visible.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/models.test.js",
       "requiere": []

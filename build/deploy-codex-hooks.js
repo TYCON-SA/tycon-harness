@@ -15,7 +15,7 @@
  * - Backup una sola vez (~/.codex/hooks.json.bak-tycon) antes del primer cambio.
  * - Atomic write. Idempotente: correrlo dos veces deja el mismo archivo.
  * - Exit 0 con línea "sin cambios" o "desplegado" — el instalador imprime el aviso de TRUST
- *   solo cuando hubo cambios (gotcha: Codex aprueba hooks POR HASH; cada cambio re-untrustea;
+ *   solo cuando hubo cambios (Codex aprueba cada hook por su contenido: cada cambio pide aprobarlo de nuevo;
  *   se re-aprueba con /hooks en una sesión interactiva).
  *
  * Uso: node deploy-codex-hooks.js [--dry-run] [--selftest]
@@ -323,7 +323,9 @@ function main() {
   if (act.dropped.length) {
     console.log(`deploy-codex-hooks: sin registrar porque su integración está apagada: ${act.dropped.map((d) => `${d.spec.replace(/^@tcg:/, '')} (${d.when.split(':')[1]})`).join(' · ')}`);
   }
-  console.log('⚠️  TRUST: Codex aprueba hooks POR HASH — tras este cambio, correr /hooks en una sesión interactiva de codex y aprobar, o los hooks nuevos NO corren (sin error visible).');
+  // Codex aprueba cada control por su contenido: uno que cambió vuelve a pedir aprobación, y sin ella no corre. La marca
+  // ⚠ es la que hace que el informe de la instalación repita el renglón (report.warningLines y tools.js NOTICE_RE).
+  console.log('⚠ Qué sigue en Codex: abrí codex, escribí /hooks y aprobá los controles nuevos. Sin eso no corren, y Codex no avisa.');
   return 0;
 }
 

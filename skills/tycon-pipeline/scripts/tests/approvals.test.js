@@ -156,6 +156,12 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   assert.equal(r.status, 0, r.stderr);
 
   markerHasta3(home, 's-auto', repo, story);
+  // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
+  const planAuto = '1. El README con el título nuevo del proyecto.\n';
+  fs.writeFileSync(path.join(require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.91', true, story), 'step-02-bmad-plan.md'), planAuto);
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's-auto.jsonl'),
+    `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
   r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.equal(r.status, 0, r.stderr);
 

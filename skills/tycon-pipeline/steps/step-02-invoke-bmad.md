@@ -66,6 +66,11 @@ El skill BMAD en plan mode debe producir:
 - Lista de archivos que va a tocar
 - Identificación de riesgos o ambigüedades
 
+**El plan queda escrito** en la carpeta de la corrida (`pipeline.js run-dir --story <s> --repo <r> --create`), en
+`step-02-bmad-plan.md`, antes de pasar al paso 3. Es lo que se le muestra a la persona, también cuando el plan se
+aprueba solo: con riesgo bajo, `complete-step 3 --auto-approved` no cierra sin ese archivo ni sin el plan en un
+mensaje tuyo a la persona (paso 3).
+
 ## Guardrail — patrón de referencia verificado (stories de backend)
 
 🔴 **Para stories de backend**, antes de pasar el plan a Step 3, el orquestador DEBE chequear:

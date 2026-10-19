@@ -7,6 +7,8 @@
  *   - El modo lo decide el guion por lo que hay en el repo (`_bmad/bmm/config.yaml`), nunca el modelo.
  *   - La historia la escribe el guion: valida antes, no pisa, pasa el lint y el arnés la encuentra.
  *   - El guion deja constancia de lo que escribió; esa constancia es lo que habilita la rama sola en `start`.
+ *   - La historia nace limpia para el validador: sprint, salvaguarda primero, lo que no hay que hacer y cómo verificar
+ *     con un comando real. Sin comando que decir, no escribe.
  *
  * Todo corre en repos de juguete y con un HOME de laboratorio: nunca toca el árbol ni la casa de quien la corre.
  */
@@ -66,6 +68,7 @@ const respuestas = (extra = {}) => ({
   outOfScope: ['el cálculo de impuestos'],
   filesToCreate: [],
   filesToModify: ['src/cart.js'],
+  verify: ['npm test'],
   ...extra,
 });
 
@@ -128,7 +131,7 @@ test('T4 Write_EscribeLaHistoria: frontmatter, secciones, una fila por prueba, c
     assert.ok(txt.split('\n').includes(linea), `falta la línea «${linea}»`);
   }
   assert.match(txt, /^created: \d{4}-\d{2}-\d{2}$/m);
-  for (const titulo of ['## Story', '## Acceptance Criteria', '### Tests (2 verificaciones)', '## Tasks / Subtasks', '## Fuera de alcance', '## Dev Notes']) {
+  for (const titulo of ['## Story', '## Acceptance Criteria', '### Tests (2 verificaciones)', '## Tasks / Subtasks', '## Lo que NO hay que hacer', '## Cómo verificar que funciona', '## Dev Notes']) {
     assert.ok(txt.includes(`\n${titulo}\n`), `falta la sección ${titulo}`);
   }
   assert.match(txt, /1\. \*\*Given\*\* un carrito con dos productos y envío a domicilio \*\*When\*\* abro el resumen \*\*Then\*\* el total incluye el costo del envío/);
@@ -283,5 +286,95 @@ test('T15 Portada_SinAvisoBmad: la portada ya no dice que la skill espera _bmad/
     assert.doesNotMatch(txt, viejo, `${f} todavía avisa que la skill espera _bmad/`);
     assert.doesNotMatch(txt, /story-format\.md/, `${f} todavía manda a escribir la historia a mano`);
     assert.match(txt, nuevo, `${f} no dice qué pasa sin _bmad/`);
+  }
+});
+
+// ── La historia nace limpia para el validador ──────────────────────────────────────────────────
+
+function escribir(d, extra) {
+  const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas(extra))]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  return fs.readFileSync(r.json.path, 'utf8');
+}
+
+/** Lo que va entre un título `## X` y el siguiente `## `. */
+function seccion(txt, titulo) {
+  const i = txt.indexOf(`\n${titulo}\n`);
+  assert.ok(i >= 0, `falta la sección ${titulo}`);
+  const resto = txt.slice(i + titulo.length + 2);
+  const fin = resto.search(/\n## /);
+  return fin < 0 ? resto : resto.slice(0, fin);
+}
+
+test('T20 Write_HistoriaLimpia_Sprint @story-8.62 @ac-1: sprint 1 en el frontmatter y el estado bajo el título', () => {
+  const txt = escribir(repo());
+  const fm = txt.split('\n---\n')[0];
+  assert.ok(fm.split('\n').includes('sprint: 1'), 'falta «sprint: 1» en el frontmatter');
+  assert.match(txt, /\n# Story 1\.1: [^\n]+\n\nStatus: ready-for-dev\n/);
+});
+
+test('T21 Write_SalvaguardaPrimero @story-8.62 @ac-2: la primera tarea es la salvaguarda de estado', () => {
+  const tareas = seccion(escribir(repo()), '## Tasks / Subtasks').split('\n').filter((l) => /^- \[ \]/.test(l));
+  assert.ok(tareas.length >= 3, tareas.join('\n'));
+  assert.match(tareas[0], /Task 1: Salvaguarda de estado/);
+  assert.match(tareas[0], /src\/cart\.js/, 'la salvaguarda nombra los archivos de la historia');
+});
+
+test('T22 Write_LoQueNoHayQueHacer @story-8.62 @ac-3: con y sin «qué no tocar», al menos un renglón', () => {
+  const con = seccion(escribir(repo()), '## Lo que NO hay que hacer');
+  assert.match(con, /^- No tocar el cálculo de impuestos/m);
+  assert.match(con, /^- No escribir el código antes de ver las pruebas en rojo/m);
+  const yaDiceNo = seccion(escribir(repo(), { outOfScope: ['no cambiar la moneda.'] }), '## Lo que NO hay que hacer');
+  assert.match(yaDiceNo, /^- No cambiar la moneda\.$/m);
+  assert.doesNotMatch(yaDiceNo, /No tocar no/i);
+  const sin = seccion(escribir(repo(), { outOfScope: [] }), '## Lo que NO hay que hacer');
+  assert.ok(sin.split('\n').filter((l) => l.startsWith('- ')).length >= 1, sin);
+  assert.doesNotMatch(sin, /No tocar/);
+});
+
+test('T23 Write_ComoVerificar_DeVerifyODelRepo @story-8.62 @ac-4: el comando de la respuesta, o npm test si el repo lo declara', () => {
+  const deVerify = seccion(escribir(repo(), { verify: ['npx vitest run src/cart.test.js'] }), '## Cómo verificar que funciona');
+  assert.match(deVerify, /```bash\nnpx vitest run src\/cart\.test\.js\n```/);
+  const d = repo();
+  fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ name: 'acme', scripts: { test: 'node --test' } }));
+  const delRepo = seccion(escribir(d, { verify: undefined }), '## Cómo verificar que funciona');
+  assert.match(delRepo, /```bash\nnpm test\n```/);
+  // una lista vacía es «no lo trae»: también sale del repo
+  assert.match(seccion(escribir(d, { verify: [] }), '## Cómo verificar que funciona'), /```bash\nnpm test\n```/);
+  // el comando lo corre después el recorrido: la persona lo ve antes del «sí»
+  const paso3 = fs.readFileSync(path.join(SKILL, 'first-time.md'), 'utf8').split('## 3. Mostrar')[1].split('\n## ')[0];
+  assert.match(paso3, /con qué comando se corren/);
+});
+
+test('T25 Write_QueExisteHoyYOrden @story-8.62 @ac-6: lo que está en el disco, la delta y el orden de las tareas', () => {
+  const d = repo();
+  fs.mkdirSync(path.join(d, 'src'));
+  fs.writeFileSync(path.join(d, 'src', 'cart.js'), 'module.exports = {};\n');
+  const txt = escribir(d, { filesToCreate: ['src/envio.js'] });
+  const hoy = txt.slice(txt.indexOf('\n### Que existe hoy\n'), txt.indexOf('\n### Que hay que hacer (la delta)\n'));
+  assert.match(hoy, /\*\*Archivo:\*\* `src\/cart\.js` — lo modifica la historia/);
+  assert.match(hoy, /\*\*No existe:\*\* `src\/envio\.js`/);
+  assert.match(txt, /### Que hay que hacer \(la delta\)\n\n1\. Crear `src\/envio\.js`\n2\. Modificar `src\/cart\.js`\n3\. Que se cumplan los criterios 1 a 2/);
+  assert.match(txt, /### Task Dependencies\n\nTask 1 → Task 2 → Task 3 \(secuencial\)/);
+  const sinArchivos = escribir(repo(), { filesToModify: [] });
+  assert.match(sinArchivos, /La historia no nombra archivos/);
+});
+
+test('T24 Write_SinComando_Sale2 @story-8.62 @ac-5: sin verify ni nada que deducir, no escribe', () => {
+  // el `test` que deja `npm init` sale siempre con error: no es un comando de pruebas
+  const stubNpmInit = { name: 'acme', scripts: { test: 'echo "Error: no test specified" && exit 1' } };
+  for (const pkg of [null, { name: 'acme', scripts: {} }, '{ esto no es json', stubNpmInit]) {
+    const d = repo();
+    if (pkg !== null) fs.writeFileSync(path.join(d, 'package.json'), typeof pkg === 'string' ? pkg : JSON.stringify(pkg));
+    const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas({ verify: undefined }))]);
+    assert.strictEqual(r.status, 2, r.stdout);
+    assert.match(r.stderr, /falta cómo se corren las pruebas/);
+    assert.ok(!fs.existsSync(path.join(d, 'stories')) || fs.readdirSync(path.join(d, 'stories')).length === 0, 'no escribió nada');
+  }
+  // un comando con salto de línea o con ``` saldría del bloque bash y escribiría en la historia
+  for (const malo of ['npm test\nrm -rf /', 'echo ```']) {
+    const r = correr(['write', '--repo', repo(), '--answers', escribirRespuestas(respuestas({ verify: [malo] }))]);
+    assert.strictEqual(r.status, 2, `${JSON.stringify(malo)}: ${r.stdout}`);
+    assert.match(r.stderr, /verify/);
   }
 });
