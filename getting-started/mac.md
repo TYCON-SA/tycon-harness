@@ -4,8 +4,7 @@ Copiá todo el bloque de la parte 1 y pegáselo a Claude Code: te guía paso a p
 hacer vos. No hace falta cuenta de GitHub ni permiso: el arnés se baja de un repo público. Los opcionales (parte 2) van
 después, en una sesión nueva de Claude Code.
 
-Instala el perfil completo (`full`), que cambia cómo te contesta Claude en todos tus proyectos (ver la portada, «Antes
-de instalar»). Para el perfil mínimo, escribí «quiero el perfil mínimo» arriba del bloque al pegarlo.
+Instala el perfil completo (`full`), que cambia cómo te contesta Claude en todos tus proyectos ([qué cambia](reference.es.md#qué-cambia-la-instalación-completa)). Para el perfil mínimo, escribí «quiero el perfil mínimo» arriba del bloque al pegarlo.
 
 ## Parte 1 — instalación base
 

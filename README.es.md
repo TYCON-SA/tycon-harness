@@ -30,7 +30,11 @@ máquina](#empezá-solo), o [para tu equipo](#para-equipos).
 **Sirve hoy para .NET y JavaScript/TypeScript**: el paso de pruebas corre `dotnet test`, vitest, jest y `node --test`.
 En otros lenguajes ese paso todavía no reconoce tus pruebas y no da verde solo.
 
-Abrí la terminal (en Windows, PowerShell 7) y escribí:
+Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.
+La lista completa está en [Qué necesitás](#qué-necesitás).
+
+Para que tu agente siga el ciclo, instalá el arnés en tu máquina. Abrí la terminal (en Windows, PowerShell 7) y
+escribí:
 
 ```bash
 npx @tyconsa/harness@latest
@@ -39,21 +43,26 @@ npx @tyconsa/harness@latest
 No te pregunta nada antes del plan: instala para vos, con la instalación mínima, sin conexiones opcionales y sin
 revisores para una tecnología. Te muestra en cinco renglones qué va a cambiar y pregunta una sola vez
 «¿Instalo? [s/N]»: con un «no», no queda nada. Si no tenés Claude Code ni Codex, te dice cómo instalarlos y no baja
-nada. La instalación mínima suma a tu agente el índice de guías del arnés en cada sesión; no toca git
-ni las reglas de cómo te contesta. Para sacarla,
+nada. Con el «sí» tarda menos de un minuto y termina con «arnés instalado» y la versión. La instalación mínima suma a
+tu agente el índice de guías del arnés en cada sesión; no toca git ni las reglas de cómo te contesta. Para sacarla,
 `harness.js uninstall --dry-run` muestra qué quitaría y `harness.js uninstall --yes` la quita.
+
+Si usás Codex, falta un paso: la última línea te pide abrir `codex`, correr `/hooks` y aprobarlos una vez. Codex
+aprueba sus hooks uno por uno; sin ese paso, los controles del arnés no corren en Codex y no avisan.
 
 La instalación completa suma los frenos en los repos que trabajan con el arnés y cambia cómo te contesta el agente en todos tus proyectos:
 [qué cambia](getting-started/reference.es.md#qué-cambia-la-instalación-completa).
 
 ## Tu primera historia
 
-1. Abrí tu agente de código en la carpeta de tu repo (si estaba abierto, cerralo y abrilo de nuevo: las reglas entran al abrirlo).
-2. La primera vez, el agente te pide permiso para leer la carpeta del arnés. Se acepta una vez.
-3. Pedí la historia: «creá una story con `tycon-create-story` para agregar un filtro por fecha». Leela y ajustala.
-4. Si tu repo no tiene `_bmad/`, te hace tres preguntas en llano y arma los criterios y las pruebas. Si no hay git o estás en `main`, el recorrido crea la rama solo.
-5. Pedí «implementemos la story» con la ruta del archivo: la frase va así. Te muestra el plan, espera tu visto bueno, programa y corre las pruebas y los revisores.
-6. Deja el commit preparado: nunca commitea ni sube cambios sin tu permiso.
+Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos.
+
+1. **Abrí tu agente de código en la carpeta de tu repo**, para que cargue las reglas del arnés (si estaba abierto, cerralo y abrilo de nuevo: las reglas entran al abrirlo).
+2. **Aceptá el permiso**: la primera vez, el agente te pide permiso para leer la carpeta del arnés, donde están sus guías. Se acepta una vez.
+3. **Pedí la historia**, para que el cambio quede escrito antes de programar: «creá una story con `tycon-create-story` para agregar un filtro por fecha».
+4. **Contestá lo que falte.** Si tu repo no tiene `_bmad/`, necesita tres cosas en llano: qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar; lo que ya dijiste no lo vuelve a preguntar. Te muestra la historia, la escribe con tu «sí» y te da la frase para seguir.
+5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica el plan se aprueba solo; en las demás espera tu visto bueno. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
+6. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 
 Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` dicen qué falta, sin tocar nada.
 
