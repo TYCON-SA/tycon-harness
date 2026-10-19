@@ -37,11 +37,15 @@ descripción `[cancelado]` y devolver el WI de ADO a su estado previo (los side-
 ya corrieron — mismo tratamiento que una cancelación en Step 3). Si por cualquier razón el
 fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes acá como siempre.
 
-1. Invocar el subagente `tycon-story-validator` usando la tool `Agent`:
+1. Leer las reglas de la organización (el validador no corre comandos: se las pasa el pedido):
+   ```bash
+   node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js org-rules
+   ```
+   e invocar el subagente `tycon-story-validator` usando la tool `Agent`, con `test_names` y `screen_test` en el pedido:
    ```
    Agent(
      subagent_type: "tycon-story-validator",
-     prompt: "Validar la story en {story_path} contra el repo {repo_path}. Retornar reporte estructurado con severity CRITICAL/WARNING/OK por cada item del checklist Mary+GOLD."
+     prompt: "Validar la story en {story_path} contra el repo {repo_path}. Reglas de la organización: test_names={test_names}, screen_test={screen_test}. Retornar reporte estructurado con severity CRITICAL/WARNING/OK por cada item del checklist Mary+GOLD."
    )
    ```
 

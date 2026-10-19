@@ -270,7 +270,28 @@ function proseDropNotice(detail) {
     + 'Si toca pantalla, declará sus archivos en files_to_modify.';
 }
 
+const REACT_EXT_RE = /\.(tsx|jsx)\b/i;
+
+/**
+ * El veredicto de pantalla según la regla `screen_test` de la organización: `ui` = el de siempre; `react` = una story
+ * que sólo nombra pantallas `.svelte`/`.vue` no pide E2E; `off` = ninguna lo pide. Cuando la regla saca una story que
+ * toca pantalla, `note` lo dice en una línea.
+ * Devuelve `{ ui, note }`.
+ */
+function applyScreenRule(content, repoRoot, rule = 'ui') {
+  const ui = storyTouchesUi(content, repoRoot);
+  if (!ui || rule === 'ui') return { ui, note: null };
+  if (rule === 'off') {
+    return { ui: false, note: 'ℹ️  La story toca pantalla, pero la organización no exige la prueba E2E de pantalla (screen_test: off).' };
+  }
+  const detail = uiSignalDetail(content, repoRoot);
+  if (rule === 'react' && detail.signal === 'extension' && !REACT_EXT_RE.test(fmOf(content) || '')) {
+    return { ui: false, note: 'ℹ️  La story toca pantallas .svelte o .vue, y la organización sólo exige la prueba E2E de pantalla en .tsx/.jsx (screen_test: react).' };
+  }
+  return { ui, note: null };
+}
+
 module.exports = {
-  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice,
+  storyTouchesUi, touchesUiParts, uiSignalDetail, proseDropNotice, applyScreenRule,
   UI_FM_FILES_RE, UI_FM_PATHS_RE, UI_BODY_RE,
 };

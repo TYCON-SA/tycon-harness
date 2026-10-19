@@ -40,7 +40,7 @@ Reporte estructurado en Markdown:
 
 ## 🟡 WARNING
 - Frontmatter: falta campo `{field}`
-- Tests tabla: test `{nombre}` no sigue naming PascalCase
+- Tests tabla: test `{nombre}` no sigue el estilo de nombre de la organización (regla `test_names`)
 - ...
 
 ## ✅ OK
@@ -128,7 +128,14 @@ sobre una story limpia para decir que el archivo existe).
      - Aparezcan en una sección de Notas/Changelog/History/Dev Agent Record (cita histórica, no propuesta).
    - Si quedan matches no excluidos → **[VAL-W9] WARNING**: "Story usa `P{n}` sin calificar en `{file:line}`. 'P{n}' tiene 2 lecturas firmadas en V7 (Pantalla vs Etapa). Calificar con prefijo: `Pantalla P{n}` (vista UI) o `Etapa P{n}` (pipeline operativo), o reemplazar por el nombre de la etapa (`Recepción`, `Armado`, etc.) per `prd.md` §Glosario y Convenciones de Numeración."
    - Severity WARNING (no bloquea, pausa para decisión del dev per tycon-pipeline regla C.i). Stories `done`/`review` quedan exentas — fix-forward, no rewrite-backward.
-8. **Validar tabla de Tests**: nombres en PascalCase, resultado esperado concreto (HTTP code, event, etc.) → si no cumple → **[VAL-W3] WARNING**.
+8. **Validar tabla de Tests**: resultado esperado concreto (HTTP code, event, etc.) y el nombre según la regla
+   `test_names` de la organización, que el orquestador te pasa en el pedido (sale de `pipeline.js org-rules`): `any`
+   o sin regla en el pedido → cualquier estilo de nombre; `pascal` → PascalCase (`PostPedidos_NoApiKey_Returns401`);
+   `snake` → snake_case (`test_post_pedidos_sin_clave_da_401`). Si no cumple → **[VAL-W3] WARNING**.
+   La regla `screen_test` (también en el pedido) dice si la tabla necesita una fila `E*` de prueba E2E
+   (story-format §6.1): `ui` o sin regla → la story que nombra `.tsx`, `.jsx`, `.svelte` o `.vue`; `react` → sólo
+   `.tsx`/`.jsx`; `off` → no se exige, y tu reporte lo dice en una línea OK. Si falta la fila que la regla pide →
+   **[VAL-W3] WARNING**.
 9. **Dev Agent Record**: si story está en status `done`/`review`, el record debe estar completo. Si está en `in-progress`/`ready-for-dev`, el record debe estar como placeholder (ni ausente ni completo) — si está ausente → **[VAL-W5] WARNING**.
 10. **Validar deferrals abiertos del propio story (Gate 1 del DoD)**: solo aplica si la story está en status `review` o el caller pidió validación post-implementación (e.g. Step 5 del `tycon-pipeline`). Escanear archivos modificados/creados por la implementación (cross-ref con `Dev Agent Record > File List` si está poblado, o con git diff vs el merge-base si el caller provee la lista). Buscar patterns:
     - `TODO\(Story-{N}-deferral\)` (canónico)

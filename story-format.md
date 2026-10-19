@@ -377,7 +377,9 @@ Debe ser especifica, no generica. Malos ejemplos: "Como usuario quiero hacer cos
 **Reglas:**
 
 - La primera columna (`#`) lleva el T-ID (`T1`, `T2`, … / `E1` para E2E) — es una de las claves que `pipeline.js mech-check` usa para matchear tabla ↔ código
-- Nombre del test en formato `PascalCase_Descriptivo` (ej: `PostPedidos_NoApiKey_Returns401`)
+- Nombre del test según la regla `test_names` de la organización (`pipeline.js org-rules`): `any` (de fábrica) no
+  pide estilo; `pascal` pide `PascalCase_Descriptivo` (ej: `PostPedidos_NoApiKey_Returns401`); `snake` pide
+  `snake_case` (ej: `test_post_pedidos_sin_clave_da_401`)
 - **Columna `AC` (OBLIGATORIA)**: lista de números de AC que cubre el test (ej: `1` o `1,3`). Todo AC debe aparecer en al menos una fila (regla GOLD #2, verificada mecánicamente por ACCOV-C5)
 - **Columna `Nivel` (OBLIGATORIA)**: `unit` | `integration` | `e2e`
 - El escenario describe las condiciones de entrada
@@ -388,6 +390,10 @@ Debe ser especifica, no generica. Malos ejemplos: "Como usuario quiero hacer cos
 
 - **xUnit (.NET)**: `[Trait("Story", "N.M")]` + `[Trait("AC", "1")]` en cada test (un `Trait("AC", ...)` por AC cubierto).
 - **vitest / Playwright**: tag literal `@story-N.M` y `@ac-1` en el título del `describe`/`test` (ej: `test('@story-4.5 @ac-1 rechaza payload vacío', ...)`).
+- **pytest**: `@pytest.mark.story("N.M")` + `@pytest.mark.ac(1)` en la función, o `@story-N.M @ac-1` en su docstring
+  o en el `-k` del nombre (ej: `def test_story_4_5_ac_1_rechaza_payload_vacio`).
+- **Un corredor declarado por la organización** (Go, Maven, Gradle, Karma u otro): el T-ID o la etiqueta
+  `@story-N.M @ac-1` en el nombre de la prueba, que es lo que llega al reporte JUnit.
 
 **Por qué:** permite verificación **MECÁNICA** de cobertura — `pipeline.js mech-check` cruza la tabla `### Tests` contra el código (matchea por Trait/tag/T-ID/nombre) y aplica ACCOV-C1 (test declarado que no existe) y ACCOV-C5 (AC sin test), en vez de depender de matching semántico por LLM. Además habilita correr la cobertura de un AC puntual: `dotnet test --filter "AC=1"`.
 
@@ -403,7 +409,7 @@ Debe ser especifica, no generica. Malos ejemplos: "Como usuario quiero hacer cos
 
 #### 6.1 Regla E2E obligatoria (stories con componentes frontend)
 
-Si la story crea o modifica **componentes React** (archivos `.tsx`), la tabla `### Tests` DEBE incluir al menos **1 smoke test E2E implementado** como parte de la story — no como "planificado para después".
+Si la story crea o modifica **una pantalla**, la tabla `### Tests` DEBE incluir al menos **1 smoke test E2E implementado** como parte de la story — no como "planificado para después". Qué cuenta como pantalla lo dice la regla `screen_test` de la organización (`pipeline.js org-rules`): `ui` (de fábrica) = `.tsx`, `.jsx`, `.svelte` y `.vue`; `react` = sólo `.tsx` y `.jsx`; `off` = la regla no se exige, y el cierre de la story lo dice.
 
 El test E2E debe:
 - Estar en un spec file concreto **ya creado** (ej: `tests/e2e/story-N-M-descripcion.spec.ts`)

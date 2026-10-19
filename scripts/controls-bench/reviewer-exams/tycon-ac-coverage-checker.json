@@ -1,0 +1,22 @@
+{
+  "agent": "tycon-ac-coverage-checker",
+  "file": "agents/tycon-ac-coverage-checker.md",
+  "hash": "8f9a1b6bf3cab22cf1722126d9ab535e108003a6",
+  "passed": 6,
+  "total": 6,
+  "score": 1,
+  "baseline": {
+    "passed": 6,
+    "total": 6,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-ac-coverage-checker::accov-c2-ac-broadcast-sin-implementar": true,
+    "tycon-ac-coverage-checker::accov-c1-test-declarado-sin-implementar": true,
+    "tycon-ac-coverage-checker::limpio-tests-cubiertos-sin-c1": true,
+    "tycon-ac-coverage-checker::accov-c5-ac-sin-test-dedicado": true,
+    "tycon-ac-coverage-checker::accov-c4-diferidos-abiertos-al-pasar-a-done": true,
+    "tycon-ac-coverage-checker::accov-c7-checklist-manual-al-cerrar": true
+  }
+}

@@ -1750,7 +1750,7 @@ function main() {
     } else if (v.reason === 'no-playwright-evidence') {
       lines.push(`     DODRT-C5.1: story de UI — la evidencia DoD NO menciona Playwright/E2E.`);
       lines.push(`     Evidencia encontrada: ${v.evidencePath}`);
-      lines.push(`     Una story que toca UI (.tsx) se prueba con un E2E Playwright que asserta CADA`);
+      lines.push(`     Una story que toca una pantalla (.tsx, .jsx, .svelte, .vue) se prueba con un E2E que asserta CADA`);
       lines.push(`     AC de UI — no alcanza curl al backend ni unit tests. Caso: Story 11.2 (y 11.1).`);
     } else if (v.reason === 'matrix-red') {
       lines.push(`     DODRT-C6: matriz de verificación runtime ROJA (re-computada en vivo). hash: ${v.hash}`);

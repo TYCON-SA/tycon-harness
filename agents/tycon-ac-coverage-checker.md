@@ -42,7 +42,7 @@ Estos gaps NO se detectan si ningún advisor cross-checkea el spec contra el có
 **[ACCOV-C1]** Test `T-N` declarado en la tabla `### Tests` **O** test requerido mencionado en Task descriptions sin test correspondiente en código.
 
 Heurística:
-1. **Parsear la tabla `### Tests`** → extraer cada test ID (`T1`, `T2`, ..., `T41`) + su nombre PascalCase (e.g. `CreateManualOrderWithAllRequiredFields`, `SignalrBroadcastsArticuloReceivedEvent`).
+1. **Parsear la tabla `### Tests`** → extraer cada test ID (`T1`, `T2`, ..., `T41`) + su nombre, en el estilo que sea (la regla `test_names` de la organización: cualquiera, PascalCase como `CreateManualOrderWithAllRequiredFields`, o snake_case como `test_create_manual_order`).
 2. **(2026-05-13)** **Parsear Tasks descriptions** → escanear sección `## Tasks / Subtasks` buscando patterns de tests requeridos NO listados en la tabla `### Tests`:
    - `"Test paridad PUT vs POST"` / `"Test paridad ... vs ..."`
    - `"Test [nombre]"`, `"agregar test para"`, `"escribir test que verifique"`
@@ -50,8 +50,8 @@ Heurística:
    - Pattern fuzzy: cualquier mención de "test" + verbo en task description.
    - Para cada match: extraer descripción + Task ID (e.g. `Task 7.7`) y tratarlo como un "test virtual" `T-task-N.M` para grep-check.
 3. Para cada `T-N` (tabla) **O** `T-task-N.M` (descripción Task):
-   - Grep en `**/__tests__/**.test.ts(x)` + `**/Tests/**.cs` + `**/test/**.{spec,test}.ts(x)` por el nombre PascalCase O por substring del título descriptivo / keywords de la Task description.
-   - Si NO encuentra match → CRITICAL: "T-N (`{pascal_name}`) o test requerido en Task X.Y (`{task_description}`) sin implementación. Esperado match en `it('...{pascal_name}...')` o `[Fact] public async Task {pascal_name}()`."
+   - Grep en todos los archivos de prueba del repo, sin suponer un stack: `**/*.{test,spec}.{ts,tsx,js,jsx,mjs}`, `**/Tests/**.cs`, `**/test_*.py`, `**/*_test.py`, `**/tests/**/*.py`, `**/*_test.go`, `**/src/test/**/*.{java,kt}`, `**/*.test.sh`, por el nombre O por las etiquetas (`@story-N.M @ac-1`, `[Trait("AC", ...)]`, `@pytest.mark.ac`) O por substring del título descriptivo / keywords de la Task description.
+   - Si NO encuentra match → CRITICAL: "T-N (`{nombre}`) o test requerido en Task X.Y (`{task_description}`) sin implementación. Esperado match del nombre o de su etiqueta en el archivo de prueba de su corredor."
 4. Excepción: si la story marca el test como `~~T37~~` o `[DEFERRED]` (strikethrough), saltearlo.
 
 **Por qué**: una Task del spec puede pedir un test —p. ej. *"Test paridad PUT vs POST event-discriminator: ambos paths deben retornar idéntica response shape ante mismo Bundle input"*— que NO está en la tabla `### Tests`. Mirando solo la tabla, ACCOV-C1 lo deja pasar.
@@ -77,7 +77,7 @@ Si el AC tiene keyword pero el grep no matchea → CRITICAL: "AC #N declara `{ke
 
 **[ACCOV-C3]** Test marcado como `[Fact]` o `it()` con nombre matching un AC, pero el body del test SOLO contiene `Assert.NotNull` / `expect(x).toBeDefined()` sin verificación semántica de comportamiento.
 
-Heurística: para cada test PascalCase que matchea un AC, leer el body. Si no contiene al menos UNA assertion sobre estado específico (e.g. `Equal(`, `Contains(`, `Verify(` con `Times.Once`, `toEqual(`, `toHaveBeenCalledWith(`), → WARNING: "Test `{T-N}` existe pero parece tautológico (solo NotNull/toBeDefined). Validar manualmente que verifica el comportamiento esperado por el AC."
+Heurística: para cada test que matchea un AC, leer el body. Si no contiene al menos UNA assertion sobre estado específico (e.g. `Equal(`, `Contains(`, `Verify(` con `Times.Once`, `toEqual(`, `toHaveBeenCalledWith(`), → WARNING: "Test `{T-N}` existe pero parece tautológico (solo NotNull/toBeDefined). Validar manualmente que verifica el comportamiento esperado por el AC."
 
 ### CRITICAL
 
@@ -181,10 +181,10 @@ Heurística:
 ## Workflow
 
 1. Leer story `.md`.
-2. Parsear tabla `### Tests` → lista de `(test_id, pascal_name, descripcion)` triples. Excluir strikethrough/deferred.
+2. Parsear tabla `### Tests` → lista de `(test_id, nombre, descripcion)` triples. Excluir strikethrough/deferred.
 3. Parsear `## Acceptance Criteria` → lista de ACs con número + texto + keywords detectados.
 4. Para cada test:
-   - Grep `it('.*${pascal_name}.*` o `[Fact]\s*public async Task ${pascal_name}` en `modified_files` + extensiones de test (`.test.ts(x)`, `.spec.ts(x)`, `Tests.cs`, `Test.cs`).
+   - Grep del `${nombre}` o de su etiqueta (`@story-N.M @ac-K`, `[Trait("AC", ...)]`, `@pytest.mark.ac`) en `modified_files` + los archivos de prueba de cualquier corredor (`.test.*`, `.spec.*`, `Tests.cs`, `Test.cs`, `test_*.py`, `*_test.py`, `*_test.go`, `src/test/**`).
    - Si encuentra → mark covered.
    - Si NO → emit ACCOV-C1 finding.
 5. Para cada AC con keyword crítico:

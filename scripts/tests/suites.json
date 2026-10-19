@@ -363,6 +363,12 @@
       "requiere": []
     },
     {
+      "__nota": "las reglas de la organización (stack.rules): nombres de prueba, prueba de pantalla e idioma de la app.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/org-rules.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "los totales de un reporte JUnit (pytest, Go, Maven, Gradle, Karma).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/junit-report.test.js",

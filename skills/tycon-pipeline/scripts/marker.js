@@ -1554,11 +1554,18 @@ function markerStoryIsUi(marker) {
     const p = marker && marker.storyPath;
     if (!p || !fs.existsSync(p)) return false;
     const content = fs.readFileSync(p, 'utf8');
+    // qué cuenta como pantalla lo dice la regla screen_test de la organización (ui de fábrica, react u off)
     return require(path.join(__dirname, 'lib', 'ui-signal.js'))
-      .storyTouchesUi(content, (marker && marker.repoPath) || process.cwd());
-  } catch (_e) {
+      .applyScreenRule(content, (marker && marker.repoPath) || process.cwd(), screenRule()).ui;
+  } catch (e) {
+    // no deja la exigencia de pantalla apagada en silencio
+    console.error(`⚠️  no pude decidir si la story toca pantalla (${e && e.message ? e.message : e}): se trata como sin pantalla`);
     return false;
   }
+}
+
+function screenRule() {
+  try { return require(path.join(__dirname, 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
 // Story 7.18 (AC 6) — la baja de pantalla nunca es muda. Si el detector de antes tomaba la story como de
@@ -1570,8 +1577,12 @@ function avisarBajaDePantalla(marker) {
     const p = marker && resolveStoryPath(marker.storyPath, marker);
     if (!p || !fs.existsSync(p)) return;
     const ui = require(path.join(__dirname, 'lib', 'ui-signal.js'));
-    const linea = ui.proseDropNotice(ui.uiSignalDetail(fs.readFileSync(p, 'utf8'), marker.repoPath || process.cwd()));
+    const content = fs.readFileSync(p, 'utf8');
+    const linea = ui.proseDropNotice(ui.uiSignalDetail(content, marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
+    // con screen_test: off, el cierre dice que la prueba de pantalla no se exigió
+    const regla = ui.applyScreenRule(content, marker.repoPath || process.cwd(), screenRule()).note;
+    if (regla) console.error(regla);
   } catch (_e) { /* el aviso nunca rompe el comando */ }
 }
 
@@ -1644,7 +1655,7 @@ function cmdSetCheck(name, status, flag) {
   if (name === 'dod') avisarBajaDePantalla(marker);
   // DODRT-C5.1 (2026-07-07) — DoD de una story de UI NO se puede marcar manual: exige Playwright real.
   if (name === 'dod' && flag !== '--force-manual' && status === 'green' && markerStoryIsUi(marker)) {
-    console.error("marker.js set-check dod: RECHAZADO — la story toca UI (.tsx / paths FE del repo / E2E).");
+    console.error("marker.js set-check dod: RECHAZADO — la story toca una pantalla (.tsx, .jsx, .svelte, .vue / paths FE del repo / E2E).");
     console.error("  El DoD de una story de UI NO se marca a mano: exige un E2E Playwright que asserte");
     console.error("  CADA AC de UI (regla DODRT-C5.1). Usá:");
     console.error("    marker.js run-check dod -- npx playwright test <spec> --workers=1");

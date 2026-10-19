@@ -5325,6 +5325,36 @@ function computeFindingsStatus(args) {
   };
 }
 
+const LANGUAGE_NAMES = { es: 'castellano', en: 'inglés', pt: 'portugués', fr: 'francés', it: 'italiano', de: 'alemán' };
+
+/**
+ * El pedido para el sub-agente «tester no técnico» del paso «Probar en vivo». `scope` = `guide` (los pasos de la guía
+ * de QA) o `ui` (los textos y capturas de la pantalla). La línea del idioma sale de la regla `ui_language` de la
+ * organización: con ella, el texto en otro idioma es una marca; sin ella, el idioma no se juzga. Si la configuración
+ * no se pudo leer, el pedido lo dice en vez de tomarla como «sin declarar». Devuelve `{ text, problems }`.
+ */
+function readabilityBrief({ scope = 'guide', opts } = {}) {
+  const { rules, problems } = require('./lib/stack-config.js').orgRules(opts);
+  const lang = rules.ui_language.value;
+  const name = lang ? (LANGUAGE_NAMES[lang.split('-')[0]] || lang) : null;
+  const unread = !lang && problems.length > 0;
+  const what = scope === 'ui'
+    ? 'Leé los textos visibles de cada pantalla y sus capturas. Juzgá si se entienden y si anticipan el resultado; no la estética.'
+    : 'Leé cada paso de la guía de QA. Marcá lo que te dejaría preguntándole a un dev: jerga, ambigüedad («buscá una orden» sin decir cómo), conocimiento que el paso da por sabido.';
+  const language = name
+    ? `El texto tiene que estar en ${name}: marcá todo lo que esté en otro idioma.`
+    : unread
+      ? 'La regla de idioma de la organización no se pudo leer: no juzgues el idioma del texto, y avisá que la regla falta.'
+      : 'La organización no declaró el idioma de la app: no juzgues el idioma del texto.';
+  const text = [
+    'Sos un tester no técnico: trabajás en QA de laboratorio y no sabés programar.',
+    what,
+    language,
+    'Cada marca, en su línea: «<texto citado>» — qué confunde.',
+  ].join('\n');
+  return { text, problems };
+}
+
 // ── CLI ───────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
   // AUTONOMY-DEFAULT-ON (2026-06-23, decisión DevA): el modo autónomo Nivel 1 viene PRENDIDO por
@@ -5976,6 +6006,22 @@ function main() {
         `${t.adhoc_pre_step5} de ésos ANTES de los advisors · referencia: ~60-100K tokens por spawn`
       : 'sin spawns registrados';
     process.stdout.write(JSON.stringify(out, null, 2) + '\n');
+    process.exit(0);
+  }
+  if (cmd === 'org-rules') {
+    // Las reglas de la organización (stack.rules): cada una con su valor y de dónde salió, y los problemas. Nunca tira:
+    // sin configuración salen las de fábrica.
+    const r = require('./lib/stack-config.js').orgRules();
+    process.stdout.write(JSON.stringify(r, null, 2) + '\n');
+    process.exit(0);
+  }
+  if (cmd === 'readability-brief') {
+    // El pedido para el lector de legibilidad del paso «Probar en vivo»: la guía del tester (por defecto) o los textos
+    // de la pantalla (`--scope ui`). El idioma sale de la regla ui_language de la organización; sin ella, no se juzga.
+    if (args.scope !== undefined && args.scope !== 'ui') { process.stderr.write(`--scope sólo acepta «ui» (vino «${args.scope}»)\n`); process.exit(2); }
+    const brief = readabilityBrief({ scope: args.scope === 'ui' ? 'ui' : 'guide' });
+    for (const p of brief.problems) process.stderr.write(`⚠️  ${p}\n`);
+    process.stdout.write(brief.text + '\n');
     process.exit(0);
   }
   if (cmd === 'evidence-key') {
