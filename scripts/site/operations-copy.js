@@ -10,10 +10,14 @@
  * Dos órdenes:
  *   subir   (el trabajo que copia) arma la foto con las rutas de `RUTAS` del commit de `main`, sube primero
  *           `fotos/<commit>.tar.gz` y recién al final el índice `actual.json` (commit, hora, huella sha256 de la foto y la
- *           versión de git de cada archivo). Si el índice ya nombra ese commit, no sube nada. Borra las fotos de más de 7
- *           días, salvo la que nombra el índice. Si falla la foto, el índice no se toca y el sitio sigue con la anterior.
- *   bajar   (el sitio) baja el índice; si el commit cambió, baja la foto, comprueba la huella, la valida entera (sin
- *           enlaces, sin rutas absolutas ni `..`) y recién entonces la abre en una carpeta nueva. Una foto que no pasa
+ *           versión de git de cada archivo). Si el índice ya nombra ese commit, con la misma lista de archivos y su foto
+ *           presente, no sube nada; si la lista cambió (el arnés suma un archivo a la foto), re-sube con el mismo commit
+ *           en `fotos/<commit>-<huella>.tar.gz`, sin pisar la que nombra el índice; el índice dice cuál en `foto`.
+ *           Borra las fotos de más de 7 días, salvo la que nombra el índice. Si falla la foto, el índice no se toca y el
+ *           sitio sigue con la anterior.
+ *   bajar   (el sitio) baja el índice; si el commit o la huella cambiaron, baja la foto que nombra `foto`, comprueba
+ *           la huella, la valida entera (sin enlaces, sin rutas absolutas ni `..`) y recién entonces la abre en una
+ *           carpeta nueva. Una foto que no pasa
  *           no se abre: el sitio sigue con la carpeta anterior. Una ruta sana que el sitio no lee se ignora (no se
  *           escribe y queda en el registro): un archivo nuevo en la copia no deja al sitio sin datos frescos.
  *
@@ -51,6 +55,13 @@ const RUTAS = Object.freeze([
 ]);
 const INDICE = 'actual.json';
 const CARPETA_FOTOS = 'fotos/';
+// la foto que nombra un índice: `foto` (una re-subida con el mismo commit va con otro nombre y no pisa la anterior) o, sin
+// él, la de siempre. `null` si `foto` no tiene la forma de una foto: ese índice no se usa.
+const FORMA_FOTO = /^fotos\/[0-9a-f]{7,64}(-[0-9a-f]{16})?\.tar\.gz$/;
+function fotoDe(indice) {
+  if (!indice || indice.foto === undefined) return `${CARPETA_FOTOS}${indice && indice.commit}.tar.gz`;
+  return typeof indice.foto === 'string' && FORMA_FOTO.test(indice.foto) ? indice.foto : null;
+}
 const VIDA_FOTOS_MS = 7 * 86400000;
 
 const enRutas = (rel) => RUTAS.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
@@ -246,14 +257,14 @@ async function borrarViejas({ almacen, ahora = Date.now, log = () => {} }) {
   const idx = await almacen.get(INDICE);
   let actual = null;
   if (idx.status === 200) {
-    try { actual = JSON.parse(idx.cuerpo).commit; } catch { log('el índice de la copia no se lee: no se borra ninguna foto vieja (sin saber cuál nombra, podría ser ésa)'); return { borradas: [] }; }
+    try { actual = fotoDe(JSON.parse(idx.cuerpo)); } catch { log('el índice de la copia no se lee: no se borra ninguna foto vieja (sin saber cuál nombra, podría ser ésa)'); return { borradas: [] }; }
   }
   const l = await almacen.list(CARPETA_FOTOS);
   if (l.error || l.status !== 200) { log(`no se pudo listar las fotos viejas (${codigoDe(l)}): quedan para la próxima`); return { borradas: [] }; }
   if (l.truncado) log('el listado de fotos se cortó antes del final: las que no se listaron quedan para la próxima');
   const borradas = [];
   for (const b of l.blobs) {
-    if (actual && b.name === `${CARPETA_FOTOS}${actual}.tar.gz`) continue;
+    if (actual && b.name === actual) continue;
     if (!Number.isFinite(b.modificado)) { log(`${b.name}: sin fecha legible, no se borra`); continue; }
     if (ahora() - b.modificado <= VIDA_FOTOS_MS) continue;
     const r = await almacen.del(b.name);
@@ -261,6 +272,13 @@ async function borrarViejas({ almacen, ahora = Date.now, log = () => {} }) {
     else borradas.push(b.name);
   }
   return { borradas };
+}
+
+/** ¿Las dos listas `{ rel: versión }` nombran los mismos archivos con las mismas versiones? */
+function mismaLista(a, b) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && a[k] === b[k]);
 }
 
 /** `{ ok, subido, motivo, commit, bytes }`. Nunca deja un índice que nombre una foto que no se subió. */
@@ -273,16 +291,21 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
   let foto;
   try { foto = armarFoto(j.archivos); } catch (e) { return { ok: false, motivo: e.message }; }
   const huella = crypto.createHash('sha256').update(foto).digest('hex');
-  const indice = { version: 1, commit: j.commit, hora: new Date(ahora()).toISOString(), huella, bytes: foto.length, archivos: Object.fromEntries(j.archivos.map((a) => [a.rel, a.oid])) };
+  const indice = { version: 1, commit: j.commit, hora: new Date(ahora()).toISOString(), huella, bytes: foto.length, archivos: Object.fromEntries(j.archivos.map((a) => [a.rel, a.oid])), foto: `${CARPETA_FOTOS}${j.commit}.tar.gz` };
   if (dryRun) return { ok: true, subido: false, motivo: `prueba: ${j.archivos.length} archivo(s), ${foto.length} bytes, commit ${j.commit.slice(0, 12)}`, commit: j.commit, bytes: foto.length, indice };
   const previo = await almacen.get(INDICE);
   if (previo.error || (previo.status !== 200 && previo.status !== 404)) return { ok: false, motivo: `no se pudo leer el índice de la copia (${codigoDe(previo)}${previo.status ? ` ${previo.status}` : ''})` };
   if (previo.status === 200) {
     let p = null; try { p = JSON.parse(previo.cuerpo); } catch { /* ilegible: se reemplaza */ }
-    if (p && p.commit === j.commit) {
+    if (p && p.commit === j.commit && !mismaLista(p.archivos, indice.archivos)) {
+      // con otro nombre: la foto que nombra el índice viejo queda entera por si el índice nuevo no llega a escribirse
+      indice.foto = `${CARPETA_FOTOS}${j.commit}-${huella.slice(0, 16)}.tar.gz`;
+      log(`el índice nombra ${j.commit.slice(0, 12)} con otra lista de archivos: se vuelve a subir con el mismo commit`);
+    } else if (p && p.commit === j.commit && fotoDe(p)) {
       // al día sólo si la foto que nombra el índice está: si se borró, se vuelve a subir (y el índice con ella)
-      const l = await almacen.list(`${CARPETA_FOTOS}${j.commit}.tar.gz`);
-      const esta = !l.error && l.status === 200 && l.blobs.some((b) => b.name === `${CARPETA_FOTOS}${j.commit}.tar.gz`);
+      const nombre = fotoDe(p);
+      const l = await almacen.list(nombre);
+      const esta = !l.error && l.status === 200 && l.blobs.some((b) => b.name === nombre);
       if (l.error || l.status !== 200) return { ok: false, motivo: `no se pudo comprobar que la foto de ${j.commit.slice(0, 12)} siga en el contenedor (${codigoDe(l)})` };
       if (esta) {
         const b = await borrarViejas({ almacen, ahora, log });
@@ -292,7 +315,7 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
       log(`el índice nombra ${j.commit.slice(0, 12)} y su foto no está: se vuelve a subir`);
     }
   }
-  const f = await almacen.put(`${CARPETA_FOTOS}${j.commit}.tar.gz`, foto, 'application/gzip');
+  const f = await almacen.put(indice.foto, foto, 'application/gzip');
   if (f.error || (f.status !== 201 && f.status !== 200)) return { ok: false, motivo: `no se pudo subir la foto (${f.error ? f.error.code || f.error.message : f.status}): el índice queda como estaba` };
   const i = await almacen.put(INDICE, Buffer.from(`${JSON.stringify(indice)}\n`), 'application/json');
   if (i.error || (i.status !== 201 && i.status !== 200)) return { ok: false, motivo: `la foto se subió y el índice no (${i.error ? i.error.code || i.error.message : i.status}): el sitio sigue con la anterior` };
@@ -303,8 +326,8 @@ async function subir({ repo, almacen, ahora = Date.now, log = () => {}, dryRun =
 
 // ── bajar ──────────────────────────────────────────────────────────────────────────────────────────────────────
 /**
- * `{ ok: true, cambio, carpeta, indice }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, carpeta }` de la bajada
- * anterior. Con el mismo commit no baja la foto. Con uno nuevo, la abre en `<dir>/copia-<commit>-<azar>` y recién entonces
+ * `{ ok: true, cambio, carpeta, indice }` o `{ ok: false, codigo, motivo }`. `previo`: `{ commit, huella, carpeta }` de la
+ * bajada anterior. Con el mismo commit y la misma huella no baja la foto. Con uno nuevo, la abre en `<dir>/copia-<commit>-<azar>` y recién entonces
  * borra la carpeta anterior: quien lee nunca ve una mezcla.
  */
 async function bajar({ almacen, dir, previo = null, log = () => {} }) {
@@ -320,8 +343,11 @@ async function bajar({ almacen, dir, previo = null, log = () => {} }) {
   if (!arch || typeof arch !== 'object' || Array.isArray(arch) || !Object.keys(arch).length || !Object.entries(arch).every(([k, v]) => rutaSegura(k) && typeof v === 'string' && /^[0-9a-f]{40,64}$/.test(v))) {
     return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia no trae la versión de cada archivo' };
   }
-  if (previo && previo.commit === indice.commit && previo.carpeta && fs.existsSync(previo.carpeta)) return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
-  const f = await almacen.get(`${CARPETA_FOTOS}${indice.commit}.tar.gz`);
+  const nombre = fotoDe(indice);
+  if (!nombre) return { ok: false, codigo: 'ilegible', motivo: 'el índice de la copia nombra una foto que no tiene la forma de una foto' };
+  // sin cambio sólo con el mismo commit Y la misma huella: una foto re-subida con el mismo commit trae otra
+  if (previo && previo.commit === indice.commit && previo.huella === indice.huella && previo.carpeta && fs.existsSync(previo.carpeta)) return { ok: true, cambio: false, carpeta: previo.carpeta, indice };
+  const f = await almacen.get(nombre);
   if (f.error || f.status !== 200) return { ok: false, codigo: f.status === 404 ? 'ilegible' : codigoDe(f), motivo: `la foto que nombra el índice no se pudo bajar (${f.error ? f.error.code || f.error.message : f.status})` };
   if (crypto.createHash('sha256').update(f.cuerpo).digest('hex') !== indice.huella) return { ok: false, codigo: 'ilegible', motivo: 'la foto no tiene la huella que dice el índice: no se abre' };
   const foto = leerFoto(f.cuerpo);

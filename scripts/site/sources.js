@@ -579,7 +579,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return { ok: true };
   }
 
-  // la copia de operaciones: el índice en cada refresco; la foto sólo si cambió el commit
+  // la copia de operaciones: el índice en cada refresco; la foto sólo si cambió el commit o su huella
   let almacen = almacenCopia;
   async function actualizarCopia() {
     if (!almacen) {
@@ -588,7 +588,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       try { almacen = nube.almacenDeCopia({ ...cfg.operationsCopy, urlBase: urlCopia }); }
       catch (e) { return { estado: 'sin_configurar', motivo: `la copia de operaciones no está configurada (${e.message})` }; }
     }
-    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, carpeta: st.copia.carpeta } : null, log });
+    const r = await COPIA.bajar({ almacen, dir: dirCopias, previo: st.copia ? { commit: st.copia.indice.commit, huella: st.copia.indice.huella, carpeta: st.copia.carpeta } : null, log });
     if (!r.ok) return { estado: r.codigo, motivo: `copia de operaciones: ${r.motivo}` };
     st.copia = { carpeta: r.carpeta, indice: r.indice };
     const hora = Date.parse(r.indice.hora);
