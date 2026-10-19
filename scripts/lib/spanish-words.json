@@ -1527,6 +1527,10 @@
       "reason": "inglés técnico: maqueta de pantalla; nombra el guion de la story 7.30 (skills/tycon-pipeline/scripts/mockup.js), sus opciones --mockup-approved y --mockup-sha y el subcomando approve-mockup; decisión del dueño 2026-10-17"
     },
     {
+      "words": ["usd"],
+      "reason": "sigla de la moneda; la usa la opción --max-budget-usd de Claude Code, que no es nuestra (la revisión de la semana, story 1.27, corta con ella su tope en dólares); aprobada por el dueño, 2026-10-19"
+    },
+    {
       "path": "scripts/publishing/names-ceiling.json",
       "reason": "el techo de la story 8.10 conserva su clave «nucleo» a propósito: el freno de nombres reales frena perder una clave (story 8.9, AC 29); quien lo lee traduce core → nucleo"
     },
