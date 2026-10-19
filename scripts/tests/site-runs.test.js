@@ -263,14 +263,14 @@ test('2.45-T4 FiltroSaleEnElIdioma @story-2.45 @ac-4', async () => {
     for (const t of ['from', 'to', 'product', 'machine', 'today', 'this week', 'this month', 'clear']) assert.match(visibleEn, new RegExp(`(^| )${t}( |$)`), `en inglés: «${t}»`);
     assert.doesNotMatch(visibleEn, /desde|hasta|máquina|esta semana|este mes|limpiar|\bhoy\b/, 'ni una etiqueta en castellano');
     assert.match(en, /id="f-hoy"[\s\S]*id="f-semana"[\s\S]*id="f-mes"/, 'los tres atajos');
-    assert.match(en, /data-molde="\{n\} of \{t\} runs in view"/, 'el molde de la cuenta, en inglés');
+    assert.match(en, /data-molde="\{n\} of \{t\} runs shown"/, 'el molde de la cuenta, en inglés');
     const es = filtro((await h.pedir('/corridas', { cookie: `${ses}; sitio-idioma=es` })).texto);
     for (const t of ['desde', 'hasta', 'producto', 'máquina', 'hoy', 'esta semana', 'este mes', 'limpiar']) assert.match(sinTags(es), new RegExp(`(^| )${t}( |$)`), `en castellano: «${t}»`);
     assert.match(es, /data-molde="\{n\} de \{t\} corridas a la vista"/);
     // el cliente dibuja la cuenta con el molde del idioma
     const c = await clienteDelSitio(h, `${ses}; sitio-idioma=en`);
     c.w.__aplicar();
-    assert.match(c.nodos.cuenta.textContent, /^\d+ of \d+ runs in view$/, c.nodos.cuenta.textContent);
+    assert.match(c.nodos.cuenta.textContent, /^\d+ of \d+ runs shown$/, c.nodos.cuenta.textContent);
     // y la caché por idioma no mezcla: pedir en castellano después de inglés devuelve castellano
     assert.match(filtro((await h.pedir('/corridas', { cookie: ses })).texto), /limpiar/);
   });

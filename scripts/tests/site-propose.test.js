@@ -227,7 +227,7 @@ test('T6 Resumen_EnIngles @story-2.46 @ac-2 @ac-5', async () => {
     const lead = await entrar(LEAD); const tok = await token(lead);
     const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'sitio', borrador: { site: { access: ACCESO_MAS } } }, EN)).json;
     assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
-    assert.deepStrictEqual(r.resumen, [`You add x@acme.example as dev in ${TX.t('en', 'pantalla.quienEntraAlSitio')}`]);
+    assert.deepStrictEqual(r.resumen, [`Adding x@acme.example as dev to ${TX.t('en', 'pantalla.quienEntraAlSitio')}`]);
     for (const frase of r.resumen) assert.doesNotMatch(frase, /Sumás|Sacás|Cambiás|Quién|entra al sitio| como /, `sin castellano: ${frase}`);
   });
   const ops2 = clon({ 'operations.json': opsBase() });
@@ -236,10 +236,10 @@ test('T6 Resumen_EnIngles @story-2.46 @ac-2 @ac-5', async () => {
     const lead = await entrar(LEAD); const tok = await token(lead);
     const r = (await escribir('/api/config/revisar', lead, tok, { seccion: 'respuesta', borrador: { response: { language: 'es', style: 'executive', max_chars: 1500 } } }, EN)).json;
     const etiqueta = TX.t('en', 'pantalla.largoMaximoDeProsaEn').split(' (')[0];
-    assert.deepStrictEqual(r.resumen, [`You change «${etiqueta}» from 1300 to 1500`]);
+    assert.deepStrictEqual(r.resumen, [`Changing "${etiqueta}" from 1300 to 1500`]);
     assert.doesNotMatch(r.resumen[0], /Cambiás|Largo|de prosa/);
     const t = (await escribir('/api/config/revisar', lead, tok, { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example', by_project: { P: 'p@acme.example', Q: 'q@acme.example' } } } }, EN)).json;
-    assert.deepStrictEqual(t.resumen, [`You change 3 values in ${TX.t('en', 'pantalla.aQuienLeLleganLos')}`]);
+    assert.deepStrictEqual(t.resumen, [`Changing 3 values in ${TX.t('en', 'pantalla.aQuienLeLleganLos')}`]);
   });
 });
 
@@ -579,7 +579,7 @@ test('T14 Textos_RefreshMinutes_YGuia @story-2.46 @ac-11 @ac-12', () => {
     assert.match(TX.t(idioma, 'pantalla.queReleeElSitio'), rx, idioma);
   }
   assert.strictEqual(TX.t('es', 'pantalla.siNoLoDeclarasQuinceMinutos'), `Si no lo declarás: ${defecto} minutos`);
-  assert.match(TX.t('en', 'pantalla.siNoLoDeclarasQuinceMinutos'), new RegExp(`If you do not declare it: ${defecto} minutes`));
+  assert.match(TX.t('en', 'pantalla.siNoLoDeclarasQuinceMinutos'), new RegExp(`If not set: ${defecto} minutes`));
   // la pantalla los muestra en la sección «Quién entra al sitio»
   const pantalla = ORG.pantalla('es');
   assert.match(pantalla, /Cada cuánto el sitio relee sus datos/);

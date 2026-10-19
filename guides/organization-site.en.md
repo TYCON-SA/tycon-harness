@@ -11,7 +11,7 @@ Every step in this guide comes from the code or from a real run. What has not be
 same line.
 
 The screenshots come from a lab site with a made-up organization, **Acme**: its people, machines and products do not
-exist. The site is in Spanish, so each screenshot is described in English in the text around it. Your site looks the
+exist. The screenshots show the site in Spanish, so each one is described in English in the text around it. Your site looks the
 same, with your names.
 
 ## What it is and what it is for
@@ -227,7 +227,7 @@ goes through it section by section.
 At the top there are four cards: machines to confirm, sections with something to fix, sections up to date, and machines
 with an old harness version or "no news" (*sin noticias*: they have not sent runs for a while, so their version is not
 known). Below, five tabs: **People** (*Personas*), **Repos and products** (*Repos y productos*),
-**Notices and the night** (*Avisos y la noche*), **How Claude works** (*Cómo trabaja Claude*) and **Installation and
+**Notices and night runs** (*Avisos y la noche*), **How Claude works** (*Cómo trabaja Claude*) and **Installation and
 updates** (*Instalación y actualización*). A number next to a tab says how many things are waiting there.
 
 ![Configuration: the four cards at the top and the People tab](sitio-de-la-organizacion/capturas/configuracion-personas.png)
@@ -245,7 +245,7 @@ written" (*Revisado: está bien escrito*) or what is wrong. Then **Propose the c
 at the top, a plain-language summary of what changes ("You add x@acme.example as dev in Who gets into the site",
 "You change "Character limit" from 1300 to 1500") and, below it, only the lines that change, with three lines of
 context: what goes out is red with a `−`, what comes in is green with a `+` (the sign is there so it reads without
-relying on color), and the unchanged stretches are folded into "… N unchanged lines". **See the whole files** (*Ver los
+relying on color), and the unchanged stretches are folded into "… N unchanged lines". **See the full files** (*Ver los
 archivos enteros*) opens both files in full. The file is written in a format with braces and quotes; you do not need to
 understand it: check that the only thing that changes is what you changed. **Confirm and propose** (*Confirmar y
 proponer*) opens a change request (a pull request) in that section's repo, and the section shows the link to the request.
@@ -347,15 +347,15 @@ The sections, in the order of the screen:
 - **Azure DevOps**: the team's Azure DevOps organization. It reaches each machine. It lives in `team-profile.json`, in
   the profile repo. Whoever maintains the harness reviews it.
 
-Below are **Products** (*Productos*: the ones the night checks) and **What the organization brings** (*Lo que trae la
+Below are **Products** (*Productos*: the ones the night checks) and **What the organization provides** (*Lo que trae la
 organización*: the skills, reviewers, onboarding guides and packs of the profile repo, each with its link). They are view
 only: they are changed with a request in their repo.
 
 ![Repos and products](sitio-de-la-organizacion/capturas/configuracion-repos.png)
 
-### Notices and the night (Avisos y la noche)
+### Notices and night runs (Avisos y la noche)
 
-- **Where each morning's summary arrives** (*Dónde llega el resumen de cada mañana*): the notice channel (Telegram,
+- **Where the morning summary is sent** (*Dónde llega el resumen de cada mañana*): the notice channel (Telegram,
   Slack or Teams). It lives in `operations.json`, in the operations repo. A maintainer reviews it.
 - **Waiting notice** (*Aviso de espera*): how many minutes a run waits for a person before giving notice. It reaches
   every machine. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
@@ -367,7 +367,7 @@ only: they are changed with a request in their repo.
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
 
-![Notices and the night](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
+![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
 ### How Claude works (Cómo trabaja Claude)
 
@@ -406,7 +406,7 @@ What the person sees in the section, and what the agent does when asked for a to
 - **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes
   it into their coding agent, opened in the project.
 - **What the agent does** with that sentence:
-  1. Looks at the project: which tool runs the tests, the **file that detects it** (the one in the project folder, for
+  1. Looks at the project: which tool runs the tests, the **detection file** (the one in the project folder, for
      example `Cargo.toml`), the command, which report it leaves (JUnit or the Vitest/Jest JSON) and where, and whether it
      measures coverage and in what format (Cobertura, lcov, istanbul, JaCoCo or the Go profile). `{results}` is the
      run's folder.

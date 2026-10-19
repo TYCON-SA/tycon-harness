@@ -288,7 +288,11 @@ function describe(p) {
 // `readEffects` devuelve `ok: false` con el archivo y el motivo, y quien la usa lo dice.
 const EFFECTS_FILE = path.join('scripts', 'setup', 'install-effects.json');
 const EFFECT_KINDS = [...KINDS, 'task'];
-const EFFECT_KEYS = ['id', 'id_pattern', 'kind', 'title', 'group', 'default', 'site_section', 'site_pending', 'does', 'blocks', 'when', 'switch', 'network', 'stores', 'windows', 'front_page', 'profiles', 'source'];
+const EFFECT_KEYS = ['id', 'id_pattern', 'kind', 'title', 'group', 'default', 'site_section', 'site_pending', 'does', 'blocks', 'when', 'switch', 'network', 'stores', 'windows', 'front_page', 'profiles', 'source', 'en'];
+// el inglés de cada pieza, para el sitio en inglés: la terminal sigue leyendo `title`, `does` y `switch`
+const EFFECT_EN_KEYS = ['title', 'does', 'switch'];
+// la variable de un interruptor: lo que va antes del primer espacio («TYCON_SESSION_GUARD=1 lo prende»)
+const switchVariable = (s) => String(s).trim().split(' ')[0];
 // cómo la muestra el sitio: un título corto, el grupo donde va, si viene prendida o apagada, la sección de Configuración
 // donde la organización la cambia (`site_section`) o la pestaña donde debería poder cambiarla y todavía no (`site_pending`)
 const EFFECT_GROUPS = ['safety', 'assistant', 'notices', 'memory', 'time', 'install', 'pipeline', 'codex'];
@@ -340,6 +344,23 @@ function effectProblems(doc) {
     if (e.kind === 'hook' && hasId && !hookId(e.id).event) out.push(`${name}: el id de un hook es «<EVENTO>:<ruta de su spec>»`);
     if (e.kind === 'task' && !(isObject(e.source) && typeof e.source.file === 'string' && e.source.file && typeof e.source.pattern === 'string' && e.source.pattern)) {
       out.push(`${name}: una tarea lleva «source» con «file» y «pattern» (dónde está lo que corre)`);
+    }
+    // `en`, si está: el título y el detalle en inglés, y la frase del interruptor sólo cuando el interruptor trae una.
+    // Que falte no es un problema acá (esta validación corre también en el instalador): lo frena la prueba de la lista,
+    // scripts/tests/install-effects.test.js
+    if ('en' in e) {
+      if (!isObject(e.en)) out.push(`${name}: «en» es un objeto con «title» y «does» en inglés`);
+      else {
+        for (const k of Object.keys(e.en)) if (!EFFECT_EN_KEYS.includes(k)) out.push(`${name}: «en.${k}» no es un campo de en (${EFFECT_EN_KEYS.join(', ')})`);
+        if (typeof e.en.title !== 'string' || !e.en.title.trim() || e.en.title.length > TITLE_MAX) out.push(`${name}: falta «en.title» (el título en inglés, hasta ${TITLE_MAX} caracteres)`);
+        if (typeof e.en.does !== 'string' || !e.en.does.trim()) out.push(`${name}: falta «en.does» (el detalle en inglés)`);
+        const conFrase = typeof e.switch === 'string' && e.switch.trim() !== switchVariable(e.switch);
+        if ('switch' in e.en && !conFrase) out.push(`${name}: «en.switch» va sólo cuando «switch» trae una frase además de la variable`);
+        if (conFrase && !('switch' in e.en)) out.push(`${name}: falta «en.switch» (la frase del interruptor en inglés)`);
+        if ('switch' in e.en && conFrase && !(typeof e.en.switch === 'string' && switchVariable(e.en.switch) === switchVariable(e.switch) && e.en.switch.trim() !== switchVariable(e.switch))) {
+          out.push(`${name}: «en.switch» empieza con la misma variable que «switch» (${switchVariable(e.switch)}) y sigue con la frase`);
+        }
+      }
     }
     if (isObject(e.source) && 'ps1_pattern' in e.source && !(typeof e.source.ps1_pattern === 'string' && e.source.ps1_pattern)) {
       out.push(`${name}: «source.ps1_pattern», si está, es el texto que la nombra en el instalador de Windows`);

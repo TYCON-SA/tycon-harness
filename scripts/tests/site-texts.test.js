@@ -4,6 +4,7 @@
  *
  * T7 Textos_CadaClaveEnLosDosIdiomas          T9  Textos_ConfiguracionEnLosDosIdiomas
  * T8 Textos_NingunaPaginaEnInglesTraeCastellano T10 Textos_LaAyudaSigueElIdioma
+ * 2.57: Textos_ElCatalogoEnElIdiomaDeLaPagina · Textos_TodasLasSeccionesDeConfiguracionEnIngles
  *
  * T8 arma cada página del sitio en inglés con datos de laboratorio (Acme) y busca texto visible en castellano: un texto
  * escrito en una vista, fuera de la tabla, aparece ahí. Los datos de afuera (nombres de repos, productos, máquinas) no se
@@ -34,39 +35,8 @@ const temporales = [];
 const tmp = (p) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), p)); temporales.push(d); return d; };
 test.after(() => { for (const d of temporales) fs.rmSync(d, { recursive: true, force: true }); });
 
-// ── el detector de castellano ─────────────────────────────────────────────────────────────────────────────────────
-// Palabras comunes del castellano que no son palabras del inglés. Un texto visible con una de éstas, o con una letra
-// acentuada o con ñ, ¿ o ¡, está en castellano.
-const PALABRAS = new Set(('el la los las del que con para una uno unos unas por sin como cómo qué cuál cuando cuándo dónde ' +
-  'está están esta este estos estas ese esa eso hay son ser fue tiene tienen todavía también desde hasta cada sus tus ' +
-  'nada ningún ninguno ninguna más menos días hoy ayer ver entrar salir página sitio fuente fuentes medido medida falta ' +
-  'pedido pedidos corridas corrida tuyas tuyos lista cuenta cambio cambios guardar proponer revisar descargar quién ' +
-  'otra otro mantiene arnés prueba pruebas producción configuración sección secciones ayuda proyectos inicio tema claro oscuro ' +
-  'versión nueva nuevo nuevos abiertos abiertas cerrados vencen vence decidir asignado asignada bloqueadas paradas curso ' +
-  'aprobación vigilado vulnerabilidades vivas paridad orden filtrar compartido licencia créditos componentes terceros ' +
-  'todavía cargando frenado').split(/\s+/).filter(Boolean));
-const ACENTO = /[áéíóúñ¿¡]/i;
-// lo que se permite en cualquier idioma: el nombre del idioma en el selector
-const PERMITIDOS = new Set(['Español']);
-
-/** Los textos visibles de una página: lo que queda entre etiquetas, y los atributos que se leen (aria-label, title, alt, placeholder). */
-function textosVisibles(html) {
-  const sinCodigo = html.replace(/<script\b[\s\S]*?<\/script>/gi, '').replace(/<style\b[\s\S]*?<\/style>/gi, '');
-  const out = [];
-  for (const m of sinCodigo.matchAll(/\b(?:aria-label|title|alt|placeholder)="([^"]*)"/g)) out.push(m[1]);
-  for (const t of sinCodigo.replace(/<[^>]*>/g, '\n').split('\n')) out.push(t);
-  return out.map((t) => t.replace(/&[a-z#0-9]+;/gi, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean);
-}
-/** Los textos en castellano de una lista, sin los `datos` de afuera (se sacan por valor). */
-function enCastellano(textos, datos = []) {
-  return textos.filter((t) => {
-    let s = ` ${t} `;
-    for (const d of datos) s = s.split(d).join(' ');
-    for (const p of PERMITIDOS) s = s.split(p).join(' ');
-    if (ACENTO.test(s)) return true;
-    return s.toLowerCase().split(/[^a-záéíóúñü]+/).some((w) => PALABRAS.has(w));
-  });
-}
+// el detector de castellano: uno solo, el mismo de install-effects.test.js y de la prueba en vivo del sitio
+const { textosVisibles, enCastellano } = require('./lib/spanish-text.js');
 
 // ── el laboratorio Acme: datos con nombres que no son castellano ───────────────────────────────────────────────────
 const leida = (extra) => ({ estado: 'medido', codigo: null, motivo: null, fecha: HOY, ...extra });
@@ -164,7 +134,8 @@ test('T8 Textos_NingunaPaginaEnInglesTraeCastellano @story-2.42 @ac-4 @ac-5 @ac-
       const esperado = ruta === '/no-existe' ? 404 : (ses === ana && ruta === '/arnes' ? 403 : 200);
       assert.strictEqual(r.status, esperado, `${ruta}: ${r.status}`);
       // la ayuda trae la guía en inglés: su cuerpo es de la guía, no de la tabla
-      // y el cuerpo de Corridas lo arma la vista de corridas de la noche: queda en castellano (decisión 11, story aparte)
+      // y el cuerpo de Corridas lo arma la vista de corridas de la noche, compartida con la página de la noche: todavía
+      // sale sólo en castellano
       let html = ruta === '/ayuda' ? r.texto.replace(/<article[\s\S]*<\/article>/, '') : r.texto;
       if (ruta === '/corridas') html = html.replace(/<div class="corridas">[\s\S]*(?=<footer class="pie">)/, '');
       for (const t of enCastellano(textosVisibles(html), DATOS)) hallazgos.push(`${ruta}: «${t}»`);
@@ -205,8 +176,8 @@ function clon(archivos) {
 }
 
 /** Corre el código de pantalla de Configuración con un documento mínimo y la respuesta dada; devuelve sus textos. */
-async function pantallaCon(codigo, respuesta) {
-  const nodo = () => { const n = { hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
+async function pantallaCon(codigo, respuesta, alAtributo = () => {}) {
+  const nodo = () => { const n = { hijos: [], textContent: '', attrs: {}, setAttribute(k, v) { n.attrs[k] = v; alAtributo({ [k]: v }); }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener() {}, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
   const app = nodo();
   const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: () => nodo() };
   new Function('document', 'fetch', codigo)(document, () => Promise.resolve({ status: 200, json: () => Promise.resolve(respuesta) }));
@@ -215,7 +186,7 @@ async function pantallaCon(codigo, respuesta) {
   return textos(app);
 }
 
-test('T9 Textos_ConfiguracionEnLosDosIdiomas @story-2.42 @ac-4', async () => {
+test('T9 Textos_ConfiguracionEnLosDosIdiomas @story-2.42 @ac-4 @story-2.57 @ac-5 @ac-8', async () => {
   const ops = clon({ 'operations.json': configAcme() });
   const perfil = clon({ 'team-profile.json': { version: 1, packs: { default: ['bizuit'] } } });
   const emisor = await arrancarEmisor();
@@ -250,15 +221,11 @@ test('T9 Textos_ConfiguracionEnLosDosIdiomas @story-2.42 @ac-4', async () => {
     assert.match(vistos['es-rev'], /la lista tiene que tener a alguien que mantenga el sitio/);
     // inglés: títulos, ayudas, botones y el mensaje de validación, sin castellano
     assert.ok(vistos.en.some((t) => /Who gets into the site/.test(t)), `el título de la sección en inglés: ${vistos.en.slice(0, 40).join(' | ')}`);
-    // el catálogo de lo que instala el arnés (install-effects.json, compartido con el instalador) queda en castellano:
-    // decisión 11, story aparte
-    const efectos = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects;
-    const catalogo = efectos.flatMap((e) => [e.title, e.does]).filter(Boolean);
-    const interruptores = efectos.map((e) => e.switch).filter(Boolean);
-    const restos = enCastellano(vistos.en.flatMap((t) => String(t).split('\n')).filter((t) => !catalogo.includes(t)), [...DATOS, ...interruptores, 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
+    // el catálogo de lo que instala el arnés también, con su inglés: sin excepción
+    const restos = enCastellano(vistos.en.flatMap((t) => String(t).split('\n')), [...DATOS, 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
     assert.deepStrictEqual(restos, [], `Configuración en inglés con castellano:\n${restos.join('\n')}`);
     assert.doesNotMatch(vistos['en-rev'], /la lista tiene que tener/);
-    assert.match(vistos['en-rev'], /the list has to include someone who maintains the site/i);
+    assert.match(vistos['en-rev'], /the list must include a site maintainer/i);
   } finally { await h.cerrar(); await emisor.cerrar(); }
   // la página local (harness.js team-config) sigue igual: su código de pantalla, el de siempre en castellano
   assert.strictEqual(ORG.pantalla(), ORG.pantalla('es'));
@@ -285,7 +252,7 @@ test('T10 Textos_LaAyudaSigueElIdioma @story-2.42 @ac-7', async () => {
   await con(raiz, async (h, c) => {
     const r = await h.pedir('/ayuda', { cookie: `${c}; sitio-idioma=en` });
     assert.ok(r.texto.includes(`id="${HELP.ancla('Qué es y para qué sirve')}"`), 'la castellana');
-    assert.match(r.texto, /does not include the help in English|no English help/i, 'el aviso, en inglés');
+    assert.match(r.texto, /does not include help in English|no English help/i, 'el aviso, en inglés');
     assert.doesNotMatch(r.texto, /se muestra en/);
   });
   // el idioma de la ayuda es el del pedido
@@ -296,7 +263,7 @@ test('T10 Textos_LaAyudaSigueElIdioma @story-2.42 @ac-7', async () => {
 test('T9b Textos_LaTraduccionDeMensajes_NoTocaDatos @story-2.42 @ac-4 — el caso que encontró el pase adversarial', () => {
   const T = TEXTS();
   // un mensaje de la casa, con un valor que es otro mensaje de la casa
-  assert.strictEqual(T.traducirMensaje('en', 'scripts/x.json no se pudo leer (EACCES): se corrige a mano'), 'scripts/x.json could not be read (EACCES): it is fixed by hand');
+  assert.strictEqual(T.traducirMensaje('en', 'scripts/x.json no se pudo leer (EACCES): se corrige a mano'), 'scripts/x.json could not be read (EACCES): fix it by hand');
   // lo que dice un lector del arnés pasa tal cual; en castellano, nada cambia
   assert.strictEqual(T.traducirMensaje('en', 'el lector dice otra cosa'), 'el lector dice otra cosa');
   assert.strictEqual(T.traducirMensaje('es', 'al día'), 'al día');
@@ -339,4 +306,110 @@ test('T8b Textos_ElAvisoDeCorridasSigueElIdioma @story-2.42 @ac-4', async () => 
     const es = await h.pedir('/corridas', { cookie: c });
     assert.match(es.texto, /sin buzón configurado: no medido/);
   } finally { await h.cerrar(); await emisor.cerrar(); }
+});
+
+// ── Configuración entera en inglés, con el catálogo de lo que instala el arnés ───────────────────────────────────────
+/** Configuración con más datos del laboratorio Acme (máquinas, buzón, perfil con integraciones y paquetes), en un idioma:
+ *  los textos que dibuja la pantalla, los ids de sección que dibujó y la respuesta de /api/config. */
+async function configuracionAcme(idioma) {
+  const opsDoc = { ...configAcme(), people: { machines: { 'acme-mac-1': { person: PERSONA, reported_sha256: null, confirmed_by: MANTIENE, confirmed_on: '2026-10-01' } } } };
+  opsDoc.site = { ...opsDoc.site, url: 'https://site.acme.example', refresh_minutes: 15, mailbox: { provider: 'azure-blob', account: 'acmeruns', container: 'runs', threads: false } };
+  const ops = clon({ 'operations.json': opsDoc });
+  const perfil = clon({ 'team-profile.json': { version: 1, ado: { org: 'https://dev.azure.com/acme' }, integrations: { clockify: false, engram: true, mailbox: true, codex: 'detect', nightly: true },
+    update: { channel: 'latest', apply: 'auto' }, packs: { default: ['bizuit'] }, install: { profile: 'full' } } });
+  const emisor = await arrancarEmisor();
+  const f = H.fuentesFijas({ config: opsDoc });
+  f.clones = () => ({ operaciones: { dir: ops }, perfil: { dir: perfil } });
+  f.dirBuzon = tmp('site-texts-cfg2-buzon-');
+  f.exclusivo = (fn) => fn();
+  const env = H.envBase({ SITE_OIDC_ISSUER: emisor.issuer, SITE_PROFILE_REPO: 'https://git.acme.example/perfil.git', SITE_PROFILE_TOKEN: ['tok', 'perfil'].join('-') });
+  const cfg = validarConfiguracion(env).cfg;
+  const rutas = require(path.join(H.SITE, 'tabs', 'config.js')).crearRutas({ cfg, fuentes: f, versionImagen: '2026.10.15.48', ahora: () => AHORA });
+  const h = await H.arrancarSitio({ env, fuentes: f, rutasExtra: rutas });
+  try {
+    const lead = (await H.ingresar(h, emisor, { sub: 's-lead', email: MANTIENE, email_verified: true })).sesion;
+    const ck = `${lead}; sitio-idioma=${idioma}`;
+    const pagina = await h.pedir('/configuracion', { cookie: ck });
+    const src = (/<script src="(\/static\/config\.js[^"]*)"/.exec(pagina.texto) || [])[1];
+    const codigo = (await h.pedir(src, { cookie: ck })).texto;
+    const api = (await h.pedir('/api/config', { cookie: ck })).json;
+    assert.ok(api && api.ok, JSON.stringify(api).slice(0, 300));
+    const ids = [];
+    const textos = await pantallaCon(codigo, api, (attrs) => { if (attrs.id) ids.push(attrs.id); });
+    return { textos: textos.flatMap((t) => String(t).split('\n')), ids, api, codigo };
+  } finally { await h.cerrar(); await emisor.cerrar(); }
+}
+const EFECTOS = () => JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects;
+
+test('2.57 · Textos_ElCatalogoEnElIdiomaDeLaPagina @story-2.57 @ac-4', async () => {
+  const T = TEXTS();
+  const guarda = EFECTOS().find((e) => e.id === 'PreToolUse:@tcg:session-collision-guard.js');
+  const frenos = EFECTOS().find((e) => e.id === 'PreToolUse:@tcg:safety-guard-pre.sh');
+  const en = await configuracionAcme('en');
+  // en inglés: el título, el detalle y dónde se cambia, con la frase del interruptor en inglés
+  for (const x of [guarda.en.title, guarda.en.does, frenos.en.title, frenos.en.does]) assert.ok(en.textos.includes(x), `en inglés falta «${x}»`);
+  const donde = T.t('en', 'pantalla.vieneApagado') + T.t('en', 'pantalla.soloEnTuMaquinaCon') + guarda.en.switch + '.';
+  assert.strictEqual(donde, 'Off by default. Only on your machine, with TYCON_SESSION_GUARD=1 (turns it on).', 'la frase se lee entera en inglés');
+  assert.ok(en.textos.some((t) => t.startsWith(donde)), `en inglés: «${donde}» (${en.textos.filter((t) => t.includes('TYCON_SESSION_GUARD')).join(' | ')})`);
+  for (const x of [guarda.title, guarda.does, frenos.title, guarda.switch]) assert.ok(!en.textos.some((t) => t.includes(x)), `en inglés sale el castellano «${x}»`);
+  // en castellano: lo de hoy, igual
+  const es = await configuracionAcme('es');
+  for (const x of [guarda.title, guarda.does, frenos.title]) assert.ok(es.textos.includes(x), `en castellano falta «${x}»`);
+  assert.ok(es.textos.some((t) => t.startsWith('Viene apagado. Sólo en tu máquina, con TYCON_SESSION_GUARD=1 lo prende.')), 'en castellano, dónde se cambia como hoy');
+  assert.ok(!es.textos.includes(guarda.en.title), 'en castellano no sale el inglés');
+  // una pieza sin su inglés, con la página en inglés: sale en castellano (decisión 7), no vacía
+  const api = JSON.parse(JSON.stringify(en.api));
+  const inst = api.secciones.find((s) => s.id === 'instalacion');
+  const sinEn = inst.extras.perfiles.minimal.find((f) => f.title === guarda.title) || inst.extras.perfiles.full.find((f) => f.title === guarda.title);
+  assert.ok(sinEn && sinEn.en, 'la ficha de la pieza trae su inglés');
+  for (const p of ['minimal', 'full']) for (const f of inst.extras.perfiles[p]) if (f.title === guarda.title) f.en = null;
+  const caida = (await pantallaCon(en.codigo, api)).flatMap((t) => String(t).split('\n'));
+  assert.ok(caida.includes(guarda.title) && caida.includes(guarda.does), 'sin en: el título y el detalle en castellano');
+  assert.ok(caida.some((t) => t.startsWith(T.t('en', 'pantalla.vieneApagado') + T.t('en', 'pantalla.soloEnTuMaquinaCon') + guarda.switch + '.')), 'sin en: el interruptor tal cual');
+  assert.ok(!caida.includes(guarda.en.title), 'sin en: no aparece el inglés de otra');
+});
+
+test('2.57 · Textos_TodasLasSeccionesDeConfiguracionEnIngles @story-2.57 @ac-6', async () => {
+  const { textos, ids, api } = await configuracionAcme('en');
+  // la pantalla dibujó cada sección que mandó el servidor, en sus cinco pestañas
+  const secciones = api.secciones.map((s) => s.id);
+  assert.ok(secciones.length >= 20, `las secciones de Configuración (${secciones.length})`);
+  const faltan = secciones.filter((id) => !ids.includes(`seccion-${id}`));
+  assert.deepStrictEqual(faltan, [], 'secciones que la pantalla no dibujó');
+  for (const p of ['personas', 'repos', 'avisos', 'claude', 'instalacion']) assert.ok(ids.includes(`pestana-${p}`), `la pestaña ${p}`);
+  // y ninguna trae castellano: ni sus títulos, ni sus ayudas, ni el catálogo de lo que instala el arnés
+  const restos = enCastellano(textos, [...DATOS, 'acme-mac-1', 'acmeruns', 'bizuit', 'operations.json', 'team-profile.json', 'team-repos.json']);
+  assert.deepStrictEqual(restos, [], `Configuración en inglés con castellano:\n${restos.join('\n')}`);
+  // el detector no ve el castellano sin tildes («Frena comandos destructivos o riesgosos»): el catálogo se compara entero
+  const castellano = new Set(EFECTOS().flatMap((e) => [e.title, e.does]));
+  const delCatalogo = textos.filter((t) => castellano.has(t));
+  assert.deepStrictEqual(delCatalogo, [], `piezas en castellano en la página en inglés:\n${delCatalogo.join('\n')}`);
+  // y la frase en castellano de los interruptores («lo prende»), que va dentro de una oración: se busca adentro
+  const frases = EFECTOS().map((e) => (typeof e.switch === 'string' ? e.switch.trim().split(' ').slice(1).join(' ') : '')).filter(Boolean);
+  assert.strictEqual(frases.length, 4, `los cuatro interruptores con frase (${frases.join(' | ')})`);
+  const conFrase = textos.filter((t) => frases.some((f) => t.includes(f)));
+  assert.deepStrictEqual(conFrase, [], `interruptores en castellano en la página en inglés:\n${conFrase.join('\n')}`);
+});
+
+test('2.57 · Textos_LasFuentesConSuNombreEnIngles @story-2.57 @ac-7 @ac-8', () => {
+  const V = require(path.join(H.SITE, 'views.js'));
+  // las fuentes de la noche se llaman por su id, en castellano («dependencias», «vigilante»): en inglés, con su nombre
+  const ids = require(path.join(ROOT, 'scripts', 'nightly', 'dashboard', 'sources.json')).sources.map((s) => s.id);
+  // cada fuente de la noche tiene su nombre en la tabla: una nueva sin nombre saldría con su id, aunque fuera castellano
+  const sinNombre = ids.filter((id) => !Object.prototype.hasOwnProperty.call(TEXTS().TEXTOS, `fuente.${id}`));
+  assert.deepStrictEqual(sinNombre, [], `fuentes de sources.json sin su clave fuente.<id> en texts.js: ${sinNombre.join(', ')}`);
+  const m = { sources: { lista: [...ids, 'propia-de-acme'].map((id) => ({ id, estado: 'medido', fecha: HOY })) } };
+  const titulos = (idioma) => V.filasArnes(m, { idioma }).filter((l) => /^fuente:/.test(l.clave)).map((l) => l.titulo);
+  const en = titulos('en');
+  assert.strictEqual(en.length, ids.length + 1, 'una línea por fuente');
+  assert.ok(en.includes('Source dependencies') && en.includes('Source watcher') && en.includes('Source controls bench'), en.join(' | '));
+  assert.ok(en.includes('Source propia-de-acme'), 'una fuente propia de la organización sale con su id');
+  const restos = enCastellano(en.filter((t) => t !== 'Source propia-de-acme'), ['sdlc-stage']);
+  assert.deepStrictEqual(restos, [], `fuentes con nombre en castellano en inglés:\n${restos.join('\n')}`);
+  // ninguna fuente conocida sale con su id en castellano
+  for (const id of ['dependencias', 'vigilante', 'banco', 'suites', 'paridad', 'corridas', 'pasos-corrida', 'concentracion']) {
+    assert.ok(!en.includes(`Source ${id}`), `«Source ${id}» en inglés`);
+  }
+  // en castellano, como siempre: «Fuente <id>»
+  assert.deepStrictEqual(titulos('es'), [...ids, 'propia-de-acme'].map((id) => `Fuente ${id}`));
 });
