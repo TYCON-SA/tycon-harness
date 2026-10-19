@@ -205,6 +205,14 @@ ul.efectos p{margin:2px 0 8px 18px;font-size:13.5px;max-width:72ch}
 .archivos-enteros{margin:0 0 10px}.archivos-enteros summary{cursor:pointer;color:var(--ink-2)}
 .archivos-enteros .antes-despues{margin-top:8px}.archivos-enteros pre{overflow-x:auto;max-width:100%}
 pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line);font:12.5px/1.5 var(--mono);overflow:auto;max-height:360px;white-space:pre}
+/* los valores que se pisaron con un cambio de afuera: cada uno con las dos versiones, para elegir */
+.conflictos{margin:10px 0;padding:12px 14px;border-radius:10px;border:1px solid color-mix(in srgb,var(--warn-ink) 45%,var(--line));background:color-mix(in srgb,var(--warn-ink) 7%,var(--surface))}
+.conflicto{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.conflicto > .lab{font-weight:600;margin-bottom:6px}
+.conflicto .dos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.conflicto .dos .lab{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.conflicto pre{max-height:180px}
+.msg.recuperar .bar{margin-top:8px}
 
 /* ── teléfono ── */
 @media (max-width:900px){
@@ -225,7 +233,7 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
 @media (max-width:640px){
   .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .t-val,.kpi .val{font-size:28px}
-  .antes-despues,.despliegue{grid-template-columns:minmax(0,1fr)}
+  .antes-despues,.despliegue,.conflicto .dos{grid-template-columns:minmax(0,1fr)}
   .fila.quitar3{grid-template-columns:minmax(0,1fr) auto}.fila.quitar3 > :nth-child(2){grid-column:1}
   .thr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.thr > :first-child{grid-column:1/-1;font-weight:600}.thr.h{display:none}
   .renglones li{grid-template-columns:minmax(0,1fr)}.renglones .acc{grid-row:auto;grid-column:1;justify-content:flex-start}

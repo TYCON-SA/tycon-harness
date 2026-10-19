@@ -255,8 +255,21 @@ restart in the middle of the request), the page does not show the error right aw
 2, 5 and 10 seconds, whether the request for that proposal exists, and shows its link if it does. Only when it finds
 nothing does it show the error, which asks you to reload and check whether the request was opened before repeating it.
 The page never resends the proposal by itself.
-Someone on the team reviews it and merges it. The site picks up the change on the **next refresh** (every 15 minutes, if
-the organization did not choose another interval). **Download** (*Descargar*) downloads the changed file, for when the
+Someone on the team reviews it and merges it.
+
+You do not need to reload the page. While the request is open, the page asks every 10 seconds whether it went in, for
+up to 10 minutes; with the tab hidden it stops asking and resumes when you come back. When the request goes in or is
+closed, the site rereads the repo and the page takes the new version. If, while you were editing, someone changed
+**another part** of the same file, your change is put on top of the new version and the difference shows it before you
+confirm again. If they changed **the same thing** as you, the section shows each value with both versions: **Keep
+mine** (*Quedarme con el mío*) or **Take the current one** (*Tomar el de ahora*), and what you entered is not lost. A
+list counts as a single value: if you both touched the same list, you choose the whole list. If you reload the page with
+something not yet proposed, the section offers **Recover what you were entering** (*Recuperar lo que estabas
+cargando*). What you entered lives in your browser while the tab is open and never goes to the site. In a browser that
+does not allow storing it (a private window, for example) the page works the same, without that offer. The accepted
+differences between products are not merged: if their file changed, they ask you to reload as before.
+
+**Download** (*Descargar*) downloads the changed file, for when the
 site cannot propose: you hand it to whoever has access to that repo, who uploads it with a change request.
 
 ![A section changed and reviewed: "Reviewed: it is well written"](sitio-de-la-organizacion/capturas/configuracion-revisado.png)

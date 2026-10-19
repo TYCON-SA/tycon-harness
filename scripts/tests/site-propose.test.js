@@ -15,8 +15,15 @@
  *   T3  Diferencia_EnLaPantalla_RojoVerdeYSignos          T10 RespuestaCortada_ConsultaYMuestraElEnlace
  *   T7  Proponiendo_TodoApagado_YVuelve                   T11 RespuestaCortada_NoHayPedido_ElErrorDeSiempre
  *   T9  SegundaRespuesta_NoPisaElExito                    T14 Textos_RefreshMinutes_YGuia
+ * La versión nueva y lo cargado (el servidor, con el Azure y el GitHub de juguete; la pantalla, al final):
+ *   T15  TrasElMerge_SinRecarga_ProponeOtraCosa           T15b TrasElMerge_LaPaginaConsultaYRelee_PestanaOculta
+ *   T16  CambioAjeno_SinPisarse_SeReaplica                T16b Reaplicar_HojaPorHoja · T16c Reaplicado_EnLaPantalla_…
+ *   T16d Reaplicar_LoQueNoSeMezcla_YSusRechazos
+ *   T17  CambioAjeno_SePisan_ElegirSinPerder              T17b SePisan_EnLaPantalla_ElegirCadaValor
+ *   T18  Recarga_OfreceRecuperar                          T19  SinSessionStorage_AndaIgual
  * La pantalla corre sobre un documento mínimo y un fetch falso; los tiempos de espera de la consulta los pasa la
- * prueba como un parámetro más del código de la página (en el navegador no existe y valen 2, 5 y 10 segundos).
+ * prueba como un parámetro más del código de la página (en el navegador no existe y valen 2, 5 y 10 segundos), igual
+ * que el ritmo del seguimiento del pedido (10 s) y el sessionStorage.
  *
  * Sin red: el repo de operaciones es un repo git local por HTTP (lib/git-http-repo.js) y las APIs de Azure DevOps y de
  * GitHub son servidores falsos en el proceso (lib/fake-ado-api.js, lib/fake-github-api.js). Correos y repos inventados.
@@ -409,10 +416,12 @@ const SECCION_CANAL = { id: 'canal', titulo: 'Canal', repo: 'operaciones', archi
  * La pantalla viva: `rutas` contesta cada llamada del fetch falso (`{ GET|POST ruta }` → función que da la respuesta, o
  * una promesa que la prueba suelta cuando quiere). Devuelve el árbol, los botones por su texto y las llamadas hechas.
  */
-async function pantallaViva(rutas, esperas = [1, 1, 1]) {
+async function pantallaViva(rutas, esperas = [1, 1, 1], extras = {}) {
   const nodo = (tag) => { const n = { tag, hijos: [], textContent: '', attrs: {}, on: {}, setAttribute(k, v) { n.attrs[k] = v; }, appendChild(c) { n.hijos.push(c); return c; }, addEventListener(e, f) { n.on[e] = f; }, replaceChildren(...cs) { n.hijos = cs; } }; return n; };
   const app = nodo('div');
-  const document = { querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t) };
+  // `hidden` y `visibilitychange`: la pestaña oculta corta la consulta por el pedido; la prueba la oculta y la vuelve a mostrar
+  const oyentes = {};
+  const document = { hidden: Boolean(extras.oculta), querySelector: () => null, getElementById: (id) => (id === 'config-app' ? app : null), createElement: (t) => nodo(t), addEventListener(e, f) { (oyentes[e] = oyentes[e] || []).push(f); } };
   const llamadas = [];
   const fetchFalso = (ruta, opts) => {
     const metodo = (opts && opts.method) || 'GET';
@@ -421,14 +430,15 @@ async function pantallaViva(rutas, esperas = [1, 1, 1]) {
     if (!f) return Promise.reject(new Error(`ruta sin contestar: ${metodo} ${ruta}`));
     return Promise.resolve(f(ruta, opts)).then((r) => (r instanceof Error ? Promise.reject(r) : r));
   };
-  new Function('document', 'fetch', 'location', 'esperasConsulta', ORG.pantalla())(document, fetchFalso, { hash: '' }, esperas);
+  new Function('document', 'fetch', 'location', 'esperasConsulta', 'sessionStorage', 'seguimientoPedido', ORG.pantalla())(document, fetchFalso, { hash: '' }, esperas, extras.sessionStorage, extras.seguimiento || { cada: 1, vueltas: 5 });
   const soltar = async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r)); };
   await soltar();
   const todos = (n = app) => [n, ...n.hijos.flatMap((h) => todos(h))];
   const textoDe = (n) => [n.textContent, ...n.hijos.map(textoDe)].filter(Boolean).join(' ');
   const seccion = () => todos().find((n) => n.attrs.id === 'seccion-canal');
   const boton = (texto) => todos(seccion()).find((n) => n.tag === 'button' && n.textContent === texto);
-  return { app, llamadas, soltar, todos, textoDe, seccion, boton, clic: async (texto) => { const b = boton(texto); assert.ok(b, `hay un botón «${texto}»`); b.on.click(); await soltar(); return b; } };
+  const mostrar = async (oculta) => { document.hidden = oculta; for (const f of oyentes.visibilitychange || []) f(); await soltar(); };
+  return { app, document, llamadas, soltar, todos, textoDe, seccion, boton, mostrar, clic: async (texto) => { const b = boton(texto); assert.ok(b, `hay un botón «${texto}»`); b.on.click(); await soltar(); return b; } };
 }
 const json = (j, status = 200) => () => ({ status, json: () => Promise.resolve(j) });
 const sinJson = (status) => () => ({ status, json: () => Promise.reject(new Error('no es JSON')) });
@@ -579,4 +589,487 @@ test('T14 Textos_RefreshMinutes_YGuia @story-2.46 @ac-11 @ac-12', () => {
   for (const [nombre, guia, rx] of [['es', es, [/`site\.refresh_minutes`[^\n]*(\n[^\n]+)*?[^\n]*5 a 120/, /15 minutos/, /no instala versiones/i, /SITE_AUTH_MICROSOFT_ACCOUNTS=organization/, /nunca `common`/, /Saliste/, /una sola\s+vez/, /consulta/]], ['en', en, [/`site\.refresh_minutes`[^\n]*(\n[^\n]+)*?[^\n]*5 to 120/, /15 minutes/, /does not install versions/, /SITE_AUTH_MICROSOFT_ACCOUNTS=organization/, /never `common`/, /You signed out/, /only once|a single time/, /checks/]]]) {
     for (const r of rx) assert.match(guia, r, `${nombre}: ${r}`);
   }
+});
+
+// ── la versión nueva y lo cargado: el servidor ─────────────────────────────────────────────────────────────────
+
+/**
+ * El sitio en proceso con el repo de la sección servido por HTTP y la API de su plataforma de juguete (Azure o GitHub).
+ * `refrescar` de las fuentes trae main al clon del sitio, como el refresco de verdad; `reloj.t` es la hora del sitio (la
+ * prueba la mueve: la rama de cada propuesta lleva la hora). `afuera(texto)` cambia main sin pasar por el sitio y
+ * `entra(pedido)` lo da por mergeado en la plataforma.
+ */
+async function sitioConPlataforma({ plataforma, repo = 'operaciones', archivos }, fn) {
+  const nombre = repo === 'perfil' ? 'perfil' : 'ops';
+  const archivo = repo === 'perfil' ? 'team-profile.json' : 'operations.json';
+  const remoto = plataforma === 'azure'
+    ? { platform: 'azure', org: 'acme', project: 'Proy', repo: nombre, web: `https://dev.azure.example/acme/Proy/_git/${nombre}` }
+    : { platform: 'github', org: 'acme', repo: nombre, web: `https://github.example/acme/${nombre}` };
+  let api, r;
+  try {
+    api = plataforma === 'azure' ? await arrancarAdoFalso({ org: 'acme', project: 'Proy', repo: nombre }) : await arrancarGithubFalso({ owner: 'acme', repo: nombre });
+    if (plataforma === 'azure') api.st.politicas = [api.politicaDeRevisores(1)];
+    else api.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    const raiz = tmp('site-propose-plat-');
+    r = await crearRepoHttp({ raiz, nombre: `${nombre}.git`, archivos, cabecera: CAB });
+    const dir = path.join(raiz, 'clon-del-sitio');
+    // git por HTTP, sin bloquear: el servidor del repo vive en este mismo proceso
+    const gitHttp = (cwd, ...a) => require('util').promisify(require('child_process').execFile)('git', ['-c', `http.extraheader=Authorization: ${CAB}`, ...a], { cwd });
+    await gitHttp(raiz, 'clone', '-q', '--depth', '1', '--branch', 'main', r.url, dir);
+    const fuentes = repo === 'perfil'
+      ? fuentesCon({ ops: clon({ 'operations.json': opsBase() }), perfil: dir })
+      : fuentesCon({ ops: dir });
+    fuentes.st.refrescos = 0;
+    fuentes.refrescar = async () => {
+      fuentes.st.refrescos += 1;
+      await gitHttp(dir, 'fetch', '-q', '--depth', '1', 'origin', 'main');
+      g(dir, 'reset', '-q', '--hard', 'FETCH_HEAD');
+    };
+    const reloj = { t: AHORA };
+    const env = repo === 'perfil' ? { ...PERFIL_ENV, SITE_PROFILE_WRITE_TOKEN: ESCRITURA } : { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA };
+    const opciones = { remotos: { [repo]: remoto }, urlBase: { [plataforma]: api.base }, ahora: () => reloj.t, versionImagen: ORG.RESPONSE_SINCE };
+    const pedidos = () => api.st.pedidos;
+    const entra = (pedido, texto) => {
+      r.cambiar({ [archivo]: texto });
+      if (plataforma === 'azure') Object.assign(pedido, { status: 'completed', closedDate: new Date(reloj.t).toISOString() });
+      else Object.assign(pedido, { state: 'closed', merged_at: new Date(reloj.t).toISOString() });
+    };
+    await conPestana({ fuentes, env, opciones }, async (ctx) => {
+      const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
+      const config = async (query = '') => (await ctx.h.pedir(`/api/config${query}`, { cookie: lead })).json;
+      const seccion = async (id, query) => (await config(query)).secciones.find((x) => x.id === id);
+      const post = async (ruta, cuerpo) => (await ctx.escribir(`/api/config/${ruta}`, lead, tok, cuerpo)).json;
+      await fn({ ...ctx, r, api, fuentes, reloj, lead, config, seccion, post, pedidos, entra, afuera: (texto) => r.cambiar({ [archivo]: texto }), archivo });
+    });
+  } finally { await cerrarTodos(r, api); }
+}
+const sinRecarga = (j) => assert.ok(!/recarg|reload/i.test(JSON.stringify(j)), `nunca «recargá»: ${JSON.stringify(j)}`);
+/** Los renglones que la diferencia marca como cambiados (sale o entra). */
+const cambiados = (dif) => (dif || []).flatMap((t) => t.renglones || []).filter((x) => x.tipo !== 'igual').map((x) => x.linea.trim());
+
+test('T15 TrasElMerge_SinRecarga_ProponeOtraCosa @story-2.46 @ac-13', { skip: SIN_BACKEND }, async () => {
+  for (const plataforma of ['azure', 'github']) {
+    await sitioConPlataforma({ plataforma, archivos: { 'operations.json': opsBase() } }, async ({ seccion, post, pedidos, entra, reloj, fuentes, config, h, lead }) => {
+      // 1. la primera propuesta abre su pedido, y el pedido entra en main
+      const resp = await seccion('responsables');
+      const rev1 = await post('revisar', { seccion: 'responsables', borrador: { owners: { default: 'otro@acme.example' } }, base: resp.texto, oid: resp.oid });
+      assert.strictEqual(rev1.ok, true, JSON.stringify(rev1));
+      const marca1 = marcaNueva();
+      const p1 = await post('proponer', { seccion: 'responsables', texto: rev1.texto, oid: resp.oid, base: resp.texto, marca: marca1 });
+      assert.strictEqual(p1.ok, true, `${plataforma}: ${JSON.stringify(p1)}`);
+      entra(pedidos()[0], rev1.texto);
+      // la página pregunta por su marca: el servidor la recuerda abierta, pero pregunta a la plataforma
+      const q = (await h.pedir(`/api/config/propuesta?seccion=responsables&marca=${marca1}`, { cookie: lead })).json;
+      assert.strictEqual(q.estado, 'aplicado', `${plataforma}: ${JSON.stringify(q)}`);
+      // 2. sin releer: otra cosa del mismo archivo, con la versión de antes. Vuelve reaplicada, nunca «recargá»
+      reloj.t += 60 * 1000;
+      const sitio = await seccion('sitio');
+      assert.strictEqual(sitio.oid, resp.oid, 'el sitio todavía no releyó');
+      const rev2 = await post('revisar', { seccion: 'sitio', borrador: { site: { maintainers: [LEAD, DEV] } }, base: sitio.texto, oid: sitio.oid });
+      assert.strictEqual(rev2.ok, true, JSON.stringify(rev2));
+      const p2 = await post('proponer', { seccion: 'sitio', texto: rev2.texto, oid: sitio.oid, base: sitio.texto, marca: marcaNueva() });
+      sinRecarga(p2);
+      assert.strictEqual(p2.codigo, 'reaplicado', `${plataforma}: ${JSON.stringify(p2)}`);
+      const doc2 = JSON.parse(p2.texto);
+      assert.strictEqual(doc2.owners.default, 'otro@acme.example', 'lo que entró se queda');
+      assert.deepStrictEqual(doc2.site.maintainers, [LEAD, DEV], 'y lo nuevo, encima');
+      assert.ok(cambiados(p2.diferencia).every((l) => !/otro@acme/.test(l)), `la diferencia muestra sólo lo de la persona: ${cambiados(p2.diferencia)}`);
+      assert.ok(cambiados(p2.diferencia).some((l) => l.includes(DEV)));
+      assert.strictEqual(pedidos().length, 1, 'reaplicar no abre nada');
+      // confirmar de nuevo (con su marca nueva y la base nueva): el pedido se abre
+      const p3 = await post('proponer', { seccion: 'sitio', texto: p2.texto, oid: p2.seccion.oid, base: p2.seccion.texto, marca: marcaNueva() });
+      assert.strictEqual(p3.ok, true, `${plataforma}: ${JSON.stringify(p3)}`);
+      sinRecarga(p3);
+      entra(pedidos()[1], p2.texto);
+      // 3. releyendo: el sitio trae main y la página ya tiene la versión nueva; proponer va derecho
+      reloj.t += 60 * 1000;
+      const antes = fuentes.st.refrescos;
+      const fresca = (await config('?releer=1')).secciones.find((x) => x.id === 'responsables');
+      assert.strictEqual(fuentes.st.refrescos, antes + 1, 'releyó');
+      assert.strictEqual(JSON.parse(fresca.texto).site.maintainers.length, 2, 'con lo que entró');
+      // el tope: otra relectura enseguida no vuelve a leer
+      await config('?releer=1');
+      assert.strictEqual(fuentes.st.refrescos, antes + 1, 'una relectura cada 30 s');
+      const rev4 = await post('revisar', { seccion: 'responsables', borrador: { owners: { default: LEAD } }, base: fresca.texto, oid: fresca.oid });
+      const p4 = await post('proponer', { seccion: 'responsables', texto: rev4.texto, oid: fresca.oid, base: fresca.texto, marca: marcaNueva() });
+      assert.strictEqual(p4.ok, true, `${plataforma}: ${JSON.stringify(p4)}`);
+      assert.strictEqual(p4.codigo === 'reaplicado', false);
+      assert.strictEqual(pedidos().length, 3);
+    });
+  }
+});
+
+const PERFIL_TANDA2 = () => ({ 'team-repos.json': TR_BASE, 'team-layer.json': capa(ORG.RESPONSE_SINCE), 'team-profile.json': PERFIL });
+
+test('T16 CambioAjeno_SinPisarse_SeReaplica @story-2.46 @ac-14', { skip: SIN_BACKEND }, async () => {
+  for (const plataforma of ['azure', 'github']) {
+    await sitioConPlataforma({ plataforma, repo: 'perfil', archivos: PERFIL_TANDA2() }, async ({ seccion, post, pedidos, afuera, fuentes }) => {
+      const s = await seccion('respuesta');
+      assert.ok(s && s.oid, JSON.stringify(s));
+      // mientras se edita «Cómo contesta Claude», otro cambia «update» en el mismo archivo
+      afuera(ORG.formatJson({ ...PERFIL, update: { ...PERFIL.update, channel: 'stable' } }));
+      const borrador = { response: { ...PERFIL.response, max_chars: 1500 } };
+      const rev = await post('revisar', { seccion: 'respuesta', borrador, base: s.texto, oid: s.oid });
+      assert.strictEqual(rev.ok, true, JSON.stringify(rev));
+      const p = await post('proponer', { seccion: 'respuesta', texto: rev.texto, oid: s.oid, base: s.texto, marca: marcaNueva() });
+      sinRecarga(p);
+      assert.strictEqual(p.codigo, 'reaplicado', `${plataforma}: ${JSON.stringify(p)}`);
+      const doc = JSON.parse(p.texto);
+      assert.strictEqual(doc.update.channel, 'stable', 'lo de afuera se queda');
+      assert.strictEqual(doc.response.max_chars, 1500, 'lo de la persona, encima');
+      assert.deepStrictEqual(cambiados(p.diferencia).filter((l) => !/^[{}],?$/.test(l)).map((l) => l.replace(/,$/, '')), ['"max_chars": 1300', '"max_chars": 1500'], 'la diferencia, sólo lo de la persona');
+      assert.deepStrictEqual(p.borrador, { response: { ...PERFIL.response, max_chars: 1500 } });
+      assert.ok(p.seccion && p.seccion.oid && p.seccion.oid !== s.oid, 'la base nueva');
+      assert.strictEqual(pedidos().length, 0);
+      const ok = await post('proponer', { seccion: 'respuesta', texto: p.texto, oid: p.seccion.oid, base: p.seccion.texto, marca: marcaNueva() });
+      assert.strictEqual(ok.ok, true, JSON.stringify(ok));
+      // /revisar con una base vieja, ya con el sitio al día: revisa sobre la base de la página (lo que la persona ve), sin
+      // pisar con el borrador entero la versión del sitio; la mezcla la hace «Proponer» contra la punta
+      await fuentes.refrescar();
+      const rev2 = await post('revisar', { seccion: 'respuesta', borrador: { response: { ...PERFIL.response, style: 'detailed' } }, base: s.texto, oid: s.oid });
+      assert.strictEqual(rev2.ok, true, JSON.stringify(rev2));
+      assert.strictEqual(JSON.parse(rev2.texto).update.channel, PERFIL.update.channel, 'sobre la base que abrió');
+      assert.deepStrictEqual(cambiados(rev2.diferencia).filter((l) => !/^[{}],?$/.test(l)).map((l) => l.replace(/,$/, '')), [`"style": "${PERFIL.response.style}"`, '"style": "detailed"'], 'la diferencia contra su base');
+      const p2 = await post('proponer', { seccion: 'respuesta', texto: rev2.texto, oid: s.oid, base: s.texto, marca: marcaNueva() });
+      assert.strictEqual(p2.codigo, 'reaplicado', JSON.stringify(p2));
+      assert.strictEqual(JSON.parse(p2.texto).update.channel, 'stable', 'al proponer, lo de afuera se queda');
+      // y al revés: main cambia otra vez y la página, con esa versión (más nueva que la del sitio), revisa sobre la suya
+      afuera(ORG.formatJson({ ...PERFIL, update: { ...PERFIL.update, channel: 'stable', apply: 'ask' } }));
+      const p3 = await post('proponer', { seccion: 'respuesta', texto: p2.texto, oid: p2.seccion.oid, base: p2.seccion.texto, marca: marcaNueva() });
+      assert.strictEqual(p3.codigo, 'reaplicado', JSON.stringify(p3));
+      const masNueva = await post('revisar', { seccion: 'respuesta', borrador: { response: { ...PERFIL.response, max_chars: 1600 } }, base: p3.seccion.texto, oid: p3.seccion.oid });
+      assert.strictEqual(masNueva.ok, true, JSON.stringify(masNueva));
+      assert.strictEqual(JSON.parse(masNueva.texto).update.apply, 'ask', 'sobre la versión de la página, no la vieja del sitio');
+      assert.deepStrictEqual(cambiados(masNueva.diferencia).filter((l) => !/^[{}],?$/.test(l)).map((l) => l.replace(/,$/, '')), ['"max_chars": 1300', '"max_chars": 1600']);
+      // una base que no es la versión que dice: el servidor no mezcla a ciegas
+      const mentira = await post('revisar', { seccion: 'respuesta', borrador, base: '{}\n', oid: s.oid });
+      assert.strictEqual(mentira.ok, false);
+      assert.strictEqual(mentira.reaplicado, undefined);
+    });
+  }
+});
+
+test('T17 CambioAjeno_SePisan_ElegirSinPerder @story-2.46 @ac-15', { skip: SIN_BACKEND }, async () => {
+  for (const plataforma of ['azure', 'github']) {
+    await sitioConPlataforma({ plataforma, repo: 'perfil', archivos: PERFIL_TANDA2() }, async ({ seccion, post, pedidos, afuera }) => {
+      const s = await seccion('respuesta');
+      afuera(ORG.formatJson({ ...PERFIL, response: { ...PERFIL.response, max_chars: 1400 }, update: { ...PERFIL.update, channel: 'stable' } }));
+      const borrador = { response: { ...PERFIL.response, max_chars: 1500, style: 'detailed' } };
+      const rev = await post('revisar', { seccion: 'respuesta', borrador, base: s.texto, oid: s.oid });
+      const p = await post('proponer', { seccion: 'respuesta', texto: rev.texto, oid: s.oid, base: s.texto, marca: marcaNueva() });
+      sinRecarga(p);
+      assert.strictEqual(p.ok, false);
+      assert.strictEqual(p.codigo, 'se_pisan', `${plataforma}: ${JSON.stringify(p)}`);
+      assert.deepStrictEqual(p.conflictos.map((c) => [c.ruta, c.tuyo, c.ahora]), [['response.max_chars', 1500, 1400]]);
+      assert.deepStrictEqual(p.conflictos[0].camino, ['response', 'max_chars']);
+      // lo escrito sigue: el borrador mezclado trae lo tuyo en el choque y lo tuyo que no choca
+      assert.strictEqual(p.borrador.response.max_chars, 1500);
+      assert.strictEqual(p.borrador.response.style, 'detailed');
+      assert.strictEqual(JSON.parse(p.seccion.texto).response.max_chars, 1400, 'la base nueva es lo de ahora');
+      assert.strictEqual(pedidos().length, 0, 'nada se abre');
+    });
+  }
+});
+
+test('T16b Reaplicar_HojaPorHoja @story-2.46 @ac-14 @ac-15', () => {
+  const base = { a: 1, b: { c: 2, d: 3 }, l: [1, 2], 'x@acme.example': { rol: 'dev' } };
+  // sin choques: lo de afuera y lo mío en hojas distintas, una clave con puntos, una lista entera
+  let m = ORG.reaplicar({ base, mio: { ...base, b: { c: 20, d: 3 }, 'x@acme.example': { rol: 'lead' } }, actual: { ...base, a: 9, l: [1, 2, 3] } });
+  assert.deepStrictEqual(m.conflictos, []);
+  assert.deepStrictEqual(m.doc, { a: 9, b: { c: 20, d: 3 }, l: [1, 2, 3], 'x@acme.example': { rol: 'lead' } });
+  // la misma hoja con el mismo valor no choca
+  m = ORG.reaplicar({ base, mio: { ...base, a: 5 }, actual: { ...base, a: 5 } });
+  assert.deepStrictEqual(m.conflictos, []);
+  // la misma hoja, distinto valor: choca, y en el doc queda lo mío
+  m = ORG.reaplicar({ base, mio: { ...base, a: 5 }, actual: { ...base, a: 6 } });
+  assert.deepStrictEqual(m.conflictos, [{ camino: ['a'], ruta: 'a', tuyo: 5, ahora: 6 }]);
+  assert.strictEqual(m.doc.a, 5);
+  // una lista es un valor: dos que la tocan, chocan
+  m = ORG.reaplicar({ base, mio: { ...base, l: [1, 2, 4] }, actual: { ...base, l: [1, 2, 3] } });
+  assert.deepStrictEqual(m.conflictos.map((c) => c.ruta), ['l']);
+  // yo saco un objeto entero y afuera cambian una hoja de adentro: choca en el objeto
+  const sinB = { ...base }; delete sinB.b;
+  m = ORG.reaplicar({ base, mio: sinB, actual: { ...base, b: { c: 2, d: 30 } } });
+  assert.deepStrictEqual(m.conflictos.map((c) => [c.ruta, c.tuyo, c.ahora]), [['b', undefined, { c: 2, d: 30 }]]);
+  assert.strictEqual('b' in m.doc, false);
+  // afuera sacan una hoja que yo no toqué: queda sacada
+  m = ORG.reaplicar({ base, mio: { ...base, a: 2 }, actual: { ...base, b: { c: 2 } } });
+  assert.deepStrictEqual(m.doc.b, { c: 2 });
+  // yo saco un objeto entero y afuera SUMAN algo adentro: choca, en vez de borrar en silencio lo que sumaron
+  m = ORG.reaplicar({ base, mio: sinB, actual: { ...base, b: { c: 2, d: 3, e: 9 } } });
+  assert.deepStrictEqual(m.conflictos.map((c) => [c.ruta, c.tuyo, c.ahora]), [['b', undefined, { c: 2, d: 3, e: 9 }]]);
+  // null no es lo mismo que sacado: pasar de null a sacado es un cambio, y choca con otro valor
+  const conNull = { a: null, b: 1 };
+  m = ORG.reaplicar({ base: conNull, mio: { b: 1 }, actual: conNull });
+  assert.deepStrictEqual(m.doc, { b: 1 }, 'el borrado de un null no se pierde');
+  m = ORG.reaplicar({ base: conNull, mio: { b: 1 }, actual: { a: 5, b: 1 } });
+  assert.deepStrictEqual(m.conflictos.map((c) => [c.ruta, c.tuyo, c.ahora]), [['a', undefined, 5]]);
+  // una máquina o un producto puede llamarse constructor, prototype o __proto__: se mezcla como cualquier clave, como
+  // clave propia, sin tocar el prototipo
+  const raras = JSON.parse('{"machines": {"constructor": {"person": "a"}, "prototype": {"person": "b"}, "__proto__": {"person": "c"}}}');
+  const rarasMias = JSON.parse('{"machines": {"constructor": {"person": "A"}, "prototype": {"person": "B"}, "__proto__": {"person": "C"}}}');
+  m = ORG.reaplicar({ base: raras, mio: rarasMias, actual: { ...JSON.parse(JSON.stringify(raras)), otra: 1 } });
+  assert.deepStrictEqual(m.conflictos, []);
+  assert.strictEqual(JSON.stringify(m.doc), '{"machines":{"constructor":{"person":"A"},"prototype":{"person":"B"},"__proto__":{"person":"C"}},"otra":1}');
+  assert.strictEqual(Object.getPrototypeOf(m.doc.machines), Object.prototype, 'el prototipo, intacto');
+  m = ORG.reaplicar({ base: raras, mio: rarasMias, actual: JSON.parse('{"machines": {"constructor": {"person": "Z"}, "prototype": {"person": "b"}, "__proto__": {"person": "c"}}}') });
+  assert.deepStrictEqual(m.conflictos.map((c) => c.ruta), ['machines.constructor.person'], 'y choca como cualquier otra');
+  assert.strictEqual(({}).person, undefined);
+  // la versión de un texto, como la da git
+  assert.strictEqual(ORG.versionDeTexto('hola\n'), spawnSync('git', ['hash-object', '--stdin'], { input: 'hola\n', encoding: 'utf8' }).stdout.trim());
+});
+
+// ── la versión nueva y lo cargado: la pantalla ────────────────────────────────────────────────────────────────
+
+/** Un sessionStorage de juguete: el mismo objeto entre dos cargas de la página es «recargar la pestaña». */
+function almacenDeJuguete() {
+  const m = new Map();
+  return { m, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } };
+}
+/** Escribe en el campo de texto de la sección canal, como la persona (el evento sube hasta la pestaña). */
+function escribirEnCanal(p, texto) {
+  const ta = p.todos(p.seccion()).find((n) => n.tag === 'textarea');
+  assert.ok(ta, 'el campo de la sección');
+  ta.on.input({ target: { value: texto } });
+  if (p.app.on.input) p.app.on.input({ target: ta });
+}
+
+test('T15b TrasElMerge_LaPaginaConsultaYRelee_PestanaOculta @story-2.46 @ac-13', async () => {
+  const enlace = 'https://git.acme.example/acme/ops/pullrequest/11';
+  let estado = 'abierto';
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
+    'POST /api/config/proponer': json({ ok: true, message: `Pedido abierto: ${enlace}`, enlace }),
+    'GET /api/config/propuesta': () => ({ status: 200, json: () => Promise.resolve({ ok: true, estado, enlace }) }),
+  }, [1, 1, 1], { seguimiento: { cada: 1, vueltas: 50 } });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  const consultas = () => p.llamadas.filter((c) => c.ruta.startsWith('/api/config/propuesta')).length;
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(consultas() >= 1, 'con el pedido abierto, la página pregunta');
+  // la pestaña se oculta: deja de preguntar
+  await p.mostrar(true);
+  for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 5));
+  const congeladas = consultas();
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.strictEqual(consultas(), congeladas, 'oculta, no pregunta');
+  assert.ok(!p.llamadas.some((c) => c.ruta.includes('releer')), 'todavía no relee');
+  // vuelve a verse y el pedido ya entró: relee
+  estado = 'aplicado';
+  await p.mostrar(false);
+  for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 5));
+  await p.soltar();
+  assert.ok(consultas() > congeladas, 'al volver, retoma');
+  assert.ok(p.llamadas.some((c) => c.metodo === 'GET' && c.ruta === '/api/config?releer=1'), p.llamadas.map((c) => c.ruta).join(' '));
+  const n = consultas();
+  for (let i = 0; i < 4; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.strictEqual(consultas(), n, 'después de releer, deja de preguntar');
+});
+
+test('T18 Recarga_OfreceRecuperar @story-2.46 @ac-16', async () => {
+  const almacen = almacenDeJuguete();
+  const a = await pantallaViva({ 'GET /api/config': CONFIG() }, [1, 1, 1], { sessionStorage: almacen });
+  escribirEnCanal(a, '"y"');
+  await a.soltar();
+  assert.ok([...almacen.m.keys()].some((k) => k.includes('canal')), `guardó el borrador: ${[...almacen.m.keys()]}`);
+  assert.deepStrictEqual([...almacen.m.keys()], ['configuracion-del-sitio:canal'], 'una clave por sección');
+  const guardado = JSON.parse([...almacen.m.values()][0]);
+  assert.deepStrictEqual(guardado, { oid: 'oid-1', base: TEXTO_HOY, borrador: { notify: 'y' }, original: { notify: 'x' } }, 'la versión, su texto, lo cargado y lo de antes');
+  // recargar: otra página, el mismo sessionStorage
+  const b = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR }, [1, 1, 1], { sessionStorage: almacen });
+  assert.ok(b.textoDe(b.seccion()).includes('Recuperar lo que estabas cargando'), b.textoDe(b.seccion()));
+  await b.clic('Recuperar lo que estabas cargando');
+  const ta = b.todos(b.seccion()).find((n) => n.tag === 'textarea');
+  assert.strictEqual(JSON.parse(ta.value), 'y', 'el campo, como estaba');
+  assert.ok(!b.textoDe(b.seccion()).includes('Recuperar lo que estabas cargando'));
+  await b.clic('Revisar cambios');
+  const rev = b.llamadas.find((c) => c.ruta === '/api/config/revisar');
+  assert.deepStrictEqual(rev.cuerpo.borrador, { notify: 'y' });
+  assert.strictEqual(rev.cuerpo.oid, 'oid-1'); assert.strictEqual(rev.cuerpo.base, TEXTO_HOY, 'con la base que abrió');
+  // descartar: se borra y no vuelve a ofrecerse
+  const c = await pantallaViva({ 'GET /api/config': CONFIG() }, [1, 1, 1], { sessionStorage: almacen });
+  await c.clic('Descartar');
+  assert.strictEqual(almacen.m.size, 0, 'descartado');
+  const d = await pantallaViva({ 'GET /api/config': CONFIG() }, [1, 1, 1], { sessionStorage: almacen });
+  assert.ok(!d.textoDe(d.seccion()).includes('Recuperar lo que estabas cargando'));
+  // sacar un campo y volver a ponerlo cambia el orden de las claves, no el valor: nada que guardar ni que ofrecer
+  const conObjeto = () => json({ ok: true, secciones: [{ ...SECCION_CANAL, borrador: { notify: { a: 1, b: 2 } } }], proponer: { operaciones: { habilitado: true } }, versiones: [], productos: [] });
+  const orden = almacenDeJuguete();
+  const f = await pantallaViva({ 'GET /api/config': conObjeto() }, [1, 1, 1], { sessionStorage: orden });
+  escribirEnCanal(f, '{"b": 2, "a": 1}'); await f.soltar();
+  assert.strictEqual(orden.m.size, 0, 'el mismo valor en otro orden no es un cambio');
+  orden.setItem('configuracion-del-sitio:canal', JSON.stringify({ oid: 'oid-1', base: TEXTO_HOY, borrador: { notify: { b: 2, a: 1 } }, original: { notify: { a: 1, b: 2 } } }));
+  const g2 = await pantallaViva({ 'GET /api/config': conObjeto() }, [1, 1, 1], { sessionStorage: orden });
+  assert.ok(!g2.textoDe(g2.seccion()).includes('Recuperar lo que estabas cargando'), 'tampoco al recargar');
+  // proponer bien también lo borra
+  const e = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json({ ok: true, codigo: 'aplicado', message: 'Aplicado', enlace: 'https://git.acme.example/p/1' }) }, [1, 1, 1], { sessionStorage: almacen });
+  escribirEnCanal(e, '"y"'); await e.soltar();
+  assert.strictEqual(almacen.m.size, 1);
+  await e.clic('Revisar cambios'); await e.clic('Proponer el cambio'); await e.clic('Confirmar y proponer');
+  await e.soltar();
+  assert.strictEqual(almacen.m.size, 0, 'propuesto, se borra');
+});
+
+test('T17b SePisan_EnLaPantalla_ElegirCadaValor @story-2.46 @ac-15', async () => {
+  const BASE_NUEVA = '{\n  "notify": "w"\n}\n';
+  const sePisan = { ok: false, codigo: 'se_pisan', message: 'Otra persona cambió lo mismo', conflictos: [{ camino: ['notify'], ruta: 'notify', tuyo: 'y', ahora: 'w' }], borrador: { notify: 'y' }, seccion: { texto: BASE_NUEVA, oid: 'oid-2', borrador: { notify: 'w' } } };
+  const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json(sePisan) });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  const t = p.textoDe(p.seccion());
+  assert.ok(t.includes('Quedarme con el mío') && t.includes('Tomar el de ahora'), t);
+  assert.ok(/\by\b/.test(t) && /\bw\b/.test(t), 'las dos versiones a la vista');
+  assert.ok(!/recarg/i.test(t));
+  await p.clic('Tomar el de ahora');
+  assert.ok(!p.textoDe(p.seccion()).includes('Tomar el de ahora'), 'elegido');
+  await p.clic('Revisar cambios');
+  const rev = p.llamadas.filter((c) => c.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador, { notify: 'w' }, 'lo elegido');
+  assert.strictEqual(rev.cuerpo.oid, 'oid-2'); assert.strictEqual(rev.cuerpo.base, BASE_NUEVA, 'contra la base nueva');
+  // un valor que se pisó bajo una clave «__proto__» (el nombre de una máquina) se elige como clave propia, sin tocar el
+  // prototipo de la página
+  const raro = { ...sePisan, conflictos: [{ camino: ['__proto__', 'person'], ruta: '__proto__.person', tuyo: 'a@acme.example', ahora: 'b@acme.example' }], borrador: { notify: 'y' } };
+  const pr = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json(raro) });
+  await pr.clic('Revisar cambios'); await pr.clic('Proponer el cambio'); await pr.clic('Confirmar y proponer');
+  await pr.clic('Tomar el de ahora'); await pr.clic('Revisar cambios');
+  const conRaro = pr.llamadas.filter((c) => c.ruta === '/api/config/revisar').pop().cuerpo.borrador;
+  assert.deepStrictEqual(conRaro, JSON.parse('{"notify": "y", "__proto__": {"person": "b@acme.example"}}'));
+  assert.strictEqual(({}).person, undefined, 'el prototipo, intacto');
+  // «Quedarme con el mío» deja lo escrito
+  const q = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json(sePisan) });
+  await q.clic('Revisar cambios'); await q.clic('Proponer el cambio'); await q.clic('Confirmar y proponer');
+  await q.clic('Quedarme con el mío'); await q.clic('Revisar cambios');
+  assert.deepStrictEqual(q.llamadas.filter((c) => c.ruta === '/api/config/revisar').pop().cuerpo.borrador, { notify: 'y' });
+  // mezclado sin choques pero que no pasa la revisión: el motivo, la base nueva y lo cargado; sin valores para elegir
+  const noValida = { ok: false, codigo: 'no_valida', message: 'Tu cambio sobre la versión nueva del archivo no pasa la revisión (notify: falta)', conflictos: [], borrador: { notify: 'y' }, seccion: { texto: BASE_NUEVA, oid: 'oid-3', borrador: { notify: 'w' } } };
+  const v = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json(noValida) });
+  await v.clic('Revisar cambios'); await v.clic('Proponer el cambio'); await v.clic('Confirmar y proponer');
+  const tv = v.textoDe(v.seccion());
+  assert.ok(tv.includes('no pasa la revisión') && !tv.includes('Tomar el de ahora'), tv);
+  await v.clic('Revisar cambios');
+  const rv = v.llamadas.filter((c) => c.ruta === '/api/config/revisar').pop().cuerpo;
+  assert.deepStrictEqual([rv.oid, rv.borrador], ['oid-3', { notify: 'y' }]);
+});
+
+test('T16c Reaplicado_EnLaPantalla_MuestraLaDiferenciaYConfirma @story-2.46 @ac-14', async () => {
+  const BASE_NUEVA = '{\n  "notify": "x",\n  "owners": 1\n}\n';
+  const reaplicado = { ok: false, codigo: 'reaplicado', message: 'El archivo cambió afuera en otra parte: sumé tu cambio', texto: '{\n  "notify": "y",\n  "owners": 1\n}\n', diferencia: DIFERENCIA, resumen: RESUMEN, borrador: { notify: 'y' }, seccion: { texto: BASE_NUEVA, oid: 'oid-2', borrador: { notify: 'x' } } };
+  let n = 0;
+  const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': () => { n += 1; return n === 1 ? { status: 200, json: () => Promise.resolve(reaplicado) } : { status: 200, json: () => Promise.resolve({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/2' }) }; } });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  const t = p.textoDe(p.seccion());
+  assert.ok(t.includes('sumé tu cambio'), t);
+  assert.ok(!/recarg/i.test(t));
+  assert.ok(p.boton('Confirmar y proponer'), 'para confirmar de nuevo');
+  const pres = p.todos(p.seccion()).filter((x) => x.tag === 'pre').map((x) => x.textContent);
+  assert.deepStrictEqual(pres, [BASE_NUEVA, reaplicado.texto], 'el Hoy es la versión nueva');
+  await p.clic('Confirmar y proponer');
+  const envios = p.llamadas.filter((c) => c.ruta === '/api/config/proponer');
+  assert.strictEqual(envios.length, 2);
+  assert.notStrictEqual(envios[1].cuerpo.marca, envios[0].cuerpo.marca, 'una marca nueva');
+  assert.strictEqual(envios[1].cuerpo.oid, 'oid-2'); assert.strictEqual(envios[1].cuerpo.texto, reaplicado.texto);
+  assert.ok(p.textoDe(p.seccion()).includes('Pedido abierto'));
+  // lo que el sitio arma siempre sobre su versión de hoy («Confirmar máquina»): «Revisar» dice cuál, y «Proponer»
+  // compara contra ésa y no contra la vieja de la página
+  const conVersion = json({ ok: true, texto: TEXTO_DESPUES, borrador: { notify: 'y' }, diferencia: DIFERENCIA, resumen: RESUMEN, version: { texto: BASE_NUEVA, oid: 'oid-9' } });
+  const q = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': conVersion, 'POST /api/config/proponer': json({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/9' }) });
+  await q.clic('Revisar cambios'); await q.clic('Proponer el cambio'); await q.clic('Confirmar y proponer');
+  const envio = q.llamadas.find((c) => c.ruta === '/api/config/proponer').cuerpo;
+  assert.deepStrictEqual([envio.oid, envio.base], ['oid-9', BASE_NUEVA]);
+});
+
+test('T19 SinSessionStorage_AndaIgual @story-2.46 @ac-17', async () => {
+  const tira = { getItem() { throw new Error('SecurityError'); }, setItem() { throw new Error('QuotaExceededError'); }, removeItem() { throw new Error('SecurityError'); } };
+  for (const [nombre, almacen] of [['que tira', tira], ['que no existe', undefined]]) {
+    const p = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json({ ok: true, message: 'Pedido abierto', enlace: 'https://git.acme.example/p/3' }) }, [1, 1, 1], { sessionStorage: almacen });
+    assert.ok(p.seccion(), `${nombre}: la pantalla cargó`);
+    escribirEnCanal(p, '"y"'); await p.soltar();
+    await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+    const t = p.textoDe(p.app);
+    assert.ok(t.includes('Pedido abierto'), `${nombre}: ${t}`);
+    assert.ok(!/SecurityError|QuotaExceeded|Recuperar lo que estabas/.test(t), `${nombre}: sin error a la vista`);
+  }
+});
+
+test('T16d Reaplicar_LoQueNoSeMezcla_YSusRechazos @story-2.46 @ac-14 @ac-15', { skip: SIN_BACKEND }, async () => {
+  // RP.proponer: con el archivo cambiado en main devuelve el texto y la versión de la punta; si no puede leerla, lo dice
+  // en el registro y no inventa un texto vacío
+  let gh, r, dir;
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase() }));
+    const oidViejo = r.oidDe('refs/heads/main', 'operations.json');
+    const nuevo = ORG.formatJson(opsBase({ owners: { default: 'otra@acme.example' } }));
+    r.cambiar({ 'operations.json': nuevo });
+    const base = { clon: dir, archivo: 'operations.json', contenido: ORG.formatJson(opsBase({ notify: 'x' })), oidEsperado: oidViejo, idCorto: 'operations', credencial: ESCRITURA, remote: REMOTO_GH, urlBase: { github: gh.base }, now: new Date(AHORA) };
+    const c = await RP.proponer(base);
+    assert.strictEqual(c.codigo, 'cambio');
+    assert.strictEqual(c.oidActual, r.oidDe('refs/heads/main', 'operations.json'));
+    assert.strictEqual(c.textoActual, nuevo);
+    const registro = [];
+    const gitQueFalla = (args, opts) => (args[0] === 'cat-file' ? Promise.resolve({ status: 1, stdout: '', stderr: 'fatal: bad object' }) : RP.correrGit(args, opts));
+    const sinLeer = await RP.proponer({ ...base, git: gitQueFalla, log: (l) => registro.push(l) });
+    assert.strictEqual(sinLeer.codigo, 'cambio');
+    assert.ok(sinLeer.oidActual && !('textoActual' in sinLeer), JSON.stringify(sinLeer));
+    assert.ok(registro.some((l) => /cat-file/.test(l)), registro.join(' | '));
+    assert.strictEqual(gh.st.pedidos.length, 0);
+  } finally { await cerrarTodos(r, gh); }
+
+  // el sitio: la base que no es la versión que dice se rechaza, y Diferencias entre productos no se mezcla
+  const PARIDAD = { grupos: {}, rasgos: [], diferencias_declaradas: [{ grupo: 'web', rasgo: 'firma', motivo: 'no aplica', fecha: '2026-10-01', revision: '2026-12-01' }] };
+  await sitioConPlataforma({ plataforma: 'github', archivos: { 'operations.json': opsBase(), 'scripts/ci/product-parity.json': PARIDAD } }, async ({ seccion, post, fuentes, config, reloj, r: repo }) => {
+    const repoOps = repo;
+    const s = await seccion('responsables');
+    const borrador = { owners: { default: 'otro@acme.example' } };
+    for (const [nombre, cuerpo] of [
+      ['oid null con base', { base: s.texto, oid: null }],
+      ['oid con otra forma', { base: s.texto, oid: 'no-es-un-oid' }],
+      ['base que no es JSON', { base: 'hola', oid: ORG.versionDeTexto('hola') }],
+    ]) {
+      const rev = await post('revisar', { seccion: 'responsables', borrador, ...cuerpo });
+      assert.strictEqual(rev.ok, false, `${nombre}: ${JSON.stringify(rev)}`);
+      assert.match(rev.problems[0].message, /no coincide/, nombre);
+    }
+    // «Revisar» dice sobre qué versión armó el texto (la de la página); «Proponer» con una base que no es la que dice
+    // se rechaza igual, sin abrir nada
+    const rev = await post('revisar', { seccion: 'responsables', borrador, base: s.texto, oid: s.oid });
+    assert.deepStrictEqual(rev.version, { texto: s.texto, oid: s.oid });
+    repoOps.cambiar({ 'operations.json': ORG.formatJson(opsBase({ notify: 'otro canal' })) });
+    await fuentes.refrescar();
+    const falsa = await post('proponer', { seccion: 'responsables', texto: rev.texto, oid: s.oid, base: `${s.texto} `, marca: marcaNueva() });
+    assert.strictEqual(falsa.ok, false); assert.match(falsa.message, /no coincide/, JSON.stringify(falsa));
+    // con la base verdadera se mezcla; lo de afuera (un canal con otra forma) hace que lo mezclado no pase la revisión:
+    // `no_valida`, con el motivo, la base nueva y lo cargado, sin abrir nada
+    const mala = await post('proponer', { seccion: 'responsables', texto: rev.texto, oid: s.oid, base: s.texto, marca: marcaNueva() });
+    assert.strictEqual(mala.codigo, 'no_valida', JSON.stringify(mala));
+    assert.match(mala.message, /no pasa la revisión/);
+    assert.deepStrictEqual(mala.conflictos, []);
+    assert.strictEqual(JSON.parse(mala.seccion.texto).notify, 'otro canal');
+    assert.deepStrictEqual(mala.borrador, borrador);
+    // afuera lo arreglan: ahora sí, la propuesta vuelve puesta encima
+    repoOps.cambiar({ 'operations.json': ORG.formatJson(opsBase({ site: { maintainers: [LEAD, DEV] } })) });
+    const buena = await post('proponer', { seccion: 'responsables', texto: rev.texto, oid: s.oid, base: s.texto, marca: marcaNueva() });
+    assert.strictEqual(buena.codigo, 'reaplicado', JSON.stringify(buena));
+    assert.deepStrictEqual(JSON.parse(buena.texto).site.maintainers, [LEAD, DEV]);
+    assert.strictEqual(JSON.parse(buena.texto).owners.default, 'otro@acme.example');
+    // Diferencias entre productos no se mezcla (su borrador es una acción): con su archivo cambiado en main, el «cambió»
+    // de siempre
+    const par = await seccion('paridad');
+    assert.ok(par && par.oid, JSON.stringify(par));
+    const renovada = { ...PARIDAD, diferencias_declaradas: [{ ...PARIDAD.diferencias_declaradas[0], motivo: 'sigue sin aplicar', revision: '2027-01-01' }] };
+    repo.cambiar({ 'scripts/ci/product-parity.json': ORG.formatJson({ ...PARIDAD, rasgos: ['firma'] }) });
+    const p = await post('proponer', { seccion: 'paridad', texto: ORG.formatJson(renovada), oid: par.oid, base: par.texto, marca: marcaNueva() });
+    assert.strictEqual(p.ok, false); assert.strictEqual(p.codigo, 'cambio', JSON.stringify(p));
+    // dos «releé ya» a la vez comparten una sola relectura
+    const antes = fuentes.st.refrescos;
+    const refrescarDeVerdad = fuentes.refrescar;
+    fuentes.refrescar = async () => { await new Promise((ok) => setTimeout(ok, 200)); return refrescarDeVerdad(); };
+    const [a, b] = await Promise.all([config('?releer=1'), config('?releer=1')]);
+    assert.ok(a.ok && b.ok);
+    assert.strictEqual(fuentes.st.refrescos, antes + 1, 'una sola relectura para los dos');
+    reloj.t += 60 * 1000;
+    // una relectura que falla no tumba la pestaña: contesta con lo que había
+    fuentes.refrescar = async () => { throw new Error('repo caído'); };
+    const c2 = await config('?releer=1');
+    assert.strictEqual(c2.ok, true);
+  });
 });
