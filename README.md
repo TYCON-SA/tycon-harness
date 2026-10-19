@@ -72,8 +72,9 @@ If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/
 - Your coding agent, Claude Code or Codex, installed and signed in: it is where you use the harness.
 - Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
 - Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
-- Git is **not** needed to use the harness: it is downloaded as files, not cloned.
-  A GitHub account is not needed either: this repository is public.
+- Git is **not** needed to install the harness: it is downloaded as files, not cloned.
+  A GitHub account is not needed either: this repository is public. To commit your stories you do need git, with
+  your name and email set (`git config --global user.name` and `user.email`).
 - Your Node is needed to install. After that the harness downloads its own Node 24 (about 50 MB, from nodejs.org) and
   its hooks run with it; your projects keep your Node, which is not touched. Turn it off with `TYCON_HARNESS_NODE=0`.
 - What your project needs to build (for example, the .NET SDK). Without it, the implementation stops at the build.
