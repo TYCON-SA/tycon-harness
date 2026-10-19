@@ -1620,7 +1620,7 @@ const COVER_PHRASE = {
 };
 const COVER_WORDS = { en: ['Complete', 'Consistent', 'Controlled', 'Adaptable'], es: ['Completo', 'Consistente', 'Controlado', 'Adaptable'] };
 const COVER_AGENT = { en: 'coding agent', es: 'agente de código' };
-const STACKS_LINE = { en: 'It works today for .NET and JavaScript/TypeScript', es: 'Sirve hoy para .NET y JavaScript/TypeScript' };
+const STACKS_LINE = { en: 'It works today for .NET, JavaScript, TypeScript, Python, Go and Java', es: 'Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java' };
 // lo que vale en otros lenguajes, dicho junto a la línea de arriba
 const OTHER_STACKS = { en: 'that step does not recognize your tests yet', es: 'ese paso todavía no reconoce tus pruebas' };
 // los seis pasos del ciclo, en orden, cada uno en negrita con su número

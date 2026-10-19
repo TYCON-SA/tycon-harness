@@ -27,8 +27,9 @@ máquina](#empezá-solo), o [para tu equipo](#para-equipos).
 
 ## Empezá solo
 
-**Sirve hoy para .NET y JavaScript/TypeScript**: el paso de pruebas corre `dotnet test`, vitest, jest y `node --test`.
-En otros lenguajes ese paso todavía no reconoce tus pruebas y no da verde solo.
+**Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java**: el paso de pruebas corre de fábrica .NET, Vitest,
+Jest, Node (`node --test`), pytest, Go, Maven, Gradle y Karma. Con otra herramienta, ese paso todavía no reconoce tus
+pruebas hasta que tu equipo la declara en su configuración («Tu tecnología», en el sitio).
 
 Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.
 La lista completa está en [Qué necesitás](#qué-necesitás).
