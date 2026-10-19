@@ -351,6 +351,10 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     // la marca es una parte de site que un lector anterior no conoce: la sección dice «todavía no sabe leer»
     if (s.id === 'organizacion' && !(Array.isArray(lec.SITE_KEYS) && lec.SITE_KEYS.includes('brand'))) return { ...base, estado: 'no_reader', motivo: M('config.noLeeMarca') };
     if (s.id === 'modelos') { const hoy = ORG.modelosDeHoy(TREE); v.extras = { hoy, motivoHoy: hoy ? null : ORG.motivoDeHoy(TREE), revisores: revisoresDelArbol(cl.perfil && cl.perfil.dir) }; }
+    // un trabajo declarado por encima del tope se marca al cargar (y «revisar» no lo deja proponer); los repos
+    // sin pipeline dicen qué pasa, con la misma respuesta que da el lector al merge
+    if (s.id === 'modelos' && doc) v.problems.push(...ORG.problemasDelTope(s, lec, doc));
+    if (s.id === 'suites') v.extras = { sinPipeline: ORG.sinPipelinePorRegla(lec) };
     // las herramientas de prueba de fábrica de esta versión, para que «Cambiar» arranque desde ellas; las que la puerta
     // corre por dentro se listan sin poder cambiarse
     if (s.id === 'tecnologia') v.extras = tecnologiaDeFabrica();

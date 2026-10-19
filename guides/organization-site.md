@@ -395,9 +395,11 @@ en su repo.
 - **Cómo contesta Claude**: el idioma, el estilo y el largo de las respuestas en todas las máquinas. Queda en
   `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Qué modelo usa cada trabajo del pipeline**: el modelo de los revisores, del pase adversarial, de los ayudantes y de
-  la sesión; lo que no se declara usa el de hoy. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien
-  mantiene, mirando el costo.
-- **Dónde corren las pruebas completas al mergear**: en la máquina o en el servidor, repo por repo. Queda en
+  la sesión, en una tabla por grupo con el valor por defecto de cada trabajo al lado; «el por defecto» deja el que trae
+  la versión instalada. Con el tope obligatorio, un trabajo elegido por encima del tope se marca en rojo y el cambio no
+  se puede proponer. Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene, mirando el costo.
+- **Dónde corren las pruebas completas al mergear**: en la máquina o en el servidor, repo por repo, un renglón por repo
+  (✎ abre sus datos). Un repo sin pipeline de pruebas completas dice qué pasa con su regla. Queda en
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
   avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.

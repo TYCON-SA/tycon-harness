@@ -1986,6 +1986,25 @@ test('T14b Plan_KeepMode_HonoredOnHostsWithoutPullRequests @story-7.28 @ac-10', 
   }
 });
 
+test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13 — lo que la pantalla dice sin pipeline es lo que decide el merge', () => {
+  // un repo de GitHub sin pipeline declarado, con cada regla; la rama exige un control o no exige ninguno
+  const where = { host: 'github', ghRepo: 'acme/widgets' };
+  const config = { mode: 'pr', check: null, declaredIn: 'x' };
+  const conControl = { rules: RULESET(['ci-completo'], false), branch: CLASSIC(['ci-completo']) };
+  const sinControl = { rules: [], branch: UNPROTECTED };
+  const vistos = {};
+  for (const rule of ['automatico', 'siempre-en-la-maquina', 'confiar-en-el-servidor']) {
+    const dice = TR.suitesWithoutPipeline(rule);
+    const decide = (routes) => M.suitesDecision(where, config, 'main', deps({ gh: fakeGhApi(routes), teamRepos: team(entry(GH_REPO, { rule })) })).suites;
+    const [exige, noExige] = [decide(conControl), decide(sinControl)];
+    if (dice === 'machine') assert.deepStrictEqual([exige, noExige], ['machine', 'machine'], `${rule}: «corren en la máquina del dev»`);
+    else assert.deepStrictEqual([dice, exige, noExige], ['server-if-any-check', 'server', 'machine'], `${rule}: «el servidor, si la rama exige un control»`);
+    vistos[dice] = true;
+  }
+  assert.deepStrictEqual(Object.keys(vistos).sort(), ['machine', 'server-if-any-check'], 'las dos respuestas aparecen');
+  assert.strictEqual(TR.suitesWithoutPipeline('inventada'), null, 'una regla que el lector no conoce no se adivina');
+});
+
 // ── T22 va ÚLTIMA: mira que en todo el archivo nadie le preguntó al az ni al gh de la máquina ───────────────────────
 test('T22 Plan_NoRegression_NothingDeclared_PublicClone_NoRealCalls @story-7.28 @ac-15', () => {
   const az = fakeAz(AZ_OK());

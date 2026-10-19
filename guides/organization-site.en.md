@@ -412,10 +412,13 @@ only: they are changed with a request in their repo.
 - **How Claude answers** (*Cómo contesta Claude*): the language, style and length of the answers on every machine. It
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
-  adversarial pass, the helpers and the session; what is not declared uses today's. It lives in `team-repos.json`, in
-  the profile repo. A maintainer reviews it, looking at the cost.
+  adversarial pass, the helpers and the session, in one table per group with each job's default next to it; «the
+  default» keeps the one the installed version comes with. With the required ceiling, a job set above the ceiling is
+  marked in red and the change cannot be proposed. It lives in `team-repos.json`, in the profile repo. A maintainer
+  reviews it, looking at the cost.
 - **Where the full tests run on merge** (*Dónde corren las pruebas completas al mergear*): on the machine or on the
-  server, repo by repo. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
+  server, repo by repo, one row per repo (✎ opens its details). A repo without a full tests pipeline says what happens
+  with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Test coverage** (*Cobertura de las pruebas*): the percentage of covered new lines below which the test control gives
   notice (it warns, it does not stop). It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Your technology** (*Tu tecnología*): what the harness already recognizes, the file endings your team adds as code,
