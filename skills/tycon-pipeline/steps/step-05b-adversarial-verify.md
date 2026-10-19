@@ -97,7 +97,7 @@ lee para saber que 5b fue atendido (si no, `next` te devuelve 5b de nuevo en loo
 
 ```bash
 # corrió el workflow → su resultado (§Decisiones post-output):
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --classes <clases> --tests <k> …
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --classes <clases> --tests <k> …
 # el gate dio run:false → el salteo (el comando le vuelve a preguntar al portón):
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>
 ```
@@ -132,6 +132,12 @@ invocar la tool `Workflow`:
 > Todo lo demás del step es idéntico (marker, join, decisiones post-output). Paridad verificada
 > con bug plantado confirmado por ambas vías. Sin resume cross-sesión:
 > un workflow huérfano bajo codex cae SIEMPRE en la rama "relanzar" de este step.
+> Sale 3 si el pase quedó **no medido** (§Pase no medido); el archivo de `--out` se escribe igual.
+
+🔴 **El resultado se guarda en `<RUN_DIR>/step-05b-adversarial.json` en las dos rutas**: bajo Codex lo
+escribe `workflow-lite.js --out`; con la herramienta Workflow, el orquestador escribe ahí, tal cual, el JSON que devolvió
+la herramienta, ANTES de procesarlo. Es el archivo que se anota con `mark-adversarial-result --result`: trae el texto de
+cada hallazgo (`detalle`), el estado de cada lente (`lentes`) y si el pase revisó todo (`medido`).
 
 ⚠️ `scriptPath` es un path LITERAL (la tool Workflow no expande `~`): pasá el ABSOLUTO
 (`$HOME/.claude/agent-skills/skills/tycon-pipeline/scripts/adversarial-verify.workflow.js` con `$HOME` resuelto).
@@ -166,6 +172,52 @@ edge · correctitud-algorítmica · integración/contratos); cada hunter lee el 
 reproduce → cero ruido). Devuelve `{ confirmed: [...], all_lenses: [...], probes_dir, hallazgos, clases, agentes_ahorrados, dudas, sin_veredicto, hallazgos_sin_veredicto, a_verificar_aparte }`; cada CONFIRMED trae `probe_dir`
 (la carpeta con su prueba; `""` si el verificador no pudo guardarla — su `verify_reasoning` dice por
 qué). Al terminar, anotar el resultado con `mark-adversarial-result` (§Decisiones post-output): eso cierra el 5b.
+
+## Pase no medido
+
+`agent()` devuelve `null` cuando un agente muere o no contesta lo pedido, en la herramienta Workflow y en
+`workflow-lite.js` por igual. Antes el guion leía un cazador muerto como una lente sin hallazgos: con Codex en
+su tope, un pase que no revisó nada salió «6 lentes limpias». Ahora:
+
+- Una lente cuyo cazador no contestó queda **`sin-medir`** (en `lentes` y en `lentes_sin_medir`).
+- Un hallazgo cuyo verificador no contestó queda **`sin-veredicto`** en `detalle`, con su texto entero. Nunca es
+  refutado ni limpio.
+- Con alguno de los dos, el pase sale **`medido: false`** y su `aviso` lo dice. **No medido no es verde**:
+  `mark-adversarial-result` lo anota `no-medido` y no cierra el 5b, `complete-step 8` frena (`pase-no-medido`, y
+  `DOD_BYPASS` no lo abre), `deep-review-gate` dice que corre (el salteo se niega) y `next` pide relanzarlo.
+- Para destrabar: relanzar (`mark-adversarial-launched <runId nuevo> 5b --relaunch`) y anotar el resultado nuevo con
+  `--result`. Abandonarlo sigue siendo una decisión del dev con el interruptor (`TYCON_NO_DEEP_REVIEW=1`, queda en
+  `bypass.log`).
+- Bajo Codex, `corredor.muertos` dice la causa de cada agente y la hora. Con el tope de uso no se reintenta y los
+  agentes que faltan no se lanzan.
+
+## Sin Codex ni Workflow: el pase propio con agentes de Claude
+
+La salida aprobada cuando Codex no contesta y la sesión no tiene la herramienta Workflow:
+**un pase propio con agentes de Claude — cazadores con Sonnet, un verificador aparte por hallazgo que corre el código,
+juicio con Opus, nunca Fable**. Corre EL MISMO guion; `workflow-lite.js --agents-dir` no lanza nada: arma los pedidos y
+lee las respuestas, y el archivo de resultado sale del guion, no se escribe a mano.
+
+```bash
+W=~/.claude/agent-skills/skills/tycon-pipeline/scripts
+node $W/marker.js mark-adversarial-launched claude-<sello> 5b --relaunch   # --relaunch sólo si ya había un lanzamiento
+# vuelta 1: deja seis pedidos (uno por cazador) y sale 3
+node $W/workflow-lite.js $W/adversarial-verify.workflow.js --args '<mismo JSON de args, model: "sonnet">' \
+  --out <RUN_DIR>/step-05b-adversarial.json --agents-dir <RUN_DIR>/step-05b-agentes
+```
+
+1. Leer `<RUN_DIR>/step-05b-agentes/PEDIDOS.json`: por cada pedido pendiente, lanzar UN `Agent(...)` de Claude
+   (`model` del pedido: `sonnet`; en segundo plano, ventana de 3 vivos) con el texto de `prompt_file`, y la orden de
+   escribir en `answer_file` SÓLO el JSON que pide `schema_file`.
+2. Con todas las respuestas escritas, volver a correr el mismo comando. La segunda vuelta deja los pedidos de los
+   verificadores (uno por clase de hallazgo, que reproduce o refuta corriendo el código); se lanzan igual.
+3. Repetir hasta que el comando salga 0 y `PEDIDOS.json` quede vacío. El juicio lo hace la sesión (Opus): leer
+   `detalle` y decidir qué se arregla.
+4. Anotar como siempre: `mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …`. El
+   resultado trae `corredor.nombre: agentes-claude`.
+
+Una respuesta que falta o que no trae las claves del esquema cuenta como agente muerto: la lente queda sin medir o el
+hallazgo sin veredicto, igual que con Codex.
 
 ## Superficie compartida — el 4to override del gate (2026-08-26)
 
@@ -282,7 +334,7 @@ relanzamiento, las del pase anterior no cuentan), `--own p` va con
 `--in` (las rutas), `k + p + d = N`, y todo diferido lleva `--reason`:
 
 ```bash
-node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --classes <clases> \
+node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --classes <clases> \
   --tests <k promovidas> [--own <p> --in "<ruta>[,<ruta>…]"] [--deferred <d> --reason "<por qué y a qué story>"]
 ```
 
@@ -340,10 +392,9 @@ contador. No están confirmados ni refutados. Tratarlos como refutados es marcar
 que nadie reprodujo — el defecto que el agrupamiento existe para NO cometer. Si vuelve
 `a_verificar_aparte > 0`: relanzar el pase sobre ellos o verificarlos a mano antes de cerrar.
 
-🔴 **`sin_veredicto` no es «refutado»**: son las clases cuyo verificador murió o no contestó JSON válido. El
-default REFUTED sigue valiendo (no se confirma lo que no se reprodujo), pero una muerte técnica ahora arrastra a
-la CLASE entera, no a un hallazgo — por eso el pase la cuenta y la loguea. Si vuelve `sin_veredicto > 0`, decidilo:
-relanzar el pase o verificar esas clases a mano. No se cierra el 5b haciendo de cuenta que no había nada.
+🔴 **`sin_veredicto` no es «refutado»**: son las clases cuyo verificador murió o no contestó JSON válido. Sus
+hallazgos quedan `sin-veredicto` en `detalle`, con su texto, y el pase sale no medido (§Pase no medido): no se
+confirman, pero tampoco se dan por limpios. No se cierra el 5b haciendo de cuenta que no había nada.
 
 **Al cerrar el pase**, pasarle las causas al volcado para que el ratio se siga midiendo solo, y los
 hallazgos que quedaron sin verificar para que no desaparezcan:

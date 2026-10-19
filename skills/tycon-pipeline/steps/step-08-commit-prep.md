@@ -102,7 +102,7 @@ anota en `gates.log` (`name: findings-json`). Correr este comando igual sirve pa
 
 - **pase lanzado** → hace falta su resultado `--type 5b` anotado en o después del ÚLTIMO lanzamiento:
   ```bash
-  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> \
+  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> \
     --tests <k promovidas> [--own <p> --in "<rutas>"] [--deferred <d> --reason "<por qué>"]
   ```
   (un resultado de un lanzamiento anterior —pase relanzado— no cuenta: `resultado-de-otro-lanzamiento`).

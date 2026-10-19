@@ -2615,7 +2615,7 @@ function notaCierre3(marker) {
     : '';
   return `marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
-const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> '
+const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
 // El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio (2026-10-03). El cierre del paso 8 exige
@@ -2641,6 +2641,17 @@ const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_r
 function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   const { veredictoPaseAdversarial, paseAtendido, reglaPaseAjeno } = require('./lib/adversarial-verdict.js');
   const v = veredictoPaseAdversarial(marker);
+  if (v.motivo === 'pase-no-medido') {
+    // El pase corrió y no revisó todo. No está atendido: se relanza (y en el mismo turno, --relaunch).
+    const { SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+    const p = v.pase || {};
+    return {
+      pending_action: {
+        kind: 'relanzar-pase-no-medido',
+        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso (5b) y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
+      },
+    };
+  }
   if (paseAtendido(v)) {
     const skip = marker.adversarialSkip || {};
     if (v.motivo === 'abandonado' || skip.abandonado === true) {
@@ -5833,6 +5844,19 @@ function main() {
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
     const corrida = readSessionMarker();
     const mismaStory = !args.story || !corrida || !corrida.storyPath || path.resolve(args.story) === path.resolve(corrida.storyPath);
+    // Un pase que quedó NO MEDIDO (alguna lente sin su cazador, algún hallazgo sin su verificador) es un
+    // pase que falta. El portón dice que corre —así el salteo se niega— salvo el interruptor del dev, que gana siempre.
+    if (corrida && mismaStory && !args.noDeepReview && result && typeof result.run === 'boolean') {
+      const { veredictoPaseAdversarial, SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+      const v = veredictoPaseAdversarial(corrida);
+      if (v.motivo === 'pase-no-medido') {
+        const p = v.pase || {};
+        const porque = `el pase anterior quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}): un pase que no revisó todo es un pase que falta — relanzalo (--relaunch), o ${SALIDA_APROBADA}`;
+        result.reason = result.run ? `${porque} · ${result.reason}` : `${porque} · el portón por sí solo decía: ${result.reason}`;
+        if (!result.run) { result.run = true; result.model = result.model || p.modelo || MODELOS.DEFAULTS.adversarial.model; }
+        result.previous_pass = 'no-medido';
+      }
+    }
     if (corrida && corrida.storyId && mismaStory && (corrida.stepsCompleted || []).map(String).includes('4')
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {

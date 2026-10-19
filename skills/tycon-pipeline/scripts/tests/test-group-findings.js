@@ -30,6 +30,16 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
+
+// El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con sus N confirmados.
+function resultadoMedido(dir, n) {
+  const archivo = path.join(dir, `resultado-${n}-${process.hrtime.bigint()}.json`);
+  fs.writeFileSync(archivo, JSON.stringify({
+    confirmed: Array.from({ length: n }, (_v, k) => ({ lens: 'l', summary: `h${k}` })),
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true,
+  }));
+  return archivo;
+}
 const LIB = path.join(SCRIPTS, 'lib', 'group-findings.js');
 const WFLITE = path.join(SCRIPTS, 'workflow-lite.js');
 const WORKFLOW = path.join(SCRIPTS, 'adversarial-verify.workflow.js');
@@ -210,7 +220,7 @@ test('AC7 — mark-adversarial-result acepta --classes y lo guarda en el volcado
   const set = spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '7.11', repoPath: repo, storyPath: path.join(repo, 's.md') })], { encoding: 'utf8', env });
   assert.strictEqual(set.status, 0, `no se pudo armar el marker: ${set.stderr}`);
 
-  const res = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--classes', '3', '--tests', '0', '--deferred', '6', '--reason', 'caso de prueba'], { encoding: 'utf8', env });
+  const res = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--result', resultadoMedido(tmp, 6), '--classes', '3', '--tests', '0', '--deferred', '6', '--reason', 'caso de prueba'], { encoding: 'utf8', env });
   assert.strictEqual(res.status, 0, `mark-adversarial-result rechazó --classes: ${res.stderr}`);
 
   const get = spawnSync(process.execPath, [MARKER, 'get'], { encoding: 'utf8', env });
@@ -232,12 +242,12 @@ test('AC7 — el volcado también guarda los hallazgos que quedaron sin verifica
   fs.mkdirSync(repo, { recursive: true });
   spawnSync(process.execPath, [MARKER, 'set', JSON.stringify({ storyId: '7.11', repoPath: repo, storyPath: path.join(repo, 's.md') })], { encoding: 'utf8', env });
 
-  const ok = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--classes', '3', '--separate', '2', '--tests', '0', '--deferred', '6', '--reason', 'x'], { encoding: 'utf8', env });
+  const ok = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--result', resultadoMedido(tmp, 6), '--classes', '3', '--separate', '2', '--tests', '0', '--deferred', '6', '--reason', 'x'], { encoding: 'utf8', env });
   assert.strictEqual(ok.status, 0, `rechazó --separate: ${ok.stderr}`);
   const m = JSON.parse(spawnSync(process.execPath, [MARKER, 'get'], { encoding: 'utf8', env }).stdout);
   assert.strictEqual(m.adversarialPasses.slice(-1)[0].a_verificar_aparte, 2, 'queda anotado en el volcado');
 
-  const imposible = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '2', '--type', '5b', '--separate', '5', '--tests', '0', '--deferred', '2', '--reason', 'x'], { encoding: 'utf8', env });
+  const imposible = spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '2', '--type', '5b', '--result', resultadoMedido(tmp, 2), '--separate', '5', '--tests', '0', '--deferred', '2', '--reason', 'x'], { encoding: 'utf8', env });
   assert.strictEqual(imposible.status, 2, 'más sin verificar que confirmados es imposible');
 });
 
@@ -303,7 +313,7 @@ test('AC7 — --classes rechaza lo que no es un entero y lo que supera a los con
 
   const correr = (clases) => spawnSync(
     process.execPath,
-    [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--classes', clases, '--tests', '0', '--deferred', '6', '--reason', 'x'],
+    [MARKER, 'mark-adversarial-result', '6', '--type', '5b', '--result', resultadoMedido(tmp, 6), '--classes', clases, '--tests', '0', '--deferred', '6', '--reason', 'x'],
     { encoding: 'utf8', env }
   );
 
