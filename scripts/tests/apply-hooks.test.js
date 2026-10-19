@@ -102,6 +102,9 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
     assert.match(h.when, /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/, `${h.spec}: when ${h.when}`);
     assert.strictEqual(typeof h.platforms.windows, 'boolean', `${h.spec}: platforms.windows`);
     assert.ok(h.label && typeof h.label === 'string', `${h.spec}: label`);
+    // los pasos y el efecto los muestra «Cómo trabaja»: el aplicador los acepta ausentes, la lista real los trae siempre
+    assert.ok(Array.isArray(h.steps) && h.steps.length, `${h.spec}: steps`);
+    assert.ok(typeof h.effect === 'string', `${h.spec}: effect`);
   }
   // ninguno de los dos instaladores lleva una lista propia (AC 23)
   for (const rel of ['scripts/install-tycon-hooks.sh', 'scripts/install-tycon-hooks.ps1']) {
@@ -114,12 +117,16 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const bad = JSON.parse(JSON.stringify(list));
   bad.hooks[0].when = 'a veces';
   assert.ok(mod.validateList(bad).some((p) => p.includes(bad.hooks[0].spec) && p.includes('when')));
-  // los pasos y el efecto de cada control (los muestra «Cómo trabaja» del sitio): sin ellos, o fuera del vocabulario, rojo
-  for (const [campo, valor] of [['steps', undefined], ['steps', []], ['steps', ['paso cinco']], ['effect', undefined], ['effect', 'grita']]) {
+  // los pasos y el efecto de cada control (los muestra «Cómo trabaja» del sitio): fuera del vocabulario, rojo
+  for (const [campo, valor] of [['steps', []], ['steps', ['paso cinco']], ['effect', 'grita']]) {
     const mal = JSON.parse(JSON.stringify(list));
-    if (valor === undefined) delete mal.hooks[1][campo]; else mal.hooks[1][campo] = valor;
+    mal.hooks[1][campo] = valor;
     assert.ok(mod.validateList(mal).some((p) => p.includes(mal.hooks[1].spec) && p.includes(campo)), `${campo} = ${JSON.stringify(valor)}`);
   }
+  // ausentes, la lista se aplica igual (una lista armada a mano o de otra versión no se rechaza por datos de pantalla)
+  const sinDatos = JSON.parse(JSON.stringify(list));
+  delete sinDatos.hooks[1].steps; delete sinDatos.hooks[1].effect;
+  assert.deepStrictEqual(mod.validateList(sinDatos), [], 'sin steps ni effect, la lista pasa');
 });
 
 // ── T34 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

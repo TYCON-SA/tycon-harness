@@ -1825,6 +1825,12 @@
       "requiere": []
     },
     {
+      "__nota": "la pestaña «Cómo trabaja» del sitio de la organización: el recorrido de una historia armado con las mismas fuentes con que corre el arnés (la tabla de pasos, el cálculo de revisores, la lista de controles y los despachadores, los paquetes, los lectores de configuración y las funciones que deciden cada pieza «según la historia»), que frena si una fuente y la pantalla se separan; los revisores de la organización revisados con el lector de paquetes y propuestos en un solo pedido con versiones firmadas; sólo para quien mantiene; textos en los dos idiomas. Levanta el servidor del sitio con sesiones reales del emisor local, repos git locales por HTTP y un GitHub falso en el proceso; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/how-it-works.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",

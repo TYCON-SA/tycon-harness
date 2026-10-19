@@ -106,9 +106,10 @@ function validateList(list) {
     if (h.async !== undefined && (h.async !== true || !ASYNC_ALLOWED)) out.push(`${who}: async sólo puede ser true`);
     if (!h.platforms || typeof h.platforms !== 'object' || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
     // en qué pasos del pipeline actúa y qué hace: no cambian lo que se registra; los muestra «Cómo trabaja» del sitio
-    // (que cada id sea un paso de verdad lo cruza la prueba del sitio contra la tabla de pasos)
-    if (!Array.isArray(h.steps) || !h.steps.length || !h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s))) out.push(`${who}: steps tiene que ser una lista de pasos del pipeline («4», «7c»…) o ["all"]`);
-    if (!EFFECTS.includes(h.effect)) out.push(`${who}: effect «${h.effect}» fuera del vocabulario (${EFFECTS.join(', ')})`);
+    // (que cada id sea un paso de verdad lo cruza la prueba del sitio contra la tabla de pasos). Sin ellos la lista se
+    // aplica igual: son datos para mostrar, y que la lista real los traiga lo exige su prueba
+    if (h.steps !== undefined && (!Array.isArray(h.steps) || !h.steps.length || !h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${who}: steps tiene que ser una lista de pasos del pipeline («4», «7c»…) o ["all"]`);
+    if (h.effect !== undefined && !EFFECTS.includes(h.effect)) out.push(`${who}: effect «${h.effect}» fuera del vocabulario (${EFFECTS.join(', ')})`);
     const key = `${h.event}|${normMatcher(h.matcher)}|${h.spec}`;
     if (seen.has(key)) out.push(`${who}: registro repetido (${h.event}, ${h.matcher || 'sin matcher'})`);
     seen.add(key);
