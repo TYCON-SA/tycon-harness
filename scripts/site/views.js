@@ -18,7 +18,9 @@
 const { esc, chip, umbralValido } = require('../nightly/dashboard/common.js');
 const fichasDelTablero = require('./tabs/cards.js');
 const { compare: compararVersiones } = require('../setup/harness/version-order.js');
-const { t } = require('./texts.js');
+const { t, TEXTOS } = require('./texts.js');
+/** El nombre de una fuente de la noche en un idioma; una fuente que la tabla no conoce sale con su id. */
+const nombreDeFuente = (id, idioma) => (Object.prototype.hasOwnProperty.call(TEXTOS, `fuente.${id}`) ? t(idioma, `fuente.${id}`) : id);
 const { IDIOMAS, POR_DEFECTO, valido } = require('./language.js');
 const { MOTIVOS: MOTIVOS_ULTIMA } = require('./latest-release.js');
 
@@ -211,7 +213,7 @@ function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idio
   const cf = (f) => conFecha(f, idioma);
   const lineas = [];
   for (const s of (m.sources && Array.isArray(m.sources.lista) ? m.sources.lista : [])) {
-    lineas.push({ clave: `fuente:${s.id}`, titulo: T('arnes.fuente', { id: s.id }), estado: s.estado, texto: s.estado === 'medido' ? T('arnes.alDia', { fecha: s.fecha }) : cf(s) });
+    lineas.push({ clave: `fuente:${s.id}`, titulo: T('arnes.fuente', { id: nombreDeFuente(s.id, idioma) }), estado: s.estado, texto: s.estado === 'medido' ? T('arnes.alDia', { fecha: s.fecha }) : cf(s) });
   }
   const b = m.banco;
   lineas.push({ clave: 'banco', titulo: T('arnes.banco'), estado: medida(b) ? 'medido' : 'no_medido', texto: medida(b) ? T(Number.isFinite(b.total) ? 'arnes.bancoRojosDe' : 'arnes.bancoRojos', { n: (b.rojos || []).length, total: b.total, fecha: b.fecha }) : cf(b) });

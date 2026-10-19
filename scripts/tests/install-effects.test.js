@@ -516,3 +516,56 @@ test('8.16 D · Effects_Integrations_OfferedAreTheFourWithASwitch_AllEightNamed'
   assert.ok(bad((d) => { d.integrations.push(d.integrations[0]); }).some((m) => /dos veces/.test(m)), 'una repetida');
   assert.ok(bad((d) => { delete d.integrations[7].why; }).some((m) => /por qué/.test(m)), 'una que no se ofrece sin «why»');
 });
+
+// ── el inglés de cada pieza, para el sitio en inglés ────────────────────────────────────────────────────────────────
+// La terminal sigue leyendo `title`, `does` y `switch`; la pestaña Configuración del sitio en inglés lee `en`. Una pieza
+// sin `en` la frena esta prueba, no la validación: la validación corre también en el instalador, y un inglés que falta
+// puede dejar a una máquina sin su lista.
+const { enCastellano } = require('./lib/spanish-text.js');
+// la variable del interruptor: lo que va antes del primer espacio («TYCON_SESSION_GUARD=1 lo prende» → TYCON_SESSION_GUARD=1)
+const variableDe = (s) => String(s).split(' ')[0];
+
+test('2.57 · Effects_CadaPiezaTraeSuIngles @story-2.57 @ac-2', () => {
+  const doc = readJson(ROOT, managed.EFFECTS_FILE);
+  assert.deepStrictEqual(managed.effectProblems(doc), [], 'la lista real pasa su validación');
+  const sinIngles = doc.effects.filter((e) => !(e.en && e.en.title && e.en.does)).map((e) => e.id || e.id_pattern);
+  assert.deepStrictEqual(sinIngles, [], `piezas sin su inglés (en.title y en.does): ${sinIngles.join(', ')}`);
+  for (const e of doc.effects) {
+    const name = e.id || e.id_pattern;
+    assert.notStrictEqual(e.en.title, e.title, `${name}: en.title es el castellano`);
+    assert.notStrictEqual(e.en.does, e.does, `${name}: en.does es el castellano`);
+    const conFrase = typeof e.switch === 'string' && e.switch.trim() !== variableDe(e.switch);
+    assert.strictEqual('switch' in e.en, conFrase, `${name}: en.switch va sólo cuando el interruptor trae una frase («${e.switch}»)`);
+  }
+  // las cuatro con frase, con la misma variable adelante
+  const conFrase = doc.effects.filter((e) => e.en.switch);
+  assert.strictEqual(conFrase.length, 4, `las piezas con frase en el interruptor: ${conFrase.map((e) => e.id).join(', ')}`);
+  for (const e of conFrase) assert.strictEqual(variableDe(e.en.switch), variableDe(e.switch), `${e.id}: la misma variable`);
+  // la validación mira la forma de `en` cuando está; una pieza sin `en` no es un problema de la validación
+  const sample = doc.effects.find((e) => e.id === 'PreToolUse:@tcg:session-collision-guard.js');
+  const bad = (en) => managed.effectProblems({ effects: [Object.assign({}, sample, { en })] });
+  const sinEn = Object.assign({}, sample); delete sinEn.en;
+  assert.deepStrictEqual(managed.effectProblems({ effects: [sinEn] }), [], 'una pieza sin en: no es problema de la validación');
+  assert.ok(bad({ ...sample.en, color: 'x' }).some((m) => m.includes('session-collision-guard') && m.includes('color')), 'un campo de más en en');
+  assert.ok(bad({ ...sample.en, does: ' ' }).some((m) => m.includes('en.does')), 'un en.does vacío');
+  assert.ok(bad('Blocks git').some((m) => m.includes('session-collision-guard') && m.includes('«en» es un objeto')), 'un en que no es un objeto');
+  assert.ok(bad({ ...sample.en, title: '' }).some((m) => m.includes('en.title')), 'un en.title vacío');
+  assert.ok(bad({ ...sample.en, title: 'x'.repeat(71) }).some((m) => m.includes('en.title')), 'un en.title de más de 70 caracteres, como title');
+  const { switch: _sw, ...sinSwitch } = sample.en;
+  assert.ok(bad(sinSwitch).some((m) => m.includes('falta «en.switch»')), 'un interruptor con frase sin en.switch');
+  assert.ok(bad({ ...sample.en, switch: 'TYCON_OTHER_GUARD=1 turns it on' }).some((m) => m.includes('en.switch')), 'otra variable en en.switch');
+  const sinFrase = Object.assign({}, doc.effects.find((e) => e.id === 'PreToolUse:@tcg:safety-guard-pre.sh'));
+  sinFrase.en = { ...sinFrase.en, switch: 'TYCON_SAFETY_GUARD=0 turns it off' };
+  assert.ok(managed.effectProblems({ effects: [sinFrase] }).some((m) => m.includes('en.switch')), 'en.switch sin frase en el interruptor');
+});
+
+test('2.57 · Effects_ElInglesNoTraeCastellano @story-2.57 @ac-3', () => {
+  const doc = readJson(ROOT, managed.EFFECTS_FILE);
+  const textos = doc.effects.flatMap((e) => (e.en ? [e.en.title, e.en.does, e.en.switch] : [])).filter(Boolean);
+  assert.ok(textos.length >= doc.effects.length * 2, `cada pieza con su inglés (${textos.length} textos)`);
+  // las variables de los interruptores y los nombres de archivo no son castellano: van tal cual
+  const restos = enCastellano(textos);
+  assert.deepStrictEqual(restos, [], `inglés del catálogo con castellano:\n${restos.join('\n')}`);
+  // el detector, contra un texto con castellano: rojo
+  assert.deepStrictEqual(enCastellano(['Frena git si otra sesión usa la copia']), ['Frena git si otra sesión usa la copia']);
+});

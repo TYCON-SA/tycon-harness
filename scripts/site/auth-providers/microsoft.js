@@ -149,10 +149,10 @@ const variables = ['SITE_AUTH_MICROSOFT_ACCOUNTS', 'SITE_AUTH_MICROSOFT_TENANT']
 
 // lo que este proveedor le dice a una persona, en los dos idiomas: la tabla del sitio (texts.js) lo suma a la suya
 const TEXTOS = {
-  'proveedor.microsoftCualquiera': { es: 'Microsoft, con cualquier cuenta de trabajo o escuela, de cualquier organización; los invitados del directorio de la organización entran por su propia puerta', en: 'Microsoft, with any work or school account, from any organization; guests of the organization\'s directory sign in through their own door' },
+  'proveedor.microsoftCualquiera': { es: 'Microsoft, con cualquier cuenta de trabajo o escuela, de cualquier organización; los invitados del directorio de la organización entran por su propia puerta', en: "Microsoft, with any work or school account, from any organization; guests of the organization's directory use their own sign-in option" },
   'proveedor.microsoftInquilino': { es: 'Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados)', en: 'Microsoft accounts from the organization\'s directory (one tenant, including guests)' },
   'proveedor.personalNo': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio', en: 'personal Microsoft accounts are not accepted on this site' },
-  'proveedor.personalNoInvitado': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio. Si sos invitado del directorio de la organización, entrá por la puerta de los invitados', en: 'personal Microsoft accounts are not accepted on this site. If you are a guest of the organization\'s directory, sign in through the guests\' door' },
+  'proveedor.personalNoInvitado': { es: 'las cuentas personales de Microsoft no se aceptan en este sitio. Si sos invitado del directorio de la organización, entrá por la puerta de los invitados', en: "personal Microsoft accounts are not accepted on this site. If you are a guest of the organization's directory, use the guest sign-in option" },
   'proveedor.entrarMicrosoft': { es: 'Entrar con tu cuenta de Microsoft', en: 'Sign in with your Microsoft account' },
 };
 

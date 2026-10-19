@@ -756,6 +756,8 @@ function pantalla(idioma = 'es') {
 (function () {
   // cada texto visible sale de TX, que el servidor arma en el idioma de la página; una clave que falta se ve como clave
   var TX = ${textos};
+  // el idioma de la página: elige el de cada pieza de lo que instala el arnés; el resto ya viene en TX
+  var IDIOMA = ${JSON.stringify(idioma === 'en' ? 'en' : 'es')};
   function T(k, v) {
     var s = Object.prototype.hasOwnProperty.call(TX, k.slice(9)) ? TX[k.slice(9)] : k;
     return v ? s.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, function (m, n) { return Object.prototype.hasOwnProperty.call(v, n) ? String(v[n]) : m; }) : s;
@@ -1401,12 +1403,14 @@ function pantalla(idioma = 'es') {
   // los grupos de lo que instala el arnés, en el orden en que se muestran; uno que la pantalla no conoce va al final
   var GRUPOS = [['safety', T('pantalla.frenosDeSeguridad')], ['assistant', T('pantalla.comoContestaYTrabajaEl')], ['notices', T('pantalla.avisosAlArrancarYAl')], ['pipeline', T('pantalla.revisoresYPipeline')],
     ['memory', T('pantalla.memoriaEntreSesiones')], ['time', T('pantalla.registroDeTiempo')], ['install', T('pantalla.instalacionYActualizacion')], ['codex', T('pantalla.codex')]];
+  /** Un texto de una pieza en el idioma de la página: el inglés de «en» si la página está en inglés y la pieza lo trae. */
+  function dePieza(f, k) { return IDIOMA !== 'es' && f.en && f.en[k] ? f.en[k] : f[k]; }
   /** Si viene prendida o apagada y dónde se cambia: lo de la organización, en Configuración; lo de una máquina, se dice. */
   function dondeSeCambia(f) {
     var pestana = function (idSeccion) { var t = PESTANAS.filter(function (p) { return p[2].indexOf(idSeccion) >= 0; })[0]; return t ? t[1] + ' → ' : ''; };
     var base = f.default === 'off' ? T('pantalla.vieneApagado') : String(f.when || '').indexOf('integration:') === 0 ? T('pantalla.vieneConSuIntegracion') : T('pantalla.vienePrendido');
     if (f.site_section) return base + T('pantalla.seCambiaEnConfiguracion') + pestana(f.site_section) + (PLANO[f.site_section] ? PLANO[f.site_section].corto : f.site_section) + '.';
-    var resto = f.switch ? T('pantalla.soloEnTuMaquinaCon') + f.switch + '.' : T('pantalla.esParteDelArnesNo');
+    var resto = f.switch ? T('pantalla.soloEnTuMaquinaCon') + dePieza(f, 'switch') + '.' : T('pantalla.esParteDelArnesNo');
     var pend = f.site_pending ? T('pantalla.pendienteQueSePuedaCambiar') + ((PESTANAS.filter(function (p) { return p[0] === f.site_pending; })[0] || [])[1] || f.site_pending) + '.' : '';
     return base + resto + pend;
   }
@@ -1417,7 +1421,7 @@ function pantalla(idioma = 'es') {
       var xs = lista.filter(function (f) { return g[0] ? f.group === g[0] : conocidos.indexOf(f.group) < 0; });
       if (!xs.length) return;
       var ul = el('ul', { class: 'efectos' });
-      xs.forEach(function (f) { ul.appendChild(el('li', {}, el('details', {}, el('summary', { text: f.title }), el('p', { text: f.does }), el('p', { class: 'muted', text: dondeSeCambia(f) })))); });
+      xs.forEach(function (f) { ul.appendChild(el('li', {}, el('details', {}, el('summary', { text: dePieza(f, 'title') }), el('p', { text: dePieza(f, 'does') }), el('p', { class: 'muted', text: dondeSeCambia(f) })))); });
       cont.appendChild(el('details', { class: 'grupo' }, el('summary', { text: g[1] + ' (' + xs.length + ')' }), ul));
     });
     if (!lista.length) cont.appendChild(el('p', { class: 'muted', text: T('pantalla.nada') }));

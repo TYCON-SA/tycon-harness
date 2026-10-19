@@ -153,8 +153,9 @@ function perfilesDeInstalacion() {
   try {
     const lista = JSON.parse(fs.readFileSync(path.join(TREE, 'scripts', 'setup', 'install-effects.json'), 'utf8')).effects || [];
     // cada pieza con lo que la pantalla muestra: el título y su grupo, el detalle, si viene prendida y dónde se cambia;
-    // las piezas con el mismo título y el mismo detalle (un hook en dos eventos) van una vez
-    const ficha = (e) => ({ title: e.title, group: e.group, does: e.does, default: e.default, when: e.when, switch: e.switch || null, site_section: e.site_section || null, site_pending: e.site_pending || null });
+    // las piezas con el mismo título y el mismo detalle (un hook en dos eventos) van una vez; `en` lleva su inglés, y la
+    // pantalla elige el idioma (así la respuesta guardada es una sola)
+    const ficha = (e) => ({ title: e.title, group: e.group, does: e.does, default: e.default, when: e.when, switch: e.switch || null, site_section: e.site_section || null, site_pending: e.site_pending || null, en: isObject(e.en) ? e.en : null });
     const de = (p) => {
       const vistas = new Set();
       return lista.filter((e) => isObject(e) && Array.isArray(e.profiles) && e.profiles.includes(p) && typeof e.does === 'string' && typeof e.title === 'string')
