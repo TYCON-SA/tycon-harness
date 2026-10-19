@@ -225,7 +225,7 @@ Each miss below is a Critical Issue: the harness tools read these fields and ski
 - `status` is a value from `scripts/metrics/states.json`; `ado_work_item` is NOT written by hand
 - Follow-up stories declare `followup_of` + `followup_reason` from the closed vocabulary (§1.2)
 - Behavior ACs use Given/When/Then; there are failure-mode ACs and a `### No-regresión` group
-- `### Tests` table has the `#`, `AC` and `Nivel` columns; every AC appears in at least one row; React stories have an `E*` row with a real spec path (§6.1)
+- `### Tests` table has the `#`, `AC` and `Nivel` columns; every AC appears in at least one row; stories that touch a screen (the organization's `screen_test` rule) have an `E*` row with a real spec path (§6.1); test names follow the `test_names` rule
 - First task is the BD/state safeguard; tasks are tagged `[SEQ]`/`[PAR]` with their ACs
 - Backend stories have "Patron de referencia verificado" with anchors that resolve, or an explicit "No aplica" with the search done (§9.2)
 - The template's guidance HTML comments were removed

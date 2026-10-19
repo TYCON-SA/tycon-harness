@@ -737,6 +737,9 @@ si falla, sin bypass por env var — igual que la matriz):
 4. **Review de legibilidad independiente**: un sub-agente que hace de "tester no técnico" (persona
    de QA de laboratorio, sin saber programar) lee cada paso y marca lo que lo dejaría preguntándole a
    un dev — jerga sutil, ambigüedad ("buscá una orden" sin decir cómo), dependencias de conocimiento.
+   **El pedido al sub-agente sale de** `node <skill>/scripts/pipeline.js readability-brief` (con `--scope ui` en la
+   4b): trae el idioma de la regla `ui_language` de la organización. Con un idioma declarado, el texto en otro idioma
+   es una marca; sin él, el sub-agente no juzga el idioma.
    El orquestador RESUELVE cada marca y guarda el resultado en `specs/qa/<sid>-legibilidad.md` con
    `veredicto: OK`. 1-3 son candados duros infakeables (chequean el texto real); 4 es evidencia
    (tier DoD) — atrapa lo que el detector no puede (frases sin jerga pero confusas: "forzar por otra vía", "buscá una
