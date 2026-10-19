@@ -8,6 +8,9 @@ activan con `packs.default` (`all`, `none` o una lista de nombres), desde la sec
 Configuración del sitio o en el perfil del equipo; un repo puede achicar la lista con `packs:` en su
 `.tycon/advisors.yaml`.
 
+Para armar uno propio —qué archivos lleva, cuándo corre un revisor, cómo se activa y cómo se examinan sus revisores—
+está la guía `guides/reviewer-packs.md`, con un paquete de ejemplo para copiar en `examples/packs/svelte-fastapi/`.
+
 Lo que un `pack.json` puede declarar (revisores con su condición, superficie y profundidad; las carpetas `skills/`,
 `agents/`, `guides/` y `templates/`) está en `guides/agent-architecture.md`, sección «Paquetes de revisores».
 

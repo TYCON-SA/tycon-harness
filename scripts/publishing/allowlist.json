@@ -20,6 +20,7 @@
           "claude-md-blocks/**",
           "commands/**",
           "mods/**",
+          "examples/**",
           "pipelines/operations/**",
           "guides/**",
           "scripts/**"

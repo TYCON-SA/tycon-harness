@@ -318,6 +318,14 @@
       ]
     },
     {
+      "__nota": "story 8.59 (T1-T10): el paquete de revisores de ejemplo (examples/packs/svelte-fastapi/) es válido, se dispara por lo tocado y no se instala; el examen corre los casos de un paquete con --pack y, sin la bandera, los de siempre; la guía para armar un paquete propio.",
+      "raiz": "arnes",
+      "ruta": "tests/example-pack.test.js",
+      "requiere": [
+        "agent-skills"
+      ]
+    },
+    {
       "__nota": "story 8.41 (T1-T10, T33): el paquete se activa por organización — packs.default con lista en los dos lectores, las carpetas propias del paquete, los enlaces de la máquina que siguen a lo activo, el freno del repo que nombra un paquete no activado y la sección «Paquetes» de la configuración.",
       "raiz": "arnes",
       "ruta": "tests/pack-pieces.test.js",

@@ -30,6 +30,7 @@ mods/harness-mods/          los mods de Claude Code del arnés (el cartel de la 
 pipelines/                  los seis azure-pipelines-*.yml
   pipelines/templates/      sus pedazos compartidos
 packs/                      sólo su README: los paquetes de un equipo (revisores, skills, guías, plantillas) llegan con su perfil
+examples/packs/             paquetes de ejemplo para copiar: no se instalan ni se activan
 inbox/                      lo que espera que alguien decida
   inbox/instincts/          los instintos minados
   inbox/dependencies/ · inbox/watcher/   las fichas de los dos nocturnos

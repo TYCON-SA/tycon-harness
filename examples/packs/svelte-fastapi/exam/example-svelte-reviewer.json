@@ -1,0 +1,43 @@
+{
+  "__doc": "Casos del examen de example-svelte-reviewer (story 8.59). Cada caso que tiene que marcar comete UN solo error; el que no tiene que marcar es su gemelo corregido. El caso aprueba por la presencia o ausencia del rule ID como hallazgo (`- [ID] ...`). Se corren con `advisor-runner.js --pack <carpeta del paquete>`.",
+  "advisor": "example-svelte-reviewer",
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte.",
+  "cases": [
+    {
+      "id": "svelte-c1-html-de-una-prop",
+      "type": "must-flag",
+      "rule": "SVELTE-C1",
+      "canario": true,
+      "files": {
+        "src/lib/Comment.svelte": "<script>\n  export let comment;\n</script>\n\n<article class=\"comment\">\n  <h3>{comment.author}</h3>\n  <div class=\"body\">{@html comment.body}</div>\n</article>\n"
+      }
+    },
+    {
+      "id": "svelte-c1-limpio-con-dompurify",
+      "type": "must-not-flag",
+      "rule": "SVELTE-C1",
+      "canario": true,
+      "files": {
+        "src/lib/Comment.svelte": "<script>\n  import DOMPurify from 'dompurify';\n  export let comment;\n  $: safeBody = DOMPurify.sanitize(comment.body);\n</script>\n\n<article class=\"comment\">\n  <h3>{comment.author}</h3>\n  <div class=\"body\">{@html safeBody}</div>\n</article>\n"
+      }
+    },
+    {
+      "id": "svelte-w1-subscribe-sin-cancelar",
+      "type": "must-flag",
+      "rule": "SVELTE-W1",
+      "files": {
+        "src/lib/stores.js": "import { writable } from 'svelte/store';\n\nexport const cart = writable([]);\n",
+        "src/lib/CartBadge.svelte": "<script>\n  import { cart } from './stores.js';\n\n  let count = 0;\n  cart.subscribe((items) => {\n    count = items.length;\n  });\n</script>\n\n<span class=\"badge\">{count}</span>\n"
+      }
+    },
+    {
+      "id": "svelte-w1-cancelada-en-ondestroy",
+      "type": "must-not-flag",
+      "rule": "SVELTE-W1",
+      "files": {
+        "src/lib/stores.js": "import { writable } from 'svelte/store';\n\nexport const cart = writable([]);\n",
+        "src/lib/CartBadge.svelte": "<script>\n  import { onDestroy } from 'svelte';\n  import { cart } from './stores.js';\n\n  let count = 0;\n  const unsubscribe = cart.subscribe((items) => {\n    count = items.length;\n  });\n  onDestroy(unsubscribe);\n</script>\n\n<span class=\"badge\">{count}</span>\n"
+      }
+    }
+  ]
+}
