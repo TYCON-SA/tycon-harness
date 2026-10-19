@@ -14,6 +14,9 @@
 #         escribir lo prohibido que las reglas con nombre no ven (ahí la roja es `shape`, la forma exacta del archivo).
 #         Entre ellas, la regla `after-queue` (2026-10-15): cada job se saltea en el push a main de la cola de merge y
 #         sólo en ése; una condición que saltea de más, o un job sin ella, es rojo.
+#   T1-T4 · PublicCi_Workflow_SinGuionEnLaBase — sin `scripts/ci/run-base-controls.sh` en la base, el paso de `ci.yml` (su bloque `run`, corrido
+#         de verdad) frena en rojo «no pude correr» sin correr nada; con el guion corre el de la base. La rama que
+#         corría los controles del pedido, de vuelta, es rojo en `base-controls`; la guía de detalle lo dice.
 #   T24 · PublicCi_PartesQueJuntasSonTodo (2026-10-14) — la corrida partida para correr a la vez: con
 #         TYCON_PUBLIC_CI_PART=checks corren todos los pasos menos las portables; con suites-<i>-of-<n>, sólo las portables
 #         con su parte (TYCON_PORTABLE_SHARD=<i>/<n>); un valor que no es una parte sale 2 sin correr nada. Y
@@ -728,6 +731,70 @@ else
     || no "T12 el volcado del registro en el paso de falla no neutraliza los comandos de la CI"
   grep -qF -- '--range "${BASE}...HEAD" --base "${BASE}"' "${CI_YML}" && ok "T12 en la cola el rango sale de la misma base que los controles" \
     || no "T12 el rango de la llamada de la base no sale de la base"
+
+  # ── T1 · PublicCi_Workflow_BaseSinGuion_FrenaRojo · T2 · PublicCi_Workflow_BaseConGuion_CorreLaBase —
+  #    el bloque `run` del paso, sacado del ci.yml real y corrido con `bash -e` (el shell de GitHub) en un pedido de
+  #    juguete: sin run-base-controls.sh en la base sale 1 «no pude correr» y no corre nada del pedido; con el guion,
+  #    corre el public-ci.sh de la base con --base. Cada public-ci.sh anota quién corrió en ${WF_MARKS}. ──
+  awk '/^      - name: Los pasos de la CI pública que le tocan a esta parte$/ { s = 1; next }
+    s && /^        run: \|$/ { r = 1; next }
+    r && /^          / { sub(/^          /, ""); print; next }
+    r && /^$/ { print; next }
+    r { exit }' "${CI_YML}" > "${T}/wf-step.sh"
+  grep -q 'public-ci' "${T}/wf-step.sh" || no "T1 no encuentro el bloque run del paso en ${CI_YML#${ROOT}/}"
+  # wf_case <nombre> <con-guion 0|1> [<evento: pull_request|merge_group>] [<public-ci.sh en la base 1|0>] → arma origin
+  #   (la base) y un pedido encima; corre el bloque; deja .out, .rc y .ran. En la cola la base llega por BASE_SHA.
+  wf_case() {
+    local name="$1" with_script="$2" event="${3:-pull_request}" with_ci="${4:-1}" d="${T}/wf-$1" sha=""
+    mkdir -p "${d}/origin/scripts/ci" "${d}/rt" "${d}/marks"
+    printf '#!/usr/bin/env bash\necho "pedido $*" >> "${WF_MARKS}/ran"\n' > "${d}/origin/scripts/ci/public-ci.sh"
+    ( cd "${d}/origin" && lab_git init -q -b main . && lab_git add -A && lab_git commit -qm inicio ) > /dev/null 2>&1
+    if [ "${with_ci}" = 1 ]; then printf '#!/usr/bin/env bash\necho "base $*" >> "${WF_MARKS}/ran"\n' > "${d}/origin/scripts/ci/public-ci.sh"
+    else rm -f "${d}/origin/scripts/ci/public-ci.sh"; fi
+    [ "${with_script}" = 1 ] && printf '#!/usr/bin/env bash\nexit 0\n' > "${d}/origin/scripts/ci/run-base-controls.sh"
+    ( cd "${d}/origin" && lab_git add -A && lab_git commit -qm base ) > /dev/null 2>&1
+    lab_git clone -q "${d}/origin" "${d}/pr" > /dev/null 2>&1
+    printf '#!/usr/bin/env bash\necho "pedido $*" >> "${WF_MARKS}/ran"\n' > "${d}/pr/scripts/ci/public-ci.sh"
+    ( cd "${d}/pr" && lab_git checkout -q -b pedido && lab_git add -A && lab_git commit -qm "el pedido" ) > /dev/null 2>&1
+    [ "${event}" = merge_group ] && sha="$(lab_git -C "${d}/pr" rev-parse origin/main)"
+    ( cd "${d}/pr" && env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
+        GITHUB_EVENT_NAME="${event}" BASE_REF=main BASE_SHA="${sha}" RUNNER_TEMP="${d}/rt" WF_MARKS="${d}/marks" \
+        bash -e "${T}/wf-step.sh" ) > "${d}.out" 2>&1
+    echo "$?" > "${d}.rc"; touch "${d}/marks/ran"
+  }
+  wf_case no-script 0
+  is "T1 base sin run-base-controls.sh: el paso sale 1" 1 "$(cat "${T}/wf-no-script.rc")"
+  has "T1 …y dice que no pudo correr" "${T}/wf-no-script.out" "no pude correr"
+  has "T1 …nombrando el guion que falta" "${T}/wf-no-script.out" "scripts/ci/run-base-controls.sh"
+  if [ -s "${T}/wf-no-script/marks/ran" ]; then no "T1 …y no corre nada, pero corrió: $(tr '\n' ' ' < "${T}/wf-no-script/marks/ran")"
+  else ok "T1 …y no corre ningún public-ci.sh, ni el del pedido ni el de la base"; fi
+  wf_case with-script 1
+  is "T2 base con run-base-controls.sh: el paso sale 0" 0 "$(cat "${T}/wf-with-script.rc")"
+  if grep -q '^base .*--base ' "${T}/wf-with-script/marks/ran" && ! grep -q '^pedido' "${T}/wf-with-script/marks/ran"; then
+    ok "T2 …corre el public-ci.sh de la base, con --base, y no el del pedido"
+  else no "T2 esperaba sólo el de la base con --base y corrió: $(tr '\n' ' ' < "${T}/wf-with-script/marks/ran")"; fi
+  # la cola de merge (la base llega por BASE_SHA) y una base con el guion pero sin public-ci.sh: rojo igual, sin correr nada
+  wf_case queue-no-script 0 merge_group
+  is "T1 en la cola, base sin run-base-controls.sh: el paso sale 1" 1 "$(cat "${T}/wf-queue-no-script.rc")"
+  has "T1 …y dice que no pudo correr" "${T}/wf-queue-no-script.out" "no pude correr"
+  if [ -s "${T}/wf-queue-no-script/marks/ran" ]; then no "T1 …en la cola corrió: $(tr '\n' ' ' < "${T}/wf-queue-no-script/marks/ran")"
+  else ok "T1 …y en la cola tampoco corre ningún public-ci.sh"; fi
+  wf_case no-base-ci 1 pull_request 0
+  RC="$(cat "${T}/wf-no-base-ci.rc")"
+  if [ "${RC}" != 0 ] && [ ! -s "${T}/wf-no-base-ci/marks/ran" ]; then ok "T1 base con el guion y sin public-ci.sh: rojo (exit ${RC}) sin correr el del pedido"
+  else no "T1 base sin public-ci.sh: esperaba rojo sin correr nada y dio exit ${RC}: $(tr '\n' ' ' < "${T}/wf-no-base-ci/marks/ran")"; fi
+  # ── T3 · PublicCi_Workflow_RamaDeArranqueDeVuelta_Rojo — la rama que corría los controles del pedido
+  #    cuando la base no traía el guion, de vuelta, o el freno quitado: rojo en base-controls ──
+  altered "con la rama de arranque de vuelta" "base-controls" 'return t.replace(/^( *)git cat-file -e "\$\{BASE\}:scripts\/ci\/run-base-controls\.sh" \|\| .*\n((?:.*\n){2})/m,
+    (m, s, two) => s + "if git cat-file -e \"${BASE}:scripts/ci/run-base-controls.sh\"; then\n" + two.replace(/^(?=.)/gm, "  ")
+      + s + "else\n" + s + "  bash scripts/ci/public-ci.sh --clean-machine --range \"origin/${BASE_REF#refs/heads/}...HEAD\"\n" + s + "fi\n");'
+  altered "sin frenar una base sin el guion" "base-controls" 'return t.replace(/^ *git cat-file -e "\$\{BASE\}:scripts\/ci\/run-base-controls\.sh" \|\| .*\n/m, "");'
+  # ── T4 · PublicCi_Guia_SinRamaDeArranque — la guía de detalle dice que sin el guion `ci.yml` frena ──
+  DETAIL="${ROOT}/guides/maintaining/piezas-en-detalle.md"
+  if [ -f "${DETAIL}" ]; then
+    lacks "T4 la guía de detalle ya no habla de la rama de arranque" "${DETAIL}" "rama de arranque"
+    has "T4 …y dice que sin el guion en la base ci.yml frena en rojo" "${DETAIL}" "Si la base no trae este guion, \`ci.yml\` frena en rojo «no pude correr»"
+  fi
 
   # no pudo leer: 2, no un verde
   node "${CHECK}" "${T}/alt/no-such-file.yml" > "${T}/check.out" 2>&1; is "T22 un archivo que no existe sale 2 (no pude leer)" 2 "$?"
