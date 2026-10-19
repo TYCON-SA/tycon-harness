@@ -723,6 +723,62 @@ function mensajeDelPaseAdversarial(v) {
 // manual (una persona con nombre) o automática (un agente o una regla). Si no se puede escribir, AVISA y no frena el
 // paso: el registro no agrega interrupciones. Lo agarra el portón de CI en el merge, que exige la
 // línea del plan en toda corrida que declara anotar aprobaciones.
+const PLAN_FILE = 'step-02-bmad-plan.md';
+
+/**
+ * El plan escrito del paso 2, en la carpeta de la corrida: `{ file }`, o `{ error }` si la carpeta no se puede
+ * calcular (ahí pedir que se escriba el plan mandaría a buscar un archivo que no va a aparecer).
+ */
+function planDeLaCorrida(marker) {
+  try {
+    const repo = marker.repoPath || process.cwd();
+    const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
+    // con la carpeta creada, como anotarAprobacion: si todavía no existe, el mensaje dice dónde va el plan
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    return runDir ? { file: path.join(runDir, PLAN_FILE) } : { error: 'la story no da una clave para su carpeta de corrida' };
+  } catch (e) { return { error: e.message }; }
+}
+
+/**
+ * ¿El plan está en lo que el agente le escribió a la persona en esta sesión? Lee la conversación que Claude Code guarda
+ * en `~/.claude/projects/<carpeta>/<sesión>.jsonl` (los mensajes del asistente). Cuenta los renglones del plan de 20
+ * caracteres o más que aparecen en esos mensajes, sin mirar el formato (negritas, viñetas, números, mayúsculas): con la
+ * mitad o más, se mostró; un plan sin ningún renglón así no cuenta como visto. Los mensajes de subagentes no cuentan.
+ * `{ legible: false, motivo }` cuando la conversación no se encuentra o no se lee —otra
+ * herramienta, como Codex, o una sesión sin registro—: quien llama falla cerrado.
+ */
+function planEnLaConversacion(planTxt, { env = process.env, home = os.homedir() } = {}) {
+  const sid = String(env.CLAUDE_CODE_SESSION_ID || '');
+  if (!/^[\w-]+$/.test(sid)) return { legible: false, motivo: 'la sesión no dice su identificador' };
+  const root = path.join(home, '.claude', 'projects');
+  let file = null;
+  try {
+    for (const d of fs.readdirSync(root)) {
+      const f = path.join(root, d, `${sid}.jsonl`);
+      if (fs.existsSync(f)) { file = f; break; }
+    }
+  } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
+  if (!file) return { legible: false, motivo: 'no encontré su registro' };
+  let textos = '';
+  try {
+    for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!l.trim()) continue;
+      let r;
+      try { r = JSON.parse(l); } catch (_e) { continue; }   // un renglón a medio escribir no tapa a los demás
+      // lo que escribe un subagente no lo ve la persona: no cuenta
+      const c = r && r.type === 'assistant' && !r.isSidechain && r.message && r.message.content;
+      if (Array.isArray(c)) for (const x of c) if (x && x.type === 'text' && typeof x.text === 'string') textos += `${x.text}\n`;
+    }
+  } catch (e) { return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` }; }
+  const norm = (s) => s.toLowerCase().replace(/^\s*(?:\d+[.)]|[-+•*>]|#+)\s+/gm, '').replace(/[`*_#>]/g, ' ').replace(/\s+/g, ' ').trim();
+  const dicho = norm(textos);
+  const renglones = planTxt.split('\n').map(norm).filter((l) => l.length >= 20);
+  // un plan sin ningún renglón de texto (sólo símbolos, o «ok») aparece en cualquier respuesta: no cuenta como visto
+  if (!renglones.length) return { legible: true, mostrado: false };
+  const vistos = renglones.filter((l) => dicho.includes(l)).length;
+  return { legible: true, mostrado: vistos * 2 >= renglones.length };
+}
+
 function anotarAprobacion(marker, entrada) {
   try {
     const approvals = require('./lib/approvals.js');
@@ -790,6 +846,7 @@ function cmdCompleteStep(nRaw, flags) {
   // `--approved "<cita>"` (HITL) o `--auto-approved "<criterios>"` (Nivel 2, SOLO LOW-risk — se verifica
   // con risk-class, no se declara: hallazgo R11). Sin esto, cerrar el 3 era un comando vacío y el
   // portón de carril (código antes del plan) se abría sin que nadie hubiera aprobado nada.
+  let planParaMostrar = null;
   if (n === 3) {
     const approved = optVal('--approved');
     const auto = optVal('--auto-approved');
@@ -851,6 +908,43 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('    marker.js complete-step 3 --approved "<cita textual>"');
         process.exit(1);
       }
+      // Aprobado solo no es aprobado a escondidas: el plan tiene que estar escrito y la persona lo tiene que haber visto
+      // en la respuesta del agente. Imprimirlo no alcanzó (medido: el agente siguió sin mostrarlo),
+      // así que se lee la conversación; si no se puede leer, falla cerrado y se le pregunta a la persona.
+      const plan = planDeLaCorrida(marker);
+      if (plan.error) {
+        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'sin carpeta de corrida' });
+        console.error(`marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero se muestra igual, y no pude calcular la carpeta de la corrida donde va (${plan.error}).`);
+        console.error('  Revisá la story del marcador (storyId y storyPath) o aprobá el plan con --approved "<cita>".');
+        process.exit(1);
+      }
+      let planTxt = '';
+      try { planTxt = fs.readFileSync(plan.file, 'utf8'); } catch (_e) { /* falta: se dice abajo */ }
+      if (!planTxt.trim()) {
+        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: 'plan sin escribir' });
+        console.error(`marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero se muestra igual: falta escribirlo en ${plan.file}.`);
+        console.error('  Escribí ahí el plan del paso 2, mostráselo a la persona en tu respuesta y volvé a correr este comando.');
+        process.exit(1);
+      }
+      const visto = planEnLaConversacion(planTxt);
+      if (!visto.legible || !visto.mostrado) {
+        appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: visto.legible ? 'plan sin mostrar' : 'conversación ilegible' });
+        // lo que la persona ve son tus mensajes de texto; la salida de un comando, un archivo o tu razonamiento, no
+        // (medido: el agente creyó haberlo mostrado porque el plan estaba en esos lugares)
+        const queVe = '  La persona sólo ve tus mensajes de texto: no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste.';
+        if (visto.legible) {
+          console.error('marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero la persona tiene que verlo: ninguno de tus mensajes de texto lo trae.');
+          console.error(queVe);
+          console.error('  Escribí ahora un mensaje con el plan TAL CUAL (éste, entero, no un resumen) y después volvé a correr este comando:');
+        } else {
+          console.error(`marker.js complete-step 3 BLOQUEADO — no puedo leer la conversación de esta sesión (${visto.motivo}), así que no sé si la persona vio el plan: no se aprueba solo.`);
+          console.error(queVe);
+          console.error('  Escribí un mensaje con el plan TAL CUAL (éste, entero, no un resumen), preguntale si lo aprueba y cerrá con --approved "<su respuesta>":');
+        }
+        console.error(`\n${planTxt.trim()}\n`);
+        process.exit(1);
+      }
+      planParaMostrar = planTxt.trim();
     }
     const at3 = nowIso();
     if (mockupPlan) {
@@ -1298,6 +1392,10 @@ function cmdCompleteStep(nRaw, flags) {
   marker.lastTouch = nowIso();
   writeMarker(marker);
   process.stdout.write(JSON.stringify(marker, null, 2));
+  if (planParaMostrar) {
+    // por la salida de errores: la estándar es el JSON del marcador, que otros leen
+    console.error('\n📋 El plan se aprobó solo (riesgo bajo) y ya está en tu respuesta: la persona lo vio.');
+  }
 }
 
 /**
@@ -3010,6 +3108,26 @@ function cmdAdoptSession(sid) {
 
 const VALID_STATUSES = ['ready-for-dev', 'in-progress', 'review', 'done', 'blocked', 'abandoned'];
 
+// La guía del formato pide además `Status: <estado>` bajo el título (`# Story N: …`). Si el frontmatter cambia y esa
+// línea no, la historia queda con dos estados y el validador lo marca. Sólo se toca la línea `Status:` que
+// sigue al título, separada por renglones vacíos; sin ella, el cuerpo queda igual.
+function withBodyStatus(content, newStatus) {
+  const fm = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+  const start = fm ? fm[0].length : 0;
+  const body = content.slice(start);
+  // el primer título del cuerpo fuera de los bloques de código, y sólo si es el de la story: un ejemplo (adentro de
+  // un bloque, antes o después del título) no se toca
+  let at = -1, inFence = false, pos = 0;
+  for (const line of body.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    else if (!inFence && /^# /.test(line)) { at = /^# Story /.test(line) ? pos : -1; break; }
+    pos += line.length + 1;
+  }
+  if (at < 0) return content;
+  const rest = body.slice(at).replace(/^(# Story [^\n]*\r?\n(?:[ \t]*\r?\n)*Status:[ \t]*)[\w-]+/, (_, head) => `${head}${newStatus}`);
+  return content.slice(0, start) + body.slice(0, at) + rest;
+}
+
 function cmdUpdateStoryStatus(storyPath, newStatus) {
   if (!storyPath || !newStatus) {
     console.error('marker.js update-story-status: <storyPath> <newStatus> requeridos');
@@ -3044,7 +3162,7 @@ function cmdUpdateStoryStatus(storyPath, newStatus) {
   // Reemplazo con FUNCIÓN, nunca con texto: replace lee `$'`, `$&` y `$1` en el texto de reemplazo, y un título con
   // `$'` pegaba el resto del archivo adentro del frontmatter (story 8.14 del arnés, 2026-10-01).
   const newFmBody = fmBody.replace(statusRegex, (_, head, tail) => `${head}${newStatus}${tail}`);
-  const newContent = content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`);
+  const newContent = withBodyStatus(content.replace(fmRegex, (_, open, _body, close) => `${open}${newFmBody}${close}`), newStatus);
   // Atomic write.
   const tmp = `${storyPath}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, newContent, 'utf8');

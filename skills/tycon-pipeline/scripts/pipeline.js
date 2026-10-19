@@ -3236,7 +3236,7 @@ function recortarStart(result) {
 
 // ── pipeline.js risk-class — Autonomía Nivel 2 (decisión DevA 2026-06-09) ───
 // Clasifica la story para el auto-approve CONDICIONAL del plan (Step 3):
-// LOW-risk → step-03 se auto-aprueba CON anuncio visible; cualquier criterio
+// LOW-risk → step-03 se auto-aprueba y el plan se muestra igual; cualquier criterio
 // fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
 // git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
 // Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
@@ -3313,7 +3313,7 @@ function computeRiskClass(args) {
     auto_approve_plan: allPass,
     criteria,
     note: allPass
-      ? 'LOW-risk: step-03 puede auto-aprobarse CON anuncio visible al user (Nivel 2). Push y scope firmado siguen human-gate SIEMPRE.'
+      ? 'LOW-risk: step-03 puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step 3 --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
       : 'NORMAL: checkpoint HITL del plan (step-03) como siempre.',
   };
 }

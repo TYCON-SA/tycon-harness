@@ -134,8 +134,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → plan auto-aprobado con anuncio;
-  NORMAL → HITL. `git push` y scope firmado son siempre human-gate.
+- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → auto-aprobado, con el plan en tus
+  mensajes; NORMAL → HITL. Push y scope firmado: human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con
   `scripts/visual-plan.js render`. Default OFF.
 - **H.i — sesión fresca**: el pipeline corre en sesión nueva o tras `/clear`; si la conversación ya lleva

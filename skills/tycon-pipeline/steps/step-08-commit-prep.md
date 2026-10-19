@@ -278,7 +278,7 @@ idénticos en cada corrida y enterraban el resumen real (feedback del dev 2026-0
 
 Está listo para commitear — decime y lo hago.
 
-Pendiente tuyo: smoke check de DoD antes de pasarla a `done` (build verde no alcanza) · timer de clocki sigue abierto · el cierre en ADO va después del merge.
+Pendiente tuyo: antes de darla por terminada, probala andando (que compile y pasen las pruebas no alcanza){ · el reloj de Clockify sigue abierto}{ · el pedido de Azure DevOps se cierra después de mergear}.
 Detalle técnico (findings, archivos, mensaje de commit completo) — pedímelo y te lo pego.
 ```
 
@@ -296,9 +296,12 @@ queda la ruta para copiar—, y debajo la línea
 - **Máximo ~10 líneas** salvo que haya CRITICAL sin resolver (ahí manda COMM.i) o algo haya fallado.
 - **El mensaje de commit SÍ va completo al chat** — es lo que el dev tiene que leer para aprobar.
   Es la única excepción al "detalle a pedido".
-- **Los 3 recordatorios (DoD / clocki / ADO) van en UNA línea combinada**, no en 3 bloques con
-  emoji y sangría. El contenido normativo no cambia — sigue vigente todo lo de arriba (el timer NO
-  se cierra, el DoD es obligatorio, ADO se cierra post-merge); lo que cambia es cuánto espacio ocupan.
+- **Los recordatorios van en UNA línea combinada y en llano**, no en 3 bloques con emoji y sangría.
+  Sólo los que aplican: el del reloj si hay un timer de Clockify abierto para esta carpeta; el de Azure DevOps si
+  la story tiene `ado_work_item`. Sin «smoke», «DoD» ni «ADO» (caso 2026-10-19: un dev solo, sin Clockify ni Azure
+  DevOps, leía «smoke de DoD» y «cierre en ADO» en su primera historia). El contenido normativo no cambia —
+  sigue vigente todo lo de arriba (el timer NO se cierra, probarla andando es obligatorio, el pedido se cierra
+  después del merge); lo que cambia es cuánto espacio ocupan y cómo se dicen.
 - **Sin conteos de líneas, sin listas de archivos tocados, sin rule IDs** en el cierre. Todo eso
   vive en `.advisors/pipeline-runs/<run-dir>/` y en el diff.
 
@@ -316,7 +319,10 @@ Si el flujo va straight a Step 9 (ADO closure) sin pausa, el clear ocurre allá.
 
 La primera vez que una máquina nueva con la instalación mínima cierra una historia, `marker.js clear` imprime una
 oferta: un título, tres renglones (qué cambia, dónde, cómo se vuelve atrás) y las dos órdenes para contestar. Sale una
-sola vez por máquina y la decide el cierre, no vos.
+sola vez por máquina y la decide el cierre, no vos. **Corré `marker.js clear` sin recortar su salida** (sin `| tail` ni
+`| head`): la oferta va al final y con un recorte se pierde. Si igual la leíste recortada, su último renglón trae la
+orden `offer show`, que la vuelve a mostrar entera sin contestarla (medido: con `| tail -2` el agente vio sólo las
+órdenes y la oferta no llegó a la persona).
 
 1. Mostrá el título y los tres renglones **tal cual**, sin resumirlos ni agregarles nada, y preguntá sí o no (con
    `AskUserQuestion` bajo Claude Code; con una pregunta llana en otra herramienta). La recomendación no la das vos: es
