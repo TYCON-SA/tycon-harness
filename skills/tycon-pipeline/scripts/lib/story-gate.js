@@ -111,8 +111,8 @@ function norm(p) {
   return String(p || '').replace(/\\/g, '/');
 }
 
-/** ¿Es un archivo de CÓDIGO a efectos del carril? (impl o test, extensiones del equipo) */
-function isCodeFile(filePath) {
+/** ¿Es un archivo de CÓDIGO a efectos del carril? (impl o test, extensiones del equipo y de la organización) */
+function isCodeFile(filePath, { extra } = {}) {
   const s = norm(filePath);
   if (!s) return false;
   const segs = s.split('/');
@@ -121,7 +121,7 @@ function isCodeFile(filePath) {
     if (NEVER_CODE_SEGMENTS.has(seg)) return false;
     if (seg === '.claude' && segs[i + 1] !== 'worktrees') return false;
   }
-  if (isImplPath(s) || isTestPath(s)) return true;
+  if (isImplPath(s, { extra }) || isTestPath(s, { extra })) return true;
   return EXTRA_CODE_EXTS.has(path.extname(s).toLowerCase());
 }
 

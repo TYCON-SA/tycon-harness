@@ -388,6 +388,7 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
  */
 const BANDERAS = Object.freeze([
   'hasNext', 'hasReact', 'csModified', 'tsxModified', 'shModified', 'codeModified',
+  'pyModified', 'svelteModified', 'vueModified', 'sourceModified',
   'pluginCfgModified', 'secretCfgModified', 'depChanged', 'onlyDocs',
 ]);
 

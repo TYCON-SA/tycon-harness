@@ -36,7 +36,8 @@ const path = require('path');
 if (process.env.TYCON_REBUILD_VERIFY === '0') process.exit(0);
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
-const COMPONENT_RE = /\.(tsx|jsx|vue|razor)$/i;
+// Una pantalla en Svelte también se reconstruye antes de verificarla (casos: tests/code-files.test.js).
+const COMPONENT_RE = /\.(tsx|jsx|vue|svelte|razor)$/i;
 const NOTICE_THROTTLE_MS = 10 * 60 * 1000;
 
 function findRepoRoot(startDir) {

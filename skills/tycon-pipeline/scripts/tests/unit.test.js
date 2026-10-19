@@ -6989,3 +6989,82 @@ test('7.32-DiffReal_Manda: una story que declara un .md y un diff que toca códi
   assert.equal(rc.run_size, 'completa');
   assert.equal(rc.criteria.find((c) => c.name === 'superficie-chica').pass, false);
 });
+
+// ── Python, Svelte y Vue son código ─────────────────────────────────────────────────────────────────────────────
+// Un diff de sólo Python o sólo Svelte lleva los revisores de seguridad, de fallos silenciosos y de cobertura de
+// pruebas, como uno de JS/TS; y el control de criterios encuentra las pruebas de pytest y de Go.
+const { computeAdvisorSet: computeAdvisorSet848, detectStack: detectStack848 } = require(path.join(SCRIPTS, 'pipeline.js'));
+const packs848 = require(path.join(SCRIPTS, 'lib', 'packs.js'));
+function repo848(archivos) {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'stack-848-'));
+  for (const [rel, contenido] of Object.entries(archivos)) {
+    fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true });
+    fs.writeFileSync(path.join(repo, rel), contenido);
+  }
+  return repo;
+}
+
+test('@story-8.48 @ac-3 T6 DetectStack_OnlyPy_NotOnlyDocs', () => {
+  const repo = repo848({ 'app/util.py': 'def f():\n    try:\n        return 1\n    except ValueError:\n        raise\n' });
+  const det = detectStack848(repo, ['app/util.py']);
+  assert.equal(det.onlyDocs, false);
+  assert.equal(det.codeModified, true);
+  assert.equal(det.pyModified, true);
+  const set = computeAdvisorSet848({ repo, story: null, files: ['app/util.py'] });
+  for (const r of ['tycon-plugin-security-basics', 'tycon-plugin-tests-coverage', 'tycon-silent-failure-hunter']) {
+    assert.ok(set.all.includes(r), `${r} entra con un diff de sólo .py (set: ${set.all.join(', ')})`);
+  }
+});
+
+test('@story-8.48 @ac-3 @ac-4 T7 DetectStack_OnlySvelteOrVue_CodeReviewers', () => {
+  for (const [f, bandera] of [['src/App.svelte', 'svelteModified'], ['src/App.vue', 'vueModified']]) {
+    const repo = repo848({ [f]: '<script>\n  async function cargar() { try { await fetch("/x") } catch (e) { throw e } }\n</script>\n' });
+    const det = detectStack848(repo, [f]);
+    assert.equal(det.onlyDocs, false, f);
+    assert.equal(det[bandera], true, f);
+    assert.equal(det.tsxModified, false, `${f} no se hace pasar por JS/TS: los paquetes de React no lo reciben`);
+    const set = computeAdvisorSet848({ repo, story: null, files: [f] });
+    assert.ok(set.all.includes('tycon-plugin-security-basics'), `${f}: ${set.all.join(', ')}`);
+    assert.ok(set.all.includes('tycon-plugin-tests-coverage'), f);
+    // un paquete que pide esa bandera la ve
+    assert.equal(packs848.evaluarCondicion({ detection: bandera }, { det, files: [f] }), true);
+  }
+  for (const b of ['pyModified', 'svelteModified', 'vueModified']) {
+    assert.ok(packs848.BANDERAS.includes(b), `${b} es una bandera válida en un manifiesto`);
+    assert.equal(packs848.validarCondicion({ detection: b }, packs848.BANDERAS), null, b);
+  }
+  // un .py en cualquier carpeta, no sólo routers/ o main.py
+  assert.equal(packs848.evaluarCondicion({ detection: 'pyModified' }, { det: detectStack848(repo848({ 'app/util.py': 'x = 1\n' }), ['app/util.py']), files: ['app/util.py'] }), true);
+});
+
+test('@story-8.48 @ac-5 T21 StoryChecks_PytestAndGoTests_Found', () => {
+  const repo = repo848({
+    'story.md': `---
+story: "9.48"
+status: in-progress
+---
+# Story 9.48
+
+## Acceptance Criteria
+
+1. **Given** algo, **Then** otra cosa.
+2. **Given** algo más, **Then** otra.
+3. **Given** Go, **Then** también.
+
+### Tests (3 verificaciones)
+
+| # | Test | AC | Nivel | Escenario | Resultado esperado |
+|---|------|----|-------|-----------|--------------------|
+| T1 | \`test_rechaza_texto_true\` | 1 | unit | x | y |
+| T2 | \`AceptaBooleanoDeVerdad\` | 2 | unit | x | y |
+| T3 | \`TestHandlerDevuelve422\` | 3 | unit | x | y |
+`,
+    'backend/tests/api/test_flags.py': '# T1\ndef test_rechaza_texto_true():\n    assert True\n',
+    // una línea por elemento: pegadas con «\n» delante, las marcas parecen una dirección de correo al freno de publicar
+    'backend/tests/api/helpers_flags.py': ['@pytest.mark.story("9.48")', '@pytest.mark.ac(2)', 'def test_acepta():', '    pass', ''].join('\n'),
+    'svc/handler_test.go': 'func TestHandlerDevuelve422(t *testing.T) {}\n',
+  });
+  const r = checks.runStoryChecks({ repo, storyPath: path.join(repo, 'story.md') });
+  const c1 = r.findings.filter((x) => x.rule === 'ACCOV-C1');
+  assert.deepEqual(c1, [], `sin críticos falsos de ACCOV-C1: ${JSON.stringify(c1)}`);
+});

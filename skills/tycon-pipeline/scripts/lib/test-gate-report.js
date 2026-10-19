@@ -38,6 +38,13 @@ const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2)
 const { spawnSync } = require('child_process');
 const { readLcov } = require('./node-coverage.js');   // el lcov del corredor de suites.json
 
+const codeFiles = require('./code-files.js');
+/** ¿Archivo fuente que cuenta para la cobertura de los archivos nuevos? */
+function isCodeFile(f, { extra } = {}) {
+  const ex = extra !== undefined ? extra : require('./stack-config.js').orgExtra();
+  return codeFiles.isSource(f, { extra: ex });
+}
+const isTestFile = codeFiles.isTestFile;
 const OBS_HASTA = '2026-10-06';
 const COVERAGE_DEFAULT = 75;
 
@@ -487,8 +494,11 @@ function informe(argv) {
     for (const w of correrGit(['-C', repo, 'diff', 'HEAD', '--name-only', '--diff-filter=A'], 20000).stdout.split(/\s+/)) if (w) nuevos.add(w);
     for (const w of correrGit(['-C', repo, 'ls-files', '--others', '--exclude-standard'], 20000).stdout.split(/\s+/)) if (w) nuevos.add(w);
   } catch (_) { /* sin git: no hay archivos nuevos que mirar */ }
-  const codeRe = /\.(cs|ts|tsx|js|jsx)$/;
-  const testRe = /(\.test\.|\.spec\.|Tests?\.cs$|__tests__|test-utils)/;
+  // La cobertura se mide sobre archivos FUENTE (lib/code-files.js, con lo que sume la organización): un guion `.sh` o
+  // un `.csproj` no aparecen en ningún informe de cobertura.
+  const codeRe = { test: (f) => isCodeFile(f) };
+  // `.test.`/`.spec.` en cualquier lugar del nombre, como antes (`x.test.helpers.ts` es de pruebas)
+  const testRe = { test: (f) => isTestFile(f) || /(\.test\.|\.spec\.|__tests__|test-utils)/.test(f) };
   // En el arnés, todo lo que vive en una carpeta de pruebas es prueba: los ayudantes (`scripts/tests/lib/`) y las suites
   // que no llevan `.test.` en el nombre (`test-*.js`). Con el lcov del corredor, contarlos como código mueve el número.
   const esPrueba = (f) => testRe.test(f) || (runner === 'suites-json' && /(^|\/)tests?\//.test(f));
@@ -913,7 +923,7 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció (story 2.21, AC 9)
-module.exports = { informe, leerXml, redondear1, rutaReal, buscarArchivos, OBS_HASTA };
+module.exports = { informe, leerXml, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {
   try {

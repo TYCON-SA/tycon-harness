@@ -38,14 +38,14 @@
 
 'use strict';
 
-const path = require('path');
 
-/** Extensiones que cuentan como CÓDIGO de implementación. Deliberadamente sin `.md`/`.json`/`.yaml`/`.sql`. */
-const CODE_EXTS = new Set([
-  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts',
-  '.cs', '.py', '.go', '.rb', '.java', '.kt', '.swift',
-  '.vue', '.svelte',
-]);
+/** Extensiones que cuentan como CÓDIGO de implementación: los archivos fuente de `code-files.js` (sin `.md`/`.json`/
+ * `.yaml`/`.sql`), más las que sume la organización (`stack.code_extensions`). */
+const codeFiles = require('./code-files.js');
+const CODE_EXTS = new Set(codeFiles.SOURCE_EXTS);
+function esFuente(p, extra) {
+  return codeFiles.isSource(p, { extra: extra !== undefined ? extra : require('./stack-config.js').orgExtra() });
+}
 
 /**
  * ¿El path es un archivo de TEST? Patrones de los stacks del equipo (vitest/jest/node:test/xunit).
@@ -60,7 +60,7 @@ const CODE_EXTS = new Set([
  * otro dev, 2026-07-30). Misma razón excluye fixtures (`tests/fixtures/*.json`): tocar un dato de
  * prueba no es escribir un test. Los patrones por NOMBRE de archivo ya traen extensión de código.
  */
-function isTestPath(p) {
+function isTestPath(p, { extra } = {}) {
   const s = String(p || '').replace(/\\/g, '/');
   const base = s.slice(s.lastIndexOf('/') + 1);
   if (
@@ -76,7 +76,7 @@ function isTestPath(p) {
   return (
     (/(^|\/)(tests?|__tests__|spec|specs)\//i.test(s) ||     // vive en un directorio de tests…
       /(^|[/.])Tests?\//.test(s)) &&                         // .NET: MiProyecto.Tests/ Y Tycon.X.API.Tests/
-    CODE_EXTS.has(path.extname(s).toLowerCase())             // …y es CÓDIGO (no .md/.json/.yaml)
+    esFuente(s, extra)                                       // …y es CÓDIGO (no .md/.json/.yaml)
   );
 }
 
@@ -97,10 +97,10 @@ function adentroDelRepo(evs, repoPath) {
 }
 
 /** ¿El path es CÓDIGO de implementación (no test)? */
-function isImplPath(p) {
+function isImplPath(p, { extra } = {}) {
   const s = String(p || '').replace(/\\/g, '/');
-  if (isTestPath(s)) return false;
-  return CODE_EXTS.has(path.extname(s).toLowerCase());
+  if (isTestPath(s, { extra })) return false;
+  return esFuente(s, extra);
 }
 
 /**
@@ -203,4 +203,4 @@ function atddBlockMessage(r) {
   ].join('\n');
 }
 
-module.exports = { computeAtddOrder, isTestPath, isImplPath, atddBlockMessage };
+module.exports = { computeAtddOrder, isTestPath, isImplPath, atddBlockMessage, CODE_EXTS };
