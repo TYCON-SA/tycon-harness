@@ -641,3 +641,27 @@ test('Matriz_StoryYaEnCurso_AvisoSinRojo — antes del corte, un AC de pantalla 
   assert.equal(rRoto.perAc[1].verdict, 'SIN-EVIDENCIA');
   assert.ok(rRoto.avisos.some((a) => /marcador ilegible: sesion-e\.json/.test(a)), `${rRoto.avisos}`);
 });
+
+test('CapturasSinIndice_PortonAnterior @story-7.34 @ac-9 — carpeta de capturas sin captures.json: portón viejo, con la acción', () => {
+  // 🔴 rojo: decía «captures.json ilegible» de un índice que no existe (capturas de antes de la regla del índice).
+  const w = makeWorkspace({ acs: [[2, '**Given** la lista, **Then** muestra el total.']], rows: [['E1', '`story-9-9.spec.ts::flujo`', '2', 'e2e']] });
+  const t = compactNow();
+  writeGate(w, t, 'story-9-9.spec.ts', ['x @ac-2']);
+  const dir = path.join(w.dodDir, `9.9-captures-${t}`);
+  fs.mkdirSync(dir, { recursive: true });
+  juguete(dir, '01-a.png');
+  const r = calc(w);
+  assert.equal(r.perAc[2].verdict, 'SIN-EVIDENCIA');
+  assert.ok(r.avisos.some((a) => /anterior a la regla del índice/.test(a) && /volvé a correr el portón E2E con los specs de la story/.test(a)), `${r.avisos}`);
+  assert.ok(!r.avisos.some((a) => /ilegible/.test(a)), `${r.avisos}`);
+});
+
+test('CapturasIndiceQueNoParsea_SigueIlegible @story-7.34 @ac-10 — un índice que existe y no parsea sigue siendo ilegible', () => {
+  const w = makeWorkspace({ acs: [[2, '**Given** la lista, **Then** muestra el total.']], rows: [['E1', '`story-9-9.spec.ts::flujo`', '2', 'e2e']] });
+  const t = compactNow();
+  writeGate(w, t, 'story-9-9.spec.ts', ['x @ac-2']);
+  writeIndex(w, t, null, { texto: '{no es json' });
+  const r = calc(w);
+  assert.ok(r.avisos.some((a) => /captures\.json ilegible en 9\.9-captures-/.test(a)), `${r.avisos}`);
+  assert.ok(!r.avisos.some((a) => /anterior a la regla del índice/.test(a)), `${r.avisos}`);
+});

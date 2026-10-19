@@ -1,0 +1,65 @@
+{
+ "__doc": "El repo hermano se lee de la rama de la story. Caso real (reporte de un dev del equipo): specs en un repo y pantallas en el hermano declarado en evidence.companion_repos, cada uno en su worktree con ramas de NOMBRE DISTINTO que nombran la story (`docs/…-1-1-impl` y `feat/…-1-1-…`). La guía del tester buscaba las pantallas en el checkout principal del hermano (otra rama): la story quedó un día sin poder cerrarse con «pantallas que no están en el disco». La regla que fija este caso: sin rama de mismo nombre, el único worktree del hermano cuya rama nombra la story es el hermano, también para la guía del tester.",
+ "hooks": [
+  {
+   "hook": "qa-guide.js --ui-texts (las pantallas del hermano, en su worktree)",
+   "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-advisor-run.js",
+   "controles": [
+    "${SKILLS}/skills/tycon-pipeline/scripts/qa-guide.js",
+    "${SKILLS}/skills/tycon-pipeline/scripts/lib/companion-repos.js"
+   ],
+   "__controles": "El caso corre qa-guide.js desde el setup y asserta lo que imprime: el disparo del hook es neutro.",
+   "event": "PreToolUse",
+   "matcher": "Task|Agent",
+   "cases": [
+    {
+     "id": "guia-encuentra-la-pantalla-del-hermano-en-ramas-de-nombre-distinto",
+     "type": "must-run",
+     "files": {
+      "Specs/.tycon/advisors.yaml": "evidence:\n  companion_repos:\n    - Front\n",
+      "Specs/README.md": "specs\n",
+      "Front/src/components/Facturas.tsx": "export const F = () => <p>Texto viejo del principal.</p>;\n",
+      "_story.md": "---\nepic: 1\nstory: \"1.1\"\ntitle: \"La lista de facturas\"\nstatus: in-progress\nfiles_to_modify:\n  - Front/src/components/Facturas.tsx\n---\n\n# Story 1.1\n\n## Acceptance Criteria\n\n1. **Given** un cliente con facturas **When** abre la lista **Then** ve cuántas le faltan pagar.\n\n### Tests\n\n| # | Test | AC | Nivel | Escenario | Resultado esperado |\n|---|---|---|---|---|---|\n| T1 | `ListaDeFacturas_MuestraPendientes` | 1 | e2e | x | y |\n",
+      "_pantalla.tsx": "export const F = () => <p>Te faltan pagar 2 facturas.</p>;\n"
+     },
+     "setup": [
+      "git init -q -b main Specs && git init -q -b main Front",
+      "git -C Specs add -A && git -C Specs -c user.email=banco@banco -c user.name=banco commit -q -m base",
+      "git -C Front add -A && git -C Front -c user.email=banco@banco -c user.name=banco commit -q -m base",
+      "git -C Specs worktree add -q -b docs/facturas-1-1-impl ../Specs-wt",
+      "git -C Front worktree add -q -b feat/facturas-1-1-pantalla ../Front-wt",
+      "mkdir -p Specs-wt/specs/stories && cp _story.md Specs-wt/specs/stories/story-1.1-x.md",
+      "cp _pantalla.tsx Front-wt/src/components/Facturas.tsx",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/qa-guide.js --story ${FIXTURE}/Specs-wt/specs/stories/story-1.1-x.md --ui-texts > ui.out 2> ui.err"
+     ],
+     "stdin": {
+      "session_id": "hermano-1",
+      "tool_name": "Task",
+      "tool_input": {
+       "subagent_type": "general-purpose",
+       "model": "haiku"
+      }
+     },
+     "expect": {
+      "file_contains": [
+       {
+        "path": "${FIXTURE}/ui.out",
+        "re": "Te faltan pagar 2 facturas"
+       },
+       {
+        "path": "${FIXTURE}/ui.err",
+        "re": "feat/facturas-1-1-pantalla"
+       }
+      ],
+      "file_not_contains": [
+       {
+        "path": "${FIXTURE}/ui.out",
+        "re": "Texto viejo del principal"
+       }
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

@@ -537,3 +537,132 @@ test('7.30-T26 UiReadability_SinPantallasEnElDisco_TieneSalida @story-7.30 @ac-2
     assert.strictEqual(r.rc, 2, `${archivo}\n${r.out}`);
   }
 });
+
+// ── las pantallas del repo hermano, en el worktree de la rama de la story ───────────────
+
+const GIT_ENV = { ...process.env, GIT_AUTHOR_DATE: '2026-10-19T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-19T12:00:00Z' };
+function gitEn(dir, ...args) {
+  const r = spawnSync('git', ['-C', dir, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args], { encoding: 'utf8', env: GIT_ENV });
+  assert.strictEqual(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`);
+  return r.stdout;
+}
+function commitTodo(dir, msg) {
+  gitEn(dir, 'add', '-A');
+  gitEn(dir, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '-m', msg);
+}
+/**
+ * Specs (la story de prueba, que declara a Front) y Front (el código), cada uno con su worktree en una rama de nombre distinto
+ * que nombra la story. La pantalla nueva vive sólo en el worktree de Front; en el checkout principal hay otra versión.
+ * `frontRama: null` → Front sin worktree (el principal queda en `main`).
+ */
+function hermanos({ declarada = 'Front/src/components/Facturas.tsx', frontRama = 'feat/facturas-1-1-pantalla' } = {}) {
+  const dir = path.join(TMP, `h${++n}`);
+  fs.mkdirSync(dir, { recursive: true });
+  const raiz = fs.realpathSync(dir);
+  const specs = path.join(raiz, 'Specs');
+  const front = path.join(raiz, 'Front');
+  for (const r of [specs, front]) { fs.mkdirSync(r, { recursive: true }); spawnSync('git', ['init', '-q', '-b', 'main', r], { stdio: 'ignore' }); }
+  escribir(path.join(specs, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n');
+  escribir(path.join(specs, 'README.md'), 'specs\n');
+  commitTodo(specs, 'base');
+  escribir(path.join(front, 'src', 'components', 'Vieja.tsx'), 'export const V = () => <p>La pantalla de main.</p>;\n');
+  escribir(path.join(front, 'src', 'components', 'Facturas.tsx'), 'export const F = () => <p>Texto viejo del principal.</p>;\n');
+  commitTodo(front, 'base');
+  const specsWt = path.join(raiz, 'Specs-wt');
+  gitEn(specs, 'worktree', 'add', '-q', '-b', 'docs/facturas-1-1-impl', specsWt);
+  let frontWt = null;
+  if (frontRama) {
+    frontWt = path.join(raiz, 'Front-wt');
+    gitEn(front, 'worktree', 'add', '-q', '-b', frontRama, frontWt);
+    escribir(path.join(frontWt, 'src', 'components', 'Facturas.tsx'), 'export const F = () => <p>Te faltan pagar 2 facturas.</p>;\n');
+    escribir(path.join(frontWt, 'src', 'components', 'Nueva.tsx'), 'export const N = () => <h2>Factura nueva</h2>;\n');
+  }
+  fs.mkdirSync(path.join(specsWt, '.advisors', 'dod-runtime'), { recursive: true });
+  const s = story(specsWt, [declarada]);
+  return { raiz, specsWt, front, frontWt, story: s };
+}
+
+test('UiReadability_PantallaEnElWorktreeDelHermano_Pasa @story-7.34 @ac-6 — la pantalla nueva del hermano se encuentra', () => {
+  // 🔴 rojo: la guía buscaba en el checkout principal de Front (otra rama): «(7) pantallas que no están en el disco».
+  const lab = hermanos({ declarada: 'Front/src/components/Nueva.tsx' });
+  const qa = guiaLista(lab.specsWt);
+  escribir(path.join(qa, '1.1-legibilidad-ui.md'), UI_OK(['Front/src/components/Nueva.tsx']));
+  const r = check(lab.story);
+  assert.strictEqual(r.rc, 0, r.out);
+});
+
+test('UiTexts_LasTresFormasDeNombrarAlHermano @story-7.34 @ac-6 — <hermano>/x, ../<hermano>/x y (<hermano>) x leen el worktree', () => {
+  const env = { ...process.env, HOME };
+  delete env.NODE_TEST_CONTEXT;
+  for (const declarada of ['Front/src/components/Facturas.tsx', '../Front/src/components/Facturas.tsx', '(Front) src/components/Facturas.tsx']) {
+    const lab = hermanos({ declarada });
+    const r = spawnSync('node', [QA, '--story', lab.story, '--ui-texts'], { encoding: 'utf8', input: '', env });
+    assert.strictEqual(r.status, 0, `${declarada}\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /- Te faltan pagar 2 facturas\./, `${declarada}\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /Texto viejo del principal/, `${declarada}\n${r.stdout}`);
+  }
+  // Lo que nombra a un hermano no se busca en su checkout principal: la pantalla que falta en el worktree, falta.
+  const lab = hermanos({ declarada: 'Front/src/components/Vieja.tsx' });
+  fs.rmSync(path.join(lab.frontWt, 'src', 'components', 'Vieja.tsx'));
+  const r = spawnSync('node', [QA, '--story', lab.story, '--ui-texts'], { encoding: 'utf8', input: '', env });
+  assert.doesNotMatch(r.stdout, /La pantalla de main/, r.stdout);
+});
+
+test('QaGuide_HermanoEnOtraRama_AvisaEnUnaLinea @story-7.34 @ac-5 — sin worktree, la guía dice de qué rama lee', () => {
+  const lab = hermanos({ frontRama: null });
+  const env = { ...process.env, HOME };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync('node', [QA, '--story', lab.story, '--ui-texts'], { encoding: 'utf8', input: '', env });
+  assert.match(`${r.stdout}\n${r.stderr}`, /Front[^\n]*checkout principal[^\n]*rama main/, `${r.stdout}\n${r.stderr}`);
+});
+
+test('ScreenFiles_MismaRutaEnDosRepos_SeRevisanLasDos @story-7.34 @ac-6 — (A) x y (B) x son dos pantallas', () => {
+  // 🔴 rojo (pase adversarial): se deduplicaba por la ruta sin el repo y la segunda pantalla no se revisaba ni faltaba.
+  const ui = require(path.join(SK, 'lib', 'ui-texts.js'));
+  const dir = fs.mkdtempSync(path.join(TMP, 'dos-repos-'));
+  escribir(path.join(dir, 'A', 'src', 'App.tsx'), 'export const A = () => <p>a</p>;\n');
+  escribir(path.join(dir, 'B', 'src', 'App.tsx'), 'export const B = () => <p>b</p>;\n');
+  const fm = 'files_to_modify:\n  - (A) src/App.tsx\n  - (B) src/App.tsx\n';
+  const resolve = (e) => { const m = e.match(/^\((\w+)\)\s+(.+)$/); return m ? path.join(dir, m[1], m[2]) : undefined; };
+  const r = ui.screenFiles(fm, '', [], resolve);
+  assert.deepStrictEqual(r.found.map((s) => s.abs).sort(), [path.join(dir, 'A', 'src', 'App.tsx'), path.join(dir, 'B', 'src', 'App.tsx')]);
+  fs.rmSync(path.join(dir, 'A', 'src', 'App.tsx'));
+  const sinA = ui.screenFiles(fm, '', [], resolve);
+  assert.deepStrictEqual(sinA.found.map((s) => s.abs), [path.join(dir, 'B', 'src', 'App.tsx')]);
+  assert.strictEqual(sinA.missing.length, 1, JSON.stringify(sinA));
+});
+
+test('QaGuide_RepoPropioEntreParentesis_LeeElWorktree @story-7.34 @ac-6 — (<repo de la story>) x desde su worktree', () => {
+  // 🔴 rojo (pase adversarial): `(Specs) x` caía a la carpeta vecina `Specs`, el checkout principal en otra rama.
+  const lab = hermanos({ declarada: '(Specs) src/Propia.tsx' });
+  escribir(path.join(lab.raiz, 'Specs', 'src', 'Propia.tsx'), 'export const P = () => <p>La de main.</p>;\n');
+  escribir(path.join(lab.specsWt, 'src', 'Propia.tsx'), 'export const P = () => <p>La de la rama.</p>;\n');
+  const env = { ...process.env, HOME };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync('node', [QA, '--story', lab.story, '--ui-texts'], { encoding: 'utf8', input: '', env });
+  assert.match(r.stdout, /- La de la rama\./, r.stdout);
+  assert.doesNotMatch(r.stdout, /La de main/, r.stdout);
+});
+
+test('QaGuide_RepoEntreParentesis_NoSaleDelRepo @story-7.34 @ac-6 — (<hermano>) ../../x no sale de su repo', () => {
+  // 🔴 rojo (revisor de seguridad): la forma con paréntesis unía la raíz y la ruta sin la guarda de las otras dos formas.
+  const lab = hermanos({ declarada: '(Front) ../Afuera.tsx' });
+  escribir(path.join(lab.raiz, 'Afuera.tsx'), 'export const X = () => <p>Fuera del repo.</p>;\n');
+  const env = { ...process.env, HOME };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync('node', [QA, '--story', lab.story, '--ui-texts'], { encoding: 'utf8', input: '', env });
+  assert.doesNotMatch(r.stdout, /Fuera del repo/, r.stdout);
+});
+
+test('QaGuide_RepoDeLaStorySinGit_LoDice @story-7.34 @ac-6 — si git no identifica el repo de la story, se dice', () => {
+  // 🔴 rojo (revisor de fallas silenciosas): sin git, `(<repo propio>) x` caía a la carpeta vecina sin aviso.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(TMP, 'sin-git-')));
+  const repo = path.join(raiz, 'Proj');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true }); // una carpeta .git que git no reconoce
+  escribir(path.join(repo, 'src', 'X.tsx'), 'export const X = () => <p>Hola.</p>;\n');
+  const s = story(repo, ['(Proj) src/X.tsx']);
+  const env = { ...process.env, HOME };
+  delete env.NODE_TEST_CONTEXT;
+  const r = spawnSync('node', [QA, '--story', s, '--ui-texts'], { encoding: 'utf8', input: '', env });
+  assert.match(`${r.stdout}\n${r.stderr}`, /no pude identificar el repo git de la story/, `${r.stdout}\n${r.stderr}`);
+});

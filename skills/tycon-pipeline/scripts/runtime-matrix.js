@@ -736,8 +736,11 @@ function imagenesDelE2e(gates, key, sellos) {
     if (!isDir(dir)) continue;
     let crudo;
     let index;
-    try { crudo = fs.readFileSync(path.join(dir, 'captures.json'), 'utf8'); index = JSON.parse(crudo); } catch {
-      problemas.push(`captures.json ilegible en ${carpeta}: sus imágenes no cuentan.`);
+    try { crudo = fs.readFileSync(path.join(dir, 'captures.json'), 'utf8'); index = JSON.parse(crudo); } catch (e) {
+      // Sin índice no es un índice roto: son capturas de un portón anterior a la regla, y se arreglan corriéndolo otra vez.
+      problemas.push(e && e.code === 'ENOENT'
+        ? `${carpeta} no tiene captures.json: capturas de un portón anterior a la regla del índice. Sus imágenes no cuentan: volvé a correr el portón E2E con los specs de la story.`
+        : `captures.json ilegible en ${carpeta}: sus imágenes no cuentan.`);
       continue;
     }
     if (!Array.isArray(index)) { problemas.push(`captures.json de ${carpeta} no es una lista: sus imágenes no cuentan.`); continue; }
@@ -963,7 +966,7 @@ function compute(opts) {
   // lo corre (lib/companion-repos.js). Sin esto, su evidencia salía «de un repo NO declarado» y no contaba.
   const companionLib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
   const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
-  const enRama = rama ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama)) : [];
+  const enRama = rama ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama, /\d/.test(sid) ? sid : null)) : [];
   const evidenceRoots = repoRoot ? [...new Set([repoRoot, ...evCfg.roots, ...enRama])] : [];
   for (const miss of evCfg.missing) {
     warnings.push(`companion_repo declarado en .tycon/advisors.yaml pero INEXISTENTE: ${miss} — no aporta evidencia (¿typo o repo sin clonar?).`);
