@@ -67,6 +67,7 @@
     "scripts/metrics/corridas-buzon.json",
     "scripts/metrics/reviewers-cost-assumption.json",
     "scripts/metrics/states.json",
+    "scripts/metrics/retro-sweep.json",
     "scripts/nightly/dashboard/sources.json",
     "scripts/nightly/dependencies/repos.json",
     "scripts/production/node-official.json",

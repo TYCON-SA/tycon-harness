@@ -144,11 +144,11 @@ test('T13 Semana_NocturnosSalteados_HallazgosIlegiblesDichos @story-1.27 @ac-1 @
   const m = j.merges_leidos.find((x) => x.story === '8.58');
   assert.ok(m && Array.isArray(m.incompleto) && m.incompleto.includes('hallazgos'), `el merge del findings.json roto queda marcado: ${JSON.stringify(m)}`);
   assert.ok(ag.calls()[0].prompt.includes('"incompleto"'), 'y el agente lo ve marcado');
-  // la story de un merge de Azure DevOps sale del título (lo confirmó el pase adversarial: quedaba sin story)
+  // la story de un merge de Azure DevOps sale del título (sin eso, esos merges quedaban sin story)
   const W = require(REVIEW);
-  assert.strictEqual(W.storyDe('Merged PR 2597: Story 5.4 — spec', '', null), '5.4');
-  assert.strictEqual(W.storyDe('Merged PR 2598: arreglo del tablero', 'docs(2.42): lo que quedó', null), '2.42');
-  assert.strictEqual(W.storyDe('Merged PR 2599: chore sin story', '', null), null);
+  assert.strictEqual(W.storyDe('Merged PR 1: Story 5.4 — spec', '', null), '5.4');
+  assert.strictEqual(W.storyDe('Merged PR 1: arreglo del tablero', 'docs(2.42): lo que quedó', null), '2.42');
+  assert.strictEqual(W.storyDe('Merged PR 1: chore sin story', '', null), null);
 });
 
 test('T2 Agente_UnaCorrida_ConTope @story-1.27 @ac-2 @ac-6: una sola llamada, con el material recortado al tope y lo que no entró nombrado', () => {
