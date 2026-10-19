@@ -449,6 +449,8 @@ const eff = require(process.argv[1] + "/scripts/setup/install-effects.json").eff
 const a = Q.upgradeOffer({ effects: eff, tree: "/h/.tycon/harness", home: "/h" });
 const toy = eff.filter((e) => e.kind !== "git-hook");
 const b = Q.upgradeOffer({ effects: toy, tree: "/h/.tycon/harness", home: "/h" });
+const w = Q.upgradeOffer({ effects: eff, tree: "/h/.tycon/harness", home: "/h", shownHarness: "\"C:/Users/x/.tycon/harness/scripts/setup/harness.js\"" });
+if (!(w[2].includes("node \"C:/Users/x/.tycon/harness/scripts/setup/harness.js\" install --profile minimal --yes") && !w[2].includes("~"))) { process.stdout.write(JSON.stringify({ w })); process.exit(0); }
 const ok = Array.isArray(a) && a.length === 3 && /frenos?/.test(a[0]) && /bloques? de reglas/.test(a[0]) && /hooks globales de git/.test(a[0])
   && /todos tus repos/.test(a[1]) && /tu agente de código/.test(a[1])
   && /install --profile minimal --yes/.test(a[2]) && /~\/\.tycon\/harness\/scripts\/setup\/harness\.js/.test(a[2])

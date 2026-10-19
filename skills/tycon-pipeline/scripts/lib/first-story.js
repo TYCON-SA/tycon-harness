@@ -233,7 +233,9 @@ function decide({ home, env, marker, tree }) {
     const eff = setupMod(tree, 'managed').readEffects(tree);
     // el motivo de readEffects puede repetir un pedazo del archivo: se nombra el archivo y se manda al diagnóstico
     if (!eff.ok) return { lines: [], warn: `la oferta de la instalación completa no se mostró: no pude leer la lista de efectos ${eff.file} (harness.js doctor dice por qué)` };
-    const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home });
+    // en Windows, la ruta entera entre comillas: PowerShell no expande `~` en el argumento de un programa
+    const shownHarness = process.platform === 'win32' ? `"${harnessJsOf(tree)}"` : null;
+    const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home, shownHarness });
     writeRecord(home, Object.assign(rec, { offer: { status: 'offered', at: now, story } }));
     return {
       lines: [

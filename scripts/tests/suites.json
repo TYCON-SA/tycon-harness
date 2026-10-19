@@ -1471,6 +1471,12 @@
       "requiere": []
     },
     {
+      "__nota": "la primera historia de la máquina y la oferta de la instalación completa al cerrarla: el lector por evidencia (instalación nueva, sin corridas cerradas, sin historial podado; en la duda, no medido), la oferta una sola vez desde el cierre, el «sí», el «no», sin persona, cierres a la vez bajo un candado y el clon de skills aparte.",
+      "raiz": "arnes",
+      "ruta": "tests/first-story.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17 (prerequisitos): los .ps1 del arnés se dejan leer por el PowerShell 5.1 que trae Windows (marca de codificación en los escritos a mano; todos sin errores de sintaxis leídos como los lee 5.1, con su control del rojo) y el instalador, sin PowerShell 7, lo dice en UNA línea por la salida estándar con el comando para instalarlo, sale 1 y no escribe nada; el requisito que falta en harness.js trae su comando y doctor los lista también sin instalar. Sin pwsh: T2 a T5 salteadas (NO MEDIDO), no verdes.",
       "raiz": "arnes",
       "ruta": "tests/ps1-readable.test.js",
