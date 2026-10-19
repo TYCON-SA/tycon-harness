@@ -227,6 +227,33 @@ for SEG in $SEGMENTS; do
     block "$SEG"
   fi
 
+  # --- pytest / python -m pytest ---
+  # Un archivo, una carpeta o `-k <patrón>` acotan; sin nada, es la suite completa del proyecto.
+  if [[ "$SEG" =~ ^(python[0-9.]*[[:space:]]+-m[[:space:]]+)?pytest([[:space:]]|$) ]]; then
+    ES_TEST=1
+    REST="$(echo "$SEG" | sed -E 's/^(python[0-9.]*[[:space:]]+-m[[:space:]]+)?pytest//')"
+    HAS_POSITIONAL=0
+    # Las opciones que llevan valor (`-n auto`, `--cov app`, `-p x`…) no acotan: su valor no es un archivo. Sólo
+    # listar o pedir la versión no corre la suite.
+    SALTEAR=0
+    # IFS es el salto de línea (arriba): los argumentos se separan uno por renglón. Un argumento entre comillas
+    # (`-m "not slow"`, `"tests/a b.py"`) cuenta como uno solo: si no, su segunda palabra pasa por un archivo. Entre
+    # comillas, una opción (`"-x"`) o nada (`""`) siguen sin acotar. Una comilla que este tramo no cierra (el comando se
+    # partió en un `;` o un `|` de adentro) no cuenta: `"-x` es la opción `-x`.
+    for TOK in $(echo "$REST" | sed -E "s/\"(-[^\"]*)?\"/-q/g; s/'(-[^']*)?'/-q/g; s/\"[^\"]*\"/ARG/g; s/'[^']*'/ARG/g; s/[\"']//g" | tr -s ' \t' '\n'); do
+      if [[ "$SALTEAR" == "1" ]]; then SALTEAR=0; continue; fi
+      case "$TOK" in
+        -k|-k=*) HAS_POSITIONAL=1; break ;;
+        --version|--co|--collect-only|-h|--help) HAS_POSITIONAL=1; break ;;
+        -n|-p|-m|-c|-o|-W|--maxfail|--cov|--cov-report|--cov-config|--junitxml|--junit-xml|--rootdir|--durations|--tb|--log-level|--basetemp|--deselect|--ignore|--ignore-glob|--confcutdir|--dist|--numprocesses) SALTEAR=1 ;;
+        -*) ;;
+        *) HAS_POSITIONAL=1; break ;;
+      esac
+    done
+    [[ "$HAS_POSITIONAL" == "1" ]] && continue
+    block "$SEG"
+  fi
+
   # --- dotnet test ---
   if [[ "$SEG" =~ ^dotnet[[:space:]]+test([[:space:]]|$) ]]; then
     ES_TEST=1

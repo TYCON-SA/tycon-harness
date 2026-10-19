@@ -65,6 +65,9 @@ case "$STORY_ARG" in
     # la del repo de la story. Su resultado viaja en `companions` del artefacto de ese repo.
     if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" ]]; then
       export TYCON_EVIDENCE_KEY_FAILED="corrida del repo hermano: la copia sellada es la del repo de la story (su resultado va en companions)"
+    elif [[ "${TYCON_TEST_GATE_PART:-}" == "1" ]]; then
+      # una parte de una story que toca varios proyectos: la copia sellada es la del total, que escribe correr_partes
+      export TYCON_EVIDENCE_KEY_FAILED="parte de una corrida por proyectos: la copia sellada es la del total"
     elif [ ! -f "$STORY_ARG" ]; then
       export TYCON_EVIDENCE_KEY_FAILED="no encontré la story $STORY_ARG"
     else
@@ -82,6 +85,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MARKER_JS="$SCRIPT_DIR/marker.js"
 OUT_DIR="$REPO/.advisors"
 OUT_FILE="$OUT_DIR/tests-result.json"
+# Una parte de una story que toca varios proyectos del repo (ver «Varios proyectos tocados»): su artefacto va aparte y
+# el de la raíz lo arma la corrida que la lanzó.
+if [[ "${TYCON_TEST_GATE_PART:-}" == "1" && -n "${TYCON_TEST_GATE_OUT_FILE:-}" ]]; then OUT_FILE="$TYCON_TEST_GATE_OUT_FILE"; fi
 # El umbral lo resuelve el informe: la variable de la máquina, si sirve › la organización › 75. Acá va
 # tal cual, vacía si no está, para que el artefacto pueda decir de dónde salió.
 COV_MIN="${TYCON_COVERAGE_MIN:-}"
@@ -145,7 +151,7 @@ fi
 correr_hermanos_al_salir() {
   local rc=$?
   trap - EXIT
-  if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" || -z "$STORY_ARG" || ! -f "$STORY_ARG" ]]; then exit "$rc"; fi
+  if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" || "${TYCON_TEST_GATE_PART:-}" == "1" || -z "$STORY_ARG" || ! -f "$STORY_ARG" ]]; then exit "$rc"; fi
   local story_abs blancos err
   story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
   err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
@@ -256,15 +262,92 @@ SCOPE_SOURCE="explicito"
 #     porque parece verificación. Ahora: se deduce de lo que la story declara (o del diff), y si
 #     hay ambigüedad NO se corre nada.
 DEDUC_TSV="$(node "$SCRIPT_DIR/lib/test-scope.js" "$REPO" "$STORY_ARG" --tsv 2>/dev/null || true)"
-TG_MULTI=0; TG_SCOPE=""; TG_SOURCE=""; TG_STORY_ID=""; TG_AMBIG=0; TG_CANDS=""; TG_REASON=""
+TG_MULTI=0; TG_SCOPE=""; TG_SOURCE=""; TG_STORY_ID=""; TG_AMBIG=0; TG_CANDS=""; TG_REASON=""; TG_SCOPES=""
 # 🔴 El separador es \x1f, NO un tabulador: bash trata el tab como espacio en blanco de IFS y
 # colapsa los separadores consecutivos, así que un campo vacío en el medio corre todos los de
 # atrás (el alcance llegaba valiendo "1", que era el flag de ambigüedad). Lo cazó el test del freno.
-IFS=$'\x1f' read -r TG_MULTI TG_SCOPE TG_SOURCE TG_STORY_ID TG_AMBIG TG_CANDS TG_REASON <<< "$DEDUC_TSV"
+IFS=$'\x1f' read -r TG_MULTI TG_SCOPE TG_SOURCE TG_STORY_ID TG_AMBIG TG_CANDS TG_REASON TG_SCOPES <<< "$DEDUC_TSV"
 TG_MULTI="${TG_MULTI:-0}"; TG_AMBIG="${TG_AMBIG:-0}"
 # Cuando $2 es la RUTA de la story, el id sale del frontmatter — una sola verdad: lo lee el
 # deductor, que ya abrió el archivo. Si $2 era un id, se respeta tal cual.
 if [[ -n "$TG_STORY_ID" ]]; then STORY_ID="$TG_STORY_ID"; fi
+
+# --- Varios proyectos tocados: una corrida por proyecto ---------------------------------------------------------
+# Una story que toca dos o más proyectos con pruebas del mismo repo (el back en pytest y el front en Vitest) corre cada
+# uno con su suite, en serie, cada uno con su artefacto; el de la raíz junta los resultados en `parts` y es verde sólo
+# si todas lo son. Antes esto frenaba con 4 y el back quedaba sin medir. Archivos que no caen en ningún proyecto siguen
+# frenando con 4, y una story de otro repo sigue con la salida 7 de la corrida cruzada.
+correr_partes() {
+  local partes="$1" story_abs="" final=0 filas="" scope hrc out
+  [[ -n "$STORY_ARG" && -f "$STORY_ARG" ]] && story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
+  # el artefacto de una corrida anterior no puede quedar a la vista si éste no se llega a escribir
+  rm -f "$OUT_FILE"
+  echo "[test-gate] la story toca ${partes//,/, }: corre cada proyecto" >&2
+  IFS=',' read -r -a _lista <<< "$partes"
+  for scope in "${_lista[@]}"; do
+    [[ -z "$scope" ]] && continue
+    out="$OUT_DIR/tests-result.part-${scope//\//_}.json"
+    hrc=0
+    TYCON_TEST_GATE_PART=1 TYCON_TEST_GATE_OUT_FILE="$out" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "${story_abs:-$STORY_ARG}" "$scope" < /dev/null || hrc=$?
+    # un 7 de una parte sin la constancia de «sin acotar» es un rojo de verdad
+    if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$out"; then hrc=1; fi
+    filas+="${scope}"$'\x1f'"${hrc}"$'\x1f'"${out}"$'\n'
+    # un rojo de verdad gana sobre «sin acotar» (7), y éste sobre verde y sobre «sin pruebas» (3)
+    if [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then
+      [[ "$final" == "0" || "$final" == "7" ]] && final="$hrc"
+    elif [[ "$hrc" == "7" && "$final" == "0" ]]; then final=7; fi
+  done
+  node -e '
+    const fs = require("fs"), p = require("path");
+    const [out, ts, storyId, final, filas] = process.argv.slice(1);
+    const parts = filas.split("\n").filter(Boolean).map((l) => {
+      const [scope, exit, file] = l.split("\x1f");
+      let a = null; try { a = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_e) { a = null; }
+      return { scope, exit: Number(exit), green: Number(exit) === 0, runner: a ? a.runner : null, totals: a ? a.totals : {}, artifact: file };
+    });
+    const suma = (k) => parts.reduce((n, x) => n + (Number.isFinite(x.totals && x.totals[k]) ? x.totals[k] : 0), 0);
+    // cero pruebas corridas entre todas las partes no es verde (salida 6), como en una corrida de un solo proyecto
+    let fin = Number(final);
+    const corridas = suma("total") - suma("skipped");
+    if (fin === 0 && !(corridas > 0)) fin = 6;
+    const art = { ts, story_id: storyId, runner: parts.map((x) => x.runner || "?").join("+"), repo: null,
+      suite_exit: fin, suite_green: fin === 0 && parts.length > 0,
+      ...(fin === 6 ? { no_tests_run: "ninguna de las partes corrió pruebas: eso no es verde" } : {}),
+      ...(fin === 7 ? { unscoped: true, merge_requires_ci: true,
+        unscoped_reason: `parte(s) sin acotar: ${parts.filter((x) => x.exit === 7).map((x) => x.scope).join(", ")} — la cubre la CI del pedido` } : {}),
+      totals: { total: suma("total"), passed: suma("passed"), failed: suma("failed"), skipped: suma("skipped") },
+      parts,
+      coverage: { per_new_file: {}, new_files_pct: null, threshold: null, meets_threshold: null,
+        no_cross_check: "la cobertura está en el artefacto de cada parte (parts[].artifact)" },
+      provenance: "test-gate.sh: una corrida por proyecto tocado; el total es verde sólo si todas lo son" };
+    fs.mkdirSync(p.dirname(out), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
+    // la copia que viaja (la que lee runtime-matrix.js) es la del TOTAL, no la de la última parte
+    const clave = process.env.TYCON_EVIDENCE_KEY;
+    if (clave && !process.env.TYCON_EVIDENCE_KEY_FAILED && /^[A-Za-z0-9][A-Za-z0-9._+~-]*$/.test(clave) && !clave.includes("..")) {
+      const evDir = process.env.TYCON_EVIDENCE_DIR || p.join(p.dirname(out), "dod-runtime");
+      fs.mkdirSync(evDir, { recursive: true });
+      fs.writeFileSync(p.join(evDir, `${clave}-tests-result.json`), JSON.stringify({ kind: "tests-result-sellado", story_id: storyId,
+        ts, runner: art.runner, suite_exit: art.suite_exit, suite_green: art.suite_green, halted: null, totals: art.totals,
+        coverage: art.coverage, provenance: art.provenance }, null, 2));
+    }
+  ' "$OUT_FILE" "$TS" "$STORY_ID" "$final" "$filas" || {
+    echo "[test-gate] 🔴 no pude juntar las partes en $OUT_FILE: sin artefacto, esto no es verde" >&2
+    [[ "$final" == "0" ]] && final=1
+  }
+  # el total de pruebas lo decidió el artefacto (cero pruebas → 6)
+  if [[ "$final" == "0" ]] && ! node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).suite_green===true?0:1)}catch(e){process.exit(1)}' "$OUT_FILE"; then
+    final=6
+  fi
+  if [[ "$final" == "7" ]]; then
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "una parte de la story no se pudo acotar a lo tocado" ) >&2 || true
+  elif [[ "$final" != "0" ]]; then
+    marcar_tests_en_rojo "$final" "una de las partes de la story (${partes//,/, }) no está en verde: salida $final"
+  fi
+  echo "[test-gate] partes: resultado total → salida $final" >&2
+  exit "$final"
+}
+if [[ -z "$SCOPE" && "$TG_MULTI" == "1" && "$TG_SCOPES" == *,* ]]; then correr_partes "$TG_SCOPES"; fi
 
 if [[ -z "$SCOPE" && "$TG_MULTI" == "1" ]]; then
   if [[ "$TG_AMBIG" == "0" && -n "$TG_SCOPE" ]]; then
@@ -333,7 +416,19 @@ if ls "$REPO"/*.sln >/dev/null 2>&1 || ls "$REPO"/*.csproj >/dev/null 2>&1; then
 fi
 
 RUNNER=""
-if [[ -n "$_HAY_DOTNET" ]]; then
+# Las herramientas de lib/test-runners.js: la que declaró la organización (team-repos.json → stack.test_runners) va
+# antes que todo; las de fábrica nuevas (pytest, Go, Maven, Gradle, Karma), después de las de siempre. El comando sale
+# de la configuración del arnés, nunca del repo que se prueba.
+GENERICO_JSON="$(node "$SCRIPT_DIR/lib/test-runners.js" resolve "$REPO" 2>/dev/null)" || GENERICO_JSON=""
+_campo_generico() { node -e 'try{const j=JSON.parse(process.argv[1]);const r=j.runner||{};const v=process.argv[2].split(".").reduce((o,k)=>o==null?o:o[k],r);process.stdout.write(v==null?"":String(v))}catch(e){}' "$GENERICO_JSON" "$1"; }
+node -e 'try{for(const p of JSON.parse(process.argv[1]).problems||[])console.error("[test-gate] ⚠️  "+p)}catch(e){}' "$GENERICO_JSON" >&2 || true
+GENERICO_NOMBRE="$(_campo_generico name)"
+GENERICO_ORIGEN="$(_campo_generico source)"
+if [[ -n "$GENERICO_NOMBRE" && "$GENERICO_ORIGEN" == "organizacion" ]]; then
+  RUNNER="$GENERICO_NOMBRE"; GENERICO=1
+elif [[ -n "$_HAY_DOTNET" && ( -n "$_DOTNET_CORRIBLE" || -z "$GENERICO_NOMBRE" ) ]]; then
+  # un .csproj más abajo no le gana al proyecto de acá (pytest.ini, go.mod…): sólo una solución o un proyecto .NET en
+  # esta misma carpeta
   RUNNER="dotnet"
 elif [ -f "$REPO/package.json" ] && grep -q '"vitest"' "$REPO/package.json" 2>/dev/null; then
   RUNNER="vitest"
@@ -359,6 +454,10 @@ elif [ -f "$REPO/scripts/tests/suites.json" ]; then
   # de DoD marcaba 11 criterios como NOT-RUN con la suite realmente verde. Tercera vez del mismo
   # patrón (node --test en julio, jest en agosto). El runner usa la MISMA lista que el nocturno.
   RUNNER="suites-json"
+elif [[ -n "$GENERICO_NOMBRE" ]]; then
+  # una herramienta de fábrica con su detector EN esta carpeta (go.mod, pytest.ini…) gana sobre la búsqueda de un
+  # proyecto node en las subcarpetas: el proyecto es el de acá
+  RUNNER="$GENERICO_NOMBRE"; GENERICO=1
 else
   # workspace contenedor: primer subdir con package.json + un runner conocido
   for d in "$REPO"/*/; do
@@ -374,6 +473,8 @@ else
   done
 fi
 REPO_RUN="${REPO_RUN:-$REPO}"
+if [[ -z "$RUNNER" && -n "$GENERICO_NOMBRE" ]]; then RUNNER="$GENERICO_NOMBRE"; GENERICO=1; REPO_RUN="$REPO"; fi
+GENERICO="${GENERICO:-}"
 
 if [[ -z "$RUNNER" ]]; then
   echo "[test-gate] No se detectó stack de tests (ni .csproj, ni vitest, ni jest, ni \`node --test\`, ni scripts/tests/suites.json) en $REPO" >&2
@@ -426,11 +527,18 @@ case "$RUNNER" in
   node-test) _HERRAMIENTA="npm" ;;
   *) _HERRAMIENTA="node" ;;
 esac
+[[ -n "$GENERICO" ]] && _HERRAMIENTA="$(_campo_generico tool)"
 # `command -v` sólo no alcanza (pase adversarial de la W6, hallazgo #8): en Windows Git Bash encuentra el guion `npx`
 # sin extensión, pero run-check lo lanza desde Node, que no lanza un `npx.cmd` sin shell; y bash cuenta también un
 # archivo sin permiso de ejecución. `portable-tools.js can-launch` mira con la MISMA búsqueda con la que run-check lanza.
 _NO_LANZA=""
-if ! command -v "$_HERRAMIENTA" >/dev/null 2>&1; then
+if [[ "$_HERRAMIENTA" == ./* ]]; then
+  # un envoltorio del proyecto (./gradlew): tiene que estar y poder ejecutarse; lo lanza bash, no run-check
+  [[ -x "$REPO_RUN/${_HERRAMIENTA#./}" ]] || _NO_LANZA="no está en el proyecto o no se puede ejecutar"
+elif [[ -n "$GENERICO" ]]; then
+  # el comando de estas herramientas lo lanza bash (run-check corre `bash -c`): alcanza con que el shell lo vea
+  command -v "$_HERRAMIENTA" >/dev/null 2>&1 || _NO_LANZA="no está en el PATH"
+elif ! command -v "$_HERRAMIENTA" >/dev/null 2>&1; then
   _NO_LANZA="no está en el PATH"
 elif ! _MOTIVO_LANZA="$(node "$SCRIPT_DIR/lib/portable-tools.js" can-launch "$_HERRAMIENTA" 2>&1)"; then
   _NO_LANZA="el shell lo ve, pero run-check no lo puede lanzar: ${_MOTIVO_LANZA:-sin motivo}"
@@ -479,7 +587,35 @@ export TYCON_TEST_GATE=1
 # variables y su destino de prueba.
 export TYCON_MAILBOX=0 TYCON_NO_UPLOAD_RUNS=1 TYCON_MAILBOX_JSON="${TMPDIR:-/tmp}/sin-llave-del-buzon-$$/corridas-buzon.json" TYCON_SUITE_RUNNER=test-gate
 
-if [[ "$RUNNER" == "dotnet" ]]; then
+if [[ -n "$GENERICO" ]]; then
+  # El comando, con {results} ya reemplazado por la carpeta de esta corrida; la definición queda en runner.json para
+  # el informe (qué reporte y qué cobertura leer). La marca de inicio sirve para leer sólo los reportes de esta corrida.
+  node "$SCRIPT_DIR/lib/test-runners.js" resolve "$REPO_RUN" --results "$RESULTS_DIR" > "$RESULTS_DIR/runner.json" 2>/dev/null
+  GENERICO_JSON="$(cat "$RESULTS_DIR/runner.json")"
+  _CMD="$(_campo_generico command)"
+  touch "$RESULTS_DIR/.inicio"
+  echo "[test-gate] $RUNNER ($(_campo_generico source)): $_CMD"
+  ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
+      bash -c "set -o pipefail; $_CMD 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  # pytest sin pytest-cov rechaza --cov: se corre de nuevo sin cobertura, y el informe lo dice
+  _SIN_COV="$(_campo_generico commandWithoutCoverage)"
+  if [[ "$SUITE_EXIT" != "0" && -n "$_SIN_COV" ]] && grep -q "unrecognized arguments: --cov" "$RESULTS_DIR/run.log" 2>/dev/null; then
+    echo "[test-gate] ⚠️  $RUNNER sin pytest-cov: corre de nuevo sin cobertura" >&2
+    echo "falta pytest-cov: las pruebas corrieron sin medir la cobertura" > "$RESULTS_DIR/sin-cobertura.txt"
+    SUITE_EXIT=0
+    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
+        bash -c "set -o pipefail; $_SIN_COV 2>&1 | tee $(printf %q "$RESULTS_DIR/run.log")" ) || SUITE_EXIT=$?
+  fi
+  # Las salidas 3 a 7 son del gate (sin pruebas, alcance, herramienta faltante, cero pruebas, sin acotar): la de una
+  # herramienta no puede confundirse con ellas. pytest sale 5 cuando no encontró ninguna prueba: es un 6 del gate.
+  if [[ "$RUNNER" == "pytest" && "$SUITE_EXIT" == "5" ]]; then
+    echo "pytest no encontró ninguna prueba (salió 5)" > "$RESULTS_DIR/sin-pruebas.txt"
+    SUITE_EXIT=6
+  elif [[ "$SUITE_EXIT" =~ ^[3-7]$ ]]; then
+    echo "[test-gate] $RUNNER salió $SUITE_EXIT: cuenta como falla (1), para no confundirlo con una salida del gate" >&2
+    SUITE_EXIT=1
+  fi
+elif [[ "$RUNNER" == "dotnet" ]]; then
   # Fix auditoría 9.4 (2026-06-11) — race bi-assembly: `dotnet test` a nivel solución
   # corre los assemblies de test EN PARALELO y, si comparten la BD de test (DatabaseFixture
   # droppea/recrea el schema), se pisan entre sí → exit=1 con 0 failed reales. En 9.4 esto
@@ -641,8 +777,13 @@ if [[ "$SUITE_EXIT" == "7" ]]; then
   echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: el merge exige la CI completa en verde." >&2
 fi
 if [[ "$SUITE_EXIT" == "0" ]]; then
-  _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
-  if [[ "$_VERDE" != "si" ]]; then
+  _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":(j.totals&&j.totals.failed>0)?"falla":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
+  if [[ "$_VERDE" == "falla" ]]; then
+    # la herramienta salió 0 pero el reporte trae fallas (Maven con testFailureIgnore, por ejemplo): es un rojo
+    echo "🔴 [test-gate] la herramienta salió 0 pero el reporte trae pruebas fallidas: NO es verde." >&2
+    ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la herramienta salió 0 con pruebas fallidas en el reporte: no es verde"); process.exit(1)' ) || true
+    SUITE_EXIT=1
+  elif [[ "$_VERDE" != "si" ]]; then
     echo "🔴 [test-gate] la suite salió 0 pero no corrió ninguna prueba, o no se pudo contar: NO es verde." >&2
     ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- node -e 'console.error("test-gate: la suite salió 0 sin ninguna prueba corrida (o sin informe que lo cuente): no es verde"); process.exit(6)' ) || true
     SUITE_EXIT=6

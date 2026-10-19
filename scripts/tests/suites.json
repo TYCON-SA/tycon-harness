@@ -381,6 +381,12 @@
       "requiere": []
     },
     {
+      "__nota": "la puerta de pruebas con pytest, Go, Maven, Gradle, Karma y una herramienta de la organización (herramientas falsas en el PATH), y una story que toca dos proyectos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-runners.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [

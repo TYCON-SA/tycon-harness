@@ -219,6 +219,37 @@ function discoverCandidates(repoDir) {
     if (runner) add(dirOf(rel), runner);
   });
 
+  // ── las herramientas de lib/test-runners.js: pytest, Go, Maven, Gradle, Karma y las de la organización ─────────
+  // Por su archivo detector, a la misma profundidad. Una carpeta que ya es candidata (.NET o node) no cambia de
+  // corredor; un conftest.py dentro de un proyecto de pytest no suma otro candidato.
+  let runnersLib = null; let stack = {};
+  try { runnersLib = require('./test-runners.js'); stack = require('./stack-config.js').readStack().stack; } catch (e) {
+    runnersLib = null;
+    process.stderr.write(`[test-scope] ⚠️  no pude cargar las herramientas de prueba (${e && e.message ? e.message : e}): sólo cuentan .NET y node como proyectos\n`);
+  }
+  if (runnersLib) {
+    const nombres = new Set(runnersLib.detectorFiles(stack).map((d) => d.file));
+    const dirs = new Set();
+    walkFiles(repoDir, 3, (rel) => {
+      const base = rel.slice(rel.lastIndexOf('/') + 1);
+      if (!nombres.has(base)) return;
+      // un conftest.py suelto en una subcarpeta no hace de ella un proyecto: sólo cuenta en la raíz del repo
+      if (base === 'conftest.py' && dirOf(rel) !== '.') return;
+      dirs.add(dirOf(rel));
+    });
+    const porProfundidad = [...dirs].sort((a, b) => (a === '.' ? -1 : b === '.' ? 1 : a.split('/').length - b.split('/').length));
+    for (const d of porProfundidad) {
+      if (byDir.has(d)) continue;
+      let r = null;
+      try { r = runnersLib.resolve(d === '.' ? repoDir : path.join(repoDir, d), { stack }); } catch (e) {
+        process.stderr.write(`[test-scope] ⚠️  no pude ver qué herramienta de prueba usa ${d} (${e && e.message ? e.message : e}): no cuenta como proyecto\n`);
+      }
+      if (!r) continue;
+      const dentroDeOtro = [...byDir.entries()].some(([c, v]) => v.runner === r.name && c !== d && isUnder(d, c));
+      if (!dentroDeOtro) add(d, r.name);
+    }
+  }
+
   return [...byDir.entries()]
     .map(([dir, { runner, territory }]) => (territory ? { dir, runner, territory } : { dir, runner }))
     .sort((a, b) => (a.dir < b.dir ? -1 : a.dir > b.dir ? 1 : 0));
@@ -239,6 +270,10 @@ function deduceScope({ files, candidates }) {
   // Prefijo más largo primero: un candidato `a/b` gana sobre `a` para `a/b/x.ts`.
   const dirs = cands.map((c) => c.dir).filter((d) => d !== '.').sort((a, b) => b.length - a.length);
   const hasRoot = Object.prototype.hasOwnProperty.call(votes, '.');
+  // la raíz es de una herramienta de lib/test-runners.js (no .NET ni node, que siguen con su regla de siempre)
+  const raiz = cands.find((c) => c.dir === '.');
+  const raizGenerica = Boolean(raiz && !['dotnet', 'vitest', 'node-test', 'jest', 'suites-json'].includes(raiz.runner));
+  const esCodigo = (f) => require('./code-files.js').isSource(f);
   // Territorio (fix 2026-08-28): los dirs que el .sln de un candidato declara como suyos —
   // ver discoverCandidates. Prefijo más largo primero, igual que los candidatos. Un candidato
   // explícito SIEMPRE gana sobre un territorio (el `owner` de arriba se evalúa antes).
@@ -257,6 +292,9 @@ function deduceScope({ files, candidates }) {
     const owner = dirs.find((d) => f === d || f.startsWith(`${d}/`));
     if (owner) { votes[owner] += 1; considered += 1; continue; }
     if (hasRoot && !f.includes('/')) { votes['.'] += 1; considered += 1; continue; }
+    // Un proyecto de pytest, Go, Maven… en la raíz tiene su código en subcarpetas (app/, src/, cmd/): un archivo de
+    // código que no cae bajo otro proyecto es suyo. La documentación sigue sin votar (no hay «raíz por descarte»).
+    if (hasRoot && raizGenerica && esCodigo(f)) { votes['.'] += 1; considered += 1; continue; }
     // 🔴 El candidato raíz ('.', típicamente un `.sln` en la raíz) vota SÓLO por los archivos que
     // están en la raíz misma. Con un repo que tiene proyecto raíz + subproyectos, "está contenido
     // en la raíz" es cierto para TODO y por lo tanto no discrimina nada: `tasks/todo.md` terminaba
@@ -287,9 +325,11 @@ function deduceScope({ files, candidates }) {
         : 'no hay archivos declarados por la story ni cambios en el diff con los que deducir el alcance',
     };
   }
+  // Dos o más proyectos tocados: no es ambiguo, se corren todos (cada uno con su suite) y el total es verde sólo si
+  // todos lo son. Frenar acá dejaba sin medir el back de una story que toca back y front.
   return {
-    multi: true, ambiguous: true, scope: null, votes,
-    reason: `los archivos tocan ${hit.length} proyectos con tests a la vez (${hit.join(', ')})`,
+    multi: true, ambiguous: false, scope: null, scopes: hit, votes,
+    reason: `los archivos tocan ${hit.length} proyectos con tests (${hit.join(', ')}): corre cada uno`,
   };
 }
 
@@ -386,6 +426,7 @@ if (require.main === module) {
       r.ambiguous ? 1 : 0,
       r.candidates.map((c) => `${c.dir}:${c.runner}`).join(','),
       String(r.reason || '').replace(/[\x1f\r\n]+/g, ' '),
+      (r.scopes || []).join(','),
     ].join('\x1f') + '\n');
   } else {
     process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);

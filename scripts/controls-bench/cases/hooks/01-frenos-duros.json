@@ -3431,6 +3431,152 @@
           }
         },
         {
+          "id": "block-pytest-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "test-scope-guard|TEST-DISCIPLINE"
+            ]
+          }
+        },
+        {
+          "id": "block-python-m-pytest-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "python -m pytest -q"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-pytest-n-auto-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest -n auto"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-pytest-cov-con-valor-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest --cov app"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-pytest-marcador-entre-comillas-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest -m \"not slow\""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-pytest-opcion-entre-comillas-sin-alcance",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest \"-x\" ''"
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "block-pytest-comilla-que-cruza-un-separador",
+          "type": "must-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest \"-x; echo \""
+            }
+          },
+          "expect": {
+            "exit": 2
+          }
+        },
+        {
+          "id": "pass-pytest-archivo-entre-comillas",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest \"tests/test a.py\""
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "pass-pytest-version",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest --version"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "pass-pytest-con-escape-explicito",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "TYCON_FULL_SUITE=1 pytest"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "pass-pytest-con-archivo",
+          "type": "must-not-block",
+          "stdin": {
+            "tool_name": "Bash",
+            "tool_input": {
+              "command": "pytest tests/test_a.py"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
           "id": "pass-npm-test-con-filtro",
           "type": "must-not-block",
           "stdin": {

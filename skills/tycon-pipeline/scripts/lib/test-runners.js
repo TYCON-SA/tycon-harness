@@ -20,6 +20,12 @@ const COVERAGE_FORMATS = Object.freeze(['cobertura', 'lcov', 'istanbul-json', 'j
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 const lee = (dir, f) => { try { return fs.readFileSync(path.join(dir, f), 'utf8'); } catch (_) { return null; } };
+/** ¿Hay un ejecutable con ese nombre en el PATH? */
+function enElPath(nombre) {
+  const exts = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  return String(process.env.PATH || '').split(path.delimiter).filter(Boolean)
+    .some((d) => exts.some((e) => { try { return fs.statSync(path.join(d, nombre + e)).isFile(); } catch (_) { return false; } }));
+}
 const existe = (dir, f) => fs.existsSync(path.join(dir, f));
 
 /** Las de fábrica, en orden. `detect(dir)` dice si el proyecto es de ese stack; `tool(dir)` qué binario tiene que estar. */
@@ -29,10 +35,11 @@ const FACTORY = Object.freeze([
     // un pyproject.toml cuenta si menciona pytest (su sección o la dependencia): uno de Poetry sin pruebas no es pytest
     detect: (d) => existe(d, 'pytest.ini') || existe(d, 'conftest.py')
       || /\bpytest\b/.test(lee(d, 'pyproject.toml') || '') || /\[tool:pytest\]/.test(lee(d, 'setup.cfg') || ''),
-    tool: () => 'python',
-    command: 'python -m pytest --junitxml={results}/junit.xml --cov --cov-report=xml:{results}/coverage.xml',
+    // `python` si está; si no, `python3` (en una Mac sólo viene python3)
+    tool: () => (enElPath('python') || !enElPath('python3') ? 'python' : 'python3'),
+    command: '{tool} -m pytest --junitxml={results}/junit.xml --cov --cov-report=xml:{results}/coverage.xml',
     // sin pytest-cov, pytest rechaza --cov: la puerta corre de nuevo con este comando y lo dice
-    commandWithoutCoverage: 'python -m pytest --junitxml={results}/junit.xml',
+    commandWithoutCoverage: '{tool} -m pytest --junitxml={results}/junit.xml',
     results: { format: 'junit', path: '{results}/junit.xml' },
     coverage: { format: 'cobertura', path: '{results}/coverage.xml' },
   },
@@ -49,16 +56,20 @@ const FACTORY = Object.freeze([
     detect: (d) => existe(d, 'pom.xml'),
     tool: () => 'mvn',
     command: 'mvn -B -q test',
-    results: { format: 'junit', path: 'target/surefire-reports/*.xml' },
-    coverage: { format: 'jacoco', path: 'target/site/jacoco/jacoco.xml', optional: true },
+    // en el proyecto, no en {results}: sólo cuentan los escritos en esta corrida (uno viejo de otra no es de ésta)
+    // `alt`: un proyecto de varios módulos deja el reporte en cada módulo
+    results: { format: 'junit', path: 'target/surefire-reports/*.xml', alt: '*/target/surefire-reports/*.xml', writtenDuringRun: true },
+    coverage: { format: 'jacoco', path: 'target/site/jacoco/jacoco.xml', alt: '*/target/site/jacoco/jacoco.xml', optional: true, writtenDuringRun: true },
   },
   {
     name: 'gradle',
     detect: (d) => existe(d, 'build.gradle') || existe(d, 'build.gradle.kts'),
     tool: (d) => (existe(d, 'gradlew') ? './gradlew' : 'gradle'),
-    command: '{tool} test',
-    results: { format: 'junit', path: 'build/test-results/test/*.xml' },
-    coverage: { format: 'jacoco', path: 'build/reports/jacoco/test/jacocoTestReport.xml', optional: true },
+    // `cleanTest`: con la tarea «al día» o tomada del caché, Gradle no corre ni reescribe el reporte, y la corrida
+    // saldría «sin pruebas» estando verde
+    command: '{tool} cleanTest test',
+    results: { format: 'junit', path: 'build/test-results/test/*.xml', alt: '*/build/test-results/test/*.xml', writtenDuringRun: true },
+    coverage: { format: 'jacoco', path: 'build/reports/jacoco/test/jacocoTestReport.xml', alt: '*/build/reports/jacoco/test/jacocoTestReport.xml', optional: true, writtenDuringRun: true },
   },
   {
     name: 'karma',
@@ -67,7 +78,7 @@ const FACTORY = Object.freeze([
     command: 'npx karma start --single-run',
     // el reporte lo deja karma-junit-reporter donde su configuración diga: se buscan los escritos en la corrida
     results: { format: 'junit', path: '**/TESTS-*.xml', alt: '**/junit*.xml', writtenDuringRun: true },
-    coverage: { format: 'lcov', path: 'coverage/**/lcov.info', optional: true },
+    coverage: { format: 'lcov', path: 'coverage/**/lcov.info', optional: true, writtenDuringRun: true },
   },
 ]);
 
@@ -141,7 +152,7 @@ function elegir(projectDir, { results, org }) {
     return {
       name: f.name, source: 'fabrica', tool,
       command: conResults(f.command.split('{tool}').join(tool), res),
-      commandWithoutCoverage: f.commandWithoutCoverage ? conResults(f.commandWithoutCoverage, res) : null,
+      commandWithoutCoverage: f.commandWithoutCoverage ? conResults(f.commandWithoutCoverage.split('{tool}').join(tool), res) : null,
       results: { ...f.results, path: conResults(f.results.path, res) },
       coverage: f.coverage ? { ...f.coverage, path: conResults(f.coverage.path, res) } : null,
     };
@@ -149,4 +160,30 @@ function elegir(projectDir, { results, org }) {
   return null;
 }
 
-module.exports = { FACTORY, RESULT_FORMATS, COVERAGE_FORMATS, NAME_RE, validateRunners, resolve, inspect };
+/** Los nombres de archivo que detectan un corredor (de fábrica o declarado): los usa test-scope.js para los candidatos. */
+function detectorFiles(stack) {
+  const org = validateRunners(stack && stack.test_runners).runners.map((r) => ({ file: r.detect, name: r.name }));
+  return [
+    ...org,
+    { file: 'pytest.ini', name: 'pytest' }, { file: 'conftest.py', name: 'pytest' }, { file: 'pyproject.toml', name: 'pytest' },
+    { file: 'setup.cfg', name: 'pytest' }, { file: 'go.mod', name: 'go' }, { file: 'pom.xml', name: 'maven' },
+    { file: 'build.gradle', name: 'gradle' }, { file: 'build.gradle.kts', name: 'gradle' }, { file: 'karma.conf.js', name: 'karma' },
+  ];
+}
+
+module.exports = { FACTORY, RESULT_FORMATS, COVERAGE_FORMATS, NAME_RE, validateRunners, resolve, inspect, detectorFiles };
+
+// CLI para test-gate.sh: `node test-runners.js resolve <carpeta> [--results <carpeta>]` → JSON `{ runner, problems }`,
+// con la configuración de la organización leída del árbol del arnés (stack-config.js), nunca del repo probado.
+if (require.main === module) {
+  const [cmd, dir, ...resto] = process.argv.slice(2);
+  if (cmd !== 'resolve' || !dir) {
+    process.stderr.write('uso: test-runners.js resolve <carpeta> [--results <carpeta>]\n');
+    process.exit(2);
+  }
+  const i = resto.indexOf('--results');
+  const results = i >= 0 ? resto[i + 1] : undefined;
+  const leido = require('./stack-config.js').readStack();
+  const r = inspect(dir, { results, stack: leido.stack });
+  process.stdout.write(`${JSON.stringify({ runner: r.runner, problems: [...leido.problems, ...r.problems] })}\n`);
+}
