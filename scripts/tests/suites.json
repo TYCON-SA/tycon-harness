@@ -441,6 +441,11 @@
     },
     {
       "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/story-headings.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
       "requiere": []
     },

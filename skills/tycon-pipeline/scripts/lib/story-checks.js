@@ -53,13 +53,117 @@ function stripFrontmatter(s) {
 // ACCOV-C5 piden `acs.length`, así que el check NO CORRÍA y no emitía NADA (ni finding,
 // ni ambiguous, ni ok). Silencio total, no subconteo. Medido sobre 424 stories reales:
 // 10 casos. `pipeline.js:356` ya usaba la forma anclada — la divergencia era el bug.
-// Ojo con el fin de sección: `$` bajo flag `m` matchea fin de CUALQUIER línea y con
-// cuantificador lazy corta en la primera → hace falta el fin-de-input real `(?![\s\S])`.
+//
+// 🔴 Una sola función lee las secciones de la story, y todos los lectores pasan por ella: una expresión propia en
+// otro archivo es la que queda atrás cuando cambia el formato, y un título que no se reconoce deja la story sin
+// criterios, sin el revisor de cobertura de criterios y con el paso de revisores en verde (la guardiana de
+// tests/story-headings.test.js frena una expresión propia nueva).
+// El título se reconoce sin importar mayúsculas y con `##` o `###`; también en castellano. Las palabras de cada
+// título viven en TITLE_WORDS para quien necesita el texto del título (el resumen de la story para los revisores).
+// `tests-result` y los títulos `Tests corridos` de la evidencia no son la tabla de la story.
+const TITLE_WORDS = {
+  criteria: 'acceptance criteria|criterios de aceptaci[oó]n',
+  tests: 'tests(?![\\w-])(?![ \\t]+corridos)',
+};
+const HEADING_LINE = /^(#{1,6})[ \t]/;
+const FENCE_LINE = /^[ \t]*(```|~~~)/;
+const TESTS_TITLE_LINE = new RegExp(`^#{2,6}[ \\t]+(?:${TITLE_WORDS.tests})`, 'i');
+const SECTIONS = {
+  // Criterios: nivel 2 o 3. Termina en el próximo título de su nivel o más alto —salvo un título de criterio
+  // (`### AC-1`), que con el título de la sección en `###` está a su mismo nivel— o en el título de pruebas.
+  // Un título de pruebas más hondo que el de criterios corta sólo si debajo hay una tabla: la de story-format es
+  // `### Tests` con su tabla, pero hay stories que usan `### Tests` como grupo de criterios (sus criterios en viñetas)
+  // y se quedaban sin ellos.
+  criteria: {
+    title: new RegExp(`^(#{2,3})[ \\t]+(?:${TITLE_WORDS.criteria})\\b[^\\n]*$`, 'i'),
+    ends: (line, level, lines, i) => {
+      const h = HEADING_LINE.exec(line);
+      if (!h) return false;
+      if (TESTS_TITLE_LINE.test(line)) return h[1].length <= level || tableBelow(lines, i);
+      return h[1].length <= level && !FORM['titulo-ac'].re.test(line);
+    },
+  },
+  // Pruebas: nivel 2 a 6 (75 stories reales la escriben con `##`). Termina en el próximo título de nivel 1 a 3.
+  tests: {
+    title: new RegExp(`^(#{2,6})[ \\t]+(?:${TITLE_WORDS.tests})[^\\n]*$`, 'i'),
+    ends: (line) => { const h = HEADING_LINE.exec(line); return !!h && h[1].length <= 3; },
+  },
+};
+
+// ¿Hay una fila de tabla debajo del título de la línea `i`, antes del próximo título?
+function tableBelow(lines, i) {
+  for (let j = i + 1; j < lines.length; j++) {
+    if (HEADING_LINE.test(lines[j])) return false;
+    if (/^[ \t]*\|/.test(lines[j])) return true;
+  }
+  return false;
+}
+
+// Sección de la story → `{ text, level, title }`, o null si no la tiene. `kind`: `criteria` o `tests`.
+// Lo que va dentro de un bloque ``` no es un título: un `# comentario` de bash o de Gherkin cortaría la sección y la
+// story perdería criterios.
+function storySection(specContent, kind) {
+  const def = SECTIONS[kind];
+  if (!def) throw new Error(`storySection: tipo desconocido «${kind}» (criteria | tests)`);
+  const lines = stripFrontmatter(specContent).split('\n');
+  let start = -1;
+  let level = 0;
+  let enBloque = false;
+  for (let i = 0; i < lines.length && start < 0; i++) {
+    if (FENCE_LINE.test(lines[i])) { enBloque = !enBloque; continue; }
+    const m = enBloque ? null : def.title.exec(lines[i]);
+    if (m) { start = i; level = m[1].length; }
+  }
+  if (start < 0) return null;
+  let end = lines.length;
+  enBloque = false;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (FENCE_LINE.test(lines[i])) { enBloque = !enBloque; continue; }
+    if (!enBloque && def.ends(lines[i], level, lines, i)) { end = i; break; }
+  }
+  return { text: lines.slice(start + 1, end).join('\n'), level, title: lines[start].trim() };
+}
+
 function acSectionOf(specContent) {
-  const body = stripFrontmatter(specContent);
-  const m = body.match(
-    /^##[ \t]+Acceptance Criteria[^\n]*\n([\s\S]*?)(?=\n##[ \t]|\n#{3,6}[ \t]+Tests\b|(?![\s\S]))/m);
-  return m ? m[1] : null;
+  const s = storySection(specContent, 'criteria');
+  return s ? s.text : null;
+}
+
+// Las formas de criterio que el arnés reconoce, en UN lugar. Las tres primeras mandan: las otras sólo se prueban si
+// ésas no dan ninguno, así una story que usa una de las tres cuenta siempre lo mismo. `numbered: false` = sin número propio: se
+// numeran 1..n en el orden del documento. Una forma nueva entra acá, con su caso en tests/story-headings.test.js.
+const AC_FORMS = [
+  { name: 'titulo-ac', numbered: true, re: /^#{2,4}[ \t]+AC[-#\s]?(\d+)\b/, example: '### AC-1 — título' },
+  { name: 'numerada', numbered: true, re: /^[ \t]*(\d+)\.[ \t]+\S/, example: '1. **Given** … **When** … **Then** …' },
+  { name: 'vineta-ac', numbered: true, re: /^[ \t]*[-*][ \t]+\*\*AC[-#\s]?(\d+)\*\*/, example: '- **AC1**: texto (o con `*`)' },
+  { name: 'ac-negrita', numbered: true, re: /^[ \t]*\*\*AC[-#\s]?(\d+)\b/, example: '**AC-1: título**' },
+  { name: 'ac-vineta-titulada', numbered: true, re: /^[ \t]*[-*][ \t]+\*\*AC[-#\s]?(\d+)\b(?!\*\*)/, example: '- **AC1 — título**: texto' },
+  // Gherkin y «Dado» sin importar mayúsculas, con viñeta o sin ella, y «Dada/Dados/Dadas»: sólo cuentan cuando la
+  // story no usa ninguna forma vieja, así que una línea de prosa que empiece así no suma criterios a una story normal.
+  { name: 'gherkin', numbered: false, re: /^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?given\b/i, example: 'GIVEN … / WHEN … / THEN … (suelto o en un bloque ```gherkin)' },
+  { name: 'dado', numbered: false, re: /^[ \t]*(?:[-*][ \t]+)?(?:\*\*)?dad[oa]s?\b/i, example: '**Dado** … **Cuando** … **Entonces** …' },
+];
+const FORM = Object.fromEntries(AC_FORMS.map((f) => [f.name, f]));
+const OLD_FORMS = ['titulo-ac', 'numerada', 'vineta-ac'];
+
+// Con qué forma nueva escribe la story sus criterios, si las viejas no dan ninguno: `{ form, starts }`, con un
+// arranque por criterio (`n` = su número). Lee también dentro de los bloques ``` (el Gherkin vive ahí).
+function newFormStarts(section) {
+  const lines = section.split('\n');
+  const numbered = [];
+  for (let i = 0; i < lines.length; i++) {
+    for (const name of ['ac-negrita', 'ac-vineta-titulada']) {
+      const m = FORM[name].re.exec(lines[i]);
+      if (m) { numbered.push({ line: i, n: parseInt(m[1], 10) }); break; }
+    }
+  }
+  if (numbered.length) return { form: 'ac-numerada', starts: numbered };
+  for (const name of ['gherkin', 'dado']) {
+    const starts = [];
+    lines.forEach((l, i) => { if (FORM[name].re.test(l)) starts.push({ line: i, n: starts.length + 1 }); });
+    if (starts.length) return { form: name, starts };
+  }
+  return { form: null, starts: [] };
 }
 
 // ACs declarados en `## Acceptance Criteria`. Dos estilos conviven en el repo y son
@@ -98,13 +202,12 @@ function parseAcsFromSpec(specContent) {
   const section = acSectionOf(specContent);
   if (section == null) return [];
   const uniq = (arr) => [...new Set(arr)].sort((a, b) => a - b);
-  const headings = [];
+  const all = (form) => [...section.matchAll(new RegExp(FORM[form].re.source, 'gm'))].map((m) => parseInt(m[1], 10));
   // `AC-1`, `AC 1`, `AC#1` y `AC1` son todas notaciones vivas en el corpus.
-  for (const m of section.matchAll(/^#{2,4}[ \t]+AC[-#\s]?(\d+)\b/gm)) headings.push(parseInt(m[1], 10));
-  const numbered = [];  // en ORDEN DE DOCUMENTO: el orden es la señal de reinicio
-  for (const m of section.matchAll(/^[ \t]*(\d+)\.[ \t]+\S/gm)) numbered.push(parseInt(m[1], 10));
-  const bullets = [];
-  for (const m of section.matchAll(/^[ \t]*-[ \t]+\*\*AC[-#\s]?(\d+)\*\*/gm)) bullets.push(parseInt(m[1], 10));
+  const headings = all('titulo-ac');
+  const numbered = all('numerada');  // en ORDEN DE DOCUMENTO: el orden es la señal de reinicio
+  const bullets = all('vineta-ac');
+  if (!headings.length && !numbered.length && !bullets.length) return uniq(newFormStarts(section).starts.map((s) => s.n));
 
   if (headings.length) {
     let singleRun = numbered.length > 0;
@@ -116,6 +219,17 @@ function parseAcsFromSpec(specContent) {
   }
   if (numbered.length) return uniq(numbered);
   return uniq(bullets);
+}
+
+// Los criterios de la story y, si no hay ninguno, por qué: `{ acs, found, reason }`. `found` dice si tiene título de
+// criterios. Lo usan los que fallan cerrado ante una story sin criterios: el set de revisores y el pre-commit.
+function criteriaOf(specContent) {
+  const found = storySection(specContent || '', 'criteria') !== null;
+  const acs = parseAcsFromSpec(specContent);
+  const reason = acs.length ? null
+    : found ? `la sección de criterios no trae ninguna forma reconocida (${AC_FORMS.map((f) => f.example).join(' · ')})`
+      : 'no tiene título de criterios (`## Acceptance Criteria` o `## Criterios de aceptación`, con ## o ###)';
+  return { acs, found, reason };
 }
 
 // AC → su TEXTO, para poder MOSTRARLE al usuario qué está aprobando (2026-07-27).
@@ -136,14 +250,17 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
   const section = acSectionOf(specContent);
   if (section == null) return out;
   const lines = section.split('\n');
-  // Marcadores de arranque de AC, en el mismo orden de preferencia que parseAcsFromSpec.
-  const START = [
-    /^#{2,4}[ \t]+AC[-#\s]?(\d+)\b/,
-    /^[ \t]*(\d+)\.[ \t]+\S/,
-    /^[ \t]*-[ \t]+\*\*AC[-#\s]?(\d+)\*\*/,
-  ];
-  const startOf = (line) => {
-    for (const re of START) {
+  // Marcadores de arranque de AC, en el mismo orden de preferencia que parseAcsFromSpec: las formas viejas y, si no
+  // hay ninguna, la otra forma que use la story. El Gherkin vive dentro de los bloques ```: en esa
+  // forma el contenido del bloque se lee.
+  const OLD_START = OLD_FORMS.map((name) => FORM[name].re);
+  const hasOld = lines.some((l) => OLD_START.some((re) => re.test(l)));
+  const nueva = hasOld ? null : newFormStarts(section);
+  const nuevaPorLinea = new Map(nueva ? nueva.starts.map((s) => [s.line, s.n]) : []);
+  const leerBloques = !!nueva && nueva.form === 'gherkin';
+  const startOf = (line, i) => {
+    if (nueva) return nuevaPorLinea.has(i) ? nuevaPorLinea.get(i) : null;
+    for (const re of OLD_START) {
       const m = re.exec(line);
       if (m) return parseInt(m[1], 10);
     }
@@ -151,7 +268,7 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
   };
   let cur = null;
   let buf = [];
-  let enFence = false; // dentro de un ``` … ``` — su contenido no es prosa del AC
+  let enFence = false; // dentro de un ``` … ``` — su contenido no es prosa del AC (salvo en Gherkin)
   const flush = () => {
     if (cur === null) return;
     const texto = limpiarProsa(buf.join(' '), maxChars);
@@ -160,12 +277,12 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
     cur = null;
     buf = [];
   };
-  for (const raw of lines) {
+  for (const [i, raw] of lines.entries()) {
     // El filtrado de fences y citas es POR LÍNEA y va acá, no en `limpiarProsa`: una vez que las
     // líneas se juntan en un solo string, `^`/`$` ya no distinguen dónde empezaba cada una.
     if (/^[ \t]*```/.test(raw)) { enFence = !enFence; continue; }
-    if (enFence) continue;
-    const n = startOf(raw);
+    if (enFence && !leerBloques) continue;
+    const n = startOf(raw, i);
     if (n !== null) {
       flush();
       cur = n;
@@ -227,8 +344,8 @@ function parseTestsTable(specContent) {
   const empty = (extra) => ({ rows: [], hasAcColumn: false, found: false, headingLevel: 0, warnings: [], ...extra });
   if (!specContent) return empty();
   const body = stripFrontmatter(specContent);
-  const m = body.match(/^(#{2,6})[ \t]+Tests\b[^\n]*\n([\s\S]*?)(?=\n#{1,3}[ \t]|(?![\s\S]))/m);
-  if (!m) {
+  const sec = storySection(specContent, 'tests');
+  if (!sec) {
     // ¿Hay una tabla markdown en el cuerpo pero ningún heading `Tests`? Entonces el
     // problema es el heading, y callar sería exactamente el modo de falla de arriba.
     const w = /^[ \t]*\|.*\|/m.test(body)
@@ -236,12 +353,12 @@ function parseTestsTable(specContent) {
       : [];
     return empty({ warnings: w });
   }
-  const headingLevel = m[1].length;
+  const headingLevel = sec.level;
   const warnings = [];
   if (headingLevel !== 3) {
     warnings.push(`La tabla de tests está bajo un heading H${headingLevel} (\`${'#'.repeat(headingLevel)} Tests\`); story-format §6 la define como H3 (\`### Tests\`). Se parseó igual, pero conviene normalizarla.`);
   }
-  const lines = m[2].split('\n').filter((l) => /^\s*\|/.test(l));
+  const lines = sec.text.split('\n').filter((l) => /^\s*\|/.test(l));
   if (lines.length < 2) {
     return empty({
       found: true, headingLevel,
@@ -531,8 +648,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
     ambiguous.push({
       rule: 'ACCOV-C5',
       detail: acSectionOf(story) == null
-        ? 'No se encontró la sección `## Acceptance Criteria` (debe ser un heading H2 a principio de línea, fuera del frontmatter). Sin ACs parseables NINGÚN check de cobertura por-AC puede correr — confirmar si la story realmente no tiene ACs o si el formato los está escondiendo.'
-        : 'La sección `## Acceptance Criteria` existe pero no se pudo extraer ningún AC de ella (esperaba lista numerada `N. …`, headings `### AC-N` o bullets `- **ACN**`). Sin ACs parseables NINGÚN check de cobertura por-AC puede correr.',
+        ? 'No se encontró la sección de criterios (`## Acceptance Criteria` o `## Criterios de aceptación`, con ## o ###, a principio de línea y fuera del frontmatter). Sin ACs parseables NINGÚN check de cobertura por-AC puede correr — confirmar si la story realmente no tiene ACs o si el formato los está escondiendo.'
+        : `La sección de criterios existe pero no se pudo extraer ningún AC de ella (formas reconocidas: ${AC_FORMS.map((f) => f.example).join(' · ')}; story-format.md §6). Sin ACs parseables NINGÚN check de cobertura por-AC puede correr.`,
     });
   }
   // Una tabla que no se pudo leer NO es lo mismo que una story sin tests — se avisa.
@@ -728,6 +845,10 @@ module.exports = {
   runStoryChecks,
   walkFiles,
   acSectionOf,
+  storySection,
+  criteriaOf,
+  AC_FORMS,
+  TITLE_WORDS,
   stripFrontmatter,
   isCodeFile,
 };

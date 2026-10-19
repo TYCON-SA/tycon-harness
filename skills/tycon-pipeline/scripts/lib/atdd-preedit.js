@@ -76,7 +76,13 @@ function isInside(root, file) {
  */
 function storyDeclaresTests(storyText) {
   if (typeof storyText !== 'string' || storyText.trim() === '') return false;
-  return /^#{2,4}\s+Tests\b/mi.test(storyText);
+  // el título lo encuentra story-checks.js, el único lector de las secciones de la story; si no carga,
+  // vale lo de arriba: ante la duda no bloquea
+  try {
+    return require('./story-checks.js').storySection(storyText, 'tests') !== null;
+  } catch {
+    return false;
+  }
 }
 
 /**

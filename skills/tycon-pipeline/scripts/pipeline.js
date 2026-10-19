@@ -902,15 +902,17 @@ function computeBase(det, extras = []) {
 function computeCompletitud(storyPath, repo, files) {
   const out = [];
   const story = storyPath ? readText(storyPath) : '';
-  const isGold = /^##\s+Acceptance Criteria/m.test(story) || /^###\s+Tests\b/m.test(story);
+  const sc = require('./lib/story-checks.js');
+  const isGold = sc.storySection(story, 'criteria') !== null || sc.storySection(story, 'tests') !== null;
 
   // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (line 130/133 step-05)
   if (story) {
     out.push('tycon-story-validator');
     out.push('tycon-spec-first-checker');
   }
-  // ac-coverage si hay tabla ### Tests O ## Acceptance Criteria
-  if (isGold) out.push('tycon-ac-coverage-checker');
+  // ac-coverage si hay tabla de pruebas o sección de criterios. Y falla cerrada: una story sin criterios
+  // detectados lo lleva siempre — sin él, el control de criterios queda «ambiguo» y nadie lo resuelve.
+  if (isGold || (story && !sc.criteriaOf(story).acs.length)) out.push('tycon-ac-coverage-checker');
 
   // deferral-tracker si la story tiene bloque `pipelines:` O el diff AGREGÓ *.skip()
   // (líneas agregadas, no archivo completo — un skip pre-existente no es deuda nueva).
@@ -1002,8 +1004,13 @@ function computeAdvisorSet({ repo, story, files }) {
   const completitud = computeCompletitud(story, repo, files);
   const conditional = computeConditional(repo, files, revisoresDePaquetes(activos, 'condicional', ctx));
   const all = unique([...base, ...completitud, ...conditional]);
+  const storyText = story ? readText(story) : '';
+  const sinCriterios = storyText ? require('./lib/story-checks.js').criteriaOf(storyText) : null;
   return {
     base, completitud, conditional, all, required_count: all.length, detection: det,
+    // por qué entró un revisor de completitud que la forma de la story no pedía (falla cerrada)
+    completitud_motivos: sinCriterios && !sinCriterios.acs.length
+      ? [`sin criterios detectados (${sinCriterios.reason}): entra el revisor de cobertura de criterios`] : [],
     // una terminación mal escrita en `stack.code_extensions` no se usa; que se vea en el anuncio del set
     // (casos: tests/code-files.test.js)
     stack_problems: stackConfig.codeExtensions().problems,
@@ -1314,10 +1321,13 @@ function computeMechDiscount(allList, args) {
   // descuentos. Antes esto descontaba con la razón falsa "checks cubiertos mecánicamente".
   if (escalateFams.has('MECH')) return null;
   const discounted = [];
+  // una story sin criterios detectados no tiene nada que el control mecánico haya cubierto
+  const sinCriterios = !mech.stats || !mech.stats.acs;
   for (const [adv, cfg] of Object.entries(MECH_DISCOUNTABLE)) {
     if (!allList.includes(adv)) continue;
     if ((args.iter || 1) < cfg.minIter) continue;
     if (escalateFams.has(cfg.family)) continue; // ambiguos → el advisor LLM resuelve esa familia
+    if (cfg.family === 'ACCOV' && sinCriterios) continue;
     discounted.push({
       name: adv,
       reason: `mech-check sin ambiguos ${cfg.family}-* → delta cubierto mecánicamente (0 tokens) ` +
@@ -2309,10 +2319,14 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
 // y el diff unificado con hunks. Los advisors lo reciben como input primario;
 // los que necesitan la story completa (spec-first; los de paquetes con `needsStory`,
 // listados en `story_path_para` de la salida) siguen recibiendo además el story_path.
-const KEEP_SECTION_RE = /acceptance criteria|^tests\b|tasks|file list|scope|qué hay que hacer|que hay que hacer|cómo verificar|como verificar|lo que no hay que hacer|patrón de referencia|patron de referencia|pipelines/i;
+const KEEP_SECTION_RE = /tasks|file list|scope|qué hay que hacer|que hay que hacer|cómo verificar|como verificar|lo que no hay que hacer|patrón de referencia|patron de referencia|pipelines/i;
 
+// Los criterios y la tabla de pruebas van enteros, como los lee story-checks.js: recortados por títulos, los criterios
+// escritos con `### AC-1` y los que llevan un `#` dentro de un bloque de código quedarían afuera del resumen que
+// reciben los revisores.
 function buildStoryDigest(storyContent) {
   if (!storyContent) return '';
+  const sc = require('./lib/story-checks.js');
   const fmMatch = storyContent.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
   const fm = fmMatch ? fmMatch[0] : '';
   const body = storyContent.slice(fm.length);
@@ -2325,6 +2339,10 @@ function buildStoryDigest(storyContent) {
       keeping = KEEP_SECTION_RE.test(h[2]);
     }
     if (keeping) out.push(line);
+  }
+  for (const kind of ['criteria', 'tests']) {
+    const s = sc.storySection(storyContent, kind);
+    if (s) out.push('', s.title, s.text);
   }
   return fm + out.join('\n');
 }
