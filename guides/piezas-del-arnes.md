@@ -629,6 +629,18 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
+## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
+
+**Qué es:** Dice si una historia es la primera que cierra la máquina, por evidencia, y al cerrarla ofrece una sola vez la instalación completa en tres renglones.
+
+**Por qué existe:** La instalación por defecto es la mínima: quien no lee la portada nunca veía un freno. La oferta llega cuando ya vio funcionar el arnés.
+
+**Quién la usa:** `marker.js clear` (la oferta, después de archivar el volcado), el paso «preparar el commit» (la respuesta) y la corrida de primera vez (`isFirstStory`).
+
+**Dónde se prueba:** `scripts/tests/first-story.test.js`, T7 de `harness-state.test.js` y el grupo `UPGRADE` de `harness-questions.test.sh`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#skillstycon-pipelinescriptslibfirst-storyjs--la-primera-historia-de-la-máquina)
+
 ## skills/tycon-pipeline/scripts/lib/models.js — el modelo de cada trabajo del pipeline
 
 **Qué es:** El único lugar donde se define el modelo de cada trabajo del pipeline (revisores, vueltas, pase adversarial, ayudantes y sugerencia de sesión) y cómo se resuelve con la configuración de la organización (`team-repos.json → models`).
@@ -1265,7 +1277,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Qué es:** Es el único control de commit, en dos partes: la del arnés y la de las skills, que viven en `.githooks/pre-commit-checks`.
 
-**Por qué existe:** Cada parte corre en su proceso, así que una salida temprana no saltea a la otra. Con `core.hooksPath` global git ignora los `.githooks/` de cada repo, y `git-pre-commit-global.sh` lo cierra delegando en el del repo. Incluye el control de paridad Claude-Codex (`build/check.js`).
+**Por qué existe:** Cada parte corre en su proceso, así que una salida temprana no saltea a la otra. Con `core.hooksPath` global git ignora los `.githooks/` y los `.git/hooks/` de cada repo, y los tres ganchos globales (`pre-commit`, `post-commit`, `pre-push`) lo cierran corriendo los del repo. Incluye el control de paridad Claude-Codex (`build/check.js`).
 
 **Quién la usa:** Git en cada commit; la CI pública corre el mismo control (`public-ci.sh`).
 
@@ -1279,7 +1291,7 @@ _(.githooks/pre-commit + .githooks/pre-commit-checks + scripts/hooks/git-pre-com
 
 **Por qué existe:** Con staging selectivo, un commit no dice nada de lo que deja atrás. Nunca frena ni commitea por vos. Lo que un repo quiere excluir se declara en `.tycon/post-commit-ignore`.
 
-**Quién la usa:** Git, desde `~/.git-hooks/post-commit`, que instala `install-tycon-hooks.sh`. Se apaga con `TYCON_POST_COMMIT_NOTICE=0`.
+**Quién la usa:** Git, desde `~/.git-hooks/post-commit`, que instala `install-tycon-hooks.sh`. El aviso se apaga con `TYCON_POST_COMMIT_NOTICE=0`; los post-commit de la persona y del repo corren igual.
 
 **Dónde se prueba:** `scripts/tests/githook-livefire.test.sh`
 

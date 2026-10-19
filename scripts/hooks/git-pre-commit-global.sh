@@ -15,8 +15,9 @@
 # es que el hook global **delegue** en el del repo. Con eso el patrón que las guías ya documentan
 # empieza a funcionar de verdad, y cada repo sigue decidiendo qué chequea sin tocar config global.
 #
-# Orden: primero la delegación (puede rechazar el commit), después el sync de engram (nunca lo
-# rechaza). Al revés, un commit rechazado igual dejaría chunks stageados.
+# Orden: primero los ganchos de la persona y del repo (`pre-commit.local`, `.git/hooks/pre-commit`,
+# `.githooks/pre-commit`; cualquiera puede rechazar el commit), después los controles del arnés y al final el sync de
+# engram (nunca lo rechaza). Al revés, un commit rechazado igual dejaría chunks stageados.
 
 set -uo pipefail
 
@@ -31,6 +32,50 @@ if [ -x "$LOCAL_HOOK" ]; then
     echo "⛔ tu pre-commit propio (pre-commit.local) rechazó el commit" >&2
     exit 1
   fi
+fi
+
+# ── 0b. El pre-commit propio del repo en .git/hooks/ ─────────────────────────────────────────────────────────
+# El gancho propio del repo en `.git/hooks/`: con `core.hooksPath` global git no lo llama, así que lo llama éste, como
+# haría git sin carpeta global. Se busca en la carpeta común de git (desde un worktree enlazado, la del repo). No corre
+# si es este mismo gancho, su `.local` o el `.githooks/` del repo (otro nombre del mismo archivo), si es una copia del
+# gancho del arnés (se reconoce por su línea de cabecera, la segunda: un gancho que sólo nombra el archivo del arnés
+# corre), o si `.git/hooks` es esta misma carpeta: así nada corre dos veces. Mientras corre lleva
+# TYCON_GIT_DIR_HOOK=<gancho>:<carpeta común>; si ese gancho vuelve a llamar a éste, la vuelta de adentro no lo llama
+# otra vez (sin lazo). La variable sólo evita esa llamada: no apaga ningún otro control. La primera vez que corre en un
+# repo lo dice, con la manera de dejarlo como estaba, y lo anota en la carpeta común para no repetirlo: un archivo por
+# gancho, creado sin pisar (`set -C`), así dos corridas a la vez avisan una sola vez. Sin permiso de ejecución, o si git
+# no dice cuál es la carpeta común, avisa y no corre. Comparar con `-ef` y no con `readlink`: anda igual en el bash de Git para Windows.
+# Devuelve el código del gancho del repo; 0 si no corrió. Está copiado igual en los tres ganchos globales: cada uno
+# corre suelto en la carpeta global, sin el arnés al lado.
+git_dir_hook() {
+  local name="$1" common top hook other seen
+  shift
+  if ! common="$(git rev-parse --git-common-dir 2>/dev/null)" || ! common="$(cd "$common" 2>/dev/null && pwd -P)"; then
+    echo "⚠ no pude ubicar la carpeta de git de este repo: no sé si tiene su propio .git/hooks/$name, y no se corrió" >&2
+    return 0
+  fi
+  [ "${TYCON_GIT_DIR_HOOK:-}" = "$name:$common" ] && return 0
+  hook="$common/hooks/$name"
+  [ -f "$hook" ] || return 0
+  [ "$common/hooks" -ef "$(dirname "$0")" ] && return 0
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""
+  for other in "$0" "$(dirname "$0")/$name.local" "${top:+$top/.githooks/$name}"; do
+    [ -n "$other" ] && [ -e "$other" ] && [ "$hook" -ef "$other" ] && return 0
+  done
+  case "$(sed -n 2p "$hook" 2>/dev/null)" in "# git-$name-global.sh"*) return 0 ;; esac
+  if [ ! -x "$hook" ]; then
+    echo "⚠ $hook existe pero NO es ejecutable — no se corrió. Si querés que corra: chmod +x \"$hook\"" >&2
+    return 0
+  fi
+  seen="$common/tycon-git-dir-hooks-announced/$name"
+  if [ ! -e "$seen" ] && { mkdir -p "$(dirname "$seen")" 2>/dev/null; ( set -C; : > "$seen" ) 2>/dev/null || [ ! -e "$seen" ]; }; then
+    echo "ℹ desde esta versión del arnés corre también el gancho propio de este repo, $hook (con la carpeta global de ganchos de git no corría). Para dejarlo como estaba: borralo o sacale el permiso de ejecución (chmod -x \"$hook\")." >&2
+  fi
+  TYCON_GIT_DIR_HOOK="$name:$common" "$hook" "$@"
+}
+if ! git_dir_hook pre-commit "$@"; then
+  echo "⛔ el gancho propio del repo (.git/hooks/pre-commit) rechazó el commit" >&2
+  exit 1
 fi
 
 # ── 1. Delegación al pre-commit del repo ─────────────────────────────────────────────────────

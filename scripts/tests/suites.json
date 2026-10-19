@@ -400,6 +400,18 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.51: la historia sin proyecto BMAD — el modo lo decide el guion, la escribe el guion (valida, no pisa, deja constancia), las instrucciones de las tres preguntas y la portada.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-create-story/scripts/tests/story-without-bmad.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/backfill-discovery.test.js",
       "requiere": []
@@ -1471,6 +1483,12 @@
       "requiere": []
     },
     {
+      "__nota": "la primera historia de la máquina y la oferta de la instalación completa al cerrarla: el lector por evidencia (instalación nueva, sin corridas cerradas, sin historial podado; en la duda, no medido), la oferta una sola vez desde el cierre, el «sí», el «no», sin persona, cierres a la vez bajo un candado y el clon de skills aparte.",
+      "raiz": "arnes",
+      "ruta": "tests/first-story.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.17 (prerequisitos): los .ps1 del arnés se dejan leer por el PowerShell 5.1 que trae Windows (marca de codificación en los escritos a mano; todos sin errores de sintaxis leídos como los lee 5.1, con su control del rojo) y el instalador, sin PowerShell 7, lo dice en UNA línea por la salida estándar con el comando para instalarlo, sale 1 y no escribe nada; el requisito que falta en harness.js trae su comando y doctor los lista también sin instalar. Sin pwsh: T2 a T5 salteadas (NO MEDIDO), no verdes.",
       "raiz": "arnes",
       "ruta": "tests/ps1-readable.test.js",
@@ -2387,6 +2405,12 @@
       "__nota": "story 8.26, tanda F1 (T55): el freno antes de publicar disparado por un `git push` DE VERDAD, con la carpeta global de hooks puesta como git la pone (scripts/hooks/git-pre-push-global.sh). Mira el efecto: la ref remota no cambia. Desde un clon recién hecho; con un pre-push propio que acepta y que rechaza; un repo que no es del arnés (misma salida que sin hook); sin el guion y sin node; una rama que trae su propio freno saboteado. Unos 10 segundos.",
       "raiz": "arnes",
       "ruta": "tests/githook-pre-push.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "los ganchos propios del repo en .git/hooks/ (pre-commit, post-commit y pre-push), disparados por commits y empujes DE VERDAD con la carpeta global de ganchos puesta como la pone el instalador: su rechazo frena (salvo post-commit), corren en orden después del .local y antes de .githooks/ y del freno de publicación, no corren dos veces (enlace, copia del gancho del arnés, la carpeta global misma), no hacen lazo, avisan una sola vez por repo y gancho, y andan desde un worktree enlazado. Repos de laboratorio, sin red; unos 20 segundos.",
+      "raiz": "arnes",
+      "ruta": "tests/githook-git-dir-chain.test.sh",
       "requiere": []
     },
     {

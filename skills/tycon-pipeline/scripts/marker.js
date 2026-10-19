@@ -673,7 +673,7 @@ function cmdTouch() {
 const { veredictoPaseAdversarial, paseAtendido } = require('./lib/adversarial-verdict.js');
 
 function mensajeDelPaseAdversarial(v) {
-  const cmdResultado = `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
+  const cmdResultado = `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run ${v.runId || '<runId>'} --model <modelo> --tests <k promovidas> [--own <p> --in "<rutas de prueba>"] [--deferred <d> --reason "<por qué>"]`;
   const cmdSalteo = 'node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-skipped --files <archivos de código del diff>';
   const e = (s) => console.error(s);
   if (v.motivo === 'registro-ilegible') {
@@ -696,6 +696,19 @@ function mensajeDelPaseAdversarial(v) {
     return;
   }
   const cuando = `${v.runId || 'sin runId'}, ${v.launchedAt}`;
+  if (v.motivo === 'pase-no-medido') {
+    // El pase corrió pero no revisó todo. Es un pase que falta, no uno «sin hallazgos».
+    const { SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+    const p = v.pase || {};
+    e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial (${cuando}) quedó NO MEDIDO: ${p.motivo_no_medido || 'no revisó todo'}.`);
+    if (p.resultado) e(`  El resultado, con el texto de cada hallazgo: ${p.resultado}`);
+    e('  Un pase que no revisó todo es un pase que falta. Relanzalo y anotá el resultado nuevo:');
+    e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-launched <runId nuevo> 5b --relaunch');
+    e('    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result <N> --type 5b --result <RUN_DIR>/step-05b-adversarial.json …');
+    e(`  Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`);
+    e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
+    return;
+  }
   if (v.motivo === 'resultado-de-otro-lanzamiento') {
     e(`marker.js complete-step 8 BLOQUEADO — el pase adversarial se relanzó (${cuando}) y el resultado anotado es del lanzamiento anterior.`);
   } else {
@@ -1754,7 +1767,7 @@ function cmdSetFlag(flag, valRaw) {
   if (flag === 'deepReviewDone') {
     // Antes de leer el marker: el comando no escribe NADA, ni el `lastTouch`.
     console.error('marker.js set-flag: `deepReviewDone` ya no se escribe a mano — cierra el 5b uno de estos dos comandos:');
-    console.error('  el pase corrió  → marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --tests <k> …');
+    console.error('  el pase corrió  → marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
     console.error('  el pase no corre → marker.js mark-adversarial-skipped --files <archivos de código del diff>   (decide el portón)');
     console.error('  (story 1.8: con la bandera suelta, 4 de 9 corridas cerraron el 5b sin anotar qué encontró el pase)');
     process.exit(2);
@@ -1958,7 +1971,7 @@ function cmdMarkAdversarialSkipped(argsGate) {
   const lanzado = marker.adversarial ? (typeof marker.adversarial === 'object' ? marker.adversarial : {}) : null;
   if (lanzado && !forzado) {
     console.error(`marker.js mark-adversarial-skipped: el pase adversarial YA se lanzó (runId ${lanzado.runId || '?'}, ${lanzado.launchedAt || 'sin fecha'}) — un pase lanzado se cierra con su resultado:`);
-    console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> --tests <k> …');
+    console.error('    marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> --tests <k> …');
     console.error('  Abandonarlo es una decisión, no un salteo: se toma con el interruptor (TYCON_NO_DEEP_REVIEW=1 o --no-deep-review)');
     console.error('  y queda en bypass.log como ADVERSARIAL_ABANDONADO.');
     process.exit(2);
@@ -2102,6 +2115,43 @@ function cmdMarkAdversarialResult(countRaw) {
   // `--story B` en una corrida de A, el resultado de B se sumaba a A y le cerraba el 5b. De otra story: sólo la
   // línea de gates.log, como una revisión sin corrida.
   const corrida = marker && storyId === marker.storyId ? marker : null;
+  // 🔴 EL NÚMERO SALE DEL RESULTADO, NO DE QUIEN LO ANOTA. Con `<N>` solo, un pase cuyos
+  // agentes murieron (Codex en su tope) se anotaba `0` y salía `listo`: nada leía lo que devolvió el pase. El 5b exige
+  // `--result <archivo>` —el JSON del pase, `<RUN_DIR>/step-05b-adversarial.json`—; de ahí salen los confirmados
+  // (tienen que coincidir con `<N>`), las lentes sin medir y los hallazgos sin veredicto. Con alguno de los dos la
+  // línea queda `no-medido`, que NO cierra el 5b. Una revisión a mano (`--type revision`) no lo exige.
+  const resultadoRuta = flag('--result');
+  let medicion = null;
+  if (tipo === '5b' || resultadoRuta !== undefined) {
+    const { medicionDelResultado, SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+    if (!resultadoRuta) {
+      console.error('marker.js mark-adversarial-result: el 5b se anota con --result <archivo>: el JSON que devolvió el pase (<RUN_DIR>/step-05b-adversarial.json). El número sale de ahí, no del que anota.');
+      console.error(`  Si el pase no corrió entero: relanzalo, o ${SALIDA_APROBADA}.`);
+      process.exit(2);
+    }
+    const abs = path.resolve(resultadoRuta);
+    let obj;
+    try { obj = JSON.parse(fs.readFileSync(abs, 'utf8')); } catch (e) {
+      console.error(`marker.js mark-adversarial-result: --result ${abs}: no lo pude leer como JSON (${e.message.split('\n')[0]}) — no se anotó nada.`);
+      process.exit(2);
+    }
+    try { medicion = medicionDelResultado(obj); } catch (e) {
+      console.error(`marker.js mark-adversarial-result: --result ${abs}: ${e.message} — no se anotó nada.`);
+      process.exit(2);
+    }
+    const lanz = corrida && corrida.adversarial && typeof corrida.adversarial === 'object' ? Date.parse(corrida.adversarial.launchedAt) : NaN;
+    if (!Number.isFinite(lanz)) {
+      console.error(`⚠️  marker.js mark-adversarial-result: no hay lanzamiento del pase con fecha en esta corrida: no pude comprobar que ${abs} sea de este pase y no de otro.`);
+    } else if (fs.statSync(abs).mtimeMs < lanz) {
+      console.error(`marker.js mark-adversarial-result: --result ${abs} es anterior al lanzamiento vigente del pase (${corrida.adversarial.launchedAt}): es el resultado de otro lanzamiento — no se anotó nada.`);
+      process.exit(2);
+    }
+    if (medicion.confirmados !== confirmados) {
+      console.error(`marker.js mark-adversarial-result: <N> = ${confirmados} pero el resultado trae ${medicion.confirmados} confirmado(s) — se anota lo que devolvió el pase.`);
+      process.exit(2);
+    }
+    medicion.ruta = abs;
+  }
   // 🔴 CADA CONFIRMADO TERMINA EN LA SUITE O SE DIFIERE CON MOTIVO (2026-09-17, pedido del dev).
   // El step-05b decía «agregá un test de regresión por cada bug confirmado» y nada lo verificaba:
   // el verificador borraba su prueba y el pipeline seguía. Ahora, con hallazgos, este comando no
@@ -2225,7 +2275,11 @@ function cmdMarkAdversarialResult(countRaw) {
     ...(enSinFecha ? { enSinFecha: true } : {}),
     diferidos,
     motivo,
-    veredicto: confirmados > 0 ? 'no-listo' : 'listo',
+    veredicto: medicion && !medicion.medido ? 'no-medido' : confirmados > 0 ? 'no-listo' : 'listo',
+    ...(medicion ? { resultado: medicion.ruta } : {}),
+    ...(medicion && !medicion.medido ? {
+      motivo_no_medido: medicion.motivo, lentes_sin_medir: medicion.lentes_sin_medir, hallazgos_sin_veredicto: medicion.hallazgos_sin_veredicto,
+    } : {}),
     runId: flag('--run') || null,
     modelo: flag('--model') || null,
     head,
@@ -2236,7 +2290,9 @@ function cmdMarkAdversarialResult(countRaw) {
     // El resultado del 5b CIERRA el 5b (story 1.8), en la misma escritura que la entrada nueva: no hay un
     // instante con el pase anotado y el 5b abierto, ni al revés. Una revisión a mano (`--type revision`) no
     // es el 5b de la corrida y no lo toca.
-    if (tipo === '5b') corrida.deepReviewDone = true;
+    // Un pase no medido NO lo cierra, y si ya estaba cerrado lo REABRE: el último resultado manda (un medido y después
+    // un no medido dejaba el 5b dado por hecho en `next`).
+    if (tipo === '5b') corrida.deepReviewDone = pase.veredicto !== 'no-medido';
     corrida.lastTouch = nowIso();
     writeMarker(corrida);
   }
@@ -2671,6 +2727,14 @@ function cmdClear() {
           `referencia ~60-100K tokens por agente · vara del historial: ~14 agentes/run\n`,
         );
       }
+      // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
+      // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
+      // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
+      try {
+        const offer = require('./lib/first-story.js').afterClose({ home: os.homedir(), env: process.env, marker });
+        for (const l of offer.lines) process.stdout.write(`${l}\n`);
+        if (offer.warn) process.stderr.write(`[marker] ${offer.warn}\n`);
+      } catch (e) { process.stderr.write(`[marker] la oferta de la instalación completa no se pudo evaluar: ${e.message}\n`); }
     }
   } catch { /* best-effort */ }
   clearMarker();

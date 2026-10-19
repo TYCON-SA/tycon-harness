@@ -19,7 +19,17 @@
  * error como feedback — la validación es de forma (claves requeridas), no JSON-Schema completa:
  * los consumidores del script filtran Boolean igual que con la tool.
  *
- * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' [--out <file>] [--repo-cwd]
+ * 🔴 Un agente muerto no es una respuesta. Cada agente que no contesta queda en `corredor.muertos` con la
+ * causa (el último renglón de su error, recortado) y la hora. Si la causa es el tope de uso de Codex no se reintenta y
+ * los agentes que faltan no se lanzan: quedan muertos con esa misma causa. El resultado sale con `corredor` y, si el
+ * pase quedó no medido (`medido: false`), el comando sale 3 —el archivo de `--out` se escribe igual—.
+ *
+ * `--agents-dir <carpeta>` (la salida aprobada sin Codex ni Workflow): no lanza nada. Cada agente busca su
+ * respuesta en `<carpeta>/<etiqueta>-<huella del pedido>.json`; si no está, deja `.prompt.txt` y `.schema.json`, la
+ * anota en `<carpeta>/PEDIDOS.json` y cuenta como muerta («sin respuesta»). La sesión lanza un agente de Claude por
+ * pedido, cada uno escribe su respuesta, y se vuelve a correr hasta que no quedan pedidos. El guion es el mismo.
+ *
+ * Uso:  node workflow-lite.js <script.workflow.js> --args '<json>' [--out <file>] [--agents-dir <carpeta>]
  *       node workflow-lite.js --selftest
  * Env:  TYCON_WFLITE_JOBS (cap de agentes concurrentes, default 4)
  *       TYCON_WFLITE_MODEL_MAP (json label→slug; default desde equivalences.json si existe)
@@ -122,7 +132,8 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs) {
     ch.stdout.on('data', (d) => (out += d));
     ch.stderr.on('data', (d) => (err += d));
     ch.on('close', (code) => { clearTimeout(killer); resolve({ code, out, err }); });
-    ch.on('error', () => { clearTimeout(killer); resolve({ code: -1, out, err }); });
+    // Sin el motivo (p. ej. `codex` no instalado: ENOENT) la causa decía «salió -1 sin escribir nada».
+    ch.on('error', (e) => { clearTimeout(killer); resolve({ code: -1, out, err: `${err}${err ? '\n' : ''}${(e && e.message) || 'no se pudo lanzar'}` }); });
   });
 }
 
@@ -141,7 +152,73 @@ function slugFor(model, models, decir = (t) => process.stderr.write(`${t}\n`)) {
   return null;
 }
 
-function makeAgent(opts) {
+// El tope de uso de Codex (o de su proveedor): contra eso no sirve reintentar.
+const TOPE_RE = /usage limit|rate[ _-]?limit|quota|too many requests|\b429\b/i;
+
+// Lo que parece una credencial se tapa antes de guardar la causa: el error de un
+// proveedor puede repetir la clave o la cabecera con que se lo llamó, y la causa va al resultado de la corrida.
+const SECRETO_RE = /\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9._-]+|AKIA[0-9A-Z]{16})|((?:Authorization:\s*)?(?:Bearer|Basic|Token)\s+|Authorization:\s+|\b(?:x-api-key|api[_-]?key)\s*[=:]\s*)\S+/gi;
+const taparSecretos = (t) => String(t).replace(SECRETO_RE, (_m, tok, pre) => (pre ? `${pre}<REDACTED>` : '<REDACTED>'));
+
+const ultimoRenglon = (t) => String(t || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).pop() || '';
+
+/**
+ * La causa de una muerte: el último renglón no vacío del error (o de la salida, si el error vino vacío), recortado y
+ * con las credenciales tapadas.
+ */
+function causaDe(res) {
+  const ultimo = ultimoRenglon(res && res.err) || ultimoRenglon(res && res.out);
+  const base = taparSecretos(ultimo) || `salió ${res && res.code !== undefined ? res.code : '?'} sin escribir nada`;
+  return base.length > 300 ? `${base.slice(0, 300)}…` : base;
+}
+
+/**
+ * ¿Murió por el tope de uso? 🔴 Se mira el último renglón del error tal cual (antes de tapar: «Token rate limit» no
+ * puede quedar «Token <REDACTED>»), y el de la salida sólo si el error vino vacío. Nunca toda la salida: `codex exec`
+ * repite el pedido, y un pedido que habla de «rate limit» hacía pasar por tope cualquier falla (pase adversarial 8.56).
+ */
+function esTope(res) {
+  const err = ultimoRenglon(res && res.err);
+  return TOPE_RE.test(err || ultimoRenglon(res && res.out));
+}
+
+const horaCorta = (d = new Date()) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
+/** Agentes de Claude por carpeta (`--agents-dir`): la respuesta se lee; si falta, se deja el pedido. */
+function makeDirAgent(opts, corredor) {
+  const dir = path.resolve(opts.agentsDir);
+  fs.mkdirSync(dir, { recursive: true });
+  const pendientes = [];
+  corredor.pendientes = pendientes;
+  const agent = async function agent(prompt, aopts) {
+    aopts = aopts || {};
+    const label = aopts.label || 'agente';
+    const huella = require('crypto').createHash('sha1').update(String(prompt)).digest('hex').slice(0, 12);
+    const clave = `${label.replace(/[^A-Za-z0-9_.-]+/g, '_')}-${huella}`;
+    const respuesta = path.join(dir, `${clave}.json`);
+    const muerto = (causa) => { corredor.muertos.push({ label, causa, hora: horaCorta() }); return null; };
+    if (fs.existsSync(respuesta)) {
+      let obj = null;
+      const raw = fs.readFileSync(respuesta, 'utf8');
+      if (!aopts.schema) { const t = raw.trim(); return t || muerto(`respuesta vacía en ${respuesta}`); }
+      try { obj = JSON.parse(raw); } catch (e) { return muerto(`respuesta ilegible en ${respuesta}: ${e.message}`); }
+      if (obj && checkShape(obj, aopts.schema)) return obj;
+      return muerto(`respuesta sin las claves pedidas (${(aopts.schema.required || []).join(', ')}) en ${respuesta}`);
+    }
+    const promptFile = path.join(dir, `${clave}.prompt.txt`);
+    fs.writeFileSync(promptFile, String(prompt));
+    const schemaFile = aopts.schema ? path.join(dir, `${clave}.schema.json`) : null;
+    if (schemaFile) fs.writeFileSync(schemaFile, JSON.stringify(aopts.schema, null, 1));
+    pendientes.push({ clave, label, phase: aopts.phase || null, model: aopts.model || null, prompt_file: promptFile, schema_file: schemaFile, answer_file: respuesta });
+    return muerto(`sin respuesta todavía: pedido en ${promptFile}`);
+  };
+  agent.cerrar = () => {
+    fs.writeFileSync(path.join(dir, 'PEDIDOS.json'), JSON.stringify({ pendientes }, null, 1) + '\n');
+  };
+  return agent;
+}
+
+function makeAgent(opts, corredor) {
   const models = modelMap();
   const seq = { n: 0 };
   const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'wflite-io-'));
@@ -150,6 +227,9 @@ function makeAgent(opts) {
     const id = ++seq.n;
     const label = aopts.label || `agent-${id}`;
     const stub = process.env.TYCON_WFLITE_AGENT_CMD;
+    const muerto = (causa, hora = horaCorta()) => { corredor.muertos.push({ label, causa, hora }); return null; };
+    // Con el tope ya visto, no se lanza nada más: se anota con la causa y la hora del tope.
+    if (corredor.tope) return muerto(`no se lanzó: ${corredor.tope.causa}`, corredor.tope.hora);
     const slug = slugFor(aopts.model, models);
     // 🔴 Salida estructurada NATIVA de codex (medido G-3, 2026-08-22): la v1 exigía el JSON por
     // prompt y lo pescaba de stdout con un escáner de llaves balanceadas — que se rompe cuando el
@@ -160,27 +240,43 @@ function makeAgent(opts) {
     const outFile = path.join(tmpBase, `out-${id}.txt`);
     const schemaFile = aopts.schema ? path.join(tmpBase, `schema-${id}.json`) : null;
     if (schemaFile) fs.writeFileSync(schemaFile, JSON.stringify(toStrictSchema(aopts.schema)));
+    let causa = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
+      if (corredor.tope) break;
       process.stderr.write(`wflite ▸ ${label} (intento ${attempt})\n`);
       let raw;
+      let res;
       if (stub) {
-        const res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
+        res = await spawnAgent(stub.split(' '), prompt, opts.cwd, opts.timeoutMs);
         raw = res.out;
       } else {
         const cmd = ['codex', 'exec', '--sandbox', 'workspace-write', '--skip-git-repo-check', ...(slug ? ['-m', slug] : []), '-o', outFile];
         if (schemaFile) cmd.push('--output-schema', schemaFile);
         cmd.push(prompt);
         try { fs.rmSync(outFile, { force: true }); } catch (_) {}
-        const res = await spawnAgent(cmd, prompt, opts.cwd, opts.timeoutMs);
+        res = await spawnAgent(cmd, prompt, opts.cwd, opts.timeoutMs);
         try { raw = fs.readFileSync(outFile, 'utf8'); } catch (_) { raw = res.out; } // fallback: stdout
-        if (res.code !== 0 && !raw) { continue; }
       }
-      if (!aopts.schema) { const t = String(raw || '').trim(); if (t) return t; continue; }
+      // Un agente que salió con error y no dejó una respuesta usable muere por la causa de SU error (y ahí se mira el
+      // tope), aunque haya escrito algo en la salida: `codex exec` puede repetir ahí el pedido.
+      const fallo = res.code !== 0;
+      const murioPorError = () => {
+        causa = causaDe(res);
+        if (esTope(res)) {
+          corredor.tope = { causa, hora: horaCorta(), label };
+          process.stderr.write(`wflite ✖ ${label}: Codex en su tope de uso (${causa}) — no reintento ni lanzo los agentes que faltan\n`);
+        }
+      };
+      if (fallo && !String(raw || '').trim()) { murioPorError(); continue; }
+      if (!aopts.schema) { const t = String(raw || '').trim(); if (t && !fallo) return t; if (fallo) murioPorError(); else causa = 'contestó vacío'; continue; }
       let obj = null;
       try { obj = JSON.parse(String(raw).trim()); } catch (_) { obj = lastJsonObject(raw); }
       if (obj && checkShape(obj, aopts.schema)) return obj;
+      if (fallo) murioPorError();
+      else causa = `contestó sin las claves pedidas (${(aopts.schema.required || []).join(', ')})`;
     }
-    return null; // semántica de la tool: agente muerto → null; los scripts filtran Boolean
+    // semántica de la tool: agente muerto → null; el guion lo cuenta como lente sin medir o hallazgo sin veredicto
+    return muerto(corredor.tope && !causa ? corredor.tope.causa : (causa || 'sin respuesta'));
   };
 }
 
@@ -188,7 +284,8 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   let source = fs.readFileSync(scriptPath, 'utf8');
   // neutralizar el export (ilegal dentro de una función): mismo objeto, sin exportar
   source = source.replace(/^export const meta =/m, 'const meta =');
-  const agent = makeAgent(opts);
+  const corredor = { nombre: opts.agentsDir ? 'agentes-claude' : 'workflow-lite', muertos: [], tope: null };
+  const agent = opts.agentsDir ? makeDirAgent(opts, corredor) : makeAgent(opts, corredor);
   const log = (m) => process.stderr.write(`wflite: ${m}\n`);
   const parallel = (thunks) => pool(thunks, JOBS);
   const pipelineFn = async (items, s1, s2) => {
@@ -200,7 +297,13 @@ async function runWorkflow(scriptPath, argsValue, opts) {
   };
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
   const fn = new AsyncFunction('args', 'log', 'agent', 'parallel', 'pipeline', source);
-  return fn(argsValue, log, agent, parallel, pipelineFn);
+  const result = await fn(argsValue, log, agent, parallel, pipelineFn);
+  if (typeof agent.cerrar === 'function') agent.cerrar();
+  if (result && typeof result === 'object' && !Array.isArray(result)) {
+    result.corredor = { nombre: corredor.nombre, muertos: corredor.muertos, tope: corredor.tope,
+      ...(corredor.pendientes ? { pedidos_pendientes: corredor.pendientes.length, pedidos: path.join(path.resolve(opts.agentsDir), 'PEDIDOS.json') } : {}) };
+  }
+  return result;
 }
 
 // ---------- selftest (offline: agente stub, cero LLM) ----------
@@ -264,11 +367,22 @@ async function main() {
   const rawArgs = ai >= 0 ? argv[ai + 1] : '{}';
   let argsValue; try { argsValue = JSON.parse(rawArgs); } catch (_) { argsValue = rawArgs; }
   const oi = argv.indexOf('--out');
+  const di = argv.indexOf('--agents-dir');
+  const agentsDir = di >= 0 ? argv[di + 1] : null;
+  if (di >= 0 && !agentsDir) { console.error('workflow-lite: --agents-dir sin carpeta'); return 1; }
   const cwd = (argsValue && argsValue.repo) || process.cwd();
-  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000 });
+  const result = await runWorkflow(scriptPath, argsValue, { cwd, timeoutMs: 20 * 60 * 1000, agentsDir });
   const json = JSON.stringify(result, null, 1);
   if (oi >= 0) { fs.writeFileSync(argv[oi + 1], json + '\n'); console.log(`wflite: resultado → ${argv[oi + 1]}`); }
   else console.log(json);
+  // Un pase no medido no sale 0: el archivo se escribió, pero nadie lo lee verde por el código de salida.
+  if (result && result.medido === false) {
+    const c = result.corredor || {};
+    if (c.tope) process.stderr.write(`wflite: Codex en su tope de uso desde las ${c.tope.hora} (${c.tope.causa}).\n`);
+    if (c.pedidos_pendientes) process.stderr.write(`wflite: quedan ${c.pedidos_pendientes} pedido(s) para agentes de Claude en ${c.pedidos}\n`);
+    process.stderr.write(`${result.aviso || 'wflite: pase NO MEDIDO'}\n`);
+    return 3;
+  }
   return 0;
 }
 

@@ -35,7 +35,7 @@
 #         los paquetes, `--packs` con otro valor no se escribe y el plan lo dice en una línea (la instalación sigue);
 #         sin perfil se escribe como siempre, y cuando el perfil llega después los paquetes salen de él.
 #
-# Uso: bash scripts/tests/harness-questions.test.sh [--only T43|T44|T45|T46|REV|PACKS|DEFAULTS]
+# Uso: bash scripts/tests/harness-questions.test.sh [--only T43|T44|T45|T46|REV|PACKS|DEFAULTS|UPGRADE]
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
@@ -436,6 +436,38 @@ const ok = /con el repo del equipo acme\/equipo/.test(t[0]) && /ninguna herramie
   && sinLista === null && sinPerfil === null;
 process.stdout.write(ok ? "ok" : JSON.stringify({ t, pk, cs, sinLista, sinPerfil }));' "$RAIZ" 2>&1)"
   [ "$R9" = ok ] && ok "T9 equipo, ninguna herramienta, paquete activo, configState directo; sin lista o sin perfil, el plan corto no se arma" || mal "T9 casos extra: ${R9}"
+fi
+
+# ══ UPGRADE · la oferta de la instalación completa: tres renglones contados desde la lista de efectos ═══════
+if corre UPGRADE; then
+  echo "8.54 · T9 UpgradeOffer_Contado"
+  # la lista real: qué suma la completa (frenos, bloques, hooks globales de git), dónde rige y la orden exacta para volver;
+  # una lista de juguete cuya completa no trae hooks de git no los nombra (contado, no escrito)
+  U9="$(node -e '
+const Q = require(process.argv[1] + "/scripts/setup/harness/questions.js");
+const eff = require(process.argv[1] + "/scripts/setup/install-effects.json").effects;
+const a = Q.upgradeOffer({ effects: eff, tree: "/h/.tycon/harness", home: "/h" });
+const toy = eff.filter((e) => e.kind !== "git-hook");
+const b = Q.upgradeOffer({ effects: toy, tree: "/h/.tycon/harness", home: "/h" });
+const w = Q.upgradeOffer({ effects: eff, tree: "/h/.tycon/harness", home: "/h", shownHarness: "\"C:/Users/x/.tycon/harness/scripts/setup/harness.js\"" });
+if (!(w[2].includes("node \"C:/Users/x/.tycon/harness/scripts/setup/harness.js\" install --profile minimal --yes") && !w[2].includes("~"))) { process.stdout.write(JSON.stringify({ w })); process.exit(0); }
+const ok = Array.isArray(a) && a.length === 3 && /frenos?/.test(a[0]) && /bloques? de reglas/.test(a[0]) && /hooks globales de git/.test(a[0])
+  && /todos tus repos/.test(a[1]) && /tu agente de código/.test(a[1])
+  && /install --profile minimal --yes/.test(a[2]) && /~\/\.tycon\/harness\/scripts\/setup\/harness\.js/.test(a[2])
+  && b.length === 3 && !/git/.test(b[0]) && !/todos tus repos/.test(b[1]);
+process.stdout.write(ok ? "ok" : JSON.stringify({ a, b }));' "$RAIZ" 2>&1)"
+  [ "$U9" = ok ] && ok "T9 la oferta: tres renglones contados (frenos, bloques, hooks de git; dónde; cómo volver); sin hooks de git en la lista, no los nombra" \
+    || mal "T9 la oferta contada: ${U9}"
+  # (T7, el camino del clon) la primera instalación escribe first_install fresca; volver a instalar no la cambia
+  qlab u7 || true
+  fi_of() { python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get('first_install'), sort_keys=True))" "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json" 2>/dev/null; }
+  RC=0; harness install --defaults --yes > "$T/u7.out" 2>&1 < /dev/null || RC=$?
+  F1="$(fi_of)"
+  RC2=0; harness install --profile full --yes > "$T/u7b.out" 2>&1 < /dev/null || RC2=$?
+  F2="$(fi_of)"
+  { [ "$RC" = 0 ] && [ "$RC2" = 0 ] && printf '%s' "$F1" | grep '"fresh": true' >/dev/null && [ "$F1" = "$F2" ]; } \
+    && ok "T7 desde un clon: la primera instalación deja first_install fresca y reinstalar no la cambia" \
+    || mal "T7 first_install desde el clon: rc ${RC}/${RC2}; antes ${F1}; después ${F2}"
 fi
 
 echo

@@ -1628,10 +1628,10 @@ const CYCLE_STEPS = {
   en: ['Request and story', 'Approved plan', 'Tests and code', 'Review', 'Delivery', 'Operation and measurement'],
   es: ['Pedido e historia', 'Plan aprobado', 'Pruebas y código', 'Revisión', 'Entrega', 'Operación y medición'],
 };
-// el primer paso del dev solo: el único sí después del plan, cómo se saca, y la salida si la skill de historias se traba
+// el primer paso del dev solo: el único sí después del plan, cómo se saca, y qué pasa sin `_bmad/` y en `main`
 const FIRST_STEP_SAYS = {
   start: ['¿Instalo? [s/N]', 'harness.js uninstall --yes'],
-  story: ['`_bmad/`', '`story-format.md`', 'implementemos la story'],
+  story: ['`_bmad/`', '`main`', 'implementemos la story'],
 };
 const coverTop = (text) => { const i = text.search(/^## /m); return i < 0 ? text : text.slice(0, i); };
 const countOf = (text, word) => text.split(word).length - 1;

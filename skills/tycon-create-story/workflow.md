@@ -15,6 +15,20 @@
 
 ## INITIALIZATION
 
+### Step 0 — Is this a BMAD project?
+
+Before anything else, run:
+
+```bash
+node <this skill's directory>/scripts/story-without-bmad.js mode --repo {project-root}
+```
+
+- `{"mode":"bmad"}` → continue with «Configuration Loading» below, unchanged.
+- `{"mode":"first-time",...}` → the repo has no BMAD project. Read fully and follow `./first-time.md` instead of the
+  rest of this workflow, and STOP here: do not load the config, do not ask for an epic or a sprint.
+
+The script decides the mode from the repo. Never decide it yourself.
+
 ### Configuration Loading
 
 Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:

@@ -105,7 +105,28 @@ function defaults({ tree, sources, mode = 'managed', channel = 'stable', version
     api_limited_notice: null,
     token_expired_notice: null,
     bootstrap: { version: null, sha256: {} },
+    // desde cuándo está instalada la máquina y si era nueva; lo llena quien crea el estado (firstInstall)
+    first_install: null,
   };
+}
+
+// los rastros de que el pipeline ya corrió en esta máquina. El instalador no crea ninguno. Lo que no se
+// puede mirar cuenta como rastro: «no pude leer» nunca es «instalación nueva».
+const seen = (fn) => { try { return fn(); } catch (e) { return e.code !== 'ENOENT'; } };
+const PRIOR_USE = Object.freeze([
+  (dir) => seen(() => fs.readdirSync(path.join(dir, 'timing-history')).length > 0),
+  (dir) => seen(() => Boolean(fs.statSync(path.join(dir, 'gates.log')))),
+  (dir) => seen(() => Boolean(fs.statSync(path.join(dir, 'advisor-runs')))),
+]);
+
+/**
+ * La primera instalación de la máquina: `{ at, version, fresh }`, para el estado que se crea de cero.
+ * `fresh` es falso si la carpeta del estado ya tenía rastros de uso del pipeline: el arnés corrió acá antes y se
+ * reinstaló sin estado, así que «sin corridas cerradas» no querría decir «primera historia».
+ */
+function firstInstall(home, version) {
+  const dir = stateDir(home);
+  return { at: new Date().toISOString(), version: version || null, fresh: !PRIOR_USE.some((used) => used(dir)) };
 }
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -231,5 +252,5 @@ function fail(status, extra = {}) {
 
 module.exports = {
   SCHEMA, FILE_NAME, SOURCE_VALUES, KINDS, TREE_SOURCE, LAYER_SOURCE,
-  paths, defaults, read, write, writeAtomic, fail, kindOf, layerSources, releaseSource, isRelease,
+  paths, defaults, firstInstall, read, write, writeAtomic, fail, kindOf, layerSources, releaseSource, isRelease,
 };

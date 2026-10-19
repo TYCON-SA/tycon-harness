@@ -2615,7 +2615,7 @@ function notaCierre3(marker) {
     : '';
   return `marker.js complete-step 3 --approved "<cita textual de la aprobación del user>" (Nivel 2 LOW-risk: --auto-approved "<criterios>")${maqueta}. Hasta entonces el portón de carril DENIEGA cualquier Edit/Write de código`;
 }
-const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --run <runId> --model <modelo> '
+const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
 // El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio (2026-10-03). El cierre del paso 8 exige
@@ -2641,6 +2641,17 @@ const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_r
 function accionDelPase(marker, story, { sidNow, nextStep } = {}) {
   const { veredictoPaseAdversarial, paseAtendido, reglaPaseAjeno } = require('./lib/adversarial-verdict.js');
   const v = veredictoPaseAdversarial(marker);
+  if (v.motivo === 'pase-no-medido') {
+    // El pase corrió y no revisó todo. No está atendido: se relanza (y en el mismo turno, --relaunch).
+    const { SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+    const p = v.pase || {};
+    return {
+      pending_action: {
+        kind: 'relanzar-pase-no-medido',
+        message: `el pase adversarial quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}; resultado en ${p.resultado || '?'}): relanzalo en su paso (5b) y anotalo con mark-adversarial-launched <runId> 5b --relaunch. Si Codex no contesta y no hay herramienta Workflow: ${SALIDA_APROBADA}.`,
+      },
+    };
+  }
   if (paseAtendido(v)) {
     const skip = marker.adversarialSkip || {};
     if (v.motivo === 'abandonado' || skip.abandonado === true) {
@@ -2913,8 +2924,41 @@ function computeStart(args) {
   try {
     branch = execFileSync('git', ['-C', repo, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch { /* repo sin git */ }
-  if (branch && ['main', 'master'].includes(branch)) {
-    pauses.push({ id: 'PIPE-C1-branch-guard', detail: `Estás en rama protegida '${branch}' — NO implementar acá. Creá/checkout una rama de trabajo primero.` });
+  // La historia del modo primera vez de tycon-create-story arranca sola: sin git, `git init`; en main/master (o en un repo sin
+  // commits), la rama `story/<n>`. Sólo con la marca `origin: first-time` Y la constancia que deja el guion que la
+  // escribió (lib/first-time-record.js): la marca sola se escribe a mano, y en un checkout que comparten varias sesiones
+  // cambiar de rama solo rompe el trabajo de la otra (caso de scripts/hooks/session-collision-guard.js). Lo que se
+  // decide acá se hace después de juntar todas las pausas: con cualquier pausa, nada cambia.
+  let firstTimeGit = null;
+  const firstTimeMark = fm.origin === 'first-time';
+  const firstTimeOk = firstTimeMark && require('./lib/first-time-record.js').isRecorded(os.homedir(), storyPath, storyId);
+  if (firstTimeOk) {
+    const gitOut = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    const target = `story/${storyId}`;
+    let hasGit = true;
+    try { gitOut('rev-parse', '--git-dir'); } catch { hasGit = false; }
+    // Una carpeta adentro de otro repo no es «sin git»: es el repo de otro. Ése no se toca (ni init ni rama).
+    let ownRepo = !hasGit;
+    if (hasGit) { try { ownRepo = fs.realpathSync(gitOut('rev-parse', '--show-toplevel')) === fs.realpathSync(repo); } catch { ownRepo = false; } }
+    let current = null;
+    if (hasGit) { try { current = gitOut('symbolic-ref', '--short', 'HEAD'); } catch { /* HEAD suelto: no se toca */ } }
+    let unborn = !hasGit;
+    if (hasGit) { try { gitOut('rev-parse', '--verify', '--quiet', 'HEAD'); } catch { unborn = true; } }
+    if (ownRepo && (!hasGit || ['main', 'master'].includes(current) || (unborn && current && current !== target))) {
+      let exists = false;
+      if (hasGit) { try { gitOut('rev-parse', '--verify', '--quiet', `refs/heads/${target}`); exists = true; } catch { /* no existe */ } }
+      if (exists) {
+        pauses.push({ id: 'PIPE-C1-branch-guard', detail: `Estás en '${current}' y la rama de esta historia, '${target}', ya existe — NO la piso ni cambio a ella solo. Pasá a esa rama (o borrala) y re-corré start.` });
+      } else {
+        firstTimeGit = { init: !hasGit, unborn, target };
+      }
+    }
+  }
+  if (branch && ['main', 'master'].includes(branch) && !firstTimeGit && !pauses.some((p) => p.id === 'PIPE-C1-branch-guard')) {
+    const aMano = firstTimeMark && !firstTimeOk
+      ? ' La marca `origin: first-time` de esta historia no la puso el guion del modo primera vez (no hay constancia): el recorrido no cambia de rama solo.'
+      : '';
+    pauses.push({ id: 'PIPE-C1-branch-guard', detail: `Estás en rama protegida '${branch}' — NO implementar acá. Creá/checkout una rama de trabajo primero.${aMano}` });
   }
 
   // PIPE-C5 (lectura): pipeline abandonado.
@@ -2924,6 +2968,21 @@ function computeStart(args) {
       detail: `La story ya está status: in-progress sin pipeline activo en otra sesión — probable pipeline abandonado (sesión que murió sin cerrar).`,
       options: 'retomar desde el último step (pipeline.js next tras adopt/re-set del marker) / resetear status y arrancar fresh',
     });
+  }
+
+  if (firstTimeGit && !pauses.length) {
+    const { init, unborn, target } = firstTimeGit;
+    try {
+      const run = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      if (init) run('init', '-q');
+      // Sin commits no hay desde dónde ramificar: se nombra la rama de HEAD, y el primer commit nace en ella.
+      if (init || unborn) run('symbolic-ref', 'HEAD', `refs/heads/${target}`);
+      else run('switch', '-q', '-c', target);
+      branch = target;
+      actions.push(`PIPE-C1: historia de primera vez → ${init ? 'git init y ' : ''}rama ${target} creada y activa (lo que no estaba commiteado sigue en el árbol).`);
+    } catch (e) {
+      pauses.push({ id: 'PIPE-C1-branch-guard', detail: `No pude preparar la rama ${target} para la historia de primera vez: ${String(e.stderr || e.message || e).trim().split('\n')[0]}. Creala a mano y re-corré start.` });
+    }
   }
 
   // PIPE-C2: .gitignore fix (mutación segura e idempotente — se hace siempre).
@@ -5787,6 +5846,19 @@ function main() {
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
     const corrida = readSessionMarker();
     const mismaStory = !args.story || !corrida || !corrida.storyPath || path.resolve(args.story) === path.resolve(corrida.storyPath);
+    // Un pase que quedó NO MEDIDO (alguna lente sin su cazador, algún hallazgo sin su verificador) es un
+    // pase que falta. El portón dice que corre —así el salteo se niega— salvo el interruptor del dev, que gana siempre.
+    if (corrida && mismaStory && !args.noDeepReview && result && typeof result.run === 'boolean') {
+      const { veredictoPaseAdversarial, SALIDA_APROBADA } = require('./lib/adversarial-verdict.js');
+      const v = veredictoPaseAdversarial(corrida);
+      if (v.motivo === 'pase-no-medido') {
+        const p = v.pase || {};
+        const porque = `el pase anterior quedó NO MEDIDO (${p.motivo_no_medido || 'no revisó todo'}): un pase que no revisó todo es un pase que falta — relanzalo (--relaunch), o ${SALIDA_APROBADA}`;
+        result.reason = result.run ? `${porque} · ${result.reason}` : `${porque} · el portón por sí solo decía: ${result.reason}`;
+        if (!result.run) { result.run = true; result.model = result.model || p.modelo || MODELOS.DEFAULTS.adversarial.model; }
+        result.previous_pass = 'no-medido';
+      }
+    }
     if (corrida && corrida.storyId && mismaStory && (corrida.stepsCompleted || []).map(String).includes('4')
         && Array.isArray(args.files) && args.files.length && typeof result.run === 'boolean') {
       try {

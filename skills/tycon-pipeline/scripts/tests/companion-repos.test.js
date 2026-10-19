@@ -348,7 +348,11 @@ function corridaConPase(home, sid, lab) {
   }));
 }
 function propia(home, sid, ruta, cwd) {
-  return spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '1', '--type', '5b', '--tests', '0', '--own', '1', '--in', ruta],
+  // El 5b se anota con `--result <archivo>`: el JSON del pase, medido, con su confirmado.
+  const resultado = path.join(home, `resultado-${process.hrtime.bigint()}.json`);
+  fs.writeFileSync(resultado, JSON.stringify({ confirmed: [{ lens: 'l', summary: 'h' }],
+    lentes: ['a', 'b', 'c', 'd', 'e', 'f'].map((l) => ({ lens: l, estado: 'medida', count: 0 })), lentes_sin_medir: [], detalle: [], medido: true }));
+  return spawnSync(process.execPath, [MARKER, 'mark-adversarial-result', '1', '--type', '5b', '--result', resultado, '--tests', '0', '--own', '1', '--in', ruta],
     { encoding: 'utf8', env: entorno(home, sid), cwd });
 }
 function pasesAnotados(home) {

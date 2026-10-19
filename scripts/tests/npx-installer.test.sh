@@ -262,6 +262,9 @@ PY
 LAB_PTY_DELAY=5 run_ix_tty s > "$BASE/t10s.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && [ "$(node -e 'try{console.log(require(process.argv[1]).install.profile)}catch{console.log("")}' "$LAB_HOME/.claude/tycon.json")" = minimal ]; then ok "8.46 T10 con «s», el único sí: instala la mínima"
 else no "8.46 T10 el sí (rc $RC, estado $(estado_kind)): $(brief "$BASE/t10s.out" 400)"; fi
+# (8.54 T7, el camino de la versión bajada) la primera instalación deja first_install fresca en el estado
+FI854="$(node -e 'try{const f=require(process.argv[1]).first_install;console.log(f&&f.fresh===true&&f.version?"ok":JSON.stringify(f))}catch(e){console.log("sin-estado")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json" 2>/dev/null)"
+[ "$FI854" = ok ] && ok "8.54 T7 con la versión bajada: el estado nuevo trae first_install fresca, con su versión" || no "8.54 T7 first_install con la versión bajada: ${FI854}"
 # (T3) npx pasa --defaults y las opciones de la persona llegan: --packs all sin --profile, sin terminal con --yes
 fresh846
 run_ix --packs all --yes > "$BASE/t3.out" 2>&1; RC=$?

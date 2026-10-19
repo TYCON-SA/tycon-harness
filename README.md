@@ -51,7 +51,7 @@ The full install adds the guards in the repos that work with the harness and cha
 1. Open your coding agent in your repo's folder (if it was open, close it and open it again: the rules load when it starts).
 2. The first time, the agent asks for permission to read the folder where the harness lives. You accept it once.
 3. Ask for the story: "create a story with `tycon-create-story` to add a date filter". Read it and adjust it.
-4. Today that skill expects a project's `_bmad/` folder: without it, it asks for more details. If it gets stuck, ask the agent to write the story in the format of `story-format.md`.
+4. If your repo has no `_bmad/`, it asks you three plain questions and writes the criteria and the tests. If there is no git or you are on `main`, the run creates the branch on its own.
 5. Ask "implementemos la story" (let's implement the story) with the file path: the phrase stays in Spanish. It shows you the plan, waits for your go-ahead, writes the code and runs the tests and reviewers.
 6. It leaves the commit ready: it never commits or pushes without your permission.
 

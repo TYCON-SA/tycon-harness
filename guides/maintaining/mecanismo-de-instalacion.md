@@ -27,7 +27,9 @@ política, deja estado, y arranca desde una copia fija que no vive en el árbol 
   `previous`), `channel`, `version`, `managed` (las piezas registradas), `hold` (la retención que deja un
   `rollback`), `notice` (el aviso pendiente que imprime el hook síncrono), `last_fetch`, `last_apply`,
   `last_health`, `failed`, `bootstrap` (sha256 de la copia fija), `repoint` (la mudanza del clon de skills: ver «La llave
-  de las skills»). Un estado ilegible **no** es «no instalado»: los comandos
+  de las skills»), `first_install` (`{ at, version, fresh }`: se escribe sólo al crear el estado de cero, con `fresh`
+  falso si la carpeta ya tenía rastros del pipeline; lo lee `first-story.js` para saber si una historia es la primera de
+  la máquina). Un estado ilegible **no** es «no instalado»: los comandos
   salen 2 nombrando el problema; `startup` avisa y no toca nada.
 - **El candado**: `~/.claude/.tycon-pipeline/harness/harness.lock` (`mkdir`, pid adentro, huérfano a los 10 minutos). Todo
   comando que escribe lo toma y relee el estado adentro. La segunda sesión que llega mientras la primera trabaja se va en

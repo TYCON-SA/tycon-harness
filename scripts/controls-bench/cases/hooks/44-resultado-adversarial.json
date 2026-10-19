@@ -151,6 +151,7 @@
       "correr.sh": "#!/bin/sh\nexit 0\n",
       "specs/a.md": "---\nstory: \"A\"\nepic: 1\nstatus: in-progress\nfiles_to_modify:\n  - scripts/x.js\n---\n# Story A\n",
       "scripts/x.js": "module.exports = 1;\n",
+      "resultado.json": "{\"confirmed\": [], \"lentes\": [{\"lens\": \"a\", \"estado\": \"medida\", \"count\": 0}], \"lentes_sin_medir\": [], \"detalle\": [], \"medido\": true}\n",
       "_marker.json": "{\n  \"storyId\": \"A\",\n  \"storyPath\": \"${FIXTURE}/specs/a.md\",\n  \"repoPath\": \"${FIXTURE}\",\n  \"sessionId\": \"adv-b4\",\n  \"lastTouch\": \"2026-09-18T04:00:00.000Z\",\n  \"stepsCompleted\": [0, 1, 2, 3, 4, 5, 6, 7],\n  \"stepsPending\": [8],\n  \"filesTouched\": [],\n  \"fileEvents\": [],\n  \"iterations\": {},\n  \"dodRuntimeChecked\": true,\n  \"adversarial\": { \"launchedAtStep\": 4, \"runId\": \"wf_B4\", \"sessionId\": \"adv-b4\", \"launchedAt\": \"2026-09-18T00:51:35.760Z\" }\n}\n"
      },
      "env": {
@@ -159,7 +160,7 @@
      "setup": [
       "mkdir -p ${SANDBOX_HOME}/.claude/.tycon-pipeline/active",
       "cp _marker.json ${SANDBOX_HOME}/.claude/.tycon-pipeline/active/adv-b4.json",
-      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result 0 --tipo 5b --run wf_B4 > res.out 2> res.err",
+      "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js mark-adversarial-result 0 --tipo 5b --result ${FIXTURE}/resultado.json --run wf_B4 > res.out 2> res.err",
       "node ${SKILLS}/skills/tycon-pipeline/scripts/marker.js complete-step 8 > c8.out 2> c8.err; echo \"rc=$?\" > rc.txt"
      ],
      "stdin": {
