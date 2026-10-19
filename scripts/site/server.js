@@ -678,6 +678,8 @@ async function main() {
     const fuentes = crearFuentes({ cfg: v.cfg, dataDir, log });
     const rutasExtra = [
       ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
+      // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
+      ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Corridas (story 2.27): arma su vista en un hilo aparte con el espejo del buzón
       ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol

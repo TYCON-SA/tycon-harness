@@ -1073,3 +1073,33 @@ test('T16d Reaplicar_LoQueNoSeMezcla_YSusRechazos @story-2.46 @ac-14 @ac-15', { 
     assert.strictEqual(c2.ok, true);
   });
 });
+
+test('T20 Proponer_VariosArchivos_VersionYCambio @story-2.61 @ac-10 — los caminos de varios archivos en un pedido', { skip: SIN_BACKEND }, async () => {
+  let gh, r, dir;
+  try {
+    gh = await arrancarGithubFalso({ owner: 'acme', repo: 'ops' });
+    gh.st.proteccion = { required_pull_request_reviews: { required_approving_review_count: 1 } };
+    ({ r, dir } = await opsPorHttp({ 'operations.json': opsBase(), 'otro.json': '{}\n' }));
+    const oidOps = r.oidDe('refs/heads/main', 'operations.json');
+    const oidOtro = r.oidDe('refs/heads/main', 'otro.json');
+    const base = { clon: dir, idCorto: 'varios', credencial: ESCRITURA, remote: REMOTO_GH, urlBase: { github: gh.base }, now: new Date(AHORA) };
+    // un archivo sin la versión que se abrió: no se propone a ciegas
+    const sinVersion = await RP.proponer({ ...base, archivos: [{ archivo: 'operations.json', contenido: '{}\n', oidEsperado: oidOps }, { archivo: 'otro.json', contenido: '{"a":1}\n' }] });
+    assert.strictEqual(sinVersion.codigo, 'sin_version');
+    // el segundo cambió en main: avisa cuál, sin empujar nada
+    r.cambiar({ 'otro.json': '{"b":2}\n' });
+    const cambio = await RP.proponer({ ...base, archivos: [{ archivo: 'operations.json', contenido: '{}\n', oidEsperado: oidOps }, { archivo: 'otro.json', contenido: '{"a":1}\n', oidEsperado: oidOtro }] });
+    assert.strictEqual(cambio.codigo, 'cambio');
+    assert.strictEqual(cambio.archivo, 'otro.json');
+    assert.deepStrictEqual(r.empujes, []);
+    // los dos al día y uno nuevo (null = no existía): un commit con los tres, un pedido
+    const oidOtroNuevo = r.oidDe('refs/heads/main', 'otro.json');
+    const ok = await RP.proponer({ ...base, archivos: [{ archivo: 'operations.json', contenido: ORG.formatJson(opsBase({ notify: 'x' })), oidEsperado: oidOps }, { archivo: 'otro.json', contenido: '{"a":1}\n', oidEsperado: oidOtroNuevo }, { archivo: 'carpeta/nuevo.md', contenido: '# nuevo\n', oidEsperado: null }] });
+    assert.ok(ok.ok, JSON.stringify(ok));
+    const rama = r.empujes.at(-1).ref.replace('refs/heads/', '');
+    assert.match(r.archivoEn(rama, 'operations.json'), /"notify": "x"/);
+    assert.strictEqual(r.archivoEn(rama, 'otro.json'), '{"a":1}\n');
+    assert.strictEqual(r.archivoEn(rama, 'carpeta/nuevo.md'), '# nuevo\n');
+    assert.strictEqual(gh.st.pedidos.length, 1);
+  } finally { await cerrarTodos(r, gh); }
+});

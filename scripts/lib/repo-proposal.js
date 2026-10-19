@@ -457,13 +457,16 @@ function enlaceManual(remote, rama) {
  * { ok: true, codigo: 'aplicado' | 'no_aplica_solo' } o { ok: false, codigo: 'quedo_abierto' } (ver `aplicarPedido`).
  * `esperar(ms)` se inyecta para las pruebas.
  */
-async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, marca = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+async function proponer({ clon, archivo: archivoSuelto, contenido, oidEsperado, archivos: varios = null, idCorto, secciones = [], quien, credencial, remote, urlBase, exclusivo = (fn) => fn(), now, git = 'git', fetch: f, log = () => {}, aplicarSolo = false, marca = null, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
   if (!remote || (remote.platform !== 'azure' && remote.platform !== 'github')) return { ok: false, codigo: 'plataforma_desconocida', message: M('rp.sinPlataforma') };
   const cred = credenciales(credencial);
   if (!cred.git || !cred.api) return { ok: false, codigo: 'sin_credencial', message: M('rp.sinCredencial') };
+  // varios archivos en un mismo pedido (`archivos: [{ archivo, contenido, oidEsperado }]`), o uno suelto como siempre
+  const lista = Array.isArray(varios) ? varios : [{ archivo: archivoSuelto, contenido, oidEsperado }];
   // sin la versión del archivo que se abrió no se puede saber si otro lo cambió (AC 16): null = «no existía»
-  if (oidEsperado === undefined) return { ok: false, codigo: 'sin_version', message: M('rp.sinVersion') };
-  if (!clon || !archivo || typeof contenido !== 'string' || !idCorto) return { ok: false, codigo: 'git', message: M('rp.faltanDatos') };
+  if (!lista.length || lista.some((x) => !x || x.oidEsperado === undefined)) return { ok: false, codigo: 'sin_version', message: M('rp.sinVersion') };
+  if (!clon || !idCorto || lista.some((x) => !x.archivo || typeof x.contenido !== 'string')) return { ok: false, codigo: 'git', message: M('rp.faltanDatos') };
+  const archivo = lista.map((x) => x.archivo).join(', ');
   const cabecera = `Basic ${Buffer.from(`x-access-token:${cred.git}`).toString('base64')}`;
   const secretos = secretosDe(cred);
   const registrar = (l) => log(tapar(l, secretos));
@@ -492,15 +495,16 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     if (puntaR.status !== 0) return { ok: false, codigo: 'git', message: M('rp.sinPunta', { rama: RAMA_PRINCIPAL, error: fallaGit(puntaR, 'git rev-parse') }) };
     const punta = String(puntaR.stdout).trim();
 
-    // 2. ¿cambió el archivo desde que se abrió la sección? (decisión 3)
-    const oidR = await correr(['rev-parse', '--verify', '--quiet', `${punta}:${archivo}`], { cwd: clon, env });
-    const oidActual = oidR.status === 0 ? String(oidR.stdout).trim() : null;
-    if ((oidEsperado || null) !== oidActual) {
+    // 2. ¿cambió algún archivo desde que se abrió la sección? (decisión 3)
+    for (const x of lista) {
+      const oidR = await correr(['rev-parse', '--verify', '--quiet', `${punta}:${x.archivo}`], { cwd: clon, env });
+      const oidActual = oidR.status === 0 ? String(oidR.stdout).trim() : null;
+      if ((x.oidEsperado || null) === oidActual) continue;
       // con el texto de la punta, quien llama puede poner la propuesta encima en vez de pedir que se recargue
       const actualR = oidActual ? await correr(['cat-file', 'blob', oidActual], { cwd: clon, env }) : null;
       const textoActual = actualR && actualR.status === 0 ? String(actualR.stdout) : null;
       if (actualR && actualR.status !== 0) fallaGit(actualR, 'git cat-file');
-      return { ok: false, codigo: 'cambio', message: M('rp.cambio'), oidActual, ...(oidActual && textoActual === null ? {} : { textoActual }) };
+      return { ok: false, codigo: 'cambio', message: M('rp.cambio'), oidActual, ...(lista.length > 1 ? { archivo: x.archivo } : {}), ...(oidActual && textoActual === null ? {} : { textoActual }) };
     }
 
     // 3. ¿ya hay un pedido abierto sobre este archivo? (decisión 3)
@@ -508,9 +512,12 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     if (abierto && abierto.error) return { ok: false, codigo: 'no_se_pudo_leer', message: M('rp.noVerifique', { error: abierto.error }) };
     if (abierto) return { ok: false, codigo: 'pedido_abierto', enlace: abierto.enlace, rama: abierto.rama, message: M('rp.yaAbierto', { enlace: abierto.enlace }) };
 
-    // 4. la política de la rama principal, para ESTE archivo (un filtro de ruta puede no cubrirlo)
-    const politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo, aplicarSolo });
-    if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
+    // 4. la política de la rama principal, para CADA archivo (un filtro de ruta puede no cubrir alguno)
+    let politica = null;
+    for (const x of lista) {
+      politica = await politicaDeRevision({ remote, credencial: cred, urlBase, fetch: f, archivo: x.archivo, aplicarSolo });
+      if (!politica.ok) return { ok: false, codigo: politica.codigo, message: politica.message };
+    }
 
     // 5. el commit, sin tocar el árbol ni el índice del clon
     const rama = `team-config/${idCorto}-${stamp(fechaDe(now))}`;
@@ -521,12 +528,12 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     const envCommit = { ...envIndice, ...AUTOR, GIT_AUTHOR_DATE: fecha, GIT_COMMITTER_DATE: fecha };
     let sha;
     try {
-      const blob = await correr(['hash-object', '-w', '--stdin'], { cwd: clon, env, input: contenido });
-      if (blob.status !== 0) return { ok: false, codigo: 'git', message: M('rp.noGuarde', { error: fallaGit(blob, 'git hash-object') }) };
-      const pasos = [
-        ['read-tree', punta],
-        ['update-index', '--add', '--cacheinfo', `100644,${String(blob.stdout).trim()},${archivo}`],
-      ];
+      const pasos = [['read-tree', punta]];
+      for (const x of lista) {
+        const blob = await correr(['hash-object', '-w', '--stdin'], { cwd: clon, env, input: x.contenido });
+        if (blob.status !== 0) return { ok: false, codigo: 'git', message: M('rp.noGuarde', { error: fallaGit(blob, 'git hash-object') }) };
+        pasos.push(['update-index', '--add', '--cacheinfo', `100644,${String(blob.stdout).trim()},${x.archivo}`]);
+      }
       for (const args of pasos) {
         const r = await correr(args, { cwd: clon, env: envIndice });
         if (r.status !== 0) return { ok: false, codigo: 'git', message: M('rp.noCommit', { error: fallaGit(r, `git ${args[0]}`) }) };

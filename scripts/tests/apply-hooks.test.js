@@ -87,7 +87,7 @@ const run = runRaw;
 const settingsOf = (L) => JSON.parse(fs.readFileSync(L.settingsPath, 'utf8'));
 const commandsOf = (s, ev) => (s.hooks[ev] || []).flatMap((e) => (e.hooks || []).map((h) => h.command));
 
-const H = (event, matcher, spec, extra = {}) => ({ event, matcher, spec, label: `etiqueta de ${spec}`, when: 'always', platforms: { windows: true }, ...extra });
+const H = (event, matcher, spec, extra = {}) => ({ event, matcher, spec, label: `etiqueta de ${spec}`, when: 'always', platforms: { windows: true }, steps: ['all'], effect: 'records', ...extra });
 const LIST_OF = (hooks, extra = {}) => ({ __doc: 'lista de juguete', hooks, superseded: ['tycon-pipeline/scripts/on-edit.js'], legacy_fragments: ['.claude/hooks/engram-pre-commit.sh'], ...extra });
 
 // ── T33 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -114,6 +114,12 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
   const bad = JSON.parse(JSON.stringify(list));
   bad.hooks[0].when = 'a veces';
   assert.ok(mod.validateList(bad).some((p) => p.includes(bad.hooks[0].spec) && p.includes('when')));
+  // los pasos y el efecto de cada control (los muestra «Cómo trabaja» del sitio): sin ellos, o fuera del vocabulario, rojo
+  for (const [campo, valor] of [['steps', undefined], ['steps', []], ['steps', ['paso cinco']], ['effect', undefined], ['effect', 'grita']]) {
+    const mal = JSON.parse(JSON.stringify(list));
+    if (valor === undefined) delete mal.hooks[1][campo]; else mal.hooks[1][campo] = valor;
+    assert.ok(mod.validateList(mal).some((p) => p.includes(mal.hooks[1].spec) && p.includes(campo)), `${campo} = ${JSON.stringify(valor)}`);
+  }
 });
 
 // ── T34 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────

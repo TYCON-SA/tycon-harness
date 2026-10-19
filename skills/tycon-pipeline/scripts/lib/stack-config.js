@@ -17,14 +17,18 @@ const { parseExtensions } = require('./code-files.js');
 
 const _cache = new Map();
 
-function readStack({ env = process.env, home = os.homedir() } = {}) {
+// `file`: el team-repos.json de un perfil en particular (el sitio de la organización lee el del clon del perfil); sin él,
+// el del árbol del arnés de esta máquina.
+function readStack({ env = process.env, home = os.homedir(), file: fileGiven = null } = {}) {
   const problems = [];
-  let file = null;
-  try {
-    const tree = require('./harness-path.js').rutaArnesHook({ env, home }).dir;
-    file = tree ? path.join(tree, 'team-repos.json') : null;
-  } catch (e) {
-    return { stack: {}, file: null, problems: [`no pude ubicar el árbol del arnés (${e && e.message ? e.message : e})`] };
+  let file = fileGiven;
+  if (!file) {
+    try {
+      const tree = require('./harness-path.js').rutaArnesHook({ env, home }).dir;
+      file = tree ? path.join(tree, 'team-repos.json') : null;
+    } catch (e) {
+      return { stack: {}, file: null, problems: [`no pude ubicar el árbol del arnés (${e && e.message ? e.message : e})`] };
+    }
   }
   if (!file) return { stack: {}, file: null, problems };
   let stat = null;

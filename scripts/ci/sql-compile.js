@@ -182,7 +182,13 @@ function main() {
   }
 }
 
-try { main(); } catch (e) {
-  console.log(`⚠️  sql: el aviso de compilación falló (${e.message}) — las migraciones de este commit quedan SIN COMPILAR`);
+/** Si una ruta es una migración que este aviso compila; lo usa también «Cómo trabaja» del sitio. */
+function isMigration(file) { return ES_MIGRACION.test(String(file || '')); }
+module.exports = { isMigration };
+
+if (require.main === module) {
+  try { main(); } catch (e) {
+    console.log(`⚠️  sql: el aviso de compilación falló (${e.message}) — las migraciones de este commit quedan SIN COMPILAR`);
+  }
+  process.exit(0);
 }
-process.exit(0);

@@ -219,6 +219,44 @@ the harness dashboard in six questions.
 
 **What to do:** a snapshot that did not arrive or a new red is looked at in the night process that produced it.
 
+### How it works (Cómo trabaja)
+
+**What it answers:** what does the agent do with a story, step by step, in this organization? Only maintainers see it.
+
+At the top, **Your organization**: the integrations that are on and off (crossed out), the active reviewer packs and the
+rules (how tests are named, which screens need an end-to-end test, which language the app uses). Below, the steps of the
+run in order, and apart the two that are outside the main path (another round of reviewers and the closing in Azure
+DevOps). Choosing a step shows:
+
+- **Guides it cites:** the step file and the guides it names.
+- **Depending on the story:** what is added only for some stories, with its condition. For example, for a story that
+  touches a screen: the mockup in "Draft the plan", its approval in "Approve the plan", and the browser test, the
+  screenshots and the readability review in "Try it live".
+- **Reviewers:** the harness ones, grouped by when they join, and the ones from each pack, with their condition.
+- **Checks:** the ones that block, warn or only record in that step. At the very bottom, the ones that act at any step.
+
+Each piece says whether it belongs to the **harness** or to **your organization**. What depends on an integration that
+is off shows as **off in your organization**.
+
+Everything comes from what the harness runs on: the step table, the reviewer selection, the list of checks, the
+detectors that decide each piece, and your organization's profile. When one of those sources changes, the tab changes
+by itself.
+
+**Improving a harness piece.** The harness is not edited from the site. "View code" opens the file in the public repo;
+"Suggest an improvement" opens a box where you write, in your own words, what you would change and why. "Open the
+request on GitHub" opens a new request in the public repo with your text, the piece, the step and the version already
+written: you send it with your own GitHub account. The site keeps no key for this.
+
+**Editing a reviewer of your organization.** The reviewers of the packs that live in the profile repo have "Edit", and
+each pack has "+ Add reviewer". You change the name, when it joins, what the change has to touch, which files it looks
+at, the prefix of its rules and its instructions. "Check" runs it through the same reader the harness uses to load packs:
+if something is wrong, it says so and "Propose" stays off. "Propose" opens a single request to the profile repo with the
+pack and the reviewer's instructions, and another maintainer approves it, as in Configuration. Removing a reviewer is
+done by hand in the profile repo.
+
+**What to do:** if a piece is unclear or something is missing, "Suggest an improvement". If a pack of your organization
+says it cannot be used, it is fixed by hand in the profile repo: until then the harness does not load it either.
+
 ### Configuration (Configuración)
 
 **What it answers:** how is the organization configured, and how is it changed? Only maintainers see it. The next part
@@ -436,12 +474,12 @@ reported with its last run. It is view only: the machines update themselves on s
 
 The site decides who you are by your email, and only with the "Who gets into the site" list:
 
-| Role | Home | Runs | Projects | Harness | Configuration |
-|---|---|---|---|---|---|
-| **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes |
-| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no |
-| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no |
-| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no |
+| Role | Home | Runs | Projects | Harness | How it works | Configuration |
+|---|---|---|---|---|---|---|
+| **Maintainer** | "What to decide today", for the whole organization | all runs | all products | yes | yes, and proposes changes to its reviewers | yes, and proposes changes |
+| **Confirmed person** (a dev in the list) | "Your things" | those of their confirmed machines | the products they work on | no | no | no |
+| **Person with an unconfirmed machine** (a dev in the list) | "Your things" | those of their confirmed machines; the new machine's, not yet | the products they work on | no | no | no |
+| **No role** (not in the list) | only the page "Your account is not in the list" | no | no | no | no | no |
 
 **How you move from one role to another.** A maintainer decides it, in Configuration, and it goes in when someone
 approves the request:
