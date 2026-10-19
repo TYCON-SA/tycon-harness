@@ -110,8 +110,10 @@ test('T7 2.34-Subir_FallaNoTocaElIndice @story-2.34 @ac-3 — si falla la foto, 
 test('T8 2.34-Subir_MismoCommitNoSube @story-2.34 @ac-2 — el índice ya nombra el commit de main: nada se sube', async () => {
   const repo = repoDeJuguete();
   const commit = git(repo, 'rev-parse', 'HEAD');
+  // el índice previo con la misma lista de archivos que sale del commit (si la lista cambia, se re-sube: T1 Subir_MismoCommitOtraLista)
+  const { indice } = await COPIA.subir({ repo, almacen: null, log: sinLog, dryRun: true });
   // la foto que nombra el índice está: al día (si faltara, se vuelve a subir: A6)
-  const al = almacenDeJuguete({ inicial: { 'actual.json': JSON.stringify({ version: 1, commit }), [`fotos/${commit}.tar.gz`]: 'x' } });
+  const al = almacenDeJuguete({ inicial: { 'actual.json': JSON.stringify({ version: 1, commit, archivos: indice.archivos }), [`fotos/${commit}.tar.gz`]: 'x' } });
   const r = await COPIA.subir({ repo, almacen: al, log: sinLog });
   assert.strictEqual(r.ok, true);
   assert.strictEqual(r.subido, false);
@@ -192,7 +194,7 @@ test('T13 2.34-Bajar_MismoCommitNoBaja @story-2.34 @ac-6 — el índice no cambi
   assert.strictEqual(a.ok, true, a.motivo);
   assert.ok(fs.existsSync(path.join(a.carpeta, 'operations.json')));
   al.ops.length = 0;
-  const b = await COPIA.bajar({ almacen: al, dir, previo: { commit: idx.commit, carpeta: a.carpeta }, log: sinLog });
+  const b = await COPIA.bajar({ almacen: al, dir, previo: { commit: idx.commit, huella: idx.huella, carpeta: a.carpeta }, log: sinLog });
   assert.strictEqual(b.ok, true);
   assert.strictEqual(b.cambio, false);
   assert.deepStrictEqual(al.ops, [['get', 'actual.json']], 'sólo el índice');
@@ -681,4 +683,122 @@ test('T4 2.54-Bajar_ElLogoLlegaAlSitio @story-2.54 @ac-4 — el sitio abre la fo
     const logo = await h.pedir('/marca/logo', { cookie: s });
     assert.deepStrictEqual([logo.status, logo.headers['content-type']], [200, 'image/png'], '/marca/logo responde con el logo de la copia');
   } finally { if (h) await h.cerrar(); await emisor.cerrar(); f.detener(); }
+});
+
+// ── al día es el mismo commit y la misma foto ──────────────────────────────────────────────────────────────────────
+/** Reemplaza en el almacén la foto del mismo commit por una con `extra` sumado, y el índice con su huella y su lista. */
+function reemplazarFoto(al, extra) {
+  const idx = JSON.parse(al.blobs.get('actual.json').cuerpo);
+  const viejos = COPIA.leerFoto(al.blobs.get(`fotos/${idx.commit}.tar.gz`).cuerpo).archivos;
+  const nuevos = [...viejos, ...Object.entries(extra).map(([rel, txt]) => ({ rel, cuerpo: Buffer.from(txt) }))];
+  const foto = COPIA.armarFoto(nuevos);
+  const archivos = { ...idx.archivos };
+  for (const rel of Object.keys(extra)) archivos[rel] = crypto.createHash('sha1').update(rel).digest('hex');
+  const nuevo = { ...idx, huella: crypto.createHash('sha256').update(foto).digest('hex'), bytes: foto.length, archivos };
+  al.blobs.set(`fotos/${idx.commit}.tar.gz`, { cuerpo: foto, modificado: Date.now() });
+  al.blobs.set('actual.json', { cuerpo: Buffer.from(JSON.stringify(nuevo)), modificado: Date.now() });
+  return { antes: idx, despues: nuevo };
+}
+
+test('T1 2.55-Subir_MismoCommitOtraLista @story-2.55 @ac-1 — el índice nombra el commit con otra lista de archivos: se vuelve a subir', async () => {
+  // 🔴 rojo: con el mismo commit dice «al día» y la foto con el logo nunca se sube.
+  const repo = repoDeJuguete({ 'operations.json': opsConLogo('marca/logo.png'), 'marca/logo.png': PNG });
+  const commit = git(repo, 'rev-parse', 'HEAD');
+  const { indice } = await COPIA.subir({ repo, almacen: null, log: sinLog, dryRun: true });
+  const sinLogo = Object.fromEntries(Object.entries(indice.archivos).filter(([rel]) => rel !== 'marca/logo.png'));
+  // lo que deja un arnés que no sumaba el logo: el mismo commit, la foto presente, la lista sin el logo
+  const al = almacenDeJuguete({ inicial: { 'actual.json': JSON.stringify({ ...indice, archivos: sinLogo }), [`fotos/${commit}.tar.gz`]: 'x' } });
+  const lineas = [];
+  const r = await COPIA.subir({ repo, almacen: al, log: (l) => lineas.push(l) });
+  assert.strictEqual(r.ok, true, r.motivo);
+  assert.strictEqual(r.subido, true, r.motivo);
+  const idx = JSON.parse(al.blobs.get('actual.json').cuerpo);
+  assert.strictEqual(idx.commit, commit, 'el mismo commit');
+  assert.ok(idx.archivos['marca/logo.png'], 'el índice nuevo nombra el logo');
+  const foto = COPIA.leerFoto(al.blobs.get(idx.foto).cuerpo);
+  assert.ok(foto.ok && foto.archivos.some((a) => a.rel === 'marca/logo.png'), 'la foto nueva trae el logo');
+  assert.ok(lineas.some((l) => /otra lista de archivos/.test(l) && l.includes(commit.slice(0, 12))), `el registro lo dice (${lineas.join(' | ')})`);
+});
+
+test('T3 2.55-Bajar_MismoCommitOtraHuella @story-2.55 @ac-2 — el mismo commit con otra huella: el sitio abre la foto nueva', async () => {
+  // 🔴 rojo: con el mismo commit el sitio se queda con la carpeta vieja (cambio: false).
+  const { al } = await conFotoSubida();
+  const dir = tmp();
+  const a = await COPIA.bajar({ almacen: al, dir, previo: null, log: sinLog });
+  assert.strictEqual(a.ok, true, a.motivo);
+  const { antes, despues } = reemplazarFoto(al, { 'marca/logo.png': PNG.toString('latin1') });
+  assert.strictEqual(antes.commit, despues.commit);
+  const b = await COPIA.bajar({ almacen: al, dir, previo: { commit: antes.commit, huella: antes.huella, carpeta: a.carpeta }, log: sinLog });
+  assert.strictEqual(b.ok, true, b.motivo);
+  assert.strictEqual(b.cambio, true, 'otra huella: se abre');
+  assert.notStrictEqual(b.carpeta, a.carpeta, 'otra carpeta');
+  assert.strictEqual(b.indice.huella, despues.huella);
+  // sin huella previa (un sitio que no la guardó): se baja, que es lo seguro
+  const c = await COPIA.bajar({ almacen: al, dir, previo: { commit: despues.commit, carpeta: b.carpeta }, log: sinLog });
+  assert.strictEqual(c.ok, true, c.motivo);
+  assert.strictEqual(c.cambio, true, 'sin huella previa: se baja');
+});
+
+test('T4 2.55-Fuentes_PasanLaHuella @story-2.55 @ac-2 — el sitio refresca la foto re-subida con el mismo commit; sin re-subir, no', async () => {
+  const repo = repoDeJuguete({ 'operations.json': OPS_VALIDO });
+  const al = almacenDeJuguete();
+  assert.strictEqual((await COPIA.subir({ repo, almacen: al, log: sinLog })).ok, true);
+  const { f } = fuentesConCopia(al, () => T0);
+  try {
+    await f.refrescar();
+    const primera = f.clones().operaciones.dir;
+    al.ops.length = 0;
+    await f.refrescar();
+    assert.strictEqual(f.clones().operaciones.dir, primera, 'la misma foto: la misma carpeta');
+    assert.ok(!al.ops.some((o) => o[0] === 'get' && o[1].startsWith('fotos/')), 'la misma foto: no la baja');
+    reemplazarFoto(al, { '.dashboard/nuevo.json': '{}\n' });
+    await f.refrescar();
+    const segunda = f.clones().operaciones.dir;
+    assert.notStrictEqual(segunda, primera, 'la foto re-subida con el mismo commit: otra carpeta');
+    assert.ok(fs.existsSync(path.join(segunda, '.dashboard', 'nuevo.json')), 'con lo que trae la foto nueva');
+  } finally { f.detener(); }
+});
+
+test('T6 2.55-Subir_ReSubidaNoPisaLaFoto @story-2.55 @ac-1 @ac-2 — la re-subida con el mismo commit no pisa la foto del índice; un «foto» raro es ilegible', async () => {
+  // 🔴 rojo (pase adversarial): la foto nueva pisa fotos/<commit>.tar.gz; si el índice no se escribe, el índice viejo
+  // nombra una foto con otra huella y un sitio que arranca de cero queda sin datos hasta la próxima corrida.
+  const repo = repoDeJuguete({ 'operations.json': opsConLogo('marca/logo.png'), 'marca/logo.png': PNG });
+  const al = almacenDeJuguete();
+  const s = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(s.ok, true, s.motivo);
+  // lo que deja un arnés que no sumaba el logo: el mismo commit, la foto sin él y el índice que la nombra
+  const previo = JSON.parse(al.blobs.get('actual.json').cuerpo);
+  const sinLogo = COPIA.leerFoto(al.blobs.get(`fotos/${previo.commit}.tar.gz`).cuerpo).archivos.filter((x) => x.rel !== 'marca/logo.png');
+  const fotoVieja = COPIA.armarFoto(sinLogo);
+  delete previo.archivos['marca/logo.png'];
+  previo.huella = crypto.createHash('sha256').update(fotoVieja).digest('hex');
+  al.blobs.set(`fotos/${previo.commit}.tar.gz`, { cuerpo: fotoVieja, modificado: Date.now() });
+  al.blobs.set('actual.json', { cuerpo: Buffer.from(JSON.stringify(previo)), modificado: Date.now() });
+  const falla = almacenDeJuguete({ fallaPut: (n) => n === 'actual.json' });
+  for (const [k, v] of al.blobs) falla.blobs.set(k, v);
+  const r = await COPIA.subir({ repo, almacen: falla, log: sinLog });
+  assert.strictEqual(r.ok, false);
+  assert.ok(falla.blobs.get(`fotos/${previo.commit}.tar.gz`).cuerpo.equals(fotoVieja), 'la foto que nombra el índice sigue entera');
+  const a = await COPIA.bajar({ almacen: falla, dir: tmp(), previo: null, log: sinLog });
+  assert.strictEqual(a.ok, true, `un sitio que arranca de cero abre la foto del índice viejo (${a.motivo})`);
+  // con el índice escrito, el sitio baja la foto nueva, que nombra «foto»
+  const ok = await COPIA.subir({ repo, almacen: al, log: sinLog });
+  assert.strictEqual(ok.subido, true, ok.motivo);
+  const idx = JSON.parse(al.blobs.get('actual.json').cuerpo);
+  assert.ok(idx.foto && idx.foto !== `fotos/${idx.commit}.tar.gz` && al.blobs.has(idx.foto), `el índice nombra la foto re-subida (${idx.foto})`);
+  const b = await COPIA.bajar({ almacen: al, dir: tmp(), previo: null, log: sinLog });
+  assert.strictEqual(b.ok, true, b.motivo);
+  assert.ok(fs.existsSync(path.join(b.carpeta, 'marca', 'logo.png')), 'el sitio abre la foto nueva, con el logo');
+  // la que nombra el índice no se borra por vieja; la de antes, a los 7 días, sí
+  for (const k of [idx.foto, `fotos/${idx.commit}.tar.gz`]) al.blobs.get(k).modificado = Date.now() - 8 * 86400000;
+  await COPIA.borrarViejas({ almacen: al, log: sinLog });
+  assert.ok(al.blobs.has(idx.foto) && !al.blobs.has(`fotos/${idx.commit}.tar.gz`), 'queda sólo la que nombra el índice');
+  // un «foto» que no tiene la forma de una foto: el índice es ilegible
+  for (const raro of ['../actual.json', 'fotos/../x.tar.gz', 'otra/carpeta.tar.gz', 7]) {
+    const mal = almacenDeJuguete();
+    for (const [k, v] of al.blobs) mal.blobs.set(k, v);
+    mal.blobs.set('actual.json', { cuerpo: Buffer.from(JSON.stringify({ ...idx, foto: raro })), modificado: Date.now() });
+    const c = await COPIA.bajar({ almacen: mal, dir: tmp(), previo: null, log: sinLog });
+    assert.deepStrictEqual([c.ok, c.codigo], [false, 'ilegible'], `foto ${JSON.stringify(raro)}: ${c.motivo}`);
+  }
 });
