@@ -752,3 +752,132 @@ test('T26 8.55-GitQueNoContesta_SeDice @story-8.55 @ac-2 @ac-3 — cuando git no
   assert.match(g.stderr, /no pude averiguar el repo git de [^\n]*suelta/, g.stderr);
   assert.doesNotMatch(g.stdout + g.stderr, /\[test-gate\] la story vive en otro repo: corren sólo/);
 });
+
+// ── el worktree del hermano por el número de la story, cuando las ramas se llaman distinto ───────────────
+
+/**
+ * Back (la story `id`) en un worktree de la rama `backRama`; Front (el código, con suites.json) con un worktree por cada
+ * rama de `frontRamas`. Las ramas de las specs y del código se llaman distinto y las dos nombran la story.
+ */
+function laboratorioPorNumero({ id = '1.4', backRama = 'docs/conciliacion-1-4-impl', frontRamas = ['feat/conciliacion-1-4-x'], story } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-num-')));
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': (story || STORY({ modificar: ['Front/scripts/lib/acme.js'] })).replace('story: "9.26"', `story: "${id}"`),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+  });
+  const front = repoGit(path.join(raiz, 'Front'), CON_SUITES);
+  const backWt = path.join(raiz, 'Back-wt');
+  git(back, 'worktree', 'add', '-q', '-b', backRama, backWt);
+  const frontWts = frontRamas.map((rama, i) => {
+    const wt = path.join(raiz, `Front-wt${i}`);
+    git(front, 'worktree', 'add', '-q', '-b', rama, wt);
+    return fs.realpathSync(wt);
+  });
+  return { raiz, back, front: fs.realpathSync(front), backWt: fs.realpathSync(backWt), frontWts, story: path.join(backWt, 'specs', 's.md') };
+}
+/** `companionRoots` en un proceso aparte, para leer también sus avisos por stderr. */
+function hermanosConAvisos(repo, story) {
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(COMPANION_LIB)}).companionRoots(process.argv[1], process.argv[2])))`, repo, story], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  return { roots: JSON.parse(r.stdout), avisos: r.stderr };
+}
+
+test('T1 HermanoMismoNombre_GanaSobreElNumero @story-7.34 @ac-1 — con una rama de mismo nombre, ésa', () => {
+  const lab = laboratorioPorNumero({ backRama: 'story/1-4', frontRamas: ['feat/otra-1-4', 'story/1-4'] });
+  const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(roots, [lab.frontWts[1]]);
+  assert.doesNotMatch(avisos, /nombra la story|no elijo|checkout principal/, avisos);
+});
+
+test('T2 HermanoPorNumero_UnoSolo_LoEligeYLoDice @story-7.34 @ac-2 — ramas distintas que nombran la story: el worktree, dicho', () => {
+  // 🔴 rojo: sin rama de mismo nombre el hermano era el checkout principal (otra rama): la guía no veía las pantallas.
+  const lab = laboratorioPorNumero();
+  const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(roots, [lab.frontWts[0]]);
+  assert.match(avisos, new RegExp(`${lab.frontWts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*feat/conciliacion-1-4-x`), avisos);
+  // Mayúsculas y punto: un número con letras y otro con punto también se reconocen.
+  const ca = laboratorioPorNumero({ id: 'CA-3', backRama: 'docs/CA-3-impl', frontRamas: ['feature/ca-3-validez'] });
+  assert.deepEqual(hermanosConAvisos(ca.backWt, ca.story).roots, [ca.frontWts[0]]);
+  const punto = laboratorioPorNumero({ id: '11.15', backRama: 'docs/x', frontRamas: ['feat/story-11.15-sso'] });
+  assert.deepEqual(hermanosConAvisos(punto.backWt, punto.story).roots, [punto.frontWts[0]]);
+});
+
+test('T3 HermanoPorNumero_PalabraEntera @story-7.34 @ac-3 — 1.4 no es 11-4, 1-45 ni 21.4', () => {
+  const { ramaNombraLaStory } = require(COMPANION_LIB);
+  // Tampoco es parte de un número más largo: `1.4.2` y `2-1-4` son otras stories.
+  for (const rama of ['feat/11-4-x', 'feat/1-45', 'feat/21.4', 'feat/x1-4', 'feat/1-4y', 'feat/1.4.2', 'feat/2-1-4-x']) {
+    assert.equal(ramaNombraLaStory(rama, '1.4'), false, rama);
+  }
+  for (const rama of ['feat/conciliacion-1-4-x', 'feat/1_4', 'docs/story-1.4', '1-4']) assert.equal(ramaNombraLaStory(rama, '1.4'), true, rama);
+  assert.equal(ramaNombraLaStory('feature/ca-3-x', 'CA-3'), true);
+  assert.equal(ramaNombraLaStory('feature/aca-3-x', 'CA-3'), false);
+  // Un id sin número (la story sin `story:` y con un nombre libre) no se busca en las ramas.
+  assert.equal(ramaNombraLaStory('feat/rediseno', 'rediseno'), false);
+  assert.equal(ramaNombraLaStory('feat/1-4', null), false);
+  // Con el arranque y el final que trae git: nada de expresiones del id (seguridad).
+  assert.equal(ramaNombraLaStory('feat/1x4', '1.4'), false);
+});
+
+test('T4 HermanoPorNumero_DosCandidatos_NoElige @story-7.34 @ac-4 — dos worktrees con el número: el declarado y se dice', () => {
+  const lab = laboratorioPorNumero({ frontRamas: ['feat/conciliacion-1-4-x', 'feature/1-4-lista-negra'] });
+  const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(roots, [lab.front]);
+  assert.match(avisos, /no elijo/, avisos);
+  assert.match(avisos, /feat\/conciliacion-1-4-x/, avisos);
+  assert.match(avisos, /feature\/1-4-lista-negra/, avisos);
+});
+
+test('T5 HermanoEnOtraRama_SeDice @story-7.34 @ac-5 — sin worktree, el checkout principal en otra rama se dice', () => {
+  const lab = laboratorioPorNumero({ backRama: 'docs/z', frontRamas: ['feat/sin-numero'] });
+  const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
+  assert.deepEqual(roots, [lab.front]);
+  assert.match(avisos, /checkout principal[^\n]*rama main/, avisos);
+  // Con el principal en la misma rama que la story (todo en main), nada que decir.
+  const enMain = laboratorioPorNumero({ frontRamas: [] });
+  const r = hermanosConAvisos(enMain.back, path.join(enMain.back, 'specs', 's.md'));
+  assert.deepEqual(r.roots, [enMain.front]);
+  assert.equal(r.avisos, '', r.avisos);
+});
+
+test('T6 TestGate_CorreElHermanoElegidoPorNumero @story-7.34 @ac-8 — el portón corre la suite del worktree elegido', () => {
+  const lab = laboratorioPorNumero();
+  fs.writeFileSync(path.join(lab.frontWts[0], 'scripts', 'lib', 'acme.js'), 'module.exports = 2;\n');
+  commitear(lab.frontWts[0], 'el cambio de la story');
+  const home = casa();
+  markerFalso(home, 't734a', lab.backWt, lab.story);
+  const r = spawnSync('bash', [TEST_GATE, lab.backWt, lab.story], { encoding: 'utf8', env: entorno(home, 't734a'), cwd: lab.backWt });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const art = artefacto(lab.backWt);
+  assert.deepEqual((art.companions || []).map((c) => c.root), [lab.frontWts[0]], JSON.stringify(art.companions));
+});
+
+test('T16 Matriz_EvidenciaDelHermanoElegidoPorNumero @story-7.34 @ac-7 — la matriz cuenta la evidencia del worktree elegido', () => {
+  const lab = laboratorioPorNumero();
+  fs.writeFileSync(path.join(lab.frontWts[0], 'scripts', 'lib', 'acme.js'), 'module.exports = 6;\n');
+  commitear(lab.frontWts[0], 'el cambio de la story');
+  const home = casa();
+  markerFalso(home, 't734b', lab.backWt, lab.story);
+  const g = spawnSync('bash', [TEST_GATE, lab.backWt, lab.story], { encoding: 'utf8', env: entorno(home, 't734b'), cwd: lab.backWt });
+  assert.equal(g.status, 0, `${g.stdout}\n${g.stderr}`);
+  const m = spawnSync(process.execPath, [path.join(SCRIPTS, 'runtime-matrix.js'), '--story', lab.story, '--json'], { encoding: 'utf8', env: entorno(home, 't734b'), cwd: lab.backWt });
+  assert.doesNotMatch(m.stdout + m.stderr, /repos NO declarados[^\n]*Front-wt0/, `${m.stdout}\n${m.stderr}`.slice(-2000));
+  // La evidencia se busca en el worktree elegido, no sólo «no se acusa»: su carpeta entra en las que lee la matriz.
+  fs.mkdirSync(path.join(lab.frontWts[0], '.advisors', 'dod-runtime'), { recursive: true });
+  const m2 = spawnSync(process.execPath, [path.join(SCRIPTS, 'runtime-matrix.js'), '--story', lab.story, '--json'], { encoding: 'utf8', env: entorno(home, 't734b'), cwd: lab.backWt });
+  const json = JSON.parse(m2.stdout.slice(m2.stdout.indexOf('{'), m2.stdout.lastIndexOf('}') + 1));
+  assert.ok((json.evidenceDirs || []).some((d) => d.startsWith(lab.frontWts[0])), JSON.stringify(json.evidenceDirs));
+});
+
+test('NumeroDeLaStory_SinCampoStory_SaleDelNombre @story-7.34 @ac-2 — sin `story:`, el número sale del nombre del archivo', () => {
+  // 🔴 rojo (pase adversarial): `story-1-4-y.md` sin `story:` daba el nombre entero como número y nunca elegía.
+  const { numeroDeLaStory } = require(COMPANION_LIB);
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'numero-')));
+  const sin = (nombre) => { const p = path.join(dir, nombre); fs.writeFileSync(p, '---\ntitle: x\n---\n# x\n'); return p; };
+  assert.equal(numeroDeLaStory(sin('story-1-4-y.md')), '1.4');
+  assert.equal(numeroDeLaStory(sin('story-1.4-y.md')), '1.4');
+  assert.equal(numeroDeLaStory(sin('1-4-y.md')), '1.4');
+  assert.equal(numeroDeLaStory(sin('rediseno-del-tablero.md')), null);
+  const con = path.join(dir, 'story-9-9-z.md');
+  fs.writeFileSync(con, '---\nstory: "CA-3"\n---\n');
+  assert.equal(numeroDeLaStory(con), 'CA-3', 'el campo `story:` manda sobre el nombre');
+});

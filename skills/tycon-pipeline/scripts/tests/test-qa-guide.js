@@ -37,6 +37,16 @@ console.log('qa-guide — casos:');
   check('ACs con encabezado ### ACn: trae el texto', acs.length === 2 && /renderiza/i.test(acs[0].text));
 }
 
+// Una sola regla de «tiene pasos-tester» para la guía y su chequeo: pasos «- …» o una descripción (los pasos numerados
+// quedan como descripción); un «Usuario:» suelto no son pasos.
+{
+  const p = qa.parsePasos('## AC 1\n- Abrí la lista.\n→ Ves 3.\n\n## AC 2\nCargá una factura.\n\n1. Entrá.\n2. Abrí la primera.\n\n## AC 3\nUsuario: cliente\n');
+  check('TienePasos_NumeradosYDescripcion_SoloUsuarioNo: pasos «- …» cuentan', qa.tienePasos && qa.tienePasos(p[1]) === true);
+  check('TienePasos_NumeradosYDescripcion_SoloUsuarioNo: numerados (descripción) cuentan', qa.tienePasos && qa.tienePasos(p[2]) === true);
+  check('TienePasos_NumeradosYDescripcion_SoloUsuarioNo: sólo Usuario no cuenta', qa.tienePasos && qa.tienePasos(p[3]) === false);
+  check('TienePasos_NumeradosYDescripcion_SoloUsuarioNo: sin bloque no cuenta', qa.tienePasos && qa.tienePasos(undefined) === false);
+}
+
 // 1. parseAcsWithText: numerados GWT + bold-label, texto multilínea.
 const spec = [
   '# Story 9.9 — Test',

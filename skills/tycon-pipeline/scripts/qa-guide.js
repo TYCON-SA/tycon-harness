@@ -166,6 +166,13 @@ function parsePasos(md) {
   return out;
 }
 
+// ¿El bloque de un AC trae pasos para el tester? Pasos «- …» o una descripción: los pasos numerados («1. …»), la forma
+// más común en las guías reales, quedan como descripción. Un «Usuario:» suelto no son pasos. La guía y su chequeo
+// preguntan acá: con dos reglas, la guía avisaba «sin pasos» de un AC que el chequeo daba por cubierto.
+function tienePasos(b) {
+  return !!(b && ((b.pairs && b.pairs.length) || (b.desc && b.desc.trim())));
+}
+
 // Secuencia (orden + secciones) del archivo de pasos: el ORDEN en que aparecen los `## AC N`
 // define el orden en que el tester los recorre (optimizado para terminar rápido, reusando setup);
 // las líneas `## GRUPO <título>` renderizan un separador de sección. Devuelve [{group}|{ac}] en orden.
@@ -463,10 +470,47 @@ function qaLocation(storyPath) {
 }
 
 // Dónde se buscan las pantallas de la story: su repo, el workspace (rutas escritas desde ahí) y los repos acompañantes
-// declarados en `.tycon/advisors.yaml` — el mismo criterio con que la matriz resuelve los archivos y la evidencia.
-// Una config que no se puede leer se DICE (revisores del paso 5): callada, las pantallas de un acompañante se leían
-// como «no están en el disco» sin que nadie supiera por qué.
-function screenRoots(repoRoot, notes) {
+// declarados en `.tycon/advisors.yaml`, cada uno en el worktree de la rama de la story — el mismo criterio con que la
+// matriz y el portón de pruebas eligen el hermano (`companionRoots`). Una ruta que nombra a un hermano (`<hermano>/x`,
+// `../<hermano>/x`, `(<hermano>) x`) se busca sólo en el que se eligió: en el checkout principal estaría el código de
+// otra rama. Una config que no se puede leer se DICE (revisores del paso 5): callada, las pantallas de un acompañante se
+// leían como «no están en el disco» sin que nadie supiera por qué.
+function screenSearch(repoRoot, notes, storyPath) {
+  if (!repoRoot) return { roots: [], resolve: undefined };
+  const roots = screenRoots(repoRoot, notes, storyPath);
+  const companions = roots.slice(2);
+  const lib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+  // El repo de git de una carpeta (el mismo para el checkout principal y todos sus worktrees), o null.
+  const repoGit = (dir) => {
+    const r = require('child_process').spawnSync('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+    return r.status === 0 ? lib.real(String(r.stdout || '').trim()) : null;
+  };
+  const propio = repoGit(repoRoot);
+  if (!propio && notes) notes.push(`no pude identificar el repo git de la story (${repoRoot}): una pantalla escrita como «(<repo de la story>) ruta» se busca en la carpeta con ese nombre, que puede estar en otra rama`);
+  const resolve = (entrada) => {
+    const pref = lib.parseRepoPrefixed(entrada);
+    if (pref) {
+      let { root } = lib.resolveRepoRef(pref.ref, repoRoot, companions);
+      if (!root) return undefined;
+      // `(<repo de la story>) x` desde su worktree: la carpeta vecina con ese nombre es el checkout principal, en otra rama.
+      if (propio && repoGit(root) === propio) root = repoRoot;
+      const abs = path.join(root, pref.rest);
+      // Como las otras dos formas, la ruta no sale de su repo.
+      const r = lib.real(root);
+      const x = lib.real(abs);
+      return x === r || x.startsWith(r + path.sep) ? abs : null;
+    }
+    const d = String(entrada || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
+    const r = lib.resolveDeclared(d, repoRoot, companions);
+    if (r.where) return path.join(r.root, r.rel);
+    const nombra = companions.some((c) => { const n = lib.label(c); return d.startsWith(`${n}/`) || d.startsWith(`../${n}/`); });
+    return nombra ? null : undefined;
+  };
+  return { roots, resolve };
+}
+
+function screenRoots(repoRoot, notes, storyPath) {
   if (!repoRoot) return [];
   const { parseEvidenceConfig } = require(path.join(__dirname, 'lib', 'evidence-config.js'));
   let companions = [];
@@ -484,6 +528,12 @@ function screenRoots(repoRoot, notes) {
     companions = cfg.roots || [];
     for (const m of cfg.missing || []) decir(`repo acompañante declarado que no está en el disco (sus pantallas no se pueden encontrar): ${m}`);
     for (const w of cfg.warnings || []) decir(w);
+    // Cada hermano, en el worktree de la rama de la story (o el declarado, con su aviso): la misma elección que la matriz.
+    if (companions.length) {
+      try { companions = require(path.join(__dirname, 'lib', 'companion-repos.js')).companionRoots(repoRoot, storyPath); } catch (e) {
+        decir(`no pude elegir el worktree de los repos acompañantes (${e.message}): sus pantallas se buscan en las carpetas declaradas, que pueden estar en otra rama`);
+      }
+    }
   } catch (e) {
     decir(`no pude leer los repos acompañantes de .tycon/advisors.yaml (${e.message}): las pantallas se buscan sólo en el repo de la story y en su carpeta`);
   }
@@ -511,11 +561,12 @@ function readListField(md, key) {
 // dueño la vio «inentendible» en staging. La capa 4 leía sólo la guía; las marcas sobre textos de la pantalla se
 // «resolvieron» reescribiendo la guía, y el texto malo siguió en el código. Ahora: (a) la pasada del tester también
 // lee la pantalla y deja `<clave>-legibilidad-ui.md`; (b) una marca citada con «» que sigue en la pantalla frena.
-function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot }) {
+function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
   const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
   const problems = []; const notes = [];
-  const { found, missing } = ui.screenFiles(fm, body, screenRoots(repoRoot, notes));
+  const busqueda = screenSearch(repoRoot, notes, storyPath);
+  const { found, missing } = ui.screenFiles(fm, body, busqueda.roots, busqueda.resolve);
   // Una pantalla declarada que no está no se puede revisar: frena (revisores del paso 5). Callada, una story cuyas
   // pantallas no se encontraban pasaba el candado sin que nadie mirara nada.
   if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos`);
@@ -719,7 +770,8 @@ function main() {
     const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
     const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---/, '');
     const avisos = [];
-    const { found, missing } = ui.screenFiles(fm, body, screenRoots(matrix.repoRoot, avisos));
+    const busqueda = screenSearch(matrix.repoRoot, avisos, abs);
+    const { found, missing } = ui.screenFiles(fm, body, busqueda.roots, busqueda.resolve);
     for (const a of avisos) console.log(`· ${a}`);
     if (!found.length) console.log(`qa-guide --ui-texts: la story ${sid} no declara pantallas que estén en el disco (.tsx/.jsx/.vue/.svelte).`);
     for (const s of found) {
@@ -773,7 +825,7 @@ function main() {
     // Lo destapó una prueba en frío con una story nueva; con la story ya armada no se veía.
     const pasosEsperado = path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`);
     if (!pasosPath) problems.push(`(1) Falta el archivo de pasos-tester: ${pasosEsperado}`);
-    const sinPasos = runtimeAcs.filter((n) => !pasosByAc[n]);
+    const sinPasos = runtimeAcs.filter((n) => !tienePasos(pasosByAc[n]));
     if (sinPasos.length) problems.push(`(2) ACs verificados corriendo SIN pasos-tester: ${sinPasos.map((n) => '#' + n).join(', ')}`);
     for (const n of Object.keys(pasosByAc)) {
       const b = pasosByAc[n];
@@ -813,7 +865,7 @@ function main() {
       );
     }
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
-    const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot });
+    const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
     problems.push(...pantalla.problems);
     for (const nota of pantalla.notes) console.log(`   · ${nota}`);
     const maqueta = mockupLayers({ qaDir, qk, mockupSha: opt('--mockup-sha'), screens: pantalla.screens });
@@ -846,7 +898,7 @@ function main() {
       tierNote = `No se puede verificar corriendo la app: ${pa.declReason || '(razón no declarada)'}. ` +
         `Cubierto por el test **${pa.coveredBy || (pa.code || []).join(', ') || 'de código'}** — el tester puede revisar que ese test exista y pase, o inspeccionar la base/el esquema directamente.`;
     }
-    const needsPasos = pruebas.length === 0 && pa.verdict === 'RUNTIME';
+    const needsPasos = !tienePasos(pasosByAc[a.n]) && pa.verdict === 'RUNTIME';
     const needsDesc = !pasos.desc;
     // Rol/usuario de prueba (badge del header): explícito en pasos.md (`Usuario:`), o el default.
     const { roles, roleNone } = resolveRoles(pasos.role, t.tier, defaultRole);
@@ -936,7 +988,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { parseAcsWithText, parseTestsFull, parsePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation };
+module.exports = { parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation };
 if (require.main === module) {
   // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

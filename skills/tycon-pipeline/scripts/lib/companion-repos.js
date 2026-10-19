@@ -75,11 +75,12 @@ function companionRoots(repo, storyPath, opts) {
   const vistos = new Set([real(repo)]);
   const out = [];
   const rama = ramaDe(repoDeLaStory || repo);
+  const numero = numeroDeLaStory(storyPath);
   for (const f of fuentes) {
     const cfg = parseEvidenceConfig(f);
     if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
     for (const r of cfg.roots) {
-      const k = enLaMismaRama(real(r), rama);
+      const k = enLaMismaRama(real(r), rama, numero);
       if (vistos.has(k)) continue;
       vistos.add(k);
       out.push(k);
@@ -101,18 +102,63 @@ function ramaDe(dir) {
   return b || null;
 }
 
-function avisar(texto) { process.stderr.write(`[hermanos] ⚠️  ${texto}\n`); }
+// Cada aviso, una vez por proceso: varios lugares de un mismo comando preguntan por los mismos hermanos.
+const AVISADOS = new Set();
+function avisar(texto) {
+  if (AVISADOS.has(texto)) return;
+  AVISADOS.add(texto);
+  process.stderr.write(`[hermanos] ⚠️  ${texto}\n`);
+}
+
+/**
+ * El número de la story (`1.4`, `CA-3`), o null: sin story legible, o sin número. El campo `story:` manda; sin él, el
+ * número del nombre del archivo (`story-1-4-x.md`, `1.4-x.md` → `1.4`). Un nombre sin número no se busca en las ramas.
+ */
+function numeroDeLaStory(storyPath) {
+  if (!storyPath) return null;
+  let fm;
+  try { fm = (fs.readFileSync(storyPath, 'utf8').match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/) || [])[1] || ''; } catch { return null; }
+  const campo = fm.match(/^story:\s*["']?([A-Za-z0-9][\w.-]*)/m);
+  if (campo) return /\d/.test(campo[1]) ? campo[1] : null;
+  const nombre = path.basename(storyPath, '.md').match(/^(?:story[-_])?(\d+(?:[.-]\d+)+)(?:$|[-_])/i);
+  return nombre ? nombre[1].replace(/-/g, '.') : null;
+}
+
+/**
+ * ¿La rama nombra a la story? Las partes del número, con `.`, `-` o `_` indistintos entre ellas y sin distinguir
+ * mayúsculas (`1.4` en `feature/<nombre>-1-4-<nombre>`, `CA-3` en `feature/ca-3-<nombre>`), como palabra entera y no como parte de un
+ * número más largo: `1.4` no es `11-4`, `1-45`, `1.4.2` ni `2-1-4`.
+ */
+function ramaNombraLaStory(rama, numero) {
+  if (!rama || !numero || !/\d/.test(numero)) return false;
+  const partes = String(numero).toLowerCase().split(/[._-]+/).filter(Boolean)
+    .map((p) => p.replace(/[^a-z0-9]/g, ''));
+  if (!partes.length || partes.some((p) => !p)) return false;
+  const re = new RegExp(`(?:^|[^a-z0-9])${partes.join('[._-]')}(?=$|[^a-z0-9])`, 'g');
+  const r = String(rama).toLowerCase();
+  for (let m = re.exec(r); m; m = re.exec(r)) {
+    const desde = m.index + (/^[a-z0-9]/.test(m[0]) ? 0 : 1);
+    const hasta = m.index + m[0].length;
+    if (/\d[._-]$/.test(r.slice(0, desde)) || /^[._-]\d/.test(r.slice(hasta))) continue;
+    return true;
+  }
+  return false;
+}
 
 // La carpeta de un worktree → la ruta con que la declara `.tycon/advisors.yaml` (su `label` es el nombre de ésa, y las
 // rutas `../<hermano>/x` de la story se resuelven contra ella).
 const DECLARADO = new Map();
 
 /**
- * El hermano declarado, o su worktree en la misma rama que el repo de la story. Desde el worktree de una story,
- * `../<hermano>` es el checkout compartido (en `main`), no el código que la story cambió: el portón probaba otra cosa.
- * Con la cabeza suelta, o sin un worktree del hermano en esa rama, el declarado tal cual.
+ * El hermano declarado, o su worktree en la rama de la story. Desde el worktree de una story, `../<hermano>` es el
+ * checkout compartido (en `main`), no el código que la story cambió: el portón probaba otra cosa.
+ * Primero, el worktree de la rama de mismo nombre. Si no hay, el ÚNICO worktree en disco cuya rama nombra la story
+ * (`numero`): las ramas de las specs y del código suelen llamarse distinto (`docs/…-1-4-impl` y `feat/…-1-4-…`). Con dos
+ * o más candidatos no se adivina: el mismo número se repite entre carpetas de specs de un producto. Toda elección que
+ * no sea la de mismo nombre se dice en una línea, y también la caída al declarado cuando está en otra rama.
+ * Con la cabeza suelta, el declarado tal cual.
  */
-function enLaMismaRama(declarado, rama) {
+function enLaMismaRama(declarado, rama, numero) {
   if (!rama) return declarado;
   const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
   if (r.error || r.status !== 0) {
@@ -125,15 +171,33 @@ function enLaMismaRama(declarado, rama) {
     avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de la rama ${rama}`);
     return declarado;
   }
-  const sub = path.relative(real(String(top.stdout || '').trim()), declarado);
-  for (const bloque of String(r.stdout || '').split(/\n\s*\n/)) {
-    const ruta = (bloque.match(/^worktree (.+)$/m) || [])[1];
-    const b = (bloque.match(/^branch refs\/heads\/(.+)$/m) || [])[1];
-    if (ruta && b === rama && esDir(path.join(ruta, sub))) {
-      const wt = real(path.join(ruta, sub));
-      if (wt !== declarado) DECLARADO.set(wt, declarado);
-      return wt;
-    }
+  const raiz = real(String(top.stdout || '').trim());
+  const sub = path.relative(raiz, declarado);
+  const elegir = (ruta) => {
+    const wt = real(path.join(ruta, sub));
+    if (wt !== declarado) DECLARADO.set(wt, declarado);
+    return wt;
+  };
+  const worktrees = String(r.stdout || '').split(/\n\s*\n/).map((bloque) => ({
+    ruta: (bloque.match(/^worktree (.+)$/m) || [])[1],
+    rama: (bloque.match(/^branch refs\/heads\/(.+)$/m) || [])[1],
+  })).filter((w) => w.ruta && esDir(path.join(w.ruta, sub)));
+  const mismoNombre = worktrees.find((w) => w.rama === rama);
+  if (mismoNombre) return elegir(mismoNombre.ruta);
+  const nombre = path.basename(declarado);
+  const candidatos = worktrees.filter((w) => ramaNombraLaStory(w.rama, numero));
+  if (candidatos.length === 1) {
+    const wt = elegir(candidatos[0].ruta);
+    avisar(`${nombre} se lee del worktree ${wt} (rama ${candidatos[0].rama}): es el único cuya rama nombra la story ${numero}`);
+    return wt;
+  }
+  if (candidatos.length > 1) {
+    avisar(`${nombre}: ${candidatos.length} worktrees nombran la story ${numero} (${candidatos.map((w) => `${real(w.ruta)} en ${w.rama}`).join(' · ')}): no elijo, uso el declarado ${declarado}`);
+    return declarado;
+  }
+  const propio = worktrees.find((w) => real(w.ruta) === raiz);
+  if (propio && propio.rama && propio.rama !== rama) {
+    avisar(`${nombre} se lee del checkout principal ${declarado}, que está en la rama ${propio.rama} (la story está en ${rama}): si el código de la story está en otro worktree, que su rama nombre la story`);
   }
   return declarado;
 }
@@ -307,7 +371,7 @@ function declaredIn(storyRepo, storyPath, companionRoot) {
 }
 
 module.exports = {
-  companionRoots, ramaDe, enLaMismaRama, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, enLaMismaRama, ramaNombraLaStory, numeroDeLaStory, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 
