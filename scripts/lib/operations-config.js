@@ -124,7 +124,12 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+// `comment`: la clave de un dato (una máquina, un producto, un proyecto) que es un comentario; `fieldComment`: la de un
+// objeto de campos fijos, donde un nombre con «_» no puede ser un campo (`_comment`, `_note`). «__» es comentario con
+// cualquier valor (`__token_doc` explica, no es una credencial: lo cuida team-repos.test.js); un «_» solo, sólo si es
+// texto y su nombre no tiene forma de secreto.
 const comment = (k) => k.startsWith('__');
+const fieldComment = (k, v) => comment(k) || (k.startsWith('_') && !SECRET_KEY.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 
 function identityProblems(v, at) {
   if (typeof v !== 'string' || !v.trim()) return [{ path: at, message: 'tiene que ser una identidad (un texto no vacío)' }];
@@ -133,14 +138,14 @@ function identityProblems(v, at) {
 }
 
 function unknownKeys(obj, allowed, at) {
-  return Object.keys(obj).filter((k) => !comment(k) && !allowed.includes(k)).map((k) => ({ path: at ? `${at}.${k}` : k, message: 'clave desconocida' }));
+  return Object.keys(obj).filter((k) => !fieldComment(k, obj[k]) && !allowed.includes(k)).map((k) => ({ path: at ? `${at}.${k}` : k, message: 'clave desconocida' }));
 }
 
 /** Las claves de `obj` (y de sus objetos, en cualquier nivel) que no van: con forma de secreto o desconocidas. */
 function siteKeyProblems(obj, allowed, at) {
   const problems = [];
   for (const k of Object.keys(obj)) {
-    if (comment(k)) continue;
+    if (fieldComment(k, obj[k])) continue;
     const here = `${at}.${k}`;
     if (SECRET_KEY.test(k)) { problems.push({ path: here, message: 'clave con forma de secreto: los secretos van en las variables de la plataforma del sitio, nunca en operations.json' }); continue; }
     if (allowed && allowed.includes(k)) continue;
@@ -260,7 +265,9 @@ function notifyProblems(notify) {
   if (!isObject(notify)) return [{ path: 'notify', message: 'tiene que ser un objeto { "channel": … }' }];
   const problems = [];
   for (const k of Object.keys(notify)) {
-    if (comment(k) || NOTIFY_KEYS.includes(k)) continue;
+    if (NOTIFY_KEYS.includes(k)) continue;
+    // un «_» solo no esconde el nombre del destino del aviso (el chat, el webhook): eso es una credencial
+    if (comment(k) || (fieldComment(k, notify[k]) && !/webhook|chat|url/i.test(k))) continue;
     // el chat, el token o la dirección del webhook: el destino es una credencial y va en los secretos del pipeline
     if (SECRET_KEY.test(k) || /webhook|chat|url/i.test(k)) problems.push({ path: `notify.${k}`, message: 'clave con forma de secreto: el destino del aviso va en los secretos del pipeline, nunca en operations.json' });
     else problems.push({ path: `notify.${k}`, message: 'clave desconocida' });

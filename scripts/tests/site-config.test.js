@@ -94,6 +94,43 @@ test('T12 Umbrales_SoloFilasConocidas_ElRestoIgual @story-2.29 @ac-11 — thresh
   assert.deepStrictEqual(Object.keys(tp.data), ['corridas_al_final', 'rojos']);
 });
 
+test('T7.35-1 Thresholds_UnderscoreComment_NotAProblem @story-7.35 @ac-5 — un comentario con un solo «_» no es una fila: ni problema ni aviso', () => {
+  const conComentarios = ORG.formatJson({
+    ...SOURCES_ORG,
+    thresholds: { _comment: 'los umbrales del tablero', ...SOURCES_ORG.thresholds, corridas_al_final: { ...SOURCES_ORG.thresholds.corridas_al_final, _note: 'proporción' } },
+  });
+  const r = ORG.thresholdsParse(conComentarios, { arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  assert.deepStrictEqual(r.avisos, []);
+  // la clave inventada sin «_» se sigue mirando: sólo se saltean los comentarios (agregada, un problema)
+  const inventada = ORG.formatJson({ ...SOURCES_ORG, thresholds: { ...SOURCES_ORG.thresholds, comment: 'x' } });
+  const previas = Object.keys(SOURCES_ORG.thresholds);
+  assert.deepStrictEqual(ORG.thresholdsParse(inventada, { arnes: { thresholds: ARNES_THRESHOLDS }, previas }).problems.map((p) => p.path), ['thresholds.comment']);
+  // un «_» con forma de secreto no es comentario (se mira como fila); «__» lo es con cualquier valor
+  const raras = ORG.formatJson({ ...SOURCES_ORG, thresholds: { ...SOURCES_ORG.thresholds, _token: 'x', __meta: { a: 1 } } });
+  assert.deepStrictEqual(ORG.thresholdsParse(raras, { arnes: { thresholds: ARNES_THRESHOLDS }, previas }).problems.map((p) => p.path), ['thresholds._token']);
+});
+
+test('T7.35-2 ApplySection_KeepsUnderscoreKeys @story-7.35 @ac-6 — proponer no pierde los comentarios con «_» que el borrador no trae', () => {
+  // Umbrales: el borrador reemplaza el bloque entero; los comentarios del bloque y de cada fila se conservan
+  const seccion = ORG.SECCIONES.find((s) => s.id === 'umbrales');
+  const archivo = ORG.formatJson({
+    ...SOURCES_ORG,
+    thresholds: { _comment: 'los umbrales del tablero', ...SOURCES_ORG.thresholds, corridas_al_final: { ...SOURCES_ORG.thresholds.corridas_al_final, _note: 'proporción' } },
+  });
+  const borrador = { corridas_al_final: { direction: 'mayor_es_mejor', ok_min: 0.9, bad_max: 0.4 }, rojos: SOURCES_ORG.thresholds.rojos };
+  const r = ORG.revisar({ seccion, texto: archivo, borrador, lectores: {}, arnes: { thresholds: ARNES_THRESHOLDS } });
+  assert.strictEqual(r.ok, true, JSON.stringify(r.problems));
+  const th = JSON.parse(r.texto).thresholds;
+  assert.strictEqual(th._comment, 'los umbrales del tablero');
+  assert.strictEqual(th.corridas_al_final._note, 'proporción');
+  assert.strictEqual(th.corridas_al_final.ok_min, 0.9, 'el cambio del borrador entra');
+  // una sección de archivo entero: el comentario de arriba que el borrador no trae se conserva
+  const entera = { id: 'x', claves: null };
+  const out = ORG.aplicarSeccion({ _lea_esto_primero: 'nota', __doc: 'doc', version: 1 }, entera, { version: 2 });
+  assert.deepStrictEqual(out, { version: 2, _lea_esto_primero: 'nota', __doc: 'doc' });
+});
+
 test('T28 Umbrales_FormatoAjenoYClaveRetirada @story-2.29 @ac-11 — tabs: sólo lectura con el motivo; clave que el arnés ya no trae: aviso sin bloquear', () => {
   const conTabs = `${JSON.stringify(SOURCES_ORG, null, '\t')}\n`;
   const r = ORG.thresholdsParse(conTabs, { arnes: { thresholds: ARNES_THRESHOLDS } });
@@ -1102,6 +1139,8 @@ test('7.29-T22 Config_Modelos_SeccionPorLosDosTransportes @story-7.29 @ac-5 — 
   const p = await pantallaFalsa([{ id: 'modelos', titulo: 'm', repo: 'perfil', estado: 'cargado', borrador: {}, problems: [], avisos: [], extras: { hoy: MOD.DEFAULTS } }]);
   const opciones = p.todo(p.sec('modelos')).filter((n) => n.tag === 'option').map((n) => n.textContent);
   assert.ok(opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.reviewers})`) && opciones.includes(`sin declarar (hoy: ${MOD.DEFAULTS.session.heavy})`), opciones.join(' · '));
+  // la sesión de una story pesada dice opus de fábrica; fable sólo si la organización lo declara
+  assert.ok(opciones.includes('sin declarar (hoy: opus)') && !opciones.some((o) => /hoy: fable/.test(o)), opciones.join(' · '));
   await conPerfil({}, async ({ seccion, revisar, proponer }) => {
     const v = await seccion('modelos');
     assert.strictEqual(v.estado, 'cargado', JSON.stringify(v));

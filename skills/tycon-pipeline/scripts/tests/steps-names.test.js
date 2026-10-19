@@ -200,11 +200,12 @@ test('T3 TandaA_MarkerAndHooksUnchanged — el marcador y las decisiones de los 
   const r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief'], sid);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const m = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
-  // las claves de hoy (medidas el 2026-10-15 con `start` sobre el código anterior a la tanda A), y ni una más
+  // las claves de hoy (medidas el 2026-10-15 con `start` sobre el código anterior a la tanda A, más las cuatro del
+  // tamaño de la corrida: size, size_reason, estimate_min, estimate_source), y ni una más
   assert.deepStrictEqual(Object.keys(m).sort(), [
-    'autonomous', 'baseSha', 'checks', 'evidenceDir', 'fileEvents', 'filesTouched', 'filesTouchedAt', 'iter', 'iterations',
-    'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId', 'sprint', 'startedAt', 'stepTimings',
-    'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
+    'autonomous', 'baseSha', 'checks', 'estimate_min', 'estimate_source', 'evidenceDir', 'fileEvents', 'filesTouched',
+    'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId',
+    'size', 'size_reason', 'sprint', 'startedAt', 'stepTimings', 'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
   ]);
   assert.strictEqual(m.stepScheme, undefined, 'sin stepScheme: eso es la tanda B');
   assert.deepStrictEqual(m.stepsCompleted, [0]);

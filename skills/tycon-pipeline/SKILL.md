@@ -144,7 +144,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   run + cómo levantar el MCP; sin binario → acción de instalación y recién ahí degradar. Sin la tool
   `Workflow` → preguntar "¿sigo sin el pase adversarial?". Lista: `pipeline.js tooling-expected`.
 - **H.iii — model/effort hint**: `pipeline.js start --session-model <el de la sesión>` trae `model_hint`
-  (LOW → sonnet · NORMAL → opus · pesada → fable, o la de la org.) y el effort (tabla en PIPE-C8;
+  (LOW → sonnet · si no, opus; fable sólo si la organización lo pide) y el effort (tabla en PIPE-C8;
   `max` nunca automático). Si no matchea, sugerir `/model` en 1 línea;
   `session_check` avisa del techo. Advisory; nunca bloquea.
 - **I.i — ATDD con gate mecánico**: los tests se escriben ANTES del código. `on-atdd-preedit.js` deniega

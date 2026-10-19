@@ -39,7 +39,8 @@ const DEFAULTS = {
   reviewers_reloop: SONNET,
   adversarial: { model: SONNET, heavy: OPUS, fable_question: 'ask' },
   helpers: HAIKU,
-  session: { low: SONNET, normal: OPUS, heavy: FABLE },
+  // una story pesada sugiere opus: el arnés no sugiere fable solo; una organización lo elige con models.session.heavy
+  session: { low: SONNET, normal: OPUS, heavy: OPUS },
 };
 
 /** El modelo de cada tier de costo de un revisor (lo que en pipeline.js era TIER_TO_MODEL). */

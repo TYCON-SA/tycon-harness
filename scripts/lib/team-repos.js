@@ -134,7 +134,13 @@ const NAME = {
 };
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
+// `comment`: la clave de un dato (un revisor) que es un comentario; `fieldComment`: la de un objeto de campos fijos,
+// donde un nombre con «_» no puede ser un campo (`_comment`, `_lea_esto_primero`). Un comentario es texto: un «_» con
+// forma de secreto, o que guarda un objeto, se revisa como cualquier otra clave. «__» sigue siendo comentario con
+// cualquier valor, como antes.
 const comment = (k) => k.startsWith('__');
+const COMMENT_SECRET = /token|secret|sas|password|passwd|pwd|key|credential/i;
+const fieldComment = (k, v) => comment(k) || (k.startsWith('_') && !COMMENT_SECRET.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 
 /** Los problemas de un repo en `at`; `[]` si está bien. */
 function repoProblems(value, at) {
@@ -146,7 +152,7 @@ function repoProblems(value, at) {
   const out = [];
   const wanted = REPO_KEYS[platform];
   for (const k of Object.keys(value)) {
-    if (k === 'platform' || comment(k)) continue;
+    if (k === 'platform' || fieldComment(k, value[k])) continue;
     if (!wanted.includes(k)) out.push({ path: `${at}.${k}`, message: platform === 'github' && k === 'project' ? 'un repo de GitHub no lleva project' : `clave desconocida en un repo de ${platform}` });
   }
   for (const k of wanted) {
@@ -172,7 +178,7 @@ function mergeSuitesProblems(value) {
   if (!isObject(value)) return [{ path: 'merge_suites', message: 'tiene que ser un objeto con default y repos' }];
   const out = [];
   for (const k of Object.keys(value)) {
-    if (!comment(k) && k !== 'default' && k !== 'repos') out.push({ path: `merge_suites.${k}`, message: 'clave desconocida' });
+    if (!fieldComment(k, value[k]) && k !== 'default' && k !== 'repos') out.push({ path: `merge_suites.${k}`, message: 'clave desconocida' });
   }
   if (value.default !== undefined) out.push(...ruleProblem(value.default, 'merge_suites.default'));
   if (value.repos === undefined) return out;
@@ -181,7 +187,7 @@ function mergeSuitesProblems(value) {
   value.repos.forEach((e, i) => {
     const at = `merge_suites.repos.${i}`;
     if (!isObject(e)) { out.push({ path: at, message: 'tiene que ser un objeto { repo, rule, full_tests_pipeline }' }); return; }
-    for (const k of Object.keys(e)) if (!comment(k) && !MERGE_ENTRY_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
+    for (const k of Object.keys(e)) if (!fieldComment(k, e[k]) && !MERGE_ENTRY_KEYS.includes(k)) out.push({ path: `${at}.${k}`, message: 'clave desconocida' });
     if (e.rule === undefined && e.full_tests_pipeline === undefined) out.push({ path: at, message: 'tiene que traer rule o full_tests_pipeline (sin ninguno, la entrada no dice nada)' });
     if (e.rule !== undefined) out.push(...ruleProblem(e.rule, `${at}.rule`));
     const repoErrs = e.repo === undefined ? [{ path: `${at}.repo`, message: 'falta' }] : repoProblems(e.repo, `${at}.repo`);
@@ -230,7 +236,7 @@ function modelsProblems(value) {
   if (!isObject(value)) return [{ path: 'models', message: 'tiene que ser un objeto (los modelos de cada trabajo del pipeline)' }];
   const out = [];
   for (const k of Object.keys(value)) {
-    if (comment(k)) continue;
+    if (fieldComment(k, value[k])) continue;
     if (!MODELS_KEYS.includes(k)) { out.push({ path: `models.${k}`, message: 'clave desconocida' }); continue; }
     const v = value[k];
     const at = `models.${k}`;
@@ -246,7 +252,7 @@ function modelsProblems(value) {
     } else if (MODELS_SUBKEYS[k]) {
       if (!isObject(v)) { out.push({ path: at, message: `tiene que ser un objeto con ${MODELS_SUBKEYS[k].join(', ')}` }); continue; }
       for (const [s, m] of Object.entries(v)) {
-        if (comment(s)) continue;
+        if (fieldComment(s, m)) continue;
         if (!MODELS_SUBKEYS[k].includes(s)) out.push({ path: `${at}.${s}`, message: 'clave desconocida' });
         else if (s === 'fable_question') {
           if (!FABLE_QUESTION.includes(m)) out.push({ path: `${at}.${s}`, message: `tiene que ser «ask» o «never» (es ${JSON.stringify(m)})` });
@@ -264,7 +270,7 @@ function modelsProblems(value) {
 function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
   const out = [];
-  for (const k of Object.keys(value)) if (!comment(k) && !WAIT_NOTICE_KEYS.includes(k)) out.push({ path: `wait_notice.${k}`, message: 'clave desconocida' });
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !WAIT_NOTICE_KEYS.includes(k)) out.push({ path: `wait_notice.${k}`, message: 'clave desconocida' });
   const m = value.minutes;
   if (m !== undefined && !(Number.isInteger(m) && m >= 1 && m <= WAIT_NOTICE_MAX)) {
     out.push({ path: 'wait_notice.minutes', message: `tiene que ser un número entero de minutos, de 1 a ${WAIT_NOTICE_MAX} (es ${JSON.stringify(m)})` });
@@ -293,7 +299,7 @@ function weeklyReviewProblems(value) {
 function coverageProblems(value) {
   if (!isObject(value)) return [{ path: 'coverage', message: 'tiene que ser un objeto (el umbral de cobertura de las líneas tocadas)' }];
   const out = [];
-  for (const k of Object.keys(value)) if (!comment(k) && !COVERAGE_KEYS.includes(k)) out.push({ path: `coverage.${k}`, message: 'clave desconocida' });
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !COVERAGE_KEYS.includes(k)) out.push({ path: `coverage.${k}`, message: 'clave desconocida' });
   const p = value.min_touched_lines_pct;
   if (p !== undefined && !(Number.isInteger(p) && p >= 1 && p <= 100)) {
     out.push({ path: 'coverage.min_touched_lines_pct', message: `tiene que ser un porcentaje entero, de 1 a 100 (es ${JSON.stringify(p)})` });
@@ -305,7 +311,7 @@ function coverageProblems(value) {
 function stackProblems(value) {
   if (!isObject(value)) return [{ path: 'stack', message: 'tiene que ser un objeto (la tecnología de la organización)' }];
   const out = [];
-  for (const k of Object.keys(value)) if (!comment(k) && !STACK_KEYS.includes(k)) out.push({ path: `stack.${k}`, message: 'clave desconocida' });
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !STACK_KEYS.includes(k)) out.push({ path: `stack.${k}`, message: 'clave desconocida' });
   const ex = value.code_extensions;
   if (ex !== undefined) {
     if (!Array.isArray(ex)) out.push({ path: 'stack.code_extensions', message: 'tiene que ser una lista de terminaciones, por ejemplo [".ex"]' });
@@ -328,7 +334,7 @@ function rulesProblems(value) {
   if (!isObject(value)) return [{ path: 'stack.rules', message: 'tiene que ser un objeto con las reglas de la organización' }];
   const out = [];
   for (const [k, v] of Object.entries(value)) {
-    if (comment(k)) continue;
+    if (fieldComment(k, v)) continue;
     const p = `stack.rules.${k}`;
     if (RULE_VALUES[k]) {
       if (!RULE_VALUES[k].includes(v)) out.push({ path: p, message: `tiene que ser ${RULE_VALUES[k].join(', ')} (es ${JSON.stringify(v)})` });
@@ -354,7 +360,7 @@ function stackSinProblemas(value, problemas) {
     } else if (k === 'rules' && isObject(v)) {
       // una regla mal escrita sale sola: vale lo de fábrica, y las demás siguen
       const reglasMalas = new Set(problemas.map((p) => p.path.match(/^stack\.rules\.([^.]+)/)).filter(Boolean).map((m) => m[1]));
-      out[k] = Object.fromEntries(Object.entries(v).filter(([r]) => !comment(r) && !reglasMalas.has(r)));
+      out[k] = Object.fromEntries(Object.entries(v).filter(([r, x]) => !fieldComment(r, x) && !reglasMalas.has(r)));
     } else if (!malas.has(k)) out[k] = v;
   }
   return out;
@@ -365,7 +371,7 @@ function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
   const problems = [];
   for (const k of Object.keys(doc)) {
-    if (!comment(k) && !KEYS.includes(k)) problems.push({ path: k, message: k === 'owners' ? 'la lista de responsables no va acá (este archivo llega a todas las máquinas): va en operations.json, en el repo de operaciones' : 'clave desconocida' });
+    if (!fieldComment(k, doc[k]) && !KEYS.includes(k)) problems.push({ path: k, message: k === 'owners' ? 'la lista de responsables no va acá (este archivo llega a todas las máquinas): va en operations.json, en el repo de operaciones' : 'clave desconocida' });
   }
   if (doc.version === undefined) problems.push({ path: 'version', message: 'falta' });
   else if (doc.version !== VERSION) problems.push({ path: 'version', message: `tiene que ser ${VERSION} (es ${JSON.stringify(doc.version)})` });

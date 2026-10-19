@@ -27,12 +27,17 @@ const { spawnSync } = require('child_process');
 
 const MARKER = path.join(__dirname, '..', 'marker.js');
 
-/** Un HOME de mentira con su `.tycon-pipeline/`, para no tocar el del dev. */
+/**
+ * Un HOME de mentira con su `.tycon-pipeline/`, para no tocar el del dev, y un arnés de mentira en `guides/`.
+ * `harness-path.js` reconoce un arnés por `scripts/install-tycon-hooks.sh`: sin ese archivo la carpeta no cuenta como
+ * arnés y el rescate nunca llega a buscar su `tokens-digest.js`.
+ */
 function corral() {
   const raiz = fs.mkdtempSync(path.join(os.tmpdir(), 'rescate-'));
   fs.mkdirSync(path.join(raiz, 'home', '.claude', '.tycon-pipeline', 'active'), { recursive: true });
   fs.mkdirSync(path.join(raiz, 'projects', 'carpeta'), { recursive: true });
   fs.mkdirSync(path.join(raiz, 'guides', 'scripts', 'metrics'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'guides', 'scripts', 'install-tycon-hooks.sh'), '');
   fs.mkdirSync(path.join(raiz, 'repo'), { recursive: true });
   return raiz;
 }
@@ -93,7 +98,7 @@ test('T8 · el archivador NO se cae si el rescate falla, y deja el motivo adentr
 });
 
 // ── T8b (AC7) · sin el script en esta máquina, el volcado sale igual ─────────────────────────────
-test('T8b · con tokens-digest.js AUSENTE (arnés atrasado) el archivador archiva igual', () => {
+test('T8b Rescue_DigestMissing_ArchivesAnyway @story-7.35 @ac-2 — con tokens-digest.js AUSENTE (arnés atrasado) el archivador archiva igual', () => {
   const raiz = corral();
   // A propósito: NO se crea `guides/scripts/metrics/tokens-digest.js`.
   marcarCorrida(raiz);
@@ -116,7 +121,7 @@ test('T8b · con tokens-digest.js AUSENTE (arnés atrasado) el archivador archiv
 
 // ── T8c · el camino feliz: si el rescate anda, su resultado queda en el volcado ──────────────────
 // Sin este caso, T8 y T8b pasarían con un archivador que NUNCA llama al rescate.
-test('T8c · con el rescate sano, lo que escribe queda en el volcado', () => {
+test('T8c Rescue_HealthyDigest_LandsInDump @story-7.35 @ac-2 — con el rescate sano, lo que escribe queda en el volcado', () => {
   const raiz = corral();
   // Un rescate de mentira que hace lo que hace el de verdad: reescribe el volcado con `consumo`.
   // Lee `--run`, el nombre con el que el cierre lo llama desde la story 8.7 B (el viejo, y la vuelta que recibe un arnés

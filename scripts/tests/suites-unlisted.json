@@ -1,0 +1,11 @@
+{
+  "__doc": "Los archivos de prueba que NO corren por scripts/tests/suites.json, cada uno con su motivo (story 7.35). Lo exige scripts/tests/suites-listed.test.js: todo archivo de prueba del arnés está en suites.json, corre por partes (sus .pN están en suites.json), o está acá con `why`. Una exclusión es una decisión, no un olvido: sin motivo, de un archivo que no existe o de uno que ya está listado, la prueba sale roja.",
+  "suites": {
+    "scripts/tests/portable-suites.test.sh": {
+      "why": "No es una suite más: es el corredor que la CI pública de GitHub (.github/workflows/ci.yml) lanza directamente para correr, en una HOME vacía, las suites que dicen no necesitar nada (TYCON_PORTABLE_SHARD). En suites.json correría las suites portables otra vez, adentro de la corrida de las suites."
+    },
+    "scripts/tests/packs-update-keeps-pieces.test.sh": {
+      "why": "Laboratorio de instalación: instala una versión del arnés en una carpeta de usuario aparte, publica la siguiente y compara las piezas; necesita pwsh y tarda minutos. Es el mismo ensayo que corre la 182 en Windows (escenario update). No se midió en la story 7.35 para no tocar el arnés instalado: deuda DEF-7.35-packs-update-sin-medir (medirla en un laboratorio con HOME aparte y decidir si va al nocturno)."
+    }
+  }
+}
