@@ -17,11 +17,13 @@ const GUIDE = path.join(ROOT, 'guides', 'maintaining', 'mantener-el-arnes.md');
 const dirs = [];
 test.after(() => { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); });
 const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'weekly-review-')); dirs.push(d); return d; };
+// una casa propia: sin ella, una corrida sin --stamp escribe el sello y los clones en el estado de quien corre la suite
+const CASA = tmp();
 
 function env(extra = {}) {
   const e = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(GIT_|TYCON_|BUILD_|SYSTEM_|TF_BUILD)/.test(k)) e[k] = v;
-  return { ...e, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(os.tmpdir(), 'weekly-review-no-global'),
+  return { ...e, HOME: CASA, USERPROFILE: CASA, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(os.tmpdir(), 'weekly-review-no-global'),
     GIT_AUTHOR_NAME: 'Lab', GIT_AUTHOR_EMAIL: 'lab@example.com', GIT_COMMITTER_NAME: 'Lab', GIT_COMMITTER_EMAIL: 'lab@example.com',
     TYCON_TODAY: '2026-10-19', ...extra };
 }
@@ -445,6 +447,9 @@ test('T12 Configuracion_DeLaOrganizacion @story-1.27 @ac-10: weekly_review de la
   assert.strictEqual(j.tope.budget_usd, 2.5);
   assert.strictEqual(j.tope.max_chars, 20000);
   assert.ok(j.tope.material_chars <= 20000);
+  // sin --stamp el sello va al estado de la casa del proceso: el de la suite, nunca el de quien la corre
+  const sellos = ['.tycon/state', '.claude/.tycon-pipeline'].map((d) => path.join(CASA, d, 'weekly-review-last-run'));
+  assert.ok(sellos.some((f) => fs.existsSync(f)), `el sello quedó en la casa de la suite: ${sellos.join(' o ')}`);
   const malEscrita = correr({ budget_usd: -1 });
   assert.strictEqual(malEscrita.r.code, 0, malEscrita.r.out);
   assert.match(malEscrita.r.out, /weekly_review.*por defecto/);
