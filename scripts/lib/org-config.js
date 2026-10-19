@@ -1625,12 +1625,13 @@ function pantalla(idioma = 'es') {
   // de la organización; si no, automático), con la respuesta del lector que el servidor manda en «sinPipeline»
   function pruebasDe(e, r, ms, sp) {
     var pl = e.full_tests_pipeline;
+    var regla = e.rule != null ? e.rule : ms.default != null ? ms.default : 'automatico';
     if (pl != null && pl !== '') {
       var lista = typeof pl === 'number' ? listaDePipelines(pipelinesDe(r.org, r.project)) : null;
       var nombre = lista && lista.filter(function (x) { return String(x.id) === String(pl); })[0];
-      return { declarado: true, texto: nombre ? nombre.nombre : typeof pl === 'number' ? T('pantalla.elPipeline') + pl : String(pl) };
+      // con «siempre en la máquina» el merge no mira el pipeline: se muestra atenuado y con su nota
+      return { declarado: true, noUsado: regla === 'siempre-en-la-maquina', texto: nombre ? nombre.nombre : typeof pl === 'number' ? T('pantalla.elPipeline') + pl : String(pl) };
     }
-    var regla = e.rule != null ? e.rule : ms.default != null ? ms.default : 'automatico';
     var que = sp && sp[regla];
     return { declarado: false, texto: que === 'machine' ? T('pantalla.correnEnLaMaquinaDelDev') : que === 'server-if-any-check' ? T('pantalla.elServidorSiLaRama') : T('pantalla.sinPipeline') };
   }
@@ -1666,7 +1667,9 @@ function pantalla(idioma = 'es') {
       var sacar = el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarElRepo'), 'aria-label': T('pantalla.quitarElRepo') + ' ' + texto, onclick: function () { ms.repos.splice(i, 1); ABIERTOS = {}; render(); } });
       var celdas = [el('div', { class: 'donde', role: 'cell' }, el('span', { class: 'ic', role: 'img', title: gh ? 'GitHub' : 'Azure DevOps', 'aria-label': gh ? 'GitHub' : 'Azure DevOps', text: gh ? 'GH' : 'Az' })),
         el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel),
-        el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];
+        pc.noUsado
+          ? el('div', { class: 'pc', role: 'cell', title: pc.texto + ' · ' + T('pantalla.noSeUsaConEstaRegla') }, el('span', { class: 'ignorado', text: pc.texto }), el('span', { class: 'nota', text: T('pantalla.noSeUsaConEstaRegla') }))
+          : el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];
       // los campos se arman antes que los mensajes del renglón: los que se dibujan junto a su campo no se repiten abajo
       if (abierto) celdas.push(el('div', { class: 'edit' }, repoFila(T('pantalla.repo3') + (i + 1), '', e.repo, function (v) { e.repo = v; }, at + '.repo', pr),
         campoPipeline(e, at + '.full_tests_pipeline', pr), el('div', { class: 'listo' }, el('button', { class: 'sec', type: 'button', text: T('pantalla.listo'), onclick: function () { ABIERTOS[i] = false; render(); } }))));

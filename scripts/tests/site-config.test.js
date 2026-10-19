@@ -2704,7 +2704,9 @@ test('T5 Repos_UnRenglonPorRepo @story-2.59 @ac-5', async () => {
     assert.deepStrictEqual([rt.textContent, rt.attrs.title], [textos[i], textos[i]], 'el repo entero, y entero en su título');
     assert.strictEqual(p.todo(p.de(f, 'regla')[0]).filter((n) => n.tag === 'select').length, 1);
     const pc = p.de(f, 'pc')[0];
-    assert.strictEqual(pc.attrs.title, pc.textContent, 'las pruebas completas, enteras en su título');
+    // la celda es un texto, o el pipeline y su nota (el pipeline que la regla no usa): el título los trae enteros
+    const partes = p.todo(pc).filter((n) => n !== pc && n.textContent).map((n) => n.textContent);
+    assert.strictEqual(pc.attrs.title, partes.length ? partes.join(' · ') : pc.textContent, 'las pruebas completas, enteras en su título');
     assert.deepStrictEqual(p.todo(p.de(f, 'acc')[0]).filter((n) => n.tag === 'button').map((n) => n.textContent), ['✎', '✕']);
     assert.strictEqual(p.todo(f).filter((n) => n.tag === 'input').length, 0, 'cerrado: sin campos de texto');
   });
@@ -2825,4 +2827,40 @@ test('T10 Compacta_TextosEnLosDosIdiomas @story-2.59 @ac-10', () => {
     assert.notStrictEqual(t('en', k), t('es', k), `${k} distinto en cada idioma`);
     assert.ok(ORG.pantalla().includes(`'${k}'`), `${k} lo usa la pantalla`);
   }
+});
+
+// ── el pipeline que la regla no usa, atenuado ────────────────────────────────────────────────────────────────────────
+test('T1 Repos_PipelineQueLaReglaNoUsa_Atenuado @story-2.59.1 @ac-1 @ac-2 @ac-3', async () => {
+  const ms = { default: 'siempre-en-la-maquina', repos: [
+    { repo: GH('propia'), rule: 'siempre-en-la-maquina', full_tests_pipeline: 'ci-a' },
+    { repo: GH('de-la-org'), full_tests_pipeline: 'ci-b' },
+    { repo: GH('auto'), rule: 'automatico', full_tests_pipeline: 'ci-c' },
+    { repo: GH('confiar'), rule: 'confiar-en-el-servidor', full_tests_pipeline: 'ci-d' },
+  ] };
+  const p = await compacta(secSuites(ms));
+  const celda = (i) => p.de(p.renglones(p.tablas()[0])[i], 'pc')[0];
+  const atenuado = (i) => p.de(celda(i), 'ignorado').length === 1 && p.texto(celda(i)).includes('no se usa con esta regla');
+  assert.deepStrictEqual([0, 1, 2, 3].map(atenuado), [true, true, false, false], 'sólo con «siempre en la máquina», propia o de la organización');
+  assert.ok(p.texto(celda(0)).includes('ci-a') && p.texto(celda(1)).includes('ci-b'), 'el nombre sigue entero');
+  assert.match(celda(0).attrs.title, /ci-a.*no se usa con esta regla/, 'el título lo dice');
+  // la regla de la organización a automático: el segundo deja de estar atenuado; el primero tiene la suya
+  p.todo(p.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.default').on.change({ target: { value: 'automatico' } });
+  await p.esperar();
+  assert.deepStrictEqual([0, 1].map(atenuado), [true, false]);
+  // sin tocar, lo mismo que llegó
+  const q = await compacta(secSuites(ms));
+  assert.strictEqual(JSON.stringify((await q.revisado()).merge_suites), JSON.stringify(ms));
+});
+
+test('T2 Repos_PipelineNoUsado_TextosEnLosDosIdiomas @story-2.59.1 @ac-4', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  assert.deepStrictEqual([t('es', 'pantalla.noSeUsaConEstaRegla'), t('en', 'pantalla.noSeUsaConEstaRegla')], ['no se usa con esta regla', 'not used with this rule']);
+  assert.ok(ORG.pantalla().includes("'pantalla.noSeUsaConEstaRegla'"));
+});
+
+test('T3 Repos_PipelineNoUsado_HojaConTema @story-2.59.1 @ac-4', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const reglas = css.match(/[^{}]*\.(ignorado|nota)\b[^{}]*\{[^{}]*\}/g) || [];
+  assert.ok(reglas.length >= 2, `las reglas del pipeline atenuado (${reglas.length})`);
+  for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, r.trim().slice(0, 80));
 });
