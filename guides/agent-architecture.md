@@ -166,7 +166,8 @@ Antes de fijar la condición de disparo de una advisory a un evento hipotético 
 
 Los revisores de un **producto** o de un **cliente** no viven en el código del pipeline: viven en
 **paquetes**, una carpeta con un `pack.json` que el pipeline carga y anuncia. El núcleo no trae ninguno: los de una
-organización viven en el repo de su perfil y llegan con la capa del equipo. Los de TYCON:
+organización viven en el repo de su perfil y llegan con la capa del equipo. Cómo armar uno propio, activarlo y examinar
+sus revisores: [reviewer-packs.md](reviewer-packs.md), con un ejemplo en `examples/packs/svelte-fastapi/`. Los de TYCON:
 
 | Paquete | Qué trae |
 |---|---|

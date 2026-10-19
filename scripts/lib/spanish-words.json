@@ -1565,6 +1565,10 @@
     {
       "words": ["basetemp", "confcutdir", "deselect", "maxfail", "numprocesses", "rootdir"],
       "reason": "opción de pytest: `--basetemp`, `--confcutdir`, `--deselect`, `--maxfail`, `--rootdir` y `--numprocesses` (pytest-xdist), que el freno de suites sin alcance reconoce para saltear su valor. Aprobadas por el dueño el 2026-10-19 (story 8.48, tanda B2)."
+    },
+    {
+      "words": ["fastapi"],
+      "reason": "nombre propio de un framework ajeno (FastAPI), no un nombre del arnés: lo usan el paquete de ejemplo examples/packs/svelte-fastapi y su revisor example-fastapi-reviewer (story 8.59). Decisión del dueño, 2026-10-19."
     }
   ],
   "schemaFiles": [

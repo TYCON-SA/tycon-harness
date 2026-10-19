@@ -69,7 +69,7 @@
  * Uso:
  *   node advisor-runner.js [--tool claude|codex|both] [--only <substr>] [--runs N] [--jobs N]
  *                          [--baseline write|check] [--json <path>] [--list] [--selftest-mcp]
- *                          [--selftest-retro] [--check-apps-off]
+ *                          [--selftest-retro] [--check-apps-off] [--pack <carpeta de un paquete>]
  */
 'use strict';
 const fs = require('fs');
@@ -507,9 +507,89 @@ const JSON_OUT = argVal('--json', null);
 const LIST = argv.includes('--list');
 const SAVE_OUTPUT = argv.includes('--save-output');
 
+// `--pack <carpeta>`: el examen de UN paquete de organización (casos: scripts/tests/example-pack.test.js). Corre sólo los casos de `<carpeta>/exam/*.json`
+// con los agentes de la carpeta del paquete. Una organización no puede sumar casos a cases/advisors/ (es del núcleo), y
+// sus casos no viajan con el perfil del equipo: viven donde se arma el paquete. Sin la bandera, el examen es el de siempre.
+// Pedido sin carpeta (`--pack` al final, o seguido de otra bandera): frena. Si cayera en el examen del núcleo, quien lo
+// pidió creería haber examinado su paquete.
+const PACK_PEDIDO = argv.includes('--pack');
+const PACK_VALOR = PACK_PEDIDO ? argv[argv.indexOf('--pack') + 1] : null;
+const PACK_DIR = PACK_VALOR && !PACK_VALOR.startsWith('--') ? path.resolve(PACK_VALOR) : null;
+/** El paquete de `--pack` ({ name, dir, agentsDir, casesDir }), o el motivo por el que no se puede examinar. */
+function packToExamine() {
+  if (!PACK_DIR) return { error: '--pack necesita la carpeta del paquete: --pack <carpeta con pack.json y exam/>' };
+  if (BASELINE_MODE) return { error: '--pack no admite --baseline: la línea de base es la del núcleo' };
+  if (VIDA) return { error: '--pack no admite --liveness: el chequeo de vida es el del núcleo (su informe lo lee el aviso del arranque); para acotar un paquete, --only' };
+  if (!(JOBS >= 1)) return { error: `--pack: --jobs tiene que ser un entero mayor que 0 (dijiste ${argVal('--jobs', '')}); con 0 carriles no corre ningún caso` };
+  if (TOOL !== 'claude') return { error: `--pack corre sólo con --tool claude: los perfiles de codex se generan sólo para los agentes del núcleo (pediste ${TOOL})` };
+  const manifest = path.join(PACK_DIR, 'pack.json');
+  let json;
+  try { json = JSON.parse(fs.readFileSync(manifest, 'utf8')); } catch (e) { return { error: `--pack: no pude leer ${manifest} (${e.code || e.message}); la carpeta tiene que ser la de un paquete, con su pack.json` }; }
+  const casesDir = path.join(PACK_DIR, 'exam');
+  const hayCasos = fs.existsSync(casesDir) && fs.readdirSync(casesDir).some((f) => f.endsWith('.json'));
+  if (!hayCasos) return { error: `--pack: ${casesDir} no existe o no tiene casos (.json); los casos del examen de un paquete van en su carpeta exam/` };
+  const agentsDir = path.resolve(PACK_DIR, typeof json.agents === 'string' && json.agents ? json.agents : 'agents');
+  if (agentsDir !== PACK_DIR && !agentsDir.startsWith(PACK_DIR + path.sep)) return { error: `--pack: «agents» de ${manifest} sale de la carpeta del paquete` };
+  const name = String(json.name || path.basename(PACK_DIR));
+  // el prefijo del informe lleva la huella de la carpeta: dos nombres que se limpian igual («a.b», «a-b») no se pisan
+  const huella = require('crypto').createHash('sha1').update(PACK_DIR).digest('hex').slice(0, 8);
+  return { name, dir: PACK_DIR, agentsDir, casesDir, reportPrefix: `pack-${name}-${huella}` };
+}
+const PACK = PACK_PEDIDO ? packToExamine() : null;
+/** Lo que tiene que cumplir cada archivo de casos de un paquete para que el examen lo corra: un `advisor` que sea un nombre
+ *  (se usa para armar la ruta de su .md) y al menos un caso. null si vale; si no, el motivo. */
+function suiteDePaqueteProblema(s, archivo) {
+  if (!s || typeof s.advisor !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(s.advisor))
+    return `--pack: ${archivo} tiene que declarar "advisor" con el nombre del revisor (letras, números, «.», «_» y «-»; sin carpetas)`;
+  if (!Array.isArray(s.cases) || !s.cases.length) return `--pack: ${archivo} está sin casos ("cases" vacío o ausente)`;
+  // el texto del pedido va como argumento de la herramienta (`claude -p <texto>`): si empezara con «-» se leería como una
+  // opción de la herramienta, no como el pedido
+  const pedidoProblema = (v) => (typeof v !== 'string' ? 'tiene que ser texto' : (v.trimStart().startsWith('-') ? 'no puede empezar con «-»' : null));
+  if (s.prompt_template !== undefined && pedidoProblema(s.prompt_template)) return `--pack: ${archivo}: "prompt_template" ${pedidoProblema(s.prompt_template)}`;
+  // El contrato de un caso de paquete es el del ejemplo: id, type must-flag|must-not-flag, rule y files. Un caso sin regla
+  // no se juzga contra nada, y uno que depende de un servidor (expect_mcp, expect_engram) se saltea si falta: los dos
+  // darían un examen verde que no examinó nada.
+  for (const c of s.cases) {
+    const id = c && typeof c.id === 'string' && c.id ? c.id : null;
+    const donde = `--pack: ${archivo}, caso ${id || '(sin id)'}`;
+    if (!id) return `${donde}: falta "id"`;
+    if (c.type !== 'must-flag' && c.type !== 'must-not-flag') return `${donde}: "type" tiene que ser must-flag o must-not-flag`;
+    if (typeof c.rule !== 'string' || !c.rule.trim()) return `${donde}: falta "rule", la regla que el caso juzga`;
+    // lista cerrada: lo que no está acá es del examen del núcleo (expect_*, tools, asymmetry…) o no existe. Una clave de
+    // otra herramienta, por ejemplo, dejaba el caso salteado en silencio y el examen verde con los demás.
+    const extra = Object.keys(c).find((k) => !CLAVES_DE_CASO_DE_PAQUETE.includes(k));
+    if (extra) return `${donde}: "${extra}" no es una clave de un caso de paquete (valen: ${CLAVES_DE_CASO_DE_PAQUETE.join(', ')}); un caso de paquete se juzga sólo por su "rule"`;
+    const noTexto = [Object.entries(c.files || {}), ...(Array.isArray(c.git_commits) ? c.git_commits : []).map((g) => Object.entries(g.files || {}))]
+      .flat().find(([, v]) => typeof v !== 'string');
+    if (noTexto) return `${donde}: el contenido de «${noTexto[0]}» tiene que ser texto`;
+    if (c.prompt !== undefined && pedidoProblema(c.prompt)) return `${donde}: "prompt" ${pedidoProblema(c.prompt)}`;
+    if (c.git_commits !== undefined && !(Array.isArray(c.git_commits) && c.git_commits.every((g) => g && typeof g === 'object'))) return `${donde}: "git_commits" tiene que ser una lista de commits`;
+    const rutas = [...Object.keys(c.files || {}), ...(Array.isArray(c.git_commits) ? c.git_commits : []).flatMap((g) => Object.keys((g && g.files) || {}))];
+    const fuera = rutas.find((r) => rutaDeCasoProblema(r));
+    if (fuera) return `${donde}: el archivo «${fuera}» ${rutaDeCasoProblema(fuera)}`;
+  }
+  return null;
+}
+const CLAVES_DE_CASO_DE_PAQUETE = Object.freeze(['id', 'type', 'rule', 'files', 'git_commits', 'prompt', 'canario', 'nota']);
+const NOMBRES_QUE_SE_CARGAN_SOLOS = Object.freeze(['.git', '.gitattributes', '.gitmodules', '.claude', '.codex', '.mcp.json',
+  'claude.md', 'claude.local.md', 'agents.md', 'agents.override.md']);
+/** null si `rel` es una ruta relativa que queda dentro de la carpeta temporal del caso; si no, el motivo. */
+function rutaDeCasoProblema(rel) {
+  const r = String(rel);
+  if (!r || path.isAbsolute(r) || r.includes('\\') || r.split('/').some((t) => t === '..' || t === '')) return 'tiene que ser una ruta relativa, sin «..», sin «\\» y sin tramos vacíos';
+  // ni dentro de un `.git` (en cualquier nivel y con cualquier caja: el disco de la Mac no distingue): un `.git/config`
+  // plantado haría correr un comando en el `git commit` con que el examen arma la historia del caso. Tampoco lo que la
+  // herramienta o git cargan solos desde la carpeta del caso: su configuración, sus servidores y sus instrucciones.
+  const tramo = r.split('/').map((t) => t.toLowerCase()).find((t) => NOMBRES_QUE_SE_CARGAN_SOLOS.includes(t));
+  if (tramo) return `no puede llamarse ni ir dentro de «${tramo}»: es algo que git o la herramienta cargan solos`;
+  return null;
+}
+
 // ---------- canónico ----------
-/** El canónico de un revisor: en la carpeta de agentes, o en la de su paquete (`packs/<p>/<agents>/`, story 8.41). */
+/** El canónico de un revisor: en la carpeta de agentes, o en la de su paquete (`packs/<p>/<agents>/`, story 8.41). Con
+ *  `--pack`, en la carpeta de agentes de ese paquete y en ningún otro lado. */
 function advisorFile(name) {
+  if (PACK && !PACK.error) return path.join(PACK.agentsDir, `${name}.md`);
   const enRaiz = path.join(AGENTS_DIR, `${name}.md`);
   if (fs.existsSync(enRaiz)) return enRaiz;
   const dir = require(path.join(TCG, 'scripts', 'lib', 'pack-pieces.js')).agentDirInPacks(process.env.TYCON_PACKS_DIR || path.join(TCG, 'packs'), name);
@@ -580,7 +660,9 @@ function mkFixture(caseDef, nonce) {
   const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'advbench-'));
   const writeAll = (files) => {
     for (const [rel, content] of Object.entries(files || {})) {
-      const p = path.join(sandbox, rel);
+      const p = path.resolve(sandbox, rel);
+      // los casos de un paquete son de otra organización: ningún archivo de un caso se escribe fuera de su carpeta
+      if (!p.startsWith(sandbox + path.sep)) throw new Error(`caso con un archivo fuera de su carpeta temporal: «${rel}»`);
       fs.mkdirSync(path.dirname(p), { recursive: true });
       fs.writeFileSync(p, subTokens(content, nonce));
     }
@@ -1709,12 +1791,18 @@ function selftestVarianza() {
 }
 
 // Modos baratos: se resuelven ANTES de tocar un solo advisor.
+// Los autotests son del examen del núcleo: con --pack devolverían su resultado como si fuera el del paquete. Se mira acá,
+// antes de que cualquiera de ellos salga, y por prefijo (`--selftest-*`): un autotest nuevo queda adentro sin tocar esto.
+{
+  const autotest = PACK_PEDIDO && argv.find((f) => f.startsWith('--selftest') || f === '--check-apps-off' || f === '--reclassify');
+  if (autotest) { console.error(`--pack no se combina con ${autotest}: es un autotest del examen del núcleo`); process.exit(2); }
+}
 if (process.argv.includes('--selftest-variance')) process.exit(selftestVarianza());
 if (process.argv.includes('--selftest-sandbox')) process.exit(selftestCorral());
 if (process.argv.includes('--selftest-classes')) process.exit(selftestClases());
 {
   const i = process.argv.indexOf('--reclassify');
-  if (i >= 0) {
+  if (i >= 0 && !PACK_PEDIDO) {   // con --pack, main() lo rechaza
     const arg = process.argv[i + 1];
     const archivo = (arg && !arg.startsWith('--')) ? arg : path.join(__dirname, '.bench', 'advisors-both.json');
     process.exit(reclasificar(archivo, { escribir: process.argv.includes('--write') }));
@@ -1725,9 +1813,19 @@ async function main() {
   if (argv.includes('--selftest-mcp')) return selftestMcp();
   if (argv.includes('--selftest-retro')) return selftestRetro();
   if (argv.includes('--check-apps-off')) return checkAppsOff();
-  if (!fs.existsSync(CASES_DIR)) { console.error(`sin casos: ${CASES_DIR}`); return 1; }
-  const suites = fs.readdirSync(CASES_DIR).filter((f) => f.endsWith('.json')).sort()
-    .map((f) => JSON.parse(fs.readFileSync(path.join(CASES_DIR, f), 'utf8')));
+  if (PACK && PACK.error) { console.error(PACK.error); return 2; }
+  const casesDir = PACK ? PACK.casesDir : CASES_DIR;
+  if (!fs.existsSync(casesDir)) { console.error(`sin casos: ${casesDir}`); return 1; }
+  const archivosDeCasos = fs.readdirSync(casesDir).filter((f) => f.endsWith('.json')).sort();
+  const suites = archivosDeCasos.map((f) => JSON.parse(fs.readFileSync(path.join(casesDir, f), 'utf8')));
+  if (PACK) {
+    const mal = suites.map((s, i) => suiteDePaqueteProblema(s, path.join(casesDir, archivosDeCasos[i]))).find(Boolean);
+    if (mal) { console.error(mal); return 2; }
+    const sinAgente = [...new Set(suites.map((s) => s.advisor))].filter((a) => !fs.existsSync(advisorFile(a)));
+    if (sinAgente.length) { console.error(`--pack: casos de un revisor sin su .md en ${PACK.agentsDir}: ${sinAgente.join(', ')}`); return 2; }
+    const informe = JSON_OUT || path.join(OUT_DIR, nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK.reportPrefix }).nombre);
+    console.log(`paquete: ${PACK.name} · agentes: ${PACK.agentsDir} · casos: ${PACK.casesDir} · informe: ${informe}`);
+  }
   retroGuard(suites); // corre SIEMPRE, también con --only: un caso fuera del corral no corre nunca
 
   // 🔴 UN REVISOR SIN CANARIO NO SE CHEQUEA, Y ESO SE DICE (2026-09-01). El chequeo de vida corre
@@ -1778,6 +1876,8 @@ async function main() {
       console.log(`${s.advisor} :: ${c.id} [${c.type} → ${c.rule || 'artefactos'}] tools=${(c.tools || ['claude', 'codex']).join(',')}`);
     }
     console.log(`— ${n} caso(s)${VIDA ? ' (chequeo de vida: sólo los canarios)' : ''}`);
+    // con --pack, listar cero casos es el mismo error que correrlos: el `--only` no coincide con nada
+    if (PACK && !n) { console.error(`--pack: ningún caso de ${PACK.casesDir} queda para correr con --only ${ONLY.join(',')}`); return 2; }
     return 0;
   }
 
@@ -1791,6 +1891,8 @@ async function main() {
     for (const t of tools) jobsList.push({ suite: s, caseDef: c, tool: t, key, excluded: !caseTools.includes(t) });
   }
   const llmRuns = jobsList.filter((j) => !j.excluded).length * RUNS;
+  // un examen de paquete que no corre ningún caso (un `--only` que no coincide) no es verde: frena
+  if (PACK && !llmRuns) { console.error(`--pack: ningún caso de ${PACK.casesDir} queda para correr${ONLY.length ? ` con --only ${ONLY.join(',')}` : ''}`); return 2; }
   console.log(`advisor-bench: ${jobsList.length} casos·herramienta × ${RUNS} corridas = ${llmRuns} invocaciones LLM (jobs=${JOBS})`);
   // Con los hooks apagados dentro de las corridas, el servidor de memoria lo levanta el banco.
   if (jobsList.some((j) => j.caseDef.expect_engram || j.caseDef.expect_mcp)) asegurarMemoriaViva();
@@ -1881,6 +1983,13 @@ async function main() {
     results[key].tools[tool] = verdict;
     console.log(`${verdict.pass ? '✅' : '❌'} [${tool}] ${key} ${caseDef.rule ? `flags=${JSON.stringify(flags)}` : 'artefactos'}${verdict.pass ? '' : ' — ' + failures.join(' | ')}`);
   }, JOBS);
+  // Lo que cuenta es lo juzgado, no lo planeado: un examen de paquete en el que ningún caso llegó a juzgarse (por la razón
+  // que sea) no es verde.
+  if (PACK) {
+    const juzgados = Object.values(results).filter((r) => Object.values(r.tools).some((v) => v && !v.skipped && typeof v.pass === 'boolean')).length;
+    const planeados = new Set(jobsList.filter((j) => !j.excluded).map((j) => j.key)).size;
+    if (juzgados < planeados) { console.error(`--pack: se juzgaron ${juzgados} de ${planeados} caso(s) de ${PACK.casesDir}; un examen de paquete juzga todos los que corre o no es verde`); return 2; }
+  }
 
   // limpieza post-suite: BARRIDO de todo advbench-* (el corral declarado + la basura de
   // sesiones que cada corrida deja con el prefijo del fixture) — best-effort: el nonce aísla igual
@@ -1964,7 +2073,8 @@ async function main() {
   // general, con los otros 25 desaparecidos y sin que nada lo dijera. La salida legítima era
   // "acordate de pasar --json", y un control que depende de que alguien se acuerde no corre.
   // `--json` explícito sigue mandando: pisar la foto completa se puede, hay que pedirlo.
-  const { nombre, alcance } = nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA });
+  // el informe de un paquete lleva su propio prefijo: el aviso del arranque lee sólo los `advisors-*` (el del núcleo)
+  const { nombre, alcance } = nombreDeReporte({ tool: TOOL, only: ONLY, vida: VIDA, prefijo: PACK ? PACK.reportPrefix : undefined });
   const outPath = JSON_OUT || path.join(OUT_DIR, nombre);
   const paridadReal = parityBreaks - paridadPorInestabilidad;
 

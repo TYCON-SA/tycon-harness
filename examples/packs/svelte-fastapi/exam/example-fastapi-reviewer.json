@@ -1,0 +1,41 @@
+{
+  "__doc": "Casos del examen de example-fastapi-reviewer (story 8.59). Cada caso que tiene que marcar comete UN solo error; el que no tiene que marcar es su gemelo corregido. El gemelo de FASTAPI-W1 deja la misma llamada bloqueante en un endpoint `def` común, que FastAPI corre aparte: es el borde que distingue la regla. Se corren con `advisor-runner.js --pack <carpeta del paquete>`.",
+  "advisor": "example-fastapi-reviewer",
+  "prompt_template": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: accion. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Archivos cambiados: {files}. Escaneá y emití el reporte.",
+  "cases": [
+    {
+      "id": "fastapi-c1-cuerpo-como-dict",
+      "type": "must-flag",
+      "rule": "FASTAPI-C1",
+      "canario": true,
+      "files": {
+        "app/routers/orders.py": "from fastapi import APIRouter\n\nfrom app.db import save_order\n\norders_router = APIRouter()\n\n\n@orders_router.post(\"/orders\")\nasync def create_order(payload: dict):\n    order_id = await save_order(customer=payload[\"customer\"], items=payload[\"items\"])\n    return {\"id\": order_id}\n"
+      }
+    },
+    {
+      "id": "fastapi-c1-con-modelo",
+      "type": "must-not-flag",
+      "rule": "FASTAPI-C1",
+      "canario": true,
+      "files": {
+        "app/routers/orders.py": "from fastapi import APIRouter\nfrom pydantic import BaseModel, Field\n\nfrom app.db import save_order\n\norders_router = APIRouter()\n\n\nclass OrderIn(BaseModel):\n    customer: str = Field(min_length=1, max_length=120)\n    items: list[int] = Field(min_length=1, max_length=50)\n\n\n@orders_router.post(\"/orders\")\nasync def create_order(payload: OrderIn):\n    order_id = await save_order(customer=payload.customer, items=payload.items)\n    return {\"id\": order_id}\n"
+      }
+    },
+    {
+      "id": "fastapi-w1-requests-en-async",
+      "type": "must-flag",
+      "rule": "FASTAPI-W1",
+      "files": {
+        "app/routers/rates.py": "import requests\nfrom fastapi import APIRouter\n\nrates_router = APIRouter()\n\nRATES_URL = \"https://rates.example.com/latest\"\n\n\n@rates_router.get(\"/rates/{currency}\")\nasync def get_rate(currency: str):\n    response = requests.get(RATES_URL, params={\"base\": currency}, timeout=10)\n    response.raise_for_status()\n    return {\"currency\": currency, \"rate\": response.json()[\"rate\"]}\n"
+      }
+    },
+    {
+      "id": "fastapi-w1-requests-en-def-comun",
+      "type": "must-not-flag",
+      "rule": "FASTAPI-W1",
+      "files": {
+        "app/routers/rates.py": "import requests\nfrom fastapi import APIRouter\n\nrates_router = APIRouter()\n\nRATES_URL = \"https://rates.example.com/latest\"\n\n\n@rates_router.get(\"/rates/{currency}\")\ndef get_rate(currency: str):\n    response = requests.get(RATES_URL, params={\"base\": currency}, timeout=10)\n    response.raise_for_status()\n    return {\"currency\": currency, \"rate\": response.json()[\"rate\"]}\n"
+      }
+    }
+  ]
+}

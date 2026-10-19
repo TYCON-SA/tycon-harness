@@ -1,0 +1,24 @@
+{
+  "name": "svelte-fastapi",
+  "description": "Paquete de ejemplo para copiar: dos revisores chicos para un front en Svelte y un back en FastAPI. No viene instalado ni activo; la guía guides/reviewer-packs.md dice cómo copiarlo, activarlo y examinarlo.",
+  "agents": "agents",
+  "guides": [],
+  "reviewers": [
+    {
+      "agent": "example-svelte-reviewer",
+      "group": "condicional",
+      "when": { "detection": "svelteModified" },
+      "surface": { "paths": ["**/*.svelte"] },
+      "depth": "lean",
+      "prefixes": ["SVELTE"]
+    },
+    {
+      "agent": "example-fastapi-reviewer",
+      "group": "condicional",
+      "when": { "detection": "pyModified" },
+      "surface": { "paths": ["**/*.py"], "excludePaths": ["**/tests/**", "**/test_*.py"] },
+      "depth": "lean",
+      "prefixes": ["FASTAPI"]
+    }
+  ]
+}
