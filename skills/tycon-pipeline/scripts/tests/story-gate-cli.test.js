@@ -686,6 +686,13 @@ test('7.30-T13 CompleteStep3_RiesgoBajoConPantalla_IgualPideLaMaqueta @story-7.3
   let r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos']);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /el plan se aprueba solo; la maqueta no: una pantalla la ve una persona antes/);
+  // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
+  const runDir = require(path.join(__dirname, '..', 'pipeline.js')).resolveRunDir(repo, '1.1', true, s);
+  const planAuto = '1. La pantalla de facturas con su detalle.\n';
+  fs.writeFileSync(path.join(runDir, 'step-02-bmad-plan.md'), planAuto);
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's13.jsonl'),
+    `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
   r = markerCli(home, 's13', ['complete-step', '3', '--auto-approved', 'LOW: 2 archivos', '--mockup-approved', 'la vio el dueño']);
   assert.equal(r.status, 0, r.stderr);
   const m = leerMarker730(home, 's13');

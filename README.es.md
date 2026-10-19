@@ -59,7 +59,7 @@ La instalación completa suma los frenos en los repos que trabajan con el arnés
 Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos.
 
 1. **Abrí tu agente de código en la carpeta de tu repo**, para que cargue las reglas del arnés (si estaba abierto, cerralo y abrilo de nuevo: las reglas entran al abrirlo).
-2. **Aceptá el permiso**: la primera vez, el agente te pide permiso para leer la carpeta del arnés, donde están sus guías. Se acepta una vez.
+2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
 3. **Pedí la historia**, para que el cambio quede escrito antes de programar: «creá una story con `tycon-create-story` para agregar un filtro por fecha».
 4. **Contestá lo que falte.** Si tu repo no tiene `_bmad/`, te hace tres preguntas en llano: qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar; lo que ya dijiste no te lo vuelve a preguntar. Te muestra la historia, la escribe con tu «sí» y te da la frase para seguir.
 5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica el plan se aprueba solo; en las demás espera tu visto bueno. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
@@ -70,7 +70,7 @@ Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harne
 ## Qué necesitás
 
 - Tu agente de código, Claude Code o Codex, instalado y con tu sesión iniciada: es donde se usa el arnés.
-- Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22 o posterior). En Mac, además, Python 3.
+- Node 24 y `tar` (para correr la línea de instalación alcanza con Node 22 o posterior). En Mac y Linux, además, Python 3.
 - Windows 11 con PowerShell 7, Mac o Linux. En WSL no se probó.
 - Git **no** hace falta para instalar el arnés: se baja como archivos, no se clona.
   Tampoco hace falta una cuenta de GitHub: este repo es público. Para commitear tus historias sí hace falta git, con

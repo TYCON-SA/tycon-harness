@@ -21,7 +21,13 @@
  *   { title, asA, iWant, soThat,
  *     criteria: [{ given, when, then, failure? }],          // numerados 1..N en ese orden
  *     tests:    [{ name, criterion, level?, scenario, expected }],
- *     outOfScope?: [texto], filesToCreate?: [ruta], filesToModify?: [ruta] }
+ *     outOfScope?: [texto], filesToCreate?: [ruta], filesToModify?: [ruta],
+ *     verify?: [comando] }                                 // cómo se corren las pruebas, un comando por renglón
+ *
+ * La historia nace limpia para el validador de historias: `sprint: 1`, la salvaguarda como primera tarea, «Lo que NO
+ * hay que hacer» y «Cómo verificar que funciona» con los comandos. Sin `verify`, el comando sale del repo (`npm test`
+ * con un `package.json` que declara `scripts.test`); si no se puede saber, no escribe: un comando inventado es el que
+ * después corre el probador en vivo.
  */
 const fs = require('fs');
 const path = require('path');
@@ -131,6 +137,10 @@ function problems(a) {
   for (const k of ['outOfScope', 'filesToCreate', 'filesToModify']) {
     if (a[k] !== undefined && (!Array.isArray(a[k]) || a[k].some((x) => !text(x)))) out.push(`«${k}» tiene que ser una lista de textos`);
   }
+  // un salto de línea o un ``` sacaría el comando del bloque bash y escribiría en la historia
+  if (a.verify !== undefined && (!Array.isArray(a.verify) || a.verify.some((x) => !text(x) || /[\r\n]|```/.test(x)))) {
+    out.push('«verify» tiene que ser una lista de comandos, uno por renglón, sin saltos de línea ni ```');
+  }
   for (const k of ['filesToCreate', 'filesToModify']) {
     for (const f of Array.isArray(a[k]) ? a[k] : []) {
       if (typeof f === 'string' && !safeRepoPath(f)) out.push(`la ruta «${f}» no sirve: va relativa al repo, sin «..», y sólo con letras sin tilde, números, «/», «.», «_», «-» (sin empezar con «-»)`);
@@ -139,8 +149,33 @@ function problems(a) {
   return out;
 }
 
+/** Los comandos de «Cómo verificar que funciona»: los de la respuesta o el que declara el repo. Sin ninguno, frena. */
+function verifyCommands(repo, a) {
+  if (Array.isArray(a.verify) && a.verify.length) return a.verify.map(oneLine);
+  let pkg = null;
+  try { pkg = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')); } catch (_e) { /* sin package.json legible */ }
+  const t = pkg && pkg.scripts && typeof pkg.scripts.test === 'string' ? pkg.scripts.test.trim() : '';
+  // el `test` que deja `npm init` («Error: no test specified» y sale 1) no corre ninguna prueba
+  if (t && !/no test specified/i.test(t)) return ['npm test'];
+  throw new Refusal('no escribí la historia: falta cómo se corren las pruebas. Agregá a las respuestas «verify» con el comando (por ejemplo ["npm test"]), o preguntale a la persona cómo las corre');
+}
+
 function yamlList(key, items) {
   return items.length ? [`${key}:`, ...items.map((x) => `  - ${oneLine(x)}`)] : [`${key}: []`];
+}
+
+/** Un renglón de «Lo que NO hay que hacer»: lo que ya empieza con «no» va tal cual, lo demás es «No tocar …». */
+function dontTouch(x) {
+  const t = oneLine(x).replace(/\.+$/, '');
+  return /^no\b/i.test(t) ? `- ${t.charAt(0).toUpperCase()}${t.slice(1)}.` : `- No tocar ${t}.`;
+}
+
+/** Lo que la salvaguarda confirma: los archivos a crear no existen y los a modificar sí. */
+function safeguard(toCreate, toModify) {
+  const parts = [];
+  if (toModify.length) parts.push(`existen ${toModify.map((f) => `\`${oneLine(f)}\``).join(', ')}`);
+  if (toCreate.length) parts.push(`todavía no existen ${toCreate.map((f) => `\`${oneLine(f)}\``).join(', ')}`);
+  return parts.length ? `: ${parts.join('; ')}` : '';
 }
 
 function today() {
@@ -148,11 +183,14 @@ function today() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function render(a, number) {
+function render(a, number, verify, exists = () => false) {
   const criteria = a.criteria;
   const tests = a.tests;
   const toCreate = a.filesToCreate || [];
   const toModify = a.filesToModify || [];
+  // «Que existe hoy» dice lo que está en el disco, no lo que la respuesta supone
+  const present = [...toModify, ...toCreate].filter((f) => exists(f));
+  const absent = [...toCreate, ...toModify].filter((f) => !exists(f));
   const principal = criteria.map((c, i) => ({ c, n: i + 1 })).filter((x) => !x.c.failure);
   const failures = criteria.map((c, i) => ({ c, n: i + 1 })).filter((x) => x.c.failure);
   const ac = ({ c, n }) => `${n}. **Given** ${oneLine(c.given)} **When** ${oneLine(c.when)} **Then** ${oneLine(c.then)}`;
@@ -164,6 +202,7 @@ function render(a, number) {
     `title: "${oneLine(a.title)}"`,
     'status: ready-for-dev',
     `created: ${today()}`,
+    'sprint: 1',
     'priority: "P2"',
     'approach: "[CREATE]"',
     'origin: first-time',
@@ -197,18 +236,42 @@ function render(a, number) {
     '',
     '## Tasks / Subtasks',
     '',
-    `- [ ] [SEQ] Task 1: las pruebas T1 a T${tests.length}, en rojo por la causa correcta (AC: todos)`,
-    `- [ ] [SEQ] Task 2: el código que las pone en verde (AC: todos)`,
+    `- [ ] [SEQ] Task 1: Salvaguarda de estado — verificar que el repo está como dice la historia${safeguard(toCreate, toModify)} (AC: todos)`,
+    `- [ ] [SEQ] Task 2: las pruebas T1 a T${tests.length}, en rojo por la causa correcta (AC: todos)`,
+    `- [ ] [SEQ] Task 3: el código que las pone en verde (AC: todos)`,
     '',
-    '## Fuera de alcance',
+    '### Task Dependencies',
     '',
-    ...((a.outOfScope || []).length ? a.outOfScope.map((x) => `- ${oneLine(x)}`) : ['- Nada declarado.']),
+    'Task 1 → Task 2 → Task 3 (secuencial)',
+    '',
+    '## Lo que NO hay que hacer',
+    '',
+    ...(a.outOfScope || []).map(dontTouch),
+    '- No escribir el código antes de ver las pruebas en rojo.',
+    '',
+    '## Cómo verificar que funciona',
+    '',
+    '```bash',
+    ...verify,
+    '```',
     '',
     '## Dev Notes',
     '',
     '### Patron de referencia verificado',
     '',
     'No aplica: historia escrita en el modo primera vez, sin proyecto BMAD.',
+    '',
+    '### Que existe hoy',
+    '',
+    ...(present.length ? present.map((f) => `- **Archivo:** \`${cell(f)}\` — ${toModify.includes(f) ? 'lo modifica la historia' : 'ya existe, y la historia dice crearlo: lo confirma la salvaguarda'}`) : []),
+    ...(absent.length ? [`- **No existe:** ${absent.map((f) => `\`${cell(f)}\``).join(', ')}`] : []),
+    ...(present.length || absent.length ? [] : ['La historia no nombra archivos: los decide el plan del recorrido y los confirma la salvaguarda.']),
+    '',
+    '### Que hay que hacer (la delta)',
+    '',
+    ...[...toCreate.map((f) => `Crear \`${cell(f)}\``), ...toModify.map((f) => `Modificar \`${cell(f)}\``)]
+      .concat([`Que se cumplan los criterios 1 a ${criteria.length}, con las pruebas T1 a T${tests.length} en verde`])
+      .map((x, i) => `${i + 1}. ${x}`),
     '',
     '### Archivos a crear/modificar',
     '',
@@ -233,12 +296,13 @@ function write(repo, answersPath, home) {
   }
   const bad = problems(answers);
   if (bad.length) throw new Refusal(`no escribí la historia:\n${bad.map((p) => `  - ${p}`).join('\n')}`);
+  const verify = verifyCommands(repo, answers);
   const { dir, number } = nextStory(repo);
   const target = path.join(dir, `story-${number}-${slug(answers.title)}.md`);
   if (fs.existsSync(target)) throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
   fs.mkdirSync(dir, { recursive: true });
   const tmpFile = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmpFile, render(answers, number), { flag: 'wx' });
+  fs.writeFileSync(tmpFile, render(answers, number, verify, (f) => fs.existsSync(path.join(repo, f))), { flag: 'wx' });
   try { fs.linkSync(tmpFile, target); } catch (e) {
     fs.unlinkSync(tmpFile);
     if (e.code === 'EEXIST') throw new Refusal(`no escribí la historia: ya existe ${target} y no lo piso`);
@@ -286,6 +350,6 @@ function main(argv) {
   }
 }
 
-module.exports = { nextStory, problems, render, isBmad, RECORD_DIR };
+module.exports = { nextStory, problems, render, verifyCommands, isBmad, RECORD_DIR };
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));

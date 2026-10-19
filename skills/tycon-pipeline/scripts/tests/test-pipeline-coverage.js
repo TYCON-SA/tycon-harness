@@ -13,11 +13,12 @@
  * Correr: node test-pipeline-coverage.js   (exit 0 OK, exit 1 fail).
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'pipeline.js'), 'utf8');
-const AGENTS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'agents');
+// Los agentes de este mismo checkout, como los paquetes: con los del arnés instalado, la prueba mediría otra versión y
+// fallaría en una máquina sin arnés.
+const AGENTS_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'agents');
 const PACKS_DIR = path.resolve(__dirname, '..', '..', '..', '..', 'packs');
 
 // Advisors del NÚCLEO que el pipeline DEBE poder seleccionar en Step 5 (base + completitud + condicionales).

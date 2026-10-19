@@ -134,8 +134,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
 - **F.iv — ADVISORS-GATE**: a `done` no se llega sin constancia de advisors en este repo (run dir con
   reportes de «Revisores» o `check=advisors green` con el `repoPath`). Escapes del dev:
   `advisors_exempt: true` + `advisors_exempt_reason:`, o `TYCON_ADVISORS_GATE=off`.
-- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → plan auto-aprobado con anuncio;
-  NORMAL → HITL. `git push` y scope firmado son siempre human-gate.
+- **G.i**: al aprobar el plan, `pipeline.js risk-class --story <spec>`: LOW → auto-aprobado, con el plan en tus
+  mensajes; NORMAL → HITL. Push y scope firmado: human-gate.
 - **G.ii**: con `visual_plan: true` (o `--visual-plan`) y risk NORMAL, plan visual offline con
   `scripts/visual-plan.js render`. Default OFF.
 - **H.i — sesión fresca**: el pipeline corre en sesión nueva o tras `/clear`; si la conversación ya lleva
@@ -144,7 +144,7 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   run + cómo levantar el MCP; sin binario → acción de instalación y recién ahí degradar. Sin la tool
   `Workflow` → preguntar "¿sigo sin el pase adversarial?". Lista: `pipeline.js tooling-expected`.
 - **H.iii — model/effort hint**: `pipeline.js start --session-model <el de la sesión>` trae `model_hint`
-  (LOW → sonnet · NORMAL → opus · pesada → fable, o la de la org.) y el effort (tabla en PIPE-C8;
+  (LOW → sonnet · si no, opus; fable sólo si la organización lo pide) y el effort (tabla en PIPE-C8;
   `max` nunca automático). Si no matchea, sugerir `/model` en 1 línea;
   `session_check` avisa del techo. Advisory; nunca bloquea.
 - **I.i — ATDD con gate mecánico**: los tests se escriben ANTES del código. `on-atdd-preedit.js` deniega

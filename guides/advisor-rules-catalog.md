@@ -226,7 +226,7 @@ Forma canónica: `pipeline.js start --story <spec> --repo <dir>` corre C0/C1/C2/
 
 | ID | Nombre | Acción |
 |---|---|---|
-| **PIPE-C8** | Modelo y/o reasoning effort de sesión no matchea la complejidad de la story (`pipeline.js model-hint`: LOW→sonnet/`medium` · NORMAL→opus/`high` · heavy→fable/`xhigh` · `max` nunca automático) | Sugerir `/model` en 1 línea (a lo sumo UN anuncio, solo-effort si el modelo ya matchea en banda LOW/heavy; en NORMAL común el effort default se calla). El user decide, override no se re-discute. (Modelo 2026-07-06; effort 2026-07-11.) |
+| **PIPE-C8** | Modelo y/o reasoning effort de sesión no matchea la complejidad de la story (`pipeline.js model-hint`: LOW→sonnet/`medium` · NORMAL→opus/`high` · pesada→opus/`xhigh`, `fable` sólo si la organización lo declara · `max` nunca automático) | Sugerir `/model` en 1 línea (a lo sumo UN anuncio, solo-effort si el modelo ya matchea en banda LOW/heavy; en NORMAL común el effort default se calla). El user decide, override no se re-discute. (Modelo 2026-07-06; effort 2026-07-11.) |
 
 ---
 

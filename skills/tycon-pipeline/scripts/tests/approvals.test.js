@@ -156,6 +156,12 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
   assert.equal(r.status, 0, r.stderr);
 
   markerHasta3(home, 's-auto', repo, story);
+  // el plan aprobado solo se muestra igual: escrito, y en la respuesta del agente (plan-visible.test.js)
+  const planAuto = '1. El README con el título nuevo del proyecto.\n';
+  fs.writeFileSync(path.join(require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.91', true, story), 'step-02-bmad-plan.md'), planAuto);
+  fs.mkdirSync(path.join(home, '.claude', 'projects', '-repo'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.claude', 'projects', '-repo', 's-auto.jsonl'),
+    `${JSON.stringify({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: `El plan:\n${planAuto}` }] } })}\n`);
   r = markerCli(home, 's-auto', repo, ['complete-step', '3', '--auto-approved', 'LOW: superficie chica']);
   assert.equal(r.status, 0, r.stderr);
 
@@ -403,4 +409,21 @@ test('T7 Guia_ManualOAutomatica @story-2.43 @ac-5', () => {
     assert.match(txt, /--approved-by/, `${rel}: cómo se nombra a la persona`);
     assert.match(txt, /--delegated-by/, `${rel}: cómo se anota la delegación`);
   }
+});
+
+// ── T10: un archivo suelto en packs/ no es un paquete ───────────────────────────────────────────────
+
+test('T10 KnownAgents_FileInPacks_NoWarning @story-7.35 @ac-9', () => {
+  // un checkout de mentira con la forma del real: approvals.js lee agents/ y packs/*/agents/ desde su propia raíz
+  const raiz = tmp('apr-packs-');
+  const lib = path.join(raiz, 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  fs.mkdirSync(lib, { recursive: true });
+  fs.copyFileSync(path.join(SCRIPTS, 'lib', 'approvals.js'), path.join(lib, 'approvals.js'));
+  fs.mkdirSync(path.join(raiz, 'packs', 'acme', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(raiz, 'packs', 'README.md'), '# paquetes\n');
+  fs.writeFileSync(path.join(raiz, 'packs', 'acme', 'agents', 'revisor-de-acme.md'), '---\nname: revisor-de-acme\n---\n');
+  const r = spawnSync(process.execPath, ['-e', `process.stdout.write(String(require(${JSON.stringify(path.join(lib, 'approvals.js'))}).esAgente('revisor-de-acme')))`], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, 'true', 'el agente del paquete sigue contando');
+  assert.equal(r.stderr, '', `sin aviso por packs/README.md: ${r.stderr}`);
 });

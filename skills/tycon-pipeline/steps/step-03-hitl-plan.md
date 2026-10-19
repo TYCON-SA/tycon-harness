@@ -16,7 +16,16 @@ ANTES de pausar, correr:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class --story <story_path>
 ```
 
-- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA**: anunciar al user "Plan auto-aprobado (Nivel 2, story LOW-risk: <criterios>)", listar el plan completo, y continuar a Step 4 **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
+- **risk=LOW** (criterios: sin `.sql`/drizzle en scope, sin `signed_for_sprint` ni `signed_ac_ref`, ≤6 archivos en scope, sin paths auth/security/payment, sin bloque `pipelines:`) → el plan se **AUTO-APRUEBA** y continúa a Step 4 **sin esperar respuesta**. El gate adicional de backend "patrón de referencia verificado" (abajo) aplica igual antes de auto-aprobar.
+- 📋 **El plan se muestra siempre, aunque se apruebe solo.** Es lo único que la persona ve de qué se va a hacer. Con
+  LOW, el orden es: (1) el plan escrito en `step-02-bmad-plan.md` de la carpeta de la corrida; (2) **un mensaje de texto
+  tuyo** con una línea «El plan se aprobó solo (riesgo bajo: <criterios en llano>)» y debajo ese plan tal cual, sin
+  resumirlo — la persona no ve el archivo, ni la salida de los comandos, ni tu razonamiento: sólo tus mensajes;
+  (3) recién después, `complete-step 3 --auto-approved`. El comando lee la conversación de la sesión y no cierra si el
+  plan no está en tus mensajes. Si no puede leer la conversación (Codex, u otra herramienta que no la guarda), falla
+  cerrado: el plan no se aprueba solo, se le muestra a la persona, se le pregunta y se cierra con `--approved`. Por
+  qué: medido en la primera historia de un dev nuevo, con riesgo bajo el plan se aprobaba y no aparecía, aunque el
+  cierre del paso lo imprimiera; el dev no veía qué se iba a hacer.
 - **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.
 - 🔴 `git push` y cambios de scope firmado NUNCA se auto-aprueban — siguen human-gate sin excepción.

@@ -185,16 +185,14 @@
             "detail": "scope firmado con cliente — costo de error alto"
           }
         ],
-        "reason": "NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)",
+        "reason": "NORMAL común → opus (sonnet se queda corto en el plan)",
         "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
       }
     },
     "start-heavy": {
       "model_hint": {
-        "recommended_session_model": "fable",
-        "also_ok": [
-          "opus"
-        ],
+        "recommended_session_model": "opus",
+        "also_ok": [],
         "risk": "NORMAL",
         "heavy": true,
         "heavy_signal_count": 2,
@@ -230,7 +228,7 @@
             "detail": "scope firmado con cliente — costo de error alto"
           }
         ],
-        "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → fable paga si evita re-loops",
+        "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → opus con más esfuerzo",
         "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
       }
     },
@@ -315,14 +313,12 @@
           "detail": "scope firmado con cliente — costo de error alto"
         }
       ],
-      "reason": "NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)",
+      "reason": "NORMAL común → opus (sonnet se queda corto en el plan)",
       "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
     },
     "hint-heavy": {
-      "recommended_session_model": "fable",
-      "also_ok": [
-        "opus"
-      ],
+      "recommended_session_model": "opus",
+      "also_ok": [],
       "risk": "NORMAL",
       "heavy": true,
       "heavy_signal_count": 2,
@@ -358,7 +354,7 @@
           "detail": "scope firmado con cliente — costo de error alto"
         }
       ],
-      "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → fable paga si evita re-loops",
+      "reason": "NORMAL + 2 señales pesadas (superficie-grande, muchos-acs) → opus con más esfuerzo",
       "note": "ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea."
     }
   }

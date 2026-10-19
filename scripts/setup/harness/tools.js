@@ -191,6 +191,8 @@ function plugged(state, { home = os.homedir(), env = process.env } = {}) {
 // el aplicador en shell, adentro del enchufe de Claude Code: una máquina sin Claude Code no tenía cómo recibirlo.
 
 const DEPLOY_TIMEOUT_MS = 5 * 60 * 1000;
+// los renglones de los desplegadores que llegan al informe de la instalación (la prueba T19 de
+// deploy-codex-copies.test.sh ata este filtro con el «qué sigue» de build/deploy-codex-hooks.js)
 const NOTICE_RE = /TRUST|🛑|⚠/;
 
 /** El archivo de reglas de Codex (`CODEX_AGENTS_MD_PATH` lo fija; si no, en su carpeta). */
@@ -380,6 +382,6 @@ function recorded(state) {
 module.exports = {
   TOOLS, LABELS, DETECT,
   codexHome, runnableAt, findIn, ownConfig, detect, parseOption, choose, reason, planLine, names, agentLines, noneFound, codexDeployed, plugged, recorded, same,
-  agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL,
+  agentsMdPath, codexPieces, plugCodex, unplugged, unpluggedNotice, NOTICE_HEAD, NOTICE_TAIL, NOTICE_RE,
   CODEX_TEAM_RECORD, TEAM_AGENT_NAME, codexTeamRecordPath, readCodexTeamRecord, writeCodexTeamRecord,
 };

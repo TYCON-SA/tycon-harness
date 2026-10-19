@@ -89,7 +89,9 @@ function entorno() {
   fs.writeFileSync(path.join(repo, 'src', 'a.js'), 'module.exports = 1;\n');
   git('add', '.');
   git('commit', '-qm', 'inicio');
-  const env = (sid) => ({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_HOME: '' });
+  // Clockify prendida a mano: la secuencia de T1 pasa por su paso, y con la integración apagada (la copia pública sin
+  // perfil) `next` lo saltearía; la prueba no depende de cómo esté configurada la máquina que la corre
+  const env = (sid) => ({ ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_LANE_LLM: '0', TYCON_HOME: '', TYCON_CLOCKIFY: '1' });
   const correr = (script, args, sid, input) => spawnSync('node', [path.join(SCRIPTS, script), ...args], {
     encoding: 'utf8', env: env(sid), input: input === undefined ? '' : input,
   });
@@ -200,11 +202,12 @@ test('T3 TandaA_MarkerAndHooksUnchanged — el marcador y las decisiones de los 
   const r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief'], sid);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const m = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
-  // las claves de hoy (medidas el 2026-10-15 con `start` sobre el código anterior a la tanda A), y ni una más
+  // las claves de hoy (medidas el 2026-10-15 con `start` sobre el código anterior a la tanda A, más las cuatro del
+  // tamaño de la corrida: size, size_reason, estimate_min, estimate_source), y ni una más
   assert.deepStrictEqual(Object.keys(m).sort(), [
-    'autonomous', 'baseSha', 'checks', 'evidenceDir', 'fileEvents', 'filesTouched', 'filesTouchedAt', 'iter', 'iterations',
-    'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId', 'sprint', 'startedAt', 'stepTimings',
-    'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
+    'autonomous', 'baseSha', 'checks', 'estimate_min', 'estimate_source', 'evidenceDir', 'fileEvents', 'filesTouched',
+    'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId',
+    'size', 'size_reason', 'sprint', 'startedAt', 'stepTimings', 'stepsCompleted', 'stepsPending', 'storyId', 'storyPath',
   ]);
   assert.strictEqual(m.stepScheme, undefined, 'sin stepScheme: eso es la tanda B');
   assert.deepStrictEqual(m.stepsCompleted, [0]);

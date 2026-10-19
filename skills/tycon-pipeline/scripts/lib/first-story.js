@@ -23,7 +23,8 @@
  *     Sin persona delante (sesión no atendida del agente o integración continua) devuelve un solo renglón con la orden,
  *     sin pregunta. Mostrada una vez —en cualquiera de las dos formas— queda anotada y no vuelve.
  *   · `node first-story.js offer accept` corre `harness.js install --profile full --yes` del árbol instalado;
- *     `offer decline` lo anota; `offer status` muestra el lector y el registro.
+ *     `offer decline` lo anota; `offer show` vuelve a mostrar entera la oferta pendiente, sin contestarla (un cierre
+ *     leído recortado no la pierde); `offer status` muestra el lector y el registro.
  *
  * El registro vive en `<estado>/first-story.json`: { first_close: { at, story }, offer: { status, at, story, code? } },
  * con `status` en offered · accepted · failed · declined · no_person.
@@ -232,22 +233,45 @@ function decide({ home, env, marker, tree }) {
       writeRecord(home, Object.assign(rec, { offer: { status: 'no_person', at: now, story } }));
       return { lines: [`Cerraste tu primera historia con el arnés. Cuando quieras la instalación completa: ${fullCommand(tree)}`], warn: null };
     }
-    const eff = setupMod(tree, 'managed').readEffects(tree);
-    // el motivo de readEffects puede repetir un pedazo del archivo: se nombra el archivo y se manda al diagnóstico
-    if (!eff.ok) return { lines: [], warn: `la oferta de la instalación completa no se mostró: no pude leer la lista de efectos ${eff.file} (harness.js doctor dice por qué)` };
-    const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home, shownHarness: shownHarnessFor(tree) });
+    const shown = offerLines({ tree, home });
+    if (shown.warn) return { lines: [], warn: shown.warn };
     writeRecord(home, Object.assign(rec, { offer: { status: 'offered', at: now, story } }));
-    return {
-      lines: [
-        'Cerraste tu primera historia con el arnés. ¿Querés pasar a la instalación completa? (se ofrece una sola vez)',
-        ...three.map((l) => `  ${l}`),
-        `Para contestar: sí → node "${self()}" offer accept · no → node "${self()}" offer decline`,
-      ],
-      warn: null,
-    };
+    return { lines: shown.lines, warn: null };
   } catch (e) {
     return { lines: [], warn: `la oferta de la instalación completa no se pudo evaluar: ${e.message}` };
   }
+}
+
+/**
+ * Los renglones de la oferta: el título, los tres renglones contados desde la lista de efectos y las órdenes para
+ * contestar. El último renglón nombra `offer show`: un cierre leído recortado (`| tail`) igual dice cómo verla entera.
+ */
+function offerLines({ tree, home }) {
+  const eff = setupMod(tree, 'managed').readEffects(tree);
+  // el motivo de readEffects puede repetir un pedazo del archivo: se nombra el archivo y se manda al diagnóstico
+  if (!eff.ok) return { warn: `la oferta de la instalación completa no se mostró: no pude leer la lista de efectos ${eff.file} (harness.js doctor dice por qué)` };
+  const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home, shownHarness: shownHarnessFor(tree) });
+  return {
+    lines: [
+      'Cerraste tu primera historia con el arnés. ¿Querés pasar a la instalación completa? (se ofrece una sola vez)',
+      ...three.map((l) => `  ${l}`),
+      `Para contestar: sí → node "${self()}" offer accept · no → node "${self()}" offer decline · la oferta entera otra vez: node "${self()}" offer show`,
+    ],
+  };
+}
+
+/** La oferta pendiente, otra vez y entera, sin contestarla. Sin oferta pendiente, sale 2. */
+function show({ home, tree = treeOf(home) } = {}) {
+  let rec;
+  try { rec = readRecord(home); } catch (e) { return { code: 2, lines: [`first-story: ${e.message}`] }; }
+  if (!rec.offer || rec.offer.status !== 'offered') {
+    return { code: 2, lines: [`first-story: no hay una oferta pendiente (${rec.offer ? `quedó «${rec.offer.status}»` : 'nunca se mostró'}).`] };
+  }
+  if (!tree) return { code: 2, lines: ['first-story: no encuentro el árbol del arnés instalado para armar la oferta'] };
+  let shown;
+  // un módulo del árbol que falta o falla sale como las demás ramas: un renglón y 2, no un volcado
+  try { shown = offerLines({ tree, home }); } catch (e) { return { code: 2, lines: [`first-story: no pude armar la oferta (${e.code || e.message})`] }; }
+  return shown.warn ? { code: 2, lines: [shown.warn] } : { code: 0, lines: shown.lines };
 }
 
 /** La respuesta de la persona. `accept` corre la instalación completa del árbol; los dos, sólo con la oferta pendiente. */
@@ -288,10 +312,11 @@ if (require.main === module) {
   const home = require('os').homedir();
   let r;
   if (cmd === 'offer' && (sub === 'accept' || sub === 'decline')) r = answer(sub, { home });
+  else if (cmd === 'offer' && sub === 'show') r = show({ home });
   else if (cmd === 'offer' && sub === 'status') {
     let rec; try { rec = readRecord(home); } catch (e) { rec = { error: e.message }; }
     r = { code: 0, lines: [JSON.stringify({ isFirstStory: isFirstStory({ home }), record: rec }, null, 2)] };
-  } else r = { code: 2, lines: ['uso: node first-story.js offer accept|decline|status'] };
+  } else r = { code: 2, lines: ['uso: node first-story.js offer accept|decline|show|status'] };
   for (const l of r.lines) (r.code === 0 ? process.stdout : process.stderr).write(`${l}\n`);
   process.exit(r.code);
 }

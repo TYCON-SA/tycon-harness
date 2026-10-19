@@ -24,13 +24,18 @@ Hacelas **una por vez**: esperá cada respuesta antes de la siguiente. Si la per
   de falla (`failure: true`).
 - Cada criterio lleva **al menos una prueba**, con un nombre como `Total_ConEnvio` (letras sin tilde, números y `_`),
   el escenario y el resultado esperado.
-- La respuesta 3 va a «fuera de alcance».
+- La respuesta 3 va a «fuera de alcance» (`outOfScope`). Si contestó «nada», dejalo vacío.
 - Si ves en el repo qué archivos se tocan, sumalos (`filesToCreate`, `filesToModify`); si no, dejalos vacíos.
+- **Cómo se corren las pruebas** (`verify`): el comando que ves en el repo (por ejemplo el `test` de `package.json`,
+  `pytest`, `dotnet test`), uno por renglón. Con un `package.json` que declara `test`, podés dejarlo afuera: el guion
+  pone `npm test`. Si no lo ves, preguntale a la persona cómo corre las pruebas: no lo inventes.
 
 ## 3. Mostrar y esperar el «sí»
 
-Mostrá en llano el título, los criterios y las pruebas, en una lista corta. Preguntá «¿La escribo así?» y
-esperá el «sí» antes de escribir nada. Si pide cambios, ajustá y volvé a mostrar.
+Mostrá en llano el título, los criterios, las pruebas y **con qué comando se corren** (lo que va en `verify`, o
+`npm test` si lo pone el guion), en una lista corta. El comando queda escrito en la historia y lo corre después el
+recorrido: la persona lo ve antes de aprobarlo. Preguntá «¿La escribo así?» y esperá el «sí» antes de escribir nada.
+Si pide cambios, ajustá y volvé a mostrar.
 
 ## 4. Escribir la historia
 
@@ -58,7 +63,8 @@ Forma del JSON:
   ],
   "outOfScope": ["los impuestos"],
   "filesToCreate": [],
-  "filesToModify": []
+  "filesToModify": [],
+  "verify": ["npm test"]
 }
 ```
 

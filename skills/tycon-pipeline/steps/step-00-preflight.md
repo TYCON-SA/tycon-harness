@@ -294,7 +294,7 @@ liviana|completa --reason "<por qué>"` (a liviana con código queda en `bypass.
 
 - **LOW** → `sonnet` (con `also_ok: [opus]`)
 - **NORMAL común** → `opus`
-- **NORMAL + ≥2 señales pesadas** (superficie >12 archivos, ≥10 ACs, código nuevo amplio, multi-tanda, migración+código, scope firmado) → `fable`
+- **NORMAL + ≥2 señales pesadas** (superficie >12 archivos, ≥10 ACs, código nuevo amplio, multi-tanda, migración+código, scope firmado) → `opus` con effort `xhigh`; `fable` sólo si la organización lo declara (`models.session.heavy`): el arnés no lo sugiere solo
 
 **Qué hace el orquestador**: compará `recommended_session_model` (∪ `also_ok`) con el modelo REAL de tu sesión — lo sabés por tu system prompt ("You are powered by..."). Si tu modelo **está** en el set → seguí en silencio. Si **no está** → anunciá la sugerencia en 1 línea estilo COMM.i, en AMBAS direcciones (upgrade y downgrade):
 
@@ -329,7 +329,7 @@ gobierna los Steps 2–4 inline. El mapping es del **orquestador (LLM) sobre el 
 |---|---|---|
 | `risk: LOW` | `medium` (`low` también ok si es casi-mecánica) | plan corto, superficie chica — effort alto acá es plata de más |
 | `NORMAL` común | `high` | el plan es el punto de apalancamiento; `medium` pifia edge cases de wiring cross-file / schema |
-| `NORMAL` + `heavy` (≥2 señales) | `xhigh` | mismas señales que justifican fable — una iteración de re-loop evitada lo paga |
+| `NORMAL` + `heavy` (≥2 señales) | `xhigh` | las señales pesadas: una iteración de re-loop evitada lo paga |
 | — | `max` | **NUNCA automático** — solo pedido explícito del user (debugging gnarly, decisión arquitectónica ambigua) |
 
 **A lo sumo UN anuncio para ambos knobs** (una pausa advisory, no dos), en AMBAS direcciones
@@ -352,7 +352,7 @@ Ejemplo (modelo mismatch + heavy — anuncio combinado):
 
 ```
 💡 Story pesada (3 señales — superficie grande, código nuevo amplio, multi-tanda).
-Estás en opus — para esta conviene fable con effort xhigh (una iteración de re-loop evitada lo paga).
+Estás en sonnet — para esta conviene opus con effort xhigh (una iteración de re-loop evitada lo paga).
 Cambiá con `/model` y seguimos (sesión y marker se conservan), o decime "seguí así".
 ```
 

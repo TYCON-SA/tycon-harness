@@ -739,7 +739,7 @@ pipelines:
 1. x
 `;
 
-test('computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→fable', () => {
+test('ModelHint_HeavyStory_SuggestsOpus @story-7.35 @ac-13 — computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→opus', () => {
   const low = path.join(os.tmpdir(), `mh-low-${process.pid}.md`);
   const normal = path.join(os.tmpdir(), `mh-normal-${process.pid}.md`);
   const heavy = path.join(os.tmpdir(), `mh-heavy-${process.pid}.md`);
@@ -756,7 +756,8 @@ test('computeModelHint: LOW→sonnet, NORMAL común→opus, NORMAL pesada→fabl
     assert.equal(h.heavy, false);
 
     h = computeModelHint({ story: heavy, files: [] });
-    assert.equal(h.recommended_session_model, 'fable', 'NORMAL con ≥2 señales pesadas → fable');
+    assert.equal(h.recommended_session_model, 'opus', 'NORMAL con ≥2 señales pesadas → opus: el arnés no sugiere fable solo');
+    assert.doesNotMatch(h.reason, /fable/i, h.reason);
     assert.equal(h.heavy, true);
     assert.ok(h.heavy_signal_count >= 2, `esperaba ≥2 señales, hubo ${h.heavy_signal_count}`);
   } finally { fs.unlinkSync(low); fs.unlinkSync(normal); fs.unlinkSync(heavy); }
@@ -1406,6 +1407,42 @@ test('update-story-status: un `$` en el frontmatter o en el cuerpo queda tal cua
   const after = fs.readFileSync(story, 'utf8');
   assert.strictEqual(after, `${fm.replace('status: ready-for-dev', 'status: in-progress')}${body}`,
     'sólo cambia el valor de status: ni el título ni el cuerpo ni el comentario');
+  fs.rmSync(fakeHome, { recursive: true, force: true });
+});
+
+// ── update-story-status cambia también la línea `Status:` del cuerpo ─────────────────────────────────────────
+// La guía del formato pide `Status:` bajo el título; el arranque (PIPE-C5) cambiaba sólo el frontmatter y la historia
+// quedaba con dos estados distintos, que el validador marca.
+test('UpdateStoryStatus_TambienElCuerpo @story-8.62 @ac-1', () => {
+  const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-status-body-'));
+  const cambiar = (nombre, texto) => {
+    const story = path.join(fakeHome, nombre);
+    fs.writeFileSync(story, texto);
+    execFileSync(process.execPath, [MARKER, 'update-story-status', story, 'in-progress'], markerEnv('status-body', fakeHome));
+    return fs.readFileSync(story, 'utf8');
+  };
+  const fm = '---\nstory: "9.97"\nstatus: ready-for-dev\n---\n';
+  // con la línea del cuerpo: cambian las dos
+  assert.strictEqual(cambiar('a.md', `${fm}\n# Story 9.97: x\n\nStatus: ready-for-dev\n\n## Story\n`),
+    '---\nstory: "9.97"\nstatus: in-progress\n---\n\n# Story 9.97: x\n\nStatus: in-progress\n\n## Story\n');
+  // sin la línea: sólo el frontmatter, el cuerpo igual
+  const sinLinea = '\n# Story 9.97: x\n\n## Story\n\nEl estado está arriba.\n';
+  assert.strictEqual(cambiar('b.md', `${fm}${sinLinea}`), `${fm.replace('ready-for-dev', 'in-progress')}${sinLinea}`);
+  // un `Status:` dentro de un bloque de código o más abajo no se toca
+  const conBloque = '\n# Story 9.97: x\n\n```\nStatus: ready-for-dev\n```\n\n## Notas\n\nStatus: ready-for-dev\n';
+  assert.strictEqual(cambiar('c.md', `${fm}${conBloque}`), `${fm.replace('ready-for-dev', 'in-progress')}${conBloque}`);
+  // un ejemplo con `# Story` dentro de un bloque de código ANTES del título real no se toca; el real sí
+  const ejemploAntes = '\n```\n# Story 0.0: ejemplo\n\nStatus: x\n```\n\n# Story 9.97: x\n\nStatus: ready-for-dev\n';
+  assert.strictEqual(cambiar('e.md', `${fm}${ejemploAntes}`),
+    `${fm.replace('ready-for-dev', 'in-progress')}${ejemploAntes.replace('Status: ready-for-dev', 'Status: in-progress')}`);
+  // lo mismo con un bloque de código con ~~~
+  const ejemploTilde = ejemploAntes.replace(/```/g, '~~~');
+  assert.strictEqual(cambiar('f.md', `${fm}${ejemploTilde}`),
+    `${fm.replace('ready-for-dev', 'in-progress')}${ejemploTilde.replace('Status: ready-for-dev', 'Status: in-progress')}`);
+  // con saltos de línea de Windows también cambian las dos, y los \r se quedan
+  const crlf = (t) => t.replace(/\n/g, '\r\n');
+  assert.strictEqual(cambiar('d.md', crlf(`${fm}\n# Story 9.97: x\n\nStatus: ready-for-dev\n`)),
+    crlf('---\nstory: "9.97"\nstatus: in-progress\n---\n\n# Story 9.97: x\n\nStatus: in-progress\n'));
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 

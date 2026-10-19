@@ -881,3 +881,24 @@ test('NumeroDeLaStory_SinCampoStory_SaleDelNombre @story-7.34 @ac-2 — sin `sto
   fs.writeFileSync(con, '---\nstory: "CA-3"\n---\n');
   assert.equal(numeroDeLaStory(con), 'CA-3', 'el campo `story:` manda sobre el nombre');
 });
+
+test('T7.35 Sibling_NotAGitRepo_OneExactWarning @story-7.35 @ac-10 — un hermano que no es repo git se usa tal cual, con un aviso exacto y una vez', () => {
+  // un hermano declarado sin git (la copia instalada del arnés, una ruta mal puesta): se avisa, porque callar esconde la
+  // ruta mal declarada (T26 de este archivo), pero con el motivo exacto y sin el error crudo de git
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sin-git-')));
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }).replace('story: "9.26"', 'story: "1.4"'),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+  });
+  const front = path.join(raiz, 'Front');
+  fs.mkdirSync(path.join(front, 'scripts', 'lib'), { recursive: true });
+  fs.writeFileSync(path.join(front, 'scripts', 'lib', 'acme.js'), 'module.exports = 1;\n');
+  const backWt = path.join(raiz, 'Back-wt');
+  git(back, 'worktree', 'add', '-q', '-b', 'docs/x-1-4', backWt);
+  const { roots, avisos } = hermanosConAvisos(fs.realpathSync(backWt), path.join(backWt, 'specs', 's.md'));
+  assert.deepEqual(roots, [front]);
+  const lineas = avisos.split('\n').filter(Boolean);
+  assert.equal(lineas.length, 1, avisos);
+  assert.match(lineas[0], /no es un repo git, uso la carpeta tal cual/);
+  assert.doesNotMatch(avisos, /fatal:/, 'sin el error crudo de git');
+});

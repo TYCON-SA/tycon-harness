@@ -3297,7 +3297,7 @@ function recortarStart(result) {
 
 // ── pipeline.js risk-class — Autonomía Nivel 2 (decisión DevA 2026-06-09) ───
 // Clasifica la story para el auto-approve CONDICIONAL del plan (Step 3):
-// LOW-risk → step-03 se auto-aprueba CON anuncio visible; cualquier criterio
+// LOW-risk → step-03 se auto-aprueba y el plan se muestra igual; cualquier criterio
 // fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
 // git push y cambios de scope firmado SIEMPRE human-gate (regla #0).
 // Criterios del diseño pipeline-autonomy-design.md §9 (validator verde es
@@ -3374,7 +3374,7 @@ function computeRiskClass(args) {
     auto_approve_plan: allPass,
     criteria,
     note: allPass
-      ? 'LOW-risk: step-03 puede auto-aprobarse CON anuncio visible al user (Nivel 2). Push y scope firmado siguen human-gate SIEMPRE.'
+      ? 'LOW-risk: step-03 puede auto-aprobarse (Nivel 2), pero el plan se muestra siempre: primero un mensaje con el plan tal cual, después complete-step 3 --auto-approved (lee la conversación; sin poder leerla, se le pregunta a la persona). Push y scope firmado siguen human-gate SIEMPRE.'
       : 'NORMAL: checkpoint HITL del plan (step-03) como siempre.',
   };
 }
@@ -3626,11 +3626,11 @@ function computeToolingExpected(repo, opts = {}) {
 //
 // Tiers (razón: el plan es el punto de mayor apalancamiento — un plan malo
 // cascadea a re-loops del Step 5 — y la implementación es el mayor consumidor
-// de tokens; fable cuesta ~2x opus, opus ~1.7x sonnet):
+// de tokens; opus ~1.7x sonnet):
 //   LOW           → sonnet alcanza (opus también ok — no molestar si ya está ahí)
 //   NORMAL común  → opus
-//   NORMAL pesada → fable (≥2 señales pesadas: la diferencia de modelo se paga
-//                   sola si evita UNA iteración de re-loop)
+//   NORMAL pesada → opus, con más esfuerzo (≥2 señales pesadas). Fable sólo si la organización lo declara
+//                   (models.session.heavy): el arnés no lo sugiere solo.
 // SIEMPRE advisory: el orquestador sugiere en 1 línea, el user decide, NUNCA bloquea.
 function computeModelHint(args) {
   const rc = computeRiskClass(args);
@@ -3664,7 +3664,7 @@ function computeModelHint(args) {
   // vacío); con techo obligatorio, recortados. La configuración llega por argumento: esta función no lee la máquina.
   const band = rc.risk === 'LOW' ? 'low' : (heavy ? 'heavy' : 'normal');
   const S = MODELOS.DEFAULTS.session;
-  const hoy = { recommended: S[band], also_ok: band === 'normal' ? [] : [S.normal] };
+  const hoy = { recommended: S[band], also_ok: band === 'normal' || S.normal === S[band] ? [] : [S.normal] };
   const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
   const avisos = [];
   const ses = org ? MODELOS.resolveSession({ org, band, today: hoy, warnings: avisos }) : { ...hoy, origin: 'default' };
@@ -3692,8 +3692,8 @@ function computeModelHint(args) {
     reason: rc.risk === 'LOW'
       ? 'risk LOW (superficie chica, sin firmas/SQL/paths sensibles) → sonnet alcanza; un modelo más caro acá es plata de más'
       : heavy
-        ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → fable paga si evita re-loops`
-        : 'NORMAL común → opus (fable no paga; sonnet se queda corto en el plan)',
+        ? `NORMAL + ${heavyCount} señales pesadas (${signals.filter((s) => s.hit).map((s) => s.name).join(', ')}) → ${recommended} con más esfuerzo`
+        : 'NORMAL común → opus (sonnet se queda corto en el plan)',
     note: (deLaOrg ? `la sugerencia sale de la configuración de la organización (session.${band}${MODELOS.ceilingOf(org) ? `, techo ${MODELOS.ceilingOf(org)}` : ''}): ${recommended}. ` : '') +
       'ADVISORY para el MODELO DE SESIÓN (steps 2-4 corren inline). Orquestador: compará con tu modelo real (system prompt); si NO está en recommended+also_ok → sugerí `/model <recomendado>` en 1 línea (el switch conserva sesión y marker) y seguí con lo que el user decida. NUNCA bloquea.',
     ...extra,

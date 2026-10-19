@@ -219,7 +219,11 @@ desplegar39 "$T/h39"
 PROPIOS="$(grep -c "\"$BIN39 " "$T/h39/hooks.json")"; NODE_FORMA="$(grep -c '"node [^"]*/scripts/hooks/' "$T/h39/hooks.json")"
 if [ "$PROPIOS" = "$ANTES39" ] && [ "$NODE_FORMA" = 0 ] && grep -q '"node /home/dev/mio.js"' "$T/h39/hooks.json"; then ok "T19 los hooks del arnés quedan una vez, con el Node del arnés ($PROPIOS); la forma node se reemplazó; el del dev quedó"
 else mal "T19 propios $PROPIOS (antes $ANTES39), con node $NODE_FORMA, dev: $(grep -c mio.js "$T/h39/hooks.json")"; fi
-[ "$(grep -c 'TRUST: Codex aprueba hooks POR HASH' "$T/out39")" = 1 ] && ok "T19 el aviso de aprobar con /hooks sale como mucho una vez" || mal "T19 el aviso de /hooks salió más de una vez"
+# el aviso de aprobar con /hooks: una vez, en llano y diciendo qué sigue
+[ "$(grep -c 'Qué sigue en Codex: abrí codex, escribí /hooks y aprobá los controles nuevos' "$T/out39")" = 1 ] && [ "$(grep -c 'POR HASH' "$T/out39")" = 0 ] && ok "T19 AvisoHooksCodex_UnaVezEnLlano: el aviso de aprobar con /hooks sale una vez y en llano" || mal "T19 AvisoHooksCodex_UnaVezEnLlano: el aviso de /hooks no salió una vez en llano ($(grep -c '/hooks' "$T/out39") renglones con /hooks)"
+# y llega al informe de la instalación por los dos caminos: el enchufe de Codex (tools.js NOTICE_RE, instalación
+# bajada) y el aplicador (report.warningLines, instalación desde un clon, también con la marca de Windows)
+node -e 'const re = require(process.argv[1]).NOTICE_RE, R = require(process.argv[2]); const out = require("fs").readFileSync(process.argv[3], "utf8"); const ls = out.split("\n").filter((l) => l.includes("Qué sigue en Codex:")); const rep = (w) => R.warningLines(out, { windows: w }).filter((l) => l.includes("Qué sigue en Codex:")).length; process.exit(ls.length === 1 && re.test(ls[0].trim()) && rep(false) === 1 && rep(true) === 1 ? 0 : 1)' "$RAIZ/scripts/setup/harness/tools.js" "$RAIZ/scripts/setup/harness/report.js" "$T/out39" && ok "T19 AvisoHooksCodex_UnaVezEnLlano: el informe de la instalación lo muestra (bajada y desde un clon)" || mal "T19 AvisoHooksCodex_UnaVezEnLlano: un filtro del informe de la instalación esconde el «qué sigue» de Codex"
 # y de vuelta: sin current, todo a node, sin duplicar
 rm -f "$CASA39/.tycon/node/current"; desplegar39 "$T/h39"
 if [ "$(grep -c "\"$BIN39 " "$T/h39/hooks.json")" = 0 ] && [ "$(grep -c '"node [^"]*/scripts/hooks/' "$T/h39/hooks.json")" -gt 0 ]; then ok "T19 sin el Node del arnés, de vuelta a node, sin duplicar"; else mal "T19 la vuelta a node dejó $(grep -c "\"$BIN39 " "$T/h39/hooks.json") con la ruta"; fi
