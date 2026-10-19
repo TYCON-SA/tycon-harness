@@ -931,7 +931,7 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció (story 2.21, AC 9)
-module.exports = { informe, leerXml, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
+module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {
   try {
