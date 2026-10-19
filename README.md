@@ -71,7 +71,7 @@ If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/
 ## What you need
 
 - Your coding agent, Claude Code or Codex, installed and signed in: it is where you use the harness.
-- Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac, also Python 3.
+- Node 24 and `tar` (Node 22 or later is enough to run the install line). On Mac and Linux, also Python 3.
 - Windows 11 with PowerShell 7, Mac or Linux. WSL was not tested.
 - Git is **not** needed to install the harness: it is downloaded as files, not cloned.
   A GitHub account is not needed either: this repository is public. To commit your stories you do need git, with
