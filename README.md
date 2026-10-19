@@ -60,7 +60,7 @@ The full install adds the guards in the repos that work with the harness and cha
 A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes.
 
 1. **Open your coding agent in your repo's folder**, so it loads the harness's rules (if it was open, close it and open it again: the rules load when it starts).
-2. **Accept the permission**: the first time, the agent asks for permission to read the folder where the harness lives, with its guides. You accept it once.
+2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
 3. **Ask for the story**, so the change is written down before any code: "create a story with `tycon-create-story` to add a date filter".
 4. **Answer what is missing.** If your repo has no `_bmad/`, it asks you three plain questions: what it must do, how you can tell it works, and what it must not touch; what you already said it does not ask again. It shows you the story, writes it on your "yes" and gives you the phrase to go on.
 5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story the plan approves itself; in the others it waits for your go-ahead. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.

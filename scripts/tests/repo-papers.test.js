@@ -587,9 +587,10 @@ const FRONT_PAGE_KEYWORDS = [
     en: ['20 is tolerated only to update an existing installation; it is not tested'],
     es: ['20 se tolera sólo para actualizar una instalación existente; no se prueba'],
   }),
-  keywordPoint('tu primera historia: el permiso de lectura que Claude Code pide la primera vez (D5)', sectionOf(at('Your first story')), {
-    en: ['permission to read the folder', 'You accept it once'],
-    es: ['permiso para leer la carpeta', 'Se acepta una vez'],
+  // la primera vez, el agente pregunta si confiás en la carpeta; el índice del arnés se carga sin otro cuadro
+  keywordPoint('tu primera historia: la confianza en la carpeta que el agente pide la primera vez', sectionOf(at('Your first story')), {
+    en: ['whether you trust it', 'say yes'],
+    es: ['si confiás en ella', 'contestá que sí'],
   }),
   keywordPoint('qué hace solo: mira como mucho una vez cada 6 horas', IN_ON_ITS_OWN, { en: ['6 hours'], es: ['6 horas'] }),
   keywordPoint('cómo se actualiza: los números de versión', IN_UPDATES, {
