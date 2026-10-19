@@ -140,6 +140,7 @@ canónico (`GITIGNORE_ADVISORS` en `pipeline.js`, copiado del `.gitignore` del a
 **/.advisors/pipeline-runs/*/*
 !**/.advisors/pipeline-runs/*/review-roster.json
 !**/.advisors/pipeline-runs/*/findings.json
+!**/.advisors/pipeline-runs/*/approvals.jsonl
 .dashboard/
 ```
 
@@ -147,8 +148,13 @@ canónico (`GITIGNORE_ADVISORS` en `pipeline.js`, copiado del `.gitignore` del a
   informa. 🔴 NUNCA `.advisors/` a secas: esa línea anula toda negación y la evidencia deja de viajar.
 - **Repo que ya decidió pero se traga lo que tiene que viajar** (`.advisors/` a secas, o sin la
   re-inclusión del registro de revisores): NO se toca — se AVISA nombrando qué no viaja (evidencia de
-  cierre y/o `review-roster.json` + `findings.json`), y decide una persona. Un repo así deja rojo al
+  cierre y/o `review-roster.json` + `findings.json` + `approvals.jsonl`), y decide una persona. Un repo así deja rojo al
   portón de CI al cerrar una story.
+- **Repo con el bloque de antes del registro de aprobaciones** (viaja el registro de revisores pero no
+  `approvals.jsonl`, el registro de aprobaciones): se agrega SÓLO la línea
+  `!**/.advisors/pipeline-runs/*/approvals.jsonl`, sin preguntar, y se informa. Es aditivo —no cambia lo que el repo
+  decidió ignorar— y corre antes de toda aprobación, así que el registro viaja en el mismo commit. Sin esa línea el
+  portón de CI frena la story (`sin-registro-de-aprobaciones`).
 - **No se pudo preguntar** (no es repo git): no se toca nada y queda constancia. «No pude mirar» y
   «miré y falta» no se escriben igual.
 

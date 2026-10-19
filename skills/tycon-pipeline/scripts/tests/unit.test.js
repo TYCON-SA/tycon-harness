@@ -3376,10 +3376,11 @@ test('test-scope: todos los archivos bajo un solo proyecto → deduce ESE alcanc
   assert.equal(r.votes.apinetcore, 0);
 });
 
-test('test-scope: archivos en DOS proyectos → ambiguo, no elige ninguno', () => {
+test('@story-8.48 @ac-12 test-scope: archivos en DOS proyectos → corren los dos, no elige uno solo', () => {
   const r = testScope.deduceScope({ files: ['mcp/src/a.ts', 'apinetcore/Api/Svc.cs'], candidates: CAND2 });
   assert.equal(r.scope, null);
-  assert.equal(r.ambiguous, true);
+  assert.equal(r.ambiguous, false);
+  assert.deepEqual(r.scopes, ['apinetcore', 'mcp']);
 });
 
 test('test-scope: archivos que no caen bajo ningún proyecto NO votan → ambiguo', () => {
@@ -3439,13 +3440,14 @@ test('test-scope: con territorio presente, la documentación sigue SIN votar →
   assert.equal(r.ambiguous, true);
 });
 
-test('test-scope: territorio raíz + archivo de OTRO proyecto → ambiguo, FRENA', () => {
+test('@story-8.48 @ac-12 test-scope: territorio raíz + archivo de OTRO proyecto → corren los dos', () => {
   const r = testScope.deduceScope({
     files: ['src/NimboBackend/Program.cs', 'tools/chat-gateway/src/spool.ts'],
     candidates: CAND_ROOT_SLN,
   });
-  assert.equal(r.ambiguous, true, 'dos proyectos tocados → no se elige ninguno, con o sin territorio');
+  assert.equal(r.ambiguous, false, 'dos proyectos tocados → se corren los dos, con o sin territorio');
   assert.equal(r.scope, null);
+  assert.equal(r.scopes.length, 2);
 });
 
 test('test-scope: un candidato explícito le GANA el archivo al territorio de otro', () => {
@@ -3514,9 +3516,9 @@ test('test-scope: DOS .sln en el mismo dir → el territorio es la UNIÓN, no el
   // Un archivo del proyecto que solo declara el PRIMER sln → vota la raíz (antes: 0 votos, freno falso).
   const solo = testScope.deduceScope({ files: ['src/A/Repo.cs'], candidates: c });
   assert.equal(solo.scope, '.');
-  // Mixto raíz + node → ambiguo, FRENA (antes: podía salir 'web' con un .cs cambiado adentro).
+  // Mixto raíz + node → corren las dos (antes: podía salir 'web' sola con un .cs cambiado adentro).
   const mixto = testScope.deduceScope({ files: ['src/A/Repo.cs', 'web/app.ts'], candidates: c });
-  assert.equal(mixto.ambiguous, true, 'jamás elegir la suite node con un .cs de la raíz tocado');
+  assert.deepEqual(mixto.scopes, ['.', 'web'], 'jamás la suite node sola con un .cs de la raíz tocado');
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
@@ -3627,7 +3629,7 @@ test('test-scope: story que toca backend Y frontend del mismo contenedor → amb
     ],
     candidates: cands,
   });
-  assert.equal(r.ambiguous, true, 'dos proyectos tocados → no se elige ninguno');
+  assert.equal(r.ambiguous, false, 'dos proyectos tocados → se corren los dos');
   assert.equal(r.scope, null);
   assert.match(r.reason, /2 proyectos/);
 });

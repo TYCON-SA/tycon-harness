@@ -158,11 +158,41 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js complete-ste
 
 Sin `--approved`/`--auto-approved` el comando bloquea; en una story con pantalla, también sin `--mockup-approved`. Queda en `marker.planApproval` y en `gates.log`. No se codea "mientras tanto": el orden es plan aprobado → tests (4.0 ATDD) → código.
 
+### Quién aprobó: manual o automática
+
+Cada aprobación queda además en `approvals.jsonl`, en la carpeta de la corrida, con qué se aprobó, cuándo, el commit,
+el tipo y quién. Hay dos tipos:
+
+- **manual**: la dio una persona con nombre. Se nombra con `--approved-by <correo o usuario>`.
+- **automática**: la dio un agente (con cuál y su modelo) o una regla. Lo que aprueba un agente **por delegación** de
+  una persona es automático: se anota con `--delegated-by <persona> --agent "<nombre> (<modelo>)"`, y la línea nombra
+  de quién es la delegación. `--auto-approved` es la regla de riesgo bajo.
+
+```bash
+# la aprobó el dueño:
+… complete-step 3 --approved "<cita>" --approved-by ana@example.com
+# la aprobó la coordinadora por delegación del dueño:
+… complete-step 3 --approved "<cita>" --delegated-by ana@example.com --agent "coordinadora (claude-opus-5-5)"
+```
+
+La aprobación de un agente nunca cuenta como la de una persona: un agente anotado con `--approved-by` queda
+automático igual. Ante la duda, automática: **quien es persona se nombra con su correo** (un usuario suelto con nombre
+de rol de agente, como «coordinadora» o «claude», queda automático; un correo `noreply` también).
+
+El límite, dicho para que nadie le pida más: el registro distingue tipos, **no prueba identidad**. Un agente que escribe
+el correo de una persona en `--approved-by` queda anotado como manual. Lo único firmado de verdad por una persona es lo
+que pasa por la terminal (la firma de los AC imposibles de verificar, `runtime-waiver`). Sin `--approved-by` ni `--delegated-by`, la línea queda automática «sin nombrar». La maqueta la
+aprueba quien aprobó el plan, en el mismo comando; `approve-mockup` acepta las mismas opciones. No se pide nada nuevo:
+si la línea no se puede escribir, el marcador avisa y el paso sigue. El portón de CI la exige en el merge (ver
+`guides/ci-gate.md`, «Registro de aprobaciones»). La misma forma vale para la exención de un CRITICAL al cerrar el
+paso 7 (`complete-step 7 --approved-by …` o `--delegated-by …`); los AC firmados por terminal (`runtime-waiver`) son
+manuales, a nombre del usuario de la terminal.
+
 ## Output de este step
 
 - `approved: true|false`
 - Feedback del usuario si pidió cambios
 - Path al plan aprobado (para referencia en Step 4)
-- `marker.planApproval` seteado (`complete-step 3 --approved|--auto-approved`)
+- `marker.planApproval` seteado (`complete-step 3 --approved|--auto-approved`) y la línea `plan` en `approvals.jsonl`
 
 Pasar al Step 4 solo si `approved: true`.

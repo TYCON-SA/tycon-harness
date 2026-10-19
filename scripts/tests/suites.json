@@ -371,6 +371,36 @@
       "requiere": []
     },
     {
+      "__nota": "las reglas de la organización (stack.rules): nombres de prueba, prueba de pantalla e idioma de la app.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/org-rules.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "los totales de un reporte JUnit (pytest, Go, Maven, Gradle, Karma).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/junit-report.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la cobertura de pytest, JaCoCo y Go, a la forma del lcov.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/coverage-readers.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "las herramientas de prueba de fábrica y las de la organización.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-runners.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "la puerta de pruebas con pytest, Go, Maven, Gradle, Karma y una herramienta de la organización (herramientas falsas en el PATH), y una story que toca dos proyectos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-runners.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [
@@ -412,6 +442,11 @@
     {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/adversarial-launch.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/approvals.test.js",
       "requiere": []
     },
     {

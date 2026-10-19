@@ -17,7 +17,8 @@
  *        merge; y antes de crear nada se lee la POLÍTICA de la rama principal (al menos un revisor): sin ella, la
  *        identidad de escritura del sitio podría escribir main, y la propuesta se apaga con el motivo.
  *   3  — si el archivo cambió desde que se abrió la sección (`oidEsperado` distinto del de main recién traída), no se
- *        propone: «recargá»; y si ya hay un pedido abierto de la pestaña sobre ese archivo, se muestra su enlace.
+ *        propone: vuelve `cambio` con el texto y la versión de la punta (`textoActual`, `oidActual`), para que quien
+ *        llama ponga la propuesta encima; y si ya hay un pedido abierto de la pestaña sobre ese archivo, se muestra su enlace.
  *   10 — un pedido por archivo, con todas las secciones cambiadas en el cuerpo.
  *   11 — una sola credencial de escritura (`SITE_OPERATIONS_WRITE_TOKEN`): va a git SÓLO en una cabecera por variables
  *        `GIT_CONFIG_*` (`http.<origen>/.extraheader`, el patrón de sources.js) y a la API en `Authorization`; nunca en
@@ -494,7 +495,13 @@ async function proponer({ clon, archivo, contenido, oidEsperado, idCorto, seccio
     // 2. ¿cambió el archivo desde que se abrió la sección? (decisión 3)
     const oidR = await correr(['rev-parse', '--verify', '--quiet', `${punta}:${archivo}`], { cwd: clon, env });
     const oidActual = oidR.status === 0 ? String(oidR.stdout).trim() : null;
-    if ((oidEsperado || null) !== oidActual) return { ok: false, codigo: 'cambio', message: M('rp.cambio') };
+    if ((oidEsperado || null) !== oidActual) {
+      // con el texto de la punta, quien llama puede poner la propuesta encima en vez de pedir que se recargue
+      const actualR = oidActual ? await correr(['cat-file', 'blob', oidActual], { cwd: clon, env }) : null;
+      const textoActual = actualR && actualR.status === 0 ? String(actualR.stdout) : null;
+      if (actualR && actualR.status !== 0) fallaGit(actualR, 'git cat-file');
+      return { ok: false, codigo: 'cambio', message: M('rp.cambio'), oidActual, ...(oidActual && textoActual === null ? {} : { textoActual }) };
+    }
 
     // 3. ¿ya hay un pedido abierto sobre este archivo? (decisión 3)
     const abierto = await pedidoAbierto({ remote, credencial: cred, idCorto, urlBase, fetch: f });

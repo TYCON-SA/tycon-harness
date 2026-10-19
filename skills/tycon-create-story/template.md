@@ -61,8 +61,9 @@ para {{benefit}}.
 | E1 | `E2E_Feature_Escenario` | 1 | e2e | `tests/e2e/story-{{epic_num}}-{{story_num}}-desc.spec.ts::nombreFuncion` — descripción breve | Componente visible, data-testid presente |
 
 > Todo AC aparece en al menos una fila. Filas `T*` = unit/integration; filas `E*` = E2E Playwright,
-> obligatorio si la story toca componentes React (story-format.md §6.1). Cada test lleva en el
-> código su tag de story y AC (`[Trait("Story", "N.M")]` + `[Trait("AC", "1")]` o `@story-N.M @ac-1`).
+> obligatorio si la story toca una pantalla según la regla `screen_test` de la organización (story-format.md §6.1).
+> El nombre de cada test sigue la regla `test_names` (`pipeline.js org-rules`). Cada test lleva en el código su tag
+> de story y AC (`[Trait("Story", "N.M")]` + `[Trait("AC", "1")]`, `@story-N.M @ac-1`, o `@pytest.mark.story`).
 
 ## Tasks / Subtasks
 

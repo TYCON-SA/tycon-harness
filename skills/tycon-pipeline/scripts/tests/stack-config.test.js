@@ -14,7 +14,7 @@ const os = require('os');
 const path = require('path');
 
 const LIB = path.resolve(__dirname, '..', 'lib');
-const { readStack, codeExtensions } = require(path.join(LIB, 'stack-config.js'));
+const { readStack, codeExtensions, orgRules } = require(path.join(LIB, 'stack-config.js'));
 
 function arbol(stack, { roto = false } = {}) {
   const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'stack-cfg-')));
@@ -68,7 +68,7 @@ test('@story-8.48 @ac-6 StackConfig_SameExtensionShape_BothReaders', () => {
   const team = require(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'team-repos.js'));
   const { EXT_RE } = require(path.join(LIB, 'code-files.js'));
   assert.equal(String(team.STACK_EXT_RE), String(EXT_RE));
-  assert.deepEqual(team.STACK_KEYS, ['code_extensions']);
+  assert.deepEqual(team.STACK_KEYS, ['code_extensions', 'test_runners', 'rules']);
   // una terminación mala no apaga el archivo: sale aparte y la sección queda sin esa subclave
   const base = { version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' }, operations: { platform: 'github', org: 'acme', repo: 'o' } };
   const r = team.parse(JSON.stringify({ ...base, stack: { code_extensions: ['GD'] } }));
@@ -78,4 +78,24 @@ test('@story-8.48 @ac-6 StackConfig_SameExtensionShape_BothReaders', () => {
   const bien = team.parse(JSON.stringify({ ...base, stack: { code_extensions: ['.gd'] } }));
   assert.deepEqual(bien.data.stack, { code_extensions: ['.gd'] });
   assert.equal(bien.sectionProblems, undefined);
+  // una regla mal escrita sale aparte y las demás reglas quedan
+  const reglas = team.parse(JSON.stringify({ ...base, stack: { rules: { test_names: 'camel', ui_language: 'es', otra: 1 } } }));
+  assert.equal(reglas.ok, true);
+  assert.deepEqual(reglas.data.stack, { rules: { ui_language: 'es' } });
+  assert.deepEqual(reglas.sectionProblems.stack.map((p) => p.path).sort(), ['stack.rules.otra', 'stack.rules.test_names']);
+});
+
+test('@story-8.48 @ac-16 StackConfig_Rules_DefaultsWithoutConfig', () => {
+  // sin árbol, sin archivo o sin `stack`: las reglas de fábrica, y nunca tira
+  for (const e of [{ TYCON_GUIDES_DIR: path.join(HOME, 'no-existe') }, env(arbol(null)), env(arbol(undefined))]) {
+    const r = orgRules({ env: e, home: HOME });
+    assert.deepEqual(r.rules, {
+      test_names: { value: 'any', source: 'por_defecto' },
+      screen_test: { value: 'ui', source: 'por_defecto' },
+      ui_language: { value: null, source: 'por_defecto' },
+    });
+  }
+  const roto = orgRules({ env: env(arbol(undefined, { roto: true })), home: HOME });
+  assert.equal(roto.rules.test_names.value, 'any');
+  assert.ok(roto.problems.length > 0);
 });

@@ -81,6 +81,12 @@ const INVOCATION = /\bbash\s+(?:scripts\/ci\/public-ci\.sh\b|"\$\{RUNNER_TEMP\}\
  */
 const AFTER_QUEUE = "github.event_name != 'push' || github.actor != 'github-merge-queue[bot]'";
 
+/**
+ * El freno de un pedido sin el guion de la revisión en la base: rojo «no pude correr», nunca los controles del pedido.
+ * Está en la forma y la regla `base-controls` lo exige; con la sangría con que va en el paso.
+ */
+const BASE_SCRIPT_GUARD = '            git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh" || { echo "::error::no pude correr: la base no trae scripts/ci/run-base-controls.sh; los controles de un pedido salen de la base, nunca del pedido"; exit 1; }';
+
 /** Una línea `uses:` de la forma: la acción es fija; el sha completo y el tag del comentario son un patrón. */
 const pinned = (prefix, action) => ({
   re: new RegExp(`^${`${prefix}${action}`.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+$`),
@@ -132,13 +138,9 @@ const SHAPE = [
   '          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ] || [ "${GITHUB_EVENT_NAME}" = "merge_group" ]; then',
   '            BASE="${BASE_SHA:-$(git rev-parse --verify "origin/${BASE_REF#refs/heads/}^{commit}")}" || exit 1',
   '            git cat-file -e "${BASE}^{commit}" || exit 1',
-  '            if git cat-file -e "${BASE}:scripts/ci/run-base-controls.sh"; then',
-  '              git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
-  '              bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"',
-  '            else',
-  '              echo "::warning::la base no trae scripts/ci/run-base-controls.sh: corren los controles del pedido"',
-  '              bash scripts/ci/public-ci.sh --clean-machine --range "origin/${BASE_REF#refs/heads/}...HEAD"',
-  '            fi',
+  BASE_SCRIPT_GUARD,
+  '            git show "${BASE}:scripts/ci/public-ci.sh" > "${RUNNER_TEMP}/public-ci-base.sh"',
+  '            bash "${RUNNER_TEMP}/public-ci-base.sh" --root . --clean-machine --range "${BASE}...HEAD" --base "${BASE}"',
   '          else',
   '            bash scripts/ci/public-ci.sh --clean-machine',
   '          fi',
@@ -571,6 +573,11 @@ const RULES = [
       // el rango sale de la misma base: en la cola, desde main se colarían los cambios del grupo de adelante
       if (!code.some((b) => /^bash "\$\{RUNNER_TEMP\}\/public-ci-base\.sh" .* --range "\$\{BASE\}\.\.\.HEAD" /.test(b))) return 'el public-ci.sh de la base no corre con `--range "${BASE}...HEAD"` (el rango sale de la misma base)';
       if (!code.some((b) => b === 'git cat-file -e "${BASE}^{commit}" || exit 1')) return 'una base que no se lee no frena antes de elegir qué guion corre (`git cat-file -e "${BASE}^{commit}" || exit 1`)';
+      // sin el guion en la base, rojo: ninguna llamada al public-ci.sh del pedido con `--range` (la rama que corría los
+      // controles del propio pedido)
+      if (!code.some((b) => b === BASE_SCRIPT_GUARD.trim())) return 'una base sin scripts/ci/run-base-controls.sh no frena en rojo «no pude correr»';
+      const own = lines.filter((l) => l.code && /^bash scripts\/ci\/public-ci\.sh .*--range\b/.test(l.body));
+      if (own.length) return `en un pedido corre el public-ci.sh del pedido (línea ${at(own)}): los controles salen de la base, nunca del pedido`;
       if (!code.some((b) => b === 'BASE_SHA: ${{ github.event.merge_group.base_sha }}')) return 'en la cola la base no es la del grupo (`BASE_SHA: ${{ github.event.merge_group.base_sha }}`)';
       return null;
     },

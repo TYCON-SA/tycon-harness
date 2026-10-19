@@ -45,6 +45,69 @@ function isCodeFile(f, { extra } = {}) {
   return codeFiles.isSource(f, { extra: ex });
 }
 const isTestFile = codeFiles.isTestFile;
+
+/**
+ * La cobertura de una herramienta de lib/test-runners.js, a la forma del lcov: `{ ok, map, unresolved, reason }`. Sin
+ * cobertura declarada, sin el archivo, o con pytest corrido sin pytest-cov, `ok: false` con el motivo.
+ */
+function coberturaGenerica(def, { repoRun, resultsDir }) {
+  const sinCov = path.join(resultsDir, 'sin-cobertura.txt');
+  if (existe(sinCov)) return { ok: false, reason: `sin cobertura: ${fs.readFileSync(sinCov, 'utf8').trim()}` };
+  const cov = def.coverage;
+  if (!cov) return { ok: false, reason: `${def.name} no declara cobertura` };
+  const archivos = reportesDe(cov, { repoRun, resultsDir });
+  if (!archivos.length) return { ok: false, reason: `${def.name} no dejó reporte de cobertura (${cov.path})${cov.optional ? ': el proyecto no tiene el plugin que la mide' : ''}` };
+  const lectores = require('./coverage-readers.js');
+  const leer = {
+    cobertura: (f) => lectores.readCobertura(f, { projectDir: repoRun }),
+    jacoco: (f) => lectores.readJacoco(f, { projectDir: repoRun }),
+    'go-cover': (f) => lectores.readGoCover(f, { projectDir: repoRun }),
+    lcov: (f) => readLcov(f, { base: repoRun, within: repoRun, label: path.basename(f), realpath: (p) => rutaReal(p).split('\\').join('/') }),
+  }[cov.format];
+  if (!leer) return { ok: false, reason: `cobertura en formato ${cov.format}: esta puerta todavía no la lee` };
+  const map = new Map(); const unresolved = [];
+  for (const f of archivos) {
+    const r = leer(f);
+    if (!r.ok) return { ok: false, reason: r.reason };
+    for (const [ruta, lineas] of r.map) {
+      if (!map.has(ruta)) map.set(ruta, new Map());
+      for (const [n, h] of lineas) map.get(ruta).set(n, (map.get(ruta).get(n) || 0) + (Number(h) || 0));
+    }
+    for (const u of r.unresolved || []) if (!unresolved.includes(u)) unresolved.push(u);
+  }
+  return { ok: true, map, unresolved, sourceUnreadable: [] };
+}
+
+/**
+ * Los archivos de un reporte o de una cobertura: una ruta fija, o un patrón con `*` / `**` relativo a la carpeta de la
+ * corrida de la herramienta. Con `writtenDuringRun`, sólo los escritos después de la marca de inicio (Karma escribe
+ * donde su configuración diga; un reporte viejo de otra corrida no cuenta).
+ */
+function reportesDe(def, { repoRun, resultsDir }) {
+  if (!def || typeof def.path !== 'string') return [];
+  const patrones = [def.path, def.alt].filter((p) => typeof p === 'string' && p);
+  const inicio = (() => { try { return fs.statSync(path.join(resultsDir, '.inicio')).mtimeMs; } catch (_) { return 0; } })();
+  const out = new Set();
+  for (const pat of patrones) {
+    const abs = path.isAbsolute(pat) ? pat : path.join(repoRun, pat);
+    if (!/[*]/.test(abs)) {
+      // una ruta fija también: un jacoco.xml de otra corrida que ésta no reescribió no es de ésta
+      if (existe(abs) && (!def.writtenDuringRun || fs.statSync(abs).mtimeMs >= inicio)) out.add(abs);
+      continue;
+    }
+    const base = abs.slice(0, abs.search(/[^/\\]*[*]/));
+    const rel = abs.slice(base.length).split('\\').join('/');
+    // `**/` = cualquier cantidad de carpetas (también ninguna); `*` = cualquier cosa dentro de un nombre
+    const cuerpo = rel.split('**/').map((parte) => parte.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*')).join('(?:.*/)?');
+    const re = new RegExp(`^${cuerpo}$`);
+    for (const f of buscarArchivos(base, () => true)) {
+      const relF = path.relative(base, f).split('\\').join('/');
+      if (/(^|\/)node_modules\//.test(relF)) continue;
+      if (re.test(relF) && (!def.writtenDuringRun || fs.statSync(f).mtimeMs >= inicio)) out.add(f);
+    }
+  }
+  return [...out].sort();
+}
 const OBS_HASTA = '2026-10-06';
 const COVERAGE_DEFAULT = 75;
 
@@ -389,8 +452,37 @@ function informe(argv) {
   // Las pruebas `todo` se cuentan aparte: no corren, pero jest y vitest las suman al total (y vitest, a las pasadas).
   // No van a `totals`, que sigue igual al del Python; sólo las descuenta `pruebasCorridas()` (hallazgo #7).
   let todo = 0;
+  // Una herramienta de lib/test-runners.js (pytest, Go, Maven, Gradle, Karma o una de la organización): test-gate.sh
+  // deja su definición en runner.json; de ahí salen qué reporte y qué cobertura leer.
+  const generico = (() => {
+    const f = path.join(resultsDir, 'runner.json');
+    if (!existe(f)) return null;
+    try { return get(leerJson(f), 'runner', null); } catch (_) { return null; }
+  })();
+  if (generico) result.runner_source = generico.source || null;
   try {
-    if (runner === 'dotnet') {
+    if (generico) {
+      const { readJunit } = require('./junit-report.js');
+      const archivos = reportesDe(generico.results, { repoRun, resultsDir });
+      const j = generico.results && generico.results.format === 'junit' ? readJunit(archivos)
+        : { ok: false, reason: `formato de reporte ${generico.results && generico.results.format} sin lector en esta puerta` };
+      const sinPruebas = path.join(resultsDir, 'sin-pruebas.txt');
+      if (existe(sinPruebas)) result.no_tests_run = `${fs.readFileSync(sinPruebas, 'utf8').trim()}: eso no es verde`;
+      if (j.ok) {
+        result.totals = { total: j.total, passed: j.passed, failed: j.failed, skipped: j.skipped, executed: j.total - j.skipped };
+        result.report_files = j.files;
+        // una herramienta que sale 0 con fallas en el reporte (Maven con testFailureIgnore) no es verde
+        if (j.failed > 0 && result.suite_green) {
+          result.suite_green = false;
+          result.failed_in_report = `${j.failed} prueba(s) fallida(s) en el reporte aunque la herramienta salió 0`;
+        }
+      } else {
+        result.totals_error = generico.name === 'karma' && !archivos.length
+          ? 'Karma sin reporte JUnit: configurá karma-junit-reporter en karma.conf.js (sin él la puerta no puede contar las pruebas)'
+          : j.reason;
+        process.stderr.write(`[test-gate] 🔴 ${result.totals_error}\n`);
+      }
+    } else if (runner === 'dotnet') {
       // Con corrida secuencial por proyecto hay UN trx por ensamblado: se suman TODOS (fix 2026-06-11).
       const trx = buscarArchivos(resultsDir, (nm) => nm.endsWith('.trx'));
       if (trx.length) {
@@ -536,7 +628,8 @@ function informe(argv) {
   const lcov = runner === 'suites-json'
     ? (existe(lcovFile) ? readLcov(lcovFile, { base: repoRun, within: repoRun, label: lcovLabel, realpath: (p) => rutaReal(p).split('\\').join('/') })
       : { ok: false, reason: 'la corrida de suites.json no dejó reporte de cobertura (falta coverage/lcov.info: el corredor lo deja con --coverage)' })
-    : null;
+    : generico ? coberturaGenerica(generico, { repoRun, resultsDir }) : null;
+  if (generico && lcov.ok && lcov.unresolved && lcov.unresolved.length) result.coverage.report_files_not_in_project = lcov.unresolved;
   if (runner === 'suites-json') {
     // lo que el número no cubre, dicho en el artefacto (rutas relativas: la copia que viaja no lleva las de la máquina)
     const rel = (p) => (typeof p === 'string' && p ? path.relative(rutaReal(repoRun), rutaReal(p)).split('\\').join('/') : null);
@@ -551,7 +644,7 @@ function informe(argv) {
     if (lcov.ok && lcov.sourceUnreadable.length) result.coverage.lcov_sources_unreadable = lcov.sourceUnreadable.map(rel);
   }
   try {
-    if (runner === 'suites-json') {
+    if (runner === 'suites-json' || generico) {
       if (lcov.ok) {
         for (const [ruta, lineas] of lcov.map) {
           const vals = [...lineas.values()];
@@ -612,6 +705,8 @@ function informe(argv) {
   for (const nf of newFiles) {
     const base = nf.split('\\').join('/');
     let hit = null;
+    // Con una herramienta de lib/test-runners.js el proyecto puede ser una subcarpeta del repo, y git da las rutas desde
+    // la raíz del repo o desde la carpeta según el comando: se busca por terminación, como con los demás corredores.
     if (runner === 'suites-json') {
       // las claves del lcov son rutas reales absolutas: sólo calza la del archivo, no un homónimo de otra carpeta
       const objetivo = rutaReal(path.join(repoRun, base)).split('\\').join('/');
@@ -629,7 +724,7 @@ function informe(argv) {
     const avg = pySum(coveredVals) / coveredVals.length;
     result.coverage.new_files_pct = redondear1(avg);
     result.coverage.meets_threshold = avg >= covMin;
-  } else if (runner === 'suites-json' && !lcov.ok) {
+  } else if ((runner === 'suites-json' || generico) && !lcov.ok) {
     // sin el lcov del corredor (no se pidió la cobertura, o quedó vacío o ilegible): se dice cuál y por qué
     result.coverage.no_cross_check = `sin cruce de cobertura: ${lcov.reason}`;
   } else if (!newFiles.length) {
@@ -730,7 +825,7 @@ function informe(argv) {
 
   /** {ruta del reporte: Map(línea → cubierta)}. Lanza si el reporte existe y no se puede leer. */
   const mapaDeLineas = () => {
-    if (runner === 'suites-json') {
+    if (runner === 'suites-json' || generico) {
       if (!lcov.ok) throw new Error(lcov.reason);
       return lcov.map;
     }
@@ -931,7 +1026,7 @@ function informe(argv) {
 }
 
 // OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció (story 2.21, AC 9)
-module.exports = { informe, leerXml, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
+module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {
   try {

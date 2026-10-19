@@ -397,6 +397,10 @@ function build(o) {
     reviewers,
     iterations,
     iterations_source: iterationsSource,
+    // Esta corrida la hizo un arnés que anota cada aprobación en `approvals.jsonl`. El portón de CI exige
+    // el registro (y su línea del plan) sólo con esta marca: un roster de un arnés anterior no la trae, y ahí la falta
+    // avisa. Campo opcional: `VERSION` no se toca.
+    registro_aprobaciones: 1,
   };
   // Se publica sólo si hay algo que decir: un roster sin hallazgos de los pasos 0-4 no gana una
   // lista vacía, y los rosters ya commiteados se siguen leyendo igual (el campo es opcional, y por

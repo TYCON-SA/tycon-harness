@@ -1,0 +1,27 @@
+{
+  "agent": "tycon-story-validator",
+  "file": "agents/tycon-story-validator.md",
+  "hash": "8d033cd1506c7949cec651160727085056b11dda",
+  "passed": 11,
+  "total": 11,
+  "score": 1,
+  "baseline": {
+    "passed": 6,
+    "total": 6,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-story-validator::val-c1-archivo-inexistente": true,
+    "tycon-story-validator::val-w3-tests-sin-pascalcase": true,
+    "tycon-story-validator::val-w3-sin-regla-no-pide-estilo": true,
+    "tycon-story-validator::limpio-story-consistente": true,
+    "tycon-story-validator::val-w14-cita-linea-sobre-archivo-que-la-story-modifica": true,
+    "tycon-story-validator::limpio-cita-por-miembro-sobre-archivo-propio-sin-w14": true,
+    "tycon-story-validator::val-w16-ac-muestra-ids-internos-al-usuario": true,
+    "tycon-story-validator::limpio-ac-muestra-numero-con-nombre-sin-w16": true,
+    "tycon-story-validator::val-c8-patron-de-referencia-por-asuncion": true,
+    "tycon-story-validator::val-w9-p-numbering-sin-calificar": true,
+    "tycon-story-validator::val-w10-backlink-faltante-en-la-padre": true
+  }
+}

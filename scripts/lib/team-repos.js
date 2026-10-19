@@ -71,8 +71,41 @@ const COVERAGE_KEYS = ['min_touched_lines_pct'];
 // La tecnología de la organización: `code_extensions` = terminaciones que también son código, además de las
 // del núcleo (skills/tycon-pipeline/scripts/lib/code-files.js, que la lee con lib/stack-config.js). Misma forma que
 // `EXT_RE` de code-files.js: este lector no carga el skill, y stack-config.test.js compara las dos.
-const STACK_KEYS = ['code_extensions'];
+// `test_runners` = las herramientas de prueba que declara la organización; misma validación que `validateRunners` de
+// skills/tycon-pipeline/scripts/lib/test-runners.js (test-runners.test.js compara los dos).
+// `rules` = las reglas que otro equipo tiene distintas: cómo se nombran las pruebas, qué cuenta como pantalla para la
+// prueba E2E obligatoria, y en qué idioma está la app. Una regla sin declarar vale lo de fábrica (stack-config.js).
+const STACK_KEYS = ['code_extensions', 'test_runners', 'rules'];
 const STACK_EXT_RE = /^\.[a-z0-9]+(?:\.[a-z0-9]+)?$/;
+const RULE_VALUES = { test_names: ['any', 'pascal', 'snake'], screen_test: ['ui', 'react', 'off'] };
+const UI_LANGUAGE_RE = /^[a-z]{2}(?:-[A-Z]{2})?$/;
+const RUNNER_RESULT_FORMATS = ['junit', 'jest-json'];
+const RUNNER_COVERAGE_FORMATS = ['cobertura', 'lcov', 'istanbul-json', 'jacoco', 'go-cover'];
+const RUNNER_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** Los problemas de cada herramienta de `stack.test_runners`, con la ruta `stack.test_runners.<i>.<campo>`. */
+function runnersProblems(value) {
+  if (!Array.isArray(value)) return [{ path: 'stack.test_runners', message: 'tiene que ser una lista de herramientas de prueba' }];
+  const out = []; const nombres = new Set();
+  value.forEach((r, i) => {
+    const p = `stack.test_runners.${i}`;
+    if (!isObject(r)) { out.push({ path: p, message: 'tiene que ser un objeto' }); return; }
+    if (typeof r.name !== 'string' || !RUNNER_NAME.test(r.name)) out.push({ path: `${p}.name`, message: `minúsculas, números y guiones (es ${JSON.stringify(r.name)})` });
+    else if (nombres.has(r.name)) out.push({ path: `${p}.name`, message: `${r.name} está repetido` });
+    if (typeof r.detect !== 'string' || !r.detect || r.detect.startsWith('/') || r.detect.startsWith('\\') || /^[A-Za-z]:/.test(r.detect) || r.detect.split(/[\\/]/).includes('..')) {
+      out.push({ path: `${p}.detect`, message: 'el nombre de un archivo del proyecto, sin «..» ni ruta absoluta' });
+    }
+    if (typeof r.command !== 'string' || !r.command.trim()) out.push({ path: `${p}.command`, message: 'falta el comando que corre las pruebas' });
+    if (!isObject(r.results) || !RUNNER_RESULT_FORMATS.includes(r.results.format) || typeof r.results.path !== 'string') {
+      out.push({ path: `${p}.results.format`, message: `el reporte tiene que ser ${RUNNER_RESULT_FORMATS.join(' o ')}, con su path` });
+    }
+    if (r.coverage !== undefined && (!isObject(r.coverage) || !RUNNER_COVERAGE_FORMATS.includes(r.coverage.format) || typeof r.coverage.path !== 'string')) {
+      out.push({ path: `${p}.coverage.format`, message: `la cobertura tiene que ser ${RUNNER_COVERAGE_FORMATS.join(', ')}, con su path` });
+    }
+    if (typeof r.name === 'string') nombres.add(r.name);
+  });
+  return out;
+}
 // Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
@@ -258,14 +291,45 @@ function stackProblems(value) {
       });
     }
   }
+  if (value.test_runners !== undefined) out.push(...runnersProblems(value.test_runners));
+  if (value.rules !== undefined) out.push(...rulesProblems(value.rules));
   return out;
 }
 
-/** `stack` sin las subclaves con problemas: una terminación mal escrita no apaga lo demás de la sección. */
+/** Los problemas de `stack.rules`: claves cerradas, cada regla con sus valores. */
+function rulesProblems(value) {
+  if (!isObject(value)) return [{ path: 'stack.rules', message: 'tiene que ser un objeto con las reglas de la organización' }];
+  const out = [];
+  for (const [k, v] of Object.entries(value)) {
+    if (comment(k)) continue;
+    const p = `stack.rules.${k}`;
+    if (RULE_VALUES[k]) {
+      if (!RULE_VALUES[k].includes(v)) out.push({ path: p, message: `tiene que ser ${RULE_VALUES[k].join(', ')} (es ${JSON.stringify(v)})` });
+    } else if (k === 'ui_language') {
+      if (v !== null && (typeof v !== 'string' || !UI_LANGUAGE_RE.test(v))) out.push({ path: p, message: `el código del idioma, como "es" o "pt-BR", o null para no juzgarlo (es ${JSON.stringify(v)})` });
+    } else out.push({ path: p, message: 'clave desconocida' });
+  }
+  return out;
+}
+
+/**
+ * `stack` sin lo que tiene problemas: una terminación mal escrita no apaga lo demás de la sección, y una herramienta de
+ * prueba mal escrita se descarta sola (las demás siguen).
+ */
 function stackSinProblemas(value, problemas) {
   const malas = new Set(problemas.map((p) => p.path.split('.')[1]).filter(Boolean));
   const out = {};
-  for (const [k, v] of Object.entries(value)) if (STACK_KEYS.includes(k) && !malas.has(k)) out[k] = v;
+  for (const [k, v] of Object.entries(value)) {
+    if (!STACK_KEYS.includes(k)) continue;
+    if (k === 'test_runners' && Array.isArray(v)) {
+      const indices = new Set(problemas.map((p) => p.path.match(/^stack\.test_runners\.(\d+)/)).filter(Boolean).map((m) => Number(m[1])));
+      out[k] = v.filter((_, i) => !indices.has(i));
+    } else if (k === 'rules' && isObject(v)) {
+      // una regla mal escrita sale sola: vale lo de fábrica, y las demás siguen
+      const reglasMalas = new Set(problemas.map((p) => p.path.match(/^stack\.rules\.([^.]+)/)).filter(Boolean).map((m) => m[1]));
+      out[k] = Object.fromEntries(Object.entries(v).filter(([r]) => !comment(r) && !reglasMalas.has(r)));
+    } else if (!malas.has(k)) out[k] = v;
+  }
   return out;
 }
 
@@ -369,7 +433,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, modelsProblems, stackProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, modelsProblems, stackProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

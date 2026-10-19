@@ -719,6 +719,38 @@ function mensajeDelPaseAdversarial(v) {
   e('  Abandonarlo es una decisión: TYCON_NO_DEEP_REVIEW=1 marker.js mark-adversarial-skipped --files … (queda en bypass.log).');
 }
 
+// Cada aprobación que el pipeline ya pide queda en `approvals.jsonl`, en la carpeta de la corrida, como
+// manual (una persona con nombre) o automática (un agente o una regla). Si no se puede escribir, AVISA y no frena el
+// paso: el registro no agrega interrupciones. Lo agarra el portón de CI en el merge, que exige la
+// línea del plan en toda corrida que declara anotar aprobaciones.
+function anotarAprobacion(marker, entrada) {
+  try {
+    const approvals = require('./lib/approvals.js');
+    const repo = marker.repoPath || process.cwd();
+    const storyAbs = resolveStoryPath(marker.storyPath, marker) || undefined;
+    const runDir = require('./pipeline.js').resolveRunDir(repo, String(marker.storyId), true, storyAbs);
+    if (!runDir) throw new Error('no pude calcular la carpeta de la corrida (clave de la story)');
+    let commit = null;
+    try {
+      commit = require('child_process').execFileSync('git', ['-C', repo, 'rev-parse', '--short=12', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+    } catch (_e) { /* repo sin commits: la línea va sin commit */ }
+    const linea = approvals.anotar(runDir, { commit, ...entrada });
+    appendLog('gates.log', { name: 'approval', status: 'ok', story: marker.storyId, que: linea.que, tipo: linea.tipo, quien: linea.quien });
+    return linea;
+  } catch (e) {
+    appendLog('gates.log', { name: 'approval', status: 'not-recorded', story: marker.storyId, que: entrada && entrada.que, error: String(e.message || e).slice(0, 200) });
+    console.error(`⚠️  no pude anotar la aprobación «${entrada && entrada.que}» en approvals.jsonl (${e.message || e}). El paso sigue; el portón de CI la va a pedir en el merge.`);
+    return null;
+  }
+}
+
+/** El tipo y el quién de una aprobación, de las opciones `--approved-by`, `--delegated-by` y `--agent`. */
+function quienDeLasOpciones(optVal, extra) {
+  return require('./lib/approvals.js').quienDesdeOpciones({
+    approvedBy: optVal('--approved-by'), delegatedBy: optVal('--delegated-by'), agent: optVal('--agent'), ...(extra || {}),
+  });
+}
+
 function cmdCompleteStep(nRaw, flags) {
   const n = parseInt(nRaw, 10);
   if (Number.isNaN(n)) {
@@ -829,6 +861,13 @@ function cmdCompleteStep(nRaw, flags) {
     }
     marker.planApproval = { mode: approved ? 'user' : 'auto-low-risk', text: approved || auto, at: at3 };
     appendLog('gates.log', { name: 'plan-approval', status: 'ok', story: marker.storyId, mode: marker.planApproval.mode, text: marker.planApproval.text });
+    // `--approved` sin `--approved-by` ni `--delegated-by` queda automática «sin nombrar»; `--auto-approved`
+    // es la regla de riesgo bajo. La maqueta la aprueba quien aprobó el plan, en el mismo comando.
+    const quienPlan = approved ? quienDeLasOpciones(optVal) : quienDeLasOpciones(() => null, { regla: 'risk-class LOW' });
+    anotarAprobacion(marker, { que: 'plan', cuando: at3, via: approved ? 'complete-step 3 --approved' : 'complete-step 3 --auto-approved', ...quienPlan });
+    if (mockupPlan) {
+      anotarAprobacion(marker, { que: 'maqueta', cuando: at3, via: 'complete-step 3 --mockup-approved', ...quienDeLasOpciones(optVal) });
+    }
     // R12: la decisión se anota SIEMPRE, para que el paso 8 vea una pantalla que apareció después del plan.
     marker.mockupDecision = { screen: sc.screen, signal: sc.signal || null, at: at3 };
     if (mockupPlan) {
@@ -981,6 +1020,39 @@ function cmdCompleteStep(nRaw, flags) {
       const { runMutationGate } = require('./lib/mutation-gate.js');
       const g = runMutationGate({ marker, opts, appendLog });
       if (g.block) process.exit(1);
+    }
+  }
+
+  // ── Step 7 (hallazgos: la decisión) — la exención de un CRITICAL queda en el registro de aprobaciones ──
+  // La decisión ya existe: es el `disposition: waived` de un CRITICAL en findings.json. Al cerrar el 7 se anota una línea
+  // por cada uno, con `--approved-by <persona>` (manual) o `--delegated-by <persona> --agent "<nombre> (<modelo>)"`
+  // (automática); sin ninguno, automática «sin nombrar». No frena: avisa si no puede leer los hallazgos.
+  if (n === 7) {
+    // El paso 7 corre sólo con CRITICAL, así que sus hallazgos tienen que estar: no poder leerlos se dice siempre
+    // («no hay exenciones» y «no pude mirar» no se escriben igual).
+    let lista = null;
+    let motivo = null;
+    try {
+      const storyAbs7 = resolveStoryPath(marker.storyPath, marker) || undefined;
+      const rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs7);
+      if (!rd) motivo = 'no encontré la carpeta de la corrida';
+      else {
+        const data = JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8'));
+        lista = Array.isArray(data) ? data : (Array.isArray(data && data.findings) ? data.findings : null);
+        if (!lista) motivo = 'findings.json no es una lista de hallazgos';
+      }
+    } catch (e) {
+      motivo = e && e.code === 'ENOENT' ? 'falta findings.json (pipeline.js write-findings)' : `findings.json no se lee (${e.message || e})`;
+    }
+    if (motivo) {
+      appendLog('gates.log', { name: 'approval', status: 'not-recorded', story: marker.storyId, que: 'exenciones de CRITICAL', error: motivo });
+      console.error(`⚠️  complete-step 7: ${motivo}: las exenciones de CRITICAL no quedan en approvals.jsonl. El paso sigue.`);
+    }
+    for (const f of lista || []) {
+      if (!f || String(f.severity).toUpperCase() !== 'CRITICAL' || f.disposition !== 'waived') continue;
+      anotarAprobacion(marker, {
+        que: `exencion ${f.rule_id || '?'}${f.file ? ` en ${f.file}` : ''}`, via: 'complete-step 7', ...quienDeLasOpciones(optVal),
+      });
     }
   }
 
@@ -1469,6 +1541,10 @@ function cmdApproveMockup(flags) {
   marker.mockupApproval = { file: p.mockup, sha256: sha, mode: 'user', text: cita, at };
   if (!marker.mockupDecision || marker.mockupDecision.screen !== true) marker.mockupDecision = { screen: true, signal: sc.signal || null, at };
   appendLog('gates.log', { name: 'mockup-approval', status: 'ok', story: marker.storyId, sha256: sha.slice(0, 12), reapproval: !!prev, ...(prev ? { previous: prev.slice(0, 12) } : {}) });
+  {
+    const optVal = (name) => { const k = opts.indexOf(name); return k >= 0 ? (opts[k + 1] ?? '') : null; };
+    anotarAprobacion(marker, { que: 'maqueta', cuando: at, via: 'approve-mockup', ...quienDeLasOpciones(optVal) });
+  }
   writeMarker(marker);
   console.log(JSON.stringify({ ok: true, file: p.mockup, approval: p.approval, sha256: sha, reapproval: !!prev }, null, 2));
 }
@@ -1478,11 +1554,18 @@ function markerStoryIsUi(marker) {
     const p = marker && marker.storyPath;
     if (!p || !fs.existsSync(p)) return false;
     const content = fs.readFileSync(p, 'utf8');
+    // qué cuenta como pantalla lo dice la regla screen_test de la organización (ui de fábrica, react u off)
     return require(path.join(__dirname, 'lib', 'ui-signal.js'))
-      .storyTouchesUi(content, (marker && marker.repoPath) || process.cwd());
-  } catch (_e) {
+      .applyScreenRule(content, (marker && marker.repoPath) || process.cwd(), screenRule()).ui;
+  } catch (e) {
+    // no deja la exigencia de pantalla apagada en silencio
+    console.error(`⚠️  no pude decidir si la story toca pantalla (${e && e.message ? e.message : e}): se trata como sin pantalla`);
     return false;
   }
+}
+
+function screenRule() {
+  try { return require(path.join(__dirname, 'lib', 'stack-config.js')).orgRules().rules.screen_test.value; } catch (_e) { return 'ui'; }
 }
 
 // Story 7.18 (AC 6) — la baja de pantalla nunca es muda. Si el detector de antes tomaba la story como de
@@ -1494,8 +1577,12 @@ function avisarBajaDePantalla(marker) {
     const p = marker && resolveStoryPath(marker.storyPath, marker);
     if (!p || !fs.existsSync(p)) return;
     const ui = require(path.join(__dirname, 'lib', 'ui-signal.js'));
-    const linea = ui.proseDropNotice(ui.uiSignalDetail(fs.readFileSync(p, 'utf8'), marker.repoPath || process.cwd()));
+    const content = fs.readFileSync(p, 'utf8');
+    const linea = ui.proseDropNotice(ui.uiSignalDetail(content, marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
+    // con screen_test: off, el cierre dice que la prueba de pantalla no se exigió
+    const regla = ui.applyScreenRule(content, marker.repoPath || process.cwd(), screenRule()).note;
+    if (regla) console.error(regla);
   } catch (_e) { /* el aviso nunca rompe el comando */ }
 }
 
@@ -1568,7 +1655,7 @@ function cmdSetCheck(name, status, flag) {
   if (name === 'dod') avisarBajaDePantalla(marker);
   // DODRT-C5.1 (2026-07-07) — DoD de una story de UI NO se puede marcar manual: exige Playwright real.
   if (name === 'dod' && flag !== '--force-manual' && status === 'green' && markerStoryIsUi(marker)) {
-    console.error("marker.js set-check dod: RECHAZADO — la story toca UI (.tsx / paths FE del repo / E2E).");
+    console.error("marker.js set-check dod: RECHAZADO — la story toca una pantalla (.tsx, .jsx, .svelte, .vue / paths FE del repo / E2E).");
     console.error("  El DoD de una story de UI NO se marca a mano: exige un E2E Playwright que asserte");
     console.error("  CADA AC de UI (regla DODRT-C5.1). Usá:");
     console.error("    marker.js run-check dod -- npx playwright test <spec> --workers=1");
@@ -3200,6 +3287,11 @@ function cmdRuntimeWaiver(storyArg) {
     console.error('   COMMITEALO: es lo que hace que tu aprobación valga en otra máquina y en CI.');
   }
   appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: approved, rejected, matrixHash: matrix.hash, approvedBy });
+  // La firma por terminal es de una persona (el agente no tiene terminal): manual, una línea por AC.
+  {
+    const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
+    for (const linea of require('./lib/approvals.js').lineasDeFirmaPorTerminal(approved, approvedBy)) anotarAprobacion(mk, linea);
+  }
   console.error(`\n✅ Waiver registrado (TTY): story ${matrix.sid}, ACs aprobados ${approved.join(',')}${rejected.length ? ` · rechazados ${rejected.join(',')}` : ''}, hash ${matrix.hash}, por ${approvedBy}.`);
   console.error(`   Pinneado al hash actual: si el código/evidencia cambian, se invalida solo.`);
   console.error(`   Cadena: ${entry.chain}`);

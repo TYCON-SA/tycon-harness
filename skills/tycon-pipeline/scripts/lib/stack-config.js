@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * stack-config.js — la clave `stack` del `team-repos.json` de la organización: las extensiones que también son código.
+ * stack-config.js — la clave `stack` del `team-repos.json` de la organización: las extensiones que también son código y
+ * las reglas (cómo se nombran las pruebas, qué cuenta como pantalla, en qué idioma está la app).
  *
  * Mismo camino que el umbral de cobertura (`test-gate-report.js`, `resolverUmbral`): el árbol del arnés lo da
  * `harness-path.js` en modo hook, el archivo se lee con el lector de las máquinas (`scripts/lib/team-repos.js`). Nunca
@@ -64,4 +65,25 @@ function orgExtra(opts) {
   try { return codeExtensions(opts).extra; } catch (_) { return []; }
 }
 
-module.exports = { readStack, codeExtensions, orgExtra };
+// Lo de fábrica no tiene la forma de ningún equipo: cualquier nombre de prueba, toda pantalla (.tsx, .jsx, .svelte,
+// .vue) pide su E2E, y el idioma de la app no se juzga.
+const RULE_DEFAULTS = Object.freeze({ test_names: 'any', screen_test: 'ui', ui_language: null });
+
+/**
+ * Las reglas de la organización: `{ rules: { <regla>: { value, source } }, problems }`, `source` = `organizacion` o
+ * `por_defecto`. Una regla mal escrita ya la descartó el lector (sale en `problems`) y vale lo de fábrica. Nunca tira.
+ */
+function orgRules(opts = {}) {
+  let r;
+  try { r = readStack(opts); } catch (e) { r = { stack: {}, problems: [`no pude leer las reglas (${e && e.message ? e.message : e})`] }; }
+  const declared = r.stack && r.stack.rules && typeof r.stack.rules === 'object' ? r.stack.rules : {};
+  const rules = {};
+  for (const [k, def] of Object.entries(RULE_DEFAULTS)) {
+    rules[k] = Object.prototype.hasOwnProperty.call(declared, k)
+      ? { value: declared[k], source: 'organizacion' }
+      : { value: def, source: 'por_defecto' };
+  }
+  return { rules, problems: r.problems || [] };
+}
+
+module.exports = { readStack, codeExtensions, orgExtra, orgRules, RULE_DEFAULTS };
