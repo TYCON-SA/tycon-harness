@@ -1074,6 +1074,7 @@ const TEXTOS = {
   'pantalla.apagada2': { es: 'apagada', en: 'off' },
   'pantalla.siEstaInstalado': { es: 'si está instalado', en: 'if installed' },
   'pantalla.automatico2': { es: 'automático', en: 'automatic' },
+  'pantalla.noSeUsaConEstaRegla': { es: 'no se usa con esta regla', en: 'not used with this rule' },
   'pantalla.techoObligatorio2': { es: 'Techo obligatorio', en: 'Mandatory ceiling' },
   'pantalla.loPagaLaOrganizacionNingun': { es: 'Lo paga la organización: ningún trabajo pasa de este modelo, aunque se pida.', en: 'The organization pays for it: no job goes above this model, even if asked.' },
   'pantalla.ningunTrabajoPasaDe': { es: ' ningún trabajo pasa de…', en: ' no job goes above…' },
