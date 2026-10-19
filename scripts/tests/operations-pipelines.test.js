@@ -718,3 +718,40 @@ test('T7 ProcesoAzure_InstalaSegunRepos @story-8.50 @ac-5: el paso de la configu
   assert.strictEqual(run([{ tipo: 'nuget', activo: false }, { tipo: 'pip', activo: false }]), '00', 'un repo apagado no pide su herramienta');
   assert.strictEqual(run([{ tipo: 'nuget' }, { tipo: 'pip' }]), '11');
 });
+
+// La regla de `main` del repo de operaciones es una sola («todo automático»), y la dicen igual el README de Azure
+// DevOps y la guía del sitio en sus dos idiomas; el de GitHub dice que ahí el sitio todavía no entra solo.
+function seccion(texto, desde, hasta) {
+  const i = texto.indexOf(desde);
+  assert.ok(i >= 0, `falta la sección «${desde}»`);
+  const j = texto.indexOf(hasta, i + desde.length);
+  assert.ok(j > i, `falta el fin de la sección «${desde}» («${hasta}»)`);
+  return texto.slice(i, j).replace(/\s+/g, ' ');
+}
+
+test('T1 8.58-UnaSolaRegla_AzureYSitio @story-8.58: el README de Azure y la guía del sitio (es y en) dicen la misma receta', () => {
+  const guia = (f) => fs.readFileSync(path.join(ROOT, 'guides', f), 'utf8');
+  const secciones = {
+    'README de Azure': [seccion(read('README.md'), '### La política de rama de `main`', 'La pestaña Configuración lee'), /\*\*prendido\*\*/, /Lo que se resigna/, /Volver a pedir aprobación/],
+    'guía es': [seccion(guia('organization-site.md'), '### La política de rama del repo de operaciones', '### El permiso para'), /\*\*prendido\*\*/, /Lo que se resigna/, /Volver a pedir aprobación/],
+    'guía en': [seccion(guia('organization-site.en.md'), '### The branch policy of the operations repo', '### The permission for'), /\*\*on\*\*/, /What you give up/, /Asking for approval again/],
+  };
+  for (const [donde, [s, prendido, resigna, volver]] of Object.entries(secciones)) {
+    assert.match(s, /todo automático|everything automatic/, `${donde}: nombra la regla`);
+    assert.match(s, /Require a minimum number of reviewers\*?\*? (\(en la API, «Minimum number of reviewers»\) )?(en|at) 1/, `${donde}: un revisor`);
+    assert.match(s, new RegExp(`Allow requestors to approve their own changes\\* ${prendido.source}`), `${donde}: el voto de quien crea el pedido cuenta`);
+    assert.match(s, /Prohibit the most recent pusher from approving their own changes\* (apagado|off)/, `${donde}: sin «Prohibit the most recent pusher»`);
+    assert.match(s, /Bypass policies when pushing\*\* (en|set to) «?"?Allow/, `${donde}: la excepción de la noche`);
+    assert.match(s, /site\.auto_apply: true/, `${donde}: el sitio aplica solo`);
+    assert.match(s, resigna, `${donde}: dice qué se resigna`);
+    assert.match(s, volver, `${donde}: dice cómo volver a pedir aprobación`);
+  }
+});
+
+test('T2 8.58-UnaSolaRegla_GitHub @story-8.58: el README de GitHub dice la regla, que el sitio todavía no entra solo, y qué se resigna', () => {
+  const s = seccion(read(path.join('github', 'README.md')), '**La protección de `operations.json` y de los workflows.**', 'Y en *Settings → Actions → General*');
+  assert.match(s, /todo automático/);
+  assert.match(s, /la noche entra sola; el sitio, todavía no/);
+  assert.match(s, /Lo que se resigna/);
+  assert.match(s, /Volver a pedir aprobación/);
+});

@@ -51,7 +51,8 @@ yellow card is something waiting for a decision (a new dependency, a test that t
 it is decided. If someone's run got stuck, they look it up in **Runs** (*Corridas*) and open its detail: there they see
 which step the time went to and what a control found. If a new machine started sending runs, Home counts it and
 **Configuration** asks to confirm whose it is: they confirm it, the change is proposed as a request to the operations
-repo, and when someone approves it, that person starts seeing their own things.
+repo, and when the request goes in (by itself, with the organization's rule; otherwise, when someone approves it), that
+person starts seeing their own things.
 
 **A day of a developer.** They come in from the same link, or from the site address they saved. In **Home** they see
 their own things: how many runs they did this week, their open pull requests and what is assigned to them. In **Runs**
@@ -69,8 +70,9 @@ anything on their machine to see it.
   site shows them only a page with no data.
 
 **What it does not do.** The site shows; it does not act. It writes to no repo, except the change requests that the
-Configuration tab proposes, and those go in only when someone approves them. It does not run pipelines, merge, deploy or
-touch any machine. What it shows is, at most, as old as the last night snapshot or the last download of the mailbox.
+Configuration tab proposes, and those go in as the operations repo's branch policy says: by themselves with the
+organization's rule, or when someone approves them if the organization asks for approval ("The branch policy of the
+operations repo", in "Common to every installation"). It does not run pipelines, deploy or touch any machine. What it shows is, at most, as old as the last night snapshot or the last download of the mailbox.
 
 **It is optional.** The harness works fully without the site: the configuration lives in the profile and operations
 repos, and without the site it is changed with a pull request to each one. What each case needs (a solo dev or a team,
@@ -110,7 +112,7 @@ the language you chose.
 maintainer has to confirm that the machine is yours. Until they do, only maintainers see your runs; you still get in,
 if you are in the list, and see the rest. Ask whoever maintains the harness (if you do not know
 who, whoever sent you the link or whoever installed the harness on your machine). They confirm it in Configuration, the
-change goes in when someone approves it, and from the next refresh on (at most 15 minutes later) you see your own
+change goes in (by itself or when someone approves it, depending on the organization), and from the next refresh on (at most 15 minutes later) you see your own
 things.
 
 ## The tabs
@@ -295,6 +297,7 @@ The sections, in the order of the screen:
   updates", in Installation and updating.
 - **"A maintainer's changes"** (*Los cambios de un mantenedor*): whether a change proposed by a site maintainer goes in
   by itself, or stays as a request for another person to approve. It is off by default: undeclared, the request stays.
+  The organization's rule turns it on ("The branch policy of the operations repo", below).
   On ("yes", `site.auto_apply` in `operations.json`), "Propose" opens the request, approves it with the site's identity
   and completes it; right after, the site reads the repo again and the section says "Applied" (*Aplicado*). It only
   happens if the main branch's policies are met with that vote: if they ask for more (another reviewer, a named
@@ -492,15 +495,17 @@ almost always an expired credential or a permission that changed.
 **What you see:** in a Configuration section, "Propose the change" is not there, or it is gray, and next to it it says
 why.
 
-**Why it happens:** the site only proposes if the repo requires another person to approve each change before adding it
-to the main branch (a "review policy"); without that rule, the site could change the repo without anyone looking. Also
-when the policy lets whoever creates the request approve it ("Allow requestors to approve their own changes", on Azure
-DevOps): the site creates the request, and it would approve itself; unless the organization turns on "A maintainer's
-changes", which is meant for exactly that. And when the site has no permission to write to that
-repo, or when there is already an open request on the same file (the section shows its link).
+**Why it happens:** the site only proposes if the repo's main branch has a review policy (the one in "The branch policy
+of the operations repo"); without any, the site could change the repo without leaving a request. Also when the policy
+lets whoever creates the request approve it ("Allow requestors to approve their own changes", on Azure DevOps) and "A
+maintainer's changes" is off: the site creates the request, and it would approve itself without the organization having
+asked for it. On GitHub, with the push rule by path, the site does not propose `operations.json`. And when the site has
+no permission to write to that repo, or when there is already an open request on the same file (the section shows its
+link).
 
-**What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can ask for
-the review policy or the write permission. With an open request, wait until it is merged or closed.
+**What to do:** review, press **Download**, and hand the file to whoever has access to the repo. A maintainer can set
+the organization's policy (with "A maintainer's changes" on) or grant the write permission. With an open request, wait
+until it is merged or closed.
 
 !["Propose" off, with its reason: the repo has no policy requiring review](sitio-de-la-organizacion/capturas/proponer-apagado.png)
 
@@ -754,11 +759,38 @@ maintain the harness. Removing `SITE_FIRST_MAINTAINER` protects against an overs
 
 ### The branch policy of the operations repo
 
-Before publishing the site, `main` of the operations repo needs a branch policy that asks for a reviewer who is not the
-author. Without it, anyone who can push to `main` can make themselves a site maintainer (by changing the list) or change
-a night process and take its secrets. That policy is also what enables "Proponer" (propose) in the Configuration tab.
-How to set it on Azure DevOps and on GitHub: the READMEs of the operations models (`pipelines/operations/README.md` and
-`pipelines/operations/github/README.md`).
+The rule is **"everything automatic"**: what the night saves and what the site proposes goes into `main` of the
+operations repo without a person approving it. It is the same one the READMEs of the operations models say
+(`pipelines/operations/README.md` and `pipelines/operations/github/README.md`). Set it before publishing the site: with
+no policy at all, "Proponer" (propose) stays off.
+
+**On Azure DevOps**, in *Project settings → Repositories → the operations repo*:
+
+1. *Policies → Branch Policies → main*: **Require a minimum number of reviewers** at 1, on the whole branch, with *Allow
+   requestors to approve their own changes* **on**, *Prohibit the most recent pusher from approving their own changes*
+   off and *Reset code reviewer votes when there are new changes* on. No named reviewers: a "Required reviewers" policy
+   leaves the request waiting for those people.
+2. *Security*: **Bypass policies when pushing** set to "Allow" only for the build identity of the night processes, which
+   save by pushing to `main`. Nobody else, not the site's identity either.
+3. In `operations.json`, `site.auto_apply: true` ("A maintainer's changes", in People).
+
+With that the night pushes directly, and the site opens its request, approves it with its identity and completes it
+(the section says "Applied", *Aplicado*). A person cannot push to `main` (it bounces with `TF402455`): they go in through
+a request, which they can approve themselves.
+
+**On GitHub** the night goes in by itself; the site, not yet: whoever opens a pull request cannot approve it. The rule
+is the push rule by path in the GitHub README: the site validates and downloads `operations.json`, and a maintainer
+opens the pull request by hand.
+
+**What you give up.** Nobody reviews those changes before they go in. A record remains: each change from the site is a
+request with who asked for it, and the site's log records `cambio aplicado: <file> por <email>, pedido <link>`. Whoever
+can write to the operations repo can make themselves a site maintainer or change a night process without anyone else
+looking: what you guard is who has write access to that repo.
+
+**Asking for approval again.** If the organization prefers another person to look at each change, turn off *Allow
+requestors to approve their own changes* in the policy of step 1. The site keeps proposing, and the request stays for
+another person to approve; with `site.auto_apply` on, the section says why it did not go in by itself. To ask for it
+only on some files, keep the policy of step 1 and add one with a path filter (the Azure DevOps README says how).
 
 ### The permission for "Propose"
 
@@ -766,9 +798,10 @@ How to set it on Azure DevOps and on GitHub: the READMEs of the operations model
 `SITE_OPERATIONS_WRITE_TOKEN` for the sections of the operations repo and `SITE_PROFILE_WRITE_TOKEN` for those of the
 team profile. On Azure DevOps, a token with *Code: Read & write* on those repos, **without** *Bypass policies when
 pushing* or *Bypass policies when completing pull requests*: the site creates a branch and a request, it never writes
-`main`. With a personal token, the requests come out in that person's name, and the branch policy keeps asking for its
-approvals: the policy must have "Allow requestors to approve their own changes" turned off, or the site does not propose
-(the author would approve it), except with "A maintainer's changes" on (below). Without the permission, each section says
+`main`. With a personal token, the requests come out in that person's name. If the policy lets whoever creates the
+request approve it ("Allow requestors to approve their own changes", the organization's rule), the site proposes only
+with "A maintainer's changes" on (below): off, the author would approve it without the organization having asked for
+it. Without the permission, each section says
 "To propose from here, the site needs permission to write to the repo. Meanwhile: review, download and upload it by
 hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el repo…*).
 
@@ -777,8 +810,9 @@ hand" (*Para proponer desde acá, el sitio necesita permiso para escribir en el 
 With `site.auto_apply: true` in `operations.json` ("A maintainer's changes", in People), the site approves and completes
 each request a maintainer proposes. For that its write identity needs, on Azure DevOps, *Code: Read & write* and
 *Contribute to pull requests* on the repo, and never *Bypass policies*: the site skips no policy, and if one is not met
-with its vote, the request stays. The review policy of `main` has to let the vote of whoever creates the request count
-("Allow requestors to approve their own changes" on) and ask for one reviewer. With no policy at all on `main`,
+with its vote, the request stays. The review policy of `main` is the organization's (above): it lets the vote of whoever
+creates the request count, asks for a single reviewer, does not prohibit the most recent pusher from approving and names
+no reviewers. If it asks for more, the request stays and the section says what is missing. With no policy at all on `main`,
 "Propose" stays off even with the option on. To turn it on, first the new image, then the key: an older image does not
 know `site.auto_apply` and would take `operations.json` as invalid (it keeps the last good one). Each applied change
 leaves its line in the site's log with the email of whoever asked for it; it is the only log line that carries an email.
@@ -1066,7 +1100,8 @@ data). It is the configuration of the organization, not that of any machine.
 - **Without a policy that requires review on `main`, "Proponer" stays off.** On Azure DevOps a "Minimum number of
   reviewers" policy on the whole branch counts, or a "Required reviewers" one with a path filter; with the filter,
   "Proponer" is enabled file by file: only in the sections whose file the filter covers. In both, the vote of whoever
-  creates the request cannot count. On GitHub the branch protection counts, or a rule that requires a pull request; with
+  creates the request counts only with `site.auto_apply` on: then the site approves and completes the request, if its
+  vote meets the policy (`politicaDeRevision`, `aplicaSolo`). On GitHub the branch protection counts, or a rule that requires a pull request; with
   the push rule by path the site does not propose.
 - **Every write is defended twice:** the site's `Origin` (or `Sec-Fetch-Site: same-origin`) and a double-submit token
   (`X-Site-Token`); then JSON and a body of up to 256 KB.

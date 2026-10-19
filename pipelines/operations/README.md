@@ -63,13 +63,13 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los pipelines. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pedido revisado, nunca escribiendo `main`. Con
+**Cómo se edita `operations.json` después del alta.** Siempre por pedido, nunca escribiendo `main`. Con
 el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los mismos
 lectores (`operations-config.js`, `team-repos.js`) y abre el pedido desde el sitio con la identidad de escritura
 (`SITE_OPERATIONS_WRITE_TOKEN`). Sin sitio, se edita el archivo y se abre el pedido a mano; la página local
 `harness.js team-config` (en la máquina de quien mantiene, con los clones) muestra lo que hay, de sólo lectura, con los
-problemas que ven los lectores. La pestaña no habilita «Proponer» si `main` no tiene una política que pida al menos un
-revisor (punto 3). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
+problemas que ven los lectores. La pestaña no habilita «Proponer» si `main` no tiene una política de revisión (punto 3, «La
+política de rama de `main`»). Los umbrales del tablero (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién
 cuando la plantilla `ops-data.yml` dejó la marca `.dashboard/applied-config.json` con ese archivo adentro: la marca dice
 qué archivos de configuración aplicó la noche de verdad, con su identificador de objeto, y se guarda sólo al final de
 una noche verde. Hasta entonces la sección dice «tu nocturno todavía no lee este archivo».
@@ -96,7 +96,7 @@ La huella se calcula así, con el correo tal como lo informa la máquina (se pas
 node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1].trim().toLowerCase()).digest('hex'))" "<correo informado>"
 ```
 
-Cada confirmación entra por pedido revisado, como cualquier cambio de este archivo. Antes de abrirlo, validalo con
+Cada confirmación entra por pedido, como cualquier cambio de este archivo. Antes de abrirlo, validalo con
 `node scripts/lib/operations-config.js operations.json` de un arnés que ya conozca `people`: uno anterior lo rechaza y
 frena la revisión de dependencias.
 
@@ -120,29 +120,41 @@ Y en *Project settings → Pipelines → Settings* del proyecto donde corren los
 
 ### La política de rama de `main` del repo de operaciones
 
-Ponela **antes** de publicar el sitio de la organización. Sin ella, cualquiera que pueda empujar a `main` se hace
-mantenedor del sitio (cambia la lista `site.access`) o cambia el YAML de un nocturno y se lleva sus secretos.
+La regla es **«todo automático»**: lo que guarda la noche y lo que propone el sitio de la organización entra a `main`
+sin que lo apruebe una persona. Es la misma que dice la guía del sitio (`guides/organization-site.md`, «La política de
+rama del repo de operaciones»). Ponela **antes** de publicar el sitio.
 
-**La receta recomendada.** En *Project settings → Repositories → el repo de operaciones → Policies → Branch Policies →
-main*:
+**La receta.** En *Project settings → Repositories → el repo de operaciones*:
 
-1. **Require a minimum number of reviewers** (en la API, «Minimum number of reviewers»): en 1, con *Allow requestors to
-   approve their own changes* apagado y *Reset code reviewer votes when there are new changes* prendido. Sobre toda la
-   rama.
-2. En *Security* del repo de operaciones, **Bypass policies when pushing** en «Allow» **sólo** para la identidad de
-   compilación de los nocturnos (la de esta sección; mirá cuál es en una corrida). Los nocturnos guardan empujando a
-   `main`; sin la excepción, su guardado rebota. Nadie más la tiene.
-3. Encolar y editar los tres pipelines, sólo quienes mantienen (*Pipelines → el pipeline → Manage security*).
+1. *Policies → Branch Policies → main*: **Require a minimum number of reviewers** (en la API, «Minimum number of reviewers»)
+   en 1, sobre toda la rama, con *Allow requestors to approve their own changes* **prendido**, *Prohibit the
+   most recent pusher from approving their own changes* apagado y *Reset code reviewer votes when there are new changes*
+   prendido.
+2. *Security*: **Bypass policies when pushing** en «Allow» **sólo** para la identidad de compilación de los nocturnos
+   (la de esta sección; mirá cuál es en una corrida). Los nocturnos guardan empujando a `main`; sin la excepción, su
+   guardado rebota. Nadie más la tiene, tampoco la identidad del sitio.
+3. En `operations.json`, `site.auto_apply: true`: el sitio aprueba y completa los pedidos que propone. Su identidad de
+   escritura (`SITE_OPERATIONS_WRITE_TOKEN`) lleva *Contribute* y *Contribute to pull requests*, nunca *Bypass policies*.
+4. Encolar y editar los tres pipelines, sólo quienes mantienen (*Pipelines → el pipeline → Manage security*).
 
-Con eso, un empuje directo de una persona a `main` rebota (`TF402455`) y todo cambio va por un pedido con un revisor que
-no es el autor.
+Con eso la noche empuja directo y los pedidos del sitio entran solos. Un empuje directo de una persona a `main` rebota
+(`TF402455`): entra por un pedido, que puede aprobar ella misma.
 
-**La alternativa: el filtro por ruta.** «Required reviewers» (*Automatically included reviewers*, obligatorio) en 1, con
-el filtro de ruta `/operations.json;/pipelines/*`, el grupo de quienes mantienen como revisor y *Allow requestors to
-approve their own changes* apagado. La documentación de Azure DevOps dice que una rama con una política obligatoria no
-acepta empujes directos, sin distinguir rutas: la identidad de los nocturnos sigue necesitando la excepción del punto 2.
-Con el filtro, la pestaña Configuración del sitio habilita «Proponer» **archivo por archivo**: sólo en las secciones
-cuyo archivo cubre el filtro; las demás dicen «la política de main no cubre <archivo>».
+**Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio es un pedido con
+su autor, y el registro del sitio anota quién pidió cada cambio aplicado. Quien puede escribir en este repo puede
+hacerse mantenedor del sitio (cambia la lista `site.access`) o cambiar el YAML de un nocturno y llevarse sus secretos
+sin que otro lo mire: lo que se cuida es quién tiene escritura acá.
+
+**Volver a pedir aprobación.** En la política del punto 1, *Allow requestors to approve their own changes* apagado. El
+sitio sigue proponiendo y cada pedido espera a otra persona; con `site.auto_apply` prendida, la sección dice por qué no
+entró solo. **Sólo en algunos archivos:** se deja la política del punto 1 y se suma una «Required reviewers»
+(*Automatically included reviewers*, obligatoria) en 1, con el filtro de ruta `/operations.json;/pipelines/*`, el
+grupo de quienes mantienen como revisor y *Allow requestors to approve their own changes* apagado. Los pedidos de esos
+archivos esperan a quienes mantienen; los demás entran solos. Sin la política del punto 1, sólo con el filtro, la
+pestaña Configuración habilita «Proponer» **archivo por archivo**: sólo en las secciones cuyo archivo cubre el filtro;
+las demás dicen «la política de main no cubre <archivo>». La documentación de Azure DevOps dice que una rama con una
+política obligatoria no acepta empujes directos, sin distinguir rutas: la identidad de los nocturnos sigue necesitando
+la excepción del punto 2.
 
 La pestaña Configuración lee estas políticas: sin ninguna de las dos, «Proponer» queda apagado con el motivo, y desde el
 sitio sólo se valida y se descarga. Ningún nocturno guarda `operations.json` ni nada bajo `pipelines/`.

@@ -47,8 +47,8 @@ mantiene abre el enlace y cae en **Inicio**, en «Qué decidir hoy»: una ficha 
 (una dependencia nueva, una prueba que se puso roja anoche) y dice dónde se decide. Si una corrida de alguien quedó
 trabada, la busca en **Corridas** y abre su detalle: ahí ve en qué paso se fue el tiempo y qué control encontró algo.
 Si una máquina nueva empezó a mandar corridas, Inicio lo cuenta y **Configuración** pide confirmar de quién es: la
-confirma, el cambio se propone como un pedido al repo de operaciones, y cuando alguien lo aprueba, esa persona empieza a
-ver lo suyo.
+confirma, el cambio se propone como un pedido al repo de operaciones, y cuando el pedido entra (solo, con la regla de la
+organización; si no, cuando alguien lo aprueba), esa persona empieza a ver lo suyo.
 
 **Un día de un dev.** Entra desde el mismo enlace, o desde la dirección del sitio que guardó. En **Inicio** ve lo suyo:
 cuántas corridas hizo en la semana, sus pull requests abiertos y lo que tiene asignado. En **Corridas** ve sólo sus
@@ -65,7 +65,9 @@ máquina para verlo.
   pero el sitio le muestra sólo una página sin datos.
 
 **Lo que no hace.** El sitio muestra; no actúa. No escribe en ningún repo, salvo los pedidos de cambio que propone la
-pestaña Configuración, y esos entran sólo cuando alguien los aprueba. No corre pipelines, no mergea, no despliega y no
+pestaña Configuración, y esos entran como diga la política de rama del repo de operaciones: solos con la regla de la
+organización, o cuando alguien los aprueba si la organización pide aprobación («La política de rama del repo de
+operaciones», en «Lo común a cualquier instalación»). No corre pipelines, no despliega y no
 toca ninguna máquina. Lo que muestra tiene, a lo sumo, el atraso de la última foto de la noche o de la última bajada del
 buzón.
 
@@ -107,7 +109,8 @@ repos, productos y máquinas, lo que escribió cada uno) se ve como está. La ay
 Quien mantiene tiene que confirmar que esa máquina es tuya. Hasta que te confirmen, tus corridas las ven sólo quienes
 mantienen; vos entrás igual, si estás en la lista, y ves lo demás. Pedíselo a quien mantiene el arnés
 (si no sabés quién es, a quien te pasó el enlace o a quien instaló el arnés en tu máquina). Lo confirma en
-Configuración, el cambio entra cuando alguien lo aprueba, y a partir del próximo refresco (a lo sumo 15 minutos después)
+Configuración, el cambio entra (solo o cuando alguien lo aprueba, según la organización), y a partir del próximo
+refresco (a lo sumo 15 minutos después)
 ves lo tuyo.
 
 ## Las pestañas
@@ -284,7 +287,8 @@ Las secciones, en el orden de la pantalla:
   equipo. Va de 5 a 120 minutos; si no lo declarás, son 15. No instala versiones: eso es «Cómo se actualiza el sitio»,
   en Instalación y actualización.
 - **Los cambios de un mantenedor**: si un cambio que propone quien mantiene el sitio entra solo, o queda un pedido para
-  que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. Prendida («sí», `site.auto_apply` en
+  que lo apruebe otra persona. Viene apagada: sin declarar, queda el pedido. La regla de la organización la prende
+  («La política de rama del repo de operaciones», más abajo). Prendida («sí», `site.auto_apply` en
   `operations.json`), «Proponer» abre el pedido, lo aprueba con la identidad del sitio y lo completa; enseguida el sitio
   vuelve a leer el repo y la sección dice «Aplicado». Sólo pasa si las políticas de la rama principal quedan cumplidas
   con ese voto: si piden algo más (otro revisor, un revisor nombrado, un build), el sitio dice qué falta y deja el
@@ -469,15 +473,17 @@ credencial vencida o un permiso que cambió.
 
 **Lo que se ve:** en una sección de Configuración, «Proponer el cambio» no está, o está gris, y al lado dice por qué.
 
-**Por qué pasa:** el sitio sólo propone si el repo exige que otra persona apruebe cada cambio antes de sumarlo a la
-rama principal (una «política de revisión»); sin esa regla, el sitio podría cambiar el repo sin que nadie lo mire.
-También cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en
-Azure DevOps): el pedido lo crea el sitio, y se aprobaría solo; salvo que la organización prenda «Los cambios de un
-mantenedor», que es justamente para eso. Y cuando el sitio no tiene permiso para escribir en ese
-repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la sección muestra su enlace).
+**Por qué pasa:** el sitio sólo propone si la rama principal del repo tiene una política de revisión (la de «La
+política de rama del repo de operaciones»); sin ninguna, el sitio podría cambiar el repo sin dejar un pedido. También
+cuando la política deja que quien crea el pedido lo apruebe («Allow requestors to approve their own changes», en Azure
+DevOps) y «Los cambios de un mantenedor» está apagada: el pedido lo crea el sitio, y se aprobaría solo sin que la
+organización lo haya pedido. En GitHub, con la regla de empuje por ruta, el sitio no propone `operations.json`. Y cuando
+el sitio no tiene permiso para escribir en ese repo, o cuando ya hay un pedido abierto sobre el mismo archivo (la
+sección muestra su enlace).
 
 **Qué hacer:** revisá y apretá **Descargar**, y pasale el archivo a quien tiene acceso al repo. Quien mantiene puede
-pedir la política de revisión o el permiso de escritura. Con un pedido abierto, esperá a que se mergee o se cierre.
+poner la política de la organización (con «Los cambios de un mantenedor» prendida) o dar el permiso de escritura. Con un
+pedido abierto, esperá a que se mergee o se cierre.
 
 ![«Proponer» apagado, con su motivo: el repo no tiene una política que pida revisión](sitio-de-la-organizacion/capturas/proponer-apagado.png)
 
@@ -731,11 +737,38 @@ Sacar `SITE_FIRST_MAINTAINER` protege de un olvido, no de ese administrador.
 
 ### La política de rama del repo de operaciones
 
-Antes de publicar el sitio, `main` del repo de operaciones necesita una política de rama que pida un revisor que no sea
-el autor. Sin ella, cualquiera que pueda empujar a `main` puede hacerse mantenedor del sitio (cambia la lista) o cambiar
-un proceso de la noche y llevarse sus secretos. Esa política es también la que habilita «Proponer» en la pestaña
-Configuración. Cómo ponerla en Azure DevOps y en GitHub: los READMEs de los modelos de operaciones
-(`pipelines/operations/README.md` y `pipelines/operations/github/README.md`).
+La regla es **«todo automático»**: lo que guarda la noche y lo que propone el sitio entra a `main` del repo de
+operaciones sin que lo apruebe una persona. Es la misma que dicen los READMEs de los modelos de operaciones
+(`pipelines/operations/README.md` y `pipelines/operations/github/README.md`). Ponela antes de publicar el sitio: sin
+ninguna política, «Proponer» queda apagado.
+
+**En Azure DevOps**, en *Project settings → Repositories → el repo de operaciones*:
+
+1. *Policies → Branch Policies → main*: **Require a minimum number of reviewers** en 1, sobre toda la rama, con *Allow
+   requestors to approve their own changes* **prendido**, *Prohibit the most recent pusher from approving their own
+   changes* apagado y *Reset code reviewer votes when there are new changes* prendido. Sin revisores nombrados: un
+   «Required reviewers» deja el pedido esperando a esas personas.
+2. *Security*: **Bypass policies when pushing** en «Allow» sólo para la identidad de compilación de los nocturnos, que
+   guardan empujando a `main`. Nadie más, tampoco la identidad del sitio.
+3. En `operations.json`, `site.auto_apply: true` («Los cambios de un mantenedor», en Personas).
+
+Con eso la noche empuja directo, y el sitio abre su pedido, lo aprueba con su identidad y lo completa (la sección dice
+«Aplicado»). Una persona no puede empujar a `main` (rebota con `TF402455`): entra por un pedido, que puede aprobar ella
+misma.
+
+**En GitHub** la noche entra sola; el sitio, todavía no: quien abre un pull request no puede aprobarlo. La regla es la de
+empuje por ruta del README de GitHub: el sitio valida y descarga `operations.json`, y quien mantiene abre el pull
+request a mano.
+
+**Lo que se resigna.** Nadie revisa esos cambios antes de que entren. Queda la constancia: cada cambio del sitio es un
+pedido con quien lo pidió, y el registro del sitio anota `cambio aplicado: <archivo> por <correo>, pedido <enlace>`.
+Quien puede escribir en el repo de operaciones puede hacerse mantenedor del sitio o cambiar un proceso de la noche sin
+que otro lo mire: lo que se cuida es quién tiene escritura en ese repo.
+
+**Volver a pedir aprobación.** Si la organización prefiere que otra persona mire cada cambio, en la política del paso 1
+apagá *Allow requestors to approve their own changes*. El sitio sigue proponiendo, y el pedido queda para que lo apruebe
+otra persona; con `site.auto_apply` prendida, la sección dice por qué no entró solo. Para pedirla sólo en algunos
+archivos, se deja la política del paso 1 y se suma una con filtro de ruta (el README de Azure DevOps dice cómo).
 
 ### El permiso para «Proponer»
 
@@ -743,9 +776,10 @@ Configuración. Cómo ponerla en Azure DevOps y en GitHub: los READMEs de los mo
 `SITE_OPERATIONS_WRITE_TOKEN` para las secciones del repo de operaciones y `SITE_PROFILE_WRITE_TOKEN` para las del
 perfil del equipo. En Azure DevOps, un permiso con *Code: Read & write* sobre esos repos, **sin** *Bypass policies when
 pushing* ni *Bypass policies when completing pull requests*: el sitio crea una rama y un pedido, nunca escribe `main`.
-Con un permiso personal, los pedidos salen a nombre de esa persona, y la política de la rama sigue pidiendo sus
-aprobaciones: la política tiene que tener apagado «Allow requestors to approve their own changes», o el sitio no
-propone (lo aprobaría el mismo autor), salvo con «Los cambios de un mantenedor» prendida (abajo). Sin el permiso, cada sección dice «Para
+Con un permiso personal, los pedidos salen a nombre de esa persona. Si la política deja que quien crea el pedido lo
+apruebe («Allow requestors to approve their own changes», la regla de la organización), el sitio propone sólo con «Los
+cambios de un mantenedor» prendida (abajo): apagada, lo aprobaría el mismo autor sin que la organización lo haya
+pedido. Sin el permiso, cada sección dice «Para
 proponer desde acá, el sitio necesita permiso para escribir en el repo. Mientras tanto: revisá, descargá y subilo a
 mano».
 
@@ -754,8 +788,9 @@ mano».
 Con `site.auto_apply: true` en `operations.json` («Los cambios de un mantenedor», en Personas), el sitio aprueba y
 completa cada pedido que propone quien mantiene. Para eso su identidad de escritura necesita, en Azure DevOps, *Code:
 Read & write* y *Contribute to pull requests* sobre el repo, y nunca *Bypass policies*: el sitio no saltea ninguna
-política, y si una no se cumple con su voto, el pedido queda. La política de revisión de `main` tiene que dejar que
-cuente el voto de quien crea el pedido («Allow requestors to approve their own changes» prendido) y pedir un revisor.
+política, y si una no se cumple con su voto, el pedido queda. La política de revisión de `main` es la de la
+organización (arriba): deja que cuente el voto de quien crea el pedido, pide un solo revisor, no prohíbe aprobar a quien
+empujó el último cambio y no nombra revisores. Si pide más, el pedido queda y la sección dice qué falta.
 Sin ninguna política en `main`, «Proponer» sigue apagado aunque la opción esté prendida. Para encenderla, primero la
 imagen nueva, después la clave: una imagen anterior no conoce `site.auto_apply` y daría `operations.json` por inválido
 (se queda con el último bueno). Cada cambio aplicado deja su línea en el registro del sitio con el correo de quien lo
@@ -1037,7 +1072,8 @@ un dato). Es la configuración de la organización, no la de ninguna máquina.
 - **Sin una política que pida revisión en `main`, «Proponer» queda apagado.** En Azure DevOps vale una política
   «Minimum number of reviewers» sobre toda la rama, o una «Required reviewers» con filtro de ruta, y con el filtro
   «Proponer» se habilita archivo por archivo: sólo en las secciones cuyo archivo el filtro cubre. En las dos, el voto de
-  quien crea el pedido no puede contar. En GitHub vale la protección de la rama o una regla que pida pull request; con
+  quien crea el pedido cuenta sólo con `site.auto_apply` prendida: entonces el sitio aprueba y completa el pedido, si su
+  voto cumple la política (`politicaDeRevision`, `aplicaSolo`). En GitHub vale la protección de la rama o una regla que pida pull request; con
   la regla de empuje por ruta el sitio no propone.
 - **Cada escritura se defiende dos veces:** el `Origin` del sitio (o `Sec-Fetch-Site: same-origin`) y un token de doble
   envío (`X-Site-Token`); después, JSON y un cuerpo de hasta 256 KB.

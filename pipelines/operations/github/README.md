@@ -101,13 +101,15 @@ node -e "JSON.parse(require('fs').readFileSync('scripts/nightly/dependencies/rep
 Lo demás (`.dashboard/`, `inbox/`, `artifacts/`) lo crean los workflows. Un repo de operaciones recién creado no los
 trae, y está bien.
 
-**Cómo se edita `operations.json` después del alta.** Siempre por pull request revisado, nunca escribiendo `main`.
+**Cómo se edita `operations.json` después del alta.** Siempre por pull request, nunca escribiendo `main`.
 Con el sitio de la organización desplegado, su pestaña **Configuración**, sólo para los que mantienen: valida con los
-mismos lectores (`operations-config.js`, `team-repos.js`) y abre el pull request desde el sitio con un token de grano
-fino sobre este repo (`SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`). Sin sitio, se edita el
+mismos lectores (`operations-config.js`, `team-repos.js`); con la regla de «La protección de `operations.json` y de
+los workflows» (abajo), descarga el archivo y quien mantiene abre el pull request a mano. Sin sitio, se edita el
 archivo y se abre el pull request a mano; la página local `harness.js team-config` (en la máquina de quien mantiene, con
-los clones) muestra lo que hay, de sólo lectura, con los problemas que ven los lectores. La pestaña no habilita «Proponer» si
-`main` no tiene una protección o una regla que pida revisión. Los umbrales del tablero
+los clones) muestra lo que hay, de sólo lectura, con los problemas que ven los lectores. La pestaña habilita «Proponer»
+(con un token de grano fino sobre este repo, `SITE_OPERATIONS_WRITE_TOKEN`: `contents: write`, `pull_requests: write`)
+sólo si `main` tiene una protección o una regla que pida revisión, y aun así el pull request queda para que lo apruebe
+otra persona. Los umbrales del tablero
 (`scripts/nightly/dashboard/sources.json`) se editan en el sitio recién cuando la noche dejó la marca
 `.dashboard/applied-config.json` con ese archivo adentro (qué configuración aplicó de verdad, con su identificador de
 objeto; sólo al final de una noche verde). En estos workflows la deja `prepare-tree.sh`, igual que la plantilla de
@@ -136,7 +138,7 @@ La huella se calcula así, con el correo tal como lo informa la máquina (se pas
 node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1].trim().toLowerCase()).digest('hex'))" "<correo informado>"
 ```
 
-Cada confirmación entra por pull request revisado, como cualquier cambio de este archivo. Antes de abrirlo, validalo
+Cada confirmación entra por pull request, como cualquier cambio de este archivo. Antes de abrirlo, validalo
 con `node scripts/lib/operations-config.js operations.json` de un arnés que ya conozca `people`: uno anterior lo
 rechaza y frena la revisión de dependencias.
 
@@ -160,7 +162,11 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el
 enlace al sitio.
 
-**La protección de `operations.json` y de los workflows.** Ponela **antes** de publicar el sitio de la organización: sin
+**La protección de `operations.json` y de los workflows.** La regla de la organización es **«todo automático»**: lo que
+guarda la noche y lo que propone el sitio entra a `main` sin que lo apruebe una persona. Es la misma que dicen la guía
+del sitio (`guides/organization-site.md`, «La política de rama del repo de operaciones») y el README de Azure DevOps.
+En GitHub se cumple a medias: **la noche entra sola; el sitio, todavía no**, porque quien abre un pull request no puede
+aprobarlo y el sitio no completa pedidos en GitHub. Ponela **antes** de publicar el sitio de la organización: sin
 ella, cualquiera que pueda empujar a `main` se hace mantenedor del sitio o cambia un workflow y se lleva sus secretos. En
 *Settings → Rules → Rulesets → New push ruleset* (repos privados o internos), la regla **Restrict file paths** sobre
 `operations.json` y `.github/workflows/**`, con el equipo de quienes mantienen como única excepción (*Bypass list*). Los
@@ -170,6 +176,13 @@ empuje que toque esas rutas en **cualquier** rama, también la de una propuesta:
 a mano. (Una regla de rama que pida pull request sobre todo `main` dejaría proponer al sitio, pero frena los guardados de
 los nocturnos; ponerle de excepción a GitHub Actions dejaría a cualquiera con escritura empujar un workflow que escriba
 `main`.)
+
+**Lo que se resigna.** Nadie revisa los guardados de la noche antes de que entren, y quien mantiene puede empujar
+`operations.json` y los workflows sin que otro lo mire. Queda la constancia: cada cambio es un commit con su autor.
+**Volver a pedir aprobación:** cambiar la regla por ruta por un *branch ruleset* sobre `main` con *Require a pull
+request before merging* y una aprobación. Como frena también los guardados de la noche, lleva a GitHub Actions en su
+*Bypass list*, con el riesgo del paréntesis de arriba. Con esa regla el sitio propone, y el pull request queda para que
+lo apruebe otra persona.
 
 Y en *Settings → Actions → General*: *Workflow permissions* puede quedar en «Read repository contents»; cada workflow
 pide para sí `contents: write` (para guardar en este repo) y nada más. Si `main` del repo de operaciones tiene reglas de
