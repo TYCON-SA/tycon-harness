@@ -162,6 +162,10 @@ test('8.54 T8 Oferta_PrimerCierre · el clear de la primera corrida cerrada impr
   for (const l of tres) assert.ok(r.out.includes(l), `falta el renglón «${l}» en:\n${r.out}`);
   assert.match(r.out, /offer accept/);
   assert.match(r.out, /offer decline/);
+  // en Windows la orden para volver lleva la ruta entera entre comillas; en Mac y Linux, la de la carpeta personal
+  assert.strictEqual(FS.shownHarnessFor('C:\\h\\arnes', 'win32'), `"${path.join('C:\\h\\arnes', 'scripts', 'setup', 'harness.js')}"`);
+  assert.strictEqual(FS.shownHarnessFor('/h/arnes', 'darwin'), null);
+  assert.strictEqual(FS.shownHarnessFor('/h/arnes', 'linux'), null);
   const rec = record(home);
   assert.strictEqual(rec && rec.offer && rec.offer.status, 'offered', JSON.stringify(rec));
   assert.strictEqual(rec.first_close.story, '9.9');

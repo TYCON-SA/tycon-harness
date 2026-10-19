@@ -185,6 +185,8 @@ function personPresent(env = process.env) {
 
 const harnessJsOf = (tree) => path.join(tree, 'scripts', 'setup', 'harness.js');
 const self = () => path.join(__dirname, 'first-story.js');
+/** Cómo se muestra harness.js en la orden para volver: en Windows, entero y entre comillas (PowerShell no expande `~`). */
+const shownHarnessFor = (tree, platform = process.platform) => (platform === 'win32' ? `"${harnessJsOf(tree)}"` : null);
 const fullCommand = (tree) => (tree ? `node "${harnessJsOf(tree)}" install --profile full --yes` : 'harness.js install --profile full --yes, desde la carpeta del arnés instalado');
 
 /**
@@ -233,9 +235,7 @@ function decide({ home, env, marker, tree }) {
     const eff = setupMod(tree, 'managed').readEffects(tree);
     // el motivo de readEffects puede repetir un pedazo del archivo: se nombra el archivo y se manda al diagnóstico
     if (!eff.ok) return { lines: [], warn: `la oferta de la instalación completa no se mostró: no pude leer la lista de efectos ${eff.file} (harness.js doctor dice por qué)` };
-    // en Windows, la ruta entera entre comillas: PowerShell no expande `~` en el argumento de un programa
-    const shownHarness = process.platform === 'win32' ? `"${harnessJsOf(tree)}"` : null;
-    const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home, shownHarness });
+    const three = setupMod(tree, 'questions').upgradeOffer({ effects: eff.effects, tree, home, shownHarness: shownHarnessFor(tree) });
     writeRecord(home, Object.assign(rec, { offer: { status: 'offered', at: now, story } }));
     return {
       lines: [
@@ -281,7 +281,7 @@ function answer(kind, { home, env = process.env, tree = treeOf(home), harnessJs 
 const accept = (opts) => answer('accept', opts);
 const decline = (opts) => answer('decline', opts);
 
-module.exports = { RECORD_FILE, treeOf, closedStories, isFirstStory, personPresent, afterClose, accept, decline, readRecord };
+module.exports = { RECORD_FILE, treeOf, shownHarnessFor, closedStories, isFirstStory, personPresent, afterClose, accept, decline, readRecord };
 
 if (require.main === module) {
   const [cmd, sub] = process.argv.slice(2);
