@@ -2632,6 +2632,14 @@ function cmdClear() {
           `referencia ~60-100K tokens por agente · vara del historial: ~14 agentes/run\n`,
         );
       }
+      // La oferta de la instalación completa al cerrar la primera historia: sale del cierre mecánico, después
+      // de archivar el volcado (el volcado de ESTA corrida es la evidencia de que se cerró). Va a la salida estándar para
+      // que el agente la muestre tal cual; un error se dice en un renglón y nunca frena el cierre.
+      try {
+        const offer = require('./lib/first-story.js').afterClose({ home: os.homedir(), env: process.env, marker });
+        for (const l of offer.lines) process.stdout.write(`${l}\n`);
+        if (offer.warn) process.stderr.write(`[marker] ${offer.warn}\n`);
+      } catch (e) { process.stderr.write(`[marker] la oferta de la instalación completa no se pudo evaluar: ${e.message}\n`); }
     }
   } catch { /* best-effort */ }
   clearMarker();

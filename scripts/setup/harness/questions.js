@@ -266,8 +266,38 @@ function shortPlan({ effects, profile, version, tree, home = null, tools = [], t
   ];
 }
 
+/**
+ * La oferta de la instalación completa al cerrar la primera historia: tres renglones —qué suma la
+ * completa, dónde rige, cómo se vuelve atrás—, contados desde la lista de efectos como la diferencia entre la completa y
+ * la mínima. Si la completa no trae hooks de git ni bloques de reglas, los renglones no los nombran. La orden para volver
+ * es la que se corre tal cual: en Windows, con la ruta entera (PowerShell no expande `~` en el argumento de un programa).
+ */
+function upgradeOffer({ effects, tree, home = null, platform = process.platform }) {
+  const full = profileCounts(effects, 'full');
+  const min = profileCounts(effects, 'minimal');
+  const brakes = Math.max(0, full.brakes - min.brakes);
+  const hooks = Math.max(0, full.hooks - min.hooks);
+  const blocks = Math.max(0, full.blocks - min.blocks);
+  const gitHooks = full.gitHooks > min.gitHooks;
+  const adds = [
+    brakes ? `${plural(brakes, 'freno que puede', 'frenos que pueden')} parar un comando peligroso` : null,
+    blocks ? `${plural(blocks, 'bloque de reglas que cambia', 'bloques de reglas que cambian')} cómo te contesta tu agente` : null,
+    gitHooks ? 'hooks globales de git' : null,
+  ].filter(Boolean);
+  const addsText = adds.length > 1 ? `${adds.slice(0, -1).join(', ')} y ${adds[adds.length - 1]}` : (adds[0] || 'lo mismo que la mínima');
+  const where = [gitHooks ? 'en todos tus repos' : null, blocks ? 'en todas las sesiones de tu agente de código' : null].filter(Boolean);
+  const harnessJs = path.join(tree || '', 'scripts', 'setup', 'harness.js');
+  const shown = platform === 'win32' ? `"${harnessJs}"` : homeRelative(harnessJs, home);
+  return [
+    `Qué cambia: la instalación completa suma ${addsText}${hooks ? ` (${plural(hooks, 'hook', 'hooks')} más en total)` : ''}.`,
+    `Dónde: ${where.length ? `rige ${where.join(' y ')}, no sólo en este proyecto` : 'sólo en los repos donde trabajás con el arnés'}.`,
+    `Cómo se vuelve atrás: node ${shown} install --profile minimal --yes deja la máquina como está ahora.`,
+  ];
+}
+
 module.exports = {
   PROFILES, ASK_PROFILE, ASK_INTEGRATIONS, PACKS_QUESTION, MAX_TRIES, CHANGE_HINT,
   profileCounts, profileLines, parseProfile, askProfile, offeredIntegrations, parseIntegrations, askIntegrations,
   checkIntegrationsOption, checkPacksOption, packsText, samePacks, originLabel, configLines, configState, shortPlan,
+  upgradeOffer,
 };

@@ -1537,7 +1537,11 @@ function cmdInstall(ctx, H) {
     // 6. el estado
     const src = makeSource({ repoInfo, ref: target.ref, commit: target.commit, tree: d.manifest.tree, version: target.version });
     let state = existing;
-    if (!state) { state = S.defaults({ tree, sources: [src], channel, version: { number: target.version } }); pieces.push('state'); }
+    if (!state) {
+      state = S.defaults({ tree, sources: [src], channel, version: { number: target.version } });
+      state.first_install = S.firstInstall(ctx.home, target.version);   // sólo al crear el estado: dice si la instalación es nueva
+      pieces.push('state');
+    }
     else { state.tree = tree; state.sources = [src]; state.mode = 'managed'; state.version.number = target.version; pieces.push('state'); }
     state.source = 'public';
     // la capa del equipo queda en el estado (story 8.25, AC 2 y 7): `update` la lleva a cada versión nueva

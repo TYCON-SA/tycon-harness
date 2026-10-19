@@ -1943,6 +1943,7 @@ function cmdInstall(ctx) {
     if (!state) {
       state = S.defaults({ tree, sources, channel });
       state.version.number = versionNumber(ctx, state);
+      state.first_install = S.firstInstall(ctx.home, state.version.number);   // sólo al crear el estado: dice si la instalación es nueva
       pieces.push('state');
     } else if (real(state.tree) !== tree && !fromExisting) {
       // se vuelve a instalar desde otro clon: el estado apunta al nuevo
