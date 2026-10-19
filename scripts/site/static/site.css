@@ -153,6 +153,30 @@ input.bad{border-color:var(--bad)}
 .fila.repo + .fila.repo{border-top:1px dashed var(--line)}
 .fila.quitar{grid-template-columns:minmax(0,1fr) auto}
 .fila.quitar3{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto}
+/* quién entra al sitio: una tabla, un renglón por persona; cada renglón es «contents» para que sus celdas
+   se alineen en las columnas de la tabla. Los colores salen de las variables del tema */
+.personas{display:grid;grid-template-columns:max-content minmax(0,1fr) auto;border-top:1px solid var(--line)}
+.personas .h{display:contents}
+.personas .h > span{font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);padding:8px 0 6px}
+.persona{display:contents}
+.persona > *{padding:6px 0;border-bottom:1px solid var(--line);min-width:0;display:flex;align-items:center}
+.persona > .rol{padding-right:12px}
+.persona.con-error > :not(.err-fila){border-bottom:0}
+.persona > .err-fila{grid-column:1/-1;display:grid;gap:2px;padding:0 0 6px}
+.persona select{padding:5px 8px;border-radius:8px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--ink);font-size:13.5px;max-width:100%}
+.persona select.bad{border-color:var(--bad)}
+.persona .correos{flex-wrap:wrap;gap:5px}
+.persona .correo{display:inline-flex;align-items:center;gap:2px;max-width:100%;box-sizing:border-box;padding:2px 2px 2px 9px;border-radius:999px;border:1px solid var(--line-strong);background:var(--surface-2);font-size:13px;line-height:20px}
+.persona .correo > span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.persona .correo.bad{border-color:var(--bad);color:var(--bad-ink)}
+.persona input.nuevo{width:210px;max-width:100%;box-sizing:border-box;padding:3px 9px;border-radius:999px;border:1px solid var(--ink-2);background:var(--surface-2);color:var(--ink);font-size:13px}
+.persona input.nuevo.bad{border-color:var(--bad)}
+.form-block .persona button.chip-x,.form-block .persona button.sumar,.form-block .persona button.quitar-persona{padding:0;border:0;border-radius:999px;background:transparent;color:var(--muted);line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.form-block .persona button.chip-x{width:20px;height:20px;font-size:12px}
+.form-block .persona button.sumar{width:26px;height:26px;border:1px dashed var(--line-strong);font-size:15px}
+.form-block .persona button.quitar-persona{width:30px;height:30px;font-size:14px;margin-left:8px}
+.form-block .persona button.chip-x:hover,.form-block .persona button.sumar:hover,.form-block .persona button.quitar-persona:hover{background:var(--wash);color:var(--ink)}
+.persona button:focus-visible,.persona select:focus-visible,.persona input:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
 .k{font-weight:600;font-size:13.5px;align-self:center;overflow-wrap:anywhere}.k small{display:block;font-weight:400;color:var(--muted);font-size:12px}
 .form-block button,#config-app .bar button{padding:7px 13px;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--page);cursor:pointer;font-size:13.5px;white-space:nowrap}
 .form-block button.sec,#config-app .bar button.sec{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
@@ -235,6 +259,10 @@ pre{margin:0;padding:12px 14px;border-radius:10px;background:var(--surface-2);bo
   .t-val,.kpi .val{font-size:28px}
   .antes-despues,.despliegue,.conflicto .dos{grid-template-columns:minmax(0,1fr)}
   .fila.quitar3{grid-template-columns:minmax(0,1fr) auto}.fila.quitar3 > :nth-child(2){grid-column:1}
+  /* el renglón de una persona baja a dos líneas: el rol y su ✕ arriba, los correos abajo */
+  .personas{grid-template-columns:minmax(0,1fr) auto;grid-auto-flow:row dense}.personas .h{display:none}
+  .persona > .rol,.persona > .acc{border-bottom:0;padding-bottom:2px}.persona > .acc{grid-column:2}
+  .persona > .correos{grid-column:1/-1;padding-top:2px}
   .thr{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.thr > :first-child{grid-column:1/-1;font-weight:600}.thr.h{display:none}
   .renglones li{grid-template-columns:minmax(0,1fr)}.renglones .acc{grid-row:auto;grid-column:1;justify-content:flex-start}
   .renglones .acc input{width:100%}

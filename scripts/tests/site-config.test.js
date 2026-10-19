@@ -1773,12 +1773,14 @@ test('T6 2.40-Personas_EditaLaLista @story-2.40 @ac-6 @ac-5', async () => {
     borrador: { site: { access: [{ role: 'maintainer', emails: [LEAD] }] } }, extras: { servicios: ['azure-blob'], conAcceso: true, migracion: 'la lista se armó con lo de hoy' } };
   const pant = await pantallaFalsa([sec]);
   assert.strictEqual(pant.error, null);
-  const campos = () => pant.todo(pant.sec('sitio')).filter((n) => ['input', 'select'].includes(n.tag)).map((n) => n.attrs['data-path']).filter((x) => /^site\.access/.test(x || ''));
+  // un correo escrito es una etiqueta con su ruta; uno recién sumado, un campo
+  const campos = () => pant.todo(pant.sec('sitio')).filter((n) => ['input', 'select', 'span'].includes(n.tag)).map((n) => n.attrs['data-path']).filter((x) => /^site\.access/.test(x || ''));
   assert.deepStrictEqual(campos(), ['site.access.0.role', 'site.access.0.emails.0']);
   assert.match(pant.textoDe('sitio'), /la lista se armó con lo de hoy/);
   await pant.click('+ Agregar persona', 'sitio');
   assert.deepStrictEqual(campos(), ['site.access.0.role', 'site.access.0.emails.0', 'site.access.1.role', 'site.access.1.emails.0']);
-  await pant.click('+ Agregar correo', 'sitio');
+  // el + del primer renglón suma un correo
+  await pant.click('+', 'sitio');
   assert.ok(campos().includes('site.access.0.emails.1'), campos().join(' '));
   const rol = pant.todo(pant.sec('sitio')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'site.access.0.role');
   assert.deepStrictEqual(rol.hijos.map((o) => o.textContent), ['Mantiene el sitio', 'Dev']);
@@ -2349,4 +2351,174 @@ test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 
   const q = await pantallaTec({ stack: { code_extensions: ['.ex'] } }, 'es', { texto: '{}\n', proponer: { perfil: { habilitado: true } } });
   await q.revisado();
   assert.match(q.texto(), /Se abre un pedido de cambio en .*Entra cuando alguien lo aprueba/);
+});
+
+// ── Personas: un renglón por persona ─────────────────────────────────────────────────────────────────────────────────
+const SEIS = [
+  { role: 'maintainer', emails: ['ana@acme.example', 'ana@casa.example'] },
+  { role: 'maintainer', emails: ['bruno@acme.example'] },
+  { role: 'dev', emails: ['carla@acme.example', 'carla@lab.example', 'c@viejo.example'] },
+  { role: 'dev', emails: ['dario@acme.example'] },
+  { role: 'dev', emails: ['elena@acme.example', 'elena@casa.example'] },
+  { role: 'dev', emails: ['fede@acme.example'] },
+];
+const seccionSitio = (access, { problems = [], soloLectura = false } = {}) => ({ id: 'sitio', titulo: 'sitio', repo: 'operaciones', archivo: 'operations.json', estado: 'cargado', soloLectura, motivo: soloLectura ? 'sólo lectura' : null,
+  borrador: { site: { access: clon2(access), refresh_minutes: 20 } }, problems, avisos: [], extras: { conAcceso: true } });
+function clon2(v) { return JSON.parse(JSON.stringify(v)); }
+/** La sección Personas sobre la pantalla falsa: sus renglones y lo que viaja al revisar. */
+async function personas(access, opciones) {
+  const p = await pantallaFalsa([seccionSitio(access, opciones)], { '/api/config/revisar': () => ({ ok: true, texto: '', diferencias: [] }) });
+  assert.strictEqual(p.error, null);
+  const de = (n, clase) => p.todo(n).filter((x) => String(x.attrs.class || '').split(' ').includes(clase));
+  const renglones = () => de(p.sec('sitio'), 'persona');
+  const revisado = async () => { await p.click('Revisar cambios', 'sitio'); return p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop().cuerpo.borrador.site.access; };
+  return { ...p, de, renglones, revisado };
+}
+
+test('T1 Personas_UnRenglonPorPersona @story-2.56 @ac-1', async () => {
+  const p = await personas(SEIS);
+  const r = p.renglones();
+  assert.strictEqual(r.length, 6, 'un renglón por persona');
+  r.forEach((fila, i) => {
+    const sel = p.todo(fila).filter((n) => n.tag === 'select');
+    assert.strictEqual(sel.length, 1, `renglón ${i}: un selector de rol`);
+    assert.deepStrictEqual(sel[0].hijos.map((o) => o.attrs.value), ['maintainer', 'dev']);
+    assert.strictEqual(sel[0].value, SEIS[i].role);
+    const etiquetas = p.de(fila, 'correo');
+    assert.deepStrictEqual(etiquetas.map((e) => p.todo(e).map((n) => n.textContent).join('')).map((t) => t.replace('✕', '')), SEIS[i].emails, `renglón ${i}: una etiqueta por correo`);
+    etiquetas.forEach((e) => assert.strictEqual(p.de(e, 'chip-x').length, 1, 'cada etiqueta con su ×'));
+    assert.strictEqual(p.de(fila, 'sumar').length, 1, 'un +');
+    assert.strictEqual(p.de(fila, 'quitar-persona').length, 1, 'la × de la persona');
+    assert.strictEqual(p.todo(fila).filter((n) => n.tag === 'input').length, 0, 'un correo escrito no es un campo');
+  });
+  assert.ok(p.todo(p.sec('sitio')).some((n) => n.tag === 'button' && n.textContent === '+ Agregar persona'));
+});
+
+test('T2 Personas_SumarYSacar @story-2.56 @ac-2', async () => {
+  // el +: un campo para escribir; lo escrito se guarda al tipear y viaja al revisar
+  let p = await personas(SEIS);
+  p.de(p.renglones()[1], 'sumar')[0].on.click({});
+  await new Promise((r) => setImmediate(r));
+  const campo = p.todo(p.renglones()[1]).find((n) => n.tag === 'input');
+  assert.ok(campo, 'el + abre un campo');
+  campo.on.input({ target: { value: 'bruno@casa.example' } });
+  let esperado = clon2(SEIS); esperado[1].emails.push('bruno@casa.example');
+  assert.deepStrictEqual(await p.revisado(), esperado, 'sumar un correo');
+  // la × de una etiqueta saca sólo ese correo
+  p = await personas(SEIS);
+  p.de(p.de(p.renglones()[2], 'correo')[1], 'chip-x')[0].on.click({});
+  esperado = clon2(SEIS); esperado[2].emails.splice(1, 1);
+  assert.deepStrictEqual(await p.revisado(), esperado, 'sacar un correo');
+  // la × de la persona la saca entera
+  p = await personas(SEIS);
+  p.de(p.renglones()[3], 'quitar-persona')[0].on.click({});
+  esperado = clon2(SEIS); esperado.splice(3, 1);
+  assert.deepStrictEqual(await p.revisado(), esperado, 'sacar a la persona');
+  // el rol cambia sólo esa entrada
+  p = await personas(SEIS);
+  p.todo(p.renglones()[5]).find((n) => n.tag === 'select').on.change({ target: { value: 'maintainer' } });
+  esperado = clon2(SEIS); esperado[5].role = 'maintainer';
+  assert.deepStrictEqual(await p.revisado(), esperado, 'cambiar el rol');
+});
+
+test('T3 Personas_LaNuevaEsDev @story-2.56 @ac-3', async () => {
+  const p = await personas(SEIS);
+  await p.click('+ Agregar persona', 'sitio');
+  const r = p.renglones();
+  assert.strictEqual(r.length, 7);
+  assert.strictEqual(p.todo(r[6]).find((n) => n.tag === 'select').value, 'dev', 'nace Dev, el de menor permiso');
+  const campos = p.todo(r[6]).filter((n) => n.tag === 'input');
+  assert.strictEqual(campos.length, 1, 'con el campo del correo listo');
+  assert.strictEqual(campos[0].attrs.value, '');
+  assert.deepStrictEqual((await p.revisado())[6], { role: 'dev', emails: [''] });
+});
+
+test('T4 Personas_SinTocarNadaNoCambia @story-2.56 @ac-4', async () => {
+  const p = await personas(SEIS);
+  const va = await p.revisado();
+  assert.deepStrictEqual(va, SEIS);
+  assert.strictEqual(JSON.stringify(va), JSON.stringify(SEIS), 'mismo orden y mismas claves');
+});
+
+test('T5 Personas_TodoProblemaEnSuRenglon @story-2.56 @ac-5', async () => {
+  const access = clon2(SEIS); access[4].emails[1] = 'elena-casa.example';
+  const problems = [
+    { path: 'site.access.4.emails.1', message: 'no es un correo' },
+    { path: 'site.access.3.emails', message: 'hace falta al menos un correo' },
+    { path: 'site.access.2.role', message: 'el rol es maintainer o dev' },
+    { path: 'site.access.1.color', message: 'clave desconocida color' },
+  ];
+  const p = await personas(access, { problems });
+  const r = p.renglones();
+  const texto = (fila) => p.todo(fila).map((n) => n.textContent).join(' | ');
+  const mala = p.de(r[4], 'correo')[1];
+  assert.ok(String(mala.attrs.class).split(' ').includes('bad'), 'el correo mal escrito, en rojo');
+  assert.match(texto(r[4]), /elena-casa\.example: no es un correo/);
+  // el mensaje que ya nombra el correo (el del servidor: «x» no es un correo) no lo repite
+  const yaLoDice = await personas(access, { problems: [{ path: 'site.access.4.emails.1', message: '«elena-casa.example» no es un correo' }] });
+  const err = yaLoDice.de(yaLoDice.renglones()[4], 'err').map((n) => n.textContent);
+  assert.deepStrictEqual(err, ['«elena-casa.example» no es un correo'], 'sin el correo dos veces');
+  assert.match(texto(r[3]), /hace falta al menos un correo/);
+  assert.match(texto(r[2]), /el rol es maintainer o dev/);
+  assert.match(texto(r[1]), /clave desconocida color/, 'también una clave desconocida de la entrada');
+  assert.doesNotMatch(texto(r[0]), /no es un correo|clave desconocida/);
+  // un correo recién sumado (vacío, todavía un campo) con su problema: el campo en rojo y el mensaje en el renglón
+  const conVacio = clon2(SEIS); conVacio[0].emails.push('');
+  const v = await personas(conVacio, { problems: [{ path: 'site.access.0.emails.2', message: 'el correo está vacío' }] });
+  const campoVacio = v.todo(v.renglones()[0]).find((n) => n.tag === 'input');
+  assert.ok(String(campoVacio.attrs.class).split(' ').includes('bad'), 'el campo vacío con problema, en rojo');
+  assert.match(v.todo(v.renglones()[0]).map((n) => n.textContent).join(' | '), /correo: el correo está vacío/);
+  // una entrada que no es una persona, o con correos que no son una lista: la sección se dibuja igual y lo dice en su
+  // renglón (antes, la pantalla se caía y la sección quedaba vacía sin aviso)
+  for (const rara of ['pepe', null, { role: 'dev', emails: 'suelto@acme.example' }]) {
+    const q = await personas([SEIS[0], rara, SEIS[1]]);
+    const filas = q.renglones();
+    assert.strictEqual(filas.length, 3, `${JSON.stringify(rara)}: los tres renglones`);
+    assert.match(q.todo(filas[1]).map((n) => n.textContent).join(' | '), /renglón de la lista está mal armado|correos de esta persona están mal escritos en el archivo/, JSON.stringify(rara));
+    assert.strictEqual(q.de(filas[1], 'quitar-persona').length, 1, 'se puede quitar');
+    assert.deepStrictEqual(await q.revisado(), [SEIS[0], rara, SEIS[1]], 'dibujarla no la cambia');
+  }
+});
+
+test('T6 Personas_TextosEnLosDosIdiomas @story-2.56 @ac-7', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const k of ['pantalla.correos', 'pantalla.quitarCorreo', 'pantalla.agregarCorreoUno', 'pantalla.quitarPersona']) {
+    assert.notStrictEqual(t('es', k), k, `${k} en castellano`);
+    assert.notStrictEqual(t('en', k), k, `${k} en inglés`);
+    assert.notStrictEqual(t('en', k), t('es', k), `${k} distinto en cada idioma`);
+    assert.ok(ORG.pantalla().includes(`'${k}'`), `${k} lo usa la pantalla`);
+  }
+});
+
+test('T7 Personas_HojaConTemaYTelefono @story-2.56 @ac-6 @ac-7', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const reglas = css.match(/[^{}]*\.(personas|persona|correo|chip-x|sumar|quitar-persona)\b[^{}]*\{[^{}]*\}/g) || [];
+  assert.ok(reglas.length >= 5, `las reglas de la tabla (${reglas.length})`);
+  for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, `sin colores fijos: ${r.trim().slice(0, 80)}`);
+  const tel = /@media \(max-width:640px\)\{([\s\S]*?)\n\}/.exec(css);
+  assert.ok(tel && /\.personas/.test(tel[1]), 'el teléfono baja el renglón a dos líneas');
+});
+
+test('T10 Personas_SoloLecturaYLaT6 @story-2.56 @ac-9', async () => {
+  const p = await personas(SEIS, { soloLectura: true });
+  const tabla = p.de(p.sec('sitio'), 'personas')[0];
+  assert.ok(tabla, 'la tabla dibujada');
+  const agregar = p.todo(p.sec('sitio')).find((n) => n.tag === 'button' && n.textContent === '+ Agregar persona');
+  const controles = [...p.todo(tabla).filter((n) => ['select', 'button', 'input'].includes(n.tag)), agregar];
+  assert.ok(controles.length >= 6 * 3, `los controles de la tabla (${controles.length})`);
+  for (const c of controles) assert.strictEqual(c.attrs.disabled, 'disabled', `${c.tag} ${c.textContent} apagado`);
+});
+
+test('T11 Personas_TextosDelDuenoEnIngles @story-2.56 @ac-10', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const MS = require(path.join(ROOT, 'scripts', 'site', 'auth-providers', 'microsoft.js'));
+  assert.strictEqual(t('en', 'pantalla.laListaDeQuienEntra'), 'The list of who gets in and what they see: Maintainers see this tab and propose changes; devs see only their own work. If you remove yourself, you lose access once the change is applied.');
+  assert.strictEqual(t('en', 'pantalla.conQueSeEntra') + MS.TEXTOS['proveedor.microsoftInquilino'].en + t('en', 'pantalla.estoSeCambiaEnLa'),
+    "Sign-in: Microsoft accounts from the organization's directory (one tenant, including guests). You change this in the installation, not here.");
+  assert.strictEqual(t('en', 'pantalla.nadieEntraSiNoEsta'), 'Only people on this list can sign in. Each person can use any of their emails and sees the same thing.');
+  // el castellano no cambia
+  assert.strictEqual(t('es', 'pantalla.laListaDeQuienEntra'), 'La lista de quién entra y qué ve: quienes mantienen ven esta pestaña y proponen cambios; los devs ven lo suyo. Si te sacás de la lista, perdés el acceso cuando se apruebe.');
+  assert.strictEqual(t('es', 'pantalla.conQueSeEntra') + MS.TEXTOS['proveedor.microsoftInquilino'].es + t('es', 'pantalla.estoSeCambiaEnLa'),
+    'Con qué se entra: Microsoft, con las cuentas del directorio de la organización (un solo inquilino, con sus invitados). Esto se cambia en la instalación, no acá.');
+  assert.strictEqual(t('es', 'pantalla.nadieEntraSiNoEsta'), 'Nadie entra si no está acá. Cada persona entra con cualquiera de sus correos y ve lo mismo.');
 });
