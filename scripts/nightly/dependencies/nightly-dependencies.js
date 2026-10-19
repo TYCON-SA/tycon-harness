@@ -406,7 +406,8 @@ function auditarArbol(base, entrada, guion, hoy) {
   return {
     ...base, medido: true, resumen: inf.resumen,
     declaracion: inf.declaracion,
-    graves: graves.map((h) => ({ paquete: h.paquete, severidad: h.severidad, advisories: h.advisories, declarada: h.declarada })),
+    graves: graves.map((h) => ({ paquete: h.paquete, severidad: h.severidad, advisories: h.advisories, declarada: h.declarada,
+      ...(h.gravedad_sin_dato ? { gravedad_sin_dato: true } : {}) })),
     no_declaradas: inf.no_declaradas || [],
   };
 }
@@ -419,13 +420,15 @@ function agruparHallazgos(repos) {
     for (const g of r.graves || []) {
       if (g.declarada) continue;                 // lo declarado no despierta a nadie
       const id = huella(g.paquete, g.severidad, g.advisories);
-      if (!m.has(id)) m.set(id, { id, paquete: g.paquete, severidad: g.severidad, advisories: g.advisories, repos: [] });
+      if (!m.has(id)) m.set(id, { id, paquete: g.paquete, severidad: g.severidad, advisories: g.advisories, repos: [], sinDato: [] });
       m.get(id).repos.push(etiqueta(r));
+      m.get(id).sinDato.push(!!g.gravedad_sin_dato);
     }
   }
   const orden = { critical: 2, high: 1 };
+  // «alta por falta de dato» sólo si ningún repo informó la gravedad: con uno que la informa, el dato existe
   return [...m.values()]
-    .map((h) => ({ ...h, repos: [...new Set(h.repos)].sort() }))
+    .map(({ sinDato, ...h }) => ({ ...h, repos: [...new Set(h.repos)].sort(), ...(sinDato.every(Boolean) ? { gravedad_sin_dato: true } : {}) }))
     .sort((a, b) => (orden[b.severidad] - orden[a.severidad]) || (b.repos.length - a.repos.length) || a.paquete.localeCompare(b.paquete));
 }
 
@@ -700,6 +703,7 @@ function escribirBorradores(pendingDir, aAnunciar, snapshot) {
       `veredicto: pendiente`,
       `paquete: ${h.paquete}`,
       `severidad: ${h.severidad}`,
+      ...(h.gravedad_sin_dato ? ['# alta por falta de dato: el gestor de paquetes no informó la gravedad (se cuenta alta para no callarla)'] : []),
       `noches: ${h.noches}`,
       `ids:`,
       `  - ${h.id}`,

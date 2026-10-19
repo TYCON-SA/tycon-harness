@@ -28,6 +28,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js');
 
 /**
@@ -73,17 +74,68 @@ function companionRoots(repo, storyPath, opts) {
   if (repoDeLaStory && !mismo(repoDeLaStory, repo)) fuentes.push(repoDeLaStory);
   const vistos = new Set([real(repo)]);
   const out = [];
+  const rama = ramaDe(repoDeLaStory || repo);
   for (const f of fuentes) {
     const cfg = parseEvidenceConfig(f);
     if (opts && typeof opts.onMissing === 'function') for (const m of cfg.missing) opts.onMissing(m, f);
     for (const r of cfg.roots) {
-      const k = real(r);
+      const k = enLaMismaRama(real(r), rama);
       if (vistos.has(k)) continue;
       vistos.add(k);
       out.push(k);
     }
   }
   return out;
+}
+
+/** La rama en que está un repo, o null (cabeza suelta, o git que no contesta). */
+function ramaDe(dir) {
+  if (!dir) return null;
+  const r = spawnSync('git', ['-C', dir, 'symbolic-ref', '-q', '--short', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  // salida 1 con -q = cabeza suelta; cualquier otra cosa es git que no contestó, y se dice
+  if (r.error || (r.status !== 0 && r.status !== 1)) {
+    avisar(`no pude leer la rama de ${dir} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): los repos hermanos se leen como están declarados`);
+    return null;
+  }
+  const b = r.status === 0 ? String(r.stdout || '').trim() : '';
+  return b || null;
+}
+
+function avisar(texto) { process.stderr.write(`[hermanos] ⚠️  ${texto}\n`); }
+
+// La carpeta de un worktree → la ruta con que la declara `.tycon/advisors.yaml` (su `label` es el nombre de ésa, y las
+// rutas `../<hermano>/x` de la story se resuelven contra ella).
+const DECLARADO = new Map();
+
+/**
+ * El hermano declarado, o su worktree en la misma rama que el repo de la story. Desde el worktree de una story,
+ * `../<hermano>` es el checkout compartido (en `main`), no el código que la story cambió: el portón probaba otra cosa.
+ * Con la cabeza suelta, o sin un worktree del hermano en esa rama, el declarado tal cual.
+ */
+function enLaMismaRama(declarado, rama) {
+  if (!rama) return declarado;
+  const r = spawnSync('git', ['-C', declarado, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  if (r.error || r.status !== 0) {
+    avisar(`no pude listar los worktrees de ${declarado} (${(r.error && (r.error.code || r.error.message)) || String(r.stderr || '').trim().split('\n')[0] || `git salió ${r.status}`}): uso el declarado, que puede no ser el código de la rama ${rama}`);
+    return declarado;
+  }
+  // Un hermano declarado como subcarpeta de su repo es esa subcarpeta también en el worktree.
+  const top = spawnSync('git', ['-C', declarado, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 15000 });
+  if (top.error || top.status !== 0) {
+    avisar(`no pude leer la raíz git de ${declarado} (${(top.error && (top.error.code || top.error.message)) || String(top.stderr || '').trim().split('\n')[0] || `git salió ${top.status}`}): uso el declarado, que puede no ser el código de la rama ${rama}`);
+    return declarado;
+  }
+  const sub = path.relative(real(String(top.stdout || '').trim()), declarado);
+  for (const bloque of String(r.stdout || '').split(/\n\s*\n/)) {
+    const ruta = (bloque.match(/^worktree (.+)$/m) || [])[1];
+    const b = (bloque.match(/^branch refs\/heads\/(.+)$/m) || [])[1];
+    if (ruta && b === rama && esDir(path.join(ruta, sub))) {
+      const wt = real(path.join(ruta, sub));
+      if (wt !== declarado) DECLARADO.set(wt, declarado);
+      return wt;
+    }
+  }
+  return declarado;
 }
 
 /** La raíz git que contiene un archivo o carpeta (la carpeta con `.git`), o null. */
@@ -93,7 +145,7 @@ function gitRootOf(p) {
 }
 
 /** Cómo se nombra un repo hermano para una persona y para el step-05b: el nombre de su carpeta. */
-function label(root) { return path.basename(real(root)); }
+function label(root) { const r = real(root); return path.basename(DECLARADO.get(r) || r); }
 
 /**
  * A qué repo pertenece un archivo de `--files` (relativo a `--repo`, o absoluto): `{ root, rel, abs, propio }`.
@@ -141,6 +193,9 @@ function resolveDeclared(decl, repo, companions) {
     if (d.startsWith(`${nombre}/`)) candidatos.push(d.slice(nombre.length + 1));
     const deRepo = path.resolve(repo, d);
     if (adentro(deRepo, c)) candidatos.push(path.relative(real(c), real(deRepo)).split(path.sep).join('/'));
+    // Con el hermano en su worktree, `../<hermano>/x` apunta a la carpeta declarada: se traduce al worktree.
+    const decl = DECLARADO.get(real(c));
+    if (decl && adentro(deRepo, decl)) candidatos.push(path.relative(decl, real(deRepo)).split(path.sep).join('/'));
     for (const rel of candidatos) {
       // Adentro del hermano, como la guarda del repo: `sub/../../x` no empieza con `../` y sale de su raíz (seguridad, vuelta 2).
       const enHermano = path.join(c, rel);
@@ -252,7 +307,7 @@ function declaredIn(storyRepo, storyPath, companionRoot) {
 }
 
 module.exports = {
-  companionRoots, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
+  companionRoots, ramaDe, enLaMismaRama, gitRootOf, label, ownerOf, groupByRepo, resolveDeclared, parseRepoPrefixed, resolveRepoRef,
   companionTargets, declaredHere, declaredIn, real,
 };
 

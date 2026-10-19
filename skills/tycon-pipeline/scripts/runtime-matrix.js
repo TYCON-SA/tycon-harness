@@ -952,7 +952,12 @@ function compute(opts) {
   const repoRoot = opts.repoRoot ? path.resolve(opts.repoRoot) : discoverRepoRoot(storyPath);
   const evCfg = parseEvidenceConfig(repoRoot);
   const fePaths = evCfg.fePaths;
-  const evidenceRoots = repoRoot ? [repoRoot, ...evCfg.roots] : [];
+  // Cada hermano declarado cuenta también en su worktree de la rama de la story: es el mismo repo, y es donde el portón
+  // lo corre (lib/companion-repos.js). Sin esto, su evidencia salía «de un repo NO declarado» y no contaba.
+  const companionLib = require(path.join(__dirname, 'lib', 'companion-repos.js'));
+  const rama = repoRoot ? companionLib.ramaDe(repoRoot) : null;
+  const enRama = rama ? evCfg.roots.map((r) => companionLib.enLaMismaRama(companionLib.real(r), rama)) : [];
+  const evidenceRoots = repoRoot ? [...new Set([repoRoot, ...evCfg.roots, ...enRama])] : [];
   for (const miss of evCfg.missing) {
     warnings.push(`companion_repo declarado en .tycon/advisors.yaml pero INEXISTENTE: ${miss} — no aporta evidencia (¿typo o repo sin clonar?).`);
   }

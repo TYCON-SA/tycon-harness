@@ -413,4 +413,39 @@ for f in pipelines/operations/examples/repos.json pipelines/operations/examples/
 for f in pipelines/operations/README.md pipelines/operations/github/README.md; do grep -q '`npm`, `nuget` o `pip`' "$AQUI/$f" || faltan="$faltan $f"; done
 [ -z "$faltan" ] && ok "T9 los ejemplos y las guías de operaciones nombran pip en «tipo»" || no "T9 no nombran pip:$faltan"
 
+# ── una gravedad vacía o desconocida en npm/nuget cuenta como alta, con la marca ──────────────────
+# 🔴 rojo: «» o «unknown» no estaba entre las graves; no entraba en no_declaradas y el repo salía limpio sin aviso.
+repo
+echo '{"vulnerabilities":{"acme-a":{"severity":"","via":[{"url":"https://x/GHSA-aaaa"}]},"acme-b":{"severity":"unknown","via":[{"url":"https://x/GHSA-bbbb"}]},"acme-i":{"severity":"info","via":[{"url":"https://x/GHSA-iiii"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0,"info":1}}}' > "$TMP/npm.json"
+rc=$(corre --type npm --block --json)
+v=$(node -e '
+const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+const h = Object.fromEntries(j.hallazgos.map((x) => [x.paquete, x]));
+console.log([h["acme-a"].severidad, !!h["acme-a"].gravedad_sin_dato, JSON.stringify(h["acme-a"].gravedad_informada), h["acme-b"].severidad, h["acme-b"].gravedad_informada,
+  h["acme-i"].severidad, !!h["acme-i"].gravedad_sin_dato, j.resumen.high, j.no_declaradas.sort().join("+")].join(" "));' "$TMP/out.txt" 2>&1)
+[ "$rc" -eq 1 ] && [ "$v" = 'high true "" high unknown info false 2 acme-a+acme-b' ] \
+  && ok "T9 8.55 npm: gravedad vacía o desconocida = alta con la marca, suma al resumen y frena; info sigue info" || no "T9 8.55 npm salió $rc: $v"
+rc=$(corre --type npm --block)
+grep -q "acme-a \[high, gravedad sin dato: npm no la informa\]" "$TMP/out.txt" \
+  && ok "T9 8.55 el texto dice que npm no informó la gravedad" || no "T9 8.55 texto: $(cat "$TMP/out.txt")"
+
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"
+echo '{"projects":[{"frameworks":[{"topLevelPackages":[{"id":"Acme.Nuget","vulnerabilities":[{"advisoryurl":"https://x/GHSA-nnnn"}]}]}]}]}' > "$TMP/nuget.json"
+rc=$(corre --type nuget --block --json)
+v=$(node -e 'const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const h = j.hallazgos[0];
+console.log([h.severidad, !!h.gravedad_sin_dato, j.resumen.high, j.no_declaradas.join("+")].join(" "));' "$TMP/out.txt" 2>&1)
+[ "$rc" -eq 1 ] && [ "$v" = 'high true 1 Acme.Nuget' ] \
+  && ok "T10 8.55 nuget: sin gravedad = alta con la marca y frena" || no "T10 8.55 nuget salió $rc: $v"
+
+# T10 (más): la info sola no frena, y en nuget, con empate, la gravedad informada gana a la que no tiene dato
+repo
+echo '{"vulnerabilities":{"acme-i":{"severity":"info","via":[{"url":"https://x/GHSA-iiii"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0,"info":1}}}' > "$TMP/npm.json"
+rc=$(corre --type npm --block)
+[ "$rc" -eq 0 ] && ok "T10 8.55 una vulnerabilidad info sola no frena" || no "T10 8.55 info sola salió $rc: $(cat "$TMP/out.txt")"
+rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"
+echo '{"projects":[{"frameworks":[{"topLevelPackages":[{"id":"Acme.Doble","vulnerabilities":[{"advisoryurl":"https://x/GHSA-d001"},{"severity":"High","advisoryurl":"https://x/GHSA-d002"}]}]}]}]}' > "$TMP/nuget.json"
+corre --type nuget --json >/dev/null
+v=$(node -e 'const h = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).hallazgos[0]; console.log([h.severidad, !!h.gravedad_sin_dato, h.advisories.length].join(" "));' "$TMP/out.txt" 2>&1)
+[ "$v" = "high false 2" ] && ok "T10 8.55 nuget: con empate, la gravedad informada gana a la sin dato" || no "T10 8.55 empate nuget: $v"
+
 [ "$fallos" -eq 0 ] && { echo "✅ auditar-dependencias: todo verde ($casos casos)"; exit 0; } || { echo "❌ auditar-dependencias: $fallos fallo(s)"; exit 1; }

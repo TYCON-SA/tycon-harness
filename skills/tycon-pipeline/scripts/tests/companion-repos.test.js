@@ -503,3 +503,248 @@ test('test-gate: con dos hermanos corren los dos aunque la suite del primero lea
   const art = artefacto(lab.back);
   assert.deepEqual(art.companions.map((c) => path.basename(c.root)).sort(), ['Front', 'Front2'], JSON.stringify(art.companions));
 });
+
+// ── el hermano desde un worktree, la corrida cruzada, su base y la salida «sin acotar» ───────────────
+
+const { companionRoots } = require('../lib/companion-repos.js');
+const SUITES_DOS = JSON.stringify({ diarias: [{ raiz: 'arnes', ruta: 'tests/lee.test.js' }, { raiz: 'arnes', ruta: 'tests/otra.test.js' }], semanales: [] });
+const CON_SUITES = {
+  'scripts/tests/suites.json': SUITES_DOS,
+  'scripts/tests/lee.test.js': '// lee scripts/lib/acme.js\nprocess.exit(0);\n',
+  'scripts/tests/otra.test.js': 'process.exit(0);\n',
+  'scripts/lib/acme.js': 'module.exports = 1;\n',
+};
+function commitear(dir, msg) {
+  git(dir, 'add', '-A');
+  git(dir, '-c', 'user.email=lab@lab', '-c', 'user.name=lab', 'commit', '-q', '-m', msg);
+}
+/** Back (la story) y Front (el código, con suites.json), cada uno con un worktree en `story/x` al lado. */
+function laboratorioDeWorktrees({ frontEnRama = true, story } = {}) {
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-wt-')));
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': story || STORY({ modificar: ['Front/scripts/lib/acme.js'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+  });
+  const front = repoGit(path.join(raiz, 'Front'), CON_SUITES);
+  const backWt = path.join(raiz, 'Back-wt');
+  git(back, 'worktree', 'add', '-q', '-b', 'story/x', backWt);
+  const frontWt = path.join(raiz, 'Front-wt');
+  git(front, 'worktree', 'add', '-q', '-b', frontEnRama ? 'story/x' : 'otra', frontWt);
+  return { raiz, back, front, backWt: fs.realpathSync(backWt), frontWt: fs.realpathSync(frontWt), story: path.join(backWt, 'specs', 's.md') };
+}
+
+test('T2 8.55-companionRoots_DesdeUnWorktree_ElHermanoDeLaMismaRama @story-8.55 @ac-2 — desde un worktree, el hermano es su worktree en la misma rama', () => {
+  // 🔴 rojo: `Front` declarado se leía tal cual: desde Back-wt el portón probaba el checkout de main, no el código de la story.
+  const lab = laboratorioDeWorktrees();
+  assert.deepEqual(companionRoots(lab.backWt, lab.story), [lab.frontWt]);
+  // sin worktree del hermano en la rama: el declarado, como hoy
+  const sinRama = laboratorioDeWorktrees({ frontEnRama: false });
+  assert.deepEqual(companionRoots(sinRama.backWt, sinRama.story), [fs.realpathSync(sinRama.front)]);
+  // con la cabeza suelta en el repo de la story: el declarado
+  git(lab.backWt, 'checkout', '-q', '--detach');
+  assert.deepEqual(companionRoots(lab.backWt, lab.story), [fs.realpathSync(lab.front)]);
+});
+
+test('T3 8.55-TestGate_Hermano_BaseBifurcacion_SoloLoQueLeeLoTocado @story-8.55 @ac-3 @ac-4 — el hermano mide desde su bifurcación y corre sólo lo que lee lo tocado', () => {
+  // 🔴 rojo: con el marcador de otro repo la base caía a HEAD, «no sé qué se tocó», y corrían todas las suites del hermano.
+  const lab = laboratorioDeWorktrees();
+  fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 2;\n');
+  commitear(lab.frontWt, 'el cambio de la story');
+  const home = casa();
+  markerFalso(home, 't855a', lab.backWt, lab.story);
+  const r = spawnSync('bash', [TEST_GATE, lab.backWt, lab.story], { encoding: 'utf8', env: entorno(home, 't855a'), cwd: lab.backWt });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const art = artefacto(lab.backWt);
+  assert.equal(art.companions.length, 1, JSON.stringify(art.companions));
+  assert.equal(art.companions[0].root, lab.frontWt, 'el hermano es el worktree de la misma rama');
+  const delHermano = artefacto(lab.frontWt);
+  assert.equal(delHermano.coverage.touched_base.source, 'bifurcacion', JSON.stringify(delHermano.coverage.touched_base));
+  assert.equal(delHermano.totals.suites, 1, `corre sólo la que lee lo tocado: ${JSON.stringify(delHermano.totals)}`);
+  assert.match(r.stdout + r.stderr, /DIFERIDA otra\.test\.js — la corrida cruzada .* corre sólo las suites que leen lo tocado/);
+});
+
+test('T7 8.55-TestGate_HermanoSinAcotar_Sale7_RojoGana @story-8.55 @ac-5 @ac-7 — sin poder acotar sale 7 y el check queda sin-acotar; un rojo de otro hermano gana', () => {
+  // 🔴 rojo: sin base el hermano corría la suite completa (o, sin corrida, salía 3 «sin pruebas» como si nada).
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sinacotar-')));
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+  });
+  const front = path.join(raiz, 'Front');
+  fs.mkdirSync(front, { recursive: true });
+  for (const [rel, texto] of Object.entries(CON_SUITES)) escribir(front, rel, texto);
+  git(front, 'init', '-q', '-b', 'trabajo');   // sin origin ni main: no hay bifurcación que buscar
+  commitear(front, 'base');
+  fs.writeFileSync(path.join(front, 'scripts', 'lib', 'acme.js'), 'module.exports = 3;\n');
+  const home = casa();
+  const archivoMarker = markerFalso(home, 't855b', back, path.join(back, 'specs', 's.md'));
+  const r = spawnSync('bash', [TEST_GATE, back, path.join(back, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855b'), cwd: back });
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stdout + r.stderr, /sin acotar: la cubre la CI del pedido/);
+  const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
+  assert.equal(m.checks.tests, 'sin-acotar', `checks.tests=${m.checks.tests}`);
+  const art = artefacto(back);
+  assert.equal(art.companions[0].exit, 7);
+  assert.equal(art.all_green, false);
+  const delHermano = artefacto(front);
+  assert.equal(delHermano.unscoped, true);
+  assert.equal(delHermano.suite_green, false);
+  assert.equal(delHermano.totals.suites || 0, 0, 'no corrió nada');
+
+  // con un segundo hermano en rojo, sale el código del rojo
+  const front2 = repoGit(path.join(raiz, 'Front2'), { 'app/package.json': PKG_NODE_TEST, 'app/tests/y.test.js': PRUEBA_ROJA });
+  escribir(front2, 'app/src/y.js', 'module.exports = 2;\n');
+  fs.writeFileSync(path.join(back, '.tycon', 'advisors.yaml'), 'evidence:\n  companion_repos:\n    - Front\n    - Front2\n');
+  fs.writeFileSync(path.join(back, 'specs', 's.md'), STORY({ modificar: ['Front/scripts/lib/acme.js'], crear: ['Front2/app/src/y.js'] }));
+  const r2 = spawnSync('bash', [TEST_GATE, back, path.join(back, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855b'), cwd: back });
+  assert.notEqual(r2.status, 7, `un rojo gana sobre «sin acotar»\n${r2.stdout}\n${r2.stderr}`);
+  assert.notEqual(r2.status, 0);
+  assert.match(String(JSON.parse(fs.readFileSync(archivoMarker, 'utf8')).checks.tests), /^red/);
+});
+
+test('T14 8.55-TestGate_RepoConStoryDeOtroRepo_Acotada @story-8.55 @ac-3 @ac-4 — un repo con la ruta de una story de otro repo también se acota', () => {
+  // 🔴 rojo: `test-gate.sh <público> <story del privado>`: el marcador es de otro repo, la base caía a
+  //    HEAD, «no sé qué se tocó», y corrían todas las suites del repo de código.
+  const lab = laboratorioDeWorktrees();
+  fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 4;\n');
+  commitear(lab.frontWt, 'el cambio de la story');
+  const home = casa();
+  markerFalso(home, 't855c', lab.backWt, lab.story);
+  const r = spawnSync('bash', [TEST_GATE, lab.frontWt, lab.story], { encoding: 'utf8', env: entorno(home, 't855c'), cwd: lab.frontWt });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  const art = artefacto(lab.frontWt);
+  assert.equal(art.coverage.touched_base.source, 'bifurcacion', JSON.stringify(art.coverage.touched_base));
+  assert.equal(art.totals.suites, 1, `corre sólo la que lee lo tocado: ${JSON.stringify(art.totals)}`);
+  assert.match(r.stdout + r.stderr, /DIFERIDA otra\.test\.js/);
+});
+
+/** Un repo de código con suites.json y sin bifurcación posible (sin origin ni main), con un cambio sin commitear. */
+function frenteSinBase(raiz) {
+  const front = path.join(raiz, 'Front');
+  fs.mkdirSync(front, { recursive: true });
+  for (const [rel, texto] of Object.entries(CON_SUITES)) escribir(front, rel, texto);
+  git(front, 'init', '-q', '-b', 'trabajo');
+  commitear(front, 'base');
+  fs.writeFileSync(path.join(front, 'scripts', 'lib', 'acme.js'), 'module.exports = 5;\n');
+  return front;
+}
+
+test('T16 8.55-TestGate_SinAcotarGanaAlVerde @story-8.55 @ac-7 — con el repo de la story en verde y el hermano sin acotar, el total es 7', () => {
+  // 🔴 rojo: «sin acotar» se perdía detrás del verde del repo de la story y el total salía 0.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-verde7-')));
+  const back = repoGit(path.join(raiz, 'Back'), {
+    'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }),
+    '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - Front\n',
+    'package.json': PKG_NODE_TEST, 'test/b.test.js': PRUEBA_VERDE,
+  });
+  frenteSinBase(raiz);
+  const home = casa();
+  const archivoMarker = markerFalso(home, 't855d', back, path.join(back, 'specs', 's.md'));
+  const r = spawnSync('bash', [TEST_GATE, back, path.join(back, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855d'), cwd: back });
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  assert.equal(artefacto(back).suite_green, true, 'el repo de la story sí está verde');
+  // y «sin acotar» sube arriba: quien lee sólo el nivel de arriba no lo puede leer verde (pase adversarial, confirmado)
+  assert.equal(artefacto(back).unscoped, true, JSON.stringify(artefacto(back)));
+  assert.equal(artefacto(back).merge_requires_ci, true);
+  assert.match(artefacto(back).unscoped_reason, /Front/);
+  assert.equal(JSON.parse(fs.readFileSync(archivoMarker, 'utf8')).checks.tests, 'sin-acotar');
+});
+
+test('T17 8.55-TestGate_RepoConStoryDeOtroRepo_SinAcotar @story-8.55 @ac-5 — un repo con la story de otro, sin forma de acotar, sale 7 sin correr nada', () => {
+  // 🔴 rojo: la forma directa (sin pasar por el hermano) corría todas las suites del repo de código.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'directo7-')));
+  const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }) });
+  const front = frenteSinBase(raiz);
+  const home = casa();
+  const archivoMarker = markerFalso(home, 't855e', back, path.join(back, 'specs', 's.md'));
+  const r = spawnSync('bash', [TEST_GATE, front, path.join(back, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855e'), cwd: front });
+  assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
+  const art = artefacto(front);
+  assert.equal(art.unscoped, true);
+  assert.equal(art.merge_requires_ci, true);
+  assert.equal(art.totals.suites || 0, 0);
+  assert.equal(JSON.parse(fs.readFileSync(archivoMarker, 'utf8')).checks.tests, 'sin-acotar');
+});
+
+test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 — un 7 sin la constancia de «sin acotar» es un rojo', () => {
+  // 🔴 rojo: cualquier salida 7 (jest, vitest, npm test, dotnet o una suite) pasaba a «sin-acotar» y no frenaba nada.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'siete-rojo-')));
+  const repo = repoGit(path.join(raiz, 'R'), {
+    'package.json': JSON.stringify({ name: 'r', version: '1.0.0', scripts: { test: 'node --test; exit 7' } }) + '\n',
+    'test/a.test.js': PRUEBA_VERDE,
+  });
+  const home = casa();
+  const archivoMarker = markerFalso(home, 't855f', repo, path.join(repo, 'no-hay.md'));
+  const r = spawnSync('bash', [TEST_GATE, repo, '9.26'], { encoding: 'utf8', env: entorno(home, 't855f'), cwd: repo });
+  assert.equal(r.status, 1, `${r.stdout}\n${r.stderr}`);
+  assert.match(r.stderr, /salió 7 y no es «sin acotar»/);
+  const m = JSON.parse(fs.readFileSync(archivoMarker, 'utf8'));
+  assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
+});
+
+test('T22 8.55-HermanoEnWorktree_RutaConPuntosSigueResolviendo @story-8.55 @ac-2 — «../<hermano>/x» se asigna al worktree del hermano', () => {
+  // 🔴 rojo (pase adversarial, confirmado): con el hermano en su worktree, la ruta «../Front/x» de la story caía en el
+  //    checkout compartido y ya no era del hermano: `targets` la perdía sin aviso y su suite podía no correr.
+  const lab = laboratorioDeWorktrees({ story: STORY({ modificar: ['../Front/scripts/lib/acme.js'] }) });
+  const r = spawnSync(process.execPath, [COMPANION_LIB, 'targets', lab.backWt, lab.story], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const [root, , archivos] = r.stdout.trim().split('\x1f');
+  assert.equal(root, lab.frontWt, r.stdout);
+  assert.equal(archivos, 'scripts/lib/acme.js');
+});
+
+test('T23 8.55-MismoRepoEnOtroWorktree_NoEsCruzada @story-8.55 @ac-3 — un worktree del mismo repo no es otro repo', () => {
+  // 🔴 rojo (pase adversarial, confirmado): el checkout principal con la story en un worktree del mismo repo se tomaba como
+  //    corrida cruzada (toplevels distintos): se acotaba o salía 7 «sin acotar» sin ser una story de otro repo.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mismo-repo-')));
+  const code = repoGit(path.join(raiz, 'Code'), { ...CON_SUITES, 'specs/s.md': STORY({ modificar: ['scripts/lib/acme.js'] }) });
+  const wt = path.join(raiz, 'Code-wt');
+  git(code, 'worktree', 'add', '-q', '-b', 'feat', wt);
+  const home = casa();
+  const r = spawnSync('bash', [TEST_GATE, code, path.join(wt, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855g'), cwd: code });
+  assert.doesNotMatch(r.stdout + r.stderr, /la story vive en otro repo/, `${r.stdout}\n${r.stderr}`);
+});
+
+test('T24 8.55-HermanoSubcarpeta_SigueSiendoLaSubcarpeta @story-8.55 @ac-2 — un hermano declarado como subcarpeta no pasa a ser el repo entero', () => {
+  // 🔴 rojo (pase adversarial, confirmado): `Front/sub` declarado volvía como `Front` (la raíz del checkout en la rama), y
+  //    con worktree como `Front-wt` en vez de `Front-wt/sub`. El propio arnés declara un hermano así.
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sub-')));
+  const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({}), '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Front/sub\n' });
+  const front = repoGit(path.join(raiz, 'Front'), { 'sub/a.js': '1\n' });
+  assert.deepEqual(companionRoots(back, path.join(back, 'specs', 's.md')), [path.join(front, 'sub')], 'todo en main: la subcarpeta');
+  const backWt = path.join(raiz, 'Back-wt'); git(back, 'worktree', 'add', '-q', '-b', 'story/y', backWt);
+  const frontWt = path.join(raiz, 'Front-wt'); git(front, 'worktree', 'add', '-q', '-b', 'story/y', frontWt);
+  assert.deepEqual(companionRoots(backWt, path.join(backWt, 'specs', 's.md')), [path.join(fs.realpathSync(frontWt), 'sub')], 'con worktree: su subcarpeta');
+});
+
+test('T25 8.55-MatrizLeeLaEvidenciaDelHermanoEnSuWorktree @story-8.55 @ac-2 — la matriz cuenta lo que el portón dejó en el worktree del hermano', () => {
+  // 🔴 rojo (pase adversarial, confirmado): el portón escribe en Front-wt y la matriz miraba sólo Front: «evidencia en repos
+  //    NO declarados: Front-wt — NO cuenta».
+  const lab = laboratorioDeWorktrees();
+  fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 6;\n');
+  commitear(lab.frontWt, 'el cambio de la story');
+  const home = casa();
+  markerFalso(home, 't855h', lab.backWt, lab.story);
+  const g = spawnSync('bash', [TEST_GATE, lab.backWt, lab.story], { encoding: 'utf8', env: entorno(home, 't855h'), cwd: lab.backWt });
+  assert.equal(g.status, 0, `${g.stdout}\n${g.stderr}`);
+  const m = spawnSync(process.execPath, [path.join(SCRIPTS, 'runtime-matrix.js'), '--story', lab.story, '--json'], { encoding: 'utf8', env: entorno(home, 't855h'), cwd: lab.backWt });
+  assert.doesNotMatch(m.stdout + m.stderr, /repos NO declarados[^\n]*Front-wt/, `${m.stdout}\n${m.stderr}`.slice(-2000));
+});
+
+test('T26 8.55-GitQueNoContesta_SeDice @story-8.55 @ac-2 @ac-3 — cuando git no puede contestar, se dice y nada se toma como cruzado', () => {
+  // 🔴 rojo (revisor de fallas silenciosas, vueltas 3 y 5): un hermano declarado que no es un repo git caía al declarado
+  //    sin aviso, y una story fuera de git se comparaba como «otro repo» (con bash 3.2, `cd ""` no falla).
+  const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'git-mudo-')));
+  const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({}), '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../SinGit\n' });
+  fs.mkdirSync(path.join(raiz, 'SinGit'));
+  const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'lib', 'companion-repos.js'), 'targets', back, path.join(back, 'specs', 's.md')], { encoding: 'utf8' });
+  assert.match(r.stderr, /no pude listar los worktrees de [^\n]*SinGit/, r.stderr);
+
+  const suelta = path.join(raiz, 'suelta');
+  fs.mkdirSync(suelta);
+  fs.writeFileSync(path.join(suelta, 's.md'), STORY({}));
+  const code = repoGit(path.join(raiz, 'Code'), CON_SUITES);
+  const g = spawnSync('/bin/bash', [TEST_GATE, code, path.join(suelta, 's.md')], { encoding: 'utf8', env: entorno(casa(), 't855i'), cwd: code });
+  assert.match(g.stderr, /no pude averiguar el repo git de [^\n]*suelta/, g.stderr);
+  assert.doesNotMatch(g.stdout + g.stderr, /\[test-gate\] la story vive en otro repo: corren sólo/);
+});

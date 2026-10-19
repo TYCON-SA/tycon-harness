@@ -1,0 +1,25 @@
+{
+  "agent": "tycon-plugin-tests-coverage",
+  "file": "agents/tycon-plugin-tests-coverage.md",
+  "hash": "aa2575f9662d75e856b7e8c53b3d988d12eecd80",
+  "passed": 9,
+  "total": 9,
+  "score": 1,
+  "baseline": {
+    "passed": 3,
+    "total": 3,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-plugin-tests-coverage::test-c1-suite-roja-en-artifact": true,
+    "tycon-plugin-tests-coverage::test-w2-coverage-bajo-archivo-nuevo": true,
+    "tycon-plugin-tests-coverage::limpio-artifact-verde-coverage-ok": true,
+    "tycon-plugin-tests-coverage::test-w9-payload-a-mano-con-constructor-real": true,
+    "tycon-plugin-tests-coverage::test-w9-limpio-el-test-usa-el-constructor-real": true,
+    "tycon-plugin-tests-coverage::test-w10-assert-sobre-el-total-entre-tablas": true,
+    "tycon-plugin-tests-coverage::limpio-assert-sobre-la-tabla-tocada-y-el-total-reportado-sin-w10": true,
+    "tycon-plugin-tests-coverage::test-w2-lineas-tocadas-bajo-umbral": true,
+    "tycon-plugin-tests-coverage::limpio-sin-cruce-de-lineas-tocadas": true
+  }
+}

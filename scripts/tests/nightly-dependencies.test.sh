@@ -1500,6 +1500,30 @@ console.log(JSON.stringify({ b1, h1, g1, e1, t1c, t6c, t7c, t7d }));')
 [ "$r" = '{"b1":true,"h1":true,"g1":true,"e1":true,"t1c":true,"t6c":true,"t7c":true,"t7d":true}' ] \
   && ok "B1/H1/G1/E1 (story 4.5, 5b) + ramas: un repo fuera de repos.json no se lee «coincide»; una reapertura leída borra marcadores aunque falte medir; una fecha ilegible reinicia la gracia; ignorado_frenado sale ordenado; categoría rara y volcado sin pedidos se dicen" \
   || no "B1/H1/G1/E1: ${r}"
+# ── T11: la ficha dice cuándo una vulnerabilidad es alta por falta de dato ────────────────────────
+# 🔴 rojo: el nocturno no pasaba `gravedad_sin_dato`; quien decide veía «alta» sin saber que era un valor por defecto.
+rm -rf "$TMP/out" "$TMP/pend"; mundo SD CD; echo "$LIMPIO" > "$TMP/fix/SD.json"; echo "$LIMPIO" > "$TMP/fix/CD.json"; config "$TMP/c.json" 5 SD CD
+noche "$TMP/c.json" 2026-09-01 >/dev/null
+echo '{"vulnerabilities":{"acme-sd":{"severity":"","via":[{"url":"https://x/GHSA-sd01"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > "$TMP/fix/SD.json"
+echo '{"vulnerabilities":{"acme-cd":{"severity":"high","via":[{"url":"https://x/GHSA-cd01"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}' > "$TMP/fix/CD.json"
+noche "$TMP/c.json" 2026-09-02 >/dev/null
+fsd=$(grep -l "^paquete: acme-sd$" "$TMP/pend/pending"/*.yaml 2>/dev/null | head -1)
+fcd=$(grep -l "^paquete: acme-cd$" "$TMP/pend/pending"/*.yaml 2>/dev/null | head -1)
+{ [ -n "$fsd" ] && [ -n "$fcd" ] && grep -q "^# alta por falta de dato: el gestor de paquetes no informó la gravedad" "$fsd" \
+  && ! grep -q "falta de dato" "$fcd" && grep -q "^severidad: high$" "$fsd" \
+  && [ "$(basename "$fsd" .yaml)" = "$(sed -n 's/^id: //p' "$fsd")" ]; } \
+  && ok "T11 8.55 la ficha de una alta sin dato lo dice; la de una alta informada, no" \
+  || no "T11 8.55 fichas: sd=«${fsd}» cd=«${fcd}» $(cat "$fsd" 2>/dev/null)"
+
+# T11 (más): el mismo hallazgo con la gravedad informada en un repo y sin dato en otro no lleva la marca
+rm -rf "$TMP/out" "$TMP/pend"; mundo M1 M2; echo "$LIMPIO" > "$TMP/fix/M1.json"; echo "$LIMPIO" > "$TMP/fix/M2.json"; config "$TMP/c.json" 5 M1 M2
+noche "$TMP/c.json" 2026-09-01 >/dev/null
+echo '{"vulnerabilities":{"acme-mx":{"severity":"","via":[{"url":"https://x/GHSA-mx01"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0}}}' > "$TMP/fix/M1.json"
+echo '{"vulnerabilities":{"acme-mx":{"severity":"high","via":[{"url":"https://x/GHSA-mx01"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}' > "$TMP/fix/M2.json"
+noche "$TMP/c.json" 2026-09-02 >/dev/null
+fmx=$(grep -l "^paquete: acme-mx$" "$TMP/pend/pending"/*.yaml 2>/dev/null | head -1)
+{ [ -n "$fmx" ] && ! grep -q "falta de dato" "$fmx" && grep -q "^  - M1/M1$" "$fmx" && grep -q "^  - M2/M2$" "$fmx"; } \
+  && ok "T11 8.55 con un repo que informa la gravedad, la ficha no dice «falta de dato»" || no "T11 8.55 mezcla: $(cat "$fmx" 2>/dev/null)"
 
 echo
 total=$((pasaron + fallos))

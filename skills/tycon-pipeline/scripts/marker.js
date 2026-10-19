@@ -946,6 +946,18 @@ function cmdCompleteStep(nRaw, flags) {
       process.exit(1);
     }
 
+    // ── «Sin acotar»: se acepta anunciándolo ──────────────────────────────────────────────────
+    // La corrida del repo hermano no se pudo acotar a lo tocado y no corrió nada (salida 7 de test-gate.sh). Correr la
+    // suite completa del hermano en la máquina del dev no es la salida: la cubre la CI del pedido, y queda escrito.
+    if (testsCheck === 'sin-acotar') {
+      appendLog('gates.log', {
+        name: 'tests-unscoped', status: 'accepted', story: marker.storyId || null,
+        reason: 'sin acotar: la cubre la CI del pedido; el merge exige la CI completa en verde',
+      });
+      console.error('⚠️  la suite no se acotó (sin acotar: no se supo qué se tocó en el repo hermano, o ninguna suite lo lee):');
+      console.error('   la cubre la CI del pedido, y el merge exige la CI completa en verde. El motivo está en .advisors/tests-result.json.');
+    }
+
     // ── Chequeo de MUTANTES (AVISA, NO FRENA — decisión del dev 2026-08-13) ─────────────────────
     // La suite en verde no prueba que los tests ejerzan el código nuevo; el chequeo lo rompe a
     // propósito y mira si algún test se pone rojo. El único caso que bloquea es exit 1 del chequeo
@@ -1472,6 +1484,33 @@ function avisarBajaDePantalla(marker) {
     const linea = ui.proseDropNotice(ui.uiSignalDetail(fs.readFileSync(p, 'utf8'), marker.repoPath || process.cwd()));
     if (linea) console.error(linea);
   } catch (_e) { /* el aviso nunca rompe el comando */ }
+}
+
+/**
+ * `mark-tests-not-scoped`: la salida 7 de test-gate.sh es «sin acotar» (una corrida cruzada no pudo acotarse a lo tocado
+ * y no corrió nada). `run-check` la registra como `red:exit=7`; acá pasa a `sin-acotar`, que no es verde ni un rojo
+ * para arreglar: la cubre la CI del pedido (complete-step 4 lo anuncia). Sólo lo llama test-gate.sh, y sólo cambia un
+ * `red:exit=7` puesto por el portón: no puede tapar ningún otro rojo.
+ */
+function cmdMarkTestsNotScoped(motivo) {
+  if (process.env.TYCON_TEST_GATE !== '1') {
+    console.error('marker.js mark-tests-not-scoped: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) return;   // sin corrida activa no hay nada que marcar, como run-check
+  const st = (marker.checks || {}).tests;
+  const prov = (marker.checksProvenance || {}).tests;
+  if (st !== 'red:exit=7' || prov !== 'test-gate') {
+    console.error(`marker.js mark-tests-not-scoped: el check tests es ${st || '(ausente)'} (${prov || 'sin procedencia'}), no la salida 7 del portón: no lo cambio`);
+    process.exit(2);
+  }
+  marker.checks.tests = 'sin-acotar';
+  marker.checksAt = marker.checksAt || {};
+  marker.checksAt.tests = nowIso();
+  writeMarker(marker);
+  appendLog('gates.log', { sessionId: marker.sessionId || null, storyId: marker.storyId || null, check: 'tests',
+    status: 'sin-acotar', provenance: 'test-gate', motivo: String(motivo || '').slice(0, 300) });
 }
 
 function cmdSetCheck(name, status, flag) {
@@ -3399,6 +3438,9 @@ switch (cmd) {
     break;
   case 'run-check':
     cmdRunCheck(process.argv.slice(3));
+    break;
+  case 'mark-tests-not-scoped':
+    cmdMarkTestsNotScoped(arg1);
     break;
   case 'set-flag':
     cmdSetFlag(arg1, arg2);

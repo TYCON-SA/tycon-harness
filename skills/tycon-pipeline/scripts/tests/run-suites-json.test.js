@@ -790,3 +790,111 @@ test('T5 …--coverage sin carpeta es un error de uso, y un lcov ilegible se nom
   assert.deepEqual(resumen.coverage.without_data, [], 'ilegible no es «sin datos»');
   assert.match(r.stdout, /1 ilegible/);
 });
+
+// ── la corrida cruzada (la del repo hermano, o con la story en otro repo), acotada a lo tocado ────────
+
+function hermanoLab() {
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/lee.test.js' },
+    { raiz: 'arnes', ruta: 'tests/otra.test.js' },
+  ] }, { conSkills: false });
+  // la primera nombra el archivo tocado; la otra no
+  f.escribir('arnes', 'tests/lee.test.js', "// lee scripts/lib/acme.js\nprocess.exit(0)\n");
+  f.escribir('arnes', 'tests/otra.test.js', 'process.exit(0)\n');
+  return f;
+}
+function runOnlyTouched(f, { env = {}, touched } = {}) {
+  const out = path.join(f.root, 'out.json');
+  const args = [RUNNER, f.repo, out, '--skills', f.skills, '--only-touched'];
+  if (touched !== undefined) {
+    const tf = path.join(f.root, 'touched.json');
+    fs.writeFileSync(tf, JSON.stringify(touched));
+    args.push('--touched', tf);
+  }
+  const e = { ...process.env, ...env };
+  if (!('TYCON_GATE_ALL_SUITES' in env)) delete e.TYCON_GATE_ALL_SUITES;
+  const r = spawnSync('node', args, { encoding: 'utf8', env: e });
+  const resumen = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : null;
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, resumen };
+}
+
+test('T4 8.55-SoloLoTocado_CorreAunqueToqueCodigo @story-8.55 @ac-4 — --only-touched corre sólo lo que lee lo tocado, aunque sea código', () => {
+  // 🔴 rojo: sin --only-touched el corredor corre las dos (o, con --light, se apaga porque lo tocado es código).
+  const f = hermanoLab();
+  const r = runOnlyTouched(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.equal(r.resumen.corridas, 1, JSON.stringify(r.resumen));
+  assert.equal(r.resumen.deferred_suites.length, 1);
+  assert.match(r.resumen.deferred_suites[0].suite, /otra\.test\.js$/);
+  assert.match(r.resumen.deferred_suites[0].reason, /corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido/);
+  // tocar una suite corre esa suite, no todas las de su carpeta (la regla de la corrida liviana arrastraba a las ~400)
+  const suiteTocada = runOnlyTouched(f, { touched: { known: true, files: ['scripts/tests/lee.test.js'] } });
+  assert.equal(suiteTocada.status, 0, suiteTocada.stderr);
+  assert.equal(suiteTocada.resumen.corridas, 1, `sólo la suite tocada: ${JSON.stringify(suiteTocada.resumen.deferred_suites)}`);
+  const todas = runOnlyTouched(f, { touched: { known: true, files: ['scripts/lib/acme.js'] }, env: { TYCON_GATE_ALL_SUITES: '1' } });
+  assert.equal(todas.status, 0, todas.stderr);
+  assert.equal(todas.resumen.corridas, 2, 'TYCON_GATE_ALL_SUITES=1 corre todo');
+});
+
+test('T5 8.55-SoloLoTocado_SinSaber_O_SinSuites_Sale7 @story-8.55 @ac-5 — sin saber qué se tocó, o sin suite que lo lea, no corre nada y sale 7', () => {
+  // 🔴 rojo: «no sé qué se tocó» corría las ~400 suites; «ninguna lo lee» salía 3 («0 corridas»), que no dice por qué.
+  const f = hermanoLab();
+  const sinSaber = runOnlyTouched(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
+  assert.equal(sinSaber.status, 7, `${sinSaber.stdout}\n${sinSaber.stderr}`);
+  assert.equal(sinSaber.resumen.corridas, 0);
+  assert.match(sinSaber.resumen.unscoped.reason, /no sé qué archivos tocó la story en este repo.*la base cayó a HEAD/);
+  const sinArchivo = runOnlyTouched(f, {});
+  assert.equal(sinArchivo.status, 7, 'sin --touched tampoco se sabe');
+  const nadieLee = runOnlyTouched(f, { touched: { known: true, files: ['docs/nada.md'] } });
+  assert.equal(nadieLee.status, 7, nadieLee.stdout);
+  assert.equal(nadieLee.resumen.corridas, 0);
+  assert.match(nadieLee.resumen.unscoped.reason, /ninguna suite lee lo que la story tocó en este repo/);
+});
+
+test('T15 8.55-Suites_NoHeredanLasVariablesDelPorton @story-8.55 @ac-10 — las suites no ven las variables internas del portón', () => {
+  // 🔴 rojo: cada suite heredaba la clave de la evidencia y las marcas del hermano; una suite que corre su propio portón de
+  //    juguete las tomaba como suyas (la clave renombraba su copia sellada; la marca del hermano la acotaba).
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/eco.test.js' }] }, { conSkills: false });
+  const VARS = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO', 'TYCON_TEST_GATE_CROSS_REPO'];
+  f.escribir('arnes', 'tests/eco.test.js', `const v = ${JSON.stringify(VARS)}.filter((k) => k in process.env); if (v.length) { console.error('heredó ' + v.join(',')); process.exit(1); }\n`);
+  const env = Object.fromEntries(VARS.map((k) => [k, '1']));
+  for (const extra of [[], ['--coverage', path.join(f.root, 'cov')]]) {
+    const out = path.join(f.root, 'out.json');
+    const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, ...extra], { encoding: 'utf8', env: { ...process.env, ...env } });
+    assert.equal(r.status, 0, `${extra.length ? 'con' : 'sin'} cobertura la suite heredó variables del portón:\n${r.stdout}\n${r.stderr}\n${fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : ''}`);
+  }
+});
+
+test('T20 8.55-SoloLoTocado_RequireSinExtension_CodigoQueEmpiezaConTest @story-8.55 @ac-4 — la corrida cruzada no difiere una suite que prueba lo tocado', () => {
+  // 🔴 rojo (pase adversarial, confirmado por un verificador que corrió el código): una suite que carga el archivo tocado
+  //    sin extensión o por su carpeta quedaba diferida, y un archivo de código que empieza con «test-» (test-gate.sh) se
+  //    tomaba por otra suite: ninguna de las suites que lo nombran corría.
+  const f = armar({ diarias: [
+    { raiz: 'arnes', ruta: 'tests/sinext.test.js' },
+    { raiz: 'arnes', ruta: 'tests/carpeta.test.js' },
+    { raiz: 'arnes', ruta: 'tests/porton.test.sh' },
+    { raiz: 'arnes', ruta: 'tests/otra.test.js' },
+  ] }, { conSkills: false });
+  f.escribir('arnes', 'tests/sinext.test.js', "require('../lib/acme');\nprocess.exit(0)\n");
+  f.escribir('arnes', 'tests/carpeta.test.js', "require('../lib/gen');\nprocess.exit(0)\n");
+  f.escribir('arnes', 'tests/porton.test.sh', 'bash "$(dirname "$0")/../test-gate.sh" --help >/dev/null 2>&1; exit 0\n');
+  f.escribir('arnes', 'tests/otra.test.js', 'process.exit(0)\n');
+  f.escribir('arnes', 'lib/acme.js', 'module.exports = 1;\n');
+  f.escribir('arnes', 'lib/gen/index.js', 'module.exports = 2;\n');
+  f.escribir('arnes', 'test-gate.sh', 'exit 0\n');
+  const r = runOnlyTouched(f, { touched: { known: true, files: ['scripts/lib/acme.js', 'scripts/lib/gen/index.js', 'scripts/test-gate.sh'] } });
+  assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+  assert.deepEqual(r.resumen.deferred_suites.map((d) => path.basename(d.suite)), ['otra.test.js'], JSON.stringify(r.resumen.deferred_suites));
+  assert.equal(r.resumen.corridas, 3);
+});
+
+test('T21 8.55-AusenteYDiferidas_ElMotivoDiceLaVerdad @story-8.55 @ac-5 — con una ausente y el resto diferidas, el rojo no dice «todas ausentes»', () => {
+  // 🔴 rojo (pase adversarial, confirmado): el motivo decía «todas las suites declaradas están ausentes» con una suite
+  //    existente diferida en el mismo resumen. La ausente sigue siendo rojo.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }, { raiz: 'arnes', ruta: 'tests/fantasma.test.js' }] }, { conSkills: false });
+  f.escribir('arnes', 'tests/a.test.js', 'process.exit(0)\n');
+  const r = runOnlyTouched(f, { touched: { known: true, files: ['scripts/lib/nada.js'] } });
+  assert.equal(r.status, 1, r.stdout);
+  assert.doesNotMatch(r.resumen.no_medido || '', /todas las suites declaradas están ausentes/);
+  assert.match(r.resumen.no_medido || '', /1 ausente.*1 diferida/);
+});

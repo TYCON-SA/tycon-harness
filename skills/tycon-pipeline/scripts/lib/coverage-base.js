@@ -10,7 +10,11 @@
  * (`baseSha`). Orden:
  *   1. `TYCON_COVERAGE_BASE` (el que llama manda)
  *   2. `baseSha` del marcador, si el marcador es del MISMO repo git y el commit es ancestro de HEAD
- *   3. `HEAD` (sólo lo no commiteado)
+ *   3. en una corrida cruzada (`TYCON_TEST_GATE_CROSS_REPO=1`: la del repo hermano, o un repo con la story de otro) con
+ *      el marcador de otro repo, o sin marcador: la bifurcación con su rama principal (`merge-base HEAD origin/HEAD` ›
+ *      `origin/main` › `main`). El marcador es del repo de la story; en el repo de código, lo que la story cambió es lo
+ *      posterior a la bifurcación, más lo sin commitear.
+ *   4. `HEAD` (sólo lo no commiteado)
  * Una base que no sirve NO se usa en silencio: queda en `descartadas` con su motivo, y se cae a la
  * siguiente. Fuera de git no hay base (`ref: null`) y el parser lo dice.
  *
@@ -46,6 +50,19 @@ function verificar(top, ref) {
   return { sha };
 }
 
+// La bifurcación del repo con su rama principal: { sha, rama } o { motivo } con lo que se probó.
+function bifurcacion(top) {
+  const probadas = [];
+  for (const rama of ['origin/HEAD', 'origin/main', 'main']) {
+    const v = git(top, ['rev-parse', '--verify', '-q', `${rama}^{commit}`]);
+    if (v.error) { probadas.push(rama); continue; }
+    const mb = git(top, ['merge-base', 'HEAD', v.out]);
+    if (mb.out) return { sha: mb.out, rama };
+    probadas.push(`${rama} (sin ancestro común con HEAD${mb.error ? `: ${mb.error}` : ''})`);
+  }
+  return { motivo: `no encontré la rama principal contra la que buscar la bifurcación (probé ${probadas.join(', ')})` };
+}
+
 function resolver({ repo, env = process.env, marker = null, markerError = null } = {}) {
   const descartadas = [];
   const t = repo ? git(repo, ['rev-parse', '--show-toplevel']) : { error: 'no se indicó carpeta' };
@@ -73,6 +90,13 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
       if (v.sha) return { ref: v.sha, source: 'marcador', descartadas };
       descartadas.push({ source: 'marcador', motivo: v.motivo });
     }
+  }
+
+  const delOtro = !marker || !marker.baseSha || descartadas.some((d) => d.source === 'marcador' && /otro repo/.test(d.motivo));
+  if (env && env.TYCON_TEST_GATE_CROSS_REPO === '1' && delOtro) {
+    const b = bifurcacion(top);
+    if (b.sha) return { ref: b.sha, source: 'bifurcacion', rama: b.rama, descartadas };
+    descartadas.push({ source: 'bifurcacion', motivo: b.motivo });
   }
 
   const h = git(top, ['rev-parse', '--verify', 'HEAD^{commit}']);

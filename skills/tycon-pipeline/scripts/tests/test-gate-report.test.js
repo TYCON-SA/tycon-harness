@@ -35,6 +35,11 @@ const GATE = path.join(SCRIPTS, 'test-gate.sh');
 const SMOKE = path.join(SCRIPTS, 'smoke-run.sh');
 const FIXTURES = path.join(__dirname, 'fixtures', 'test-gate-report');
 const SESION = 'sesion-acme-w6';
+// test-gate.sh exporta la clave de la copia sellada (TYCON_EVIDENCE_KEY, o _FAILED si no la pudo calcular) cuando recibe
+// la ruta de una story, y esta suite corre dentro de él: el informe de cada caso de juguete la tomaba en vez del id del
+// caso. Lo de afuera no entra a los casos.
+delete process.env.TYCON_EVIDENCE_KEY;
+delete process.env.TYCON_EVIDENCE_KEY_FAILED;
 
 const GIT_ENV = {
   ...process.env,
@@ -510,8 +515,8 @@ test('W6-5b #10 …la salida 5 deja el check tests del marcador en rojo, no un v
 // (no corrió nada) caía en «suite roja: corregir y re-correr». Cada salida propia de test-gate.sh tiene su fila.
 test('W6-5b #11 …la tabla «Salidas del gate» del paso 4 tiene una fila por cada salida de test-gate.sh', () => {
   const gate = fs.readFileSync(GATE, 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
-  const codigos = new Set([...gate.matchAll(/\bexit (\d+)\b|SUITE_EXIT=(\d+)\b/g)].map((m) => m[1] || m[2]).filter((c) => c !== '0'));
-  for (const c of ['3', '4', '5', '6']) assert.ok(codigos.has(c), `test-gate.sh ya no sale ${c}: revisar esta prueba`);
+  const codigos = new Set([...gate.matchAll(/\bexit (\d+)\b|SUITE_EXIT=(\d+)\b|"\$SUITE_EXIT" == "(\d+)"/g)].map((m) => m[1] || m[2] || m[3]).filter((c) => c !== '0'));
+  for (const c of ['3', '4', '5', '6', '7']) assert.ok(codigos.has(c), `test-gate.sh ya no sale ${c}: revisar esta prueba`);
   const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-04-execute.md'), 'utf8');
   const tabla = paso.split('### Salidas del gate')[1];
   assert.ok(tabla, 'el paso 4 perdió la sección «Salidas del gate»');
@@ -733,4 +738,47 @@ test('T10 7.31-Umbral_MaquinaOrganizacionDefecto @story-7.31 @ac-9 — el umbral
     if (problema) assert.ok((cov.threshold_problems || []).some((p) => problema.test(p)), `${que}: ${JSON.stringify(cov.threshold_problems)}`);
     else assert.strictEqual(cov.threshold_problems, undefined, que);
   }
+});
+
+// ── El portón de pruebas ────────────────────────────────────────────────────────────────────────────────────────────────
+test('T1 8.55-ClaveHeredada_NoCambiaElResultado @story-8.55 @ac-1 — la clave de la evidencia que exporta un test-gate.sh de afuera no cambia el resultado', () => {
+  // 🔴 rojo: test-gate.sh exporta TYCON_EVIDENCE_KEY (o _FAILED) cuando recibe la ruta de una story, y esta suite corre
+  //    dentro de él: el informe nombraba la copia sellada con la clave de afuera y dos casos de esta suite salían rojos.
+  for (const [k, v] of [['TYCON_EVIDENCE_KEY', '8.55'], ['TYCON_EVIDENCE_KEY_FAILED', 'no encontré la story']]) {
+    const env = { ...process.env, [k]: v };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, ['--test', '--test-name-pattern', '^T69 TestGate_NodeReport|^T9 7\\.31-SuitesJson_ConReporte', __filename],
+      { encoding: 'utf8', env, timeout: 300000 });
+    assert.strictEqual(r.status, 0, `con ${k} puesta la suite cambia:\n${(r.stdout + r.stderr).slice(-3000)}`);
+    assert.match(r.stdout, /ℹ pass 2\b/, `esperaba las dos pruebas corridas con ${k}:\n${r.stdout.slice(-1500)}`);
+  }
+});
+
+test('T6 8.55-Informe_Salida7_SinAcotar @story-8.55 @ac-6 — la salida 7 es «sin acotar»: no es verde y el merge exige la CI completa', () => {
+  // 🔴 rojo: el informe leía la salida 7 como una suite roja más, sin decir que no se corrió nada ni por qué.
+  const tmp = tmpReal('tgr-sinacotar-');
+  const repo = path.join(tmp, 'repo');
+  const results = path.join(tmp, 'results');
+  fs.mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', repo], { stdio: 'ignore' });
+  escribir(repo, { 'scripts/tests/suites.json': { text: '{"diarias":[],"semanales":[]}\n' } });
+  git(repo, ['add', '-A']); git(repo, ['commit', '-qm', 'base']);
+  fs.mkdirSync(results, { recursive: true });
+  const motivo = 'no sé qué archivos tocó la story en este repo: la base cayó a HEAD';
+  fs.writeFileSync(path.join(results, 'suites.json'), JSON.stringify({ corridas: 0, verdes: 0, fallas: [], ausentes: [], deferred_suites: [], unscoped: { reason: motivo } }));
+  const out = path.join(tmp, 'out.json');
+  const r = spawnSync(process.execPath, [REPORT, 'suites-json', repo, repo, results, out, '7', '8.55', '75', '2026-10-18T12:00:00Z',
+    '0', '', 'explicito', '', '{"git":true}', '', '{"ref":null,"source":null,"descartadas":[]}'],
+  { encoding: 'utf8', env: { ...process.env, HOME: tmp, USERPROFILE: tmp, TYCON_GUIDES_DIR: tmp, TYCON_EVIDENCE_DIR: path.join(tmp, 'ev') } });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const art = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.strictEqual(art.suite_exit, 7);
+  assert.strictEqual(art.suite_green, false, 'sin acotar nunca es verde');
+  assert.strictEqual(art.unscoped, true);
+  assert.strictEqual(art.unscoped_reason, motivo);
+  assert.strictEqual(art.merge_requires_ci, true);
+  // y el revisor de cobertura lo nombra como no verde
+  const regla = fs.readFileSync(path.join(SCRIPTS, '..', '..', '..', 'agents', 'tycon-plugin-tests-coverage.md'), 'utf8')
+    .split('\n').find((l) => l.startsWith('| **TEST-C1** |')) || '';
+  assert.match(regla, /unscoped/, `la regla TEST-C1 no nombra «sin acotar»: ${regla}`);
 });

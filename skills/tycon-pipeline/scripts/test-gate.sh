@@ -32,6 +32,8 @@
 #       · 4 alcance ambiguo (no se corrió NADA) · 5 falta la herramienta que corre las
 #       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA; story 8.17, AC 50)
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
+#       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
+#       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido, y el merge la exige en verde.
 #
 # Sin `python3`, `timeout` ni `realpath` (story 8.17, AC 46 y 50): en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
@@ -91,6 +93,12 @@ mkdir -p "$OUT_DIR"
 # su código, igual que la 6. Sin esto, un verde de una corrida anterior quedaba en pie y `complete-step 4` lo aceptaba:
 # «no pude correr» quedaba dicho en el artefacto y no en el marcador (pase adversarial de la W6, hallazgo #10). Sin
 # corrida activa, run-check no escribe nada. Nunca corta el gate.
+# «Sin acotar» se lee de la CONSTANCIA, no del número: un corredor (jest, vitest, npm test, dotnet) o una suite también
+# pueden salir 7 porque fallan, y eso es un rojo. Sólo la corrida cruzada de suites.json escribe `unscoped: true`.
+es_sin_acotar() {
+  node -e 'try{process.exit(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).unscoped===true?0:1)}catch(e){process.exit(1)}' "$1"
+}
+
 marcar_tests_en_rojo() {
   local codigo="$1" motivo="$2"
   ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" run-check tests -- \
@@ -110,6 +118,30 @@ marcar_tests_en_rojo() {
 #     terminar y no puede dejar en verde un repo rojo.
 #   · La corrida del hermano no sigue a los hermanos del hermano (TYCON_TEST_GATE_COMPANION=1) ni sella evidencia.
 REPO_STORY="$REPO"   # la raíz que recibió el gate; REPO se mueve si hay alcance
+# La corrida CRUZADA: la del repo hermano, o la que recibe un repo con la ruta de una story de otro repo (la story en el
+# privado y el código en el público). Ahí el marcador es del otro repo: la base de «lo tocado» es la bifurcación y la
+# corrida se acota a lo tocado. Va sólo a los comandos que la leen, en su línea: exportada, la heredarían las suites.
+TG_CROSS=""
+if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" ]]; then
+  TG_CROSS=1
+elif [[ "$STORY_ARG" == *.md && -f "$STORY_ARG" ]]; then
+  # Se compara el repo (su carpeta .git común), no el checkout: un worktree del mismo repo no es otro repo.
+  # Vacío si git no contesta: con bash 3.2, `cd ""` no falla y devolvía la carpeta misma, que se comparaba como otro repo.
+  _tg_repo_git() {
+    local d
+    d="$(cd "$1" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" || return 0
+    [[ -n "$d" ]] || return 0
+    ( cd "$1" && cd "$d" 2>/dev/null && pwd -P ) || true
+  }
+  _TG_TOP_REPO="$(_tg_repo_git "$REPO")"
+  _TG_TOP_STORY="$(_tg_repo_git "$(dirname "$STORY_ARG")")"
+  if [[ -n "$_TG_TOP_REPO" && -n "$_TG_TOP_STORY" && "$_TG_TOP_REPO" != "$_TG_TOP_STORY" ]]; then TG_CROSS=1
+  elif [[ -z "$_TG_TOP_REPO" || -z "$_TG_TOP_STORY" ]]; then
+    # Sin saber de qué repo es cada uno no se puede decir que sea cruzada: corre como siempre, y se dice.
+    if [[ -z "$_TG_TOP_REPO" ]]; then _TG_SIN_REPO="$REPO"; else _TG_SIN_REPO="$(dirname "$STORY_ARG")"; fi
+    echo "[test-gate] ⚠️  no pude averiguar el repo git de $_TG_SIN_REPO: si la story vive en otro repo, esta corrida no se acota" >&2
+  fi
+fi
 correr_hermanos_al_salir() {
   local rc=$?
   trap - EXIT
@@ -146,9 +178,16 @@ correr_hermanos_al_salir() {
       # Sin alcance propio: el de este repo (TYCON_TEST_SCOPE) no vale para el hermano.
       TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" < /dev/null || hrc=$?
     fi
+    # Un 7 del hermano sin la constancia de «sin acotar» es un rojo de verdad: se combina como 1.
+    if [[ "$hrc" == "7" ]] && ! es_sin_acotar "$root/.advisors/tests-result.json"; then
+      echo "[test-gate] ⚠️  el repo hermano $(basename "$root") salió 7 sin la constancia de «sin acotar»: es un rojo" >&2
+      hrc=1
+    fi
     filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${hrc}"$'\n'
-    if [[ "$final" == "0" || "$final" == "3" ]] && [[ "$hrc" != "0" && "$hrc" != "3" ]]; then final="$hrc"; fi
-    if [[ "$final" == "3" && "$hrc" == "0" ]]; then final=0; fi
+    # Un rojo de verdad gana; «sin acotar» (7) gana sobre verde y sobre «sin pruebas» (3).
+    if [[ "$final" == "0" || "$final" == "3" || "$final" == "7" ]] && [[ "$hrc" != "0" && "$hrc" != "3" && "$hrc" != "7" ]]; then final="$hrc"
+    elif [[ "$final" == "0" || "$final" == "3" ]] && [[ "$hrc" == "7" ]]; then final=7
+    elif [[ "$final" == "3" && "$hrc" == "0" ]]; then final=0; fi
   done <<< "$blancos"
   node -e '
     const fs = require("fs"), p = require("path");
@@ -157,7 +196,7 @@ correr_hermanos_al_salir() {
       const [root, scope, archivos, exit] = l.split("\x1f");
       const n = Number(exit);
       return { root, scope: scope || null, files: archivos.split(",").filter(Boolean), exit: n, green: n === 0,
-        no_suite: n === 3, artifact: p.join(root, ".advisors", "tests-result.json") };
+        no_suite: n === 3, ...(n === 7 ? { unscoped: true } : {}), artifact: p.join(root, ".advisors", "tests-result.json") };
     });
     let art = null;
     try { art = JSON.parse(fs.readFileSync(out, "utf8")); } catch (_e) { art = null; }
@@ -170,11 +209,25 @@ correr_hermanos_al_salir() {
     }
     art.companions = companions;
     art.all_green = Number(final) === 0;
+    // «Sin acotar» en un hermano sube arriba: el total no es verde aunque este repo lo esté, y quien lee sólo el nivel
+    // de arriba (el revisor de cobertura) no puede leerlo verde.
+    if (Number(final) === 7) {
+      const sin = companions.filter((c) => c.unscoped).map((c) => p.basename(c.root));
+      // el motivo propio (si este repo tampoco se pudo acotar) se conserva; los hermanos se suman
+      const motivos = [art.unscoped ? art.unscoped_reason : null, sin.length ? `repo(s) hermano(s) sin acotar: ${sin.join(", ")}` : null].filter(Boolean);
+      art.unscoped = true;
+      art.unscoped_reason = `${motivos.join("; ") || "sin acotar"} — la cubre la CI del pedido`;
+      art.merge_requires_ci = true;
+    }
     fs.mkdirSync(p.dirname(out), { recursive: true });
     fs.writeFileSync(out, JSON.stringify(art, null, 2) + "\n");
   ' "$OUT_FILE" "$TS" "$STORY_ID" "$rc" "$final" "$filas" \
     || echo "[test-gate] ⚠️  no pude anotar los repos hermanos en $OUT_FILE (mirá el error de arriba)" >&2
-  if [[ "$final" != "0" ]]; then
+  if [[ "$final" == "7" ]]; then
+    marcar_tests_en_rojo 7 "sin acotar: la cubre la CI del pedido (un repo hermano no se pudo acotar a lo tocado); no es verde"
+    ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "un repo hermano no se pudo acotar a lo tocado" ) >&2 || true
+    echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — el merge exige la CI completa en verde." >&2
+  elif [[ "$final" != "0" ]]; then
     marcar_tests_en_rojo "$final" "el total de la story (este repo + sus repos hermanos) no está en verde: salida $final"
   fi
   echo "[test-gate] repos hermanos: resultado total → salida $final (este repo: $rc)" >&2
@@ -477,7 +530,7 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # eso necesita saber qué toca la story: lo declarado + el diff contra la base de la corrida + lo sin
   # trackear (lib/touched-files.js). La base se resuelve ACÁ, antes de correr, y el parser la reusa.
   # Si no se puede saber, no se pasa `--touched` y el runner corre todo — «no pude mirar» ≠ «no toca».
-  BASE_JSON="$(node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
+  BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
   # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro); igual se dice por qué.
   _TG_BASE="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.write(j.ref||"")}catch(e){process.stderr.write(`[test-gate] ⚠️  la base de la corrida es ilegible (${e.message}): corren todas las suites\n`)}' "$BASE_JSON" || true)"
@@ -496,9 +549,15 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # «diferidas por corrida liviana», con la lista en el resumen. El tamaño lo dice el marcador de la sesión; sin
   # marcador legible, todo como siempre. Sin saber qué toca la story, el runner corre todo igual.
   LIGHT_ARGS=()
+  # La corrida cruzada se acota a lo tocado: las ~400 suites del repo de código no corren enteras en la máquina del dev,
+  # las corre la CI del pedido. Sin poder acotar, el corredor sale 7 («sin acotar») sin correr nada.
+  if [[ "$TG_CROSS" == "1" ]]; then
+    LIGHT_ARGS=(--only-touched)
+    echo "[test-gate] la story vive en otro repo: corren sólo las suites que leen lo tocado (la completa la corre la CI del pedido)"
+  fi
   _TG_SIZE="$(node "$MARKER_JS" get 2>/dev/null | node -e 'let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(t).size||""))}catch(e){process.stderr.write("[test-gate] no pude leer el tamaño de la corrida del marcador: corren las suites de siempre\n")}})' || true)"
   if [[ "$_TG_SIZE" == "liviana" ]]; then
-    LIGHT_ARGS=(--light)
+    LIGHT_ARGS+=(--light)
     echo "[test-gate] corrida liviana: sólo las suites que leen algún archivo tocado (las demás, diferidas por corrida liviana)"
   fi
   # Con la cobertura pedida, cada suite corre bajo el medidor de Node y deja su lcov; el informe lee el
@@ -549,7 +608,7 @@ CODE_STATE_JSON="$(node "$SCRIPT_DIR/lib/suite-freshness.js" state "$REPO" 2>/de
 # parser publica `touched_lines_pct: null` con el motivo; nunca rompe el gate.
 # La rama suites-json ya la resolvió antes de correr (story 7.15): se reusa, no se recalcula.
 if [[ -z "${BASE_JSON:-}" ]]; then
-  BASE_JSON="$(node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
+  BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
 fi
 # La sesión con la cadena canónica del arnés (lib/session-id.js: Claude, Codex, banco) — la línea de
@@ -573,6 +632,14 @@ node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESUL
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,
 # AC 50: «nunca pasaron»). El informe ya lo dejó dicho en el artefacto; acá el check `tests` del marcador queda en
 # rojo con el mismo motivo —`run-check` ya lo había puesto verde por la salida 0— y el gate sale 6.
+if [[ "$SUITE_EXIT" == "7" ]] && ! { [[ "$RUNNER" == "suites-json" ]] && es_sin_acotar "$OUT_FILE"; }; then
+  echo "🔴 [test-gate] la suite salió 7 y no es «sin acotar» (no hay constancia de una corrida cruzada sin acotar): es un rojo; el gate sale 1" >&2
+  SUITE_EXIT=1
+fi
+if [[ "$SUITE_EXIT" == "7" ]]; then
+  ( cd "$REPO_RUN" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-scoped "$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).unscoped_reason||""))}catch(e){}' "$OUT_FILE")" ) >&2 || true
+  echo "🟡 [test-gate] sin acotar: la cubre la CI del pedido — no se corrió ninguna suite (el motivo está en $OUT_FILE). No es verde: el merge exige la CI completa en verde." >&2
+fi
 if [[ "$SUITE_EXIT" == "0" ]]; then
   _VERDE="$(node -e 'try{const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(j.suite_green===true?"si":"no")}catch(e){process.stdout.write("no")}' "$OUT_FILE")"
   if [[ "$_VERDE" != "si" ]]; then
