@@ -78,14 +78,21 @@ const VISUAL_E2E_FILE_RE = /\.(png|jpe?g|webp|gif|webm)$/i;
 const VISUAL_SMOKE_FILE_RE = /\.(png|webm)$/i;
 
 const RUNTIME_NIVEL_RE = /e2e|smoke|runtime|playwright/i;
-const CODE_FILE_RE = /\.(cs|ts|tsx|js|jsx|sql)$/i;
+// El código es el de lib/code-files.js (con lo que sume la organización); la matriz suma `.sql` (migraciones).
+const codeFilesLib = require('./lib/code-files.js');
+function isCodeFile(f, { extra } = {}) {
+  const ex = extra !== undefined ? extra : require('./lib/stack-config.js').orgExtra();
+  return codeFilesLib.isCode(f, { extra: ex }) || codeFilesLib.extOf(f) === '.sql';
+}
+const CODE_FILE_RE = { test: (f) => isCodeFile(f) };
 // Lado FE por STACK, no por producto (fix 2026-08-14): `.tsx` y vitest son señal genérica, y
 // `.test.ts(x)` es el naming de vitest — pero `.test.js` es node --test BACKEND (un repo del equipo):
 // tenerlo entero (`.test.`) como señal FE obligaba a las filas backend a buscar una suite FE
 // que solo aportaba un repo ajeno. Los nombres de producto (`CeiboFrontEnd`,
 // `ceibo-deposito`) salieron del harness: cada repo declara su lado en
 // `.tycon/advisors.yaml → evidence.fe_paths` y kindOf() los toma de ahí.
-const GENERIC_FE_RE = /\.tsx|\.test\.tsx?\b|vitest/i;
+// Una pantalla en Svelte o Vue es lado FE igual que una en React.
+const GENERIC_FE_RE = /\.tsx|\.jsx\b|\.svelte\b|\.vue\b|\.test\.tsx?\b|vitest/i;
 function kindOf(s, fePaths) {
   const str = String(s || '');
   return (fePaths || []).some((t) => str.includes(t)) || GENERIC_FE_RE.test(str) ? 'fe' : 'be';
@@ -1607,7 +1614,7 @@ function main() {
 // `acEsDeAccion` se exporta para poder testear la heurística de DODRT-C8 como función PURA
 // (mismo criterio que lib/atdd-order.js): sus falsos positivos se miden con texto de ACs
 // reales, no armando un workspace entero.
-module.exports = { compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM };
+module.exports = { isCodeFile, compute, renderMd, storyIdFrom, discoverRepoRoot, acEsDeAccion, parseExencionC8, avisoFirmasDescartadas, esDePantalla, VISUAL_EVIDENCE_FROM };
 
 if (require.main === module) {
   main();

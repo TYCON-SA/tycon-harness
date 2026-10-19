@@ -61,13 +61,18 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'stack'];
 // El plazo del aviso de espera (story 7.20, AC 14): minutos enteros de 1 a 120. Lo lee scripts/hooks/wait-notice.js.
 const WAIT_NOTICE_KEYS = ['minutes'];
 const WAIT_NOTICE_MAX = 120;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
+// La tecnología de la organización: `code_extensions` = terminaciones que también son código, además de las
+// del núcleo (skills/tycon-pipeline/scripts/lib/code-files.js, que la lee con lib/stack-config.js). Misma forma que
+// `EXT_RE` de code-files.js: este lector no carga el skill, y stack-config.test.js compara las dos.
+const STACK_KEYS = ['code_extensions'];
+const STACK_EXT_RE = /^\.[a-z0-9]+(?:\.[a-z0-9]+)?$/;
 // Copia de `MODELS` de skills/tycon-pipeline/scripts/lib/models.js, en su orden (story 7.29, decisión 12): este lector
 // no puede cargar el skill —lo valida el instalador con el lector del árbol que va a quedar— y T21 compara las dos.
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
@@ -236,6 +241,34 @@ function coverageProblems(value) {
   return out;
 }
 
+/** Los problemas de `stack`, con la ruta de cada clave; `[]` si está bien. */
+function stackProblems(value) {
+  if (!isObject(value)) return [{ path: 'stack', message: 'tiene que ser un objeto (la tecnología de la organización)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!comment(k) && !STACK_KEYS.includes(k)) out.push({ path: `stack.${k}`, message: 'clave desconocida' });
+  const ex = value.code_extensions;
+  if (ex !== undefined) {
+    if (!Array.isArray(ex)) out.push({ path: 'stack.code_extensions', message: 'tiene que ser una lista de terminaciones, por ejemplo [".ex"]' });
+    else {
+      const vistos = new Set();
+      ex.forEach((v, i) => {
+        if (typeof v !== 'string' || !STACK_EXT_RE.test(v)) out.push({ path: `stack.code_extensions.${i}`, message: `cada terminación va con punto y en minúsculas, por ejemplo ".ex" (es ${JSON.stringify(v)})` });
+        else if (vistos.has(v)) out.push({ path: `stack.code_extensions.${i}`, message: `${v} está repetida` });
+        vistos.add(v);
+      });
+    }
+  }
+  return out;
+}
+
+/** `stack` sin las subclaves con problemas: una terminación mal escrita no apaga lo demás de la sección. */
+function stackSinProblemas(value, problemas) {
+  const malas = new Set(problemas.map((p) => p.path.split('.')[1]).filter(Boolean));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) if (STACK_KEYS.includes(k) && !malas.has(k)) out[k] = v;
+  return out;
+}
+
 /** Valida un objeto ya leído. */
 function validate(doc) {
   if (!isObject(doc)) return [{ path: '', message: 'el archivo tiene que ser un objeto JSON' }];
@@ -271,17 +304,24 @@ function parse(text) {
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
+  // y con `stack`: se descarta sólo la subclave con el problema, el resto de la sección sigue
+  const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionStack.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionCoverage.length) delete data.coverage;
+    if (sectionStack.length) {
+      if (isObject(doc.stack)) data.stack = stackSinProblemas(doc.stack, sectionStack);
+      else delete data.stack;
+    }
   }
   const sections = {
     ...(sectionModels.length ? { models: sectionModels } : {}),
     ...(sectionWait.length ? { wait_notice: sectionWait } : {}),
     ...(sectionCoverage.length ? { coverage: sectionCoverage } : {}),
+    ...(sectionStack.length ? { stack: sectionStack } : {}),
   };
   return { ok: problems.length === 0, data, problems, ...(Object.keys(sections).length ? { sectionProblems: sections } : {}) };
 }
@@ -329,7 +369,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, modelsProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, modelsProblems, stackProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

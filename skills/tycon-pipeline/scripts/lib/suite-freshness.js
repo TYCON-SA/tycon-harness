@@ -49,8 +49,19 @@ const { execFileSync } = require('child_process');
 // adversarial: un bump de PackageReference en un .csproj o una migración .sql nueva en una
 // iteración de fix daban FRESCO). `.json` queda AFUERA a propósito: tests-result.json y
 // configs mutables harían stale perpetuo.
-const CODE_PATHSPECS = ['*.cs', '*.ts', '*.tsx', '*.js', '*.jsx', '*.csproj', '*.sln', '*.sql'];
-const CODE_RE = /\.(cs|ts|tsx|js|jsx|csproj|sln|sql)$/;
+// El código es el de lib/code-files.js (con lo que sume la organización); acá se agregan `.sln` y `.sql`.
+const codeFiles = require('./code-files.js');
+const MANIFEST_EXTS = ['.sln', '.sql'];
+function isCodeFile(f, { extra } = {}) {
+  const ext = codeFiles.extOf(f);
+  const ex = extra !== undefined ? extra : require('./stack-config.js').orgExtra();
+  return codeFiles.isCode(f, { extra: ex }) || MANIFEST_EXTS.includes(ext);
+}
+function codePathspecs(extra) {
+  const ex = extra !== undefined ? extra : require('./stack-config.js').orgExtra();
+  return [...codeFiles.SOURCE_EXTS, ...codeFiles.CODE_ONLY_EXTS, ...MANIFEST_EXTS, ...ex].map((e) => `*${e}`);
+}
+const CODE_RE = { test: (f) => isCodeFile(f) };
 
 function git(repoDir, args) {
   return execFileSync('git', ['-C', repoDir, ...args], {
@@ -78,6 +89,7 @@ function codeState(repoDir) {
   try {
     // path → blobhash, arrancando del index (hash ya calculado, no lee contenido).
     const byPath = new Map();
+    const CODE_PATHSPECS = codePathspecs();
     for (const ln of lines(git(repoDir, ['ls-files', '-s', '--', ...CODE_PATHSPECS]))) {
       // `<mode> <hash> <stage>\t<path>`
       const m = ln.match(/^\d+\s+([0-9a-f]{40,64})\s+\d+\t(.+)$/);
@@ -139,7 +151,7 @@ function checkFreshness(repoDir, testsResultPath) {
   };
 }
 
-module.exports = { codeState, checkFreshness, CODE_RE };
+module.exports = { codeState, checkFreshness, CODE_RE, isCodeFile };
 
 if (require.main === module) {
   const [cmd, repoDir, artPath] = process.argv.slice(2);

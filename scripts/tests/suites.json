@@ -351,6 +351,18 @@
       ]
     },
     {
+      "__nota": "story 8.48: la lista única de lo que es código, de lo que es prueba y de las marcas de prueba salteada.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/code-files.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.48: la clave `stack` de team-repos.json, leída desde el árbol del arnés.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/stack-config.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [

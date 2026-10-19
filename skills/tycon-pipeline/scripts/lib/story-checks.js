@@ -363,8 +363,14 @@ function deferredAcs(specContent) {
 // T2b/T3b/T3c marcados como ausentes estando rotulados literalmente en la suite, mientras los
 // T-ID numéricos «pasaban» por coincidencia de substring en OTRAS suites `.js`. Un CRITICAL
 // mecánico falso cuesta una vuelta de advisor y enseña a desconfiar del control.
-const TEST_FILE_RE = /\.(test|spec)\.(t|j)sx?$|\.(test|spec)\.sh$|Tests?\.cs$/;
-const CODE_EXT_RE = /\.(cs|ts|tsx|js|jsx)$/;
+// Qué es prueba y qué es código lo dice lib/code-files.js (pytest, Go, .NET, JS/TS y suites bash), con lo
+// que sume la organización. `TEST_FILE_RE` y `CODE_EXT_RE` quedan con su nombre para los llamadores de este módulo.
+const codeFiles = require('./code-files.js');
+const TEST_FILE_RE = { test: (f) => codeFiles.isTestFile(f) };
+function isCodeFile(f, { extra } = {}) {
+  return codeFiles.isSource(f, { extra: extra !== undefined ? extra : require('./stack-config.js').orgExtra() });
+}
+const CODE_EXT_RE = { test: (f) => isCodeFile(f) };
 
 // Walk recursivo acotado (skip node_modules/bin/obj/.git). Cap de archivos para
 // repos gigantes — los checks son sobre el delta de la story, no un sweep total.
@@ -379,7 +385,10 @@ function companionRoots(repo) {
 function walkFiles(root, predicate, cap = 8000) {
   const out = [];
   const stack = [root];
-  const SKIP = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'build', '.next', 'coverage', 'playwright-report', 'test-results']);
+  // `venv`, `site-packages` y `__pycache__` (Python): las pruebas de los paquetes instalados llenarían el tope antes de
+  // llegar a las del proyecto, y ACCOV-C1 daría un crítico falso (casos: tests/code-files.test.js).
+  const SKIP = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'build', '.next', 'coverage', 'playwright-report', 'test-results',
+    'venv', 'site-packages', '__pycache__']);
   // Cap de DIRECTORIOS visitados (perf, verificación adversarial 2026-06-11): el cap
   // anterior era solo sobre archivos MATCHEADOS — un monorepo con pocos matches pero
   // miles de dirs igual se walkeaba entero en cada invocación inline.
@@ -392,7 +401,7 @@ function walkFiles(root, predicate, cap = 8000) {
     for (const e of entries) {
       if (e.isDirectory()) {
         if (!SKIP.has(e.name) && !e.name.startsWith('.')) stack.push(path.join(dir, e.name));
-      } else if (predicate(e.name)) {
+      } else if (predicate(e.name, path.join(dir, e.name))) {
         out.push(path.join(dir, e.name));
       }
     }
@@ -417,10 +426,12 @@ function findTestImplementation(testFiles, contentsCache, row, storyId) {
     if (!c) continue;
     // (1) contrato Trait/tag por AC
     if (storyId && row.acRefs.length) {
-      const storyTagged = c.includes(`Trait("Story","${storyId}")`) || c.includes(`Trait("Story", "${storyId}")`) || c.includes(`@story-${storyId}`);
+      const storyTagged = c.includes(`Trait("Story","${storyId}")`) || c.includes(`Trait("Story", "${storyId}")`) || c.includes(`@story-${storyId}`)
+        || c.includes(`@pytest.mark.story("${storyId}")`) || c.includes(`@pytest.mark.story('${storyId}')`);
       if (storyTagged) {
         for (const ac of row.acRefs) {
-          if (c.includes(`Trait("AC","${ac}")`) || c.includes(`Trait("AC", "${ac}")`) || c.includes(`@ac-${ac}`)) {
+          if (c.includes(`Trait("AC","${ac}")`) || c.includes(`Trait("AC", "${ac}")`) || c.includes(`@ac-${ac}`)
+            || c.includes(`@pytest.mark.ac(${ac})`)) {
             evidence.push({ file: f, via: `contrato Trait/tag AC#${ac}` });
           }
         }
@@ -472,9 +483,11 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   // evidence.companion_repos`, el mismo mecanismo de la evidencia de DoD): el arnés declara sus
   // tests de integración en agent-skills (2.13: T8b/T8c), y mirar sólo este repo daba CRITICAL
   // falso en cada corrida (2026-09-10). Sin config o con el módulo ausente → sólo este repo.
-  const testFiles = walkFiles(repo, (n) => TEST_FILE_RE.test(n));
+  // la ruta relativa a la raíz: `tests/api/helpers.py` es prueba de pytest por la carpeta, no por el nombre
+  const esPrueba = (raiz) => (n, abs) => TEST_FILE_RE.test(abs ? path.relative(raiz, abs) : n);
+  const testFiles = walkFiles(repo, esPrueba(repo));
   for (const raiz of companionRoots(repo)) {
-    for (const f of walkFiles(raiz, (n) => TEST_FILE_RE.test(n))) if (!testFiles.includes(f)) testFiles.push(f);
+    for (const f of walkFiles(raiz, esPrueba(raiz))) if (!testFiles.includes(f)) testFiles.push(f);
   }
   const contentsCache = new Map();
   for (const f of testFiles) contentsCache.set(f, readText(f));
@@ -574,12 +587,11 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   }
 
   // ── DEFTR-C2: skips en los files del diff sin anotación de deferral ──
-  const skipRe = /\b(?:it|test|describe)\.skip\(|\bxit\(|\[Fact\(Skip\s*=|\[Theory\(Skip\s*=/;
   const diffTestFiles = files.filter((f) => TEST_FILE_RE.test(f));
   for (const f of diffTestFiles) {
     const abs = path.isAbsolute(f) ? f : path.join(repo, f);
     const c = readText(abs);
-    if (!c || !skipRe.test(c)) continue;
+    if (!c || !codeFiles.hasSkipMark(c, f)) continue;
     const annotated = /deferral|Story-[\w.]+-deferral|pipelines\./i.test(c);
     if (!annotated) {
       findings.push({
@@ -717,4 +729,5 @@ module.exports = {
   walkFiles,
   acSectionOf,
   stripFrontmatter,
+  isCodeFile,
 };

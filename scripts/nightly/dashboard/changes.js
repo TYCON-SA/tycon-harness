@@ -122,7 +122,8 @@ function relativa(ruta, repoPath) {
  * `perl -i`, y las rutas entre comillas de un script que abre para escribir. Lo que no se reconoce
  * devuelve vacío y el comando sale como «script por consola»: mejor sin nombre que con uno inventado.
  */
-const EXT_ARCHIVO = /\.(cs|csproj|sln|ts|tsx|js|jsx|mjs|cjs|json|ya?ml|md|sql|sh|ps1|py|html?|css|scss|xml|bpmn|toml|txt|config|props|razor|cshtml)$/i;
+// Con los archivos fuente de skills/tycon-pipeline/scripts/lib/code-files.js (Svelte, Vue, Go, Java…).
+const EXT_ARCHIVO = /\.(cs|csproj|sln|ts|tsx|js|jsx|mjs|cjs|mts|cts|json|ya?ml|md|sql|sh|ps1|py|go|rb|java|kt|swift|vue|svelte|html?|css|scss|xml|bpmn|toml|txt|config|props|razor|cshtml)$/i;
 const ESCRIBE = /open\([^)]*['"][wa]['"]|\.write_text\(|writeFileSync\(|appendFileSync\(|\.write\(/;
 function destinosDeConsola(cmd) {
   const c = String(cmd || '');

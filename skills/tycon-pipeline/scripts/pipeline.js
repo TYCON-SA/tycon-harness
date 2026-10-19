@@ -29,6 +29,8 @@ const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 
 const os = require('os');
 const honesty = require('./lib/ledger-honesty.js');
 const companionLib = require('./lib/companion-repos.js');   // story 7.26: el repo hermano de una story de dos repos
+const codeFiles = require('./lib/code-files.js');         // qué es código, qué es prueba (una sola lista)
+const stackConfig = require('./lib/stack-config.js');     // lo que sume la organización (team-repos.json → stack)
 
 // ── log de invocaciones reales de advisors (CF-2 2026-05-21) ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
@@ -785,9 +787,16 @@ function detectStack(repo, files) {
   const tsxModified = anyFileMatches(files, /\.(tsx|ts|jsx|js)$/i);
   // PIPE-DETECT (2026-09-17): un guion `.sh` es código. Los de CI despliegan y frenan en
   // producción, y un diff de sólo `.sh` salía `onlyDocs`: cero revisores de código. Medido sobre
-  // 296 corridas: 42 tocaron un `.sh`, 4 sólo `.sh`. `.py`/`.ps1`/`.yml` quedan afuera a propósito.
+  // 296 corridas: 42 tocaron un `.sh`, 4 sólo `.sh`.
   const shModified = anyFileMatches(files, /\.sh$/); // minúsculas, como `matchGlob` en la tabla del re-loop
-  const codeModified = csModified || tsxModified || shModified;
+  // Python, Svelte, Vue y cualquier archivo fuente de lib/code-files.js (con lo que sume la organización) también son
+  // código: un diff de sólo `.py` o sólo `.svelte` lleva los revisores del núcleo, no sale `onlyDocs`.
+  const extraOrg = stackConfig.orgExtra();
+  const pyModified = anyFileMatches(files, /\.py$/i);
+  const svelteModified = anyFileMatches(files, /\.svelte$/i);
+  const vueModified = anyFileMatches(files, /\.vue$/i);
+  const sourceModified = files.some((f) => codeFiles.isSource(f, { extra: extraOrg }));
+  const codeModified = csModified || tsxModified || shModified || sourceModified;
   // FIX-4(b) (2026-08-25): la superficie de CONFIG. El arnés publica una tabla que dice vigilar
   // `plugin.json`, los `appsettings*.json` y los `.env` — y su propia selección no los podía
   // entregar nunca: un diff de sólo config se clasificaba `onlyDocs` y el set quedaba vacío. O sea
@@ -808,6 +817,10 @@ function detectStack(repo, files) {
     csModified,
     tsxModified,
     shModified,
+    pyModified,
+    svelteModified,
+    vueModified,
+    sourceModified,
     codeModified,
     pluginCfgModified,
     secretCfgModified,
@@ -851,10 +864,10 @@ function computeBase(det, extras = []) {
   const TC = 'tycon-plugin-tests-coverage';
   const SB = 'tycon-plugin-security-basics';
 
-  // Sin `.cs` ni JS/TS: docs, config y/o guiones. (Era `det.onlyDocs` hasta PIPE-DETECT: con un
+  // Sin archivos fuente: docs, config y/o guiones. (Era `det.onlyDocs` hasta PIPE-DETECT: con un
   // `.sh` contando como código, un guion junto a un `plugin.json` dejaba de entrar acá y la
   // config perdía a su revisor en silencio — lo cazó el revisor de fallos silenciosos.)
-  if (!det.csModified && !det.tsxModified) {
+  if (!det.csModified && !det.tsxModified && !det.sourceModified) {
     // 🔴 Ya no es un `[]` a secas (FIX-4(a) y (b), 2026-08-25). Un diff sin código puede seguir
     // siendo puro docs —y ahí sí va vacío—, pero si tocó la superficie de CONFIG hay reglas
     // escritas sobre ella que hasta hoy no podían dispararse por su propio objeto.
@@ -869,7 +882,7 @@ function computeBase(det, extras = []) {
     return [...new Set(cfg)];
   }
 
-  // Con código (.cs y/o JS/TS): las convenciones del stack las traen los paquetes; pruebas y
+  // Con código fuente (.cs, JS/TS, Python, Svelte, Vue…): las convenciones del stack las traen los paquetes; pruebas y
   // seguridad son del núcleo y NUNCA faltan (AC 8 de la 8.2: sin paquetes, un diff .cs sigue
   // teniendo revisor de pruebas y de seguridad).
   return [...new Set([...extras, TC, SB])];
@@ -892,10 +905,9 @@ function computeCompletitud(storyPath, repo, files) {
   // deferral-tracker si la story tiene bloque `pipelines:` O el diff AGREGÓ *.skip()
   // (líneas agregadas, no archivo completo — un skip pre-existente no es deuda nueva).
   const hasPipelines = /^pipelines:/m.test(story);
-  const testFiles = files.filter((f) => /\.(test|spec)\.(t|j)sx?$|Tests?\.cs$|_test\.go$/.test(f));
+  const testFiles = files.filter((f) => codeFiles.isTestFile(f));
   const skipContents = readAddedContents(repo, testFiles);
-  const hasSkips = anyContentMatches(skipContents,
-    /\b(it|test|describe)\.skip\(|\bxit\(|\[Fact\(Skip=|\[Theory\(Skip=/);
+  const hasSkips = skipContents.some((c) => codeFiles.hasSkipMark(c.content, c.file));
   if (hasPipelines || hasSkips) out.push('tycon-deferral-tracker');
 
   return out;
@@ -909,7 +921,15 @@ function computeConditional(repo, files, extras = []) {
   const out = [];
   const csFiles = files.filter((f) => /\.cs$/i.test(f));
   const csContents = readAddedContents(repo, csFiles, ['.cs']);
-  const jsTsContents = readAddedContents(repo, files, ['.ts', '.tsx', '.js', '.jsx']);
+  // Svelte y Vue llevan JavaScript adentro; el resto de los archivos fuente (Python, Go, Java…) se mira con
+  // las palabras de manejo de errores de su lenguaje.
+  // `.mjs`/`.cjs`/`.mts`/`.cts` también: la superficie de este revisor ya los cubría y un `catch` mudo ahí es lo mismo.
+  const jsTsContents = readAddedContents(repo, files, ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.svelte', '.vue']);
+  const extraOrg = stackConfig.orgExtra();
+  // Los fuentes que no son .cs ni de la familia JS/TS (Python, Go, Java… y las extensiones de la organización).
+  const esOtroFuente = (f) => codeFiles.isSource(f, { extra: extraOrg }) && !/\.(cs|[cm]?[jt]sx?|svelte|vue)$/i.test(f);
+  const otherSrcFiles = files.filter(esOtroFuente);
+  const otherSrcContents = readAddedContents(repo, otherSrcFiles);
 
   // (los revisores de un stack —.NET y BIZUIT, Next.js + Postgres— y los de clientes viven en sus paquetes: entran por `extras`)
 
@@ -926,6 +946,7 @@ function computeConditional(repo, files, extras = []) {
   // adaptado al stack TYCON (.NET / TS / React / Next.js).
   if (anyContentMatches(csContents, /\b(try|catch|async|Task\.Run|BackgroundService|EnsureSuccess|JSON\.parse|throw new)/) ||
       anyContentMatches(jsTsContents, /\b(try|catch|async|await|\.catch\(|JSON\.parse|throw new)/) ||
+      anyContentMatches(otherSrcContents, /\b(try|catch|except|raise|async|await|throw|rescue|recover|panic)\b|\bif err != nil\b/) ||
       // PIPE-DETECT: en un guion no hay palabra clave que filtre — casi todo es «tragar un error»
       // (`|| true`, `2>/dev/null`, `set -e` ausente). Alcanza con que haya un `.sh` de producción;
       // la misma exclusión de pruebas que usa el re-loop (ADVISOR_AUDITED_SURFACE).
@@ -947,7 +968,8 @@ function computeConditional(repo, files, extras = []) {
   // texto nuevo hardcodeado. Caso disparador: un producto del equipo, 2026-06-01 (512 textos
   // acumulados sin gate — guides/maintaining/incident-log.md#case-hardcoded-ui-text-backlog-2026-06-01). Es ratchet de "no deuda nueva", no sweep del backlog.
   if (i18nRequired(repo) &&
-      (anyFileMatches(files, /\.(tsx|ts|jsx|js)$/) || anyFileMatches(files, /\.cs$/i))) {
+      (anyFileMatches(files, /\.(tsx|ts|jsx|js)$/) || anyFileMatches(files, /\.cs$/i)
+        || files.some((f) => /\.(svelte|vue)$/i.test(f) || (esOtroFuente(f) && !codeFiles.isTestFile(f))))) {
     out.push('i18n-hardcoded-text-reviewer');
   }
 
@@ -972,6 +994,9 @@ function computeAdvisorSet({ repo, story, files }) {
   const all = unique([...base, ...completitud, ...conditional]);
   return {
     base, completitud, conditional, all, required_count: all.length, detection: det,
+    // una terminación mal escrita en `stack.code_extensions` no se usa; que se vea en el anuncio del set
+    // (casos: tests/code-files.test.js)
+    stack_problems: stackConfig.codeExtensions().problems,
     // story 8.2 — que se vea en la primera corrida con qué paquetes se eligió el set, no al mes.
     // `packs_declarados`: null = el repo no restringe (activos todos los instalados); [] o lista = lo
     // que el repo fijó en `packs:` — así «restringido a ninguno» no se confunde con «ninguno instalado».
@@ -997,6 +1022,12 @@ function computeAdvisorSet({ repo, story, files }) {
 //
 // Trade-off: si el mapping mal computa, un advisor con regresión silenciosa no se
 // atrapa. Mitigación: log explícito + `--force-full-reloop` para override manual.
+// Los archivos fuente que no son .cs ni JS/TS (Python, Svelte, Vue, Go…) y las pruebas de pytest y Go.
+// Con las extensiones de la organización: un arreglo en un `.ex` también es superficie tocada en el re-loop.
+const SOURCE_GLOBS = [...codeFiles.SOURCE_EXTS, ...stackConfig.orgExtra()]
+  .filter((e) => !['.cs', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(e))
+  .map((e) => `**/*${e}`);
+const TEST_GLOBS_8_48 = ['**/test_*.py', '**/*_test.py', '**/*_test.go'];
 const ADVISOR_AUDITED_SURFACE = {
   // ── Set base ── (los de convenciones por stack viven en packs/ desde la story 8.2: su
   // `surface` está en el manifiesto y la lee superficieDe())
@@ -1004,7 +1035,8 @@ const ADVISOR_AUDITED_SURFACE = {
   // hooks, el tablero). Sin ellos, un re-loop cuyo fix vive en un `.js` salteaba a este advisor
   // por «superficie no tocada» — medido en la story 2.15: 4 re-loops seguidos, con el hallazgo
   // del cazador de fallos silenciosos arreglado justamente en un `.js`.
-  'tycon-plugin-security-basics': { paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh', '**/appsettings*.json', '**/.env*'] },
+  // Más los archivos fuente de Python, Svelte, Vue y los demás lenguajes de lib/code-files.js.
+  'tycon-plugin-security-basics': { paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh', ...SOURCE_GLOBS, '**/appsettings*.json', '**/.env*'] },
   'tycon-plugin-tests-coverage': { always: true }, // recuento de tests + coverage cambia con cualquier test edit
 
   // ── Set completitud (Mary+GOLD) ──
@@ -1020,8 +1052,8 @@ const ADVISOR_AUDITED_SURFACE = {
   'tycon-silent-failure-hunter': {
     // `.js`/`.mjs`/`.cjs`: ver el comentario de security-basics — el arnés es JavaScript, y un
     // `catch` mudo en un `.js` es exactamente lo que este advisor existe para cazar.
-    paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh'],
-    excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.test.js', '**/*.test.sh', '**/*.spec.ts', '**/*.spec.tsx', '**/*.spec.js', '**/__tests__/**'],
+    paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh', ...SOURCE_GLOBS],
+    excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.test.js', '**/*.test.sh', '**/*.spec.ts', '**/*.spec.tsx', '**/*.spec.js', '**/__tests__/**', ...TEST_GLOBS_8_48],
   },
   // e2e-realness: solo specs Playwright.
   'tycon-e2e-realness-checker': { paths: ['**/tests/e2e/**/*.spec.ts', '**/tests/e2e/**/*.spec.tsx'] },
@@ -1033,8 +1065,8 @@ const ADVISOR_AUDITED_SURFACE = {
   'llm-cost-reviewer': { paths: ['**/lib/llm/**', '**/lib/embeddings/**', '**/matcher/**'] },
   // i18n: texto visible en código FE/BE. Excluye tests/stories (no son UI prod).
   'i18n-hardcoded-text-reviewer': {
-    paths: ['**/*.tsx', '**/*.ts', '**/*.jsx', '**/*.js', '**/*.cs'],
-    excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', '**/__tests__/**', '**/*.stories.tsx'],
+    paths: ['**/*.tsx', '**/*.ts', '**/*.jsx', '**/*.js', '**/*.cs', ...SOURCE_GLOBS],
+    excludePaths: ['**/tests/**', '**/Tests/**', '**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', '**/__tests__/**', '**/*.stories.tsx', ...TEST_GLOBS_8_48],
   },
 };
 
@@ -2417,7 +2449,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     // digest o no son surface de los advisors — Read on demand); (b) cap GLOBAL
     // además del cap por archivo; (c) lo omitido queda LISTADO explícito (nunca
     // truncación silenciosa — el advisor sabe qué leer con Read si lo necesita).
-    const CODE_FULL_RE = /\.(cs|ts|tsx|js|jsx|sql|json|sh|ps1|py|razor|vue)$/i;
+    // código (lib/code-files.js, con lo que sume la organización) más lo que el revisor necesita leer entero
+    const CODE_FULL_RE = { test: (f) => codeFiles.isCode(f, { extra: stackConfig.orgExtra() }) || /\.(sql|json|ps1|razor)$/i.test(f) };
     const UNTRACKED_TOTAL_CAP = 100000;
     let untrackedSection = '';
     const omittedFromContext = [];
@@ -3959,7 +3992,8 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
   const noMedidos = [];
   const ausentes = [];   // con --allow-missing-files: ausentes y sin trackear, contados 0 a sabiendas
   for (const f of (Array.isArray(files) ? files : [])) {
-    if (!/\.(js|mjs|cjs|ts|tsx|jsx|cs|py|go|rb|sh|sql|vue|svelte)$/i.test(f)) continue;
+    // el código de lib/code-files.js (con lo que sume la organización) más `.sql`
+    if (!codeFiles.isCode(f, { extra: stackConfig.orgExtra() }) && !/\.sql$/i.test(f)) continue;
     const o = companionLib.ownerOf(f, repo || process.cwd());
     const abs = o.abs;
     if (!o.root) {
@@ -6237,6 +6271,8 @@ module.exports = {
   advisorsRunSinceStart,
   computeAdvisorSet,
   detectStack,
+  // tests/code-files.test.js — la densidad cuenta todos los archivos fuente
+  densidadDelDiff,
   // story 8.2 — paquetes de revisores: tests/packs.test.js y package-equivalence.js.
   BANDERAS_DETECCION,
   computeValidadores,
