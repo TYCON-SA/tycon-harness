@@ -2534,6 +2534,12 @@
       "requiere": []
     },
     {
+      "__nota": "la revisión de la semana (scripts/nightly/weekly-review/weekly-review.js): repos de juguete con git de verdad y un agente inyectado; la semana, el tope, la regla de patrón, la lista de propuestas, «no pude leer», el disparador del examen, el resumen de la mañana y la clave weekly_review. Sin red y sin modelo.",
+      "raiz": "arnes",
+      "ruta": "tests/weekly-review.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el examen de UN revisor y su portón (scripts/controls-bench/reviewer-change-check.js): la huella del archivo, el examen completo o nada, el puntaje recalculado desde los casos contra la línea de base de la base del cambio, y el bloque del portón de CI. El corredor de casos se inyecta: sin modelo, sin red.",
       "raiz": "arnes",
       "ruta": "tests/reviewer-change-check.test.js",

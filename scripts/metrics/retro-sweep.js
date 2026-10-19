@@ -8,7 +8,8 @@
  * en la plataforma (la cola de GitHub, el auto-completar de Azure DevOps): esos merges no pasan por ninguna sesión, y
  * sin esto se quedan sin su archivo de métricas. Este barrido no depende de quién mergeó: lee la
  * historia de main (primer padre) de cada repo y corre el latido (retro-heartbeat.js: sin modelo, un segundo) de los que
- * no tienen archivo. La retro con modelo NO se corre acá: los merges de story van a la revisión de la semana.
+ * no tienen archivo. La retro con modelo NO se corre acá: los merges de story van a la revisión de la semana
+ * (scripts/nightly/weekly-review/weekly-review.js, que baja los repos con `teamRepos` y `obtain` de este archivo).
  *
  * CUBIERTO. La regla de retro-pending.js (scripts/lib/retro-coverage.js: repo + sha) sobre las carpetas de `--out` y
  * `--covered-in`, y además un archivo con el sha COMPLETO del merge: el latido de otra máquina nombra el repo con su
@@ -279,4 +280,4 @@ function main() {
 }
 
 if (require.main === module) process.exitCode = main();
-module.exports = { args, loadConfig, exclusion, teamRepos, clean };
+module.exports = { args, loadConfig, exclusion, teamRepos, obtain, clean };

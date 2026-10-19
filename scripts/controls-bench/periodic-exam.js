@@ -39,6 +39,9 @@
  * no tiene handler de flags desconocidos y `advisor-runner.js --help` arranca el banco COMPLETO
  * (gotcha medido 2026-08-27). Una pieza que envuelve a otra no puede heredar esa forma.
  *
+ * Después del examen, el mismo disparador lanza la revisión de la semana (`revisionSemanal`), que decide sola
+ * si le toca y tiene su apagado propio (TYCON_NO_WEEKLY_REVIEW=1); su resultado no cambia el código de salida del examen.
+ *
  * Apagado: TYCON_NO_NIGHTLY_EXAM=1
  * Inyección para pruebas: TYCON_EXAM_CONFIG · TYCON_EXAM_RUNNER · TYCON_EXAM_REPO ·
  *                         TYCON_EXAM_MACHINE · TYCON_EXAM_PROBE (ruta a un comando, u `off`)
@@ -587,26 +590,27 @@ function actualizarRepo(repo, log) {
   return { ok: true };
 }
 
-/** Stagea SOLO el reporte (nunca `git add -A`) y pushea con reintento por rebase (AC 9, 10). */
-function viajar(repo, log) {
+/**
+ * Stagea SOLO el reporte (nunca `git add -A`) y pushea con reintento por rebase (AC 9, 10). `rutas` y `mensaje` los pasa
+ * otra pieza que viaja por el mismo camino (la revisión de la semana); sin ellos, el reporte del examen.
+ */
+function viajar(repo, log, rutas = [RUTA_REPORTE_QUE_VIAJA], mensaje = `chore(examen): resultado del examen de revisores ${new Date().toISOString().slice(0, 10)}`) {
   // 🔴 `timeout` + `GIT_TERMINAL_PROMPT=0` (2026-09-01): bajo launchd no hay nadie que
   // conteste un pedido de contraseña. Sin esto, un git que pregunta se queda esperando para
   // siempre, y el label de launchd queda ocupado — el examen deja de correr hasta que alguien
   // lo note por la denuncia de los 8 días. Colgar es peor que fallar.
   const git = (...a) => spawnSync('git', ['-C', repo, ...a],
     { encoding: 'utf8', timeout: 120000, env: Object.assign({}, process.env, { GIT_TERMINAL_PROMPT: '0' }) });
-  const add = git('add', '--', RUTA_REPORTE_QUE_VIAJA);   // hace falta: el reporte puede ser nuevo
+  const add = git('add', '--', ...rutas);   // hace falta: el reporte puede ser nuevo
   if (add.status !== 0) return { ok: false, motivo: `git add falló: ${add.stderr}` };
-  if (git('diff', '--quiet', 'HEAD', '--', RUTA_REPORTE_QUE_VIAJA).status === 0) {
+  if (git('diff', '--quiet', 'HEAD', '--', ...rutas).status === 0) {
     log('el reporte no cambió: no hay nada que commitear'); return { ok: true };
   }
   // 🔴 `--only -- <ruta>`: lo que decide qué entra a un commit es el índice ENTERO, no el último
   // `git add`. Sin esto, un commit de las 2 de la mañana se lleva puesto lo que el dev haya dejado
   // preparado antes de irse a dormir — dentro de un commit cuyo mensaje habla de otra cosa.
   // El orden importa: todo lo que va DESPUÉS de `--` es ruta, así que el mensaje va antes.
-  const commit = git('commit', '-q', '--only',
-    '-m', `chore(examen): resultado del examen de revisores ${new Date().toISOString().slice(0, 10)}`,
-    '--', RUTA_REPORTE_QUE_VIAJA);
+  const commit = git('commit', '-q', '--only', '-m', mensaje, '--', ...rutas);
   if (commit.status !== 0) return { ok: false, motivo: `git commit falló: ${commit.stderr || commit.stdout}` };
 
   // La rama por NOMBRE: `pull --rebase origin HEAD` resuelve la rama por defecto DEL REMOTO, que
@@ -623,7 +627,7 @@ function viajar(repo, log) {
   }
   // 🔴 El archivo NO se borra ni se revierte: la medición fue buena, lo que falló fue el
   // transporte. Queda en disco para que una persona lo pushee a mano.
-  return { ok: false, motivo: `no se pudo pushear tras ${REINTENTOS_DE_PUSH} reintentos — el resultado quedó en ${RUTA_REPORTE_QUE_VIAJA}` };
+  return { ok: false, motivo: `no se pudo pushear tras ${REINTENTOS_DE_PUSH} reintentos — el resultado quedó en ${rutas.join(', ')}` };
 }
 
 /**
@@ -981,8 +985,30 @@ async function main(argv) {
   }
 }
 
+/**
+ * La revisión de la semana (scripts/nightly/weekly-review/; casos: scripts/tests/weekly-review.test.js T10) usa ESTE disparador: el nocturno de Azure no trae agente, y otro disparador al
+ * lado gastaría la cuota dos veces. Corre después del examen, pase lo que pase con él, sólo en la máquina designada
+ * (o con --force), y nunca con --help, --dry-run ni --install-task. Ella decide sola si le toca (`--if-due`, una vez
+ * por semana) y tiene su propio apagado (TYCON_NO_WEEKLY_REVIEW=1); su resultado no cambia el código de salida del examen.
+ */
+function revisionSemanal(argv, deps = {}) {
+  if (['--help', '-h', '--dry-run', '--install-task'].some((f) => argv.includes(f))) return { corrio: false, motivo: 'no en este modo' };
+  const designada = deps.designada !== undefined ? deps.designada : esMaquinaDesignada(leerConfig(lugarDelExamen().config), identidadesDeMaquina());
+  if (!designada && !argv.includes('--force')) return { corrio: false, motivo: 'no-designada' };
+  const repo = deps.repo || lugarDelExamen().repo;
+  const guion = path.join(__dirname, '..', 'nightly', 'weekly-review', 'weekly-review.js');
+  const equipo = path.join(__dirname, '..', '..', 'team-repos.json');
+  const args = [guion, '--if-due', '--out', repo, ...(fs.existsSync(equipo) ? ['--team-repos', equipo] : [])];
+  const r = (deps.spawn || spawnSync)(process.execPath, args, { stdio: 'inherit', timeout: 45 * 60000 });
+  // lo que salió mal queda en el registro del disparador (el log de launchd): un 5 es «no viajó», sin código es un corte
+  const log = deps.log || ((m) => console.error(`examen-periodico: ${m}`));
+  if (r && r.status === null) log(`la revisión de la semana no terminó (${r.signal || (r.error && r.error.code) || 'sin código'})`);
+  else if (r && r.status !== 0) log(`la revisión de la semana salió ${r.status}: su informe dice qué no pudo`);
+  return { corrio: true, codigo: r && r.status };
+}
+
 module.exports = {
-  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS,
+  VEJEZ_MS, RUTA_REPORTE_QUE_VIAJA, CANDADO_EN_ESCRITURA_MS, viajar, revisionSemanal,
   leerConfig, lugarDelExamen, designaMaquina, identidadesDeMaquina, esMaquinaDesignada, periodoCumplido, estadoDelCandado,
   motivoDeGit,
   plistDeseado, diasProgramados, decidir, instalarTarea, liberarCandado, tomarCandado, main,
@@ -994,6 +1020,9 @@ if (require.main === module) {
   try { legacy = require(path.join(__dirname, '..', 'lib', 'legacy-names.js')); } catch (_) { legacy = null; }
   if (legacy) legacy.aliasArgv('scripts/controls-bench/periodic-exam.js', { exitCode: 2, prefix: 'examen-periodico: ' });
   main(process.argv.slice(2))
-    .then((c) => process.exit(c))
+    .then((c) => {
+      try { revisionSemanal(process.argv.slice(2)); } catch (e) { console.error(`examen-periodico: la revisión de la semana no se pudo lanzar: ${e && e.message}`); }
+      process.exit(c);
+    })
     .catch((e) => { console.error(`examen-periodico: ${e && e.message}`); process.exit(1); });
 }
