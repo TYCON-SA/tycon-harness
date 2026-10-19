@@ -111,7 +111,8 @@ function blobsDelBuzon() {
 }
 
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
-function operaciones() {
+/** Los archivos del repo de operaciones. `extra.access`: la lista de quién entra en lugar de la de antes (site.maintainers). */
+function operaciones(extra = {}) {
   const H = req('scripts/tests/lib/site-harness.js');
   const ops = {
     version: 1,
@@ -123,6 +124,7 @@ function operaciones() {
       'mac-lead': { person: LEAD, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
     } },
   };
+  if (extra.access) { delete ops.site.maintainers; ops.site.access = extra.access; }
   const archivos = H.archivosDeOperaciones({ hoy: HOY, ayer: AYER, config: ops });
   // los proyectos del día: dos productos con sus stories (sólo número, estado y días en el estado)
   delete archivos['.dashboard/proyectos/Proyecto X__Repo X.json'];
@@ -156,8 +158,10 @@ const REPOS = { version: 1, public: GH('arnes'), profile: GH('perfil'), operatio
  *   frenado      el repo de operaciones con una configuración que no valida y sin último bueno: el sitio se frena
  *   cargando     el buzón contesta muy lento: el repo de operaciones ya se leyó y las corridas quedan «cargando»
  *   falla        todo se leyó una vez y después el buzón dejó de contestar: la banda «no se pudo actualizar»
+ * `opciones.access`: la lista de quién entra (site.access) del repo de operaciones; sin ella, la de antes
+ * (site.maintainers), que la pestaña Configuración muestra migrada.
  */
-async function laboratorio(variante) {
+async function laboratorio(variante, opciones = {}) {
   const ORG = req('scripts/lib/org-config.js');
   const H = req('scripts/tests/lib/site-harness.js');
   const { crearRepoHttp } = req('scripts/tests/lib/git-http-repo.js');
@@ -170,7 +174,7 @@ async function laboratorio(variante) {
   for (const d of ['ops', 'perfil']) fs.mkdirSync(path.join(raiz, d));
   const TOKEN = `w-${crypto.randomBytes(8).toString('hex')}`;
   const CAB = `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString('base64')}`;
-  const archivosOps = operaciones();
+  const archivosOps = operaciones({ access: opciones.access });
   if (variante === 'frenado') archivosOps['operations.json'] = { version: 1, owners: { default: 'esto no es un correo' }, site: { maintainers: [LEAD] } };
   const json = (o) => (typeof o === 'string' ? o : ORG.formatJson(o));
   const ops = await crearRepoHttp({ raiz: path.join(raiz, 'ops'), nombre: 'operaciones.git', cabecera: CAB, archivos: Object.fromEntries(Object.entries(archivosOps).map(([k, v]) => [k, json(v)])) });

@@ -1019,26 +1019,77 @@ function pantalla(idioma = 'es') {
     box.appendChild(listaDeTextos(T('pantalla.revisanLosHallazgosDelVigilante'), null, d.reviewers.watcher = d.reviewers.watcher || [], function (l) { d.reviewers.watcher = l; }, 'reviewers.watcher', pr, T('pantalla.usuario'), T('pantalla.agregarPersona')));
     return box;
   }
-  // quién entra al sitio y con qué rol (story 2.40): una fila por persona, con su rol y uno o más correos
+  // quién entra al sitio y con qué rol: una tabla con un renglón por persona: el rol, sus
+  // correos como etiquetas con su ✕ y un + para sumar otro, y el ✕ que quita a la persona. Sólo cambia cómo se ve: cada
+  // entrada sigue siendo { role, emails[] }
+  var CORREO_A_ENFOCAR = null;
   function editorAcceso(site, pr, ex) {
     var box = el('div', { class: 'pila' });
     if (ex.inicioDeSesion) box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.conQueSeEntra') + ex.inicioDeSesion.texto + T('pantalla.estoSeCambiaEnLa') }));
     if (ex.migracion) box.appendChild(aviso('warn', T('pantalla.laListaTodaviaNoEsta'), ex.migracion));
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.nadieEntraSiNoEsta') }));
     var acc = site.access = site.access || [];
+    var tabla = el('div', { class: 'personas', role: 'table', 'aria-label': T('pantalla.lasPersonas') },
+      el('div', { class: 'h', role: 'row' }, el('span', { role: 'columnheader', text: T('pantalla.rol') }), el('span', { role: 'columnheader', text: T('pantalla.correos') }), el('span', { role: 'columnheader' })));
     acc.forEach(function (e, i) {
-      e.emails = e.emails || [];
-      var fila = el('div', { class: 'sub' }, el('div', { class: 'fila quitar' }, selector(T('pantalla.rol'), e.role, [['maintainer', T('pantalla.mantieneElSitio')], ['dev', T('pantalla.dev')]], function (v) { e.role = v; }, 'site.access.' + i + '.role', pr),
-        quitar(function () { acc.splice(i, 1); render(); })));
-      e.emails.forEach(function (m, j) {
-        fila.appendChild(el('div', { class: 'fila quitar' }, campo('', m, function (nv) { e.emails[j] = nv; }, 'site.access.' + i + '.emails.' + j, pr, { placeholder: T('pantalla.correo') }), quitar(function () { e.emails.splice(j, 1); render(); })));
+      var p = 'site.access.' + i;
+      // todo problema de la persona va en su renglón, también el de una clave que la tabla no dibuja
+      var mios = (pr || []).filter(function (x) { return x.path === p || String(x.path).indexOf(p + '.') === 0; });
+      MOSTRADOS = MOSTRADOS.concat(mios);
+      var quitarPersona = el('div', { class: 'acc', role: 'cell' }, el('button', { class: 'quitar-persona', type: 'button', text: '✕', title: T('pantalla.quitarPersona'), 'aria-label': T('pantalla.quitarPersona'), onclick: function () { acc.splice(i, 1); render(); } }));
+      var conAvisos = function (fila, propios) {
+        var errores = el('div', { class: 'err-fila', role: 'cell' });
+        propios.forEach(function (texto) { errores.appendChild(el('div', { class: 'err', text: texto })); });
+        fila.appendChild(errores);
+      };
+      // una entrada que no es una persona se ve con su aviso y se puede quitar: dibujarla no la cambia
+      if (!esObjeto(e)) {
+        var rara = el('div', { class: 'persona con-error', role: 'row' }, el('div', { class: 'rol', role: 'cell' }), el('div', { class: 'correos', role: 'cell' }, el('span', { class: 'muted', text: JSON.stringify(e) })), quitarPersona);
+        conAvisos(rara, [T('pantalla.entradaNoEsPersona')].concat(mios.map(function (x) { return x.message; })));
+        tabla.appendChild(rara);
+        return;
+      }
+      if (e.emails == null) e.emails = [];
+      var con = function (ruta) { return mios.some(function (x) { return x.path === ruta; }); };
+      var fila = el('div', { class: 'persona' + (mios.length || !Array.isArray(e.emails) ? ' con-error' : ''), role: 'row' });
+      var rol = el('select', { 'aria-label': T('pantalla.rol'), 'data-path': p + '.role', class: con(p + '.role') ? 'bad' : undefined, onchange: function (ev) { e.role = ev.target.value; } },
+        el('option', { value: 'maintainer', text: T('pantalla.mantieneElSitio') }), el('option', { value: 'dev', text: T('pantalla.dev') }));
+      rol.value = e.role == null ? '' : String(e.role);
+      fila.appendChild(el('div', { class: 'rol', role: 'cell' }, rol));
+      var correos = el('div', { class: 'correos', role: 'cell' });
+      // correos que no son una lista: se muestran tal cual, con su aviso; el + los reemplaza por una lista nueva
+      if (!Array.isArray(e.emails)) correos.appendChild(el('span', { class: 'muted', text: JSON.stringify(e.emails) }));
+      (Array.isArray(e.emails) ? e.emails : []).forEach(function (m, j) {
+        var ruta = p + '.emails.' + j;
+        if (m === '') {
+          // el correo recién sumado: se guarda al tipear, sin redibujar (así no se pierde el clic en «Revisar cambios»)
+          var nuevo = el('input', { class: 'nuevo' + (con(ruta) ? ' bad' : ''), type: 'email', value: '', placeholder: T('pantalla.correo'), 'aria-label': T('pantalla.agregarCorreoUno'), 'data-path': ruta,
+            oninput: function (ev) { e.emails[j] = ev.target.value; },
+            onkeydown: function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); CORREO_A_ENFOCAR = null; render(); } } });
+          correos.appendChild(nuevo);
+          if (CORREO_A_ENFOCAR === ruta) { CORREO_A_ENFOCAR = null; setTimeout(function () { if (nuevo.focus) nuevo.focus(); }, 0); }
+          return;
+        }
+        correos.appendChild(el('span', { class: 'correo' + (con(ruta) ? ' bad' : ''), title: m, 'data-path': ruta }, el('span', { text: m }),
+          el('button', { class: 'chip-x', type: 'button', text: '✕', title: T('pantalla.quitarCorreo') + ' ' + m, 'aria-label': T('pantalla.quitarCorreo') + ' ' + m, onclick: function () { e.emails.splice(j, 1); render(); } })));
       });
-      fila.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarCorreo'), onclick: function () { e.emails.push(''); render(); } }));
-      problemasEn(pr, 'site.access.' + i + '.emails').forEach(function (x) { fila.appendChild(el('div', { class: 'err', text: x.message })); });
-      box.appendChild(fila);
+      correos.appendChild(el('button', { class: 'sumar', type: 'button', text: '+', title: T('pantalla.agregarCorreoUno'), 'aria-label': T('pantalla.agregarCorreoUno'), onclick: function () { if (!Array.isArray(e.emails)) e.emails = []; e.emails.push(''); CORREO_A_ENFOCAR = p + '.emails.' + (e.emails.length - 1); render(); } }));
+      fila.appendChild(correos);
+      fila.appendChild(quitarPersona);
+      var avisos = Array.isArray(e.emails) ? [] : [T('pantalla.correosNoSonLista')];
+      mios.forEach(function (x) {
+        // con su correo adelante, salvo que el mensaje ya lo nombre (el del servidor: «x» no es un correo)
+        var j = /\.emails\.(\d+)$/.exec(String(x.path));
+        var escrito = j && Array.isArray(e.emails) ? e.emails[j[1]] : null;
+        var nombra = typeof escrito === 'string' && escrito !== '' && String(x.message).indexOf(escrito) >= 0;
+        avisos.push((j && Array.isArray(e.emails) && !nombra ? (escrito || T('pantalla.correo')) + ': ' : '') + x.message);
+      });
+      if (avisos.length) conAvisos(fila, avisos);
+      tabla.appendChild(fila);
     });
-    if (!acc.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
-    box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarPersona2'), onclick: function () { acc.push({ role: 'dev', emails: [''] }); render(); } }));
+    if (acc.length) box.appendChild(tabla);
+    else box.appendChild(el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
+    box.appendChild(el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarPersona2'), onclick: function () { acc.push({ role: 'dev', emails: [''] }); CORREO_A_ENFOCAR = 'site.access.' + (acc.length - 1) + '.emails.0'; render(); } }));
     problemasEn(pr, 'site.access').forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
