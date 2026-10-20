@@ -700,7 +700,7 @@ function heredocAlimentaShell(cmd, indice, partes, tokens, PREFIJOS, vars, expan
  *     evento, cuenta como duda.
  * Medido con la primera versión, que liberaba el cuerpo si «ningún tramo corre el archivo»: 68 caminos de ejecución
  * pasaban (`bash -c 'bash x'`, `sh < x`, `cat x | sh`, `xargs`, `tee >(sh)`, `PATH=.:$PATH x`, `cat >> ~/.bashrc`,
- * `node -e "require('./x')"`, `make`…). Con la lista, cualquier otro programa vuelve a juzgar el cuerpo como siempre.
+ * un `node -e` que carga el archivo, `make`…). Con la lista, cualquier otro programa vuelve a juzgar el cuerpo como siempre.
  * Ese contenido no se lee buscando servidores ni el Llavero: `const server = …` en un archivo de código cumplía la cadena
  * de conexión `Server=` y frenaba. Ante cualquier duda, falso.
  * @returns {boolean}
