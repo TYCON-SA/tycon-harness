@@ -55,7 +55,7 @@ snapshot(){ # $1 = funciones, $2 = alias, $3 = epoch-ms del nombre (default: aho
 
 # corre el hook con un comando; imprime el exit code. $2… = variables extra "K=V"
 corre(){ local cmd="$1"; shift
-  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.CWD||"/tmp",tool_input:{command:process.env.CMD}}))' 2>/dev/null)"
+  local payload; payload="$(CMD="$cmd" node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",hook_event_name:"PreToolUse",cwd:process.env.WITHOUT_CWD?undefined:(process.env.CWD||"/tmp"),tool_input:{command:process.env.CMD}}))' 2>/dev/null)"
   # TYCON_PROD_SESSION_SINCE: el arranque de la sesión, en ms. En producción sale de la ascendencia de
   # procesos hasta el `claude` que invocó el hook; acá no hay ninguno, así que se inyecta. La costura
   # sólo puede cerrar el freno (0 = TODOS los snapshots son candidatos, el lado seguro), nunca abrirlo.
@@ -630,6 +630,139 @@ frena "8.14 #42 SameTextHeredocAndShell_ShellIsJudged" "cat > /tmp/notas.txt <<'
 rm -f $P/production-{index,memory}.json
 EOF
 bash -c 'rm -f $P/production-{index,memory}.json'"
+
+# ── 6.1.1 · el contenido de un archivo que el comando escribe y no ejecuta no se juzga ─────────
+# El cuerpo que sólo se guarda en un archivo no se lee buscando servidores ni el Llavero: `const server = …` en código
+# cumple la cadena de conexión `Server=` y, sin esto, frena. Lo que se ejecuta sigue frenando.
+mundo
+pasa  "6.1.1 T1 HeredocAArchivo_ConstServer_Pasa" "cat > server.js <<'EOF'
+const http = require('http');
+const server = http.createServer((req, res) => res.end('ok'));
+server.listen(3000);
+EOF"
+pasa  "6.1.1 T2 TeeHeredoc_ConstServer_Pasa" "tee server.js >/dev/null <<EOF
+const server = http.createServer(h);
+EOF"
+pasa  "6.1.1 T3 HeredocAJson_CadenaDeConexion_Pasa" "cat > app.json <<'EOF'
+{\"cs\": \"Server=$PROD;Database=x\"}
+EOF"
+frena "6.1.1 T4 BashHeredoc_Sqlcmd_Frena" "bash <<'EOF'
+sqlcmd -S $PROD -Q \"select 1\"
+EOF"
+frena "6.1.1 T5 PythonHeredoc_CadenaDeConexion_Frena" "python3 <<'EOF'
+import pyodbc; pyodbc.connect('Server=$PROD;Database=x')
+EOF"
+frena "6.1.1 T6 SqlcmdDirecto_Frena" "sqlcmd -S $PROD -Q \"select 1\""
+frena "6.1.1 T7 EscriboYCorroConNode_Frena" "cat > x.js <<'EOF'
+const cs = 'Server=$PROD;Database=x';
+EOF
+node x.js"
+frena "6.1.1 T8 DestinoNoLiteral_Frena" "cat > \"\$F\" <<'EOF'
+sqlcmd -S $PROD -Q \"select 1\"
+EOF
+bash \"\$F\""
+pasa  "6.1.1 T9 HeredocAArchivo_Llavero_Pasa" "cat > notas.md <<'EOF'
+La contraseña vive en el Llavero: security find-generic-password -s tycon-prod-acme -w
+EOF"
+t10_falta=""
+grep -q "Lo que el comando \*\*sólo escribe\*\* a un archivo y no corre" "$AQUI/guides/produccion-con-permiso.md" 2>/dev/null || t10_falta="$t10_falta la guía;"
+grep -q "El contenido de un archivo que el comando escribe y no corre no se juzga" "$AQUI/guides/maintaining/piezas-en-detalle.md" 2>/dev/null || t10_falta="$t10_falta el detalle de la pieza;"
+if [ -z "$t10_falta" ]; then ok "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged"
+else no "6.1.1 T10 Guide_DeclaresFileContentIsNotJudged — no lo dice:$t10_falta"; fi
+# Caminos por los que el contenido escrito se ejecuta en el mismo comando: por la entrada, por un envoltorio, por una
+# sustitución, tras un `cd` o desde un archivo de arranque. Todos frenan.
+CUERPO_SQL="sqlcmd -S $PROD -Q \"select 1\""
+frena "6.1.1 T11 EscriboYCorroPorEntrada_Frena (bash < x)" "cat > /tmp/x.sh <<'EOF'
+$CUERPO_SQL
+EOF
+bash < /tmp/x.sh"
+frena "6.1.1 T11 EscriboYCorroPorEntrada_Frena (cat x | bash)" "cat > /tmp/x.sh <<'EOF'
+$CUERPO_SQL
+EOF
+cat /tmp/x.sh | bash"
+frena "6.1.1 T12 TeeASustitucion_Frena" "tee >(bash) <<'EOF'
+$CUERPO_SQL
+EOF"
+frena "6.1.1 T13 CdYRutaRelativa_Frena" "cat > /tmp/x.sh <<'EOF'
+$CUERPO_SQL
+EOF
+cd /tmp && bash x.sh"
+frena "6.1.1 T14 OtrosEjecutores_Frena (npx tsx)" "cat > q.ts <<'EOF'
+const cs = 'Server=$PROD;Database=x';
+EOF
+npx tsx q.ts"
+frena "6.1.1 T14 OtrosEjecutores_Frena (python3)" "cat > x.py <<'EOF'
+cs = 'Server=$PROD;Database=x'
+EOF
+python3 x.py"
+frena "6.1.1 T15 SqlcmdPorEntrada_Frena" "sqlcmd <<'EOF'
+:connect $PROD
+select 1
+EOF"
+frena "6.1.1 T16 AnexarAUnArchivoOculto_Frena" "cat >> ~/.zshrc <<'EOF'
+$CUERPO_SQL
+EOF"
+frena "6.1.1 T17 ComandoMixto_FrenaPorElShell" "cat > notas.md <<'EOF'
+const server = http.createServer(h);
+EOF
+bash <<'EOF2'
+$CUERPO_SQL
+EOF2"
+# T18 · cada rama de rechazo de la lista cerrada, con un cuerpo que nombra producción
+# stable-data: no crea commits ni repos; `.git/hooks` es sólo una carpeta oculta de prueba que el freno no lee
+mkdir -p "$TMP/t18/.git/hooks" "$TMP/t18/b"; : > "$TMP/t18/viejo.sh"; ln -sf "$TMP/t18/.git/hooks/pre-commit" "$TMP/t18/enlace"
+t18(){ frena "6.1.1 T18 RamasDeRechazo_Frenan ($1)" "$2
+$CUERPO_SQL
+EOF"; }
+t18 'PATH= antes'          "mkdir -p $TMP/t18/b; PATH=$TMP/t18/b:\$PATH; cat > $TMP/t18/b/ls <<'EOF'"
+t18 '>&archivo oculto'     "cat > $TMP/t18/ok >&$TMP/t18/.git/hooks/x <<'EOF'"
+t18 'a>archivo oculto'     "cat <<'EOF' >$TMP/t18/ok a>$TMP/t18/.git/hooks/x"
+t18 'echo a un oculto'     "echo x > ~/.zshrc; cat > $TMP/t18/ok <<'EOF'"
+t18 'sustitución \$(…)'    "cat > $TMP/t18/\$(echo ok) <<'EOF'"
+t18 'tee -a'               "tee -a $TMP/t18/ok <<'EOF'"
+t18 'comodín'              "cat > $TMP/t18/o* <<'EOF'"
+t18 '/dev/fd'              "cat > /dev/fd/3 <<'EOF'"
+t18 'carpeta .git/hooks'   "cat > $TMP/t18/.git/hooks/pre-commit <<'EOF'"
+t18 'enlace'               "cat > $TMP/t18/enlace <<'EOF'"
+t18 'guion existente'      "cat > $TMP/t18/viejo.sh <<'EOF'"
+t18 'sudo'                 "sudo cat > $TMP/t18/ok <<'EOF'"
+t18 'Makefile nuevo'       "cat > $TMP/t18/Makefile <<'EOF'"
+t18 'guion .sh nuevo'      "cat > $TMP/t18/nuevo.sh <<'EOF'"
+t18 '~otro usuario'        "cat > ~root/x <<'EOF'"
+mkdir -p "$TMP/t18/bucle"; ln -sf "$TMP/t18/bucle/a" "$TMP/t18/bucle/b"; ln -sf "$TMP/t18/bucle/b" "$TMP/t18/bucle/a"
+t18 'enlace en bucle'      "cat > $TMP/t18/bucle/a/x <<'EOF'"
+mkdir -p "$TMP/t18/real/sub"; ln -sf "$TMP/t18/.git/hooks" "$TMP/t18/real/enlace-a-hooks"
+t18 'carpeta nueva bajo un enlace' "mkdir -p $TMP/t18/real/enlace-a-hooks/nueva; cat > $TMP/t18/real/enlace-a-hooks/nueva/x <<'EOF'"
+t18 'MAKEFILE en mayúsculas' "cat > $TMP/t18/MAKEFILE <<'EOF'"
+t18 '~/library en minúsculas' "mkdir -p ~/library/LaunchAgents; cat > ~/library/LaunchAgents/x.plist <<'EOF'"
+t18 'chmod al lado'        "chmod +x $TMP/t18/sin-ext; cat > $TMP/t18/sin-ext <<'EOF'"
+ln -sf "$TMP/t18/no-existe/hooks" "$TMP/t18/roto"
+t18 'carpeta enlace roto'  "cat > $TMP/t18/roto/x <<'EOF'"
+frena "6.1.1 T18 RamasDeRechazo_Frenan (cuerpo sin comillas con \$(…): el shell lo ejecuta)" "cat > $TMP/t18/ok <<EOF
+\$(security find-generic-password -s tycon-prod-acme -w)
+EOF"
+frena "6.1.1 T18 RamasDeRechazo_Frenan (cuerpo sin comillas con comillas invertidas)" "cat > $TMP/t18/ok <<EOF
+\`$CUERPO_SQL\`
+EOF"
+pasa  "6.1.1 T18 RamasDeRechazo_Frenan (control: el mismo \$(…) con el delimitador entre comillas)" "cat > $TMP/t18/ok2 <<'EOF'
+\$(security find-generic-password -s tycon-prod-acme -w)
+EOF"
+frena "6.1.1 T18 RamasDeRechazo_Frenan (delimitador <<\\EOF: el shell cierra antes y corre lo que sigue)" "cat > $TMP/t18/ok <<\\EOF
+hola
+EOF
+security find-generic-password -s tycon-prod-acme -w
+\\EOF"
+frena "6.1.1 T18 RamasDeRechazo_Frenan (delimitador <<E\"OF\")" "cat > $TMP/t18/ok <<E\"OF\"
+hola
+EOF
+$CUERPO_SQL
+E"
+WITHOUT_CWD=1 frena "6.1.1 T18 RamasDeRechazo_Frenan (relativa sin carpeta del evento)" "cat > notas-sin-carpeta.md <<'EOF'
+$CUERPO_SQL
+EOF"
+pasa  "6.1.1 T18 RamasDeRechazo_Frenan (control: lo mismo a un archivo nuevo)" "cat > $TMP/t18/nuevo.js <<'EOF'
+$CUERPO_SQL
+EOF"
 
 # T27 · el criterio crudo NO cambia (AC 17, decisión del dueño): `CRUDO` decide la caída del freno, el tope de 32 KB, la red
 # de lo opaco y lo que measure-guard cuenta como falso positivo; su copia `nombra_bases()` vive en node-shim.sh. Se compara
