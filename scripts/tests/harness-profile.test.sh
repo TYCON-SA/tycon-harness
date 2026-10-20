@@ -165,12 +165,16 @@ if corre T32; then
   applier "$H" "$TREE" "$T/t32/install.out"
   [ "$RC" = 0 ] || mal "T32 el aplicador en minimal salió ${RC}: $(tail -n 3 "$T/t32/install.out" | tr '\n' ' ')"
   harness_hooks "$H" "$TREE" > "$T/t32/hooks.txt"; minimal_hooks > "$T/t32/want.txt"
-  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 7 ] && ok "T32 la lista de efectos marca siete hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no siete"
-  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los siete hooks de minimal" \
+  [ "$(wc -l < "$T/t32/want.txt" | tr -d ' ')" = 8 ] && ok "T32 la lista de efectos marca ocho hooks de minimal" || mal "T32 la lista marca $(wc -l < "$T/t32/want.txt" | tr -d ' ') hooks de minimal, no ocho"
+  cmp -s "$T/t32/hooks.txt" "$T/t32/want.txt" && ok "T32 registra exactamente los ocho hooks de minimal" \
     || mal "T32 hooks registrados distintos de los de minimal: $(diff "$T/t32/want.txt" "$T/t32/hooks.txt" | grep '^[<>]' | head -6 | tr '\n' ' ')"
-  # el freno de comandos destructivos está en los dos perfiles (decisión del dueño, 2026-10-05); los demás, sólo en full
+  # el freno de comandos destructivos y el portón de edición están en los dos perfiles (sin el portón, el agente puede
+  # implementar una historia sin recorrido y nadie se entera); los demás, sólo en full
   grep -qx 'PreToolUse:@tcg:safety-guard-pre.sh' "$T/t32/hooks.txt" && ok "T32 el freno de comandos destructivos, registrado" || mal "T32 minimal sin el freno de comandos destructivos"
-  grep -Eq 'test-scope-guard-pre|hook-pre-edit|on-pre-commit|on-bash-write-gate' "$T/t32/hooks.txt" && mal "T32 hay otro freno registrado en minimal" || ok "T32 ningún otro freno"
+  grep -qx 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js' "$T/t32/hooks.txt" && ok "T32 el portón de edición, registrado" || mal "T32 minimal sin el portón de edición"
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if any("hook-pre-edit.js" in h.get("command","") and "Edit" in (g.get("matcher") or "") for g in d.get("hooks",{}).get("PreToolUse",[]) for h in g.get("hooks",[])) else 1)' "$H/.claude/settings.json" \
+    && ok "T32 el portón de edición corre antes de Edit|Write" || mal "T32 el portón de edición no está antes de Edit|Write"
+  grep -Eq 'test-scope-guard-pre|on-pre-commit|on-bash-write-gate' "$T/t32/hooks.txt" && mal "T32 hay otro freno registrado en minimal" || ok "T32 ningún otro freno"
   [ -z "$(setting "$H" cleanupPeriodDays)" ] && [ -z "$(setting "$H" env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR)" ] \
     && ok "T32 sin cleanupPeriodDays ni la variable de env" || mal "T32 escribió los ajustes: cleanupPeriodDays=$(setting "$H" cleanupPeriodDays) env=$(setting "$H" env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR)"
   [ ! -e "$H/.git-hooks" ] && ok "T32 ~/.git-hooks sin tocar" || mal "T32 tocó los hooks de git: $(ls "$H/.git-hooks" | tr '\n' ' ')"
@@ -359,8 +363,8 @@ if corre T35; then
   if [ "$R1" = 0 ] && [ "$R2" = 0 ] && grep -q 'perfil: minimal (--profile)' "$T/t35/dry-min.out" && grep -q 'perfil: full (--profile)' "$T/t35/dry-full.out" \
      && ! cmp -s <(grep -v '^perfil:' "$T/t35/dry-min.out") <(grep -v '^perfil:' "$T/t35/dry-full.out"); then ok "T35 --dry-run con cada perfil: dos planes distintos, con el perfil en la cabecera"
   else mal "T35 --dry-run por perfil: rc ${R1}/${R2} · $(grep -m1 '^perfil' "$T/t35/dry-min.out") · $(grep -m1 '^perfil' "$T/t35/dry-full.out")"; fi
-  # en minimal frena uno solo: el freno de comandos destructivos (decisión del dueño, 2026-10-05)
-  grep -Eq '\(1 puede frenar' "$T/t35/dry-min.out" && ok "T35 el plan de minimal cuenta un freno (el de comandos)" || mal "T35 el plan de minimal no cuenta un freno: $(grep -Em1 'frenar|hooks' "$T/t35/dry-min.out")"
+  # en minimal frenan dos: el freno de comandos destructivos y el portón de edición
+  grep -Eq '\(2 pueden frenar' "$T/t35/dry-min.out" && ok "T35 el plan de minimal cuenta dos frenos (el de comandos y el portón de edición)" || mal "T35 el plan de minimal no cuenta dos frenos: $(grep -Em1 'frenar|hooks' "$T/t35/dry-min.out")"
   grep -Eq 'puede(n)? frenar' "$T/t35/dry-full.out" && ok "T35 espejo: el plan de full sí cuenta frenos" || mal "T35 espejo: el plan de full no cuenta frenos (el «ninguno» de minimal no probaría nada)"
   # las tareas de fondo de full no se anuncian en el plan de minimal (pase adversarial de la tanda C, clase 1)
   BG='recorre de fondo el historial de git'
