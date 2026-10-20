@@ -207,9 +207,12 @@ function noEsPersona(quien) {
  *   · `approvedBy` + `quote`: la cita está textual en un mensaje escrito por el dev → manual, a su nombre;
  *   · lo mismo + `relayedBy`: la cita llegó en un mensaje de esa sesión, y la organización la declara en
  *     `approvals.relay_session` → automática, por delegación del dev, a nombre de la sesión que reenvió.
+ * Con `critico` ({ rule, file, reason, storyId, sessionId, stateDir }), el ok tiene que responder a ESE crítico: a la
+ * persona se le mostró (constancia `critical-shown`, lib/critical-display.js), el mensaje es posterior a la muestra y
+ * nombra el crítico (su regla o su nombre en llano) sin negarlo. Sin muestra: `{ ok: false, sinMuestra: true }`.
  * `{ ok: true, entrada: { tipo, quien, delegacion?, cita, cita_cuando, via } }` o `{ ok: false, motivo, sinConversacion? }`.
  */
-function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes } = {}) {
+function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico } = {}) {
   const persona = noEsPersona(approvedBy);
   if (persona) return { ok: false, motivo: persona };
   // sin la hora de arranque de la corrida no se puede saber si la cita es vieja: no se aprueba (falla cerrado)
@@ -218,6 +221,28 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
   if (!cita) return { ok: false, motivo: 'falta la cita (--quote "<las palabras del dev, textuales>")' };
   const pok = require('./person-ok.js');
   const quien = String(approvedBy).trim();
+  // Con `critico`, el ok tiene que responder a la muestra de ese crítico: la hora y el juez salen de ahí.
+  let juzgar;
+  let anterior = 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía';
+  const respuestaAlCritico = () => {
+    if (!critico) return null;
+    const cd = require('./critical-display.js');
+    const visto = cd.mostrado({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, file: critico.file, reason: critico.reason });
+    if (visto && visto.error) return { ok: false, motivo: `no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró este crítico` };
+    if (!visto) {
+      // sin la conversación el arnés no muestra nada: el motivo es ése, y el camino es la terminal
+      const conv = pok.leerConversacion({ env, home });
+      if (!conv.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
+      return { ok: false, sinMuestra: true, motivo: `a la persona no se le mostró este crítico; el arnés se lo muestra al correr este comando (o al escribir ${cd.PEDIDO}), y después hace falta su ok a ese crítico` };
+    }
+    // la más nueva entre la muestra y el arranque de la corrida: una muestra vieja no habilita un ok de otra corrida
+    if (Date.parse(visto.ts) > Date.parse(desde)) desde = visto.ts;
+    const ar = cd.archivosDeLaRegla({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, runDir: critico.runDir });
+    if (ar.error) return { ok: false, motivo: `${ar.error}: no sé en cuántos archivos está abierta la regla` };
+    juzgar = cd.juez({ rule: critico.rule, file: critico.file, archivos: ar.archivos, arnes: critico.arnes });
+    anterior = 'el ok es de antes de que se le mostrara este crítico: hace falta su respuesta a la muestra';
+    return null;
+  };
   if (relayedBy !== null && relayedBy !== undefined) {
     const sesion = String(relayedBy).trim();
     const declarada = sesionQueReenvia({ env, home, arnes });
@@ -227,16 +252,20 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
     if (!sesion || sesion.toLowerCase() !== declarada.valor.toLowerCase()) {
       return { ok: false, motivo: `la sesión «${sesion}» no es la que la organización deja reenviar el ok de un dev («${declarada.valor}», approvals.relay_session)` };
     }
-    const r = pok.citaReenviada(cita, sesion, { env, home, desde });
+    const sinRespuesta = respuestaAlCritico();
+    if (sinRespuesta) return sinRespuesta;
+    const r = pok.citaReenviada(cita, sesion, { env, home, desde, juzgar });
     if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
     if (r.corta) return { ok: false, motivo: `la cita es muy corta: tiene que tener al menos ${pok.CITA_MINIMA} letras o dígitos` };
-    if (!r.encontrada) return { ok: false, motivo: r.anterior ? 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía' : `la cita no la encontré en un mensaje que haya llegado de la sesión «${sesion}»` };
+    if (!r.encontrada) return { ok: false, motivo: r.rechazo || (r.anterior ? anterior : `la cita no la encontré en un mensaje que haya llegado de la sesión «${sesion}»`) };
     return { ok: true, entrada: { tipo: 'automatica', quien: `agente ${sesion}`, delegacion: quien, relevo: sesion, cita, cita_cuando: r.cuando || null, sesion: sesionActual(env), via: `ok de ${quien} reenviado por la sesión ${sesion}` } };
   }
-  const r = pok.citaDeLaPersona(cita, { env, home, desde });
+  const sinRespuesta = respuestaAlCritico();
+  if (sinRespuesta) return sinRespuesta;
+  const r = pok.citaDeLaPersona(cita, { env, home, desde, juzgar });
   if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
   if (r.corta) return { ok: false, motivo: `la cita es muy corta: tiene que tener al menos ${pok.CITA_MINIMA} letras o dígitos` };
-  if (!r.encontrada) return { ok: false, motivo: r.anterior ? 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía' : `la cita no la encontré en un mensaje escrito por ${quien} en esta conversación (no cuentan lo que escribió el agente, una herramienta, un subagente u otra sesión)` };
+  if (!r.encontrada) return { ok: false, motivo: r.rechazo || (r.anterior ? anterior : `la cita no la encontré en un mensaje escrito por ${quien} en esta conversación (no cuentan lo que escribió el agente, una herramienta, un subagente u otra sesión)`) };
   return { ok: true, entrada: { tipo: 'manual', quien, cita, cita_cuando: r.cuando || null, sesion: sesionActual(env), via: 'ok del dev en el chat' } };
 }
 

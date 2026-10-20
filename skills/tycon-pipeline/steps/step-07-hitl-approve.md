@@ -56,13 +56,22 @@ quita la fricción, no la trazabilidad.
   no por el mapa. Si el dev prefiere cortar acá y retomar después, el marker queda activo.
 - **"override" (eximir el crítico)** → un crítico lo decide una persona: **el agente nunca se exime solo**, ni
   firmando como `orquestador`, ni con «hacé lo que recomiendes». Tres caminos, en este orden:
-  1. **El ok del dev en el chat** (el principal): preguntale en llano qué es el crítico y qué pasa si se exime; con su
-     respuesta, `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"
-     --quote "<sus palabras, textuales>"`. El arnés busca la cita en un mensaje escrito por el dev (no en lo que
-     escribiste vos, una herramienta, un subagente u otra sesión). Queda manual, con la cita y su hora.
+  1. **El ok del dev en el chat** (el principal). El crítico se lo muestra el arnés, no vos: corré
+     `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>"` y, antes de que corra, el arnés le
+     pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
+     el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
+     instalación mínima no trae la puerta de comandos), escribí con Write `exencion-pedida.json` en la carpeta de la
+     corrida con `{ "rule", "file", "reason" }` y el arnés lo muestra. Con su respuesta,
+     `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
+     en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
+     **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
+     («eximo TEST-C1») o el nombre en llano que le enseñó el bloque («eximo la suite completa»); si la regla está en
+     más de un archivo, también el archivo. Un «apruebo, seguí» o un «dale» suelto no exime: es un ok a algo, no a este crítico. Tampoco un ok de
+     antes de la muestra, uno a otro crítico, una pregunta, ni uno con una negación o una condición en cualquier parte
+     («no», «nunca», «si lo arreglás…»): ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
   2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session` (perfil del
-     equipo; por defecto ninguna): lo mismo con `--relayed-by <sesión>`. La cita del dev tiene que llegar textual en un
-     mensaje de esa sesión. Queda automático, por delegación del dev.
+     equipo; por defecto ninguna): lo mismo con `--relayed-by <sesión>`. La cita tiene que llegar textual en un
+     mensaje de esa sesión, posterior a la muestra y nombrando el crítico. Queda automático, por delegación del dev.
   3. **Desde su terminal**, si el dev prefiere: `marker.js waive-critical … --terminal` (lo corre el dev).
 
   Recién con la constancia, el hallazgo se anota `waived` en `pipeline.js write-findings`: sin ella, `write-findings`

@@ -3395,10 +3395,21 @@ function cmdWaiveCritical(argv) {
     const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
     entrada = { tipo: 'manual', quien, via: 'waive-critical (terminal)' };
   } else {
-    const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m.startedAt });
+    const critico = { rule, file, reason, storyId: String(m.storyId), sessionId: SID, stateDir: STATE_DIR, runDir };
+    const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m.startedAt, critico });
     if (!r.ok) {
       console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${r.motivo}.`);
       if (r.sinConversacion) console.error('   Sin la conversación no puedo comprobar el ok: que el dev lo firme por la terminal (--terminal).');
+      if (r.sinMuestra) {
+        const pedido = path.join(runDir, require('./lib/critical-display.js').PEDIDO);
+        console.error('   Si no apareció en pantalla un bloque «Te piden eximir un crítico» (o el comando llevaba variables de la terminal,');
+        console.error('   que el arnés no puede leer: escribí los valores tal cual), escribí con Write (no por la terminal):');
+        console.error(`     ${pedido}`);
+        console.error(`     ${JSON.stringify({ rule, file, reason })}`);
+        console.error('   y el arnés se lo muestra. Después, la persona contesta nombrando el crítico; recién ahí, este comando con su cita.');
+        console.error('   O que lo firme en su terminal (--terminal).');
+        process.exit(1);
+      }
       console.error('   Un crítico lo decide una persona. Los caminos:');
       for (const l of caminos()) console.error(l);
       process.exit(1);
