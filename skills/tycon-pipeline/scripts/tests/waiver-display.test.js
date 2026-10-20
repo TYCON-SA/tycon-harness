@@ -159,3 +159,35 @@ test('WaiverBlocked_SaysBothWays @story-8.78 @ac-6', () => {
     if (extra.TYCON_WAIVER_PLATFORM) assert.match(t, /ventana/);
   }
 });
+
+test('WaiverShown_OtherCopyOrChangedText_NotSigned @story-8.78 @ac-4', () => {
+  // una copia de la historia con otro texto y la misma razón no se muestra ni se firma; y cambiar el texto del criterio
+  // después de la muestra la deja sin valor: la persona firma lo que vio
+  const lab = laboratorio();
+  const copia = path.join(lab.base, 'copia.md');
+  fs.writeFileSync(copia, fs.readFileSync(lab.story, 'utf8').replace(TEXTO, 'el botón tiene el color de la marca'));
+  const p = puertaBash(lab, `node ${MARKER} runtime-waiver ${copia} --acs 1`);
+  assert.equal(p.stdout.trim(), '', 'una historia que no es la de la corrida no se muestra');
+  assert.equal(gates(lab).filter((x) => x.name === 'ac-shown').length, 0);
+  const c = lab.marker(['runtime-waiver', copia, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', 'firmo el AC 1']);
+  assert.notEqual(c.status, 0);
+  assert.match(c.stderr, /no es la historia de la corrida/);
+  // mostrada la verdadera, cambia el texto del criterio: la muestra ya no vale para firmar
+  mostrar(lab);
+  fs.writeFileSync(lab.story, fs.readFileSync(lab.story, 'utf8').replace(TEXTO, 'el aviso queda en cualquier lado'));
+  lab.conversar([delDev('firmo el AC 1')]);
+  const r = firmar(lab, 'firmo el AC 1');
+  assert.notEqual(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /no se le mostró/);
+  assert.equal(firmados(lab).length, 0);
+});
+
+test('WaiverJudge_OnlyAPlainYesSigns @story-8.78 @ac-4', () => {
+  const juez = require(path.join(SCRIPTS, 'lib', 'waiver-display.js')).juez([1]);
+  for (const t of ['¿firmo el AC 1?', 'no quiero firmar el AC 1', 'revisá el AC 1', 'apruebo, seguí', 'no lo firmo, el AC 1 está mal']) {
+    assert.ok(juez(t), `«${t}» no es un sí`);
+  }
+  for (const t of ['firmo el AC 1', 'Firmo el criterio 1: no hay ambiente de prueba', 'sí, lo firmo, AC 1']) {
+    assert.equal(juez(t), null, `«${t}» es un sí`);
+  }
+});

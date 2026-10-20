@@ -39,15 +39,28 @@ function mostrado({ stateDir, sessionId, storyId, ac, sha }) {
   return del.length ? del[del.length - 1] : null;
 }
 
-const RE_NIEGA = /(?<![\p{L}\p{N}])(?:no|ni|nunca|jam[aá]s|todav[ií]a\s+no)\s+(?:(?:lo|la|los|las|te|se)\s+)?firm/iu;
+// lo que no es un sí: una negación antes de «firmar» (con «quiero», «voy a», «puedo» en el medio) o una pregunta
+const RE_NIEGA = /(?<![\p{L}\p{N}])(?:no|ni|nunca|jam[aá]s|todav[ií]a\s+no)\s+(?:(?:quiero|voy\s+a|puedo|pienso|vamos\s+a)\s+)?(?:(?:lo|la|los|las|te|se)\s+)?firm/iu;
+// el sí: «firmo», «firmamos», «firmalo», «lo firmo»… en primera persona o como orden
+const RE_FIRMA = /(?<![\p{L}\p{N}])(?:firmo|firmamos|f[ií]rmalo|f[ií]rmalos|firmá|firmalo|lo\s+firmo|los\s+firmo)(?![\p{L}\p{N}])/iu;
 
-/** ¿El mensaje nombra cada criterio («AC 3», «criterio 3», «#3») y no dice que no lo firma? */
+/**
+ * La huella de lo que se le mostró a la persona: el texto del criterio, por qué no se puede probar en vivo y qué lo
+ * cubre. Si cambia cualquiera de los tres, la muestra ya no vale para la firma.
+ */
+function huella(text, reason, coveredBy) {
+  return require('crypto').createHash('sha256').update(JSON.stringify([String(text ?? '').trim(), String(reason ?? '').trim(), String(coveredBy ?? '').trim()])).digest('hex').slice(0, 16);
+}
+
+/** ¿El mensaje dice que firma («firmo …») nombrando cada criterio («AC 3», «criterio 3», «#3»), sin negarlo ni preguntar? */
 function juez(acs) {
   const lista = [...new Set((acs || []).map(Number))];
   const nombra = (t, n) => new RegExp(`(?<![\\p{L}\\p{N}])(?:ac|criterio)\\s*(?:n[°º.]?\\s*)?#?\\s*${n}(?![\\p{N}])`, 'iu').test(t) || new RegExp(`#${n}(?![\\p{N}])`).test(t);
   const f = (texto) => {
     const t = String(texto || '');
     if (RE_NIEGA.test(t)) return 'el mensaje dice que no lo firma';
+    if (/[¿?]/.test(t)) return 'el mensaje pregunta: una pregunta no es un ok';
+    if (!RE_FIRMA.test(t)) return `el mensaje no dice que lo firma: tiene que decir, por ejemplo, «firmo el AC ${lista[0]}»`;
     const faltan = lista.filter((n) => !nombra(t, n));
     if (faltan.length) return `el ok no nombra ${faltan.map((n) => `el AC ${n}`).join(' ni ')}: tiene que decir, por ejemplo, «firmo el AC ${faltan[0]}»`;
     return null;
@@ -87,9 +100,21 @@ function criteriosDe(storyPath, acs) {
   for (const n of acs) {
     const a = matrix.perAc && matrix.perAc[n];
     if (!a || !pend.has(n)) continue;
-    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, sha: waiver.declHashFor(a.declReason, a.coveredBy) });
+    lista.push({ ac: n, text: a.text, reason: a.declReason, coveredBy: a.coveredBy, sha: huella(a.text, a.declReason, a.coveredBy) });
   }
   return { matrix, lista };
+}
+
+/**
+ * ¿Es ésta la historia de la corrida abierta? Sólo se muestra (y sólo se firma) la del marcador: una copia en otra ruta,
+ * con el mismo número y otro texto, mostraría a la persona algo distinto de lo que después se firma.
+ */
+function esLaDelMarcador(storyPath, marker) {
+  if (!marker || !marker.storyPath) return false;
+  const repo = marker.repoPath || process.cwd();
+  const real = (p) => { try { return fs.realpathSync(p); } catch (_) { return path.resolve(p); } };
+  const delMarcador = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(repo, marker.storyPath);
+  return real(storyPath) === real(delMarcador);
 }
 
 // Arma la muestra de los criterios pedidos, si corresponde. La constancia la escribe quien muestra, después de mostrar.
@@ -99,9 +124,9 @@ function preparar({ sessionId, stateDir, home = os.homedir(), storyPath, acs }) 
   if (!marker || !marker.storyId) return null;
   if (!require('./person-ok.js').leerConversacion({ sesion: sessionId, home }).legible) return null;
   const abs = path.isAbsolute(storyPath) ? storyPath : path.join(marker.repoPath || process.cwd(), storyPath);
-  if (!fs.existsSync(abs)) return null;
+  if (!fs.existsSync(abs) || !esLaDelMarcador(abs, marker)) return null;
   const c = criteriosDe(abs, acs);
-  if (c.error) return null;
+  if (c.error) return { reminder: `no pude armar los criterios para mostrarlos (la matriz no computa: ${c.error}): así no se pueden firmar hasta arreglarlo.` };
   const storyId = String(c.matrix.sid || marker.storyId);
   const faltan = c.lista.filter((x) => { const v = mostrado({ stateDir, sessionId, storyId, ac: x.ac, sha: x.sha }); return !v || v.error; });
   if (!faltan.length) return null;
@@ -138,7 +163,7 @@ function pedidosDelComando(command) {
 }
 
 function paraMostrar({ command, sessionId, stateDir, home = os.homedir() }) {
-  const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, ...p })).filter(Boolean);
+  const listos = pedidosDelComando(command).map((p) => preparar({ sessionId, stateDir, home, ...p })).filter((r) => r && r.systemMessage);
   if (!listos.length) return null;
   return { systemMessage: listos.map((r) => r.systemMessage).join('\n\n'), anotar: () => { for (const r of listos) r.anotar(); } };
 }
@@ -152,8 +177,10 @@ function handle(event, opts = {}) {
   if (!archivo || path.basename(String(archivo)) !== PEDIDO) return null;
   const sessionId = require('./session-id.js').resolveSessionId(event.session_id);
   const stateDir = opts.stateDir || require('./story-gate-io.js').DEFAULT_STATE_DIR;
-  const marker = leerMarcador(stateDir, sessionId);
-  if (!marker || !marker.storyId || !marker.storyPath) return null;
+  let marker;
+  try { marker = leerMarcador(stateDir, sessionId); } catch (e) { return { reminder: `no pude leer el marcador de la corrida (${e.message}): no puedo mostrar los criterios para firmar.` }; }
+  if (!marker || !marker.storyId) return null;
+  if (!marker.storyPath) return { reminder: `el marcador de la corrida no trae la ruta de la historia: no puedo mostrar los criterios de ${PEDIDO}.` };
   const repo = marker.repoPath || process.cwd();
   const story = path.isAbsolute(marker.storyPath) ? marker.storyPath : path.join(repo, marker.storyPath);
   const runDir = require('../pipeline.js').resolveRunDir(repo, String(marker.storyId), false, fs.existsSync(story) ? story : undefined);
@@ -165,7 +192,8 @@ function handle(event, opts = {}) {
   const acs = p && Array.isArray(p.acs) ? [...new Set(p.acs.map(Number).filter((n) => Number.isInteger(n) && n > 0))] : [];
   if (!acs.length) return { reminder: `${PEDIDO} tiene que ser un objeto con { "acs": [n] }: los números de los criterios a firmar.` };
   const r = preparar({ sessionId, stateDir, home: opts.home, storyPath: story, acs });
+  if (r && r.reminder) return { reminder: r.reminder };
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, mostrado, juez, bloque, criteriosDe, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, mostrado, juez, huella, bloque, criteriosDe, esLaDelMarcador, pedidosDelComando, paraMostrar, handle };

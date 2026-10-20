@@ -3387,6 +3387,18 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const { val } = opcionesDe(argv);
   const pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   if (!pedidos.length) { console.error('marker.js runtime-waiver: con --approved-by hay que nombrar los criterios: --acs <n,m>.'); process.exit(2); }
+  // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
+  if (argv.includes('--relayed-by')) {
+    console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
+    console.error('   por otra sesión: lo da la persona que lo vio, en esta conversación o en su terminal.');
+    process.exit(2);
+  }
+  const wd = require('./lib/waiver-display.js');
+  // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+  if (!wd.esLaDelMarcador(storyPath, m)) {
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en esta sesión${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+    process.exit(2);
+  }
   const matrix = rm.compute({ storyPath });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
   const notRun = matrix.notRun || [];
@@ -3397,15 +3409,8 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const pend = new Set(matrix.notVerifiable || []);
   const ajenos = pedidos.filter((n) => !pend.has(n));
   if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
-  // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
-  if (argv.includes('--relayed-by')) {
-    console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
-    console.error('   por otra sesión: lo da la persona que lo vio, en esta conversación o en su terminal.');
-    process.exit(2);
-  }
-  const wd = require('./lib/waiver-display.js');
   const criterios = { storyId: String(matrix.sid), sessionId: SID, stateDir: STATE_DIR,
-    acs: pedidos.map((n) => ({ ac: n, sha: waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy) })) };
+    acs: pedidos.map((n) => ({ ac: n, sha: wd.huella(matrix.perAc[n].text, matrix.perAc[n].declReason, matrix.perAc[n].coveredBy) })) };
   const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), desde: m && m.startedAt, criterios });
   if (!r.ok) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — ${r.motivo}.`);
