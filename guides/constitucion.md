@@ -27,11 +27,12 @@ Cómo se lee:
 ## Lo que hoy no la cumple
 
 - **El registro de horas.** El núcleo nombra a Clockify: tiene una skill propia, hooks que la llaman y el paso de
-  arranque del pipeline. Hay un cambio en curso que lo saca del núcleo: el perfil elige la herramienta (ninguna, Clockify
+  arranque del pipeline. Un cambio en curso lo saca del núcleo: el perfil elige la herramienta (ninguna, Clockify
   u otra) y el núcleo sólo pide «registrá el tiempo».
-- **Los avisos.** El núcleo nombra a Telegram: el aviso cuando una corrida espera a una persona, el resumen de cada
-  mañana y la instalación. Todavía no hay un cambio que los saque. Hasta entonces, cada historia que toque los avisos
-  no agrega otra mención a Telegram en el núcleo.
+- **Los avisos.** El núcleo nombra a Telegram: el aviso cuando una corrida espera a una persona, el aviso de la noche
+  sobre la evidencia y la instalación. El mismo cambio en curso los saca: la organización elige desde el sitio uno o
+  más canales, todo aviso pasa por un solo camino, y las credenciales quedan en la máquina de cada dev (o, para los
+  avisos de la noche, en los secretos del servidor).
 
 ## Cómo se aplica en una historia
 
