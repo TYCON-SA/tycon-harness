@@ -39,6 +39,7 @@
  *   "forbid_artifact": [{ "path": ".advisors/alerts.md" }]
  *   "expect_engram":   { "project": "advbench-retro", "min": 1 }   (o "max": 0 para el gemelo)
  *   "git_commits":     [{ "message": "..", "date": "2026-08-19T10:00:00", "files": {..} }]
+ *   "sin_commits":     true → el repo del caso queda sin ningún commit (como lo deja `git init`)
  *   "expect_capturas": true → la línea `CAPTURAS: engram=<n> ...` es obligatoria; con
  *                       expect_engram además se CRUZA el n declarado contra el conteo real por
  *                       nonce — el delta declarado-vs-real ES el hallazgo (espejo CHEQUEOS-MCP).
@@ -673,6 +674,13 @@ function mkFixture(caseDef, nonce) {
   // variables ganan sobre el `cwd`). Pasó el 2026-09-27: dos commits `fixture` en la rama del dev y
   // el árbol reemplazado por el del fixture. El motivo largo vive en `lib/clean-git-env.js`.
   const g = (cmd, env) => execSync(cmd, { cwd: sandbox, env: sinGitDelPadre(env) });
+  // `"sin_commits": true`: el repo queda como lo deja `git init` —la primera historia de un repo recién
+  // creado—, sin el commit del fixture. No se combina con `git_commits`.
+  if (caseDef.sin_commits === true) {
+    if (caseDef.git_commits) throw new Error('un caso con "sin_commits" no puede traer "git_commits"');
+    g('git init -q -b main');
+    return sandbox;
+  }
   g(`git init -q -b main && git add -A && git -c user.email=bench@tycon -c user.name=bench commit -qm fixture`);
   // historia git plantada (caso correlación del retro: el hotfix POSTERIOR al merge es un commit
   // real con fecha real — `git log --grep` del advisor lo tiene que poder ver)

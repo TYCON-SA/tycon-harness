@@ -54,7 +54,21 @@ quita la fricción, no la trazabilidad.
   `iteration: N+1` sobre el diff actualizado, siguiendo `step-07b-rerun-advisors-if-fixes.md`.
   🔴 `pipeline.js next` **hoy no conoce el 7b**: esa vuelta la aplica el orquestador por la regla,
   no por el mapa. Si el dev prefiere cortar acá y retomar después, el marker queda activo.
-- **"override"** → requiere comentario justificativo. Registrar la razón en el log del pipeline. Proceder a Step 8 con flag `had_override: true`.
+- **"override" (eximir el crítico)** → un crítico lo decide una persona: **el agente nunca se exime solo**, ni
+  firmando como `orquestador`, ni con «hacé lo que recomiendes». Tres caminos, en este orden:
+  1. **El ok del dev en el chat** (el principal): preguntale en llano qué es el crítico y qué pasa si se exime; con su
+     respuesta, `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"
+     --quote "<sus palabras, textuales>"`. El arnés busca la cita en un mensaje escrito por el dev (no en lo que
+     escribiste vos, una herramienta, un subagente u otra sesión). Queda manual, con la cita y su hora.
+  2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session` (perfil del
+     equipo; por defecto ninguna): lo mismo con `--relayed-by <sesión>`. La cita del dev tiene que llegar textual en un
+     mensaje de esa sesión. Queda automático, por delegación del dev.
+  3. **Desde su terminal**, si el dev prefiere: `marker.js waive-critical … --terminal` (lo corre el dev).
+
+  Recién con la constancia, el hallazgo se anota `waived` en `pipeline.js write-findings`: sin ella, `write-findings`
+  no escribe, y `complete-step 7` y `complete-step 8` frenan. Proceder a Step 8 con flag `had_override: true`.
+  El límite: comprobar la cita prueba que el mensaje está en la conversación; no prueba quién está detrás de la
+  sesión que reenvía.
 - **"cancelar"** → terminar el pipeline.
 
 ### Si hay solo WARNING:

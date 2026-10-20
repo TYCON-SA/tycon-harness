@@ -1,0 +1,28 @@
+{
+  "agent": "tycon-dod-runtime-checker",
+  "file": "agents/tycon-dod-runtime-checker.md",
+  "hash": "7019c37046d5004350f44cc87feb5a058f89e215",
+  "passed": 12,
+  "total": 12,
+  "score": 1,
+  "baseline": {
+    "passed": 4,
+    "total": 4,
+    "score": 1
+  },
+  "regressions": [],
+  "cases": {
+    "tycon-dod-runtime-checker::dodrt-c1-endpoint-sin-smoke": true,
+    "tycon-dod-runtime-checker::dodrt-c3-transaccion-sin-rollback-test": true,
+    "tycon-dod-runtime-checker::dodrt-c9-evidencia-sin-procedencia": true,
+    "tycon-dod-runtime-checker::dodrt-c9-repo-propio-sin-commits": true,
+    "tycon-dod-runtime-checker::dodrt-c9-dependiente-sin-commits": true,
+    "tycon-dod-runtime-checker::dodrt-w3-smoke-staging-sin-prefijo": true,
+    "tycon-dod-runtime-checker::dodrt-w3-prefijo-sin-version-no-se-marca": true,
+    "tycon-dod-runtime-checker::dodrt-c10-resultado-fabricado": true,
+    "tycon-dod-runtime-checker::dodrt-c10-sembrar-el-given-no-se-marca": true,
+    "tycon-dod-runtime-checker::dodrt-w4-expectativa-vacia": true,
+    "tycon-dod-runtime-checker::dodrt-c5-smoke-driven-parcial": true,
+    "tycon-dod-runtime-checker::dodrt-c8-accion-solo-mirada": true
+  }
+}

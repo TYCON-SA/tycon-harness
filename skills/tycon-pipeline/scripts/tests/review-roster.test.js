@@ -237,3 +237,45 @@ test('un advisor INVENTADO sigue siendo incoherencia — el prefijo no abre la p
     assert.equal(v.ok, false, `"${falso}" no es una fuente del pipeline y tiene que seguir frenando`);
   }
 });
+
+// Un revisor llamado DESPUÉS de sellada la ronda (el de la prueba en vivo, paso 7c) también entra al registro: si el
+// gancho lo escribiera sólo al completarse la ronda, `write-findings` rechazaría al revisor del 7c como firmante. En un
+// repo sin commits, como la primera historia de un repo recién creado.
+test('Roster_RevisorDeLaPruebaEnVivo_Firma @story-8.63 @ac-10', () => {
+  const { execFileSync, spawnSync } = require('child_process');
+  const SCRIPTS = path.join(__dirname, '..');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'roster-7c-'));
+  const home = path.join(base, 'home');
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(home); fs.mkdirSync(path.join(repo, 'stories'), { recursive: true });
+  execFileSync('git', ['init', '-q'], { cwd: repo });   // sin commits: la primera historia de un repo nuevo
+  const story = path.join(repo, 'stories', 'story-1.1-precios.md');
+  fs.writeFileSync(story, ['---', 'story: "1.1"', 'title: "precios"', 'status: in-progress', '---', '', '# Story 1.1', ''].join('\n'));
+  const sid = 's-7c';
+  const env = { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_AUTO_SNAPSHOT: '0' };
+  delete env.TYCON_HOME;
+  const set = spawnSync(process.execPath, [path.join(SCRIPTS, 'marker.js'), 'set', JSON.stringify({ storyId: '1.1', storyPath: story, repoPath: repo })], { cwd: repo, env, encoding: 'utf8' });
+  assert.equal(set.status, 0, set.stderr);
+  const estado = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
+  fs.mkdirSync(path.join(estado, 'advisor-runs'), { recursive: true });
+  fs.writeFileSync(path.join(estado, 'advisor-runs', `${sid}.jsonl`),
+    `${JSON.stringify({ ts: '2026-10-19T22:00:00Z', event: 'step5-start', iter: 1, expected: ['tycon-silent-failure-hunter'], story: '1.1' })}\n`);
+  const spawn = (agente) => {
+    const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'on-advisor-run.js')], {
+      cwd: repo, env, encoding: 'utf8',
+      input: JSON.stringify({ tool_name: 'Agent', session_id: sid, cwd: repo, tool_input: { subagent_type: agente, prompt: 'x' } }),
+    });
+    assert.equal(r.status, 0, r.stderr);
+  };
+  spawn('tycon-silent-failure-hunter');   // completa y sella la ronda
+  spawn('tycon-dod-runtime-checker');     // el paso 7c, después del sello
+  const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '1.1', false, story);
+  const roster = R.read(runDir);
+  assert.ok(roster, 'hay registro de autoría');
+  assert.deepEqual(roster.reviewers.map((r) => r.agent).sort(), ['tycon-dod-runtime-checker', 'tycon-silent-failure-hunter']);
+  const f = path.join(base, 'f.json');
+  fs.writeFileSync(f, JSON.stringify([{ rule_id: 'DODRT-W1', severity: 'WARNING', advisor: 'tycon-dod-runtime-checker', file: 'a', disposition: 'open', reason: 'r' }]));
+  const w = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'write-findings', '--story', story, '--repo', repo, '--findings', f], { cwd: repo, env, encoding: 'utf8' });
+  assert.equal(w.status, 0, `${w.stdout}${w.stderr}`);
+  fs.rmSync(base, { recursive: true, force: true });
+});

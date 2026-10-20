@@ -196,6 +196,10 @@ const VOCABULARIO = Object.freeze({
   // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
   // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
   response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
+  // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
+  // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
+  approvals: Object.freeze({ relay_session: 'texto' }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars` (story 2.31): el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -223,6 +227,11 @@ const DEFAULTS = Object.freeze({
 // La segunda (story 7.19, decisión del dueño del 2026-10-15): la pregunta del modelo mayor en el pase adversarial.
 // Apagarla es una decisión de costo del equipo, no de una máquina.
 const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question']);
+// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. El
+// perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
+// implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
+// archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 /** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
@@ -821,6 +830,22 @@ function cargar(opts = {}) {
     }
   }
 
+  // Las claves que vale sólo el perfil del equipo (PROFILE_ONLY) salen del perfil del ÁRBOL del arnés: ni
+  // `TYCON_PROFILE=<ruta>` ni `TYCON_PROFILE=0` las cambian (una variable la puede poner el agente que implementa).
+  let planoArbol = planoPerfil;
+  if (rp.explicito || rp.anulado) {
+    planoArbol = {};
+    const pa = perfilDelArbol(arnes);
+    const la = pa.ruta ? leerJson(pa.ruta) : { estado: 'ausente' };
+    if (la.estado === 'roto') errores.push({ archivo: pa.ruta, clave: null, motivo: la.motivo });
+    else if (la.estado === 'leido') {
+      const v = validarArchivo(la.datos, { archivo: pa.ruta, esPerfil: true, home });
+      // de ese perfil sólo importan las claves que vale sólo él: un error en otra clave lo dice su propia lectura
+      for (const e of v.errores) if (PROFILE_ONLY.some((r) => String(e.clave || '').startsWith(r.split('.')[0]))) errores.push(e);
+      for (const r of PROFILE_ONLY) if (Object.prototype.hasOwnProperty.call(v.plano, r)) planoArbol[r] = v.plano[r];
+    }
+  }
+
   const valores = Object.fromEntries(Object.keys(VOCABULARIO).map((s) => [s, {}]));
   const origenes = {};
   const variables = {};
@@ -838,6 +863,15 @@ function cargar(opts = {}) {
       const enMaquina = Object.prototype.hasOwnProperty.call(planoMaquina, ruta);
       const ganaElPerfil = PROFILE_WINS.includes(ruta) && Object.prototype.hasOwnProperty.call(planoPerfil, ruta);
       if (ganaElPerfil && enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'perfil' };
+      if (PROFILE_ONLY.includes(ruta)) {
+        if (enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'solo-perfil' };
+        else if (rp.explicito && Object.prototype.hasOwnProperty.call(planoPerfil, ruta) && planoPerfil[ruta] !== planoArbol[ruta]) {
+          shadowed[ruta] = { value: planoPerfil[ruta], origin: 'TYCON_PROFILE', by: 'solo-perfil' };
+        }
+        if (Object.prototype.hasOwnProperty.call(planoArbol, ruta)) { valores[seccion][clave] = planoArbol[ruta]; origenes[ruta] = 'perfil'; }
+        else { valores[seccion][clave] = null; origenes[ruta] = 'sin-valor'; }
+        continue;
+      }
       const e = valorDeEntorno(env, ruta, tipo, home);
       if (e && e.error) { errores.push(e.error); }
       if (e && !e.error) { valores[seccion][clave] = e.valor; origenes[ruta] = 'env'; variables[ruta] = e.variable; continue; }
@@ -1065,6 +1099,13 @@ function explicar(opts = {}) {
   L.push(`  install.home = ${v.install.home ? `${v.install.home} (${o['install.home']})` : 'claude (sin valor: el clon en la carpeta de Claude Code; con tycon, cada máquina se muda sola a ~/.tycon en el arranque)'}`);
   // la pregunta del modelo mayor en el pase adversarial (story 7.19): siempre con valor, siempre con origen
   L.push(`  adversarial.model_question = ${fmt(v.adversarial.model_question)} (${o['adversarial.model_question']}${unused('adversarial.model_question')})`);
+  // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
+  {
+    const s = c.shadowed['approvals.relay_session'];
+    const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
+    const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '';
+    L.push(`  approvals.relay_session = ${v.approvals.relay_session ? `${v.approvals.relay_session} (${o['approvals.relay_session']}${ignorado})` : `sin valor (nadie reenvía${ignorado})`}`);
+  }
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);
   if (c.entorno.TYCON_PROFILE !== null) extras.push(`TYCON_PROFILE=${c.entorno.TYCON_PROFILE}`);
@@ -1159,6 +1200,7 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   }
   const tipo = VOCABULARIO[seccion][k];
   // un secreto no pasa por acá (quedaría en el argv de quien llama y en su historial): lo escribe quien lo lee por stdin
+  if (PROFILE_ONLY.includes(`${seccion}.${k}`)) return { ok: false, file, reason: `${enArchivo(seccion)}.${k} vale sólo desde el perfil del equipo (team-profile.json, con un pedido al repo del perfil o desde la pestaña Configuración del sitio): en el archivo de la máquina no se usa` };
   if (tipo === 'secreto') return { ok: false, file, reason: `${enArchivo(seccion)}.${k} no se escribe por acá: harness.js config set ${enArchivo(seccion)}.${k} (lee el valor por stdin y nunca lo muestra)` };
   const err = validarTipo(tipo, valorNuevo);
   if (err) return { ok: false, file, reason: `${enArchivo(seccion)}.${k}: ${err}` };
@@ -1236,7 +1278,7 @@ const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
 
 module.exports = {
   parse, KEYS, motivoPaquetes, paquetesDeTexto,
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
   esIntegracion, estadoIntegracion, integraciones, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,

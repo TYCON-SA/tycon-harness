@@ -90,6 +90,9 @@ test('T2 Registro_AgenteNuncaManual — los agentes del repo y los correos (pase
   assert.equal(approvals.normalizar({ que: 'plan', tipo: 'manual', quien: 'coordinadora@example.org' }).tipo, 'manual');
   assert.equal(approvals.normalizar({ que: 'plan', tipo: 'manual', quien: 'claude.perez@example.org' }).tipo, 'manual');
   assert.equal(approvals.normalizar({ que: 'plan', tipo: 'manual', quien: 'noreply@anthropic.com' }).tipo, 'automatica');
+  // un apellido que termina en «bot» es una persona; un bot se nombra como palabra
+  for (const persona of ['talbot@example.com', 'abbot@example.com']) assert.equal(approvals.esAgente(persona), false, persona);
+  for (const bot of ['ci-bot@example.com', 'bot@example.com', 'release.bot@example.com', 'deploy_bot@example.com']) assert.equal(approvals.esAgente(bot), true, bot);
   // Ante la duda, automática: un usuario suelto que se llama como un rol de agente.
   assert.equal(approvals.normalizar({ que: 'plan', tipo: 'manual', quien: 'coordinadora' }).tipo, 'automatica');
 });
@@ -167,23 +170,22 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan @story-2.43 @ac-3', () => {
 
   const runDir = runDirDe();
   assert.ok(runDir, 'el marcador crea la carpeta de la corrida');
+  // la exención de un CRITICAL ya no la anota el paso 7: la deja `waive-critical` con el ok de una persona
+  // (critical-waiver.test.js). Un WARNING eximido no deja línea.
   fs.writeFileSync(path.join(runDir, 'findings.json'), JSON.stringify([
-    { rule_id: 'SEC-C1', severity: 'CRITICAL', advisor: 'tycon-plugin-security-basics', file: 'README.md', disposition: 'waived', reason: 'falso positivo aceptado' },
     { rule_id: 'SEC-W1', severity: 'WARNING', advisor: 'tycon-plugin-security-basics', file: 'README.md', disposition: 'waived', reason: 'no aplica' },
   ]));
   r = markerCli(home, 's-auto', repo, ['complete-step', '7', '--approved-by', 'ana@example.com']);
   assert.equal(r.status, 0, r.stderr);
 
   const ls = lineas(runDir);
-  assert.equal(ls.length, 4, JSON.stringify(ls));
-  const [plan, deleg, auto, exencion] = ls;
+  assert.equal(ls.length, 3, JSON.stringify(ls));
+  const [plan, deleg, auto] = ls;
   assert.deepEqual([plan.que, plan.tipo, plan.quien], ['plan', 'manual', 'ana@example.com']);
   assert.deepEqual([deleg.que, deleg.tipo, deleg.delegacion], ['plan', 'automatica', 'ana@example.com']);
   assert.match(deleg.quien, /coordinadora/);
   assert.deepEqual([auto.que, auto.tipo], ['plan', 'automatica']);
   assert.match(auto.quien, /^regla /);
-  assert.equal(exencion.tipo, 'manual');
-  assert.match(exencion.que, /SEC-C1/);
   for (const l of ls) assert.match(l.commit || '', /^[0-9a-f]{7,40}$/);
 });
 
@@ -224,22 +226,23 @@ test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — la maqueta, con el plan y 
     [['plan', 'manual', null], ['maqueta', 'manual', null], ['maqueta', 'automatica', 'ana@example.com']]);
 });
 
-test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — la exención por delegación, y si no puede anotar avisa y sigue @story-2.43 @ac-3', () => {
+test('T4 Marker_AprobacionesQueYaExisten_SeAnotan — una exención sin constancia frena el 7, y si no puede anotar avisa y sigue @story-2.43 @ac-3 @story-8.63 @ac-6', () => {
   const { repo, story } = repoConStory();
   const home = tmp('apr-home-');
   markerHasta3(home, 's-x', repo, story);
   let r = markerCli(home, 's-x', repo, ['complete-step', '3', '--approved', 'dale', '--approved-by', 'ana@example.com']);
   assert.equal(r.status, 0, r.stderr);
   const runDir = require(path.join(SCRIPTS, 'pipeline.js')).resolveRunDir(repo, '9.91', false, story);
-  // Paso 7 sin findings.json: lo dice, no lo traga.
+  // Paso 7 sin findings.json: el 7 corre con críticos, así que sin hallazgos que mirar no cierra
   r = markerCli(home, 's-x', repo, ['complete-step', '7', '--approved-by', 'ana@example.com']);
-  assert.equal(r.status, 0, r.stderr);
+  assert.notEqual(r.status, 0, r.stderr);
   assert.match(r.stderr, /falta findings\.json/);
   fs.writeFileSync(path.join(runDir, 'findings.json'), JSON.stringify([{ rule_id: 'SEC-C2', severity: 'CRITICAL', advisor: 'x', file: 'a', disposition: 'waived', reason: 'r' }]));
+  // una delegación al cerrar el paso ya no exime: falta la constancia del ok
   r = markerCli(home, 's-x', repo, ['complete-step', '7', '--delegated-by', 'ana@example.com', '--agent', 'coordinadora (claude-opus-5-5)']);
-  assert.equal(r.status, 0, r.stderr);
-  const ex = lineas(runDir).find((l) => /SEC-C2/.test(l.que));
-  assert.deepEqual([ex.tipo, ex.delegacion], ['automatica', 'ana@example.com']);
+  assert.notEqual(r.status, 0, r.stderr);
+  assert.match(r.stderr, /SEC-C2/);
+  assert.equal(lineas(runDir).find((l) => /SEC-C2/.test(l.que)), undefined);
 
   // Sin dónde escribir (`.advisors` es un archivo): el paso cierra igual y lo avisa.
   const otro = repoConStory();

@@ -391,6 +391,12 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
       const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { response: {} } });
       if (gate) { v.soloLectura = true; v.motivo = gate; }
     }
+    // con una capa que pide una versión que no lee `approvals`, se muestra y no se propone (como `response`)
+    if (s.id === 'aprobaciones') {
+      const capa = leerDe(dir, 'team-layer.json');
+      const gate = ORG.teamProfileGateProblem({ layerText: capa.estado === 'leido' ? capa.texto : '', versionImagen, doc: { approvals: {} } });
+      if (gate) { v.soloLectura = true; v.motivo = gate; }
+    }
     if (s.id === 'ado') {
       v.extras = {
         proyecto: M('config.adoProyecto'),

@@ -48,6 +48,35 @@
       "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: acción. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Contexto banco: NO llames mem_save acá — no hay decisión real que persistir y ensuciaría la memoria del equipo. NO arranques DevHost ni ejecutes curl: evaluá la EVIDENCIA EXISTENTE en el repo (eso es lo que el gate audita). La story specs/story-99-3.md pide transición review → done: validá el DoD runtime, con foco en la PROCEDENCIA de la evidencia de smoke (.advisors/dod-runtime/99.3-smoke.md): ¿registra contra qué backend corrió y si ese commit está en origin? Inputs: story_path=specs/story-99-3.md · repo_path=. · modified_files=[src/components/SeguimientoScreen.tsx]. Escaneá y emití el reporte."
     },
     {
+      "id": "dodrt-c9-repo-propio-sin-commits",
+      "type": "must-not-flag",
+      "rule": "DODRT-C9",
+      "sin_commits": true,
+      "__doc": "Story 8.63: la primera historia de un repo recién creado (el modo primera vez hace git init). El repo de la historia no tiene commits: el humo corrió contra el diff de la historia, sólo en este disco, y smoke-run.sh lo anotó en el registro (target.estado sin-commits). No hay repos de los que se dependa. NO es C9: en el laboratorio de la 8.62 el revisor lo marcó crítico y el agente terminó eximiéndolo solo.",
+      "files": {
+        "stories/story-1.1-precio-en-pesos.md": "---\nstory: \"1.1\"\nepic: 1\ntitle: \"Precio en pesos\"\nstatus: review\n---\n\n# Story 1.1 — Precio en pesos\n\n## Acceptance Criteria\n\n1. `formatoPesos(1234.5)` devuelve «$ 1.234,50» y `formatoPesos(0)` devuelve «$ 0,00».\n",
+        "src/precios.js": "function formatoPesos(n) {\n  return '$ ' + n.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n}\nmodule.exports = { formatoPesos };\n",
+        "test/precios.test.js": "const test = require('node:test');\nconst assert = require('node:assert');\nconst { formatoPesos } = require('../src/precios.js');\ntest('FormatoPesos_MilDoscientos', () => assert.strictEqual(formatoPesos(1234.5), '$ 1.234,50'));\ntest('FormatoPesos_Cero', () => assert.strictEqual(formatoPesos(0), '$ 0,00'));\n",
+        "package.json": "{\"name\":\"precios\",\"version\":\"1.0.0\",\"scripts\":{\"test\":\"node --test\"}}\n",
+        ".advisors/dod-runtime/1.1-smoke-ledger.jsonl": "{\"ts\": \"2026-10-19T22:10:00Z\", \"story\": \"1.1\", \"acs\": [1], \"cmd\": \"node -e \\\"console.log(require('./src/precios.js').formatoPesos(1234.5))\\\"\", \"pass_if\": \"imprime $ 1.234,50\", \"exit\": 0, \"via\": \"smoke-run.sh\", \"v\": 2, \"target\": {\"repo\": \".\", \"commit\": null, \"estado\": \"sin-commits\", \"en_remoto\": \"sin-remoto\"}}\n",
+        ".advisors/dod-runtime/1.1-smoke-outputs/1.txt": "$ 1.234,50\n"
+      },
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: acción. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Contexto banco: NO llames mem_save acá — no hay decisión real que persistir y ensuciaría la memoria del equipo. NO arranques DevHost ni ejecutes curl: evaluá la EVIDENCIA EXISTENTE en el repo (eso es lo que el gate audita). La story stories/story-1.1-precio-en-pesos.md pide transición review → done: validá el DoD runtime, con foco en la PROCEDENCIA de la evidencia de humo (.advisors/dod-runtime/1.1-smoke-ledger.jsonl): ¿registra contra qué corrió? Inputs: story_path=stories/story-1.1-precio-en-pesos.md · repo_path=. · modified_files=[src/precios.js, test/precios.test.js]. Escaneá y emití el reporte."
+    },
+    {
+      "id": "dodrt-c9-dependiente-sin-commits",
+      "type": "must-flag",
+      "rule": "DODRT-C9",
+      "__doc": "Story 8.63, gemelo del anterior: la excepción del repo sin commits es SÓLO para el repo de la propia historia. Acá la historia es de frontend y el humo ejercita un backend de OTRO repo que no tiene commits: es exactamente «verde contra la laptop» — el código del backend no existe en ningún despliegue posible. Sigue siendo C9.",
+      "files": {
+        "specs/story-1-2.md": "---\nstory: \"1.2\"\nepic: 1\ntitle: \"Pantalla de precios\"\nstatus: review\n---\n\n# Story 1.2 — Pantalla de precios (frontend)\n\n## Acceptance Criteria\n\n1. La pantalla lista los precios consultando `GET /api/precios` del backend (repo ../precios-backend).\n",
+        ".advisors/dod-runtime/1.2-smoke.md": "# Humo — Story 1.2\n\nCorrido contra http://localhost:5001 — 12/12 verdes.\n\n- GET /api/precios -> 200 OK\n\n## Target\n- URL: http://localhost:5001\n- Frontend: . @ (este repo)\n- Backend: ../precios-backend @ sin commits todavía (git init recién hecho; el código vive sólo en este disco)\n- En origin: sin remoto\n",
+        "src/components/Precios.tsx": "export function Precios(){ return <div data-testid=\"precios\">ok</div>; }\n",
+        "package.json": "{\"name\":\"front\",\"version\":\"1.0.0\"}\n"
+      },
+      "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: acción. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Contexto banco: NO llames mem_save acá — no hay decisión real que persistir y ensuciaría la memoria del equipo. NO arranques DevHost ni ejecutes curl: evaluá la EVIDENCIA EXISTENTE en el repo (eso es lo que el gate audita). La story specs/story-1-2.md pide transición review → done: validá el DoD runtime, con foco en la PROCEDENCIA de la evidencia de humo (.advisors/dod-runtime/1.2-smoke.md): ¿registra contra qué backend corrió y si ese commit está en origin? Inputs: story_path=specs/story-1-2.md · repo_path=. · modified_files=[src/components/Precios.tsx]. Escaneá y emití el reporte."
+    },
+    {
       "id": "dodrt-w3-smoke-staging-sin-prefijo",
       "type": "must-flag",
       "rule": "DODRT-W3",

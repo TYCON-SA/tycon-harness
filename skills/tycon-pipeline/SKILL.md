@@ -121,9 +121,8 @@ La palanca de costo es abrir MENOS agentes (un spawn cuesta ~60-100K tokens ante
   <skill>/scripts/runtime-matrix.js --story <abs spec>`; `complete-step 8` la exige verde (run-check). Cada
   AC queda RUNTIME / CODE-ONLY / SIN-EVIDENCIA. `NOT-RUN` → lo corre el agente (E2E, o smoke vía
   `scripts/smoke-run.sh`, que es lo único que cuenta como evidencia); `NOT-VERIFIABLE` (declarado en
-  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → lo aprueba el USUARIO con `marker.js
-  runtime-waiver <spec>` (TTY; se registra en `<repo>/.tycon/runtime-waivers.jsonl`, que se commitea,
-  anclado a la declaración). El agente JAMÁS aprueba. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
+  `runtime_not_verifiable:` con `reason:` + `covered_by:`) → decide una persona; el agente nunca firma por su cuenta: ok del dev con su cita (`--quote`),
+  `--relayed-by` o `--terminal`. Un CRITICAL, igual: `waive-critical`. La cita no prueba quién la pasa. Presentar CADA NOT-VERIFIABLE en el chat, en llano,
   con razón y test que lo cubre, y pedir decisión AC por AC — nunca sólo el comando o un link. El checkpoint
   de «Hallazgos» lleva el resumen: «Corrido de verdad: N de T. Sin correr (bloquean, los corro yo): [lista].
   Imposibles-declarados (esperan tu decisión): [lista]». Narrar «listo / probado» con la matriz roja es la violación. Un verbo de

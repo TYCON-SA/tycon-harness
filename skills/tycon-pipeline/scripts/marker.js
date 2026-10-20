@@ -740,43 +740,13 @@ function planDeLaCorrida(marker) {
 }
 
 /**
- * ¿El plan está en lo que el agente le escribió a la persona en esta sesión? Lee la conversación que Claude Code guarda
- * en `~/.claude/projects/<carpeta>/<sesión>.jsonl` (los mensajes del asistente). Cuenta los renglones del plan de 20
- * caracteres o más que aparecen en esos mensajes, sin mirar el formato (negritas, viñetas, números, mayúsculas): con la
- * mitad o más, se mostró; un plan sin ningún renglón así no cuenta como visto. Los mensajes de subagentes no cuentan.
- * `{ legible: false, motivo }` cuando la conversación no se encuentra o no se lee —otra
- * herramienta, como Codex, o una sesión sin registro—: quien llama falla cerrado.
+ * ¿El plan está en lo que el agente le escribió a la persona en esta sesión? La lectura de la conversación vive en
+ * lib/person-ok.js (la misma lectura busca el ok de la persona). `{ legible: false, motivo }` cuando la
+ * conversación no se encuentra o no se lee —otra herramienta, como Codex, o una sesión sin registro—: quien llama falla
+ * cerrado.
  */
-function planEnLaConversacion(planTxt, { env = process.env, home = os.homedir() } = {}) {
-  const sid = String(env.CLAUDE_CODE_SESSION_ID || '');
-  if (!/^[\w-]+$/.test(sid)) return { legible: false, motivo: 'la sesión no dice su identificador' };
-  const root = path.join(home, '.claude', 'projects');
-  let file = null;
-  try {
-    for (const d of fs.readdirSync(root)) {
-      const f = path.join(root, d, `${sid}.jsonl`);
-      if (fs.existsSync(f)) { file = f; break; }
-    }
-  } catch (e) { return { legible: false, motivo: `no pude leer ${root} (${e.code || e.message})` }; }
-  if (!file) return { legible: false, motivo: 'no encontré su registro' };
-  let textos = '';
-  try {
-    for (const l of fs.readFileSync(file, 'utf8').split('\n')) {
-      if (!l.trim()) continue;
-      let r;
-      try { r = JSON.parse(l); } catch (_e) { continue; }   // un renglón a medio escribir no tapa a los demás
-      // lo que escribe un subagente no lo ve la persona: no cuenta
-      const c = r && r.type === 'assistant' && !r.isSidechain && r.message && r.message.content;
-      if (Array.isArray(c)) for (const x of c) if (x && x.type === 'text' && typeof x.text === 'string') textos += `${x.text}\n`;
-    }
-  } catch (e) { return { legible: false, motivo: `no pude leer su registro (${e.code || e.message})` }; }
-  const norm = (s) => s.toLowerCase().replace(/^\s*(?:\d+[.)]|[-+•*>]|#+)\s+/gm, '').replace(/[`*_#>]/g, ' ').replace(/\s+/g, ' ').trim();
-  const dicho = norm(textos);
-  const renglones = planTxt.split('\n').map(norm).filter((l) => l.length >= 20);
-  // un plan sin ningún renglón de texto (sólo símbolos, o «ok») aparece en cualquier respuesta: no cuenta como visto
-  if (!renglones.length) return { legible: true, mostrado: false };
-  const vistos = renglones.filter((l) => dicho.includes(l)).length;
-  return { legible: true, mostrado: vistos * 2 >= renglones.length };
+function planEnLaConversacion(planTxt, opts = {}) {
+  return require('./lib/person-ok.js').planEnLaConversacion(planTxt, opts);
 }
 
 function anotarAprobacion(marker, entrada) {
@@ -1117,36 +1087,47 @@ function cmdCompleteStep(nRaw, flags) {
     }
   }
 
-  // ── Step 7 (hallazgos: la decisión) — la exención de un CRITICAL queda en el registro de aprobaciones ──
-  // La decisión ya existe: es el `disposition: waived` de un CRITICAL en findings.json. Al cerrar el 7 se anota una línea
-  // por cada uno, con `--approved-by <persona>` (manual) o `--delegated-by <persona> --agent "<nombre> (<modelo>)"`
-  // (automática); sin ninguno, automática «sin nombrar». No frena: avisa si no puede leer los hallazgos.
-  if (n === 7) {
-    // El paso 7 corre sólo con CRITICAL, así que sus hallazgos tienen que estar: no poder leerlos se dice siempre
-    // («no hay exenciones» y «no pude mirar» no se escriben igual).
-    let lista = null;
+  // ── Steps 7 y 8 — un crítico lo decide una persona ──
+  // Cada CRITICAL `waived` de findings.json tiene que tener su constancia (`waive-critical`, con el ok de una persona).
+  // Una exención automática «sin nombrar» dejaba que el agente se eximiera solo; ya no existe. El 8 lo vuelve a mirar porque el 7 sólo corre con críticos y findings.json se puede
+  // reescribir a mano después. No poder leer los hallazgos se dice (en el 7 siempre tienen que estar).
+  if (n === 7 || n === 8) {
+    let rd = null;
     let motivo = null;
     try {
-      const storyAbs7 = resolveStoryPath(marker.storyPath, marker) || undefined;
-      const rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs7);
+      const storyAbs78 = resolveStoryPath(marker.storyPath, marker) || undefined;
+      rd = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, storyAbs78);
       if (!rd) motivo = 'no encontré la carpeta de la corrida';
-      else {
-        const data = JSON.parse(fs.readFileSync(path.join(rd, 'findings.json'), 'utf8'));
-        lista = Array.isArray(data) ? data : (Array.isArray(data && data.findings) ? data.findings : null);
-        if (!lista) motivo = 'findings.json no es una lista de hallazgos';
-      }
-    } catch (e) {
-      motivo = e && e.code === 'ENOENT' ? 'falta findings.json (pipeline.js write-findings)' : `findings.json no se lee (${e.message || e})`;
-    }
+    } catch (e) { motivo = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
+    const cw = require('./lib/critical-waivers.js');
+    const v = rd ? cw.verificarExenciones(rd, { story: marker.storyId }) : { faltan: [], ilegibles: 0, existe: false };
+    if (n === 7 && !motivo && rd && !v.existe) motivo = 'falta findings.json (pipeline.js write-findings)';
     if (motivo) {
-      appendLog('gates.log', { name: 'approval', status: 'not-recorded', story: marker.storyId, que: 'exenciones de CRITICAL', error: motivo });
-      console.error(`⚠️  complete-step 7: ${motivo}: las exenciones de CRITICAL no quedan en approvals.jsonl. El paso sigue.`);
+      // el 7 corre sólo con críticos: sin hallazgos que mirar, no se cierra (revisor de fallas silenciosas, vuelta 2);
+      // el 8 lo dice y sigue (un paso 8 sin corrida que mirar lo frenan sus propios portones)
+      appendLog('gates.log', { name: 'critical-waivers', status: n === 7 ? 'blocked' : 'not-checked', story: marker.storyId, step: n, error: motivo });
+      if (n === 7) {
+        console.error(`marker.js complete-step 7 BLOQUEADO — ${motivo}: el paso 7 corre con críticos y no puedo mirar si alguno quedó eximido sin el ok de una persona.`);
+        process.exit(1);
+      }
+      console.error(`⚠️  complete-step ${n}: ${motivo}: no pude mirar si hay críticos eximidos sin el ok de una persona.`);
     }
-    for (const f of lista || []) {
-      if (!f || String(f.severity).toUpperCase() !== 'CRITICAL' || f.disposition !== 'waived') continue;
-      anotarAprobacion(marker, {
-        que: `exencion ${f.rule_id || '?'}${f.file ? ` en ${f.file}` : ''}`, via: 'complete-step 7', ...quienDeLasOpciones(optVal),
-      });
+    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En el 8 lo frena con su propio
+    // mensaje el control de findings.json que sigue (computeFindingsStatus); acá, el 7
+    if (v.error && v.existe && n === 7) {
+      appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, error: v.error });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.error}: no puedo saber si hay críticos eximidos sin el ok de una persona. Volvé a escribirlo con pipeline.js write-findings.`);
+      process.exit(1);
+    }
+    if (v.faltan.length) {
+      appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, faltan: v.faltan });
+      console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.faltan.length} crítico(s) marcado(s) como eximido(s) sin el ok de una persona:`);
+      for (const l of cw.renglonesDeFaltantes(v)) console.error(l);
+      console.error('   Un crítico lo decide una persona: arreglalo, o pedile el ok al dev y anotalo. Los caminos:');
+      const rs = cw.sesionQueReenvia();
+      for (const f of v.faltan) for (const l of cw.caminos({ marker: __filename, ruleId: f.rule_id, file: f.file || '<archivo>', relaySession: rs.valor })) console.error(l);
+      if (rs.aviso) console.error(`   (sin reenvío: ${rs.aviso})`);
+      process.exit(1);
     }
   }
 
@@ -3232,13 +3213,156 @@ function cmdUpdatePipelineStatus(storyPath, which, newStatus) {
   for (const t of chosen) process.stdout.write(`${t.name}: ${newStatus}\n`);
 }
 
+/**
+ * `runtime-waiver <spec> --acs n,m --approved-by "<el dev>" --quote "<cita>" [--relayed-by <sesión>]`: firma los
+ * criterios declarados imposibles de probar en vivo con el ok de una persona, en la misma cadena que la firma por terminal
+ * (la matriz la lee igual) y con su línea en approvals.jsonl. Sólo los criterios nombrados, y sólo si están pendientes.
+ */
+function runtimeWaiverConOk(storyPath, argv, m) {
+  const waiver = require('./lib/runtime-waiver.js');
+  const rm = require('./runtime-matrix.js');
+  const cw = require('./lib/critical-waivers.js');
+  const { val } = opcionesDe(argv);
+  const pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
+  if (!pedidos.length) { console.error('marker.js runtime-waiver: con --approved-by hay que nombrar los criterios: --acs <n,m>.'); process.exit(2); }
+  const matrix = rm.compute({ storyPath });
+  if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
+  const notRun = matrix.notRun || [];
+  if (notRun.length) {
+    console.error(`🚫 marker.js runtime-waiver RECHAZADO — hay criterios SIN CORRER que no se pueden eximir: AC ${notRun.map((n) => '#' + n).join(', ')}. Los corre el agente.`);
+    process.exit(2);
+  }
+  const pend = new Set(matrix.notVerifiable || []);
+  const ajenos = pedidos.filter((n) => !pend.has(n));
+  if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
+  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m && m.startedAt });
+  if (!r.ok) {
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${r.motivo}.`);
+    console.error('   El agente nunca firma por su cuenta. Mostrale al dev cada criterio con su razón y el test que lo cubre, y con su ok:');
+    console.error(`     node ${__filename} runtime-waiver ${storyPath} --acs ${pedidos.join(',')} --approved-by "<el dev>" --quote "<sus palabras, textuales>"`);
+    console.error(`   O lo firma el dev en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
+    process.exit(1);
+  }
+  const declHashByAc = {};
+  for (const n of pedidos) declHashByAc[n] = waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy);
+  const repoRoot = matrix.repoRoot || null;
+  const e = r.entrada;
+  const entry = waiver.appendWaiver({
+    story: matrix.key || matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.delegacion || e.quien, nowIso: nowIso(), declHashByAc,
+    logPath: repoRoot ? waiver.repoWaiverLogPath(repoRoot) : undefined,
+    ok: { tipo: e.tipo, quien: e.quien, ...(e.delegacion ? { delegacion: e.delegacion } : {}), cita: e.cita, cita_cuando: e.cita_cuando, via: e.via },
+  });
+  appendLog('gates.log', { type: 'RUNTIME_WAIVER', story: matrix.sid, acs: pedidos, matrixHash: matrix.hash, approvedBy: e.quien, via: e.via });
+  const mk = { ...(m || {}), repoPath: repoRoot || (m && m.repoPath) || null, storyId: (m && m.storyId) || matrix.sid, storyPath };
+  for (const n of pedidos) {
+    anotarAprobacion(mk, { que: `AC ${n} imposible de verificar en vivo`, via: e.via, tipo: e.tipo, quien: e.quien,
+      ...(e.delegacion ? { delegacion: e.delegacion } : {}), cita: e.cita, cita_cuando: e.cita_cuando });
+  }
+  if (repoRoot) console.error(`📌 Firmado en ${waiver.repoWaiverLogPath(repoRoot)} — commitealo: así vale en otra máquina y en CI.`);
+  console.error(`✅ Firmado (${e.tipo === 'manual' ? `ok de ${e.quien} en el chat` : `ok de ${e.delegacion} reenviado por ${e.quien}`}): story ${matrix.sid}, AC ${pedidos.join(',')}. Cadena: ${entry.chain}`);
+  process.exit(0);
+}
+
+// ============================================================
+// Un crítico lo decide una persona
+// ============================================================
+// `waive-critical --rule <id> --file <f> --reason "<r>"` deja la constancia de que una persona eximió ese CRITICAL, y
+// sólo así `write-findings` y los cierres de los pasos 7 y 8 aceptan un CRITICAL `waived`. Tres caminos, en este orden:
+//   1. `--approved-by "<el dev>" --quote "<sus palabras>"`: la cita, textual, en un mensaje escrito por el dev en esta
+//      conversación (lib/person-ok.js). Manual, a su nombre, con la cita y la hora del mensaje.
+//   2. lo mismo + `--relayed-by <sesión>`: la cita llegó en un mensaje de esa sesión, que la organización declara en
+//      `approvals.relay_session`. Automática, por delegación del dev, a nombre de la sesión.
+//   3. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
+// El agente solo no exime: sin ok de nadie, a nombre de «orquestador» o de un agente, o con una cita que no aparece, frena.
+function opcionesDe(argv) {
+  // una bandera seguida de otra bandera no tiene valor: `--approved-by --quote x` no aprueba a nombre de «--quote»
+  const val = (n) => { const i = argv.indexOf(n); if (i < 0) return null; const v = argv[i + 1]; return v === undefined || /^--/.test(v) ? '' : v; };
+  return { val, tiene: (n) => argv.includes(n) };
+}
+
+function cmdWaiveCritical(argv) {
+  const cw = require('./lib/critical-waivers.js');
+  const { val, tiene } = opcionesDe(argv);
+  const rule = (val('--rule') || '').trim();
+  const file = (val('--file') || '').trim();
+  const reason = (val('--reason') || '').trim();
+  if (!rule || !reason) {
+    console.error('marker.js waive-critical: faltan --rule <regla> y --reason "<por qué>" (y --file <archivo> si el hallazgo lo nombra).');
+    process.exit(2);
+  }
+  const m = readMarker();
+  if (!m) { console.error('marker.js waive-critical: no hay marker activo para esta sesión'); process.exit(1); }
+  let runDir = null;
+  try {
+    const storyAbs = resolveStoryPath(m.storyPath, m) || undefined;
+    runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs);
+  } catch (e) { console.error(`marker.js waive-critical: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2); }
+  if (!runDir) { console.error('marker.js waive-critical: la story no da una clave para su carpeta de corrida'); process.exit(2); }
+  const caminos = () => {
+    const rs = cw.sesionQueReenvia();
+    return [...cw.caminos({ marker: __filename, ruleId: rule, file: file || '<archivo>', relaySession: rs.valor }), ...(rs.aviso ? [`   (sin reenvío: ${rs.aviso})`] : [])];
+  };
+
+  let entrada;
+  if (tiene('--terminal')) {
+    const waiver = require('./lib/runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la firma: seguí ahí.');
+      const v = waiver.abrirVentana({ script: __filename, args: ['waive-critical', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js waive-critical: ${v.estado === 'vencida' ? 'la ventana venció sin firmar' : `no pude abrir la ventana (${v.motivo})`} — no se eximió nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (!waiver.hasTty()) {
+      console.error('🔒 marker.js waive-critical --terminal BLOQUEADO — necesita una terminal de verdad: lo corre el dev, no el agente.');
+      console.error(`     node ${__filename} waive-critical ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
+      process.exit(2);
+    }
+    let resp;
+    try {
+      resp = waiver.promptTty(
+        `\n════════ EXIMIR UN CRÍTICO · story ${m.storyId} ════════\n` +
+        `Regla: ${rule}${file ? `\nArchivo: ${file}` : ''}\nPor qué: ${reason}\n\n¿Lo eximís? Un crítico eximido va al commit sin arreglar. (si / no) > `,
+      );
+    } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
+    if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js waive-critical: no lo eximiste — el crítico sigue abierto.'); process.exit(1); }
+    if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js waive-critical: la frase no coincide — no se eximió nada.'); process.exit(1); }
+    const quien = process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user';
+    entrada = { tipo: 'manual', quien, via: 'waive-critical (terminal)' };
+  } else {
+    const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m.startedAt });
+    if (!r.ok) {
+      console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — ${r.motivo}.`);
+      if (r.sinConversacion) console.error('   Sin la conversación no puedo comprobar el ok: que el dev lo firme por la terminal (--terminal).');
+      console.error('   Un crítico lo decide una persona. Los caminos:');
+      for (const l of caminos()) console.error(l);
+      process.exit(1);
+    }
+    entrada = r.entrada;
+  }
+  // Primero el renglón del registro del arnés (que el agente no puede escribir): es lo que hace valer la constancia al
+  // cerrar. Si no quedó escrito, no se anota nada ni se anuncia un éxito que después el cierre contradiría.
+  const constancia = { ts: nowIso(), rule_id: rule, file, reason, ...entrada };
+  appendLog('gates.log', { name: 'critical-waiver', status: 'ok', story: m.storyId, rule, file, ts: constancia.ts, tipo: constancia.tipo, quien: constancia.quien, via: constancia.via, huella: cw.huella(constancia) });
+  const enRegistro = cw.fueraDelRegistro(constancia, { story: m.storyId });
+  if (enRegistro) {
+    console.error(`🚫 marker.js waive-critical: no se eximió ${rule} — no pude dejar el renglón en el registro del arnés (${enRegistro}). Sin él la exención no vale.`);
+    process.exit(2);
+  }
+  const linea = cw.anotar(runDir, constancia);
+  anotarAprobacion(m, { que: `exencion ${rule}${file ? ` en ${file}` : ''}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien,
+    ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
+  console.error(`✅ ${rule}${file ? ` en ${file}` : ''} eximido (${linea.tipo === 'manual' ? 'manual' : 'automático, por delegación'}, ${linea.quien}${linea.delegacion ? ` por ${linea.delegacion}` : ''}). Ahora sí se puede anotar como waived en findings.json.`);
+  process.exit(0);
+}
+
 // ============================================================
 // DODRT-C6 — waiver runtime USER-ONLY (llave TTY, 2026-07-10)
 // ============================================================
 // La ÚNICA vía para saltear la verificación runtime por-AC. TTY-only por construcción:
 // el agente corre sin terminal controladora → promptTty() tira. El humano confirma en su
 // terminal. El agente NO puede ejecutar esto con éxito. Ver lib/runtime-waiver.js.
-function cmdRuntimeWaiver(storyArg) {
+function cmdRuntimeWaiver(storyArg, argv = []) {
   const waiver = require('./lib/runtime-waiver.js');
   const rm = require('./runtime-matrix.js');
 
@@ -3255,6 +3379,13 @@ function cmdRuntimeWaiver(storyArg) {
     console.error('  El path va POSICIONAL (no hay flag `--story`) y conviene ABSOLUTO:');
     console.error(`    node ${__filename} runtime-waiver /abs/path/a/la-story.md`);
     process.exit(2);
+  }
+
+  // Con el ok del dev escrito en el chat (o reenviado por la sesión que declara la organización), sin
+  // terminal. El agente nunca firma por su cuenta: la cita tiene que estar en un mensaje de la persona.
+  if (argv.includes('--approved-by') || argv.includes('--quote') || argv.includes('--relayed-by')) {
+    runtimeWaiverConOk(storyPath, argv, m);
+    return;
   }
 
   // 🔴 Windows (decisión del dueño, 2026-10-15): no hay /dev/tty. El comando se vuelve a lanzar en una ventana de consola
@@ -3732,7 +3863,10 @@ switch (cmd) {
     cmdSnapshotIter(arg1, process.argv.slice(4));
     break;
   case 'runtime-waiver':
-    cmdRuntimeWaiver(arg1);
+    cmdRuntimeWaiver(arg1, process.argv.slice(4));
+    break;
+  case 'waive-critical':
+    cmdWaiveCritical(process.argv.slice(3));
     break;
   case 'mark-adversarial-launched':
     cmdMarkAdversarialLaunched(arg1, arg2);
