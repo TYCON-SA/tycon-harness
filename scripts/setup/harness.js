@@ -302,10 +302,16 @@ function applierKnowsReport(script) {
  * es suya. Un registro que no se lee es `[]`, y se dice: esa corrida no saca ninguna regla vieja.
  */
 function managedBefore(ctx, log) {
-  try { const st = loadState(ctx); return st && Array.isArray(st.managed) ? st.managed : []; } catch (e) {
-    if (log) log(`piezas compartidas: no pude leer el registro (${(e && e.code) || (e && e.message) || e}): esta vez no saco permisos de lectura viejos`);
+  const say = (why) => { if (log) log(`piezas compartidas: no pude leer el registro (${why}): esta vez no saco permisos de lectura viejos`); };
+  try {
+    // `read` devuelve `{ status, state }`: lo anotado está en `state.managed`, y sirve aunque el estado tenga otro
+    // problema (un árbol que no está, un campo de más); sólo un archivo que no se pudo leer no trae nada
+    const r = loadState(ctx);
+    const st = r && r.state;
+    if (st && Array.isArray(st.managed)) return st.managed;
+    if (r && r.status !== 'missing') say(r.reason || r.status);
     return [];
-  }
+  } catch (e) { say((e && e.code) || (e && e.message) || e); return []; }
 }
 
 /**
@@ -4844,4 +4850,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore };

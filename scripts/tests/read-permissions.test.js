@@ -208,6 +208,26 @@ test('T6 ReadRules_ActualizarSumaYSaca @story-8.66 @ac-4 — una skill nueva sum
   } finally { fs.rmSync(m.home, { recursive: true, force: true }); }
 });
 
+test('T6b ReadRules_ActualizarLeeElRegistroReal @story-8.66 @ac-4 — lo anotado antes sale del registro de la máquina, no de una lista armada a mano', () => {
+  // medido en el laboratorio: con el registro leído con la forma equivocada, «lo anotado antes» salía vacío y una skill
+  // que dejaba de estar enlazada conservaba su regla. Acá el registro se escribe donde lo deja el instalador
+  const m = maquina();
+  try {
+    const ST = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'state.js'));
+    const pieza = { kind: 'setting', where: m.settings, id: `${RP.PREFIX}Read(~/.claude/skills/vieja/**)`, value: 'Read(~/.claude/skills/vieja/**)' };
+    const { file } = ST.paths(m.home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schema: 1, tree: m.tree, sources: [], managed: [pieza] }));
+    const H = require(path.join(ROOT, 'scripts', 'setup', 'harness.js'));
+    assert.deepStrictEqual(H.managedBefore({ home: m.home, env: m.env }, null), [pieza]);
+    // y un registro ilegible se dice (no se calla como «no había nada»)
+    fs.writeFileSync(file, '{ roto');
+    const dichas = [];
+    assert.deepStrictEqual(H.managedBefore({ home: m.home, env: m.env }, (l) => dichas.push(l)), []);
+    assert.ok(dichas.some((l) => /no pude leer el registro/.test(l)), dichas.join('\n'));
+  } finally { fs.rmSync(m.home, { recursive: true, force: true }); }
+});
+
 test('T7 ReadRules_DesinstalarSacaSoloLasPropias @story-8.66 @ac-5 — saca las anotadas; sin nada más, sin permissions', () => {
   const m = maquina();
   try {
