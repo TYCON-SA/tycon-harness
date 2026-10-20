@@ -60,6 +60,34 @@ function splitSegments(cmd) {
   return String(cmd).split(/\s*(?:&&|\|\||;|\||\n)\s*/).filter(Boolean);
 }
 
+/**
+ * Los destinos de un cp / mv: con `-t` / `--target-directory` (también `-rt`, `-t<carpeta>`), la carpeta y cada archivo
+ * que llega a ella; si no, el último token una vez sacadas las redirecciones del final (`cp a b 2>&1`).
+ */
+function cpMvDest(seg) {
+  // un comentario al final no es parte del comando
+  const sinComentario = seg.replace(/(^|\s)#.*$/, '');
+  const sinRedir = sinComentario.replace(/[ \t]*(?:&|\d)?>{1,2}(?:\||&)?[ \t]*(?:'[^']*'|"[^"]*"|[^\s'"|;&<>]+)?/g, ' ');
+  const words = (sinRedir.trim().match(new RegExp(Q, 'g')) || []).map((w) => {
+    const mm = w.match(new RegExp(`^${Q}$`));
+    return mm ? tok(mm, 1) : null;
+  }).filter(Boolean);
+  // con varios -t vale el último, como en cp
+  let dir = null;
+  const fuera = new Set([0]);   // el nombre del comando, y lo que nombra la carpeta
+  for (let i = 0; i < words.length; i++) {
+    const largo = /^--target-directory=(.+)$/.exec(words[i]);
+    const pegado = /^-t(.+)$/.exec(words[i]);
+    if (largo) { dir = largo[1]; fuera.add(i); } else if ((/^-[a-zA-Z]*t$/.test(words[i]) || words[i] === '--target-directory') && words[i + 1]) {
+      dir = words[i + 1]; fuera.add(i).add(i + 1); i++;
+    } else if (pegado) { dir = pegado[1]; fuera.add(i); }
+  }
+  // sin -t: el último argumento que no es una opción (`cp a b -f`, `Copy-Item a b -Force`, `cp a b --`)
+  if (dir === null) { const t = words.slice(1).filter((w) => !w.startsWith('-')).pop(); return t ? [t] : []; }
+  const fuentes = words.filter((w, i) => !fuera.has(i) && !w.startsWith('-'));
+  return [dir, ...fuentes.map((f) => `${dir.replace(/[\\/]+$/, '')}/${f.split(/[\\/]/).pop()}`)];
+}
+
 function lastWord(seg) {
   const words = seg.trim().match(new RegExp(Q, 'g')) || [];
   if (!words.length) return null;
@@ -78,8 +106,10 @@ function lastWord(seg) {
 function stripNonCommandText(s) {
   // Heredocs: <<EOF / <<-EOF / <<'EOF' / <<"EOF" … hasta la línea que es sólo el delimitador.
   let t = String(s).replace(/(<<-?[ \t]*(['"]?)([A-Za-z_][\w]*)\2[^\n]*\n)[\s\S]*?\n[ \t]*\3[ \t]*(?=\n|$)/g, '$1');
-  // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas).
-  t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g, (m, pre, q) => `${pre}${q}${q}`);
+  // Strings entre comillas que no siguen a un operador de redirección / tee: se vacían (quedan las comillas), salvo
+  // los que pueden ser un nombre de archivo (sin espacios ni operadores): `cp a "<dir>/b.md"` sigue nombrando su destino.
+  t = t.replace(/(^|[^>\w])(?<!tee[ \t]+)(?<!>[ \t]*)(['"])((?:\\.|(?!\2)[^\\])*)\2/g,
+    (m, pre, q, body) => (/^[^\s'"|;&<>`()]+$/.test(body) ? m : `${pre}${q}${q}`));
   return t;
 }
 
@@ -90,13 +120,13 @@ function leadingCd(cmd) {
 }
 
 /** Devuelve los paths (tal cual aparecen) que el comando escribe. */
-function extractWriteTargets(cmd) {
+function extractWriteTargets(cmd, { keep = null } = {}) {
   const out = new Set();
   const raw = String(cmd || '');
   const s = stripNonCommandText(raw);
 
-  // 1) redirecciones: `> f`, `>> f`, `2> f` (no `>&2`, no `<`)
-  const reRedirect = new RegExp(`(?:^|[^<>&])\\d?>{1,2}[ \\t]*${Q}`, 'g');
+  // 1) redirecciones: `> f`, `>> f`, `2> f`, `&> f`, `>| f`, `>& f` (no `>&2`, no `<`)
+  const reRedirect = new RegExp(`(?:^|[^<>&])(?:&|\\d)?>{1,2}(?:\\||&(?![\\d-]))?[ \\t]*${Q}`, 'g');
   let m;
   while ((m = reRedirect.exec(s))) {
     const t = tok(m, 1);
@@ -114,26 +144,41 @@ function extractWriteTargets(cmd) {
     }
   }
 
-  // 3) sed -i / --in-place / perl -i / -pi / -ni : todo token con extensión de código del segmento
+  // 3) sed -i / --in-place / perl -i / -pi / -ni : todo token con extensión de código del segmento, o que quien llama
+  //    quiere mirar igual (`keep`: el estado y el árbol instalado, sea cual sea la extensión)
   for (const seg of splitSegments(s)) {
     // Anclados al INICIO del segmento (H3): `grep -i "sed" src/a.ts` no es un sed -i.
     const head = seg.trim().replace(/^(?:\w+=\S+\s+)*(?:sudo\s+)?/, '');
     const isSedI = /^sed\b/.test(head) && /(^|\s)(-i\b|-[a-zA-Z]*i[a-zA-Z]*\b(?=\s)|--in-place)/.test(head);
-    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z]*i[a-zA-Z]*(\s|$)/.test(head);
+    const isPerlI = /^perl\b/.test(head) && /(^|\s)-[a-zA-Z]*i\S*(\s|$)/.test(head);
     if (isSedI || isPerlI) {
       const words = seg.match(new RegExp(Q, 'g')) || [];
-      for (const w of words) {
+      // el nombre del comando y, si no hay -e / -f, la expresión (el primer argumento) no son archivos: `keep` no los mira
+      const conExpresionAparte = /(^|\s)(-[a-zA-Z]*[ef]|--expression|--file)/.test(head) || isPerlI;
+      let args = 0;
+      let esValorDeE = false;   // lo que sigue a -e / --expression es la expresión, no un archivo
+      let anterior = null;
+      // en el comando escrito, ¿hay un `-i ''` de verdad (el sufijo vacío de Mac) o es una expresión que se vació?
+      const sufijoVacio = /(^|\s)-i\s+(''|"")(\s|$)/.test(raw);
+      for (const w of words.slice(1)) {
         const mm = w.match(new RegExp(`^${Q}$`));
         const t = mm ? tok(mm, 1) : null;
-        if (t && !t.startsWith('-') && isCodeFile(t)) out.add(t);
+        if (t == null) continue;
+        const previo = anterior; anterior = t;
+        if (t.startsWith('-')) { esValorDeE = /^(-[a-zA-Z]*e|--expression)$/.test(t); continue; }
+        if (esValorDeE) { esValorDeE = false; continue; }
+        // `sed -i ''` (Mac): el `''` es el sufijo de -i. Si no, una expresión con espacios llega vaciada y ocupa su lugar
+        if (t === '') { if (!(isSedI && previo === '-i' && sufijoVacio)) args++; continue; }
+        args++;
+        const esExpresion = !conExpresionAparte && args === 1;
+        if (isCodeFile(t) || (keep && !esExpresion && keep(t))) out.add(t);
       }
     }
     // 4) cp / mv → destino = último token del segmento. También sus formas de PowerShell (Copy-Item /
     //    Move-Item y sus alias copy / cpi / move / mi; no distingue mayúsculas): por la herramienta PowerShell de
     //    Windows (2026-10-04).
     if (/^(?:\w+=\S+\s+)*(?:sudo\s+)?(?:cp|mv)\b/.test(seg.trim()) || /^(?:copy-item|move-item|copy|cpi|move|mi)\b/i.test(seg.trim())) {
-      const t = lastWord(seg);
-      if (t) out.add(t);
+      for (const t of cpMvDest(seg)) out.add(t);
     }
   }
 
@@ -234,8 +279,8 @@ const { expandirRuta } = require('./lib/command-vars.js');
  * Cada destino de escritura del comando, con su ruta absoluta: `[{ raw, abs, sinResolver: [nombres] }]`.
  * `sinResolver` lista lo que no se pudo resolver (vacía si se resolvió todo).
  */
-function destinosResueltos(cmd, cwd, platform = process.platform) {
-  return extractWriteTargets(cmd).map((raw) => {
+function destinosResueltos(cmd, cwd, platform = process.platform, { keep = null } = {}) {
+  return extractWriteTargets(cmd, { keep }).map((raw) => {
     const { valor, sinResolver } = expandirRuta(cmd, raw);
     return { raw, abs: resolveTarget(valor, cwd, platform, { homeVariable: true }), sinResolver };
   });
@@ -310,24 +355,33 @@ function handle(event, opts = {}) {
   if (event?.tool_name && event.tool_name !== 'Bash' && event.tool_name !== 'PowerShell') return null;
   const cmd = event?.tool_input?.command;
   if (!cmd) return null;
-  const targets = extractWriteTargets(cmd);
-  if (!targets.length) return null;
-
   const baseCwd = nativePath(event?.cwd || process.cwd());
   const cdDir = leadingCd(cmd);
   const cwd = cdDir ? resolveTarget(cdDir, baseCwd) : baseCwd;
-  const sessionId = resolveSessionId(event?.session_id);
   const io = require('./lib/story-gate-io.js');
   const stateDir = opts.stateDir || io.DEFAULT_STATE_DIR;
+  const installedTree = require('./lib/installed-tree.js');
+  const installedRoots = Array.isArray(opts.installedRoots) ? opts.installedRoots : io.defaultInstalledRoots();
+  const { isInside } = require('./lib/atdd-preedit.js');
+  // el estado y el árbol instalado del arnés se miran por ruta real, sea cual sea la extensión
+  const stateReal = installedTree.realPath(stateDir);
+  const protegido = (abs) => {
+    const real = installedTree.realPath(abs);
+    return isInside(stateDir, abs) || isInside(stateReal, real) || installedTree.inside(installedRoots, real, { real: true });
+  };
+  const keep = (t) => protegido(resolveTarget(expandirRuta(cmd, t).valor, cwd, process.platform, { homeVariable: true }));
+  const targets = extractWriteTargets(cmd, { keep });
+  if (!targets.length) return null;
+
+  const sessionId = resolveSessionId(event?.session_id);
   // story 7.25: con las variables del comando (y del ambiente) expandidas; lo no resuelto queda anotado para el mensaje
-  const resueltos = destinosResueltos(cmd, cwd);
+  const resueltos = destinosResueltos(cmd, cwd, process.platform, { keep });
   const absTargets = resueltos.map((d) => d.abs);
   const sinResolverDe = new Map(resueltos.filter((d) => d.sinResolver.length).map((d) => [d.abs, d]));
   // Antes de decidir y aunque los frenos estén apagados: dónde escribió la consola es un dato de la
   // corrida, no una decisión del freno (story 2.19).
   anotarEscriturasConsola(stateDir, sessionId, absTargets);
   if (laneOff && skillOff) return null;
-  const { isInside } = require('./lib/atdd-preedit.js');
   const via = `Bash: ${String(cmd).replace(/\s+/g, ' ').slice(0, 120)}`;
 
   // ── Portón de CARRIL (código + estado del pipeline) ──────────────────────────────────────────
@@ -339,9 +393,10 @@ function handle(event, opts = {}) {
       // …salvo que la extensión ESCRITA (sin variables) diga que no es código: `$OUT/notes.md` pasa como cualquier .md
       const extLiteral = /\.([^./\\$`{}]+)$/.exec(path.basename(abs));
       const quizasCodigo = isCodeFile(abs) || (sinResolverDe.has(abs) && !extLiteral);
-      if (!quizasCodigo && !isInside(stateDir, abs)) continue;
-      if (isCodeFile(abs) || isInside(stateDir, abs)) {
-        const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir });
+      const enProtegido = protegido(abs);
+      if (!quizasCodigo && !enProtegido) continue;
+      if (isCodeFile(abs) || enProtegido) {
+        const r = io.evaluate({ filePath: abs, sessionId, cwd, via, stateDir, installedRoots });
         if (r.verdict.action === 'block') return { block: r.message + '\n' };
       }
       if (quizasCodigo) passedCode.push(abs);

@@ -29,9 +29,20 @@ const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2)
 const { execFileSync } = require('child_process');
 
 const gate = require('./story-gate.js');
+const installedTree = require('./installed-tree.js');   // el árbol instalado del arnés
 const { isInside } = require('./atdd-preedit.js');
 
 const DEFAULT_STATE_DIR = path.join(stateDirOf(os.homedir()));
+
+// Las raíces del árbol instalado se guardan una vez encontradas (el despachador corre in-process). Una respuesta vacía
+// no se guarda: si la instalación aparece después, la próxima escritura ya la ve.
+let installedRootsMemo = null;
+function defaultInstalledRoots() {
+  if (installedRootsMemo) return installedRootsMemo;
+  const r = installedTree.roots({ home: os.homedir() });
+  if (r.length) installedRootsMemo = r;
+  return r;
+}
 const STALE_HOURS = 6; // mismo TTL que los markers ajenos en on-prompt.js
 const DISCOVERY_BUDGET_MS = Number(process.env.TYCON_STORY_SCAN_BUDGET_MS) || 500;
 
@@ -263,8 +274,11 @@ function appendLog(stateDir, fileName, sessionId, obj) {
  * @param {string} [p.stateDir] override para tests
  * @returns {{ verdict: {action, kind?, reason}, message: string|null, ctx: object }}
  */
-function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR }) {
+function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR, installedRoots }) {
   const abs = path.isAbsolute(String(filePath)) ? String(filePath) : path.resolve(cwd || process.cwd(), String(filePath));
+  const roots = Array.isArray(installedRoots) ? installedRoots : defaultInstalledRoots();
+  const realFilePath = installedTree.realPath(abs);
+  const realStateDir = installedTree.realPath(stateDir);
   const marker = readMarker(stateDir, sessionId);
   const adhoc = readAdhoc(stateDir, sessionId);
 
@@ -274,18 +288,19 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR 
   // SIEMPRE como booleano: si no, la lógica pura caería al respaldo por carpeta, que es el agujero.
   const hipotetico = (isHarness) => gate.computeStoryGate({
     filePath: abs, stateDir, homeDir: os.homedir(), repoRoot: '/__unknown__', repoHasTycon: true, repoHasStories: true,
-    marker, adhoc, isHarness,
+    marker, adhoc, isHarness, realFilePath, installedRoots: roots, realStateDir,
   });
   let pre = hipotetico(false);
-  if (pre.action === 'block' && pre.kind !== 'state-dir' && isHarnessRepo(abs)) pre = hipotetico(true);
+  if (pre.action === 'block' && pre.kind !== 'state-dir' && pre.kind !== 'installed-tree' && isHarnessRepo(abs)) pre = hipotetico(true);
   // Si con un repo "hipotéticamente bajo el arnés" ya pasa, pasa (no-código, harness, marker OK, ad-hoc OK).
-  // Si bloquea por state-dir o plan, bloquea sin mirar el repo. Sólo no-lane / adhoc-cap dependen del repo.
+  // Si bloquea por state-dir, installed-tree o plan, bloquea sin mirar el repo. Sólo no-lane / adhoc-cap dependen del repo.
   let repo = { repoRoot: null, repoHasTycon: false, repoHasStories: false, discoveryPartial: false };
   let verdict = pre;
   if (pre.action === 'block' && (pre.kind === 'no-lane' || pre.kind === 'adhoc-cap')) {
     repo = repoContext(abs);
     verdict = gate.computeStoryGate({
       filePath: abs, stateDir, homeDir: os.homedir(), ...repo, marker, adhoc, isHarness: false,
+      realFilePath, installedRoots: roots, realStateDir,
       gateEnabled: gateEnabledForRepo(repo.repoRoot),
     });
   }
@@ -315,5 +330,5 @@ module.exports = {
   DEFAULT_STATE_DIR, STALE_HOURS, LANE_RECENT_PROMPTS,
   readMarker, readAdhoc, writeAdhoc, recordAdhocFile, adhocPath, listOtherMarkers,
   lanePath, readLane, recordPrompt,
-  repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo,
+  repoContext, gateEnabledForRepo, appendLog, evaluate, isHarnessRepo, defaultInstalledRoots,
 };
