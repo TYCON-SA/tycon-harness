@@ -491,6 +491,15 @@ function sinPipelinePorRegla(lector) {
   return Object.fromEntries(lector.MERGE_RULES.map((r) => [r, lector.suitesWithoutPipeline(r)]));
 }
 
+/**
+ * Qué hace cada regla, por regla: `{ <regla>: 'server-if-required' | 'machine-always' | 'server-only' }` del lector del
+ * árbol, para la línea debajo de cada selector de la pantalla; `null` con un lector anterior (y la pantalla no la pone).
+ */
+function queHacePorRegla(lector) {
+  if (!lector || typeof lector.suitesWithRule !== 'function' || !Array.isArray(lector.MERGE_RULES)) return null;
+  return Object.fromEntries(lector.MERGE_RULES.map((r) => [r, lector.suitesWithRule(r)]));
+}
+
 /** El valor como texto con las claves ordenadas: el orden en que vienen no es un cambio. */
 function canonico(v) {
   if (Array.isArray(v)) return `[${v.map(canonico).join(',')}]`;
@@ -1654,6 +1663,17 @@ function pantalla(idioma = 'es') {
     var que = sp && sp[regla];
     return { declarado: false, texto: que === 'machine' ? T('pantalla.correnEnLaMaquinaDelDev') : que === 'server-if-any-check' ? T('pantalla.elServidorSiLaRama') : T('pantalla.sinPipeline') };
   }
+  // story 2.59.2: qué hace la regla elegida, con la respuesta del lector que el servidor manda en «queHace» (como la nota
+  // «sin pipeline»). Un repo sin regla propia sigue la de la organización; la organización sin declarar es automático. Sin
+  // esa respuesta (un lector anterior), ninguna línea
+  var QUE_HACE = { 'server-if-required': 'pantalla.queHaceAutomatico', 'machine-always': 'pantalla.queHaceSiempre', 'server-only': 'pantalla.queHaceConfiar' };
+  function queHace(regla, qh, deRepo) {
+    if (!qh) return null;
+    var vacia = regla == null || regla === '';
+    if (vacia && deRepo) return el('span', { class: 'que-hace', text: T('pantalla.sigueLaReglaDeArriba') });
+    var k = QUE_HACE[qh[vacia ? 'automatico' : regla]];
+    return k ? el('span', { class: 'que-hace', text: T(k) }) : null;
+  }
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
     var box = el('div', { class: 'pila' });
@@ -1665,7 +1685,11 @@ function pantalla(idioma = 'es') {
     }
     d.merge_suites = d.merge_suites || {};
     var ms = d.merge_suites;
-    box.appendChild(selector(T('pantalla.laReglaDeLaOrganizacion'), ms.default, [['', T('pantalla.sinDeclararAutomatico')]].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; render(); }, 'merge_suites.default', pr));
+    var qh = s.extras && s.extras.queHace;
+    var deOrg = selector(T('pantalla.laReglaDeLaOrganizacion'), ms.default, [['', T('pantalla.sinDeclararAutomatico')]].concat(REGLAS), function (v) { if (v) ms.default = v; else delete ms.default; render(); }, 'merge_suites.default', pr);
+    var lineaOrg = queHace(ms.default, qh, false);
+    if (lineaOrg) deOrg.appendChild(lineaOrg);
+    box.appendChild(deOrg);
     var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.porRepo') }), el('p', { class: 'sub-d', text: T('pantalla.cadaRepoUsaLaRegla') }));
     ms.repos = ms.repos || [];
     if (!ms.repos.length) sub.appendChild(el('p', { class: 'muted', text: T('pantalla.ningunRepoTodavia') }));
@@ -1685,7 +1709,7 @@ function pantalla(idioma = 'es') {
       var editar = el('button', { class: 'editar', type: 'button', text: '✎', title: T('pantalla.editarElRepo'), 'aria-label': T('pantalla.editarElRepo') + ' ' + texto, 'aria-expanded': abierto ? 'true' : 'false', onclick: function () { ABIERTOS[i] = !abierto; render(); } });
       var sacar = el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarElRepo'), 'aria-label': T('pantalla.quitarElRepo') + ' ' + texto, onclick: function () { ms.repos.splice(i, 1); ABIERTOS = {}; render(); } });
       var celdas = [el('div', { class: 'donde', role: 'cell' }, el('span', { class: 'ic', role: 'img', title: gh ? 'GitHub' : 'Azure DevOps', 'aria-label': gh ? 'GitHub' : 'Azure DevOps', text: gh ? 'GH' : 'Az' })),
-        el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel),
+        el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel, queHace(e.rule, qh, true)),
         pc.noUsado
           ? el('div', { class: 'pc', role: 'cell', title: pc.texto + ' · ' + T('pantalla.noSeUsaConEstaRegla') }, el('span', { class: 'ignorado', text: pc.texto }), el('span', { class: 'nota', text: T('pantalla.noSeUsaConEstaRegla') }))
           : el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];
@@ -2284,7 +2308,7 @@ function pantalla(idioma = 'es') {
 
 module.exports = {
   SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
-  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy,
+  problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,
 };

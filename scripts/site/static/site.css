@@ -211,6 +211,10 @@ select.corto.bad{border-color:var(--bad);color:var(--bad-ink)}
 .tabla2 .pc.vacio{color:var(--muted)}
 .tabla2 .pc .ignorado{color:var(--muted)}
 .tabla2 .pc .nota{color:var(--muted);font-size:11.5px;font-style:italic}
+/* story 2.59.2: qué hace la regla elegida, debajo de su selector */
+.que-hace{display:block;color:var(--muted);font-size:11.5px;line-height:1.35;margin-top:3px}
+.tabla2 .r > .regla:has(.que-hace){flex-direction:column;align-items:stretch;justify-content:center;gap:0}
+.tabla2 .r > .regla .que-hace{max-width:34ch}
 .tabla2 .r.abierto > *{background:var(--wash)}
 .tabla2 .r > .edit{grid-column:1/-1;display:grid;gap:8px;padding:6px 10px 12px;border-bottom:1px solid var(--line)}
 .tabla2 .edit .fila.repo{padding-top:0}

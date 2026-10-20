@@ -2865,6 +2865,90 @@ test('T3 Repos_PipelineNoUsado_HojaConTema @story-2.59.1 @ac-4', () => {
   for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, r.trim().slice(0, 80));
 });
 
+// ── qué hace cada regla, debajo de su selector ──────────────────────────────────────────────────────────────────────
+const QUE_HACE = { automatico: 'server-if-required', 'siempre-en-la-maquina': 'machine-always', 'confiar-en-el-servidor': 'server-only' };
+const LINEA = {
+  org: 'sigue la regla de arriba',
+  automatico: 'el servidor, si la rama le exige las pruebas; si no, la máquina del dev',
+  siempre: 'en la máquina del dev, aunque el servidor también las corra',
+  confiar: 'sólo el servidor; sirve si de verdad las corre',
+};
+
+test('T1 Repos_QueHaceCadaRegla_DebajoDelSelector @story-2.59.2 @ac-1 @ac-3', async () => {
+  const ms = { default: 'automatico', repos: [
+    { repo: GH('sin-regla') },
+    { repo: GH('auto'), rule: 'automatico' },
+    { repo: GH('siempre'), rule: 'siempre-en-la-maquina', full_tests_pipeline: 'ci-s' },
+    { repo: GH('confiar'), rule: 'confiar-en-el-servidor' },
+  ] };
+  const extras = { sinPipeline: SIN_PIPE, queHace: QUE_HACE };
+  const p = await compacta(secSuites(ms, [], extras));
+  const linea = (nodo) => { const q = p.de(nodo, 'que-hace'); return q.length === 1 ? p.texto(q[0]) : null; };
+  const deRepo = (i) => linea(p.de(p.renglones(p.tablas()[0])[i], 'regla')[0]);
+  const orgSel = () => p.todo(p.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.default');
+  const deOrg = () => { const sel = orgSel(); const caja = p.todo(p.sec('suites')).find((n) => n.tag === 'div' && n.attrs.class === 'campo' && p.todo(n).includes(sel)); return linea(caja); };
+  assert.deepStrictEqual([0, 1, 2, 3].map(deRepo), [LINEA.org, LINEA.automatico, LINEA.siempre, LINEA.confiar]);
+  assert.strictEqual(deOrg(), LINEA.automatico);
+  // al cambiar la opción, cambia la línea (la del repo y la de la organización)
+  p.todo(p.de(p.renglones(p.tablas()[0])[1], 'regla')[0]).find((n) => n.tag === 'select').on.change({ target: { value: 'confiar-en-el-servidor' } });
+  await p.esperar();
+  assert.strictEqual(deRepo(1), LINEA.confiar);
+  orgSel().on.change({ target: { value: 'siempre-en-la-maquina' } });
+  await p.esperar();
+  assert.strictEqual(deOrg(), LINEA.siempre);
+  assert.strictEqual(deRepo(0), LINEA.org, 'el repo sin regla propia sigue diciendo que sigue la de arriba');
+  // «sin declarar» en la organización: rige automático
+  orgSel().on.change({ target: { value: '' } });
+  await p.esperar();
+  assert.strictEqual(deOrg(), LINEA.automatico);
+  // sin tocar, lo mismo que llegó; la nota «sin pipeline» y el pipeline que la regla no usa, igual
+  const q = await compacta(secSuites(ms, [], extras));
+  assert.strictEqual(JSON.stringify((await q.revisado()).merge_suites), JSON.stringify(ms));
+  const pc = (i) => p.texto(q.de(q.renglones(q.tablas()[0])[i], 'pc')[0]);
+  assert.strictEqual(pc(0), 'corren en la máquina del dev');
+  assert.match(pc(2), /ci-s.*no se usa con esta regla/);
+});
+
+test('T2 Repos_QueHace_SaleDelLector @story-2.59.2 @ac-2', async () => {
+  assert.deepStrictEqual(ORG.queHacePorRegla(TR), Object.fromEntries(TR.MERGE_RULES.map((r) => [r, TR.suitesWithRule(r)])));
+  assert.deepStrictEqual(ORG.queHacePorRegla(TR), QUE_HACE);
+  assert.strictEqual(TR.suitesWithRule('otra'), null);
+  assert.strictEqual(ORG.queHacePorRegla({ MERGE_RULES: TR.MERGE_RULES, suitesWithoutPipeline: TR.suitesWithoutPipeline }), null, 'un lector anterior');
+  // sin la respuesta del lector, ninguna línea
+  const p = await compacta(secSuites({ default: 'automatico', repos: [{ repo: GH('c'), rule: 'automatico' }] }));
+  assert.strictEqual(p.todo(p.sec('suites')).filter((n) => n.attrs && n.attrs.class === 'que-hace').length, 0);
+  // una respuesta incompleta o con un valor que la pantalla no conoce: esa regla queda sin línea, las demás la tienen
+  const raro = { automatico: 'otra-cosa', 'siempre-en-la-maquina': 'machine-always' };
+  const r = await compacta(secSuites({ default: 'automatico', repos: [
+    { repo: GH('a'), rule: 'automatico' }, { repo: GH('s'), rule: 'siempre-en-la-maquina' }, { repo: GH('c'), rule: 'confiar-en-el-servidor' }, { repo: GH('o'), full_tests_pipeline: 'ci' },
+  ] }, [], { sinPipeline: SIN_PIPE, queHace: raro }));
+  const lineaDe = (i) => { const q = r.de(r.de(r.renglones(r.tablas()[0])[i], 'regla')[0], 'que-hace'); return q.length ? r.texto(q[0]) : null; };
+  assert.deepStrictEqual([0, 1, 2, 3].map(lineaDe), [null, LINEA.siempre, null, LINEA.org]);
+  // el servidor manda la respuesta con el lector del árbol
+  await conPerfil({ repos: { ...TR_BASE, merge_suites: SUITES_5 } }, async ({ seccion }) => {
+    assert.deepStrictEqual((await seccion('suites')).extras.queHace, QUE_HACE);
+  });
+});
+
+test('T3 Repos_QueHace_TextosEnLosDosIdiomas @story-2.59.2 @ac-4', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const claves = { 'pantalla.sigueLaReglaDeArriba': [LINEA.org, 'follows the rule above'],
+    'pantalla.queHaceAutomatico': [LINEA.automatico, "the server, if the branch requires the tests; otherwise the dev's machine"],
+    'pantalla.queHaceSiempre': [LINEA.siempre, "on the dev's machine, even if the server also runs them"],
+    'pantalla.queHaceConfiar': [LINEA.confiar, 'only the server; useful if it really runs them'] };
+  for (const [k, [es, en]] of Object.entries(claves)) {
+    assert.deepStrictEqual([t('es', k), t('en', k)], [es, en], k);
+    assert.ok(ORG.pantalla().includes(`'${k}'`), `${k} lo usa la pantalla`);
+  }
+});
+
+test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const reglas = css.match(/[^{}]*\.que-hace\b[^{}]*\{[^{}]*\}/g) || [];
+  assert.ok(reglas.length >= 1, 'la regla de la línea');
+  for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, r.trim().slice(0, 80));
+});
+
 // ── Quién puede reenviar el ok de un dev (approvals.relay_session) ─────────────────────────────────────
 test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja Claude»', () => {
   const s = ORG.seccionPorId('aprobaciones');
