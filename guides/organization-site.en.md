@@ -388,6 +388,10 @@ only: they are changed with a request in their repo.
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
   not impose any team's style. It lives in `team-repos.json` → `stack`, in the profile repo. A maintainer reviews it. A
   tool that is not on the list is requested with «Ask your agent» (below, §Your technology).
+- **Who relays a developer's OK** (*Quién reenvía el ok de un dev*): the coordinating session that may pass a
+  developer's OK on to the session doing the work, to waive a reviewer's critical finding or sign off a criterion that
+  cannot be tested live. Empty means none: the developer writes the OK in their own session's chat. It only counts from
+  here, never from a machine.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night); a machine can turn one off for itself. It lives in `team-profile.json`, in the profile repo. A maintainer
   reviews it.

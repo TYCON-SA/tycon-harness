@@ -1279,7 +1279,8 @@ test('writeFindings + findings-status: escribe validado, status pasa de missing(
   const findingsFile = path.join(repo, 'in.json');
   fs.writeFileSync(findingsFile, JSON.stringify([
     { rule_id: 'DOTNET-W3', severity: 'WARNING', advisor: 'a', file: 'f.cs', disposition: 'fixed', reason: 'r' },
-    { ruleId: 'SEC-C1', severity: 'critical', disposition: 'waived', summary: 's' },
+    // un crítico eximido necesita la constancia del ok de una persona (critical-waiver.test.js): acá, arreglado
+    { ruleId: 'SEC-C1', severity: 'critical', disposition: 'fixed', summary: 's' },
   ]));
   const w = writeFindings({ story, repo, findings: findingsFile });
   assert.equal(w.wrote, true);
@@ -1298,7 +1299,7 @@ test('writeFindings + findings-status: escribe validado, status pasa de missing(
   const written = JSON.parse(fs.readFileSync(w.path, 'utf8'));
   assert.equal(written[1].rule_id, 'SEC-C1');
   assert.equal(written[1].severity, 'CRITICAL');
-  assert.equal(written[1].disposition, 'waived');
+  assert.equal(written[1].disposition, 'fixed');
   fs.rmSync(repo, { recursive: true, force: true });
 });
 

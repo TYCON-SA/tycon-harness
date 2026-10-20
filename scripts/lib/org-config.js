@@ -62,7 +62,7 @@ const SECCIONES = Object.freeze([
   // máquina. `rutas` (opcional): las hojas que la sección cambia dentro de sus `claves`; lo demás de esas claves queda
   // como estaba (Telegram y CodeGraph, de cada máquina, no se editan desde la sección de integraciones).
   // quién puede reenviar el ok de un dev para eximir un crítico (approvals.relay_session; vale sólo desde el perfil)
-  Object.freeze({ id: 'aprobaciones', titulo: 'Quién puede reenviar el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
+  Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta Claude', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
   Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
@@ -921,6 +921,7 @@ function pantalla(idioma = 'es') {
     cobertura: { t: T('pantalla.coberturaDeLasPruebas'), d: T('pantalla.llegaATodasLasMaquinas5'), corto: T('pantalla.coberturaDeLasPruebas') },
     tecnologia: { t: T('pantalla.tecTuTecnologia'), d: T('pantalla.tecLlegaATodasLasMaquinas'), corto: T('pantalla.tecTuTecnologia') },
     respuesta: { t: T('pantalla.comoContestaClaude'), d: T('pantalla.elIdiomaElEstiloY'), corto: T('pantalla.comoContestaClaude') },
+    aprobaciones: { t: T('pantalla.quienReenviaElOkTitulo'), d: T('pantalla.quienReenviaElOkDescripcion'), corto: T('pantalla.quienReenviaElOkTitulo') },
     integraciones: { t: T('pantalla.integraciones'), d: T('pantalla.queServiciosUsaCadaMaquina'), corto: T('pantalla.integraciones') },
     ado: { t: 'Azure DevOps', d: T('pantalla.laOrganizacionDeLaPlataforma', { plataforma: 'Azure DevOps' }), corto: 'Azure DevOps' },
     actualizacion: { t: T('pantalla.comoSeActualizanLasMaquinas'), d: T('pantalla.queVersionTomaCadaMaquina'), corto: T('pantalla.actualizacion') },

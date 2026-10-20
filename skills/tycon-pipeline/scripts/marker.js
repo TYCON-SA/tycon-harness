@@ -1112,8 +1112,9 @@ function cmdCompleteStep(nRaw, flags) {
       }
       console.error(`⚠️  complete-step ${n}: ${motivo}: no pude mirar si hay críticos eximidos sin el ok de una persona.`);
     }
-    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano (revisor de fallas silenciosas)
-    if (v.error && v.existe) {
+    // un findings.json que está y no se lee frena: es justo el que se pudo reescribir a mano. En el 8 lo frena con su propio
+    // mensaje el control de findings.json que sigue (computeFindingsStatus); acá, el 7
+    if (v.error && v.existe && n === 7) {
       appendLog('gates.log', { name: 'critical-waivers', status: 'blocked', story: marker.storyId, step: n, error: v.error });
       console.error(`marker.js complete-step ${n} BLOQUEADO — ${v.error}: no puedo saber si hay críticos eximidos sin el ok de una persona. Volvé a escribirlo con pipeline.js write-findings.`);
       process.exit(1);

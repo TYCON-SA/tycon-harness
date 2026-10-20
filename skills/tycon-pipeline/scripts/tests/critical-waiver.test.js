@@ -213,7 +213,7 @@ test('Step8_CriticoEximidoSinConstancia_Frena @story-8.63 @ac-6', () => {
   fs.writeFileSync(path.join(lab.runDir, 'findings.json'), '{roto');
   r = lab.marker(['complete-step', '8', '--out-of-order']);
   assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /findings\.json no se lee/);
+  assert.match(r.stderr, /findings\.json/);
   // con la constancia del ok, el cierre del 8 ya no frena por esto (lo que frene después es de otros portones)
   fs.writeFileSync(path.join(lab.runDir, 'findings.json'), JSON.stringify([CRITICO]));
   fs.rmSync(path.join(lab.runDir, 'critical-waivers.jsonl'));

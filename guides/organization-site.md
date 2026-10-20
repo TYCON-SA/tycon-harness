@@ -371,6 +371,9 @@ en su repo.
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
   arnés no impone el estilo de ningún equipo. Queda en `team-repos.json` → `stack`, en el repo del perfil. Lo revisa quien
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
+- **Quién reenvía el ok de un dev**: la sesión coordinadora que puede pasarle el ok de un dev a la sesión que
+  implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en vivo. Vacío, ninguna:
+  el ok lo escribe el dev en el chat de su sesión. Vale sólo desde acá, nunca desde una máquina.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
   puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
