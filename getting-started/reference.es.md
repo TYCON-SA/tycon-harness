@@ -546,6 +546,14 @@ su archivo de métricas (`TYCON_RETRO_PENDING=0` lo apaga). El comando de más a
 `.tycon/`. Dos apagados del portón de edición: `TYCON_STORY_GATE=off` en tu ambiente (el agente no puede ponerla en la
 sesión en curso), y `pipeline.story_gate: false` en `.tycon/advisors.yaml`, commiteado, para ese repo.
 
+**La prueba con navegador**: cuando una historia cambia una pantalla y el repo todavía no tiene cómo probar en un
+navegador, el arnés te ofrece prepararla. Con tu sí instala Playwright en el repo (como herramienta de desarrollo) y su
+navegador, y escribe `playwright.config.ts`, una primera prueba en `tests/e2e/` y el bloque `e2e:` de
+`.tycon/advisors.yaml`. Para volver atrás, pedile a tu agente «deshacé la preparación de la prueba con navegador»; a mano
+es `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js undo --repo <repo>`. Borra sólo lo que nadie
+cambió y no borra el navegador, que comparten tus otros proyectos. Con tu no, la historia queda con la prueba pendiente,
+a la vista, y la próxima historia con pantalla te la vuelve a ofrecer.
+
 ## Sin red
 
 Sin red, la instalación igual termina (exit 0). El paso de terceros dice en una línea que no pudo preguntar a los

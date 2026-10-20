@@ -552,6 +552,14 @@ its metrics file exists (`TYCON_RETRO_PENDING=0` turns that off). The command ab
 `.tycon/` folder. Two ways to turn the edit gate off: `TYCON_STORY_GATE=off` in your environment (the agent cannot set
 it for the running session), and `pipeline.story_gate: false` in `.tycon/advisors.yaml`, committed, for that repo.
 
+**The browser test**: when a story changes a screen and the repo has no way yet to test in a browser, the harness offers
+to set it up. With your yes it installs Playwright in the repo (as a development tool) and its browser, and writes
+`playwright.config.ts`, a first test in `tests/e2e/` and the `e2e:` block of `.tycon/advisors.yaml`. To undo it, ask your
+agent to undo the browser test setup; by hand it is
+`node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js undo --repo <repo>`. It removes only what nobody
+changed and it does not remove the browser, which your other projects share. With your no, the story keeps the test
+pending, in plain sight, and the next story with a screen offers it again.
+
 ## Offline
 
 Without network, the install still finishes (exit 0). The third-party step says in one line that it could not reach

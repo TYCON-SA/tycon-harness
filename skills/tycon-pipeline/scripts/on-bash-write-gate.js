@@ -454,14 +454,19 @@ if (require.main === module) {
   let r = null;
   try { r = handle(event || {}); } catch (e) { logHookError(e); r = null; }
   if (r && r.block) { process.stderr.write(r.block); process.exit(2); }
-  // Antes de cerrar el paso 3, el plan se lo muestra el arnés a la persona si el agente no lo hizo (lib/plan-display.js).
-  try {
-    const io = require('./lib/story-gate-io.js');
-    const pd = require('./lib/plan-display.js').planParaMostrar({
-      command: event && event.tool_input && event.tool_input.command,
-      sessionId: resolveSessionId(event && event.session_id), stateDir: io.DEFAULT_STATE_DIR,
-    });
-    if (pd) { process.stdout.write(JSON.stringify({ systemMessage: pd.systemMessage })); pd.anotar(); }
-  } catch (e) { logHookError(e); }
+  // Antes de cerrar el paso 3, el arnés le muestra a la persona el plan si el agente no lo hizo (lib/plan-display.js) y,
+  // si la historia cambia una pantalla en un repo sin prueba con navegador, la oferta de prepararla (lib/browser-test.js).
+  // Van en un solo aviso.
+  const avisos = [];
+  const pedido = {
+    command: event && event.tool_input && event.tool_input.command,
+    sessionId: resolveSessionId(event && event.session_id), stateDir: require('./lib/story-gate-io.js').DEFAULT_STATE_DIR,
+  };
+  try { const pd = require('./lib/plan-display.js').planParaMostrar(pedido); if (pd) avisos.push(pd); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude armar el plan para mostrarlo (${e.message})\n`); }
+  try { const of = require('./lib/browser-test.js').offerToShow(pedido); if (of) avisos.push(of); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude decidir si va la oferta de la prueba con navegador (${e.message})\n`); }
+  if (avisos.length) {
+    process.stdout.write(JSON.stringify({ systemMessage: avisos.map((a) => a.systemMessage).join('\n\n') }));
+    for (const a of avisos) { try { a.anotar(); } catch (e) { logHookError(e); } }
+  }
   process.exit(0);
 }
