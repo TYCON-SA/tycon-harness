@@ -3537,12 +3537,17 @@ function computeToolingExpected(repo, opts = {}) {
     : 'NO se puede levantar acá — el binario NO está en esta máquina: AVISAR al user con la acción concreta de instalación (codegraph: guides/integrations/codegraph-mcp.md; codebase_memory: conseguir el binario e instalar con `codebase-memory-mcp install`). Mientras tanto, fallback.';
 
   const expected = [];
-  if (fs.existsSync(path.join(repo, '.codegraph'))) {
+  // CodeGraph se espera si el repo tiene su índice, o si la integración está prendida (la organización la usa): ahí,
+  // una máquina sin el binario se avisa aunque el repo todavía no tenga `.codegraph/`
+  const hasIndex = fs.existsSync(path.join(repo, '.codegraph'));
+  if (hasIndex || (integrations && integrations.codegraph === true)) {
     const bin = findBinary(KNOWN_CLI.codegraph.bin);
     expected.push({
       name: 'codegraph',
       mcp_prefix: 'mcp__codegraph__',
-      why: `.codegraph/ presente en ${repo} — el repo tiene índice CodeGraph (regla del equipo: "CodeGraph primero" para todo lookup de símbolos)`,
+      why: hasIndex
+        ? `.codegraph/ presente en ${repo} — el repo tiene índice CodeGraph (regla del equipo: "CodeGraph primero" para todo lookup de símbolos)`
+        : 'integrations.codegraph prendida — tu organización usa CodeGraph; el índice lo arma cada máquina (scripts/setup/install-codegraph)',
       binary_found: bin,
       cli_fallback: KNOWN_CLI.codegraph.cli,
       fallback: 'grep/Glob (más lento, sin call-graph ni impact analysis)',

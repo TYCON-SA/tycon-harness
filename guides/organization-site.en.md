@@ -431,8 +431,9 @@ only: they are changed with a request in their repo.
   cannot be tested live. Empty means none: the developer writes the OK in their own session's chat. It only counts from
   here, never from a machine.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
-  night); a machine can turn one off for itself. It lives in `team-profile.json`, in the profile repo. A maintainer
-  reviews it.
+  night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
+  for each dev and the harness warns when a machine lacks it. Telegram is not here: it belongs to each machine. It lives
+  in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.

@@ -411,8 +411,10 @@ en su repo.
 - **Quién reenvía el ok de un dev**: la sesión coordinadora que puede pasarle el ok de un dev a la sesión que
   implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en vivo. Vacío, ninguna:
   el ok lo escribe el dev en el chat de su sesión. Vale sólo desde acá, nunca desde una máquina.
-- **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
-  puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
+  código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
+  a cada dev y el arnés avisa si una máquina no lo tiene. Telegram no está acá: es de cada máquina. Queda en
+  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
   Corridas muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.

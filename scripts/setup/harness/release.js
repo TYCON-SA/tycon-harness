@@ -1558,6 +1558,8 @@ function cmdInstall(ctx, H) {
     // 7. la copia fija de arranque, y —sólo con Claude Code— su línea de arranque y el @import (en Codex el arranque es
     // su hook, que corre esta misma copia fija, y las reglas van en AGENTS.md: los pone el enchufe de Codex)
     if (H.copyBootstrap(ctx, tree, state, { version: target.version })) pieces.push('bootstrap');
+    // CodeGraph, si la organización lo prende y faltaba: lo cubrió el «¿Instalo?»; si falla, el arnés sigue y lo dice
+    if (asked.codegraphInstall) { const cg = H.codegraphInstall({ tree, env: ctx.env }); if (cg.note) notes.push(cg.note); }
     if (withClaude) {
       const SL = require('./startup-line.js');
       const n = SL.checkNode({ env: ctx.env });

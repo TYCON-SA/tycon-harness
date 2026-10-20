@@ -7,7 +7,12 @@ consultan ese grafo en vez de escanear archivos con `grep` — menos tokens, men
 
 100% local, MIT. Soporta C#, TypeScript, JavaScript, Python, Go, Rust, Java y ~12 lenguajes más.
 
-> Setup **opcional** — cada dev decide si lo activa. No es parte del flujo TYCON obligatorio.
+> **La organización puede prenderlo para todo el equipo** desde su sitio (Configuración → Integraciones →
+> `integrations.codegraph`). Prendido así, el instalador del arnés lo suma a su plan como un renglón más (cubierto por el
+> mismo «¿Instalo?») y lo instala con `install-codegraph.sh --tool-only` (`-ToolOnly` en Windows): el CLI y el hook de
+> arranque, sin indexar ninguna carpeta; el índice de cada repo lo arma el hook la primera vez que lo abrís. Si esa
+> instalación falla, la del arnés sigue y lo dice. `/tycon-harness` (doctor) y el pipeline avisan si una máquina no lo
+> tiene. Sin la organización, sigue siendo **opcional**: cada dev decide si lo activa.
 
 ---
 
