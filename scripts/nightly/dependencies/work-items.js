@@ -100,6 +100,83 @@ const ORDEN_SEV = { critical: 2, high: 1 };
 // Bugs reales (una crítica en un proyecto de cliente, 2026-09-15). Medido ese día: los 8 proyectos aceptan estos cuatro valores.
 // Lo que no está en la tabla no se inventa: el campo no se manda.
 const SEVERIDAD_AZURE = { critical: '1 - Critical', high: '2 - High', moderate: '3 - Medium', low: '4 - Low' };
+const CAMPO_SEVERIDAD = 'Microsoft.VSTS.Common.Severity';
+const CAMPO_REPRO = 'Microsoft.VSTS.TCM.ReproSteps';
+// los obligatorios que el pedido ya trae (o que Azure pone solo): el resto tiene que cubrirlo la configuración
+const CAMPOS_PROPIOS = new Set(['System.Title', 'System.State', 'System.AreaId', 'System.AreaPath', 'System.IterationId', 'System.IterationPath',
+  'System.TeamProject', 'System.WorkItemType', 'System.Description', 'System.Tags', 'System.AssignedTo', 'System.Reason']);
+
+/** Los campos de un tipo en un proyecto: `{ ok, campos: Set, obligatorios: [] }`, `{ ok: false, noExiste }` o `{ ok: false, motivo }`. */
+function leerCamposDelTipo(az, proyecto, tipo) {
+  const r = az(['devops', 'invoke', '--area', 'wit', '--resource', 'workitemtypesfield', '--route-parameters', `project=${proyecto}`, `type=${tipo}`, '--api-version', '7.1'],
+    { valida: (v) => (v && Array.isArray(v.value) && v.value.every((x) => x && typeof x.referenceName === 'string') ? null : 'la respuesta no trae «value[].referenceName»') });
+  if (!r.ok) return /VS402323/.test(r.motivo) ? { ok: false, noExiste: true, motivo: r.motivo } : { ok: false, motivo: `no pude leer los campos del tipo ${tipo} en ${proyecto} (${r.motivo})` };
+  // un obligatorio con valor por defecto lo completa Azure (medido: Priority y ValueArea del Product Backlog Item)
+  const sinDefecto = (x) => x.defaultValue === undefined || x.defaultValue === null || x.defaultValue === '';
+  return { ok: true, campos: new Set(r.valor.value.map((x) => x.referenceName)), obligatorios: r.valor.value.filter((x) => x.alwaysRequired === true && sinDefecto(x)).map((x) => x.referenceName) };
+}
+
+/** El elemento de backlog por defecto de un proyecto (la categoría Microsoft.RequirementCategory): `{ ok, tipo }` o `{ ok: false, motivo }`. */
+function leerTipoDeBacklog(az, proyecto) {
+  const r = az(['devops', 'invoke', '--area', 'wit', '--resource', 'workitemtypecategories', '--route-parameters', `project=${proyecto}`, '--api-version', '7.1'],
+    { valida: (v) => (v && Array.isArray(v.value) ? null : 'la respuesta no trae «value»') });
+  if (!r.ok) return { ok: false, motivo: `no pude leer la categoría de elemento de backlog de ${proyecto} (${r.motivo}): no se inventa un tipo` };
+  const c = r.valor.value.find((x) => x && x.referenceName === 'Microsoft.RequirementCategory');
+  const tipo = c && c.defaultWorkItemType && typeof c.defaultWorkItemType.name === 'string' ? c.defaultWorkItemType.name : null;
+  return tipo ? { ok: true, tipo } : { ok: false, motivo: `${proyecto} no tiene una categoría de elemento de backlog legible: no se inventa un tipo` };
+}
+
+/**
+ * El tipo del pedido en un proyecto, una vez por proyecto y por corrida: el que configura la organización
+ * (`work_items.type`) si existe en el proyecto; si no, o sin configuración, su elemento de backlog. Devuelve
+ * `{ ok, tipo, campos, obligatorios, deFabrica, motivoFabrica }` o `{ ok: false, motivo }` (no se crea: falla cerrado).
+ */
+function cacheDeTipos(az, workItems) {
+  const cache = new Map();
+  return (proyecto) => {
+    if (cache.has(proyecto)) return cache.get(proyecto);
+    let v;
+    const configurado = workItems && typeof workItems.type === 'string' ? workItems.type : null;
+    const c = configurado ? leerCamposDelTipo(az, proyecto, configurado) : null;
+    if (c && c.ok) v = { ok: true, tipo: configurado, campos: c.campos, obligatorios: c.obligatorios, deFabrica: false };
+    else if (c && !c.noExiste) v = { ok: false, motivo: c.motivo };
+    else {
+      const b = leerTipoDeBacklog(az, proyecto);
+      if (!b.ok) v = { ok: false, motivo: b.motivo };
+      else {
+        const cb = leerCamposDelTipo(az, proyecto, b.tipo);
+        v = cb.ok ? { ok: true, tipo: b.tipo, campos: cb.campos, obligatorios: cb.obligatorios, deFabrica: true,
+          motivoFabrica: configurado ? `el tipo «${configurado}» no existe en ${proyecto}: va como ${b.tipo}, su elemento de backlog` : null }
+          : { ok: false, motivo: cb.motivo };
+      }
+    }
+    cache.set(proyecto, v);
+    return v;
+  };
+}
+
+/**
+ * Los campos del pedido: los fijos de la configuración, pisados por los de su gravedad (sólo si el tipo es el
+ * configurado), y Severity y ReproSteps sólo si el tipo los tiene. `{ ok, campos: [k=v] }` o `{ ok: false, motivo }` si
+ * queda un obligatorio del tipo sin cubrir: nunca un pedido a medias.
+ */
+function camposDelPedido(t, workItems, severidad, fCuerpo) {
+  const valores = {};
+  if (!t.deFabrica && workItems) {
+    // sólo lo que el lector deja viajar: un comentario («__nota») o un campo que el pedido ya fija no van a Azure
+    const copiar = (m) => { for (const [k, v] of Object.entries(m || {})) if (operaciones.workItemFieldOk(k, v)) valores[k] = v; };
+    copiar(workItems.fixed_fields);
+    copiar(workItems.by_severity && workItems.by_severity[severidad]);
+    // un campo configurado que el tipo no tiene: Azure lo rechazaría; se dice antes, con su nombre
+    const ajenos = Object.keys(valores).filter((k) => !t.campos.has(k));
+    if (ajenos.length) return { ok: false, motivo: `el tipo ${t.tipo} no tiene ${ajenos.join(', ')}: revisá work_items en operations.json` };
+  }
+  if (t.campos.has(CAMPO_REPRO)) valores[CAMPO_REPRO] = `@${fCuerpo}`;
+  if (t.campos.has(CAMPO_SEVERIDAD) && Object.prototype.hasOwnProperty.call(SEVERIDAD_AZURE, severidad)) valores[CAMPO_SEVERIDAD] = SEVERIDAD_AZURE[severidad];
+  const faltan = t.obligatorios.filter((k) => !CAMPOS_PROPIOS.has(k) && !Object.prototype.hasOwnProperty.call(valores, k));
+  if (faltan.length) return { ok: false, motivo: `el tipo ${t.tipo} exige ${faltan.join(', ')} y la configuración no ${faltan.length > 1 ? 'los cubre' : 'lo cubre'}: no se crea un pedido a medias` };
+  return { ok: true, campos: Object.entries(valores).map(([k, v]) => `${k}=${v}`) };
+}
 
 // ── utilidades ─────────────────────────────────────────────────────────────────────────────────
 
@@ -251,7 +328,7 @@ function responsables(a, azure) {
     return { ok: false, motivo: `sin responsable de respaldo: ${a.operations} no sirve (${porque}) — no se adivina` };
   }
   const bp = r.data.owners.by_project || {};
-  return { ok: true, fuente: 'operations.json', respaldo: r.data.owners.default,
+  return { ok: true, fuente: 'operations.json', respaldo: r.data.owners.default, workItems: r.data.work_items || null,
            declarado: (p) => (Object.prototype.hasOwnProperty.call(bp, p) ? operaciones.ownerFor(r.data, p) : null) };
 }
 
@@ -392,6 +469,7 @@ function hablar(ctx) {
     simulado, tope, fichas_vivas: 0, fichas_sin_pedido: 0, creados: [], adoptados: [], existentes: 0,
     fallidos: [], postergados: [], sin_iteracion: [], sin_dueno_unico: [], pagados_avisados: [], reabiertos: [],
     deuda_avisada: [], sin_pedido: [], cerrados_vivos_avisados: [], huerfanos_adoptados: [], huerfanos_sin_adoptar: [],
+    tipo_de_fabrica: [],
   };
   const textos = [];
   const unaVez = (lista, item) => { if (!lista.some((x) => x.proyecto === item.proyecto)) lista.push(item); };
@@ -437,6 +515,9 @@ function hablar(ctx) {
     return respaldo ? { ok: true, ...respaldo } : { ok: false, motivo: motivoRespaldo };
   };
   if (elegidas.length) respaldoDe();
+  // el tipo del pedido de cada proyecto, con lo que configura la organización (operations.json → work_items)
+  const workItems = quien.ok ? (quien.workItems || null) : null;
+  const tipoDe = cacheDeTipos(az, workItems);
 
   // Lo que se lee UNA vez por proyecto por corrida (no por ficha).
   const cacheDueno = new Map(), cacheIter = new Map();
@@ -538,22 +619,30 @@ function hablar(ctx) {
           : `<p>Asignado al responsable de respaldo (<strong>${escHtml(dueno.asignado)}</strong>) — ${escHtml(dueno.motivo)}.</p>`,
       ].join('\n');
 
+      const t = tipoDe(p);
+      if (!t.ok) { fallo('tipo', t.motivo); continue; }
+      if (t.deFabrica && t.motivoFabrica) unaVez(res.tipo_de_fabrica, { proyecto: p, tipo: t.tipo, motivo: t.motivoFabrica });
+      const severidadFicha = f.fi.escalares.severidad;
+      // los campos se arman antes del simulado: un obligatorio sin cubrir se ve también sin crear nada
+      const pc = camposDelPedido(t, workItems, severidadFicha, '<cuerpo>');
+      if (!pc.ok) { fallo('campos', pc.motivo); continue; }
       if (simulado) {
-        res.creados.push({ ficha: idFicha, proyecto: p, id: null, asignado_a: dueno.asignado, motivo_dueno: dueno.motivo, iteracion: it.ruta });
+        res.creados.push({ ficha: idFicha, proyecto: p, id: null, tipo: t.tipo, asignado_a: dueno.asignado, motivo_dueno: dueno.motivo, iteracion: it.ruta });
         textos.push({ proyecto: p, ficha: idFicha, titulo, cuerpo, comentario });
         pedidoDelPaquete.set(clavePaquete(f, p), { ficha: idFicha, id: null });
         continue;
       }
       const fCuerpo = archivo('cuerpo.html', cuerpo);
-      const severidad = Object.prototype.hasOwnProperty.call(SEVERIDAD_AZURE, f.fi.escalares.severidad)
-        ? [`Microsoft.VSTS.Common.Severity=${SEVERIDAD_AZURE[f.fi.escalares.severidad]}`] : [];
-      const c = az(['boards', 'work-item', 'create', '--type', 'Bug', '--project', p, '--title', titulo,
+      const { campos } = camposDelPedido(t, workItems, severidadFicha, fCuerpo);
+      // la gravedad va siempre en una etiqueta (y en el cuerpo): no todos los tipos tienen Severity
+      const gravedad = /^[a-z]+$/.test(String(severidadFicha || '')) ? `; arnes-gravedad:${severidadFicha}` : '';
+      const c = az(['boards', 'work-item', 'create', '--type', t.tipo, '--project', p, '--title', titulo,
         '--iteration', it.ruta, '--description', `@${fCuerpo}`,
         // 🔴 UN solo --fields con todo: repetido, argparse se queda con el último y las etiquetas —la
         // identidad del pedido— se perderían en silencio. Y la asignación va ACÁ, cruda, y no por
         // `--assigned-to` (ver `deducirDueno`): así la valida Azure en vez de perderse sin aviso.
-        '--fields', `System.Tags=arnes-hallazgo; arnes:${idFicha}`, `Microsoft.VSTS.TCM.ReproSteps=@${fCuerpo}`,
-        `System.AssignedTo=${dueno.asignado}`, ...severidad],
+        '--fields', `System.Tags=arnes-hallazgo; arnes:${idFicha}${gravedad}`,
+        `System.AssignedTo=${dueno.asignado}`, ...campos],
       { valida: (v) => (v && Number.isInteger(v.id) ? null : 'la respuesta no trae «id»') });
       if (!c.ok) { fallo('crear', c.motivo); continue; }
       const id = c.valor.id;
@@ -563,7 +652,7 @@ function hablar(ctx) {
       catch (e) { fallo('escribir-ficha', `el Bug ${id} se creó pero no pude anotarlo en la ficha: ${e.message} — mañana se adopta por la etiqueta`); }
       const k = comentar(id, comentario);
       if (!k.ok) fallo('comentario', `el Bug ${id} se creó sin su comentario: ${k.motivo}`);
-      res.creados.push({ ficha: idFicha, proyecto: p, id, asignado_a: dueno.asignado, motivo_dueno: dueno.motivo, iteracion: it.ruta });
+      res.creados.push({ ficha: idFicha, proyecto: p, id, tipo: t.tipo, asignado_a: dueno.asignado, motivo_dueno: dueno.motivo, iteracion: it.ruta });
     }
   }
 
@@ -1222,12 +1311,13 @@ function imprimir(r, textos, hoy) {
   if (r.simulado) console.log('🟡 MODO SIMULADO: se leyó Azure y se calculó lo que habría salido. No se creó ni se comentó nada, y las fichas no se tocaron.');
   console.log(`Fichas vivas: ${r.fichas_vivas} · sin pedido en algún proyecto: ${r.fichas_sin_pedido} · tope: ${r.tope} ficha(s) por noche · pedidos que ya existían: ${r.existentes}`);
   for (const c of r.creados) {
-    console.log(`${r.simulado ? '🟡 habría creado' : '🆕 creado'} en ${c.proyecto} (ficha ${c.ficha})${c.id ? ` → Bug ${c.id}` : ''} · asignado a ${c.asignado_a} (${c.motivo_dueno}) · iteración ${c.iteracion}`);
+    console.log(`${r.simulado ? '🟡 habría creado' : '🆕 creado'} en ${c.proyecto} (ficha ${c.ficha})${c.id ? ` → ${c.tipo || 'pedido'} ${c.id}` : (c.tipo ? ` como ${c.tipo}` : '')} · asignado a ${c.asignado_a} (${c.motivo_dueno}) · iteración ${c.iteracion}`);
   }
   for (const x of r.adoptados) console.log(`🔗 adoptado en ${x.proyecto} (ficha ${x.ficha}) → Bug ${x.id}: Azure ya lo tenía por la etiqueta`);
   for (const x of r.fallidos) console.log(`❌ ${x.paso} · ${x.proyecto} (ficha ${x.ficha}): ${x.motivo}`);
   for (const x of r.postergados) console.log(`⏳ postergada por el tope: ${x.ficha} (${x.proyectos.join(', ')}) — entra primero mañana`);
   for (const x of r.sin_iteracion) console.log(`🗓️ ${x.proyecto}: ${x.motivo} → el pedido va a la raíz del backlog`);
+  for (const x of r.tipo_de_fabrica || []) console.log(`🧩 ${x.proyecto}: ${x.motivo}`);
   for (const x of r.sin_dueno_unico) console.log(`👤 ${x.proyecto}: ${x.motivo} → se asigna al responsable de respaldo`);
   for (const x of r.reabiertos || []) console.log(`🔁 volvió a aparecer en ${x.proyecto}: Bug ${x.id} reabierto (ficha ${x.ficha})`);
   for (const x of r.pagados_avisados) console.log(`📣 «ya no aparece» en ${x.proyecto} (Bug ${x.id}, ficha ${x.ficha})${x.cerrado === true ? ' · Bug cerrado' : x.cerrado === false ? ' · ya estaba cerrado' : ''}`);

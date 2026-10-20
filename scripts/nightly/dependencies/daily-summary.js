@@ -84,7 +84,7 @@ const RUBROS = {
   // `pedidos_creados` (2026-09-15): los Bugs que la noche abrió. El primer resumen con pedidos reales
   // no los nombraba — la noticia de la noche no estaba en el mensaje de la noche.
   dependencias: ['nuevos', 'pedidos_creados', 'pedidos_cerrados', 'pedidos_reabiertos', 'vivas_por_proyecto', 'edad_mas_vieja', 'aceptadas_sin_resolver', 'rechazadas_sin_deuda',
-    'deuda_con_pedido_abierto', 'postergadas_por_presupuesto', 'proyectos_sin_iteracion',
+    'deuda_con_pedido_abierto', 'postergadas_por_presupuesto', 'proyectos_sin_iteracion', 'proyectos_con_tipo_de_fabrica',
     // story 4.5: el cruce «pedido cerrado, vulnerabilidad viva» — se LEEN de `cruce`, no se recalculan
     'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto'],
   vigilante: ['nuevos', 'pendientes', 'aceptadas_sin_story', 'no_medido', 'ignoradas_hoy'],
@@ -93,7 +93,7 @@ const ETIQUETA = {
   nuevos: 'nuevos', pedidos_creados: 'pedidos creados', pedidos_cerrados: 'Bugs cerrados por el arnés', pedidos_reabiertos: 'Bugs reabiertos por el arnés', vivas_por_proyecto: 'vivas', edad_mas_vieja: 'la viva más vieja',
   aceptadas_sin_resolver: 'aceptadas sin resolver', rechazadas_sin_deuda: 'rechazadas sin deuda',
   deuda_con_pedido_abierto: 'deuda con pedido abierto', postergadas_por_presupuesto: 'postergadas por presupuesto',
-  proyectos_sin_iteracion: 'proyectos sin iteración', pendientes: 'pendientes',
+  proyectos_sin_iteracion: 'proyectos sin iteración', proyectos_con_tipo_de_fabrica: 'proyectos sin el tipo configurado', pendientes: 'pendientes',
   aceptadas_sin_story: 'aceptadas sin story', no_medido: 'no medido', ignoradas_hoy: 'ignoradas hoy',
   pedidos_cerrados_con_vivas: 'pedidos cerrados con la vulnerabilidad viva', resueltas_con_pedido_abierto: 'resueltas con pedido abierto',
 };
@@ -274,6 +274,11 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
   }
 
   R.proyectos_sin_iteracion = deLosPedidos('sin_iteracion', (x) => ({ proyecto: x.proyecto, motivo: x.motivo || null }));
+  // los proyectos donde el tipo que configura la organización no existe y el pedido salió como su elemento de backlog.
+  // Una noche de antes no trae la clave: entonces no había tipo configurado, así que ninguno cayó (es cero, medido)
+  R.proyectos_con_tipo_de_fabrica = p && !Array.isArray(p.tipo_de_fabrica)
+    ? { valor: [], de: null, motivo: null, simulado: !!p.simulado }
+    : deLosPedidos('tipo_de_fabrica', (x) => ({ proyecto: x.proyecto, tipo: x.tipo || null, motivo: x.motivo || null }));
 
   // 🔴 El cruce (story 4.5). Sin la clave, o con `consultado: false`, los dos rubros son `null` con el
   // motivo: «ningún pedido cerrado con la vulnerabilidad viva» sólo se puede decir habiendo leído el estado.
@@ -358,7 +363,7 @@ function identidad(nombre, r) {
       case 'pedidos_creados': case 'pedidos_cerrados': case 'pedidos_reabiertos': return orden(v.map((x) => `${x.ficha}:${x.proyecto}:${x.id}`));
       // La edad de una resuelta con pedido abierto crece sola: se compara QUIÉN está, no hace cuánto.
       case 'pedidos_cerrados_con_vivas': case 'resueltas_con_pedido_abierto': return orden(v.map((x) => `${x.ficha}:${x.proyecto}`));
-      case 'proyectos_sin_iteracion': return orden(v.map((x) => x.proyecto));
+      case 'proyectos_sin_iteracion': case 'proyectos_con_tipo_de_fabrica': return orden(v.map((x) => x.proyecto));
       case 'postergadas_por_presupuesto':
         return JSON.stringify([JSON.parse(orden(v.hallazgos.map((h) => h.id))),
           v.pedidos === null ? null : JSON.parse(orden(v.pedidos.map((x) => `${x.ficha}:${[...x.proyectos].sort().join('+')}`)))]);
@@ -501,7 +506,7 @@ function detalle(nombre, r) {
       return `aceptadas sin resolver: ${largo(v)} de ${numero(r.de)}${r.bloqueadas ? ` (${numero(r.bloqueadas)} bloqueada(s))` : ''}`;
     case 'pedidos_creados':
       return r.simulado ? `pedidos que habrían salido (simulado): ${largo(v)}` : `pedidos creados: ${largo(v)}`;
-    case 'deuda_con_pedido_abierto': case 'proyectos_sin_iteracion': return `${ETIQUETA[nombre]}: ${largo(v)}${sim(r)}`;
+    case 'deuda_con_pedido_abierto': case 'proyectos_sin_iteracion': case 'proyectos_con_tipo_de_fabrica': return `${ETIQUETA[nombre]}: ${largo(v)}${sim(r)}`;
     case 'postergadas_por_presupuesto':
       return `postergadas por presupuesto: ${largo(v && v.hallazgos)} hallazgo(s) · pedidos: ${!v || v.pedidos === null ? '?' : `${largo(v.pedidos)}${sim(r)}`}`;
     case 'pendientes':
