@@ -517,7 +517,7 @@ repo_en deriva; chunk aaaa1111; chunk cccc3333; indice 'aaaa1111' 'xxxx9999'
 repo_en sinman; chunk aaaa1111; chunk bbbb2222
 repo_en sinchunks; indice 'aaaa1111' 'bbbb2222'; rmdir "$R/.engram/chunks"
 repo_en roto;   chunk aaaa1111; printf '{"version":1,"chunks":[' > "$R/.engram/manifest.json"
-node -e 'const a=require(process.argv[1]);const r=a.engramChunksSinIndexar(process.argv[2]).sort((x,y)=>x.repo<y.repo?-1:1);process.stdout.write(JSON.stringify(r));' "$AUDIT" "$RAIZ" >"$TMP/audit.json" 2>"$TMP/err"
+node -e 'const a=require(process.argv[1]);const p=require("path");const r=a.engramChunksSinIndexar(process.argv[2]).sort((x,y)=>x.repo<y.repo?-1:1);/* cada fila dice la carpeta de su repo (varias raíces, story 2.67): se verifica y se saca para comparar la forma */if(!r.every((x)=>x.dir===p.join(process.argv[2],x.repo)))throw new Error("dir mal: "+JSON.stringify(r));process.stdout.write(JSON.stringify(r.map(({dir,...x})=>x)));' "$AUDIT" "$RAIZ" >"$TMP/audit.json" 2>"$TMP/err"
 [ "$(cat "$TMP/audit.json")" = '[{"repo":"deriva","sinIndexar":["cccc3333"],"fantasma":["xxxx9999"]},{"repo":"roto","manifestIlegible":true,"sinIndexar":[],"fantasma":[]},{"repo":"sinchunks","sinIndexar":[],"fantasma":["aaaa1111","bbbb2222"]},{"repo":"sinman","sinManifest":true,"sinIndexar":["aaaa1111","bbbb2222"],"fantasma":[]}]' ] \
   && ok "T19 engramChunksSinIndexar conserva su forma en los 5 casos (sano ausente · deriva · índice roto · sin carpeta = todo fantasma · sin índice)" \
   || no "T19 el audit devolvió $(cat "$TMP/audit.json") — $(cat "$TMP/err")"

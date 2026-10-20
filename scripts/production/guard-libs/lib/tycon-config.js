@@ -140,7 +140,7 @@ const VOCABULARIO = Object.freeze({
   // Toda clave que ese comando sabe escribir tiene que estar en este vocabulario (lo fija la prueba del freno, T56).
   // `team` y `operations`: los clones del perfil del equipo y del repo de operaciones de la organización, que edita la
   // página de configuración (`harness.js team-config`, que las pide la primera vez y las guarda con `config set`).
-  rutas: Object.freeze({ repos: 'ruta', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta', team: 'ruta-absoluta', operations: 'ruta-absoluta' }),
+  rutas: Object.freeze({ repos: 'rutas', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta', team: 'ruta-absoluta', operations: 'ruta-absoluta' }),
   // `github.token` (story 8.23, tandas B y C): el permiso de sólo lectura de GitHub, en `~/.tycon/config.json`. Tipo
   // `secreto`: este lector sabe SI está y nunca qué dice —el valor no entra a `valores` (queda `true`), no sale en
   // `explain`, `get` ni en un error, y `set` no lo escribe (lo escribe `harness.js config set github.token`, por stdin)—.
@@ -173,7 +173,8 @@ const VOCABULARIO = Object.freeze({
   // Los paquetes de revisores que se activan en un repo que no declara `packs:` (story 8.7, AC 8): `all` = todos los
   // instalados, `none` = ninguno. Lo pregunta `lib/packs.js` de agent-skills. Un paquete «opcional» es uno que quien no
   // lo usa no tiene que apagar: afuera, sin perfil, `none`; el perfil del equipo dice `all` (en el equipo nada cambia).
-  packs: Object.freeze({ default: 'opcion:all|none' }),
+  // Una lista (`["bizuit", "clients"]`) activa exactamente ésos; por variable, separada por comas.
+  packs: Object.freeze({ default: 'paquetes' }),
   // Cuánto instala el arnés (story 8.16, tanda C · AC 21): `minimal` (lo que hace falta para las guías, las skills, los
   // revisores y el pipeline como skill) o `full` (también los frenos, los bloques que cambian cómo contesta el asistente,
   // los hooks de git y las tareas de fondo). NO tiene valor por defecto: si nadie lo dice queda nulo («sin elegir») y el
@@ -183,7 +184,30 @@ const VOCABULARIO = Object.freeze({
   // de hoy: el clon en la carpeta de Claude Code; `tycon` hace que el arranque de cada máquina la mude sola a `~/.tycon`,
   // una vez. La prende el dueño en el perfil del equipo DESPUÉS de migrar su máquina a mano; hasta entonces no está.
   install: Object.freeze({ profile: 'opcion:minimal|full', home: 'opcion:claude|tycon' }),
+  // La pregunta del modelo mayor en el pase adversarial: `ask` (por defecto) = el portón la ofrece
+  // en una story pesada y el orquestador le pregunta a la persona; `never` = no se ofrece, corre el modelo que eligió el
+  // portón. Cerrada y no un sí/no, para sumar un tercer valor sin romper archivos si el dueño lo pide; hoy no hay
+  // `always` («Fable NUNCA automático» es una decisión de costo). Gana el perfil del equipo (PROFILE_WINS).
+  // 🔴 El lector del freno de producción (/opt) no la conoce hasta reinstalarlo: escrita en el archivo de una máquina
+  // con una copia vieja, ésta lee la configuración como ROTA. En el perfil no choca: no lo lee.
+  adversarial: Object.freeze({ model_question: 'opcion:ask|never' }),
+  // Cómo contesta el asistente: el idioma y el estilo del bloque de respuesta del CLAUDE.md (y del AGENTS.md),
+  // y el tope de prosa que mide el medidor de estilo. Cerrados: cada estilo es un texto revisado en
+  // claude-md-blocks/response-style/<estilo>.<idioma>.md, y un valor fuera de la lista es configuración ROTA (el
+  // sincronizador deja el bloque que había). Sin valor: `neutral` en `es`, y el tope del estilo (TOPE_POR_ESTILO).
+  response: Object.freeze({ language: 'opcion:es|en', style: 'opcion:executive|detailed|neutral', max_chars: 'entero:300-4000' }),
+  // Quién puede reenviar el ok de un dev: el nombre de la sesión (la coordinadora de una organización) cuyos
+  // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
+  // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
+  approvals: Object.freeze({ relay_session: 'texto' }),
+  // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
+  // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
+  // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
+  qa: Object.freeze({ manual_check: 'opcion:off|required' }),
 });
+// El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars`: el de `executive` es el de
+// siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
+const TOPE_POR_ESTILO = Object.freeze({ executive: 1300, detailed: 3000, neutral: 2000 });
 // Las claves que SIEMPRE tienen un valor: sin nadie que diga nada, éste, con origen `default` (la política no se apaga:
 // una máquina de afuera, sin perfil, queda en «estable» y «preguntar»; el perfil del equipo trae `latest` + `auto`).
 // `update.skills_source` nace en `separate`: sin que nadie diga nada, ninguna máquina re-apunta nada (story 8.18).
@@ -192,6 +216,8 @@ const VOCABULARIO = Object.freeze({
 const DEFAULTS = Object.freeze({
   'update.channel': 'stable', 'update.apply': 'ask', 'update.skills_source': 'separate', 'packs.default': 'none',
   'update.source': 'public', 'rutas.tree': '~/.claude/.tycon-pipeline/harness/tree',
+  'adversarial.model_question': 'ask',
+  'response.language': 'es', 'response.style': 'neutral',
 });
 // Las claves en las que el PERFIL DEL EQUIPO le gana al archivo de la máquina (story 8.29, decisión del dueño del
 // 2026-10-11). Para todo lo demás el orden es el de siempre: variable › máquina › perfil. Para éstas: variable › perfil ›
@@ -202,7 +228,36 @@ const DEFAULTS = Object.freeze({
 // máquina NO se toca: lo que tiene escrito queda ahí, sin efecto mientras el perfil declare la clave, y `explain` lo dice.
 // Una integración apagada en la máquina, en cambio, sigue apagada aunque el perfil la prenda: eso no cambió.
 // Quien quiera otros paquetes en UNA máquina del equipo usa la variable (`TYCON_PACKS_DEFAULT`), o `packs:` en el repo.
-const PROFILE_WINS = Object.freeze(['packs.default']);
+// La segunda: la pregunta del modelo mayor en el pase adversarial.
+// Apagarla es una decisión de costo del equipo, no de una máquina.
+const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question']);
+// Las claves que vale SÓLO el perfil del equipo: ni una variable ni el archivo de la máquina las cambian. El
+// perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
+// implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
+// archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
+/** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
+const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
+/** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
+function motivoPaquetes(valor) {
+  if (typeof valor === 'string') return ['all', 'none'].includes(valor.trim()) ? null : `tiene que ser all, none o una lista de nombres de paquete, no ${JSON.stringify(valor)}`;
+  if (!Array.isArray(valor) || !valor.length) return `tiene que ser all, none o una lista no vacía de nombres de paquete (para ninguno, none), no ${JSON.stringify(valor)}`;
+  const malo = valor.find((n) => typeof n !== 'string' || !NOMBRE_DE_PAQUETE.test(n));
+  if (malo !== undefined) return `${JSON.stringify(malo)} no es un nombre de paquete (minúsculas, dígitos y guiones)`;
+  if (new Set(valor).size !== valor.length) return `la lista repite un paquete: ${JSON.stringify(valor)}`;
+  return null;
+}
+/** El valor de `packs.default` escrito como texto (variable o `set`): `all`, `none` o `a,b`. `{ valor }` o `{ motivo }`. */
+function paquetesDeTexto(texto) {
+  const t = String(texto).trim();
+  if (t === 'all' || t === 'none') return { valor: t };
+  const lista = t.split(',').map((x) => x.trim());
+  const m = motivoPaquetes(lista);
+  return m ? { motivo: `«${t}»: ${m.replace(/^tiene que ser /, 'tiene que ser ')}` } : { valor: lista };
+}
+
+/** El rango `[min, max]` de un tipo `entero:min-max`, o null si no es de ese tipo. */
+function rangoDe(tipo) { const m = typeof tipo === 'string' ? /^entero:(\d+)-(\d+)$/.exec(tipo) : null; return m ? [Number(m[1]), Number(m[2])] : null; }
 /** Las opciones de un tipo `opcion:a|b`, o null si no es de ese tipo. */
 function optionsOf(tipo) { return typeof tipo === 'string' && tipo.startsWith('opcion:') ? tipo.slice('opcion:'.length).split('|') : null; }
 // Las secciones se ESCRIBEN en inglés en los archivos (story 8.9, tanda P · 2026-09-30): `paths` e `integrations`. El
@@ -293,6 +348,9 @@ const VARIABLES = Object.freeze({
   'packs.default': ['TYCON_PACKS_DEFAULT'],
   'install.profile': ['TYCON_INSTALL_PROFILE'],
   'install.home': ['TYCON_INSTALL_HOME'],
+  'response.language': ['TYCON_RESPONSE_LANGUAGE'],
+  'response.style': ['TYCON_RESPONSE_STYLE'],
+  'response.max_chars': ['TYCON_RESPONSE_MAX_CHARS'],
 });
 
 // Los interruptores por hook que ya existían siguen valiendo POR ENCIMA de la llave de su
@@ -360,9 +418,13 @@ function esRutaAbsoluta(v) { const s = String(v).trim(); return /^~(?=$|[\\/])/.
 function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'secreto') return true;   // sólo «está»: el valor no sale de su archivo
   if (tipo === 'ruta') return resolverRutaDeArchivo(valor, home);
+  // una ruta o varias (la carpeta de los repos puede ser más de una): una lista se resuelve ruta por ruta
+  if (tipo === 'rutas') return Array.isArray(valor) ? valor.map((v) => resolverRutaDeArchivo(v, home)) : resolverRutaDeArchivo(valor, home);
   if (tipo === 'ruta-absoluta') return path.normalize(expandirHome(String(valor).trim(), home));
   if (clave === 'ado.org') return normalizarOrg(valor);
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
+  if (tipo === 'paquetes' && typeof valor === 'string') return valor.trim();
+  if (Array.isArray(valor)) return valor.slice();
   return typeof valor === 'string' ? valor.trim() : valor;   // un booleano sigue siendo booleano
 }
 /** Un dato de una persona escondido en un comentario (`__doc`, `__nota`) del perfil versionado. El mensaje muestra SÓLO los
@@ -381,9 +443,8 @@ function muestra(valor) { return /^\d+$/.test(valor) ? `número de ${valor.lengt
 // para quien revisa el pull request (T3/T4/T5 de tycon-config.test.js). `clave`/`llave` no son nombres de credencial: en castellano son «la clave X» de la
 // configuración. Los valores (no los comentarios) siguen pasando por el vocabulario cerrado y por FORMAS_PERSONALES.
 const FORMAS_EN_COMENTARIO = Object.freeze([
-  // una dirección con usuario no es un email: el remoto ssh de GitHub o la URL de Azure DevOps con el usuario adelante (lo que
+  // una dirección con usuario no es un email: `git@github.com:org/repo`, `https://usuario@dev.azure.com/org` (lo que
   // documenta normalizarOrg) — sin barra antes del usuario ni `/` o `:pegado` después del dominio ([DEF-8.3.1-5])
-  // (en la copia propia del freno, sin los dos ejemplos escritos: el freno de publicar los toma por correos)
   [/(?<![\w.%+\/-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![\w.-]*(?:\/|:\S))/, 'parece un email'],
   [/\d{6,}:[A-Za-z0-9_-]{30,}/, 'parece un token de bot'],
   [/eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/, 'parece un JWT'],
@@ -642,13 +703,20 @@ function validarTipo(tipo, valor) {
     case 'texto':
     case 'ruta':
       return (typeof valor === 'string' && valor.trim()) ? null : `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
+    case 'rutas':
+      if (typeof valor === 'string' && valor.trim()) return null;
+      return (Array.isArray(valor) && valor.length && valor.every((v) => typeof v === 'string' && v.trim())) ? null : `tiene que ser una ruta o una lista de rutas (textos no vacíos), no ${JSON.stringify(valor)}`;
     case 'secreto':
       // el motivo nunca repite el valor (ni un pedazo): llega a la salida de comandos y a registros
       return (typeof valor === 'string' && valor.trim() && !/\s/.test(valor.trim())) ? null : 'tiene que ser un texto sin espacios (el valor no se muestra)';
+    case 'paquetes':
+      return motivoPaquetes(valor);
     case 'ruta-absoluta':
       if (!(typeof valor === 'string' && valor.trim())) return `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
       return esRutaAbsoluta(valor) ? null : `tiene que ser una ruta absoluta (o con ~), no ${JSON.stringify(valor)}: una relativa no se resuelve contra nada`;
     default: {
+      const rango = rangoDe(tipo);
+      if (rango) return (Number.isInteger(valor) && valor >= rango[0] && valor <= rango[1]) ? null : `tiene que ser un entero entre ${rango[0]} y ${rango[1]}, no ${JSON.stringify(valor)}`;
       const opciones = optionsOf(tipo);
       if (opciones) return (typeof valor === 'string' && opciones.includes(valor.trim())) ? null : `tiene que ser uno de: ${opciones.join(', ')} — no ${JSON.stringify(valor)}`;
       return `tipo desconocido en el vocabulario: ${tipo}`;
@@ -670,6 +738,16 @@ function valorDeEntorno(env, clave, tipo, home) {
         return { valor: DETECT, variable };
       }
       return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser 0 o 1${tipo === 'llave-o-detectar' ? ` (o ${DETECT})` : ''}` } };
+    }
+    if (tipo === 'paquetes') {
+      const p = paquetesDeTexto(v);
+      return p.motivo ? { error: { archivo: 'entorno', clave: variable, motivo: `vale ${p.motivo}` } } : { valor: p.valor, variable };
+    }
+    const rango = rangoDe(tipo);
+    if (rango) {
+      const n = /^\d+$/.test(v) ? Number(v) : NaN;
+      if (n >= rango[0] && n <= rango[1]) return { valor: n, variable };
+      return { error: { archivo: 'entorno', clave: variable, motivo: `vale «${v}»; tiene que ser un entero entre ${rango[0]} y ${rango[1]}` } };
     }
     const opciones = optionsOf(tipo);
     if (opciones) {
@@ -761,6 +839,22 @@ function cargar(opts = {}) {
     }
   }
 
+  // Las claves que vale sólo el perfil del equipo (PROFILE_ONLY) salen del perfil del ÁRBOL del arnés: ni
+  // `TYCON_PROFILE=<ruta>` ni `TYCON_PROFILE=0` las cambian (una variable la puede poner el agente que implementa).
+  let planoArbol = planoPerfil;
+  if (rp.explicito || rp.anulado) {
+    planoArbol = {};
+    const pa = perfilDelArbol(arnes);
+    const la = pa.ruta ? leerJson(pa.ruta) : { estado: 'ausente' };
+    if (la.estado === 'roto') errores.push({ archivo: pa.ruta, clave: null, motivo: la.motivo });
+    else if (la.estado === 'leido') {
+      const v = validarArchivo(la.datos, { archivo: pa.ruta, esPerfil: true, home });
+      // de ese perfil sólo importan las claves que vale sólo él: un error en otra clave lo dice su propia lectura
+      for (const e of v.errores) if (PROFILE_ONLY.some((r) => String(e.clave || '').startsWith(r.split('.')[0]))) errores.push(e);
+      for (const r of PROFILE_ONLY) if (Object.prototype.hasOwnProperty.call(v.plano, r)) planoArbol[r] = v.plano[r];
+    }
+  }
+
   const valores = Object.fromEntries(Object.keys(VOCABULARIO).map((s) => [s, {}]));
   const origenes = {};
   const variables = {};
@@ -778,6 +872,15 @@ function cargar(opts = {}) {
       const enMaquina = Object.prototype.hasOwnProperty.call(planoMaquina, ruta);
       const ganaElPerfil = PROFILE_WINS.includes(ruta) && Object.prototype.hasOwnProperty.call(planoPerfil, ruta);
       if (ganaElPerfil && enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'perfil' };
+      if (PROFILE_ONLY.includes(ruta)) {
+        if (enMaquina) shadowed[ruta] = { value: planoMaquina[ruta], origin: 'maquina', by: 'solo-perfil' };
+        else if (rp.explicito && Object.prototype.hasOwnProperty.call(planoPerfil, ruta) && planoPerfil[ruta] !== planoArbol[ruta]) {
+          shadowed[ruta] = { value: planoPerfil[ruta], origin: 'TYCON_PROFILE', by: 'solo-perfil' };
+        }
+        if (Object.prototype.hasOwnProperty.call(planoArbol, ruta)) { valores[seccion][clave] = planoArbol[ruta]; origenes[ruta] = 'perfil'; }
+        else { valores[seccion][clave] = null; origenes[ruta] = 'sin-valor'; }
+        continue;
+      }
       const e = valorDeEntorno(env, ruta, tipo, home);
       if (e && e.error) { errores.push(e.error); }
       if (e && !e.error) { valores[seccion][clave] = e.valor; origenes[ruta] = 'env'; variables[ruta] = e.variable; continue; }
@@ -849,6 +952,19 @@ function integraciones(config) {
   const out = {};
   for (const k of LAS_OCHO) { const e = estadoIntegracion(config, k).estado; out[k] = e === DETECT ? DETECT : e === 'prendida'; }
   return out;
+}
+/**
+ * Cómo contesta el asistente, según una configuración YA cargada: `{ language, style, max_chars, origen:
+ * { language, style, max_chars } }`. `max_chars` sin valor es el tope del estilo (origen `estilo`).
+ */
+function respuesta(config) {
+  const r = config.valores.response;
+  const o = config.origenes;
+  const tope = r.max_chars === null || r.max_chars === undefined ? TOPE_POR_ESTILO[r.style] : r.max_chars;
+  return {
+    language: r.language, style: r.style, max_chars: tope,
+    origen: { language: o['response.language'], style: o['response.style'], max_chars: r.max_chars === null || r.max_chars === undefined ? 'estilo' : o['response.max_chars'] },
+  };
 }
 /**
  * Las llaves de las dos herramientas (story 8.23, tanda C · AC 24), según una configuración YA cargada:
@@ -931,7 +1047,7 @@ function explicar(opts = {}) {
   const c = cargar(opts);
   const v = c.valores;
   const o = c.origenes;
-  const fmt = (x) => (x === null || x === undefined ? '' : String(x));
+  const fmt = (x) => (x === null || x === undefined ? '' : Array.isArray(x) ? x.join(', ') : String(x));
   const integracionesTexto = {};
   const estado = (llave) => {
     const val = v.integraciones[llave];
@@ -990,6 +1106,15 @@ function explicar(opts = {}) {
   L.push(`  install.profile = ${v.install.profile ? `${v.install.profile} (${o['install.profile']})` : 'sin elegir'}`);
   // dónde vive el arnés (story 8.23, tanda D): sin valor es `claude` (el clon de hoy); `tycon` muda cada máquina sola
   L.push(`  install.home = ${v.install.home ? `${v.install.home} (${o['install.home']})` : 'claude (sin valor: el clon en la carpeta de Claude Code; con tycon, cada máquina se muda sola a ~/.tycon en el arranque)'}`);
+  // la pregunta del modelo mayor en el pase adversarial: siempre con valor, siempre con origen
+  L.push(`  adversarial.model_question = ${fmt(v.adversarial.model_question)} (${o['adversarial.model_question']}${unused('adversarial.model_question')})`);
+  // quién puede reenviar el ok de un dev: sólo del perfil; lo que diga la máquina se nombra y no se usa
+  {
+    const s = c.shadowed['approvals.relay_session'];
+    const donde = s && s.origin === 'TYCON_PROFILE' ? `el perfil de TYCON_PROFILE (${c.archivos.perfil.ruta})` : c.archivos.maquina.ruta;
+    const ignorado = s ? `; ${donde} dice ${fmt(s.value)} y no se usa: vale sólo desde el perfil del equipo del árbol del arnés` : '';
+    L.push(`  approvals.relay_session = ${v.approvals.relay_session ? `${v.approvals.relay_session} (${o['approvals.relay_session']}${ignorado})` : `sin valor (nadie reenvía${ignorado})`}`);
+  }
   const extras = [];
   if (c.entorno.TYCON_SKILLS_DIR) extras.push(`TYCON_SKILLS_DIR=${c.entorno.TYCON_SKILLS_DIR} (lib/skills-dir.js, no es de este lector)`);
   if (c.entorno.TYCON_PROFILE !== null) extras.push(`TYCON_PROFILE=${c.entorno.TYCON_PROFILE}`);
@@ -1084,6 +1209,7 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   }
   const tipo = VOCABULARIO[seccion][k];
   // un secreto no pasa por acá (quedaría en el argv de quien llama y en su historial): lo escribe quien lo lee por stdin
+  if (PROFILE_ONLY.includes(`${seccion}.${k}`)) return { ok: false, file, reason: `${enArchivo(seccion)}.${k} vale sólo desde el perfil del equipo (team-profile.json, con un pedido al repo del perfil o desde la pestaña Configuración del sitio): en el archivo de la máquina no se usa` };
   if (tipo === 'secreto') return { ok: false, file, reason: `${enArchivo(seccion)}.${k} no se escribe por acá: harness.js config set ${enArchivo(seccion)}.${k} (lee el valor por stdin y nunca lo muestra)` };
   const err = validarTipo(tipo, valorNuevo);
   if (err) return { ok: false, file, reason: `${enArchivo(seccion)}.${k}: ${err}` };
@@ -1143,11 +1269,28 @@ function setKey(home = os.homedir(), clave, valorNuevo, { env = process.env, gua
   return { ok: true, file, before, after: valorEscrito, warning: avisos.length ? avisos.join(' · ') : null };
 }
 
+/**
+ * El lector de un perfil del equipo como TEXTO, para la configuración de la organización (scripts/lib/org-config.js,
+ * sección «Paquetes»): las mismas reglas con que se lee el perfil (vocabulario cerrado, nada personal). `{ ok, data,
+ * problems: [{ path, message }] }`. No lee nada de la máquina ni anota usos de nombres viejos.
+ */
+function parse(texto) {
+  let datos;
+  try { datos = JSON.parse(String(texto)); } catch (e) { return { ok: false, data: null, problems: [{ path: '', message: `no es JSON válido: ${String((e && e.message) || e).split('\n')[0]}` }] }; }
+  if (!esObjeto(datos)) return { ok: false, data: null, problems: [{ path: '', message: 'el perfil tiene que ser un objeto JSON' }] };
+  const { errores } = sinAnotar(() => validarArchivo(datos, { archivo: NOMBRE_PERFIL, esPerfil: true, home: os.homedir() }));
+  const problems = errores.map((e) => ({ path: e.clave || '', message: e.motivo }));
+  return { ok: problems.length === 0, data: problems.length ? null : datos, problems };
+}
+/** Las secciones del perfil que este lector conoce, con su nombre en el archivo (lo mira `lectorSabe` de org-config.js). */
+const KEYS = Object.freeze(Object.keys(VOCABULARIO).map((s) => enArchivo(s)));
+
 module.exports = {
-  VOCABULARIO, DEFAULTS, PROFILE_WINS, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
+  parse, KEYS, motivoPaquetes, paquetesDeTexto,
+  VOCABULARIO, DEFAULTS, PROFILE_WINS, PROFILE_ONLY, INTEGRACIONES, LAS_OCHO, TOOLS, toolKeys, COMO_SE_PRENDE, VARIABLES, INTERRUPTORES_POR_HOOK, RAIZ_ARNES, NOMBRE_PERFIL, NOMBRE_PERFIL_VIEJO, perfilDelArbol, avisoNombrePerfil, NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, DONDE_CLAVES, ConfigError,
   rutaMaquina, nombreArchivoMaquina, comoSePrende, rutaPerfil, leerPerfil, rutaLlaveBuzon, cargar, leer, leerParaHook, avisoParaHook, valor, explicar, estadoEnlace, formaPersonal,
   normalizarOrg, nombreDeOrganizacion, resolverRutaDeArchivo, personalEnComentario,
-  esIntegracion, estadoIntegracion, integraciones, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
+  esIntegracion, estadoIntegracion, integraciones, respuesta, TOPE_POR_ESTILO, integracionParaComando, integracionParaHook, sinAnotar, setKey, cli,
 };
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
@@ -1158,7 +1301,7 @@ module.exports = {
  */
 function cli(argv) {
   const cmd = argv[0];
-  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | set <clave> <valor>';
+  const usage = 'uso: tycon-config.js explain [--json] | get <clave> | validate [--hook] | key <integracion> [--hook [--switch VAR]] | integrations [--shell|--json] | response [--json] | set <clave> <valor>';
   // `set <clave> <valor>` (story 8.16, tanda D · AC 34): lo que antes se editaba a mano en ~/.claude/tycon.json, con el
   // escritor único (`setKey`). Una llave acepta true, false, 1 o 0 (y `integrations.codex`, además, detect); una opción,
   // sus valores; un texto o una ruta, un texto no vacío. Nunca escribe sobre un archivo roto.
@@ -1177,9 +1320,17 @@ function cli(argv) {
       else if (tipo === 'llave-o-detectar' && esDetect(String(crudo).trim())) valorNuevo = DETECT;
       else { process.stderr.write(`${clave}: vale «${crudo}»; tiene que ser true, false, 1 o 0${tipo === 'llave-o-detectar' ? ` (o ${DETECT})` : ''}\n`); process.exit(2); }
     }
+    if (tipo === 'paquetes') {
+      const p = paquetesDeTexto(crudo);
+      if (p.motivo) { process.stderr.write(`${clave}: vale ${p.motivo}\n`); process.exit(2); }
+      valorNuevo = p.valor;
+    }
+    // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows): se guardan como lista
+    if (tipo === 'rutas') { const l = String(crudo).split(path.delimiter).map((x) => x.trim()).filter(Boolean); if (l.length > 1) valorNuevo = l; }
+    if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
-    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : String(x));
+    const fmt = (x) => (x === null || x === undefined ? '(sin valor)' : Array.isArray(x) ? x.join(',') : String(x));
     process.stdout.write(`${clave}: ${fmt(r.before)} → ${fmt(r.after)} en ${r.file}\n`);
     process.stdout.write('se aplica en el próximo arranque, o ya con `harness.js apply`; para ver antes qué cambia, `harness.js apply --dry-run`\n');
     if (r.warning) process.stdout.write(`${r.warning}\n`);
@@ -1207,6 +1358,15 @@ function cli(argv) {
     if (argv.includes('--json')) { process.stdout.write(JSON.stringify(ocho) + '\n'); process.exit(0); }
     // forma shell: una asignación por integración, sólo `0` · `1` · `detect` (el instalador las evalúa tal cual)
     for (const k of LAS_OCHO) process.stdout.write(`TYCON_INTEG_${k.toUpperCase()}=${ocho[k] === DETECT ? DETECT : (ocho[k] ? '1' : '0')}\n`);
+    process.exit(0);
+  }
+  // `response --json`: idioma, estilo y tope del bloque de respuesta, ya resueltos (lo leen los
+  // sincronizadores de bloques). Rota: nada por stdout y exit 2 —el sincronizador deja el bloque que había—.
+  if (cmd === 'response') {
+    let c;
+    try { c = leer(); } catch (e) { process.stderr.write(e.message + '\n'); process.exit(2); }
+    const r = respuesta(c);
+    process.stdout.write((argv.includes('--json') ? JSON.stringify(r) : `${r.style} ${r.language} ${r.max_chars}`) + '\n');
     process.exit(0);
   }
   if (cmd === 'explain') {

@@ -166,28 +166,55 @@ function topeEnElHome(r, home, R) {
 function raizPorMayoria(repos, home, R = rutasDe(process.platform)) {
   if (!repos.length) return null;
   const P = R.P;
-  const votos = new Map();   // llave del ancestro → { ruta, n }
+  const votos = new Map();   // llave del ancestro → { ruta, n, afuera }
   for (const r of repos) {
     const bajoElHome = R.dentroDe(r, home) && !R.igual(r, home);
     let p = P.dirname(r);
-    const tope = bajoElHome ? topeEnElHome(r, home, R) : P.dirname(p);   // fuera del home: sólo el padre directo
+    // fuera del home (otra unidad, /Volumes, /opt) votan todos los ancestros hasta la raíz del disco, que nunca es raíz:
+    // con repos a distintas profundidades (D:\Repos\X\Y\repo, D:\Repos\Z\repo) el padre directo no junta mayoría
+    const tope = bajoElHome ? topeEnElHome(r, home, R) : P.parse(r).root;
     while (p && !R.igual(p, tope) && p !== P.dirname(p)) {
       const k = R.llave(p);
-      const v = votos.get(k) || { ruta: p, n: 0 };
+      const v = votos.get(k) || { ruta: p, n: 0, afuera: !bajoElHome };
       v.n++; votos.set(k, v);
       p = P.dirname(p);
     }
   }
   const minimo = Math.ceil(repos.length / 2);
   const hondura = (x) => x.split(/[\\/]+/).filter(Boolean).length;
+  // bajo el home, el ancestro más alto (el tope ya lo frena en el home); fuera, el más hondo que junta la mayoría: el más
+  // alto sería /Volumes o la unidad entera
   const candidatos = [...votos.values()].filter((v) => v.n >= minimo)
-    .sort((a, b) => (hondura(a.ruta) - hondura(b.ruta)) || (b.n - a.n) || a.ruta.localeCompare(b.ruta));
+    .sort((a, b) => (a.afuera !== b.afuera ? (a.afuera ? 1 : -1) : 0)
+      || (a.afuera ? hondura(b.ruta) - hondura(a.ruta) : hondura(a.ruta) - hondura(b.ruta)) || (b.n - a.n) || a.ruta.localeCompare(b.ruta));
   if (candidatos.length) return { root: candidatos[0].ruta, repos: candidatos[0].n };
   // Todos los repos cuelgan DIRECTO del home (o de la misma carpeta personal): la raíz es esa carpeta (sin este caso
   // quedaría sin voto).
   const padre = P.dirname(repos[0]);
   if (repos.every((r) => R.igual(P.dirname(r), padre) && R.igual(padre, R.dentroDe(r, home) ? topeEnElHome(r, home, R) : home))) return { root: padre, repos: repos.length };
   return null;
+}
+
+/**
+ * Una raíz por grupo de repos: la de la mayoría; después, con los que quedaron afuera, otra; y así (una persona puede
+ * tener los repos en dos carpetas, de dos clientes o dos países). Hasta 5 raíces; desde la segunda, con al menos dos repos.
+ */
+function raicesPorMayoria(repos, home, R = rutasDe(process.platform)) {
+  const out = [];
+  let resto = repos.slice();
+  while (resto.length && out.length < 5) {
+    const r = raizPorMayoria(resto, home, R);
+    // una carpeta extra pide al menos dos repos: un repo suelto de una sesión no es una carpeta de repos
+    if (!r || (out.length && r.repos < 2)) break;
+    out.push(r);
+    resto = resto.filter((x) => !R.dentroDe(x, r.root));
+  }
+  return out;
+}
+
+/** Saca las carpetas que están dentro de otra de la lista (sus repos ya se recorren desde la de afuera) y las repetidas. */
+function sinAnidadas(roots, R) {
+  return roots.filter((r, i) => !roots.some((o, j) => j !== i && (R.igual(o, r) ? j < i : R.dentroDe(r, o))));
 }
 
 /** `rutas.repos` del archivo de la máquina (nivel 2). Tira ConfigError si el archivo está roto. */
@@ -234,8 +261,12 @@ function resolveReposRoot(envValue, opts = {}) {
   // `~` se expande igual que en el lector de configuración (tycon-config.js): una `~` literal llega a la variable
   // por el bloque `env` de settings.json o por `export X="~/…"` con comillas (pase adversarial, vuelta 1).
   if (v && String(v).trim()) {
-    const e = String(v).trim().replace(/^~(?=$|[\\/])/, home);
-    return { root: P.isAbsolute(e) ? P.normalize(e) : P.join(home, e), fuente: 'env' };   // relativa: contra el HOME, como el lector
+    // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows)
+    const roots = String(v).split(R.win ? ';' : ':').map((x) => x.trim()).filter(Boolean)
+      .map((x) => x.replace(/^~(?=$|[\\/])/, home))
+      .map((e) => (P.isAbsolute(e) ? P.normalize(e) : P.join(home, e)));   // relativa: contra el HOME, como el lector
+    const sin = sinAnidadas(roots, R);
+    return { root: sin[0], roots: sin, fuente: 'env' };
   }
 
   const clon = opts.clon || path.resolve(__dirname, '..', '..');      // <clon>/scripts/lib → el clon
@@ -245,7 +276,8 @@ function resolveReposRoot(envValue, opts = {}) {
   // 2. el archivo de la máquina
   if (!opts.sinConfig) {
     const m = raizDeLaMaquina({ env, home, clon });
-    if (m) return { root: m, fuente: 'maquina' };
+    const lista = sinAnidadas((Array.isArray(m) ? m : [m]).filter(Boolean), R);
+    if (lista.length) return { root: lista[0], roots: lista, fuente: 'maquina' };
   }
 
   // La infraestructura son los DOS clones, en las tres formas de máquina (story 8.18): el del arnés, «donde están las
@@ -265,8 +297,8 @@ function resolveReposRoot(envValue, opts = {}) {
 
   // 3. lo que la persona hace
   const ses = reposDeSesiones({ projectsDir, home, tmp, excluir: infra, R, fsx });
-  const mayoria = raizPorMayoria(ses.repos, home, R);
-  if (mayoria) return { root: mayoria.root, fuente: 'sesiones', evidencia: mayoria.repos };
+  const grupos = raicesPorMayoria(ses.repos, home, R);
+  if (grupos.length) return { root: grupos[0].root, roots: grupos.map((g) => g.root), fuente: 'sesiones', evidencia: grupos.reduce((n, g) => n + g.repos, 0) };
 
   // 4. el vecino del arnés — sólo si de verdad hay vecinos. Un vecino es un repo de TRABAJO: la infraestructura que
   //    el paso 3 dejó afuera tampoco cuenta acá, y se compara por ruta real (lo instalado puede ser un enlace). Hasta
@@ -277,7 +309,7 @@ function resolveReposRoot(envValue, opts = {}) {
   try {
     if (fs.existsSync(P.join(clon, 'scripts')) && fs.statSync(vecino).isDirectory()) {
       const otros = reposAlLado(vecino, { R, fsx, excluir: infra }).filter((p) => !R.igual(p, clon));
-      if (otros.length) return { root: vecino, fuente: 'vecino', evidencia: otros.length };
+      if (otros.length) return { root: vecino, roots: [vecino], fuente: 'vecino', evidencia: otros.length };
     }
   } catch (_) { /* sigue */ }
 
@@ -289,7 +321,7 @@ function resolveReposRoot(envValue, opts = {}) {
   if (padreMudanza) {
     const viejo = fsx.real(desde) || desde;
     const otros = reposAlLado(padreMudanza, { R, fsx, excluir: infra }).filter((p) => !R.igual(p, desde) && !R.igual(fsx.real(p) || p, viejo));
-    if (otros.length) return { root: padreMudanza, fuente: 'mudanza', evidencia: otros.length };
+    if (otros.length) return { root: padreMudanza, roots: [padreMudanza], fuente: 'mudanza', evidencia: otros.length };
   }
 
   // 6. sin raíz, dicho como tal — nunca una ruta inventada. Lo que se leyó de las sesiones va en el motivo: «0 carpetas»
@@ -298,7 +330,7 @@ function resolveReposRoot(envValue, opts = {}) {
     ? `sin mayoría de repos en las sesiones de ${projectsDir} (${ses.diag.carpetas} carpeta(s) de sesión, ${ses.diag.cwds} con su carpeta de trabajo en el disco, ${ses.repos.length} repo(s) de trabajo)`
     : `sin sesiones con repos en ${projectsDir}`;
   return {
-    root: null, fuente: 'sin-raiz',
+    root: null, roots: [], fuente: 'sin-raiz',
     motivo: `sin TYCON_REPOS_ROOT, sin rutas.repos en ${path.join(home, '.claude', 'tycon.json')}, ${sesTxt} y sin otro repo al lado del arnés (${vecino})${padreMudanza ? ` ni del clon desde el que se mudó la máquina (${padreMudanza})` : ''}`,
   };
 }
@@ -311,7 +343,7 @@ function describir(r) {
     sesiones: `tus sesiones (${r.evidencia} repos)`,
     vecino: `la carpeta del arnés (${r.evidencia} repos al lado)`,
     mudanza: `la carpeta del clon desde el que se mudó la máquina (${r.evidencia} repos al lado)`,
-    'sin-raiz': `sin raíz — ${r.motivo}. Definí TYCON_REPOS_ROOT o rutas.repos en ~/.claude/tycon.json`,
+    'sin-raiz': `sin raíz — ${r.motivo}. Declarala con: node "${path.join(__dirname, 'tycon-config.js')}" set paths.repos <carpeta> (una o varias; o la variable TYCON_REPOS_ROOT)`,
   }[r.fuente];
 }
 
@@ -529,4 +561,4 @@ function sessionRepos(opts = {}) {
   return reposDeSesiones({ projectsDir: opts.projectsDir || path.join(home, '.claude', 'projects'), home, tmp, excluir: infra, R, fsx }).repos;
 }
 
-module.exports = { resolveReposRoot, sessionRepos, describir, ENV, __test: { rutasDe, raizPorMayoria, reposDeSesiones } };
+module.exports = { resolveReposRoot, sessionRepos, describir, ENV, __test: { rutasDe, raizPorMayoria, raicesPorMayoria, reposDeSesiones } };

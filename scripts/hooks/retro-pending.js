@@ -367,11 +367,13 @@ function copiasDeTrabajo() {
   const out = { raiz: null, motivo: '', copias: [] };
   const lib = path.join(__dirname, '..', 'lib', 'repos-root.js');
   if (!fs.existsSync(lib)) { out.motivo = 'sin repos-root.js al lado'; return (censoMemo = out); }
-  let raiz = null;
-  try { raiz = require(lib).resolveReposRoot().root; } catch (e) { out.motivo = `la raíz de repos no se pudo leer (${(e && e.message) || e})`; return (censoMemo = out); }
-  if (!raiz || !fs.existsSync(raiz)) { out.motivo = 'sin raíz de repos'; return (censoMemo = out); }
-  out.raiz = raiz;
-  const cola = [[raiz, 0]];
+  // todas las carpetas de repos de la máquina (puede haber más de una)
+  let raices = [];
+  try { raices = (require(lib).resolveReposRoot().roots || []).filter((r) => fs.existsSync(r)); } catch (e) { out.motivo = `la raíz de repos no se pudo leer (${(e && e.message) || e})`; return (censoMemo = out); }
+  if (!raices.length) { out.motivo = 'sin raíz de repos'; return (censoMemo = out); }
+  out.raiz = raices[0];
+  out.raices = raices;
+  const cola = raices.map((r) => [r, 0]);
   let vistas = 0;
   while (cola.length && vistas < CENSO_TOPE) {
     const [dir, nivel] = cola.shift();
