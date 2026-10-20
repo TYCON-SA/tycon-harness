@@ -448,11 +448,17 @@ const WORK_ITEM_TYPE = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,127}$/u;
 // los que el pedido ya fija (su identidad, a quién va, su texto): la configuración no los pisa
 const WORK_ITEM_RESERVED = new Set(['system.tags', 'system.assignedto', 'system.title', 'system.description', 'system.state',
   'system.teamproject', 'system.workitemtype', 'system.areapath', 'system.iterationpath', 'system.areaid', 'system.iterationid',
-  'microsoft.vsts.tcm.reprosteps']);
+  'microsoft.vsts.tcm.reprosteps', 'microsoft.vsts.common.severity']);
+// un nombre de campo con forma de secreto. Los términos largos cuentan en cualquier parte del nombre («Custom.authtoken»,
+// «Custom.clientsecret»); los cortos, sólo como palabra entera (partida por «.», «_», «-» y mayúsculas), para que
+// «Custom.ApiKey» lo sea y «Custom.Keyword» o «Custom.Monkey», no
+const SECRET_LONG = /token|secret|passw|credential|apikey|accesskey|bearer/i;
+const SECRET_WORD = /^(sas|pwd|key|pat)s?$/i;
+const secretField = (k) => SECRET_LONG.test(k) || String(k).replace(/([a-z0-9])([A-Z])/g, '$1 $2').split(/[\s._-]+/).some((w) => SECRET_WORD.test(w));
 
 /** ¿Puede viajar este campo de la configuración al pedido? Las mismas reglas que valida el lector; los comentarios, no. */
 function workItemFieldOk(k, v) {
-  if (comment(k) || !WORK_ITEM_FIELD.test(k) || WORK_ITEM_RESERVED.has(k.toLowerCase()) || SECRET_KEY.test(k)) return false;
+  if (comment(k) || !WORK_ITEM_FIELD.test(k) || WORK_ITEM_RESERVED.has(k.toLowerCase()) || secretField(k)) return false;
   if (typeof v === 'number') return Number.isFinite(v);
   return typeof v === 'string' && v.trim() !== '' && !v.startsWith('@') && !/[\r\n]/.test(v);
 }
@@ -462,11 +468,11 @@ function workItemFieldsProblems(v, at) {
   if (!isObject(v)) return [{ path: at, message: 'tiene que ser un objeto { "<referencia de campo>": texto o número }' }];
   const problems = [];
   for (const [k, val] of Object.entries(v)) {
-    if (comment(k)) continue;
+    if (fieldComment(k, val)) continue;
     if (!k.trim()) { problems.push({ path: at, message: 'un campo sin nombre' }); continue; }
     if (!WORK_ITEM_FIELD.test(k)) { problems.push({ path: `${at}.${k}`, message: 'no es la referencia de un campo (como «Microsoft.VSTS.Common.Priority»)' }); continue; }
     if (WORK_ITEM_RESERVED.has(k.toLowerCase())) { problems.push({ path: `${at}.${k}`, message: 'lo fija el pedido (su identidad, su asignación o su texto): la configuración no lo pisa' }); continue; }
-    if (SECRET_KEY.test(k)) { problems.push({ path: `${at}.${k}`, message: 'tiene forma de secreto: los secretos no van en este archivo' }); continue; }
+    if (secretField(k)) { problems.push({ path: `${at}.${k}`, message: 'tiene forma de secreto: los secretos no van en este archivo' }); continue; }
     if (typeof val === 'number' && Number.isFinite(val)) continue;
     if (!(typeof val === 'string' && val.trim())) problems.push({ path: `${at}.${k}`, message: 'tiene que ser un texto no vacío o un número' });
     // «@» al principio hace que la línea de comandos lea un archivo; un salto de línea parte el argumento
@@ -484,7 +490,7 @@ function workItemsProblems(w) {
   if (w.by_severity !== undefined) {
     if (!isObject(w.by_severity)) problems.push({ path: 'work_items.by_severity', message: `tiene que ser un objeto con ${SEVERITIES.join(', ')}` });
     else for (const [sev, campos] of Object.entries(w.by_severity)) {
-      if (comment(sev)) continue;
+      if (fieldComment(sev, campos)) continue;
       if (!SEVERITIES.includes(sev)) problems.push({ path: `work_items.by_severity.${sev}`, message: `gravedad desconocida (son ${SEVERITIES.join(', ')})` });
       else problems.push(...workItemFieldsProblems(campos, `work_items.by_severity.${sev}`));
     }
@@ -518,7 +524,7 @@ function ownerFor(data, project) {
   return Object.prototype.hasOwnProperty.call(bp, project) ? bp[project] : data.owners.default;
 }
 
-module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, parse, load, ownerFor, workItemFieldOk };
+module.exports = { VERSION, KEYS, OWNER_KEYS, REVIEWER_KEYS, SITE_KEYS, CARD_IDS,ACCESS_KEYS, ACCESS_ROLES, BRAND_KEYS, BRAND_LOGO, NOTIFY_CHANNELS, MAILBOX_PROVIDERS, REFRESH_MIN, REFRESH_MAX, EMAIL, ACCOUNT, CONTAINER, PEOPLE_KEYS, MACHINE_KEYS, PROJECT_KEYS, FORMA_MAQUINA, DEPLOYMENT_PROVIDERS, DEPLOYMENT_SIDES, GITHUB_REPO, SEVERITIES, WORK_ITEM_KEYS, parse, load, ownerFor, workItemFieldOk };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
