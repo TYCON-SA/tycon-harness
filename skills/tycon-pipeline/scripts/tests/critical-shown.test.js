@@ -504,3 +504,58 @@ test('CriticalShown_Paso7YBloqueEnsenanLaForma @story-8.77 @ac-7', () => {
   const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
   assert.match(cd.bloque({ storyId: '9.93', rule: REGLA, file: ARCHIVO, reason: MOTIVO, arnes: tmp('cs-bloque-') }), /Contestá sólo eso.*cualquier otra cosa, en otro mensaje/);
 });
+
+// El freno sin tilde («para», «espera», «frena», «aguanta») cuenta sólo cuando abre el mensaje, una oración o una
+// cláusula; con tilde, en cualquier lugar. La preposición «para» dentro de una oración no es un pedido de esperar.
+const FRASE_737 = 'Eximo SEC-C3 de la 7.37: findings.json lo puede reescribir el agente; es un hueco previo que vale para todos los críticos y va a una story aparte.';
+const FRASE_747 = 'Eximo TEST-C1 de la 7.47: la suite completa la corre la CI del pedido.';
+
+test('CriticalShown_ParaPreposicion_Exime @story-8.82 @ac-1', () => {
+  const archivo = 'skills/tycon-pipeline/scripts/marker.js';
+  const motivo = 'findings.json lo puede reescribir el agente: hueco previo; va a una story aparte';
+  const lab = laboratorio({ sid: 's-cs-para', criticos: [{ rule_id: 'SEC-C3', file: archivo, summary: 'findings.json lo escribe el agente' }] });
+  mostrar(lab, 'SEC-C3', archivo, motivo);
+  lab.conversar([delDev(FRASE_737)]);
+  const r = waive(lab, FRASE_737, { rule: 'SEC-C3', file: archivo, reason: motivo });
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(eximidos(lab).length, 1);
+  // la frase que ya pasaba sigue pasando
+  assert.equal(juezDe()(FRASE_747), null);
+});
+
+test('CriticalShown_FrenoConTilde_NoExime @story-8.82 @ac-2', () => {
+  const j = juezDe();
+  for (const f of ['esperá', 'pará', 'frená', 'aguantá']) {
+    for (const t of [`${f[0].toUpperCase()}${f.slice(1)}, eximo TEST-C1.`, `Eximo TEST-C1 y ${f} un poco.`, `Eximo TEST-C1, ${f}.`]) {
+      assert.match(j(t) || '', /pide esperar/, t);
+    }
+  }
+});
+
+test('CriticalShown_FrenoSinTildeAlAbrir_NoExime @story-8.82 @ac-3', () => {
+  const j = juezDe();
+  for (const t of ['Para.', 'Espera un poco, eximo TEST-C1.', 'Eximo TEST-C1, para.', 'Eximo TEST-C1. Frena.', 'Eximo TEST-C1; aguanta.', 'Eximo TEST-C1: espera.',
+    // tras un conector, un guion, un paréntesis, unas comillas o puntos suspensivos, al final, o en otra línea
+    'Eximo TEST-C1 y espera un poco', 'Eximo TEST-C1 pero para', 'Eximo TEST-C1 ahora espera', 'Eximo TEST-C1 y para', 'Eximo TEST-C1 — espera',
+    'Eximo TEST-C1 - aguanta', 'Eximo TEST-C1 (para)', 'Eximo TEST-C1… frena', 'Eximo TEST-C1 «espera»', '"Para." Eximo TEST-C1', 'Eximo TEST-C1 para.',
+    'Eximo TEST-C1\npara', '¿Espera? Eximo TEST-C1',
+    // con tilde en forma descompuesta (letra + acento aparte)
+    'Eximo TEST-C1. Esperá.']) {
+    assert.notEqual(j(t), null, t);
+  }
+  assert.match(j('Eximo TEST-C1, para.'), /pide esperar/);
+});
+
+test('CriticalShown_SinTildeEnMedio_NoEsFreno @story-8.82 @ac-4', () => {
+  const j = juezDe();
+  for (const t of ['Eximo TEST-C1 de la 9.93: el pedido queda en espera de la CI.', 'Eximo TEST-C1 de la 9.93: el control frena el merge igual.',
+    'Eximo TEST-C1 de la 9.93: la regla vale para todos los repos.', 'Eximo TEST-C1 de la 9.93: la máquina aguanta la suite en la CI.']) {
+    assert.equal(j(t), null, t);
+  }
+});
+
+test('CriticalShown_RetractaMismaRegla @story-8.82 @ac-5', () => {
+  const j = juezDe();
+  for (const t of ['Para.', 'Esperá.', 'Espera, eximir no.', 'Mejor espera.', 'Y espera, eximir', 'Eximir — para']) assert.equal(j.retracta(t), true, t);
+  for (const t of ['Sobre la CI: corre para todos los repos.', 'El pedido queda en espera de la CI.']) assert.equal(j.retracta(t), false, t);
+});

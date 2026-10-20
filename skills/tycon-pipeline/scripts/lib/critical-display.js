@@ -147,7 +147,27 @@ function juez({ rule, file, archivos = [], arnes }) {
   const nombraEsta = (s) => codigosDe(s).includes(r) || (!!llano && norm(s).includes(norm(llano)));
   const RE_EXIM = /(?<![\p{L}\p{N}])exim\p{L}*|exenci[oó]n/iu;
   // un freno sin «no» («Esperá.», «Pará.», «Frená») también se echa atrás
-  const RE_FRENO = /(?<![\p{L}\p{N}])(?:esper[aá]|par[aá]|fren[aá]|aguant[aá])(?![\p{L}\p{N}])/iu;
+  // Con tilde frena en cualquier lugar. Sin tilde frena salvo en un solo caso: va después de una palabra que no es un
+  // conector y antes de otra palabra, como la preposición en «vale para todos» o «queda en espera de la CI». Abriendo el
+  // mensaje, tras un signo, un guion, un paréntesis, unas comillas o un conector («y espera», «pero para»), al final
+  // («Eximo X para.») o en un mensaje de hasta tres palabras, frena: ante la duda, no exime.
+  const RE_FRENO_TILDE = /(?<![\p{L}\p{N}])(?:esperá|pará|frená|aguantá)(?![\p{L}\p{N}])/iu;
+  const RE_SIN_TILDE = /(?<![\p{L}\p{N}])(?:espera|para|frena|aguanta)(?![\p{L}\p{N}])/giu;
+  const CONECTORES = new Set(['y', 'e', 'o', 'u', 'ni', 'pero', 'sino', 'aunque', 'ahora', 'mejor', 'bueno', 'ok', 'dale', 'che', 'porfa', 'favor', 'entonces', 'mientras', 'igual', 'antes']);
+  const frenaSinTilde = (t) => {
+    if (t.split(/[\s,.;:!?¿¡]+/).filter(Boolean).length <= 3 && RE_SIN_TILDE.test(t)) { RE_SIN_TILDE.lastIndex = 0; return true; }
+    RE_SIN_TILDE.lastIndex = 0;
+    for (const m of t.matchAll(RE_SIN_TILDE)) {
+      const antes = t.slice(0, m.index).replace(/[ \t]+$/, '');
+      const despues = t.slice(m.index + m[0].length);
+      if (!antes || !/[\p{L}\p{N}]$/u.test(antes)) return true;
+      const previa = antes.match(/[\p{L}\p{N}]+$/u)[0].toLowerCase();
+      if (CONECTORES.has(previa)) return true;
+      if (!/^[ \t]+[\p{L}\p{N}]/u.test(despues)) return true;
+    }
+    return false;
+  };
+  const RE_FRENO = { test: (texto) => { const t = String(texto).normalize('NFC'); return RE_FRENO_TILDE.test(t) || frenaSinTilde(t); } };
   // lo que enseñan los rechazos: el mensaje del ok trae sólo el ok; una aclaración va en otro mensaje
   const SOLO = `contestá sólo «eximo ${r}»${llano ? ` (o «eximo ${llano}»)` : ''}, con su motivo si querés; cualquier otra cosa, en otro mensaje`;
   const juzgar = (texto) => {
