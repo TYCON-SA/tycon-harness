@@ -245,18 +245,18 @@ test('T15 ArgumentosInvalidos_Salen2: argumentos inválidos salen con 2', () => 
   }
 });
 
-test('T16 MarcadorSinPasos_YPasoPasado: sin lista de pasos se dice; paso pasado de su mediana no resta de más', () => {
+test('T16 MarcadorSinPasos_YPasoPasado: sin lista de pasos se dice; paso pasado de su mediana dice «atrasada» con la hora fija', () => {
   const m = toyMachine();
   history(m, 'a', { 0: 1, 4: 10, 5: 6 });
   fs.writeFileSync(path.join(m.state, 'active', 'nolist00.json'), JSON.stringify({ sessionId: 'nolist00', storyId: '3.1' }));
-  // step 4 started 40 min ago with a 10 min median: it counts as 0 left, then step 5 adds 6 min
+  // step 4 started 40 min ago with a 10 min median: the fixed estimate is 13:20 + 10 + 6 = 13:36, already past
   marker(m, 'late0000-1', { storyId: '3.2', storyPath: story(m.root, '3.2', 't'), stepsCompleted: [0], stepsPending: [4, 5], lastTouch: NOW,
     stepTimings: { 4: { startedAt: '2026-10-18T13:20:00.000Z' } } });
   session(m, process.pid, 'late0000-1', 'x');
   const r = run(m);
   assert.ok(r.unreadable.some((u) => /nolist00\.json: sin lista de pasos pendientes/.test(u)), r.unreadable.join(' | '));
-  const end = new Date(Date.parse(NOW) + 6 * 60000);
-  assert.strictEqual(r.rows[0].end, `${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')}`);
+  const end = new Date(Date.parse('2026-10-18T13:36:00.000Z'));
+  assert.strictEqual(r.rows[0].end, `atrasada (estimado ${String(end.getHours()).padStart(2, '0')}:${String(end.getMinutes()).padStart(2, '0')})`);
 });
 
 test('T17 Wip_AdhocRecomiendaClearOrphan: el viejo trae el comando; el nuevo, desde cuándo', () => {
@@ -320,7 +320,7 @@ test('T20 Entrando_ConPedido_Ocupada: el 8 cerrado y un pedido abierto dan la fi
   const r = run(m, { prs: (q) => { asked.push(q); return { prs: [{ number: 236, draft: false }] }; } });
   assert.strictEqual(r.rows.length, 1, r.text);
   assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #236');
-  assert.strictEqual(r.rows[0].end, 'sin estimación (espera la CI o la cola)');
+  assert.strictEqual(r.rows[0].end, 'sin estimación (espera la CI o la cola; sin merges medidos en x)');
   assert.deepStrictEqual(r.free, []);
   assert.strictEqual(asked.length, 1);
   assert.strictEqual(asked[0].branch, 'story/x');
@@ -552,7 +552,7 @@ test('T30 SinPipeline_Busy_Ocupada: una sesión busy sin marcador sale trabajand
   const m = toyMachine();
   session(m, process.pid, 'sp000000-1', 'videos', { status: 'busy', statusUpdatedAt: minsBefore(2) });
   const r = runP(m);
-  assert.deepStrictEqual(r.rows, [{ work: '(sin pipeline)', state: `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`, end: 'sin estimación (no tiene pasos)', session: 'videos' }]);
+  assert.deepStrictEqual(r.rows, [{ work: '(carpeta desconocida)', state: `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(2))}`, end: 'sin estimación (no tiene pasos)', session: 'videos' }]);
   assert.deepStrictEqual(r.free, []);
 });
 
@@ -667,6 +667,8 @@ test('T39 SinPipeline_RamaDeStory_LaMuestra: la carpeta de la sesión en una ram
   const by = Object.fromEntries(r.rows.map((x) => [x.session, x.state]));
   assert.strictEqual(by.arrancando, `Trabajando sin pipeline · story 8.48 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
   assert.strictEqual(by['en-main'], `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`);
+  const work = Object.fromEntries(r.rows.map((x) => [x.session, x.work]));
+  assert.deepStrictEqual([work.arrancando, work['en-main']], ['wt · story/8.48-algo', 'principal · main']);
   // another branch, a folder that is gone and a detached HEAD: no story
   const other = gitRepo(m.root, 'otra', 'feature/x', GH);
   const detached = gitRepo(m.root, 'suelto', 'main', GH);
@@ -676,4 +678,84 @@ test('T39 SinPipeline_RamaDeStory_LaMuestra: la carpeta de la sesión en una ram
   const n = toyMachine();
   for (const [i, cwd] of [other, path.join(m.root, 'no-existe'), detached].entries()) session(n, process.pid, `sp00000${i}-x`, `s${i}`, { status: 'busy', statusUpdatedAt: minsBefore(1), cwd });
   for (const row of runP(n).rows) assert.strictEqual(row.state, `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`, row.session);
+});
+
+// ── The delay shows, the end counts entering the repos, and loose work says its age ──────────────────────────────
+
+test('T40 Atrasada_NoCorreConElReloj: pasado el estimado, la misma hora fija a dos horas distintas', () => {
+  const m = toyMachine();
+  history(m, 'a', { 0: 1, 4: 10, 5: 6 });
+  marker(m, 'late0000-2', { storyId: '3.3', storyPath: story(m.root, '3.3', 't'), stepsCompleted: [0], stepsPending: [4, 5], lastTouch: NOW,
+    stepTimings: { 4: { startedAt: '2026-10-18T13:20:00.000Z' } } });
+  session(m, process.pid, 'late0000-2', 'x');
+  const fixed = `atrasada (estimado ${localHhmm(Date.parse('2026-10-18T13:36:00.000Z'))})`;
+  assert.strictEqual(run(m).rows[0].end, fixed);
+  assert.strictEqual(run(m, { now: '2026-10-18T15:00:00.000Z' }).rows[0].end, fixed);
+});
+
+// A repo whose main has merges of known duration: the branch tip at `t`, its merge `mins` later.
+function mergesRepo(root, name, mins) {
+  const dir = path.join(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  const g = (date, ...args) => execFileSync('git', ['-C', dir, '-c', 'user.name=t', '-c', `user.email=${'t'}${'@'}acme.example`, '-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...args],
+    { env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }, stdio: 'ignore' });
+  execFileSync('git', ['init', '-q', '-b', 'main', dir]);
+  let t = Date.parse('2026-10-15T10:00:00.000Z');
+  g(new Date(t).toISOString(), 'commit', '-q', '--allow-empty', '-m', 'base');
+  mins.forEach((min, i) => {
+    t += 3600000;
+    g(new Date(t).toISOString(), 'checkout', '-q', '-b', `b${i}`, 'main');
+    g(new Date(t).toISOString(), 'commit', '-q', '--allow-empty', '-m', `rama ${i}`);
+    g(new Date(t).toISOString(), 'checkout', '-q', 'main');
+    g(new Date(t + min * 60000).toISOString(), 'merge', '-q', '--no-ff', '-m', `merge ${i}`, `b${i}`);
+  });
+  g(new Date(t).toISOString(), 'checkout', '-q', '-b', 'story/x');
+  return dir;
+}
+
+test('T41 Fin_SumaLaEntradaALosRepos: la hora suma la mediana de entrada; la que espera, el cierre del 8 más la mediana', () => {
+  const m = toyMachine();
+  history(m, 'a', { 0: 1, 4: 20, 5: 10, 8: 4 });
+  const repo = mergesRepo(m.root, 'x', [20, 30, 40]);   // median 30 min
+  // in progress: 10 min left of step 4, then 10 + 4 → NOW + 24, plus 30 entering → NOW + 54
+  marker(m, 'enter000-1', { storyId: '9.6', storyPath: story(m.root, '9.6', 't'), repoPath: repo, stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 8],
+    stepTimings: { 4: { startedAt: '2026-10-18T13:50:00.000Z' } } });
+  session(m, process.pid, 'enter000-1', 'en-curso');
+  const r = run(m);
+  assert.strictEqual(r.rows[0].end, `${localHhmm(Date.parse(NOW) + 54 * 60000)} (con la entrada a los repos)`, r.text);
+  // waiting for its pull request: step 8 closed at 13:50 → 13:50 + 30 = 14:20
+  const w = toyMachine();
+  entering(w, 'ent00000-9', { repoPath: mergesRepo(w.root, 'x', [20, 30, 40]), stepTimings: { 8: { startedAt: '2026-10-18T13:40:00.000Z', completedAt: '2026-10-18T13:50:00.000Z' } } });
+  const rw = run(w, { prs: () => ({ prs: [{ number: 7, draft: false }] }) });
+  assert.strictEqual(rw.rows[0].end, `${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))} (con la entrada a los repos)`, rw.text);
+  // past that hour it says so, with the same fixed hour
+  const late = run(w, { now: '2026-10-18T15:00:00.000Z', prs: () => ({ prs: [{ number: 7, draft: false }] }) });
+  assert.strictEqual(late.rows[0].end, `atrasada (estimado ${localHhmm(Date.parse('2026-10-18T14:20:00.000Z'))})`);
+  // a repo without measured merges: the hour leaves it out and says so
+  const n = toyMachine();
+  history(n, 'a', { 0: 1, 4: 20, 5: 10, 8: 4 });
+  marker(n, 'enter000-2', { storyId: '9.7', storyPath: story(n.root, '9.7', 't'), repoPath: gitRepo(n.root, 'y', 'story/y', GH), stepsCompleted: [0, 1, 2, 3], stepsPending: [4, 5, 8],
+    stepTimings: { 4: { startedAt: '2026-10-18T13:50:00.000Z' } } });
+  session(n, process.pid, 'enter000-2', 'sin-merges');
+  assert.strictEqual(run(n).rows[0].end, `${localHhmm(Date.parse(NOW) + 24 * 60000)} (sin la entrada a y: sin merges medidos)`);
+});
+
+test('T42 SinPipeline_DiceCarpetaYRama: la fila dice la carpeta y la rama, no «(sin pipeline)»', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'mi-arreglo', 'fix/el-aviso', GH);
+  session(m, process.pid, 'sp000000-w', 'arreglando', { status: 'busy', statusUpdatedAt: minsBefore(1), cwd: wt });
+  const r = runP(m);
+  assert.strictEqual(r.rows[0].work, 'mi-arreglo · fix/el-aviso');
+  assert.ok(!r.text.includes('(sin pipeline)'), r.text);
+});
+
+test('T43 TrabajoSuelto_SinTocar_PreguntaSiTermino: el viejo pregunta si terminó y dice cómo cerrarlo; el nuevo, desde cuándo', () => {
+  const m = toyMachine();
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'adv00000-1.json'), JSON.stringify({ reason: 'el video del capítulo 1', declaredAt: new Date(minsBefore(300)).toISOString(), lastTouch: new Date(minsBefore(120)).toISOString() }));
+  fs.writeFileSync(path.join(m.state, 'adhoc', 'adv00000-2.json'), JSON.stringify({ reason: 'un ajuste chico', declaredAt: new Date(minsBefore(30)).toISOString(), lastTouch: new Date(minsBefore(10)).toISOString() }));
+  session(m, process.pid, 'adv00000-1', 'videos', { status: 'busy', statusUpdatedAt: minsBefore(1) });
+  session(m, process.pid, 'adv00000-2', 'ajustes', { status: 'busy', statusUpdatedAt: minsBefore(1) });
+  const by = Object.fromEntries(run(m).rows.map((x) => [x.session, x.state]));
+  assert.strictEqual(by.videos, `Trabajo suelto · sin tocar desde ${localHhmm(minsBefore(120))} · ¿terminó? cerralo desde su sesión: node ${path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js')} adhoc clear`);
+  assert.strictEqual(by.ajustes, `Trabajo suelto · sin tocar desde ${localHhmm(minsBefore(10))}`);
 });
