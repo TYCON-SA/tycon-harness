@@ -2587,6 +2587,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.80 (T6 a T10): `harness.js npx`, lo que sigue a la bajada del paquete de npm (scripts/setup/harness/npx.js): requisites() por plataforma, «para quién», --team con parseTeam (GitHub y Azure) y su permiso, el agente instalado, la línea exacta sin terminal, la máquina ya instalada (al día, «¿Actualizo?» con el update del árbol que corre, team-init, install --team), un solo número de versión, y el paquete 1.0.3 de la historia contra el árbol de la rama. Un hijo con lo que toca la máquina inyectado y un GitHub de juguete. Sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/npx-entry.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.40, tanda A (T13 a T16): .github/workflows/npm-publish.yml leído por texto con check-public-workflow.js --publisher (disparador, permisos, acciones por sha, npm exacto ≥ 11.15.0, npm stage publish desde la carpeta del paquete, la integridad antes de publicar) y sus pasos de shell corridos con un npm de mentira: ya publicada con el mismo contenido sale 0, con otro rojo, npm viejo rojo, el paquete inexistente o sin publicador de confianza salteado en verde con aviso. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/npm-publish-workflow.test.js",
