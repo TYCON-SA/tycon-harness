@@ -17,7 +17,7 @@ This skill is a modified copy of `bmad-create-story` from the BMad Method.
 
 | File | Status |
 |---|---|
-| `SKILL.md` | Identical to the original |
+| `SKILL.md` | The description adds the requests in Spanish ("creá una historia", "escribí una historia", "creá una story", "armá la historia de…"), so that a request written in Spanish also starts this skill |
 | `discover-inputs.md` | Identical to the original |
 | `checklist.md` | Adds section 5.5, "TYCON Mary+GOLD format": the story fields and sections the harness reads, checked as critical issues |
 | `template.md` | Replaced by the Mary+GOLD story template: a YAML frontmatter the harness reads (epic, story, status, sprint, files…), the guidance comments that point to `story-format.md`, and the Tests table |
@@ -45,7 +45,7 @@ Esta skill es una copia modificada de `bmad-create-story`, del BMad Method.
 
 | Archivo | Estado |
 |---|---|
-| `SKILL.md` | Igual al original |
+| `SKILL.md` | La descripción suma los pedidos en castellano («creá una historia», «escribí una historia», «creá una story», «armá la historia de…»), para que un pedido en castellano también arranque esta skill |
 | `discover-inputs.md` | Igual al original |
 | `checklist.md` | Suma la sección 5.5, «TYCON Mary+GOLD format»: los campos y secciones de la story que lee el arnés, revisados como problemas críticos |
 | `template.md` | Reemplazada por la plantilla de story Mary+GOLD: un frontmatter YAML que lee el arnés (epic, story, status, sprint, archivos…), los comentarios de guía que mandan a `story-format.md`, y la tabla de pruebas |
