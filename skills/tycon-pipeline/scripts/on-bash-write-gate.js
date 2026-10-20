@@ -520,6 +520,8 @@ if (require.main === module) {
   try { const pd = require('./lib/plan-display.js').planParaMostrar(pedido); if (pd) avisos.push(pd); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude armar el plan para mostrarlo (${e.message})\n`); }
   // antes de eximir un crítico, el arnés se lo muestra a la persona: el ok vale si responde a eso (lib/critical-display.js)
   try { const cd = require('./lib/critical-display.js').paraMostrar(pedido); if (cd) avisos.push(cd); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude armar el crítico para mostrarlo (${e.message})\n`); }
+  // antes de firmar un criterio que no se puede probar en vivo, el arnés se lo muestra a la persona (lib/waiver-display.js)
+  try { const wd = require('./lib/waiver-display.js').paraMostrar(pedido); if (wd) avisos.push(wd); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude armar el criterio para mostrarlo (${e.message})\n`); }
   try { const of = require('./lib/browser-test.js').offerToShow(pedido); if (of) avisos.push(of); } catch (e) { logHookError(e); process.stderr.write(`⚠️  no pude decidir si va la oferta de la prueba con navegador (${e.message})\n`); }
   if (avisos.length) {
     process.stdout.write(JSON.stringify({ systemMessage: avisos.map((a) => a.systemMessage).join('\n\n') }));

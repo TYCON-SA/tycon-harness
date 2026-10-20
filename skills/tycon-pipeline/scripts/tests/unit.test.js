@@ -1837,7 +1837,7 @@ test('marker: el storyPath RELATIVO del marker se resuelve contra repoPath (no c
     salida = `${e.stdout || ''}${e.stderr || ''}`;
   }
   assert.ok(!/no encuentro la story/.test(salida), `resolvió el path relativo contra repoPath — salida:\n${salida}`);
-  assert.match(salida, /BLOQUEADO — requiere una terminal/, 'llegó hasta el candado TTY (que es donde debe morir sin terminal)');
+  assert.match(salida, /BLOQUEADO — acá no hay una terminal/, 'llegó hasta el candado TTY (que es donde debe morir sin terminal)');
 
   // Y el mensaje de error, cuando de verdad no hay story, NO manda a un flag inexistente.
   fs.writeFileSync(path.join(activeDir, `${SID}.json`), JSON.stringify({

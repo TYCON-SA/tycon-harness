@@ -333,4 +333,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, archivosDeLaRegla, juez, bloque, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, paraMostrar, handle };

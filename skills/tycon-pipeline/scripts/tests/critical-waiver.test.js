@@ -266,17 +266,29 @@ function laboratorioDeCriterio(conversacion) {
   return lab;
 }
 
+/** La puerta Bash ante el pedido de firma: el arnés le muestra el criterio a la persona (lib/waiver-display.js). */
+function mostrarCriterio(lab) {
+  const p = spawnSync('node', [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+    cwd: lab.repo, encoding: 'utf8', env: lab.env,
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: `node ${path.join(SCRIPTS, 'marker.js')} runtime-waiver ${lab.story} --acs 1` } }),
+  });
+  assert.equal(p.status, 0, p.stderr);
+}
+const FIRMA = 'firmo el AC 1: el servicio externo no tiene ambiente de prueba';
+
 test('RuntimeWaiver_OkDelDev_FirmaSinTerminal @story-8.63 @ac-7', () => {
-  const lab = laboratorioDeCriterio([delDev(CITA, T(2))]);
-  const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', CITA]);
+  const lab = laboratorioDeCriterio([delAgente('Hay un criterio para firmar.', new Date().toISOString())]);
+  mostrarCriterio(lab);
+  lab.conversar([delDev(FIRMA, T(2))]);
+  const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', FIRMA]);
   assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
   const lib = require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js'));
   const firmados = lib.waivedAcs('9.91', { declHashByAc: { 1: lib.declHashFor('x', 'T1') }, repoRoot: lab.repo });
   assert.ok(firmados.has(1), 'la matriz lo cuenta');
   const [e] = lineas(lib.repoWaiverLogPath(lab.repo));
-  assert.deepEqual([e.tty, e.ok && e.ok.tipo, e.ok && e.ok.cita], [false, 'manual', CITA]);
+  assert.deepEqual([e.tty, e.ok && e.ok.tipo, e.ok && e.ok.cita], [false, 'manual', FIRMA]);
   const ap = lineas(path.join(lab.runDir, 'approvals.jsonl')).find((l) => /AC 1/.test(l.que));
-  assert.deepEqual([ap.tipo, ap.quien, ap.cita], ['manual', 'Dev de Prueba', CITA]);
+  assert.deepEqual([ap.tipo, ap.quien, ap.cita], ['manual', 'Dev de Prueba', FIRMA]);
 });
 
 test('RuntimeWaiver_SinOk_Frena @story-8.63 @ac-7', () => {
@@ -284,10 +296,10 @@ test('RuntimeWaiver_SinOk_Frena @story-8.63 @ac-7', () => {
   const r = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', CITA]);
   assert.notEqual(r.status, 0);
   assert.equal(fs.existsSync(require(path.join(SCRIPTS, 'lib', 'runtime-waiver.js')).repoWaiverLogPath(lab.repo)), false);
-  // reenviado sin que la organización declare la sesión: frena
+  // reenviado por otra sesión: no se acepta para un criterio, lo firma la persona que lo vio
   const rel = lab.marker(['runtime-waiver', lab.story, '--acs', '1', '--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
   assert.notEqual(rel.status, 0);
-  assert.match(rel.stderr, /approvals\.relay_session/);
+  assert.match(rel.stderr, /no se acepta reenviad/);
   // sin opciones sigue siendo la terminal
   const t = lab.marker(['runtime-waiver', lab.story]);
   assert.notEqual(t.status, 0);
