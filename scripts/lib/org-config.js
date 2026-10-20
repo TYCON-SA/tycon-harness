@@ -162,7 +162,7 @@ const WAIT_NOTICE_SINCE = '2026.10.17.8';
 // `coverage`: la etiqueta del merge que lo trajo al lector
 const COVERAGE_SINCE = '2026.10.17.45';
 // `review`: la etiqueta del merge que lo trajo al lector
-const REVIEW_SINCE = '2026.10.20.40';
+const REVIEW_SINCE = '2026.10.20.43';
 // `stack`: la etiqueta del merge que trajo `stack.rules` al lector (las terminaciones y las herramientas llegaron antes;
 // se pide la versión que lee la clave entera)
 const STACK_SINCE = '2026.10.19.11';
