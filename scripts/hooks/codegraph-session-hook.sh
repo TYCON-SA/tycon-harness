@@ -56,7 +56,7 @@ command -v codegraph >/dev/null 2>&1 || exit 0
 
 # ¿cwd es un proyecto?
 IS_PROJECT=0
-[ -d "$CWD/.git" ]           && IS_PROJECT=1
+[ -e "$CWD/.git" ]           && IS_PROJECT=1   # en un worktree, .git es un archivo
 [ -f "$CWD/package.json" ]   && IS_PROJECT=1
 [ -f "$CWD/go.mod" ]         && IS_PROJECT=1
 [ -f "$CWD/Cargo.toml" ]     && IS_PROJECT=1
@@ -73,10 +73,13 @@ if [ ! -d "$CWD/.codegraph" ]; then
   codegraph init -i "$CWD" >/dev/null 2>&1 || exit 0
 fi
 
-# .gitignore
-GI="$CWD/.gitignore"
-if [ -f "$GI" ] && ! grep -qxF ".codegraph/" "$GI" 2>/dev/null; then
-  printf '\n# CodeGraph: indice local (SQLite), machine-specific y regenerable\n.codegraph/\n' >> "$GI"
+# El índice es de esta máquina: va al exclude local de git, nunca al .gitignore del equipo (un cambio ahí se termina
+# subiendo). La ruta la da git, así vale también en un worktree. Fuera de un repo no se anota nada.
+EX="$(git -C "$CWD" rev-parse --git-path info/exclude 2>/dev/null)"
+if [ -n "$EX" ]; then
+  case "$EX" in /*) ;; *) EX="$CWD/$EX" ;; esac
+  mkdir -p "$(dirname "$EX")" 2>/dev/null
+  grep -qxF ".codegraph/" "$EX" 2>/dev/null || printf '.codegraph/\n' >> "$EX"
 fi
 
 # Registrar el MCP server del lado CLAUDE (scope local; forma larga `--path` porque el `-p` corto

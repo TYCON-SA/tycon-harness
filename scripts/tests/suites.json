@@ -1907,6 +1907,12 @@
       "requiere": []
     },
     {
+      "__nota": "CodeGraph no deja nada para subir en un repo compartido: el índice va al exclude local de git (también en un worktree), nunca al .gitignore; sin repo, nada y un renglón; el aviso del pipeline nombra el instalador del arnés; --no-auto saca el gancho de arranque; el cierre y el renglón del plan dicen qué queda prendido. Repos, hogares y binarios de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/codegraph-local.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",

@@ -3548,7 +3548,9 @@ function computeToolingExpected(repo, opts = {}) {
     codegraph: {
       bin: 'codegraph',
       cli: 'codegraph query "<símbolo>" | codegraph context "<task>" | codegraph status | codegraph affected — vía Bash, mismo índice que el MCP',
-      raise_install: '`codegraph install` (re-cablea el MCP server) — el server nuevo carga recién en la próxima sesión o tras /mcp',
+      // el instalador del arnés registra el servidor sin escribir en el repo; `codegraph install` deja .mcp.json, .claude/
+      // y un enganche que corre en cada mensaje: no se recomienda
+      raise_install: 'el instalador del arnés: bash scripts/setup/install-codegraph.sh desde la carpeta del arnés (en Windows, install-codegraph.ps1) — registra el servidor sin escribir en el repo; carga recién en la próxima sesión o tras /mcp',
     },
     'codebase_memory': {
       bin: path.join(os.homedir(), '.local', 'bin', 'codebase-memory-mcp'),

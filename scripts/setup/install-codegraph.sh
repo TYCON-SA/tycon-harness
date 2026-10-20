@@ -86,7 +86,7 @@ echo
 # ---- helpers ----
 is_project() {
   local d="$1" f
-  [ -d "$d/.git" ]            && return 0
+  [ -e "$d/.git" ]            && return 0   # en un worktree, .git es un archivo
   [ -f "$d/package.json" ]    && return 0
   [ -f "$d/go.mod" ]          && return 0
   [ -f "$d/Cargo.toml" ]      && return 0
@@ -134,10 +134,17 @@ for repo in "${REPOS[@]}"; do
     ( cd "$repo" && codegraph init -i >/dev/null 2>&1 ) \
       || { echo "✗ Fallo el init de $name." >&2; exit 1; }
   fi
-  gi="$repo/.gitignore"
-  if [ -f "$gi" ] && ! grep -qxF ".codegraph/" "$gi"; then
-    printf '\n# CodeGraph: indice local (SQLite), machine-specific y regenerable\n.codegraph/\n' >> "$gi"
-    echo "  + .codegraph/ agregado a $name/.gitignore"
+  # el índice es de esta máquina: al exclude local de git, nunca al .gitignore del equipo; fuera de un repo, nada
+  ex="$(git -C "$repo" rev-parse --git-path info/exclude 2>/dev/null)" || ex=""
+  if [ -z "$ex" ]; then
+    echo "  ⚠ $name no es un repo de git: no anoté .codegraph/ en ningún lado"
+  else
+    case "$ex" in /*) ;; *) ex="$repo/$ex" ;; esac
+    mkdir -p "$(dirname "$ex")"
+    if ! grep -qxF ".codegraph/" "$ex" 2>/dev/null; then
+      printf '.codegraph/\n' >> "$ex"
+      echo "  + .codegraph/ anotado en el exclude local de git de $name (no se sube)"
+    fi
   fi
   if [ -f "$repo/CLAUDE.md" ] && ! grep -q "CodeGraph" "$repo/CLAUDE.md"; then
     echo "  ⚠ $name/CLAUDE.md NO tiene la seccion CodeGraph. Sin ella los agentes"
@@ -227,22 +234,60 @@ PY
     esac
   fi
   echo
+else
+  # --no-auto saca el gancho de arranque si estaba; el resto de settings.json queda igual
+  SETTINGS="$HOME/.claude/settings.json"
+  if [ -f "$SETTINGS" ]; then
+    HOOK_RESULT="$(
+      python3 - "$SETTINGS" <<'PY' 2>/dev/null || echo "ERROR"
+import json, sys
+path = sys.argv[1]
+try:
+    with open(path) as f:
+        data = json.load(f)
+except Exception:
+    print("MALFORMED"); sys.exit(0)
+ss = data.get("hooks", {}).get("SessionStart") if isinstance(data, dict) and isinstance(data.get("hooks"), dict) else None
+if not isinstance(ss, list):
+    print("ABSENT"); sys.exit(0)
+ours = lambda h: isinstance(h, dict) and "codegraph-session-hook" in str(h.get("command", ""))
+kept = []
+for group in ss:
+    if isinstance(group, dict) and isinstance(group.get("hooks"), list) and any(ours(h) for h in group["hooks"]):
+        rest = [h for h in group["hooks"] if not ours(h)]
+        if rest:
+            kept.append({**group, "hooks": rest})
+    else:
+        kept.append(group)
+if len(kept) == len(ss) and kept == ss:
+    print("ABSENT"); sys.exit(0)
+data["hooks"]["SessionStart"] = kept
+with open(path, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+print("REMOVED")
+PY
+    )"
+    case "$HOOK_RESULT" in
+      REMOVED) echo "→ saqué el modo automático (el gancho de arranque de CodeGraph) de $SETTINGS" ;;
+      ABSENT)  ;;
+      *)       echo "⚠ No pude editar $SETTINGS para sacar el modo automático (malformado o sin python3)." >&2 ;;
+    esac
+  fi
 fi
 
 echo "✓ CodeGraph instalado."
 echo
-echo "Proximos pasos:"
-echo "  1. Reinicia Claude Code abriendolo en: $REGDIR"
-echo "  2. Cuando pida aprobar el/los MCP server(s) 'codegraph*', aprobalos."
-echo "  3. Verifica con el comando /mcp dentro de Claude Code (deben figurar 'connected')."
+echo "Para usarlo: reiniciá Claude Code en el repo ($REGDIR) y, cuando lo pida, aprobá el servidor 'codegraph'."
+echo "Se verifica con /mcp dentro de Claude Code (tiene que figurar 'connected')."
 if [ "$AUTO_HOOK" -eq 1 ]; then
   echo
-  echo "Modo automatico ACTIVO: de aca en adelante, cualquier OTRO repo que abras"
-  echo "en Claude Code se auto-configura solo (indexa + registra) via el hook."
-  echo "No hace falta volver a correr este script — salvo para contenedores"
-  echo "(--container), que el hook no maneja."
+  echo "Modo automático prendido: al abrir una sesión en un repo, lo indexa y lo registra en esta máquina (el índice queda"
+  echo "en .codegraph/, anotado en el exclude local de git); no corre en cada mensaje ni deja archivos para subir."
+  echo "Para sacarlo: bash $SCRIPT_DIR/install-codegraph.sh --tool-only --no-auto"
+  echo "Los contenedores con subproyectos (--container) no los maneja: para esos, este script una vez."
 else
   echo
-  echo "Modo manual (--no-auto): solo se configuro el target. Para otros repos,"
-  echo "volve a correr este script apuntando a cada uno."
+  echo "Modo manual (--no-auto): solo se configuró el target. Para otros repos,"
+  echo "volvé a correr este script apuntando a cada uno."
 fi

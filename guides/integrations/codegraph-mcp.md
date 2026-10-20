@@ -37,7 +37,8 @@ El script:
 3. **Autodetecta** si el target es un repo suelto o un contenedor con subproyectos
    (forzá con `--repo` / `--container`, o `-Repo` / `-Container` en Windows).
 4. Indexa cada repo y lo registra como MCP server (`claude mcp add`, scope local).
-5. Agrega `.codegraph/` al `.gitignore`.
+5. Anota `.codegraph/` en el exclude local de git (`.git/info/exclude`, el que vale para un worktree): no toca el
+   `.gitignore` del equipo. En una carpeta que no es un repo no anota nada y lo dice.
 6. **Instala un hook `SessionStart`** → de acá en adelante, cualquier OTRO repo que abras
    se auto-configura solo (ver "Modo automático").
 
@@ -51,8 +52,8 @@ Tras esa corrida única, el script dejó instalado `codegraph-session-hook.sh` (
 Windows) como hook `SessionStart` en tu `~/.claude/settings.json`. En cada sesión nueva:
 
 - Si el directorio es un proyecto y **todavía no está seteado** → lo indexa, lo registra
-  como MCP server y agrega `.codegraph/` al `.gitignore`. Corre en background (`async`),
-  no bloquea el arranque.
+  como MCP server y anota `.codegraph/` en el exclude local de git. Corre en background (`async`),
+  no bloquea el arranque. Corre al abrir la sesión, no en cada mensaje.
 - Si ya está seteado → sale al instante (marca `.codegraph/.tycon-setup-done`).
 
 O sea: **corrés el instalador una vez y nunca más tocás nada** — todo repo futuro queda
@@ -63,7 +64,8 @@ primera vez que abrís ese repo (es inherente a cómo Claude Code carga MCP serv
 mismo pero tiene repos adentro). Para esos, corré el instalador con `--container` una vez.
 
 **Optar por NO usar el hook:** instalá con `--no-auto` (`-NoAuto` en Windows) — modo
-manual, configura solo el repo indicado y hay que re-correr el script para cada otro repo.
+manual, configura solo el repo indicado y hay que re-correr el script para cada otro repo. Si el hook ya estaba,
+`--tool-only --no-auto` lo saca de `~/.claude/settings.json` y deja el resto igual.
 
 ---
 
@@ -76,9 +78,11 @@ contexto en todas tus sesiones, y es **self-gating**: aplica cuando el repo tien
 su raíz o la sesión tiene tools de CodeGraph (incluidas las `codegraph-<subcarpeta>` del modo
 contenedor del instalador). No hay que hacer nada.
 
-Ojo: `codegraph install` agrega además su propia sección al `~/.claude/CLAUDE.md` (entre
-`<!-- CODEGRAPH_START -->` y `<!-- CODEGRAPH_END -->`), que duplica las instrucciones que el
-servidor MCP ya manda; si reaparece después de reinstalar, se puede borrar.
+Ojo: no uses `codegraph install` para registrar el servidor. Con `--location local` escribe en el repo `.mcp.json`,
+`.claude/settings.json` (con un enganche que corre `codegraph prompt-hook` en cada mensaje) y `.claude/CLAUDE.md`:
+quedan para subir a un repo compartido. Global, agrega su propia sección al `~/.claude/CLAUDE.md` (entre
+`<!-- CODEGRAPH_START -->` y `<!-- CODEGRAPH_END -->`), que duplica lo que el servidor ya manda. El instalador del arnés
+registra el servidor sin escribir en el repo.
 
 Si querés que la regla viaje *con un repo puntual* (p.ej. para alguien fuera del setup
 TYCON), pegá este bloque en el `CLAUDE.md` del repo y commiteálo:
@@ -113,10 +117,12 @@ falla (server caído), recién ahí caer a `grep`.
 | Pieza | Dónde vive | ¿Se commitea? |
 |---|---|---|
 | CLI `codegraph` | npm global | No — per máquina |
-| Índice `.codegraph/` | Carpeta del repo (SQLite) | **No** — gitignored, regenerable |
+| Índice `.codegraph/` | Carpeta del repo (SQLite) | **No** — anotado en el exclude local de git, regenerable |
 | Registro MCP server | `~/.claude.json` scope `local` | No — per máquina |
 | Hook `SessionStart` | `~/.claude/settings.json` | No — per máquina |
-| Entrada `.codegraph/` en `.gitignore` | Repo | **Sí** |
+| Entrada `.codegraph/` en `.git/info/exclude` | Repo, sólo esta máquina | No — no se sube |
+
+Un `.gitignore` que ya tenía `.codegraph/` de antes queda como está.
 
 Nada de la config MCP es portable (rutas absolutas resueltas por máquina) — por eso cada
 dev corre el instalador localmente.

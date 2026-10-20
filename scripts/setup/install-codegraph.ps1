@@ -157,14 +157,19 @@ foreach ($repoPath in $Repos) {
     }
     finally { Pop-Location }
 
-    $gi = Join-Path $repoPath ".gitignore"
-    if (Test-Path -LiteralPath $gi) {
-        $giLines = Get-Content -LiteralPath $gi
-        if ($giLines -notcontains ".codegraph/") {
-            Add-Content -LiteralPath $gi -Value ""
-            Add-Content -LiteralPath $gi -Value "# CodeGraph: indice local (SQLite), machine-specific y regenerable"
-            Add-Content -LiteralPath $gi -Value ".codegraph/"
-            Write-Host "   + .codegraph/ agregado a $name\.gitignore"
+    # el índice es de esta máquina: al exclude local de git, nunca al .gitignore del equipo; fuera de un repo, nada
+    $ex = (& git -C $repoPath rev-parse --git-path info/exclude 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $ex) {
+        Write-Host "   ! $name no es un repo de git: no anoté .codegraph/ en ningún lado"
+    }
+    else {
+        if (-not [System.IO.Path]::IsPathRooted($ex)) { $ex = Join-Path $repoPath $ex }
+        $exDir = Split-Path -Parent $ex
+        if (-not (Test-Path -LiteralPath $exDir)) { New-Item -ItemType Directory -Path $exDir -Force | Out-Null }
+        $exLines = if (Test-Path -LiteralPath $ex) { Get-Content -LiteralPath $ex } else { @() }
+        if ($exLines -notcontains ".codegraph/") {
+            Add-Content -LiteralPath $ex -Value ".codegraph/"
+            Write-Host "   + .codegraph/ anotado en el exclude local de git de $name (no se sube)"
         }
     }
     $claudeMd = Join-Path $repoPath "CLAUDE.md"
@@ -266,22 +271,52 @@ if (-not $NoAuto) {
     }
     Write-Host ""
 }
+else {
+    # -NoAuto saca el gancho de arranque si estaba; el resto de settings.json queda igual
+    $Settings = Join-Path $HOME ".claude\settings.json"
+    if (Test-Path -LiteralPath $Settings) {
+        try {
+            $data = Get-Content -LiteralPath $Settings -Raw | ConvertFrom-Json -AsHashtable
+            if ($data -is [hashtable] -and $data.ContainsKey("hooks") -and $data["hooks"] -is [hashtable] -and $data["hooks"].ContainsKey("SessionStart")) {
+                $removed = $false
+                $kept = @()
+                foreach ($group in @($data["hooks"]["SessionStart"])) {
+                    if ($group -is [hashtable] -and $group.ContainsKey("hooks")) {
+                        $rest = @($group["hooks"] | Where-Object { -not ("$($_["command"])" -match "codegraph-session-hook") })
+                        if ($rest.Count -ne @($group["hooks"]).Count) {
+                            $removed = $true
+                            if ($rest.Count -gt 0) { $group["hooks"] = $rest; $kept += $group }
+                            continue
+                        }
+                    }
+                    $kept += $group
+                }
+                if ($removed) {
+                    $data["hooks"]["SessionStart"] = $kept
+                    ($data | ConvertTo-Json -Depth 100) | Set-Content -LiteralPath $Settings -Encoding UTF8
+                    Write-Host "-> saqué el modo automático (el gancho de arranque de CodeGraph) de $Settings"
+                }
+            }
+        }
+        catch {
+            Write-Warning "No pude editar $Settings para sacar el modo automático ($_)."
+        }
+    }
+}
 
 Write-Host "OK: CodeGraph instalado."
 Write-Host ""
-Write-Host "Proximos pasos:"
-Write-Host "  1. Reinicia Claude Code abriendolo en: $RegDir"
-Write-Host "  2. Cuando pida aprobar el/los MCP server(s) 'codegraph*', aprobalos."
-Write-Host "  3. Verifica con el comando /mcp dentro de Claude Code (deben figurar 'connected')."
+Write-Host "Para usarlo: reiniciá Claude Code en el repo ($RegDir) y, cuando lo pida, aprobá el servidor 'codegraph'."
+Write-Host "Se verifica con /mcp dentro de Claude Code (tiene que figurar 'connected')."
 if (-not $NoAuto) {
     Write-Host ""
-    Write-Host "Modo automatico ACTIVO: de aca en adelante, cualquier OTRO repo que abras"
-    Write-Host "en Claude Code se auto-configura solo (indexa + registra) via el hook."
-    Write-Host "No hace falta volver a correr este script — salvo para contenedores"
-    Write-Host "(-Container), que el hook no maneja."
+    Write-Host "Modo automático prendido: al abrir una sesión en un repo, lo indexa y lo registra en esta máquina (el índice queda"
+    Write-Host "en .codegraph\, anotado en el exclude local de git); no corre en cada mensaje ni deja archivos para subir."
+    Write-Host "Para sacarlo: pwsh -File `"$ScriptDir\install-codegraph.ps1`" -ToolOnly -NoAuto"
+    Write-Host "Los contenedores con subproyectos (-Container) no los maneja: para esos, este script una vez."
 }
 else {
     Write-Host ""
-    Write-Host "Modo manual (-NoAuto): solo se configuro el target. Para otros repos,"
-    Write-Host "volve a correr este script apuntando a cada uno."
+    Write-Host "Modo manual (-NoAuto): solo se configuró el target. Para otros repos,"
+    Write-Host "volvé a correr este script apuntando a cada uno."
 }
