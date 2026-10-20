@@ -269,16 +269,49 @@ function agentsFolderOf(json) {
 }
 
 /**
- * Los paquetes de una carpeta `packs/`, con sus revisores y los errores del validador del pipeline. `origin`:
- * `harness` (los del árbol) u `organization` (los del perfil). `yaDeclarados` (agente → { paquete, archivo }) es el
- * mismo mapa que arma el cargador del pipeline: se comparte entre las carpetas para que un revisor declarado en dos
- * paquetes salga como problema, como cuando el pipeline los carga.
+ * Los lugares donde el validador busca el `.md` de un revisor, relativos a `baseDir` (la raíz del árbol o del perfil),
+ * en su orden: la carpeta de agentes que declara el paquete (si declara una) y la de respaldo (`agentsDir`, la
+ * `agents/` de la raíz).
  */
-function readPacks({ treeDir, packsDir, origin, yaDeclarados = new Map() }) {
+function agentPlacesOf({ baseDir, pack, json, agent, agentsDir }) {
+  const declarada = json && typeof json.agents === 'string' && json.agents ? agentsFolderOf(json) : null;
+  return [
+    ...(declarada ? [rel(path.join('packs', pack, declarada, `${agent}.md`))] : []),
+    ...(agentsDir ? [rel(path.relative(baseDir, path.join(agentsDir, `${agent}.md`)))] : []),
+  ];
+}
+
+/**
+ * Dónde está el `.md` de un revisor: el primero de sus lugares donde existe. Si no está en ninguno, el primero: ahí
+ * nace uno nuevo (la carpeta del paquete si declara una; si no, la de la raíz).
+ */
+function agentFileOf({ baseDir, pack, json, agent, agentsDir }) {
+  const lugares = agentPlacesOf({ baseDir, pack, json, agent, agentsDir });
+  return lugares.find((l) => fs.existsSync(path.join(baseDir, l))) || lugares[0] || rel(path.join('packs', pack, 'agents', `${agent}.md`));
+}
+
+/** El texto con las rutas absolutas de estas carpetas pasadas a relativas: la pantalla no muestra rutas de la máquina. */
+function withoutAbsolutePaths(texto, carpetas) {
+  let t = String(texto);
+  for (const c of carpetas.filter(Boolean).map((x) => path.resolve(x)).sort((a, b) => b.length - a.length)) t = t.split(`${c}${path.sep}`).join('').split(c).join('.');
+  return t;
+}
+
+/**
+ * Los paquetes de una carpeta `packs/`, con sus revisores y los errores del validador del pipeline. `origin`:
+ * `harness` (los del árbol) u `organization` (los del perfil). `agentsDir`: la carpeta de agentes de respaldo con que
+ * se valida, la de la raíz de donde vienen los paquetes (la del árbol, o la del perfil: la que el instalador copia al
+ * árbol antes de validar). `yaDeclarados` (agente → { paquete, archivo }) es el mismo mapa que arma el cargador del
+ * pipeline: se comparte entre las carpetas para que un revisor declarado en dos paquetes salga como problema, como
+ * cuando el pipeline los carga. Los problemas salen sin repetir y sin rutas absolutas; los agentes que faltan, además,
+ * en `missing` con dónde deberían estar, para que la pantalla los diga en llano.
+ */
+function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, 'agents'), yaDeclarados = new Map() }) {
+  const baseDir = path.dirname(packsDir);
   const out = [];
   let nombres = [];
   try { nombres = fs.readdirSync(packsDir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort(); } catch (e) {
-    if (e && e.code !== 'ENOENT') out.push({ name: rel(packsDir), origin, reviewers: [], problems: [`la carpeta no se pudo leer (${e.code})`] });
+    if (e && e.code !== 'ENOENT') out.push({ name: rel(path.basename(packsDir)), origin, reviewers: [], problems: [`la carpeta no se pudo leer (${e.code})`], missing: [] });
     return out;
   }
   const P = require(path.join(CODE, PIPELINE_SCRIPTS, 'lib', 'packs.js'));
@@ -286,23 +319,29 @@ function readPacks({ treeDir, packsDir, origin, yaDeclarados = new Map() }) {
   for (const n of nombres) {
     const archivo = path.join(packsDir, n, 'pack.json');
     if (!fs.existsSync(archivo)) continue;
-    let json = null; const problems = [];
+    let json = null; const problems = []; const missing = [];
     // el código del error o su tipo (SyntaxError), nunca el mensaje del parser: podría citar el contenido del archivo
     try { json = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) { problems.push(`pack.json no se pudo leer (${(e && (e.code || e.name)) || 'Error'})`); }
     if (json) {
-      for (const e of P.validarManifiesto(json, { archivo, agentsDir: path.join(treeDir, 'agents'), nucleo: PIPE.revisoresDelNucleo(), banderas: P.BANDERAS, yaDeclarados })) {
-        problems.push(`${e.revisor ? `${e.revisor}: ` : ''}${e.motivo}`);
+      for (const e of P.validarManifiesto(json, { archivo, agentsDir, nucleo: PIPE.revisoresDelNucleo(), banderas: P.BANDERAS, yaDeclarados })) {
+        const texto = `${e.revisor ? `${e.revisor}: ` : ''}${withoutAbsolutePaths(e.motivo, [baseDir, treeDir])}`;
+        if (!problems.includes(texto)) problems.push(texto);
+        if (e.revisor && /^no existe el agente /.test(e.motivo) && !missing.some((x) => x.agent === e.revisor)) {
+          missing.push({ agent: e.revisor, expected: agentPlacesOf({ baseDir, pack: n, json, agent: e.revisor, agentsDir }) });
+        }
       }
       for (const r of Array.isArray(json.reviewers) ? json.reviewers : []) {
-        if (r && typeof r.agent === 'string' && !yaDeclarados.has(r.agent)) yaDeclarados.set(r.agent, { paquete: n, archivo });
+        // la ruta del manifiesto, relativa: sale en el mensaje de un revisor repetido
+        if (r && typeof r.agent === 'string' && !yaDeclarados.has(r.agent)) yaDeclarados.set(r.agent, { paquete: n, archivo: rel(path.join('packs', n, 'pack.json')) });
       }
     }
     const carpeta = agentsFolderOf(json);
     const reviewers = json && Array.isArray(json.reviewers) ? json.reviewers.filter((r) => r && typeof r === 'object' && typeof r.agent === 'string').map((r) => ({
       agent: r.agent, group: r.group, when: r.when || null, surface: r.surface || null, prefixes: r.prefixes || [],
       file: carpeta ? rel(path.join(n, carpeta, `${r.agent}.md`)) : rel(path.join(n, 'pack.json')),
+      md: carpeta ? agentFileOf({ baseDir, pack: n, json, agent: r.agent, agentsDir }) : null,
     })) : [];
-    out.push({ name: n, origin, dir: path.join(packsDir, n), reviewers, problems });
+    out.push({ name: n, origin, dir: path.join(packsDir, n), reviewers, problems, missing });
   }
   return out;
 }
@@ -322,7 +361,7 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   const yaDeclarados = new Map();
   const packs = [
     ...readPacks({ treeDir, packsDir: path.join(packsTreeDir || treeDir, 'packs'), origin: 'harness', yaDeclarados }),
-    ...(profileDir ? readPacks({ treeDir, packsDir: path.join(profileDir, 'packs'), origin: 'organization', yaDeclarados }) : []),
+    ...(profileDir ? readPacks({ treeDir, packsDir: path.join(profileDir, 'packs'), origin: 'organization', agentsDir: path.join(profileDir, 'agents'), yaDeclarados }) : []),
   ];
   const instalados = unique(packs.filter((p) => !p.problems.length).map((p) => p.name)).sort();
   const v = org ? org.packsDefault : null;
@@ -347,6 +386,8 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     const grupos = s.id === '1' ? ['validacion'] : (s.id === '5' || s.id === '7b') ? ['base', 'condicional'] : [];
     const dePaquetes = packs.flatMap((p) => p.reviewers.filter((r) => grupos.includes(r.group)).map((r) => ({
       ...r, pack: p.name, origin: p.origin, active: activos === null ? null : activos.includes(p.name), editable: p.origin === 'organization' && !p.problems.length && r.group !== 'validacion',
+      // por qué no se edita un revisor de la organización: su paquete roto (con el primer problema) o un uso que valida
+      notEditable: p.origin !== 'organization' ? null : p.problems.length ? { reason: 'broken', detail: p.problems[0] } : r.group === 'validacion' ? { reason: 'validation' } : null,
     })));
     const bloque = {
       always: core('always'),
@@ -374,10 +415,10 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     steps, allSteps: { controls: [...enTodo.values()] },
     org: org ? { ...org, packs: { installed: instalados, active: activos } } : null,
     profile: { state: profileDir ? 'leido' : (profileState || 'no_configurado'), reason: profileReason || null },
-    packs: packs.map((p) => ({ name: p.name, origin: p.origin, problems: p.problems, reviewers: p.reviewers.map((r) => r.agent) })),
+    packs: packs.map((p) => ({ name: p.name, origin: p.origin, problems: p.problems, missing: p.missing || [], reviewers: p.reviewers.map((r) => r.agent) })),
     // lo que no se pudo leer de las fuentes del arnés: la pantalla lo dice, no lo esconde detrás de un «no hay»
     problems: [...pasos.flatMap((s) => s.problems), ...problemasDeControles.map((p) => `${p.spec}: ${p.message}`)],
   };
 }
 
-module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, buildModel, STEP_INTEGRATIONS, DENY_RX };
+module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, agentFileOf, withoutAbsolutePaths, buildModel, STEP_INTEGRATIONS, DENY_RX };
