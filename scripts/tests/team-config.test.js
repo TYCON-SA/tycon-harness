@@ -465,3 +465,18 @@ test('2.29-T21b PaginaLocal_LoQueNoSePuedeLeer_SeDice', async () => {
     });
   }
 });
+
+// la configuración de los pedidos de vulnerabilidades se ve, de sólo lectura, en la página
+// local — sale del núcleo común como las demás secciones de operations.json, sin código propio
+test('4.9-T16c PaginaLocal_MuestraLosPedidosDeVulnerabilidades @story-4.9 @ac-10', () => {
+  // 🔴 rojo: la sección no llega a la página local, o llega sin la configuración del archivo.
+  const tree = path.join(__dirname, '..', '..');
+  const ops = cloneWithRemote().dir;
+  const work_items = { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad' }, by_severity: { critical: { 'Custom.Impacto': 5 } } };
+  fs.writeFileSync(path.join(ops, 'operations.json'), `${JSON.stringify({ version: 1, owners: { default: 'lead@acme.example' }, work_items }, null, 2)}\n`);
+  const target = TC.TARGETS.find((t) => t.id === 'operations');
+  const s = TC.sectionsOf(target, ops, TC.loadCore(tree).core, []).find((x) => x.id === 'pedidos');
+  assert.ok(s, 'la página local tiene la sección de los pedidos');
+  assert.strictEqual(s.titulo, 'Pedidos de vulnerabilidades');
+  assert.deepStrictEqual(s.data, { work_items });
+});

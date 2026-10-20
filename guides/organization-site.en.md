@@ -406,6 +406,17 @@ only: they are changed with a request in their repo.
   shows in Arnés, Proyectos and Corridas. Untick the ones you do not use: they stop being built and shown, and Arnés
   says how many are hidden. It lives in `operations.json`, in the operations repo (`site.hidden_cards`). A maintainer
   reviews it.
+- **Vulnerability work items** (*Pedidos de vulnerabilidades*): the type and fields the night review uses to create
+  the work item for a vulnerability in each Azure DevOps project. It has three parts: the **type** (empty, each project
+  uses its backlog item), the **fixed fields**, which go on every work item, and one row **per severity** (critical,
+  high, moderate and low), whose fields win over the fixed ones when they match. Each field is written with its Azure
+  DevOps reference name (like `Microsoft.VSTS.Common.Priority`) and its value. The title, text, tags and assignment are
+  set by the harness and cannot be changed here. "Review changes" validates it with the same reader the night uses: a
+  field the harness sets, a value that starts with "@" or has a line break, or a severity that is not one of the four,
+  is marked on its field and not proposed. A project without the chosen type uses its own, and the morning summary
+  says so. It lives in `operations.json`, in the operations repo (`work_items`). A maintainer reviews it. Types and
+  fields are typed in: picking them from a list read from Azure DevOps would need a work item read permission the site
+  does not have.
 
 ![Notices and night runs](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 

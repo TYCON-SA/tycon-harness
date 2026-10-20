@@ -389,6 +389,16 @@ en su repo.
 - **Fichas que muestra el sitio**: una casilla por cada ficha del tablero de la noche que el sitio muestra en Arnés,
   Proyectos y Corridas. Destildá las que no uses: dejan de armarse y de mostrarse, y Arnés dice cuántas hay ocultas.
   Queda en `operations.json`, en el repo de operaciones (`site.hidden_cards`). Lo revisa quien mantiene.
+- **Pedidos de vulnerabilidades**: con qué tipo y qué campos crea la revisión de la noche el pedido de trabajo de una
+  vulnerabilidad en cada proyecto de Azure DevOps. Tiene tres partes: el **tipo** (vacío, cada proyecto usa su elemento
+  de backlog), los **campos fijos**, que van en todos los pedidos, y una fila **por gravedad** (crítica, alta, media y
+  baja), cuyos campos ganan sobre los fijos si coinciden. Cada campo se escribe con su referencia en Azure DevOps (como
+  `Microsoft.VSTS.Common.Priority`) y su valor. El título, el texto, las etiquetas y la asignación los pone el arnés y no
+  se cambian acá. «Revisar cambios» lo valida con el mismo lector que usa la noche: un campo que el arnés fija, un valor
+  que empieza con «@» o con un salto de línea, o una gravedad que no es una de las cuatro, se marcan en su campo y no se
+  proponen. Un proyecto que no tiene el tipo elegido usa el suyo, y el resumen de la mañana lo dice. Queda en
+  `operations.json`, en el repo de operaciones (`work_items`). Lo revisa quien mantiene. Los tipos y los campos se
+  escriben: elegirlos de una lista leída de Azure DevOps pediría un permiso de lectura de work items que el sitio no tiene.
 
 ![Avisos y la noche](sitio-de-la-organizacion/capturas/configuracion-avisos.png)
 
