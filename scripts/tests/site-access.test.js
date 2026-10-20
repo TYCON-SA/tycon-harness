@@ -132,7 +132,7 @@ test('T20 Filtro_QueEsDeQuien', () => {
   assert.deepStrictEqual(conAlias.pedidos.lista.map((p) => p.id), [11]);
   // A sin lista de proyectos: la frase
   assert.strictEqual(mA.proyectos.lista, null);
-  assert.match(mA.proyectos.motivo, /todavía no se sabe en qué proyectos trabajás: lo confirma quien mantiene el arnés/);
+  assert.match(mA.proyectos.motivo, /quien mantiene todavía no te asignó productos/);
   // la persona nunca recibe la lista de máquinas sin confirmar
   assert.strictEqual(mA.maquinasSinConfirmar, undefined);
   assert.strictEqual(mL.maquinasSinConfirmar, 1, 'quien mantiene sabe cuántas máquinas sin confirmar hay');
@@ -262,14 +262,16 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   };
   const ve = (email) => access.filtrar(modelo, access.quienPide(persona(email), { config }), access.crearReglas({ config, modelo, personas }));
   const mA = ve(A);
-  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Alfa', 'Gama'], 'Alfa por sus corridas, Gama agregado; Beta no');
-  assert.deepStrictEqual(views.inicioDev(mA).proyectos, { estado: 'medido', lista: ['Alfa', 'Gama'] }, 'la línea de proyectos del Inicio');
-  assert.deepStrictEqual(views.filasProyectos(mA).filas.map((f) => f.producto), ['Alfa', 'Gama'], 'la pestaña Proyectos');
-  // X tiene corridas, pero ninguna se ubica en un producto: la frase de la 2.23, nunca todos los productos
+  // lo que ve la persona es sólo lo declarado; sus corridas en Alfa quedan como sugerencia para quien mantiene
+  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], 'Gama declarado; Alfa (sus corridas) no decide');
+  assert.deepStrictEqual(views.inicioDev(mA).proyectos, { estado: 'medido', lista: ['Gama'] }, 'la línea de proyectos del Inicio');
+  assert.deepStrictEqual(views.filasProyectos(mA).filas.map((f) => f.producto), ['Gama'], 'la pestaña Proyectos');
+  assert.deepStrictEqual(access.crearReglas({ config, modelo, personas }).sugeridosDe(A), ['Alfa'], 'Alfa, por sus corridas, como sugerencia; Beta no');
+  // X tiene corridas y nada declarado: la tabla cerrada con su frase, nunca todos los productos
   const mX = ve(X);
   assert.strictEqual(mX.proyectos.lista, null);
   assert.deepStrictEqual(mX.productos, []);
-  assert.match(views.inicioDev(mX).proyectos.motivo, /todavía no se sabe en qué proyectos trabajás/);
+  assert.match(views.inicioDev(mX).proyectos.motivo, /quien mantiene todavía no te asignó productos/);
   // quien mantiene: la cuenta de máquinas sin confirmar con corridas (la de OTRO y la que no informa), sin correos
   const mL = ve(LEAD);
   assert.strictEqual(mL.maquinasSinConfirmar, 2);
@@ -313,7 +315,7 @@ test('2.28-R1 Union_QuePeopleRechaza_NoPasaLaCorridaALaNueva', () => {
       const reglas = access.crearReglas({ config, modelo, personas });
       const deB = access.filtrar(modelo, access.quienPide(persona(B), { config }), reglas);
       assert.deepStrictEqual(deB.corridas.lista.map((c) => c.inicio.slice(0, 10)).sort(), unida ? ['2026-10-01', '2026-10-03'] : ['2026-10-03'], `${nombre}: las corridas que ve B`);
-      assert.deepStrictEqual(reglas.proyectosDe(B), unida ? ['Alfa', 'Beta'] : ['Beta'], `${nombre}: los productos de B`);
+      assert.deepStrictEqual(reglas.sugeridosDe(B), unida ? ['Alfa', 'Beta'] : ['Beta'], `${nombre}: los productos sugeridos para B`);
       const lead = access.filtrar(modelo, access.quienPide(persona(LEAD), { config }), reglas);
       assert.strictEqual(lead.corridas.lista.length, 2, `${nombre}: quien mantiene ve las dos`);
       assert.strictEqual(lead.maquinasSinConfirmar, unida ? 0 : 1, `${nombre}: la vieja que no se une es una máquina por confirmar`);
@@ -355,7 +357,8 @@ test('2.28-R3 DondeTrabaja_PorPedidosAsignados', () => {
   };
   const personas = { informados: H.informados({ 'maq-a-11111111': A }), repos: [{ producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }, { producto: 'Gama', ruta: 'Gama/Front', ado: 'Gama/Front' }] };
   const reglas = access.crearReglas({ config, modelo, personas });
-  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'el pedido asignado a A (en mayúsculas) ubica Gama; el de B no cuenta');
+  assert.deepStrictEqual(reglas.sugeridosDe(A), ['Gama'], 'el pedido asignado a A (en mayúsculas) sugiere Gama; el de B no cuenta');
+  assert.strictEqual(reglas.proyectosDe(A), null, 'una sugerencia no decide qué ve');
 });
 
 // Revisores de la vuelta 2: el ayudante de las pruebas tiene la misma forma que el lector real
@@ -414,4 +417,90 @@ test('T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h', async () => {
     assert.match((await h.pedir('/', { cookie: sA })).texto, /1 corridas en 7 días/);
     assert.strictEqual((await h.pedir('/healthz')).status, 200);
   });
+});
+
+// ── los productos de cada persona salen sólo de lo declarado en Configuración; lo deducido es una sugerencia ──────
+
+/** Un mundo con tres productos, una persona A con una máquina confirmada, corridas en Alfa y un pedido asignado en Beta. */
+function mundoDeclarado(projects) {
+  const config = opsBase({ people: {
+    machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A), confirmed_by: LEAD, confirmed_on: '2026-10-15' } },
+    ...(projects ? { projects } : {}),
+  } });
+  const personas = { informados: H.informados({ 'maq-a-11111111': A }), repos: [
+    { producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }, { producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }, { producto: 'Gama', ruta: 'Gama/Front', ado: 'Gama/Front' },
+  ] };
+  const inicio = new Date(haceHoras(1)).toISOString();
+  const modelo = {
+    corridas: { estado: 'medido', fecha: '2026-10-15', lista: [{ maquina: 'maq-a-11111111', inicio, producto: 'Alfa/Web', cambio: null }] },
+    prs: { estado: 'medido', fecha: '2026-10-15', lista: [{ numero: 7, proyecto: 'Beta', repo: 'Front', dias: 1, autor: A, enlace: null }] },
+    pedidos: { estado: 'medido', fecha: '2026-10-15', lista: [{ id: 9, proyecto: 'Beta', tipo: 'Bug', estado: 'Active', asignado: A, dias: 1, enlace: null, dependencias: false, titulo: null }] },
+    productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: ['Alfa/Web'] }, { producto: 'Beta', proyectos: ['Beta'], rutas: ['Beta/Front'] }, { producto: 'Gama', proyectos: ['Gama'], rutas: ['Gama/Front'] }],
+    productosFuente: { estado: 'medido', codigo: null, motivo: null, fecha: '2026-10-15' },
+    proyectos: { estado: 'medido', fecha: '2026-10-15', lista: [{ proyecto: 'Alfa', repo: 'Web' }, { proyecto: 'Beta', repo: 'Front' }, { proyecto: 'Gama', repo: 'Front' }] },
+  };
+  const reglas = access.crearReglas({ config, modelo, personas });
+  return { config, modelo, reglas, ve: (email) => access.filtrar(modelo, access.quienPide(persona(email), { config }), reglas) };
+}
+
+test('T1 Productos_SoloLoDeclarado', () => {
+  const { reglas, ve } = mundoDeclarado({ [A]: { add: ['Gama'] } });
+  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'ni Alfa (sus corridas) ni Beta (su pedido): sólo lo declarado');
+  const mA = ve(A);
+  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama']);
+  assert.deepStrictEqual(mA.proyectos.lista.map((p) => p.proyecto), ['Gama'], 'las fotos de proyectos, sólo las del declarado');
+  assert.deepStrictEqual(views.filasProyectos(mA).filas.map((f) => f.producto), ['Gama'], 'la pestaña Proyectos');
+  // lo deducido queda como sugerencia para quien mantiene, sin lo ya declarado
+  assert.deepStrictEqual(reglas.sugeridosDe(A), ['Alfa', 'Beta']);
+});
+
+test('T2 Productos_SinDeclarar_Cerrado', () => {
+  const { reglas, ve } = mundoDeclarado(null);
+  assert.strictEqual(reglas.proyectosDe(A), null, 'sin nada declarado, ninguno: nunca todos');
+  const mA = ve(A);
+  assert.deepStrictEqual(mA.productos, []);
+  assert.strictEqual(mA.proyectos.lista, null);
+  assert.strictEqual(mA.proyectos.codigo, 'sin_donde_trabaja');
+  assert.match(views.inicioDev(mA).proyectos.motivo, /quien mantiene todavía no te asignó productos/);
+  assert.match(views.paginaProyectos({ modelo: mA, quien: { rol: 'person', email: A }, pestanas: [], ahora: Date.now() }), /quien mantiene todavía no te asignó productos/);
+  assert.deepStrictEqual(reglas.sugeridosDe(A), ['Alfa', 'Beta'], 'lo deducido sigue disponible como sugerencia');
+});
+
+test('T3 Productos_DeclaradoInexistente_NoSale', () => {
+  const { reglas, ve } = mundoDeclarado({ [A]: { add: ['Gama', 'Inexistente'] } });
+  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'un producto que no está en la lista no se declara');
+  assert.deepStrictEqual(ve(A).productos.map((p) => p.producto), ['Gama']);
+  // un declarado con otro de sus correos (la persona entra con cualquiera de los suyos)
+  const otro = mundoDeclarado({ [A.toUpperCase()]: { add: ['Beta'] } });
+  assert.deepStrictEqual(otro.reglas.proyectosDe(A), ['Beta'], 'el correo de la clave sin distinguir mayúsculas');
+});
+
+// el pase adversarial lo reprodujo: la vista de una persona recorta las fotos a las de sus productos, y «no usa stories del
+// arnés» se perdía si ninguno de los suyos tenía foto al día
+test('T12 Producto_SinStories_TambienParaLaPersona', () => {
+  const { config, modelo } = mundoDeclarado({ [A]: { add: ['Gama', 'Delta'] } });
+  modelo.productos.push({ producto: 'Delta', proyectos: ['Delta'], rutas: ['Delta/Back'] });
+  modelo.proyectos = { estado: 'medido', fecha: '2026-10-15', hay_al_dia: true, lista: [{ proyecto: 'Alfa', repo: 'Web', vieja: false, stories: [] }, { proyecto: 'Gama', repo: 'Front', vieja: true, fecha: '2026-10-01', stories: [] }] };
+  const mA = access.filtrar(modelo, access.quienPide(persona(A), { config }), access.crearReglas({ config, modelo, personas: null }));
+  const delta = views.filasProyectos(mA).filas.find((f) => f.producto === 'Delta');
+  assert.strictEqual(delta.motivo, 'sus repos no usan stories del arnés', 'la persona ve lo mismo que quien mantiene');
+});
+
+// revisor de fallos silenciosos: si todo lo declarado no existe, «no te asignó productos» sería falso
+test('T13 Productos_DeclaradosInexistentes_LoDice', () => {
+  const { ve } = mundoDeclarado({ [A]: { add: ['Inexistente'] } });
+  const mA = ve(A);
+  assert.deepStrictEqual(mA.productos, []);
+  assert.strictEqual(mA.proyectos.codigo, 'declarados_inexistentes');
+  assert.match(views.inicioDev(mA).proyectos.motivo, /lo que te asignaron no está en la lista de productos/);
+});
+
+test('T4 Inicio_LoPersonal_SinCambios', () => {
+  // sin nada declarado: sus pedidos, sus pull requests y sus corridas siguen saliendo de su identidad
+  const { ve } = mundoDeclarado(null);
+  const mA = ve(A);
+  assert.deepStrictEqual(mA.pedidos.lista.map((p) => p.id), [9], 'su pedido asignado, aunque Beta no esté declarado');
+  assert.deepStrictEqual(mA.prs.lista.map((p) => p.numero), [7], 'su pull request');
+  assert.strictEqual(mA.corridas.lista.length, 1, 'su corrida');
+  assert.strictEqual(views.inicioDev(mA).corridas.en7dias, 1);
 });

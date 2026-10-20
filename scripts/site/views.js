@@ -37,7 +37,7 @@ function hora(marca, idioma = POR_DEFECTO) {
 
 /** Los códigos de estado de la lista cerrada (AC 14) y de los propios de una fuente: su frase vive en la tabla. */
 const CODIGOS = ['sin_red', 'sin_permiso', 'credencial_rechazada', 'parcial', 'cargando', 'fuente_vieja', 'sin_configurar', 'sin_foto', 'ilegible',
-  'sin_buzon', 'no_corre_banco', 'sin_ayer', 'sin_dato', 'sin_donde_trabaja', 'identidad_sin_asociar', 'no_medido_noche', 'sin_rama', 'falla_git',
+  'sin_buzon', 'no_corre_banco', 'sin_ayer', 'sin_dato', 'sin_donde_trabaja', 'declarados_inexistentes', 'identidad_sin_asociar', 'no_medido_noche', 'sin_rama', 'falla_git',
   'falla_interna', 'sin_paridad', 'sin_productos', 'paridad_no_medida', 'sin_clon', 'grupo_sin_comparar', 'declaracion_incompleta'];
 /** Las frases en un idioma: `{ codigo: frase }`. */
 const frasesEn = (idioma) => Object.fromEntries(CODIGOS.map((c) => [c, t(idioma, `frase.${c}`)]));
@@ -146,6 +146,9 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   // de los repos de stories); una foto vieja no cuenta como al día
   const snaps = medida(m.proyectos) && Array.isArray(m.proyectos.lista) ? m.proyectos.lista : [];
   const frescasDe = (proyecto) => snaps.filter((s) => s.proyecto === proyecto && !s.vieja);
+  // el nocturno de métricas deja foto sólo de los repos con stories del arnés: con alguna foto al día, un producto sin
+  // ninguna (ni vieja) es uno cuyos repos no las usan; sin ninguna al día no se sabe si el nocturno corrió
+  const hayAlDia = (m.proyectos && m.proyectos.hay_al_dia === true) || snaps.some((s) => !s.vieja);
   const viejasDe = (proyecto) => snaps.filter((s) => s.proyecto === proyecto && s.vieja);
   const cuantos = new Map();
   for (const p of productos) for (const k of p.proyectos || []) cuantos.set(k, (cuantos.get(k) || 0) + 1);
@@ -191,12 +194,14 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
     if (m.dependencias && medida(m.dependencias) && m.dependencias.vivas_por_proyecto) vivas = (p.proyectos || []).reduce((a, n) => a + (Number(m.dependencias.vivas_por_proyecto[n]) || 0), 0);
     const d = medida(dep) && dep.productos ? dep.productos[p.producto] : null;
     const masNuevaVieja = viejas.map((s) => s.fecha).filter(Boolean).sort().pop();
+    const sinStories = !frescas.length && !viejas.length && medida(m.proyectos) && hayAlDia;
     return {
       producto: p.producto,
       medido: frescas.length > 0,
+      ...(sinStories ? { sin_stories: true } : {}),
       motivo: frescas.length ? null
         : (viejas.length ? T('proyectos.fotoVieja', { fecha: masNuevaVieja || T('proyectos.sinFecha') })
-          : (medida(m.proyectos) ? T('proyectos.sinFoto') : conFecha(m.proyectos, idioma))),
+          : (sinStories ? T('proyectos.sinStories') : (medida(m.proyectos) ? T('proyectos.sinFoto') : conFecha(m.proyectos, idioma)))),
       ...contar(stories),
       compartido: compartido > 1 ? compartido : null,
       despliegues: d ? { estado: d.estado || 'medido', staging: d.staging || null, produccion: d.produccion || null, produccion_atrasada: d.produccion_atrasada ?? null, aprobacion: d.aprobacion || null, main: d.main || null, motivo: d.estado === 'no_medido' ? (fraseDeCodigo(d.motivo, idioma) || T('vista.noMedido')) : null }
@@ -394,7 +399,7 @@ function paginaProyectos(ctx) {
   };
   const filasHtml = filas.map((f) => `<tr><th scope="row">${esc(f.producto)}${f.compartido ? ` <span class="nota">${esc(T('proyectos.compartido', { n: f.compartido }))}</span>` : ''}</th>${f.medido
     ? `<td>${esc(T('proyectos.enCursoCelda', { n: f.en_curso, revision: f.en_revision }))}</td><td>${esc(T('proyectos.paradasCelda', { paradas: f.paradas, sinMedir: f.sin_medir }))}</td><td>${f.bloqueadas}</td>`
-    : `<td class="nm" colspan="3">${noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
+    : `<td class="nm" colspan="3">${f.sin_stories ? esc(f.motivo) : noMedido(f.motivo)}</td>`}${celdaDep(f.despliegues)}<td>${esc(f.vigilado === null ? T('vista.noMedido') : T(f.vigilado ? 'vista.si' : 'vista.no'))}</td><td>${f.vivas === null ? esc(T('vista.noMedido')) : esc(f.vivas)}</td><td${f.paridad.estado === 'no_medido' ? ' class="nm"' : ''}>${esc(f.paridad.texto)}</td></tr>`).join('');
   const cab = ['producto', 'enCurso', 'paradas', 'bloqueadas', 'enPrueba', 'enProduccion', 'aprobacion', 'vigilado', 'vivas', 'paridad'].map((k) => `<th>${esc(T(`proyectos.col.${k}`, { dias: PARADA_DIAS }))}</th>`).join('');
   const tabla = `<label class="filtro">${esc(T('proyectos.filtrar'))} <input type="search" data-filtro="proyectos"></label><div class="card tbl-wrap"><table class="tabla" id="proyectos"><thead><tr>${cab}</tr></thead><tbody>${filasHtml}</tbody></table></div>`;
   const pie = `<p class="q-note">${esc(T('proyectos.totales', { enCurso: totales.en_curso_total, paradas: totales.paradas_total, sinMedir: totales.sin_medir_total }))}</p>`;

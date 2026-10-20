@@ -1296,16 +1296,40 @@ function pantalla(idioma = 'es') {
       conf.appendChild(li);
     });
     box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.confirmadas') }), Object.keys(machines).length ? conf : el('p', { class: 'muted', text: T('pantalla.ninguna') })));
+    // Lo que ve cada persona es sólo lo declarado (add). Los «quitados» (remove) de antes ya no hacen nada: se avisa
+    // una vez y salen del borrador, así el próximo Proponer los limpia del archivo.
+    var proyectos = d.people.projects || {};
+    Object.keys(proyectos).forEach(function (k) {
+      var f = proyectos[k];
+      if (!f || typeof f !== 'object' || f.remove === undefined) return;
+      ex.quitadosViejos = true;
+      delete f.remove;
+      if (!Object.keys(f).length) delete proyectos[k];
+    });
     var donde = el('ul', { class: 'renglones' });
     (ex.personas || []).forEach(function (p) {
-      var fix = (d.people.projects || {})[p.correo] || {};
+      // la clave que ya tiene en el archivo (otro de sus correos, o con mayúsculas); sin ninguna, su primer correo
+      var clave = p.clave || p.correo;
+      var fix = (d.people.projects || {})[clave] || {};
+      var declarados = Array.isArray(fix.add) ? fix.add : [];
+      var deLaPersona = function () { d.people.projects = d.people.projects || {}; var f = d.people.projects[clave] = d.people.projects[clave] || {}; f.add = Array.isArray(f.add) ? f.add : []; return f; };
       var agregar = el('input', { placeholder: T('pantalla.producto2'), 'aria-label': T('pantalla.producto') });
-      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.deducido') + ((p.deducidos || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seAgrega') + ((fix.add || []).join(', ') || T('pantalla.nada2')) + T('pantalla.seQuita') + ((fix.remove || []).join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }),
-        el('span', { class: 'acc' }, agregar,
-          el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.add = f.add || []; f.add.push(v); render(); } }),
-          el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; d.people.projects = d.people.projects || {}; var f = d.people.projects[p.correo] = d.people.projects[p.correo] || {}; f.remove = f.remove || []; f.remove.push(v); render(); } }))));
+      var acciones = el('span', { class: 'acc' });
+      declarados.forEach(function (prod) {
+        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.quitar'), 'data-producto': prod, 'aria-label': T('pantalla.quitar') + ' ' + prod, onclick: function () { var f = deLaPersona(); f.add = f.add.filter(function (x) { return x !== prod; }); if (!f.add.length) delete d.people.projects[clave]; render(); } }));
+      });
+      (p.sugeridos || []).filter(function (s2) { return declarados.indexOf(s2) < 0; }).forEach(function (prod) {
+        acciones.appendChild(el('span', { class: 'dato', text: T('pantalla.sugerido') + prod }));
+        acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.aceptar'), 'data-producto': prod, onclick: function () { var f = deLaPersona(); if (f.add.indexOf(prod) < 0) f.add.push(prod); render(); } }));
+      });
+      acciones.appendChild(agregar);
+      acciones.appendChild(el('button', { class: 'sec', type: 'button', text: T('pantalla.agregar'), onclick: function () { var v = agregar.value.trim(); if (!v) return; var f = deLaPersona(); if (f.add.indexOf(v) < 0) f.add.push(v); render(); } }));
+      donde.appendChild(el('li', {}, el('span', { class: 'quien', text: p.correo }), el('span', { class: 'dato', text: T('pantalla.ve') + (declarados.join(', ') || T('pantalla.nada2')) + (p.caida ? T('pantalla.susMaquinasNoMandanNoticias') : '') }), acciones));
     });
-    box.appendChild(el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }), (ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') })));
+    var sub = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.enQueProyectosTrabajaCada') }), el('p', { class: 'sub-d', text: T('pantalla.elSitioLoDeduceDe') }));
+    if (ex.quitadosViejos) sub.appendChild(aviso('warn', T('pantalla.quitadosViejos'), T('pantalla.quitadosViejosDetalle')));
+    sub.appendChild((ex.personas || []).length ? donde : el('p', { class: 'muted', text: T('pantalla.nadieTodavia') }));
+    box.appendChild(sub);
     return box;
   }
   // los nombres de los umbrales, como los titula el tablero; uno que no está acá se muestra con su clave

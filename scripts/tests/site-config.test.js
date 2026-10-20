@@ -294,8 +294,8 @@ function clon(archivos) {
 const opsBase = (extra = {}) => ({ version: 1, owners: { default: LEAD }, site: { maintainers: [LEAD] }, ...extra });
 
 /** Las fuentes de la 2.23 de mentira, con los clones y el espejo que la pestaña lee. */
-function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null }) {
-  const f = H.fuentesFijas({ config: config || opsBase(), personas: { informados, repos } });
+function fuentesCon({ ops, perfil = null, config, informados = null, repos = null, espejo = null, estado = {}, indice = null, escritura = null, modelo = {} }) {
+  const f = H.fuentesFijas({ config: config || opsBase(), modelo, personas: { informados, repos } });
   const base = f.estado;
   f.estado = () => ({ ...base(), ...estado });
   // con la copia de operaciones: la carpeta de la foto con su índice, y el clon de escritura aparte
@@ -524,8 +524,10 @@ test('T9 Personas_ConfirmarEscribeQuienYCuando_YQuitar @story-2.29 @ac-9', async
 });
 
 test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
+  // las personas de la sección salen de «Quién entra al sitio»: las dos están en la lista
+  const lista = [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }, { role: 'dev', emails: ['caido@acme.example'] }];
   const machines = { 'maq-a': { person: DEV, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' }, 'maq-x': { person: 'caido@acme.example', reported_sha256: sha('otro@acme.example'), confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
-  const config = opsBase({ people: { machines } });
+  const config = opsBase({ site: { access: lista }, people: { machines } });
   const ops = clon({ 'operations.json': config });
   const inf = H.informados({ 'maq-a': null, 'maq-x': 'nuevo@acme.example' });
   await conPestana({ fuentes: fuentesCon({ ops, config, informados: inf }) }, async ({ h, entrar, token, escribir }) => {
@@ -551,6 +553,99 @@ test('T10 Personas_CorreccionDeDondeTrabaja @story-2.29 @ac-9', async () => {
       assert.strictEqual(!p.soloLectura, editable);
     });
   }
+});
+
+// ── «En qué proyectos trabaja cada uno»: las personas de la lista de acceso, lo deducido como sugerencia ──────────
+
+test('T5 Personas_DeLaListaDeAcceso', async () => {
+  const SIN = 'sin.maquina@acme.example';
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [SIN, 'otro.correo@acme.example'] }] },
+    people: { projects: { 'declarada@acme.example': { add: ['Gama'] } } } });
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const correos = p.extras.personas.map((x) => x.correo);
+    assert.ok(correos.includes(SIN), 'una persona de la lista sin máquina aparece (por su primer correo)');
+    assert.ok(!correos.includes('otro.correo@acme.example'), 'una vez por persona, no por correo');
+    assert.ok(correos.includes('declarada@acme.example'), 'quien ya tiene algo declarado también');
+    assert.ok(!correos.includes(LEAD), 'quien mantiene ve todo: no se le declaran productos');
+  });
+});
+
+test('T6 Sugerencia_SeAcepta', async () => {
+  // del lado del servidor: lo deducido que no está declarado llega como sugerencia
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV] }] }, people: { projects: { [DEV]: { add: ['Alfa'] } } } });
+  const modelo = {
+    pedidos: { estado: 'medido', fecha: HOY, lista: [{ id: 1, proyecto: 'Beta', tipo: 'Bug', estado: 'Active', asignado: DEV, dias: 1 }, { id: 2, proyecto: 'Alfa', tipo: 'Bug', estado: 'Active', asignado: DEV, dias: 1 }] },
+    productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: [] }, { producto: 'Beta', proyectos: ['Beta'], rutas: [] }],
+  };
+  const repos = [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }, { producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }];
+  const ops = clon({ 'operations.json': config });
+  await conPestana({ fuentes: fuentesCon({ ops, config, modelo, repos, informados: H.informados({}) }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const dev = p.extras.personas.find((x) => x.correo === DEV);
+    assert.deepStrictEqual(dev.sugeridos, ['Beta'], 'Beta por su pedido; Alfa ya está declarado');
+  });
+  // en la pantalla: «sugerido: Beta» con Aceptar, que lo suma a lo declarado; Quitar saca de lo declarado
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { [DEV]: { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: ['Beta'], caida: false }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.strictEqual(pa.error, null);
+  assert.ok(pa.textoDe('personas').includes('sugerido: Beta'), pa.textoDe('personas'));
+  await pa.click('Aceptar', 'personas');
+  assert.ok(!pa.textoDe('personas').includes('sugerido: Beta'), 'aceptada deja de ser sugerencia');
+  await pa.click('Revisar cambios', 'personas');
+  const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects[DEV].add, ['Alfa', 'Beta'], 'Aceptar la sumó a lo declarado');
+  // «Quitar» sobre un declarado lo saca de add (y no escribe un remove)
+  const pq = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa', 'Beta'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
+  const quitar = pq.todo(pq.sec('personas')).find((n) => n.tag === 'button' && n.textContent === 'Quitar' && n.attrs['data-producto'] === 'Beta');
+  assert.ok(quitar, 'cada declarado tiene su Quitar');
+  quitar.on.click({});
+  for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  await pq.click('Revisar cambios', 'personas');
+  const rq = pq.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rq.cuerpo.borrador.people.projects[DEV], { add: ['Alfa'] });
+});
+
+// el pase adversarial lo reprodujo: lo declarado bajo otro correo de la persona, o con mayúsculas, la pantalla no lo veía
+test('T11 Personas_DeclaradoBajoOtroCorreo_SeVeYSeEdita', async () => {
+  const OTRO = 'segundo.correo@acme.example';
+  const machines = { 'maq-b': { person: OTRO, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' } };
+  const config = opsBase({ site: { access: [{ role: 'maintainer', emails: [LEAD] }, { role: 'dev', emails: [DEV, OTRO] }] },
+    people: { machines, projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } });
+  const ops = clon({ 'operations.json': config });
+  const modelo = { productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: [] }] };
+  const inf = H.informados({ 'maq-b': 'otro.distinto@acme.example' });
+  await conPestana({ fuentes: fuentesCon({ ops, config, modelo, informados: inf }) }, async ({ h, entrar }) => {
+    const p = (await h.pedir('/api/config', { cookie: await entrar(LEAD) })).json.secciones.find((s) => s.id === 'personas');
+    const fila = p.extras.personas.find((x) => x.correo === DEV);
+    assert.strictEqual(fila.clave, 'Segundo.Correo@acme.example', 'la pantalla edita la clave que ya existe, con su grafía');
+    assert.strictEqual(fila.caida, true, 'la máquina de su otro correo cuenta (informa otro correo: no confirmada)');
+  });
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { 'Segundo.Correo@acme.example': { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, clave: 'Segundo.Correo@acme.example', sugeridos: ['Beta'], caida: false }] } };
+  const pa = await pantallaFalsa([seccion]);
+  assert.ok(pa.textoDe('personas').includes('ve: Alfa'), pa.textoDe('personas'));
+  await pa.click('Aceptar', 'personas');
+  await pa.click('Revisar cambios', 'personas');
+  const rev = pa.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects, { 'Segundo.Correo@acme.example': { add: ['Alfa', 'Beta'] } }, 'una sola clave, la que ya estaba');
+});
+
+test('T7 QuitadosViejos_SeAvisanYSeLimpian', async () => {
+  const seccion = { id: 'personas', titulo: 'personas', repo: 'operaciones', estado: 'cargado', soloLectura: false, motivo: null, problems: [], avisos: [],
+    borrador: { people: { projects: { [DEV]: { add: ['Alfa'], remove: ['Beta'] }, 'solo.quitados@acme.example': { remove: ['Gama'] } } } },
+    extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } };
+  const p = await pantallaFalsa([seccion]);
+  assert.strictEqual(p.error, null);
+  assert.ok(p.textoDe('personas').includes('hay quitados viejos que ya no hacen nada'), p.textoDe('personas'));
+  await p.click('Revisar cambios', 'personas');
+  const rev = p.pedidos.filter((x) => x.ruta === '/api/config/revisar').pop();
+  assert.deepStrictEqual(rev.cuerpo.borrador.people.projects, { [DEV]: { add: ['Alfa'] } }, 'el borrador que se propone ya no trae los quitados');
+  // sin quitados, no hay aviso
+  const sin = await pantallaFalsa([{ ...seccion, borrador: { people: { projects: { [DEV]: { add: ['Alfa'] } } } }, extras: { personas: [{ correo: DEV, sugeridos: [], caida: false }] } }]);
+  assert.ok(!sin.textoDe('personas').includes('quitados viejos'));
 });
 
 test('T11 Sitio_MantenedoresVaciaNoSePropone_CorreoMalFormado @story-2.29 @ac-10', async () => {

@@ -396,7 +396,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
       proyectos.push({ proyecto: decodificar(texto(d.proyecto)), repo: texto(d.repo), fecha, vieja, stories: (Array.isArray(d.stories) ? d.stories : []).filter(isObject).map((s) => ({ grupo: texto(s.grupo, 30), canonico: texto(s.canonico, 30), dias_en_estado: num(s.dias_en_estado) })) });
     }
     if (!proyectos.length) m.proyectos = noMedida(ilegibles ? 'ilegible' : 'sin_foto');
-    else m.proyectos = fuente('medido', ilegibles ? 'parcial' : null, fechaProy, { lista: proyectos, ilegibles });
+    // hay_al_dia: si el nocturno de métricas dejó alguna foto al día; viaja aparte porque la vista de una persona recorta
+    // la lista a sus productos y sin esto no podría decir «sus repos no usan stories del arnés»
+    else m.proyectos = fuente('medido', ilegibles ? 'parcial' : null, fechaProy, { lista: proyectos, ilegibles, hay_al_dia: proyectos.some((x) => !x.vieja) });
   } catch (e) {
     m.proyectos = noMedida(e.code === 'ENOENT' ? 'sin_foto' : 'ilegible');
     if (e.code !== 'ENOENT') log(`la carpeta de fotos por proyecto no se pudo leer (${e.code || e.message})`);
