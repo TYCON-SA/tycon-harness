@@ -124,6 +124,17 @@ function renderPage(model, { idioma, publicRepo, version }) {
   const elegir = `<label class="ct-elegir"><span>${esc(T('comoTrabaja.elegirPaso'))}</span><select data-action="step">${enOrden.map((s) => `<option value="${esc(s.id)}">${esc(nombrePaso(s))}</option>`).join('')}</select></label>`;
 
   const orgPacks = model.packs.filter((p) => p.origin === 'organization');
+  // los problemas de un paquete en llano: el agente que falta, con dónde debería estar; los demás, como los dice el
+  // lector (sin repetir y sin rutas de la máquina: así llegan del modelo)
+  const enLlano = (p) => {
+    const faltan = (p && p.missing) || [];
+    return [
+      ...faltan.map((x) => T('comoTrabaja.faltaAgente', { revisor: x.agent, rutas: x.expected.join(T('comoTrabaja.oBien')) })),
+      ...((p && p.problems) || []).filter((t) => !faltan.some((x) => t.startsWith(`${x.agent}: no existe el agente`))),
+    ];
+  };
+  const porque = (r) => (r.notEditable && r.notEditable.reason === 'validation' ? T('comoTrabaja.noEditableValidacion')
+    : T('comoTrabaja.noEditableRoto', { motivo: enLlano(orgPacks.find((p) => p.name === r.pack))[0] || (r.notEditable && r.notEditable.detail) || '' }));
   const pasos = model.steps.map((s) => {
     const paso = nombrePaso(s);
     const goal = s.off ? T('comoTrabaja.pasoApagado', { integracion: s.off }) : (() => { try { return T(`paso.${s.id}.objetivo`); } catch { return s.goal; } })();
@@ -141,7 +152,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
         const cuando = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1 ? (() => { try { return T(`bandera.${r.when.detection}`); } catch { return r.when.detection; } })() : (r.group === 'base' && !r.when ? T('comoTrabaja.grupoBase') : T('comoTrabaja.condicionEscrita'));
         const chips = [r.origin === 'organization' ? deLaOrg : delArnes, r.active === false ? chip('off', T('comoTrabaja.noActivo')) : ''];
         const acciones = r.origin === 'organization'
-          ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(T('comoTrabaja.soloAMano'))}</span>`)
+          ? (r.editable ? `<button type="button" class="btn" data-action="edit" data-pack="${esc(pack)}" data-agent="${esc(r.agent)}" aria-expanded="false">${esc(T('comoTrabaja.editar'))}</button>` : `<span class="ct-nota">${esc(porque(r))}</span>`)
           : ver(`packs/${pack}/${r.file.split('/').slice(1).join('/')}`) + mejorar(`packs/${pack}/pack.json`, paso);
         return pieza({ origin: r.origin, nombre: r.agent, cuando, chips, acciones, extra: r.active === false ? ' apagada' : '' });
       }).join('');
@@ -150,7 +161,7 @@ function renderPage(model, { idioma, publicRepo, version }) {
       rev += `<p class="ct-grupo">${esc(T('comoTrabaja.grupoPaquete', { paquete: pack }))}</p><ul class="ct-lista">${items2}</ul>${agregar}`;
     }
     if (s.id === '5') {
-      for (const p of orgPacks.filter((x) => x.problems.length)) rev += `<p class="ct-error">${esc(T('comoTrabaja.paqueteRoto', { paquete: p.name, motivo: p.problems.join(' · ') }))}</p>`;
+      for (const p of orgPacks.filter((x) => x.problems.length)) rev += `<p class="ct-error">${esc(T('comoTrabaja.paqueteRoto', { paquete: p.name, motivo: enLlano(p).join(' · ') }))}</p>`;
       if (model.org && !orgPacks.length) rev += `<p class="ct-vacio">${esc(T('comoTrabaja.sinRevisoresOrg'))}</p>`;
     }
     if (!rev) rev = `<p class="ct-vacio">${esc(T('comoTrabaja.sinRevisores'))}</p>`;
@@ -202,7 +213,7 @@ function declaradosEnOtros({ treeDir, profileDir, pack }) {
   for (const [raiz, propio] of [[path.join(treeDir, 'packs'), false], [path.join(profileDir, 'packs'), true]]) {
     let nombres = [];
     try { nombres = fs.readdirSync(raiz, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch (e) {
-      if (e && e.code !== 'ENOENT') ilegibles.push(`${raiz} (${e.code})`);
+      if (e && e.code !== 'ENOENT') ilegibles.push(`packs (${e.code})`);
       continue;
     }
     for (const n of nombres) {
@@ -213,7 +224,7 @@ function declaradosEnOtros({ treeDir, profileDir, pack }) {
         if (e && e.code !== 'ENOENT') ilegibles.push(`${n}/pack.json (${e.code || e.name})`);
         continue;
       }
-      for (const r of Array.isArray(j && j.reviewers) ? j.reviewers : []) if (r && typeof r.agent === 'string' && !out.has(r.agent)) out.set(r.agent, { paquete: n, archivo });
+      for (const r of Array.isArray(j && j.reviewers) ? j.reviewers : []) if (r && typeof r.agent === 'string' && !out.has(r.agent)) out.set(r.agent, { paquete: n, archivo: `packs/${n}/pack.json` });
     }
   }
   return { mapa: out, ilegibles };
@@ -256,26 +267,35 @@ function reviewDraft({ profileDir, draft, treeDir = TREE, idioma = 'es' }) {
     if (!cab.cuerpo.trim()) problems.push(E('vacias'));
   }
   // el validador del pipeline, sobre una copia del paquete con el borrador puesto
+  // dónde va el .md del borrador: donde está hoy (la carpeta del paquete o agents/ del perfil); uno nuevo, en el paquete
+  const destino = NAME_RE.test(agente) ? HIW().agentFileOf({ baseDir: profileDir, pack: draft.pack, json, agent: agente, agentsDir: path.join(profileDir, 'agents') }) : null;
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-pack-'));
   try {
     const copia = path.join(tmp, draft.pack);
+    // agents/ del perfil, copiada aparte: es la carpeta de respaldo con que se valida, como al instalar
+    const raiz = path.join(tmp, '.agents-del-perfil');
     // la copia no trae ningún enlace simbólico del perfil (ni de archivos ni de carpetas): así nada de lo que se escribe
     // en ella puede caer afuera de la carpeta temporal. Un revisor cuyo .md era un enlace queda sin él, y el lector lo dice
     const escribir = (destino, texto) => { fs.rmSync(destino, { force: true, recursive: true }); fs.writeFileSync(destino, texto); };
     try {
       fs.cpSync(dirPack, copia, { recursive: true, filter: (origen) => !fs.lstatSync(origen).isSymbolicLink() });
+      fs.mkdirSync(raiz);
+      const agentesPerfil = path.join(profileDir, 'agents');
+      if (fs.existsSync(agentesPerfil) && !fs.lstatSync(agentesPerfil).isSymbolicLink()) fs.cpSync(agentesPerfil, raiz, { recursive: true, filter: (origen) => !fs.lstatSync(origen).isSymbolicLink() });
       escribir(path.join(copia, 'pack.json'), ORG.formatJson(nuevo));
-      if (NAME_RE.test(agente)) { fs.mkdirSync(path.join(copia, carpetaAgentes), { recursive: true }); escribir(path.join(copia, carpetaAgentes, `${agente}.md`), String(draft.instructions || '')); }
+      if (destino === `agents/${agente}.md`) escribir(path.join(raiz, `${agente}.md`), String(draft.instructions || ''));
+      else if (destino) { fs.mkdirSync(path.join(copia, carpetaAgentes), { recursive: true }); escribir(path.join(copia, carpetaAgentes, `${agente}.md`), String(draft.instructions || '')); }
     } catch (e) { return { ok: false, problems: [...problems, E('copia', { codigo: (e && e.code) || 'error' })], files: [] }; }
     const P = PACKS();
     const otros = declaradosEnOtros({ treeDir, profileDir, pack: draft.pack });
     if (otros.ilegibles.length) problems.push(E('otrosIlegibles', { packs: otros.ilegibles.join(', ') }));
-    const errores = P.validarManifiesto(nuevo, { archivo: path.join(copia, 'pack.json'), agentsDir: path.join(treeDir, 'agents'), nucleo: PIPE().revisoresDelNucleo(), banderas: P.BANDERAS, yaDeclarados: otros.mapa });
-    for (const e of errores) problems.push(`${e.revisor ? `${e.revisor}: ` : ''}${e.motivo}`);
+    const errores = P.validarManifiesto(nuevo, { archivo: path.join(copia, 'pack.json'), agentsDir: raiz, nucleo: PIPE().revisoresDelNucleo(), banderas: P.BANDERAS, yaDeclarados: otros.mapa });
+    // sin la carpeta temporal en el mensaje: la persona ve rutas del perfil
+    for (const e of errores) problems.push(`${e.revisor ? `${e.revisor}: ` : ''}${HIW().withoutAbsolutePaths(String(e.motivo).split(`${raiz}${path.sep}`).join('agents/').split(`${tmp}${path.sep}`).join('packs/'), [profileDir, treeDir, tmp])}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   const files = NAME_RE.test(agente) ? [
     { archivo: `packs/${draft.pack}/pack.json`, contenido: ORG.formatJson(nuevo) },
-    { archivo: `packs/${draft.pack}/${carpetaAgentes}/${agente}.md`, contenido: String(draft.instructions || '') },
+    { archivo: destino === `agents/${agente}.md` ? destino : `packs/${draft.pack}/${carpetaAgentes}/${agente}.md`, contenido: String(draft.instructions || '') },
   ] : [];
   return { ok: !problems.length, problems, files, pack: draft.pack };
 }
@@ -327,17 +347,21 @@ function draftOf(profileDir, pack, agent) {
   const carpeta = HIW().agentsFolderOf(json);
   if (!carpeta) return { error: `packs/${pack}/pack.json: «agents» sale de la carpeta del paquete` };
   let instructions = '';
-  const md = path.join(profileDir, 'packs', pack, carpeta, `${agent}.md`);
+  // donde está el .md: en la carpeta del paquete o, si no, en agents/ del perfil (la que mira el instalador)
+  const relMd = HIW().agentFileOf({ baseDir: profileDir, pack, json, agent, agentsDir: path.join(profileDir, 'agents') });
+  const md = path.join(profileDir, relMd);
   try {
     // un enlace simbólico se rechaza: el editor mostraría el archivo al que apunta, que puede estar fuera del perfil
-    if (!fs.lstatSync(md).isFile()) return { error: `packs/${pack}/${carpeta}/${agent}.md no es un archivo común` };
+    if (!fs.lstatSync(md).isFile()) return { error: `${relMd} no es un archivo común` };
+    // y ninguna carpeta del camino puede ser un enlace que lleve afuera del perfil
+    if (!fs.realpathSync(md).startsWith(`${fs.realpathSync(profileDir)}${path.sep}`)) return { error: `${relMd} no es un archivo común` };
     instructions = fs.readFileSync(md, 'utf8');
   } catch (e) {
     // sin su .md el editor lo arma de nuevo y la cabecera lo pide; cualquier otro error se dice
-    if (!e || e.code !== 'ENOENT') return { error: `packs/${pack}/${carpeta}/${agent}.md (${(e && e.code) || 'error'})` };
+    if (!e || e.code !== 'ENOENT') return { error: `${relMd} (${(e && e.code) || 'error'})` };
   }
   const simple = r.when && typeof r.when.detection === 'string' && Object.keys(r.when).length === 1;
-  return { md: `packs/${pack}/${carpeta}/${agent}.md`, draft: {
+  return { md: relMd, draft: {
     pack, original: agent, agent, group: r.group, detection: simple ? r.when.detection : '', whenWritten: Boolean(r.when && !simple),
     paths: (r.surface && r.surface.paths) || [], always: Boolean(r.surface && r.surface.always === true), prefix: (r.prefixes || [])[0] || '', instructions,
   } };

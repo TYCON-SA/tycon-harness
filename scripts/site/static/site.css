@@ -393,7 +393,7 @@ table.tabla#proyectos thead th{white-space:normal}
 .ct .btn.prim{background:var(--ink);color:var(--page);border-color:var(--ink)}
 .ct .btn[disabled],.ct .btn[aria-disabled="true"]{opacity:.45;cursor:not-allowed;pointer-events:none}
 .ct .btn.mas{margin-top:6px;border-style:dashed;background:transparent;color:var(--ink-2)}
-.ct-nota{margin:0;font-size:12px;color:var(--muted)}
+.ct-nota{margin:0;font-size:12px;color:var(--muted);max-width:36ch}
 .ct-error{margin:0;color:var(--bad-ink);font-size:12.5px}
 .ct-ok{margin:0;color:var(--good-ink);font-size:12.5px}
 .ct-panel{margin:6px 0 10px;padding:14px;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface-2);display:grid;gap:10px;list-style:none}
