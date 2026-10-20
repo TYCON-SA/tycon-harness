@@ -865,6 +865,22 @@ test('T15 8.55-Suites_NoHeredanLasVariablesDelPorton @story-8.55 @ac-10 — las 
   }
 });
 
+test('T15b 7.36-Suites_NoHeredanLaMarcaDelPorton @story-7.36 @ac-15 — una suite no ve TYCON_TEST_GATE', () => {
+  // 🔴 rojo (medido): test-gate.sh exporta TYCON_TEST_GATE=1 para que `marker.js run-check` anote la
+  //    procedencia; cada suite la heredaba, y la del freno de cierre (test-stop-dod-gate.sh) cambiaba de conducta: roja
+  //    dentro del portón, verde sola. Mutación: sacar TYCON_TEST_GATE de DEL_PORTON en run-suites-json.js.
+  const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/eco.test.js' }] }, { conSkills: false });
+  //    Lo mismo con TYCON_TEST_GATE_TREE_TOUCHED (las bases del árbol armado para el informe): heredada, el portón de
+  //    juguete de test-gate-report / test-gate-runners / test-coverage-parser contaba las líneas de otro árbol.
+  const VARS = ['TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED'];
+  f.escribir('arnes', 'tests/eco.test.js', `const v = ${JSON.stringify(VARS)}.filter((k) => k in process.env); if (v.length) { console.error('heredó ' + v.join(',')); process.exit(1); }\n`);
+  for (const extra of [[], ['--coverage', path.join(f.root, 'cov')]]) {
+    const out = path.join(f.root, 'out.json');
+    const r = spawnSync('node', [RUNNER, f.repo, out, '--skills', f.skills, ...extra], { encoding: 'utf8', env: { ...process.env, TYCON_TEST_GATE: '1', TYCON_TEST_GATE_TREE_TOUCHED: '/tmp/x.json' } });
+    assert.equal(r.status, 0, `${extra.length ? 'con' : 'sin'} cobertura la suite heredó la marca del portón:\n${r.stdout}\n${r.stderr}`);
+  }
+});
+
 test('T20 8.55-SoloLoTocado_RequireSinExtension_CodigoQueEmpiezaConTest @story-8.55 @ac-4 — la corrida cruzada no difiere una suite que prueba lo tocado', () => {
   // 🔴 rojo (pase adversarial, confirmado por un verificador que corrió el código): una suite que carga el archivo tocado
   //    sin extensión o por su carpeta quedaba diferida, y un archivo de código que empieza con «test-» (test-gate.sh) se

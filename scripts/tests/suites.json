@@ -682,6 +682,12 @@
       "requiere": []
     },
     {
+      "__nota": "el portón mide el repo privado adelgazado sobre el árbol armado (clon del privado, sus cambios del disco y el público de la rama debajo), con las skills del árbol y nunca las instaladas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-private-tree.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/large-output.test.js",
       "requiere": []
