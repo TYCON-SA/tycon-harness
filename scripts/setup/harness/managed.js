@@ -25,6 +25,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const PD = require('./plugin-dirs.js');   // story 7.27
+const RP = require('./read-permissions.js');
 
 const KINDS = ['hook', 'setting', 'block', 'import', 'startup-line', 'link', 'command', 'git-hook', 'launch-agent', 'codex', 'third-party', 'file'];
 const EVENTS = ['PreToolUse', 'PostToolUse', 'SessionStart', 'SessionEnd', 'Stop', 'SubagentStop', 'UserPromptSubmit', 'Notification', 'PreCompact'];
@@ -170,6 +171,8 @@ function present(piece, { home = os.homedir(), env = process.env, isStartupLine 
     }
     case 'setting': {
       const s = json(piece.where);
+      // una regla de lectura del arnés es un elemento de permissions.allow, que también tiene las del dev
+      if (RP.isRuleId(piece.id)) return Boolean(s) && RP.hasRule(s, RP.ruleOf(piece.id));
       const v = s ? getPath(s, piece.id) : undefined;
       if (v === undefined) return false;
       // la carpeta de los mods (story 7.27) es un elemento de una lista que también tiene las carpetas del dev

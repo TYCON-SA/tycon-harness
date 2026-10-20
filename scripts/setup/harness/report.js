@@ -191,9 +191,14 @@ function leftCounts(pieces, { effects = null, thirdParty = null } = {}) {
       L.push(`hooks: ${hooks.length} (no pude contar cuántos frenan: ${effects && effects.reason ? effects.reason : 'sin la lista de efectos'})`);
     }
   }
+  // las reglas de lectura del arnés van aparte, con sus carpetas: no son «ajustes» que el dev reconozca
+  const isRead = (p) => p.kind === 'setting' && typeof p.id === 'string' && p.id.startsWith('permissions.allow:Read(');
+  const reads = list.filter(isRead).map((p) => p.id.slice('permissions.allow:Read('.length).replace(/\/\*\*\)$/, '').replace(/\)$/, ''));
   for (const [kind, label] of [['block', 'bloques en CLAUDE.md'], ['setting', 'ajustes de settings.json'], ['git-hook', 'hooks de git'], ['command', 'comandos'], ['link', 'enlaces']]) {
-    if (n(kind)) L.push(`${label}: ${n(kind)}`);
+    const c = kind === 'setting' ? list.filter((p) => p.kind === 'setting' && !isRead(p)).length : n(kind);
+    if (c) L.push(`${label}: ${c}`);
   }
+  if (reads.length) L.push(`Claude Code lee sin preguntar ${reads.length} carpeta${reads.length === 1 ? '' : 's'} del arnés (sólo leer; editarlas y leer el resto de tu máquina siguen preguntando): ${reads.join(', ')}`);
   const placed = n('third-party');
   // con el paso apagado (`thirdParty: 'off'`) el aplicador no reporta ninguna aunque estén en disco, y no va a bajar
   // nada: ni «0 en su lugar» ni «pendientes» serían verdad

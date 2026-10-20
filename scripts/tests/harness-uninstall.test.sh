@@ -896,7 +896,13 @@ want = [("setting", "cleanupPeriodDays"), ("setting", "env.CLAUDE_BASH_MAINTAIN_
         ("setting", "env.CLAUDE_CODE_PLUGIN_DIRS")]   # story 7.27: la carpeta de los mods del arnés
 names = [os.path.basename(c) for c in glob.glob(os.path.join(tree, "commands", "*.md"))]
 want += [("command", n) for n in names]
+# las reglas de lectura de las carpetas del arnés, una pieza por regla; la del árbol y la del enlace del arnés
+# tienen que estar (las de las skills dependen del árbol de laboratorio)
+rules = [i for (k, i) in keys if i.startswith("permissions.allow:Read(")]
+keys = [(k, i) for (k, i) in keys if not i.startswith("permissions.allow:")]
 bad = []
+if "permissions.allow:Read(~/.claude/tycon-harness/**)" not in rules: bad.append("falta la regla de lectura del enlace del arnés: %r" % rules)
+if not any(r.endswith("/**)") and "/.claude/" not in r for r in rules): bad.append("falta la regla de lectura del árbol: %r" % rules)
 if not names: bad.append("el árbol de laboratorio no trae comandos: no se mide la copia")
 if sorted(keys) != sorted(want): bad.append("las piezas compartidas del registro son %r (esperado %r)" % (sorted(keys), sorted(want)))
 log = open(log_file, encoding="utf-8").read() if os.path.exists(log_file) else ""

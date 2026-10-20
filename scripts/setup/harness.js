@@ -297,6 +297,38 @@ function applierKnowsReport(script) {
   try { return fs.readFileSync(script, 'utf8').includes('--report-json'); } catch (_) { return false; }
 }
 
+/**
+ * Lo anotado antes de esta corrida (`state.managed`): las reglas de lectura del arnés lo usan para sacar la que ya no
+ * es suya. Un registro que no se lee es `[]`, y se dice: esa corrida no saca ninguna regla vieja.
+ */
+function managedBefore(ctx, log) {
+  const say = (why) => { if (log) log(`piezas compartidas: no pude leer el registro (${why}): esta vez no saco permisos de lectura viejos`); };
+  try {
+    // `read` devuelve `{ status, state }`: lo anotado está en `state.managed`, y sirve aunque el estado tenga otro
+    // problema (un árbol que no está, un campo de más); sólo un archivo que no se pudo leer no trae nada
+    const r = loadState(ctx);
+    const st = r && r.state;
+    if (st && Array.isArray(st.managed)) return st.managed;
+    if (r && r.status !== 'missing') say(r.reason || r.status);
+    return [];
+  } catch (e) { say((e && e.code) || (e && e.message) || e); return []; }
+}
+
+/**
+ * Las reglas de lectura de las carpetas del arnés, DESPUÉS del aplicador: los enlaces de ~/.claude que
+ * cubren (agent-skills, cada skill) los crea él, y antes no existen. Devuelve sus piezas (o `[]`); nunca tira.
+ */
+function readPieces(ctx, tree, { log, snapshotDir }) {
+  if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return [];
+  try {
+    const r = mod('shared').applyReadRules({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, previous: managedBefore(ctx, log) });
+    return r && Array.isArray(r.pieces) ? r.pieces : [];
+  } catch (e) {
+    if (log) log(`piezas compartidas: las reglas de lectura no se pudieron sumar (${String((e && e.message) || e).split('\n')[0]})`);
+    return [];
+  }
+}
+
 /** La variable con que se le avisa al aplicador que las piezas compartidas YA están hechas (la de `shared.DONE_ENV`). */
 const SHARED_DONE_ENV = 'TYCON_HARNESS_SHARED_DONE';
 /** La variable con que se le dice al aplicador qué hacer con Codex (story 8.23, tanda C): `done` · `off`. */
@@ -307,12 +339,13 @@ const CODEX_BY_HARNESS_ENV = 'TYCON_HARNESS_CODEX';
  * y son del arnés (van al registro), o `null` si no se pudieron hacer —ahí las hace el aplicador, como siempre—. Nunca
  * tira: lo que pasa va al registro, no a la salida.
  */
-function sharedPieces(ctx, tree, { log, snapshotDir }) {
+function sharedPieces(ctx, tree, { log, snapshotDir, reads = true }) {
   // TYCON_NO_AUTOINSTALL=1 apaga al aplicador entero (sale sin escribir nada): tampoco se hacen por él
   if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return null;
   try {
-    // los dos ajustes son de full (story 8.16, tanda C): en minimal, o con el perfil sin saber, no se escriben
-    const r = mod('shared').applyShared({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, settings: profileFull(profileOf(ctx, tree)) });
+    // los dos ajustes son de full (story 8.16, tanda C): en minimal, o con el perfil sin saber, no se escriben.
+    // `reads: false`: las reglas de lectura las suma readPieces, después del aplicador
+    const r = mod('shared').applyShared({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, settings: profileFull(profileOf(ctx, tree)), reads, previous: reads ? managedBefore(ctx, log) : [] });
     return r && r.ok && Array.isArray(r.pieces) ? r.pieces : null;
   } catch (e) {
     // «sin shared.js» sólo si lo que falta ES ese módulo —un árbol de antes de la tanda D (una vuelta atrás corrida desde
@@ -534,7 +567,8 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   // enchufa. Nunca se hereda de quien nos lanzó: sin lista de herramientas escrita, el aplicador decide como siempre
   if (codex) env[CODEX_BY_HARNESS_ENV] = codex; else delete env[CODEX_BY_HARNESS_ENV];
   const settingsThere = fs.existsSync(settingsPath(ctx));
-  let shared = settingsThere ? sharedPieces(ctx, tree, { log, snapshotDir }) : null;
+  // las reglas de lectura van después del aplicador (crea los enlaces que cubren): acá, sin ellas
+  let shared = settingsThere ? sharedPieces(ctx, tree, { log, snapshotDir, reads: false }) : null;
   if (shared) env[SHARED_DONE_ENV] = '1';
   let reportDir = null;
   const extra = [];
@@ -562,7 +596,9 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
     } else if (ok && log) log('aplicador: salió 0 sin escribir el reporte de piezas (el registro queda como estaba)');
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch (_) { /* el temporal ya no está */ }
   }
-  if (!settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir });
+  if (!settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
+  // las reglas de lectura del arnés, con los enlaces ya hechos; van con las compartidas al registro
+  if (ok) shared = [...(shared || []), ...readPieces(ctx, tree, { log, snapshotDir })];
   // los avisos del aplicador para la persona (story 8.16, AC 8): el registro se queda con las últimas tres líneas, y un
   // aviso de más arriba se perdía; `install` los repite tal cual
   const warnings = mod('report').warningLines(out, { windows: isWin(ctx) });
@@ -829,6 +865,11 @@ function sharedPlan(ctx, tree) {
       const PD = mod('plugin-dirs');
       const has = PD.hasDir(env[PD.PLUGIN_DIRS_KEY], PD.ourDir(ctx.home), { sep: PD.separator(ctx.platform), home: ctx.home });
       out.push({ kind: 'setting', where: file, id: PD.PLUGIN_DIRS_ID, action: has ? 'keep' : 'add' });
+    }
+    // las reglas de lectura de las carpetas del arnés: en los dos perfiles, una línea por regla
+    if (ctx.env.TYCON_NO_READ_PERMISSIONS !== '1') {
+      const RP = mod('read-permissions');
+      for (const rule of RP.plannedRules({ home: ctx.home, tree, platform: ctx.platform })) out.push({ kind: 'setting', where: file, id: RP.pieceId(rule), action: RP.hasRule(s, rule) ? 'keep' : 'add' });
     }
     const src = path.join(tree, 'commands');
     if (ctx.env.TYCON_NO_COMMANDS_SYNC !== '1' && fs.existsSync(src)) {
@@ -4809,4 +4850,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore };

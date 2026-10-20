@@ -1640,6 +1640,18 @@ _engram-version + scripts/setup/check-engram-version.sh / `scripts/setup/check-e
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessprofilejs)
 
+## scripts/setup/harness/read-permissions.js
+
+**Qué es:** Las reglas de lectura del arnés en `permissions.allow` de `~/.claude/settings.json`: el árbol, sus dos enlaces y cada skill enlazada a él.
+
+**Por qué existe:** La primera historia frenaba en el cuadro «Allow this read?» de Claude Code al leer una guía del arnés. Las reglas dejan leer esas carpetas y nada más; editar sigue preguntando. Codex no lo necesita: lee sin preguntar.
+
+**Quién la usa:** `harness.js` al instalar y actualizar (después del aplicador, en los dos perfiles), el registro y la desinstalación. El aplicador suelto no la usa. Interruptor: `TYCON_NO_READ_PERMISSIONS=1`.
+
+**Dónde se prueba:** `scripts/tests/read-permissions.test.js`
+
+**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessread-permissionsjs)
+
 ## scripts/setup/harness/questions.js
 
 **Qué es:** Las preguntas de la instalación: perfil, integraciones y paquete del stack.
