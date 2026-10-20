@@ -25,6 +25,30 @@ ciclo de desarrollo con IA (AI SDLC), paso por paso:
 Los controles son una parte del ciclo: cuidan cada paso. Se arranca de dos maneras: [solo, en tu
 máquina](#empezá-solo), o [para tu equipo](#para-equipos).
 
+**Mirá cómo funciona.**
+
+Cinco videos cortos, de uno a dos minutos cada uno, con el camino de quien trabaja solo: de instalarlo a sumar las reglas de tu proyecto.
+
+**0. Qué es y qué ganás**
+
+https://github.com/user-attachments/assets/7a578d6b-d16c-4919-acf8-7a1f235d0c5b
+
+**1. Instalarlo**
+
+https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9
+
+**2. Tu primera historia**
+
+https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a
+
+**3. Una historia con pantalla**
+
+https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
+
+**4. Las reglas de tu proyecto**
+
+https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+
 ## Empezá solo
 
 **Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java**: el paso de pruebas corre de fábrica .NET, Vitest,
