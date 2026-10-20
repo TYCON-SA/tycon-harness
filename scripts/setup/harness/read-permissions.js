@@ -7,8 +7,8 @@
 // lectura de SUS carpetas, y nada más: una regla `Read(<carpeta>/**)` por cada una. Sólo lectura: editar sigue
 // preguntando (por eso no `additionalDirectories`, que en modo «aceptar ediciones» también deja editar).
 //
-// Las carpetas: el árbol instalado (por su ruta real), los dos enlaces de ~/.claude que apuntan a él (`tycon-harness` y
-// `agent-skills`) y cada skill de ~/.claude/skills cuya ruta real cae en el árbol. Una regla vale si cubre la ruta pedida
+// Las carpetas: el árbol instalado (por su ruta real), los dos enlaces de ~/.claude que apuntan a él (el lugar del arnés
+// y las skills instaladas, los dos de tycon-home.js) y cada skill de ~/.claude/skills cuya ruta real cae en el árbol. Una regla vale si cubre la ruta pedida
 // y la real, así que cada enlace lleva la suya (medido con Claude Code 2.1.304: una skill enlazada al árbol preguntaba
 // con el árbol permitido, y dejó de preguntar con su propia regla). Las skills propias del dev quedan afuera.
 //
@@ -85,13 +85,12 @@ function ourRules({ home, tree, platform = process.platform, skipped = null }) {
   add(treeReal);
   // nombrado por otra ruta (una carpeta enlazada en el medio): la regla vale para la pedida y para la real
   if (path.resolve(tree) !== treeReal) add(path.resolve(tree));
-  // la carpeta de Claude Code la da tycon-home.js; una copia parcial del instalador sin él usa la de siempre
-  let claude;
-  try { claude = require('./tycon-home.js').claudeDir(home); } catch (_) { claude = path.join(home, '.claude'); }
+  // la carpeta de Claude Code y los dos enlaces (el lugar del arnés y las skills instaladas) los da tycon-home.js
+  const TH = require('./tycon-home.js');
+  const claude = TH.claudeDir(home);
   const inTree = (p) => { const r = real(p); return Boolean(r) && (r === treeReal || r.startsWith(treeReal + path.sep)); };
   const isLink = (p) => { try { return fs.lstatSync(p).isSymbolicLink(); } catch (_) { return false; } };
-  for (const name of ['tycon-harness', 'agent-skills']) {
-    const p = path.join(claude, name);
+  for (const p of [TH.placePath(home), TH.installedSkillsDir(home)]) {
     if (isLink(p) && inTree(p)) add(p);
   }
   let skills = [];
@@ -100,6 +99,19 @@ function ourRules({ home, tree, platform = process.platform, skipped = null }) {
     const p = path.join(claude, 'skills', s);
     if (isLink(p) && inTree(p)) add(p);
   }
+  return out;
+}
+
+/**
+ * Las reglas que va a dejar una instalación, para el plan que se muestra ANTES de instalar: las de hoy y la del enlace
+ * del lugar del arnés, que `install` crea siempre después del plan. Los demás enlaces (las skills instaladas, cada
+ * skill) los hace el aplicador sólo en algunas formas de instalar: se cuentan si ya están.
+ */
+function plannedRules({ home, tree, platform = process.platform }) {
+  const out = ourRules({ home, tree, platform });
+  if (!tree || !real(tree)) return out;
+  const r = ruleFor(require('./tycon-home.js').placePath(home), { home, platform });
+  if (r && !out.includes(r)) out.splice(Math.min(1, out.length), 0, r);
   return out;
 }
 
@@ -159,4 +171,4 @@ function notes({ added, dropped }, file) {
   return out;
 }
 
-module.exports = { PREFIX, OFF_ENV, ruleFor, ourRules, apply, hasRule, removeRule, notes, isRuleId, ruleOf, pieceId };
+module.exports = { PREFIX, OFF_ENV, ruleFor, ourRules, plannedRules, apply, hasRule, removeRule, notes, isRuleId, ruleOf, pieceId };

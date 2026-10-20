@@ -337,7 +337,8 @@ if corre T36; then
   APPLIER_LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log"; }
   last_run() { tail -1 "$(APPLIER_LOG)" 2>/dev/null; }
   # las piezas compartidas del registro, ordenadas, con repetidos si los hubiera
-  shared_managed() { estado "sorted([p['kind'], p['id']] for p in d.get('managed') or [] if p['kind'] in ('setting', 'command'))"; }
+  # (sin las reglas de lectura de las carpetas del arnés: dependen del laboratorio y las prueba read-permissions.test.js)
+  shared_managed() { estado "sorted([p['kind'], p['id']] for p in d.get('managed') or [] if p['kind'] in ('setting', 'command') and not p['id'].startswith('permissions.allow:'))"; }
   SHARED_WANT="[['command', 'lab-command.md'], ['setting', 'cleanupPeriodDays'], ['setting', 'env.$VAR_ENV']]"
   no_repeats() { estado "len(d['managed']) == len({(p['kind'], p['where'], p['id']) for p in d['managed']})"; }
   in_machine() { [ "$(settings "d.get('cleanupPeriodDays')")" = 365 ] && [ "$(settings "d.get('env', {}).get('$VAR_ENV')")" = 1 ] && cmp -s "$LAB_TREE/commands/lab-command.md" "$LAB_HOME/.claude/commands/lab-command.md"; }
@@ -422,7 +423,7 @@ PY
   rm -f "$TYCON_SETTINGS_PATH"
   TYCON_HARNESS_SHARED_DONE=1 harness apply >/dev/null 2>&1; RC=$?
   case "$(last_run)" in *" shared_done= "*) ok "T36 sin settings.json el aplicador corre SIN el aviso (tampoco el heredado de quien lanzó a harness.js)" ;; *) mal "T36 sin settings.json el aplicador corrió avisado: $(last_run)" ;; esac
-  [ "$RC" = 0 ] && [ "$(settings "list(d)[0]")" = '$schema' ] && in_machine && [ "$(shared_managed)" = "$SHARED_WANT" ] && [ "$(no_repeats)" = True ] \
+  [ "$RC" = 0 ] && [ "$(settings "list(d)[0]")" = '$schema' ] && in_machine && [ "$(shared_managed)" = "$SHARED_WANT" ] && [ "$(no_repeats)" = True ] && [ "$(settings "'Read(~/.claude/$PLACE_NAME/**)' in d.get('permissions', {}).get('allow', [])")" = True ] \
     && ok "T36 sin settings.json: nace con el \"\$schema\" del esqueleto, con las tres piezas, anotadas una vez" \
     || mal "T36 sin settings.json (rc $RC): claves $(settings "list(d)") · managed $(shared_managed)"
   # espejo: con el archivo presente, harness.js las hace primero y avisa
@@ -1345,11 +1346,13 @@ if corre RELOCATE; then
   for d in "$LAB_TREE" "$(node -p 'require("fs").realpathSync(process.argv[1])' "$LAB_TREE")"; do
     harness_lab_isolated node "$LAB_TREE/scripts/lib/legacy-names.js" --migrate-machine --reroot "$d" "$REL_OLD" --home "$LAB_HOME" >/dev/null 2>&1
   done
-  N_OLD="$(grep -c "/.claude/$LEGACY_PLACE_NAME/" "$TYCON_SETTINGS_PATH")"
+  # el nombre viejo en los HOOKS: las reglas de permiso conservan la forma vieja al lado de la nueva (legacy-names.js), a propósito
+  old_in_hooks() { python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps(d.get("hooks", {})).count(sys.argv[2]))' "$TYCON_SETTINGS_PATH" "/.claude/$LEGACY_PLACE_NAME/"; }
+  N_OLD="$(old_in_hooks)"
   cp "$TYCON_SETTINGS_PATH" "$BASE/trel-before.json"
   HOOKS_BEFORE="$(harness_lab_settings_commands | wc -l | tr -d ' ')"
   SALIDA="$(harness_lab_isolated harness relocate 2>&1)"; RC=$?
-  [ "${N_OLD:-0}" -gt 0 ] && [ "$RC" = 0 ] && [ "$(grep -c "/.claude/$LEGACY_PLACE_NAME/" "$TYCON_SETTINGS_PATH")" = 0 ] \
+  [ "${N_OLD:-0}" -gt 0 ] && [ "$RC" = 0 ] && [ "$(old_in_hooks)" = 0 ] \
     && ok "RELOCATE la máquina con $N_OLD línea(s) por el nombre viejo: relocate 0 y ninguna queda" || mal "RELOCATE relocate (rc $RC, por el viejo antes $N_OLD): $SALIDA"
   APPLIED="$(harness_lab_real_applier 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ! printf '%s\n' "$APPLIED" | grep '^ADDED:' >/dev/null && [ "$(harness_lab_settings_commands | wc -l | tr -d ' ')" = "$HOOKS_BEFORE" ] \

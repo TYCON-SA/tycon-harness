@@ -2548,6 +2548,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.66: las reglas de lectura de las carpetas del arnés en permissions.allow de ~/.claude/settings.json — cuáles (el árbol, sus dos enlaces y cada skill enlazada), su forma, sumar sin pisar al dev, sin repetir, después del aplicador, sacar al actualizar lo que ya no es del arnés (leyendo el registro de disco) y desinstalar sólo lo anotado. Con HOME y settings.json de prueba.",
+      "raiz": "arnes",
+      "ruta": "tests/read-permissions.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.10.1 (T23-T25): tres cosas que la limpieza de datos internos sacó de lo que se publica y ninguna otra suite cuidaba — la guía de reglas para revisores no enumera la cartera de repos en su texto público (T23), ninguna guía enlaza un repo de Azure DevOps de una organización de verdad (T24), y cada hallazgo de la auditoría que quedó sin hacer tiene su línea de deuda en tasks/todo.md (T25; NO MEDIDO en una copia sin tasks/). El texto público se saca con la función del exportador.",
       "raiz": "arnes",
       "ruta": "tests/internal-data-leftovers.test.js",

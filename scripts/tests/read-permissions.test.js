@@ -75,6 +75,18 @@ test('T2 ReadRules_FormaDeLaRuta @story-8.66 @ac-1 — bajo la carpeta personal 
   } finally { fs.rmSync(raro, { recursive: true, force: true }); }
 });
 
+test('T2c ReadRules_ElPlanAnticipaElEnlaceDelLugar @story-8.66 @ac-1 — antes de instalar, el plan ya cuenta la regla del enlace que install va a crear', () => {
+  const m = maquina();
+  try {
+    fs.unlinkSync(path.join(m.claude, 'tycon-harness'));
+    assert.ok(!RP.ourRules({ home: m.home, tree: m.tree }).includes('Read(~/.claude/tycon-harness/**)'), 'hoy no está (el enlace todavía no existe)');
+    const plan = RP.plannedRules({ home: m.home, tree: m.tree });
+    assert.strictEqual(plan[0], 'Read(~/.tycon/harness/**)');
+    assert.ok(plan.includes('Read(~/.claude/tycon-harness/**)'), 'el plan la anticipa');
+    assert.strictEqual(new Set(plan).size, plan.length, 'sin repetir');
+  } finally { fs.rmSync(m.home, { recursive: true, force: true }); }
+});
+
 test('T2b ReadRules_ArbolPorSusDosRutas @story-8.66 @ac-1 — nombrado por un enlace en el medio, la regla de la ruta pedida y la de la real', () => {
   const m = maquina();
   try {

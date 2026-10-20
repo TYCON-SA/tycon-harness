@@ -869,7 +869,7 @@ function sharedPlan(ctx, tree) {
     // las reglas de lectura de las carpetas del arnés: en los dos perfiles, una línea por regla
     if (ctx.env.TYCON_NO_READ_PERMISSIONS !== '1') {
       const RP = mod('read-permissions');
-      for (const rule of RP.ourRules({ home: ctx.home, tree, platform: ctx.platform })) out.push({ kind: 'setting', where: file, id: RP.pieceId(rule), action: RP.hasRule(s, rule) ? 'keep' : 'add' });
+      for (const rule of RP.plannedRules({ home: ctx.home, tree, platform: ctx.platform })) out.push({ kind: 'setting', where: file, id: RP.pieceId(rule), action: RP.hasRule(s, rule) ? 'keep' : 'add' });
     }
     const src = path.join(tree, 'commands');
     if (ctx.env.TYCON_NO_COMMANDS_SYNC !== '1' && fs.existsSync(src)) {
