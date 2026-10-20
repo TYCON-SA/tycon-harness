@@ -378,3 +378,19 @@ test('T24 Write_SinComando_Sale2 @story-8.62 @ac-5: sin verify ni nada que deduc
     assert.match(r.stderr, /verify/);
   }
 });
+
+test('T26 Write_TraeElCierre @story-8.64 @ac-1: el mensaje de cierre viaja en el resultado y la guía lo pide tal cual', () => {
+  // medido: la frase para seguir iba sólo por la salida de errores y el agente no la dijo
+  const d = repo();
+  const r = correr(['write', '--repo', d, '--answers', escribirRespuestas(respuestas())]);
+  assert.strictEqual(r.status, 0, r.stderr);
+  const rel = path.relative(d, r.json.path).split(path.sep).join('/');
+  assert.strictEqual(typeof r.json.closing, 'string', JSON.stringify(r.json));
+  assert.ok(r.json.closing.startsWith(`Listo, tu historia quedó en \`${rel}\`.`), r.json.closing);
+  assert.ok(r.json.closing.includes(`Para implementarla, pedime: «implementemos la story ${rel}».`), r.json.closing);
+  assert.match(r.json.closing, /el recorrido lo prepara solo/);
+  const guia = fs.readFileSync(path.join(SKILL, 'first-time.md'), 'utf8');
+  const cierre = guia.slice(guia.indexOf('## 5. El cierre'));
+  assert.match(cierre, /`closing`/);
+  assert.match(cierre, /tal cual/);
+});

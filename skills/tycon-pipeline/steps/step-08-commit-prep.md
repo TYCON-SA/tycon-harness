@@ -304,6 +304,14 @@ queda la ruta para copiar—, y debajo la línea
   después del merge); lo que cambia es cuánto espacio ocupan y cómo se dicen.
 - **Sin conteos de líneas, sin listas de archivos tocados, sin rule IDs** en el cierre. Todo eso
   vive en `.advisors/pipeline-runs/<run-dir>/` y en el diff.
+- **Lo que no corrió porque no aplicaba no se nombra**: el pase adversarial que no corrió por riesgo bajo, Clockify o
+  Azure DevOps cuando no están. El cierre dice lo que pasó, no lo que no hacía falta.
+- **Sin jerga del arnés**: el cierre no dice «gate», «matriz», «done», «riesgo LOW» ni nombres de comandos
+  (`/tycon-…`). Se dice lo que significa: «las pruebas de cada criterio corrieron», «para darla por terminada».
+  Caso 2026-10-19 (noche): un dev solo leyó «el gate lo salteó por riesgo LOW», «la matriz por criterio da verde» y
+  «Clockify y ADO no aplicaron» en su primera historia.
+- **Después del commit, lo que sigue en una línea llana** con la frase que lo pide: «Cuando quieras subirla a main,
+  decime "mergeala a main"». Nada de cerrarla con un comando.
 
 ## 🟢 Limpieza del marker file (MANDATORY post-2026-05-15)
 

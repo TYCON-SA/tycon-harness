@@ -41,11 +41,14 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
    ```bash
    node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js org-rules
    ```
-   e invocar el subagente `tycon-story-validator` usando la tool `Agent`, con `test_names` y `screen_test` en el pedido:
+   e invocar el subagente `tycon-story-validator` usando la tool `Agent`, con `test_names`, `screen_test` y la ruta de la
+   guía de historias (`story_format`, absoluta; el validador no corre comandos y con `~` adivina la carpeta personal) en el pedido.
+   Si `story_format` es `null`, sacá del pedido la frase «La guía de historias está en …»: el validador la busca solo y
+   lo dice si no la encuentra.
    ```
    Agent(
      subagent_type: "tycon-story-validator",
-     prompt: "Validar la story en {story_path} contra el repo {repo_path}. Reglas de la organización: test_names={test_names}, screen_test={screen_test}. Retornar reporte estructurado con severity CRITICAL/WARNING/OK por cada item del checklist Mary+GOLD."
+     prompt: "Validar la story en {story_path} contra el repo {repo_path}. La guía de historias está en {story_format}. Reglas de la organización: test_names={test_names}, screen_test={screen_test}. Retornar reporte estructurado con severity CRITICAL/WARNING/OK por cada item del checklist Mary+GOLD."
    )
    ```
 

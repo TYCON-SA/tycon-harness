@@ -1,6 +1,6 @@
 # ⚙️ GENERADO por build/generate.js — NO EDITAR A MANO (se pisa en la próxima corrida)
 # canónico: agents/tycon-story-validator.md
-# source_sha256: cadda040e32f477b4d912c8d99552853efe869b7446d86a9112296fd6ec8c198
+# source_sha256: c30bef7c204c3a2ffc7d683dea5f72475c954eb4b17050e28f11171e2e16a1d7
 # Formato SUBAGENTE NATIVO: se despliega como $CODEX_HOME/agents/tycon-story-validator.toml y una
 # sesión codex lo spawnea (collaborationspawn_agent → tool_input.agent_type = "tycon-story-validator").
 # El ledger de check-count lo registra on-advisor-run.js por agent_type (sonda G-1).
@@ -70,7 +70,7 @@ sobre una story limpia para decir que el archivo existe).
 
 ## Workflow de validación
 
-1. **Leer la guía Mary+GOLD en runtime**: Read `~/.claude/tycon-harness/story-format.md`.
+1. **Leer la guía Mary+GOLD en runtime**: Read de la ruta que trae el pedido («La guía de historias está en …»). Sin ruta en el pedido, `story-format.md` en la carpeta del arnés (`~/.claude/tycon-harness/`) con la carpeta personal real, nunca adivinada; si no la encontrás, decilo en el reporte.
 2. **Parsear la story**: leer frontmatter + cuerpo.
 3. **Validar frontmatter** contra el schema de la guía — si falta algún campo, **[VAL-W1] WARNING** (epic, story, title, status, sprint, priority, approach, depends_on).
 4. **Validar estructura**: Title (H1), Status line, ## Story en formato \"Como X, quiero Y, para Z\", ## Acceptance Criteria con ACs numerados y agrupados H3 (si falta agrupación → **[VAL-W2] WARNING**), ### Tests como tabla (si no cumple → **[VAL-W3] WARNING**).

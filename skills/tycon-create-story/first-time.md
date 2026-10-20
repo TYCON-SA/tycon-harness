@@ -76,9 +76,10 @@ No escribas el archivo de la historia con tus herramientas de edición, ni lo co
 
 ## 5. El cierre
 
-Decile dónde quedó y qué sigue, en dos líneas:
+Tu último mensaje es el campo `closing` del resultado del guion, tal cual, sin recortarlo ni resumirlo. Dice dónde
+quedó y qué sigue:
 
 > Listo, tu historia quedó en `<ruta>`. Para implementarla, pedime: «implementemos la story <ruta>». Si el repo no
 > tiene git o estás en `main`, el recorrido lo prepara solo: crea la rama de trabajo y te lo dice.
 
-La frase «implementemos la story <ruta>» va tal cual: es la que arranca el recorrido.
+La frase «implementemos la story <ruta>» es la que arranca el recorrido: sin ella, quien empieza no sabe cómo seguir.
