@@ -240,7 +240,10 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
     const ar = cd.archivosDeLaRegla({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, runDir: critico.runDir });
     if (ar.error) return { ok: false, motivo: `${ar.error}: no sé en cuántos archivos está abierta la regla` };
     juzgar = cd.juez({ rule: critico.rule, file: critico.file, archivos: ar.archivos, arnes: critico.arnes });
-    anterior = 'el ok es de antes de que se le mostrara este crítico: hace falta su respuesta a la muestra';
+    // dicho en llano: a qué hora lo mostró el arnés y qué pedir ahora (un ok anterior se descarta siempre)
+    const hora = new Date(visto.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    anterior = `el ok es de antes de que se le mostrara este crítico: el arnés se lo mostró a las ${hora} y lo que contestó antes no cuenta. `
+      + `Pedile que conteste ahora a la muestra, por ejemplo «eximo ${String(critico.rule).trim()}»`;
     return null;
   };
   if (relayedBy !== null && relayedBy !== undefined) {
