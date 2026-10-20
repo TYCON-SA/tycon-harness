@@ -496,8 +496,9 @@ if [[ -n "${TYCON_ENGRAM_HOOK-}" ]]; then if [[ "$TYCON_ENGRAM_HOOK" == "0" ]]; 
 # El perfil de instalación (story 8.16, tanda C · AC 23): `minimal` o `full`, de la configuración del arnés
 # (`install.profile`: TYCON_INSTALL_PROFILE › ~/.claude/tycon.json › perfil del equipo). Se lee UNA vez.
 #   · full, o SIN VALOR → lo de siempre, byte a byte (el perfil del equipo fija full; sin elegir se comporta como full).
-#   · minimal → sólo los hooks que scripts/setup/install-effects.json marca `minimal` (hoy siete, con el freno de
-#     comandos destructivos, que está en los dos perfiles y sólo lo apaga TYCON_SAFETY_GUARD=0) más los de una
+#   · minimal → sólo los hooks que scripts/setup/install-effects.json marca `minimal` (hoy ocho, con el freno de
+#     comandos destructivos, que está en los dos perfiles y sólo lo apaga TYCON_SAFETY_GUARD=0, y el portón de edición,
+#     también en los dos, que apaga TYCON_STORY_GATE=off) más los de una
 #     integración prendida; los demás se SACAN si estaban (con el motivo en la línea del reporte); los dos opt-in de
 #     full que nacen prendidos (test-scope-guard, telegram-zombie-sweep) sólo con su variable en `1`; sin los dos
 #     ajustes de settings.json, sin los hooks de git (ni el core.hooksPath de ningún repo) y sin las tareas de fondo
@@ -536,7 +537,7 @@ PY
   fi
 fi
 case "$PROFILE_STATE" in
-  ok) [[ "$TYCON_PROFILE_VALUE" == "minimal" ]] && echo "tycon: perfil de instalación: minimal — con el freno de comandos destructivos y sin los demás frenos, sin los bloques que cambian cómo contesta el asistente, sin los ajustes de settings.json, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" ;;
+  ok) [[ "$TYCON_PROFILE_VALUE" == "minimal" ]] && echo "tycon: perfil de instalación: minimal — con el freno de comandos destructivos y el de editar código sin historia ni ajuste puntual, sin los demás frenos, sin los bloques que cambian cómo contesta el asistente, sin los ajustes de settings.json, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" ;;
   rota) echo "⚠ tycon: la configuración del arnés está ROTA — lo del perfil de instalación queda como estaba (ni se registra ni se saca; los dos frenos de comandos se registran igual) hasta arreglarla: node $SCRIPT_DIR/lib/tycon-config.js validate" ;;
   *) echo "⚠ tycon: sin scripts/lib/tycon-config.js (o sin node): no sé qué perfil de instalación tiene esta máquina — lo del perfil queda como estaba (los dos frenos de comandos se registran igual)" ;;
 esac

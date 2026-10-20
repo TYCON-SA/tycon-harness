@@ -348,10 +348,10 @@ There are two, `minimal` and `full`, and there is no default: `install` asks if 
 pass `--profile`.
 
 - **`minimal`**: the guides, the skills, the reviewers, the story workflow and the new-version notice. It does not
-  change how the assistant answers. It registers seven hooks (six that only take notes and the brake against
-  destructive commands), plus those of each optional connection you turn on, and brings the links, commands and third-party skills.
-- **`full`**: everything in `minimal`, plus the other brakes (in a repository with stories, editing code without the
-  workflow is denied), the three blocks that change how the assistant answers in all your projects (in Spanish,
+  change how the assistant answers. It registers eight hooks (six that only take notes, the brake against
+  destructive commands and the one against editing code without a story or a one-off fix), plus those of each optional connection you turn on, and brings the links, commands and third-party skills.
+- **`full`**: everything in `minimal`, plus the other brakes (the same gate for code written from the
+  terminal, and the one against committing a story without the evidence it asks for), the three blocks that change how the assistant answers in all your projects (in Spanish,
   conclusion first, with a length cap), the two `settings.json` settings, the git hooks and the background tasks.
 
 You choose with `--profile minimal` or `--profile full`, with `install.profile` in `~/.claude/tycon.json`, or with the

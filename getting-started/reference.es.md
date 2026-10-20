@@ -341,10 +341,11 @@ volvé a instalar con `--team <dirección>`.
 Hay dos, `minimal` y `full`, y no hay una por defecto: `install` te pregunta si no elegís; sin terminal, pasá `--profile`.
 
 - **`minimal`**: las guías, las skills, los revisores, el recorrido de las historias y el aviso de versión nueva. No
-  cambia cómo contesta el asistente. Registra siete hooks (seis que sólo anotan y el freno de comandos destructivos),
+  cambia cómo contesta el asistente. Registra ocho hooks (seis que sólo anotan, el freno de comandos destructivos y el de editar código sin
+  historia ni ajuste puntual),
   más los de cada conexión opcional que prendas, y trae los enlaces, los comandos y las skills de terceros.
-- **`full`**: todo lo de `minimal`, y además los otros frenos (en un repo con historias, editar código sin el recorrido
-  se deniega), los tres bloques que cambian cómo contesta el asistente en todos tus proyectos (en castellano, con la
+- **`full`**: todo lo de `minimal`, y además los otros frenos (el mismo portón para el código que se escribe por la
+  terminal, y el de commitear una historia sin la evidencia que pide), los tres bloques que cambian cómo contesta el asistente en todos tus proyectos (en castellano, con la
   conclusión primero y un tope de largo), los dos ajustes de `settings.json`, los hooks de git y las tareas de fondo.
 
 Se elige con `--profile minimal` o `--profile full`, con `install.profile` en `~/.claude/tycon.json` o con la variable

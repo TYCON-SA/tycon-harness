@@ -2564,6 +2564,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.74: con la instalación mínima, el portón de edición está en la lista de minimal y hace lo mismo que en la completa sobre un repo con la forma del laboratorio del capítulo 2 — sin recorrido se niega con la pregunta en llano, el ajuste puntual con la frase de la persona pasa, la primera historia se abre con el plan aprobado; la completa no cambia. HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/minimal-lane-gate.test.sh",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.16, tanda D (T43 a T46): las preguntas de la primera instalación, con harness.js real y el aplicador de juguete, en una máquina de afuera (TYCON_PROFILE=0) — el perfil sin valor por defecto (Enter vuelve a preguntar, a la tercera o con fin de entrada sale 2; sin terminal 2 con las dos opciones, también con --yes; --dry-run igual), las integraciones que la lista de efectos ofrece (ninguna marcada, un nombre desconocido vuelve a preguntar) y el paquete del stack, las opciones que las contestan (--profile, --integrations, --packs: con las cuatro ninguna pregunta; inválidas o contra su variable salen 2), y el orden preguntas → plan con su cabecera → conformidad → escritura (con «no» no queda ni tycon.json; la segunda corrida y el perfil del equipo no preguntan nada). Usa una terminal de juguete (python3 + pty).",
       "raiz": "arnes",
       "ruta": "tests/harness-questions.test.sh",

@@ -949,7 +949,7 @@ if ($ProfileIsMinimal -and $ProfileMinimalIds.Count -eq 0) {
     $ProfileState = 'rota'; $ProfileIsMinimal = $false
     Write-Host "! tycon: no pude leer que trae el perfil minimal (scripts/setup/install-effects.json): lo del perfil de instalacion queda como estaba"
 }
-if ($ProfileIsMinimal) { Write-Host "tycon: perfil de instalacion: minimal - con el freno de comandos destructivos y sin los demas frenos, sin los bloques que cambian como contesta el asistente, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" }
+if ($ProfileIsMinimal) { Write-Host "tycon: perfil de instalacion: minimal - con el freno de comandos destructivos y el de editar codigo sin historia ni ajuste puntual, sin los demas frenos, sin los bloques que cambian como contesta el asistente, sin hooks de git ni tareas de fondo (full: install.profile en ~/.claude/tycon.json)" }
 elseif ($ProfileState -eq 'rota') { Write-Host "! tycon: la configuracion del arnes esta ROTA - lo del perfil de instalacion queda como estaba (ni se registra ni se saca; los dos frenos de comandos se registran igual) hasta arreglarla: node scripts/lib/tycon-config.js validate" }
 elseif ($ProfileState -ne 'ok') { Write-Host "! tycon: sin scripts/lib/tycon-config.js (o sin node): no se que perfil de instalacion tiene esta maquina - lo del perfil queda como estaba (los dos frenos de comandos se registran igual)" }
 $ProfileFull = ($ProfileState -eq 'ok') -and -not $ProfileIsMinimal
