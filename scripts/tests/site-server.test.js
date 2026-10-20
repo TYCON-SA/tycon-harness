@@ -100,7 +100,7 @@ test('T6 Imagen_DockerfileSinPrivilegiosNiPruebas', () => {
   assert.match(df, /^HEALTHCHECK\b[\s\S]*\/livez/m, 'HEALTHCHECK contra /livez');
   assert.doesNotMatch(df.split('\n').filter((l) => /HEALTHCHECK|CMD .*wget|CMD .*node/.test(l)).join('\n'), /\/healthz/, 'nunca contra /healthz');
   assert.match(df, /apk add[^\n]*\bgit\b/, 'git adentro');
-  assert.match(df, /skills\/tycon-pipeline\/steps\/step-0/, 'los títulos de los pasos adentro');
+  assert.match(df, /^COPY skills\/tycon-pipeline\/steps\/ skills\/tycon-pipeline\/steps\/$/m, 'los pasos adentro (sus títulos y lo que lee Cómo trabaja)');
   assert.match(df, /ENV\s+[^\n]*TYCON_SKILLS_DIR=/, 'TYCON_SKILLS_DIR apuntando a ellos');
   assert.match(df, /CMD\s+\["node",\s*"scripts\/site\/server\.js"\]/, 'la misma orden que con Node solo');
   for (const p of ['scripts/tests', '.git', '**/*.pem', '**/*.key', '**/.env']) assert.ok(ign.split('\n').map((l) => l.trim()).includes(p), `${p} fuera de la imagen`);

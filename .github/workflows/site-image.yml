@@ -27,8 +27,12 @@ on:
       - 'scripts/setup/install-effects.json'
       - 'scripts/ci/check-product-parity.js'
       - 'scripts/ci/legacy-options.js'
-      - 'skills/tycon-pipeline/scripts/lib/**'
+      - 'skills/tycon-pipeline/scripts/**'
       - 'skills/tycon-pipeline/steps/**'
+      - 'skills/clocki/scripts/**'
+      - 'scripts/hooks/**'
+      - 'scripts/setup/hooks-list.json'
+      - 'guides/**'
       - 'agents/**'
       - 'packs/**'
       - 'LICENSE*'
@@ -81,6 +85,14 @@ jobs:
             --label "org.opencontainers.image.version=$VERSION" --label "org.opencontainers.image.revision=$GITHUB_SHA" \
             --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --label "org.opencontainers.image.created=$CREADA" \
             --label "tycon.image=site" .
+          # la pestaña Cómo trabaja arma su modelo con lo que la imagen trae: la sonda corre en el checkout y dentro de la
+          # imagen recién armada, y tienen que dar lo mismo. Distinto (o un error adentro), no se escanea ni se publica. Las
+          # dos con el Node de la imagen: el checkout entra montado, de sólo lectura
+          SONDA_ARBOL=$(docker run --rm -v "$PWD:/arbol:ro" "${IMAGEN}:${VERSION}" node /arbol/scripts/tests/lib/how-it-works-probe.js /arbol)
+          SONDA_IMAGEN=$(docker run --rm -v "$PWD/scripts/tests/lib:/app/scripts/tests/lib:ro" "${IMAGEN}:${VERSION}" node /app/scripts/tests/lib/how-it-works-probe.js)
+          [ "$SONDA_IMAGEN" = "$SONDA_ARBOL" ] || { echo "::error::la pestaña Cómo trabaja no arma en la imagen lo mismo que en el árbol: ${SONDA_IMAGEN:0:400}"; exit 1; }
+          # iguales no alcanza: rota en los dos lados también frena (sin error y sin problemas de lectura)
+          case "$SONDA_IMAGEN" in *'"problems":[]}') ;; *) echo "::error::la pestaña Cómo trabaja no arma su modelo en la imagen: ${SONDA_IMAGEN:0:400}"; exit 1 ;; esac
           # el escaneo, ANTES de publicar: una vulnerabilidad HIGH o CRITICAL con arreglo publicado frena todo (exit 1, nada
           # se sube); las que todavía no tienen arreglo se avisan. Trivy fijado por versión y por huella; la imagen le llega
           # como archivo, sin el socket de Docker
