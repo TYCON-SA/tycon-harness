@@ -109,6 +109,9 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, T('inicio.maquinasSinInforme')));
   else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
   filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
+  // los proyectos cuyos pedidos asignados la noche no pudo medir: a cada dev le falta lo suyo de ahí
+  const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
+  if (sinMedir.length) filas.push(filaNoMedida('pedidos_asignados_sin_medir', T('inicio.loAsignado'), T('inicio.asignadoSinMedir', { proyectos: sinMedir.join(', ') })));
   // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
   // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
   const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
@@ -131,7 +134,8 @@ function inicioDev(m, { ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
   const proyectos = Array.isArray(m.productos) && m.proyectos && m.proyectos.lista !== null
     ? { estado: 'medido', lista: m.productos.map((p) => p.producto) }
     : { estado: 'no_medido', motivo: fraseDe(m.proyectos, idioma), lista: [] };
-  return { corridas, prs: lado(m.prs), pedidos: lado(m.pedidos), proyectos };
+  const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
+  return { corridas, prs: lado(m.prs), pedidos: { ...lado(m.pedidos), sin_medir: sinMedir }, proyectos };
 }
 
 /** Las filas de Proyectos (AC 19): una por producto, sin sumar dos veces lo compartido. */
@@ -360,13 +364,13 @@ function paginaInicio(ctx) {
     ? lista(d.prs.lista, (p) => `${link(p.enlace, `#${esc(p.numero)}`)} · ${esc(p.repo)} · ${esc(T('vista.dias', { n: p.dias }))}`)
     : filaNo(T('inicio.tusPrs'), d.prs.motivo);
   const ped = d.pedidos.estado === 'medido'
-    ? lista(d.pedidos.lista, (p) => `${link(p.enlace, `#${esc(p.id)}`)} · ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(T('vista.dias', { n: p.dias }))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`)
+    ? lista(d.pedidos.lista, (p) => `${link(p.enlace, `#${esc(p.id)}`)}${p.titulo ? ` ${esc(p.titulo)}` : ''} · ${esc(p.tipo)} · ${esc(p.estado)} · ${esc(T('vista.dias', { n: p.dias }))}${p.dependencias ? ` · <b>${esc(T('inicio.dependencias'))}</b>` : ''}`)
     : filaNo(T('inicio.loAsignado'), d.pedidos.motivo);
   const proy = d.proyectos.estado === 'medido' ? lista(d.proyectos.lista, (p) => esc(p)) : filaNo(T('inicio.tusProyectos'), d.proyectos.motivo);
   return layout(ctx, T('pestana.inicio'), [
     seccion(T('inicio.tusCorridas'), `<div class="grid">${corr}</div>`),
     seccion(T('inicio.tusPrs'), prs),
-    seccion(T('inicio.loAsignado'), `${ped}<p class="q-note">${esc(T('inicio.asignadoAtraso'))}</p>`),
+    seccion(T('inicio.loAsignado'), `${ped}${Array.isArray(d.pedidos.sin_medir) && d.pedidos.sin_medir.length ? `<p class="q-note">${esc(T('inicio.asignadoSinMedir', { proyectos: d.pedidos.sin_medir.join(', ') }))}</p>` : ''}<p class="q-note">${esc(T('inicio.asignadoAtraso'))}</p>`),
     seccion(T('inicio.tusProyectos'), proy),
   ].join(''), T('inicio.ledePersona'));
 }

@@ -428,7 +428,9 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   else m.prs = prs.ok ? noMedida('no_medido_noche', prs.fecha) : prs.fuente;
   const asig = foto('assigned', 'assigned-*.json');
   if (asig.ok && asig.doc.estado === 'medido' && Array.isArray(asig.doc.pedidos)) {
-    m.pedidos = fuente('medido', null, asig.fecha, { lista: asig.doc.pedidos.filter(isObject).map((p) => ({ id: num(p.id), proyecto: texto(p.proyecto), tipo: texto(p.tipo, 40), estado: texto(p.estado, 40), asignado: texto(p.asignado, 200), dias: num(p.dias_en_estado), enlace: enlace(p.enlace), dependencias: p.dependencias === true })) });
+    m.pedidos = fuente('medido', null, asig.fecha, { lista: asig.doc.pedidos.filter(isObject).map((p) => ({ id: num(p.id), proyecto: texto(p.proyecto), tipo: texto(p.tipo, 40), estado: texto(p.estado, 40), asignado: texto(p.asignado, 200), dias: num(p.dias_en_estado), enlace: enlace(p.enlace), dependencias: p.dependencias === true, titulo: texto(p.titulo, 120) })),
+      // de los proyectos que la noche no pudo medir, sólo el nombre: el motivo trae texto de la plataforma
+      sin_medir: (Array.isArray(asig.doc.proyectos_no_medidos) ? asig.doc.proyectos_no_medidos : []).filter(isObject).map((x) => texto(x.proyecto)).filter(Boolean).map(decodificar) });
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
 

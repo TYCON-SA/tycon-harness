@@ -195,6 +195,8 @@ function filtrar(modelo, quien, reglas) {
       d.productos = Object.fromEntries(Object.entries(d.productos || {}).filter(([k]) => set.has(k)));
       out.despliegues = d;
     }
+    // los proyectos que la noche no pudo medir: sólo los suyos (el nombre de un proyecto ajeno es de otra persona)
+    out.pedidos.sin_medir = (Array.isArray(pedidos.sin_medir) ? pedidos.sin_medir : []).filter((x) => proyectosSuyos.has(x));
     if (m.dependencias && m.dependencias.vivas_por_proyecto) {
       out.dependencias = { estado: m.dependencias.estado, codigo: m.dependencias.codigo || null, fecha: m.dependencias.fecha || null,
         vivas_por_proyecto: Object.fromEntries(Object.entries(m.dependencias.vivas_por_proyecto).filter(([k]) => proyectosSuyos.has(k))) };
