@@ -1922,7 +1922,7 @@ test('T2 Seccion_AutoApply_CambiaSoloSuHoja @story-2.39 @ac-2', () => {
 });
 
 /** El repo de operaciones por HTTP, Azure de juguete que deja completar y mueve main, y la pestaña encima. */
-async function conAplicar({ autoApply, politica = 'autor', ops = null, masPoliticas = () => [], log = () => {} }, fn) {
+async function conAplicar({ autoApply, politica = 'autor', ops = null, masPoliticas = () => [], log = () => {}, esperaRefrescoMs }, fn) {
   const { arrancarAdoFalso } = require('./lib/fake-ado-api.js');
   let ado, r, dir;
   const remotos = { operaciones: { platform: 'azure', org: 'acme', project: 'Proy', repo: 'ops', web: 'https://dev.azure.com/acme/Proy/_git/ops' } };
@@ -1947,7 +1947,7 @@ async function conAplicar({ autoApply, politica = 'autor', ops = null, masPoliti
       await ex('git', ['-c', `http.extraheader=Authorization: ${CAB}`, 'fetch', '-q', '--depth', '1', 'origin', 'main'], { cwd: dir });
       await ex('git', ['reset', '-q', '--hard', 'FETCH_HEAD'], { cwd: dir });
     };
-    await conPestana({ fuentes: f, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base }, log } }, async (ctx) => {
+    await conPestana({ fuentes: f, env: { SITE_OPERATIONS_WRITE_TOKEN: ESCRITURA }, opciones: { remotos, urlBase: { azure: ado.base }, log, ...(esperaRefrescoMs === undefined ? {} : { esperaRefrescoMs }) } }, async (ctx) => {
       const lead = await ctx.entrar(LEAD); const tok = await ctx.token(lead);
       const estado = async () => (await ctx.h.pedir('/api/config', { cookie: lead })).json;
       const revisar = async (id, borrador) => (await ctx.escribir('/api/config/revisar', lead, tok, { seccion: id, borrador })).json;
@@ -2036,6 +2036,41 @@ test('T11 EstadoProponer_DiceSiSeAplicaSolo @story-2.39 @ac-10', { skip: SIN_BAC
   // la pantalla dice qué va a pasar antes de tocar «Proponer»
   const codigo = ORG.pantalla();
   assert.ok(codigo.includes('Se aplica solo: el sitio aprueba y completa el pedido'), 'el texto de «se aplica solo»');
+});
+
+test('Aplicado_RefrescoLento_ContestaAlTope @story-2.68 @ac-1', { skip: SIN_BACKEND }, async () => {
+  // el refresco entero (con la bajada del buzón) tarda minutos: la respuesta sale al tope y el refresco sigue solo
+  const registro = [];
+  await conAplicar({ autoApply: true, esperaRefrescoMs: 200, log: (l) => registro.push(l) }, async ({ f, revisar, proponer, refrescos }) => {
+    let fallar; const lento = new Promise((ok, mal) => { fallar = mal; });
+    // se mide desde que arranca el refresco: armar y aplicar el cambio (git y la plataforma de juguete) tarda lo suyo
+    let t0 = null;
+    f.refrescar = async () => { refrescos.push({ lento: true }); t0 = Date.now(); await lento; };
+    try {
+      const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+      const p = await proponer('responsables', rev.texto);
+      const tardo = Date.now() - t0;
+      assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+      assert.match(p.message, /próximo refresco/);
+      assert.ok(tardo < 2000, `contestó en ${tardo} ms, sin esperar el refresco`);
+      assert.strictEqual(refrescos.length, 1, 'el refresco arrancó');
+      assert.ok(registro.some((l) => /el refresco sigue/.test(l)), registro.join('\n'));
+    } finally {
+      // el refresco que siguió solo falla después de la respuesta: queda en el registro, no se pierde
+      fallar(new Error('el buzón no contestó'));
+    }
+    for (let i = 0; i < 20 && !registro.some((l) => /el refresco falló/.test(l)); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.ok(registro.some((l) => /el refresco falló/.test(l)), registro.join('\n'));
+  });
+});
+
+test('Aplicado_RefrescoRapido_ComoHoy @story-2.68 @ac-2', { skip: SIN_BACKEND }, async () => {
+  await conAplicar({ autoApply: true, esperaRefrescoMs: 30000 }, async ({ revisar, proponer }) => {
+    const rev = await revisar('responsables', { owners: { default: 'otro@acme.example' } });
+    const p = await proponer('responsables', rev.texto);
+    assert.deepStrictEqual([p.ok, p.codigo], [true, 'aplicado'], JSON.stringify(p));
+    assert.match(p.message, /^Aplicado: el cambio ya está en la rama principal y el sitio lo usa/);
+  });
 });
 
 test('T19 Pestana_RefrescoFalla_LoAnotaYSigue @story-2.39 @ac-9', { skip: SIN_BACKEND }, async () => {

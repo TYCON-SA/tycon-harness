@@ -257,13 +257,15 @@ const MARCAS_RECORDADAS = 200;
 // «releé ya» (`GET /api/config?releer=1`): una relectura a la vez y no más de una cada RELECTURA_MS, para que muchas
 // páginas abiertas no golpeen el repo
 const RELECTURA_MS = 30 * 1000;
+// después de aplicar solo, cuánto espera la respuesta al refresco antes de decir «se ve en el próximo refresco»
+const ESPERA_REFRESCO_MS = 8 * 1000;
 
 /**
  * Las rutas de la pestaña, para `rutasExtra` de crearSitio. `cfg` es la del servidor; `fuentes`, las de la 2.23.
  * Inyectables (pruebas): `lectores`, `versionImagen`, `ahora`, `hoy`, `fetch`, `urlBase` (la dirección de la API de cada plataforma) y
- * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice).
+ * `remotos` ({ operaciones, perfil }: la plataforma de cada repo cuando la dirección no la dice) y `esperaRefrescoMs`.
  */
-function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {} }) {
+function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy = null, lectores = {}, fetch = globalThis.fetch, urlBase = {}, remotos = {}, log = () => {}, esperaRefrescoMs = ESPERA_REFRESCO_MS }) {
   const dia = () => (hoy ? hoy() : new Date(ahora()).toISOString().slice(0, 10));
   const lector = (nombre) => ORG.loadReader(TREE, nombre, lectores);
   // los umbrales del arnés (los de la imagen): `{ thresholds, motivo }`; sin ellos, Umbrales no edita y lo dice
@@ -730,8 +732,15 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
    */
   async function despuesDeAplicar(s, r, texto) {
     if (!r || r.codigo !== 'aplicado') return r;
-    try { await fuentes.refrescar(); } catch (e) { log(`después de aplicar ${s.archivo}, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); }
-    const ya = vista(s).texto === texto;
+    // el refresco es el entero (con la bajada del buzón) y puede tardar minutos: la respuesta lo espera como mucho
+    // `esperaRefrescoMs`; si tarda más, el cambio ya está en main y el refresco sigue solo
+    const refresco = Promise.resolve().then(() => fuentes.refrescar())
+      .then(() => true, (e) => { log(`después de aplicar ${s.archivo}, el refresco falló (${(e && e.name) || 'error'}): se ve en el próximo`); return true; });
+    let tope;
+    const aTiempo = await Promise.race([refresco, new Promise((ok) => { tope = setTimeout(() => ok(false), esperaRefrescoMs); })]);
+    clearTimeout(tope);
+    if (!aTiempo) log(`después de aplicar ${s.archivo}, el refresco sigue (más de ${esperaRefrescoMs} ms): la respuesta no lo espera`);
+    const ya = aTiempo && vista(s).texto === texto;
     return { ...r, message: ya ? M('config.aplicadoYa') : M('config.aplicadoProximo') };
   }
 
