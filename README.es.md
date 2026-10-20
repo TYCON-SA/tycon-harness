@@ -58,7 +58,7 @@ pruebas hasta que tu equipo la declara en su configuración («Tu tecnología»,
 Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.
 La lista completa está en [Qué necesitás](#qué-necesitás).
 
-Para que tu agente siga el ciclo, instalá el arnés en tu máquina. Abrí la terminal (en Windows, PowerShell 7) y
+Para que tu agente siga el ciclo, instalá el arnés en tu máquina ([▶ video](https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9)). Abrí la terminal (en Windows, PowerShell 7) y
 escribí:
 
 ```bash
@@ -80,14 +80,16 @@ La instalación completa suma los frenos en los repos que trabajan con el arnés
 
 ## Tu primera historia
 
-Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos.
+Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la sigue y los revisores la controlan. Que la primera sea chica, como una función nueva en un archivo: una así tarda unos 10 minutos. · [▶ video](https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a)
 
 1. **Abrí tu agente de código en la carpeta de tu repo**: ahí escribe la historia, crea la rama y guarda los cambios. Si lo tenías abierto desde antes de instalar, cerralo y abrilo de nuevo: las reglas del arnés entran al abrirlo.
 2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
 3. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 4. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
-5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica te muestra el plan y lo aprueba solo; en las demás, lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo. Si la historia toca pantallas, además arma una maqueta para que la apruebes, la prueba con un navegador si tu repo ya tiene esas pruebas, y te deja una guía para probarla a mano.
+5. **Pedí «implementemos la story»**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica te muestra el plan y lo aprueba solo; en las demás, lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo.
 6. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
+7. **Una historia con pantalla.** El agente arma una maqueta para que la apruebes antes de programar; si tu repo no tiene cómo probar en un navegador, te ofrece prepararlo; y te deja una guía para probarla a mano. · [▶ video](https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550)
+8. **Las reglas propias de tu proyecto.** Pedile a tu agente un revisor que controle una regla tuya (por ejemplo, «el email de un cliente nunca se muestra completo»): queda en tu repo de reglas y revisa cada historia junto con los del arnés. · [▶ video](https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f)
 
 Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` dicen qué falta, sin tocar nada.
 
