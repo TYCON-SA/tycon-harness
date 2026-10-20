@@ -126,6 +126,7 @@ const TEXTOS = {
   'inicio.loAsignado': { es: 'Lo que tenés asignado', en: 'What is assigned to you' },
   'inicio.dependencias': { es: 'dependencias', en: 'dependencies' },
   'inicio.tusProyectos': { es: 'Tus proyectos', en: 'Your projects' },
+  'inicio.asignadoSinMedir': { es: 'No se pudo medir esta noche: {proyectos}. Lo asignado ahí no está en la lista.', en: 'Could not be measured tonight: {proyectos}. Work assigned there is not on the list.' },
   'inicio.asignadoAtraso': { es: 'Lo asignado se ve con hasta un día de atraso: sale de la foto de cada noche.', en: "Assigned work shows up to one day late: it comes from each night's snapshot." },
   'inicio.ledePersona': { es: 'Lo tuyo: tus corridas, tus pedidos de cambio abiertos y lo que tenés asignado.', en: 'Your work: your runs, your open pull requests and what is assigned to you.' },
 

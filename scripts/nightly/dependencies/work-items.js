@@ -1332,7 +1332,9 @@ module.exports = { parseArgs, crearAz, proyectosDeFicha, paresPorPedir, ordenarY
   responsables, responsablesDeRepos,
   // story 4.5
   personaMasReciente, leerCategorias, leerPedidoDeAzure, buscarHuerfanos, volcar, avisarCerradosVivos, adoptarHuerfanos,
-  textoCerradoVivo };
+  textoCerradoVivo,
+  // los pedidos asignados del sitio juzgan «abierto» con las mismas categorías
+  cacheDeCategorias };
 
 // 🔴 `process.exitCode`, NO `process.exit()`. Este guión lo ejecuta otro proceso y le parsea la
 // salida; en Node las escrituras a una tubería son ASINCRÓNICAS y `process.exit()` mata el proceso
