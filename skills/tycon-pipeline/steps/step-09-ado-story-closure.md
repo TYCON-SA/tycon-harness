@@ -1,4 +1,4 @@
-# Cerrar en ADO
+# Cerrar la historia
 
 **Objetivo**: dejar trazabilidad regulatoria-grade en el work item de Azure DevOps al momento de marcar una story como `done`. Postea un comment con los commit SHA(s), CI run y PR link que dieron cierre a la story, y transiciona el state del WI a `Closed` / `Done`.
 

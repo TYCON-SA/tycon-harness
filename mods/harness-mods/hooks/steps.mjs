@@ -9,7 +9,7 @@ export const STEPS = [
   { id: '0', name: 'Arranque' },
   { id: '0b', name: 'Arranque: reloj de Clockify' },
   { id: '0c', name: 'Arranque: pedido en ADO' },
-  { id: '1', name: 'Validar la story' },
+  { id: '1', name: 'Validar la historia' },
   { id: '2', name: 'Armar el plan' },
   { id: '3', name: 'Aprobar el plan' },
   { id: '4', name: 'Implementar y correr las pruebas' },

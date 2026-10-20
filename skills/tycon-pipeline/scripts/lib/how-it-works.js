@@ -28,8 +28,20 @@ const EFFECT_RANK = { records: 0, warns: 1, blocks: 2 };
 // una salida que niega la acción: la decisión de un hook (deny/block), un código de salida 2 o el `{ block }` de un hijo
 // de los despachadores
 const DENY_RX = /permissionDecision|['"]deny['"]|exit\(2\)|exitCode|\bexit 2\b|decision:\s*['"]block['"]|"decision":\s*"block"|\bblock:\s|\breturn 2\b/;
-// qué integración de la organización necesita cada paso para correr: el salteo mecánico de `computeNext` en pipeline.js
-const STEP_INTEGRATIONS = Object.freeze({ '0b': 'clockify' });
+// Las piezas de una integración de la organización, cada una en el paso de la pantalla que la lleva: id estable, paso,
+// integración (la clave del lector de configuración), clave del texto y archivo del árbol. Los textos dicen qué hace sin
+// nombrar el servicio, así que cambiar de servicio es cambiar la integración de una fila. Un paso del pipeline cuyo
+// archivo es el de una pieza de otro paso no se muestra como paso: se muestra como esa pieza (FOLDED_STEPS).
+// Las integraciones que un repo puede prender por su cuenta aunque la organización no las tenga (ADO, con su
+// .tycon/ado-config.yaml): apagadas en la organización no se esconden, porque en algún repo pueden correr.
+const PER_REPO_INTEGRATIONS = Object.freeze(['ado']);
+function stepFile(archivo) { return `${STEPS_DIR.split(path.sep).join('/')}/${archivo}`; }
+const INTEGRATION_PIECES = Object.freeze([
+  { id: 'timeTrackingStart', step: '0', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasAbre', code: stepFile('step-00b-clocki-start.md') },
+  { id: 'adoWorkItemActive', step: '0', integration: 'ado', textKey: 'piezaOrg.pedidoAdoActivo', code: stepFile('step-00c-ado-mark-active.md') },
+  { id: 'adoWorkItemClose', step: '9', integration: 'ado', textKey: 'piezaOrg.pedidoAdoCierra', code: stepFile('step-09-ado-story-closure.md') },
+  { id: 'timeTrackingClose', step: '9', integration: 'clockify', textKey: 'piezaOrg.registroDeHorasCierra', code: stepFile('step-09-ado-story-closure.md') },
+].map(Object.freeze));
 
 const rel = (p) => p.split(path.sep).join('/');
 const leer = (f) => { try { return fs.readFileSync(f, 'utf8'); } catch { return null; } };
@@ -250,14 +262,18 @@ function readOrg({ treeDir, profileDir }) {
   const perfil = ['team-profile.json', 'perfil-equipo.json'].map((f) => path.join(profileDir, f)).find((f) => fs.existsSync(f)) || path.join(profileDir, 'team-profile.json');
   const hogar = fs.mkdtempSync(path.join(os.tmpdir(), 'how-it-works-home-'));
   let integrations = {}; let packsDefault = null; const problems = [];
+  // sin el archivo del perfil, o sin poder leerlo, no se sabe qué integraciones tiene la organización (no «todas apagadas»)
+  let integrationsKnown = false;
   try {
     const cfg = TC.cargar({ env: { TYCON_PROFILE: perfil }, home: hogar });
     integrations = TC.integraciones(cfg);
+    // un error del archivo entero (sin clave: ilegible) es no haberlo leído; uno de una clave deja leído el resto
+    integrationsKnown = fs.existsSync(perfil) && !(cfg.errores || []).some((e) => e.archivo === perfil && !e.clave);
     packsDefault = cfg.valores && cfg.valores.packs ? cfg.valores.packs.default : null;
     for (const e of cfg.errores || []) problems.push(`${e.clave || path.basename(e.archivo)}: ${e.motivo}`);
   } catch (e) { problems.push(`no se pudo leer la configuración (${String(e.message || e).split('\n')[0]})`); } finally { fs.rmSync(hogar, { recursive: true, force: true }); }
   const reglas = SC.orgRules({ file: path.join(profileDir, 'team-repos.json') });
-  return { integrations, packsDefault, rules: reglas.rules, problems: [...problems, ...reglas.problems] };
+  return { integrations, integrationsKnown, packsDefault, rules: reglas.rules, problems: [...problems, ...reglas.problems] };
 }
 
 // ── los paquetes ──
@@ -349,6 +365,20 @@ function readPacks({ treeDir, packsDir, origin, agentsDir = path.join(treeDir, '
 // ── el modelo ──
 
 /**
+ * Los pasos que la pantalla muestra como pieza de otro (su archivo es el de una pieza de INTEGRATION_PIECES de otro
+ * paso), cada uno con el paso que lo lleva: `{ <id>: <id del anfitrión> }`.
+ */
+function foldedInto(pasos) {
+  const out = {};
+  for (const s of pasos) {
+    const f = INTEGRATION_PIECES.find((x) => x.step !== s.id && x.code === stepFile(s.file));
+    if (f) out[s.id] = f.step;
+  }
+  return out;
+}
+const foldedSteps = (pasos) => Object.keys(foldedInto(pasos));
+
+/**
  * El recorrido entero para la pantalla. `profileDir`: el clon del perfil (o null, con `profileState` y `profileReason`
  * diciendo por qué); `packsTreeDir`: de dónde salen los paquetes del árbol (por defecto, el árbol).
  */
@@ -356,7 +386,9 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   treeDir = path.resolve(treeDir);
   const PIPE = require(path.join(CODE, PIPELINE_SCRIPTS, 'pipeline.js'));
   const org = readOrg({ treeDir, profileDir });
-  const off = (integration) => (org && integration && org.integrations[integration] === false ? integration : null);
+  // una integración que la organización tiene apagada: sus piezas y sus controles no se muestran. Sin perfil, o con el
+  // perfil sin su archivo, no se sabe qué tiene, y se muestra todo
+  const apagada = (integration) => Boolean(org && org.integrationsKnown && integration && !PER_REPO_INTEGRATIONS.includes(integration) && org.integrations[integration] === false);
   // un mismo mapa para las dos carpetas: un revisor declarado en dos paquetes sale como problema, como en el pipeline
   const yaDeclarados = new Map();
   const packs = [
@@ -367,7 +399,6 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   const v = org ? org.packsDefault : null;
   const activos = !org ? null : v === 'all' ? instalados : Array.isArray(v) ? instalados.filter((n) => v.includes(n)) : [];
   const { controls, problems: problemasDeControles } = readControls(treeDir);
-  const conOff = (c) => ({ ...c, off: off(c.integration) });
   // el validador de stories del paso 1 sale del mismo cálculo que el pipeline (sin paquetes: sólo el núcleo)
   const validadores = (() => {
     const prev = process.env.TYCON_PACKS_DIR;
@@ -381,7 +412,10 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     }
   })();
   const pasos = readSteps(treeDir);
-  const steps = pasos.map((s) => {
+  const plegados = foldedInto(pasos);
+  const steps = pasos.filter((s) => !(s.id in plegados)).map((s) => {
+    // sus controles y los de los pasos que lleva como pieza
+    const propiosIds = [s.id, ...Object.keys(plegados).filter((id) => plegados[id] === s.id)];
     const core = (grupo) => (s.id === '5' || s.id === '7b' ? PIPE.CORE_REVIEWERS.filter((r) => r.group === grupo).map((r) => ({ agent: r.agent, whenKey: r.whenKey, file: `agents/${r.agent}.md` })) : []);
     const grupos = s.id === '1' ? ['validacion'] : (s.id === '5' || s.id === '7b') ? ['base', 'condicional'] : [];
     const dePaquetes = packs.flatMap((p) => p.reviewers.filter((r) => grupos.includes(r.group)).map((r) => ({
@@ -397,19 +431,22 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
     };
     // los controles del paso: uno por guion, con el efecto más fuerte de sus registros
     const propios = new Map();
-    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes(s.id))) {
+    for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => propiosIds.includes(id)) && !apagada(x.integration))) {
       const ya = propios.get(c.spec);
-      if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) propios.set(c.spec, conOff(c));
+      if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) propios.set(c.spec, c);
     }
+    const declaradas = INTEGRATION_PIECES.filter((f) => f.step === s.id);
     return {
-      ...s, off: off(STEP_INTEGRATIONS[s.id]), reviewers: bloque, controls: [...propios.values()],
-      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.includes(s.id)).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
+      ...s, reviewers: bloque, controls: [...propios.values()],
+      orgPiecesDeclared: declaradas.length,
+      orgPieces: declaradas.filter((f) => !apagada(f.integration)).map((f) => ({ id: f.id, integration: f.integration, textKey: f.textKey, code: f.code })),
+      storyPieces: STORY_CONDITIONALS.filter((c) => c.steps.some((id) => propiosIds.includes(id))).map((c) => ({ id: c.id, code: c.code, guide: c.guide, textKey: c.textKey })),
     };
   });
   const enTodo = new Map();
-  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes('all'))) {
+  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.includes('all') && !apagada(x.integration))) {
     const ya = enTodo.get(c.spec);
-    if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) enTodo.set(c.spec, conOff(c));
+    if (!ya || EFFECT_RANK[c.effect] > EFFECT_RANK[ya.effect]) enTodo.set(c.spec, c);
   }
   return {
     steps, allSteps: { controls: [...enTodo.values()] },
@@ -421,4 +458,4 @@ function buildModel({ treeDir, profileDir = null, profileState = null, profileRe
   };
 }
 
-module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, agentFileOf, withoutAbsolutePaths, buildModel, STEP_INTEGRATIONS, DENY_RX };
+module.exports = { readSteps, citedGuides, readControls, controlProblems, STORY_CONDITIONALS, checkConditionals, readOrg, readPacks, agentsFolderOf, agentFileOf, withoutAbsolutePaths, buildModel, INTEGRATION_PIECES, PER_REPO_INTEGRATIONS, FOLDED_STEPS: Object.freeze(foldedSteps(require('./steps.js').STEPS)), DENY_RX };

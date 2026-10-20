@@ -167,7 +167,7 @@ encontró un error, cuántos agentes se lanzaron y cuánto se consumió.
 ![Corridas: el alcance, «Lo que se mira primero» y las fichas del filtro](sitio-de-la-organizacion/capturas/corridas-tabla.png)
 
 Más abajo está **«Corrida por corrida»**: una fila por corrida, de la más nueva a la más vieja. La barra de cada fila
-reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la story, 2 Armar
+reparte el tiempo entre los pasos del pipeline, con los colores de la leyenda: 0 Arranque, 1 Validar la historia, 2 Armar
 el plan, 3 Aprobar el plan, 4 Implementar y correr las pruebas, 5 Revisores, 6 Hallazgos: el informe, 7 Hallazgos: la
 decisión y 8 Preparar el commit. «Sin marca» es un tramo que la corrida no anotó.
 

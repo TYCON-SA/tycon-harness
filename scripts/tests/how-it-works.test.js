@@ -226,7 +226,9 @@ test('T9 ArnesSoloLectura @story-2.61 @ac-3 @ac-7 — lo del arnés no tiene cam
   const lista = html.slice(html.indexOf('<ol class="ct-pasos'), html.indexOf('</ol>'));
   const ids = [...lista.matchAll(/data-step="([^"]+)"/g)].map((x) => x[1]);
   const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
-  assert.deepStrictEqual(ids, [...STEPS.filter((s) => s.inSequence !== false), ...STEPS.filter((s) => s.inSequence === false)].map((s) => s.id));
+  const plegados = HIW().FOLDED_STEPS;
+  const visibles = STEPS.filter((s) => !plegados.includes(s.id));
+  assert.deepStrictEqual(ids, [...visibles.filter((s) => s.inSequence !== false), ...visibles.filter((s) => s.inSequence === false)].map((s) => s.id).concat('todo'));
   assert.ok(lista.indexOf('ct-aparte') < lista.indexOf('data-step="7b"'), '«Fuera del recorrido» antes de los de afuera');
 });
 
@@ -487,17 +489,18 @@ test('T17 ComoTrabaja_DosOrganizaciones @story-2.61 @ac-15 — cada organizació
     assert.strictEqual(mA.org.rules.test_names.value, 'pascal');
     assert.strictEqual(mB.org.rules.test_names.value, 'snake');
     const paso = (m, id) => m.steps.find((s) => s.id === id);
-    assert.strictEqual(paso(mA, '0b').off, null, 'A: el reloj corre');
-    assert.strictEqual(paso(mB, '0b').off, 'clockify', 'B: el reloj, apagado en la organización');
+    const piezasReloj = (m) => m.steps.flatMap((s) => s.orgPieces || []).filter((x) => x.integration === 'clockify');
+    assert.ok(piezasReloj(mA).length, 'A: el registro de horas, en sus pasos');
+    assert.deepStrictEqual(piezasReloj(mB), [], 'B: apagado en la organización, no aparece');
     const controlesReloj = (m) => [...m.allSteps.controls, ...m.steps.flatMap((s) => s.controls)].filter((c) => c.integration === 'clockify');
-    assert.ok(controlesReloj(mA).length && controlesReloj(mA).every((c) => !c.off));
-    assert.ok(controlesReloj(mB).every((c) => c.off === 'clockify'));
+    assert.ok(controlesReloj(mA).length, 'A: sus controles');
+    assert.deepStrictEqual(controlesReloj(mB), [], 'B: ni sus controles');
     assert.deepStrictEqual(mA.org.packs.active, ['acme-pagos']);
     assert.deepStrictEqual(mB.org.packs.active, []);
     assert.ok(paso(mA, '5').reviewers.packs.some((r) => r.agent === 'acme-pagos-reviewer' && r.active));
     assert.ok(paso(mB, '5').reviewers.packs.every((r) => !r.active), 'B no tiene activo el paquete');
     const hB = TAB().renderPage(mB, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
-    assert.ok(hB.includes(TX().t('es', 'comoTrabaja.apagadoEnTuOrganizacion')));
+    assert.ok(!hB.includes('clocki/'), 'B: nada del registro de horas en la página');
   } finally { process.env.HOME = viejo; }
 });
 
@@ -783,5 +786,188 @@ test('T24 ComoTrabaja_LaSondaDiceElRepoYLosEnlaces @story-2.61.2 @ac-1 @ac-2 —
     assert.strictEqual(pasa(sana.texto), true, 'sana, pasa');
   } finally {
     fs.rmSync(vacia, { recursive: true, force: true });
+  }
+});
+
+// ════════════════════════════════════════ en llano: nombres, piezas de la organización, controles ════════════════════════════════════════
+
+const VIEJOS = /Validar la story(?! en)|Cerrar en ADO/;
+test('T25 ComoTrabaja_NingunNombreViejoDePaso @story-2.61.3 @ac-1 — ningún «Validar la story» ni «Cerrar en ADO» como nombre de paso', () => {
+  // «Validar la story en …» es el pedido al validador, no el nombre del paso
+  const archivos = ['scripts/site/texts.js', 'skills/tycon-pipeline/scripts/on-prompt.js', 'skills/tycon-pipeline/scripts/lib/story-gate.js',
+    'skills/tycon-pipeline/scripts/pipeline.js', 'skills/tycon-pipeline/scripts/lib/steps.js', 'mods/harness-mods/hooks/steps.mjs',
+    'skills/tycon-pipeline/SKILL.md', 'skills/tycon-pipeline/steps/step-00-preflight.md', 'skills/tycon-pipeline/steps/step-01-validate-story.md',
+    'skills/tycon-pipeline/steps/step-09-ado-story-closure.md', 'guides/organization-site.md'];
+  for (const a of archivos) {
+    const texto = fs.readFileSync(path.join(ROOT, a), 'utf8');
+    const linea = texto.split('\n').find((l) => VIEJOS.test(l));
+    assert.ok(!linea, `${a}: ${linea}`);
+  }
+  const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  assert.strictEqual(STEPS.find((x) => x.id === '1').name, 'Validar la historia');
+  assert.strictEqual(STEPS.find((x) => x.id === '9').name, 'Cerrar la historia');
+  assert.deepStrictEqual(['1', '9'].map((id) => TX().t('en', `paso.${id}`)), ['Validate the story', 'Close the story']);
+});
+
+// ADO se prende con su organización (ado.org), las demás con su llave en integrations
+const perfilIntegraciones = ({ ado, ...integrations }) => carpeta(perfilCon({ profile: { integrations, packs: { default: 'all' }, ...(ado ? { ado: { org: 'https://dev.azure.com/acme' } } : {}) } }));
+const conCasa = (fn) => {
+  const viejo = process.env.HOME; process.env.HOME = carpeta({ '.claude/tycon.json': { integrations: { clockify: true, engram: true } } });
+  try { return fn(); } finally { process.env.HOME = viejo; }
+};
+const seccionDe = (html, id) => { const i = html.indexOf(`id="paso-${id}"`); return html.slice(i, html.indexOf('</section>', i)); };
+
+test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el registro de horas y ADO son piezas de «Arranque» y «Cerrar la historia»', () => {
+  const H2 = HIW();
+  const m = H2.buildModel({ treeDir: ROOT, profileDir: null });
+  const ids = m.steps.map((x) => x.id);
+  assert.ok(!ids.includes('0b') && !ids.includes('0c'), `sin 0b ni 0c: ${ids.join(',')}`);
+  assert.deepStrictEqual([...H2.FOLDED_STEPS].sort(), ['0b', '0c']);
+  // la tabla: cada fila nombra un paso que existe, una integración del lector, su texto y un archivo del árbol
+  const integraciones = TC.integraciones(TC.cargar({ env: {}, home: tmp('hiw-home-') }));
+  for (const f of H2.INTEGRATION_PIECES) {
+    assert.ok(ids.includes(f.step), `${f.id}: el paso ${f.step}`);
+    assert.ok(f.integration in integraciones, `${f.id}: ${f.integration} es una integración`);
+    assert.ok(fs.existsSync(path.join(ROOT, f.code)), `${f.id}: ${f.code}`);
+    for (const idioma of ['es', 'en']) assert.ok(TX().t(idioma, f.textKey), `${f.id}: su texto en ${idioma}`);
+  }
+  const deUnPaso = (id) => (m.steps.find((x) => x.id === id).orgPieces || []).map((x) => x.id);
+  assert.deepStrictEqual(deUnPaso('0').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === '0').map((f) => f.id).sort());
+  assert.deepStrictEqual(deUnPaso('9').sort(), H2.INTEGRATION_PIECES.filter((f) => f.step === '9').map((f) => f.id).sort());
+  assert.ok(deUnPaso('0').length >= 2 && deUnPaso('9').length >= 2);
+  // lo que un paso plegado llevaba pasa a su anfitrión: sus controles y lo que se suma según la historia (si no, la
+  // pieza «pedido en ADO», declarada en el 0c, no aparece en ningún paso)
+  const arranque = m.steps.find((x) => x.id === '0');
+  for (const c of H2.STORY_CONDITIONALS.filter((x) => x.steps.some((id) => H2.FOLDED_STEPS.includes(id)))) {
+    assert.ok(arranque.storyPieces.some((x) => x.id === c.id), `${c.id} (de ${c.steps}) en «Arranque»`);
+  }
+  const { controls } = H2.readControls(ROOT);
+  for (const c of controls.filter((x) => Array.isArray(x.steps) && x.steps.some((id) => H2.FOLDED_STEPS.includes(id)))) {
+    assert.ok(arranque.controls.some((x) => x.spec === c.spec), `el control ${c.spec} (de ${c.steps}) en «Arranque»`);
+  }
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  for (const id of ['0', '9']) {
+    const sec = seccionDe(html, id);
+    assert.ok(sec.includes(`<h3>${TX().t('es', 'comoTrabaja.segunTuOrganizacion')}</h3>`), `el paso ${id} tiene su bloque`);
+    for (const f of H2.INTEGRATION_PIECES.filter((x) => x.step === id)) {
+      assert.ok(sec.includes(TX().t('es', f.textKey)), `${f.id} en el paso ${id}`);
+      assert.ok(sec.includes(`href="${PUBLICO}/blob/main/${f.code}"`) && sec.includes(`data-piece="${f.code}"`), `${f.id}: «Ver el código» y «Proponer una mejora»`);
+    }
+  }
+  // lo que se ve de la pestaña no dice «Clockify»: el registro de horas puede ser otro servicio
+  const visible = html.replace(/<[^>]+>/g, ' ');
+  assert.doesNotMatch(visible, /clockify/i);
+  for (const idioma of ['es', 'en']) assert.doesNotMatch(TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' }).replace(/<[^>]+>/g, ' '), /clockify/i, idioma);
+});
+
+test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
+  const H2 = HIW();
+  const marca = `ct-chip segun">${TX().t('es', 'comoTrabaja.segunTuOrganizacionMarca')}<`;
+  const todos = (m) => [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)];
+  const piezas = (m) => m.steps.flatMap((x) => x.orgPieces || []);
+  // ADO prendido, registro de horas apagado
+  const mixta = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ ado: true, clockify: false, engram: true }) });
+  assert.ok(piezas(mixta).some((x) => x.integration === 'ado'), 'ADO aparece');
+  assert.ok(!piezas(mixta).some((x) => x.integration === 'clockify'), 'el registro de horas, no');
+  assert.ok(!todos(mixta).some((c) => c.integration === 'clockify'), 'ni sus controles');
+  const hMixta = TAB().renderPage(mixta, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  assert.ok(hMixta.includes(marca), 'lo prendido lleva la marca');
+  assert.ok(!hMixta.includes(`ct-chip off">${TX().t('es', 'comoTrabaja.apagadoEnTuOrganizacion')}<`), 'ya no hay «apagado» en una pieza');
+  // todo apagado en la organización: ADO se puede prender por repo (.tycon/ado-config.yaml), así que no se esconde
+  const nada = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ clockify: false, engram: false }) });
+  assert.strictEqual(nada.org.integrations.ado, false, 'el perfil no tiene ADO');
+  assert.ok(piezas(nada).length && piezas(nada).every((x) => x.integration === 'ado'), 'quedan sólo las de ADO');
+  assert.ok(todos(nada).some((c) => c.integration === 'ado'), 'y su control');
+  assert.ok(!todos(nada).some((c) => c.integration === 'clockify'));
+  // un paso con piezas declaradas y ninguna visible lo dice; uno sin filas no tiene el bloque
+  const vacio = { ...nada, steps: nada.steps.map((x) => (x.id === '0' ? { ...x, orgPieces: [] } : x)) };
+  const hNada = TAB().renderPage(vacio, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  assert.ok(seccionDe(hNada, '0').includes(TX().t('es', 'comoTrabaja.sinPiezasOrg')), 'el paso dice que no tiene');
+  assert.ok(!seccionDe(hNada, '2').includes(TX().t('es', 'comoTrabaja.segunTuOrganizacion')), 'un paso sin filas no tiene el bloque');
+  // un clon del perfil sin su archivo: no se sabe qué tiene la organización, se muestra todo (como sin perfil)
+  const sinArchivo = H2.buildModel({ treeDir: ROOT, profileDir: carpeta({ 'LEEME.md': 'perfil sin configurar\n' }) });
+  assert.strictEqual(piezas(sinArchivo).length, H2.INTEGRATION_PIECES.length, 'todas las piezas');
+  assert.ok(todos(sinArchivo).some((c) => c.integration === 'clockify'), 'y los controles del registro de horas');
+  // el archivo está pero no se puede leer: tampoco se sabe, y el problema sale en la franja
+  const ilegible = H2.buildModel({ treeDir: ROOT, profileDir: carpeta({ 'team-profile.json': '{ roto' }) });
+  assert.strictEqual(piezas(ilegible).length, H2.INTEGRATION_PIECES.length, 'ilegible: todas las piezas');
+  assert.ok(ilegible.org.problems.some((p) => /ilegible/.test(p)), `ilegible: el problema a la vista (${ilegible.org.problems})`);
+  // una clave inválida no hace ilegible al archivo: lo apagado sigue sin aparecer
+  const unaClave = H2.buildModel({ treeDir: ROOT, profileDir: carpeta({ 'team-profile.json': { integrations: { clockify: false }, update: { channel: 42 } } }) });
+  assert.ok(!piezas(unaClave).some((x) => x.integration === 'clockify'), 'una clave mala no prende lo apagado');
+  // sin perfil: todo, con la marca
+  const sin = H2.buildModel({ treeDir: ROOT, profileDir: null });
+  assert.strictEqual(piezas(sin).length, H2.INTEGRATION_PIECES.length);
+  const hSin = TAB().renderPage(sin, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  const conIntegracion = todos(sin).filter((c) => c.integration);
+  assert.ok(conIntegracion.length, 'hay controles de una integración');
+  for (const c of conIntegracion) {
+    const li = hSin.split(`data-piece="${c.script}"`)[1].split('</li>')[0];
+    assert.ok(li.includes(marca), `${c.spec}: con la marca`);
+  }
+}));
+
+test('T30 ComoTrabaja_CadaControlDeclaraSuIntegracion @story-2.61.3 @ac-4 — un control de ADO o del registro de horas lo declara', () => {
+  const { controls } = HIW().readControls(ROOT);
+  const deIntegracion = { 'tycon-ado-story-wi/': 'ado', 'clocki/': 'clockify' };
+  for (const c of controls) {
+    for (const [parte, integ] of Object.entries(deIntegracion)) {
+      if (c.script.includes(parte)) assert.strictEqual(c.integration, integ, `${c.spec} (${c.script})`);
+    }
+  }
+  assert.strictEqual(controls.find((c) => c.spec === 'ado-story-create').integration, 'ado');
+});
+
+test('T31 ComoTrabaja_CadaControlDiceQueHace @story-2.61.3 @ac-5 — el título es lo que hace; el archivo, debajo', () => {
+  const { controls } = HIW().readControls(ROOT);
+  const especs = [...new Set(controls.map((c) => c.spec))];
+  assert.ok(especs.length > 40, `${especs.length} controles`);
+  for (const spec of especs) {
+    let es; let en;
+    try { es = TX().t('es', `control.${spec}`); en = TX().t('en', `control.${spec}`); } catch (e) {
+      assert.fail(`${spec}: le falta su texto en llano (control.${spec} en scripts/site/texts.js, en castellano y en inglés)`);
+    }
+    assert.ok(es && en && es !== en, `${spec}: dos idiomas`);
+    assert.ok(hasSpanish(es) && !hasSpanish(en), `${spec}: el castellano en castellano y el inglés en inglés`);
+    assert.doesNotMatch(`${es} ${en}`, /\.(js|sh|mjs)\b|clockify/i, `${spec}: sin archivos ni Clockify`);
+  }
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: null });
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  for (const c of [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)]) {
+    const li = html.split(`data-piece="${c.script}"`)[1].split('</li>')[0];
+    assert.ok(li.includes(`<span class="ct-nom sans">${TX().t('es', `control.${c.spec}`)}</span>`), `${c.spec}: su título`);
+    assert.ok(li.includes(`<span class="ct-archivo">${c.script}</span>`), `${c.spec}: el archivo debajo`);
+  }
+});
+
+test('T32 ComoTrabaja_EnTodoElRecorridoEsUnaEntrada @story-2.61.3 @ac-6 — la última entrada, aparte; su sección se esconde como un paso', () => {
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: null });
+  const html = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  const lista = html.slice(html.indexOf('<ol class="ct-pasos'), html.indexOf('</ol>'));
+  const items = [...lista.matchAll(/<li[^>]*>.*?<\/li>/g)].map((x) => x[0]);
+  assert.match(items[items.length - 1], /data-step="todo"/, 'la última entrada');
+  assert.ok(items[items.length - 2].includes(TX().t('es', 'comoTrabaja.enCualquierPaso')) && items[items.length - 2].includes('ct-aparte'), 'con su separador');
+  const sel = html.slice(html.indexOf('<select data-action="step">'), html.indexOf('</select>'));
+  assert.match(sel, /<option value="todo">[^<]+<\/option>$/, 'también en la lista del teléfono, al final');
+  // su sección es un paso más: el guion que esconde los pasos la esconde a ella
+  assert.match(html, /<section class="ct-paso card" id="paso-todo" data-step="todo"/);
+  assert.ok(!html.includes('ct-todo'), 'ya no hay una sección siempre a la vista');
+  const guion = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'tabs', 'how-it-works.js'), 'utf8');
+  assert.match(guion, /querySelectorAll\('\.ct-paso'\)\.forEach\(function \(s\) \{ s\.hidden = s\.getAttribute\('data-step'\) !== id; \}\)/);
+});
+
+test('T34 Sonda_RepoSinEnlacesYCarpetaQueNoEsElArbol @story-2.61.3 @ac-8 — repo sí y enlaces 0, un problema; la carpeta personal o «/», error sin leer', () => {
+  const SONDA = path.join(__dirname, 'lib', 'how-it-works-probe.js');
+  const { problemasDeLaSonda } = require(SONDA);
+  assert.deepStrictEqual(problemasDeLaSonda({ publicRepo: PUBLICO, codeLinks: 0, problems: [] }), ['sin enlaces al código en la página']);
+  assert.deepStrictEqual(problemasDeLaSonda({ publicRepo: PUBLICO, codeLinks: 3, problems: [] }), []);
+  assert.ok(problemasDeLaSonda({ publicRepo: null, codeLinks: 0, problems: [] })[0].includes('public-remotes.json'));
+  const casa = tmp('hiw-casa-');
+  for (const raiz of [casa, path.parse(casa).root]) {
+    const r = spawnSync(process.execPath, [SONDA, raiz], { encoding: 'utf8', env: { ...process.env, HOME: casa, USERPROFILE: casa } });
+    assert.strictEqual(r.status, 0, r.stderr);
+    const json = JSON.parse(r.stdout.trim());
+    assert.match(json.error || '', /no es el árbol del arnés/, `${raiz}: ${r.stdout}`);
+    assert.ok(!('steps' in json), 'no armó nada');
   }
 });

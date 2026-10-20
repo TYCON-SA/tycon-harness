@@ -279,7 +279,7 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '  tests (ATDD) y código. Saltearse el HITL del plan es exactamente lo que este portón impide.',
       '',
       '  Salidas:',
-      '   1. Si todavía no mostraste el plan → terminá «Validar la story» y «Armar el plan» (`pipeline.js next` te dice cuál va) y',
+      '   1. Si todavía no mostraste el plan → terminá «Validar la historia» y «Armar el plan» (`pipeline.js next` te dice cuál va) y',
       '      presentáselo al user. NO codees "mientras tanto".',
       '   2. Si el user YA aprobó el plan (palabras claras de proceder, sin condiciones) →',
       `        node ${MARKER_JS} complete-step 3 --approved "<cita textual de la aprobación>"`,

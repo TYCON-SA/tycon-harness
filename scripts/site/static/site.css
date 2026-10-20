@@ -361,13 +361,12 @@ table.tabla#proyectos thead th{white-space:normal}
 .ct-pasos a{display:grid;grid-template-columns:28px minmax(0,1fr);gap:8px;align-items:center;padding:7px 8px;border-radius:9px;color:var(--ink-2);text-decoration:none;font-size:13.5px}
 .ct-pasos a:hover{background:var(--wash)}
 .ct-pasos a[aria-current="step"]{background:var(--ink);color:var(--page)}
-.ct-pasos a.off{opacity:.55}
 .ct-pasos .n{font:12px var(--mono);opacity:.7}
 .ct-aparte{margin:8px 8px 2px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
 .ct-elegir{display:none;gap:4px;font-size:13px;color:var(--ink-2)}
 .ct-elegir select{width:100%;padding:8px 10px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font:inherit}
 .ct-detalle{display:grid;gap:14px;min-width:0}
-.ct-paso,.ct-todo{padding:18px 20px;display:grid;gap:16px}
+.ct-paso{padding:18px 20px;display:grid;gap:16px}
 .ct-goal{margin:2px 0 0;color:var(--ink-2);font-size:14px}
 .ct-bloque h3{margin:0 0 6px;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
 .ct-vacio{margin:0;font-size:13px;color:var(--muted)}
@@ -379,11 +378,13 @@ table.tabla#proyectos thead th{white-space:normal}
 .ct-nom{font:13px var(--mono);overflow-wrap:anywhere}
 .ct-nom.sans{font:600 13.5px var(--sans)}
 .ct-cuando{flex-basis:100%;font-size:12.5px;color:var(--muted)}
+.ct-archivo{flex-basis:100%;font:12px var(--mono);color:var(--muted);overflow-wrap:anywhere}
 .ct-pieza.apagada .ct-nom,.ct-pieza.apagada .ct-cuando{opacity:.55}
 .ct-acc{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .ct-chip{display:inline-block;padding:0 7px;border-radius:999px;font:11px/18px var(--sans);border:1px solid var(--line-strong);color:var(--ink-2);vertical-align:1px}
 .ct-chip.org{border-color:var(--accent);color:var(--accent)}
 .ct-chip.arnes{color:var(--muted)}
+.ct-chip.segun{border-color:var(--accent);color:var(--accent);border-style:dashed}
 .ct-chip.frena{border-color:var(--bad);color:var(--bad-ink)}
 .ct-chip.avisa{color:var(--warn-ink)}
 .ct-chip.off{border-style:dashed;color:var(--muted)}

@@ -27,7 +27,7 @@ const ESPERADOS = {
   0: 'Arranque',
   '0b': 'Arranque: reloj de Clockify',
   '0c': 'Arranque: pedido en ADO',
-  1: 'Validar la story',
+  1: 'Validar la historia',
   2: 'Armar el plan',
   3: 'Aprobar el plan',
   4: 'Implementar y correr las pruebas',
@@ -38,7 +38,7 @@ const ESPERADOS = {
   '7b': 'Revisores, otra vuelta',
   '7c': 'Probar en vivo',
   8: 'Preparar el commit',
-  9: 'Cerrar en ADO',
+  9: 'Cerrar la historia',
 };
 
 // Un paso nombrado por su número: «Step 5», «step 4», «steps 1-2», «paso 8», «sub-paso 4.0», «5b», «7c»…

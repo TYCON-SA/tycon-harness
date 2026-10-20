@@ -9,7 +9,21 @@
 //   node how-it-works-probe.js [raíz]   →   { "steps": [...], "controls": [...], "publicRepo", "codeLinks", "problems": [...] }
 //   con --modules, además la lista de módulos cargados (rutas relativas a la raíz) para cruzarla con lo que copia la imagen
 //   con --public-remotes-tree <carpeta>, el repo público se lee de ahí (las pruebas lo apuntan a una carpeta vacía)
+// La carpeta personal o la raíz del disco no son el árbol: la sonda da error sin leerlas (leería todo lo de adentro).
+const os = require('os');
 const path = require('path');
+
+/** Lo que la sonda dice que falta: lo que no se pudo leer del arnés, y el repo público y sus enlaces en la página. */
+function problemasDeLaSonda({ publicRepo, codeLinks, problems }) {
+  const out = [...problems];
+  if (!publicRepo) out.push('sin repo público: scripts/setup/public-remotes.json no se pudo leer');
+  else if (!codeLinks) out.push('sin enlaces al código en la página');
+  return out;
+}
+module.exports = { problemasDeLaSonda };
+if (require.main === module) main();
+
+function main() {
 
 const args = process.argv.slice(2);
 const opcion = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
@@ -19,6 +33,10 @@ const REMOTES_TREE = path.resolve(opcion('--public-remotes-tree') || ROOT);
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
 
 let salida;
+if (ROOT === path.resolve(os.homedir()) || ROOT === path.parse(ROOT).root) {
+  process.stdout.write(`${JSON.stringify({ error: 'la carpeta personal o la raíz del disco no es el árbol del arnés' })}\n`);
+  return;
+}
 try {
   const HIW = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'how-it-works.js'));
   const m = HIW.buildModel({ treeDir: ROOT });
@@ -27,7 +45,8 @@ try {
   salida = {
     steps: m.steps.map((s) => ({
       id: s.id, goal: s.goal || null, guides: s.guides || [], reviewers: revisores(s.reviewers),
-      controls: (s.controls || []).map((c) => `${c.spec}|${c.effect}|${c.off || ''}`),
+      controls: (s.controls || []).map((c) => `${c.spec}|${c.effect}|${c.integration || ''}`),
+      orgPieces: (s.orgPieces || []).map((x) => x.id),
       storyPieces: (s.storyPieces || []).map((x) => x.id), problems: (s.problems || []).map(texto),
     })),
     controls: ((m.allSteps && m.allSteps.controls) || []).map((c) => `${c.spec}|${(c.steps || []).join(',')}|${c.effect}`),
@@ -39,9 +58,7 @@ try {
   salida.publicRepo = TAB.publicRepoOf(REMOTES_TREE);
   salida.codeLinks = (TAB.renderPage(m, { idioma: 'es', publicRepo: salida.publicRepo, version: '' }).match(/href="[^"]*\/blob\/main\//g) || []).length;
   // `problems` va última: la guarda del workflow mira que la salida termine en "problems":[]}
-  salida.problems = (m.problems || []).map(texto);
-  if (!salida.publicRepo) salida.problems.push('sin repo público: scripts/setup/public-remotes.json no se pudo leer');
-  else if (!salida.codeLinks) salida.problems.push('sin enlaces al código en la página');
+  salida.problems = problemasDeLaSonda({ publicRepo: salida.publicRepo, codeLinks: salida.codeLinks, problems: (m.problems || []).map(texto) });
 } catch (e) {
   salida = { error: String((e && e.message) || e).split('\n')[0] };
 }
@@ -49,3 +66,4 @@ if (process.argv.includes('--modules')) {
   salida.modules = Object.keys(require.cache).filter((f) => f.startsWith(ROOT + path.sep) && !f.includes(`${path.sep}tests${path.sep}`)).map(rel).sort();
 }
 process.stdout.write(`${JSON.stringify(salida)}\n`);
+}

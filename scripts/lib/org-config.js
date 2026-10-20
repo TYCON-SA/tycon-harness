@@ -1664,15 +1664,20 @@ function pantalla(idioma = 'es') {
     return { declarado: false, texto: que === 'machine' ? T('pantalla.correnEnLaMaquinaDelDev') : que === 'server-if-any-check' ? T('pantalla.elServidorSiLaRama') : T('pantalla.sinPipeline') };
   }
   // story 2.59.2: qué hace la regla elegida, con la respuesta del lector que el servidor manda en «queHace» (como la nota
-  // «sin pipeline»). Un repo sin regla propia sigue la de la organización; la organización sin declarar es automático. Sin
-  // esa respuesta (un lector anterior), ninguna línea
+  // «sin pipeline»). La organización sin declarar es automático. Un repo sin regla propia dice qué hace la de la
+  // organización (story 2.61.3): «como la organización: …», con la regla de arriba de ese momento. Sin esa respuesta (un
+  // lector anterior), o con un valor que la pantalla no conoce, ninguna línea
   var QUE_HACE = { 'server-if-required': 'pantalla.queHaceAutomatico', 'machine-always': 'pantalla.queHaceSiempre', 'server-only': 'pantalla.queHaceConfiar' };
-  function queHace(regla, qh, deRepo) {
+  function textoQueHace(regla, qh) {
+    var k = QUE_HACE[qh[regla == null || regla === '' ? 'automatico' : regla]];
+    return k ? T(k) : null;
+  }
+  function queHace(regla, qh, deRepo, deLaOrg) {
     if (!qh) return null;
     var vacia = regla == null || regla === '';
-    if (vacia && deRepo) return el('span', { class: 'que-hace', text: T('pantalla.sigueLaReglaDeArriba') });
-    var k = QUE_HACE[qh[vacia ? 'automatico' : regla]];
-    return k ? el('span', { class: 'que-hace', text: T(k) }) : null;
+    var texto = vacia && deRepo ? textoQueHace(deLaOrg, qh) : textoQueHace(regla, qh);
+    if (!texto) return null;
+    return el('span', { class: 'que-hace', text: vacia && deRepo ? T('pantalla.comoLaOrganizacion', { queHace: texto }) : texto });
   }
   function editorSuites(s, d, pr) {
     MOSTRADOS = [];
@@ -1709,7 +1714,7 @@ function pantalla(idioma = 'es') {
       var editar = el('button', { class: 'editar', type: 'button', text: '✎', title: T('pantalla.editarElRepo'), 'aria-label': T('pantalla.editarElRepo') + ' ' + texto, 'aria-expanded': abierto ? 'true' : 'false', onclick: function () { ABIERTOS[i] = !abierto; render(); } });
       var sacar = el('button', { class: 'quitar-fila', type: 'button', text: '✕', title: T('pantalla.quitarElRepo'), 'aria-label': T('pantalla.quitarElRepo') + ' ' + texto, onclick: function () { ms.repos.splice(i, 1); ABIERTOS = {}; render(); } });
       var celdas = [el('div', { class: 'donde', role: 'cell' }, el('span', { class: 'ic', role: 'img', title: gh ? 'GitHub' : 'Azure DevOps', 'aria-label': gh ? 'GitHub' : 'Azure DevOps', text: gh ? 'GH' : 'Az' })),
-        el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel, queHace(e.rule, qh, true)),
+        el('div', { class: 'repo-t', role: 'cell', title: texto, text: texto }), el('div', { class: 'regla', role: 'cell' }, regla.sel, queHace(e.rule, qh, true, ms.default)),
         pc.noUsado
           ? el('div', { class: 'pc', role: 'cell', title: pc.texto + ' · ' + T('pantalla.noSeUsaConEstaRegla') }, el('span', { class: 'ignorado', text: pc.texto }), el('span', { class: 'nota', text: T('pantalla.noSeUsaConEstaRegla') }))
           : el('div', { class: 'pc' + (pc.declarado ? '' : ' vacio'), role: 'cell', title: pc.texto, text: pc.texto }), el('div', { class: 'acc', role: 'cell' }, editar, sacar)];

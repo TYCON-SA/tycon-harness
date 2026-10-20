@@ -861,7 +861,8 @@ test('T48 MarcadorVivoConNombre_FilaConPaso_CierreIlegibleAlPie @story-2.49.1 @a
   const r = run(m, { prs: () => ({ prs: [] }) });
   assert.strictEqual(r.rows.length, 1, r.text);
   assert.strictEqual(r.rows[0].session, 'new1');
-  assert.strictEqual(r.rows[0].state, 'Validar la story');
+  // un marcador abierto antes del cambio de nombre: guarda el número del paso y sale con el nombre de hoy
+  assert.strictEqual(r.rows[0].state, 'Validar la historia');
   assert.ok(r.unreadable.some((u) => u.includes('8.67-roto.json')), r.text);
   const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
   assert.ok(/después del cierre|aunque el cierre/.test(command), 'la ayuda dice que la story se ve también después del cierre');
