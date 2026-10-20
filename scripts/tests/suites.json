@@ -491,6 +491,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.46: una persona marca cada criterio de la guía como probado a mano — la opción de la organización, la muestra, la marca con el ok de la persona y el freno del cierre.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/manual-checks.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.78: un criterio que no se puede probar en vivo se firma con un ok que responde a ese criterio — el arnés se lo muestra a la persona (puerta Bash o al escribir firma-pedida.json), el ok lo nombra, no se acepta reenviado, y el bloqueo sin terminal dice las dos vías.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/waiver-display.test.js",

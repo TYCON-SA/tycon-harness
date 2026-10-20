@@ -1398,6 +1398,25 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('  Y la de la PANTALLA (specs/qa/<sid>-legibilidad-ui.md, paso 7c.7): sus marcas se resuelven EN LA PANTALLA, no en la guía.');
       }
     }
+    // La marca a mano: si la organización lo pide (qa.manual_check: required), una persona marca cada criterio de la guía
+    // como probado a mano: con la misma condición de pantalla que la guía, después de ella. No se abre con DOD_BYPASS.
+    if (!blocked && qaStoryPath) {
+      try {
+        const esPantalla = markerStoryIsUi(marker) || !!(marker.mockupApproval && maqueta.compare);
+        const rdMc = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, qaStoryPath);
+        const f = require('./lib/manual-checks.js').freno({ storyPath: qaStoryPath, storyId: String(marker.storyId), runDir: rdMc, stateDir: STATE_DIR, esPantalla });
+        appendLog('gates.log', { name: 'manual-checks', status: f.status, story: marker.storyId, ...(f.faltan.length ? { faltan: f.faltan } : {}) });
+        if (f.status === 'blocked') {
+          blocked = 'manualcheck';
+          console.error('');
+          console.error('marker.js complete-step 8 BLOQUEADO — falta la marca a mano de una persona.');
+          for (const l of f.mensaje) console.error(`  ${l}`);
+        }
+      } catch (e) {
+        blocked = 'manualcheck';
+        console.error(`marker.js complete-step 8 BLOQUEADO — no pude mirar si falta la marca a mano (${e.message}).`);
+      }
+    }
     if (bloqueoMaqueta) {
       console.error('');
       console.error('  🔒 El bloqueo de la maqueta no se abre con DOD_BYPASS: una pantalla la ve una persona antes de construirla.');
@@ -1414,7 +1433,7 @@ function cmdCompleteStep(nRaw, flags) {
       // bypass por env var: DOD_BYPASS lo puede setear el agente, y la regla (DevA 2026-07-10) es que
       // el agente NO puede saltear ni la verificación runtime ni dejar la guía sin criollo. Los bloqueos
       // legacy (ui / non-ui) mantienen su escape DOD_BYPASS histórico.
-      if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide') {
+      if (String(blocked).startsWith('acmatrix') || blocked === 'qaguide' || blocked === 'manualcheck') {
         console.error('');
         console.error('  🔒 Este bloqueo NO tiene bypass para el agente (ni DOD_BYPASS ni --no-verify lo saltean');
         console.error('     limpiamente): la verificación runtime es obligatoria. La única salida es el waiver TTY del usuario.');
@@ -3551,6 +3570,99 @@ function cmdWaiveCritical(argv) {
   process.exit(0);
 }
 
+// `mark-tested --acs <n,m> (--approved-by <quién> --quote "<cita>" | --terminal)` deja la marca de que una persona probó
+// a mano esos criterios de la guía, si la organización lo pide (`qa.manual_check: required`, lib/manual-checks.js). La
+// respuesta tiene que ser posterior a la muestra del arnés y nombrar cada criterio. Un reenvío de otra sesión no marca:
+// la marca es de quien probó.
+function cmdMarkTested(argv) {
+  const mc = require('./lib/manual-checks.js');
+  const { val, tiene } = opcionesDe(argv);
+  const acs = [...new Set(String(val('--acs') || '').split(/[,\s]+/).filter(Boolean).map(Number))];
+  if (!acs.length || acs.some((n) => !Number.isInteger(n) || n <= 0)) {
+    console.error('marker.js mark-tested: falta --acs <números de criterio, separados por coma> (y --approved-by <quién> --quote "<su respuesta>", o --terminal).');
+    process.exit(2);
+  }
+  const p = mc.prendida();
+  if (!p.prendida) { console.error('marker.js mark-tested: tu organización no pide la marca a mano; no anoté nada.'); process.exit(0); }
+  const m = readMarker();
+  if (!m) { console.error('marker.js mark-tested: no hay marker activo para esta sesión'); process.exit(1); }
+  const storyAbs = resolveStoryPath(m.storyPath, m);
+  if (!storyAbs) { console.error('marker.js mark-tested: no encontré la story de la corrida'); process.exit(2); }
+  let runDir = null;
+  try { runDir = require('./pipeline.js').resolveRunDir(m.repoPath || process.cwd(), String(m.storyId), true, storyAbs); } catch (e) {
+    console.error(`marker.js mark-tested: no pude calcular la carpeta de la corrida (${e.message})`); process.exit(2);
+  }
+  if (!runDir) { console.error('marker.js mark-tested: la story no da una clave para su carpeta de corrida'); process.exit(2); }
+  const todos = mc.criterios(storyAbs);
+  const ajenos = acs.filter((n) => !todos.some((c) => c.n === n));
+  if (ajenos.length) { console.error(`marker.js mark-tested: ${ajenos.join(', ')} no ${ajenos.length > 1 ? 'son criterios' : 'es un criterio'} de la historia ${m.storyId}.`); process.exit(2); }
+  const lista = acs.map((n) => todos.find((c) => c.n === n));
+  if (val('--relayed-by') !== null) {
+    console.error('🚫 marker.js mark-tested: no se marcó nada — la prueba a mano la marca la persona que probó; un reenvío no la marca.');
+    process.exit(1);
+  }
+  let entrada;
+  if (tiene('--terminal')) {
+    const waiver = require('./lib/runtime-waiver.js');
+    if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
+      console.error('🪟 Abro una ventana nueva para la marca: seguí ahí.');
+      const v = waiver.abrirVentana({ script: __filename, args: ['mark-tested', ...argv] });
+      if (v.estado === 'vencida' || v.estado === 'no-abrio') { console.error(`🔒 marker.js mark-tested: ${v.estado === 'vencida' ? 'la ventana venció sin marcar' : `no pude abrir la ventana (${v.motivo})`} — no se marcó nada.`); process.exit(1); }
+      process.exit(v.codigo === 0 ? 0 : (v.codigo || 1));
+    }
+    if (waiver.esWindows()) { waiver.anotarVentana(); process.on('exit', () => waiver.pausaFinal()); }
+    if (!waiver.hasTty()) {
+      console.error('🔒 marker.js mark-tested --terminal BLOQUEADO — necesita una terminal de verdad: lo corre la persona que probó, no el agente.');
+      console.error(`     node ${__filename} mark-tested ${argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(' ')}`);
+      process.exit(2);
+    }
+    let resp;
+    try {
+      resp = waiver.promptTty(`\n════════ PROBADO A MANO · historia ${m.storyId} ════════\n${lista.map((c) => `  Criterio ${c.n} — ${c.text}`).join('\n')}\n\n¿Los probaste a mano? (si / no) > `);
+    } catch (e) { console.error(`🔒 ${e.message}`); process.exit(2); }
+    if (!/^s(i|í)?$/i.test(String(resp || '').trim())) { console.error('marker.js mark-tested: no se marcó nada.'); process.exit(1); }
+    if (waiver.esWindows() && !waiver.confirmarFrase()) { console.error('🔒 marker.js mark-tested: la frase no coincide — no se marcó nada.'); process.exit(1); }
+    entrada = { quien: process.env.USER || process.env.LOGNAME || process.env.USERNAME || 'tty-user', via: 'terminal' };
+  } else {
+    const cw = require('./lib/critical-waivers.js');
+    const persona = cw.noEsPersona(val('--approved-by'));
+    if (persona) { console.error(`🚫 marker.js mark-tested: no se marcó nada — ${persona}.`); process.exit(1); }
+    const cita = String(val('--quote') || '').trim();
+    if (!cita) { console.error('marker.js mark-tested: falta la cita (--quote "<la respuesta de la persona, textual>").'); process.exit(2); }
+    const visto = mc.mostrado({ stateDir: STATE_DIR, sessionId: SID, storyId: String(m.storyId), acs });
+    if (visto && visto.error) { console.error(`🚫 marker.js mark-tested: no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró qué marca.`); process.exit(1); }
+    if (!visto) {
+      const pok = require('./lib/person-ok.js');
+      const conv = pok.leerConversacion({});
+      if (!conv.legible) { console.error(`🚫 marker.js mark-tested: no puedo leer la conversación de esta sesión (${conv.motivo}): que la persona lo marque en su terminal (--terminal).`); process.exit(1); }
+      console.error('🚫 marker.js mark-tested: no se marcó nada — a la persona no se le mostró qué va a marcar; el arnés se lo muestra al correr este comando (o al escribir marca-pedida.json), y después hace falta su respuesta nombrando los criterios.');
+      console.error('   Si no apareció en pantalla el bloque «Vas a marcar como probado a mano», escribí con Write (no por la terminal):');
+      console.error(`     ${path.join(runDir, mc.PEDIDO)}`);
+      console.error(`     ${JSON.stringify({ acs })}`);
+      console.error('   O que la persona lo marque en su terminal (--terminal).');
+      process.exit(1);
+    }
+    let desde = m.startedAt;
+    if (!desde || Date.parse(visto.ts) > Date.parse(desde)) desde = visto.ts;
+    const r = require('./lib/person-ok.js').citaDeLaPersona(cita, { desde, juzgar: mc.juez(acs) });
+    if (!r.legible) { console.error(`🚫 marker.js mark-tested: no puedo leer la conversación de esta sesión (${r.motivo}): que la persona lo marque en su terminal (--terminal).`); process.exit(1); }
+    if (r.corta) { console.error('🚫 marker.js mark-tested: la cita es muy corta.'); process.exit(1); }
+    if (!r.encontrada) {
+      console.error(`🚫 marker.js mark-tested: no se marcó nada — ${r.rechazo || (r.anterior ? 'la respuesta es de antes de que se le mostrara qué marcaba: hace falta su respuesta a la muestra' : 'la cita no la encontré en un mensaje escrito por la persona en esta conversación')}.`);
+      process.exit(1);
+    }
+    entrada = { quien: String(val('--approved-by')).trim(), cita, cita_cuando: r.cuando || null, via: 'ok de la persona en el chat' };
+  }
+  const ts = nowIso();
+  const renglones = acs.map((ac) => ({ ac, story: String(m.storyId), ...entrada, ts }));
+  // primero el par en el registro del arnés (que el agente no escribe): sin él la marca no cuenta al cerrar
+  for (const r of renglones) appendLog('gates.log', { name: 'manual-check', status: 'ok', story: String(m.storyId), ac: r.ac, ts, quien: r.quien, via: r.via, huella: mc.huellaMarca(r) });
+  mc.anotar(runDir, renglones);
+  anotarAprobacion(m, { que: `prueba a mano de ${acs.length > 1 ? 'los criterios' : 'el criterio'} ${acs.join(', ')}`, via: entrada.via, tipo: 'manual', quien: entrada.quien, ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
+  console.error(`✅ ${acs.length > 1 ? 'Criterios' : 'Criterio'} ${acs.join(', ')} marcado${acs.length > 1 ? 's' : ''} como probado${acs.length > 1 ? 's' : ''} a mano por ${entrada.quien}.`);
+  process.exit(0);
+}
+
 // ============================================================
 // DODRT-C6 — waiver runtime USER-ONLY (llave TTY, 2026-07-10)
 // ============================================================
@@ -4064,6 +4176,9 @@ switch (cmd) {
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));
+    break;
+  case 'mark-tested':
+    cmdMarkTested(process.argv.slice(3));
     break;
   case 'mark-adversarial-launched':
     cmdMarkAdversarialLaunched(arg1, arg2);

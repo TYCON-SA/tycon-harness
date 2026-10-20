@@ -116,7 +116,7 @@ test('FirstScreen_PrimeraVez_ConAbrirLaApp_Pasa @story-8.67.1 @ac-2 — con la l
   const antes = html.indexOf('Antes de empezar');
   assert.ok(antes > 0, 'la guía no trae «Antes de empezar»');
   assert.ok(html.indexOf('http://localhost:8000') > antes, 'la dirección no está en el bloque');
-  assert.ok(antes < html.indexOf('AC #1'), '«Antes de empezar» no está antes del primer caso');
+  assert.ok(antes < html.indexOf('Criterio 1'), '«Antes de empezar» no está antes del primer caso');
 });
 
 test('FirstScreen_HistoriaNormal_NoCambia @story-8.67.1 @ac-3 — fuera del modo primera vez, como hoy', () => {

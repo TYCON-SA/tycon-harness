@@ -1851,5 +1851,38 @@ test('8.63 · RelaySession_SoloDesdeElPerfil @story-8.63 @ac-11', () => {
   const r = cli(['set', 'approvals.relay_session', 'yo-mismo'], { home: casa() });
   assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
   assert.match(r.stderr, /sólo desde el perfil del equipo/);
-  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session']);
+  assert.deepEqual(lib().PROFILE_ONLY, ['approvals.relay_session', 'qa.manual_check']);
+});
+
+// ── Una persona marca cada criterio como probado a mano (qa.manual_check) ──────────────────────────────
+// Cerrada (off | required) y sólo desde el perfil: si la leyera de la máquina o de una variable, el agente que implementa
+// podría apagarse el freno del cierre.
+test('7.46 · Config_QaManualCheck_ValoresYDefault @story-7.46 @ac-5', () => {
+  let c = cargar({ home: casa(), arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.qa.manual_check, c.origenes['qa.manual_check']], [null, 'sin-valor'], 'sin valor: apagada');
+  c = cargar({ home: casa(), arnes: arnesCon({ qa: { manual_check: 'required' } }) });
+  assert.deepEqual(c.errores, []);
+  assert.deepEqual([c.valores.qa.manual_check, c.origenes['qa.manual_check']], ['required', 'perfil']);
+  c = cargar({ home: casa(), arnes: arnesCon({ qa: { manual_check: 'off' } }) });
+  assert.equal(c.valores.qa.manual_check, 'off');
+  c = cargar({ home: casa(), arnes: arnesCon({ qa: { manual_check: 'si' } }) });
+  assert.ok(c.errores.some((e) => e.clave === 'qa.manual_check'), JSON.stringify(c.errores));
+});
+
+test('7.46 · Config_QaManualCheck_SoloPerfil @story-7.46 @ac-6', () => {
+  const home = casa();
+  maquina(home, { qa: { manual_check: 'required' } });
+  let c = cargar({ home, arnes: arnesCon(null) });
+  assert.deepEqual(c.errores, []);
+  assert.equal(c.valores.qa.manual_check, null);
+  assert.deepEqual(c.shadowed['qa.manual_check'], { value: 'required', origin: 'maquina', by: 'solo-perfil' });
+  assert.equal(lib().VARIABLES['qa.manual_check'], undefined);
+  const otro = path.join(tmp('tcfg-perfil-'), 'perfil.json');
+  fs.writeFileSync(otro, JSON.stringify({ qa: { manual_check: 'off' } }));
+  c = cargar({ env: { TYCON_PROFILE: otro }, home: casa(), arnes: arnesCon({ qa: { manual_check: 'required' } }) });
+  assert.equal(c.valores.qa.manual_check, 'required', 'el del árbol, no el de la variable');
+  const r = cli(['set', 'qa.manual_check', 'off'], { home: casa() });
+  assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /sólo desde el perfil del equipo/);
 });

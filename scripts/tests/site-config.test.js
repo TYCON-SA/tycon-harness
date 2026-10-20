@@ -2992,6 +2992,40 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   }
 });
 
+// ── Una persona marca cada criterio como probado a mano (qa.manual_check) ───────────────────────────────
+test('7.46 Config_PruebaAMano_SeccionYPedido @story-7.46 @ac-7 @ac-15 — la sección, sus textos en dos lenguas, y lo que propone', async () => {
+  const s = ORG.seccionPorId('pruebaAMano');
+  assert.ok(s, 'la sección existe');
+  assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas, s.necesita], ['team-profile.json', 'perfil', 'harness-config', ['qa'], ['qa.manual_check'], ['qa']]);
+  const rev = (borrador) => ORG.revisar({ seccion: 'pruebaAMano', texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
+  const ok = rev({ qa: { manual_check: 'required' } });
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok.problems));
+  assert.strictEqual(ok.texto, ORG.formatJson({ ...PERFIL_TYCON, qa: { manual_check: 'required' } }));
+  assert.strictEqual(rev({ qa: { manual_check: 'si' } }).ok, false);
+  // la pantalla, en las dos lenguas: el título, el selector con sus dos opciones y la ayuda de la maqueta
+  const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const esperado = {
+    es: ['Prueba a mano de cada criterio', 'Una persona marca cada criterio como probado a mano', 'No (de fábrica): la guía dice qué probó el arnés', 'Sí: la historia no se cierra sin la marca de una persona'],
+    en: ['Hand-testing each criterion', 'A person marks each criterion as tested by hand', 'No (default): the guide says what the harness tested', "Yes: the story does not close without a person's mark"],
+  };
+  for (const idioma of ['es', 'en']) {
+    for (const k of ['pantalla.pruebaAManoTitulo', 'pantalla.pruebaAMano', 'pantalla.pruebaAManoNo', 'pantalla.pruebaAManoSi']) assert.ok(esperado[idioma].includes(textos.t(idioma, k)), `${idioma} ${k}: ${textos.t(idioma, k)}`);
+    assert.match(textos.t(idioma, 'pantalla.pruebaAManoAyuda'), idioma === 'es' ? /el agente no puede\s+ponerla/ : /the agent cannot set it/);
+    assert.match(ORG.pantalla(idioma), /pruebaAMano: editorPruebaAMano/);
+  }
+  const p = await pantallaFalsa([seccionPerfil('pruebaAMano', {})]);
+  assert.strictEqual(p.error, null);
+  const sel = p.todo(p.sec('pruebaAMano')).find((n) => n.tag === 'select');
+  assert.ok(sel, 'hay un selector');
+  assert.deepStrictEqual(p.todo(sel).filter((n) => n.tag === 'option').map((n) => n.attrs.value), ['', 'required']);
+  assert.match(p.textoDe('pruebaAMano'), /el agente no puede/);
+  // con qa en el perfil, la capa tiene que pedir la versión que la lee
+  const CON = { ...PERFIL_TYCON, qa: { manual_check: 'required' } };
+  const bajo = ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.APPROVALS_SINCE)), versionImagen: '2026.10.15.48', doc: CON });
+  assert.match(bajo, /todavía no se puede proponer/); assert.match(bajo, /qa/); assert.ok(bajo.includes(`>= ${ORG.QA_SINCE}`), bajo);
+  assert.strictEqual(ORG.teamProfileGateProblem({ layerText: JSON.stringify(capa(ORG.QA_SINCE)), versionImagen: '2026.10.15.48', doc: CON }), null);
+});
+
 test('8.63 Perfil_ApprovalsPideSuVersion @story-8.63 @ac-12 — con approvals en el perfil, la capa tiene que pedir la versión que la lee', () => {
   const CON = { ...PERFIL_TYCON, approvals: { relay_session: 'coordinadora' } };
   const viejo = JSON.stringify(capa(ORG.RESPONSE_SINCE));

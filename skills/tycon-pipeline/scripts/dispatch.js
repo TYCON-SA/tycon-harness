@@ -167,6 +167,8 @@ const CHAINS = {
     { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['2', '3'], effect: 'warns' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)
     { name: 'critical-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'critical-display.js'), steps: ['all'], effect: 'warns' },
+    // Los criterios que se van a marcar como probados a mano se los muestra el arnés a la persona (instalación mínima)
+    { name: 'manual-check-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'manual-checks.js'), steps: ['all'], effect: 'warns' },
     // El criterio que se quiere firmar como imposible de probar en vivo, al escribirse el pedido (instalación mínima)
     { name: 'waiver-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'waiver-display.js'), steps: ['all'], effect: 'warns' },
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla

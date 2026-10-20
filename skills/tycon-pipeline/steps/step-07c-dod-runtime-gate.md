@@ -727,7 +727,20 @@ el caso común; la carpeta real la dice `qa-guide.js` al generar.
 
 Genera `<...>/specs/qa/<story>-guia-qa.html` (self-contained, sin red): una card por AC con el
 texto del AC, cómo se verificó automáticamente, pasos para reproducirlo a mano, y controles
-pasó/falló/notas + un botón **Limpiar** por AC.
+pasó/falló/notas + un botón **Limpiar** por AC. Cada criterio dice en llano qué probó el arnés («✓ el arnés ya lo
+probó», «El arnés no lo probó: probalo a mano»).
+
+**La marca a mano, si la organización la pide** (`qa.manual_check: required` en el perfil del equipo, pestaña
+Configuración del sitio): `complete-step 8` frena hasta que una persona marque cada criterio de la guía como probado a
+mano. Se pide así, nunca se pone por la persona:
+1. La persona prueba con la guía y te contesta en el chat nombrando los criterios («probé a mano los criterios 1 y 2»).
+2. Corré `node <skill>/scripts/marker.js mark-tested --acs 1,2 --approved-by "<quién>" --quote "<su respuesta, textual>"`.
+   La primera vez el arnés le muestra a la persona qué va a marcar y el comando frena: su respuesta tiene que ser
+   posterior a esa muestra. Si el bloque no apareció en pantalla (instalación mínima), escribí con Write
+   `<carpeta de la corrida>/marca-pedida.json` con `{ "acs": [1, 2] }` y el arnés lo muestra.
+3. O la persona lo firma en su terminal: `marker.js mark-tested --acs 1,2 --terminal`.
+Un reenvío de la sesión coordinadora no marca: la marca es de quien probó. Las marcas quedan en
+`<carpeta de la corrida>/manual-checks.jsonl`, cada una con su par en el registro del arnés.
 
 **`--open`**: en la ÚLTIMA generación de la corrida (la que queda
 vigente al cerrar el pipeline), pasar `--open` para que la guía se abra sola en el navegador —
