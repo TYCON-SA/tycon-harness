@@ -918,6 +918,8 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     if (multi) { c.maquina = maquina; c.maquina_origen = maquina ? (origen || maquina) : null; c.maquina_motivo = maquina ? null : motivo; c.maquina_nota = maquina ? nota : null; }
     c.cambios = opts.sinHilos ? { estado: 'no_medido', motivo: SIN_HILOS } : cambiosDeLaCorrida(rutas, d.marker, nombresPasos, d.cambio);
     c.sin_pasos_anotados = sinPasosAnotados(c, d.marker);
+    // una corrida cuyo marcador desapareció sin su cierre (unclosed-runs.js): se ve, y se distingue
+    c.sin_cerrar = d.sinCerrar === true;
     // de qué volcado salió (para bajar su detalle a demanda): sólo del lado del servidor, nunca en lo que se sirve
     Object.defineProperty(c, '_volcado', { value: rutas[0], enumerable: false });
     if (opts.sinHilos && c.tiempos) c.tiempos.espera_del_hilo_ms = null;
@@ -1051,7 +1053,7 @@ const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(c
 function paraLista(c) {
   return {
     id: c.id, story: c.story, producto: c.producto, maquina: c.maquina === undefined ? null : c.maquina, maquina_motivo: c.maquina_motivo === undefined ? null : c.maquina_motivo,
-    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true,
+    inicio: c.inicio, semana: c.semana, dur_ms: c.dur_ms, llego_al_final: c.llego_al_final, ultimo_paso: c.ultimo_paso, sin_pasos_anotados: c.sin_pasos_anotados === true, sin_cerrar: c.sin_cerrar === true,
     tramos: copiar(c.tramos), sin_marca: copiar(c.sin_marca),
     tiempos: elegir(c.tiempos, ['trabajo_ms', 'trabajo_medido', 'espera_humana_ms', 'espera_del_hilo_ms']),
     controles: elegir(c.controles, ['total', 'error', 'freno', 'por_control']),
@@ -1108,6 +1110,7 @@ function colEspera(c) {
 }
 
 const TITULO_SIN_PASOS = 'la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada';
+const TITULO_SIN_CERRAR = 'el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de corrida y del registro de controles';
 
 function colArchivos(c) {
   const x = c.cambios;
@@ -1245,7 +1248,7 @@ function tabla(M) {
       <td class="dur">${dur(c.dur_ms)}</td>
       <td class="dur tr">${colTrabajo(c)}</td>
       <td class="dur es">${colEspera(c)}</td>
-      <td class="pasos-n">${c.llego_al_final ? '<span class="ok9">llegó al 8</span>' : c.sin_pasos_anotados ? `<span class="parcial" title="${esc(TITULO_SIN_PASOS)}">no anotó sus pasos</span>` : `<span class="parcial">quedó en el ${c.ultimo_paso === null ? '—' : c.ultimo_paso}</span>`}</td>
+      <td class="pasos-n">${c.sin_cerrar ? `<span class="parcial" title="${esc(TITULO_SIN_CERRAR)}">sin cerrar</span>` : c.llego_al_final ? '<span class="ok9">llegó al 8</span>' : c.sin_pasos_anotados ? `<span class="parcial" title="${esc(TITULO_SIN_PASOS)}">no anotó sus pasos</span>` : `<span class="parcial">quedó en el ${c.ultimo_paso === null ? '—' : c.ultimo_paso}</span>`}</td>
       <td class="ag">${c.costo ? c.costo.agentes : '<span class="nd" title="no registra agentes lanzados — no es cero">—</span>'}</td>
       <td class="vu">${c.costo && c.costo.vueltas !== null ? c.costo.vueltas : '<span class="nd">—</span>'}</td>
       <td class="tk">${tk}</td>
@@ -1954,7 +1957,7 @@ const CLIENTE = String.raw`(function () {
   // C[idx]): buscarlo con indexOf daba -1 y ningún cambio ni parche se podía abrir (pase adversarial)
   function detalle(c, idx) {
     if (idx === undefined) idx = C.indexOf(c);
-    var chips = '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : c.sin_pasos_anotados ? 'no anotó sus pasos' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
+    var chips = (c.sin_cerrar ? '<span class="chip warn" title="el marcador desapareció sin su cierre: lo que se ve sale de su carpeta de corrida y del registro de controles"><span class="g">◆</span>sin cerrar</span>' : '') + '<span class="chip ' + (c.llego_al_final ? 'ok' : 'warn') + '"' + (!c.llego_al_final && c.sin_pasos_anotados ? ' title="la corrida trabajó pero el marcador sólo anotó el arranque: no es una corrida abandonada"' : '') + '><span class="g">' + (c.llego_al_final ? '●' : '◆') + '</span>' + (c.llego_al_final ? 'llegó al paso 8' : c.sin_pasos_anotados ? 'no anotó sus pasos' : 'quedó en el paso ' + (c.ultimo_paso === null ? '?' : c.ultimo_paso)) + '</span>'
       + (c.controles && c.controles.error ? '<span class="chip bad"><span class="g">▲</span>' + c.controles.error + ' con error</span>' : '')
       + (c.controles && c.controles.freno ? '<span class="chip warn"><span class="g">◆</span>frenó ' + c.controles.freno + '</span>' : '')
       + (c.costo && c.costo.vueltas !== null ? '<span class="chip neutro"><span class="g">○</span>' + c.costo.vueltas + ' vueltas</span>' : '')

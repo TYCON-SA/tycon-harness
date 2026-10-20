@@ -1380,6 +1380,7 @@ const TEXTOS = {
   'control.@tcg:large-read-meter.js': { es: 'Anota cuánto trajo el agente de un solo archivo y si bastaba una parte.', en: 'Records how much the agent pulled from a single file and whether a partial read would do.' },
   'control.@tcg:missing-path-notice.js': { es: 'Avisa cuando un comando de lectura nombró una ruta que no existe.', en: 'Warns when a read command named a path that does not exist.' },
   'control.@tcg:owner-email-notice.js': { es: 'Te avisa una vez qué correo de git manda tu máquina al equipo.', en: 'Tells you once which git email your machine reports to the team.' },
+  'control.@tcg:unclosed-runs-notice.js': { es: 'Te avisa una vez por día si quedó alguna corrida sin cerrar, y la sube marcada.', en: 'Tells you once a day if a run was left unclosed, and uploads it marked as such.' },
   'control.@tcg:pr-auto-complete-guard.js': { es: 'Frena crear a mano un pedido hacia main sin autocompletado ni los ajustes correctos.', en: 'Blocks hand-creating a change request to main without auto-complete and the right settings.' },
   'control.@tcg:pr-one-per-repo-guard.js': { es: 'Frena abrir un pedido de cambios si el repositorio ya tiene otro abierto.', en: 'Blocks opening a change request when the repository already has one open.' },
   'control.@tcg:produccion-notice.js': { es: 'Avisa si el freno de producción falta, quedó viejo o fue alterado en máquinas autorizadas.', en: 'Warns if the production safeguard is missing, outdated or altered on authorized machines.' },

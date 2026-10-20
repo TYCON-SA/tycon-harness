@@ -2767,6 +2767,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.67 (tanda A): las corridas que quedaron sin cerrar. El recolector las busca en los repos de las sesiones (no en una raíz) y toma sólo las de esta máquina (nunca entraron a git, o el gates.log las nombra), sin cierre, sin marcador vivo y de más de 24 h; el volcado trae sólo lo que hay y lo demás «no medido»; una vez por run dir; upload-runs los deja antes de contar; la vista dice «sin cerrar»; el aviso de arranque, una vez por día. Hogares, sesiones y repos de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/unclosed-runs.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/worktree-sweep.test.js",

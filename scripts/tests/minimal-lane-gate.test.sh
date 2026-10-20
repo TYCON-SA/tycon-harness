@@ -77,9 +77,10 @@ pasa && ok "con el plan aprobado, la edición pasa" || mal "con el plan aprobado
 
 echo "T5 · MinimalLab_FullUnchanged @story-8.74 @ac-1"
 FULL="$(node -e 'const l=require(process.argv[1]).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).map((x)=>x.id);console.log(l.length+" "+l.includes("PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js"))' "$EFFECTS")"
-FULL_MAIN="$(git -C "$ROOT" show origin/main:scripts/setup/install-effects.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).length)}catch(e){console.log("?")}})')"
-if [ "${FULL%% *}" = "$FULL_MAIN" ] && [ "${FULL##* }" = true ]; then ok "la completa sigue con sus ${FULL%% *} hooks, el portón entre ellos"
-elif [ "$FULL_MAIN" = "?" ] && [ "${FULL##* }" = true ]; then echo "  ⏭ NO MEDIDO: sin origin/main no comparo la cuenta de la completa (trae el portón: ${FULL%% *} hooks); no es un verde"
-else mal "la completa cambió: ${FULL} contra ${FULL_MAIN} en main"; fi
+# lo que se mide es que la completa no PIERDA ningún hook de main: un pedido que suma uno nuevo a la completa es legítimo
+FULL_MAIN="$(git -C "$ROOT" show origin/main:scripts/setup/install-effects.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{const ahora=new Set(require(process.argv[1]).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).map((x)=>x.id));const faltan=JSON.parse(s).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).map((x)=>x.id).filter((i)=>!ahora.has(i));console.log(faltan.length?faltan.join(","):"ninguno")}catch(e){console.log("?")}})' "$EFFECTS")"
+if [ "$FULL_MAIN" = "ninguno" ] && [ "${FULL##* }" = true ]; then ok "la completa conserva todos los hooks de main (${FULL%% *} ahora), el portón entre ellos"
+elif [ "$FULL_MAIN" = "?" ] && [ "${FULL##* }" = true ]; then echo "  ⏭ NO MEDIDO: sin origin/main no comparo la completa (trae el portón: ${FULL%% *} hooks); no es un verde"
+else mal "la completa perdió hooks de main: ${FULL_MAIN} (portón presente: ${FULL##* })"; fi
 
 [ "$fail" = 0 ] && echo "=== TODOS OK ===" || { echo "=== HUBO FALLOS ==="; exit 1; }

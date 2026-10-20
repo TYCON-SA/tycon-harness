@@ -504,4 +504,29 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { resolveReposRoot, describir, ENV, __test: { rutasDe, raizPorMayoria, reposDeSesiones } };
+/**
+ * Los repos en los que trabaja esta persona, sacados de sus sesiones (el paso 3 de resolveReposRoot, sin votar una raíz):
+ * lo usan quienes necesitan los repos y no una carpeta, como las corridas sin cerrar. Sin la infraestructura (el clon del
+ * arnés y el de las skills), sin temporales ni `~/.claude`. Devuelve rutas reales.
+ */
+function sessionRepos(opts = {}) {
+  const env = opts.env || process.env;
+  const R = rutasDe(opts.platform || process.platform);
+  const P = R.P;
+  const fsx = {
+    real: (p) => { const r = real(p); return r ? R.canon(r) : null; },
+    esRepo: esRepoGit,
+    hijos: (dir) => { try { return fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => P.join(dir, e.name)); } catch (_) { return []; } },
+  };
+  const home0 = opts.home || os.homedir();
+  const home = fsx.real(home0) || R.canon(home0);
+  const clon = opts.clon || path.resolve(__dirname, '..', '..');
+  const installed = P.join(home, '.claude', 'agent-skills');
+  let skills = installed;
+  if (fs.existsSync(path.join(__dirname, 'skills-dir.js'))) skills = require('./skills-dir.js').resolveSkillsDirs(env.TYCON_SKILLS_DIR).repo;
+  const infra = [...new Set([fsx.real(clon), fsx.real(skills), fsx.real(installed)].filter(Boolean))];
+  const tmp = fsx.real(opts.tmp || os.tmpdir()) || (opts.tmp || os.tmpdir());
+  return reposDeSesiones({ projectsDir: opts.projectsDir || path.join(home, '.claude', 'projects'), home, tmp, excluir: infra, R, fsx }).repos;
+}
+
+module.exports = { resolveReposRoot, sessionRepos, describir, ENV, __test: { rutasDe, raizPorMayoria, reposDeSesiones } };
