@@ -17,8 +17,11 @@
  *
  * Una sesión viva sin marcador ni ad-hoc también puede estar trabajando (un video, una medición, una story que todavía
  * no armó su marcador): si su archivo de sesión dice `busy`, o tuvo actividad en los últimos 5 minutos, sale en la tabla
- * como «Trabajando sin pipeline», con su carpeta y su rama, la hora de su última actividad y, si su carpeta está en una
- * rama `story/<id>…`, la story. Un trabajo suelto dice desde cuándo no se toca; pasada 1 h, pregunta si terminó y dice
+ * como «Trabajando sin pipeline», con la hora de su última actividad. Qué hace sale del último archivo que tocó en las
+ * últimas 3 h, del registro que el arnés escribe por sesión (`file-events/<sid>.jsonl`), salvo los de su carpeta temporal
+ * y los de la memoria: el repo, y su rama o la primera carpeta dentro del repo; la story, de una rama `story/<id>…` o de
+ * un archivo `specs/story-<id>-…`. Sin ninguno, su carpeta y su rama. Una nota (`marker.js doing`) manda sobre lo
+ * deducido. Un trabajo suelto dice desde cuándo no se toca; pasada 1 h, pregunta si terminó y dice
  * cómo cerrarlo desde su sesión. La última actividad es la más nueva de las fechas de su archivo de sesión y la de su transcripción, de la que
  * sólo se mira la fecha. Libre es la que no hace nada hace más de 5 minutos; sin actividad hace más de 3 horas, va en
  * una línea aparte («Sin uso»): el proceso vive, pero nadie la usa. Sin ningún dato de actividad, sigue libre y se dice.
@@ -31,7 +34,7 @@
  * Un marcador sin pasos pendientes está terminado y no se muestra. Uno sin tocar hace más de 24 h no cuenta, igual que
  * para `marker.js list-all`, que lo descarta; acá sólo se dice cuántos hay, sin borrarlos.
  *
- * Excepción: si cerró el paso 8 y su sesión sigue viva, la story puede estar esperando entrar a los repos (la CI, la
+ * Excepción: si cerró el paso 8 y su sesión sigue viva (de sus cierres cuenta el que cerró último), la story puede estar esperando entrar a los repos (la CI, la
  * cola, un pedido en borrador). Se buscan sus repos (`repoPath` y la raíz git de cada archivo tocado, salvo los que
  * están en su rama principal) y se pregunta por los pedidos abiertos de su rama: a GitHub con `gh`, a Azure DevOps
  * con `az`. Con alguno abierto, o con una consulta que no contestó, sale como «Entrando a los repos» y la sesión no
@@ -426,6 +429,73 @@ function sessionPlace(cwd, ctx) {
   return head.err || !head.out ? path.basename(cwd) : `${path.basename(cwd)} · ${head.out}`;
 }
 
+// Los últimos archivos que tocó una sesión, del más nuevo al más viejo, del registro que escribe el arnés
+// (`file-events/<sid>.jsonl`, un `{path, ts}` por renglón): de las últimas 3 h, sin los de su carpeta temporal
+// (`scratchpad`) ni los de la memoria de Claude Code, que toca entre medio de su trabajo, y sin repetir. Sólo se lee el
+// final del registro: el renglón más nuevo está abajo.
+const TOUCHED_TAIL_BYTES = 64 * 1024;
+const TOUCHED_MAX = 20;
+function lastTouched(sdir, sid, home, nowMs, unreadable) {
+  const file = path.join(sdir, 'file-events', `${sid}.jsonl`);
+  let text;
+  try {
+    const fd = fs.openSync(file, 'r');
+    try {
+      const size = fs.fstatSync(fd).size;
+      const len = Math.min(size, TOUCHED_TAIL_BYTES);
+      const buf = Buffer.alloc(len);
+      fs.readSync(fd, buf, 0, len, size - len);
+      text = buf.toString('utf8');
+    } finally { fs.closeSync(fd); }
+  } catch (e) {
+    if (e.code !== 'ENOENT') unreadable.push(`${file}: ${e.message}`);
+    return [];
+  }
+  const memory = path.join(home, '.claude', 'projects') + path.sep;
+  const lines = text.split('\n');
+  const out = [];
+  // un renglón cortado (el primero de la cola) o roto no es un archivo: se saltea
+  for (let i = lines.length - 1; i >= 0 && out.length < TOUCHED_MAX; i -= 1) {
+    let ev;
+    try { ev = JSON.parse(lines[i]); } catch { continue; }
+    const p = ev && typeof ev.path === 'string' ? ev.path : '';
+    const ts = Date.parse(ev && ev.ts);
+    if (!path.isAbsolute(p) || !Number.isFinite(ts)) continue;
+    if (nowMs - ts > IDLE_MS) break;
+    if (/[\\/]scratchpad[\\/]/.test(p) || p.startsWith(memory) || out.includes(p)) continue;
+    out.push(p);
+  }
+  return out;
+}
+
+// Qué hace una sesión según un archivo que tocó: el repo, y la rama si no es la principal o la primera carpeta dentro del
+// repo si lo es; la story, de una rama `story/<id>…` o de un archivo `specs/story-<id>-…`. Fuera de un repo, `null`; si
+// git no contesta, `null` y el motivo al pie.
+function touchedPlace(file, ctx, unreadable) {
+  let dir = path.dirname(file);
+  while (!fs.existsSync(dir) && path.dirname(dir) !== dir) dir = path.dirname(dir);
+  const top = git(dir, ['rev-parse', '--show-toplevel'], ctx);
+  // el tope de tiempo lo cuenta quien llama, en un solo renglón; otra falla de git va al pie
+  if (top.err && !NOT_A_REPO.test(top.err) && top.status !== null) unreadable.push(`${dir}: ${top.err}`);
+  if (top.err || !top.out) return null;
+  const root = path.resolve(top.out);
+  // git da la raíz por su ruta real (`/private/var/…` en la Mac): el archivo se mide desde la suya
+  let real = dir;
+  try { real = fs.realpathSync(dir); } catch { /* se mide desde la escrita */ }
+  const rel = path.relative(root, path.join(real, path.relative(dir, file)));
+  if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return null;
+  const head = git(root, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx);
+  // sin rama (HEAD suelto) git sale 1; cualquier otra falla va al pie
+  if (head.err && head.status !== 1 && head.status !== null) unreadable.push(`${root}: ${head.err}`);
+  const branch = head.err ? '' : head.out;
+  const fromBranch = /^story\/(\d+(?:\.\d+)+)(?:[-/]|$)/.exec(branch);
+  const fromSpec = /(?:^|[\\/])specs[\\/]story-(\d+(?:\.\d+)+)-/.exec(rel);
+  const parts = rel.split(/[\\/]/);
+  const base = path.basename(root);
+  const work = branch && !MAIN_BRANCHES.includes(branch) ? `${base} · ${branch}` : parts.length > 1 ? `${base} · ${parts[0]}` : base;
+  return { work, story: (fromBranch && fromBranch[1]) || (fromSpec && fromSpec[1]) || null };
+}
+
 // El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
 function enteringState(m, prsOf, unreadable, wanted, ctx) {
   const shown = [];
@@ -460,14 +530,22 @@ function latestClosures(dir, nowMs, unreadable) {
     try { mtime = fs.statSync(file).mtimeMs; } catch (e) { unreadable.push(`${file}: sin fecha legible (${e.message})`); continue; }
     if (nowMs - mtime <= STALE_MS) recent.push({ file, mtime });
   }
-  recent.sort((a, b) => b.mtime - a.mtime);
-  // cuenta el más nuevo de cada sesión aunque no haya cerrado el paso 8: uno más viejo no lo reemplaza
-  const seen = new Set();
-  for (const { file } of recent) {
+  // el más nuevo de cada sesión es el que cerró último (`archivedAt`), no el archivo tocado último: algo puede volver a
+  // escribir un cierre viejo. Sin `archivedAt` legible, vale la fecha del archivo.
+  const closed = [];
+  for (const { file, mtime } of recent) {
     let h;
     try { h = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
     const m = h && h.marker;
-    if (!m || !m.sessionId || seen.has(m.sessionId)) continue;
+    if (!m || !m.sessionId) continue;
+    const at = Date.parse(h.archivedAt);
+    closed.push({ m, at: Number.isFinite(at) ? at : mtime });
+  }
+  closed.sort((a, b) => b.at - a.at);
+  // cuenta el más nuevo de cada sesión aunque no haya cerrado el paso 8: uno más viejo no lo reemplaza
+  const seen = new Set();
+  for (const { m } of closed) {
+    if (seen.has(m.sessionId)) continue;
     seen.add(m.sessionId);
     if ((Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String).includes('8')) out.set(m.sessionId, m);
   }
@@ -632,18 +710,29 @@ function buildWip(opts = {}) {
   const noData = [];
   const idle = [];
   let internal = 0;
+  let notDeduced = 0;
   for (const [sid, s] of sessions) {
     if (s.alive && s.internal && !busy.has(sid)) { internal += 1; continue; }
     if (!s.alive || busy.has(sid)) continue;
     const label = s.name || shortId(sid);
     if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
-      const story = s.cwd && storyBranch(s.cwd, gitCtx);
+      // lo que hace sale del último archivo que tocó dentro de un repo; sin uno, de la carpeta donde arrancó
+      let place = null;
+      const files = lastTouched(sdir, sid, home, nowMs, unreadable);
+      for (const file of files) {
+        // sin tiempo para git, los que siguen fallarían igual: se cuenta la sesión y va un solo renglón al pie
+        if (Date.now() > gitCtx.until) { notDeduced += 1; break; }
+        place = touchedPlace(file, gitCtx, unreadable);
+        if (place) break;
+      }
+      const story = (place && place.story) || (s.cwd && storyBranch(s.cwd, gitCtx));
       const parts = ['Trabajando sin pipeline', story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
-      rows.push({ work: sessionPlace(s.cwd, gitCtx), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+      rows.push({ work: place ? place.work : sessionPlace(s.cwd, gitCtx), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
   }
+  if (notDeduced) unreadable.push(`${notDeduced} sesión(es) sin deducir qué hacen: se pasó del tope de ${GIT_BUDGET_MS / 1000} s leyendo los repos`);
   return { rows, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 

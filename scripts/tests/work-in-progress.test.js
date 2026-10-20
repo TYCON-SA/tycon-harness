@@ -1028,3 +1028,156 @@ test('T10 Ayuda_DiceDoingYChocaConMain @story-2.49.2 @ac-8: la ayuda explica doi
   const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
   for (const words of ['marker.js doing', 'no es un permiso', 'choca con main']) assert.ok(command.includes(words), words);
 });
+
+// ── What a session does, from the files it touched; the close that closed last ────────────────────────────────────
+
+// The touched-files log the harness writes per session: one `{path, ts}` line per file, `mins` minutes before NOW.
+function touched(m, sid, files) {
+  const dir = path.join(m.state, 'file-events');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${sid}.jsonl`), files.map(([p, mins]) => JSON.stringify({ path: p, ts: new Date(minsBefore(mins)).toISOString() })).join('\n') + '\n');
+}
+function inRepo(repo, rel) {
+  const f = path.join(repo, rel);
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, 'x\n');
+  return f;
+}
+const busyAt = (cwd) => ({ status: 'busy', statusUpdatedAt: minsBefore(1), cwd });
+
+test('T1 CierreQueCerroUltimo_GanaAunqueElOtroSeReescriba @story-2.49.3 @ac-1: cuenta el cierre de archivedAt más nuevo, no el archivo tocado último', () => {
+  const m = toyMachine();
+  const viejo = gitRepo(m.root, 'v', 'story/v', 'https://github.com/acme/v.git');
+  const nuevo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'ult00000-1', 'Beto');
+  closure(m, 'ult00000-1', '5.1-2026-10-18T1350', 10, { repoPath: nuevo });
+  const old = closure(m, 'ult00000-1', '5.0-2026-10-18T1200', 120, { storyId: '5.0', repoPath: viejo });
+  // something rewrites the old close afterwards: its file date is newer, its archivedAt is not
+  fs.utimesSync(old, new Date(minsBefore(1)), new Date(minsBefore(1)));
+  const r = run(m, { prs: (q) => ({ prs: q.name === 'x' ? [{ number: 322, draft: false }] : [] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #322');
+});
+
+test('T2 ArchivosTocados_RepoYCarpeta @story-2.49.3 @ac-2: sin pipeline ni nota, el último archivo tocado dice el repo y la carpeta', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const difusion = gitRepo(m.root, 'difusion', 'main', GH);
+  session(m, process.pid, 'arc00000-1', 'Angelito', busyAt(main));
+  touched(m, 'arc00000-1', [[inRepo(main, 'specs/a.md'), 30], [inRepo(difusion, 'videos/motion/eq1.py'), 2]]);
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].work, 'difusion · videos');
+  assert.strictEqual(r.rows[0].state, `Trabajando sin pipeline · última actividad ${localHhmm(minsBefore(1))}`);
+});
+
+test('T3 ArchivosTocados_StoryDeLaRamaODelArchivo @story-2.49.3 @ac-3: la story sale de la rama story/… o del archivo specs/story-…', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const wt = gitRepo(m.root, 'principal-wt-881', 'story/8.81-algo', GH);
+  session(m, process.pid, 'arc00000-2', 'Burrito', busyAt(main));
+  touched(m, 'arc00000-2', [[inRepo(wt, 'specs/notas.md'), 3]]);
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows[0].work, 'principal-wt-881 · story/8.81-algo', r.text);
+  assert.strictEqual(r.rows[0].state, `Trabajando sin pipeline · story 8.81 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
+  // in main, the story comes from the spec it wrote
+  const n = toyMachine();
+  const repo = gitRepo(n.root, 'specs-repo', 'main', GH);
+  session(n, process.pid, 'arc00000-3', 'Burrito', busyAt(repo));
+  touched(n, 'arc00000-3', [[inRepo(repo, 'specs/story-8.81-el-revisor.md'), 3]]);
+  const s = runP(n, { home: n.root });
+  assert.strictEqual(s.rows[0].work, 'specs-repo · specs', s.text);
+  assert.strictEqual(s.rows[0].state, `Trabajando sin pipeline · story 8.81 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
+});
+
+test('T4 ArchivosTocados_SinScratchpadMemoriaNiViejos @story-2.49.3 @ac-4: el scratchpad, la memoria y lo de hace más de 3 h no cuentan', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const difusion = gitRepo(m.root, 'difusion', 'main', GH);
+  const scratch = path.join(m.root, 'tmp', 'claude-501', 'proyecto', 'arc00000-4', 'scratchpad', 'x.py');
+  const memory = path.join(m.root, '.claude', 'projects', 'proyecto', 'memory', 'nota.md');
+  session(m, process.pid, 'arc00000-4', 'Angelito', busyAt(main));
+  touched(m, 'arc00000-4', [[inRepo(difusion, 'videos/x.md'), 20], [memory, 2], [scratch, 1]]);
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows[0].work, 'difusion · videos', r.text);
+  // only old, scratchpad or memory files: the row as before (the session's folder)
+  const n = toyMachine();
+  const nMain = gitRepo(n.root, 'principal', 'main', GH);
+  session(n, process.pid, 'arc00000-5', 'Angelito', busyAt(nMain));
+  touched(n, 'arc00000-5', [[inRepo(gitRepo(n.root, 'difusion', 'main', GH), 'videos/x.md'), 4 * 60], [path.join(n.root, '.claude', 'projects', 'p', 'memory', 'a.md'), 2]]);
+  assert.strictEqual(runP(n, { home: n.root }).rows[0].work, 'principal · main');
+});
+
+test('T5 Doing_GanaSobreLoDeducido @story-2.49.3 @ac-5: una nota anotada manda sobre los archivos tocados', () => {
+  const h = toyHome();
+  const difusion = gitRepo(h.root, 'difusion', 'main', GH);
+  session(h, process.pid, 'arc00000-6', 'Angelito', { status: 'busy' });
+  touched(h, 'arc00000-6', [[inRepo(difusion, 'videos/x.md'), 2]]);
+  doing(h, 'arc00000-6', 'armo el video del capítulo 3');
+  const r = run(h, { home: h.home });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].work, 'armo el video del capítulo 3');
+});
+
+test('T6 Ayuda_DiceArchivosTocados @story-2.49.3 @ac-6: la ayuda dice que el trabajo sale de los archivos tocados y que doing lo corrige', () => {
+  const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
+  for (const words of ['archivos que tocó', 'corrige']) assert.ok(command.includes(words), words);
+});
+
+test('T7 ArchivosTocados_FueraDeRepoRotoYGitSinRespuesta @story-2.49.3 @ac-4: el anterior si el último no está en un repo; un renglón roto se saltea; git sin respuesta se dice', () => {
+  const m = toyMachine();
+  const main = gitRepo(m.root, 'principal', 'main', GH);
+  const difusion = gitRepo(m.root, 'difusion', 'main', GH);
+  const loose = path.join(m.root, 'suelta', 'nota.txt');
+  fs.mkdirSync(path.dirname(loose), { recursive: true });
+  fs.writeFileSync(loose, 'x\n');
+  session(m, process.pid, 'arc00000-7', 'Angelito', busyAt(main));
+  touched(m, 'arc00000-7', [[inRepo(difusion, 'videos/x.md'), 10], [loose, 2]]);
+  fs.appendFileSync(path.join(m.state, 'file-events', 'arc00000-7.jsonl'), '{"path": roto\n');
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows[0].work, 'difusion · videos', r.text);
+  assert.deepStrictEqual(r.unreadable, [], r.text);
+  // git with no time left, two sessions: the rows fall back to their folders and the footer says it once, with the count
+  session(m, process.pid, 'arc00000-9', 'Burrito', busyAt(main));
+  touched(m, 'arc00000-9', [[inRepo(difusion, 'videos/y.md'), 3]]);
+  const capped = runP(m, { home: m.root, repoBudgetMs: -1 });
+  const capLines = capped.unreadable.filter((u) => /tope/.test(u));
+  assert.deepStrictEqual(capLines, ['2 sesión(es) sin deducir qué hacen: se pasó del tope de 3 s leyendo los repos'], capped.text);
+});
+
+test('T8 ArchivosTocados_SinStory_LaDeLaRamaDeLaSesion @story-2.49.3 @ac-3: si el archivo no nombra story, vale la rama de story de la carpeta de la sesión', () => {
+  const m = toyMachine();
+  const wt = gitRepo(m.root, 'wt', 'story/8.81-algo', GH);
+  const difusion = gitRepo(m.root, 'difusion', 'main', GH);
+  session(m, process.pid, 'arc00000-8', 'Burrito', busyAt(wt));
+  touched(m, 'arc00000-8', [[inRepo(difusion, 'videos/x.md'), 2]]);
+  const r = runP(m, { home: m.root });
+  assert.strictEqual(r.rows[0].work, 'difusion · videos', r.text);
+  assert.strictEqual(r.rows[0].state, `Trabajando sin pipeline · story 8.81 en preparación · última actividad ${localHhmm(minsBefore(1))}`);
+});
+
+test('T9 BordesDeLaDeduccion @story-2.49.3 @ac-1 @ac-2: cierre sin archivedAt usa la fecha del archivo; archivo en la raíz del repo; repetidos una vez', () => {
+  // a close without archivedAt sorts by its file date: the newer file wins
+  const m = toyMachine();
+  const viejo = gitRepo(m.root, 'v', 'story/v', 'https://github.com/acme/v.git');
+  const nuevo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'bor00000-1', 'Beto');
+  closure(m, 'bor00000-1', '5.0-viejo', 120, { storyId: '5.0', repoPath: viejo });
+  const sinFecha = closure(m, 'bor00000-1', '5.1-sin-fecha', 10, { repoPath: nuevo });
+  const h = JSON.parse(fs.readFileSync(sinFecha, 'utf8'));
+  delete h.archivedAt;
+  fs.writeFileSync(sinFecha, JSON.stringify(h));
+  fs.utimesSync(sinFecha, new Date(minsBefore(10)), new Date(minsBefore(10)));
+  const r = run(m, { prs: (q) => ({ prs: q.name === 'x' ? [{ number: 9, draft: false }] : [] }) });
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #9', r.text);
+  // a file outside any repo touched 25 times counts once, so the one before it (at the root of a repo in main) is read:
+  // just the repo
+  const n = toyMachine();
+  const repo = gitRepo(n.root, 'difusion', 'main', GH);
+  const other = gitRepo(n.root, 'otro', 'main', GH);
+  const loose = path.join(n.root, 'suelta.txt');
+  fs.writeFileSync(loose, 'x\n');
+  session(n, process.pid, 'bor00000-2', 'Angelito', busyAt(other));
+  touched(n, 'bor00000-2', [[inRepo(repo, 'README.md'), 9], ...Array.from({ length: 25 }, () => [loose, 1])]);
+  assert.strictEqual(runP(n, { home: n.root }).rows[0].work, 'difusion');
+});

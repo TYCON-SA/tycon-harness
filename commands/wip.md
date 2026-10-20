@@ -34,18 +34,22 @@ Azure DevOps (sólo lee, con topes de unos segundos); si no pudo, lo dice al pie
 como libre. Un pedido que el servidor marca en conflicto sale con «(choca con main)»: hay que traerle main antes de que
 entre. Cada repo se lee una vez, aunque la story haya tocado muchas carpetas suyas.
 
-«Anotado por la sesión» es lo que una sesión sin story dijo que hace, con `marker.js doing "<qué hago>"` (otro
-`doing` lo reemplaza; `marker.js doing clear` lo borra al terminar). La nota no es un permiso: no deja editar código
-sin pipeline, como sí lo hace `adhoc`. Pasada 1 h sin tocarse, la fila pregunta si terminó.
+«Anotado por la sesión» es lo que una sesión sin story dijo que hace, si quiere corregir lo que el /wip deduce, con
+`marker.js doing "<qué hago>"` (otro `doing` lo reemplaza; `marker.js doing clear` lo borra al terminar).
+La nota no es un permiso: no deja editar código sin pipeline, como sí lo hace `adhoc`. Pasada 1 h sin tocarse, la fila pregunta
+si terminó.
 
 Los agentes internos de otras sesiones (un examen o un pase que lanza su propio Claude, en la carpeta temporal y sin
 nombre puesto) no tienen fila: al pie va un renglón con cuántos hay.
 
 «Trabajando sin pipeline» es una sesión que está haciendo algo fuera de una story (un video, una medición, una story
-que todavía no armó su marcador): su archivo de sesión dice que está ocupada, o tuvo actividad hace menos de 5 minutos.
-Si su carpeta está en una rama de story, la fila la nombra. «Libres» son las que no hacen nada hace más de 5 minutos;
-«Sin uso hace más de 3 h», las que siguen abiertas pero nadie usa. La última actividad sale de las fechas del archivo
-de sesión y de la fecha de su conversación guardada: el programa no lee lo que dice ninguna conversación.
+que todavía no armó su marcador): su archivo de sesión dice que está ocupada, o tuvo actividad hace menos de 5
+minutos. Qué hace sale de los archivos que tocó en las últimas 3 h (el último que no sea de su carpeta temporal ni de
+la memoria): el repo, y su rama o la primera carpeta dentro del repo; la story, de una rama `story/<id>…` o de un
+archivo `specs/story-<id>-…`. Sin ninguno, sale la carpeta donde arrancó. Una nota con `doing` corrige lo deducido.
+«Libres» son las que no hacen nada hace más de 5 minutos; «Sin uso hace más de 3 h», las que siguen abiertas pero
+nadie usa. La última actividad sale de las fechas del archivo de sesión y de la fecha de su conversación guardada: el
+programa no lee lo que dice ninguna conversación.
 
 Si hay trabajo a medio camino, la salida trae el comando para limpiar cada uno. **No lo corras**: limpiar lo decide
 quien lee.
