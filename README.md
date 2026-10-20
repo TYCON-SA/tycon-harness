@@ -27,7 +27,7 @@ machine](#start-on-your-own), or [for your team](#for-teams).
 
 **See how it works.**
 
-Five short videos, one to two minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
+Six short videos, one to two minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
 
 **0. What it is and what you get**
 
@@ -35,17 +35,21 @@ https://github.com/user-attachments/assets/7a578d6b-d16c-4919-acf8-7a1f235d0c5b
 
 **1. Installing it**
 
-https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9
+https://github.com/user-attachments/assets/70773273-5886-48ed-b150-5431c67a9cc7
 
-**2. Your first story**
+**2. From the idea to the stories**
+
+https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518
+
+**3. Your first story**
 
 https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a
 
-**3. A story with a screen**
+**4. A story with a screen**
 
 https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
 
-**4. Your project's rules**
+**5. Your project's rules**
 
 https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
 
@@ -58,7 +62,7 @@ your tests yet until your team declares it in its configuration ("Your technolog
 Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
 is in [What you need](#what-you-need).
 
-For your agent to follow the cycle, install the harness on your machine ([▶ video](https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9)). Open the terminal (on Windows, PowerShell 7)
+For your agent to follow the cycle, install the harness on your machine ([▶ video](https://github.com/user-attachments/assets/70773273-5886-48ed-b150-5431c67a9cc7)). Open the terminal (on Windows, PowerShell 7)
 and type:
 
 ```bash
@@ -85,12 +89,13 @@ A story is your request in writing, with its criteria and its tests: the agent f
 
 1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
-3. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
-4. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
-5. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story it shows you the plan and approves it on its own; in the others, you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
-6. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
-7. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550)
-8. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f)
+3. **If the idea is big, the stories come first.** Your agent takes it through stages —understanding the problem, the PRD, the architecture, the epics— until it leaves the stories; you review each stage, and each artifact is committed to the repo, next to the code. A small change does not need it: ask for the story directly. · [▶ video](https://github.com/user-attachments/assets/24124d87-ebca-4069-8d82-d0b498f09518)
+4. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
+5. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
+6. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story it shows you the plan and approves it on its own; in the others, you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
+7. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
+8. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550)
+9. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f)
 
 If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, without changing anything.
 
@@ -172,6 +177,45 @@ How the harness extends for your organization —what each organization adds, th
 organization with three model jobs and your operations repo: [how to set them up](pipelines/operations/README.md)
 (in Spanish). On GitHub, the same three run as GitHub Actions workflows, and the dependency findings become issues in
 each product repo: [how to set them up](pipelines/operations/github/README.md) (in Spanish).
+
+**Step by step, for whoever sets up the team.**
+
+1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. The table above says what each one holds. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
+2. **Set up your team.** `npx @tyconsa/harness@latest --audience org` installs your machine and goes on with `harness.js team-init`, which builds the three files of the team repo and validates them. Create the empty repo, with access only for the team, and push them. Each dev installs with `npx @tyconsa/harness@latest --team <team repo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
+3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. How to try it on your machine with Docker and how to install it, in [the site guide](guides/organization-site.en.md). · [▶ video](https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9)
+4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965)
+5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87)
+6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
+
+**The team videos** (in Spanish).
+
+**0. The three layers**
+
+https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129
+
+**1. Setting up your team**
+
+https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
+
+**2. A tour of the site**
+
+https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
+
+**3. Configuring from the site**
+
+https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
+
+**4. From commit to production**
+
+https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
+
+**5. What runs at night**
+
+https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
+
+**From working on your own to the team**
+
+https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
 
 ## What else it does
 
