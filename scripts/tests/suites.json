@@ -265,8 +265,7 @@
       "gate_only_when_touching": [
         "scripts/nightly/**",
         "scripts/lib/**",
-        "scripts/tests/lib/fake-az.sh",
-        "scripts/tests/work-items-type.test.sh"
+        "scripts/tests/lib/**"
       ]
     },
     {
