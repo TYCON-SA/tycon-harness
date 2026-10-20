@@ -2983,20 +2983,36 @@ function cmdClear() {
       // `pipeline.js cost-report`. Vara del historial (58 runs): ~14 spawns por run, 22% de
       // exploración libre, 2,6 de ésos antes de los advisors.
       const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
-      const costo = { spawns: 0, adhoc: 0, adhoc_pre_step5: 0, iteraciones: 0, por_tipo: {} };
+      const costo = { spawns: 0, adhoc: 0, adhoc_pre_step5: 0, iteraciones: 0, por_tipo: {}, sin_hora: 0 };
       try {
         const runLog = path.join(STATE_DIR, 'advisor-runs', `${SID}.jsonl`);
+        // El registro es de la sesión, que puede haber corrido otras stories: cuenta sólo lo lanzado desde que arrancó
+        // esta corrida y, si la línea nombra una story, sólo la de ésta. Una línea sin hora no se sabe de qué corrida es:
+        // no cuenta, y queda dicho en `sin_hora`.
+        // Sin la hora de arranque (un marcador viejo o editado) sólo cuentan las líneas que nombran esta story, y se dice.
+        const desde = Date.parse(marker.startedAt || '');
+        if (!Number.isFinite(desde)) costo.sin_arranque = true;
+        const estaStory = String(marker.storyId || '');
         let vistoStep5 = false;
         for (const l of fs.readFileSync(runLog, 'utf8').split('\n')) {
           if (!l.trim()) continue;
-          let d; try { d = JSON.parse(l); } catch { continue; }
+          let d; try { d = JSON.parse(l); } catch { costo.ilegibles = (costo.ilegibles || 0) + 1; continue; }
+          const nombra = d.story !== undefined && d.story !== null;
+          if (nombra && String(d.story) !== estaStory) continue;
+          if (!nombra && costo.sin_arranque) continue;
+          const hora = Date.parse(d.ts || '');
+          if (!Number.isFinite(hora)) { costo.sin_hora++; continue; }
+          if (Number.isFinite(desde) && hora < desde) continue;
           if (d.event === 'step5-start') { vistoStep5 = true; continue; }
           if (!d.advisor) continue;
           costo.spawns++;
           costo.por_tipo[d.advisor] = (costo.por_tipo[d.advisor] || 0) + 1;
           if (ADHOC.has(d.advisor)) { costo.adhoc++; if (!vistoStep5) costo.adhoc_pre_step5++; }
         }
-      } catch { /* sin log de spawns: costo queda en cero */ }
+      } catch (e) {
+        // sin registro, el costo queda en cero; un registro que está y no se lee lo dice, para no pasar por «cero agentes»
+        if (e.code !== 'ENOENT') costo.registro = `no se pudo leer (${e.code || e.message})`;
+      }
       // las vueltas: las que lanzaron revisores (las fotos de iteración), la misma cuenta que pipeline.js review-rounds; un
       // arranque del paso 5 sin revisores no es una vuelta
       costo.iteraciones = require('./lib/review-rounds.js').vueltas(marker);
