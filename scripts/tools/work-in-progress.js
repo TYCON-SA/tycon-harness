@@ -9,14 +9,17 @@
  * se pudo leer, con su motivo.
  *
  * La hora de fin es la suma de las medianas de los pasos que faltan, tomadas de las corridas archivadas de esta
- * máquina (`timing-history/`), contando sólo los pasos con arranque y fin medidos (`step-times.js`). Al paso en curso
- * se le descuenta lo que ya lleva, nunca por debajo de cero. Si algún paso que falta no tiene mediana, no hay hora:
- * se dice cuál.
+ * máquina (`timing-history/`), contando sólo los pasos con arranque y fin medidos (`step-times.js`), más la entrada a
+ * los repos de la story (CI, cola y merge: la mediana del tiempo entre el último commit de cada rama y su merge, leída
+ * de su historia de git). La hora es fija: cuenta desde el arranque del paso en curso, y pasado su estimado dice
+ * «atrasada (estimado HH:MM)»; nunca corre con el reloj. Si algún paso que falta no tiene mediana, no hay hora: se dice
+ * cuál. Un repo sin merges medidos queda afuera de la hora, y se dice.
  *
  * Una sesión viva sin marcador ni ad-hoc también puede estar trabajando (un video, una medición, una story que todavía
  * no armó su marcador): si su archivo de sesión dice `busy`, o tuvo actividad en los últimos 5 minutos, sale en la tabla
- * como «Trabajando sin pipeline», con la hora de su última actividad y, si su carpeta está en una rama `story/<id>…`, la
- * story. La última actividad es la más nueva de las fechas de su archivo de sesión y la de su transcripción, de la que
+ * como «Trabajando sin pipeline», con su carpeta y su rama, la hora de su última actividad y, si su carpeta está en una
+ * rama `story/<id>…`, la story. Un trabajo suelto dice desde cuándo no se toca; pasada 1 h, pregunta si terminó y dice
+ * cómo cerrarlo desde su sesión. La última actividad es la más nueva de las fechas de su archivo de sesión y la de su transcripción, de la que
  * sólo se mira la fecha. Libre es la que no hace nada hace más de 5 minutos; sin actividad hace más de 3 horas, va en
  * una línea aparte («Sin uso»): el proceso vive, pero nadie la usa. Sin ningún dato de actividad, sigue libre y se dice.
  *
@@ -58,6 +61,8 @@ const STALE_MS = 24 * 3600 * 1000;
 const WORKING_MS = 5 * 60 * 1000;
 // una sesión sin actividad hace más que esto no se ofrece como libre: el proceso vive, pero nadie la usa
 const IDLE_MS = 3 * 3600 * 1000;
+// un trabajo suelto sin tocar hace más que esto pregunta si terminó
+const LOOSE_STALE_MS = 3600 * 1000;
 const MARKER_JS = path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
 const shortId = (sid) => String(sid || '').slice(0, 8) || '?';
 const oneLine = (s) => String(s).replace(/\s+/g, ' ').trim();
@@ -152,7 +157,16 @@ const hhmm = (ms) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-function estimateEnd(marker, medians, nowMs) {
+// Lo que dice la hora de fin sobre la entrada a los repos: sumada, o cuáles quedaron afuera por no tener merges medidos.
+function entryNote(entry) {
+  if (!entry || !entry.repos) return '';
+  return entry.missing.length ? ` (sin la entrada a ${entry.missing.join(', ')}: sin merges medidos)` : ' (con la entrada a los repos)';
+}
+
+// La hora es fija: arranque del paso en curso + su mediana + las de los pasos que faltan + la entrada a los repos.
+// Pasado el estimado del paso en curso, dice «atrasada» con esa hora; nunca corre con el reloj (si corriera, un paso
+// pasado de su mediana mostraría la hora actual y escondería el atraso).
+function estimateEnd(marker, medians, nowMs, entry) {
   const pending = (marker.stepsPending || []).map(String);
   if (!pending.length) return 'sin datos (no quedan pasos)';
   const missing = pending.find((s) => medians[s] == null);
@@ -167,9 +181,24 @@ function estimateEnd(marker, medians, nowMs) {
     const ends = Object.values(timings).map((x) => Date.parse(x && x.completedAt)).filter(Number.isFinite);
     since = ends.length ? Math.max(...ends) : nowMs;
   }
-  let left = Math.max(0, medians[current] - Math.max(0, nowMs - since));
-  for (const s of pending.slice(1)) left += medians[s];
-  return approx ? `${hhmm(nowMs + left)} (aprox.)` : hhmm(nowMs + left);
+  const currentEnd = since + medians[current];
+  let fixed = currentEnd;
+  for (const s of pending.slice(1)) fixed += medians[s];
+  fixed += entry ? entry.ms : 0;
+  if (nowMs > currentEnd) return `atrasada (estimado ${hhmm(fixed)}${approx ? ', aprox.' : ''})`;
+  return `${hhmm(fixed)}${approx ? ' (aprox.)' : ''}${entryNote(entry)}`;
+}
+
+// La story que cerró el paso 8 y espera sus pedidos: el cierre del 8 más la entrada a los repos.
+function enteringEnd(marker, entry, nowMs) {
+  if (!entry || !entry.repos || entry.missing.length) {
+    return `sin estimación (espera la CI o la cola; sin merges medidos en ${entry && entry.missing.length ? entry.missing.join(', ') : 'sus repos'})`;
+  }
+  const t8 = (marker.stepTimings || {})['8'];
+  const done = Date.parse(t8 && t8.completedAt);
+  if (!Number.isFinite(done)) return 'sin estimación (espera la CI o la cola; sin la hora de cierre del paso 8)';
+  const fixed = done + entry.ms;
+  return nowMs > fixed ? `atrasada (estimado ${hhmm(fixed)})` : `${hhmm(fixed)}${entryNote(entry)}`;
 }
 
 const ENTERING = 'Entrando a los repos';
@@ -197,6 +226,38 @@ function gitNow(dir, args, ms) {
   if (r.status === 0) return { out: r.stdout.trim() };
   if (r.error) return { err: r.error.code === 'ETIMEDOUT' ? 'git se pasó del tope leyendo los repos' : `git: ${r.error.message}`, status: null };
   return { err: oneLine(r.stderr || `git salió con ${r.status}`).slice(0, 200), status: r.status };
+}
+
+// La entrada a un repo (CI, cola y merge), medida en su historia de git: de los últimos merges a la rama principal, el
+// tiempo entre el último commit de la rama y su merge. Mediana en ms, o null sin merges medidos. Sin red.
+const ENTRY_SAMPLES = 30;
+function entryMedianMs(root, ctx) {
+  let ref = null;
+  for (const r of ['origin/HEAD', 'origin/main', 'origin/master', 'main', 'master']) {
+    const v = git(root, ['rev-parse', '--verify', '-q', `${r}^{commit}`], ctx);
+    if (!v.err && v.out) { ref = r; break; }
+  }
+  if (!ref) return null;
+  const log = git(root, ['log', '--merges', '--first-parent', '-n', String(ENTRY_SAMPLES), '--format=%ct %P', ref], ctx);
+  if (log.err || !log.out) return null;
+  const merges = log.out.split('\n').map((l) => l.trim().split(/\s+/)).filter((p) => p.length >= 3).map(([ct, , tip]) => ({ ct: Number(ct), tip }));
+  if (!merges.length) return null;
+  const tips = git(root, ['log', '--no-walk=unsorted', '--format=%H %ct', ...merges.map((x) => x.tip)], ctx);
+  if (tips.err) return null;
+  const at = new Map(tips.out.split('\n').map((l) => l.trim().split(' ')).map(([h, c]) => [h, Number(c)]));
+  return median(merges.map((x) => (x.ct - at.get(x.tip)) * 1000).filter((v) => Number.isFinite(v) && v >= 0));
+}
+
+// La entrada a los repos de una story: la suma de las medianas (entran uno detrás del otro) y los que no tienen medida.
+function storyEntry(m, ctx) {
+  const roots = storyRepos(m, [], ctx);
+  const out = { repos: roots.length, ms: 0, missing: [] };
+  for (const root of roots) {
+    const med = entryMedianMs(root, ctx);
+    if (med == null) out.missing.push(path.basename(root));
+    else out.ms += med;
+  }
+  return out;
 }
 
 // Las raíces git de la story: su repoPath y la carpeta de cada archivo tocado. Lo que no existe o no es un repo se
@@ -323,6 +384,13 @@ function storyBranch(dir, ctx) {
   return x ? x[1] : null;
 }
 
+// Qué hace una sesión sin pipeline: su carpeta y la rama en que está (sin rama: sólo la carpeta).
+function sessionPlace(cwd, ctx) {
+  if (!cwd) return '(carpeta desconocida)';
+  const head = path.isAbsolute(cwd) && fs.existsSync(cwd) ? git(cwd, ['symbolic-ref', '-q', '--short', 'HEAD'], ctx) : { err: 'no existe' };
+  return head.err || !head.out ? path.basename(cwd) : `${path.basename(cwd)} · ${head.out}`;
+}
+
 // El estado de una story con el paso 8 cerrado: `null` si ya entró (nada abierto y todo contestado).
 function enteringState(m, prsOf, unreadable, wanted, ctx) {
   const shown = [];
@@ -409,7 +477,10 @@ function buildWip(opts = {}) {
     const step = entering || stateOf(m.stepsPending[0]);
     const work = `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`;
     const label = liveName(sid);
-    if (label) rows.push({ work, state: step, end: entering ? 'sin estimación (espera la CI o la cola)' : estimateEnd(m, medians, nowMs), session: label });
+    if (label) {
+      const entry = storyEntry(m, gitCtx);
+      rows.push({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label });
+    }
     else halfway.push(`${work} · ${shortId(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
   }
 
@@ -423,7 +494,14 @@ function buildWip(opts = {}) {
     busy.add(sid);
     const work = cut(String(a.reason || '(sin motivo)'), TITLE_MAX);
     const label = liveName(sid);
-    if (label) rows.push({ work, state: 'Trabajo suelto', end: 'sin estimación (no tiene pasos)', session: label });
+    if (label) {
+      // Desde cuándo no se toca: pasada 1 h, pregunta si terminó y dice cómo cerrarlo desde su sesión (no lo borra).
+      const last = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
+      const parts = ['Trabajo suelto'];
+      if (last !== undefined) parts.push(`sin tocar desde ${hhmm(last)}`);
+      if (last !== undefined && nowMs - last > LOOSE_STALE_MS) parts.push(`¿terminó? cerralo desde su sesión: node ${MARKER_JS} adhoc clear`);
+      rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+    }
     else {
       // Se limpia con `adhoc clear-orphan`, que sólo borra pasadas las 24 h sin tocarse: antes, se dice desde cuándo.
       let touched = [a.lastTouch, a.declaredAt].map((v) => Date.parse(v)).find(Number.isFinite);
@@ -450,7 +528,7 @@ function buildWip(opts = {}) {
     if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
       const story = s.cwd && storyBranch(s.cwd, gitCtx);
       const parts = ['Trabajando sin pipeline', story && `story ${story} en preparación`, s.last != null && `última actividad ${hhmm(s.last)}`].filter(Boolean);
-      rows.push({ work: '(sin pipeline)', state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+      rows.push({ work: sessionPlace(s.cwd, gitCtx), state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
     } else if (s.last == null) { free.push(label); noData.push(label); }
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
