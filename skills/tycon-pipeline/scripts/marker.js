@@ -3397,10 +3397,27 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const pend = new Set(matrix.notVerifiable || []);
   const ajenos = pedidos.filter((n) => !pend.has(n));
   if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
-  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m && m.startedAt });
+  // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
+  if (argv.includes('--relayed-by')) {
+    console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
+    console.error('   por otra sesión: lo da la persona que lo vio, en esta conversación o en su terminal.');
+    process.exit(2);
+  }
+  const wd = require('./lib/waiver-display.js');
+  const criterios = { storyId: String(matrix.sid), sessionId: SID, stateDir: STATE_DIR,
+    acs: pedidos.map((n) => ({ ac: n, sha: waiver.declHashFor(matrix.perAc[n].declReason, matrix.perAc[n].coveredBy) })) };
+  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), desde: m && m.startedAt, criterios });
   if (!r.ok) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — ${r.motivo}.`);
-    console.error('   El agente nunca firma por su cuenta. Mostrale al dev cada criterio con su razón y el test que lo cubre, y con su ok:');
+    if (r.sinMuestra) {
+      const runDir = m && m.storyId ? require('./pipeline.js').resolveRunDir((m && m.repoPath) || process.cwd(), String(m.storyId), true, storyPath) : null;
+      console.error('   Si no apareció en pantalla un bloque «Te piden firmar … que no se puede probar en vivo», escribí con Write');
+      console.error(`   (no por la terminal) ${runDir ? path.join(runDir, wd.PEDIDO) : wd.PEDIDO} con ${JSON.stringify({ acs: pedidos })}`);
+      console.error('   y el arnés se lo muestra. Después, la persona contesta nombrando el criterio; recién ahí, este comando con su cita.');
+      console.error(`   O que lo firme en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
+      process.exit(1);
+    }
+    console.error('   El agente nunca firma por su cuenta. El arnés le muestra al dev cada criterio; con su ok, que lo nombre:');
     console.error(`     node ${__filename} runtime-waiver ${storyPath} --acs ${pedidos.join(',')} --approved-by "<el dev>" --quote "<sus palabras, textuales>"`);
     console.error(`   O lo firma el dev en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
     process.exit(1);
@@ -3584,17 +3601,16 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 
   // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
   if (!waiver.hasTty()) {
-    if (waiver.esWindows()) {
-      console.error('🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este mismo comando,');
-      console.error('   con la consola sin ningún otro proceso conectado. Corrido con la entrada redirigida, o desde la consola');
-      console.error('   del agente, no firma. Lo corre EL USUARIO, en su terminal:');
-      console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
-      process.exit(2);
-    }
-    console.error('🔒 marker.js runtime-waiver BLOQUEADO — requiere una terminal interactiva real (/dev/tty).');
-    console.error('   Este es el candado user-only: el agente corre sin terminal y NO puede ejecutarlo.');
-    console.error('   Lo corre EL USUARIO, en su terminal:');
-    console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
+    // las dos vías, en llano: el agente no firma; firma la persona, en el chat o en su terminal
+    let version = 'desconocida';
+    try { version = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'version.json'), 'utf8')).version || version; } catch (_) { /* sin version.json: se dice desconocida */ }
+    console.error(waiver.esWindows()
+      ? '🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este comando, sin otro proceso conectado: corrido desde el agente o con la entrada redirigida, no firma.'
+      : '🔒 marker.js runtime-waiver BLOQUEADO — acá no hay una terminal de una persona (/dev/tty): el agente no puede firmar.');
+    console.error('   Un criterio que no se puede probar en vivo lo firma una persona, de una de estas dos formas:');
+    console.error('   (a) En el chat: pedile al agente la firma de ese criterio; el arnés te lo muestra y vos contestás «firmo el AC N».');
+    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath}${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
+    console.error(`   Versión del arnés: ${version}. Si no está al día (en Windows la firma por ventana llegó el 2026-10-15), actualizalo con /tycon-harness.`);
     process.exit(2);
   }
 
