@@ -13,6 +13,9 @@
  * Contrato de los handlers (cada módulo exporta handle(event)):
  *   null            → nada
  *   { reminder: t } → advisory → se envuelve en <system-reminder> a stdout
+ *   { systemMessage: t } → se le muestra a la PERSONA en pantalla (solo PostToolUse). Con algo que mostrar, la salida
+ *                   es el JSON de Claude Code ({ systemMessage, hookSpecificOutput.additionalContext } con los
+ *                   reminders adentro), salvo que un handler lanzado aparte ya haya escrito: ahí va como reminder
  *   { block: msg }  → BLOQUEAR → stderr + exit 2 (solo válido en PreToolUse)
  *
  * Fail-open + VISIBLE (H19): si un handler tira, se loguea a
@@ -160,6 +163,8 @@ const CHAINS = {
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
     { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
+    // El plan escrito se lo muestra el arnés a la persona en pantalla (el agente no siempre lo hace: medido)
+    { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['2', '3'], effect: 'warns' },
     { name: 'ado-story-create', path: path.join(SKILLS_DIR, 'tycon-ado-story-wi', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: (event) => isStoryWrite(event) && adoForStory(event), steps: ['1'], effect: 'records' },
     { name: 'followup-story-create', path: path.join(SKILLS_DIR, 'tycon-story-followup-link', 'scripts', 'on-story-create.js'), spawn: true, spawnIf: isStoryWrite, steps: ['1'], effect: 'records' },
   ],
@@ -212,6 +217,8 @@ function dispatch(mode) {
   // atómico — semántica correcta).
   const events = prepareEvents(rawEvent);
   const reminders = [];
+  const paraLaPersona = [];
+  let escribioAparte = false;
   const saltarClocki = mode === 'post-edit' && !clockifyPrendida();
 
   for (const event of events) for (const h of chain) {
@@ -243,7 +250,7 @@ function dispatch(mode) {
               timeout: 15000,
               stdio: ['pipe', 'pipe', 'pipe'],
             });
-            if (out && out.trim()) process.stdout.write(out);
+            if (out && out.trim()) { process.stdout.write(out); escribioAparte = true; }
           }
         }
       } catch (e) {
@@ -279,8 +286,20 @@ function dispatch(mode) {
     if (result.reminder) {
       reminders.push(result.reminder);
     }
+    if (result.systemMessage && mode === 'post-edit') paraLaPersona.push({ texto: String(result.systemMessage), alMostrar: result.alMostrar, name: h.name });
   }
 
+  if (paraLaPersona.length && !escribioAparte) {
+    const contexto = reminders.map((t) => `<system-reminder>\n${String(t).trim()}\n</system-reminder>`).join('\n');
+    process.stdout.write(JSON.stringify({
+      systemMessage: paraLaPersona.map((p) => p.texto).join('\n\n'),
+      ...(contexto ? { hookSpecificOutput: { hookEventName: 'PostToolUse', additionalContext: contexto } } : {}),
+    }));
+    // recién mostrado, se anota (`alMostrar`): lo que bajó a reminder abajo lo lee sólo el agente y no se anota
+    for (const p of paraLaPersona) if (typeof p.alMostrar === 'function') { try { p.alMostrar(); } catch (e) { logHookError(p.name, e); } }
+    process.exit(0);
+  }
+  for (const p of paraLaPersona) reminders.push(p.texto);
   if (reminders.length > 0) {
     const out = reminders
       .map((t) => `<system-reminder>\n${String(t).trim()}\n</system-reminder>\n`)

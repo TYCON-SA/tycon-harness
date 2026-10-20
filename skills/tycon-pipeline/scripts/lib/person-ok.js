@@ -10,7 +10,8 @@
  *     eso también se guarda como «mensaje de usuario», y el agente podría imprimir la cita para después encontrarla.
  *   · `citaReenviada(cita, sesion)`: ¿llegó dentro de un mensaje de otra sesión con ese nombre? Es la variante en la
  *     que una sesión coordinadora reenvía textual el ok del dev.
- *   · `planEnLaConversacion(plan)`: ¿el agente le mostró el plan a la persona?.
+ *   · `planEnLaConversacion(plan)`: ¿el agente le mostró el plan a la persona (en un mensaje, en una pregunta con opciones
+ *     o en el modo plan)?
  *
  * La cita se compara sin mayúsculas, con los espacios juntados y sin comillas alrededor, y tiene que tener al menos
  * `CITA_MINIMA` letras o dígitos: un «sí» suelto aparece en cualquier conversación.
@@ -161,10 +162,27 @@ function citaReenviada(cita, sesion, opts = {}) {
   return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde) };
 }
 
+// Lo que la persona ve de una llamada a herramienta: la pregunta con opciones (su texto, cada opción y su vista previa) y
+// el plan del modo plan. El resto de las herramientas (escribir un archivo, correr un comando) no se le muestra.
+function textoVisibleDeHerramienta(x) {
+  const inp = x && x.input && typeof x.input === 'object' ? x.input : {};
+  const out = [];
+  if (x.name === 'AskUserQuestion' && Array.isArray(inp.questions)) {
+    for (const q of inp.questions) {
+      if (!q || typeof q !== 'object') continue;
+      if (typeof q.question === 'string') out.push(q.question);
+      for (const o of Array.isArray(q.options) ? q.options : []) {
+        for (const k of ['label', 'description', 'preview']) if (o && typeof o[k] === 'string') out.push(o[k]);
+      }
+    }
+  } else if (x.name === 'ExitPlanMode' && typeof inp.plan === 'string') out.push(inp.plan);
+  return out.join('\n');
+}
+
 /**
- * ¿El plan está en lo que el agente le escribió a la persona? Cuenta los renglones del plan de 20 caracteres o más que
- * aparecen en los mensajes del asistente de la sesión principal, sin mirar el formato: con la mitad o más, se mostró;
- * un plan sin ningún renglón así no cuenta como visto.
+ * ¿El plan está en lo que el agente le mostró a la persona? Cuenta los renglones del plan de 20 caracteres o más que
+ * aparecen en los mensajes del asistente de la sesión principal (su texto, y lo que muestran la pregunta con opciones y
+ * el modo plan), sin mirar el formato: con la mitad o más, se mostró; un plan sin ningún renglón así no cuenta como visto.
  */
 function planEnLaConversacion(planTxt, opts = {}) {
   const conv = leerConversacion(opts);
@@ -173,10 +191,15 @@ function planEnLaConversacion(planTxt, opts = {}) {
   for (const r of conv.registros) {
     // lo que escribe un subagente no lo ve la persona: no cuenta
     const c = r && r.type === 'assistant' && !r.isSidechain && r.message && r.message.content;
-    if (Array.isArray(c)) for (const x of c) if (x && x.type === 'text' && typeof x.text === 'string') textos += `${x.text}\n`;
+    if (!Array.isArray(c)) continue;
+    for (const x of c) {
+      if (x && x.type === 'text' && typeof x.text === 'string') textos += `${x.text}\n`;
+      else if (x && x.type === 'tool_use') textos += `${textoVisibleDeHerramienta(x)}\n`;
+    }
   }
   const n = (s) => s.toLowerCase().replace(/^\s*(?:\d+[.)]|[-+•*>]|#+)\s+/gm, '').replace(/[`*_#>]/g, ' ').replace(/\s+/g, ' ').trim();
-  const dicho = n(textos);
+  // un comentario HTML no se ve en pantalla: lo que va adentro no cuenta como mostrado
+  const dicho = n(textos.replace(/<!--[\s\S]*?(?:-->|$)/g, ' '));
   const renglones = planTxt.split('\n').map(n).filter((l) => l.length >= 20);
   if (!renglones.length) return { legible: true, mostrado: false };
   const vistos = renglones.filter((l) => dicho.includes(l)).length;
