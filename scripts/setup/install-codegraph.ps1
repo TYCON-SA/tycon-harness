@@ -118,7 +118,7 @@ function Test-Project {
 
 # ---- 3. resolver modo + lista de repos ----
 $Repos = @()
-$RegDir = "(el repo que abras: el hook arma su indice)"
+$RegDir = "el repo que abras: el hook arma su indice"
 if (-not $ToolOnly) {
 if ($Mode -eq "auto") {
     if (Test-Project $Target) { $Mode = "repo" } else { $Mode = "container" }

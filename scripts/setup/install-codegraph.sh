@@ -99,7 +99,7 @@ is_project() {
 
 # ---- 3. resolver modo + lista de repos ----
 REPOS=()
-REGDIR="(el repo que abras: el hook arma su índice)"
+REGDIR="el repo que abras: el hook arma su índice"
 if [ "$TOOL_ONLY" -eq 0 ]; then
 if [ "$MODE" = "auto" ]; then
   if is_project "$TARGET"; then MODE="repo"; else MODE="container"; fi
