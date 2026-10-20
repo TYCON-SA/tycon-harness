@@ -112,6 +112,31 @@ function parseDefaultRole(md) {
   return m ? normalizeRoles(m[1]) : null;
 }
 
+// Modo primera vez: la persona trabaja sola. La guía dice cómo abrir la app con una línea
+// «Abrir la app: …» al tope del archivo de pasos (está escrita para el dev, que es quien la levanta) y ningún paso le
+// pide algo al equipo.
+function parseOpenApp(md) {
+  if (!md) return null;
+  const m = md.match(/^\s*Abrir\s+la\s+app\s*:\s*(.+?)\s*$/im);
+  return m ? m[1] : null;
+}
+
+/** Los renglones del archivo de pasos que nombran al equipo como personas. */
+function teamLines(md) {
+  return String(md || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => /\b(al|el|del|tu)\s+equipo\b/i.test(l));
+}
+
+/** ¿La historia la escribió el modo primera vez? La marca y la constancia del guion; ante cualquier duda, no. */
+function isFirstTimeStory(fm, storyAbs, storyId) {
+  if (!/^origin:\s*["']?first-time["']?\s*$/m.test(fm || '')) return false;
+  let record;
+  try { record = require(path.join(__dirname, 'lib', 'first-time-record.js')); } catch (e) {
+    console.error(`⚠️  qa-guide: no pude cargar first-time-record.js (${e && e.message ? e.message : e}): la revisión de modo primera vez no corre`);
+    return false;
+  }
+  return record.isRecorded(os.homedir(), storyAbs, storyId);
+}
+
 // Resuelve el/los rol(es) de prueba de un AC para el badge del header.
 //   - `pasosRole` explícito (`Usuario:` del AC) gana siempre; `[ROLE_NONE]` → "sin login".
 //   - Sin explícito: SOLO los AC genuinamente no-verificables por la app (tier 'wv') caen a
@@ -467,7 +492,9 @@ function qaLocation(storyPath) {
   const matrix = require(path.join(__dirname, 'runtime-matrix.js')).compute({ storyPath: abs });
   if (matrix.structuralError) throw new Error(`la matriz no computa (${matrix.structuralError})`);
   const sid = matrix.sid;
-  return { qaDir: path.join(path.dirname(path.dirname(abs)), 'qa'), qk: matrix.key || sid, sid, repoRoot: matrix.repoRoot, matrix };
+  const qk = matrix.key || sid;
+  const qaDir = require(path.join(__dirname, 'lib', 'qa-dir.js')).qaDirFor(abs, [qk, sid]);
+  return { qaDir, qk, sid, repoRoot: matrix.repoRoot, matrix };
 }
 
 // Dónde se buscan las pantallas de la story: su repo, el workspace (rutas escritas desde ahí) y los repos acompañantes
@@ -709,7 +736,7 @@ function main() {
     console.error(`qa-guide.js: ${e.message}.`);
     process.exit(2);
   }
-  const { matrix, sid, qk } = loc;
+  const { matrix, sid, qk, qaDir: qaDirStory } = loc;
   const titleM = content.match(/^#\s+(.+)$/m);
   const title = titleM ? titleM[1].replace(/[#*`]/g, '').trim() : sid;
 
@@ -725,7 +752,7 @@ function main() {
   // preámbulo (setup del entorno) — --preamble o convención specs/qa/preamble.md del repo de la story
   let preambleHtml = '';
   const preamblePath = opt('--preamble') ||
-    [path.join(path.dirname(path.dirname(abs)), 'qa', 'preamble.md')].find(isFile);
+    [path.join(qaDirStory, 'preamble.md')].find(isFile);
   if (preamblePath && isFile(preamblePath)) {
     const md = fs.readFileSync(preamblePath, 'utf8');
     // render muy básico: encabezados, listas, code fences, párrafos.
@@ -752,17 +779,21 @@ function main() {
   let pasosByAc = {};
   let sequence = [];
   let defaultRole = null;
+  let openApp = null;
+  let pasosRaw = '';
   const pasosPath = opt('--steps') ||
-    [path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`)].find(isFile);
+    [path.join(qaDirStory, `${qk}-pasos.md`)].find(isFile);
   // Lo viejo: con número compartido, `<id>-pasos.md` / `<id>-legibilidad.md` no dicen de cuál story son. No cuentan,
   // no se tocan, y se nombran para que nadie crea que la guía falta por descuido.
   const qaViejos = qk === sid ? [] : [`${sid}-pasos.md`, `${sid}-legibilidad.md`]
-    .map((f) => path.join(path.dirname(path.dirname(abs)), 'qa', f)).filter(isFile);
+    .map((f) => path.join(qaDirStory, f)).filter(isFile);
   if (pasosPath && isFile(pasosPath)) {
     const rawMd = fs.readFileSync(pasosPath, 'utf8');
     pasosByAc = parsePasos(rawMd);
     sequence = parsePasosSequence(rawMd);
     defaultRole = parseDefaultRole(rawMd);
+    openApp = parseOpenApp(rawMd);
+    pasosRaw = rawMd;
   }
 
   // ── MODO --ui-texts (story 7.24): los textos que ve el usuario en cada pantalla de la story, sin el código alrededor.
@@ -785,7 +816,7 @@ function main() {
     for (const m of missing) console.log(`· declarada y no está en el disco: ${m}`);
     // Story 7.30: con una maqueta aprobada, lo que la pantalla tiene distinto de ella es insumo de la pasada del tester.
     const mk = require(path.join(__dirname, 'mockup.js'));
-    const qaDirU = path.join(path.dirname(path.dirname(abs)), 'qa');
+    const qaDirU = qaDirStory;
     const mockupPath = path.join(qaDirU, `${qk}-mockup.html`);
     const ap = mk.readApproval(path.join(qaDirU, `${qk}-mockup-approval.json`));
     if (ap.state === 'bad') console.log(`· no pude leer la aprobación de la maqueta: ${ap.error}`);
@@ -818,13 +849,13 @@ function main() {
     const isUi = isUiStory(content, fm, matrix.repoRoot);
     if (!isUi) { console.log(`qa-guide --check: story ${sid} no toca UI → no requiere guía de tester.`); process.exit(0); }
     const problems = [];
-    const qaDir = path.join(path.dirname(path.dirname(abs)), 'qa');
+    const qaDir = qaDirStory;
     const runtimeAcs = acs.map((a) => a.n).filter((n) => (matrix.perAc[n] || {}).verdict === 'RUNTIME');
     // 🔴 La ruta del mensaje se CALCULA de la misma forma que la búsqueda (2026-08-05): decía
     // `specs/qa/...` mientras el script buscaba en `<repo>/qa/...`, así que mandaba a crear el
     // archivo donde nunca lo iba a encontrar — y el gate seguía fallando después de obedecerlo.
     // Lo destapó una prueba en frío con una story nueva; con la story ya armada no se veía.
-    const pasosEsperado = path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`);
+    const pasosEsperado = path.join(qaDirStory, `${qk}-pasos.md`);
     if (!pasosPath) problems.push(`(1) Falta el archivo de pasos-tester: ${pasosEsperado}`);
     const sinPasos = runtimeAcs.filter((n) => !tienePasos(pasosByAc[n]));
     if (sinPasos.length) problems.push(`(2) ACs verificados corriendo SIN pasos-tester: ${sinPasos.map((n) => '#' + n).join(', ')}`);
@@ -864,6 +895,12 @@ function main() {
         `Agregá una línea en criollo bajo el "## AC N" de ${pasosPath || pasosEsperado}. ` +
         `Aplica también a los ACs no verificables por la app: igual aparecen en la guía y el tester los lee.`,
       );
+    }
+    if (isFirstTimeStory(fm, abs, (fm.match(/^story:\s*["']?([^"'\s#]+)/m) || [])[1] || sid)) {
+      for (const l of teamLines(pasosRaw)) {
+        problems.push(`(7) Modo primera vez: la persona trabaja sola y no tiene a quién pedirle. Reescribí el paso para que diga qué hacer, sin pedírselo al equipo: «${l}» (${pasosPath || pasosEsperado})`);
+      }
+      if (!openApp) problems.push(`(7) Modo primera vez: falta la línea «Abrir la app: <dónde se levanta> · <qué dirección se abre>» al tope de ${pasosPath || pasosEsperado}. La persona trabaja sola: la guía le dice cómo abrir la app.`);
     }
     if (sinRol.length) problems.push(`(5) ACs verificados corriendo SIN usuario de prueba declarado — agregá 'Usuario: <rol>' en el bloque del AC de ${pasosEsperado}, o un 'Usuario por defecto: <rol>' al tope del archivo: ${sinRol.map((n) => '#' + n).join(', ')}`);
     const pantalla = uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot: matrix.repoRoot, storyPath: abs });
@@ -935,9 +972,7 @@ function main() {
   // Determinar el path de salida ANTES de render, para preservar el estado del tester ya guardado.
   let out = opt('--out');
   if (!out) {
-    const specsStories = path.dirname(abs);
-    const specsRoot = path.dirname(specsStories);
-    out = path.join(specsRoot, 'qa', path.basename(abs, '.md') + '-guia-qa.html');
+    out = path.join(qaDirStory, path.basename(abs, '.md') + '-guia-qa.html');
   }
   // Si ya existe una guía con respuestas del tester guardadas, preservarlas (script#qa-state).
   let embeddedState = {};
@@ -949,7 +984,7 @@ function main() {
 
   const html = renderHtml({
     outFileName: path.basename(out),
-    sid, title, preambleHtml, cards, stats, embeddedState,
+    sid, title, preambleHtml: (openApp ? `<p><strong>Abrir la app:</strong> ${esc(openApp)}</p>` : '') + preambleHtml, cards, stats, embeddedState,
     generatedAt: (opt('--now') || 'ahora'),
   });
 
@@ -962,7 +997,7 @@ function main() {
   // La ruta que se sugiere es la MISMA que se busca (PIPE-DEBT-2.14): antes el mensaje decía
   // `specs/qa/` fijo y la búsqueda es `<carpeta padre de la story>/../qa/` — en un repo con las
   // stories en `specs/` eso es `qa/`, y el dev escribía el archivo donde el mensaje decía.
-  const pasosHint = path.relative(process.cwd(), path.join(path.dirname(path.dirname(abs)), 'qa', `${qk}-pasos.md`)) || `${qk}-pasos.md`;
+  const pasosHint = path.relative(process.cwd(), path.join(qaDirStory, `${qk}-pasos.md`)) || `${qk}-pasos.md`;
   for (const v of qaViejos) console.log(`   ⚠ ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo (no se tocó). La guía de esta story va en ${pasosHint}.`);
   if (faltan.length) console.log(`   ⚠ Sin pasos-tester: AC ${faltan.join(', ')} — escribir en ${pasosHint}`);
   if (sinDesc.length) console.log(`   ⚠ Sin descripción criolla (el titular queda en texto técnico del AC): AC ${sinDesc.join(', ')} — agregar una línea de descripción en ${pasosHint}`);
@@ -989,7 +1024,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation };
+module.exports = { parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines };
 if (require.main === module) {
   // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');
