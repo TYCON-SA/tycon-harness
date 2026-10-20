@@ -2895,7 +2895,10 @@ function computeNext() {
     for (const c of ['build', 'tests', 'advisors']) {
       // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step 4 lo dijo y lo anotó).
       const sinAcotar = c === 'tests' && checks[c] === 'sin-acotar';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}` });
+      // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
+      // de la historia copia la línea (nunca un verde callado)
+      const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}` });
     }
   }
 
@@ -3076,6 +3079,30 @@ function computeStart(args) {
       }
     }
   }
+  // Una carpeta sin NINGÚN git (ni ella ni de arriba) se inicia aunque la historia no traiga la marca: ahí
+  // no hay rama de otra sesión que pisar, que es por lo que la marca hace falta. El caso: una historia escrita a mano
+  // llegó al commit sin git, con el chequeo de dependencias salteado sin aviso. No en la carpeta personal, ni en la raíz,
+  // ni con la historia afuera: ahí pausa y da el comando a mano.
+  if (!firstTimeGit && !firstTimeOk) {
+    let hasGit = true;
+    try { execFileSync('git', ['-C', repo, 'rev-parse', '--git-dir'], { stdio: ['ignore', 'ignore', 'ignore'] }); } catch { hasGit = false; }
+    if (!hasGit) {
+      const target = `story/${storyId}`;
+      const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+      const repoReal = real(repo);
+      const storyReal = real(storyPath);
+      const aMano = `git -C "${repo}" init && git -C "${repo}" symbolic-ref HEAD refs/heads/${target}`;
+      let porque = null;
+      if (repoReal === real(os.homedir())) porque = 'es tu carpeta personal';
+      else if (repoReal === path.parse(repoReal).root) porque = 'es la raíz del disco';
+      else if (path.relative(repoReal, storyReal).startsWith('..') || path.isAbsolute(path.relative(repoReal, storyReal))) porque = 'la historia está fuera de esa carpeta';
+      if (porque) {
+        pauses.push({ id: 'PIPE-C1-sin-git', detail: `La carpeta ${repo} no tiene git y no lo inicio solo: ${porque}. Si es la carpeta del proyecto, inicialo a mano y volvé a correr start: ${aMano}` });
+      } else {
+        firstTimeGit = { init: true, unborn: true, target, sinMarca: true };
+      }
+    }
+  }
   if (branch && ['main', 'master'].includes(branch) && !firstTimeGit && !pauses.some((p) => p.id === 'PIPE-C1-branch-guard')) {
     const aMano = firstTimeMark && !firstTimeOk
       ? ' La marca `origin: first-time` de esta historia no la puso el guion del modo primera vez (no hay constancia): el recorrido no cambia de rama solo.'
@@ -3093,7 +3120,7 @@ function computeStart(args) {
   }
 
   if (firstTimeGit && !pauses.length) {
-    const { init, unborn, target } = firstTimeGit;
+    const { init, unborn, target, sinMarca } = firstTimeGit;
     try {
       const run = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
       if (init) run('init', '-q');
@@ -3101,9 +3128,12 @@ function computeStart(args) {
       if (init || unborn) run('symbolic-ref', 'HEAD', `refs/heads/${target}`);
       else run('switch', '-q', '-c', target);
       branch = target;
-      actions.push(`PIPE-C1: historia de primera vez → ${init ? 'git init y ' : ''}rama ${target} creada y activa (lo que no estaba commiteado sigue en el árbol).`);
+      actions.push(sinMarca
+        ? `PIPE-C1: tu carpeta no tenía git: lo inicié (git init) y creé la rama ${target} (lo que había sigue igual, sin commitear).`
+        : `PIPE-C1: historia de primera vez → ${init ? 'git init y ' : ''}rama ${target} creada y activa (lo que no estaba commiteado sigue en el árbol).`);
     } catch (e) {
-      pauses.push({ id: 'PIPE-C1-branch-guard', detail: `No pude preparar la rama ${target} para la historia de primera vez: ${String(e.stderr || e.message || e).trim().split('\n')[0]}. Creala a mano y re-corré start.` });
+      const aMano = init ? ` A mano: git -C "${repo}" init && git -C "${repo}" symbolic-ref HEAD refs/heads/${target}` : '';
+      pauses.push({ id: 'PIPE-C1-branch-guard', detail: `No pude preparar la rama ${target} para ${sinMarca ? 'esta historia' : 'la historia de primera vez'}: ${String(e.stderr || e.message || e).trim().split('\n')[0]}. Creala a mano y re-corré start.${aMano}` });
     }
   }
 
@@ -3537,12 +3567,17 @@ function computeToolingExpected(repo, opts = {}) {
     : 'NO se puede levantar acá — el binario NO está en esta máquina: AVISAR al user con la acción concreta de instalación (codegraph: guides/integrations/codegraph-mcp.md; codebase_memory: conseguir el binario e instalar con `codebase-memory-mcp install`). Mientras tanto, fallback.';
 
   const expected = [];
-  if (fs.existsSync(path.join(repo, '.codegraph'))) {
+  // CodeGraph se espera si el repo tiene su índice, o si la integración está prendida (la organización la usa): ahí,
+  // una máquina sin el binario se avisa aunque el repo todavía no tenga `.codegraph/`
+  const hasIndex = fs.existsSync(path.join(repo, '.codegraph'));
+  if (hasIndex || (integrations && integrations.codegraph === true)) {
     const bin = findBinary(KNOWN_CLI.codegraph.bin);
     expected.push({
       name: 'codegraph',
       mcp_prefix: 'mcp__codegraph__',
-      why: `.codegraph/ presente en ${repo} — el repo tiene índice CodeGraph (regla del equipo: "CodeGraph primero" para todo lookup de símbolos)`,
+      why: hasIndex
+        ? `.codegraph/ presente en ${repo} — el repo tiene índice CodeGraph (regla del equipo: "CodeGraph primero" para todo lookup de símbolos)`
+        : 'integrations.codegraph prendida — tu organización usa CodeGraph; el índice lo arma cada máquina (scripts/setup/install-codegraph)',
       binary_found: bin,
       cli_fallback: KNOWN_CLI.codegraph.cli,
       fallback: 'grep/Glob (más lento, sin call-graph ni impact analysis)',
@@ -4345,15 +4380,42 @@ function computeDepGate({ repo, story }) {
   } catch (e) { hermanosError = e.message; }
   const diffs = [];
   const sinMedir = [];
+  const MANIFIESTOS = ['package.json', '*/package.json', '**/package.json',
+    '*.csproj', '**/*.csproj', 'Directory.Packages.props', '**/Directory.Packages.props'];
+  const gitDe = (raiz, a, input) => execFileSync('git', ['-C', raiz, ...a], { encoding: 'utf8', input, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'] });
   for (const raiz of raices) {
     try {
-      diffs.push(execFileSync('git', ['-C', raiz, 'diff', 'HEAD', '--unified=0', '--',
-        'package.json', '*/package.json', '**/package.json',
-        '*.csproj', '**/*.csproj', 'Directory.Packages.props', '**/Directory.Packages.props'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
-    } catch {
-      if (raiz === repo) return { gate: 'skip', reason: 'repo sin git o `git diff HEAD` falló — dep-gate no aplica', new_deps: [] };
-      sinMedir.push(raiz);
+      // Sin commits todavía (el repo recién iniciado al arrancar) la base es el árbol vacío: todo es nuevo.
+      let base = 'HEAD';
+      try { gitDe(raiz, ['rev-parse', '--verify', '-q', 'HEAD^{commit}']); } catch {
+        gitDe(raiz, ['rev-parse', '--git-dir']);   // sin git sigue al catch de afuera
+        base = gitDe(raiz, ['hash-object', '-t', 'tree', '--stdin'], '').trim();
+      }
+      let diff = gitDe(raiz, ['diff', base, '--unified=0', '--', ...MANIFIESTOS]);
+      // Un manifiesto sin trackear no aparece en `git diff`: se lee entero, como agregado. De un package.json cuentan
+      // sólo sus listas de dependencias (si no, `"version": "1.0.0"` pasaría por una).
+      // Lo instalado no es del proyecto: en una carpeta recién iniciada todavía no hay .gitignore, y sin este filtro cada
+      // node_modules/*/package.json pasaría sus dependencias como nuevas.
+      const sinTrackear = gitDe(raiz, ['ls-files', '--others', '--exclude-standard', '-z', '--', ...MANIFIESTOS]).split('\0')
+        .filter((rel) => rel && !rel.split('/').includes('node_modules'));
+      for (const rel of sinTrackear) {
+        let txt;
+        try { txt = fs.readFileSync(path.join(raiz, rel), 'utf8').replace(/^﻿/, ''); } catch (e) { hermanosFaltan.push({ repo: raiz, motivo: `no pude leer ${rel} (${e.code || e.message})` }); continue; }
+        if (path.basename(rel) === 'package.json') {
+          let pj;
+          try { pj = JSON.parse(txt); } catch (e) { hermanosFaltan.push({ repo: raiz, motivo: `${rel} no es JSON válido (${e.message})` }); continue; }
+          for (const k of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+            for (const [n, v] of Object.entries((pj && typeof pj[k] === 'object' && pj[k]) || {})) diff += `\n+${JSON.stringify(n)}: ${JSON.stringify(String(v))}`;
+          }
+        } else {
+          diff += `\n${txt.split(/\r?\n/).map((l) => `+${l}`).join('\n')}`;
+        }
+      }
+      diffs.push(diff);
+    } catch (e) {
+      const causa = String((e && (e.stderr || e.message)) || e).trim().split('\n')[0];
+      if (raiz === repo) return { gate: 'no-medido', reason: `la carpeta no tiene git (o git falló: ${causa}): no pude mirar qué dependencias son nuevas — lo que no se miró no cuenta como «sin dependencias nuevas»`, new_deps: [] };
+      sinMedir.push({ raiz, causa });
     }
   }
   // Un paquete es NUEVO solo si su nombre aparece en líneas '+' pero NO en '−'. Esto
@@ -4398,7 +4460,7 @@ function computeDepGate({ repo, story }) {
     (re.test(storyText) || (preparado && d.name === '@playwright/test') ? declared : undeclared).push(d.name);
   }
   // un hermano que no se pudo diffear no es «sin dependencias nuevas»: se dice
-  const noMedidos = [...sinMedir.map((r) => ({ repo: r, motivo: '`git diff HEAD` falló' })), ...hermanosFaltan,
+  const noMedidos = [...sinMedir.map((r) => ({ repo: r.raiz, motivo: `git falló: ${r.causa}` })), ...hermanosFaltan,
     ...(hermanosError ? [{ repo: null, motivo: `no pude leer los repos hermanos declarados: ${hermanosError}` }] : [])];
   return {
     gate: undeclared.length ? 'pause' : 'pass',
@@ -5175,6 +5237,31 @@ function projectRunToStoryRepo(runDir, storyPath) {
   return { projected: copied.length > 0, dest, copied };
 }
 
+// Lo que la corrida no pudo medir, para que el informe de «Hallazgos» lo diga: el chequeo de dependencias
+// que quedó `no-medido` (o con repos sin mirar) y las líneas tocadas sin cobertura. Una constancia ilegible no se lee
+// como «medido»: sale como sin medir, con el motivo. Una constancia que no está es un paso que no corrió: no se inventa.
+function sinMedirDeLaCorrida(runDir, repo) {
+  const out = [];
+  const leer = (f) => {
+    if (!exists(f)) return { ausente: true };
+    try { return { valor: JSON.parse(readText(f)) }; } catch (e) { return { error: `no pude leer ${f} (${String(e.message).slice(0, 120)})` }; }
+  };
+  const dep = leer(path.join(runDir, 'dep-gate.json'));
+  if (dep.error) out.push({ que: 'las dependencias nuevas', motivo: dep.error });
+  else if (dep.valor) {
+    if (dep.valor.gate === 'no-medido') out.push({ que: 'las dependencias nuevas', motivo: dep.valor.reason || 'el chequeo no pudo mirar el repo' });
+    for (const n of dep.valor.repos_no_medidos || []) out.push({ que: `las dependencias nuevas de ${n.repo || 'los repos hermanos'}`, motivo: n.motivo });
+  }
+  if (repo) {
+    const tr = leer(path.join(repo, '.advisors', 'tests-result.json'));
+    if (tr.error) out.push({ que: 'la cobertura de las líneas tocadas', motivo: tr.error });
+    else if (tr.valor && tr.valor.coverage && tr.valor.coverage.touched_lines_pct === null) {
+      out.push({ que: 'la cobertura de las líneas tocadas', motivo: tr.valor.coverage.touched_no_cross_check || 'el reporte de pruebas no trae el porcentaje' });
+    }
+  }
+  return out;
+}
+
 function writeFindings(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
@@ -5273,6 +5360,8 @@ function writeFindings(args) {
     const todas = [...records.map((f) => f.iter), ...notas.map((n) => n.iter), ...deFotos].filter(Number.isInteger);
     vueltas = Math.max(...todas);
   }
+  const sinMedir = sinMedirDeLaCorrida(runDir, args.repo);
+  for (const x of sinMedir) normWarnings.push(`sin medir: ${x.que} — ${x.motivo}`);
   const rethink = notas.length ? {
     rounds: vueltas,
     notes_count: notas.length,
@@ -5281,6 +5370,7 @@ function writeFindings(args) {
   return {
     wrote: true, path: outPath, story_id: storyId, total: records.length, counts,
     ...(rethink ? { rethink } : {}),
+    ...(sinMedir.length ? { sin_medir: sinMedir } : {}),
     ...(marcados.length ? { reviewers_flagged: marcados.map((t) => t.reviewer) } : {}),
     ...(proyeccion.projected ? { projected_to_story_repo: proyeccion.dest } : {}),
     ...(proyeccion.reason && proyeccion.reason.startsWith('no se pudo') ? { warnings: [...normWarnings, `proyección al repo de la story: ${proyeccion.reason}`] } : (normWarnings.length ? { warnings: normWarnings } : {})),
@@ -6250,6 +6340,21 @@ function main() {
   // (PAUSA HITL), exit 0 si pass/skip. Ver computeDepGate.
   if (cmd === 'dep-gate') {
     const result = computeDepGate({ repo: args.repo, story: args.story });
+    // La constancia queda en la carpeta de la corrida: `write-findings` la lee para decir lo que no se midió.
+    // Sin la constancia, `write-findings` no sabría que algo quedó sin medir: si no se puede guardar, sale 1 y lo dice.
+    if (args.story) {
+      let motivo = null;
+      try {
+        const rd = resolveRunDir(args.repo, deriveStoryId(args.story), true, args.story);
+        if (rd) { fs.mkdirSync(rd, { recursive: true }); fs.writeFileSync(path.join(rd, 'dep-gate.json'), JSON.stringify(result, null, 2) + '\n'); }
+        else motivo = 'no encontré ni pude crear la carpeta de la corrida';
+      } catch (e) { motivo = e.message; }
+      if (motivo) {
+        process.stdout.write(JSON.stringify(result, null, 2) + '\n');
+        process.stderr.write(`🔴 dep-gate: no pude dejar la constancia en la carpeta de la corrida (${motivo}): el informe de hallazgos no sabría qué quedó sin medir.\n`);
+        process.exit(1);
+      }
+    }
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.gate === 'pause' ? 2 : 0);
   }

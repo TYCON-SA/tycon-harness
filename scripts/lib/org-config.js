@@ -60,12 +60,12 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'paquetes', titulo: 'Paquetes', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['packs'], idCorto: 'profile', necesita: ['packs'] }),
   // story 2.31: lo que cambia la experiencia de cada dev, en el perfil del equipo, validado por el mismo lector de la
   // máquina. `rutas` (opcional): las hojas que la sección cambia dentro de sus `claves`; lo demás de esas claves queda
-  // como estaba (Telegram y CodeGraph, de cada máquina, no se editan desde la sección de integraciones).
+  // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
   // quién puede reenviar el ok de un dev para eximir un crítico (approvals.relay_session; vale sólo desde el perfil)
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta Claude', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
-  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly']), idCorto: 'profile', necesita: ['integrations'] }),
+  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
@@ -1433,12 +1433,12 @@ function pantalla(idioma = 'es') {
     box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;
   }
-  var INTEGRACIONES = [['clockify', T('pantalla.clockifyRegistraLasHorasDe')], ['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')]];
+  var INTEGRACIONES = [['clockify', T('pantalla.clockifyRegistraLasHorasDe')], ['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')], ['codegraph', T('pantalla.codegraphIndiceDeCodigo')]];
   // story 2.59: un renglón por integración, el nombre y su descripción a la izquierda y un selector corto a la derecha
   function editorIntegraciones(s, d, pr) {
     var i = d.integrations || {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramYCodegraphSeConfiguran') }));
+    box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramSeConfigura') }));
     var t = tabla('integ', T('pantalla.integraciones'));
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
@@ -1872,7 +1872,7 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
-  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)' };
+  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {

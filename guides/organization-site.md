@@ -236,6 +236,8 @@ Cada pieza dice si es **del arnés** o **de tu organización**. Lo que depende d
 Todo sale de lo mismo con que corre el arnés: la tabla de pasos, el cálculo de revisores, la lista de controles, los
 detectores que deciden cada pieza y el perfil de tu organización. Si una de esas fuentes cambia, la pestaña cambia sola.
 
+![Cómo trabaja: arriba lo de tu organización, a la izquierda los pasos y a la derecha lo que pasa en el paso elegido](sitio-de-la-organizacion/capturas/como-trabaja.png)
+
 **Mejorar una pieza del arnés.** El arnés no se edita desde el sitio. «Ver el código» abre el archivo en el repo público;
 «Proponer una mejora» abre un cuadro donde escribís, con tus palabras, qué cambiarías y por qué. «Abrir el pedido en
 GitHub» abre un pedido nuevo del repo público con tu texto, la pieza, el paso y la versión ya escritos: lo enviás con tu
@@ -302,7 +304,7 @@ cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo,
 
 ![Una sección cambiada y revisada: «Revisado: está bien escrito»](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
 
-![Antes de proponer: el archivo de hoy y el archivo después del cambio, con «Confirmar y proponer»](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
+![Antes de proponer: los renglones que cambian, marcados, con «Confirmar y proponer»](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
 
 ![El pedido abierto: la sección muestra su enlace](sitio-de-la-organizacion/capturas/configuracion-propuesto.png)
 
@@ -416,8 +418,10 @@ en su repo.
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
   antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
   máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
-- **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
-  puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche, el índice de
+  código de CodeGraph); una máquina puede apagar una para ella sola. Con CodeGraph prendido, el instalador se lo instala
+  a cada dev y el arnés avisa si una máquina no lo tiene. Telegram no está acá: es de cada máquina. Queda en
+  `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
   Corridas muestra los archivos que tocó. Queda en `operations.json`, en el repo de operaciones. Lo revisa quien
   mantiene.
@@ -430,7 +434,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 - **En el sitio**: los lenguajes que el arnés ya reconoce, las terminaciones que suma tu equipo, la tabla de
   herramientas de prueba y las tres reglas. Las que la puerta de pruebas corre por dentro (.NET, Vitest, Jest y Node)
-  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle y Karma se pueden
+  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle, Karma y Playwright se pueden
   cambiar: el formulario llega lleno con la de fábrica, y al guardar queda una copia de la organización con el mismo
   nombre que la reemplaza. «Volver a la de fábrica» borra la copia. El comando de una herramienta lo corre la
   computadora de cada persona del equipo.

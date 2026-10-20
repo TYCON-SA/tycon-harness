@@ -210,9 +210,11 @@ function noEsPersona(quien) {
  * Con `critico` ({ rule, file, reason, storyId, sessionId, stateDir }), el ok tiene que responder a ESE crítico: a la
  * persona se le mostró (constancia `critical-shown`, lib/critical-display.js), el mensaje es posterior a la muestra y
  * nombra el crítico (su regla o su nombre en llano) sin negarlo. Sin muestra: `{ ok: false, sinMuestra: true }`.
+ * Con `criterios` ({ acs: [{ ac, sha }], storyId, sessionId, stateDir }), lo mismo para los criterios que se firman como
+ * imposibles de probar en vivo: la constancia `ac-shown` de cada uno (lib/waiver-display.js) y un ok que los nombra.
  * `{ ok: true, entrada: { tipo, quien, delegacion?, cita, cita_cuando, via } }` o `{ ok: false, motivo, sinConversacion? }`.
  */
-function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico } = {}) {
+function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico, criterios } = {}) {
   const persona = noEsPersona(approvedBy);
   if (persona) return { ok: false, motivo: persona };
   // sin la hora de arranque de la corrida no se puede saber si la cita es vieja: no se aprueba (falla cerrado)
@@ -225,6 +227,23 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
   let juzgar;
   let anterior = 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía';
   const respuestaAlCritico = () => {
+    // Con `criterios` (los AC que se firman como imposibles de probar en vivo), el ok responde a la muestra de cada uno
+    if (criterios) {
+      const wd = require('./waiver-display.js');
+      for (const c of criterios.acs) {
+        const visto = wd.mostrado({ stateDir: criterios.stateDir, sessionId: criterios.sessionId, storyId: criterios.storyId, ac: c.ac, sha: c.sha });
+        if (visto && visto.error) return { ok: false, motivo: `no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró el AC ${c.ac}` };
+        if (!visto) {
+          const conv = pok.leerConversacion({ env, home });
+          if (!conv.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${conv.motivo})` };
+          return { ok: false, sinMuestra: true, motivo: `a la persona no se le mostró el AC ${c.ac}; el arnés se lo muestra al pedir la firma con este comando (o al escribir ${wd.PEDIDO}), y después hace falta su ok a ese criterio` };
+        }
+        if (Date.parse(visto.ts) > Date.parse(desde)) desde = visto.ts;
+      }
+      juzgar = wd.juez(criterios.acs.map((c) => c.ac));
+      anterior = 'el ok es de antes de que se le mostrara el criterio: hace falta su respuesta a la muestra';
+      return null;
+    }
     if (!critico) return null;
     const cd = require('./critical-display.js');
     const visto = cd.mostrado({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, file: critico.file, reason: critico.reason });
@@ -240,7 +259,10 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
     const ar = cd.archivosDeLaRegla({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, runDir: critico.runDir });
     if (ar.error) return { ok: false, motivo: `${ar.error}: no sé en cuántos archivos está abierta la regla` };
     juzgar = cd.juez({ rule: critico.rule, file: critico.file, archivos: ar.archivos, arnes: critico.arnes });
-    anterior = 'el ok es de antes de que se le mostrara este crítico: hace falta su respuesta a la muestra';
+    // dicho en llano: a qué hora lo mostró el arnés y qué pedir ahora (un ok anterior se descarta siempre)
+    const hora = new Date(visto.ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    anterior = `el ok es de antes de que se le mostrara este crítico: el arnés se lo mostró a las ${hora} y lo que contestó antes no cuenta. `
+      + `Pedile que conteste ahora a la muestra, por ejemplo «eximo ${String(critico.rule).trim()}»`;
     return null;
   };
   if (relayedBy !== null && relayedBy !== undefined) {

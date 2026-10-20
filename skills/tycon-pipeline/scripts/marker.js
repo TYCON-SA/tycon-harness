@@ -56,6 +56,8 @@
  *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
  *                                                  (recovery / admin); sin marker, lo dice y sale 1
  *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
+ *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
+ *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
@@ -1130,6 +1132,20 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('   la cubre la CI del pedido, y el merge exige la CI completa en verde. El motivo está en .advisors/tests-result.json.');
     }
 
+    // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────
+    // El portón no reconoce ninguna herramienta de pruebas en el repo (salida 3 de test-gate.sh) y no corrió nada. No es
+    // un rojo que el agente pueda arreglar; tampoco es verde: se dice en una línea, con cómo medirlo, y queda anotado.
+    if (testsCheck === 'sin-medir') {
+      appendLog('gates.log', {
+        name: 'tests-not-measured', status: 'accepted', story: marker.storyId || null,
+        reason: marker.testsNotMeasuredReason || 'el portón no reconoce ninguna herramienta de pruebas en el repo',
+      });
+      console.error(`⚠️  ${testsNotMeasuredLine(marker)}`);
+      console.error('   Para medirlas: declará el comando de pruebas del repo en el sitio de la organización, pestaña Configuración →');
+      console.error('   Tu tecnología → Cómo se corren las pruebas (stack.test_runners de team-repos.json). El detalle está en');
+      console.error('   .advisors/tests-result.json.');
+    }
+
     // ── Chequeo de MUTANTES (AVISA, NO FRENA — decisión del dev 2026-08-13) ─────────────────────
     // La suite en verde no prueba que los tests ejerzan el código nuevo; el chequeo lo rompe a
     // propósito y mira si algún test se pone rojo. El único caso que bloquea es exit 1 del chequeo
@@ -1774,6 +1790,38 @@ function cmdMarkTestsNotScoped(motivo) {
   writeMarker(marker);
   appendLog('gates.log', { sessionId: marker.sessionId || null, storyId: marker.storyId || null, check: 'tests',
     status: 'sin-acotar', provenance: 'test-gate', motivo: String(motivo || '').slice(0, 300) });
+}
+
+/**
+ * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
+ * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
+ * pie. No es verde ni un rojo para arreglar: complete-step 4 y el paso 8 lo anuncian (nunca un verde callado). Sólo lo
+ * llama test-gate.sh.
+ */
+/** La línea que dicen el paso 4 y el paso 8 cuando el check `tests` quedó «sin medir». */
+function testsNotMeasuredLine(marker) {
+  const r = String((marker && marker.testsNotMeasuredReason) || '');
+  const m = r.match(/no encontré (un proyecto de [^.]*?)(?:\. |$)/);
+  return `pruebas no medidas: el portón no sabe correr las pruebas de este repo${m ? ` (no encontré ${m[1]})` : ''}`;
+}
+
+function cmdMarkTestsNotMeasured(motivo) {
+  if (process.env.TYCON_TEST_GATE !== '1') {
+    console.error('marker.js mark-tests-not-measured: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) return;   // sin corrida activa no hay nada que marcar, como run-check
+  marker.checks = marker.checks || {};
+  marker.checks.tests = 'sin-medir';
+  marker.checksProvenance = marker.checksProvenance || {};
+  marker.checksProvenance.tests = 'test-gate';
+  marker.checksAt = marker.checksAt || {};
+  marker.checksAt.tests = nowIso();
+  marker.testsNotMeasuredReason = String(motivo || '').slice(0, 600);
+  writeMarker(marker);
+  appendLog('gates.log', { sessionId: marker.sessionId || null, storyId: marker.storyId || null, check: 'tests',
+    status: 'sin-medir', provenance: 'test-gate', motivo: String(motivo || '').slice(0, 300) });
 }
 
 function cmdSetCheck(name, status, flag) {
@@ -3076,6 +3124,55 @@ function sessionLiveness(sid) {
 
 // `adhoc clear-orphan <sid>`: el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
 // y el ad-hoc lleva más de STALE_HOURS sin tocarse; cada borrado y cada negativa quedan en adhoc.log.
+// `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
+// permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
+// `doing clear-orphan <sid>` borra la de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+function cmdDoing(sub, arg) {
+  const dir = path.join(STATE_DIR, 'doing');
+  const safe = (s) => String(s).replace(/[/\\]/g, '_');
+  if (sub === 'clear-orphan') {
+    if (!arg) { console.error('marker.js doing clear-orphan: falta el id de la sesión — uso: doing clear-orphan <sessionId>'); process.exit(2); }
+    const sid = safe(arg);
+    if (sid === safe(SID)) { console.error('marker.js doing clear-orphan: es la nota de esta sesión — se borra con `marker.js doing clear`'); process.exit(3); }
+    const file = path.join(dir, `${sid}.json`);
+    if (!fs.existsSync(file)) { console.error('marker.js doing clear-orphan: no hay nota de esa sesión: no se borró nada'); process.exit(1); }
+    const live = sessionLiveness(sid);
+    if (live.unknown) { console.error(`marker.js doing clear-orphan: no se borró — no pude verificar que la sesión no esté viva (${live.unknown})`); process.exit(3); }
+    if (live.alive) { console.error(`marker.js doing clear-orphan: no se borró — la sesión está viva (pid ${live.pid})`); process.exit(3); }
+    // como `adhoc clear-orphan`: una sesión sin archivo de sesión (Codex no lo escribe) parece muerta; 24 h sin tocarse
+    // es la segunda señal
+    let at = NaN;
+    try { at = Date.parse(JSON.parse(fs.readFileSync(file, 'utf8')).at); } catch (_e) { /* sin fecha legible: la del archivo */ }
+    if (!Number.isFinite(at)) { try { at = fs.statSync(file).mtimeMs; } catch (_e) { at = Date.now(); } }
+    if (Date.now() - at < STALE_HOURS * 3600 * 1000) {
+      const d = new Date(at + STALE_HOURS * 3600 * 1000);
+      console.error(`marker.js doing clear-orphan: no se borró — la nota tiene menos de ${STALE_HOURS} h; se podrá borrar después de las ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      process.exit(3);
+    }
+    try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    appendLog('doing.log', { kind: 'DOING_CLEAR_ORPHAN', sessionId: sid, by: SID });
+    process.stdout.write(`doing: borrada la nota de la sesión ${sid}\n`);
+    return;
+  }
+  if (!SID) { console.error('marker.js doing: no sé qué sesión es (falta CLAUDE_CODE_SESSION_ID)'); process.exit(2); }
+  const file = path.join(dir, `${safe(SID)}.json`);
+  if (sub === 'clear') {
+    try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    appendLog('doing.log', { kind: 'DOING_CLEAR' });
+    process.stdout.write('doing: borrada\n');
+    return;
+  }
+  const text = String(sub || '').replace(/\s+/g, ' ').trim();
+  if (text.length < 8 || text.length > 200) {
+    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
+    process.exit(2);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString() }));
+  appendLog('doing.log', { kind: 'DOING_SET', text });
+  process.stdout.write(`doing: ${text}\n`);
+}
+
 function cmdAdhocClearOrphan(sid) {
   if (!sid) {
     console.error('marker.js adhoc clear-orphan: falta el id de la sesión — uso: adhoc clear-orphan <sessionId>');
@@ -3309,6 +3406,18 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const { val } = opcionesDe(argv);
   const pedidos = [...new Set(String(val('--acs') || '').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0))];
   if (!pedidos.length) { console.error('marker.js runtime-waiver: con --approved-by hay que nombrar los criterios: --acs <n,m>.'); process.exit(2); }
+  // lo firma la persona que vio el criterio: el ok reenviado por otra sesión no vale acá
+  if (argv.includes('--relayed-by')) {
+    console.error('🚫 marker.js runtime-waiver: no se firmó — el ok para un criterio que no se puede probar en vivo no se acepta reenviado');
+    console.error('   por otra sesión: lo da la persona que lo vio, en esta conversación o en su terminal.');
+    process.exit(2);
+  }
+  const wd = require('./lib/waiver-display.js');
+  // sólo la historia de la corrida abierta: una copia en otra ruta mostraría a la persona otra cosa que la que se firma
+  if (!wd.esLaDelMarcador(storyPath, m)) {
+    console.error(`🚫 marker.js runtime-waiver: no se firmó — ${storyPath} no es la historia de la corrida abierta en esta sesión${m && m.storyPath ? ` (${m.storyPath})` : ''}.`);
+    process.exit(2);
+  }
   const matrix = rm.compute({ storyPath });
   if (matrix.structuralError) { console.error(`marker.js runtime-waiver: la matriz no computa (${matrix.structuralError}).`); process.exit(2); }
   const notRun = matrix.notRun || [];
@@ -3319,10 +3428,20 @@ function runtimeWaiverConOk(storyPath, argv, m) {
   const pend = new Set(matrix.notVerifiable || []);
   const ajenos = pedidos.filter((n) => !pend.has(n));
   if (ajenos.length) { console.error(`marker.js runtime-waiver: AC ${ajenos.join(', ')} no está(n) declarado(s) imposible(s) de probar en vivo y pendiente(s) de firma.`); process.exit(2); }
-  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), relayedBy: val('--relayed-by'), desde: m && m.startedAt });
+  const criterios = { storyId: String(matrix.sid), sessionId: SID, stateDir: STATE_DIR,
+    acs: pedidos.map((n) => ({ ac: n, sha: wd.huella(matrix.perAc[n].text, matrix.perAc[n].declReason, matrix.perAc[n].coveredBy) })) };
+  const r = cw.okDeUnaPersona({ approvedBy: val('--approved-by'), quote: val('--quote'), desde: m && m.startedAt, criterios });
   if (!r.ok) {
     console.error(`🚫 marker.js runtime-waiver: no se firmó — ${r.motivo}.`);
-    console.error('   El agente nunca firma por su cuenta. Mostrale al dev cada criterio con su razón y el test que lo cubre, y con su ok:');
+    if (r.sinMuestra) {
+      const runDir = m && m.storyId ? require('./pipeline.js').resolveRunDir((m && m.repoPath) || process.cwd(), String(m.storyId), true, storyPath) : null;
+      console.error('   Si no apareció en pantalla un bloque «Te piden firmar … que no se puede probar en vivo», escribí con Write');
+      console.error(`   (no por la terminal) ${runDir ? path.join(runDir, wd.PEDIDO) : wd.PEDIDO} con ${JSON.stringify({ acs: pedidos })}`);
+      console.error('   y el arnés se lo muestra. Después, la persona contesta nombrando el criterio; recién ahí, este comando con su cita.');
+      console.error(`   O que lo firme en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
+      process.exit(1);
+    }
+    console.error('   El agente nunca firma por su cuenta. El arnés le muestra al dev cada criterio; con su ok, que lo nombre:');
     console.error(`     node ${__filename} runtime-waiver ${storyPath} --acs ${pedidos.join(',')} --approved-by "<el dev>" --quote "<sus palabras, textuales>"`);
     console.error(`   O lo firma el dev en su terminal: node ${__filename} runtime-waiver ${storyPath}`);
     process.exit(1);
@@ -3599,17 +3718,16 @@ function cmdRuntimeWaiver(storyArg, argv = []) {
 
   // Freno físico ANTES de computar nada: si no hay terminal, ni arrancamos.
   if (!waiver.hasTty()) {
-    if (waiver.esWindows()) {
-      console.error('🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este mismo comando,');
-      console.error('   con la consola sin ningún otro proceso conectado. Corrido con la entrada redirigida, o desde la consola');
-      console.error('   del agente, no firma. Lo corre EL USUARIO, en su terminal:');
-      console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
-      process.exit(2);
-    }
-    console.error('🔒 marker.js runtime-waiver BLOQUEADO — requiere una terminal interactiva real (/dev/tty).');
-    console.error('   Este es el candado user-only: el agente corre sin terminal y NO puede ejecutarlo.');
-    console.error('   Lo corre EL USUARIO, en su terminal:');
-    console.error(`     node ${__filename} runtime-waiver ${storyPath}`);
+    // las dos vías, en llano: el agente no firma; firma la persona, en el chat o en su terminal
+    let version = 'desconocida';
+    try { version = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'version.json'), 'utf8')).version || version; } catch (_) { /* sin version.json: se dice desconocida */ }
+    console.error(waiver.esWindows()
+      ? '🔒 marker.js runtime-waiver BLOQUEADO — en Windows firma sólo la ventana NUEVA que abre este comando, sin otro proceso conectado: corrido desde el agente o con la entrada redirigida, no firma.'
+      : '🔒 marker.js runtime-waiver BLOQUEADO — acá no hay una terminal de una persona (/dev/tty): el agente no puede firmar.');
+    console.error('   Un criterio que no se puede probar en vivo lo firma una persona, de una de estas dos formas:');
+    console.error('   (a) En el chat: pedile al agente la firma de ese criterio; el arnés te lo muestra y vos contestás «firmo el AC N».');
+    console.error(`   (b) En tu terminal: node ${__filename} runtime-waiver ${storyPath}${waiver.esWindows() ? '  (en Windows abre una ventana para firmar)' : ''}`);
+    console.error(`   Versión del arnés: ${version}. Si no está al día (en Windows la firma por ventana llegó el 2026-10-15), actualizalo con /tycon-harness.`);
     process.exit(2);
   }
 
@@ -4035,6 +4153,9 @@ switch (cmd) {
   case 'mark-tests-not-scoped':
     cmdMarkTestsNotScoped(arg1);
     break;
+  case 'mark-tests-not-measured':
+    cmdMarkTestsNotMeasured(arg1);
+    break;
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
     break;
@@ -4076,6 +4197,9 @@ switch (cmd) {
     break;
   case 'adhoc':
     cmdAdhoc(arg1, arg2);
+    break;
+  case 'doing':
+    cmdDoing(arg1, arg2);
     break;
   case 'story-skill-bypass':
     cmdStorySkillBypass(arg1);

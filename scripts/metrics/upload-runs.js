@@ -693,7 +693,8 @@ function placeFactsForMailbox(day, folder = null) {
     if (e.code === 'ENOENT') return null;
     state = null;
   }
-  const out = { schema: 1, day, owner: correoDeGitGlobal({ home }) };
+  // el sistema de la máquina: para contar en el buzón las de Windows que quedan trabadas en una versión vieja
+  const out = { schema: 1, day, owner: correoDeGitGlobal({ home }), platform: process.platform };
   if (folder) out.folder = folder;
   let P;
   try { P = require('../setup/harness/place.js'); } catch (e) {

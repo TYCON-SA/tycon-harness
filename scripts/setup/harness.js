@@ -985,6 +985,24 @@ function installPlan(ctx, { pinned = null } = {}) {
  * @returns {{ code?: number, lines?: string[], profile?: string, profileVia?: string, writes: object[], over: object,
  *             head: string[], guided: boolean, eof: boolean, config?: object, order: string[] }}
  */
+/**
+ * Instala CodeGraph con el instalador del árbol (`install-codegraph.sh`, o `.ps1` en Windows), después del «¿Instalo?».
+ * Nunca frena la instalación del arnés: si falla, devuelve `{ ok: false, note }` con qué pasó y cómo reintentar.
+ * @returns {{ ok: boolean, note: string|null }}
+ */
+function codegraphInstall({ tree, env = process.env, platform = process.platform }) {
+  const win = platform === 'win32';
+  const script = path.join(tree, 'scripts', 'setup', win ? 'install-codegraph.ps1' : 'install-codegraph.sh');
+  // `--tool-only`: el CLI y el hook de arranque, sin indexar ninguna carpeta (el hook arma el índice de cada repo que se abre)
+  const retry = win ? `pwsh -File "${script}" -ToolOnly` : `bash "${script}" --tool-only`;
+  if (!fs.existsSync(script)) return { ok: false, note: `CodeGraph no se pudo instalar (no está ${script}); el arnés quedó instalado` };
+  const r = spawnSync(win ? 'pwsh' : 'bash', win ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-ToolOnly'] : [script, '--tool-only'],
+    { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10 * 60 * 1000, windowsHide: true });
+  if (r.status === 0) return { ok: true, note: 'CodeGraph: instalado (lo usa tu organización)' };
+  const why = r.error ? r.error.message : String(r.stderr || r.stdout || `salió con ${r.status}`).trim().split('\n').pop().slice(0, 200);
+  return { ok: false, note: `CodeGraph no se pudo instalar (${why}); el arnés quedó instalado — reintentá con: ${retry}` };
+}
+
 function installQuestions(ctx, tree, existing) {
   const out = { writes: [], over: {}, head: [], guided: false, eof: false, order: [] };
   const Q = mod('questions'), P = mod('prompt'), PR = mod('profile');
@@ -1098,6 +1116,12 @@ function installQuestions(ctx, tree, existing) {
   }
   out.head = Q.configLines(config, out.over, out.order);
   if (packsNote) out.head.push(packsNote);
+  // CodeGraph prendido por la organización y sin el binario: un renglón más del plan, cubierto por el mismo «¿Instalo?»
+  // (sin pregunta nueva). Lo instala `codegraphInstall` después del sí.
+  if (v.integraciones && v.integraciones.codegraph === true && o['integraciones.codegraph'] === 'perfil' && !findInPath('codegraph', ctx.env)) {
+    out.head.push('CodeGraph: tu organización lo usa — se instala (scripts/setup/install-codegraph); el índice lo arma esta máquina');
+    out.codegraphInstall = true;
+  }
   // cuando no se preguntaron las integraciones (el perfil lo fija la configuración, la instalación ya existe, `--yes`, sin
   // terminal), UNA línea al final con cómo cambiar el perfil y las integraciones (decisión del dueño, 2026-10-05)
   if (!out.asked) out.hint = Q.CHANGE_HINT;
@@ -1693,7 +1717,7 @@ function releaseHelpers(ctx) {
   const S = mod('state');
   return {
     takeSnapshot, finishSnapshot, runApplier, noteHooksPath, hooksPathUnattended, runHealth, recordPieces, ensureLink, linkResolvesTo, ensureImport, copyBootstrap,
-    settingsPath, policyOf, applyPolicy, installQuestions, writeAnswers, profileOf, machineProfile, holdText, availableText,
+    settingsPath, policyOf, applyPolicy, installQuestions, codegraphInstall, writeAnswers, profileOf, machineProfile, holdText, availableText,
     applyHint, REEVALUATED_NOTICE, engramOn, missingRequirement, profileSwitch, dropForProfile, profileSwitchNotes, toolChoice, withAnswers, toolNotice,
     harnessNodeNotice, packRetiredLine,
     engramSync: (c) => {
@@ -2136,15 +2160,20 @@ function cmdInstall(ctx) {
 
     const changed = pieces.length > 0 || JSON.stringify(existing) !== JSON.stringify(state);
     if (changed) S.write(ctx.home, state);
+    // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
+    // (con una fuente que no se pudo mirar la instalación sale 1, y el aviso queda)
+    if (!blind.length) mod('report').clearUpdateFailure(ctx.home);
     finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
     const head = `arnés ${existing && !pieces.length ? 'ya instalado' : 'instalado'} en modo ${state.mode} · ${tree}`;
     // lo demás quedó hecho, pero hay una fuente que no se pudo mirar: sale 1 (la nota de arriba dice cuál y por qué)
     const blindLine = blind.length ? `harness.js install: sale 1 — no pude mirar ${blind.length === 1 ? 'la fuente' : 'las fuentes'} ${blind.join(', ')}; corré install otra vez cuando se pueda mirar` : null;
     // --from-existing lo llama el aplicador sobre una instalación que ya está: su salida es la de siempre (AC 44 de la
     // 8.16: no cambia nada), los pasos que hizo el programa o «sin cambios»
+    // CodeGraph, si la organización lo prende y faltaba: lo cubrió el «¿Instalo?»; si falla, el arnés sigue y lo dice
+    const cgLine = asked.codegraphInstall ? codegraphInstall({ tree, env: ctx.env }).note : null;
     if (!applied) {
       const steps = pieces.length ? `piezas escritas: ${pieces.join(', ')}` : 'sin cambios: ya estaba instalado así';
-      const lines = [head, `versión: ${state.version.number}`, `canal: ${state.channel} · aplicación: ${policy.apply}`, steps, ...notes];
+      const lines = [head, `versión: ${state.version.number}`, `canal: ${state.channel} · aplicación: ${policy.apply}`, steps, ...notes, ...(cgLine ? [cgLine] : [])];
       return blindLine ? { code: 1, lines: [...lines, blindLine] } : { code: 0, lines };
     }
     // el cierre (story 8.16, AC 8): qué quedó, contado desde el reporte del aplicador y las piezas que hizo el programa;
@@ -2161,8 +2190,8 @@ function cmdInstall(ctx) {
       thirdParty: ctx.env.TYCON_NO_AUTOINSTALL === '1' ? null : (ctx.env.TYCON_THIRD_PARTY === '0' ? 'off' : thirdPartyDeclared(tree)),
       warnings: applied.warnings, backup: snap && snap.dir, log: S.paths(ctx.home).log,
     });
-    if (blindLine) return { code: 1, lines: [head, ...summary, blindLine] };
-    return { code: 0, lines: [head, ...summary] };
+    if (blindLine) return { code: 1, lines: [head, ...summary, ...(cgLine ? [cgLine] : []), blindLine] };
+    return { code: 0, lines: [head, ...summary, ...(cgLine ? [cgLine] : [])] };
   }, { env: ctx.env, onBusy: busy });
 }
 
@@ -3901,6 +3930,11 @@ function doctorConfigItems(ctx, tree, state, prof, add, extra) {
         extra.integrations[k] = { state: e.estado, origin: e.origen };
       }
       if (config.valores.packs) extra.packs = { value: config.valores.packs.default, origin: config.origenes['packs.default'] };
+      // CodeGraph prendido (por la organización o la máquina) y sin el binario: aviso con cómo instalarlo; no frena
+      if (config.valores.integraciones && config.valores.integraciones.codegraph === true && !findInPath('codegraph', ctx.env)) {
+        const quien = config.origenes['integraciones.codegraph'] === 'perfil' ? 'tu organización usa' : 'esta máquina tiene prendido';
+        add('warn', `CodeGraph: ${quien} CodeGraph y esta máquina no lo tiene — instalalo con bash ~/.claude/${PLACE.PLACE_NAME}/scripts/setup/install-codegraph.sh --tool-only (en Windows: pwsh -File ~\\.claude\\${PLACE.PLACE_NAME}\\scripts\\setup\\install-codegraph.ps1 -ToolOnly)`);
+      }
     }
   } catch (e) { add('warn', `integraciones y paquete: no pude leer la configuración (${(e && e.message) || e})`); }
   // el perfil de una persona sola, en un repo de esta máquina: amarillo, nunca rojo, y no frena nada
@@ -4861,4 +4895,4 @@ if (require.main === module) {
   process.exitCode = main(process.argv.slice(2));
 }
 
-module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore };
+module.exports = { COMMANDS, NODE_FLOOR, TREE, parse, usage, main, requirementsFor, requirementChecks, findInPath, installPlan, fixedCopyFiles, managedBefore, installQuestions, codegraphInstall, doctorConfigItems };

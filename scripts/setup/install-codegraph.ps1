@@ -29,7 +29,9 @@ param(
     [Parameter(Position = 0)] [string] $Target = "",
     [switch] $Container,
     [switch] $Repo,
-    [switch] $NoAuto
+    [switch] $NoAuto,
+    # el CLI y el hook, sin indexar ni registrar ninguna carpeta (lo usa el instalador del arnés)
+    [switch] $ToolOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -115,6 +117,9 @@ function Test-Project {
 }
 
 # ---- 3. resolver modo + lista de repos ----
+$Repos = @()
+$RegDir = "(el repo que abras: el hook arma su indice)"
+if (-not $ToolOnly) {
 if ($Mode -eq "auto") {
     if (Test-Project $Target) { $Mode = "repo" } else { $Mode = "container" }
     Write-Host "   modo autodetectado: $Mode"
@@ -212,6 +217,7 @@ foreach ($repoPath in $Repos) {
     }
 }
 Write-Host ""
+}   # -ToolOnly: sin repos que indexar ni registrar
 
 # ---- 6. instalar el hook SessionStart (auto-setup de futuros repos) ----
 if (-not $NoAuto) {

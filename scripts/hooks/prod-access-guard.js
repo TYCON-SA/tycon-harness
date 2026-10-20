@@ -283,6 +283,7 @@ function decidir(entrada) {
     process.exit(0);
   }
   const esCodex = !!payload.turn_id && !payload.session_id_claude;   // precedente: on-skill-invoke.js
+  carpetaDelComando = typeof payload.cwd === 'string' && require('path').isAbsolute(payload.cwd) ? payload.cwd : null;
 
   const nombraBases = CRUDO.test(cmd);
   if (cmd.length > MAX_CMD) {
@@ -302,14 +303,16 @@ function decidir(entrada) {
   // contraseña de producción del Llavero sin que nada frenara (revisores del Step 5, 2026-09-15).
   const escondidos = textosEscondidos(cmd, partes, tokens, PREFIJOS, vars, expandir);
   const textos = [{ texto: cmd, partes, shell: true },
-    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell }))];
+    ...escondidos.map((t) => ({ texto: t.texto, partes: segmentos(t.texto), shell: t.shell, contenido: t.contenido }))];
+  // lo que se juzga como algo que corre: el contenido de un archivo que el comando no ejecuta queda afuera
+  const ejecutados = textos.filter((x) => !x.contenido);
   let analizado = false;
 
   // ── 1. el Llavero (AC 10) ───────────────────────────────────────────────────────────────────
   // Se busca `security` en CUALQUIER posición del segmento, no sólo como primer token: con
   // `nice -n 5 security …`, `sudo -u x security …` o `\security …` el programa quedaba escondido y
   // la regla no se aplicaba (pase adversarial 2026-09-15).
-  for (const { texto } of textos.flatMap((x) => x.partes)) {
+  for (const { texto } of ejecutados.flatMap((x) => x.partes)) {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     for (const i of dondeEsta(t, new Set(['security']))) {
       analizado = true;
@@ -392,7 +395,7 @@ function decidir(entrada) {
   }
 
   // ── 4. servidores nombrados por cualquiera de los gatillos (AC 6, 7, 8) ─────────────────────
-  const candidatos = textos.flatMap((x) => servidoresNombrados(x.partes, tokens, PREFIJOS, vars, expandir));
+  const candidatos = ejecutados.flatMap((x) => servidoresNombrados(x.partes, tokens, PREFIJOS, vars, expandir));
   let clasificados = false;   // ¿se llegó a clasificar algún servidor? (story 2.6)
   const nombrados = candidatos.filter((c) => !c.benigno);
   if (candidatos.length) analizado = true;            // lo benigno también es análisis: se miró y no es un servidor
@@ -525,20 +528,27 @@ function textosEscondidos(cmd, partes, tokens, PREFIJOS, vars = {}, expandir = n
   // contenido del archivo. Lo decide `heredocAlimentaShell` (2026-09-16); el destino de esa
   // redirección lo juzga `escrituraProtegida` sobre la línea del `<<`, que `sinHeredocs` conserva.
   let opaco = false;
-  const agregar = (t, shell) => {
+  // `contenido`: el texto sólo se guarda en un archivo que este comando no ejecuta (`heredocSoloAArchivo`); no se lee
+  // buscando servidores ni el Llavero
+  const agregar = (t, shell, contenido = false) => {
     if (t === null || t === undefined) { opaco = true; return; }
     const v = String(t);
     if (!v.trim()) return;
     if (v.length > MAX_ESCONDIDO) { opaco = true; return; }
     // el mismo texto que vuelve como shell sube la marca: un heredoc a un archivo con el mismo texto que un `bash -c`
-    // posterior dejaba al `bash -c` como «contenido» (pase adversarial de la 8.14 A, #42)
+    // posterior dejaba al `bash -c` como «contenido» (pase adversarial de la 8.14 A, #42); por la misma razón, un texto
+    // que llega también por otra vía deja de ser contenido
     const previo = out.find((x) => x.texto === v);
-    if (previo) { if (shell) previo.shell = true; } else out.push({ texto: v, shell: !!shell });
+    if (previo) { if (shell) previo.shell = true; if (!contenido) previo.contenido = false; }
+    else out.push({ texto: v, shell: !!shell, contenido });
   };
 
   // (a) cuerpos de heredoc: `bash <<EOF … EOF` — `sinHeredocs` los borra del análisis normal
   const heredoc = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/g;
-  let h; while ((h = heredoc.exec(cmd))) agregar(h[3], heredocAlimentaShell(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir));
+  let h; while ((h = heredoc.exec(cmd))) {
+    const shell = heredocAlimentaShell(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir);
+    agregar(h[3], shell, !shell && heredocSoloAArchivo(cmd, h.index, partes, tokens, PREFIJOS, vars, expandir));
+  }
 
   for (const { texto } of partes) {
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
@@ -673,6 +683,110 @@ function heredocAlimentaShell(cmd, indice, partes, tokens, PREFIJOS, vars, expan
     const t = tokensDeSegmento(texto, tokens, PREFIJOS);
     return t.length > 0 && (SHELL_DE_ARCHIVO.has(basename(t[0])) || /^\.?\//.test(t[0]));
   })) || (ejecutaOpaco && rutasDestino.some((r) => r !== null));  // un lado sin resolver y el otro con algo: duda
+}
+
+/**
+ * ¿El cuerpo del heredoc que empieza en `indice` es SÓLO el contenido de un archivo que este comando no ejecuta?
+ *
+ * Se decide por LISTA CERRADA, no por «nadie lo corre»: verdadero sólo si
+ *   - TODOS los tramos del comando corren un programa inofensivo (`INOFENSIVOS`), sin prefijos (`sudo`, `env`) ni
+ *     asignaciones (`PATH=…` cambia qué corre después), y sin `$(…)`, comillas invertidas, `<(…)`/`>(…)`, paréntesis
+ *     ni llaves fuera de los cuerpos (un `python3 > out <<EOF` queda afuera: python no está en la lista);
+ *   - cada destino que escribe cualquier tramo (`>`, `>|`, `&>` y los argumentos de `tee`, leídos por el parser del
+ *     shell) es un archivo con nombre literal, sin comodines, sin anexar, bajo la carpeta personal o una temporal por su
+ *     ruta real, fuera de `~/Library` y sin carpetas ocultas (`~/.zshrc`, `.git/hooks/`); no se llama como un guion que
+ *     otro corre (`Makefile`, `package.json`, `*.sh`…, exista o no) y, si ya existe, no es un enlace ni tiene permiso de
+ *     ejecución. Un error del sistema de archivos que no sea «no existe», o un destino relativo sin la carpeta del
+ *     evento, cuenta como duda.
+ * Medido con la primera versión, que liberaba el cuerpo si «ningún tramo corre el archivo»: 68 caminos de ejecución
+ * pasaban (`bash -c 'bash x'`, `sh < x`, `cat x | sh`, `xargs`, `tee >(sh)`, `PATH=.:$PATH x`, `cat >> ~/.bashrc`,
+ * un `node -e` que carga el archivo, `make`…). Con la lista, cualquier otro programa vuelve a juzgar el cuerpo como siempre.
+ * Ese contenido no se lee buscando servidores ni el Llavero: `const server = …` en un archivo de código cumplía la cadena
+ * de conexión `Server=` y frenaba. Ante cualquier duda, falso.
+ * @returns {boolean}
+ */
+// la carpeta en que corre el comando (la del evento): contra ella se resuelve un destino relativo
+let carpetaDelComando = null;
+// sin `chmod`: volvería ejecutable lo que se acaba de escribir
+const INOFENSIVOS = new Set(['cat', 'tee', 'mkdir', 'touch', 'echo', 'printf', 'ls', 'true']);
+function heredocSoloAArchivo(cmd, indice, partes, tokens, PREFIJOS, vars, expandir) {
+  const path = require('path');
+  const os = require('os');
+  const fs = require('fs');
+  const { parseSimpleCommand, sinHeredocs } = require(path.join(__dirname, '..', 'lib', 'shell-parse.js'));
+  if (/\$\(|`|[<>]\(|[(){}]/.test(sinHeredocs(cmd))) return false;
+  // Con el delimitador sin comillas (`<<EOF`) el shell expande el cuerpo: un `$(…)` o una comilla invertida adentro SE
+  // EJECUTA. Sólo se libera un cuerpo con delimitador entre comillas, o sin `$` ni comillas invertidas.
+  // El delimitador, sólo en sus formas simples (`EOF`, `'EOF'`, `"EOF"`): con `<<\EOF` o `<<E"OF"` el shell cierra en
+  // `EOF` y lo que sigue se ejecuta, pero acá se leería como parte del cuerpo
+  if (!/^<<-?\s*(?:[A-Za-z0-9_.-]+|'[A-Za-z0-9_.-]+'|"[A-Za-z0-9_.-]+")(?=[\s;&|<>]|$)/.test(cmd.slice(indice))) return false;
+  const este = /<<-?\s*(['"]?)([^\s'"<>|&;]+)\1[^\n]*\n([\s\S]*?)\n[ \t]*\2[ \t]*(?=\n|$)/y;
+  este.lastIndex = indice;
+  const h = este.exec(cmd);
+  if (!h || (!h[1] && /[$`]/.test(h[3]))) return false;
+  // Todos los tramos, no sólo la línea del `<<`: un `echo … > ~/.zshrc` al lado también escribe. Las redirecciones las
+  // lee el parser del shell (`>&archivo` y `a>archivo` también escriben; una regex con espacio delante no las veía).
+  const destinos = [];
+  for (const { texto } of partes) {
+    const pp = parseSimpleCommand(texto);
+    // una asignación sola cambia qué corre después (`PATH=/tmp/b:$PATH; ls` con `/tmp/b/ls` recién escrito): afuera
+    if (!pp.words.length || pp.assignments.length) return false;
+    const t = tokens(texto.trim());
+    if (!t.length || !INOFENSIVOS.has(t[0])) return false;        // sin ruta ni prefijo: `cat`, no `/x/cat` ni `sudo cat`
+    for (const r of pp.redirections) {
+      if (r.dup && /^\d+$/.test(String(r.target))) continue;       // `2>&1`: no es un archivo
+      if (!r.write) continue;                                      // `< x`: lee, no escribe
+      if (r.dup || !['>', '>|', '&>'].includes(r.op)) return false; // anexar (`>>`) u otra forma que no leo
+      destinos.push(sinComillas(String(r.target)));
+    }
+    if (t[0] === 'tee') {
+      const args = pp.words.slice(1).filter((w) => w !== '__HEREDOC__');
+      if (args.some((a) => /^-/.test(a))) return false;            // `tee -a` y banderas que no sé leer
+      destinos.push(...args.map(sinComillas));
+    }
+  }
+  const casa = os.homedir();
+  const raices = [casa, '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'];
+  // Cada error que no sea «no existe» vuelve null (= se juzga el cuerpo): un permiso negado o un enlace en bucle no son
+  // «una ruta normal». Una carpeta que todavía no existe se juzga por su antecesor más cercano que sí, por su ruta real.
+  const real = (p) => {
+    const resto = [];
+    for (let actual = p; ; actual = path.dirname(actual)) {
+      try { return path.join(fs.realpathSync(actual), ...resto.reverse()); } catch (e) {
+        if (e.code !== 'ENOENT' || actual === path.dirname(actual)) return null;
+        try { fs.lstatSync(actual); return null; } catch { /* no existe ni como enlace: se sube */ }   // un enlace roto
+        resto.push(path.basename(actual));
+      }
+    }
+  };
+  const resolver = (x) => {
+    const r = NO_LITERAL.test(x) ? (expandir ? expandir(x, vars) : null) : x;
+    if (r === null || NO_LITERAL.test(r) || /[*?[\]{}\\]/.test(r)) return null;
+    if (/^~(?!\/|$)/.test(r)) return null;                           // `~otro/x`: la carpeta de otro usuario
+    if (!path.isAbsolute(r) && !/^~/.test(r) && !carpetaDelComando) return null;   // relativa sin la carpeta del evento
+    const abs = path.resolve(carpetaDelComando || '/', r.replace(/^~(?=\/|$)/, casa));
+    if (abs === '/dev/null') return abs;
+    // un guion que otro corre (`make`, `npm`, `bash x.sh`, en este comando o en el siguiente) no es contenido, exista o no
+    // sin mayúsculas: el disco de la Mac no las distingue, y `make` encuentra un `MAKEFILE`
+    if (/^(?:makefile|gnumakefile|package\.json|dockerfile|.*\.(?:sh|bash|zsh|command))$/i.test(path.basename(abs))) return null;
+    // el archivo, si ya existe, no puede ser un enlace ni tener permiso de ejecución
+    let st = null;
+    try { st = fs.lstatSync(abs); } catch (e) { if (e.code !== 'ENOENT') return null; }
+    if (st && (st.isSymbolicLink() || !st.isFile() || (st.mode & 0o111))) return null;
+    // la carpeta, por su ruta real: un enlace a `~/.git/hooks` no cuenta como `/tmp`
+    const dir = real(path.dirname(abs));
+    return dir === null ? null : path.join(dir, path.basename(abs));
+  };
+  const casaReal = real(casa) || casa;
+  // `/dev/null` no es un destino: sin otro, el cuerpo no va a ningún archivo y no hay nada que liberar
+  const rutas = destinos.map(resolver).filter((r) => r !== '/dev/null');
+  if (!rutas.length) return false;
+  // comparado en minúsculas: `~/library/LaunchAgents` es `~/Library/LaunchAgents` en el disco de la Mac
+  const bajo = (r, raiz) => r.toLowerCase().startsWith(raiz.toLowerCase() + path.sep);
+  return rutas.every((r) => r !== null
+    && [...raices, casaReal].some((raiz) => bajo(r, raiz))
+    && !bajo(r, path.join(casa, 'Library')) && !bajo(r, path.join(casaReal, 'Library'))
+    && !r.split(path.sep).some((parte) => parte.startsWith('.')));
 }
 
 /** Índices de los tokens cuyo basename (des-escapado) es alguno de `nombres`, en CUALQUIER posición. */

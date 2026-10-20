@@ -481,7 +481,8 @@ test('T17 ComoTrabaja_DosOrganizaciones @story-2.61 @ac-15 — cada organizació
   try {
     const mA = HIW().buildModel({ treeDir: ROOT, profileDir: A });
     const mB = HIW().buildModel({ treeDir: ROOT, profileDir: B });
-    const delLector = (dir) => TC.integraciones(TC.cargar({ env: { TYCON_PROFILE: path.join(dir, 'team-profile.json') }, home: tmp('hiw-home-') }));
+    // las del lector, sin Telegram: es de cada máquina, no de la organización
+    const delLector = (dir) => { const i = TC.integraciones(TC.cargar({ env: { TYCON_PROFILE: path.join(dir, 'team-profile.json') }, home: tmp('hiw-home-') })); delete i.telegram; return i; };
     assert.deepStrictEqual(mA.org.integrations, delLector(A));
     assert.deepStrictEqual(mB.org.integrations, delLector(B));
     const SC = require(path.join(SCRIPTS, 'lib', 'stack-config.js'));

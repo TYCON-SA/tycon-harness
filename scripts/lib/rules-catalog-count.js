@@ -34,9 +34,9 @@ const CLIENT_PACK = path.join('packs', 'clients', 'pack.json');
 // 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del equipo
 // eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
 const EXPECTED = {
-  filas: 352,
-  reglas: 351,
-  identificadores: 349,
+  filas: 354,
+  reglas: 353,
+  identificadores: 351,
   i18n: 7,
   sinVerificacion: 8,
   retiradas: ['ACCOV-C9', 'REAL-C5', 'REAL-W5', 'SPEC-W8'],

@@ -1558,6 +1558,8 @@ function cmdInstall(ctx, H) {
     // 7. la copia fija de arranque, y —sólo con Claude Code— su línea de arranque y el @import (en Codex el arranque es
     // su hook, que corre esta misma copia fija, y las reglas van en AGENTS.md: los pone el enchufe de Codex)
     if (H.copyBootstrap(ctx, tree, state, { version: target.version })) pieces.push('bootstrap');
+    // CodeGraph, si la organización lo prende y faltaba: lo cubrió el «¿Instalo?»; si falla, el arnés sigue y lo dice
+    if (asked.codegraphInstall) { const cg = H.codegraphInstall({ tree, env: ctx.env }); if (cg.note) notes.push(cg.note); }
     if (withClaude) {
       const SL = require('./startup-line.js');
       const n = SL.checkNode({ env: ctx.env });
@@ -1624,6 +1626,8 @@ function cmdInstall(ctx, H) {
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
     H.finishSnapshot(ctx, snap, log);
+    // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
+    R.clearUpdateFailure(ctx.home);
     // las carpetas que Claude Code lee sin preguntar, con la misma línea que el resumen de la instalación desde un clon
     const readLine = R.readFoldersLine(require('./shared.js').union(a.report, a.shared));
     const readLines = readLine ? [readLine] : [];

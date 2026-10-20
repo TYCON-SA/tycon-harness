@@ -893,7 +893,9 @@ const GUIDED_INSTALL_KEYWORDS = [
   keywordPoint('AC 10 · Windows, en los requisitos', IN_REQUIREMENTS, { both: ['PowerShell 7', 'WSL'], en: [WINDOWS_PHRASE.requirements.en], es: [WINDOWS_PHRASE.requirements.es] }),
   keywordPoint('AC 10 · Windows, junto al bloque de PowerShell', IN_INSTALL, { both: ['PowerShell 7'], en: [WINDOWS_PHRASE.install.en], es: [WINDOWS_PHRASE.install.es] }),
 ];
-const FIRST_USE_MAX_LINES = 8;
+// los seis pasos de la primera historia, su presentación y «si algo no anda», más dos pasos opcionales de la serie de
+// videos: la historia con pantalla y las reglas propias
+const FIRST_USE_MAX_LINES = 10;
 
 /** Lo que una portada dice de más: la promesa vieja de `uninstall`, «Primer uso» largo, o Windows sin WSL. */
 function guidedLeftovers(text, lang) {

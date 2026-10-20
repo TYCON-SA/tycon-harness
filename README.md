@@ -25,16 +25,40 @@ AI software development life cycle (AI SDLC), step by step:
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
 
+**See how it works.**
+
+Five short videos, one to two minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
+
+**0. What it is and what you get**
+
+https://github.com/user-attachments/assets/7a578d6b-d16c-4919-acf8-7a1f235d0c5b
+
+**1. Installing it**
+
+https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9
+
+**2. Your first story**
+
+https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a
+
+**3. A story with a screen**
+
+https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
+
+**4. Your project's rules**
+
+https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+
 ## Start on your own
 
 **It works today for .NET, JavaScript, TypeScript, Python, Go and Java**: out of the box the test step runs .NET,
-Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle and Karma. With another tool, that step does not recognize
+Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma and Playwright. With another tool, that step does not recognize
 your tests yet until your team declares it in its configuration ("Your technology", on the site).
 
 Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
 is in [What you need](#what-you-need).
 
-For your agent to follow the cycle, install the harness on your machine. Open the terminal (on Windows, PowerShell 7)
+For your agent to follow the cycle, install the harness on your machine ([▶ video](https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9)). Open the terminal (on Windows, PowerShell 7)
 and type:
 
 ```bash
@@ -57,14 +81,16 @@ The full install adds the guards in the repos that work with the harness and cha
 
 ## Your first story
 
-A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes.
+A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes. · [▶ video](https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a)
 
 1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
 3. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 4. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
-5. **Ask "implementemos la story" (let's implement the story) with the file path**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story it shows you the plan and approves it on its own; in the others, you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it. If the story touches screens, it also builds a mockup for you to approve, tests it in a browser if your repo already has those tests, and leaves a guide for testing it by hand.
+5. **Ask "implementemos la story" (let's implement the story)**, to start the run: the phrase stays in Spanish. If there is no git, it initializes it; if you are on `main`, it creates the branch. It validates the story and, if something is missing, asks whether to fix it. In a small story it shows you the plan and approves it on its own; in the others, you approve it. Then it writes the tests and the code, runs the tests and the reviewers, and checks each criterion by running it.
 6. **Read the summary and say "commit it".** It leaves the message ready and never commits or pushes without your permission. When the first story closes, it offers you the full install.
+7. **A story with a screen.** The agent builds a mockup for you to approve before any code; if your repo has no way to test in a browser, it offers to set it up; and it leaves a guide for testing it by hand. · [▶ video](https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550)
+8. **Your project's own rules.** Ask your agent for a reviewer that checks a rule of yours (for example, "a customer's email is never shown in full"): it lives in your rules repo and reviews every story along with the harness's own. · [▶ video](https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f)
 
 If something doesn't work, `/tycon-harness` (in Claude Code) or `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` says what is missing, without changing anything.
 

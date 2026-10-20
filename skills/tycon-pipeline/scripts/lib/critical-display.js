@@ -145,6 +145,11 @@ function juez({ rule, file, archivos = [], arnes }) {
   const comoNombrar = varios && archivos.filter((a) => path.basename(a) === base).length > 1 ? archivo : base;
   const codigosDe = (s) => [...String(s).matchAll(RE_CODIGO)].map((m) => m[1].toUpperCase());
   const nombraEsta = (s) => codigosDe(s).includes(r) || (!!llano && norm(s).includes(norm(llano)));
+  const RE_EXIM = /(?<![\p{L}\p{N}])exim\p{L}*|exenci[oó]n/iu;
+  // un freno sin «no» («Esperá.», «Pará.», «Frená») también se echa atrás
+  const RE_FRENO = /(?<![\p{L}\p{N}])(?:esper[aá]|par[aá]|fren[aá]|aguant[aá])(?![\p{L}\p{N}])/iu;
+  // lo que enseñan los rechazos: el mensaje del ok trae sólo el ok; una aclaración va en otro mensaje
+  const SOLO = `contestá sólo «eximo ${r}»${llano ? ` (o «eximo ${llano}»)` : ''}, con su motivo si querés; cualquier otra cosa, en otro mensaje`;
   const juzgar = (texto) => {
     const t = String(texto || '');
     const codigos = codigosDe(t);
@@ -153,24 +158,34 @@ function juez({ rule, file, archivos = [], arnes }) {
     if (!codigos.includes(r) && otros.length) return `el ok nombra ${otros.join(', ')}, no ${r}`;
     if (!nombraEsta(t)) return `el ok no nombra este crítico (${nombre}): un ok genérico no exime`;
     // El ok tiene que DECIR que lo exime, sin vueltas: leer bien todas las formas de negar en texto libre no cierra, así
-    // que ante la duda no exime. Cualquier negación en el mensaje lo descarta; una pregunta no cuenta; el nombre y el
-    // «exim…» van en la misma parte de la frase. El bloque enseña qué escribir («eximo R»): un rechazo de más se arregla
-    // contestando de nuevo; un ok de más eximiría lo que la persona no aprobó.
-    if (RE_NIEGA_ALGO.test(t)) return `el ok trae una negación («no», «nunca», «sin eximir»…): no exime. Para eximirlo, una frase sin negaciones: «eximo ${r}»${llano ? ` o «eximo ${llano}»` : ''}`;
-    if (RE_EXCEPCION.test(t)) return `el ok pone una excepción o una condición («menos», «salvo», «cuando», «hasta que»…): no exime. Para eximirlo, sin condiciones: «eximo ${r}»${llano ? ` o «eximo ${llano}»` : ''}`;
-    if (RE_CONDICION.test(t)) return `el ok pone una condición («si …»): no exime. Para eximirlo, sin condiciones: «eximo ${r}»${llano ? ` o «eximo ${llano}»` : ''}`;
+    // que ante la duda no exime. Cualquier negación, freno, excepción o condición en el mensaje lo descarta, aunque esté
+    // en una aclaración de otra cosa: juzgar sólo la oración que exime dejaba pasar formas de echarse atrás sin nombrar el
+    // crítico, y una aclaración con su propio «no» tiene la misma forma que una retractación. Un rechazo de más se arregla
+    // contestando de nuevo (el motivo dice cómo); un ok de más eximiría lo que la persona no aprobó.
+    if (RE_NIEGA_ALGO.test(t)) return `el ok trae una negación («no», «nunca», «sin eximir»…): no exime. Para eximirlo, ${SOLO}`;
+    if (RE_FRENO.test(t)) return `el ok pide esperar («esperá», «pará»…): no exime. Para eximirlo, ${SOLO}`;
+    if (RE_EXCEPCION.test(t)) return `el ok pone una excepción o una condición («menos», «salvo», «cuando», «hasta que»…): no exime. Para eximirlo, ${SOLO}`;
+    if (RE_CONDICION.test(t)) return `el ok pone una condición («si …»): no exime. Para eximirlo, ${SOLO}`;
     // una parte de la frase arranca con «exim… <regla o nombre en llano>»: así el crítico es lo que se exime, y no
     // «eximo todo menos TEST-C1» ni «eximo TEST-C2 y mantengo TEST-C1». Lo que sigue puede ser una explicación: una
     // negación, una excepción o una condición ya descartaron el ok más arriba.
     const objetos = [r, ...(llano ? [llano] : [])].map((x) => escRe(norm(x)));
-    const RE_FORMA = new RegExp(`^(?:ok|dale|s[ií]|listo)?\\s*(?:yo\\s+)?(?:exim[oíe]|exim[ií]lo|exim[ií]la|eximimos|exim[ií]los)\\s+(?:el\\s+|la\\s+)?(?:cr[ií]tico\\s+)?(?:${objetos.join('|')})(?![\\p{L}\\p{N}-])(?:\\s.*)?$`, 'iu');
+    // «apruebo eximir R» es una aprobación igual de clara que «eximo R», con las mismas reglas
+    const RE_FORMA = new RegExp(`^(?:ok|dale|s[ií]|listo)?\\s*(?:yo\\s+)?(?:exim[oíe]|exim[ií]lo|exim[ií]la|eximimos|exim[ií]los|apruebo\\s+(?:que\\s+se\\s+)?exim(?:ir|a)|apruebo\\s+la\\s+exenci[oó]n\\s+de)\\s+(?:el\\s+|la\\s+)?(?:cr[ií]tico\\s+)?(?:${objetos.join('|')})(?![\\p{L}\\p{N}-])(?:\\s.*)?$`, 'iu');
     const afirma = partes(t).some((p) => !p.pregunta && RE_FORMA.test(norm(p.texto.replace(/[.:!;]+\s*$/, ''))));
     if (!afirma) return `el ok nombra ${r} pero no dice que lo exime: tiene que decirlo («eximo ${r}»${llano ? ` o «eximo ${llano}»` : ''}), sin preguntar`;
     if (varios && comoNombrar && !nombraEntero(t, comoNombrar)) return `${r} está abierta en ${archivos.length} archivos: el ok tiene que nombrar ${comoNombrar}`;
     return null;
   };
-  // ¿este mensaje se echa atrás de eximir ESTE crítico? (lo nombra y trae una negación, una excepción o una condición)
-  juzgar.retracta = (texto) => nombraEsta(String(texto || '')) && (RE_NIEGA_ALGO.test(texto) || RE_EXCEPCION.test(texto) || RE_CONDICION.test(texto));
+  // ¿un mensaje POSTERIOR al ok se echa atrás? Sí, si trae una negación, un freno, una excepción o una condición y además
+  // nombra este crítico o habla de eximir, o es corto (hasta tres palabras: «No.», «Mejor no.», «Esperá.»). Una aclaración
+  // de otra cosa en su propio mensaje («Sobre la Mac: no hay otro ensayo.») no tumba el ok: es lo que enseña el rechazo.
+  juzgar.retracta = (texto) => {
+    const t = String(texto || '');
+    if (!(RE_NIEGA_ALGO.test(t) || RE_FRENO.test(t) || RE_EXCEPCION.test(t) || RE_CONDICION.test(t))) return false;
+    const corto = t.split(/[\s,.;:!?¿¡]+/).filter(Boolean).length <= 3;
+    return nombraEsta(t) || RE_EXIM.test(t) || corto;
+  };
   return juzgar;
 }
 
@@ -188,6 +203,7 @@ function bloque({ storyId, rule, file, reason, summary, archivos = [], arnes }) 
     `  Por qué lo quieren eximir: ${reason}`,
     'Un crítico eximido va al commit sin arreglar.',
     `Si estás de acuerdo, contestá ${formas}${archivos.length > 1 && base ? `, nombrando el archivo (${base})` : ''}. Un «dale» o un «apruebo» suelto no lo exime.`,
+    'Contestá sólo eso, con su motivo si querés; cualquier otra cosa, en otro mensaje.',
   ].join('\n');
 }
 

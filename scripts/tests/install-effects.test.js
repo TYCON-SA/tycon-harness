@@ -425,8 +425,9 @@ const MINIMAL_HOOKS = [
   'UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js', 'PostToolUse:tycon-pipeline/scripts/hook-post-edit.js',
   'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:tycon-pipeline/scripts/on-advisor-run.js',
   'SessionStart:@tcg:harness-bootstrap-heal.sh', 'SessionStart:@tcg:branch-guard-notice.js',
-  // el freno de comandos destructivos está en los dos perfiles (decisión del dueño, 2026-10-05)
-  'PreToolUse:@tcg:safety-guard-pre.sh',
+  // el freno de comandos destructivos y el portón de edición están en los dos perfiles (decisiones del dueño): sin el
+  // portón, en la mínima el agente implementa una historia sin recorrido y nadie se entera
+  'PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js',
 ];
 /** Las filas de «Los hooks que instala»: `{ hook, event, profile }` (la columna «Perfil» tal cual), o null sin la columna. */
 function installTableRows(text) {
@@ -462,7 +463,7 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
   // las reglas de lo que queda sólo en full
   for (const e of eff.effects) {
     const integ = /^integration:/.test(e.when);
-    const bothByDecision = e.id === 'PreToolUse:@tcg:safety-guard-pre.sh';   // decisión del dueño, 2026-10-05
+    const bothByDecision = e.id === 'PreToolUse:@tcg:safety-guard-pre.sh' || e.id === 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js';
     if (e.kind === 'hook' && e.blocks !== 'no' && !integ && e.when !== 'optin:TYCON_SESSION_GUARD' && !bothByDecision) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} frena: sólo full`);
     if (bothByDecision) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: el freno de comandos va en los dos perfiles`);
     // las reglas de lectura de las carpetas del arnés van en los dos: sin ellas la primera historia, que corre con la

@@ -15,6 +15,7 @@
 #   bash install-codegraph.sh --container /ruta    # contenedor con subproyectos
 #   bash install-codegraph.sh --repo /ruta         # forzar modo repo-suelto
 #   bash install-codegraph.sh --no-auto            # NO instalar el hook automatico
+#   bash install-codegraph.sh --tool-only          # sólo el CLI y el hook, sin indexar ninguna carpeta
 #
 # Por defecto autodetecta si el target es un repo suelto o un contenedor con
 # subproyectos. Idempotente: re-correrlo re-indexa y reinstala limpio.
@@ -42,12 +43,14 @@ usage() {
 # ---- args ----
 MODE="auto"      # auto | repo | container
 AUTO_HOOK=1      # instalar el hook SessionStart (0 con --no-auto)
+TOOL_ONLY=0      # --tool-only: el CLI y el hook, sin indexar ni registrar ninguna carpeta (lo usa el instalador del arnés)
 TARGET=""
 for arg in "$@"; do
   case "$arg" in
     --container) MODE="container" ;;
     --repo)      MODE="repo" ;;
     --no-auto)   AUTO_HOOK=0 ;;
+    --tool-only) TOOL_ONLY=1 ;;
     -h|--help)   usage; exit 0 ;;
     -*)          echo "✗ Opcion desconocida: $arg" >&2; usage; exit 1 ;;
     *)           TARGET="$arg" ;;
@@ -96,6 +99,8 @@ is_project() {
 
 # ---- 3. resolver modo + lista de repos ----
 REPOS=()
+REGDIR="(el repo que abras: el hook arma su índice)"
+if [ "$TOOL_ONLY" -eq 0 ]; then
 if [ "$MODE" = "auto" ]; then
   if is_project "$TARGET"; then MODE="repo"; else MODE="container"; fi
   echo "  modo autodetectado: $MODE"
@@ -172,6 +177,7 @@ for repo in "${REPOS[@]}"; do
   [ -d "$repo/.codegraph" ] && touch "$repo/.codegraph/.tycon-setup-done" 2>/dev/null || true
 done
 echo
+fi   # --tool-only: sin repos que indexar ni registrar
 
 # ---- 6. instalar el hook SessionStart (auto-setup de futuros repos) ----
 if [ "$AUTO_HOOK" -eq 1 ]; then

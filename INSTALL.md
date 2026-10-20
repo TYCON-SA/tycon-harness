@@ -192,7 +192,7 @@ mide. «Ninguno propio»: se saca a mano de `settings.json`, y con `TYCON_NO_AUT
 archivo. «Perfil» dice si el hook está en los dos perfiles de instalación o sólo en `full` (`install.profile` en
 `~/.claude/tycon.json`, o `TYCON_INSTALL_PROFILE`; sin elegir es `full`, y el perfil del equipo fija `full`): en `minimal`
 sólo quedan los que dicen «minimal y full» —entre ellos el freno de comandos destructivos, `safety-guard-pre.sh`, que se
-apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de `full` (`test-scope-guard-pre.sh`,
+apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`—, y de los dos que nacen prendidos y son de `full` (`test-scope-guard-pre.sh`,
 `telegram-zombie-sweep.sh`) sólo los que tengan su variable en `1`. Sale de
 `scripts/setup/install-effects.json` (`profiles`), y una prueba cruza la columna con esa lista.
 
@@ -202,7 +202,7 @@ apaga sólo con su variable en `0`—, y de los dos que nacen prendidos y son de
 | `tycon-pipeline/scripts/on-prompt.js` | UserPromptSubmit | Reconoce el pedido de implementar una story y avisa si otra sesión trabaja en lo mismo | No | minimal y full | ninguno propio |
 | `clocki/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de Clockify por inactividad | No | minimal y full | integración Clockify (`TYCON_CLOCKIFY=0`) |
 | `tycon-pipeline/scripts/hook-post-edit.js` | PostToolUse (Edit\|Write) | Después de editar: registra la edición para el pipeline y el timer; al escribir una story, sus pasos de alta | No | minimal y full | ninguno propio |
-| `tycon-pipeline/scripts/hook-pre-edit.js` | PreToolUse (Edit\|Write) | Antes de editar: el portón de carril (código sin pipeline ni ad-hoc declarado), el frontmatter de la definición de hecho, el orden de las pruebas (ATDD), la story escrita a mano y el choque entre sesiones | Sí: deniega la edición | full | `TYCON_STORY_GATE=off` (carril) · `TYCON_STORY_SKILL_GATE=off` (story a mano) |
+| `tycon-pipeline/scripts/hook-pre-edit.js` | PreToolUse (Edit\|Write) | Antes de editar: el portón de carril (código sin pipeline ni ad-hoc declarado), el frontmatter de la definición de hecho, el orden de las pruebas (ATDD), la story escrita a mano y el choque entre sesiones | Sí: deniega la edición | minimal y full | `TYCON_STORY_GATE=off` (carril) · `TYCON_STORY_SKILL_GATE=off` (story a mano) |
 | `tycon-pipeline/scripts/on-skill-invoke.js` | PostToolUse (Skill) | Deja constancia de que se invocó la skill que crea stories: es la evidencia que pide el freno de la story escrita a mano | No | minimal y full | `TYCON_STORY_SKILL_GATE=off` |
 | `tycon-pipeline/scripts/on-pre-commit.js` | PreToolUse (Bash) | Antes de un `git commit`: frena el de una story sin la evidencia de ejecución que pide su definición de hecho | Sí: deniega el commit | full | ninguno propio |
 | `push-phantom-ref-notice.js` | PreToolUse (Bash) | Antes de subir cambios, avisa si nombran un archivo de código que no existe en el repo | No | full | `TYCON_PUSH_GHOST=0` |

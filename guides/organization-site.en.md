@@ -242,6 +242,8 @@ Everything comes from what the harness runs on: the step table, the reviewer sel
 detectors that decide each piece, and your organization's profile. When one of those sources changes, the tab changes
 by itself.
 
+![How it works: your organization at the top, the steps on the left and what happens in the chosen step on the right](sitio-de-la-organizacion/capturas/como-trabaja.png)
+
 **Improving a harness piece.** The harness is not edited from the site. "View code" opens the file in the public repo;
 "Suggest an improvement" opens a box where you write, in your own words, what you would change and why. "Open the
 request on GitHub" opens a new request in the public repo with your text, the piece, the step and the version already
@@ -312,7 +314,7 @@ site cannot propose: you hand it to whoever has access to that repo, who uploads
 
 ![A section changed and reviewed: "Reviewed: it is well written"](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
 
-![Before proposing: today's file and the file after the change, with "Confirm and propose"](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
+![Before proposing: the lines that change, highlighted, with "Confirm and propose"](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
 
 ![The open request: the section shows its link](sitio-de-la-organizacion/capturas/configuracion-propuesto.png)
 
@@ -437,8 +439,9 @@ only: they are changed with a request in their repo.
   mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
   profile repo.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
-  night); a machine can turn one off for itself. It lives in `team-profile.json`, in the profile repo. A maintainer
-  reviews it.
+  night, the CodeGraph code index); a machine can turn one off for itself. With CodeGraph on, the installer sets it up
+  for each dev and the harness warns when a machine lacks it. Telegram is not here: it belongs to each machine. It lives
+  in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Run conversations** (*Conversaciones de las corridas*): whether the site also downloads what was said in each run;
   with that, the Runs detail shows the files it touched. It lives in `operations.json`, in the operations repo. A
   maintainer reviews it.
@@ -451,7 +454,7 @@ What the person sees in the section, and what the agent does when asked for a to
 
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
   the three rules. The ones the test gate runs internally (.NET, Vitest, Jest and Node) show as «built in · the
-  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle and Karma can be changed: the form arrives filled with the
+  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle, Karma and Playwright can be changed: the form arrives filled with the
   built-in one, and saving leaves an organization copy with the same name that replaces it. «Back to the built-in one»
   deletes the copy. A tool's command runs on every team member's computer.
 - **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes

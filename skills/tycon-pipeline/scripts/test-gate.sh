@@ -18,7 +18,8 @@
 #   test-gate.sh <repo-dir> [story-id|story-path] [subdir]
 #
 #   Detecta el stack: *.csproj → dotnet test --collect; package.json con vitest
-#   → npx vitest run --coverage. Escribe:
+#   → npx vitest run --coverage; las de lib/test-runners.js (pytest, Playwright…). Un solo proyecto con pruebas en una
+#   subcarpeta se corre con ese alcance. Escribe:
 #     <repo>/.advisors/tests-result.json   ← el artefacto que lee el advisor
 #
 #   En un repo con MÁS DE UN proyecto testeable, el alcance se DEDUCE de los
@@ -28,7 +29,8 @@
 #   Pasar la RUTA de la story en $2 (en vez del id) habilita la deducción por
 #   declaración y saca el id del frontmatter.
 #
-# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 3 sin stack de tests
+# Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
+#       (deja tests-result.json con `no_stack` y el motivo en llano, y el check `tests` en `sin-medir`)
 #       · 4 alcance ambiguo (no se corrió NADA) · 5 falta la herramienta que corre las
 #       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA; story 8.17, AC 50)
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
@@ -259,6 +261,12 @@ correr_hermanos_al_salir() {
     }
     art.companions = companions;
     art.all_green = Number(final) === 0;
+    // este repo no tiene pruebas que el portón sepa correr, pero un hermano las corrió: lo medido es el hermano, y
+    // «pruebas no medidas» ya no es cierto (el marcador lo dejó la corrida del hermano)
+    if (art.no_stack && companions.some((c) => c.green)) {
+      delete art.no_stack; delete art.no_stack_reason;
+      art.no_suite_here = true;
+    }
     // «Sin acotar» en un hermano sube arriba: el total no es verde aunque este repo lo esté, y quien lee sólo el nivel
     // de arriba (el revisor de cobertura) no puede leerlo verde.
     if (Number(final) === 7) {
@@ -520,8 +528,46 @@ REPO_RUN="${REPO_RUN:-$REPO}"
 if [[ -z "$RUNNER" && -n "$GENERICO_NOMBRE" ]]; then RUNNER="$GENERICO_NOMBRE"; GENERICO=1; REPO_RUN="$REPO"; fi
 GENERICO="${GENERICO:-}"
 
+# Un solo proyecto con pruebas, en una subcarpeta (el back en `backend/` con pytest.ini y nada en la raíz): el deductor
+# no tiene alcance que deducir, y la raíz no tiene corredor. Se corre ése, con su alcance, en vez de salir 3.
+if [[ -z "$RUNNER" && -z "$SCOPE" && -n "$TG_CANDS" && "$TG_CANDS" != *,* ]]; then
+  _UNICO="${TG_CANDS%%:*}"
+  if [[ -n "$_UNICO" && "$_UNICO" != "." && -d "$REPO/$_UNICO" ]]; then
+    echo "[test-gate] alcance: el único proyecto con pruebas, $_UNICO/" >&2
+    trap - EXIT
+    TYCON_TEST_SCOPE= exec bash "$SCRIPT_DIR/test-gate.sh" "$REPO" "$STORY_ARG" "$_UNICO"
+  fi
+fi
+
 if [[ -z "$RUNNER" ]]; then
-  echo "[test-gate] No se detectó stack de tests (ni .csproj, ni vitest, ni jest, ni \`node --test\`, ni scripts/tests/suites.json) en $REPO" >&2
+  # 🔴 La salida 3 deja constancia y el check `tests` queda «sin medir»: sin artefacto, el revisor de
+  # pruebas lo leía como «el portón no corrió» (un crítico falso), y sin tocar el marcador la historia cerraba sin decir
+  # que nadie midió nada (o con el verde de una corrida anterior).
+  _MIRADAS="$(cd "$REPO" && { echo "."; for d in */; do [[ -d "$d" ]] && echo "${d%/}/"; done; } | head -12 | paste -sd ',' - | sed 's/,/, /g')"
+  _RAZON="el portón no sabe correr las pruebas de este repo: miré ${_MIRADAS} y no encontré un proyecto de .NET, Vitest, Jest, node --test, pytest, Go, Maven, Gradle, Karma ni Playwright. Para medirlas, declará el comando de pruebas del repo en el sitio de la organización: pestaña Configuración → Tu tecnología → Cómo se corren las pruebas (stack.test_runners de team-repos.json)"
+  echo "[test-gate] 🟡 pruebas no medidas: $_RAZON" >&2
+  node -e '
+    const fs = require("fs"), p = require("path");
+    const [out, storyId, ts, reason] = process.argv.slice(1);
+    fs.mkdirSync(p.dirname(out), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify({
+      ts, story_id: storyId, runner: null, repo: null,
+      suite_exit: 3, suite_green: false,
+      no_stack: true, no_stack_reason: reason,
+      totals: {},
+      coverage: { per_new_file: {}, new_files_pct: null, threshold: null, meets_threshold: null },
+      provenance: "test-gate.sh NO MIDIÓ — no reconoce ninguna herramienta de pruebas en el repo; no se corrió ninguna suite",
+    }, null, 2) + "\n");
+  ' "$OUT_FILE" "$STORY_ID" "$TS" "$_RAZON" || echo "[test-gate] ⚠️  no pude escribir la constancia en $OUT_FILE" >&2
+  # Una parte o un repo hermano sin pruebas no toca el marcador: el total lo decide la corrida que los lanzó, donde 3 es
+  # «sin pruebas acá» y otra parte o el repo de la story pueden estar en verde.
+  if [[ "${TYCON_TEST_GATE_PART:-}" != "1" && "${TYCON_TEST_GATE_COMPANION:-}" != "1" ]]; then
+    # si el marcador no se deja escribir, un verde de otra corrida no puede quedar en pie: el check queda en rojo
+    if ! ( cd "$REPO" && TYCON_TEST_GATE=1 node "$MARKER_JS" mark-tests-not-measured "$_RAZON" ) >&2; then
+      echo "[test-gate] ⚠️  no pude anotar «sin medir» en el marcador: el check tests queda en rojo" >&2
+      marcar_tests_en_rojo 3 "pruebas no medidas (no pude anotar «sin medir»): $_RAZON"
+    fi
+  fi
   exit 3
 fi
 

@@ -401,6 +401,12 @@
       "requiere": []
     },
     {
+      "__nota": "la puerta de pruebas con el back en pytest en una subcarpeta y el front con Playwright (herramientas falsas en el PATH); lo que no sabe correr deja constancia y el check queda «sin medir» (story 7.45).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-project-folder.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [
@@ -491,6 +497,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.78: un criterio que no se puede probar en vivo se firma con un ok que responde a ese criterio — el arnés se lo muestra a la persona (puerta Bash o al escribir firma-pedida.json), el ok lo nombra, no se acepta reenviado, y el bloqueo sin terminal dice las dos vías.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/waiver-display.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/models.test.js",
       "requiere": []
@@ -499,6 +511,12 @@
       "__nota": "story 8.51: la historia de primera vez arranca sola — sin git, git init; en main/master, la rama story/<n>; sólo con la marca y la constancia del guion (la marca a mano pausa como siempre).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/start-first-story.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.76: un repo sin git se inicia al arrancar aunque la historia no tenga la marca del modo primera vez (no en la carpeta personal, la raíz ni con la historia afuera); sin commits, dependencias y líneas tocadas contra el árbol vacío; lo no medido llega a write-findings como sin_medir.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-no-git.test.js",
       "requiere": []
     },
     {
@@ -1883,6 +1901,18 @@
       "requiere": []
     },
     {
+      "__nota": "una actualización trabada por un archivo tomado (Windows): el aviso dice qué cerrar y qué correr; una instalación que sale bien borra el aviso viejo; el Node propio reintenta un rename tomado y, si sigue, dice qué hacer; el registro del buzón trae el sistema de la máquina; la guía de Windows tiene la salida. Hogares de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-stuck-update.test.js",
+      "requiere": []
+    },
+    {
+      "__nota": "CodeGraph prendido por la organización: el renglón del plan del instalador (sólo con el perfil del equipo y sin el binario), el paso que corre install-codegraph --tool-only después del sí (falla y sigue), el texto de install-effects.json, el aviso de doctor y lo que espera tooling-expected; y Telegram fuera de «Tu organización» en «Cómo trabaja». Perfiles, hogares y binarios de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/codegraph-team.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",
@@ -2567,6 +2597,12 @@
       "__nota": "story 8.16, tanda C (T32, T33, T35 a T37, T40): los perfiles de instalación — el aplicador REAL en minimal (sólo los seis hooks de minimal, ningún freno, sin los dos ajustes, sin hooks de git, cero tareas de fondo de full; un node intermediario las anota sin correrlas) y el control en full; sin valor igual a full; la configuración rota deja lo del perfil como está; la variable manda en los dos sentidos; harness.js install --profile (la clave después de la conformidad, el plan por perfil, la variable que contradice sale 2); el cambio de perfil full → minimal → full con removePieces y su copia, también por archivo en el próximo startup; los inválidos; y el perfil del equipo contra el aplicador de antes de la tanda (la punta de la B, 6f1f6dec: necesita la historia entera). Usa una terminal de juguete (python3 + pty).",
       "raiz": "arnes",
       "ruta": "tests/harness-profile.test.sh",
+      "requiere": []
+    },
+    {
+      "__nota": "story 8.74: con la instalación mínima, el portón de edición está en la lista de minimal y hace lo mismo que en la completa sobre un repo con la forma del laboratorio del capítulo 2 — sin recorrido se niega con la pregunta en llano, el ajuste puntual con la frase de la persona pasa, la primera historia se abre con el plan aprobado; la completa no cambia. HOME temporal.",
+      "raiz": "arnes",
+      "ruta": "tests/minimal-lane-gate.test.sh",
       "requiere": []
     },
     {

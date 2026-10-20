@@ -650,16 +650,16 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js run-check ac
     `runtime_not_verifiable:` (`reason:` + `covered_by:`), se le presenta al dev **uno por
     uno en el chat** con el resumen llano ("probado corriendo: N de T; solo tests de
     código: M; sin evidencia: K"), y decide una persona. **El agente nunca firma por su
-    cuenta.** Tres caminos, en este orden:
-    1. **El ok del dev en el chat** (el principal): con su respuesta,
-       `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m> --approved-by "<el dev>" --quote "<sus palabras, textuales>"`.
-       El arnés busca la cita en un mensaje escrito por el dev en esta conversación (no en lo que escribiste vos,
-       una herramienta, un subagente u otra sesión) y queda manual, con la cita y su hora.
-    2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session`: lo
-       mismo con `--relayed-by <sesión>`; la cita tiene que llegar textual en un mensaje de esa sesión. Queda
-       automático, por delegación del dev.
-    3. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>`
-       (pide confirmación criterio por criterio).
+    cuenta.** Dos caminos:
+    1. **El ok del dev en el chat** (el principal). Primero el arnés le muestra cada criterio: corré
+       `node <skill>/scripts/marker.js runtime-waiver <abs spec.md> --acs <n,m>` y la puerta lo muestra en pantalla
+       (texto, por qué no se puede probar en vivo, qué lo cubre); en la instalación mínima, escribí con Write
+       `firma-pedida.json` ({ "acs": [n] }) en la carpeta de la corrida. Con su respuesta, que nombra cada criterio
+       («firmo el AC n»), el mismo comando con `--approved-by "<el dev>" --quote "<sus palabras, textuales>"`. El
+       arnés busca la cita en un mensaje del dev posterior a la muestra; un «dale» suelto no firma. El ok reenviado
+       por otra sesión (`--relayed-by`) no se acepta acá: lo firma la persona que vio el criterio.
+    2. **Desde su terminal**, si el dev prefiere: `node <skill>/scripts/marker.js runtime-waiver <abs spec.md>`
+       (pide confirmación criterio por criterio; en Windows abre una ventana para firmar).
 
     Después, re-correr el `run-check acmatrix` (ahora verde). El límite: comprobar la cita prueba que el mensaje
     está en la conversación; no prueba quién está detrás de la sesión que reenvía.

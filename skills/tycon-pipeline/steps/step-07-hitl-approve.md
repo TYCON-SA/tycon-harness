@@ -56,7 +56,9 @@ quita la fricción, no la trazabilidad.
   no por el mapa. Si el dev prefiere cortar acá y retomar después, el marker queda activo.
 - **"override" (eximir el crítico)** → un crítico lo decide una persona: **el agente nunca se exime solo**, ni
   firmando como `orquestador`, ni con «hacé lo que recomiendes». Tres caminos, en este orden:
-  1. **El ok del dev en el chat** (el principal). El crítico se lo muestra el arnés, no vos: corré
+  1. **El ok del dev en el chat** (el principal). El crítico se lo muestra el arnés, no vos, y **antes de pedirle el ok**:
+     contarlo vos en el chat no cuenta como muestra, y un ok que llega antes de la muestra del arnés no vale (el comando
+     dice a qué hora la mostró y que se lo pidas de nuevo). Corré
      `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>"` y, antes de que corra, el arnés le
      pone en pantalla un bloque «Te piden eximir un crítico» con la regla, su nombre en llano, el archivo, lo que dijo
      el revisor y tu motivo. El comando frena hasta que el dev conteste a ESE bloque. Si el bloque no apareció (la
@@ -65,10 +67,14 @@ quita la fricción, no la trazabilidad.
      `marker.js waive-critical … --approved-by "<el dev>" --quote "<sus palabras, textuales>"`. La cita vale si está
      en un mensaje escrito por el dev (no en lo que escribiste vos, una herramienta, un subagente u otra sesión),
      **posterior a la muestra**, y si ese mensaje **dice que exime ese crítico**: una frase con «exim…» y su regla
-     («eximo TEST-C1») o el nombre en llano que le enseñó el bloque («eximo la suite completa»); si la regla está en
+     («eximo TEST-C1», o «apruebo eximir TEST-C1») o el nombre en llano que le enseñó el bloque («eximo la suite
+     completa»); si la regla está en
      más de un archivo, también el archivo. Un «apruebo, seguí» o un «dale» suelto no exime: es un ok a algo, no a este crítico. Tampoco un ok de
-     antes de la muestra, uno a otro crítico, una pregunta, ni uno con una negación o una condición en cualquier parte
-     («no», «nunca», «si lo arreglás…»): ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
+     antes de la muestra, uno a otro crítico, una pregunta, ni uno con una negación, un freno o una condición («no»,
+     «esperá», «si lo arreglás…») en cualquier parte del mensaje, aunque sea una aclaración de otra cosa: el ok va solo
+     en su mensaje («eximo TEST-C1», con su motivo si quiere) y **cualquier otra cosa, en otro mensaje**. Una aclaración
+     en un mensaje aparte no tumba el ok; uno posterior que nombra el crítico, habla de eximir o es un «No.» / «Esperá.»
+     corto, sí. Ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
   2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session` (perfil del
      equipo; por defecto ninguna): lo mismo con `--relayed-by <sesión>`. La cita tiene que llegar textual en un
      mensaje de esa sesión, posterior a la muestra y nombrando el crítico. Queda automático, por delegación del dev.

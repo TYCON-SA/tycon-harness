@@ -36,6 +36,7 @@ la fila aplica.
 | Linkear una story nueva a la que viene a fixear/recalibrar (back-links `followup_of:` / `followed_up_by:`) | `story-format.md` §1.2 |
 | Back-fillear back-links de follow-ups en stories existentes (audit periódico de un repo) | `scripts/tools/tycon-backfill-followups.js` (dry-run / `--apply` / `--render-table`) |
 | Una story "no aparece" para el validator / el backfill / los scripts de status, o adoptar el lint de frontmatter en un repo | `story-format.md` §1.0 + `scripts/lib/lint-story-frontmatter.js` |
+| **Agregar o tocar una integración** (avisos, registro de horas, índice de código, revisores propios, cualquier herramienta de afuera) — la regla innegociable: el núcleo no nombra herramientas | `guides/constitucion.md` |
 | Memoria persistente con engram (si la integración está prendida) | `guides/integrations/engram-workflow.md` |
 | Commit, push, merge, cualquier cosa de git | `guides/git-commit-conventions.md` |
 | Nombrar algo que ejecuta la máquina · frenó el freno de castellano · renombrar sin romper a nadie (`renames.json`) | `guides/maintaining/nombres-en-ingles.md` |

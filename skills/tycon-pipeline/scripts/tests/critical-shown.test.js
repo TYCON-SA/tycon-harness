@@ -410,3 +410,97 @@ test('CriticalShown_MuestraViejaNoHabilitaOkViejo @story-8.71 @ac-6', () => {
   });
   assert.equal(r.ok, false);
 });
+
+// ── el ok va solo en su mensaje; una aclaración, en otro (los casos de una sesión real, con nombres cambiados) ────
+const FIRMA = 'Firma: coordinadora, por delegación del dueño.';
+const juezDe = (rule = REGLA) => require(path.join(SCRIPTS, 'lib', 'critical-display.js')).juez({ rule, file: ARCHIVO, arnes: tmp('cs-orac-') });
+
+test('CriticalShown_AclaracionEnOtroMensaje_Exime @story-8.77 @ac-1', () => {
+  const j = juezDe();
+  // casos c y d: con la aclaración en el mismo mensaje no exime, y el motivo enseña cómo escribirlo
+  const juntos = `Eximo TEST-C1 de la 9.93: la suite completa la corre la CI del pedido. ${FIRMA} Sobre la Mac: es el laboratorio local, no hay otro ensayo.`;
+  assert.match(j(juntos), /contestá sólo «eximo TEST-C1».*cualquier otra cosa, en otro mensaje/);
+  // el ok solo, con su motivo y la firma, exime
+  assert.equal(j(`Eximo TEST-C1 de la 9.93: la suite completa la corre la CI del pedido. ${FIRMA}`), null);
+  // por el comando: la aclaración en un mensaje aparte, después del ok, no lo tumba
+  const lab = laboratorio({ sid: 's-cs-aparte' });
+  mostrar(lab);
+  lab.conversar([delDev(`Eximo TEST-C1 de la 9.93: la suite completa la corre la CI del pedido. ${FIRMA}`, T(1)),
+    delDev('Sobre la Mac: es el laboratorio local, no hay otro ensayo. Una corrección: la 182 no pasa a tanda B.', T(2))]);
+  const r = waive(lab, 'Eximo TEST-C1 de la 9.93');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+});
+
+test('CriticalShown_NegacionEnElMensaje_NoExime @story-8.77 @ac-2', () => {
+  const j = juezDe();
+  for (const t of ['Eximo TEST-C1. No eximo TEST-C1.', 'Eximo TEST-C1 cuando pase la CI', 'eximo TEST-C1. no lo eximas todavía',
+    'Eximo TEST-C1. Sobre la Mac: no quiero que se avance con nada.', 'Eximo TEST-C1. Una corrección: No avancen con nada de lo planeado.',
+    'Eximo TEST-C1. Esperá, todavía no está listo para eso.', 'Eximo TEST-C1. Ojo, salvo que falle.', 'Eximo TEST-C1. Eso sí, solo si pasa la CI.',
+    'Eximo TEST-C1. Sobre lo de antes: te confirmo después de hablar con el equipo.']) assert.notEqual(j(t), null, t);
+});
+
+test('CriticalShown_FrenoYNegacionCorta_NoExime @story-8.77 @ac-3', () => {
+  const j = juezDe();
+  for (const t of ['Eximo TEST-C1. No.', 'Eximo TEST-C1. Mejor no.', 'Eximo TEST-C1.\nNo, pará.', 'Eximo TEST-C1. Esperá.', 'Eximo TEST-C1. Pará.']) {
+    assert.notEqual(j(t), null, t);
+  }
+  assert.match(j('Eximo TEST-C1. Esperá.'), /pide esperar/);
+});
+
+test('CriticalShown_ApruebaEximir_Exime @story-8.77 @ac-4', () => {
+  const j = juezDe();
+  assert.equal(j('Apruebo eximir TEST-C1 de la 9.93: la suite completa la corre la CI del pedido.'), null);
+  assert.equal(j('apruebo eximir la suite completa'), null);
+  assert.match(j('Apruebo.'), /no nombra este crítico/);
+  assert.match(j('Apruebo eximir TEST-C1 si pasa la CI'), /condición/);
+  // caso b, por el comando: la misma frase después de la muestra exime
+  const lab = laboratorio({ sid: 's-cs-apruebo' });
+  mostrar(lab);
+  const frase = `Apruebo eximir TEST-C1 de la 9.93: la suite completa la corre la CI del pedido. ${FIRMA}`;
+  lab.conversar([delDev(frase)]);
+  const r = waive(lab, 'Apruebo eximir TEST-C1 de la 9.93');
+  assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+  assert.equal(eximidos(lab).length, 1);
+});
+
+test('CriticalShown_OkAntesDeLaMuestra_PideDeNuevoEnLlano @story-8.77 @ac-5', () => {
+  const lab = laboratorio({ sid: 's-cs-destiempo' });
+  const antes = new Date().toISOString();
+  const espera = Date.now() + 30; while (Date.now() < espera) { /* la muestra queda después */ }
+  mostrar(lab);
+  lab.conversar([delDev(`Eximo TEST-C1 de la 9.93: la suite completa la corre la CI del pedido. ${FIRMA}`, antes)]);
+  const r = waive(lab, 'Eximo TEST-C1 de la 9.93');
+  assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
+  assert.match(r.stderr, /de antes de que se le mostrara este crítico/);
+  assert.match(r.stderr, /se lo mostró a las \d{2}:\d{2}/);
+  assert.match(r.stderr, /pedile que conteste ahora/i);
+  assert.match(r.stderr, /«eximo TEST-C1»/);
+  assert.equal(eximidos(lab).length, 0);
+});
+
+test('CriticalShown_RetractaSiNombraHablaDeEximirOEsCorto @story-8.77 @ac-6', () => {
+  const j = juezDe();
+  for (const t of ['No.', 'Mejor no.', 'Esperá.', 'No lo eximas todavía.', 'Sobre TEST-C1: no, mejor arreglalo.', 'Pensándolo bien, TEST-C1 no.']) {
+    assert.equal(j.retracta(t), true, t);
+  }
+  for (const t of ['Una corrección: la 182 no pasa a tanda B.', 'Sobre la Mac: es el laboratorio local, no hay otro ensayo.', 'Bien el --tool-only.']) {
+    assert.equal(j.retracta(t), false, t);
+  }
+  for (const despues of ['No.', 'No lo eximas todavía.']) {
+    const l = laboratorio({ sid: `s-cs-atras-${despues.length}` });
+    mostrar(l);
+    l.conversar([delDev('eximo TEST-C1, la corrí a mano', T(1)), delDev(despues, T(2))]);
+    const rr = waive(l, 'eximo TEST-C1, la corrí a mano');
+    assert.equal(rr.status, 1, `${despues}: ${rr.stdout}${rr.stderr}`);
+    assert.match(rr.stderr, /se echó atrás/);
+  }
+});
+
+test('CriticalShown_Paso7YBloqueEnsenanLaForma @story-8.77 @ac-7', () => {
+  const paso = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-07-hitl-approve.md'), 'utf8');
+  assert.match(paso, /antes de pedirle el ok/);
+  assert.match(paso, /apruebo eximir/i);
+  assert.match(paso, /en otro mensaje/);
+  const cd = require(path.join(SCRIPTS, 'lib', 'critical-display.js'));
+  assert.match(cd.bloque({ storyId: '9.93', rule: REGLA, file: ARCHIVO, reason: MOTIVO, arnes: tmp('cs-bloque-') }), /Contestá sólo eso.*cualquier otra cosa, en otro mensaje/);
+});

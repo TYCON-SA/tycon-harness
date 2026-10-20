@@ -276,7 +276,7 @@ y "todos" es exactamente donde se esconden las regresiones que la story causó e
 |---|---|---|
 | `0` | suite verde | seguir |
 | `!=0` (1,2,…) | suite roja | pausar, corregir, re-correr |
-| `3` | el repo no tiene stack de tests detectable | anotarlo; no hay suite que correr |
+| `3` | **sin medir**: el portón no reconoce ninguna herramienta de pruebas en el repo y no corrió nada. Deja `tests-result.json` con `no_stack: true` y el motivo en llano (`no_stack_reason`); el check `tests` queda `sin-medir`, también sobre un verde anterior. Un solo proyecto con pruebas en una subcarpeta ya no sale 3: se corre con ese alcance | seguir anunciándolo: `complete-step 4` y el paso 8 dicen «pruebas no medidas», y el cierre de la historia lo copia en una línea. Para medirlas, declarar el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas) |
 | `4` | **FRENO**: el repo tiene más de un proyecto testeable y no se pudo deducir cuál | pasar el alcance a mano: `test-gate.sh <repo> <story> <subdir>` |
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |
@@ -329,21 +329,24 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js dep-gate \
 ```
 
 Diffea las dependencias AGREGADAS (`package.json` / `*.csproj` / `Directory.Packages.props`)
-vs HEAD contra el texto de la story. Un paquete es **nuevo** solo si su nombre aparece en
+vs HEAD contra el texto de la story. Sin commits todavía, contra el árbol vacío (todo es nuevo); un manifiesto sin
+trackear cuenta entero. Deja su resultado en `dep-gate.json`, en la carpeta de la corrida. Un paquete es **nuevo** solo si su nombre aparece en
 líneas `+` pero no en `−` (filtra churn de coma y bumps de versión). "Declarado" = el nombre
 del paquete aparece textualmente en la story (match conservador, verificable — no inferencia).
 
 **Decisión post-output**:
 - **`gate: pass`** (exit 0) → proceder a Step 5.
-- **`gate: skip`** (repo sin git) → proceder, anotarlo en el log.
+- **`gate: no-medido`** (exit 0; la carpeta no tiene git o `git diff` falló) → decírselo a la persona en una línea,
+  con el `reason`, y seguir. No es «sin dependencias nuevas»: `write-findings` lo levanta de `dep-gate.json` y el
+  informe de «Hallazgos» lo lleva en «Sin medir».
 - **`gate: pause`** (exit 2, hay `undeclared[]`) → **PAUSAR**. Mostrar la lista al user:
   *"La implementación agregó estas dependencias no declaradas en la story: {undeclared}.
   ¿Las aprobás? Si sí, las agrego al spec antes del commit."* Tres caminos: (a) aprobar +
   agregar al spec (frontmatter/AC) y re-correr, (b) override consciente si es falso positivo
   (paquete mencionado con otro nombre) anotándolo, (c) revertir la dependencia.
 
-**Skip-condition** (verificable, no inferencia — regla E.i): el gate devuelve `skip` solo si el
-repo no tiene git o `git diff HEAD` falla. NO se saltea "porque parece que no agregó nada" —
+**Cuándo no mide** (verificable, no inferencia — regla E.i): el gate devuelve `no-medido` solo si el
+repo no tiene git o `git diff` falla. NO se saltea "porque parece que no agregó nada" —
 si no agregó nada, el propio comando devuelve `pass` con `new_deps: []`.
 
 ## 🔀 Lanzamiento TEMPRANO del pase adversarial 5b (Fase B paralelización, 2026-07-30 — DEFAULT ON)

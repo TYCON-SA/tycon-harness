@@ -293,6 +293,10 @@ queda la ruta para copiar—, y debajo la línea
 
 **Reglas del cierre:**
 
+- **Pruebas no medidas, dicho**: si el check `tests` quedó `sin-medir` (salida 3 del portón: no reconoce ninguna
+  herramienta de pruebas en el repo), el bullet de lo verificado dice en una línea
+  «pruebas no medidas: el portón no sabe correr las pruebas de este repo» y cómo medirlas (declarar el comando en el sitio de la organización, Configuración →
+  Tu tecnología → Cómo se corren las pruebas). Nunca «la suite pasó» ni un silencio.
 - **Máximo ~10 líneas** salvo que haya CRITICAL sin resolver (ahí manda COMM.i) o algo haya fallado.
 - **El mensaje de commit SÍ va completo al chat** — es lo que el dev tiene que leer para aprobar.
   Es la única excepción al "detalle a pedido".
