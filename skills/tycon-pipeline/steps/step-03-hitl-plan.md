@@ -85,6 +85,12 @@ compara lo construido contra ella.
    ```
    Sin `--out` la escribe donde la busca la revisión (`<carpeta qa>/<clave>-mockup.html`). Rechaza el texto de relleno
    (lorem ipsum, TBD, TODO, «...»): los textos son los que va a leer el usuario.
+   **Lo que se abre encima va como capa.** Una ventana, un diálogo o un panel superpuesto que la story describa, o que
+   la guía del stack del producto pida como modal, va como otra pantalla con `presentation: "layer"`, el nombre de la
+   pantalla de abajo en `over` y el texto del botón o enlace que la abre en `trigger`. Lo que dice la story manda sobre
+   la convención («en la página, no modal» va en la página). La maqueta fija el contenido y los estados, no la forma de
+   presentarlos: la forma sale de la story y de la guía del stack, y donde la maqueta marca una capa, se construye una
+   capa.
 3. **Presentarla con el plan, en el chat**: la ruta del archivo y la lista de `mockup.js texts <ruta>` por pantalla. El
    navegador puede no abrirse (sesión remota, Linux sin escritorio, la jaula de Codex) o estar en otra máquina: la lista
    en el chat es lo que se aprueba seguro.

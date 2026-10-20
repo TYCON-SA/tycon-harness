@@ -404,3 +404,90 @@ test('T29 Mockup_SchemaDemoYRenderPorStory', () => {
   assert.strictEqual(r2.rc, 2);
   assert.match(r2.err, /la story no tiene pantalla: no hay maqueta que armar/);
 });
+
+// Una pantalla puede ser una capa encima de otra, con el botón o enlace que la abre.
+const CON_CAPA = () => ({
+  storyId: '1.2',
+  title: 'Los clientes',
+  screens: [
+    { name: 'Lista de clientes', state: 'con clientes', elements: [{ kind: 'heading', text: 'Clientes' }, { kind: 'button', text: 'Eliminar' }, { kind: 'link', text: 'Ver historial' }] },
+    {
+      name: 'Confirmar eliminación', state: 'abierta', presentation: 'layer', over: 'Lista de clientes', trigger: 'Eliminar',
+      elements: [{ kind: 'text', text: '¿Eliminar este cliente?' }, { kind: 'button', text: 'Confirmar', primary: true }, { kind: 'button', text: 'Cancelar' }],
+    },
+  ],
+});
+
+test('Mockup_Capa_SeDibujaEncimaConSuDisparador @story-7.48 @ac-1', () => {
+  const out = path.join(TMP, 'capa', 'm.html');
+  const r = renderModelo(CON_CAPA(), out);
+  assert.strictEqual(r.rc, 0, r.all);
+  const html = fs.readFileSync(out, 'utf8');
+  assert.match(html, /<section class="screen layer" data-screen-index="1" data-screen-name="Confirmar eliminación" data-presentation="layer">/);
+  assert.match(html, /Se abre encima de «Lista de clientes» con «Eliminar»/);
+  assert.doesNotMatch(html.split('data-screen-index="1"')[0], /data-presentation="layer"/, 'la pantalla de abajo no es capa');
+  assert.strictEqual(run(['check', out]).rc, 0, run(['check', out]).all);
+  const t = run(['texts', out]);
+  assert.strictEqual(t.rc, 0, t.all);
+  assert.match(t.out, /Eliminar este cliente/);
+  assert.match(t.out, /Confirmar/);
+});
+
+test('Mockup_Capa_DatosInvalidos_NoEscribe @story-7.48 @ac-2', () => {
+  const casos = [
+    [(m) => { m.screens[1].presentation = 'popup'; }, /pantalla 2: `presentation` «popup» no está en la lista \(page \| layer\)/],
+    [(m) => { delete m.screens[1].over; }, /pantalla 2: una capa necesita `over`/],
+    [(m) => { delete m.screens[1].trigger; }, /pantalla 2: una capa necesita `trigger`/],
+    [(m) => { m.screens[1].over = 'Otra pantalla'; }, /pantalla 2: `over` «Otra pantalla» no es el nombre de otra pantalla/],
+    [(m) => { m.screens[1].over = 'Confirmar eliminación'; }, /pantalla 2: `over` «Confirmar eliminación» no es el nombre de otra pantalla/],
+    [(m) => { m.screens[1].trigger = 'Clientes'; }, /pantalla 2: `trigger` «Clientes» no es un botón ni un enlace de «Lista de clientes»/],
+  ];
+  casos.forEach(([cambio, motivo], i) => {
+    const m = CON_CAPA(); cambio(m);
+    const out = path.join(TMP, 'capa-mal', `${i}.html`);
+    const r = renderModelo(m, out);
+    assert.notStrictEqual(r.rc, 0, `caso ${i}`);
+    assert.match(r.all, motivo, `caso ${i}: ${r.all}`);
+    assert.strictEqual(fs.existsSync(out), false, `caso ${i}: no escribe`);
+  });
+  // un enlace también abre una capa
+  const m = CON_CAPA(); m.screens[1].trigger = 'Ver historial';
+  assert.strictEqual(renderModelo(m, path.join(TMP, 'capa-mal', 'enlace.html')).rc, 0);
+});
+
+test('Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3', () => {
+  // la huella del HTML del modelo de muestra antes de que existieran las capas: una maqueta aprobada no cambia
+  const HOY = '4d993ecc8f381836a5a3c37b761da8614e546d93d42d2cc65950da496c3a7c0a';
+  const { renderMockup } = require(MOCKUP);
+  const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');
+  assert.strictEqual(huella(MODELO()), HOY);
+  const conPage = MODELO(); conPage.screens.forEach((s) => { s.presentation = 'page'; });
+  assert.strictEqual(huella(conPage), HOY);
+});
+
+test('Mockup_Schema_ExplicaLaCapa @story-7.48 @ac-4', () => {
+  const r = run(['schema']);
+  assert.strictEqual(r.rc, 0, r.all);
+  for (const w of ['presentation', 'over', 'trigger', '"layer"']) assert.ok(r.out.includes(w), w);
+  assert.match(r.out, /No se comparan[^.]*presentation/);
+  const demo = path.join(TMP, 'capa', 'demo.html');
+  assert.strictEqual(run(['demo', '--out', demo]).rc, 0);
+  assert.match(fs.readFileSync(demo, 'utf8'), /data-presentation="layer"/);
+});
+
+test('Paso3_ArmarElModelo_DiceQueVaComoCapa @story-7.48 @ac-5', () => {
+  // los renglones de la guía se juntan: una frase partida en dos sigue siendo la misma frase
+  const paso = fs.readFileSync(path.join(SK, '..', 'steps', 'step-03-hitl-plan.md'), 'utf8').replace(/\s+/g, ' ');
+  assert.match(paso, /presentation: "layer"/);
+  assert.match(paso, /ventana, un diálogo o un panel/);
+  assert.match(paso, /la story manda sobre la convención/);
+});
+
+test('Pasos3y4_LaMaquetaFijaContenidoNoForma @story-7.48 @ac-6', () => {
+  for (const f of ['step-03-hitl-plan.md', 'step-04-execute.md']) {
+    const paso = fs.readFileSync(path.join(SK, '..', 'steps', f), 'utf8').replace(/\s+/g, ' ');
+    assert.match(paso, /la maqueta fija el contenido y los estados, no la forma/i, f);
+    assert.match(paso, /la forma sale de la story y de la guía del stack/i, f);
+    assert.match(paso, /donde la maqueta marca una capa[^.]*, se construye una capa/i, f);
+  }
+});

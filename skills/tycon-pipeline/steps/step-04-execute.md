@@ -191,6 +191,12 @@ El skill BMAD se encarga de:
 - Ejecutar tests unitarios que correspondan
 - Actualizar el Dev Agent Record del story con file list, completion notes, debug log
 
+**Con una maqueta aprobada** (story con pantalla, paso 3): la maqueta fija el contenido y los estados, no la forma de
+presentarlos. La forma sale de la story y de la guía del stack del producto. Donde la maqueta marca una capa
+(`presentation: "layer"`, «Se abre encima de … con …»), se construye una capa que se abre con ese botón o enlace;
+donde no marca nada, la story y la guía dicen si va en la página o encima. Agregá esto a los `args` del skill cuando
+la story tiene maqueta.
+
 ## Acción — build gate
 
 Después de que BMAD termina la implementación, **antes de invocar advisors**, verificar que el código compila.

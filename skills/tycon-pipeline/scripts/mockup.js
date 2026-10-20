@@ -31,6 +31,8 @@ const CSP = "default-src 'none'; style-src 'unsafe-inline'";
 const KINDS = ['heading', 'text', 'button', 'link', 'field', 'checkbox', 'table', 'list', 'message', 'box'];
 const TONES = ['info', 'ok', 'warn', 'error'];
 const TEXT_KINDS = ['heading', 'text', 'button', 'link', 'message', 'box'];
+// cómo se presenta una pantalla: en la página, o como una capa encima de otra (una ventana, un diálogo, un panel)
+const PRESENTATIONS = ['page', 'layer'];
 
 // El escape propio de la maqueta: además de `& < > " '` codifica `= ( ) @ :` como entidades numéricas. Así un texto
 // que trae `<img src=https://…>` o `url(…)` no deja ningún `src=` ni `url(` literal en el archivo, y `check` no da
@@ -83,9 +85,23 @@ function validateModel(model) {
     out.push('falta `screens` (una lista con al menos una pantalla)');
     return out;
   }
+  const nombreDe = (sc, i) => (sc && isStr(sc.name) ? sc.name : `Pantalla ${i + 1}`);
   model.screens.forEach((sc, i) => {
     const p = `pantalla ${i + 1}`;
     if (!sc || typeof sc !== 'object') { out.push(`${p}: no es un objeto`); return; }
+    if (sc.presentation !== undefined && !PRESENTATIONS.includes(sc.presentation)) out.push(`${p}: \`presentation\` «${sc.presentation}» no está en la lista (${PRESENTATIONS.join(' | ')})`);
+    if (sc.presentation === 'layer') {
+      // una capa se abre encima de otra pantalla con un botón o un enlace que está en esa pantalla
+      if (!isStr(sc.over)) out.push(`${p}: una capa necesita \`over\` (el nombre de la pantalla sobre la que se abre)`);
+      if (!isStr(sc.trigger)) out.push(`${p}: una capa necesita \`trigger\` (el texto del botón o enlace que la abre)`);
+      if (isStr(sc.over)) {
+        const abajo = model.screens.filter((o, j) => j !== i && nombreDe(o, j) === sc.over && nombreDe(o, j) !== nombreDe(sc, i));
+        if (!abajo.length) out.push(`${p}: \`over\` «${sc.over}» no es el nombre de otra pantalla de la maqueta`);
+        else if (isStr(sc.trigger) && !abajo.some((o) => Array.isArray(o.elements) && o.elements.some((el) => el && (el.kind === 'button' || el.kind === 'link') && el.text === sc.trigger))) {
+          out.push(`${p}: \`trigger\` «${sc.trigger}» no es un botón ni un enlace de «${sc.over}»`);
+        }
+      }
+    }
     if (!Array.isArray(sc.elements) || !sc.elements.length) { out.push(`${p}: falta \`elements\` (lo que muestra la pantalla)`); return; }
     sc.elements.forEach((el, j) => {
       const e = `${p}, elemento ${j + 1}`;
@@ -143,6 +159,13 @@ const STYLE = `
   .box { border: 2px dashed #b4bccb; border-radius: 8px; padding: 24px; color: #5a6475; min-width: 280px; text-align: center; }
   .notes { max-width: 760px; font-size: 13px; color: #5a6475; }
 `;
+// Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale igual que antes y su huella aprobada sigue valiendo.
+const LAYER_STYLE = `
+  .layer { background: transparent; border: 0; }
+  .layer-backdrop { background: rgba(29, 36, 51, 0.45); border-radius: 10px; padding: 32px 24px; }
+  .layer-dialog { background: #fff; border: 1px solid #9aa3b2; border-radius: 10px; max-width: 520px; margin: 0 auto; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+  .screen-layer { font-size: 12px; color: #1d2433; background: #ffe9a8; border-radius: 10px; padding: 1px 8px; }
+`;
 
 /** El HTML de la maqueta: un archivo, sin código ni direcciones. */
 function renderMockup(model) {
@@ -173,15 +196,19 @@ function renderMockup(model) {
   };
   const screens = model.screens.map((sc, i) => {
     const name = isStr(sc.name) ? sc.name : `Pantalla ${i + 1}`;
-    return [
-      `<section class="screen" data-screen-index="${i}" data-screen-name="${E(name)}">`,
-      `<div class="screen-head"><span class="screen-name">${E(name)}</span>${isStr(sc.state) ? `<span class="screen-state">${E(sc.state)}</span>` : ''}${isStr(sc.file) ? `<span class="screen-file">${E(sc.file)}</span>` : ''}</div>`,
-      `<div class="screen-body">`,
-      ...sc.elements.map((x) => el(x, i)),
-      '</div>',
-      '</section>',
-    ].join('\n');
+    const capa = sc.presentation === 'layer';
+    const head = `<div class="screen-head"><span class="screen-name">${E(name)}</span>${isStr(sc.state) ? `<span class="screen-state">${E(sc.state)}</span>` : ''}${capa ? `<span class="screen-layer">Se abre encima de «${E(sc.over)}» con «${E(sc.trigger)}»</span>` : ''}${isStr(sc.file) ? `<span class="screen-file">${E(sc.file)}</span>` : ''}</div>`;
+    const body = [`<div class="screen-body">`, ...sc.elements.map((x) => el(x, i)), '</div>'];
+    if (capa) {
+      return [
+        `<section class="screen layer" data-screen-index="${i}" data-screen-name="${E(name)}" data-presentation="layer">`,
+        '<div class="layer-backdrop"><div class="layer-dialog">', head, ...body, '</div></div>',
+        '</section>',
+      ].join('\n');
+    }
+    return [`<section class="screen" data-screen-index="${i}" data-screen-name="${E(name)}">`, head, ...body, '</section>'].join('\n');
   }).join('\n');
+  const conCapas = model.screens.some((sc) => sc.presentation === 'layer');
   const sub = `Maqueta de la pantalla${isStr(model.storyId) ? ` — story ${E(model.storyId)}` : ''}. Se mira y se aprueba con el plan; lo construido se compara contra estos textos.`;
   return [
     '<!doctype html>',
@@ -190,7 +217,7 @@ function renderMockup(model) {
     `<meta name="generator" content="${GENERATOR}">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>Maqueta — ${E(model.title)}</title>`,
-    `<style>${STYLE}</style>`,
+    `<style>${STYLE}${conCapas ? LAYER_STYLE : ''}</style>`,
     '</head><body>',
     `<header><h1>${E(model.title)}</h1><p>${sub}</p></header>`,
     screens,
@@ -397,6 +424,18 @@ const DEMO = {
       ],
     },
     { name: 'Lista de facturas', state: 'sin facturas', elements: [{ kind: 'text', text: 'No tiene facturas sin pagar.' }] },
+    {
+      name: 'Confirmar el pago',
+      state: 'abierta',
+      presentation: 'layer',
+      over: 'Lista de facturas',
+      trigger: 'Pagar seleccionadas',
+      elements: [
+        { kind: 'text', text: 'Va a pagar 1 factura por $ 120.000.' },
+        { kind: 'button', text: 'Confirmar pago', primary: true },
+        { kind: 'button', text: 'Volver' },
+      ],
+    },
   ],
   notes: 'para el dueño; no se compara',
 };
@@ -411,8 +450,12 @@ ${JSON.stringify(DEMO, null, 2)}
   (placeholder opcional); columns no vacío para table; items no vacío para list.
 - Se comparan con la pantalla: el texto de heading, text, button, link y message; label y placeholder; columns; items;
   y el text de un box sólo con "compare": true (el rótulo de un box describe una imagen o un gráfico para el dueño).
-  No se comparan value, rows, notes, ni el nombre o el estado de la pantalla.
+  No se comparan value, rows, notes, ni el nombre, el estado o la presentation de la pantalla.
 - Los estados de falla (vacío, error) van como otra pantalla con su "state": así el dueño los aprueba y se comparan.
+- presentation (opcional): "page" (la de siempre) o "layer", una ventana, un diálogo o un panel que se abre encima de
+  otra pantalla. Una capa lleva "over" (el nombre de la pantalla de abajo) y "trigger" (el texto exacto de un botón o
+  enlace de esa pantalla, el que la abre); se dibuja como un marco sobre un fondo atenuado. La maqueta fija el
+  contenido y los estados, no la forma: la forma sale de la story y de la guía del stack.
 - Los textos son los reales de la pantalla: lorem ipsum, TBD, TODO, XXX o "..." no se aceptan.`;
 
 function main() {
