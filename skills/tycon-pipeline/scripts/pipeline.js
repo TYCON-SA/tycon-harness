@@ -4964,6 +4964,47 @@ function readSessionMarkerStrict() {
   } catch (e) { return { estado: 'ilegible', marcador: null, motivo: String(e.message).slice(0, 80) }; }
 }
 
+// El tope de vueltas de revisores (lib/review-rounds.js): null si la vuelta `iter` puede servirse, o el mensaje llano de
+// por qué no. Al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona (una vuelta extra con su
+// ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
+function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
+  const tope = rr.tope({ repo: repoAbs });
+  if (iter <= tope.value) return null;
+  const stateDir = stateDirOf(os.homedir());
+  if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return null;
+  const h = rr.hallazgosDe(runDir);
+  const ab = rr.abiertos(h.lista);
+  const bloquean = ab.filter((a) => a.bloquea);
+  const deuda = ab.filter((a) => !a.bloquea);
+  const de = { maquina: 'de esta máquina', repo: 'del repo', organizacion: 'de la organización', fabrica: 'de fábrica' }[tope.source] || '';
+  if (args.extraRound) {
+    const cw = require('./lib/critical-waivers.js');
+    const r = cw.okDeUnaPersona({ approvedBy: args.approvedBy, quote: args.quote, desde: marcador && marcador.startedAt });
+    if (!r.ok) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}. Una vuelta más allá del tope la autoriza una persona, con sus palabras en esta conversación.\n`;
+    const e = r.entrada;
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', status: 'ok', story: storyId, iter, quien: e.quien, cita: e.cita, via: e.via })}\n`);
+    return null;
+  }
+  const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`];
+  if (h.error) renglones.push(`   No pude leer lo abierto (${h.error}): arreglá findings.json con pipeline.js write-findings y volvé a pedirlo.`);
+  else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
+  if (bloquean.length) {
+    renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
+    for (const l of rr.resumen(bloquean)) renglones.push(`     · ${l}`);
+    renglones.push('   (a) Una vuelta más para arreglarlo: con su ok, el mismo comando con');
+    renglones.push(`       --extra-round --approved-by "<la persona>" --quote "<sus palabras, textuales>"`);
+    renglones.push('   (b) Eximirlo: marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" (el arnés le muestra el crítico y ella contesta).');
+  }
+  if (deuda.length) {
+    renglones.push(`   ${bloquean.length ? 'El resto' : 'Lo abierto'} queda como deuda visible (${deuda.length}) y el recorrido sigue sin otra vuelta:`);
+    for (const l of rr.resumen(deuda)) renglones.push(`     · ${l}`);
+    renglones.push('   Anotalo: en findings.json cada uno con "disposition": "deferred" y "deuda": "tope" (pipeline.js write-findings), después');
+    renglones.push('   pipeline.js write-followups; el cierre lo dice con pipeline.js review-rounds.');
+  }
+  return `${renglones.join('\n')}\n`;
+}
+
 // El freno de la tercera vuelta de `smart-reloop` y `advisors`: null si puede seguir, o el mensaje llano de por qué no.
 // Si sigue, anota la vuelta servida en la carpeta de la corrida (rethink/served.json). La corrida se busca como en el
 // resto del pipeline (`resolveRunDir`); sin story o sin carpeta no hay nota posible. Ante la duda, frena.
@@ -5015,8 +5056,16 @@ function rethinkGate(args) {
     return `🛑 El registro de vueltas servidas de la corrida (${rt.servedPath(runDir)}) existe y no se puede leer: ${servidas.reason}. Sin él no sé cuántas vueltas de revisores lleva, y ante la duda no devuelvo el set. Corregilo o borralo.\n`;
   }
   const pedida = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
-  // Pedir una vuelta que ya se sirvió (o una menor) cuenta como una vuelta NUEVA: max(declarada, marcador, última servida + 1).
-  const iter = servidas.last > 0 ? Math.max(pedida, servidas.last + 1) : pedida;
+  // Una vuelta es un número de iteración que llegó a lanzar revisores (la foto que el arnés toma al lanzar el último).
+  // Pedir de nuevo el set de la última vuelta servida, sin que se haya lanzado, es la MISMA vuelta; con sus revisores
+  // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). Sin marcador con la story
+  // no hay fotos que mirar: ahí cada pedido es una vuelta nueva, como antes, para que repetir no esquive la nota.
+  const rr = require('./lib/review-rounds.js');
+  const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
+  const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
+  // El tope de vueltas: más allá, sólo una vuelta extra que autorizó una persona.
+  const bloqueoDelTope = topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId });
+  if (bloqueoDelTope) return bloqueoDelTope;
   if (iter >= rt.FIRST_ITER) {
     const dice = [];
     if (iter !== declarada) {
@@ -5209,6 +5258,8 @@ function normalizeFindingRecord(raw, warnings, ctx) {
     ...(firmante.tramo ? { tramo: firmante.tramo } : {}),
     ...(prueba ? { test: prueba } : {}),
     ...(refutation ? { refutation } : {}),
+    // lo que quedó abierto al llegar al tope de vueltas: deuda visible (lib/review-rounds.js)
+    ...(disposition === 'deferred' && String(raw.deuda || '').trim() === 'tope' ? { deuda: 'tope' } : {}),
   };
 }
 
@@ -5612,6 +5663,9 @@ function parseArgs(argv) {
     else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero (story 7.10)
     else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión (story 7.29)
     else if (t === '--run-dir') a.runDir = argv[++i];
+    else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
+    else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
+    else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
     else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff (story 7.2)
     else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla (story 7.24); sin valor no es «sin --scope»
     else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas (story 7.2)             // write-findings/findings-status: dir de la corrida (default: auto-resolve)
@@ -5640,6 +5694,28 @@ function parseArgs(argv) {
 function main() {
   const cmd = process.argv[2];
   const args = parseArgs(process.argv.slice(3));
+
+  // La línea del cierre: cuántas vueltas de revisores hubo, el tope y qué quedó abierto (lib/review-rounds.js).
+  if (cmd === 'review-rounds') {
+    const rr = require('./lib/review-rounds.js');
+    const { marcador } = readSessionMarkerStrict();
+    const repoAbs = path.resolve(args.repo || (marcador && marcador.repoPath) || '.');
+    const storyArg = args.story || (marcador && marcador.storyPath) || null;
+    const storyAbs = storyArg ? (path.isAbsolute(storyArg) ? storyArg : path.join(repoAbs, storyArg)) : null;
+    const storyId = storyAbs ? deriveStoryId(storyAbs) : null;
+    const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
+    const tope = rr.tope({ repo: repoAbs });
+    const h = rr.hallazgosDe(runDir);
+    const ab = rr.abiertos(h.lista);
+    const out = { vueltas: rr.vueltas(marcador), tope: tope.value, tope_de: tope.source, problemas: [...tope.problems, ...(h.error ? [h.error] : [])], abiertos: ab };
+    out.linea = rr.linea({ n: out.vueltas, max: out.tope, abiertos: ab });
+    if (args.json) process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+    else {
+      process.stdout.write(`${out.linea}\n`);
+      for (const p of out.problemas) process.stderr.write(`⚠️  ${p}\n`);
+    }
+    process.exit(0);
+  }
 
   if (cmd === 'advisors') {
     // FIX auditoría 2026-06-11: files fantasma (shell quoting roto) degradaban el set

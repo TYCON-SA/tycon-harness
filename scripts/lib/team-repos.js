@@ -64,7 +64,7 @@ const VERSION = 1;
 const PLATFORMS = ['azure', 'github'];
 const REPO_KEYS = { azure: ['org', 'project', 'repo'], github: ['org', 'repo'] };
 const REQUIRED = ['public', 'profile', 'operations'];
-const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'stack', 'weekly_review'];
+const OPTIONAL = ['maintainers', 'harness_copies', 'merge_suites', 'models', 'wait_notice', 'coverage', 'review', 'stack', 'weekly_review'];
 // La revisión de la semana: prendida o no, el tope en dólares de su única corrida del agente y el tope de material en
 // caracteres. Lo lee scripts/nightly/weekly-review/weekly-review.js; sin la clave, prendida, 5 y 600.000: con 600.000
 // entra casi toda una semana de mucho movimiento por menos de la mitad del tope en dólares.
@@ -78,6 +78,12 @@ const WAIT_NOTICE_MAX = 120;
 // El umbral de cobertura de las líneas tocadas: un entero de 1 a 100. Lo lee
 // skills/tycon-pipeline/scripts/lib/test-gate-report.js, después de TYCON_COVERAGE_MIN de la máquina y antes del 75.
 const COVERAGE_KEYS = ['min_touched_lines_pct'];
+// Las vueltas de revisores de una story: `max_rounds` = el tope, un entero de 1 a 6 (de fábrica 2);
+// `blocking_prefixes` = prefijos de reglas que la organización suma a los de fábrica como «seguridad o datos»
+// (SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE no se configuran, sólo se suman). Cada prefijo: mayúsculas,
+// dígitos y guiones, y puede terminar en -C o -W.
+const REVIEW_KEYS = ['max_rounds', 'blocking_prefixes'];
+const REVIEW_PREFIX_RE = /^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/;
 // La tecnología de la organización: `code_extensions` = terminaciones que también son código, además de las
 // del núcleo (skills/tycon-pipeline/scripts/lib/code-files.js, que la lee con lib/stack-config.js). Misma forma que
 // `EXT_RE` de code-files.js: este lector no carga el skill, y stack-config.test.js compara las dos.
@@ -353,6 +359,31 @@ function coverageProblems(value) {
   return out;
 }
 
+/** Los problemas de `review`; `[]` si está bien. */
+function reviewProblems(value) {
+  if (!isObject(value)) return [{ path: 'review', message: 'tiene que ser un objeto (las vueltas de revisores de una story)' }];
+  const out = [];
+  for (const k of Object.keys(value)) if (!fieldComment(k, value[k]) && !REVIEW_KEYS.includes(k)) out.push({ path: `review.${k}`, message: 'clave desconocida' });
+  const n = value.max_rounds;
+  if (n !== undefined && !(Number.isInteger(n) && n >= 1 && n <= 6)) {
+    out.push({ path: 'review.max_rounds', message: `tiene que ser un número entero de vueltas, de 1 a 6 (es ${JSON.stringify(n)})` });
+  }
+  const b = value.blocking_prefixes;
+  if (b !== undefined) {
+    if (!Array.isArray(b)) out.push({ path: 'review.blocking_prefixes', message: 'tiene que ser una lista de prefijos de reglas' });
+    else {
+      const vistos = new Set();
+      b.forEach((x, i) => {
+        if (typeof x !== 'string' || !REVIEW_PREFIX_RE.test(x)) {
+          out.push({ path: `review.blocking_prefixes.${i}`, message: `tiene que ser un prefijo de regla: mayúsculas, dígitos y guiones, como SEC o SIGNALR-C (es ${JSON.stringify(x)})` });
+        } else if (vistos.has(x)) out.push({ path: `review.blocking_prefixes.${i}`, message: `repetido (${x})` });
+        else vistos.add(x);
+      });
+    }
+  }
+  return out;
+}
+
 /** Los problemas de `stack`, con la ruta de cada clave; `[]` si está bien. */
 function stackProblems(value) {
   if (!isObject(value)) return [{ path: 'stack', message: 'tiene que ser un objeto (la tecnología de la organización)' }];
@@ -447,17 +478,20 @@ function parse(text) {
   const sectionWait = isObject(doc) && doc.wait_notice !== undefined ? waitNoticeProblems(doc.wait_notice) : [];
   // y con `coverage`: un umbral mal escrito cae al valor por defecto, no deja sin el archivo
   const sectionCoverage = isObject(doc) && doc.coverage !== undefined ? coverageProblems(doc.coverage) : [];
+  // y con `review`: un tope mal escrito cae al de fábrica (2), no deja sin el archivo
+  const sectionReview = isObject(doc) && doc.review !== undefined ? reviewProblems(doc.review) : [];
   // y con `stack`: se descarta sólo la subclave con el problema, el resto de la sección sigue
   const sectionStack = isObject(doc) && doc.stack !== undefined ? stackProblems(doc.stack) : [];
   // y con `weekly_review`: un tope mal escrito deja la revisión con los valores por defecto, y lo dice
   const sectionWeekly = isObject(doc) && doc.weekly_review !== undefined ? weeklyReviewProblems(doc.weekly_review) : [];
   let data = problems.length ? null : doc;
-  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionStack.length || sectionWeekly.length)) {
+  if (data && (sectionModels.length || sectionWait.length || sectionCoverage.length || sectionReview.length || sectionStack.length || sectionWeekly.length)) {
     data = { ...doc };
     if (sectionModels.length) delete data.models;
     if (sectionWait.length) delete data.wait_notice;
     if (sectionWeekly.length) delete data.weekly_review;
     if (sectionCoverage.length) delete data.coverage;
+    if (sectionReview.length) delete data.review;
     if (sectionStack.length) {
       if (isObject(doc.stack)) data.stack = stackSinProblemas(doc.stack, sectionStack);
       else delete data.stack;
@@ -467,6 +501,7 @@ function parse(text) {
     ...(sectionModels.length ? { models: sectionModels } : {}),
     ...(sectionWait.length ? { wait_notice: sectionWait } : {}),
     ...(sectionCoverage.length ? { coverage: sectionCoverage } : {}),
+    ...(sectionReview.length ? { review: sectionReview } : {}),
     ...(sectionStack.length ? { stack: sectionStack } : {}),
     ...(sectionWeekly.length ? { weekly_review: sectionWeekly } : {}),
   };
@@ -516,7 +551,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, reviewProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

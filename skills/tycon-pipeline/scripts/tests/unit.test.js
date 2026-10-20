@@ -3223,9 +3223,10 @@ test('foto de iteración: la llamada manual no pisa la automática, y el re-loop
   ].join('\n') + '\n');
 
   const env = { ...process.env, HOME: fakeHome, CLAUDE_CODE_SESSION_ID: SID };
+  // el tope de vueltas al máximo de la máquina: acá se mide la foto de la vuelta 12, no el tope
   const correr = (script, args, extraEnv) => cp.spawnSync(
     process.execPath, [path.join(SCRIPTS, script), ...args],
-    { env: { ...env, ...(extraEnv || {}) }, cwd: repo, encoding: 'utf8' },
+    { env: { ...env, TYCON_REVIEW_MAX_ROUNDS: '99', ...(extraEnv || {}) }, cwd: repo, encoding: 'utf8' },
   );
 
   // ── Capa 1 — la llamada manual del «cierre del step», con el arreglo ya adentro ──

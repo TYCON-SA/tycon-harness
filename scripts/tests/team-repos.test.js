@@ -598,6 +598,35 @@ test('T11 7.31-Coverage_ValidaSuSeccion @story-7.31 @ac-10 — el umbral de cobe
   assert.deepStrictEqual(Object.keys(dos.sectionProblems).sort(), ['coverage', 'wait_notice']);
 });
 
+test('T14 Review_ValidaSuSeccion @story-7.37 @ac-4 — el tope de vueltas y los prefijos de seguridad o datos, con su sección aparte', () => {
+  // 🔴 rojo: un tope o un prefijo mal escrito invalida todo el archivo, o pasa como válido.
+  const ok = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { review: { max_rounds: 6, blocking_prefixes: ['PAGOS', 'SIGNALR-C', 'A1-W'], _nota: 'x' } })));
+  assert.equal(ok.ok, true, JSON.stringify(ok.problems));
+  assert.deepStrictEqual(ok.data.review.max_rounds, 6);
+  assert.equal(ok.sectionProblems, undefined);
+  const casos = [
+    [{ max_rounds: 0 }, 'review.max_rounds'],
+    [{ max_rounds: 7 }, 'review.max_rounds'],
+    [{ max_rounds: '2' }, 'review.max_rounds'],
+    [{ max_rounds: 2.5 }, 'review.max_rounds'],
+    [{ blocking_prefixes: 'SEC' }, 'review.blocking_prefixes'],
+    [{ blocking_prefixes: ['sec'] }, 'review.blocking_prefixes.0'],
+    [{ blocking_prefixes: ['SEC-'] }, 'review.blocking_prefixes.0'],
+    [{ blocking_prefixes: ['1SEC'] }, 'review.blocking_prefixes.0'],
+    [{ blocking_prefixes: [5] }, 'review.blocking_prefixes.0'],
+    [{ blocking_prefixes: ['PAGOS', 'PAGOS'] }, 'review.blocking_prefixes.1'],
+    [{ max_rounds: 2, otra: 1 }, 'review.otra'],
+    [3, 'review'],
+  ];
+  for (const [review, ruta] of casos) {
+    const r = TEAM.parse(JSON.stringify(Object.assign(goodTeam(), { review })));
+    assert.equal(r.ok, true, `${ruta}: un problema de review no invalida el archivo`);
+    assert.deepStrictEqual(r.problems, []);
+    assert.ok(r.data && !('review' in r.data), `${ruta}: data sin review`);
+    assert.ok(r.sectionProblems && r.sectionProblems.review.some((p) => p.path === ruta), `${ruta}: ${JSON.stringify(r.sectionProblems)}`);
+  }
+});
+
 test('T2b OperationsConfig_DeploymentsRepoConPuntosYProductoVacio (2.22, revisores)', () => {
   const r = OPS.parse(JSON.stringify(opsWithDeployments({ provider: 'github', products: {
     Acme: { production: [{ repo: '../..', environment: 'prd' }, { repo: 'acme/..', environment: 'prd' }, { repo: 'acme/.app', environment: 'prd' }] }, Vacio: {},

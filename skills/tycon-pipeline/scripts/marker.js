@@ -1211,6 +1211,23 @@ function cmdCompleteStep(nRaw, flags) {
   //     evidencia de texto (agente-escribible), el agujero exacto de la Story 11.2.
   //   - Story no-UI: mantiene el gate `dodRuntimeChecked` (Step 7c corrido).
   if (n === 8) {
+    // Un crítico de seguridad o de datos abierto o diferido no cierra callado: lo arregla una vuelta (extra, si se llegó al
+    // tope, con el ok de una persona) o lo exime una persona (waive-critical). Venga del revisor o del pase adversarial.
+    {
+      const rr = require('./lib/review-rounds.js');
+      let rd8 = null;
+      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined); } catch (_) { rd8 = null; }
+      const h = rr.hallazgosDe(rd8);
+      const bloquean = rr.abiertos(h.lista).filter((a) => a.bloquea);
+      if (bloquean.length) {
+        appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
+        console.error(`marker.js complete-step 8 BLOQUEADO — ${bloquean.length} crítico(s) de seguridad o de datos abierto(s) o diferido(s):`);
+        for (const l of rr.resumen(bloquean)) console.error(`   · ${l}`);
+        console.error('   Lo decide una persona: arreglarlo (con su ok para una vuelta más, si se llegó al tope: smart-reloop --extra-round');
+        console.error('   --approved-by "<la persona>" --quote "<sus palabras>"), o eximirlo (marker.js waive-critical, con su ok a ese crítico).');
+        process.exit(1);
+      }
+    }
     const isUi = markerStoryIsUi(marker);
     avisarBajaDePantalla(marker);
     let blocked = null;
@@ -2946,13 +2963,16 @@ function cmdClear() {
         for (const l of fs.readFileSync(runLog, 'utf8').split('\n')) {
           if (!l.trim()) continue;
           let d; try { d = JSON.parse(l); } catch { continue; }
-          if (d.event === 'step5-start') { vistoStep5 = true; costo.iteraciones++; continue; }
+          if (d.event === 'step5-start') { vistoStep5 = true; continue; }
           if (!d.advisor) continue;
           costo.spawns++;
           costo.por_tipo[d.advisor] = (costo.por_tipo[d.advisor] || 0) + 1;
           if (ADHOC.has(d.advisor)) { costo.adhoc++; if (!vistoStep5) costo.adhoc_pre_step5++; }
         }
       } catch { /* sin log de spawns: costo queda en cero */ }
+      // las vueltas: las que lanzaron revisores (las fotos de iteración), la misma cuenta que pipeline.js review-rounds; un
+      // arranque del paso 5 sin revisores no es una vuelta
+      costo.iteraciones = require('./lib/review-rounds.js').vueltas(marker);
       const dump = { archivedAt: nowIso(), marker, gates, costo };
       const safeStory = String(marker.storyId).replace(/[^\w.-]/g, '_');
       const ts = nowIso().replace(/[:.]/g, '').slice(0, 15);

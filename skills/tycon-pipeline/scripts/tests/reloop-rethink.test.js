@@ -67,7 +67,8 @@ const hallazgo = (rule, file, iter) => ({
 });
 
 const home = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rethink-home-'));
-const env = (h) => ({ ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID, TYCON_TODAY: '2026-10-18' });
+// el tope de vueltas al máximo: acá se mide la nota de «repensar», que pide la tercera vuelta y las siguientes
+const env = (h) => ({ ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID, TYCON_TODAY: '2026-10-18', TYCON_REVIEW_MAX_ROUNDS: '6' });
 
 function reloop(repo, iter, extra = []) {
   const h = home();
@@ -574,7 +575,8 @@ test('T21 · 🔴 sale rojo si sin --story el freno ignora la story del marcador
   // marcador con la story: sin --story usa la del marcador y ve las vueltas servidas
   const activo = path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(h), 'active');
   fs.mkdirSync(activo, { recursive: true });
-  fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({ sessionId: SID, repoPath: repo, storyPath: story }));
+  // las vueltas 1 y 2 lanzaron sus revisores (las fotos que el arnés toma al lanzar el último)
+  fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({ sessionId: SID, repoPath: repo, storyPath: story, iterations: { 1: { files: {} }, 2: { files: {} } } }));
   const r = sinStory('smart-reloop', ['--iter', '1']);
   assert.notEqual(r.status, 0, r.stdout.slice(0, 160));
   assert.doesNotMatch(r.stdout, /"rerun"/);

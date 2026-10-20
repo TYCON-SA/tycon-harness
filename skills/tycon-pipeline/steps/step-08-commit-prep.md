@@ -297,6 +297,9 @@ queda la ruta para copiar—, y debajo la línea
   herramienta de pruebas en el repo), el bullet de lo verificado dice en una línea
   «pruebas no medidas: el portón no sabe correr las pruebas de este repo» y cómo medirlas (declarar el comando en el sitio de la organización, Configuración →
   Tu tecnología → Cómo se corren las pruebas). Nunca «la suite pasó» ni un silencio.
+- **Las vueltas y lo abierto, dicho**: el bullet de los revisores copia la línea de
+  `node <skill>/scripts/pipeline.js review-rounds --story <s> --repo <r>` («N vueltas de revisores (tope M); quedó
+  abierto: …»). Lo que quedó como deuda se nombra; nunca un cierre que parece limpio con deuda adentro.
 - **Máximo ~10 líneas** salvo que haya CRITICAL sin resolver (ahí manda COMM.i) o algo haya fallado.
 - **El mensaje de commit SÍ va completo al chat** — es lo que el dev tiene que leer para aprobar.
   Es la única excepción al "detalle a pedido".
