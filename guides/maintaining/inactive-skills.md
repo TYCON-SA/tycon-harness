@@ -31,6 +31,10 @@ están versionados: los instaló BMAD en cada máquina, así que en otra máquin
 mv ~/.claude/agent-skills/skills-inactivas/<skill> ~/.claude/agent-skills/skills/
 ```
 
+En una máquina con el arnés instalado por versión esa carpeta es la instalación: el agente no la puede escribir y la
+próxima actualización deshace el cambio. Ahí el `mv` lo corrés vos en tu terminal, o la skill vuelve por un pedido al
+repo del arnés.
+
 Y abrir una sesión nueva. En Codex, además, correr el instalador para que cree su enlace, llamándolo por la ruta del
 clon del arnés (no por el enlace `~/.claude/tycon-harness`: llamarlo por el enlace registra los hooks por
 segunda vez):

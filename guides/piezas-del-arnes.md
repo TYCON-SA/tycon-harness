@@ -1204,6 +1204,16 @@ _(scripts/metrics/upload-runs.js + scripts/metrics/download-runs.js)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptsnightlydashboardreducerjs)
 
+## lib/installed-tree.js
+
+**Qué es:** Dice cuál es el árbol instalado del arnés (`~/.tycon/harness` y sus vecinas) y si una ruta cae adentro, también por los enlaces de `~/.claude`. Con eso el portón de escrituras niega que el agente escriba ahí, en cualquier modo de permisos: el arnés se cambia con un pedido a su repo, no editando la instalación.
+
+**Por qué existe:** En el modo automático de Claude Code una escritura fuera del proyecto se aprueba sola; además cada actualización reemplaza el árbol. Un clon de trabajo enlazado no cuenta. En Codex frena su sandbox; con acceso total escribe.
+
+**Quién la usa:** `lib/story-gate.js`, por `on-story-gate.js` y `on-bash-write-gate.js`.
+
+**Dónde se prueba:** `tycon-pipeline/scripts/tests/installed-tree.test.js` y el banco `59-arbol-instalado.json`.
+
 ## test-gate.sh
 
 _(test-gate.sh (AgentSkills) + la ficha «evaluaron el umbral»)_

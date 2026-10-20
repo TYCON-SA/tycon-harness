@@ -138,6 +138,9 @@ function sameFile(a, b) {
  * @param {object} p
  * @param {string}  p.filePath        archivo que se va a editar (absoluto)
  * @param {string|null} p.stateDir    `~/.claude/.tycon-pipeline` (Writes ahí se deniegan siempre)
+ * @param {string|null} [p.realFilePath]  la ruta real del archivo (por los enlaces); sin ella, `filePath`
+ * @param {string[]} [p.installedRoots]   rutas reales del árbol instalado del arnés (Writes ahí se deniegan siempre)
+ * @param {string|null} [p.realStateDir]  la ruta real de `stateDir` (si es un enlace); sin ella, `stateDir`
  * @param {string|null} p.homeDir     home del user (un "repo" que es el home no cuenta como repo)
  * @param {string|null} p.repoRoot    raíz del repo git del archivo (null si no hay repo)
  * @param {boolean} p.repoHasTycon    existe `<repoRoot>/.tycon/`
@@ -150,13 +153,23 @@ function sameFile(a, b) {
  */
 function computeStoryGate({
   filePath, stateDir, homeDir, repoRoot, repoHasTycon, repoHasStories, gateEnabled = true, marker, adhoc,
-  isHarness,
+  isHarness, realFilePath = null, installedRoots = [], realStateDir = null,
 }) {
   if (!filePath) return { action: 'pass', reason: 'sin file_path' };
+  // la ruta real (por los enlaces) la resuelve el borde; sin ella, la escrita
+  const real = realFilePath || filePath;
 
   // El estado del pipeline lo escribe marker.js, nunca la tool Write/Edit. Sin kill-switch.
-  if (stateDir && isInside(stateDir, filePath)) {
+  if (stateDir && (isInside(stateDir, filePath) || isInside(realStateDir || stateDir, real))) {
     return { action: 'block', kind: 'state-dir', reason: 'escritura directa al estado del pipeline (~/.claude/.tycon-pipeline/)' };
+  }
+  // El árbol instalado del arnés lo reemplaza cada actualización: se cambia con un pedido a su repo.
+  // Sin kill-switch del repo y antes del pase de los repos del arnés: vale en cualquier modo de permisos.
+  const raiz = Array.isArray(installedRoots) ? installedRoots.find((r) => isInside(r, real)) : null;
+  if (raiz) {
+    // `adentro`: la parte de la ruta dentro del árbol (el mensaje mira ahí, no en las carpetas de arriba)
+    const adentro = norm(real).slice(norm(raiz).replace(/\/+$/, '').length);
+    return { action: 'block', kind: 'installed-tree', reason: 'escritura en el árbol instalado del arnés', adentro };
   }
 
   if (gateEnabled === false) return { action: 'pass', reason: 'gate apagado (env o config commiteada del repo)' };
@@ -242,6 +255,20 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '  con Write/Edit (o por Bash en sus formas obvias) es fabricar evidencia — el harness lo deniega.',
       `  Usá el comando correspondiente: node ${MARKER_JS} <set|complete-step|run-check|adhoc|…>.`,
     ].join('\n');
+  }
+  if (r.kind === 'installed-tree') {
+    return [
+      '⛔ el arnés instalado no se edita',
+      viaLine.replace(/\n$/, ''),
+      `  ${f}`,
+      '  El arnés se cambia con un pedido a su repo, no editando la instalación.',
+      '  La próxima actualización reemplaza este árbol entero.',
+      '  Para cambiar algo del arnés: hacelo en una copia de trabajo de su repo y proponelo con un pedido.',
+      ...(/^\/packs(\/|$)/.test(r.adentro || '') ? [
+        '  Un paquete de revisores propio tampoco va acá: la próxima actualización lo borra. Guardalo en tu repo; el',
+        '  arnés todavía no tiene un lugar para paquetes propios que sobreviva a las actualizaciones.',
+      ] : []),
+    ].filter((l) => l !== '').join('\n');
   }
   if (r.kind === 'plan') {
     return [

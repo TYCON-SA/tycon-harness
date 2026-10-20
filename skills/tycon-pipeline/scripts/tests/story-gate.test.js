@@ -326,3 +326,179 @@ test('harness: `isHarness` booleano manda sobre la carpeta; sin él decide la ca
   // El state-dir bloquea siempre, también en un repo del harness.
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/home/u/.claude/.tycon-pipeline/active/s1.json', isHarness: true }).kind, 'state-dir');
 });
+
+// ── installed-tree: el árbol instalado del arnés no se escribe, en ningún modo ─────────
+function mkInstalled() {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'inst-')));
+  const tree = path.join(base, '.tycon', 'harness');
+  fs.mkdirSync(path.join(tree, 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(base, '.claude'), { recursive: true });
+  fs.symlinkSync(tree, path.join(base, '.claude', 'tycon-harness'), 'junction');
+  return { base, tree, link: path.join(base, '.claude', 'tycon-harness'), roots: [tree] };
+}
+
+test('InstalledTree_DeniedAlways', () => {
+  const { tree } = mkInstalled();
+  const roots = [tree];
+  const marker = { storyId: '9.9', stepsPending: [], repoPath: '/w/otro' };
+  for (const f of [path.join(tree, 'skills', 'a.js'), path.join(tree, 'guia.md')]) {
+    for (const extra of [{}, { marker }, { gateEnabled: false }, { isHarness: true }]) {
+      const r = gate.computeStoryGate({ ...BASE, filePath: f, realFilePath: f, installedRoots: roots, ...extra });
+      assert.equal(r.action, 'block', `${f} ${JSON.stringify(extra)}`);
+      assert.equal(r.kind, 'installed-tree');
+    }
+  }
+});
+
+test('InstalledTree_ClonesConfigProjectPass', () => {
+  const { base, tree } = mkInstalled();
+  const roots = [tree];
+  const wt = path.join(base, 'SourceCode', 'tycon-harness-wt-x', 'skills', 'a.js');
+  for (const f of [wt, path.join(base, '.tycon', 'config.json'), `${REPO}/specs/s.md`, path.join(os.tmpdir(), 'x.md')]) {
+    const r = gate.computeStoryGate({ ...BASE, filePath: f, realFilePath: f, installedRoots: roots });
+    assert.notEqual(r.kind, 'installed-tree', f);
+  }
+});
+
+test('InstalledTree_MessageInPlainWords', () => {
+  const { tree } = mkInstalled();
+  const f = path.join(tree, 'guia.md');
+  const r = gate.computeStoryGate({ ...BASE, filePath: f, realFilePath: f, installedRoots: [tree] });
+  const m = gate.blockMessage(r, { filePath: f });
+  assert.match(m, /^⛔ el arnés instalado no se edita/);
+  assert.match(m, /El arnés se cambia con un pedido a su repo, no editando la instalación\./);
+  assert.match(m, /La próxima actualización reemplaza este árbol entero\./);
+  assert.doesNotMatch(m, /installed-tree|kind|[A-Z]{3,}-[CW]\d/);
+  // un paquete de revisores propio escrito en el árbol: el mensaje dice que ahí se pierde
+  const pk = path.join(tree, 'packs', 'mi-stack', 'pack.json');
+  const rp = gate.computeStoryGate({ ...BASE, filePath: pk, realFilePath: pk, installedRoots: [tree] });
+  assert.match(gate.blockMessage(rp, { filePath: pk }), /paquete de revisores propio tampoco va acá/);
+  assert.doesNotMatch(m, /paquete de revisores/);
+  // una carpeta packs más abajo en el árbol no es la de los paquetes
+  const doc = path.join(tree, 'docs', 'packs', 'x.md');
+  const rd = gate.computeStoryGate({ ...BASE, filePath: doc, realFilePath: doc, installedRoots: [tree] });
+  assert.doesNotMatch(gate.blockMessage(rd, { filePath: doc }), /paquete de revisores/);
+});
+
+test('StateDir_ByRealPath', () => {
+  const real = fs.realpathSync(tmpState());
+  const linkBase = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'lnk-')));
+  const link = path.join(linkBase, '.tycon-pipeline');
+  fs.symlinkSync(real, link, 'junction');
+  const r = io.evaluate({ filePath: path.join(link, 'active', 's1.json'), sessionId: 's1', stateDir: real, installedRoots: [] });
+  assert.equal(r.verdict.action, 'block');
+  assert.equal(r.verdict.kind, 'state-dir');
+});
+
+test('BashWrite_InstalledTree_Denied', () => {
+  const { tree, link } = mkInstalled();
+  const stateDir = tmpState();
+  const repo = mkRepo(false);
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const opts = { stateDir, installedRoots: [tree] };
+  for (const cmd of [`echo x > ${path.join(tree, 'a.md')}`, `cp src/a ${path.join(link, 'b.js')}`, `echo x | tee ${path.join(tree, 'c.txt')}`]) {
+    const b = bash.handle(ev(cmd), opts);
+    assert.ok(b && /el arnés instalado no se edita/.test(b.block), cmd);
+  }
+  assert.equal(bash.handle(ev('echo x > ./proyecto.md'), opts), null);
+});
+
+test('BashWrite_InstalledTree_OtherForms', () => {
+  // las formas que el pase adversarial mostró que pasaban: sed/perl en sitio sobre un archivo que no es código, el
+  // destino de cp/mv escondido por una redirección final o dado con -t, y las redirecciones &> >| >&
+  const { tree, link } = mkInstalled();
+  fs.writeFileSync(path.join(tree, 'guia.md'), 'x\n');
+  const stateDir = tmpState();
+  const repo = mkRepo(false);
+  const ev = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command } });
+  const opts = { stateDir, installedRoots: [tree] };
+  const g = path.join(link, 'guia.md');
+  for (const cmd of [
+    `sed -i '' 's/x/y/' ${g}`,
+    `perl -pi -e 's/x/y/' ${g}`,
+    `cp a ${path.join(tree, 'b.md')} 2>&1`,
+    `mv a ${path.join(tree, 'b.md')} 2>/dev/null`,
+    `cp -t ${tree} a`,
+    `mv --target-directory=${link} a`,
+    `echo x &> ${g}`,
+    `echo x >| ${g}`,
+    `echo x >& ${g}`,
+  ]) {
+    const b = bash.handle(ev(cmd), opts);
+    assert.ok(b && /el arnés instalado no se edita/.test(b.block), cmd);
+  }
+  // el destino entre comillas, los -t agrupados o pegados, y las formas de PowerShell con redirección final
+  for (const cmd of [
+    `cp a "${path.join(tree, 'b.md')}"`,
+    `cp a '${path.join(tree, 'b.md')}'`,
+    `sed -i '' 's/x/y/' "${g}"`,
+    `echo x | tee -a "${path.join(tree, 'f')}"`,
+    `echo x >| "${g}"`,
+    `cp -rt ${tree} a`,
+    `mv -vt ${tree} a`,
+    `cp -t${tree} a`,
+    `Copy-Item a ${path.join(tree, 'b.md')} 2>&1`,
+    `cp a "b.md"`.replace('"b.md"', `"${path.join(tree, 'b.md')}"`),
+    `cp a ${path.join(tree, 'b.md')} -f`,
+    `Copy-Item a ${path.join(tree, 'b.md')} -Force`,
+    `cp a ${path.join(tree, 'b.md')} # nota`,
+    `cp -t /tmp/x -t ${tree} a`,
+    `mv --target-directory ${tree} a`,
+    `perl -i.bak -pe 's/x/y/' ${g}`,
+    `perl -pi.bak -e 's/x/y/' ${g}`,
+    `sed -i ${g} -ne p`,
+    `sed -i 's/a b/c/' ${g}`,
+    `sed -i -es/a/b/ ${g}`,
+    `sed -i -e 's/a/b/' ${g}`,
+  ]) {
+    const b = bash.handle(ev(cmd), opts);
+    assert.ok(b && /el arnés instalado no se edita/.test(b.block), cmd);
+  }
+  // con la sesión parada en el árbol, un destino entre comillas sin barra también se ve
+  const enElArbol = (command) => ({ tool_name: 'Bash', session_id: 's1', cwd: tree, tool_input: { command } });
+  assert.ok(/el arnés instalado no se edita/.test((bash.handle(enElArbol('cp a "b.md"'), opts) || {}).block || ''));
+  // un destino con $HOME hacia el árbol
+  const prevHome = process.env.HOME;
+  process.env.HOME = path.dirname(path.dirname(tree));
+  try {
+    const b = bash.handle(ev(`echo x > $HOME/.tycon/harness/a.md`), opts);
+    assert.ok(b && /el arnés instalado no se edita/.test(b.block), '$HOME');
+  } finally { process.env.HOME = prevHome; }
+  // una ruta de Windows entre comillas (con barras invertidas) se lee como destino
+  assert.deepEqual(bash.extractWriteTargets('Copy-Item a "C:\\Users\\x\\.tycon\\harness\\b.md"'), ['C:\\Users\\x\\.tycon\\harness\\b.md']);
+  // con -t cuenta cada archivo que llega: copiar código a una carpeta del repo sigue siendo escribir código
+  assert.deepEqual(bash.extractWriteTargets('cp -t src a.ts b.md').sort(), ['src', 'src/a.ts', 'src/b.md']);
+  assert.deepEqual(bash.extractWriteTargets('cp a.cs -tsrc b.cs').sort(), ['src', 'src/a.cs', 'src/b.cs']);
+  // la expresión de sed no es un archivo: con la sesión parada adentro del árbol, editar un archivo de afuera pasa
+  const enArbol = { tool_name: 'Bash', session_id: 's1', cwd: tree, tool_input: { command: `sed -i '' 's/a/b/' ${path.join(repo, 'x.md')}` } };
+  assert.equal(bash.handle(enArbol, opts), null);
+  for (const cmd of [`sed -i -e 's/a/b/' ${path.join(repo, 'x.md')}`, `perl -pi -e 's/x/y/' ${path.join(repo, 'x.md')}`]) {
+    assert.equal(bash.handle({ ...enArbol, tool_input: { command: cmd } }, opts), null, cmd);
+  }
+  // un texto entre comillas con espacios sigue sin leerse como destino
+  assert.deepEqual(bash.extractWriteTargets('git commit -m "fix > src/a.ts"'), []);
+  // sed en sitio sobre un archivo del proyecto que no es código sigue pasando, y `>&2` no es un destino
+  assert.equal(bash.handle(ev("sed -i '' 's/x/y/' notas.md"), opts), null);
+  assert.equal(bash.handle(ev('echo x >&2'), opts), null);
+});
+
+test('StateDir_RealPathOfALinkedStateDir', () => {
+  // la carpeta del estado puede ser un enlace (la de ~/.claude antes de la mudanza): escribir por su destino real también
+  // es escribir el estado
+  const real = fs.realpathSync(tmpState());
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'lnk2-')));
+  const link = path.join(base, '.tycon-pipeline');
+  fs.symlinkSync(real, link, 'junction');
+  const r = io.evaluate({ filePath: path.join(real, 'active', 's1.json'), sessionId: 's1', stateDir: link, installedRoots: [] });
+  assert.equal(r.verdict.kind, 'state-dir');
+  const repo = mkRepo(false);
+  const b = bash.handle({ tool_name: 'Bash', session_id: 's1', cwd: repo, tool_input: { command: `echo x > ${path.join(real, 'active', 's1.json')}` } }, { stateDir: link, installedRoots: [] });
+  assert.ok(b && /ESTADO DEL PIPELINE/.test(b.block));
+});
+
+test('InstalledRoots_EmptyAnswerIsNotKept', () => {
+  // las raíces se guardan una vez encontradas; una respuesta vacía no se guarda
+  assert.ok(Array.isArray(io.defaultInstalledRoots()));
+  const src = fs.readFileSync(path.join(SCRIPTS, 'lib', 'story-gate-io.js'), 'utf8');
+  assert.match(src, /if \(r\.length\) installedRootsMemo = r;/);
+});

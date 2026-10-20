@@ -486,9 +486,12 @@ de terceros». Lo que sigue es para una skill **del equipo**.
 
 **Flujo para agregar una skill nueva del equipo:**
 
+Se hace en una copia de trabajo del repo del arnés, nunca en el arnés instalado (`~/.tycon/harness` y sus enlaces de
+`~/.claude`): la próxima actualización lo reemplaza entero, y el agente no lo puede escribir.
+
 1. Crear la carpeta de la skill con el skill `/skill-creator`:
    ```bash
-   mkdir -p ~/.claude/tycon-harness/skills/mi-skill
+   mkdir -p <copia de trabajo del arnés>/skills/mi-skill
    # crear SKILL.md y los archivos necesarios adentro
    ```
 2. Validar que `SKILL.md` tenga frontmatter `name` + `description` — sin esto Claude Code no la ve. Si su nombre no
@@ -496,7 +499,7 @@ de terceros». Lo que sigue es para una skill **del equipo**.
    repo frena toda carpeta que no esté declarada en ningún universo.
 3. Commit + push:
    ```bash
-   cd ~/.claude/tycon-harness
+   cd <copia de trabajo del arnés>
    git add skills/mi-skill
    git commit -m "feat(skills): add mi-skill — <descripción breve + fuente si aplica>"
    git push
@@ -510,7 +513,7 @@ La línea de arranque (paso 4 de instalación) trae la versión nueva del repo e
 **Eliminar una skill:**
 
 ```bash
-cd ~/.claude/tycon-harness
+cd <copia de trabajo del arnés>
 git rm -r skills/skill-a-eliminar
 git commit -m "chore(skills): remove skill-a-eliminar (motivo)"
 git push

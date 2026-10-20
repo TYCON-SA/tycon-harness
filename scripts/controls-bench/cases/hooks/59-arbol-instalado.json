@@ -1,0 +1,356 @@
+{
+  "__doc": "Story 8.68: el árbol instalado del arnés (~/.tycon/harness, team, third-party, previous y sus enlaces de ~/.claude) no lo escribe el agente, en ningún modo de permisos. El HOME del banco imita una instalación por versión.",
+  "hooks": [
+    {
+      "hook": "hook-pre-edit.js → on-story-gate (árbol instalado)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/hook-pre-edit.js",
+      "event": "PreToolUse",
+      "matcher": "Edit|Write",
+      "cases": [
+        {
+          "id": "arbol-deniega-directo",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/.tycon/harness/guia.md",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-deniega-por-enlace",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/.claude/tycon-harness/skills/nueva/a.js",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-deniega-perfil-del-equipo",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/.tycon/team/abc/perfil.json",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-pasa-config-de-la-maquina",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/.tycon/config.json",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "arbol-pasa-archivo-del-proyecto",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/notas.md",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "arbol-pasa-copia-de-trabajo-del-arnes",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/SourceCode/tycon-harness-wt-x/guides/a.md",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "arbol-deniega-por-el-nombre-viejo",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.claude/tycon-harness\" \"$HOME/.claude/tycon-claude-guides\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Edit",
+            "tool_input": {
+              "file_path": "${SANDBOX_HOME}/.claude/tycon-claude-guides/guia.md",
+              "old_string": "a",
+              "new_string": "b"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-pasa-temporal",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Write",
+            "tool_input": {
+              "file_path": "${FIXTURE}/../tmp-868.md",
+              "content": "x"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        }
+      ]
+    },
+    {
+      "hook": "on-bash-write-gate.js (árbol instalado)",
+      "script": "${SKILLS}/skills/tycon-pipeline/scripts/on-bash-write-gate.js",
+      "event": "PreToolUse",
+      "matcher": "Bash",
+      "cases": [
+        {
+          "id": "arbol-deniega-consola-redireccion",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}",
+            "tool_input": {
+              "command": "echo x > ${SANDBOX_HOME}/.claude/agent-skills/a.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-deniega-consola-cp",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}",
+            "tool_input": {
+              "command": "cp notas.md ${SANDBOX_HOME}/.tycon/harness/notas.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-pasa-consola-proyecto",
+          "type": "must-not-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}",
+            "tool_input": {
+              "command": "echo x > ${FIXTURE}/notas.md"
+            }
+          },
+          "expect": {
+            "exit": 0
+          }
+        },
+        {
+          "id": "arbol-deniega-consola-sed-en-sitio",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\"",
+            "printf 'x\\n' > \"$HOME/.tycon/harness/guia.md\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}",
+            "tool_input": {
+              "command": "sed -i.bak 's/x/y/' ${SANDBOX_HOME}/.claude/tycon-harness/guia.md"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        },
+        {
+          "id": "arbol-deniega-consola-cp-con-redireccion",
+          "type": "must-block",
+          "setup": [
+            "mkdir -p \"$HOME/.tycon/state\" \"$HOME/.tycon/harness/scripts\" \"$HOME/.tycon/harness/skills\" \"$HOME/.tycon/team\" \"$HOME/.tycon/third-party\" \"$HOME/.tycon/previous\"",
+            "printf '{\"sources\":[{\"kind\":\"release\"}]}' > \"$HOME/.tycon/state/harness-state.json\"",
+            "printf '#!/bin/sh\\n' > \"$HOME/.tycon/harness/scripts/install-tycon-hooks.sh\"",
+            "printf '{}' > \"$HOME/.tycon/config.json\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/tycon-harness\"",
+            "node -e \"require('fs').symlinkSync(process.argv[1], process.argv[2], 'junction')\" \"$HOME/.tycon/harness\" \"$HOME/.claude/agent-skills\"",
+            "printf 'x\\n' > \"$HOME/.tycon/harness/guia.md\""
+          ],
+          "stdin": {
+            "session_id": "bench-arbol",
+            "tool_name": "Bash",
+            "cwd": "${FIXTURE}",
+            "tool_input": {
+              "command": "cp notas.md ${SANDBOX_HOME}/.tycon/harness/notas.md 2>&1"
+            }
+          },
+          "expect": {
+            "exit": 2,
+            "stderr_re": [
+              "el arnés instalado no se edita",
+              "pedido a su repo"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
