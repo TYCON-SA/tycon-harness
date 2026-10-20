@@ -409,6 +409,36 @@ function enteringState(m, prsOf, unreadable, wanted, ctx) {
   return failures.length ? `${ENTERING} (no se pudo consultar los pedidos)` : null;
 }
 
+// El cierre más nuevo de cada sesión en timing-history/ (sesión → marcador archivado), entre los archivos de las últimas
+// 24 h por su fecha (sin abrir los viejos: son cientos) y con el paso 8 cerrado. Uno reciente que no se lee, al pie.
+function latestClosures(dir, nowMs, unreadable) {
+  const out = new Map();
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((n) => n.endsWith('.json')); } catch (e) {
+    if (e.code !== 'ENOENT') unreadable.push(`${dir}: ${e.message}`);
+    return out;
+  }
+  const recent = [];
+  for (const n of names) {
+    const file = path.join(dir, n);
+    let mtime;
+    try { mtime = fs.statSync(file).mtimeMs; } catch (e) { unreadable.push(`${file}: sin fecha legible (${e.message})`); continue; }
+    if (nowMs - mtime <= STALE_MS) recent.push({ file, mtime });
+  }
+  recent.sort((a, b) => b.mtime - a.mtime);
+  // cuenta el más nuevo de cada sesión aunque no haya cerrado el paso 8: uno más viejo no lo reemplaza
+  const seen = new Set();
+  for (const { file } of recent) {
+    let h;
+    try { h = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
+    const m = h && h.marker;
+    if (!m || !m.sessionId || seen.has(m.sessionId)) continue;
+    seen.add(m.sessionId);
+    if ((Array.isArray(m.stepsCompleted) ? m.stepsCompleted : []).map(String).includes('8')) out.set(m.sessionId, m);
+  }
+  return out;
+}
+
 function buildWip(opts = {}) {
   const home = opts.home || os.homedir();
   const sdir = opts.stateDir || stateDir(home);
@@ -482,6 +512,25 @@ function buildWip(opts = {}) {
       rows.push({ work, state: step, end: entering ? enteringEnd(m, entry, nowMs) : estimateEnd(m, medians, nowMs, entry), session: label });
     }
     else halfway.push(`${work} · ${shortId(sid)} · quedó en: ${step} · limpiar: node ${MARKER_JS} clear-session ${sid}`);
+  }
+
+  // Después del cierre: `marker.js clear` borra el marcador y deja el cierre en timing-history/. Una sesión viva sin
+  // marcador activo cuyo cierre más nuevo (de las últimas 24 h, por la fecha del archivo, antes de abrirlo) cerró el
+  // paso 8 se trata como un marcador cerrado: si su rama tiene pedidos abiertos, sale «Entrando a los repos».
+  const closures = latestClosures(path.join(sdir, 'timing-history'), nowMs, unreadable);
+  for (const [sid, m] of closures) {
+    if (busy.has(sid) || !liveName(sid)) continue;
+    // el worktree de la story se borra al mergear: si su carpeta ya no existe, la story entró (no es un problema)
+    if (typeof m.repoPath === 'string' && path.isAbsolute(m.repoPath) && !fs.existsSync(m.repoPath)) continue;
+    const entering = enteringState(m, opts.prs, unreadable, wanted, gitCtx);
+    if (!entering) continue;
+    busy.add(sid);
+    let title;
+    try { title = storyTitle(m.storyPath); } catch (e) {
+      title = '(título ilegible)';
+      unreadable.push(`${m.storyPath || '(sin ruta de story)'}: ${e.code === 'ENOENT' ? 'no existe' : e.message}`);
+    }
+    rows.push({ work: `${m.storyId || '?'} · ${cut(title, TITLE_MAX)}`, state: entering, end: enteringEnd(m, storyEntry(m, gitCtx), nowMs), session: liveName(sid) });
   }
 
   if (stale) unreadable.push(`${stale} marcador(es) sin tocar hace más de 24 h: no cuentan (marker.js list-all los descarta)`);

@@ -28,8 +28,9 @@ aparecen, «Quedaron a medio camino» y «No se pudo leer». No agregues listas 
 cada sesión, ni horas que la tabla no trae: «sin datos» se deja como está.
 
 «Entrando a los repos» es una story que cerró el pipeline y espera que entren sus pedidos (la CI, la cola, un
-pedido en borrador): su sesión sigue ocupada. Para saberlo, el programa pregunta a GitHub o a Azure DevOps (sólo lee,
-con topes de unos segundos); si no pudo, lo dice al pie.
+pedido en borrador): su sesión sigue ocupada. Se ve también después del cierre, cuando el pipeline ya borró su
+marcador: el programa lee el último cierre de la sesión (de las últimas 24 h). Para saberlo, pregunta a GitHub o a
+Azure DevOps (sólo lee, con topes de unos segundos); si no pudo, lo dice al pie y la sesión no cuenta como libre.
 
 «Trabajando sin pipeline» es una sesión que está haciendo algo fuera de una story (un video, una medición, una story
 que todavía no armó su marcador): su archivo de sesión dice que está ocupada, o tuvo actividad hace menos de 5 minutos.

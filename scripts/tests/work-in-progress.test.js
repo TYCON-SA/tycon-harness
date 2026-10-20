@@ -759,3 +759,110 @@ test('T43 TrabajoSuelto_SinTocar_PreguntaSiTermino: el viejo pregunta si termin�
   assert.strictEqual(by.videos, `Trabajo suelto · sin tocar desde ${localHhmm(minsBefore(120))} · ¿terminó? cerralo desde su sesión: node ${path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js')} adhoc clear`);
   assert.strictEqual(by.ajustes, `Trabajo suelto · sin tocar desde ${localHhmm(minsBefore(10))}`);
 });
+
+// ── After the close: `marker.js clear` deletes the marker, and the close stays in timing-history ──────────────────
+
+// The close of a pipeline as `marker.js clear` leaves it: `{ archivedAt, marker }`, with the file dated `mins` before NOW
+// (the /wip looks at the file date before opening it).
+function closure(m, sid, name, mins, fields = {}) {
+  const at = new Date(minsBefore(mins));
+  const file = path.join(m.state, 'timing-history', `${name}.json`);
+  fs.writeFileSync(file, JSON.stringify({
+    archivedAt: at.toISOString(),
+    marker: { sessionId: sid, storyId: '5.1', storyPath: story(m.root, '5.1', 'Lo que entra'), stepsCompleted: [0, 1, 2, 3, 4, 5, 6, 8], stepsPending: [], lastTouch: at.toISOString(), ...fields },
+  }));
+  fs.utimesSync(file, at, at);
+  return file;
+}
+
+test('T44 CierreSinMarcador_PedidoAbierto_SaleEntrando @story-2.49.1 @ac-1: sin marcador, el cierre de la sesión con un pedido abierto da la fila', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'cie00000-1', 'new2');
+  closure(m, 'cie00000-1', '5.1-2026-10-18T1350', 10, { repoPath: repo });
+  const r = run(m, { prs: () => ({ prs: [{ number: 12, draft: false }] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].work, '5.1 · Lo que entra');
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #12');
+  assert.strictEqual(r.rows[0].session, 'new2');
+  assert.deepStrictEqual(r.free, []);
+  // si la consulta falla: la fila sale igual, el pie lo dice y la sesión no queda libre
+  const f = run(m, { prs: () => ({ error: 'gh no contestó' }) });
+  assert.strictEqual(f.rows[0].state, 'Entrando a los repos (no se pudo consultar los pedidos)');
+  assert.ok(f.unreadable.some((u) => /no contestó/.test(u)), f.text);
+  assert.deepStrictEqual(f.free, []);
+});
+
+test('T45 CierreSinMarcador_PedidosEntrados_SinFila @story-2.49.1 @ac-2: con los pedidos ya entrados, el cierre no agrega fila', () => {
+  const m = toyMachine();
+  session(m, process.pid, 'cie00000-2', 'new2');
+  closure(m, 'cie00000-2', '5.1-2026-10-18T1350', 10, { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const r = run(m, { prs: () => ({ prs: [] }) });
+  assert.deepStrictEqual(r.rows, []);
+  assert.deepStrictEqual(r.free, ['new2']);
+});
+
+test('T46 CierreViejoOMuerto_SeIgnora @story-2.49.1 @ac-3: un cierre de hace 25 h, o de una sesión muerta, no agrega nada', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'cie00000-3', 'vieja');
+  closure(m, 'cie00000-3', '5.1-viejo', 25 * 60, { repoPath: repo });
+  session(m, DEAD_PID, 'cie00000-4', 'muerta');
+  closure(m, 'cie00000-4', '5.1-muerta', 10, { repoPath: repo });
+  const asked = [];
+  const r = run(m, { prs: (q) => { asked.push(q); return { prs: [{ number: 12, draft: false }] }; } });
+  assert.deepStrictEqual(r.rows, [], r.text);
+  assert.deepStrictEqual(asked, [], 'ni se consultan');
+});
+
+test('T47 CierreYMarcador_UnaSolaFila_ElMasNuevo @story-2.49.1 @ac-4 @ac-5: cuenta el cierre más nuevo; con marcador activo, sólo la fila del marcador', () => {
+  const m = toyMachine();
+  const viejo = gitRepo(m.root, 'v', 'story/v', 'https://github.com/acme/v.git');
+  const nuevo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'cie00000-5', 'new2');
+  closure(m, 'cie00000-5', '5.0-2026-10-18T1200', 120, { storyId: '5.0', repoPath: viejo });
+  closure(m, 'cie00000-5', '5.1-2026-10-18T1350', 10, { repoPath: nuevo });
+  const prs = (q) => ({ prs: [{ number: q.name === 'x' ? 12 : 7, draft: false }] });
+  const r = run(m, { prs });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].state, 'Entrando a los repos · x #12');
+  // si el cierre más nuevo no cerró el paso 8, ése manda: uno más viejo de la misma sesión no lo reemplaza
+  closure(m, 'cie00000-5', '5.2-2026-10-18T1355', 5, { storyId: '5.2', stepsCompleted: [0, 1], stepsPending: [], repoPath: nuevo });
+  assert.deepStrictEqual(run(m, { prs }).rows, [], 'el más nuevo no cerró el 8: sin fila');
+  fs.rmSync(path.join(m.state, 'timing-history', '5.2-2026-10-18T1355.json'));
+  // con un marcador activo de la misma sesión, gana el marcador
+  marker(m, 'cie00000-5', { storyId: '9.9', storyPath: story(m.root, '9.9', 'Otra'), stepsCompleted: [0], stepsPending: [1, 2], lastTouch: NOW });
+  const conMarcador = run(m, { prs });
+  assert.strictEqual(conMarcador.rows.length, 1, conMarcador.text);
+  assert.strictEqual(conMarcador.rows[0].work, '9.9 · Otra');
+});
+
+test('T49 CierreConElWorktreeBorrado_YaEntro @story-2.49.1 @ac-8: si la carpeta del repo del cierre ya no existe, la story entró: sin fila y sin aviso', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  session(m, process.pid, 'cie00000-7', 'new2');
+  closure(m, 'cie00000-7', '5.1-2026-10-18T1350', 10, { repoPath: repo, filesTouched: [path.join(repo, 'a.js')] });
+  fs.rmSync(repo, { recursive: true, force: true });
+  const asked = [];
+  const r = run(m, { prs: (q) => { asked.push(q); return { prs: [{ number: 12, draft: false }] }; } });
+  assert.deepStrictEqual(r.rows, [], r.text);
+  assert.deepStrictEqual(r.free, ['new2']);
+  assert.deepStrictEqual(r.unreadable, [], 'un worktree borrado al mergear no es un problema');
+  assert.deepStrictEqual(asked, []);
+});
+
+test('T48 MarcadorVivoConNombre_FilaConPaso_CierreIlegibleAlPie @story-2.49.1 @ac-6 @ac-7: un marcador en curso sale con su paso; un cierre reciente roto, al pie', () => {
+  const m = toyMachine();
+  marker(m, 'cie00000-6', { storyId: '8.68', storyPath: story(m.root, '8.68', 'El agente no edita el arnés instalado'), stepsCompleted: [0], stepsPending: [1, 2, 3], lastTouch: NOW });
+  session(m, process.pid, 'cie00000-6', 'new1');
+  const roto = path.join(m.state, 'timing-history', '8.67-roto.json');
+  fs.writeFileSync(roto, '{ roto');
+  fs.utimesSync(roto, new Date(minsBefore(5)), new Date(minsBefore(5)));
+  const r = run(m, { prs: () => ({ prs: [] }) });
+  assert.strictEqual(r.rows.length, 1, r.text);
+  assert.strictEqual(r.rows[0].session, 'new1');
+  assert.strictEqual(r.rows[0].state, 'Validar la story');
+  assert.ok(r.unreadable.some((u) => u.includes('8.67-roto.json')), r.text);
+  const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
+  assert.ok(/después del cierre|aunque el cierre/.test(command), 'la ayuda dice que la story se ve también después del cierre');
+});
