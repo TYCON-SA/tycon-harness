@@ -141,7 +141,7 @@ test('T7b Imagen_LaGuiaEstaAdentro @story-2.41 @ac-1 — armada de verdad, la im
   }
 });
 
-test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @ac-1 @ac-4 — dentro de la imagen, el mismo modelo que en el árbol', { skip: SIN_DOCKER }, () => {
+test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @story-2.61.2 @ac-1 @ac-4 — dentro de la imagen, el mismo modelo que en el árbol', { skip: SIN_DOCKER }, () => {
   // la pestaña «Cómo trabaja» carga el pipeline y lee los pasos, las guías, la lista de controles y sus guiones: la
   // sonda arma su modelo en los dos lados (montada en la imagen, como la de Configuración en T2k)
   const id = crypto.randomBytes(4).toString('hex');
@@ -156,6 +156,9 @@ test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @ac-1 @ac-4 — d
     assert.strictEqual(enImagen.error, undefined, `en la imagen, el modelo se arma: ${enImagen.error}`);
     assert.deepStrictEqual(enImagen.problems, [], 'en la imagen, nada que no se pudo leer');
     assert.ok(enImagen.steps.length > 10 && enImagen.controls.length > 0, 'pasos y controles');
+    // 2.61.2: el repo público viaja en la imagen, y con él los «Ver el código»
+    assert.match(enImagen.publicRepo || '', /^https:\/\//, 'en la imagen, el repo público');
+    assert.ok(enImagen.codeLinks > 0, 'en la imagen, enlaces al código');
     assert.deepStrictEqual(enImagen, arbol, 'el mismo modelo en la imagen que en el árbol');
   } finally {
     docker(['image', 'rm', '-f', imagen], { timeout: 60000 });

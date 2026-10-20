@@ -585,6 +585,8 @@ test('T21 ComoTrabaja_CadaArchivoQueLeeEntraALaImagen @story-2.61.1 @ac-3 — si
     'skills/tycon-pipeline/scripts/lib/steps.js',
     ...STEPS.map((s) => `skills/tycon-pipeline/steps/${s.file}`),
     'scripts/setup/hooks-list.json',
+    // el repo público: sin él no hay «Ver el código» ni adónde mandar una mejora (2.61.2)
+    'scripts/setup/public-remotes.json',
     ...lista.map((h) => (h.spec.startsWith('@tcg:') ? `scripts/hooks/${h.spec.slice(5)}` : `skills/${h.spec}`)),
     ...versionados.stdout.split('\0').filter((f) => /^guides\/.+\.md$/.test(f)),
   ];
@@ -614,5 +616,48 @@ test('T22 ComoTrabaja_LaImagenSinSecretosYLaSimulacionSinAdivinar @story-2.61.1 
   for (const copia of ['COPY --from=base /app/x scripts/x/', 'COPY scripts/a/ \\\n  scripts/a/']) {
     fs.writeFileSync(path.join(d, 'scripts', 'site', 'Dockerfile'), `FROM x\n${copia}\n`);
     assert.throws(() => imageFiles(d, ['scripts/a/b.js']), /image-files/, copia);
+  }
+});
+
+test('T23 ComoTrabaja_SinRepoPublicoSinBotonesVacios @story-2.61.2 @ac-3 — sin repo público, ni «Proponer una mejora» ni «Ver el código»', () => {
+  const m = HIW().buildModel({ treeDir: ROOT, profileDir: null });
+  const piezas = (html) => html.split('data-origin="harness"').slice(1).map((x) => x.split('</li>')[0]);
+  const sin = TAB().renderPage(m, { idioma: 'es', publicRepo: null, version: 'v' });
+  assert.ok(piezas(sin).length > 20, 'hay piezas del arnés');
+  assert.ok(!sin.includes('data-action="improve"'), 'sin adónde ir, no hay botón de mejora');
+  assert.ok(!sin.includes('/blob/main/'), 'ni enlaces al código');
+  const con = TAB().renderPage(m, { idioma: 'es', publicRepo: PUBLICO, version: 'v' });
+  for (const p of piezas(con)) {
+    assert.ok(p.includes('data-action="improve"'), 'con repo público, cada pieza tiene «Proponer una mejora»');
+    assert.ok(p.includes(`href="${PUBLICO}/blob/main/`), 'y «Ver el código»');
+  }
+});
+
+test('T24 ComoTrabaja_LaSondaDiceElRepoYLosEnlaces @story-2.61.2 @ac-1 @ac-2 — la sonda exige repo público y enlaces; sin ellos, la guarda del workflow frena', () => {
+  const sonda = (...extra) => {
+    const r = spawnSync(process.execPath, [path.join(__dirname, 'lib', 'how-it-works-probe.js'), ROOT, ...extra], { encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    return { texto: r.stdout.trim(), json: JSON.parse(r.stdout.trim().split('\n').pop()) };
+  };
+  const sana = sonda();
+  assert.match(sana.json.publicRepo || '', /^https:\/\//, 'en el árbol, el repo público');
+  assert.ok(sana.json.codeLinks > 0, `en el árbol, enlaces al código (${sana.json.codeLinks})`);
+  assert.deepStrictEqual(sana.json.problems, []);
+  // sin el archivo del repo público (una carpeta vacía en su lugar, como la imagen de antes), un problema
+  const vacia = fs.mkdtempSync(path.join(os.tmpdir(), 'hiw-sin-remoto-'));
+  try {
+    const rota = sonda('--public-remotes-tree', vacia);
+    assert.strictEqual(rota.json.publicRepo, null);
+    assert.strictEqual(rota.json.codeLinks, 0);
+    assert.ok(rota.json.problems.some((x) => /public-remotes\.json/.test(x)), `dice qué falta: ${JSON.stringify(rota.json.problems)}`);
+    // la guarda real del workflow (el renglón de site-image.yml, con bash) la frena
+    const wf = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'site-image.yml'), 'utf8');
+    const guarda = wf.match(/case "\$SONDA_IMAGEN" in \*'"problems":\[\]\}'\) ;; \*\) echo "::error::[^"]*"; exit 1 ;; esac/);
+    assert.ok(guarda, 'la guarda del workflow');
+    const pasa = (salida) => spawnSync('bash', ['-c', guarda[0]], { env: { PATH: process.env.PATH, SONDA_IMAGEN: salida }, encoding: 'utf8' }).status === 0;
+    assert.strictEqual(pasa(rota.texto), false, 'sin repo público, la imagen no se publica');
+    assert.strictEqual(pasa(sana.texto), true, 'sana, pasa');
+  } finally {
+    fs.rmSync(vacia, { recursive: true, force: true });
   }
 });
