@@ -27,7 +27,7 @@ machine](#start-on-your-own), or [for your team](#for-teams).
 
 **See how it works.**
 
-Six short videos, one to two minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
+Six short videos, one to three minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
 
 **0. What it is and what you get**
 

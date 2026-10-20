@@ -27,7 +27,7 @@ máquina](#empezá-solo), o [para tu equipo](#para-equipos).
 
 **Mirá cómo funciona.**
 
-Seis videos cortos, de uno a dos minutos cada uno, con el camino de quien trabaja solo: de instalarlo a sumar las reglas de tu proyecto.
+Seis videos cortos, de uno a tres minutos cada uno, con el camino de quien trabaja solo: de instalarlo a sumar las reglas de tu proyecto.
 
 **0. Qué es y qué ganás**
 
