@@ -64,6 +64,8 @@
  *
  * Uso:  node check-trigger-without-docs.js [--root <dir>] [--config <product-parity.json>] [--json]
  *       node check-trigger-without-docs.js --file <azure-pipelines.yml> [--file …]   (un YAML suelto)
+ *       node check-trigger-without-docs.js --repo <dir> --changed <archivo> […]  (¿estos archivos disparan la CI de ese
+ *         repo? Lee sus azure-pipelines*.yml de origin/main; 0 no dispara · 1 dispara · 2 no se pudo saber)
  * (story 8.9, tanda B3a: --root y --file tenían nombre en castellano; el viejo sigue andando hasta el retiro)
  * Sale 0 ningún pipeline medido construye por documentación · 1 alguno construye (o no construye ni
  * con código) · 2 no pudo medir lo suficiente para opinar (o llegó una opción con su nombre viejo y el nuevo a la vez).
@@ -130,14 +132,54 @@ const EXCLUDE_SUGERIDO = ['README.md', 'CLAUDE.md', 'AGENTS.md', '.engram-projec
   'tasks', '.advisors', '.engram', '.tycon', '.claude', '.vscode'];
 
 function args(argv) {
-  const o = { raiz: null, config: null, configDada: false, archivos: [], json: false };
+  const o = { raiz: null, config: null, configDada: false, archivos: [], json: false, repo: null, changed: [] };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--root') o.raiz = argv[++i];
     else if (argv[i] === '--config') { o.configDada = true; o.config = argv[++i]; }
     else if (argv[i] === '--file') o.archivos.push(argv[++i]);
     else if (argv[i] === '--json') o.json = true;
+    else if (argv[i] === '--repo') o.repo = argv[++i];
+    // --changed lleva uno o más archivos, hasta la próxima opción
+    else if (argv[i] === '--changed') { while (i + 1 < argv.length && !argv[i + 1].startsWith('--')) o.changed.push(argv[++i]); }
   }
   return o;
+}
+
+/**
+ * ¿Estos archivos de este repo disparan su CI? Mira cada `azure-pipelines*.yml` del repo tal como está en `origin/main`
+ * (lo que corre, no el disco) y le aplica las mismas reglas de Azure que el modo de siempre. Devuelve { rc, lineas }:
+ * 0 ninguno dispara · 1 alguno dispara · 2 no se pudo saber (sin archivos, sin origin/main, sin pipelines). Un «no sé»
+ * nunca se dice como «no dispara».
+ */
+function triggerForFiles(repoDir, changed) {
+  const noSe = (motivo) => ({ rc: 2, lineas: [`🔴 no pude saber si dispara la CI: ${motivo}`] });
+  if (!changed.length) return noSe('faltan los archivos (--changed <archivo>…)');
+  let lista;
+  try {
+    lista = cp.execFileSync('git', ['-C', repoDir, 'ls-tree', '-r', '--name-only', 'origin/main'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 32 * 1024 * 1024 });
+  } catch (_) { return noSe(`${repoDir} no tiene origin/main (sin remoto, o sin traer)`); }
+  const pipelines = lista.split('\n').filter((f) => /(^|\/)azure-pipelines[^/]*\.ya?ml$/.test(f));
+  if (!pipelines.length) return noSe(`${repoDir} no tiene ningún azure-pipelines*.yml en origin/main`);
+  const lineas = [];
+  let dispara = 0;
+  for (const f of pipelines) {
+    let texto;
+    try {
+      texto = cp.execFileSync('git', ['-C', repoDir, 'show', `origin/main:${f}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (_) { return noSe(`no pude leer ${f} de origin/main`); }
+    const trigger = leerTrigger(texto);
+    if (trigger.tipo === 'none') { lineas.push(`  · ${f}: trigger: none — no se dispara por empuje`); continue; }
+    const porQue = changed.map((a) => ({ a, p: incluido(trigger, a) })).filter((x) => x.p !== null);
+    if (porQue.length) {
+      dispara += 1;
+      lineas.push(`  · ${f}: dispara — ${porQue.map((x) => `${x.a} por ${x.p}`).join(', ')}`);
+    } else lineas.push(`  · ${f}: no dispara con estos archivos`);
+  }
+  // lo que no ve se dice: un pipeline con otro nombre de archivo, o creado sólo en la web de Azure DevOps, no está acá
+  lineas.push(dispara ? `🔴 dispara la CI: ${dispara} de ${pipelines.length} pipeline(s)` : `✅ no dispara la CI: ninguno de los ${pipelines.length} pipeline(s) que encontré`);
+  lineas.push('   (miré los azure-pipelines*.yml de origin/main; un pipeline con otro nombre o creado sólo en la web no lo veo)');
+  return { rc: dispara ? 1 : 0, lineas };
 }
 
 function expandir(p) {
@@ -329,6 +371,12 @@ function main(argv0) {
     return 2;
   }
   const o = args(argv);
+  if (o.repo !== null || o.changed.length) {
+    if (!o.repo) { console.log('🔴 no pude saber si dispara la CI: falta --repo <carpeta del repo>'); return 2; }
+    const r = triggerForFiles(path.resolve(expandir(o.repo)), o.changed);
+    for (const l of r.lineas) console.log(l);
+    return r.rc;
+  }
   const resultados = [];      // { nombre, archivo, tipo, veredicto: 'docs' | 'sin-codigo' | 'ok' | 'no-aplica', detalle }
   const lineas = [], avisos = [];
   let ausentes = 0;
@@ -425,4 +473,4 @@ function main(argv0) {
 }
 
 if (require.main === module) process.exit(main(process.argv.slice(2)));
-module.exports = { main, leerTrigger, cubre, incluido, evaluar, MERGE_SOLO_DOCS, CODIGO, EXCLUDE_SUGERIDO };
+module.exports = { main, leerTrigger, cubre, incluido, evaluar, triggerForFiles, MERGE_SOLO_DOCS, CODIGO, EXCLUDE_SUGERIDO };
