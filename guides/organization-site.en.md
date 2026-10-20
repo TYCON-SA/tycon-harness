@@ -423,6 +423,10 @@ only: they are changed with a request in their repo.
   with its rule. It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
 - **Test coverage** (*Cobertura de las pruebas*): the percentage of covered new lines below which the test control gives
   notice (it warns, it does not stop). It lives in `team-repos.json`, in the profile repo. A maintainer reviews it.
+- **Reviewer rounds** (*Vueltas de revisores*): how many reviewer rounds a story gets before it stops (1 to 6; empty,
+  2). At the cap, a security or data critical is decided by a person and the rest stays as visible debt. You can also add
+  rules that count as security or data. A repo can adjust the cap in its `.tycon/advisors.yaml`. It lives in
+  `team-repos.json` → `review`, in the profile repo. A maintainer reviews it.
 - **Your technology** (*Tu tecnología*): what the harness already recognizes, the file endings your team adds as code,
   the test tools (the built-in ones, and the ones your organization changed or added) and three rules: the test name
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
