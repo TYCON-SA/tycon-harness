@@ -2136,6 +2136,9 @@ function cmdInstall(ctx) {
 
     const changed = pieces.length > 0 || JSON.stringify(existing) !== JSON.stringify(state);
     if (changed) S.write(ctx.home, state);
+    // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
+    // (con una fuente que no se pudo mirar la instalación sale 1, y el aviso queda)
+    if (!blind.length) mod('report').clearUpdateFailure(ctx.home);
     finishSnapshot(ctx, snap, (l) => R0.log(ctx.home, `install: ${l}`));
     const head = `arnés ${existing && !pieces.length ? 'ya instalado' : 'instalado'} en modo ${state.mode} · ${tree}`;
     // lo demás quedó hecho, pero hay una fuente que no se pudo mirar: sale 1 (la nota de arriba dice cuál y por qué)

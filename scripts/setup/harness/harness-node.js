@@ -319,6 +319,25 @@ function ensure({ tree = DEFAULT_TREE, env = process.env, platform = process.pla
   }
 }
 
+/**
+ * `rename` que espera a un archivo tomado: en Windows el antivirus revisa el Node recién bajado y lo tiene abierto unos
+ * segundos (EPERM, EBUSY, EACCES). Reintenta con esperas crecientes; si sigue tomado, el motivo dice qué hacer.
+ * `rename` y `sleep` se inyectan en las pruebas. `{ ok, reason }`.
+ */
+const HELD = ['EPERM', 'EBUSY', 'EACCES'];
+const HELD_STEPS = 'si se repite, cerrá VS Code, tu agente y las terminales, abrí PowerShell desde el menú Inicio y corré: npx @tyconsa/harness@latest';
+function renameWaiting(from, to, { rename = fs.renameSync, sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms), waitsMs = [200, 500, 1000, 2000, 3000] } = {}) {
+  for (let i = 0; ; i++) {
+    try { rename(from, to); return { ok: true }; } catch (e) {
+      if (!HELD.includes(e.code) || i >= waitsMs.length) {
+        const why = `${e.code || e.message}: ${from} → ${to}`;
+        return { ok: false, reason: HELD.includes(e.code) ? `${why} — un archivo está tomado (suele ser el antivirus revisando el Node recién bajado); se reintenta en el próximo arranque; ${HELD_STEPS}` : why };
+      }
+      sleep(waitsMs[i]);
+    }
+  }
+}
+
 function install({ tree, env, platform, list, entry, pk, p, log, rec }) {
   const inc = path.join(p.dir, `.incoming-${process.pid}`);
   const drop = () => { try { fs.rmSync(inc, { recursive: true, force: true }); } catch (_) { /* queda; lo barre la próxima */ } };
@@ -356,13 +375,20 @@ function install({ tree, env, platform, list, entry, pk, p, log, rec }) {
   fs.writeFileSync(path.join(inc, MANIFEST), `${JSON.stringify({ version: list.version, platform: pk.key, file: entry.file, sha256: entry.sha256, binary_sha256: binSha, installed_at: nowIso() }, null, 2)}\n`);
   const dest = path.join(p.versions, list.version);
   fs.mkdirSync(p.versions, { recursive: true });
+  let aside = null;
   if (fs.existsSync(dest)) {
-    const aside = path.join(p.trash, `${list.version}-${Date.now()}`);
+    aside = path.join(p.trash, `${list.version}-${Date.now()}`);
     fs.mkdirSync(p.trash, { recursive: true });
-    fs.renameSync(dest, aside);
+    const ra = renameWaiting(dest, aside);
+    if (!ra.ok) return fail(ra.reason);
     log(`node del arnés: ${dest} estaba y no servía: apartado a ${aside}`);
   }
-  fs.renameSync(inc, dest);
+  const rm = renameWaiting(inc, dest);
+  if (!rm.ok) {
+    // lo apartado vuelve a su lugar: el enlace `current` puede apuntar ahí, y no tiene que quedar apuntando a la nada
+    if (aside && !fs.existsSync(dest)) { const back = renameWaiting(aside, dest); if (!back.ok) log(`node del arnés: no pude devolver ${aside} a ${dest} (${back.reason})`); }
+    return fail(rm.reason);
+  }
   const before = TH.linkTarget(p.current);
   try { TH.pointLink(p.current, dest, { platform }); } catch (e) { return { ok: false, reason: `no pude apuntar ${p.current} a ${dest} (${e.code || e.message})` }; }
   if (before && path.basename(before) !== list.version) rec.previous = path.basename(before);
@@ -498,4 +524,5 @@ if (require.main === module) {
 module.exports = {
   readList, platformKey, entryFor, probe, formFor, interpreter, ensure, doctorFacts, countHooks, doctorLevel, listedHookPaths,
   readRecord, writeRecord, noticeFor, WINDOWS_FORM, BARE_POSIX, BARE_WIN, FETCH_BUDGET_S, MAX_BYTES, RETRY_AFTER_MS,
+  renameWaiting,
 };

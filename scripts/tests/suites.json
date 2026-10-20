@@ -1889,6 +1889,12 @@
       "requiere": []
     },
     {
+      "__nota": "una actualización trabada por un archivo tomado (Windows): el aviso dice qué cerrar y qué correr; una instalación que sale bien borra el aviso viejo; el Node propio reintenta un rename tomado y, si sigue, dice qué hacer; el registro del buzón trae el sistema de la máquina; la guía de Windows tiene la salida. Hogares de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-stuck-update.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",

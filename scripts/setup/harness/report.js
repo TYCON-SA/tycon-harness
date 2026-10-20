@@ -592,8 +592,14 @@ function updateFailureText(f) {
   if (!f) return null;
   if (f.unreadable) return `no pude leer desde cuándo el arnés no se actualiza (${f.unreadable}): harness.js doctor lo detalla`;
   if (f.count < FAILURE_SAY_FROM) return null;
-  return `no se pudo actualizar desde ${f.since} (${f.count} arranques): ${f.reason} — harness.js doctor lo detalla`;
+  const base = `no se pudo actualizar desde ${f.since} (${f.count} arranques): ${f.reason} — harness.js doctor lo detalla`;
+  // Un archivo tomado (Windows) no se destraba solo: el que actualiza es el código ya instalado, y reintenta lo mismo en
+  // cada arranque mientras haya una ventana abierta. Se dice qué hacer, en cada arranque.
+  return HELD_FILE.test(String(f.reason)) ? `${base}. ${HELD_FILE_STEPS}` : base;
 }
+const HELD_FILE = /EPERM|EBUSY|EACCES|tomad[oa]/;
+const HELD_FILE_STEPS = 'Para destrabarla: cerrá VS Code (todas las ventanas), tu agente y las terminales; abrí PowerShell desde '
+  + 'el menú Inicio y corré: npx @tyconsa/harness@latest — si vuelve a fallar, reiniciá la máquina y correlo antes de abrir VS Code';
 
 module.exports = {
   LOG_MAX_BYTES, VERSION_FILE, derive, stampedVersion, numberAt, versionLine, versionJson,

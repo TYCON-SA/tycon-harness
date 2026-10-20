@@ -87,7 +87,23 @@ Con el plan leído y tu sí, la instalación:
 pwsh -File get-harness.ps1 -- --profile full --integrations none --packs all --yes
 ```
 
-## Parte 2 — opcionales: engram, codegraph, codex y telegram
+## Si el arnés no se actualiza (un archivo tomado)
+
+Si cada arranque dice «no se pudo actualizar desde … (N arranques)» con `EPERM`, `EBUSY` o «un archivo está tomado»,
+Windows no deja mover la carpeta del arnés porque hay algo abierto adentro (VS Code, una sesión de tu agente, una
+terminal o una ventana del Explorador). El arranque reintenta lo mismo cada vez y no se destraba solo:
+
+1. Cerrá VS Code (todas las ventanas), tu agente y las terminales.
+2. Abrí PowerShell desde el menú Inicio (no dentro de VS Code) y corré:
+
+   ```powershell
+   cd $env:USERPROFILE
+   npx @tyconsa/harness@latest
+   ```
+
+3. Si vuelve a decir `EPERM`, reiniciá la máquina y corré el paso 2 antes de abrir VS Code.
+
+Caso verificado (2026-10-20): una máquina con Windows 11 trabada desde el 14/10 se destrabó así, con todo cerrado.
 
 ```text
 Esto va DESPUÉS de la parte 1, en una sesión NUEVA de Claude Code (ya cerré y reabrí). Las mismas reglas: cada comando
