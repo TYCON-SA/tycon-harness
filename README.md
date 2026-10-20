@@ -182,12 +182,12 @@ each product repo: [how to set them up](pipelines/operations/github/README.md) (
 
 1. **Understand the three layers.** This repo, the harness, the same for everybody; the team repo, with what reaches every machine; and the team operations, with what runs at night. The table above says what each one holds. · [▶ video](https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129)
 2. **Set up your team.** `npx @tyconsa/harness@latest --audience org` installs your machine and goes on with `harness.js team-init`, which builds the three files of the team repo and validates them. Create the empty repo, with access only for the team, and push them. Each dev installs with `npx @tyconsa/harness@latest --team <team repo>`. · [▶ video](https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5)
-3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. How to try it on your machine with Docker and how to install it, in [the site guide](guides/organization-site.en.md). · [▶ video](https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9)
+3. **Look at the organization site.** Each person signs in with the organization's account and sees their own: their runs, their pull requests, what is assigned to them; whoever maintains the harness sees everything. It is optional: the harness works fully without it. [Setting up the site: step-by-step guide](guides/organization-site.en.md#what-you-need-first) (try it with Docker, Azure Container Apps, Render or your own machine). · [▶ video](https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9)
 4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965)
 5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87)
 6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
 
-**The team videos** (in Spanish).
+**The team's path, on video.** For whoever sets up the harness for their organization: from the three layers to what runs at night. Each video lasts one to four minutes, in Spanish.
 
 **0. The three layers**
 
@@ -212,6 +212,8 @@ https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
 **5. What runs at night**
 
 https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
+
+**To wrap up.** The summary of both paths.
 
 **From working on your own to the team**
 
