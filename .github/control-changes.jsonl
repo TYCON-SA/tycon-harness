@@ -1,1 +1,2 @@
 {"hash":"43eb4eb3ab4f226b30fb964474dbd1311f4bdd58d8beb2336d3c76de965cecaf","rules":[{"path":".github/workflows/ci.yml","blob":"16b77855f33f2814ae39bef68e4f339545fdfacf"},{"path":"scripts/ci/check-public-workflow.js","blob":"4e9702876664e465726ff7112c8c66de20ddac18"}],"at":"2026-10-19","by":"dueño"}
+{"hash":"9535fc6089a5956b42aa4d1f6e691f4a2a77f16335de915095d4984a0b2fc26e","rules":[{"path":"scripts/lib/rules-catalog-count.js","blob":"e5371def09167b9a4710fcf57601c82efb398cd3"}],"at":"2026-10-20","by":"dueño"}
