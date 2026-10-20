@@ -1895,6 +1895,12 @@
       "requiere": []
     },
     {
+      "__nota": "CodeGraph prendido por la organización: el renglón del plan del instalador (sólo con el perfil del equipo y sin el binario), el paso que corre install-codegraph --tool-only después del sí (falla y sigue), el texto de install-effects.json, el aviso de doctor y lo que espera tooling-expected; y Telegram fuera de «Tu organización» en «Cómo trabaja». Perfiles, hogares y binarios de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/codegraph-team.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "las fichas del tablero nocturno en el sitio: la lista de las 25 igual a la del tablero, una sola cuenta con colectar() sobre la misma foto, lista blanca de campos, «no medido» sin foto o con una vieja, las ocultas por site.hidden_cards no se arman ni llegan a la página, Arnés sólo para quien mantiene. Levanta el servidor del sitio con sesiones inyectadas y fotos sintéticas; sin red.",
       "raiz": "arnes",
       "ruta": "tests/site-cards.test.js",

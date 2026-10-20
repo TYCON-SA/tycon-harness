@@ -267,6 +267,8 @@ function readOrg({ treeDir, profileDir }) {
   try {
     const cfg = TC.cargar({ env: { TYCON_PROFILE: perfil }, home: hogar });
     integrations = TC.integraciones(cfg);
+    // Telegram es de cada máquina (el perfil rechaza un chat): no es una integración de la organización
+    delete integrations.telegram;
     // un error del archivo entero (sin clave: ilegible) es no haberlo leído; uno de una clave deja leído el resto
     integrationsKnown = fs.existsSync(perfil) && !(cfg.errores || []).some((e) => e.archivo === perfil && !e.clave);
     packsDefault = cfg.valores && cfg.valores.packs ? cfg.valores.packs.default : null;

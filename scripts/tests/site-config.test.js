@@ -1339,10 +1339,10 @@ test('2.31-T6 ResponseSection_OldLayerVersion_DoesNotPropose @story-2.31 @ac-5 �
 test('2.31-T11 NewSections_ValidateWithMachineReader_RejectPersonalValues @story-2.31 @ac-10 @ac-11 @ac-12 @ac-13 @ac-16 — cada sección cambia sólo sus hojas y valida con el lector de la máquina', () => {
   const rev = (seccion, borrador) => ORG.revisar({ seccion, texto: ORG.formatJson(PERFIL_TYCON), borrador, lectores: { 'harness-config': TC } });
   const cambio = (r, esperado) => { assert.strictEqual(r.ok, true, JSON.stringify(r.problems)); assert.strictEqual(r.texto, ORG.formatJson(esperado)); };
-  // integraciones: las cinco del equipo; Telegram y CodeGraph no se editan acá (son de cada máquina)
+  // integraciones: las seis del equipo (CodeGraph incluido); Telegram no se edita acá (es de cada máquina)
   const integ = ORG.seccionPorId('integraciones');
-  assert.deepStrictEqual(integ.rutas, ['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly']);
-  cambio(rev('integraciones', { integrations: { clockify: false, engram: true, mailbox: true, codex: true, nightly: true, codegraph: true } }), { ...PERFIL_TYCON, integrations: { ...PERFIL_TYCON.integrations, clockify: false, codex: true } });
+  assert.deepStrictEqual(integ.rutas, ['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']);
+  cambio(rev('integraciones', { integrations: { clockify: false, engram: true, mailbox: true, codex: true, nightly: true, codegraph: true } }), { ...PERFIL_TYCON, integrations: { ...PERFIL_TYCON.integrations, clockify: false, codex: true, codegraph: true } });
   assert.deepStrictEqual(rev('integraciones', { integrations: { clockify: 'sí' } }).problems.map((p) => p.path), ['integrations.clockify']);
   // Azure DevOps: la organización; un correo ahí es un valor personal y lo rechaza el lector
   cambio(rev('ado', { ado: { org: 'https://dev.azure.com/otra' } }), { ...PERFIL_TYCON, ado: { org: 'https://dev.azure.com/otra' } });
@@ -1435,8 +1435,9 @@ test('2.31-T16 Proponer_SoloLasHojasDeLaSeccion @story-2.31 @ac-15 (pase adversa
     const doc = JSON.parse(ok.texto); doc.update.skills_source = 'unified';
     assert.match((await proponer('actualizacion', ORG.formatJson(doc))).message, /update\.skills_source.*no es de esta sección/);
     const ok2 = await revisar('integraciones', { integrations: { ...PERFIL_TYCON.integrations, nightly: false } });
-    const doc2 = JSON.parse(ok2.texto); doc2.integrations.codegraph = true;
-    assert.match((await proponer('integraciones', ORG.formatJson(doc2))).message, /integrations\.codegraph.*no es de esta sección/);
+    // las seis integraciones son de la sección (CodeGraph también): lo de otra clave del perfil, no
+    const doc2 = JSON.parse(ok2.texto); doc2.ado = { org: 'https://dev.azure.com/otra' };
+    assert.match((await proponer('integraciones', ORG.formatJson(doc2))).message, /ado.*no es de esta sección/);
   });
 });
 
@@ -2782,7 +2783,7 @@ test('T13 Repos_SinPipelineQuePasa @story-2.59 @ac-13', async () => {
 test('T7 Integraciones_UnRenglonPorIntegracion @story-2.59 @ac-7', async () => {
   let p = await compacta(secInteg(INTEG));
   const filas = p.renglones(p.tablas()[0]);
-  assert.strictEqual(filas.length, 5);
+  assert.strictEqual(filas.length, 6, 'las cinco de antes y CodeGraph');
   assert.ok(p.clases(p.tablas()[0]).includes('integ'));
   filas.forEach((f) => { assert.strictEqual(p.de(f, 'que').length, 1); assert.strictEqual(p.todo(f).filter((n) => n.tag === 'select').length, 1); });
   assert.match(p.texto(filas[0]), /Clockify/);
@@ -3001,4 +3002,18 @@ test('8.63 Perfil_ApprovalsPideSuVersion @story-8.63 @ac-12 — con approvals en
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: PERFIL_TYCON }), null, 'sin approvals, cualquier versión lee el perfil');
   // con el archivo actual, sólo frena si el pedido cambia approvals
   assert.strictEqual(ORG.teamProfileGateProblem({ layerText: viejo, versionImagen: '2026.10.15.48', doc: { ...CON, ado: { org: 'https://dev.azure.com/otra' } }, actual: CON }), null);
+});
+
+test('T1 OrgConfig_IntegrationsSection_EditsCodegraph @story-8.75 @ac-1 — CodeGraph se edita desde Integraciones, validado por el lector', () => {
+  assert.ok(ORG.seccionPorId('integraciones').rutas.includes('integrations.codegraph'));
+  const r = ORG.revisar({ seccion: 'integraciones', texto: ORG.formatJson(PERFIL_TYCON), borrador: { integrations: { codegraph: 'sí' } }, lectores: { 'harness-config': TC } });
+  assert.deepStrictEqual(r.problems.map((p) => p.path), ['integrations.codegraph']);
+});
+
+test('T2 OrgConfig_TelegramText_PerMachine @story-8.75 @ac-2 — el texto dice que Telegram es de cada máquina, sin nombrar CodeGraph', () => {
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  const es = t('es', 'pantalla.telegramSeConfigura');
+  assert.match(es, /Telegram/);
+  assert.doesNotMatch(es, /CodeGraph/);
+  assert.match(ORG.pantalla(), /pantalla\.telegramSeConfigura/);
 });
