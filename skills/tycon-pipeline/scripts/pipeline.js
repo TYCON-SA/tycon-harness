@@ -4383,9 +4383,19 @@ function computeDepGate({ repo, story }) {
   }
   const declared = [];
   const undeclared = [];
+  // `@playwright/test` lo instaló la preparación de la prueba con navegador con el ok de la persona (lib/browser-test.js):
+  // esa aprobación ya está anotada para este repo, y no se le vuelve a preguntar
+  const preparado = (() => {
+    try {
+      const bt = require('./lib/browser-test.js');
+      const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+      return bt.gates(require('./lib/story-gate-io.js').DEFAULT_STATE_DIR)
+        .some((g) => g.name === bt.PREPARED && g.repoPath && real(g.repoPath) === real(repo));
+    } catch (e) { process.stderr.write(`⚠️  dep-gate: no pude leer si la prueba con navegador se preparó con el ok de la persona (${e.message})\n`); return false; }
+  })();
   for (const d of deps) {
     const re = new RegExp(d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    (re.test(storyText) ? declared : undeclared).push(d.name);
+    (re.test(storyText) || (preparado && d.name === '@playwright/test') ? declared : undeclared).push(d.name);
   }
   // un hermano que no se pudo diffear no es «sin dependencias nuevas»: se dice
   const noMedidos = [...sinMedir.map((r) => ({ repo: r, motivo: '`git diff HEAD` falló' })), ...hermanosFaltan,
@@ -6121,6 +6131,33 @@ function main() {
     }
     const guia = tree ? path.join(tree, 'story-format.md') : null;
     r.story_format = guia && fs.existsSync(guia) ? guia : null;
+    // El veredicto de pantalla de la historia, con el mismo detector que los controles del cierre (Casos: tests/first-screen-story.test.js): el
+    // revisor de la historia lo recibe en el pedido y no lo deduce por su cuenta.
+    r.screen = null;
+    if (args.story) {
+      try {
+        const sp = path.resolve(String(args.story));
+        const content = fs.readFileSync(sp, 'utf8');
+        const ui = require('./lib/ui-signal.js');
+        const repoRoot = require('./lib/evidence-config.js').discoverRepoRoot(sp);
+        const verdict = ui.applyScreenRule(content, repoRoot, r.rules.screen_test.value);
+        const detail = ui.uiSignalDetail(content, repoRoot);
+        const porSenal = {
+          extension: 'nombra un archivo de pantalla (.tsx, .jsx, .vue o .svelte)',
+          lista: 'sus archivos a tocar están en una carpeta de pantalla (frontend, src/app, src/components o las que declara el repo)',
+          campo: 'un campo del frontmatter (repo, stack, área…) nombra el frente',
+          tanda: 'una tanda del bloque pipelines nombra el frente',
+          prosa: 'no declara archivos y su texto habla del frente',
+          cuerpo: 'trae escenarios de prueba con navegador',
+        };
+        r.screen = {
+          ui: verdict.ui === true,
+          why: verdict.note || porSenal[detail.signal] || 'ninguna señal de pantalla: ni archivos de pantalla, ni carpetas del frente, ni escenarios con navegador',
+        };
+      } catch (e) {
+        r.problems.push(`no pude calcular el veredicto de pantalla de ${args.story} (${e && e.message ? e.message : e})`);
+      }
+    }
     process.stdout.write(JSON.stringify(r, null, 2) + '\n');
     process.exit(0);
   }

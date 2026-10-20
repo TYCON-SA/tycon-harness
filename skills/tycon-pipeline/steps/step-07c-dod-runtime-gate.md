@@ -458,6 +458,18 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 `on-frontmatter-write.js` verifica** antes de permitir `status: done` /
 `pipelines.X.status: done`. Sin un run fresco + verde, el hook bloquea.
 
+### 7c.3-pendiente — La prueba con navegador que la persona dejó pendiente
+
+Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (paso 3), la historia lleva
+`browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
+`browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step 8`, el commit y el paso a `review` vuelven a
+buscar esa respuesta en la conversación de la sesión que la anotó, posterior a la oferta: si la encuentran, el gate no
+corre (la historia se prueba con la guía para probarla a mano) y dicen en una línea «Prueba con navegador pendiente en
+la historia …», que queda anotada (`browser-test-debt`). Si falta la marca, la constancia, la oferta o la respuesta en
+la conversación, o si el repo ya tiene prueba con navegador (ahí se corre), frenan como siempre y dicen por qué. Se paga
+preparando el repo: `e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>" --ok "<su respuesta>"` y
+corriendo el gate. Se deshace con `e2e-setup.js undo --repo <repo>`.
+
 ### 7c.3-escape — Cuándo se permite NO correr el gate (estrictísimo)
 
 El ÚNICO escape es `dod_runtime_exempt: true` en frontmatter (story sin UI/E2E
@@ -707,6 +719,12 @@ de trabajo de la story. Tras la matriz:
 node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/qa-guide.js --story <abs spec.md> --open
 ```
 
+**Dónde queda** (una sola regla, `lib/qa-dir.js`; la usan la guía, sus pasos y revisiones, el preámbulo, la maqueta y
+el freno del commit): con la historia en una carpeta de historias (`specs/stories/`, `stories/`), `qa/` al lado de esa
+carpeta; con la historia suelta en `specs/`, `specs/qa/`, salvo que el repo ya use `qa/` al lado de `specs/` y no tenga
+`specs/qa/`. Una historia que ya tiene archivos en el lugar de antes sigue ahí. Las rutas `specs/qa/` de abajo son
+el caso común; la carpeta real la dice `qa-guide.js` al generar.
+
 Genera `<...>/specs/qa/<story>-guia-qa.html` (self-contained, sin red): una card por AC con el
 texto del AC, cómo se verificó automáticamente, pasos para reproducirlo a mano, y controles
 pasó/falló/notas + un botón **Limpiar** por AC.
@@ -724,6 +742,14 @@ que tenés que ver>`, en criollo), que el orquestador ESCRIBE como parte del ste
 son directos; para los técnicos/no-observables se escribe una nota honesta). Si un AC RUNTIME no
 tiene pasos-tester, la guía lo marca "faltan pasos" (y el generador lo avisa por stdout). El detalle
 técnico de la tabla + el comando del smoke van a un `<details>` colapsado "para el dev".
+
+🔴 **Modo primera vez: la persona trabaja sola** (historia escrita por el modo primera vez de `tycon-create-story`:
+marca `origin: first-time` y la constancia del guion). Ningún paso le pide algo al equipo («pedile al equipo la
+dirección», «el equipo te muestra»): el paso dice qué hacer. Y el archivo de pasos abre con una línea
+`Abrir la app: <dónde se levanta y con qué> · <qué dirección se abre>` (ej. `Abrir la app: en la carpeta frontend,
+python3 -m http.server 8000; después abrí http://localhost:8000`). La guía la muestra arriba de todo, en «Antes de
+empezar»; está escrita para el dev, así que no pasa por el detector de jerga. `qa-guide.js --check` frena (punto 7) si
+falta la línea o si un renglón nombra al equipo. Fuera de ese modo, nada de esto se exige.
 
 🔴 **Usuario de prueba por AC (DODRT-C7, 2026-07-13)**: cada AC declara CON QUÉ USUARIO se prueba —
 la guía lo pinta como un badge en el header. Formato:

@@ -1374,6 +1374,7 @@ const TEXTOS = {
   'control.@tcg:wait-notice.js': { es: 'Avisa por Telegram cuando una corrida lleva rato esperando una respuesta tuya.', en: 'Sends a Telegram message when a run has been waiting on you for a while.' },
   'control.@tcg:worktree-sweep.js': { es: 'Borra solas las carpetas de trabajo que ya se mergearon a main.', en: 'Automatically deletes working folders whose changes are already merged into main.' },
   'control.ado-story-create': { es: 'Anota que una historia nueva necesita su pedido de trabajo en ADO.', en: 'Records that a new story needs its work item in ADO.' },
+  'control.browser-test-offer': { es: 'Ofrece preparar la prueba con navegador cuando la historia cambia una pantalla y el repo no la tiene.', en: 'Offers to set up the browser test when the story changes a screen and the repo has none.' },
   'control.clocki-enforce': { es: 'Avisa si estás editando archivos sin un registro de horas abierto.', en: 'Warns when you edit files with no time entry running.' },
   'control.clocki/scripts/on-prompt.js': { es: 'Avisa de un registro de horas olvidado, o de que falta abrir uno al empezar.', en: 'Warns about a forgotten open time entry, or when one should be opened as work starts.' },
   'control.clocki/scripts/touch-activity.js': { es: 'Anota que sigue habiendo actividad, para que el registro de horas no se cierre por inactividad.', en: 'Records ongoing activity so the time entry is not closed for inactivity.' },

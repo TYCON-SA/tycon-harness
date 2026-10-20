@@ -434,6 +434,7 @@ function handle(event) {
     // FRESCO (posterior al último cambio de código de esta corrida — auditoría 2026-06-09).
     const freshnessFloor = computeFreshnessFloor(event.session_id);
     const pw = needsPlaywright ? hasFreshPlaywrightPass(repoRoots, storyId, freshnessFloor, filePath) : { pass: true };
+    if (needsPlaywright && !pw.pass && deudaDeNavegador(newContent, filePath, storyId, newS)) return null;
     if (needsPlaywright && !pw.pass) {
       const pl = [];
       pl.push('🚨 BLOQUEADO — story con E2E reales pasa a review/done SIN suite Playwright verde' + (pw.stale ? ' FRESCA' : ''));
@@ -510,6 +511,21 @@ function handle(event) {
 
   anotarDecision('evidencia-ausente', 'bloqueo', storyId, newS);
   return { block: lines.join('\n') + '\n' };
+}
+
+// La prueba con navegador que la persona dejó pendiente (lib/browser-test.js): vale sólo con la marca de la historia y
+// la constancia que escribió e2e-setup.js en gates.log. Si vale, se dice y queda anotada.
+function deudaDeNavegador(content, filePath, storyId, newS) {
+  const bt = require('./lib/browser-test.js');
+  const d = require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: filePath, content });
+  if (!d.declared) {
+    if (d.motivo && !/no declara/.test(d.motivo)) process.stderr.write(`La prueba con navegador pendiente de la historia ${storyId} no vale — ${d.motivo}.\n`);
+    return false;
+  }
+  process.stderr.write(`${bt.debtLine(d)}\n`);
+  bt.recordDebtUse(stateDirOf(os.homedir()), d, 'review');
+  anotarDecision('prueba-con-navegador-pendiente', 'paso', storyId, newS);
+  return true;
 }
 
 module.exports = { handle, prefijoDe, findRepoRoots, hasFreshPlaywrightPass, hasDodEvidence, fechaDeCambio, computeFreshnessFloor, tiempoDeEvidencia };

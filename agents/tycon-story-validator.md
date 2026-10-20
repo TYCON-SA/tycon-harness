@@ -132,10 +132,12 @@ sobre una story limpia para decir que el archivo existe).
    `test_names` de la organización, que el orquestador te pasa en el pedido (sale de `pipeline.js org-rules`): `any`
    o sin regla en el pedido → cualquier estilo de nombre; `pascal` → PascalCase (`PostPedidos_NoApiKey_Returns401`);
    `snake` → snake_case (`test_post_pedidos_sin_clave_da_401`). Si no cumple → **[VAL-W3] WARNING**.
-   La regla `screen_test` (también en el pedido) dice si la tabla necesita una fila `E*` de prueba E2E
-   (story-format §6.1): `ui` o sin regla → la story que nombra `.tsx`, `.jsx`, `.svelte` o `.vue`; `react` → sólo
-   `.tsx`/`.jsx`; `off` → no se exige, y tu reporte lo dice en una línea OK. Si falta la fila que la regla pide →
-   **[VAL-W3] WARNING**.
+   Si la tabla necesita una fila `E*` de prueba E2E (story-format §6.1) lo dice el pedido:
+   «La historia tiene pantalla según el arnés: sí|no (<por qué>)». Ese veredicto ya aplica la regla `screen_test` de la organización y sale del
+   mismo detector que los controles del cierre (rutas del frente, terminaciones de pantalla, escenarios con navegador):
+   no lo deduzcas por tu cuenta ni por la terminación de los archivos. «sí» y falta la fila → **[VAL-W3] WARNING**;
+   «no» → no se exige. Si el pedido no trae el veredicto, no lo deduzcas: tu reporte lo dice en una línea OK
+   («no recibí el veredicto de pantalla del arnés») y no exigís la fila.
 9. **Dev Agent Record**: si story está en status `done`/`review`, el record debe estar completo. Si está en `in-progress`/`ready-for-dev`, el record debe estar como placeholder (ni ausente ni completo) — si está ausente → **[VAL-W5] WARNING**.
 10. **Validar deferrals abiertos del propio story (Gate 1 del DoD)**: solo aplica si la story está en status `review` o el caller pidió validación post-implementación (e.g. Step 5 del `tycon-pipeline`). Escanear archivos modificados/creados por la implementación (cross-ref con `Dev Agent Record > File List` si está poblado, o con git diff vs el merge-base si el caller provee la lista). Buscar patterns:
     - `TODO\(Story-{N}-deferral\)` (canónico)

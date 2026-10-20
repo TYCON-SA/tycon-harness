@@ -461,6 +461,12 @@
       "requiere": []
     },
     {
+      "__nota": "la oferta de la prueba con navegador: la muestra el arnés sólo con pantalla y sin navegador; preparar y declarar la deuda piden la respuesta de la persona; la deuda afloja el cierre sólo con sus dos marcas.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/browser-test-offer.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.63: el ok de una persona se busca textual en lo que la persona escribió en la conversación — nunca en lo que escribió el agente, una herramienta, un subagente u otra sesión.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/person-ok.test.js",
@@ -758,6 +764,11 @@
       "__nota": "story 7.34: la guía del tester y su chequeo cuentan los pasos con la misma regla (pasos numerados y «Usuario:» suelto).",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/qa-guide-steps.test.js",
+      "requiere": []
+    },
+    {
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/first-screen-story.test.js",
       "requiere": []
     },
     {

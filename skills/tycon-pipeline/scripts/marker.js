@@ -1281,7 +1281,15 @@ function cmdCompleteStep(nRaw, flags) {
       const dodCheck = marker.checks && marker.checks.dod;
       const dodProv = marker.checksProvenance && marker.checksProvenance.dod;
       const okUi = dodCheck === 'green' && (dodProv === 'run-check' || dodProv === 'manual-forced');
-      if (!okUi) {
+      // La prueba con navegador que la persona dejó pendiente (lib/browser-test.js): sólo con las dos marcas, la de la
+      // historia y la constancia que escribió e2e-setup.js en gates.log. Se dice siempre.
+      const bt = require('./lib/browser-test.js');
+      const deuda = okUi ? null : bt.debtDeclared({ stateDir: STATE_DIR, storyPath: resolveStoryPath(marker.storyPath, marker) || marker.storyPath });
+      if (deuda && deuda.declared) {
+        console.log(bt.debtLine(deuda));
+        bt.recordDebtUse(STATE_DIR, deuda, 'complete-step 8');
+      } else if (!okUi) {
+        if (deuda && deuda.motivo && !/no declara/.test(deuda.motivo)) console.error(`marker.js complete-step 8: la prueba con navegador pendiente no vale — ${deuda.motivo}.`);
         blocked = 'ui';
         console.error('marker.js complete-step 8 BLOQUEADO — story de UI sin el gate `dod` en verde por run-check.');
         console.error('');
@@ -1290,6 +1298,7 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('    marker.js run-check dod -- npx playwright test <spec> --workers=1');
         console.error('  Escape consciente (marcada UI pero sin superficie de UI real):');
         console.error('    marker.js set-check dod green --force-manual   (queda manual-forced en gates.log)');
+        console.error('  Si el repo no tiene cómo probar en un navegador: la persona decide en la oferta (e2e-setup.js prepare|defer).');
       }
     } else if (marker.dodRuntimeChecked !== true) {
       blocked = 'non-ui';

@@ -15,7 +15,7 @@ ciclo de desarrollo con IA (AI SDLC), paso por paso:
 
 1. **Pedido e historia:** contás qué querés y el agente lo escribe como una historia (story): qué hay que hacer y cómo
    se prueba. Para un ajuste chico alcanza con pedirlo con tus palabras.
-2. **Plan aprobado:** el agente arma el plan y espera tu visto bueno.
+2. **Plan aprobado:** el agente arma el plan y te lo muestra; en una historia chica lo aprueba solo, en las demás espera tu visto bueno.
 3. **Pruebas y código:** escribe las pruebas y el código, y corre las pruebas.
 4. **Revisión:** revisores especializados (seguridad, convenciones, cobertura) miran el cambio antes del commit.
 5. **Entrega:** el commit y el merge pasan por controles. Nada se commitea ni se sube sin tu permiso.
@@ -62,7 +62,7 @@ Una historia es tu pedido escrito, con sus criterios y sus pruebas: el agente la
 2. **Decí que confiás en la carpeta**: la primera vez que abrís tu agente en esa carpeta, te pregunta si confiás en ella: contestá que sí.
 3. **Pedí la historia con tus palabras**, para que el cambio quede escrito antes de programar: «creá una historia para agregar un filtro por fecha».
 4. **Revisá la historia.** El agente la arma con lo que le pediste, contestando tres preguntas en llano (qué tiene que hacer, cómo se ve que anda y qué no tiene que tocar), y te marca lo que supuso. Te la muestra y la escribe con tu «sí». Si tu repo ya trae la carpeta `_bmad/`, la arma con lo que hay ahí.
-5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. Te muestra el plan y lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo. Si la historia toca pantallas, además arma una maqueta para que la apruebes, la prueba con un navegador si tu repo ya tiene esas pruebas, y te deja una guía para probarla a mano.
+5. **Pedí «implementemos la story» con la ruta del archivo**, para arrancar el recorrido: la frase va así. Si no hay git, lo inicia; si estás en `main`, crea la rama. Valida la historia y, si le falta algo, te pregunta si la arregla. En una historia chica te muestra el plan y lo aprueba solo; en las demás, lo aprobás vos. Después escribe las pruebas y el código, corre las pruebas y los revisores, y prueba cada criterio corriéndolo. Si la historia toca pantallas, además arma una maqueta para que la apruebes, la prueba con un navegador si tu repo ya tiene esas pruebas, y te deja una guía para probarla a mano.
 6. **Revisá el resumen y decí «commitealo».** Te deja el mensaje armado y nunca commitea ni sube cambios sin tu permiso. Al cerrar la primera historia te ofrece la instalación completa.
 
 Si algo no anda, `/tycon-harness` (en Claude Code) o `node ~/.claude/tycon-harness/scripts/setup/harness.js doctor` dicen qué falta, sin tocar nada.
