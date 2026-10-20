@@ -1388,6 +1388,7 @@ const TEXTOS = {
   'control.on-story-gate': { es: 'Frena editar código sin un proceso activo ni un plan aprobado.', en: 'Blocks editing code without an active process or an approved plan.' },
   'control.on-story-skill-gate': { es: 'Frena crear una historia a mano sin usar la herramienta que las crea.', en: 'Blocks writing a story by hand instead of using the tool that creates stories.' },
   'control.on-write-collision': { es: 'Avisa si vas a editar un archivo que otra sesión ya está tocando.', en: 'Warns when you are about to edit a file another session is already changing.' },
+  'control.critical-display': { es: 'Antes de eximir un crítico, te lo muestra en pantalla; sólo vale tu ok a ese crítico, no un «dale» suelto.', en: 'Before a critical finding is waived, shows it to you on screen; only your yes to that finding counts, not a bare "go ahead".' },
   'control.plan-display': { es: 'Te muestra el plan en pantalla antes de aprobarlo, sin depender del agente.', en: 'Shows you the plan on screen before approval, without relying on the agent to relay it.' },
   'control.tycon-pipeline/scripts/on-advisor-run.js': { es: 'Anota qué revisores se lanzaron de verdad y frena los lanzamientos improvisados.', en: 'Records which reviewers were actually launched and blocks ad-hoc launches.' },
   'control.tycon-pipeline/scripts/on-bash-write-gate.js': { es: 'Frena escribir código por la terminal para esquivar el control de edición.', en: 'Blocks writing code through the terminal to get around the edit control.' },

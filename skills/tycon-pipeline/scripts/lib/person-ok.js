@@ -117,20 +117,29 @@ function mensajeDeOtraSesion(texto) {
 const norm = (s) => String(s).toLowerCase().replace(/[«»"“”'‘’]/g, ' ').replace(/\s+/g, ' ').trim();
 const letras = (s) => (String(s).match(/[\p{L}\p{N}]/gu) || []).length;
 
-// `desde`: la hora a partir de la cual vale el ok (el arranque de la corrida). Una frase vieja del dev, de antes de esta
-// corrida, no aprueba lo que todavía no existía.
-function buscar(cita, candidatos, desde) {
+// `desde`: la hora a partir de la cual vale el ok (el arranque de la corrida, o la muestra del crítico). Una frase
+// vieja del dev no aprueba lo que todavía no existía. `juzgar(texto)`: si viene, el mensaje entero que trae la cita
+// tiene que pasarlo (null); si no, su motivo vuelve como `rechazo` (el del mensaje más nuevo).
+function buscar(cita, candidatos, desde, juzgar) {
   const c = norm(cita);
   if (letras(c) < CITA_MINIMA) return { encontrada: false, corta: true };
   const t0 = desde ? Date.parse(desde) : NaN;
   let vieja = false;
+  let rechazo = null;
   // la última vez que se dijo: la hora que se anota es la del ok más reciente
   for (let i = candidatos.length - 1; i >= 0; i--) {
     if (!norm(candidatos[i].texto).includes(c)) continue;
     const t = Date.parse(candidatos[i].cuando || '');
     if (!Number.isNaN(t0) && !(t >= t0)) { vieja = true; continue; }
+    const motivo = typeof juzgar === 'function' ? juzgar(candidatos[i].texto) : null;
+    if (motivo) { if (!rechazo) rechazo = motivo; continue; }
+    // un mensaje posterior que se echa atrás tumba el ok, aunque la cita sea de uno anterior
+    if (juzgar && typeof juzgar.retracta === 'function' && candidatos.slice(i + 1).some((c) => juzgar.retracta(c.texto))) {
+      return { encontrada: false, rechazo: 'después de ese ok, la persona se echó atrás (un mensaje posterior lo niega o le pone una condición)' };
+    }
     return { encontrada: true, cuando: candidatos[i].cuando };
   }
+  if (rechazo) return { encontrada: false, rechazo };
   return vieja ? { encontrada: false, anterior: true } : { encontrada: false };
 }
 
@@ -142,7 +151,7 @@ function citaDeLaPersona(cita, opts = {}) {
   // (la extensión de VS Code marca lo que tipea la persona con `origin.kind: human`; la terminal no le pone marca)
   const propios = textosDeUsuario(conv.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
     .map((t) => ({ texto: escritoPorLaPersona(t.texto), cuando: t.cuando })).filter((t) => t.texto !== null);
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde) };
+  return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar) };
 }
 
 /** ¿La cita llegó dentro de un mensaje de la sesión `sesion`? `{ legible, motivo?, encontrada, cuando?, corta? }`. */
@@ -159,7 +168,7 @@ function citaReenviada(cita, sesion, opts = {}) {
     const m = typeof o.body === 'string' ? { cuerpo: o.body } : mensajeDeOtraSesion(t.texto);
     if (m && !RE_AJENO.test(m.cuerpo)) reenviados.push({ texto: m.cuerpo, cuando: t.cuando });
   }
-  return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde) };
+  return { legible: true, archivo: conv.archivo, ...buscar(cita, reenviados, opts.desde, opts.juzgar) };
 }
 
 // Lo que la persona ve de una llamada a herramienta: la pregunta con opciones (su texto, cada opción y su vista previa) y

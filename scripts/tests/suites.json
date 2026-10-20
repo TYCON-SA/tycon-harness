@@ -479,6 +479,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.71: un crítico se exime con un ok que responde a ese crítico — el arnés se lo muestra a la persona (puerta Bash o al escribir exencion-pedida.json) y el ok vale sólo posterior a la muestra y nombrando el crítico.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/critical-shown.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/models.test.js",
       "requiere": []

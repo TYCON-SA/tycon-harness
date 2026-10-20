@@ -22,7 +22,8 @@ const RAIZ = path.join(SCRIPTS, '..', '..', '..');
 const MARKER = path.join(SCRIPTS, 'marker.js');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const SMOKE = path.join(SCRIPTS, 'smoke-run.sh');
-const CITA = 'ok, eximilo: es un falso positivo del humo';
+// el ok dice que exime el crítico que se le mostró, nombrándolo: un «eximilo» suelto no alcanza (critical-shown.test.js)
+const CITA = 'ok, eximo DODRT-C9: es un falso positivo del humo';
 // las horas de la conversación, después del arranque de la corrida (antes no valen: una frase vieja no aprueba nada)
 // stable-data: el marcador anota su arranque con el reloj real; la conversación tiene que quedar después, cuando sea
 const T = (seg) => new Date(Date.now() + 60000 + seg * 1000).toISOString();
@@ -81,7 +82,15 @@ const deOtraSesion = (nombre, texto, ts = T(5)) => ({
 
 const CRITICO = { rule_id: 'DODRT-C9', severity: 'CRITICAL', advisor: 'orquestador', file: '.advisors/dod-runtime/9.91-smoke.md', disposition: 'waived', reason: 'repo sin commits' };
 const lineas = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-const waive = (lab, extra) => lab.marker(['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', ...extra]);
+// como en Claude Code: antes del comando corre la puerta Bash, que le muestra el crítico a la persona
+const waive = (lab, extra) => {
+  const args = ['waive-critical', '--rule', CRITICO.rule_id, '--file', CRITICO.file, '--reason', 'falso positivo del humo', ...extra];
+  spawnSync(process.execPath, [path.join(SCRIPTS, 'on-bash-write-gate.js')], {
+    cwd: lab.repo, encoding: 'utf8', env: lab.env,
+    input: JSON.stringify({ session_id: lab.sid, tool_name: 'Bash', cwd: lab.repo, tool_input: { command: `node ${MARKER} ${args.map((a) => `'${String(a).replace(/'/g, `'\\''`)}'`).join(' ')}` } }),
+  });
+  return lab.marker(args);
+};
 
 test('WriteFindings_CriticoEximidoSinConstancia_NoEscribe @story-8.63 @ac-1', () => {
   const lab = laboratorio();
