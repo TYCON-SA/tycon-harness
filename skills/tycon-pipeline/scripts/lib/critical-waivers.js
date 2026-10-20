@@ -214,7 +214,7 @@ function noEsPersona(quien) {
  * imposibles de probar en vivo: la constancia `ac-shown` de cada uno (lib/waiver-display.js) y un ok que los nombra.
  * `{ ok: true, entrada: { tipo, quien, delegacion?, cita, cita_cuando, via } }` o `{ ok: false, motivo, sinConversacion? }`.
  */
-function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico, criterios } = {}) {
+function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env, home, arnes, critico, criterios, respuesta } = {}) {
   const persona = noEsPersona(approvedBy);
   if (persona) return { ok: false, motivo: persona };
   // sin la hora de arranque de la corrida no se puede saber si la cita es vieja: no se aprueba (falla cerrado)
@@ -227,6 +227,15 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
   let juzgar;
   let anterior = 'la cita es de antes de que arrancara esta corrida: no aprueba lo que todavía no existía';
   const respuestaAlCritico = () => {
+    // Con `respuesta` ({ desde, juez, sinAviso }), el ok responde a un aviso que el arnés anotó (el del tope de vueltas):
+    // posterior a ese aviso y con lo que el juez pide
+    if (respuesta) {
+      if (!respuesta.desde) return { ok: false, sinMuestra: true, motivo: respuesta.sinAviso || 'a la persona no se le mostró el aviso que hay que contestar' };
+      if (Date.parse(respuesta.desde) > Date.parse(desde)) desde = respuesta.desde;
+      juzgar = respuesta.juez;
+      anterior = 'el ok es de antes del aviso: hace falta su respuesta a ese aviso';
+      return null;
+    }
     // Con `criterios` (los AC que se firman como imposibles de probar en vivo), el ok responde a la muestra de cada uno
     if (criterios) {
       const wd = require('./waiver-display.js');

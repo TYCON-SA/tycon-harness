@@ -6,7 +6,8 @@
  * (`marker.iterations[N]`). Al llegar al tope con algo abierto, un crítico de seguridad o de datos lo decide una persona
  * (una vuelta extra con su ok, o eximirlo); lo demás queda como deuda visible y el recorrido sigue.
  *
- *   · `tope({ repo, env, home })`: `{ value, source, problems }`. La variable de la máquina `TYCON_REVIEW_MAX_ROUNDS` ›
+ *   · `tope({ repo, env, home, stateDir, sinMaquina })`: `{ value, source, problems }`. El ajuste de la máquina
+ *     (`review-max-rounds.json` en la carpeta de estado del arnés, donde el agente no escribe; de 1 a 99) ›
  *     `review.max_rounds` del repo (`.tycon/advisors.yaml`, lo commiteado: bajar el tope afloja y aflojar exige commit) ›
  *     la organización (`review.max_rounds` de team-repos.json) › 2. Un valor fuera de 1 a 6 no se usa y lo dice.
  *   · `clase(regla, { prefijos })`: 'seguridad' | 'datos' | null.
@@ -68,22 +69,43 @@ function deLaOrganizacion({ env = process.env, home = os.homedir() } = {}) {
   return { review: null, problems };
 }
 
-function tope({ repo, env = process.env, home = os.homedir() } = {}) {
+function tope({ repo, env = process.env, home = os.homedir(), stateDir, sinMaquina = false } = {}) {
+  if (sinMaquina) return topeSinMaquina({ repo, env, home });
+  return topeConMaquina({ repo, env, home, stateDir });
+}
+const ARCHIVO_MAQUINA = 'review-max-rounds.json';
+function topeConMaquina({ repo, env, home, stateDir }) {
   const problems = [];
-  // la variable de la máquina llega hasta 99: la usan las pruebas y los casos de laboratorio que piden vueltas altas; la
-  // organización y el repo, de 1 a 6
-  const maquina = env.TYCON_REVIEW_MAX_ROUNDS;
-  if (maquina !== undefined && String(maquina).trim() !== '') {
-    const n = entero(maquina);
-    if (n !== null && n >= MINIMO && n <= 99) return { value: n, source: 'maquina', problems };
-    problems.push(`TYCON_REVIEW_MAX_ROUNDS: tiene que ser un entero de ${MINIMO} a 99 (es ${JSON.stringify(String(maquina)).slice(0, 30)}); no se usa`);
+  const r = leerMaquina({ home, stateDir, problems });
+  if (r) return r;
+  const resto = topeSinMaquina({ repo, env, home });
+  return { ...resto, problems: [...problems, ...resto.problems] };
+}
+function leerMaquina({ home, stateDir, problems }) {
+  // El ajuste de la máquina vive en la carpeta de estado del arnés (review-max-rounds.json, { "max_rounds": N } de 1 a
+  // 99), donde el agente no escribe: lo pone una persona en su terminal, o una prueba en su HOME temporal. Una variable
+  // de ambiente la podría anteponer el propio agente al comando, y el tope dejaría de cortar.
+  const archivo = path.join(stateDir || require('./state-dir.js').stateDir(home), ARCHIVO_MAQUINA);
+  let crudo = null;
+  try { crudo = JSON.parse(fs.readFileSync(archivo, 'utf8')); } catch (e) {
+    if (e && e.code !== 'ENOENT') problems.push(`${archivo}: no se lee (${e.message || e}); no se usa`);
   }
+  if (crudo !== null) {
+    const n = entero(crudo && crudo.max_rounds);
+    if (n !== null && n >= MINIMO && n <= 99) return { value: n, source: 'maquina', problems };
+    problems.push(`${archivo}: max_rounds tiene que ser un entero de ${MINIMO} a 99; no se usa`);
+  }
+  return null;
+}
+/** El tope sin el ajuste de la máquina: el repo › la organización › 2. */
+function topeSinMaquina({ repo, env, home }) {
+  const problems = [];
   if (repo) {
     let txt = null;
     try {
       const cs = require('./config-source.js');
       txt = cs.leerCommiteado(repo);
-    } catch (_) { txt = null; }
+    } catch (e) { problems.push(`no pude leer .tycon/advisors.yaml commiteado (${e && e.message ? e.message : e}): no sé si el repo ajusta el tope`); }
     const v = delYaml(txt);
     if (v !== undefined) {
       const n = entero(v);
@@ -96,16 +118,18 @@ function tope({ repo, env = process.env, home = os.homedir() } = {}) {
   if (org.review && org.review.max_rounds !== undefined) {
     const n = entero(org.review.max_rounds);
     if (enRango(n)) return { value: n, source: 'organizacion', problems };
+    problems.push(`review.max_rounds de la organización: tiene que ser un entero de ${MINIMO} a ${MAXIMO} (es ${JSON.stringify(org.review.max_rounds)}); no se usa`);
   }
   return { value: FABRICA, source: 'fabrica', problems };
 }
 
 /** Los prefijos que frenan: los de fábrica más los que suma la organización (`review.blocking_prefixes`, a seguridad). */
 function prefijos(opts = {}) {
-  const org = opts.review !== undefined ? { review: opts.review } : deLaOrganizacion(opts);
+  const org = opts.review !== undefined ? { review: opts.review, problems: [] } : deLaOrganizacion(opts);
   const extra = org.review && Array.isArray(org.review.blocking_prefixes)
     ? org.review.blocking_prefixes.map((p) => String(p).trim().toUpperCase()).filter(Boolean) : [];
-  return { seguridad: [...PREFIJOS_FABRICA.seguridad, ...extra], datos: [...PREFIJOS_FABRICA.datos] };
+  // si no se pudo leer la configuración de la organización, frenan sólo los de fábrica, y se dice
+  return { seguridad: [...PREFIJOS_FABRICA.seguridad, ...extra], datos: [...PREFIJOS_FABRICA.datos], problems: org.problems || [] };
 }
 
 const reglaDe = (f) => String((f && (f.rule_id || f.ruleId || f.rule)) || '').trim().toUpperCase();
@@ -168,12 +192,44 @@ function extras({ stateDir, story }) {
   return out;
 }
 
+/** El último aviso del tope que el arnés le mostró para esa vuelta de esa historia (`review-cap-shown`), o null. */
+function avisoDelTope({ stateDir, story, iter }) {
+  let txt = '';
+  try { txt = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8'); } catch (_) { return null; }
+  let ultimo = null;
+  for (const l of txt.split('\n')) {
+    if (!l.trim()) continue;
+    let g; try { g = JSON.parse(l); } catch (_) { continue; }
+    if (g && g.name === 'review-cap-shown' && String(g.story) === String(story) && g.iter === iter) ultimo = g;
+  }
+  return ultimo;
+}
+
+// el sí a otra vuelta: nombra la vuelta («otra vuelta», «una vuelta más», «vuelta extra») sin negarla ni preguntar
+const RE_VUELTA = /(?<![\p{L}\p{N}])(?:otra\s+vuelta|una\s+vuelta\s+m[aá]s|vuelta\s+(?:extra|m[aá]s|adicional))(?![\p{L}\p{N}])/iu;
+const RE_NO_VUELTA = /(?<![\p{L}\p{N}])(?:no|ni|nunca|sin)\s+(?:(?:quiero|hagas|hace\s+falta|va|vamos\s+a\s+hacer)\s+)?(?:otra|una|m[aá]s)?\s*vuelta/iu;
+/** ¿El mensaje autoriza otra vuelta, sin negarla ni preguntar? `(texto) => null | motivo`. */
+function juezDeLaVuelta() {
+  const f = (texto) => {
+    const t = String(texto || '');
+    if (RE_NO_VUELTA.test(t)) return 'el mensaje dice que no a otra vuelta';
+    if (/[¿?]/.test(t)) return 'el mensaje pregunta: una pregunta no es un ok';
+    if (!RE_VUELTA.test(t)) return 'el mensaje no autoriza otra vuelta: tiene que decirlo, por ejemplo «dale, una vuelta más»';
+    return null;
+  };
+  f.retracta = (texto) => RE_NO_VUELTA.test(String(texto || ''));
+  return f;
+}
+
 function resumen(lista) {
   return lista.map((a) => `${a.regla}${a.file ? ` en ${a.file}` : ''}${a.resumen ? ` — ${a.resumen}` : ''}`);
 }
 
-/** La línea del cierre. */
-function linea({ n, max, abiertos: ab }) {
+/** La línea del cierre. Con `noMirado` (no se pudieron leer los hallazgos) no dice «nada»: dice que no se pudo mirar. */
+function linea({ n, max, abiertos: ab, noMirado, de }) {
+  // un tope que puso el ajuste de la máquina se dice: no es el de la organización ni el del repo
+  if (de === 'maquina') max = `${max}, puesto por el ajuste de esta máquina`;
+  if (noMirado) return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); lo abierto no lo pude mirar: ${noMirado}.`;
   const lista = ab || [];
   const bloq = lista.filter((a) => a.bloquea);
   const deuda = lista.filter((a) => !a.bloquea);
@@ -183,4 +239,4 @@ function linea({ n, max, abiertos: ab }) {
   return `${n} ${n === 1 ? 'vuelta' : 'vueltas'} de revisores (tope ${max}); quedó abierto: ${partes.length ? partes.join('; ') : 'nada'}.`;
 }
 
-module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, resumen, linea };
+module.exports = { FABRICA, MINIMO, MAXIMO, PREFIJOS_FABRICA, delYaml, tope, prefijos, clase, abiertos, hallazgosDe, vueltas, lanzada, extras, avisoDelTope, juezDeLaVuelta, resumen, linea };

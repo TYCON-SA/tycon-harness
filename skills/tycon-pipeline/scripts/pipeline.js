@@ -4969,25 +4969,42 @@ function readSessionMarkerStrict() {
 // ok, que se anota en gates.log, o eximirlo); lo demás queda como deuda visible y el recorrido sigue sin otra vuelta.
 function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
   const tope = rr.tope({ repo: repoAbs });
-  if (iter <= tope.value) return null;
   const stateDir = stateDirOf(os.homedir());
+  const anotar = (g) => { fs.mkdirSync(stateDir, { recursive: true }); fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), story: storyId, iter, ...g })}\n`); };
+  if (iter <= tope.value) {
+    // la variable de la máquina puede subir el tope por encima del de la organización y el repo: pasa, pero queda anotado
+    if (tope.source === 'maquina') {
+      const sinMaquina = rr.tope({ repo: repoAbs, sinMaquina: true });
+      if (iter > sinMaquina.value) {
+        anotar({ name: 'review-cap-machine', status: 'ok', value: tope.value, sin_la_maquina: sinMaquina.value });
+        process.stderr.write(`⚠️  La vuelta ${iter} pasa el tope de ${sinMaquina.value} porque el ajuste de esta máquina (review-max-rounds.json) lo sube a ${tope.value}: queda anotado.\n`);
+      }
+    }
+    return null;
+  }
   if (rr.extras({ stateDir, story: storyId }).some((e) => e.iter === iter)) return null;
   const h = rr.hallazgosDe(runDir);
-  const ab = rr.abiertos(h.lista);
+  const pre = rr.prefijos();
+  const ab = rr.abiertos(h.lista, { prefijos: pre });
   const bloquean = ab.filter((a) => a.bloquea);
   const deuda = ab.filter((a) => !a.bloquea);
   const de = { maquina: 'de esta máquina', repo: 'del repo', organizacion: 'de la organización', fabrica: 'de fábrica' }[tope.source] || '';
+  // «no pude mirar» no es «no quedó nada abierto»
+  const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
+  const avisos = [...tope.problems, ...pre.problems].map((p) => `   ⚠️  ${p}`);
   if (args.extraRound) {
+    // el ok responde al aviso del tope de ESTA vuelta (lo anota el arnés al decirlo) y autoriza otra vuelta, sin negarla
     const cw = require('./lib/critical-waivers.js');
-    const r = cw.okDeUnaPersona({ approvedBy: args.approvedBy, quote: args.quote, desde: marcador && marcador.startedAt });
-    if (!r.ok) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}. Una vuelta más allá del tope la autoriza una persona, con sus palabras en esta conversación.\n`;
+    const aviso = rr.avisoDelTope({ stateDir, story: storyId, iter });
+    const r = cw.okDeUnaPersona({ approvedBy: args.approvedBy, quote: args.quote, desde: marcador && marcador.startedAt,
+      respuesta: { desde: aviso && aviso.ts, juez: rr.juezDeLaVuelta(), sinAviso: 'todavía no se avisó el tope de esta vuelta: pedí el set sin --extra-round, el arnés dice qué quedó abierto, y recién ahí vale el ok de la persona' } });
+    if (!r.ok) return `🛑 No se autorizó la vuelta extra ${iter}: ${r.motivo}. Una vuelta más allá del tope la autoriza una persona, con sus palabras en esta conversación, después del aviso del tope.\n`;
     const e = r.entrada;
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.appendFileSync(path.join(stateDir, 'gates.log'), `${JSON.stringify({ ts: new Date().toISOString(), name: 'extra-round', status: 'ok', story: storyId, iter, quien: e.quien, cita: e.cita, via: e.via })}\n`);
+    anotar({ name: 'extra-round', status: 'ok', quien: e.quien, cita: e.cita, via: e.via });
     return null;
   }
-  const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`];
-  if (h.error) renglones.push(`   No pude leer lo abierto (${h.error}): arreglá findings.json con pipeline.js write-findings y volvé a pedirlo.`);
+  const renglones = [`🛑 Llegaste al tope de ${tope.value} vueltas de revisores (${de}): no devuelvo el set de la vuelta ${iter}.`, ...avisos];
+  if (noMirado) renglones.push(`   No pude mirar lo abierto (${noMirado}): escribí los hallazgos con pipeline.js write-findings y volvé a pedirlo.`);
   else if (!ab.length) renglones.push('   No quedó nada abierto: seguí con «Probar en vivo» y «Preparar el commit».');
   if (bloquean.length) {
     renglones.push(`   Quedó abierto algo de seguridad o de datos (${bloquean.length}): lo decide una persona. Mostrale esto y preguntale qué hace:`);
@@ -5002,6 +5019,8 @@ function topeDeVueltas({ args, iter, rr, marcador, runDir, repoAbs, storyId }) {
     renglones.push('   Anotalo: en findings.json cada uno con "disposition": "deferred" y "deuda": "tope" (pipeline.js write-findings), después');
     renglones.push('   pipeline.js write-followups; el cierre lo dice con pipeline.js review-rounds.');
   }
+  // el aviso queda anotado: el ok de una vuelta extra tiene que ser posterior
+  anotar({ name: 'review-cap-shown', status: 'blocked', tope: tope.value, abiertos: ab.map((a) => a.regla) });
   return `${renglones.join('\n')}\n`;
 }
 
@@ -5037,6 +5056,12 @@ function rethinkGate(args) {
   // corrida. Fuera de una corrida no hay vueltas que contar: --iter ausente, 1 o 2 pasa como siempre; desde la tercera (la que pide nota) frena.
   const marcadorConStory = !!(marcador && typeof marcador.storyPath === 'string' && marcador.storyPath);
   if (!marcadorConStory && !propia) {
+    // el tope vale también fuera de una corrida (con tope 1, la vuelta 2 no pasa)
+    const iterSin = Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador);
+    if (iterSin < rt.FIRST_ITER) {
+      const bloqueo = topeDeVueltas({ args, iter: iterSin, rr: require('./lib/review-rounds.js'), marcador, runDir: null, repoAbs, storyId });
+      if (bloqueo) return bloqueo;
+    }
     if (Math.max(Number.isInteger(declarada) ? declarada : 0, delMarcador) >= rt.FIRST_ITER) {
       return `🛑 Pediste la vuelta ${Math.max(declarada, delMarcador)} de revisores pero no hay corrida del pipeline que la respalde: ni el marcador de la sesión trae la story ni --story da una carpeta de corrida${storyId ? ` («${storyId}»)` : ''}. Sin carpeta de corrida no se pueden contar las vueltas, y ante la duda no devuelvo el set. Pasá --story <spec.md> (y --repo <repo>) de una corrida abierta, o corré pipeline.js run-dir --story <spec> --repo <repo> --create.\n`;
     }
@@ -5706,9 +5731,12 @@ function main() {
     const runDir = storyId ? resolveRunDir(repoAbs, storyId, false, storyAbs) : null;
     const tope = rr.tope({ repo: repoAbs });
     const h = rr.hallazgosDe(runDir);
-    const ab = rr.abiertos(h.lista);
-    const out = { vueltas: rr.vueltas(marcador), tope: tope.value, tope_de: tope.source, problemas: [...tope.problems, ...(h.error ? [h.error] : [])], abiertos: ab };
-    out.linea = rr.linea({ n: out.vueltas, max: out.tope, abiertos: ab });
+    const pre = rr.prefijos();
+    const ab = rr.abiertos(h.lista, { prefijos: pre });
+    // «no pude mirar» no es «no quedó nada abierto»
+    const noMirado = h.error || (!runDir ? 'no encontré la carpeta de la corrida' : null);
+    const out = { vueltas: rr.vueltas(marcador), tope: tope.value, tope_de: tope.source, problemas: [...tope.problems, ...pre.problems, ...(noMirado ? [noMirado] : [])], abiertos: ab };
+    out.linea = rr.linea({ n: out.vueltas, max: out.tope, abiertos: ab, noMirado, de: tope.source });
     if (args.json) process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
     else {
       process.stdout.write(`${out.linea}\n`);

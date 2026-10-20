@@ -66,6 +66,8 @@ function laboratorio({ findings = null, fotos = [], servidas = [], advisorsYaml 
     { encoding: 'utf8', env: { ...env, ...envExtra } });
   lab.cmd = (bin, args, envExtra = {}) => spawnSync(process.execPath, [bin, ...args], { encoding: 'utf8', cwd: repo, env: { ...env, ...envExtra } });
   lab.foto = (n) => { const m = JSON.parse(fs.readFileSync(markerFile, 'utf8')); m.iterations[n] = { ts: new Date().toISOString(), files: {} }; fs.writeFileSync(markerFile, JSON.stringify(m)); };
+  // el ajuste de la máquina: un archivo en la carpeta de estado, donde el agente no escribe
+  lab.maquina = (n) => fs.writeFileSync(path.join(state, 'review-max-rounds.json'), JSON.stringify({ max_rounds: n }));
   lab.servidas = () => { try { return JSON.parse(fs.readFileSync(path.join(run, 'rethink', 'served.json'), 'utf8')).served; } catch (_) { return []; } };
   lab.conversar = (regs) => {
     const dir = path.join(home, '.claude', 'projects', '-repo');
@@ -88,9 +90,15 @@ test('Rounds_SameRoundTwice_DoesNotCount @story-7.37 @ac-1', () => {
   assert.deepEqual(lab.servidas(), [1, 2]);
   // con los revisores de la 2 lanzados, el pedido siguiente es la 3, como siempre (con el tope alto, pide la nota)
   lab.foto(2);
-  const c = lab.reloop(2, [], { TYCON_REVIEW_MAX_ROUNDS: '6' });
+  lab.maquina(6);
+  const c = lab.reloop(2);
   assert.equal(c.status, 3, c.stderr);
   assert.match(c.stderr, /vuelta 3/i);
+  // subir el tope con el ajuste de la máquina pasa, pero queda anotado y se dice
+  assert.match(c.stderr, /el ajuste de esta máquina.*lo sube a 6: queda anotado/);
+  assert.ok(gates(lab).some((g) => g.name === 'review-cap-machine' && g.iter === 3));
+  const linea = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo]);
+  assert.match(linea.stdout, /tope 6, puesto por el ajuste de esta máquina/);
 });
 
 test('Rounds_RunCost_CountsRoundsWithReviewers @story-7.37 @ac-2', () => {
@@ -113,6 +121,10 @@ test('Cap_Default_Two @story-7.37 @ac-3', () => {
   assert.equal(r.status, 3, r.stderr);
   assert.match(r.stderr, /tope de 2 vueltas/);
   assert.match(r.stderr, /no quedó nada abierto|quedó abierto/i);
+  // una variable de ambiente antepuesta al comando (la podría poner el propio agente) no sube el tope
+  const v = lab.reloop(3, [], { TYCON_REVIEW_MAX_ROUNDS: '99' });
+  assert.equal(v.status, 3);
+  assert.match(v.stderr, /tope de 2 vueltas/);
 });
 
 test('Cap_OrgAndRepo_RepoWins_BadValueSaid @story-7.37 @ac-4', () => {
@@ -135,6 +147,13 @@ test('Cap_SecurityCritical_AsksThePerson @story-7.37 @ac-5', () => {
   assert.match(r.stderr, /seguridad o (de )?datos/);
   assert.match(r.stderr, /--extra-round/);
   assert.match(r.stderr, /waive-critical/);
+  // un «no» a otra vuelta, o un ok que no la nombra, no la autoriza
+  for (const dice of ['no hace falta otra vuelta, lo eximo', 'ok, seguí']) {
+    lab.conversar([delDev(dice)]);
+    const no = lab.reloop(3, ['--extra-round', '--approved-by', 'Dev de Prueba', '--quote', dice]);
+    assert.equal(no.status, 3, `«${dice}» no autoriza otra vuelta`);
+    assert.match(no.stderr, /No se autorizó la vuelta extra/);
+  }
   // con el ok de la persona, la vuelta extra se sirve (la tercera, además, pide su nota de repensar)
   lab.conversar([delDev('dale, una vuelta más para arreglar el SEC-C1')]);
   const nota = lab.cmd(MARKER, ['rethink', '--iter', '3', '--repeated', 'El mismo hallazgo de seguridad en las dos vueltas sobre el mismo archivo',
@@ -170,6 +189,21 @@ test('Close_BlockingCriticalOpen_Blocks @story-7.37 @ac-7', () => {
     assert.notEqual(r.status, 0, f.rule_id);
     assert.match(r.stderr, new RegExp(`${f.rule_id}.*seguridad o (de )?datos|seguridad o (de )?datos.*${f.rule_id}`, 's'), r.stderr);
   }
+});
+
+test('Close_UnreadableFindings_NeverNothingOpen @story-7.37 @ac-7 @ac-8', () => {
+  // no poder leer los hallazgos no es «no quedó nada abierto»: el paso 8 frena y la línea del cierre lo dice
+  const lab = laboratorio({ fotos: [1, 2] });
+  fs.writeFileSync(path.join(lab.run, 'findings.json'), '{ esto no es JSON');
+  const c = lab.cmd(MARKER, ['complete-step', '8']);
+  assert.notEqual(c.status, 0);
+  assert.match(c.stderr, /findings\.json/, 'lo frena el control de findings.json');
+  assert.doesNotMatch(c.stdout + c.stderr, /BLOQUEADO — 0 crítico/);
+  const l = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo]);
+  assert.match(l.stdout, /lo abierto no lo pude mirar/);
+  assert.doesNotMatch(l.stdout, /quedó abierto: nada/);
+  const r = lab.reloop(3);
+  assert.match(r.stderr, /No pude mirar lo abierto/);
 });
 
 test('Close_SaysRoundsAndOpen @story-7.37 @ac-8', () => {

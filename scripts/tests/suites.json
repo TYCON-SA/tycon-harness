@@ -992,6 +992,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.37: el tope de vueltas de revisores — la misma vuelta pedida dos veces no suma, el tope de fábrica, de la organización y del repo, al tope lo de seguridad o datos lo decide una persona y lo demás queda como deuda, el cierre lo dice.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/review-rounds.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/review-roster.test.js",
       "requiere": []

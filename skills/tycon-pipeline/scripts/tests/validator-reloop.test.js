@@ -78,6 +78,8 @@ function mkHome(repo, pasos, { marker = {}, conversacion = true, lineasCrudas = 
   const h = fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-home-'));
   const activo = path.join(h, '.claude', '.tycon-pipeline', 'active');
   fs.mkdirSync(activo, { recursive: true });
+  // el tope de vueltas al máximo (el ajuste de la máquina): acá se mide qué revisores entran en cada vuelta, no el tope
+  fs.writeFileSync(path.join(h, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
   const story = path.join(repo, 'specs', 'story-9.9-algo.md');
   const a = path.join(repo, 'src', 'a.js');
   fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({
@@ -123,8 +125,7 @@ function correr(home, repo, args, envExtra = {}, { sinStory = false } = {}) {
     assert.equal(n.status, 0, `no se pudo dejar la nota de la vuelta ${iter}: ${n.stderr}`);
   }
   const r = spawnSync(process.execPath, [PIPELINE, ...args, '--repo', repo, ...story, '--files', 'src/a.js'],
-    // el tope de vueltas al máximo: acá se mide qué revisores entran en cada vuelta, no el tope
-    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', TYCON_REVIEW_MAX_ROUNDS: '6', ...envExtra } });
+    { encoding: 'utf8', env: { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CODE_SESSION_ID: SID, TYCON_GUIDES_DIR: TCG || '', ...envExtra } });
   let json = null;
   try { json = JSON.parse(r.stdout); } catch { /* se asserta abajo */ }
   return { status: r.status, json, stderr: r.stderr, stdout: r.stdout };

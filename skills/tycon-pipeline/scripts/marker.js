@@ -1216,8 +1216,16 @@ function cmdCompleteStep(nRaw, flags) {
     {
       const rr = require('./lib/review-rounds.js');
       let rd8 = null;
-      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined); } catch (_) { rd8 = null; }
+      let noMirado = null;
+      try { rd8 = require('./pipeline.js').resolveRunDir(marker.repoPath || process.cwd(), String(marker.storyId), false, resolveStoryPath(marker.storyPath, marker) || undefined); } catch (e) { noMirado = `no pude calcular la carpeta de la corrida (${e.message || e})`; }
       const h = rr.hallazgosDe(rd8);
+      // «no pude mirar» no es «no quedó nada abierto»: sin poder calcular la carpeta no se cierra. Un findings.json que
+      // falta o no se lee lo frena el control de findings.json que sigue, con su propio mensaje.
+      if (noMirado) {
+        appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, error: noMirado });
+        console.error(`marker.js complete-step 8 BLOQUEADO — ${noMirado}: no puedo saber si quedó abierto un crítico de seguridad o de datos. Volvé a escribir los hallazgos con pipeline.js write-findings.`);
+        process.exit(1);
+      }
       const bloquean = rr.abiertos(h.lista).filter((a) => a.bloquea);
       if (bloquean.length) {
         appendLog('gates.log', { name: 'review-cap-blocking', status: 'blocked', story: marker.storyId, step: 8, abiertos: bloquean.map((a) => a.regla) });
