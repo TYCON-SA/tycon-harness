@@ -236,6 +236,8 @@ Cada pieza dice si es **del arnés** o **de tu organización**. Lo que depende d
 Todo sale de lo mismo con que corre el arnés: la tabla de pasos, el cálculo de revisores, la lista de controles, los
 detectores que deciden cada pieza y el perfil de tu organización. Si una de esas fuentes cambia, la pestaña cambia sola.
 
+![Cómo trabaja: arriba lo de tu organización, a la izquierda los pasos y a la derecha lo que pasa en el paso elegido](sitio-de-la-organizacion/capturas/como-trabaja.png)
+
 **Mejorar una pieza del arnés.** El arnés no se edita desde el sitio. «Ver el código» abre el archivo en el repo público;
 «Proponer una mejora» abre un cuadro donde escribís, con tus palabras, qué cambiarías y por qué. «Abrir el pedido en
 GitHub» abre un pedido nuevo del repo público con tu texto, la pieza, el paso y la versión ya escritos: lo enviás con tu
@@ -302,7 +304,7 @@ cuando el sitio no puede proponer: se lo pasás a quien tiene acceso a ese repo,
 
 ![Una sección cambiada y revisada: «Revisado: está bien escrito»](sitio-de-la-organizacion/capturas/configuracion-revisado.png)
 
-![Antes de proponer: el archivo de hoy y el archivo después del cambio, con «Confirmar y proponer»](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
+![Antes de proponer: los renglones que cambian, marcados, con «Confirmar y proponer»](sitio-de-la-organizacion/capturas/configuracion-diferencia.png)
 
 ![El pedido abierto: la sección muestra su enlace](sitio-de-la-organizacion/capturas/configuracion-propuesto.png)
 
