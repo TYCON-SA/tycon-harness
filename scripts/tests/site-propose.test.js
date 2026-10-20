@@ -430,7 +430,7 @@ async function pantallaViva(rutas, esperas = [1, 1, 1], extras = {}) {
     if (!f) return Promise.reject(new Error(`ruta sin contestar: ${metodo} ${ruta}`));
     return Promise.resolve(f(ruta, opts)).then((r) => (r instanceof Error ? Promise.reject(r) : r));
   };
-  new Function('document', 'fetch', 'location', 'esperasConsulta', 'sessionStorage', 'seguimientoPedido', ORG.pantalla())(document, fetchFalso, { hash: '' }, esperas, extras.sessionStorage, extras.seguimiento || { cada: 1, vueltas: 5 });
+  new Function('document', 'fetch', 'location', 'esperasConsulta', 'sessionStorage', 'seguimientoPedido', 'esperaRespuesta', ORG.pantalla())(document, fetchFalso, { hash: '' }, esperas, extras.sessionStorage, extras.seguimiento || { cada: 1, vueltas: 5 }, extras.esperaRespuesta);
   const soltar = async () => { for (let i = 0; i < 30; i++) await new Promise((r) => setImmediate(r)); };
   await soltar();
   const todos = (n = app) => [n, ...n.hijos.flatMap((h) => todos(h))];
@@ -550,6 +550,75 @@ test('T10 RespuestaCortada_ConsultaYMuestraElEnlace @story-2.46 @ac-8', async ()
   for (let i = 0; i < 3; i++) await new Promise((r) => setTimeout(r, 10));
   assert.ok(!q.llamadas.some((c) => c.ruta.startsWith('/api/config/propuesta')), 'con mensaje del sitio no consulta');
   assert.ok(q.textoDe(q.seccion()).includes('el archivo cambió desde que lo abriste'));
+});
+
+test('RespuestaColgada_ConsultaYCierra @story-2.68 @ac-3', async () => {
+  // el POST no contesta (el sitio espera algo largo): pasado el tope, la pantalla pregunta por la marca y cierra con eso
+  const enlace = 'https://git.acme.example/acme/ops/pullrequest/10';
+  const consultas = [];
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
+    'POST /api/config/proponer': () => new Promise(() => {}),
+    'GET /api/config/propuesta': (ruta) => { consultas.push(ruta); return { status: 200, json: () => Promise.resolve({ ok: true, estado: consultas.length < 2 ? 'en_curso' : 'aplicado', enlace }) }; },
+  }, [1, 1, 1], { esperaRespuesta: 5 });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  for (let i = 0; i < 10; i++) { await new Promise((r) => setTimeout(r, 10)); await p.soltar(); }
+  const marca = p.llamadas.find((c) => c.ruta === '/api/config/proponer').cuerpo.marca;
+  assert.ok(consultas.length >= 2 && consultas.every((c) => c.startsWith(`/api/config/propuesta?seccion=canal&marca=${marca}`)), consultas.join(' '));
+  const texto = p.textoDe(p.seccion());
+  assert.ok(!texto.includes('proponiendo…'), `ya no dice «proponiendo…»: ${texto}`);
+  assert.match(texto, /[Aa]plicado/, texto);
+  assert.ok(p.todos(p.seccion()).some((x) => x.tag === 'a' && x.attrs.href === enlace), 'con el enlace');
+  assert.strictEqual(p.llamadas.filter((c) => c.ruta === '/api/config/proponer').length, 1, 'nunca reintenta /proponer');
+});
+
+test('SinRespuestaNiPedido_DiceQueHacer @story-2.68 @ac-3', async () => {
+  // la respuesta nunca llega y la consulta nunca ve el pedido: al agotar las vueltas, la sección dice qué hacer
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
+    'POST /api/config/proponer': () => new Promise(() => {}),
+    'GET /api/config/propuesta': json({ ok: true, estado: 'no_hay' }),
+  }, [1, 1, 1], { esperaRespuesta: 5, seguimiento: { cada: 1, vueltas: 3 } });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  for (let i = 0; i < 10; i++) { await new Promise((r) => setTimeout(r, 10)); await p.soltar(); }
+  const texto = p.textoDe(p.seccion());
+  assert.ok(!texto.includes('proponiendo…'), texto);
+  assert.match(texto, /recargá y mirá si el pedido se abrió/, texto);
+});
+
+test('RespuestaTardia_NoPisaLaConsulta @story-2.68 @ac-4', async () => {
+  let contestar;
+  const p = await pantallaViva({
+    'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
+    'POST /api/config/proponer': () => new Promise((r) => { contestar = r; }),
+    'GET /api/config/propuesta': json({ ok: true, estado: 'abierto', enlace: 'https://git.acme.example/acme/ops/pullrequest/11' }),
+  }, [1, 1, 1], { esperaRespuesta: 5 });
+  await p.clic('Revisar cambios'); await p.clic('Proponer el cambio'); await p.clic('Confirmar y proponer');
+  for (let i = 0; i < 5; i++) { await new Promise((r) => setTimeout(r, 10)); await p.soltar(); }
+  assert.ok(p.textoDe(p.seccion()).includes('Pedido abierto'), p.textoDe(p.seccion()));
+  // la respuesta del POST llega tarde, con un error: la propuesta ya quedó contestada por la consulta
+  contestar({ status: 500, json: () => Promise.resolve({ ok: false, message: 'el sitio se reinició' }) });
+  await p.soltar();
+  const texto = p.textoDe(p.seccion());
+  assert.ok(texto.includes('Pedido abierto'), texto);
+  assert.ok(!texto.includes('el sitio se reinició'), texto);
+  // ni una tardía con éxito: la primera respuesta buena manda
+  let contestar2;
+  const b = await pantallaViva({
+    'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR,
+    'POST /api/config/proponer': () => new Promise((r) => { contestar2 = r; }),
+    'GET /api/config/propuesta': json({ ok: true, estado: 'abierto', enlace: 'https://git.acme.example/acme/ops/pullrequest/12' }),
+  }, [1, 1, 1], { esperaRespuesta: 5 });
+  await b.clic('Revisar cambios'); await b.clic('Proponer el cambio'); await b.clic('Confirmar y proponer');
+  for (let i = 0; i < 5; i++) { await new Promise((r) => setTimeout(r, 10)); await b.soltar(); }
+  contestar2({ status: 200, json: () => Promise.resolve({ ok: true, message: 'Otra cosa que no tiene que verse', enlace: 'https://git.acme.example/otro' }) });
+  await b.soltar();
+  assert.ok(!b.textoDe(b.seccion()).includes('Otra cosa que no tiene que verse'), b.textoDe(b.seccion()));
+  assert.ok(b.todos(b.seccion()).some((x) => x.tag === 'a' && x.attrs.href === 'https://git.acme.example/acme/ops/pullrequest/12'));
+  // sin tope cumplido (la respuesta llega a tiempo) no se consulta; «aplicado» no deja nada que seguir
+  const q = await pantallaViva({ 'GET /api/config': CONFIG(), 'POST /api/config/revisar': REVISAR, 'POST /api/config/proponer': json({ ok: true, codigo: 'aplicado', message: 'Aplicado: el cambio ya está en la rama principal', enlace: 'x' }) }, [1, 1, 1], { esperaRespuesta: 60000 });
+  await q.clic('Revisar cambios'); await q.clic('Proponer el cambio'); await q.clic('Confirmar y proponer');
+  assert.ok(!q.llamadas.some((c) => c.ruta.startsWith('/api/config/propuesta')), 'con respuesta a tiempo no consulta');
 });
 
 test('T11 RespuestaCortada_NoHayPedido_ElErrorDeSiempre @story-2.46 @ac-8', async () => {

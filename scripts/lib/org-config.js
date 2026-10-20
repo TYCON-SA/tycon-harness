@@ -873,6 +873,8 @@ function pantalla(idioma = 'es') {
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
   // con el pedido abierto, cada cuánto pregunta si ya entró y cuántas veces (10 s, hasta 10 minutos); la prueba pasa los suyos
   var SEGUIR = typeof seguimientoPedido !== 'undefined' && seguimientoPedido ? seguimientoPedido : { cada: 10000, vueltas: 60 };
+  // cuánto se espera la respuesta de «Proponer» antes de preguntar por la marca si el pedido ya se abrió (las pruebas lo achican)
+  var ESPERA_RESPUESTA = typeof esperaRespuesta !== 'undefined' && esperaRespuesta ? esperaRespuesta : 20000;
 
   // ── lo cargado sin proponer, por sección, en sessionStorage (vive lo que la pestaña) ──
   // todo acceso puede fallar (navegador privado, almacén bloqueado o lleno): entonces la página sigue sin guardarlo y no
@@ -2151,6 +2153,23 @@ function pantalla(idioma = 'es') {
     var marca = S.marcas[s.id] || (S.marcas[s.id] = nuevaMarca());
     var b = baseDe(s);
     S.proponiendo[s.id] = marca; render();
+    // una respuesta que tarda (el sitio esperando algo largo) no deja la sección en «proponiendo…»: pasado el tope se
+    // pregunta por la marca, y si el pedido ya se abrió o ya entró, la propuesta se cierra con eso
+    var sigueEsperando = function () { return S.proponiendo[s.id] === marca && !S.terminadas[marca]; };
+    var vigilar = function (vuelta) {
+      if (!sigueEsperando()) return;
+      // sin respuesta y sin pedido a la vista después de todas las vueltas: no se queda en «proponiendo…», dice qué hacer
+      if (vuelta >= SEGUIR.vueltas) return terminarPropuesta(s, marca, { ok: false, text: T('pantalla.noPudeHablarConEl') + T('pantalla.sinRespuesta') + T('pantalla.siEstabasProponiendoRecargaY'), enlace: null }, false);
+      // con la pestaña oculta no pregunta, como el seguimiento del pedido
+      cuandoSeVea(function () {
+        api('/propuesta?seccion=' + encodeURIComponent(s.id) + '&marca=' + marca).then(function (h) {
+          if (!sigueEsperando()) return;
+          if (h && h.ok && (h.estado === 'abierto' || h.estado === 'aplicado')) return terminarPropuesta(s, marca, { ok: true, text: h.estado === 'aplicado' ? T('pantalla.pedidoAplicado') : T('pantalla.pedidoAbierto'), enlace: h.enlace || null, codigo: h.estado }, true);
+          despues(SEGUIR.cada, function () { vigilar(vuelta + 1); });
+        });
+      });
+    };
+    despues(ESPERA_RESPUESTA, function () { vigilar(0); });
     api('/proponer', { seccion: s.id, texto: S.textos[s.id], oid: b.oid === undefined ? null : b.oid, base: b.texto === null || b.texto === undefined ? '' : b.texto, marca: marca }).then(function (r) {
       if (!r.sinRespuesta && !S.terminadas[marca] && (r.codigo === 'reaplicado' || r.codigo === 'se_pisan' || r.codigo === 'no_valida')) return otraVersion(s, r);
       if (!r.sinRespuesta || S.terminadas[marca]) return terminarPropuesta(s, marca, { ok: r.ok, text: r.message, enlace: r.enlace || null, codigo: r.codigo }, r.ok);
