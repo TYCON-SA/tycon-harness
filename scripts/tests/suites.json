@@ -485,6 +485,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 7.46: una persona marca cada criterio de la guía como probado a mano — la opción de la organización, la muestra, la marca con el ok de la persona y el freno del cierre.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/manual-checks.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/models.test.js",
       "requiere": []

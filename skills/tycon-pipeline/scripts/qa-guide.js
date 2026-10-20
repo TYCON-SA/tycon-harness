@@ -311,18 +311,53 @@ function mdInline(s) {
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
 }
 
-function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embeddedState, outFileName }) {
+// Qué probó el arnés, en llano, para la insignia de cada criterio: `{ tier, badge, como }`. `como` sólo cuando lo probó
+// corriendo la app (de punta a punta, o con un humo).
+function estadoDelArnes(pa) {
+  const v = (pa && pa.verdict) || 'NOT-RUN';
+  if (v === 'RUNTIME') {
+    const e2e = pa.fuentes && Array.isArray(pa.fuentes.e2e) && pa.fuentes.e2e.length > 0;
+    return { tier: 'run', badge: '✓ el arnés ya lo probó', como: `Lo probó corriendo la app${e2e ? ', con una prueba de punta a punta' : ''}. Probarlo a mano es un segundo control.` };
+  }
+  if (v === 'NOT-VERIFIABLE' || v === 'WAIVED-USER') return { tier: 'wv', badge: 'La app no lo muestra: lo cubre una prueba del código', como: null };
+  return { tier: 'pend', badge: 'El arnés no lo probó: probalo a mano', como: null };
+}
+
+// «el 20/10 a las 10:31», en la hora de la máquina que genera la guía
+function cuandoEnLlano(ts) {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const dd = (n) => String(n).padStart(2, '0');
+  return `el ${dd(d.getDate())}/${dd(d.getMonth() + 1)} a las ${dd(d.getHours())}:${dd(d.getMinutes())}`;
+}
+
+function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embeddedState, outFileName, manual = null }) {
+  // con la opción de la organización prendida: quién marcó cada criterio a mano, y lo que falta
+  const conMarca = manual && manual.prendida;
+  const marcaDe = (c) => {
+    if (!conMarca) return '';
+    const m = (manual.marcas || {})[c.n];
+    if (!m) return `<div class="manual manual-falta">✋ Falta que una persona lo marque como probado a mano.</div>`;
+    return `<div class="manual manual-hecha">✋ ${c.tier === 'wv' ? 'Revisado' : 'Probado'} a mano por ${esc(m.quien)}, ${esc(cuandoEnLlano(m.ts))}.</div>`;
+  };
+  const criteriosConMarca = cards.filter((c) => !c.groupTitle);
+  const faltan = conMarca ? (manual.faltan || []) : [];
+  const avisoMarca = conMarca ? `<div class="aviso-manual"><b>Tu organización pide que una persona marque cada criterio como probado a mano.</b>
+    ${faltan.length ? `Falta marcar ${faltan.length} de ${criteriosConMarca.length}: ${faltan.length > 1 ? 'los criterios' : 'el criterio'} ${esc(faltan.map((f) => f.n).join(', '))}. La historia no se cierra hasta que esté${faltan.length > 1 ? 'n' : ''} marcado${faltan.length > 1 ? 's' : ''}.` : 'Todos los criterios están marcados.'}
+    ${manual.error ? `<br>No se pudieron leer las marcas (${esc(manual.error)}): la guía las muestra como faltantes.<br>` : ''}
+    Para marcarlo, decíselo al agente en el chat, nombrando el criterio («probé a mano el criterio N»): el arnés te muestra qué vas a marcar y anota tu respuesta. El agente no puede marcarlo por vos.</div>` : '';
   const rows = cards.map((c) => c.groupTitle ? `
     <h2 class="group">${esc(c.groupTitle)}</h2>` : `
     <section class="ac" data-ac="${c.n}" data-tier="${c.tier}">
       <header>
-        <span class="acnum">AC #${c.n}</span>
+        <span class="acnum">Criterio ${c.n}</span>
         <span class="badge badge-${c.tier}">${esc(c.badge)}</span>${
           c.roleNone ? `\n        <span class="badge badge-none">Sin login — lo verifica el sistema</span>`
           : (c.roles || []).map((r) => `\n        <span class="badge badge-role" title="Usuario con el que probar este AC">${esc(r)}</span>`).join('')
         }
       </header>
       <p class="actext">${mdInline(c.text)}</p>
+      ${c.como ? `<p class="tiernote">${esc(c.como)}</p>` : ''}
       ${c.tierNote ? `<p class="tiernote">${mdInline(c.tierNote)}</p>` : ''}
       ${c.pruebas.length ? `<div class="block"><h4>Qué probar a mano</h4>${c.pruebas.map((p) => `
         <div class="prueba">
@@ -343,6 +378,7 @@ function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embed
         </div>
         <textarea placeholder="Notas del tester (qué viste, capturas, nº de orden usada...)" data-notes="${c.n}"></textarea>
       </div>
+      ${marcaDe(c)}
     </section>`).join('\n');
 
   return `<!doctype html>
@@ -394,6 +430,10 @@ function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embed
   .prog{color:var(--muted);font-size:13px;margin-left:auto}
   .saved{color:var(--run);font-size:13px} @media (prefers-color-scheme:dark){.saved{color:#4ade80}}
   .ac.done-pass{border-color:var(--run)} .ac.done-fail{border-color:#c0392b}
+  .manual{margin-top:12px;padding:10px 12px;border-radius:8px;font-size:14px}
+  .manual-falta{border:1px solid var(--pend)} .manual-hecha{border:1px solid var(--run)}
+  .aviso-manual{border:1px solid var(--pend);border-radius:10px;padding:12px 14px;margin:0 0 18px}
+  .aviso-manual b{display:block;margin-bottom:4px}
   .storage-note{background:rgba(37,99,235,.08);border:1px solid var(--accent);border-radius:8px;padding:8px 12px;font-size:13px;margin-bottom:16px;color:var(--ink)}
 </style></head>
 <body><div class="wrap">
@@ -404,12 +444,15 @@ function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embed
   </div>
   <script id="qa-state" type="application/json">${JSON.stringify(embeddedState || {})}</script>
   <h1>Guía de prueba manual — Story ${esc(sid)}</h1>
-  <p class="sub">${esc(title)} · generada ${esc(generatedAt)} · segundo control de calidad (humano) sobre lo verificado automáticamente</p>
+  <p class="sub">${esc(title)} · generada ${esc(generatedAt)} · la guía dice qué probó el arnés; lo demás se prueba a mano</p>
   <div class="summary">
-    <span class="pill"><b>${stats.total}</b> ACs</span>
-    <span class="pill"><b>${stats.runtime}</b> verificados corriendo la app</span>
-    <span class="pill"><b>${stats.waived + stats.notVerifiable}</b> no verificables por la app (revisar test que los cubre)</span>
+    <span class="pill"><b>${stats.total}</b> criterios</span>
+    <span class="pill">✓ el arnés ya probó <b>${stats.runtime}</b></span>
+    <span class="pill"><b>${stats.pending != null ? stats.pending : Math.max(0, stats.total - stats.runtime - stats.waived - stats.notVerifiable)}</b> para probar a mano</span>
+    <span class="pill"><b>${stats.waived + stats.notVerifiable}</b> que la app no puede mostrar</span>${conMarca ? `
+    <span class="pill">✋ marcados a mano <b>${criteriosConMarca.length - faltan.length}</b> de ${criteriosConMarca.length}</span>` : ''}
   </div>
+  ${avisoMarca}
   <div class="storage-note">
     📝 Tus respuestas (Pasó / Falló / No aplica + notas) se van recordando mientras trabajás. Cuando
     termines (o cuando quieras cortar), tocá <b>💾 Guardar</b>: escribe tus selecciones dentro de
@@ -768,13 +811,6 @@ function main() {
       .split(/\n{2,}/).map((b) => /^<(h3|ul|pre)/.test(b.trim()) ? b : (b.trim() ? `<p>${b.trim()}</p>` : '')).join('\n');
   }
 
-  const TIER = {
-    RUNTIME: { tier: 'run', badge: 'verificado corriendo', note: null },
-    'WAIVED-USER': { tier: 'wv', badge: 'no verificable por la app (aprobado)', note: null },
-    'NOT-VERIFIABLE': { tier: 'wv', badge: 'no verificable por la app', note: null },
-    'NOT-RUN': { tier: 'pend', badge: 'pendiente', note: null },
-  };
-
   // Pasos EN CRIOLLO para el tester (fuente separada de la tabla dev): --steps o <repo>/qa/<clave>-pasos.md
   let pasosByAc = {};
   let sequence = [];
@@ -921,7 +957,7 @@ function main() {
 
   function buildCard(a) {
     const pa = matrix.perAc[a.n] || { verdict: 'NOT-RUN' };
-    const t = TIER[pa.verdict] || TIER['NOT-RUN'];
+    const t = estadoDelArnes(pa);
     const acTests = tests.filter((r) => r.acRefs.includes(a.n));
     const tecnica = acTests
       .map((r) => ({ escenario: r.escenario, esperado: r.esperado }))
@@ -941,7 +977,7 @@ function main() {
     // Rol/usuario de prueba (badge del header): explícito en pasos.md (`Usuario:`), o el default.
     const { roles, roleNone } = resolveRoles(pasos.role, t.tier, defaultRole);
     const needsRole = t.tier !== 'wv' && !roleNone && roles.length === 0;
-    return { n: a.n, text: headline, acTextTech, tier: t.tier, badge: t.badge, tierNote, pruebas, tecnica, cmds, needsPasos, needsDesc, roles, roleNone, needsRole };
+    return { n: a.n, text: headline, acTextTech, tier: t.tier, badge: t.badge, como: t.como, tierNote, pruebas, tecnica, cmds, needsPasos, needsDesc, roles, roleNone, needsRole };
   }
 
   // ORDEN pensado para el tester: si el archivo de pasos define una secuencia (orden de los `## AC N`
@@ -967,7 +1003,24 @@ function main() {
     runtime: matrix.stats.runtime,
     waived: matrix.stats.waived,
     notVerifiable: matrix.stats.notVerifiable,
+    pending: acs.filter((a) => estadoDelArnes(matrix.perAc[a.n]).tier === 'pend').length,
   };
+
+  // Con la opción de la organización prendida, quién marcó cada criterio a mano y qué falta.
+  let manual = null;
+  try {
+    const mc = require(path.join(__dirname, 'lib', 'manual-checks.js'));
+    if (mc.prendida().prendida) {
+      const storyId = (fm.match(/^story:\s*["']?([^"'\s#]+)/m) || [])[1] || sid;
+      const runDir = require(path.join(__dirname, 'pipeline.js')).resolveRunDir(matrix.repoRoot || path.dirname(abs), String(storyId), false, abs);
+      const stateDir = require(path.join(__dirname, 'lib', 'story-gate-io.js')).DEFAULT_STATE_DIR;
+      const v = runDir ? mc.validas({ runDir, stateDir, storyId }) : { marcas: {} };
+      manual = { prendida: true, marcas: v.marcas, faltan: acs.filter((a) => !v.marcas[a.n]).map((a) => ({ n: a.n, text: a.text })) };
+    }
+  } catch (e) {
+    console.error(`· no pude leer las marcas a mano (${e.message})`);
+    manual = { prendida: true, marcas: {}, faltan: acs.map((a) => ({ n: a.n, text: a.text })), error: e.message };
+  }
 
   // Determinar el path de salida ANTES de render, para preservar el estado del tester ya guardado.
   let out = opt('--out');
@@ -984,7 +1037,7 @@ function main() {
 
   const html = renderHtml({
     outFileName: path.basename(out),
-    sid, title, preambleHtml: (openApp ? `<p><strong>Abrir la app:</strong> ${esc(openApp)}</p>` : '') + preambleHtml, cards, stats, embeddedState,
+    manual, sid, title, preambleHtml: (openApp ? `<p><strong>Abrir la app:</strong> ${esc(openApp)}</p>` : '') + preambleHtml, cards, stats, embeddedState,
     generatedAt: (opt('--now') || 'ahora'),
   });
 
@@ -1024,7 +1077,7 @@ function main() {
   process.exit(0);
 }
 
-module.exports = { parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines };
+module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines };
 if (require.main === module) {
   // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');

@@ -430,6 +430,12 @@ only: they are changed with a request in their repo.
   developer's OK on to the session doing the work, to waive a reviewer's critical finding or sign off a criterion that
   cannot be tested live. Empty means none: the developer writes the OK in their own session's chat. It only counts from
   here, never from a machine.
+- **Hand-testing each criterion** (*Prueba a mano de cada criterio*): whether, besides what the harness tests, a person
+  has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
+  harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,
+  naming it; the harness first shows them what they are about to mark, and neither the agent nor a relayed message can
+  mark it. It only counts from here, never from a machine. It lives in `team-profile.json` → `qa.manual_check`, in the
+  profile repo.
 - **Integrations** (*Integraciones*): which services each machine uses (the time clock, the memory, the mailbox, the
   night); a machine can turn one off for itself. It lives in `team-profile.json`, in the profile repo. A maintainer
   reviews it.

@@ -167,6 +167,8 @@ const CHAINS = {
     { name: 'plan-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'plan-display.js'), steps: ['2', '3'], effect: 'warns' },
     // El crítico que se quiere eximir se lo muestra el arnés a la persona al escribirse el pedido (instalación mínima)
     { name: 'critical-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'critical-display.js'), steps: ['all'], effect: 'warns' },
+    // Los criterios que se van a marcar como probados a mano se los muestra el arnés a la persona (instalación mínima)
+    { name: 'manual-check-display', path: path.join(PIPELINE_SCRIPTS, 'lib', 'manual-checks.js'), steps: ['all'], effect: 'warns' },
     // Una historia con pantalla en un repo sin prueba con navegador: el arnés le ofrece a la persona prepararla
     { name: 'browser-test-offer', path: path.join(PIPELINE_SCRIPTS, 'lib', 'browser-test.js'), steps: ['2', '3'], effect: 'warns' },
     // crea el pedido de trabajo en ADO: `integration` lo dice para «Cómo trabaja» (lo apagado en la organización no se muestra)

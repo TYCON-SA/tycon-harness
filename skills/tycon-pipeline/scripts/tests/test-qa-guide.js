@@ -187,6 +187,47 @@ check('parsePasosSequence: orden respeta el archivo (3 antes que 1)', JSON.strin
   check('(6) alcanza también a los ACs no verificables', qa.detectJargon(acWaiveado).length > 0);
 }
 
+// La guía dice en llano qué probó el arnés: la insignia, cómo lo probó y el resumen.
+{
+  const conE2e = qa.estadoDelArnes({ verdict: 'RUNTIME', fuentes: { e2e: ['g.md'], smoke: [] } });
+  const conHumo = qa.estadoDelArnes({ verdict: 'RUNTIME', fuentes: { e2e: [], smoke: ['2026-10-20T10:00:00Z'] } });
+  check('QaGuide_Apagada_ElArnesYaLoProbo @story-7.46 @ac-1 — insignia', conE2e.tier === 'run' && conE2e.badge === '✓ el arnés ya lo probó');
+  check('QaGuide_Apagada_ElArnesYaLoProbo @story-7.46 @ac-1 — de punta a punta', /^Lo probó corriendo la app, con una prueba de punta a punta\. Probarlo a mano es un segundo control\.$/.test(conE2e.como));
+  check('QaGuide_Apagada_ElArnesYaLoProbo @story-7.46 @ac-1 — sólo humo', conHumo.como === 'Lo probó corriendo la app. Probarlo a mano es un segundo control.');
+  const pend = ['NOT-RUN', 'RUNTIME-PARCIAL'].map((v) => qa.estadoDelArnes({ verdict: v }));
+  const nv = ['NOT-VERIFIABLE', 'WAIVED-USER'].map((v) => qa.estadoDelArnes({ verdict: v }));
+  check('QaGuide_Apagada_PendienteYNoVerificable @story-7.46 @ac-2 — pendientes', pend.every((e) => e.tier === 'pend' && e.badge === 'El arnés no lo probó: probalo a mano' && !e.como));
+  check('QaGuide_Apagada_PendienteYNoVerificable @story-7.46 @ac-2 — no verificables', nv.every((e) => e.tier === 'wv' && e.badge === 'La app no lo muestra: lo cubre una prueba del código'));
+  const g = qa.renderHtml({
+    sid: '9.9', title: 'T', generatedAt: 'x', stats: { total: 4, runtime: 2, waived: 0, notVerifiable: 1, pending: 1 },
+    cards: [
+      { n: 1, text: 'uno', tier: 'run', badge: conE2e.badge, como: conE2e.como, pruebas: [], tecnica: [], cmds: [] },
+      { n: 2, text: 'dos', tier: 'run', badge: conHumo.badge, como: conHumo.como, pruebas: [], tecnica: [], cmds: [] },
+      { n: 3, text: 'tres', tier: 'pend', badge: pend[0].badge, pruebas: [], tecnica: [], cmds: [] },
+      { n: 4, text: 'cuatro', tier: 'wv', badge: nv[0].badge, tierNote: 'Lo cubre **T6**.', pruebas: [], tecnica: [], cmds: [] },
+    ],
+  });
+  check('QaGuide_Resumen_EnLlano @story-7.46 @ac-3 — los cuatro números', /<b>4<\/b> criterios/.test(g) && /✓ el arnés ya probó <b>2<\/b>/.test(g) && /<b>1<\/b> para probar a mano/.test(g) && /<b>1<\/b> que la app no puede mostrar/.test(g));
+  check('QaGuide_Resumen_EnLlano @story-7.46 @ac-3 — «Criterio N», sin «AC #»', /Criterio 1</.test(g) && !/AC #/.test(g));
+  check('QaGuide_Resumen_EnLlano @story-7.46 @ac-3 — sin «verificado corriendo»', !/verificado corriendo/i.test(g));
+  check('QaGuide_Resumen_EnLlano @story-7.46 @ac-4 — radios, Guardar y qa-state siguen', /value="pass"/.test(g) && /onclick="guardar\(\)"/.test(g) && /id="qa-state"/.test(g));
+  check('QaGuide_Resumen_EnLlano @story-7.46 @ac-4 — apagada: nada de la marca a mano', !/a mano por|Falta que una persona|marcados a mano/.test(g));
+  const p = qa.renderHtml({
+    sid: '9.9', title: 'T', generatedAt: 'x', stats: { total: 3, runtime: 1, waived: 0, notVerifiable: 1, pending: 1 },
+    manual: { prendida: true, marcas: { 1: { quien: 'Ana', ts: '2026-10-20T13:31:00Z' }, 3: { quien: 'Ana', ts: '2026-10-20T13:33:00Z' } }, faltan: [{ n: 2, text: 'dos' }] },
+    cards: [
+      { n: 1, text: 'uno', tier: 'run', badge: conE2e.badge, pruebas: [], tecnica: [], cmds: [] },
+      { n: 2, text: 'dos', tier: 'pend', badge: pend[0].badge, pruebas: [], tecnica: [], cmds: [] },
+      { n: 3, text: 'tres', tier: 'wv', badge: nv[0].badge, pruebas: [], tecnica: [], cmds: [] },
+    ],
+  });
+  check('QaGuide_Prendida_AvisoYEstadoPorTarjeta @story-7.46 @ac-12 — aviso', /Tu organización pide que una persona marque cada criterio como probado a mano\./.test(p) && /Falta marcar 1 de 3: el criterio 2\./.test(p) && /La historia no se cierra hasta que esté marcado\./.test(p));
+  check('QaGuide_Prendida_AvisoYEstadoPorTarjeta @story-7.46 @ac-12 — resumen', /✋ marcados a mano <b>2<\/b> de 3/.test(p));
+  check('QaGuide_Prendida_AvisoYEstadoPorTarjeta @story-7.46 @ac-12 — probado', /✋ Probado a mano por Ana, el 20\/10 a las \d\d:31\./.test(p));
+  check('QaGuide_Prendida_AvisoYEstadoPorTarjeta @story-7.46 @ac-12 — revisado', /✋ Revisado a mano por Ana, el 20\/10 a las \d\d:33\./.test(p));
+  check('QaGuide_Prendida_AvisoYEstadoPorTarjeta @story-7.46 @ac-12 — falta', /✋ Falta que una persona lo marque como probado a mano\./.test(p));
+}
+
 console.log('');
 if (fails) { console.error(`✗ ${fails} caso(s) fallando`); process.exit(1); }
 console.log('✓ qa-guide — todos los casos verdes');

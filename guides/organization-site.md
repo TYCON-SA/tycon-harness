@@ -411,6 +411,11 @@ en su repo.
 - **Quién reenvía el ok de un dev**: la sesión coordinadora que puede pasarle el ok de un dev a la sesión que
   implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en vivo. Vacío, ninguna:
   el ok lo escribe el dev en el chat de su sesión. Vale sólo desde acá, nunca desde una máquina.
+- **Prueba a mano de cada criterio**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
+  la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
+  frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
+  antes qué va a marcar, y el agente no puede marcarlo ni lo marca un reenvío. Vale sólo desde acá, nunca desde una
+  máquina. Queda en `team-profile.json` → `qa.manual_check`, en el repo del perfil.
 - **Integraciones**: qué servicios usa cada máquina (el reloj de horas, la memoria, el buzón, la noche); una máquina
   puede apagar una para ella sola. Queda en `team-profile.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Conversaciones de las corridas**: si el sitio baja también lo que se habló en cada corrida; con eso, el detalle de
