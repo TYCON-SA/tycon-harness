@@ -53,6 +53,7 @@ const { spawnSync } = require('child_process');
 const { writeAtomic, paths: statePaths } = require('./state');
 const M = require('./managed');
 const PD = require('./plugin-dirs.js');   // story 7.27
+const RP = require('./read-permissions.js');
 const SL = require('./startup-line');
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
@@ -322,6 +323,12 @@ function removePieces(pieces, { home = os.homedir(), env = process.env, tree = n
         }
         case 'setting': {
           const d = json(piece); if (!d) break;
+          // una regla de lectura del arnés: se saca sólo esa entrada de permissions.allow; sin nada más, la
+          // lista, y sin nada en permissions, también
+          if (RP.isRuleId(piece.id)) {
+            if (RP.removeRule(d.data, RP.ruleOf(piece.id))) { d.dirty = true; out.removed.push(piece); } else out.absent.push(piece);
+            break;
+          }
           const cur = getPath(d.data, piece.id);
           if (cur === undefined) { out.absent.push(piece); break; }
           // la carpeta de los mods (story 7.27): se saca sólo esa entrada; si no queda nada, la clave

@@ -83,8 +83,9 @@ printf '# adentro\n' > "$TREE/commands/sub/inner.md"              # una carpeta:
 # call <home> <salida.json> [VAR=valor…] — la función del módulo, directa (`node -e`), con el árbol $TREE (o LAB_TREE)
 call() {
   local h="$1" out="$2"; shift 2
-  # TYCON_NO_MODS=1: la carpeta de los mods (story 7.27) la prueba harness-mods.test.js; acá, los dos ajustes de siempre
-  env "${ENV_UNSET[@]}" HOME="$h" TYCON_NO_MODS=1 LAB_TREE="${LAB_TREE:-$TREE}" LAB_MOD="${LAB_MOD:-$MOD}" "$@" node -e '
+  # TYCON_NO_MODS=1: la carpeta de los mods (story 7.27) la prueba harness-mods.test.js; acá, los dos ajustes de siempre.
+  # TYCON_NO_READ_PERMISSIONS=1: las reglas de lectura las prueba read-permissions.test.js
+  env "${ENV_UNSET[@]}" HOME="$h" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 LAB_TREE="${LAB_TREE:-$TREE}" LAB_MOD="${LAB_MOD:-$MOD}" "$@" node -e '
     const S = require(process.env.LAB_MOD);
     const r = S.applyShared({ home: process.env.HOME, env: process.env, tree: process.env.LAB_TREE });
     process.stdout.write(JSON.stringify(r) + "\n");
@@ -295,7 +296,7 @@ if corre S7 && suite_part 1; then
     && ok "S7 con la copia del mecanismo ya tomada (TYCON_HARNESS_SNAPSHOT_DIR) escribe sin dejar .bak" || mal "S7 bajo harness.js quedó un .bak, o no escribió"
   # la opción explícita le gana a la variable (harness.js sin copia posible pide el .bak de siempre)
   new_home "$H"; echo '{"hooks":{}}' > "$H/.claude/settings.json"
-  env "${ENV_UNSET[@]}" HOME="$H" TYCON_NO_MODS=1 TYCON_HARNESS_SNAPSHOT_DIR="$T/s7-snap" node -e '
+  env "${ENV_UNSET[@]}" HOME="$H" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 TYCON_HARNESS_SNAPSHOT_DIR="$T/s7-snap" node -e '
     const S = require(process.argv[1]);
     S.applyShared({ home: process.env.HOME, env: process.env, tree: process.argv[2], backup: true });' "$MOD" "$TREE" 2>/dev/null
   [ "$(baks "$H")" = "1" ] && ok "S7 con backup: true deja el .bak aunque la variable esté puesta" || mal "S7 backup: true no dejó el .bak"
@@ -326,7 +327,7 @@ if corre S9 && suite_part 1; then
   H="$T/s9"; new_home "$H"; printf '{"model":"x","env":{"MIA":"x"}}' > "$H/.claude/settings.json"
   printf '# mío\n' > "$T/s9-mine.md"; mkdir -p "$H/.claude/commands"; cp "$T/s9-mine.md" "$H/.claude/commands/mine.md"
   call "$H" "$T/s9.json"
-  env "${ENV_UNSET[@]}" HOME="$H" TYCON_NO_MODS=1 node -e '
+  env "${ENV_UNSET[@]}" HOME="$H" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 node -e '
     const path = require("path"); const fs = require("fs");
     const [dir, resFile, tree] = process.argv.slice(1);
     const S = require(path.join(dir, "shared.js")), M = require(path.join(dir, "managed.js")), R = require(path.join(dir, "remove.js"));
@@ -380,7 +381,7 @@ run_installer() { # run_installer <home> <salida.txt> [VAR=valor…] [-- args de
     TYCON_NO_COLLECT_FINDINGS=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_NO_AZ_PROJECTS_REFRESH=1 \
     TYCON_NO_ENGRAM_VERSION_CHECK=1 TYCON_NO_SQLITE_CHECK=1 TYCON_NO_ENGRAM_PROJECT_CHECK=1 TYCON_NO_AGENTSMD_POINTER=1 \
     TYCON_NO_CANONICAL_PATH=1 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_BOOTSTRAP_HEAL=1 TYCON_SAFETY_GUARD=0 TYCON_TEST_SCOPE_GUARD=0 \
-    TYCON_SESSION_GUARD=0 TYCON_NO_MODS=1 GIT_CONFIG_NOSYSTEM=1 TYCON_PARITY_BENCH_DIR="$T/parity-bench" \
+    TYCON_SESSION_GUARD=0 TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 GIT_CONFIG_NOSYSTEM=1 TYCON_PARITY_BENCH_DIR="$T/parity-bench" \
     ${extra[@]+"${extra[@]}"} bash "$INST" "$@" > "$out" 2>&1
 }
 
@@ -643,7 +644,7 @@ if corre S12 && suite_part 1; then
   #    ocurrió.
   call_busy() { # call_busy <home> <salida.json> <código> <cuántas veces falla> [VAR=valor…]
     local h="$1" out="$2" code="$3" times="$4"; shift 4
-    env "${ENV_UNSET[@]}" HOME="$h" TYCON_NO_MODS=1 LAB_TREE="$TREE" LAB_MOD="$MOD" LAB_FAIL_CODE="$code" LAB_FAIL_TIMES="$times" "$@" node -e '
+    env "${ENV_UNSET[@]}" HOME="$h" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 LAB_TREE="$TREE" LAB_MOD="$MOD" LAB_FAIL_CODE="$code" LAB_FAIL_TIMES="$times" "$@" node -e '
       const fs = require("fs");
       const real = fs.renameSync; const at = [];
       fs.renameSync = (from, to) => {
@@ -713,7 +714,7 @@ if corre S13 && suite_part 1; then
   #    ~/.claude sin que nada los nombrara.
   call_stuck() { # call_stuck <home> <salida.json> <qué no se deja borrar: tmp|bak|both|none> [half-write]
     # con `half-write`, lo que falla no es el reemplazo sino la escritura del temporal, a medio escribir (disco lleno)
-    env "${ENV_UNSET[@]}" HOME="$1" TYCON_NO_MODS=1 LAB_TREE="$TREE" LAB_MOD="$MOD" LAB_STUCK="$3" LAB_HALF_WRITE="${4:-}" node -e '
+    env "${ENV_UNSET[@]}" HOME="$1" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 LAB_TREE="$TREE" LAB_MOD="$MOD" LAB_STUCK="$3" LAB_HALF_WRITE="${4:-}" node -e '
       const fs = require("fs");
       const realRename = fs.renameSync, realRm = fs.rmSync, realWrite = fs.writeFileSync;
       if (process.env.LAB_HALF_WRITE) fs.writeFileSync = (p, text, o) => {

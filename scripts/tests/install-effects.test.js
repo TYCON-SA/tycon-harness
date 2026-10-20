@@ -465,7 +465,11 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
     const bothByDecision = e.id === 'PreToolUse:@tcg:safety-guard-pre.sh';   // decisión del dueño, 2026-10-05
     if (e.kind === 'hook' && e.blocks !== 'no' && !integ && e.when !== 'optin:TYCON_SESSION_GUARD' && !bothByDecision) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} frena: sólo full`);
     if (bothByDecision) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: el freno de comandos va en los dos perfiles`);
-    if (['setting', 'git-hook'].includes(e.kind)) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)}: sólo full`);
+    // las reglas de lectura de las carpetas del arnés van en los dos: sin ellas la primera historia, que corre con la
+    // mínima, frena en un cuadro de permiso
+    const readRules = e.kind === 'setting' && e.id_pattern === '^permissions\\.allow:Read\\(.+\\)$';
+    if (readRules) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: las reglas de lectura van en los dos perfiles`);
+    if (['setting', 'git-hook'].includes(e.kind) && !readRules) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)}: sólo full`);
     // los bloques de un paquete: el perfil lo dice el marcador de cada uno (requires-profile), como el de un bloque del núcleo
     if (e.kind === 'block' && !integ && e.id_pattern) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: el perfil lo decide cada bloque`);
     if (e.kind === 'block' && !integ && !e.id_pattern) assert.deepStrictEqual(e.profiles, ['full'], `${nameOf(e)} cambia cómo contesta: sólo full`);
