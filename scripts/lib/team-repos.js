@@ -299,6 +299,19 @@ function suitesWithoutPipeline(rule) {
   return null;
 }
 
+/**
+ * Qué hace cada regla con las suites al mergear, como lo decide `suitesDecision` de `scripts/tools/merge-pr.js`:
+ * `server-if-required` (automático: el servidor si la rama exige las pruebas; si no, la máquina), `machine-always`
+ * (siempre en la máquina, aunque el servidor también las corra), `server-only` (confiar en el servidor); `null` si la
+ * regla no existe. La pantalla de configuración lo dice debajo de cada selector.
+ */
+function suitesWithRule(rule) {
+  if (rule === 'automatico') return 'server-if-required';
+  if (rule === 'siempre-en-la-maquina') return 'machine-always';
+  if (rule === 'confiar-en-el-servidor') return 'server-only';
+  return null;
+}
+
 /** Los problemas de `wait_notice` (story 7.20); `[]` si está bien. */
 function waitNoticeProblems(value) {
   if (!isObject(value)) return [{ path: 'wait_notice', message: 'tiene que ser un objeto (el plazo del aviso de espera)' }];
@@ -503,7 +516,7 @@ function privateRepoRef(data) {
   return `${m.project}/_git/${m.repo}`;
 }
 
-module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, modelsAboveCeiling, suitesWithoutPipeline, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
+module.exports = { VERSION, PLATFORMS, REPO_KEYS, KEYS, MERGE_RULES, MODEL_NAMES, STACK_KEYS, STACK_EXT_RE, RULE_VALUES, UI_LANGUAGE_RE, WEEKLY_REVIEW_DEFAULTS, modelsProblems, modelsAboveCeiling, suitesWithoutPipeline, suitesWithRule, stackProblems, weeklyReviewProblems, parse, load, url, privateRepoRef, repoProblems, harnessCopies, mergeSuitesFor };
 
 if (require.main === module) {
   const args = process.argv.slice(2);
