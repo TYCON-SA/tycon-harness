@@ -1,9 +1,9 @@
 {
   "agent": "tycon-story-validator",
   "file": "agents/tycon-story-validator.md",
-  "hash": "49df4f266cf1b8ea1f28cd1bb4fd215a8934acdf",
-  "passed": 11,
-  "total": 11,
+  "hash": "5727b9b7a8577eb1041f3d210ee45f66272e4902",
+  "passed": 13,
+  "total": 13,
   "score": 1,
   "baseline": {
     "passed": 6,
@@ -22,6 +22,8 @@
     "tycon-story-validator::limpio-ac-muestra-numero-con-nombre-sin-w16": true,
     "tycon-story-validator::val-c8-patron-de-referencia-por-asuncion": true,
     "tycon-story-validator::val-w9-p-numbering-sin-calificar": true,
-    "tycon-story-validator::val-w10-backlink-faltante-en-la-padre": true
+    "tycon-story-validator::val-w10-backlink-faltante-en-la-padre": true,
+    "tycon-story-validator::val-w17-la-guia-ya-dice-que-el-arnes-lo-probo": true,
+    "tycon-story-validator::limpio-criterio-nuevo-sin-w17": true
   }
 }

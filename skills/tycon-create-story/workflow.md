@@ -371,6 +371,16 @@ Load config from `{project-root}/_bmad/bmm/config.yaml` and resolve:
 
 <step n="6" goal="Update sprint status and finalize">
   <action>Validate the newly created story file {default_output_file} against `./checklist.md` and apply any required fixes before finalizing</action>
+  <action>Run the `tycon-story-validator` subagent on the new story (pre-implementation: no `phase`). If its report has
+  `[VAL-W17]` (a criterion asks for something the code already does), show it to the user in plain words BEFORE
+  reporting completion: each criterion with the `file:line` and what the code already does there, exactly as the report
+  gives it, and three choices: (a) keep the story as is, (b) adjust it (drop or rewrite those criteria, then validate
+  again), (c) discard it. Without `[VAL-W17]`, say nothing about it.</action>
+  <check if="the user chose (c) discard">
+    <action>Delete {default_output_file}. Do NOT save it and do NOT touch {{sprint_status}}</action>
+    <output>Story {{story_id}} discarded: the code already does it ({file:line} from the report). Nothing was saved.</output>
+    <action>HALT — skip the rest of this step</action>
+  </check>
   <action>Save story document unconditionally</action>
 
   <!-- Update sprint status -->

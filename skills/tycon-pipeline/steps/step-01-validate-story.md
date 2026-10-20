@@ -105,6 +105,24 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
   - 🔴 **`VAL-C8` / `XPAT-C1` / `XPAT-C3` no se deberían waiver a la ligera**: significan que la story de backend no nace anclada a un patrón hermano verificado — la condición de la que sale un fix inventado. El camino correcto es corregir la story (abrir los archivos hermanos, citar el patrón real). Un override acá debe quedar registrado con justificación explícita del usuario en el pipeline log.
   - Si el usuario hace override → continuar a Step 2 con nota explícita en el pipeline log.
 
+- **Si hay `VAL-W17`** (un criterio pide algo que el código ya hace): se trata antes que los demás warnings, porque
+  puede volverlos irrelevantes. PAUSAR y mostrarle a la persona, en llano, cada criterio con el `archivo:línea` y lo
+  que el código ya hace ahí (tal como lo trae el reporte, sin agregar ni sacar), y preguntar:
+  ```
+  Parte de lo que pide la historia ya lo hace el código:
+  - Criterio {N}: ya lo hace {archivo}:{línea} — {qué hace}. {Entero | En parte: falta …}
+
+  ¿Cómo seguimos?
+  (a) Seguir igual: la historia queda como está
+  (b) Ajustar la historia: saco o reescribo esos criterios y la vuelvo a validar
+  (c) Descartar la historia: no hay nada que hacer
+  ```
+  - **(a) Seguir igual** → anotar `val_w17_acknowledged: <criterios>` en el log del paso y seguir con los demás warnings.
+  - **(b) Ajustar** → reescribir los criterios con la persona, guardar la story y re-correr el validador.
+  - **(c) Descartar** → `marker.js update-story-status <spec> abandoned`, el motivo en el Change Log de la story
+    («el código ya lo hace: {archivo}:{línea}»), y terminar el pipeline (con la reversión de 0b/0c de arriba).
+  Con modo autónomo y coordinadora, la pregunta va a quien aprueba (la coordinadora), no se decide sola.
+
 - **Si hay WARNING (sin CRITICAL)**: chequear primero la **whitelist de formato cosmético**: si TODOS los warnings son `VAL-W1` (frontmatter incompleto no-contractual), `VAL-W2` o `VAL-W9` (reglas de formato puro) → el pipeline **AUTO-CONTINÚA** a Step 2 sin pausa, registrando `warnings_acknowledged: <lista de rule IDs>` en el log del step y listándolos en el anuncio al usuario. Si hay CUALQUIER warning fuera de la whitelist → PAUSAR y preguntar al usuario:
   ```
   La story tiene {N} warnings (no bloquean implementación pero afectan calidad/formato Mary+GOLD):
