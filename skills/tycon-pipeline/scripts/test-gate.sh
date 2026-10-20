@@ -148,10 +148,46 @@ elif [[ "$STORY_ARG" == *.md && -f "$STORY_ARG" ]]; then
     echo "[test-gate] ⚠️  no pude averiguar el repo git de $_TG_SIN_REPO: si la story vive en otro repo, esta corrida no se acota" >&2
   fi
 fi
+# La carpeta temporal del árbol armado del privado adelgazado (ver la rama suites.json) se borra siempre al
+# salir: por el trap de EXIT y por los de las señales, que además cortan la corrida de las suites que esté en vuelo.
+TG_PRIVATE_TREE_DIR=""
+TG_SUITES_PID=""
+TG_TREE_PUB_ROOT=""
+TG_NO_COMPANIONS=""
+TG_TREE_TOUCHED_FILE=""
+borrar_arbol_privado() {
+  # La corrida de las suites va en su propio grupo de procesos (ver la rama suites.json): se corta el grupo entero, así
+  # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaba vivas
+  # sobre el árbol ya borrado (casos: tests/test-gate-private-tree.test.js, el corte).
+  if [[ -n "${TG_SUITES_PID:-}" ]]; then
+    kill -TERM -- "-$TG_SUITES_PID" 2>/dev/null || kill -TERM "$TG_SUITES_PID" 2>/dev/null || true
+    wait "$TG_SUITES_PID" 2>/dev/null || true
+    TG_SUITES_PID=""
+  fi
+  if [[ -n "${TG_PRIVATE_TREE_DIR:-}" && -d "$TG_PRIVATE_TREE_DIR" ]]; then
+    rm -rf "$TG_PRIVATE_TREE_DIR" || echo "[test-gate] ⚠️  no pude borrar la carpeta del árbol armado: queda en $TG_PRIVATE_TREE_DIR" >&2
+  fi
+  TG_PRIVATE_TREE_DIR=""
+}
+# Un corte por señal con el árbol armado: se borra todo, el check `tests` queda en rojo con el código (un verde de una
+# corrida anterior no queda en pie, como en el 4, el 5 y el 6) y no se corren los repos hermanos.
+cortar_arbol_privado() {
+  borrar_arbol_privado
+  marcar_tests_en_rojo "$1" "la corrida se cortó (señal) mientras medía el repo privado adelgazado: no es verde"
+  trap - EXIT
+  exit "$1"
+}
 correr_hermanos_al_salir() {
   local rc=$?
   trap - EXIT
+  borrar_arbol_privado
   if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" || "${TYCON_TEST_GATE_PART:-}" == "1" || -z "$STORY_ARG" || ! -f "$STORY_ARG" ]]; then exit "$rc"; fi
+  # El árbol del privado adelgazado no se pudo armar (o su lista está rota): el portón ya sale 4 sin medir nada, y
+  # correr el público solo como hermano no lo vuelve medible.
+  if [[ -n "$TG_NO_COMPANIONS" ]]; then
+    echo "[test-gate] repos hermanos: no se corren — $TG_NO_COMPANIONS" >&2
+    exit "$rc"
+  fi
   local story_abs blancos err
   story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
   err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
@@ -172,8 +208,16 @@ correr_hermanos_al_salir() {
   local filas="" final="$rc" root scope archivos hrc
   while IFS=$'\x1f' read -r root scope archivos; do
     [[ -z "$root" ]] && continue
-    echo "[test-gate] repo hermano $(basename "$root"): la story declara ahí ${archivos//,/, } → corre su suite${scope:+ (alcance $scope)}" >&2
     hrc=0
+    # El público que fue debajo del árbol armado ya se midió ahí, con lo privado encima (las mismas suites
+    # que leen lo tocado). Correrlo otra vez solo duplicaba la corrida (medido: 7,5 + 8,5 min); su resultado es el de
+    # este repo.
+    if [[ -n "${TG_TREE_PUB_ROOT:-}" && "$root" == "$TG_TREE_PUB_ROOT" ]]; then
+      echo "[test-gate] repo hermano $(basename "$root"): se midió dentro del árbol armado del privado (no se corre dos veces)" >&2
+      filas+="${root}"$'\x1f'"${scope}"$'\x1f'"${archivos}"$'\x1f'"${rc}"$'\n'
+      continue
+    fi
+    echo "[test-gate] repo hermano $(basename "$root"): la story declara ahí ${archivos//,/, } → corre su suite${scope:+ (alcance $scope)}" >&2
     # TYCON_TEST_GATE_STORY_REPO: el repo de la story, para que el cruce de cobertura del hermano mire sólo lo que la
     # story crea en él (lib/companion-repos.js declared-in).
     # `< /dev/null`: la lista de hermanos entra al bucle por la entrada estándar; una suite que la lee se tragaba los
@@ -666,6 +710,51 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # eso necesita saber qué toca la story: lo declarado + el diff contra la base de la corrida + lo sin
   # trackear (lib/touched-files.js). La base se resuelve ACÁ, antes de correr, y el parser la reusa.
   # Si no se puede saber, no se pasa `--touched` y el runner corre todo — «no pude mirar» ≠ «no toca».
+  #
+  # El repo privado ADELGAZADO no trae lo que es del público. Medido solo, sus suites del público salían
+  # ausentes y las de agent-skills corrían sobre el arnés INSTALADO (un verde que no dice nada de la rama). Se mide el
+  # árbol armado —un clon del privado con sus cambios del disco y el público de la rama debajo— en una carpeta temporal
+  # que se borra al salir, también si la corrida se corta. En la máquina corren sólo las suites que leen lo tocado (las
+  # enteras las corre la CI del pedido y el nocturno): ver lib/private-tree.js.
+  TG_TREE_ARGS=()
+  _tg_thin=0
+  node "$SCRIPT_DIR/lib/private-tree.js" detect "$REPO_RUN" || _tg_thin=$?
+  # 0 «es», 10 «no es»; cualquier otra salida (el detector que se cae, node que falta) es «no sé», nunca «no es»
+  if [[ "$_tg_thin" != "0" && "$_tg_thin" != "10" ]]; then
+    [[ "$_tg_thin" == "4" ]] || echo "[test-gate] 🔴 el detector del privado adelgazado salió $_tg_thin: no sé si es el privado adelgazado, y medirlo solo leería el arnés instalado" >&2
+    _tg_thin=4
+  fi
+  if [[ "$_tg_thin" == "4" ]]; then
+    # la lista del privado adelgazado no se deja leer, o le falta su guion (el motivo, arriba): medirlo solo leería el
+    # arnés instalado
+    TG_NO_COMPANIONS="no se pudo saber si el repo es el privado adelgazado"
+    marcar_tests_en_rojo 4 "no se pudo saber si el repo es el privado adelgazado (el motivo, arriba): no corrí nada"
+    exit 4
+  fi
+  if [[ "$_tg_thin" == "0" ]]; then
+    _tg_tmp_root="${TYCON_PRIVATE_TREE_TMP:-${TMPDIR:-/tmp}}"
+    mkdir -p "$_tg_tmp_root"
+    TG_PRIVATE_TREE_DIR="$(mktemp -d "${_tg_tmp_root%/}/arbol-privado-XXXXXX")" || { echo "[test-gate] 🔴 no pude crear la carpeta temporal del árbol armado en $_tg_tmp_root" >&2; TG_NO_COMPANIONS="no se pudo crear la carpeta del árbol armado"; marcar_tests_en_rojo 4 "no pude crear la carpeta del árbol armado"; exit 4; }
+    trap 'cortar_arbol_privado 143' TERM
+    trap 'cortar_arbol_privado 130' INT
+    trap 'cortar_arbol_privado 129' HUP
+    _TG_STORY_ARG="-"; [[ -n "$STORY_ARG" && -f "$STORY_ARG" ]] && _TG_STORY_ARG="$STORY_ARG"
+    if ! _TG_TREE_JSON="$(node "$SCRIPT_DIR/lib/private-tree.js" build "$REPO_RUN" "$_TG_STORY_ARG" "$TG_PRIVATE_TREE_DIR")"; then
+      # Sin público para poner debajo, o sin poder armar el árbol (el motivo, arriba): no se corre nada, y no es verde.
+      TG_NO_COMPANIONS="no se pudo armar el árbol del privado adelgazado"
+      marcar_tests_en_rojo 4 "no pude armar el árbol del privado adelgazado (el motivo, arriba): no corrí nada"
+      exit 4
+    fi
+    _tg_tree_field() { node -e 'const j=JSON.parse(process.argv[1]);const v=process.argv[2].split(".").reduce((o,k)=>o==null?o:o[k],j);process.stdout.write(v==null?"":String(v))' "$_TG_TREE_JSON" "$1"; }
+    _TG_PUB_ROOT="$(_tg_tree_field base.root)"
+    TG_TREE_PUB_ROOT="$_TG_PUB_ROOT"
+    _tg_rama="$(_tg_tree_field base.branch)"
+    _tg_equipo="$(_tg_tree_field team)"
+    echo "[test-gate] árbol armado del privado adelgazado — público debajo: $_TG_PUB_ROOT (rama ${_tg_rama:-suelta}, commit $(_tg_tree_field base.commit | cut -c1-12)$([[ "$(_tg_tree_field base.uncommitted)" == "true" ]] && echo ', con cambios sin commit')) · $([[ -n "$_tg_equipo" ]] && echo "capa del equipo: $_tg_equipo" || echo 'sin capa del equipo (HARNESS_TEAM_DIR no está)') · armado en $(_tg_tree_field seconds) s"
+    REPO_RUN="$(_tg_tree_field tree)"
+    TG_TREE_ARGS=(--skills "$(_tg_tree_field skills)" --only-touched)
+    echo "[test-gate] en la máquina corren sólo las suites que leen lo tocado; las otras quedan diferidas (las corre la CI del pedido y el nocturno)"
+  fi
   BASE_JSON="$(TYCON_TEST_GATE_CROSS_REPO="$TG_CROSS" node "$SCRIPT_DIR/lib/coverage-base.js" "$REPO" 2>/dev/null)" || BASE_JSON=""
   [[ -n "$BASE_JSON" ]] || BASE_JSON='{"ref":null,"source":null,"descartadas":[{"source":"coverage-base","motivo":"no se pudo correr lib/coverage-base.js"}]}'
   # Sin base, touched-files dice «no sé» y el runner corre todo (el lado seguro); igual se dice por qué.
@@ -676,7 +765,17 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   _TG_STORY_FILE=""; [[ -n "$STORY_ARG" && -f "$STORY_ARG" ]] && _TG_STORY_FILE="$STORY_ARG"
   # `${arr[@]+…}`: con el arreglo vacío y `set -u`, el bash 3.2 de macOS corta con «unbound variable».
   TOUCHED_ARGS=()
-  if node "$SCRIPT_DIR/lib/touched-files.js" "$REPO_RUN" "$_TG_STORY_FILE" "$_TG_BASE" "$_TG_BASE_SRC" > "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
+  if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+    # en el árbol armado, lo tocado es lo de los dos repos (las rutas del árbol son las de cada uno)
+    if node "$SCRIPT_DIR/lib/private-tree.js" touched "$REPO" "$_TG_PUB_ROOT" "$_TG_STORY_ARG" "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
+      TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
+      # el informe cuenta las líneas tocadas en cada repo contra su base (no el árbol contra la base del privado). Va
+      # sólo al informe, en su línea: exportada, la heredaban las suites que corren su propio portón de juguete.
+      TG_TREE_TOUCHED_FILE="$RESULTS_DIR/touched.json"
+    else
+      echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story en los dos repos ($(head -1 "$RESULTS_DIR/touched.err")): sin acotar — no corre ninguna suite (salida 7), la cubre la CI del pedido" >&2
+    fi
+  elif node "$SCRIPT_DIR/lib/touched-files.js" "$REPO_RUN" "$_TG_STORY_FILE" "$_TG_BASE" "$_TG_BASE_SRC" > "$RESULTS_DIR/touched.json" 2>"$RESULTS_DIR/touched.err"; then
     TOUCHED_ARGS=(--touched "$RESULTS_DIR/touched.json")
   else
     echo "[test-gate] ⚠️  no pude averiguar qué archivos toca la story ($(head -1 "$RESULTS_DIR/touched.err")): corren todas las suites" >&2
@@ -699,8 +798,21 @@ elif [[ "$RUNNER" == "suites-json" ]]; then
   # Con la cobertura pedida, cada suite corre bajo el medidor de Node y deja su lcov; el informe lee el
   # juntado ($RESULTS_DIR/coverage/lcov.info) para las líneas tocadas.
   echo "[test-gate] suites.json — corriendo scripts/tests/suites.json en paralelo, con cobertura (1 sola corrida, resumen → $RESULTS_DIR/suites.json)"
+  if [[ -n "${TG_PRIVATE_TREE_DIR:-}" ]]; then
+    # De fondo y con `wait`: así una señal corta la espera, el trap borra el árbol y no se espera a la suite. Con
+    # `set -m` el trabajo de fondo tiene su propio grupo de procesos, que el trap corta entero.
+    # El marcador es el del privado: run-check corre desde él; el corredor mide el árbol.
+    set -m
+    ( cd "$REPO" && node "$MARKER_JS" run-check tests -- \
+        node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} "${TG_TREE_ARGS[@]}" --coverage "$RESULTS_DIR/coverage" ) &
+    TG_SUITES_PID=$!
+    set +m
+    wait "$TG_SUITES_PID" || SUITE_EXIT=$?
+    TG_SUITES_PID=""
+  else
   ( cd "$REPO_RUN" && node "$MARKER_JS" run-check tests -- \
       node "$SCRIPT_DIR/lib/run-suites-json.js" "$REPO_RUN" "$RESULTS_DIR/suites.json" ${TOUCHED_ARGS[@]+"${TOUCHED_ARGS[@]}"} ${LIGHT_ARGS[@]+"${LIGHT_ARGS[@]}"} --coverage "$RESULTS_DIR/coverage" ) || SUITE_EXIT=$?
+  fi
 elif [[ "$RUNNER" == "jest" ]]; then
   # `--maxWorkers` capado por default: jest paraleliza en ~cores-1 y cada worker carga jsdom + el
   # grafo de módulos. En una 8-core/16GB eso es el swap thrash que `test-execution-discipline.md`
@@ -762,7 +874,7 @@ BASE_REF="$(node -e 'try{const j=JSON.parse(process.argv[1]);process.stdout.writ
 # `realpath`, que en un Git Bash pueden faltar: el informe trae su propio reemplazo de los dos.
 # El artefacto de una corrida anterior se borra antes: si el informe falla, no puede quedar un verde viejo a la vista.
 rm -f "$OUT_FILE"
-node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
+TYCON_TEST_GATE_TREE_TOUCHED="${TG_TREE_TOUCHED_FILE:-}" node "$SCRIPT_DIR/lib/test-gate-report.js" "$RUNNER" "$REPO" "$REPO_RUN" "$RESULTS_DIR" "$OUT_FILE" "$SUITE_EXIT" "$STORY_ID" "$COV_MIN" "$TS" "$TEST_PROJECT_COUNT" "$SCOPE" "$SCOPE_SOURCE" "$DECLARED_NEW" "$CODE_STATE_JSON" "$BASE_REF" "$BASE_JSON" \
   || echo "[test-gate] ⚠️  el informe falló (lib/test-gate-report.js): mirá el error de arriba; no quedó artefacto" >&2
 
 # 🔴 Una suite que sale 0 sin haber corrido ninguna prueba (o sin informe que lo cuente) NO es verde (story 8.17,

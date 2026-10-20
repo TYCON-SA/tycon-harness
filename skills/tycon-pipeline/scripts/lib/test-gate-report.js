@@ -823,6 +823,26 @@ function informe(argv) {
     return { top, tocadas: out };
   };
 
+  /** Las líneas tocadas de los dos repos del árbol armado, cada uno contra su base; `top` es el árbol. */
+  const treeTouchedLines = (archivo, repoDir, ilegibles) => {
+    let bases;
+    try { bases = JSON.parse(fs.readFileSync(archivo, 'utf8')).bases; } catch (e) {
+      throw new Error(`no pude leer las bases del árbol armado (${archivo}): ${e.message}`);
+    }
+    if (!Array.isArray(bases) || !bases.length) throw new Error(`${archivo} no trae las bases de los dos repos`);
+    const out = new Map();
+    for (const b of bases) {
+      if (!b || !b.repo || !b.ref) throw new Error(`no hay base contra la que comparar en ${(b && b.repo) || 'un repo del árbol'}`);
+      for (const [f, ls] of lineasTocadas(b.repo, b.ref, ilegibles).tocadas) {
+        if (!out.has(f)) out.set(f, new Set());
+        for (const l of ls) out.get(f).add(l);
+      }
+    }
+    const r = git(repoDir, ['rev-parse', '--show-toplevel']);
+    if (r.returncode !== 0) throw new Error('el árbol armado no es un repo git');
+    return { top: pyStrip(r.stdout), tocadas: out };
+  };
+
   /** {ruta del reporte: Map(línea → cubierta)}. Lanza si el reporte existe y no se puede leer. */
   const mapaDeLineas = () => {
     if (runner === 'suites-json' || generico) {
@@ -907,7 +927,14 @@ function informe(argv) {
   } else {
     try {
       const ilegibles = [];
-      const { top, tocadas: todas } = lineasTocadas(repoRun, baseRef, ilegibles);
+      // En el árbol armado del privado adelgazado (lo público encima de la punta del privado), el diff contra
+      // la base del privado trae el público entero como «tocado». Las líneas se cuentan en cada repo contra SU base
+      // (las de lib/private-tree.js touched) y se miran en el árbol, donde las rutas son las mismas.
+      const touched = process.env.TYCON_TEST_GATE_TREE_TOUCHED
+        ? treeTouchedLines(process.env.TYCON_TEST_GATE_TREE_TOUCHED, repoRun, ilegibles)
+        : lineasTocadas(repoRun, baseRef, ilegibles);
+      const { top } = touched;
+      const todas = touched.tocadas;
       cov.touched_files_unreadable = ordenar(ilegibles);
       // El alcance es la carpeta que se TESTEÓ (repo_run), no el contenedor (pase adversarial 2026-09-16).
       const pref = path.relative(rutaReal(top), rutaReal(repoRun)).split('\\').join('/');

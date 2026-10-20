@@ -316,8 +316,24 @@ printf '%s' "${out}" | grep 'movela a «Reglas para revisores»' >/dev/null && o
 
 # ── T9 Codex_GeneradorYCheck ─────────────────────────────────────────────────────────────────────
 cd "${AQUI}" || exit 9
-node build/generate.js --check > "${TMP}/gen.txt" 2>&1 && ok "T9 los .toml de Codex están al día" || no "T9 generate --check: $(tail -3 "${TMP}/gen.txt")"
-node build/check.js > "${TMP}/chk.txt" 2>&1 && ok "T9 build/check.js verde" || no "T9 check.js: $(tail -3 "${TMP}/chk.txt")"
+# Los revisores de ESTE árbol, nunca los instalados: fake-home.sh apunta TYCON_SKILLS_DIR a la copia
+# instalada, y con ella el --check comparaba las copias de Codex de la rama contra los revisores de la máquina (rojo
+# cuando la máquina va atrasada, verde aunque la rama esté rota). Es lo mismo que ya hacía T14.
+env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/generate.js --check > "${TMP}/gen.txt" 2>&1 && ok "T9 los .toml de Codex están al día" || no "T9 generate --check: $(tail -3 "${TMP}/gen.txt")"
+env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/check.js > "${TMP}/chk.txt" 2>&1 && ok "T9 build/check.js verde" || no "T9 check.js: $(tail -3 "${TMP}/chk.txt")"
+# T9b · con TYCON_SKILLS_DIR apuntando a una copia de revisores DISTINTA (la instalada atrasada), T9 sigue midiendo el árbol
+_otra="$(mktemp -d)"; mkdir -p "${_otra}/skills"; cp -R "${AQUI}/agents" "${_otra}/agents"
+printf '\nUna línea que la copia de la rama no tiene.\n' >> "${_otra}/agents/tycon-plugin-tests-coverage.md"
+# la forma de antes (sólo la variable heredada) lee esa copia y sale roja: la exposición existe
+if TYCON_SKILLS_DIR="${_otra}" node build/generate.js --check > "${TMP}/gen9b-antes.txt" 2>&1; then
+  no "T9b la copia distinta no cambió nada: la prueba no prueba (¿el generador ya no lee TYCON_SKILLS_DIR?)"
+# la forma de T9 mide el árbol aunque la variable apunte a otra copia
+elif TYCON_SKILLS_DIR="${_otra}" env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/generate.js --check > "${TMP}/gen9b.txt" 2>&1; then
+  ok "T9b 7.36-ReviewerCopies_FromTree_NotInstalled — con TYCON_SKILLS_DIR en otra copia, T9 sigue midiendo los revisores del árbol"
+else
+  no "T9b T9 leyó la otra copia: $(tail -3 "${TMP}/gen9b.txt")"
+fi
+rm -rf "${_otra}"
 con=$(grep -l 'Límites de ejecución (no vienen del CLAUDE.md)' adapters/codex/agents/*.toml | xargs -n1 basename | sort | tr '\n' ' ')
 esperado='tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml tycon-sibling-pattern-reviewer.toml tycon-signed-scope-audit.toml tycon-silent-failure-hunter.toml '
 # Tres de los cinco son de paquetes del equipo (clientes y bizuit, que viajan con su perfil, story 8.41): en la copia
