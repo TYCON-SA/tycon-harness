@@ -208,7 +208,7 @@ const RESPONSE_SINCE = '2026.10.17.9';
  * fija con la etiqueta real al entrar a main (la pone el merge), y el pedido al perfil del equipo que declara la clave
  * sube `requires.harness` a esa versión. Una máquina anterior no aplica esa capa y sigue con la que tenía.
  */
-const APPROVALS_SINCE = '2026.10.19.28';
+const APPROVALS_SINCE = '2026.10.20.3';
 /**
  * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
  * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
