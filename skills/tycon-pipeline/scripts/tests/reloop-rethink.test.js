@@ -66,7 +66,14 @@ const hallazgo = (rule, file, iter) => ({
   rule_id: rule, severity: 'CRITICAL', advisor: `tycon-plugin-tests-coverage (iter ${iter})`, iter, file, disposition: 'fixed', reason: 'cobertura',
 });
 
-const home = () => fs.mkdtempSync(path.join(os.tmpdir(), 'rethink-home-'));
+// el tope de vueltas al máximo (el ajuste de la máquina): acá se mide la nota de «repensar», que pide la tercera vuelta y
+// las siguientes
+const home = () => {
+  const h = fs.mkdtempSync(path.join(os.tmpdir(), 'rethink-home-'));
+  fs.mkdirSync(path.join(h, '.claude', '.tycon-pipeline'), { recursive: true });
+  fs.writeFileSync(path.join(h, '.claude', '.tycon-pipeline', 'review-max-rounds.json'), '{ "max_rounds": 99 }\n');
+  return h;
+};
 const env = (h) => ({ ...process.env, HOME: h, USERPROFILE: h, CLAUDE_CODE_SESSION_ID: SID, TYCON_TODAY: '2026-10-18' });
 
 function reloop(repo, iter, extra = []) {
@@ -574,7 +581,8 @@ test('T21 · 🔴 sale rojo si sin --story el freno ignora la story del marcador
   // marcador con la story: sin --story usa la del marcador y ve las vueltas servidas
   const activo = path.join(require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(h), 'active');
   fs.mkdirSync(activo, { recursive: true });
-  fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({ sessionId: SID, repoPath: repo, storyPath: story }));
+  // las vueltas 1 y 2 lanzaron sus revisores (las fotos que el arnés toma al lanzar el último)
+  fs.writeFileSync(path.join(activo, `${SID}.json`), JSON.stringify({ sessionId: SID, repoPath: repo, storyPath: story, iterations: { 1: { files: {} }, 2: { files: {} } } }));
   const r = sinStory('smart-reloop', ['--iter', '1']);
   assert.notEqual(r.status, 0, r.stdout.slice(0, 160));
   assert.doesNotMatch(r.stdout, /"rerun"/);

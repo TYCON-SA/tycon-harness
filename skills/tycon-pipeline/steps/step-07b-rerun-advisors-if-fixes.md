@@ -24,7 +24,19 @@ si NO hubo cambios de código:
 ```
 
 **Condición de exit del loop**: cero fixes nuevos en la iteración, O CRITICAL residuales
-waiveados explícitamente por el user (con razón registrada — `had_override: true`).
+waiveados explícitamente por el user (con razón registrada — `had_override: true`), O el tope de vueltas.
+
+**El tope de vueltas** (`review.max_rounds`: 2 de fábrica; la organización lo cambia en el sitio, en Configuración; el
+repo, en `.tycon/advisors.yaml` commiteado; la máquina, con `review-max-rounds.json` en la carpeta de estado del arnés, que pone una persona y queda dicho en el
+cierre). Una vuelta es un número de
+iteración que llegó a lanzar revisores: pedir dos veces el set de la misma vuelta, sin lanzarla, no suma. Más allá del
+tope, `smart-reloop` no devuelve el set y dice qué quedó abierto:
+- **un crítico de seguridad o de datos** (reglas SEC, TENANT, AUTH, NEXTSEC, SIGNALR-C, MIGRATION, DRIZZLE, y las que
+  sume la organización; también si lo confirmó el pase adversarial): lo decide una persona. Mostrale el resumen y
+  preguntale: una vuelta más con su ok (`smart-reloop … --extra-round --approved-by "<la persona>" --quote "<sus
+  palabras>"`), o eximirlo (`marker.js waive-critical`). Sin eso, `complete-step 8` no cierra.
+- **lo demás** queda como deuda visible y el recorrido sigue sin otra vuelta: en `findings.json` con
+  `"disposition": "deferred"` y `"deuda": "tope"` (`write-findings`), después `write-followups`.
 
 **El validador de stories en el re-loop**: `smart-reloop` lo saca
 del set cuando ya devolvió **dos veredictos limpios seguidos** después de implementar; lo dice en

@@ -1545,6 +1545,35 @@ test('T12 …el campo de la sección: un número entero va como número, vacío 
   assert.strictEqual((await revisarCon('')).coverage, undefined, 'vacío: sin la clave, el de siempre (75)');
 });
 
+test('Review_MaxRounds_EditableOnSite @story-7.37 @ac-4 — el tope de vueltas de revisores se edita en team-repos.json, con su campo y su validación', async () => {
+  // 🔴 rojo: la sección no existe, no tiene su campo, o un valor fuera de 1 a 6 / un prefijo inválido pasa sin motivo.
+  const s = ORG.seccionPorId('revision');
+  assert.ok(s, 'hay una sección de las vueltas de revisores');
+  assert.deepStrictEqual([s.titulo, s.archivo, s.repo, s.lector, s.claves, s.idCorto], ['Vueltas de revisores', 'team-repos.json', 'perfil', 'team-repos.js', ['review'], 'repos']);
+  assert.ok(ORG.versionAtLeast(ORG.REVIEW_SINCE, ORG.COVERAGE_SINCE) && ORG.REVIEW_SINCE !== ORG.COVERAGE_SINCE);
+  const rev = (review) => ORG.revisar({ seccion: 'revision', texto: ORG.formatJson(TR_BASE), borrador: { review }, lectores: { 'team-repos.js': TR } });
+  const bien = rev({ max_rounds: 3, blocking_prefixes: ['PAGOS', 'SIGNALR-C'] });
+  assert.strictEqual(bien.ok, true, JSON.stringify(bien.problems));
+  assert.deepStrictEqual(JSON.parse(bien.texto), { ...TR_BASE, review: { max_rounds: 3, blocking_prefixes: ['PAGOS', 'SIGNALR-C'] } }, 'el resto del archivo igual');
+  for (const n of [0, 7, 2.5, '3']) {
+    const malo = rev({ max_rounds: n });
+    assert.strictEqual(malo.ok, false, `max_rounds ${JSON.stringify(n)}`);
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), ['review.max_rounds']);
+    assert.match(malo.problems[0].message, /de 1 a 6/);
+  }
+  for (const [lista, ruta] of [[['pagos'], 'review.blocking_prefixes.0'], [['SEC', 'A B'], 'review.blocking_prefixes.1'], [['SEC', 'SEC'], 'review.blocking_prefixes.1'], [[''], 'review.blocking_prefixes.0']]) {
+    const malo = rev({ blocking_prefixes: lista });
+    assert.strictEqual(malo.ok, false, JSON.stringify(lista));
+    assert.deepStrictEqual(malo.problems.map((p) => p.path), [ruta]);
+  }
+  // el campo está en la pantalla, dentro de «Cómo trabaja Claude»
+  const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revision', { repo: 'perfil', borrador: {} })] });
+  const caja = r.creados.filter((n) => n.attrs.id === 'seccion-revision').pop();
+  const hallados = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'review.max_rounds') hallados.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
+  assert.strictEqual(hallados.length, 1, 'la sección trae el campo del tope');
+  assert.strictEqual(r.panelDe('seccion-revision').attrs.id, 'pestana-claude');
+});
+
 test('T12 …la clase: ningún campo numérico de la pantalla convierte un texto en null @story-7.31 @ac-11', () => {
   // 🔴 rojo: un campo que hace `Number(v)` manda NaN, el archivo escribe null y el aviso dice «es null» en vez de qué corregir.
   const fuente = ORG.pantalla();
@@ -2984,7 +3013,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
-    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'tecnologia', 'aprobaciones'/);
+    assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
   }
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {

@@ -405,6 +405,10 @@ en su repo.
   `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
 - **Cobertura de las pruebas**: el porcentaje de líneas nuevas cubiertas por debajo del cual el control de pruebas
   avisa (avisa, no frena). Queda en `team-repos.json`, en el repo del perfil. Lo revisa quien mantiene.
+- **Vueltas de revisores**: cuántas vueltas de revisores tiene una historia antes de cortar (de 1 a 6; vacío, 2). Al
+  tope, un crítico de seguridad o de datos lo decide una persona y lo demás queda como deuda visible. También se suman
+  reglas a las que cuentan como seguridad o datos. Un repo puede ajustar el tope en su `.tycon/advisors.yaml`. Queda en
+  `team-repos.json` → `review`, en el repo del perfil. Lo revisa quien mantiene.
 - **Tu tecnología**: lo que el arnés ya reconoce, las terminaciones de archivo que tu equipo suma como código, las
   herramientas de prueba (las de fábrica, las que tu organización cambió o agregó) y tres reglas: el estilo de los
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
