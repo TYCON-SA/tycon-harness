@@ -51,7 +51,7 @@ function escribirArbol(raiz, archivos) {
 }
 
 // `noMedidos`: lo que el nocturno de pedidos asignados deja de los proyectos que no pudo medir
-function fuentesConMarcadores({ noMedidos = {} } = {}) {
+function fuentesConMarcadores({ noMedidos = {}, pedidosExtra = [] } = {}) {
   const extra = {
     'scripts/nightly/dependencies/repos.json': { repos: [
       { producto: 'Producto A', ruta: 'A/repo', ado: 'Proyecto A/Repo A', activo: true },
@@ -66,6 +66,7 @@ function fuentesConMarcadores({ noMedidos = {} } = {}) {
     [`.dashboard/assigned/assigned-${HOY}.json`]: { estado: 'medido', pedidos: [
       { id: 9002, proyecto: 'Proyecto Solo B', tipo: 'Bug', estado: 'Active', asignado: B, dias_en_estado: 2, enlace: 'https://dev.example/wi/edit/9002', dependencias: true, titulo: 'TITULO-PEDIDO-B' },
       { id: 9102, proyecto: 'Proyecto A', tipo: 'Task', estado: 'New', asignado: A, dias_en_estado: 1, enlace: 'https://dev.example/wi/edit/9102', dependencias: false, titulo: 'TITULO-PEDIDO-A <b>negrita</b>' },
+      ...pedidosExtra,
     ], ...noMedidos },
     [`.dashboard/vigilante/vigilante-${HOY}.json`]: { fecha: HOY, productos: { 'producto-a': { ok: true } }, hallazgos: [{ diagnostico: 'DIAGNOSTICO-LIBRE' }], resumen: { rubros: { pendientes: { valor: [{ id: 'x', diagnostico: 'DIAGNOSTICO-LIBRE' }] }, aceptadas_sin_story: { valor: [] } } } },
     [`.dashboard/controls-bench/banco-${HOY}.json`]: { ts: `${HOY}T05:00:00Z`, ran: 2, results: { 'caso-1': { tools: { claude: { pass: false, failures: ['MENSAJE-FRENO-LIBRE'] } } } } },
@@ -246,5 +247,17 @@ test('T8 Fuga_ProyectoSinMedir_SoloDondeTrabaja', async () => {
     assert.ok(!Object.values(p[A]).some((t) => t.includes('Proyecto Solo B')), 'A no trabaja ahí: no lo ve');
     assert.match(p[LEAD]['/'], /No se pudo medir esta noche: Proyecto Solo B/, 'quien mantiene lo ve');
     for (const q of [A, B, LEAD]) assert.ok(!Object.values(p[q]).some((t) => t.includes('MOTIVO-LIBRE-DEL-PROYECTO')), `${q}: el motivo de la plataforma nunca sale`);
+  } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
+});
+
+test('T8 Fuga_ProductosNoDeclarados', async () => {
+  // A tiene un pedido asignado en el proyecto donde sólo trabaja B: un pedido no le declara ese producto
+  const pedidosExtra = [{ id: 9103, proyecto: 'Proyecto Solo B', tipo: 'Task', estado: 'New', asignado: A, dias_en_estado: 1, enlace: 'https://dev.example/wi/edit/9103', dependencias: false }];
+  const { raiz, modelo, espejo, repos } = fuentesConMarcadores({ pedidosExtra });
+  try {
+    const p = await inicioDe(modelo, espejo, repos, [A, B]);
+    assert.deepStrictEqual(Object.entries(p[A]).filter(([, t]) => /Producto Solo B|Repo Solo B/.test(t)).map(([r]) => r), [], 'A no ve el producto de B en ninguna ruta');
+    assert.ok(p[A]['/'].includes('#9103'), 'su pedido sí lo ve (Inicio sale de su identidad)');
+    assert.ok(p[B]['/proyectos'].includes('Producto Solo B'), 'B, que lo tiene declarado, lo ve');
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });

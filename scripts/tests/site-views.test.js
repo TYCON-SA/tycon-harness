@@ -357,3 +357,33 @@ test('T28b Inicio_Mantenedor_PrsTrabados_LlevaASuLista — la ficha dice dónde 
   const sin = views.paginaInicio({ modelo: access.filtrar(modeloCompleto({ prs: noMedida('sin_foto') }), { rol: 'maintainer' }, access.crearReglas({})), quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
   assert.match(sin, /id="prs-trabados"><div class="q-head"><h2>Pull requests abiertos hace más de 2 días<\/h2><\/div><p class="q-note">[^<]+<\/p>/);
 });
+
+// un producto cuyos repos no usan stories del arnés lo dice, en vez de «no medido», si la foto de anoche existe
+const modeloSinStories = (fotos) => ({
+  productos: [{ producto: 'Alfa', proyectos: ['Alfa'], rutas: ['Alfa/Web'] }, { producto: 'Zeta', proyectos: ['Plugins'], rutas: ['Plugins/Back'] }],
+  productosFuente: { estado: 'medido', codigo: null, motivo: null, fecha: HOY },
+  proyectos: fotos,
+});
+
+test('T9 Producto_SinStoriesDelArnes', () => {
+  const m = modeloSinStories({ estado: 'medido', fecha: HOY, lista: [{ proyecto: 'Alfa', repo: 'Stories', fecha: HOY, vieja: false, stories: [] }] });
+  const zeta = views.filasProyectos(m).filas.find((f) => f.producto === 'Zeta');
+  assert.strictEqual(zeta.medido, false);
+  assert.strictEqual(zeta.sin_stories, true);
+  assert.strictEqual(zeta.motivo, 'sus repos no usan stories del arnés');
+  const pagina = views.paginaProyectos({ modelo: m, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: AHORA });
+  assert.match(pagina, /sus repos no usan stories del arnés/);
+  assert.doesNotMatch(pagina, /no medido: sus repos no usan/, 'no se presenta como «no medido»');
+});
+
+test('T10 Producto_SinFotoDeAnoche_SigueNoMedido', () => {
+  // sólo fotos viejas: no se sabe si el nocturno de métricas corrió, así que no se afirma que no usa stories
+  const viejas = modeloSinStories({ estado: 'medido', fecha: HOY, lista: [{ proyecto: 'Alfa', repo: 'Stories', fecha: '2026-10-01', vieja: true, stories: [] }] });
+  const zeta = views.filasProyectos(viejas).filas.find((f) => f.producto === 'Zeta');
+  assert.strictEqual(zeta.sin_stories, undefined);
+  assert.strictEqual(zeta.motivo, 'sin foto de sus proyectos');
+  // sin ninguna foto (la fuente no medida): la frase de la fuente, como hoy
+  const nada = views.filasProyectos(modeloSinStories({ estado: 'no_medido', codigo: 'sin_foto', motivo: null, fecha: null, lista: [] })).filas.find((f) => f.producto === 'Zeta');
+  assert.ok(!nada.sin_stories);
+  assert.notStrictEqual(nada.motivo, 'sus repos no usan stories del arnés');
+});

@@ -47,9 +47,9 @@
 //           "reported_sha256": <64 hexadecimales> | null,    la huella del correo que informaba la máquina al confirmar
 //           "confirmed_by": <correo>,                        quién la confirmó
 //           "confirmed_on": "AAAA-MM-DD" } },                y qué día
-//       "projects": { "<correo>": {                          opcional — corrige «dónde trabaja» cada persona
-//           "add": [<producto>, …],                          productos que se suman a los deducidos
-//           "remove": [<producto>, …] } } } }              y los que se sacan (un producto no va en las dos)
+//       "projects": { "<correo>": {                          opcional — en qué productos trabaja cada persona
+//           "add": [<producto>, …],                          los productos que ve: sólo los declarados acá
+//           "remove": [<producto>, …] } } } }              se sigue leyendo sin efecto; el sitio lo limpia al proponer
 //   En `site`, una clave con forma de secreto (token, secret, sas, password, key…) es un problema en cualquier nivel: los
 //   secretos del sitio van en las variables de su plataforma.
 //   <identidad> = el nombre único de la plataforma: el principalName de Azure (el que viaja en System.AssignedTo) o
