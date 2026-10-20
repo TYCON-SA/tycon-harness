@@ -41,7 +41,10 @@ editar() { # editar <sid> <archivo> → salida del hook (y deja su exit code en 
   local ev; ev="$(printf '{"session_id":"%s","hook_event_name":"PreToolUse","tool_name":"Edit","cwd":"%s","tool_input":{"file_path":"%s","old_string":"a","new_string":"b"}}' "$1" "$R" "$2")"
   OUT="$(cd "$R" && printf '%s' "$ev" | HOME="$H" CLAUDE_CODE_SESSION_ID="$1" node "$SKILL/hook-pre-edit.js" 2>&1)"; RC=$?
 }
-negado() { [ "$RC" = 2 ] || grep -q '"permissionDecision":"deny"' <<<"$OUT"; }
+# negado: el portón niega (salida 2 o la decisión deny) con su propio texto · pasa: el hook terminó bien y no negó.
+# Un hook que se cae (salida 1, sin deny) no es ninguna de las dos: no se lee como «pasa».
+negado() { { [ "$RC" = 2 ] || grep -q '"permissionDecision":"deny"' <<<"$OUT"; } && grep -q 'tycon-pipeline' <<<"$OUT"; }
+pasa() { [ "$RC" = 0 ] && ! grep -q '"permissionDecision":"deny"' <<<"$OUT"; }
 
 echo "T2 · MinimalLab_EditWithoutLane_DeniedPlain @story-8.74 @ac-2"
 editar s874a "$R/src/formato.js"
@@ -53,28 +56,30 @@ echo "T3 · MinimalLab_AdhocWithQuote_Allowed @story-8.74 @ac-3"
 # lo que escribió la persona entra por el control que lo anota en una sesión real (on-prompt.js, también en minimal);
 # sin el clasificador por modelo, decide la cita literal
 printf '{"session_id":"s874b","hook_event_name":"UserPromptSubmit","cwd":"%s","prompt":"es un ajuste chico, sin story: arreglá el formato"}' "$R" \
-  | ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/on-prompt.js" ) >/dev/null 2>&1
+  | ( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b node "$SKILL/on-prompt.js" ) >"$T/prompt.out" 2>&1 \
+  || mal "on-prompt.js no anotó lo que escribió la persona: $(head -c 300 "$T/prompt.out")"
 AD="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874b TYCON_LANE_LLM=0 node "$SKILL/marker.js" adhoc set '{"reason":"es un ajuste chico, sin story"}' 2>&1 )" \
   || mal "no se pudo declarar el ajuste puntual con la frase de la persona: $(head -c 300 <<<"$AD")"
 editar s874b "$R/src/formato.js"
-negado && mal "el ajuste puntual con la frase de la persona no pasó: $(head -c 300 <<<"$OUT")" || ok "con el ajuste puntual declarado, la edición pasa"
+pasa && ok "con el ajuste puntual declarado, la edición pasa" || mal "el ajuste puntual con la frase de la persona no pasó: rc=$RC $(head -c 300 <<<"$OUT")"
 
 echo "T4 · MinimalLab_FirstStory_PipelineOpensGate @story-8.74 @ac-4"
 S1="$( cd "$R" && HOME="$H" CLAUDE_CODE_SESSION_ID=s874c TYCON_PIPELINE_NO_AUTONOMOUS=1 node "$SKILL/pipeline.js" start --story "$R/specs/story-1-1.md" --repo "$R" --brief 2>&1 )"
 grep -q '"ready": true' <<<"$S1" || mal "pipeline.js start no abrió el recorrido: $(head -c 300 <<<"$S1")"
 editar s874c "$R/src/formato.js"
-if negado && grep -qi 'plan' <<<"$OUT"; then ok "con el recorrido abierto y sin plan aprobado, se niega por el plan"
+if negado && grep -q 'Aprobar el plan' <<<"$OUT"; then ok "con el recorrido abierto y sin plan aprobado, se niega por el plan"
 else mal "sin plan aprobado no se negó por el plan: rc=$RC $(head -c 300 <<<"$OUT")"; fi
-( cd "$R" && for n in 1 2; do HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step $n; done
-  HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step 3 --approved "dale, implementala" --approved-by prueba@ejemplo.invalid ) >/dev/null 2>&1
+( cd "$R" && for n in 1 2; do HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step $n || exit 1; done
+  HOME="$H" CLAUDE_CODE_SESSION_ID=s874c node "$SKILL/marker.js" complete-step 3 --approved "dale, implementala" --approved-by prueba@ejemplo.invalid ) >"$T/pasos.out" 2>&1 \
+  || mal "no se pudieron cerrar los pasos 1 a 3: $(tail -c 300 "$T/pasos.out")"
 editar s874c "$R/test/formato.test.js"
-negado && mal "con el plan aprobado, la prueba no se pudo escribir: $(head -c 300 <<<"$OUT")" || ok "con el plan aprobado, la edición pasa"
+pasa && ok "con el plan aprobado, la edición pasa" || mal "con el plan aprobado, la prueba no se pudo escribir: rc=$RC $(head -c 300 <<<"$OUT")"
 
 echo "T5 · MinimalLab_FullUnchanged @story-8.74 @ac-1"
 FULL="$(node -e 'const l=require(process.argv[1]).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).map((x)=>x.id);console.log(l.length+" "+l.includes("PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js"))' "$EFFECTS")"
 FULL_MAIN="$(git -C "$ROOT" show origin/main:scripts/setup/install-effects.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",(d)=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).effects.filter((x)=>x.kind==="hook"&&(x.profiles||[]).includes("full")).length)}catch(e){console.log("?")}})')"
 if [ "${FULL%% *}" = "$FULL_MAIN" ] && [ "${FULL##* }" = true ]; then ok "la completa sigue con sus ${FULL%% *} hooks, el portón entre ellos"
-elif [ "$FULL_MAIN" = "?" ]; then ok "la completa trae el portón (${FULL}); sin origin/main para comparar la cuenta"
+elif [ "$FULL_MAIN" = "?" ] && [ "${FULL##* }" = true ]; then echo "  ⏭ NO MEDIDO: sin origin/main no comparo la cuenta de la completa (trae el portón: ${FULL%% *} hooks); no es un verde"
 else mal "la completa cambió: ${FULL} contra ${FULL_MAIN} en main"; fi
 
 [ "$fail" = 0 ] && echo "=== TODOS OK ===" || { echo "=== HUBO FALLOS ==="; exit 1; }
