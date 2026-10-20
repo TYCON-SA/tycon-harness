@@ -61,7 +61,7 @@ function retros(list) {
   const files = {};
   for (const r of list) {
     files[`.dashboard/retros/metrics-${r.sha.slice(0, 7)}.json`] = JSON.stringify({ schema_version: '2.0', repo: '/agente/x', merge_commit: r.sha,
-      story: r.story || null, generated_by: r.by || 'retro-latido.js', ...(r.learnings ? { learnings: r.learnings } : {}), metrics: {} });
+      story: r.story || null, generated_by: r.by || 'retro-heartbeat.js', ...(r.learnings ? { learnings: r.learnings } : {}), metrics: {} });
   }
   return repo([{ date: '2026-10-18T23:00:00', branch: 'chore/retros', files }]).dir;
 }

@@ -72,6 +72,8 @@ function envLimpio(home) {
   const env = { ...process.env, HOME: home, USERPROFILE: home };
   for (const k of ['TYCON_HOME', 'NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
     'TYCON_WAIVER_LOG', 'DOD_BYPASS', 'TYCON_PACKS_DIR']) delete env[k];
+  // con la HOME vacía no hay arnés instalado: el de esta copia (en una máquina de dev pasaba por el instalado)
+  env.TYCON_GUIDES_DIR = ROOT;
   return env;
 }
 

@@ -27,6 +27,9 @@
 #
 # Uso: bash scripts/tests/harness-profile.test.sh [--only T32|T33|T40|T35|T36|T37|REG]
 set -uo pipefail
+# el banco nocturno apaga el buzón para todas las suites; acá el aplicador tiene que instalar lo que cuelga del buzón
+# (T40 cuenta el hook del aviso por correo), así que la prueba no hereda ese apagado
+unset TYCON_MAILBOX
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FIX="$RAIZ/scripts/tests/fixtures/harness-managed-pieces.json"
 EFFECTS="$RAIZ/scripts/setup/install-effects.json"

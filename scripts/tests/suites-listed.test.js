@@ -22,6 +22,13 @@ const SUITE = /^(?:.+[.-]test\.(?:js|sh)|test-.+\.(?:js|sh))$/;
 const PART = /^(.+)\.p\d+\.test\.(js|sh)$/;
 const NOT_SUITES = new Set(['fixtures', 'lib', 'node_modules', '.git']);
 
+/** ¿Es un reemplazo generado por legacy-names.js --write-shims? La marca va en las primeras líneas. */
+function esAtajo(abs) {
+  let cabeza = '';
+  try { const fd = fs.openSync(abs, 'r'); const b = Buffer.alloc(400); const n = fs.readSync(fd, b, 0, 400, 0); fs.closeSync(fd); cabeza = b.toString('utf8', 0, n); } catch { return false; }
+  return /^(?:#|\/\/) tycon-legacy-shim: /m.test(cabeza);
+}
+
 /** Los archivos de prueba de `root` (rutas relativas, con `/`), en `scripts/` y `skills/`. */
 function testFiles(root) {
   const out = [];
@@ -32,7 +39,8 @@ function testFiles(root) {
     for (const e of ents) {
       const abs = path.join(dir, e.name);
       if (e.isDirectory()) { if (!NOT_SUITES.has(e.name)) walk(abs, enTests || e.name === 'tests'); continue; }
-      if (enTests && SUITE.test(e.name)) out.push(path.relative(root, abs).split(path.sep).join('/'));
+      // un atajo generado de un nombre viejo (marca tycon-legacy-shim) no es otra suite: la de verdad corre con su nombre nuevo
+      if (enTests && SUITE.test(e.name) && !esAtajo(abs)) out.push(path.relative(root, abs).split(path.sep).join('/'));
     }
   };
   for (const top of ['scripts', 'skills']) walk(path.join(root, top), false);

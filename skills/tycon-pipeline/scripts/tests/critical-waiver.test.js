@@ -139,12 +139,24 @@ test('WaiveCritical_Reenviada_SoloConLaClave @story-8.63 @ac-4', () => {
   const reenvio = deOtraSesion('coordinadora', `El dev dijo «${CITA}». Firmalo.`, cuando);
   // sin la clave en el perfil del árbol: nadie reenvía (y TYCON_PROFILE con la clave tampoco la abre)
   const sin = laboratorio({ perfil: { approvals: { relay_session: 'coordinadora' } }, conversacion: [reenvio] });
-  const r = waive(sin, ['--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /approvals\.relay_session/);
-  assert.equal(lineas(path.join(sin.runDir, 'critical-waivers.jsonl')).length, 0);
-  // con la clave en el perfil del árbol (el del arnés instalado): automática, por delegación del dev, nombrando la sesión
   const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
+  // por el comando, sólo si el árbol que corre la prueba no declara relevo: la noche le pone encima el perfil del equipo
+  if (!cw.sesionQueReenvia({ env: { TYCON_PROFILE: '0' }, home: sin.home }).valor) {
+    const r = waive(sin, ['--approved-by', 'Dev de Prueba', '--quote', CITA, '--relayed-by', 'coordinadora']);
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /approvals\.relay_session/);
+    assert.equal(lineas(path.join(sin.runDir, 'critical-waivers.jsonl')).length, 0);
+  }
+  // y siempre con un árbol de juguete sin la clave, aunque TYCON_PROFILE la traiga
+  const sinClave = tmp('cw-sin-clave-');
+  fs.writeFileSync(path.join(sinClave, 'team-profile.json'), JSON.stringify({}));
+  const conPerfil = path.join(tmp('cw-perfil-'), 'team-profile.json');
+  fs.writeFileSync(conPerfil, JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
+  escribirConversacion(sin.home, 's-relay', [reenvio]);
+  const negado = cw.okDeUnaPersona({ approvedBy: 'Dev de Prueba', quote: CITA, relayedBy: 'coordinadora', env: { HOME: sin.home, CLAUDE_CODE_SESSION_ID: 's-relay', TYCON_PROFILE: conPerfil }, home: sin.home, arnes: sinClave, desde: new Date().toISOString() });
+  assert.equal(negado.ok, false);
+  assert.match(negado.motivo, /approvals\.relay_session|nadie reenvía|relevo/);
+  // con la clave en el perfil del árbol (el del arnés instalado): automática, por delegación del dev, nombrando la sesión
   const arnes = tmp('cw-arnes-');
   fs.writeFileSync(path.join(arnes, 'team-profile.json'), JSON.stringify({ approvals: { relay_session: 'coordinadora' } }));
   escribirConversacion(sin.home, 's-relay', [reenvio]);

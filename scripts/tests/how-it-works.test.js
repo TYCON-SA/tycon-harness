@@ -496,7 +496,9 @@ test('T17 ComoTrabaja_DosOrganizaciones @story-2.61 @ac-15 — cada organizació
     const controlesReloj = (m) => [...m.allSteps.controls, ...m.steps.flatMap((s) => s.controls)].filter((c) => c.integration === 'clockify');
     assert.ok(controlesReloj(mA).length, 'A: sus controles');
     assert.deepStrictEqual(controlesReloj(mB), [], 'B: ni sus controles');
-    assert.deepStrictEqual(mA.org.packs.active, ['acme-pagos']);
+    // con «all» también entran los paquetes que trae el árbol (el del equipo, encima del público): se mira el de A
+    const delArbol = new Set(fs.existsSync(path.join(ROOT, 'packs')) ? fs.readdirSync(path.join(ROOT, 'packs')) : []);
+    assert.deepStrictEqual(mA.org.packs.active.filter((p) => !delArbol.has(p)), ['acme-pagos']);
     assert.deepStrictEqual(mB.org.packs.active, []);
     assert.ok(paso(mA, '5').reviewers.packs.some((r) => r.agent === 'acme-pagos-reviewer' && r.active));
     assert.ok(paso(mB, '5').reviewers.packs.every((r) => !r.active), 'B no tiene activo el paquete');
