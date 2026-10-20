@@ -1073,7 +1073,7 @@ test('@story-7.26 computeDepGate: en una story de dos repos mira también el rep
   fs.rmSync(raiz, { recursive: true, force: true });
 });
 
-test('computeDepGate: sin dependencias nuevas → pass; repo sin git → skip', () => {
+test('computeDepGate: sin dependencias nuevas → pass; repo sin git → no-medido (story 8.76: no es un skip mudo)', () => {
   const dir = mkTmpRepo();
   fs.writeFileSync(path.join(dir, 'package.json'), '{\n  "dependencies": {\n    "react": "^18.0.0"\n  }\n}\n');
   execFileSync('git', ['-C', dir, 'add', 'package.json']);
@@ -1081,7 +1081,7 @@ test('computeDepGate: sin dependencias nuevas → pass; repo sin git → skip', 
   assert.equal(computeDepGate({ repo: dir, story: null }).gate, 'pass');
   fs.rmSync(dir, { recursive: true, force: true });
   const noGit = fs.mkdtempSync(path.join(os.tmpdir(), 'tycon-nogit-'));
-  assert.equal(computeDepGate({ repo: noGit, story: null }).gate, 'skip');
+  assert.equal(computeDepGate({ repo: noGit, story: null }).gate, 'no-medido');
   fs.rmSync(noGit, { recursive: true, force: true });
 });
 

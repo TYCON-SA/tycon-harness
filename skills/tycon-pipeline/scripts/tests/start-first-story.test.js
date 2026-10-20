@@ -155,11 +155,12 @@ test('T16 Start_MarcaAMano_NoCambiaRama: la marca escrita a mano no habilita ni 
   assert.ok(p && /no la puso el guion/.test(p.detail), JSON.stringify(r.pauses));
   assert.deepStrictEqual(ramas(home, d), ['main']);
 
+  // sin ningún git, la marca no hace falta: no hay rama de otra sesión que pisar (start-no-git.test.js)
   const sinGit = tmp('sin-git-a-mano');
   const story2 = historiaAMano(sinGit, { marca: true });
   const r2 = start(laboratorio(), story2, sinGit);
-  assert.ok(!fs.existsSync(path.join(sinGit, '.git')), 'sin la constancia no hace git init');
-  assert.strictEqual(r2.ready, true, 'sin git y sin constancia sigue como hoy');
+  assert.ok(fs.existsSync(path.join(sinGit, '.git')), 'sin git, el arranque lo inicia aunque la marca sea a mano');
+  assert.strictEqual(r2.ready, true, JSON.stringify(r2.pauses));
 });
 
 test('T21 Start_RamaNoSePuedeCrear_Pausa: si git no puede crear la rama, pausa con su motivo y nada cambia', () => {

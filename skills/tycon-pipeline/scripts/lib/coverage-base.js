@@ -101,6 +101,11 @@ function resolver({ repo, env = process.env, marker = null, markerError = null }
 
   const h = git(top, ['rev-parse', '--verify', 'HEAD^{commit}']);
   if (h.error) {
+    // Un repo sin commits todavía (el que inicia el arranque) se mide contra el árbol vacío: todo es línea tocada.
+    // Casos: skills/tycon-pipeline/scripts/tests/start-no-git.test.js
+    const sinCommits = git(top, ['symbolic-ref', '-q', 'HEAD']);
+    const vacio = sinCommits.out ? spawnSync('git', ['-C', top, 'hash-object', '-t', 'tree', '--stdin'], { input: '', encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }) : null;
+    if (vacio && vacio.status === 0 && vacio.stdout.trim()) return { ref: vacio.stdout.trim(), source: 'arbol-vacio', descartadas };
     descartadas.push({ source: 'HEAD', motivo: `no hay un HEAD utilizable (${h.error})` });
     return { ref: null, source: null, descartadas };
   }

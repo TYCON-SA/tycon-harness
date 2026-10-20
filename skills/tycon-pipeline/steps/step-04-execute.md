@@ -329,21 +329,24 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js dep-gate \
 ```
 
 Diffea las dependencias AGREGADAS (`package.json` / `*.csproj` / `Directory.Packages.props`)
-vs HEAD contra el texto de la story. Un paquete es **nuevo** solo si su nombre aparece en
+vs HEAD contra el texto de la story. Sin commits todavía, contra el árbol vacío (todo es nuevo); un manifiesto sin
+trackear cuenta entero. Deja su resultado en `dep-gate.json`, en la carpeta de la corrida. Un paquete es **nuevo** solo si su nombre aparece en
 líneas `+` pero no en `−` (filtra churn de coma y bumps de versión). "Declarado" = el nombre
 del paquete aparece textualmente en la story (match conservador, verificable — no inferencia).
 
 **Decisión post-output**:
 - **`gate: pass`** (exit 0) → proceder a Step 5.
-- **`gate: skip`** (repo sin git) → proceder, anotarlo en el log.
+- **`gate: no-medido`** (exit 0; la carpeta no tiene git o `git diff` falló) → decírselo a la persona en una línea,
+  con el `reason`, y seguir. No es «sin dependencias nuevas»: `write-findings` lo levanta de `dep-gate.json` y el
+  informe de «Hallazgos» lo lleva en «Sin medir».
 - **`gate: pause`** (exit 2, hay `undeclared[]`) → **PAUSAR**. Mostrar la lista al user:
   *"La implementación agregó estas dependencias no declaradas en la story: {undeclared}.
   ¿Las aprobás? Si sí, las agrego al spec antes del commit."* Tres caminos: (a) aprobar +
   agregar al spec (frontmatter/AC) y re-correr, (b) override consciente si es falso positivo
   (paquete mencionado con otro nombre) anotándolo, (c) revertir la dependencia.
 
-**Skip-condition** (verificable, no inferencia — regla E.i): el gate devuelve `skip` solo si el
-repo no tiene git o `git diff HEAD` falla. NO se saltea "porque parece que no agregó nada" —
+**Cuándo no mide** (verificable, no inferencia — regla E.i): el gate devuelve `no-medido` solo si el
+repo no tiene git o `git diff` falla. NO se saltea "porque parece que no agregó nada" —
 si no agregó nada, el propio comando devuelve `pass` con `new_deps: []`.
 
 ## 🔀 Lanzamiento TEMPRANO del pase adversarial 5b (Fase B paralelización, 2026-07-30 — DEFAULT ON)

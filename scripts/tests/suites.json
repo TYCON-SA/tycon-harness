@@ -502,6 +502,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.76: un repo sin git se inicia al arrancar aunque la historia no tenga la marca del modo primera vez (no en la carpeta personal, la raíz ni con la historia afuera); sin commits, dependencias y líneas tocadas contra el árbol vacío; lo no medido llega a write-findings como sin_medir.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/start-no-git.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.51: la historia sin proyecto BMAD — el modo lo decide el guion, la escribe el guion (valida, no pisa, deja constancia), las instrucciones de las tres preguntas y la portada.",
       "raiz": "agent-skills",
       "ruta": "tycon-create-story/scripts/tests/story-without-bmad.test.js",

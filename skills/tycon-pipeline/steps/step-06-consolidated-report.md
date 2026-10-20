@@ -93,6 +93,11 @@ El volcado crudo de este reporte al chat es un anti-pattern explícito — enter
 ### tycon-silent-failure-hunter
 - `LineManager.ReleaseLineIfHeldAsync` traga la excepción sin log
 
+## ⚪ Sin medir (N)
+
+{Sólo si `write-findings` devolvió `sin_medir`: una línea por cada uno, «- {que}: {motivo}». Sin `sin_medir`, la
+sección no va. Lo que no se midió no pasa a «OK».}
+
 ## ✅ OK
 - Full test suite: X/X PASS, 0 regresiones
 - Sin secretos detectables
@@ -114,6 +119,7 @@ El artefacto de arriba se escribe SIEMPRE completo. Al usuario le llega esto:
 - {hallazgo 1 en llano, sin rule ID ni file:line — qué pasa y por qué importa}
 - {hallazgo 2 ...}
 - {qué quedó OK que valga la pena decir: "la suite pasó entera, sin regresiones"}
+- {si `write-findings` trajo `sin_medir`: «no pude medir: {que, en llano} — {motivo}», una línea por cada uno}
 
 {Si hay CRITICAL → acá manda COMM.i: resumen + pregunta + detalle. Si no hay CRITICAL → una línea:}
 Detalle completo (rule IDs, archivos, fixes propuestos) en `.advisors/pipeline-runs/<run-dir>/`
