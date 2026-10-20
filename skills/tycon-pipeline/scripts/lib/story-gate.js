@@ -265,8 +265,9 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
       '  La próxima actualización reemplaza este árbol entero.',
       '  Para cambiar algo del arnés: hacelo en una copia de trabajo de su repo y proponelo con un pedido.',
       ...(/^\/packs(\/|$)/.test(r.adentro || '') ? [
-        '  Un paquete de revisores propio tampoco va acá: la próxima actualización lo borra. Guardalo en tu repo; el',
-        '  arnés todavía no tiene un lugar para paquetes propios que sobreviva a las actualizaciones.',
+        '  Un paquete de revisores propio tampoco va acá: la próxima actualización lo borra. Su lugar es packs/<nombre>/',
+        '  del repo del perfil de tu equipo, que sobrevive a las actualizaciones. Si no tenés uno, armalo con',
+        '  harness.js team-init --local, aunque seas una sola persona (guides/reviewer-packs.md, «Si trabajás solo»).',
       ] : []),
     ].filter((l) => l !== '').join('\n');
   }

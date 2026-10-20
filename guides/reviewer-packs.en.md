@@ -15,7 +15,7 @@ En castellano: [reviewer-packs.md](reviewer-packs.md).
 my-pack/
   pack.json                      the manifest: which reviewers it brings and when each one runs
   agents/<reviewer>.md           each reviewer: its instructions and its rule catalog
-  exam/<reviewer>.json           the exam cases (they do not travel with the team profile)
+  exam/<reviewer>.json           the exam cases (they travel with the pack, as data)
 ```
 
 A pack can also bring `skills/`, `guides/`, `templates/` and `claude-md-blocks/`. The full manifest format is in
@@ -49,9 +49,9 @@ expensive the model that runs it is.
 
 **With the team profile** (the usual way):
 
-1. Copy `pack.json` and `agents/` to `packs/<your-pack>/` in your team's profile repo. Do not copy `exam/` or the
+1. Copy `pack.json`, `agents/` and `exam/` to `packs/<your-pack>/` in your team's profile repo. Do not copy the
    `README.md`: the team layer accepts a closed list of paths and, with a file outside it, it is not stacked on any
-   machine.
+   machine. The cases in `exam/` travel as data: one level, `.json` only.
 2. Activate it with `packs.default` in `team-profile.json` (`"all"` or a list with its name), or in the site's
    Configuration tab, Packs section.
 3. Each machine gets it on its next update: the harness puts it in its packs folder and links its agents.
@@ -114,5 +114,35 @@ configuration, but a reviewer that declares a tool for running commands will use
 fail, because the reviewer does not know the rule yet. Then write the rule and run them again: both cases must pass. A
 `must-flag` that passes before the rule exists proves nothing: the case is too obvious or leans on another rule.
 
-**Where the cases live**: in the repo where your organization builds and examines the pack, not in the team profile.
-They are used by whoever maintains the pack, not by every machine.
+**Where the cases live**: next to the pack, in `packs/<your-pack>/exam/` of the profile repo. They travel as data and
+nothing loads them as instructions: whoever runs the exam uses them.
+
+## If you work alone
+
+This section is for the agent, when a person who works alone asks it for reviewers for their stack ("build me reviewers
+for Svelte and FastAPI"). A pack of your own goes in the profile repo, even if it belongs to one person: it is the only
+place that survives updates.
+
+What is never done: writing the pack into the harness installation (`~/.tycon/harness/packs/`, or
+`~/.claude/agent-skills/packs/`, which is the same place). The harness denies it, and the next update would delete it.
+Nor is `packs.default` set in the machine configuration (`~/.claude/tycon.json`) for a profile pack: it goes in
+`team-profile.json`.
+
+1. **The profile.** If `harness.js doctor` shows no team profile, create a local one:
+   `harness.js team-init --local --name <name>`. It lands in `~/<name>-profile`, in a git repo on the machine with a
+   commit on `main`, with no account and no address. If there is already a profile, use that one.
+2. **The pack.** Build it in `packs/<name>/` of the profile repo, with its `pack.json`, its `agents/` and its cases in
+   `exam/`. The example `examples/packs/svelte-fastapi/` is the model; change its name, prefixes and rules.
+3. **Activate it.** In the profile's `team-profile.json`, `packs.default` with its name (`["<name>"]`).
+4. **Commit.** `git add -A && git commit` in the profile folder. The harness reads only what is committed on `main`.
+5. **Bring it in.** `harness.js update`, or the first time `harness.js install --team <profile folder>`. Then
+   `pipeline.js advisors` (as in "How to validate it") must name the pack in `packs`.
+6. **The exam.** `advisor-runner.js --pack <profile folder>/packs/<name> --tool claude --runs 2`, as in "How to examine a
+   reviewer". Each pass costs about two minutes of model time: tell the person first.
+7. **Tell them what it checks.** Read each reviewer's catalog (its `.md` in `agents/`) and tell the person, in plain
+   words and without the IDs, what each rule looks at, which ones stop the story and which only warn, and how many exam
+   cases passed.
+8. **The backup, once.** A local profile lives only on that machine: `doctor` shows it as a warning. Offer once to push it
+   to GitHub or Azure DevOps: an empty private repo, and from the profile folder `git remote add origin <address>` and
+   `git push -u origin main`; then `harness.js install --team <address>`, so the harness reads it from there. If the
+   person says no, do not offer it again: the `doctor` warning stays, and it blocks nothing.

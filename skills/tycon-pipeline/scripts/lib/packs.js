@@ -636,10 +636,20 @@ function activosDeLaOrganizacion({ instalados, dir }) {
   if (faltan.length) {
     throw new PackError(faltan.map((n) => ({
       archivo: `packs.default (${origin})`, revisor: null, clave: PACKS_DEFAULT_KEY,
-      motivo: `la organización activa el paquete «${n}» y no está instalado en ${dir} (instalados: ${instalados.map((p) => p.nombre).join(', ') || 'ninguno'})`,
+      motivo: `la organización activa el paquete «${n}» y no está instalado en ${dir} (instalados: ${instalados.map((p) => p.nombre).join(', ') || 'ninguno'}) — ${queHacerSiFalta(origin)}`,
     })));
   }
   return instalados.filter((p) => value.includes(p.nombre));
+}
+
+/** Qué hacer cuando falta un paquete activo, según de dónde sale el pedido: las mismas palabras que doctor
+ *  (scripts/lib/pack-pieces.js, missingPackHint). */
+function queHacerSiFalta(origin) {
+  try {
+    return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'pack-pieces.js')).missingPackHint(origin);
+  } catch (e) {
+    return `sacalo de packs.default (${origin}) o instalalo (no pude leer el resto de la ayuda: ${e.code || e.message})`;
+  }
 }
 
 // ── evaluación ─────────────────────────────────────────────────────────────────────────────────
@@ -701,6 +711,6 @@ module.exports = {
   raizAgentSkills, dirPaquetes, dirAgentes,
   descubrir, nombresInstalados, cargarPaquetes, resetCache, BANDERAS, validateTree,
   validarManifiesto, validarCondicion, validarSuperficie,
-  paquetesDeclarados, declaracionDelRepo, paquetesActivos, activosDeLaOrganizacion, nombreActual, packsDefault, notaDePaquetes, textoDeDefault,
+  paquetesDeclarados, declaracionDelRepo, paquetesActivos, activosDeLaOrganizacion, queHacerSiFalta, nombreActual, packsDefault, notaDePaquetes, textoDeDefault,
   evaluarCondicion, rendirPrompt,
 };

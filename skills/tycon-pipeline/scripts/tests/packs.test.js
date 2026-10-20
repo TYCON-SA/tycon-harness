@@ -1072,3 +1072,27 @@ test('8.29 · T6 Packs_DefaultFollowsTheProfile @story-8.29 @ac-6 — en un repo
   assert.deepEqual(directo(casaCon('all'), arnesDeLaboratorio829({ perfil: { packs: { default: 'none' } } }), { TYCON_PACKS_DEFAULT: 'all' }),
     { value: 'all', origin: 'TYCON_PACKS_DEFAULT' }, 'la variable le gana al perfil');
 });
+
+// ── un paquete activo que falta: el mensaje dice de dónde sale el pedido y qué hacer ──────
+test('MissingActivePack_SaysWhatToDo', () => {
+  const { queHacerSiFalta } = require('../lib/packs.js');
+  const maquina = queHacerSiFalta('maquina');
+  assert.match(maquina, /configuración de esta máquina/);
+  assert.match(maquina, /repo del perfil/);
+  assert.match(maquina, /harness\.js team-init --local/);
+  assert.match(maquina, /packs\.default/);
+  const perfil = queHacerSiFalta('perfil');
+  assert.match(perfil, /perfil/);
+  assert.match(perfil, /harness\.js update/);
+  const variable = queHacerSiFalta('TYCON_PACKS_DEFAULT');
+  assert.match(variable, /TYCON_PACKS_DEFAULT/);
+  for (const m of [maquina, perfil, variable]) assert.doesNotMatch(m, /[A-Z]{3,}-[CW]\d|PackError|activosDeLaOrganizacion/);
+  // por el comando real: con la variable pidiendo uno que no está, sale ≠ 0 con el origen y el paso
+  const packsDir = paquetes({ prueba: PRUEBA });
+  const d = repo();
+  agregar(d, 'src/A.cs', 'class X {}\n');
+  const r = advisors(d, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentes(...AGENTES_PRUEBA), TYCON_PACKS_DEFAULT: 'mi-stack' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /mi-stack/);
+  assert.match(r.stderr, /TYCON_PACKS_DEFAULT/);
+});

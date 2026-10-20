@@ -21,6 +21,9 @@
 #           en la línea pegable; la línea para el equipo no promete que el guion pida el permiso (dice cómo llega); un git
 #           que no puede commitear tras «s» sale 1. Y (segunda vuelta de revisores) en Azure, `ado.org` lleva la
 #           organización codificada, como la URL del repo, y el lector real de la configuración la acepta así.
+#   · T46 a T48 — `--local`: el perfil de un dev solo sin dirección ni cuenta, con git en la máquina; sin
+#           git sale 1; un paquete en ese perfil se instala con `install --team <carpeta>` y sobrevive a una reinstalación;
+#           T10, doctor lo dice como aviso «sin copia de respaldo».
 #   · T31 — con red, el ejemplo de juguete (fixtures/team-init-example/) es igual byte a byte al publicado; sin red,
 #           «no medido».
 #
@@ -318,6 +321,73 @@ mkdir -p "$BASE/historias/ocupada2/acme-stories" && printf 'algo\n' > "$BASE/his
 H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/ocupada2/perfil" --stories acme-stories < /dev/null > "$BASE/t45s.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && [ "$(files_in "$BASE/historias/ocupada2/perfil")" = "team-layer.json team-profile.json team-repos.json " ] && grep -q 'ya existe y no está vacía' "$BASE/t45s.out"; then ok "T45 en el alta completa, un repo de historias que no se puede escribir deja el perfil y sale 1 diciéndolo"
 else no "T45 alta completa con la carpeta de historias ocupada (rc $RC): $(brief "$BASE/t45s.out" 300)"; fi
+
+# ══ T46 a T48 · el perfil de un dev solo, local ═════════════════════════════════════════════════════════════════
+# sin dirección ni cuenta: los dos archivos, git en la máquina con un commit en main, y el arnés lo lee de esa carpeta
+D="$BASE/solo/solo-profile"
+H team-init --local --name solo --dir "$D" < /dev/null > "$BASE/t46.out" 2>&1; RC=$?
+COMMITS="$("$REAL_GIT" -C "$D" rev-list --count main 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$(files_in "$D")" = "team-layer.json team-profile.json " ] && [ "$COMMITS" = 1 ] && [ -z "$("$REAL_GIT" -C "$D" status --porcelain 2>/dev/null)" ] && [ "$(jget "$D/team-layer.json" name)" = solo ]; then
+  ok "T46 team-init --local: la declaración y el perfil (sin team-repos.json), con git y un commit en main, sin nada sin commitear"
+else no "T46 --local (rc $RC, commits «${COMMITS}»): $(files_in "$D") — $(brief "$BASE/t46.out" 500)"; fi
+if grep -qF "install --version $VERSION --team \"$D\"" "$BASE/t46.out" && grep -q 'git remote add origin' "$BASE/t46.out" && grep -q 'git push' "$BASE/t46.out" && grep -q 'harness.js install --team' "$BASE/t46.out" && grep -qi 'copia de respaldo' "$BASE/t46.out" && ! grep -q 'github.com/new?owner=' "$BASE/t46.out"; then
+  ok "T46 el resumen ofrece instalar con la carpeta y dice cómo subirlo después (remote, push e install --team), sin pedir dirección"
+else no "T46 el resumen de --local: $(brief "$BASE/t46.out" 700)"; fi
+LAB_PTY_DELAY=3 harness_lab_pty $'solo2\nlocal\n'"$BASE/solo/tty-profile"$'\nn' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --no-stories > "$BASE/t46b.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$(files_in "$BASE/solo/tty-profile")" = "team-layer.json team-profile.json " ]; then ok "T46 con terminal, «local» como plataforma arma el perfil local sin preguntar dirección"
+else no "T46 con terminal (rc $RC): $(files_in "$BASE/solo/tty-profile") — $(brief "$BASE/t46b.out" 500)"; fi
+env PATH="$LAB/no-git-bin" "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --local --name solo --dir "$BASE/solo/sin-git" < /dev/null > "$BASE/t47.out" 2>&1; RC=$?
+if [ "$RC" -eq 1 ] && [ ! -e "$BASE/solo/sin-git" ] && grep -q 'git' "$BASE/t47.out"; then ok "T47 --local sin git en la máquina: sale 1 diciéndolo, sin escribir la carpeta"
+else no "T47 --local sin git (rc $RC): $(brief "$BASE/t47.out" 400)"; fi
+# un GIT_DIR heredado (team-init corrido dentro de un hook de git) no decide dónde se escribe
+OTRO="$BASE/solo/otro-repo"; mkdir -p "$OTRO" && "$REAL_GIT" -C "$OTRO" -c maintenance.auto=false init -q -b main && "$REAL_GIT" -C "$OTRO" -c maintenance.auto=false commit -q --allow-empty -m "otro"
+ANTES_OTRO="$("$REAL_GIT" -C "$OTRO" rev-list --count main)"
+GIT_DIR="$OTRO/.git" GIT_WORK_TREE="$OTRO" "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --local --name solo --dir "$BASE/solo/con-git-dir" < /dev/null > "$BASE/t47e.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ "$("$REAL_GIT" -C "$OTRO" rev-list --count main)" = "$ANTES_OTRO" ] && [ "$(env -u GIT_DIR -u GIT_WORK_TREE "$REAL_GIT" -C "$BASE/solo/con-git-dir" rev-list --count main 2>/dev/null)" = 1 ]; then
+  ok "T47 con GIT_DIR heredado de otro repo: el commit va al perfil nuevo y el otro repo queda igual"
+else no "T47 GIT_DIR heredado (rc $RC, otro: $("$REAL_GIT" -C "$OTRO" rev-list --count main)): $(brief "$BASE/t47e.out" 300)"; fi
+# una carpeta como dirección con --platform github o azure no arma un perfil a medias
+H team-init --name acme --platform github --profile-repo "$BASE/solo/x" --dir "$BASE/solo/mezcla" < /dev/null > "$BASE/t47b.out" 2>&1; RC=$?
+H team-init --name acme --platform azure --profile-repo "$BASE/solo/x" --dir "$BASE/solo/mezcla" --dry-run < /dev/null > "$BASE/t47c.out" 2>&1; RC2=$?
+H team-init --local --name solo --profile-repo acme/x --dir "$BASE/solo/mezcla" < /dev/null > "$BASE/t47d.out" 2>&1; RC3=$?
+if [ "$RC" -eq 2 ] && [ "$RC2" -eq 2 ] && [ "$RC3" -eq 2 ] && [ ! -e "$BASE/solo/mezcla" ] && grep -q -- '--local' "$BASE/t47b.out"; then
+  ok "T47 una carpeta con --platform github/azure, o --local con --profile-repo: sale 2 diciendo --local, sin escribir nada"
+else no "T47 plataforma mezclada (rc $RC/$RC2/$RC3): $(brief "$BASE/t47b.out" 300) · $(brief "$BASE/t47c.out" 200) · $(brief "$BASE/t47d.out" 200)"; fi
+# T48: el paquete del ejemplo en el perfil local, activo, instalado con --team <carpeta>; sobrevive a una reinstalación
+EXP="$RAIZ/examples/packs/svelte-fastapi"
+mkdir -p "$D/packs/svelte-fastapi" && cp -R "$EXP/pack.json" "$EXP/agents" "$EXP/exam" "$D/packs/svelte-fastapi/" \
+  && "$REAL_NODE" -e 'const f=process.argv[1],j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.packs=Object.assign({},j.packs,{default:["svelte-fastapi"]});require("fs").writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$D/team-profile.json" \
+  && "$REAL_GIT" -C "$D" add -A && "$REAL_GIT" -C "$D" commit -q -m "mi paquete" || no "T48 no pude armar el paquete en el perfil local"
+# una versión de juguete con el pipeline de ESTA rama adentro: el cargador de paquetes valida el paquete de la capa
+mkdir -p "$LAB_AUTHOR_TREE/skills/tycon-pipeline" && cp -R "$RAIZ/skills/tycon-pipeline/scripts" "$LAB_AUTHOR_TREE/skills/tycon-pipeline/" \
+  && rm -rf "$LAB_AUTHOR_TREE/skills/tycon-pipeline/scripts/tests" \
+  && printf -- '---\nname: tycon-pipeline\ndescription: skill pública de juguete\n---\n' > "$LAB_AUTHOR_TREE/skills/tycon-pipeline/SKILL.md" \
+  && harness_lab_publish_stable 2026.10.08.2 || no "T48 no pude publicar la versión de juguete con el pipeline"
+H install --version latest --team "$D" --yes < /dev/null > "$BASE/t48a.out" 2>&1; RC=$?
+TEAM_IN_STATE="$("$REAL_NODE" -e 'try{const s=require(process.argv[1]);console.log(s.team?s.team.repo:"")}catch{console.log("")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")"
+PK="$LAB_HOME/.tycon/harness/packs/svelte-fastapi"
+if [ "$RC" -eq 0 ] && [ "$TEAM_IN_STATE" = "$D" ] && [ -f "$PK/pack.json" ] && [ -f "$PK/agents/example-fastapi-reviewer.md" ] && [ -f "$PK/exam/example-fastapi-reviewer.json" ]; then
+  ok "T48 install --team <carpeta>: el paquete del perfil local queda instalado (con su examen) y el estado guarda la carpeta"
+else no "T48 install --team local (rc $RC, estado «${TEAM_IN_STATE}»): $(ls "$PK" 2>/dev/null | tr '\n' ' ') — $(brief "$BASE/t48a.out" 600)"; fi
+H install --version latest --defaults --yes < /dev/null > "$BASE/t48b.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && [ -f "$PK/pack.json" ]; then ok "T48 una reinstalación (install --version latest) no lo borra: el paquete sigue"
+else no "T48 la reinstalación (rc $RC): $(ls "$PK" 2>/dev/null | tr '\n' ' ') — $(brief "$BASE/t48b.out" 600)"; fi
+# un cambio commiteado en el perfil local llega con update (el camino de todos los días)
+"$REAL_NODE" -e 'const f=process.argv[1],j=JSON.parse(require("fs").readFileSync(f,"utf8"));j.reviewers[0].depth="standard";require("fs").writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$D/packs/svelte-fastapi/pack.json" \
+  && "$REAL_GIT" -C "$D" commit -q -am "el revisor de svelte, más profundo" || no "T48 no pude cambiar el paquete"
+H update --yes < /dev/null > "$BASE/t48c.out" 2>&1; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '"depth": "standard"' "$PK/pack.json" 2>/dev/null; then ok "T48 harness.js update trae el cambio commiteado en el perfil local"
+else no "T48 update (rc $RC): $(grep -o '"depth": "[a-z]*"' "$PK/pack.json" 2>/dev/null | head -1) — $(brief "$BASE/t48c.out" 500)"; fi
+# T10: el perfil sólo en esta máquina es un aviso amarillo que no cambia el código de doctor
+H doctor < /dev/null > "$BASE/t10.out" 2>&1; RC=$?
+if grep -q '! .*copia de respaldo' "$BASE/t10.out" && grep -qF "$D" "$BASE/t10.out" && ! grep -q '✗ .*copia de respaldo' "$BASE/t10.out" && ! grep -q '✗ .*svelte-fastapi' "$BASE/t10.out"; then
+  ok "T10 doctor con el perfil local: aviso «sin copia de respaldo» con la carpeta, nunca en rojo (doctor salió $RC)"
+else no "T10 doctor perfil local (rc $RC): $(grep -i 'respaldo\|svelte' "$BASE/t10.out" | tr '\n' ' ' | cut -c1-500)"; fi
+# AC 4: con el perfil leído de un repo remoto (el de GitHub de juguete de T28), el aviso se va
+H install --version latest --team acme/harness-team-profile --yes < /dev/null > "$BASE/t10b.out" 2>&1; RC=$?
+H doctor < /dev/null > "$BASE/t10c.out" 2>&1
+if [ "$RC" -eq 0 ] && ! grep -q 'copia de respaldo' "$BASE/t10c.out"; then ok "T10 con el perfil en un repo remoto, doctor ya no avisa «sin copia de respaldo»"
+else no "T10 perfil remoto (rc $RC): $(grep -i 'respaldo' "$BASE/t10c.out" | cut -c1-300) — $(brief "$BASE/t10b.out" 300)"; fi
 
 # ══ T31 · el ejemplo de juguete es el publicado (con red) ═════════════════════════════════════════════════════════
 RAW="https://raw.githubusercontent.com/TYCON-SA/harness-team-profile-example/main"

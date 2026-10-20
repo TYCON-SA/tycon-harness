@@ -15,7 +15,7 @@ En inglés: [reviewer-packs.en.md](reviewer-packs.en.md).
 mi-paquete/
   pack.json                      el manifiesto: qué revisores trae y cuándo corre cada uno
   agents/<revisor>.md            cada revisor: sus instrucciones y su catálogo de reglas
-  exam/<revisor>.json            los casos del examen (no viajan con el perfil del equipo)
+  exam/<revisor>.json            los casos del examen (viajan con el paquete, como datos)
 ```
 
 Un paquete puede traer además `skills/`, `guides/`, `templates/` y `claude-md-blocks/`. El formato completo del
@@ -49,9 +49,9 @@ qué tan caro es el modelo que lo corre.
 
 **Con el perfil del equipo** (el camino de siempre):
 
-1. Copiá `pack.json` y `agents/` a `packs/<tu-paquete>/` en el repo del perfil de tu equipo. No copies `exam/` ni el
+1. Copiá `pack.json`, `agents/` y `exam/` a `packs/<tu-paquete>/` en el repo del perfil de tu equipo. No copies el
    `README.md`: la capa del equipo acepta una lista cerrada de rutas y, con un archivo fuera de ella, no se apila en
-   ninguna máquina.
+   ninguna máquina. Los casos de `exam/` viajan como datos: un nivel, sólo `.json`.
 2. Activalo con `packs.default` en `team-profile.json` (`"all"` o una lista con su nombre), o en la pestaña
    Configuración del sitio, sección Paquetes.
 3. Cada máquina lo recibe con su próxima actualización: el arnés lo pone en su carpeta de paquetes y enlaza sus agentes.
@@ -115,5 +115,35 @@ tienen que salir en rojo, porque el revisor todavía no la conoce. Después escr
 casos tienen que salir en verde. Un `must-flag` que sale verde antes de escribir la regla no prueba nada: el caso es
 demasiado obvio o se apoya en otra regla.
 
-**Dónde viven los casos**: en el repo donde tu organización arma y examina el paquete, no en el perfil del equipo. Los
-usa quien mantiene el paquete, no cada máquina.
+**Dónde viven los casos**: al lado del paquete, en `packs/<tu-paquete>/exam/` del repo del perfil. Viajan como datos y
+nada los carga como instrucciones: los usa quien corre el examen.
+
+## Si trabajás solo
+
+Esta sección es para el agente, cuando una persona que trabaja sola le pide revisores para su stack («armame revisores
+para Svelte y FastAPI»). Un paquete propio va en el repo del perfil, aunque sea de una persona: es lo único que
+sobrevive a las actualizaciones.
+
+Lo que nunca se hace: escribir el paquete en la instalación del arnés (`~/.tycon/harness/packs/`, o
+`~/.claude/agent-skills/packs/`, que es lo mismo). El arnés lo niega, y la próxima actualización lo borraría. Tampoco
+se pone `packs.default` en la configuración de la máquina (`~/.claude/tycon.json`) para un paquete del perfil: va en
+`team-profile.json`.
+
+1. **El perfil.** Si `harness.js doctor` no muestra un perfil del equipo, armá uno local:
+   `harness.js team-init --local --name <nombre>`. Queda en `~/<nombre>-profile`, en un repo git de la máquina con un
+   commit en `main`, sin cuenta ni dirección. Si ya hay un perfil, usá ése.
+2. **El paquete.** Armalo en `packs/<nombre>/` del repo del perfil, con su `pack.json`, sus `agents/` y sus casos en
+   `exam/`. El ejemplo `examples/packs/svelte-fastapi/` es el modelo; cambiale el nombre, los prefijos y las reglas.
+3. **Activarlo.** En `team-profile.json` del perfil, `packs.default` con su nombre (`["<nombre>"]`).
+4. **Commit.** `git add -A && git commit` en la carpeta del perfil. El arnés lee sólo lo commiteado en `main`.
+5. **Traerlo.** `harness.js update`, o la primera vez `harness.js install --team <carpeta del perfil>`. Después,
+   `pipeline.js advisors` (como en «Cómo se valida») tiene que nombrar el paquete en `packs`.
+6. **El examen.** `advisor-runner.js --pack <carpeta del perfil>/packs/<nombre> --tool claude --runs 2`, como en «Cómo
+   se examina un revisor». Cuesta unos dos minutos de modelo por pasada: avisale antes a la persona.
+7. **Contarle qué revisa.** Leé el catálogo de cada revisor (su `.md` en `agents/`) y decile a la persona, en castellano
+   llano y sin los IDs, qué mira cada regla, cuáles frenan la historia y cuáles sólo avisan, y cuántos casos del examen
+   salieron bien.
+8. **La copia de respaldo, una sola vez.** Un perfil local vive sólo en esa máquina: `doctor` lo muestra como aviso. Ofrecé
+   una sola vez subirlo a GitHub o a Azure DevOps: un repo privado vacío, y desde la carpeta del perfil
+   `git remote add origin <dirección>` y `git push -u origin main`; después `harness.js install --team <dirección>`,
+   para que el arnés lo lea de ahí. Si dice que no, no lo vuelvas a ofrecer: el aviso de `doctor` queda, y no frena nada.

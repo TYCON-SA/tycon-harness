@@ -673,6 +673,24 @@ JSON="$(TYCON_PROFILE=0 harness doctor --json 2>/dev/null)"
 SALIDA="$(TYCON_PROFILE=0 harness doctor 2>&1)"
 case "$SALIDA" in *"perfil sin elegir"*"integraciones:"*|*"integraciones:"*"perfil sin elegir"*) ok "T49 …y la salida para una persona también lo dice" ;; *) mal "T49 la salida de texto no lo dice" ;; esac
 
+# ── T9 Doctor_ActivePackMissing_Red ─────────────────────────────────────────────────────────────────────────────────
+# un paquete que `packs.default` pide y no está instalado: rojo, y doctor sale distinto de 0, aunque no haya NINGÚN
+# paquete instalado (el caso medido: el paquete se borró con la actualización y doctor seguía en verde). `all` y `none`
+# no son nombres: no frenan. El mensaje dice de dónde sale el pedido y qué hacer.
+echo "T9 · doctor: un paquete activo que falta"
+printf '{ "install": { "profile": "minimal" }, "packs": { "default": ["mi-stack"] } }\n' > "$LAB_HOME/.claude/tycon.json"
+JSON="$(harness doctor --json 2>/dev/null)"; harness doctor >/dev/null 2>&1; RC9=$?
+[ "$(printf '%s' "$JSON" | jtxt "any('mi-stack' in f and 'no está instalado' in f for f in d['fail'])")" = True ] && [ "$RC9" -ne 0 ] \
+  && ok "T9 packs.default pide «mi-stack» y no está: rojo y doctor sale $RC9" || mal "T9 paquete que falta (rc $RC9): fail=$(printf '%s' "$JSON" | jtxt "d['fail']") warn=$(printf '%s' "$JSON" | jtxt "[w for w in d['warn'] if 'paquete' in w]")"
+[ "$(printf '%s' "$JSON" | jtxt "any('mi-stack' in f and 'configuración de esta máquina' in f and 'team-init --local' in f for f in d['fail'])")" = True ] \
+  && ok "T9 el rojo dice de dónde sale el pedido (la máquina) y qué hacer (el repo del perfil con team-init --local)" || mal "T9 el texto: $(printf '%s' "$JSON" | jtxt "d['fail']")"
+for v in '"all"' '"none"'; do
+  printf '{ "install": { "profile": "minimal" }, "packs": { "default": %s } }\n' "$v" > "$LAB_HOME/.claude/tycon.json"
+  JSON="$(harness doctor --json 2>/dev/null)"
+  [ "$(printf '%s' "$JSON" | jtxt "any('no está instalado' in f for f in d['fail'])")" = False ] && ok "T9 espejo: packs.default $v no frena" || mal "T9 $v frena: $(printf '%s' "$JSON" | jtxt "d['fail']")"
+done
+rm -f "$LAB_HOME/.claude/tycon.json"
+
 # ── T6 Doctor_PublicPlusLayerEqualsInternal_CompatByTransformedList_VersionWithoutTransformedRed_IgnoredNotCounted_
 #    MinimumLag_ReadOnly (story 8.13.1, tanda A · AC 5; y el subcomando `layer` del AC 1 y 10) ─────────────────────────
 # Una máquina CON capa, armada a mano en el laboratorio (la tanda A no instala desde la copia pública: eso es la B). El

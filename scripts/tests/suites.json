@@ -1841,6 +1841,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.70 (T1-T5b): la capa del equipo desde un repo git de LA MÁQUINA, el perfil de un dev solo — `--team` entiende una ruta absoluta o ~/ (una relativa no); la capa sale del commit de main, nunca de lo sin commitear; la misma lista cerrada y validación que GitHub y Azure (un guion no se apila; los casos del examen de un paquete sí); la caché y `unchanged`; una carpeta sin git o un repo sin main frenan con el motivo; leer el repo no ejecuta hooks ni fsmonitor plantados en su configuración.",
+      "raiz": "arnes",
+      "ruta": "tests/harness-team-local.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "la página local de la configuración de la organización (`harness.js team-config`), de sólo lectura: sólo contesta con su llave y por su propia dirección (otro Host, otro Origin, sin llave, no JSON o un cuerpo de más: rechazados); nada se carga de afuera; muestra las secciones del núcleo común con los problemas de los lectores del árbol; la carpeta de cada clon la valida y la guarda quien la lanzó; las cinco rutas que antes guardaban o proponían contestan 410 sin escribir archivo, rama ni pedido, y el aviso dice el sitio o el repo de operaciones; cómo se abre el navegador en Mac, Windows y Linux.",
       "raiz": "arnes",
       "ruta": "tests/team-config.test.js",

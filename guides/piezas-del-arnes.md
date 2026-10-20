@@ -2016,6 +2016,18 @@ _scripts/setup/harness/team-init.js + el comando `harness.js team-init` + gettin
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptssetupharnessteam-initjs)
 
+## scripts/setup/harness/team-local.js
+
+_scripts/setup/harness/team-local.js + `harness.js team-init --local` + `--team <carpeta>`_
+
+**Qué es:** La capa del equipo leída de un repo git de la máquina: el perfil de una persona que trabaja sola, sin cuenta ni repo remoto.
+
+**Por qué existe:** Los revisores propios de un dev solo quedaban en la instalación y la actualización los borraba. Su lugar es el repo del perfil. Se lee como un repo remoto: sólo lo commiteado en `main`, con la misma lista cerrada y validación, sin ejecutar nada del repo.
+
+**Quién la usa:** El instalador y la actualización, cuando el perfil es una carpeta.
+
+**Dónde se prueba:** `scripts/tests/harness-team-local.test.js` y `scripts/tests/harness-team-init.test.sh` (T46 a T48)
+
 ## scripts/publishing/new-names.js
 
 _scripts/publishing/ + guides/maintaining/publicacion-espejo.md_
