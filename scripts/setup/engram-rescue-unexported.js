@@ -118,11 +118,14 @@ const DB = path.join(os.homedir(), '.engram', 'engram.db');
 const audit = require(path.join(__dirname, '..', 'lib', 'harness-audit.js'));
 // Misma raíz que usa el audit — nunca una carpeta escrita a mano (ver lib/repos-root.js). Sin raíz no se
 // rescata nada y se dice (story 8.3, AC 6); un ~/.claude/tycon.json roto tira: un comando frena.
-const REPOS_ROOT = (() => {
+// todas las carpetas de repos (puede haber más de una): cada repo se busca en la que lo tiene
+const REPOS_ROOTS = (() => {
   const r = require(path.join(__dirname, '..', 'lib', 'repos-root.js')).resolveReposRoot();
-  if (!r.root) { console.error(`engram-rescue-unexported: no medido — sin raíz de repos (${r.motivo})`); process.exit(2); }
-  return r.root;
+  if (!r.roots || !r.roots.length) { console.error(`engram-rescue-unexported: no medido — sin raíz de repos (${r.motivo})`); process.exit(2); }
+  return r.roots;
 })();
+const REPOS_ROOT = REPOS_ROOTS[0];
+const raizDe = (rel) => REPOS_ROOTS.find((x) => fs.existsSync(path.join(x, rel))) || REPOS_ROOT;
 
 function sql(q) {
   return execFileSync(process.env.TYCON_SQLITE_BIN || 'sqlite3', ['-readonly', DB, q], { encoding: 'utf8', timeout: 20000 })
@@ -202,7 +205,7 @@ function reindexar(apply) {
   // está en el índice" — un repo cuya memoria nadie puede importar, reportado como sano.
   const rotos = [];
   for (const { repo } of pinned) {
-    const base = path.join(REPOS_ROOT, repo, '.engram');
+    const base = path.join(raizDe(repo), repo, '.engram');
     const dirChunks = path.join(base, 'chunks');
     const fMan = path.join(base, 'manifest.json');
     if (!fs.existsSync(dirChunks)) continue;
@@ -326,7 +329,7 @@ function pendientesDe(r) {
   // de un hermano YA VIAJÓ — contarla como pendiente era volver a tocarla en cada corrida.
   const dirs = [];
   for (const repoDelGrupo of (Array.isArray(r.repos) && r.repos.length ? r.repos : [r.repo])) {
-    const base = path.join(REPOS_ROOT, repoDelGrupo);
+    const base = path.join(raizDe(repoDelGrupo), repoDelGrupo);
     dirs.push(path.join(base, '.engram', 'chunks'));
     try {
       for (const sub of fs.readdirSync(base, { withFileTypes: true })) {
@@ -392,7 +395,7 @@ function pinDe(dir) {
  * @returns {{destino: string, pin: string}|{error: string}}
  */
 function resolverDestino(r) {
-  const base = path.join(REPOS_ROOT, r.repo);
+  const base = path.join(raizDe(r.repo), r.repo);
   if (!fs.existsSync(base)) return { error: `${r.repo}: la carpeta no existe (${base})` };
 
   if (fs.existsSync(path.join(base, '.git'))) {
@@ -419,7 +422,7 @@ function resolverDestino(r) {
   }
   // El dev eligió: sólo vale si es uno de los candidatos legítimos (existe, es git, pin exacto).
   if (destinoElegido) {
-    const elegido = candidatos.find((c) => path.resolve(c.d) === path.resolve(path.join(REPOS_ROOT, destinoElegido)));
+    const elegido = candidatos.find((c) => path.resolve(c.d) === path.resolve(path.join(raizDe(destinoElegido), destinoElegido)));
     if (elegido) return { destino: elegido.d, pin: elegido.pin };
     return { error: `${r.repo}: --target ${destinoElegido} no es un sub-repo de ${r.repo} que declare \`${r.project}\` (candidatos: ${candidatos.map((c) => path.relative(REPOS_ROOT, c.d)).join(', ') || 'ninguno'})` };
   }
@@ -511,7 +514,7 @@ function resolverDestino(r) {
     process.exit(1);
   }
   for (const [repo, d] of destinos) {
-    if (path.resolve(d.destino) !== path.resolve(path.join(REPOS_ROOT, repo))) {
+    if (path.resolve(d.destino) !== path.resolve(path.join(raizDe(repo), repo))) {
       console.log(`   (${repo} es un contenedor → se exporta en ${path.relative(REPOS_ROOT, d.destino)}, pin \`${d.pin}\`)`);
     }
   }

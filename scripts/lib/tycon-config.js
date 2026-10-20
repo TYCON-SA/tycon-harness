@@ -140,7 +140,7 @@ const VOCABULARIO = Object.freeze({
   // Toda clave que ese comando sabe escribir tiene que estar en este vocabulario (lo fija la prueba del freno, T56).
   // `team` y `operations`: los clones del perfil del equipo y del repo de operaciones de la organización, que edita la
   // página de configuración (`harness.js team-config`, que las pide la primera vez y las guarda con `config set`).
-  rutas: Object.freeze({ repos: 'ruta', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta', team: 'ruta-absoluta', operations: 'ruta-absoluta' }),
+  rutas: Object.freeze({ repos: 'rutas', tree: 'ruta-absoluta', maintained: 'ruta-absoluta', maintainers: 'ruta-absoluta', team: 'ruta-absoluta', operations: 'ruta-absoluta' }),
   // `github.token` (story 8.23, tandas B y C): el permiso de sólo lectura de GitHub, en `~/.tycon/config.json`. Tipo
   // `secreto`: este lector sabe SI está y nunca qué dice —el valor no entra a `valores` (queda `true`), no sale en
   // `explain`, `get` ni en un error, y `set` no lo escribe (lo escribe `harness.js config set github.token`, por stdin)—.
@@ -418,6 +418,8 @@ function esRutaAbsoluta(v) { const s = String(v).trim(); return /^~(?=$|[\\/])/.
 function normalizarValor(tipo, valor, home, clave) {
   if (tipo === 'secreto') return true;   // sólo «está»: el valor no sale de su archivo
   if (tipo === 'ruta') return resolverRutaDeArchivo(valor, home);
+  // una ruta o varias (la carpeta de los repos puede ser más de una): una lista se resuelve ruta por ruta
+  if (tipo === 'rutas') return Array.isArray(valor) ? valor.map((v) => resolverRutaDeArchivo(v, home)) : resolverRutaDeArchivo(valor, home);
   if (tipo === 'ruta-absoluta') return path.normalize(expandirHome(String(valor).trim(), home));
   if (clave === 'ado.org') return normalizarOrg(valor);
   if (tipo === 'llave-o-detectar' && esDetect(valor)) return DETECT;   // el valor viejo se lee como el nuevo
@@ -701,6 +703,9 @@ function validarTipo(tipo, valor) {
     case 'texto':
     case 'ruta':
       return (typeof valor === 'string' && valor.trim()) ? null : `tiene que ser un texto no vacío, no ${JSON.stringify(valor)}`;
+    case 'rutas':
+      if (typeof valor === 'string' && valor.trim()) return null;
+      return (Array.isArray(valor) && valor.length && valor.every((v) => typeof v === 'string' && v.trim())) ? null : `tiene que ser una ruta o una lista de rutas (textos no vacíos), no ${JSON.stringify(valor)}`;
     case 'secreto':
       // el motivo nunca repite el valor (ni un pedazo): llega a la salida de comandos y a registros
       return (typeof valor === 'string' && valor.trim() && !/\s/.test(valor.trim())) ? null : 'tiene que ser un texto sin espacios (el valor no se muestra)';
@@ -1320,6 +1325,8 @@ function cli(argv) {
       if (p.motivo) { process.stderr.write(`${clave}: vale ${p.motivo}\n`); process.exit(2); }
       valorNuevo = p.valor;
     }
+    // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows): se guardan como lista
+    if (tipo === 'rutas') { const l = String(crudo).split(path.delimiter).map((x) => x.trim()).filter(Boolean); if (l.length > 1) valorNuevo = l; }
     if (rangoDe(tipo) && /^\d+$/.test(String(crudo).trim())) valorNuevo = Number(String(crudo).trim());
     const r = setKey(os.homedir(), clave, valorNuevo);
     if (!r.ok) { process.stderr.write(`tycon-config.js set: ${r.reason}\n`); process.exit(2); }
