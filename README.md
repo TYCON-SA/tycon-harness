@@ -59,7 +59,7 @@ The full install adds the guards in the repos that work with the harness and cha
 
 A story is your request in writing, with its criteria and its tests: the agent follows it and the reviewers check it. Make the first one small, like a new function in one file: one like that takes about 10 minutes.
 
-1. **Open your coding agent in your repo's folder**, so it loads the harness's rules (if it was open, close it and open it again: the rules load when it starts).
+1. **Open your coding agent in your repo's folder**: that is where it writes the story, creates the branch and saves the changes. If it was open from before you installed, close it and open it again: the harness's rules load when it starts.
 2. **Say you trust the folder**: the first time you open your agent in that folder, it asks whether you trust it: say yes.
 3. **Ask for the story in your own words**, so the change is written down before any code: "create a story to add a date filter".
 4. **Review the story.** The agent builds it from your request, answering three plain questions (what it must do, how you can tell it works, and what it must not touch), and marks what it assumed. It shows it to you and writes it on your "yes". If your repo already has a `_bmad/` folder, it builds it with what is there.
