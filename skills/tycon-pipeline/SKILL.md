@@ -244,7 +244,7 @@ Arranque: `pipeline.js start --story <spec> --repo <dir> --brief [--no-autonomou
 PAUSA sin mutar ante conflicto cross-sesión, rama protegida o pipeline abandonado). Entre pasos,
 `pipeline.js next` da el próximo (`step_name`: su nombre llano) y su archivo: leer SOLO ése. El orden:
 
-Arranque (`0`; reloj de Clockify `0b`, pedido en ADO `0c`) · Validar la historia (`1`) · Armar el plan (`2`, BMAD) ·
+Arranque (`0`; reloj `0b`, pedido en ADO `0c`) · Validar la historia (`1`) · Armar el plan (`2`, BMAD) ·
 Aprobar el plan (`3`) · Implementar y correr las pruebas (`4`: pruebas primero, build-gate, `test-gate.sh <repo> <story_path>` —con la RUTA de la story— suite completa una vez: exit 0 verde · ≠0 rojo · 3 sin stack de tests · 4 FRENO si no puede deducir el proyecto, sin correr nada: pasar el alcance `test-gate.sh <repo> <story> <subdir>` · 5 falta el corredor: nunca verde · 6 salió 0 sin correr pruebas: no es verde; `complete-step 4` bloquea un verde de `tests` que no haya puesto este gate; después `pipeline.js dep-gate`) ·
 Revisores (`5`) · Pase adversarial (`5b`, join) · Hallazgos: el informe (`6`, `write-findings` + `write-followups`) ·
 Hallazgos: la decisión (`7`, sólo con CRITICAL) · otra vuelta de revisores (`7b`) si hubo fixes · Probar en vivo
