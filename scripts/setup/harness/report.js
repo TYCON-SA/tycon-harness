@@ -171,6 +171,19 @@ function backupLine(dir) {
   return 'copia de respaldo: no se pudo tomar (el registro dice por qué): esta instalación quedó sin copia de cómo estaba la máquina antes';
 }
 
+const isReadPiece = (p) => isObject(p) && p.kind === 'setting' && typeof p.id === 'string' && p.id.startsWith('permissions.allow:Read(');
+
+/**
+ * La línea de las carpetas del arnés que Claude Code lee sin preguntar, desde las piezas que dejó el aplicador; `null`
+ * si no hay ninguna regla de lectura. La dicen el resumen de la instalación desde un clon y el de la instalación bajada.
+ */
+function readFoldersLine(pieces) {
+  const reads = (Array.isArray(pieces) ? pieces : []).filter(isReadPiece)
+    .map((p) => p.id.slice('permissions.allow:Read('.length).replace(/\/\*\*\)$/, '').replace(/\)$/, ''));
+  if (!reads.length) return null;
+  return `Claude Code lee sin preguntar ${reads.length} carpeta${reads.length === 1 ? '' : 's'} del arnés (sólo leer; editarlas y leer el resto de tu máquina siguen preguntando): ${reads.join(', ')}`;
+}
+
 /**
  * Lo que quedó en la máquina, contado por tipo: las líneas de «qué quedó». `pieces` es el reporte del aplicador más las
  * piezas que hizo `harness.js`; `effects`, la lectura de la lista de efectos (`managed.readEffects`): con ella rota no
@@ -192,13 +205,12 @@ function leftCounts(pieces, { effects = null, thirdParty = null } = {}) {
     }
   }
   // las reglas de lectura del arnés van aparte, con sus carpetas: no son «ajustes» que el dev reconozca
-  const isRead = (p) => p.kind === 'setting' && typeof p.id === 'string' && p.id.startsWith('permissions.allow:Read(');
-  const reads = list.filter(isRead).map((p) => p.id.slice('permissions.allow:Read('.length).replace(/\/\*\*\)$/, '').replace(/\)$/, ''));
   for (const [kind, label] of [['block', 'bloques en CLAUDE.md'], ['setting', 'ajustes de settings.json'], ['git-hook', 'hooks de git'], ['command', 'comandos'], ['link', 'enlaces']]) {
-    const c = kind === 'setting' ? list.filter((p) => p.kind === 'setting' && !isRead(p)).length : n(kind);
+    const c = kind === 'setting' ? list.filter((p) => p.kind === 'setting' && !isReadPiece(p)).length : n(kind);
     if (c) L.push(`${label}: ${c}`);
   }
-  if (reads.length) L.push(`Claude Code lee sin preguntar ${reads.length} carpeta${reads.length === 1 ? '' : 's'} del arnés (sólo leer; editarlas y leer el resto de tu máquina siguen preguntando): ${reads.join(', ')}`);
+  const reads = readFoldersLine(list);
+  if (reads) L.push(reads);
   const placed = n('third-party');
   // con el paso apagado (`thirdParty: 'off'`) el aplicador no reporta ninguna aunque estén en disco, y no va a bajar
   // nada: ni «0 en su lugar» ni «pendientes» serían verdad
@@ -588,5 +600,4 @@ module.exports = {
   installSummary, installFailure, updateBackupLine, warningLines, leftCounts,
   repeatedHooks, repeatedHooksText, doctorText, doctorJson, log, setNotice, clearNotice,
   readUpdateFailure, recordUpdateFailure, clearUpdateFailure, updateFailureText, busyIsFailure, BUSY_FAILURE_MS,
-  layerItems, layerJson, layerWhole, layerText, layerComputeJson, layerComputeText,
-};
+  layerItems, layerJson, layerWhole, layerText, layerComputeJson, layerComputeText, readFoldersLine };

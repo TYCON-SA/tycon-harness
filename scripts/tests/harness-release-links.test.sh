@@ -193,6 +193,15 @@ if corre T4; then
   done
   [ -z "$hits" ] && ok "nada fuera de ~/.tycon nombra versions/ (enchufes, CLAUDE.md, estado, configuración, copia fija, enlaces)" || mal "lo nombran: $hits"
   [ "$(estado "d['tree']")" = "$T/harness" ] && ok "el estado dice ~/.tycon/harness como árbol" || mal "el estado dice tree=$(estado "d['tree']")"
+  # UpdateClose_ReglasNuevasYSinCambios @story-8.66.2 @ac-4: el cierre de update dice las reglas de lectura que sumó, y
+  # nada si no cambió ninguna
+  node -e 'const fs=require("fs"),f=process.argv[1],s=JSON.parse(fs.readFileSync(f,"utf8"));s.permissions.allow=s.permissions.allow.filter((r)=>!r.startsWith("Read("));fs.writeFileSync(f,JSON.stringify(s,null,2))' "$TYCON_SETTINGS_PATH"
+  harness_lab_publish_stable 2026.10.07.4
+  out="$(harness_release update --yes 2>&1)"
+  case "$out" in *"permití leer sin preguntar"*) ok "UpdateClose_ReglasNuevasYSinCambios: con reglas que faltaban, el cierre de update las nombra" ;; *) mal "UpdateClose_ReglasNuevasYSinCambios: el cierre de update no nombra las reglas que sumó: $out" ;; esac
+  harness_lab_publish_stable 2026.10.07.5
+  out="$(harness_release update --yes 2>&1)"
+  case "$out" in *"permití leer"*|*"saqué de"*) mal "UpdateClose_ReglasNuevasYSinCambios: sin reglas nuevas, el cierre de update igual habla de permisos: $out" ;; *) ok "UpdateClose_ReglasNuevasYSinCambios: sin reglas nuevas, el cierre de update no habla de permisos" ;; esac
   # (pase adversarial, clase 5) el modo desarrollador y la vuelta: `link --managed` vuelve a ~/.tycon/harness, no a la
   # carpeta numerada (con real() quedaban el estado y el lugar atados a la versión de ese momento)
   harness_release link --local "$LAB_TREE" --allow-temporary >/dev/null 2>&1

@@ -1624,7 +1624,10 @@ function cmdInstall(ctx, H) {
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
     H.finishSnapshot(ctx, snap, log);
-    return { code: 0, lines: [`arnés instalado en modo managed · ${tree} (versión bajada, sin git)`, `versión: ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url}`, ...(teamStack ? [`${TEAM.planLine(teamPlan)} → apilada en ${tree}`] : []), `canal: ${state.channel} · aplicación: ${policyNow.apply}`, `herramientas enchufadas: ${TOOLS.names(state.tools)}`, `piezas escritas: ${pieces.join(', ')}`, ...notes, ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
+    // las carpetas que Claude Code lee sin preguntar, con la misma línea que el resumen de la instalación desde un clon
+    const readLine = R.readFoldersLine(require('./shared.js').union(a.report, a.shared));
+    const readLines = readLine ? [readLine] : [];
+    return { code: 0, lines: [`arnés instalado en modo managed · ${tree} (versión bajada, sin git)`, `versión: ${target.version} (${target.ref} ${sha7(target.commit)}) de ${repoInfo.url}`, ...(teamStack ? [`${TEAM.planLine(teamPlan)} → apilada en ${tree}`] : []), `canal: ${state.channel} · aplicación: ${policyNow.apply}`, `herramientas enchufadas: ${TOOLS.names(state.tools)}`, `piezas escritas: ${pieces.join(', ')}`, ...readLines, ...notes, ...(tokenExpired(ctx.env) ? [EXPIRED_TOKEN_TEXT] : [])] };
   }, { env: ctx.env, onBusy: (lock) => ({ code: 3, lines: [`harness.js: ${lock.reason || 'otra sesión está actualizando'}`] }) });
 }
 
@@ -1980,7 +1983,8 @@ function update(ctx, state, H, { mode = 'apply', log = null, snapshot = null, ye
   const packLines = packLine ? [packLine] : [];
   if (packLine && log) log(`update: ${packLine}`);
   const dataNotice = [...(sw.kept || []), ...moved.lines, ...packLines].join(' · ') || null;
-  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
+  // las reglas de lectura que esta actualización sumó o sacó (si no cambió ninguna, nada)
+  return { status: 'applied', code: 0, lines: [`arnés ${before} → ${t.version}`, ...(a.readNotes || []), ...tp.notes, ...teamLines, ...(sw.kept || []), ...moved.lines, ...packLines], from: before, to: t.version, backup: snap && snap.dir ? snap.dir : null, dataNotice };
 }
 
 /** `rollback` en release (AC 15): el cambio al revés, los enchufes, la salud; sin previous/, dice `install --version`. */

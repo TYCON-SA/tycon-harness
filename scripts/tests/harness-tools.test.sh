@@ -159,6 +159,13 @@ if runs T21; then
   [ "$(state "','.join(d['tools'])")" = claude ] && ok "el estado recuerda qué enchufó (tools: claude)" || bad "el estado dice tools: $(state "d.get('tools')")"
   [ ! -e "$CODEX_HOME" ] && ok "y no escribió nada en la carpeta de Codex" || bad "escribió en $CODEX_HOME: $(ls -A "$CODEX_HOME" 2>/dev/null)"
   case "$OUT" in *"herramientas enchufadas: Claude Code"*) ok "el cierre dice qué enchufó" ;; *) bad "el cierre no dice qué enchufó: $OUT" ;; esac
+  # InstallClose_NombraLasCarpetas @story-8.66.1 @ac-1: el cierre nombra las carpetas que Claude Code lee sin preguntar
+  case "$OUT" in *"piezas escritas"*"lee sin preguntar"*"~/.tycon/harness"*) ok "InstallClose_NombraLasCarpetas: el cierre nombra las carpetas permitidas, después de las piezas" ;; *) bad "InstallClose_NombraLasCarpetas: el cierre no nombra las carpetas permitidas: $OUT" ;; esac
+  # InstallClose_SinReglas_SinLinea @story-8.66.1 @ac-1: con las reglas apagadas, el cierre no las nombra
+  harness_lab_tools_fresh_home
+  OUT="$(TYCON_NO_READ_PERMISSIONS=1 harness install --version latest --tool claude --yes 2>&1)"; RC=$?
+  [ "$RC" = 0 ] && ok "InstallClose_SinReglas_SinLinea: install con las reglas apagadas sale 0" || bad "InstallClose_SinReglas_SinLinea: salió $RC: $OUT"
+  case "$OUT" in *"lee sin preguntar"*) bad "InstallClose_SinReglas_SinLinea: con las reglas apagadas el cierre igual las nombra: $OUT" ;; *) ok "InstallClose_SinReglas_SinLinea: con las reglas apagadas, el cierre no las nombra" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
   # desde un CLON (la instalación de hoy): el plan nombra las herramientas, Claude Code va siempre, y --tool codex solo sale 2
