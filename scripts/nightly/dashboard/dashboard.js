@@ -77,7 +77,9 @@ const AMB_ARGV = {
   config: CONFIG,
   raiz: RAIZ,   // de dónde salen repos.json, pipeline-debt.json, declared.json y lane-hypothesis.json (el sitio pasa su copia de operaciones)
   hoy: null,
-  ahora: null,
+  // `--now <milisegundos>`: el instante contra el que se mide la frescura de cada fuente. Existe para PROBAR, como
+  // `--dir`: con `TYCON_TODAY` fijo y el reloj real, una foto de juguete se vuelve vieja sola al pasar los días
+  ahora: Number.isFinite(Number(valor('--now', ''))) && valor('--now', '') !== '' ? Number(valor('--now', '')) : null,
 };
 let AMB = { ...AMB_ARGV };
 /**

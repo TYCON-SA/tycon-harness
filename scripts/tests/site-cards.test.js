@@ -161,11 +161,13 @@ test('2.36-UnaSolaCuenta_TableroYSitio: sobre la misma foto, cada ficha da en el
   try {
     montarDashboard(dir);
     const env = { ...process.env, HOME: HOME_FALSO, TYCON_TODAY: HOY };
-    const cli = spawnSync(process.execPath, [TABLERO, '--nightly', '--dir', dir, '--dry-run', '--json'], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
+    // el instante también queda fijo, el mismo día de la foto: con el reloj real la foto se vuelve vieja al pasar los días
+    const AHORA = Date.parse(`${HOY}T12:00:00Z`);
+    const cli = spawnSync(process.execPath, [TABLERO, '--nightly', '--dir', dir, '--now', String(AHORA), '--dry-run', '--json'], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
     const panelesCli = JSON.parse(cli.stdout.slice(cli.stdout.indexOf('\n{') + 1, cli.stdout.lastIndexOf('}') + 1));
     const api = spawnSync(process.execPath, ['-e', `
       const f = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'site', 'tabs', 'cards.js'))});
-      const d = require(${JSON.stringify(TABLERO)}).colectar({ dir: ${JSON.stringify(dir)}, nocturno: true });
+      const d = require(${JSON.stringify(TABLERO)}).colectar({ dir: ${JSON.stringify(dir)}, nocturno: true, ahora: ${AHORA} });
       process.stdout.write(JSON.stringify(f.modeloDeFichas(d.paneles, { cfg: d.cfg }).lista));`], { encoding: 'utf8', env, maxBuffer: 1 << 26 });
     assert.strictEqual(api.status, 0, api.stderr);
     const delSitio = JSON.parse(api.stdout);
