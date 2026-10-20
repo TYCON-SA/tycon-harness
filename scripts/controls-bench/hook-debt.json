@@ -2,6 +2,11 @@
   "__doc": "DEUDA DECLARADA de cobertura de hooks (FIX-7 + decisión D3 del dev, 2026-08-25). `build/check-hook-coverage.js` enumera los scripts de hooks EN DISCO y exige que cada uno tenga casos en el banco; lo que no los tiene entra ACÁ con motivo y fecha, y al escribirle casos se BORRA su línea. 🔴 La lista arrancó con 9 entradas el 2026-08-25 a la mañana y quedó VACÍA el mismo día a la tarde (casos en 20-handlers-pre-edit.json y 21-hooks-sueltos.json, cada uno verificado en rojo desconectando su hook). Se deja el archivo con la lista vacía a propósito: es el lugar donde una pieza nueva declara su deuda, y su historia en git es el registro de cuánto duró cada una.",
   "debt": [
     {
+      "script": "unclosed-runs-notice.js",
+      "date": "2026-10-20",
+      "reason": "Aviso de arranque de las corridas sin cerrar (story 2.67). Sus casos necesitan un repo de trabajo fuera de la carpeta temporal del sistema: el lector de sesiones (repos-root.js, sessionRepos) descarta a propósito los repos de la temporal, y el banco corre cada caso adentro de ella. Mientras tanto lo cubren T6 y T7 de scripts/tests/unclosed-runs.test.js, que lo corren como proceso con un HOME de juguete y otra temporal declarada: dice el renglón una vez por día, calla sin nada, calla apagado y dice cuando no pudo mirar. Se salda cuando el banco sepa declarar otra temporal por caso."
+    },
+    {
       "script": "advisor-liveness-on-change.js",
       "date": "2026-09-01",
       "reason": "No es un hook de la herramienta: es un ayudante del pre-commit de git del repo de los advisors, y el banco alimenta hooks por STDIN con el payload de un evento — a éste hay que pasarle rutas por ARGUMENTOS, cosa que runner.js no sabe hacer. Su tabla de decisión (la parte que puede romperse en silencio: qué frena, qué avisa, qué deja pasar) SÍ está cubierta, por su propio --selftest con 12 casos, incluidos los dos que garantizan que la plomería y una confirmación mixta NO frenan un commit. Se salda cuando runner.js sepa pasar argv, o escribiéndole al script una entrada por stdin sólo para el banco — lo segundo sería inventar una superficie que nadie usa, así que la deuda es a propósito."
