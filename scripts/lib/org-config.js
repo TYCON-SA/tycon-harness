@@ -211,11 +211,10 @@ const RESPONSE_SINCE = '2026.10.17.9';
  */
 const APPROVALS_SINCE = '2026.10.20.3';
 /**
- * 🔴 La primera versión del arnés cuyo lector conoce `qa` (la marca a mano de cada criterio). Es la etiqueta del merge que la trae: se fija con
- * la etiqueta real al entrar a main. Mientras tanto vale una versión que todavía no existe, así no se puede proponer la
- * clave a un perfil que la rechazaría.
+ * 🔴 La primera versión del arnés cuyo lector conoce `qa` (la marca a mano de cada criterio): la etiqueta del merge que la
+ * trajo. El pedido al perfil del equipo que declara la clave sube `requires.harness` a esa versión.
  */
-const QA_SINCE = '2026.10.20.99';
+const QA_SINCE = '2026.10.20.39';
 /**
  * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
  * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
