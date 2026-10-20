@@ -37,7 +37,8 @@
 # · `revisiones`: `devops invoke --area wit --resource revisions --route-parameters id=N` → `revisiones-N.json`
 #   (sin fixture sale 1 con TF401232, como el `show` de un id que no existe).
 # · `estados`: `devops invoke --area wit --resource workItemTypeStates --route-parameters project=P type=Bug`
-#   → `estados-P.json` (sin fixture sale 1: el tipo o el proyecto no existe).
+#   → `estados-P.json` (sin fixture sale 1: el tipo o el proyecto no existe). Por tipo:
+#   `estados-P-<tipo>.json`; el `estados-P.json` de siempre vale sólo para `type=Bug`.
 #
 # ── LO QUE SUMÓ LA 4.6 (los PR abiertos de la organización) ──────────────────────────────────────
 # · `prs`: `devops invoke --area git --resource pullRequests --query-parameters … $skip=N` → `prs-N.json`
@@ -289,7 +290,8 @@ switch (paso) {
   }
   case 'estados': {
     const rp = kv('--route-parameters');
-    const f = fixJson(`estados-${rp.project}.json`, null);
+    // por tipo: `estados-<proyecto>-<tipo>.json`; el de siempre, sin tipo, es el del Bug
+    const f = fixJson(`estados-${rp.project}-${rp.type}.json`, null) || (rp.type === 'Bug' ? fixJson(`estados-${rp.project}.json`, null) : null);
     if (f) out(f);
     falla(`VS402323: el tipo ${rp.type} no existe en el proyecto ${rp.project}`);
     break;
