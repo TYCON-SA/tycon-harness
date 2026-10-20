@@ -1858,7 +1858,7 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
-  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)' };
+  var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {

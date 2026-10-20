@@ -81,7 +81,9 @@ function computeGate(marker) {
   const failures = [];
   for (const [name, status] of Object.entries(checks)) {
     // «sin-acotar» (tests): no se corrió nada a propósito y la cubre la CI del pedido; no es un rojo que el agente arregle.
-    if (status !== 'green' && !(name === 'tests' && status === 'sin-acotar')) failures.push(`${name} → ${status}`);
+    // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; tampoco lo arregla el agente: lo dicen el
+    // paso 4 y el cierre de la historia.
+    if (status !== 'green' && !(name === 'tests' && (status === 'sin-acotar' || status === 'sin-medir'))) failures.push(`${name} → ${status}`);
   }
   // Sin checks registrados o todos verdes → green → deja parar (preserva pausas HITL).
   return { green: failures.length === 0, failures };

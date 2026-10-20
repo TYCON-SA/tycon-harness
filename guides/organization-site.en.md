@@ -445,7 +445,7 @@ What the person sees in the section, and what the agent does when asked for a to
 
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
   the three rules. The ones the test gate runs internally (.NET, Vitest, Jest and Node) show as «built in · the
-  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle and Karma can be changed: the form arrives filled with the
+  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle, Karma and Playwright can be changed: the form arrives filled with the
   built-in one, and saving leaves an organization copy with the same name that replaces it. «Back to the built-in one»
   deletes the copy. A tool's command runs on every team member's computer.
 - **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes

@@ -2,7 +2,7 @@
 
 /**
  * test-runners.js — las herramientas de prueba que la puerta sabe correr además de las de siempre (.NET, Vitest, Jest,
- * `node --test` y las suites del arnés): las de fábrica (pytest, Go, Maven, Gradle, Karma) y las que la organización
+ * `node --test` y las suites del arnés): las de fábrica (pytest, Go, Maven, Gradle, Karma, Playwright) y las que la organización
  * declara en `team-repos.json → stack.test_runners`.
  *
  * Todas se describen igual: qué archivo del proyecto las detecta, qué herramienta tiene que estar, qué comando corren,
@@ -27,6 +27,7 @@ function enElPath(nombre) {
     .some((d) => exts.some((e) => { try { return fs.statSync(path.join(d, nombre + e)).isFile(); } catch (_) { return false; } }));
 }
 const existe = (dir, f) => fs.existsSync(path.join(dir, f));
+const PLAYWRIGHT_CONFIGS = Object.freeze(['playwright.config.js', 'playwright.config.ts', 'playwright.config.mjs', 'playwright.config.cjs']);
 
 /** Las de fábrica, en orden. `detect(dir)` dice si el proyecto es de ese stack; `tool(dir)` qué binario tiene que estar. */
 const FACTORY = Object.freeze([
@@ -79,6 +80,17 @@ const FACTORY = Object.freeze([
     // el reporte lo deja karma-junit-reporter donde su configuración diga: se buscan los escritos en la corrida
     results: { format: 'junit', path: '**/TESTS-*.xml', alt: '**/junit*.xml', writtenDuringRun: true },
     coverage: { format: 'lcov', path: 'coverage/**/lcov.info', optional: true, writtenDuringRun: true },
+  },
+  {
+    // las pruebas de punta a punta de un front: con Vitest o Jest en la misma carpeta gana el de siempre (va antes)
+    name: 'playwright',
+    detect: (d) => PLAYWRIGHT_CONFIGS.some((f) => existe(d, f)),
+    tool: () => 'npx',
+    // el reportero junit escribe donde dice la variable; el comando lo lanza bash, así que la variable va adelante
+    command: 'PLAYWRIGHT_JUNIT_OUTPUT_NAME={results}/junit.xml npx playwright test --reporter=junit',
+    results: { format: 'junit', path: '{results}/junit.xml' },
+    coverage: null,
+    noCoverageReason: 'sin cobertura: las pruebas de punta a punta no la miden',
   },
 ]);
 
@@ -134,12 +146,18 @@ function inspect(projectDir, { results, stack } = {}) {
   return { runner: elegir(projectDir, { results, org: v.runners }), problems };
 }
 
+/** El binario de un comando declarado: la primera palabra que no es una variable de entorno (`VAR=valor npx …` → npx). */
+function herramientaDelComando(command) {
+  const palabras = String(command).trim().split(/\s+/);
+  return palabras.find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) || palabras[0];
+}
+
 function elegir(projectDir, { results, org }) {
   const res = results || '{results}';
   for (const r of org) {
     if (!existe(projectDir, r.detect)) continue;
     return {
-      name: r.name, source: 'organizacion', tool: r.command.trim().split(/\s+/)[0],
+      name: r.name, source: 'organizacion', tool: herramientaDelComando(r.command),
       command: conResults(r.command, res),
       results: { ...r.results, path: conResults(r.results.path, res) },
       coverage: r.coverage ? { ...r.coverage, path: conResults(r.coverage.path, res) } : null,
@@ -155,6 +173,7 @@ function elegir(projectDir, { results, org }) {
       commandWithoutCoverage: f.commandWithoutCoverage ? conResults(f.commandWithoutCoverage.split('{tool}').join(tool), res) : null,
       results: { ...f.results, path: conResults(f.results.path, res) },
       coverage: f.coverage ? { ...f.coverage, path: conResults(f.coverage.path, res) } : null,
+      ...(f.noCoverageReason ? { noCoverageReason: f.noCoverageReason } : {}),
     };
   }
   return null;
@@ -168,6 +187,7 @@ function detectorFiles(stack) {
     { file: 'pytest.ini', name: 'pytest' }, { file: 'conftest.py', name: 'pytest' }, { file: 'pyproject.toml', name: 'pytest' },
     { file: 'setup.cfg', name: 'pytest' }, { file: 'go.mod', name: 'go' }, { file: 'pom.xml', name: 'maven' },
     { file: 'build.gradle', name: 'gradle' }, { file: 'build.gradle.kts', name: 'gradle' }, { file: 'karma.conf.js', name: 'karma' },
+    ...PLAYWRIGHT_CONFIGS.map((file) => ({ file, name: 'playwright' })),
   ];
 }
 
@@ -176,6 +196,7 @@ function detectorFiles(stack) {
 const DECLARE_AS = Object.freeze({
   pytest: { detect: 'pyproject.toml', tool: 'python' }, go: { detect: 'go.mod' }, maven: { detect: 'pom.xml' },
   gradle: { detect: 'build.gradle', tool: './gradlew' }, karma: { detect: 'karma.conf.js' },
+  playwright: { detect: 'playwright.config.ts' },
 });
 
 /**

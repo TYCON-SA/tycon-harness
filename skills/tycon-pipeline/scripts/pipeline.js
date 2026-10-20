@@ -2895,7 +2895,10 @@ function computeNext() {
     for (const c of ['build', 'tests', 'advisors']) {
       // «sin-acotar» (tests) se acepta anunciándolo: la cubre la CI del pedido (complete-step 4 lo dijo y lo anotó).
       const sinAcotar = c === 'tests' && checks[c] === 'sin-acotar';
-      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}` });
+      // «sin-medir» (tests): el portón no sabe correr las pruebas del repo; se acepta diciéndolo, y el cierre
+      // de la historia copia la línea (nunca un verde callado)
+      const sinMedir = c === 'tests' && checks[c] === 'sin-medir';
+      if (checks[c]) preconditions.push({ id: `check-${c}`, satisfied: checks[c] === 'green' || sinAcotar || sinMedir, detail: `marker.checks.${c}=${checks[c]} (provenance: ${(marker.checksProvenance || {})[c] || 'desconocida'})${sinAcotar ? ' — sin acotar: la cubre la CI del pedido, y el merge exige la CI completa en verde' : ''}${sinMedir ? ' — pruebas no medidas: el portón no sabe correr las pruebas de este repo; el cierre de la historia lo dice en una línea, y para medirlas se declara el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas)' : ''}` });
     }
   }
 

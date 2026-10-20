@@ -54,7 +54,7 @@ function coberturaGenerica(def, { repoRun, resultsDir }) {
   const sinCov = path.join(resultsDir, 'sin-cobertura.txt');
   if (existe(sinCov)) return { ok: false, reason: `sin cobertura: ${fs.readFileSync(sinCov, 'utf8').trim()}` };
   const cov = def.coverage;
-  if (!cov) return { ok: false, reason: `${def.name} no declara cobertura` };
+  if (!cov) return { ok: false, reason: def.noCoverageReason || `${def.name} no declara cobertura` };
   const archivos = reportesDe(cov, { repoRun, resultsDir });
   if (!archivos.length) return { ok: false, reason: `${def.name} no dejó reporte de cobertura (${cov.path})${cov.optional ? ': el proyecto no tiene el plugin que la mide' : ''}` };
   const lectores = require('./coverage-readers.js');

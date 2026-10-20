@@ -28,7 +28,7 @@ machine](#start-on-your-own), or [for your team](#for-teams).
 ## Start on your own
 
 **It works today for .NET, JavaScript, TypeScript, Python, Go and Java**: out of the box the test step runs .NET,
-Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle and Karma. With another tool, that step does not recognize
+Vitest, Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma and Playwright. With another tool, that step does not recognize
 your tests yet until your team declares it in its configuration ("Your technology", on the site).
 
 Before you install you need your coding agent (Claude Code or Codex) signed in, and Node 22 or later. The full list
