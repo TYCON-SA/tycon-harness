@@ -200,6 +200,10 @@ const VOCABULARIO = Object.freeze({
   // mensajes valen como reenvío textual del ok del dev para eximir un crítico o firmar un criterio que no se puede probar
   // en vivo. Sin valor, nadie. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY).
   approvals: Object.freeze({ relay_session: 'texto' }),
+  // Si, además del arnés, una persona tiene que marcar cada criterio de la guía del tester como probado a mano antes de
+  // cerrar la historia: `off` (o sin valor) = no; `required` = el cierre frena sin esa marca. Cerrada, para sumar un
+  // valor sin romper archivos. Vale SÓLO desde el perfil del equipo (PROFILE_ONLY): el agente podría apagarse el freno.
+  qa: Object.freeze({ manual_check: 'opcion:off|required' }),
 });
 // El tope de prosa de cada estilo cuando el perfil no fija `response.max_chars` (story 2.31): el de `executive` es el de
 // siempre. Lo usan el sincronizador (lo escribe en el bloque) y el medidor (lo mide).
@@ -231,7 +235,7 @@ const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question
 // perfil es versionado y se cambia con un pedido; la variable y el archivo de la máquina los puede escribir el agente que
 // implementa, y esta clave abre la puerta a eximir un crítico: si las leyera, el agente se la abriría solo. Lo que el
 // archivo de la máquina tenga escrito queda en `shadowed` con `by: 'solo-perfil'` y `explain` lo dice; `set` no la escribe.
-const PROFILE_ONLY = Object.freeze(['approvals.relay_session']);
+const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 /** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
