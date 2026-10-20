@@ -45,6 +45,8 @@ COPY scripts/nightly/projects/state-age.js scripts/nightly/projects/
 COPY scripts/setup/harness/ scripts/setup/harness/
 # qué trae cada perfil de instalación: lo muestra la pestaña Configuración
 COPY scripts/setup/install-effects.json scripts/setup/
+# el repo público del arnés: sin él, la pestaña Cómo trabaja no tiene «Ver el código» ni adónde mandar una mejora
+COPY scripts/setup/public-remotes.json scripts/setup/
 COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 # la pestaña Cómo trabaja carga el pipeline y lee lo mismo que él: la tabla y los archivos de los pasos, la lista de
 # controles y el guion de cada uno (así reconoce un despachador), y las guías (así reconoce una guía citada por su

@@ -82,7 +82,8 @@ function renderPage(model, { idioma, publicRepo, version }) {
   const nombrePaso = (s) => { try { return T(`paso.${s.id}`); } catch { return s.name; } };
   const chip = (clase, texto) => `<span class="ct-chip ${clase}">${esc(texto)}</span>`;
   const ver = (ruta, clave = 'comoTrabaja.verCodigo') => (publicRepo ? `<a class="btn" href="${esc(`${publicRepo}/blob/main/${ruta}`)}" target="_blank" rel="noopener">${esc(T(clave))}</a>` : '');
-  const mejorar = (ruta, paso) => `<button type="button" class="btn" data-action="improve" data-piece="${esc(ruta)}" data-step-name="${esc(paso)}" aria-expanded="false">${esc(T('comoTrabaja.proponerMejora'))}</button>`;
+  // sin repo público, la mejora no tiene adónde ir: no se dibuja un botón que no hace nada
+  const mejorar = (ruta, paso) => (!publicRepo ? '' : `<button type="button" class="btn" data-action="improve" data-piece="${esc(ruta)}" data-step-name="${esc(paso)}" aria-expanded="false">${esc(T('comoTrabaja.proponerMejora'))}</button>`);
   const pieza = ({ origin, nombre, mono = true, cuando, chips = [], acciones, ruta, extra = '' }) => `<li class="ct-pieza${extra}" data-origin="${origin}"${ruta ? ` data-piece="${esc(ruta)}"` : ''}><div class="ct-que"><span class="ct-nom${mono ? '' : ' sans'}">${esc(nombre)}</span>${chips.join('')}${cuando ? `<span class="ct-cuando">${esc(cuando)}</span>` : ''}</div><div class="ct-acc">${acciones}</div></li>`;
   const delArnes = chip('arnes', T('comoTrabaja.delArnes'));
   const deLaOrg = chip('org', T('comoTrabaja.deTuOrganizacion'));
