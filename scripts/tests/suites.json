@@ -1936,6 +1936,12 @@
       "requiere": []
     },
     {
+      "__nota": "¿Estos archivos de este repo disparan su CI? check-trigger-without-docs.js --repo --changed lee los pipelines de origin/main con las reglas de Azure: sin trigger dispara, specs/ excluido no, trigger: none no se empuja, el disco no cuenta, y «no sé» sale 2; el paso 9 commitea el done, lo lleva a main y lo dice. Repos y pipelines de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/trigger-for-files.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "CodeGraph no deja nada para subir en un repo compartido: el índice va al exclude local de git (también en un worktree), nunca al .gitignore; sin repo, nada y un renglón; el aviso del pipeline nombra el instalador del arnés; --no-auto saca el gancho de arranque; el cierre y el renglón del plan dicen qué queda prendido. Repos, hogares y binarios de juguete; sin red.",
       "raiz": "arnes",
       "ruta": "tests/codegraph-local.test.js",

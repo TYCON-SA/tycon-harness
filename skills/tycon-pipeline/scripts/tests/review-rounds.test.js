@@ -106,13 +106,75 @@ test('Rounds_RunCost_CountsRoundsWithReviewers @story-7.37 @ac-2', () => {
   // el registro de revisores con cuatro arranques del paso 5 (dos sin revisores)
   const runs = path.join(lab.state, 'advisor-runs');
   fs.mkdirSync(runs, { recursive: true });
+  const ts = new Date().toISOString();
   fs.writeFileSync(path.join(runs, `${SID}.jsonl`), [{ event: 'step5-start' }, { advisor: 'tycon-plugin-security-basics' }, { event: 'step5-start' },
-    { event: 'step5-start' }, { advisor: 'tycon-plugin-security-basics' }, { event: 'step5-start' }].map((x) => JSON.stringify(x)).join('\n') + '\n');
+    { event: 'step5-start' }, { advisor: 'tycon-plugin-security-basics' }, { event: 'step5-start' }].map((x) => JSON.stringify({ ts, ...x })).join('\n') + '\n');
   const rr = lab.cmd(PIPELINE, ['review-rounds', '--story', lab.story, '--repo', lab.repo, '--json']);
   assert.equal(rr.status, 0, rr.stderr);
   assert.equal(JSON.parse(rr.stdout).vueltas, 2);
   const c = lab.cmd(MARKER, ['clear']);
   assert.match(c.stdout + c.stderr, /en 2 iteración/, 'el costo del run cuenta las vueltas con revisores');
+});
+
+// El costo del cierre cuenta sólo esta corrida: desde que arrancó y, si la línea nombra una story, la de esta.
+function costoDelVolcado(lab) {
+  const dir = path.join(lab.state, 'timing-history');
+  const f = fs.readdirSync(dir).filter((x) => x.startsWith('9.8-')).sort().pop();
+  return JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).costo;
+}
+function registro(lab, lineas) {
+  const runs = path.join(lab.state, 'advisor-runs');
+  fs.mkdirSync(runs, { recursive: true });
+  fs.writeFileSync(path.join(runs, `${SID}.jsonl`), lineas.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('\n') + '\n');
+}
+const antes = () => new Date(Date.now() - 3600000).toISOString();
+const despues = () => new Date(Date.now() + 1000).toISOString();
+
+test('RunCost_OnlyThisStory @story-7.49 @ac-1', () => {
+  const lab = laboratorio({ fotos: [1] });
+  registro(lab, [
+    { ts: antes(), advisor: 'tycon-plugin-security-basics', story: '9.7' }, { ts: antes(), advisor: 'tycon-story-validator', story: '9.7' },
+    { ts: antes(), advisor: 'tycon-ac-coverage-checker', story: '9.7' },
+    { ts: despues(), event: 'step5-start' },
+    { ts: despues(), advisor: 'tycon-plugin-security-basics', story: '9.8' }, { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' },
+    // otra story que corrió en la misma sesión, después del arranque de ésta, tampoco es de esta corrida
+    { ts: despues(), advisor: 'tycon-plugin-tests-coverage', story: '9.6' },
+  ]);
+  const c = lab.cmd(MARKER, ['clear']);
+  assert.match(c.stdout + c.stderr, /costo del run: 2 agentes/, c.stderr);
+  assert.equal(costoDelVolcado(lab).spawns, 2);
+});
+
+test('RunCost_AdhocAfterStart_Counts @story-7.49 @ac-2', () => {
+  const lab = laboratorio({ fotos: [1] });
+  registro(lab, [{ ts: antes(), advisor: 'Explore' }, { ts: despues(), advisor: 'Explore' }, { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
+  lab.cmd(MARKER, ['clear']);
+  const costo = costoDelVolcado(lab);
+  assert.deepEqual([costo.spawns, costo.adhoc], [2, 1]);
+});
+
+test('RunCost_NoTimestamp_Said @story-7.49 @ac-3', () => {
+  const lab = laboratorio({ fotos: [1] });
+  registro(lab, [{ advisor: 'tycon-story-validator', story: '9.8' }, { ts: 'no es una hora', advisor: 'Explore' }, { event: 'step5-start' },
+    // sin hora pero de otra story: no es de esta corrida, ni para contarla como «sin hora»
+    { advisor: 'tycon-story-validator', story: '9.7' }, '{ esto no es JSON',
+    { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
+  lab.cmd(MARKER, ['clear']);
+  const costo = costoDelVolcado(lab);
+  assert.equal(costo.spawns, 1);
+  assert.equal(costo.sin_hora, 3);
+  assert.equal(costo.ilegibles, 1);
+});
+
+test('RunCost_NoStart_OnlyThisStorySaid @story-7.49 @ac-1 @ac-3', () => {
+  // un marcador sin hora de arranque: cuentan sólo las líneas que nombran esta story, y el volcado lo dice
+  const lab = laboratorio({ fotos: [1] });
+  const m = JSON.parse(fs.readFileSync(lab.markerFile, 'utf8')); delete m.startedAt; fs.writeFileSync(lab.markerFile, JSON.stringify(m));
+  registro(lab, [{ ts: antes(), advisor: 'Explore' }, { ts: antes(), advisor: 'tycon-story-validator', story: '9.7' }, { ts: despues(), advisor: 'tycon-story-validator', story: '9.8' }]);
+  lab.cmd(MARKER, ['clear']);
+  const costo = costoDelVolcado(lab);
+  assert.equal(costo.spawns, 1);
+  assert.equal(costo.sin_arranque, true);
 });
 
 test('Cap_Default_Two @story-7.37 @ac-3', () => {

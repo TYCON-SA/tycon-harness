@@ -336,6 +336,50 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js update-story
 
 **Garantiza** que el cierre ADO y el frontmatter quedan en lockstep. Una sesión futura que abra `tycon-pipeline` sobre esta story va a leer `done` y NO va a re-arrancar el pipeline (PIPE-C5 del Step 0 lo detecta y rechaza).
 
+## Acción — llevar el `done` a main
+
+`update-story-status` deja el cambio en el disco; sin esto, el work item queda cerrado y la story en main sigue en
+`review`. El cambio nace después del merge (`done` es «en main y desplegado»), así que su commit es parte del cierre,
+no un olvido.
+
+**La autorización es la del checkpoint del cierre.** El punto 1 de abajo corre ANTES de ese checkpoint: cuando se le
+muestra al dev la lista de commits para el comentario, ese mismo mensaje dice que el cierre va a commitear el `done` y
+llevarlo a main, y lo que contestó el guion sobre la CI. Su ok cubre el comentario, el cierre del work item y este commit:
+no se pregunta de nuevo. Sin ese ok, el pipeline no commitea ni empuja nada (regla de `guides/git-commit-conventions.md`).
+
+1. **¿Dispara la CI?** Antes de commitear, con `origin` recién traído (el guion lee `origin/main`) y el archivo de la
+   story relativo a la raíz del repo, se lo pregunta al guion, no a la memoria:
+
+   ```bash
+   git -C <repo> fetch origin
+   node "${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}/scripts/ci/check-trigger-without-docs.js" \
+     --repo <repo> --changed <ruta de la story>
+   ```
+
+   Sale 0 → «no dispara la CI»; 1 → «dispara la CI» con el pipeline y el patrón que dio; 2 → «no pude saber si dispara
+   la CI», con el motivo. Una salida 2 nunca se dice como «no dispara». El guion habla del CI que corre al entrar a
+   `main` y sólo ve los `azure-pipelines*.yml`; si el repo tiene un pipeline creado en la web, o la validación de pedidos
+   de su política de rama, eso corre aparte y se dice así.
+2. **El commit, en una rama propia desde `origin/main`**, nunca en el checkout del dev (puede tener trabajo ajeno):
+
+   ```bash
+   git -C <repo> worktree add -b chore/<id>-done <carpeta-temporal> origin/main
+   # la story de main contra la del checkout: sólo puede cambiar el status
+   git -C <carpeta-temporal> diff --no-index -U0 <ruta de la story> <story en el checkout> | grep '^[-+][^-+]'
+   cp <story en el checkout> <carpeta-temporal>/<ruta de la story>
+   git -C <carpeta-temporal> add <ruta de la story>
+   git -C <carpeta-temporal> commit -m "docs(specs): <id> — status done"
+   git -C <carpeta-temporal> push -u origin chore/<id>-done
+   ```
+
+   Se copia sólo el archivo de la story. Si la comparación muestra algún renglón distinto de `status:` (o del `Status:`
+   del cuerpo), se para y se le muestra la diferencia al dev: copiar el archivo entero pisaría lo que haya en main.
+3. **El camino a main es el del repo**: el que da `merge-pr.js plan` (el mismo de `/tycon-merge-to-main`). En modo `pr`
+   sobre Azure DevOps, un pedido con `--auto-complete true --squash false`; en GitHub, un pedido a la fila; en modo
+   `push`, el empuje directo de la rama a `main`. Después, se borra la carpeta temporal y su rama local.
+4. **Sin el ok del dev**, o si algo de lo anterior falla: no se dice «status: done» como si estuviera en main. El
+   mensaje final lo deja como **acción pendiente**, con los comandos de arriba ya armados para esa story.
+
 **Después de esto, `marker.js clear`** para limpiar el marker per-session de esta sesión:
 
 ```bash
@@ -370,7 +414,8 @@ Mensaje al dev al final:
 - Comment posteado con: <N> commits + CI run #<run-id> + PR <pr-id-o-N/A> + tiempo <Xh YYm>
 - State: → Closed
 - Timer Clockify cerrado: duración total <Xh YYm>   (omitir línea si no había timer activo)
-- Frontmatter `.md` → status: done (source of truth durable).
+- Story → status: done: commit <sha> · <«en main» si se empujó directo | «pedido <n>, entra solo» si quedó en un pedido> · CI: <no dispara | dispara <pipeline> | no pude saber si dispara la CI (<motivo>)>
+  (sin el ok, o si falló: «acción pendiente: llevar el done a main» con los comandos ya armados)
 - Marker pipeline → cleared.
 - Carpetas de trabajo: <lo que dijo worktree-sweep.js — borradas, o las que quedaron y por qué>
 
