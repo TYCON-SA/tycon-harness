@@ -2773,6 +2773,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 2.67 (tanda B): la carpeta de los repos puede ser más de una y estar fuera de la carpeta personal. Fuera del home votan todos los ancestros menos la raíz del disco; rutas.repos y TYCON_REPOS_ROOT aceptan varias y `set` guarda la lista; root es la primera de roots; las sesiones dan una raíz por grupo (desde la segunda, con al menos dos repos); las repetidas o anidadas se sacan; sin raíz, el motivo trae el comando; los que recorren repos ven los de todas. Hogares, configuraciones y repos de juguete; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/repos-roots.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "2026-10-16, pedido del dueño («borrá solas las carpetas ya mergeadas»): scripts/hooks/worktree-sweep.js. Con git de verdad (remoto desnudo, clon y worktrees en una carpeta temporal) y un HOME de prueba por caso: al arrancar borra el worktree limpio y mergeado con su rama y nunca el checkout principal; nombra y no toca los que tienen archivos modificados o sin seguimiento y los que tienen commits sin mergear; calla ante uno usado hace poco, y deja el recién creado, el bloqueado y el de la sesión; sella el día y calla en el segundo arranque; apagado por variable y en seco no toca nada. Con --story borra sólo los de esa story, trae origin antes de juzgar y deja el que tiene cambios. Sin red.",
       "raiz": "arnes",
       "ruta": "tests/worktree-sweep.test.js",
