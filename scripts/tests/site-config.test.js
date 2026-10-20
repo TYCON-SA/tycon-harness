@@ -2868,11 +2868,12 @@ test('T3 Repos_PipelineNoUsado_HojaConTema @story-2.59.1 @ac-4', () => {
 // ── qué hace cada regla, debajo de su selector ──────────────────────────────────────────────────────────────────────
 const QUE_HACE = { automatico: 'server-if-required', 'siempre-en-la-maquina': 'machine-always', 'confiar-en-el-servidor': 'server-only' };
 const LINEA = {
-  org: 'sigue la regla de arriba',
   automatico: 'el servidor, si la rama le exige las pruebas; si no, la máquina del dev',
   siempre: 'en la máquina del dev, aunque el servidor también las corra',
   confiar: 'sólo el servidor; sirve si de verdad las corre',
 };
+// un repo sin regla propia: qué hace la regla de la organización
+const COMO_ORG = (queHace) => `como la organización: ${queHace}`;
 
 test('T1 Repos_QueHaceCadaRegla_DebajoDelSelector @story-2.59.2 @ac-1 @ac-3', async () => {
   const ms = { default: 'automatico', repos: [
@@ -2887,7 +2888,7 @@ test('T1 Repos_QueHaceCadaRegla_DebajoDelSelector @story-2.59.2 @ac-1 @ac-3', as
   const deRepo = (i) => linea(p.de(p.renglones(p.tablas()[0])[i], 'regla')[0]);
   const orgSel = () => p.todo(p.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.default');
   const deOrg = () => { const sel = orgSel(); const caja = p.todo(p.sec('suites')).find((n) => n.tag === 'div' && n.attrs.class === 'campo' && p.todo(n).includes(sel)); return linea(caja); };
-  assert.deepStrictEqual([0, 1, 2, 3].map(deRepo), [LINEA.org, LINEA.automatico, LINEA.siempre, LINEA.confiar]);
+  assert.deepStrictEqual([0, 1, 2, 3].map(deRepo), [COMO_ORG(LINEA.automatico), LINEA.automatico, LINEA.siempre, LINEA.confiar]);
   assert.strictEqual(deOrg(), LINEA.automatico);
   // al cambiar la opción, cambia la línea (la del repo y la de la organización)
   p.todo(p.de(p.renglones(p.tablas()[0])[1], 'regla')[0]).find((n) => n.tag === 'select').on.change({ target: { value: 'confiar-en-el-servidor' } });
@@ -2896,7 +2897,7 @@ test('T1 Repos_QueHaceCadaRegla_DebajoDelSelector @story-2.59.2 @ac-1 @ac-3', as
   orgSel().on.change({ target: { value: 'siempre-en-la-maquina' } });
   await p.esperar();
   assert.strictEqual(deOrg(), LINEA.siempre);
-  assert.strictEqual(deRepo(0), LINEA.org, 'el repo sin regla propia sigue diciendo que sigue la de arriba');
+  assert.strictEqual(deRepo(0), COMO_ORG(LINEA.siempre), 'el repo sin regla propia dice qué hace la de la organización');
   // «sin declarar» en la organización: rige automático
   orgSel().on.change({ target: { value: '' } });
   await p.esperar();
@@ -2923,7 +2924,8 @@ test('T2 Repos_QueHace_SaleDelLector @story-2.59.2 @ac-2', async () => {
     { repo: GH('a'), rule: 'automatico' }, { repo: GH('s'), rule: 'siempre-en-la-maquina' }, { repo: GH('c'), rule: 'confiar-en-el-servidor' }, { repo: GH('o'), full_tests_pipeline: 'ci' },
   ] }, [], { sinPipeline: SIN_PIPE, queHace: raro }));
   const lineaDe = (i) => { const q = r.de(r.de(r.renglones(r.tablas()[0])[i], 'regla')[0], 'que-hace'); return q.length ? r.texto(q[0]) : null; };
-  assert.deepStrictEqual([0, 1, 2, 3].map(lineaDe), [null, LINEA.siempre, null, LINEA.org]);
+  // el repo que sigue a la organización (automático, con un valor que la pantalla no conoce) tampoco tiene línea
+  assert.deepStrictEqual([0, 1, 2, 3].map(lineaDe), [null, LINEA.siempre, null, null]);
   // el servidor manda la respuesta con el lector del árbol
   await conPerfil({ repos: { ...TR_BASE, merge_suites: SUITES_5 } }, async ({ seccion }) => {
     assert.deepStrictEqual((await seccion('suites')).extras.queHace, QUE_HACE);
@@ -2932,7 +2934,7 @@ test('T2 Repos_QueHace_SaleDelLector @story-2.59.2 @ac-2', async () => {
 
 test('T3 Repos_QueHace_TextosEnLosDosIdiomas @story-2.59.2 @ac-4', () => {
   const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  const claves = { 'pantalla.sigueLaReglaDeArriba': [LINEA.org, 'follows the rule above'],
+  const claves = { 'pantalla.comoLaOrganizacion': ['como la organización: {queHace}', "like the organization: {queHace}"],
     'pantalla.queHaceAutomatico': [LINEA.automatico, "the server, if the branch requires the tests; otherwise the dev's machine"],
     'pantalla.queHaceSiempre': [LINEA.siempre, "on the dev's machine, even if the server also runs them"],
     'pantalla.queHaceConfiar': [LINEA.confiar, 'only the server; useful if it really runs them'] };
@@ -2940,6 +2942,22 @@ test('T3 Repos_QueHace_TextosEnLosDosIdiomas @story-2.59.2 @ac-4', () => {
     assert.deepStrictEqual([t('es', k), t('en', k)], [es, en], k);
     assert.ok(ORG.pantalla().includes(`'${k}'`), `${k} lo usa la pantalla`);
   }
+});
+
+test('T33 Repos_ComoLaOrganizacionDiceQueHace @story-2.61.3 @ac-7 — el repo que sigue a la organización dice qué hace su regla, y cambia con ella', async () => {
+  const ms = { repos: [{ repo: GH('sigue') }, { repo: GH('propia'), rule: 'confiar-en-el-servidor' }] };
+  const p = await compacta(secSuites(ms, [], { sinPipeline: SIN_PIPE, queHace: QUE_HACE }));
+  const deRepo = (i) => { const q = p.de(p.de(p.renglones(p.tablas()[0])[i], 'regla')[0], 'que-hace'); return q.length === 1 ? p.texto(q[0]) : null; };
+  const orgSel = () => p.todo(p.sec('suites')).find((n) => n.tag === 'select' && n.attrs['data-path'] === 'merge_suites.default');
+  // sin declarar en la organización: rige automático, y el repo lo dice
+  assert.strictEqual(deRepo(0), COMO_ORG(LINEA.automatico));
+  assert.strictEqual(deRepo(1), LINEA.confiar, 'el de regla propia, sin cambios');
+  for (const [regla, linea] of [['siempre-en-la-maquina', LINEA.siempre], ['confiar-en-el-servidor', LINEA.confiar], ['automatico', LINEA.automatico]]) {
+    orgSel().on.change({ target: { value: regla } });
+    await p.esperar();
+    assert.strictEqual(deRepo(0), COMO_ORG(linea), `con «${regla}» arriba`);
+  }
+  assert.ok(!p.todo(p.sec('suites')).some((n) => n.attrs && n.attrs.class === 'que-hace' && /regla de arriba/.test(p.texto(n))), 'ningún «sigue la regla de arriba»');
 });
 
 test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {

@@ -36,10 +36,10 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.js find-by-stor
 Detectados N markers activos en sesiones distintas a la actual:
   • sessionId=abc12345… started=<date> lastTouch=<date>
     repoPath=<path>
-    hechos: Arranque, Validar la story, Armar el plan, Aprobar el plan · pendientes: Implementar y correr las pruebas, … · filesTouched=N
+    hechos: Arranque, Validar la historia, Armar el plan, Aprobar el plan · pendientes: Implementar y correr las pruebas, … · filesTouched=N
 
 NO arrancar la corrida desde cero («Arranque») — vas a:
-  • Re-ejecutar pasos ya hechos («Validar la story», «Armar el plan»).
+  • Re-ejecutar pasos ya hechos («Validar la historia», «Armar el plan»).
   • Re-preguntar decisiones ya tomadas al user.
   • Re-implementar archivos ya creados → colisión Write.
   • Abrir 2do timer Clockify encima del 1ro (doble cobro).
@@ -244,7 +244,7 @@ Si al arrancar el pipeline detectás que `status:` YA es `in-progress` y PIPE-C0
 ```
 🟡 ALERTA — Story X.Y.Z tiene status: in-progress sin marker activo
 
-Esto indica un pipeline previo que NO terminó (sesión cerrada sin «Preparar el commit» ni «Cerrar en ADO»).
+Esto indica un pipeline previo que NO terminó (sesión cerrada sin «Preparar el commit» ni «Cerrar la historia»).
 
 Last touch del frontmatter (git log): <fecha>
 

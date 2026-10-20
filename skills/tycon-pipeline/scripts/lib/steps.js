@@ -14,7 +14,7 @@ const STEPS = [
   { id: '0', name: 'Arranque', file: 'step-00-preflight.md' },
   { id: '0b', name: 'Arranque: reloj de Clockify', file: 'step-00b-clocki-start.md' },
   { id: '0c', name: 'Arranque: pedido en ADO', file: 'step-00c-ado-mark-active.md' },
-  { id: '1', name: 'Validar la story', file: 'step-01-validate-story.md' },
+  { id: '1', name: 'Validar la historia', file: 'step-01-validate-story.md' },
   { id: '2', name: 'Armar el plan', file: 'step-02-invoke-bmad.md' },
   { id: '3', name: 'Aprobar el plan', file: 'step-03-hitl-plan.md' },
   { id: '4', name: 'Implementar y correr las pruebas', file: 'step-04-execute.md' },
@@ -25,7 +25,7 @@ const STEPS = [
   { id: '7b', name: 'Revisores, otra vuelta', file: 'step-07b-rerun-advisors-if-fixes.md', inSequence: false },
   { id: '7c', name: 'Probar en vivo', file: 'step-07c-dod-runtime-gate.md' },
   { id: '8', name: 'Preparar el commit', file: 'step-08-commit-prep.md' },
-  { id: '9', name: 'Cerrar en ADO', file: 'step-09-ado-story-closure.md', inSequence: false },
+  { id: '9', name: 'Cerrar la historia', file: 'step-09-ado-story-closure.md', inSequence: false },
 ];
 
 /** El nombre llano de un paso por su id; acepta el número suelto del marcador (`5` o `'5'`). `null` si no existe. */

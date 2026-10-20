@@ -421,6 +421,30 @@ test('T14 Timer_OneSleeperPerSession — tres cierres seguidos: un solo proceso 
 });
 
 // ── T15 · AC 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
+test('T28 Espera_AbiertaConElNombreViejoSeCierra @story-2.61.3 @ac-2 — una espera guardada con «Validar la story» se cierra y el aviso usa el nombre de hoy', async () => {
+  const w = world({ ms: 60000 });
+  marker(w, 'viejo', { pending: [1, 2, 3] });
+  const tp = transcript(w, 'viejo', [userRec('x'), agentRec('¿sigo?')]);
+  // la espera la abrió una versión anterior del arnés: el nombre viejo, guardado; el paso, por su número
+  fs.mkdirSync(path.join(w.dir, 'waits'), { recursive: true });
+  fs.writeFileSync(path.join(w.dir, 'waits', 'viejo.json'), JSON.stringify({
+    session: 'viejo', story: '9.9', step: '1', stepName: 'Validar la story', kind: 'stop', waiting: '¿sigo?',
+    openedAt: new Date().toISOString(), records: 2, prompts: 1, transcript: tp, pid: null, notified: false,
+  }));
+  append(tp, [userRec('sí, seguí')]);
+  const r = hook(w, { hook_event_name: 'UserPromptSubmit', session_id: 'viejo', transcript_path: tp, prompt: 'sí, seguí' });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const l = await waitFor(() => logLines(w).find((x) => x.session === 'viejo'));
+  assert.ok(l, 'la espera quedó en el registro');
+  assert.strictEqual(l.result, 'answered');
+  assert.strictEqual(waitFile(w, 'viejo'), null, 'y se cerró');
+  // el aviso arma el nombre por el número del paso: sale el de hoy
+  const { buildMessage } = require(HOOK);
+  const texto = buildMessage([{ story: '9.9', step: '1', waiting: '¿sigo?' }]);
+  assert.match(texto, /Validar la historia/);
+  assert.doesNotMatch(texto, /Validar la story/);
+});
+
 test('T15 Steps_FromTheTable — el nombre de la tabla; un id desconocido, tal cual y anotado', () => {
   const { stepLabel } = require(HOOK);
   const { STEPS } = require(path.join(ROOT, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));

@@ -100,7 +100,7 @@ test('T4 Board_PipelineTable_NoCostColumn — /pipeline: Paso | Estado | Tiempo,
   assert.match(t, /\| Paso \| Estado \| Tiempo \|/);
   assert.doesNotMatch(t, /gasto|USD|\$/i);
   const fila = (name) => t.split('\n').find((l) => l.startsWith(`| ${name} |`));
-  assert.match(fila('Validar la story'), /\| hecho \| 8 min \|/);
+  assert.match(fila('Validar la historia'), /\| hecho \| 8 min \|/);
   assert.match(fila('Arranque: reloj de Clockify'), /\| hecho \|/, 'sub-paso por bandera');
   assert.match(fila('Implementar y correr las pruebas'), /\| corriendo \| 12 min \|/);
   assert.match(fila('Revisores'), /\| pendiente \| — \|/);

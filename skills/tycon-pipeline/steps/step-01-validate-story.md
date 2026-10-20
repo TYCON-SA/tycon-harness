@@ -1,4 +1,4 @@
-# Validar la story
+# Validar la historia
 
 **Objetivo**: invocar el advisor `tycon-story-validator` sobre el path del story que el user pasó. Reportar issues. Si hay CRITICAL, pausar antes de seguir.
 

@@ -324,7 +324,7 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
           `en ${otherSessions.length} sesión${otherSessions.length > 1 ? 'es' : ''} distinta${otherSessions.length > 1 ? 's' : ''}:\n` +
           lines +
           `\n\n🔴 NO arrancar la corrida desde cero («Arranque») — vas a:\n` +
-          `   • Re-ejecutar «Validar la story» y «Armar el plan», ya hechos.\n` +
+          `   • Re-ejecutar «Validar la historia» y «Armar el plan», ya hechos.\n` +
           `   • Re-preguntar decisiones ya tomadas al user.\n` +
           `   • Re-implementar archivos ya creados en la otra sesión (colisión Write).\n` +
           `   • Re-correr advisors innecesariamente.\n` +
