@@ -460,11 +460,9 @@ function hablar(ctx) {
   };
   const comentar = (id, html) => az(['boards', 'work-item', 'update', '--id', String(id), '--discussion', `@${archivo('comentario.html', html)}`],
     { valida: (v) => (v && v.id !== undefined ? null : 'la respuesta no trae «id»') });
-  const cacheCategorias = new Map();
-  const categoriasDe = (proyecto) => () => {
-    if (!cacheCategorias.has(proyecto)) cacheCategorias.set(proyecto, leerCategorias(az, proyecto));
-    return cacheCategorias.get(proyecto);
-  };
+  const deCategorias = cacheDeCategorias(az);
+  // por proyecto y por el tipo del pedido (lo pone cerrarLeido/reabrirLeido, que ya leyeron el work item)
+  const categoriasDe = (proyecto) => (tipo) => deCategorias(proyecto, tipo);
   const cerrar = (id, proyecto, idFicha) => cerrarPedido(az, id, proyecto, idFicha, categoriasDe(proyecto));
   const reabrir = (id, proyecto, idFicha, desde) => reabrirPedido(az, id, proyecto, idFicha, desde, categoriasDe(proyecto));
 
@@ -569,7 +567,7 @@ function hablar(ctx) {
     }
   }
 
-  avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, (id, proyecto, idFicha) => leerSuBug(az, id, proyecto, idFicha));
+  avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, (id, proyecto, idFicha) => leerSuPedido(az, id, proyecto, idFicha));
   avisarCerradosVivos(ctx, res, comentar, respaldoDe, textos);
 
   // Lo que SIGUE sin pedido al terminar: es lo que el resumen tiene que listar como fallo de creación.
@@ -639,22 +637,28 @@ function hablar(ctx) {
  * `pedidos:`, un Bug, con la etiqueta de la ficha (revisión adversarial: un id mal anotado cerraba un work
  * item ajeno — los ids son únicos en la organización). `{ ok, fields }` · `{ ok: false, ajeno, motivo }`.
  */
-function leerSuBug(az, id, proyecto, idFicha) {
+function leerSuPedido(az, id, proyecto, idFicha) {
   const s = az(['boards', 'work-item', 'show', '--id', String(id)],
     { valida: (v) => (v && v.fields && typeof v.fields['System.State'] === 'string' ? null : 'la respuesta no trae «fields.System.State»') });
-  if (!s.ok) return { ok: false, motivo: `no pude leer el Bug ${id} (${s.motivo})` };
+  if (!s.ok) return { ok: false, motivo: `no pude leer el pedido ${id} (${s.motivo})` };
   const f = s.valor.fields;
   const tp = f['System.TeamProject'];
   const tipo = f['System.WorkItemType'];
-  const conEtiqueta = tokensDeEtiquetas(f['System.Tags']).includes(`arnes:${idFicha}`.toLowerCase());
-  if (tp !== proyecto || tipo !== 'Bug' || !conEtiqueta) {
-    return { ok: false, ajeno: true, motivo: `el work item ${id} no es el Bug de esta ficha en ${proyecto} (proyecto ${tp || '?'}, tipo ${tipo || '?'}${conEtiqueta ? '' : `, sin la etiqueta arnes:${idFicha}`})` };
+  // Propio por las etiquetas, no por el tipo: una organización puede pasar el pedido a otro tipo de work item y el
+  // nocturno lo tiene que seguir cerrando, reabriendo y comentando. El creador NO cuenta acá a propósito: lo mira
+  // cerrarLeido (sólo cierra lo que creó el arnés); una copia hecha por una persona sigue recibiendo el aviso.
+  const tokens = tokensDeEtiquetas(f['System.Tags']);
+  const conEtiqueta = tokens.includes(`arnes:${idFicha}`.toLowerCase());
+  const delArnes = tokens.includes('arnes-hallazgo');
+  if (tp !== proyecto || !conEtiqueta || !delArnes) {
+    const falta = [conEtiqueta ? null : `arnes:${idFicha}`, delArnes ? null : 'arnes-hallazgo'].filter(Boolean);
+    return { ok: false, ajeno: true, motivo: `el work item ${id} no es el pedido de esta ficha en ${proyecto} (proyecto ${tp || '?'}, tipo ${tipo || '?'}${falta.length ? `, sin la etiqueta ${falta.join(' ni ')}` : ''})` };
   }
   return { ok: true, fields: f };
 }
 
 function cerrarPedido(az, id, proyecto, idFicha, categoriasDe) {
-  const b = leerSuBug(az, id, proyecto, idFicha);
+  const b = leerSuPedido(az, id, proyecto, idFicha);
   if (!b.ok) return b;
   return { ...cerrarLeido(az, id, proyecto, b.fields, categoriasDe), fields: b.fields };
 }
@@ -665,11 +669,12 @@ function cerrarLeido(az, id, proyecto, f, categoriasDe) {
   const creador = f['System.CreatedBy'];
   const desc = creador && typeof creador === 'object' ? String(creador.descriptor || '') : '';
   if (!desc.startsWith('svc.')) return { ok: true, cerrado: false, porque: 'persona', motivo_azure: null };
-  const cat = categoriasDe();
+  const tipo = f['System.WorkItemType'];
+  const cat = categoriasDe(tipo);
   if (!cat || !cat.categorias) return { ok: false, motivo: (cat && cat.motivo) || `no pude leer las categorías de estado de ${proyecto}` };
   const completos = Object.keys(cat.categorias).filter((e) => cat.categorias[e] === 'Completed');
   if (completos.length !== 1) {
-    return { ok: false, motivo: `el Bug de ${proyecto} tiene ${completos.length} estado(s) de cierre (${completos.join(', ') || 'ninguno'}): no sé a cuál cerrarlo` };
+    return { ok: false, motivo: `el tipo ${tipo} de ${proyecto} tiene ${completos.length} estado(s) de cierre (${completos.join(', ') || 'ninguno'}): no sé a cuál cerrarlo` };
   }
   const actual = f['System.State'];
   if (['Completed', 'Removed'].includes(cat.categorias[actual])) return { ok: true, cerrado: false, porque: 'ya-cerrado', motivo_azure: null };
@@ -678,7 +683,7 @@ function cerrarLeido(az, id, proyecto, f, categoriasDe) {
   const destino = completos[0];
   const u = az(['boards', 'work-item', 'update', '--id', String(id), '--state', destino],
     { valida: (v) => (v && v.fields && v.fields['System.State'] === destino ? null : `la respuesta no dice que quedó en «${destino}»`) });
-  if (!u.ok) return { ok: false, motivo: `no pude cerrar el Bug ${id} (${u.motivo})` };
+  if (!u.ok) return { ok: false, motivo: `no pude cerrar el pedido ${id} (${u.motivo})` };
   return { ok: true, cerrado: true, porque: null, motivo_azure: u.valor.fields['System.Reason'] || null };
 }
 
@@ -693,22 +698,23 @@ function cerrarLeido(az, id, proyecto, f, categoriasDe) {
  *   Closed→New pone «Not fixed» (Agile) y Done→New «Moved to the backlog» (Scrum).
  */
 function reabrirPedido(az, id, proyecto, idFicha, desde, categoriasDe) {
-  const b = leerSuBug(az, id, proyecto, idFicha);
+  const b = leerSuPedido(az, id, proyecto, idFicha);
   if (!b.ok) return b;
   return { ...reabrirLeido(az, id, proyecto, desde, b.fields, categoriasDe), fields: b.fields };
 }
 
 function reabrirLeido(az, id, proyecto, desde, f, categoriasDe) {
-  const cat = categoriasDe();
+  const tipo = f['System.WorkItemType'];
+  const cat = categoriasDe(tipo);
   if (!cat || !cat.categorias) return { ok: false, motivo: (cat && cat.motivo) || `no pude leer las categorías de estado de ${proyecto}` };
   if (cat.categorias[f['System.State']] !== 'Completed') return { ok: true, reabierto: false, porque: 'no-esta-cerrado' };
   const cambio = String(f['Microsoft.VSTS.Common.StateChangeDate'] || '').slice(0, 10);
   if (cambio !== desde) return { ok: true, reabierto: false, porque: 'lo-toco-una-persona' };
   const destino = Object.keys(cat.categorias).find((e) => cat.categorias[e] === 'Proposed');
-  if (!destino) return { ok: false, motivo: `el Bug de ${proyecto} no tiene un estado inicial al que reabrirlo` };
+  if (!destino) return { ok: false, motivo: `el tipo ${tipo} de ${proyecto} no tiene un estado inicial al que reabrirlo` };
   const u = az(['boards', 'work-item', 'update', '--id', String(id), '--state', destino],
     { valida: (v) => (v && v.fields && v.fields['System.State'] === destino ? null : `la respuesta no dice que quedó en «${destino}»`) });
-  if (!u.ok) return { ok: false, motivo: `no pude reabrir el Bug ${id} (${u.motivo})` };
+  if (!u.ok) return { ok: false, motivo: `no pude reabrir el pedido ${id} (${u.motivo})` };
   return { ok: true, reabierto: true, porque: null };
 }
 
@@ -783,7 +789,7 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
             res.fallidos.push({ ficha: f.idFicha, proyecto, paso: 'reabrir', motivo: r.motivo });
             if (!r.ajeno) html = `<p>${prefijo(f.idFicha, proyecto, r.fields)}Volvió a aparecer en tu proyecto — medido el ${hoy}. No pude reabrirlo (${escHtml(r.motivo)}): reabrilo vos. Lo había cerrado la revisión nocturna el ${escHtml(desde)}.</p>`;
           } else if (r.reabierto) {
-            html = `<p>${prefijo(f.idFicha, proyecto, r.fields)}Volvió a aparecer en tu proyecto — medido el ${hoy}. Reabro este Bug: lo había cerrado la revisión nocturna el ${escHtml(desde)}, cuando dejó de verla (ficha <code>arnes:${escHtml(f.idFicha)}</code>).</p>`;
+            html = `<p>${prefijo(f.idFicha, proyecto, r.fields)}Volvió a aparecer en tu proyecto — medido el ${hoy}. Reabro este pedido: lo había cerrado la revisión nocturna el ${escHtml(desde)}, cuando dejó de verla (ficha <code>arnes:${escHtml(f.idFicha)}</code>).</p>`;
             res.reabiertos.push({ ficha: f.idFicha, proyecto, id });
           }
           if (html) {
@@ -821,7 +827,7 @@ function avisos(ctx, res, comentar, cerrar, reabrir, respaldoDe, leerBug) {
         if (entrada.cerrado) linea = `${proyecto} (${hoy}, cerrado por el arnés)`;
         const pie = `<p>La revisión nocturna de dependencias dejó de ver la vulnerabilidad, como alta o crítica, en todos los repos de este proyecto (ficha <code>arnes:${escHtml(f.idFicha)}</code>). Si vuelve a aparecer, se va a ver.</p>`;
         html = entrada.cerrado
-          ? `<p>${m}En tu proyecto ya no aparece — medido el ${hoy}. Cierro este Bug: el arreglo está en <code>main</code>; cuándo llega a producción lo decide el equipo.</p>\n${pie}`
+          ? `<p>${m}En tu proyecto ya no aparece — medido el ${hoy}. Cierro este pedido: el arreglo está en <code>main</code>; cuándo llega a producción lo decide el equipo.</p>\n${pie}`
           : noPude ? `<p>${m}En tu proyecto ya no aparece — medido el ${hoy}. No pude cerrarlo (${escHtml(noPude)}): cerralo vos si corresponde.</p>\n${pie}`
             : porque === 'ya-cerrado' ? `<p>${m}En tu proyecto ya no aparece — medido el ${hoy}.</p>\n${pie}`
               : `<p>${m}En tu proyecto ya no aparece — medido el ${hoy}; cerralo si corresponde.</p>\n${pie}`;
@@ -877,14 +883,49 @@ function personaMasReciente(revisiones) {
   return mejor ? { el: mejor.el, nombre: mejor.nombre } : { el: null, nombre: null };
 }
 
-/** Las categorías del Bug en un proyecto: `{ categorias: { <estado>: <categoría> }, motivo: null }` o `{ categorias: null, motivo }`. */
-function leerCategorias(az, proyecto) {
+/**
+ * Las categorías de estado de un TIPO de work item en un proyecto: `{ categorias: { <estado>: <categoría> }, motivo: null }`
+ * o `{ categorias: null, motivo }`. Las del pedido salen de su propio tipo: un tipo propio de la organización
+ * tiene sus estados («Identificado … Cerrado»), y los del Bug no le sirven. Sin tipo, o sin poder leerlas, `categorias` es
+ * null: quien la llama no cierra ni reabre ese pedido (falla cerrado) y el motivo dice el tipo.
+ */
+function leerCategorias(az, proyecto, tipo) {
+  if (typeof tipo !== 'string' || !tipo.trim()) return { categorias: null, motivo: `el pedido de ${proyecto} no dice su tipo de work item: no sé qué categorías de estado leer` };
   const r = az(['devops', 'invoke', '--area', 'wit', '--resource', 'workItemTypeStates', '--route-parameters',
-    `project=${proyecto}`, 'type=Bug', '--api-version', '7.1'],
+    `project=${proyecto}`, `type=${tipo}`, '--api-version', '7.1'],
   { valida: (v) => (v && Array.isArray(v.value) && v.value.length
     && v.value.every((x) => x && typeof x.name === 'string' && typeof x.category === 'string') ? null : 'la respuesta no trae «value[].category»') });
-  if (!r.ok) return { categorias: null, motivo: `no pude leer las categorías de estado de ${proyecto} (${r.motivo})` };
+  if (!r.ok) return { categorias: null, motivo: `no pude leer las categorías de estado de ${proyecto} (tipo ${tipo}: ${r.motivo})` };
   return { categorias: Object.fromEntries(r.valor.value.map((x) => [x.name, x.category])), motivo: null };
+}
+
+/**
+ * Una caché de categorías por proyecto y por tipo: `de(proyecto, tipo)`. `de.porProyecto()` arma lo que el volcado
+ * publica en `proyectos`: por proyecto, las del Bug (o las del primer tipo leído, si no se leyó el Bug) como siempre, y
+ * en `tipos` las de cada tipo que se leyó.
+ */
+function cacheDeCategorias(az) {
+  const cache = new Map();
+  const de = (proyecto, tipo) => {
+    const k = JSON.stringify([proyecto, tipo]);
+    if (!cache.has(k)) cache.set(k, leerCategorias(az, proyecto, tipo));
+    return cache.get(k);
+  };
+  de.porProyecto = () => {
+    const out = {};
+    for (const [k, v] of cache.entries()) {
+      const [p, t] = JSON.parse(k);
+      const tipoDe = typeof t === 'string' && t ? t : '(sin tipo)';
+      if (!out[p]) out[p] = { tipos: {} };
+      out[p].tipos[tipoDe] = v;
+    }
+    for (const p of Object.keys(out)) {
+      const base = out[p].tipos.Bug || Object.values(out[p].tipos)[0];
+      out[p] = { categorias: base.categorias, motivo: base.motivo, tipos: out[p].tipos };
+    }
+    return Object.fromEntries(Object.entries(out).sort(([x], [y]) => x.localeCompare(y)));
+  };
+  return de;
 }
 
 /** Un pedido por id: el `show` y sus revisiones. `{ ok, fields, revisiones }` o `{ ok: false, motivo }`. */
@@ -932,7 +973,7 @@ function buscarHuerfanos(az, cfg, nombrados, categoriasDe, archivo) {
       if (!tokens.includes('arnes-hallazgo')) continue;          // CONTAINS es por substring: se confirma exacto
       const tok = tokens.find((x) => x.startsWith('arnes:'));
       const estado = typeof s.valor.fields['System.State'] === 'string' ? s.valor.fields['System.State'] : null;
-      const cats = categoriasDe(p).categorias;
+      const cats = categoriasDe(p, s.valor.fields['System.WorkItemType']).categorias;
       deEste.push({ id, proyecto: p, ficha: tok ? tok.slice('arnes:'.length) : null, estado,
         categoria: cats && estado && Object.prototype.hasOwnProperty.call(cats, estado) ? cats[estado] : null });
     }
@@ -975,8 +1016,7 @@ function volcar(a) {
   const archivo = (nombre, contenido) => { const p = path.join(tmp, `${++n}-${nombre}`); fs.writeFileSync(p, contenido); return p; };
   try {
     const todas = leerTodasLasFichas(a.pending);
-    const cache = new Map();
-    const categoriasDe = (p) => { if (!cache.has(p)) cache.set(p, leerCategorias(az, p)); return cache.get(p); };
+    const categoriasDe = cacheDeCategorias(az);   // (proyecto, tipo): las del tipo de cada pedido
     const pedidos = {};
     // Ordenado por ficha: el archivo se commitea cada noche, y el orden del disco no está garantizado.
     for (const f of todas.filter((x) => x.estado !== 'archived').sort((x, y) => String(x.idFicha).localeCompare(String(y.idFicha)))) {
@@ -988,7 +1028,7 @@ function volcar(a) {
         pedidos[id] = e;
         const w = leerPedidoDeAzure(az, id);
         if (!w.ok) { e.motivo_no_leido = w.motivo; continue; }
-        const cats = categoriasDe(proyecto);
+        const cats = categoriasDe(proyecto, w.fields['System.WorkItemType']);
         if (!cats.categorias) { e.motivo_no_leido = cats.motivo; continue; }
         const estado = w.fields['System.State'];
         if (!Object.prototype.hasOwnProperty.call(cats.categorias, estado)) { e.motivo_no_leido = `el estado ${estado} no está en las categorías de ${proyecto}`; continue; }
@@ -1003,7 +1043,7 @@ function volcar(a) {
     // tiene dueño aunque nadie lo mire; no es un suelto.
     const nombrados = new Set(todas.flatMap((f) => leerPedidos(f.txt).map((x) => x.id)));
     const { huerfanos, noConsultados } = buscarHuerfanos(az, cfg, nombrados, categoriasDe, archivo);
-    const proyectos = Object.fromEntries([...cache.entries()].sort(([x], [y]) => x.localeCompare(y)));
+    const proyectos = categoriasDe.porProyecto();
     const salida = { fecha: hoy, consultado: true, motivo: null, proyectos, pedidos, huerfanos, huerfanos_no_consultados: noConsultados };
     escribirJsonAtomico(destino, salida);
 

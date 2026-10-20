@@ -258,6 +258,17 @@
       ]
     },
     {
+      "__nota": "story 4.9 (tanda A): el pedido propio de cualquier tipo — por proyecto y etiquetas; las categorías de estado del tipo del pedido, que fallan cerrado.",
+      "raiz": "arnes",
+      "ruta": "tests/work-items-type.test.sh",
+      "requiere": [],
+      "gate_only_when_touching": [
+        "scripts/nightly/**",
+        "scripts/lib/**",
+        "scripts/tests/lib/**"
+      ]
+    },
+    {
       "raiz": "arnes",
       "ruta": "tests/work-items.test.sh",
       "requiere": [],

@@ -870,7 +870,7 @@ snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
 marca=$(grep -c '^  - Proy A (2026-09-10, cerrado por el arnés)$' "$TMP/pend/pending/abc12345.yaml")
 aviso_ok=0; llamada actualizar 0 'arg("--id") === "301" && arg("--state") === "Closed" && !a.includes("--reason") && !a.includes("--discussion")' \
-  && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && b.includes("Cierro este Bug") && b.includes("main")' \
+  && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && b.includes("Cierro este pedido") && b.includes("main")' \
   && llamada comentario 0 'b.includes(`data-vss-mention="version:2.0,${process.env.BACKUP_OWNER_ID}"`) && b.includes("data-vss-mention=\"version:2.0,dan00000-0000-0000-0000-00000000f3e1\"") && b.includes("@Dana Prueba")' \
   && ped 'p.pagados_avisados.length === 1 && p.pagados_avisados[0].id === 301 && p.pagados_avisados[0].cerrado === true && p.pagados_avisados[0].motivo_azure === "Fixed and verified"' && aviso_ok=1
 correr >/dev/null
@@ -878,13 +878,13 @@ correr >/dev/null
   && ok "T18: 🔴 el Bug del proyecto donde ya no aparece se CIERRA (al estado de cierre del proyecto, sin motivo) y recibe el aviso, una sola vez" \
   || no "T18: rc=$rc aviso=$aviso_ok marca=$marca comentarios=$(cuenta comentario) cierres=$(cuenta actualizar) · $(pie)"
 
-# T18c. un Bug que una persona YA cerró (o quitó) no se toca: sólo el aviso, sin «Cierro este Bug»
+# T18c. un Bug que una persona YA cerró (o quitó) no se toca: sólo el aviso, sin «Cierro este pedido»
 mundo
 ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" "  - ProyB: 302"
 estados "Proy A" Closed; wi 301 Closed "Proy A"
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
-{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && !b.includes("Cierro este Bug")' \
+{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && !b.includes("Cierro este pedido")' \
   && ped 'p.pagados_avisados[0].cerrado === false' && grep -q '^  - Proy A (2026-09-10)$' "$TMP/pend/pending/abc12345.yaml"; } \
   && ok "T18c: un Bug ya cerrado por una persona no se vuelve a tocar: recibe el aviso y queda marcado" \
   || no "T18c: rc=$rc cierres=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
@@ -897,7 +897,7 @@ ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" " 
 wi 301 New "Proy A"
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
-{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && b.includes("No pude cerrarlo") && b.includes("categorías de estado") && !b.includes("Cierro este Bug")' \
+{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'arg("--id") === "301" && b.includes("ya no aparece") && b.includes("No pude cerrarlo") && b.includes("categorías de estado") && !b.includes("Cierro este pedido")' \
   && grep -q '^  - Proy A (2026-09-10)$' "$TMP/pend/pending/abc12345.yaml" \
   && ped 'p.fallidos.some((x) => x.paso === "cerrar" && x.proyecto === "Proy A" && /categorías de estado/.test(x.motivo)) && p.pagados_avisados[0].cerrado === false'; } \
   && ok "T18d: 🔴 si no se pueden leer los estados del proyecto no se cierra, pero el aviso sale diciendo que no se pudo, se marca y el fallo se dice" \
@@ -908,7 +908,7 @@ estados "Proy A" Closed; wi 301 Active "Proy A"
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 TYCON_AZ_FAIL='actualizar:--state' rc=$(TYCON_AZ_FAIL='actualizar:--state' correr)
 { [ "$rc" -eq 0 ] && llamada comentario 0 'b.includes("No pude cerrarlo") && b.includes("cerralo vos")' && grep -q '^  - Proy A (2026-09-10)$' "$TMP/pend/pending/abc12345.yaml" \
-  && ped 'p.fallidos.some((x) => x.paso === "cerrar" && /no pude cerrar el Bug 301/.test(x.motivo))'; } \
+  && ped 'p.fallidos.some((x) => x.paso === "cerrar" && /no pude cerrar el pedido 301/.test(x.motivo))'; } \
   && ok "T18d: 🔴 si Azure rechaza el cierre, el aviso dice que no se pudo cerrar, se marca (no se insiste cada noche) y el fallo se dice" \
   || no "T18d rechazo: rc=$rc comentarios=$(cuenta comentario) · $(pie)"
 
@@ -922,22 +922,23 @@ rc=$(correr)
   && ok "T18e: en un proyecto Scrum el Bug se cierra a Done" \
   || no "T18e: rc=$rc cierres=$(cuenta actualizar) · $(pie)"
 
-# T18f. 🔴 el id de la ficha no es SU Bug (otro proyecto, otro tipo, sin la etiqueta de la ficha): no se toca nada
-# (revisión adversarial: un id mal anotado cerraba un work item ajeno; antes, sólo le dejaba un comentario de más)
-for variante in proyecto tipo etiqueta; do
+# T18f. 🔴 el id de la ficha no es SU pedido (otro proyecto, sin la etiqueta del arnés, sin la de la ficha): no se toca nada
+# (revisión adversarial: un id mal anotado cerraba un work item ajeno; antes, sólo le dejaba un comentario de más).
+# El tipo no cuenta: un pedido propio de otro tipo se cierra, y lo prueba work-items-type.test.sh.
+for variante in proyecto hallazgo etiqueta; do
   mundo
   ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" "  - ProyB: 302"
   estados "Proy A" Closed
   case $variante in
     proyecto) wi 301 New ProyB ;;
-    tipo)     wi 301 New "Proy A" "User Story" ;;
+    hallazgo) wi 301 New "Proy A" Bug svc.build "arnes:abc12345" ;;
     etiqueta) wi 301 New "Proy A" Bug svc.build "cliente; sprint-12" ;;
   esac
   snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
   rc=$(correr)
   { [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && [ "$(cuenta comentario)" -eq 0 ] && ! grep -q '^pagado_avisado:' "$TMP/pend/pending/abc12345.yaml" \
-    && ped 'p.fallidos.some((x) => x.paso === "cerrar" && /no es el Bug de esta ficha/.test(x.motivo))'; } \
-    && ok "T18f ($variante): 🔴 un work item que no es el Bug de la ficha en ese proyecto no se cierra ni se comenta, y el fallo se dice" \
+    && ped 'p.fallidos.some((x) => x.paso === "cerrar" && /no es el pedido de esta ficha/.test(x.motivo))'; } \
+    && ok "T18f ($variante): 🔴 un work item que no es el pedido de la ficha en ese proyecto no se cierra ni se comenta, y el fallo se dice" \
     || no "T18f ($variante): rc=$rc cierres=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
 done
 
@@ -948,7 +949,7 @@ ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" " 
 estados "Proy A" Closed; wi 301 New "Proy A" Bug aad.persona
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
-{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'b.includes("ya no aparece") && b.includes("cerralo si corresponde") && !b.includes("Cierro este Bug")' \
+{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'b.includes("ya no aparece") && b.includes("cerralo si corresponde") && !b.includes("Cierro este pedido")' \
   && ped 'p.pagados_avisados[0].cerrado === false'; } \
   && ok "T18g: 🔴 el arnés sólo cierra los Bugs que creó él: uno creado por una persona recibe el aviso y queda abierto" \
   || no "T18g: rc=$rc cierres=$(cuenta actualizar) · $(pie)"
@@ -969,7 +970,7 @@ ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" " 
 estados "Proy A" Closed; wi 301 Resolved "Proy A"
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
-{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'b.includes("ya no aparece") && !b.includes("Cierro este Bug")'; } \
+{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 0 ] && llamada comentario 0 'b.includes("ya no aparece") && !b.includes("Cierro este pedido")'; } \
   && ok "T18i: un Bug en Resolved no se cierra: una persona ya decidió" \
   || no "T18i: rc=$rc cierres=$(cuenta actualizar) · $(pie)"
 
@@ -998,7 +999,7 @@ reaparece(){ # <cambio de estado del Bug> <línea de la marca>
 reaparece 2026-09-08T04:03:11Z "Proy A (2026-09-08, cerrado por el arnés)"
 rc=$(correr)
 { [ "$rc" -eq 0 ] && llamada actualizar 0 'arg("--id") === "301" && arg("--state") === "New" && !a.includes("--reason")' \
-  && llamada comentario 0 'arg("--id") === "301" && b.includes("Volvió a aparecer") && b.includes("Reabro este Bug") && b.includes("2026-09-08")' \
+  && llamada comentario 0 'arg("--id") === "301" && b.includes("Volvió a aparecer") && b.includes("Reabro este pedido") && b.includes("2026-09-08")' \
   && llamada comentario 0 'b.includes(`data-vss-mention="version:2.0,${process.env.BACKUP_OWNER_ID}"`) && b.includes("@Dana Prueba")' \
   && ! grep -q 'Proy A (2026-09-08' "$TMP/pend/pending/abc12345.yaml" \
   && ped 'JSON.stringify(p.reabiertos) === JSON.stringify([{ ficha: "abc12345", proyecto: "Proy A", id: 301 }])'; } \
@@ -1024,7 +1025,7 @@ rc=$(correr)
 reaparece 2026-09-08T04:03:11Z "Proy A (2026-09-08, cerrado por el arnés)"
 rc=$(TYCON_AZ_FAIL='actualizar:--state' correr)
 { [ "$rc" -eq 0 ] && llamada comentario 0 'b.includes("Volvió a aparecer") && b.includes("No pude reabrirlo") && b.includes("reabrilo vos")' \
-  && ped 'p.fallidos.some((x) => x.paso === "reabrir" && /no pude reabrir el Bug 301/.test(x.motivo)) && p.reabiertos.length === 0'; } \
+  && ped 'p.fallidos.some((x) => x.paso === "reabrir" && /no pude reabrir el pedido 301/.test(x.motivo)) && p.reabiertos.length === 0'; } \
   && ok "T18n: 🔴 una reapertura que falla avisa igual en el Bug y cuenta el fallo" \
   || no "T18n: rc=$rc comentarios=$(cuenta comentario) · $(pie)"
 
@@ -1037,7 +1038,7 @@ ficha pending abc12345 browserslist high 3 "B/B" "pedidos:" "  - Proy A: 301" " 
 estados "Proy A" Closed; wi 301 New "Proy A"
 snapshot $HOY "[$(p1 abc12345 browserslist B/B)]"
 rc=$(correr)
-{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 1 ] && llamada comentario 0 'b.includes("Cierro este Bug") && b.includes("@Dana Prueba") && !b.includes(process.env.BACKUP_OWNER_ID)' \
+{ [ "$rc" -eq 0 ] && [ "$(cuenta actualizar)" -eq 1 ] && llamada comentario 0 'b.includes("Cierro este pedido") && b.includes("@Dana Prueba") && !b.includes(process.env.BACKUP_OWNER_ID)' \
   && ped 'p.fallidos.some((x) => x.paso === "mencion" && x.proyecto === "Proy A")'; } \
   && ok "T18o: 🔴 sin la identidad del responsable de respaldo el aviso de cierre sale igual, mencionando al responsable, y el fallo se dice" \
   || no "T18o: rc=$rc cierres=$(cuenta actualizar) comentarios=$(cuenta comentario) · $(pie)"
