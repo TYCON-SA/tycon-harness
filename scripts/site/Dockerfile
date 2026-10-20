@@ -46,8 +46,15 @@ COPY scripts/setup/harness/ scripts/setup/harness/
 # qué trae cada perfil de instalación: lo muestra la pestaña Configuración
 COPY scripts/setup/install-effects.json scripts/setup/
 COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
-COPY skills/tycon-pipeline/scripts/lib/ skills/tycon-pipeline/scripts/lib/
-COPY skills/tycon-pipeline/steps/step-0*.md skills/tycon-pipeline/steps/
+# la pestaña Cómo trabaja carga el pipeline y lee lo mismo que él: la tabla y los archivos de los pasos, la lista de
+# controles y el guion de cada uno (así reconoce un despachador), y las guías (así reconoce una guía citada por su
+# nombre). Sin pruebas: la lista de exclusiones las saca. how-it-works.test.js frena si algo de eso no entra
+COPY skills/tycon-pipeline/scripts/ skills/tycon-pipeline/scripts/
+COPY skills/tycon-pipeline/steps/ skills/tycon-pipeline/steps/
+COPY skills/clocki/scripts/ skills/clocki/scripts/
+COPY scripts/hooks/ scripts/hooks/
+COPY scripts/setup/hooks-list.json scripts/setup/
+COPY guide[s]/ guides/
 # los revisores del núcleo y los paquetes de revisores del árbol: la pestaña Configuración dice cuáles conoce esta
 # versión y qué paquetes hay instalados. El público no trae paquetes (llegan con la capa del equipo); con el comodín la
 # imagen se arma igual sin la carpeta

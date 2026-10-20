@@ -563,3 +563,56 @@ test('T12 Proponer_UnArchivoComoAntes @story-2.61 @ac-14 — proponer con un arc
     assert.match(rama, /^team-config\/profile-/);
   } finally { await Promise.allSettled([r, gh].filter(Boolean).map((s) => s.cerrar())); }
 });
+
+test('T21 ComoTrabaja_CadaArchivoQueLeeEntraALaImagen @story-2.61.1 @ac-3 — sin Docker: lo que lee la pestaña entra a la imagen, y sólo lo publicado', () => {
+  const { imageFiles } = require('./lib/image-files.js');
+  const git = (...a) => spawnSync('git', ['-C', ROOT, ...a], { encoding: 'utf8' });
+  const versionados = git('ls-files', '-z');
+  assert.strictEqual(versionados.status, 0, `git ls-files: ${versionados.stderr}`);
+  const { entran } = imageFiles(ROOT, versionados.stdout.split('\0').filter(Boolean));
+  const enImagen = new Set(entran);
+  // lo que la pestaña carga de verdad: los módulos que quedan cargados al armar su modelo
+  const sonda = spawnSync(process.execPath, [path.join(__dirname, 'lib', 'how-it-works-probe.js'), ROOT, '--modules'], { encoding: 'utf8' });
+  assert.strictEqual(sonda.status, 0, sonda.stderr);
+  const modelo = JSON.parse(sonda.stdout.trim().split('\n').pop());
+  assert.ok(!modelo.error, `el modelo se arma en el árbol: ${modelo.error}`);
+  // y lo que lee como texto: la tabla de pasos, cada archivo de paso, la lista de controles, el guion de cada control
+  // (así reconoce un despachador) y las guías (así reconoce una guía citada por su nombre)
+  const { STEPS } = require(path.join(SCRIPTS, 'lib', 'steps.js'));
+  const lista = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  const leidos = [
+    ...modelo.modules,
+    'skills/tycon-pipeline/scripts/lib/steps.js',
+    ...STEPS.map((s) => `skills/tycon-pipeline/steps/${s.file}`),
+    'scripts/setup/hooks-list.json',
+    ...lista.map((h) => (h.spec.startsWith('@tcg:') ? `scripts/hooks/${h.spec.slice(5)}` : `skills/${h.spec}`)),
+    ...versionados.stdout.split('\0').filter((f) => /^guides\/.+\.md$/.test(f)),
+  ];
+  const faltan = [...new Set(leidos)].filter((f) => !enImagen.has(f));
+  assert.deepStrictEqual(faltan, [], 'todo lo que lee la pestaña entra a la imagen');
+  // sólo lo publicado: un archivo sin versionar dentro de lo que se copia entraría a una imagen armada en esta máquina
+  const sueltos = git('ls-files', '-z', '--others', '--exclude-standard');
+  assert.strictEqual(sueltos.status, 0, sueltos.stderr);
+  assert.deepStrictEqual(imageFiles(ROOT, sueltos.stdout.split('\0').filter(Boolean)).entran, [], 'ningún archivo sin versionar entra a la imagen');
+  // y ninguna prueba
+  assert.deepStrictEqual(entran.filter((f) => /(^|\/)tests?\/|\.test\.|(^|\/)scenarios\//.test(f)), [], 'la imagen no trae pruebas');
+});
+
+test('T22 ComoTrabaja_LaImagenSinSecretosYLaSimulacionSinAdivinar @story-2.61.1 @ac-3 — formas de secreto afuera; lo que la simulación no sabe leer, lo dice', () => {
+  const { imageFiles, patron } = require('./lib/image-files.js');
+  // un archivo con forma de secreto dentro de lo que se copia no entra (en una máquina pueden estar sin versionar)
+  const secretos = ['.env', '.env.local', '.env.production', '.npmrc', 'clave.p12', 'id_rsa', 'id_rsa.pub', 'id_dsa', 'id_ed25519', 'id_ecdsa', 'clave.pem', 'clave.key', 'clave.pfx', 'algo.env',
+    '.netrc', '.pypirc', '.git-credentials', 'llaves.jks', 'app.keystore', 'clave.pkcs12', 'terraform.tfstate', 'terraform.tfstate.backup', 'prod.tfvars',
+    'credentials.json', 'service-account-prod.json', '.aws/credentials', '.docker/config.json']
+    .flatMap((n) => [`scripts/hooks/${n}`, `skills/tycon-pipeline/scripts/${n}`, `guides/${n}`, `scripts/site/${n}`]);
+  assert.deepStrictEqual(imageFiles(ROOT, secretos).entran, [], 'ninguna forma de secreto entra');
+  // un patrón que no sabe leer como BuildKit tira enseguida, en vez de colgarse o adivinar
+  for (const p of ['a[b', '/scripts/site', 'x[!a]y', 'x[^a]y']) assert.throws(() => patron(p), /image-files/, p);
+  const d = tmp('hiw-img-');
+  fs.mkdirSync(path.join(d, 'scripts', 'site'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'scripts', 'site', 'Dockerfile.dockerignore'), '*\n!scripts/\n');
+  for (const copia of ['COPY --from=base /app/x scripts/x/', 'COPY scripts/a/ \\\n  scripts/a/']) {
+    fs.writeFileSync(path.join(d, 'scripts', 'site', 'Dockerfile'), `FROM x\n${copia}\n`);
+    assert.throws(() => imageFiles(d, ['scripts/a/b.js']), /image-files/, copia);
+  }
+});

@@ -140,3 +140,24 @@ test('T7b Imagen_LaGuiaEstaAdentro @story-2.41 @ac-1 — armada de verdad, la im
     docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
   }
 });
+
+test('T8 Imagen_LaPestanaComoTrabajaArmaSuModelo @story-2.61.1 @ac-1 @ac-4 — dentro de la imagen, el mismo modelo que en el árbol', { skip: SIN_DOCKER }, () => {
+  // la pestaña «Cómo trabaja» carga el pipeline y lee los pasos, las guías, la lista de controles y sus guiones: la
+  // sonda arma su modelo en los dos lados (montada en la imagen, como la de Configuración en T2k)
+  const id = crypto.randomBytes(4).toString('hex');
+  const imagen = `site-prueba-como-trabaja:${id}`;
+  const sonda = (r) => { assert.strictEqual(r.status, 0, (r.stdout + r.stderr).slice(-800)); return JSON.parse(r.stdout.trim().split('\n').pop()); };
+  try {
+    const b = docker(['buildx', 'build', '--load', '-f', 'scripts/site/Dockerfile', '-t', imagen, '.']);
+    assert.strictEqual(b.status, 0, `la imagen se arma: ${(b.stderr || '').slice(-800)}`);
+    const lib = path.join(ROOT, 'scripts', 'tests', 'lib');
+    const arbol = sonda(spawnSync(process.execPath, [path.join(lib, 'how-it-works-probe.js'), ROOT], { cwd: ROOT, encoding: 'utf8', timeout: 120000 }));
+    const enImagen = sonda(docker(['run', '--rm', '-v', `${lib}:/app/scripts/tests/lib:ro`, imagen, 'node', '/app/scripts/tests/lib/how-it-works-probe.js'], { timeout: 120000 }));
+    assert.strictEqual(enImagen.error, undefined, `en la imagen, el modelo se arma: ${enImagen.error}`);
+    assert.deepStrictEqual(enImagen.problems, [], 'en la imagen, nada que no se pudo leer');
+    assert.ok(enImagen.steps.length > 10 && enImagen.controls.length > 0, 'pasos y controles');
+    assert.deepStrictEqual(enImagen, arbol, 'el mismo modelo en la imagen que en el árbol');
+  } finally {
+    docker(['image', 'rm', '-f', imagen], { timeout: 60000 });
+  }
+});

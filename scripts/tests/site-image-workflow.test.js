@@ -17,7 +17,9 @@ const read = () => fs.readFileSync(ARCHIVO, 'utf8');
 const codigo = (t) => t.split('\n').filter((l) => l.trim() && !/^\s*#/.test(l));
 // lo que copia scripts/site/Dockerfile: si cambia algo que la imagen trae, la imagen se vuelve a armar
 const RUTAS = ["'scripts/site/**'", "'scripts/lib/**'", "'scripts/metrics/**'", "'scripts/nightly/**'", "'scripts/setup/harness/**'", "'scripts/setup/install-effects.json'",
-  "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/lib/**'", "'skills/tycon-pipeline/steps/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
+  "'scripts/ci/check-product-parity.js'", "'scripts/ci/legacy-options.js'", "'skills/tycon-pipeline/scripts/**'", "'skills/tycon-pipeline/steps/**'",
+  // lo que lee la pestaña Cómo trabaja: los guiones de los controles, su lista y las guías
+  "'skills/clocki/scripts/**'", "'scripts/hooks/**'", "'scripts/setup/hooks-list.json'", "'guides/**'", "'agents/**'", "'packs/**'", "'LICENSE*'", "'NOTICE*'",
   // la guía del sitio y sus capturas: la pestaña Ayuda la arma de la imagen
   "'guides/organization-site.md'", "'guides/organization-site.en.md'", "'guides/sitio-de-la-organizacion/capturas/**'",
   // y el propio workflow: un cambio a cómo se arma la imagen la vuelve a armar
@@ -251,4 +253,28 @@ test('T4b 2.33-Rev_StableDiceQuePasoYLaFirmaEsDeEsteWorkflow @story-2.33 @ac-4 �
   assert.match(t, /echo "::warning::stable no se movió/, 'un «queda» (igual, menor o incomparable) deja un aviso');
   assert.match(t, /--signer-workflow "\$\{GITHUB_REPOSITORY\}\/\.github\/workflows\/site-image\.yml"/, 'la firma tiene que ser de este workflow');
   assert.match(t, /--label "tycon\.image=site"/, 'la etiqueta con la que harness.js update reconoce la imagen del sitio');
+});
+
+test('T7 SiteImageWorkflow_LaSondaCorreAntesDePublicar @story-2.61.1 @ac-2 — la pestaña Cómo trabaja arma su modelo dentro de la imagen antes del escaneo', () => {
+  const t = read();
+  const armar = t.indexOf('docker build -f scripts/site/Dockerfile');
+  const enImagen = t.search(/docker run --rm -v "\$PWD\/scripts\/tests\/lib:\/app\/scripts\/tests\/lib:ro" "\$\{IMAGEN\}:\$\{VERSION\}" node \/app\/scripts\/tests\/lib\/how-it-works-probe\.js/);
+  const enArbol = t.search(/docker run --rm -v "\$PWD:\/arbol:ro" "\$\{IMAGEN\}:\$\{VERSION\}" node \/arbol\/scripts\/tests\/lib\/how-it-works-probe\.js \/arbol/);
+  const escanear = t.indexOf('TRIVY=');
+  assert.ok(armar > 0 && enImagen > armar && enArbol > armar, 'la sonda corre dentro de la imagen recién armada y en el checkout');
+  assert.ok(enImagen < escanear && enArbol < escanear, 'antes del escaneo y de publicar: una imagen rota no se publica');
+  // las dos salidas tienen que ser iguales; distinto, el paso falla con el motivo a la vista
+  assert.match(t, /\[ "\$SONDA_IMAGEN" = "\$SONDA_ARBOL" \] \|\| \{ echo "::error::la pestaña Cómo trabaja no arma en la imagen lo mismo que en el árbol/, 'distinto, frena');
+  assert.match(t, /set -euo pipefail/, 'una sonda que falla corta el paso');
+  // iguales y rotas también frena: la de la imagen tiene que terminar sin problemas (un {error} no lo hace)
+  const guarda = t.match(/case "\$SONDA_IMAGEN" in \*'"problems":\[\]\}'\) ;; \*\) echo "::error::[^"]*"; exit 1 ;; esac/);
+  assert.ok(guarda && t.indexOf(guarda[0]) < escanear, 'rota en los dos lados también frena, antes del escaneo');
+  // el renglón tal cual del workflow, corrido con bash
+  const pasa = (salida) => require('child_process').spawnSync('bash', ['-c', guarda[0]], { env: { PATH: process.env.PATH, SONDA_IMAGEN: salida }, encoding: 'utf8' }).status === 0;
+  assert.strictEqual(pasa('{"error":"x"}'), false, 'un error igual en los dos lados no pasa');
+  assert.strictEqual(pasa('{"steps":[],"controls":[],"packs":[],"problems":["guides no se pudo leer"]}'), false, 'con problemas no pasa');
+  // sana: la salida real de la sonda sobre este árbol
+  const real = require('child_process').spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'tests', 'lib', 'how-it-works-probe.js'), ROOT], { encoding: 'utf8' });
+  assert.strictEqual(real.status, 0, real.stderr);
+  assert.strictEqual(pasa(real.stdout.trim()), true, 'la salida real de la sonda, sana, pasa');
 });
