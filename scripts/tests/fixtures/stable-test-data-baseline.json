@@ -208,7 +208,6 @@
     "scripts/tests/pipeline-debt.test.js",
     "scripts/tests/pr-suites-shards.test.js",
     "scripts/tests/pr-verdict.test.sh",
-    "scripts/tests/prod-access-guard.test.sh",
     "scripts/tests/public-push-guard.test.js",
     "scripts/tests/recompute-zip-notes.test.sh",
     "scripts/tests/release-api-count.test.sh",

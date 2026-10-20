@@ -274,6 +274,18 @@ textos** — si no, un `bash -c` lee la contraseña de producción del Llavero s
 Y cuando el comando nombra bases y esconde lo que corre de una forma que no se puede ver (por
 ejemplo `bash -c "$CMD"`, con la variable definida en otro lado), **frena y lo dice**.
 
+Lo que el comando **sólo escribe** a un archivo y no corre (`cat > server.js <<'EOF'`, `tee x <<EOF`) es contenido,
+no algo que se ejecuta: el freno no lo lee buscando servidores ni el Llavero. Vale sólo si el comando entero usa
+`cat`, `tee`, `mkdir`, `touch`, `echo`, `printf`, `ls` o `true`, sin `$(…)` ni tuberías a otro programa, y
+el archivo tiene nombre fijo, se crea o se pisa (no se anexa) y vive en tu carpeta o en una temporal, fuera de
+carpetas ocultas y de `~/Library`. No puede llamarse como un guion que otro corre (`*.sh`, `*.bash`, `*.zsh`, `*.command`, `Makefile`,
+`package.json`, `Dockerfile`, con mayúsculas o sin); si
+ya existía, no puede ser un enlace ni tener permiso de ejecución; y el comando no puede asignar variables (`PATH=…`).
+Con `<<EOF` sin comillas el shell ejecuta el `$(…)` del cuerpo: ese cuerpo se libera sólo si no tiene `$` ni comillas
+invertidas (con `<<'EOF'` no se expande nada), y el delimitador va escrito simple (`EOF`, `'EOF'` o `"EOF"`). Ante cualquier duda (un permiso negado, una ruta relativa sin la carpeta
+de la sesión) se juzga como siempre. Con cualquier otra cosa (`node server.js`, `bash < x.sh`, `cat >> ~/.zshrc`) se
+juzga como siempre.
+
 Lo que **no** se frena, a propósito, porque es trabajo de todos los días: buscar texto (`grep`,
 `cat`, `echo`), preguntar si un cliente está instalado (`command -v sqlcmd`), listar servidores en
 Azure sin nombrar ninguno, un `git merge` de rutina, o correr un guion del arnés que toca `.tycon/`.
