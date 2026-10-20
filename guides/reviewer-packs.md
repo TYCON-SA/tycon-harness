@@ -45,6 +45,13 @@ FastAPI (el revisor contesta `✅ OK`). Si tu repo tiene mucho Python que no es 
 `surface` dice qué archivos lo vuelven a correr en cada vuelta de revisión; `depth` (`lean`, `standard`, `deep`) dice
 qué tan caro es el modelo que lo corre.
 
+**Un revisor que compara con otros repos** (por ejemplo, con proyectos hermanos del tuyo) los declara en `siblings` del
+manifiesto (`[{ "path": "Producto/Repo", "name": "Repo" }]`, rutas relativas a la raíz de repos). El arnés no los busca:
+mira si cada uno está en su ruta esperada. En el grupo `validacion`, el `prompt` los recibe con `{siblings}`, una línea
+por repo: «Repo: <ruta> (está)» o «… (NO está en esta máquina: no lo busques en otro lado)». Cualquier revisor los pide
+con `node <arnés>/skills/tycon-pipeline/scripts/pipeline.js siblings --repo <repo>`. Que el revisor no rastree el disco
+por su cuenta: desde una raíz como `D:\` cae en repos que no son los que querés comparar.
+
 ## Cómo se activa
 
 **Con el perfil del equipo** (el camino de siempre):
