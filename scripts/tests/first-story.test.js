@@ -192,6 +192,12 @@ test('8.62 Oferta_RecortadaSeVuelveAVer @story-8.62 @ac-10 · si el cierre se le
   assert.match(otra.stderr, /no hay una oferta pendiente/);
 });
 
+test('8.64 Oferta_VolverALaMinimaEnLlano @story-8.64 @ac-4 · el tercer renglón dice cómo volver a la mínima, sin «vuelve atrás»', () => {
+  const tres = Q.upgradeOffer({ effects: EFFECTS, tree: RAIZ, home: casa() });
+  assert.match(tres[2], /^Si después preferís la mínima, la cambiás con una orden: node .* install --profile minimal --yes/);
+  for (const l of tres) assert.doesNotMatch(l, /vuelve atrás/);
+});
+
 test('8.54 T10 Accept_CorreLaCompleta · corre install --profile full --yes del árbol; si sale distinto de 0, failed', () => {
   const toy = path.join(BASE, 'toy-harness.js');
   fs.writeFileSync(toy, "require('fs').writeFileSync(process.env.TOY_ARGS, JSON.stringify(process.argv.slice(2))); process.exit(Number(process.env.TOY_RC || 0));\n");

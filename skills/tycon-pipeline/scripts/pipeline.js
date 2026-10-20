@@ -6091,6 +6091,17 @@ function main() {
     // Las reglas de la organización (stack.rules): cada una con su valor y de dónde salió, y los problemas. Nunca tira:
     // sin configuración salen las de fábrica.
     const r = require('./lib/stack-config.js').orgRules();
+    // La guía de historias, con su ruta absoluta: el validador no corre comandos y con «~» adivinaba la carpeta personal.
+    let tree = null;
+    try {
+      const h = require('./lib/harness-path.js').rutaArnesHook({ env: process.env, home: os.homedir() });
+      tree = h.dir;
+      if (!tree && h.aviso) r.problems.push(h.aviso);
+    } catch (e) {
+      r.problems.push(`no pude ubicar el árbol del arnés para la guía de historias (${e && e.message ? e.message : e})`);
+    }
+    const guia = tree ? path.join(tree, 'story-format.md') : null;
+    r.story_format = guia && fs.existsSync(guia) ? guia : null;
     process.stdout.write(JSON.stringify(r, null, 2) + '\n');
     process.exit(0);
   }

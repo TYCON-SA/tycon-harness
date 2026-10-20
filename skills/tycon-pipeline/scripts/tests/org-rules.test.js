@@ -163,3 +163,19 @@ test('@story-8.48 @ac-19 T23 Step07c_Readability_LanguageFromOrg', () => {
   const step = fs.readFileSync(path.join(SCRIPTS, '..', 'steps', 'step-07c-dod-runtime-gate.md'), 'utf8');
   assert.match(step, /readability-brief/);
 });
+
+test('@story-8.64 @ac-3 T20 OrgRules_RutaDeLaGuia', () => {
+  // medido: el validador no corre comandos, leía «~/.claude/tycon-harness/story-format.md» y adivinó /root
+  const con = tree(undefined);
+  fs.writeFileSync(path.join(con, 'story-format.md'), '# guía\n');
+  assert.equal(orgRules(con).story_format, path.join(con, 'story-format.md'));
+  const sin = orgRules(tree(undefined));
+  assert.equal(sin.story_format, null);
+  assert.deepEqual(sin.problems, [], 'sin guía no es un problema de las reglas: el validador la busca solo');
+  const paso1 = fs.readFileSync(path.join(ROOT, 'skills', 'tycon-pipeline', 'steps', 'step-01-validate-story.md'), 'utf8');
+  assert.match(paso1, /\{story_format\}/);
+  assert.match(paso1, /Si `story_format` es `null`, sacá del pedido la frase/);
+  const validador = fs.readFileSync(path.join(ROOT, 'agents', 'tycon-story-validator.md'), 'utf8');
+  assert.match(validador, /la ruta que trae el pedido/);
+  assert.match(validador, /Sin ruta en el pedido[^\n]*si no la encontrás, decilo en el reporte/);
+});

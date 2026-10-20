@@ -58,7 +58,7 @@ sobre una story limpia para decir que el archivo existe).
 
 ## Workflow de validación
 
-1. **Leer la guía Mary+GOLD en runtime**: Read `~/.claude/tycon-harness/story-format.md`.
+1. **Leer la guía Mary+GOLD en runtime**: Read de la ruta que trae el pedido («La guía de historias está en …»). Sin ruta en el pedido, `story-format.md` en la carpeta del arnés (`~/.claude/tycon-harness/`) con la carpeta personal real, nunca adivinada; si no la encontrás, decilo en el reporte.
 2. **Parsear la story**: leer frontmatter + cuerpo.
 3. **Validar frontmatter** contra el schema de la guía — si falta algún campo, **[VAL-W1] WARNING** (epic, story, title, status, sprint, priority, approach, depends_on).
 4. **Validar estructura**: Title (H1), Status line, ## Story en formato "Como X, quiero Y, para Z", ## Acceptance Criteria con ACs numerados y agrupados H3 (si falta agrupación → **[VAL-W2] WARNING**), ### Tests como tabla (si no cumple → **[VAL-W3] WARNING**).

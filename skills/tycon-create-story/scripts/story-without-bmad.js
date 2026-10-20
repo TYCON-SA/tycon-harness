@@ -317,7 +317,11 @@ function write(repo, answersPath, home) {
     }
     throw new Refusal(`${why}; no la dejé escrita. Revisá esa carpeta y volvé a correrlo`);
   }
-  return { path: target, story: number, phrase: `implementemos la story ${path.relative(repo, target).split(path.sep).join('/')}` };
+  const rel = path.relative(repo, target).split(path.sep).join('/');
+  // el cierre viaja en el resultado: lo que va sólo por la salida de errores el agente no lo dice
+  const closing = `Listo, tu historia quedó en \`${rel}\`. Para implementarla, pedime: «implementemos la story ${rel}». ` +
+    'Si el repo no tiene git o estás en `main`, el recorrido lo prepara solo: crea la rama de trabajo y te lo dice.';
+  return { path: target, story: number, phrase: `implementemos la story ${rel}`, closing };
 }
 
 function main(argv) {

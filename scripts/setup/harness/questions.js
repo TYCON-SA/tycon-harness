@@ -268,7 +268,7 @@ function shortPlan({ effects, profile, version, tree, home = null, tools = [], t
 
 /**
  * La oferta de la instalación completa al cerrar la primera historia: tres renglones —qué suma la
- * completa, dónde rige, cómo se vuelve atrás—, contados desde la lista de efectos como la diferencia entre la completa y
+ * completa, dónde rige, cómo volver a la mínima—, contados desde la lista de efectos como la diferencia entre la completa y
  * la mínima. Si la completa no trae hooks de git ni bloques de reglas, los renglones no los nombran. La orden para volver
  * es la que se corre tal cual; quien la muestra puede pasar la ruta ya escrita (`shownHarness`) cuando `~` no sirve.
  */
@@ -291,7 +291,7 @@ function upgradeOffer({ effects, tree, home = null, shownHarness = null }) {
   return [
     `Qué cambia: la instalación completa suma ${addsText}${hooks ? ` (${plural(hooks, 'hook', 'hooks')} más en total)` : ''}.`,
     `Dónde: ${where.length ? `rige ${where.join(' y ')}, no sólo en este proyecto` : 'sólo en los repos donde trabajás con el arnés'}.`,
-    `Cómo se vuelve atrás: node ${shown} install --profile minimal --yes deja la máquina como está ahora.`,
+    `Si después preferís la mínima, la cambiás con una orden: node ${shown} install --profile minimal --yes`,
   ];
 }
 

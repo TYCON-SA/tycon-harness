@@ -171,3 +171,14 @@ test('PlanVisible_InstruccionesLoDicen @story-8.62 @ac-9 @ac-10', () => {
   assert.match(pendiente[0], /\{ · el pedido de Azure DevOps[^}]*\}/);
   assert.match(paso8, /Sólo los que aplican: el del reloj si hay un timer de Clockify abierto[^]*si\s+la story tiene `ado_work_item`/);
 });
+
+test('Paso8_CierreSinJerga @story-8.64 @ac-2: el cierre no nombra lo que no aplicó, no usa jerga y dice qué sigue en llano', () => {
+  const paso8 = fs.readFileSync(path.join(STEPS, 'step-08-commit-prep.md'), 'utf8');
+  const reglas = paso8.slice(paso8.indexOf('**Reglas del cierre:**'), paso8.indexOf('## 🟢 Limpieza del marker file'));
+  assert.ok(reglas.length > 40, 'no encontré las «Reglas del cierre»');
+  assert.match(reglas, /no corrió porque no aplicaba[^]*no se nombra/);
+  const noAplico = reglas.slice(reglas.indexOf('no corrió porque no aplicaba'));
+  for (const ejemplo of ['pase adversarial', 'Clockify', 'Azure DevOps']) assert.ok(noAplico.slice(0, 300).includes(ejemplo), `la regla no da el ejemplo ${ejemplo}`);
+  for (const palabra of ['«gate»', '«matriz»', '«done»', '«riesgo LOW»', '`/tycon-']) assert.ok(reglas.includes(palabra), `las reglas no prohíben ${palabra}`);
+  assert.match(reglas, /mergeala a main/);
+});
