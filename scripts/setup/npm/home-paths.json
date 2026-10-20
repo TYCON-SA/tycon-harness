@@ -1,5 +1,5 @@
 {
-  "__doc": "Las rutas del estado que el instalador de npx necesita ANTES de que exista el arnés (no puede cargar scripts/setup/harness/tycon-home.js). Tienen que ser las mismas que resuelve tycon-home.js: lo mide scripts/tests/npm-package.test.js (T43). Story 8.40, AC 36. La ruta vieja (legacy_state) se retira con la 8.24.",
+  "__doc": "Ya no lo lee ningún programa: el estado y la configuración los resuelve tycon-home.js desde el árbol bajado (scripts/setup/harness/npx.js). Queda en el paquete para que su lista de archivos no cambie. La ruta vieja (legacy_state) se retira con la 8.24.",
   "own_env": "TYCON_HOME",
   "own_dir": ".tycon",
   "own_state": "state/harness-state.json",

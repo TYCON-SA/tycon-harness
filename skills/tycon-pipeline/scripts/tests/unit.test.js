@@ -805,12 +805,14 @@ test('computeToolingExpected: codegraph solo si hay .codegraph/, workflow-tool s
     const cg = t.expected.find((e) => e.name === 'codegraph');
     assert.ok('binary_found' in cg && 'cli_fallback' in cg, 'codegraph trae binary_found + cli_fallback (no se asserta el valor: depende de la máquina)');
 
-    t = computeToolingExpected(sinCg);
+    // sin decir las integraciones, la función lee la configuración de la máquina que corre la prueba: con CodeGraph
+    // prendido ahí, lo esperaría aunque el repo no tenga índice
+    t = computeToolingExpected(sinCg, { integrations: null });
     assert.ok(!t.expected.some((e) => e.name === 'codegraph'), 'sin .codegraph/ → NO espera codegraph');
 
     // Genérico: MCP servers declarados en .mcp.json del repo (caso codebase_memory en un producto del equipo)
     fs.writeFileSync(path.join(sinCg, '.mcp.json'), JSON.stringify({ mcpServers: { 'codebase_memory': { command: 'x' } } }));
-    t = computeToolingExpected(sinCg);
+    t = computeToolingExpected(sinCg, { integrations: null });
     const cm = t.expected.find((e) => e.name === 'codebase_memory');
     assert.ok(cm, 'MCP declarado en .mcp.json del repo → esperado');
     assert.equal(cm.mcp_prefix, 'mcp__codebase_memory__');

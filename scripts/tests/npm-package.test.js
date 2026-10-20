@@ -1,42 +1,25 @@
 'use strict';
 
 /**
- * npm-package.test.js — la forma del paquete de npm que instala el arnés (story 8.40, tanda A · T3, T5, T10, T11, T12).
+ * npm-package.test.js — el paquete de npm que arranca el instalador del arnés: baja el árbol publicado y le pasa el
+ * trabajo a su `harness.js npx`. Lo que no se puede perder:
+ *   · T1  — corrido contra un GitHub de juguete, baja la punta y corre `harness.js npx` del árbol bajado con las
+ *           opciones tal cual, con el mismo Node y con el commit y el repo en el entorno; sale con el código del hijo.
+ *   · T2  — si el hijo sale distinto de 0, el paquete sale con ese código y la carpeta temporal no queda.
+ *   · T3  — con un Node menor que el piso sale 1 sin un solo pedido a la red, con el comando sugerido.
+ *   · T4  — un árbol bajado sin el subcomando `npx` (una punta vieja) sale 1 diciendo el motivo, sin correr nada.
+ *   · T5  — el archivo tiene 200 líneas o menos, ningún `require` fuera del núcleo, no nombra su versión, el paquete
+ *           trae los mismos archivos de hoy y su versión es 1.1.0.
+ *   · 8.40 T3 — el shebang, el repo de fábrica una sola vez, el piso de Node en 22, ningún hijo lanzado como `node`,
+ *           `--help` corto sin red ni HOME, y `--repo` o las variables de prueba mal escritos salen 2 sin red.
+ *   · T10 / T10b / T10c — package.json: semver, bin, `files`, licencia, repo, acceso público, `engines.node` con el piso;
+ *           el semver se compara y se rechaza como lo hace npm.
+ *   · T11 — scripts/ci/npm-package-version.js: un cambio bajo scripts/setup/npm/ sin subir `version` es rojo.
+ *   · T12 — el README dice lo que el paquete NO es.
+ *   · T35b — un proxy https:// se habla por TLS (como curl), para un destino https (CONNECT) y uno http.
  *
- * El paquete (`scripts/setup/npm/`) es un INSTALADOR chico, no el arnés: un solo programa sin dependencias que baja la
- * versión publicada de GitHub y corre `harness.js install`. Lo que no se puede perder:
- *   · T3  — `npm pack --dry-run` lista exactamente package.json, index.js, home-paths.json, README.md y LICENSE (la copia el workflow);
- *           sin `dependencies`; el shebang en la línea 1; 420 líneas como mucho (con la detección de Claude Code y Codex); el repo de fábrica escrito UNA vez; el
- *           piso de Node para instalar en 22 (harness.js sigue en 20, sólo para actualizar); ningún hijo lanzado como `node` por nombre (siempre process.execPath);
- *           `--help` sale 0 sin red ni HOME y nombra el archivo que corre y dónde se ve la procedencia.
- *   · T5  — `requisites()` exportada: Windows pide pwsh 7 (con `winget install Microsoft.PowerShell`) y tar; fuera de
- *           Windows, bash, tar y python3 (éste salvo que se pida SÓLO Codex); ninguna variable de entorno cambia la
- *           plataforma; un Node por debajo del piso se nombra.
- *   · T10 — package.json: versión semver, bin `tycon-harness` → index.js, `files` con los cinco, Apache-2.0, el repo
- *           público, `publishConfig.access: public`, `engines.node` con el piso.
- *   · T11 — scripts/ci/npm-package-version.js: un cambio bajo scripts/setup/npm/ sin subir `version` es rojo con la línea
- *           «subí version»; con la subida, verde; un cambio que no toca la carpeta no la mira.
- *   · T12 — el README del paquete (la página de npmjs.com) dice lo que el paquete NO es.
- *   · T5b — (pase adversarial de la 8.40, clases 5 y 6) `--tool` se lee como lo lee install (tools.parseOption: comas,
- *           mayúsculas, espacios) y python3 se pide justo cuando install lo va a pedir; en una Mac sin las herramientas de
- *           línea de comandos, /usr/bin/python3 no cuenta (como get-harness.sh): se nombra con `xcode-select --install`.
- *   · T10c — (clase 8) la versión del paquete se rechaza si npm la rechaza o la normaliza: identificadores vacíos, ceros
- *           adelante, metadatos de build, más de 256 caracteres; lo que acepta, el semver de npm lo da por válido tal cual
- *           (si está en la máquina).
- *   · T5c — (segunda vuelta de revisores) un xcode-select que no se pudo correr (no está, o lo corta una señal) no
- *           afirma que faltan las herramientas; uno que corre y dice que no están, sí.
- *   · T36 — (clases 1 y 2) la dirección del repo del perfil se acepta con el MISMO criterio que parseTeam (team.js), con
- *           paridad caso por caso.
- *   · T37 — (clases 1, 2 y 3) corrido contra un GitHub de juguete y un harness.js de mentira: las URL de GitHub y la de
- *           clonar de Azure llegan a install --team; TYCON_AZURE_TOKEN se guarda (azure.token); la credencial de Azure
- *           del gestor de git alcanza (no se pide ni se sale 1), y sin ninguna se sale 1 antes de bajar.
- *   · T35b — (clase 9) un proxy https:// se habla por TLS (como curl), para un destino https (CONNECT) y uno http.
- *   · T40 — (segunda vuelta) un config.json que está y no se lee sale 1 nombrándolo, sin bajar ni instalar ni tocarlo;
- *           uno que no existe es «sin permiso guardado».
- *   · 8.46 T15 — la ayuda dice el defecto «para mí», `--audience team|org`, el plan corto y el único sí; no dice «sin
- *           valor por defecto».
- *   · 8.46 T44 — sin Claude Code ni Codex, la ayuda de index.js (que no puede cargar tools.js) es la misma que la de
- *           noneFound para cada sistema, y la detección da lo mismo que tools.detect en los mismos casos.
+ * Los requisitos, «para quién», `--team`, el agente instalado y el caso «ya instalado» viven en
+ * scripts/tests/npx-entry.test.js (el subcomando `npx` del árbol).
  *
  * Sin red: npm pack --dry-run no la usa (y se le cierra con npm_config_offline). Repos de juguete con git de verdad.
  * Correr: node --test scripts/tests/npm-package.test.js
@@ -56,33 +39,128 @@ const VERSION_TOOL = path.join(ROOT, 'scripts', 'ci', 'npm-package-version.js');
 const read = (f) => fs.readFileSync(f, 'utf8');
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 const npmBin = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const SHA = 'a'.repeat(40);
+const FILES = ['LICENSE', 'README.md', 'home-paths.json', 'index.js', 'package.json'];
 
-test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
+/**
+ * El paquete corrido de verdad (sin terminal) contra un GitHub de juguete que sirve un árbol con un `harness.js` de
+ * mentira, que anota cada llamada. Opciones: el entorno extra y `npx` (el árbol trae el subcomando, o no).
+ */
+async function toyRun(box, args, extraEnv = {}, { npx = true } = {}) {
+  const script = INDEX;
+  const http = require('http');
+  const tgz = path.join(box, npx ? 'arnes.tgz' : 'arnes-vieja.tgz');
+  if (!fs.existsSync(tgz)) {
+    const setup = path.join(box, npx ? 'src-n' : 'src-v', 'example-harness-main', 'scripts', 'setup');
+    fs.mkdirSync(path.join(setup, 'harness'), { recursive: true });
+    // anota cada llamada (argumentos, Node, commit y repo del entorno, lo que recibe por stdin) y sale con FAKE_EXIT
+    fs.writeFileSync(path.join(setup, 'harness.js'), [
+      "const fs=require('fs');const a=process.argv.slice(2);let i='';",
+      "if(a[0]==='config'){try{i=fs.readFileSync(0,'utf8')}catch(_){}}",
+      "fs.appendFileSync(process.env.FAKE_LOG,JSON.stringify({argv:a,input:i,exec:process.execPath,file:__filename,commit:process.env.TYCON_NPX_COMMIT||null,repo:process.env.TYCON_NPX_REPO||null})+'\\n');",
+      "process.exitCode=Number(process.env.FAKE_EXIT||0);", ''].join('\n'));
+    if (npx) fs.writeFileSync(path.join(setup, 'harness', 'npx.js'), "'use strict';\n// el subcomando npx de juguete\n");
+    execFileSync('tar', ['-czf', tgz, '-C', path.join(box, npx ? 'src-n' : 'src-v'), 'example-harness-main']);
+  }
+  const seen = [];
+  const srv = http.createServer((q, r) => {
+    seen.push(q.url);
+    if (q.url.includes('/info/refs')) { r.writeHead(200); return r.end(Buffer.from(`001e# service=git-upload-pack\n0000003f${SHA} refs/heads/main\n0000`, 'latin1')); }
+    if (q.url.includes('/tar.gz/')) { r.writeHead(200); return r.end(fs.readFileSync(tgz)); }
+    r.writeHead(404); r.end('{}');
+  });
+  await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const home = fs.mkdtempSync(path.join(box, 'home-'));
+  const temp = fs.mkdtempSync(path.join(box, 'temp-'));   // la carpeta temporal del sistema de esta corrida: al final tiene que estar vacía
+  const log = path.join(home, 'fake.log');
+  fs.writeFileSync(path.join(home, '.claude.json'), '{}');
+  const env = Object.assign({ PATH: process.env.PATH, HOME: home, USERPROFILE: home, TMPDIR: temp, TEMP: temp, TMP: temp, TYCON_HOME: path.join(home, '.tycon'), FAKE_LOG: log,
+    TYCON_RELEASE_API: base, TYCON_RELEASE_GIT: base, TYCON_RELEASE_ARCHIVE: base, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, 'gitconfig') }, extraEnv);
+  if (process.platform === 'win32') for (const k of ['SystemRoot', 'PATHEXT']) env[k] = process.env[k];
+  const child = require('child_process').spawn(process.execPath, [script, ...args], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { out += d; });
+  const code = await new Promise((res) => child.on('close', res));
+  srv.close();
+  const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+  return { code, out, calls, seen, home, left: fs.readdirSync(temp) };
+}
+
+test('T1 NpmPackage_Arranque_DelegaEnElArbol @story-8.80 @ac-1', async () => {
+  const box = tmp('npm-arranque-');
+  try {
+    const args = ['--team', 'acme/team-profile', '--tool', 'codex', '--yes'];
+    const r = await toyRun(box, args);
+    assert.strictEqual(r.code, 0, r.out);
+    assert.strictEqual(r.calls.length, 1, `un solo hijo: ${JSON.stringify(r.calls)}`);
+    const c = r.calls[0];
+    assert.deepStrictEqual(c.argv, ['npx', ...args], 'las opciones, tal cual, detrás de `npx`');
+    assert.strictEqual(c.exec, process.execPath, 'el mismo Node');
+    assert.ok(c.file.endsWith(path.join('scripts', 'setup', 'harness.js')), 'el harness.js del árbol bajado');
+    assert.strictEqual(c.commit, SHA, 'el commit que bajó, en el entorno');
+    assert.strictEqual(c.repo, 'TYCON-SA/tycon-harness', 'el repo, en el entorno');
+    assert.ok(r.seen.some((u) => u.includes('/info/refs')) && r.seen.some((u) => u.includes(`/tar.gz/${SHA}`)), `bajó por las rutas públicas: ${JSON.stringify(r.seen)}`);
+    assert.ok(!fs.existsSync(path.dirname(path.dirname(path.dirname(c.file)))), 'la carpeta del árbol bajado ya no está');
+    assert.deepStrictEqual(r.left, [], 'la carpeta temporal se borró');
+    // --repo propio: llega al hijo en el entorno y también en las opciones
+    const own = await toyRun(box, ['--repo=acme/harness', '--yes']);
+    assert.strictEqual(own.code, 0, own.out);
+    assert.strictEqual(own.calls[0].repo, 'acme/harness');
+    assert.deepStrictEqual(own.calls[0].argv, ['npx', '--repo=acme/harness', '--yes']);
+    assert.ok(own.seen.some((u) => u.startsWith('/acme/harness.git/info/refs')), JSON.stringify(own.seen));
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+test('T2 NpmPackage_HijoFalla_BorraIgual @story-8.80 @ac-1', async () => {
+  const box = tmp('npm-falla-');
+  try {
+    const r = await toyRun(box, ['--yes'], { FAKE_EXIT: '3' });
+    assert.strictEqual(r.code, 3, r.out);
+    assert.strictEqual(r.calls.length, 1);
+    assert.deepStrictEqual(r.left, [], 'la carpeta temporal no quedó');
+    assert.ok(!fs.existsSync(path.dirname(path.dirname(path.dirname(r.calls[0].file)))), 'el árbol bajado ya no está');
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+test('T3 NpmPackage_NodeViejo_NoBaja @story-8.80 @ac-2', async () => {
+  const http = require('http');
+  let hits = 0;
+  const srv = http.createServer((q, r) => { hits++; r.writeHead(404); r.end('{}'); });
+  await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+  const base = `http://127.0.0.1:${srv.address().port}`;
+  const I = require(INDEX);
+  const write = process.stderr.write; let said = '';
+  process.stderr.write = (s) => { said += s; return true; };
+  let code;
+  try { code = await I.main(['--yes'], { PATH: process.env.PATH, TYCON_RELEASE_API: base, TYCON_RELEASE_GIT: base, TYCON_RELEASE_ARCHIVE: base }, '20.19.0'); }
+  finally { process.stderr.write = write; srv.close(); }
+  assert.strictEqual(code, 1, said);
+  assert.strictEqual(hits, 0, 'ni un pedido al servidor');
+  assert.match(said, /node 20\.19\.0/); assert.match(said, /Node 22 o más/); assert.match(said, /brew install node|nodejs\.org/, 'con el comando sugerido');
+  assert.match(said, /no lo corro/, 'la sugerencia se imprime, nunca se corre');
+});
+
+test('T4 NpmPackage_PuntaVieja_LoDice @story-8.80 @ac-3', async () => {
+  const box = tmp('npm-vieja-');
+  try {
+    const r = await toyRun(box, ['--yes'], {}, { npx: false });
+    assert.strictEqual(r.code, 1, r.out);
+    assert.match(r.out, /la versión publicada todavía no sabe recibir este paquete/);
+    assert.deepStrictEqual(r.calls, [], 'no corrió nada del árbol bajado');
+    assert.deepStrictEqual(r.left, [], 'la carpeta temporal se borró también acá');
+  } finally { fs.rmSync(box, { recursive: true, force: true }); }
+});
+
+test('T5 NpmPackage_SinNumeroNiDependencias @story-8.80 @ac-4', (t) => {
   const pkg = JSON.parse(read(path.join(PKG_DIR, 'package.json')));
+  const src = read(INDEX);
+  assert.ok(src.split('\n').length <= 200, `index.js tiene ${src.split('\n').length} líneas (tope 200)`);
   assert.strictEqual(pkg.dependencies, undefined, 'sin dependencies');
   assert.strictEqual(pkg.devDependencies, undefined, 'sin devDependencies');
-  const src = read(INDEX);
-  assert.strictEqual(src.split('\n')[0], '#!/usr/bin/env node', 'el shebang en la línea 1');
-  assert.ok(src.split('\n').length <= 420, `index.js tiene ${src.split('\n').length} líneas (tope 420)`);
-  assert.strictEqual((src.match(/^const REPO = '[^']+';/gm) || []).length, 1, 'el repo de fábrica, una sola vez');
-  // el piso para INSTALAR es 22 (decisión del dueño, 2026-10-16); harness.js sigue en 20: lo tolera sólo para actualizar
-  const floorHarness = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
-  const floorPkg = /^const NODE_FLOOR = (\d+);/m.exec(src);
-  assert.ok(floorPkg, 'index.js declara NODE_FLOOR');
-  assert.strictEqual(floorPkg[1], '22', 'el piso del instalador es 22');
-  assert.strictEqual(floorHarness, '20', 'harness.js sigue en 20 (actualizar una instalación existente)');
-  assert.ok(!/spawnSync\(\s*['"]node['"]/.test(src) && !/spawn\(\s*['"]node['"]/.test(src) && !/execFileSync\(\s*['"]node['"]/.test(src), 'ningún hijo se lanza como `node` por nombre');
-  assert.ok(/process\.execPath/.test(src), 'el hijo corre con process.execPath');
-  assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url|\.\/home-paths\.json)['"])/.test(src), 'sólo módulos del núcleo de Node y las rutas del paquete');
-  // --help: sale 0 sin red ni HOME (una HOME que no existe y la red apuntada a un puerto cerrado)
-  const h = spawnSync(process.execPath, [INDEX, '--help'], { encoding: 'utf8', env: Object.assign({}, process.env, { HOME: path.join(os.tmpdir(), 'no-existe-npm-help'), USERPROFILE: path.join(os.tmpdir(), 'no-existe-npm-help'), TYCON_RELEASE_API: 'http://127.0.0.1:9', TYCON_RELEASE_GIT: 'http://127.0.0.1:9', TYCON_RELEASE_ARCHIVE: 'http://127.0.0.1:9' }) });
-  assert.strictEqual(h.status, 0, h.stderr);
-  const out = h.stdout + h.stderr;
-  assert.ok(out.includes(fs.realpathSync(INDEX)) || out.includes(INDEX), 'nombra el archivo que corre');
-  assert.match(out, /Provenance/);
-  assert.match(out, /npm view @tyconsa\/harness dist\.attestations/);
-  assert.ok(!fs.existsSync(path.join(os.tmpdir(), 'no-existe-npm-help')), '--help no creó la HOME');
-  // npm pack --dry-run: exactamente los cinco (LICENSE lo copia el workflow antes de empaquetar)
+  assert.ok(!/require\(\s*['"](?!(fs|os|path|http|https|net|tls|tty|child_process|crypto|url)['"])/.test(src), 'sólo módulos del núcleo de Node');
+  assert.ok(!/package\.json/.test(src) && !src.includes(pkg.version), 'no lee ni nombra el número de versión del paquete');
+  assert.strictEqual(pkg.version, '1.1.0');
   const npm = spawnSync(npmBin, ['--version'], { encoding: 'utf8', shell: process.platform === 'win32' });
   if (npm.status !== 0) { t.diagnostic('NO MEDIDO: no hay npm en esta máquina (la lista del paquete)'); return; }
   const box = tmp('npm-pack-');
@@ -92,56 +170,43 @@ test('T3 NpmPackage_OneFile_NoDeps_Help', (t) => {
     fs.writeFileSync(path.join(box, 'sobra.txt'), 'no tiene que entrar al paquete\n');
     const r = spawnSync(npmBin, ['pack', '--dry-run', '--json'], { cwd: box, encoding: 'utf8', shell: process.platform === 'win32', env: Object.assign({}, process.env, { npm_config_offline: 'true', npm_config_cache: path.join(box, '.npm-cache'), npm_config_update_notifier: 'false' }) });
     assert.strictEqual(r.status, 0, r.stderr);
-    const files = JSON.parse(r.stdout)[0].files.map((f) => f.path).sort();
-    assert.deepStrictEqual(files, ['LICENSE', 'README.md', 'home-paths.json', 'index.js', 'package.json']);
+    assert.deepStrictEqual(JSON.parse(r.stdout)[0].files.map((f) => f.path).sort(), FILES, 'los mismos archivos de hoy');
   } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });
 
-test('T5 NpxInstaller_Requisites_PerPlatform', () => {
-  const I = require(INDEX);
-  assert.strictEqual(typeof I.requisites, 'function', 'requisites() exportada');
-  const have = (...names) => (n) => names.includes(n);
-  const NEW = '24.0.0';
-  // Windows sin pwsh: lo nombra con el comando sugerido; tar sí está
-  const win = I.requisites({ platform: 'win32', tools: have('tar'), nodeVersion: NEW, args: [] });
-  assert.strictEqual(win.length, 1, JSON.stringify(win));
-  assert.match(win[0], /pwsh/); assert.match(win[0], /7/); assert.match(win[0], /winget install Microsoft\.PowerShell/);
-  assert.match(win[0], /no lo corro/);
-  // en Windows no se piden bash ni python3
-  assert.deepStrictEqual(I.requisites({ platform: 'win32', tools: have('tar', 'pwsh'), nodeVersion: NEW, args: [] }), []);
-  // una Mac sin bash: lo nombra (brew)
-  const mac = I.requisites({ platform: 'darwin', tools: have('tar', 'python3'), nodeVersion: NEW, args: [] });
-  assert.strictEqual(mac.length, 1); assert.match(mac[0], /falta bash/); assert.match(mac[0], /brew install bash/);
-  // sólo Codex: python3 no hace falta; Claude y Codex: sí
-  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: have('tar', 'bash'), nodeVersion: NEW, args: ['--tool', 'codex'] }), []);
-  const both = I.requisites({ platform: 'darwin', tools: have('tar', 'bash'), nodeVersion: NEW, args: ['--tool', 'claude', '--tool', 'codex'] });
-  assert.strictEqual(both.length, 1); assert.match(both[0], /python3/);
-  // sin opciones (Claude Code por defecto): python3 es requisito
-  assert.strictEqual(I.requisites({ platform: 'linux', tools: have('tar', 'bash'), nodeVersion: NEW, args: [] }).length, 1);
-  // un Node viejo se nombra con la versión que hay y el piso (20 ya no alcanza para instalar)
-  const old = I.requisites({ platform: 'darwin', tools: have('tar', 'bash', 'python3'), nodeVersion: '20.19.0', args: [] });
-  assert.strictEqual(old.length, 1); assert.match(old[0], /20\.19\.0/); assert.match(old[0], new RegExp(String(I.NODE_FLOOR)));
-  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: have('tar', 'bash', 'python3'), nodeVersion: '22.0.0', args: [] }), [], 'Node 22 alcanza');
-  // dos faltas: una línea por cada una
-  assert.strictEqual(I.requisites({ platform: 'darwin', tools: have(), nodeVersion: NEW, args: [] }).length, 3);
-  // Windows: tar por ruta absoluta (el de System32), nunca el primero que aparezca (CreateProcess mira antes la carpeta
-  // actual): un tar.exe en el PATH no lo cumple, y la falta se dice
-  assert.strictEqual(I.tarCmd({ SystemRoot: 'C:\\Windows' }, 'win32'), 'C:\\Windows\\System32\\tar.exe');
-  assert.strictEqual(I.tarCmd({}, 'darwin'), 'tar');
-  const box = tmp('npm-wintar-');
-  try {
-    fs.writeFileSync(path.join(box, 'tar.exe'), '');
-    const noSys = I.requisites({ platform: 'win32', env: { PATH: box, PATHEXT: '.EXE', SystemRoot: path.join(box, 'no-existe') }, nodeVersion: NEW, args: [] });
-    assert.ok(noSys.some((l) => /falta tar/.test(l)), `un tar.exe en el PATH no cuenta: ${JSON.stringify(noSys)}`);
-    fs.mkdirSync(path.join(box, 'win', 'System32'), { recursive: true }); fs.writeFileSync(path.join(box, 'win', 'System32', 'tar.exe'), '');
-    if (process.platform !== 'win32') {   // path.win32.join arma la ruta con «\»: sólo se puede pisar en un sistema de archivos de Windows
-      assert.match(I.tarCmd({ SystemRoot: path.join(box, 'win') }, 'win32'), /System32\\tar\.exe$/);
-    } else assert.ok(!I.requisites({ platform: 'win32', env: { PATH: '', SystemRoot: path.join(box, 'win') }, tools: null, nodeVersion: NEW, args: [] }).some((l) => /falta tar/.test(l)));
-  } finally { fs.rmSync(box, { recursive: true, force: true }); }
-  // ninguna variable de entorno cambia la plataforma: la lee de process.platform (o del argumento), nada más
+test('8.40 T3 NpmPackage_Shebang_Floor_Help', () => {
   const src = read(INDEX);
+  assert.strictEqual(src.split('\n')[0], '#!/usr/bin/env node', 'el shebang en la línea 1');
+  assert.strictEqual((src.match(/^const REPO = '[^']+';/gm) || []).length, 1, 'el repo de fábrica, una sola vez');
+  // el piso para INSTALAR es 22 (decisión del dueño, 2026-10-16); harness.js sigue en 20: lo tolera sólo para actualizar
+  const floorHarness = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
+  const floorPkg = /^const NODE_FLOOR = (\d+);/m.exec(src);
+  assert.ok(floorPkg, 'index.js declara NODE_FLOOR');
+  assert.strictEqual(floorPkg[1], '22', 'el piso del instalador es 22');
+  assert.strictEqual(floorHarness, '20', 'harness.js sigue en 20 (actualizar una instalación existente)');
+  assert.ok(!/spawnSync\(\s*['"]node['"]/.test(src) && !/spawn\(\s*['"]node['"]/.test(src) && !/execFileSync\(\s*['"]node['"]/.test(src), 'ningún hijo se lanza como `node` por nombre');
+  assert.ok(/process\.execPath/.test(src), 'el hijo corre con process.execPath');
   assert.ok(!/(spawnSync|launch)\([^)]*?['"]tar['"]\s*,/.test(src), 'tar nunca por nombre suelto: siempre tarCmd()');
-  assert.ok(!/env\.[A-Z_]*(PLATFORM|OSTYPE|\bOS\b)/.test(src) && !/process\.env\.OS\b/.test(src), 'la plataforma no sale de una variable');
+  // --help: sale 0 sin red ni HOME (una HOME que no existe y la red apuntada a un puerto cerrado), corto y propio
+  const none = path.join(os.tmpdir(), 'no-existe-npm-help');
+  const dead = { TYCON_RELEASE_API: 'http://127.0.0.1:9', TYCON_RELEASE_GIT: 'http://127.0.0.1:9', TYCON_RELEASE_ARCHIVE: 'http://127.0.0.1:9' };
+  const h = spawnSync(process.execPath, [INDEX, '--help'], { encoding: 'utf8', env: Object.assign({}, process.env, { HOME: none, USERPROFILE: none }, dead) });
+  assert.strictEqual(h.status, 0, h.stderr);
+  const out = h.stdout + h.stderr;
+  assert.ok(out.split('\n').length <= 14, 'una ayuda corta');
+  assert.ok(out.includes(fs.realpathSync(INDEX)) || out.includes(INDEX), 'nombra el archivo que corre');
+  assert.match(out, /harness\.js/, 'dice que el trabajo lo hace el instalador del arnés bajado');
+  assert.match(out, /Provenance/);
+  assert.match(out, /npm view @tyconsa\/harness dist\.attestations/);
+  assert.ok(!fs.existsSync(none), '--help no creó la HOME');
+  // --repo y las variables de prueba mal escritas: salen 2 sin tocar la red
+  const bad = (args, env) => spawnSync(process.execPath, [INDEX, ...args], { encoding: 'utf8', env: Object.assign({}, process.env, dead, env) });
+  for (const args of [['--repo', '../x'], ['--repo=acme/..'], ['--repo', 'sin-barra'], ['--repo']]) {
+    const r = bad(args, {});
+    assert.strictEqual(r.status, 2, `${args.join(' ')}: ${r.stderr}`); assert.match(r.stderr, /--repo pide/);
+  }
+  const ftp = bad(['--yes'], { TYCON_RELEASE_API: 'ftp://x' });
+  assert.strictEqual(ftp.status, 2, ftp.stderr); assert.match(ftp.stderr, /TYCON_RELEASE_API tiene que empezar con http/);
 });
 
 test('T10 NpmPackage_VersionIsSemverAndStartsAt1', () => {
@@ -151,7 +216,7 @@ test('T10 NpmPackage_VersionIsSemverAndStartsAt1', () => {
   assert.ok(VT.parseSemver(pkg.version), `version semver: ${pkg.version}`);
   assert.ok(VT.compareSemver(pkg.version, '1.0.0') >= 0, 'desde 1.0.0');
   assert.deepStrictEqual(pkg.bin, { 'tycon-harness': 'index.js' });
-  assert.deepStrictEqual([...pkg.files].sort(), ['LICENSE', 'README.md', 'home-paths.json', 'index.js', 'package.json']);
+  assert.deepStrictEqual([...pkg.files].sort(), FILES);
   assert.strictEqual(pkg.license, 'Apache-2.0');
   const remote = JSON.parse(read(path.join(ROOT, 'scripts', 'setup', 'public-remotes.json'))).remotes[0];
   const repoUrl = typeof pkg.repository === 'string' ? pkg.repository : pkg.repository.url;
@@ -239,53 +304,6 @@ test('T12 NpmPackage_ReadmeSaysWhatItIsNot', () => {
   assert.ok(/npx @tyconsa\/harness@latest/.test(text), 'la línea lleva @latest');
 });
 
-// ── pase adversarial de la 8.40 (las clases confirmadas, como regresión) ─────────────────────────────────────────────
-
-test('T5b NpxInstaller_Requisites_ToolLikeInstall_MacPythonStub', () => {
-  const I = require(INDEX);
-  const TL = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js'));
-  const NEW = '24.0.0';
-  const have = (...names) => (n) => names.includes(n);
-  // clase 6: python3 se pide justo cuando install instala Claude Code, leyendo --tool como lo lee install
-  for (const args of [['--tool', 'codex', '--tool', 'CLAUDE'], ['--tool', 'Codex'], ['--tool', ' codex '], ['--tool', 'codex,claude'],
-    ['--tool=CODEX'], ['--tool', 'codex'], ['--tool', 'claude'], ['--tool', 'Codex,'], ['--tool=codex', '--tool=Claude']]) {
-    const values = args.flatMap((a, i) => (a === '--tool' ? [args[i + 1]] : (a.startsWith('--tool=') ? [a.slice(7)] : [])));
-    const p = TL.parseOption(values);
-    assert.ok(p.ok, `${JSON.stringify(args)}: install lo acepta`);
-    const needsPython = !(p.tools.length === 1 && p.tools[0] === 'codex');
-    const gate = I.requisites({ platform: 'darwin', tools: have('tar', 'bash'), nodeVersion: NEW, args, clt: true });
-    assert.strictEqual(gate.some((l) => /python3/.test(l)), needsPython, `${JSON.stringify(args)}: install instala ${JSON.stringify(p.tools)}`);
-  }
-  // clase 5: en una Mac sin las herramientas de línea de comandos, /usr/bin/python3 sólo pide instalarlas
-  const stub = (n) => (n === 'python3' ? '/usr/bin/python3' : ['tar', 'bash'].includes(n));
-  const noClt = I.requisites({ platform: 'darwin', tools: stub, nodeVersion: NEW, args: [], clt: false });
-  assert.strictEqual(noClt.length, 1, JSON.stringify(noClt));
-  assert.match(noClt[0], /python3/); assert.match(noClt[0], /xcode-select --install/); assert.match(noClt[0], /no lo corro/);
-  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: stub, nodeVersion: NEW, args: [], clt: true }), [], 'con las herramientas, el de /usr/bin vale');
-  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: (n) => (n === 'python3' ? '/opt/homebrew/bin/python3' : true), nodeVersion: NEW, args: [], clt: false }), [], 'otro python3 primero en el PATH no depende de las herramientas');
-  assert.deepStrictEqual(I.requisites({ platform: 'darwin', tools: stub, nodeVersion: NEW, args: ['--tool', 'codex'], clt: false }), [], 'sólo Codex no pide python3');
-  assert.deepStrictEqual(I.requisites({ platform: 'linux', tools: stub, nodeVersion: NEW, args: [], clt: false }), [], 'fuera de la Mac no se mira');
-});
-
-test('T5c NpxInstaller_Requisites_XcodeSelectUnrunnable_NoClaim', (t) => {
-  if (process.platform === 'win32') { t.diagnostic('NO MEDIDO: el xcode-select de mentira es un guion de shell'); return; }
-  const I = require(INDEX);
-  const stub = (n) => (n === 'python3' ? '/usr/bin/python3' : ['tar', 'bash'].includes(n));
-  const dir = tmp('npx-xcode-');
-  const before = process.env.PATH;
-  const fake = (body) => { const bin = fs.mkdtempSync(path.join(dir, 'bin-')); const f = path.join(bin, 'xcode-select'); fs.writeFileSync(f, `#!/bin/sh\n${body}\n`); fs.chmodSync(f, 0o755); return bin; };
-  const gate = (PATH) => { process.env.PATH = PATH; try { return I.requisites({ platform: 'darwin', tools: stub, nodeVersion: '24.0.0', args: [] }); } finally { process.env.PATH = before; } };
-  try {
-    // no se pudo correr: no hay xcode-select en el PATH, o una señal lo corta. No sé si faltan: no lo afirmo
-    assert.deepStrictEqual(gate(fs.mkdtempSync(path.join(dir, 'vacio-'))), [], 'sin xcode-select no se afirma que faltan las herramientas');
-    assert.deepStrictEqual(gate(fake('kill -9 $$')), [], 'un xcode-select cortado por una señal no afirma que faltan');
-    // corrió y dijo que no están: se nombran (el control)
-    const no = gate(fake('exit 2'));
-    assert.strictEqual(no.length, 1, JSON.stringify(no)); assert.match(no[0], /xcode-select --install/);
-    assert.deepStrictEqual(gate(fake('echo /Library/Developer/CommandLineTools; exit 0')), [], 'con las herramientas, nada falta');
-  } finally { process.env.PATH = before; fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
 test('T10c NpmPackageVersion_RejectsWhatNpmRejects', () => {
   const { parseSemver } = require(VERSION_TOOL);
   const bad = ['1.0.1-a..b', '1.0.1-a.', '1.0.1-.a', '1.0.1-01', '1.0.1-a.01', '1.0.0-', '1.0.0+', '1.0.0+a..b', '01.0.0', '1.00.0',
@@ -301,100 +319,6 @@ test('T10c NpmPackageVersion_RejectsWhatNpmRejects', () => {
   for (const v of [...bad, ...good]) {
     if (parseSemver(v)) assert.strictEqual(semver.valid(v), v, `«${v}»: lo acepto y npm lo publica tal cual`);
   }
-});
-
-test('T36 NpxInstaller_TeamAddress_SameCriterionAsParseTeam', () => {
-  const I = require(INDEX);
-  const T = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'team.js'));
-  assert.strictEqual(typeof I.teamShape, 'function', 'teamShape() exportada');
-  const cases = ['acme/team-profile', ' acme/team-profile ', 'https://github.com/acme/team-profile', 'https://github.com/acme/team-profile.git',
-    'https://github.com/acme/team-profile/', 'https://GitHub.com/acme/team-profile.git', ['https://usuario', 'github.com/acme/team-profile'].join('@'),
-    'https://dev.azure.com/acme/Proj/_git/team-profile', ['https://acme', 'dev.azure.com/acme/Proj/_git/team-profile'].join('@'),
-    'https://dev.azure.com/acme/Proj/_git/team-profile/', 'https://dev.azure.com/acme/Proj/_git/team-profile.git',
-    'https://DEV.AZURE.COM/acme/Mi%20Proyecto/_git/perfil', 'https://dev.azure.com/acme/Proyecto (uno)/_git/perfil',
-    'https://dev.azure.com/acme/%2e%2e/_git/perfil', 'https://dev.azure.com/../acme/_git/perfil', 'https://dev.azure.com/acme/../_git/perfil',
-    'https://dev.azure.com/acme/Pro<j/_git/perfil', 'https://dev.azure.com/acme/Proj/perfil', 'https://dev.azure.com/acme/Proj/_git/a/b',
-    'acme/..', '../perfil', './.', 'acme', 'acme/perfil/extra', 'http://github.com/acme/perfil', 'https://gitlab.com/acme/perfil',
-    'git@github.com:acme/perfil.git', '', 'acme/per fil', 'https://github.com/acme/..'];
-  for (const c of cases) {
-    const p = T.parseTeam(c);
-    const mine = I.teamShape(c);
-    assert.strictEqual(Boolean(mine), p.ok, `«${c}»: parseTeam dice ${p.ok}`);
-    if (p.ok) { assert.strictEqual(mine.host, p.host, c); assert.strictEqual(mine.repo, p.repo, c); }
-  }
-});
-
-/** El instalador del paquete corrido de verdad (sin terminal) contra un GitHub de juguete que sirve un harness.js de mentira. */
-async function toyRun(box, args, extraEnv) {
-  const http = require('http');
-  const sha = 'a'.repeat(40);
-  const tgz = path.join(box, 'arnes.tgz');
-  if (!fs.existsSync(tgz)) {
-    const top = path.join(box, 'src', 'example-harness-main', 'scripts', 'setup');
-    fs.mkdirSync(top, { recursive: true });
-    // anota cada llamada (argumentos y lo que recibe por stdin) y sale 0
-    fs.writeFileSync(path.join(top, 'harness.js'), "const fs=require('fs');let i='';if(process.argv[2]==='config'){try{i=fs.readFileSync(0,'utf8')}catch(_){}}\nfs.appendFileSync(process.env.FAKE_LOG,JSON.stringify({argv:process.argv.slice(2),input:i})+'\\n');\n");
-    execFileSync('tar', ['-czf', tgz, '-C', path.join(box, 'src'), 'example-harness-main']);
-  }
-  const seen = [];
-  const srv = http.createServer((q, r) => {
-    seen.push(q.url);
-    if (q.url.includes('/info/refs')) { r.writeHead(200); return r.end(Buffer.from(`001e# service=git-upload-pack\n0000003f${sha} refs/heads/main\n0000`, 'latin1')); }
-    if (q.url.includes('/tar.gz/')) { r.writeHead(200); return r.end(fs.readFileSync(tgz)); }
-    r.writeHead(404); r.end('{}');
-  });
-  await new Promise((res) => srv.listen(0, '127.0.0.1', res));
-  const base = `http://127.0.0.1:${srv.address().port}`;
-  const home = fs.mkdtempSync(path.join(box, 'home-'));
-  const log = path.join(home, 'fake.log');
-  fs.writeFileSync(path.join(home, '.claude.json'), '{}');   // Claude Code «instalado» por su configuración: el instalador no frena por falta de agente
-  const env = Object.assign({ PATH: process.env.PATH, HOME: home, USERPROFILE: home, TYCON_HOME: path.join(home, '.tycon'), FAKE_LOG: log,
-    TYCON_RELEASE_API: base, TYCON_RELEASE_GIT: base, TYCON_RELEASE_ARCHIVE: base, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(home, 'gitconfig') }, extraEnv);
-  if (process.platform === 'win32') for (const k of ['SystemRoot', 'PATHEXT']) env[k] = process.env[k];
-  const child = require('child_process').spawn(process.execPath, [INDEX, ...args, '--tool', 'codex'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '';
-  child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { out += d; });
-  const code = await new Promise((res) => child.on('close', res));
-  srv.close();
-  const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
-  return { code, out, calls, seen, home };
-}
-
-test('T37 NpxInstaller_TeamForms_AzureCredential_Run', async () => {
-  const box = tmp('npx-team-');
-  try {
-    const install = (r) => r.calls.find((c) => c.argv[0] === 'install');
-    const teamOf = (r) => { const a = install(r).argv; return a[a.indexOf('--team') + 1]; };
-    // clase 2: las formas de GitHub que acepta --team llegan a install, con el repo que lee parseTeam
-    for (const form of ['https://github.com/acme/team-profile', 'https://GitHub.com/acme/team-profile.git', 'https://github.com/acme/team-profile/']) {
-      const r = await toyRun(box, ['--team', form, '--yes'], {});
-      assert.strictEqual(r.code, 0, `${form}: ${r.out}`);
-      assert.strictEqual(teamOf(r), 'acme/team-profile', form);
-      assert.ok(install(r).argv.includes('--defaults'), `${form}: install recibe --defaults (8.46 T3)`);
-      assert.ok(r.seen.some((u) => u.startsWith('/acme/team-profile.git/info/refs')), `${form}: miró el repo del equipo antes de bajar`);
-    }
-    // clases 1 y 2: la URL de clonar de Azure (con usuario) y TYCON_AZURE_TOKEN: el permiso se guarda como azure.token
-    const pat = ['permiso', 'azure', 'de', 'laboratorio'].join('-');
-    let r = await toyRun(box, ['--team', ['https://acme', 'dev.azure.com/acme/Proj/_git/team-profile'].join('@'), '--yes'], { TYCON_AZURE_TOKEN: pat, TYCON_AZURE_GIT_CREDENTIAL: '0' });
-    assert.strictEqual(r.code, 0, r.out);
-    const saved = r.calls.find((c) => c.argv.join(' ') === 'config set azure.token');
-    assert.ok(saved && saved.input === pat, `TYCON_AZURE_TOKEN guardado con config set azure.token: ${JSON.stringify(r.calls)}`);
-    assert.strictEqual(teamOf(r), 'https://dev.azure.com/acme/Proj/_git/team-profile');
-    assert.ok(!r.out.includes(pat), 'el permiso no sale en pantalla');
-    // sin credencial de ninguna clase: sale 1 antes de bajar (el control)
-    r = await toyRun(box, ['--team', 'https://dev.azure.com/acme/Proj/_git/team-profile/', '--yes'], { TYCON_AZURE_GIT_CREDENTIAL: '0' });
-    assert.strictEqual(r.code, 1, r.out); assert.match(r.out, /permiso de Azure DevOps/); assert.ok(!install(r), 'no instaló');
-    // clase 3: la credencial de Azure en el gestor de credenciales de git alcanza, como en install --team (team-azure.credential)
-    if (spawnSync('git', ['--version']).status !== 0) return;
-    const creds = path.join(box, 'git-credentials');
-    fs.writeFileSync(creds, `https://usuario:${['otro', 'permiso', 'azure'].join('-')}@dev.azure.com\n`);
-    const gitconfig = path.join(box, 'gitconfig-store');
-    fs.writeFileSync(gitconfig, `[credential]\n\thelper = store --file=${creds.replace(/\\/g, '/')}\n`);
-    r = await toyRun(box, ['--team', 'https://dev.azure.com/acme/Proj/_git/team-profile', '--yes'], { GIT_CONFIG_GLOBAL: gitconfig });
-    assert.strictEqual(r.code, 0, r.out);
-    assert.ok(install(r), 'siguió a install --team');
-    assert.ok(!r.calls.some((c) => c.argv.includes('azure.token')), 'no guardó nada: install la lee del gestor de git');
-  } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });
 
 test('T35b NpxInstaller_HttpsProxy_SpeaksTls', async (t) => {
@@ -440,117 +364,4 @@ test('T35b NpxInstaller_HttpsProxy_SpeaksTls', async (t) => {
       assert.ok(lines.includes(`GET http://127.0.0.1:${hp}/directo`), JSON.stringify(lines));
     } finally { target.close(); proxy.close(); plain.close(); }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
-
-test('T40 NpxInstaller_SavedConfigUnreadable_Exits1_KeepsFile', async () => {
-  const box = tmp('npx-config-');
-  try {
-    for (const [what, text] of [['no es JSON', '{"github": {"token": '], ['no es un objeto', 'null\n']]) {
-      const own = fs.mkdtempSync(path.join(box, 'tycon-'));
-      const f = path.join(own, 'config.json');
-      fs.writeFileSync(f, text);
-      const r = await toyRun(box, ['--yes'], { TYCON_HOME: own });
-      assert.strictEqual(r.code, 1, `${what}: ${r.out}`);
-      assert.ok(r.out.includes(f), `${what}: nombra el archivo — ${r.out}`);
-      assert.strictEqual(fs.readFileSync(f, 'utf8'), text, `${what}: el archivo queda como estaba`);
-      assert.ok(!r.calls.length, `${what}: no corrió install ni config set — ${JSON.stringify(r.calls)}`);
-      assert.ok(!r.seen.some((u) => u.includes('/tar.gz/')), `${what}: no bajó nada — ${JSON.stringify(r.seen)}`);
-    }
-    // el control: sin config.json (ENOENT) es «sin permiso guardado», e instala
-    const r = await toyRun(box, ['--yes'], { TYCON_HOME: fs.mkdtempSync(path.join(box, 'tycon-')) });
-    assert.strictEqual(r.code, 0, r.out);
-    assert.ok(r.calls.some((c) => c.argv[0] === 'install'), JSON.stringify(r.calls));
-  } finally { fs.rmSync(box, { recursive: true, force: true }); }
-});
-
-// T43 (el cierre, AC 36): el instalador corre antes de que exista el arnés y no puede cargar tycon-home.js; sus rutas viven
-// en home-paths.json y tienen que ser las MISMAS que resuelve tycon-home.js, con la casa propia y sin ella, y con TYCON_HOME
-test('T43 NpmPackage_HomePaths_ParityWithTyconHome', () => {
-  const HP = JSON.parse(read(path.join(PKG_DIR, 'home-paths.json')));
-  const TH = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tycon-home.js'));
-  const STATE_FILE = 'harness-state.json';
-  const I = require(INDEX);
-  assert.deepStrictEqual(I.HP, HP, 'index.js lee el mismo home-paths.json');
-  assert.strictEqual(I.ownRoot({ TYCON_HOME: '/x/y' }), '/x/y', 'ownRoot de index.js honra TYCON_HOME');
-  assert.strictEqual(I.ownRoot({}), path.join(os.homedir(), HP.own_dir), 'ownRoot de index.js sin TYCON_HOME');
-  const ours = (home, env = {}) => {   // lo que arma index.js con home-paths.json, con su HOME de juguete
-    const own = env[HP.own_env] || path.join(home, HP.own_dir);
-    return { ownState: path.join(own, ...HP.own_state.split('/')), ownConfig: path.join(own, ...HP.own_config.split('/')), legacyState: path.join(home, ...HP.legacy_state.split('/')) };
-  };
-  const saved = process.env.TYCON_HOME;
-  const box = tmp('home-paths-');
-  try {
-    delete process.env.TYCON_HOME;
-    const fresh = path.join(box, 'sin-casa'); fs.mkdirSync(fresh);
-    assert.strictEqual(ours(fresh).legacyState, path.join(TH.stateDir(fresh), STATE_FILE), 'sin la casa propia, el estado es el de siempre');
-    const own = path.join(box, 'con-casa'); fs.mkdirSync(path.join(own, '.tycon', 'state'), { recursive: true });
-    assert.strictEqual(ours(own).ownState, path.join(TH.stateDir(own), STATE_FILE), 'con la casa propia, el estado es el de ~/.tycon');
-    assert.strictEqual(ours(own).ownConfig, TH.configFile(own), 'la configuración de la casa propia');
-    const elsewhere = path.join(box, 'otra-casa'); fs.mkdirSync(path.join(elsewhere, 'state'), { recursive: true });
-    process.env.TYCON_HOME = elsewhere;
-    assert.strictEqual(ours(own, { TYCON_HOME: elsewhere }).ownState, path.join(TH.stateDir(own), STATE_FILE), 'con TYCON_HOME, el estado es el de esa carpeta');
-    assert.strictEqual(HP.own_env, 'TYCON_HOME');
-    assert.strictEqual(HP.own_dir, TH.OWN_DIR_NAME);
-    // la ruta vieja está declarada en legacy-home-names.json (se retira con la 8.24)
-    const legacy = JSON.parse(read(path.join(ROOT, 'scripts', 'tests', 'fixtures', 'legacy-home-names.json')));
-    assert.ok([...(legacy.entries || []), ...(legacy.until_d || [])].some((e) => e.path === 'scripts/setup/npm/home-paths.json'), 'home-paths.json declarado en legacy-home-names.json');
-    // el espejo: una ruta cambiada sale distinta
-    const bad = Object.assign({}, HP, { own_state: 'estado/harness-state.json' });
-    assert.notStrictEqual(path.join(own, '.tycon', ...bad.own_state.split('/')), path.join(TH.stateDir(own), STATE_FILE));
-  } finally {
-    if (saved === undefined) delete process.env.TYCON_HOME; else process.env.TYCON_HOME = saved;
-    fs.rmSync(box, { recursive: true, force: true });
-  }
-  // index.js no arma las rutas a mano: las lee de home-paths.json
-  const src = read(INDEX);
-  assert.match(src, /require\('\.\/home-paths\.json'\)/);
-  assert.ok(!/'\.tycon-pipeline'|'harness-state\.json'|'config\.json'/.test(src), 'ninguna ruta del estado escrita a mano en index.js');
-});
-
-test('8.46 T15 NpxInstaller_Help_DefaultsForMe_OneYes', () => {
-  const h = spawnSync(process.execPath, [INDEX, '--help'], { encoding: 'utf8', env: Object.assign({}, process.env, { HOME: path.join(os.tmpdir(), 'no-existe-npm-help'), USERPROFILE: path.join(os.tmpdir(), 'no-existe-npm-help') }) });
-  assert.strictEqual(h.status, 0, h.stderr);
-  const out = h.stdout + h.stderr;
-  assert.match(out, /para m[ií]/, 'nombra «para mí» como defecto');
-  assert.match(out, /--audience team\|org/, 'nombra --audience team|org');
-  assert.match(out, /cinco renglones/, 'dice el plan corto');
-  assert.match(out, /¿Instalo\? \[s\/N\]/, 'dice el único sí');
-  assert.ok(!/sin valor por defecto/.test(out), 'no dice «sin valor por defecto»');
-});
-
-test('8.46 T44 NpxInstaller_AgentHelpAndDetection_SameAsTools', () => {
-  const I = require(INDEX);
-  const T = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js'));
-  for (const p of ['darwin', 'linux', 'win32']) {
-    assert.deepStrictEqual(I.agentLines(p), T.agentLines(p), `las órdenes de ${p}: las mismas en index.js y en tools.js`);
-    const text = I.agentLines(p).join('\n');
-    assert.match(text, /Claude Code/); assert.match(text, /Codex/);
-    assert.match(text, p === 'win32' ? /irm https:\/\/claude\.ai\/install\.ps1 \| iex/ : /curl -fsSL https:\/\/claude\.ai\/install\.sh \| bash/);
-    assert.match(text, p === 'win32' ? /chatgpt\.com\/codex\/install\.ps1/ : /curl -fsSL https:\/\/chatgpt\.com\/codex\/install\.sh \| sh/);
-    assert.ok(T.noneFound(p).includes(I.agentLines(p)[0]), `noneFound(${p}) trae las órdenes`);
-  }
-  const box = tmp('agent-detect-');
-  try {
-    const bin = path.join(box, 'bin'); fs.mkdirSync(bin);
-    const cases = {
-      ninguna: () => {},
-      claudeEnElPath: (h) => { const f = path.join(bin, process.platform === 'win32' ? 'claude.exe' : 'claude'); fs.writeFileSync(f, ''); fs.chmodSync(f, 0o755); },
-      claudeJson: (h) => fs.writeFileSync(path.join(h, '.claude.json'), '{}'),
-      codexAuth: (h) => { fs.mkdirSync(path.join(h, '.codex')); fs.writeFileSync(path.join(h, '.codex', 'auth.json'), '{}'); },
-      soloLoDesplegado: (h) => { fs.mkdirSync(path.join(h, '.codex')); fs.writeFileSync(path.join(h, '.codex', 'hooks.json'), '{}'); fs.mkdirSync(path.join(h, '.claude')); fs.writeFileSync(path.join(h, '.claude', 'settings.json'), '{}'); },
-    };
-    for (const [name, make] of Object.entries(cases)) {
-      const home = path.join(box, name); fs.mkdirSync(home);
-      for (const f of fs.readdirSync(bin)) fs.rmSync(path.join(bin, f));
-      make(home);
-      const env = { TYCON_TOOLS_DETECT_PATH: bin, PATH: '' };
-      const d = T.detect({ home, env, platform: process.platform });
-      const want = d.claude.installed || d.codex.installed;
-      assert.strictEqual(I.agentFound({ home, env, platform: process.platform }), want, `${name}: index.js dice lo mismo que tools.detect (${want})`);
-    }
-    // en Windows la carpeta personal es USERPROFILE aunque HOME diga otra (como os.homedir())
-    const real = path.join(box, 'perfil-real'); fs.mkdirSync(real); fs.writeFileSync(path.join(real, '.claude.json'), '{}');
-    assert.strictEqual(I.agentFound({ env: { USERPROFILE: real, HOME: path.join(box, 'otra'), TYCON_TOOLS_DETECT_PATH: '' }, platform: 'win32' }), true, 'win32: mira USERPROFILE');
-    assert.strictEqual(I.agentFound({ env: { USERPROFILE: path.join(box, 'otra'), HOME: real, TYCON_TOOLS_DETECT_PATH: '' }, platform: 'linux' }), true, 'fuera de Windows: mira HOME');
-  } finally { fs.rmSync(box, { recursive: true, force: true }); }
 });

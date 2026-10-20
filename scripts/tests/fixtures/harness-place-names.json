@@ -94,6 +94,7 @@
     { "path": "scripts/lib/repos-root.js", "member": "selftest", "why": "el clon de juguete del --selftest como carpeta real dentro de ~/.claude, con el nombre del lugar: no es el lugar de la máquina" },
     { "path": "scripts/production/guard-libs/lib/repos-root.js", "member": "selftest", "why": "la copia propia del freno de producción (2026-10-14): el mismo clon de juguete del --selftest" },
     { "path": "scripts/setup/npm/index.js", "member": "REPO", "why": "el instalador de npx (story 8.40): el repo de fábrica de donde se baja el arnés (org/nombre en GitHub). Es el nombre del repo, no el lugar del arnés en la máquina" },
+    { "path": "scripts/setup/harness/npx.js", "member": "say / secret", "why": "el rótulo «tycon-harness:» de los mensajes que el paquete de npm muestra (el mismo que imprime su arranque): es el nombre del paquete, no el lugar" },
     { "path": "scripts/ci/check-public-workflow.js", "member": "--publisher", "why": "el aviso de npm-publish.yml nombra el publicador de confianza (org / repo / workflow): es el nombre del repo en GitHub, no el lugar" }
   ],
   "place_text": [

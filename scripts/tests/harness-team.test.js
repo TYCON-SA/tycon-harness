@@ -72,7 +72,7 @@ test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames',
   const tableEnd = src.indexOf('\n};', tableStart);
   const table = src.slice(tableStart, tableEnd);
   const names = [...table.matchAll(/^\s{2}([a-z]+):\s+\{/gm)].map((m) => m[1]);
-  assert.deepEqual(names.sort(), ['apply', 'channel', 'config', 'doctor', 'install', 'layer', 'link', 'migrate', 'relocate', 'rollback', 'startup', 'uninstall', 'update', 'version'].sort(), 'la tabla de subcomandos no gana ninguno');
+  assert.deepEqual(names.sort(), ['apply', 'channel', 'config', 'doctor', 'install', 'layer', 'link', 'migrate', 'npx', 'relocate', 'rollback', 'startup', 'uninstall', 'update', 'version'].sort(), 'la tabla de subcomandos no gana ninguno más que npx (que no declara --team: lo valida install)');
   const optsOf = (cmd) => { const m = new RegExp(`^\\s{2}${cmd}:\\s+\\{ opts: \\{([^}]*)\\}`, 'm').exec(table); return m ? m[1] : ''; };
   assert.match(optsOf('install'), /'--team': 'value'/, 'install --team <org>/<repo>');
   assert.match(optsOf('migrate'), /'--team': 'value'/, 'migrate --team <org>/<repo>');
