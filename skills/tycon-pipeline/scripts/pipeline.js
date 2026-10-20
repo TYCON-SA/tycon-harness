@@ -4383,9 +4383,19 @@ function computeDepGate({ repo, story }) {
   }
   const declared = [];
   const undeclared = [];
+  // `@playwright/test` lo instaló la preparación de la prueba con navegador con el ok de la persona (lib/browser-test.js):
+  // esa aprobación ya está anotada para este repo, y no se le vuelve a preguntar
+  const preparado = (() => {
+    try {
+      const bt = require('./lib/browser-test.js');
+      const real = (p) => { try { return fs.realpathSync(p); } catch (_e) { return path.resolve(p); } };
+      return bt.gates(require('./lib/story-gate-io.js').DEFAULT_STATE_DIR)
+        .some((g) => g.name === bt.PREPARED && g.repoPath && real(g.repoPath) === real(repo));
+    } catch (e) { process.stderr.write(`⚠️  dep-gate: no pude leer si la prueba con navegador se preparó con el ok de la persona (${e.message})\n`); return false; }
+  })();
   for (const d of deps) {
     const re = new RegExp(d.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    (re.test(storyText) ? declared : undeclared).push(d.name);
+    (re.test(storyText) || (preparado && d.name === '@playwright/test') ? declared : undeclared).push(d.name);
   }
   // un hermano que no se pudo diffear no es «sin dependencias nuevas»: se dice
   const noMedidos = [...sinMedir.map((r) => ({ repo: r, motivo: '`git diff HEAD` falló' })), ...hermanosFaltan,

@@ -458,6 +458,18 @@ El gate del proyecto (el script que el repo declaró en `e2e.gate`) hace, por co
 `on-frontmatter-write.js` verifica** antes de permitir `status: done` /
 `pipelines.X.status: done`. Sin un run fresco + verde, el hook bloquea.
 
+### 7c.3-pendiente — La prueba con navegador que la persona dejó pendiente
+
+Si el repo no tenía cómo probar en un navegador y la persona contestó que no a la oferta (paso 3), la historia lleva
+`browser_test: deferred` y `browser_test_reason: "<fecha> — la persona: «<su respuesta>»"`, y `gates.log` la constancia
+`browser-test-deferred` que escribió `e2e-setup.js defer`. `complete-step 8`, el commit y el paso a `review` vuelven a
+buscar esa respuesta en la conversación de la sesión que la anotó, posterior a la oferta: si la encuentran, el gate no
+corre (la historia se prueba con la guía para probarla a mano) y dicen en una línea «Prueba con navegador pendiente en
+la historia …», que queda anotada (`browser-test-debt`). Si falta la marca, la constancia, la oferta o la respuesta en
+la conversación, o si el repo ya tiene prueba con navegador (ahí se corre), frenan como siempre y dicen por qué. Se paga
+preparando el repo: `e2e-setup.js prepare --repo <repo> --story <spec> --approved-by "<el dev>" --ok "<su respuesta>"` y
+corriendo el gate. Se deshace con `e2e-setup.js undo --repo <repo>`.
+
 ### 7c.3-escape — Cuándo se permite NO correr el gate (estrictísimo)
 
 El ÚNICO escape es `dod_runtime_exempt: true` en frontmatter (story sin UI/E2E

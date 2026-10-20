@@ -1520,7 +1520,15 @@ function main() {
     // DODRT-C5.1 (2026-07-07) — para una story de UI, la evidencia DoD debe venir de un E2E
     // Playwright REAL (no curl/unit). Cierra el agujero de "probada en runtime" con solo curl al
     // backend (Story 11.2: se declaró probada sin correr el Playwright de los ACs de UI).
-    if (storyIsUiStory(staged, cwd) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)) {
+    // La prueba con navegador que la persona dejó pendiente, con sus dos marcas (lib/browser-test.js): no frena, se dice.
+    const deudaNavegador = storyIsUiStory(staged, cwd) && !/playwright|tests\/e2e\/|@story-/i.test(evidence.content)
+      ? require('./lib/browser-test.js').debtDeclared({ stateDir: stateDirOf(os.homedir()), storyPath: path.resolve(cwd, specRel), content: staged })
+      : null;
+    if (deudaNavegador && deudaNavegador.declared) {
+      process.stderr.write(`${require('./lib/browser-test.js').debtLine(deudaNavegador)}\n`);
+      require('./lib/browser-test.js').recordDebtUse(stateDirOf(os.homedir()), deudaNavegador, 'commit');
+    } else if (deudaNavegador) {
+      if (deudaNavegador.motivo && !/no declara/.test(deudaNavegador.motivo)) process.stderr.write(`La prueba con navegador pendiente de ${specRel} no vale — ${deudaNavegador.motivo}.\n`);
       violations.push({
         specRel, storyId, statusTransition, pipelineTransition,
         reason: 'no-playwright-evidence',
