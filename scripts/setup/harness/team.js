@@ -121,6 +121,9 @@ const LAYER_PATTERNS = Object.freeze([
   // los escriben en el CLAUDE.md y el AGENTS.md mientras la organización activa el paquete (scripts/lib/pack-pieces.js
   // blocksOf). Ni un nombre que un asistente carga solo ni uno que empiece con punto
   new RegExp(`^packs/${SEG}/claude-md-blocks/(?!(?:${LOADED_ALONE.map(anyCase).join('|')})(?:\\.[A-Za-z0-9_-]+)*\\.md$)${SEG_NO_DOT}\\.md$`),
+  // los casos del examen de un paquete, como DATOS: un nivel, sólo `.json`, sin punto adelante. Viajan con el
+  // paquete para que el examen se corra donde vive (el perfil de un dev solo); nada los carga como instrucciones
+  new RegExp(`^packs/${SEG}/exam/${SEG_NO_DOT}\\.json$`),
 ]);
 /** Un agente de la capa: en agents/ de la raíz o en la carpeta de un paquete. */
 const AGENT_RE = /^(?:packs\/[^/]+\/)?agents\/[^/]+\.md$/;
@@ -280,16 +283,23 @@ const nap = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)
  * El repo del equipo, en una de sus formas: `org/nombre` o `https://github.com/<org>/<repo>` (GitHub) o
  * `https://dev.azure.com/<org>/<proyecto>/_git/<repo>` (Azure DevOps; la fuente de TYCON). `{ ok, host, org, name, repo, url
  * [, project] }` —`repo` es el identificador que guarda el estado: `org/nombre` en GitHub, la URL en Azure— o `{ ok: false, problem }`.
+ * Y la ruta absoluta (o `~/…`) de un repo git de la máquina (el perfil de un dev solo, `team-init --local`):
+ * `host: 'local'`, `repo` = la ruta absoluta. Una ruta relativa no: depende de dónde se corra.
  */
-function parseTeam(option) {
+function parseTeam(option, { home = os.homedir() } = {}) {
   const s = option === undefined || option === null ? '' : String(option).trim();
+  const local = /^~(?=[\\/]|$)/.test(s) ? path.join(home, s.slice(1)) : (path.isAbsolute(s) ? s : null);
+  if (local !== null) {
+    const repo = path.resolve(local);
+    return { ok: true, host: 'local', org: null, name: path.basename(repo), repo, url: repo };
+  }
   if (/^https:\/\/(?:[^@/]+@)?dev\.azure\.com\//i.test(s)) {
     const a = require('./team-azure.js').parseAzureUrl(s);
     return a.ok ? { ok: true, host: 'azure', org: a.org, project: a.project, name: a.name, repo: a.url, url: a.url } : { ok: false, problem: a.problem };
   }
   const m = /^https:\/\/(?:[^@/]+@)?github\.com\/([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/i.exec(s) || /^([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+)$/.exec(s);
   // «.» y «..» pasan la forma pero no son nombres: en la URL del pedido cambiarían de endpoint (pase adversarial, clase 7)
-  if (!m || [m[1], m[2]].some((x) => /^\.+$/.test(x))) return { ok: false, problem: `--team tiene que ser org/nombre o la URL del repo del equipo (https://github.com/<org>/<repo>, o https://dev.azure.com/<org>/<proyecto>/_git/<repo>); dice «${s.replace(/^(https?:\/\/)[^@/]+@/, '$1')}»` };
+  if (!m || [m[1], m[2]].some((x) => /^\.+$/.test(x))) return { ok: false, problem: `--team tiene que ser org/nombre, la URL del repo del equipo (https://github.com/<org>/<repo>, o https://dev.azure.com/<org>/<proyecto>/_git/<repo>) o la ruta completa de un repo de esta máquina (/…, ~/…); dice «${s.replace(/^(https?:\/\/)[^@/]+@/, '$1')}»` };
   return { ok: true, host: 'github', org: m[1], name: m[2], repo: `${m[1]}/${m[2]}`, url: `https://github.com/${m[1]}/${m[2]}` };
 }
 
@@ -299,8 +309,15 @@ function parseTeam(option) {
  * credencial de Azure (1, con la acción: nunca se calla). `publicRepo` (GitHub): el otro repo que el permiso tiene que ver.
  */
 function openSource(ident, { ctx, deadlineAt = null, publicRepo = null } = {}) {
-  const src = parseTeam(ident);
+  const src = parseTeam(ident, { home: ctx.home || os.homedir() });
   if (!src.ok) return { ok: false, code: 2, reason: src.problem };
+  // un repo de la máquina: sin red ni credencial; la misma lista cerrada y validación (team-local.js)
+  if (src.host === 'local') {
+    const LO = require('./team-local.js');
+    const o = LO.open(src, { env: ctx.env });
+    if (!o.ok) return { ok: false, code: 1, host: 'local', src, reason: o.reason };
+    return { ok: true, host: 'local', src, resolve: (opts) => LO.resolve(o.c, opts), fetch: (r, opts) => LO.fetch(o.c, r, opts) };
+  }
   // `deadlineAt` es el reloj de MIRAR (`resolve`). La BAJADA (`fetch`) arranca el suyo cuando empieza: no hereda lo que sobró de
   // la mirada ni de lo que quien llama hizo antes con el mismo reloj (2026-10-09: 113 archivos de Azure con el reloj de mirar)
   if (src.host === 'azure') {

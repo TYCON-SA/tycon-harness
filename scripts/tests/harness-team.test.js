@@ -58,11 +58,13 @@ test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames',
   const az = TEAM.parseTeam('https://dev.azure.com/acme/proyecto/_git/equipo-perfil');
   assert.deepEqual(az, { ok: true, host: 'azure', org: 'acme', project: 'proyecto', name: 'equipo-perfil', repo: 'https://dev.azure.com/acme/proyecto/_git/equipo-perfil', url: 'https://dev.azure.com/acme/proyecto/_git/equipo-perfil' });
   assert.equal(TEAM.parseTeam('https://dev.azure.com/acme/_git/x').ok, false);
-  for (const bad of ['', 'acme', 'a/b/c', 'acme/', '/x', 'ac me/x', 'acme/x y', 'http://github.com/acme/x', 'https://gitlab.com/acme/x', 'acme/x.git/']) {
+  for (const bad of ['', 'acme', 'a/b/c', 'acme/', 'ac me/x', 'acme/x y', 'http://github.com/acme/x', 'https://gitlab.com/acme/x', 'acme/x.git/']) {
     const r = TEAM.parseTeam(bad);
     assert.equal(r.ok, false, `«${bad}» tendría que rechazarse`);
     assert.match(r.problem, /org\/nombre/);
   }
+  // una ruta absoluta es un repo de esta máquina (el perfil de un dev solo), no una dirección de GitHub mal escrita
+  assert.equal(TEAM.parseTeam('/x').host, 'local');
   assert.equal(TEAM.parseTeam('acme/x.git').ok, true, 'un nombre que termina en .git es un nombre válido de GitHub');
   // la tabla de subcomandos: sin subcomando nuevo; install y migrate ganan --team
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness.js'), 'utf8');

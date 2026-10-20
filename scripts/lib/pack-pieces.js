@@ -133,10 +133,24 @@ function orgActive({ tree, env = process.env, home } = {}) {
   if (value === 'none' || value == null) return { value: value || 'none', origin, names: [], installed, error: null };
   // uno de la lista que está pero con su manifiesto roto no es «no instalado»: se dice roto, con su archivo
   const broken = listPacks(packsDirOf(tree)).errores.filter((e) => value.includes(path.basename(path.dirname(e.archivo))));
-  if (broken.length) return { value, origin, names: null, installed, error: `la organización activa ${broken.map((e) => `«${path.basename(path.dirname(e.archivo))}», que está roto (${e.archivo}: ${e.motivo})`).join('; ')}` };
-  const missing = value.filter((n) => !installed.includes(n));
-  if (missing.length) return { value, origin, names: null, installed, error: `la organización activa ${missing.map((n) => `«${n}»`).join(', ')} y no está instalado en ${packsDirOf(tree)}` };
+  const brokenNames = broken.map((e) => path.basename(path.dirname(e.archivo)));
+  // el que falta se nombra aunque otro esté roto: doctor da rojo por el que falta
+  const missing = value.filter((n) => !installed.includes(n) && !brokenNames.includes(n));
+  const missingText = missing.length ? `la organización activa ${missing.map((n) => `«${n}»`).join(', ')} y no está instalado en ${packsDirOf(tree)}` : '';
+  if (broken.length) return { value, origin, names: null, installed, missing, error: [`la organización activa ${broken.map((e) => `«${path.basename(path.dirname(e.archivo))}», que está roto (${e.archivo}: ${e.motivo})`).join('; ')}`, missingText].filter(Boolean).join('; y ') };
+  if (missing.length) return { value, origin, names: null, installed, missing, error: missingText };
   return { value, origin, names: installed.filter((n) => value.includes(n)), installed, error: null };
+}
+
+/**
+ * Qué hacer cuando `packs.default` pide un paquete que esta máquina no tiene, según de dónde sale el pedido.
+ * Lo dicen doctor y el pipeline con las mismas palabras. El caso medido: un dev solo dejó su paquete en la instalación,
+ * la actualización lo borró y la configuración de la máquina lo siguió pidiendo.
+ */
+function missingPackHint(origin) {
+  if (origin === 'perfil') return 'lo pide el perfil del equipo: si el paquete está en el perfil, falta traerlo (harness.js update); si no está, falta agregarlo en packs/<nombre>/ del repo del perfil, o sacarlo de packs.default en team-profile.json';
+  if (origin === 'env' || origin === 'TYCON_PACKS_DEFAULT') return 'lo pide la variable TYCON_PACKS_DEFAULT de esta terminal: sacala o corregila';
+  return 'lo pide la configuración de esta máquina (~/.claude/tycon.json): un paquete propio va en packs/<nombre>/ del repo del perfil, que sobrevive a las actualizaciones (si no tenés uno, armalo con harness.js team-init --local, aunque seas una sola persona); o sacalo de packs.default';
 }
 
 /**
@@ -191,7 +205,7 @@ function retiredLine({ check = false, count, packs, pieces, value, origin }) {
 /** El lector de la configuración del arnés de este árbol (lo pide la sección «Paquetes» de org-config.js), o null. */
 function configReader() { try { return require('./tycon-config.js'); } catch (_) { return null; } }
 
-module.exports = { packsDirOf, listPacks, piecesOf, agentDirInPacks, linkedTo, orgActive, blocksOf, packOfBlock, blockSource, PACK_BLOCKS_DIR, PACK_BLOCK_PREFIX, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };
+module.exports = { packsDirOf, listPacks, piecesOf, agentDirInPacks, linkedTo, orgActive, missingPackHint, blocksOf, packOfBlock, blockSource, PACK_BLOCKS_DIR, PACK_BLOCK_PREFIX, valueText, folderProblem, configReader, retiredLine, WHERE_TO_ACTIVATE, RETIRED_PHRASE, RETIRED_RX };
 
 // `node pack-pieces.js blocks --json [--tree <árbol>]`: los bloques de los paquetes activos, para los sincronizadores que no
 // son de Node (sync-claude-md-blocks.sh y .ps1, el plan de install-tycon-hooks.ps1). Sale 0 siempre que contestó; 2 por uso.

@@ -372,7 +372,14 @@ test('InstalledTree_MessageInPlainWords', () => {
   // un paquete de revisores propio escrito en el árbol: el mensaje dice que ahí se pierde
   const pk = path.join(tree, 'packs', 'mi-stack', 'pack.json');
   const rp = gate.computeStoryGate({ ...BASE, filePath: pk, realFilePath: pk, installedRoots: [tree] });
-  assert.match(gate.blockMessage(rp, { filePath: pk }), /paquete de revisores propio tampoco va acá/);
+  const mp = gate.blockMessage(rp, { filePath: pk });
+  assert.match(mp, /paquete de revisores propio tampoco va acá/);
+  // nombra el lugar que sobrevive a las actualizaciones, y cómo armarlo si no lo hay
+  assert.match(mp, /repo del perfil/);
+  assert.match(mp, /packs\/<nombre>\//);
+  assert.match(mp, /harness\.js team-init --local/);
+  assert.match(mp, /aunque seas una sola persona/);
+  assert.doesNotMatch(mp, /todavía no tiene un lugar/);
   assert.doesNotMatch(m, /paquete de revisores/);
   // una carpeta packs más abajo en el árbol no es la de los paquetes
   const doc = path.join(tree, 'docs', 'packs', 'x.md');

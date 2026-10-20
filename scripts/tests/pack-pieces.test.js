@@ -443,6 +443,12 @@ test('OrgActive_ListedBrokenPack_SaysBroken', () => {
   assert.match(r.json.error, /roto/);
   assert.match(r.json.error, /pack\.json/);
   assert.doesNotMatch(r.json.error, /no está instalado/);
+  // roto y ausente a la vez — el ausente igual se nombra, para que doctor dé rojo
+  const r2 = enProceso(`process.stdout.write(JSON.stringify(require(${JSON.stringify(PIECES)}).orgActive({ tree: ${JSON.stringify(clon)} })))`, entorno(['roto', 'ausente']));
+  assert.equal(r2.status, 0, r2.err);
+  assert.deepEqual(r2.json.missing, ['ausente']);
+  assert.match(r2.json.error, /roto/);
+  assert.match(r2.json.error, /ausente/);
 });
 
 // ── T7 · AC 5 ────────────────────────────────────────────────────────────────────────────────────────────────────

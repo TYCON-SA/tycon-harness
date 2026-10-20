@@ -322,7 +322,8 @@ test('@story-8.59 @ac-7 @ac-8 8.59-Ejemplo_NoSeInstala', () => {
   (function walk(dir) { for (const e of fs.readdirSync(dir, { withFileTypes: true })) { const p = path.join(dir, e.name); if (e.isDirectory()) walk(p); else files.push(path.relative(EXAMPLE, p).split(path.sep).join('/')); } })(EXAMPLE);
   for (const rel of files) {
     const why = layerPathProblem(`packs/svelte-fastapi/${rel}`);
-    if (rel === 'pack.json' || rel.startsWith('agents/')) assert.strictEqual(why, null, `${rel} viaja con el perfil del equipo`);
+    // los casos del examen viajan con el paquete, así el examen se puede correr donde vive el paquete
+    if (rel === 'pack.json' || rel.startsWith('agents/') || /^exam\/[^/]+\.json$/.test(rel)) assert.strictEqual(why, null, `${rel} viaja con el perfil del equipo`);
     else assert.ok(why, `${rel} no viaja con el perfil: se queda donde se arma el paquete`);
   }
   assert.ok(files.some((f) => f.startsWith('exam/')) && files.includes('README.md'), 'el ejemplo trae exam/ y README.md');
@@ -337,4 +338,20 @@ test('@story-8.59 @ac-9 8.59-Guia_DiceLoQueHayQueSaber', () => {
   for (const f of ['INDEX.md', 'packs/README.md', 'guides/agent-architecture.md'])
     assert.ok(read(f).includes('reviewer-packs.md'), `${f} enlaza la guía`);
   assert.ok(read('guides/piezas-del-arnes.md').includes('examples/'), 'el árbol de piezas nombra examples/');
+});
+
+test('@story-8.70 @ac-6 @ac-7 ReviewerPacks_SoloSection', () => {
+  const es = read('guides/reviewer-packs.md');
+  const sec = es.slice(es.indexOf('## Si trabajás solo'));
+  assert.ok(es.includes('## Si trabajás solo'), 'la guía en castellano trae la sección');
+  for (const w of ['harness.js team-init --local', 'packs/<nombre>/', 'team-profile.json', 'packs.default', 'git commit', 'harness.js update', '--pack', 'catálogo', 'una sola vez', 'harness.js install --team', 'nunca'])
+    assert.ok(sec.includes(w), `la sección nombra ${w}`);
+  assert.ok(/nunca se hace: escribir el paquete en la instalación/i.test(sec), 'dice que nunca se escribe en la instalación');
+  assert.ok(/no lo vuelvas a ofrecer/.test(sec), 'la copia de respaldo se ofrece una sola vez');
+  assert.ok(!/No copies `exam\/`/.test(es), 'el examen ya viaja con el paquete');
+  const en = read('guides/reviewer-packs.en.md');
+  assert.ok(en.includes('## If you work alone'), 'la guía en inglés trae la sección');
+  const secEn = en.slice(en.indexOf('## If you work alone'));
+  for (const w of ['harness.js team-init --local', 'packs/<name>/', 'team-profile.json', 'harness.js update', '--pack', 'catalog', 'once', 'harness.js install --team'])
+    assert.ok(secEn.includes(w), `the section names ${w}`);
 });

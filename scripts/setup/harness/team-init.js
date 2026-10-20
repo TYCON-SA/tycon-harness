@@ -127,6 +127,8 @@ function build(example, { name, src, version, publicRepo }) {
   // la organización codificada, como en la URL del repo que arma parseTeam (el lector de ado.org la guarda tal cual)
   if (src.host === 'azure') profile.ado = Object.assign({}, isObject(profile.ado) ? profile.ado : {}, { org: `https://dev.azure.com/${encodeURIComponent(src.org)}` });
   else delete profile.ado;
+  // un perfil local no declara repos remotos: sin team-repos.json, que es opcional en la capa
+  if (src.host === 'local') return { ok: true, texts: { 'team-layer.json': fmt(layer), 'team-profile.json': fmt(profile) } };
   const repos = renameDocs(parsed['team-repos.json'], was, name);
   repos.version = 1;
   if (publicRepo) repos.public = publicRepo;
@@ -144,6 +146,7 @@ function validate(T, texts, { tree, version, home, env }) {
   if (!d.ok) return d;
   const p = T.validateProfile(texts['team-profile.json'], { readerTree: tree, home, env, name: 'team-profile.json' });
   if (!p.ok) return p;
+  if (texts['team-repos.json'] === undefined) return { ok: true };
   return T.validateTeamRepos(texts['team-repos.json'], { readerTree: tree });
 }
 
@@ -151,8 +154,13 @@ function hasGit(env) {
   const r = spawnSync('git', ['--version'], { env, encoding: 'utf8', windowsHide: true, timeout: 10000 });
   return !r.error && r.status === 0;
 }
+// ninguna variable de git de quien llama decide en qué repo se escribe (corrido dentro de un hook de git, GIT_DIR apuntaría a
+// otro repo)
+const GIT_REPO_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_COMMON_DIR', 'GIT_NAMESPACE', 'GIT_PREFIX'];
 function git(dir, args, env) {
-  const r = spawnSync('git', ['-C', dir, ...args], { env, encoding: 'utf8', windowsHide: true, timeout: GIT_TIMEOUT_MS });
+  const clean = Object.assign({}, env);
+  for (const k of GIT_REPO_VARS) delete clean[k];
+  const r = spawnSync('git', ['-C', dir, ...args], { env: clean, encoding: 'utf8', windowsHide: true, timeout: GIT_TIMEOUT_MS });
   // un git que no arrancó o que cortó una señal se dice como tal (nunca un error vacío)
   const why = r.error ? `no arrancó: ${r.error.code || r.error.message}` : r.signal ? `cortado con la señal ${r.signal}` : '';
   return { ok: !r.error && !r.signal && r.status === 0, err: [String(r.stderr || '').trim().split('\n').slice(-2).join(' '), why].filter(Boolean).join(' · ') };
@@ -213,6 +221,74 @@ function writeStories(tree, { team, repo, src, dir, dry, out, asked = false }) {
   return { code: 0 };
 }
 
+/**
+ * El perfil de una persona sola, en un repo git de esta máquina sin dirección, sin
+ * cuenta y sin team-repos.json. Se arma al lado, con git y un commit en `main`, y se mueve entero: una falla no deja medio
+ * repo. Después ofrece instalar con esa carpeta y dice cómo subirlo (la copia de respaldo), sin preguntarlo: la oferta de
+ * subirlo la hace el agente, una vez (guides/reviewer-packs.md, «Si trabajás solo»).
+ */
+function runLocal({ tree, home, env, opts, state, version, name, T, P, out, dry }) {
+  if (opts['profile-repo'] !== undefined) return fail(2, 'un perfil local no lleva --profile-repo: vive en una carpeta de esta máquina (--dir)');
+  if (opts['stories-only'] || opts.stories !== undefined) return fail(2, 'el repo de historias necesita una plataforma (github o azure): un perfil local no lo arma');
+  const defDir = path.join(home, `${name}-profile`);
+  let dir = opts.dir !== undefined ? String(opts.dir) : ask(P, out, `la carpeta del perfil, en esta máquina [${defDir}]: `);
+  dir = path.resolve(String(dir || defDir).replace(/^~(?=[\\/]|$)/, home));
+  if (fs.existsSync(dir)) {
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch (e) { return fail(2, `la carpeta ${dir} no se puede usar (${e.code || e.message})`); }
+    if (entries.length) return fail(1, `la carpeta ${dir} ya existe y no está vacía: no la toco. Elegí otra con --dir`);
+  }
+  if (!dry && !hasGit(env)) return fail(1, 'el perfil local vive en un repo git de esta máquina y no encuentro git: instalalo y volvé a correrlo. No escribí nada.');
+  const src = { host: 'local', name: path.basename(dir), repo: dir };
+  const ex = fetchExample(tree, env);
+  if (!ex.ok) return fail(1, `${ex.reason}. No escribí nada.`);
+  const built = build(ex.files, { name, src, version, publicRepo: null });
+  if (!built.ok) return fail(1, `${built.reason}. No escribí nada.`);
+  const v = validate(T, built.texts, { tree, version, home, env });
+  if (!v.ok) return fail(1, `${v.reason} — el ejemplo publicado trae algo que esta versión del arnés (${version}) no entiende. No escribí nada; actualizá el arnés (harness.js update) y volvé a correrlo.`);
+  const files = Object.keys(built.texts);
+  if (dry) {
+    out(`team-init --local --dry-run: escribiría en ${dir}, con git y un commit en main (no escribí nada):`);
+    for (const f of files) { out(`── ${f}`); out(built.texts[f].trimEnd()); }
+    return { code: 0, lines: [] };
+  }
+  let tmp = null;
+  try {
+    // la temporal al lado, con nombre que nadie puede adivinar (un enlace plantado en <dir>.tmp-<pid> se seguiría);
+    // el repo nace con objetos sha1, el formato que lee el arnés (un init.defaultObjectFormat=sha256
+    // global armaría un perfil que install --team no lee)
+    fs.mkdirSync(path.dirname(dir), { recursive: true });
+    tmp = fs.mkdtempSync(path.join(path.dirname(dir), `.${path.basename(dir)}.tmp-`));
+    for (const f of files) fs.writeFileSync(path.join(tmp, f), built.texts[f]);
+    for (const s of [['-c', 'init.defaultObjectFormat=sha1', 'init', '-q'], ['symbolic-ref', 'HEAD', 'refs/heads/main'], ['add', ...files], ['commit', '-q', '-m', `el perfil de ${name} (harness.js team-init --local)`]]) {
+      const r = git(tmp, s, env);
+      const verb = s.find((x) => !x.startsWith('-') && !x.includes('='));
+      if (!r.ok) throw new Error(verb === 'commit' ? `git no pudo commitear (¿sin identidad? configurá user.name y user.email): ${r.err}` : `git ${verb} falló: ${r.err}`);
+    }
+    if (fs.existsSync(dir)) fs.rmdirSync(dir);   // existe y está vacía (se miró arriba)
+    fs.renameSync(tmp, dir);
+  } catch (e) {
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    return fail(1, `${e.message || e.code}. No escribí nada.`);
+  }
+  out('');
+  out(`listo: el perfil de ${name} quedó en ${dir} (${files.join(', ')}), en un repo git de esta máquina con un commit en main, validado con los lectores de esta versión (${version}).`);
+  out('lo que sigue:');
+  const installArgs = ['install', '--version', version, '--team', dir];
+  const installCmd = `node "${path.join(tree, 'scripts', 'setup', 'harness.js')}" install --version ${version} --team "${dir}"`;
+  let installRc = 0;
+  if (P.saidYes(ask(P, out, '  1. ¿Instalo esta máquina con el perfil ahora? [s/N] ') || '')) {
+    const r = spawnSync(process.execPath, [path.join(tree, 'scripts', 'setup', 'harness.js'), ...installArgs], { stdio: 'inherit', env, windowsHide: true });
+    installRc = r.error || r.signal || r.status === null ? 1 : r.status;
+    if (installRc !== 0) out(`     la instalación con el perfil salió ${installRc}: probala de nuevo con ${installCmd}`);
+  } else out(`  1. instalá esta máquina con el perfil: ${installCmd}`);
+  out(`  2. tus paquetes de revisores van en ${path.join(dir, 'packs', '<nombre>')}${path.sep}, activados en team-profile.json (packs.default) y con un commit; después, harness.js update. El paso a paso: guides/reviewer-packs.md del arnés, «Si trabajás solo».`);
+  out('  3. sin copia de respaldo: el perfil vive sólo en esta máquina. Para tenerla, subilo a GitHub o a Azure DevOps: creá el repo privado VACÍO y, desde la carpeta,');
+  out(`       cd "${dir}" && git remote add origin "<dirección del repo>" && git push -u origin main`);
+  out('     y después harness.js install --team <dirección del repo>, para que el arnés lo lea de ahí.');
+  return { code: installRc, lines: [] };
+}
+
 function run(ctx) {
   const { tree, home, env, opts, state, version } = ctx;
   const out = (s) => process.stdout.write(`${s}\n`);
@@ -227,16 +303,21 @@ function run(ctx) {
   if (name === null) return fail(2, 'falta el nombre de la organización: pasá --name <org> (o corrélo en una terminal)');
   const nameCheck = T.validateDeclaration(fmt({ schema: 1, name, requires: { harness: `>= ${version}` } }), version);
   if (!nameCheck.ok) return fail(2, `el nombre «${name}» no sirve: ${nameCheck.reason}`);
-  let platform = opts.platform !== undefined ? String(opts.platform) : ask(P, out, '¿dónde vive el repo del perfil? github o azure: ');
-  if (platform === null) return fail(2, 'falta la plataforma: pasá --platform github|azure');
+  if (opts.local && opts.platform !== undefined && String(opts.platform).toLowerCase() !== 'local') return fail(2, `--local no va con --platform ${opts.platform}`);
+  let platform = opts.local ? 'local' : opts.platform !== undefined ? String(opts.platform) : ask(P, out, '¿dónde vive el repo del perfil? github, azure o local (sólo en esta máquina, para una persona sola): ');
+  if (platform === null) return fail(2, 'falta la plataforma: pasá --platform github|azure, o --local');
   platform = platform.toLowerCase();
-  if (!['github', 'azure'].includes(platform)) return fail(2, `la plataforma es github o azure (dice «${platform}»)`);
+  if (!['github', 'azure', 'local'].includes(platform)) return fail(2, `la plataforma es github, azure o local (dice «${platform}»)`);
+  if (platform === 'local') return runLocal({ tree, home, env, opts, state, version, name, T, P, out, dry });
   const shape = platform === 'github' ? 'org/repo de GitHub' : 'https://dev.azure.com/<org>/<proyecto>/_git/<repo>';
   const addr = opts['profile-repo'] !== undefined ? String(opts['profile-repo']) : ask(P, out, `la dirección del repo del perfil (${shape}): `);
   if (addr === null) return fail(2, `falta la dirección del repo del perfil: pasá --profile-repo <${shape}>`);
   const src = T.parseTeam(addr);
   if (!src.ok) return fail(2, src.problem.replace(/^--team/, 'la dirección del repo del perfil'));
-  if ((src.host === 'azure') !== (platform === 'azure')) return fail(2, `la dirección «${addr}» no es de ${platform}: ${shape}`);
+  // la dirección tiene que ser de la plataforma pedida: una carpeta de esta máquina (`host: 'local'`) con github o
+  // azure armaría un perfil remoto sin team-repos.json y a medias
+  if (src.host === 'local') return fail(2, `«${addr}» es una carpeta de esta máquina, no un repo de ${platform}: para un perfil local, team-init --local (--dir <carpeta>)`);
+  if (src.host !== platform) return fail(2, `la dirección «${addr}» no es de ${platform}: ${shape}`);
   if (storiesOnly) {   // sólo el repo de historias, para armarlo después del perfil (o sin él)
     let repo = opts.stories !== undefined ? String(opts.stories) : ask(P, out, `el nombre del repo de historias [${storiesDefault(src)}]: `);
     repo = repo || storiesDefault(src);
