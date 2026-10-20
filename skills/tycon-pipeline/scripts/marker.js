@@ -723,7 +723,7 @@ function mensajeDelPaseAdversarial(v) {
 // manual (una persona con nombre) o automática (un agente o una regla). Si no se puede escribir, AVISA y no frena el
 // paso: el registro no agrega interrupciones. Lo agarra el portón de CI en el merge, que exige la
 // línea del plan en toda corrida que declara anotar aprobaciones.
-const PLAN_FILE = 'step-02-bmad-plan.md';
+const { PLAN_FILE } = require('./lib/plan-display.js');
 
 /**
  * El plan escrito del paso 2, en la carpeta de la corrida: `{ file }`, o `{ error }` si la carpeta no se puede
@@ -747,6 +747,31 @@ function planDeLaCorrida(marker) {
  */
 function planEnLaConversacion(planTxt, opts = {}) {
   return require('./lib/person-ok.js').planEnLaConversacion(planTxt, opts);
+}
+
+/**
+ * El bloque del plan para la persona, por la salida normal: lo que un guion manda sólo por la salida de errores el agente
+ * no se lo pasa a la persona (medido), y lo que la persona ve son los mensajes del agente.
+ */
+function planParaLaPersona(planTxt) {
+  console.log([
+    'Mostrale esto a la persona, en un mensaje tuyo o en la pregunta que le hagas, antes de seguir (el plan entero, tal cual):',
+    '',
+    planTxt.trim(),
+    '',
+    'Si creés que ya se lo mostraste: no alcanza, el control no lo encontró en lo que ella ve. Escribilo de nuevo tal cual.',
+  ].join('\n'));
+}
+
+/**
+ * ¿La persona vio el plan? En lo que le escribió el agente, o porque se lo mostró el arnés en pantalla antes de este
+ * comando (la constancia `plan-shown` de lib/plan-display.js: la misma sesión, la misma historia y el mismo plan).
+ */
+function planVisto(marker, planTxt) {
+  const visto = planEnLaConversacion(planTxt);
+  if (!visto.legible || visto.mostrado) return visto;
+  const pd = require('./lib/plan-display.js');
+  return pd.mostradoPorElArnes({ stateDir: STATE_DIR, sessionId: SID, storyId: marker.storyId, planTxt }) ? { ...visto, mostrado: true, porElArnes: true } : visto;
 }
 
 function anotarAprobacion(marker, entrada) {
@@ -896,12 +921,12 @@ function cmdCompleteStep(nRaw, flags) {
         console.error('  Escribí ahí el plan del paso 2, mostráselo a la persona en tu respuesta y volvé a correr este comando.');
         process.exit(1);
       }
-      const visto = planEnLaConversacion(planTxt);
+      const visto = planVisto(marker, planTxt);
       if (!visto.legible || !visto.mostrado) {
         appendLog('gates.log', { name: 'plan-auto-approve', status: 'blocked', story: marker.storyId, motivo: visto.legible ? 'plan sin mostrar' : 'conversación ilegible' });
         // lo que la persona ve son tus mensajes de texto; la salida de un comando, un archivo o tu razonamiento, no
         // (medido: el agente creyó haberlo mostrado porque el plan estaba en esos lugares)
-        const queVe = '  La persona sólo ve tus mensajes de texto: no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste.';
+        const queVe = '  La persona sólo ve tus mensajes de texto (y lo que trae una pregunta con opciones): no ve la salida de este comando, ni el archivo del plan, ni lo que pensaste.';
         if (visto.legible) {
           console.error('marker.js complete-step 3 BLOQUEADO — el plan se aprueba solo, pero la persona tiene que verlo: ninguno de tus mensajes de texto lo trae.');
           console.error(queVe);
@@ -912,9 +937,40 @@ function cmdCompleteStep(nRaw, flags) {
           console.error('  Escribí un mensaje con el plan TAL CUAL (éste, entero, no un resumen), preguntale si lo aprueba y cerrá con --approved "<su respuesta>":');
         }
         console.error(`\n${planTxt.trim()}\n`);
+        planParaLaPersona(planTxt);
         process.exit(1);
       }
       planParaMostrar = planTxt.trim();
+    }
+    // Con riesgo bajo el plan queda escrito en la corrida: un ok a una pregunta que no lo traía no aprueba (medido: el
+    // agente preguntó «¿lo apruebo?» a secas y la persona aprobó sin verlo). Sin conversación legible no hay cómo saber:
+    // la cita alcanza, como antes. Con riesgo normal no cambia.
+    if (approved) {
+      const plan = planDeLaCorrida(marker);
+      let planTxt = '';
+      if (!plan.error) {
+        try { planTxt = fs.readFileSync(plan.file, 'utf8'); } catch (e) {
+          // sin plan escrito no hay qué comparar: la cita alcanza, como antes; una lectura que falla por otra cosa queda anotada
+          if (e.code !== 'ENOENT') appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude leer el plan', error: String(e.code || e.message).slice(0, 200) });
+        }
+      }
+      const visto = planTxt.trim() ? planVisto(marker, planTxt) : null;
+      if (visto && visto.legible && !visto.mostrado) {
+        let rc = null;
+        try { rc = require('./pipeline.js').computeRiskClass({ story: resolveStoryPath(marker.storyPath, marker) }); } catch (e) { rc = { error: e.message }; }
+        if (!rc || !rc.risk || rc.error) {
+          // sin el riesgo no se sabe si este control aplica: no frena, pero queda anotado y se dice
+          appendLog('gates.log', { name: 'plan-approval', status: 'skipped', story: marker.storyId, motivo: 'no pude calcular el riesgo', error: String((rc && rc.error) || 'sin riesgo').slice(0, 200) });
+          console.error(`⚠️  no pude calcular el riesgo de la story (${(rc && rc.error) || 'sin riesgo'}): no comprobé que la persona haya visto el plan.`);
+        }
+        if (rc && rc.risk === 'LOW') {
+          appendLog('gates.log', { name: 'plan-approval', status: 'blocked', story: marker.storyId, motivo: 'ok sin plan a la vista' });
+          console.error('marker.js complete-step 3 BLOQUEADO — la persona aprobó sin ver el plan: ninguno de tus mensajes ni tus preguntas lo trae.');
+          console.error('  Mostráselo entero (en un mensaje o dentro de la pregunta), preguntale de nuevo y cerrá con --approved "<su respuesta>".');
+          planParaLaPersona(planTxt);
+          process.exit(1);
+        }
+      }
     }
     const at3 = nowIso();
     if (mockupPlan) {

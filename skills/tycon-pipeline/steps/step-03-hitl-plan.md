@@ -26,6 +26,17 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   cerrado: el plan no se aprueba solo, se le muestra a la persona, se le pregunta y se cierra con `--approved`. Por
   qué: medido en la primera historia de un dev nuevo, con riesgo bajo el plan se aprobaba y no aparecía, aunque el
   cierre del paso lo imprimiera; el dev no veía qué se iba a hacer.
+- 🗣️ **La pregunta a la persona trae el plan entero**: en tu mensaje o dentro de la pregunta con opciones (en su texto
+  o en la vista previa de una opción). Nunca un «¿lo apruebo?» a secas. Cuando el comando frena, su salida normal trae
+  el bloque «Mostrale esto a la persona» con el plan: copialo tal cual. Si creés que ya lo mostraste y el comando dice
+  que no, no alcanza: escribilo de nuevo. Con riesgo bajo, `--approved` también comprueba que el plan se vio: si la
+  conversación se lee y el plan no está en lo que la persona vio, no cierra. Por qué: medido en un laboratorio, el
+  agente dijo que el plan ya estaba en sus mensajes sin haberlo mostrado, preguntó a secas y la persona aprobó sin
+  verlo.
+- 🖥️ **Si no lo mostraste, lo muestra el arnés.** En Claude Code, antes de que corra `complete-step 3`, el arnés le
+  pone el plan en pantalla a la persona («El plan de la historia … (te lo muestra el arnés, tal cual está escrito)») y
+  lo anota; el paso lo cuenta como mostrado. No reemplaza tu mensaje: si la persona pregunta por el plan, es ése. Por
+  qué: en el mismo laboratorio el agente recibió el plan tres veces y no lo escribió nunca.
 - **risk=NORMAL** → checkpoint HITL exactamente como se describe abajo.
 - El user puede forzar HITL siempre con `warnings_pause: true` en `.tycon/advisors.yaml` del repo.
 - 🔴 `git push` y cambios de scope firmado NUNCA se auto-aprueban — siguen human-gate sin excepción.
