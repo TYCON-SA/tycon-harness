@@ -867,3 +867,164 @@ test('T48 MarcadorVivoConNombre_FilaConPaso_CierreIlegibleAlPie @story-2.49.1 @a
   const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
   assert.ok(/después del cierre|aunque el cierre/.test(command), 'la ayuda dice que la story se ve también después del cierre');
 });
+
+// ── choca con main, `doing`, una vez por repo, agentes internos ──────────────────────────────────────────────────────
+const MARKER = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
+const { stateDir: stateDirOf } = require(path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'state-dir.js'));
+
+// A toy machine whose state folder is the one marker.js uses for a fake HOME: `doing` writes there and /wip reads it.
+function toyHome() {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'wiphome-'));
+  const state = stateDirOf(home);
+  for (const d of ['active', 'adhoc', 'timing-history']) fs.mkdirSync(path.join(state, d), { recursive: true });
+  const sessions = path.join(home, 'sessions');
+  fs.mkdirSync(sessions, { recursive: true });
+  return { root: home, home, state, sessions };
+}
+const doing = (h, sid, ...args) => execFileSync('node', [MARKER, 'doing', ...args],
+  { encoding: 'utf8', input: '', env: { ...process.env, HOME: h.home, USERPROFILE: h.home, CLAUDE_CODE_SESSION_ID: sid } });
+const doingFile = (h, sid) => path.join(h.state, 'doing', `${sid}.json`);
+
+test('T1 PedidoEnConflicto_DiceChocaConMain @story-2.49.2 @ac-1: GitHub DIRTY y Azure conflicts dicen «choca con main»', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'cho00000-1', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([{ number: 236, isDraft: false, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' }]));`);
+  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #236 (choca con main)');
+  const args = JSON.parse(fs.readFileSync(path.join(gh, 'args.json'), 'utf8'));
+  assert.ok(args.some((a) => /mergeStateStatus/.test(a)), args.join(' '));
+  const n = toyMachine();
+  entering(n, 'cho00000-2', { repoPath: gitRepo(n.root, 'y', 'story/x', AZ) });
+  const az = fakeBin(n.root, 'az', `process.stdout.write(JSON.stringify([{ pullRequestId: 4920, isDraft: false, mergeStatus: 'conflicts' }]));`);
+  const outAz = execFileSync('node', [WIP, '--state-dir', n.state, '--sessions-dir', n.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${az}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(JSON.parse(outAz).rows[0].state, 'Entrando a los repos · y !4920 (choca con main)');
+});
+
+test('T2 ConflictoYBorrador_DosMarcas_UnknownSinMarca @story-2.49.2 @ac-1 @ac-2: borrador en conflicto, UNKNOWN y sin dato', { skip: onWindows }, () => {
+  const m = toyMachine();
+  entering(m, 'cho00000-3', { repoPath: gitRepo(m.root, 'x', 'story/x', GH) });
+  const gh = fakeBin(m.root, 'gh', `process.stdout.write(JSON.stringify([
+    { number: 1, isDraft: true, mergeable: 'CONFLICTING', mergeStateStatus: 'DIRTY' },
+    { number: 2, isDraft: false, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN' },
+    { number: 3, isDraft: false }]));`);
+  const out = execFileSync('node', [WIP, '--state-dir', m.state, '--sessions-dir', m.sessions, '--now', NOW, '--json'],
+    { input: '', env: { ...process.env, PATH: `${gh}${path.delimiter}${process.env.PATH}` } });
+  assert.strictEqual(JSON.parse(out).rows[0].state, 'Entrando a los repos · x #1 (borrador) (choca con main) · x #2 · x #3');
+});
+
+test('T3 Doing_LaFilaDiceLaNota @story-2.49.2 @ac-3: una sesión viva sin pipeline muestra lo que anotó', () => {
+  const h = toyHome();
+  session(h, process.pid, 'doi00000-1', 'Burrito', { status: 'busy' });
+  doing(h, 'doi00000-1', 'armo el video del capítulo 3');
+  const r = run(h);
+  const row = r.rows.find((x) => x.session === 'Burrito');
+  assert.ok(row, r.text);
+  assert.strictEqual(row.work, 'armo el video del capítulo 3');
+  assert.match(row.state, /^Anotado por la sesión · sin tocar desde \d\d:\d\d$/);
+  assert.strictEqual(r.rows.length, 1, r.text);
+});
+
+test('T4 Doing_SeReemplazaYSeBorra @story-2.49.2 @ac-3: otro doing la reemplaza y doing clear la borra', () => {
+  const h = toyHome();
+  session(h, process.pid, 'doi00000-2', 'Angelito', { status: 'busy' });
+  doing(h, 'doi00000-2', 'visto bueno para animar los capítulos 0 y 1');
+  doing(h, 'doi00000-2', 'animo el capítulo 2');
+  assert.strictEqual(run(h).rows[0].work, 'animo el capítulo 2');
+  doing(h, 'doi00000-2', 'clear');
+  assert.ok(!fs.existsSync(doingFile(h, 'doi00000-2')));
+  assert.match(run(h).rows[0].state, /^Trabajando sin pipeline/);
+  // el texto va de 8 a 200 caracteres: fuera de eso no se anota nada
+  for (const bad of ['corto', 'x'.repeat(201)]) {
+    assert.throws(() => doing(h, 'doi00000-2', bad), (e) => e.status === 2, bad.slice(0, 10));
+    assert.ok(!fs.existsSync(doingFile(h, 'doi00000-2')));
+  }
+});
+
+test('T5 Doing_NoAbreElPortonDeCarril @story-2.49.2 @ac-3: la nota no es un marcador ni un ad-hoc', () => {
+  const h = toyHome();
+  doing(h, 'doi00000-3', 'mido el banco de controles');
+  const lib = path.join(__dirname, '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib');
+  const io = require(path.join(lib, 'story-gate-io.js'));
+  const gate = require(path.join(lib, 'story-gate.js'));
+  assert.strictEqual(io.readAdhoc(h.state, 'doi00000-3'), null);
+  assert.strictEqual(io.readMarker(h.state, 'doi00000-3'), null);
+  assert.deepStrictEqual(fs.readdirSync(path.join(h.state, 'adhoc')), []);
+  // el portón de carril, con lo que esa sesión tiene en el estado, sigue frenando un Edit de código
+  const verdict = gate.computeStoryGate({ filePath: '/w/MiRepo/src/Foo.cs', stateDir: h.state, homeDir: h.home, repoRoot: '/w/MiRepo',
+    repoHasTycon: true, repoHasStories: false, marker: io.readMarker(h.state, 'doi00000-3'), adhoc: io.readAdhoc(h.state, 'doi00000-3') });
+  assert.strictEqual(verdict.action, 'block', JSON.stringify(verdict));
+});
+
+test('T6 Doing_ViejaPreguntaYMuertaAbajo @story-2.49.2 @ac-4: pasada 1 h pregunta; la de una sesión muerta va abajo', () => {
+  const h = toyHome();
+  session(h, process.pid, 'doi00000-4', 'Angelito', { status: 'busy' });
+  fs.mkdirSync(path.join(h.state, 'doing'), { recursive: true });
+  fs.writeFileSync(doingFile(h, 'doi00000-4'), JSON.stringify({ text: 'reviso los capítulos', at: new Date(minsBefore(120)).toISOString() }));
+  session(h, DEAD_PID, 'doi00000-5', 'Muerta');
+  fs.writeFileSync(doingFile(h, 'doi00000-5'), JSON.stringify({ text: 'otra cosa vieja', at: new Date(minsBefore(30)).toISOString() }));
+  const r = run(h);
+  const row = r.rows.find((x) => x.session === 'Angelito');
+  assert.strictEqual(row.state, `Anotado por la sesión · sin tocar desde ${localHhmm(minsBefore(120))} · ¿terminó? borrala desde su sesión: node ${MARKER} doing clear`);
+  assert.ok(!r.rows.some((x) => x.work === 'otra cosa vieja'), r.text);
+  // como el ad-hoc: antes de las 24 h dice desde cuándo se podrá borrar, y clear-orphan se niega
+  assert.ok(r.halfway.some((x) => x.includes('otra cosa vieja') && x.includes(`se podrá borrar después de las ${localHhmm(minsBefore(30) + 24 * 3600000)}`)), r.text);
+  const real = toyHome();
+  fs.mkdirSync(path.join(real.state, 'doing'), { recursive: true });
+  fs.writeFileSync(doingFile(real, 'doi00000-6'), JSON.stringify({ text: 'nota reciente de otra', at: new Date().toISOString() }));
+  assert.throws(() => doing(real, 'doi00000-7', 'clear-orphan', 'doi00000-6'), (e) => e.status === 3 && /menos de 24 h/.test(e.stderr));
+  assert.ok(fs.existsSync(doingFile(real, 'doi00000-6')));
+  fs.writeFileSync(doingFile(real, 'doi00000-6'), JSON.stringify({ text: 'nota vieja de otra', at: new Date(Date.now() - 25 * 3600000).toISOString() }));
+  doing(real, 'doi00000-7', 'clear-orphan', 'doi00000-6');
+  assert.ok(!fs.existsSync(doingFile(real, 'doi00000-6')));
+  // la de una sesión viva no se borra nunca
+  const live = toyHome();
+  fs.mkdirSync(path.join(live.state, 'doing'), { recursive: true });
+  fs.writeFileSync(doingFile(live, 'doi00000-8'), JSON.stringify({ text: 'nota de una viva', at: new Date(Date.now() - 25 * 3600000).toISOString() }));
+  fs.mkdirSync(path.join(live.home, '.claude', 'sessions'), { recursive: true });
+  fs.writeFileSync(path.join(live.home, '.claude', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: 'doi00000-8' }));
+  assert.throws(() => doing(live, 'doi00000-7', 'clear-orphan', 'doi00000-8'), (e) => e.status === 3 && /viva/.test(e.stderr));
+  assert.ok(fs.existsSync(doingFile(live, 'doi00000-8')));
+});
+
+test('T7 DiezCarpetasDeUnRepo_UnaConsulta @story-2.49.2 @ac-5: diez carpetas del mismo repo, una sola pregunta por su raíz', () => {
+  const m = toyMachine();
+  const repo = gitRepo(m.root, 'x', 'story/x', GH);
+  const files = [];
+  for (let i = 0; i < 10; i++) { fs.mkdirSync(path.join(repo, `d${i}`, 'sub'), { recursive: true }); files.push(path.join(repo, `d${i}`, 'sub', 'f.js')); }
+  entering(m, 'one00000-1', { repoPath: repo, filesTouched: files });
+  const gitCtx = { until: Date.now() + 60000, cache: new Map() };
+  run(m, { prs: () => ({ prs: [] }), gitCtx });
+  const asked = [...gitCtx.cache.keys()].filter((k) => k.endsWith('\0rev-parse --show-toplevel'));
+  assert.strictEqual(asked.length, 1, asked.join('\n'));
+});
+
+test('T8 TopeDeTiempo_UnSoloRenglon @story-2.49.2 @ac-6: varias carpetas sin leer por el tope dan un renglón con la cuenta', () => {
+  const m = toyMachine();
+  const dirs = [];
+  for (let i = 0; i < 5; i++) { const d = path.join(m.root, `c${i}`); fs.mkdirSync(d); dirs.push(path.join(d, 'f.js')); }
+  entering(m, 'one00000-2', { filesTouched: dirs });
+  const r = run(m, { prs: () => ({ prs: [] }), repoBudgetMs: -1 });
+  const capped = r.unreadable.filter((u) => /tope/.test(u));
+  assert.strictEqual(capped.length, 1, capped.join('\n'));
+  assert.match(capped[0], /5 carpeta\(s\)/);
+});
+
+test('T9 AgentesInternos_SinFilaYUnRenglon @story-2.49.2 @ac-7: carpeta en la temporal y nombre derivado no tienen fila', () => {
+  const m = toyMachine();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'advbench-'));
+  session(m, process.pid, 'int00000-1', 'advbench-aaa', { status: 'busy', cwd: tmp, nameSource: 'derived' });
+  session(m, process.pid, 'int00000-2', 'advbench-bbb', { status: 'busy', cwd: tmp, nameSource: 'derived' });
+  session(m, process.pid, 'int00000-3', 'Labo', { status: 'busy', cwd: tmp });   // nombre puesto: es una sesión real
+  const r = run(m);
+  assert.ok(!r.rows.some((x) => /advbench/.test(x.session)), r.text);
+  assert.ok(r.rows.some((x) => x.session === 'Labo'), r.text);
+  assert.ok(!r.free.some((x) => /advbench/.test(x)), r.text);
+  assert.match(r.text, /2 agente\(s\) interno\(s\) de otras sesiones/);
+});
+
+test('T10 Ayuda_DiceDoingYChocaConMain @story-2.49.2 @ac-8: la ayuda explica doing, que no es un permiso, y «choca con main»', () => {
+  const command = fs.readFileSync(path.join(__dirname, '..', '..', 'commands', 'wip.md'), 'utf8');
+  for (const words of ['marker.js doing', 'no es un permiso', 'choca con main']) assert.ok(command.includes(words), words);
+});

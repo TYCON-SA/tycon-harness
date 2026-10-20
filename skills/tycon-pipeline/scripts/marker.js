@@ -56,6 +56,8 @@
  *   marker.js clear-session <sessionId>         → borra el marker de OTRA sesión
  *                                                  (recovery / admin); sin marker, lo dice y sale 1
  *   marker.js adhoc clear-orphan <sessionId>    → borra el ad-hoc de OTRA sesión, sólo si no está viva
+ *   marker.js doing "<qué hago>" | doing clear  → anota (o borra) qué hace esta sesión sin story, para /wip; NO es un
+ *                                                  permiso. `doing clear-orphan <sid>`: la de otra sesión que no vive.
  *                                                  y lleva más de 24 h sin tocarse
  *   marker.js adopt-session <sessionId>         → ADOPTA el marker completo de otra
  *                                                  sesión (resume cross-session sin pérdida:
@@ -3057,6 +3059,55 @@ function sessionLiveness(sid) {
 
 // `adhoc clear-orphan <sid>`: el ad-hoc que dejó una sesión que ya no está. Se borra sólo si la sesión no está viva
 // y el ad-hoc lleva más de STALE_HOURS sin tocarse; cada borrado y cada negativa quedan en adhoc.log.
+// `doing "<qué hago>"`: lo que hace una sesión sin story (un video, una medición), para que /wip lo diga. No es un
+// permiso: no toca el portón de carril ni el ad-hoc. Otro `doing` la reemplaza; `doing clear` la borra;
+// `doing clear-orphan <sid>` borra la de otra sesión que ya no vive. Archivo: doing/<sid>.json { text, at }; doing.log.
+function cmdDoing(sub, arg) {
+  const dir = path.join(STATE_DIR, 'doing');
+  const safe = (s) => String(s).replace(/[/\\]/g, '_');
+  if (sub === 'clear-orphan') {
+    if (!arg) { console.error('marker.js doing clear-orphan: falta el id de la sesión — uso: doing clear-orphan <sessionId>'); process.exit(2); }
+    const sid = safe(arg);
+    if (sid === safe(SID)) { console.error('marker.js doing clear-orphan: es la nota de esta sesión — se borra con `marker.js doing clear`'); process.exit(3); }
+    const file = path.join(dir, `${sid}.json`);
+    if (!fs.existsSync(file)) { console.error('marker.js doing clear-orphan: no hay nota de esa sesión: no se borró nada'); process.exit(1); }
+    const live = sessionLiveness(sid);
+    if (live.unknown) { console.error(`marker.js doing clear-orphan: no se borró — no pude verificar que la sesión no esté viva (${live.unknown})`); process.exit(3); }
+    if (live.alive) { console.error(`marker.js doing clear-orphan: no se borró — la sesión está viva (pid ${live.pid})`); process.exit(3); }
+    // como `adhoc clear-orphan`: una sesión sin archivo de sesión (Codex no lo escribe) parece muerta; 24 h sin tocarse
+    // es la segunda señal
+    let at = NaN;
+    try { at = Date.parse(JSON.parse(fs.readFileSync(file, 'utf8')).at); } catch (_e) { /* sin fecha legible: la del archivo */ }
+    if (!Number.isFinite(at)) { try { at = fs.statSync(file).mtimeMs; } catch (_e) { at = Date.now(); } }
+    if (Date.now() - at < STALE_HOURS * 3600 * 1000) {
+      const d = new Date(at + STALE_HOURS * 3600 * 1000);
+      console.error(`marker.js doing clear-orphan: no se borró — la nota tiene menos de ${STALE_HOURS} h; se podrá borrar después de las ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`);
+      process.exit(3);
+    }
+    try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    appendLog('doing.log', { kind: 'DOING_CLEAR_ORPHAN', sessionId: sid, by: SID });
+    process.stdout.write(`doing: borrada la nota de la sesión ${sid}\n`);
+    return;
+  }
+  if (!SID) { console.error('marker.js doing: no sé qué sesión es (falta CLAUDE_CODE_SESSION_ID)'); process.exit(2); }
+  const file = path.join(dir, `${safe(SID)}.json`);
+  if (sub === 'clear') {
+    try { fs.unlinkSync(file); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    appendLog('doing.log', { kind: 'DOING_CLEAR' });
+    process.stdout.write('doing: borrada\n');
+    return;
+  }
+  const text = String(sub || '').replace(/\s+/g, ' ').trim();
+  if (text.length < 8 || text.length > 200) {
+    console.error('marker.js doing: el texto va de 8 a 200 caracteres — uso: marker.js doing "<qué hago>" | doing clear');
+    process.exit(2);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ text, at: new Date().toISOString() }));
+  appendLog('doing.log', { kind: 'DOING_SET', text });
+  process.stdout.write(`doing: ${text}\n`);
+}
+
 function cmdAdhocClearOrphan(sid) {
   if (!sid) {
     console.error('marker.js adhoc clear-orphan: falta el id de la sesión — uso: adhoc clear-orphan <sessionId>');
@@ -3961,6 +4012,9 @@ switch (cmd) {
     break;
   case 'adhoc':
     cmdAdhoc(arg1, arg2);
+    break;
+  case 'doing':
+    cmdDoing(arg1, arg2);
     break;
   case 'story-skill-bypass':
     cmdStorySkillBypass(arg1);

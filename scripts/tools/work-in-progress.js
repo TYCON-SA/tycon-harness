@@ -132,6 +132,16 @@ function transcriptMs(projectsDir, cwd, sid) {
   try { return fs.statSync(path.join(projectsDir, cwd.replace(/[^A-Za-z0-9-]/g, '-'), `${sid}.jsonl`)).mtimeMs; } catch { return null; }
 }
 
+// Un agente interno de otra sesión (un examen o un pase que lanza su propio Claude): corre en la carpeta temporal del
+// sistema y nadie le puso nombre. Hacen falta las dos señales: un laboratorio con nombre puesto es una sesión de verdad.
+function isInternalAgent(cwd, nameSource) {
+  if (nameSource !== 'derived' || !cwd) return false;
+  let real = cwd;
+  try { real = fs.realpathSync(cwd); } catch { /* ya no existe: se juzga por la ruta escrita */ }
+  const tmp = (() => { try { return fs.realpathSync(os.tmpdir()); } catch { return os.tmpdir(); } })();
+  return [tmp, '/var/folders', '/private/var/folders'].some((t) => real === t || real.startsWith(t + path.sep));
+}
+
 function sessionsBySid(dir, unreadable, projectsDir) {
   const out = new Map();
   for (const file of jsonFiles(dir, unreadable)) {
@@ -143,7 +153,8 @@ function sessionsBySid(dir, unreadable, projectsDir) {
     let alive = false;
     try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === 'EPERM'; }
     const dates = [Number(s.statusUpdatedAt), Number(s.updatedAt), transcriptMs(projectsDir, s.cwd, s.sessionId)].filter((v) => Number.isFinite(v) && v > 0);
-    const cur = { name: s.name || null, alive, busy: s.status === 'busy', cwd: typeof s.cwd === 'string' ? s.cwd : null, last: dates.length ? Math.max(...dates) : null };
+    const cwd = typeof s.cwd === 'string' ? s.cwd : null;
+    const cur = { name: s.name || null, alive, busy: s.status === 'busy', cwd, last: dates.length ? Math.max(...dates) : null, internal: isInternalAgent(cwd, s.nameSource) };
     // Dos archivos con la misma sesión: manda el vivo, y la actividad es la más nueva de los dos.
     const prev = out.get(s.sessionId);
     if (!prev || (!prev.alive && alive)) out.set(s.sessionId, prev && prev.last > (cur.last ?? -1) ? { ...cur, last: prev.last } : cur);
@@ -267,13 +278,33 @@ function storyRepos(m, failures, ctx) {
   if (m.repoPath != null && (typeof m.repoPath !== 'string' || !path.isAbsolute(m.repoPath))) failures.push(`repoPath ilegible: ${JSON.stringify(m.repoPath)}`);
   else if (m.repoPath && !fs.existsSync(m.repoPath)) failures.push(`${m.repoPath}: ya no existe`);
   const touched = Array.isArray(m.filesTouched) ? m.filesTouched.map((f) => path.dirname(String(f))) : [];
-  for (const dir of new Set([m.repoPath, ...touched])) {
-    if (typeof dir !== 'string' || !path.isAbsolute(dir) || !fs.existsSync(dir)) continue;
+  // Una pregunta por repo: de la más corta a la más larga, una carpeta que ya está dentro de una raíz encontrada no se
+  // vuelve a preguntar. Las que no se leyeron por el tope de tiempo van en un solo renglón, con la cuenta.
+  const dirs = [...new Set([m.repoPath, ...touched])].filter((d) => typeof d === 'string' && path.isAbsolute(d)).sort((a, b) => a.length - b.length);
+  let capped = 0;
+  let cappedWhy = '';
+  for (const dir of dirs) {
+    if (!fs.existsSync(dir)) continue;
+    // git da la raíz por su ruta real (`/private/var/…` en la Mac): se compara con la carpeta por la suya
+    let real = dir;
+    try { real = fs.realpathSync(dir); } catch { /* se compara por la escrita */ }
+    // ya está dentro de una raíz encontrada, salvo que en el medio haya otro repo (un submódulo, un `vendor/`)
+    const inside = (d, r) => {
+      if (d !== r && !d.startsWith(r + path.sep)) return false;
+      for (let p = d; p !== r; p = path.dirname(p)) if (fs.existsSync(path.join(p, '.git'))) return false;
+      return true;
+    };
+    if (roots.some((r) => inside(dir, r) || inside(real, r))) continue;
     const top = git(dir, ['rev-parse', '--show-toplevel'], ctx);
-    if (top.err) { if (!NOT_A_REPO.test(top.err)) failures.push(`${dir}: ${top.err}`); continue; }
+    if (top.err) {
+      if (/tope/.test(top.err)) { capped += 1; cappedWhy = top.err; }
+      else if (!NOT_A_REPO.test(top.err)) failures.push(`${dir}: ${top.err}`);
+      continue;
+    }
     const root = path.resolve(top.out);
     if (!roots.includes(root)) roots.push(root);
   }
+  if (capped) failures.push(`${capped} carpeta(s) no se leyeron: ${cappedWhy}`);
   return roots;
 }
 
@@ -326,7 +357,7 @@ function repoQuery(root, failures, ctx) {
 }
 
 function commandFor(q) {
-  if (q.kind === 'github') return ['gh', ['pr', 'list', '--repo', q.slug, '--head', q.branch, '--state', 'open', '--json', 'number,isDraft']];
+  if (q.kind === 'github') return ['gh', ['pr', 'list', '--repo', q.slug, '--head', q.branch, '--state', 'open', '--json', 'number,isDraft,mergeable,mergeStateStatus']];
   return ['az', ['repos', 'pr', 'list', '--org', `https://dev.azure.com/${encodeURIComponent(q.org)}`, '--project', q.project,
     '--repository', q.repo, '--source-branch', q.branch, '--status', 'active', '--output', 'json']];
 }
@@ -353,7 +384,11 @@ function runQuery(q, perMs, env, children) {
       try {
         const list = JSON.parse(stdout);
         if (!Array.isArray(list)) throw new Error('no es una lista');
-        const prs = list.map((p) => ({ number: p && (p.number ?? p.pullRequestId), draft: Boolean(p && p.isDraft === true) }));
+        // choca con main: lo dice el servidor (GitHub DIRTY o CONFLICTING, Azure `conflicts`); UNKNOWN o sin el dato, nada
+        const prs = list.map((p) => ({
+          number: p && (p.number ?? p.pullRequestId), draft: Boolean(p && p.isDraft === true),
+          conflict: Boolean(p && (p.mergeStateStatus === 'DIRTY' || p.mergeable === 'CONFLICTING' || p.mergeStatus === 'conflicts')),
+        }));
         if (!prs.every((p) => Number.isInteger(p.number))) throw new Error('un pedido sin número');
         resolve({ prs });
       } catch (e) { resolve({ error: `${cmd}: respuesta ilegible (${e.message})` }); }
@@ -402,7 +437,7 @@ function enteringState(m, prsOf, unreadable, wanted, ctx) {
     wanted.push(q);
     const res = prsOf ? prsOf(q) : { error: 'no se consultó' };
     if (!res || res.error) { failures.push(`pedidos de ${q.name} (${q.branch}): ${res ? res.error : 'sin respuesta'}`); continue; }
-    for (const p of res.prs) shown.push(`${q.name} ${q.kind === 'github' ? '#' : '!'}${p.number}${p.draft ? ' (borrador)' : ''}`);
+    for (const p of res.prs) shown.push(`${q.name} ${q.kind === 'github' ? '#' : '!'}${p.number}${p.draft ? ' (borrador)' : ''}${p.conflict ? ' (choca con main)' : ''}`);
   }
   unreadable.push(...failures.map((f) => `story ${m.storyId || '?'}: ${f}`));
   if (shown.length) return `${ENTERING} · ${shown.join(' · ')}`;
@@ -568,10 +603,37 @@ function buildWip(opts = {}) {
     }
   }
 
+  // Lo que anota una sesión sin story (`marker.js doing`): no es un permiso, sólo dice qué hace. Un marcador o un ad-hoc
+  // de la misma sesión mandan sobre la nota.
+  for (const file of jsonFiles(path.join(sdir, 'doing'), unreadable)) {
+    const sid = path.basename(file, '.json');
+    if (busy.has(sid)) continue;
+    let d;
+    try { d = readObject(file); } catch (e) { unreadable.push(`${file}: ${e.message}`); continue; }
+    const work = cut(String(d.text || '(sin texto)'), TITLE_MAX);
+    const at = Date.parse(d.at);
+    const label = liveName(sid);
+    if (!label) {
+      // como el ad-hoc: se borra con `doing clear-orphan`, que sólo borra pasadas las 24 h sin tocarse
+      let touched = at;
+      if (!Number.isFinite(touched)) { try { touched = fs.statSync(file).mtimeMs; } catch { touched = nowMs; } }
+      const how = nowMs - touched > STALE_MS ? `borrar: node ${MARKER_JS} doing clear-orphan ${sid}` : `se podrá borrar después de las ${hhmm(touched + STALE_MS)}`;
+      halfway.push(`nota «${work}» · ${shortId(sid)} · ${how}`);
+      continue;
+    }
+    busy.add(sid);
+    const parts = ['Anotado por la sesión'];
+    if (Number.isFinite(at)) parts.push(`sin tocar desde ${hhmm(at)}`);
+    if (Number.isFinite(at) && nowMs - at > LOOSE_STALE_MS) parts.push(`¿terminó? borrala desde su sesión: node ${MARKER_JS} doing clear`);
+    rows.push({ work, state: parts.join(' · '), end: 'sin estimación (no tiene pasos)', session: label });
+  }
+
   const free = [];
   const noData = [];
   const idle = [];
+  let internal = 0;
   for (const [sid, s] of sessions) {
+    if (s.alive && s.internal && !busy.has(sid)) { internal += 1; continue; }
     if (!s.alive || busy.has(sid)) continue;
     const label = s.name || shortId(sid);
     if (s.busy || (s.last != null && nowMs - s.last < WORKING_MS)) {
@@ -582,10 +644,10 @@ function buildWip(opts = {}) {
     else if (nowMs - s.last > IDLE_MS) idle.push(`${label} (desde ${hhmm(s.last)})`);
     else free.push(label);
   }
-  return { rows, free, idle, halfway, unreadable, wanted, text: render(rows, free, noData, idle, halfway, unreadable) };
+  return { rows, free, idle, halfway, unreadable, wanted, internal, text: render(rows, free, noData, idle, halfway, unreadable, internal) };
 }
 
-function render(rows, free, noData, idle, halfway, unreadable) {
+function render(rows, free, noData, idle, halfway, unreadable, internal = 0) {
   const esc = (s) => oneLine(s).replace(/\|/g, '\\|');
   const lines = ['| Trabajo | Estado | Fin estimado | Sesión |', '|---|---|---|---|'];
   if (!rows.length) lines.push('| (nada en curso) | | | |');
@@ -593,6 +655,7 @@ function render(rows, free, noData, idle, halfway, unreadable) {
   const freeText = free.map((f) => (noData.includes(f) ? `${f} (sin dato de actividad)` : f));
   lines.push('', `Libres: ${freeText.length ? freeText.join(', ') : 'ninguna'}`);
   if (idle.length) lines.push(`Sin uso hace más de ${IDLE_MS / 3600000} h: ${idle.join(', ')}`);
+  if (internal) lines.push(`${internal} agente(s) interno(s) de otras sesiones (sin fila: corren en la carpeta temporal, sin nombre puesto)`);
   if (halfway.length) lines.push('', `Quedaron a medio camino (sesión cerrada o sin rastro): ${halfway.length}`, ...halfway.map((h) => `- ${h}`));
   if (unreadable.length) lines.push('', 'No se pudo leer:', ...unreadable.map((u) => `- ${u}`));
   return lines.join('\n');
