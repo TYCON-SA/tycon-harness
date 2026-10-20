@@ -1301,6 +1301,22 @@ function archivosDotnetDelRepo(repo, tope = 200) {
   walk(repo, 0);
   return out;
 }
+/**
+ * Los hermanos declarados de los paquetes activos, en su ruta esperada bajo la raíz de repos de la máquina
+ * (scripts/lib/repos-root.js, que honra TYCON_REPOS_ROOT). Sin raíz, se dice; nunca se busca.
+ */
+function hermanosDelRepo(activos) {
+  let raiz = null;
+  let motivo = null;
+  try {
+    const r = require(path.join(packsLib.raizAgentSkills(), 'scripts', 'lib', 'repos-root.js')).resolveReposRoot();
+    raiz = r.root || null;
+    if (!raiz) motivo = r.motivo || 'sin raíz de repos';
+  } catch (e) { motivo = `no pude leer la raíz de repos (${e.message})`; }
+  const lista = packsLib.hermanosResueltos({ paquetes: activos, reposRoot: raiz });
+  return { raiz, motivo, lista, texto: packsLib.textoDeHermanos(lista, { reposRoot: raiz }) };
+}
+
 function computeValidadores({ story, repo }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
   // Una ruta mal tipeada no puede dar un set «válido» a medias (lo reprodujo el pase adversarial de la 8.2):
@@ -1317,12 +1333,14 @@ function computeValidadores({ story, repo }) {
   const activos = paquetesActivos(repo);
   const ctx = { det, files, agregado: (exts) => readDiffContents(repo, files, exts) };
   const lanzamientos = [];
+  let hermanos = null;   // se resuelven una vez, y sólo si algún revisor de validación entra
   for (const p of activos) {
     for (const r of p.revisores) {
       if (r.grupo !== 'validacion' || !packsLib.evaluarCondicion(r.cuando, ctx)) continue;
+      if (!hermanos) hermanos = hermanosDelRepo(activos);
       lanzamientos.push({
         agente: r.agente, paquete: p.nombre, modelo: r.modelo,
-        prompt: packsLib.rendirPrompt(r.prompt, { story_path: story, repo_path: repo }),
+        prompt: packsLib.rendirPrompt(r.prompt, { story_path: story, repo_path: repo, siblings: hermanos.texto }),
         nota: r.nota,
       });
     }
@@ -5706,6 +5724,17 @@ function main() {
   // story 8.2 — los revisores de validación del paso 1 salen de acá, no de la prosa del step.
   //   node pipeline.js validators --story <spec.md> --repo <dir>
   //     → { validadores: ['tycon-story-validator', ...], lanzamientos: [{agente, paquete, modelo, prompt, nota}], packs }
+  // siblings — los hermanos declarados de los paquetes activos en el repo, en su ruta esperada (para el revisor que no
+  // recibe {siblings} en su pedido). Un paquete roto sale 2, como en validators.
+  if (cmd === 'siblings') {
+    let repoEsDir = false;
+    try { repoEsDir = fs.statSync(args.repo).isDirectory(); } catch (_e) { repoEsDir = false; }
+    if (!repoEsDir) { process.stderr.write(`🛑 siblings: --repo no es una carpeta: ${args.repo}\n`); process.exit(2); }
+    const h = hermanosDelRepo(paquetesActivos(args.repo));
+    process.stdout.write(JSON.stringify({ repo: args.repo, raiz: h.raiz, ...(h.motivo ? { motivo: h.motivo } : {}), hermanos: h.lista, texto: h.texto }, null, 2) + '\n');
+    return;
+  }
+
   if (cmd === 'validators') {
     let salida;
     try {

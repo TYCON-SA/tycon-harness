@@ -45,6 +45,14 @@ reviewer answers `✅ OK`). If your repo has a lot of non-web Python, narrow it:
 `surface` says which files make it run again on each review round; `depth` (`lean`, `standard`, `deep`) says how
 expensive the model that runs it is.
 
+**A reviewer that compares against other repos** (for example, sibling projects of yours) declares them in the
+manifest's `siblings` (`[{ "path": "Product/Repo", "name": "Repo" }]`, paths relative to the repos root). The harness
+does not search for them: it checks whether each one is at its expected path. In the `validacion` group the `prompt`
+gets them through `{siblings}`, one line per repo: «Repo: <path> (está)» or «… (NO está en esta máquina: no lo busques en
+otro lado)». Any reviewer can ask for them with `node <harness>/skills/tycon-pipeline/scripts/pipeline.js siblings
+--repo <repo>`. Do not let the reviewer crawl the disk on its own: from a root like `D:\` it ends up in repos you did not
+mean to compare.
+
 ## How to activate it
 
 **With the team profile** (the usual way):

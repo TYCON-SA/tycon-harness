@@ -514,6 +514,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 8.81: el núcleo resuelve los hermanos declarados de los paquetes contra la raíz de repos sin recorrer nada ({siblings} en el pedido de validación y pipeline.js siblings); con el perfil del equipo (TYCON_TEAM_PROFILE_DIR), el revisor de hermanos sólo entra en un plugin y su agente no rastrea el disco.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/declared-siblings.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "story 8.51: la historia sin proyecto BMAD — el modo lo decide el guion, la escribe el guion (valida, no pisa, deja constancia), las instrucciones de las tres preguntas y la portada.",
       "raiz": "agent-skills",
       "ruta": "tycon-create-story/scripts/tests/story-without-bmad.test.js",

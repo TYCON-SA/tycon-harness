@@ -676,10 +676,40 @@ function evaluarCondicion(cuando, ctx) {
 
 /** Rinde un prompt del grupo validacion: {story_path} y {repo_path}. Reemplazo por función: un `$&`
  *  o `$'` dentro de una ruta no se expande (String.replace con string sí lo haría). */
-function rendirPrompt(prompt, { story_path, repo_path }) {
+function rendirPrompt(prompt, { story_path, repo_path, siblings }) {
   return String(prompt || '')
     .replace(/\{story_path\}/g, () => story_path || '')
-    .replace(/\{repo_path\}/g, () => repo_path || '');
+    .replace(/\{repo_path\}/g, () => repo_path || '')
+    .replace(/\{siblings\}/g, () => siblings || '');
+}
+
+/**
+ * Los hermanos que declaran los paquetes (`siblings`), cada uno en su ruta esperada bajo la raíz de repos. No se recorre
+ * ninguna carpeta: sólo se mira si esa ruta existe. Un revisor que salía a buscarlos por el disco caía en repos que no
+ * eran hermanos; una raíz distinta en otra máquina se arregla declarándola, no buscando. Sin raíz, ninguno «está».
+ * @returns {Array<{ paquete, nombre, ruta, rutaEsperada: string|null, esta: boolean }>}
+ */
+function hermanosResueltos({ paquetes = [], reposRoot = null } = {}) {
+  const out = [];
+  for (const p of paquetes) {
+    for (const h of p.hermanos || []) {
+      const rutaEsperada = reposRoot ? path.join(reposRoot, ...String(h.ruta).split('/')) : null;
+      let esta = false;
+      if (rutaEsperada) { try { esta = fs.statSync(rutaEsperada).isDirectory(); } catch (_e) { esta = false; } }
+      out.push({ paquete: p.nombre, nombre: h.nombre, ruta: h.ruta, rutaEsperada, esta });
+    }
+  }
+  return out;
+}
+
+/** Lo que recibe el pedido en `{siblings}`: una línea por hermano, y qué hacer con el que no está. */
+function textoDeHermanos(lista, { reposRoot = null } = {}) {
+  if (!lista.length) return '(no hay hermanos declarados: no se buscan)';
+  const lineas = lista.map((h) => (h.esta
+    ? `- ${h.nombre}: ${h.rutaEsperada} (está)`
+    : `- ${h.nombre}: ${h.rutaEsperada || h.ruta} (NO está en esta máquina: no lo busques en otro lado)`));
+  if (!reposRoot) lineas.push('(no sé cuál es la raíz de repos de esta máquina: se declara con TYCON_REPOS_ROOT)');
+  return lineas.join('\n');
 }
 
 /**
@@ -712,5 +742,5 @@ module.exports = {
   descubrir, nombresInstalados, cargarPaquetes, resetCache, BANDERAS, validateTree,
   validarManifiesto, validarCondicion, validarSuperficie,
   paquetesDeclarados, declaracionDelRepo, paquetesActivos, activosDeLaOrganizacion, queHacerSiFalta, nombreActual, packsDefault, notaDePaquetes, textoDeDefault,
-  evaluarCondicion, rendirPrompt,
+  evaluarCondicion, rendirPrompt, hermanosResueltos, textoDeHermanos,
 };
