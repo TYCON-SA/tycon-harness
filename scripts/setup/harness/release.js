@@ -1626,6 +1626,8 @@ function cmdInstall(ctx, H) {
     for (const l of moved.lines) { notes.push(l); log(l); }
     S.write(ctx.home, state);
     H.finishSnapshot(ctx, snap, log);
+    // una instalación que salió bien deja la máquina al día: el aviso «no se pudo actualizar desde …» de antes ya no vale
+    R.clearUpdateFailure(ctx.home);
     // las carpetas que Claude Code lee sin preguntar, con la misma línea que el resumen de la instalación desde un clon
     const readLine = R.readFoldersLine(require('./shared.js').union(a.report, a.shared));
     const readLines = readLine ? [readLine] : [];

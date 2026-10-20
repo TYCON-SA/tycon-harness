@@ -1895,6 +1895,12 @@
       "requiere": []
     },
     {
+      "__nota": "una actualización trabada por un archivo tomado (Windows): el aviso dice qué cerrar y qué correr; una instalación que sale bien borra el aviso viejo; el Node propio reintenta un rename tomado y, si sigue, dice qué hacer; el registro del buzón trae el sistema de la máquina; la guía de Windows tiene la salida. Hogares de juguete en carpetas temporales; sin red.",
+      "raiz": "arnes",
+      "ruta": "tests/windows-stuck-update.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "CodeGraph prendido por la organización: el renglón del plan del instalador (sólo con el perfil del equipo y sin el binario), el paso que corre install-codegraph --tool-only después del sí (falla y sigue), el texto de install-effects.json, el aviso de doctor y lo que espera tooling-expected; y Telegram fuera de «Tu organización» en «Cómo trabaja». Perfiles, hogares y binarios de juguete en carpetas temporales; sin red.",
       "raiz": "arnes",
       "ruta": "tests/codegraph-team.test.js",
