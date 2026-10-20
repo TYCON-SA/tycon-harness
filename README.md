@@ -27,7 +27,11 @@ machine](#start-on-your-own), or [for your team](#for-teams).
 
 **See how it works.**
 
-Six short videos, one to three minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
+Two paths in short videos, the one of someone working on their own and the team's, and a summary that ties them together. Each video lasts one to four minutes, and they are in Spanish.
+
+### If you work on your own
+
+For whoever uses the harness on their machine: from installing it to adding your project's rules.
 
 **0. What it is and what you get**
 
@@ -52,6 +56,42 @@ https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
 **5. Your project's rules**
 
 https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+
+### If you set up a team
+
+For whoever sets up the harness for their organization: from the three layers to what runs at night.
+
+**0. The three layers**
+
+https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129
+
+**1. Setting up your team**
+
+https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
+
+**2. A tour of the site**
+
+https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
+
+**3. Configuring from the site**
+
+https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
+
+**4. From commit to production**
+
+https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
+
+**5. What runs at night**
+
+https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
+
+### To wrap up
+
+For everyone: the summary of both paths.
+
+**From working on your own to the team**
+
+https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
 
 ## Start on your own
 
@@ -186,38 +226,6 @@ each product repo: [how to set them up](pipelines/operations/github/README.md) (
 4. **Configure from the site.** The **Configuration** tab (maintainers only) customizes the organization: who is responsible for what, the notice channel, the thresholds. It validates every change and proposes it as a pull request; it never writes `main`. Without the site, the same change goes as a pull request to the right repo. · [▶ video](https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965)
 5. **From commit to production.** The commit and the merge go through controls on each machine, and [the CI gate](guides/ci-gate.md) (in Spanish) checks again on the server what reached `main`. If you declare in `operations.json → deployments` the staging and production pipelines of each product, the dashboard shows their deployments ([how](pipelines/operations/README.md), in Spanish). · [▶ video](https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87)
 6. **What runs at night.** The dependency review, the cycle metrics and the dashboard run in your organization with your operations repo, and in the morning the notice arrives (Telegram, Slack or Teams) with counts and the link to the site. How to set them up: on [Azure DevOps](pipelines/operations/README.md) or on [GitHub](pipelines/operations/github/README.md) (in Spanish). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
-
-**The team's path, on video.** For whoever sets up the harness for their organization: from the three layers to what runs at night. Each video lasts one to four minutes, in Spanish.
-
-**0. The three layers**
-
-https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129
-
-**1. Setting up your team**
-
-https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
-
-**2. A tour of the site**
-
-https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
-
-**3. Configuring from the site**
-
-https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
-
-**4. From commit to production**
-
-https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
-
-**5. What runs at night**
-
-https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
-
-**To wrap up.** The summary of both paths.
-
-**From working on your own to the team**
-
-https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
 
 ## What else it does
 

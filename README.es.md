@@ -27,7 +27,11 @@ máquina](#empezá-solo), o [para tu equipo](#para-equipos).
 
 **Mirá cómo funciona.**
 
-Seis videos cortos, de uno a tres minutos cada uno, con el camino de quien trabaja solo: de instalarlo a sumar las reglas de tu proyecto.
+Dos caminos en videos cortos, el de quien trabaja solo y el del equipo, y un resumen que los une. Cada video dura de uno a cuatro minutos.
+
+### Si trabajás solo
+
+Para quien usa el arnés en su máquina: de instalarlo a sumar las reglas de tu proyecto.
 
 **0. Qué es y qué ganás**
 
@@ -52,6 +56,42 @@ https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
 **5. Las reglas de tu proyecto**
 
 https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+
+### Si armás un equipo
+
+Para quien arma el arnés para su organización: de las tres capas a lo que corre de noche.
+
+**0. Las tres capas**
+
+https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129
+
+**1. Dar de alta tu equipo**
+
+https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
+
+**2. Un recorrido por el sitio**
+
+https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
+
+**3. Configurar desde el sitio**
+
+https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
+
+**4. Del commit a producción**
+
+https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
+
+**5. Lo que corre de noche**
+
+https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
+
+### Para cerrar
+
+Para todos: el resumen de los dos caminos.
+
+**Del dev solo al equipo**
+
+https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
 
 ## Empezá solo
 
@@ -184,38 +224,6 @@ repo de cada producto: [cómo darlos de alta](pipelines/operations/github/README
 4. **Configurá desde el sitio.** La pestaña **Configuración** (sólo para quien mantiene) personaliza la organización: quién es responsable de qué, el canal del aviso, los umbrales. Valida cada cambio y lo propone con un pedido de cambio; nunca escribe `main`. Sin sitio, el mismo cambio va con un pedido de cambio al repo que corresponde. · [▶ video](https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965)
 5. **Del commit a producción.** El commit y el merge pasan por controles en cada máquina, y [el portón de CI](guides/ci-gate.md) vuelve a verificar en el servidor lo que llegó a `main`. Si declarás en `operations.json → deployments` los pipelines de staging y de producción de cada producto, el tablero muestra sus despliegues ([cómo](pipelines/operations/README.md)). · [▶ video](https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87)
 6. **Lo que corre de noche.** La revisión de dependencias, las métricas del ciclo y el tablero corren en tu organización con tu repo de operaciones, y a la mañana llega el aviso (Telegram, Slack o Teams) con cantidades y el enlace al sitio. Cómo darlos de alta: en [Azure DevOps](pipelines/operations/README.md) o en [GitHub](pipelines/operations/github/README.md). · [▶ video](https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6)
-
-**El camino del equipo, en video.** Para quien arma el arnés para su organización: de las tres capas a lo que corre de noche. Cada video dura de uno a cuatro minutos.
-
-**0. Las tres capas**
-
-https://github.com/user-attachments/assets/582a4581-141c-486e-a19d-1f5eb01d6129
-
-**1. Dar de alta tu equipo**
-
-https://github.com/user-attachments/assets/fa77d543-85b8-4564-8530-d583679b15c5
-
-**2. Un recorrido por el sitio**
-
-https://github.com/user-attachments/assets/4a3eb7fa-b206-4699-a123-8ca00a84bba9
-
-**3. Configurar desde el sitio**
-
-https://github.com/user-attachments/assets/eac2bff8-1849-492a-8cff-79d16e689965
-
-**4. Del commit a producción**
-
-https://github.com/user-attachments/assets/4aa334f2-b000-42ff-a5d2-603c2b213d87
-
-**5. Lo que corre de noche**
-
-https://github.com/user-attachments/assets/0fc6e458-74d8-4338-b997-3e87841680c6
-
-**Para cerrar.** El resumen de los dos caminos.
-
-**Del dev solo al equipo**
-
-https://github.com/user-attachments/assets/8e9c21c1-3fda-4724-9340-d998c2cf14a7
 
 ## Qué más hace
 
