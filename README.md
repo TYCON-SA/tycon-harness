@@ -25,6 +25,30 @@ AI software development life cycle (AI SDLC), step by step:
 The checks are one part of the cycle: they guard every step. There are two ways to start it: [on your own, on your
 machine](#start-on-your-own), or [for your team](#for-teams).
 
+**See how it works.**
+
+Five short videos, one to two minutes each and in Spanish, along the path of someone working on their own: from installing it to adding your project's rules.
+
+**0. What it is and what you get**
+
+https://github.com/user-attachments/assets/7a578d6b-d16c-4919-acf8-7a1f235d0c5b
+
+**1. Installing it**
+
+https://github.com/user-attachments/assets/c473571f-478b-4eed-947d-7640cca790d9
+
+**2. Your first story**
+
+https://github.com/user-attachments/assets/921015b9-b305-4d93-ad0b-df5a582b7a3a
+
+**3. A story with a screen**
+
+https://github.com/user-attachments/assets/c7de96c4-91c3-4aeb-b4ba-d588e9475550
+
+**4. Your project's rules**
+
+https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
+
 ## Start on your own
 
 **It works today for .NET, JavaScript, TypeScript, Python, Go and Java**: out of the box the test step runs .NET,
