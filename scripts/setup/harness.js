@@ -998,7 +998,7 @@ function codegraphInstall({ tree, env = process.env, platform = process.platform
   if (!fs.existsSync(script)) return { ok: false, note: `CodeGraph no se pudo instalar (no está ${script}); el arnés quedó instalado` };
   const r = spawnSync(win ? 'pwsh' : 'bash', win ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-ToolOnly'] : [script, '--tool-only'],
     { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 10 * 60 * 1000, windowsHide: true });
-  if (r.status === 0) return { ok: true, note: 'CodeGraph: instalado (lo usa tu organización)' };
+  if (r.status === 0) return { ok: true, note: 'CodeGraph: instalado (lo usa tu organización) — para usarlo en un repo, reiniciá Claude Code y aprobá el servidor; el modo automático se saca con install-codegraph --tool-only --no-auto' };
   const why = r.error ? r.error.message : String(r.stderr || r.stdout || `salió con ${r.status}`).trim().split('\n').pop().slice(0, 200);
   return { ok: false, note: `CodeGraph no se pudo instalar (${why}); el arnés quedó instalado — reintentá con: ${retry}` };
 }
@@ -1119,7 +1119,7 @@ function installQuestions(ctx, tree, existing) {
   // CodeGraph prendido por la organización y sin el binario: un renglón más del plan, cubierto por el mismo «¿Instalo?»
   // (sin pregunta nueva). Lo instala `codegraphInstall` después del sí.
   if (v.integraciones && v.integraciones.codegraph === true && o['integraciones.codegraph'] === 'perfil' && !findInPath('codegraph', ctx.env)) {
-    out.head.push('CodeGraph: tu organización lo usa — se instala (scripts/setup/install-codegraph); el índice lo arma esta máquina');
+    out.head.push('CodeGraph: tu organización lo usa — se instala (scripts/setup/install-codegraph); el índice lo arma esta máquina y queda prendido el modo automático: al abrir una sesión en un repo, lo indexa y lo registra');
     out.codegraphInstall = true;
   }
   // cuando no se preguntaron las integraciones (el perfil lo fija la configuración, la instalación ya existe, `--yes`, sin

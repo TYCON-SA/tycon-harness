@@ -16,6 +16,12 @@ $Cwd = (Get-Location).Path
 # No tocar paths dentro de node_modules / .git
 if ($Cwd -match "[\\/]node_modules[\\/]" -or $Cwd -match "[\\/]\.git[\\/]") { exit 0 }
 
+# Nunca tratar la carpeta personal ni la raiz de un disco como proyecto: una sesion abierta sin carpeta arranca ahi, y
+# con un package.json suelto indexaria todo (el mismo cuidado que tiene el gancho de Mac y Linux).
+$CwdFull = [System.IO.Path]::GetFullPath($Cwd).TrimEnd('\', '/')
+$HomeFull = if ($HOME) { [System.IO.Path]::GetFullPath($HOME).TrimEnd('\', '/') } else { $null }
+if (($HomeFull -and $CwdFull -ieq $HomeFull) -or ($CwdFull -eq [System.IO.Path]::GetPathRoot($Cwd).TrimEnd('\', '/'))) { exit 0 }
+
 # Herramientas presentes
 if (-not (Get-Command codegraph -ErrorAction SilentlyContinue)) { exit 0 }
 if (-not (Get-Command claude -ErrorAction SilentlyContinue))    { exit 0 }
@@ -39,14 +45,15 @@ if (-not (Test-Path -LiteralPath (Join-Path $Cwd ".codegraph"))) {
     if ($LASTEXITCODE -ne 0) { exit 0 }
 }
 
-# .gitignore
-$Gi = Join-Path $Cwd ".gitignore"
-if (Test-Path -LiteralPath $Gi) {
-    if ((Get-Content -LiteralPath $Gi) -notcontains ".codegraph/") {
-        Add-Content -LiteralPath $Gi -Value ""
-        Add-Content -LiteralPath $Gi -Value "# CodeGraph: indice local (SQLite), machine-specific y regenerable"
-        Add-Content -LiteralPath $Gi -Value ".codegraph/"
-    }
+# El índice es de esta máquina: va al exclude local de git, nunca al .gitignore del equipo (un cambio ahí se termina
+# subiendo). La ruta la da git, así vale también en un worktree. Fuera de un repo no se anota nada.
+$Ex = (& git -C $Cwd rev-parse --git-path info/exclude 2>$null)
+if ($LASTEXITCODE -eq 0 -and $Ex) {
+    if (-not [System.IO.Path]::IsPathRooted($Ex)) { $Ex = Join-Path $Cwd $Ex }
+    $ExDir = Split-Path -Parent $Ex
+    if (-not (Test-Path -LiteralPath $ExDir)) { New-Item -ItemType Directory -Path $ExDir -Force | Out-Null }
+    $ExLines = if (Test-Path -LiteralPath $Ex) { Get-Content -LiteralPath $Ex } else { @() }
+    if ($ExLines -notcontains ".codegraph/") { Add-Content -LiteralPath $Ex -Value ".codegraph/" }
 }
 
 # Registrar el MCP server (forma larga --path por la colision de -p)
