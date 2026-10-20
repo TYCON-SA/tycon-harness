@@ -316,16 +316,21 @@ function managedBefore(ctx, log) {
 
 /**
  * Las reglas de lectura de las carpetas del arnés, DESPUÉS del aplicador: los enlaces de ~/.claude que
- * cubren (agent-skills, cada skill) los crea él, y antes no existen. Devuelve sus piezas (o `[]`); nunca tira.
+ * cubren (agent-skills, cada skill) los crea él, y antes no existen. Devuelve `{ pieces, notes }`: sus piezas y lo que
+ * sumó o sacó, en llano (vacío si no cambió nada), para el cierre de `update`. Nunca tira.
  */
 function readPieces(ctx, tree, { log, snapshotDir }) {
-  if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return [];
+  if (ctx.env.TYCON_NO_AUTOINSTALL === '1') return { pieces: [], notes: [] };
   try {
     const r = mod('shared').applyReadRules({ home: ctx.home, env: ctx.env, tree, backup: !snapshotDir, log, previous: managedBefore(ctx, log) });
-    return r && Array.isArray(r.pieces) ? r.pieces : [];
+    // todo lo que sumó, sacó o no pudo hacer; el apagado a propósito (TYCON_NO_READ_PERMISSIONS=1) no se repite en cada cierre
+    const off = mod('read-permissions').OFF_ENV;
+    const notes = r && Array.isArray(r.notes) ? r.notes.filter((n) => !n.startsWith(`${off}=1`)) : [];
+    if (r && !r.ok && r.reason && !notes.includes(r.reason)) notes.push(r.reason);
+    return { pieces: r && Array.isArray(r.pieces) ? r.pieces : [], notes };
   } catch (e) {
     if (log) log(`piezas compartidas: las reglas de lectura no se pudieron sumar (${String((e && e.message) || e).split('\n')[0]})`);
-    return [];
+    return { pieces: [], notes: [] };
   }
 }
 
@@ -598,11 +603,12 @@ function runClaudeApplier(ctx, tree, { log, snapshotDir = null, codex = null, en
   }
   if (!settingsThere && ok) shared = sharedPieces(ctx, tree, { log, snapshotDir, reads: false });
   // las reglas de lectura del arnés, con los enlaces ya hechos; van con las compartidas al registro
-  if (ok) shared = [...(shared || []), ...readPieces(ctx, tree, { log, snapshotDir })];
+  const reads = ok ? readPieces(ctx, tree, { log, snapshotDir }) : { pieces: [], notes: [] };
+  if (ok) shared = [...(shared || []), ...reads.pieces];
   // los avisos del aplicador para la persona (story 8.16, AC 8): el registro se queda con las últimas tres líneas, y un
   // aviso de más arriba se perdía; `install` los repite tal cual
   const warnings = mod('report').warningLines(out, { windows: isWin(ctx) });
-  return { ok, status: r.status, out, report, shared: shared || [], warnings, reason: ok ? null : `el aplicador salió ${r.status === null ? 'matado' : r.status}` };
+  return { ok, status: r.status, out, report, shared: shared || [], readNotes: reads.notes, warnings, reason: ok ? null : `el aplicador salió ${r.status === null ? 'matado' : r.status}` };
 }
 
 /** Cuántas skills de terceros baja el instalador según la lista del árbol, o null si no se puede leer (story 8.16, AC 8). */

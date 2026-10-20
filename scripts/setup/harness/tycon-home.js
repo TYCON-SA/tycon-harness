@@ -335,7 +335,7 @@ function strayTempLinks(at) {
 }
 
 module.exports = {
-  PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError,
+  PLACE_NAME, LEGACY_PLACE_NAME, OWN_DIR_NAME, TyconHomeError, ownRootOf,
   placePath, legacyPlacePath, isHarnessClone, resolvePlace, claudeDir,
   harnessDir, stateDir, configFile, backupsDir, installedSkillsDir, maintainedDir, dashboardDir, home, ownPaths, isReleaseMachine, maintainedPath,
   harnessNode,

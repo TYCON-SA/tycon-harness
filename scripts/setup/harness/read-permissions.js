@@ -51,8 +51,12 @@ function ruleFor(dir, { home, platform = process.platform }) {
   const same = (a, b) => (win ? a.toLowerCase() === b.toLowerCase() : a === b);
   // la parte de la ruta que va escrita en la regla: lo que sigue a la carpeta personal (forma `~/…`) o la ruta entera
   let body = null; let lead = '~/';
-  const rel = P.relative(h, d);
-  if (rel && !rel.startsWith('..') && !P.isAbsolute(rel) && same(P.join(h, rel), d)) body = rel.split(SEP);
+  // bajo la carpeta personal tal cual o bajo su ruta real (una carpeta personal enlazada: la carpeta llega resuelta)
+  const under = (base) => { const rel = P.relative(base, d); return rel && !rel.startsWith('..') && !P.isAbsolute(rel) && same(P.join(base, rel), d) ? rel : null; };
+  let realHome = h;
+  if (!win) { try { realHome = clean(fs.realpathSync(home)); } catch (_) { realHome = h; } }
+  const rel = under(h) || (realHome !== h ? under(realHome) : null);
+  if (rel) body = rel.split(SEP);
   else if (win) {
     const m = /^([A-Za-z]):[\\/]*(.*)$/.exec(d);
     // una ruta de red (`\\servidor\recurso`) no tiene una forma documentada: sin regla
@@ -82,7 +86,12 @@ function ourRules({ home, tree, platform = process.platform, skipped = null }) {
   };
   const treeReal = tree ? real(tree) : null;
   if (!treeReal) return out;
-  add(treeReal);
+  // la instalación bajada: el árbol real es una carpeta de versions/, que cambia en cada actualización. La regla cubre
+  // versions/ entera, así no nombra una versión ni cambia al actualizar (y cubre la ruta real, que Claude Code exige)
+  // sólo la versions/ del arnés (~/.tycon/versions): otra carpeta que se llame igual no se ensancha
+  const ours = real(path.join(require('./tycon-home.js').ownRootOf(home), 'versions'));
+  const parent = path.dirname(treeReal);
+  add(ours && parent === ours ? parent : treeReal);
   // nombrado por otra ruta (una carpeta enlazada en el medio): la regla vale para la pedida y para la real
   if (path.resolve(tree) !== treeReal) add(path.resolve(tree));
   // la carpeta de Claude Code y los dos enlaces (el lugar del arnés y las skills instaladas) los da tycon-home.js

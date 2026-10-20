@@ -259,3 +259,62 @@ test('T7 ReadRules_DesinstalarSacaSoloLasPropias @story-8.66 @ac-5 — saca las 
     assert.strictEqual(otra.absent.length, 1);
   } finally { fs.rmSync(m.home, { recursive: true, force: true }); }
 });
+
+const RPT = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'report.js'));
+const pieza = (regla) => ({ kind: 'setting', where: '/x/settings.json', id: RP.pieceId(regla), value: regla });
+
+test('ReadFoldersLine_CeroUnaYVarias @story-8.66.1 @ac-2 — la línea de las carpetas, una sola forma', () => {
+  assert.strictEqual(typeof RPT.readFoldersLine, 'function', 'falta readFoldersLine en report.js');
+  assert.strictEqual(RPT.readFoldersLine([{ kind: 'hook', id: 'x' }, { kind: 'setting', id: 'cleanupPeriodDays' }]), null);
+  const una = RPT.readFoldersLine([pieza('Read(~/.tycon/harness/**)')]);
+  assert.match(una, /lee sin preguntar 1 carpeta del arnés/);
+  assert.match(una, /~\/\.tycon\/harness$/);
+  const tres = RPT.readFoldersLine([{ kind: 'hook', id: 'x' }, ...NUESTRAS.slice(0, 3).map(pieza)]);
+  assert.match(tres, /3 carpetas/);
+  for (const d of ['~/.tycon/harness', '~/.claude/tycon-harness', '~/.claude/agent-skills']) assert.ok(tres.includes(d), tres);
+  // el resumen de la instalación desde un clon dice exactamente la misma línea
+  assert.ok(RPT.leftCounts(NUESTRAS.slice(0, 3).map(pieza)).includes(tres));
+});
+
+test('UpdateNotes_SoloSiSumaOSaca @story-8.66.1 @ac-3 — la nota de lo que cambió sale sólo cuando cambió algo', () => {
+  const m = maquina();
+  try {
+    const primera = SH.applyReadRules({ home: m.home, env: m.env, tree: m.tree, backup: false });
+    assert.ok(primera.notes.some((n) => /permití leer sin preguntar/.test(n) && n.includes('~/.tycon/harness')), primera.notes.join(' | '));
+    const segunda = SH.applyReadRules({ home: m.home, env: m.env, tree: m.tree, backup: false, previous: primera.pieces });
+    assert.ok(!segunda.notes.some((n) => /permití leer|saqué de/.test(n)), segunda.notes.join(' | '));
+  } finally { fs.rmSync(m.home, { recursive: true, force: true }); }
+});
+
+test('RuleFor_CarpetaPersonalEnlazada @story-8.66.2 @ac-1 — con la carpeta personal enlazada, la forma ~/… igual', () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-enl-')));
+  try {
+    const realHome = path.join(base, 'real', 'ana');
+    fs.mkdirSync(path.join(realHome, '.tycon', 'harness'), { recursive: true });
+    const home = path.join(base, 'ana');
+    fs.symlinkSync(realHome, home, 'dir');
+    assert.strictEqual(RP.ruleFor(path.join(realHome, '.tycon', 'harness'), { home, platform: 'darwin' }), 'Read(~/.tycon/harness/**)');
+    // una carpeta fuera de las dos sigue con la forma absoluta
+    assert.strictEqual(RP.ruleFor(path.join(base, 'otra'), { home, platform: 'darwin' }), `Read(/${path.join(base, 'otra')}/**)`);
+  } finally { fs.rmSync(base, { recursive: true, force: true }); }
+});
+
+test('OurRules_ArbolEnVersions_ReglaDeVersionsEntera @story-8.66.2 @ac-2 — la regla de la ruta real no nombra una versión', () => {
+  const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rp-ver-')));
+  try {
+    const version = path.join(home, '.tycon', 'versions', '2026.1.1');
+    fs.mkdirSync(path.join(version, 'skills'), { recursive: true });
+    const tree = path.join(home, '.tycon', 'harness');
+    fs.symlinkSync(version, tree, 'dir');
+    const reglas = RP.ourRules({ home, tree });
+    assert.ok(reglas.includes('Read(~/.tycon/versions/**)'), reglas.join(' | '));
+    assert.ok(reglas.includes('Read(~/.tycon/harness/**)'), reglas.join(' | '));
+    assert.ok(!reglas.some((r) => /versions\/2026/.test(r)), reglas.join(' | '));
+    // un árbol en otra carpeta que se llama versions/ no ensancha la regla a sus vecinas
+    const ajena = path.join(home, 'trabajo', 'versions', 'arnes');
+    fs.mkdirSync(path.join(ajena, 'skills'), { recursive: true });
+    const deAfuera = RP.ourRules({ home, tree: ajena });
+    assert.ok(deAfuera.includes('Read(~/trabajo/versions/arnes/**)'), deAfuera.join(' | '));
+    assert.ok(!deAfuera.includes('Read(~/trabajo/versions/**)'), deAfuera.join(' | '));
+  } finally { fs.rmSync(home, { recursive: true, force: true }); }
+});
