@@ -192,11 +192,12 @@ function computeCommitGate({ verdict, mode = 'warn' }) {
 // Decisión del dev: que **avise**, no que la genere sola. Generarla sola es cómodo pero vuelve a
 // esconder que te saliste del pipeline, que es el problema de fondo.
 
-/** Path de la guía para una story — MISMA regla que qa-guide.js: hermano `qa/` de `stories/`. */
+/** Path de la guía para una story — la carpeta sale de la MISMA regla que usa qa-guide.js (`lib/qa-dir.js`). */
 function qaGuidePathFor(storyAbsPath) {
-  const storiesDir = path.dirname(storyAbsPath);
-  const specsRoot = path.dirname(storiesDir);
-  return path.join(specsRoot, 'qa', path.basename(storyAbsPath, '.md') + '-guia-qa.html');
+  let id = null;
+  try { id = (fs.readFileSync(storyAbsPath, 'utf8').match(/^story:\s*["']?([^"'\s#]+)/m) || [])[1] || null; } catch { /* sin historia legible: sólo el nombre del archivo */ }
+  const dir = require('./qa-dir.js').qaDirFor(storyAbsPath, [id]);
+  return path.join(dir, path.basename(storyAbsPath, '.md') + '-guia-qa.html');
 }
 
 // ── ¿Hay algo que una PERSONA pueda operar a mano? (2026-07-28, feedback DevA) ─────────────────

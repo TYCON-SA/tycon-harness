@@ -1212,7 +1212,7 @@ function main() {
 
           // La guía del tester lleva la clave de la story (story 1.17.1): con número repetido, dos stories que
           // comparten la carpeta qa/ escribían y leían el mismo archivo.
-          const pasosPath = path.join(path.dirname(path.dirname(storyAbs)), 'qa',
+          const pasosPath = path.join(require('./lib/qa-dir.js').qaDirFor(storyAbs, [matrix.key, matrix.sid]),
             `${matrix.key || matrix.sid}-pasos.md`);
           const pasosMd = fs.existsSync(pasosPath) ? fs.readFileSync(pasosPath, 'utf8') : null;
 

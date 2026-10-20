@@ -6121,6 +6121,33 @@ function main() {
     }
     const guia = tree ? path.join(tree, 'story-format.md') : null;
     r.story_format = guia && fs.existsSync(guia) ? guia : null;
+    // El veredicto de pantalla de la historia, con el mismo detector que los controles del cierre (Casos: tests/first-screen-story.test.js): el
+    // revisor de la historia lo recibe en el pedido y no lo deduce por su cuenta.
+    r.screen = null;
+    if (args.story) {
+      try {
+        const sp = path.resolve(String(args.story));
+        const content = fs.readFileSync(sp, 'utf8');
+        const ui = require('./lib/ui-signal.js');
+        const repoRoot = require('./lib/evidence-config.js').discoverRepoRoot(sp);
+        const verdict = ui.applyScreenRule(content, repoRoot, r.rules.screen_test.value);
+        const detail = ui.uiSignalDetail(content, repoRoot);
+        const porSenal = {
+          extension: 'nombra un archivo de pantalla (.tsx, .jsx, .vue o .svelte)',
+          lista: 'sus archivos a tocar están en una carpeta de pantalla (frontend, src/app, src/components o las que declara el repo)',
+          campo: 'un campo del frontmatter (repo, stack, área…) nombra el frente',
+          tanda: 'una tanda del bloque pipelines nombra el frente',
+          prosa: 'no declara archivos y su texto habla del frente',
+          cuerpo: 'trae escenarios de prueba con navegador',
+        };
+        r.screen = {
+          ui: verdict.ui === true,
+          why: verdict.note || porSenal[detail.signal] || 'ninguna señal de pantalla: ni archivos de pantalla, ni carpetas del frente, ni escenarios con navegador',
+        };
+      } catch (e) {
+        r.problems.push(`no pude calcular el veredicto de pantalla de ${args.story} (${e && e.message ? e.message : e})`);
+      }
+    }
     process.stdout.write(JSON.stringify(r, null, 2) + '\n');
     process.exit(0);
   }
