@@ -276,7 +276,7 @@ y "todos" es exactamente donde se esconden las regresiones que la story causó e
 |---|---|---|
 | `0` | suite verde | seguir |
 | `!=0` (1,2,…) | suite roja | pausar, corregir, re-correr |
-| `3` | el repo no tiene stack de tests detectable | anotarlo; no hay suite que correr |
+| `3` | **sin medir**: el portón no reconoce ninguna herramienta de pruebas en el repo y no corrió nada. Deja `tests-result.json` con `no_stack: true` y el motivo en llano (`no_stack_reason`); el check `tests` queda `sin-medir`, también sobre un verde anterior. Un solo proyecto con pruebas en una subcarpeta ya no sale 3: se corre con ese alcance | seguir anunciándolo: `complete-step 4` y el paso 8 dicen «pruebas no medidas», y el cierre de la historia lo copia en una línea. Para medirlas, declarar el comando en el sitio de la organización (Configuración → Tu tecnología → Cómo se corren las pruebas) |
 | `4` | **FRENO**: el repo tiene más de un proyecto testeable y no se pudo deducir cuál | pasar el alcance a mano: `test-gate.sh <repo> <story> <subdir>` |
 | `5` | **no pude correr las pruebas**: falta el corredor (`npx`, `dotnet`, `npm`), o el shell lo ve pero no se puede lanzar. No se corrió nada (`halted: true`, `missing_tool`) | NO tocar las pruebas: instalar la herramienta o abrir la sesión con un PATH que la vea, y re-correr el gate |
 | `6` | la suite salió 0 pero **no corrió ninguna prueba** (o no dejó un resumen que las cuente): no es verde | mirar `no_tests_run` en `tests-result.json`: alcance vacío, todas saltadas o `todo`, o un resumen ilegible; corregir eso y re-correr |

@@ -425,7 +425,7 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
 
 - **En el sitio**: los lenguajes que el arnés ya reconoce, las terminaciones que suma tu equipo, la tabla de
   herramientas de prueba y las tres reglas. Las que la puerta de pruebas corre por dentro (.NET, Vitest, Jest y Node)
-  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle y Karma se pueden
+  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle, Karma y Playwright se pueden
   cambiar: el formulario llega lleno con la de fábrica, y al guardar queda una copia de la organización con el mismo
   nombre que la reemplaza. «Volver a la de fábrica» borra la copia. El comando de una herramienta lo corre la
   computadora de cada persona del equipo.

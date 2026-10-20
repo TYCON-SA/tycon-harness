@@ -52,7 +52,7 @@ https://github.com/user-attachments/assets/f299ebd1-5423-4d53-aee9-6de9c876fd3f
 ## Empezá solo
 
 **Sirve hoy para .NET, JavaScript, TypeScript, Python, Go y Java**: el paso de pruebas corre de fábrica .NET, Vitest,
-Jest, Node (`node --test`), pytest, Go, Maven, Gradle y Karma. Con otra herramienta, ese paso todavía no reconoce tus
+Jest, Node (`node --test`), pytest, Go, Maven, Gradle, Karma y Playwright. Con otra herramienta, ese paso todavía no reconoce tus
 pruebas hasta que tu equipo la declara en su configuración («Tu tecnología», en el sitio).
 
 Antes de instalar necesitás tu agente de código (Claude Code o Codex) con tu sesión iniciada, y Node 22 o posterior.

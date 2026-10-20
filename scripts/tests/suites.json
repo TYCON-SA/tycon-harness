@@ -401,6 +401,12 @@
       "requiere": []
     },
     {
+      "__nota": "la puerta de pruebas con el back en pytest en una subcarpeta y el front con Playwright (herramientas falsas en el PATH); lo que no sabe correr deja constancia y el check queda «sin medir» (story 7.45).",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-gate-project-folder.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/run-size.test.js",
       "requiere": [

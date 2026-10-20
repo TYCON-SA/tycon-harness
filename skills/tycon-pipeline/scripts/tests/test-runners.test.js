@@ -167,3 +167,28 @@ test('@story-8.48 @ac-14 T17 TestRunners_RepoUnderTest_CannotDeclareRunner', () 
   assert.equal(r.source, 'fabrica');
   assert.doesNotMatch(r.command, /curl/);
 });
+
+test('@story-7.45 @ac-1 T10 Factory_Playwright_Entry', () => {
+  for (const conf of ['playwright.config.js', 'playwright.config.ts', 'playwright.config.mjs', 'playwright.config.cjs']) {
+    const r = runners.resolve(proyecto({ [conf]: 'export default {};\n' }), { results: '/tmp/res' });
+    assert.ok(r, conf);
+    assert.equal(r.name, 'playwright', conf);
+    assert.equal(r.tool, 'npx');
+    assert.match(r.command, /PLAYWRIGHT_JUNIT_OUTPUT_NAME=\/tmp\/res\/junit\.xml npx playwright test --reporter=junit/);
+    assert.deepEqual(r.results, { format: 'junit', path: '/tmp/res/junit.xml' });
+    assert.equal(r.coverage, null);
+    assert.match(r.noCoverageReason, /punta a punta/);
+  }
+  // Vitest en la misma carpeta gana (orden del catálogo): esta función sólo ve las de fábrica, y Playwright está al final
+  const nombres = runners.FACTORY.map((f) => f.name);
+  assert.equal(nombres[nombres.length - 1], 'playwright');
+  // el deductor ve sus cuatro archivos
+  const det = runners.detectorFiles().filter((d) => d.name === 'playwright').map((d) => d.file).sort();
+  assert.deepEqual(det, ['playwright.config.cjs', 'playwright.config.js', 'playwright.config.mjs', 'playwright.config.ts']);
+  // «Cambiar» desde el sitio arranca con el comando de fábrica: la herramienta de la declarada es npx, no la variable
+  const fila = runners.factoryTable().find((f) => f.name === 'playwright');
+  assert.ok(fila && !fila.coverage, JSON.stringify(fila));
+  const decl = runners.inspect(proyecto({ [fila.detect]: '' }), { stack: { test_runners: [{ name: 'playwright', detect: fila.detect, command: fila.command, results: fila.results }] } });
+  assert.equal(decl.runner.source, 'organizacion');
+  assert.equal(decl.runner.tool, 'npx');
+});

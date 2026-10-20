@@ -1132,6 +1132,20 @@ function cmdCompleteStep(nRaw, flags) {
       console.error('   la cubre la CI del pedido, y el merge exige la CI completa en verde. El motivo está en .advisors/tests-result.json.');
     }
 
+    // ── «Sin medir»: se acepta diciéndolo, nunca callado ─────────────────────────────────
+    // El portón no reconoce ninguna herramienta de pruebas en el repo (salida 3 de test-gate.sh) y no corrió nada. No es
+    // un rojo que el agente pueda arreglar; tampoco es verde: se dice en una línea, con cómo medirlo, y queda anotado.
+    if (testsCheck === 'sin-medir') {
+      appendLog('gates.log', {
+        name: 'tests-not-measured', status: 'accepted', story: marker.storyId || null,
+        reason: marker.testsNotMeasuredReason || 'el portón no reconoce ninguna herramienta de pruebas en el repo',
+      });
+      console.error(`⚠️  ${testsNotMeasuredLine(marker)}`);
+      console.error('   Para medirlas: declará el comando de pruebas del repo en el sitio de la organización, pestaña Configuración →');
+      console.error('   Tu tecnología → Cómo se corren las pruebas (stack.test_runners de team-repos.json). El detalle está en');
+      console.error('   .advisors/tests-result.json.');
+    }
+
     // ── Chequeo de MUTANTES (AVISA, NO FRENA — decisión del dev 2026-08-13) ─────────────────────
     // La suite en verde no prueba que los tests ejerzan el código nuevo; el chequeo lo rompe a
     // propósito y mira si algún test se pone rojo. El único caso que bloquea es exit 1 del chequeo
@@ -1757,6 +1771,38 @@ function cmdMarkTestsNotScoped(motivo) {
   writeMarker(marker);
   appendLog('gates.log', { sessionId: marker.sessionId || null, storyId: marker.storyId || null, check: 'tests',
     status: 'sin-acotar', provenance: 'test-gate', motivo: String(motivo || '').slice(0, 300) });
+}
+
+/**
+ * `mark-tests-not-measured`: la salida 3 de test-gate.sh es «sin medir» (no reconoce ninguna herramienta de pruebas en el
+ * repo y no corrió nada). Pone `sin-medir` sobre cualquier estado anterior: un verde de otra corrida no puede quedar en
+ * pie. No es verde ni un rojo para arreglar: complete-step 4 y el paso 8 lo anuncian (nunca un verde callado). Sólo lo
+ * llama test-gate.sh.
+ */
+/** La línea que dicen el paso 4 y el paso 8 cuando el check `tests` quedó «sin medir». */
+function testsNotMeasuredLine(marker) {
+  const r = String((marker && marker.testsNotMeasuredReason) || '');
+  const m = r.match(/no encontré (un proyecto de [^.]*?)(?:\. |$)/);
+  return `pruebas no medidas: el portón no sabe correr las pruebas de este repo${m ? ` (no encontré ${m[1]})` : ''}`;
+}
+
+function cmdMarkTestsNotMeasured(motivo) {
+  if (process.env.TYCON_TEST_GATE !== '1') {
+    console.error('marker.js mark-tests-not-measured: sólo lo usa test-gate.sh (TYCON_TEST_GATE=1)');
+    process.exit(2);
+  }
+  const marker = readMarker();
+  if (!marker) return;   // sin corrida activa no hay nada que marcar, como run-check
+  marker.checks = marker.checks || {};
+  marker.checks.tests = 'sin-medir';
+  marker.checksProvenance = marker.checksProvenance || {};
+  marker.checksProvenance.tests = 'test-gate';
+  marker.checksAt = marker.checksAt || {};
+  marker.checksAt.tests = nowIso();
+  marker.testsNotMeasuredReason = String(motivo || '').slice(0, 600);
+  writeMarker(marker);
+  appendLog('gates.log', { sessionId: marker.sessionId || null, storyId: marker.storyId || null, check: 'tests',
+    status: 'sin-medir', provenance: 'test-gate', motivo: String(motivo || '').slice(0, 300) });
 }
 
 function cmdSetCheck(name, status, flag) {
@@ -3973,6 +4019,9 @@ switch (cmd) {
     break;
   case 'mark-tests-not-scoped':
     cmdMarkTestsNotScoped(arg1);
+    break;
+  case 'mark-tests-not-measured':
+    cmdMarkTestsNotMeasured(arg1);
     break;
   case 'set-flag':
     cmdSetFlag(arg1, arg2);
