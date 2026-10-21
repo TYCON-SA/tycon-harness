@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# evidence-key-collision.test.sh — red de la story 1.17: la evidencia no se pisa entre stories del mismo número.
+# evidence-key-collision.test.sh — red de la clave de evidencia: la evidencia no se pisa entre stories del mismo número.
 #
-# Por qué existe: la evidencia de cierre se nombraba con el número de la story y nada más
-# (`<id>-smoke-ledger.jsonl`, `<id>-runtime-matrix.md`…). En dos repos del equipo el número NO identifica:
-# numeran por tema y cada tema arranca en 1.1. La matriz de verificación por criterio contó un criterio como
-# corrido con el registro de OTRA story del mismo número (2026-10-05). Medido: 35 de 88 evidencias de un
-# repo y 20 de 79 de otro bajo un número que comparten varias stories (guides/maintaining/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
+# Por qué existe: si la evidencia de cierre se nombrara con el número de la story y nada más
+# (`<id>-smoke-ledger.jsonl`, `<id>-runtime-matrix.md`…), en un repo que numera por tema (cada tema arranca en 1.1)
+# el número NO identifica: la matriz de verificación por criterio contaría un criterio como
+# corrido con el registro de OTRA story del mismo número.
 #
 # La regla: la clave de la evidencia lleva el tema SÓLO cuando el número está repetido en el repo
 # (`<tema>__<número>`); si es único, la clave es el número solo, como siempre. Una regla «por carpeta
-# `stories/`» dejaba huérfanas las 106 evidencias de un repo con números únicos y no arreglaba otro que no
+# `stories/`» dejaría huérfanas las evidencias de un repo con números únicos y no arreglaría otro que no
 # usa carpetas `stories/`: T2b y T1b la cazan.
 #
-# Lo que prueba (story 1.17, tabla «Tests»):
+# Lo que prueba:
 #   T1   dos temas, mismo número → el humo de cada uno cae en su archivo (smoke-run.sh con la RUTA de la story)
 #   T1b  sin carpeta `stories/` → el tema es la carpeta de la story
 #   T2   forma del arnés (`specs/story-1-9-x.md`) → la clave es el número, igual que hoy
@@ -28,11 +27,11 @@
 #   T8   la parcheada a mano con el tema en el nombre (`1.1-cobranza-*`) no se toca y el reporte la nombra
 #   T9   número repetido → el lint lo avisa con las rutas y sale 0
 #   T10  números únicos → el lint no avisa
-#   T11  story-format pide el id único; incident-log tiene su entrada; README tiene la fila
+#   T11  story-format pide el id único; el registro de incidentes tiene su entrada; el índice tiene la fila
 #   T12  sin recorrido completo del repo → error, sin clave adivinada
 #   T14  clave no calculable → sin evidencia y con el motivo dicho (no «no hay evidencia» a secas)
 #   T15  test-gate.sh real deja la copia sellada del resultado bajo la clave
-#   T16-T21 lo que encontró el pase adversarial: la clave es única entre las stories del mismo número aunque los
+#   T16-T21 casos límite: la clave es única entre las stories del mismo número aunque los
 #        temas choquen al desempatar, se repitan en otra área o difieran sólo en tildes; los ids con letras también se
 #        separan; «renombrada a mano» mira el tema entero; el autoexamen de cierre se busca por la clave
 #   T22  ruta de story inexistente o id con barras/comillas → ningún escritor escribe nada
@@ -180,7 +179,7 @@ M6="$TMP/m6"; repo "$M6"
 story "$M6/.specs/cobranza-deudor/stories/1-1-x.md" 1.1
 story "$M6/.specs/pagos/stories/1-1-y.md" 1.1
 E6="$M6/.advisors/dod-runtime"; S6="$M6/.specs/cobranza-deudor/stories/1-1-x.md"
-# Una línea vieja (sin `v`), armada por el ayudante compartido de las pruebas (story 1.19).
+# Una línea sin `v`, armada por el ayudante compartido de las pruebas.
 node "$SK/tests/lib/smoke-ledger-line.js" --dod "$E6" --gates "$GATES" --story 1.1 --acs 1 --repo "$M6"
 printf '# matriz vieja\n' > "$E6/1.1-runtime-matrix.md"
 printf '# parcheada a mano\n' > "$E6/1.1-cobranza-runtime-matrix.md"
@@ -217,10 +216,10 @@ out10="$(cd "$L10" && node "$AQUI/scripts/lib/lint-story-frontmatter.js" 2>&1)";
 if [ $rc10 -eq 0 ] && ! echo "$out10" | grep 'repetid' >/dev/null; then ok "T10 números únicos: el lint no avisa"
 else no "T10 con números únicos no hay aviso (salió $rc10): $(echo "$out10" | grep repetid | head -2)"; fi
 
-# T11 — la convención, el incident-log y el README
+# T11 — la convención, el registro de incidentes y el índice
 f11=""
 grep -q 'único dentro de su repo' "$AQUI/story-format.md" || f11="$f11 story-format"
-# el incident-log del equipo no se publica: la copia pública trae un reemplazo sin casos (sin public-repos.json, que
+# el registro de incidentes del equipo no se publica: la copia pública trae un reemplazo sin casos (sin public-repos.json, que
 # tampoco sale). Ahí esas dos no se pueden medir y se dice; en el repo interno, que falten sigue siendo rojo.
 if [ ! -f "$AQUI/scripts/publishing/public-repos.json" ]; then
   echo "⏭ evidencia: T11 la entrada del incident-log: NO MEDIDO en la copia (trae un reemplazo del registro, sin casos)"
@@ -228,7 +227,7 @@ else
 grep -q '^## evidencia-pisada-entre-stories-2026-10-05' "$AQUI/guides/maintaining/incident-log.md" || f11="$f11 incident-log"
 grep -q 'un identificador que no identifica convierte a un control en un mentiroso con confianza' "$AQUI/guides/maintaining/incident-log.md" || f11="$f11 regla"
 fi
-grep -q 'evidencia huérfana' "$AQUI/INDEX.md" || f11="$f11 INDEX"   # el índice: INDEX.md desde 2026-10-14
+grep -q 'evidencia huérfana' "$AQUI/INDEX.md" || f11="$f11 INDEX"   # el índice de guías es INDEX.md
 if [ -z "$f11" ]; then ok "T11 story-format pide el id único, incident-log tiene su entrada y README su fila"
 else no "T11 faltan:$f11"; fi
 
@@ -240,7 +239,7 @@ else no "T12 sin recorrido completo tiene que fallar sin devolver clave (salió 
 
 # T13 — el medidor nocturno tampoco adivina: con el recorrido de stories incompleto, la evidencia DoD sale «no
 #       medida» con el motivo, en vez de cruzarla por una clave calculada sobre una lista a la que le pueden faltar
-#       las stories que repiten el número (AC 13; lo encontró la revisión de cobertura de la iteración 1).
+#       las stories que repiten el número.
 M13="$TMP/m13"; rm -rf "$M13"; mkdir -p "$M13"; git -C "$M13" init -q
 story "$M13/.specs/a/stories/1-1-x.md" 1.1; sed -i.bak 's/^status: in-progress$/status: done/' "$M13/.specs/a/stories/1-1-x.md"; rm -f "$M13/.specs/a/stories/1-1-x.md.bak"
 mkdir -p "$M13/.advisors/dod-runtime"; printf 'verdict=PASS\n' > "$M13/.advisors/dod-runtime/1.1-202610051200Z.md"
@@ -255,7 +254,7 @@ if echo "$r13" | grep '^dod-null | dod_evidence: .*incompleto' >/dev/null; then 
 else no "T13 con el recorrido incompleto el medidor no puede cruzar evidencia: «${r13}»"; fi
 
 # T14 — «no pude calcular la clave» no se dice como «no hay evidencia»: el portón de Azure y el freno del cambio de
-#       estado no dan la evidencia por buena Y dicen el motivo (lo encontró la revisión de fallas silenciosas, iter 1).
+#       estado no dan la evidencia por buena Y dicen el motivo.
 e14="$(cd "$M5" && TYCON_EVIDENCE_KEY_BUDGET_MS=0 node -e '
   const [sk, ci, b, repo] = process.argv.slice(1);
   const fw = require(sk + "/on-frontmatter-write.js"), g = require(ci);
@@ -266,7 +265,7 @@ if echo "$e14" | grep 'azure:false estado:false' >/dev/null && [ "$(echo "$e14" 
 else no "T14 sin clave no hay evidencia, y el motivo tiene que decirse: «$(echo "$e14" | tr '\n' ' ')»"; fi
 
 # T15 — el portón de pruebas REAL (test-gate.sh, no su informe con la variable puesta a mano) calcula la clave desde la
-#       ruta de la story y deja la copia sellada bajo ella (lo encontró la revisión de cobertura de pruebas, iter 1).
+#       ruta de la story y deja la copia sellada bajo ella.
 M15="$TMP/m15"; rm -rf "$M15"; mkdir -p "$M15/scripts/tests"; git -C "$M15" init -q
 story "$M15/.specs/a/stories/1-1-x.md" 1.1
 story "$M15/.specs/b/stories/1-1-y.md" 1.1
@@ -278,7 +277,7 @@ if [ $rc15 -eq 0 ] && [ -f "$M15/.advisors/dod-runtime/a__1.1-tests-result.json"
   ok "T15 test-gate.sh real: la copia sellada cae en a__1.1-tests-result.json"
 else no "T15 test-gate.sh con la ruta de la story tiene que dejar a__1.1-tests-result.json (salió $rc15; hay: $(ls "$M15/.advisors/dod-runtime" 2>/dev/null | tr '\n' ' ')): $(tail -3 "$TMP/t15.log" | tr '\n' ' ')"; fi
 
-# ── T16-T21: lo que encontró el pase adversarial de la iteración 1 (9 hallazgos, 4 causas) ──────────────────────────
+# ── T16-T21: casos límite de la clave ──────────────────────────
 # claves(<ruta>...) imprime las claves separadas por espacio.
 claves(){ local out="" k; for p in "$@"; do k="$(clave "$p")"; out="$out ${k:-?}"; done; echo "${out# }"; }
 distintas(){ [ "$(printf '%s\n' $1 | sort -u | wc -l | tr -d ' ')" -eq "$(printf '%s\n' $1 | wc -l | tr -d ' ')" ] && ! echo "$1" | grep '?' >/dev/null; }
@@ -335,10 +334,9 @@ if [ "$r21" = "a:true b:false" ]; then ok "T21 el autoexamen de a no cuenta para
 else no "T21 el autoexamen de cierre se tiene que buscar por la clave: «${r21}» (esperado a:true b:false)"; fi
 
 # T22 — un escritor que recibe una ruta de story que no existe, o un id con barras, `..` o comillas, NO escribe nada:
-#       antes usaba el texto crudo como nombre del archivo de evidencia (fuera de la carpeta con `../`, o un JSON roto)
-#       (lo encontró la revisión de seguridad de la iteración 2). Cada llamada se juzga por su código de salida EXACTO y
-#       por el motivo que imprime: «salió distinto de 0» solo también lo da un script que no está o que se rompió
-#       (lo encontró la revisión de fallas silenciosas de la iteración 4).
+#       con el texto crudo como nombre del archivo de evidencia, la evidencia quedaría fuera de la carpeta (con `../`)
+#       o rompería un JSON. Cada llamada se juzga por su código de salida EXACTO y
+#       por el motivo que imprime: «salió distinto de 0» solo también lo da un script que no está o que se rompió.
 W22="$TMP/w22"; repo "$W22"; E22="$W22/.advisors/dod-runtime"; mkdir -p "$W22/afuera"
 f22=""
 # espera <etiqueta> <exit esperado> <texto esperado en stderr> -- <comando...>
@@ -362,8 +360,7 @@ if [ -z "$f22" ]; then ok "T22 ruta inexistente o id con barras/comillas: cada e
 else no "T22 un escritor aceptó un valor que no puede nombrar evidencia, o no lo rechazó por el motivo esperado:$f22"; fi
 
 # T23 — la guía de QA y la verificación previa al cierre (`pipeline.js preflight-frontmatter`, PRE-1) también leen por la
-#       clave: con dos stories 1.1, el humo y la evidencia de cierre de una no aparecen en la de la otra (lo pidió la
-#       revisión de cobertura de la iteración 2).
+#       clave: con dos stories del mismo número, el humo y la evidencia de cierre de una no aparecen en la de la otra.
 # En su propia carpeta: PRE-1 también busca en los repos VECINOS, y los otros mundos de esta suite lo serían.
 W23="$TMP/solo23/w23"; mkdir -p "$TMP/solo23"; repo "$W23"; E23="$W23/.advisors/dod-runtime"
 story "$W23/.specs/a/stories/1-1-x.md" 1.1; story "$W23/.specs/b/stories/1-1-y.md" 1.1

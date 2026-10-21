@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# harness-team-skill-data.test.sh — una skill de la lista FIJA de la versión, con sus datos fuera de su carpeta (story 8.25,
-# tanda A2c · T35, T36), en el laboratorio: el GitHub de juguete con los dos repos, y una capa de juguete que trae la skill de
+# harness-team-skill-data.test.sh — una skill de la lista FIJA de la versión, con sus datos fuera de su carpeta
+# (T35, T36), en el laboratorio: el GitHub de juguete con los dos repos, y una capa de juguete que trae la skill de
 # la lista (`skills/bizuit-sdd`, su nombre de la lista; TODO su contenido inventado) con sus dos archivos de datos.
 #
 # Lo que no se puede perder:
@@ -17,8 +17,8 @@
 #         se nombra; `deja:` nombra la casa; sin capa, ninguna línea nueva.
 #
 # Límite dicho: el aplicador del laboratorio es de juguete (el de los laboratorios de versiones bajadas): «ningún comando
-# apunta dentro de la capa» se mide sobre lo que ESE aplicador registra; con el aplicador real, no medido (aprobado por el
-# dueño, 2026-10-09). En Windows, los permisos del archivo no se miden.
+# apunta dentro de la capa» se mide sobre lo que ESE aplicador registra; con el aplicador real, no medido.
+# En Windows, los permisos del archivo no se miden.
 #
 # Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude, ~/.tycon, ~/.bizuit-sdd ni el checkout real.
 # Uso: bash scripts/tests/harness-team-skill-data.test.sh [--only T35|T35m|T36]
@@ -127,7 +127,7 @@ $OUT"
 $OUT"
   [ -f "$(NEW)/$SKILL/docs/otra.md" ] && ok "(d) el refresco en el lugar trajo el cambio" || mal "(d) el refresco no trajo el cambio"
   [ ! -e "$(CASA)" ] && ok "(d) …y no copió la conexión" || mal "(d) el refresco copió la conexión"
-  # (e) sin carpeta propia: dos apartadas (sin diario, la mudanza de la A2b), el clon dejado y previous/ → la apartada más nueva
+  # (e) sin carpeta propia: dos apartadas (sin diario), el clon dejado y previous/ → la apartada más nueva
   rm -rf "$PROPIA"
   A_VIEJA="$LAB_HOME/.claude/agent-skills.before-migrate-20261001-000000-1-1"; A_NUEVA="$LAB_HOME/.claude/agent-skills.before-migrate-20261005-000000-1-1"
   CLON="$BASE/clon-dejado"
@@ -181,7 +181,7 @@ $UPD_OUT"
 $UPD_OUT"
   [ -f "$(CASA)" ] && case "$UPD_OUT" in *"no es una ruta absoluta"*) true ;; *) false ;; esac && ok "(j) la relativa se ignora y se dice" || mal "(j) $UPD_OUT"
   # (n) en el ARRANQUE con aplicación automática (el modo del perfil del equipo), lo que la mudanza tiene que decir —acá, la clave
-  # sensible— llega al aviso de la sesión, no sólo al registro (pase adversarial, clase 15)
+  # sensible— llega al aviso de la sesión, no sólo al registro
   olvida_mudanza; rm -f "$PROPIA/$OLD"; { printf 'password: %s\n' "$SENT"; conexion arranque; } > "$(NEW)/$SKILL/$OLD"
   nueva_version; ventana_none
   OUT="$(harness_release startup 2>&1)"; ALL_OUT="$ALL_OUT
@@ -199,7 +199,7 @@ $OUT"
 fi
 
 # ───────────────────────────────────────────── T35m ───────────────────────────────────────────────────────────────────
-# (revisores, vuelta 1) la mudanza REAL: una máquina con clon, la conexión vieja en su clon viejo de skills, y migrate --to-home
+# la mudanza REAL: una máquina con clon, la conexión vieja en su clon viejo de skills, y migrate --to-home
 if corre T35m; then
   echo "T35 (la mudanza) · migrate --to-home con repo del equipo: el plan lo anticipa, la conexión llega a la casa nueva desde lo que la mudanza apartó, y el estado recuerda la apartada"
   harness_lab_create "$BASE/lab35m"
@@ -267,7 +267,7 @@ if corre T36; then
   KEPT="$(ls -d "$LAB_HOME"/.tycon/team/kept-*/previous/$SKILL/processes/x/spec.md 2>/dev/null | head -1)"
   [ -n "$KEPT" ] && ok "(e) la spec quedó en ~/.tycon/team/kept-…/previous/" || mal "(e) no quedó en kept-: $(ls -R "$LAB_HOME/.tycon/team" 2>&1 | head -20)"
   case "$UPD_OUT" in *"guardado en"*"previous/$SKILL/processes/x/spec.md"*) ok "(e) …y la salida la nombra" ;; *) mal "(e) la salida no la nombra: $UPD_OUT" ;; esac
-  # (e') rollback tampoco toca la casa de los datos (nada del arnés la borra: AC 34)
+  # (e') rollback tampoco toca la casa de los datos (nada del arnés la borra)
   CASA_H="$(shasum "$(CASA)" 2>/dev/null | cut -c1-40)"
   OUT="$(harness_release rollback 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(shasum "$(CASA)" 2>/dev/null | cut -c1-40)" = "$CASA_H" ] && [ -n "$CASA_H" ] && ok "(e') rollback deja la casa igual" || mal "(e') rollback rc $RC, casa $(ls -la "$(CASA)" 2>&1): $OUT"

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# bench-stable-key.test.sh — renombrar la PROSA de un hook no fabrica regresiones (2026-09-05).
+# bench-stable-key.test.sh — renombrar la PROSA de un hook no fabrica regresiones.
 #
-# Caso disparador: la clave de cada caso del banco incluía la descripción para humanos del hook.
-# El 03-09 se amplió la de branch-guard-notice y sus tres casos viejos quedaron "desaparecidos"
-# de la línea de base: el aviso del arranque gritó "3 regresiones" durante dos días sin que
-# existiera ninguna. Un banco que grita en falso se deja de mirar. Deuda BANCO-CLAVE-ES-LA-PROSA.
+# Defecto que cierra: si la clave de cada caso del banco incluye la descripción para humanos del hook,
+# ampliar esa descripción deja los casos viejos como "desaparecidos"
+# de la línea de base: el aviso del arranque grita "3 regresiones" sin que
+# exista ninguna. Un banco que grita en falso se deja de mirar.
 #
 # Lo que fija: se fija una línea de base, se cambia SOLO la prosa del hook, y la comparación
 # tiene que dar 0 regresiones y 0 desaparecidos. `RUNNER=` permite apuntar a otra copia del
-# corredor (así se verificó el rojo previo contra la versión anterior).
+# corredor (así se verifica el rojo contra una versión anterior).
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNNER="${RUNNER:-$TCG/scripts/controls-bench/runner.js}"

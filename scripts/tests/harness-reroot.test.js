@@ -1,9 +1,9 @@
 'use strict';
 /**
  * harness-reroot.test.js — `legacy-names.js --migrate-machine --reroot <de> <a>`: cambiar la raíz de lo que la máquina
- * tiene escrito (story 8.19, tanda B · AC 15 y 16). En Node a propósito: corre igual en el agente Windows.
+ * tiene escrito. En Node a propósito: corre igual en el agente Windows.
  *
- * EL CASO. El lugar del arnés pasó a llamarse como el repo público (place.js) y el nombre viejo sigue resolviendo. Lo que una
+ * El lugar del arnés se llama como el repo público (place.js) y el nombre viejo sigue resolviendo. Lo que una
  * máquina registró por el nombre viejo (hooks, permisos, los .local de git, Codex, LaunchAgents, comandos) sigue
  * andando, pero el día que el viejo se retire se rompe. `--reroot` lo pasa al lugar, con cuatro reglas que no se negocian:
  * no resuelve enlaces (si lo hiciera, reescribiría también lo registrado por la ruta real del clon), compara la ruta
@@ -11,7 +11,7 @@
  * lo que otro escribe: sacar la vieja vuelve a preguntar), y un hook que ya estaba por la ruta real pierde su gemelo por
  * el viejo. Anda sin el mapa de renombres, que no viaja a la copia pública.
  *
- * Qué fija (la tabla de pruebas de la story):
+ * Qué fija:
  *   T19 cada forma escrita de `placeForms` en darwin y en win32, reescrita en su misma forma; el `<de>` pelado; el
  *       parecido y la ruta real intactos; ningún `$` nuevo; y el contador de `doctor` da el mismo número;
  *   T20 la máquina de juguete entera: hooks por el lugar, permiso con dos formas, gemelo fuera y dicho, repetido una vez,

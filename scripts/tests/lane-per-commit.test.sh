@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# lane-per-commit.test.sh — red del carril de cada commit (story 2.7).
+# lane-per-commit.test.sh — red del carril de cada commit.
 #
-# Por qué existe: el hook que registra cada commit de una sesión (unpushed-work-notice.js) anotaba el
+# Por qué existe: el hook que registra cada commit de una sesión (unpushed-work-notice.js) anota el
 # repo y el sha, y nada de POR QUÉ CARRIL entró el trabajo: una corrida del pipeline, un atajo
 # declarado, o ninguno de los dos. Sin eso, «¿cuánto se hace fuera del pipeline?» no tiene número.
 #
 # Lo que prueba:
 #   T9  — tres commits, tres carriles: pipeline (con su story), adhoc y ninguno; la línea durable
 #         (carriles.jsonl) lleva {ts, carril, story} y NADA más — ni ruta, ni sha, ni mensaje
-#   T9b — el registro por sesión (el que ya existía) suma carril y story sin perder repo ni sha
+#   T9b — el registro por sesión suma carril y story sin perder repo ni sha
 #   T9c — una story con forma rara no se copia: sale null
 #   T10 — un commit que el hook no ve (hecho fuera de una sesión) no deja ninguna línea
 #   T11 — no poder escribir la constancia no rompe el hook
@@ -87,7 +87,7 @@ registrar s-rara "feat: story rara" >/dev/null
 [ "$(campo "$CARR" 4 'o.carril + "|" + o.story')" = "pipeline|null" ] && ok "T9c una story con forma rara no se copia" || no "T9c línea 4: $(sed -n 4p "$CARR" 2>/dev/null)"
 
 # ── T9d — el estado de la sesión existe pero no se puede leer ──────────────────────────────────
-# 🔴 rojo previo: tratarlo igual que «no existe» → un commit hecho EN una corrida se cuenta como «ninguno».
+# 🔴 Tratarlo igual que «no existe» haría que un commit hecho EN una corrida se cuente como «ninguno».
 printf '{"storyId": "2.7", roto' > "$CASA/$EST/active/s-rota.json"
 gcommit "feat: estado roto"
 registrar s-rota "feat: estado roto" >/dev/null
@@ -97,8 +97,8 @@ gcommit "fix: atajo roto"
 registrar s-adhoc-rota "fix: atajo roto" >/dev/null
 [ "$(campo "$CARR" 6 'o.carril')" = "ilegible" ] && ok "T9d también si el que no se lee es el del atajo" || no "T9d línea 6: $(sed -n 6p "$CARR" 2>/dev/null)"
 
-# ── T9e — un atajo vencido no es un carril (pase adversarial: hallazgos 2, 8, 11, 15) ───────────
-# 🔴 rojo previo: el portón da el atajo por vencido pasadas 6 h, y el hook lo seguía contando como `adhoc`.
+# ── T9e — un atajo vencido no es un carril ───────────
+# 🔴 El portón da el atajo por vencido pasadas 6 h; si el hook lo siguiera contando como `adhoc`, la medición sería falsa.
 node -e '
 const fs=require("fs"); const v=new Date(Date.now()-20*3600e3).toISOString();
 fs.writeFileSync(process.argv[1], JSON.stringify({reason:"un hotfix viejo",files:[],declaredAt:v,lastTouch:v}));
@@ -107,9 +107,9 @@ gcommit "fix: con atajo vencido"
 registrar s-vencido "fix: con atajo vencido" >/dev/null
 [ "$(campo "$CARR" 7 'o.carril')" = "ninguno" ] && ok "T9e un atajo vencido (20 h) no cuenta como adhoc" || no "T9e línea 7: $(sed -n 7p "$CARR" 2>/dev/null)"
 
-# ── T9f — el commit que llega justo DESPUÉS de cerrar la corrida sigue siendo del pipeline (hallazgo 12) ──
-# 🔴 rojo previo: el paso 8 cierra el marker antes de que el dev apruebe el commit → el commit de la corrida
-#    caía en `ninguno`, que es exactamente lo contrario de lo que el carril existe para medir.
+# ── T9f — el commit que llega justo DESPUÉS de cerrar la corrida sigue siendo del pipeline ──────────────
+# 🔴 El paso 8 cierra el marker antes de que el dev apruebe el commit: sin esto, el commit de la corrida
+#    cae en `ninguno`, que es exactamente lo contrario de lo que el carril existe para medir.
 mkdir -p "$CASA/$EST/timing-history"
 node -e '
 const fs=require("fs");

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # harness-repoint.test.sh — la llave `update.skills_source`: re-apuntar el clon viejo de agent-skills al repo unificado,
-# deshacerlo, y la guarda que nunca deja a una máquina sin skills (story 8.18, tramo 3 · T32, T33, T34 y T35).
+# deshacerlo, y la guarda que nunca deja a una máquina sin skills (T32, T33, T34 y T35).
 #
-# El caso: los dos repos internos (el arnés y agent-skills) se unieron en uno. Cada máquina del equipo sigue con sus DOS
+# Situación: los dos repos internos (el arnés y agent-skills) se unieron en uno. Cada máquina del equipo sigue con sus DOS
 # clones hasta que la llave pasa a `unified`: ahí `harness.js startup` / `update` cambia el remoto de
 # `~/.claude/agent-skills` al del repo unificado y lo avanza en línea recta al mismo commit que el clon del arnés. Es una
 # mudanza sobre las máquinas de todo el equipo: lo que se prueba acá es que NADA de lo del dev se mueve, que se deshace
@@ -14,7 +14,7 @@
 #        versionar, lo ignorado, las skills de terceros y el stash están idénticos, y los enlaces y settings.json no se
 #        tocaron; (d) ese clon muestra sólo agents/, skills/, packs/ y los archivos de la raíz (el instalador no está ahí);
 #        (e) UNA línea, una vez: el segundo `startup` no cambia nada y no dice nada. Hay copia de seguridad de antes.
-#        Después, cada `update` deja los dos clones en el mismo commit, y `version` muestra uno solo (AC 35).
+#        Después, cada `update` deja los dos clones en el mismo commit, y `version` muestra uno solo.
 #   T33 · si no puede pasar —otra rama, commits propios, un archivo sin versionar o ignorado que choca con una ruta que
 #        llega, sin red, historia sin unir, un fallo a mitad de camino— no se mueve NINGUNA de las dos fuentes (tampoco el
 #        arnés, aunque haya versión nueva), el aviso nombra la causa y el comando, `doctor` queda en rojo, «sin red» se
@@ -41,28 +41,26 @@
 #   ADOPT · el estado se perdió (desinstalar y volver a instalar) con el clon ya re-apuntado: el arranque lo reconoce por
 #        la constancia que la mudanza deja dentro del clon, la máquina se sigue actualizando, y la vuelta sigue andando.
 #
-# Lo que confirmó el pase adversarial del tramo 3 (2026-10-04), una sección por causa. Cada una se puso roja antes del
-# arreglo, con el guion que reprodujo el hallazgo:
+# Una sección por causa. Cada una se prueba con el guion que reproduce el defecto:
 #   SAME  · `~/.claude/agent-skills` pasó a ser un enlace al CLON DEL ARNÉS y el estado todavía lista la fuente vieja: la
 #        mudanza (ida, vuelta, deshacer una en curso) se niega y ese clon no se toca; el comando que el aviso nombra
-#        (`harness.js install`) vuelve a detectar las fuentes y la máquina se actualiza otra vez (clases 1 y 20).
+#        (`harness.js install`) vuelve a detectar las fuentes y la máquina se actualiza otra vez.
 #   VIEW  · la vista reducida se lee por su valor EFECTIVO (`.git/config.worktree` le gana a `.git/config`): un clon donde
 #        alguna vez se corrió `git sparse-checkout disable` re-apunta y vuelve; una vista propia hecha con el comando
-#        estándar se detecta; y el remedio que el aviso nombra destraba, corrido tal cual (clases 7, 8, 10 y 11).
+#        estándar se detecta; y el remedio que el aviso nombra destraba, corrido tal cual.
 #   BACK  · la vuelta no pisa nada del dev: un archivo sin versionar o ignorado en una ruta que vuelve la frena; una
 #        mudanza en curso no se deshace sobre una rama del dev; lo que estaba en el índice vuelve en el índice; y un
-#        renombre sin commitear no esconde la ruta que la versión nueva cambia (clases 3, 9, 16, 17, 18 y 19).
+#        renombre sin commitear no esconde la ruta que la versión nueva cambia.
 #   STATE · el estado se contrasta con el clon de verdad: «sin constancia» no frena ningún arranque, seguir el remedio
 #        del aviso lo saca, `--dry-run` no deja nada grabado, y doctor no dice «re-apuntado» de un clon que sigue al
-#        repo viejo (clases 4, 5, 6, 12 y 13).
+#        repo viejo.
 #   NFF   · «no avanza en línea recta» ya arreglado en el repo unificado: `harness.js update` a mano trae el arnés y
-#        reintenta la mudanza en el mismo comando; sin arreglar, no mueve ninguna fuente (clase 2).
-#   ARGS  · una URL del estado que empieza con «-» no llega a git como opción (revisor de seguridad).
+#        reintenta la mudanza en el mismo comando; sin arreglar, no mueve ninguna fuente.
+#   ARGS  · una URL del estado que empieza con «-» no llega a git como opción.
 #   (y en T35: «no pude leer si de esa fuente salen las skills» no es «no salen»: no se avanza y se dice.)
 #
-# Lo que encontró la segunda vuelta del revisor de fallos silenciosos (2026-10-04): «no pude mirar» nunca es «no hay».
-# Cada una inyecta el fallo con un git de laboratorio delante del PATH (`blind_git`) o con permisos quitados, y se puso
-# roja antes del arreglo:
+# «No pude mirar» nunca es «no hay».
+# Cada una inyecta el fallo con un git de laboratorio delante del PATH (`blind_git`) o con permisos quitados:
 #   REDETECT · `install` no suelta una fuente cuya carpeta no pudo mirar (permisos, un disco que no responde) ni borra lo
 #        anotado de su mudanza: sólo la que de verdad ya no existe.
 #   IDENTITY · si no se pudo leer la identidad de los dos clones, la vuelta no le hace `reset` al clon del arnés: no se
@@ -73,7 +71,7 @@
 #        contiene»: dice que no pudo comparar.
 #   PARTIAL · deshacer una ida en curso que no pudo listar lo que cambia no la da por deshecha.
 #
-# La tercera vuelta (2026-10-04, revisor de fallos silenciosos y revisor de pruebas) sumó, en esas mismas secciones:
+# Más casos en esas mismas secciones:
 #   PARTIAL · una puerta por cada «no pude mirar» de la limpieza del merge a medias, y la comparación de cada archivo con
 #        la versión nueva en tres estados: si no pudo leer el disco, la versión nueva o las dos —o mirar si el archivo
 #        está (permisos)—, no pisa ni borra nada y lo dice.  REDETECT · `install` que no pudo mirar una fuente sale 1
@@ -92,7 +90,7 @@ corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
 FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
-# lo que esta máquina no deja medir: se cuenta, y una suite con algo sin medir no dice «todo verde» (tercera vuelta)
+# lo que esta máquina no deja medir: se cuenta, y una suite con algo sin medir no dice «todo verde»
 NO_MEDIDOS=0
 no_medido() { echo "  ⏭   — $1 NO MEDIDO: $2"; NO_MEDIDOS=$((NO_MEDIDOS+1)); }
 T_INICIO=$(date +%s)
@@ -128,8 +126,8 @@ lab_guard() {
   exit 1
 }
 # TODO armado de laboratorio de esta suite pasa por estas dos: arman y, salga bien o mal, `lab_guard` mira la HOME antes
-# de que la sección siga (tercera vuelta del revisor de pruebas: T35, LINK, STATE y REAL armaban por su cuenta y, si el
-# armado fallaba, seguían). GUARD comprueba que no quede ningún armado por fuera de ellas.
+# de que la sección siga (si el armado fallara, la sección
+# seguiría). GUARD comprueba que no quede ningún armado por fuera de ellas.
 lab_team() { harness_lab_team_machine "$@" >/dev/null; local rc=$?; lab_guard; return $rc; }      # lab:wrapper
 lab_single() { harness_lab_single_tree "$@" >/dev/null; local rc=$?; lab_guard; return $rc; }      # lab:wrapper
 # sólo para GUARD: el armado falla ANTES de tomar la HOME (lo que pasaría con un disco lleno o un git que no arranca)
@@ -189,8 +187,8 @@ foto_arbol() { # foto_arbol <archivo>
 # « — » y «; después:»), tal cual: la prueba lo CORRE. Si el aviso no lo trae, sale vacío
 remedio() { printf '%s\n' "$1" | sed -n "s/.* — \\($2[^;]*\\); después: .*/\\1/p" | head -1; }
 # corre_remedio '<comando>' — el remedio tal cual; cada `harness.js install` que trae, con `--yes` escrito acá (también en
-# un remedio de varios comandos encadenados): la prueba no tiene terminal, y desde la story 8.16 (tanda B) install sin
-# terminal muestra el plan y no escribe (AC 44)
+# un remedio de varios comandos encadenados): la prueba no tiene terminal, y install sin
+# terminal muestra el plan y no escribe
 corre_remedio() { bash -c "${1//harness.js install/harness.js install --yes}"; }
 suelta_la_mirada() { estado_set 'd.last_fetch=null; d.last_fetch_failed=null'; }   # el arranque siguiente vuelve a mirar la red
 # blind_git '<patrones>' <comando…>  — el comando con un git de laboratorio delante del PATH que FALLA (sale 128, y lo dice
@@ -233,7 +231,7 @@ if corre T32; then
   [ -f "$LAB_SKILLS/.githooks/pre-commit" ] && [ ! -e "$LAB_SKILLS/scripts" ] || mal "T32 precondición: el clon viejo no tiene la forma esperada"
   EXTRAS0="$(harness_lab_clone_extras "$LAB_SKILLS")"; STATUS0="$(sk status --porcelain --ignored)"; STASH0="$(sk stash list --format='%H %gs')"
   # lo que git no sigue, archivo por archivo. (`git status --ignored` no sirve para comparar después de la ida: el
-  # .gitignore pasa a ser el del repo unido, y una carpeta que antes salía entera como ignorada —`!! .advisors/`— sale
+  # .gitignore pasa a ser el del repo unido, y una carpeta que sale entera como ignorada —`!! .advisors/`— pasa a salir
   # archivo por archivo. Cambia cómo se LISTA, no lo que hay: a la vuelta, T34 compara el status tal cual.)
   SUELTOS0="$(sk ls-files --others | LC_ALL=C sort)"
   ENLACES0="$(harness_lab_links)"; SETTINGS0="$(shasum -a 256 < "$TYCON_SETTINGS_PATH")"
@@ -281,7 +279,7 @@ if corre T32; then
     && ok "T32 doctor en la máquina re-apuntada: verde, lo dice una vez, y ya no dice «nada se mueve hasta que la llave…»" || mal "T32 doctor (rc $RC): $JSON"
   SALIDA="$(con_llave harness version 2>&1)"
   case "$SALIDA" in *"agent-skills "[0-9a-f]*) mal "T32 version sigue mostrando dos commits: $SALIDA" ;; *"${LAB_COMMIT_UNION:0:7}"*) ok "T32 (AC 35) version muestra un solo commit" ;; *) mal "T32 version: $SALIDA" ;; esac
-  # AC 35: una versión nueva → los dos clones, en el mismo commit; y el clon sigue mostrando sólo lo suyo
+  # una versión nueva → los dos clones, en el mismo commit; y el clon sigue mostrando sólo lo suyo
   harness_lab_publish tree "versión nueva del repo unido" skills/tycon-pipeline/NEW.md "nuevo"
   NUEVO="$(head_de "$LAB_AUTHOR_TREE")"
   SALIDA="$(con_llave harness update 2>&1)"; RC=$?
@@ -307,7 +305,7 @@ if corre T32; then
     && ok "T32 con la política en ask el arranque no re-apunta: deja el aviso con el comando" || mal "T32 en ask: rc $RC, origin $(origen_de "$LAB_SKILLS"), aviso $(estado 'd.notice')"
   case "$(TYCON_UPDATE_APPLY=ask con_llave harness doctor 2>&1)" in *"todavía no se re-apuntó"*"«ask»"*"update --yes"*) ok "T32 …y doctor dice quién lo hace: la persona, con update --yes" ;; *) mal "T32 doctor en ask no dice cómo aplicarlo: $(TYCON_UPDATE_APPLY=ask con_llave harness doctor 2>&1 | head -4)" ;; esac
   # como llega al equipo: la llave en el PERFIL (con la política del equipo). Y una máquina que la tiene apagada en su
-  # propio archivo NO re-apunta, aunque el perfil la prenda: así quedan las Windows hasta probar una (AC 38)
+  # propio archivo NO re-apunta, aunque el perfil la prenda: así quedan las Windows hasta probar una
   maquina "$BASE/t32d" || mal "T32 no pude armar la cuarta máquina"
   printf '{ "update": { "channel": "latest", "apply": "auto", "skills_source": "unified" } }\n' > "$LAB/team-profile.json"
   con_perfil() { env -u TYCON_UPDATE_APPLY TYCON_PROFILE="$LAB/team-profile.json" node "$LAB_TREE/scripts/setup/harness.js" "$@"; }
@@ -533,9 +531,9 @@ if corre T35; then
   SALIDA="$(harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$RETORNO" ] && [ "$(head_de "$LAB_SKILLS")" = "$LAB_COMMIT_SKILLS" ] && [ -d "$LAB_HOME/.claude/skills/tycon-pipeline" ] \
     && ok "T35 espejo: en la máquina de dos clones sin re-apuntar el arnés sigue a main (el retorno de antes de la llave) y las skills siguen en el clon viejo" || mal "T35 espejo: rc $RC, arnés $(head_de "$LAB_TREE") (retorno $RETORNO): $SALIDA"
-  # (4) «no pude leer» no es «de acá no salen las skills» (revisor de fallos silenciosos): en la máquina de un solo árbol,
-  # con el árbol de lo instalado ilegible (su objeto apartado), la guarda no sabe si de esa fuente salen las skills. Antes
-  # lo leía como «no salen», se salteaba, y la punta sin skills seguía su camino. No se avanza, y se dice con su causa
+  # (4) «no pude leer» no es «de acá no salen las skills»: en la máquina de un solo árbol,
+  # con el árbol de lo instalado ilegible (su objeto apartado), la guarda no sabe si de esa fuente salen las skills. Leerlo
+  # como «no salen» saltearía la guarda y dejaría pasar la punta sin skills. No se avanza, y se dice con su causa
   lab_single "$BASE/t35d" || mal "T35 no pude armar la segunda máquina de un solo árbol"
   harness install --yes >/dev/null 2>&1 || mal "T35 install en la segunda máquina de un solo árbol falló"
   harness_lab_publish_without_skills || mal "T35 no pude publicar la punta sin skills (ilegible)"
@@ -643,10 +641,10 @@ if corre REAL; then
 fi
 
 # ═══ SAME · ~/.claude/agent-skills pasó a ser el clon del arnés: la mudanza se niega y no lo toca ═════════════════════
-# El caso (pase adversarial, clases 1 y 20): el dev borra su clon viejo y el aplicador enlaza `~/.claude/agent-skills` al
+# Situación: el dev borra su clon viejo y el aplicador enlaza `~/.claude/agent-skills` al
 # clon del arnés (canonical-path.js --ensure-repo-links). El estado sigue listando la fuente `agent_skills`. Con la llave
-# en `unified` la ida le ponía la vista reducida AL CLON DEL ARNÉS (desaparecía scripts/, con harness.js adentro) y la
-# vuelta le hacía `reset --hard` al commit viejo de agent-skills. Y `install`, el remedio, no volvía a detectar las fuentes.
+# en `unified` la ida le pondría la vista reducida AL CLON DEL ARNÉS (desaparecería scripts/, con harness.js adentro) y la
+# vuelta le haría `reset --hard` al commit viejo de agent-skills. Y `install`, el remedio, tiene que volver a detectar las fuentes.
 if corre SAME; then
   # el dev borra el clon viejo y el aplicador deja el enlace al clon del arnés
   un_arbol_de_hecho() {
@@ -669,7 +667,7 @@ if corre SAME; then
   foto_arbol "$BASE/same/despues2"
   [ "$RC" = 2 ] && igual "$BASE/same/antes" "$BASE/same/despues2" && case "$SALIDA" in *"clon del arnés"*) true ;; *) false ;; esac \
     && ok "SAME la ida: update a mano sale 2 con la misma causa, y tampoco lo toca" || mal "SAME update a mano (rc $RC): $(diff "$BASE/same/antes" "$BASE/same/despues2" | head -6): $SALIDA"
-  # el remedio que el aviso nombra, corrido tal cual: install vuelve a detectar las fuentes (clase 20)
+  # el remedio que el aviso nombra, corrido tal cual: install vuelve a detectar las fuentes
   REMEDIO="$(remedio "$SALIDA" 'node ')"
   [ -n "$REMEDIO" ] && corre_remedio "$REMEDIO" >/dev/null 2>&1; RC=$?
   [ -n "$REMEDIO" ] && [ "$RC" = 0 ] && [ "$(estado 'd.sources.length')" = 1 ] && [ "$(estado 'd.sources[0].name')" = harness ] && [ "$(estado 'd.repoint')" = null ] \
@@ -704,7 +702,7 @@ if corre SAME; then
   harness install --yes >/dev/null 2>&1
   [ "$(estado 'd.sources.length')" = 1 ] && [ "$(estado 'd.repoint')" = null ] && harness update >/dev/null 2>&1 \
     && ok "SAME …e install la saca del estado junto con la fuente que ya no existe; update sale 0" || mal "SAME install no limpió la mudanza en curso: fuentes $(estado 'd.sources.length'), repoint $(estado 'd.repoint')"
-  # (4) clase 20 con la llave apagada: el remedio que nombran update y doctor (install --source <url>) destraba
+  # (4) con la llave apagada: el remedio que nombran update y doctor (install --source <url>) destraba
   maquina "$BASE/same4" || mal "SAME no pude armar la cuarta máquina"
   un_arbol_de_hecho || mal "SAME precondición: el enlace de la cuarta máquina"
   SALIDA="$(harness update 2>&1)"; RC=$?
@@ -725,10 +723,10 @@ if corre SAME; then
 fi
 
 # ═══ VIEW · la vista reducida se lee por su valor efectivo, y el remedio del aviso destraba ═══════════════════════════
-# El caso (clases 7, 8, 10 y 11): `git sparse-checkout set` y `disable` escriben en `.git/config.worktree`, que le gana
-# a `.git/config`. La mudanza leía y escribía sólo `.git/config`: con `core.sparseCheckout=false` en el otro archivo,
-# `reapply` fallaba en la ida y al deshacer, y la mudanza quedaba «en curso» para siempre; una vista propia hecha con el
-# comando estándar no se detectaba; y `git sparse-checkout disable`, el remedio del aviso, no destrababa.
+# Situación: `git sparse-checkout set` y `disable` escriben en `.git/config.worktree`, que le gana
+# a `.git/config`. La mudanza tiene que leer y escribir el valor efectivo, no sólo `.git/config`: con `core.sparseCheckout=false` en el otro archivo,
+# `reapply` falla en la ida y al deshacer, y la mudanza queda «en curso» para siempre; una vista propia hecha con el
+# comando estándar no se detecta; y `git sparse-checkout disable`, el remedio del aviso, no destraba.
 if corre VIEW; then
   efectiva() { sk config --type=bool --get core.sparseCheckout; }
   # (1) el clon viejo de un dev que alguna vez probó sparse-checkout y lo apagó: ida y vuelta, byte a byte
@@ -786,9 +784,9 @@ if corre VIEW; then
 fi
 
 # ═══ BACK · la vuelta no pisa nada del dev ════════════════════════════════════════════════════════════════════════════
-# El caso (clases 3, 9, 16, 17, 18 y 19): la ida frena ante un archivo del dev en el camino; la vuelta (`reset --hard` al
-# commit guardado) lo pisaba sin aviso y sin copia. Una mudanza en curso se deshacía sobre la rama en la que estuviera
-# parado el dev. Lo que estaba en el índice volvía sin agregar. Y un renombre sin commitear escondía la ruta vieja.
+# Situación: la ida frena ante un archivo del dev en el camino; la vuelta (`reset --hard` al
+# commit guardado) no lo puede pisar sin aviso ni copia. Una mudanza en curso no se deshace sobre la rama en la que esté
+# parado el dev. Lo que estaba en el índice vuelve al índice. Y un renombre sin commitear no esconde la ruta vieja.
 if corre BACK; then
   FRASE_VUELTA='la llave volvió a «separate» y este clon sigue en el repo unificado'
   maquina "$BASE/back" || mal "BACK no pude armar la máquina del equipo después del corte"
@@ -836,7 +834,7 @@ if corre BACK; then
     && case "$(estado 'd.notice')" in *"skills/lab-skill/SKILL.md"*) true ;; *) false ;; esac \
     && ok "BACK una mudanza en curso con un archivo del dev en el camino: no se deshace encima, y el aviso nombra la ruta" || mal "BACK en curso (rc $RC): archivo «$(cat "$LAB_SKILLS/skills/lab-skill/SKILL.md")», repoint $(estado 'd.repoint' | cut -c1-160), aviso $(estado 'd.notice')"
   rm -rf "$LAB_SKILLS/skills/lab-skill"
-  # (d) clase 17: en curso, y el dev quedó parado en una rama suya con un commit propio
+  # (d) en curso, y el dev quedó parado en una rama suya con un commit propio
   sk checkout -q -b mi-rama
   printf 'notas del dev\n' > "$LAB_SKILLS/agents/NOTAS.md"; sk add agents/NOTAS.md; sk commit -q -m "trabajo del dev en su rama"
   PROPIO="$(head_de "$LAB_SKILLS")"; MAIN0="$(sk rev-parse refs/heads/main)"
@@ -848,7 +846,7 @@ if corre BACK; then
   SALIDA="$(harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_SKILLS" ] && [ "$(head_de "$LAB_SKILLS")" = "$LAB_COMMIT_SKILLS" ] && [ "$(estado 'd.repoint')" = null ] && [ "$(sk rev-parse refs/heads/mi-rama)" = "$PROPIO" ] \
     && ok "BACK (clase 17) espejo: de vuelta en main, el arranque siguiente la deshace, y la rama del dev queda como estaba" || mal "BACK (clase 17) espejo (rc $RC): origin $(origen_de "$LAB_SKILLS"), repoint $(estado 'd.repoint' | cut -c1-160): $SALIDA"
-  # (e) clases 16 y 19: lo que el dev tenía en el índice vuelve EN el índice
+  # (e) lo que el dev tenía en el índice vuelve EN el índice
   maquina "$BASE/back3" || mal "BACK no pude armar la segunda máquina"
   printf '\ncambio agregado al índice\n' >> "$LAB_SKILLS/agents/lab-reviewer.md"; sk add agents/lab-reviewer.md
   sk rm -q .tycon/lab-config.yaml
@@ -863,7 +861,7 @@ if corre BACK; then
   [ "$RC" = 0 ] && [ "$(sk status --porcelain --untracked-files=no)" = "$STATUS0" ] \
     && ok "BACK (clases 16 y 19) ida y vuelta: lo que estaba en el índice vuelve en el índice (mismo status)" || mal "BACK (clases 16 y 19) el status cambió (rc $RC): antes «${STATUS0}» después «$(sk status --porcelain --untracked-files=no)»: $SALIDA"
   igual "$BASE/back3/antes" "$BASE/back3/despues" && ok "BACK (clases 16 y 19) …y el clon queda byte a byte como al principio" || mal "BACK (clases 16 y 19) ida y vuelta con cambios en el índice dejó diferencias: $(diff "$BASE/back3/antes" "$BASE/back3/despues" | head -8)"
-  # (f) clase 18: un renombre sin commitear no esconde la ruta que la versión nueva cambia
+  # (f) un renombre sin commitear no esconde la ruta que la versión nueva cambia
   maquina "$BASE/back4" || mal "BACK no pude armar la tercera máquina"
   sk mv README.md LEEME.md
   foto "$BASE/back4/antes"
@@ -876,9 +874,9 @@ if corre BACK; then
 fi
 
 # ═══ STATE · el estado se contrasta con el clon de verdad ═════════════════════════════════════════════════════════════
-# El caso (clases 4, 5, 6, 12 y 13): «sin constancia» decía «no frena a nadie» y desde el segundo arranque congelaba la
-# máquina; seguir el remedio del aviso no soltaba `repoint.applied`; `update --dry-run` lo dejaba grabado; y con el clon
-# reemplazado por uno del repo viejo, doctor seguía diciendo «✓ re-apuntados».
+# Situación: «sin constancia» tiene que decir «no frena a nadie»; si desde el segundo arranque congelara la
+# máquina sería un defecto; seguir el remedio del aviso tiene que soltar `repoint.applied`; `update --dry-run` no deja nada grabado; y con el clon
+# reemplazado por uno del repo viejo, doctor no puede seguir diciendo «✓ re-apuntados».
 if corre STATE; then
   FRASE_VUELTA='la llave volvió a «separate» y este clon sigue en el repo unificado'
   # la máquina cuyo ~/.claude/agent-skills se volvió a clonar a mano desde el repo unificado: sin constancia de la mudanza
@@ -889,13 +887,13 @@ if corre STATE; then
   ln -s "$LAB_SKILLS/skills" "$LAB_HOME/.claude/skills"; ln -s "$LAB_SKILLS/agents" "$LAB_HOME/.claude/agents"
   harness install --yes >/dev/null 2>&1 || mal "STATE install falló"
   [ "$(fuente agent_skills url)" = "$LAB_REMOTE_UNIFIED" ] && [ "$(estado 'd.repoint')" = null ] || mal "STATE precondición: fuente $(fuente agent_skills url), repoint $(estado 'd.repoint')"
-  # (clase 13) --dry-run no deja nada grabado
+  # --dry-run no deja nada grabado
   SALIDA="$(con_llave harness update --dry-run 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(estado 'd.repoint')" = null ] \
     && ok "STATE (clase 13) update --dry-run con la llave no deja la adopción grabada en el estado" || mal "STATE (clase 13) --dry-run (rc $RC) dejó: $(estado 'd.repoint')"
   con_llave harness startup >/dev/null 2>&1
   [ "$(estado 'd.repoint.applied.adopted')" = true ] && [ "$(estado 'd.repoint.applied.from')" = null ] || mal "STATE precondición: el arranque con la llave no adoptó sin origen: $(estado 'd.repoint')"
-  # (clases 5 y 12) la llave vuelve a separate: se dice en cada arranque, y NINGÚN arranque deja de actualizar
+  # la llave vuelve a separate: se dice en cada arranque, y NINGÚN arranque deja de actualizar
   suelta_la_mirada
   SALIDA="$(harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(estado 'd.last_fetch')" != null ] && case "$(estado 'd.notice')" in *"$FRASE_VUELTA"*"no hay constancia"*) true ;; *) false ;; esac \
@@ -914,8 +912,8 @@ if corre STATE; then
   JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
   [ "$RC" = 1 ] && [ "$(printf '%s' "$JSON" | doctor_json "d.fail.filter((t)=>/no hay constancia/.test(t)).length")" = 1 ] \
     && ok "STATE …y doctor lo tiene en rojo" || mal "STATE doctor (rc $RC): $(printf '%s' "$JSON" | doctor_json 'd.fail')"
-  # (clases 6 y 13) el remedio del aviso, seguido al pie de la letra, lo saca
-  # (clases 6 y 13) el remedio del aviso, corrido tal cual (con la URL del repo viejo en su lugar), lo saca
+  # el remedio del aviso, seguido al pie de la letra, lo saca
+  # el remedio del aviso, corrido tal cual (con la URL del repo viejo en su lugar), lo saca
   REMEDIO="$(remedio "$AVISO" 'git -C ')"
   case "$REMEDIO" in *"remote set-url origin <URL-del-repo-viejo>"*"install --source <URL-del-repo-viejo>"*"reset --keep origin/main"*) ok "STATE el aviso trae el remedio entero para volverlo a mano, en un solo comando" ;; *) mal "STATE el aviso no trae el remedio entero: $AVISO" ;; esac
   REMEDIO="${REMEDIO//<URL-del-repo-viejo>/$LAB_REMOTE_SKILLS}"
@@ -928,7 +926,7 @@ if corre STATE; then
   harness startup >/dev/null 2>&1
   [ "$(head_de "$LAB_TREE")" = "$(head_de "$LAB_AUTHOR_TREE")" ] && [ "$(harness doctor --json 2>/dev/null | doctor_json "d.fail.filter((t)=>/sigue en el repo unificado|el origen cambió/.test(t)).length")" = 0 ] \
     && ok "STATE …la máquina se sigue actualizando, y doctor ya no tiene ese rojo" || mal "STATE después del remedio: arnés $(head_de "$LAB_TREE") publicado $(head_de "$LAB_AUTHOR_TREE") · $(harness doctor 2>&1 | grep '✗' | head -4)"
-  # (clase 4) el clon re-apuntado se rompe y se vuelve a clonar del repo VIEJO: el estado no puede seguir diciendo «re-apuntado»
+  # el clon re-apuntado se rompe y se vuelve a clonar del repo VIEJO: el estado no puede seguir diciendo «re-apuntado»
   maquina "$BASE/state4" || mal "STATE no pude armar la segunda máquina"
   con_llave harness startup >/dev/null 2>&1
   [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_UNIFIED" ] || mal "STATE precondición: la segunda máquina no quedó re-apuntada"
@@ -967,8 +965,8 @@ if corre STATE; then
 fi
 
 # ═══ NFF · «no avanza en línea recta», ya arreglado en el repo unificado: update a mano destraba ══════════════════════
-# El caso (clase 2): el repo viejo recibió un commit después de la unión y el clon lo bajó. El destino de la mudanza sale
-# del clon local del arnés, y con el clon de skills frenado no se actualiza ninguna fuente (AC 32): aunque el repo
+# Situación: el repo viejo recibe un commit después de la unión y el clon lo baja. El destino de la mudanza sale
+# del clon local del arnés, y con el clon de skills frenado no se actualiza ninguna fuente: aunque el repo
 # unificado mergee ese commit, el clon del arnés nunca lo baja. `harness.js update` pedido a mano —el comando que el
 # aviso nombra— trae primero el arnés, SÓLO si lo publicado ya contiene el commit del clon, y reintenta la mudanza.
 if corre NFF; then
@@ -981,7 +979,7 @@ if corre NFF; then
   AVISO="$(estado 'd.notice')"
   case "$AVISO" in *"línea recta"*) true ;; *) mal "NFF precondición: el arranque no frenó por «línea recta»: $AVISO" ;; esac
   case "$AVISO" in *"línea recta"*"harness.js update"*"a mano"*"reintenta"*) ok "NFF el aviso dice que update a mano trae el arnés y reintenta la mudanza" ;; *) mal "NFF el aviso no lo dice: $AVISO" ;; esac
-  # sin arreglar, con una versión nueva del arnés que NO trae ese commit: update a mano no mueve ninguna fuente (AC 32)
+  # sin arreglar, con una versión nueva del arnés que NO trae ese commit: update a mano no mueve ninguna fuente
   harness_lab_publish tree "una versión nueva que no arregla nada" skills/tycon-pipeline/V5.md "v5"
   foto "$BASE/nff/antes"
   SALIDA="$(con_llave harness update 2>&1)"; RC=$?
@@ -1003,7 +1001,7 @@ if corre NFF; then
 fi
 
 # ═══ ARGS · una URL del estado que empieza con «-» no llega a git como opción ═════════════════════════════════════════
-# El caso (revisor de seguridad): `git ls-remote <url>` sin el separador `--` lee una URL que empieza con «-» como una
+# Situación: `git ls-remote <url>` sin el separador `--` lee una URL que empieza con «-» como una
 # opción; `--upload-pack=<comando>` corre ese comando. La URL sale del estado y de la constancia del clon.
 if corre ARGS; then
   maquina "$BASE/args" || mal "ARGS no pude armar la máquina del equipo después del corte"
@@ -1026,8 +1024,8 @@ if corre ARGS; then
   estado_set "d.repoint.applied.from.url='$LAB_REMOTE_SKILLS'"
   SALIDA="$(harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_SKILLS" ] && ok "ARGS espejo: con la URL buena, la vuelta pasa" || mal "ARGS espejo de la vuelta (rc $RC): $SALIDA"
-  # una mudanza «en curso» cuyo commit de destino guardado no es un commit (segunda vuelta del revisor de seguridad): el
-  # deshacer lo pasaba a `git diff <de> <a>`, y `--output=<archivo>` hacía que git pisara ese archivo
+  # una mudanza «en curso» cuyo commit de destino guardado no es un commit: el
+  # deshacer lo pasa a `git diff <de> <a>`, y `--output=<archivo>` haría que git pisara ese archivo
   rm -f "$MARCA"
   ACA="$(sk rev-parse HEAD)"
   estado_set "d.repoint={pending:{step:'forward',at:'2026-10-04T00:00:00Z',from:{url:'$LAB_REMOTE_SKILLS',commit:'$ACA'},to:{url:'$LAB_REMOTE_UNIFIED',commit:'--output=$MARCA'}}}"
@@ -1038,10 +1036,10 @@ if corre ARGS; then
 fi
 
 # ═══ REDETECT · install no suelta una fuente que no pudo mirar ════════════════════════════════════════════════════════
-# El caso (segunda vuelta del revisor de fallos silenciosos, hallazgo 1): al volver a detectar las fuentes, `install`
-# tomaba CUALQUIER falla al resolver la carpeta de una fuente (permisos, un disco que no responde) como «ya no existe»:
-# soltaba la fuente de skills y BORRABA lo anotado de su mudanza —de dónde venía el clon, o una mudanza a medias—, y la
-# vuelta ya no se podía hacer sola. Se suelta sólo la que de verdad no está.
+# Situación: al volver a detectar las fuentes, `install`
+# no puede tomar CUALQUIER falla al resolver la carpeta de una fuente (permisos, un disco que no responde) como «ya no existe»:
+# soltaría la fuente de skills y BORRARÍA lo anotado de su mudanza —de dónde venía el clon, o una mudanza a medias—, y la
+# vuelta ya no se podría hacer sola. Se suelta sólo la que de verdad no está.
 if corre REDETECT; then
   maquina "$BASE/redetect" || mal "REDETECT no pude armar la máquina del equipo después del corte"
   con_llave harness startup >/dev/null 2>&1
@@ -1072,9 +1070,9 @@ if corre REDETECT; then
     [ "$RC" = 0 ] && [ "$(estado 'd.sources.length')" = 1 ] && [ "$(estado 'd.repoint')" = null ] && case "$SALIDA" in *"ya no existe"*) true ;; *) false ;; esac \
       && ok "REDETECT espejo: con el clon borrado de verdad, install suelta la fuente y lo anotado de su mudanza, y lo dice" || mal "REDETECT espejo del borrado (rc $RC): fuentes $(estado 'd.sources.length'), repoint $(estado 'd.repoint' | cut -c1-120): $SALIDA"
   fi
-  # (2) SIN la comprobación de salud (tercera vuelta del revisor de fallos silenciosos): arriba install sale 1 porque la
-  # salud tampoco pasa. `install --from-existing` —como lo corre el aplicador— no la corre: salía 0 con la nota. «No pude
-  # mirar» no es «instalado»: sale 1, con la nota. Las skills salen del clon del arnés (un solo árbol) y la fuente que no se
+  # (2) SIN la comprobación de salud: arriba install sale 1 porque la
+  # salud tampoco pasa. `install --from-existing` —como lo corre el aplicador— no la corre: tiene que salir 1 con la nota, no 0. «No pude
+  # mirar» no es «instalado». Las skills salen del clon del arnés (un solo árbol) y la fuente que no se
   # puede mirar es la que el estado todavía lista
   maquina "$BASE/redetect2" || mal "REDETECT no pude armar la segunda máquina"
   LEJOS="$LAB/far"; mkdir -p "$LEJOS/agent-skills"
@@ -1099,9 +1097,9 @@ if corre REDETECT; then
 fi
 
 # ═══ IDENTITY · sin poder leer la identidad de los clones, la mudanza no toca nada ════════════════════════════════════
-# El caso (hallazgo 2): `sameClone` contestaba «no es el mismo clon» también cuando no pudo leer la identidad (git no
+# Situación: `sameClone` no puede contestar «no es el mismo clon» cuando no pudo leer la identidad (git no
 # contestó a tiempo, un `.git` que no se deja leer). Con `~/.claude/agent-skills` enlazado al clon del arnés por una ruta
-# que no es letra por letra la misma (otra caja, en un disco que no distingue mayúsculas), la vuelta le hacía `reset
+# que no es letra por letra la misma (otra caja, en un disco que no distingue mayúsculas), la vuelta le haría `reset
 # --hard` al clon del arnés, al commit viejo de agent-skills. Tres respuestas: mismo · distinto · no pude mirar; con «no
 # pude mirar» ni la ida, ni la vuelta, ni deshacer, ni reconocer: no se toca nada, se dice, y se reintenta.
 if corre IDENTITY; then
@@ -1129,7 +1127,7 @@ if corre IDENTITY; then
       && ok "IDENTITY ($what) espejo: con git contestando, es el mismo repo (mismo .git): no se toca y se dice" || mal "IDENTITY ($what) espejo (rc $RC): $(diff "$BASE/identity/$tag-antes" "$BASE/identity/$tag-despues2" | head -6) · aviso $(estado 'd.notice'): $SALIDA"
   }
   # (1) un árbol de trabajo enlazado del clon del arnés (`git worktree`): otra ruta, el mismo .git. No depende del disco:
-  #     se mide en cualquier máquina (tercera vuelta del revisor de pruebas: antes sólo se medía con mayúsculas)
+  #     se mide en cualquier máquina
   maquina "$BASE/identity" || mal "IDENTITY no pude armar la máquina del equipo después del corte"
   con_llave harness startup >/dev/null 2>&1
   [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_UNIFIED" ] || mal "IDENTITY precondición: la máquina no quedó re-apuntada"
@@ -1149,8 +1147,8 @@ if corre IDENTITY; then
 fi
 
 # ═══ HIDDEN · sin poder contar lo que la vista oculta, la vuelta no dice «muestra todo» ═══════════════════════════════
-# El caso (hallazgo 3): si `git ls-files -t` fallaba, lo oculto se contaba como 0: la vuelta salteaba volver a mostrar y
-# decía «muestra todo otra vez» sin saberlo. Ahora es una falla con su causa: la mudanza queda a medias y el arranque
+# Situación: si `git ls-files -t` falla, lo oculto no puede contarse como 0: la vuelta saltearía volver a mostrar y
+# diría «muestra todo otra vez» sin saberlo. Es una falla con su causa: la mudanza queda a medias y el arranque
 # siguiente la termina.
 if corre HIDDEN; then
   maquina "$BASE/hidden" || mal "HIDDEN no pude armar la máquina del equipo después del corte"
@@ -1164,7 +1162,7 @@ if corre HIDDEN; then
   SALIDA="$(harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_SKILLS" ] && [ "$(sk ls-files -t | grep -c '^S ')" = 0 ] && [ "$(estado 'd.repoint')" = null ] \
     && ok "HIDDEN espejo: con git contestando, el arranque siguiente termina la vuelta y el clon muestra todo" || mal "HIDDEN espejo (rc $RC): origin $(origen_de "$LAB_SKILLS"), ocultos $(sk ls-files -t | grep -c '^S '), repoint $(estado 'd.repoint' | cut -c1-200): $SALIDA"
-  # la OTRA puerta (tercera vuelta del revisor de pruebas): la vista apagada a mano con archivos todavía ocultos. Ahí se
+  # la OTRA puerta: la vista apagada a mano con archivos todavía ocultos. Ahí se
   # cuenta lo oculto ANTES de decidir si hay que volver a mostrar; sin poder contarlo, tampoco se da la vuelta por terminada.
   # Falla sólo ESA cuenta (la primera): la de después contestaría, y sin esta puerta la vuelta seguiría sin mostrar nada
   maquina "$BASE/hidden2" || mal "HIDDEN no pude armar la segunda máquina"
@@ -1182,8 +1180,8 @@ if corre HIDDEN; then
 fi
 
 # ═══ POP · lo apartado en un stash que no se pudo reaplicar se dice ══════════════════════════════════════════════════
-# El caso (hallazgo 4): en los caminos de error de `advance` (el merge falló) y de `revert` (el reset falló) se reaplicaba
-# lo local del stash propio sin mirar el resultado: si los dos intentos fallaban, lo del dev quedaba en el stash sin aviso.
+# Situación: en los caminos de error de `advance` (el merge falla) y de `revert` (el reset falla) se reaplica
+# lo local del stash propio: si los dos intentos fallan, lo del dev queda en el stash y no puede quedar sin aviso.
 # No se pierde nada, pero hay que decirlo, con el comando para verlo.
 if corre POP; then
   # (1) advance: la actualización de todos los días, con un cambio del dev sin commitear en el clon de skills
@@ -1211,7 +1209,7 @@ if corre POP; then
   case "$AVISO" in *"stash list"*) ok "POP revert: el reset y la reaplicación fallaron: la vuelta lo dice, nombrando stash list" ;; *) mal "POP revert (rc $RC) no dice dónde quedó lo del dev: $AVISO" ;; esac
   sk stash show -p 'stash@{0}' 2>/dev/null | grep 'otro cambio del dev sin commitear' >/dev/null \
     && ok "POP revert: …y lo del dev está en el stash (no se perdió nada)" || mal "POP revert: lo del dev no está en el stash: $(sk stash list)"
-  # espejo (tercera vuelta del revisor de pruebas): si sólo falla el reset, lo del dev vuelve a su lugar y no se nombra
+  # espejo: si sólo falla el reset, lo del dev vuelve a su lugar y no se nombra
   # ningún stash
   maquina "$BASE/pop3" || mal "POP no pude armar la tercera máquina"
   con_llave harness startup >/dev/null 2>&1
@@ -1220,17 +1218,17 @@ if corre POP; then
   STASH0="$(sk stash list --format='%H')"
   SALIDA="$(blind_git '* reset -q --hard *' harness startup 2>&1)"; RC=$?
   AVISO="$SALIDA $(estado 'd.notice')"
-  # que el reset de verdad falló (vuelta 4 del revisor de pruebas): la vuelta no pasó, así que el clon sigue en el repo
-  # unificado; sin esto, una vuelta que saliera bien también daba verde
+  # que el reset de verdad falló: la vuelta no pasó, así que el clon sigue en el repo
+  # unificado; sin esto, una vuelta que saliera bien también daría verde
   [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_UNIFIED" ] || mal "POP revert espejo: el reset no falló (el clon volvió al repo viejo): el caso no ejerció nada"
   grep -q 'otro cambio del dev sin commitear' "$LAB_SKILLS/README.md" && [ "$(sk stash list --format='%H')" = "$STASH0" ] && case "$AVISO" in *"stash list"*) false ;; *) true ;; esac \
     && ok "POP revert espejo: con la reaplicación bien, lo del dev vuelve a su lugar, no queda en ningún stash y no se nombra ninguno" || mal "POP revert espejo (rc $RC): $(sk status --porcelain | head -3) · stash $(sk stash list | grep -c .): $AVISO"
 fi
 
 # ═══ PARTIAL · deshacer una ida en curso no da por limpio lo que no pudo listar ═══════════════════════════════════════
-# La misma clase, en `restorePartial` (lo encontró este arreglo): para limpiar un merge que murió a medias se listan las
-# rutas que cambian entre el commit de antes y el de destino; si git no podía listarlas, se leía como «el merge ni
-# empezó» y la mudanza se daba por deshecha. Ahora queda en curso, se dice, y el arranque siguiente la termina.
+# En `restorePartial`: para limpiar un merge que murió a medias se listan las
+# rutas que cambian entre el commit de antes y el de destino; si git no puede listarlas, no se lee como «el merge ni
+# empezó» ni la mudanza se da por deshecha: queda en curso, se dice, y el arranque siguiente la termina.
 if corre PARTIAL; then
   maquina "$BASE/partial" || mal "PARTIAL no pude armar la máquina del equipo después del corte"
   # el destino de la ida: la unión más un archivo NUEVO en la vista (skills/lab-partial/NEW.md), armado en un clon aparte
@@ -1263,9 +1261,9 @@ if corre PARTIAL; then
   partial_blind "no pudo mirar si el destino está en el clon" "* rev-parse --verify -q $DEST^{commit}*" '*no pude mirar si el commit al que iba la ida*'
   partial_blind "no pudo listar lo que cambia" '* diff --no-renames --name-status *' '*no pude listar lo que cambia*'
   partial_blind "no pudo mirar lo modificado" '* diff --no-renames --name-only -z HEAD*' '*no pude mirar lo modificado*'
-  # las dos lecturas que comparan un archivo con la versión nueva (tercera vuelta del revisor de fallos silenciosos): si
-  # fallaban las DOS, «vacío == vacío» daba iguales, y la limpieza pisaba README.md y borraba NEW.md; si fallaba una sola,
-  # daba distintos, salteaba el archivo y daba la ida por deshecha con lo de la versión nueva todavía en el disco
+  # las dos lecturas que comparan un archivo con la versión nueva: si
+  # fallan las DOS, «vacío == vacío» daría iguales, y la limpieza pisaría README.md y borraría NEW.md; si falla una sola,
+  # daría distintos, saltearía el archivo y daría la ida por deshecha con lo de la versión nueva todavía en el disco
   partial_blind "no pudo leer el archivo del disco" '* hash-object *' '*no pude leer*del disco*'
   partial_blind "no pudo leer el archivo de la versión nueva" "* rev-parse --verify -q $DEST:*" '*no pude leer*de la versión nueva*'
   partial_blind "no pudo leer ninguna de las dos" "* hash-object *|* rev-parse --verify -q $DEST:*" '*no pude leer*'
@@ -1289,7 +1287,7 @@ if corre PARTIAL; then
   [ "$RC" = 0 ] && [ "$(estado 'd.repoint')" = null ] && [ "$(sk rev-parse HEAD)" = "$ACA" ] && [ "$(origen_de "$LAB_SKILLS")" = "$LAB_REMOTE_SKILLS" ] && [ "$(sk rev-parse -q --verify refs/remotes/origin/main)" = "$RM" ] \
     && [ ! -e "$LAB_SKILLS/skills/lab-partial/NEW.md" ] && [ "$(cat "$LAB_SKILLS/README.md")" = "$A_MEDIAS" ] \
     && ok "PARTIAL espejo: con git contestando, el arranque siguiente la deshace: saca lo de la versión nueva, deja lo demás, y el clon queda como estaba" || mal "PARTIAL espejo (rc $RC): repoint $(estado 'd.repoint' | cut -c1-160), head $(sk rev-parse HEAD), NEW.md $([ -e "$LAB_SKILLS/skills/lab-partial/NEW.md" ] && echo quedó || echo no): $SALIDA"
-  # espejo de la rama que restaura (vuelta 4 del revisor de fallos silenciosos): un archivo que el merge alcanzó a
+  # espejo de la rama que restaura: un archivo que el merge alcanzó a
   # escribir con el contenido de la versión nueva vuelve al de HEAD (`checkout -f`); sin este caso esa rama no corría
   en_curso; a_medias
   sk show "$DEST:README.md" > "$LAB_SKILLS/README.md" 2>/dev/null
@@ -1304,8 +1302,8 @@ if corre PARTIAL; then
 fi
 
 # ═══ CONTAINS · «no pude comparar» no es «todavía no lo contiene» ════════════════════════════════════════════════════
-# El caso (hallazgo 5): `update` a mano con el freno «no avanza en línea recta» mira si lo publicado del repo unificado ya
-# contiene el commit del clon de skills. Si git no pudo compararlos, lo informaba como «todavía no lo contiene».
+# Situación: `update` a mano con el freno «no avanza en línea recta» mira si lo publicado del repo unificado ya
+# contiene el commit del clon de skills. Si git no puede compararlos, no lo informa como «todavía no lo contiene».
 if corre CONTAINS; then
   maquina "$BASE/contains" || mal "CONTAINS no pude armar la máquina del equipo después del corte"
   harness_lab_publish skills "un PR tardío en el repo viejo, después de la unión"
@@ -1323,7 +1321,7 @@ if corre CONTAINS; then
   [ "$RC" = 2 ] && igual "$BASE/contains/antes" "$BASE/contains/despues" && [ "$(head_de "$LAB_TREE")" = "$LAB_COMMIT_UNION" ] \
     && ok "CONTAINS sin poder comparar, update a mano sale 2 y no mueve ninguna fuente" || mal "CONTAINS (rc $RC): arnés $(head_de "$LAB_TREE") · $(diff "$BASE/contains/antes" "$BASE/contains/despues" | head -6): $SALIDA"
   case "$SALIDA" in *"todavía no contiene"*) mal "CONTAINS sin poder comparar dijo «todavía no contiene»: $SALIDA" ;; *"no pude comparar"*"git de laboratorio"*) ok "CONTAINS …y dice que no pudo comparar, con la causa (no «todavía no lo contiene»)" ;; *) mal "CONTAINS no dice que no pudo comparar: $SALIDA" ;; esac
-  # las otras tres ramas de «no pude mirar» de `unblockStraightLine` (tercera vuelta del revisor de pruebas), una por una:
+  # las otras tres ramas de «no pude mirar» de `unblockStraightLine`, una por una:
   # no pudo traer lo publicado · no pudo leer el HEAD del clon de skills · no pudo mirar si el commit del clon está en el
   # clon del arnés. Las dos últimas leen algo que el comando ya leyó antes: fallan recién después de traer el arnés
   # contains_blind <etiqueta> <patrón que arma (o vacío)> <patrones> <lo que tiene que decir (patrón de case, sin comillas)>
@@ -1349,15 +1347,15 @@ if corre CONTAINS; then
 fi
 
 # ═══ GUARD · la suite no corre nada sobre la HOME de verdad ════════════════════════════════════════════════════════════
-# El caso (segunda vuelta del revisor de seguridad): si armar la máquina falla antes de que el laboratorio tome la HOME,
-# las secciones seguían y corrían `harness startup` y el remedio del aviso sobre la ~/.claude de verdad.
+# Situación: si armar la máquina falla antes de que el laboratorio tome la HOME,
+# las secciones seguirían y correrían `harness startup` y el remedio del aviso sobre la ~/.claude de verdad.
 # sólo la corre GUARD (con LAB_SELF_CHECK=1): una sección que no mide nada, para ver qué dice el cierre
 if [ "${LAB_SELF_CHECK:-}" = 1 ] && [ "$ONLY" = UNMEASURED ]; then no_medido UNMEASURED "la sección de control de GUARD"; fi
 if corre GUARD; then
   ( HOME="/tmp/no-es-el-laboratorio"; lab_guard ) >/dev/null 2>&1 && mal "GUARD con la HOME fuera del laboratorio, lab_guard no cortó" \
     || ok "GUARD con la HOME fuera del laboratorio, lab_guard corta la suite"
   ( HOME="$BASE/una/home"; lab_guard ) >/dev/null 2>&1 && ok "GUARD espejo: con la HOME del laboratorio, sigue" || mal "GUARD espejo: con la HOME del laboratorio, cortó igual"
-  # que se USE (tercera vuelta del revisor de pruebas): (1) por lectura, ningún armado de laboratorio fuera de lab_team y
+  # que se USE: (1) por lectura, ningún armado de laboratorio fuera de lab_team y
   # lab_single; (2) por ejecución, cada sección con el armado roto a propósito ANTES de tomar la HOME corta en rojo, sin
   # seguir. La HOME de esas corridas es una carpeta de juguete fuera de su laboratorio: si alguna siguiera, no toca nada real
   SUELTOS="$(grep -nE 'harness_lab_(team_machine|single_tree|shape)\b' "$RAIZ/scripts/tests/harness-repoint.test.sh" | grep -v '^[0-9]*: *#' | grep -v 'lab:wrapper')"

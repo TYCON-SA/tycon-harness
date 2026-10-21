@@ -5,10 +5,9 @@
 // Por qué existe: con `set -o pipefail`, `… | grep -q <patrón>` es una carrera. `grep -q` sale apenas encuentra; si lo de la
 // izquierda todavía escribe, muere por SIGPIPE y la tubería entera cuenta como falla AUNQUE el patrón esté. Medido en
 // Linux con la máquina cargada: con un texto corto (`echo "$S" | grep -q`), 2 rojos falsos cada 20 000; con un programa
-// que escribe mucho, rojo siempre. Así salieron rojas de a ratos release-notes y otras en public-ci (2026-10-14), y se
-// cambiaron 491 líneas de 71 suites, y 4 de dos guiones del producto, a `| grep … >/dev/null`: sin -q, grep lee hasta el
-// final. En el producto importa más: en validate-engram-upgrade.sh la carrera hacía que un error real del sync se leyera
-// como «sin error».
+// que escribe mucho, rojo siempre. Así salen rojas de a ratos suites como release-notes y public-ci.
+// La forma segura es `| grep … >/dev/null`: sin -q, grep lee hasta el final. En el producto importa más: en
+// validate-engram-upgrade.sh la carrera haría que un error real del sync se leyera como «sin error».
 //
 // Lo que no se puede perder (GrepQPipefail_NoPipeIntoGrepQ):
 //   · ningún renglón de código de un `.sh` del arnés o de las skills (pruebas y producto) con pipefail tiene `| grep -q` (también `-qE`, `-Fq`…); los comentarios no

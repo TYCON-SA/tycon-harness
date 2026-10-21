@@ -3,9 +3,9 @@
  * dashboard-metrics.test.js — red de `lib/dashboard-metrics.js` + `dashboard-series.js`.
  *
  * Los casos positivos son, a propósito, las FORMAS REALES en que los 117 archivos legacy
- * estaban rotos (medición 2026-08-28): value string con prosa, value null sin motivo, ratio
+ * estaban rotos: value string con prosa, value null sin motivo, ratio
  * imposible, sub-campos inventados. Si el validador deja pasar una de ésas, la serie vuelve
- * a mentir y nadie se entera — que es exactamente el silencio de cuatro meses que motivó esto.
+ * a mentir y nadie se entera.
  */
 
 'use strict';
@@ -38,7 +38,7 @@ const base = () => ({
     advisor_rerun_loop_iterations: { value: 2 },
     step_8_commit_skipped_rerun: { value: 0 },
     advisor_findings_on_verification_artifacts: { value: 1, produccion: 0, tests: 1, story_spec: 0 },
-    // 2026-09-18: la fila del punto ciego entró al contrato, así que el documento COMPLETO la trae.
+    // La fila del punto ciego es parte del contrato, así que el documento COMPLETO la trae.
     // Va en null con motivo, que es su forma normal: la correlación la hace el nocturno.
     deep_review_skipped_then_hotfixed: { value: null, unavailable_reason: 'la correlación la hace el nocturno' },
   },
@@ -57,7 +57,7 @@ t('null CON motivo es legal y se reporta como no-medida, no como error', () => {
   d.metrics.advisor_rerun_loop_iterations = { value: null, unavailable_reason: 'gates.log sin entries para esta story' };
   const v = validate(d);
   assert.strictEqual(v.ok, true);
-  // 2 desde el 2026-09-18: la del caso, más `deep_review_skipped_then_hotfixed`, que en el documento
+  // 2: la del caso, más `deep_review_skipped_then_hotfixed`, que en el documento
   // completo va siempre en null con motivo (su correlación la hace el nocturno).
   assert.strictEqual(v.notMeasured.length, 2);
   assert.ok(v.notMeasured.some((x) => x.metric === 'advisor_rerun_loop_iterations'));
@@ -175,15 +175,15 @@ t('el CLI --json emite la serie parseable', () => {
   assert.ok(j.series.advisor_warnings_per_story.n >= 1);
 });
 
-// ── la fecha: cadena declarada, fuente publicada, orden cronológico real (2026-09-05) ────────
-// Reproduce la medición: captured_at en 26 de 125, generated_at en 69, date en 11, 19 sólo en el
-// nombre. Leer un solo campo dejaba 99 nulos, `--since` los descartaba en silencio y la tendencia
-// ordenaba por String(null). 🔴 Rojo previo de cada caso, anotado en su nombre.
+// ── la fecha: cadena declarada, fuente publicada, orden cronológico real ────────
+// Los archivos reales traen la fecha en campos distintos (captured_at, generated_at, date) o sólo en el
+// nombre. Leer un solo campo deja nulos, `--since` los descarta en silencio y la tendencia
+// ordena por String(null). Cada caso anota qué lo rompe.
 
 const { resolveDate } = require(LIB);
 
 t('resolveDate sigue la cadena captured_at → generated_at → date → nombre y dice de cuál salió', () => {
-  // rojo previo: volver a `String(doc.captured_at).slice(0,10)` → los tres últimos dan null
+  // falla con: volver a `String(doc.captured_at).slice(0,10)` → los tres últimos dan null
   assert.deepStrictEqual(resolveDate({ captured_at: '2026-08-28T10:00:00-03:00' }, 'metrics-2026-08-28-x.json').date_source, 'captured_at');
   assert.deepStrictEqual(resolveDate({ generated_at: '2026-07-04' }, 'metrics-2026-07-04-x.json'), { date: '2026-07-04', date_source: 'generated_at', date_conflict: null });
   assert.deepStrictEqual(resolveDate({ date: '2026-06-10' }, 'metrics-2026-06-10-x.json').date_source, 'date');
@@ -192,7 +192,7 @@ t('resolveDate sigue la cadena captured_at → generated_at → date → nombre 
 });
 
 t('resolveDate NO adivina con basura y declara el conflicto cuando la fecha de adentro no es la del nombre', () => {
-  // rojo previo: quitar el regex de forma → 'ayer' o 'N/A' pasarían como fecha
+  // falla con: quitar el regex de forma → 'ayer' o 'N/A' pasarían como fecha
   assert.strictEqual(resolveDate({ captured_at: 'ayer' }, 'sin-fecha.json').date, null);
   const c = resolveDate({ captured_at: '2026-05-05' }, 'metrics-2026-09-01-tarde.json');
   assert.strictEqual(c.date, '2026-05-05', 'la declarada gana');
@@ -206,7 +206,7 @@ write('metrics-2026-05-03-solo-nombre.json', { project: 'n', metrics: { advisor_
 write('metrics-sin-fecha.json', { project: 'x', metrics: { advisor_warnings_per_story: { value: 9 } } });
 
 t('loadAll ya no deja en null la fecha de un registro que la tiene en otro campo o en el nombre', () => {
-  // rojo previo: leer sólo captured_at → 3 de estos 4 quedan sin fecha
+  // falla con: leer sólo captured_at → 3 de estos 4 quedan sin fecha
   const { records } = loadAll(tmp);
   const by = (s) => records.find((r) => r.file.includes(s));
   assert.strictEqual(by('solo-generated').date_source, 'generated_at');
@@ -216,7 +216,7 @@ t('loadAll ya no deja en null la fecha de un registro que la tiene en otro campo
 });
 
 t('el CLI ordena por fecha REAL: la ventana no termina en "null" aunque haya un registro sin fecha', () => {
-  // rojo previo: `rows.sort(String(x.date).localeCompare(...))` y window desde rows → until === null
+  // falla con: `rows.sort(String(x.date).localeCompare(...))` y window desde rows → until === null
   const j = JSON.parse(execFileSync('node', [SERIES, '--json', '--dir', tmp], { encoding: 'utf8' }));
   assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(String(j.window.until)), `until fue ${j.window.until}`);
   assert.ok(j.window.since <= j.window.until);
@@ -225,14 +225,14 @@ t('el CLI ordena por fecha REAL: la ventana no termina en "null" aunque haya un 
 });
 
 t('un filtro por fecha reporta cuántos dejó afuera y cuántos salieron por no tener fecha', () => {
-  // rojo previo: sin los campos excluded_by_window / undated_before_window → undefined
+  // falla con: sin los campos excluded_by_window / undated_before_window → undefined
   const j = JSON.parse(execFileSync('node', [SERIES, '--json', '--dir', tmp, '--since', '2026-07-01'], { encoding: 'utf8' }));
   assert.ok(j.excluded_by_window >= 3, `excluidos: ${j.excluded_by_window}`);
   assert.strictEqual(j.undated_before_window, 1);
 });
 
 t('sin fecha suficiente NO hay tendencia, y se dice por qué', () => {
-  // rojo previo: volver a dibujar la flecha con main.length >= 6 sin mirar la cobertura de fechas
+  // falla con: volver a dibujar la flecha con main.length >= 6 sin mirar la cobertura de fechas
   const j = JSON.parse(execFileSync('node', [SERIES, '--json', '--dir', tmp], { encoding: 'utf8' }));
   assert.strictEqual(j.trend.ok, false);
   assert.ok(typeof j.trend.motivo === 'string' && j.trend.motivo.length > 0);
@@ -241,9 +241,9 @@ t('sin fecha suficiente NO hay tendencia, y se dice por qué', () => {
   assert.ok(!/→ (subiendo|bajando)/.test(out), 'no puede haber flecha');
 });
 
-// ── la INVARIANTE del contrato: qué CUENTA `value`, no sólo qué forma tiene (2026-09-18) ──────────
-// Medido sobre los 29 archivos reales con las tres partes: 23 publicaban `tests + story_spec` (el label),
-// 4 el TOTAL con `produccion` y 2 sólo `tests` — tres unidades en la misma serie y el validador en verde.
+// ── la INVARIANTE del contrato: qué CUENTA `value`, no sólo qué forma tiene ──────────
+// Los archivos reales con las tres partes publican `tests + story_spec` (el label), el TOTAL con `produccion`
+// o sólo `tests`: tres unidades en la misma serie con el validador en verde.
 // Los casos rojos son, a propósito, las dos formas reales de estar mal.
 t('la invariante: value = tests + story_spec pasa', () => {
   const d = base();
@@ -252,7 +252,7 @@ t('la invariante: value = tests + story_spec pasa', () => {
   assert.strictEqual(v.ok, true, v.errors.join(' | '));
 });
 t('la invariante: publicar el TOTAL (produccion + tests + story_spec) es un error que nombra la cuenta', () => {
-  // rojo previo: `metrics-2026-09-14-…-story-4.5-merge.json`, value 18 con partes 13/3/2
+  // falla con: value 18 con partes 13/3/2 (el total)
   const d = base();
   d.metrics.advisor_findings_on_verification_artifacts = { value: 18, produccion: 13, tests: 3, story_spec: 2 };
   const v = validate(d);
@@ -260,7 +260,7 @@ t('la invariante: publicar el TOTAL (produccion + tests + story_spec) es un erro
   assert.ok(v.errors.some((e) => /tests \+ story_spec/.test(e) && /= 5/.test(e)), v.errors.join(' | '));
 });
 t('la invariante: publicar sólo `tests` también es un error', () => {
-  // rojo previo: `metrics-2026-09-15-…-story-2.16-merge.json`, value 0 con partes 26/0/1
+  // falla con: value 0 con partes 26/0/1 (sólo `tests`)
   const d = base();
   d.metrics.advisor_findings_on_verification_artifacts = { value: 0, produccion: 26, tests: 0, story_spec: 1 };
   assert.strictEqual(validate(d).ok, false);
@@ -280,12 +280,11 @@ t('la invariante NO se juzga sobre una parte con forma inválida: ese error ya s
   assert.strictEqual(v.errors.filter((e) => /advisor_findings_on_verification_artifacts/.test(e)).length, 1, v.errors.join(' | '));
 });
 
-// ── «No pude preguntar» no se publica como número (2026-09-18, DEEP-REVIEW-SKIP-SIN-STORY-1) ─────
+// ── «No pude preguntar» no se publica como número ─────
 // La fila `deep_review_skipped_then_hotfixed` mide algo que presupone una story; un cambio que entra
-// SIN story no encaja en su definición y la fila imprimía `0`. Medido: 46 de 52 archivos con esa
-// métrica publican 0, y tres lo dicen en su propio detalle («Sin story — la métrica exige … ninguno
-// aplica»). Un 0 que significa «esta pregunta no se pudo hacer» es el falso verde más caro del
-// tablero, y es justo el que esa fila fue creada para denunciar.
+// SIN story no encaja en su definición y la fila imprimiría `0`.
+// Un 0 que significa «esta pregunta no se pudo hacer» es el falso verde más caro del tablero, y es justo el que
+// esa fila existe para denunciar.
 t('una entrada que se declara no medida (`status: n/a`) NO puede publicar un número', () => {
   const d = base();
   d.metrics.deep_review_skipped_then_hotfixed = { value: 0, status: 'n/a', detail: 'sin story: la métrica no aplica' };
@@ -312,13 +311,13 @@ t('un valor REAL sin declararse no medida pasa: la regla no prohíbe medir cero'
   assert.strictEqual(validate(d).ok, true);
 });
 
-// ── T23 · R3_Lib_MovedRequires (story 8.12, tanda R3, AC 20) ─────────────────────────────────────────────────────────
+// ── T23 · R3_Lib_MovedRequires ─────────────────────────────────────────────────────────
 // La serie vive en scripts/lib/: compila desde ahí, pide su vecino `dashboard-metrics.js` sin `lib/` adelante, valida
 // un directorio de juguete y, sin `--dir`, sigue leyendo el `.dashboard/` del clon (no uno inventado bajo scripts/). En la
 // ruta de siempre queda el reemplazo generado —lo llaman dos pipelines y el capturador de retrospectivas—; esa ruta sale
 // del mapa, y la copia pública, que no lo lleva, lo dice.
 // Sólo la copia pública —que no lleva el mapa— se saltea. Con el mapa presente, ilegible o sin la entrada es un rojo
-// (pase adversarial de la R3: «sin entrada» leído como «copia pública» dejaba pasar en verde un reemplazo que falta).
+// (leer «sin entrada» como «copia pública» dejaría pasar en verde un reemplazo que falta).
 const MAP_PATH = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
 
 t('T23 R3_Lib_MovedRequires — la serie compila desde scripts/lib/ y su vecino resuelve', () => {

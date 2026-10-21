@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-third-party.test.sh — el paso del instalador que restituye las skills de terceros (story 8.5, T7-T18).
+# install-third-party.test.sh — el paso del instalador que restituye las skills de terceros (T7-T18).
 #
 # Lo que no se puede perder:
 #   · Que restituya SIN RED desde la historia de git del clon (el contenido que el pull del retiro acaba de borrar
@@ -240,7 +240,7 @@ if [ "$n1" = 1 ] && grep -q '/plugin marketplace add' <<<"$o1" && ! grep -q '/pl
   ok "T18 sin el plugin: una sola línea con los dos comandos en el día; con el plugin o apagado, silencio; nunca baja la propietaria"
 else bad "T18: 1=[$o1] 2=[$o2] 3=[$o3] 4=[$o4]"; fi
 
-# ═══ Regresiones del pase adversarial (story 8.5, tanda A, corrida wf_2ffcafec-e40) ═══════════════════════════════════
+# ═══ Regresiones ═══════════════════════════════════════════════════════════════════════════════════════════════════
 # A · una skill rota en el disco no deja sin restituir a las demás, y el aviso la nombra
 H="$BASE/hA"; mkdir -p "$H"; R="$BASE/rA"; with_history "$R"; M="$BASE/mA.json"; EXTRA_TREE="$TX" manifest "$M" done "$UNREACHABLE" "$C1" "$T1"
 step "$H" "$R" "$M" >/dev/null 2>&1
@@ -292,7 +292,7 @@ out="$(env -i HOME="$H" PATH="$PATH" GIT_ALLOW_PROTOCOL=file node "$STEP" --repo
 if [ "$rc" -eq 0 ] && grep -q 'faltan' <<<"$out" && grep -q 'skills/acme-helper' <<<"$out"; then ok "adv-I --check nombra lo que falta aunque el aviso diario ya haya salido"
 else bad "adv-I (rc=$rc): $out"; fi
 
-# J (revisores, iter 2) · retiro pendiente, árbol fuera de la historia y un destino con OTRO contenido: se dice, no se calla
+# J · retiro pendiente, árbol fuera de la historia y un destino con OTRO contenido: se dice, no se calla
 H="$BASE/hJ"; mkdir -p "$H"; R="$BASE/rJ"; without_history "$R"; M="$BASE/mJ.json"; manifest "$M" pending "$UNREACHABLE" "$C1" "$T1"
 mkdir -p "$R/skills/acme-helper"; printf 'otra cosa\n' > "$R/skills/acme-helper/SKILL.md"
 out="$(step "$H" "$R" "$M" 2>&1)"; rc=$?
@@ -301,9 +301,9 @@ if [ "$rc" -eq 0 ] && grep -q 'skills/acme-helper' <<<"$out" && grep -q 'no pued
   ok "rev-J un destino con otro contenido y sin su árbol en la historia se nombra (en el arranque y en --check), no se saltea callado"
 else bad "rev-J (rc=$rc): [$out] [$out2]"; fi
 
-# K (2026-10-06) · --check nombra lo modificado localmente aunque el aviso del día ya haya salido en el arranque. Caso: un dev
-# corrió --check a mano para saber qué skills le había pisado otro instalador, y no salió nada porque el arranque ya lo
-# había dicho esa mañana: el aviso diario es para el arranque, no para quien pregunta.
+# K · --check nombra lo modificado localmente aunque el aviso del día ya haya salido en el arranque. Si un dev
+# corre --check a mano para saber qué skills le pisó otro instalador, tiene que salir algo aunque el arranque ya lo
+# haya dicho esa mañana: el aviso diario es para el arranque, no para quien pregunta.
 H="$BASE/hK"; mkdir -p "$H"; R="$BASE/rK"; without_history "$R"; M="$BASE/mK.json"; manifest "$M" done "$ORIGIN" "$C1" "$T1"
 step "$H" "$R" "$M" >/dev/null 2>&1
 printf 'la pisó otro instalador\n' > "$R/skills/acme-helper/SKILL.md"
@@ -313,7 +313,7 @@ if [ "$rc" -eq 0 ] && grep -q 'modificado localmente' <<<"$out" && grep -q 'modi
   ok "K --check nombra lo modificado localmente aunque el arranque ya haya dado el aviso del día"
 else bad "K (rc=$rc): [$out] [$out2]"; fi
 
-# ═══ T28 · el pull del retiro sobre un archivo ajeno que el dev modificó no deja agent-skills trabado (AC 27) ══════════
+# ═══ T28 · el pull del retiro sobre un archivo ajeno que el dev modificó no deja agent-skills trabado ══════════
 # Así lo trae la línea de arranque: `pull --ff-only --autostash`. Con el archivo modificado, git sale 0 pero deja el
 # índice en conflicto (DU) y el stash «autostash»; desde ahí ningún pull entra.
 S28="$BASE/as28"; g clone -q "$AS_SRC" "$S28"                         # un upstream propio: acá se agregan commits
@@ -346,7 +346,7 @@ if [ "$antes_u" -gt 0 ] && [ "$rc" -eq 0 ] && [ "$despues_u" = "$antes_u" ] && g
   ok "T28 un conflicto en un archivo propio no se toca y se nombra (antes era silencio)"
 else bad "T28 conflicto propio (antes ${antes_u} · después ${despues_u}, rc=$rc): $out"; fi
 
-# T28 · los rechazos del destrabe (revisores y pase adversarial, tanda B): cada uno deja el índice como estaba y lo dice
+# T28 · los rechazos del destrabe: cada uno deja el índice como estaba y lo dice
 # retired_du <dir> → una máquina con el pull del retiro trabado sobre skills/acme-helper/SKILL.md (DU con autostash)
 retired_du() {
   local s="$1.src"; g clone -q "$AS_SRC" "$s"; g clone -q "$s" "$1"; g -C "$1" reset -q --hard HEAD~1
@@ -389,7 +389,7 @@ if [ "$u0" -gt 0 ] && [ "$(unmerged "$R")" = "$u0" ] && grep -q -- '--check no e
    && [ "$(cat "$R/skills/acme-helper/SKILL.md")" = 'lo cambió un BMAD más nuevo' ]; then
   ok "T28 --check nombra el conflicto sin escribir, y un git rm --cached que falla deja el índice y el archivo como estaban"
 else bad "T28 --check / rm fallido (conflictos ${u0} → $(unmerged "$R")): [$out] [$out2]"; fi
-# el manifiesto dice que el retiro está pendiente: ese pull no es el del retiro → no se toca nada (story 8.5.1, T5)
+# el manifiesto dice que el retiro está pendiente: ese pull no es el del retiro → no se toca nada (T5)
 R="$BASE/r28g"; retired_du "$R"; u0="$(unmerged "$R")"; st0="$(g -C "$R" stash list)"; M28g="$BASE/m28g.json"; manifest "$M28g" pending "$UNREACHABLE" "$C1" "$T1"
 mkdir -p "$BASE/h28g"; out="$(step "$BASE/h28g" "$R" "$M28g" 2>&1)"; rc=$?
 if [ "$u0" -gt 0 ] && [ "$rc" -eq 0 ] && [ "$(unmerged "$R")" = "$u0" ] && [ "$(g -C "$R" stash list)" = "$st0" ] \
@@ -397,7 +397,7 @@ if [ "$u0" -gt 0 ] && [ "$rc" -eq 0 ] && [ "$(unmerged "$R")" = "$u0" ] && [ "$(
    && grep -q 'skills/acme-helper/SKILL.md' <<<"$out" && ! grep -q 'destrabé' <<<"$out"; then
   ok "T28 con el retiro pendiente no toca nada (índice, archivo y stash iguales) y lo dice nombrando la ruta"
 else bad "T28 retiro pendiente (rc=$rc, conflictos ${u0} → $(unmerged "$R")): $out"; fi
-# una ruta con espacio: el comando que sugiere el paso se copia, se corre y destraba ese archivo (story 8.5.1, T6).
+# una ruta con espacio: el comando que sugiere el paso se copia, se corre y destraba ese archivo (T6).
 # Laboratorio propio: una ruta con espacio en AS_SRC cambiaría los árboles de todos los casos de arriba.
 S6="$BASE/as-esp"; g init -q -b main "$S6"; mkdir -p "$S6/skills/zorblax-own" "$S6/skills/acme-helper/ref"
 printf 'propia\n' > "$S6/skills/zorblax-own/SKILL.md"; printf 'ajena\n' > "$S6/skills/acme-helper/ref/con espacio.md"
@@ -414,8 +414,8 @@ if [ "$u0" -gt 0 ] && grep -qF "rm --cached -- 'skills/acme-helper/ref/con espac
    && [ -f "$R/skills/acme-helper/ref/con espacio.md" ]; then
   ok "T28 una ruta con espacio va citada en el comando sugerido; copiado y corrido, destraba ese archivo (el propio sigue para resolver a mano)"
 else bad "T28 ruta con espacio (conflictos ${u0} → $(unmerged "$R"), comando rc=$rcc: [$cmd]): $out"; fi
-# el destrabe EXITOSO bajo una carpeta con espacio: el `git -C … stash list` del mensaje se copia y corre (pase adversarial
-# de la 8.5.1, vuelta 2: la rama del rechazo citaba la carpeta y la del éxito no)
+# el destrabe EXITOSO bajo una carpeta con espacio: el `git -C … stash list` del mensaje se copia y corre (la rama
+# del rechazo y la del éxito citan la carpeta)
 mkdir -p "$BASE/con espacio"; R="$BASE/con espacio/r28i"; retired_du "$R"
 mkdir -p "$BASE/h28i"; out="$(step "$BASE/h28i" "$R" "$M" 2>&1)"
 cmd="$(grep -o "git -C '[^']*' stash list" <<<"$out" | head -1)"
@@ -424,7 +424,7 @@ if grep -q 'destrabé agent-skills' <<<"$out" && [ -n "$cmd" ] && [ "$rcc" -eq 0
   ok "T28 destrabe exitoso bajo una carpeta con espacio: el git -C … stash list del mensaje va citado y corre"
 else bad "T28 destrabe con carpeta con espacio (comando [$cmd] rc=$rcc, conflictos $(unmerged "$R")): $out"; fi
 
-# ═══ adv-B1 · retiro hecho, sin historia ni estado: --check nombra una carpeta a medias (antes sólo la que faltaba entera) ═
+# ═══ retiro hecho, sin historia ni estado: --check nombra una carpeta a medias, no sólo la que falta entera ═══════
 H="$BASE/hB1"; mkdir -p "$H"; R="$BASE/rB1"; without_history "$R"; M1="$BASE/mB1.json"; manifest "$M1" done "$UNREACHABLE" "$C1" "$T1"
 mkdir -p "$R/skills/acme-helper"; printf 'name: acme-helper\n' > "$R/skills/acme-helper/SKILL.md"
 out="$(env -i HOME="$H" PATH="$PATH" GIT_ALLOW_PROTOCOL=file node "$STEP" --repo "$R" --manifest "$M1" --check 2>&1)"; rc=$?
@@ -439,7 +439,7 @@ if [ "$rc" -eq 0 ] && [ "$n6" = 1 ] && grep -q 'skills/acme-helper' <<<"$out" &&
   ok "adv-B6 sin red, dos skills del mismo origen: una sola línea «no pude preguntar» que nombra las dos"
 else bad "adv-B6 (rc=$rc, líneas ${n6}): $out"; fi
 
-# ═══ T26 (story 8.18, AC 26) · el repo unido: un clon NUEVO restituye desde la historia unida, sin red ══════════════
+# ═══ T26 · el repo unido: un clon NUEVO restituye desde la historia unida, sin red ══════════════
 # El arnés y agent-skills son UN repo. La historia de agent-skills —con la skill ajena versionada (A) y su retiro (B)—
 # entró por el merge de la unión: un clon nuevo del repo unido trae esos objetos, y el paso restituye sin red con los
 # destinos del manifiesto resueltos contra la raíz que trae skills/. El clon es `--no-local`: viaja sólo lo que la
@@ -503,13 +503,12 @@ else bad "T7 el instalador (rc=$rc) no mostró el aviso del paso: $(tail -5 <<<"
 out="$(instalar TYCON_THIRD_PARTY=0)"
 if grep -q 'skills de terceros.*apagado' <<<"$out"; then ok "T7 con TYCON_THIRD_PARTY=0 el paso lo dice en una línea"
 else bad "T7 apagado no dijo nada: $(tail -5 <<<"$out" | tr '\n' ' ')"; fi
-# Los dos instaladores invocan el mismo script, con el MISMO repo y con --check cuando corresponde (contrato C11).
-# Hasta la story 8.18 los dos traían la ruta escrita (`--repo <HOME>/.claude/agent-skills`) y esto buscaba ese texto.
-# Desde entonces ninguno la trae: le preguntan a scripts/lib/skills-dir.js con la variante de quien ESCRIBE en la máquina
-# (`--installed`: lo instalado mientras exista) y guardan la raíz en una variable. Buscar el texto de antes daba rojo con
-# los dos instaladores sanos (medido en Azure sobre la rama junta, corrida 11741). Se mira lo que el contrato protege:
+# Los dos instaladores invocan el mismo script, con el MISMO repo y con --check cuando corresponde.
+# Ninguno trae la ruta escrita (`--repo <HOME>/.claude/agent-skills`): le preguntan a scripts/lib/skills-dir.js con la variante
+# de quien ESCRIBE en la máquina (`--installed`: lo instalado mientras exista) y guardan la raíz en una variable. Buscar
+# ese texto daría rojo con los dos instaladores sanos. Se mira lo que el contrato protege:
 #   1. las llamadas al paso son las dos de siempre, en los dos: la de la raíz instalada, con los argumentos del modo
-#      revisión, y la del modo revisión sin el enlace todavía (decisión C16), con --check fijo; ninguna con otra carpeta;
+#      revisión, y la del modo revisión sin el enlace todavía, con --check fijo; ninguna con otra carpeta;
 #   2. esa raíz sale de la carpeta de skills que contesta la biblioteca con --installed, y de ningún otro lado (la ruta
 #      escrita queda sólo para una copia del instalador sin la biblioteca al lado);
 #   3. en modo revisión, --check viaja.

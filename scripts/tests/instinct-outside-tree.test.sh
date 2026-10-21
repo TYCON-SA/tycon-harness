@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# instinct-outside-tree.test.sh — el grabador de aprendizajes no escribe en un árbol que no trae su buzón (story 8.27).
+# instinct-outside-tree.test.sh — el grabador de aprendizajes no escribe en un árbol que no trae su buzón.
 #
-# EL CASO (2026-10-09). El observador, el disparador del arranque y el comando de revisión creaban `inbox/instincts/`
-# dentro del árbol del arnés antes de mirar nada: también por ensayar (`--dry-run`) o por listar. En un árbol que no la
-# trae —una versión bajada, la copia pública— eso era una carpeta que nadie le trajo: la prueba que mide «nadie escribe
-# en el árbol» fallaba siempre a la primera sobre la copia, y en un arnés instalado lo escrito se perdía al actualizar.
-# Ahora se escribe en la casa de la persona (`<estado>/inbox/instincts/`), se lee en todos los lugares, y nadie crea
+# Si el observador, el disparador del arranque y el comando de revisión crearan `inbox/instincts/`
+# dentro del árbol del arnés antes de mirar nada (también por ensayar con `--dry-run` o por listar), en un árbol que no la
+# trae —una versión bajada, la copia pública— sería una carpeta que nadie le trajo: la prueba que mide «nadie escribe
+# en el árbol» fallaría siempre a la primera sobre la copia, y en un arnés instalado lo escrito se perdería al actualizar.
+# Se escribe en la casa de la persona (`<estado>/inbox/instincts/`), se lee en todos los lugares, y nadie crea
 # una carpeta por leer. La regla vive en scripts/instincts/instinct-dirs.js; sus casos sueltos, en instinct-dirs.test.js.
 #
-# Qué fija (los números son los de la tabla de pruebas de la story):
+# Qué fija:
 #   T9   el observador en --dry-run no crea nada: ni en el árbol ni en la casa
 #   T10  una corrida de verdad escribe en la casa; con buzón, en el árbol como siempre
 #   T11  lo ya decidido en otro lugar no se vuelve a proponer, entra a la revisión, y el contador de un descarte
@@ -17,9 +17,9 @@
 #   T13  approve y reject mueven el archivo dentro del lugar donde estaba
 #   T14  el disparador manda el registro adonde se escribe y nunca crea inbox/ en un árbol que no la trae
 #   T15  sin tycon-home.js nadie cae al árbol: el observador lo dice y sale 0, el comando de revisión sale 1
-# Y de la vuelta de revisores: una carpeta que existe y no se deja leer se DICE (nunca se muestra como vacía); el
-# disparador deja un registro de reserva con el motivo cuando no puede usar el suyo; la mudanza de descartados de antes
-# de la 8.12 no corre en un árbol sin buzón; un borrado que falla al aprobar no pierde la decisión.
+# Además: una carpeta que existe y no se deja leer se DICE (nunca se muestra como vacía); el
+# disparador deja un registro de reserva con el motivo cuando no puede usar el suyo; la mudanza de descartados de la
+# carpeta anterior no corre en un árbol sin buzón; un borrado que falla al aprobar no pierde la decisión.
 #
 # Cómo corre: los guiones se COPIAN a un árbol de prueba (su raíz es ese árbol) y HOME es una carpeta de usuario de
 # laboratorio, con el ambiente vacío (`env -i`). El modelo es un `claude` de mentira en el PATH: no gasta un token ni
@@ -28,8 +28,7 @@
 set -uo pipefail
 # La suite corre A PROPÓSITO con una TYCON_HOME heredada, como la tiene quien la exporta en su terminal: tycon-home.js la
 # mira antes que HOME, así que un comando que no fije su ambiente (o no la saque) se iría a esa carpeta y el caso daría
-# rojo. Los comandos medidos corren con `env -i`; el único que hereda el ambiente es `estado`, que la saca. (Pase
-# adversarial de la story: con la variable exportada, 7 casos daban rojo falso.)
+# rojo. Los comandos medidos corren con `env -i`; el único que hereda el ambiente es `estado`, que la saca.
 export TYCON_HOME="/una/casa/heredada/que/ningun/caso/tiene/que/usar"
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fallos=0
@@ -256,7 +255,7 @@ observar "$A" "$H" "$B"
 if [ "$RC" = 0 ] && grep -F "no es JSON válido" "$LAB/t11h.log" | grep -F "puede volver a proponerse" >/dev/null && ls "$CASA/pending/"*"-$H_NUEVA.yaml" > /dev/null 2>&1; then
   ok "T11 (h) con la configuración de la máquina rota, el observador anota que el clon que mantiene no se lee, y sigue"
 else bad "T11 (h) configuración rota" "rc=$RC $(tail -3 "$LAB/t11h.log" | tr '\n' ' ' | cut -c1-300)"; fi
-# (f) la mudanza de descartados de antes de la 8.12 no corre en un árbol que no trae su buzón: nada pasa a inbox/
+# (f) la mudanza de descartados de la carpeta anterior no corre en un árbol que no trae su buzón: nada pasa a inbox/
 V_CARPETA=""
 [ -f "$TCG/scripts/lib/renames.json" ] && V_CARPETA=$(node -e '
   const l = require(process.argv[1]);

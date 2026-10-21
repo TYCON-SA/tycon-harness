@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# deploy-codex-copies.test.sh — desplegar los hooks de Codex desde otra ruta no los acumula (2026-09-15).
+# deploy-codex-copies.test.sh — desplegar los hooks de Codex desde otra ruta no los acumula.
 #
-# El caso real: en la máquina del admin, ~/.codex/hooks.json tenía cada hook del arnés registrado hasta
-# seis veces — la ruta de siempre más cinco copias temporales de otras sesiones, tres ya borradas. El
-# despliegue reconocía como propias sólo las entradas con SU ruta, así que corrido desde una copia
-# conservaba las de la ruta real y sumaba las suyas. Codex corría cada aviso varias veces, sin error.
+# El caso: si el despliegue reconociera como propias sólo las entradas con SU ruta, corrido desde una copia
+# conservaría las de la ruta real y sumaría las suyas: ~/.codex/hooks.json acumularía cada hook del arnés varias
+# veces (la ruta de siempre más copias temporales de otras sesiones) y Codex correría cada aviso varias veces,
+# sin error.
 #
 # Todo pasa en carpetas temporales salvo el caso 4, que necesita un destino FUERA de ellas para probar
 # el freno: usa una carpeta propia bajo ~/.cache y la borra al terminar.
-# DEPLOY_HOOKS_JS apunta a otra versión del despliegue (para verificar el rojo previo contra la vieja).
+# DEPLOY_HOOKS_JS apunta a otra versión del despliegue (para verificar que la prueba falla contra la versión anterior).
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -63,20 +63,20 @@ printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","co
 desplegar "$T/a" "$T/h5"
 grep -q "copia-vieja/scripts/hooks/retirado.js" "$T/h5/hooks.json" && mal "C-05 quedó un hook retirado apuntando a una copia temporal" || ok "C-05 un hook retirado que apunta a una copia temporal se limpia"
 
-# C-06 y C-07 · story 8.18, hallazgo I12: quien ESCRIBE rutas en la máquina usa las skills INSTALADAS.
-# La máquina del equipo después del corte: el clon del arnés ya trae skills/ y agents/ (es «unido») y además hay un
-# ~/.claude/agent-skills instalado aparte. Con «el propio clon primero» los comandos de ~/.codex/hooks.json pasaban a
-# apuntar al clon del arnés, y Codex aprueba cada hook por su texto: había que re-aprobarlos todos. Sin variable.
+# C-06 y C-07 · quien ESCRIBE rutas en la máquina usa las skills INSTALADAS.
+# La máquina del equipo con el repo unido: el clon del arnés ya trae skills/ y agents/ (es «unido») y además hay un
+# ~/.claude/agent-skills instalado aparte. Con «el propio clon primero» los comandos de ~/.codex/hooks.json pasarían a
+# apuntar al clon del arnés, y Codex aprueba cada hook por su texto: habría que re-aprobarlos todos. Sin variable.
 unida() { # <dir>: una copia con la forma del repo unido (lo que mira isSingleRepo) y los dos desplegadores
   copia "$1"
   cp "$RAIZ/scripts/lib/canonical-path.js" "$RAIZ/scripts/lib/legacy-names.js" "$1/scripts/lib/" 2>"$T/cp.err" \
     || { mal "no pude armar la copia unida: $(cat "$T/cp.err")"; return 1; }
-  # lo que canonical-path.js importa viaja con ella (story 8.19: el nombre del lugar, scripts/setup/harness/place.js, que
-  # desde la 8.23 lo toma de tycon-home.js, a su lado)
+  # lo que canonical-path.js importa viaja con ella (el nombre del lugar, scripts/setup/harness/place.js, que
+  # lo toma de tycon-home.js, a su lado)
   mkdir -p "$1/scripts/setup/harness" && cp "$RAIZ/scripts/setup/harness/place.js" "$RAIZ/scripts/setup/harness/tycon-home.js" "$1/scripts/setup/harness/" 2>"$T/cp.err" \
     || { mal "no pude armar la copia unida: $(cat "$T/cp.err")"; return 1; }
-  # el mapa de renombres no viaja a la copia pública (story 8.9): sin él legacy-names.js es paso directo, así que allá
-  # se arma la copia sin él. Medido en T23 de la 8.7 (story 8.18): exigirlo daba tres rojos en la copia y verde adentro.
+  # el mapa de renombres no viaja a la copia pública: sin él legacy-names.js es paso directo, así que allá
+  # se arma la copia sin él. Exigirlo daría rojo en la copia y verde adentro.
   if [ -f "$RAIZ/scripts/lib/renames.json" ]; then
     cp "$RAIZ/scripts/lib/renames.json" "$1/scripts/lib/" 2>"$T/cp.err" || { mal "no pude armar la copia unida: $(cat "$T/cp.err")"; return 1; }
   fi
@@ -116,12 +116,12 @@ for f in build/deploy-codex-all.js build/deploy-codex-hooks.js build/deploy-shar
   fi
 done
 
-# C-09 a C-13 · DEF-8.23-C-hooks-codex-sin-integracion (2026-10-09): los hooks de una integración apagada no se registran
+# C-09 a C-13 · los hooks de una integración apagada no se registran
 # en Codex, con la misma decisión que el lado Claude Code (scripts/setup/apply-hooks.js). Corre el despliegue del árbol
 # ENTERO (necesita el aplicador, la lista y el lector de la configuración al lado), con una HOME y un Codex de prueba;
-# cada integración la fija su variable, que gana sobre el perfil del equipo. Visto en el nocturno 12518: con Codex
-# enchufado y engram apagada, doctor corrió engram-pre-commit.sh.
-# story 2.28: el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta.
+# cada integración la fija su variable, que gana sobre el perfil del equipo. Sin esto, con Codex
+# enchufado y engram apagada, doctor correría engram-pre-commit.sh.
+# el aviso del correo (owner-email-notice.js) es de la integración del buzón, y entra en la cuenta.
 DE_INTEGRACION="engram-pre-commit.sh engram-drift-notice.js clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js clocki/scripts/sweep.js dependencies-notice.js dashboard-notice.js retro-staleness-notice.js owner-email-notice.js"
 CASA9="$T/casa9"; mkdir -p "$CASA9"
 APAGADAS="TYCON_ENGRAM=0 TYCON_CLOCKIFY=0 TYCON_NIGHTLY=0 TYCON_CODEGRAPH=0 TYCON_MAILBOX=0"
@@ -146,7 +146,7 @@ else
   mal "C-09 salida $RC; quedaron registrados:${SOBRAN:- (ninguno)}; safety-guard $(cuantos safety-guard-pre.sh "$T/h9/hooks.json") y codegraph $(cuantos codegraph-session-hook.sh "$T/h9/hooks.json") vez/veces"; tail -3 "$T/out9"
 fi
 
-# C-10 · con las cuatro prendidas, el fragmento entero, como antes
+# C-10 · con las cuatro prendidas, el fragmento entero
 # shellcheck disable=SC2086
 desplegar_arbol "$T/h10" $PRENDIDAS
 N10=$(comandos "$T/h10/hooks.json")
@@ -187,7 +187,7 @@ case "$PAR" in
   *) mal "C-13 la paridad de hooks dice: $PAR" ;;
 esac
 
-# ── story 8.39: los hooks de Codex con el Node propio del arnés ─────────────────────────────────────────────────────
+# ── los hooks de Codex con el Node propio del arnés ─────────────────────────────────────────────────────
 # Un Node del arnés de juguete en la HOME de prueba: un GUION que dice la versión de la lista y si no llama al node real
 # por su ruta absoluta (nunca un enlace a un binario real), con el enlace `current`.
 CASA39="$T/casa39"; NODE_V="$(node -e 'process.stdout.write(require(process.argv[1]).version)' "$RAIZ/scripts/production/node-official.json")"

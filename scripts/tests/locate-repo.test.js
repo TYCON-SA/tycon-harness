@@ -2,11 +2,11 @@
 /**
  * locate-repo.test.js — red de `ubicarRepo` (scripts/nightly/dependencies/nightly-dependencies.js).
  *
- * POR QUÉ EXISTE (2026-09-29). `ruta` en repos.json es la ETIQUETA de una entrada, no el nombre de
+ * POR QUÉ EXISTE. `ruta` en repos.json es la ETIQUETA de una entrada, no el nombre de
  * la carpeta. En Azure eso no se nota —el pipeline clona en `<raiz>/<ruta>`—, pero en la máquina de
  * un dev cada uno clonó con el nombre que quiso: `Orbita/FrontEnd` vive en
- * `Orbita/OrbitaFrontEnd`. Esos repos salían NO MEDIDO con «el repo no está en …»: verdad
- * literal, conclusión falsa. Ahora se los ubica por IDENTIDAD — el `origin` que apunta al mismo
+ * `Orbita/OrbitaFrontEnd`. Sin ubicarlos, esos repos saldrían NO MEDIDO con «el repo no está en …»: verdad
+ * literal, conclusión falsa. Se los ubica por IDENTIDAD — el `origin` que apunta al mismo
  * repo de Azure que declara `ado` — y no por parecido de nombre.
  *
  * Lo que estos casos protegen, y que sin ellos se rompería en silencio:

@@ -1,9 +1,9 @@
 'use strict';
 /**
  * applier-batch.test.js — la tanda del aplicador: varios pasos de Node en un solo proceso, cada uno con la misma
- * respuesta que su llamada suelta (story 8.36 · AC 1-3 · T1-T3).
+ * respuesta que su llamada suelta (T1-T3).
  *
- * EL CASO (2026-10-14). El aplicador de Windows (`install-tycon-hooks.ps1`) corre en cada arranque de sesión y lanzaba
+ * POR QUÉ. El aplicador de Windows (`install-tycon-hooks.ps1`) corre en cada arranque de sesión y lanza
  * ~16 procesos de Node; en Windows cada uno cuesta ~50-100 ms sólo en lanzarse desde PowerShell. La tanda
  * (`scripts/setup/applier-batch.js`) corre varios de esos pasos en un solo proceso. Lo que no puede pasar: que un paso
  * conteste distinto que su llamada suelta. Si contesta distinto, el aplicador hace otra cosa.
@@ -34,7 +34,7 @@ const SCRIPTS = {
   'tycon-config': path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'),
   'legacy-names': path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'),
   'apply-hooks': path.join(ROOT, 'scripts', 'setup', 'apply-hooks.js'),
-  // tanda B (story 8.36, Task 6): los enlaces y el paso de terceros
+  // los enlaces y el paso de terceros
   'canonical-path': path.join(ROOT, 'scripts', 'lib', 'canonical-path.js'),
   'install-third-party': path.join(ROOT, 'scripts', 'publishing', 'install-third-party.js'),
 };

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# download-runs.test.sh — la bajada del buzón de corridas, sólo para quien tiene el rol de lectura (story 2.16).
+# download-runs.test.sh — la bajada del buzón de corridas, sólo para quien tiene el rol de lectura.
 #
 # Sin red y sin `az` real: el «buzón» es un servidor HTTP local que imita el listado XML y el GET de blobs
 # de Azure Storage con `Authorization: Bearer`, y `az` es un doble (TYCON_AZ_BIN) que devuelve un token, o
 # falla como una máquina sin sesión, o no existe. HOME es falso: nada de esta máquina entra ni sale.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito qué lo pone en rojo. El exit code se lee ANTES de cualquier
 #    pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# story 8.3: las integraciones se declaran por variable — sin perfil del equipo, download-runs.js dice «buzón apagado»
+# Las integraciones se declaran por variable — sin perfil del equipo, download-runs.js dice «buzón apagado»
 # (o «Azure DevOps apagado»: la bajada usa la sesión de az) y sale 0 antes de hacer lo que esta suite mide con dobles.
 export TYCON_MAILBOX=1 TYCON_ADO_ORG=https://dev.azure.com/prueba
 BAJAR="${RAIZ}/scripts/metrics/download-runs.js"
@@ -18,10 +18,10 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
-# 🔴 Esta suite NO toca el tablero del repo (gemelo de dashboard.test.sh C-27 y dashboard-runs.test.sh T15). El
-#    2026-10-16: 2.24-T20 corría la página del equipo con --nightly y sin --output, que la escribe en
-#    artifacts/tablero-del-arnes.html del repo; en la misma tanda que dashboard-runs, ésa la veía cambiar y se ponía
-#    roja de a ratos (tres veces el 15/10). Cada página que genera esta suite va a su temporal; T24, al final, lo cuida.
+# 🔴 Esta suite NO toca el tablero del repo (gemelo de dashboard.test.sh C-27 y dashboard-runs.test.sh T15). Correr
+#    la página del equipo con --nightly y sin --output la escribe en artifacts/tablero-del-arnes.html del repo; en la
+#    misma tanda que dashboard-runs, ésa la vería cambiar y se pondría roja de a ratos.
+#    Cada página que genera esta suite va a su temporal; T24, al final, lo cuida.
 huella() { python3 -c "import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" "$1" 2>/dev/null || echo AUSENTE; }
 ENTREGABLE_SEIS="${RAIZ}/artifacts/tablero-del-arnes.html"
 HUELLA_SEIS_ANTES="$(huella "${ENTREGABLE_SEIS}")"
@@ -138,8 +138,8 @@ bajar() {
 campo() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); v=d.get(sys.argv[2]); print(json.dumps(v) if isinstance(v,(dict,list,bool)) or v is None else v)" "$1/out.json" "$2" 2>/dev/null; }
 gets() { if [ -f "$1/pedidos.jsonl" ]; then grep -v 'comp=list' "$1/pedidos.jsonl" | grep -c '"metodo":"GET"' || true; else echo 0; fi; }
 
-# ── T10 · baja lo nuevo o cambiado, no lo que ya tiene (AC9) ────────────────────────────────────
-# 🔴 rojo previo: bajar todo en cada arranque → con diez máquinas, 1 GB por arranque.
+# ── T10 · baja lo nuevo o cambiado, no lo que ya tiene ────────────────────────────────────
+# 🔴 Falla con: bajar todo en cada arranque → con diez máquinas, 1 GB por arranque.
 T="${BASE}/t10"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json" 800
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.hilo.jsonl.gz" 4000
@@ -181,8 +181,8 @@ bajar "${T}" "${T}/bin/az"
 [ ! -e "${T}/estado/corridas-buzon/suelto-en-la-raiz.json" ] && [ ! -e "${T}/estado/corridas-buzon/equipo-deva/pagina.html" ] && [ ! -d "${T}/estado/corridas-buzon/Mac Con Espacios" ] && [ ! -d "${T}/estado/corridas-buzon/equipo-deva/sub" ] && ok "T10 y ninguno se escribió" || mal "T10 se escribió algún nombre sin forma"
 [ -z "$(find "${T}/estado" -name '*.tmp-*' 2>/dev/null)" ] && ok "T10 no quedaron temporales" || mal "T10 quedaron temporales"
 
-# ── 2.5 T3 · los registros de frenos y escapes bajan a <buzon>/<maquina>/registros/ (story 2.5, AC4) ─────
-# 🔴 rojo previo: aceptar sólo <maquina>/<corrida> → el reductor nunca ve a las otras máquinas; o aceptar
+# ── T3 · los registros de frenos y escapes bajan a <buzon>/<maquina>/registros/ ─────
+# 🔴 Falla con: aceptar sólo <maquina>/<corrida> → el reductor nunca ve a las otras máquinas; o aceptar
 #    cualquier subcarpeta → «equipo-deva/sub/…» (caso T10) se escribe.
 T="${BASE}/t3-25"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "devb-mbp/registros/gates.log.gz" 300
@@ -211,9 +211,9 @@ shutil.move(reg + '.aparte', reg)
 assert con == sin and con['arch'] == 1, (con, sin)
 PY
 
-# ── 2.5 T3b · los registros bajan PRIMERO y la cobertura después de sus registros; si uno no llega, la
-# cobertura no se escribe (quedaría apuntando a un registro viejo). (story 2.5, AC4)
-# 🔴 rojo previo: bajar en el orden del listado → bypass, cobertura, gates: un corte o un blob que llega
+# ── T3b · los registros bajan PRIMERO y la cobertura después de sus registros; si uno no llega, la
+# cobertura no se escribe (quedaría apuntando a un registro viejo).
+# 🔴 Falla con: bajar en el orden del listado → bypass, cobertura, gates: un corte o un blob que llega
 #    distinto deja la cobertura nueva junto al gates.log.gz viejo, y los registros esperan detrás de las corridas.
 T="${BASE}/t3b-25"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 for i in 1 2 3 4 5 6; do blob "${T}/b" "lab-mini/1.${i}-2026-09-01T1000.json" 200; done
@@ -229,9 +229,9 @@ bajar "${T}" "${T}/bin/az"
 [ -f "${T}/estado/corridas-buzon/lab-mini/registros/bypass.log.gz" ] && [ ! -e "${T}/estado/corridas-buzon/lab-mini/registros/gates.log.gz" ] && [ ! -e "${T}/estado/corridas-buzon/lab-mini/registros/cobertura.json" ] && [ "${RC}" -eq 1 ] \
   && ok "2.5-T3c gates.log.gz llega distinto → no se escribe, y la cobertura de esa máquina queda retenida (sale 1)" || mal "2.5-T3c rc=${RC}: $(ls "${T}/estado/corridas-buzon/lab-mini/registros" 2>&1)"
 
-# ── T10b · los estados de error de la bajada que no tenían caso (tests-coverage iter 1) ──────────
-# 🔴 rojo previo: sin_contenedor, servicio_fallo, sin_red, sin_permiso_a_mitad, parcial y sin_tiempo
-#    estaban en el código y ningún caso los ejercía; y un fallo después de bajar algo decía bajado=true.
+# ── T10b · los estados de error de la bajada sin caso propio ──────────
+# 🔴 Falla con: que sin_contenedor, servicio_fallo, sin_red, sin_permiso_a_mitad, parcial y sin_tiempo
+#    queden sin un caso que los ejerza, o un fallo después de bajar algo diga bajado=true.
 T="${BASE}/t10b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json" 800; blob "${T}/b" "equipo-deva/2.2-2026-09-02T1000.json" 900
 for CODIGO in 404 500; do
@@ -248,7 +248,7 @@ echo "equipo-deva/2.2-2026-09-02T1000.json" > "${T}/b/corromper"; bajar "${T}" "
 [ ! -e "${T}/estado/corridas-buzon/equipo-deva/2.2-2026-09-02T1000.json" ] && [ -z "$(find "${T}/estado" -name '*.tmp-*' 2>/dev/null)" ] && ok "T10b el que llegó distinto no se escribió ni dejó temporal" || mal "T10b el corrupto quedó en disco"
 rm -f "${T}/b/corromper"
 T="${BASE}/t10c"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token; echo 60 > "${T}/b/demora"
-# 80 blobs (no 20): desde el hotfix del 2026-10-16 se bajan 8 a la vez, y 20 de 60 ms entraban enteros en el tope
+# 80 blobs (no 20): se bajan 8 a la vez, y 20 de 60 ms entrarían enteros en el tope
 i=0; while [ "${i}" -lt 80 ]; do blob "${T}/b" "maq-z/7.$(printf %02d ${i})-2026-09-07T0500.json" 200; i=$((i+1)); done
 bajar "${T}" "${T}/bin/az" --budget-ms 200
 BJ=$(campo "${T}" bajados); ST=$(campo "${T}" sin_tiempo)
@@ -257,18 +257,18 @@ T="${BASE}/t10d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 for p in ${PIDS}; do :; done; kill "${p}" 2>/dev/null; sleep 0.2
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "sin_red" ] && [ ! -e "${T}/estado/corridas-buzon" ] && ok "T10d puerto cerrado → exit 1, sin_red, sin carpeta" || mal "T10d sin red → rc=${RC} estado=$(campo "${T}" estado)"
-# los nombres que no se bajan se NOMBRAN, no sólo se cuentan (spec-first iter 1)
+# los nombres que no se bajan se NOMBRAN, no sólo se cuentan
 T="${BASE}/t10e"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "Mac Rara/1.1-2026-09-01T1000.json" 50; blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json" 50
-# y un nombre con una secuencia de terminal (ESC) no llega crudo ni al registro ni al JSON (security iter 2)
-# 🔴 rojo previo: los nombres los elige cualquiera con la llave de escritura; crudos, pintan o borran la terminal de quien baja.
+# y un nombre con una secuencia de terminal (ESC) no llega crudo ni al registro ni al JSON
+# 🔴 Falla con: los nombres los elige cualquiera con la llave de escritura; si salen crudos, pintan o borran la terminal de quien baja.
 blob "${T}/b" "$(printf 'trampa\033[2J')/x.json" 50
 bajar "${T}" "${T}/bin/az"
 ! grep -q "$(printf '\033')" "${T}/err.txt" && ! grep -q "$(printf '\033')" "${T}/out.json" && grep -q 'trampa\\u001b\[2J' "${T}/err.txt" && ok "T10e un nombre con ESC se escapa (\\u001b) en el registro y en el JSON" || mal "T10e el ESC llegó crudo: $(cat -v "${T}/err.txt" | head -2)"
 python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['ignorados']==2 and 'Mac Rara/1.1-2026-09-01T1000.json' in d['ignorados_nombres'], d" "${T}/out.json" 2>/dev/null && grep -q 'Mac Rara/1.1-2026-09-01T1000.json' "${T}/err.txt" && ok "T10e el blob sin forma se nombra en el resumen y en el registro" || mal "T10e el ignorado no se nombra: $(cat "${T}/err.txt" | head -2)"
 
-# ── T10f · la carpeta local no se puede mirar o no se puede escribir: se cuenta, nunca «bajado» (tests-coverage + silent-failure iter 3) ──
-# 🔴 rojo previo: las ramas `no_leidos` (stat local con EACCES) y `malos` por escritura fallida no tenían caso.
+# ── T10f · la carpeta local no se puede mirar o no se puede escribir: se cuenta, nunca «bajado» ──
+# 🔴 Falla con: que las ramas `no_leidos` (stat local con EACCES) y `malos` por escritura fallida queden sin caso.
 T="${BASE}/t10f"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "maq-f/1.1-2026-09-01T1000.json" 300
 bajar "${T}" "${T}/bin/az"
@@ -284,7 +284,7 @@ bajar "${T}" "${T}/bin/az"; chmod 755 "${T}/estado/corridas-buzon/maq-f"
 [ -z "$(find "${T}/estado" -name '*.tmp-*' 2>/dev/null)" ] && ok "T10f no quedaron temporales" || mal "T10f quedaron temporales"
 
 # ── T11 · sin permiso no deja rastro: sin az, sin sesión, 403 → exit 0, sin carpeta, aviso diario ─
-# 🔴 rojo previo: un login en la máquina de otro miembro del equipo, o una carpeta vacía que se lee como
+# 🔴 Falla con: un login en la máquina de otro miembro del equipo, o una carpeta vacía que se lee como
 #    «bajé y no había nada».
 for MODO in missing no-session 403; do
   T="${BASE}/t11-${MODO}"; buzon "${T}/b"; config "${T}/cfg.json"; blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json"
@@ -308,11 +308,11 @@ blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json"
 ( echo "no-deberia-leerse" | TYCON_MAILBOX_JSON="${T}/cfg.json" TYCON_MAILBOX_URL_BASE="${URL_BUZON}" TYCON_AZ_BIN="${T}/bin/az" TYCON_MAILBOX_DIR="${T}/estado/corridas-buzon" node "${BAJAR}" --json > "${T}/out.json" 2>&1 )
 ! grep -q 'leyo:no-deberia-leerse\|tty' "${T}/stdin.log" 2>/dev/null && ok "T11 az corre sin entrada: no hereda la terminal ni lo que venga por stdin (nunca puede preguntar)" || mal "T11 az leyó la entrada: $(cat "${T}/stdin.log")"
 
-# ── T9 · el instalador: barrido → subida → bajada, cada llave apaga sólo lo suyo (AC7, AC12) ────────
+# ── T9 · el instalador: barrido → subida → bajada, cada llave apaga sólo lo suyo ────────
 # Se extrae del instalador REAL el bloque «Rescate del hilo…» (hasta el siguiente bloque) y se corre con
 # SCRIPT_DIR en un temporal donde tres dobles anotan el orden en que los llaman. Correr el instalador
 # entero en un temporal arrastra decenas de dependencias ajenas a este caso.
-# 🔴 rojo previo: bajar antes de subir → la página propia sale sin lo de hoy; sin la bajada en el bloque,
+# 🔴 Falla con: bajar antes de subir → la página propia sale sin lo de hoy; sin la bajada en el bloque,
 #    quienes leen el buzón nunca ven lo del resto del equipo.
 T="${BASE}/t9"; mkdir -p "${T}/scripts/metrics" "${T}/home"
 python3 - "${RAIZ}/scripts/install-tycon-hooks.sh" "${T}/bloque.sh" <<'PY2'
@@ -335,7 +335,7 @@ SIN_LLAVES=(-u TF_BUILD -u TYCON_NO_UPLOAD_RUNS -u TYCON_NO_DOWNLOAD_RUNS -u TYC
 instalar9() {  # <líneas esperadas> <VAR=valor>...
   local esperadas="$1"; shift
   : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
-  # TYCON_INTEG_MAILBOX=1: el bloque extraído lee la llave del buzón que el instalador resuelve más arriba (story 8.3); acá es un
+  # TYCON_INTEG_MAILBOX=1: el bloque extraído lee la llave del buzón que el instalador resuelve más arriba; acá es un
   # dato de entrada, y el caso de abajo la apaga para probar que apaga sólo lo suyo.
   env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 PROFILE_FULL=1 "$@" \
     bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
@@ -353,16 +353,16 @@ instalar9 2 TYCON_NO_UPLOAD_RUNS=1
 ! grep -q subida "${T}/orden.txt" && grep -q barrido "${T}/orden.txt" && grep -q bajada "${T}/orden.txt" && ok "T9 TYCON_NO_UPLOAD_RUNS=1 apaga sólo la subida" || mal "T9 sin subida: $(tr '\n' '|' < "${T}/orden.txt")"
 instalar9 2 TYCON_NO_THREAD_RESCUE=1
 ! grep -q barrido "${T}/orden.txt" && grep -q subida "${T}/orden.txt" && grep -q bajada "${T}/orden.txt" && ok "T9 TYCON_NO_THREAD_RESCUE=1 apaga sólo el barrido" || mal "T9 sin barrido: $(tr '\n' '|' < "${T}/orden.txt")"
-# story 8.3 (AC 9): con la integración «buzón» apagada no se lanza ni la subida ni la bajada; el barrido (local) sigue
+# Con la integración «buzón» apagada no se lanza ni la subida ni la bajada; el barrido (local) sigue
 instalar9 1 TYCON_INTEG_MAILBOX=0
 ! grep -q subida "${T}/orden.txt" && ! grep -q bajada "${T}/orden.txt" && grep -q barrido "${T}/orden.txt" && ok "T9 (8.3) buzón apagado: ni subida ni bajada, el barrido sigue" || mal "T9 buzón apagado: $(tr '\n' '|' < "${T}/orden.txt")"
 instalar9 0 CHECK_ONLY=1
 [ ! -s "${T}/orden.txt" ] && ok "T9 con --check no lanza nada" || mal "T9 con --check lanzó: $(tr '\n' '|' < "${T}/orden.txt")"
 
-# ── T9b · story 2.9: la recolección de hallazgos va ENTRE el barrido y la subida ────────────────────
-# 🔴 rojo previo: sin el paso en el bloque, nadie corre el recolector, `hallazgos.jsonl` no existe en
-#    ninguna máquina y la subida declara la fuente «no_medido» para siempre — la tarea 0 de la story sin
-#    hacer, y en verde. Y si fuera DESPUÉS de la subida, lo recolectado hoy subiría recién mañana.
+# ── T9b · la recolección de hallazgos va ENTRE el barrido y la subida ────────────────────
+# 🔴 Falla con: sin el paso en el bloque, nadie corre el recolector, `hallazgos.jsonl` no existe en
+#    ninguna máquina y la subida declara la fuente «no_medido» para siempre, en verde. Y si fuera DESPUÉS de la
+#    subida, lo recolectado hoy subiría recién mañana.
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'recoleccion ' + process.argv.slice(2).join(' ') + '\\\\n'), 200);\n" > "${T}/scripts/metrics/collect-findings.js"
 instalar9 4 TYCON_X=0
 ORDER_LOG="$(tr '\n' '|' < "${T}/orden.txt")"
@@ -382,11 +382,11 @@ instalar9 2 TYCON_NO_UPLOAD_RUNS=1
   || mal "T9b la llave de la subida apagó la recolección: $(tr '\n' '|' < "${T}/orden.txt")"
 rm -f "${T}/scripts/metrics/collect-findings.js"   # los casos que siguen miden el bloque sin este paso
 
-# ── 2.12-T14 · InstaladorEnCi_NoLanzaLaTanda (story 2.12) · dentro de una corrida de Azure la tanda de fondo NO se lanza (AC 14) ───────────
+# ── T14 · InstaladorEnCi_NoLanzaLaTanda · dentro de una corrida de Azure la tanda de fondo NO se lanza ───────────
 # Los casos de arriba corren el bloque con `env -u TF_BUILD`: el banco nocturno corre con TF_BUILD=True y la guarda
-# nueva los habría puesto en rojo. Éste lo pone a propósito.
-# 🔴 rojo previo: sin la guarda, el banco nocturno lanza barrido → recolección → subida → bajada con el HOME del
-#    agente — así llegó la carpeta `runnervmg34hb/` al buzón del equipo el 2026-09-17 a las 05:01 UTC.
+# los pondría en rojo. Éste lo pone a propósito.
+# 🔴 Falla con: sin la guarda, el banco nocturno lanza barrido → recolección → subida → bajada con el HOME del
+#    agente, y la carpeta de la máquina efímera del agente llega al buzón del equipo.
 printf "setTimeout(() => require('fs').appendFileSync(process.env.ORDER_LOG, 'recoleccion\\\\n'), 200);\n" > "${T}/scripts/metrics/collect-findings.js"
 : > "${T}/orden.txt"; rm -rf "${T}/home/.claude"
 env HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 PROFILE_FULL=1 TF_BUILD=True bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
@@ -401,10 +401,9 @@ sleep 2
 rm -f "${T}/scripts/metrics/collect-findings.js"
 
 # (usa T7D, no T: los casos siguientes del instalador siguen usando ${T})
-# ── T7 (story 2.9) · los hallazgos bajan con el mismo rango y la misma retención que los registros ─
-# 🔴 rojo previo (revisor de cobertura de ACs): la tabla de la story prometía este caso y nunca se
-#    escribió; y la guarda de la bajada reconocía sólo «.log.gz », así que una falla de
-#    hallazgos.jsonl.gz no retenía la cobertura.
+# ── T7 · los hallazgos bajan con el mismo rango y la misma retención que los registros ─
+# 🔴 Falla con: que la guarda de la bajada reconozca sólo «.log.gz »: una falla de
+#    hallazgos.jsonl.gz no retiene la cobertura.
 T7D="${BASE}/t7-29"; buzon "${T7D}/b"; config "${T7D}/cfg.json"; az_doble "${T7D}" token
 for i in 1 2 3; do blob "${T7D}/b" "lab-mini/2.${i}-2026-09-0${i}T1000.json" 100; done
 blob "${T7D}/b" "lab-mini/registros/bypass.log.gz" 100; blob "${T7D}/b" "lab-mini/registros/gates.log.gz" 100
@@ -425,36 +424,36 @@ bajar "${T7D}" "${T7D}/bin/az"
 [ ! -e "${T7D}/estado/corridas-buzon/lab-mini/registros/hallazgos.jsonl.gz" ] && [ ! -e "${T7D}/estado/corridas-buzon/lab-mini/registros/cobertura.json" ] && [ "${RC}" -eq 1 ] \
   && ok "T7 hallazgos.jsonl.gz llega distinto → no se escribe y la cobertura de esa máquina queda retenida" \
   || mal "T7 retención de hallazgos (rc=${RC}): $(ls "${T7D}/estado/corridas-buzon/lab-mini/registros" 2>&1)"
-# la guarda previa a la cola reconoce los registros por la lista de la subida (story 8.9, tanda E: la expresión escrita a
-# mano no veía el guion de legacy-names.jsonl.gz); los casos «8.9-E» del final la prueban corriendo, con .jsonl.gz incluido
+# la guarda previa a la cola reconoce los registros por la lista de la subida (una expresión escrita a
+# mano no ve el guion de legacy-names.jsonl.gz); los casos de «retención por registro» del final la prueban corriendo, con .jsonl.gz incluido
 grep -q 'const esFallaDeRegistro = (x) => REGISTROS.some(' "${RAIZ}/scripts/metrics/download-runs.js" \
   && ok "T7 la guarda previa a la cola reconoce los registros por REGISTROS de la subida (también .jsonl.gz)" \
   || mal "T7 la guarda previa de la bajada no sale de REGISTROS"
 
 
-# el registro de cada arranque se AGREGA, no pisa al anterior (pase adversarial, Opus)
-# 🔴 rojo previo: con `>` la segunda sesión del día borraba el aviso de vencimiento, que sale una vez por día.
+# el registro de cada arranque se AGREGA, no pisa al anterior
+# 🔴 Falla con: con `>` la segunda sesión del día borra el aviso de vencimiento, que sale una vez por día.
 mkdir -p "${T}/home/.claude/.tycon-pipeline"; : > "${T}/orden.txt"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
 echo "LINEA-DE-LA-SESION-ANTERIOR" > "${T}/home/.claude/.tycon-pipeline/download-runs.log"
 env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
-# Sin PROFILE_FULL el bloque lanza la subida y la bajada, no el barrido: son DOS líneas. Esperar tres agotaba los 10 s del
-# tope en cada una de estas dos corridas (story 8.22, tramo F: 21 de los ~57 s de la suite).
+# Sin PROFILE_FULL el bloque lanza la subida y la bajada, no el barrido: son DOS líneas. Esperar tres agota los 10 s del
+# tope en cada una de estas dos corridas.
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
 grep -q 'LINEA-DE-LA-SESION-ANTERIOR' "${T}/home/.claude/.tycon-pipeline/upload-runs.log" && grep -q 'LINEA-DE-LA-SESION-ANTERIOR' "${T}/home/.claude/.tycon-pipeline/download-runs.log" && ok "T9 el registro de subida y de bajada conserva lo de la sesión anterior (se agrega)" || mal "T9 el arranque pisó el registro anterior"
 
-# pasado el tope (~512 KB) el registro viejo se mueve a .1 y el nuevo arranca de cero (tests-coverage iter 5)
-# 🔴 rojo previo: sin rotación, un registro que se agrega crece para siempre.
+# pasado el tope (~512 KB) el registro viejo se mueve a .1 y el nuevo arranca de cero
+# 🔴 Falla con: sin rotación, un registro que se agrega crece para siempre.
 : > "${T}/orden.txt"; head -c 600000 /dev/zero | tr '\0' 'x' > "${T}/home/.claude/.tycon-pipeline/upload-runs.log"
 env "${SIN_LLAVES[@]}" HOME="${T}/home" PATH="${T}/bin:${PATH}" ORDER_LOG="${T}/orden.txt" SCRIPT_DIR="${T}/scripts" CHECK_ONLY=0 TYCON_INTEG_MAILBOX=1 TYCON_X=0 bash -c 'source "$1"' _ "${T}/bloque.sh" > "${T}/inst.log" 2>&1
 n=0; while [ "${n}" -lt 40 ]; do [ "$(wc -l < "${T}/orden.txt" | tr -d ' ')" -ge 2 ] && break; sleep 0.25; n=$((n+1)); done; sleep 1
 [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null | tr -d ' ')" = "600000" ] && [ "$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log" | tr -d ' ')" -lt 1000 ] && ok "T9 registro de más de 512 KB → pasa a .1 entero y el nuevo arranca chico" || mal "T9 rotación: .1=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log.1" 2>/dev/null) actual=$(wc -c < "${T}/home/.claude/.tycon-pipeline/upload-runs.log")"
 
-# ── T18 (parte instalador) · el bloque ya no nombra git ni el repo privado (AC17) ──────────────────
+# ── T18 (parte instalador) · el bloque no nombra git ni el repo privado ──────────────────
 [ ! -s "${T}/git.log" ] && ok "T18 el bloque del instalador no invoca git" || mal "T18 el bloque invocó git: $(head -2 "${T}/git.log")"
 grep -q 'corridas\.json\|corridas-del-arnes\|corridas-remoto' "${T}/bloque.sh" && mal "T18 el bloque del instalador todavía nombra el repo privado git" || ok "T18 el bloque del instalador no nombra corridas.json ni el repo git"
-# ── 2.19 T13 · el cambio de git baja con la MISMA forma con que sube (story 2.19, AC13) ──────────────
-# 🔴 rojo previo: la forma no acepta .cambio.json.gz → el blob se cuenta como ignorado y no baja.
+# ── T13 · el cambio de git baja con la MISMA forma con que sube ──────────────
+# 🔴 Falla con: la forma no acepta .cambio.json.gz → el blob se cuenta como ignorado y no baja.
 T="${BASE}/t219"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "equipo-deva/2.19-2026-09-17T1300.cambio.json.gz" 2500
 blob "${T}/b" "equipo-deva/2.19-2026-09-17T1300.cambio.json.gz.99.tmp" 10
@@ -465,13 +464,13 @@ bajar "${T}" "${T}/bin/az"
   || mal "2.19-T13 rc=${RC} bajados=$(campo "${T}" bajados) carpeta: $(ls "${T}/estado/corridas-buzon/equipo-deva" 2>&1)"
 
 
-# ── 2.12-T12 · BajarSinHilos_NoBajaConversaciones (story 2.12) · --no-threads: el nocturno baja registros y volcados, nunca las conversaciones (AC 12) ──
-# 🔴 rojo previo: sin la bandera (o ignorándola), el hilo baja — el agente de Azure tendría las conversaciones, con
+# ── T12 · BajarSinHilos_NoBajaConversaciones · --no-threads: el nocturno baja registros y volcados, nunca las conversaciones ──
+# 🔴 Falla con: sin la bandera (o ignorándola), el hilo baja — el agente de Azure tiene las conversaciones, con
 #    prompts, rutas y código de clientes, para una página que no las usa.
 T="${BASE}/t12"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.json" 800
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.hilo.jsonl.gz" 4000
-# story 2.19: el cambio de git tampoco lo usa la página del nocturno y trae código de todos los repos
+# El cambio de git tampoco lo usa la página del nocturno y trae código de todos los repos
 blob "${T}/b" "equipo-deva/2.1-2026-09-01T1000.cambio.json.gz" 2200
 mkdir -p "${T}/b/blobs/corridas/equipo-deva/registros"
 printf '{"ts":"2026-09-16T10:00:00Z","name":"tests","status":"green"}\n' | gzip -c > "${T}/b/blobs/corridas/equipo-deva/registros/gates.log.gz"
@@ -499,8 +498,8 @@ bajar "${T}" "${T}/bin/az" --no-threads --budget-ms 1
 [ "$(campo "${T}" completo)" = "false" ] && [ "$(campo "${T}" sin_tiempo)" != "0" ] \
   && ok "2.12-T12 una bajada que se quedó sin tiempo dice completo false" || mal "2.12-T12 sin tiempo: completo=$(campo "${T}" completo) sin_tiempo=$(campo "${T}" sin_tiempo) rc=${RC}"
 
-# ── 8.9-D2 · el índice y el sello diario con su nombre en inglés; el viejo sigue valiendo ─────────────
-# 🔴 rojo previo: renombrar el índice sin leer el viejo re-baja todo lo que el listado no trae con MD5, y renombrar el
+# ── Nombres en inglés · el índice y el sello diario con su nombre en inglés; el viejo sigue valiendo ─────────────
+# 🔴 Falla con: renombrar el índice sin leer el viejo re-baja todo lo que el listado no trae con MD5, y renombrar el
 #    sello sin leer el viejo repite el aviso de «sin permiso» el día del cambio. El nombre viejo sale del mapa.
 viejo_d2() {  # <nombre nuevo> → el nombre viejo, según scripts/lib/renames.json
   node -e '
@@ -556,10 +555,10 @@ python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if len(d
 rm -rf "${CASA}"
 fi
 
-# ── 8.9-E · una falla local de CUALQUIER registro antes de la cola retiene la cobertura, también con guion en el nombre ──
-# 🔴 rojo previo (pase adversarial de la story 8.9, tanda E): la guarda reconocía los registros con una expresión escrita a
-#    mano (`[a-z]+\.(log|jsonl)\.gz`), que no ve el guion de `legacy-names.jsonl.gz`; una copia local ilegible de ése
-#    dejaba escribir la cobertura nueva. Ahora sale de REGISTROS de upload-runs.js: un registro nuevo entra solo.
+# ── Retención por registro · una falla local de CUALQUIER registro antes de la cola retiene la cobertura, también con guion en el nombre ──
+# 🔴 Falla con: reconocer los registros con una expresión escrita a
+#    mano (`[a-z]+\.(log|jsonl)\.gz`), que no ve el guion de `legacy-names.jsonl.gz`: una copia local ilegible de ése
+#    deja escribir la cobertura nueva. La lista sale de REGISTROS de upload-runs.js: un registro nuevo entra solo.
 for REG in hallazgos.jsonl legacy-names.jsonl; do
   T8="${BASE}/t89e-${REG}"; buzon "${T8}/b"; config "${T8}/cfg.json"; az_doble "${T8}" token
   blob "${T8}/b" "lab-mini/registros/${REG}.gz" 100; blob "${T8}/b" "lab-mini/registros/cobertura.json" 100
@@ -572,7 +571,7 @@ for REG in hallazgos.jsonl legacy-names.jsonl; do
     || mal "8.9-E ${REG}.gz ilegible: rc=${RC}, cobertura $( [ -e "${L8}/cobertura.json" ] && echo escrita || echo retenida)"
 done
 
-# ════ story 2.24 · el bajador toma la última versión y deja el espejo como hoy ═══════════════════════════════════
+# ════ el bajador toma la última versión y deja el espejo como estaba ═══════════════════════════════════
 VA=v20261020T100000000Z; VB=v20261021T100000000Z
 gets_de() { if [ -f "$1/pedidos.jsonl" ]; then grep -v 'comp=list' "$1/pedidos.jsonl" | grep '"metodo":"GET"' | grep -c "$2" || true; else echo 0; fi; }
 cobertura_de() {  # <archivo> <fuentes medidas, separadas por coma> → una cobertura válida que declara esas fuentes medidas
@@ -585,7 +584,7 @@ PY
 }
 gz_de() { mkdir -p "$(dirname "$1")"; printf '{"ts":"2026-10-20T10:00:00Z","name":"%s","status":"green"}\n' "$2" | gzip -c > "$1"; }
 
-# ── 2.24 T14 · Corrida_TomaLaMasNueva_EnLaRutaDeSiempre (AC 11) ── 🔴 rojo previo: bajar todas y que gane la última del listado.
+# ── T14 · Corrida_TomaLaMasNueva_EnLaRutaDeSiempre ── 🔴 Falla con: bajar todas y que gane la última del listado.
 T="${BASE}/t224-14"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 C="${T}/b/blobs/corridas"
 blob "${T}/b" "maq-x/1.1-2026-10-01T1000.json" 300
@@ -598,7 +597,7 @@ bajar "${T}" "${T}/bin/az"
   && ok "2.24-T14 baja sólo la versión más nueva, a <máquina>/<archivo> (la ruta de siempre), versiones_viejas 2, un solo GET, completo" \
   || mal "2.24-T14 rc=${RC} viejas=$(campo "${T}" versiones_viejas) gets=$(gets "${T}/b") completo=$(campo "${T}" completo) · $(ls -R "${T}/estado/corridas-buzon" 2>&1 | head -6 | tr '\n' ' ')"
 
-# ── 2.24 T15 · NoThreads_OmiteHilosDeTodasLasVersiones (AC 11) ── 🔴 rojo previo: una versión del hilo baja.
+# ── T15 · NoThreads_OmiteHilosDeTodasLasVersiones ── 🔴 Falla con: una versión del hilo baja.
 T="${BASE}/t224-15"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "maq-x/1.1-2026-10-01T1000.json" 300
 blob "${T}/b" "maq-x/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
@@ -609,7 +608,7 @@ bajar "${T}" "${T}/bin/az" --no-threads
   && ! grep -q 'hilo.jsonl.gz\|cambio.json.gz' "${T}/b/pedidos.jsonl" \
   && ok "2.24-T15 con --no-threads, ni el hilo ni el cambio de ninguna versión bajan; omitidos los cuenta (3)" || mal "2.24-T15 rc=${RC} omitidos=$(campo "${T}" omitidos)"
 
-# ── 2.24 T16 · Registros_JuegoMasNuevoConCobertura_SaltaIncompleto (AC 12) ── 🔴 rojo previo: tomar B.
+# ── T16 · Registros_JuegoMasNuevoConCobertura_SaltaIncompleto ── 🔴 Falla con: tomar B.
 T="${BASE}/t224-16"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 C="${T}/b/blobs/corridas/maq-x/registros"
 gz_de "${C}/gates.log.gz" plano; cobertura_de "${C}/cobertura.json" gates
@@ -622,7 +621,7 @@ E="${T}/estado/corridas-buzon/maq-x/registros"
   && ok "2.24-T16 toma el juego más nuevo COMPLETO (A), saltea el B sin cobertura (versiones_incompletas 1) y no lo baja" \
   || mal "2.24-T16 rc=${RC} incompletas=$(campo "${T}" versiones_incompletas) gets B=$(gets_de "${T}/b" "${VB}") · $(gunzip -c "${E}/gates.log.gz" 2>&1 | head -c 80)"
 
-# ── 2.24 T30 · Registros_FuenteMedidaSinArchivo_Saltea (AC 12) ── 🔴 rojo previo: tomar B por tener cobertura.
+# ── T30 · Registros_FuenteMedidaSinArchivo_Saltea ── 🔴 Falla con: tomar B por tener cobertura.
 T="${BASE}/t224-30"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 C="${T}/b/blobs/corridas/maq-x/registros"
 gz_de "${C}/${VA}/gates.log.gz" versionA; gz_de "${C}/${VA}/bypass.log.gz" versionA; cobertura_de "${C}/${VA}/cobertura.json" gates,bypass
@@ -634,9 +633,9 @@ E="${T}/estado/corridas-buzon/maq-x/registros"
   && ok "2.24-T30 una versión con cobertura que declara bypass medido y sin bypass.log.gz se saltea: queda A" \
   || mal "2.24-T30 rc=${RC} incompletas=$(campo "${T}" versiones_incompletas) · $(gunzip -c "${E}/gates.log.gz" 2>&1 | head -c 80)"
 
-# ── 2.24 T16b · Registros_CoberturaQueNoSeLee_NoEsIncompleta (AC 12; revisor de fallos silenciosos, vuelta 1) ──
-# 🔴 rojo previo: un 500 al pedir la cobertura del juego más nuevo, o una cobertura ilegible, se contaba como «juego
-#    incompleto»: el espejo quedaba con la versión anterior y la bajada decía exit 0, completo true.
+# ── T16b · Registros_CoberturaQueNoSeLee_NoEsIncompleta ──
+# 🔴 Falla con: un 500 al pedir la cobertura del juego más nuevo, o una cobertura ilegible, contado como «juego
+#    incompleto»: el espejo queda con la versión anterior y la bajada dice exit 0, completo true.
 T="${BASE}/t224-16b"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 C="${T}/b/blobs/corridas/maq-x/registros"
 gz_de "${C}/${VA}/gates.log.gz" versionA; cobertura_de "${C}/${VA}/cobertura.json" gates
@@ -653,7 +652,7 @@ bajar "${T}" "${T}/bin/az"
   && ok "2.24-T16c una cobertura ilegible se nombra (parcial, exit 1, completo false), no cuenta como incompleta, y el espejo queda con la versión anterior" \
   || mal "2.24-T16c ilegible: rc=${RC} estado=$(campo "${T}" estado) incompletas=$(campo "${T}" versiones_incompletas) no_leidos=$(campo "${T}" no_leidos)"
 
-# ── 2.24 T17 · VersionMalFormada_Ignorada (AC 14) ── 🔴 rojo previo: una versión mal formada se baja o tumba la pasada.
+# ── T17 · VersionMalFormada_Ignorada ── 🔴 Falla con: una versión mal formada se baja o tumba la pasada.
 T="${BASE}/t224-17"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "maq-x/v2026/x.json" 50
 blob "${T}/b" "maq-x/otra/x.json" 50
@@ -663,7 +662,7 @@ bajar "${T}" "${T}/bin/az"
   && python3 -c "import json,sys; n=json.load(open(sys.argv[1]))['ignorados_nombres']; assert sorted(n)==['maq-x/otra/x.json','maq-x/registros/vX/gates.log.gz','maq-x/v2026/x.json'], n" "${T}/out.json" \
   && ok "2.24-T17 versión mal formada u otra subcarpeta: ignorados 3, nombrados, nada en el disco" || mal "2.24-T17 rc=${RC} ignorados=$(campo "${T}" ignorados) $(campo "${T}" ignorados_nombres)"
 
-# ── 2.24 T20 · Lectores_IgualConVersionesQueConNombresDeSiempre (AC 13) ── 🔴 rojo previo: un lector que lee la carpeta v….
+# ── T20 · Lectores_IgualConVersionesQueConNombresDeSiempre ── 🔴 Falla con: un lector que lee la carpeta v….
 T="${BASE}/t224-20"
 for B in plano versionado; do buzon "${T}/${B}"; done
 mkdir -p "${T}/fuente/maq-x/registros"
@@ -710,8 +709,8 @@ else
   mal "2.24-T20 completo plano=$(campo "${T}/plano" completo) versionado=$(campo "${T}/versionado" completo) · espejos: $(diff -rq "${T}/plano/estado/corridas-buzon/maq-x" "${T}/versionado/estado/corridas-buzon/maq-x" 2>&1 | head -3) · runs $(cmp "${T}/plano-runs.json" "${T}/versionado-runs.json" 2>&1) · noche $(cmp "${T}/plano-noche.json" "${T}/versionado-noche.json" 2>&1) $(wc -c < "${T}/plano-noche.json") · $(head -c 300 "${T}/plano-noche.crudo")"
 fi
 
-# ── 2.24 T18 · OverwritesReport_SoloListaYCuentaSinNombres (story 2.24, AC 1, 2, 15) ──────────────────────────────
-# 🔴 rojo previo: el informe no existe (la bandera se ignora y baja todo), o nombra las máquinas (se llaman como personas).
+# ── T18 · OverwritesReport_SoloListaYCuentaSinNombres ──────────────────────────────
+# 🔴 Falla con: el informe no existe (la bandera se ignora y baja todo), o nombra las máquinas (se llaman como personas).
 T="${BASE}/t224-18"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
 blob "${T}/b" "mac-a/1.1-2026-10-01T1000.hilo.jsonl.gz" 300
@@ -752,7 +751,7 @@ assert d['estado'] == 'medido', d
 assert d['blobs'] == 9 and d['reescritos'] == 2 and d['sin_fecha_de_creacion'] == 1 and d['sin_fecha_de_modificacion'] == 1 and d['ignorados'] == 1, d
 t = d['por_tipo']
 assert t['registros'] == {'blobs': 2, 'reescritos': 1, 'sin_fecha_de_creacion': 1, 'sin_fecha_de_modificacion': 0}, t
-# un blob sin fecha de modificación es «no medido», nunca «no re-escrito» (revisor de fallos silenciosos, vuelta 1)
+# un blob sin fecha de modificación es «no medido», nunca «no re-escrito»
 assert t['hilo']['reescritos'] == 1 and t['volcado'] == {'blobs': 4, 'reescritos': 0, 'sin_fecha_de_creacion': 0, 'sin_fecha_de_modificacion': 1}, t
 assert t['cambio']['blobs'] == 1 and t['ignorado']['blobs'] == 1, t
 m = {x['alias']: x for x in d['maquinas']}
@@ -771,8 +770,8 @@ else mal "2.24-T18 rc=${RC} · $(head -c 600 "${T}/out.json") · $(head -2 "${T}
 grep -q 'mac-a\|mac-b\|mac-c' "${T}/out.json" "${T}/err.txt" && mal "2.24-T18 el informe nombra una máquina: $(grep -o 'mac-[abc][^"]*' "${T}/out.json" "${T}/err.txt" | head -2)" \
   || ok "2.24-T18 ni el informe ni sus avisos nombran una máquina (sólo alias)"
 
-# ── 2.24 T19 · OverwritesReport_SinPermiso_NoMedido (story 2.24, AC 1) ────────────────────────────────────────────
-# 🔴 rojo previo: sin el rol el informe falla con exit ≠ 0, o crea la carpeta del espejo.
+# ── T19 · OverwritesReport_SinPermiso_NoMedido ────────────────────────────────────────────
+# 🔴 Falla con: sin el rol el informe falla con exit ≠ 0, o crea la carpeta del espejo.
 for MODO in bad-token no-session; do
   T="${BASE}/t224-19-${MODO}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" "${MODO}"
   blob "${T}/b" "mac-a/1.1-2026-10-01T1000.json" 300
@@ -781,7 +780,7 @@ for MODO in bad-token no-session; do
     && ok "2.24-T19 (${MODO}) sin permiso: exit 0, «no medido» con su motivo, sin carpeta creada" \
     || mal "2.24-T19 (${MODO}) rc=${RC} estado=$(campo "${T}" estado) motivo=$(campo "${T}" motivo) · $(ls "${T}" | tr '\n' ' ')"
 done
-# 2.24 T19b · el listado que falla por otra cosa que el permiso NO es «no medido» con exit 0: es un error (cobertura de pruebas, vuelta 1)
+# T19b · el listado que falla por otra cosa que el permiso NO es «no medido» con exit 0: es un error
 for CODIGO in 404 500; do
   T="${BASE}/t224-19b-${CODIGO}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
   echo "${CODIGO}" > "${T}/b/modo-lista"
@@ -791,10 +790,10 @@ for CODIGO in 404 500; do
     && ok "2.24-T19b listado ${CODIGO} → ${ESPERA}, exit 1, sin carpeta" || mal "2.24-T19b listado ${CODIGO}: rc=${RC} estado=$(campo "${T}" estado)"
 done
 
-# ── 8.39 T31 · InformeNodePropio_PorVersion_AusentesAparte (story 8.39, AC 23 y 24) ────────────────────────────────
+# ── T31 · InformeNodePropio_PorVersion_AusentesAparte ────────────────────────────────
 # @story-8.39 @ac-23 @ac-24  Por máquina, con su alias: «sí» si su place.json es de una versión con el Node propio (trae
 # install.harness_node), «no» si es de una anterior, «no medido» sin place.json; las que no suben hace 14 días, aparte;
-# `todas` sólo si ninguna presente dice «no» ni «no medido». Sólo lista. 🔴 rojo previo: la opción no existe.
+# `todas` sólo si ninguna presente dice «no» ni «no medido». Sólo lista. 🔴 Falla con: que la opción no exista.
 T="${BASE}/t839-31"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 for m in mac-a mac-b mac-c mac-d; do blob "${T}/b" "${m}/1.1-2026-10-14T1000.json" 300; done
 HACE20="$(python3 -c "import datetime; print((datetime.datetime.utcnow()-datetime.timedelta(days=20)).strftime('%Y-%m-%dT%H:%M:%SZ'))")"
@@ -834,10 +833,10 @@ bajar "${T}" "${T}/bin/az" --harness-node-report
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" todas)" = "true" ] && ok "8.39-T31 con las tres presentes en «sí»: todas: true (la ausente no cuenta)" || mal "8.39-T31 todas=$(campo "${T}" todas) · $(head -c 400 "${T}/out.json")"
 
 
-# ════ story 2.28 · la unión de carpetas: una carpeta vieja es historia de UNA nueva, o no se une (AC 25-28) ══════
+# ════ la unión de carpetas: una carpeta vieja es historia de UNA nueva, o no se une ══════
 # place228 <buzon> <carpeta> <previous_folder> <moved_on> [code_regenerated reason] — el place.json de una carpeta nueva
 # huella_de <carpeta> — la huella de las corridas de una carpeta (sus volcados .json de primer nivel), como la declara la
-# máquina que subió ahí (story 2.28, segunda vuelta de seguridad): la misma función que usan la subida y la bajada.
+# máquina que subió ahí: la misma función que usan la subida y la bajada.
 huella_de() { node -e 'const fs=require("fs"); const [,u,d]=process.argv; let n=[]; try { n=fs.readdirSync(d).filter((x)=>x.endsWith(".json")); } catch (_) {} console.log(require(u).huellaDeCorridas(n))' "${RAIZ}/scripts/metrics/upload-runs.js" "$1"; }
 place228() {
   local code="${2##*-}" extra=""
@@ -848,7 +847,7 @@ place228() {
 volcado228() { mkdir -p "$1/blobs/corridas/$2"; printf '{"archivedAt":"%sT10:00:00.000Z","marker":{"sessionId":"sid-%s"}}\n' "$4" "$3" > "$1/blobs/corridas/$2/$3.json"; }
 uniones() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(json.dumps(d, sort_keys=True))" "$1/estado/corridas-buzon/.carpetas-de-maquina.json" 2>&1; }
 
-# ── 2.28 T35 · Carpetas_UnaDeclaracion_SeUne (AC 26) ── 🔴 rojo previo: sin archivo; el correo adentro.
+# ── T35 · Carpetas_UnaDeclaracion_SeUne ── 🔴 Falla con: sin archivo; el correo adentro.
 T="${BASE}/t228-35"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
 place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
@@ -861,7 +860,7 @@ case "$(cat "${T}/estado/corridas-buzon/.carpetas-de-maquina.json" 2>/dev/null)"
 node -e 'const { carpetasDeMaquina } = require(process.argv[1]); const r = carpetasDeMaquina(process.argv[2]); process.exit(r.carpetas["macbook-pro"].estado === "unida" ? 0 : 1)' "${BAJAR}" "${T}/estado/corridas-buzon" \
   && ok "2.28-T35 carpetasDeMaquina(espejo) da lo mismo (una sola definición)" || mal "2.28-T35 carpetasDeMaquina no exportada o distinta"
 # Contrato: el archivo que escribe la bajada lo acepta el lector del reductor (que también usan la poda y la vista).
-# 🔴 rojo previo (revisor de cobertura, segunda vuelta): los lectores se probaban con el archivo fabricado a mano.
+# 🔴 Falla con: probar los lectores con el archivo fabricado a mano.
 node -e 'const r = require(process.argv[1]).leerUnionesDeCarpetas(process.argv[2]); process.exit(r.estado === "medidas" && r.carpetas.get("macbook-pro").nueva === "macbook-pro-1a2b3c4d" ? 0 : 1)' "${RAIZ}/scripts/nightly/dashboard/reducer.js" "${T}/estado/corridas-buzon" \
   && ok "2.28-T35 contrato: el lector del reductor acepta lo que escribe la bajada" || mal "2.28-T35 contrato: el reductor no acepta el archivo de la bajada"
 # también con la bajada parcial
@@ -875,7 +874,7 @@ bajar "${T}" "${T}/bin/az"
   && ok "2.28-T35 la bajada parcial también deja el archivo" || mal "2.28-T35 parcial: rc=${RC} estado=$(campo "${T}" estado) uniones=$(uniones "${T}")"
 
 # «no pude mirar» no es «no recibió nada»: una carpeta vieja que no se deja listar no se une y queda nombrada
-# 🔴 rojo previo (pase de fallos silenciosos): el listado fallido daba «último día vacío» y la vieja quedaba unida.
+# 🔴 Falla con: que el listado fallido dé «último día vacío» y la vieja quede unida.
 T="${BASE}/t228-35c"; mkdir -p "${T}/esp/macbook-pro" "${T}/esp/macbook-pro-1a2b3c4d/registros"
 printf '{"schema":1,"day":"2026-10-15","folder":{"name":"macbook-pro-1a2b3c4d","code":"1a2b3c4d","previous_folder":"macbook-pro","moved_on":"2026-10-15"}}\n' > "${T}/esp/macbook-pro-1a2b3c4d/registros/place.json"
 chmod 000 "${T}/esp/macbook-pro"
@@ -886,7 +885,7 @@ else
 fi
 chmod 755 "${T}/esp/macbook-pro"
 
-# ── pase adversarial (2026-10-15): una declaración sin forma no une nada ─────────────────────────────────────────────
+# ── pase adversarial: una declaración sin forma no une nada ─────────────────────────────────────────────
 # El buzón lo escribe cualquiera con la llave: una declaración vale sólo si la carpeta que declara es EXACTAMENTE
 # `<vieja>-<8 hexadecimales>`, la vieja no es a su vez una carpeta nueva, y la mudanza es una fecha real, no posterior al
 # día de su place.json. 🔴 rojos previos (clases 3, 7, 14, 18 y el «aparte»): dos carpetas que se declaran una a la otra
@@ -916,7 +915,7 @@ echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'pc' n
   && ok "2.28-adv una fecha imposible no declara nada y la otra unión sigue" || mal "2.28-adv imposible: ${U}"
 # un código regenerado declara también la carpeta con código que reemplaza (sale del registro de subidas de la máquina):
 # esa carpeta se une a la regenerada si nada llegó ahí después; si no, queda como estaba.
-# 🔴 rojo previo (clase 4): la carpeta del código anterior no la declaraba nadie y el tablero contaba dos veces lo re-subido.
+# 🔴 Falla con: la carpeta del código anterior que no declara nadie, y el tablero que cuenta dos veces lo re-subido.
 E="${BASE}/t228-adv/regenerada"; mkdir -p "${E}/macbook-pro" "${E}/macbook-pro-1111aaaa"
 pl228 "${E}" macbook-pro-1111aaaa 1111aaaa macbook-pro 2026-09-14 2026-09-16
 pl228 "${E}" macbook-pro-2222bbbb 2222bbbb macbook-pro 2026-09-17 2026-09-17 ",\"code_regenerated\":{\"on\":\"2026-09-17\",\"reason\":\"no estaba\"},\"superseded_folders\":[\"macbook-pro-1111aaaa\"],\"superseded_runs_sha256\":{\"macbook-pro-1111aaaa\":\"$(huella_de "${E}/macbook-pro-1111aaaa")\"}"
@@ -927,10 +926,10 @@ printf '{}\n' > "${E}/macbook-pro-1111aaaa/9.9-2026-09-18T0900.json"
 echo "$(uniones_de "${E}")" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro-1111aaaa']['estado']=='siguio_recibiendo', d" 2>/dev/null \
   && ok "2.28-adv y si la del código anterior siguió recibiendo, no se une" || mal "2.28-adv regenerada que siguió: $(uniones_de "${E}")"
 
-# Tercera vuelta de seguridad (decisión del dueño, 2026-10-15): la unión pide la HUELLA de las corridas que la máquina
+# La unión pide la HUELLA de las corridas que la máquina
 # subió a la carpeta vieja (de su registro de subidas; la llave no deja listar el buzón, así que nadie más la sabe). Una
 # máquina con el mismo nombre que declara la carpeta vieja de otra no la sabe: no se une.
-# 🔴 rojo previo: con un `moved_on` de hoy y la carpeta ajena sin nada después, la carpeta de otra persona quedaba unida.
+# 🔴 Falla con: con un `moved_on` de hoy y la carpeta ajena sin nada después, la carpeta de otra persona queda unida.
 E="${BASE}/t228-adv/huella"; mkdir -p "${E}/macbook-pro"; printf '{}\n' > "${E}/macbook-pro/9.1-2026-10-14T0900.json"
 pl228 "${E}" macbook-pro-aaaaaaaa aaaaaaaa macbook-pro 2026-10-15 2026-10-15
 node -e 'const fs=require("fs"); const f=process.argv[1]; const p=JSON.parse(fs.readFileSync(f)); p.folder.previous_runs_sha256=require("crypto").createHash("sha256").update("adivinada").digest("hex"); fs.writeFileSync(f, JSON.stringify(p))' "${E}/macbook-pro-aaaaaaaa/registros/place.json"
@@ -951,9 +950,9 @@ pl228 "${E}" macbook-pro-2222bbbb 2222bbbb macbook-pro 2026-09-17 2026-09-17 ',"
 U="$(uniones_de "${E}")"
 echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d['macbook-pro-1111aaaa']['estado']=='siguio_recibiendo', d" 2>/dev/null \
   && ok "2.28-adv una carpeta reemplazada con otra huella no se une a la regenerada" || mal "2.28-adv reemplazada con otra huella: ${U}"
-# Segunda vuelta de seguridad: la lista de reemplazadas vale sólo con un código regenerado ese día, y ningún día de un
-# place.json puede ser posterior a hoy. 🔴 rojo previo: una carpeta nueva sin regenerar listaba la carpeta con código de
-# otra máquina; con un `day` y un `moved_on` a futuro, la otra «nunca siguió recibiendo» y quedaba unida a la atacante.
+# La lista de reemplazadas vale sólo con un código regenerado ese día, y ningún día de un
+# place.json puede ser posterior a hoy. 🔴 Falla con: una carpeta nueva sin regenerar que lista la carpeta con código de
+# otra máquina; con un `day` y un `moved_on` a futuro, la otra «nunca siguió recibiendo» y queda unida a la atacante.
 E="${BASE}/t228-adv/sin-regenerar"; mkdir -p "${E}/beta" "${E}/beta-bbbbbbbb"
 pl228 "${E}" beta-bbbbbbbb bbbbbbbb beta 2026-09-14 2026-09-16
 pl228 "${E}" beta-aaaaaaaa aaaaaaaa beta 2026-09-17 2026-09-17 ',"superseded_folders":["beta-bbbbbbbb"]'
@@ -967,7 +966,7 @@ U="$(uniones_de "${E}")"
 echo "${U}" | python3 -c "import json,sys; d=json.load(sys.stdin); assert 'gama-cccccccc' not in d and d['gama']['estado']=='unida' and d['gama']['nueva']=='gama-cccccccc', d" 2>/dev/null \
   && ok "2.28-adv un día de place.json posterior a hoy no declara nada" || mal "2.28-adv día futuro: ${U}"
 
-# ── 2.28 T36 · Carpetas_DosDeclaraciones_NoSeUne (AC 25, 27) ── 🔴 rojo previo: unirla a la más nueva.
+# ── T36 · Carpetas_DosDeclaraciones_NoSeUne ── 🔴 Falla con: unirla a la más nueva.
 T="${BASE}/t228-36"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
 volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
 place228 "${T}/b" macbook-pro-1a2b3c4d macbook-pro 2026-10-15
@@ -984,13 +983,13 @@ bajar "${T}" "${T}/bin/az"
 echo "$(uniones "${T}")" | python3 -c "import json,sys; d=json.load(sys.stdin); c=d['carpetas']['macbook-pro']; assert c['estado']=='compartida' and c['declarantes']==2, c; assert d['regeneradas']=={'macbook-pro-55aa66bb':{'on':'2026-10-15','reason':'no estaba'}}, d['regeneradas']" 2>/dev/null \
   && ok "2.28-T36 código regenerado: compartida, y la carpeta nueva en regeneradas con día y motivo" || mal "2.28-T36 regenerado: $(uniones "${T}")"
 # el motivo viene de OTRA máquina: sin controles ni separadores de línea, y acotado a 120 caracteres
-# 🔴 rojo previo (revisor de cobertura, tercera vuelta): el saneado del motivo no tenía caso.
+# 🔴 Falla con: el saneado del motivo sin caso propio.
 E="${BASE}/t228-36c"; mkdir -p "${E}/maq-s"
 node -e 'const fs=require("fs"); const [,d]=process.argv; fs.mkdirSync(`${d}/maq-s-1a2b3c4d/registros`,{recursive:true}); fs.writeFileSync(`${d}/maq-s-1a2b3c4d/registros/place.json`, JSON.stringify({schema:1,day:"2026-10-15",folder:{name:"maq-s-1a2b3c4d",code:"1a2b3c4d",previous_folder:"maq-s",moved_on:"2026-10-15",code_regenerated:{on:"2026-10-15",reason:`x${String.fromCharCode(0x2028)}y${String.fromCharCode(7)}`+"z".repeat(300)}}}))' "${E}"
 node -e 'const r=require(process.argv[1]).carpetasDeMaquina(process.argv[2]); const m=r.regeneradas["maq-s-1a2b3c4d"].reason; process.exit(m.length<=120 && !/[\u0000-\u001f]/.test(m) && !m.includes(String.fromCharCode(0x2028)) ? 0 : 1)' "${BAJAR}" "${E}" \
   && ok "2.28-T36 el motivo de una regeneración ajena sale sin controles y acotado" || mal "2.28-T36 el motivo ajeno no se sanea"
 
-# ── 2.28 T37 · Carpetas_SiguioRecibiendo_NoSeUne (AC 28) ── 🔴 rojo previo: unirla con una declaración.
+# ── T37 · Carpetas_SiguioRecibiendo_NoSeUne ── 🔴 Falla con: unirla con una declaración.
 for por in volcado place; do
   T="${BASE}/t228-37-${por}"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token
   volcado228 "${T}/b" macbook-pro "9.1-2026-10-14T0900" 2026-10-14
@@ -1003,11 +1002,11 @@ for por in volcado place; do
     && ok "2.28-T37 la vieja recibió un ${por} después de la mudanza: siguio_recibiendo, sin unir; la que nadie declara no aparece" || mal "2.28-T37 ${por}: rc=${RC} $(uniones "${T}")"
 done
 
-# ── T23 (story 2.23) · Bajar_ConOtraCredencial_SinHilos ─────────────────────────────────────────
+# ── T23 · Bajar_ConOtraCredencial_SinHilos ─────────────────────────────────────────
 # El sitio de la organización llama a bajar() con sus opciones: la cuenta, el contenedor, la SAS de LECTURA y la carpeta.
 # No lee corridas-buzon.json (no hay), no mira las integraciones (apagadas), no llama a az (no hay), y baja sólo los
 # volcados y los registros, nunca hilos ni cambios. La firma va en la consulta, sin cabecera Authorization.
-# 🔴 rojo previo: bajar() leía corridas-buzon.json y la sesión de az; sin ellos no bajaba nada (y con ellos bajaba hilos).
+# 🔴 Falla con: que bajar() lea corridas-buzon.json y la sesión de az: sin ellos no baja nada (y con ellos baja hilos).
 rm -rf "${HOME}/.claude"   # 8.9-D2 siembra la casa de juguete a propósito; T23 mira sólo lo que escribe él
 T="${BASE}/t23"; buzon "${T}/b"; SIG="firma-$$"; echo "${SIG}" > "${T}/b/sas-sig"
 blob "${T}/b" "maq-a-11111111/2.1-2026-10-15T1000.json" 700
@@ -1044,7 +1043,7 @@ RC=$?
 [ "${RC}" -eq 2 ] && grep -q llave_con_escritura "${T}/out.txt" && [ ! -s "${T}/b/pedidos.jsonl" ] \
   && ok "T23 una SAS que escribe no se usa: llave_con_escritura y ningún pedido al buzón" || mal "T23b rc=${RC} · $(cat "${T}/out.txt")"
 # una cuenta que no tiene la forma de Azure Storage armaría otro host con la credencial adentro: no se manda nada
-# (revisión de seguridad de la 2.23; rojo previo: `https://${cuenta}.blob.core.windows.net` con «host.malo/x?»)
+# (falla con armar `https://${cuenta}.blob.core.windows.net` con «host.malo/x?»)
 T="${BASE}/t23c"; mkdir -p "${T}"
 TYCON_MAILBOX=0 node -e '
 const { bajar } = require(process.argv[1]);
@@ -1055,7 +1054,7 @@ RC=$?
 [ "${RC}" -eq 2 ] && grep -q config_rota "${T}/out.txt" && [ ! -e "${T}/sitio" ] \
   && ok "T23 una cuenta sin la forma de Azure Storage: config_rota, sin pedir nada ni crear la carpeta" || mal "T23c rc=${RC} · $(cat "${T}/out.txt")"
 # un 200 al listar que no es un listado (la página de un proxy) no es «el buzón está vacío y al día» (cazador de fallos
-# silenciosos de la 2.23; rojo previo: 0 blobs, al_dia, completo true)
+# silenciosos; falla con: 0 blobs, al_dia, completo true)
 T="${BASE}/t23d"; buzon "${T}/b"; config "${T}/cfg.json"; az_doble "${T}" token; echo 1 > "${T}/b/lista-html"
 bajar "${T}" "${T}/bin/az"
 [ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "servicio_fallo" ] && [ "$(campo "${T}" completo)" = "false" ] \

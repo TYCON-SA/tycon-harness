@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # config-shell-consumers.test.sh — los consumidores de shell y python del lector de configuración del
-# arnés, corridos de verdad (story 8.3, tanda A · pase adversarial, vuelta 1).
+# arnés, corridos de verdad.
 #
-# Lo que el pase encontró MIDIENDO, no leyendo: `scripts/ci/validate-pipeline-in-ado.sh` resolvía las dos
-# variables de la organización en el orden INVERSO al lector (con las dos definidas y distintas consultaba
-# una organización mientras `tycon-config.js explain` mostraba otra), y `scripts/hooks/instinct-observe.py`
-# comparaba el cwd contra una `~` literal en TYCON_REPOS_ROOT (atribuía la observación al último nombre de
+# Qué defiende, MIDIENDO y no leyendo: `scripts/ci/validate-pipeline-in-ado.sh` resuelve las dos
+# variables de la organización en el MISMO orden que el lector (con las dos definidas y distintas consulta
+# la organización que muestra `tycon-config.js explain`), y `scripts/hooks/instinct-observe.py`
+# expande una `~` literal en TYCON_REPOS_ROOT (si no, atribuye la observación al último nombre de
 # carpeta del cwd en vez de al repo). Un consumidor que lee la misma variable que el lector tiene que llegar
-# al MISMO valor: si no, «una sola cadena, siempre la misma» (AC 1) es mentira en ese consumidor.
+# al MISMO valor: si no, «una sola cadena, siempre la misma» es mentira en ese consumidor.
 #
 # Cómo corre: sin red. Un `curl` de mentira anota la URL que le pidieron y contesta como Azure; el hook python
 # escribe su JSONL en un temporal. 🔴 Nada acá toca el HOME real: HOME temporal, PATH con los dobles adelante,
@@ -46,7 +46,7 @@ if [ "$rc" -eq 0 ] && grep -q 'dev.azure.com/nueva/Proy/_apis/pipelines/7/runs' 
   ok "T1 con TYCON_ADO_ORG y ADO_ORG distintas, consulta la organización que dice el lector (TYCON_ADO_ORG)"
 else bad "T1 consultó otra organización (rc=$rc) — curl: $(tr '\n' ' ' < "$LOG" | head -c 200) — $salida"; fi
 
-# ── T1b · sólo ADO_ORG (la variable que ya existía antes de la 8.3) sigue valiendo ──────────────────
+# ── T1b · sólo ADO_ORG (la variable previa al lector) sigue valiendo ──────────────────
 : > "$LOG"
 EXTRA_ENV=(ADO_ORG=https://dev.azure.com/vieja)
 correr --project Proy --pipeline 7 >/dev/null 2>&1; rc=$?
@@ -54,7 +54,7 @@ if [ "$rc" -eq 0 ] && grep -q 'dev.azure.com/vieja/Proy/' "$LOG"; then ok "T1b A
 else bad "T1b ADO_ORG sola no valió (rc=$rc)"; fi
 
 # ── T2 · sin variable y con ~/.claude/tycon.json ROTO: frena con archivo, clave y motivo (exit 2) ───
-#         — no con «sin organización», que es lo que AC 2 prohíbe: un archivo roto no se lee como ausente
+#         — no con «sin organización», que es lo que esta prueba prohíbe: un archivo roto no se lee como ausente
 printf '{ "integrations": { "engram": "si" } }' > "$BASE/home/.claude/tycon.json"
 EXTRA_ENV=(TYCON_NOTHING_SET=1)
 salida="$(correr --project Proy --pipeline 7 2>&1)"; rc=$?
@@ -65,7 +65,7 @@ else bad "T2 configuración rota mal reportada (rc=$rc): $salida"; fi
 rm -f "$BASE/home/.claude/tycon.json"
 
 # ── T3b · el lector no pudo contestar (sin node en el PATH): «no pude preguntar», exit 2 — nunca «apagado» ────────
-#          (regla 5 del bloque ADO; pase adversarial de la tanda B: rc 127 dejaba ORG vacío y se leía como apagada, exit 0)
+#          (regla 5 del bloque ADO: un rc 127 dejaría ORG vacío y se leería como apagada, exit 0)
 : > "$LOG"
 SIN_NODE="$BASE/bin-sin-node"; mkdir -p "$SIN_NODE"; ln -sf "$BASE/bin/curl" "$SIN_NODE/curl"
 for b in bash sh mktemp cat tr head rm sed grep dirname python3; do p="$(command -v "$b" 2>/dev/null)"; [ -n "$p" ] && ln -sf "$p" "$SIN_NODE/$b"; done
@@ -75,7 +75,7 @@ if [ "$rc" -eq 2 ] && printf '%s' "$salida" | grep -qi 'no pude leer' && ! print
 else bad "T3b sin node (rc=$rc): $salida"; fi
 
 # ── T3 · sin variable y sin nada configurado: Azure DevOps APAGADO — lo dice en una línea, sale 0 y no consulta ──
-#         nada (story 8.3, AC 10; tanda B — hasta entonces salía 2 con «sin organización»). Nunca «válido» ni «0».
+#         nada. Nunca «válido» ni «0».
 : > "$LOG"
 salida="$(correr --project Proy --pipeline 7 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ] && printf '%s' "$salida" | grep -qi 'Azure DevOps apagad' && [ ! -s "$LOG" ] \
@@ -91,9 +91,9 @@ if cat "$BASE/obs"/*.jsonl 2>/dev/null | grep -q '"project": "miRepo"'; then
   ok "T4 instinct-observe.py: con TYCON_REPOS_ROOT='~/Proyectos' la observación se atribuye al repo (miRepo), no a «sub»"
 else bad "T4 instinct-observe.py atribuyó mal la observación: $(cat "$BASE/obs"/*.jsonl 2>/dev/null | head -c 300)"; fi
 
-# ── T5 · el resumen de integraciones del instalador PowerShell (pase adversarial de la tanda B, reproducido con pwsh 7):
+# ── T5 · el resumen de integraciones del instalador PowerShell (reproducible con pwsh 7):
 #         `$true -eq 'detect'` es True en PowerShell (convierte la cadena al tipo del operando izquierdo), así que TODA
-#         integración prendida salía como «(detect)». Se ejecuta el bloque REAL del .ps1 (recortado entre sus dos marcas)
+#         integración prendida sale como «(detect)». Se ejecuta el bloque REAL del .ps1 (recortado entre sus dos marcas)
 #         con un JSON de mentira. Sin pwsh en la máquina: NO MEDIDO, nunca verde.
 PS1="$TCG/scripts/install-tycon-hooks.ps1"
 if command -v pwsh >/dev/null 2>&1; then
@@ -115,9 +115,9 @@ else
   echo "⏭ config-consumidores: T5 NO MEDIDO — sin pwsh en esta máquina no se ejecuta el bloque del instalador PowerShell"
 fi
 
-# ── T3 (story 8.3.1) · el lugar donde re-entra un hook del arnés: el .ps1 y el .sh dan el mismo ──────────────────────
+# ── T3 (re-entrada) · el lugar donde re-entra un hook del arnés: el .ps1 y el .sh dan el mismo ──────────────────────
 #         Casos: (índices del arnés de cada elemento, None = ajeno ; el índice del que entra) → posición esperada.
-#         Desde la story 8.17 (tanda W3) los dos instaladores llaman al MISMO aplicador, scripts/setup/apply-hooks.js:
+#         Los dos instaladores llaman al MISMO aplicador, scripts/setup/apply-hooks.js:
 #         «el .ps1 y el .sh dan el mismo» vale por construcción, y se prueba la función real del aplicador.
 APPLY_JS="$TCG/scripts/setup/apply-hooks.js"
 CASOS_LUGAR='[[[0,null,2],1,1],[[null,3,null],1,1],[[null,null],1,2],[[0,1,null,4],3,2],[[],5,0],[[4,5],1,0]]'
@@ -125,7 +125,7 @@ ESPERADO="$(node -e 'console.log(JSON.parse(process.argv[1]).map((c) => c[2]).jo
 sal_sh="$(node -e 'const m = require(process.argv[1]); console.log(JSON.parse(process.argv[2]).map((c) => m.lugarCanonico(c[0], c[1])).join(" "))' "$APPLY_JS" "$CASOS_LUGAR" 2>&1)"
 if [ "$sal_sh" = "$ESPERADO" ]; then ok "T3 el aplicador re-inserta en el lugar canónico ($sal_sh)"
 else bad "T3 lugar canónico del aplicador: esperado [$ESPERADO] salió [$sal_sh]"; fi
-# Pase adversarial (5b): quién es «del arnés» se decide por la INVOCACIÓN (la ruta entre comillas, completa), no por
+# Quién es «del arnés» se decide por la INVOCACIÓN (la ruta entre comillas, completa), no por
 # un pedazo del texto: «retro-pending.js» no es «pending.js», y un comando que sólo menciona la ruta no es ese hook.
 cat > "$BASE/indice.js" <<'JS'
 const m = require(process.argv[2]);

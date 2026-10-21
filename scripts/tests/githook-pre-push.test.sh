@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# githook-pre-push.test.sh — el freno antes de publicar, disparado por un `git push` DE VERDAD (story 8.26, tanda F1 · AC 52).
+# githook-pre-push.test.sh — el freno antes de publicar, disparado por un `git push` DE VERDAD.
 #
 # ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────────────────────
 # La lógica del freno se prueba en public-push-guard.test.js llamando al guion a mano. Eso no prueba el cableado, y el
-# cableado es justo donde la revisión adversarial encontró el hueco: con `core.hooksPath` global git ignora el
+# cableado es justo donde puede estar el hueco: con `core.hooksPath` global git ignora el
 # `.githooks/` de cada repo, así que un `pre-push` escrito, probado y verde puede no correr NUNCA (el mismo defecto que
 # githook-livefire.test.sh cuida para el `pre-commit`). Acá se empuja de verdad, con la carpeta global de hooks puesta
 # como git la pone, y se mira el EFECTO: la ref remota NO cambia.
@@ -39,7 +39,7 @@ montar() {
   mkdir -p "$T/hooks" "$T/arnes" "$T/casa" "$T/publico"
   cp "$GLOBAL" "$T/hooks/pre-push"; chmod +x "$T/hooks/pre-push"
   for p in $PIEZAS; do mkdir -p "$T/arnes/$(dirname "$p")"; cp "$RAIZ/$p" "$T/arnes/$p"; done
-  # el control de historia interna, si el árbol ya lo trae (es de otra tanda): el freno lo usa si está
+  # el control de historia interna, si el árbol lo trae: el freno lo usa si está
   [ -f "$RAIZ/scripts/publishing/internal-history.js" ] && cp "$RAIZ/scripts/publishing/internal-history.js" "$T/arnes/scripts/publishing/"
   printf '{}\n' > "$T/arnes/perfil-equipo.json"   # una máquina del equipo: la lista es obligatoria
   printf '{ "terminos": [ { "patron": "%s", "categoria": "cliente" } ], "permitidos": [] }\n' "$TERMINO" > "$T/lista.json"
@@ -211,8 +211,8 @@ else mal "P-10 sin arnés instalado el token salió (exit $RC)"; sed -n '1,8p' "
 rm -rf "$T"
 
 # ── P-11 · «del arnés» no es sólo «el árbol de trabajo trae el instalador» ───────────────────────────────────────
-# El despachador decidía mirando UN archivo del árbol de trabajo: parado en una rama que no lo trae, o en un repo sin
-# árbol, una rama del arnés salía sin que el freno corriera. Ahora decide el freno, por lo que SE EMPUJA.
+# Decidir mirando UN archivo del árbol de trabajo falla: parado en una rama que no lo trae, o en un repo sin
+# árbol, una rama del arnés saldría sin que el freno corriera. Por eso decide el freno, por lo que SE EMPUJA.
 T=$(mktemp -d); montar "$T"
 rama "$T" sucia guides/a.md "con $TERMINO"
 ( cd "$T/repo" && g checkout -q --orphan otra-cosa && g rm -rfq . && printf 'nada del arnés\n' > nota.md && g add -A && g "${QUIEN[@]}" commit -q -m "otra cosa" )
@@ -247,7 +247,7 @@ RC=$(empujar "$T" origin limpia)
 if [ "$RC" = "0" ] && grep -q 'pre-push propio .* no se puede ejecutar' "$T/out.txt"; then ok "P-12 un pre-push.local sin permiso de ejecución no corre, y se dice (no queda callado)"
 else mal "P-12 un pre-push.local sin permiso de ejecución quedó callado (exit $RC)"; sed -n '1,6p' "$T/out.txt"; fi
 rm -f "$T/hooks/pre-push.local"
-# un freno falso (sale siempre 0) ofrecido por la variable que antes lo prestaba: sin arnés instalado, no se usa
+# un freno falso (sale siempre 0) ofrecido por una variable de entorno: sin arnés instalado, no se usa
 mkdir -p "$T/falso/scripts/hooks" "$T/arnes-vacio/scripts"; printf 'process.exit(0);\n' > "$T/falso/scripts/hooks/public-push-guard.js"
 rama "$T" sucia guides/a.md "con $TERMINO"
 RC=$(TYCON_PRE_PUSH_TREE="$T/falso" EMPUJE_ARNES="$T/arnes-vacio" empujar "$T" origin sucia)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-plan.test.sh — el plan antes de escribir (story 8.16, tanda B · AC 3, 11, 13 a 17 · T14, T15, T17 a T22).
+# harness-plan.test.sh — el plan antes de escribir (T14, T15, T17 a T22).
 #
 # Lo que no se puede perder:
 #   T15 · el aplicador REAL con `--check --plan-json <archivo>` escribe `[{kind, where, id, action}]` y nada más: en una
@@ -24,12 +24,12 @@
 # REAL sobre una copia descartable del árbol y una HOME de juguete (el patrón de harness-uninstall.test.sh). Nunca
 # ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 #
-#   REG · las regresiones del pase adversarial de la tanda B: una reparación anunciada se hace (1); el plan trae el
+#   REG · las regresiones: una reparación anunciada se hace (1); el plan trae el
 #         despliegue de Codex (2), las skills de terceros con la ruta del reporte (3), lo que install escribe en la copia
 #         fija y la línea de arranque (4), el git pull que el aplicador reescribe (5); armar el plan no escribe nada aunque
 #         tycon.json use un nombre viejo (7); --dry-run --channel latest no pregunta (9); y apply --dry-run dice que la
-#         lista de efectos está rota (revisor de alcance).
-#   REG-PIPE · preguntarle algo al plan no depende de qué proceso termina primero (2026-10-10, ver `plan_has`).
+#         lista de efectos está rota.
+#   REG-PIPE · preguntarle algo al plan no depende de qué proceso termina primero (ver `plan_has`).
 #
 # Uso: bash scripts/tests/harness-plan.test.sh [--only T15|T17|T14|T18|T19|T20|T21|T22|REG]
 set -uo pipefail
@@ -56,8 +56,8 @@ lab_tree() { # lab_tree <dir> → una copia del árbol bajo prueba, con git prop
 # 🔴 Sin `maintenance.auto=false`, el commit deja corriendo de fondo un `git maintenance run --auto --detach` que crea y
 #    borra `.git/objects/maintenance.lock` unos milisegundos después de que el commit volvió. Si en ese momento T15 saca
 #    su huella de la HOME, ve el candado; cuando lista las rutas para decir qué cambió, ya no está: rojo «la HOME cambió»
-#    con la lista vacía (main, 15/10, Node 22 y 24). Medido con git 2.56: 11 de cada 100 commits dejan el candado a la
-#    vista; con git 2.50 (Mac), ninguno. Es la misma clase que harness_lab_git apaga en el laboratorio común (story 8.38).
+#    con la lista vacía. Con git 2.56, 11 de cada 100 commits dejan el candado a la
+#    vista; con git 2.50 (Mac), ninguno. Es la misma clase que harness_lab_git apaga en el laboratorio común.
 lab_commit() {
   env GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com \
     GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com \
@@ -115,8 +115,8 @@ for p in json.load(open(sys.argv[1], encoding='utf-8')): print('%s %s %s' % (p['
 #    `pipefail` de arriba, `grep -q` sale en su primer acierto y cierra la tubería, y si el `sort` de plan_actions todavía
 #    no terminó de escribir muere por la tubería cerrada (141): la tubería da FALSO con el dato presente. Pasa cuando la
 #    lista no entra en una sola escritura (sort escribe de a 4096 bytes en Linux; el plan con Codex mide ~4900) y la
-#    máquina está cargada. Era REG-2, roja en cuatro validaciones de ramas que no la tocaban (12521, 12577, 12742, 12750)
-#    y siempre verde en una Mac, donde sort escribe todo junto. Medido con la consulta de antes sobre ese plan, en Linux
+#    máquina está cargada. Es REG-2: sale roja en validaciones de ramas que no la tocan
+#    y siempre verde en una Mac, donde sort escribe todo junto. Con la consulta en una tubería, en Linux
 #    con dos núcleos ocupados: 19 falsos en 300 vueltas. Lo cuida REG-PIPE, abajo.
 plan_has() { plan_actions "$1" > "$T/plan-actions.txt" && grep -q -- "$2" "$T/plan-actions.txt"; }
 plan_all() { plan_actions "$1" > "$T/plan-actions.txt" && [ -s "$T/plan-actions.txt" ] && ! grep -qv -- "$2" "$T/plan-actions.txt"; }
@@ -357,10 +357,10 @@ PY
   [ "$RC" = 0 ] && grep -q 'lab-hook.js' "$LAB_HOME/.claude/settings.json" && ! grep -q -e '¿' -e '--yes' "$T/t22-apply.out" && ok "T22 apply lo repone sin preguntar" || mal "T22 apply: salió ${RC}: $(tail -n 2 "$T/t22-apply.out" | tr '\n' ' ')"
 fi
 
-# ══ REG · las regresiones del pase adversarial de la tanda B (y del revisor de alcance) ══════════════════════════════
+# ══ REG · las regresiones ══════════════════════════════
 if corre REG; then
   echo "REG · lo que encontró el pase adversarial de la tanda B"
-  # clase 1: una reparación que el plan anuncia (un hook borrado a mano) se hace; antes, «sin cambios» y nada repuesto
+  # una reparación que el plan anuncia (un hook borrado a mano) se hace; sin esto, dice «sin cambios» y no repone nada
   fresh_lab reg1 || true
   harness install --yes > /dev/null 2>&1 < /dev/null || mal "REG-1 install previo falló"
   python3 - "$LAB_HOME/.claude/settings.json" <<'PY'
@@ -374,7 +374,7 @@ PY
   RC=0; harness install --yes > "$T/reg1.out" 2>&1 < /dev/null || RC=$?
   [ "$RC" = 0 ] && grep -q 'lab-hook.js' "$LAB_HOME/.claude/settings.json" && ! grep -q 'sin cambios' "$T/reg1.out" \
     && ok "REG-1 el hook borrado que el plan anunciaba, install --yes lo repone" || mal "REG-1 rc ${RC}, el hook $(grep -q lab-hook.js "$LAB_HOME/.claude/settings.json" && echo está || echo 'NO está'): $(tail -n 2 "$T/reg1.out" | tr '\n' ' ')"
-  # clase 4: lo que install escribe y el plan no veía (un módulo viejo de la copia fija, la línea de arranque repetida)
+  # lo que install escribe y el plan no veía (un módulo viejo de la copia fija, la línea de arranque repetida)
   for caso in modulo-viejo linea-repetida; do
     fresh_lab "reg4-$caso" || true
     harness install --yes > /dev/null 2>&1 < /dev/null || mal "REG-4 install previo falló"
@@ -397,7 +397,7 @@ PY
       ok "REG-4 ${caso}: el plan lo muestra, y sin terminal ni --yes install sale 2 sin escribir"
     else mal "REG-4 ${caso}: dry-run rc ${RC} ($(head -n 2 "$T/reg4-$caso-dry.out" | tr '\n' ' ')) · install rc ${RC2}, HOME $( [ "$(home_now)" = "$ANTES" ] && echo igual || echo CAMBIADA )"; fi
   done
-  # clase 7: un tycon.json con un nombre viejo de sección no hace escribir nada en la HOME al armar el plan
+  # un tycon.json con un nombre viejo de sección no hace escribir nada en la HOME al armar el plan
   fresh_lab reg7 || true
   # el nombre viejo de la sección, armado en dos partes: escrito entero, el control de menciones viejas lo contaría como uso
   OLD_SECTION="integra""ciones"
@@ -406,7 +406,7 @@ PY
   RC=0; harness install --dry-run > "$T/reg7.out" 2>&1 < /dev/null || RC=$?
   [ "$RC" = 0 ] && [ "$(home_now)" = "$ANTES" ] && [ ! -e "$LAB_HOME/.claude/.tycon-pipeline" ] \
     && ok "REG-7 con un nombre viejo en tycon.json, install --dry-run no escribe nada (ni el registro de nombres viejos)" || mal "REG-7 rc ${RC}; HOME $( [ "$(home_now)" = "$ANTES" ] && echo igual || echo CAMBIADA ): $(ls "$LAB_HOME/.claude/.tycon-pipeline" 2>&1 | tr '\n' ' ')"
-  # clase 9: install --dry-run --channel latest sobre una copia pública con apply: auto no pregunta: muestra el plan
+  # install --dry-run --channel latest sobre una copia pública con apply: auto no pregunta: muestra el plan
   fresh_lab reg9 || true
   harness_lab_public > /dev/null 2>&1
   printf '{ "update": { "apply": "auto" } }\n' > "$LAB_HOME/.claude/tycon.json"
@@ -415,7 +415,7 @@ PY
   [ "$RC" = 0 ] && grep -q '^escribe:' "$T/reg9.out" && ! grep -q '¿Paso a latest' "$T/reg9.out" && grep -q 'se te pide confirmarlo' "$T/reg9.out" && [ "$(home_now)" = "$ANTES" ] \
     && ok "REG-9 install --dry-run --channel latest: el plan, el aviso de la confirmación, sin preguntar ni escribir" || mal "REG-9 rc ${RC}: $(tr '\n' ' ' < "$T/reg9.out" | head -c 300)"
   # las piezas compartidas (en Windows las hace este programa, no el aplicador): con un aplicador que no da su plan, el plan
-  # del programa trae igual cleanupPeriodDays, la variable de env y los comandos de barra (story 8.16, AC 20)
+  # del programa trae igual cleanupPeriodDays, la variable de env y los comandos de barra
   fresh_lab regsh || true
   harness_lab_old_applier
   mkdir -p "$LAB_TREE/commands"; printf '# un comando de barra de laboratorio\n' > "$LAB_TREE/commands/lab-cmd.md"
@@ -427,7 +427,7 @@ const p = r.plan.pieces;
 const has = (k, id) => p.some((x) => x.kind === k && x.id === id && x.action === "add");
 console.log([has("setting", "cleanupPeriodDays"), has("setting", "env.CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"), p.some((x) => x.kind === "command" && x.action === "add")].join(" "));' "$LAB_TREE/scripts/setup/harness.js" "$LAB_TREE" 2>&1)"
   [ "$SH" = "true true true" ] && ok "REG-SH las piezas compartidas están en el plan del programa aunque el aplicador no dé el suyo" || mal "REG-SH piezas compartidas en el plan: «${SH}»"
-  # revisor de alcance: apply --dry-run con la lista de efectos rota lo dice
+  # apply --dry-run con la lista de efectos rota lo dice
   fresh_lab regw2 || true
   harness install --yes > /dev/null 2>&1 < /dev/null || mal "REG-W2 install previo falló"
   printf '{ roto\n' > "$LAB_TREE/scripts/setup/install-effects.json"
@@ -458,28 +458,28 @@ json.dump(pieces, open(sys.argv[1],'w',encoding='utf-8'))" "$T/regpipe/plan.json
     || mal "REG-PIPE un plan ilegible se leyó como si trajera piezas"
 fi
 
-# ── REG con el aplicador real: Codex (clase 2), las skills de terceros del repo único (clase 3), el git pull (clase 5) ──
+# ── REG con el aplicador real: Codex, las skills de terceros del repo único, el git pull ──
 if corre REG; then
   A="$T/regr/tree"; H="$T/regr/home"; lab_tree "$A"; new_home "$H"; base "$H"
-  # clase 5: un `git pull` propio en la línea de arranque, que el aplicador reescribe, aparece en el plan
+  # un `git pull` propio en la línea de arranque, que el aplicador reescribe, aparece en el plan
   mkdir -p "$H/.claude"
   printf '{ "hooks": { "SessionStart": [ { "hooks": [ { "type": "command", "command": "cd ~/SourceCode/tycon-claude-guides && git pull -q" } ] } ] } }\n' > "$H/.claude/settings.json"
   RC=0; "${RUN_ENV[@]}" bash "$A/scripts/install-tycon-hooks.sh" --check --plan-json "$T/regr/plan5.json" > /dev/null 2>&1 || RC=$?
   [ "$RC" = 0 ] && plan_has "$T/regr/plan5.json" '^pull-line .* update$' \
     && ok "REG-5 el git pull de una línea de arranque que el aplicador reescribe está en el plan (pull-line update)" || mal "REG-5 rc ${RC}: $(plan_actions "$T/regr/plan5.json" 2>&1 | grep -v ' add$' | head -3 | tr '\n' ';')"
-  # clase 2: con Codex prendido, el plan trae las piezas del despliegue (hooks.json, config.toml), no sólo AGENTS.md
+  # con Codex prendido, el plan trae las piezas del despliegue (hooks.json, config.toml), no sólo AGENTS.md
   if [ -d "$RAIZ/build" ] && [ -d "$RAIZ/adapters/codex" ]; then
     A2="$T/regr/tree-codex"; H2="$T/regr/home-codex"
     lab_tree "$A2"; ( cd "$RAIZ" && tar cf - build adapters ) | ( cd "$A2" && tar xf - )
     new_home "$H2"; base "$H2"; RUN_ENV=("${RUN_ENV[@]/TYCON_CODEX=0/TYCON_CODEX=1}"); mkdir -p "$H2/.codex"
     RC=0; "${RUN_ENV[@]}" bash "$A2/scripts/install-tycon-hooks.sh" --check --plan-json "$T/regr/plan2.json" > /dev/null 2>&1 || RC=$?
-    # El mensaje dice QUÉ buscaba y qué no encontró. Antes mostraba las primeras cuatro piezas `codex` del plan, por
-    # orden alfabético, y se leía como «el plan propone de más»: nunca decía si las dos buscadas estaban.
+    # El mensaje dice QUÉ buscaba y qué no encontró. Si mostrara las primeras cuatro piezas `codex` del plan, por
+    # orden alfabético, se leería como «el plan propone de más» y nunca diría si las dos buscadas están.
     MISSING=""; for piece in hooks.json config.toml; do plan_has "$T/regr/plan2.json" "^codex ${piece} add\$" || MISSING="${MISSING} «codex ${piece} add»"; done
     [ "$RC" = 0 ] && [ -z "$MISSING" ] \
       && ok "REG-2 con Codex prendido, el plan trae hooks.json y config.toml del despliegue" || mal "REG-2 rc ${RC}: al plan con Codex prendido le falta:${MISSING:- nada} · trae $(grep -c '^codex ' "$T/plan-actions.txt" 2>/dev/null) pieza(s) codex de $(grep -c . "$T/plan-actions.txt" 2>/dev/null)"
   else ok "REG-2 NO MEDIDO: este árbol no trae build/ y adapters/codex"; fi
-  # clase 3: en el repo único sin el enlace todavía, las skills de terceros se anotan con la ruta del reporte
+  # en el repo único sin el enlace todavía, las skills de terceros se anotan con la ruta del reporte
   A3="$T/regr/tree-single"; H3="$T/regr/home-single"
   lab_tree "$A3"; mkdir -p "$A3/skills/tycon-pipeline" "$A3/agents"; : > "$A3/skills/tycon-pipeline/.keep"; : > "$A3/agents/.keep"
   git -C "$A3" add -A >/dev/null 2>&1; env GIT_CONFIG_GLOBAL=/dev/null git -C "$A3" -c user.name=l -c user.email=l@e -c core.hooksPath=/dev/null commit -q -m single >/dev/null 2>&1
@@ -498,9 +498,9 @@ p=json.load(open(sys.argv[1])); print(next((x['where'] for x in p if x['kind']==
   case "$BAD3" in "0 0"|"") mal "REG-3 rc ${RC}: el plan no trae skills de terceros («${BAD3}»)" ;; *" 0") ok "REG-3 las skills de terceros del plan van con la ruta de ~/.claude/agent-skills (${BAD3% *}), como el reporte" ;; *) mal "REG-3 skills de terceros con otra ruta: ${BAD3}" ;; esac
 fi
 
-# REG-819 (story 8.19, revisión de C+E, M3): la marca de arranque de los bloques cambió de texto en la tanda E. Un bloque
+# REG-819: la marca de arranque de los bloques tiene una versión vieja. Un bloque
 # que ya está escrito con la marca vieja se anota «update» (como el .ps1, que decide por el prefijo), nunca «add».
-# 🔴 rojo previo: el plan del .sh comparaba la marca entera y decía «add» para los bloques que la persona ya tiene.
+# 🔴 Si el plan del .sh comparara la marca entera, diría «add» para los bloques que la persona ya tiene.
 if corre REG; then
   H4="$T/reg5"; rm -rf "$H4"; mkdir -p "$H4/.claude"
   # los bloques del núcleo y los de los paquetes que el árbol activa (con la capa del equipo encima, el de cada paquete)

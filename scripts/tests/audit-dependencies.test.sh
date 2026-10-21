@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Prueba de audit-dependencies.js — EL criterio del análisis de dependencias, en un solo lugar.
 #
-# Nace del 2026-09-01. Dos hechos del mismo día lo motivaron:
-#  · el pipeline de URUTAU/FrontEnd pasó en verde a las 15:56 y a las 16:42 se publicó
-#    CVE-2026-73089 sobre browserslist — mismo código, veredicto opuesto;
-#  · el backend de FRESNO tenía 4 vulnerabilidades altas y su pipeline las daba por VERDES, porque
-#    no restauraba antes de escanear (así que no miraba nada) y el fallo se perdía en el `| tee`.
+# Los dos hechos que lo motivan:
+#  · un pipeline puede pasar en verde a las 15:56 y a las 16:42 publicarse
+#    un CVE sobre una dependencia — mismo código, veredicto opuesto;
+#  · un backend con 4 vulnerabilidades altas puede salir VERDE, porque
+#    no restaura antes de escanear (así que no mira nada) y el fallo se pierde en el `| tee`.
 #
 # Por eso el eje de casi todos los casos de abajo es el mismo: **que "no pude medir" nunca se
 # pueda confundir con "está limpio"**. Ninguno toca la red: el comando externo se inyecta.
@@ -53,7 +53,7 @@ repo; echo "$limpio" > "$TMP/npm.json"
 rc=$(corre --type npm --block)
 [ "$rc" -eq 0 ] && ok "un repo limpio sale 0 incluso con --block" || no "limpio salió $rc: $(cat "$TMP/out.txt")"
 
-# ── 3. EL CASO REAL: altas sin declarar frenan el pull request ───────────────────────────────
+# ── 3. altas sin declarar frenan el pull request ───────────────────────────────
 repo; echo "$conAltas" > "$TMP/npm.json"
 rc=$(corre --type npm --block)
 { [ "$rc" -eq 1 ] && grep -q "browserslist" "$TMP/out.txt"; } \
@@ -65,8 +65,8 @@ rc=$(corre --type npm)
 [ "$rc" -eq 0 ] && ok "sin --block el mismo hallazgo sale 0: avisa, no frena" || no "sin --block salió $rc"
 
 # ── 5. la deuda declarada y VIGENTE no despierta a nadie ─────────────────────────────────────
-# 🔴 Desde el 2026-09-03 la entrada tiene que nombrar los avisos que ampara: declarar sólo el
-# nombre amparaba el paquete entero para todo aviso futuro. El caso de abajo, con los avisos
+# 🔴 La entrada tiene que nombrar los avisos que ampara: declarar sólo el
+# nombre ampararía el paquete entero para todo aviso futuro. El caso de abajo, con los avisos
 # puestos, es la conducta correcta; el caso "sin avisos no ampara" está más abajo.
 repo; echo "$conAltas" > "$TMP/npm.json"
 cat > "$TMP/repo/vulnerabilidades-pendientes.json" <<'D'
@@ -113,8 +113,8 @@ rc=$(corre --type npm --block)
 { [ "$rc" -eq 2 ] && grep -q "NO MEDIDO" "$TMP/out.txt"; } \
   && ok "una salida ilegible sale 2, nunca 0" || no "salida ilegible salió $rc: $(cat "$TMP/out.txt")"
 
-# ── 11. 🔴 EL CASO DE UN PRODUCTO DEL EQUIPO: si el restore falla, NO se escanea nada — y eso no es limpio ─────────
-# Reproduce el defecto real del backend de FRESNO: sin assets file `dotnet list --vulnerable` no ve
+# ── 11. 🔴 si el restore falla, NO se escanea nada — y eso no es limpio ─────────
+# Reproduce el defecto de un backend: sin assets file `dotnet list --vulnerable` no ve
 # nada, el 1 se pierde en el `| tee` y el paso sale VERDE con 4 altas adentro.
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/x.sln"
 echo '{"projects":[]}' > "$TMP/nuget.json"
@@ -145,10 +145,10 @@ rc=$(node "$GUION" --type npm >"$TMP/out.txt" 2>&1; echo $?)
 [ "$rc" -eq 2 ] && ok "sin --repo sale 2 con la ayuda" || no "sin --repo salió $rc"
 
 echo
-# ── 🔴 LA AMNISTÍA ES POR (PAQUETE, AVISO), NO POR NOMBRE (2026-09-03) ─────────────────────────
-# Antes bastaba con que el NOMBRE del paquete figurara: eso amparaba el paquete entero, en todo el
-# repo y para todo aviso FUTURO. Un formulario nuevo que agregara un paquete ya declarado pasaba sin
-# que nadie lo mirara, y un aviso nuevo sobre un paquete declarado no despertaba a nadie.
+# ── 🔴 LA AMNISTÍA ES POR (PAQUETE, AVISO), NO POR NOMBRE ─────────────────────────
+# Si bastara con que el NOMBRE del paquete figurara, eso ampararía el paquete entero, en todo el
+# repo y para todo aviso FUTURO. Un formulario nuevo que agregara un paquete ya declarado pasaría sin
+# que nadie lo mirara, y un aviso nuevo sobre un paquete declarado no despertaría a nadie.
 decl(){ printf '%s' "$1" > "$TMP/repo/vulnerabilidades-pendientes.json"; }
 
 repo; echo "$conAltas" > "$TMP/npm.json"
@@ -170,7 +170,7 @@ rc=$(corre --type npm --block)
 
 # 🔴 Si el análisis NO da un aviso propio (paquete vulnerable a través de otro), no se le puede
 # exigir uno: esos casos quedarían IMPOSIBLES de declarar, en rojo para siempre, y un control que no
-# se puede satisfacer se apaga. Medido el 2026-09-03: 3 de 47 formularios caían ahí.
+# se puede satisfacer se apaga. Medido: 3 de 47 formularios caen ahí.
 sinAviso='{"vulnerabilities":{"jspdf-autotable":{"severity":"high","via":["jspdf"]}},"metadata":{"vulnerabilities":{"critical":0,"high":1,"moderate":0,"low":0}}}'
 repo; printf '%s' "$sinAviso" > "$TMP/npm.json"
 decl '{"revision":"2026-12-31","paquetes":[{"paquete":"jspdf-autotable","advisories":[]}]}'
@@ -189,11 +189,10 @@ rc=$(corre --type npm --block)
 [ "$rc" -eq 1 ] && ok "una declaración vencida no ampara aunque nombre los avisos" || no "🔴 la vencida amparó ($rc)"
 
 # ── 🔴 el registro de avisos tropieza: se REINTENTA antes de declarar "no pude medir" ────────
-# (2026-09-03) Medido en producción: dos pull requests (de dos productos del equipo) quedaron
-# rechazados a las 22:42 con "npm audit reportó un error: sin detalle", mientras Lapacho pasaba
-# un minuto después con el mismo guion. Los mismos repos habían pasado a las 21:30. O sea: un
+# Cuando el registro tropieza, un pull request queda rechazado con "npm audit reportó un error: sin detalle",
+# mientras otro pasa un minuto después con el mismo guion. O sea: un
 # tropiezo del registro, no un hallazgo. El resto del arnés ya reintenta ante lo transitorio (las
-# imágenes de análisis, el ingreso al host); esto no, y un tropiezo de red frenaba un cambio sano.
+# imágenes de análisis, el ingreso al host); sin reintento, un tropiezo de red frena un cambio sano.
 # 🔴 Lo que NO cambia: si tras los reintentos sigue sin poder, es "no pude medir" (exit 2). El
 # reintento acorta la ventana del tropiezo; no convierte un no-medido en un verde.
 cat > "$TMP/npm-flaky.sh" <<'FLAKY'
@@ -212,9 +211,9 @@ rc=$(FIX="$TMP" FALLAR_HASTA=1 TYCON_DEP_CMD="$TMP/npm-flaky.sh" TYCON_DEP_TODAY
   || no "🔴 un tropiezo del registro tumbó la medición: rc=$rc intentos=$(cat "$TMP/intentos" 2>/dev/null) — $(cat "$TMP/out.txt")"
 
 # ── 🔴 el registro que NO CONTESTA se corta por tiempo, no se espera para siempre ────────────
-# (2026-09-03) Esa noche el registro de avisos se degradó y una sola llamada tardó 267 SEGUNDOS
-# (medida desde la máquina del dev, otra red: no era Azure). El guion no tenía ningún tiempo de
-# espera, así que el paso por formulario de un producto del equipo —33 llamadas— se comió 40 minutos contra un techo
+# Si el registro de avisos se degrada, una sola llamada puede tardar 267 SEGUNDOS
+# (medido desde la máquina del dev, otra red: no es Azure). Sin ningún tiempo de
+# espera, el paso por formulario de un producto —33 llamadas— se come 40 minutos contra un techo
 # de 60 por trabajo. Lo normal es ~1 segundo por formulario: el corte se pone treinta veces más
 # arriba, y lo que se corta es "no pude medir" con su motivo, nunca un verde.
 cat > "$TMP/npm-colgado.sh" <<'COLGADO'
@@ -240,9 +239,9 @@ rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 TYCON_D
 [ "$rc" -eq 0 ] && ok "…y una medición normal no se corta" || no "🔴 el corte se llevó una medición buena (rc=$rc)"
 
 # 🔴 …y el reintento tiene PRESUPUESTO: no puede estirar el paso sin techo.
-# (2026-09-03, la misma noche) El análisis por formulario recorre 33 repos en ese producto; con el registro
+# El análisis por formulario recorre 33 repos en ese producto; con el registro
 # degradado, 3 intentos con esperas por cada uno convertirían un paso de 36 segundos en media hora,
-# contra un techo de 60 minutos por trabajo. Medido esa noche: ese paso pasó de 0,6 a 24+ minutos
+# contra un techo de 60 minutos por trabajo. Medido: ese paso pasó de 0,6 a 24+ minutos
 # SOLO por la lentitud del registro, sin reintentos. El reintento tiene que ayudar con un tropiezo,
 # no amplificar una caída.
 rm -f "$TMP/intentos"
@@ -264,9 +263,9 @@ rc=$(FIX="$TMP" FALLAR_HASTA=99 TYCON_DEP_CMD="$TMP/npm-flaky.sh" TYCON_DEP_TODA
 
 
 # ── la declaración se lee RELATIVA a --repo: una subcarpeta trae la suya, no la de la raíz ──────
-# (2026-09-05) El nocturno pasa a auditar subcarpetas (`subruta`: el gateway de mensajería de un producto del equipo,
+# El nocturno audita subcarpetas (`subruta`: el gateway de mensajería de un producto del equipo,
 # tools/chat-gateway, con su propio lockfile y su propio vulnerabilidades-pendientes.json). Este
-# guion ya resolvía la declaración relativa a --repo, así que el caso NO tuvo rojo previo: es la red
+# guion resuelve la declaración relativa a --repo: el caso es la red
 # que impide que alguien "arregle" la lectura anclándola a la raíz del repo git, que dejaría al
 # gateway sin su deuda declarada y despertando a todo el mundo la primera noche.
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo/sub"; : > "$TMP/repo/sub/package-lock.json"; : > "$TMP/repo/package-lock.json"
@@ -289,15 +288,13 @@ rc=$(FIX="$TMP" TYCON_DEP_CMD="$TMP/doble.sh" TYCON_DEP_TODAY=2026-09-01 node "$
 
 
 # ── el informe llega ENTERO a quien lo lee por una tubería ──────────────────────────────────────
-# (2026-09-28) Este guion se usa de UNA sola forma en producción: el nocturno lo invoca con
+# Este guion se usa de UNA sola forma en producción: el nocturno lo invoca con
 # spawnSync y le parsea el JSON de la salida. Con `process.exit(main())` las escrituras de Node a
-# una tubería son asincrónicas y el proceso moría con parte del informe sin escribir: un informe de
-# 9782 bytes llegaba cortado en 8192, el JSON no parseaba, y el repo salía «no devolvió JSON
-# legible (exit 0)» — NO MEDIDO, con un motivo que no nombra la causa. Los 8 repos que había tenían
-# informes chicos y nunca lo dispararon; apareció con el primero grande (custom-forms/runtime-app
-# del repo del framework, 21 hallazgos). El caso se escribe con spawnSync a propósito: por el
+# una tubería son asincrónicas y el proceso muere con parte del informe sin escribir: un informe de
+# 9782 bytes llega cortado en 8192, el JSON no parsea, y el repo sale «no devolvió JSON
+# legible (exit 0)» — NO MEDIDO, con un motivo que no nombra la causa. Con informes chicos no se
+# nota; aparece con uno grande (21 hallazgos). El caso se escribe con spawnSync a propósito: por el
 # redirigido a archivo que usa el resto de esta suite, el corte NO se ve.
-# Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 rm -rf "$TMP/repo"; mkdir -p "$TMP/repo"; : > "$TMP/repo/package-lock.json"
 python3 - "$TMP/npm.json" <<'GRANDE'
 import json, sys
@@ -414,7 +411,7 @@ for f in pipelines/operations/README.md pipelines/operations/github/README.md; d
 [ -z "$faltan" ] && ok "T9 los ejemplos y las guías de operaciones nombran pip en «tipo»" || no "T9 no nombran pip:$faltan"
 
 # ── una gravedad vacía o desconocida en npm/nuget cuenta como alta, con la marca ──────────────────
-# 🔴 rojo: «» o «unknown» no estaba entre las graves; no entraba en no_declaradas y el repo salía limpio sin aviso.
+# 🔴 «» o «unknown» cuenta entre las graves; si no, no entra en no_declaradas y el repo sale limpio sin aviso.
 repo
 echo '{"vulnerabilities":{"acme-a":{"severity":"","via":[{"url":"https://x/GHSA-aaaa"}]},"acme-b":{"severity":"unknown","via":[{"url":"https://x/GHSA-bbbb"}]},"acme-i":{"severity":"info","via":[{"url":"https://x/GHSA-iiii"}]}},"metadata":{"vulnerabilities":{"critical":0,"high":0,"moderate":0,"low":0,"info":1}}}' > "$TMP/npm.json"
 rc=$(corre --type npm --block --json)

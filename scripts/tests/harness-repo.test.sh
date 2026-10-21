@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# harness-repo.test.sh — ¿este repo es del arnés? lo dice el remoto, no la carpeta (2026-09-17)
+# harness-repo.test.sh — ¿este repo es del arnés? lo dice el remoto, no la carpeta
 #
-# Caso: la exclusión de los repos del arnés estaba escrita tres veces (retro-pending.js,
-# unpushed-work-notice.js, lib/story-gate.js de agent-skills) y las tres miraban el NOMBRE DE LA
-# CARPETA: un clon descartable del arnés no quedaba excluido, y un repo de producto bajo una carpeta
-# llamada `tycon-claude-guides` quedaba excluido sin serlo. Detalle: scripts/lib/harness-repo.js.
+# La exclusión de los repos del arnés se apoya en el remoto (retro-pending.js,
+# unpushed-work-notice.js, lib/story-gate.js de agent-skills): si miraran el NOMBRE DE LA
+# CARPETA, un clon descartable del arnés no quedaría excluido, y un repo de producto bajo una carpeta
+# llamada `tycon-claude-guides` quedaría excluido sin serlo. Detalle: scripts/lib/harness-repo.js.
 #
-# Story 8.3 (T7, AC 7): «el arnés» ya no son dos URLs de una organización escritas en el código: es el
+# «El arnés» no son dos URLs de una organización escritas en el código: es el
 # `origin` del propio clon (y el de agent-skills), normalizado para cualquier host. Los casos de siempre
 # corren con las identidades de referencia INYECTADAS (TYCON_HARNESS_IDENTITIES) para no depender del
 # `origin` de la máquina; los nuevos prueban el fork en otro servidor, el producto en el mismo servidor y
@@ -43,8 +43,8 @@ ARNES="https://${URL_USER}@dev.azure.com/acme/tycon-claude-guides/_git/tycon-cla
 SKILLS='https://acme.visualstudio.com/AgentSkills/_git/AgentSkills'
 # Las identidades de referencia, inyectadas: los casos de siempre no dependen del origin de esta máquina.
 export TYCON_HARNESS_IDENTITIES="$ARNES,$SKILLS"
-# El nombre público del arnés (el del lugar, story 8.19): los casos que arman una carpeta con el nombre interno tienen
-# su gemelo con éste (tanda E, AC 39). Sale de la constante, nunca escrito a mano.
+# El nombre público del arnés (el del lugar): los casos que arman una carpeta con el nombre interno tienen
+# su gemelo con éste. Sale de la constante, nunca escrito a mano.
 PUB="$(node -p "require(process.argv[1]).PLACE_NAME" "$TCG/scripts/setup/harness/place.js")"
 
 # T1 — las formas de URL de Azure son el mismo repo; el usuario de la URL no cuenta
@@ -75,7 +75,7 @@ const mal = [...si.filter((u) => !esIdentidadDelArnes(identidadAzure(u))).map((u
 if (mal.length) { console.log(mal.join("\n")); process.exit(1); }
 ' "$J" && ok "T1 las formas de URL de Azure se reconocen, y lo que se parece no" || bad "T1 formas de URL"
 
-# T1b — el normalizador para cualquier host (story 8.3): ssh ≡ https, sin usuario, sin .git, sin caja
+# T1b — el normalizador para cualquier host: ssh ≡ https, sin usuario, sin .git, sin caja
 node -e '
 const { identidadRemoto, mismaIdentidad } = require(process.argv[1]);
 const a = identidadRemoto("git@github.com:Alguien/Tycon-Claude-Guides.git");
@@ -130,8 +130,8 @@ espera "T7 ruta fuera de todo repo git → respaldo por carpeta" "$BASE/afuera/t
 mkdir -p "$BASE/afuera/$PUB/docs"
 espera "T7 gemelo: fuera de todo repo git, la carpeta con el nombre público → respaldo por carpeta" "$BASE/afuera/$PUB/docs/x.md" "true carpeta"
 
-# T8 — un remoto de OTRO host bajo una carpeta con nombre del arnés NO es el arnés (ahora se sabe leer:
-#      es un remoto legible que no es el de referencia; el veredicto «no» es el mismo de siempre)
+# T8 — un remoto de OTRO host bajo una carpeta con nombre del arnés NO es el arnés (es un remoto legible
+#      que no es el de referencia)
 repo "$BASE/otro/tycon-claude-guides" 'https://github.com/alguien/tycon-claude-guides.git'
 espera "T8 remoto de otro host bajo carpeta con nombre del arnés → NO es del arnés" "$BASE/otro/tycon-claude-guides" "false remoto"
 repo "$BASE/otro/$PUB" "https://github.com/alguien/$PUB.git"
@@ -157,7 +157,7 @@ out="$(node "$J" "$BASE/scratchpad/tcg")"; rc=$?
   && printf '%s' "$out" | grep -q '"identidades_del_arnes"' \
   && ok "T10 la CLI dice qué decidió, por qué, y las identidades de referencia" || bad "T10 CLI (rc=${rc}, out='${out}')"
 
-# ── Story 8.3 · T7: la identidad propia ─────────────────────────────────────────────────────────
+# ── T7: la identidad propia ─────────────────────────────────────────────────────────
 
 # T12 — un clon del arnés alojado en OTRO servidor (un fork en GitHub) se reconoce en las dos formas;
 #       un producto en el mismo servidor, no
@@ -176,7 +176,7 @@ unset TYCON_HARNESS_IDENTITIES
 mkdir -p "$BASE/sin-origen/scripts/lib" "$BASE/sin-skills"
 cp "$J" "$BASE/sin-origen/scripts/lib/harness-repo.js"
 cp "$TCG/scripts/lib/skills-dir.js" "$BASE/sin-origen/scripts/lib/"   # la lib copiada lleva su vecina: sin ella caería al default de agent-skills, que sí tiene origin
-cp "$TCG/scripts/lib/legacy-names.js" "$BASE/sin-origen/scripts/lib/"   # y la de los nombres renombrados (story 8.9), que carga al arrancar
+cp "$TCG/scripts/lib/legacy-names.js" "$BASE/sin-origen/scripts/lib/"   # y la de los nombres renombrados, que carga al arrancar
 export TYCON_SKILLS_DIR="$BASE/sin-skills"   # tampoco agent-skills aporta identidad: no hay ninguna que leer
 espera "T13 sin identidad propia → la carpeta decide y se dice" "$BASE/otro/tycon-claude-guides" "true carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
 espera "T13b sin identidad propia, carpeta sin nombre del arnés → no" "$BASE/scratchpad/tcg" "false carpeta-sin-identidad-propia" "$BASE/sin-origen/scripts/lib/harness-repo.js"
@@ -197,15 +197,15 @@ unset TYCON_SKILLS_DIR
 # T15 — el clon REAL donde corre esta prueba se reconoce a sí mismo por su propio origin (sin inyección)
 espera "T15 este mismo clon del arnés, por su propio origin" "$TCG" "true remoto"
 
-# ── Story 8.18 · T16 (AC 17, contrato C5): «repo del arnés» en las tres formas de máquina ────────
-# El arnés y agent-skills pasan a ser UN repo. Mientras dura la mudanza conviven tres formas de máquina:
+# ── T16: «repo del arnés» en las tres formas de máquina ────────
+# El arnés y agent-skills son UN repo. Mientras dura la mudanza conviven tres formas de máquina:
 #   (a) un árbol: el clon del repo unido, y `~/.claude/agent-skills` es un enlace a él;
 #   (b) dos clones, el viejo de agent-skills ya re-apuntado al remoto del arnés (mismo remoto);
 #   (c) dos clones, el viejo sin re-apuntar: su `origin` sigue siendo el remoto viejo.
-# 🔴 EL CASO (c): la identidad de agent-skills salía del `origin` de «donde están las skills», y desde esta story
-#    eso contesta EL PROPIO CLON cuando trae `skills/` (después del corte, el clon del arnés de toda máquina).
-#    El remoto viejo dejaba de ser «del arnés» y el clon instalado de las skills —donde corren los hooks de toda
-#    la máquina— pasaba a tratarse como un repo de producto: pedía story, pipeline y retrospectiva.
+# 🔴 En (c): la identidad de agent-skills sale del `origin` de «donde están las skills», y
+#    eso contesta EL PROPIO CLON cuando trae `skills/` (el clon del arnés de toda máquina).
+#    Si no, el remoto viejo dejaría de ser «del arnés» y el clon instalado de las skills —donde corren los hooks de toda
+#    la máquina— pasaría a tratarse como un repo de producto: pediría story, pipeline y retrospectiva.
 #    La referencia suma SIEMPRE el `origin` de lo instalado en `~/.claude/agent-skills` (salvo que la variable
 #    diga dónde están las skills: ahí manda la variable, como en todo el arnés).
 # Sin identidades inyectadas y con HOME de juguete: lo que se mide es de dónde saca la biblioteca su referencia.
@@ -254,7 +254,7 @@ expect_at "T16c 🔴 clon viejo SIN re-apuntar (remoto viejo), con el clon del a
 expect_at "T16c …y otro clon con el remoto viejo, en otra carpeta, también" "$BASE/t16/c/home" "$LIB_C" "$BASE/t16/old-skills-elsewhere" "true remoto"
 expect_at "T16c …el clon del arnés también" "$BASE/t16/c/home" "$LIB_C" "$BASE/t16/c/harness" "true remoto"
 expect_at "T16c un repo de producto NO es del arnés" "$BASE/t16/c/home" "$LIB_C" "$BASE/t16/product" "false remoto"
-# la máquina de hoy (el clon del arnés todavía sin skills/): igual que siempre
+# la máquina con el clon del arnés todavía sin skills/: igual que siempre
 own_clone "$BASE/t16/c0/harness" "$ARNES" split
 repo "$BASE/t16/c0/home/.claude/agent-skills" "$SKILLS"
 LIB_C0="$BASE/t16/c0/harness/scripts/lib/harness-repo.js"
@@ -270,7 +270,7 @@ got="$(env -u TYCON_HARNESS_IDENTITIES HOME="$BASE/t16/c/home" TYCON_SKILLS_DIR=
 
 # La raíz de los repos del equipo sigue dejando afuera a los DOS clones, también cuando el instalado de las skills
 # vive fuera de ~/.claude (un enlace) y el clon del arnés ya trae skills/: sin eso, una persona con un solo producto
-# quedaba con la carpeta del clon de skills como «raíz de sus repos».
+# quedaría con la carpeta del clon de skills como «raíz de sus repos».
 R16="$BASE/t16/root"; H16="$R16/home"
 mkdir -p "$H16/.claude/projects" "$H16/Infra" "$H16/Proyectos" "$R16/tmp"
 repo "$H16/Proyectos/ProductoA" "$PRODUCT"
@@ -293,9 +293,9 @@ process.stdout.write(`${r.fuente} ${r.root} ${r.evidencia}`);' "$H16/Infra/harne
   && ok "T16e la raíz de repos deja afuera a los dos clones (el del arnés y el de las skills, aunque viva fuera de ~/.claude): queda la carpeta del producto" \
   || bad "T16e esperaba «sesiones $H16/Proyectos 1», dio «${got}»"
 
-# T16f · pase adversarial del tramo 1 (hallazgo 1): la MISMA máquina, cuando la persona todavía no abrió una sesión en
-# el producto. El paso de las sesiones ya dejaba afuera a los dos clones, pero el paso «vecino» sólo descartaba al del
-# arnés: el clon viejo de las skills contaba como «otro repo al lado» y la raíz salía `Infra` (con el producto en
+# T16f · la MISMA máquina, cuando la persona todavía no abrió una sesión en
+# el producto. El paso de las sesiones deja afuera a los dos clones, y el paso «vecino» también tiene que descartar a los dos: si sólo descartara al del
+# arnés, el clon viejo de las skills contaría como «otro repo al lado» y la raíz saldría `Infra` (con el producto en
 # `Proyectos`): cero repos que auditar, sin el error «no se miró ningún repo». Lo esperado es «sin raíz».
 root_of() { # imprime "fuente raíz evidencia" de la casa H16, con el clon del arnés de Infra/harness
   env -u TYCON_REPOS_ROOT -u TYCON_SKILLS_DIR HOME="$H16" node -e '
@@ -315,13 +315,13 @@ got="$(root_of)"
   && ok "T16f (espejo) con un producto al lado del arnés, la raíz es esa carpeta y la evidencia cuenta al producto, no al clon de las skills" \
   || bad "T16f (espejo) esperaba «vecino $H16/Infra 1», dio «${got}»"
 
-# T16g · pase adversarial del tramo 1 (2026-10-04): la referencia de «el arnés» le pregunta dónde están las skills a
-# scripts/lib/skills-dir.js, y un `catch` tragaba CUALQUIER error de esa pregunta y seguía con `~/.claude/agent-skills`.
-# Medido: con `TYCON_SKILLS_DIR` puesta y un skills-dir.js que está y no carga, la referencia salía de lo instalado en
-# vez de la variable —un clon suelto con el remoto viejo pasaba a ser «del arnés», y el de la variable dejaba de
-# serlo— con código 0 y sin una línea. Y skills-dir.js TIRA cuando su vecina canonical-path.js está y no carga
-# (hallazgo 19): ese aviso también se perdía acá (sin variable la respuesta hoy coincide, porque lo instalado suma
-# siempre; el error igual tiene que verse). El valor de siempre es sólo para la copia que viaja SIN skills-dir.js.
+# T16g · la referencia de «el arnés» le pregunta dónde están las skills a
+# scripts/lib/skills-dir.js; un `catch` que tragara CUALQUIER error de esa pregunta y siguiera con `~/.claude/agent-skills`
+# haría que, con `TYCON_SKILLS_DIR` puesta y un skills-dir.js que está y no carga, la referencia saliera de lo instalado en
+# vez de la variable —un clon suelto con el remoto viejo pasaría a ser «del arnés», y el de la variable dejaría de
+# serlo— con código 0 y sin una línea. Y skills-dir.js TIRA cuando su vecina canonical-path.js está y no carga:
+# ese aviso tampoco puede perderse acá (sin variable la respuesta coincide, porque lo instalado suma
+# siempre; el error igual tiene que verse). El valor por defecto es sólo para la copia que viaja SIN skills-dir.js.
 ask_at() { # $1=HOME $2=lib $3=ruta [$4=TYCON_SKILLS_DIR] → deja la respuesta en ASK_OUT, el código en ASK_RC y stderr en ASK_ERR
   local err="$BASE/t16/ask-err.txt"
   if [ -n "${4:-}" ]; then
@@ -376,9 +376,9 @@ expect_answer "T16g (espejo) sin skills-dir.js al lado: la referencia suma lo in
 ask_at "$G16/home" "$G16/no-rule/scripts/lib/harness-repo.js" "$BASE/t16/product"
 expect_answer "T16g (espejo) …y un producto sigue sin ser del arnés" "false remoto"
 
-# T16h · segunda vuelta de los revisores del tramo 1 (2026-10-04): la búsqueda de la raíz de repos (repos-root.js)
-# también le pregunta a skills-dir.js dónde están las skills, para excluir ese clon, y tragaba el error igual que
-# los otros dos lectores. Medido: con la regla rota contestaba una raíz tranquila, con código 0 y sin una línea.
+# T16h · la búsqueda de la raíz de repos (repos-root.js)
+# también le pregunta a skills-dir.js dónde están las skills, para excluir ese clon, y no puede tragar el error como los otros dos lectores.
+# Con la regla rota, una raíz tranquila con código 0 y sin una línea escondería el error.
 root_at() { # $1=HOME $2=lib → la salida en ROOT_OUT, el código en ROOT_RC y stderr en ROOT_ERR
   local err="$BASE/t16/root-err.txt"
   ROOT_OUT="$(env -u TYCON_REPOS_ROOT -u TYCON_SKILLS_DIR HOME="$1" node "$2" 2>"$err")"; ROOT_RC=$?
@@ -400,8 +400,8 @@ root_at "$G16/home" "$G16/no-rule/scripts/lib/repos-root.js"
 if [ "$ROOT_RC" -eq 0 ] && [ -z "$ROOT_ERR" ]; then ok "T16h (espejo) sin skills-dir.js al lado: contesta como siempre, excluyendo lo instalado"
 else bad "T16h (espejo) esperaba código 0 y sin avisos; dio rc=${ROOT_RC}, stderr «${ROOT_ERR}»"; fi
 
-# ── Story 8.26 · T21 (AC 21): el repo público (GitHub) y el de mantenimiento (Azure DevOps) son «del arnés» ──────
-# HarnessRepo_PublicCloneAndMaintainersAreHarness_ProductIsNot. El día del corte el dueño escribe en el público y lo
+# ── T21: el repo público (GitHub) y el de mantenimiento (Azure DevOps) son «del arnés» ──────
+# HarnessRepo_PublicCloneAndMaintainersAreHarness_ProductIsNot. Quien mantiene escribe en el público y lo
 # interno vive en el repo de mantenimiento: los dos se trabajan como el arnés (sin story ni pipeline de producto). Su
 # identidad no se escribe en el código: la declara el clon que corre —en el interno, el nombre público y el de
 # mantenimiento en scripts/publishing/public-repos.json; en la copia, los remotos públicos en
@@ -446,7 +446,7 @@ CLI21="$(env -u TYCON_HARNESS_IDENTITIES -u TYCON_SKILLS_DIR HOME="$T21/home" no
 if printf '%s' "$CLI21" | grep -q 'public-repos.json'; then ok "T21j la CLI dice qué declaración no pudo leer"
 else bad "T21j la CLI no nombra la declaración ilegible: «${CLI21}»"; fi
 # sin identidad propia legible (el clon sin origin, sin agent-skills), lo declarado NO arma una referencia: decide la
-# carpeta y se dice, como siempre (pase adversarial de la tanda A: sumar lo declarado tapaba ese respaldo)
+# carpeta y se dice, como siempre (sumar lo declarado taparía ese respaldo)
 mkdir -p "$T21/noorigin/scripts/lib" "$T21/noorigin/scripts/publishing"
 for f in $LIBS; do cp "$TCG/scripts/lib/$f" "$T21/noorigin/scripts/lib/"; done
 printf '{ "org": "acme", "repo": "acme-harness", "maintainers": "%s" }\n' "$T21_MAINT" > "$T21/noorigin/scripts/publishing/public-repos.json"
@@ -456,12 +456,12 @@ expect_at "T21m …y el clon del público no se cuela por la declaración" "$T21
 got21="$(env -u TYCON_SKILLS_DIR HOME="$T21/home" TYCON_HARNESS_IDENTITIES="$T21_INTERNAL" node -e 'const l=require(process.argv[1]); const j=l.juzgarRuta(process.argv[2]); process.stdout.write(j.arnes+" "+j.por)' "$L21" "$T21/public-clone")"
 [ "$got21" = "false remoto" ] && ok "T21k con identidades inyectadas, lo declarado no se suma" || bad "T21k esperaba «false remoto», dio «${got21}»"
 
-# ── Story 8.26 · T78 (AC 65 a, tanda H1c): el clon de mantenimiento se reconoce desde la MÁQUINA ───────────────────
+# ── T78: el clon de mantenimiento se reconoce desde la MÁQUINA ───────────────────
 # `MaintainerMachine_FromPublicClone_MaintainersCloneIsHarness_MergeModeFound` (la mitad del merge: merge-pr.test.js)
-# Después del corte, quien mantiene trabaja en un clon del PÚBLICO, que no trae public-repos.json: la dirección del
-# repo de mantenimiento ya no la declara el árbol. La declara la máquina (`paths.maintainers` de ~/.tycon/config.json):
+# Quien mantiene trabaja en un clon del PÚBLICO, que no trae public-repos.json: la dirección del
+# repo de mantenimiento no la declara el árbol. La declara la máquina (`paths.maintainers` de ~/.tycon/config.json):
 # cuenta el `origin` de ESE clon. Y vale también cuando el arnés que corre no tiene `origin` propio (una versión
-# instalada no es un clon): medido el 2026-10-11, ahí la referencia quedaba vacía y decidía el nombre de la carpeta.
+# instalada no es un clon): sin esto, la referencia queda vacía y decide el nombre de la carpeta.
 T78="$BASE/t78"
 T78_PUBLIC='https://github.com/acme/acme-harness'
 T78_MAINT='https://dev.azure.com/acme/harness/_git/acme-harness-internal'
@@ -572,10 +572,10 @@ pub78() { # $1=HOME $2=lib $3=url → true|false
 [ "$(pub78 "$T21/home" "$L21" 'https://github.com/acme/acme-harness')" = true ] && [ "$(pub78 "$T21/home" "$L21" "$T21_MAINT")" = false ] \
   && ok "T78x en el interno (public-repos.json): el org/repo de GitHub es el público; su «maintainers», no" || bad "T78x public-repos.json: el público o el de mantenimiento mal clasificados"
 
-# la ruta declarada con OTRAS MAYÚSCULAS que la carpeta del disco (pase adversarial de la tanda H1c): en un disco que no
+# la ruta declarada con OTRAS MAYÚSCULAS que la carpeta del disco: en un disco que no
 # las distingue —el de la Mac por defecto, el de Windows— es la misma carpeta, `harness.js config set` la guarda como se
-# tipeó, y git contesta con la caja de verdad. Comparada sin corregir la caja, la declaración salía «no es la raíz de un
-# clon de git»: no sumaba, y el motivo era falso. (En un disco que sí las distingue, la otra caja es otra carpeta: no se mide.)
+# tipeó, y git contesta con la caja de verdad. Comparada sin corregir la caja, la declaración saldría «no es la raíz de un
+# clon de git»: no sumaría, y el motivo sería falso. (En un disco que sí las distingue, la otra caja es otra carpeta: no se mide.)
 mkdir -p "$T78/CaseProbe"
 if [ -d "$T78/caseprobe" ]; then
   repo "$T78/work/Internal-Caja" 'https://dev.azure.com/acme/harness/_git/acme-harness-internal'
@@ -593,9 +593,9 @@ out78="$(env -u TYCON_HARNESS_IDENTITIES -u TYCON_SKILLS_DIR -u TYCON_HOME -u GI
 printf '%s' "$out78" | grep -q 'git no contest' && ! printf '%s' "$out78" | grep -q 'no es la raíz' \
   && ok "T78slow con un git que no contesta, el motivo es «git no contestó», no «no es la raíz de un clon»" || bad "T78slow el motivo de un git colgado es falso: «${out78}»"
 
-# 🔴 Lo que esa declaración CAMBIA en la máquina (revisión del plan de la tanda H1c): los tres controles que excluyen a
+# 🔴 Lo que esa declaración CAMBIA en la máquina: los tres controles que excluyen a
 # «los repos del arnés» le preguntan a ESTE reconocedor, así que en un clon descartable del repo del arnés —donde en una
-# máquina con la versión instalada hoy corren— dejan de correr. Se fija acá por los dos lados: (1) cada control sigue
+# máquina con la versión instalada corren— dejan de correr. Se fija acá por los dos lados: (1) cada control sigue
 # preguntándole al reconocedor (si alguno pasa a decidir por su cuenta, esto avisa), y (2) la respuesta que reciben para
 # un archivo de ese clon, con la pregunta que cada uno hace (por repo o por ruta).
 for caller in \
@@ -623,7 +623,7 @@ mkdir -p "$T78/tmp/tcg-descartable/scripts"
   && ok "T78z3 …y en un repo de producto el portón de carril sigue pidiendo story o carril" || bad "T78z3 un archivo de un producto salió «del arnés»"
 
 # adentro de un hook de git (GIT_DIR apunta al repo del hook): el reconocedor lee el remoto del repo que le PREGUNTAN.
-# Medido en la revisión del plan: con GIT_DIR puesta, un producto salía «del arnés» y la referencia era el repo del hook.
+# Con GIT_DIR puesta, un producto saldría «del arnés» si la referencia fuera el repo del hook.
 got78="$(judge78 "$T78/home" "$L78" "$T78/product" GIT_DIR="$T78/public-clone/.git")"
 [ "$got78" = "false remoto" ] && ok "T78s con GIT_DIR de otro repo en el ambiente, un producto sigue sin ser del arnés" || bad "T78s esperaba «false remoto», dio «${got78}»"
 got78="$(judge78 "$T78/home" "$L78" "$T78/work/internal" GIT_DIR="$T78/product/.git")"

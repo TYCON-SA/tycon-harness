@@ -1,15 +1,14 @@
 'use strict';
 
 /**
- * export-compare.test.js — el ayudante que compara la copia pública antes y después de una mudanza (story 8.12, AC 4,
- * T6 · tanda R2, 2026-10-02).
+ * export-compare.test.js — el ayudante que compara la copia pública antes y después de una mudanza (T6).
  *
  * Lo que no se puede perder:
  *   · Que una ruta que cambió con el MISMO contenido sea «movido», no un hallazgo: la mudanza es eso.
  *   · Que cualquier otra diferencia en lo que sale o en lo que queda excluido, un glob muerto nuevo, el termómetro de
  *     nombres en castellano (`spanishNames`) o el techo de nombres (`names-ceiling`) sea un hallazgo (exit 1).
  *   · Que una foto rota sea «no pude comparar» (exit 2), nunca «iguales».
- *   · Que un cambio de lado (excluido ↔ publicado) nunca quede tapado por contenidos repetidos (T6b, pase adversarial R2).
+ *   · Que un cambio de lado (excluido ↔ publicado) nunca quede tapado por contenidos repetidos (T6b).
  *   · Que un git que no pudo contestar al sacar la foto sea «no pude sacarla» (exit 2), no «el techo no está» (T6c).
  *
  * Trabaja con fotos de mentira escritas a mano (la forma que deja `export-compare.js snapshot`): no corre el exportador.
@@ -179,9 +178,9 @@ test('T6_ExcludedNowShipped_Exit1', () => {
   assert.deepStrictEqual(r.json.moved, [], 'cambiar de lado no es un movido');
 });
 
-// ── adversarial R2: contenidos repetidos no pueden tapar un cambio de lado ──────────────────────────────────────
-// El pase adversarial de la R2 confirmó que, con dos archivos del mismo contenido (los `.gitkeep` vacíos del arnés), un
-// archivo que pasaba de excluido a publicado se emparejaba por contenido del mismo lado y salía «movido», con exit 0.
+// ── contenidos repetidos no pueden tapar un cambio de lado ──────────────────────────────────────
+// Con dos archivos del mismo contenido (los `.gitkeep` vacíos del arnés), un archivo que pasa de excluido a
+// publicado podría emparejarse por contenido del mismo lado y salir «movido», con exit 0.
 /** Una foto con sólo estos archivos en core/arnes (el resto de BASE igual). `order` invierte el orden de las claves. */
 const onlyCoreArnes = (shipped, excluded, order = 'as-is') => photo((d) => {
   const keep = (o) => (order === 'reversed' ? Object.fromEntries(Object.entries(o).reverse()) : o);
@@ -236,9 +235,9 @@ test('T6b_RepeatedContentOnlyLegitMove_Exit0 (adversarial R2)', () => {
   }
 });
 
-// ── silent (re-loop R2): un git que no pudo contestar no es «el archivo no está» ────────────────────────────────
-// El revisor de fallos silenciosos: `snapshot` leía el techo con `git show` y cualquier salida ≠ 0 quedaba como «no está
-// en <sha>», aunque git hubiera fallado por permisos o «dubious ownership»: la foto parecía completa. Estas pruebas
+// ── un git que no pudo contestar no es «el archivo no está» ────────────────────────────────
+// Si `snapshot` leyera el techo con `git show` y tomara cualquier salida ≠ 0 como «no está
+// en <sha>», aunque git hubiera fallado por permisos o «dubious ownership», la foto parecería completa. Estas pruebas
 // arman un exportador de laboratorio (sale por su cuenta, sin la copia) y un repo de una sola confirmación.
 function labExporter() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'export-compare-lab-'));
@@ -301,7 +300,7 @@ test('T6c_SnapshotCeilingGitFails_Exit2 (silent, re-loop R2)', () => {
 
 test('T6c_SnapshotCeilingMissingInCommit_NoteExit0 (silent, re-loop R2)', () => {
   const { repo, sha } = labRepo();
-  // la exportación sale 1 (hallazgos: dato); con 2 la foto entera sale 2 (pase adversarial del tramo 2 de la 8.18, clase 1)
+  // la exportación sale 1 (hallazgos: dato); con 2 la foto entera sale 2
   const r = snapshotLab({ LAB_SHA: sha, TYCON_GUIDES_DIR: repo, LAB_EXPORT_EXIT: '1' });
   assert.strictEqual(r.code, 0, `${r.out}\n${r.err}`);
   assert.match(r.out, /names-ceiling\.json no está en/, 'la nota de siempre');
@@ -391,11 +390,11 @@ test('T6_Usage_Exit2', () => {
   assert.match(r.stderr, /snapshot[\s\S]*diff/);
 });
 
-// ══ story 8.18 (tramo 2) — el mismo árbol desde el repo unido: `trees` y `exclusions` ═══════════════════════════════════
-// El arnés y agent-skills pasaron a ser un repo. La vara del tramo (AC 20) es binaria: la copia `--single-repo` que arma
-// el exportador desde el repo unido tiene el MISMO árbol que la que armaba desde los dos repos, carpeta de primer nivel
+// ══ el mismo árbol desde el repo unido: `trees` y `exclusions` ═══════════════════════════════════
+// El arnés y agent-skills son un repo. La vara es binaria: la copia `--single-repo` que arma
+// el exportador desde el repo unido tiene el MISMO árbol que la que se arma desde los dos repos, carpeta de primer nivel
 // por carpeta de primer nivel, con una sola diferencia declarada —el `.gitignore` pierde el bloque `.advisors/` de
-// agent-skills—. Y sobre la rama junta (AC 21), lo que difiere son sólo archivos que la story tocó a propósito.
+// agent-skills—. Y sobre la rama junta, lo que difiere son sólo archivos tocados a propósito.
 // Acá se arma todo de juguete, con git de verdad en carpetas temporales (entorno limpio, sin la configuración de la
 // máquina); la medición sobre los commits reales va aparte.
 const { sinGitDelPadre } = require(path.join(RAIZ, 'scripts', 'lib', 'clean-git-env.js'));
@@ -461,11 +460,11 @@ function trees(before, after, extra = []) {
 
 
 test('Export_JoinedBranch_DiffOnlyTouchedFiles — la imagen por el exportador: una skill renombrada, un papel, una traducción a Codex', () => {
-  // lo que la story toca en el interno sale en la copia con OTRA ruta en tres casos: lo dice la lista blanca (y el exportador)
+  // lo que se toca en el interno sale en la copia con OTRA ruta en tres casos: lo dice la lista blanca (y el exportador)
   const list = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'export-compare-imagen-')), 'allowlist.json');
   created.push(path.dirname(list));
-  // lo tocado sale (un «in» de su fuente): sólo lo que el exportador publica explica algo en la copia (clase 9 del pase
-  // adversarial del tramo 2); la tabla privada de juguete va al lado de la lista
+  // lo tocado sale (un «in» de su fuente): sólo lo que el exportador publica explica algo en la copia;
+  // la tabla privada de juguete va al lado de la lista
   fs.writeFileSync(path.join(path.dirname(list), 'replacements.json'), JSON.stringify({ pares: [], afuera: [] }));
   fs.writeFileSync(list, JSON.stringify({
     packages: { core: { arnes: { in: ['scripts/**'], out: [] }, 'agent-skills': { in: ['agents/*.md', 'skills/**'], out: [] } } },
@@ -502,10 +501,10 @@ test('Export_JoinedBranch_DiffOnlyTouchedFiles — la imagen por el exportador: 
   assert.strictEqual(r.code, 2, `${r.err}\n${r.out}`);
 });
 
-// ── story 8.18, pase adversarial del tramo 2 (clase 9): sólo explica lo que el exportador publica ─────────────────────
-// La imagen de un archivo tocado era su misma ruta, se publicara o no: un archivo PRIVADO que la story tocó y que aparece
-// en la copia pasaba como «tocado a propósito» —justo la fuga que la medición del AC 21 tiene que ver—, y lo mismo el
-// destino de un papel cuyo homónimo privado se tocó (en el repo real, guides/maintaining/incident-log.md).
+// ── sólo explica lo que el exportador publica ─────────────────────
+// Si la imagen de un archivo tocado fuera su misma ruta, se publicara o no, un archivo PRIVADO tocado que aparece
+// en la copia pasaría como «tocado a propósito» —justo la fuga que la medición de la copia tiene que ver—, y lo mismo el
+// destino de un papel cuyo homónimo privado se tocó.
 test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exportador no publica no explica su aparición en la copia', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'export-compare-publica-'));
   created.push(dir);
@@ -533,7 +532,7 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
   const privateOnes = ['guides/fuera.md', 'guides/maintaining/incident-log.md', 'guides/privada.md', 'skills/projects/cliente/SKILL.md', 'specs/story.md'];
   fs.writeFileSync(touched, `${[...privateOnes, 'guides/guia.md'].join('\n')}\n`);
 
-  // 🔴 rojo previo: sale 0, «salvo 6 archivo(s) que la story tocó»
+  // 🔴 Falla con: sale 0, «salvo 6 archivo(s) que la story tocó»
   let r = trees(before, after, ['--touched', touched, '--allowlist', list]);
   assert.strictEqual(r.code, 1, `${r.err}\n${r.out}`);
   assert.deepStrictEqual(r.json.findings.map((f) => `${f.kind} ${f.path}`).sort(), privateOnes.map((p) => `unexplained ${p}`));
@@ -553,10 +552,10 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
   assert.match(r.err, /replacements\.json/);
 });
 
-// ── story 8.18, AC 19 · la foto (`snapshot`) del repo unido: una fuente física, partida por ruta ───────────────────────
+// ── la foto (`snapshot`) del repo unido: una fuente física, partida por ruta ───────────────────────
 // La foto arma «lo excluido» mirando el árbol de cada fuente. Desde el repo unido no hay otro clon que mirar: el árbol de
-// cada fuente lógica es su mitad del commit del arnés. Sin eso la foto buscaba agent-skills en otro lado (y si lo
-// encontraba, en otro commit) y contaba como excluido de una fuente lo que es de la otra.
+// cada fuente lógica es su mitad del commit del arnés. Sin eso la foto buscaría agent-skills en otro lado (y si lo
+// encontrara, en otro commit) y contaría como excluido de una fuente lo que es de la otra.
 test('Export_OnePhysicalSource_SplitByPath_TwoReposStillWork — snapshot: lo excluido de cada fuente lógica sale de su mitad del mismo commit', () => {
   // un exportador de laboratorio: dice de cuántas fuentes físicas leyó y deja la copia de dos repos con lo que «sale»
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'export-compare-lab-unido-'));
@@ -590,7 +589,7 @@ if (require.main === module) {
 `);
   fs.writeFileSync(path.join(pub, 'allowlist.json'), JSON.stringify({ packages: { core: {
     arnes: { in: ['README.md', '.gitignore', 'scripts/**', '.githooks/**', '.tycon/**'] }, 'agent-skills': { in: ['.gitignore', 'skills/**', '.githooks/**', '.tycon/**'] } } } }));
-  // el `sourceOfPath` REAL, como en `wrappedExporter`: un doble a mano tenía otra regla (le faltaban los dos archivos
+  // el `sourceOfPath` REAL, como en `wrappedExporter`: un doble a mano tendría otra regla (le faltarían los dos archivos
   // sueltos de agent-skills) y la prueba medía el doble, no la partición de verdad
   fs.writeFileSync(path.join(pub, 'new-names.js'), `module.exports = require(${JSON.stringify(path.join(RAIZ, 'scripts', 'publishing', 'new-names.js'))});\n`);
   fs.writeFileSync(path.join(root, 'scripts', 'lib', 'skills-dir.js'), "module.exports = { resolveSkillsDirs: (v) => ({ repo: v || '/no-hay-otro-clon' }) };\n");
@@ -606,7 +605,7 @@ if (require.main === module) {
   // el repo unido: todo en un commit
   const unified = newRepo('export-compare-unido-');
   // (los dos archivos sueltos de agent-skills —`.tycon/post-commit-ignore` y `.githooks/pre-commit-skills`— entran en el
-  // commit: los parte el `sourceOfPath` REAL, no un doble con otra regla; revisión del tramo 2, vuelta 1)
+  // commit: los parte el `sourceOfPath` REAL, no un doble con otra regla)
   const sha = commitLab(unified, {
     'README.md': 'sale\n', '.gitignore': 'node_modules/\n', 'scripts/interno.js': '// no sale\n',
     'skills/una/SKILL.md': 'sale\n', 'skills/privada/SKILL.md': 'no sale\n',
@@ -639,7 +638,7 @@ if (require.main === module) {
   assert.match(r.err, /sourceOfPath/);
 });
 
-// ── T21 (la herramienta) · story 8.18, AC 20: `--explain --json` de antes y de después dan la misma lista de excluidos ──
+// ── T21 (la herramienta): `--explain --json` de antes y de después dan la misma lista de excluidos ──
 test('Export_PrivateStaysOut_SameExclusions_NoDeadGlobs — exclusions: las dos salidas de --explain, comparadas', () => {
   const explainOf = (mutate = () => {}) => {
     const data = {
@@ -674,7 +673,7 @@ test('Export_PrivateStaysOut_SameExclusions_NoDeadGlobs — exclusions: las dos 
     const h = spawnSync(process.execPath, [COMPARE, 'exclusions', a, b], { encoding: 'utf8' });
     return { code: r.status, json, out: r.stdout || '', err: r.stderr || '', human: `${h.stdout || ''}${h.stderr || ''}`, humanCode: h.status };
   };
-  // el repo unido: agent-skills ya no trae .gitignore ni README.md (la unión los dejó del lado del arnés)
+  // el repo unido: agent-skills no trae .gitignore ni README.md (quedan del lado del arnés)
   const unified = (d) => {
     d.fuentes['agent-skills'].sha = d.fuentes.arnes.sha;
     d.primerNivel = d.primerNivel.filter((x) => !(x.fuente === 'agent-skills' && ['.gitignore', 'README.md'].includes(x.entrada)));
@@ -718,9 +717,9 @@ test('Export_PrivateStaysOut_SameExclusions_NoDeadGlobs — exclusions: las dos 
   r = exclusions(explainOf((d) => { delete d.coberturaExclusiones; }), explainOf());
   assert.strictEqual(r.code, 2, `una salida sin sus claves no es de --explain\n${r.err}\n${r.out}`);
 
-  // El .gitattributes (2026-10-04): los dos repos lo traen IDÉNTICO desde la 8.17, después del commit de la unión. En el
+  // El .gitattributes: los dos repos lo traen IDÉNTICO. En el
   // repo unido es un archivo, del lado del arnés, como el README.md: la entrada de agent-skills deja de existir y su
-  // la exclusión queda en 0. Medido con export-real T21 sobre main de los dos repos. Del lado del arnés, en cambio, sigue
+  // la exclusión queda en 0. Del lado del arnés, en cambio, sigue
   // siendo un hallazgo: sólo se declara lo que la unión le saca a agent-skills.
   const withAttributes = (d) => {
     d.primerNivel.push({ fuente: 'arnes', entrada: '.gitattributes', tipo: 'archivo', reglas: [{ tipo: 'entra', glob: '.gitattributes', detalle: 'core' }] });

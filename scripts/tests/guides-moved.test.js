@@ -1,20 +1,20 @@
 'use strict';
 
 /**
- * guides-moved.test.js — T34 y T38 de la story 8.12, tanda R5 (AC 30 y 34).
+ * guides-moved.test.js — T34 y T38: las guías movidas dejan reemplazo en la ruta vieja.
  *
  * Las guías de plugins Bizuit pasaron a `guides/bizuit/` y los documentos fechados de decisiones a
  * `guides/decisions/`. Lo que se puede romper sin que nadie lo vea:
  *   - un reemplazo en la ruta vieja que apunta a una ruta que no existe (el revisor que abre la ruta
  *     vieja lee «movida a…» y no encuentra nada), o un reemplazo que falta y deja un 404 a quien la nombra;
- *   - una mención de la ruta vieja que quedó en el repo (sigue andando por el reemplazo, pero la story
- *     de retiro lo borra y ahí se rompe);
+ *   - una mención de la ruta vieja que quedó en el repo (sigue andando por el reemplazo, pero el retiro
+ *     del reemplazo lo borra y ahí se rompe);
  *   - un producto nuevo que nace citando la ruta vieja desde la plantilla.
  *
  * Las rutas viejas salen del mapa (`scripts/lib/renames.json`, entradas `batch: R5`), nunca escritas acá:
  * la copia pública no lleva el mapa, y ahí esta prueba no mide (lo dice; no pasa en silencio).
  *
- * T49 de la tanda R8 (AC 45): `--stale-mentions` en 0 en los dos repos (una sola corrida, compartida con T34), y la
+ * T49: `--stale-mentions` en 0 en los dos repos (una sola corrida, compartida con T34), y la
  * sección «Dónde vive cada cosa» de `guides/piezas-del-arnes.md` —el árbol y sus cuatro reglas—, enlazada desde «Qué
  * contiene» del README sin que el README pase su tope. Esas dos partes no necesitan el mapa: miden también en la copia.
  *
@@ -33,7 +33,7 @@ const HAS_MAP = fs.existsSync(MAP);
 const NOT_MEASURED = !HAS_MAP && 'NO MEDIDO — copia pública sin el mapa';
 const L = require(path.join(ROOT, 'scripts', 'lib', 'legacy-names.js'));
 
-/** Las entradas de la tanda R5. Con el mapa y sin entradas R5, el mapa está roto: falla, no se saltea. */
+/** Las entradas `batch: R5` del mapa. Con el mapa y sin entradas R5, el mapa está roto: falla, no se saltea. */
 function r5Entries() {
   const all = JSON.parse(fs.readFileSync(MAP, 'utf8')).entries.filter((e) => e && e.batch === 'R5');
   assert.ok(all.length > 0, 'el mapa no tiene entradas de la tanda R5');
@@ -44,12 +44,12 @@ function r5Entries() {
   }
   return all;
 }
-/** Lo que sólo nombra su propio repo no deja reemplazo (como en la 8.9). */
+/** Lo que sólo nombra su propio repo no deja reemplazo. */
 const leavesShim = (e) => Array.isArray(e.callers) && e.callers.some((c) => c !== 'same-repo');
 
 test('T34 R5_Guides_ShimsAndInternalLinks — las 11 guías están en su carpeta nueva', { skip: NOT_MEASURED }, () => {
   const entries = r5Entries();
-  // (las cuatro guías Bizuit salieron de la R5 con la story 8.41: se mudaron al paquete bizuit, en la capa del equipo, y un
+  // (las cuatro guías Bizuit no cuentan acá: viven en el paquete bizuit, en la capa del equipo, y un
   // nombre nuevo no puede tener dos viejos)
   assert.strictEqual(entries.length, 11, 'once documentos de decisiones');
   for (const e of entries) {
@@ -124,8 +124,8 @@ test('T34 R5_Guides_ShimsAndInternalLinks — --stale-mentions no marca ninguna 
   assert.deepStrictEqual(ours, [], `quedan menciones de las rutas viejas de la R5:\n${ours.join('\n')}`);
 });
 
-// (story 8.41: las guías de BIZUIT y las plantillas de producto se mudaron al paquete bizuit, en la capa del equipo; la
-// entrada del mapa de la guía React es ahora la de esa mudanza, y la plantilla viaja como `CLAUDE.md.template`)
+// (las guías de BIZUIT y las plantillas de producto viven en el paquete bizuit, en la capa del equipo; la
+// entrada del mapa de la guía React es la de ese paquete, y la plantilla viaja como `CLAUDE.md.template`)
 test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios cita la guía React en su ruta nueva', { skip: NOT_MEASURED }, () => {
   const entries = JSON.parse(fs.readFileSync(MAP, 'utf8')).entries.filter((e) => e && e.kind === 'file');
   const react = entries.find((e) => e.new === 'packs/bizuit/guides/bizuit-plugin-react.md');
@@ -138,9 +138,9 @@ test('T38 R5_Templates_NewProductBornWithNewPath — la plantilla de formularios
   assert.deepStrictEqual(stale, [], 'la plantilla no nombra ninguna ruta vieja de las guías');
 });
 
-// ── T49 · story 8.12, tanda R8 (AC 45) — las guías de entrada citan la ruta nueva y explican dónde vive cada cosa ──────
+// ── T49 · las guías de entrada citan la ruta nueva y explican dónde vive cada cosa ──────
 const PIECES = path.join(ROOT, 'guides', 'piezas-del-arnes.md');
-const README = path.join(ROOT, 'INDEX.md');   // el índice: hasta 2026-10-14 se llamaba README.md
+const README = path.join(ROOT, 'INDEX.md');   // el índice de guías
 const WHERE_TITLE = 'Dónde vive cada cosa';
 // las carpetas que el árbol tiene que nombrar, como mínimo
 const TREE_DIRS = ['scripts/setup/', 'scripts/hooks/', 'scripts/tools/', 'scripts/lib/', 'scripts/nightly/', 'scripts/instincts/',

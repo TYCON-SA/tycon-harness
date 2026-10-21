@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# githook-livefire.test.sh — la cadena de git hooks, disparada por GIT DE VERDAD (2026-09-06).
+# githook-livefire.test.sh — la cadena de git hooks, disparada por GIT DE VERDAD.
 #
-# ── POR QUÉ EXISTE (GITHOOK-LIVEFIRE-1, aprobado por el dev el 2026-09-06) ──────────────────────
-# El banco cubre los hooks de Claude y de Codex (runner + live-fire), y la cadena de git hooks tenía
-# casos… pero TODOS invocan el guion a mano (`bash .githooks/pre-commit`). Nadie hacía un commit.
-# Y ése es exactamente el agujero del incidente que la motiva (`incident-log#hookspath-eclipse`):
+# ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
+# El banco cubre los hooks de Claude y de Codex (runner + live-fire), y la cadena de git hooks tiene
+# casos… pero TODOS invocan el guion a mano (`bash .githooks/pre-commit`). Ninguno hace un commit.
+# Y ése es exactamente el agujero del eclipse de `core.hooksPath`:
 # con `core.hooksPath` global —que el sync de engram necesita— git IGNORA el `.githooks/` de cada
-# repo, así que el lint de stories, el de la wiki y el portón estaban escritos, documentados,
-# adoptados… y NUNCA se ejecutaban. Invocando el guion a mano eso no se ve: se ve sólo intentando
+# repo, así que el lint de stories, el de la wiki y el portón pueden estar escritos, documentados,
+# adoptados… y NUNCA ejecutarse. Invocando el guion a mano eso no se ve: se ve sólo intentando
 # commitear. Lo mismo que live-fire-guard.js hace con el safety-guard, un nivel más abajo.
 #
 # 🔴 Lo que se asserta es el EFECTO, no el código de salida del hook: el commit NO SE CREA.
@@ -24,7 +24,7 @@ POST="$RAIZ/scripts/hooks/git-post-commit-global.sh"
 # («no encontré …») decide.
 HOOK_REPO="$(node "$RAIZ/scripts/tests/lib/pre-commit-hook.js" harness "$RAIZ")"   # si el ayudante falla, su error se ve
 [ -n "$HOOK_REPO" ] || HOOK_REPO="$RAIZ/.githooks/pre-commit"
-# Story 7.15/7.16: cada commit corre con HOME en la carpeta del caso (`$T/casa`, armada por fake_home_create
+# Cada commit corre con HOME en la carpeta del caso (`$T/casa`, armada por fake_home_create
 # DENTRO de la subshell del commit), así las mediciones y las constancias de los frenos no van a los registros
 # reales del dev (frenos.jsonl sube al buzón y alimenta el tablero). El delegador global busca el arnés en
 # `$HOME/.claude/tycon-harness` cuando no le pasan TYCON_GUIDES_DIR: el ayudante lo fija con la HOME
@@ -73,7 +73,7 @@ montar() {
   cp "$GLOBAL" "$T/hooks-globales/pre-commit"; chmod +x "$T/hooks-globales/pre-commit"
   [ -f "$POST" ] && { cp "$POST" "$T/hooks-globales/post-commit"; chmod +x "$T/hooks-globales/post-commit"; }
   cp "$HOOK_REPO" "$T/repo/.githooks/pre-commit"; chmod +x "$T/repo/.githooks/pre-commit"
-  # el lint de stories vive en scripts/lib/ desde la story 8.12 (tanda R3): viaja con la carpeta
+  # el lint de stories vive en scripts/lib/: viaja con la carpeta
   cp -R "$RAIZ/scripts/lib" "$RAIZ/scripts/metrics" "$RAIZ/scripts/ci" "$T/repo/scripts/" 2>/dev/null
   # y los reemplazos de lo mudado a scripts/lib/, como en el arnés (rutas del mapa, nunca escritas acá): sin ellos el mapa
   # del laboratorio (C-25) nombraría archivos mudados sin su reemplazo. Sin mapa (la copia pública) no hay nada que copiar.
@@ -92,7 +92,7 @@ commitear() {
 }
 cuantos() { git -C "$1/repo" rev-list --count HEAD; }
 
-# ── La suite corre por partes (story 8.22, tramo F: ninguna suite pasa de 45 s en la validación de una rama). Entera
+# ── La suite corre por partes (ninguna suite pasa de 45 s en la validación de una rama). Entera
 # —a mano— corre todos los bloques; como parte (`githook-livefire.p<k>.test.sh`), sólo los suyos. Lo de afuera de
 # los bloques corre siempre: un bloque no puede depender de lo que dejó otro (scripts/tests/lib/suite-parts.sh).
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
@@ -100,9 +100,9 @@ suite_parts 2
 SK_ERR="$(mktemp)"   # lo usan C-06 (parte 1) y C-23 (parte 2), y se borra al final: se arma afuera de los bloques
 if suite_part 1; then   # ── parte 1 de 2 ──
 
-# ── C-01 · 🔴 EL CASO DEL INCIDENTE: una story rota, un commit de verdad → NO SE CREA ─────────
-# Rojo previo verificado: con `core.hooksPath` apuntando a una carpeta SIN el delegador (el eclipse
-# real), este mismo commit ENTRA — es el caso C-03 de abajo, que existe para que este verde
+# ── C-01 · 🔴 una story rota, un commit de verdad → NO SE CREA ─────────
+# Rojo con `core.hooksPath` apuntando a una carpeta SIN el delegador (el eclipse
+# real): este mismo commit ENTRA — es el caso C-03 de abajo, que existe para que este verde
 # signifique algo.
 T=$(mktemp -d); montar "$T"; ANTES=$(cuantos "$T")
 printf '%s' "$STORY_ROTA" > "$T/repo/specs/story-9.8-rota.md"
@@ -130,7 +130,7 @@ rm -rf "$T"
 
 # ── C-03 · 🔴 EL ECLIPSE, reproducido: sin el delegador global, el hook del repo NO corre ──────
 # `core.hooksPath` apunta a una carpeta sin `pre-commit`: git ignora el `.githooks/` del repo y la
-# story rota entra. Es el incidente `hookspath-eclipse` tal cual, y lo que le da sentido a C-01.
+# story rota entra. Es el eclipse de `core.hooksPath` tal cual, y lo que le da sentido a C-01.
 T=$(mktemp -d); montar "$T"; mkdir -p "$T/hooks-vacios"; ANTES=$(cuantos "$T")
 printf '%s' "$STORY_ROTA" > "$T/repo/specs/story-9.8-rota.md"
 ( cd "$T/repo" && git add specs/story-9.8-rota.md )
@@ -166,15 +166,14 @@ fi
 rm -rf "$T"
 
 # ── C-06 · el pre-commit de AgentSkills, disparado por git de verdad ──────────────────────────
-# Es el tercero de la familia y no tenía NINGÚN caso. Su regla: si el commit toca `agents/*.md`,
+# Es el tercero de la familia. Su regla: si el commit toca `agents/*.md`,
 # la traducción a Codex tiene que estar al día. 🔴 El chequeo NO vive en su repo: lo resuelve en
-# `TYCON_GUIDES_DIR` (o `~/SourceCode/tycon-claude-guides`) — lo descubrió este mismo caso, que en
-# su primera versión puso el chequeo de juguete en el repo y el hook corrió el REAL, dando verde
-# por el motivo equivocado. Se apunta la variable a un arnés de juguete: así se prueba la CADENA
+# `TYCON_GUIDES_DIR` (o `~/SourceCode/tycon-claude-guides`) — si el chequeo de juguete se pone en el
+# repo, el hook corre el REAL y da verde por el motivo equivocado. Se apunta la variable a un arnés de juguete: así se prueba la CADENA
 # (que git lo corra y que el rechazo llegue), no la lógica del chequeo, que tiene su propia red.
 # El clon de agent-skills: la regla común (TYCON_SKILLS_DIR › el propio clon si es unido › ~/.claude/agent-skills).
-# Si la biblioteca no puede contestar es un rojo con la causa (story 8.18, pase adversarial del tramo 2, clases 4 y 7):
-# antes caía callada a la ruta instalada y C-06 a C-08 probaban el pre-commit de OTRO clon.
+# Si la biblioteca no puede contestar es un rojo con la causa: caer callada a la ruta instalada haría que C-06 a C-08
+# probaran el pre-commit de OTRO clon.
 AS_REPO="" AS_HOOK=""
 if ! AS_REPO="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js" 2> "$SK_ERR")"; then
   mal "C-06/C-07/C-08 no pude resolver la carpeta de skills: $(head -n 1 "$SK_ERR")"; AS_REPO=""
@@ -211,8 +210,8 @@ elif [ -f "$AS_HOOK" ]; then
   fi
   rm -rf "$T"
 
-  # C-06b · story 8.41: los revisores de un stack viven en la carpeta de agentes de su paquete; tocar uno corre el mismo
-  # chequeo (antes el hook miraba sólo `agents/*.md` y el commit entraba con la traducción vieja)
+  # C-06b · los revisores de un stack viven en la carpeta de agentes de su paquete; tocar uno corre el mismo
+  # chequeo (mirar sólo `agents/*.md` dejaría entrar el commit con la traducción vieja)
   T=$(mktemp -d); montar_as "$T" 1
   ( cd "$T/repo" && git rm -q --cached agents/tycon-de-juguete.md && mkdir -p packs/paq-juguete/agents \
     && mv agents/tycon-de-juguete.md packs/paq-juguete/agents/ && git add packs/paq-juguete/agents/tycon-de-juguete.md )
@@ -250,8 +249,8 @@ else
 fi
 
 
-# ── C-09 · 🔴 COMMIT-DEJA-AFUERA-1: un commit REAL que deja archivos atrás → git lo dice ──────
-# Rojo previo: sin `hooks-globales/post-commit` el mismo commit entra en silencio (es C-10b).
+# ── C-09 · 🔴 un commit REAL que deja archivos atrás → git lo dice ──────
+# Rojo sin `hooks-globales/post-commit`: el mismo commit entra en silencio (es C-10b).
 if [ -f "$POST" ]; then
   T=$(mktemp -d); montar "$T"
   printf 'a\n' > "$T/repo/a.txt"; printf 'b\n' > "$T/repo/b.txt"
@@ -288,10 +287,10 @@ if [ -f "$POST" ]; then
 else
   echo "  ⚠️   — C-09/C-10 NO verificados: no está $POST. No es un verde."
 fi
-# ── C-11 · el presupuesto de los archivos IMPORTADOS frena un commit REAL (story 7.4) ──────────
-# El bloque del pre-commit se disparaba sólo con `claude-md-blocks/`. El README —que cada máquina
-# importa ENTERO en cada sesión y en cada subagente— no estaba en ese disparo, así que su techo
-# podía pasarse sin que nada corriera. Rojo previo: con el `grep` viejo este commit ENTRA (C-11b).
+# ── C-11 · el presupuesto de los archivos IMPORTADOS frena un commit REAL ──────────
+# Si el bloque del pre-commit se dispara sólo con `claude-md-blocks/`, el README —que cada máquina
+# importa ENTERO en cada sesión y en cada subagente— queda fuera de ese disparo, y su techo
+# puede pasarse sin que nada corra. Rojo con un `grep` que no lo mire: este commit ENTRA (C-11b).
 T=$(mktemp -d); montar "$T"
 mkdir -p "$T/repo/claude-md-blocks" "$T/repo/guides"
 cat > "$T/repo/claude-md-blocks/budget.json" <<'JSON'
@@ -332,10 +331,10 @@ else
 fi
 rm -rf "$T"
 
-# C-11d · 🔴 si FALTA el guion del presupuesto, el commit NO se crea. Hasta la 7.4 acá se avisaba
-# por stderr y el commit entraba igual, mientras el mismo bloque SÍ frenaba cuando el guion corría y
-# no podía medir: la misma pregunta con dos respuestas. Y de este bloque cuelga el techo del README,
-# que es lo que cada sesión importa entero. Rojo previo: sin el `exit 1`, este commit entra.
+# C-11d · 🔴 si FALTA el guion del presupuesto, el commit NO se crea. Avisar
+# por stderr y dejar entrar el commit sería la misma pregunta con dos respuestas, porque el mismo bloque SÍ frena cuando
+# el guion corre y no puede medir. Y de este bloque cuelga el techo del README,
+# que es lo que cada sesión importa entero. Rojo sin el `exit 1`: este commit entra.
 T=$(mktemp -d); montar "$T"
 mkdir -p "$T/repo/claude-md-blocks" "$T/repo/guides"
 printf '{ "default": 6000, "imported": { "README.md": { "ceiling": 55000 } } }\n' > "$T/repo/claude-md-blocks/budget.json"
@@ -352,11 +351,11 @@ else
 fi
 rm -rf "$T"
 
-# ── C-12 · reglas del CLAUDE.md fuera de «Reglas para revisores»: git AVISA y el commit ENTRA (7.5) ──
+# ── C-12 · reglas del CLAUDE.md fuera de «Reglas para revisores»: git AVISA y el commit ENTRA ──
 # Los revisores del pipeline no cargan el CLAUDE.md: una regla escrita fuera de la sección no la ven.
 # El aviso tiene que salir en un commit REAL y no puede frenarlo. Sin llave de TypeSafe (se quita del
-# ambiente): avisa toda línea nueva fuera de la sección. Rojo previo: sin el bloque 1b' del pre-commit
-# global, el commit entra en silencio.
+# ambiente): avisa toda línea nueva fuera de la sección. Rojo sin el bloque 1b' del pre-commit
+# global: el commit entra en silencio.
 T=$(mktemp -d); montar "$T"; rm -rf "$T/repo/.githooks"
 printf '# r\n\n## Reglas para revisores\n\n- Nunca SQL concatenado.\n' > "$T/repo/CLAUDE.md"
 ( cd "$T/repo" && git add CLAUDE.md && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "claude.md base" )
@@ -368,8 +367,8 @@ if [ "$RC" = "0" ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ] && grep -q 'movel
 else
   mal "C-12 exit $RC · commits ${ANTES}→$(cuantos "$T") — sin aviso o frenó"; sed -n '1,8p' "$T/out.txt"
 fi
-# T21 (story 7.15): la medición del aviso va a la HOME de la prueba, no al reviewer-rules.jsonl real.
-# Evidencia POSITIVA; rojo previo: sin HOME temporal en commitear, el archivo de la prueba no existe.
+# T21: la medición del aviso va a la HOME de la prueba, no al reviewer-rules.jsonl real.
+# Evidencia POSITIVA; rojo sin HOME temporal en commitear: el archivo de la prueba no existe.
 if [ "$(FAKE_HOME="$T/casa" fake_home_count reviewer-rules.jsonl '"archivo":"CLAUDE.md"')" -gt 0 ]; then
   ok "C-12 T21 la medición del aviso quedó en la HOME de la prueba, no en la real"
 else
@@ -377,7 +376,7 @@ else
 fi
 rm -rf "$T"
 
-# ── C-13..C-15 · el freno de nombres nuevos, disparado por git de verdad (story 8.10, T22-T24) ──
+# ── C-13..C-15 · el freno de nombres nuevos, disparado por git de verdad (T22-T24) ──
 fi   # ── lo que sigue lo usan las dos partes: queda fuera de los bloques ──
 # El arnés de laboratorio lleva el freno y una configuración SINTÉTICA (AcmeCorp→Ceibo): nunca la
 # lista ni la tabla reales. agent-skills de laboratorio al lado (TYCON_SKILLS_DIR), con un paquete.
@@ -401,7 +400,7 @@ montar_nombres() {   # $1=T — montar + el freno + su configuración + un agent
   local T="$1"
   montar "$T"
   mkdir -p "$T/repo/scripts/publishing" "$T/repo/guides" "$T/skills/packs/clientes" "$T/skills/skills/tycon-x"
-  # el freno, el exportador y el detector, en su carpeta (story 8.9, tanda C4)
+  # el freno, el exportador y el detector, en su carpeta
   copy_publishing "$T" new-names.js export.js public-copy.js detector.js
   printf '%s\n' '{"packages":{"nucleo":{"arnes":{"in":["guides/**","scripts/**",".githooks/**"],"out":[]},"agent-skills":{"in":["skills/tycon-*/**",".githooks/**"],"out":[{"glob":"packs/**","reason":"prueba"}]}}}}' > "$T/repo/scripts/publishing/allowlist.json"
   printf '%s\n' '{"terminos":[{"patron":"AcmeCorp","categoria":"cliente","palabra":true}]}' > "$T/repo/scripts/publishing/denylist.json"
@@ -435,8 +434,8 @@ printf '# Guía\n\nUna línea.\nOtra línea limpia.\n' > "$T/repo/guides/x.md"; 
 RC=$(commitear_nombres "$T" "una línea limpia")
 if [ "$RC" = "0" ] && [ "$(cuantos "$T")" = "$((ANTES + 1))" ]; then ok "C-13 T22 el espejo: una línea limpia entra"
 else mal "C-13 T22 el espejo: una línea limpia fue frenada (exit $RC)"; sed -n '1,12p' "$T/out.txt"; fi
-# T21 (story 7.15): el freno de nombres deja su medición y su constancia (frenos.jsonl sube al buzón y
-# alimenta el tablero) en la HOME de la prueba. Evidencia POSITIVA; rojo previo: fueron a la HOME real.
+# T21: el freno de nombres deja su medición y su constancia (frenos.jsonl sube al buzón y
+# alimenta el tablero) en la HOME de la prueba. Evidencia POSITIVA; rojo si van a la HOME real.
 if [ "$(FAKE_HOME="$T/casa" fake_home_count new-names.jsonl '"outcome"')" -gt 0 ] \
    && [ "$(FAKE_HOME="$T/casa" fake_home_count frenos.jsonl '"freno":"new-names"')" -gt 0 ]; then
   ok "C-13 T21 new-names.jsonl y la constancia del freno quedaron en la HOME de la prueba, no en la real"
@@ -501,15 +500,15 @@ fi
 
 fi   # ── lo que sigue lo usan las dos partes: queda fuera de los bloques ──
 
-# ── C-16..C-24 · el freno de nombres nuevos en castellano, disparado por git de verdad (story 8.9, T6-T13, T15) ──
+# ── C-16..C-24 · el freno de nombres nuevos en castellano, disparado por git de verdad (T6-T13, T15) ──
 # El laboratorio es el de C-13 más el freno nuevo, la lista REAL de palabras (scripts/lib/spanish-words.json, que
 # `montar` copia con scripts/lib) y un perfil de laboratorio (modo equipo: lo que sale lo decide la lista blanca). Los
 # nombres castellanos de los casos se arman partidos (`co""pia`): este archivo sale en la copia pública y el freno lo
-# mira como a cualquier ejecutable (AC 7). En los archivos del laboratorio quedan literales.
+# mira como a cualquier ejecutable. En los archivos del laboratorio quedan literales.
 montar_castellano() {   # $1=T
   local T="$1"
   montar_nombres "$T"
-  # con el perfil del equipo el pre-commit exige también el control de historia interna (story 8.26, tanda G3: sin el
+  # con el perfil del equipo el pre-commit exige también el control de historia interna (sin el
   # guion, en un clon del equipo, el commit no se crea); va con su configuración
   copy_publishing "$T" spanish-names.js internal-history.js internal-history.json
   printf '%s\n' '{"__doc":"perfil de laboratorio"}' > "$T/repo/perfil-equipo.json"
@@ -518,7 +517,7 @@ montar_castellano() {   # $1=T
   ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "el freno en castellano" )
 }
 # Sin diccionario inglés (el nocturno es Linux) una palabra que no está en la lista pasa por inglés: lo que depende de
-# eso se declara NO verificado, y el aviso «sin diccionario» no cuenta como que el freno habló (corrida 11337).
+# eso se declara NO verificado, y el aviso «sin diccionario» no cuenta como que el freno habló.
 DICC="${TYCON_SPANISH_NAMES_DICTIONARY:-/usr/share/dict/words}"
 # (el control corre también la parte de las skills, que en este repo de juguete —sin la forma del arnés— no encuentra
 # «el otro repo» y lo avisa, sin frenar: ese aviso no es el freno hablando de un nombre)
@@ -570,8 +569,8 @@ rm -rf "$T"
 
 # C-17 · T7 SpanishNames_ExistingNameReused_Passes — un nombre castellano que ya sale pasa: todavía no tiene reemplazo
 T=$(mktemp -d); montar_castellano "$T"
-# el nombre tiene que existir ANTES del commit: desde la tanda B3a la opción real de la copia se llama en inglés, así que
-# el laboratorio trae su propia herramienta que ya la usa en castellano (tanda C1)
+# el nombre tiene que existir ANTES del commit: la opción real de la copia se llama en inglés, así que
+# el laboratorio trae su propia herramienta que ya la usa en castellano
 printf 'const quiere = process.argv.includes("--pa""quete");\n' | sed 's/""//' > "$T/repo/scripts/old-tool.js"
 ( cd "$T/repo" && git add -A && git -c core.hooksPath=/dev/null -c user.email=b@b -c user.name=b commit -q -m "una herramienta que ya usa la opción" )
 ANTES=$(cuantos "$T")
@@ -637,8 +636,8 @@ T=$(mktemp -d); montar_castellano "$T"
 printf 'const x = 2;\n' > "$T/repo/scripts/english-tool.js"; ( cd "$T/repo" && git add -A )
 ANTES=$(cuantos "$T"); RC=$(commitear_nombres "$T" "sin la lista")
 # La corrida directa lleva el MISMO agent-skills de laboratorio que el commit: sin él, busca uno en la HOME de prueba,
-# no lo encuentra, avisa y sale 0 antes de mirar la lista — el caso daba rojo en toda consola sin TYCON_SKILLS_DIR
-# exportada (el nocturno la exporta, por eso ahí pasaba).
+# no lo encuentra, avisa y sale 0 antes de mirar la lista — el caso daría rojo en toda consola sin TYCON_SKILLS_DIR
+# exportada (el nocturno la exporta, por eso ahí pasa).
 ( cd "$T/repo" && git add -A && HOME="$T/casa" TYCON_SKILLS_DIR="$T/skills" node scripts/publishing/spanish-names.js --repo . ) >/dev/null 2>&1; RC_DIRECTO=$?
 if [ "$RC" != "0" ] && [ "$RC_DIRECTO" = "2" ] && [ "$(cuantos "$T")" = "$ANTES" ] && grep -q 'no pude mirar' "$T/out.txt"; then
   ok "C-20 T10 sin la lista: «no pude mirar», sale 2 y el commit NO se crea"
@@ -704,8 +703,8 @@ fi
 # C-23 · T13 SpanishNames_TimeBudget y C-24 · T15 SpanishNames_OwnTestsDoNotTriggerItself — sobre una copia de trabajo
 # del arnés REAL: el freno con sus archivos y su prueba stageados pasa, y 5 corridas sobre un commit de un archivo dan
 # una mediana de a lo sumo 5 s.
-# Con la biblioteca rota es un rojo con la causa, no el «NO verificados» de la máquina sin skills (story 8.18, pase
-# adversarial del tramo 2, clases 4 y 7: antes la carpeta quedaba vacía y el bloque se salteaba con un aviso).
+# Con la biblioteca rota es un rojo con la causa, no el «NO verificados» de la máquina sin skills (con la carpeta
+# vacía el bloque se saltearía con un aviso).
 if ! SK_REAL="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js" 2> "$SK_ERR")"; then
   mal "C-23/C-24 (T13, T15) no pude resolver la carpeta de skills: $(head -n 1 "$SK_ERR")"
 elif [ -d "$SK_REAL/skills" ]; then
@@ -739,12 +738,12 @@ fi
 fi
 if suite_part 1; then   # ── parte 1 de 2 ──
 
-# ── C-25 · el mapa de renombres se valida en el pre-commit cuando el commit lo toca (story 8.9, tanda A2, AC 13) ──
+# ── C-25 · el mapa de renombres se valida en el pre-commit cuando el commit lo toca ──
 # Un mapa con una variable nueva en castellano no se commitea; el mismo mapa con el nombre en inglés, sí. Lo que se
 # valida es lo stageado: un arreglo en el disco sin stagear no hace pasar el commit. La palabra es una de la lista, no
 # una que se juzga con el diccionario: lo que se prueba acá es el mapa, y así se mide también en el nocturno (Linux).
-# La copia pública (story 8.7) sale sin el perfil del equipo y sin el mapa: el de laboratorio parte del mapa REAL, así
-# que ahí no hay de dónde armarlo. Se dice y no corre. (Tapado hasta la 8.7 por el rojo del pre-commit de más arriba.)
+# La copia pública sale sin el perfil del equipo y sin el mapa: el de laboratorio parte del mapa REAL, así
+# que ahí no hay de dónde armarlo. Se dice y no corre.
 PUBLIC_COPY=0
 if [ ! -f "$RAIZ/perfil-equipo.json" ] || [ ! -f "$RAIZ/scripts/lib/renames.json" ]; then PUBLIC_COPY=1; fi
 if [ "$PUBLIC_COPY" = 1 ]; then
@@ -752,9 +751,8 @@ if [ "$PUBLIC_COPY" = 1 ]; then
 else
 T=$(mktemp -d); montar_castellano "$T"
 # El mapa de laboratorio parte del mapa real recortado a lo que el laboratorio tiene en disco, y le suma su entrada. Uno
-# de una sola entrada dejaba a los guiones de scripts/ci declarando pares de opciones sin su entrada (el validador lo
-# exige desde la B2) y a los reemplazos sin la suya; el mapa real entero nombra archivos que el laboratorio no copió
-# (tanda C1).
+# de una sola entrada deja a los guiones de scripts/ci declarando pares de opciones sin su entrada (el validador lo
+# exige) y a los reemplazos sin la suya; el mapa real entero nombra archivos que el laboratorio no copia.
 mapa_de_lab() {   # $1 = la variable nueva de la entrada de laboratorio
   node -e '
     const fs = require("fs"), path = require("path"); const [repo, nueva] = process.argv.slice(1);
@@ -795,14 +793,14 @@ else mal "C-25 borrado del mapa: exit $RC"; sed -n '1,8p' "$T/out.txt"; fi
 rm -rf "$T"
 fi
 
-# ── C-26/C-27 · el tipo de cada pieza del mapa, disparado por git de verdad (story 8.12, R7, AC 42) ──
+# ── C-26/C-27 · el tipo de cada pieza del mapa, disparado por git de verdad ──
 # Un commit que deja una ficha con un tipo distinto del que le da su ruta NO se crea; el espejo —un cambio
 # en el mapa con los tipos al día— entra, con la pública regenerada. Sin el espejo, un pre-commit que
 # rechaza todo commit del mapa también daría verde.
 mapa_lab() {
   local T="$1"
-  # el mapa del arnés vive en scripts/tools/harness-map/ desde la story 8.12, tanda R4
-  # y su versión pública, con la mini-clase en onboarding/mini-class/ desde la story 8.9, tanda F
+  # el mapa del arnés vive en scripts/tools/harness-map/
+  # y su versión pública, con la mini-clase en onboarding/mini-class/
   mkdir -p "$T/repo/scripts/tools/harness-map" "$T/repo/artifacts" "$T/repo/onboarding/mini-class" "$T/repo/build"
   cp "$RAIZ/scripts/tools/harness-map/"* "$T/repo/scripts/tools/harness-map/"
   cp "$RAIZ/artifacts/mapa-arnes.html" "$T/repo/artifacts/"
@@ -841,18 +839,18 @@ fi
 rm -rf "$T"
 fi
 
-# ── C-28 · T26 R3_DashboardSeries_PipelinesAndCapturerShim (story 8.12, tanda R3, AC 22) ──────────────
-# Cinco piezas pasaron a scripts/lib/. Los pipelines del arnés corren en Azure desde un checkout del arnés: si un yml
+# ── C-28 · T26 R3_DashboardSeries_PipelinesAndCapturerShim ──────────────
+# Cinco piezas viven en scripts/lib/. Los pipelines del arnés corren en Azure desde un checkout del arnés: si un yml
 # siguiera nombrando la ruta vieja andaría por el reemplazo… que la copia pública no lleva. Así que (a) los yml parsean,
 # (b) ningún archivo de este carril nombra una ruta vieja y cada ruta nueva existe, (c) el reemplazo de la vieja da lo
 # mismo que la nueva (el revisor de retrospectiva de agent-skills sigue llamando la vieja hasta el retiro) y (d) el
 # pre-commit real lintea por la ruta nueva aunque la vieja no esté. Las rutas viejas salen del mapa, nunca escritas acá.
-# desde la R6 los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
-# (story 8.41: la validación y su plantilla son del repo privado, con nombre nuevo; la plantilla del hook de stories vive
+# los yml del arnés viven en pipelines/ y la plantilla en pipelines/templates/
+# (la validación y su plantilla son del repo privado; la plantilla del hook de stories vive
 # en el paquete bizuit, en la capa del equipo)
 R3_ARCHIVOS="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml .githooks/pre-commit packs/bizuit/templates/stories/githooks-pre-commit.template build/check.js"
 R3_YML="pipelines/azure-pipelines.yml pipelines/azure-pipelines-maintainers-pr.yml pipelines/azure-pipelines-vigilante.yml pipelines/templates/fetch-repos.yml"
-# La copia pública (story 8.7) no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
+# La copia pública no trae los pipelines del equipo (el exportador deja afuera pipelines/**): un yml que ahí
 # no está no se puede parsear, y se dice. En el repo del equipo, que falte uno sigue siendo un rojo.
 if python3 -c 'import yaml' >/dev/null 2>&1; then
   R3_ROTOS=""; R3_NOT_SHIPPED=""; R3_PARSED=0
@@ -871,7 +869,7 @@ fi
 if [ ! -f "$RAIZ/perfil-equipo.json" ] || [ ! -f "$RAIZ/scripts/lib/renames.json" ]; then
   echo "  ⏭️   — C-28 T26 rutas viejas y reemplazo: NO MEDIDO — copia pública sin el mapa"
 else
-  # «vieja<TAB>nueva» de las cinco de la tanda R3
+  # «vieja<TAB>nueva» de las cinco piezas
   R3_PARES="$(node -e 'const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
     for (const e of m.entries) if (e && e.batch === "R3" && e.kind === "file") console.log(e.old + "\t" + e.new);' "$RAIZ/scripts/lib/renames.json")"
   R3_N=$(printf '%s\n' "$R3_PARES" | grep -c .)
@@ -938,7 +936,7 @@ else
   rm -rf "$T"
 fi
 
-# ── C-29 · T36 R5_Probe_MovedPrivateGuideWithoutGlob_CommitNotCreated (story 8.12, tanda R5, AC 32) ──────────────────
+# ── C-29 · T36 R5_Probe_MovedPrivateGuideWithoutGlob_CommitNotCreated ──────────────────
 # Una guía privada que el exportador deja afuera por su NOMBRE de archivo (una exclusión fija con comodín en guides/): si
 # se la mueve con su reemplazo atrás y SIN tocar el glob, su contenido pasa a salir en la copia. Dos redes: la primera
 # (la exportación sale 2, «exclusión fija sin archivo») la cubre export.test.js; ésta es la segunda, la del commit:
@@ -988,11 +986,11 @@ else
   rm -rf "$T"
 fi
 
-# ── C-30 · T16 GithookLivefire_PapelesPasanLosFrenos (story 8.7, tanda A, AC 13) ──────────────────────────────────────────
+# ── C-30 · T16 GithookLivefire_PapelesPasanLosFrenos ──────────────────────────────────────────
 # Los papeles de la copia pública viven en scripts/publishing/public-files/, que queda afuera por un «out», y llegan a su
 # destino por un sintético. Para los dos frenos, el `from` de un sintético sale (whatShips lo cuenta): un nombre real en un
-# papel, o un ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo previo: el `from` no contaba
-# como algo que sale y los dos commits se creaban.
+# papel, o un ejecutable con nombre en castellano que un sintético publica, NO entran. Rojo si el `from` no cuenta
+# como algo que sale: los dos commits se crean.
 papeles_lista() {   # $1=T $2=lista JSON de sintéticos — la lista blanca del laboratorio con los papeles afuera
   printf '%s\n' "{\"packages\":{\"core\":{\"arnes\":{\"in\":[\"guides/**\",\"scripts/**\",\".githooks/**\"],\"out\":[{\"glob\":\"scripts/publishing/public-files/**\",\"reason\":\"prueba: llegan por un sintético\"}]},\"agent-skills\":{\"in\":[\"skills/tycon-*/**\"],\"out\":[{\"glob\":\"packs/**\",\"reason\":\"prueba\"}]}}},\"synthetic\":$2}" \
     > "$1/repo/scripts/publishing/allowlist.json"
@@ -1027,7 +1025,7 @@ else
 fi
 rm -rf "$T"
 
-# ── C-31..C-33 · el control único del arnés, disparado por git de verdad (story 8.18, T5; story 8.41, T25) ─────────
+# ── C-31..C-33 · el control único del arnés, disparado por git de verdad (T5, T25) ─────────
 # `.githooks/pre-commit` llama a `.githooks/pre-commit-checks`, que corre SIEMPRE sus dos partes (la del arnés y la de
 # las skills), cada una en su proceso. El laboratorio tiene esa forma: los dos archivos de ESTE repo, el arnés de `montar` y —para que la parte de skills tenga con qué frenar— el control de
 # skills de terceros con un manifiesto sintético (una sola familia propia). Se mide el efecto: un commit sano entra, y
@@ -1083,10 +1081,10 @@ if [ -f "$CHECKS" ] && grep -q 'pre-commit-checks' "$DISPATCHER" 2>/dev/null; th
   fi
   rm -rf "$T"
 
-  # C-34 · el doble aviso (story 8.18, AC 25, T25 · [DEF-8.18-doble-aviso]): un commit que estrena un ejecutable con
+  # C-34 · el doble aviso (T25): un commit que estrena un ejecutable con
   # nombre en castellano en CADA mitad. Las dos partes corren el freno sobre la misma raíz, una por fuente: cada una
   # frena lo suyo, y cada hallazgo sale UNA vez en toda la salida del commit.
-  # 🔴 rojo previo verificado: cada parte nombraba también el archivo de la otra (dos veces cada uno, y doble en el registro).
+  # 🔴 Rojo si cada parte nombra también el archivo de la otra (dos veces cada uno, y doble en el registro).
   T=$(mktemp -d); mount_union "$T"
   mkdir -p "$T/repo/agents" "$T/repo/skills/tycon-pipeline"
   copy_publishing "$T" new-names.js spanish-names.js export.js public-copy.js detector.js internal-history.js internal-history.json

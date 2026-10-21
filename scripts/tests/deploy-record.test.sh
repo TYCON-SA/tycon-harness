@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy-record.test.sh — el ayudante que anota cada despliegue en su corrida (story 2.10).
+# deploy-record.test.sh — el ayudante que anota cada despliegue en su corrida.
 #
 # Qué se prueba acá, con el ayudante cargado por `source` y sin red:
 #   · la CLAVE identifica el despliegue y no la corrida (T2)
@@ -75,8 +75,8 @@ R=$(entorno_de "$D" ENVIRONMENT_NAME=production)
 D=$(nuevo_tmp)
 env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$D" bash -c "set -u; . '$AYUDANTE'; registro_declarar_entorno produccion" > "$D/out.txt"
 [ "$(cat "$D/tycon-despliegue/entorno" 2>/dev/null)" = "produccion" ] && ok "T9 registro_declarar_entorno produccion deja el archivo del job" || no "T9 declarar no dejó el archivo"
-# story 8.9 (tanda E): el entorno se recibe también con el nombre de la opción de deploy-plugin.sh («production») y se
-# sigue GRABANDO «produccion», el valor que leen la 2.11 y los registros ya escritos (pregunta 2 de la 8.9).
+# El entorno se recibe también con el nombre de la opción de deploy-plugin.sh («production») y se
+# sigue GRABANDO «produccion», el valor que leen los lectores del registro y los registros ya escritos.
 D=$(nuevo_tmp)
 env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$D" bash -c "set -u; . '$AYUDANTE'; registro_declarar_entorno production; echo rc=\$?" > "$D/out.txt"
 [ "$(cat "$D/tycon-despliegue/entorno" 2>/dev/null)" = "produccion" ] && grep -q 'rc=0' "$D/out.txt" && ! grep -q 'logissue' "$D/out.txt" \
@@ -86,11 +86,11 @@ D=$(nuevo_tmp)
 env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$D" bash -c "set -u; . '$AYUDANTE'; registro_declarar_entorno prod" > "$D/out.txt"
 [ ! -f "$D/tycon-despliegue/entorno" ] && grep -q 'logissue type=warning' "$D/out.txt" && ok "T9 declarar 'prod' no escribe el archivo y avisa" || no "T9 declarar un valor inválido escribió o no avisó"
 
-# Revisión (fallos silenciosos): un --environment explícito que no se pudo dejar para el humo no se pierde callado
+# Un --environment explícito que no se pudo dejar para el humo no se pierde callado
 SAL=$(env -i PATH="$PATH" HOME="$TMP" TF_BUILD=True AGENT_TEMPDIRECTORY="$TMP/no-existe/job" bash -c "set -u; . '$AYUDANTE'; registro_declarar_entorno produccion; echo rc=\$?")
 printf '%s' "$SAL" | grep 'logissue type=warning' >/dev/null && printf '%s' "$SAL" | grep 'rc=1' >/dev/null && ok "T9 sin directorio del job, declarar el entorno avisa y devuelve 1" || no "🔴 T9 declarar sin directorio del job se perdió en silencio: $SAL"
 
-# Pase adversarial: perder la marca (o la etiqueta) no escribe nada por stderr — el 2>/dev/null tiene que tapar la redirección
+# Perder la marca (o la etiqueta) no escribe nada por stderr — el 2>/dev/null tiene que tapar la redirección
 D=$(nuevo_tmp); mkdir -p "$D/tycon-despliegue"; chmod 555 "$D/tycon-despliegue"
 env -i PATH="$PATH" HOME="$TMP" "${CORRIDA[@]}" AGENT_TEMPDIRECTORY="$D" bash -c "set -u; . '$AYUDANTE'; registro_despliegue desplegado plugin totorabackend 1.0.214 abc1234; echo rc=\$?" >"$D/../out.txt" 2>"$D/../err.txt"
 if [ -w "$D/tycon-despliegue" ]; then ok "T9 (se corre como root: el directorio de sólo lectura no aplica — caso no medido acá)"

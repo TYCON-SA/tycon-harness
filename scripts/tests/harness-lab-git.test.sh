@@ -4,10 +4,10 @@
 # Por qué existe: `harness_lab_git` (scripts/tests/lib/harness-lab.sh) corre git sin la configuración de la máquina, y
 # git, sin configuración, después de cada `commit` y de cada `fetch` lanza `git maintenance run --auto` y lo deja
 # corriendo de fondo. Ese proceso empaqueta objetos sueltos y los borra cuando quiere. Las suites del laboratorio que
-# sacan una huella de un repo (`find` + `shasum` de cada archivo, antes y después de un comando) leían un repo que se
-# estaba moviendo solo: harness-update.test.sh T8 dio «algún comando escribió en un repo ajeno» sin que nadie hubiera
-# escrito (validación del 2026-10-11, con git 2.55.0 en el agente: 139 «No such file or directory» de `./objects/…` y uno
-# de `./objects/maintenance.lock` en la salida; la misma suite, con el mismo código, dio verde media hora después).
+# sacan una huella de un repo (`find` + `shasum` de cada archivo, antes y después de un comando) leen un repo que se
+# está moviendo solo: harness-update.test.sh T8 da «algún comando escribió en un repo ajeno» sin que nadie haya
+# escrito (con git 2.55.0 en el agente: 139 «No such file or directory» de `./objects/…` y uno
+# de `./objects/maintenance.lock` en la salida; la misma suite, con el mismo código, da verde media hora después).
 #
 # Lo que no se puede perder (LabGit_NoAutoMaintenance_CommitAndFetch):
 #   · un `commit` y un `fetch` hechos con `harness_lab_git` no lanzan ningún proceso de mantenimiento (ni
@@ -15,7 +15,7 @@
 #   · el control: el MISMO git, con el mismo ambiente y sin pasar por la función, sí lo lanza. Si un git nuevo dejara
 #     de lanzarlo, este guion lo dice en rojo en vez de quedar verde sin medir nada.
 #
-# 🔴 rojo previo (medido con la función de antes sobre este mismo guion): los dos comandos lanzan
+# 🔴 Sin las opciones de harness_lab_git, los dos comandos lanzan
 #    `git maintenance run --auto --quiet --detach`.
 #
 # Laboratorio: un repo y un bare en el temporal. Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido.
@@ -39,7 +39,7 @@ launched() { # launched <traza>
   done < "$1"
   echo "$n"
 }
-# el mismo ambiente que arma harness_lab_git, sin sus opciones: lo que hacía el laboratorio antes
+# el mismo ambiente que arma harness_lab_git, sin sus opciones: lo que haría el laboratorio sin ellas
 plain_git() { # plain_git <dir> <args…>
   local d="$1"; shift
   env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
@@ -75,11 +75,11 @@ N="$(launched "$BASE/lab-fetch.json")"
 [ "$(harness_lab_git "$REPO" config --get maintenance.auto 2>/dev/null)" = false ] && [ "$(harness_lab_git "$REPO" config --get gc.auto 2>/dev/null)" = 0 ] \
   && ok "harness_lab_git corre con maintenance.auto=false y gc.auto=0" || mal "harness_lab_git no fija maintenance.auto=false y gc.auto=0"
 
-# ── LabMachine_NoAutoMaintenance_CodeUnderTest (2026-10-14) ──────────────────────────────────────────────────────────
+# ── LabMachine_NoAutoMaintenance_CodeUnderTest ──────────────────────────────────────────────────────────
 # El git que corre el CÓDIGO BAJO PRUEBA (harness.js) no pasa por harness_lab_git: es un `git` a secas que hereda el
 # entorno de la máquina de juguete. Ese git también tiene que correr sin mantenimiento automático: con git 2.55 el
-# `fetch` de harness.js reempaquetaba el clon de fondo y harness-repoint.test.sh («byte a byte») salía rojo de a ratos.
-# 🔴 rojo previo: sin harness_lab_no_auto_maintenance en el armado, el commit y el fetch de abajo lanzan el mantenimiento.
+# `fetch` de harness.js reempaqueta el clon de fondo y harness-repoint.test.sh («byte a byte») sale rojo de a ratos.
+# 🔴 Sin harness_lab_no_auto_maintenance en el armado, el commit y el fetch de abajo lanzan el mantenimiento.
 echo "LabMachine · el git del código bajo prueba, con el entorno de la máquina de juguete, tampoco lo lanza"
 (
   harness_lab_create "$BASE/machine" >/dev/null 2>&1 || { echo "  MAL  — no pude armar la máquina de juguete"; exit 1; }

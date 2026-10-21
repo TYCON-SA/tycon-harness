@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * legacy-names-c0.test.js — antes de la C1, la estructura destino (story 8.9, tanda C0 · 2026-09-30). T63.
+ * legacy-names-c0.test.js — antes de renombrar lo que llaman la máquina y el otro repo, la estructura destino. T63.
  *
  * Lo que no se puede perder:
- *   · Todo ejecutable que cambia de carpeta en la story —también los que ya están en inglés— tiene su entrada en el mapa
- *     con sus llamadores MEDIDOS antes de la C1 (AC 59). La lista sale de la tabla «Una sola mudanza por archivo» de la
+ *   · Todo ejecutable que cambia de carpeta —también los que ya están en inglés— tiene su entrada en el mapa
+ *     con sus llamadores MEDIDOS antes de renombrar. La lista sale de la tabla «Una sola mudanza por archivo» de la
  *     story y de `git ls-files`, nunca de una lista de esta prueba: un ejecutable nuevo en una de esas carpetas sin su
  *     entrada la pone en rojo.
  *   · Una entrada nace antes de su mudanza y no hace nada hasta que el archivo se mueve: `--stale-mentions` no marca la
@@ -65,7 +65,7 @@ test('T63 PreC1_CallersMeasuredForEveryMove — cada carpeta y cada ejecutable q
   const entries = map.entries.filter((e) => e && (e.kind === 'file' || e.kind === 'folder') && (e.repo || 'arnes') === 'arnes');
   const byOld = new Map(entries.map((e) => [e.old.replace(/\/+$/, ''), e]));
   // El piso es sobre la TABLA (que la lectura la encuentre entera), no sobre cuántas carpetas viejas quedan en el disco:
-  // cada tanda muda las suyas y ese número baja hasta cero (la tanda F sacó tres y lo puso en rojo con el piso anterior).
+  // cada etapa de la mudanza muda las suyas y ese número baja hasta cero.
   const rows = movesFromStory();
   assert.ok(rows.length >= 8, `la tabla «Una sola mudanza por archivo» trae sus filas (hay ${rows.length})`);
   const moves = rows.filter((m) => fs.existsSync(path.join(RAIZ, m.old)));   // lo ya mudado del todo no está en el disco
@@ -80,12 +80,12 @@ test('T63 PreC1_CallersMeasuredForEveryMove — cada carpeta y cada ejecutable q
       if (!e || e.kind !== 'file' || !e.new.startsWith(`${m.new}/`) || !valid(e)) missing.push(`archivo ${rel} (a ${m.new}/)`);
     }
   }
-  // los ejecutables en castellano sueltos en scripts/ salen de ahí por la regla 1 (C1-C3): su entrada dice adónde
+  // los ejecutables en castellano sueltos en scripts/ salen de ahí al renombrarse: su entrada dice adónde
   const sn = require(SPANISH);
   const det = sn.makeDetector(sn.loadWords(fs.readFileSync(path.join(RAIZ, sn.WORDS_PATH), 'utf8'), sn.WORDS_PATH));
   const loose = ls.filter((x) => path.posix.dirname(x) === 'scripts' && EXEC.test(x)
     && det.isSpanish(path.posix.basename(x).replace(/\.[^.]+$/, '')).spanish);
-  // cero sueltos es válido: la C3 mudó los dos últimos (captura.sh y smoke-examen.sh); el que aparezca, con su entrada
+  // cero sueltos es válido: ya se mudaron los dos últimos (captura.sh y smoke-examen.sh); el que aparezca, con su entrada
   for (const rel of loose) {
     const e = byOld.get(rel);
     if (!e || path.posix.dirname(e.new) === 'scripts' || !valid(e)) missing.push(`suelto ${rel} (carpeta por la regla 1)`);
@@ -96,7 +96,7 @@ test('T63 PreC1_CallersMeasuredForEveryMove — cada carpeta y cada ejecutable q
 test('T63 PreC1_CallersMeasuredForEveryMove — los llamadores de afuera medidos quedan en el mapa', { skip: SKIP_PUBLIC }, () => {
   const map = JSON.parse(fs.readFileSync(MAP, 'utf8'));
   const byNew = new Map(map.entries.filter((e) => e && (e.kind === 'file' || e.kind === 'folder')).map((e) => [e.new.replace(/\/+$/, ''), e]));
-  // lo que la medición del 2026-09-30 encontró de afuera (veredicto a mano, línea por línea): el pre-commit de
+  // lo que la medición encontró de afuera (veredicto a mano, línea por línea): el pre-commit de
   // agent-skills corre tres guiones de la carpeta de publicación y su pipeline lee un manifiesto de ahí; la skill de
   // alta de productos edita y corre el nocturno de dependencias
   for (const n of ['scripts/publishing', 'scripts/publishing/new-names.js', 'scripts/publishing/spanish-names.js',
@@ -123,7 +123,7 @@ test('T63 PreC1_CallersMeasuredForEveryMove — isMoved: un permiso denegado no 
   fs.writeFileSync(path.join(root, 'locked', 'old.js'), 'module.exports = 0;\n');
   fs.chmodSync(path.join(root, 'locked'), 0o000);
   try {
-    // antes: el stat del viejo fallaba por permiso, se leía como «el viejo ya no está» y la entrada quedaba mudada
+    // sin esto, el stat del viejo falla por permiso, se lee como «el viejo ya no está» y la entrada queda mudada
     assert.throws(() => LEGACY.isMoved({ kind: 'file', old: 'locked/old.js', new: 'target/new.js' }, root),
       (e) => e instanceof LEGACY.LegacyNamesError && /locked\/old\.js/.test(e.message) && /EACCES/.test(e.message), 'el viejo ilegible frena');
     assert.throws(() => LEGACY.isMoved({ kind: 'file', old: 'target/new.js', new: 'locked/old.js' }, root),
@@ -171,7 +171,7 @@ test('T63 PreC1_CallersMeasuredForEveryMove — --stale-mentions: nada antes de 
   const before = stale(arnes, skills);
   assert.strictEqual(before.status, 0, `antes de mudar, la ruta vieja es la real: nada que marcar\n${before.stdout}${before.stderr}`);
 
-  // primero se renombra UN archivo, directo a su destino final (C1-C3): la carpeta nueva ya existe, pero la vieja sigue
+  // primero se renombra UN archivo, directo a su destino final: la carpeta nueva ya existe, pero la vieja sigue
   // siendo la de verdad (keep-name.js está ahí) — sólo el nombre viejo del renombrado se marca
   fs.mkdirSync(path.join(arnes, 'scripts', 'nightly', 'target'), { recursive: true });
   git(arnes, 'mv', 'scripts/legacy-dir/old-name.js', 'scripts/nightly/target/new-name.js');

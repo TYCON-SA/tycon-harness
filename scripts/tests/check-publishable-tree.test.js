@@ -1,9 +1,8 @@
 'use strict';
 /**
- * check-publishable-tree.test.js — el control del repo interno que cuida la verificación de lo publicado (story 8.23,
- * tanda B · T20).
+ * check-publishable-tree.test.js — el control del repo interno que cuida la verificación de lo publicado (T20).
  *
- * EL CASO (2026-10-06, revisión I3). Una máquina sin git instala el arnés bajando el comprimido de un commit publicado y lo
+ * POR QUÉ. Una máquina sin git instala el arnés bajando el comprimido de un commit publicado y lo
  * da por bueno si el árbol que trae es el del commit. Tres cosas del repo rompen eso sin que nadie lo note hasta la
  * primera instalación: un `export-ignore` o `export-subst` en un `.gitattributes` (el comprimido no trae lo que el
  * commit trae, o lo trae cambiado), un enlace simbólico (`120000`) o un submódulo (`160000`) en una ruta publicada (el
@@ -168,14 +167,14 @@ test('T20 · sobre el repo del arnés, con su propia lista blanca y su exportado
 
 // La exclusión fija de pipelines/ deja salir los modelos de operaciones (la carpeta sólo existe en el repo público) y nada
 // más que la validación nombrada: un pipeline del equipo sigue afuera solo, y una carpeta que sólo empieza igual también.
-// 🔴 rojo previo: sin la carpeta en el `salvo`, una guía pública que cita un modelo cuenta como ruta del equipo.
+// 🔴 sin la carpeta en el `salvo`, una guía pública que cita un modelo cuenta como ruta del equipo.
 test('PipelinesSalvo_OperationsModelsShip_TeamPipelinesStayOut', () => {
   const exporter = require(path.join(ROOT, 'scripts', 'publishing', 'export.js'));
   const x = exporter.EXCLUIDOS_SIEMPRE.find((r) => r.glob === 'pipelines/**');
   assert.ok(x, 'la exclusión fija de pipelines/ existe');
   const sale = (p) => !exporter.cubreFija(x, p);
   assert.ok(sale('pipelines/operations/team-dashboard.yml') && sale('pipelines/operations/examples/product-parity.json'), 'los modelos de operaciones salen');
-  // la validación de cada pedido es del repo privado desde la story 8.41 (tanda F2): ya no sale
+  // la validación de cada pedido es del repo privado: no sale
   assert.ok(!sale('pipelines/azure-pipelines-maintainers-pr.yml') && !sale('pipelines/templates/run-suites.yml'), 'la validación del privado no sale');
   assert.ok(!sale('pipelines/azure-pipelines-banco.yml'), 'un pipeline del equipo sigue afuera');
   assert.ok(!sale('pipelines/operationsX/a.yml') && !sale('pipelines/operations'), 'una carpeta que sólo empieza igual, o la ruta suelta, no');
@@ -183,7 +182,7 @@ test('PipelinesSalvo_OperationsModelsShip_TeamPipelinesStayOut', () => {
 
 // El control de lo publicable lee la misma excepción: un enlace en un modelo de operaciones frena (se publica); el mismo
 // enlace en un pipeline del equipo, no (la exclusión fija lo deja afuera aunque la lista diga pipelines/**).
-// 🔴 rojo previo: con el `salvo` de archivos exactos, el modelo de operaciones contaba como privado y su enlace pasaba.
+// 🔴 con el `salvo` de archivos exactos, el modelo de operaciones cuenta como privado y su enlace pasa.
 test('PipelinesSalvo_PublishableTree_SeesOperationsModelsAsPublished', () => {
   const r = toyRepo();
   fs.writeFileSync(r.allowlist, JSON.stringify({ packages: { core: { arnes: { in: ['README.md', '.gitattributes', 'scripts/**', 'pipelines/**'], out: [] } } } }));

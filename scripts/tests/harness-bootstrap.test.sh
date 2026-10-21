@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # harness-bootstrap.test.sh — la copia fija de arranque (`scripts/setup/harness/bootstrap.js` + los dos respaldos en
-# shell) sobre una máquina de juguete (story 8.13, tanda A · T14 y la parte «árbol de developer borrado» de T11).
+# shell) sobre una máquina de juguete (T14 y la parte «árbol de developer borrado» de T11).
 #
 # Lo que no se puede perder:
 #   · La línea de arranque nueva llama a la COPIA FIJA (`~/.claude/.tycon-pipeline/harness/bootstrap.js`), no al árbol:
@@ -102,7 +102,7 @@ grep -q "path=$PATH" "$FAKE_LOG" 2>/dev/null && ok "T14 · harness.js corrió co
 [ "$(log_lines)" = "0" ] && ok "T14 · sin respaldo: startup.log sin líneas de respaldo" || bad "T14 · startup.log tiene líneas con el árbol sano: $(cat "$HDIR/startup.log")"
 [ -z "$(state_field notice)" ] && ok "T14 · sin respaldo: notice vacío" || bad "T14 · notice con el árbol sano: $(state_field notice)"
 
-# argv pasa tal cual (así `rollback` desde la copia fija anda en la C)
+# argv pasa tal cual (así `rollback` desde la copia fija anda)
 node "$HDIR/bootstrap.js" doctor --json >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 0 ] && grep -q '^argv=doctor --json ' "$FAKE_LOG" && ok "T14 · bootstrap.js pasa cualquier argv (doctor --json)" || bad "T14 · argv no pasó (rc=$rc): $(tail -1 "$FAKE_LOG")"
 # y devuelve el exit code de harness.js
@@ -191,7 +191,7 @@ grep -q '^argv=startup ' "$FAKE_LOG" && ok "T11 · y la sesión arrancó por har
 [ "$(state_field schema)" = "1" ] && ok "T11 · el resto del estado se conservó (schema)" || bad "T11 · el estado perdió campos"
 # otra sesión tiene el candado → no vuelve, sale ≠ 0 y el estado queda como estaba (lo hará la sesión siguiente)
 rm "$LINK"; ln -s "$GONE" "$LINK"; write_state developer "$GONE" "$LAB_TREE"
-# (story 8.23, AC 37: «otra sesión» es un proceso VIVO —esta misma prueba—; el de uno muerto se pisa, abajo)
+# («otra sesión» es un proceso VIVO —esta misma prueba—; el de uno muerto se pisa, abajo)
 mkdir -p "$HDIR/harness.lock"; echo $$ > "$HDIR/harness.lock/pid"
 node "$HDIR/bootstrap.js" >/dev/null 2>&1; rc=$?
 [ "$rc" -ne 0 ] && [ "$(state_field mode)" = "developer" ] && ok "T11 · con el candado tomado no vuelve: sale ≠ 0 y el estado no cambia" || bad "T11 · con el candado tomado: rc=$rc mode=$(state_field mode)"
@@ -210,9 +210,9 @@ node "$HDIR/bootstrap.js" >/dev/null 2>"$BASE/bs.err"; rc=$?
 [ "$rc" -ne 0 ] && [ "$(state_field mode)" = "developer" ] && ok "T11 · developer sin tree_before: sale ≠ 0 y no inventa un árbol" || bad "T11 · sin tree_before: rc=$rc mode=$(state_field mode)"
 rm "$LINK"; ln -s "$LAB_TREE" "$LINK"
 
-# ═══ Regresiones de la iteración 1 (pase adversarial, 2026-10-02) ════════════════════════════════════════════════════
-# REG-D8 · la vuelta sola a managed también corrige la fuente harness (sources[].dir): si no, update quedaba mirando el
-# clon borrado y la máquina no se actualizaba nunca más (clase 26)
+# ═══ Regresiones ════════════════════════════════════════════════════
+# REG-D8 · la vuelta sola a managed también corrige la fuente harness (sources[].dir): si no, update quedaría mirando el
+# clon borrado y la máquina no se actualizaría nunca más
 rm "$LINK"; ln -s "$GONE" "$LINK"; write_state developer "$GONE" "$LAB_TREE"
 node -e 'const f=process.argv[1];const s=JSON.parse(require("fs").readFileSync(f,"utf8"));s.sources[0].dir=process.argv[2];require("fs").writeFileSync(f,JSON.stringify(s))' "$STATE" "$GONE"
 node "$HDIR/bootstrap.js" >/dev/null 2>&1
@@ -220,7 +220,7 @@ DIR_H="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],
 [ "$DIR_H" = "$LAB_TREE" ] && ok "REG-D8 · la vuelta a managed apunta la fuente harness a tree_before" || bad "REG-D8 · sources[harness].dir quedó en $DIR_H"
 rm "$LINK"; ln -s "$LAB_TREE" "$LINK"
 # REG-W4 · el respaldo en shell NO toca el git del clon en modo developer (sólo corre el aplicador): el dev con
-# harness.js roto a medio editar no puede terminar con su HEAD movido ni su trabajo en un autostash (clase 18)
+# harness.js roto a medio editar no puede terminar con su HEAD movido ni su trabajo en un autostash
 DEVC="$LAB/clones/dev-propio"; harness_lab_git "$LAB/clones" clone -q "$LAB_REMOTE_TREE" "$DEVC" >/dev/null 2>&1
 printf 'a medio editar\n' >> "$DEVC/README.md"
 harness_lab_publish tree "una versión nueva que el respaldo NO debe traer en developer"
@@ -231,7 +231,7 @@ bash "$HDIR/bootstrap-fallback.sh" >/dev/null 2>&1
 [ "$(applier_runs)" -gt "$N0" ] && ok "REG-W4 · …y sí corrió el aplicador" || bad "REG-W4 · el aplicador no corrió"
 rm "$LINK"; ln -s "$LAB_TREE" "$LINK"; write_state managed "$LAB_TREE" null
 
-# ═══ T24/T26 (tanda C, decisión 7 del dueño) · rollback y uninstall corren el PROGRAMA de la copia fija ══════════════
+# ═══ T24/T26 · rollback y uninstall corren el PROGRAMA de la copia fija ══════════════
 # La copia fija suma `program/harness.js` y `program/harness/*.js` (la última versión que pasó la salud): `bootstrap.js
 # rollback|uninstall` corre ESA, no la del árbol —que puede estar rota, o no estar—; `startup` sigue corriendo la del árbol.
 fake_program() { # el harness.js FALSO de la copia fija: anota «program argv=…» y sale 0
@@ -260,9 +260,9 @@ node "$HDIR/bootstrap.js" rollback --list >/dev/null 2>&1
 grep -q '^argv=rollback --list ' "$FAKE_LOG" && ok "T24 · sin programa en la copia fija, rollback cae al harness.js del árbol" \
   || bad "T24 · sin programa en la copia fija, rollback no corrió el árbol: $(cat "$FAKE_LOG")"
 
-# ═══ T35 (story 8.18, AC 34) · la guarda del respaldo: nunca avanza a una punta que no trae las skills ═══════════════
-# El respaldo hace `git pull` por su cuenta. Si `main` vuelve a un árbol de antes de la unión de los dos repos, el clon del
-# que salen las skills (~/.claude/agent-skills: el clon viejo, re-apuntado o no, o el único árbol) se quedaría sin ellas:
+# ═══ T35 · la guarda del respaldo: nunca avanza a una punta que no trae las skills ═══════════════
+# El respaldo hace `git pull` por su cuenta. Si `main` vuelve a un árbol sin las skills (anterior a juntar los dos repos), el clon del
+# que salen las skills (~/.claude/agent-skills: un clon aparte, re-apuntado o no, o el único árbol) se quedaría sin ellas:
 # el respaldo mira lo traído ANTES de su pull y, si no trae skills/tycon-pipeline, no mueve NINGUNO de los dos clones.
 GUARDA="la versión nueva no trae las skills: no se aplica"
 for needle in "ls-tree -d --name-only" "skills/tycon-pipeline" "$GUARDA" "no pude mirar" "fetch --quiet"; do
@@ -289,11 +289,11 @@ bash "$HDIR/bootstrap-fallback.sh" >/dev/null 2>&1
   && ok "T35 · espejo: con una punta que trae las skills el respaldo avanza los dos clones" || bad "T35 · espejo: los clones no avanzaron"
 [ "$(fixed_hash)" = "$H0" ] && ok "T35 · la copia fija sigue igual" || bad "T35 · la copia fija cambió"
 
-# ─── T35 · «no pude mirar» no es «no trae las skills» (tramo 3 · revisor de fallos silenciosos, 2026-10-04) ─────────────
-# La guarda preguntaba con `git cat-file -e <commit>:skills/tycon-pipeline`, que contesta lo mismo (≠ 0) si el árbol no
+# ─── T35 · «no pude mirar» no es «no trae las skills» ─────────────
+# Preguntar con `git cat-file -e <commit>:skills/tycon-pipeline` contesta lo mismo (≠ 0) si el árbol no
 # trae la carpeta que si git no pudo leerlo (un objeto que falta, un candado, un tiempo agotado). Con el árbol de HEAD sin
-# leer, el respaldo entendía «de este clon no salen las skills» y hacía el pull: a una punta sin skills. Con el de lo
-# traído sin leer frenaba —bien—, pero diciendo «no trae las skills», que no era cierto. Ahora son tres respuestas: trae ·
+# leer, el respaldo entendería «de este clon no salen las skills» y haría el pull: a una punta sin skills. Con el de lo
+# traído sin leer frenaría —bien—, pero diciendo «no trae las skills», que no es cierto. Por eso son tres respuestas: trae ·
 # no trae · no pude mirar; con «no pude mirar» no se mueve NINGÚN clon y la línea lo dice con su causa.
 # Cómo se mide: un `git` de laboratorio delante del PATH que falla (128) sólo cuando le preguntan por el árbol de UN
 # commit (LAB_GIT_BLIND); todo lo demás va al git de verdad. Los dos respaldos por EJECUCIÓN: el .sh, y el .ps1 con pwsh
@@ -366,7 +366,7 @@ for impl in sh ps1; do
     && ok "T35 · $F: sin poder leer el árbol de lo traído no se mueve ningún clon, y dice que no pudo mirar (no que «no trae las skills»)" \
     || bad "T35 · $F: sin poder leer lo traído (rc $rc): skills $(head_of "$LAB_SKILLS") vs ${S_ANTES} — $(last_line)"
   [ "$impl" = sh ] && { grep -q 'no pude mirar' <<<"$(state_field notice)" && ok "T35 · $F: …y el aviso del estado también lo dice" || bad "T35 · $F: el aviso del estado no lo dice: «$(state_field notice)»"; }
-  # (3) la tercera puerta (tercera vuelta del revisor de pruebas): git no contesta a qué commit avanzaría el clon (ni «no
+  # (3) la tercera puerta: git no contesta a qué commit avanzaría el clon (ni «no
   #     hay rama de la que traer», que sale 1 y callado, ni un sha). Tampoco se mueve ningún clon, y se dice
   run_fallback "$impl" LAB_GIT_UPSTREAM_FAIL=1; rc=$?
   case "$(last_line)" in *"no pude mirar a qué versión avanzaría"*) SAID=1 ;; *) SAID=0 ;; esac
@@ -378,7 +378,7 @@ for impl in sh ps1; do
   run_fallback "$impl" "LAB_GIT_NET_WITNESS=$BASE/net-$impl.log"; rc=$?
   [ "$rc" -eq 0 ] && [ "$(head_of "$LAB_SKILLS")" = "$TIP" ] && ok "T35 · $F: espejo — pudiendo mirar, y con las skills en lo traído, avanza" \
     || bad "T35 · $F: espejo — no avanzó (rc $rc): $(head_of "$LAB_SKILLS") vs ${TIP} — $(last_line)"
-  # T39 (story 8.23, tanda L · AC 38): el respaldo sale a la red sin poder abrir un login (ni la terminal ni el gestor)
+  # T39: el respaldo sale a la red sin poder abrir un login (ni la terminal ni el gestor)
   if [ -s "$BASE/net-$impl.log" ] && ! grep -v -q '^GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0$' "$BASE/net-$impl.log"; then ok "T39 · $F: sus $(wc -l < "$BASE/net-$impl.log" | tr -d ' ') salidas a la red corren con GCM_INTERACTIVE=never y GIT_TERMINAL_PROMPT=0"
   else bad "T39 · $F: una salida a la red pudo preguntar: $(sort -u "$BASE/net-$impl.log" 2>/dev/null | head -3)"; fi
 done
@@ -393,7 +393,7 @@ T_ANTES="$(head_of "$LAB_TREE")"
 bash "$HDIR/bootstrap-fallback.sh" >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 0 ] && [ "$(head_of "$LAB_TREE")" = "$T_ANTES" ] && [ -d "$LAB_HOME/.claude/skills/tycon-pipeline" ] && grep -q "$GUARDA" "$HDIR/startup.log" \
   && ok "T35 · un solo árbol: el respaldo no avanza a la punta sin skills, las skills siguen y lo dice" || bad "T35 · un solo árbol: rc $rc, head $(head_of "$LAB_TREE") vs $T_ANTES: $(tail -1 "$HDIR/startup.log" 2>/dev/null)"
-# espejo: la máquina de DOS clones sin re-apuntar — el arnés sí sigue a main (el retorno de antes de la llave)
+# espejo: la máquina de DOS clones sin re-apuntar — el arnés sí sigue a main
 harness_lab_team_machine "$BASE/lab-team" toy >/dev/null && harness_lab_cut && harness_lab_pull_tree || bad "T35 · no pude armar la máquina de dos clones"
 PIPE="$LAB_HOME/.claude/.tycon-pipeline"; HDIR="$PIPE/harness"; STATE="$PIPE/harness-state.json"; APPLIER_LOG="$PIPE/lab-applier.log"
 install_fixed_copy; write_state managed "$LAB_TREE" null
@@ -402,10 +402,10 @@ bash "$HDIR/bootstrap-fallback.sh" >/dev/null 2>&1
 [ "$(head_of "$LAB_TREE")" = "$(remote_head "$LAB_REMOTE_TREE")" ] && [ "$(head_of "$LAB_SKILLS")" = "$LAB_COMMIT_SKILLS" ] && [ -d "$LAB_HOME/.claude/skills/tycon-pipeline" ] \
   && ok "T35 · espejo: con dos clones sin re-apuntar el arnés sigue a main y las skills siguen en el clon viejo" || bad "T35 · espejo dos clones: arnés $(head_of "$LAB_TREE") vs $(remote_head "$LAB_REMOTE_TREE")"
 
-# ═══ story 8.19 · T10: la copia fija de antes y la de ahora, con los dos nombres del lugar ═══════════════════════════
-# La copia fija de ANTES de la tanda A (congelada en fixtures/bootstrap-legacy-place.js) conoce sólo el nombre viejo: una
+# ═══ T10: la copia fija anterior y la actual, con los dos nombres del lugar ═══════════════════════════
+# La copia fija anterior (congelada en fixtures/bootstrap-legacy-place.js) conoce sólo el nombre viejo: una
 # máquina que no se actualizó la sigue corriendo. Con el código nuevo tiene que seguir arrancando por el viejo (que
-# resuelve, y desde la 8.19 apunta al lugar); la copia nueva prueba primero el lugar y después el viejo; y con la salud
+# resuelve y apunta al lugar); la copia nueva prueba primero el lugar y después el viejo; y con la salud
 # roja y el árbol de vuelta al código anterior (es decir: la copia vieja otra vez), ese código encuentra el viejo y arranca.
 harness_lab_create "$BASE/lab-t10" || bad "T10 · no pude armar el laboratorio"
 PIPE="$LAB_HOME/.claude/.tycon-pipeline"; HDIR="$PIPE/harness"; STATE="$PIPE/harness-state.json"; FAKE_LOG="$PIPE/fake-harness.log"
@@ -416,7 +416,7 @@ write_state managed "$LAB_TREE" null
 publish_harness 0 "t10: harness.js falso que sale 0"; pull_tree
 OLD_COPY="$RAIZ/scripts/tests/fixtures/bootstrap-legacy-place.js"
 mkdir -p "$HDIR"
-# (1) la copia vieja, con el lugar → árbol y el viejo → el lugar (lo que deja la 8.19): arranca por el viejo
+# (1) la copia vieja, con el lugar → árbol y el viejo → el lugar (lo que deja la instalación actual): arranca por el viejo
 ln -s "$LAB_TREE" "$P_LINK"; ln -s "$P_LINK" "$V_LINK"
 cp "$OLD_COPY" "$HDIR/bootstrap.js"; : > "$FAKE_LOG"
 node "$HDIR/bootstrap.js" startup >/dev/null 2>"$BASE/t10.err"; rc=$?
@@ -437,13 +437,13 @@ node "$HDIR/bootstrap.js" startup >/dev/null 2>&1; rc=$?
 rm "$P_LINK"
 node "$HDIR/bootstrap.js" startup >/dev/null 2>"$BASE/t10.err"; rc=$?
 [ "$rc" -ne 0 ] && grep -q "$PLACE_NAME" "$BASE/t10.err" && ! grep -q "$LEGACY_NAME" "$BASE/t10.err" && ok "T10 · sin ninguno: sale ≠ 0, nombra el lugar y no el viejo" || bad "T10 · sin ninguno (rc $rc): $(cat "$BASE/t10.err")"
-# (6) la salud roja y el árbol de vuelta: la copia fija vuelve a ser la vieja; con los dos nombres como los deja la 8.19,
+# (6) la salud roja y el árbol de vuelta: la copia fija vuelve a ser la vieja; con los dos nombres como los deja la instalación actual,
 #     ese código encuentra el viejo y arranca
 ln -s "$LAB_TREE" "$P_LINK"; ln -s "$P_LINK" "$V_LINK"; cp "$OLD_COPY" "$HDIR/bootstrap.js"; : > "$FAKE_LOG"
 node "$HDIR/bootstrap.js" startup >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 0 ] && grep -q '^argv=startup ' "$FAKE_LOG" && ok "T10 · (error) salud roja y el código anterior: encuentra el viejo y arranca" || bad "T10 · el código anterior no arrancó (rc $rc)"
 
-# ─── T23 de la story 8.39 · Bootstrap_CurrentSanoOQueNoContesta ────────────────────────────────────────────────────────
+# ─── T23 · Bootstrap_CurrentSanoOQueNoContesta ────────────────────────────────────────────────────────
 # @story-8.39 @ac-8 @ac-16  bootstrap.js lanza harness.js con el Node del arnés (`<casa>/node/current`) sólo si su
 # `--version` contesta en 5 s con n ≥ 20; si sale 1 o se cuelga, con el node que corre la copia fija, y el respaldo NO
 # corre (un current roto no puede hacer volver atrás una versión sana). El Node de juguete es un GUION que anota su uso y

@@ -1,16 +1,16 @@
 'use strict';
 /**
- * harness-prompt.test.js — la pregunta del programa de instalación (`scripts/setup/harness/prompt.js`; story 8.16,
- * tanda B · AC 2 · T13).
+ * harness-prompt.test.js — la pregunta del programa de instalación (`scripts/setup/harness/prompt.js`;
+ * T13).
  *
  * Lo que no se puede perder:
- *   · «hay terminal» es `process.stdin.isTTY` y nada más (lo mismo que `uninstall` desde la 8.13);
+ *   · «hay terminal» es `process.stdin.isTTY` y nada más (lo mismo que `uninstall`);
  *   · un sí acepta `s`, `si`, `sí`, `y`, `yes` (mayúsculas y espacios alrededor); CUALQUIER otra cosa es no: vacío,
  *     fin de entrada, una lectura que tira (terminal cerrada), `n`, una palabra que empieza con s;
  *   · sin terminal no se imprime ninguna pregunta y la respuesta es no; con terminal se imprime una vez y se lee una
  *     línea, sin tiempo límite ni colores.
  *
- * 🔴 rojo previo verificado: sin `scripts/setup/harness/prompt.js` todo falla en el `require`.
+ * 🔴 Sin `scripts/setup/harness/prompt.js` todo falla en el `require`.
  * 🔴 No lee la terminal de verdad: la lectura se inyecta.
  */
 const test = require('node:test');
@@ -45,7 +45,7 @@ test('T13 · Prompt_OnlyIsTTY_ClosedAnswers_EofIsNo', async (t) => {
   });
   await t.test('readLine: una terminal sin nada escrito todavía (EAGAIN) se espera, sin tiempo límite', () => {
     // la persona tipea DESPUÉS de ver la pregunta: Node deja la terminal sin bloqueo y la lectura dice EAGAIN hasta que hay
-    // algo. Tomarlo como «no» hacía que nadie pudiera contestar a tiempo (lo encontró T21 con la respuesta demorada)
+    // algo. Tomarlo como «no» haría que nadie pudiera contestar a tiempo (lo cubre T21 con la respuesta demorada)
     let calls = 0;
     const late = (fd, buf) => {
       calls++;
@@ -91,11 +91,11 @@ test('T13 · Prompt_OnlyIsTTY_ClosedAnswers_EofIsNo', async (t) => {
   });
 });
 
-// ── story 8.16, tanda D (AC 30, 31 y 37 · T52 y las piezas de las preguntas) ────────────────────────────────────────
+// ── T52 y las piezas de las preguntas ────────────────────────────────────────
 // Las preguntas de la instalación (scripts/setup/harness/questions.js) usan la misma lectura: `readAnswer` dice además si
 // la entrada se terminó, porque en una terminal la lectura que sigue a un fin de entrada vuelve a esperar y una pregunta
 // que se repite se quedaría esperando sin que nadie conteste.
-// 🔴 rojo previo verificado: antes de la tanda D no existían `readAnswer` ni questions.js (todo falla en el require).
+// 🔴 Sin `readAnswer` ni questions.js todo falla en el require.
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const Q = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'questions.js'));
@@ -111,8 +111,8 @@ test('8.16 D · readAnswer: una línea, o fin de entrada dicho como tal', () => 
   assert.deepStrictEqual(P.readAnswer({ readSync: fakeReadSync(['\n']) }), { text: '', eof: false }, 'Enter no es fin de entrada');
   assert.deepStrictEqual(P.readAnswer({ readSync: fakeReadSync([]) }), { text: '', eof: true });
   const closed = () => { const e = new Error('EIO'); e.code = 'EIO'; throw e; };
-  // desde la tanda G de la 8.23 la lectura que TIRA además dice cuál fue el error (`error`): quien lee por tubería
-  // distingue «no escribieron nada» de «no pude leer» (antes los dos salían como «llegó vacío»)
+  // la lectura que TIRA además dice cuál fue el error (`error`): quien lee por tubería
+  // distingue «no escribieron nada» de «no pude leer» (sin esto, los dos salen como «llegó vacío»)
   assert.deepStrictEqual(P.readAnswer({ readSync: closed }), { text: '', eof: true, error: 'EIO' }, 'una terminal cerrada es fin de entrada, con su error');
   assert.strictEqual(P.readLine({ readSync: fakeReadSync(['s\r\n']) }), 's', 'readLine sigue devolviendo el texto');
 });
@@ -158,16 +158,16 @@ test('8.16 D · askIntegrations y las opciones: sólo lo ofrecido, nada marcado'
   assert.deepStrictEqual(Q.checkIntegrationsOption('none', ['clockify', 'engram']), { names: [] });
   assert.match(Q.checkIntegrationsOption('foo', ['clockify', 'engram']).error, /válidas: clockify, engram, o none/);
   assert.deepStrictEqual(Q.checkPacksOption('all'), { value: 'all' });
-  // (story 8.41) una lista de paquetes vale; contra los que trae la versión, uno que no está es un error que nombra las válidas
+  // una lista de paquetes vale; contra los que trae la versión, uno que no está es un error que nombra las válidas
   assert.deepStrictEqual(Q.checkPacksOption('bizuit', ['bizuit']), { value: ['bizuit'] });
   assert.match(Q.checkPacksOption('medio', ['bizuit']).error, /«medio».*all, none o una lista/);
   assert.match(Q.checkPacksOption('Medio!').error, /no es un nombre de paquete/);
   assert.strictEqual(Q.checkPacksOption(undefined), null);
 });
 
-// T52 · Questions_SameCodeOnEveryPlatform_Ps1Untouched (AC 37): las preguntas son el mismo código en cualquier sistema
-// —ninguna rama por plataforma en prompt.js, questions.js ni en las funciones de harness.js que preguntan— y la tanda no
-// tocó el instalador de Windows ni su sync de bloques.
+// T52 · Questions_SameCodeOnEveryPlatform_Ps1Untouched: las preguntas son el mismo código en cualquier sistema
+// —ninguna rama por plataforma en prompt.js, questions.js ni en las funciones de harness.js que preguntan— y el
+// instalador de Windows y su sync de bloques quedan sin tocar.
 test('T52 · Questions_SameCodeOnEveryPlatform_Ps1Untouched', async (t) => {
   const PLATFORM = /platform|win32|isWin\(|darwin/;
   await t.test('prompt.js y questions.js no miran la plataforma', () => {
@@ -189,7 +189,7 @@ test('T52 · Questions_SameCodeOnEveryPlatform_Ps1Untouched', async (t) => {
   await t.test('la tanda D no tocó el instalador de Windows ni su sync de bloques', (tt) => {
     const git = (args) => spawnSync('git', ['-C', RAIZ, ...args], { encoding: 'utf8' });
     const files = ['scripts/install-tycon-hooks.ps1', 'scripts/setup/sync-claude-md-blocks.ps1'];
-    // el commit que trajo esta prueba de la tanda D (si todavía no está commiteada, se compara el árbol con HEAD)
+    // el commit que trajo esta prueba (si todavía no está commiteada, se compara el árbol con HEAD)
     const log = git(['log', '--diff-filter=A', '--format=%H', '--', 'scripts/tests/harness-questions.test.sh']);
     if (log.status !== 0) { tt.skip(`NO MEDIDO: git log salió ${log.status} (${(log.stderr || '').trim()})`); return; }
     const added = log.stdout.trim().split('\n').filter(Boolean).pop();
@@ -199,8 +199,8 @@ test('T52 · Questions_SameCodeOnEveryPlatform_Ps1Untouched', async (t) => {
   });
 });
 
-// T46 (story 8.23, tanda G · AC 43): el valor secreto se lee de la terminal SIN eco y sin la basura del pegado. En la
-// primera máquina migrada (2026-10-08) `config set github.token` mostró la clave y guardó las marcas del pegado (401).
+// T46: el valor secreto se lee de la terminal SIN eco y sin la basura del pegado: sin esto,
+// `config set github.token` muestra la clave y guarda las marcas del pegado (401).
 test('T46 · ReadSecret_NoEcho_BracketedPasteStripped_BackspaceCtrlC', async (t) => {
   const bytes = (...parts) => parts.map((p) => Buffer.isBuffer(p) ? p : Buffer.from(p, 'utf8'));
   const tty = () => { const calls = []; return { isTTY: true, setRawMode(v) { calls.push(v); }, calls }; };
@@ -223,7 +223,7 @@ test('T46 · ReadSecret_NoEcho_BracketedPasteStripped_BackspaceCtrlC', async (t)
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['ab', '\x7f', 'c', '\x08', 'd\r']), write: () => {} }).text, 'ad');
     const b = Buffer.from('ñ', 'utf8');
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read([b.subarray(0, 1), b.subarray(1), '\t\x01x\n']), write: () => {} }).text, 'ñx');
-    // Backspace sobre un carácter de varios bytes lo borra ENTERO (pase adversarial de la tanda G: quedaba el primer byte → U+FFFD)
+    // Backspace sobre un carácter de varios bytes lo borra ENTERO (si no, queda el primer byte → U+FFFD)
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['añ', '\x7f', '\r']), write: () => {} }).text, 'a');
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['a€b', '\x7f\x7f', 'c\r']), write: () => {} }).text, 'ac');
   });
@@ -235,8 +235,8 @@ test('T46 · ReadSecret_NoEcho_BracketedPasteStripped_BackspaceCtrlC', async (t)
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read([]), write: () => {} }).aborted, true, 'fin de entrada sin Enter: abortado');
   });
   await t.test('un Esc suelto, una flecha ESC O A o Alt+tecla NO dejan la lectura colgada: se descartan y Enter sigue valiendo', () => {
-    // el cazador de fallos silenciosos (tanda G) lo armó a mano: ESC seguido de texto esperaba el cierre de una secuencia
-    // que no venía, y ni Enter ni Ctrl-C salían (el modo crudo apaga el Ctrl-C del sistema)
+    // sin esto, ESC seguido de texto esperaría el cierre de una secuencia
+    // que no viene, y ni Enter ni Ctrl-C saldrían (el modo crudo apaga el Ctrl-C del sistema)
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['\x1b', 'abc\r']), write: () => {} }).text, 'abc');
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['\x1bOA', 'x\r']), write: () => {} }).text, 'x');
     assert.strictEqual(P.readSecret({ stdin: tty(), readSync: read(['\x1bq', 'y\n']), write: () => {} }).text, 'y');

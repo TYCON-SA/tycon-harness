@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-move-home.test.sh — la mudanza de cada máquina a `~/.tycon` (story 8.23, tanda D · T27, T28, T29 y T32).
+# harness-move-home.test.sh — la mudanza de cada máquina a `~/.tycon` (T27, T28, T29 y T32).
 #
 # Lo que no se puede perder:
 #   T27 · `migrate --to-home` comprueba ANTES de escribir nada: `~/.tycon` libre o nuestro, la versión que se puede bajar
@@ -13,7 +13,7 @@
 #   T29 · el clon de la persona no se toca (hash del `.git` y del árbol), y `paths.maintained` lo declara: `doctor` lo nombra.
 #   T32 · la llave `install.home: tycon` del perfil: el arranque migra una vez; una precondición que falla se avisa y se
 #         reintenta en cada sesión; un fallo DURANTE deshace, queda `failed` y no se reintenta solo (a mano sí).
-#   T28r · la raíz de los repos: si salía de los repos al lado del clon y no estaba declarada, la mudanza la anota en
+#   T28r · la raíz de los repos: si sale de los repos al lado del clon y no está declarada, la mudanza la anota en
 #         paths.repos; una declarada no se pisa; una carpeta sin otros repos no se anota.
 #   T14 · un clon de antes del lector de team-repos.json se muda con una capa que lo trae: la capa se juzga con los lectores
 #         de la versión que baja (el plan lo dice); una capa que esa versión rechaza sigue frenando, con la HOME idéntica.
@@ -70,7 +70,7 @@ print(n)' "$1"
 # el hash del clon de la persona: el árbol Y su .git (un fetch, un pull o un reset lo cambian)
 clone_hash() { ( cd "$LAB_TREE" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 ) | shasum -a 256 | cut -d' ' -f1; }
 
-# la máquina del equipo de hoy: instalada DESDE EL CLON (el lugar → el clon, el estado en .tycon-pipeline, el clon viejo
+# la máquina del equipo: instalada DESDE EL CLON (el lugar → el clon, el estado en .tycon-pipeline, el clon viejo
 # de skills como carpeta real), con el servidor de versiones de juguete listo para la mudanza
 clone_machine() {
   harness_lab_create "$1"
@@ -137,7 +137,7 @@ if runs T27; then
   case "$OUT" in *"enlace:"*agent-skills*) ok "…y agent-skills" ;; *) bad "el plan no nombra agent-skills como enlace: $OUT" ;; esac
   case "$OUT" in *"clon"*"no se toca"*) ok "…y que el clon no se toca" ;; *) bad "el plan no dice que el clon no se toca: $OUT" ;; esac
   [ "$(harness_lab_home_hash)" = "$H0" ] && ok "--dry-run no escribió nada" || bad "--dry-run escribió en la HOME"
-  # (f) con Codex enchufado, el plan anticipa que va a pedir aprobar sus hooks (AC 28)
+  # (f) con Codex enchufado, el plan anticipa que va a pedir aprobar sus hooks
   python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['tools']=['claude','codex']; json.dump(d, open(p,'w'), indent=2)" "$(OLD_STATE)"
   OUT="$(harness migrate --to-home --dry-run 2>&1)"
   case "$OUT" in *"enchufa:"*"Codex te va a pedir aprobar sus hooks"*) ok "con Codex enchufado, el plan anticipa la re-aprobación de sus hooks" ;; *) bad "el plan no anticipa la re-aprobación de Codex: $OUT" ;; esac
@@ -170,7 +170,7 @@ if runs T28; then
   done
   # desde acá la máquina es la del último corte (links), completada por el arranque: se mide el resultado entero
   [ -f "$(NEW_TREE)/version.json" ] && [ "$(j "$(NEW_TREE)/version.json" "d['version']")" = 2026.10.08.1 ] && ok "la versión 2026.10.08.1 vive en ~/.tycon/harness" || bad "~/.tycon/harness no trae la versión: $(ls "$(NEW_TREE)" 2>/dev/null | head -5 | tr '\n' ' ')"
-  # la forma con enlaces (story 8.33, T12): con TYCON_RELEASE_LINKS=1 (la forma de Windows, en Mac sólo de pruebas) la
+  # la forma con enlaces (T12): con TYCON_RELEASE_LINKS=1 (la forma de Windows, en Mac sólo de pruebas) la
   # mudanza deja ~/.tycon/harness como enlace a versions/<v>; sin la variable, una carpeta, como siempre
   if [ "${TYCON_RELEASE_LINKS:-}" = 1 ]; then
     [ -L "$(NEW_TREE)" ] && case "$(readlink "$(NEW_TREE)")" in */versions/2026.10.08.1) true ;; *) false ;; esac && ok "con la forma con enlaces, ~/.tycon/harness es un enlace a versions/2026.10.08.1" || bad "con TYCON_RELEASE_LINKS=1 la mudanza no dejó el enlace: $(ls -la "$LAB_HOME/.tycon" | tr '\n' ' ')"
@@ -216,7 +216,7 @@ if runs T28; then
   grep -q '"stage": "start"' "$(LOG)" 2>/dev/null || grep -q "mudanza: diario" "$(LOG)" && ok "el registro anota el diario antes del primer cambio" || bad "el registro no anota el diario: $(grep mudanza "$(LOG)" | head -3)"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
-  # ── (2b) story 8.39, T26 · Mudanza_ConNodeDelArnes_NoSeNiega @story-8.39 @ac-19: una máquina de clon que ya bajó el
+  # ── (2b) T26 · Mudanza_ConNodeDelArnes_NoSeNiega @story-8.39 @ac-19: una máquina de clon que ya bajó el
   # Node propio del arnés (`~/.tycon/node/current`) se muda igual; `node/` no se mueve ni se borra y `current` sigue
   # andando. El Node de juguete es un GUION que llama al node real por su ruta: nunca un enlace a un binario real.
   clone_machine "$BASE/lab28n"
@@ -244,7 +244,7 @@ if runs T28; then
 fi
 
 # ───────────────────────────────────────────── T28x ──────────────────────────────────────────
-# T41 (story 8.23, tanda F · AC 40): lo PERSONAL de la carpeta vieja de agent-skills (lo que no es del arnés ni de terceros)
+# T41: lo PERSONAL de la carpeta vieja de agent-skills (lo que no es del arnés ni de terceros)
 # queda activo después de la mudanza: ~/.claude/skills y ~/.claude/agents pasan a carpetas reales con lo personal adentro y un
 # enlace por entrada del arnés al lado; el plan lo dice («conserva N skills y M agentes tuyos: …»); cortada en la etapa
 # `personal`, el arranque la completa; cortada antes de instalar, deshace y los enlaces viejos vuelven.
@@ -383,7 +383,7 @@ if runs T28x; then
   [ "$(cat "$LAB_HOME/.claude/skills/tycon-pipeline/SKILL.md")" = "# la mía, con el nombre del arnés" ] && [ ! -L "$LAB_HOME/.claude/skills/tycon-pipeline" ] && ok "…la entrada propia no se pisó (sigue real)" || bad "tycon-pipeline propia pisada: $(ls -ld "$LAB_HOME/.claude/skills/tycon-pipeline")"
   case "$OUT" in *"lo personal quedó activo, pero"*"no las piso: skills/tycon-pipeline"*) ok "…y la salida final avisa que la del arnés con ese nombre no se ve (no sólo el registro)" ;; *) bad "la salida no trae el aviso del choque: $OUT" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
-  # (h) (pase adversarial, clases 2 y 11) ~/.claude/skills es un enlace a una carpeta PROPIA del dev: no se toca, lo suyo sigue
+  # (h) ~/.claude/skills es un enlace a una carpeta PROPIA del dev: no se toca, lo suyo sigue
   # activo, lo personal de la carpeta vieja va adentro, y el plan lo dice
   clone_machine_f "$BASE/lab28x7"
   mkdir -p "$LAB_HOME/mis-skills/propia"; printf '# la mía, en mi carpeta\n' > "$LAB_HOME/mis-skills/propia/SKILL.md"
@@ -396,7 +396,7 @@ if runs T28x; then
   [ -f "$LAB_HOME/mis-skills/propia/SKILL.md" ] && [ -d "$LAB_HOME/mis-skills/mi-skill" ] && [ ! -L "$LAB_HOME/mis-skills/mi-skill" ] && ok "…lo tuyo sigue y lo personal de la carpeta vieja quedó adentro de tu carpeta" || bad "la carpeta propia: $(ls -la "$LAB_HOME/mis-skills" | tr '\n' ' ')"
   [ -L "$LAB_HOME/mis-skills/tycon-pipeline" ] && ok "…y el arnés al lado, también adentro de tu carpeta (un enlace por entrada)" || bad "sin enlace por entrada en la carpeta propia: $(ls -la "$LAB_HOME/mis-skills" | tr '\n' ' ')"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
-  # (i) (clase 6) en una carpeta real previa hay un enlace por entrada que apunta a la carpeta vieja (quedaría colgado al
+  # (i) en una carpeta real previa hay un enlace por entrada que apunta a la carpeta vieja (quedaría colgado al
   # apartarla): no cuenta como «ya existe», se reemplaza por lo personal real
   clone_machine_f "$BASE/lab28x8"
   rm "$LAB_HOME/.claude/skills"; mkdir -p "$LAB_HOME/.claude/skills"; ln -s "$OLD_SKILLS/skills/mi-skill" "$LAB_HOME/.claude/skills/mi-skill"
@@ -404,7 +404,7 @@ if runs T28x; then
   [ "$RC" = 0 ] && [ -d "$LAB_HOME/.claude/skills/mi-skill" ] && [ ! -L "$LAB_HOME/.claude/skills/mi-skill" ] && [ -f "$LAB_HOME/.claude/skills/mi-skill/SKILL.md" ] && ok "un enlace por entrada a la carpeta vieja se reemplaza por lo personal real (no queda colgado ni cuenta como «ya existe»)" || bad "el enlace viejo a mi-skill no se reemplazó (rc $RC): $(ls -ld "$LAB_HOME/.claude/skills/mi-skill" 2>&1) $OUT"
   case "$OUT" in *"no se pisaron: skills/mi-skill"*) bad "la salida cuenta mi-skill como no pisada, pero era un enlace colgado" ;; *) ok "…y la salida no la cuenta como «ya existía»" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
-  # (j) (clase 7) TODO lo personal choca con algo real en el destino: nada se mueve, y la salida final igual lo DICE
+  # (j) TODO lo personal choca con algo real en el destino: nada se mueve, y la salida final igual lo DICE
   clone_machine_f "$BASE/lab28x9"
   rm -rf "$OLD_SKILLS/skills/.trash" "$OLD_SKILLS/skills/lab-own" "$OLD_SKILLS/skills/lab-third-party" "$OLD_SKILLS/agents/mi-agente.md"   # queda sólo mi-skill
   rm "$LAB_HOME/.claude/skills"; mkdir -p "$LAB_HOME/.claude/skills/mi-skill"; printf '# otra mi-skill, ya acá\n' > "$LAB_HOME/.claude/skills/mi-skill/SKILL.md"
@@ -416,9 +416,9 @@ if runs T28x; then
 fi
 
 # ───────────────────────────────────────────── T28y ──────────────────────────────────────────
-# T44 (story 8.23, tanda G · AC 41): el perfil del equipo que el clon trae (perfil-equipo.json en su raíz) pasa a
-# ~/.tycon/config.json como valores de la máquina: la versión bajada no lo trae y la primera máquina migrada (2026-10-08)
-# quedó con las integraciones, el paquete por defecto y la política de fábrica. Se mide con el lector de configuración ANTES
+# T44: el perfil del equipo que el clon trae (perfil-equipo.json en su raíz) pasa a
+# ~/.tycon/config.json como valores de la máquina: la versión bajada no lo trae y, sin esto, la máquina migrada
+# queda con las integraciones, el paquete por defecto y la política de fábrica. Se mide con el lector de configuración ANTES
 # (desde el clon) y DESPUÉS (desde ~/.tycon/harness): los mismos valores, con el origen «perfil» convertido en «maquina».
 # El laboratorio pone el perfil por variable (TYCON_PROFILE): acá se vacía después de crear el laboratorio, para que el
 # perfil se lea del árbol que corre, como en una máquina del equipo.
@@ -516,9 +516,9 @@ for k in ["ado.org","integraciones.clockify","integraciones.engram","integracion
 fi
 
 # ───────────────────────────────────────────── T28r ──────────────────────────────────────────
-# La raíz de los repos (2026-10-14): una máquina sin raíz declarada la deducía de los repos al lado del clon. Mudado el
-# arnés a ~/.tycon, al lado no hay nada y la máquina quedó «sin raíz» (el aviso diario de engram dejó de chequear). La
-# mudanza anota esa carpeta en paths.repos si la raíz salía de ahí y no estaba declarada; con una raíz declarada no la
+# La raíz de los repos: una máquina sin raíz declarada la deduce de los repos al lado del clon. Mudado el
+# arnés a ~/.tycon, al lado no hay nada y la máquina queda «sin raíz» (el aviso diario de engram deja de chequear). La
+# mudanza anota esa carpeta en paths.repos si la raíz sale de ahí y no está declarada; con una raíz declarada no la
 # pisa; y una carpeta sin otros repos no se anota.
 if runs T28r; then
   echo "T28r · la raíz de los repos: la mudanza anota la carpeta del clon si de ahí salía; no pisa una declarada; no anota una carpeta sin repos"
@@ -530,7 +530,7 @@ if runs T28r; then
   OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "(a) --dry-run sale 0" || bad "(a) --dry-run rc $RC: $OUT"
   case "$OUT" in *"→ paths.repos"*) bad "(a) con el clon solo en su carpeta el plan anota una raíz sin repos: $(printf '%s\n' "$OUT" | grep 'raíz de repos')" ;; *) ok "(a) con el clon solo en su carpeta el plan no anota raíz (sería una carpeta sin repos)" ;; esac
-  # (b) un repo de trabajo al lado del clon: la raíz salía de ahí → el plan lo dice y la mudanza la anota
+  # (b) un repo de trabajo al lado del clon: la raíz sale de ahí → el plan lo dice y la mudanza la anota
   mkdir -p "$CLONES/ProductoA" && git -C "$CLONES/ProductoA" init -q
   OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
   case "$OUT" in *"raíz de repos: "*"→ paths.repos"*) ok "(b) con un repo al lado del clon, el plan dice que anota la raíz en paths.repos" ;; *) bad "(b) el plan no anota la raíz: $(printf '%s\n' "$OUT" | grep 'raíz de repos' || echo '(sin línea)')" ;; esac
@@ -571,7 +571,7 @@ if runs T29; then
   OUT="$(harness doctor 2>&1)"
   case "$OUT" in *"clon que esta máquina mantiene"*"$LAB_TREE"*) ok "doctor nombra el clon que la máquina mantiene" ;; *) bad "doctor no nombra el clon mantenido: $OUT" ;; esac
   [ "$(clone_hash)" = "$C0" ] && ok "…y doctor tampoco lo tocó" || bad "doctor cambió el clon"
-  # el freno de producción de ANTES de la mudanza (AC 30): instalado desde un clon, su origen fijado no trae `repo`; anda por
+  # el freno de producción de ANTES de la mudanza: instalado desde un clon, su origen fijado no trae `repo`; anda por
   # los enlaces y doctor pide reinstalarlo. Con el freno nuevo (con `repo`), nada que decir. Raíz de sistema falsa (TYCON_PROD_ROOT)
   SYS="$BASE/lab29/sys"; mkdir -p "$SYS/opt/tycon/hooks" "$SYS/opt/tycon/production"; printf '// freno\n' > "$SYS/opt/tycon/hooks/prod-access-guard.js"
   printf '{ "url": "https://dev.azure.com/acme/x/_git/x", "org": "https://dev.azure.com/acme", "fijado": "2026-09-15T00:00:00Z" }\n' > "$SYS/opt/tycon/production/trusted-origin.json"
@@ -637,10 +637,10 @@ if runs T32; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-# ══ T13 (story 8.25, AC 13): la mudanza con repo del equipo ═══════════════════════════════════════════════════════════
+# ══ T13: la mudanza con repo del equipo ═══════════════════════════════════════════════════════════
 # El repo del equipo sale de `--team` o de la clave `team` del public-repos.json del clon; el plan lo dice; sin acceso, la
 # mudanza no arranca (1, HOME idéntica); con la capa apilada, el perfil del clon NO se funde en ~/.tycon/config.json (el
-# profileFold de la G queda `skipped`), explain lee ado.org con origen perfil, y el estado trae team con el commit.
+# profileFold queda `skipped`), explain lee ado.org con origen perfil, y el estado trae team con el commit.
 if runs T13; then
   echo "T13 · la mudanza con el repo del equipo: la clave del clon o --team, el plan, sin acceso 1, la capa apilada y el perfil sin fundir"
   team_profile_13() { printf '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "clockify": true, "engram": true, "nightly": true }, "update": { "channel": "latest", "apply": "auto", "source": "internal" }, "packs": { "default": "all" }, "install": { "profile": "full" } }\n' > "$1/perfil-equipo.json"; }
@@ -662,7 +662,7 @@ d=json.load(sys.stdin); s,c=sys.argv[1],sys.argv[2]; print("%s %s" % (json.dumps
   OUT="$(harness migrate --to-home --dry-run --team sin-barra 2>&1)"; RC=$?
   [ "$RC" = 2 ] && ok "--team sin forma sale 2" || bad "--team sin forma: rc $RC: $OUT"
   case "$OUT" in *"org/nombre"*) ok "…diciendo la forma" ;; *) bad "no dice la forma: $OUT" ;; esac
-  # (b) sin repo del equipo declarado en ningún lado: el plan funde el perfil (lo de la tanda G), sin línea de capa
+  # (b) sin repo del equipo declarado en ningún lado: el plan funde el perfil, sin línea de capa
   OUT="$(harness migrate --to-home --dry-run 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "sin equipo: --dry-run sale 0" || bad "sin equipo: rc $RC: $OUT"
   case "$OUT" in *"capa del equipo"*) bad "sin equipo declarado el plan habla de la capa: $OUT" ;; *"como valores de la máquina"*) ok "sin equipo: el plan funde el perfil (tanda G)" ;; *) bad "sin equipo: el plan no funde el perfil: $OUT" ;; esac
@@ -727,9 +727,9 @@ d=json.load(sys.stdin); s,c=sys.argv[1],sys.argv[2]; print("%s %s" % (json.dumps
 fi
 
 # ══ T14: el clon viejo, de antes del lector de team-repos.json ═══════════════════════════════════════════════════════
-# Un clon anterior a scripts/lib/team-repos.js no se podía mudar con una capa que trae team-repos.json: las precondiciones
-# juzgaban la capa con los lectores DEL CLON («la versión que va a quedar no trae su lector … la capa no se apila»). Ahora
-# el plan dice que la capa se valida con la versión que baja, y la mudanza la juzga con los lectores de esa versión, después
+# Un clon anterior a scripts/lib/team-repos.js se muda con una capa que trae team-repos.json: si las precondiciones
+# juzgaran la capa con los lectores DEL CLON, frenarían («la versión que va a quedar no trae su lector … la capa no se apila»). El
+# plan dice que la capa se valida con la versión que baja, y la mudanza la juzga con los lectores de esa versión, después
 # de bajarla y antes de escribir nada: una capa válida se apila; una que esa versión rechaza sigue frenando, con la HOME idéntica.
 if runs T14; then
   echo "T14 · el clon sin el lector de team-repos.json: el plan y la mudanza validan la capa con la versión que baja; una capa inválida sigue frenando"

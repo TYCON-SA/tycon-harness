@@ -3,19 +3,18 @@
 #
 # Verifica que instinct-observer.js elige el ejecutor correcto según qué CLI tenga la máquina
 # (claude→Haiku, codex→gpt-5.4-mini, ollama local) y escribe `proposed_by` en el instinct — así
-# un dev SOLO-Codex también recibe propuestas (el defecto que cerró esto: el cerebro estaba
-# clavado a `claude`). Usa STUBS en PATH (no gasta tokens, no toca la red). Caso: el observer
-# estaba Claude-only y bajo Codex-solo no proponía nada.
+# un dev SOLO-Codex también recibe propuestas (si el cerebro estuviera
+# clavado a `claude`, bajo Codex-solo no se propondría nada). Usa STUBS en PATH (no gasta tokens, no toca la red).
 #
-# 🔴 Nunca escribe en el arnés (story 8.27). Hasta el 2026-10-09 corría el observador REAL: escribía cada propuesta en
-#    inbox/instincts/pending/ del árbol —y borraba ahí por patrón—, y sobre la copia pública, que no trae esa carpeta, la
-#    creaba. Ahora los guiones se copian a un árbol de prueba que NO trae su buzón, así que la propuesta cae en la casa
+# 🔴 Nunca escribe en el arnés. Si corriera el observador REAL sobre el árbol, escribiría cada propuesta en
+#    inbox/instincts/pending/ del árbol —y borraría ahí por patrón—, y sobre la copia pública, que no trae esa carpeta, la
+#    crearía. Los guiones se copian a un árbol de prueba que NO trae su buzón, así que la propuesta cae en la casa
 #    de la carpeta de usuario del laboratorio; al final se mide que el árbol real quedó igual.
 #
 # Corre en la pasada diaria del instalador (BASH_TESTS). Manual: bash scripts/tests/instinct-executor.test.sh
 set -uo pipefail
 # Una TYCON_HOME heredada del ambiente de quien corre movería la casa del laboratorio (tycon-home.js la mira antes que
-# HOME): acá la carpeta de usuario es la del laboratorio, siempre (story 8.27, pase adversarial).
+# HOME): acá la carpeta de usuario es la del laboratorio, siempre.
 unset TYCON_HOME
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fallos=0
@@ -93,7 +92,7 @@ R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
 echo "$R" | grep "claude/claude-haiku" >/dev/null && ok "solo-claude → Haiku" || bad "solo-claude" "esperaba claude/haiku, dio: $R"
 rm -f "$LAB/bin/claude"
 
-# ── 2. Solo codex en PATH (dev SOLO-Codex) → proposed_by codex/gpt-5.4-mini ── EL DEFECTO ──
+# ── 2. Solo codex en PATH (dev SOLO-Codex) → proposed_by codex/gpt-5.4-mini ──
 mk_stub codex codex
 R=$(run_observer); ESPERADAS=$((ESPERADAS+1))
 echo "$R" | grep "codex/gpt-5.4-mini" >/dev/null && ok "solo-codex → gpt-5.4-mini (dev Codex-only ya recibe propuestas)" || bad "solo-codex" "esperaba codex/gpt-5.4-mini, dio: $R"
@@ -143,9 +142,9 @@ HOME="$LAB" TYCON_INSTINCT_OBS_DIR="$OBSDIR" PATH="$LAB/bin:/usr/bin:/bin" \
   node "$OBS" --since "$MONTH" >/dev/null 2>&1; RC=$?
 [ "$RC" = "0" ] && ok "sin ejecutor → exit 0 limpio" || bad "sin-ejecutor" "exit $RC, esperaba 0"
 
-# ── T17 Executor_WritesInLabHome_RealTreeUntouched (story 8.27) ──
-# CADA corrida que propone dejó su propuesta en la casa del laboratorio (ni una menos: son 4, o 5 con el caso de la
-# ruta vieja), el árbol de prueba no ganó inbox/, y el árbol real quedó igual.
+# ── T17 Executor_WritesInLabHome_RealTreeUntouched ──
+# CADA corrida que propone deja su propuesta en la casa del laboratorio (ni una menos: son 4, o 5 con el caso de la
+# ruta vieja), el árbol de prueba no gana inbox/, y el árbol real queda igual.
 ESCRITAS=$(grep -c x "$LAB/escritas.txt" 2>/dev/null || true)
 if [ "$ESPERADAS" -ge 4 ] && [ "${ESCRITAS:-0}" = "$ESPERADAS" ] && [ ! -e "$ARBOL/inbox" ] && [ "$(real_ahora)" = "$REAL_ANTES" ]; then
   ok "T17 las $ESPERADAS propuestas cayeron en la casa del laboratorio, el árbol de prueba sin inbox/ y el árbol real igual que antes"

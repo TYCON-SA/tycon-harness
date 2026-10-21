@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
-# harness-profile.test.sh — los perfiles de instalación (story 8.16, tanda C · AC 23, 25 a 27 y 43).
+# harness-profile.test.sh — los perfiles de instalación.
 #
-# EL CASO. Hasta la tanda C la instalación traía todo o nada: los frenos, los tres bloques que cambian cómo contesta el
+# Sin perfiles, la instalación trae todo o nada: los frenos, los tres bloques que cambian cómo contesta el
 # asistente en todos los proyectos, los dos ajustes de Claude Code, los hooks de git y las tareas de fondo. Alguien de
-# afuera que sólo quería las guías y las skills recibía también eso. Ahora hay dos perfiles —`minimal` y `full`— y lo
+# afuera que sólo quiere las guías y las skills recibiría también eso. Hay dos perfiles —`minimal` y `full`— y lo
 # que trae cada uno lo dice `scripts/setup/install-effects.json` (`profiles`). Lo que estas pruebas sostienen:
 #   T32 · el aplicador REAL con `install.profile: minimal` registra sólo los hooks de minimal, ningún freno, no escribe
 #         los dos ajustes, no toca los hooks de git y no lanza ninguna tarea de fondo de `full`; sí hace los enlaces, los
 #         comandos y las skills de terceros (las pide). Con `full` sí lo hace todo (el control: si el aplicador dejara de
 #         lanzar todo, el «cero lanzamientos» de minimal no diría nada).
-#   T33 · sin valor es `full` (igual a hoy); un valor fuera de la lista deja lo del perfil como está y lo dice; una
+#   T33 · sin valor es `full`; un valor fuera de la lista deja lo del perfil como está y lo dice; una
 #         variable puesta a mano manda en los dos sentidos (`minimal` + `TYCON_TEST_SCOPE_GUARD=1` registra el freno de
-#         pruebas; `TYCON_SAFETY_GUARD=0` saca el de comandos, que desde el 2026-10-05 está en los dos perfiles).
-#   T40 · con el perfil del equipo, el aplicador de esta tanda deja los MISMOS hooks (profile-equivalence.js --settings)
-#         y el MISMO CLAUDE.md (cmp) que el de antes de la tanda (la punta de la tanda B), sin tocar tycon.json.
-#   T35 a T37 (las tandas siguientes del archivo) · `harness.js install --profile`, el cambio de perfil y los valores
+#         pruebas; `TYCON_SAFETY_GUARD=0` saca el de comandos, que está en los dos perfiles).
+#   T40 · con el perfil del equipo, el aplicador deja los MISMOS hooks (profile-equivalence.js --settings)
+#         y el MISMO CLAUDE.md (cmp) que el aplicador de antes de los perfiles (BASE_REF), sin tocar tycon.json.
+#   T35 a T37 · `harness.js install --profile`, el cambio de perfil y los valores
 #         inválidos, con el programa de verdad.
 #
 # Laboratorio: una copia descartable del árbol (con git propio) y una HOME de juguete con un agent-skills de juguete (un
 # archivo por hook que vive ahí), el patrón de harness-plan.test.sh. Un `node` intermediario va primero en el PATH:
 # anota cada lanzamiento de una tarea de fondo y NO la corre (tampoco el disparador del examen: una HOME temporal sola
 # no aísla launchd). Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido.
-# 🔴 rojo previo verificado: antes de la tanda C el aplicador no lee el perfil (registra los 44 hooks en minimal).
+# 🔴 Sin el perfil, el aplicador no lo lee y registra todos los hooks en minimal.
 #
-#   REG · (pase adversarial de la tanda C) un cambio de perfil sin el reporte del aplicador no se da por hecho.
+#   REG · un cambio de perfil sin el reporte del aplicador no se da por hecho.
 #
 # Uso: bash scripts/tests/harness-profile.test.sh [--only T32|T33|T40|T35|T36|T37|REG]
 set -uo pipefail
@@ -33,8 +33,8 @@ unset TYCON_MAILBOX
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FIX="$RAIZ/scripts/tests/fixtures/harness-managed-pieces.json"
 EFFECTS="$RAIZ/scripts/setup/install-effects.json"
-# la punta de la tanda B: el aplicador de antes de los perfiles (T40). Con la historia entera (fetchDepth: 0) está.
-# main sin la tanda C (con la B, la E, los frenos con Bash|PowerShell y la W0 de la 8.17): el aplicador «de antes»
+# el último commit sin perfiles: el aplicador de antes de los perfiles (T40). Con la historia entera (fetchDepth: 0) está.
+# main sin los perfiles: el aplicador «de antes»
 BASE_REF="${TYCON_PROFILE_BASE_REF:-44628fc7}"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
@@ -149,7 +149,7 @@ TREE="$T/tree"; lab_tree "$TREE" || { echo "❌ no pude armar el árbol de labor
 # T40: estos casos miden el aplicador con un perfil del equipo, no un perfil en particular.
 TEAM_PROFILE="$RAIZ/perfil-equipo.json"
 if [ ! -f "$TEAM_PROFILE" ] && git -C "$RAIZ" show "${BASE_REF}:perfil-equipo.json" > "$T/perfil-equipo.json" 2>/dev/null; then
-  # con el perfil que instala el equipo (full), como dice el perfil de hoy; el de entonces todavía no lo decía
+  # con el perfil que instala el equipo (full), como dice el perfil actual; el del commit base todavía no lo dice
   python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.setdefault("install", {}).setdefault("profile", "full"); json.dump(d, open(p, "w"), indent=2)' "$T/perfil-equipo.json" \
     && TEAM_PROFILE="$T/perfil-equipo.json"
 fi
@@ -224,7 +224,7 @@ if corre T33; then
   cmp -s "$T/t33/antes.txt" "$T/t33/despues.txt" && ok "T33 rota: no saca ni agrega hooks del perfil" || mal "T33 rota: cambiaron los hooks: $(diff "$T/t33/antes.txt" "$T/t33/despues.txt" | grep '^[<>]' | head -4 | tr '\n' ' ')"
   grep -q 'perfil de instalación queda como estaba' "$T/t33/r2.out" && ok "T33 rota: lo dice" || mal "T33 rota: no lo dice: $(head -c 300 "$T/t33/r2.out")"
   #   …y sobre una HOME vacía, rota no registra lo de full (no lo agrega) salvo los dos frenos de comandos, que se
-  #   registran igual (decisión del dueño, 2026-10-04: una máquina nueva con la configuración rota no queda sin frenos)
+  #   registran igual (una máquina nueva con la configuración rota no queda sin frenos)
   H="$T/t33/rota-vacia"; new_home "$H"; machine "$H" '{ "install": { "profile": "medio" } }'; base "$H"; applier "$H" "$TREE" "$T/t33/r3.out"
   harness_hooks "$H" "$TREE" > "$T/t33/r3.txt"
   { minimal_hooks; printf '%s\n' 'PreToolUse:@tcg:safety-guard-pre.sh' 'PreToolUse:@tcg:test-scope-guard-pre.sh'; } | LC_ALL=C sort -u > "$T/t33/r3-want.txt"
@@ -246,21 +246,22 @@ if corre T33; then
   grep -q 'fuera del perfil minimal' "$T/t33/s2.out" && ok "T33 de full a minimal: el motivo en la línea del reporte" || mal "T33 de full a minimal: sin el motivo en el reporte: $(grep -m3 ' - ' "$T/t33/s2.out" | tr '\n' ' ')"
 fi
 
-# ══ T40 · el perfil del equipo: lo mismo que antes de la tanda ════════════════════════════════════════════════════════
+# ══ T40 · el perfil del equipo: lo mismo que antes de los perfiles ════════════════════════════════════════════════════
 if corre T40; then
   echo "T40 · Team_ProfileFull_SettingsEquivalent_ClaudeMdByteIdentical_NoQuestions"
   if [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
     # La copia pública (sin scripts/publishing/public-repos.json, que no se publica) no trae la historia ni el perfil del
     # equipo: lo que los necesita ahí NO SE PUEDE MEDIR y se dice como «NO MEDIDO en la copia», sin contar como rojo; en el
-    # repo interno, que falten sigue siendo rojo (la convención de harness-place.test.js, story 8.19).
+    # repo interno, que falten sigue siendo rojo (la convención de harness-place.test.js).
     echo "  ⏭   — T40 NO MEDIDO en la copia — no trae el commit de antes de la tanda (${BASE_REF}) ni el perfil del equipo"
   elif ! git -C "$RAIZ" cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
     mal "T40 NO MEDIDO — no está el commit de antes de la tanda (${BASE_REF}); con la historia entera está (TYCON_PROFILE_BASE_REF lo cambia)"
   else
     OLD="$T/old-tree"; lab_tree "$OLD" "$BASE_REF" || mal "T40 no pude armar el árbol de ${BASE_REF}"
-    # los bloques, los de hoy en los dos lados: la 8.19 (tanda E) cambió el texto de dos y la marca de arranque («generado
-    # por … del arnés»), y T40 mide el perfil, no esos textos. La marca se compara sin su descripción (ver el cmp de abajo).
-    # (sin el marcador `requires-profile`, que el aplicador de antes no conoce: es de la tanda C de la 8.16)
+    # los bloques, los actuales en los dos lados: el texto de dos y la marca de arranque («generado
+    # por … del arnés») cambiaron desde el commit de antes, y T40 mide el perfil, no esos textos. La marca se compara sin
+    # su descripción (ver el cmp de abajo).
+    # (sin el marcador `requires-profile`, que el aplicador de antes no conoce)
     rm -rf "$OLD/claude-md-blocks" && cp -R "$RAIZ/claude-md-blocks" "$OLD/claude-md-blocks" \
       && for f in "$OLD"/claude-md-blocks/*.md; do grep -v '^<!-- requires-profile:' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
     # cada aplicador con el perfil del equipo de su commit (el de antes no conoce la sección `install`)
@@ -278,12 +279,12 @@ t = open(sys.argv[1], encoding="utf-8").read().replace(sys.argv[2], sys.argv[3])
 open(sys.argv[4], "w", encoding="utf-8").write(t)
 PY
     sed "s#$T/t40/new#@HOME@#g" "$T/t40/new/.claude/settings.json" > "$T/t40/new-norm.json"
-    # Los hooks que el arnés SUMÓ después de ${BASE_REF}, declarados acá con su story: T40 mide que el perfil no cambie
-    # lo que había, no que el arnés no crezca. Se apartan del lado de hoy antes de comparar, y cada uno tiene que estar
+    # Los hooks que el arnés SUMÓ después de ${BASE_REF}, declarados acá: T40 mide que el perfil no cambie
+    # lo que había, no que el arnés no crezca. Se apartan del lado actual antes de comparar, y cada uno tiene que estar
     # UNA vez (una declaración que ya no hace falta, sale; registrado dos veces, o en otro evento más, también es rojo).
-    # Sin esto, el primer hook nuevo ponía roja la prueba para siempre.
-    #   scripts/hooks/public-push-guard.js — el freno antes de publicar (story 8.26, tanda F1)
-    #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido (story 2.28, AC 30)
+    # Sin esto, el primer hook nuevo pondría roja la prueba para siempre.
+    #   scripts/hooks/public-push-guard.js — el freno antes de publicar
+    #   scripts/hooks/owner-email-notice.js — tu correo de git, dicho una vez, con el buzón prendido
     #   scripts/hooks/wait-notice.js — el aviso de que una corrida espera a una persona, en sus seis eventos
     #   scripts/hooks/worktree-sweep.js — el barrido diario de las carpetas de trabajo ya mergeadas
     #   scripts/hooks/unclosed-runs-notice.js — las corridas que quedaron sin cerrar, dicho una vez por día
@@ -370,12 +371,12 @@ if corre T35; then
   # en minimal frenan dos: el freno de comandos destructivos y el portón de edición
   grep -Eq '\(2 pueden frenar' "$T/t35/dry-min.out" && ok "T35 el plan de minimal cuenta dos frenos (el de comandos y el portón de edición)" || mal "T35 el plan de minimal no cuenta dos frenos: $(grep -Em1 'frenar|hooks' "$T/t35/dry-min.out")"
   grep -Eq 'puede(n)? frenar' "$T/t35/dry-full.out" && ok "T35 espejo: el plan de full sí cuenta frenos" || mal "T35 espejo: el plan de full no cuenta frenos (el «ninguno» de minimal no probaría nada)"
-  # las tareas de fondo de full no se anuncian en el plan de minimal (pase adversarial de la tanda C, clase 1)
+  # las tareas de fondo de full no se anuncian en el plan de minimal
   BG='recorre de fondo el historial de git'
   { ! grep -q "$BG" "$T/t35/dry-min.out" && grep -q "$BG" "$T/t35/dry-full.out"; } && ok "T35 el plan de minimal no anuncia las tareas de fondo de full (el de full sí)" \
     || mal "T35 tareas de fondo por perfil: minimal $(grep -c "$BG" "$T/t35/dry-min.out") · full $(grep -c "$BG" "$T/t35/dry-full.out")"
   [ ! -e "$H/.claude/tycon.json" ] && [ ! -e "$H/.claude/.tycon-pipeline" ] && ok "T35 --dry-run --profile no escribe nada" || mal "T35 --dry-run --profile escribió"
-  # «n» en la terminal: ni tycon.json. Desde la tanda D, con `--profile` y terminal se preguntan antes las integraciones y
+  # «n» en la terminal: ni tycon.json. Con `--profile` y terminal se preguntan antes las integraciones y
   # el paquete (Enter y Enter: ninguna, no), y recién después la conformidad
   H="$T/t35/no"; new_home "$H"; base "$H"; ANTES="$(home_hash "$H")"
   harness_lab_pty $'\n\nn' "${RUN_ENV[@]}" node "$TREE/scripts/setup/harness.js" install --profile minimal > "$T/t35/no.out" 2>&1
@@ -393,7 +394,7 @@ if corre T35; then
   [ "$(state_profile "$H")" = "minimal|maquina" ] && ok "T35 el estado guarda el perfil y su origen" || mal "T35 el estado: $(state_profile "$H")"
   cmp -s <(harness_hooks "$H" "$TREE") <(minimal_hooks) && ok "T35 instaló los hooks de minimal" || mal "T35 hooks tras --profile minimal: $(harness_hooks "$H" "$TREE" | wc -l | tr -d ' ')"
   grep -q 'perfil: minimal' "$T/t35/min.out" && ok "T35 el cierre nombra el perfil" || mal "T35 el cierre no nombra el perfil: $(tail -n 8 "$T/t35/min.out" | tr '\n' ' ')"
-  # sin --profile y sin que nadie lo diga: desde la tanda D (AC 30) ya no es «full (sin elegir)» — sin terminal sale 2
+  # sin --profile y sin que nadie lo diga: no es «full (sin elegir)» — sin terminal sale 2
   # pidiendo el perfil, también con --yes, y no escribe nada (las preguntas las prueba harness-questions.test.sh)
   H="$T/t35/unset"; new_home "$H"; base "$H"; ANTES="$(home_hash "$H")"
   harness "$T/t35/unset.out" install --yes
@@ -449,8 +450,8 @@ print(' '.join(str(r) for r in rs))" "$H/.claude/.tycon-pipeline/harness/backups
   harness "$T/t36/back.out" install --profile full --yes
   { [ "$RC" = 0 ] && [ "$(setting "$H" cleanupPeriodDays)" = 365 ] && [ -f "$H/.git-hooks/pre-commit" ] && grep -q 'TYCON_BLOCK:response-style START' "$H/.claude/CLAUDE.md" \
     && [ "$(harness_hooks "$H" "$TREE" | wc -l | tr -d ' ')" -gt 20 ]; } && ok "T36 de vuelta a full: lo repone todo" || mal "T36 de vuelta a full: rc ${RC} · $(harness_hooks "$H" "$TREE" | wc -l | tr -d ' ') hooks · $(tail -n 3 "$T/t36/back.out" | tr '\n' ' ')"
-  # el cambio por archivo: `apply --dry-run` lo muestra antes (qué quita y que el perfil cambia: pase adversarial, clases 5
-  # y 9), y el próximo startup lo aplica, con su copia y sin preguntar
+  # el cambio por archivo: `apply --dry-run` lo muestra antes (qué quita y que el perfil cambia),
+  # y el próximo startup lo aplica, con su copia y sin preguntar
   machine "$H" '{ "install": { "profile": "minimal" } }'
   ANTES="$(home_hash "$H")"
   harness "$T/t36/apply-dry.out" apply --dry-run
@@ -462,7 +463,7 @@ print(' '.join(str(r) for r in rs))" "$H/.claude/.tycon-pipeline/harness/backups
     || mal "T36 startup tras cambiar el archivo: rc ${RC} · $(harness_hooks "$H" "$TREE" | wc -l | tr -d ' ') hooks · estado $(state_profile "$H")"
   [ "$(wc -l < "$T/t36/startup.out" | tr -d ' ')" -le 1 ] && ok "T36 startup sigue en una línea como mucho" || mal "T36 startup imprimió $(wc -l < "$T/t36/startup.out" | tr -d ' ') líneas"
   # un paso apagado a mano no se lee como «no es del perfil nuevo»: con TYCON_NO_COMMANDS_SYNC=1 los comandos no se
-  # reportan, y el cambio de full a minimal NO los borra (están en los dos perfiles; pase adversarial, clases 8 y 12)
+  # reportan, y el cambio de full a minimal NO los borra (están en los dos perfiles)
   H="$T/t36/optout"; new_home "$H"; base "$H"
   harness "$T/t36/oo1.out" install --profile full --yes
   N_CMD="$(ls "$H/.claude/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')"
@@ -484,7 +485,7 @@ if corre T37; then
   H="$T/t37/opt"; new_home "$H"; base "$H"; ANTES="$(home_hash "$H")"
   harness "$T/t37/opt.out" install --profile medio --yes
   { [ "$RC" = 2 ] && grep -q 'perfil «medio»: tiene que ser minimal o full' "$T/t37/opt.out" && [ "$(home_hash "$H")" = "$ANTES" ]; } && ok "T37 --profile medio: 2 con los dos válidos, nada escrito" || mal "T37 --profile medio: rc ${RC} · $(head -c 200 "$T/t37/opt.out")"
-  # `--profile` con `--from-existing` (esa corrida no aplica nada): 2, no se ignora en silencio (pase adversarial, clase 6)
+  # `--profile` con `--from-existing` (esa corrida no aplica nada): 2, no se ignora en silencio
   harness "$T/t37/fe.out" install --from-existing --profile minimal
   { [ "$RC" = 2 ] && grep -q -- '--profile no va con --from-existing' "$T/t37/fe.out" && [ "$(home_hash "$H")" = "$ANTES" ]; } && ok "T37 --profile con --from-existing: 2, nada escrito" \
     || mal "T37 --profile con --from-existing: rc ${RC} · $(head -c 200 "$T/t37/fe.out")"
@@ -509,10 +510,10 @@ if corre T37; then
     || mal "T37 aviso del freno: rc ${RC} · $(grep -m1 'freno' "$T/t37/guard.out")"
 fi
 
-# ══ REG · regresiones del pase adversarial de la tanda C que piden el aplicador de juguete ═════════════════════════════
-# (clases 7 y 14) un cambio de perfil sin el reporte de piezas del aplicador no sabe qué sobra: no quita nada, y por eso
-# tampoco anota el perfil nuevo — el arranque siguiente, con reporte, lo reintenta. Antes lo anotaba igual, y lo de full
-# que el aplicador no saca solo (los ajustes, los hooks de git) quedaba para siempre.
+# ══ REG · regresiones que piden el aplicador de juguete ═════════════════════════════
+# un cambio de perfil sin el reporte de piezas del aplicador no sabe qué sobra: no quita nada, y por eso
+# tampoco anota el perfil nuevo — el arranque siguiente, con reporte, lo reintenta. Si lo anotara igual, lo de full
+# que el aplicador no saca solo (los ajustes, los hooks de git) quedaría para siempre.
 if corre REG; then
   echo "REG · el cambio de perfil sin reporte no se da por hecho"
   OUT="$( (

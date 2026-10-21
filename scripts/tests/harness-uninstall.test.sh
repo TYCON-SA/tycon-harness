@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# harness-uninstall.test.sh — lo que el aplicador deja en la máquina, registrado pieza por pieza (story 8.13). La tanda C
-# suma acá los casos de `harness.js uninstall` (que sólo saca lo registrado): este archivo es la red de las dos mitades.
+# harness-uninstall.test.sh — lo que el aplicador deja en la máquina, registrado pieza por pieza. Además
+# trae los casos de `harness.js uninstall` (que sólo saca lo registrado): este archivo es la red de las dos mitades.
 #
 # Lo que no se puede perder:
-#   T18 · Applier_ReportJson_AgainstDeclaredList_Ps1ByReading (tanda B, AC 15) — el `install-tycon-hooks.sh` REAL en un HOME
+#   T18 · Applier_ReportJson_AgainstDeclaredList_Ps1ByReading — el `install-tycon-hooks.sh` REAL en un HOME
 #         de juguete, con todo prendido y con todo apagado, escribe con `--report-json <archivo>` un arreglo
 #         `[{kind, where, id}]` sin duplicados; cada pieza casa con la lista declarada
 #         (`scripts/tests/fixtures/harness-managed-pieces.json`) y ninguna con sus exclusiones; con todo apagado no aparece
@@ -11,34 +11,34 @@
 #         las de las integraciones y los opt-in. Con `--check` no se escribe el reporte. Sin la opción, la salida y lo que
 #         queda en el disco son los de siempre, byte a byte. El `.ps1` por lectura: acepta la opción (`-ReportJson` y
 #         `--report-json`), tiene `Record-Piece` en los sitios que la lista marca `windows: true` (y no en los `false`), y
-#         escribe el reporte también en su salida temprana. Tanda D (AC 28): las piezas COMPARTIDAS (`when: shared` en la
+#         escribe el reporte también en su salida temprana. Las piezas COMPARTIDAS (`when: shared` en la
 #         lista: `cleanupPeriodDays`, la variable de `env`, los comandos) las reporta el `.sh` suelto, o las hace y las
 #         anota `harness.js` (y entonces el reporte del `.sh` no las trae): el verificador acepta los dos lados sin
 #         confundirlos, y el `.ps1` no las anota (en Windows son de `harness.js`).
-#   T21 · Applier_NoLegacyBakUnderHarness_YesStandalone (tanda B, AC 18; la parte del aplicador `.sh` y del reparador de la
+#   T21 · Applier_NoLegacyBakUnderHarness_YesStandalone (la parte del aplicador `.sh` y del reparador de la
 #         línea de arranque — la de sync-claude-md-blocks y los `.ps1` está en sync-codex-detection.test.sh) — con
 #         `TYCON_HARNESS_SNAPSHOT_DIR` puesta no quedan `.bak` propios (settings.json, CLAUDE.md, pre-commit, post-commit);
-#         suelto, sí, como hoy.
-#   T26 · Uninstall_OnlyManaged_NeverVersionedInOtherRepo_WorksWithoutTree (tanda C, AC 22) — en tres partes: (a)
+#         suelto, sí.
+#   T26 · Uninstall_OnlyManaged_NeverVersionedInOtherRepo_WorksWithoutTree — en tres partes: (a)
 #         `remove.js` unitario (cada tipo de pieza, lo ajeno y su orden intactos, un ajuste cambiado por el dev se queda,
 #         el `.local` vuelve, nunca tira); (b) `uninstall.js` directo sobre una instalación REAL (`harness.js install` con
 #         el aplicador real en un HOME de juguete, sobre una copia descartable del árbol): plan, quita, deja, revisalo,
 #         sin árbol, segunda corrida; (c) de punta a punta por `harness.js uninstall` y la copia fija
 #         (`bootstrap.js uninstall --yes` con el clon borrado), `--dry-run`, sin `--yes` y sin terminal → 2 sin tocar
 #         nada, «nada que quitar» y `doctor` «no instalado».
-#   T27 · Uninstall_ByteForByte_AliensAndLocalHookIntact (tanda C, AC 23) — settings.json con hooks ajenos y formato
+#   T27 · Uninstall_ByteForByte_AliensAndLocalHookIntact — settings.json con hooks ajenos y formato
 #         propio, CLAUDE.md con texto propio, ~/.claude/skills carpeta real, un pre-commit propio (el aplicador lo pasa
 #         a .local), un repo de producto con AGENTS.md puntero; install → se borra el clon → uninstall --yes: settings.json
 #         y CLAUDE.md iguales por `cmp` a los de antes de instalar, la skill sigue, el pre-commit vuelve, el AGENTS.md
 #         sigue y sale en la lista, doctor «no instalado». Directo con el módulo y de punta a punta por la copia fija.
-#   REG · las regresiones del pase adversarial de la tanda C (directo con los módulos, HOME de juguete, segundos):
+#   REG · las regresiones (directo con los módulos, HOME de juguete, segundos):
 #         REG-H1 (una pieza que no se pudo leer no se pierde: `run` sale ok:false y el estado queda con ella),
 #         REG-H6 (un comando que el dev cambió queda aunque el árbol ya no lo traiga), REG-H7 (los repos que son enlaces a
 #         carpetas también se miran por AGENTS.md puntero), REG-H13 (un hook del arnés con texto alrededor sale en
 #         «revisalo», no desaparece), REG-H14 (`$HOME/…` o `~/…` que no es una raíz del arnés es ajeno), REG-H15
 #         (hooks.json/config.toml de Codex se borran sólo si siguen como los dejó la instalación), REG-R1 (`file` y `codex`
 #         fuera de su raíz no se borran), REG-R2 (un ajuste con su valor sin cambiar sí se quita).
-#   K3  · Uninstall_SingleRepo_LinksIntoTheTree (story 8.7, tanda C · decisión C3) — en el repo único (skills/ y agents/ en
+#   K3  · Uninstall_SingleRepo_LinksIntoTheTree — en el repo único (skills/ y agents/ en
 #         la raíz del clon) `uninstall --yes` quita ~/.claude/agent-skills, agents y skills cuando son enlaces al clon; con
 #         skills/ y agents/ como carpetas reales quita los enlaces por entrada y deja la carpeta y lo propio; un enlace
 #         colgado que apuntaba adentro de un clon borrado también se va; uno que apunta a OTRO lado no se toca (espejo).
@@ -46,14 +46,14 @@
 #
 # Aislamiento (el patrón de installer-cleanup-period.test.sh): HOME de juguete con un agent-skills de juguete (archivos
 # vacíos en las rutas que pide el set canónico, nunca un enlace al real), sin perfil del equipo (TYCON_PROFILE=0), sin
-# Codex, sin el examen ni launchd, sin la tanda de fondo, sin red. Nunca ~/.claude ni el checkout real.
+# Codex, sin el examen ni launchd, sin el trabajo de fondo, sin red. Nunca ~/.claude ni el checkout real.
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 #
-#   T38 · (story 8.18, AC 37) `uninstall` en las tres formas de máquina que deja la unión de los dos repos: quita sólo lo
+#   T38 · `uninstall` en las tres formas de máquina que deja la unión de los dos repos: quita sólo lo
 #         registrado y NO borra el clon viejo de skills ni toca su remoto — tampoco el re-apuntado, que queda re-apuntado.
 #
 # Uso: bash scripts/tests/harness-uninstall.test.sh [--only T18|T21|T26|T27|K3|REG|T38|S16]
-#   S16 · (story 8.16, tanda A · AC 6) «deja» nombra ~/.claude/response-style/ y ~/.claude/safety-guard.log cuando existen.
+#   S16 · «deja» nombra ~/.claude/response-style/ y ~/.claude/safety-guard.log cuando existen.
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INST="$RAIZ/scripts/install-tycon-hooks.sh"
@@ -98,10 +98,10 @@ ENV_UNSET=(-u TYCON_SETTINGS_PATH -u CLAUDE_MD_PATH -u CODEX_AGENTS_MD_PATH -u T
      -u TYCON_SESSION_GUARD -u TYCON_TG_ZOMBIE_SWEEP -u TYCON_CLOCKIFY -u TYCON_ENGRAM -u TYCON_NIGHTLY -u TYCON_ADO_ORG
      -u ADO_ORG -u TYCON_REPOS_ROOT -u TF_BUILD -u XDG_CONFIG_HOME -u TYCON_GUIDES_DIR -u TYCON_SKILLS_DIR
      -u CLAUDE_CODE_PLUGIN_DIRS)
-# 🔴 CLAUDE_CODE_PLUGIN_DIRS (2026-10-15): desde la 7.27 el instalador la pone en cada máquina con el arnés (la carpeta de
+# 🔴 CLAUDE_CODE_PLUGIN_DIRS: el instalador la pone en cada máquina con el arnés (la carpeta de
 #    sus mods), y la instalación SUMA lo que trae la terminal cuando settings.json no la tiene (plugin-dirs.js, addDir con
-#    `inherited`). Heredada, la instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite; la
-#    desinstalación saca sólo la propia y T26/T27 salían con 4 MAL en cualquier máquina con el arnés instalado.
+#    `inherited`). Heredada, la instalación de prueba anotaría la carpeta de mods DE VERDAD de quien corre la suite; la
+#    desinstalación saca sólo la propia y T26/T27 saldrían con 4 MAL en cualquier máquina con el arnés instalado.
 base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
   # TYCON_PARITY_BENCH_DIR: con el perfil completo el instalador lanza de fondo el chequeo de paridad, que en un clon deja
   # su reporte en scripts/controls-bench/.bench/ del árbol (lo que corre a la vez lo ve); acá va a la carpeta de la suite
@@ -113,12 +113,12 @@ base() { # base <home> → el ambiente aislado común (en el arreglo RUN_ENV)
        TYCON_THIRD_PARTY_NETWORK_BUDGET_S=1 GIT_CONFIG_NOSYSTEM=1)
 }
 # todo apagado: ninguna integración (sin perfil) y los opt-in que nacen prendidos, apagados. El buzón se apaga explícito:
-# en el árbol del equipo (el privado con el público debajo) su llave lo prende sola, y desde que hay un hook que depende de
-# él (owner-email-notice.js) «sin perfil» ya no alcanza para que quede apagado.
+# en el árbol del equipo (el privado con el público debajo) su llave lo prende sola, y con un hook que depende de
+# él (owner-email-notice.js) «sin perfil» no alcanza para que quede apagado.
 all_off() { base "$1"; RUN_ENV+=(TYCON_MAILBOX=0 TYCON_SAFETY_GUARD=0 TYCON_TEST_SCOPE_GUARD=0 TYCON_SESSION_GUARD=0); }
 # todo prendido: clockify, engram y nocturnos por variable; los seis opt-in (el de Telegram por su plugin en el disco); el
 # espejo de Codex por el disco (un AGENTS.md con bloques del arnés: el despliegue de Codex no corre en una prueba) y una
-# skill de terceros ya restituida en el estado. Azure DevOps también (story 8.7, AC 25): el bloque de CLAUDE.md que la
+# skill de terceros ya restituida en el estado. Azure DevOps también: el bloque de CLAUDE.md que la
 # requiere (`<!-- requires-integration: ado -->`) sólo se escribe con ella prendida; el refresco de proyectos sigue apagado
 # por TYCON_NO_AZ_PROJECTS_REFRESH (base).
 all_on() {
@@ -238,12 +238,12 @@ if corre T18; then
     mal "T18 todo apagado: el reporte no casa con la lista declarada"; grep '^MAL' "$T/v-off.txt" | head -15 | sed 's/^/        /'
   fi
 
-  # 1b. las piezas COMPARTIDAS (tanda D, AC 28: `when: shared` — cleanupPeriodDays, la variable de env y los comandos) las
+  # 1b. las piezas COMPARTIDAS (`when: shared` — cleanupPeriodDays, la variable de env y los comandos) las
   #     reporta el .sh cuando corre suelto, o las hace y las anota harness.js (y entonces el reporte del .sh NO las trae).
   #     El verificador acepta los dos lados y no los confunde: su 6º argumento dice quién las hizo (`applier`, por
   #     defecto, o `harness`). Acá se prueba el verificador con el reporte real de arriba, entero y sin las compartidas.
-  # 🔴 rojo previo: con la lista ya en `shared` y el verificador de antes, un reporte SIN las compartidas pasaba como
-  #    suelto («falta en el reporte» dejó de mirar los dos ajustes) y uno CON ellas pasaba como «bajo harness.js».
+  # 🔴 Sin esto: con la lista en `shared` y un verificador que no distingue, un reporte SIN las compartidas pasaría como
+  #    suelto («falta en el reporte» dejaría de mirar los dos ajustes) y uno CON ellas pasaría como «bajo harness.js».
   if [ -f "$H/reporte.json" ]; then
     python3 - "$FIX" "$H/reporte.json" "$T/reporte-sin-compartidas.json" <<'PY'
 import json, re, sys
@@ -281,7 +281,7 @@ PY
   #     (TYCON_HARNESS_SHARED_DONE=1, con el candado) entrega un reporte que casa con la lista «bajo harness.js» —sin
   #     ellas— y no deja ninguna de las tres en la máquina. El espejo: con sólo el candado (un programa viejo, que no
   #     conoce la variable) el reporte casa como suelto.
-  # 🔴 rojo previo (medido con un .sh que no conoce la variable): «bajo harness.js el aplicador reportó una pieza
+  # 🔴 Sin esto (con un .sh que no conoce la variable) el verificador dice «bajo harness.js el aplicador reportó una pieza
   #    compartida (la hace y la anota harness.js): setting cleanupPeriodDays», y lo mismo por la de env y cada comando.
   new_home "$H"; all_off "$H"
   rc=0; "${RUN_ENV[@]}" TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_SHARED_DONE=1 bash "$INST" --report-json "$H/reporte.json" > "$T/salida-1c.txt" 2>&1 || rc=$?
@@ -427,12 +427,11 @@ PY
     else
       mal "T18 el .ps1 tiene errores de sintaxis"; head -5 "$T/parse.txt" | sed 's/^/        /'
     fi
-    # F10 por ejecución (con pwsh). Hasta la W4 el .ps1 salía antes del sync cuando la lista de hooks no cambiaba, y un
-    # Record-BlocksInPlace anotaba ahí los bloques que ya estaban (F10 del pase adversarial de la tanda B; el seguimiento
-    # de la W3a, punto 12, los anotaba también con \r\n). Desde la W4 (AC 30) no hay salida temprana: cada corrida llega
-    # al sync de bloques, que es quien los anota. Se mide la corrida que importaba: la SEGUNDA, sin hooks nuevos, con el
+    # Por ejecución (con pwsh). El .ps1 no sale antes del sync aunque la lista de hooks no cambie: si saliera, un
+    # Record-BlocksInPlace anotaría ahí los bloques que ya estaban (también con \r\n). Cada corrida llega
+    # al sync de bloques, que es quien los anota. Se mide la corrida que importa: la SEGUNDA, sin hooks nuevos, con el
     # CLAUDE.md en \r\n (un clon viejo) — tiene que anotar los mismos bloques que la primera, todos.
-    # Con Azure DevOps prendido, fijo: el bloque que la requiere (story 8.7, AC 25) sólo se escribe con ella prendida.
+    # Con Azure DevOps prendido, fijo: el bloque que la requiere sólo se escribe con ella prendida.
     P10="$T/f10"; H10="$P10/home"; mkdir -p "$H10/.claude"
     f10_run() { # f10_run <reporte> — el .ps1 entero, suelto, en la casa de juguete
       env "${ENV_UNSET[@]}" HOME="$H10" USERPROFILE="$H10" TYCON_ADO_ORG=https://dev.azure.com/acme TYCON_NO_NIGHTLY_EXAM=1 TYCON_THIRD_PARTY=0 \
@@ -474,8 +473,8 @@ if corre T21; then
   }
   list_baks() { find "$H/.claude" "$H/.git-hooks" -maxdepth 1 -name '*.bak*' 2>/dev/null | sed "s|$H/||" | LC_ALL=C sort | tr '\n' ' '; }
 
-  # F11 (revisor de alcance): con el hook ajeno Y su .local ya puesto, el ajeno no tiene otro lugar que su .bak — la copia del
-  # mecanismo rota tras 5 y se perdería —, así que ESE .bak se hace igual bajo harness.js, y el aviso lo dice como hoy.
+  # con el hook ajeno Y su .local ya puesto, el ajeno no tiene otro lugar que su .bak — la copia del
+  # mecanismo rota tras 5 y se perdería —, así que ESE .bak se hace igual bajo harness.js, y el aviso lo dice.
   # Los demás (settings.json, CLAUDE.md) no.
   seed_machine; mkdir -p "$T/copia"
   "${RUN_ENV[@]}" TYCON_HARNESS_SNAPSHOT_DIR="$T/copia" bash "$INST" > "$T/t21-con.txt" 2>&1
@@ -496,7 +495,7 @@ if corre T21; then
   [ -z "$B" ] && [ -f "$H/.git-hooks/post-commit.local" ] \
     && ok "T21 bajo harness.js un hook del arnés viejo o un ajeno sin .local no dejan .bak" \
     || mal "T21 bajo harness.js un hook del arnés viejo o un ajeno sin .local dejaron «${B}»"
-  # el pre-push (story 8.26, tanda F1): el ajeno sigue corriendo desde .local, ejecutable; el del arnés queda puesto y se dice
+  # el pre-push: el ajeno sigue corriendo desde .local, ejecutable; el del arnés queda puesto y se dice
   if grep -q 'echo ajeno' "$H/.git-hooks/pre-push.local" && [ -x "$H/.git-hooks/pre-push.local" ] && [ -x "$H/.git-hooks/pre-push" ] \
      && grep -q 'git-pre-push-global.sh' "$H/.git-hooks/pre-push" && grep -q '✓ pre-push global de git instalado' "$T/t21-local.txt"; then
     ok "T21 el pre-push ajeno pasa a pre-push.local (ejecutable) y el del arnés queda puesto"
@@ -542,7 +541,7 @@ if corre T21; then
     mal "T21 un pre-push del arnés sin permiso de ejecución quedó así"; grep -n 'pre-push' "$T/t21-sin-permiso.txt" | head -5
   fi
   # lanzado por harness.js (TYCON_HARNESS_LOCK_HELD=1) el aplicador no vuelve a llamar a `harness.js install
-  # --from-existing`: el estado lo escribe quien lo lanzó; antes se escribía dos veces y quedaba una copia de más
+  # --from-existing`: el estado lo escribe quien lo lanzó; si se escribiera dos veces, quedaría una copia de más
   seed_machine; rm -f "$H/.claude/.tycon-pipeline/harness-state.json"   # sin estado: es el caso en que se anidaba
   "${RUN_ENV[@]}" TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_SNAPSHOT_DIR="$T/copia" bash "$INST" > /dev/null 2>&1
   [ ! -e "$H/.claude/.tycon-pipeline/harness-state.json" ] && [ ! -d "$H/.claude/.tycon-pipeline/harness/backups" ] \
@@ -568,7 +567,7 @@ PY
     mal "T21 suelto faltan .bak: quedaron «${B}»"
   fi
 
-  # el reparador de la línea de arranque (tanda A): su python copiaba settings.json a .bak antes de agregar la llamada
+  # el reparador de la línea de arranque: su python copia settings.json a .bak antes de agregar la llamada
   for mode in con sin; do
     new_home "$H"
     printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"cd ~/x/tycon-claude-guides && git pull"}]}]}}\n' > "$H/.claude/settings.json"
@@ -589,10 +588,10 @@ PY
   done
 fi
 
-# ── tanda C: la desinstalación (T26 y T27) ─────────────────────────────────────────────────────────────────────────────
+# ── la desinstalación (T26 y T27) ─────────────────────────────────────────────────────────────────────────────
 # El laboratorio: el aplicador REAL y el `harness.js install` REAL en un HOME de juguete (new_home + base, como T18), sobre
 # una COPIA DESCARTABLE del árbol de la rama (`git init` de scripts/ sin sus pruebas, claude-md-blocks/, commands/ y el
-# README): así se puede borrar el clon, que es lo que el AC 22 pide probar. Nunca el clon real ni ~/.claude.
+# README): así se puede borrar el clon, que es lo que hay que probar. Nunca el clon real ni ~/.claude.
 lab_tree() { # lab_tree <dir> → una copia del árbol bajo prueba, con git propio (sin el .git del clon)
   rm -rf "$1"; mkdir -p "$1"
   ( cd "$RAIZ" && tar cf - --exclude=scripts/tests --exclude=node_modules scripts claude-md-blocks commands README.md ) | ( cd "$1" && tar xf - )
@@ -883,10 +882,10 @@ PY
   t0=$SECONDS
   if install26 "$H" "$L" "$A"; then
     ok "T26 instalación real en el HOME de juguete ($((SECONDS - t0)) s, copia del árbol incluida)"
-    # tanda D (AC 28, T36): bajo harness.js las tres piezas compartidas las hace él —el aplicador REAL corre avisado y no
+    # T36: bajo harness.js las tres piezas compartidas las hace él —el aplicador REAL corre avisado y no
     # las reporta— y quedan en el registro, una vez cada una; lo que sigue de T26 prueba que `uninstall` las quita.
-    # 🔴 rojo previo (medido con un harness.js sin el enganche): «el registro de harness.js no dice que hizo las piezas
-    #    compartidas» (las hacía y las reportaba el aplicador).
+    # 🔴 Sin el enganche: «el registro de harness.js no dice que hizo las piezas
+    #    compartidas» (las haría y las reportaría el aplicador).
     python3 - "$H/.claude/.tycon-pipeline/harness-state.json" "$H/.claude/.tycon-pipeline/harness/startup.log" "$A" > "$L/shared.txt" 2>&1 <<'PY'
 import glob, json, os, sys
 state_file, log_file, tree = sys.argv[1:4]
@@ -1033,7 +1032,7 @@ PY
   echo "  ·    T27 tardó $((SECONDS - T27_T0)) s"
 fi
 
-# ── story 8.7, tanda C (decisión C3): los enlaces del repo único ───────────────────────────────────────────────────────
+# ── los enlaces del repo único ───────────────────────────────────────────────────────
 # En el repo único (skills/ y agents/ en la raíz del clon) el aplicador deja tres enlaces más —~/.claude/agent-skills → el
 # clon, ~/.claude/skills → <clon>/skills y ~/.claude/agents → <clon>/agents— o, si skills/ y agents/ ya son carpetas reales
 # de la persona, un enlace por entrada adentro. Apuntan ADENTRO del árbol, no al árbol: `remove.js` los dejaba, y
@@ -1243,8 +1242,7 @@ PY
     else mal "K3 $6"; head -8 "$4/check-$1.txt" | sed 's/^/        /'; fi
   }
 
-  # variante 1 · la HOME sin skills/ ni agents/: desde la story 8.35, carpetas reales con un enlace por entrada (antes, tres
-  # enlaces a la carpeta entera)
+  # variante 1 · la HOME sin skills/ ni agents/: carpetas reales con un enlace por entrada
   L="$T/lab-k3a"; H="$L/casa"; A="$L/arbol"; rm -rf "$L"; mkdir -p "$L" "$H/.claude"
   lab_single_repo "$A" "$L"; lab_env "$H" "$L"; RUN_ENV+=(TYCON_THIRD_PARTY=0 TYCON_PRODUCTION_GUARD_DIR="$L/sin-freno")
   rc=0; "${RUN_ENV[@]}" node "$A/scripts/setup/harness.js" install --yes >"$L/install.txt" 2>&1 || rc=$?
@@ -1444,9 +1442,9 @@ JS
   grep -q '^  ok' "$T/reg.txt" || mal "REG no corrió"
 fi
 
-# ═══ T38 (story 8.18, AC 37) · uninstall en las tres formas de máquina ═══════════════════════════════════════════════
-# `uninstall` quita sólo lo registrado en las tres formas, y NO borra el clon viejo de skills ni toca su remoto: ni el de
-# antes (dos clones sin re-apuntar) ni el re-apuntado al repo unificado (que queda re-apuntado y mostrando sólo lo suyo:
+# ═══ T38 · uninstall en las tres formas de máquina ═══════════════════════════════════════════════
+# `uninstall` quita sólo lo registrado en las tres formas, y NO borra el clon viejo de skills ni toca su remoto: ni en la forma de
+# dos clones sin re-apuntar ni en la re-apuntada al repo unificado (que queda re-apuntado y mostrando sólo lo suyo:
 # deshacer la mudanza es la llave, no la desinstalación). Va al final: el laboratorio cambia la HOME de la suite.
 if corre T38; then
   echo "T38 · Mechanism_SkillsSourceInThreeShapes_Uninstall"
@@ -1479,10 +1477,10 @@ if corre T38; then
   done
 fi
 
-# ── S16-T6 · Uninstall_KeepsListed_ResponseStyleAndSafetyGuardLog (story 8.16, tanda A · AC 6) ──────────────────────
-# El caso (auditoría de la copia publicada, 2026-10-03): la portada decía «uninstall deshace todo» y el comando deja,
+# ── S16-T6 · Uninstall_KeepsListed_ResponseStyleAndSafetyGuardLog ──────────────────────
+# La portada no puede decir «uninstall deshace todo»: el comando deja,
 # entre otras cosas, lo que guardaron dos hooks: las respuestas largas (`~/.claude/response-style/`) y los comandos
-# bloqueados (`~/.claude/safety-guard.log`). No las nombraba. Ahora están en «deja» cuando existen, y sólo entonces.
+# bloqueados (`~/.claude/safety-guard.log`). Las nombra en «deja» cuando existen, y sólo entonces.
 if corre S16; then
   echo "S16-T6 · Uninstall_KeepsListed_ResponseStyleAndSafetyGuardLog"
   # shellcheck disable=SC1091
@@ -1495,7 +1493,7 @@ if corre S16; then
   [ "$RC" = 0 ] && case "$(deja)" in *response-style*|*safety-guard.log*) mal "S16-T6 sin esas rutas en la máquina las nombra igual: $(deja)" ;; *) ok "S16-T6 sin las dos rutas en la máquina, «deja» no las nombra" ;; esac || mal "S16-T6 --dry-run sin las rutas: rc $RC: $SALIDA"
   mkdir -p "$LAB_HOME/.claude/response-style/long"; printf 'una respuesta larga\n' > "$LAB_HOME/.claude/response-style/long/x.md"
   printf 'un comando bloqueado\n' > "$LAB_HOME/.claude/safety-guard.log"
-  # los otros dos medidores también guardan fuera de la carpeta de estado (pase adversarial de la tanda A)
+  # los otros dos medidores también guardan fuera de la carpeta de estado
   mkdir -p "$LAB_HOME/.claude/blocking-meter" "$LAB_HOME/.claude/lectura-grande"
   printf '{}\n' > "$LAB_HOME/.claude/blocking-meter/log.jsonl"; printf '{}\n' > "$LAB_HOME/.claude/lectura-grande/log.jsonl"
   ANTES="$(harness_lab_home_hash)"
@@ -1509,7 +1507,7 @@ if corre S16; then
   case "$SALIDA" in *"$LAB_HOME/.claude/response-style"*"$LAB_HOME/.claude/safety-guard.log"*|*"$LAB_HOME/.claude/safety-guard.log"*"$LAB_HOME/.claude/response-style"*) ok "S16-T6 …y el cierre de uninstall las nombra" ;; *) mal "S16-T6 el cierre de uninstall no las nombra: $SALIDA" ;; esac
 fi
 
-# ── T29 de la story 8.39 · Uninstall_DosFormas_DejaLaCarpetaNombrada ─────────────────────────────────────────────────
+# ── T29 · Uninstall_DosFormas_DejaLaCarpetaNombrada ─────────────────────────────────────────────────
 # @story-8.39 @ac-22  uninstall reconoce el hook del arnés escrito con la ruta del Node propio (sin comillas, con
 # comillas, y la forma de Windows en texto) y deja ~/.tycon/node, nombrado en «deja» con el comando para borrarlo
 echo "T29 · uninstall y el Node del arnés"

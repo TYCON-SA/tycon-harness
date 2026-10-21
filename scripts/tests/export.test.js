@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * export.test.js — la copia pública de cada paquete del arnés (épica 8, story 8.4, tanda A, 2026-09-27).
+ * export.test.js — la copia pública de cada paquete del arnés.
  *
  * Lo que no se puede perder, en orden de gravedad:
  *   · Que salga EXACTAMENTE lo del commit y de la lista blanca: nunca el árbol de trabajo, nunca lo privado de la
@@ -80,7 +80,7 @@ const clonar = (x) => JSON.parse(JSON.stringify(x));
 const existe = (salida, rel) => fs.existsSync(path.join(salida, rel));
 /**
  * Un .gitignore de la copia de un solo repo, partido donde empieza el bloque de las carpetas de las que no sale nada
- * (story 8.26, AC 30): `{ own, folders }` — lo que venía del repo, tal cual, y las carpetas que sumó el exportador. El
+ *: `{ own, folders }` — lo que viene del repo, tal cual, y las carpetas que sumó el exportador. El
  * comentario del bloque se le pide al exportador: si cambia, estas pruebas lo siguen.
  */
 function splitPrivateBlock(texto) {
@@ -182,7 +182,7 @@ const DENEGADOS_BASE = {
   ],
   emailsPermitidos: ['arnes@tycon.com.ar'],
 };
-// El nombre público de mentira (story 8.7, AC 14): el de verdad vive en scripts/publishing/public-repos.json, que no viaja.
+// El nombre público de mentira: el de verdad vive en scripts/publishing/public-repos.json, que no viaja.
 const PUBLICO = { __doc: 'nombre público de mentira', org: 'example-org', repo: 'example-harness' };
 
 // ── la fixture: se arma una vez y cada prueba trabaja sobre su copia ─────────────────────────────────
@@ -214,7 +214,7 @@ function armarPlantilla() {
   for (const a of REVISORES) deArnes[`scripts/controls-bench/cases/advisors/${a}.json`] = `{ "agente": "${a}", "casos": [] }\n`;
   for (const m of muestras('arnes')) deArnes[m] = 'muestra de una exclusión fija\n';
   deArnes['scripts/ci/pipeline-debt.json'] = DEUDA_REAL;
-  // story 8.10 (AC 18): el exportador lee los productos del registro de paridad; el de la fixture, uno que la lista ve
+  // El exportador lee los productos del registro de paridad; el de la fixture, uno que la lista ve
   deArnes['scripts/ci/product-parity.json'] =`${JSON.stringify({ grupos: { g: [{ producto: 'AcmeCorp', ruta: 'AcmeCorp/Backend' }] } }, null, 2)}\n`;
   escribir(arnes, deArnes);
 
@@ -266,7 +266,7 @@ function fixture() {
     primero: plantilla.primero,
     cfg: {
       lista: path.join(dir, 'cfg', 'allowlist.json'), reemplazos: path.join(dir, 'cfg', 'replacements.json'), denegados: path.join(dir, 'cfg', 'denylist.json'),
-      // story 8.7 (AC 14): el nombre público va siempre por opción — el de verdad no viaja en la copia, donde esta suite corre
+      // El nombre público va siempre por opción — el de verdad no viaja en la copia, donde esta suite corre
       publicRepos: path.join(dir, 'cfg', 'public-repos.json'),
     },
     salida: (nombre) => path.join(dir, 'out', nombre),
@@ -299,7 +299,7 @@ function exportar(fx, args, { env = {} } = {}) {
 
 const temporales = (fx) => fs.readdirSync(path.join(fx.dir, 'out')).filter((n) => n.includes('.exportando-'));
 
-// ── story 8.10, pase adversarial — «tiene par» lo decide la tabla: el reemplazo de verdad, con la caja del PAR ─────────
+// ── «tiene par» lo decide la tabla: el reemplazo de verdad, con la caja del PAR ─────────
 test('Exporter_TermHasPair_TheTableDecides', () => {
   const ex = require(EXPORTAR);
   const cats = ['cliente', 'persona', 'host-interno', 'maquina', 'interno'];
@@ -314,7 +314,7 @@ test('Exporter_TermHasPair_TheTableDecides', () => {
     [{ indice: 1, categoria: 'cliente' }], 'por su posición y su categoría');
 });
 
-// ── 2026-10-05 (la validación en 15 min o menos) — el atajo de los reemplazos no cambia nada ─────────────────────────
+// ── el atajo de los reemplazos no cambia nada ─────────────────────────
 // reemplazar() saltea un par si el texto, en minúsculas, no contiene la primera parte de ninguna de sus formas. Tiene
 // que reemplazar igual cada caja, las partes separadas, el par que aparece recién después de otro reemplazo, y no
 // atajear una forma con letras fuera de ASCII (la `i` de las expresiones y las minúsculas de JS pueden no coincidir).
@@ -335,15 +335,15 @@ test('Exporter_ReplaceShortcut_SameResultInEveryCase', () => {
 
 const sinArchivo = (tabla) => tabla.exclusionesSinArchivo.map((x) => `${x.origen} ${x.fuente}/${x.glob}`).sort();
 
-// El caso real (AC 60): en el arnés del equipo, las guías privadas protegidas por su nombre de archivo (export.js y los
-// «out» de la lista blanca) están cubiertas HOY por su archivo, no por un reemplazo. En la copia pública no están.
+// En el arnés del equipo, las guías privadas protegidas por su nombre de archivo (export.js y los
+// «out» de la lista blanca) están cubiertas por su archivo, no por un reemplazo. En la copia pública no están.
 test('T64 PreC1_ExporterExplainBeforeAfter — las guías privadas reales, cada una cubierta por su archivo', { skip: !fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && 'copia pública: sin las guías privadas ni la configuración' }, () => {
   const r = spawnSync(process.execPath, [EXPORTAR, '--explain', '--json', '--harness', 'HEAD', '--agent-skills', 'HEAD'], { cwd: RAIZ, encoding: 'utf8',
     env: { ...sinGit(process.env), TYCON_GUIDES_DIR: RAIZ } });
   assert.strictEqual(r.status, 0, r.stderr);
   const tabla = JSON.parse(r.stdout);
   assert.deepStrictEqual(tabla.exclusionesSinArchivo, [], 'ninguna exclusión del arnés queda sin su archivo');
-  // las guías privadas por nombre de archivo, en guides/ o (desde la R5 de la 8.12) en guides/decisions/; las de
+  // las guías privadas por nombre de archivo, en guides/ o en guides/decisions/; las de
   // guides/bizuit/ van a su paquete, no son privadas
   const porNombre = tabla.coberturaExclusiones.filter((x) => x.fuente === 'arnes' && x.origen !== 'afuera-privado' && /^guides\/(?:decisions\/)?[^/]+\.md$/.test(x.glob));
   assert.ok(porNombre.length >= 3, `las tres guías privadas por nombre de archivo (hay ${porNombre.length})`);
@@ -353,7 +353,7 @@ test('T64 PreC1_ExporterExplainBeforeAfter — las guías privadas reales, cada 
   }
 });
 
-// ══ story 8.7, tanda A — los papeles y el repo único ════════════════════════════════════════════════════════════════
+// ══ los papeles y el repo único ════════════════════════════════════════════════════════════════
 // Los marcadores de bloque se arman por partes: ninguna línea de este archivo es exactamente un marcador (el exportador
 // frena un marcador solo en su línea fuera de un `.md`).
 const MARCA = {
@@ -363,19 +363,19 @@ const MARCA = {
   PE: '-' + '->',
 };
 const PAPELES = 'scripts/publishing/public-files';
-// EL REPO PRIVADO ADELGAZADO (story 8.26, tanda I, 2026-10-13). Ahí las pruebas corren sobre el árbol armado: lo público
+// EL REPO PRIVADO ADELGAZADO. Ahí las pruebas corren sobre el árbol armado: lo público
 // llega encima, y con él los guiones de entrada y la lista de remotos en scripts/setup/. «En el interno no existe» no se
 // puede cumplir, así que esas dos afirmaciones no se exigen cuando la lista del privado (.tycon/internal-forms.json) dice
 // `layout: thin`; lo demás de cada caso (la plantilla, su declaración en la lista blanca) sí. Sin esa lista —el público,
-// o un privado de antes— no cambia nada.
+// o un privado completo— no cambia nada.
 const THIN_PRIVATE = (() => {
   try { return JSON.parse(fs.readFileSync(path.join(RAIZ, '.tycon', 'internal-forms.json'), 'utf8')).layout === 'thin'; } catch (_) { return false; }
 })();
 
-// ── T9 · story 8.7, AC 14 — el nombre público, en un solo lugar ─────────────────────────────────────────────────────────
-// AC 14 · la clasificación de cada commit (whatShips, la que usan los frenos) lee el nombre público del MISMO commit: un
+// ── T9 — el nombre público, en un solo lugar ─────────────────────────────────────────────────────────
+// La clasificación de cada commit (whatShips, la que usan los frenos) lee el nombre público del MISMO commit: un
 // archivo roto es «no pude mirar» (tira), nunca «sin nombre público»; ausente (la copia pública no lo trae), sigue sin él.
-// Revisión de fallos silenciosos de la tanda A: antes se tragaba cualquier error del lector.
+// Tragarse cualquier error del lector lo haría pasar por «sin nombre público».
 test('PublicNameExceptions_Reader_EveryEntryWithPathAndWhy_NoDuplicates', () => {
   // las excepciones de la dirección del repo público: cada archivo con su motivo, una sola vez
   const ex = require(EXPORTAR);
@@ -415,8 +415,8 @@ test('WhatShips_PublicRepos_BrokenIsCouldNotLook', () => {
   }
 });
 
-// ── pase adversarial de la tanda A de la story 8.7 (step-05b) ──────────────────────────────────────────────────────────
-// traversal-completeness-1: los frenos de nombres miran el .md ENTERO, bloques internos incluidos (AC 5)
+// ── los frenos de nombres ──────────────────────────────────────────────────────────
+// los frenos de nombres miran el .md ENTERO, bloques internos incluidos
 test('WhatShips_InternalBlocks_FrenosSeeWholeFile', () => {
   const fx = fixture();
   const { IS, IE, PS, PE } = MARCA;
@@ -434,7 +434,7 @@ test('WhatShips_InternalBlocks_FrenosSeeWholeFile', () => {
 });
 
 test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — los bytes: una función, la misma entrada da los mismos bytes', () => {
-  // 🔴 rojo previo: «ex.versionFileBytes is not a function» (export.js no exportaba la función ni VERSION_FILE)
+  // 🔴 Falla con: «ex.versionFileBytes is not a function» (export.js sin la función ni VERSION_FILE)
   const ex = require(EXPORTAR);
   const A = 'a'.repeat(40);
   const B = 'b'.repeat(40);
@@ -476,7 +476,7 @@ test('Export_VersionJson_OnlyWhenTreeChanged_Deterministic_VerifyIgnores — los
   for (const [que, datos] of mal) assert.throws(() => ex.versionFileBytes(datos), ex.NoPudo, `${que}: tira`);
 });
 
-// ── story 8.13, tanda D (decisión A1) — el archivo que dice cuál es el remoto público ───────────────────────────────────
+// ── el archivo que dice cuál es el remoto público ───────────────────────────────────
 // La copia lleva `scripts/setup/public-remotes.json` con el nombre público ya puesto: con él, el programa de instalación
 // reconoce un clon del público. Es un papel más (vive en public-files/ con los marcadores y llega por un sintético); en
 // el interno ese archivo no existe en `scripts/setup/`, así que un clon interno nunca es «público».
@@ -485,7 +485,7 @@ const PLANTILLA_REMOTOS = '{ "remotes": ["https://github.com/{{public-org}}/{{pu
 
 test('Export_PublicRemotes_ShipsWithThePublicName — la plantilla real y su declaración en la lista blanca',
   { skip: !fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && 'copia pública: ahí el archivo ya está en su destino y la plantilla no viaja' }, () => {
-    // 🔴 rojo previo: ENOENT de scripts/publishing/public-files/scripts/setup/public-remotes.json
+    // 🔴 Falla con: ENOENT de scripts/publishing/public-files/scripts/setup/public-remotes.json
     const plantilla = fs.readFileSync(path.join(RAIZ, PAPELES, REMOTOS), 'utf8');
     assert.strictEqual(plantilla, PLANTILLA_REMOTOS, 'el contrato con el programa de instalación: una lista «remotes» con la URL por marcadores');
     assert.deepStrictEqual(JSON.parse(plantilla), { remotes: ['https://github.com/{{public-org}}/{{public-repo}}'] });
@@ -502,10 +502,10 @@ test('Export_PublicRemotes_ShipsWithThePublicName — la plantilla real y su dec
     assert.doesNotThrow(() => require(EXPORTAR).validarLista(real, 'allowlist.json'));
   });
 
-// ── story 8.18 (tramo 2) — el repo unido: UNA fuente física, dos lógicas partidas por ruta ─────────────────────────────
+// ── el repo unido: UNA fuente física, dos lógicas partidas por ruta ─────────────────────────────
 // El arnés y agent-skills pasan a ser un repo. La copia pública tiene que salir igual: el exportador lee un solo commit y
 // lo parte por ruta (`agents/`, `skills/`, `packs/`, `.tycon/post-commit-ignore` y `.githooks/pre-commit-skills` son la
-// fuente agent-skills; el resto, arnes). Con dos repos físicos —estas mismas pruebas de juguete— sigue andando como hoy.
+// fuente agent-skills; el resto, arnes). Con dos repos físicos —estas mismas pruebas de juguete— sigue andando igual.
 const HARNESS_HOOK = '#!/usr/bin/env bash\n# pre-commit de mentira del arnés\nexit 0\n';
 const SKILLS_HOOK = '#!/usr/bin/env bash\n# pre-commit de mentira de agent-skills\nexit 0\n';
 // el despachador de un commit del repo unido anterior al control único (corría las dos partes)
@@ -556,7 +556,7 @@ test('Export_SplitHooks_Direct_PartAlreadyThere_OneControl_NothingToSplit', () =
   assert.deepStrictEqual(ajustes.map((a) => a.archivo), ['arnes/.githooks/pre-commit', 'agent-skills/.githooks/pre-commit']);
 });
 
-// story 8.41, AC 33 (T26): el exportador ya no trae la transformación que juntaba dos pre-commit con un despachador generado
+// (T26) El exportador no trae la transformación que juntaba dos pre-commit con un despachador generado
 test('T26 Export_NoMergedHooksTransform', () => {
   const ex = require(EXPORTAR);
   assert.ok(!ex.TRANSFORMACIONES.some((c) => c.nombre === 'merged-hooks'), 'la lista de transformaciones no nombra merged-hooks');
@@ -570,10 +570,10 @@ test.after(() => {
   for (const d of [...creados, plantilla && plantilla.dir]) if (d) fs.rmSync(d, { recursive: true, force: true });
 });
 
-// ── story 8.16, tanda E (AC 41, T58) — los dos guiones de entrada de la portada ────────────────────────────────────
+// ── T58 — los dos guiones de entrada de la portada ────────────────────────────────────
 // `get-harness.sh` y `get-harness.ps1` son papeles: viven en public-files/ con los marcadores y llegan a
 // `scripts/setup/` de la copia por un sintético, con la dirección del repo público ya puesta. `--explain --json` lista
-// los sintéticos (con su origen y su motivo), como ya listaba los generados. En el interno no existen en scripts/setup/.
+// los sintéticos (con su origen y su motivo), como lista los generados. En el interno no existen en scripts/setup/.
 const ENTRY_SCRIPTS = ['scripts/setup/get-harness.sh', 'scripts/setup/get-harness.ps1'];
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 
@@ -598,15 +598,15 @@ test('Export_GetHarness_ByPlaceholder_InternalNeverNamesPublicRepo — la declar
     assert.doesNotThrow(() => require(EXPORTAR).validarLista(real, 'allowlist.json'));
   });
 
-// ══ story 8.13.1, tanda A (AC 6, T7) — la lista de transformados viaja en version.json ═════════════════════════════════
+// ══ T7 — la lista de transformados viaja en version.json ═════════════════════════════════
 // Una máquina con la capa privada compara cada ruta pública con el commit interno: una con otro blob es, o un archivo
 // que el exportador transformó, o uno de otra versión. Para distinguirlos, el version.json publicado trae `transformed`:
 // las rutas PUBLICADAS cuyo blob difiere del interno en esa misma ruta, cada una con el nombre de su ajuste. La lista
 // sale de lo que el exportador hizo en esa corrida (sus `ajustes` y los reemplazos, contra el blob interno), nunca de una
 // lista escrita a mano. La mitad de mirror.js (la sincronización la escribe y `verify` la comprueba) está en mirror.test.js.
 
-// ── story 8.10.3, tanda B · pase de fallos silenciosos (W8) y pase adversarial (clases 1-4, 6-8): la marca y su control
-// cuentan lo mismo sobre el mismo corpus — sobre el texto sin marcar, el control encuentra exactamente lo que la marca
+// ── la marca y su control ──────────────────────────────────
+// La marca y su control cuentan lo mismo sobre el mismo corpus — sobre el texto sin marcar, el control encuentra exactamente lo que la marca
 // marca; sobre el texto marcado, nada. Así no pueden desincronizarse en silencio ni frenar algo que la marca no arregla.
 test('Exporter_PathsNotInCopy_AgreesWithMarkOnCorpus', () => {
   const ex = require(EXPORTAR);
@@ -622,7 +622,7 @@ test('Exporter_PathsNotInCopy_AgreesWithMarkOnCorpus', () => {
     ['guides/a.md', 'dice `algo\nsigue` y `scripts/y.js` fin\n\nuna `suelta\n\ny `tasks/x.md` acá\n'],
     ['skills/s/SKILL.md', 'Paso: `steps/p.md` y `steps/q.md`.\n```\n`scripts/y.js` en un cerco\n```\n'],
     ['README.md', 'El README: `tasks/x.md`.\n'],
-    // vuelta 2 (fallos silenciosos): una vecina del equipo que se llama como una convención suelta
+    // una vecina del equipo que se llama como una convención suelta
     ['guides/sub/doc.md', 'La carpeta `specs` de acá y `tasks/todo.md`.\n'],
   ];
   for (const [archivo, texto] of corpus) {
@@ -636,7 +636,7 @@ test('Exporter_PathsNotInCopy_AgreesWithMarkOnCorpus', () => {
   assert.ok(total >= 10, `el corpus ejercita la marca (${total})`);
 });
 
-// ── story 8.10.3, tanda B · pase de cobertura (TEST-W4): una lista de convenciones mal escrita es una configuración rota
+// ── una lista de convenciones mal escrita es una configuración rota
 test('Exporter_ReaderConventions_Invalid_Exits2', () => {
   const fx = fixture();
   const malas = [
@@ -648,7 +648,7 @@ test('Exporter_ReaderConventions_Invalid_Exits2', () => {
   ];
   malas.forEach((extra, i) => {
     fx.config({ lista: { ...clonar(LISTA_BASE), ...extra } });
-    // story 8.26 (AC 36): el exportador ya no arma; la lista se valida igual al clasificar
+    // El exportador no arma; la lista se valida igual al clasificar
     const r = exportar(fx, ['--explain']);
     assert.strictEqual(r.code, 2, `${JSON.stringify(extra)} sale 2\n${r.err}\n${r.out}`);
     assert.match(`${r.err}${r.out}`, /readerConventions/);
@@ -656,9 +656,9 @@ test('Exporter_ReaderConventions_Invalid_Exits2', () => {
   assert.deepStrictEqual(temporales(fx), []);
 });
 
-// ── story 8.22, tramo F (AC 35 b) · el exportador más rápido, con el mismo resultado ───────────────────────────────────
-// Medido el 2026-10-07 sobre el núcleo real (37 s): 9,8 s se iban en compilar los ~400 .js de la copia con un proceso de
-// node por archivo, y 2,6 s en volver a calcular, para cada archivo, qué busca el atajo de cada par de reemplazo.
+// ── el exportador más rápido, con el mismo resultado ───────────────────────────────────
+// Compilar los ~400 .js de la copia con un proceso de node por archivo, y volver a calcular, para cada archivo, qué
+// busca el atajo de cada par de reemplazo, cuestan segundos de más sobre el núcleo real.
 test('T44 Export_CompileCheck_InProcessSameReport — los CommonJS se compilan en el mismo proceso, y el informe es el de `node --check` archivo por archivo', () => {
   const exp = require(EXPORTAR);
   const copia = fs.mkdtempSync(path.join(os.tmpdir(), 'export-t44-'));
@@ -694,7 +694,7 @@ test('T44 Export_CompileCheck_InProcessSameReport — los CommonJS se compilan e
     assert.deepStrictEqual(got.map((f) => f.archivo), ['scripts/roto.js', 'scripts/roto-dos.cjs', 'scripts/modulo-roto.mjs', 'paquete/esm-roto.js', 'scripts/guion-roto.sh'],
       'frenan los cinco rotos; el .mjs sano y los dos del paquete declarado módulo no se dan por rotos');
     assert.ok(got.every((f) => f.detalle && !f.detalle.includes(copia)), 'el detalle no lleva la carpeta temporal');
-    // lo que ya no lanza un proceso: los CommonJS sanos. Lo demás sigue como antes.
+    // lo que no lanza un proceso: los CommonJS sanos. Lo demás se compila con un proceso por archivo.
     const base = (list) => list.map((p) => path.relative(copia, p).split(path.sep).join('/')).sort();
     assert.deepStrictEqual(base(before.spawned), rutas.filter((r) => !r.endsWith('.md') && !r.endsWith('.json')).sort(), 'antes: un proceso por archivo de código');
     assert.deepStrictEqual(base(after.spawned), ['paquete/adentro/tambien-esm.js', 'paquete/esm-roto.js', 'paquete/esm.js', 'scripts/guion-roto.sh', 'scripts/guion.sh', 'scripts/modulo-roto.mjs', 'scripts/modulo.mjs', 'scripts/roto-dos.cjs', 'scripts/roto.js'],
@@ -708,7 +708,7 @@ test('T44 Export_CompileCheck_InProcessSameReport — los CommonJS se compilan e
 test('T45 Export_PairShortcut_ComputedOncePerPair — el atajo de los reemplazos contesta lo mismo que el cálculo de siempre, par por par y texto por texto', () => {
   const exp = require(EXPORTAR);
   const detector = require(DETECTOR);
-  // el cálculo de antes del tramo F, tal cual: por cada forma, cada vez
+  // el cálculo directo, tal cual: por cada forma, cada vez
   const asBefore = (par, lower) => par.formas.some((f) => !/^[\x20-\x7e]*$/.test(f.texto) || lower.includes(detector.partesDe(f.texto)[0].toLowerCase()));
   const pares = [
     { real: 'AcmeCorp', formas: [{ texto: 'AcmeCorp' }] },
@@ -732,8 +732,8 @@ test('T45 Export_PairShortcut_ComputedOncePerPair — el atajo de los reemplazos
   assert.strictEqual(exp.parPuedeEstar(par, 'hay primero acá'), true, 'lo que busca el atajo se calcula una vez por par');
 });
 
-// Pase adversarial del tramo F (5b): con una marca de orden de bytes (BOM) delante del `#!`, node no carga el archivo
-// (el `#!` sólo vale en el primer carácter). El atajo sacaba el BOM y después el `#!`, y lo daba por compilado.
+// Con una marca de orden de bytes (BOM) delante del `#!`, node no carga el archivo
+// (el `#!` sólo vale en el primer carácter). Un atajo que sacara el BOM y después el `#!` lo daría por compilado.
 test('T44 — un .js con BOM delante del `#!` no se da por compilado en el mismo proceso: decide `node --check`, con el mismo informe', () => {
   const exp = require(EXPORTAR);
   const copia = fs.mkdtempSync(path.join(os.tmpdir(), 'export-t44b-'));
@@ -754,10 +754,11 @@ test('T44 — un .js con BOM delante del `#!` no se da por compilado en el mismo
   }
 });
 
-// ── T83 · story 8.26, AC 30 (el arreglo del 2026-10-12, antes del corte) ───────────────────────────────────────────────
-// El ensayo general del corte le preguntó a git, parado en la copia real, por cada carpeta de primer nivel sin nada
-// público: el .gitignore de la copia ignoraba 2 de 12. `gitignore-publico` sólo sacaba líneas «!…»; nadie agregaba las
-// carpetas que el repo fuente trae y la copia no. En el repo que nace de esa copia, un `git add` común las subía.
+// ── T83 ───────────────────────────────────────────────
+// Se le pregunta a git, parado en la copia real, por cada carpeta de primer nivel sin nada
+// público: el .gitignore de la copia tiene que ignorarlas todas. Si `gitignore-publico` sólo sacara líneas «!…»
+// y nadie agregara las carpetas que el repo fuente trae y la copia no, en el repo que nace de esa copia un `git add`
+// común las subiría.
 // Sin los ignorados de la máquina de quien corre: sin `core.excludesFile` git lee igual `~/.config/git/ignore`, y una
 // carpeta ignorada ahí daría verde sin que el .gitignore de la copia la nombre.
 const NO_MACHINE_IGNORES = ['-c', 'core.excludesFile=/dev/null'];
@@ -808,7 +809,7 @@ test('PublicGitignore_FolderNames_EscapedOrRefused — un nombre con caracteres 
   ex.ignorePrivateFolders(treeOf('scripts/hola.js', 'privada/nota.md'), vacio, []);
   assert.strictEqual(vacio.get('.gitignore').datos.toString('utf8'), `${ex.PRIVATE_FOLDERS_NOTE.join('\n')}\n/privada/\n`);
   // lo que el .gitignore ya traía queda BYTE A BYTE: saltos de Windows, y bytes que no son UTF-8 (pasarlo por texto los
-  // cambiaba por el carácter de reemplazo, y esa línea dejaba de ignorar lo suyo). El bloque va detrás, siempre.
+  // cambia por el carácter de reemplazo, y esa línea deja de ignorar lo suyo). El bloque va detrás, siempre.
   const bloque = Buffer.from(`${ex.PRIVATE_FOLDERS_NOTE.join('\n')}\n/privada/\n`, 'utf8');
   for (const [que, bytes] of [['saltos de Windows y la línea ya escrita', Buffer.from('node_modules/\r\n/privada/\r\n')],
     ['un byte que no es UTF-8', Buffer.concat([Buffer.from('caf'), Buffer.from([0xe9]), Buffer.from('/\n')])],
@@ -842,12 +843,10 @@ test('PublicGitignore_FolderNames_EscapedOrRefused — un nombre con caracteres 
   assert.ok(!sinArchivo.has('.gitignore') && sinAjustes.length === 0, 'sin .gitignore en la copia no se inventa uno');
 });
 
-// ── story 8.26, AC 36 (T36) · el exportador queda como control: clasifica y no arma ──────────────────────────────────
-// Desde el corte a GitHub el repo público es la fuente y nadie arma una copia. Pedirle una al exportador sale 2 diciéndolo
-// —con cualquiera de las opciones con que se la pedía, también con --json—, sin escribir nada ni tocar las fuentes. La
+// ── T36 · el exportador es un control: clasifica y no arma ──────────────────────────────────
+// El repo público es la fuente y nadie arma una copia. Pedirle una al exportador sale 2 diciéndolo
+// —con cualquiera de sus opciones de armado, también con --json—, sin escribir nada ni tocar las fuentes. La
 // clasificación sigue: `--explain` clasifica el primer nivel (0) y `whatShips` sigue siendo la biblioteca de los frenos.
-// La cuenta de las pruebas de este archivo: 95 antes, 17 después (salieron las 79 que medían la copia armada; una pasó a
-// medir el control y ésta es nueva).
 test('T36 Exporter_ClassifiesAndVerifiesOnly — pedirle la copia sale 2 sin escribir nada; --explain clasifica', () => {
   const fx = fixture();
   const antes = [fx.arnes, fx.skills].map((d) => gitFx(d, ['status', '--porcelain', '--untracked-files=all']));

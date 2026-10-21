@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Prueba de label-prs.sh — la corrida de main dice qué pull requests trae (story 2.17).
+# Prueba de label-prs.sh — la corrida de main dice qué pull requests trae.
 #
-# La corrida que dispara el push a main se titulaba «Merge pull request <id> from dev into main» y no
-# enlazaba a nada; con `batch: true` una corrida junta varios merges y el título muestra, a lo sumo,
+# La corrida que dispara el push a main se titula «Merge pull request <id> from dev into main» y no
+# enlaza a nada; con `batch: true` una corrida junta varios merges y el título muestra, a lo sumo,
 # el último. El guion le pone a la corrida una etiqueta PR-<id> por cada pull request que trae y un
 # resumen. La corrida «dos merges agrupados» no se puede provocar a voluntad en Azure DevOps: se
 # reproduce acá con historias git sintéticas, sin red.
@@ -54,7 +54,7 @@ correr
 CONTROL=$(git -C "$R" log --first-parent --merges --format=%s HEAD~1..HEAD | tr '\n' '|')
 [ "$CONTROL" = "Merged PR 12: segundo del lote|" ] && ok "…(control: con HEAD~1 sólo se vería el PR 12)" || no "el mundo no reproduce el caso: HEAD~1 ve [$CONTROL]"
 
-# T1b (AC 16, observación del revisor spec-first): con el checkout en otra rama, --until main
+# T1b: con el checkout en otra rama, --until main
 # calcula la base desde main, no desde la rama del checkout. La otra rama sale del merge 11 y tiene
 # su propio commit de versión sin marca: si la base saliera de ahí, sólo se vería el PR 12.
 M11=$(git -C "$R" log --first-parent --merges --format=%H --grep='^Merged PR 11' main | head -1)
@@ -81,7 +81,7 @@ printf '%s\n' "$OUT" | grep "^##vso\[task.uploadsummary\]" >/dev/null && ok "…
 
 # ---------------------------------------------------------------- T2b. el merge de un pedido de GitHub
 # Un pedido mergeado desde GitHub por el skill se titula «asunto (#N)»: el número va al final. Sin leer esa forma, el
-# merge contaba como «sin número» y la corrida quedaba sin su etiqueta. Vale SÓLO con el repo en GitHub: en uno de
+# merge cuenta como «sin número» y la corrida queda sin su etiqueta. Vale SÓLO con el repo en GitHub: en uno de
 # Azure un «(#N)» que cierra el asunto de un merge es el número de una TAREA, no de un pedido.
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"
 merge_a dev main "feat(stock): el total por depósito (#41)"
@@ -138,13 +138,13 @@ git -C "$R" remote add origin https://github.com/acme/widgets.git
 correr
 [ "$(etiquetas)" = "PR-41 PR-412 PR-43 " ] && ok "…y sin el dato de Azure, un origin de GitHub alcanza" || no "origin de GitHub sin proveedor: [$(etiquetas)]"
 # 🔴 EN UN REPO DE AZURE la forma NO vale: ahí «(#N)» al final del asunto de un merge es una tarea. Medido sobre merges
-# de verdad: la corrida quedaba etiquetada con un pedido que no existe, y el resumen lo enlazaba.
+# de verdad: sin esto, la corrida queda etiquetada con un pedido que no existe, y el resumen lo enlaza.
 nuevo_repo; bump_backend "$(git rev-parse HEAD)"
 merge_a dev main "merge: dev -> main — el servicio valida el token de sesión (#5001)"
 merge_a dev main "Merged PR 43: uno de verdad"
 SYSTEM_COLLECTIONURI="https://dev.azure.com/o/" SYSTEM_TEAMPROJECT="P" BUILD_REPOSITORY_PROVIDER="TfsGit" BUILD_REPOSITORY_NAME="R" correr
-# «5001» como número suelto: el resumen nombra commits por su sha corto, y uno como «b5001e5» lo contenía (public-ci,
-# 2026-10-14, Node 24: rojo sin ninguna tarea en el resumen)
+# «5001» como número suelto: el resumen nombra commits por su sha corto, y uno como «b5001e5» lo contiene, así que
+# un patrón flojo toma un sha corto por una tarea
 SUELTO_5001='(^|[^0-9a-fA-F])5001([^0-9a-fA-F]|$)'
 printf 'anotado en el commit de versión b5001e5.\n' | grep -E "$SUELTO_5001" >/dev/null && no "el patrón del 5001 toma un sha corto" || ok "el patrón del 5001 no toma un sha corto (b5001e5)"
 printf '%s\n' 'la tarea 5001 quedó nombrada' | grep -E "$SUELTO_5001" >/dev/null && ok "…y sí ve el 5001 suelto" || no "el patrón del 5001 no ve el número suelto"
@@ -206,7 +206,7 @@ correr
 
 # T24. La marca existe pero NO SIRVE (el commit anotado no está en el clon, o no es ancestro): se cae
 # al commit del bot y se DICE. Sin este caso, romper el `merge-base --is-ancestor` no lo nota nadie —
-# y esa lógica ahora la usan dos guiones (hueco TEST-W4, revisor de cobertura de tests).
+# y esa lógica la usan dos guiones.
 nuevo_repo; X=$(git rev-parse HEAD)
 merge_a dev main "Merged PR 91: antes del bump"
 git checkout -q main; git commit -q --allow-empty -m "chore: bump version to 1.0.$N [skip ci]" -m "Commit: deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
@@ -272,11 +272,10 @@ if [ ! -f "$PASO" ]; then
   no "NO MEDIDO: no encontré $PASO (TYCON_SKILLS_DIR) — sin el skill no se puede verificar la capa 1"
 else
   PISTA="el skill no tiene el update de la story 2.17 con sus cuatro opciones: mergeá agent-skills ANTES que el arnés, o corré esta suite con TYCON_SKILLS_DIR apuntando al clon donde está el cambio"
-  # 🔴 `--delete-source-branch` se verifica PRESENTE, no fijo en `false` (2026-09-17). La etapa 2 del
-  # plan de PR le enseñó al 9b las ramas efímeras: el valor pasó a salir de `$BORRAR_SOURCE`, que es
-  # `false` para dev↔main y `true` para una rama de un solo uso. Anclar el literal dejaba la suite
-  # roja por el cambio que el skill hizo A PROPÓSITO — y lo que la story 2.17 vino a arreglar es que
-  # la opción VIAJE en el update (el `--squash false` del create no llegaba, medido con un pull request de prueba), no su valor.
+  # 🔴 `--delete-source-branch` se verifica PRESENTE, no fijo en `false`. El valor sale de `$BORRAR_SOURCE`, que es
+  # `false` para dev↔main y `true` para una rama de un solo uso. Anclar el literal dejaría la suite roja
+  # ante un cambio legítimo del skill; lo que importa es que la opción VIAJE en el update (el `--squash false` del
+  # create no llega, medido con un pull request de prueba), no su valor.
   DSB='--delete-source-branch ("?\$BORRAR_SOURCE"?|false|true)'
   S93=$(awk '/^### 9b\.3/{f=1} /^### 9b\.4/{f=0} f' "$PASO")
   S92=$(awk '/^### 9b\.2/{f=1} /^### 9b\.3/{f=0} f' "$PASO")
@@ -304,7 +303,7 @@ fi
 # ---------------------------------------------------------------- T22. registro
 node -e 'const d=require(process.argv[1]);const t=[...d.diarias,...(d.semanales||[])];process.exit(t.some(x=>x.raiz==="arnes"&&x.ruta==="tests/label-prs.test.sh")?0:1)' "$AQUI/scripts/tests/suites.json" \
   && ok "la suite está registrada en suites.json" || no "la suite no está en suites.json"
-# Desde la story 7.7 el índice de piezas vive en guides/piezas-del-arnes.md y el README ya no las
+# El índice de piezas vive en guides/piezas-del-arnes.md y el README no las
 # lista: la pieza tiene que estar nombrada en alguno de los dos (mismo criterio que readme-index.test.js).
 grep -q "scripts/ci/label-prs.sh" "$AQUI/guides/piezas-del-arnes.md" "$AQUI/README.md" \
   && ok "la guía de piezas (o el README) nombra el guion" \

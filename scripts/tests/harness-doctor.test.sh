@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# harness-doctor.test.sh — `harness.js doctor` mínimo de la tanda A (story 8.13 · T13, la parte del diagnóstico; la B
-# completa el doctor con el registro de piezas: T19).
+# harness-doctor.test.sh — `harness.js doctor` (T13, el diagnóstico mínimo; T19 lo completa
+# con el registro de piezas).
 #
 # Lo que no se puede perder:
 #   · `doctor` es de sólo lectura: el HOME queda idéntico por hash (la única excepción, `--fetch`, escribe FETCH_HEAD).
@@ -14,17 +14,17 @@
 #   · Lo que dice de un HEAD que no es el commit registrado es CIERTO, también en una copia pública: si promete que
 #     `update` lo re-registra, `update` lo re-registra; con commits propios no lo promete, y el comando que aconseja se
 #     puede correr.
-#   · (story 8.18, T38) En las tres formas de máquina que deja la unión de los dos repos —dos clones sin re-apuntar, dos
+#   · T38 · En las tres formas de máquina que deja la unión de los dos repos —dos clones sin re-apuntar, dos
 #     clones con el viejo re-apuntado al repo unificado, un solo árbol— doctor es verde, de sólo lectura y dice cuál es;
-#     la llave prendida con la mudanza sin hacer es un aviso; y lo publicado sin skills (AC 34), otro, con lo que hay.
-#   · (story 8.18, REPEATED) Los hooks del arnés que una máquina ya tiene registrados más de una vez: doctor lo dice UNA
+#     la llave prendida con la mudanza sin hacer es un aviso; y lo publicado sin skills, otro, con lo que hay.
+#   · REPEATED · Los hooks del arnés que una máquina ya tiene registrados más de una vez: doctor lo dice UNA
 #     vez, como dato, con la cuenta y cómo sacarlos a mano; no toca settings.json ni pone el diagnóstico en rojo.
-#   · (story 8.18, REPEATED-CASE) …también cuando la segunda ruta es la misma carpeta escrita con otras mayúsculas, en
+#   · REPEATED-CASE · …también cuando la segunda ruta es la misma carpeta escrita con otras mayúsculas, en
 #     un disco que no las distingue: se compara qué archivo es, no cómo está escrita la ruta.
-#   · T97 (story 8.17, tanda W3a): dice cuántos controles ESPERADOS —los de la lista del aplicador para esta plataforma y
+#   · T97 · dice cuántos controles ESPERADOS —los de la lista del aplicador para esta plataforma y
 #     esta configuración— faltan en settings.json y cuáles; es un aviso, nunca un rojo (tampoco bajo la comprobación de
 #     salud), y sigue sin escribir nada.
-#   · T6 (story 8.13.1, tanda A · AC 5): en una máquina con capa, doctor prueba sin escribir que público + capa = interno
+#   · T6 · en una máquina con capa, doctor prueba sin escribir que público + capa = interno
 #     (lo que falta, lo editado a mano, lo que no viene de ninguna fuente; lo ignorado y los escritores no cuentan), la
 #     compatibilidad por la lista de transformados, el rojo de un version.json sin esa lista, no_push y pre-push sólo en
 #     un árbol gestionado, y la capa al mínimo con las horas. `layer --check` es el mismo chequeo (0 / 1 / 3), y con
@@ -55,18 +55,18 @@ SALIDA="$(harness doctor 2>&1)"; RC=$?
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T13 doctor no escribe nada (HOME idéntico por hash)" || mal "T13 doctor escribió algo"
 [ "$(printf '%s\n' "$SALIDA" | head -1 | grep -c managed)" = 1 ] && ok "T13 la primera línea dice el modo" || mal "T13 primera línea: $(printf '%s\n' "$SALIDA" | head -1)"
 # interno + ask (TYCON_PROFILE=0 en el laboratorio) → aviso «máquina del equipo»; con auto, no
-# (story 8.16: doctor dice siempre «perfil: …», así que acá se busca el aviso entero, no la palabra suelta)
+# (doctor dice siempre «perfil: …», así que acá se busca el aviso entero, no la palabra suelta)
 case "$SALIDA" in *"máquina del equipo sin el perfil"*) ok "T13 remoto interno en ask: avisa la máquina del equipo sin el perfil" ;; *) mal "T13 no avisa el ask interno: $SALIDA" ;; esac
 JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = 0 ] && ok "T13 --json: sin fail en una instalación sana" || mal "T13 --json fail: $(printf '%s' "$JSON" | jtxt "d['fail']")"
 [ "$(printf '%s' "$JSON" | jtxt "any('ask' in w or 'perfil' in w for w in d['warn'])")" = True ] && ok "T13 --json: el aviso del ask está en warn" || mal "T13 --json warn: $(printf '%s' "$JSON" | jtxt "d['warn']")"
-# el espejo del fork de T37 (tanda D): un clon interno de verdad —el árbol NO trae la lista de remotos públicos—, en ask
+# el espejo del fork de T37: un clon interno de verdad —el árbol NO trae la lista de remotos públicos—, en ask
 # por defecto, trae el aviso «una máquina del equipo sin el perfil», como siempre
 [ ! -e "$LAB_TREE/scripts/setup/public-remotes.json" ] && [ "$(printf '%s' "$JSON" | jtxt "any('máquina del equipo sin el perfil' in w for w in d['warn'])")" = True ] \
   && ok "T13 un árbol sin la lista de remotos públicos (clon interno), en ask por defecto: con el aviso «máquina del equipo sin el perfil»" || mal "T13 clon interno sin el aviso: $(printf '%s' "$JSON" | jtxt "d['warn']")"
 JSON="$(TYCON_UPDATE_APPLY=auto harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('ask' in w for w in d['warn'])")" = False ] && ok "T13 con apply auto no avisa" || mal "T13 con auto avisa igual: $(printf '%s' "$JSON" | jtxt "d['warn']")"
-# T40 (story 8.23, tanda L · AC 39): dos arranques que no pudieron actualizar → doctor lo dice como aviso, con la fecha
+# T40: dos arranques que no pudieron actualizar → doctor lo dice como aviso, con la fecha
 FALLA="$LAB_HOME/.claude/.tycon-pipeline/harness/update-failures.json"
 printf '{"since":"2026-10-06T10:00:00.000Z","count":2,"reason":"sin red","last":"2026-10-06T11:00:00.000Z"}\n' > "$FALLA"
 JSON="$(harness doctor --json 2>/dev/null)"
@@ -90,7 +90,7 @@ harness_lab_git "$LAB_TREE" remote set-url origin "$LAB_REMOTE_TREE"
 ANTES="$(harness_lab_home_hash)"; rm -f "$LAB_TREE/.git/FETCH_HEAD"
 harness doctor --fetch >/dev/null 2>&1
 [ -f "$LAB_TREE/.git/FETCH_HEAD" ] && [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T13 --fetch escribe FETCH_HEAD y nada más del HOME" || mal "T13 --fetch: FETCH_HEAD=$([ -f "$LAB_TREE/.git/FETCH_HEAD" ] && echo sí || echo no)"
-# ── T19 Doctor_ManagedVsMachine_ReadOnly_FetchIsTheException (tanda B · AC 16) ─────────────────────────────────────
+# ── T19 Doctor_ManagedVsMachine_ReadOnly_FetchIsTheException ─────────────────────────────────────
 # El registro de piezas (`managed`) contra la máquina: lo registrado que falta, lo del arnés sin registrar, el HEAD y el
 # origin de cada fuente; y sigue sin escribir nada.
 ESTADO="$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
@@ -168,8 +168,8 @@ SALIDA="$(harness doctor 2>&1)"
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && [ -f "$TYCON_SETTINGS_PATH.bak.2026-01-01T00-00-00" ] && ok "T19 los .bak quedan intactos" || mal "T19 doctor tocó los .bak"
 case "$SALIDA" in *"2 copia"*".bak"*"no las gestiona"*|*".bak"*"2"*"no las gestiona"*) ok "T19 cuenta los .bak y dice que no los gestiona" ;; *) mal "T19 no cuenta los .bak: $SALIDA" ;; esac
 # las piezas propias de harness.js (el @import, la copia fija): borradas a mano, apply no las repone → no se caen del
-# registro y doctor remite a install (pase adversarial, iteración 2)
-# (los dos nombres del lugar, de su constante: story 8.19)
+# registro y doctor remite a install
+# (los dos nombres del lugar, de su constante)
 PLACE_NAMES_RX="$(node -e 'const p=require(process.argv[1]); process.stdout.write(`(${p.LEGACY_PLACE_NAME}|${p.PLACE_NAME})`)' "$RAIZ/scripts/setup/harness/place.js")"
 { grep -v -E "${PLACE_NAMES_RX}/(README|INDEX).md" "$CLAUDE_MD_PATH" || true; } > "$BASE/claude.md"   # sin otras líneas, grep -v sale 1
 cat "$BASE/claude.md" > "$CLAUDE_MD_PATH"
@@ -184,7 +184,7 @@ harness_lab_publish tree "v2 a mano" VERSION 2
 harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1
 JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 [ "$RC" != 0 ] && [ "$(printf '%s' "$JSON" | jtxt "any('HEAD' in f for f in d['fail'])")" = True ] && ok "T19 HEAD en la punta de origin pero no registrado: rojo" || mal "T19 HEAD movido a mano: rc $RC"
-# `update --check` sólo mira: no promete un re-registro que no graba (revisor de fallos silenciosos, iteración 2)
+# `update --check` sólo mira: no promete un re-registro que no graba
 SALIDA="$(harness update --check 2>&1)"
 case "$SALIDA" in *"commit re-registrado"*) mal "T19 update --check dice «re-registrado» sin grabarlo: $SALIDA" ;; *"re-registraría"*) ok "T19 update --check dice que se re-registraría, sin grabar" ;; *) mal "T19 update --check no dice nada del commit a re-registrar: $SALIDA" ;; esac
 harness update --check >/dev/null 2>&1
@@ -201,7 +201,7 @@ mv "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh" "$BASE/fall
 JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('bootstrap-fallback.sh' in w and 'install' in w for w in d['warn'])")" = True ] && ok "T19 un archivo registrado de la copia fija que falta se avisa con install" || mal "T19 archivo de la copia fija: $(printf '%s' "$JSON" | jtxt "d['warn']")"
 mv "$BASE/fallback.sh" "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap-fallback.sh"
-# tanda C (decisión 7 del dueño): la copia fija trae el programa entero —harness.js y scripts/setup/harness/*.js en
+# la copia fija trae el programa entero —harness.js y scripts/setup/harness/*.js en
 # program/—, igual al árbol, registrado como piezas propias; uno que falta es rojo de la copia fija y aviso con install
 PROG="$LAB_HOME/.claude/.tycon-pipeline/harness/program"
 PROG_OK=1
@@ -217,17 +217,17 @@ JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 [ "$RC" != 0 ] && [ "$(printf '%s' "$JSON" | jtxt "any('copia fija' in f and 'program/harness/state.js' in f for f in d['fail'])")" = True ] && ok "T24 un módulo de la copia fija que falta es rojo y lo nombra" || mal "T24 módulo faltante en la copia fija: rc $RC $(printf '%s' "$JSON" | jtxt "d['fail']")"
 [ "$(printf '%s' "$JSON" | jtxt "any('program/harness/state.js' in w and 'install' in w for w in d['warn'])")" = True ] && ok "T24 …y como pieza registrada que falta, con install" || mal "T24 el módulo faltante no sale como pieza con install: $(printf '%s' "$JSON" | jtxt "d['warn']")"
 mv "$BASE/state.js" "$PROG/harness/state.js"
-# --fetch sigue siendo la única escritura (el caso de arriba, ahora con el registro lleno)
+# --fetch sigue siendo la única escritura (el caso de arriba, con el registro lleno)
 ANTES="$(harness_lab_home_hash)"; rm -f "$LAB_TREE/.git/FETCH_HEAD"
 harness doctor --fetch >/dev/null 2>&1
 [ -f "$LAB_TREE/.git/FETCH_HEAD" ] && [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T19 --fetch escribe FETCH_HEAD y nada más" || mal "T19 --fetch escribió otra cosa"
 
-# ── T97 Doctor_MissingExpectedControls_WarnNeverFail_ReadOnly (story 8.17, tanda W3a · AC 70) ───────────────────────
-# Un control que el aplicador CONOCE y nunca registró no está en el registro de piezas: doctor comparaba sólo lo
-# registrado y decía «todas en su lugar» (pipeline 182: al instalador de Windows le faltaban 15 y doctor callaba).
+# ── T97 Doctor_MissingExpectedControls_WarnNeverFail_ReadOnly ───────────────────────
+# Un control que el aplicador CONOCE y nunca registró no está en el registro de piezas: si doctor comparara sólo lo
+# registrado, diría «todas en su lugar» y callaría lo que falta.
 # Acá el aplicador de juguete pasa a conocer un control más —una línea con la forma de su lista— que no registra.
-# 🔴 rojo previo (medido): sin la cuenta de esperados, 5 MAL — doctor no decía cuántos controles esperados hay (las dos
-#    líneas de «todos registrados»), ni nombraba `lab-expected.js` en un aviso (en JSON, en texto y bajo la salud).
+# 🔴 Rojo sin la cuenta de esperados, 5 MAL — doctor no dice cuántos controles esperados hay (las dos
+#    líneas de «todos registrados»), ni nombra `lab-expected.js` en un aviso (en JSON, en texto y bajo la salud).
 esperados() { printf '%s' "$1" | jtxt "' | '.join(w for w in d['warn'] if 'esperado' in w)"; }
 JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 [ "$RC" = 0 ] && [ -z "$(esperados "$JSON")" ] && ok "T97 espejo: con todo lo esperado registrado, doctor no dice que falte nada" || mal "T97 espejo: rc $RC «$(esperados "$JSON")»"
@@ -268,8 +268,8 @@ PY
 rm -f "$LAB_TREE/scripts/hooks/lab-expected.js"
 harness_lab_git "$LAB_TREE" checkout -q -- scripts/install-tycon-hooks.sh 2>/dev/null || mal "T97 no pude dejar el aplicador de juguete como estaba"
 
-# ── T37 (tanda D · AC 29b): en una copia pública con `latest` + `auto`, doctor lo recuerda en CADA corrida ──────────
-# 🔴 rojo previo: doctor no tenía la frase («sin revisión tuya» no aparecía en ningún aviso).
+# ── T37 · en una copia pública con `latest` + `auto`, doctor lo recuerda en CADA corrida ──────────
+# 🔴 Rojo si doctor no tiene la frase («sin revisión tuya» no aparece en ningún aviso).
 recuerda() { printf '%s' "$1" | jtxt "any('sin revisión tuya' in w for w in d['warn'])"; }
 JSON="$(TYCON_UPDATE_CHANNEL=latest TYCON_UPDATE_APPLY=auto harness doctor --json 2>/dev/null)"
 [ "$(recuerda "$JSON")" = False ] && ok "T37 espejo: en un clon interno, latest + auto no trae el recordatorio" || mal "T37 clon interno con el recordatorio: $(printf '%s' "$JSON" | jtxt "d['warn']")"
@@ -289,8 +289,8 @@ JSON="$(TYCON_UPDATE_CHANNEL=stable TYCON_UPDATE_APPLY=auto harness doctor --jso
 [ "$(recuerda "$JSON")" = False ] && ok "T37 espejo: stable + auto no trae el recordatorio" || mal "T37 stable + auto con el recordatorio"
 # en la copia pública el aviso «máquina del equipo sin el perfil» no corresponde (no es un clon interno)
 # El aviso «una máquina del equipo sin el perfil» usa el MISMO criterio de «público» (A1), no la presencia de
-# `version.json`: la primera publicación salió sin ese archivo, y a una persona de afuera le salía siempre.
-# 🔴 rojo previo: con `internal = !version.json`, este clon público (sin version.json) en ask traía el aviso.
+# `version.json`: una publicación puede salir sin ese archivo, y a una persona de afuera le saldría siempre.
+# 🔴 Rojo con `internal = !version.json`: este clon público (sin version.json) en ask trae el aviso.
 [ ! -f "$LAB_TREE/version.json" ] || mal "T37 el laboratorio público trae version.json: el caso de abajo no mediría lo que dice"
 JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('máquina del equipo' in w for w in d['warn'])")" = False ] && ok "T37 un clon del público SIN version.json, en ask por defecto: sin el aviso «máquina del equipo sin el perfil»" || mal "T37 la copia pública avisa «máquina del equipo»: $(printf '%s' "$JSON" | jtxt "d['warn']")"
@@ -298,7 +298,7 @@ JSON="$(harness doctor --json 2>/dev/null)"
 # Una COPIA con otro remoto —un fork de la copia pública, o la copia servida desde una carpeta local—: el árbol trae la
 # lista de remotos públicos y su remoto no está en ella. No es «una máquina del equipo sin el perfil» (el aviso es sólo
 # para un clon interno de verdad: un árbol SIN la lista); sí sigue diciendo que su remoto no es el público.
-# 🔴 rojo previo: con el criterio «el remoto no es el público», este fork en ask por defecto traía el aviso
+# 🔴 Rojo con el criterio «el remoto no es el público»: este fork en ask por defecto trae el aviso
 #    («T37 un fork de la copia… trae el aviso «máquina del equipo»: ['remoto interno con la política en ask: …']»).
 harness_lab_create "$BASE/lab-otro-remoto" >/dev/null
 harness_lab_public "https://example.invalid/example-org/example-harness"
@@ -309,11 +309,11 @@ JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('no es el repo público' in o for o in d['ok'])")" = True ] && ok "T37 …y sigue diciendo que su remoto no es el repo público" || mal "T37 el fork no dice que su remoto no es el público: $(printf '%s' "$JSON" | jtxt "d['ok']")"
 [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = 0 ] && ok "T37 …sin nada en rojo" || mal "T37 el fork tiene rojos: $(printf '%s' "$JSON" | jtxt "d['fail']")"
 
-# ── T19 en una copia pública (pase adversarial de la tanda D, causa B): lo que doctor dice del HEAD que no es el
+# ── T19 en una copia pública: lo que doctor dice del HEAD que no es el
 #    registrado tiene que ser CIERTO también para una fuente que se reescribe ─────────────────────────────────────────
-# 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 4 MAL — doctor decía «si el
-#    clon está en la punta de origin, harness.js update … lo re-registra» y `update` salía 2 sin re-registrar nunca (el
-#    lazo de re-registro salteaba las fuentes que se reescriben); y con un commit propio decía lo mismo.
+# 🔴 Rojo con un programa sin esta conducta: 4 MAL — doctor dice «si el
+#    clon está en la punta de origin, harness.js update … lo re-registra» y `update` sale 2 sin re-registrar nunca (el
+#    lazo de re-registro saltea las fuentes que se reescriben); y con un commit propio dice lo mismo.
 rojo_head() { printf '%s' "$1" | jtxt "' | '.join(f for f in d['fail'] if 'HEAD' in f)"; }
 harness_lab_create "$BASE/lab-publico-pull" >/dev/null
 harness_lab_public
@@ -324,8 +324,8 @@ harness_lab_publish_stable 2026.10.02.1
 harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1   # un pull a mano en main, antes de la primera actualización
 JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 [ "$RC" != 0 ] && case "$(rojo_head "$JSON")" in *"no es el commit registrado"*"commit publicado"*"harness.js update"*"lo re-registra"*) true ;; *) false ;; esac && ok "T19 copia pública, pull a mano en main: rojo, y dice que update lo re-registra" || mal "T19 copia pública (pull): rc $RC «$(rojo_head "$JSON")»"
-# T40b (2026-10-15, una máquina del equipo en Windows): la falla que dejaron arranques viejos se borra cuando la
-# actualización a mano sale bien; si no, doctor y cada sesión seguían diciendo «no se pudo actualizar» con el arnés al día
+# T40b: la falla que dejan los arranques fallidos se borra cuando la
+# actualización a mano sale bien; si no, doctor y cada sesión seguirían diciendo «no se pudo actualizar» con el arnés al día
 FALLA2="$(node -e "console.log(require(process.argv[1]).paths(process.argv[2]).failuresFile)" "$LAB_TREE/scripts/setup/harness/state.js" "$LAB_HOME")"
 mkdir -p "$(dirname "$FALLA2")"
 printf '{"since":"2026-10-14T14:38:47.224Z","count":4,"reason":"no pude apartar la versión activa (EPERM)","last":"2026-10-15T09:00:00.000Z","kind":"update"}\n' > "$FALLA2"
@@ -349,10 +349,10 @@ printf '{ roto' > "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json"
 SALIDA="$(harness doctor 2>&1)"; RC=$?
 [ "$RC" != 0 ] && case "$SALIDA" in *ilegible*|*roto*|*"no se puede leer"*) ok "T13 estado ilegible: rojo con el motivo" ;; *) mal "T13 estado ilegible sin motivo: $SALIDA" ;; esac || mal "T13 estado ilegible: rc 0"
 
-# ═══ T38 (story 8.18, AC 37) · doctor en las tres formas de máquina que deja la unión de los dos repos ═══════════════
+# ═══ T38 · doctor en las tres formas de máquina que deja la unión de los dos repos ═══════════════
 # Dos clones sin re-apuntar, dos clones con el viejo re-apuntado al repo unificado, y un solo árbol: en las tres doctor es
 # verde, de sólo lectura, y dice qué forma es; muestra la fuente `agent_skills` mientras hay dos clones. Con la llave
-# prendida y la mudanza todavía sin hacer, un aviso (no rojo); y lo publicado sin skills (AC 34), un aviso con lo que hay.
+# prendida y la mudanza todavía sin hacer, un aviso (no rojo); y lo publicado sin skills, un aviso con lo que hay.
 for shape in two-clones repointed single; do
   harness_lab_shape "$BASE/t38-$shape" "$shape" || { mal "T38 ($shape) no pude armar la máquina"; continue; }
   ANTES="$(harness_lab_home_hash)"
@@ -377,7 +377,7 @@ for shape in two-clones repointed single; do
       && ok "T38 con la llave prendida y la mudanza sin hacer: un aviso (lo hace el próximo arranque), no rojo" || mal "T38 llave prendida sin mudanza: rc $RC: $JSON"
   fi
   if [ "$shape" = repointed ]; then
-    # AC 34: lo último traído no trae las skills → doctor lo muestra con lo que hay en el clon, sin salir a la red
+    # lo último traído no trae las skills → doctor lo muestra con lo que hay en el clon, sin salir a la red
     harness_lab_publish_without_skills && harness_lab_git "$LAB_SKILLS" fetch -q origin || mal "T38 no pude traer la punta sin skills"
     SALIDA="$(harness doctor 2>&1)"; RC=$?
     [ "$RC" = 0 ] && case "$SALIDA" in *"fuente agent_skills: lo publicado"*"no trae las skills"*"no se aplica"*) true ;; *) false ;; esac \
@@ -385,11 +385,11 @@ for shape in two-clones repointed single; do
   fi
 done
 
-# ═══ REPEATED (story 8.18 · decisión del dueño, 2026-10-04: «avisa y no toca») · los hooks que ya quedaron repetidos ══
-# El caso: el ensayo del alta de un dev nuevo (2026-10-03) terminó con 32 hooks registrados DOS veces —el mismo archivo
-# por dos rutas: la carpeta del clon y el enlace ~/.claude/tycon-harness—. El instalador ya no registra uno dos
-# veces (AC 36), pero los que una máquina ya tiene se quedan: sacarlos solo cambiaría el settings.json de las máquinas
-# del equipo el día del corte. doctor lo dice UNA vez, como dato (cuántos, y cómo se sacan a mano), sin tocar nada y sin
+# ═══ REPEATED · los hooks que ya quedaron repetidos («avisa y no toca») ══
+# El caso: una máquina con hooks registrados DOS veces —el mismo archivo
+# por dos rutas: la carpeta del clon y el enlace ~/.claude/tycon-harness—. El instalador no registra uno dos
+# veces, pero los que una máquina ya tiene se quedan: sacarlos solo cambiaría el settings.json de las máquinas
+# del equipo. doctor lo dice UNA vez, como dato (cuántos, y cómo se sacan a mano), sin tocar nada y sin
 # poner el diagnóstico en rojo. Repetido = mismo evento, mismo matcher (en cualquier orden) y el MISMO archivo del arnés
 # por su ruta real; el mismo archivo en otro evento o con otro matcher no lo es, y un hook de la persona tampoco cuenta.
 harness_lab_create "$BASE/rep" >/dev/null
@@ -443,11 +443,11 @@ SALIDA="$(harness doctor 2>&1)"
   && ok "REPEATED (error) con settings.json ilegible dice que no pudo mirar (no «sin repetidos»)" || mal "REPEATED (error) settings.json ilegible: $(printf '%s\n' "$SALIDA" | grep -i 'repetid' | cut -c1-200)"
 cp "$BASE/rep-settings-clean.json" "$TYCON_SETTINGS_PATH"
 
-# ═══ REPEATED-CASE (story 8.18, tramo 3 · pase adversarial, clase 15) · la misma carpeta escrita con otras mayúsculas ══
+# ═══ REPEATED-CASE · la misma carpeta escrita con otras mayúsculas ══
 # El caso: en un disco que no distingue mayúsculas (el de una Mac, el de Windows), el instalador llamado por la misma
-# carpeta escrita con otra caja (`…/src/harness` por `…/Src/harness`) dejó 27 hooks registrados dos veces, y doctor
-# calló: comparaba la ruta real letra por letra (`fs.realpathSync` no iguala la caja) y decidía «es del arnés» con un
-# prefijo letra por letra, así que esos hooks ni contaban como del arnés. La regla ahora es QUÉ ARCHIVO es (dispositivo
+# carpeta escrita con otra caja (`…/src/harness` por `…/Src/harness`) deja hooks registrados dos veces. Si doctor
+# comparara la ruta real letra por letra (`fs.realpathSync` no iguala la caja) y decidiera «es del arnés» con un
+# prefijo letra por letra, callaría: esos hooks ni contarían como del arnés. La regla es QUÉ ARCHIVO es (dispositivo
 # e inodo); si el disco no da esa identidad, la ruta real con la caja igualada sólo cuando ese disco no la distingue.
 # Se mide por las dos vías («id»: con la identidad; «path»: sin ella, como en un disco que no la da), con la raíz en su
 # caja y en la otra, y con su espejo: dos archivos DISTINTOS del árbol no son un repetido.
@@ -503,11 +503,11 @@ else
   echo "  ⏭ REPEATED-CASE NO MEDIDO — este disco distingue mayúsculas (${REP_OTHER} no es ${LAB_TREE}): la misma carpeta en otra caja no existe acá"
 fi
 
-# ── T26 Doctor_WhereHarnessLives_LegacyOnlyIfPresent_CountByFile_JsonPlace_ReadOnly (story 8.19, tanda B · AC 19) ───
+# ── T26 Doctor_WhereHarnessLives_LegacyOnlyIfPresent_CountByFile_JsonPlace_ReadOnly ───
 # doctor dice en qué nombre vive el arnés y si es enlace o carpeta; el nombre viejo SÓLO si existe (una máquina de afuera
 # nunca lo lee); cuánto queda registrado por él, archivo por archivo, como dato y con el comando (harness.js relocate);
 # rojo si ningún nombre resuelve o si los dos apuntan a clones distintos; un viejo que es una carpeta ajena o un archivo
-# es un dato (deuda M7 de la tanda A). Todo de sólo lectura. Los enlaces se arman por Node (en Windows, junctions).
+# es un dato. Todo de sólo lectura. Los enlaces se arman por Node (en Windows, junctions).
 PN="$(node -p "require('$RAIZ/scripts/setup/harness/place.js').PLACE_NAME")"
 LN="$(node -p "require('$RAIZ/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
 T26_PLACE="$LAB_HOME/.claude/$PN"; T26_OLD="$LAB_HOME/.claude/$LN"
@@ -536,7 +536,7 @@ case "$SALIDA" in *"registrado por el nombre viejo: settings.json 1"*"harness.js
 [ "$(printf '%s' "$JSON" | jtxt "(d['place']['name'], d['place']['kind'], d['legacy']['to_place'], d['registered_by_legacy']['total'], len(d['fail']))")" = "('$PN', 'link', True, 1, 0)" ] \
   && ok "T26 --json: place (nombre, enlace), legacy (apunta al lugar), registered_by_legacy 1, sin fail" || mal "T26 --json: $(printf '%s' "$JSON" | jtxt "{k: d.get(k) for k in ('place','legacy','registered_by_legacy','fail')}")"
 # «8.19» como número suelto: la salida trae la hora de instalación con milésimas, y «…:38.190Z» lo contenía de a ratos
-# (public-ci, 2026-10-14, Node 22: rojo sin ninguna story en la salida)
+# (en public-ci con Node 22 sale rojo sin ninguna story en la salida)
 T26_STORY='story|(^|[^0-9.])8\.19([^0-9]|$)'
 printf '%s\n' '  ✓ versión 2026.10.14+b815072 · instalada 2026-10-14T05:55:38.190Z' | grep -iE "$T26_STORY" >/dev/null && mal "T26 el patrón de story toma la hora de instalación como una story" || ok "T26 el patrón de story no toma la hora de instalación (…:38.190Z)"
 printf '%s\n' 'tanda B de la 8.19' '(8.19)' 'una Story' | grep -ciE "$T26_STORY" | grep -x 3 >/dev/null && ok "T26 espejo: el patrón sí ve «8.19» suelto y «story»" || mal "T26 espejo: el patrón no ve «8.19» suelto o «story»"
@@ -561,7 +561,6 @@ SALIDA="$(harness doctor 2>&1)"; RC=$?; JSON="$(harness doctor --json 2>/dev/nul
   && ok "T26 máquina de afuera: verde, sin nombrar el viejo, place sin legacy en el JSON" || mal "T26 afuera (rc $RC): $(printf '%s\n' "$SALIDA" | grep -i 'viejo') · $(printf '%s' "$JSON" | jtxt "[k for k in d]")"
 # (3b) …con las copias que el arnés gestiona instaladas: el pre-commit global de git (copia de su fuente en el árbol)
 #      nombra la ruta vieja a propósito; no es un registro de la persona: sigue sin una palabra del viejo y con 0
-#      (pase adversarial de la tanda B, B1)
 mkdir -p "$LAB_TREE/scripts/hooks" "$TYCON_GIT_HOOKS_DIR"
 printf '#!/usr/bin/env bash\nharness_dir="${TYCON_GUIDES_DIR:-$HOME/.claude/%s}"\nbash "$HOME/.claude/%s/scripts/hooks/x.sh"\n' "$LN" "$LN" > "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh"
 cp "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh" "$TYCON_GIT_HOOKS_DIR/pre-commit"
@@ -569,7 +568,7 @@ SALIDA="$(harness doctor 2>&1)"; RC=$?; JSON="$(harness doctor --json 2>/dev/nul
 [ "$RC" = 0 ] && ! printf '%s\n' "$SALIDA" | grep "nombre viejo" >/dev/null && [ "$(printf '%s' "$JSON" | jtxt "('legacy' in d, 'registered_by_legacy' in d)")" = "(False, False)" ] \
   && ok "T26 máquina de afuera con el pre-commit global del árbol instalado: tampoco nombra el viejo (la copia no es un registro)" || mal "T26 afuera con el pre-commit (rc $RC): $(printf '%s\n' "$SALIDA" | grep -i 'viejo') · $(printf '%s' "$JSON" | jtxt "d.get('registered_by_legacy')")"
 rm -f "$LAB_TREE/scripts/hooks/git-pre-commit-global.sh" "$TYCON_GIT_HOOKS_DIR/pre-commit"
-# (4) el viejo como carpeta ajena o como archivo: un dato, no rojo (M7)
+# (4) el viejo como carpeta ajena o como archivo: un dato, no rojo
 mkdir -p "$T26_OLD/algo"
 SALIDA="$(harness doctor 2>&1)"; RC=$?
 [ "$RC" = 0 ] && case "$SALIDA" in *"nombre viejo ~/.claude/$LN es una carpeta, que no es un clon del arnés"*) true ;; *) false ;; esac && ok "T26 el viejo como carpeta ajena: un dato, verde" || mal "T26 carpeta ajena (rc $RC): $(printf '%s\n' "$SALIDA" | grep -i viejo)"
@@ -592,11 +591,11 @@ case "$(harness version 2>&1)" in *"arnés en ~/.claude/$PN"*) ok "T26 version m
 [ "$(harness version --json 2>/dev/null | jtxt "d['place']['name']")" = "$PN" ] && ok "T26 version --json trae place" || mal "T26 version --json: $(harness version --json 2>&1 | head -3)"
 cp "$BASE/t26-settings.json" "$TYCON_SETTINGS_PATH"
 
-# ── T38 HealthAndDoctor_Minimal_GreenWithEventsWithoutHooks (story 8.16, tanda C · AC 28, la parte de doctor) ────────
+# ── T38 HealthAndDoctor_Minimal_GreenWithEventsWithoutHooks (la parte de doctor) ────────
 # En una instalación minimal, lo que el perfil no trae no es un «control esperado que falta»; doctor dice el perfil con su
 # origen y sigue sin escribir nada. El aplicador de juguete pasa a conocer un control que es sólo de full (el medidor de
 # estilo, según la lista de efectos) y no lo registra: en full se avisa que falta; en minimal, no.
-# 🔴 rojo previo (medido): sin el perfil en doctor, minimal avisaba el control de full como faltante y no decía el perfil.
+# 🔴 Rojo sin el perfil en doctor: minimal avisa el control de full como faltante y no dice el perfil.
 echo "T38 · doctor en minimal"
 harness_lab_create "$BASE/t38" >/dev/null
 harness install --yes >/dev/null 2>&1 || mal "T38 install previo falló"
@@ -615,7 +614,7 @@ JSON="$(harness doctor --json 2>/dev/null)"; RC=$?
 SALIDA="$(harness doctor 2>&1)"
 case "$SALIDA" in *"perfil: minimal ("*) ok "T38 …y la salida para una persona también lo dice" ;; *) mal "T38 la salida de texto no dice el perfil" ;; esac
 case "$SALIDA" in *"sin registrar"*) mal "T38 doctor en minimal da algo «sin registrar»: $(printf '%s\n' "$SALIDA" | grep 'sin registrar' | head -2)" ;; *) ok "T38 …y nada «sin registrar»" ;; esac
-# (pase adversarial de la tanda C, clases 3 y 4) en minimal, el barrido de Telegram prendido a mano (TYCON_TG_ZOMBIE_SWEEP=1,
+# En minimal, el barrido de Telegram prendido a mano (TYCON_TG_ZOMBIE_SWEEP=1,
 # con el plugin) lo registra el aplicador: doctor lo espera, y si no está lo avisa
 mkdir -p "$LAB_HOME/.claude/plugins/cache/claude-plugins-official/telegram"
 printf 'process.exit(0);\n' > "$LAB_TREE/scripts/hooks/telegram-zombie-sweep.sh"
@@ -627,12 +626,12 @@ JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(printf '%s' "$JSON" | jtxt "any('telegram-zombie-sweep.sh' in w for w in d['warn'])")" = False ] && ok "T38 espejo: sin la variable, en minimal no lo espera" \
   || mal "T38 espejo del barrido: lo espera sin la variable"
 
-# ── T49 Doctor_ShowsProfileIntegrationsPackBrakes_JsonKeys_UnchosenWarns (story 8.16, tanda D · AC 35) ─────────────
+# ── T49 Doctor_ShowsProfileIntegrationsPackBrakes_JsonKeys_UnchosenWarns ─────────────
 # doctor dice el perfil con su origen, las integraciones prendidas y apagadas con su origen, el paquete del stack por
 # defecto y cuántos controles que frenan están registrados (nombrando los que frenan en cualquier repo); en una
 # instalación sin perfil elegido avisa que se comporta como full. `--json` suma `profile`, `integrations`, `packs` y
 # `brakes` sin tocar `mode`, `fail`, `warn` ni `ok`. Sigue sin escribir nada.
-# 🔴 rojo previo verificado: antes de la tanda D doctor no decía integraciones, paquete ni frenos, y --json no traía esas claves.
+# 🔴 Rojo si doctor no dice integraciones, paquete ni frenos, y --json no trae esas claves.
 echo "T49 · doctor: perfil, integraciones, paquete y frenos"
 harness_lab_create "$BASE/t49" >/dev/null
 harness install --yes >/dev/null 2>&1 || mal "T49 install previo falló"
@@ -649,8 +648,8 @@ printf '{ "install": { "profile": "minimal" } }\n' > "$LAB_HOME/.claude/tycon.js
 ANTES="$(harness_lab_home_hash)"
 JSON="$(harness doctor --json 2>/dev/null)"
 [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "T49 doctor no escribe nada" || mal "T49 doctor escribió algo"
-# (cruce con la tanda B de la 8.19, AC 19: `place` va siempre, y `legacy` y `registered_by_legacy` si el viejo existe o
-# algo lo nombra; fuera de esas tres, las claves son exactamente las de siempre más las cuatro de la tanda D)
+# (`place` va siempre, y `legacy` y `registered_by_legacy` si el nombre viejo existe o
+# algo lo nombra; fuera de esas tres, las claves son exactamente las de la lista)
 [ "$(printf '%s' "$JSON" | jtxt "(sorted(k for k in d.keys() if k not in ('place', 'legacy', 'registered_by_legacy')), 'place' in d)")" = "(['brakes', 'declared_repos', 'fail', 'harness_node', 'integrations', 'mode', 'ok', 'packs', 'profile', 'warn'], True)" ] \
   && ok "T49 --json: las cuatro claves nuevas y las de siempre (más las del lugar, desde la story 2.21 declared_repos y desde la 8.39 harness_node)" || mal "T49 claves de --json: $(printf '%s' "$JSON" | jtxt "sorted(d.keys())")"
 [ "$(printf '%s' "$JSON" | jtxt "(d['profile']['value'], d['profile']['origin'])")" = "('minimal', 'maquina')" ] && ok "T49 profile: minimal desde ~/.claude/tycon.json" || mal "T49 profile: $(printf '%s' "$JSON" | jtxt "d['profile']")"
@@ -692,8 +691,8 @@ done
 rm -f "$LAB_HOME/.claude/tycon.json"
 
 # ── T6 Doctor_PublicPlusLayerEqualsInternal_CompatByTransformedList_VersionWithoutTransformedRed_IgnoredNotCounted_
-#    MinimumLag_ReadOnly (story 8.13.1, tanda A · AC 5; y el subcomando `layer` del AC 1 y 10) ─────────────────────────
-# Una máquina CON capa, armada a mano en el laboratorio (la tanda A no instala desde la copia pública: eso es la B). El
+#    MinimumLag_ReadOnly (y el subcomando `layer`) ─────────────────────────
+# Una máquina CON capa, armada a mano en el laboratorio (no se instala desde la copia pública). El
 # árbol del laboratorio hace de «copia pública»: trae version.json con su lista de transformados, LICENSE y las tres listas
 # declaradas de la capa. El «interno» de juguete es esa copia sin lo de «sólo afuera», con el transformado entero y con lo
 # privado (un plan, una guía privada dentro de guides/, una skill de un producto y un instinto, que es de los escritores).
@@ -704,7 +703,7 @@ harness_lab_create "$BASE/lab-capa" >/dev/null
 A6="$LAB_AUTHOR_TREE"
 mkdir -p "$A6/guides" "$A6/scripts/tests/fixtures"
 for f in layer-public-wins layer-public-only harness-tree-writers; do cp "$RAIZ/scripts/tests/fixtures/$f.json" "$A6/scripts/tests/fixtures/"; done
-# qué publica el commit de la capa lo dice la clasificación del exportador (AC 5): sus guiones, y la lista blanca y la
+# qué publica el commit de la capa lo dice la clasificación del exportador: sus guiones, y la lista blanca y la
 # tabla de juguete, que el interno trae (la copia también: así son iguales, no agregados)
 mkdir -p "$A6/scripts/publishing"; cp "$RAIZ"/scripts/publishing/*.js "$A6/scripts/publishing/"
 cp "$RAIZ/scripts/tests/fixtures/layer-lab-allowlist.json" "$A6/scripts/publishing/allowlist.json"
@@ -748,7 +747,7 @@ PLACE6="$(printf '%s' "$JSON" | jtxt "d['place']")"
   && ok "T6 sin fuentes layer: doctor sin la clave «layer» ni líneas de la capa" || mal "T6 sin fuentes layer doctor habla de la capa: $JSON"
 harness layer --check >/dev/null 2>&1; RC=$?
 [ "$RC" = 3 ] && ok "T6 layer --check sin capa: 3" || mal "T6 layer --check sin capa: rc $RC"
-# apilar la capa y registrarla en el estado (lo que en la tanda B harán migrate y update)
+# apilar la capa y registrarla en el estado (lo que hacen migrate y update)
 LAYERJS6="$LAB_TREE/scripts/setup/harness/layer.js"
 node "$LAYERJS6" compute --internal "$READ6" --public "$LAB_TREE" --out "$LAB/layer-list.json" >/dev/null 2>&1 || mal "T6 layer.js compute falló"
 node "$LAYERJS6" apply --tree "$LAB_TREE" --from "$READ6" --list "$LAB/layer-list.json" --manifest "$MANIFEST6" >/dev/null 2>&1 || mal "T6 layer.js apply falló"
@@ -823,7 +822,7 @@ doctor6
 harness layer --check >/dev/null 2>&1; RC=$?
 [ "$RC" = 1 ] && ok "T6 layer --check con un archivo que sobra: 1" || mal "T6 layer --check con uno que sobra: rc $RC"
 rm -f "$LAB_TREE/guides/stray.md"
-# (pase adversarial de la tanda A, clase 8) un pisado que volvió al contenido público (un checkout o un reset en el
+# Un pisado que volvió al contenido público (un checkout o un reset en el
 # árbol): a la capa le falta ese archivo —rojo, capa incompleta—, no es «editado a mano» (la capa SÍ lo vuelve a pisar)
 cp "$LAB_TREE/guides/public.md" "$LAB/public-pisado.md"
 harness_lab_git "$LAB_TREE" checkout -q -- guides/public.md
@@ -834,7 +833,7 @@ doctor6
 harness layer --check >/dev/null 2>&1; RC=$?
 [ "$RC" = 1 ] && ok "T6 layer --check con un pisado vuelto al público: 1" || mal "T6 layer --check pisado vuelto al público: rc $RC"
 cp "$LAB/public-pisado.md" "$LAB_TREE/guides/public.md"
-# (clase 12) un archivo que la copia pública misma sigue —un papel que el exportador agrega sólo a la copia y que la
+# Un archivo que la copia pública misma sigue —un papel que el exportador agrega sólo a la copia y que la
 # lista «sólo afuera» todavía no nombra— viene del público: no es «no viene de ninguna fuente»
 mkdir -p "$LAB_TREE/docs"; printf '# sólo en la copia\n' > "$LAB_TREE/docs/solo-en-la-copia.md"
 harness_lab_git "$LAB_TREE" add docs/solo-en-la-copia.md >/dev/null
@@ -883,7 +882,7 @@ harness_lab_git "$INT6" reset -q --hard HEAD~1 >/dev/null
 harness_lab_git "$INT6" push -q -f origin main >/dev/null 2>&1
 harness_lab_git "$READ6" fetch -q -f origin '+refs/heads/*:refs/heads/*' >/dev/null 2>&1
 state6 internal.commit="\"$INT6_COMMIT\"" harness.commit="\"$(harness_lab_git "$LAB_TREE" rev-parse HEAD)\""
-# (clase 6, del lado de doctor) un agregado que el interno borró y la persona editó queda en el manifiesto marcado
+# Un agregado que el interno borró y la persona editó queda en el manifiesto marcado
 # `held` (layer.js): doctor lo cuenta «a mano» aunque su carpeta siga excluida, y layer --check sale 1
 printf 'mi nota en el plan\n' >> "$LAB_TREE/tasks/plan.md"
 harness_lab_git "$INT6" checkout -q -b sin-plan >/dev/null 2>&1
@@ -907,7 +906,7 @@ node "$LAYERJS6" apply --tree "$LAB_TREE" --from "$READ6" --list "$LAB/layer-lis
 state6 internal.commit="\"$INT6_COMMIT\""
 doctor6
 [ "$(printf '%s' "$JSON" | jtxt "'$SUM6' in d['ok']")" = True ] || mal "T6 tras el held la capa no volvió entera: $(printf '%s' "$JSON" | jtxt "[t for t in d['ok']+d['warn']+d['fail'] if 'capa' in t or 'tasks' in t]")"
-# `layer --public <copia> --harness-clone <clon>` (AC 10): calcula contra lo que le dan, sin tocar el estado ni el HOME
+# `layer --public <copia> --harness-clone <clon>`: calcula contra lo que le dan, sin tocar el estado ni el HOME
 H6="$(harness_lab_home_hash)"
 JSON="$(harness layer --check --json --public "$LAB_TREE" --harness-clone "$INT6" 2>/dev/null)"; RC=$?
 [ "$RC" = 0 ] && [ "$(printf '%s' "$JSON" | jtxt "(sorted(d['add']), d['overwrite'], d['otherVersion'], d['onlyPublic']['undeclared'])")" = "(['guides/maintaining/incident-log.md', 'inbox/instincts/pending/lab.md', 'skills/projects/acme/SKILL.md', 'tasks/plan.md'], ['guides/public.md'], [], [])" ] \
@@ -937,7 +936,7 @@ harness layer --check --public "$LAB_TREE" --harness-clone "$INT6" >/dev/null 2>
 harness_lab_git "$LAB_TREE" reset -q --soft HEAD~1 >/dev/null
 harness_lab_git "$LAB_TREE" checkout -q HEAD -- version.json >/dev/null
 state6 harness.commit="\"$(harness_lab_git "$LAB_TREE" rev-parse HEAD)\""
-# el árbol gestionado (en la tanda A existe sólo acá): pushurl no_push y el pre-push; cambiados, rojo
+# el árbol gestionado (existe sólo acá): pushurl no_push y el pre-push; cambiados, rojo
 GITDIR6="$LAB_TREE/.git"
 : > "$GITDIR6/tycon-managed"
 harness_lab_git "$LAB_TREE" remote set-url --push origin no_push
@@ -973,10 +972,10 @@ SALIDA="$(harness install --dry-run --harness-clone "$INT6" 2>&1)"; RC=$?
 SALIDA="$(harness --help 2>&1)"
 case "$SALIDA" in *"layer"*"--harness-clone"*|*"--harness-clone"*"layer"*) ok "T6 --help lista layer e install --harness-clone" ;; *) mal "T6 --help: $SALIDA" ;; esac
 
-# ── T79 (story 8.26, tanda H1c · AC 65 d): doctor nombra el freno antes de publicar ──────────────────────────────────
-# El freno antes de publicar es lo único que hay entre un nombre real y el repo público, y doctor no decía nada de él: ni
-# si el `pre-push` está en la carpeta GLOBAL de hooks de git, ni de dónde sale la lista, ni qué clon de mantenimiento
-# declara la máquina, ni si esa lista está al día. Lo que no puede pasar:
+# ── T79 · doctor nombra el freno antes de publicar ──────────────────────────────────
+# El freno antes de publicar es lo único que hay entre un nombre real y el repo público, y doctor tiene que decir de él: si
+# el `pre-push` está en la carpeta GLOBAL de hooks de git, de dónde sale la lista, qué clon de mantenimiento
+# declara la máquina y si esa lista está al día. Lo que no puede pasar:
 #   · un ROJO nuevo. La comprobación de salud de una actualización corre `doctor --json` y un `fail` la tira abajo: un
 #     rojo acá frenaría las actualizaciones de toda máquina sin el `pre-push` (perfil mínimo, TYCON_NO_GIT_HOOKS=1, sin
 #     carpeta global de hooks). Todo es dato o aviso, y el código de salida es el mismo que sin la pieza;
@@ -1256,12 +1255,12 @@ kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 SALIDA="$(harness --help 2>&1)"
 case "$SALIDA" in *"--fetch"*"FETCH_HEAD"*"remoto del clon de la lista"*) ok "$T79 la ayuda de doctor --fetch dice que además le pregunta al remoto del clon de la lista" ;; *) mal "$T79 la ayuda de doctor --fetch no nombra la pregunta al remoto del clon de la lista" ;; esac
 
-# ── T21 Doctor_ReposDeclarados_ConListaDeLaOrganizacion (story 2.21 · AC 15, 16) @story-2.21 @ac-16 ─────────────────
-# La ficha «repos declarados contra el disco» salió de la página del tablero y vive acá: la lista de la ORGANIZACIÓN
+# ── T21 Doctor_ReposDeclarados_ConListaDeLaOrganizacion @story-2.21 @ac-16 ─────────────────
+# La ficha «repos declarados contra el disco» vive en doctor: la lista de la ORGANIZACIÓN
 # (`scripts/nightly/dependencies/repos.json` del clon de operaciones, `paths.operations`) contra los repos bajo la raíz
 # de repos-root.js, a profundidad 2. Un repo cuenta como declarado si su `origin` (leído de .git/config, sin git) apunta
 # al `ado` de una entrada, sin distinguir mayúsculas y con los espacios decodificados.
-# 🔴 rojo previo: doctor no dice nada de los repos; o compara por el nombre de la carpeta (la etiqueta `ruta`).
+# 🔴 Rojo si doctor no dice nada de los repos; o compara por el nombre de la carpeta (la etiqueta `ruta`).
 T221="story 2.21 ·"
 harness_lab_create "$BASE/t221" >/dev/null
 harness install --yes >/dev/null 2>&1 || mal "$T221 install previo falló"
@@ -1283,7 +1282,7 @@ t221_repo() {  # t221_repo <carpeta relativa a la raíz> <url del origin> [huell
 t221_repo Acme/AcmeBackEnd 'https://dev.azure.com/lab/Acme%20Proj/_git/BackEnd'
 t221_repo Acme/FE 'https://dev.azure.com/lab/acme proj/_git/front%20end'
 t221_repo Otro/Suelto 'https://dev.azure.com/lab/Otro/_git/Suelto' huella
-# (pase adversarial de la 2.21) un clon por SSH es el mismo repo que su `ado`; un worktree es el repo del que sale, no otro
+# Un clon por SSH es el mismo repo que su `ado`; un worktree es el repo del que sale, no otro
 t221_repo Acme/Mob 'git@ssh.dev.azure.com:v3/lab/Acme%20Proj/Mobile'
 mkdir -p "$T221_ROOT/Otro/Suelto/.git/worktrees/wt" "$T221_ROOT/Otro/Suelto-wt/.tycon"
 printf 'gitdir: %s\n' "$T221_ROOT/Otro/Suelto/.git/worktrees/wt" > "$T221_ROOT/Otro/Suelto-wt/.git"
@@ -1296,8 +1295,8 @@ case "$L" in *"repos declarados por la organización: 3 de 3 en este disco (raí
 [ "$(printf '%s' "$JSON" | jtxt "d['declared_repos']")" = "{'declared': 3, 'on_disk': 4, 'matched': 3, 'undeclared_with_harness': 1}" ] \
   && ok "$T221 T21 --json trae declared_repos { declared, on_disk, matched, undeclared_with_harness }" || mal "$T221 T21 declared_repos: $(printf '%s' "$JSON" | jtxt "d.get('declared_repos', 'sin la clave')")"
 
-# ── T22 Doctor_ReposDeclarados_SinListaNuncaFalla (story 2.21 · AC 17) @story-2.21 @ac-17 ───────────────────────────
-# 🔴 rojo previo: un `fail` acá tira la comprobación de salud de cada actualización (corre `doctor --json`).
+# ── T22 Doctor_ReposDeclarados_SinListaNuncaFalla @story-2.21 @ac-17 ───────────────────────────
+# 🔴 Rojo si: un `fail` acá tira la comprobación de salud de cada actualización (corre `doctor --json`).
 T221_FAIL0="$(printf '%s' "$JSON" | jtxt "len(d['fail'])")"
 rm -f "$LAB_HOME/.tycon/config.json"
 JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
@@ -1315,7 +1314,7 @@ JSON="$(TYCON_REPOS_ROOT="$BASE/t221/no-existe" harness doctor --json 2>/dev/nul
 { [ -n "$(t221_lines "$JSON" warn)" ] && [ -z "$(t221_lines "$JSON" fail)" ]; } \
   && ok "$T221 T22 sin raíz de repos: un aviso con el motivo, nunca un rojo" || mal "$T221 T22 sin raíz: warn=«$(t221_lines "$JSON" warn)» ok=«$(t221_lines "$JSON" ok)» fail=«$(t221_lines "$JSON" fail)»"
 # un repo cuya configuración no se puede leer no se cuenta como «no declarado» en silencio: aviso con el código
-# (revisión de la story 2.21: «no pude leer» no es «no está»). Sin efecto si corre como root (chmod no le quita nada).
+# («no pude leer» no es «no está»). Sin efecto si corre como root (chmod no le quita nada).
 chmod 000 "$T221_ROOT/Acme/FE/.git/config"
 JSON="$(TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --json 2>/dev/null)"
 chmod 644 "$T221_ROOT/Acme/FE/.git/config"
@@ -1330,7 +1329,7 @@ JSON="$(TYCON_HARNESS_HEALTH=1 TYCON_REPOS_ROOT="$T221_ROOT" harness doctor --js
   && ok "$T221 T22 bajo la comprobación de salud el bloque no corre: ninguna línea y declared_repos en null" || mal "$T221 T22 bajo la salud: ok=«$(t221_lines "$JSON" ok)» declared_repos=$(printf '%s' "$JSON" | jtxt "d.get('declared_repos', 'sin la clave')")"
 rm -f "$LAB_HOME/.tycon/config.json"
 
-# ── T27 y T28 de la story 8.39: el Node propio del arnés en doctor (dato o aviso, nunca rojo) ─────────────────────────
+# ── T27 y T28: el Node propio del arnés en doctor (dato o aviso, nunca rojo) ─────────────────────────
 # @story-8.39 @ac-20 Doctor_NodeDelArnes_LineaYClave · @ac-21 Doctor_NodeDelArnes_NuncaRojo
 echo "T27/T28 · doctor y el Node del arnés"
 harness_lab_create "$BASE/t839" >/dev/null

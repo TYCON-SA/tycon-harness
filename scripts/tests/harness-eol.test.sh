@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# harness-eol.test.sh — los finales de línea de un clon viejo se corrigen ANTES de aplicar (story 8.17, tanda W3a · T98,
-# AC 71).
+# harness-eol.test.sh — los finales de línea de un clon viejo se corrigen ANTES de aplicar (T98).
 #
 # Por qué existe: un clon de Windows anterior a `.gitattributes` conserva `\r\n` en todo lo que el `pull` no toca (cada
 # máquina del equipo). Un hook `.sh` con `\r\n` no corre: un freno así sale distinto de 2 y no frena, sin decir nada.
@@ -17,7 +16,7 @@
 # aplicador que corre sigue siendo el de bash. El «clon viejo» se arma como queda uno de verdad: el archivo se saca del
 # repo con `\r\n` (una regla local de atributos, que después se borra) y git lo sigue dando por no modificado.
 #
-# 🔴 rojo previo (medido con el programa de antes sobre este mismo guion): el aplicador con `\r\n` no corre y `apply`,
+# 🔴 Rojo sin el paso: el aplicador con `\r\n` no corre y `apply`,
 #    `startup`, `update` e `install` fallan o dejan el clon como estaba; nada dice «finales de línea».
 #
 # Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido.
@@ -120,7 +119,7 @@ said "$SALIDA" && case "$SALIDA" in *"no pude"*) true ;; *) false ;; esac && ok 
 [ "$(crlf_count)" = 1 ] && [ -z "$(dirty)" ] && ok "T98 …y no deja el clon a medias" || mal "T98 el paso que falla dejó el clon a medias: con \\r\\n $(crlf_count), sucio «$(dirty)»"
 
 # ═══ la corrección queda a medias: `reset --hard` no puede reescribir un archivo ═════════════════════════════════════
-# Eol_ResetHardFailsMidway_SaysHowToCheck (primera vuelta de revisión de la W3a). Con un archivo que no se deja
+# Eol_ResetHardFailsMidway_SaysHowToCheck. Con un archivo que no se deja
 # reemplazar (en Windows, abierto por otro programa; acá, su carpeta sin permiso de escritura: «unable to unlink»), el
 # índice se recupera bien pero `git status` y `git diff` quedan LIMPIOS aunque ese archivo siga con \r\n: quien compruebe
 # con `git status` no ve nada y descarta el aviso. El aviso dice cuántos siguen, cuáles, y cómo comprobarlo.
@@ -189,9 +188,9 @@ SALIDA="$(lab_git_apply '')"
 [ "$(crlf_count)" = 0 ] && case "$SALIDA" in *"normalicé"*) true ;; *) false ;; esac && ok "queda alguno, el espejo: cuando la receta funciona, dice «normalicé» y no queda ninguno" || mal "queda alguno, el espejo: quedan $(crlf_count) · $SALIDA"
 
 # ═══ B3 · un archivo con un cambio que `git status` no ve: no se toca nada ═══════════════════════════════════════════
-# Eol_HiddenLocalChange_AssumeUnchangedOrSkipWorktree_NothingTouched (pase adversarial de la W3a, B3). «Árbol limpio» se
-# decidía con `git status`, que no ve un archivo marcado `--assume-unchanged`: la receta pisaba su cambio local y decía
-# «normalicé». Con `--skip-worktree` sobrevivía, pero el paso salía `failed` en cada corrida. Ahora, con cualquiera de las
+# Eol_HiddenLocalChange_AssumeUnchangedOrSkipWorktree_NothingTouched. «Árbol limpio» no se
+# decide con `git status`, que no ve un archivo marcado `--assume-unchanged`: la receta pisaría su cambio local y diría
+# «normalicé». Con `--skip-worktree` sobreviviría, pero el paso saldría `failed` en cada corrida. Por eso, con cualquiera de las
 # dos marcas en algún archivo, no se toca nada y se dice cuáles (hasta tres nombres y la cuenta) y qué correr.
 echo "· un cambio que git status no ve"
 tracked() { harness_lab_git "$LAB_TREE" ls-files | wc -l | tr -d ' '; }
@@ -221,9 +220,9 @@ SALIDA="$(TYCON_HARNESS_EOL_PLATFORM=win32 harness apply 2>&1)"
 [ "$(crlf_count)" = 0 ] && case "$SALIDA" in *"normalicé"*) true ;; *) false ;; esac && ok "el espejo: sin marcas, normaliza y lo dice" || mal "el espejo sin marcas: quedan $(crlf_count) · $SALIDA"
 
 # ═══ B4 · la receta no vacía el índice, y un índice vacío no es «limpio» ═════════════════════════════════════════════
-# Eol_RecipeKilled_IndexNeverEmptied / Eol_EmptyIndexWithHead_IsBroken_Said (pase adversarial de la W3a, B4). La receta
-# vieja vaciaba el índice (`rm --cached -r .`) y lo rearmaba (`reset --hard`): si el segundo paso moría, el índice quedaba
-# vacío, el paso siguiente leía «nada con \r\n» y contestaba `clean` callado para siempre. La receta nueva reescribe SÓLO
+# Eol_RecipeKilled_IndexNeverEmptied / Eol_EmptyIndexWithHead_IsBroken_Said. Una receta
+# que vacíe el índice (`rm --cached -r .`) y lo rearme (`reset --hard`) deja el índice vacío si el segundo paso muere:
+# el paso siguiente leería «nada con \r\n» y contestaría `clean` callado para siempre. La receta reescribe SÓLO
 # los archivos con \r\n desde el índice, sin vaciarlo; y un índice vacío con un HEAD que tiene archivos se dice.
 echo "· la receta muere a mitad"
 old_clone "$HOOK" README.md
@@ -261,7 +260,7 @@ SALIDA="$(TYCON_HARNESS_EOL_PLATFORM=win32 harness startup 2>&1)"; RC=$?
 [ "$RC" = 0 ] && [ "$(crlf_count)" = 0 ] && ok "T98 startup con el clon ya al día: normaliza" || mal "T98 startup: rc $RC, quedan $(crlf_count) · $SALIDA"
 step_before_applier && ok "T98 startup: el paso queda antes que el aplicador" || mal "T98 startup: el orden en el registro: $(grep -n 'finales de línea\|aplicador' "$(REGISTRO)" | tail -4)"
 
-# Eol_StartupNotice_ReachesNotice_NotStderr (pase adversarial de la W3a, B2). En `startup` la línea de arranque es async:
+# Eol_StartupNotice_ReachesNotice_NotStderr. En `startup` la línea de arranque es async:
 # su salida no llega a la conversación, sólo `notice` del estado (lo imprime el hook síncrono en la sesión). El aviso del
 # paso —árbol sucio, o el paso falló— va a `notice`, junto a otro aviso si lo hay (no lo pisa), y NO a stderr (ahí nadie
 # lo ve y el ensayo de Windows lo cuenta como ruido de la línea de arranque). En install/apply/update, en una terminal,
@@ -306,12 +305,12 @@ SALIDA="$(harness install --yes 2>&1)"; RC=$?
 [ "$RC" = 0 ] && [ "$(crlf_count)" = 1 ] && ! said "$SALIDA" && ok "T98 espejo: install en Linux no toca los finales de línea" || mal "T98 install en Linux: rc $RC, con \\r\\n $(crlf_count) · $SALIDA"
 
 # ═══ doctor después de normalizar: la copia fija no sale «vieja» por un \r\n ═════════════════════════════════════════
-# Eol_DoctorAfterNormalize_FixedCopyNotStale (seguimiento de la W3a, punto 12; medido en Windows, 182 #11786 y #11810).
+# Eol_DoctorAfterNormalize_FixedCopyNotStale (medido en Windows).
 # La copia fija de arranque se toma del árbol en la instalación y se refresca sólo tras una salud en verde (es la red
-# para volver atrás). En un clon viejo se tomó con \r\n; el paso de finales de línea deja el árbol con \n y `doctor`
-# decía «copia fija de arranque vieja respecto del árbol» en cada sesión, aunque el contenido fuera el mismo. Un
+# para volver atrás). En un clon viejo se toma con \r\n; el paso de finales de línea deja el árbol con \n y `doctor`
+# diría «copia fija de arranque vieja respecto del árbol» en cada sesión, aunque el contenido fuera el mismo. Un
 # cambio de verdad en el árbol tiene que seguir dando el aviso (el espejo).
-# 🔴 rojo previo (medido con el programa de antes sobre este mismo guion): tras normalizar, doctor da el aviso.
+# 🔴 Rojo si doctor da el aviso tras normalizar.
 echo "· doctor después de normalizar"
 lab eol-doctor
 FIXED="scripts/setup/harness/bootstrap.js"

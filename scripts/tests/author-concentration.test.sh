@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# author-concentration.test.sh — la concentración por persona, por producto y sin nombres (story 2.26).
+# author-concentration.test.sh — la concentración por persona, por producto y sin nombres.
 #
-# El tablero medía la concentración sólo en la máquina de quien lo generaba, contando por NOMBRE (dos alias de una
-# persona la partían en dos) y con los commits de los pipelines adentro. El nocturno ya baja todos los repos de la
+# Medir la concentración sólo en la máquina de quien genera el tablero la falsea: cuenta por NOMBRE (dos alias de una
+# persona la parten en dos) y con los commits de los pipelines adentro. El nocturno ya baja todos los repos de la
 # organización: acá se cuenta ahí, uniendo alias, sacando las máquinas, y publicando sólo proporciones por producto.
 # Ningún nombre ni correo toca el disco ni sale del guion.
 #
@@ -79,7 +79,7 @@ M=$(json "$TMP/t13/out.json" "[p['motivo'] for p in d['productos'] if p['product
 case "$M" in *"menos de 20 commits"*) ok "T13 el motivo lo dice" ;; *) mal "T13 motivo: $M" ;; esac
 
 # ── T14 · Identidad_NombreYCorreoSeUnen @ac-12 ─────────────────────────────────────────────────────────────────────
-# Mutación: contar por nombre (lo de antes) da 0.4; leer el .mailmap del disco en un clon sin árbol no lo aplica → rojo.
+# Mutación: contar por nombre da 0.4; leer el .mailmap del disco en un clon sin árbol no lo aplica → rojo.
 S="$TMP/t14/scan"; mkdir -p "$S"
 repo "$S/Q__Alias"; commits "$S/Q__Alias" 8 "Ana Pérez" ana@ej.test; commits "$S/Q__Alias" 8 ana ANA@ej.test; commits "$S/Q__Alias" 4 Beto beto@ej.test
 repo "$S/Q__Correos"; commits "$S/Q__Correos" 8 Caro c1@ej.test; commits "$S/Q__Correos" 8 Caro c2@ej.test; commits "$S/Q__Correos" 4 Dani dani@ej.test
@@ -197,7 +197,7 @@ grep -q 'E/Roto' "$TMP/t28/stderr" && ok "T28 stderr dice qué repo falló" || m
 R=$(json "$TMP/t28/out.json" "[p['estado'] for p in d['productos'] if p['producto']=='Roto'][0]")
 [ "$rc" -eq 0 ] && [ "$R" = "no_medido" ] && ok "T28 el archivo sale igual, con ese repo no medido" || mal "T28 rc=$rc Roto=$R"
 
-# ── Lo que encontró el pase adversarial y el revisor de seguridad (2026-10-17): regresiones ───────────────────────
+# ── Regresiones: casos del pase adversarial y del revisor de seguridad ───────────────────────
 # Mayúsculas: el nocturno nombra la carpeta como la devuelve Azure DevOps; repos.json puede escribirla distinto.
 # Mutación: buscar la carpeta con fs.existsSync tal cual → «no está entre los clones» en un disco que distingue.
 S="$TMP/adv/scan"; mkdir -p "$S"
@@ -206,11 +206,11 @@ productos "$TMP/adv/repos.json" '{"producto":"Mayus","ado":"acme/back"},{"produc
 correr "$S" "$TMP/adv/repos.json" "$TMP/adv/out.json" >/dev/null
 R=$(json "$TMP/adv/out.json" "' | '.join(f\"{p['producto']}:{p['estado']}\" for p in sorted(d['productos'],key=lambda x:x['producto']))")
 [ "$R" = "Escape:no_medido | Mayus:medido | Puntos:no_medido" ] && ok "adv la carpeta se busca sin distinguir mayúsculas; un ado que sale de --scan no se mide" || mal "adv $R"
-# La guarda dice POR QUÉ: sin ella, el mismo ado caería en «no está entre los clones» (revisor de pruebas, vuelta 2).
+# La guarda dice POR QUÉ: sin ella, el mismo ado caería en «no está entre los clones».
 # Mutación: borrar el chequeo de nombreSeguro → el motivo pasa a «no está entre los clones del nocturno».
 R=$(json "$TMP/adv/out.json" "' | '.join(p['repos'][0]['motivo'] for p in sorted(d['productos'],key=lambda x:x['producto']) if p['producto']!='Mayus')")
 case "$R" in *"sale de la carpeta de las copias"*"|"*"sale de la carpeta de las copias"*) ok "adv la guarda de rutas dice que el ado sale de la carpeta" ;; *) mal "adv motivo de la guarda: $R" ;; esac
-# La corrida local: una `ruta` de repos.json que sale de la carpeta de los repos no se mide (revisor de criterios, v3).
+# La corrida local: una `ruta` de repos.json que sale de la carpeta de los repos no se mide.
 # Mutación: borrar el chequeo de `adentro` en resolverLocal → «no está en este disco» (o, si existe, se mide afuera).
 mkdir -p "$TMP/adv-local/raiz" "$TMP/adv-local/fuera"; repo "$TMP/adv-local/fuera/R"; commits "$TMP/adv-local/fuera/R" 20 Ana ana@ej.test
 R=$(node -e 'const c=require(process.argv[1]);console.log(c.resolverLocal([{producto:"X",ado:"P/R",ruta:"../fuera/R"}],process.argv[2])[0].motivo||"medible")' "$CONC" "$TMP/adv-local/raiz")

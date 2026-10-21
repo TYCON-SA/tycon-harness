@@ -1,16 +1,16 @@
 'use strict';
 /**
- * harness-place.test.js — el nombre del lugar del arnés, definido UNA vez, y sus copias declaradas (story 8.19, tanda A).
+ * harness-place.test.js — el nombre del lugar del arnés, definido UNA vez, y sus copias declaradas.
  *
- * EL CASO (2026-10-04). El dueño vio en la portada publicada que quien clona el repo público lee después
- * en `~/.claude/` el nombre del repo interno. El lugar pasa a llamarse como el repo público y el nombre
- * viejo sigue resolviendo. El inventario de ese día encontró el nombre definido cuatro veces y escrito a mano en unos
- * catorce lugares más: con un nombre nuevo, cada copia escrita a mano es una que se puede desfasar en silencio.
+ * Quien clona el repo público no debe leer después, en `~/.claude/`, el nombre del repo interno. El lugar
+ * se llama como el repo público y el nombre viejo sigue resolviendo. Con el nombre definido varias veces y escrito a
+ * mano en otros lugares, cada copia escrita a mano es una que se puede desfasar en silencio: por eso se define UNA vez
+ * y las copias se declaran.
  *
- * Qué fija (los números son los de la tabla de pruebas de la story):
+ * Qué fija:
  *   T1  los identificadores nuevos en inglés, los dos frenos de nombres en 0 sobre la rama, y el nombre del repo
  *       público sin escribir como nombre de repo;
- *   T3  una sola definición: place.js sin dependencias, los archivos del AC 3 sin la ruta del lugar escrita a mano, y
+ *   T3  una sola definición: place.js sin dependencias, los archivos que toman el nombre de place.js sin la ruta del lugar escrita a mano, y
  *       samePath como el sistema (sin mayúsculas ni barra final en Windows; distinto en Linux);
  *   T4  cada copia declarada nombra los dos nombres de la constante; una copia desfasada y una no declarada hacen fallar;
  *       un envoltorio cae en `generated` por su marca;
@@ -94,8 +94,8 @@ function codeFiles(root) {
 }
 /**
  * Las copias que la lista no declara: código que escribe el nombre nuevo a mano, o que DEFINE el viejo como constante.
- * (Un mensaje o una ruta que todavía nombra el lugar por el viejo no es una copia de la constante: es texto, y lo cambia la
- * tanda C, con su barrido por expresión —T38—.)
+ * (Un mensaje o una ruta que todavía nombra el lugar por el viejo no es una copia de la constante: es texto, y lo cubre el
+ * barrido por expresión —T38—.)
  */
 function undeclaredCopies(root, files) {
   const declared = new Set([
@@ -122,7 +122,7 @@ function undeclaredCopies(root, files) {
 
 // ── T1 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T1 PlaceNames_EnglishIdentifiers_NoRealNames_PublicRepoNameUnwritten', () => {
-  // los nombres que la máquina ejecuta, en inglés (AC 1)
+  // los nombres que la máquina ejecuta, en inglés
   assert.deepStrictEqual(Object.keys(PLACE).sort(), ['LEGACY_PLACE_NAME', 'PLACE_NAME', 'isHarnessClone', 'legacyPlacePath', 'placePath', 'resolvePlace', 'samePath']);
   for (const k of ['literal_copies', 'recognizers', 'legacy_only', 'other_uses', 'place_text', 'generated']) assert.ok(Array.isArray(LIST[k]), `harness-place-names.json: falta la sección ${k}`);
   // el nombre del repo público no se escribe como nombre de repo (los papeles usan {{public-org}}/{{public-repo}})
@@ -137,7 +137,7 @@ test('T1 PlaceNames_EnglishIdentifiers_NoRealNames_PublicRepoNameUnwritten', () 
   // los dos frenos de nombres sobre la rama (con origin/main a mano; sin él —un clon superficial—, NO MEDIDO)
   // 🔴 En un árbol armado —el repo privado con el público encima, como lo arma la validación de sus pedidos— la punta
   // es el commit local de esa superposición. Medido desde ahí, todo el público cuenta como «nuevo» y los frenos marcan
-  // nombres que ya existían (16 hallazgos en la corrida #13239); medido hasta el commit anterior, el privado adelgazado
+  // nombres que ya existían; medido hasta el commit anterior, el privado adelgazado
   // no trae la lista de palabras y el freno no puede mirar. Ahí este caso no mide los frenos sobre la rama, y lo dice.
   const tipSubject = spawnSync('git', ['-C', ROOT, 'log', '-1', '--format=%s', 'HEAD'], { encoding: 'utf8' });
   if (tipSubject.status === 0 && tipSubject.stdout.includes('[superposición local, no se empuja]')) {
@@ -157,19 +157,19 @@ test('T1 PlaceNames_EnglishIdentifiers_NoRealNames_PublicRepoNameUnwritten', () 
 });
 
 // ── T3 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// los archivos del AC 3 que toman el nombre de place.js
+// los archivos que toman el nombre de place.js
 const AC3_FILES = ['scripts/lib/canonical-path.js', 'scripts/setup/harness.js', 'scripts/setup/harness/repoint.js', 'scripts/setup/harness/remove.js',
   'scripts/setup/harness/shared.js', 'scripts/setup/harness/snapshot.js', 'scripts/setup/harness/channel.js', 'scripts/setup/harness/report.js',
   'scripts/instincts/instinct-draft.js', 'scripts/publishing/export.js', 'scripts/publishing/profile-equivalence.js'];
 test('T3 PlaceConstant_SingleDefinition_SamePathWin32', () => {
-  // story 8.23 (A1): los dos nombres y sus rutas se definen en tycon-home.js (la raíz de todas las rutas del arnés, sin
+  // los dos nombres y sus rutas se definen en tycon-home.js (la raíz de todas las rutas del arnés, sin
   // dependencias); place.js es su fachada y no carga nada más
   const requiresOf = (rel) => [...read(rel).matchAll(/require\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]).sort();
   assert.deepStrictEqual(requiresOf('scripts/setup/harness/place.js'), ['./tycon-home.js', 'path'], 'place.js carga algo más que tycon-home.js y path');
   assert.deepStrictEqual([...new Set(requiresOf('scripts/setup/harness/tycon-home.js'))], ['fs', 'os', 'path'], 'tycon-home.js sólo carga módulos de Node');
   const defined = ['scripts/setup/harness/place.js', 'scripts/setup/harness/tycon-home.js'].filter((f) => /\bPLACE_NAME\s*=\s*['"`]/.test(codeOnly(read(f))));
   assert.deepStrictEqual(defined, ['scripts/setup/harness/tycon-home.js'], 'los nombres del lugar se definen en tycon-home.js, una vez');
-  // el lugar se llama como el repo público (decisión del dueño, story 8.19); sin public-repos.json (la copia), sólo que hay nombre
+  // el lugar se llama como el repo público; sin public-repos.json (la copia), sólo que hay nombre
   const publicFile = path.join(ROOT, 'scripts', 'publishing', 'public-repos.json');
   if (fs.existsSync(publicFile)) assert.strictEqual(PLACE.PLACE_NAME, JSON.parse(fs.readFileSync(publicFile, 'utf8')).repo, 'el lugar no se llama como el repo público');
   else assert.ok(/^[A-Za-z0-9._-]+$/.test(PLACE.PLACE_NAME));
@@ -182,7 +182,7 @@ test('T3 PlaceConstant_SingleDefinition_SamePathWin32', () => {
       `${f}: escribe el nombre nuevo a mano, fuera de los comentarios`);
     assert.ok(/require\([^)]*place\.js['"]\)/.test(code), `${f}: no toma el nombre de place.js`);
   }
-  // los otros usos de la palabra siguen donde estaban, declarados (AC 3, other_uses)
+  // los otros usos de la palabra siguen donde estaban, declarados (other_uses)
   assert.ok(read('scripts/setup/harness/sources.js').includes(`'${PLACE.PLACE_NAME}'`), 'el stash de sources.js sigue');
   assert.ok(read('scripts/setup/harness/health.js').includes(`'${PLACE.PLACE_NAME}-health'`), 'el id de sesión de health.js sigue');
   // samePath: como el sistema
@@ -216,10 +216,10 @@ test('T4 PlaceNames_LiteralCopies_MatchConstant_DriftFails_GeneratedByMark', () 
   fs.writeFileSync(path.join(t, 'scripts', 'lib', 'shim.js'), `#!/usr/bin/env node\n// ${LIST.generated[0].mark} scripts/lib/x.js\nconst p = '.claude/${PLACE.PLACE_NAME}';\n`);
   assert.deepStrictEqual(undeclaredCopies(t, codeFiles(t)).sort(), ['scripts/lib/new-one.js', 'scripts/lib/other.js'], 'la sembrada no aparece, o el envoltorio no cae en generated');
   fs.rmSync(t, { recursive: true, force: true });
-  // los envoltorios versionados llevan su marca y nombran sólo el lugar (AC 10)
+  // los envoltorios versionados llevan su marca y nombran sólo el lugar
   const shims = spawnSync('git', ['-C', ROOT, 'grep', '-l', '-I', LIST.generated[0].mark], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean)
     .filter((f) => isShimText(read(f)));
-  // la copia pública no trae el mapa de renombres ni los envoltorios (story 8.9): ahí esa parte no se mide, y se dice
+  // la copia pública no trae el mapa de renombres ni los envoltorios: ahí esa parte no se mide, y se dice
   if (fs.existsSync(path.join(ROOT, 'scripts', 'lib', 'renames.json'))) assert.ok(shims.length > 50, `pocos envoltorios encontrados por su marca: ${shims.length}`);
   else console.log(`⏭ T4: NO MEDIDO — los envoltorios (no hay scripts/lib/renames.json: la copia pública; ${shims.length} encontrados)`);
   for (const f of shims) assert.ok(!placeNamesIn(read(f)).has(PLACE.LEGACY_PLACE_NAME), `${f}: el envoltorio nombra el viejo (regenerar con legacy-names.js --write-shims)`);
@@ -297,8 +297,8 @@ test('T13 Recognizers_BothNamesAsSegments_LegacyOnlyDeclared', () => {
 });
 
 // ── T14 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Lo que NO es una operación sobre los nombres del lugar y usa un operador de enlace a propósito, con su motivo (desvío
-// declarado de la tanda A: el AC 13 barre el archivo entero; estas líneas son de otra cosa y sacarlas rompería lo suyo).
+// Lo que NO es una operación sobre los nombres del lugar y usa un operador de enlace a propósito, con su motivo (la prueba
+// barre el archivo entero; estas líneas son de otra cosa y sacarlas rompería lo suyo).
 const OPERATOR_EXCEPTIONS = [
   { path: 'scripts/production/install-guard.sh', line: 'while [ -L "$p" ] && [ $n -lt 20 ]; do', why: 'real_de: sigue los enlaces del BINARIO de node que se copia a /opt, sin programas del usuario (corre con sudo, sólo en macOS)' },
   { path: 'scripts/production/install-guard.sh', line: 'local t; t="$(readlink "$p")"', why: 'real_de: ídem' },
@@ -322,20 +322,20 @@ test('T14 LinkOps_NodeOnly_WholeFileOperators_NoRecursiveRemoval_NoNewDollar', (
     });
   }
   for (const x of OPERATOR_EXCEPTIONS) assert.ok(read(x.path).split('\n').some((l) => l.trim() === x.line), `excepción que ya no está (sacala de la lista): ${x.path}: ${x.line}`);
-  // un nombre se borra con unlink o rmdir, nunca recursivo (AC 13 b): el creador y sus ayudantes
+  // un nombre se borra con unlink o rmdir, nunca recursivo: el creador y sus ayudantes
   const cp = read('scripts/lib/canonical-path.js');
   const body = (name) => { const i = cp.indexOf(`function ${name}(`); assert.ok(i >= 0, `falta ${name}`); return cp.slice(i, cp.indexOf('\n}\n', i)); };
   for (const fn of ['removeName', 'pointName', 'ensurePlace', 'placePlan', 'takePlaceLock', 'releasePlaceLock']) {
     assert.ok(!/rmSync|recursive:\s*true\s*,\s*force|rimraf/.test(body(fn).replace(/mkdirSync\([^)]*\)/g, '')), `${fn}: un borrado recursivo`);
   }
   assert.match(body('removeName'), /unlinkSync[\s\S]*rmdirSync/);
-  // (segunda vuelta, M6) el borrado de una pieza `link` en uninstall, también: unlink/rmdir, nunca recursivo
+  // el borrado de una pieza `link` en uninstall, también: unlink/rmdir, nunca recursivo
   const rm = read('scripts/setup/harness/remove.js');
   const i = rm.indexOf('const rmName = '); assert.ok(i >= 0, 'remove.js: falta rmName');
   const rmBody = rm.slice(i, rm.indexOf('\n  };\n', i));
   assert.ok(/unlinkSync[\s\S]*rmdirSync/.test(rmBody) && !/rmSync|recursive/.test(rmBody), `remove.js rmName: ${rmBody}`);
   assert.match(rm.slice(rm.indexOf("case 'link': {"), rm.indexOf("case 'command': {")), /rmName\(piece, piece\.where\)/, 'remove.js: la pieza link no se borra con rmName');
-  // el comando que propone instinct-draft.js: en Windows la ruta absoluta con `/` y sin `$` (AC 13 c)
+  // el comando que propone instinct-draft.js: en Windows la ruta absoluta con `/` y sin `$`
   const draft = require(path.join(ROOT, 'scripts', 'instincts', 'instinct-draft.js'));
   const win = draft.hookCommand('x.sh', { platform: 'win32', home: 'C:\\Users\\Lab' });
   assert.strictEqual(win, `C:/Users/Lab/.claude/${PLACE.PLACE_NAME}/scripts/hooks/x.sh`);
@@ -343,13 +343,13 @@ test('T14 LinkOps_NodeOnly_WholeFileOperators_NoRecursiveRemoval_NoNewDollar', (
   assert.strictEqual(draft.hookCommand('x.sh', { platform: 'darwin' }), `$HOME/.claude/${PLACE.PLACE_NAME}/scripts/hooks/x.sh`, 'en Mac y Linux el comando sigue como estaba (el `$HOME` ya estaba)');
 });
 
-// ═══ Tanda C · la ruta del lugar en los textos (AC 25 a 28) ═════════════════════════════════════════════════════════
+// ═══ La ruta del lugar en los textos ═════════════════════════════════════════════════════════
 // La ruta del lugar con el nombre viejo, en cualquier forma: `~/.claude/<viejo>` con `/`, `\` o `\\`, y
 // `path.join(…, '.claude', '<viejo>')`. El repo o la carpeta del clon (`SourceCode/<viejo>`, `_git/<viejo>`, el
-// `project:` de engram) no es la ruta del lugar y no cuenta (categoría b de la story).
+// `project:` de engram) no es la ruta del lugar y no cuenta.
 const LEGACY_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.LEGACY_PLACE_NAME}(?![A-Za-z0-9_-])|['"]\\.claude['"],\\s*['"]${PLACE.LEGACY_PLACE_NAME}['"]`);
 const PLACE_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE.PLACE_NAME}(?![A-Za-z0-9_-])`);
-// El alcance del barrido, por expresión (AC 28): lo versionado menos la historia.
+// El alcance del barrido, por expresión: lo versionado menos la historia.
 const HISTORY_RX = /^(specs|tasks|inbox|instincts|\.advisors|\.engram|\.dashboard)\/|^guides\/((maintaining\/)?incident-log\.md|decisions\/|codex-migration\.md)|^scripts\/tests\/fixtures\/startup-lines\.json$/;
 function sweepScope(root) {
   const r = spawnSync('git', ['-C', root, 'ls-files'], { encoding: 'utf8' });
@@ -403,9 +403,9 @@ const TEAM_PAPERS = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'onboa
   'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 const NAMES_THE_PLACE = ['INSTALL.md', 'onboarding/new-dev-harness-setup.md', 'guides/piezas-del-arnes.md', 'claude-md-blocks/names/tool-names.codex.md', 'commands/tycon-instincts.md'];
 test('T35 TeamPapers_PlacePath_OldStartupDeclared_TwoNamesParagraphInternal', () => {
-  // la verificación del import en los papeles del equipo (revisión de C+E, C3): una máquina nueva escribe
+  // la verificación del import en los papeles del equipo: una máquina nueva escribe
   // `@~/.claude/<lugar>/README.md`, así que todo chequeo de CLAUDE.md que busca el import por el nombre viejo tiene que
-  // aceptar también el lugar. 🔴 rojo previo: el alta contaba sólo `<viejo>/README.md` (esperaba 1, una máquina nueva da 0).
+  // aceptar también el lugar. 🔴 Si el alta contara sólo `<viejo>/README.md`, esperaría 1 y una máquina nueva da 0.
   for (const f of shipped(TEAM_PAPERS, 'T35 (import)')) {
     const oneName = read(f).split('\n').filter((l) => l.includes('CLAUDE.md') && l.includes(PLACE.LEGACY_PLACE_NAME) && !l.includes(PLACE.PLACE_NAME) && !LEGACY_PATH_RX.test(l));
     assert.deepStrictEqual(oneName, [], `${f}: un chequeo del import en CLAUDE.md que sólo acepta el nombre viejo`);
@@ -512,10 +512,10 @@ test('T39 RepoAnchorsUnchanged_HistoryUntouched', () => {
   assert.ok(read('scripts/lib/harness-audit.js').includes(`'tycon', '${PLACE.LEGACY_PLACE_NAME}'`), 'harness-audit.js: el project: de engram');
   assert.ok(read('scripts/production/install-guard.sh').includes(`/${PLACE.LEGACY_PLACE_NAME}/_git/${PLACE.LEGACY_PLACE_NAME}`), 'install-guard.sh: la URL de Azure');
   assert.ok(read('scripts/publishing/third-party-coverage.js').includes(`'agent-skills', '${PLACE.LEGACY_PLACE_NAME}'`), 'third-party-coverage.js: la lista');
-  // el diff de la tanda no toca historia (salvo tasks/todo.md, esta story y su medición; .engram/ es la exportación de la
+  // el diff de la rama no toca historia (salvo tasks/todo.md, esta story y su medición; .engram/ es la exportación de la
   // memoria que acompaña cada commit, sólo agrega)
   // Lo que mide: los commits PROPIOS de la rama (los que main no tiene), sin los merges. Así no depende de ninguna rama viva
-  // (la de la tanda A ya entró a main y su rama se borra) y una mezcla de main en la rama no cuela la historia
+  // (las ramas ya mergeadas se borran) y una mezcla de main en la rama no cuela la historia
   // de otras stories: `--no-merges` deja afuera el commit de mezcla y `merge-base origin/main HEAD` corta todo lo que ya
   // está en main. Parada en main (o con la rama ya mergeada) no hay commits propios: no hay qué medir, y se dice.
   const base = spawnSync('git', ['-C', ROOT, 'merge-base', 'origin/main', 'HEAD'], { encoding: 'utf8' });
@@ -523,19 +523,19 @@ test('T39 RepoAnchorsUnchanged_HistoryUntouched', () => {
   const d = spawnSync('git', ['-C', ROOT, 'log', '--no-merges', '--name-only', '--format=', `${base.stdout.trim()}..HEAD`], { encoding: 'utf8' });
   assert.strictEqual(d.status, 0, d.stderr);
   if (!d.stdout.trim()) console.log('⏭ T39: la rama no tiene commits propios fuera de main: el diff de historia no se mide');
-  // sólo se mide en una rama de la 8.19: la que toca su story. Una rama de otra story edita su propia story (historia
-  // para esta expresión) y eso no es «la tanda reescribió historia» (pasó con la 8.13.1 A, 2026-10-06)
+  // sólo se mide en una rama que toca la story de este lugar. Una rama de otra story edita su propia story (historia
+  // para esta expresión) y eso no es «la rama reescribió historia»
   const own = d.stdout.split('\n').filter(Boolean);
   if (own.length && !own.some((f) => /^specs\/story-8\.19-[^/]+\.md$/.test(f))) { console.log('⏭ T39: no es una rama de la 8.19 (no toca su story): el diff de historia no se mide'); return; }
-  // las stories 8.13.1 y 8.15 también: retocarlas es la tanda D de la 8.19 (Task 9; la hizo la 8.13.1 A el 2026-10-05)
+  // retocar las stories que nombran el lugar viejo es parte del cambio de nombre: también se permiten
   const allowed = /^(tasks\/todo\.md|specs\/story-8\.19-[^/]+\.md|specs\/story-8\.13\.1-[^/]+\.md|specs\/story-8\.15-[^/]+\.md|tasks\/measurement-8\.19-[^/]+\/.+|\.engram\/.+)$/;
   const touched = own.filter((f) => HISTORY_RX.test(f) && !allowed.test(f));
   assert.deepStrictEqual(touched, [], 'la tanda reescribió historia');
 });
 
-// ═══ Tanda E · el nombre del repo interno en lo que se publica (AC 36 y 40) ═════════════════════════════════════════
+// ═══ El nombre del repo interno en lo que se publica ═════════════════════════════════════════════════
 // T48: la prosa que se publica dice «el arnés» (o la ruta del lugar) donde nombraba al repo interno. Se mira fuera de
-// las marcas de sólo interno (lo que no sale) y sin contar la ruta del lugar con el nombre viejo (tanda C). README.md
+// las marcas de sólo interno (lo que no sale) y sin contar la ruta del lugar con el nombre viejo. README.md
 // sigue bajo su tope. Lo que queda en la copia (datos de Azure, reconocedores, copias declaradas, pruebas) lo cuenta
 // export-real.test.sh contra scripts/tests/fixtures/public-copy-internal-name.json (T52).
 const INTERNAL_NAME_RX = new RegExp(PLACE.LEGACY_PLACE_NAME, 'i');
@@ -576,7 +576,7 @@ test('T48 PublishedProse_InternalRepoName_SaysTheHarness_ReadmeUnderLimit', () =
   assert.deepStrictEqual(publishedLines(toy).filter((l) => INTERNAL_NAME_RX.test(l)).length, 1, 'el espejo de publishedLines');
 });
 
-// T49-T51 (story 8.19, tanda E). Lo publicado se decide como lo decide el exportador por la lista blanca
+// T49-T51. Lo publicado se decide como lo decide el exportador por la lista blanca
 // (allowlist.json: `in` de algún paquete y ningún `out` de esa fuente); la medición de verdad, sobre la copia armada, es
 // T52 en export-real.test.sh. Sin allowlist.json (la copia pública no lo trae) estas tres no se pueden medir, y se dice.
 const INTERNAL_LIST = JSON.parse(read('scripts/tests/fixtures/public-copy-internal-name.json'));
@@ -627,7 +627,7 @@ test('T49 PublishedCodeMessagesAndComments_SayTheHarness', () => {
 });
 
 test('T50 FunctionalRecognizers_AddPublicName_KeepInternal_AzureDataDeclared', () => {
-  // los reconocedores declarados nombran los dos: el interno sigue, el público se suma (AC 38)
+  // los reconocedores declarados nombran los dos: el interno sigue, el público se suma
   const recognizers = INTERNAL_LIST.entries.filter((e) => e.kind === 'functional' && /^reconocedor/.test(e.why));
   assert.ok(recognizers.length >= 5, `pocos reconocedores declarados: ${recognizers.length}`);
   const word = (n) => new RegExp(`(^|[^A-Za-z0-9_-])${n}([^A-Za-z0-9_-]|$)`, 'm');
@@ -645,7 +645,7 @@ test('T50 FunctionalRecognizers_AddPublicName_KeepInternal_AzureDataDeclared', (
     assert.strictEqual(j.arnes, want, `harness-repo.js: la carpeta «${name}» ${want ? 'es' : 'no es'} del arnés (dio ${j.arnes} por ${j.por})`);
   }
   fs.rmSync(t, { recursive: true, force: true });
-  // los datos de Azure quedan, declarados con su motivo (los dos que nombra el AC 38, como mínimo)
+  // los datos de Azure quedan, declarados con su motivo
   const azure = INTERNAL_LIST.entries.filter((e) => e.kind === 'azure');
   for (const p of ['scripts/ci/grant-new-product-permissions.js', 'scripts/production/install-guard.sh']) {
     assert.ok(azure.some((e) => e.path === p), `${p}: el dato de Azure no está declarado como «azure»`);
@@ -654,12 +654,12 @@ test('T50 FunctionalRecognizers_AddPublicName_KeepInternal_AzureDataDeclared', (
 });
 
 test('T51 TestsAndBench_TwinCasesWithPublicName', () => {
-  // los casos que arman una carpeta con el nombre interno para probar un reconocimiento tienen su gemelo con el público
-  // (AC 39). Que los dos salgan verdes lo dicen el banco (--only) y la suite, corridos aparte.
+  // los casos que arman una carpeta con el nombre interno para probar un reconocimiento tienen su gemelo con el público.
+  // Que los dos salgan verdes lo dicen el banco (--only) y la suite, corridos aparte.
   const TWINS = ['scripts/controls-bench/cases/hooks/14-retro-pending.json', 'scripts/controls-bench/cases/hooks/23-unpushed-notice.json', 'scripts/tests/harness-repo.test.sh',
     'skills/tycon-pipeline/scripts/tests/story-gate-cli.test.js', 'skills/tycon-pipeline/scripts/tests/story-skill-gate.test.js'];
   // las formas en que un caso arma la carpeta: `mkdir -p …/<n>`, `repo "$BASE/…/<n>`, `path.join(base, '<n>'` y la ruta
-  // suelta `'/x/<n>/…'` (revisión de C+E, M2: las de skills/ no las veía)
+  // suelta `'/x/<n>/…'` (las de skills/ también)
   const builds = (text, name) => {
     const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const forms = [`(?:mkdir -p "?|repo ")(?:\\$BASE/)?(?:[\\w.-]+/)*${n}(?=[/"\\s])`, `path\\.join\\(base, '${n}'`, `'/x/${n}/`];
@@ -678,10 +678,10 @@ test('T51 TestsAndBench_TwinCasesWithPublicName', () => {
   assert.strictEqual(missing(`"mkdir -p ${PLACE.LEGACY_PLACE_NAME}/a && x" "mkdir -p ${PLACE.PLACE_NAME}/a && x"`), null, 'el espejo de T51: con gemelo');
 });
 
-// ═══ La guarda del laboratorio (2026-10-15) ══════════════════════════════════════════════════════════════════════════
+// ═══ La guarda del laboratorio ══════════════════════════════════════════════════════════════════════════
 // Las suites protegen la carpeta real con scripts/tests/lib/lab-guard.js, que toma el nombre del lugar de place.js. La
-// guarda escrita a mano, con el nombre adentro, se copiaba de suite en suite y caía en T49 recién en el pedido (siete
-// ramas, 2026-10-14). Se barre lo que se publica de scripts/: las pruebas de skills/ pueden correr desde un clon sin
+// guarda escrita a mano, con el nombre adentro, se copia de suite en suite y cae en T49 recién en el pedido.
+// Se barre lo que se publica de scripts/: las pruebas de skills/ pueden correr desde un clon sin
 // scripts/ al lado y guardan su copia, declarada en public-copy-internal-name.json.
 const LAB_GUARD = 'scripts/tests/lib/lab-guard.js';
 /** Las líneas que escriben a mano la guarda con el nombre viejo del lugar: [archivo:línea]. */

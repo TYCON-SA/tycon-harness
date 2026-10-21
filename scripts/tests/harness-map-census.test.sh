@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# harness-map-census.test.sh — toda pieza del arnés tiene lugar en el mapa (2026-09-15).
+# harness-map-census.test.sh — toda pieza del arnés tiene lugar en el mapa.
 #
 # Lo que se protege: que el mapa no vuelva a quedar incompleto sin que nadie lo note. Una pieza nueva
 # sin ficha que la cite hace fallar esto; excluir sin motivo, o dejar una exclusión que ya no aplica,
 # también. Y «no pude medir» nunca sale verde. Los casos 2 a 7 trabajan sobre un arnés de juguete en un
-# directorio temporal; el 1 mide el repo real. Los casos 8 a 12 (story 8.12, tanda R7) cuidan el `tipo` de
+# directorio temporal; el 1 mide el repo real. Los casos 8 a 12 cuidan el `tipo` de
 # cada pieza: sale de la ruta de su primer archivo, y un tipo tipeado a mano distinto, o una ruta sin regla,
-# no pasan; el 11 mide el mapa real. El 15 (story 8.12, tanda R4) cuida que las carpetas nuevas se censen
+# no pasan; el 11 mide el mapa real. El 15 cuida que las carpetas nuevas se censen
 # solas, sin una lista fija de carpetas.
 #
 # El código (scripts/tools/harness-map/) vive en el repo público; el mapa interno (artifacts/mapa-arnes.html) y sus
@@ -16,7 +16,7 @@
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
-# el mapa del arnés vive en scripts/tools/harness-map/ desde la story 8.12, tanda R4
+# el mapa del arnés vive en scripts/tools/harness-map/
 HMAP="scripts/tools/harness-map"
 CENSO="$RAIZ/$HMAP/census.js"
 TMP="$(mktemp -d)"
@@ -45,7 +45,7 @@ TODO='[["tcg","scripts/hooks/aviso.js"],["as","skills/tycon-pipeline/scripts/pas
 echo "harness-map-census"
 
 # C-01 · el arnés real: toda pieza está en alguna ficha o excluida con motivo.
-# las skills del repo que se prueba (repo unido, story 8.18), no las de la instalación de la máquina, que puede estar atrasada
+# las skills del repo que se prueba, no las de la instalación de la máquina, que puede estar atrasada
 if [ "$REAL" = 1 ]; then
   node "$CENSO" --skills "$RAIZ/skills" > "$TMP/real" 2>&1
   [ $? = 0 ] && ok "C-01 toda pieza del arnés real tiene lugar en el mapa" || { mal "C-01 hay piezas sin lugar en el mapa"; cat "$TMP/real"; }
@@ -83,7 +83,7 @@ rc=$(correr "$TMP/c7")
 [ "$rc" = 1 ] && grep -q "skills/tycon-pipeline/scripts/paso.js" "$TMP/c7/out" && ! grep -q "skills/tycon-pipeline/\$" "$TMP/c7/out" \
   && ok "C-07 el comodín de carpeta no da por citados los archivos de adentro" || { mal "C-07 el comodín cubrió de más o de menos (rc=$rc)"; cat "$TMP/c7/out"; }
 
-# ── El tipo de cada pieza, derivado de su ruta (story 8.12, tanda R7) ─────────────────────────────
+# ── El tipo de cada pieza, derivado de su ruta ─────────────────────────────
 # mapa <archivo> <fichas>: un mapa mínimo con las fichas dadas (una por línea, como el real).
 mapa() { printf 'x\nconst D = {\n%s\n};\ny\n' "$2" > "$1"; }
 tipos() { node "$CENSO" --types --json --map "$1" 2>&1; }
@@ -169,7 +169,7 @@ printf 'sin fichas\n' > "$TMP/ilegible.html"
 node "$CENSO" --check --map "$TMP/ilegible.html" > "$TMP/c12" 2>&1; rc=$?
 [ "$rc" = 2 ] && grep -q "tipos del mapa — NO MEDIDO" "$TMP/c12" && ok "C-12 --check sobre un mapa ilegible sale «no medido»" || { mal "C-12 mapa ilegible (rc=$rc)"; cat "$TMP/c12"; }
 
-# ── Las carpetas que estrena la tanda R2 (story 8.12, AC 5): scripts/instincts/ e inbox/ ──────────────────
+# ── Las carpetas scripts/instincts/ e inbox/ ──────────────────
 # C-13 · una pieza en scripts/instincts/ sin ficha frena y se nombra (si el censo no recorriera la carpeta, la pieza
 # movida ahí desaparecería en silencio), y un ejecutable que cae en el buzón inbox/ —que sólo guarda datos— también.
 arnes "$TMP/c13" "$TODO" '[]'
@@ -183,9 +183,9 @@ rc=$(correr "$TMP/c13")
   && ok "C-13 el censo recorre scripts/instincts/ e inbox/ (y los datos del buzón no son piezas)" \
   || { mal "C-13 scripts/instincts/ o inbox/ fuera del censo (rc=$rc)"; cat "$TMP/c13/out"; }
 
-# C-14 · T20 R2_AdvisorDemo_Decision: el experimento del ejecutor barato se borró (pregunta 4 decidida): no está en el
+# C-14 · T20 R2_AdvisorDemo_Decision: el experimento del ejecutor barato está retirado: no está en el
 # árbol ni en las exclusiones del mapa, el índice (INDEX.md) no lo lista y la guía de costos dice que se retiró sin nombrar el
-# guion (nunca como algo para correr). Hasta la tanda G2 de la story 8.26 la guía decía hasta qué commit vivió: un
+# guion (nunca como algo para correr). La guía no dice hasta qué commit vivió: un
 # commit de la historia interna no va en una guía que se publica, y `git log` lo sigue sabiendo.
 demo=scripts/tycon-advisor-demo.js
 guia="$RAIZ/guides/harness-cost-tiering.md"
@@ -197,11 +197,11 @@ fuera_limpio=1; [ -f "$RAIZ/$HMAP/fuera-del-mapa.json" ] && grep -q "tycon-advis
   && ok "C-14 T20 el experimento del ejecutor barato está retirado y la guía lo dice sin mandarlo a correr" \
   || { mal "C-14 T20 el retiro de $demo no es coherente"; [ -n "$vivas" ] && echo "$vivas"; }
 
-# ── Las carpetas de la tanda R4 (story 8.12, AC 27): sin lista fija de carpetas ─────────────────────────────────
+# ── Carpetas nuevas: sin lista fija de carpetas ─────────────────────────────────
 # C-15 · T31 R4_HarnessMap_PreCommitAndCensusFolders (mitad del censo): una pieza en scripts/nightly/watcher/ y otra en
 # scripts/tools/harness-map/ que ninguna ficha cita salen 1 y se nombran —las recorren los bucles de scripts/nightly/* y
-# scripts/tools/*, así que la lista fija ya no las necesita—, y lo mismo una definición de pipeline en pipelines/ o
-# pipelines/templates/ (la carpeta que estrena la R6). Las exclusiones se leen de la carpeta nueva del mapa.
+# scripts/tools/*, así que no hace falta una lista fija—, y lo mismo una definición de pipeline en pipelines/ o
+# pipelines/templates/. Las exclusiones se leen de la carpeta del mapa.
 arnes "$TMP/c15" "$TODO" '[]'
 mkdir -p "$TMP/c15/tcg/scripts/nightly/watcher" "$TMP/c15/tcg/pipelines/templates"
 : > "$TMP/c15/tcg/scripts/nightly/watcher/guion-lab.js"

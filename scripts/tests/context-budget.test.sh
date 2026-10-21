@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# context-budget.test.sh — el medidor de contexto no cobra esquemas que NO están cargados (2026-09-06).
+# context-budget.test.sh — el medidor de contexto no cobra esquemas que NO están cargados.
 #
-# CONTEXT-BUDGET-TOOLS-DIFERIDAS-1. El medidor asumía 500 tokens por herramienta para TODO servidor
+# El medidor no puede asumir 500 tokens por herramienta para TODO servidor
 # MCP, incluidos los conectores de claude.ai que la cuenta NO tiene autorizados —cuyos esquemas no
-# se cargan— y sobre esa cuenta inflada puntuaba 0/10 y recomendaba desconectar cosas. Se estuvo a
-# punto de hacerlo. Un medidor que infla no es sólo impreciso: recomienda perder algo a cambio de un
+# se cargan—: sobre esa cuenta inflada puntuaría 0/10 y recomendaría desconectar cosas.
+# Un medidor que infla no es sólo impreciso: recomienda perder algo a cambio de un
 # ahorro que no existe, y un 0/10 permanente entrena a ignorar la categoría.
 #
 # Lo que se afirma acá, y nada más: un conector que figura en `mcp-needs-auth-cache.json` (la lista
@@ -12,8 +12,8 @@
 # esquema cargado, y el reporte lo DICE. Cuánto cuesta exactamente un nombre diferido no se midió:
 # se cobra un mínimo declarado, no 500.
 #
-# 🔴 rojo previo verificado: con la cuenta vieja, los 4 conectores sin autorizar sumaban 21.500 y
-#    el reporte no mencionaba «sin autorizar».
+# 🔴 con el cálculo sin esta distinción, los 4 conectores sin autorizar suman 21.500 y
+#    el reporte no menciona «sin autorizar».
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 FALLOS=0
@@ -58,10 +58,9 @@ HOME="$H" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -i "si
 
 # C-05 · harness-audit usa el mismo criterio (tiene su propia copia de la cuenta): su número tiene
 # que ser EL MISMO que el de context-budget, y su propio veredicto `passed` tiene que ser verdadero.
-# 🔴 La primera versión de este caso regexeaba el número (`actual: NN,NNN`) y aceptaba cualquier
-# cifra menor a 100.000: con la copia VIEJA de harness-audit (48.500) seguía verde, o sea que el
-# único caso que cuidaba la copia no se ponía rojo nunca (revisión adversarial 2026-09-06, tres
-# lentes). Rojo previo del arreglo, verificado: 27.516 ≠ 48.500.
+# 🔴 El caso compara el número exacto, no una regex (`actual: NN,NNN`) que acepte cualquier
+# cifra menor a 100.000: con una copia desactualizada de harness-audit (48.500) seguiría verde, o sea que el
+# único caso que cuida la copia no se pondría rojo nunca. Con esa copia: 27.516 ≠ 48.500.
 HA=$(HOME="$H" node "$RAIZ/scripts/lib/harness-audit.js" --json 2>/dev/null | python3 -c "
 import json,sys,re; d=json.load(sys.stdin)
 for cat in d.get('categories',[]):
@@ -77,13 +76,13 @@ else
 fi
 rm -rf "$H"
 
-# ── La cadena del CLAUDE.md con sus @imports, y el piso MEDIDO (story 7.4, 2026-09-17) ──────────
-# El medidor leía sólo `~/.claude/CLAUDE.md` y NO seguía sus `@imports`: reportaba 4.724 tokens para
-# una cadena de 276 KB, con el README del arnés (235.771 bytes ≈ 76 mil tokens) invisible. O sea que
-# la herramienta con la que se decide qué recortar del arranque no veía el ítem más grande.
+# ── La cadena del CLAUDE.md con sus @imports, y el piso MEDIDO ──────────
+# El medidor sigue los `@imports` de `~/.claude/CLAUDE.md`, no sólo el archivo: si no, reporta 4.724 tokens para
+# una cadena de 276 KB, con el README del arnés (235.771 bytes ≈ 76 mil tokens) invisible. La herramienta
+# con la que se decide qué recortar del arranque tiene que ver el ítem más grande.
 # Y su cuenta es una ESTIMACIÓN (chars/4): medido, este contenido tokeniza a 3,08 bytes/token, así
 # que subestima ~30 %. Por eso `--measured` pone al lado el piso REAL, leído del primer pedido de cada
-# transcripción de subagente. Medición: tasks/medicion-7.4-piso-de-contexto-2026-09-17.md.
+# transcripción de subagente.
 
 H2=$(mktemp -d); mkdir -p "$H2/.claude" "$H2/x"
 printf '{ "mcpServers": {} }\n' > "$H2/.claude/settings.json"
@@ -105,9 +104,8 @@ bs=[i for i in its if i.get('path','').endswith('/x/b.md') or i.get('path','').e
 falta=[i for i in its if 'no-existe' in i.get('path','')]
 print(len(its), len(bs), (bs[0].get('tokens') if bs else 0), len(falta), (falta[0].get('missing') if falta else None), (d.get('claudemd') or {}).get('totalTokens'))" 2>/dev/null)
 set -- $LEE
-# 🔴 El 5º campo (`missing`) se IMPRIMÍA y no se comparaba: si `inventoryClaudeMd` dejara de marcar
-# el import inexistente (regresión del AC 9), este caso seguía en VERDE. Lo cazó el revisor de fallos
-# silenciosos en la 7.4 — el tercer caso de esta corrida que medía algo sin afirmarlo.
+# 🔴 El 5º campo (`missing`) se COMPARA, no sólo se imprime: si `inventoryClaudeMd` dejara de marcar
+# el import inexistente (regresión del import), este caso seguiría en VERDE.
 if [ "${1:-}" != "SIN-JSON" ] && [ "${2:-0}" = 1 ] && [ "${3:-0}" -ge 900 ] 2>/dev/null && [ "${4:-0}" = 1 ] && [ "${5:-}" = "True" ] && [ "${6:-0}" -ge 1000 ] 2>/dev/null; then
   ok "C-06 la cadena sigue los @imports (b.md una sola vez con ~1.000 tok, el ausente listado Y marcado missing, el total los suma)"
 else
@@ -119,9 +117,9 @@ HOME="$H2" node "$RAIZ/scripts/tools/context-budget.js" 2>/dev/null | grep -i "i
   && ok "C-06b el reporte legible dice «import de <archivo>»" || mal "C-06b el reporte no distingue lo importado de lo propio"
 
 # C-06c · 🔴 con un import GRANDE, la recomendación se dispara y el reporte NO revienta.
-# El fixture chico de C-06 no alcanzaba: la recomendación sólo entra si el import pasa los 20.000
-# tokens, así que el reporte se rompía SÓLO en la máquina real (forma {savings,action,how} contra
-# {ahorro,titulo,como}) y la suite seguía verde. Un fixture que nunca cruza el umbral no prueba el
+# El fixture chico de C-06 no alcanza: la recomendación sólo entra si el import pasa los 20.000
+# tokens, así que el reporte se rompería SÓLO en la máquina real (forma {savings,action,how} contra
+# {ahorro,titulo,como}) y la suite seguiría verde. Un fixture que nunca cruza el umbral no prueba el
 # camino que importa.
 H4=$(mktemp -d); mkdir -p "$H4/.claude"
 printf '{ "mcpServers": {} }\n' > "$H4/.claude/settings.json"
@@ -134,8 +132,8 @@ else
 fi
 rm -rf "$H4"
 
-# C-06d · un @import que resuelve FUERA del home se cuenta igual, pero queda MARCADO (SEC-C7,
-# hallazgo del revisor de seguridad en la 7.4). Excluirlo haría que la medición subestime lo que de
+# C-06d · un @import que resuelve FUERA del home se cuenta igual, pero queda MARCADO (SEC-C7).
+# Excluirlo haría que la medición subestime lo que de
 # verdad se carga —Claude Code lo carga igual— así que la respuesta correcta es decirlo, no esconderlo.
 H5=$(mktemp -d); mkdir -p "$H5/.claude"
 printf '{ "mcpServers": {} }\n' > "$H5/.claude/settings.json"
@@ -185,12 +183,10 @@ fi
 
 # C-07c · 🔴 las transcripciones ANIDADAS también cuentan. Los subagentes lanzados por la tool
 # Workflow (los hunters del pase adversarial, por ejemplo) no viven en `subagents/*.jsonl` sino un
-# nivel más abajo, en `subagents/workflows/<id>/*.jsonl`. La primera versión de `medirPiso` sólo
-# miraba los hijos directos y se salteaba EN SILENCIO el 63 % de los lanzamientos reales de esta
-# máquina (513 contados contra 874 ignorados): el «piso medido» salía de una minoría no aleatoria,
-# sin un solo aviso de «no medido». Lo cazó el pase adversarial de la 7.4 reproduciéndolo contra el
-# módulo real — el mismo «verde que significa no miré nada» que esta story existe para cerrar, en el
-# código nuevo de la story. Rojo previo: con el recorrido de un nivel, n=1 en vez de 3.
+# nivel más abajo, en `subagents/workflows/<id>/*.jsonl`. Si `medirPiso` sólo
+# mirara los hijos directos, se saltearía EN SILENCIO la mayoría de los lanzamientos reales (el «piso medido» saldría de una
+# minoría no aleatoria, sin un solo aviso de «no medido»): el «verde que significa no miré nada». Con el
+# recorrido de un nivel, n=1 en vez de 3.
 W="$H2/.claude/projects/p/sesion/subagents/workflows/wf_abc"; mkdir -p "$W"
 { turno "$HOY" 0 111000 0; } > "$W/agent-w1.jsonl"
 printf '{"agentType":"general-purpose","workflowPhase":"Hunt"}\n' > "$W/agent-w1.meta.json"
@@ -210,10 +206,10 @@ else
 fi
 
 # C-07c2 · 🔴 un primer pedido con el consumo TODO EN CERO no es un piso de 0: es «no se pudo
-# medir». Medido en esta máquina al arreglar C-07c: 120 de 1.372 transcripciones traen
+# medir». En una máquina real, 120 de 1.372 transcripciones traen
 # `input_tokens: 0, cache_read: 0, cache_creation: 0` (agentes que nunca llegaron a pedir nada), y
-# entraban a la muestra arrastrando el mínimo a 0 y la mediana hacia abajo. Un cero publicado como
-# medición es exactamente lo que esta story persigue: se cuentan aparte, como los ilegibles.
+# entrarían a la muestra arrastrando el mínimo a 0 y la mediana hacia abajo. Un cero publicado como
+# medición es lo que el medidor evita: se cuentan aparte, como los ilegibles.
 { turno "$HOY" 0 0 0; } > "$W/agent-w3.jsonl"
 printf '{"agentType":"general-purpose"}\n' > "$W/agent-w3.meta.json"
 CERO=$(HOME="$H2" node "$RAIZ/scripts/tools/context-budget.js" --measured --json 2>/dev/null | python3 -c "
@@ -231,8 +227,8 @@ fi
 
 # C-07d · el orden del listado por tipo es ESTABLE ante empates: dos tipos con la misma mediana
 # tienen que salir siempre en el mismo orden, no en el que devuelva el sistema de archivos. Con más
-# de 8 tipos y un empate en el borde del corte, un tipo aparecía o desaparecía del top según el orden
-# incidental de las carpetas (hallazgo del pase adversarial, 7.4).
+# de 8 tipos y un empate en el borde del corte, un tipo podría aparecer o desaparecer del top según el orden
+# incidental de las carpetas.
 ORD=$(HOME="$H2" node -e '
 const { medirPiso } = require(process.argv[1]);
 const fs = require("fs"), os = require("os"), path = require("path");
@@ -299,7 +295,7 @@ else
 fi
 rm -rf "$H2"
 
-# ── T17 · R2_Tools_MovedRequiresAndManifests (story 8.12, tanda R2, AC 14) ──────────────────────────────────────
+# ── T17 · R2_Tools_MovedRequiresAndManifests ──────────────────────────────────────
 # Las seis utilidades viven en scripts/tools/. Lo que las nombra por ruta tiene que seguirlas, o se rompe en silencio:
 # harness-audit las importa y las invoca (su «Catalog Integrity» corre rules-distill.js; si no lo encuentra, la
 # categoría entera pasa a un único rojo «no corre» y el resto de la auditoría sigue verde), los manifiestos de la
@@ -341,7 +337,7 @@ else
 fi
 rm -rf "$H6"
 # los `target` de las derivadas de este repo nombran archivos que existen (third-party-coverage sólo mide los de
-# agent-skills: una derivada de acá con la ruta vieja quedaba muerta sin que nadie lo dijera)
+# agent-skills: una derivada de acá con la ruta vieja queda muerta sin que nadie lo diga)
 MUERTOS=$(node -e '
 const fs = require("fs"), path = require("path");
 const m = JSON.parse(fs.readFileSync(path.join(process.argv[1], "scripts/publishing/third-party-skills.json"), "utf8"));

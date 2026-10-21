@@ -1,12 +1,12 @@
 'use strict';
 
 /**
- * legacy-names-f.test.js — las carpetas internas, a su destino final (story 8.9, tanda F · 2026-10-03). T59, T60, T61.
+ * legacy-names-f.test.js — las carpetas internas, a su destino final. T59, T60, T61.
  *
- * La tanda muda cuatro carpetas: las dos colas de fichas de los nocturnos a `inbox/`, la mini-clase a `onboarding/` y
+ * Se mudan cuatro carpetas: las dos colas de fichas de los nocturnos a `inbox/`, la mini-clase a `onboarding/` y
  * los dos `.json` del nocturno de dependencias al lado de su guion. Lo que no se puede perder:
  *
- *   · T59 (AC 55) — cambian las RUTAS y nada más. La referencia es la clasificación del paso cero, hecha antes de mover
+ *   · T59 — cambian las RUTAS y nada más. La referencia es la clasificación hecha antes de mover
  *     nada: `fixtures/legacy-names-f/classification.tsv` trae, por archivo y carpeta, cuántas menciones eran ruta y
  *     cuántas valor, prosa u homónimo (sólo cuentas: los fragmentos de texto no viajan). Se mira por cuatro lados,
  *     porque ninguno alcanza solo:
@@ -19,11 +19,11 @@
  *          (`.dashboard/<cola>`), que quedan.
  *     Lo que tiene forma de ruta fuera de los homónimos lo frena además `spanish-names.js --stale-mentions`
  *     (guides-moved.test.js lo exige en cero): acá no se repite, tarda medio minuto.
- *   · T60 (AC 56) — los dos yml nocturnos y la plantilla que trae los repos parsean y toda ruta que nombran existe:
- *     `--queue` y `--pending` en la carpeta nueva (con su `pending/`), `--branch` igual que antes, el `git add` y los
+ *   · T60 — los dos yml nocturnos y la plantilla que trae los repos parsean y toda ruta que nombran existe:
+ *     `--queue` y `--pending` en la carpeta nueva (con su `pending/`), `--branch` sin cambios, el `git add` y los
  *     `require` de `repos.json`. Y cada guion, en su modo que no escribe y SIN `--pending` ni `--config`, encuentra las
  *     fichas y la configuración en la carpeta nueva de un arnés de juguete (sin red, sin Azure, HOME de juguete).
- *   · T61 (AC 57) — el aviso de arranque de dependencias busca las fichas primero en la carpeta nueva y, si no está, en
+ *   · T61 — el aviso de arranque de dependencias busca las fichas primero en la carpeta nueva y, si no está, en
  *     la vieja (del mapa), en lo publicado y en el disco: una máquina con las fichas todavía en la carpeta vieja sigue
  *     diciendo cuántos hallazgos esperan decisión. Sin ninguna de las dos, no inventa números.
  *
@@ -52,7 +52,7 @@ const SKIP_PUBLIC = !TEAM && 'NO MEDIDO — copia pública sin el mapa';
 const CLASSIFICATION = path.join(__dirname, 'fixtures', 'legacy-names-f', 'classification.tsv');
 const SHIM_MARK = 'tycon-legacy-shim:';
 
-// Los cuatro destinos (AC 55). Las carpetas viejas se toman del mapa por su destino.
+// Los cuatro destinos. Las carpetas viejas se toman del mapa por su destino.
 const QUEUE_DEPS = 'inbox/dependencies';
 const QUEUE_WATCHER = 'inbox/watcher';
 const MINI_CLASS = 'onboarding/mini-class';
@@ -64,7 +64,7 @@ const EXPECTED_SHIMS_LEFT = 3;
 /**
  * agent-skills, por la regla común (scripts/lib/skills-dir.js): TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el
  * propio clon si es unido › la copia de la máquina. `null` si ahí no hay skills. Sin `catch`: si la biblioteca no puede
- * contestar, la suite es roja con la causa (story 8.18: antes cada suite tenía la ruta instalada escrita a mano).
+ * contestar, la suite es roja con la causa.
  */
 function skillsRoot() {
   const root = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
@@ -157,7 +157,7 @@ function compareMentions(expected, now) {
   return { lost, extra };
 }
 
-// Delante de la palabra vieja, esto la vuelve OTRA cosa: la foto de la noche, una rama, la carpeta vieja de otra tanda.
+// Delante de la palabra vieja, esto la vuelve OTRA cosa: la foto de la noche, una rama, la carpeta vieja de otra mudanza.
 const NOT_THE_FOLDER_BEFORE = ['.dashboard/', 'refs/heads/', 'origin/', 'scripts/'];
 const END = '$|[\\s"\'`),;:|\\]}]';
 const END_IN_CODE = '$|[\\s"\'`]';   // en código, `<vieja>/)` es el cierre de una expresión regular, no una carpeta
@@ -220,14 +220,14 @@ function oldPiecesIn(line, folders) {
 /** Cuántas veces arma `text` la foto de la noche de una cola: `'.dashboard', '<vieja>'`. */
 const photoJoins = (text, word) => [...text.matchAll(new RegExp(`['"]\\.dashboard['"]\\s*,\\s*['"]${esc(word)}['"]`, 'g'))].length;
 
-/** Lo que el detector necesita de cada carpeta de la tanda, leído del mapa y del disco. */
+/** Lo que el detector necesita de cada carpeta mudada, leído del mapa y del disco. */
 function movedFolders() {
   return fFolders().map((e) => {
     const stayed = new Set(list(path.join(RAIZ, e.old)));
     return { old: e.old, new: e.new, children: list(path.join(RAIZ, e.new)).filter((n) => !stayed.has(n)) };
   });
 }
-/** Los archivos que el mapa declara homónimos de cada carpeta de la tanda: `carpeta nueva → Set("repo\tarchivo")`. */
+/** Los archivos que el mapa declara homónimos de cada carpeta mudada: `carpeta nueva → Set("repo\tarchivo")`. */
 function homonymFiles() {
   const { globARegex } = require(path.join(RAIZ, 'scripts', 'publishing', 'detector.js'));
   const out = new Map();
@@ -243,8 +243,8 @@ function homonymFiles() {
   return out;
 }
 
-// Las doce rutas armadas por pedazos (punto 17 del paso cero), una por una: archivo, línea medida sobre el `main` de
-// antes de la tanda (sólo para ubicarla: se mira el archivo entero), qué arma y a qué carpeta se mudó.
+// Las doce rutas armadas por pedazos, una por una: archivo, línea medida sobre el `main` previo a la mudanza
+// (sólo para ubicarla: se mira el archivo entero), qué arma y a qué carpeta se mudó.
 const SCRIPT_DEPS = 'scripts/nightly/dependencies/nightly-dependencies.js';
 const SCRIPT_WORK_ITEMS = 'scripts/nightly/dependencies/work-items.js';
 const SCRIPT_SUMMARY = 'scripts/nightly/dependencies/daily-summary.js';
@@ -452,9 +452,9 @@ function ymlRoutes(text) {
     const arg = (name) => { const m = new RegExp(`--${name}[ =]+${ARG}`).exec(block); return m ? stripArg(m[1]) : null; };
     calls.push({ line: i + 1, queue: arg('queue'), branch: arg('branch') });
   });
-  // Lo que el paso guarda en main. Hasta la story 8.26 (tanda H1a) era un `git add <rutas>`; desde entonces los
-  // nocturnos guardan por `push-nightly-data.js save … -- <rutas>`: las rutas van después del «--», en el mismo
-  // llamado (que sigue en varias líneas con «\»). Las dos formas cuentan: es la misma lista, con otro comando.
+  // Lo que el paso guarda en main: los nocturnos guardan por `push-nightly-data.js save … -- <rutas>` (las rutas van
+  // después del «--», en el mismo llamado, que sigue en varias líneas con «\»), o por un `git add <rutas>`.
+  // Las dos formas cuentan: es la misma lista, con otro comando.
   const saved = [];
   lines.forEach((line, i) => {
     if (!/push-nightly-data\.js\s+save\b/.test(line) || /^\s*#/.test(line)) return;
@@ -533,7 +533,7 @@ test('T60a · BatchF_PipelinesParseAndDryRunsMatch — los yml parsean y toda ru
   const p = parses(abs);
   if (p.measured) assert.ok(p.ok, `${FETCH_REPOS_YML} no parsea: ${p.error}`);
   const text = fs.readFileSync(abs, 'utf8');
-  // Story 8.26, tanda C: la lista de productos ya no se lee con dos `require` de una ruta fija; la plantilla la recibe
+  // La lista de productos no se lee con `require` de una ruta fija: la plantilla la recibe
   // por el parámetro `productRegistry`, y su valor por defecto es la carpeta nueva (la validación con un repo de GitHub
   // como propio le pasa la que trae de afuera).
   assert.strictEqual(productRegistryDefault(text), `${DEPS_CONFIG}/repos.json`, `${FETCH_REPOS_YML}: repos.json se lee de ${DEPS_CONFIG}/ por defecto`);
@@ -676,7 +676,7 @@ function dashboardPanels(stdout) {
   assert.ok(a >= 0 && b > a, `el tablero no imprimió su JSON:\n${stdout.slice(0, 400)}`);
   return JSON.parse(stdout.slice(a + 1, b + 2));
 }
-/** El valor por defecto del parámetro `productRegistry` de la plantilla (story 8.26, tanda C). */
+/** El valor por defecto del parámetro `productRegistry` de la plantilla. */
 function productRegistryDefault(text) {
   const m = /- name: productRegistry\s+type: string\s+default: '([^']+)'/.exec(text);
   return m ? m[1] : null;
@@ -768,8 +768,7 @@ test('T60b · laboratorio — con las fichas y repos.json en las carpetas viejas
   assert.strictEqual(f.watcherCards, 0, 'la mirada de producción no lee la cola vieja');
   assert.ok(f.dashboardProducts && f.dashboardProducts.estado === 'no_medido', 'el tablero, sin repos.json, dice no medido');
   // por ESE motivo, no porque la foto de la noche se haya puesto vieja
-  // el motivo es el del tablero publicado: sin repos.json dice que la lista de productos del equipo no vino (antes del
-  // corte el repo del equipo decía «no hay productos declarados en repos.json»; desde el corte el texto es el del público)
+  // el motivo es el del tablero publicado: sin repos.json dice que la lista de productos del equipo no vino
   assert.match(String(f.dashboardProducts.motivo), /lista de productos del equipo no viene/, 'el tablero no mide porque no encontró repos.json');
   assert.strictEqual(f.fetched, null, 'el paso que trae los repos falla sin repos.json');
 });

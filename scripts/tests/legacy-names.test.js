@@ -1,9 +1,9 @@
 'use strict';
 
 /**
- * legacy-names.test.js — el mapa de renombres y la biblioteca que hace que un nombre viejo siga andando (story 8.9,
- * tanda A2 · 2026-09-30). T16-T23 y T25; la parte bash de T17 y T19, y T26-T27, están en legacy-names-install.test.sh;
- * T24, en exportador-real.test.sh. Story 8.12, tanda R1 (2026-10-01): T1 (los `callers` de cada entrada R contra la
+ * legacy-names.test.js — el mapa de renombres y la biblioteca que hace que un nombre viejo siga andando.
+ * T16-T23 y T25; la parte bash de T17 y T19, y T26-T27, están en legacy-names-install.test.sh;
+ * T24, en exportador-real.test.sh. Además, T1 (los `callers` de cada entrada R contra la
  * medición, y un .yml que nombran sólo Azure DevOps, las guías y su repo), T2 (el `require` y el .ps1 que cambian de
  * carpeta) y T9 (el `role` de los hooks y su sufijo).
  *
@@ -21,7 +21,7 @@
  *   · Todo `require` de un archivo que se copia a /opt con el freno de producción está en la lista de lo que se copia.
  *
  * Los nombres castellanos de los ejemplos se arman por concatenación: esta prueba sale en la copia pública y el freno
- * de nombres en castellano la mira como a cualquier ejecutable (AC 7). En los archivos del laboratorio van literales.
+ * de nombres en castellano la mira como a cualquier ejecutable. En los archivos del laboratorio van literales.
  */
 
 const test = require('node:test');
@@ -174,9 +174,9 @@ test('LegacyNames_BrokenMap_PassThroughWarnsOnce', () => {
   assert.strictEqual((r.stderr.match(/no se deja leer/g) || []).length, 1, `avisa una sola vez: ${r.stderr}`);
 });
 
-// ── Tanda C4 (revisor de fallos silenciosos): un mapa que no se puede MIRAR no es un mapa que no está ────────────────
-// Sin mapa (no existe) no se dice nada: es la copia pública. Pero un permiso denegado sobre su carpeta se leía igual que
-// «no hay mapa», sin aviso, y los frenos que buscan la configuración de una foto vieja por el mapa la daban por ausente.
+// ── Un mapa que no se puede MIRAR no es un mapa que no está ────────────────
+// Sin mapa (no existe) no se dice nada: es la copia pública. Pero un permiso denegado sobre su carpeta se leería igual que
+// «no hay mapa», sin aviso, y los frenos que buscan la configuración de una foto vieja por el mapa la darían por ausente.
 test('LegacyNames_UnreadableMap_WarnsNotSilent', { skip: process.getuid && process.getuid() === 0 && 'como root el permiso no se niega' }, () => {
   const dir = tmp('unreadable-map');
   write(dir, { 'locked/renames.json': JSON.stringify({ entries: [] }) });
@@ -197,9 +197,9 @@ test('LegacyNames_UnreadableMap_WarnsNotSilent', { skip: process.getuid && proce
   }
 });
 
-// ── Tanda C4 (pase adversarial): la basura del sistema no hace «real» una carpeta mudada ─────────────────────────────
+// ── La basura del sistema no hace «real» una carpeta mudada ─────────────────────────────
 // Una carpeta vieja con sólo reemplazos está mudada. Un `.DS_Store` que macOS deja al abrirla en el Finder (git lo ignora)
-// la volvía «real» y el control de nombres viejos y el instalador dejaban de verla mudada, en silencio.
+// la volvería «real» y el control de nombres viejos y el instalador dejarían de verla mudada, en silencio.
 test('LegacyNames_OsJunkInOldFolder_StillMoved', () => {
   const root = tmp('junk-folder');
   write(root, { 'new-dir/tool.js': '// real\n' });
@@ -346,7 +346,7 @@ test('T20 LegacyNames_Shims_PerExtension', () => {
   assert.ok(extra < 1500, `el reemplazo no puede costar más de 1,5 s (costó ${Math.round(extra)} ms)`);
 });
 
-// ── T20 (estructura destino y vuelta 1) · otra carpeta, carpeta que desapareció, .ps1, .md, agent-skills, rutas ──
+// ── T20 (estructura destino) · otra carpeta, carpeta que desapareció, .ps1, .md, agent-skills, rutas ──
 test('T20 LegacyNames_Shims_CrossFolderPs1MdLoggingAndUnsafePaths', () => {
   const repo = tmp('shims2');
   const skills = tmp('shims2-skills');
@@ -421,7 +421,7 @@ test('T20 LegacyNames_Shims_CrossFolderPs1MdLoggingAndUnsafePaths', () => {
   assert.match(sh, new RegExp(`'scripts/${vieja}-dash/tool\\.sh'`), 'los nombres van entre comillas simples en el bash generado');
 });
 
-// ── T26 (en JS, vuelta 1 del pase adversarial) · la migración de la máquina en los casos que se escapaban ──────────
+// ── T26 (en JS) · la migración de la máquina en los casos de borde ──────────
 test('T26 LegacyNames_MigrateMachine_PermissionsOrderFormsAndBinaryPlist', () => {
   const base = tmp('migrate');
   const G = path.join(base, 'src', 'guides');
@@ -488,7 +488,7 @@ test('T26 LegacyNames_MigrateMachine_PermissionsOrderFormsAndBinaryPlist', () =>
   assert.strictEqual(rw(`node "C:\\Users\\x\\tcg\\scripts\\hooks\\${W.viejo}.js"`), 'node "C:\\Users\\x\\tcg\\scripts\\hooks\\new-hook.js"');
 });
 
-// ── vuelta 2 de revisores · sin respaldo no se reescribe, y se dice; un archivo que no se deja escribir no corta el resto
+// ── sin respaldo no se reescribe, y se dice; un archivo que no se deja escribir no corta el resto
 test('T26 LegacyNames_MigrateMachine_NoBackupNoRewrite', (t) => {
   if (typeof process.getuid === 'function' && process.getuid() === 0) { t.skip('NO MEDIDO: como root, una carpeta de sólo lectura igual se escribe'); return; }
   const base = tmp('migrate-ro');
@@ -515,7 +515,7 @@ test('T26 LegacyNames_MigrateMachine_NoBackupNoRewrite', (t) => {
   assert.strictEqual(res.renamed, 1, 'RENAMED cuenta sólo lo reescrito de verdad');
 });
 
-// ── vuelta 1 del pase adversarial · claves, estado, opciones con --, y el registro que no puede escribir ─────────
+// ── claves, estado, opciones con --, y el registro que no puede escribir ─────────
 test('LegacyNames_KeysStateDashesAndLogFailure', () => {
   const home = tmp('misc');
   const { readKeys, prepareStateWrite, aliasOptions, LegacyNamesError } = lib();
@@ -686,8 +686,8 @@ test('T24 Export_BrokenMapBlocksCopyNotTheBeforeSnapshot', () => {
     ['arnes/scripts/d.sh', 'node scripts/lib/hook-io.js'],
   ], hook);
   assert.deepStrictEqual(m2.map((h) => h.archivo), ['arnes/scripts/b.sh', 'arnes/scripts/c.sh', 'arnes/scripts/d.sh'], 'sólo la ruta del arnés, no la que termina igual en otro repo');
-  // los que leen y protegen los dos nombres a propósito (LEGACY_READERS de spanish-names.js, tanda P) nombran la ruta vieja
-  // en la copia también: no son una mención de más (story 8.9, tanda B3b: la copia del núcleo no salía desde la P)
+  // los que leen y protegen los dos nombres a propósito (LEGACY_READERS de spanish-names.js) nombran la ruta vieja
+  // en la copia también: no son una mención de más
   const lector = [...require(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js')).LEGACY_READERS][0];
   const m3 = exporter.mencionesViejas([
     [`arnes/${lector}`, 'node scripts/lib/hook-io.js'],
@@ -713,12 +713,12 @@ test('T25 ProdGuard_ArchivosRequireClosure', () => {
   const m = /\nARCHIVOS=\(\n([\s\S]*?)\n\)/.exec(sh);
   assert.ok(m, 'encuentro la lista ARCHIVOS');
   const files = m[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
-  // la copia propia del freno (2026-10-14): scripts/production/guard-libs/ ocupa en /opt el lugar de scripts/lib/ y
+  // la copia propia del freno: scripts/production/guard-libs/ ocupa en /opt el lugar de scripts/lib/ y
   // scripts/setup/ (lib/, setup/harness/), así que los require relativos se resuelven como si estuviera ahí
   const enOpt = (rel) => rel.replace(/^scripts\/production\/guard-libs\//, 'scripts/');
   const set = new Set(files.map(enOpt));
-  // el nombre de antes de la biblioteca de constancias: el instalador deja en /opt la biblioteca misma con ese nombre
-  // (tanda C1: el freno instalado lo carga así), fuera de ARCHIVOS porque en el repo es un reemplazo
+  // el nombre anterior de la biblioteca de constancias: el instalador deja en /opt la biblioteca misma con ese nombre
+  // (el freno instalado lo carga así), fuera de ARCHIVOS porque en el repo es un reemplazo
   const r = /\nNOMBRE_VIEJO_CONSTANCIA=(\S+)/.exec(sh);
   if (r) {
     set.add(`scripts/${r[1]}`);
@@ -750,17 +750,17 @@ test('T25 ProdGuard_ArchivosRequireClosure', () => {
   assert.deepStrictEqual(sinPaso, [], `archivos de ARCHIVOS sin su línea «instalar»: ${sinPaso.join(' · ')}`);
 });
 
-// ── story 8.12, tanda R1 ─────────────────────────────────────────────────────────────────────────────────────────
+// ── laboratorio del mapa ─────────────────────────────────────────────────────────────────────────────────────────
 const checkMapLab = (repo, map) => {
   const f = path.join(repo, `map-${Math.random().toString(36).slice(2)}.json`);
   fs.writeFileSync(f, JSON.stringify(map));
   return spawnSync(process.execPath, [SPANISH, '--check-map', '--map', f, '--repo', repo], { encoding: 'utf8', env: envWith({}) });
 };
 
-// ── T9 · el rol de un hook va en su nombre (AC 7) ───────────────────────────────────────────────────────────────
+// ── T9 · el rol de un hook va en su nombre ───────────────────────────────────────────────────────────────
 test('T9 Restructure_CheckMap_HookRoleSuffix', () => {
   const repo = tmp('role');
-  // la entrada de la tabla de constancia: cargada por la 8.9 antes de la regla del sufijo (la única que acepta role_waiver)
+  // la entrada de la tabla de constancia: cargada antes de la regla del sufijo (la única que acepta role_waiver)
   const waivedOld = 'scripts/hooks/advisor-' + 'vi' + 'da' + '-on-change.js';
   write(repo, {
     'scripts/hooks/lab-check.js': '#!/usr/bin/env node\n',
@@ -793,14 +793,14 @@ test('T9 Restructure_CheckMap_HookRoleSuffix', () => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-// ── T1 · los llamadores de cada entrada R, los de la medición (AC 1) ─────────────────────────────────────────────
+// ── T1 · los llamadores de cada entrada R, los de la medición ─────────────────────────────────────────────
 const MEASUREMENT = path.join(RAIZ, 'tasks', 'medicion-8.12-cada-pieza-en-su-carpeta-2026-09-30.md');
 const MAP_REAL = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
 const TEAM_812 = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && fs.existsSync(MAP_REAL) && fs.existsSync(MEASUREMENT);
 // lo que nombra Azure DevOps: la medición no lo clasifica siempre, y en ningún otro lado vale
 const ADO_NAMED = /^(?:azure-pipelines[^/]*\.yml|ci-templates(?:\/.*)?)$/;
 /** old (sin barra final) → llamadores, del §«Detalle por ítem» de la medición. Un ítem sin ruta de destino (un glob, una
- *  pregunta abierta, lo que renombra la 8.9) no es una entrada del mapa. */
+ *  pregunta abierta, lo que renombra otra mudanza) no es una entrada del mapa. */
 function measuredCallers(text) {
   const at = text.indexOf('## Detalle por ítem');
   assert.ok(at >= 0, 'la medición tiene §«Detalle por ítem»');
@@ -851,7 +851,7 @@ test('T1 Restructure_CheckMap_CrossFolderEntriesCallersAndAdo — cada entrada R
   const yml = [...measured.keys()].find((k) => /^azure-pipelines-.+\.yml$/.test(k));
   const ymlCallers = [...new Set([...measured.get(yml), 'ado'])];
   assert.deepStrictEqual(callersProblems([{ kind: 'file', old: yml, new: `pipelines/${yml}`, batch: 'R6', callers: ymlCallers }], measured), [], `${yml}: con ado, pasa`);
-  // la carpeta de plantillas, por su nombre de la medición (sin escribir la ruta vieja: desde la R6 ya se mudó y la copia
+  // la carpeta de plantillas, por su nombre de la medición (sin escribir la ruta vieja: ya se mudó y la copia
   // pública no puede nombrarla)
   const tplKey = [...measured.keys()].find((k) => ADO_NAMED.test(k) && !/\.yml$/.test(k));
   if (tplKey) {
@@ -872,9 +872,9 @@ test('T1 Restructure_CheckMap_CrossFolderEntriesCallersAndAdo — un .yml ya mud
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-// ── T51 · story 8.12, tanda R8 (AC 47) — el mapa contra la medición, en la otra dirección, y sin fecha propia ─────────
-// T1 mira de cada entrada R hacia la medición (sus `callers`). Lo que falta para que la story de retiro (tanda E de la 8.9)
-// saque del mapa exactamente lo de esta story: que todo ítem de la medición con una ruta de destino tenga su entrada (o lo
+// ── T51 · el mapa contra la medición, en la otra dirección, y sin fecha propia ─────────
+// T1 mira de cada entrada R hacia la medición (sus `callers`). Lo que falta para que el retiro
+// saque del mapa exactamente lo de esta mudanza: que todo ítem de la medición con una ruta de destino tenga su entrada (o lo
 // cubra la carpeta que lo contiene), que el `new` sea el destino medido, que ninguna entrada traiga una fecha suya (el
 // retiro vive en la raíz del mapa, una sola vez) y que el conteo cierre. Los ítems se clasifican por la FORMA de su
 // encabezado, nunca por su ruta: esta prueba no escribe ninguna ruta vieja.
@@ -983,7 +983,7 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — toda ruta medida tiene su en
   assert.deepStrictEqual(problems, [], `el mapa contra la medición:\n  ${problems.join('\n  ')}`);
   const dates = ownDateProblems(map);
   assert.deepStrictEqual(dates, [], `entradas con fecha propia:\n  ${dates.join('\n  ')}`);
-  // el conteo cerrado de la medición del 2026-09-30, por la forma de cada encabezado
+  // el conteo cerrado de la medición, por la forma de cada encabezado
   const byKind = {};
   for (const it of items) byKind[it.kind] = (byKind[it.kind] || 0) + 1;
   assert.strictEqual(items.length, 68, 'la medición tiene 68 ítems');
@@ -1057,7 +1057,7 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un ítem sin en
   const rootless = lab(good());
   delete rootless.retire_after;
   assert.deepStrictEqual(ownDateProblems(rootless), ['la raíz del mapa no tiene retire_after']);
-  // una entrada que no es R puede tener otras claves (las de la 8.9)
+  // una entrada que no es R puede tener otras claves (las de otras mudanzas)
   assert.deepStrictEqual(ownDateProblems(lab([...good(), { kind: 'env', old: 'TYCON_LAB_OLD', new: 'TYCON_LAB_NEW', batch: 'C1', where: ['scripts/lab.js'] }])), []);
 });
 
@@ -1107,7 +1107,7 @@ test('T51 Close_MapEntriesCompleteVsMeasurement — laboratorio: un destino que 
   assert.ok(mapVsMeasurement(asR, items.slice(0, 1), () => false).problems.length > 0);
 });
 
-// ── T2 ·los reemplazos que cambian de carpeta: el require y el .ps1 (AC 2; los dos huecos de T20 de la 8.9) ─────────
+// ── T2 · los reemplazos que cambian de carpeta: el require y el .ps1 (los dos huecos de T20) ─────────
 test('T2 Restructure_Shims_ComputedRelativePathAndMdForm', () => {
   const repo = tmp('shims-r1');
   write(repo, {
@@ -1148,8 +1148,8 @@ test('T2 Restructure_Shims_ComputedRelativePathAndMdForm', () => {
   fs.rmSync(repo, { recursive: true, force: true });
 });
 
-// ── Story 8.12, tanda R1: la mudanza a scripts/setup/ y scripts/hooks/ ──────────────────────────────────────────────
-// T10: las 17 entradas R1 del mapa están mudadas de verdad (el nuevo existe y compila; en el viejo, el reemplazo
+// ── la mudanza a scripts/setup/ y scripts/hooks/ ──────────────────────────────────────────────
+// T10: las 17 entradas de esta mudanza en el mapa están mudadas de verdad (el nuevo existe y compila; en el viejo, el reemplazo
 // generado que apunta al nuevo, o nada si sólo lo nombra su repo), el mapa real valida, y quienes los llaman por ruta
 // (el instalador .sh y .ps1, install-codegraph) apuntan a la carpeta nueva y a un archivo que existe.
 test('T10 R1_SetupAndHooks_MovedRequiresAndShims', { skip: !TEAM_812 && 'copia pública: sin el mapa' }, () => {
@@ -1190,8 +1190,7 @@ test('T10 R1_SetupAndHooks_MovedRequiresAndShims', { skip: !TEAM_812 && 'copia p
 });
 
 // T10 (cont.): un instalador de scripts/setup/ que no encuentra scripts/hooks/ lo DICE y sale ≠ 0 — bajo `set -e`, un
-// `cd` relativo que falla dentro de la asignación mataba el script mudo, antes de su propio mensaje (revisor de fallos
-// silenciosos, R1).
+// `cd` relativo que falla dentro de la asignación mataría el script mudo, antes de su propio mensaje.
 test('T10 R1_SetupScripts_MissingHooksDirSaysSo', () => {
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'r1-hooks-'));
   try {
@@ -1223,8 +1222,8 @@ test('T14 R1_HarnessEnvPublish_LaunchAgentFromSetup', { skip: !TEAM_812 && 'copi
   assert.ok(!/harness-env-publish/.test(`${cov.stdout}${cov.stderr}`), 'la cobertura no le exige casos como hook');
 });
 
-// ── Story 8.12, tanda R2: scripts/tools/ ────────────────────────────────────────────────────────────────────────────
-// T21 (AC 18): los pasos de skill de agent-skills corren `tycon-worktree.sh` y `tycon-backfill-followups.js` por la ruta
+// ── scripts/tools/ ────────────────────────────────────────────────────────────────────────────
+// T21: los pasos de skill de agent-skills corren `tycon-worktree.sh` y `tycon-backfill-followups.js` por la ruta
 // VIEJA (`~/.claude/tycon-claude-guides/scripts/<nombre>`) y agent-skills no cambia hasta el retiro. En un arnés de
 // juguete —las dos herramientas reales en su ruta nueva y el reemplazo generado en la vieja, con las entradas del mapa
 // real— cada comando de esos pasos da, por las dos rutas, la misma salida (rutas y fechas normalizadas) y el mismo
@@ -1320,11 +1319,11 @@ test('T21 R2_StepCommands_OldAndNewPath_SameOutput', { skip: !TEAM_812 && 'NO ME
   }
 });
 
-// ── Story 8.12, tanda R2 (pase adversarial R2, clases 1, 2, 4 y 5): los restos locales no hacen «real» la carpeta vieja ──
+// ── Los restos locales no hacen «real» la carpeta vieja ──
 // Tras el pull de la mudanza, git borra lo versionado de la carpeta vieja y deja lo que nunca versionó: el log del
 // grabador, los descartados, un `.DS_Store`. Eso no es la carpeta de verdad: la entrada está mudada (el control de nombres
 // viejos la cuenta y el instalador reescribe), esté lo que quedó sin seguir o ignorado por un `.gitignore`. Un archivo
-// que git sí versiona en la vieja sigue haciéndola real (como antes). Nombres de laboratorio.
+// que git sí versiona en la vieja sigue haciéndola real. Nombres de laboratorio.
 test('T19d R2Adversarial_LeftoversInOldFolder_UntrackedOrIgnored_StillMoved — adversarial R2: sólo lo versionado hace real la carpeta vieja', () => {
   const root = tmp('r2-leftover');
   const genv = {};
@@ -1367,9 +1366,9 @@ test('T19d R2Adversarial_LeftoversInOldFolder_UntrackedOrIgnored_StillMoved — 
   }
 });
 
-// T19e (pase adversarial R2, revisor de fallos silenciosos): «no es un repo de git» (git no está, o dice «not a git
-// repository») se mira en el disco, como antes. Cualquier otro fallo de git —«dubious ownership», un permiso, un repo
-// roto— frena con un error que lo dice: «no pude preguntar» no es «no hay nada», y caer callado al disco era volver a
+// T19e: «no es un repo de git» (git no está, o dice «not a git
+// repository») se mira en el disco. Cualquier otro fallo de git —«dubious ownership», un permiso, un repo
+// roto— frena con un error que lo dice: «no pude preguntar» no es «no hay nada», y caer callado al disco sería volver a
 // contar los restos de la máquina como la carpeta de verdad.
 test('T19e R2AdversarialSilent_GitFailsForReal_StopsInsteadOfFallingBackToDisk — adversarial R2 / silent: sólo «no es un repo» mira el disco', () => {
   const root = tmp('r2-silent');
@@ -1380,7 +1379,7 @@ test('T19e R2AdversarialSilent_GitFailsForReal_StopsInsteadOfFallingBackToDisk �
     const L = lib();
     const folder = { kind: 'folder', old: 'notions', new: 'inbox/notions', batch: 'lab', callers: ['machine'] };
     write(root, { 'inbox/notions/README.md': '# lab\n', 'notions/observer.log': 'log\n' });
-    // un directorio que no es repo, con el git de verdad: el disco, como hoy (el log de la vieja la hace real)
+    // un directorio que no es repo, con el git de verdad: el disco (el log de la vieja la hace real)
     assert.strictEqual(L.isMoved(folder, root), false, 'sin repo: mira el disco');
     // git falla de verdad: frena, no cae al disco
     fakeGit(`echo "fatal: detected dubious ownership in repository at '${root}'" >&2\nexit 1`);
@@ -1400,14 +1399,14 @@ test('T19e R2AdversarialSilent_GitFailsForReal_StopsInsteadOfFallingBackToDisk �
   }
 });
 
-// ── story 8.18 · pase adversarial del tramo 1 (2026-10-04): quien pregunta dónde están las skills no tapa el error ──
-// `skillsRepoRoot()` le pregunta a scripts/lib/skills-dir.js, que desde el hallazgo 19 TIRA cuando su vecina
-// canonical-path.js está y no carga (antes contestaba «no es un clon unido» y todos leían las skills INSTALADAS). Acá
-// quedaba un `catch` que tragaba ese error y volvía a `~/.claude/agent-skills`. Medido: en un clon unido con un
-// `require` roto en canonical-path.js, `--migrate-machine --check` salía 0 sin una línea, mirando lo instalado. El valor
+// ── Quien pregunta dónde están las skills no tapa el error ──
+// `skillsRepoRoot()` le pregunta a scripts/lib/skills-dir.js, que TIRA cuando su vecina
+// canonical-path.js está y no carga (si contestara «no es un clon unido», todos leerían las skills INSTALADAS). Un
+// `catch` que tragara ese error y volviera a `~/.claude/agent-skills` haría que, en un clon unido con un
+// `require` roto en canonical-path.js, `--migrate-machine --check` saliera 0 sin una línea, mirando lo instalado. El valor
 // de siempre es SÓLO para la copia que viaja sin skills-dir.js al lado.
-// Y los hallazgos 10 y 11: como módulo principal, la línea de comandos corría ANTES del `module.exports`, y su cadena
-// de `require` (skills-dir → canonical-path → este archivo a medio cargar) le hacía escribir a Node dos avisos de
+// Y como módulo principal, la línea de comandos corre DESPUÉS del `module.exports`: si corriera antes, su cadena
+// de `require` (skills-dir → canonical-path → este archivo a medio cargar) le haría escribir a Node dos avisos de
 // dependencia circular por stderr en cada corrida.
 // «El propio clon» sale de dónde vive el archivo: cada caso arma un clon unido de juguete con su copia de las tres
 // bibliotecas, y una HOME de juguete con un agent-skills instalado.
@@ -1423,9 +1422,9 @@ function skillsLab() {
   const libDir = path.join(clone, 'scripts', 'lib');
   for (const d of [libDir, path.join(clone, 'skills', 'tycon-pipeline'), path.join(clone, 'agents'), path.join(inst, 'skills', 'tycon-pipeline')]) fs.mkdirSync(d, { recursive: true });
   for (const f of ['legacy-names.js', 'skills-dir.js', 'canonical-path.js']) fs.copyFileSync(path.join(RAIZ, 'scripts', 'lib', f), path.join(libDir, f));
-  // lo que canonical-path.js importa viaja con ella (story 8.19: el nombre del lugar vive en scripts/setup/harness/place.js)
+  // lo que canonical-path.js importa viaja con ella (el nombre del lugar vive en scripts/setup/harness/place.js)
   fs.mkdirSync(path.join(clone, 'scripts', 'setup', 'harness'), { recursive: true });
-  // place.js toma el nombre de tycon-home.js, a su lado (story 8.23)
+  // place.js toma el nombre de tycon-home.js, a su lado
   for (const f of ['place.js', 'tycon-home.js']) fs.copyFileSync(path.join(RAIZ, 'scripts', 'setup', 'harness', f), path.join(clone, 'scripts', 'setup', 'harness', f));
   // un mapa con una entrada de agent-skills: es la que hace preguntar dónde están las skills
   const map = path.join(dir, 'map.json');
@@ -1457,7 +1456,7 @@ function skillsLab() {
 }
 
 test('5b-19b LegacyNames_SkillsRoot_NeighborPresentButBroken_ErrorSurfaces — con canonical-path.js rota, la raíz de las skills NO cae a lo instalado en silencio', () => {
-  // 🔴 rojo previo: `try { … resolveSkillsDirs(…).repo } catch { return ~/.claude/agent-skills }` → contesta lo instalado
+  // 🔴 Con `try { … resolveSkillsDirs(…).repo } catch { return ~/.claude/agent-skills }` contestaría lo instalado
   //    con código 0 y stderr vacío.
   const l = skillsLab();
   assert.deepStrictEqual(l.root(), { code: 0, out: path.join(l.clone, 'probe', 'x.js'), err: '' }, 'control: el clon unido sano contesta el propio clon');
@@ -1497,7 +1496,7 @@ test('5b-19b — los espejos sanos: sin skills-dir.js al lado, lo de siempre; y 
 });
 
 test('5b-19b — un skills-dir.js que ESTÁ y rompe al cargarse tampoco se lee como «no está»: el error sale', () => {
-  // 🔴 rojo previo: el mismo `catch` → lo instalado, callado.
+  // 🔴 El mismo `catch` contestaría lo instalado, callado.
   const l = skillsLab();
   fs.writeFileSync(path.join(l.libDir, 'skills-dir.js'), 'throw new Error("biblioteca rota a propósito")\n');
   const r = l.root();
@@ -1507,7 +1506,7 @@ test('5b-19b — un skills-dir.js que ESTÁ y rompe al cargarse tampoco se lee c
 });
 
 test('5b-10 LegacyNames_AsMainModule_NoCircularDependencyWarnings — la línea de comandos en un clon unido, sin variable, no escribe avisos de dependencia circular', () => {
-  // 🔴 rojo previo: el bloque `if (require.main === module)` antes del `module.exports` → 2 avisos por corrida
+  // 🔴 Con el bloque `if (require.main === module)` antes del `module.exports` habría 2 avisos por corrida
   //    («Accessing non-existent property … of module exports inside circular dependency»), con el resultado correcto.
   const l = skillsLab();
   const machine = l.cli(['--migrate-machine', '--check', '--map', l.map]);
@@ -1534,9 +1533,9 @@ test('5b-10 — los espejos sanos: la línea de comandos sigue contestando y fal
   assert.deepStrictEqual([r.status, r.stdout, r.stderr], [0, 'function function sigue', '']);
 });
 
-// ── story 8.19 · T11: las plantillas de los envoltorios nombran SÓLO el lugar, y los versionados son lo que se genera ──
-// Las tres plantillas buscaban la biblioteca para anotar un uso en ~/.claude/<nombre viejo>. Desde la 8.19 el lugar es
-// ~/.claude/tycon-harness: las plantillas nombran sólo ése (un segundo intento por el viejo no agrega nada: anotar el uso
+// ── T11: las plantillas de los envoltorios nombran SÓLO el lugar, y los versionados son lo que se genera ──
+// Las tres plantillas buscan la biblioteca para anotar un uso en ~/.claude/tycon-harness y nombran sólo ese lugar
+// (un segundo intento por el nombre viejo no agrega nada: anotar el uso
 // nunca rompe), y los envoltorios del repo se regeneran con --write-shims, nunca a mano.
 test('T11 Shims_TemplatesPlaceOnly_VersionedEqualGenerated (story 8.19)', () => {
   const L = lib();
@@ -1551,7 +1550,7 @@ test('T11 Shims_TemplatesPlaceOnly_VersionedEqualGenerated (story 8.19)', () => 
     assert.ok(L.isGeneratedShim(rel, text), `${rel}: el envoltorio versionado no es lo que escribe --write-shims (regeneralo)`);
     assert.ok(!text.includes(`.claude/${P.LEGACY_PLACE_NAME}`) && !text.includes(`'.claude', '${P.LEGACY_PLACE_NAME}'`), `${rel}: nombra el lugar viejo`);
   }
-  // la copia pública no trae el mapa de renombres ni los envoltorios (story 8.9): ahí la parte de «los versionados» no se
+  // la copia pública no trae el mapa de renombres ni los envoltorios: ahí la parte de «los versionados» no se
   // puede medir, y se dice; las plantillas, abajo, se prueban igual en las dos
   if (fs.existsSync(path.join(RAIZ, 'scripts', 'lib', 'renames.json'))) assert.ok(n > 50, `pocos envoltorios versionados: ${n}`);
   else console.log(`⏭ T11: NO MEDIDO — los envoltorios versionados (no hay scripts/lib/renames.json: la copia pública; ${n} encontrados)`);

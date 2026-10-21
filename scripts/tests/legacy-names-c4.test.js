@@ -1,18 +1,17 @@
 'use strict';
 
 /**
- * legacy-names-c4.test.js — las carpetas, a su destino final (story 8.9, tanda C4 · 2026-10-01). T43, T44.
+ * legacy-names-c4.test.js — las carpetas, a su destino final. T43, T44.
  *
  * Lo que no se puede perder:
- *   · Las cuatro carpetas de la C4 quedan mudadas (en la vieja sólo reemplazos), cada ejecutable que alguien nombra desde
- *     fuera deja su reemplazo, y los cinco `.json` en castellano se mudan una sola vez, ya con nombre en inglés (decisión
- *     del dueño, AC 39). Cambian las rutas y no los valores: cada aparición clasificada como valor antes de tocar nada
+ *   · Las cuatro carpetas quedan mudadas (en la vieja sólo reemplazos), cada ejecutable que alguien nombra desde
+ *     fuera deja su reemplazo, y los cinco `.json` en castellano se mudan una sola vez, ya con nombre en inglés.
+ *     Cambian las rutas y no los valores: cada aparición clasificada como valor antes de tocar nada
  *     sigue ahí, y ninguna ruta vieja queda fuera de la historia (T43).
  *   · El pre-commit de agent-skills corre el freno de verdad: con un arnés al día, por la carpeta nueva; con uno
  *     atrasado, por la vieja. La ruta vieja de los frenos corre el de verdad (mismo resultado) (T43).
  *   · El exportador no queda con exclusiones sin archivo y los pipelines de Azure parsean y nombran rutas que existen,
- *     ninguna de una carpeta mudada (T44). La parte manual de T44 —el nocturno siguiente con la misma cobertura— es la
- *     espera de la tanda D.
+ *     ninguna de una carpeta mudada (T44). La parte manual de T44 es el nocturno siguiente con la misma cobertura.
  *
  * Las rutas viejas salen del mapa en tiempo de ejecución (escritas acá, mantendrían vivos los nombres en castellano que
  * cuenta el termómetro). La prueba sale en la copia pública: sin el mapa del equipo, se saltea con motivo.
@@ -31,10 +30,10 @@ const MAP = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
 const TEAM = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && fs.existsSync(MAP);
 const SKIP_PUBLIC = !TEAM && 'copia pública: sin el mapa';
 const SHIM_MARK = 'tycon-legacy-shim:';
-// La clasificación de cada aparición, hecha antes de tocar nada (AC 39: «archivo en el run dir»).
+// La clasificación de cada aparición, hecha antes de tocar nada.
 const CLASSIFICATION = path.join(RAIZ, '.advisors', 'pipeline-runs', '8.9-C4-20261001-1100', 'clasificacion-c4.tsv');
 
-// Lo que el plan aprobó (re-medido al abrir la C4): 5 ejecutables con reemplazo y 5 `.json` renombrados sin reemplazo.
+// Lo esperado: 5 ejecutables con reemplazo y 5 `.json` renombrados sin reemplazo.
 const EXPECTED_SHIMS = 5;
 const EXPECTED_RENAMED_JSON = 5;
 // Los tres guiones del arnés que el pre-commit de agent-skills corre por ruta.
@@ -43,7 +42,7 @@ const PRE_COMMIT_SCRIPTS = ['new-names.js', 'spanish-names.js', 'third-party-cov
 /**
  * agent-skills, por la regla común (scripts/lib/skills-dir.js): TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el
  * propio clon si es unido › la copia de la máquina. `null` si ahí no hay skills. Sin `catch`: si la biblioteca no puede
- * contestar, la suite es roja con la causa (story 8.18: antes cada suite tenía la ruta instalada escrita a mano).
+ * contestar, la suite es roja con la causa.
  */
 function skillsRoot() {
   const root = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
@@ -110,9 +109,9 @@ test('T43b · BatchC4_FoldersPathsNotValues — ninguna ruta vieja fuera de la h
   const values = rows.filter((x) => x[4] === 'valor');
   assert.ok(values.length >= 20, `la clasificación trae ${values.length} valores (se midieron 31)`);
   const fileMoves = new Map(c4Files().map((e) => [e.old, e.new]));
-  // la ruta de hoy: la mudanza de la C4 y, después, las de las tandas siguientes (la R4 de la story 8.12 volvió a mudar
-  // la carpeta del mapa del arnés a `scripts/tools/harness-map/`): se sigue la cadena del mapa hasta que no cambie, y sólo por las
-  // mudanzas que ya pasaron —el mapa declara también las que vienen (la carpeta de la mini-clase, tanda F de la 8.9)—
+  // la ruta actual: la mudanza propia y, después, las siguientes (p. ej. la carpeta del mapa del arnés se vuelve a mudar
+  // a `scripts/tools/harness-map/`): se sigue la cadena del mapa hasta que no cambie, y sólo por las
+  // mudanzas que ya pasaron —el mapa declara también las que vienen (p. ej. la carpeta de la mini-clase)—
   const laterMoves = entries().filter((e) => (e.kind === 'file' || e.kind === 'folder') && e.batch !== 'C4' && (!e.repo || e.repo === 'arnes')
     && typeof e.old === 'string' && typeof e.new === 'string' && fs.existsSync(path.join(RAIZ, e.new)));
   const step = (rel, list, files) => {
@@ -132,8 +131,8 @@ test('T43b · BatchC4_FoldersPathsNotValues — ninguna ruta vieja fuera de la h
   };
   // una línea con un valor puede nombrar además uno de los `.json` renombrados: ese nombre sí cambia (por el mapa)
   const renamedBases = c4Files().filter((e) => e.old.endsWith('.json')).map((e) => [path.posix.basename(e.old), path.posix.basename(e.new)]);
-  // la tanda D1 renombra las claves de la configuración (AC 42): una palabra que la C4 vio como valor y la D1 clasificó
-  // como clave (la de los sintéticos de la lista blanca) cambia con su clave, no con la mudanza
+  // las claves de la configuración se renombran en otra mudanza: una palabra que acá se clasificó como valor y allá como
+  // clave (la de los sintéticos de la lista blanca) cambia con su clave, no con la mudanza
   const d1Keys = new Set(entries().filter((e) => e.batch === 'D1' && e.kind === 'key').map((e) => e.old));
   const lost = [];
   for (const [repo, rel, , word, , text] of values) {
@@ -212,9 +211,9 @@ test('T43d · BatchC4_FoldersPathsNotValues — la ruta vieja de los frenos corr
   }
 });
 
-// Pase adversarial de la C4: el freno compila el exportador de una foto de antes de la mudanza (la base del PR de la C4),
+// El freno compila el exportador de una foto anterior a la mudanza (la base del pedido),
 // cuyo `require` relativo al detector cae en el reemplazo generado de la carpeta vieja. Ese reemplazo es para los
-// llamadores de afuera: cargado por el propio freno anotaba un uso falso del nombre viejo y, en Azure, un aviso por stderr.
+// llamadores de afuera: cargado por el propio freno, anotaría un uso falso del nombre viejo y, en Azure, un aviso por stderr.
 test('T43e · BatchC4_FoldersPathsNotValues — el código de una foto vieja no pasa por los reemplazos', { skip: SKIP_PUBLIC }, () => {
   const p = publishing();
   const home = tmp('home');
@@ -232,7 +231,7 @@ test('T43e · BatchC4_FoldersPathsNotValues — el código de una foto vieja no 
 });
 
 test('T44 · BatchC4_ExporterAndNightly — el exportador sin exclusiones sin archivo', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills') }, () => {
-  // sobre lo commiteado de los dos repos (por defecto el exportador mira origin/main, que antes del merge no trae la tanda)
+  // sobre lo commiteado de los dos repos (por defecto el exportador mira origin/main, que puede no traer los cambios)
   const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'export.js'), '--explain', '--json', '--harness', 'HEAD', '--agent-skills', 'HEAD'],
     { cwd: RAIZ, encoding: 'utf8', env: cleanEnv({ TYCON_GUIDES_DIR: RAIZ, TYCON_SKILLS_DIR: SKILLS }), maxBuffer: 1 << 26 });
   assert.strictEqual(r.status, 0, `--explain: ${r.stderr}`);
@@ -243,7 +242,7 @@ test('T44 · BatchC4_ExporterAndNightly — el exportador sin exclusiones sin ar
 
 test('T44b · BatchC4_ExporterAndNightly — los pipelines de Azure parsean y nombran rutas que existen, ninguna mudada', { skip: SKIP_PUBLIC }, () => {
   const py = spawnSync('python3', ['-c', 'import yaml'], { encoding: 'utf8' });
-  // desde la R6 los seis viven en pipelines/
+  // los seis viven en pipelines/
   const PIPES = path.join(RAIZ, 'pipelines');
   const ymls = fs.existsSync(PIPES) ? fs.readdirSync(PIPES).filter((f) => /^azure-pipelines[\w-]*\.yml$/.test(f)).map((f) => `pipelines/${f}`) : [];
   assert.ok(ymls.length >= 5, `pipelines de Azure: ${ymls.join(', ')}`);

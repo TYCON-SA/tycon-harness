@@ -1,10 +1,9 @@
 'use strict';
-// invented-names-rule.test.js — la regla de un nombre inventado (story 8.10.3, tanda E, AC 19 · T18).
+// invented-names-rule.test.js — la regla de un nombre inventado (T18).
 //
-// POR QUÉ EXISTE: la tabla privada de reemplazos cambia cada nombre real por uno inventado. Durante meses el inventado
-// se eligió «parecido» al real —la misma inicial, el mismo largo, una palabra en común—, y con eso quien lee la copia
-// pública puede acercarse al real. La tanda E cambió los inventados que se parecían; esta prueba es lo que impide que
-// vuelva a entrar uno así.
+// POR QUÉ EXISTE: la tabla privada de reemplazos cambia cada nombre real por uno inventado. Un inventado «parecido» al
+// real —la misma inicial, el mismo largo, una palabra en común— deja que quien lee la copia pública se acerque al
+// real; esta prueba impide que entre uno así.
 //
 // LA REGLA. Un inventado de cliente, persona, máquina o interno NO conserva del real:
 //   · la inicial (sin contar un prefijo neutro del inventado ni lo que las dos formas traen igual al principio por
@@ -51,8 +50,7 @@ const CATEGORIAS_FUERA = {
 };
 
 // Palabras estructurales: nombran la CLASE de cosa (un repositorio, una pantalla, un tipo de repo), no la cosa. Que el
-// real y el inventado las compartan no acerca al real. Las cinco primeras son las de la story; el resto lo sumó el
-// inventario de la tanda E (aprobado por el dueño el 2026-10-08), agrupado por su motivo.
+// real y el inventado las compartan no acerca al real. Se agrupan por su motivo.
 const ESTRUCTURALES = {
   'las cinco de la story: el papel de una clase': ['repository', 'service', 'worker', 'exception', 'controller'],
   'tipo de pieza de código (sufijo o prefijo de clase, de archivo o de carpeta)': [

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Prueba de check-artifact-paths.js — el control que impide que un pipeline LEA de una carpeta
-# que él nunca LLENA. Nace del defecto real del 2026-09-03: los pipelines de producción de los
-# plugins de dos productos del equipo bajaban el artefacto a $(Pipeline.Workspace)/ci y UN paso lo buscaba en
-# $(System.ArtifactsDirectory) — el despliegue a producción fallaba SIEMPRE, después de la
+# que él nunca LLENA. Cubre el defecto de los pipelines de producción que bajan el artefacto a
+# $(Pipeline.Workspace)/ci mientras UN paso lo busca en
+# $(System.ArtifactsDirectory): el despliegue a producción falla SIEMPRE, después de la
 # aprobación humana. Los casos 1 y 2 reproducen ese defecto y su gemelo correcto: sin ese par, un
 # verde de este control no significaría nada.
 set -uo pipefail

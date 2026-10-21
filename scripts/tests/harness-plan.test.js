@@ -1,7 +1,7 @@
 'use strict';
 /**
- * harness-plan.test.js — el plan que `install` muestra antes de escribir (`scripts/setup/harness/plan.js`; story 8.16,
- * tanda B · AC 12, 15, 18 · T16 y la parte de módulo de T20 y T23).
+ * harness-plan.test.js — el plan que `install` muestra antes de escribir (`scripts/setup/harness/plan.js`;
+ * T16 y la parte de módulo de T20 y T23).
  *
  * Lo que no se puede perder:
  *   · `describe()` imprime, en este orden, «escribe:», «cambia en cómo trabaja tu asistente:», «corre solo:», «red:»,
@@ -13,7 +13,7 @@
  *   · la diferencia de comportamiento entre dos listas de efectos (lo que `update` muestra antes de preguntar): entra,
  *     sale, o cambia si frena.
  *
- * 🔴 rojo previo verificado: sin `scripts/setup/harness/plan.js` todo falla en el `require`.
+ * 🔴 Sin `scripts/setup/harness/plan.js` todo falla en el `require`.
  * 🔴 No toca la HOME: el plan es datos.
  */
 const test = require('node:test');

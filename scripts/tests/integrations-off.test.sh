@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # integrations-off.test.sh — sin configuración, las ocho integraciones están APAGADAS: el instalador no
 # registra sus hooks ni llama a ningún servicio, y cada comando que las necesitaba termina bien y lo dice
-# (story 8.3, tanda B · T9 Integraciones_SinPerfil_ApagadasYSinLlamadas · T10 Integraciones_ApagadaLoDiceYNoMiente).
+# (T9 Integraciones_SinPerfil_ApagadasYSinLlamadas · T10 Integraciones_ApagadaLoDiceYNoMiente).
 #
-# La falla que caza, en sus dos caras (story 8.3, §Origen): para afuera, una integración sin configurar que llama
+# La falla que caza, en sus dos caras: para afuera, una integración sin configurar que llama
 # a un servicio ajeno o falla en silencio; para el equipo, «PR abiertos: 0» cuando en realidad no se miró nada.
 #
 # Cómo mide:
@@ -15,12 +15,12 @@
 #   · El instalador corre SIN --check (con --check el refresco de az y la tanda de fondo ni se intentan) y con los
 #     TYCON_NO_* de lo LOCAL (sync de bloques, git hooks, gui, sqlite, examen, rescate…); NUNCA los interruptores de
 #     las integraciones (TYCON_NO_AZ_PROJECTS_REFRESH, TYCON_NO_UPLOAD_RUNS, …): eso es lo que se mide.
-#   · Control positivo (el rojo previo del propio test): con las llaves prendidas por variable, los siete hooks SÍ se
+#   · Control positivo (la contraprueba del propio test): con las llaves prendidas por variable, los siete hooks SÍ se
 #     registran y `az` SÍ es llamado. Si el instalador dejara de registrar todo, este bloque lo delata.
 # 🔴 Nada acá toca el HOME real ni escribe en agent-skills (se lee) — y se MIDE: al final, la raíz de agent-skills
-#    tiene que estar igual que al empezar. Rojo previo (2026-09-26, antes de la tanda B):
-#    el instalador registraba clocki, engram y los avisos de nocturnos siempre, y refrescaba `az` con sólo tenerlo.
-# Story 8.7 (T32 SyncBloques_IntegracionRequerida, al final): un bloque del CLAUDE.md que requiere una integración se
+#    tiene que estar igual que al empezar. Sin la distinción,
+#    el instalador registraría clocki, engram y los avisos de nocturnos siempre, y refrescaría `az` con sólo tenerlo.
+# T32 SyncBloques_IntegracionRequerida, al final: un bloque del CLAUDE.md que requiere una integración se
 #    escribe sólo con ella prendida, y se quita al apagarla.
 # Correr: bash scripts/tests/integrations-off.test.sh   (~30 s)
 
@@ -35,8 +35,8 @@ ok() { TOTAL=$((TOTAL+1)); echo "✅ integraciones: $1"; }
 no() { TOTAL=$((TOTAL+1)); FALLOS=$((FALLOS+1)); echo "❌ integraciones: $1"; }
 
 # agent-skills: TYCON_SKILLS_DIR (raíz o skills/) o ~/.claude/agent-skills. Sin él el instalador aborta.
-# 🔴 «No pude preguntar» no es «no está» (story 8.18, 2026-10-04): la biblioteca tira cuando su vecina está y no carga.
-#    Con `2>/dev/null || true` eso salía como «agent-skills no está en esta máquina». Ahora la causa se dice entera.
+# 🔴 «No pude preguntar» no es «no está»: la biblioteca tira cuando su vecina está y no carga.
+#    Con `2>/dev/null || true` eso saldría como «agent-skills no está en esta máquina». La causa se dice entera.
 if ! SK_REPO="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js" 2> "$T/skills-dir.err")"; then
   echo "integraciones: NO MEDIDO — no pude resolver la carpeta de skills: $(head -n 1 "$T/skills-dir.err")"
   exit 1
@@ -59,7 +59,7 @@ LOCAL_OFF=(TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_COMMANDS_SYNC=1 TYCON_NO_GIT_HOOKS=
   TYCON_NO_CANONICAL_PATH=1 TYCON_NO_BOOTSTRAP_HEAL=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9)
 casa() { # <nombre> → crea una HOME temporal NUEVA con agent-skills enlazado e imprime su ruta
   # Siempre nueva y con `ln -n`: un `ln -s` sobre un enlace a carpeta que ya existe no lo reemplaza, crea el enlace
-  # ADENTRO del agent-skills real. Pasó el 2026-09-27: `casa rota` dos veces dejó ~/.claude/agent-skills/agent-skills
+  # ADENTRO del agent-skills real: `casa rota` dos veces deja ~/.claude/agent-skills/agent-skills
   # apuntando a sí mismo.
   local c; c="$(mktemp -d "$T/$1.XXXXXX")" && mkdir -p "$c/.claude" && ln -sn "$SK_REPO" "$c/.claude/agent-skills" && echo "$c"
 }
@@ -76,7 +76,7 @@ esperar_llamada() { # <patrón> <segundos>: espera a que aparezca en el registro
   local i=0; while [ "$i" -lt "$2" ]; do grep -q "$1" "$LLAMADAS" 2>/dev/null && return 0; sleep 1; i=$((i+1)); done; return 1
 }
 
-# ── La suite corre por partes (story 8.22, tramo F: ninguna suite pasa de 45 s en la validación de una rama). Entera
+# ── La suite corre por partes (ninguna suite pasa de 45 s en la validación de una rama). Entera
 # —a mano— corre todos los bloques; como parte (`integrations-off.p<k>.test.sh`), sólo los suyos. Lo de afuera de
 # los bloques corre siempre: un bloque no puede depender de lo que dejó otro (scripts/tests/lib/suite-parts.sh).
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
@@ -194,12 +194,12 @@ SAL="$(afuera "$C4" -- bash "$RAIZ/scripts/ci/validate-pipeline-in-ado.sh" --pro
 dice_apagada "validate-pipeline-in-ado.sh (Azure DevOps)" "$RC" "$SAL" 'azure devops'
 
 # (acá sólo los SERVICIOS de las integraciones: el observador de instintos pregunta por `claude`/`codex` para elegir
-#  su modelo, y eso no es una integración de la story)
+#  su modelo, y eso no es una integración)
 if grep -qE '^(az|engram|curl) ' "$LLAMADAS" 2>/dev/null; then no "T10 con las integraciones apagadas, algún comando igual llamó a un servicio: $(grep -E '^(az|engram|curl) ' "$LLAMADAS" | sort -u | head -5 | tr '\n' ' ')"
 else ok "T10 ningún comando apagado llamó a az/engram/curl"; fi
 
 # el paso de work item (prosa de agent-skills): resuelve la organización por la configuración y, apagada, lo dice y se saltea;
-# el «default por proyecto conocido» ya no es un nivel
+# no hay un «default por proyecto conocido»
 for f in skills/tycon-pipeline/steps/step-00c-ado-mark-active.md skills/tycon-pipeline/steps/step-09-ado-story-closure.md skills/tycon-ado-story-wi/SKILL.md; do
   p="$SK_REPO/$f"
   if [ ! -f "$p" ]; then echo "  ℹ NO MEDIDO — $f no está en $SK_REPO"; continue; fi
@@ -221,10 +221,10 @@ else no "T10 control: buzón prendido sin llave: exit $RC — $(echo "$SAL" | ta
 SAL="$(afuera "$C4" TYCON_ENGRAM=1 -- node "$RAIZ/scripts/lib/engram-autoheal.js" 2>&1)"
 if echo "$SAL" | grep -i 'apagad' >/dev/null; then no "T10 control: con engram prendida, engram-autoheal.js igual dice «apagada»"; else ok "T10 control: con engram prendida, engram-autoheal.js no dice «apagada»"; fi
 
-# ── T10 · un BUG del lector no se traga (revisor de fallos silenciosos, tanda B, 2026-09-27) ─────────────────────────
-# «Sin la lib al lado: como hoy» vale SÓLO cuando la lib no está (MODULE_NOT_FOUND). Un error de verdad dentro del lector
+# ── T10 · un BUG del lector no se traga ─────────────────────────
+# «Sin la lib al lado: como siempre» vale SÓLO cuando la lib no está (MODULE_NOT_FOUND). Un error de verdad dentro del lector
 # (acá: un TypeError plantado) tiene que verse: el comando frena con exit ≠ 0 y lo dice; el hook sigue (exit 0) pero lo
-# dice. Antes, seis consumidores lo envolvían en un catch-all y un bug del lector se volvía invisible en todos a la vez.
+# dice. Si seis consumidores lo envolvieran en un catch-all, un bug del lector sería invisible en todos a la vez.
 F="$(mktemp -d)"; cp -R "$RAIZ/scripts" "$F/scripts"
 printf '%s\n' "throw new TypeError('bug de mentira en el lector');" > "$F/scripts/lib/tycon-config.js"
 SAL="$(afuera "$C4" -- node "$F/scripts/lib/engram-autoheal.js" 2>&1)"; RC=$?
@@ -236,7 +236,7 @@ else no "T10 con el lector roto por un bug, bench-notice.js salió $RC sin decir
 rm -rf "$F"
 
 # ── T10 · configuración ROTA en un comando que carga harness-audit: frena prolijo (exit 2, archivo · clave · motivo), no
-#          con una traza sin capturar (exit 1) — pase adversarial de la tanda B: harness-audit tira al CARGAR el módulo
+#          con una traza sin capturar (exit 1); harness-audit tira al CARGAR el módulo
 C5="$(casa rota-engram)"; printf '{ "integrations": { "engram": "si" } }' > "$C5/.claude/tycon.json"
 for cmd in "scripts/lib/harness-audit.js --json" "scripts/lib/engram-autoheal.js"; do
   SAL="$(afuera "$C5" -- node $RAIZ/$cmd 2>&1)"; RC=$?
@@ -244,9 +244,9 @@ for cmd in "scripts/lib/harness-audit.js --json" "scripts/lib/engram-autoheal.js
   else no "T10 config rota: ${cmd%% *} salió $RC — $(echo "$SAL" | grep -v '^\s*$' | tail -3 | tr '\n' ' ' | cut -c1-200)"; fi
 done
 
-# ── T10 · el interruptor por hook puesto en 1 manda sobre la llave apagada (decisión 2: «en los dos sentidos») ──────
-#          engram-drift-notice con TYCON_ENGRAM_DRIFT=1 y engram apagada NO dice «apagado» (antes sí: el instalador lo
-#          registraba y el hook igual no hacía nada); el hook de git con TYCON_ENGRAM_HOOK=1 llama a engram (de mentira)
+# ── T10 · el interruptor por hook puesto en 1 manda sobre la llave apagada («en los dos sentidos») ──────
+#          engram-drift-notice con TYCON_ENGRAM_DRIFT=1 y engram apagada NO dice «apagado» (el instalador lo
+#          registra, así que el hook tiene que actuar); el hook de git con TYCON_ENGRAM_HOOK=1 llama a engram (de mentira)
 SAL="$(afuera "$C4" TYCON_ENGRAM_DRIFT=1 -- node "$RAIZ/scripts/hooks/engram-drift-notice.js" --force 2>&1)"
 if echo "$SAL" | grep -i 'engram apagad' >/dev/null; then no "T10 con TYCON_ENGRAM_DRIFT=1 y la llave apagada, engram-drift-notice igual dice «apagado»"
 else ok "T10 TYCON_ENGRAM_DRIFT=1 manda sobre la llave apagada (engram-drift-notice no dice «apagado»)"; fi
@@ -264,9 +264,9 @@ fi
 if suite_part 2; then   # ── parte 2 de 2 ──
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
-# story 8.3.1 · settings.json como función de la configuración (AC 1, 2 · T1, T2 · Task 0)
-# Rojo previo (pase adversarial de la 8.3-B, `determinism-ordering-1`): prender → apagar → prender dejaba el hook
-# re-agregado al FINAL de su bloque, distinto byte a byte de una instalación fresca con las mismas llaves.
+# settings.json como función de la configuración (T1, T2)
+# Prender → apagar → prender no deja el hook re-agregado al FINAL de su bloque: el resultado es igual byte a byte a
+# una instalación fresca con las mismas llaves.
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
 # settings.json de una casa con su ruta reemplazada por «CASA»: dos casas distintas se comparan por contenido.
 normal() { sed "s#$1#CASA#g" "$1/.claude/settings.json"; }
@@ -279,7 +279,7 @@ cp "$C6/.claude/settings.json" "$T/antes-de-prender.json"
 afuera "$C6" "${LLAVES_ON[@]}" -- bash "$INST" > "$C6/instalador-3.out" 2>&1
 if [ -n "$(normal "$C5")" ] && [ "$(normal "$C5")" = "$(normal "$C6")" ]; then ok "T1 prender → apagar → prender deja el mismo settings.json que una instalación fresca con las mismas llaves"
 else no "T1 prender → apagar → prender NO da el settings.json de una instalación fresca: $(diff <(normal "$C5") <(normal "$C6") | grep '^[<>]' | head -4 | tr '\n' ' ' | cut -c1-300)"; fi
-# Task 0: la corrida que re-inserta pasó por el backup, y el backup es lo que había antes de prender
+# La corrida que re-inserta pasó por el backup, y el backup es lo que había antes de prender
 BAK="$(ls -t "$C6/.claude/"settings.json.bak.* 2>/dev/null | head -1)"
 if [ -n "$BAK" ] && cmp -s "$BAK" "$T/antes-de-prender.json"; then ok "T1 (Task 0) antes de re-insertar el instalador guardó el settings.json anterior, recuperable tal cual"
 else no "T1 (Task 0) no hay backup de la corrida que re-insertó, o no es el archivo anterior (${BAK:-sin backup})"; fi
@@ -316,8 +316,8 @@ if [ -n "$P_ANTES" ] && [ "$P_ANTES" = "$P_DESPUES" ]; then ok "T2 el hook ajeno
 else no "T2 el hook ajeno se movió: antes=${P_ANTES:-ausente} después=${P_DESPUES:-ausente}"; fi
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════
-# story 8.7 · T32 SyncBloques_IntegracionRequerida (AC 25) — un bloque del CLAUDE.md que requiere una integración
-# Rojo previo (2026-10-03): el sync escribía todos los bloques siempre; afuera, sin Azure DevOps, cada sesión cargaba
+# T32 SyncBloques_IntegracionRequerida — un bloque del CLAUDE.md que requiere una integración
+# Sin esto, el sync escribiría todos los bloques siempre; afuera, sin Azure DevOps, cada sesión cargaría
 # igual la regla sobre un servicio que no usa. El bloque lo declara en su primera línea
 # (`<!-- requires-integration: ado -->`) y el sync pregunta al lector de configuración.
 # Se llama al sync DIRECTO y sin TYCON_NO_CLAUDEMD_SYNC (el ayudante `afuera` lo apaga con LOCAL_OFF).
@@ -437,7 +437,7 @@ R1="$(home32 broken-absent)"; R2="$(home32 broken-present seed)"
 for c in "$R1" "$R2"; do printf '{ "integrations": { "clokify": true } }' > "$c/.claude/tycon.json"; done
 seed_stale "$R2/.claude/CLAUDE.md" "$B_ADO"
 SAL="$(sync32 "$R1" 2>&1)"; RC=$?
-# desde la story 8.16 (tanda C) los otros tres bloques piden el perfil full: con la configuración rota tampoco se sabe el
+# los otros tres bloques piden el perfil full: con la configuración rota tampoco se sabe el
 # perfil, así que tampoco se agregan, y cada uno lo dice en su línea
 if [ "$RC" -eq 0 ] && ! has_block "$R1/.claude/CLAUDE.md" "$B_ADO" && ! has_block "$R1/.claude/CLAUDE.md" response-style \
    && [ "$(echo "$SAL" | grep "$B_ADO" | grep -c 'integración «ado»')" = 1 ] && echo "$SAL" | grep "'response-style'" | grep 'perfil' >/dev/null; then ok "T32 configuración rota y bloque ausente: no se agrega (tampoco los del perfil), y una línea lo dice por cada uno"
@@ -453,7 +453,7 @@ if env -i PATH=/usr/bin:/bin /bin/sh -c 'command -v node' > /dev/null 2>&1 || ! 
 else
   S1="$(home32 no-node-absent)"; S2="$(home32 no-node-present seed)"; seed_stale "$S2/.claude/CLAUDE.md" "$B_ADO"
   SAL="$(PATH32=/usr/bin:/bin sync32 "$S1" "$ADO_ON" 2>&1)"
-  # (story 8.16: sin node tampoco se sabe el perfil, así que el bloque de estilo tampoco se agrega)
+  # (sin node tampoco se sabe el perfil, así que el bloque de estilo tampoco se agrega)
   if ! has_block "$S1/.claude/CLAUDE.md" "$B_ADO" && ! has_block "$S1/.claude/CLAUDE.md" response-style && echo "$SAL" | grep "$B_ADO" | grep 'node' >/dev/null; then ok "T32 sin node y bloque ausente: no se agrega (tampoco los del perfil), y la línea nombra node"
   else no "T32 sin node y bloque ausente: $(echo "$SAL" | head -2 | tr '\n' ' ' | cut -c1-240)"; fi
   SAL="$(PATH32=/usr/bin:/bin sync32 "$S2" 2>&1)"
@@ -475,9 +475,9 @@ if has_block "$D2/.claude/CLAUDE.md" zeta && grep -q '^texto de zeta$' "$D2/.cla
    && ! grep -q 'requires-integration' "$D2/.claude/CLAUDE.md" && echo "$SAL" | grep "'zeta'" | grep 'integración «zeta»' >/dev/null; then ok "T32 integración desconocida y bloque presente: queda, se actualiza (sin el comentario), y una línea lo dice"
 else no "T32 integración desconocida y bloque presente: $(echo "$SAL" | head -3 | tr '\n' ' ' | cut -c1-240)"; fi
 
-# ── un marcador CASI bien escrito (pase adversarial de la tanda C) ──
-# Con otra forma (mayúsculas, guion, dos nombres) o fuera de la primera línea, el bloque pasaba por un bloque común: se
-# escribía con la integración apagada y el comentario se copiaba al CLAUDE.md, sin una palabra. Es «no se sabe»: no se
+# ── un marcador CASI bien escrito ──
+# Con otra forma (mayúsculas, guion, dos nombres) o fuera de la primera línea, el bloque pasaría por un bloque común: se
+# escribiría con la integración apagada y el comentario se copiaría al CLAUDE.md, sin una palabra. Es «no se sabe»: no se
 # agrega, queda si estaba, el comentario nunca se copia y una línea lo dice. Un BOM delante no cambia nada.
 LAB2="$T/t32-lab2"; mkdir -p "$LAB2/scripts/setup" "$LAB2/claude-md-blocks"
 cp -R "$RAIZ/scripts/lib" "$LAB2/scripts/lib"; cp "$SYNC" "$LAB2/scripts/setup/"

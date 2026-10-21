@@ -1,7 +1,7 @@
 'use strict';
 /**
  * harness-startup-line.test.js — la migración de la línea de arranque (`scripts/setup/harness/startup-line.js`)
- * (story 8.13, tanda A · T8 y la parte .js de T28).
+ * (T8 y la parte .js de T28).
  *
  * Lo que no se puede perder:
  *   T8  · primero el piso de Node: con un `node` viejo NO se toca ninguna línea y el aviso lo dice; cada forma conocida de
@@ -11,7 +11,7 @@
  *         la nueva; una segunda corrida no cambia nada.
  *   T28 · la línea de Windows va con barras normales y comillas como el resto del `.ps1` (`install-tycon-hooks.ps1:421`).
  *
- * 🔴 rojo previo verificado: sin `scripts/setup/harness/startup-line.js` nada de esto existe.
+ * 🔴 Sin `scripts/setup/harness/startup-line.js` nada de esto existe.
  * 🔴 Nada toca el HOME real: cada caso arma su `settings.json` en el temporal.
  */
 const test = require('node:test');
@@ -69,7 +69,7 @@ test('T8 · la fixture trae las formas medidas, cada una con id, plataforma, asy
     assert.ok(['posix', 'windows'].includes(f.platform) && ['known', 'unknown'].includes(f.expect), f.id);
     // sin nombres reales: lo mide new-names.js en el pre-commit (T1 lo corre sobre scripts/setup/); acá, que el usuario sea el inventado
     // el usuario inventado empieza en mayúscula a propósito: el detector de publicación toma `/Users/<minúscula>…/` por
-    // una ruta de máquina real (la tanda A rompió así la copia pública del núcleo, 2026-10-02)
+    // una ruta de máquina real (si no, la copia pública del núcleo se rompe)
     assert.ok(!/\/Users\/(?!Lab-user\b)[\w.-]+/.test(f.command), `${f.id}: un usuario que no es el inventado (Lab-user)`);
   }
   for (const id of ['canonical-posix', 'canonical-windows', 'sourcecode-clone-no-engram', 'no-engram', 'no-installer', 'no-ff', 'canonical-posix-async-false', 'heal-appended']) {
@@ -96,9 +96,9 @@ test('T28 · newLine en Windows: barras normales, comillas como el .ps1 (:421), 
   assert.ok(r.command.includes("node 'C:/Users/Lab-user/.claude/.tycon-pipeline/harness/bootstrap.js'"), r.command);
   assert.ok(r.command.includes("& 'C:/Users/Lab-user/.claude/.tycon-pipeline/harness/bootstrap-fallback.ps1'"), r.command);
   assert.ok(/-Command "[^"]*"$/.test(r.command), 'la -Command va entre comillas dobles y adentro sólo simples');
-  // en Windows los hooks se escriben con `/` y comillas dobles: desde la story 8.17 (W3) los escribe el aplicador,
-  // scripts/setup/apply-hooks.js con --platform windows (antes, install-tycon-hooks.ps1). La línea nueva sigue esa regla.
-  // Desde que el arnés tiene su propio Node, un `.js` arranca con el intérprete que elige el aplicador (`jsPrefix`).
+  // en Windows los hooks se escriben con `/` y comillas dobles: los escribe el aplicador,
+  // scripts/setup/apply-hooks.js con --platform windows. La línea nueva sigue esa regla.
+  // Como el arnés trae su propio Node, un `.js` arranca con el intérprete que elige el aplicador (`jsPrefix`).
   const applier = fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'apply-hooks.js'), 'utf8');
   assert.ok(applier.includes('const absCmd = windows ? fwd(abs) : abs;') && applier.includes('command = `${runner === \'node\' ? jsPrefix : runner} "${absCmd}"`'),
     'el aplicador ya no escribe los hooks de Windows con / y comillas como antes: revisar la línea nueva');
@@ -248,9 +248,9 @@ test('T8 · un settings.json ilegible o inexistente no se toca y el motivo lo no
   assert.strictEqual(fs.existsSync(path.join(dir, 'no-existe.json')), false, 'sin addIfMissing no se crea nada');
 });
 
-// Story 8.7, AC 19 (medido el 2026-10-03 en la máquina limpia): una HOME que nunca usó Claude Code no tiene
-// settings.json. `install` (addIfMissing) tiene que dejar la línea nueva igual: sin esto el instalador creaba después su
-// esqueleto, la línea no quedaba en ningún lado y el reparador de arranque hablaba en la primera sesión.
+// Una HOME que nunca usó Claude Code no tiene
+// settings.json. `install` (addIfMissing) tiene que dejar la línea nueva igual: sin esto el instalador crearía después su
+// esqueleto, la línea no quedaría en ningún lado y el reparador de arranque hablaría en la primera sesión.
 test('T8 · install sobre una HOME sin settings.json lo crea con la línea nueva (y no hay qué respaldar)', () => {
   const { migrate, newLine } = mod();
   const dir = path.join(BASE, 'fresh-home', '.claude');   // la carpeta tampoco existe: es la primera escritura
@@ -273,9 +273,9 @@ test('T8 · install sobre una HOME sin settings.json lo crea con la línea nueva
   assert.strictEqual(r4.changed, false); assert.ok(/no pude crear .*la línea de arranque no se registró/.test(r4.reason), r4.reason);
 });
 
-// Pase adversarial de la tanda C de la 8.7 (2026-10-03): el hermano del caso de arriba. Un settings.json que existe
+// El hermano del caso de arriba: un settings.json que existe
 // pero está VACÍO (0 bytes, un salto de línea, sólo espacios: una escritura truncada, un `touch`). El aplicador lo lee
-// como `{}` y le escribe sus hooks; `install` lo daba por «ilegible» y la máquina quedaba instalada sin línea de arranque.
+// como `{}` y le escribe sus hooks; `install` no puede darlo por «ilegible»: la máquina quedaría instalada sin línea de arranque.
 test('T8 · install sobre un settings.json VACÍO lo trata como {} y registra la línea nueva (migrar a secas no lo toca)', () => {
   const { migrate, newLine } = mod();
   const dir = path.join(BASE, 'empty-settings'); fs.mkdirSync(dir, { recursive: true });
@@ -315,7 +315,7 @@ test('T8 · el módulo es núcleo público: no hace require del perfil, de legac
   assert.ok(!/legacy-names|renames\.json|perfil-equipo|team-profile/.test(src), 'startup-line.js depende de algo que la copia pública no trae');
 });
 
-// ─── Regresiones del pase adversarial y de los revisores (iteración 1, 2026-10-02) ───────────────────────────────────
+// ─── Regresiones ───────────────────────────────────
 
 test('REG-D11 · Windows: un HOME con apóstrofe va escapado dentro de las comillas simples de PowerShell', () => {
   const { newLine } = mod();
@@ -379,10 +379,10 @@ test('T21 · Applier_NoLegacyBakUnderHarness_YesStandalone: bajo harness.js (bac
   assert.strictEqual(backups(c).length, 1, 'suelta no dejó su .bak');
 });
 
-// ─── story 8.17 · la línea de Windows corre igual por cualquier shell ────────────────────────────────────────
+// ─── la línea de Windows corre igual por cualquier shell ────────────────────────────────────────
 // En Windows, Claude Code le pasa el comando de un hook a Git Bash («Git Bash on Windows, or PowerShell when Git Bash
-// isn't installed»): bash expande lo que empieza con `$` dentro de comillas dobles. La forma que escribió la 8.13
-// (`if ($LASTEXITCODE -ne 0)`) salía 1 en cada sesión y el respaldo no corría nunca (medido en un agente Windows).
+// isn't installed»): bash expande lo que empieza con `$` dentro de comillas dobles. Una forma con
+// `if ($LASTEXITCODE -ne 0)` saldría 1 en cada sesión y el respaldo no correría nunca.
 
 test('W-S1 · StartupLine_Windows_HasNothingAShellExpands: la línea nueva de Windows no trae `$`, acentos graves ni `!`', () => {
   const { newLine, isNew, isSuperseded } = mod();
@@ -474,10 +474,10 @@ test('W-S3 · StartupLine_Windows_RunsTheSameThroughBash: corrida de verdad, dir
   }
 });
 
-// ─── story 8.17 · la línea vieja registrada con el PowerShell que trae Windows ───────────────────────────────
-// El alta mandaba registrar la línea con el PowerShell que hubiera: con sólo el 5.1 quedaba `powershell`, y el
-// mecanismo sólo reconocía las que empiezan con `pwsh`. Medido en una máquina Windows 11: esa máquina se quedaba con
-// la línea vieja para siempre, y `doctor` decía «nada en rojo».
+// ─── la línea vieja registrada con el PowerShell que trae Windows ───────────────────────────────
+// El alta registra la línea con el PowerShell que haya: con sólo el 5.1 queda `powershell`, y el
+// mecanismo tiene que reconocer también esas, no sólo las que empiezan con `pwsh`: si no, la máquina se queda con
+// la línea vieja para siempre y `doctor` dice «nada en rojo».
 
 test('W-S4 · StartupLine_OldWindowsLine_WithWindowsPowerShell_IsKnownAndMigrated', () => {
   const { classify, migrate, newLine } = mod();
@@ -486,7 +486,7 @@ test('W-S4 · StartupLine_OldWindowsLine_WithWindowsPowerShell_IsKnownAndMigrate
   const lines = [
     canonical.command.replace(/^pwsh /, 'powershell '),
     canonical.command.replace(/^pwsh /, 'powershell.exe '),
-    // la del texto del alta, tal como quedó en la máquina medida
+    // la del texto del alta, tal como queda en una máquina con sólo el 5.1
     'powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Set-Location $env:USERPROFILE\\SourceCode\\tycon-claude-guides; git pull --quiet; Set-Location $env:USERPROFILE\\.claude\\agent-skills; git pull --quiet --autostash; & $env:USERPROFILE\\SourceCode\\tycon-claude-guides\\scripts\\install-tycon-hooks.ps1 } catch {}"',
   ];
   for (const command of lines) {

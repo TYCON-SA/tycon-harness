@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # installer-codex-evidence.test.sh — el instalador decide si la máquina usa Codex por el DISCO, no sólo
-# por la llave del ambiente (2026-09-19, deuda INSTALADOR-CODEX-PREGUNTA-AL-AMBIENTE).
+# por la llave del ambiente.
 #
-# Caso disparador: la llave TYCON_CODEX vive en el rc del shell y al instalador (arranque de sesión) no
-# le llega. Medido el 2026-09-06: puesta en el .zshrc y en launchctl, vacía en la sesión → el lado Codex
-# no se desplegaba en ninguna máquina, en silencio. Ahora decide codexDeployed() de harness-parity.js.
+# La llave TYCON_CODEX vive en el rc del shell y al instalador (arranque de sesión) no
+# le llega: puesta en el .zshrc y en launchctl, vacía en la sesión → el lado Codex
+# no se desplegaría en ninguna máquina, en silencio. Decide codexDeployed() de harness-parity.js.
 #
 # Se mira el bloque del AGENTS.md puntero en modo --check (avisa y no escribe): sale el aviso ⇔ el
 # instalador cree que la máquina usa Codex. Casos: (1) evidencia sin llave → sí; (2) sin evidencia ni
 # llave → no; (3) llave en 0 explícito con evidencia → no; (4) llave en 1 sin evidencia → sí;
-# (5) chequeo roto → avisa la causa y sigue; (6) rojo previo: el instalador de hoy con la pregunta al disco
-# arrancada (el defecto de antes: sólo miraba la llave), con evidencia y sin llave → no. Todas las corridas «no» exigen además que el instalador TERMINE (código 0).
+# (5) chequeo roto → avisa la causa y sigue; (6) el instalador con la pregunta al disco
+# arrancada (el defecto: sólo miraría la llave), con evidencia y sin llave → no. Todas las corridas «no» exigen además que el instalador TERMINE (código 0).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 INST="$RAIZ/scripts/install-tycon-hooks.sh"
@@ -27,11 +27,11 @@ export TYCON_NO_CANONICAL_PATH=1 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_BOOTSTR
 # HOME falso (mismo aislamiento que installer-cleanup-period.test.sh): el instalador exige el esqueleto de
 # tycon-pipeline, y el barrido del puntero recorre $HOME/SourceCode — ahí va un repo del equipo de juguete.
 HOME="$T/casa"; mkdir -p "$HOME/.claude/agent-skills/skills/tycon-pipeline"; export HOME
-# Desde la story 8.3 (AC 6) la raíz de repos no cae más a $HOME/SourceCode: se declara. Sin esto el barrido del
-# puntero dice «sin raíz de repos conocida» y no mira el repo de juguete (rojo de la CI 11070 tras la tanda A).
+# La raíz de repos no cae a $HOME/SourceCode: se declara. Sin esto el barrido del
+# puntero dice «sin raíz de repos conocida» y no mira el repo de juguete.
 export TYCON_REPOS_ROOT="$HOME/SourceCode"
-# Y desde la tanda B la llave de Codex sale de la configuración (`integrations.codex`): sin perfil del equipo nace
-# APAGADA. Lo que esta suite mide es el modo «detect» (lo que hoy trae el perfil): se declara en el archivo de la
+# Y la llave de Codex sale de la configuración (`integrations.codex`): sin perfil del equipo nace
+# APAGADA. Lo que esta suite mide es el modo «detect» (lo que trae el perfil): se declara en el archivo de la
 # máquina de esta HOME; TYCON_CODEX=0/1 por variable sigue mandando por encima, que es lo que los otros casos prueban.
 # La organización también: el barrido del puntero AGENTS.md sólo mira repos de la organización configurada (la del
 # origin del repo de juguete de abajo; una organización inventada).
@@ -46,8 +46,8 @@ AVISO='tiene CLAUDE.md sin AGENTS.md'
 # correr <instalador> <CODEX_HOME> [TYCON_CODEX]: imprime la salida del instalador en --check y, al final,
 # la línea «RC=<n>» con su código de salida. Sin tercer argumento, la variable NO existe en el ambiente
 # (unset), que es el caso del arranque real.
-# 🔴 El código importa: el instalador corre con `set -e`, y la primera versión del arreglo lo cortaba
-#    entero cuando la respuesta era «no» (código 10). Sólo mirar que FALTE un aviso daba verde igual.
+# 🔴 El código importa: el instalador corre con `set -e`, y si se cortara
+#    entero cuando la respuesta es «no» (código 10), sólo mirar que FALTE un aviso daría verde igual.
 correr() {
   echo '{"hooks":{}}' > "$T/s.json"
   local rc=0
@@ -78,9 +78,9 @@ else ok "con TYCON_CODEX=0 explícito gana el apagado, aunque haya evidencia"; f
 # El chequeo que FALLA (módulo roto) no se lee como «no»: avisa con la causa y el instalador sigue.
 # Copia del instalador con un harness-parity.js que tira al cargarse, en la misma estructura del arnés.
 mkdir -p "$T/tcg/scripts/lib" "$T/tcg/scripts/hooks" "$T/tcg/scripts/setup"; cp "$INST" "$T/tcg/scripts/install-tycon-hooks.sh"
-# desde la story 8.17 (W3) el instalador registra los hooks con el aplicador y su lista: viajan con él
+# el instalador registra los hooks con el aplicador y su lista: viajan con él
 cp "$RAIZ/scripts/setup/apply-hooks.js" "$RAIZ/scripts/setup/hooks-list.json" "$T/tcg/scripts/setup/"
-# desde la story 7.27 el aplicador usa scripts/setup/harness/plugin-dirs.js (y éste, place.js): la carpeta viaja entera
+# el aplicador usa scripts/setup/harness/plugin-dirs.js (y éste, place.js): la carpeta viaja entera
 cp -R "$RAIZ/scripts/setup/harness" "$T/tcg/scripts/setup/"
 echo "throw new Error('modulo-roto-de-prueba');" > "$T/tcg/scripts/lib/harness-parity.js"
 S="$(correr "$T/tcg/scripts/install-tycon-hooks.sh" "$CON")"
@@ -95,8 +95,8 @@ S="$(correr "$INST" "$SIN" 1)"
 avisa "$S" && ok "con TYCON_CODEX=1 y nada desplegado, estrena el lado Codex" \
   || mal "con TYCON_CODEX=1 y nada desplegado, el instalador no hace lo de Codex"
 
-# Rojo previo: el defecto de antes del arreglo era no preguntarle al disco (sólo la llave). Se arma desde el
-# instalador de HOY, con la pregunta al disco (codexDeployed()) cambiada por «no»: no depende de un commit viejo, que
+# El defecto a reproducir es no preguntarle al disco (sólo la llave). Se arma desde el
+# instalador actual, con la pregunta al disco (codexDeployed()) cambiada por «no»: no depende de un commit viejo, que
 # un clon sin historia no tiene. Corre desde $T: el bloque del puntero no depende de la ruta del arnés.
 if node -e '
 const fs = require("fs");

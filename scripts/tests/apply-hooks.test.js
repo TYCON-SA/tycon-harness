@@ -1,20 +1,20 @@
 'use strict';
 /**
- * apply-hooks.test.js — la lista única de hooks y el aplicador que la lee (story 8.17, tanda W3 · AC 23, 24, 25, 28;
- * T33 a T37; y de la tanda W4 lo que el aplicador hace en Windows · AC 29).
+ * apply-hooks.test.js — la lista única de hooks y el aplicador que la lee (T33 a T37;
+ * y lo que el aplicador hace en Windows).
  * stable-data: no crea commits ni lee el reloj; «commit» sale de `cat-file -e <ref>^{commit}` (sólo mira si el
  *   commit fijo de la versión anterior está en el clon).
  *
- * EL CASO. Hasta la W3 cada instalador llevaba su lista de hooks (`HOOKS_CANONICAL` y `OPTIN_HOOKS` en el `.sh`,
- * `$HooksCanonical` en el `.ps1`) y su propio código para escribir `settings.json` (un bloque de Python en el `.sh`, uno
- * de PowerShell en el `.ps1`). Medido en un agente Windows el 2026-10-04: el `.ps1` registraba 29 de los 42 controles
- * del `.sh`. Ahora hay UNA lista (`scripts/setup/hooks-list.json`) y UN aplicador (`scripts/setup/apply-hooks.js`).
+ * POR QUÉ. Dos instaladores con su propia lista de hooks (`HOOKS_CANONICAL` y `OPTIN_HOOKS` en el `.sh`, `$HooksCanonical` en
+ * el `.ps1`) y su propio código para escribir `settings.json` (un bloque de Python en el `.sh`, uno de PowerShell en el
+ * `.ps1`) se desfasan: un agente Windows llegó a registrar 29 de los 42 controles del `.sh`.
+ * Por eso hay UNA lista (`scripts/setup/hooks-list.json`) y UN aplicador (`scripts/setup/apply-hooks.js`).
  *
  * QUÉ MIDE. Sobre carpetas de juguete (nunca la carpeta de usuario real): la forma de la lista real (T33); que cada
  * hook entra según su `when`, con el intérprete de su extensión, en su lugar, y que lo reemplazado, lo viejo y lo
  * apagado se saca sin tocar lo ajeno (T34); que una segunda corrida no reescribe, que escribe atómico con copia y que
  * `--check` no escribe (T35); que un guion que falta se nombra (T36); que una lista o un `settings.json` rotos no
- * escriben nada (T37); y, en Windows, la ruta del bash de Git, `\r\n` y las rutas que un shell leería mal (AC 29, 67).
+ * escriben nada (T37); y, en Windows, la ruta del bash de Git, `\r\n` y las rutas que un shell leería mal.
  *
  * Correr:   node --test scripts/tests/apply-hooks.test.js
  */
@@ -106,7 +106,7 @@ test('T33 HooksList_Schema_EveryRecordOnce_NoListLeftInAppliers', () => {
     assert.ok(Array.isArray(h.steps) && h.steps.length, `${h.spec}: steps`);
     assert.ok(typeof h.effect === 'string', `${h.spec}: effect`);
   }
-  // ninguno de los dos instaladores lleva una lista propia (AC 23)
+  // ninguno de los dos instaladores lleva una lista propia
   for (const rel of ['scripts/install-tycon-hooks.sh', 'scripts/install-tycon-hooks.ps1']) {
     const text = fs.readFileSync(path.join(ROOT, rel), 'utf8');
     for (const marker of ['HOOKS_CANONICAL=(', 'OPTIN_HOOKS', '$HooksCanonical']) {
@@ -259,7 +259,7 @@ test('T37 ApplyHooks_BrokenListOrSettings_WritesNothing_NeverReadAsEmpty', (t) =
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stderr + r.stdout, /settings\.json/);
   assert.strictEqual(fs.readFileSync(L.settingsPath, 'utf8'), '{ roto');
-  // configuración rota: los de integración quedan como estaban (8.3, AC 2) — ni entran ni se sacan
+  // configuración rota: los de integración quedan como estaban — ni entran ni se sacan
   const integ = LIST_OF([H('SessionStart', '', '@tcg:integ.js', { when: 'integration:nightly' }), H('Stop', '', '@tcg:s.js')]);
   const L2 = lab(t, { list: integ, files: ['@tcg:integ.js', '@tcg:s.js'] });
   fs.writeFileSync(L2.settingsPath, JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `node "${L2.abs('@tcg:integ.js')}"` }] }] } }, null, 2) + '\n');
@@ -273,7 +273,7 @@ test('T37 ApplyHooks_BrokenListOrSettings_WritesNothing_NeverReadAsEmpty', (t) =
   assert.ok(!settingsOf(L2).hooks.SessionStart, 'apagada: se saca');
 });
 
-// ── Windows (AC 29 y 67): la ruta del bash de Git, la forma vieja reescrita una vez, \r\n y rutas inseguras ─────────
+// ── Windows: la ruta del bash de Git, la forma vieja reescrita una vez, \r\n y rutas inseguras ─────────
 test('W4 ApplyHooks_Windows_ShWithGitBashPath_OldFormRewrittenOnce_CrlfAndUnsafeNotRegistered', (t) => {
   const list = LIST_OF([
     H('PreToolUse', 'Bash|PowerShell', '@tcg:freno.sh'),
@@ -287,7 +287,7 @@ test('W4 ApplyHooks_Windows_ShWithGitBashPath_OldFormRewrittenOnce_CrlfAndUnsafe
   fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: {} }, null, 2) + '\n');
   const r = run(L, ['--platform', 'windows']);
   assert.strictEqual(r.status, 0, r.stderr);
-  // desvío medido del AC 29 (182 #11979): un .sh va con `bash` a secas y barras normales, como en la W3a
+  // un .sh va con `bash` a secas y barras normales
   assert.deepStrictEqual(commandsOf(settingsOf(L), 'PreToolUse'), [`bash "${fwd(L.abs('@tcg:freno.sh'))}"`], 'el .sh con bash a secas; el de \\r\\n, afuera');
   assert.ok(r.json.notInstalled.some((n) => n.kind === 'crlf' && n.relpath === 'crlf.sh'), 'el \\r\\n se dice');
   assert.ok(!commandsOf(settingsOf(L), 'SessionStart').length, 'lo que Windows excluye no se registra');
@@ -307,7 +307,7 @@ test('W4 ApplyHooks_Windows_ShWithGitBashPath_OldFormRewrittenOnce_CrlfAndUnsafe
 });
 
 test('W4 ApplyHooks_Windows_NarrowMatcher_WidenedInOneRun_CommandKept', (t) => {
-  // un freno de antes del matcher ampliado (`Bash`): en UNA corrida queda con el matcher nuevo y su comando tal cual
+  // un freno registrado con el matcher sin `Bash`: en UNA corrida queda con el matcher nuevo y su comando tal cual
   const L = lab(t, { list: LIST_OF([H('PreToolUse', 'Bash|PowerShell', '@tcg:freno.sh')]), files: ['@tcg:freno.sh'] });
   const fwd = (p) => p.replace(/\\/g, '/');
   const cmd = `bash "${fwd(L.abs('@tcg:freno.sh'))}"`;
@@ -319,10 +319,10 @@ test('W4 ApplyHooks_Windows_NarrowMatcher_WidenedInOneRun_CommandKept', (t) => {
   assert.strictEqual(sha(L.settingsPath), h, 'la segunda corrida no cambia nada');
 });
 
-// ── Pase adversarial y revisores de la W3W4 (2026-10-05): cada caso, con su rojo previo ─────────────────────────────
+// ── Casos del pase adversarial y de los revisores ─────────────────────────────
 test('W3W4 ApplyHooks_SettingsWithBom_IsRead_ModeKept_DuplicateTokenMatcherIsTheSame', (t) => {
-  // clase 7: un settings.json con BOM (válido en Windows) hacía caer al instalador entero; clase 8/13: al escribir quedaba
-  // 0644 (el Python lo dejaba 0600 y settings.json guarda tokens); clase 10: «Bash|Bash» no contaba como «Bash»
+  // un settings.json con BOM (válido en Windows) no hace caer al instalador entero; al escribir conserva los permisos
+  // del archivo y uno nuevo nace 0600 (settings.json guarda tokens); «Bash|Bash» cuenta como «Bash»
   const L = lab(t, { list: LIST_OF([H('Stop', '', '@tcg:s.js'), H('PreToolUse', 'Bash', '@tcg:p.js')]), files: ['@tcg:s.js', '@tcg:p.js'] });
   fs.writeFileSync(L.settingsPath, '﻿' + JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash|Bash', hooks: [{ type: 'command', command: `node "${L.abs('@tcg:p.js')}"` }] }] } }, null, 2) + '\n');
   fs.chmodSync(L.settingsPath, 0o600);
@@ -337,15 +337,15 @@ test('W3W4 ApplyHooks_SettingsWithBom_IsRead_ModeKept_DuplicateTokenMatcherIsThe
 });
 
 test('W3W4 ApplyHooks_FullOnlyOptinMustBeBornOn_PlanUnwritableFails_UnsafeDirOnPosix_EffectsUnreadable', (t) => {
-  // clase 5: `profile: full-only` ignoraba `default` — un opt-in full-only que nace apagado se prendía igual: la lista lo rechaza
+  // `profile: full-only` no ignora `default`: un opt-in full-only que nace apagado se prendería igual, y la lista lo rechaza
   const bad = LIST_OF([H('PreToolUse', 'Bash', '@tcg:x.sh', { when: 'optin:TYCON_X', default: 'off', profile: 'full-only' })]);
   assert.ok(mod.validateList(bad).some((p) => p.includes('full-only')), 'full-only con default off es un error de la lista');
-  // clase 16: con --check, un plan que no se puede anotar no se ignora: sale distinto de 0 (el plan quedaría incompleto)
+  // con --check, un plan que no se puede anotar no se ignora: sale distinto de 0 (el plan quedaría incompleto)
   const L = lab(t, { list: LIST_OF([H('Stop', '', '@tcg:s.js')]), files: ['@tcg:s.js'], settings: { hooks: {} } });
   const r = run(L, ['--check'], { TYCON_PLAN_PIECES: path.join(L.base, 'no-existe', 'plan.tsv') });
   assert.notStrictEqual(r.status, 0, 'un plan que no se pudo anotar no sale 0');
   assert.match(r.stderr, /plan/);
-  // revisor de seguridad: en Mac y Linux una carpeta con `$` tampoco se escribe en un comando (lo lee un shell)
+  // en Mac y Linux una carpeta con `$` tampoco se escribe en un comando (lo lee un shell)
   const L3 = lab(t, { list: LIST_OF([H('Stop', '', '@tcg:s.js')]), settings: { hooks: {} } });
   L3.hooksDir = path.join(L3.base, 'clon$raro', 'scripts', 'hooks');
   fs.mkdirSync(L3.hooksDir, { recursive: true });
@@ -355,7 +355,7 @@ test('W3W4 ApplyHooks_FullOnlyOptinMustBeBornOn_PlanUnwritableFails_UnsafeDirOnP
   assert.ok(!settingsOf(L3).hooks.Stop, 'no se registra');
   assert.match(r3.report, /^UNSAFE:1$/m);
   assert.ok(r3.json.notInstalled.some((n) => n.kind === 'unsafe-path' && n.char === '$'), 'y se dice');
-  // revisor de cobertura: sin la lista de efectos, minimal no se puede decidir y queda como estaba (nunca «todo de full»)
+  // sin la lista de efectos, minimal no se puede decidir y queda como estaba (nunca «todo de full»)
   assert.strictEqual(mod.loadMinimalIds(path.join(L.base, 'no-hay-efectos.json')), null);
   fs.writeFileSync(path.join(L.base, 'efectos-rotos.json'), '{ roto');
   assert.strictEqual(mod.loadMinimalIds(path.join(L.base, 'efectos-rotos.json')), null);
@@ -363,9 +363,9 @@ test('W3W4 ApplyHooks_FullOnlyOptinMustBeBornOn_PlanUnwritableFails_UnsafeDirOnP
   assert.deepStrictEqual([d.active.length, d.known.length, d.leave.has('@tcg:s.js')], [0, 0, true], 'minimal sin su lista: ni entra ni se saca');
 });
 
-// Pase adversarial de la W3W4 (clase 11): el desinstalador sólo reconocía `node|bash|sh|python3 "<ruta>"`; la forma que
-// escribe la W4 para un .sh en Windows (la ruta del bash de Git entre comillas) quedaba registrada después de desinstalar.
-// 🔴 rojo previo: isHarnessCommand daba false para esa forma.
+// El desinstalador reconoce `node|bash|sh|python3 "<ruta>"` y también la forma que escribe el aplicador
+// para un .sh en Windows (la ruta del bash de Git entre comillas); si no, esa forma queda registrada después de desinstalar.
+// 🔴 isHarnessCommand tiene que dar true para esa forma.
 test('W4 Remove_QuotedGitBashForm_IsTheHarnessHook', () => {
   const { isHarnessCommand } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'remove.js'));
   const roots = ['C:/Users/dev/.claude/tycon-claude-guides'];
@@ -377,9 +377,9 @@ test('W4 Remove_QuotedGitBashForm_IsTheHarnessHook', () => {
   assert.ok(!isHarnessCommand('"C:/tools/otro.exe" "C:/Users/dev/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh"', rel, roots), 'otro intérprete, no');
 });
 
-// Pase adversarial de la W3W4 (clases 2, 3, 9 y 14): el respaldo de enlace duro de los revisores (AC 39) no lo sacaba
-// nadie: el desinstalador decía «es un archivo real, no un enlace: no lo toco». Ahora canonical-path.js anota cada duro
-// que crea, y el desinstalador saca el anotado (y sólo ése). 🔴 rojo previo: quedaba en ~/.claude/agents.
+// El respaldo de enlace duro de los revisores lo saca el desinstalador: canonical-path.js anota cada duro
+// que crea, y el desinstalador saca el anotado (y sólo ése). 🔴 sin esto, el duro queda en ~/.claude/agents
+// porque el desinstalador dice «es un archivo real, no un enlace: no lo toco».
 test('W4 Remove_HardLinkRecordedByTheHarness_IsRemoved_OwnFileStays', (t) => {
   const { removePieces } = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'remove.js'));
   const cp = require(path.join(ROOT, 'scripts', 'lib', 'canonical-path.js'));
@@ -420,7 +420,7 @@ test('W4 ApplyHooks_Windows_SameHookByRepoPath_NotDuplicatedByOtherRoot', (t) =>
   const r = run(L, ['--platform', 'windows']);
   assert.strictEqual(r.status, 0, r.stderr);
   assert.strictEqual(sha(L.settingsPath), h, 'ya están: no se duplican');
-  // y en Mac/Linux, otra carpeta es otro archivo (la regla del .sh, story 8.18)
+  // y en Mac/Linux, otra carpeta es otro archivo (la regla del .sh)
   const r2 = run(L, ['--platform', 'posix']);
   assert.strictEqual(r2.status, 0);
   assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 4);
@@ -458,7 +458,7 @@ test('decide: el perfil minimal, el perfil sin saber, los frenos y engram (la l�
   assert.ok(!d.known.includes('@tcg:engram.sh'));
 });
 
-// ── story 8.39: el Node propio del arnés en el comando de cada hook .js ───────────────────────────────────────────
+// ── el Node propio del arnés en el comando de cada hook .js ───────────────────────────────────────────
 const HN = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'harness-node.js'));
 const NODE_VERSION = HN.readList(ROOT).list.version;
 /**
@@ -507,7 +507,7 @@ test('T16 ApplyHooks_NodeDelArnes_FormaDelComando @story-8.39 @ac-5', (t) => {
     assert.strictEqual(run(L, [], { TYCON_HOME: casa, TYCON_HARNESS_SHARED_DONE: '1', ...extra }).status, 0);
     assert.deepStrictEqual(commandsOf(settingsOf(L), 'Stop'), [`node "${L.abs('@tcg:s.js')}"`], `${name}: node`);
   }
-  // Windows: la forma sin comillas sólo con la medición en verde (decisión 22) y una ruta C:/ sin espacios
+  // Windows: la forma sin comillas sólo con la medición en verde y una ruta C:/ sin espacios
   const winBare = 'C:/Users/dev/.tycon/node/current/node.exe';
   assert.strictEqual(HN.formFor(winBare, 'win32').prefix, HN.WINDOWS_FORM.measured ? winBare : 'node');
   assert.strictEqual(HN.formFor('C:/Users/Nombre Apellido/.tycon/node/current/node.exe', 'win32').prefix, 'node', 'una carpeta con espacio: node (decisión 22)');
@@ -553,8 +553,8 @@ test('T17 ApplyHooks_CambioDeForma_EnElLugarSinDuplicar @story-8.39 @ac-6', (t) 
   assert.strictEqual(after.command, 'bash "/ajeno/despues.sh"');
 });
 
-// PRE_8_39_REF: el commit de `main` del público del que sale la rama de la story 8.39 (fijo: después del merge, «la base de
-// la rama» ya traería esta story y la prueba compararía lo nuevo contra lo nuevo)
+// PRE_8_39_REF: el commit de `main` del público previo al Node propio del arnés en los hooks (fijo: si la base se moviera,
+// ya traería ese cambio y la prueba compararía lo nuevo contra lo nuevo)
 const PRE_8_39_REF = '105fa90';
 /** El árbol de PRE_8_39_REF en una carpeta temporal (`git archive`: apply-hooks.js carga ./harness/ y no corre suelto), o
  *  null con la prueba SALTEADA y el motivo («no medido», nunca un verde) si el commit no está en este clon. */
@@ -569,7 +569,7 @@ function oldTree(t) {
 }
 
 // T30: actualizar desde la versión anterior, con las piezas reales. El arnés viejo instaló los hooks con `node`; la
-// actualización la corre el programa VIEJO con el aplicador NUEVO, sin Node del arnés todavía (AC 17): quedan con `node`
+// actualización la corre el programa VIEJO con el aplicador NUEVO, sin Node del arnés todavía: quedan con `node`
 // y sin duplicar; en el arranque siguiente el programa nuevo baja el Node (acá, el Node de juguete aparece) y el aplicador
 // nuevo los pasa a la forma nueva, en su lugar.
 test('T30 DesdeLaVersionAnterior_ElSegundoArranqueCambia @story-8.39 @ac-17', (t) => {
@@ -608,7 +608,7 @@ test('T18 ApplyHooks_FormaNueva_ElAplicadorViejoNoDuplica @story-8.39 @ac-18', (
   fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `${bin} "${L.abs('@tcg:s.js')}"` }] }] } }, null, 2) + '\n');
   assert.strictEqual(runOld(L).status, 0);
   assert.strictEqual(commandsOf(settingsOf(L), 'Stop').length, 1, 'posix sin comillas: cero duplicados con el aplicador viejo');
-  // posix, con comillas: el duplicado declarado (riesgo 3 de la story)
+  // posix, con comillas: el duplicado declarado
   L = lab(t, { list, files: ['@tcg:s.js'] });
   const bin2 = fakeHarnessNode(path.join(L.base, 'mi casa', '.tycon'));
   fs.writeFileSync(L.settingsPath, JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command', command: `"${bin2}" "${L.abs('@tcg:s.js')}"` }] }] } }, null, 2) + '\n');

@@ -13,20 +13,20 @@ set -uo pipefail
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PARITY="$TCG/scripts/lib/harness-parity.js"
 
-# 🔴 TODOS los runParity de esta red escriben su reporte en un bench de LABORATORIO: la 1ª
-# versión escribía al .bench real y (a) corría una carrera con el nohup de paridad del mismo
-# arranque, (b) un Ctrl-C entre el lab y la restauración dejaba rojos FABRICADOS cobrándose
+# 🔴 TODOS los runParity de esta red escriben su reporte en un bench de LABORATORIO: si escribieran
+# al .bench real, (a) correrían una carrera con el nohup de paridad del mismo
+# arranque, (b) un Ctrl-C entre el lab y la restauración dejaría rojos FABRICADOS cobrándose
 # como reales en cada arranque siguiente. El trap limpia pase lo que pase.
 BENCHLAB="$(mktemp -d)"
 export TYCON_PARITY_BENCH_DIR="$BENCHLAB"
 trap 'rm -rf "$BENCHLAB"' EXIT
 
-# 🔴 AISLAMIENTO DE LA LLAVE (2026-08-25). Los labs de esta red simulan una máquina ROTA con un
-# HOME vacío, pero heredaban `TYCON_CODEX` del shell REAL — y la superficie `llave-en-rc` da
+# 🔴 AISLAMIENTO DE LA LLAVE. Los labs de esta red simulan una máquina ROTA con un
+# HOME vacío; si heredaran `TYCON_CODEX` del shell REAL, la superficie `llave-en-rc` daría
 # verde si la llave está activa "por un mecanismo propio" (fish/direnv/sourced) aunque no haya
-# rc. O sea: en la máquina de un dev con el lado Codex desplegado, el lab NO estaba roto y el
-# caso "máquina rota → 🔴 llave-en-rc" fallaba por un motivo falso, dejando la suite en rojo
-# permanente y sin señal útil (verificado: con la llave desactivada, la misma red da todo
+# rc. O sea: en la máquina de un dev con el lado Codex desplegado, el lab NO estaría roto y el
+# caso "máquina rota → 🔴 llave-en-rc" fallaría por un motivo falso, dejando la suite en rojo
+# permanente y sin señal útil (con la llave desactivada, la misma red da todo
 # verde sin tocar el producto). Un rojo que no significa nada es peor que ninguno: se aprende
 # a ignorarlo, y con él se ignora el rojo del día en que sí importe.
 # El disparador de la auditoría NO es esta llave sino la evidencia de despliegue en
@@ -67,10 +67,10 @@ OUT=$(HOME="$LAB" CODEX_HOME="$LAB/codex" node "$PARITY" 2>&1); RC=$?
 case "$OUT" in *"ilegible"*) ok "hooks.json corrupto → la causa se reporta";; *) bad "causa reportada" "$(echo "$OUT" | head -3)";; esac
 rm -rf "$LAB"
 
-# ── 3b. T25 (story 8.23, tanda C · AC 25): la paridad mide POR HERRAMIENTA ENCHUFADA ─────────
+# ── 3b. T25: la paridad mide POR HERRAMIENTA ENCHUFADA ─────────
 # Una máquina que sólo enchufa a Codex no puede dar rojo por piezas de Claude Code que no tiene (ni su CLAUDE.md, ni su
-# ~/.claude.json, ni la llave en el rc): antes la superficie de reglas comparaba AGENTS.md contra el CLAUDE.md, y la
-# llave se pedía siempre. Con las dos enchufadas se miden las dos: un ~/.claude.json roto sí es un rojo.
+# ~/.claude.json, ni la llave en el rc): la paridad mide cada herramienta por separado.
+# Con las dos enchufadas se miden las dos: un ~/.claude.json roto sí es un rojo.
 # El laboratorio es una máquina sana de verdad: los desplegadores reales corren contra un CODEX_HOME de juguete.
 LAB=$(mktemp -d); mkdir -p "$LAB/.codex" "$LAB/.tycon/state"
 lab() { HOME="$LAB" USERPROFILE="$LAB" CODEX_HOME="$LAB/.codex" TYCON_PROFILE=0 "$@"; }
@@ -85,11 +85,11 @@ done
 case "$OUT" in *CLAUDE.md*|*.claude.json*|*"TYCON_CODEX=1 NO está"*) bad "T25 sólo Codex → no pide piezas de Claude" "$(echo "$OUT" | grep -E 'CLAUDE.md|claude.json|TYCON_CODEX' | head -2)";; *) ok "T25 sólo Codex → no pide ninguna pieza de Claude Code";; esac
 [ ! -e "$LAB/.claude" ] && ok "T25 sólo Codex → medir no crea nada en la carpeta de Claude Code" || bad "T25 medir creó ~/.claude" "$(ls -A "$LAB/.claude" | head -3)"
 grep -q '"tools"' "$BENCHLAB/harness-parity.json" && ok "T25 el reporte dice qué herramientas midió" || bad "T25 herramientas en el reporte" "falta"
-# T25b (2026-10-11) · una raíz de escritura que pasa por un enlace deja a Codex sin shell («symlinked writable roots are
+# T25b · una raíz de escritura que pasa por un enlace deja a Codex sin shell («symlinked writable roots are
 # not supported»: rechaza TODOS los comandos y no lo dice al arrancar). Es lo que deja la mudanza a ~/.tycon: la carpeta
-# vieja del estado pasa a ser un enlace al estado nuevo y seguía en writable_roots al lado de la ruta real, con esta
-# superficie en verde. Ahora la superficie se pone roja nombrándola, y el desplegador la saca.
-# 🔴 rojo previo (medido con el desplegador y la paridad de antes): la superficie da ✅ y el desplegador dice «sin cambios».
+# vieja del estado pasa a ser un enlace al estado nuevo y, si sigue en writable_roots al lado de la ruta real, esta
+# superficie se pone roja nombrándola y el desplegador la saca.
+# 🔴 Sin el arreglo, la superficie da ✅ y el desplegador dice «sin cambios».
 CFG="$LAB/.codex/config.toml"
 add_root() { node -e 'const fs=require("fs");const [f,r]=process.argv.slice(1);const t=fs.readFileSync(f,"utf8");const n=t.replace(/^(\s*writable_roots\s*=\s*\[)/m,(m)=>m+JSON.stringify(r)+", ");if(n===t)process.exit(3);fs.writeFileSync(f,n)' "$CFG" "$1"; }
 has_root() { node -e 'const D=require(process.argv[1]);process.exit(D.writableRootsHas(require("fs").readFileSync(process.argv[2],"utf8"),process.argv[3])?0:1)' "$TCG/build/deploy-codex-mcp.js" "$CFG" "$1"; }
@@ -133,12 +133,12 @@ rm -rf "$LAB"
 
 # ── 4. El reporte REAL nunca se tocó: los labs escriben en su propio bench ───────────────────
 # (la aserción es la ausencia de efecto: si el real cambió durante esta red, el aislamiento
-# está roto — el modo de falla que dejaba rojos de laboratorio sonando como reales)
+# está roto — el modo de falla que deja rojos de laboratorio sonando como reales)
 
-# ── 4b. T48 (story 8.23, tanda G · AC 44 a): dónde vive el reporte de paridad ──────────────────────────────────
+# ── 4b. T48: dónde vive el reporte de paridad ──────────────────────────────────
 # En un clon, donde siempre (.bench/ del árbol, que git ignora). En una versión BAJADA (el árbol trae .tycon-release.json)
 # el árbol es de sólo lectura para la máquina: el reporte va a la carpeta del estado (<estado>/controls-bench/), si no
-# `doctor` lo cuenta como «de más» y la próxima actualización lo pierde (la primera máquina migrada, 2026-10-08).
+# `doctor` lo cuenta como «de más» y la próxima actualización lo pierde.
 # TYCON_PARITY_BENCH_DIR explícita gana siempre. Se mide con una copia suelta de las dos piezas, nunca con el árbol real.
 LAB=$(mktemp -d); LAB="$(cd "$LAB" && pwd -P)"   # la ruta real: la pieza resuelve su propia carpeta sin enlaces (/var → /private/var en macOS)
 mkdir -p "$LAB/tree/scripts/lib" "$LAB/tree/scripts/setup/harness" "$LAB/home/.tycon/state"
@@ -157,7 +157,7 @@ OUT=$(donde env TYCON_PARITY_BENCH_DIR="$LAB/otro")
 OUT=$( unset TYCON_PARITY_BENCH_DIR; cd "$LAB/tree" && HOME="$LAB/home" USERPROFILE="$LAB/home" TYCON_HOME="$LAB/home/.tycon" node -e 'const p=require("./scripts/lib/harness-parity.js"); process.stdout.write(p.reportPath())')
 [ "$OUT" = "$LAB/home/.tycon/state/controls-bench/harness-parity.json" ] && ok "T48 reportPath() exportada para el que cobra el rojo" || bad "T48 reportPath()" "$OUT"
 # …y lo COBRA: bench-notice en un árbol bajado (scripts/ entero, sin .bench/, que git ignora y la bajada no trae) lee el
-# reporte rojo de la carpeta del estado (pase adversarial de la tanda G: salía antes de leerlo porque .bench/ no existía)
+# reporte rojo de la carpeta del estado (sin esto, sale antes de leerlo porque .bench/ no existe)
 rm -rf "$LAB/tree/scripts"; cp -R "$TCG/scripts" "$LAB/tree/scripts"; rm -rf "$LAB/tree/scripts/controls-bench/.bench"
 mkdir -p "$LAB/home/.tycon/state/controls-bench"
 printf '{ "kind": "harness-parity", "deployed": true, "ts": "%s", "reds": 2, "surfaces": [ { "name": "hooks", "ok": false }, { "name": "mcp", "ok": false } ] }\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LAB/home/.tycon/state/controls-bench/harness-parity.json"
@@ -168,10 +168,10 @@ mkdir -p "$LAB/tree/scripts/controls-bench/.bench"
 printf '{ "kind": "harness-parity", "deployed": true, "ts": "%s", "reds": 5, "surfaces": [ { "name": "viejo", "ok": false } ] }\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$LAB/tree/scripts/controls-bench/.bench/harness-parity.json"
 OUT=$( unset TYCON_PARITY_BENCH_DIR TYCON_BENCH_DIR; HOME="$LAB/home" USERPROFILE="$LAB/home" TYCON_HOME="$LAB/home/.tycon" TYCON_PROFILE=0 node "$LAB/tree/scripts/hooks/bench-notice.js" 2>&1 )
 case "$OUT" in *viejo*) bad "T48 bench-notice cobró el reporte viejo de .bench/ en vez del del estado" "$(printf '%s' "$OUT" | grep -i paridad | head -3)" ;; *"2 superficie(s) de paridad en rojo"*) ok "T48 con un reporte viejo en .bench/ y el nuevo en el estado, gana el del estado" ;; *) bad "T48 con los dos reportes no cobró ninguno" "$(printf '%s' "$OUT" | head -5)" ;; esac
-# T48b (2026-10-11) · los reportes del disparo real (live-fire*.js) van a la MISMA carpeta que el de paridad: en una
-# versión bajada quedaban en .bench/ del árbol, que cada actualización reemplaza entero — un rojo que desaparecía sin que
+# T48b · los reportes del disparo real (live-fire*.js) van a la MISMA carpeta que el de paridad: en una
+# versión bajada, si quedaran en .bench/ del árbol —que cada actualización reemplaza entero—, un rojo desaparecería sin que
 # nadie lo arreglara. Y bench-notice los cobra desde ahí.
-# 🔴 rojo previo: los tres guiones no conocen --report-dir (abren una sesión) y el aviso no lee live-fire del estado.
+# 🔴 Sin el arreglo, los tres guiones no conocen --report-dir (abren una sesión) y el aviso no lee live-fire del estado.
 bajada() { ( unset TYCON_PARITY_BENCH_DIR TYCON_BENCH_DIR; HOME="$LAB/home" USERPROFILE="$LAB/home" TYCON_HOME="$LAB/home/.tycon" TYCON_PROFILE=0 "$@" ); }
 for g in live-fire live-fire-guard live-fire-stop; do
   OUT=$(bajada node "$LAB/tree/scripts/controls-bench/$g.js" --report-dir 2>&1); RC=$?
@@ -191,14 +191,14 @@ rm -rf "$LAB/tree/scripts/controls-bench/.bench"; rm -f "$LAB/home/.tycon/state/
 OUT=$(bajada node "$LAB/tree/scripts/hooks/bench-notice.js" 2>&1)
 case "$OUT" in *"live-fire-codex.json: hook de PostToolUse NO SE DISPARÓ"*) ok "T48b …también cuando es el único reporte de la máquina" ;; *) bad "T48b live-fire como único reporte" "$(printf '%s' "$OUT" | head -4)" ;; esac
 # (una TYCON_HOME relativa NO hace fallar `stateDir(home)` —la pieza la ignora y usa la casa—: medido acá; el `catch` que sólo
-# calla «falta la pieza» queda sin un error forzable sin simular el sistema de archivos, que esta story prohíbe)
+# calla «falta la pieza» queda sin un error forzable sin simular el sistema de archivos, que esta suite evita)
 rm -rf "$LAB"
 
-# ── 4c. T26 (story 7.29 · AC 16): lo desplegado con el modelo de la organización está al día ────────────────────────
+# ── 4c. T26: lo desplegado con el modelo de la organización está al día ────────────────────────
 # Con `team-repos.json → models`, lo desplegado a Codex lleva el modelo resuelto de la organización (no el de adapters/):
-# la paridad lo compara con la misma resolución y da ✅; con el archivo ilegible se despliega lo de hoy y también da ✅;
+# la paridad lo compara con la misma resolución y da ✅; con el archivo ilegible se despliega lo de adapters/ y también da ✅;
 # un .toml editado a mano sigue siendo rojo. Sobre una copia del árbol (sin .git), nunca el real.
-# 🔴 rojo previo: con `models` declarado la paridad comparaba contra adapters/ y daba 🔴 advisors.
+# 🔴 Sin el arreglo, con `models` declarado la paridad compara contra adapters/ y da 🔴 advisors.
 LAB=$(mktemp -d); LAB="$(cd "$LAB" && pwd -P)"
 mkdir -p "$LAB/.codex" "$LAB/.tycon/state" "$LAB/tree"
 rsync -a --exclude .git --exclude node_modules --exclude '.advisors' "$TCG/" "$LAB/tree/"

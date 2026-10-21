@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// harness-mods.test.js — los mods de Claude Code del arnés (story 7.27): el cartel de la corrida, el comando /mods y
+// harness-mods.test.js — los mods de Claude Code del arnés: el cartel de la corrida, el comando /mods y
 // la carpeta que el instalador suma a CLAUDE_CODE_PLUGIN_DIRS.
 //
 // La lógica del plugin vive en módulos puros (`mods/harness-mods/hooks/*.mjs`) para probarla con node sin el motor;
@@ -126,7 +126,7 @@ test('T6 Board_UnknownStepsAndNoTimings — pasos que no conoce y sin horas: se 
   assert.doesNotThrow(() => pipelineTable(run));
 });
 
-// ── lo que encontró el pase adversarial (paso 5b de la 7.27) ─────────────────────────────────────────────────────
+// ── casos de borde del cartel ─────────────────────────────────────────────────────
 
 test('T20 Board_SubstepWithoutFlag_ClosedByCompleteStep — un sub-paso sin bandera no clava el cartel (clase 1)', async () => {
   const { readRun, warnKey } = await mod('run.mjs');
@@ -353,7 +353,7 @@ test('T16 Steps_MatchPipelineSequence — los pasos del plugin son los del pipel
   assert.deepStrictEqual(STEPS.map((s) => s.id), P.STEP_SEQUENCE.map((s) => String(s.id)));
   assert.deepStrictEqual(SUBSTEP_FLAG, { ...P.SUBSTEP_FLAG, '7c': 'dodRuntimeChecked' });
   assert.strictEqual(MAIN_TOTAL, P.STEP_SEQUENCE.filter((s) => /^\d$/.test(String(s.id))).length);
-  // story 7.23 (T2 Mod_NamesMatchStepsTable): y los MISMOS nombres que la tabla del pipeline — un nombre distinto la pone roja
+  // T2 Mod_NamesMatchStepsTable: los MISMOS nombres que la tabla del pipeline — un nombre distinto la pone roja
   const T = require(path.join(RAIZ, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js'));
   for (const s of STEPS) assert.strictEqual(s.name, T.stepName(s.id), `paso ${s.id}: el cartel lo llama «${s.name}» y lib/steps.js, «${T.stepName(s.id)}»`);
 });
@@ -408,7 +408,7 @@ test('T19 Board_ShowsShortStoryTitle — el cartel trae el título corto de la s
   assert.strictEqual(run.title, LARGO);
   assert.match(boardLine(run, 20), /^Story 9\.9 · El video de 0 a 100… · Implementar y correr las pruebas · 4 de 9 hechos · /);
   assert.ok(pipelineTable(run).split('\n')[0].startsWith(`Story 9.9 «${LARGO}» — `), pipelineTable(run));
-  // sin título, igual que antes
+  // sin título, el título es null
   const sin = readRun(markerEnPaso4(), NOW);
   assert.strictEqual(sin.title, null);
   assert.match(boardLine(sin, 20), /^Story 9\.9 · Implementar y correr las pruebas · /);

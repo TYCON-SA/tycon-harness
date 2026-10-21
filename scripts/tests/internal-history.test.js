@@ -1,15 +1,14 @@
 'use strict';
-// internal-history.test.js — lo publicado no cuenta la historia interna con números de pull request (story 8.10.3,
-// tanda B, AC 10 · T10).
+// internal-history.test.js — lo publicado no cuenta la historia interna con números de pull request.
 //
-// POR QUÉ EXISTE: la copia pública traía un centenar de números de pull request del repo del equipo —en comentarios de
-// «caso disparador», en guías, en pruebas—. Desde afuera no llevan a nada: son ruido para quien no conoce la historia.
-// Se reescribieron dejando la lección sin el número. Un número que una prueba usa como DATO (el título de un commit que
+// POR QUÉ EXISTE: la copia pública no puede traer números de pull request del repo del equipo —en comentarios, en
+// guías, en pruebas—. Desde afuera no llevan a nada: son ruido para quien no conoce la historia.
+// La lección va sin el número. Un número que una prueba usa como DATO (el título de un commit que
 // un control tiene que reconocer, un comando de laboratorio) queda, declarado con su archivo, el valor EXACTO y el motivo
 // en `fixtures/internal-history-allowed.json` — nunca un archivo entero.
 //
 // Qué fija:
-//   · ningún archivo publicado trae un número fuera de esa lista (la expresión es la de la medición de la story);
+//   · ningún archivo publicado trae un número fuera de esa lista (la expresión cuenta los números de pull request);
 //   · cada entrada de la lista sigue apareciendo donde dice (una declaración que ya no hace falta, sale).
 // Corre en el repo y en la copia. En el repo, «publicado» es la lista blanca resuelta por el exportador (`whatShips`,
 // paquetes públicos) y se lee el archivo del disco; en la copia, todo archivo de la copia. Cuál de los dos es se sabe
@@ -23,10 +22,9 @@ const { spawnSync } = require('child_process');
 
 const RAIZ = path.resolve(__dirname, '..', '..');
 const LISTA = 'scripts/tests/fixtures/internal-history-allowed.json';
-// La expresión de la medición de la story, más las formas que el pase de revisión encontró sueltas (spec-first de la
-// tanda B): el plural, «de prueba» en el medio, y el «!» con que Azure DevOps nombra un pull request. Vive en un solo
-// lugar desde la story 8.26 (tanda G1): la forma `pr-number` del control de historia interna, que mira la prosa al
-// commitear; así las dos redes ven lo mismo.
+// La expresión del número de pull request, con el plural, «de prueba» en el medio y el «!» con que Azure DevOps
+// nombra un pull request. Vive en un solo lugar: la forma `pr-number` del control de historia interna, que mira la
+// prosa al commitear; así las dos redes ven lo mismo.
 const NUMERO_DE_PR = require('../publishing/internal-history.js').FORMS['pr-number'].re;
 const EN_EL_REPO = fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'replacements.json'));
 
@@ -76,7 +74,7 @@ test('PublishedFiles_PrNumbers_OnlyDeclaredTestData', () => {
   for (const e of declarados) {
     assert.ok(e && e.file && e.form && e.value && e.reason && String(e.reason).trim(), `${LISTA}: cada entrada necesita file, form, value y reason (${JSON.stringify(e)})`);
   }
-  // la lista la comparte el control de historia interna de la prosa (story 8.26, tanda G1): esta prueba mira sólo los
+  // la lista la comparte el control de historia interna de la prosa: esta prueba mira sólo los
   // números de pull request; las demás formas las cuida scripts/tests/internal-history-guard.test.js
   const permitidos = declarados.filter((e) => e.form === 'pr-number');
   const archivos = publicados();
@@ -103,7 +101,7 @@ test('PublishedFiles_PrNumbers_OnlyDeclaredTestData', () => {
   assert.deepStrictEqual(sobran, [], 'declaraciones que ya no aparecen (o el archivo ya no se publica): sacalas de la lista');
 });
 
-// La prosa que se publica, entera, en cero (story 8.26, tanda G3, AC 56 · T59). Las guías y las portadas, las skills,
+// La prosa que se publica, entera, en cero (T59). Las guías y las portadas, las skills,
 // los revisores y los bloques dicen la regla y su porqué, sin el caso; lo que es un dato o el ejemplo de un formato
 // está declarado con su motivo. Con la prosa en cero, el control frena por escrito: quien agrega una forma no crea el
 // commit. Corre en el repo y en la copia (ahí el control mira en modo público: lo que dejaría de llevar a algún lado).
@@ -124,15 +122,15 @@ test('PublishedProse_ZeroForms_GuardBlocksByDefault', () => {
   }
 });
 
-// ── lo que ya es del repo público (deuda de las formas que no distinguían, story 8.26) ─────────────────────────────
-// Después del corte, un pedido o un commit del repo público son referencias legítimas. Tres formas —`pr-number`,
+// ── lo que ya es del repo público ─────────────────────────────────────────────────────────────────────────────
+// Un pedido o un commit del repo público son referencias legítimas. Tres formas —`pr-number`,
 // `private-commit` y el `#N` suelto de `azure-run`— le preguntan al repo público (`publicLookup`, con `git ls-remote`)
 // antes de contar. Un repo desnudo local hace de GitHub: publica cada pedido como `refs/pull/<N>/head`, como GitHub.
-// Lo de Azure sigue siendo interno, y si el público no contesta, nada es suyo: frena como antes.
+// Lo de Azure sigue siendo interno, y si el público no contesta, nada es suyo: frena igual.
 const n = (palabra, numero) => `${palabra}${numero}`;   // armados por partes: este archivo viaja y se recorre
-// 🔴 Fecha, autor y committer fijos: el sha de cada commit del laboratorio sale siempre igual. Antes salía de la hora
-// de la corrida, y cuando sus primeros 8 caracteres eran sólo dígitos (~2,3 % de las corridas) la forma
-// `private-commit`, que pide dígito y letra, no los veía y tres casos daban rojo de azar (story 8.38). Y el
+// 🔴 Fecha, autor y committer fijos: el sha de cada commit del laboratorio sale siempre igual. Sin esto, sale de la hora
+// de la corrida, y cuando sus primeros 8 caracteres son sólo dígitos (~2,3 % de las corridas) la forma
+// `private-commit`, que pide dígito y letra, no los ve y tres casos dan rojo de azar. Y el
 // mantenimiento automático de git, apagado: no queda nada de fondo tocando el laboratorio.
 const FECHA_FIJA = '2026-10-15T00:00:00Z';
 function gitIn(cwd, args) {
@@ -310,7 +308,7 @@ test('ThinOverlay_PublicAndTeamClassificationUnchanged', (t) => {
   const pub = allOf(thinLab(t, { thinList: false }).root);
   assert.strictEqual(pub.mode, 'public');
   assert.deepStrictEqual(Object.keys(pub.files).sort(), ['guides/privada.md', 'guides/propia.md', 'guides/publica.md']);
-  // con el perfil y la tabla (el repo del equipo de antes del corte) sigue el camino del equipo, no el del adelgazado
+  // con el perfil y la tabla (el repo del equipo, completo) sigue el camino del equipo, no el del adelgazado
   let mode = null;
   try { mode = allOf(thinLab(t, { thinList: false, profile: true }).root).mode; } catch (e) { mode = `no pudo: ${e.message}`; }
   assert.ok(mode === 'team' || /repo unido/.test(String(mode)), `el clon del equipo sigue clasificado como del equipo (salió ${mode})`);

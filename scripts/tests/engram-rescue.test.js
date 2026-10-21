@@ -4,16 +4,16 @@
  * engram-rescue.test.js — red de caja negra de `scripts/setup/engram-rescue-unexported.js`, la
  * herramienta que MUTA la memoria compartida del equipo.
  *
- * ── POR QUÉ EXISTE (hallazgo 16 de la revisión adversarial del 2026-08-25) ───────────────────────
- * *"La red de tests no cubre los caminos que mutan y puede quedar verde con producción rota."* Se
- * desconectaron cinco caminos productivos y quedaron verdes 20 unitarios + 9 casos del banco. Los
- * caminos que mutan datos —elegir destino, tocar por la API, sincronizar— **no tenían ninguno**.
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
+ * *"La red de tests no cubre los caminos que mutan y puede quedar verde con producción rota."* Sin
+ * casos para los caminos que mutan datos —elegir destino, tocar por la API, sincronizar—, se podrían
+ * desconectar caminos productivos y las pruebas unitarias seguirían en verde.
  *
  * Todo corre contra un laboratorio de mentira: HOME propio, raíz de repos propia, una base SQLite
  * de verdad pero de juguete, un binario `engram` falso y una API falsa en localhost. **No se toca
  * nada real**: ni la DB del dev, ni sus repos, ni la red.
  *
- * Los tres hallazgos que fija (4, 5 y 6):
+ * Lo que fija:
  *   · el destino se resuelve ANTES del primer PATCH, y sólo si es inequívoco;
  *   · una fase incompleta NO habilita el sync, y cualquier parcial sale con exit ≠ 0;
  *   · después del sync se verifica POR IDs que la memoria haya viajado de verdad.
@@ -74,7 +74,7 @@ function escribirChunk(repoDir, id, syncIds) {
 /**
  * El binario `engram` falso. `modo`:
  *   'exports'     → escribe un chunk con los sync_ids que recibe y sale 0
- *   'nothing-new' → imprime "Nothing new" y NO escribe nada (el falso verde del hallazgo 5)
+ *   'nothing-new' → imprime "Nothing new" y NO escribe nada (el falso verde de un «Nothing new»)
  *   'fails'       → exit 7
  */
 function fakeEngram(L, modo, syncIds = []) {
@@ -150,9 +150,9 @@ function correr(L, api, args = ['--apply']) {
       PATH: `${L.bin}:${process.env.PATH}`, HOME: L.home,
       TYCON_REPOS_ROOT: L.repos, ENGRAM_API: `http://127.0.0.1:${api.port}`,
       ENGRAM_LOG: log, LANG: 'en_US.UTF-8',
-      // La suite ejercita el rescate con dobles: declara su llave (la lección de la 8.3). Sin ella dependía de que el
-      // perfil del equipo prendiera la memoria, y en la copia pública —sin perfil— el rescate decía «apagado» y salía
-      // antes de lo que se mide (story 8.4, T22).
+      // La suite ejercita el rescate con dobles: declara su llave. Sin ella depende de que el
+      // perfil del equipo prenda la memoria, y en la copia pública —sin perfil— el rescate dice «apagado» y sale
+      // antes de lo que se mide.
       TYCON_ENGRAM: '1',
     },
   });
@@ -161,7 +161,7 @@ function correr(L, api, args = ['--apply']) {
 
 const SKIP = { skip: HAY_SQLITE ? false : 'sin sqlite3 en esta máquina' };
 
-// ── hallazgo 4 — el destino se resuelve ANTES de tocar, y sólo si es inequívoco ─────────────────
+// ── el destino se resuelve ANTES de tocar, y sólo si es inequívoco ─────────────────
 test('un contenedor cuyo sub-repo declara OTRO proyecto NO se usa como destino, y no se toca nada', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'target', sync_id: 's1' }]);
@@ -193,9 +193,9 @@ test('un contenedor con DOS sub-repos del mismo proyecto aborta en vez de adivin
   assert.equal(r.patches.length, 0);
 });
 
-// 🔴 --target (2026-09-06): con dos sub-repos del mismo proyecto el script abortaba pidiendo
-// «--repo <repo>» — y --repo es el filtro, no el destino: no había forma de elegir. Lapacho quedó
-// con 11 recuerdos varados por eso. Rojo previo: sin la opción, la corrida aborta con «2 sub-repos».
+// 🔴 --target: con dos sub-repos del mismo proyecto el script aborta pidiendo
+// «--repo <repo>» — y --repo es el filtro, no el destino: no hay forma de elegir. Falla con: sin la opción,
+// la corrida aborta con «2 sub-repos».
 test('un contenedor con DOS sub-repos del mismo proyecto SÍ rescata si el dev elige con --target', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
@@ -227,12 +227,12 @@ test('--target que NO es un sub-repo legítimo del proyecto aborta sin tocar nad
 });
 
 test('si el destino DESAPARECE mientras corre, no se sincroniza y la corrida sale con error', SKIP, () => {
-  // 🔴 El escenario `rescue-missing-repo` del hallazgo 4: el repo se fue, pero el PATCH ya había
-  // salido. La versión anterior omitía el sync y terminaba en 0 — una mutación a medias declarada
-  // como éxito. Ahora el destino se REVALIDA justo antes de sincronizar.
+  // 🔴 El escenario `rescue-missing-repo`: el repo se fue, pero el PATCH ya había
+  // salido. Omitir el sync y terminar en 0 sería una mutación a medias declarada
+  // como éxito. El destino se REVALIDA justo antes de sincronizar.
   //
-  // (Este caso reemplazó a uno anterior que no discriminaba: cambiaba el pin ANTES de correr, así
-  // que el escaneo ya no veía observaciones varadas y el test pasaba sin ejercer nada.)
+  // El pin no se cambia ANTES de correr: el escaneo dejaría de ver observaciones varadas y el test
+  // pasaría sin ejercer nada.
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }, { id: 'o2', project: 'p', sync_id: 's2' }]);
   const d = repo(L, 'Solo', { pin: 'p' });
@@ -242,7 +242,7 @@ test('si el destino DESAPARECE mientras corre, no se sincroniza y la corrida sal
   assert.equal(r.engramCalls.length, 0, 'no se sincroniza contra un destino que ya no está');
 });
 
-// ── hallazgo 5 — nada de éxitos parciales ───────────────────────────────────────────────────────
+// ── nada de éxitos parciales ───────────────────────────────────────────────────────
 test('si un PATCH falla, NO se sincroniza y la corrida sale con error', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
@@ -298,7 +298,7 @@ test('si el sync exporta SÓLO LA MITAD, el post-check lo caza', SKIP, async () 
   assert.match(r.stderr, /quedan 1/);
 });
 
-// ── hallazgo 6 — rastro de hasta dónde llegó ────────────────────────────────────────────────────
+// ── rastro de hasta dónde llegó ────────────────────────────────────────────────────
 test('la corrida deja journal de cada fase que muta', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
@@ -325,12 +325,12 @@ test('el dry-run no toca NADA', SKIP, async () => {
   assert.match(r.stdout, /Dry-run/);
 });
 
-// ── hallazgo 6 (parte del autoheal) — el punto de restauración ─────────────────────────────────
+// ── autoheal — el punto de restauración ─────────────────────────────────
 //
 // El autoheal tiene el `--apply` automático APAGADO a propósito, pero una persona lo puede correr
-// a mano. Su backup llevaba SÓLO LA FECHA: la segunda corrida del día pisaba el único punto de
-// restauración — justo cuando más falta hace, porque la primera ya movió memoria. Y no se
-// verificaba que la copia se pudiera leer: un backup corrupto es peor que ninguno, porque se
+// a mano. Su backup con SÓLO LA FECHA haría que la segunda corrida del día pisara el único punto de
+// restauración — justo cuando más falta hace, porque la primera ya movió memoria. Y sin
+// verificar que la copia se pueda leer, un backup corrupto sería peor que ninguno, porque se
 // decide mutar confiando en él.
 
 test('el backup del autoheal no se pisa entre corridas y se verifica que se pueda leer', SKIP, () => {
@@ -359,7 +359,7 @@ console.log(JSON.stringify({ a, b }));
   assert.equal(fs.existsSync(a.destino), true, 'el primer punto de restauración sigue estando después del segundo');
 });
 
-// ── hallazgo 17 — filtros y schemas que producían falsos verdes ─────────────────────────────────
+// ── filtros y schemas que producen falsos verdes ─────────────────────────────────
 
 test('un typo en --repo es ERROR con la lista de repos válidos, no "todo viajó"', SKIP, () => {
   const L = lab();
@@ -384,10 +384,10 @@ test('--repo sin valor es ERROR, no "sin filtro"', SKIP, () => {
 });
 
 test('una observación exportada por el chunk de un repo HERMANO no se vuelve a tocar', SKIP, () => {
-  // Los 3 de Ceibo comparten `ceibo`. El conteo de ARRIBA (harness-audit) ya agrupaba bien; el
-  // bug vivía en el recálculo DE ADENTRO del loop, que miraba sólo al representante del grupo: con
-  // una observación de verdad varada en el grupo, la que exportó un hermano se volvía a tocar en
-  // CADA corrida — trabajo de más, para siempre, sin que nadie supiera por qué.
+  // Los 3 repos del grupo comparten un proyecto. El conteo de ARRIBA (harness-audit) agrupa bien; el
+  // recálculo DE ADENTRO del loop, si mirara sólo al representante del grupo, con
+  // una observación de verdad varada en el grupo volvería a tocar la que exportó un hermano en
+  // CADA corrida — trabajo de más, para siempre, sin que nadie sepa por qué.
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }, { id: 'o2', project: 'p', sync_id: 's2' }]);
   repo(L, 'GrupoA', { pin: 'p' });
@@ -418,13 +418,12 @@ test('reindex: chunks sin manifest es ROJO, no "todo está en el índice"', SKIP
   assert.match(r.stderr, /NO hay manifest/);
 });
 
-// ── El índice que MIENTE sobre lo que ya tiene indexado (2026-09-06) ──────────────────────────
-// `--reindex` sólo miraba los chunks que FALTAN en el índice; con `if (!faltan.length) continue;`
-// salteaba el repo entero apenas no faltara ninguno, y nunca revisaba las entradas que sí están.
-// Medido en el arnés: 2 de 97 entradas declaran `sessions: 0, memories: 1` y sus
-// archivos traen 1/3 y 15/82 — o sea 83 memorias que el índice no cuenta. Vienen así desde una
-// reconstrucción manual post-conflicto (c99da7f, 22/08) y la corrida imprimía, sin pestañear,
-// "✅ Todo chunk en disco está en el índice de su repo".
+// ── El índice que MIENTE sobre lo que ya tiene indexado ──────────────────────────
+// Un `--reindex` que mire sólo los chunks que FALTAN en el índice, con `if (!faltan.length) continue;`,
+// saltea el repo entero apenas no falte ninguno, y nunca revisa las entradas que sí están.
+// Una entrada puede declarar `sessions: 0, memories: 1` mientras su archivo trae 1/3 o 15/82 — memorias que el
+// índice no cuenta (por ejemplo tras una reconstrucción manual post-conflicto), y la corrida imprimiría, sin
+// pestañear, "✅ Todo chunk en disco está en el índice de su repo".
 // No se pierde memoria (el import lee los archivos, no los contadores): lo que miente es el censo.
 
 test('reindex: una entrada que declara MENOS de lo que trae su chunk es ROJO', SKIP, () => {
@@ -456,7 +455,7 @@ test('reindex --apply corrige los contadores de la entrada, sin tocar el chunk',
   const api = fakeApi(L, 'ok'); fakeEngram(L, 'exports', []);
   const r = correr(L, api, ['--reindex', '--apply']); api.close();
   // Una corrida que ARREGLÓ todo no puede leerse como una que encontró problemas: el 🔴 es para
-  // lo que queda pendiente. Sin esto, `--apply` gritaba por lo que acababa de corregir.
+  // lo que queda pendiente. Sin esto, `--apply` grita por lo que acaba de corregir.
   assert.doesNotMatch(r.stderr, /🔴 el índice sub-declara/,
     'con --apply ya está corregido: gritarlo igual entrena a ignorar el 🔴');
   assert.equal(r.status, 0, 'corregido = verde');
@@ -469,7 +468,7 @@ test('reindex --apply corrige los contadores de la entrada, sin tocar el chunk',
 
 test('reindex: un manifest que CIERRA exacto sigue saliendo en verde', SKIP, () => {
   // El espejo obligatorio. Sin él, el chequeo nuevo podría estar dando rojo siempre y nadie lo
-  // notaría hasta que alguien lo apague por ruidoso — con lo que se pierde también el caso real.
+  // notaría hasta que alguien lo apague por ruidoso — con lo que se pierde también la señal real.
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
   const d = repo(L, 'Solo', { pin: 'p', chunks: [{ id: 'c', sync_ids: ['s1', 's2'] }] });
@@ -510,18 +509,17 @@ test('reindex: un manifest con schema ajeno es ROJO y no se toca', SKIP, () => {
   assert.match(r.stderr, /schema no es el que engram escribe/);
 });
 
-// ── hallazgo 15 — el tope es de la CORRIDA, no por observación ──────────────────────────────────
+// ── el tope es de la CORRIDA, no por observación ──────────────────────────────────
 
 test('el presupuesto global corta limpio: lo no tocado queda anotado y la corrida sale con error', SKIP, () => {
-  // Con timeout POR OBSERVACIÓN, 1016 varadas eran ~2h49m de peor caso. Acá: 2 repos, la API tarda
+  // Con timeout POR OBSERVACIÓN, mil varadas serían horas de peor caso. Acá: 2 repos, la API tarda
   // 1,5 s por PATCH y el presupuesto es 1 s — el primer repo entra (el corte se mira ENTRE repos, no
   // a mitad de uno), y al terminar ya se pasó del presupuesto: el segundo se corta ANTES de empezar
   // (nada a medias) y el cierre lo dice con el flag para subirlo.
-  // 🔴 Antes la demora era 700 ms con el mismo presupuesto de 1 s, y el caso DEPENDÍA DE LA MÁQUINA:
-  // en una Mac el arranque (node + sqlite3 + git) sumaba lo que faltaba para pasar el segundo, pero
-  // en el agente de Linux del nocturno (corridas 10022 y 10023, 2026-09-05) el primer repo terminaba
-  // en ~700 ms, el segundo entraba y la corrida salía en verde — el único rojo de 51 suites. Con la
-  // demora MAYOR que el presupuesto, el corte es seguro en cualquier máquina.
+  // 🔴 Con una demora de 700 ms y el mismo presupuesto de 1 s, el caso DEPENDERÍA DE LA MÁQUINA:
+  // en una Mac el arranque (node + sqlite3 + git) suma lo que falta para pasar el segundo, pero
+  // en un agente de Linux el primer repo terminaría en ~700 ms, el segundo entraría y la corrida saldría
+  // en verde. Con la demora MAYOR que el presupuesto, el corte es seguro en cualquier máquina.
   const L = lab();
   db(L, [{ id: 'o1', project: 'p1', sync_id: 's1' }, { id: 'o2', project: 'p2', sync_id: 's2' }]);
   repo(L, 'Uno', { pin: 'p1' });
@@ -533,7 +531,7 @@ test('el presupuesto global corta limpio: lo no tocado queda anotado y la corrid
   assert.match(r.stderr, /--budget/, 'el mensaje trae la salida: subir el presupuesto o volver a correr');
 });
 
-// ── story 8.12, R3: el rescate importa harness-audit desde scripts/lib/ ──────────────────────────
+// ── el rescate importa harness-audit desde scripts/lib/ ──────────────────────────
 // Arnés de laboratorio SIN los reemplazos de las rutas viejas (con ellos al lado, un `require` viejo seguiría andando):
 // el rescate y scripts/lib/. Tiene que llegar a donde llega desde el árbol de verdad (sin base de engram: «nada que
 // hacer»), no caerse buscando el módulo. No necesita sqlite3: corta antes de leer la base.

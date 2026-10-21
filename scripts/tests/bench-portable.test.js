@@ -1,10 +1,9 @@
 'use strict';
 /**
- * bench-portable.test.js — el banco de controles corre también en Windows, y en Linux y en Mac no cambia nada
- * (story 8.17, tanda W1).
+ * bench-portable.test.js — el banco de controles corre también en Windows, y en Linux y en Mac no cambia nada.
  *
- * EL CASO. El banco aislaba cada caso con una `HOME` temporal y preparaba los casos con el shell por defecto. En
- * Windows las dos cosas fallan sin avisar: `os.homedir()` mira `USERPROFILE` (con `HOME` sola, cada hook escribía en
+ * POR QUÉ. El banco aísla cada caso con una `HOME` temporal y prepara los casos con el shell por defecto. En
+ * Windows las dos cosas fallan sin avisar: `os.homedir()` mira `USERPROFILE` (con `HOME` sola, cada hook escribiría en
  * la carpeta de usuario real), y el shell por defecto es `cmd.exe`, que no entiende `mkdir -p`. Y `bash` a secas
  * puede ser el lanzador de WSL. El banco es la herramienta con la que se mide si un control frena: si no corre en
  * Windows, de Windows no se sabe nada.
@@ -103,7 +102,7 @@ function hookFiles() {
   return { dir, probe, shell };
 }
 
-// ── T19 · AC 14, 18 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T19 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('T19a Bench_Portable_PosixUnchanged — fuera de Windows, el entorno de un caso y su comando son los de siempre', () => {
   const vars = { TCG: '/repo', SKILLS: '/skills', SANDBOX_HOME: '/tmp/s/home', FIXTURE: '/tmp/s/fixture' };
   for (const platform of ['linux', 'darwin']) {
@@ -147,8 +146,8 @@ test('T19b Bench_Portable_WindowsEnv — con Windows inyectado, la carpeta de us
   assert.ok(!('SECRET_TOKEN' in env), 'lo demás del entorno de la máquina no entra al caso');
   for (const v of Object.values(env)) assert.ok(!String(v).startsWith('C:\\Users\\dev'), `nada apunta a la carpeta de usuario real: ${v}`);
   // 🔴 TODO lo que el banco le pasa a bash —por una variable o por el texto del guion— va con barras hacia adelante.
-  // Medido en Windows (corrida 11699): con `TCG=D:\\a\\1\\…`, `cp $TCG/scripts/controls-bench/*.js` no encontraba
-  // nada — en una palabra con comodín bash lee cada `\\` como un escape—, y 36 casos fallaban en su preparación.
+  // Con `TCG=D:\\a\\1\\…`, `cp $TCG/scripts/controls-bench/*.js` no encuentra
+  // nada — en una palabra con comodín bash lee cada `\\` como un escape—, y 36 casos fallan en su preparación.
   assert.deepStrictEqual(runner.setupEnv(vars, ctx), {
     GIT_CONFIG_NOSYSTEM: '1', HOME: 'C:/lab/s/home', USERPROFILE: 'C:/lab/s/home', TCG: 'C:/repo', SKILLS: 'C:/skills',
     FIXTURE: 'C:/lab/s/fixture', SANDBOX_HOME: 'C:/lab/s/home',
@@ -172,7 +171,7 @@ test('T19b Bench_Portable_WindowsEnv — con Windows inyectado, la carpeta de us
   const nodeHook = runner.hookEnv({ sandbox: 'C:\\lab\\s', vars, ...declares, bash: false, ctx });
   assert.deepStrictEqual([nodeHook.PS_FILE, nodeHook.FIXTURE, nodeHook.USERPROFILE], ['C:\\lab\\s\\fixture/ps.txt', 'C:\\lab\\s\\fixture', home]);
   // los sandboxes nacen bajo el temporal por su nombre LARGO: el corto (la carpeta de usuario como `NOMBRE~1`) no es la misma cadena
-  // que la que devuelven git y `realpath`, y un control que compara rutas daba rojo por el laboratorio, no por él
+  // que la que devuelven git y `realpath`, y un control que compara rutas daría rojo por el laboratorio, no por él
   assert.strictEqual(runner.sandboxRoot({ platform: 'win32', tmpdir: 'C:\\Users\\NOMBRE~1\\AppData\\Local\\Temp', realpath: () => 'C:\\Users\\NombreLargo\\AppData\\Local\\Temp' }),
     'C:\\Users\\NombreLargo\\AppData\\Local\\Temp');
   assert.strictEqual(runner.sandboxRoot({ platform: 'win32', tmpdir: 'C:\\Temp', realpath: () => { throw new Error('no'); } }), 'C:\\Temp', 'si no se puede resolver, el de siempre');
@@ -248,8 +247,8 @@ test('T19c Bench_Portable_UserprofileIsolated_SetupThroughGitBash — un caso de
   const movedSetup = runner.runCase('claude', hook, {
     id: 'home-moved-in-setup', type: 'must-emit', env: { HOME: '${FIXTURE}/otra-casa' },
     // 🔴 Se compara con Node y por la carpeta, no con `test "$USERPROFILE" = "$HOME"`: en un Windows de verdad el bash de
-    // Git reescribe HOME a su forma (`/c/a/b`) y deja USERPROFILE como vino — la misma carpeta, dos cadenas. Así
-    // estaba escrito y falló al correr EN Windows (corrida 11699), verde con Windows «inyectado» en una Mac.
+    // Git reescribe HOME a su forma (`/c/a/b`) y deja USERPROFILE como vino — la misma carpeta, dos cadenas. Con `test`
+    // falla al correr EN Windows y da verde con Windows «inyectado» en una Mac.
     // (`n` deshace también la forma `/c/a/b`, por si bash se la deja a HOME al lanzar a node, y no mira mayúsculas.)
     setup: ['node -e "const p=require(\'path\');const e=process.env;const n=(x)=>p.resolve(String(x).replace(/^[/]([A-Za-z])[/]/,(m,d)=>d+String.fromCharCode(58,47))).toLowerCase();process.exit(n(e.USERPROFILE)===n(e.HOME)&&n(e.HOME)!==n(e.SANDBOX_HOME)?0:1)" && echo sigue > "$FIXTURE/sigue.txt"'],
     stdin: {}, expect: { stdout_re: ['^USERPROFILE-FOLLOWS-HOME$'], file_exists: ['${FIXTURE}/sigue.txt'] },
@@ -298,10 +297,10 @@ test('T19d Bench_Portable_NoGitBash — en Windows sin Git for Windows: «NO MED
   assert.strictEqual(r.status, 2);
   assert.match(r.stdout, /NO MEDIDO: falta Git for Windows.*sólo está el lanzador de WSL/);
   assert.doesNotMatch(r.stdout, /✅/);
-  // 🔴 LA CONDICIÓN MEDIDA EN WINDOWS (corrida 11694): Git for Windows INSTALADO en su carpeta por defecto y FUERA del
+  // 🔴 LA CONDICIÓN: Git for Windows INSTALADO en su carpeta por defecto y FUERA del
   // PATH (el PATH, sólo System32; `ProgramFiles` y `LOCALAPPDATA` apuntando a una carpeta que no existe). El bash se
   // encuentra igual —la carpeta por defecto también se busca por `ProgramW6432`, y Windows no deja esconderla—, así
-  // que el banco corría: 392 rojos y 329 verdes que no decían nada de ningún control, porque `git` y `node` no
+  // que el banco corre: 392 rojos y 329 verdes que no dicen nada de ningún control, porque `git` y `node` no
   // estaban en el PATH con que corren los casos. Sin ellos tampoco hay nada que medir.
   const measured = (extra) => `{ platform: 'win32', env: Object.assign({ Path: 'C:\\\\Windows\\\\System32', SystemRoot: 'C:\\\\Windows', ProgramFiles: 'C:\\\\no-such-folder', LOCALAPPDATA: 'C:\\\\no-such-folder', ProgramW6432: 'C:\\\\Program Files' }, ${extra || '{}'}),`
     + " exists: (p) => ['c:\\\\program files\\\\git\\\\bin\\\\bash.exe', 'c:\\\\windows\\\\system32\\\\bash.exe', 'c:\\\\tools\\\\git.exe', 'c:\\\\tools\\\\node.exe'].includes(String(p).toLowerCase()) }";
@@ -455,16 +454,16 @@ test('T19d3 Bench_Portable_KnownGaps — en Windows un rojo declarado en known-g
     assert.doesNotMatch('ERROR: script no existe: x', new RegExp(g.match), `${g.id}: su match no acepta un error del banco`);
     assert.doesNotMatch('ERROR: Command failed: x', new RegExp(g.match));
   }
-  // lo medido en Windows (corrida 11705): los motivos con que fallan los dos casos de Telegram entran en su match
+  // los motivos con que fallan los dos casos de Telegram entran en su match
   const realGap = (id) => new RegExp(real.gaps.find((g) => g.id === `bench:red:telegram-zombie-sweep.sh::${id}`).match);
   for (const reason of ['stdout no matchea /huérfanos/', 'stdout no matchea /pids: 9001 9002/']) assert.match(reason, realGap('mata-launcher-huerfano-y-respeta-vivo'));
   assert.match('stdout no matchea /huérfanos cerrados \\(pids: [0-9]+/', realGap('mata-de-verdad'));
 });
 
 test('T19d4 Bench_Portable_KnownGapOnlyForItsReason — un rojo conocido lo es sólo si falla por el motivo declarado', () => {
-  // 🔴 Lo que cierra (revisión del 2026-10-04, reproducido): la lista se buscaba por NOMBRE de caso, así que un caso
-  // declarado quedaba «conocido» fallara por lo que fallara — con su guion borrado, con su preparación rota o con el
-  // caso mal escrito, el banco salía 0. La lista podía tapar un rojo nuevo.
+  // 🔴 La lista no se busca sólo por NOMBRE de caso: si no, un caso
+  // declarado queda «conocido» fallara por lo que fallara — con su guion borrado, con su preparación rota o con el
+  // caso mal escrito, el banco sale 0. La lista taparía un rojo nuevo.
   const cases = tempDir('tycon-bench-reason-cases-');
   const hooks = hookFiles();
   const blocks = path.join(hooks.dir, 'blocks.js');
@@ -567,12 +566,12 @@ test('T19e Bench_Portable_BaselineSame — la línea de base se escribe y se com
     { 'probe.js::with-setup': true, 'shell-hook.sh::shell-runs': true, 'toggling.js::blocks': true }, 'un veredicto por caso');
   r = run('check');
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
-  // en Windows el resumen suma «N rojos conocidos (known-gaps.json)»: medido en el agente Windows (corrida 11705), donde esta
-  // comparación, escrita en una Mac, daba rojo con el banco en verde
+  // en Windows el resumen suma «N rojos conocidos (known-gaps.json)»: una comparación escrita en una Mac
+  // daría rojo con el banco en verde
   assert.match(r.stdout, /3 corridos · 0 rojos · (?:0 rojos conocidos \(known-gaps\.json\) · )?0 NO MEDIDOS .* regresiones vs baseline: 0/);
   // En Windows (inyectado acá; de verdad en el agente) con una lista de casos de juguete, la lista REAL de huecos conocidos
-  // no aplica: describe los casos de verdad. Medido en el agente Windows (corrida 11714): se comparaba igual, cada hueco
-  // quedaba «sin caso que lo mida» y el banco salía 1 con los tres casos en verde.
+  // no aplica: describe los casos de verdad. Si se comparara igual, cada hueco
+  // quedaría «sin caso que lo mida» y el banco saldría 1 con los tres casos en verde.
   {
     const w = injectedWindows();
     const ctxSource = w.ctx ? `{ platform: 'win32', env: Object.assign({}, process.env, { ${JSON.stringify(ENV_VAR)}: ${JSON.stringify(w.witness)} }), exists: () => true }` : 'undefined';
@@ -591,8 +590,7 @@ test('T19e Bench_Portable_BaselineSame — la línea de base se escribe y se com
 });
 
 test('T19f LiveFire_MarkerIsNode — el marcador de live-fire.js es un guion de Node, y hace lo mismo que hacía el de sh', () => {
-  // 🔴 ANTES de requerirlo: si el guion corre `main()` al cargarse, requerirlo abre una sesión real del asistente (pasó
-  // al escribir esta prueba). Sin la guarda no se requiere: se falla acá.
+  // 🔴 ANTES de requerirlo: si el guion corre `main()` al cargarse, requerirlo abre una sesión real del asistente.
   assert.match(fs.readFileSync(LIVE_FIRE, 'utf8'), /\nif \(require\.main === module\) main\(\);\n/,
     'live-fire.js sólo corre main() cuando se lo lanza: requerirlo no puede abrir una sesión');
   const liveFire = require(LIVE_FIRE);
@@ -609,7 +607,7 @@ test('T19f LiveFire_MarkerIsNode — el marcador de live-fire.js es un guion de 
     else assert.ok(c.startsWith(`"${process.execPath}" "`), `fuera de Windows, el node que está corriendo, por su ruta: ${c}`);
   }
   // el intérprete del marcador, por plataforma. Fuera de Windows va la ruta absoluta del node que corre: un hook lanzado
-  // con el PATH mínimo de un trabajo programado no encuentra `node` por su nombre (y antes alcanzaba con `sh`).
+  // con el PATH mínimo de un trabajo programado no encuentra `node` por su nombre.
   assert.strictEqual(liveFire.hookEntry('/a b/mark.js', 'Stop', '', { platform: 'darwin', execPath: '/opt/node 20/bin/node' }).command,
     '"/opt/node 20/bin/node" "/a b/mark.js" Stop');
   assert.strictEqual(liveFire.hookEntry('C:\\lab x\\mark.js', 'PreToolUse', '-err', { platform: 'win32', execPath: 'C:\\Program Files\\nodejs\\node.exe' }).command,
@@ -656,7 +654,7 @@ test('T19f LiveFire_MarkerIsNode — el marcador de live-fire.js es un guion de 
 });
 
 test('T19g MissingPathNotice_UserFolderFromOsHomedir — el aviso de ruta inexistente no le pide la carpeta de usuario a la variable HOME', () => {
-  // Qué mide y qué no (T22 de la story 8.17). El hook, como hook, no usa la carpeta de usuario: un caso del banco con
+  // Qué mide y qué no (T22). El hook, como hook, no usa la carpeta de usuario: un caso del banco con
   // HOME vacía no distingue nada (pasa igual con el código de antes) y por eso no existe. El único lugar que la pide
   // es el modo `--measure`, y ahí el valor tampoco llega a usarse (sólo juzga rutas absolutas): el cambio es de
   // higiene. Lo que SÍ se puede medir es de dónde la pide: se corre ese modo con un testigo que anota cada lectura de
@@ -695,8 +693,8 @@ test('T19g MissingPathNotice_UserFolderFromOsHomedir — el aviso de ruta inexis
   assert.strictEqual(measure(NOTICE, env).status, 0);
 });
 
-// T19h · el caso (2026-10-04, corrida 182 #11867 sobre el main unido): 53 casos GIT-C4 «NO bloqueó» en Windows y 0
-// en Mac. No era el freno: los casos armaban la instalación con `ln -s <carpeta> ~/.claude/skills`, y el bash de Git
+// T19h · el caso: con `ln -s` 53 casos GIT-C4 dan «NO bloqueó» en Windows y 0
+// en Mac. No es el freno: armar la instalación con `ln -s <carpeta> ~/.claude/skills` falla, porque el bash de Git
 // for Windows (sin `winsymlinks`) COPIA la carpeta en vez de enlazarla. Con una carpeta real no hay «árbol del que
 // salen las skills» y el freno deja pasar, como corresponde. La instalación de verdad crea un junction
 // (scripts/lib/canonical-path.js): los casos lo crean igual, con node. Un `ln -s` a una carpeta sólo se acepta en un

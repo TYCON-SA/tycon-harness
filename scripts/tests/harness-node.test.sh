@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-node.test.sh — el Node propio del arnés (story 8.39): la lista de seis plataformas, la bajada verificada contra
+# harness-node.test.sh — el Node propio del arnés: la lista de seis plataformas, la bajada verificada contra
 # las huellas que viajan en el árbol, el enlace `current`, lo que pasa cuando no se puede, y quién lo usa.
 # stable-data: no crea commits; «commit» aparece en el nombre de los hooks que nombra (engram-pre-commit.sh, git-pre-commit-global.sh).
 #
@@ -276,7 +276,7 @@ mkdir -p "$BASE/devrepo/.githooks"; printf '#!/bin/sh\nnode --version > "%s"\n' 
 ( cd "$BASE/devrepo" && . "$HELPER" && ./.githooks/pre-commit )
 [ "$(cat "$BASE/devrepo.out")" = "$dev_before" ] && ok "T25 el hook del repo del dev ve el node del PATH" || bad "T25 el hook del repo vio $(cat "$BASE/devrepo.out")"
 
-# ─── las funciones del módulo, de a una (revisión de cobertura de la vuelta 1) ─────────────────────────────────────
+# ─── las funciones del módulo, de a una ──────────────────────────────────────────────────────────────────────
 # @story-8.39 @ac-1 @ac-5 @ac-14 @ac-20  readList · entryFor · formFor · noticeFor · countHooks · doctorFacts · readRecord
 UNIT="$(node -e '
 const H = require(process.argv[1]); const fs = require("fs"); const path = require("path"); const base = process.argv[2];
@@ -346,7 +346,7 @@ mkdir -p "$(dirname "$RECF")"; printf '{ roto' > "$RECF"
 [ -n "$(field "$(record)" unreadable)" ] && ok "readRecord: el registro roto vuelve «ilegible», no vacío" || bad "readRecord roto: $(record)"
 make_dist "$V1"; write_list "$V1"; hn startup >/dev/null
 [ -d "$NDIR/versions/v1.0.0" ] && ok "con el registro ilegible no se borra ninguna versión vieja" || bad "se borró una versión vieja con el registro ilegible"
-# (revisores, vuelta 2) una falla escrita sobre el registro ilegible no lo pisa ni hace que la corrida siguiente borre la
+# una falla escrita sobre el registro ilegible no lo pisa ni hace que la corrida siguiente borre la
 # versión guardada: el roto se aparta y, sin saber cuál es la anterior, no se borra nada
 printf '{ roto' > "$RECF"; make_dist "$V2"; write_list "$V2"; printf '500\n' > "$MODE"
 TYCON_HARNESS_NODE_BUDGET_S=2 hn manual >/dev/null; echo ok > "$MODE"
@@ -368,8 +368,8 @@ TYCON_PROFILE=0 TYCON_HARNESS_SHARED_DONE=1 node "$RAIZ/scripts/setup/apply-hook
   && ok "T15 con current roto el aplicador vuelve el hook a node, en su lugar y sin duplicar" || bad "T15 el aplicador dejó: $(cat "$BASE/t15/home/.claude/settings.json")"
 rm -rf "$NDIR"
 
-# ─── lo que confirmó el pase adversarial (una prueba por clase; nacen en rojo, el arreglo las pone en verde) ─────────
-# A y B · las llamadas de fondo de los instaladores también van con el Node del arnés (AC 8): la tanda `nohup bash -c` del
+# ─── casos de borde de las llamadas de fondo y de la lista (una prueba por caso) ──────────────────────────────
+# A y B · las llamadas de fondo de los instaladores también van con el Node del arnés: la tanda `nohup bash -c` del
 # .sh abre otro bash que no ve la función `node`, y `Start-Process` del .ps1 busca el programa en el PATH
 LOTE="$(awk "/^  nohup bash -c '\$/{on=1} on{print} on && /^  ' _ /{exit}" "$RAIZ/scripts/install-tycon-hooks.sh")"
 [ -n "$LOTE" ] && ! printf '%s\n' "$LOTE" | grep -qE '(^|[^"$A-Za-z_])node "' && ok "adversarial A: la tanda de fondo del .sh no llama a node pelado" || bad "adversarial A: la tanda de fondo del .sh llama a node del PATH: $(printf '%s\n' "$LOTE" | grep -E '(^|[^"$A-Za-z_])node "' | head -2)"
@@ -426,12 +426,12 @@ process.stdout.write(H.doctorLevel({ own: true, verified: true }, { own: 1, path
 rm -rf "$NDIR"
 
 # ─── el contador de hooks del ensayo de Windows (count-hooks.js) reconoce el intérprete escrito como ruta sin comillas
-# @story-8.39 @ac-27  sin esto, el ensayo contaba 0 hooks «en su lugar» en una máquina con el Node del arnés
+# @story-8.39 @ac-27  sin esto, el ensayo cuenta 0 hooks «en su lugar» en una máquina con el Node del arnés
 CF="$(node -e 'const C=require(process.argv[1]);process.stdout.write(JSON.stringify([C.commandFile("C:/U/.tycon/node/current/node.exe \"C:/x/y.js\"").runner, C.commandFile("/h/.tycon/node/current/bin/node \"/x/y.js\"").runner, C.commandFile("node \"/x/y.js\"").runner, C.commandFile("bash -c \"x\"").runner]))' "$RAIZ/scripts/tests/windows/count-hooks.js" 2>&1)"
 [ "$CF" = '["node","node","node",null]' ] && ok "count-hooks: la ruta del Node del arnés sin comillas cuenta como node (y bash -c no es un hook)" || bad "count-hooks: $CF"
 
 # ─── el laboratorio de la página guiada arma su ambiente de cero: conserva el apagado de quien lo lanza, y si no estaba
-# no lo agrega (en el ensayo de Windows la bajada es lo que se mide) — decisión 20
+# no lo agrega (en el ensayo de Windows la bajada es lo que se mide)
 TL="$(node -e '
 const T = require(process.argv[1]); const os = require("os"); const path = require("path");
 const h = path.join(os.tmpdir(), "toy-lab-env-839");

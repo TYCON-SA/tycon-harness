@@ -1,8 +1,8 @@
 'use strict';
 /**
- * harness-layer.test.js — la capa privada: CALCULAR el complemento (story 8.13.1, tanda A · AC 3 · T3).
+ * harness-layer.test.js — la capa privada: CALCULAR el complemento (T3).
  *
- * EL CASO. Una máquina del equipo instala la copia pública y apila encima lo privado. Qué es «lo privado» no lo dice
+ * Una máquina del equipo instala la copia pública y apila encima lo privado. Qué es «lo privado» no lo dice
  * ninguna lista: lo calcula la máquina comparando el commit interno con el público, ruta por ruta, por el hash de git
  * de cada archivo (`git ls-tree -r`), sin escribir nada. Lo que no se puede perder:
  *   · una ruta que está en el interno y no en el público es `add`, en su misma ruta (también bajo skills/ y packs/);
@@ -11,10 +11,10 @@
  *   · una con otro contenido que está en «el público manda» (`.gitignore`, el despachador de hooks) es `same`;
  *   · lo que está sólo en el público se acepta si está en «sólo afuera» (LICENSE, version.json); si no, es un hallazgo.
  *     «Sólo afuera» suma, sin tocar la lista a mano, lo que la lista blanca del commit interno dice que el exportador
- *     agrega sólo a la copia (`synthetic`, `generated`, `skillRenames`; pase adversarial, clases 1 y 15);
+ *     agrega sólo a la copia (`synthetic`, `generated`, `skillRenames`);
  *   · un version.json sin `transformed` no deja calcular (exit 1, con el motivo);
  *   · un archivo NUEVO que el interno publica (en una carpeta pública) y la copia no trae también es «capa de otra
- *     versión» (AC 5, la segunda mitad): qué publica el interno lo dice el exportador de juguete con su lista de rutas que
+ *     versión»: qué publica el interno lo dice el exportador de juguete con su lista de rutas que
  *     deja afuera (`publishableBy`); la línea de comandos usa la clasificación del exportador de verdad, con la lista
  *     blanca de juguete que el interno trae (fixtures/layer-lab-allowlist.json);
  *   · mismos commits → misma lista, byte a byte.
@@ -138,8 +138,8 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
   });
 
   await t.test('sólo afuera: lo que el exportador agrega sólo a la copia sale de la lista blanca del commit interno, sin la lista a mano', () => {
-    // pase adversarial, clases 1 y 15: dos papeles nuevos de public-files/ (getting-started/*.md) llegaron a la lista
-    // blanca y nadie los sumó a layer-public-only.json: cada máquina con capa veía «sólo en la copia y sin declarar».
+    // Sin esto, un papel nuevo de public-files/ (getting-started/*.md) que llega a la lista blanca sin sumarse
+    // a layer-public-only.json hace que cada máquina con capa vea «sólo en la copia y sin declarar».
     // Lo que el exportador agrega sólo a la copia —los `synthetic`, los `generated` y la carpeta nueva de cada
     // `skillRenames`— se lee de la lista blanca de ESE commit interno: la lista a mano queda vacía a propósito
     const dir = path.join(LAB, 'interno-papeles');
@@ -186,7 +186,7 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
 
   // 🔴 Sólo en el clon interno: el contrato compara la lista blanca contra el árbol INTERNO («lo que el interno no tiene»).
   // En la copia pública cada destino que la lista agrega ya está en su lugar, así que no queda nada que comparar y la
-  // prueba daba rojo por vacía (medido el 2026-10-09 en la validación desde GitHub). Allá se declara no medida, con el motivo.
+  // prueba daría rojo por vacía. Allá se declara no medida, con el motivo.
   const IN_INTERNAL = fs.existsSync(path.join(ROOT, 'scripts', 'publishing', 'replacements.json'));
   await t.test('sólo afuera: cada papel que la lista blanca real agrega sólo a la copia queda declarado', { skip: !IN_INTERNAL && 'NO MEDIDO en la copia pública: compara la lista blanca contra el árbol interno, y en la copia lo que la lista agrega ya está en su destino' }, () => {
     // el contrato sobre la lista blanca de verdad (la del HEAD de este clon): cada destino `synthetic` o `generated` que
@@ -292,7 +292,7 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     assert.deepStrictEqual([snap(INTERNAL), snap(PUBLIC.dir)], before);
   });
 
-  // revisión de seguridad (paso 5): una ruta de la lista que en Windows sale del árbol no se acepta. Las rutas de git
+  // una ruta de la lista que en Windows sale del árbol no se acepta. Las rutas de git
   // usan siempre «/»: una «\», una unidad («C:») o un «.git» en mayúsculas (en Windows es la misma carpeta) frenan.
   await t.test('una ruta que sale del árbol en Windows frena antes de escribir', () => {
     const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-ruta-'));
@@ -305,9 +305,9 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     fs.rmSync(tree, { recursive: true, force: true });
   });
 
-  // revisión del paso 5, vuelta 2 (2026-10-06): la misma regla para las rutas que llegan del manifiesto de la corrida
-  // anterior (layer.json). Antes llegaban sin mirar al borrado de lo que salió de la lista: un manifiesto con
-  // «../fuera/testigo.txt» y el sha256 de ese archivo lo borraba FUERA del árbol. Ahora frena antes de borrar o escribir
+  // la misma regla para las rutas que llegan del manifiesto de la corrida
+  // anterior (layer.json). Sin mirarlas llegarían al borrado de lo que salió de la lista: un manifiesto con
+  // «../fuera/testigo.txt» y el sha256 de ese archivo lo borraría FUERA del árbol. Frena antes de borrar o escribir
   await t.test('una ruta del manifiesto previo que sale del árbol frena sin borrar ni escribir nada', () => {
     const box = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-manif-'));
     const tree = path.join(box, 'arbol');
@@ -341,9 +341,9 @@ test('T3 Layer_ComplementByBlobs_TransformedOnlyFromVersionJson_PublicWins_Publi
     fs.rmSync(box, { recursive: true, force: true });
   });
 
-  // revisión del paso 5, vuelta 2 (2026-10-06): el `git checkout` que devuelve al público un pisado que salió de la lista
-  // corría DESPUÉS de escribir los agregados; si fallaba (otra sesión con el índice tomado), lo escrito quedaba sin
-  // manifiesto que lo dijera. Corre primero: si falla, no se escribió nada y el manifiesto queda como estaba
+  // el `git checkout` que devuelve al público un pisado que salió de la lista corre primero, antes de escribir los
+  // agregados: si corriera después y fallara (otra sesión con el índice tomado), lo escrito quedaría sin
+  // manifiesto que lo dijera. Si falla, no se escribe nada y el manifiesto queda como estaba
   await t.test('el checkout que devuelve un pisado al público falla: no se escribe nada y el manifiesto queda', () => {
     const box = fs.mkdtempSync(path.join(os.tmpdir(), 'layer-checkout-'));
     const tree = path.join(box, 'arbol');

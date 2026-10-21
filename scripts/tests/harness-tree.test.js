@@ -1,5 +1,5 @@
 'use strict';
-// harness-tree.test.js — la huella del código que mide un pipeline de operaciones y su guarda (story 8.30, T6 y T7).
+// harness-tree.test.js — la huella del código que mide un pipeline de operaciones y su guarda (T6 y T7).
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');

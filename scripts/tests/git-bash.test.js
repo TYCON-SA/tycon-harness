@@ -1,6 +1,6 @@
 'use strict';
 /**
- * git-bash.test.js — dónde está el bash de Git for Windows, probado sin Windows (story 8.17, tanda W1).
+ * git-bash.test.js — dónde está el bash de Git for Windows, probado sin Windows.
  *
  * `scripts/lib/git-bash.js` recibe la plataforma, las variables de entorno y el sistema de archivos por parámetro:
  * acá se le inyectan los de un Windows de mentira y se recorre cada rama. Lo que sólo se ve en un Windows de verdad
@@ -47,7 +47,7 @@ function windows(files, env) {
 }
 const pathOf = (...dirs) => dirs.join(';');
 
-// ── T18 · AC 13, 18 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T18 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('T18a GitBash_Find_Env — la variable manda: su bash.exe gana aunque haya git en el PATH', () => {
   const custom = 'D:\\herramientas\\git\\bin\\bash.exe';
   const w = windows([custom, GIT_BASH, `${GIT_ROOT}\\cmd\\git.exe`], { [ENV_VAR]: custom, Path: pathOf(`${GIT_ROOT}\\cmd`) });
