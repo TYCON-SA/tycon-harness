@@ -17,7 +17,7 @@
       "prompt": "Tu salida completa se guarda en un archivo de auditoría que procesa un script: no la lee una persona en el chat — la regla de 'resumen ejecutivo / detalle a pedido' de tus instrucciones NO aplica en este contexto. Emití el reporte COMPLETO en el formato del catálogo, con cada finding como bullet que abre con su rule ID entre corchetes: - [RULE-ID] `archivo:línea` descripción. Fix: acción. Los rule IDs entre corchetes van SOLO en findings reales (en la sección '✅ OK' o al descartar una regla, mencionala SIN corchetes). Contexto banco: NO llames mem_save acá — no hay decisión real que persistir y ensuciaría la memoria del equipo. NO arranques DevHost ni ejecutes curl: evaluá la EVIDENCIA EXISTENTE en el repo (eso es lo que el gate audita). La story specs/story-98-1.md pide transición review → done: validá el DoD runtime. Inputs: story_path=specs/story-98-1.md · repo_path=. · modified_files=[src/Features/Export/ExportEndpoints.cs]. Escaneá y emití el reporte.",
       "remedido": {
         "fecha": "2026-08-25",
-        "resultado": "3/3 verde tras incident-log#banco-se-envenena-solo"
+        "resultado": "3/3 verde tras el caso del banco que se envenena solo"
       },
       "canario": true
     },

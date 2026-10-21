@@ -97,7 +97,7 @@ mapa "$TMP/c8/m.html" '  "rev": {"nombre":"r","tipo":"revisor","archivos":[["as"
   "freno": {"nombre":"f","tipo":"control de sesión","archivos":[["as","skills/tycon-pipeline/scripts/on-story-gate.js"]]},
   "horas": {"nombre":"c","tipo":"control de sesión","archivos":[["as","skills/clocki/scripts/sweep.js"]]},
   "skill": {"nombre":"s","tipo":"skill","archivos":[["as","skills/tycon-pipeline/scripts/pipeline.js (model-hint)"]]},
-  "guia": {"nombre":"g","tipo":"guía","archivos":[["tcg","guides/maintaining/incident-log.md"]]},
+  "guia": {"nombre":"g","tipo":"guía","archivos":[["tcg","guides/guide-update-proposals.md"]]},
   "bloque": {"nombre":"b","tipo":"bloque","archivos":[["tcg","claude-md-blocks/"]]},
   "cmd": {"nombre":"k","tipo":"comando","archivos":[["tcg","commands/tycon-vigilante.md"]]},
   "yml": {"nombre":"y","tipo":"pipeline","archivos":[["tcg","azure-pipelines-lab.yml"]]},

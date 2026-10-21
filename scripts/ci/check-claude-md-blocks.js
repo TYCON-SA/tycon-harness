@@ -333,10 +333,10 @@ function main(argv) {
     console.error(`⚠  ${a.bloque}: lo que este commit agrega ${a.que}:`);
     console.error(`     «${a.linea}»`);
   }
-  if (r.avisos.length) console.error('   La regla queda en el bloque; el caso, la fecha y la cita van a la guía o al incident-log (guides/response-style.md cuenta cómo se poda un bloque sin perder una regla).');
+  if (r.avisos.length) console.error('   La regla queda en el bloque; el caso, la fecha y la cita van a la guía (guides/response-style.md cuenta cómo se poda un bloque sin perder una regla).');
   const problemas = [];
   for (const t of r.titulos || []) console.error(`❌ ${t.ruta}: el título trae una fecha o historia: «${t.titulo}»`);
-  if ((r.titulos || []).length) problemas.push(`${r.titulos.map((t) => t.ruta).join(', ')}: un título con fecha o historia (la historia va a la guía del bloque o al incident-log)`);
+  if ((r.titulos || []).length) problemas.push(`${r.titulos.map((t) => t.ruta).join(', ')}: un título con fecha o historia (la historia va a la guía del bloque)`);
   if (rojos.length) problemas.push(`${rojos.map((f) => f.bloque).join(', ')} se pasa de su techo`);
   if (!r.totalOk) problemas.push(`la suma de los bloques (lado Claude, ${fmt(r.suma)}) se pasa del total de ${fmt(r.total)}`);
   if (!r.totalCodexOk) problemas.push(`la suma del lado Codex (${fmt(r.sumaCodex)}) se pasa del total de ${fmt(r.totalCodex)}`);

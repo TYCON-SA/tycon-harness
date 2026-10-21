@@ -3944,8 +3944,7 @@ function cmdAdhoc(sub, payloadJson) {
         `story/spec por el pipeline, no un ajuste suelto.\n\n` +
         `  (a) Si es así → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
         `  (b) Si el user QUIERE el atajo, que lo diga en su próximo mensaje ("es un hotfix", "sin ` +
-        `story") — eso cambia el veredicto.\n\n` + ask +
-        `\n\nCaso: incident-log#adhoc-self-declared-2026-08-24.`,
+        `story") — eso cambia el veredicto.\n\n` + ask,
       );
       appendLog('adhoc.log', { kind: 'ADHOC_LLM_DENIED_LANE', reason, via: llm.via, cwd: process.cwd() });
       process.exit(2);
@@ -3976,8 +3975,7 @@ function cmdAdhoc(sub, payloadJson) {
         `una story ("${reason.slice(0, 80)}"). Citar el pedido de la story como autorización del atajo ` +
         `es exactamente el anti-pattern que este freno existe para parar.\n\n` +
         `  (a) Si es una story → Skill(skill="tycon-pipeline", args="implementemos …").\n` +
-        `  (b) Si el user QUIERE el atajo, que lo diga: su próximo mensaje es citable.\n\n` + ask +
-        `\n\nCaso: incident-log#adhoc-self-declared-2026-08-24.`,
+        `  (b) Si el user QUIERE el atajo, que lo diga: su próximo mensaje es citable.\n\n` + ask,
       );
       appendLog('adhoc.log', { kind: 'ADHOC_DENIED_STORY_QUOTE', reason, via: llm.via, cwd: process.cwd() });
       process.exit(2);

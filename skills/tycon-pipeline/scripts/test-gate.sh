@@ -862,7 +862,7 @@ fi
 # Respaldo del cruce de cobertura: los archivos que la story declara CREAR. git deja de
 # reportar "added" apenas se commitea, así que en una iteración de fix POSTERIOR al commit
 # la lista de archivos nuevos queda vacía y el cruce se perdía sin decir nada (hallazgo de
-# una persona del equipo, 2026-08-25 — el `null` del reporte se leía igual que "esto está bien" — guides/maintaining/incident-log.md#case-declared-new-files-cross-lost-2026-08-25).
+# una persona del equipo, 2026-08-25 — el `null` del reporte se leía igual que "esto está bien").
 # Sin los que viven en un repo hermano (story 7.26): ésos los cruza la corrida del hermano, y acá salían como
 # «declarados que no existen». En la corrida DEL hermano, al revés: sólo los que la story crea en él.
 # Si la consulta falla, su error queda a la vista (stderr) y se cae a la lista de siempre.

@@ -62,6 +62,6 @@ fi
 
 if [[ ${#KILLED[@]} -gt 0 ]]; then
   VERB="cerrados"; [[ "$DRY" == "1" ]] && VERB="a cerrar (dry-run)"
-  echo "🧹 tycon: ${#KILLED[@]} proceso(s) de bots de Telegram huérfanos $VERB (pids: ${KILLED[*]}) — bug del plugin oficial, ver incident-log#telegram-zombies. Off: TYCON_TG_ZOMBIE_SWEEP=0."
+  echo "🧹 tycon: ${#KILLED[@]} proceso(s) de bots de Telegram huérfanos $VERB (pids: ${KILLED[*]}) — bug del plugin oficial. Off: TYCON_TG_ZOMBIE_SWEEP=0."
 fi
 exit 0

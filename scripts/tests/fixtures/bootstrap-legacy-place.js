@@ -7,8 +7,7 @@
 // bootstrap.js — la COPIA FIJA de arranque del arnés (story 8.13, AC 13). Vive en ~/.claude/.tycon-pipeline/harness/,
 // FUERA del árbol que actualiza; la línea de arranque de cada sesión llama a esta copia, no al árbol.
 //
-// Por qué: una máquina del equipo quedó 272 commits atrás durante 6 días con el instalador viejo diciendo «todo bien»
-// (incident-log#arnes-que-se-bloquea-a-si-mismo-2026-09-03). La doctrina que dejó: lo durable no puede viajar por el
+// Por qué: una máquina del equipo quedó 272 commits atrás durante 6 días con el instalador viejo diciendo «todo bien». La doctrina que dejó: lo durable no puede viajar por el
 // camino roto. Si el `harness.js` del árbol está roto, el enlace colgado o la versión no arranca, esta copia sale ≠ 0 y
 // la línea de arranque cae al respaldo en shell (`bootstrap-fallback.sh` / `.ps1`): el `git pull --ff-only --autostash`
 // de siempre en los dos repos y el aplicador. Nada deja una máquina quieta, y `rollback` siempre tiene desde dónde correr.

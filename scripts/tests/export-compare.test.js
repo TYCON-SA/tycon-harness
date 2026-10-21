@@ -60,7 +60,7 @@ const BASE = {
         'agent-skills': { 'skills/tycon-x/SKILL.md': 'h-skill' },
       },
       excluded: {
-        arnes: { 'guides/maintaining/incident-log.md': 'h-incidentes', 'scripts/metrics/censo-1.json': 'h-censo' },
+        arnes: { 'guides/guide-update-proposals.md': 'h-incidentes', 'scripts/metrics/censo-1.json': 'h-censo' },
         'agent-skills': {},
       },
     },
@@ -159,22 +159,22 @@ test('T6_NewShippedFile_Exit1', () => {
 });
 
 test('T6_ExcludedFileGone_Exit1', () => {
-  const r = diff(photo(), photo((d) => { delete d.files.core.excluded.arnes['guides/maintaining/incident-log.md']; }));
+  const r = diff(photo(), photo((d) => { delete d.files.core.excluded.arnes['guides/guide-update-proposals.md']; }));
   assert.strictEqual(r.code, 1, `${r.err}\n${r.out}`);
   assert.deepStrictEqual(kinds(r), ['gone-excluded']);
-  assert.match(r.json.findings[0].message, /guides\/maintaining\/incident-log\.md/);
+  assert.match(r.json.findings[0].message, /guides\/guide-update-proposals\.md/);
 });
 
 test('T6_ExcludedNowShipped_Exit1', () => {
   // lo peor de una mudanza: un archivo excluido que se movió fuera de su exclusión y ahora sale, con el mismo contenido
   const r = diff(photo(), photo((d) => {
-    delete d.files.core.excluded.arnes['guides/maintaining/incident-log.md'];
-    d.files.core.shipped.arnes['guides/decisions/incident-log.md'] = 'h-incidentes';
+    delete d.files.core.excluded.arnes['guides/guide-update-proposals.md'];
+    d.files.core.shipped.arnes['guides/decisions/guide-update-proposals.md'] = 'h-incidentes';
   }));
   assert.strictEqual(r.code, 1, `${r.err}\n${r.out}`);
   assert.deepStrictEqual(kinds(r), ['now-shipped'], 'un solo hallazgo, no «nuevo» más «desaparecido»');
-  assert.match(r.json.findings[0].message, /guides\/decisions\/incident-log\.md/);
-  assert.match(r.json.findings[0].message, /guides\/maintaining\/incident-log\.md/);
+  assert.match(r.json.findings[0].message, /guides\/decisions\/guide-update-proposals\.md/);
+  assert.match(r.json.findings[0].message, /guides\/guide-update-proposals\.md/);
   assert.deepStrictEqual(r.json.moved, [], 'cambiar de lado no es un movido');
 });
 
@@ -517,19 +517,19 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
       'agent-skills': { in: ['skills/**', 'agents/*.md'], out: [] },
     } },
     skillRenames: [],
-    synthetic: [{ target: 'guides/maintaining/incident-log.md', from: 'scripts/publishing/public-files/guides/maintaining/incident-log.md', reason: 'x', packages: ['core'] }],
+    synthetic: [{ target: 'guides/guide-update-proposals.md', from: 'scripts/publishing/public-files/guides/guide-update-proposals.md', reason: 'x', packages: ['core'] }],
   }));
-  const before = handCopy({ 'README.md': 'hola\n', 'guides/maintaining/incident-log.md': 'el papel público\n', 'guides/guia.md': 'antes\n' });
+  const before = handCopy({ 'README.md': 'hola\n', 'guides/guide-update-proposals.md': 'el papel público\n', 'guides/guia.md': 'antes\n' });
   const after = alteredCopy(before, {
     'specs/story.md': '# privada\n',                          // exclusión fija
     'skills/projects/cliente/SKILL.md': '# de un cliente\n',  // exclusión fija, del lado de agent-skills
     'guides/fuera.md': 'la lista lo deja afuera\n',            // «out» de todos los paquetes que lo toman
     'guides/privada.md': 'afuera privado\n',                   // el «lista de excluidos» de la tabla privada
-    'guides/maintaining/incident-log.md': 'EL PRIVADO, con nombres\n',     // el destino de un papel, por su homónimo privado
+    'guides/guide-update-proposals.md': 'EL PRIVADO, con nombres\n',     // el destino de un papel, por su homónimo privado
     'guides/guia.md': 'después\n',                             // lo sano: sale, y la story lo tocó
   });
   const touched = path.join(dir, 'tocados.txt');
-  const privateOnes = ['guides/fuera.md', 'guides/maintaining/incident-log.md', 'guides/privada.md', 'skills/projects/cliente/SKILL.md', 'specs/story.md'];
+  const privateOnes = ['guides/fuera.md', 'guides/guide-update-proposals.md', 'guides/privada.md', 'skills/projects/cliente/SKILL.md', 'specs/story.md'];
   fs.writeFileSync(touched, `${[...privateOnes, 'guides/guia.md'].join('\n')}\n`);
 
   // 🔴 Falla con: sale 0, «salvo 6 archivo(s) que la story tocó»
@@ -540,10 +540,10 @@ test('Export_TreesTouched_OnlyWhatShipsExplains — un archivo tocado que el exp
   assert.deepStrictEqual(r.json.explained.map((x) => x.path), ['guides/guia.md'], 'el espejo: lo que sale y se tocó sigue explicado');
 
   // el espejo del papel: tocar su «from» explica su destino
-  fs.writeFileSync(touched, 'scripts/publishing/public-files/guides/maintaining/incident-log.md\n');
-  r = trees(before, alteredCopy(before, { 'guides/maintaining/incident-log.md': 'el papel público, retocado\n' }), ['--touched', touched, '--allowlist', list]);
+  fs.writeFileSync(touched, 'scripts/publishing/public-files/guides/guide-update-proposals.md\n');
+  r = trees(before, alteredCopy(before, { 'guides/guide-update-proposals.md': 'el papel público, retocado\n' }), ['--touched', touched, '--allowlist', list]);
   assert.strictEqual(r.code, 0, `${r.err}\n${r.out}`);
-  assert.deepStrictEqual(r.json.explained.map((x) => `${x.path} <- ${x.by}`), ['guides/maintaining/incident-log.md <- scripts/publishing/public-files/guides/maintaining/incident-log.md']);
+  assert.deepStrictEqual(r.json.explained.map((x) => `${x.path} <- ${x.by}`), ['guides/guide-update-proposals.md <- scripts/publishing/public-files/guides/guide-update-proposals.md']);
 
   // sin la tabla privada al lado de la lista no se sabe qué deja afuera: «no pude mirar»
   fs.rmSync(path.join(dir, 'replacements.json'));

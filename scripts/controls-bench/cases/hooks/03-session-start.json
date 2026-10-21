@@ -365,7 +365,7 @@
         {
           "id": "quiet-cwd-es-home",
           "type": "must-stay-quiet",
-          "__why": "incident-log#codegraph-indexa-el-home (2026-08-24): sesión abierta en $HOME con un package.json suelto → el hook indexó el home entero 2 h (3.8 GB). Con los stubs y SIN el guard este caso crea .codegraph y falla. HOME=${FIXTURE} para que cwd == HOME; el guard compara rutas físicas (pwd -P) porque /var → /private/var.",
+          "__why": "Caso (2026-08-24): sesión abierta en $HOME con un package.json suelto → el hook indexó el home entero 2 h (3.8 GB). Con los stubs y SIN el guard este caso crea .codegraph y falla. HOME=${FIXTURE} para que cwd == HOME; el guard compara rutas físicas (pwd -P) porque /var → /private/var.",
           "setup": [
             "echo '{}' > package.json",
             "mkdir -p $SANDBOX_HOME/bin",
@@ -423,7 +423,7 @@
         {
           "id": "codex-only-indexa-sin-claude",
           "type": "must-run",
-          "__why": "incident-log#codegraph-codex-sin-indice (2026-08-24): un dev solo-Codex tiene codegraph pero no el CLI claude; antes el hook salía en `command -v claude || exit 0` y NUNCA indexaba → el server codegraph de Codex respondía vacío. Con solo el stub de codegraph (sin claude en PATH) el hook DEBE indexar y marcar done.",
+          "__why": "Caso (2026-08-24): un dev solo-Codex tiene codegraph pero no el CLI claude; antes el hook salía en `command -v claude || exit 0` y NUNCA indexaba → el server codegraph de Codex respondía vacío. Con solo el stub de codegraph (sin claude en PATH) el hook DEBE indexar y marcar done.",
           "setup": [
             "git init -q -b main .",
             "echo '{}' > package.json",

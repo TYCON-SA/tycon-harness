@@ -328,7 +328,7 @@
     },
     {
       "log": "session-collision-guard.js — retirado del set canónico",
-      "verdict": "RETIRADO 2026-09-15 del lado Codex, igual que del lado Claude el 2026-09-07 (incident-log#freno-de-sesiones-retirado-2026-09-07): frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El script y sus casos del banco siguen.",
+      "verdict": "RETIRADO 2026-09-15 del lado Codex, igual que del lado Claude el 2026-09-07: frenaba trabajo legítimo. En Claude queda como opción apagada (TYCON_SESSION_GUARD=1); en Codex no se registra. El script y sus casos del banco siguen.",
       "scripts": [
         "session-collision-guard.js"
       ]

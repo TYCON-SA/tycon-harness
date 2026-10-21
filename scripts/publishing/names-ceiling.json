@@ -3,7 +3,7 @@
   "__last_change": {
     "date": "2026-09-29",
     "direction": "baja",
-    "reason": "Tanda D de la story 8.10, el cierre: los revisores y sus traducciones a Codex, el pipeline, las otras skills y el paquete Bizuit sin nombres reales (las citas de casos, un sujeto genérico con su enlace al incident-log). El núcleo bajó de 720 a 0 en el contenido y de 99 a 0 en los pegados; bizuit, de 188 a 0 y de 32 a 0. Con la tabla real, 0 reemplazos en las dos copias."
+    "reason": "Tanda D de la story 8.10, el cierre: los revisores y sus traducciones a Codex, el pipeline, las otras skills y el paquete Bizuit sin nombres reales (las citas de casos, un sujeto genérico). El núcleo bajó de 720 a 0 en el contenido y de 99 a 0 en los pegados; bizuit, de 188 a 0 y de 32 a 0. Con la tabla real, 0 reemplazos en las dos copias."
   },
   "nucleo": { "content": 0, "paths": 0, "glued": 0 },
   "bizuit": { "content": 0, "paths": 0, "glued": 0 }

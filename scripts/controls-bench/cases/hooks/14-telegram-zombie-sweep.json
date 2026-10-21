@@ -5,7 +5,7 @@
       "script": "${TCG}/scripts/hooks/telegram-zombie-sweep.sh",
       "event": "SessionStart",
       "matcher": "*",
-      "__why": "incident-log#telegram-zombies (2026-08-24): lanzadores del plugin oficial de Telegram huérfanos (ppid=1) durante días, 30-55% CPU c/u, robando updates al bot válido. Criterio: ppid=1 del lanzador ⇒ el CLI murió. Con ps falso (TYCON_TZS_PS_FILE) + dry-run se prueba la selección; el caso 'mata-de-verdad' mata un proceso real doble-forkeado.",
+      "__why": "Caso (2026-08-24): lanzadores del plugin oficial de Telegram huérfanos (ppid=1) durante días, 30-55% CPU c/u, robando updates al bot válido. Criterio: ppid=1 del lanzador ⇒ el CLI murió. Con ps falso (TYCON_TZS_PS_FILE) + dry-run se prueba la selección; el caso 'mata-de-verdad' mata un proceso real doble-forkeado.",
       "cases": [
         {
           "id": "quiet-sin-plugin",

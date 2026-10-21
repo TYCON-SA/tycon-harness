@@ -155,7 +155,6 @@ process.stdout.write(
   `revisores.\n\n${lineas}\n\n` +
   `  Números completos: node ${path.relative(process.cwd(), __filename) || __filename} --report\n` +
   `  Apagar el desempate: TYCON_LANE_LLM=0 · apagar este aviso: TYCON_LANE_LLM_NOTICE=0\n` +
-  `  Por qué existe: incident-log#carril-sin-salida-2026-08-27\n` +
   `</system-reminder>\n`,
 );
 

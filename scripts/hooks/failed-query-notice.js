@@ -254,8 +254,7 @@ function avisos(cmd, stdout, stderr, opciones = {}) {
       `   «${c.texto.replace(/\s+/g, ' ').slice(0, 100)}»\n` +
       '   no sé si «no hay nada» o si el comando FALLÓ — y se ven igual. Antes de concluir, mirá el\n' +
       comoMirar +
-      '   Caso: dos veces «no hay PR abierto» con un az que había fallado\n' +
-      '   (incident-log#comando-fallado-leido-como-vacio-2026-09-04; pipeline-debt SALIDA-VACIA-DE-COMANDO-FALLADO).\n',
+      '   Pasó dos veces: «no hay PR abierto» con un az que había fallado.\n',
     );
   }
   const proys = proyectosAz(cmd);
