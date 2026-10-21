@@ -1806,7 +1806,10 @@ const TEXTUALES = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'sed', '
 // Claves de cadena de conexión: `Addr`, `Address` y `Network Address` son sinónimos documentados de
 // SqlClient y no estaban.
 const CONEXION = /(^|[;"'\s(])(server|data source|addr|address|network address)\s*=\s*("[^"]*"|'[^']*'|[^;"'\s)]+)/gi;
-const RECURSO_SQL = /Microsoft\.Sql\/servers\/([A-Za-z0-9-]+)/i;
+// Sólo un id de recurso (`…/providers/Microsoft.Sql/servers/<nombre>`) nombra un servidor: el tipo
+// `microsoft.sql/servers/databases` de una consulta de `az graph` no nombra ninguno, y leído como servidor
+// frenaba la consulta por un host «databases» que no existe.
+const RECURSO_SQL = /providers\/Microsoft\.Sql\/servers\/([A-Za-z0-9-]+)/i;
 const URL_SQL = /(?:jdbc:)?(?:sqlserver|mssql|tds|azuresql|ms|odbc\+sqlserver):\/\/(?:[^@/\s]*@)?([A-Za-z0-9._*?{},-]+)/i;
 // Un archivo NO es un servidor: `Data Source=app.db` es SQLite, y frenar un `dotnet ef` rutinario es
 // cómo muere un control (pase adversarial 2026-09-15, F1).
@@ -1888,10 +1891,18 @@ function servidoresNombrados(partes, tokens, PREFIJOS, vars, expandir) {
     }
 
     if (prog === 'az' || t.includes('az')) {
+      // el subcomando de `az sql`, hasta la primera bandera: `az sql server firewall-rule create -s …` → server, firewall-rule, create
+      const iSql = t.findIndex((x, k) => x === 'sql' && t[k - 1] === 'az');
+      const ruta = [];
+      for (let k = iSql + 1; iSql >= 0 && k < t.length && !t[k].startsWith('-'); k++) ruta.push(t[k]);
+      // `-s` es el servidor en `az sql db|dw|elastic-pool …` y en los grupos de `az sql server` (firewall-rule, ad-admin…),
+      // pero `az sql server <verbo>` no lo tiene: ahí el servidor es `-n`, y lo que sigue a `-s` (en la práctica, el id
+      // de una suscripción) leído como servidor frenaba una consulta de configuración
+      const sinFlagS = ruta.length === 2 && ruta[0] === 'server';
       for (let i = 1; i < t.length; i++) {
         // `az sql server update|show|delete -n <nombre>`: ahí el servidor es el recurso mismo
         const esSqlServer = t.includes('sql') && t.includes('server');
-        const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql')) ||
+        const esFlagServidor = (t[i] === '--server' || (t[i] === '-s' && t.includes('sql') && !sinFlagS) ||
                                 (esSqlServer && (t[i] === '-n' || t[i] === '--name')));
         if (esFlagServidor && t[i + 1] !== undefined) agregar(crudoDe(texto, t[i + 1]), 'az');
         const igual = /^--server[=:](.+)$/.exec(t[i]);
