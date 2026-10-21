@@ -2448,14 +2448,14 @@ test('T28 SiteConfig_StackSection_ShowsCurrentAndDefault @story-8.48 @ac-25 — 
   // 🔴 rojo: la sección no muestra los lenguajes que ya conoce, las herramientas con su origen o las reglas; o falta un idioma.
   const con = await pantallaTec({ stack: { code_extensions: ['.ex'], test_runners: [GO_ORG, CARGO], rules: { test_names: 'pascal' } } });
   const t = con.texto();
-  for (const re of [/Python/, /Svelte/, /pytest/, /de fábrica/, /cambiada por tu organización/, /agregada por tu organización/, /el arnés la corre por dentro/, /Vitest/]) assert.match(t, re);
+  for (const re of [/Python/, /Svelte/, /pytest/, /de fábrica/, /cambiada por tu organización/, /agregada por tu organización/, /incluida en el arnés · no se edita/, /Vitest/]) assert.match(t, re);
   assert.ok(con.todos().some((n) => n.tag === 'input' && n.attrs.value === '.ex'), 'la terminación de la organización');
   const regla = con.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.test_names');
   assert.strictEqual(regla.value, 'pascal');
   assert.ok(con.todos().some((n) => n.tag === 'select' && n.attrs['data-path'] === 'stack.rules.screen_test'));
   assert.ok(con.todos().some((n) => n.attrs['data-path'] === 'stack.rules.ui_language'));
-  // las de la puerta no se cambian desde acá: una línea dice cómo reemplazar una
-  assert.match(t, /herramienta propia.*mismo archivo/);
+  // las de la puerta no se cambian desde acá: «Reemplazar» dice cómo (el detalle, en T30b)
+  assert.match(t, /Reemplazar/);
   const sin = await pantallaTec({});
   assert.match(sin.texto(), /no tenés que configurar nada/);
   const en = await pantallaTec({ stack: { test_runners: [CARGO] } }, 'en');
@@ -2508,10 +2508,71 @@ test('T30 SiteConfig_FactoryRunner_ChangeAndRevert @story-8.48 @ac-28 — «Camb
   assert.match(p.texto(), /cambiada por tu organización/);
   p.boton(/Volver a la de fábrica/).on.click(); await p.esperar();
   assert.strictEqual((await p.revisado()).stack, undefined, 'sin la copia, `stack` vacío no se propone');
-  // las cuatro que corre la puerta por dentro no tienen «Cambiar»
+  // las cuatro que corre la puerta por dentro no tienen «Cambiar»: sólo «Reemplazar», que explica cómo
   const dotnet = p.todos().find((n) => n.attrs['data-runner'] === 'dotnet');
   const deDotnet = (() => { const out = []; const walk = (x) => { out.push(x); (x.hijos || []).forEach(walk); }; walk(dotnet); return out; })();
-  assert.ok(!deDotnet.some((n) => n.tag === 'button'), '.NET sin botones');
+  assert.deepStrictEqual(deDotnet.filter((n) => n.tag === 'button').map((n) => n.textContent), ['Reemplazar'], '.NET sólo con «Reemplazar»');
+});
+
+test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas con las mismas columnas y el origen en palabras claras', async () => {
+  // 🔴 rojo: las internas con una columna menos (la tabla queda corrida), las internas y las recetas con el mismo
+  //    «de fábrica», o sin «Reemplazar» en las internas.
+  const p = await pantallaTec({ stack: { test_runners: [CARGO] } });
+  const fila = (n) => p.todos().find((x) => x.attrs['data-runner'] === n);
+  const celdas = (n) => (fila(n).hijos || []).filter((x) => x.tag === 'span');
+  for (const n of ['dotnet', 'vitest', 'go', 'cargo']) assert.strictEqual(celdas(n).length, 4, `${n}: nombre, archivo, origen y acción`);
+  const origen = (n) => celdas(n)[2].textContent;
+  assert.strictEqual(origen('dotnet'), 'incluida en el arnés · no se edita');
+  assert.strictEqual(origen('go'), 'de fábrica · se puede cambiar');
+  assert.strictEqual(origen('cargo'), 'agregada por tu organización');
+  // «Reemplazar» despliega cómo hacerlo, en la fila
+  const reemplazar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila('dotnet')); return out.find((x) => x.tag === 'button'); })();
+  assert.strictEqual(reemplazar.textContent, 'Reemplazar');
+  assert.doesNotMatch(p.texto(), /agregá una receta que se detecte con el mismo archivo/i, 'plegado hasta que se toca');
+  reemplazar.on.click(); await p.esperar();
+  assert.match(p.texto(), /Agregá una receta que se detecte con el mismo archivo y gana la de tu organización/);
+  // una de fábrica cambiada lo dice
+  const cambiada = await pantallaTec({ stack: { test_runners: [{ name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/j.xml' } }] } });
+  const celdasGo = (cambiada.todos().find((x) => x.attrs['data-runner'] === 'go').hijos || []).filter((x) => x.tag === 'span');
+  assert.strictEqual(celdasGo[2].textContent, 'cambiada por tu organización');
+  // y en inglés
+  const en = await pantallaTec({}, 'en');
+  const celdasEn = (n) => (en.todos().find((x) => x.attrs['data-runner'] === n).hijos || []).filter((x) => x.tag === 'span');
+  assert.strictEqual(celdasEn('dotnet')[2].textContent, 'included in the harness · not editable');
+  assert.strictEqual(celdasEn('go')[2].textContent, 'built in · can be changed');
+});
+
+test('T30c SiteConfig_OrgRunner_LabelAndRepoFiltersSurviveChange — el nombre para personas, el filtro de cada repo a la vista y conservado al guardar', async () => {
+  // 🔴 rojo: la fila o el formulario muestran el id en vez del nombre; el formulario no muestra el filtro de un repo; o
+  //    «Guardar» pierde `repos`/`args_default` (la máquina volvería a correr sin el filtro).
+  const NETFX = {
+    name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1, command: 'bash -c x', results: { format: 'trx', path: '{results}/**/*.trx' },
+    args_default: 'TestCategory!=Slow',
+    repos: [{ repo: { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' }, args: 'TestCategory=Unit' }],
+  };
+  const p = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  const fila = p.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest');
+  assert.strictEqual((fila.hijos || []).filter((x) => x.tag === 'span')[0].textContent, '.NET Framework (vstest)', 'la fila con el nombre para personas');
+  const cambiar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila); return out.find((x) => x.tag === 'button' && x.textContent === 'Cambiar'); })();
+  cambiar.on.click(); await p.esperar();
+  assert.match(p.texto(), /Cambiar la herramienta \.NET Framework \(vstest\)/);
+  const campoDe = (k) => p.todos().filter((n) => n.attrs['data-path'] === `runner.${k}`).pop();
+  assert.ok(campoDe('repos.0.args'), 'el filtro del repo, a la vista');
+  assert.strictEqual(campoDe('repos.0.args').attrs.value, 'TestCategory=Unit');
+  assert.match(p.texto(), /azure · acme\/Prod\/api/, 'el repo de ese filtro, con su nombre');
+  assert.strictEqual(campoDe('args_default').attrs.value, 'TestCategory!=Slow');
+  // la cobertura dice que es un formato
+  assert.ok(p.todos().some((n) => n.tag === 'option' && n.textContent === 'Cobertura (formato XML)'), 'la opción «Cobertura» aclara que es un formato');
+  // guardar sin tocar el filtro lo conserva entero; editarlo cambia sólo el args
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).stack.test_runners[0], NETFX, 'guardar sin cambios no pierde nada');
+  cambiar.on.click(); await p.esperar();
+  campoDe('repos.0.args').on.input({ target: { value: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' } });
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardada = (await p.revisado()).stack.test_runners[0];
+  assert.deepStrictEqual(guardada.repos, [{ repo: NETFX.repos[0].repo, args: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' }]);
+  assert.strictEqual(guardada.args_default, 'TestCategory!=Slow');
+  assert.strictEqual(guardada.label, '.NET Framework (vstest)');
 });
 
 test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíselo a tu agente» deja la frase y la guía dice qué hace el agente', async () => {

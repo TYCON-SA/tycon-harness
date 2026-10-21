@@ -546,10 +546,17 @@ only: they are changed with a request in their repo.
 What the person sees in the section, and what the agent does when asked for a tool that is not there.
 
 - **On the site**: the languages the harness already recognizes, the endings your team adds, the test tools table and
-  the three rules. The ones the test gate runs internally (.NET, Vitest, Jest and Node) show as «built in · the
-  harness runs it internally» and cannot be changed here. pytest, Go, Maven, Gradle, Karma and Playwright can be changed: the form arrives filled with the
-  built-in one, and saving leaves an organization copy with the same name that replaces it. «Back to the built-in one»
-  deletes the copy. A tool's command runs on every team member's computer.
+  the three rules. Each tool shows its name, the file that detects it, its origin and what can be done:
+  - **included in the harness · not editable**: .NET, Vitest, Jest and Node, which the test gate runs internally.
+    «Replace» explains how: an organization recipe detected by the same file wins.
+  - **built in · can be changed**: pytest, Go, Maven, Gradle, Karma and Playwright. «Change» brings the form filled
+    with the built-in one, and saving leaves an organization copy with the same name that replaces it.
+  - **changed by your organization**: that copy. «Back to the built-in one» deletes it.
+  - **added by your organization**: a new tool, like the .NET Framework one with vstest.
+  A tool's command runs on every team member's computer.
+
+  ![How the tests run](sitio-de-la-organizacion/capturas/configuracion-tecnologia.png)
+
 - **«Ask your agent»** leaves the sentence «set up my project's tests in the harness configuration». The person pastes
   it into their coding agent, opened in the project.
 - **What the agent does** with that sentence:
@@ -558,7 +565,8 @@ What the person sees in the section, and what the agent does when asked for a to
      measures coverage and in what format (Cobertura, lcov, istanbul, JaCoCo or the Go profile). `{results}` is the
      run's folder.
   2. Writes the `stack.test_runners` entry in `team-repos.json` of the profile repo: `name` (lowercase and hyphens),
-     `detect`, `command`, `results` and, if it measures, `coverage`.
+     `label` (the name a person sees on the site, for example «.NET Framework (vstest)»), `detect`, `command`,
+     `results` and, if it measures, `coverage`.
   3. Validates it with the machines' reader before proposing:
      `node -e 'console.log(JSON.stringify(require("<harness>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      With no problems in `stack`, it proposes it as a request to the profile repo.

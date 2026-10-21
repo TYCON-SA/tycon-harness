@@ -138,11 +138,15 @@ const esNota = (k, v) => k.startsWith('__')
   || (k.startsWith('_') && !NOTA_SECRETO.test(k) && (typeof v === 'string' || (Array.isArray(v) && v.every((s) => typeof s === 'string'))));
 
 /**
- * Los problemas de `detect_depth`, `args_default` y `repos` de una herramienta, con la ruta `<p>.<campo>`. Las mismas
- * reglas que `team-repos.js` (`runnersProblems`), que las repite porque no carga el skill.
+ * Los problemas de `label`, `detect_depth`, `args_default` y `repos` de una herramienta, con la ruta `<p>.<campo>`.
+ * Las mismas reglas que `team-repos.js` (`runnersProblems`), que las repite porque no carga el skill.
  */
 function detalleProblemas(r, p) {
   const out = [];
+  // el nombre para personas que muestra el sitio: texto de 1 a 80 caracteres
+  if (r.label !== undefined && (typeof r.label !== 'string' || !r.label.trim() || r.label.length > 80)) {
+    out.push({ path: `${p}.label`, message: 'el nombre para personas: texto de 1 a 80 caracteres' });
+  }
   if (r.detect_depth !== undefined && (!Number.isInteger(r.detect_depth) || r.detect_depth < 0 || r.detect_depth > DETECT_DEPTH_MAX)) {
     out.push({ path: `${p}.detect_depth`, message: `un entero de 0 a ${DETECT_DEPTH_MAX} (es ${JSON.stringify(r.detect_depth)})` });
   }
