@@ -801,7 +801,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     const cl = clones();
     const r = cl.operaciones ? leerDe(cl.operaciones.dir, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
     const d = r.estado === 'leido' ? docDe(r.texto) : null;
-    return RP.dondeLeerPedidos(d);
+    return RP.dondeLeerPedidos(d) || { sinDonde: M(RP.porQueNoSeLeenPedidos(d) === 'organizacion' ? 'config.pedidosSinOrganizacion' : 'config.pedidosSinProyectos') };
   }
   const pedidosGuardados = new Map();
   async function pedidoGuardado(clave, leer) {
@@ -815,7 +815,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   /** Los tipos de todos los proyectos: `{ ok, tipos, sinLeer: [{ proyecto, message }] }`; sin ninguno leído, el motivo del primero. */
   async function tiposDePedido() {
     const donde = dondeLeerPedidos();
-    if (!donde) return { ok: false, codigo: 'no_reconozco', message: M('config.pedidosSinProyectos') };
+    if (donde.sinDonde) return { ok: false, codigo: 'no_reconozco', message: donde.sinDonde };
     const leidos = await Promise.all(donde.proyectos.map(async (p) => ({ proyecto: p, r: await tiposDe(donde.org, p) })));
     const ok = leidos.filter((x) => x.r.ok);
     if (!ok.length) return { ok: false, codigo: leidos[0].r.codigo, message: leidos[0].r.message };
@@ -826,7 +826,7 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
   async function camposDePedido(tipo) {
     const t = String(tipo || '').trim();
     const donde = dondeLeerPedidos();
-    if (!donde) return { ok: false, codigo: 'no_reconozco', message: M('config.pedidosSinProyectos') };
+    if (donde.sinDonde) return { ok: false, codigo: 'no_reconozco', message: donde.sinDonde };
     for (const p of donde.proyectos) {
       const ts = await tiposDe(donde.org, p);
       if (!ts.ok || !ts.tipos.includes(t)) continue;

@@ -734,17 +734,41 @@ async function leerPedidos({ org, project, token, urlBase = {}, fetch = globalTh
   }
 }
 /**
+ * El nombre de la organización: la lista de productos la guarda como la usa la noche, con su dirección
+ * («https://dev.azure.com/<org>» o «https://<org>.visualstudio.com»), y la API la pide por nombre. Un nombre suelto queda
+ * igual; una dirección que no es de ninguna de las dos formas da '' (no se adivina).
+ */
+function nombreDeOrganizacion(org) {
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(org)) return nombreDeRuta(org) ? org : '';
+  let u;
+  try { u = new URL(org); } catch { return ''; }
+  if (u.protocol !== 'https:') return '';
+  const partes = u.pathname.split('/').filter(Boolean);
+  if (u.hostname === 'dev.azure.com') return partes.length === 1 ? decodeURIComponent(partes[0]) : '';
+  const vs = /^([^.]+)\.visualstudio\.com$/.exec(u.hostname);
+  return vs && !partes.length ? vs[1] : '';
+}
+/**
  * De qué organización y proyectos leer, según la lista de productos (repos.json del repo de operaciones):
  * `{ org, proyectos }` o null. El proyecto va codificado en la lista («Beta%20Dos/Back»): se decodifica, como la noche.
  */
 function dondeLeerPedidos(doc) {
   const esObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
-  const org = esObj(doc) && esObj(doc.azure) && typeof doc.azure.org === 'string' ? doc.azure.org.trim() : '';
+  const org = nombreDeOrganizacion(esObj(doc) && esObj(doc.azure) && typeof doc.azure.org === 'string' ? doc.azure.org.trim() : '');
   const decodificar = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
   const proyectos = [...new Set((esObj(doc) && Array.isArray(doc.repos) ? doc.repos : [])
     .filter((x) => esObj(x) && x.activo !== false && typeof x.ado === 'string' && x.ado.includes('/'))
     .map((x) => decodificar(x.ado.split('/')[0]).trim()).filter(Boolean))];
   return org && proyectos.length ? { org, proyectos } : null;
+}
+/**
+ * Por qué `dondeLeerPedidos` no da de dónde leer: 'organizacion' si la lista trae productos y la organización falta o no
+ * se reconoce; 'proyectos' si no hay productos con su proyecto (o no hay lista). Cada uno se dice con su causa.
+ */
+function porQueNoSeLeenPedidos(doc) {
+  const esObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+  if (!esObj(doc) || !(Array.isArray(doc.repos) && doc.repos.some((x) => esObj(x) && x.activo !== false && typeof x.ado === 'string' && x.ado.includes('/')))) return 'proyectos';
+  return nombreDeOrganizacion(esObj(doc.azure) && typeof doc.azure.org === 'string' ? doc.azure.org.trim() : '') ? 'proyectos' : 'organizacion';
 }
 /** Los tipos de pedido de un proyecto que se pueden crear: `{ ok, tipos: [nombre] }`, en orden alfabético. */
 async function tiposDePedido(opts) {
@@ -775,4 +799,4 @@ async function camposDelTipo({ tipo, ...opts }) {
 }
 
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, porQueNoSeLeenPedidos,enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };

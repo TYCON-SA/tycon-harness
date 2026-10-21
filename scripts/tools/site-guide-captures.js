@@ -58,6 +58,7 @@ const CAPTURAS = [
   { nombre: 'configuracion-confirmar-maquina', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-personas', pasos: 'config', espera: 'Por confirmar' },
   { nombre: 'configuracion-repos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-repos', pasos: 'config', espera: 'Dónde vive cada repo' },
   { nombre: 'configuracion-avisos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-avisos', pasos: 'config', espera: 'Aviso de espera' },
+  { nombre: 'configuracion-pedidos', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-pedidos', pasos: 'config', espera: 'Valores leídos de la plataforma' },
   { nombre: 'configuracion-claude', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-claude', pasos: 'config', espera: 'Cómo contesta Claude' },
   { nombre: 'configuracion-instalacion', sitio: 'normal', quien: LEAD, ruta: '/configuracion#pestana-instalacion', pasos: 'config', espera: 'Perfil de instalación' },
   { nombre: 'configuracion-revisado', sitio: 'normal', quien: LEAD, ruta: '/configuracion#seccion-respuesta', pasos: 'revisar', espera: 'Revisado: está bien escrito' },
@@ -112,6 +113,28 @@ function blobsDelBuzon() {
 }
 
 const GH = (repo) => ({ platform: 'github', org: 'acme', repo });
+/** La API de pedidos de trabajo de mentira: los tipos de cada proyecto y los campos del tipo «Riesgo», con sus valores. */
+async function azureFalso() {
+  const CAMPOS = [
+    { referenceName: 'Custom.Categoria', name: 'Categoría', allowedValues: ['Calidad', 'Operacional', 'Seguridad', 'Técnico'] },
+    { referenceName: 'Custom.Probabilidad', name: 'Probabilidad', allowedValues: ['1', '2', '3', '4', '5'] },
+    { referenceName: 'Custom.Impacto', name: 'Impacto', allowedValues: ['1', '2', '3', '4', '5'] },
+    { referenceName: 'Custom.Prioridad', name: 'Prioridad del riesgo', allowedValues: ['🔴 Crítico (21-25)', '🟠 Alto (15-20)', '🟡 Medio (8-14)', '🟢 Bajo (1-7)'] },
+    { referenceName: 'Custom.Disparador', name: 'Disparador' },
+    { referenceName: 'Custom.PlanDeMitigacion', name: 'Plan de mitigación' },
+  ];
+  const server = require('http').createServer((req, res) => {
+    const u = new URL(req.url, 'http://x');
+    const doc = /\/workitemtypecategories\//.test(u.pathname) ? { workItemTypes: [] }
+      : /\/workitemtypes\/Riesgo\/fields$/.test(u.pathname) ? { value: CAMPOS }
+        : /\/workitemtypes$/.test(u.pathname) ? { value: [{ name: 'Bug' }, { name: 'Riesgo' }, { name: 'Tarea' }] } : null;
+    // lo demás (los pipelines de cada proyecto) contesta «sin permiso», como sin la credencial: las otras capturas no cambian
+    res.writeHead(doc ? 200 : 401, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(doc || {}));
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  return { base: `http://127.0.0.1:${server.address().port}`, cerrar: () => new Promise((r) => server.close(r)) };
+}
 /** Los archivos del repo de operaciones. `extra.access`: la lista de quién entra en lugar de la de antes (site.maintainers). */
 function operaciones(extra = {}) {
   const H = req('scripts/tests/lib/site-harness.js');
@@ -124,12 +147,17 @@ function operaciones(extra = {}) {
       'mac-ana': { person: ANA, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
       'mac-lead': { person: LEAD, reported_sha256: null, confirmed_by: LEAD, confirmed_on: '2026-10-01' },
     } },
+    // los pedidos de vulnerabilidades, con el tipo y los campos que devuelve la plataforma de mentira (azureFalso)
+    work_items: { type: 'Riesgo', fixed_fields: { 'Custom.Categoria': 'Seguridad', 'Custom.Probabilidad': 3 }, by_severity: {
+      critical: { 'Custom.Impacto': 5, 'Custom.Prioridad': '🔴 Crítico (21-25)' }, high: { 'Custom.Impacto': 4, 'Custom.Prioridad': '🟠 Alto (15-20)' },
+      moderate: { 'Custom.Impacto': 3, 'Custom.Prioridad': '🟡 Medio (8-14)' }, low: { 'Custom.Impacto': 2, 'Custom.Prioridad': '🟢 Bajo (1-7)' } } },
   };
   if (extra.access) { delete ops.site.maintainers; ops.site.access = extra.access; }
   const archivos = H.archivosDeOperaciones({ hoy: HOY, ayer: AYER, config: ops });
   // los proyectos del día: dos productos con sus stories (sólo número, estado y días en el estado)
   delete archivos['.dashboard/proyectos/Proyecto X__Repo X.json'];
-  archivos['scripts/nightly/dependencies/repos.json'] = { azure: { org: 'https://dev.example/acme' }, repos: [
+  // la organización con la forma del archivo real; los pedidos se leen de azureFalso, nunca de la red
+  archivos['scripts/nightly/dependencies/repos.json'] = { azure: { org: 'https://dev.azure.com/acme' }, repos: [
     { producto: 'Producto X', ruta: 'Producto-X/FrontEnd', ado: 'Producto X/FrontEnd', tipo: 'npm', activo: true },
     { producto: 'Producto Y', ruta: 'Producto-Y/Backend', ado: 'Producto Y/Backend', tipo: 'nuget', activo: true },
   ] };
@@ -200,11 +228,13 @@ async function laboratorio(variante, opciones = {}) {
     SITE_PUBLIC_URL: `http://127.0.0.1:${puerto}`,
     SITE_OIDC_ISSUER: emisor.issuer, SITE_OPERATIONS_REPO: ops.url, SITE_OPERATIONS_TOKEN: TOKEN, SITE_MAILBOX_SAS: H.sas(),
     ...(opciones.sinPerfil ? {} : { SITE_PROFILE_REPO: perfil.url, SITE_PROFILE_TOKEN: TOKEN, SITE_PROFILE_WRITE_TOKEN: TOKEN }), SITE_DATA_DIR: dataDir,
+    SITE_PIPELINES_TOKEN: TOKEN,
   });
+  const az = await azureFalso();
   const cfg = validarConfiguracion(env).cfg;
   const fuentes = crearFuentes({ cfg, dataDir, log: process.env.GUIDE_CAPTURES_DEBUG ? (l) => process.stderr.write(`[sitio] ${l}\n`) : () => {}, urlBuzon: buzon.base });
   const remotos = { operaciones: { platform: 'github', org: 'acme', repo: 'operaciones', web: 'https://github.example/acme/operaciones' }, perfil: { platform: 'github', org: 'acme', repo: 'perfil', web: 'https://github.example/acme/perfil' } };
-  const rutasConfig = req('scripts/site/tabs/config.js').crearRutas({ cfg, fuentes, versionImagen: VERSION, remotos, urlBase: { github: gh.base } });
+  const rutasConfig = req('scripts/site/tabs/config.js').crearRutas({ cfg, fuentes, versionImagen: VERSION, remotos, urlBase: { github: gh.base, azure: az.base } });
   const rutasCorridas = req('scripts/site/tabs/runs.js').crearRutas({ cfg, fuentes, version: VERSION, skillsDir: path.join(ROOT, 'skills') });
   const { crearSitio } = req('scripts/site/server.js');
   const rutasAyuda = req('scripts/site/help.js').crearRutas({ raiz: ROOT });
@@ -235,7 +265,7 @@ async function laboratorio(variante, opciones = {}) {
     },
     async cerrar() {
       buzon.st.demora = 0;
-      await h.cerrar(); await emisor.cerrar(); await gh.cerrar(); await ops.cerrar(); await perfil.cerrar(); await buzon.cerrar();
+      await h.cerrar(); await emisor.cerrar(); await gh.cerrar(); await ops.cerrar(); await perfil.cerrar(); await buzon.cerrar(); await az.cerrar();
       fs.rmSync(raiz, { recursive: true, force: true });
     },
   };
