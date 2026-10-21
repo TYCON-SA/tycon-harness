@@ -2,23 +2,22 @@
 /**
  * review-roster — el registro de AUTORÍA de una story: quién implementó y quiénes revisaron.
  *
- * ── Por qué existe (decisión del dev, 2026-08-30) ────────────────────────────────────────────
+ * ── Por qué existe ────────────────────────────────────────────────────────────────────────
  * El AI-Native SDLC Playbook pide que un revisor con IA mire cada PR **en el servidor**. El arnés
  * ya hace algo mejor y antes: implementa la sesión principal y revisan ~28 advisors que son
- * SUBAGENTES con contexto propio — la independencia ya existe. Lo que faltaba es que el rastro
+ * SUBAGENTES con contexto propio — la independencia ya existe. Lo que hace falta es que el rastro
  * committeado la NOMBRE, para que el portón de CI pueda EXIGIRLA en vez de confiar en ella.
  *
- * Antes de esto, `.advisors/pipeline-runs/<story>/` decía "estos advisors corrieron y encontraron
- * esto" — nunca quién escribió el código. El portón podía verificar que hubo revisión, no que la
+ * Sin esta pieza, `.advisors/pipeline-runs/<story>/` dice "estos advisors corrieron y encontraron
+ * esto" — nunca quién escribió el código. El portón puede verificar que hubo revisión, no que la
  * hizo otro. Esta lib cierra esa distancia sin gastar un token: proyecta a un archivo committeable
  * el ledger que el hook `on-advisor-run.js` YA escribe en cada spawn real.
  *
  * ── Tres restricciones de la casa que explican el diseño ─────────────────────────────────────
  * 1. **Lo escribe el harness, no el LLM ni los advisors.** 15 de 16 advisors son read-only
  *    (`tools: [Read, Grep, Glob]`): pedirles que escriban es una instrucción imposible, y bajo esa
- *    contradicción el modelo vuelca al chat (caso 2026-07-27). El roster lo escribe un hook.
- * 2. **Mecánico, no invocado.** Un control que hay que acordarse de correr no corre
- *    (`incident-log#retro-multi-repo-2026-08-24`).
+ *    contradicción el modelo vuelca al chat. El roster lo escribe un hook.
+ * 2. **Mecánico, no invocado.** Un control que hay que acordarse de correr no corre.
  * 3. **Vista derivada, no segunda fuente de verdad.** El roster se REGENERA del ledger; si se
  *    pierde, se reconstruye. Nada que sincronizar a mano.
  *
@@ -39,11 +38,10 @@ const VERSION = 1;
  * Sella el ÁRBOL que los revisores están mirando — el working tree, que en el momento de la
  * revisión todavía no está commiteado.
  *
- * Por qué hace falta (2026-09-06): el roster publicaba `head_sha`, el HEAD al correr los
- * revisores. No es falso, es INÚTIL para auditar: en el pipeline la implementación se commitea
- * DESPUÉS de la revisión, así que ese sha apunta al árbol previo. Medido en la story 2.3 del
- * arnés: de los 25 archivos que tocó, 12 no existían en ese árbol y los otros 13 tenían otro
- * contenido — cero idénticos. Quien quisiera auditar qué se revisó no tenía con qué.
+ * Por qué hace falta: el `head_sha` (el HEAD al correr los revisores) es INÚTIL para auditar: en el pipeline
+ * la implementación se commitea DESPUÉS de la revisión, así que ese sha apunta al árbol previo. En una
+ * corrida real, de los 25 archivos que tocó la story, 12 no existían en ese árbol y los otros 13 tenían otro
+ * contenido — cero idénticos. Con ese sha no hay con qué auditar qué se revisó.
  *
  * `git write-tree` sobre una COPIA del índice: la copia es lo que lo hace barato. Con un índice
  * vacío, `git add -A` re-hashea el repo entero (esto corre en cada spawn de advisor); partiendo
@@ -79,9 +77,9 @@ function treeShaDe(repo) {
  * y un número inventado sería peor que decir que no se sabe.
  *
  * 🔴 No alcanza con contar los `step5-start` a secas (que es lo que hace `advisor-ledger.js` para
- * otra cosa): sobre el ledger real de la story 2.3 eso da **51**, porque la suite
- * `advisor-set-config.test.js` escribía ráfagas de 12 marcas peladas en el ledger de la sesión
- * viva. Las rondas reales fueron 3. Por eso una marca sólo cuenta si produjo trabajo.
+ * otra cosa): en un ledger con ráfagas de 12 marcas peladas (como las que deja la suite
+ * `advisor-set-config.test.js` en el ledger de la sesión viva) eso da **51** cuando las rondas
+ * reales son 3. Por eso una marca sólo cuenta si produjo trabajo.
  */
 function contarRondas(lines, story, esAdhoc) {
   let hayMarcas = false;
@@ -110,28 +108,27 @@ const ADHOC = new Set(['general-purpose', 'Explore', 'Plan', 'claude']);
 
 /**
  * Fuentes de hallazgos que NUNCA son un spawn: las escribe el propio pipeline. Exigirles asiento
- * en el roster frenaba prácticamente toda story real con hallazgos — el cruce findings↔roster es
+ * en el roster frenaría prácticamente toda story real con hallazgos — el cruce findings↔roster es
  * para cazar un advisor inventado, no para pelearse con la contabilidad interna del pipeline.
- * (Medido en Pacara: casi todos los runs traen `mech-check` y `adversarial-verify:*`.)
+ * (Casi todos los runs reales traen `mech-check` y `adversarial-verify:*`.)
  */
-// 🔴 Por PREFIJO, no por nombre exacto (2026-09-06). Medido sobre los runs reales del disco,
-// faltaban cinco fuentes —`orquestador`, `orquestador (smoke AC 15)`, `runtime-matrix (smoke AC
-// 14)`, `ensayo runtime (no advisor)` y `adversarial-verify (3 lentes)`— y con la story 2.1 el
-// portón daba `roster-incoherente` ×3 por ellas. La quinta es una variante escrita distinto de un
-// patrón que YA estaba: una lista literal vuelve a morder con la próxima variante. El prefijo
+// 🔴 Por PREFIJO, no por nombre exacto. Los runs reales traen variantes escritas distinto de un mismo patrón:
+// `orquestador`, `orquestador (smoke AC 15)`, `runtime-matrix (smoke AC 14)`, `ensayo runtime (no advisor)` y
+// `adversarial-verify (3 lentes)`; el portón daba `roster-incoherente` por cada una que faltaba en la lista.
+// Una lista literal vuelve a morder con la próxima variante. El prefijo
 // termina en espacio, paréntesis, dos puntos o fin: `orquestadorx` NO es el orquestador.
 // La copia del portón de CI (`tycon-ci-gate.js`) es idéntica; `roster-validate-parity.test.js` lo cuida.
 const FUENTES_SINTETICAS = [
   /^mech-check$/, /^pipeline$/,
-  /^adversarial-verify(\s|:|\(|-|$)/,   // `-fable`, `-opus`: nombres reales de la 4.4 (2026-09-14)
-  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso 5b nombrado en castellano (AG-2, 2026-09-22)
+  /^adversarial-verify(\s|:|\(|-|$)/,   // `-fable`, `-opus`: nombres reales
+  /^pase adversarial(\s|:|\(|-|$)/,     // el mismo paso 5b nombrado en castellano
   /^orquestador(\s|\(|$)/,
   /^runtime-matrix(\s|\(|$)/,
-  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del step 7c: tampoco es un spawn (AG-3, 2026-09-22)
+  /^e2e-runtime(\s|:|\(|-|$)/,          // el gate de E2E del step 7c: tampoco es un spawn
   /^ensayo runtime(\s|\(|$)/,
 ];
 
-// 🔴 Ver el comentario gemelo en `scripts/ci/tycon-ci-gate.js` (2026-09-22, un pull request de un producto del equipo — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22):
+// 🔴 Ver el comentario gemelo en `scripts/ci/tycon-ci-gate.js`:
 // el roster nombra al revisor desde el ledger (`tycon-silent-failure-hunter`) y el `advisor` de
 // `findings.json` lo tipea el orquestador con la vuelta pegada (`... (iter 3)`). Comparar esos dos
 // textos letra por letra frena PRs sanos. El paréntesis final es una anotación, nunca parte del id
@@ -148,12 +145,12 @@ function esFuenteSintetica(nombre) {
 /**
  * Los TRAMOS de una corrida. Existen porque el roster y `findings.json` NO cubren el mismo pedazo:
  * el roster arranca en el último `step5-start` (la ronda de revisión) y los hallazgos son de toda
- * la corrida. Un hallazgo del paso 1 —la validación de la story, antes de implementar— quedaba
- * siempre como "revisor ausente" (un pull request de un producto del equipo, 2026-09-22 — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22).
+ * la corrida. Un hallazgo del paso 1 —la validación de la story, antes de implementar— queda
+ * siempre como "revisor ausente".
  *
  * 🔴 La salida NO es ensanchar la ventana del roster: ahí adentro está `general-purpose`, que tiene
  * Write y en los pasos 0-4 a veces IMPLEMENTA — certificarlo como revisor volvería falsa la
- * afirmación central de la pieza (lo cazó el pase adversarial). La salida es que cada hallazgo diga
+ * afirmación central de la pieza. La salida es que cada hallazgo diga
  * de qué tramo viene y que el cruce compare tramo contra tramo.
  */
 const TRAMO = { REVISION: 'revision', PREVIO: 'previo', PIPELINE: 'pipeline' };
@@ -166,8 +163,8 @@ const MODELOS = new Set(['opus', 'sonnet', 'haiku', 'fable']);
  * `tycon-silent-failure-hunter (iter 3)` → `{ advisor: 'tycon-silent-failure-hunter', iter: 3 }`.
  *
  * La anotación NO se pierde, se muda: la vuelta va a `iter`, el modelo a `model`, y cualquier otra
- * cosa a `nota`. Un finding no pierde nada y el cruce gana un id comparable — que es exactamente lo
- * que faltaba. Sólo se mira el paréntesis FINAL: los ids de agente son kebab-case y no llevan
+ * cosa a `nota`. Un finding no pierde nada y el cruce gana un id comparable.
+ * Sólo se mira el paréntesis FINAL: los ids de agente son kebab-case y no llevan
  * paréntesis, así que esto no puede fusionar dos agentes distintos.
  */
 function separarAnotacion(nombre) {
@@ -292,10 +289,9 @@ function build(o) {
   const iter = iterPrevias + 1;
 
   // 🔴 No todo spawn es un revisor. Dos filtros, y los dos son la pieza — sin ellos el roster
-  // certificaba como "revisor" a `general-purpose` (el spawn MÁS frecuente del pipeline, que tiene
-  // Write y en los pasos previos a veces IMPLEMENTA) y la afirmación central quedaba falsa:
+  // certifica como "revisor" a `general-purpose` (el spawn MÁS frecuente del pipeline, que tiene
+  // Write y en los pasos previos a veces IMPLEMENTA) y la afirmación central queda falsa:
   // un agente que escribió código figurando como quien lo revisó, firmado por el arnés.
-  // Lo cazó el pase adversarial de la pieza, no la lectura del código.
   //   (a) sólo lo spawneado DESPUÉS del último `step5-start` — o sea la ronda de revisión, no la
   //       exploración ni la implementación de los pasos 0-4;
   //   (b) nunca los agentes de exploración libre (mismo set ADHOC que usa el hook).
@@ -305,13 +301,13 @@ function build(o) {
   for (let i = todas.length - 1; i >= 0; i--) {
     if (todas[i] && todas[i].event === 'step5-start') { desde = i + 1; hayCorte = true; break; }
   }
-  // 🔴 «Previo» se mide contra la PRIMERA ronda, no contra la última (2026-09-22, lo confirmó el
-  // pase adversarial). `reviewers` arranca en la ÚLTIMA marca a propósito (D2: no ensanchar), pero
+  // 🔴 «Previo» se mide contra la PRIMERA ronda, no contra la última.
+  // `reviewers` arranca en la ÚLTIMA marca a propósito (no ensanchar), pero
   // para el otro tramo esa misma marca es el corte equivocado: entre la primera y la última hay
   // rondas de revisión ANTERIORES, y sus revisores son revisores, no agentes de los pasos 0-4.
-  // Cortando por la última, un revisor real de la ronda 1 terminaba etiquetado «previo» en una
+  // Cortando por la última, un revisor real de la ronda 1 queda etiquetado «previo» en una
   // regeneración desde cero — y con eso, un `roster-incoherente` falso contra alguien que sí
-  // revisó. El mismo falso positivo que esta story vino a matar, reencarnado un nivel más abajo.
+  // revisó (el mismo falso positivo del revisor ausente, un nivel más abajo).
   let desdePrimera = 0;
   for (let i = 0; i < todas.length; i++) {
     if (todas[i] && todas[i].event === 'step5-start') { desdePrimera = i; break; }
@@ -322,8 +318,7 @@ function build(o) {
   // compararse. El filtro ADHOC es el mismo, y es la salvaguarda: `general-purpose` no entra acá
   // tampoco. Sale del MISMO ledger — sigue siendo vista derivada, no una segunda fuente de verdad.
   //
-  // 🔴 SIN marca de ronda no hay tramos (2026-09-22, lo confirmó el pase adversarial ejecutando el
-  // caso). Cuando el roster se REGENERA desde el freno local, las líneas llegan por
+  // 🔴 SIN marca de ronda no hay tramos. Cuando el roster se REGENERA desde el freno local, las líneas llegan por
   // `advisor-ledger.query().vivos`, que ya descartó los eventos: sin ningún `step5-start`, `desde`
   // queda en 0 y TODO parece ronda de revisión. Si igual se publicara `agentes_previos`, saldría
   // vacío y un hallazgo del paso 1 volvería a contarse como revisor ausente — el defecto original,
@@ -342,7 +337,7 @@ function build(o) {
   for (const r of relevantes) {
     if (!r || typeof r.advisor !== 'string' || !r.advisor) continue;
     if (ADHOC.has(r.advisor)) continue;
-    // Un spawn sin story NO se adopta: antes entraba al roster de cualquier story de la sesión.
+    // Un spawn sin story NO se adopta: si no, entraría al roster de cualquier story de la sesión.
     if (story != null && String(r.story) !== story) continue;
     const { model, model_source } = resolveModel(r.advisor, r.model, o.agentsDir);
     // Un mismo advisor puede correr en varias iteraciones: se conserva la PRIMERA vez que se lo vio
@@ -369,9 +364,8 @@ function build(o) {
   }
 
   // ── Cuántas RONDAS de revisión hubo ────────────────────────────────────────────────────────
-  // Antes se publicaba `iter` (la cuenta de ESCRITURAS del archivo) como si fueran rondas. En la
-  // story 2.3 eso publicó `iterations: 2` habiendo habido 3 rondas: el roster se escribe cuando el
-  // hook pasa, no una vez por vuelta. Ahora sale del ledger, que es donde está el dato — y el
+  // `iter` es la cuenta de ESCRITURAS del archivo, no de rondas: el roster se escribe cuando el
+  // hook pasa, no una vez por vuelta (con 3 rondas daría `iterations: 2`). Las rondas salen del ledger, que es donde está el dato — y el
   // roster DICE de dónde salió, igual que `model_source` dos campos más arriba: un número medido y
   // uno estimado no pueden verse iguales.
   const rondas = contarRondas(todas, story, (a) => ADHOC.has(a));
@@ -384,7 +378,7 @@ function build(o) {
     story,
     written_by: 'on-advisor-run.js',
     ts: new Date().toISOString(),
-    // `base_sha` — el commit SOBRE EL QUE se revisó. Se llamaba `head_sha`, y ese nombre invitaba
+    // `base_sha` — el commit SOBRE EL QUE se revisó. Un nombre como `head_sha` invitaría
     // a leerlo como "el árbol revisado", que es justo lo que NO es: la implementación se commitea
     // después de la revisión. Lo que se revisó lo sella `tree_sha`.
     base_sha: o.headSha || null,
@@ -410,13 +404,13 @@ function build(o) {
     if (p && typeof p.agent === 'string') previosMerge.set(p.agent, p);
   }
   for (const [agent, p] of previosVistos) if (!previosMerge.has(agent)) previosMerge.set(agent, p);
-  // 🔴 Nadie está en las dos listas, y ante la duda gana REVISOR (2026-09-22, lo confirmó el pase
-  // adversarial). En un re-loop, los revisores de la ronda anterior quedan ANTES del último
+  // 🔴 Nadie está en las dos listas, y ante la duda gana REVISOR.
+  // En un re-loop, los revisores de la ronda anterior quedan ANTES del último
   // `step5-start`, así que el barrido de arriba los clasifica como «previos». Mientras el roster
   // anterior exista eso no se nota (el merge de `reviewers` los conserva), pero en una regeneración
-  // desde cero salían de `reviewers` y aparecían en `agentes_previos`: un revisor REAL degradado de
-  // tramo, y un `roster-incoherente` falso contra él la próxima vez que firmara un hallazgo. Es el
-  // mismo falso positivo que la story vino a matar, reencarnado. Con el roster previo o sin él, el
+  // desde cero saldrían de `reviewers` y aparecerían en `agentes_previos`: un revisor REAL degradado de
+  // tramo, y un `roster-incoherente` falso contra él la próxima vez que firmara un hallazgo.
+  // Con el roster previo o sin él, el
   // resultado tiene que ser el mismo.
   const yaEsRevisor = new Set(reviewers.map((r) => r && r.agent).filter(Boolean));
   for (const agent of [...previosMerge.keys()]) if (yaEsRevisor.has(agent)) previosMerge.delete(agent);
@@ -487,7 +481,7 @@ function validate(roster, opts) {
   const advisoresEnFindings = (opts && Array.isArray(opts.advisoresEnFindings)) ? opts.advisoresEnFindings : null;
   if (advisoresEnFindings && revs) {
     // Cada firmante puede venir como texto pelado (la forma vieja, que sigue valiendo) o como
-    // `{advisor, tramo}` — que es lo que escribe `write-findings` desde la story 7.13. Con el tramo
+    // `{advisor, tramo}` — que es lo que escribe `write-findings`. Con el tramo
     // declarado se compara contra la lista de ESE tramo; sin él, contra las dos.
     const enRevision = nombresDe(revs);
     const enPrevios = nombresDe(roster.agentes_previos);
@@ -517,7 +511,7 @@ function validate(roster, opts) {
 }
 
 module.exports = {
-  FUENTES_SINTETICAS,   // exportada para el test de paridad con el portón de CI (2026-09-06)
+  FUENTES_SINTETICAS,   // exportada para el test de paridad con el portón de CI
   nombreCanonico,
   TRAMO, separarAnotacion, tramoDeFirmante, firmantesValidos, esFuenteSintetica,
   ROSTER_FILE, VERSION,

@@ -2,18 +2,18 @@
 /**
  * evidence-config.js — lectura del bloque `evidence:` de `.tycon/advisors.yaml` (fuente única).
  *
- * Nació en runtime-matrix.js con el fix de atribución de evidencia (2026-08-14) y se extrajo acá
- * el mismo día para que el detector de story-de-UI (lib/ui-signal.js) lea LA MISMA declaración —
- * dos parsers del mismo bloque es el drift de mañana. Mismo parser-YAML-mínimo-sin-deps que
+ * Lo comparten runtime-matrix.js (atribución de evidencia) y el detector de story-de-UI
+ * (lib/ui-signal.js), para que lean LA MISMA declaración — dos parsers del mismo bloque
+ * terminan divergiendo. Mismo parser-YAML-mínimo-sin-deps que
  * e2eConfig/i18nRequired de pipeline.js.
  *
  * Schema:
  *   evidence:
  *     companion_repos:   # repos hermanos del MISMO producto cuya evidencia cuenta para este repo
- *       - CeiboFrontEnd #   (nombre de hermano → se resuelve contra el padre del repo; ./ o abs también valen)
+ *       - ProductoFrontEnd #   (nombre de hermano → se resuelve contra el padre del repo; ./ o abs también valen)
  *     fe_paths:          # tokens de path/nombre que marcan el lado FRONTEND del producto
- *       - CeiboFrontEnd #   (apareo fila↔suite de la matriz + detector de story-de-UI)
- *       - ceibo-deposito
+ *       - ProductoFrontEnd #   (apareo fila↔suite de la matriz + detector de story-de-UI)
+ *       - producto-deposito
  */
 
 const fs = require('fs');
@@ -27,16 +27,16 @@ function isDir(d) { try { return fs.statSync(d).isDirectory(); } catch { return 
 function parseEvidenceText(txt, repoRoot) {
   // blockPresent: el bloque `evidence:` EXISTE en el yaml — con eso el consumidor puede
   // distinguir "no hay config" de "hay config y el parser no le sacó nada" (un formato YAML
-  // válido que este parser mínimo no entienda no puede degradar la config en silencio —
-  // review ciego F3: companion perdido = rojo falso; fe_paths perdido = detector de UI diluido).
+  // válido que este parser mínimo no entienda no puede degradar la config en silencio:
+  // companion perdido = rojo falso; fe_paths perdido = detector de UI diluido).
   const out = { roots: [], missing: [], fePaths: [], blockPresent: false, warnings: [] };
   if (!repoRoot || !txt) return out;
-  // El comentario inline se pela ANTES que las quotes (al revés, `- "X"  # c` dejaba `X"`).
+  // El comentario inline se pela ANTES que las quotes (al revés, `- "X"  # c` dejaría `X"`).
   const clean = (s) => s.replace(/\s+#.*$/, '').replace(/^['"]|['"]$/g, '').trim();
   const addEntry = (list, entry) => {
     if (!entry) return;
     if (list === 'fe_paths') { out.fePaths.push(entry); return; }
-    // `~/` se expande (2026-09-10): el arnés declara a agent-skills como compañero, que vive en
+    // `~/` se expande: el arnés declara a agent-skills como compañero, que vive en
     // `~/.claude/agent-skills` en TODAS las máquinas del equipo — una ruta absoluta con el usuario
     // adentro sólo serviría en una. Sin `~`, las tres formas de siempre: absoluta · relativa al
     // repo (empieza con `.`) · hermana bajo la carpeta padre del repo.
@@ -88,18 +88,18 @@ function parseEvidenceConfig(repoRoot, opts) {
   };
   if (!opts || !opts.freno) return parseEvidenceText(leerCarpeta(), repoRoot);
 
-  // ── Modo FRENO (FIX-1, 2026-08-25 — casos C3 y C9 de la auditoría) ──────────────────────────
+  // ── Modo FRENO ──────────────────────────
   // Las dos llaves de este bloque tienen DIRECCIONES OPUESTAS, así que se tratan distinto:
   //
   //   · `companion_repos` AFLOJA: declarar un repo hermano hace que la evidencia de OTRO repo
   //     cuente como propia. Eso se lee SÓLO de lo commiteado — aflojar tiene que estar en un
-  //     commit y verse en el diff. (Reproducido: con el hermano declarado sólo en la carpeta,
-  //     el freno pasaba de "no-evidence" a "Evidencia encontrada: <hermano>/.advisors/...".)
+  //     commit y verse en el diff. (Con el hermano declarado sólo en la carpeta,
+  //     el freno pasaría de "no-evidence" a "Evidencia encontrada: <hermano>/.advisors/...".)
   //     🔴 Efecto de borde a propósito: el primer commit que declare un hermano NUEVO da rojo
   //     hasta commitearlo. Por eso se avisa explícitamente en vez de dejar al dev adivinando.
   //
   //   · `fe_paths` DELIMITA a qué se le aplica la exigencia de prueba de navegador: sacar un
-  //     nombre de carpeta apaga la exigencia para esa app (caso C9). Se usa la UNIÓN — agregar
+  //     nombre de carpeta apaga la exigencia para esa app. Se usa la UNIÓN — agregar
   //     un nombre vale al toque, sacarlo espera al commit.
   let ambas = null;
   try { ambas = require('./config-source.js').leerAmbas(repoRoot); } catch (_e) { ambas = null; }
@@ -158,8 +158,8 @@ function evidenceDirsUnder(root) {
 
 // Roots del PRODUCTO cuya `.advisors/dod-runtime` puede tener evidencia: el repo, sus
 // companions declarados, y los subproyectos (1 nivel) de cada uno que ya tengan ese dir.
-// Es el criterio único de atribución (fix 2026-08-14): nada de barrer hermanos por vecindad —
-// los story-id colisionan entre productos y un `<sid>-*.md` ajeno satisfacía checks propios.
+// Es el criterio único de atribución: nada de barrer hermanos por vecindad —
+// los story-id colisionan entre productos y un `<sid>-*.md` ajeno satisfaría checks propios.
 function productEvidenceRoots(repoRoot, opts) {
   if (!repoRoot) return [];
   const roots = [];
@@ -174,13 +174,12 @@ function productEvidenceRoots(repoRoot, opts) {
   return roots;
 }
 
-// ── Dónde NACE la evidencia de cierre de una story (2026-09-05, stories 8.7 y 8.8 de un producto del equipo) ────────
-// En productos con las stories en un repo (Project) y el código en otros (Backend, FrontEnd,
-// VidrieraWeb), el pipeline corre parado en el repo del CÓDIGO y ahí dejaba la evidencia. Pero quien
-// la exige al cerrar es el portón de CI del repo de la STORY —que sólo mira su propio checkout, a
-// propósito—, así que toda story de ese producto que pasaba a `review` por pull request salía roja
-// (tres pull requests del repo de stories de ese producto, el 2026-09-04 y el 2026-09-05 — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05) y el dev la copiaba a mano. Dos copias
-// divergen (el ledger de smokes crece con cada corrida), así que no se copia: la evidencia NACE en
+// ── Dónde NACE la evidencia de cierre de una story ────────
+// En productos con las stories en un repo y el código en otros (backend, frontend, web), el pipeline
+// corre parado en el repo del CÓDIGO; si dejara ahí la evidencia, no la vería quien la exige al cerrar:
+// el portón de CI del repo de la STORY, que sólo mira su propio checkout, a propósito. Toda story que
+// pasara a `review` por pull request saldría roja y el dev tendría que copiarla a mano en el repo de
+// stories. Dos copias divergen (el ledger de smokes crece con cada corrida), así que no se copia: la evidencia NACE en
 // el repo git que CONTIENE la story, y todos los runners reciben ese directorio. Para el freno local
 // da lo mismo (la evidencia del repo de la story es "propia" por definición); para el portón es la
 // diferencia entre rojo y verde.
@@ -190,7 +189,7 @@ function evidenceDirForStory(storyPath, fallbackRepo) {
   const storyRepo = storyPath ? discoverRepoRoot(storyPath) : null;
   const repo = fallbackRepo ? path.resolve(fallbackRepo) : null;
   // "Otro repo" se decide por RAÍZ GIT, no por carpeta: un cwd en una subcarpeta del mismo monorepo
-  // (`<mono>/mcp` con la story en `<mono>/specs`) no es cross-repo (revisión adversarial 2026-09-05).
+  // (`<mono>/mcp` con la story en `<mono>/specs`) no es cross-repo.
   const repoRoot = repo ? (discoverRepoRoot(repo) || repo) : null;
   const base = storyRepo || repo;
   const same = (a, b) => { try { return fs.realpathSync(a) === fs.realpathSync(b); } catch { return a === b; } };

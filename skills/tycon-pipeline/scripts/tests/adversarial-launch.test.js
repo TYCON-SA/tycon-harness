@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * adversarial-launch.test.js — el pase adversarial sale a tiempo, sus verificadores no esperan al más lento y la
- * pregunta del modelo se puede apagar (story 7.19 del arnés, 2026-10-15).
+ * pregunta del modelo se puede apagar.
  *
- * Medido en 403 corridas: el pase es el camino crítico de la revisión (27 min de mediana) y 52 de 208 corridas lo
- * lanzaron más de 2 minutos después del primer revisor. El lanzamiento temprano era un párrafo del paso 4 que nadie
- * le recordaba al agente: `pipeline.js next` no lo conocía, y el portón no dejaba nada anotado.
+ * El pase es el camino crítico de la revisión: si se lanza tarde, la revisión entera se alarga. Un lanzamiento
+ * temprano que fuera sólo un párrafo del paso 4 nadie se lo recordaría al agente: `pipeline.js next` tiene que
+ * conocerlo y el portón tiene que dejar anotado su veredicto.
  *
  * Qué fija esta suite: (1) el portón deja su veredicto en un campo propio del marcador, nunca dentro de
  * `marker.adversarial` (que para todo el código es «lanzado»); (2) `next` pide consultar el portón o lanzar el pase
@@ -21,7 +21,7 @@
  * «ahora»; ningún resultado compara una hora absoluta.
  *
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adversarial-launch.test.js
- * Regenerar la foto de T14 (sólo desde el commit anterior a la 7.19): TYCON_GATE_SNAPSHOT=escribir node <este archivo>
+ * Regenerar la foto de T14 (sólo con el código de antes del veredicto propio del portón, que es lo que la foto fija): TYCON_GATE_SNAPSHOT=escribir node <este archivo>
  */
 'use strict';
 

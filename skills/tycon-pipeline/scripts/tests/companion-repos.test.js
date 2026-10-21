@@ -1,17 +1,17 @@
 #!/usr/bin/env node
 /**
- * companion-repos.test.js — story 7.26: las stories de dos repos. Cuando una story vive en un repo y cambia otro
+ * companion-repos.test.js — las stories de dos repos. Cuando una story vive en un repo y cambia otro
  * declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el repo hermano), el pipeline lo sigue: al elegir
  * revisores, al armarles el contexto, al correr las pruebas, al calcular las vueltas y al anotar las pruebas del pase
  * adversarial.
  *
- * Caso disparador: la corrida de una story de un producto del equipo que vivía en el Backend y cambiaba el FrontEnd
- * (2026-10-14). Seis puntos miraban sólo el repo de la story: el revisor de React quedaba afuera, el contexto llegaba
- * con el diff vacío («is outside repository» tiraba el diff de TODOS los archivos), la suite del hermano no la corría
- * nadie, las vueltas 2 y 3 no veían los arreglos del hermano y `(<repo>) <ruta>` daba «no existe».
+ * Caso que cubre: una story que vive en el Backend y cambia el FrontEnd. Si seis puntos miran sólo el repo de la
+ * story, el revisor de React queda afuera, el contexto llega con el diff vacío («is outside repository» tira el diff
+ * de TODOS los archivos), la suite del hermano no la corre nadie, las vueltas 2 y 3 no ven los arreglos del hermano
+ * y `(<repo>) <ruta>` da «no existe».
  *
  * Cada prueba arma un laboratorio de dos repos git efímeros (`Back` y `Front`, hermanos en la misma carpeta) y corre los
- * comandos de verdad con una HOME temporal. Las que cubren un defecto nacieron en rojo contra el código de origin/main.
+ * comandos de verdad con una HOME temporal. Las que cubren un defecto fallan sin la guarda.
  *
  * Correr: env -u NODE_TEST_CONTEXT node --test skills/tycon-pipeline/scripts/tests/companion-repos.test.js
  */
@@ -26,7 +26,7 @@ const { spawnSync, execFileSync } = require('child_process');
 
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
-// Story 8.41: los revisores de React y de cableado viven en el paquete del stack, que viaja con el perfil del equipo. En
+// Los revisores de React y de cableado viven en el paquete del stack, que viaja con el perfil del equipo. En
 // la copia pública (sin él) los casos que los esperan en el set no se pueden medir, y se dice.
 const { SKIP_PUBLIC } = require('./lib/public-copy.js');
 const CON_PAQUETE = SKIP_PUBLIC ? { skip: `${SKIP_PUBLIC}: este caso espera un revisor del paquete del stack — NO MEDIDO acá` } : {};
@@ -41,7 +41,7 @@ const DEL_ENTORNO = ['NODE_TEST_CONTEXT', 'TYCON_SESSION_ID', 'CODEX_SESSION_ID'
 function entorno(home, sid, extra) {
   const env = { ...process.env };
   for (const k of DEL_ENTORNO) delete env[k];
-  // Story 8.7 (AC 8): sin perfil, `packs.default` no activa paquetes; esta suite cuenta con los instalados.
+  // Sin perfil, `packs.default` no activa paquetes; esta suite cuenta con los instalados.
   return { ...env, HOME: home, CLAUDE_CODE_SESSION_ID: sid, TYCON_PACKS_DEFAULT: 'all', ...(extra || {}) };
 }
 
@@ -105,7 +105,7 @@ function expectedPersistido(home, sid) {
   return lineas.filter((l) => l.event === 'step5-start').pop().expected;
 }
 
-// ── Qué es un repo hermano (AC 1) ─────────────────────────────────────────────────────────────────────────────
+// ── Qué es un repo hermano ─────────────────────────────────────────────────────────────────────────────
 
 test('companionRoots: une los hermanos del repo y del repo de la story, sin el propio repo', () => {
   const { companionRoots } = require(path.join(SCRIPTS, 'lib', 'companion-repos.js'));
@@ -122,7 +122,7 @@ test('companionRoots: une los hermanos del repo y del repo de la story, sin el p
   assert.deepEqual(companionRoots(b, null), [], 'sin bloque evidence, ninguno');
 });
 
-// ── Revisores (AC 2, 3, 4) ────────────────────────────────────────────────────────────────────────────────────
+// ── Revisores ────────────────────────────────────────────────────────────────────────────────────
 
 test('advisors: el package.json del hermano detecta React y no avisa detección ciega', CON_PAQUETE, () => {
   const lab = laboratorio();
@@ -135,8 +135,8 @@ test('advisors: el package.json del hermano detecta React y no avisa detección 
   }
 });
 
-// El caso real del 2026-10-15: la story vive en el backend y el formulario en el repo hermano declara React SÓLO en
-// peerDependencies (lo provee el host de Bizuit). El package.json se encontraba bien; lo que no se leía era esa sección.
+// Caso: la story vive en el backend y el formulario en el repo hermano declara React SÓLO en
+// peerDependencies (lo provee el host de Bizuit). El package.json se encuentra bien; lo que hay que leer es esa sección.
 test('advisors: un formulario hermano con React sólo en peerDependencies trae al revisor de React', CON_PAQUETE, () => {
   const lab = laboratorio({ frontPaquete: { name: 'app', version: '1.0.0', peerDependencies: { react: '^18.3.1' }, dependencies: { dayjs: '1.11.0' } } });
   const out = advisors(lab, casa(), 't2-peer', ['src/A.cs', path.join(lab.front, 'app', 'src', 'X.tsx')]);
@@ -174,7 +174,7 @@ test('advisors: las líneas agregadas del hermano salen de su git diff', () => {
   assert.ok(out2.all.includes('tycon-silent-failure-hunter'), JSON.stringify(out2.all));
 });
 
-// ── Contexto de los revisores (AC 5, 6) ───────────────────────────────────────────────────────────────────────
+// ── Contexto de los revisores ───────────────────────────────────────────────────────────────────────
 
 test('contexto: el diff de cada repo llega, el del hermano en su sección y con (<nombre>)', () => {
   const lab = laboratorio();
@@ -207,7 +207,7 @@ test('contexto: si git falla en un repo, el texto dice cuál y por qué, y el ot
   assert.doesNotMatch(ctx, /repo sin git/);
 });
 
-// ── Pruebas (AC 7-10, 15) ─────────────────────────────────────────────────────────────────────────────────────
+// ── Pruebas ─────────────────────────────────────────────────────────────────────────────────────
 
 const PKG_NODE_TEST = JSON.stringify({ name: 'p', version: '1.0.0', scripts: { test: 'node --test' } }) + '\n';
 const PRUEBA_VERDE = "const {test}=require('node:test');test('ok',()=>{});\n";
@@ -304,7 +304,7 @@ test('test-gate: sin archivos en hermanos el artefacto queda como hoy', () => {
   assert.ok(!fs.existsSync(path.join(lab.front, '.advisors', 'tests-result.json')), 'el hermano no se corrió');
 });
 
-// ── Vueltas de revisores (AC 11) ──────────────────────────────────────────────────────────────────────────────
+// ── Vueltas de revisores ──────────────────────────────────────────────────────────────────────────────
 
 test('smart-reloop: un arreglo en el hermano después de la foto entra al delta', CON_PAQUETE, () => {
   const lab = laboratorio();
@@ -331,7 +331,7 @@ test('smart-reloop: un arreglo en el hermano después de la foto entra al delta'
   assert.ok(cableado && /X\.tsx/.test(cableado.reason), JSON.stringify(out.rerun_reasons));
 });
 
-// ── Pase adversarial (AC 12, 13, 16) ──────────────────────────────────────────────────────────────────────────
+// ── Pase adversarial ──────────────────────────────────────────────────────────────────────────
 
 const LANZADO = '2026-09-18T01:00:00.000Z';
 const DESPUES = '2026-09-18T02:00:00.000Z';
@@ -390,7 +390,7 @@ test('mark-adversarial-result: (<repo>) que no es un repo git sale 2 y no anota'
   assert.deepEqual(pasesAnotados(home), []);
 });
 
-// ── No-regresión (AC 14) ──────────────────────────────────────────────────────────────────────────────────────
+// ── No-regresión ──────────────────────────────────────────────────────────────────────────────────────
 
 test('una story de un solo repo da el mismo set, contexto y delta que antes', () => {
   const lab = laboratorio({ declarar: false });
@@ -402,7 +402,7 @@ test('una story de un solo repo da el mismo set, contexto y delta que antes', ()
   assert.deepEqual(out.all.filter((a) => /feature-wiring|react/.test(a)), [], 'un diff sólo .cs sin endpoints no trae ni cableado ni React');
 });
 
-// ── No poder mirar no es «no hay hermano» (AC 17, revisor de fallas silenciosas de la vuelta 1) ────────────────
+// ── No poder mirar no es «no hay hermano» ────────────────
 
 const COMPANION_LIB = path.join(SCRIPTS, 'lib', 'companion-repos.js');
 
@@ -435,7 +435,7 @@ test('test-gate: si no se pudo averiguar qué hermanos toca la story, no sale ve
   assert.match(String(m.checks.tests), /^red/, `checks.tests=${m.checks.tests}`);
 });
 
-// ── Lo que encontró el pase adversarial de esta corrida (causas A, B y C) ────────────────────────────────────
+// ── Casos de regresión ────────────────────────────────────
 
 test('ownerOf: un archivo borrado del repo es del repo aunque el repo cuelgue de un enlace', () => {
   const { groupByRepo } = require(COMPANION_LIB);
@@ -538,10 +538,10 @@ function laboratorioDeWorktrees({ frontEnRama = true, story } = {}) {
 }
 
 test('T2 8.55-companionRoots_DesdeUnWorktree_ElHermanoDeLaMismaRama @story-8.55 @ac-2 — desde un worktree, el hermano es su worktree en la misma rama', () => {
-  // 🔴 rojo: `Front` declarado se leía tal cual: desde Back-wt el portón probaba el checkout de main, no el código de la story.
+  // 🔴 mutación: `Front` declarado se lee tal cual: desde Back-wt el portón prueba el checkout de main, no el código de la story.
   const lab = laboratorioDeWorktrees();
   assert.deepEqual(companionRoots(lab.backWt, lab.story), [lab.frontWt]);
-  // sin worktree del hermano en la rama: el declarado, como hoy
+  // sin worktree del hermano en la rama: el declarado
   const sinRama = laboratorioDeWorktrees({ frontEnRama: false });
   assert.deepEqual(companionRoots(sinRama.backWt, sinRama.story), [fs.realpathSync(sinRama.front)]);
   // con la cabeza suelta en el repo de la story: el declarado
@@ -550,7 +550,7 @@ test('T2 8.55-companionRoots_DesdeUnWorktree_ElHermanoDeLaMismaRama @story-8.55 
 });
 
 test('T3 8.55-TestGate_Hermano_BaseBifurcacion_SoloLoQueLeeLoTocado @story-8.55 @ac-3 @ac-4 — el hermano mide desde su bifurcación y corre sólo lo que lee lo tocado', () => {
-  // 🔴 rojo: con el marcador de otro repo la base caía a HEAD, «no sé qué se tocó», y corrían todas las suites del hermano.
+  // 🔴 mutación: con el marcador de otro repo la base cae a HEAD, «no sé qué se tocó», y corren todas las suites del hermano.
   const lab = laboratorioDeWorktrees();
   fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 2;\n');
   commitear(lab.frontWt, 'el cambio de la story');
@@ -568,7 +568,7 @@ test('T3 8.55-TestGate_Hermano_BaseBifurcacion_SoloLoQueLeeLoTocado @story-8.55 
 });
 
 test('T7 8.55-TestGate_HermanoSinAcotar_Sale7_RojoGana @story-8.55 @ac-5 @ac-7 — sin poder acotar sale 7 y el check queda sin-acotar; un rojo de otro hermano gana', () => {
-  // 🔴 rojo: sin base el hermano corría la suite completa (o, sin corrida, salía 3 «sin pruebas» como si nada).
+  // 🔴 mutación: sin base el hermano corre la suite completa (o, sin corrida, sale 3 «sin pruebas» como si nada).
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sinacotar-')));
   const back = repoGit(path.join(raiz, 'Back'), {
     'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }),
@@ -607,8 +607,8 @@ test('T7 8.55-TestGate_HermanoSinAcotar_Sale7_RojoGana @story-8.55 @ac-5 @ac-7 �
 });
 
 test('T14 8.55-TestGate_RepoConStoryDeOtroRepo_Acotada @story-8.55 @ac-3 @ac-4 — un repo con la ruta de una story de otro repo también se acota', () => {
-  // 🔴 rojo: `test-gate.sh <público> <story del privado>`: el marcador es de otro repo, la base caía a
-  //    HEAD, «no sé qué se tocó», y corrían todas las suites del repo de código.
+  // 🔴 mutación: `test-gate.sh <público> <story del privado>`: el marcador es de otro repo, la base cae a
+  //    HEAD, «no sé qué se tocó», y corren todas las suites del repo de código.
   const lab = laboratorioDeWorktrees();
   fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 4;\n');
   commitear(lab.frontWt, 'el cambio de la story');
@@ -634,7 +634,7 @@ function frenteSinBase(raiz) {
 }
 
 test('T16 8.55-TestGate_SinAcotarGanaAlVerde @story-8.55 @ac-7 — con el repo de la story en verde y el hermano sin acotar, el total es 7', () => {
-  // 🔴 rojo: «sin acotar» se perdía detrás del verde del repo de la story y el total salía 0.
+  // 🔴 mutación: «sin acotar» se pierde detrás del verde del repo de la story y el total sale 0.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-verde7-')));
   const back = repoGit(path.join(raiz, 'Back'), {
     'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }),
@@ -647,7 +647,7 @@ test('T16 8.55-TestGate_SinAcotarGanaAlVerde @story-8.55 @ac-7 — con el repo d
   const r = spawnSync('bash', [TEST_GATE, back, path.join(back, 'specs', 's.md')], { encoding: 'utf8', env: entorno(home, 't855d'), cwd: back });
   assert.equal(r.status, 7, `${r.stdout}\n${r.stderr}`);
   assert.equal(artefacto(back).suite_green, true, 'el repo de la story sí está verde');
-  // y «sin acotar» sube arriba: quien lee sólo el nivel de arriba no lo puede leer verde (pase adversarial, confirmado)
+  // y «sin acotar» sube arriba: quien lee sólo el nivel de arriba no lo puede leer verde
   assert.equal(artefacto(back).unscoped, true, JSON.stringify(artefacto(back)));
   assert.equal(artefacto(back).merge_requires_ci, true);
   assert.match(artefacto(back).unscoped_reason, /Front/);
@@ -655,7 +655,7 @@ test('T16 8.55-TestGate_SinAcotarGanaAlVerde @story-8.55 @ac-7 — con el repo d
 });
 
 test('T17 8.55-TestGate_RepoConStoryDeOtroRepo_SinAcotar @story-8.55 @ac-5 — un repo con la story de otro, sin forma de acotar, sale 7 sin correr nada', () => {
-  // 🔴 rojo: la forma directa (sin pasar por el hermano) corría todas las suites del repo de código.
+  // 🔴 mutación: la forma directa (sin pasar por el hermano) corre todas las suites del repo de código.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'directo7-')));
   const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({ modificar: ['Front/scripts/lib/acme.js'] }) });
   const front = frenteSinBase(raiz);
@@ -671,7 +671,7 @@ test('T17 8.55-TestGate_RepoConStoryDeOtroRepo_SinAcotar @story-8.55 @ac-5 — u
 });
 
 test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 — un 7 sin la constancia de «sin acotar» es un rojo', () => {
-  // 🔴 rojo: cualquier salida 7 (jest, vitest, npm test, dotnet o una suite) pasaba a «sin-acotar» y no frenaba nada.
+  // 🔴 mutación: cualquier salida 7 (jest, vitest, npm test, dotnet o una suite) pasa a «sin-acotar» y no frena nada.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'siete-rojo-')));
   const repo = repoGit(path.join(raiz, 'R'), {
     'package.json': JSON.stringify({ name: 'r', version: '1.0.0', scripts: { test: 'node --test; exit 7' } }) + '\n',
@@ -687,8 +687,8 @@ test('T18 8.55-TestGate_Salida7DeOtroCorredor_EsRojo @story-8.55 @ac-5 @ac-7 —
 });
 
 test('T22 8.55-HermanoEnWorktree_RutaConPuntosSigueResolviendo @story-8.55 @ac-2 — «../<hermano>/x» se asigna al worktree del hermano', () => {
-  // 🔴 rojo (pase adversarial, confirmado): con el hermano en su worktree, la ruta «../Front/x» de la story caía en el
-  //    checkout compartido y ya no era del hermano: `targets` la perdía sin aviso y su suite podía no correr.
+  // 🔴 mutación: con el hermano en su worktree, la ruta «../Front/x» de la story cae en el
+  //    checkout compartido y deja de ser del hermano: `targets` la pierde sin aviso y su suite puede no correr.
   const lab = laboratorioDeWorktrees({ story: STORY({ modificar: ['../Front/scripts/lib/acme.js'] }) });
   const r = spawnSync(process.execPath, [COMPANION_LIB, 'targets', lab.backWt, lab.story], { encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
@@ -698,8 +698,8 @@ test('T22 8.55-HermanoEnWorktree_RutaConPuntosSigueResolviendo @story-8.55 @ac-2
 });
 
 test('T23 8.55-MismoRepoEnOtroWorktree_NoEsCruzada @story-8.55 @ac-3 — un worktree del mismo repo no es otro repo', () => {
-  // 🔴 rojo (pase adversarial, confirmado): el checkout principal con la story en un worktree del mismo repo se tomaba como
-  //    corrida cruzada (toplevels distintos): se acotaba o salía 7 «sin acotar» sin ser una story de otro repo.
+  // 🔴 mutación: el checkout principal con la story en un worktree del mismo repo se toma como
+  //    corrida cruzada (toplevels distintos): se acota o sale 7 «sin acotar» sin ser una story de otro repo.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'mismo-repo-')));
   const code = repoGit(path.join(raiz, 'Code'), { ...CON_SUITES, 'specs/s.md': STORY({ modificar: ['scripts/lib/acme.js'] }) });
   const wt = path.join(raiz, 'Code-wt');
@@ -710,7 +710,7 @@ test('T23 8.55-MismoRepoEnOtroWorktree_NoEsCruzada @story-8.55 @ac-3 — un work
 });
 
 test('T24 8.55-HermanoSubcarpeta_SigueSiendoLaSubcarpeta @story-8.55 @ac-2 — un hermano declarado como subcarpeta no pasa a ser el repo entero', () => {
-  // 🔴 rojo (pase adversarial, confirmado): `Front/sub` declarado volvía como `Front` (la raíz del checkout en la rama), y
+  // 🔴 mutación: `Front/sub` declarado vuelve como `Front` (la raíz del checkout en la rama), y
   //    con worktree como `Front-wt` en vez de `Front-wt/sub`. El propio arnés declara un hermano así.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hermano-sub-')));
   const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({}), '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../Front/sub\n' });
@@ -722,7 +722,7 @@ test('T24 8.55-HermanoSubcarpeta_SigueSiendoLaSubcarpeta @story-8.55 @ac-2 — u
 });
 
 test('T25 8.55-MatrizLeeLaEvidenciaDelHermanoEnSuWorktree @story-8.55 @ac-2 — la matriz cuenta lo que el portón dejó en el worktree del hermano', () => {
-  // 🔴 rojo (pase adversarial, confirmado): el portón escribe en Front-wt y la matriz miraba sólo Front: «evidencia en repos
+  // 🔴 mutación: el portón escribe en Front-wt y la matriz mira sólo Front: «evidencia en repos
   //    NO declarados: Front-wt — NO cuenta».
   const lab = laboratorioDeWorktrees();
   fs.writeFileSync(path.join(lab.frontWt, 'scripts', 'lib', 'acme.js'), 'module.exports = 6;\n');
@@ -736,8 +736,8 @@ test('T25 8.55-MatrizLeeLaEvidenciaDelHermanoEnSuWorktree @story-8.55 @ac-2 — 
 });
 
 test('T26 8.55-GitQueNoContesta_SeDice @story-8.55 @ac-2 @ac-3 — cuando git no puede contestar, se dice y nada se toma como cruzado', () => {
-  // 🔴 rojo (revisor de fallas silenciosas, vueltas 3 y 5): un hermano declarado que no es un repo git caía al declarado
-  //    sin aviso, y una story fuera de git se comparaba como «otro repo» (con bash 3.2, `cd ""` no falla).
+  // 🔴 mutación: un hermano declarado que no es un repo git cae al declarado
+  //    sin aviso, y una story fuera de git se compara como «otro repo» (con bash 3.2, `cd ""` no falla).
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'git-mudo-')));
   const back = repoGit(path.join(raiz, 'Back'), { 'specs/s.md': STORY({}), '.tycon/advisors.yaml': 'evidence:\n  companion_repos:\n    - ../SinGit\n' });
   fs.mkdirSync(path.join(raiz, 'SinGit'));
@@ -790,7 +790,7 @@ test('T1 HermanoMismoNombre_GanaSobreElNumero @story-7.34 @ac-1 — con una rama
 });
 
 test('T2 HermanoPorNumero_UnoSolo_LoEligeYLoDice @story-7.34 @ac-2 — ramas distintas que nombran la story: el worktree, dicho', () => {
-  // 🔴 rojo: sin rama de mismo nombre el hermano era el checkout principal (otra rama): la guía no veía las pantallas.
+  // 🔴 mutación: sin rama de mismo nombre el hermano es el checkout principal (otra rama): la guía no ve las pantallas.
   const lab = laboratorioPorNumero();
   const { roots, avisos } = hermanosConAvisos(lab.backWt, lab.story);
   assert.deepEqual(roots, [lab.frontWts[0]]);
@@ -869,7 +869,7 @@ test('T16 Matriz_EvidenciaDelHermanoElegidoPorNumero @story-7.34 @ac-7 — la ma
 });
 
 test('NumeroDeLaStory_SinCampoStory_SaleDelNombre @story-7.34 @ac-2 — sin `story:`, el número sale del nombre del archivo', () => {
-  // 🔴 rojo (pase adversarial): `story-1-4-y.md` sin `story:` daba el nombre entero como número y nunca elegía.
+  // 🔴 mutación: `story-1-4-y.md` sin `story:` da el nombre entero como número y nunca elige.
   const { numeroDeLaStory } = require(COMPANION_LIB);
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'numero-')));
   const sin = (nombre) => { const p = path.join(dir, nombre); fs.writeFileSync(p, '---\ntitle: x\n---\n# x\n'); return p; };

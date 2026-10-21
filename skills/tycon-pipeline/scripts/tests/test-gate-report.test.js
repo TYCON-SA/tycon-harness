@@ -1,22 +1,22 @@
 'use strict';
 /**
- * Pruebas del informe de test-gate.sh en Node — story 8.17, tanda W6 (AC 46 y 50).
+ * Pruebas del informe de test-gate.sh en Node.
  *
- * Hasta la W6, test-gate.sh terminaba en un bloque de Python (`python3 - … <<'PY'`) que leía la salida de cada
- * corredor de pruebas y escribía `.advisors/tests-result.json`. En Windows `python3` no es requisito: el bloque pasó a
- * lib/test-gate-report.js, con los mismos argumentos y el mismo artefacto.
+ * lib/test-gate-report.js arma el informe de test-gate.sh: lee la salida de cada corredor de pruebas y escribe
+ * `.advisors/tests-result.json` (en Windows `python3` no es requisito). Reemplaza a un bloque de Python
+ * (`python3 - … <<'PY'`) con los mismos argumentos y el mismo artefacto.
  *
  *   T69 · para cada corredor (dotnet con su trx y su cobertura, vitest, jest, `node --test` y el suites.json del
  *         arnés), el JSON que escribe Node es igual —campo por campo y en el mismo orden— al que escribía el bloque de
  *         Python sobre las mismas entradas; lo mismo la copia que viaja y la línea de gates.log. Y test-gate.sh corre
  *         de punta a punta con un PATH sin `python3`.
- *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que hoy.
+ *   T70 · smoke-run.sh corre contra un servidor de juguete con un PATH sin `python3` y deja lo mismo que con Python.
  *   T73 · sin el corredor (`npx` o `dotnet` fuera del PATH) test-gate.sh dice «no pude correr las pruebas: falta …» y
  *         el artefacto lo anota, nunca verde; sin `timeout` ni `realpath` da el mismo resultado. (La parte del `claude`
  *         que en Windows es un `.cmd` está en lane-classifier.test.js.)
  *
- * Las esperadas (fixtures/test-gate-report/<caso>/expected.json) se capturaron ANTES de tocar test-gate.sh, corriendo
- * su bloque de Python (el del commit 61e2c423) sobre las mismas entradas:
+ * Las esperadas (fixtures/test-gate-report/<caso>/expected.json) se capturaron corriendo el bloque de Python original
+ * sobre las mismas entradas:
  *     node tests/test-gate-report.test.js --capture <bloque.py>
  * Las rutas de la carpeta temporal se guardan como <TMP>; la hora de la línea de gates.log no se compara.
  * Nada de nombres reales: acme.
@@ -135,7 +135,7 @@ function correrInforme(caso, comando, extraEnv = {}) {
 
 const CASOS = fs.readdirSync(FIXTURES).filter((n) => fs.existsSync(path.join(FIXTURES, n, 'case.json'))).sort();
 
-// ── modo captura: corre el bloque de Python de antes de la W6 y guarda la esperada de cada caso ────────────────
+// ── modo captura: corre el bloque de Python original y guarda la esperada de cada caso ────────────────
 if (process.argv[2] === '--capture') {
   const py = process.argv[3];
   if (!py || !fs.existsSync(py)) { console.error('uso: test-gate-report.test.js --capture <bloque.py>'); process.exit(2); }
@@ -234,7 +234,7 @@ test('T69 TestGate_NodeReport_EqualsThePythonReport_WorksWithoutPython3 — el i
   const sinPython = pathSin(SIN_PYTHON);
   assert.ok(!tiene(sinPython, 'python3'), 'el PATH de la prueba todavía trae python3');
   for (const n of CASOS) {
-    if (JSON.parse(fs.readFileSync(path.join(FIXTURES, n, 'case.json'), 'utf8')).sin_python) continue;   // nació después: lo fija su propia prueba
+    if (JSON.parse(fs.readFileSync(path.join(FIXTURES, n, 'case.json'), 'utf8')).sin_python) continue;   // ese caso lo fija su propia prueba
     const esperada = JSON.parse(fs.readFileSync(path.join(FIXTURES, n, 'expected.json'), 'utf8'));
     const caso = armarCaso(n);
     const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { PATH: sinPython });
@@ -345,10 +345,10 @@ test('T73 TestGate_MissingRunnerSaysCouldNotRun_OwnTimeoutAndRealpath — sin el
   }
 });
 
-// Hallazgo de la tanda W6 (agente de la Task 16): corrido DENTRO de `node --test`, el hijo heredaba NODE_TEST_CONTEXT,
-// el `node --test` de la suite escribía en el formato interno de Node y el informe no contaba ninguna prueba… y quedaba
-// `suite_green: true`. Cero pruebas corridas no es verde (AC 50: «nunca pasaron»). Acá el Node se aparta A PROPÓSITO
-// del Python, que daba verde con cualquier salida 0.
+// Corrido DENTRO de `node --test`, el hijo hereda NODE_TEST_CONTEXT,
+// el `node --test` de la suite escribe en el formato interno de Node y el informe no cuenta ninguna prueba… y quedaría
+// `suite_green: true`. Cero pruebas corridas no es verde («nunca pasaron»). Acá el Node se aparta A PROPÓSITO
+// del Python, que da verde con cualquier salida 0.
 function informeSuelto(runner, salidas, suiteExit) {
   const tmp = tmpReal('tgr-cero-');
   const repo = path.join(tmp, 'repo');
@@ -387,10 +387,10 @@ test('T73 …cero pruebas corridas no es verde, aunque la suite salga 0', () => 
   assert.ok(!('no_tests_run' in conPruebas), 'y no trae el aviso');
 });
 
-// ── Pase adversarial de la W6 ───────────────────────────────────────────────────────────────────────────────────
+// ── Casos límite del informe ───────────────────────────────────────────────────────────────────────────────────
 
-// Hallazgos #3 y #4: con FORCE_COLOR, el `node --test` de Node ≥23 pinta el resumen con secuencias ANSI
-// (`\x1b[34mℹ tests 2\x1b[39m`). El informe no lo leía, y una suite verde salía 6 («no se pudo contar»).
+// Con FORCE_COLOR, el `node --test` de Node ≥23 pinta el resumen con secuencias ANSI
+// (`\x1b[34mℹ tests 2\x1b[39m`). El informe tiene que leerlo: si no, una suite verde saldría 6 («no se pudo contar»).
 test('W6-5b #3 #4 …el resumen de `node --test` con colores se lee igual que sin colores', () => {
   const color = [
     '', '> acme@1.0.0 test', '> node --test', '',
@@ -411,8 +411,8 @@ test('W6-5b #3 #4 …el resumen de `node --test` con colores se lee igual que si
   assert.deepStrictEqual(roja.totals, { total: 2, passed: 1, failed: 1, skipped: 0, executed: 2 });
 });
 
-// Hallazgo #7: las pruebas `todo` no corren. Una suite hecha sólo de `it.todo` sale 0 sin haber probado nada, y el
-// informe la contaba como corrida (jest y vitest restaban sólo las saltadas; `node --test`, igual).
+// Las pruebas `todo` no corren. Una suite hecha sólo de `it.todo` sale 0 sin haber probado nada, y no debe
+// contarse como corrida (restar sólo las saltadas no alcanza, en jest, vitest ni `node --test`).
 test('W6-5b #7 …las pruebas todo no cuentan como corridas', () => {
   const sinCorrer = [
     ['jest', { 'jest.json': '{"numTotalTests":3,"numPassedTests":0,"numFailedTests":0,"numPendingTests":0,"numTodoTests":3}' }],
@@ -437,8 +437,8 @@ test('W6-5b #7 …las pruebas todo no cuentan como corridas', () => {
   }
 });
 
-// Hallazgo #9: el promedio de cobertura de los archivos nuevos se sumaba con un reduce simple; el sum() de Python
-// (3.12+) hace una suma compensada. 70,1 + 92,8 + 62,1 daba 224,99999999999997: 75 de cobertura que «no llega a 75».
+// El promedio de cobertura de los archivos nuevos no se suma con un reduce simple: el sum() de Python
+// (3.12+) hace una suma compensada, y 70,1 + 92,8 + 62,1 daría 224,99999999999997: 75 de cobertura que «no llega a 75».
 function informeCobertura(cubiertasPorMil) {
   const tmp = tmpReal('tgr-cov-');
   const repo = path.join(tmp, 'repo');
@@ -472,7 +472,7 @@ test('W6-5b #9 …el promedio de cobertura suma como el sum() de Python', () => 
   assert.strictEqual(empate.new_files_pct, 36.4, 'Python: round(sum([25.5, 27.5, 11.2, 81.6]) / 4, 1) = 36.4');
 });
 
-// Hallazgo #8: en Windows `command -v npx` encuentra el guion `npx` de Git Bash, pero run-check no lo puede lanzar.
+// En Windows `command -v npx` encuentra el guion `npx` de Git Bash, pero run-check no lo puede lanzar.
 // Acá se emula con un `npx` que el shell ve y que no se puede ejecutar: «no pude correr» tiene que ser la salida 5,
 // no un rojo de pruebas con totales vacíos.
 test('W6-5b #8 …un corredor que el shell ve pero que no se puede lanzar es la salida 5, no un rojo', () => {
@@ -488,8 +488,8 @@ test('W6-5b #8 …un corredor que el shell ve pero que no se puede lanzar es la 
   assert.strictEqual(r.art.halted, true);
 });
 
-// Hallazgo #10: la salida 5 escribía el artefacto pero no tocaba el marcador. Un verde viejo de `tests` quedaba en
-// pie y `complete-step 4` lo aceptaba. Como en la salida 6, el check queda en rojo.
+// La salida 5 escribe el artefacto y también toca el marcador: un verde viejo de `tests` no puede quedar en
+// pie ni ser aceptado por `complete-step 4`. Como en la salida 6, el check queda en rojo.
 test('W6-5b #10 …la salida 5 deja el check tests del marcador en rojo, no un verde viejo', () => {
   const MARKER = path.join(SCRIPTS, 'marker.js');
   const home = tmpReal('tgr-home-');
@@ -511,8 +511,8 @@ test('W6-5b #10 …la salida 5 deja el check tests del marcador en rojo, no un v
   assert.strictEqual(despues.checksProvenance.tests, 'test-gate');
 });
 
-// Hallazgo #11: la tabla «Salidas del gate» del paso 4 —la que sigue el orquestador— no tenía el 5 ni el 6, y un 5
-// (no corrió nada) caía en «suite roja: corregir y re-correr». Cada salida propia de test-gate.sh tiene su fila.
+// La tabla «Salidas del gate» del paso 4 —la que sigue el orquestador— necesita el 5 y el 6: sin ellos, un 5
+// (no corrió nada) cae en «suite roja: corregir y re-correr». Cada salida propia de test-gate.sh tiene su fila.
 test('W6-5b #11 …la tabla «Salidas del gate» del paso 4 tiene una fila por cada salida de test-gate.sh', () => {
   const gate = fs.readFileSync(GATE, 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
   const codigos = new Set([...gate.matchAll(/\bexit (\d+)\b|SUITE_EXIT=(\d+)\b|"\$SUITE_EXIT" == "(\d+)"/g)].map((m) => m[1] || m[2] || m[3]).filter((c) => c !== '0'));
@@ -576,7 +576,7 @@ test('T73 …sin `timeout` ni `realpath` (un Git Bash pelado), test-gate.sh da e
 
 // ── El corredor de suites.json con cobertura, y de dónde sale el umbral ──────────────────────────────────────────
 test('T9 7.31-SuitesJson_ConReporte_DaPorcentaje @story-7.31 @ac-8 @ac-14 — con el lcov del corredor, las líneas tocadas salen con número', () => {
-  // 🔴 rojo: el «sin cruce» fijo de antes para suites-json, o el registro de fuera del árbol contado como el archivo nuevo.
+  // 🔴 rojo: el «sin cruce» fijo para suites-json, o el registro de fuera del árbol contado como el archivo nuevo.
   const caso = armarCaso('suites-json-coverage');
   const { rc, stderr, got } = correrInforme(caso, [process.execPath, REPORT], { TYCON_GUIDES_DIR: tmpReal('tgr-sin-org-') });
   assert.strictEqual(rc, 0, stderr);

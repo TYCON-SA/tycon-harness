@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * on-dod-evidence-guard.js — provenance de la evidencia DoD (auditoría 2026-06-09).
+ * on-dod-evidence-guard.js — provenance de la evidencia DoD.
  *
  * La evidencia de `.advisors/dod-runtime/*.md` es el insumo que desbloquea las
  * transiciones a review/done (on-frontmatter-write.js) y el commit (on-pre-commit.js).
- * Antes NADA impedía que el agente la ESCRIBIERA con Write/Edit — el gate más
+ * Sin esto, NADA impide que el agente la escriba con Write/Edit — el gate más
  * fakeable del harness: el LLM podía redactar un "## Playwright Run verdict=PASS
  * failed=0" sin haber corrido nada.
  *
@@ -25,9 +25,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
-// Story 7.2 del arnés: cada decisión sobre una escritura a la carpeta de evidencia deja una línea en
+// Cada decisión sobre una escritura a la carpeta de evidencia deja una línea en
 // frenos.jsonl (sólo la huella de la ruta). Ayuda, no evidencia: no cambia ni la decisión ni la salida.
 // La lib se carga adentro y envuelta: si faltara (instalación a medias), el guard frena igual.
 function anotar(regla, veredicto, filePath) {
@@ -60,10 +60,10 @@ function handle(event) {
   // es su auto-revisión estructurada (§1-5 de accov-governance-protocol.md), NO evidencia de un
   // test-run fakeable (esa es <storyId>-<ts>.md del macro + <storyId>-e2e-gate-*.md del gate, con
   // el bloque `## Playwright Run verdict=PASS`, que SÍ se siguen bloqueando). La honestidad del
-  // self-audit la cierra la convergencia ACCOV-C10 (el meta-audit ACCOV-C9 se retiró el 2026-09-16,
-  // story 7.2 del arnés; y el self-audit es opcional) — no este provenance guard. Sin la exención, escribir el artefacto que
-  // el propio protocolo manda producir requería un `touch` manual del user en cada story (fricción
-  // sin valor — el self-audit no es el gate fakeable). Fix 2026-06-14.
+  // self-audit la cierra la convergencia ACCOV-C10 (no hay meta-audit ACCOV-C9,
+  // y el self-audit es opcional) — no este provenance guard. Sin la exención, escribir el artefacto que
+  // el propio protocolo manda producir requeriría un `touch` manual del user en cada story (fricción
+  // sin valor — el self-audit no es el gate fakeable).
   if (/-self-audit(-iter\d+)?\.md$/.test(normPath)) { anotar('archivo-exento', 'paso', filePath); return null; }
 
   // EXENCIÓN — el plan de prueba manual (DODRT-C6) también lo escribe el agente: es la guía

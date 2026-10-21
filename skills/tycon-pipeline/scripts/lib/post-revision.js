@@ -1,14 +1,12 @@
 'use strict';
 /**
  * post-revision.js — ¿el commit trae código que se tocó DESPUÉS de la última ronda de revisores?
- * AVISA, no frena (2026-09-14, decisión del dev).
+ * AVISA, no frena.
  *
- * 🔴 Caso (el repo del framework, Story 7.7, 2026-09-10): la última ronda de revisores cerró a las 21:40Z;
- * a las 02:07Z del día siguiente se escribió `054_CleanupOldPluginVersionsAtomic.sql` y entró al
- * commit sin otra ronda. Tenía un error de sintaxis que frenó el despliegue. El revisor de
+ * 🔴 Caso: la última ronda de revisores cierra, y horas después se escribe una migración SQL que entra al
+ * commit sin otra ronda. Puede traer un error de sintaxis que frene el despliegue. El revisor de
  * migraciones no corrió porque el archivo no existía cuando se armó su ronda: el orquestador no
- * falló, lo que faltó fue alguien que dijera «esto no lo revisó nadie». (La retrospectiva lo había
- * leído como un defecto del disparador; medir la conversación mostró que no lo era.)
+ * falla, lo que falta es alguien que diga «esto no lo revisó nadie».
  *
  * Criterio: la ronda N deja su foto con hora (`marker.iterations[N].ts`, la escribe
  * `marker.js snapshot-iter`). Un archivo stageado que es CÓDIGO y tiene una edición registrada

@@ -21,7 +21,7 @@
  *
  * Output: system-reminder o nada. Exit 0 siempre (no bloqueante).
  *
- * H10 2026-05-21: refactor a `handle(event)` exportable para que el dispatcher
+ * `handle(event)` es exportable para que el dispatcher
  * lo corra in-process. El shim CLI del fondo preserva el comportamiento standalone.
  *
  * Schema del evento Claude Code PostToolUse Edit/Write (stdin):
@@ -36,24 +36,17 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
-// Multi-sesión sin race (2026-05-17): marker per-session en active/<sessionId>.json.
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+// Multi-sesión sin race: marker per-session en active/<sessionId>.json.
 // on-edit.js de dos sesiones concurrentes escribe archivos distintos → sin race.
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
 const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 
-// 2026-07-28 — las stories se descubren POR REPO, no con una lista fija de rutas.
-// 2026-08-15 — y POR ESTRUCTURA, no por el nombre de la carpeta.
-//
-// Primero esto era un array de TRES paths absolutos terminados en `specs/stories`; los layouts de
-// un producto del equipo no estaban ahí, así que el aviso "estás editando una story sin pipeline" nunca salía
-// para ese repo — y ese aviso es la ÚNICA capa que cubre el trabajo hecho a mano, justo el que se
-// saltea el gate de ATDD. El arreglo de entonces cambió las tres rutas por DOS NOMBRES de carpeta
-// (`stories`, `epic-*`): el mismo defecto un nivel más arriba, que se cayó en otro producto
-// (`specs/bizuit-bpmn-mcp/` → cero stories, aviso mudo otra vez). Ahora una story es un `.md` que
-// declara `story:` y `status:` en su frontmatter, viva donde viva.
-// Casos disparadores: 2026-07-28 (un producto del equipo) y 2026-08-15 (otro producto) — guides/maintaining/incident-log.md#story-discovery-nombres
+// Las stories se descubren POR REPO y POR ESTRUCTURA, no con una lista fija de rutas ni por el nombre
+// de la carpeta. Una lista de rutas deja sin aviso a los layouts que no están en ella, y ese aviso es la
+// ÚNICA capa que cubre el trabajo hecho a mano, justo el que se saltea el gate de ATDD. Por eso una story
+// es un `.md` que declara `story:` y `status:` en su frontmatter, viva donde viva.
 const { findStoryReferencing } = require('./lib/story-discovery.js');
 const atddGate = require('./lib/atdd-commit-gate.js');
 
@@ -90,7 +83,7 @@ function readMarker(sessionId) {
 }
 
 // Escribe el marker de ESTA sesión en su archivo propio. Otra sesión escribe
-// otro archivo → cero contención (fix race 2026-05-17).
+// otro archivo → cero contención.
 function writeMarker(sessionId, marker) {
   if (!fs.existsSync(ACTIVE_DIR)) fs.mkdirSync(ACTIVE_DIR, { recursive: true });
   const p = markerFilePath(sessionId);
@@ -115,13 +108,13 @@ function handle(event) {
   // Skip changes within ~/.claude/* — son tooling/config, no impl de story.
   if (filePath.startsWith(path.join(os.homedir(), '.claude'))) return null;
 
-  // Marker de ESTA sesión (multi-sesión, 2026-05-17). Si otra sesión corre un
+  // Marker de ESTA sesión (multi-sesión). Si otra sesión corre un
   // pipeline en el mismo repo, su marker vive bajo su sessionId — no lo tocamos.
   const sessionId = event.session_id || '_nosession';
 
-  // 2026-07-28 — la edición se registra SIEMPRE, haya o no corrida de pipeline. Es la evidencia
-  // que necesita el gate de ATDD del commit para cubrir el trabajo hecho a mano: sin marker, el
-  // gate de `complete-step 4` no tiene nada que leer y el orden test↔código queda sin control.
+  // La edición se registra SIEMPRE, haya o no corrida de pipeline. Es la evidencia que necesita el
+  // gate de ATDD del commit para cubrir el trabajo hecho a mano: sin marker, el gate de
+  // `complete-step 4` no tiene nada que leer y el orden test↔código queda sin control.
   atddGate.recordFileEvent(STATE_DIR, sessionId, filePath, Date.now());
 
   const marker = readMarker(sessionId);
@@ -131,7 +124,7 @@ function handle(event) {
     if (!marker.filesTouched.includes(filePath)) {
       marker.filesTouched.push(filePath);
     }
-    // El SELLO del contenido que esta edición dejó (2026-09-06, piso de frescura por contenido):
+    // El SELLO del contenido que esta edición deja (piso de frescura por contenido):
     // hash + hora. Con eso el piso de la evidencia E2E se decide comparando contenido —un
     // checkout, un rebase o un stash pop que dejan el mismo contenido NO lo mueven; un pull que
     // trae otro contenido sí—, sin adivinar por fechas del disco ni de commits.
@@ -141,13 +134,10 @@ function handle(event) {
       if (!marker.filesTouchedAt || typeof marker.filesTouchedAt !== 'object') marker.filesTouchedAt = {};
       marker.filesTouchedAt[filePath] = { hash, ts: Date.now() };
     } catch { /* ilegible o borrado: sin sello, el piso cae a la fecha del disco */ }
-    // fileEvents (fix auditoría 2026-06-11, run 9.4): registrar CADA edición con ts —
-    // incluidas las RE-ediciones de archivos ya en filesTouched. Es el data-path que
-    // computeSmartReloop (pipeline.js) usa para el delta por iteración (SPEED-1).
-    // Antes esto solo lo escribía `marker.js append-file` (código muerto, sin callers)
-    // → TODO marker llegaba sin fileEvents y smart-reloop degradaba a names-only,
-    // perdiendo los fixes sobre archivos existentes → el orquestador caía al set
-    // COMPLETO de advisors en cada re-loop (caso 9.4: 2 iteraciones full de 13 de más).
+    // fileEvents: registrar CADA edición con ts — incluidas las RE-ediciones de archivos ya en
+    // filesTouched. Es el data-path que computeSmartReloop (pipeline.js) usa para el delta por iteración.
+    // Sin estos eventos, todo marker llega sin fileEvents, smart-reloop degrada a names-only, pierde los
+    // fixes sobre archivos existentes, y el orquestador cae al set COMPLETO de advisors en cada re-loop.
     if (!Array.isArray(marker.fileEvents)) marker.fileEvents = []; // marker corrupto → normalizar (no romper el "exit 0 siempre")
     marker.fileEvents.push({ path: filePath, ts: new Date().toISOString() });
     if (marker.fileEvents.length > 500) {
@@ -162,10 +152,9 @@ function handle(event) {
     return null;
   }
 
-  // Caso 1b (2026-08-19): sin marker pero con carril AD-HOC declarado — registrar el archivo de
-  // implementación bajo el ad-hoc (el cupo del portón de carril se cuenta acá, en PostToolUse, sobre
-  // ediciones que EFECTIVAMENTE ocurrieron — no en el PreToolUse, donde un Edit fallido o denegado por
-  // otro handler también contaría; hallazgo R13 del review adversarial).
+  // Sin marker pero con carril AD-HOC declarado: registrar el archivo de implementación bajo el ad-hoc.
+  // El cupo del portón de carril se cuenta acá, en PostToolUse, sobre ediciones que EFECTIVAMENTE
+  // ocurrieron. No en el PreToolUse, donde un Edit fallido o denegado por otro handler también contaría.
   try {
     const { isImplPath } = require('./lib/atdd-order.js');
     const sg = require('./lib/story-gate.js');
@@ -186,9 +175,8 @@ function handle(event) {
         `   • Correr los revisores en paralelo cuando termines.\n` +
         `   • Bloquear "done" si quedan pasos pendientes.\n` +
         `   • Asociar este archivo al diff de la story para el commit prep.\n` +
-        // 2026-07-28 — las tres de abajo se perdieron EN SILENCIO en la misma sesión, una por una,
-        // y las tres las detectó el dev leyendo el transcript. Si trabajar fuera del pipeline es
-        // legítimo, al menos tiene que ser RUIDOSO: acá se enumera lo que te estás perdiendo.
+        // Si trabajar fuera del pipeline es legítimo, al menos tiene que ser RUIDOSO: acá se enumera
+        // lo que te estás perdiendo.
         `   • Escribir los tests ANTES del código (pruebas primero, en «Implementar y correr las pruebas»). El gate del commit avisa igual,\n` +
         `     pero recién cuando ya está escrito al revés.\n` +
         `   • Generar la guía de prueba manual derivada de los ACs:\n` +

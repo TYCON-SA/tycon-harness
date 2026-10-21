@@ -1,16 +1,14 @@
 'use strict';
 /**
- * El intérprete de castellano del portón de carril (2026-08-27).
+ * El intérprete de castellano del portón de carril.
  *
  * POR QUÉ EXISTE — Y POR QUÉ ES EL JUEZ Y NO EL DESEMPATE
- * Nació como desempate: el carril lo decidía `detectLane` (regex sobre el prompt del user) y esto
- * corría sólo cuando el camino mecánico denegaba. Ese diseño duró TRES DÍAS: tres incidentes
- * seguidos (#carril-sin-salida, #carril-no-detecta, y el "dale, probá con 2.5 segundos" que fijaba
- * carril — cazado por revisión adversarial antes de morder), cada arreglo produciendo la falla
- * opuesta. La conclusión quedó escrita en story-gate.js: el castellano no se deja regexear.
- * detectLane se borró, y esto pasó a ser quien interpreta qué autorizó el humano, en el ÚNICO
- * punto donde hace falta interpretarlo: el juicio de `marker.js adhoc set` (una vez por sesión,
- * no en cada prompt — el costo y la latencia por prompt siguen siendo la razón de no hacerlo ahí).
+ * El carril no se decide con un regex sobre el prompt del user: el castellano no se deja regexear
+ * (ver story-gate.js), y cada arreglo de un regex produce la falla opuesta (un "dale, probá con
+ * 2.5 segundos" fijaría carril, por ejemplo). Por eso esto es quien interpreta qué autorizó el
+ * humano, en el ÚNICO punto donde hace falta interpretarlo: el juicio de `marker.js adhoc set`
+ * (una vez por sesión, no en cada prompt — el costo y la latencia por prompt son la razón de no
+ * hacerlo ahí).
  *
  * QUÉ NO ES
  * NO es el freno. El freno sigue siendo mecánico: sin carril declarado, el portón bloquea el primer
@@ -20,17 +18,17 @@
  * QUÉ LEE
  * Los prompts REALES del user (`recentPrompts`, que sólo escribe on-prompt.js desde
  * UserPromptSubmit). El agente no puede inyectar texto ahí: por eso contesta "¿qué autorizó el
- * humano?" y no "¿qué le conviene al agente?" (incident-log#adhoc-self-declared-2026-08-24).
+ * humano?" y no "¿qué le conviene al agente?".
  *
  * FALLA HACIA LO MECÁNICO
  * Sin `claude`/`codex` en PATH, con TYCON_LANE_LLM=0, por timeout, salida no reconocida o cualquier
  * excepción → devuelve null y decide la capa mecánica sola (reason citando al user), como siempre.
  * Para abrir un atajo tiene que decir "adhoc" explícitamente; para vetarlo, "pipeline".
  *
- * EN WINDOWS (story 8.17, AC 50)
+ * EN WINDOWS
  * `claude` y `codex` instalados con npm son un `.cmd`, y Node no lanza un `.cmd` sin shell: no lo encuentra (busca
  * `.exe` y `.com`) o, desde Node 18.20.2 / 20.12.2, lo rechaza con EINVAL. Lanzarlo CON shell no se hace: el prompt
- * del dev viaja por ahí. Antes eso terminaba en un 'sin-modelo' mudo, como si no hubiera nada instalado; ahora el
+ * del dev viaja por ahí. Eso no termina en un 'sin-modelo' mudo, como si no hubiera nada instalado: el
  * desempate se apaga DICIÉNDOLO (via 'cmd-sin-shell', con el motivo) y decide la capa mecánica, como siempre. Queda
  * anotado en scripts/setup/windows-support.json (`excluded`). La plataforma y el entorno se inyectan en la prueba.
  *
@@ -130,7 +128,7 @@ function buildPrompt(prompts) {
 function defaultCall(prompt) {
   // TYCON_EVAL_SANDBOX=1: sin esto los hooks de SessionStart le inyectan al sub-modelo las alarmas
   // del arnés ("controls-bench EN ROJO — Correr: …") y el modelo va y las ejecuta en vez de hacer
-  // su tarea (incident-log#banco-se-envenena-solo).
+  // su tarea.
   const env = Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' });
   if (binAvailable('claude')) {
     const r = spawnSync('claude', ['--model', CLAUDE_MODEL, '--print',
@@ -181,9 +179,9 @@ function classifyLane(prompts, opts = {}) {
   if (!enabled()) return { lane: null, via: 'off' };
   const list = (Array.isArray(prompts) ? prompts : []).filter((p) => String(p || '').trim());
   if (!list.length) return { lane: null, via: 'sin-prompts' };
-  // H2b (revisión adversarial 2026-08-27): acá se TIRABAN prompts enteros si el total pasaba
-  // MAX_CHARS — enterrar el pedido de story 3 prompts atrás con prompts largos lo sacaba de la
-  // ventana del juez, y el veto se evadía AUN CON modelo. La cita (reasonInPrompts) y el juez
+  // Acá no se tiran prompts enteros si el total pasa
+  // MAX_CHARS: enterrar el pedido de story 3 prompts atrás con prompts largos lo sacaría de la
+  // ventana del juez, y el veto se evadiría AUN CON modelo. La cita (reasonInPrompts) y el juez
   // tienen que ver los MISMOS 8 prompts: si hay que achicar, se recorta CADA prompt (el intent
   // vive al principio de la frase), nunca se descarta uno.
   const joined = list.join(' ');

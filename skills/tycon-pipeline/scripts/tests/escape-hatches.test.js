@@ -1,22 +1,21 @@
 'use strict';
 
 /**
- * escape-hatches.test.js —las dos escotillas de emergencia (FIX-2 + decisión D1, 2026-08-25).
+ * escape-hatches.test.js —las dos escotillas de emergencia.
  *
- * ── QUÉ SE ROMPÍA ───────────────────────────────────────────────────────────────────────────────
+ * ── QUÉ SE EVITA ────────────────────────────────────────────────────────────────────────────────
  * Existe una escotilla: un archivo suelto con la palabra `off` apaga el control que exige "la
- * prueba antes que el código". Dos cosas estaban mal:
+ * prueba antes que el código". Dos cosas que no pueden pasar:
  *
- *   1. Se leía de la CARPETA. `echo off > .tycon/atdd-gate` sin commitear alcanzaba — y crear ese
+ *   1. Que se lea de la CARPETA. `echo off > .tycon/atdd-gate` sin commitear alcanzaría — y crear ese
  *      archivo tampoco genera evento de implementación (`.tycon` está en NEVER_CODE_SEGMENTS y los
- *      archivos sin extensión no están en CODE_EXTS), o sea que nada lo miraba.
- *   2. **Ese mismo `off` apagaba también, de yapa, el control de evidencia de la story** — el que
- *      avisa "estos criterios de aceptación no están verificados". Un dev que apagaba lo primero se
- *      llevaba lo segundo puesto sin saberlo, y **la herencia no estaba escrita en ningún lado**.
- *      Ése era el hallazgo reportable, no la escotilla en sí.
+ *      archivos sin extensión no están en CODE_EXTS), o sea que nada lo miraría.
+ *   2. **Que ese mismo `off` apague también, de yapa, el control de evidencia de la story** — el que
+ *      avisa "estos criterios de aceptación no están verificados". Un dev que apagara lo primero se
+ *      llevaría lo segundo puesto sin saberlo, y **la herencia no estaría escrita en ningún lado**.
  *
- * Decisión del dev (D1, 2026-08-25): **dos llaves**. Impacto de separar: cero — ningún repo del
- * equipo tiene `.tycon/atdd-gate` (barrido de `~/SourceCode` el mismo día).
+ * Se usan **dos llaves**. Separarlas no tiene impacto: ningún repo del
+ * equipo tiene `.tycon/atdd-gate`.
  *
  * Lanza git → throttle DIARIO.
  */
@@ -76,7 +75,7 @@ test('la variable de entorno sigue ganando (es la escotilla del dev, no del agen
 
 // ── la escotilla de EVIDENCIA — llave propia ──────────────────────────────────────────────────
 test('🔴 apagar el gate de ATDD NO apaga el de evidencia', () => {
-  // El hallazgo que motivó todo esto: la herencia existía y no estaba documentada.
+  // Cada control tiene su llave: apagar uno no hereda el apagado del otro.
   const d = repo('atdd-gate', 'off\n', 'commiteado');
   assert.equal(atdd.resolveMode(d, SIN_ENV), 'off');
   assert.equal(atdd.resolveEvidenceMode(d, SIN_ENV), 'warn',

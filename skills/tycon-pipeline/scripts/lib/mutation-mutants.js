@@ -2,9 +2,9 @@
 /**
  * lib/mutation-mutants.js — generación PURA de mutantes candidatos (sin fs, sin exec).
  *
- * Parte del CHEQUEO DE MUTANTES del harness TYCON (2026-08-13): una suite en
- * verde NO prueba que los tests ejerzan el código nuevo — ya pasó que un test
- * pasaba sin probar nada. Este módulo, dado el texto de un archivo y el conjunto
+ * Parte del CHEQUEO DE MUTANTES del harness TYCON: una suite en
+ * verde NO prueba que los tests ejerzan el código nuevo — un test puede
+ * pasar sin probar nada. Este módulo, dado el texto de un archivo y el conjunto
  * de líneas AGREGADAS, devuelve la lista ordenada y DETERMINÍSTICA de mutantes
  * chicos y seguros. El runner (scripts/mutation-check.js) los aplica uno por uno
  * y verifica que algún test se ponga rojo.
@@ -197,7 +197,7 @@ function generateMutants(entries) {
 
 /**
  * applyMutant(source, mutant) → texto mutado, o null si la línea `mutant.line`
- * ya no coincide byte a byte con `mutant.before` (fail-closed: si el archivo
+ * no coincide byte a byte con `mutant.before` (fail-closed: si el archivo
  * cambió desde que se generó el mutante, NO se escribe nada).
  * Preserva el \r final de la línea (archivos CRLF).
  */

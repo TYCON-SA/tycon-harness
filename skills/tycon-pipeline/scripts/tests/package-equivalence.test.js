@@ -1,20 +1,20 @@
 'use strict';
 
 /**
- * package-equivalence.test.js — T10 de la story 8.2: el equipo no nota el cambio.
+ * package-equivalence.test.js — el equipo no nota el paso a paquetes de revisores.
  *
  * Cada caso armado de `lib/equivalence-cases.js` recorre una rama de la matriz que el pipeline
- * tenía escrita en su código antes de la story (sólo .cs; .tsx con React, con Next y sin
+ * tenía escrita en su código antes de pasar a paquetes (sólo .cs; .tsx con React, con Next y sin
  * framework; los dos juntos; sólo config de plugin; dependencia nueva; .sh; secretos; plugin
  * Bizuit; .tsx + plugin.json; y los que trae cada paquete en su carpeta). Se corre el pipeline NUEVO con los paquetes reales
  * instalados y se compara, caso por caso, contra la **foto dorada** que
- * `package-equivalence.js snapshot --base <sha>` tomó del `pipeline.js` de `main` antes del cambio.
+ * `package-equivalence.js snapshot --base <sha>` tomó del `pipeline.js` de `main` antes del paso a paquetes.
  *
- * Por qué una foto y no correr el viejo acá: después del merge esa versión ya no existe en ningún
+ * Por qué una foto y no correr el viejo acá: esa versión ya no existe en ningún
  * checkout, y la prueba tiene que seguir valiendo. La foto lleva el sha adentro; regenerarla es
  * una decisión explícita (`foto --base <sha>`), no un efecto de correr la suite.
  *
- * Una sola diferencia es un rojo, no una tolerancia (AC 9).
+ * Una sola diferencia es un rojo, no una tolerancia.
  */
 
 const test = require('node:test');
@@ -36,7 +36,7 @@ const { SKIP_PUBLIC, absentReviewers } = require('./lib/public-copy.js');
 /** Los revisores que nombra la foto de un caso (en cualquiera de sus tres grupos). */
 const revisoresDe = (f) => [...new Set([...(f.base || []), ...(f.completitud || []), ...(f.conditional || [])])];
 
-// Story 8.10.3 (tanda D, T14): un paquete trae sus propios casos y su foto en su carpeta. La foto que viaja no nombra
+// Un paquete trae sus propios casos y su foto en su carpeta. La foto que viaja no nombra
 // ningún caso de paquete; el repo del equipo los mide igual, y donde el paquete no está sus casos no existen.
 test('Equivalencia_PackCases_ComeFromThePackFolderWithTheirOwnPhoto', () => {
   const packs = fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-packs-'));
@@ -70,8 +70,8 @@ test('Equivalencia_PackCases_ComeFromThePackFolderWithTheirOwnPhoto', () => {
   assert.deepEqual(casosDePaquetes(path.join(packs, 'no-existe')), []);
 });
 
-// Pase adversarial de la tanda D: `snapshot --out <otra ruta>` es una foto de ENSAYO y no puede pisar la foto dorada
-// de un paquete (antes de la tanda `--out` redirigía todo lo que el comando escribía); y dos fotos tomadas de bases
+// `snapshot --out <otra ruta>` es una foto de ENSAYO y no puede pisar la foto dorada
+// de un paquete (`--out` redirige todo lo que el comando escribe); y dos fotos tomadas de bases
 // distintas no se comparan como si fueran una.
 test('Equivalencia_SnapshotOut_KeepsTrialPhotosAwayFromThePack', () => {
   const { destinoDeFoto } = require('../lib/equivalence-cases.js');
@@ -109,9 +109,8 @@ test('Equivalencia_PublicPhoto_HoldsNoPackCase — la foto que viaja no trae los
   assert.deepEqual(Object.keys(publica.casos).sort(), CASOS.filter((c) => !c.paquete).map((c) => c.nombre).sort(),
     'la foto que viaja cubre exactamente los casos del núcleo');
   // Cada paquete instalado que trae su archivo de casos aporta al menos uno: un archivo que se carga y no aporta nada es
-  // un rojo, no «sin casos». Cuántos trae cada uno lo dice su archivo, no un número escrito acá (antes: «al menos 2» en
-  // el repo del equipo, que era contar a mano los casos de un paquete privado; sacar ese paquete o sus casos ponía rojo
-  // este caso).
+  // un rojo, no «sin casos». Cuántos trae cada uno lo dice su archivo, no un número escrito acá (un «al menos 2» fijo
+  // es contar a mano los casos de un paquete privado, y sacar ese paquete o sus casos pondría rojo este caso).
   const conArchivo = fs.readdirSync(PACKS_REALES).filter((p) => fs.existsSync(path.join(PACKS_REALES, p, 'equivalence-cases.js'))).sort();
   for (const p of conArchivo) {
     assert.ok(CASOS.some((c) => c.paquete === p), `el paquete ${p} trae equivalence-cases.js y no aportó ningún caso`);
@@ -128,9 +127,8 @@ test('la foto dorada existe, viene de main y cubre todos los casos', () => {
   assert.deepEqual(Object.keys(foto.casos).sort(), nombres, 'la foto cubre exactamente los casos de hoy');
 });
 
-// Story 8.7 (pase adversarial del arreglo tras la CI 11603): una TYCON_PACKS_DEFAULT de sólo espacios es «sin poner»
-// para el cargador; medir() la tiene que tratar igual y declarar el default de la foto, no pasarla tal cual (sin arnés
-// el cargador salía 2).
+// Una TYCON_PACKS_DEFAULT de sólo espacios es «sin poner» para el cargador; medir() la tiene que tratar igual y
+// declarar el default de la foto, no pasarla tal cual (sin arnés el cargador saldría 2).
 test('Equivalencia_PacksDefaultBlank_TreatedAsUnset', (t) => {
   // la foto del primer caso nombra revisores de los paquetes del equipo: sin ellos (la copia pública) no se mide
   if (SKIP_PUBLIC) { t.skip(`${SKIP_PUBLIC}: la foto nombra revisores de los paquetes del equipo — NO MEDIDO acá, se mide en el repo del equipo`); return; }
@@ -150,16 +148,15 @@ test('Equivalencia_PacksDefaultBlank_TreatedAsUnset', (t) => {
 });
 
 test('Equivalencia_ReposRootExplicito_NoDeduceLaRaiz — con --repos-root el informe no le pide la raíz al arnés: el default es perezoso', () => {
-  // (pase adversarial de la story 8.3 del arnés, vuelta 1) el default de `--repos-root` se evaluaba ANTES de mirar
-  // el flag —semántica de argumentos de JS— y frenaba con «sin raíz de repos» aunque la raíz viniera en la línea de
-  // comandos. Acá NO hay arnés que consultar (HOME aislado sin el enlace, sin TYCON_GUIDES_DIR ni TCG): si se
-  // dedujera, saldría 2 con ese mensaje.
+  // El default de `--repos-root` no se evalúa ANTES de mirar el flag (semántica de argumentos de JS): si no, frenaría
+  // con «sin raíz de repos» aunque la raíz viniera en la línea de comandos. Acá NO hay arnés que consultar (HOME aislado
+  // sin el enlace, sin TYCON_GUIDES_DIR ni TCG): si se dedujera, saldría 2 con ese mensaje.
   const vacio = fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-repos-root-'));
   const out = path.join(vacio, 'informe.md');
   const r = require('child_process').spawnSync(process.execPath,
     [path.join(SCRIPTS, 'package-equivalence.js'), 'report', '--base', 'HEAD', '--commits', '1', '--repos-root', vacio, '--out', out], {
       encoding: 'utf8', timeout: 300000,
-      // story 8.7 (AC 8): sin arnés que consultar, el default de los paquetes lo da la variable (que manda sobre todo)
+      // Sin arnés que consultar, el default de los paquetes lo da la variable (que manda sobre todo)
       env: { PATH: process.env.PATH, HOME: HOME_AISLADO, TYCON_SESSION_ID: 'equivalencia-test', TYCON_PACKS_DIR: PACKS_REALES, TYCON_PACKS_DEFAULT: 'all' },
     });
   assert.doesNotMatch((r.stderr || '') + (r.stdout || ''), /sin raíz de repos/, 'no dedujo la raíz: la pasaron');
@@ -170,10 +167,10 @@ test('Equivalencia_ReposRootExplicito_NoDeduceLaRaiz — con --repos-root el inf
 for (const caso of CASOS) {
   test(`Equivalencia_CasosArmados_MismoSetSuperficieYModelo · ${caso.nombre}`, (t) => {
     assert.ok(foto, 'la foto se leyó');
-    // Story 8.7 (tanda B): la foto de algunos casos nombra a un revisor del paquete de clientes, que la copia pública no
+    // La foto de algunos casos nombra a un revisor del paquete de clientes, que la copia pública no
     // trae (ni el manifiesto ni la definición). Ese caso no se puede comparar afuera: se saltea DICIÉNDOLO. En el repo
-    // del equipo `absentReviewers()` es siempre [] y el caso se mide entero, como siempre. (Story 8.10.3 D: al que no
-    // viaja se lo reconoce porque le falta su definición, no por una lista de nombres.)
+    // del equipo `absentReviewers()` es siempre [] y el caso se mide entero. (Al que no viaja se lo reconoce porque le
+    // falta su definición, no por una lista de nombres.)
     const queNoViajan = absentReviewers(revisoresDe(foto.casos[caso.nombre]));
     if (queNoViajan.length) {
       t.skip(`${SKIP_PUBLIC}: la foto de este caso nombra a ${queNoViajan.join(' y ')}, que no viaja${queNoViajan.length > 1 ? 'n' : ''} — NO MEDIDO acá, se mide en el repo del equipo`);

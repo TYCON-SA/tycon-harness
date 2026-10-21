@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * lib/tmp-path.js — la ruta de un archivo temporal que un paso del pipeline escribe con bash y lee con Node. UN lugar
- * (story 8.17 del arnés, tanda W6 · AC 47).
+ * lib/tmp-path.js — la ruta de un archivo temporal que un paso del pipeline escribe con bash y lee con Node. UN lugar.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
- * El paso 7c y el aviso de `on-frontmatter-write.js` escribían la configuración de E2E con una redirección de bash a
- * un archivo fijo bajo `/tmp`, y la leían con un `require()` de esa misma ruta escrita a mano. En Mac y Linux es el
+ * El paso 7c y el aviso de `on-frontmatter-write.js` escriben la configuración de E2E con una redirección de bash y
+ * la leen con Node. Con un archivo fijo bajo `/tmp` y un `require()` de esa misma ruta escrita a mano, en Mac y Linux es el
  * mismo archivo. En Windows no: el bash de Git traduce `/tmp` a la carpeta temporal del usuario, y Node, que no conoce
- * esa traducción, lee `C:\tmp\…`. El portón E2E quedaba sin configuración y el paso se saltaba sin decirlo.
- * Ahora la ruta la arma Node (que sabe cuál es la carpeta temporal de la máquina) y se guarda en una variable; quien
+ * esa traducción, lee `C:\tmp\…`. El portón E2E quedaría sin configuración y el paso se saltaría sin decirlo.
+ * La ruta la arma Node (que sabe cuál es la carpeta temporal de la máquina) y se guarda en una variable; quien
  * escribe y quien lee usan esa variable:
  *
  *   E2ECFG=$(node <skill>/scripts/lib/tmp-path.js e2ecfg <repo>)
@@ -18,9 +17,8 @@
  *
  * ── UN ARCHIVO POR REPO Y POR SESIÓN ────────────────────────────────────────────────────────────
  * El nombre lleva una huella del repo (su ruta real) y de la sesión (`lib/session-id.js`):
- * `tycon-e2ecfg-<12 hex>.json`. Con un nombre fijo, dos pipelines a la vez (dos worktrees, dos sesiones) escribían el
- * mismo archivo, y uno corría el portón E2E y las apps del repo del otro (pase adversarial de la W6, hallazgo #6:
- * 18 de 40 vueltas en el laboratorio). La huella NO depende del proceso: otra llamada de Bash de la misma sesión, sobre
+ * `tycon-e2ecfg-<12 hex>.json`. Con un nombre fijo, dos pipelines a la vez (dos worktrees, dos sesiones) escribirían el
+ * mismo archivo, y uno correría el portón E2E y las apps del repo del otro. La huella NO depende del proceso: otra llamada de Bash de la misma sesión, sobre
  * el mismo repo, llega al mismo archivo —quien escribe y quien lee siguen viendo la misma ruta aunque estén en dos
  * bloques distintos—. Sin repo, vale la carpeta de trabajo.
  *

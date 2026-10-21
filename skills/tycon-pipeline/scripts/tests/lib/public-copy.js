@@ -1,8 +1,7 @@
 'use strict';
 
 /**
- * tests/lib/public-copy.js — ¿esta suite corre adentro de la copia pública? UNA señal para las pruebas de agent-skills
- * (story 8.7 del arnés, tanda B · 2026-10-03).
+ * tests/lib/public-copy.js — ¿esta suite corre adentro de la copia pública? UNA señal para las pruebas de agent-skills.
  *
  * La copia pública sale sin el paquete de revisores de clientes (`packs/clients/`) y sin las definiciones de sus
  * revisores (`agents/`). Tres suites contaban con ellos —packs, package-equivalence y reviewer-rules— y daban rojo sólo
@@ -14,7 +13,7 @@
  * La señal: no existe `packs/clients/pack.json`. Que ese paquete no se borre por error en el repo del equipo lo cuida
  * `legacy-names-options.test.js`, que corre sólo adentro.
  *
- * Los revisores de un paquete no se escriben acá por su nombre (story 8.10.3, tanda D): se leen de los manifiestos
+ * Los revisores de un paquete no se escriben acá por su nombre: se leen de los manifiestos
  * instalados (`packReviewers`), y en la copia se reconoce al que no viaja porque le falta su definición
  * (`absentReviewers`).
  */
@@ -33,8 +32,8 @@ const SKIP_PUBLIC = !fs.existsSync(CLIENT_PACK) && 'copia pública: sin los paqu
 
 /**
  * Los revisores que declara el paquete de clientes, leídos de su manifiesto (sin repetir y ordenados); `[]` en la copia
- * pública, que sale sin él. Antes era un número escrito acá (2): el público contaba a mano lo que el repo del equipo
- * tiene, y sacar un revisor de ese paquete ponía rojas tres suites del público. Ahora el público cuenta sólo lo suyo y
+ * pública, que sale sin él. No es un número escrito acá: contar a mano lo que tiene el repo del equipo
+ * pondría rojas tres suites del público al sacar un revisor de ese paquete. El público cuenta sólo lo suyo y
  * suma lo que el manifiesto del equipo declare, sea lo que sea.
  */
 function clientPackReviewers() {

@@ -25,22 +25,20 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const { resolveSessionId } = require('./lib/session-id.js');
-const { stepNames } = require('./lib/steps.js');   // story 7.23: al dueño, los pasos por su nombre llano
+const { stepNames } = require('./lib/steps.js');   // al dueño, los pasos por su nombre llano
 
-// Multi-sesión sin race (2026-05-17): marker per-session en active/<sessionId>.json.
+// Multi-sesión sin race: marker per-session en active/<sessionId>.json.
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
 const LEGACY_MARKER_PATH = path.join(STATE_DIR, 'active.json');
 
-// TTL para markers huérfanos (2026-05-20). Reducido de 24h → 6h tras feedback real:
-// sesiones que terminaban sin llamar `marker.js clear` (Claude crash / dev cerró
-// ventana / context overflow) dejaban markers vivos hasta 24h. La sesión siguiente
-// que arrancaba sobre la misma story disparaba CROSS-SESSION CONFLICT falso positivo.
+// TTL para markers huérfanos (6h). Las sesiones que terminan sin llamar `marker.js clear` (Claude crash / dev cerró
+// ventana / context overflow) dejan markers vivos; con un TTL de 24h, la sesión siguiente
+// que arranca sobre la misma story dispararía CROSS-SESSION CONFLICT falso positivo.
 // 6h cubre el caso típico (dejaste la ventana abierta toda la jornada) sin romper
 // paralelismo intencional (sesiones reales tocan lastTouch con cada Edit via on-edit.js).
-// Caso disparador: Story 4.2 de un producto del equipo, 2026-05-20 — sesión previa orphaned marker — guides/maintaining/incident-log.md#case-orphan-marker-false-conflict-2026-05-20.
 const STALE_HOURS = 6;
 
 function markerFilePath(sessionId) {
@@ -48,10 +46,10 @@ function markerFilePath(sessionId) {
   return path.join(ACTIVE_DIR, `${safe}.json`);
 }
 
-// Cross-session discovery (fix robusto 2026-05-20). Lee TODOS los markers
+// Cross-session discovery. Lee TODOS los markers
 // activos no-stale para detectar pipelines en otras sesiones.
 //
-// Side-effect (2026-05-20 v2): markers stale (lastTouch > STALE_HOURS) son
+// Side-effect: markers stale (lastTouch > STALE_HOURS) son
 // auto-eliminados del filesystem. Esto cierra el loop de orphans: un dev que
 // nunca llamó `marker.js clear` antes de cerrar Claude no contamina sesiones
 // futuras más allá de la ventana TTL. Skip la sesión actual (currentSessionId)
@@ -82,7 +80,7 @@ function listAllMarkers(currentSessionId) {
 }
 
 // Extrae story id (formato N.M[.K]) del prompt del usuario. Devuelve el primer
-// match o null. Acota a los patrones de INTENT (no captura "Ceibo 2.4 está roto").
+// match o null. Acota a los patrones de INTENT (no captura "Acme 2.4 está roto").
 function extractStoryId(prompt) {
   // Buscamos solo dentro de los patrones INTENT — story id típicamente sigue a
   // "story" / "historia" / "tarea" / "implementemos" / "implementar".
@@ -96,14 +94,14 @@ function extractStoryId(prompt) {
 // ============================================================
 
 // INTENT keywords — usuario parece arrancando impl de story. Detección case-insensitive.
-// Patrones específicos: "implementemos la story N.M" / "implementar 1.7.1" / "story 1.7.1"
+// Patrones específicos: "implementemos la story <id>" / "implementar <id>" / "story <id>"
 // + verbos imperativos genéricos cuando van seguidos de un identifier de story.
 // Fuente única en lib/story-gate.js (los mismos patrones alimentan el veto de marker.js).
 const INTENT_PATTERNS = require('./lib/story-gate.js').STORY_INTENT_PATTERNS;
 
 // NEW_FEATURE keywords — usuario pide funcionalidad nueva sin story Mary+GOLD existente.
-// Caso disparador 2026-06-09: "vamos a hacer la funcionalidad para conciliar pagos a
-// proveedores" — Claude entró en discovery-as-Claude (preguntas sueltas en chat) en vez
+// Caso: "vamos a hacer la funcionalidad para conciliar pagos a
+// proveedores" — Claude entra en discovery-as-Claude (preguntas sueltas en chat) en vez
 // de delegar a Mary/Bob (`bmad-agent-analyst` / `tycon-create-story`). El gap es que los
 // INTENT_PATTERNS exigen story id N.M, así que el caso "feature nueva from scratch" no
 // activaba ningún reminder. Estos patrones cubren ese hueco: verbo imperativo de creación
@@ -127,7 +125,7 @@ const STOP_PATTERNS = [
 // Helpers
 // ============================================================
 
-// Marker de UNA sesión: archivo per-session `active/<sessionId>.json` (2026-05-17).
+// Marker de UNA sesión: archivo per-session `active/<sessionId>.json`.
 // Fallback al legacy single-file `active.json` (transición — readonly).
 function readMarker(sessionId) {
   const own = markerFilePath(sessionId);
@@ -151,12 +149,12 @@ function readMarker(sessionId) {
   return null;
 }
 
-// 🔇 Sandbox de EVALS (2026-07-30): las corridas del banco de pruebas spawnean `claude -p` y CADA
+// 🔇 Sandbox de EVALS: las corridas del banco de pruebas spawnean `claude -p` y CADA
 // hook UserPromptSubmit del harness le inyecta su reminder AL PROMPT del agente simulado — que lo
 // lee como parte de la conversación y lo contesta ahí adentro ("No corresponde timer de Clockify"
 // en medio de una entrevista simulada). Eso no es cosmético: le come turnos al presupuesto
-// de la entrevista y SESGA la medición, con distinta intensidad por brazo (medido en la Story 3.40:
-// 0-1 menciones en un brazo contra 6-10 en el otro, sobre la misma cantidad de turnos).
+// de la entrevista y SESGA la medición, con distinta intensidad por brazo (0-1 menciones en un brazo
+// contra 6-10 en el otro, sobre la misma cantidad de turnos).
 // El arnés setea TYCON_EVAL_SANDBOX=1 al spawnear; acá nos callamos.
 if (process.env.TYCON_EVAL_SANDBOX === '1') process.exit(0);
 
@@ -178,11 +176,11 @@ function readEvent() {
   }
 }
 
-// Regla H.i — SESIÓN FRESCA (auditoría 2026-06-11, run 9.4). Proxy mecánico de
+// Regla H.i — SESIÓN FRESCA. Proxy mecánico de
 // "sesión ya cargada": el tamaño del transcript JSONL de la sesión actual. Un
 // pipeline que arranca fresco pesa <100KB; una sesión con horas de otro trabajo
 // encima pesa MBs — y cada turno del pipeline re-lee TODO ese contexto cacheado
-// (caso 9.4: 2h14 previas → 835 turnos × ~478K tokens de cache reads = 399M).
+// (por ejemplo: 2h14 previas → 835 turnos × ~478K tokens de cache reads = 399M).
 const FRESH_SESSION_MB_THRESHOLD = 1.5;
 function sessionLoadedMB(transcriptPath) {
   if (!transcriptPath) return null;
@@ -209,36 +207,36 @@ function matches(prompt, patterns) {
 // ============================================================
 
 
-// Falsos positivos sobre contenido NO humano (fix auditoría 2026-06-11): las
+// Falsos positivos sobre contenido NO humano: las
 // task-notifications de background/workflows y los outputs de slash-commands llegan
-// al hook como "prompt" y pueden CITAR texto que matchea los patterns (caso real: el
-// resultado de un workflow de auditoría contenía "implementemos la story ... 9.4"
-// literal en su evidencia → INTENT-detect disparó 2 veces en falso, ~400 tokens de
+// al hook como "prompt" y pueden CITAR texto que matchea los patterns (por ejemplo, el
+// resultado de un workflow de auditoría que trae "implementemos la story ... 9.4"
+// literal en su evidencia → INTENT-detect dispararía en falso, ~400 tokens de
 // ruido por disparo). Señales mecánicas de contenido no-humano → salir en silencio.
 const NON_HUMAN_RE = /<task-notification>|<local-command-stdout>|<command-name>|SYSTEM NOTIFICATION - NOT USER INPUT|<system-reminder>/;
 const { prompt, sessionId, transcriptPath } = readEvent();
 if (!prompt) process.exit(0);
 if (NON_HUMAN_RE.test(prompt)) process.exit(0);
 
-// [H11 2026-05-21] El self-upgrade del SessionStart hook se removió de acá: reescribía
+// El self-upgrade del SessionStart hook no vive acá: reescribiría
 // ~/.claude/settings.json en CADA prompt (read+parse siempre, write condicional) — foot-gun
-// de config global + race cross-sesión. El bootstrap del SessionStart lo hace ahora SOLO
+// de config global + race cross-sesión. El bootstrap del SessionStart lo hace SOLO
 // install-tycon-hooks.sh|.ps1 en SessionStart (one-time), no per-prompt.
 
 // Ring de prompts del user (evidencia para reasonInPrompts y lane-classifier). Se registra en
-// CADA prompt humano, antes de cualquier salida temprana. Ya NO fija carril (2026-08-27): la
-// detección por regex se borró — ver el comentario grande en lib/story-gate.js.
-// Fail-open: si el registro falla, el hook sigue como antes.
+// CADA prompt humano, antes de cualquier salida temprana. NO fija carril: no hay
+// detección por regex — ver el comentario grande en lib/story-gate.js.
+// Fail-open: si el registro falla, el hook sigue igual.
 try {
   const io = require('./lib/story-gate-io.js');
   io.recordPrompt(STATE_DIR, sessionId, prompt);
 } catch { /* fail-open */ }
 
-// Constancia del skill creador de stories cuando el USER lo invoca por SLASH (2026-08-30, hallazgo
-// F1 del pase adversarial del freno de story-a-mano): `/tycon-create-story 4.2` tipeado por el dev
+// Constancia del skill creador de stories cuando el USER lo invoca por SLASH (freno de story-a-mano):
+// `/tycon-create-story <id>` tipeado por el dev
 // NO pasa por la tool Skill —Claude Code expande el skill en el propio mensaje como
 // `<command-name>`— y por lo tanto on-skill-invoke.js (PostToolUse Skill) no ve nada. Sin esto, el
-// flujo más directo del dev llegaba al primer Write de la story sin marca → denegado. El prompt
+// flujo más directo del dev llegaría al primer Write de la story sin marca → denegado. El prompt
 // llega CRUDO acá (con el slash), así que la marca se deja desde este hook con via:'slash'.
 // Fail-open: si falla, el freno sigue con la marca de la tool (o el bypass).
 try {
@@ -250,13 +248,12 @@ try {
   }
 } catch { /* fail-open */ }
 
-// Reparación del clon atrasado del arnés (2026-09-03) — ver lib/guides-heal.js.
-// Vive ACÁ y no en un hook propio porque este hook está enchufado en TODAS las máquinas desde
-// mayo y viaja por agent-skills, la carpeta que sí se actualiza; un hook nuevo lo registraría el
-// instalador, que es justamente lo que esas máquinas no pueden bajar (mismo callejón que el
-// bootstrap-heal del 27/08). Una vez por sesión; todo local (merge --ff-only contra el origin/main
+// Reparación del clon atrasado del arnés — ver lib/guides-heal.js.
+// Vive ACÁ y no en un hook propio porque este hook está enchufado en TODAS las máquinas
+// y viaja por agent-skills, la carpeta que sí se actualiza; un hook nuevo lo registraría el
+// instalador, que es justamente lo que esas máquinas no pueden bajar. Una vez por sesión; todo local (merge --ff-only contra el origin/main
 // que el arranque ya trajo — sale a la red sólo si nadie hizo fetch en 3 días, con timeout de 15 s);
-// el instalador corre detached — respeta H11 (nada pesado ni reescrituras de settings por prompt).
+// el instalador corre detached — respeta lo anterior (nada pesado ni reescrituras de settings por prompt).
 // Fail-open. Off: TYCON_GUIDES_HEAL=0.
 try {
   const notice = require('./lib/guides-heal.js').heal({ sessionId, stateDir: STATE_DIR });
@@ -298,7 +295,7 @@ if (marker && Array.isArray(marker.stepsPending) && marker.stepsPending.length >
 // (INTENT_PATTERNS — esto es un RECORDATORIO para invocar el skill, no un freno: un miss acá no
 // abre ningún agujero, porque el portón de carril bloquea el primer toque de código igual).
 if (!marker && matches(prompt, INTENT_PATTERNS)) {
-  // Cross-session discovery (fix robusto 2026-05-20 — caso disparador Story 4.2):
+  // Cross-session discovery:
   // extraer storyId del prompt y buscarla en markers de OTRAS sesiones activas.
   // Si hay match → emitir reminder distinto (PIPE-C0 en hook).
   const intentStoryId = extractStoryId(prompt);
@@ -389,9 +386,9 @@ if (!marker && matches(prompt, INTENT_PATTERNS)) {
 }
 
 // Caso 3: no hay marker activo + el prompt pide funcionalidad nueva sin story existente.
-// Cubre el gap dejado por INTENT_PATTERNS (que exige story id N.M). Caso disparador
-// 2026-06-09: "vamos a hacer la funcionalidad para conciliar pagos a proveedores" —
-// sin este branch el hook no emitía nada y Claude arrancaba discovery-as-Claude
+// Cubre el gap dejado por INTENT_PATTERNS (que exige story id N.M). Caso:
+// "vamos a hacer la funcionalidad para conciliar pagos a proveedores" —
+// sin este branch el hook no emite nada y Claude arranca discovery-as-Claude
 // (preguntas sueltas en chat) en vez de delegar a Mary (`bmad-agent-analyst`) o
 // Bob (`tycon-create-story`) que es el flujo Mary+GOLD spec-first.
 if (!marker && matches(prompt, NEW_FEATURE_PATTERNS)) {

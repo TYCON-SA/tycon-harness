@@ -2,12 +2,10 @@
 /**
  * run-suites-json.test.js — el 5to stack del test-gate: repos cuya suite es `scripts/tests/suites.json`.
  *
- * 🔴 Caso disparador (el arnés, story 2.2, 2026-09-05): el repo del arnés no tiene
- *    package.json ni .csproj — sus 57 suites son archivos sueltos declarados en `suites.json`, que
- *    el pipeline de Azure ya corre. El gate decía «no se detectó stack» y salía 3, así que NUNCA
- *    escribía `tests-result.json`… y sin ese artefacto la matriz de DoD marcaba 11 criterios como
- *    NOT-RUN con la suite realmente verde. Es la TERCERA vez que pasa lo mismo (node --test en
- *    julio, jest en agosto): «un gate que no puede mirar bloquea igual que uno que mira y ve rojo,
+ * 🔴 Un repo sin package.json ni .csproj (el del arnés) tiene sus suites como archivos sueltos declarados en
+ *    `suites.json`, que el pipeline de Azure ya corre. Sin este stack el gate diría «no se detectó stack» y saldría 3,
+ *    así que NUNCA escribiría `tests-result.json`, y sin ese artefacto la matriz de DoD marcaría criterios como
+ *    NOT-RUN con la suite realmente verde: «un gate que no puede mirar bloquea igual que uno que mira y ve rojo,
  *    pero por la razón equivocada».
  *
  * 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la mutación que lo pone en rojo.
@@ -45,7 +43,7 @@ function correr(repo, skills, out) {
 }
 
 test('todas verdes → exit 0 y el resumen cuenta cada una', () => {
-  // 🔴 rojo previo: no escribir el resumen, o contar «corridas» sin distinguir verdes.
+  // 🔴 mutación: no escribir el resumen, o contar «corridas» sin distinguir verdes.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/a.test.js' },
     { raiz: 'arnes', ruta: 'tests/b.test.sh' },
@@ -63,7 +61,7 @@ test('todas verdes → exit 0 y el resumen cuenta cada una', () => {
 });
 
 test('UNA roja → exit ≠ 0 y la nombra (el exit code es el real, no el del último)', () => {
-  // 🔴 rojo previo: devolver el exit del ÚLTIMO comando (el clásico `$?` tras un loop) → con la
+  // 🔴 mutación: devolver el exit del ÚLTIMO comando (el clásico `$?` tras un loop) → con la
   //    roja en el medio y una verde al final, el gate daría verde con la suite en rojo.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/a.test.js' },
@@ -83,7 +81,7 @@ test('UNA roja → exit ≠ 0 y la nombra (el exit code es el real, no el del ú
 });
 
 test('una suite AUSENTE es una falla, no un salteo en silencio', () => {
-  // 🔴 rojo previo: `[ -f "$T" ] || continue` → una suite que desapareció del disco (o un
+  // 🔴 mutación: `[ -f "$T" ] || continue` → una suite que desapareció del disco (o un
   //    agent-skills sin instalar) deja el gate en verde habiendo medido MENOS de lo declarado.
   //    «No pude mirar» y «miré y está bien» no se escriben igual.
   const f = armar({ diarias: [
@@ -99,7 +97,7 @@ test('una suite AUSENTE es una falla, no un salteo en silencio', () => {
 });
 
 test('sin suites.json legible → exit 3 y NO escribe un resumen verde', () => {
-  // 🔴 rojo previo: tratar un JSON roto como lista vacía → «0 suites, 0 rojas», verde, sin haber
+  // 🔴 mutación: tratar un JSON roto como lista vacía → «0 suites, 0 rojas», verde, sin haber
   //    corrido nada. Es el cero falso que el arnés persigue en todos lados.
   const f = armar({ diarias: [] });
   fs.writeFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), '{ esto no es json');
@@ -111,7 +109,7 @@ test('sin suites.json legible → exit 3 y NO escribe un resumen verde', () => {
 });
 
 test('las semanales también entran: la lista es TODA la de suites.json', () => {
-  // 🔴 rojo previo: leer sólo `diarias` → la semanal desaparece del gate y nadie lo nota.
+  // 🔴 mutación: leer sólo `diarias` → la semanal desaparece del gate y nadie lo nota.
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }],
     semanales: [{ raiz: 'arnes', ruta: 'tests/semanal.test.sh' }] });
   f.escribir('arnes', 'tests/a.test.js', 'process.exit(0)');
@@ -122,9 +120,8 @@ test('las semanales también entran: la lista es TODA la de suites.json', () => 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// Story 7.15 (2026-09-29): en paralelo, con diferidas y exclusivas. El gate del arnés tardaba 49,5 y
-// 67,9 min en serie; exportador-real sola, 24-41. Estas pruebas fijan que el paralelo da el MISMO
-// resultado: mismas rojas, mismo orden del resumen, nada huérfano al cortar, «no pude mirar» ≠ verde.
+// En paralelo, con diferidas y exclusivas. En serie el gate del arnés tarda más de 45 minutos. Estas pruebas fijan que
+// el paralelo da el MISMO resultado: mismas rojas, mismo orden del resumen, nada huérfano al cortar, «no pude mirar» ≠ verde.
 // Las suites de mentira anotan inicio y fin en un archivo compartido: el solapamiento se mide de ahí,
 // no de la salida del runner.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
@@ -177,7 +174,7 @@ function deferrableLab() {
 }
 
 test('T6 RunSuites_DefersWhenNotTouching — la story no toca la carpeta: la suite no corre y queda dicho por qué', () => {
-  // 🔴 rojo previo: ignorar `gate_only_when_touching` → la diferible corre (exit 1) y el gate queda en rojo.
+  // 🔴 mutación: ignorar `gate_only_when_touching` → la diferible corre (exit 1) y el gate queda en rojo.
   const f = deferrableLab();
   const r = runWith(f, { touched: { known: true, files: ['scripts/hooks/x.js'] } });
   assert.equal(r.status, 0, `esperaba 0: ${r.stdout}${r.stderr}`);
@@ -189,9 +186,9 @@ test('T6 RunSuites_DefersWhenNotTouching — la story no toca la carpeta: la sui
 });
 
 test('T7 RunSuites_RunsDeferrableWhenTouching — la story toca la carpeta: corre y su rojo cuenta', () => {
-  // 🔴 rojo previo: diferir siempre → una story de publicación cierra sin exportador-real.
+  // 🔴 mutación: diferir siempre → una story de publicación cierra sin exportador-real.
   const f = deferrableLab();
-  // un archivo de laboratorio que no existe en el arnés: la copia pública traduce las rutas reales ya mudadas (story 8.9)
+  // un archivo de laboratorio que no existe en el arnés: la copia pública traduce las rutas reales ya mudadas
   const r = runWith(f, { touched: { known: true, files: ['scripts/lab-pub/lab-tool.js'] } });
   assert.equal(r.status, 1);
   assert.equal(r.resumen.deferred_suites.length, 0);
@@ -199,18 +196,17 @@ test('T7 RunSuites_RunsDeferrableWhenTouching — la story toca la carpeta: corr
 });
 
 test('T7b RunSuites_RunsDeferrableWhenItsOwnFileIsTouched — editar la propia suite la hace correr aunque no toque su carpeta', () => {
-  // Desde el 2026-09-30 las suites lentas del arnés son diferibles: una tanda que sólo cambia la prueba
-  // no puede cerrar sin haberla corrido.
-  // 🔴 rojo previo: decidir sólo por `gate_only_when_touching` → la suite editada se difiere.
+  // Las suites lentas del arnés son diferibles: una tanda que sólo cambia la prueba no puede cerrar sin haberla corrido.
+  // 🔴 mutación: decidir sólo por `gate_only_when_touching` → la suite editada se difiere.
   const f = deferrableLab();
   const r = runWith(f, { touched: { known: true, files: ['scripts/tests/diferible.test.sh'] } });
   assert.equal(r.status, 1, `esperaba que corra (y salga roja): ${r.stdout}${r.stderr}`);
   assert.equal(r.resumen.deferred_suites.length, 0);
 });
 
-// Pase adversarial del tramo F de la story 8.22: una suite PARTIDA (`<suite>.p<k>.test.*`, una línea que carga el
-// archivo entero) se registra por sus partes. «Editar la propia suite» es editar el entero, donde viven sus casos.
-// 🔴 rojo previo: «la propia suite» era sólo la parte → tocar el archivo entero difería todas sus partes.
+// Una suite PARTIDA (`<suite>.p<k>.test.*`, una línea que carga el archivo entero) se registra por sus partes.
+// «Editar la propia suite» es editar el entero, donde viven sus casos.
+// 🔴 mutación: tomar «la propia suite» como sólo la parte → tocar el archivo entero difiere todas sus partes.
 test('T7c RunSuites_PartitionedSuite_WholeFileTouched_RunsItsParts — editar el archivo entero de una suite partida corre sus partes', () => {
   const lab = () => {
     const f = armar({ diarias: [
@@ -241,7 +237,7 @@ test('T7c RunSuites_PartitionedSuite_WholeFileTouched_RunsItsParts — editar el
   assert.equal(r.resumen.deferred_suites.length, 0);
 });
 
-// Revisor de cobertura (vuelta 3): una partida de NODE suma, a lo propio, el reparto por duración (suite-parts.json).
+// Una partida de NODE suma, a lo propio, el reparto por duración (suite-parts.json).
 test('T7c — una suite partida de Node: su archivo entero, la biblioteca de Node y el reparto por duración la corren', () => {
   const lab = () => {
     const f = armar({ diarias: [
@@ -263,7 +259,7 @@ test('T7c — una suite partida de Node: su archivo entero, la biblioteca de Nod
 });
 
 test('T8 RunSuites_UnknownTouched_RunsAll — sin datos de lo tocado (o known:false), corre todo', () => {
-  // 🔴 rojo previo: tratar «sin --touched» o `known:false` como «no toca» → se difiere sin haber mirado.
+  // 🔴 mutación: tratar «sin --touched» o `known:false` como «no toca» → se difiere sin haber mirado.
   const f1 = deferrableLab();
   const sin = runWith(f1);
   assert.equal(sin.status, 1, 'sin --touched la diferible corre');
@@ -274,7 +270,7 @@ test('T8 RunSuites_UnknownTouched_RunsAll — sin datos de lo tocado (o known:fa
 });
 
 test('T28 RunSuites_BrokenTouchedFile_RunsAll — un --touched ilegible, inexistente o con otra forma también es «no sé»: corre todo y lo dice', () => {
-  // 🔴 rojo previo (TEST-W4, revisión 2026-09-29): tratar un JSON roto como lista vacía → «no toca» → difiere.
+  // 🔴 mutación (TEST-W4): tratar un JSON roto como lista vacía → «no toca» → difiere.
   const casos = [
     ['roto', (tf) => fs.writeFileSync(tf, '{ esto no es json')],
     ['inexistente', (tf) => { try { fs.unlinkSync(tf); } catch { /* no estaba */ } }],
@@ -292,8 +288,8 @@ test('T28 RunSuites_BrokenTouchedFile_RunsAll — un --touched ilegible, inexist
 });
 
 test('T27 RunSuites_CannotWriteSummaryEarly_Exit3 —si no puede escribir el resumen en una salida temprana, sale 3 y lo dice', () => {
-  // 🔴 rojo previo (pase adversarial 2026-09-29): las salidas tempranas llamaban a escribir() de forma
-  //    síncrona fuera de la promesa → la excepción se escapaba con exit 1 y un stack, no «no pude medir».
+  // 🔴 mutación: las salidas tempranas llaman a escribir() de forma
+  //    síncrona fuera de la promesa → la excepción se escapa con exit 1 y un stack, no «no pude medir».
   const f = armar({ diarias: [] });
   fs.writeFileSync(path.join(f.repo, 'scripts', 'tests', 'suites.json'), '{ esto no es json');
   const out = path.join(f.root, 'no-es-carpeta');
@@ -304,7 +300,7 @@ test('T27 RunSuites_CannotWriteSummaryEarly_Exit3 —si no puede escribir el res
 });
 
 test('T9 RunSuites_AllSuitesOverride_RunsAll — TYCON_GATE_ALL_SUITES=1 corre todo como antes', () => {
-  // 🔴 rojo previo: leer la variable con otro nombre, o no leerla.
+  // 🔴 mutación: leer la variable con otro nombre, o no leerla.
   const f = deferrableLab();
   const r = runWith(f, { env: { TYCON_GATE_ALL_SUITES: '1' }, touched: { known: true, files: [] } });
   assert.equal(r.status, 1);
@@ -312,7 +308,7 @@ test('T9 RunSuites_AllSuitesOverride_RunsAll — TYCON_GATE_ALL_SUITES=1 corre t
 });
 
 test('T10 RunSuites_MaxConcurrencyIsW — nunca más de W a la vez, y sí W', () => {
-  // 🔴 rojo previo: seguir en serie (máximo 1) o lanzar todas juntas (máximo 6).
+  // 🔴 mutación: seguir en serie (máximo 1) o lanzar todas juntas (máximo 6).
   const names = ['a', 'b', 'c', 'd', 'e', 'f'];
   const f = armar({ diarias: names.map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh` })) });
   const log = path.join(f.root, 'log.txt');
@@ -325,7 +321,7 @@ test('T10 RunSuites_MaxConcurrencyIsW — nunca más de W a la vez, y sí W', ()
 });
 
 test('T11 RunSuites_SummaryInListOrder — el resumen sigue el orden de la lista, no el de llegada', () => {
-  // 🔴 rojo previo: empujar al resumen cuando cada una termina → la lenta del principio queda última.
+  // 🔴 mutación: empujar al resumen cuando cada una termina → la lenta del principio queda última.
   const f = armar({ diarias: ['lenta', 'r1', 'r2'].map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh` })) });
   const log = path.join(f.root, 'log.txt');
   f.escribir('arnes', 'tests/lenta.test.sh', timedSuite(log, 'lenta', 0.8));
@@ -340,7 +336,7 @@ test('T11 RunSuites_SummaryInListOrder — el resumen sigue el orden de la lista
 });
 
 test('T12 RunSuites_ExclusiveRunsAlone — la exclusiva corre sola, después del tramo paralelo', () => {
-  // 🔴 rojo previo: ignorar `exclusive` → se solapa con las otras.
+  // 🔴 mutación: ignorar `exclusive` → se solapa con las otras.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/x.test.sh', exclusive: true },
     { raiz: 'arnes', ruta: 'tests/p1.test.sh' },
@@ -359,7 +355,7 @@ test('T12 RunSuites_ExclusiveRunsAlone — la exclusiva corre sola, después del
 });
 
 test('T13 RunSuites_RedDoesNotStopOthers — roja, ausente y matada por señal cuentan; las verdes corren igual', () => {
-  // 🔴 rojo previo: cortar al primer rojo (Promise.all que rechaza) → las verdes de atrás no corren.
+  // 🔴 mutación: cortar al primer rojo (Promise.all que rechaza) → las verdes de atrás no corren.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/roja.test.sh' },
     { raiz: 'arnes', ruta: 'tests/no-existe.test.sh' },
@@ -382,7 +378,7 @@ test('T13 RunSuites_RedDoesNotStopOthers — roja, ausente y matada por señal c
 });
 
 test('T14 RunSuites_InterruptKillsChildren — cortar el runner no deja suites huérfanas ni un resumen verde', async () => {
-  // 🔴 rojo previo: no manejar SIGTERM → el runner muere y las suites (y sus hijos) siguen corriendo.
+  // 🔴 mutación: no manejar SIGTERM → el runner muere y las suites (y sus hijos) siguen corriendo.
   const f = armar({ diarias: ['s1', 's2'].map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh` })) });
   const pids = path.join(f.root, 'pids.txt');
   for (const n of ['s1', 's2']) {
@@ -408,7 +404,7 @@ test('T14 RunSuites_InterruptKillsChildren — cortar el runner no deja suites h
 });
 
 test('T15 RunSuites_MalformedFields_Conservative — un campo mal formado hace lo seguro y avisa con el nombre', () => {
-  // 🔴 rojo previo: `if (s.exclusive === true)` → «si» corre en paralelo; `includes` sobre un string → difiere.
+  // 🔴 mutación: `if (s.exclusive === true)` → «si» corre en paralelo; `includes` sobre un string → difiere.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/rara.test.sh', exclusive: 'si' },
     { raiz: 'arnes', ruta: 'tests/mal-patron.test.sh', gate_only_when_touching: 'scripts/lab-pub' },
@@ -428,7 +424,7 @@ test('T15 RunSuites_MalformedFields_Conservative — un campo mal formado hace l
 });
 
 test('T16 RunSuites_NothingLeftToRun_NotMeasured — si no queda nada para correr, no es un verde', () => {
-  // 🔴 rojo previo: «0 corridas, 0 rojas» → exit 0.
+  // 🔴 mutación: «0 corridas, 0 rojas» → exit 0.
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/diferible.test.sh', gate_only_when_touching: PUB }] });
   f.escribir('arnes', 'tests/diferible.test.sh', 'exit 0');
   const r = runWith(f, { touched: { known: true, files: [] } });
@@ -437,7 +433,7 @@ test('T16 RunSuites_NothingLeftToRun_NotMeasured — si no queda nada para corre
 });
 
 test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el defecto; 1 es la serie de siempre', () => {
-  // 🔴 rojo previo: `parseInt('mucho')` → NaN → 0 procesos y el runner no corre nada (o cuelga).
+  // 🔴 mutación: `parseInt('mucho')` → NaN → 0 procesos y el runner no corre nada (o cuelga).
   const def = Math.max(1, Math.floor((os.availableParallelism ? os.availableParallelism() : os.cpus().length) / 2));
   for (const bad of ['0', '-2', 'mucho']) {
     const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
@@ -447,7 +443,7 @@ test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el d
     assert.equal(r.resumen.workers, def, `con «${bad}» usa el defecto`);
     assert.match(r.stderr, /TYCON_SUITES_MAX_WORKERS/, `con «${bad}» avisa`);
   }
-  // 🔴 rojo previo: con W=1 lanzar igual en paralelo, o en otro orden.
+  // 🔴 mutación: con W=1 lanzar igual en paralelo, o en otro orden.
   const names = ['a', 'b', 'c'];
   const f = armar({ diarias: names.map((n) => ({ raiz: 'arnes', ruta: `tests/${n}.test.sh` })) });
   const log = path.join(f.root, 'log.txt');
@@ -460,12 +456,11 @@ test('T17 RunSuites_BadWorkersEnv_FallsBack — valor inválido avisa y usa el d
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// Story 8.18 del arnés (2026-10-03), AC 12 y 13: los dos repos internos se unieron y las suites con
-// raíz `agent-skills` viven en `<repo>/skills`. El runner las buscaba en `TYCON_SKILLS_DIR` o en
-// `~/.claude/agent-skills/skills`: en un clon de trabajo del repo unido corría las suites INSTALADAS
-// en la máquina y el gate daba verde sin haber probado el cambio. Ahora la raíz la contesta la función
-// del repo cuyas suites se corren (`<repo>/scripts/lib/skills-dir.js`, la misma que usan los demás
-// lectores de suites.json): la variable › el propio clon si es unido › lo instalado.
+// En el repo unido las suites con raíz `agent-skills` viven en `<repo>/skills`. Buscarlas sólo en `TYCON_SKILLS_DIR` o en
+// `~/.claude/agent-skills/skills` correría, en un clon de trabajo, las suites INSTALADAS en la máquina y el gate daría
+// verde sin haber probado el cambio. Por eso la raíz la contesta la función del repo cuyas suites se corren
+// (`<repo>/scripts/lib/skills-dir.js`, la misma que usan los demás lectores de suites.json): la variable › el propio
+// clon si es unido › lo instalado.
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 const HARNESS_LIB_FILES = ['skills-dir.js', 'canonical-path.js', 'legacy-names.js'];
 /** La biblioteca de un arnés que ya trae la regla: la variable, el clon que contiene esta prueba, o el enlace de la máquina. */
@@ -523,7 +518,7 @@ function runClone(w, { variable, extra = [] } = {}) {
 }
 
 test('T11 Suites_CanaryInWorkClone_RunsOwnTree_NotInstalled — sin variable ni --skills, corre la canario del CLON (roja) y no la instalada (verde)', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: `env.TYCON_SKILLS_DIR || ~/.claude/agent-skills/skills` → corre la instalada, exit 0: el verde
+  // 🔴 mutación: `env.TYCON_SKILLS_DIR || ~/.claude/agent-skills/skills` → corre la instalada, exit 0: el verde
   //    que no probó nada.
   const w = workClone();
   const r = runClone(w);
@@ -540,7 +535,7 @@ test('T11 — el espejo: la canario del clon verde sale verde; y con dos repos f
   const healthy = runClone(workClone({ clone: 'green', installed: 'red' }));
   assert.equal(healthy.status, 0, `${healthy.stdout}${healthy.stderr}`);
   assert.equal(healthy.resumen.verdes, 2);
-  // el clon del arnés SIN skills/ (la máquina del equipo de hoy): nada cambia
+  // el clon del arnés SIN skills/ (el layout de dos repos): nada cambia
   const w = workClone({ unified: false });
   const twoRepos = runClone(w);
   assert.equal(twoRepos.status, 0, `${twoRepos.stdout}${twoRepos.stderr}`);
@@ -565,7 +560,7 @@ test('T11 — la variable gana al propio clon; --skills gana a las dos; y un rep
 });
 
 test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no existe: «NO MEDIDA» con su motivo, nunca verde ni salteada', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: `if (!fs.existsSync(ruta)) continue` → 1 corrida, 1 verde, exit 0 con la mitad sin mirar.
+  // 🔴 mutación: `if (!fs.existsSync(ruta)) continue` → 1 corrida, 1 verde, exit 0 con la mitad sin mirar.
   const w = workClone({ unified: false, installed: false });
   const r = runClone(w);
   assert.equal(r.status, 1, 'una suite que no se pudo medir no deja el gate en verde');
@@ -574,7 +569,7 @@ test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no 
   assert.deepEqual(r.resumen.unmeasured_suites, [{ suite: path.join(w.inst, CANARY), reason }]);
   assert.ok(r.stdout.includes(`NO MEDIDA canary.test.js — ${reason}`), r.stdout);
   assert.match(r.stdout, /1 no medidas/);
-  // quien sólo lee `ausentes` (el gate de hoy) la sigue viendo: no desaparece de ninguna cuenta
+  // quien sólo lee `ausentes` (el gate) la sigue viendo: no desaparece de ninguna cuenta
   assert.deepEqual(r.resumen.ausentes, [path.join(w.inst, CANARY)]);
   // el espejo: con la raíz en su lugar, un archivo que falta sigue siendo AUSENTE (no «no medida»)
   const f = armar({ diarias: [{ raiz: 'agent-skills', ruta: 'x/tests/no-existe.test.js' }, { raiz: 'arnes', ruta: 'tests/a.test.js' }] });
@@ -586,7 +581,7 @@ test('T12 Suites_MissingRoot_NotMeasuredWithReason — la raíz agent-skills no 
 });
 
 test('T12 — si la función del repo no se deja usar, no se adivina la raíz: exit 3 y el resumen dice que no midió', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: caer callado a ~/.claude/agent-skills → vuelve el verde que no probó nada.
+  // 🔴 mutación: caer callado a ~/.claude/agent-skills → vuelve el verde que no probó nada.
   const w = workClone();
   fs.writeFileSync(path.join(w.repo, 'scripts', 'lib', 'skills-dir.js'), 'throw new Error("biblioteca rota a propósito")\n');
   const r = runClone(w);
@@ -596,22 +591,21 @@ test('T12 — si la función del repo no se deja usar, no se adivina la raíz: e
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// Pase adversarial del tramo 1 de la story 8.18 (2026-10-04).
+// Dos bordes del repo unido.
 //
-// Hallazgo 19 — en un clon unido, un `require` a un archivo que no existe en la cadena
-// canonical-path.js → legacy-names.js se leía como «el clon no es unido»: el runner decía «salió de:
-// installed», corría la canario INSTALADA (verde) y salía 0 con la del clon en rojo.
+// En un clon unido, un `require` a un archivo que no existe en la cadena canonical-path.js → legacy-names.js
+// no puede leerse como «el clon no es unido»: el runner diría «salió de: installed», correría la canario
+// INSTALADA (verde) y saldría 0 con la del clon en rojo.
 //
-// Hallazgos 4, 5, 6, 7 y 16 — «editar la propia suite la hace correr» comparaba la ruta de la suite con
-// el repo TAL COMO LLEGÓ. La raíz de las skills sale ya resuelta a su ruta real (el `__dirname` de
-// skills-dir.js); si el repo llega por un enlace (el lugar `~/.claude/tycon-harness`, o `/tmp`
-// en Mac, que test-gate.sh conserva con su `pwd`), la ruta propia daba `../../…`, no coincidía con lo
-// tocado y la suite editada se DIFERÍA con el gate en verde. Lo mismo al revés: el repo por su ruta real
-// y la raíz de las skills por el enlace instalado (`--skills` o la variable).
+// «Editar la propia suite la hace correr» compara la ruta de la suite con el repo TAL COMO LLEGÓ. La raíz de las
+// skills sale ya resuelta a su ruta real (el `__dirname` de skills-dir.js); si el repo llega por un enlace (el lugar
+// `~/.claude/tycon-harness`, o `/tmp` en Mac, que test-gate.sh conserva con su `pwd`), la ruta propia daría
+// `../../…`, no coincidiría con lo tocado y la suite editada se DIFERIRÍA con el gate en verde. Lo mismo al revés: el repo
+// por su ruta real y la raíz de las skills por el enlace instalado (`--skills` o la variable).
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
 
 test('5b-19 Suites_NeighborPresentButBroken_NotMeasured — un require roto en la biblioteca del clon: exit 3 «no la adivino», nunca la canario instalada en verde', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: `if (e.code === 'MODULE_NOT_FOUND') return false` en skills-dir.js → exit 0, 2 verdes, «installed».
+  // 🔴 mutación: `if (e.code === 'MODULE_NOT_FOUND') return false` en skills-dir.js → exit 0, 2 verdes, «installed».
   const w = workClone();   // la canario del clon, roja; la instalada, verde
   assert.equal(runClone(w).status, 1, 'control: el clon sano corre SU canario (roja)');
   const f = path.join(w.repo, 'scripts', 'lib', 'legacy-names.js');
@@ -663,7 +657,7 @@ function assertRan(r, how) {
 }
 
 test('5b-4 Suites_OwnSuiteTouched_RepoThroughLink_Runs — el repo llega por un enlace y la suite agent-skills editada corre igual', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: `path.relative(repo, p.ruta)` con el repo como llegó → `../clone/skills/…`, que no está en lo
+  // 🔴 mutación: `path.relative(repo, p.ruta)` con el repo como llegó → `../clone/skills/…`, que no está en lo
   //    tocado: «DIFERIDA canary.test.js», exit 0.
   const w = gatedClone();
   assertRan(runGated(w, { files: [OWN_FILE] }), 'control, el repo por su ruta real');
@@ -671,7 +665,7 @@ test('5b-4 Suites_OwnSuiteTouched_RepoThroughLink_Runs — el repo llega por un 
 });
 
 test('5b-6 — al revés: el repo por su ruta real y la raíz de las skills por un enlace (--skills, la variable, o enlaces por entrada)', { skip: NO_HARNESS }, () => {
-  // 🔴 rojo previo: el mismo `path.relative`, con la punta sin resolver del otro lado.
+  // 🔴 mutación: el mismo `path.relative`, con la punta sin resolver del otro lado.
   const w = gatedClone();
   assertRan(runGated(w, { files: [OWN_FILE], extra: ['--skills', path.join(w.link, 'skills')] }), '--skills por el enlace');
   assertRan(runGated(w, { files: [OWN_FILE], variable: w.link }), 'la variable (como raíz) por el enlace');
@@ -709,7 +703,7 @@ test('5b-4 — los espejos sanos: por el enlace, lo que NO se tocó se sigue dif
 // cobertura: la suite es su hijo, con su misma salida y su mismo código; deja su lcov en la carpeta y al final quedan
 // juntos en `lcov.info`. Sin pedirla, nada cambia: ni envoltorio ni carpeta.
 test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.31 @ac-4 @ac-5 — con cobertura, un lcov por suite; sin pedirla, como hoy', (t) => {
-  // 🔴 rojo: el medidor (o la carpeta) también sin pedirla; o el código de la roja cambiado por el envoltorio.
+  // 🔴 mutación: el medidor (o la carpeta) también sin pedirla; o el código de la roja cambiado por el envoltorio.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/de-node.test.js' },
     { raiz: 'arnes', ruta: 'tests/sin-node.test.sh' },
@@ -751,7 +745,7 @@ test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.
   assert.equal(resumen.coverage.with_data, 1);
   assert.equal(resumen.coverage.lcov, path.join(cov, 'lcov.info'));
 
-  // sin pedirla: como hoy
+  // sin pedirla: sin cambios
   fs.writeFileSync(modos, '');
   const out2 = path.join(f.root, 'out2.json');
   const r2 = spawnSync(process.execPath, [RUNNER, f.repo, out2, '--skills', f.skills], { encoding: 'utf8', env });
@@ -771,7 +765,7 @@ test('T5 7.31-ConCobertura_CadaSuiteConSuCarpeta_SinPedirlaIgualQueHoy @story-7.
 const SIN_CHMOD = (process.platform === 'win32' || (process.getuid && process.getuid() === 0))
   && 'NO MEDIDO — chmod 000 no quita la lectura en Windows ni a root; el ilegible lo prueba node-coverage.test.js';
 test('T5 …--coverage sin carpeta es un error de uso, y un lcov ilegible se nombra con su motivo @story-7.31 @ac-5', { skip: SIN_CHMOD }, () => {
-  // 🔴 rojo: `--coverage` sin valor corre sin cobertura en silencio; un lcov ilegible queda como «sin datos».
+  // 🔴 mutación: `--coverage` sin valor corre sin cobertura en silencio; un lcov ilegible queda como «sin datos».
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.sh' }] });
   // Node ya abrió el lcov de la suite cuando ella corre: le saca el permiso de lectura y el juntado no lo puede leer
   f.escribir('arnes', 'tests/a.test.sh', `chmod 000 "${path.join(f.root, 'cov', '0000.lcov')}"\nexit 0\n`);
@@ -819,7 +813,7 @@ function runOnlyTouched(f, { env = {}, touched } = {}) {
 }
 
 test('T4 8.55-SoloLoTocado_CorreAunqueToqueCodigo @story-8.55 @ac-4 — --only-touched corre sólo lo que lee lo tocado, aunque sea código', () => {
-  // 🔴 rojo: sin --only-touched el corredor corre las dos (o, con --light, se apaga porque lo tocado es código).
+  // 🔴 mutación: sin --only-touched el corredor corre las dos (o, con --light, se apaga porque lo tocado es código).
   const f = hermanoLab();
   const r = runOnlyTouched(f, { touched: { known: true, files: ['scripts/lib/acme.js'] } });
   assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
@@ -827,7 +821,7 @@ test('T4 8.55-SoloLoTocado_CorreAunqueToqueCodigo @story-8.55 @ac-4 — --only-t
   assert.equal(r.resumen.deferred_suites.length, 1);
   assert.match(r.resumen.deferred_suites[0].suite, /otra\.test\.js$/);
   assert.match(r.resumen.deferred_suites[0].reason, /corre sólo las suites que leen lo tocado; la completa la corre la CI del pedido/);
-  // tocar una suite corre esa suite, no todas las de su carpeta (la regla de la corrida liviana arrastraba a las ~400)
+  // tocar una suite corre esa suite, no todas las de su carpeta (la regla de la corrida liviana arrastraría a las ~400)
   const suiteTocada = runOnlyTouched(f, { touched: { known: true, files: ['scripts/tests/lee.test.js'] } });
   assert.equal(suiteTocada.status, 0, suiteTocada.stderr);
   assert.equal(suiteTocada.resumen.corridas, 1, `sólo la suite tocada: ${JSON.stringify(suiteTocada.resumen.deferred_suites)}`);
@@ -837,7 +831,7 @@ test('T4 8.55-SoloLoTocado_CorreAunqueToqueCodigo @story-8.55 @ac-4 — --only-t
 });
 
 test('T5 8.55-SoloLoTocado_SinSaber_O_SinSuites_Sale7 @story-8.55 @ac-5 — sin saber qué se tocó, o sin suite que lo lea, no corre nada y sale 7', () => {
-  // 🔴 rojo: «no sé qué se tocó» corría las ~400 suites; «ninguna lo lee» salía 3 («0 corridas»), que no dice por qué.
+  // 🔴 mutación: «no sé qué se tocó» no debe correr las ~400 suites; «ninguna lo lee» no debe salir 3 («0 corridas»), que no dice por qué.
   const f = hermanoLab();
   const sinSaber = runOnlyTouched(f, { touched: { known: false, files: [], reason: 'la base cayó a HEAD' } });
   assert.equal(sinSaber.status, 7, `${sinSaber.stdout}\n${sinSaber.stderr}`);
@@ -852,8 +846,8 @@ test('T5 8.55-SoloLoTocado_SinSaber_O_SinSuites_Sale7 @story-8.55 @ac-5 — sin 
 });
 
 test('T15 8.55-Suites_NoHeredanLasVariablesDelPorton @story-8.55 @ac-10 — las suites no ven las variables internas del portón', () => {
-  // 🔴 rojo: cada suite heredaba la clave de la evidencia y las marcas del hermano; una suite que corre su propio portón de
-  //    juguete las tomaba como suyas (la clave renombraba su copia sellada; la marca del hermano la acotaba).
+  // 🔴 mutación: cada suite hereda la clave de la evidencia y las marcas del hermano; una suite que corre su propio portón de
+  //    juguete las toma como suyas (la clave renombra su copia sellada; la marca del hermano la acota).
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/eco.test.js' }] }, { conSkills: false });
   const VARS = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO', 'TYCON_TEST_GATE_CROSS_REPO'];
   f.escribir('arnes', 'tests/eco.test.js', `const v = ${JSON.stringify(VARS)}.filter((k) => k in process.env); if (v.length) { console.error('heredó ' + v.join(',')); process.exit(1); }\n`);
@@ -866,12 +860,12 @@ test('T15 8.55-Suites_NoHeredanLasVariablesDelPorton @story-8.55 @ac-10 — las 
 });
 
 test('T15b 7.36-Suites_NoHeredanLaMarcaDelPorton @story-7.36 @ac-15 — una suite no ve TYCON_TEST_GATE', () => {
-  // 🔴 rojo (medido): test-gate.sh exporta TYCON_TEST_GATE=1 para que `marker.js run-check` anote la
-  //    procedencia; cada suite la heredaba, y la del freno de cierre (test-stop-dod-gate.sh) cambiaba de conducta: roja
-  //    dentro del portón, verde sola. Mutación: sacar TYCON_TEST_GATE de DEL_PORTON en run-suites-json.js.
+  // 🔴 mutación: test-gate.sh exporta TYCON_TEST_GATE=1 para que `marker.js run-check` anote la
+  //    procedencia; cada suite la hereda, y la del freno de cierre (test-stop-dod-gate.sh) cambia de conducta: roja
+  //    dentro del portón, verde sola. Se pone en rojo sacando TYCON_TEST_GATE de DEL_PORTON en run-suites-json.js.
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/eco.test.js' }] }, { conSkills: false });
   //    Lo mismo con TYCON_TEST_GATE_TREE_TOUCHED (las bases del árbol armado para el informe): heredada, el portón de
-  //    juguete de test-gate-report / test-gate-runners / test-coverage-parser contaba las líneas de otro árbol.
+  //    juguete de test-gate-report / test-gate-runners / test-coverage-parser cuenta las líneas de otro árbol.
   const VARS = ['TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED'];
   f.escribir('arnes', 'tests/eco.test.js', `const v = ${JSON.stringify(VARS)}.filter((k) => k in process.env); if (v.length) { console.error('heredó ' + v.join(',')); process.exit(1); }\n`);
   for (const extra of [[], ['--coverage', path.join(f.root, 'cov')]]) {
@@ -882,9 +876,9 @@ test('T15b 7.36-Suites_NoHeredanLaMarcaDelPorton @story-7.36 @ac-15 — una suit
 });
 
 test('T20 8.55-SoloLoTocado_RequireSinExtension_CodigoQueEmpiezaConTest @story-8.55 @ac-4 — la corrida cruzada no difiere una suite que prueba lo tocado', () => {
-  // 🔴 rojo (pase adversarial, confirmado por un verificador que corrió el código): una suite que carga el archivo tocado
-  //    sin extensión o por su carpeta quedaba diferida, y un archivo de código que empieza con «test-» (test-gate.sh) se
-  //    tomaba por otra suite: ninguna de las suites que lo nombran corría.
+  // 🔴 mutación: una suite que carga el archivo tocado
+  //    sin extensión o por su carpeta queda diferida, y un archivo de código que empieza con «test-» (test-gate.sh) se
+  //    toma por otra suite: ninguna de las suites que lo nombran corre.
   const f = armar({ diarias: [
     { raiz: 'arnes', ruta: 'tests/sinext.test.js' },
     { raiz: 'arnes', ruta: 'tests/carpeta.test.js' },
@@ -905,7 +899,7 @@ test('T20 8.55-SoloLoTocado_RequireSinExtension_CodigoQueEmpiezaConTest @story-8
 });
 
 test('T21 8.55-AusenteYDiferidas_ElMotivoDiceLaVerdad @story-8.55 @ac-5 — con una ausente y el resto diferidas, el rojo no dice «todas ausentes»', () => {
-  // 🔴 rojo (pase adversarial, confirmado): el motivo decía «todas las suites declaradas están ausentes» con una suite
+  // 🔴 mutación: el motivo dice «todas las suites declaradas están ausentes» con una suite
   //    existente diferida en el mismo resumen. La ausente sigue siendo rojo.
   const f = armar({ diarias: [{ raiz: 'arnes', ruta: 'tests/a.test.js' }, { raiz: 'arnes', ruta: 'tests/fantasma.test.js' }] }, { conSkills: false });
   f.escribir('arnes', 'tests/a.test.js', 'process.exit(0)\n');

@@ -6,16 +6,14 @@
  * terminó la ronda de advisors y ANTES de tocar una línea de código para arreglar lo que reportaron.
  * Si se toma después de los fixes, los fixes ya están «adentro» de la foto, el delta de la iteración
  * siguiente sale VACÍO, y el re-loop degrada a `--force-full-reloop`: el set completo de advisors
- * donde el delta real eran dos archivos.
+ * donde el delta real son dos archivos.
  *
- * Hasta hoy ese momento dependía de que el orquestador se acordara. **Falló dos veces en cinco
- * semanas** — story 3.25 (2026-07-27) y story 4.42 (2026-08-14), mismo síntoma y misma recuperación
- * a mano las dos veces. Lo encontró la retrospectiva del merge, no el arnés.
+ * Ese momento depende de que el orquestador se acuerde, y eso no es confiable: falla con el mismo
+ * síntoma y la misma recuperación a mano.
  *
- * La lección es la de siempre en este repo: *lo que hay que acordarse de hacer, no se hace.* El dato
- * para no depender de la memoria ya existía — el hook `on-advisor-run.js` registra cada spawn REAL y
- * la línea `step5-start` persiste el set esperado (eso es lo que lee `check-count`). Nadie los estaba
- * cruzando para detectar el momento.
+ * *Lo que hay que acordarse de hacer, no se hace.* El dato para no depender de la memoria existe — el
+ * hook `on-advisor-run.js` registra cada spawn REAL y la línea `step5-start` persiste el set esperado
+ * (eso es lo que lee `check-count`). Este módulo los cruza para detectar el momento.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
  * Función PURA sobre las líneas del log de spawns: dice si los advisors corridos desde el último
@@ -68,10 +66,10 @@ function rondaCompleta(lineas) {
 
   const faltan = esperados.filter((a) => !corridos.has(a));
 
-  // 🔴 ¿Ya se tomó la foto de ESTA ronda? Sin esto, el arreglo reintroduce el bug que viene a
-  // cerrar: la ronda queda «completa» para siempre, así que CUALQUIER spawn posterior —un agente
-  // ad-hoc, una búsqueda— volvería a disparar la foto, ahora con los fixes ya aplicados adentro.
-  // Que es exactamente el estado que produce el delta vacío. La foto se toma UNA vez por ronda.
+  // 🔴 ¿Ya se tomó la foto de ESTA ronda? Sin esto, se reintroduciría el bug que esta pieza
+  // cierra: la ronda queda «completa» para siempre, así que CUALQUIER spawn posterior —un agente
+  // ad-hoc, una búsqueda— volvería a disparar la foto, con los fixes ya aplicados adentro.
+  // Ése es exactamente el estado que produce el delta vacío. La foto se toma UNA vez por ronda.
   const yaFotografiada = parsed
     .slice(startIdx + 1)
     .some((d) => d && d.event === 'auto-snapshot');
@@ -97,14 +95,13 @@ const NO_REVISORES = new Set([
 /**
  * vueltaManual — ¿el spawn que acaba de registrarse abre una VUELTA MANUAL de revisores?
  *
- * ── POR QUÉ EXISTE (ADVISORS-ITER-MANUAL-RELOOP-UNDERCOUNT-1, aprobada 2026-09-06) ──────────────
+ * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * La métrica `advisor_rerun_loop_iterations` cuenta las líneas `advisors-iter` de gates.log, que
  * escribe `snapshot-iter` cuando una ronda FORMAL se completa (todos los esperados del último
  * `step5-start`). Las re-invocaciones MANUALES —dos o tres revisores puntuales después del pase
  * adversarial, hasta que confirman limpio— nunca completan una ronda formal, así que no dejan
- * rastro: la story 1.1 del arnés tuvo 5 vueltas reales (16 invocaciones, documentadas
- * en su reporte consolidado) y la métrica dio 2 — un 60 % menos, y justo la señal más interesante
- * (revisores que siguen encontrando cosas después del pase que ejecuta) es la que se perdía.
+ * rastro: una story con 5 vueltas reales daría 2 en la métrica — y justo la señal más interesante
+ * (revisores que siguen encontrando cosas después del pase que ejecuta) es la que se perdería.
  *
  * ── QUÉ HACE ───────────────────────────────────────────────────────────────────────────────────
  * Función PURA sobre las líneas del ledger de spawns. Sólo mira DESPUÉS del sello `auto-snapshot`
@@ -152,8 +149,7 @@ function vueltaManual(lineas, opts) {
   // chequeador de otra etapa (NO_REVISORES: el capturador post-merge, el DoD checker del 7c, el
   // validador, el de cobertura de ACs…). La ronda formal NO lo limita: un revisor que no estuvo en
   // el `expected` y se re-invoca a mano (un especialista que entró después) también es una vuelta
-  // — y un chequeador que corrió DENTRO de la ventana formal sigue sin serlo (segundo pase con
-  // Fable 2026-09-06, [13]/[18]; antes: #2/#13/#21/#52).
+  // — y un chequeador que corrió DENTRO de la ventana formal sigue sin serlo.
   const esRevisor = (a) => typeof a === 'string' && !ADHOC.has(a) && !NO_REVISORES.has(a);
   let storyRonda = null;
   for (let i = startIdx + 1; i < selloIdx; i++) {
@@ -195,7 +191,7 @@ function vueltaManual(lineas, opts) {
   return { abre: true, iter: `${iterBase}.${k + 1}`, k: k + 1 };
 }
 
-// ADHOC y NO_REVISORES se EXPORTAN (2026-09-15): `lib/late-snapshot.js` decide con los mismos dos
+// ADHOC y NO_REVISORES se EXPORTAN: `lib/late-snapshot.js` decide con los mismos dos
 // sets quién es un revisor. Copiarlos allá sería la divergencia de mañana — el día que alguien
 // agregue un chequeador nuevo a una lista y no a la otra, el corte de la foto se mueve solo.
 module.exports = { rondaCompleta, vueltaManual, NO_REVISORES, ADHOC };

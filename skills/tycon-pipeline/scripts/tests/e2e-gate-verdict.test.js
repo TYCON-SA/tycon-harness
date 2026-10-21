@@ -1,18 +1,16 @@
 'use strict';
 
 /**
- * e2e-gate-verdict.test.js —el veredicto del gate E2E tiene TRES estados, no dos
- * (story FIX-Q1 de un producto del equipo, 2026-09-27).
+ * e2e-gate-verdict.test.js —el veredicto del gate E2E tiene TRES estados, no dos.
  *
- * 🔴 El caso disparador, medido: el 2026-09-26 dos merges a `main` de un producto del equipo (FIX-M1 y FIX-M2) se
- * hicieron con el gate crítico en ROJO y waiver del dev. Al arreglar la configuración que causaba
- * ese rojo, el gate pasó a reportar `PASS (0/4)`: los tests se saltean solos cuando la base no tiene
- * datos, Playwright devuelve exit 0, y el gate leía SÓLO ese exit code. Un control que devuelve
- * verde sin haber ejercido nada es peor que uno rojo: el rojo se discute, el verde hueco se firma.
+ * 🔴 Sin el tercer estado, un gate crítico en ROJO que se arregla pasaría a reportar `PASS (0/4)`:
+ * los tests se saltean solos cuando la base no tiene datos, Playwright devuelve exit 0, y un gate
+ * que lee SÓLO ese exit code da verde. Un control que devuelve verde sin haber ejercido nada es peor
+ * que uno rojo: el rojo se discute, el verde hueco se firma.
  *
- * Y un segundo agujero del mismo día: el set crítico declaraba 5 recorridos, la app elegida tenía
- * UNO, y la línea final del gate era idéntica a la de una corrida completa. Un control que no dice
- * qué parte de su set no encontró no se puede auditar.
+ * Y un segundo agujero: si el set crítico declara 5 recorridos y la app elegida tiene UNO, la línea
+ * final del gate sería idéntica a la de una corrida completa. Un control que no dice qué parte de
+ * su set no encontró no se puede auditar.
  *
  * Parte PURA (sin Playwright, sin spawns): se le pasan totales y se mira el veredicto.
  */
@@ -40,7 +38,7 @@ test('corrió y falló → FAIL, y el exit de Playwright no se pisa', () => {
 });
 
 test('🔴 todo salteado → SIN_EJERCER y exit != 0, aunque Playwright diga 0', () => {
-  // Es EXACTAMENTE la corrida del 2026-09-27 que devolvía "PASS (0/4)".
+  // Es EXACTAMENTE la corrida que devolvía "PASS (0/4)".
   const v = ev.veredicto({ exitCode: 0, total: 4, passed: 0, failed: 0, skipped: 4 });
   assert.equal(v.verdict, 'SIN_EJERCER');
   assert.notEqual(v.exit, 0, 'un gate que no ejerció nada NO puede dejar pasar el merge');
@@ -72,8 +70,8 @@ test('el motivo explica por qué, en castellano llano y accionable', () => {
 
 // ------------------------------------------------- los códigos de salida, uno por uno
 // 🔴 Por qué se fijan acá y no alcanza `notEqual(0)`: el orquestador del step 7c ACTÚA según el
-// número, y `SIN_EJERCER` nació pisando el 3, que ya significaba «el stack no levantó» — mandaba a
-// levantar servicios que estaban arriba y a re-correr para sacar 3 otra vez. El mapa vive en la
+// número, y `SIN_EJERCER` no puede pisar el 3, que significa «el stack no levantó»: mandaría a
+// levantar servicios que están arriba y a re-correr para sacar 3 otra vez. El mapa vive en la
 // cabecera de `veredicto()` y en `steps/step-07c-dod-runtime-gate.md`; estas tres pruebas son las
 // que lo sostienen, así que un cambio de número tiene que pasar por acá.
 

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * replace-section.js — reemplazar un tramo de líneas de un archivo POR LA MISMA CADENA QUE UN EDIT (story 7.25 del arnés).
+ * replace-section.js — reemplazar un tramo de líneas de un archivo POR LA MISMA CADENA QUE UN EDIT.
  *
  *   node <skill>/scripts/replace-section.js --file <ruta> --from <n> --to <m> --with <archivo>
  *
  * Por qué existe: con el pipeline abierto, una escritura de código por consola se frena («EDICIÓN INVISIBLE»,
  * lib/ledger-visible.js) porque el registro de ediciones sólo lo alimenta el hook de Edit|Write. Para un reemplazo
- * grande —un tramo de ~300 líneas de un archivo de pruebas, caso de un producto del equipo del 2026-10-14— un Edit
- * obliga a reproducir el bloque viejo entero, y la salida que quedaba era el escape del freno más un Edit chico para que
- * el registro viera el archivo. Esta receta hace el reemplazo como lo haría el Edit:
+ * grande —un tramo de ~300 líneas de un archivo de pruebas— un Edit
+ * obliga a reproducir el bloque viejo entero, y la salida que queda es el escape del freno más un Edit chico para que
+ * el registro vea el archivo. Esta receta hace el reemplazo como lo haría el Edit:
  *   1. arma el evento de un Edit de ese tramo (`old_string` = las líneas n..m, `new_string` = el contenido nuevo);
  *   2. corre la cadena `pre-edit` del despachador (carril, story a mano, evidencia, ATDD, colisiones…): si un freno
  *      para, sale 2 con su mensaje y el archivo NO cambia;
@@ -36,7 +36,7 @@ const { spawnSync } = require('child_process');
 const { resolveSessionId } = require('./lib/session-id.js');
 
 // El despachador de los hooks de Edit, fijo: sin variable que lo cambie (una variable puesta adelante del comando
-// salteaba todos los frenos — por eso la relectura y la salida 3 no tienen prueba que los simule).
+// saltearía todos los frenos — por eso la relectura y la salida 3 no tienen prueba que los simule).
 const DISPATCH = path.join(__dirname, 'dispatch.js');
 
 function salir(msg) { process.stderr.write(`replace-section: ${msg}\n`); process.exit(2); }
@@ -69,7 +69,7 @@ function main() {
   }
   const abs = path.resolve(process.cwd(), a.file);
   // Se lee como bytes: si no es UTF-8 válido, reescribirlo cambiaría en silencio los bytes de líneas que ni se tocan
-  // (un .cs en Windows-1252 — vuelta 5 de revisores). Esos archivos van con la herramienta Edit.
+  // (un .cs en Windows-1252). Esos archivos van con la herramienta Edit.
   const comoUtf8 = (ruta, que) => {
     let buf;
     try { buf = fs.readFileSync(ruta); } catch (e) { salir(`no pude leer ${que} ${ruta} (${e.code || e.message})`); }
@@ -78,7 +78,7 @@ function main() {
     return t;
   };
   const texto = comoUtf8(abs, 'el archivo');
-  // Por consola, la receta NO pasa por las reglas de permisos de la herramienta Edit (revisión de seguridad, vuelta 2):
+  // Por consola, la receta NO pasa por las reglas de permisos de la herramienta Edit:
   // sólo escribe dentro del repo de la corrida o de la carpeta desde donde se la llama, con la RUTA REAL (un enlace
   // adentro que apunta afuera no la saca).
   // `.native`: la ruta con la caja que tiene en el disco (en macOS `.GIT` y `.git` son la misma carpeta)
@@ -90,7 +90,7 @@ function main() {
     repoDeLaCorrida = m && m.repoPath ? m.repoPath : null;
   } catch { repoDeLaCorrida = null; }   // sin marcador legible, queda sólo la carpeta de la llamada
   // La carpeta de la llamada vale sólo si es un repo git (su raíz): desde la carpeta de la persona o desde la de la
-  // configuración de la herramienta no se escribe (vuelta 3 de revisores).
+  // configuración de la herramienta no se escribe.
   let repoDeLaCarpeta = null;
   try {
     repoDeLaCarpeta = require('child_process').execFileSync('git', ['-C', process.cwd(), 'rev-parse', '--show-toplevel'],
@@ -113,7 +113,7 @@ function main() {
   if (hasta > lineas.length) salir(`rango inválido: el archivo tiene ${lineas.length} líneas y pediste hasta la ${hasta}`);
   const viejo = lineas.slice(desde - 1, hasta).join('');
   const ultimaDelTramoTieneSalto = viejo.endsWith('\n');
-  // el salto que se agrega es el del archivo: CRLF si el tramo terminaba así (pase adversarial: quedaban finales mezclados)
+  // el salto que se agrega es el del archivo: CRLF si el tramo terminaba así (sin esto quedarían finales mezclados)
   const salto = viejo.endsWith('\r\n') ? '\r\n' : '\n';
   const reemplazo = ultimaDelTramoTieneSalto && nuevo && !nuevo.endsWith('\n') ? `${nuevo}${salto}` : nuevo;
   const resultado = lineas.slice(0, desde - 1).join('') + reemplazo + lineas.slice(hasta).join('');
@@ -133,7 +133,7 @@ function main() {
   if (pre.stdout) process.stdout.write(pre.stdout);
 
   // Los frenos tardan: si el archivo cambió mientras corrían, se escribiría sobre algo que nadie miró. Se relee y, si
-  // no es lo que se leyó al principio, no se toca (revisión de seguridad de la 7.25).
+  // no es lo que se leyó al principio, no se toca.
   let ahora;
   try { ahora = fs.readFileSync(abs, 'utf8'); } catch (e) { salir(`no pude releer ${abs} antes de escribir (${e.code || e.message}); no escribí nada`); }
   if (ahora !== texto) salir(`${abs} cambió mientras corrían los frenos del Edit; no escribí nada. Volvé a correr la receta sobre el archivo actual.`);

@@ -1,36 +1,35 @@
 #!/usr/bin/env node
 /**
  * group-findings.js — junta los hallazgos del pase adversarial que son EL MISMO problema, para
- * pagar una verificación por problema y no una por hallazgo (story 7.11 del arnés, 2026-09-20).
+ * pagar una verificación por problema y no una por hallazgo.
  *
- * 🔴 Caso disparador, medido: la corrida de la story 7.10 abrió 25 agentes y 2.668.124 tokens en el
- *    pase. Seis cazadores reportaron 19 hallazgos que eran 9 problemas distintos — el mismo defecto
- *    visto por varias lentes, con otra redacción, y cada copia se llevó su propio verificador.
+ * 🔴 Sin agrupar se paga de más: en una corrida medida, el pase abrió 25 agentes y 2.668.124 tokens.
+ *    Seis cazadores reportaron 19 hallazgos que eran 9 problemas distintos — el mismo defecto
+ *    visto por varias lentes, con otra redacción, y cada copia se lleva su propio verificador.
  *
  * 🔴 EL CRITERIO ES CONSERVADOR A PROPÓSITO. Separar de más cuesta un agente. Juntar de más PIERDE
  *    un defecto real y nadie se entera, porque el pase sale igual de verde. Ante cualquier duda,
  *    separa — y deja la duda registrada (`dudas`) para poder calibrarlo con datos en vez de a ojo.
  *
- * Qué NO hace, por decisión de la story («Lo que NO hay que hacer»): **no agrupa por parecido de
+ * Qué NO hace, por diseño: **no agrupa por parecido de
  * texto del resumen**. Dos defectos distintos se describen parecido, y el mismo defecto se describe
  * distinto según la lente. Se agrupa por SITIO (archivo + línea declarada) y se veta por SÍNTOMA;
  * el texto sólo aporta los identificadores de código y la categoría de síntoma, que son señales
  * discretas, no distancia entre cadenas.
  *
- * 🔴 LA REGLA MADRE, corregida el 2026-09-20 por el propio pase adversarial: para JUNTAR hace falta
- * una señal POSITIVA de que son el mismo defecto. La versión anterior juntaba por ausencia de señal
- * de que fueran distintos, y eso la hacía depender de un vocabulario de síntomas sacado de UN solo
- * archivo: en cualquier otro repo ninguna descripción caía en esas categorías, el veto quedaba
- * inerte y «mismo archivo + misma línea» fundía cualquier par de bugs no relacionados, sin dejar
- * siquiera una duda registrada. El pase lo reprodujo con dos casos de otro dominio.
+ * 🔴 LA REGLA MADRE: para JUNTAR hace falta una señal POSITIVA de que son el mismo defecto.
+ * Juntar por ausencia de señal de que fueran distintos haría depender el criterio de un vocabulario de
+ * síntomas sacado de UN solo archivo: en cualquier otro repo ninguna descripción caería en esas
+ * categorías, el veto quedaría inerte y «mismo archivo + misma línea» fundiría cualquier par de bugs no
+ * relacionados, sin dejar siquiera una duda registrada.
  *
  * Las reglas, completas:
  *   1. Distinto archivo → nunca se juntan.
  *   2. Veto por síntoma: si los dos tienen síntoma reconocido y no comparten ninguno → separados.
  *   3. Misma línea declarada → se juntan SÓLO si además comparten síntoma o identificador de código.
  *      El sitio solo no alcanza: dos defectos distintos conviven en la misma línea todo el tiempo.
- *   4. Líneas distintas → NO (aunque compartan símbolos: en el caso real eso juntaba dos defectos
- *      que ambos pasaban por `measure()`).
+ *   4. Líneas distintas → NO (aunque compartan símbolos: compartir un símbolo como `measure()` junta
+ *      defectos distintos que sólo pasan por la misma función).
  *   5. Los dos sin línea declarada → hacen falta LAS DOS señales: identificador distintivo Y
  *      síntoma compartido. Compartir el nombre de la función que los contiene no prueba nada.
  *   6. Uno con línea y el otro sin → no hay con qué compararlos → separados.
@@ -45,8 +44,8 @@
 // ===== NUCLEO-AGRUPAR: INICIO =====
 // 🔴 Este bloque está COPIADO LITERAL dentro de adversarial-verify.workflow.js: el pase corre en
 // una caja sin `require`, así que no puede importarlo. `tests/test-group-findings.js` compara las
-// dos copias carácter por carácter y se pone rojo si se separan — que es exactamente el defecto
-// («una lista duplicada y desincronizada») que este mismo pase encontró en la corrida 7.10.
+// dos copias carácter por carácter y se pone rojo si se separan: es el defecto de una lista
+// duplicada y desincronizada.
 // Para re-sincronizar: node lib/group-findings.js --emit-core > /tmp/n.js y pegarlo.
 // Categorías de síntoma. Cerradas a propósito: una lista abierta se vuelve parecido de texto con
 // otro nombre. Cada una se reconoce por marcas de CÓDIGO (identificadores, operadores, literales),
@@ -137,7 +136,7 @@ function compatibles(a, b, ctx) {
     if (sa.line !== sb.line) {
       return { ok: false, motivo: `mismo archivo pero líneas declaradas distintas (${sa.line} vs ${sb.line})`, cerca: true };
     }
-    // 🔴 El sitio SOLO no alcanza (lo reprodujo el pase adversarial con un bug de índice y una
+    // 🔴 El sitio SOLO no alcanza (un bug de índice y una
     // condición de carrera en la misma línea): hace falta algo más que compartan.
     if (sintomasEnComun.length) {
       return { ok: true, motivo: `mismo sitio (${sa.file}:${sa.line}) y mismo síntoma (${sintomasEnComun.join('/')})` };
@@ -181,8 +180,8 @@ function agrupar(hallazgos, opts) {
     for (const x of s) cuenta.set(x, (cuenta.get(x) || 0) + 1);
   }
   // Un símbolo que aparece en buena parte de los hallazgos no distingue nada: es el nombre del
-  // módulo que todos tocan. El corte era la MITAD y el pase mostró que era demasiado permisivo con
-  // pases chicos (con 2 hallazgos, un símbolo compartido por los dos nunca llegaba a «genérico»).
+  // módulo que todos tocan. Un corte en la MITAD sería demasiado permisivo con pases chicos (con 2
+  // hallazgos, un símbolo compartido por los dos nunca llegaría a «genérico»); el corte es un tercio.
   const tope = Math.max(1, Math.ceil(hs.length / 3));
   const genericos = new Set([...cuenta.entries()].filter(([, n]) => n > tope).map(([k]) => k));
   const ctx = { simbolos, sintomas, genericos };
@@ -226,7 +225,7 @@ function agrupar(hallazgos, opts) {
  * `clasesReales` es un array paralelo a los hallazgos con la etiqueta de cada uno.
  *
  * 🔴 `juntadas_de_mas` es EL número que decide si esto se cablea: una clase producida con hallazgos
- *    de dos clases reales significa que un defecto se iba a verificar con la prueba de otro.
+ *    de dos clases reales significa que un defecto se verificaría con la prueba de otro.
  */
 function compararContra(resultado, clasesReales) {
   const reales = Array.isArray(clasesReales) ? clasesReales : [];
@@ -246,7 +245,7 @@ function compararContra(resultado, clasesReales) {
     const clasesTocadas = [...new Set(miembros.map((i) => resultado.clases.findIndex((c) => c.miembros.includes(i))))];
     // 🔴 «Coincide» es reproducción EXACTA: todos sus miembros en una sola clase producida Y esa
     // clase sin miembros de otra clase real. Sin la segunda mitad, dos clases reales fundidas en una
-    // se reportaban las dos como «coinciden» — el pase adversarial lo cazó (2026-09-20).
+    // se reportarían las dos como «coinciden».
     const limpia = clasesTocadas.length === 1 && clasesTocadas[0] >= 0 &&
       resultado.clases[clasesTocadas[0]].miembros.every((i) => reales[i] === etiqueta);
     if (limpia) coinciden.push(etiqueta);
@@ -292,7 +291,7 @@ function nucleo() {
 }
 
 if (require.main === module) {
-  // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
+  // La opción vieja sigue andando hasta el retiro
   require('./legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/lib/group-findings.js');
   if (process.argv.includes('--emit-core')) process.stdout.write(nucleo() + '\n');
 }

@@ -1,16 +1,15 @@
 'use strict';
 
 /**
- * packs.js — los paquetes de revisores (story 8.2 del arnés, 2026-09-26).
+ * packs.js — los paquetes de revisores.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
- * Hasta la 8.2 el pipeline tenía escritos en su código a los revisores de Bizuit (convenciones de
- * plugins .NET/React/Next.js) y a los de clientes (plugins hermanos, el adaptador de un cliente). Para publicar el núcleo
- * hay que sacarlos, y sacarlos a mano tiene el modo de falla más silencioso del arnés: un revisor que
- * deja de correr no da error, da MENOS hallazgos. Entonces los revisores de un producto o de un
- * cliente viven en **paquetes**: una carpeta con un `pack.json` que dice qué revisor corre, en qué
- * grupo, con qué condición, qué superficie mira en las vueltas y con qué profundidad de modelo. El
- * pipeline los carga y los anuncia; el núcleo no los nombra.
+ * Los revisores de Bizuit (convenciones de plugins .NET/React/Next.js) y los de clientes (plugins hermanos, el adaptador
+ * de un cliente) no se escriben en el código del pipeline. Para publicar el núcleo hay que sacarlos, y sacarlos a mano
+ * tiene el modo de falla más silencioso del arnés: un revisor que deja de correr no da error, da MENOS hallazgos.
+ * Entonces los revisores de un producto o de un cliente viven en **paquetes**: una carpeta con un `pack.json` que
+ * dice qué revisor corre, en qué grupo, con qué condición, qué superficie mira en las vueltas y con qué profundidad de
+ * modelo. El pipeline los carga y los anuncia; el núcleo no los nombra.
  *
  * ── LO QUE NO PUEDE PASAR EN SILENCIO ───────────────────────────────────────────────────────────
  *   · Un manifiesto ilegible, una clave fuera del vocabulario, una bandera que `detectStack` no
@@ -19,7 +18,7 @@
  *     Nunca se evalúa como «falso», nunca se degrada a «sin ese paquete».
  *   · El repo puede restringir la lista con `packs:` en `.tycon/advisors.yaml`; nombrar uno que no
  *     está instalado también frena, diciendo dónde se buscó. Sin `packs:`, los activos los dice la clave
- *     `packs.default` del arnés (`all` | `none`; story 8.7: un paquete opcional viene apagado afuera) —
+ *     `packs.default` del arnés (`all` | `none`: un paquete opcional viene apagado afuera) —
  *     ver `packsDefault`, abajo.
  *   · Sin paquetes (carpeta por defecto ausente o vacía) el núcleo corre solo y la salida dice
  *     `packs: []` — sin avisos, porque es un estado legítimo (una máquina sin agent-skills). Una
@@ -33,8 +32,8 @@
  * ── EL MANIFIESTO (vocabulario cerrado — VOCABULARIO, abajo) ─────────────────────────────────────
  *   { "name", "description", "guides": [...], "skills"?: "<carpeta>", "agents"?: "<carpeta>", "reviewers": [ { "agent", "group", "when",
  *     "surface", "depth", "prefixes", "needsStory"?, "prompt"?, "model"?, "note"? } ],
- *     "siblings"?: [ { "path", "name" } ] }   ← los plugins hermanos del corral del banco (story 8.10)
- *   `skills` y `agents` (story 8.41): carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
+ *     "siblings"?: [ { "path", "name" } ] }   ← los plugins hermanos del corral del banco
+ *   `skills` y `agents`: carpetas DEL PAQUETE (rutas relativas a su carpeta, sin salir de ella) con sus skills
  *   y sus agentes. Un revisor se busca primero en `agents` del paquete y después en la carpeta de agentes de la raíz; el
  *   mismo nombre en los dos lugares es un paquete roto (no se sabe cuál corre).
  *   group: base | condicional | validacion. Los dos primeros entran al set del paso 5; `validacion`
@@ -44,14 +43,13 @@
  *   `added` mira las líneas AGREGADAS del diff (readAddedContents del pipeline); en el grupo
  *   `validacion` no hay diff y lee el archivo entero.
  *
- * ── LAS CLAVES VIEJAS (story 8.9 del arnés, tanda D1) ────────────────────────────────────────────
- *   Las claves del manifiesto pasaron a inglés. Un paquete de afuera (`TYCON_PACKS_DIR`) escrito con
- *   las de antes se sigue aceptando: se traduce al leerlo (`readPackKeys` del puente lib/legacy-names.js).
+ * ── LAS CLAVES EN CASTELLANO ─────────────────────────────────────────────────────────────────────
+ *   Las claves del manifiesto están en inglés. Un paquete de afuera (`TYCON_PACKS_DIR`) escrito con
+ *   las claves en castellano se sigue aceptando: se traduce al leerlo (`readPackKeys` del puente lib/legacy-names.js).
  *   Una clave vieja y su nueva con valores distintos en el mismo objeto es un paquete roto (PackError).
- *   Lo que esta biblioteca DEVUELVE no cambió: `cargarPaquetes` entrega cada paquete y cada revisor con
- *   los nombres de siempre (los de resumenPaquetes en pipeline.js), que son los que viajan en
- *   las salidas JSON del pipeline (pregunta decidida 2 de la 8.9). La condición se evalúa con las
- *   claves nuevas.
+ *   Lo que esta biblioteca DEVUELVE conserva los nombres en castellano: `cargarPaquetes` entrega cada paquete y cada
+ *   revisor con los nombres de resumenPaquetes en pipeline.js, que son los que viajan en las salidas JSON del
+ *   pipeline. La condición se evalúa con las claves nuevas.
  *
  * Quien evalúa las condiciones es el pipeline: este archivo no conoce detectStack ni git — recibe
  * el contexto (`{ det, files, agregado(extensiones) }`) y las banderas válidas como parámetros, para
@@ -114,14 +112,14 @@ function descubrir(packsDir, explicito) {
 /**
  * Sólo los nombres instalados (para el lint de config). Mismo criterio que el cargador: la carpeta
  * por defecto ausente → []; una explícita (parámetro o TYCON_PACKS_DIR) inexistente o ilegible → tira
- * PackError. «No pude mirar» no se devuelve como «no hay ninguno» (lo cazó el revisor de fallos
- * silenciosos: el lint diría «no instalado» cuando el problema real es que no se pudo leer).
+ * PackError. «No pude mirar» no se devuelve como «no hay ninguno»: sin esto el lint diría «no instalado» cuando el
+ * problema real es que no se pudo leer.
  */
 function nombresInstalados({ packsDir, explicito } = {}) {
   const dir = packsDir || dirPaquetes();
   // `explicito` se puede fijar (el lint ya resolvió la carpeta y sabe si vino de la variable): sin eso,
-  // pasarle la carpeta por defecto ya resuelta la convertía en «explícita» y una máquina sin
-  // paquetes salía como «no pude leer» (lo cazó el cazador de fallos silenciosos en la iteración 2).
+  // pasarle la carpeta por defecto ya resuelta la volvería «explícita» y una máquina sin
+  // paquetes saldría como «no pude leer».
   const esExplicito = explicito != null ? !!explicito : (!!packsDir || !!process.env.TYCON_PACKS_DIR);
   return descubrir(dir, esExplicito).map((p) => p.nombre);
 }
@@ -231,7 +229,7 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
     if (m) err(null, `«${clave}»: ${m}`);
     else carpetaPropia[clave] = path.join(path.dirname(archivo), json[clave]);
   }
-  // `siblings` (story 8.10 del arnés, AC 24): los plugins hermanos que el banco de revisores fabrica en su corral para
+  // `siblings`: los plugins hermanos que el banco de revisores fabrica en su corral para
   // el revisor de hermanos del paquete. Son datos de un cliente: viven en el paquete que los usa (no se publica) y no
   // en el código del núcleo. Una lista de { path, name }: la ruta, relativa a la raíz del corral; el nombre, el del
   // plugin (un identificador: el banco arma con él las clases del hermano).
@@ -300,7 +298,7 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
   });
   // Un revisor del paso 5 tiene UNA superficie y UNA profundidad: en `base` o en `condicional`, no en
   // los dos (con los dos, `superficieDe`/`tierDe` tomarían la primera entrada y la otra se ignoraría
-  // en silencio — lo reprodujo el pase adversarial de la 8.2). Con `validacion` sí puede convivir.
+  // en silencio). Con `validacion` sí puede convivir.
   for (const [agente, grupos] of gruposDe) {
     if (grupos.has('base') && grupos.has('condicional')) {
       err(agente, 'está en «base» y en «condicional» del mismo paquete: va en uno solo (una sola superficie y profundidad por revisor del paso 5)');
@@ -310,7 +308,7 @@ function validarManifiesto(json, { archivo, agentsDir, nucleo = [], banderas = [
 }
 
 /** Del manifiesto (claves nuevas) al revisor que devuelve esta biblioteca: los nombres de siempre, que son los que
- *  viajan en las salidas JSON del pipeline (story 8.9, pregunta decidida 2). La condición va tal cual
+ *  viajan en las salidas JSON del pipeline. La condición va tal cual
  *  (claves nuevas: la evalúa `evaluarCondicion`). */
 function normalizarRevisor(r) {
   return {
@@ -353,7 +351,7 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
       errores.push({ archivo: p.archivo, revisor: null, motivo: `JSON inválido o ilegible: ${e.message}` });
       continue;
     }
-    // claves viejas → nuevas (un paquete de afuera escrito antes de la D1 de la 8.9). Una vieja y su nueva con valores
+    // claves viejas → nuevas (un paquete de afuera escrito con las claves en castellano). Una vieja y su nueva con valores
     // distintos es un paquete roto, nunca «sin ese paquete».
     try {
       json = require('./legacy-names.js').readPackKeys(json);
@@ -367,7 +365,7 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
     for (const r of json.reviewers) {
       if (!yaDeclarados.has(r.agent)) yaDeclarados.set(r.agent, { paquete: json.name, archivo: p.archivo });
     }
-    // lo que devuelve, con los nombres de siempre (ver «LAS CLAVES VIEJAS» arriba)
+    // lo que devuelve, con los nombres en castellano (ver «LAS CLAVES EN CASTELLANO» arriba)
     paquetes.push({
       nombre: json.name, dir: p.dir, archivo: p.archivo,
       descripcion: json.description, guias: json.guides || [],
@@ -384,7 +382,7 @@ function cargarPaquetes({ packsDir, agentsDir, nucleo = [], banderas = [] } = {}
 
 /**
  * Las banderas que produce `detectStack` (las únicas válidas en una condición `when`). Viven acá —y `pipeline.js` las
- * importa— para que validar un árbol no tenga que cargar el pipeline entero (story 8.25, tanda A2a).
+ * importa— para que validar un árbol no tenga que cargar el pipeline entero.
  */
 const BANDERAS = Object.freeze([
   'hasNext', 'hasReact', 'csModified', 'tsxModified', 'shModified', 'codeModified',
@@ -394,7 +392,7 @@ const BANDERAS = Object.freeze([
 
 /**
  * El contrato chico y estable que el instalador carga de LA VERSIÓN QUE VA A QUEDAR para validar la capa del equipo antes
- * de apilarla (story 8.25, tanda A2a · AC 19): los paquetes de `packsDir` con los agentes de `agentsDir`, contra el núcleo
+ * de apilarla: los paquetes de `packsDir` con los agentes de `agentsDir`, contra el núcleo
  * dado. Carpetas explícitas: nunca lee TYCON_PACKS_DIR ni TYCON_AGENTS_DIR, ni la caché. Nunca tira: devuelve la lista de
  * errores `[{ archivo, revisor, motivo }]` (vacía si todo vale).
  */
@@ -417,8 +415,8 @@ function validateTree({ packsDir, agentsDir, nucleo = [], banderas = BANDERAS } 
 }
 
 // ── `packs:` del repo (.tycon/advisors.yaml) ───────────────────────────────────────────────────
-/** El nombre actual de un paquete: un repo de producto puede nombrarlo con el viejo hasta el retiro (story 8.9 del
- *  arnés, tanda B3b: `clientes` → `clients`); los productos no se tocan, así que se traduce al leer. */
+/** El nombre actual de un paquete: un repo de producto puede nombrarlo con el viejo (`clientes` → `clients`)
+ *  hasta que lo actualice, así que se traduce al leer. */
 function nombreActual(nombre) {
   return require('./legacy-names.js').nombreDePaquete(nombre);
 }
@@ -429,16 +427,16 @@ class PacksDeclaradosError extends Error {
 }
 
 const sinComentario = (s) => String(s).replace(/(^|\s)#.*$/, '').trim();
-// Recorte de comillas DESPUÉS del trim: `[bizuit, "clientes"]` traía `"clientes` (comilla viva) y el
-// pipeline frenaba por una config correcta — lo reprodujo el pase adversarial de la story 8.2.
+// Recorte de comillas DESPUÉS del trim: sin eso `[bizuit, "clientes"]` traería `"clientes` (comilla viva) y el
+// pipeline frenaría por una config correcta.
 const limpiarItem = (s) => sinComentario(s).replace(/^(['"])(.*)\1$/, '$2').trim();
 
 /**
  * Lista declarada en la clave top-level `packs:` de un YAML (parser mínimo, sin dependencias — el
  * mismo criterio que `i18nRequired` del pipeline). null si no está la clave; [] si está vacía (`[]`).
  *
- * Formas que se leen (todas YAML válido; el pase adversarial de la 8.2 probó que antes varias de
- * ellas dejaban al repo con CERO paquetes en silencio): lista en bloque con ítems indentados o en
+ * Formas que se leen (todas YAML válido; leer mal alguna deja al repo con CERO paquetes en silencio): lista en
+ * bloque con ítems indentados o en
  * columna 0; flow en una línea o en varias (`[` … `]`); comillas con o sin espacio tras la coma;
  * comentario en la línea de la clave; BOM al inicio del archivo; un escalar suelto.
  * Una clave sin lista (`packs:` a secas, `~`, `null`, sólo comentarios) NO es «ninguno» ni «todos los paquetes»:
@@ -510,10 +508,10 @@ function yamlDelRepo(repo) {
   return null;
 }
 
-// ── el default sin `packs:` (story 8.7 del arnés, AC 8) ─────────────────────────────────────────
+// ── el default sin `packs:` ─────────────────────────────────────────
 const PACKS_DEFAULT_KEY = 'packs.default';
 const PACKS_DEFAULT_VALUES = Object.freeze(['all', 'none']);
-// Una lista de nombres (story 8.41): la misma regla que el lector del arnés (`motivoPaquetes` de tycon-config.js), que
+// Una lista de nombres: la misma regla que el lector del arnés (`motivoPaquetes` de tycon-config.js), que
 // esta biblioteca no puede cargar cuando la variable ya responde sin buscar el arnés.
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
 const PACKS_DEFAULT_TEXT = 'all, none o una lista de nombres de paquete';
@@ -532,14 +530,14 @@ const textoDeDefault = (v) => (Array.isArray(v) ? `[${v.join(', ')}]` : String(v
 /**
  * Qué paquetes activa un repo que NO declara `packs:`: lo dice la clave `packs.default` del lector de configuración del
  * arnés (`scripts/lib/tycon-config.js`: la variable `TYCON_PACKS_DEFAULT` › `team-profile.json` (o el nombre de antes) › el archivo de la
- * máquina › `none`). En esta clave el perfil del equipo le gana a lo que la máquina eligió al instalar (story 8.29): acá
+ * máquina › `none`). En esta clave el perfil del equipo le gana a lo que la máquina eligió al instalar: acá
  * no hay un orden propio, lo decide el lector. Un paquete opcional es uno que quien no lo usa no tiene que apagar: afuera,
  * sin perfil, ninguno; el perfil del equipo dice `all`. El arnés se ubica como lo ubica el pipeline (lib/harness-path.js).
  *   · arnés no encontrado, lector que no carga o configuración rota → PackError nombrando archivo, clave y motivo: una
- *     configuración rota nunca se lee como «ninguno» (el principio de la 8.3);
- *   · un arnés anterior a la 8.7 (su lector no conoce la clave, o no tiene lector) → `all`, como antes: así el orden en que
- *     se mergean los dos repos no le quita los revisores del paquete al equipo ni un minuto.
- * Desde la story 8.41 el valor puede ser también una lista: la organización activa exactamente esos paquetes. Por la
+ *     configuración rota nunca se lee como «ninguno»;
+ *   · un arnés cuyo lector no conoce la clave, o que no tiene lector → `all`: así el orden en que se mergean los dos
+ *     repos no le quita los revisores del paquete al equipo ni un minuto.
+ * El valor puede ser también una lista: la organización activa exactamente esos paquetes. Por la
  * variable, separada por comas (`bizuit,clients`).
  * @returns {{ value: 'all'|'none'|string[], origin: string, harness: string }}
  */
@@ -598,7 +596,7 @@ function paquetesActivos({ repo, instalados, packsDir } = {}) {
     // sin paquetes instalados no hay nada que activar… salvo que la organización pida paquetes por nombre: eso es una
     // máquina sin los paquetes de su organización, y se dice. Sin arnés ni variable que responder, como siempre: ninguno
     let def = null;
-    // sólo «no encuentro el arnés» se lee como antes (ninguno); una configuración rota frena como en cualquier otro caso
+    // sólo «no encuentro el arnés» se lee como «ninguno»; una configuración rota frena como en cualquier otro caso
     try { def = packsDefault(); } catch (e) { if (!(e instanceof PackError && e.errores.length > 0 && e.errores.every((x) => x.archivo === 'el arnés'))) throw e; }
     if (def && Array.isArray(def.value)) activosDeLaOrganizacion({ instalados, dir: packsDir || dirPaquetes() });
     return instalados;
@@ -615,7 +613,7 @@ function paquetesActivos({ repo, instalados, packsDir } = {}) {
   }
   const org = activosDeLaOrganizacion({ instalados, dir });
   if (declarados === null) return org;
-  // el repo achica lo que activa la organización y nunca suma (story 8.41, AC 6)
+  // el repo achica lo que activa la organización y nunca suma
   const fuera = declarados.filter((n) => !org.some((p) => p.nombre === n));
   if (fuera.length) {
     throw new PackError(fuera.map((n) => ({
@@ -685,8 +683,8 @@ function rendirPrompt(prompt, { story_path, repo_path, siblings }) {
 
 /**
  * Los hermanos que declaran los paquetes (`siblings`), cada uno en su ruta esperada bajo la raíz de repos. No se recorre
- * ninguna carpeta: sólo se mira si esa ruta existe. Un revisor que salía a buscarlos por el disco caía en repos que no
- * eran hermanos; una raíz distinta en otra máquina se arregla declarándola, no buscando. Sin raíz, ninguno «está».
+ * ninguna carpeta: sólo se mira si esa ruta existe. Un revisor que los buscara por el disco caería en repos que no
+ * son hermanos; una raíz distinta en otra máquina se arregla declarándola, no buscando. Sin raíz, ninguno «está».
  * @returns {Array<{ paquete, nombre, ruta, rutaEsperada: string|null, esta: boolean }>}
  */
 function hermanosResueltos({ paquetes = [], reposRoot = null } = {}) {
@@ -713,10 +711,10 @@ function textoDeHermanos(lista, { reposRoot = null } = {}) {
 }
 
 /**
- * Por qué no hay paquetes activos, para que se vea en la primera corrida (story 8.23, tanda G · AC 44 d): «ningún paquete
- * instalado» y «N instalados y ninguno activo» son dos cosas distintas. La primera máquina migrada (2026-10-08) tenía el
- * paquete bizuit instalado y `packs.default` en `none` porque el perfil del equipo no viajó: el pipeline anunció «no hay
- * paquetes instalados» y revisó con menos revisores sin que nadie lo viera como pérdida. Con paquetes activos, null.
+ * Por qué no hay paquetes activos, para que se vea en la primera corrida: «ningún paquete instalado» y «N instalados y
+ * ninguno activo» son dos cosas distintas. Una máquina con el paquete bizuit instalado y `packs.default` en `none`
+ * porque el perfil del equipo no viajó, si anunciara «no hay paquetes instalados», revisaría con menos revisores sin que
+ * nadie lo viera como pérdida. Con paquetes activos, null.
  */
 function notaDePaquetes({ repo, instalados, activos, packsDir } = {}) {
   if (activos && activos.length) return null;
@@ -728,9 +726,9 @@ function notaDePaquetes({ repo, instalados, activos, packsDir } = {}) {
   const cabeza = `${n} paquete${n === 1 ? '' : 's'} instalado${n === 1 ? '' : 's'} (${nombres}) y ninguno activo: `;
   if (declarados !== null) return `${cabeza}el repo declara packs: [] en ${archivo} (restringido a ninguno a propósito)`;
   const def = packsDefault();
-  // con el perfil del equipo PRESENTE y diciendo `none`, «el perfil está ausente» sería falso (story 8.29: en esta clave
+  // con el perfil del equipo PRESENTE y diciendo `none`, «el perfil está ausente» sería falso (en esta clave
   // el perfil gana, así que un `none` con origen en el perfil es una decisión del equipo, no un perfil que no viajó)
-  // qué paquetes activa la organización lo dice su configuración, no el repo (story 8.41, AC 6): un repo sólo achica la lista
+  // qué paquetes activa la organización lo dice su configuración, no el repo: un repo sólo achica la lista
   const v = textoDeDefault(def.value);
   if (def.origin === 'perfil') return `${cabeza}packs.default es ${v} (${def.origin}) y el repo no declara packs: — lo fija el perfil del equipo; qué paquetes activa tu organización se cambia en Configuración del sitio, sección Paquetes, o en el perfil del equipo`;
   return `${cabeza}packs.default es ${v} (${def.origin}) y el repo no declara packs: — en una máquina del equipo eso es el perfil del equipo ausente: packs.default all lo prende (qué paquetes activa tu organización: Configuración del sitio, sección Paquetes, o el perfil del equipo)`;

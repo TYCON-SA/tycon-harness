@@ -3,13 +3,11 @@
  * smoke-secrets — tapa los secretos del comando de una prueba de humo ANTES de escribirlo en el registro
  * (`<story>-smoke-ledger.jsonl`), y los encuentra si igual llegaron a `.advisors/dod-runtime/`.
  *
- * ── Por qué existe (2026-10-04) ──────────────────────────────────────────────────────────────
+ * ── Por qué existe ───────────────────────────────────────────────────────────────────────────
  * El registro guarda el comando tal cual corrió, y `.advisors/dod-runtime/` VIAJA por git a propósito (es la
- * evidencia de cierre). El 2026-10-04 aparecieron contraseñas SQL escritas tal cual en los registros de un
- * producto, una de ellas la de la base de PRODUCCIÓN; en otro producto pasó lo mismo con tokens Bearer (se limpió
- * a mano el 2026-09-18). El tapado de la SMOKE-SECRETO-1 (2026-09-22) ya existía, pero sólo reconocía valores
- * hechos de letras y números: `SQLCMDPASSWORD='…'` (comillas y un símbolo) o `sqlcmd -P <valor>` pasaban
- * enteros. Caso: guides/maintaining/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04.
+ * evidencia de cierre). Sin tapado, quedan en los registros contraseñas SQL escritas tal cual (hasta la de la base de
+ * PRODUCCIÓN) y tokens Bearer. Un tapado que sólo reconozca valores hechos de letras y números no alcanza:
+ * `SQLCMDPASSWORD='…'` (comillas y un símbolo) o `sqlcmd -P <valor>` pasarían enteros.
  *
  * ── Qué hace ─────────────────────────────────────────────────────────────────────────────────
  * Un conjunto CERRADO de formas inequívocas, cada una con el nombre a la vista y el valor a tapar:
@@ -36,8 +34,8 @@ const MASK = '***';
 
 // El valor de una palabra de shell, ENTERA: tramos entre comillas simples, entre comillas dobles (con escapes),
 // caracteres escapados y caracteres sueltos, pegados entre sí (`'it'\''s'` es una sola palabra). Corta en un blanco o
-// en un separador sin comillas. Revisión adversarial del 2026-10-04: con un tramo solo, `Ab;cd` o `'Ab'cd` se tapaban
-// hasta el símbolo y el resto quedaba a la vista detrás de `***`.
+// en un separador sin comillas. Con un tramo solo, `Ab;cd` o `'Ab'cd` se taparían hasta el símbolo y el resto quedaría
+// a la vista detrás de `***`.
 const SHELL_VALUE = String.raw`(?:'[^']*'|"(?:[^"\\]|\\.)*"|\$\([^)\n]*\)|\\.|[^\s'"` + '`' + String.raw`;&|()<>\\])+`;
 // El valor dentro de una cadena de conexión: sin comillas llega hasta el `;` o el fin de línea —una contraseña con un
 // espacio o una comilla en el medio no se corta—, y una comilla seguida de un blanco o del final la cierra. Si se
@@ -49,7 +47,7 @@ const CONN_VALUE_LITERAL = String.raw`'[^'\n]*'(?=;|$)|"[^"\n]*"(?=;|$)|\{[^}\n]
 const TOKEN_VALUE = String.raw`(?:[^\s'"` + '`' + String.raw`]|['"](?!\s|$))+`;
 
 // Nombres de configuración que no son el secreto aunque digan TOKEN o PASSWORD (`TOKEN_TTL`, `PASSWORD_MIN_LENGTH`,
-// `TOKEN_URL`): falsos positivos del freno medidos en la revisión del 2026-10-04.
+// `TOKEN_URL`): serían falsos positivos del freno.
 const CONFIG_SUFFIX = /_(?:TTL|AGE|URL|URI|ENDPOINT|FILE|PATH|DIR|LENGTH|LEN|COUNT|EXPIRY|EXPIRES|EXPIRATION|TIMEOUT|LIFETIME|MIN|MAX|NAME|TYPE|HEADER)$/;
 
 const STRONG_NAME = /PASSWORD|PASSWD|SECRET|(?:^|_)(?:PASS|PWD)$/;
@@ -85,9 +83,9 @@ const FORMS = [
     label: 'el -P de sqlcmd',
     // `-P` en mayúscula: el `-p` de sqlcmd es otra opción. El `\b` después de sqlcmd deja afuera SQLCMDPASSWORD. El
     // tramo hasta el `-P` sigue una línea continuada con `\` y no cruza `&&` ni `|` (el `-P` de otro comando), salvo
-    // entre comillas: `-s '|'` es el separador de columnas de sqlcmd (segunda vuelta de la revisión, 2026-10-04).
+    // entre comillas: `-s '|'` es el separador de columnas de sqlcmd.
     // 🔴 El carácter suelto no acepta comillas: si las aceptara, cada tramo entre comillas se podría leer de dos
-    // maneras y el retroceso sería exponencial (tercera vuelta: un INSERT con 8 valores tardaba 99 s, y el freno
+    // maneras y el retroceso sería exponencial (un INSERT con 8 valores tardaría 99 s, y el freno
     // pasado de tiempo deja pasar el commit). Por lo mismo la barra va sólo como escape (`\'`, `\` + salto).
     // Una comilla sin cerrar corta la búsqueda: no se ve un -P después.
     re: () => new RegExp(String.raw`(\b[Ss][Qq][Ll][Cc][Mm][Dd](?:\.[Ee][Xx][Ee])?\b(?:'[^'\n]*'|"(?:[^"\\\n]|\\.)*"|\\[\s\S]|(?!&&|\|)[^\n'"\\])*?\s-P\s*)(${SHELL_VALUE})`, 'g'),
@@ -123,8 +121,7 @@ function quotesOf(value) {
  * comillas dobles) o un marcador de documentación (`<…>`, `...`). Vacío tampoco es un secreto.
  *
  * 🔴 Entre comillas SIMPLES un `$` es literal: `'$ecret9X'` es la contraseña, no una variable. Y smoke-run.sh arma
- * entre comillas simples todo argumento con un `$`, porque ahí el shell ya expandió las variables (revisión
- * adversarial del 2026-10-04).
+ * entre comillas simples todo argumento con un `$`, porque ahí el shell ya expandió las variables.
  */
 function isSafeValue(value, opts = {}) {
   const v = String(value).trim();
@@ -151,11 +148,11 @@ function eachFormMatch(text, form, fn, opts = {}) {
   }
 }
 
-// El tapado general de la SMOKE-SECRETO-1 (2026-09-22), antes escrito en python dentro de smoke-run.sh. Cubre
+// El tapado general. Cubre
 // formas que no son de la lista (claves de API, OAuth, `curl -u`), sólo cuando el valor es de letras y números.
-// Corre DESPUÉS de las formas de la lista: al revés, sobre `PASSWORD=` con el valor `'Ab1234!x'` tapaba `Ab1234` y dejaba
+// Corre DESPUÉS de las formas de la lista: al revés, sobre `PASSWORD=` con el valor `'Ab1234!x'` taparía `Ab1234` y dejaría
 // `!x` a la vista detrás de un `$VAL` que el freno lee como variable. Los marcadores son cortos y empiezan con `$`
-// a propósito (gitleaks marca la FORMA, no el contenido — guides/maintaining/incident-log.md#case-long-redaction-marker-flagged-2026-09-22).
+// a propósito (gitleaks marca la FORMA, no el contenido: un marcador largo se leería como credencial).
 const LEGACY_PATTERNS = [
   [/\b(bearer)\s+[A-Za-z0-9._~+/=-]{20,}/gi, '$1 $$TOKEN'],
   [/\b(basic)\s+[A-Za-z0-9+/=]{12,}/gi, '$1 $$CRED'],
@@ -207,7 +204,7 @@ function truncate(s, max) {
 /** El `cmd` tal como se escribe en el registro: tapado y cortado a 300 caracteres (en ese orden). */
 function ledgerCmd(cmd, opts = {}) {
   // Se tapan los primeros 4000 caracteres: el registro guarda 300, y el tapado general crece con el cuadrado del largo
-  // (un cuerpo base64 de 50 KB tardaba 7 s).
+  // (un cuerpo base64 de 50 KB tardaría 7 s).
   const r = redact(String(cmd === undefined || cmd === null ? '' : cmd).slice(0, 4000), opts);
   return { text: truncate(r.text, 300), count: r.count };
 }
@@ -215,7 +212,7 @@ function ledgerCmd(cmd, opts = {}) {
 /**
  * El `cmd` del registro a partir de los argumentos de smoke-run.sh. Cada argumento se tapa SOLO, antes de citarlo y
  * unirlo: ahí todo `$` es literal (el shell ya expandió las variables) y una cadena de conexión con `Password='a;b'`
- * se lee con sus comillas de verdad, no con las que agrega el citado (segunda vuelta de la revisión, 2026-10-04).
+ * se lee con sus comillas de verdad, no con las que agrega el citado.
  * Después se tapa el comando unido, para las formas que ocupan dos argumentos (`-P` y su valor). El texto de un `-c`
  * es un guion: se tapa como texto, sin el modo literal.
  */
@@ -320,12 +317,12 @@ function joinArgs(args) {
   }).join(' ');
 }
 
-// ── Story 1.19 — la expectativa y la salida de un humo ──────────────────────────────────────────────────────────
+// ── la expectativa y la salida de un humo ──────────────────────────────────────────────────────────
 // Un humo con criterios escribe antes de correr qué tiene que pasar (`--pass-if`, y opcional `--fail-if`), y su
 // salida se guarda en `<evidence-dir>/<clave>-smoke-outputs/`. Las dos cosas viajan por git como el `cmd`: pasan por
 // el MISMO tapado (no hay un segundo tapado aparte que se desfase de éste).
 
-/** Tope de la salida guardada, en bytes. Decisión del dueño (2026-10-15, duda 3): 8 KB por humo. */
+/** Tope de la salida guardada, en bytes. 8 KB por humo. */
 const SALIDA_MAX_BYTES = 8192;
 /** Tope de un texto de expectativa: es una frase, no un documento. */
 const EXPECTATIVA_MAX = 1000;
@@ -353,9 +350,9 @@ const VENTANA = 3;
  * `tapar` (opcional) tapa ANTES de cortar, pero no la salida entera: el tapado general crece con el cuadrado del largo
  * (50 KB tardaban 7 s). Tapa una VENTANA de cada punta —tres veces lo que se guarda de ese lado— y recién después
  * corta. Así una credencial que el corte partiría ya está tapada cuando se corta: una línea de sqlcmd terminada en `\`
- * con su `-P` en la siguiente, o un token en el borde de una línea larga. Lo encontró el pase adversarial de la 1.19
- * (2026-10-15): cortar primero dejaba la línea del `-P` sin su sqlcmd, o un pedazo de token más corto que lo que el
- * tapado reconoce, y los dos quedaban enteros en la evidencia que viaja por git.
+ * con su `-P` en la siguiente, o un token en el borde de una línea larga. Cortar primero dejaría la línea del `-P`
+ * sin su sqlcmd, o un pedazo de token más corto que lo que el tapado reconoce, y los dos quedarían enteros en la
+ * evidencia que viaja por git.
  */
 function recortarSalida(text, max = SALIDA_MAX_BYTES, tapar = (t) => t) {
   const s = String(text);
@@ -401,14 +398,14 @@ const LINEA_TAPADA = '[línea tapada: el freno del commit la lee como un secreto
 /**
  * La salida tal como se guarda: texto (bytes inválidos → reemplazo, `\r\n` → `\n`), recortada, tapada y dentro del tope.
  *
- * Tres cosas que encontró el pase adversarial de la 1.19 (2026-10-15):
+ * Tres cuidados:
  *   · los finales de línea van como `\n`: la salida viaja por git y un checkout los reescribe (autocrlf en Windows,
- *     `eol=lf` en los repos del arnés); con los bytes crudos, la matriz la daba por editada;
+ *     `eol=lf` en los repos del arnés); con los bytes crudos, la matriz la daría por editada;
  *   · se tapa en modo literal, como los argumentos de `cmd`: la salida es texto ya resuelto, no un guion, y en modo guion
- *     un valor que empieza con `$` pasaba por una variable;
+ *     un valor que empieza con `$` pasaría por una variable;
  *   · una red final con el mismo lector del freno del commit (`findLeaksInContent`, que decodifica las líneas JSON):
- *     lo que todavía vería como secreto no se guarda. Si no, una línea JSON con `\n` delante de la forma pasaba el
- *     tapado (en crudo hay una `n` delante) y frenaba el commit.
+ *     lo que todavía vería como secreto no se guarda. Sin ella, una línea JSON con `\n` delante de la forma pasaría el
+ *     tapado (en crudo hay una `n` delante) y frenaría el commit.
  */
 function salidaParaGuardar(buf, opts = {}) {
   const texto = (Buffer.isBuffer(buf) ? buf.toString('utf8') : String(buf)).replace(/\r\n/g, '\n');
@@ -436,8 +433,8 @@ function sha256(text) { return require('crypto').createHash('sha256').update(tex
 /**
  * Lo que smoke-run.sh agrega a la línea del registro y a la del espejo para un humo `"v":2` (el `"v":2` lo pone el
  * envoltorio). Escribe la salida en `<evidenceDir>/<key>-smoke-outputs/<sello>-<6 hex>.txt` con apertura exclusiva:
- * dos humos del mismo segundo no se pisan (AC 18). Si la carpeta o el archivo no se pueden crear, `output: null`
- * (AC 17): el humo queda registrado y la matriz no lo cuenta.
+ * dos humos del mismo segundo no se pisan. Si la carpeta o el archivo no se pueden crear, `output: null`:
+ * el humo queda registrado y la matriz no lo cuenta.
  */
 function ledgerExtras(o, opts = {}) {
   const fs = require('fs');

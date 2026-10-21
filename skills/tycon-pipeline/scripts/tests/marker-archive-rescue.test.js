@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * marker-archive-rescue.test.js — T8 y T8b de la story 2.13 del arnés (2026-09-09).
+ * marker-archive-rescue.test.js — T8 y T8b: el archivador del cierre no se cae por el rescate.
  *
  * QUÉ CUIDA, en una frase: que el archivador del cierre (`marker.js clear`) llame al rescate del
  * hilo y el consumo **sin poder caerse por eso**. El volcado de una corrida es la única memoria que
@@ -13,7 +13,7 @@
  *    el arnés: son dos repos que se actualizan por caminos distintos. Una máquina con
  *    el arnés atrasado va a tener el `marker.js` nuevo y el `tokens-digest.js` ausente. Si el
  *    archivador exigiera el script, esa máquina **dejaría de archivar** — perdería no sólo el
- *    consumo sino los tiempos, los frenos y el costo, que hoy sí se guardan bien.
+ *    consumo sino los tiempos, los frenos y el costo, que sí se guardan bien.
  *
  * Correr: node --test ~/.claude/agent-skills/skills/tycon-pipeline/scripts/tests/marker-archive-rescue.test.js
  */
@@ -124,7 +124,7 @@ test('T8b Rescue_DigestMissing_ArchivesAnyway @story-7.35 @ac-2 — con tokens-d
 test('T8c Rescue_HealthyDigest_LandsInDump @story-7.35 @ac-2 — con el rescate sano, lo que escribe queda en el volcado', () => {
   const raiz = corral();
   // Un rescate de mentira que hace lo que hace el de verdad: reescribe el volcado con `consumo`.
-  // Lee `--run`, el nombre con el que el cierre lo llama desde la story 8.7 B (el viejo, y la vuelta que recibe un arnés
+  // Lee `--run`, el nombre con el que el cierre lo llama (el viejo, y la vuelta que recibe un arnés
   // atrasado, los cubren T15 y T16 de marker-archive-change.test.js).
   fs.writeFileSync(
     path.join(raiz, 'guides', 'scripts', 'metrics', 'tokens-digest.js'),

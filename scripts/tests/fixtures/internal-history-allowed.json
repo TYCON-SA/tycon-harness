@@ -360,6 +360,48 @@
       "form": "team-path",
       "value": "perfil-equipo.json",
       "reason": "un dato de la guía: el nombre de antes del perfil del equipo, que el arnés sigue leyendo sin fecha de retiro; el archivo vive en el repo del perfil de cada organización, no en esta copia"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "story-number",
+      "value": "story 8.17",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "owner-decision",
+      "value": "(decisión del dev",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "date",
+      "value": "2026-08-13",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "story-bare",
+      "value": "la 4.30",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "date",
+      "value": "2026-08-19",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "date",
+      "value": "2026-09-15",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
+    },
+    {
+      "file": "skills/tycon-pipeline/scripts/marker.js",
+      "form": "story-number",
+      "value": "story 2.17",
+      "reason": "un comentario dentro de cmdRunCheck o registrarRunCheck: scripts/tests/trimmed-close.test.sh (T12) compara el texto de esas dos funciones, comentarios incluidos, contra main; se reescribe cuando esa prueba compare sin comentarios"
     }
   ]
 }

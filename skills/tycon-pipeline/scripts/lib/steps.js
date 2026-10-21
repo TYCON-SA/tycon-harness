@@ -1,13 +1,12 @@
 'use strict';
-// lib/steps.js — la tabla única de los pasos del pipeline (story 7.23).
+// lib/steps.js — la tabla única de los pasos del pipeline.
 //
 // Cada paso: su id (el del marcador y el de los comandos: `complete-step 5`, `--type 5b`), el nombre llano con que se
 // le muestra al dueño (sin número: «Revisores», no «Step 5») y su archivo en `steps/`. El orden de la tabla es el orden
 // de la corrida; `inSequence: false` marca los dos que `pipeline.js next` no recorre (el 7b, que es una vuelta más de
 // revisores, y el 9, que corre después del merge).
 //
-// Tanda A: sólo los nombres. Los ids, los archivos y el marcador siguen como estaban; la tanda B trae los números
-// seguidos y los nombres de máquina. La copia del cartel (`mods/harness-mods/hooks/steps.mjs`) lleva los mismos
+// Sólo los nombres son llanos: los ids, los archivos y el marcador son los de la corrida. La copia del cartel (`mods/harness-mods/hooks/steps.mjs`) lleva los mismos
 // nombres, y scripts/tests/harness-mods.test.js frena si se separan.
 
 const STEPS = [

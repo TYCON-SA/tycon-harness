@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * touched-files.js — ¿qué archivos toca la story, y SE SABE? (story 7.15 del arnés, 2026-09-29)
+ * touched-files.js — ¿qué archivos toca la story, y SE SABE?
  *
- * El test-gate del arnés difiere las suites que declaran `gate_only_when_touching` (hoy sólo
+ * El test-gate del arnés difiere las suites que declaran `gate_only_when_touching` (por ejemplo
  * exportador-real, 24-41 min) cuando la story no toca esas carpetas. Esta lib junta lo tocado de tres
  * fuentes y, sobre todo, dice si se pudo mirar:
  *   · `git diff --name-only <base>` — lo que cambió desde el commit en que arrancó la corrida;
  *   · `git ls-files --others --exclude-standard` — lo nuevo sin agregar al índice;
  *   · lo que la story DECLARA (`files_to_create` + `files_to_modify`) sólo como dato en `sources.declared`:
- *     desde el 2026-09-30 no cuenta como tocado (el corte es el cambio real, ver `touchedFiles`).
+ *     no cuenta como tocado: el corte es el cambio real (ver `touchedFiles`).
  * Sin base, o con git fallando, `known: false` con el motivo: el que llama corre todo.
  * 🔴 No se reusa `changedFiles` de test-scope.js: traga los errores de git y devuelve [], así que
  *    «git falló» y «no hay cambios» se ven igual — justo lo que este corte no puede confundir.
@@ -23,8 +23,8 @@ const { spawnSync } = require('child_process');
 const { parseDeclaredFiles } = require('./test-scope');
 
 // «<carpeta>/**»: ruta relativa, sin comodines antes del /** final. Otra forma no se interpreta.
-// Cada segmento excluye «/» (una barra doble no calza) y no puede ser «.» ni «..» (pase adversarial
-// 2026-09-29: «scripts//<carpeta>/**» pasaba como válido y dejaba la suite diferida para siempre).
+// Cada segmento excluye «/» (una barra doble no calza) y no puede ser «.» ni «..»: «scripts//<carpeta>/**»
+// dejaría la suite diferida para siempre.
 const PATTERN_RE = /^(?!(?:.*\/)?\.{1,2}\/)(?:[^*?[\]{}\s/]+\/)*[^*?[\]{}\s/]+\/\*\*$/;
 
 function isValidPattern(p) {
@@ -65,21 +65,21 @@ function touchedFiles({ repo, storyPath, baseRef, baseSource } = {}) {
     return unknown(`no hay base de git contra la que comparar${storyError ? `; ${storyError}` : ''}`);
   }
   // Base = HEAD por defecto (sin marcador ni TYCON_COVERAGE_BASE: el gate corrido a mano sobre un commit
-  // hecho): el diff no ve lo commiteado, así que «no aparece» no significa «no toca» (pase adversarial).
+  // hecho): el diff no ve lo commiteado, así que «no aparece» no significa «no toca».
   if (baseSource === 'HEAD') {
     return unknown('la base de la corrida cayó a HEAD por defecto: lo ya commiteado no se ve en el diff');
   }
   // --no-renames: un archivo movido aparece como borrado en su ruta vieja + agregado en la nueva. Con la
-  // detección de renombres por defecto, `--name-only` mostraba sólo la ruta destino y mover algo FUERA de
-  // una carpeta con `gate_only_when_touching` se leía como «no la toca» (pase adversarial 2026-09-29).
+  // detección de renombres por defecto, `--name-only` muestra sólo la ruta destino, y mover algo FUERA de
+  // una carpeta con `gate_only_when_touching` se leería como «no la toca».
   const d = git(repo, ['diff', '--name-only', '--no-renames', baseRef, '--']);
   if (d.error) return unknown(d.error);
   const u = git(repo, ['ls-files', '--others', '--exclude-standard']);
   if (u.error) return unknown(u.error);
   sources.diff = lines(d.out);
   sources.untracked = lines(u.out);
-  // Lo declarado NO entra (decisión del dueño del arnés, 2026-09-30): una story de varias tandas declara los
-  // archivos de las que vienen, y sumarlos corría suites de 10+ min en tandas que no las tocaban. Queda en
+  // Lo declarado NO entra: una story de varias tandas declara los
+  // archivos de las que vienen, y sumarlos correría suites de 10+ min en tandas que no las tocan. Queda en
   // `sources.declared` como dato. Lo commiteado antes de la base es de una tanda anterior con su control hecho.
   const files = [...new Set([...sources.diff, ...sources.untracked])];
   // Una story ilegible con git sano: lo tocado de verdad sí se vio; se deja dicho igual.

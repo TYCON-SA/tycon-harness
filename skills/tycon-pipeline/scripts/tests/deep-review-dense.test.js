@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * deep-review-dense.test.js — el pase adversarial corre cuando el diff es DENSO aunque sea chico
- * en archivos (PIPE-DEBT-2.14, 2026-09-10).
+ * en archivos.
  *
- * Caso disparador (el arnés, story 2.14): 4 archivos de código → risk-class LOW → el
- * gate saltea el 5b. Forzado a mano, el pase confirmó 6 defectos reales sobre esos mismos 4
- * archivos (traversal, clasificación, contratos, determinismo). El tamaño en archivos no mide la
+ * Caso que cubre: 4 archivos de código → risk-class LOW → el
+ * gate saltea el 5b, aunque el pase pueda confirmar defectos reales en esos mismos archivos
+ * (traversal, clasificación, contratos, determinismo). El tamaño en archivos no mide la
  * lógica: una vista con agregaciones, clasificación y ejes de tiempo en 1.100 líneas es «LOW».
  *
  * Correr: node --test .../scripts/tests/deep-review-dense.test.js
@@ -35,8 +35,8 @@ function git(dir, ...a) {
   return r.stdout;
 }
 
-// 🔴 Cada laboratorio es un repo git (2026-10-15): el conteo mide cada archivo en SU repo, y un archivo fuera de todo
-//    repo ya no se cuenta entero en silencio. Un archivo nuevo sin trackear en su repo sí se cuenta entero: es nuevo.
+// 🔴 Cada laboratorio es un repo git: el conteo mide cada archivo en SU repo, y un archivo fuera de todo
+//    repo no se cuenta entero en silencio. Un archivo nuevo sin trackear en su repo sí se cuenta entero: es nuevo.
 function mkRepo(lineasCodigo) {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-'));
   git(r, 'init', '-q', '-b', 'main');
@@ -52,7 +52,7 @@ function mkRepo(lineasCodigo) {
 function mkRepoConScope(lineasCodigo) {
   const r = mkRepo(lineasCodigo);
   // 🔴 La story DECLARA su scope: sin eso el risk-class da NORMAL («scope no declarado») y el gate
-  //    decide antes de llegar a la densidad. El caso real (story 4.1) declaraba 6 archivos → LOW.
+  //    decide antes de llegar a la densidad. Una story que declara 6 archivos da LOW.
   fs.writeFileSync(path.join(r, 'story.md'),
     ['---', 'story: 4.1', 'epic: 4', 'status: in-progress', 'files_to_create: []',
      'files_to_modify:', '  - src/vista.js', '---', '', '## Acceptance Criteria', '- AC1: x', ''].join('\n'));
@@ -83,7 +83,7 @@ test('un archivo de código denso (400 líneas) corre el pase aunque el risk-cla
 });
 
 test('un archivo chico (40 líneas) sigue saltando por LOW, y el veredicto MUESTRA la medición', () => {
-  // 🔴 rojo previo: sin la señal de densidad el caso de arriba también salía run:false — este
+  // 🔴 Sin la señal de densidad, el caso de arriba también saldría run:false — este
   //    caso fija que el skip legítimo sigue existiendo y que dice cuántas líneas contó.
   const repo = mkRepo(40);
   const v = gate(repo, {}, 'src/vista.js');
@@ -107,15 +107,14 @@ test('el umbral se declara por env (TYCON_DEEP_REVIEW_DENSE_LINES) y un valor in
   assert.equal(gate(repo, { TYCON_DEEP_REVIEW_DENSE_LINES: 'muchas' }, 'src/vista.js').umbral_lineas, 300);
 });
 
-// ── «no me dijiste qué mirar» no es «no cambió nada» (2026-09-10) ──────────────────────────────
+// ── «no me dijiste qué mirar» no es «no cambió nada» ──────────────────────────────
 //
-// Caso real, story 4.1 del arnés: se invocó el gate SIN `--files` sobre un cambio de
-// 839 líneas y contestó «0 líneas agregadas < 300 → skip». Sonaba a medición y no lo era: sin
-// archivos que mirar no hay nada que contar. En esa corrida no importó porque el dev había pedido
-// la revisión a mano; por el camino automático, las 839 líneas se salteaban solas — y ese pase fue
-// justamente el que encontró seis defectos.
+// Ejemplo: el gate, invocado SIN `--files` sobre un cambio de
+// 839 líneas, contesta «0 líneas agregadas < 300 → skip». Suena a medición y no lo es: sin
+// archivos que mirar no hay nada que contar. Con la revisión pedida a mano no importa; por el
+// camino automático, las 839 líneas se saltean solas — justo cuando ese pase hace más falta.
 //
-// Se eligió CORTAR y no «correr por las dudas»: una corrida del pase adversarial midió 6,5 M de
+// El gate CORTA y no «corre por las dudas»: una corrida del pase adversarial mide 6,5 M de
 // tokens y 30 minutos, así que revisar de más no es el lado barato. El error está en la llamada y
 // se arregla ahí. Las dos invocaciones reales de los steps ya pasan `--files`.
 
@@ -129,10 +128,10 @@ test('sin --files el gate CORTA en vez de informar «0 líneas»', () => {
 });
 
 test('…pero `--files` DECLARADO y vacío sí es una medición: el diff no toca código', () => {
-  // 🔴 La distinción es el corazón del arreglo, y se pasa por alto fácil: «no me dijiste qué
+  // 🔴 La distinción es el corazón de la regla, y se pasa por alto fácil: «no me dijiste qué
   //    mirar» y «te digo que no hay archivos de código» son cosas distintas. La primera no se
   //    puede medir y corta; la segunda ES cero, y un skip ahí es correcto — una story de sólo
-  //    documentación no necesita el pase adversarial. Sin este caso, el arreglo podía terminar
+  //    documentación no necesita el pase adversarial. Sin este caso, el corte podría terminar
   //    cortando también las corridas legítimas, que es como un freno se vuelve un estorbo y
   //    alguien lo apaga.
   const repo = mkRepoConScope(400);
@@ -157,11 +156,11 @@ test('un override explícito del dev decide SIN necesitar la densidad', () => {
   assert.equal(JSON.parse(off.stdout).run, false);
 });
 
-// ── Stories de dos repos (2026-10-15, GE-4 de un producto del equipo) ──────────────────────────────────────────────
+// ── Stories de dos repos ──────────────────────────────────────────────
 //
-// La story vivía en el backend y el código en el frontend, un repo companion. El portón medía cada archivo con
-// `git -C <repo de la story>`: los del frontend daban «no trackeado» y se sumaban enteros (1464 líneas contra 221
-// reales) y corrió el pase por «denso». Ahora cada archivo se mide en el repo de su propia carpeta.
+// Si la story vive en el backend y el código en el frontend (un repo companion), medir cada archivo con
+// `git -C <repo de la story>` daría «no trackeado» para los del frontend, que se sumarían enteros (1464 líneas
+// contra 221 reales) y correría el pase por «denso». Cada archivo se mide en el repo de su propia carpeta.
 
 function repoConArchivoTrackeado(lineas) {
   const b = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-companion-'));
@@ -175,7 +174,7 @@ function repoConArchivoTrackeado(lineas) {
 }
 
 test('@story-7.26 story en A, código en el repo companion B: mide las líneas agregadas en B, no el archivo entero', () => {
-  // 🔴 rojo previo: 403 (las 400 de HEAD más las 3 nuevas) y run:true por «denso».
+  // 🔴 Midiendo en el repo equivocado daría 403 (las 400 de HEAD más las 3 nuevas) y run:true por «denso».
   const a = mkRepoConScope(40);
   const { f } = repoConArchivoTrackeado(400);
   fs.appendFileSync(f, 'export const n1 = 1;\nexport const n2 = 2;\nexport const n3 = 3;\n');
@@ -212,8 +211,8 @@ test('@story-7.26 lo medido ya pasa el umbral: corre el pase y el veredicto igua
 });
 
 test('@story-7.26 git que no puede decir si un archivo está trackeado (repo roto) no es «no trackeado»: no se suma entero', () => {
-  // 🔴 rojo previo (revisor de fallos silenciosos): cualquier salida ≠ 0 de `ls-files --error-unmatch` se leía como «no
-  //    trackeado» y el archivo se sumaba ENTERO — el mismo error de las 1464 líneas. Un `.git` vacío da 128.
+  // 🔴 Cualquier salida ≠ 0 de `ls-files --error-unmatch` se leería como «no
+  //    trackeado» y el archivo se sumaría ENTERO — el mismo error de conteo. Un `.git` vacío da 128.
   const a = mkRepoConScope(40);
   const roto = fs.mkdtempSync(path.join(os.tmpdir(), 'dense-roto-'));
   fs.mkdirSync(path.join(roto, '.git'));
@@ -226,8 +225,8 @@ test('@story-7.26 git que no puede decir si un archivo está trackeado (repo rot
 });
 
 test('@story-7.26 un archivo borrado por el cambio (git rm) cuenta 0 líneas: no corta una story de un solo repo', () => {
-  // 🔴 rojo previo (revisión adversarial): fuera del índice y del disco caía en «no medido» y el portón cortaba con
-  //    salida 2 lo que antes salteaba por LOW. Está en HEAD: agrega 0 líneas.
+  // 🔴 Fuera del índice y del disco caería en «no medido» y el portón cortaría con
+  //    salida 2 lo que salta por LOW. Está en HEAD: agrega 0 líneas.
   const a = mkRepoConScope(40);
   git(a, 'add', '-A');
   git(a, 'commit', '-q', '-m', 'base');

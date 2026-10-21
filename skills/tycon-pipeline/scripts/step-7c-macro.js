@@ -2,23 +2,22 @@
 /**
  * step-7c-macro.js — DoD Runtime Gate ceremony as a deterministic macro.
  *
- * SPEED-3 (2026-05-27). Reemplaza la secuencia manual del Step 7c: health check,
+ * Reemplaza la secuencia manual del Step 7c: health check,
  * ejecutar secuencia de curls (setup + act + verify), capturar response fields,
  * assertear status + body, escribir evidence file en formato hook-compliant
  * (incluye bloque "## Playwright Run" con substrings literales `verdict=PASS`
  * + `failed=0` que `on-frontmatter-write.js` requiere) — SÓLO si la corrida anduvo.
  *
- * 🔴 FALSO VERDE EN LA EVIDENCIA DE CIERRE (pase adversarial 2026-09-15, reproducido).
- * Hasta esa fecha, con un step en rojo el script salía 1 y IGUAL dejaba en disco un archivo
- * que decía aprobado: copiaba el `verdict=PASS failed=0` del escenario (o su literal por
- * default) sin mirar el resultado. Y ese archivo lo leen DOS controles, no uno:
- *   1. `on-frontmatter-write.js` → `hasFreshPlaywrightPass` (los tres literales) → abría la
+ * 🔴 FALSO VERDE EN LA EVIDENCIA DE CIERRE. Con un step en rojo el script sale 1, pero si dejara en
+ * disco un archivo que dice aprobado (copiando el `verdict=PASS failed=0` del escenario, o su literal por
+ * default, sin mirar el resultado), ese archivo lo leen DOS controles, no uno:
+ *   1. `on-frontmatter-write.js` → `hasFreshPlaywrightPass` (los tres literales) → abriría la
  *      transición a review/done;
  *   2. `on-pre-commit.js` → `evidenciaDeclaraFail` SÍ descarta corridas fallidas, pero sólo
  *      reconoce `verdict[:=]FAIL` a INICIO DE LÍNEA (y `## Verdict global`): el `**FAIL**` en
- *      prosa bajo `## Veredicto` no le matcheaba, y como el archivo documenta todos los ACs
- *      ganaba la selección de candidato → el portón del commit también pasaba.
- * Por eso el arreglo no es "salir 1 sin escribir el bloque" (eso tapa al primero y deja al
+ *      prosa bajo `## Veredicto` no le matchea, y como el archivo documenta todos los ACs
+ *      ganaría la selección de candidato → el portón del commit también pasaría.
+ * Por eso la solución no es "salir 1 sin escribir el bloque" (eso tapa al primero y deja al
  * segundo engañado): el archivo se escribe igual —el registro de una corrida fallida es
  * evidencia útil— pero con `verdict=FAIL failed=<n>` a inicio de línea, la única forma que
  * los dos entienden. El `evidence.playwright_run` del escenario es entrada AUTO-DECLARADA
@@ -26,12 +25,11 @@
  * un `playwright_run: FAIL` declarado se respeta — el override va en una sola dirección.
  * Casos: `scripts/tests/step-7c-macro.test.js`.
  *
- * Hoy el orquestador gasta ~2 min haciéndolo paso a paso + tiene que recordar el
- * formato exacto del evidence + manejar el path correcto (CeiboBackend/.advisors
- * gitignored vs CeiboProject/.advisors tracked).
+ * Hacerlo paso a paso le exige al orquestador recordar el formato exacto del evidence y manejar el
+ * path correcto (un `.advisors` ignorado por git en el repo de código vs uno versionado en el repo de la story).
  *
  * Usage:
- *   node step-7c-macro.js --story 13.29 --scenario <path>.json \
+ *   node step-7c-macro.js --story <número> --scenario <path>.json \
  *     [--evidence-dir <dir>] [--base-url http://localhost:5001] \
  *     [--bearer-token admin] [--dry-run]
  *
@@ -130,13 +128,13 @@ function assertBody(actual, expected) {
 // y `on-pre-commit.js:evidenciaDeclaraFail` pasa a true (la corrida fallida no compite como
 // evidencia válida). Se emite SÓLO para declarar fallo — nunca una línea análoga en verde:
 // un `verdict=PASS failed=0` de más abriría el gate incluso con la suite E2E declarada en rojo.
-// 🔴 Invariante mecánico (2026-09-15): un archivo que declara FAIL no puede contener los
+// 🔴 Invariante mecánico: un archivo que declara FAIL no puede contener los
 // literales verdes, VENGAN DE DONDE VENGAN. `on-frontmatter-write.js` escanea el archivo
 // ENTERO, no el bloque: alcanza con que el CUERPO de una respuesta del sistema bajo prueba
 // —que se copia tal cual más arriba— o el nombre de un step traigan `verdict=PASS`/`failed=0`
 // para reabrir el gate. No se borra nada: se deja legible entre comillas angulares y con
-// constancia de que se tocó. Lo cazó el caso T3 de la suite sobre la PRIMERA versión de este
-// arreglo, cuya nota de override reimprimía los literales que acababa de pisar.
+// constancia de que se tocó. Una nota de override que reimprimiera los literales que acaba de pisar
+// los reintroduciría (caso T3 de la suite).
 function escribirEvidencia(evidencePath, log, fallo) {
   const neutralizar = (t) => t
     .replace(/verdict=PASS/g, 'verdict«PASS»')
@@ -146,8 +144,7 @@ function escribirEvidencia(evidencePath, log, fallo) {
     const limpio = neutralizar(texto);
     // 🔴 La constancia NO nombra los literales que acaba de neutralizar —nombrarlos es
     // reintroducirlos— y el barrido se aplica ÚLTIMO, sobre el texto ya completo: ni la propia
-    // nota puede reabrir el gate. Las dos primeras versiones de este arreglo cayeron justo ahí
-    // (la nota de override y esta constancia), y las cazó la suite, no la lectura.
+    // nota puede reabrir el gate (la nota de override y esta constancia son los dos lugares donde pasaría).
     texto = limpio === texto ? limpio : neutralizar(
       `${limpio}\n> ⚠ Se neutralizaron literales de veredicto VERDE que venían del escenario o de una\n` +
       '> respuesta: esta corrida FALLÓ y el hook de cierre escanea el archivo entero.\n');
@@ -270,12 +267,12 @@ async function main() {
     process.exit(2);
   }
 
-  // Sin --evidence-dir: el destino que `pipeline.js start` dejó en el marker (el repo de la STORY,
-  // 2026-09-05) y recién después el cwd — que es el repo del código, o sea el bug de origen.
+  // Sin --evidence-dir: el destino que `pipeline.js start` dejó en el marker (el repo de la STORY)
+  // y recién después el cwd — que es el repo del código, no el de la story.
   const evidenceDir = args.evidenceDir || evidenceDirDelMarker() || path.join(process.cwd(), '.advisors', 'dod-runtime');
   const ts = new Date();
   const tsStr = ts.toISOString().replace(/[-:.TZ]/g, '').slice(0, 12) + 'Z';
-  // La CLAVE de la evidencia (story 1.17): con la ruta de la story, el número solo si es único en su repo o
+  // La CLAVE de la evidencia: con la ruta de la story, el número solo si es único en su repo o
   // `<tema>__<número>` si se repite. Con un número a mano se usa tal cual (en un número repetido el
   // resultado queda huérfano: la matriz lo nombra y no lo cuenta). Si la clave no se puede decidir, no se
   // escribe nada: una evidencia bajo una clave adivinada puede terminar contándole a otra story.

@@ -1,21 +1,19 @@
 /**
  * atdd-preedit.js — el freno de ATDD en el MOMENTO de la primera edición de código.
  *
- * ── POR QUÉ HIZO FALTA UNA TERCERA CAPA ──────────────────────────────────────────────────────────
- * Ya había dos frenos de ATDD y los dos son POST-MORTEM:
+ * ── POR QUÉ ES UNA TERCERA CAPA ──────────────────────────────────────────────────────────────────
+ * Hay otros dos frenos de ATDD y los dos son POST-MORTEM:
  *
  *   1. `lib/atdd-order.js` + `marker.js complete-step 4` → corre al CERRAR el step 4, o sea cuando la
  *      implementación entera ya está escrita.
  *   2. `lib/atdd-commit-gate.js` → corre al commitear, todavía más tarde.
  *
- * Los dos DETECTAN la inversión; ninguno la IMPIDE. Caso disparador (2026-07-30, máquina de otro dev
- * del equipo): el orquestador implementó las Tasks 2 a 9 completas —modelos, validador, repositorio,
- * servicio, endpoint— y recién pensaba escribir los tests en las Tasks 10-11. Lo cazó **el dev
- * leyendo el transcript**, otra vez, y lo cazó ANTES de que ninguno de los dos frenos llegara a
- * correr. El freno existía y no llegó a tiempo: para cuando el `complete-step 4` hubiera hablado, el
- * trabajo mal hecho ya estaba hecho y había que tirarlo.
+ * Los dos DETECTAN la inversión; ninguno la IMPIDE. Caso que cubre: el orquestador implementa varias
+ * tareas completas —modelos, validador, repositorio, servicio, endpoint— y recién piensa escribir los
+ * tests al final. Ninguno de los dos frenos llega a correr a tiempo: para cuando el `complete-step 4`
+ * hable, el trabajo mal hecho ya está hecho y hay que tirarlo.
  *
- * La conclusión no es "más texto normativo" (eso ya falló tres veces) ni "otro detector": es mover el
+ * La respuesta no es "más texto normativo" ni "otro detector": es mover el
  * control al único punto donde todavía se puede evitar el daño — **la edición misma**. El hook
  * `PreToolUse` (Edit|Write) puede DENEGAR el tool call, así que el intento de escribir el primer
  * archivo de código sin un test tocado antes no ocurre. Es indiferente a qué skill esté manejando
@@ -33,7 +31,7 @@
  * bloquea SÓLO con las seis condiciones juntas:
  *
  *   1. Hay un pipeline activo (marker) — afuera del pipeline no frena nada (el freno del commit
- *      sigue avisando ahí). Decisión DevA 2026-07-30.
+ *      sigue avisando ahí).
  *   2. El step 4 (implementación) todavía NO está cerrado. Después del step 4 vienen los fixes de
  *      advisors: frenarlos ahí sería absurdo y el `complete-step 4` ya juzgó el orden.
  *   3. La story declara una tabla `### Tests` — mismo skip-condition que el sub-paso 4.0. Una story
@@ -58,9 +56,9 @@ const { isTestPath, isImplPath } = require('./atdd-order.js');
 /**
  * ¿`file` está dentro de `root`? Comparación por segmento — `/repo-viejo` no cuenta como `/repo`.
  * Case-INSENSITIVE a propósito: los filesystems del equipo (APFS macOS, NTFS Windows) lo son, y un
- * `file_path` con otro casing escribe el MISMO archivo — compararlo sensible dejaba pasar código
- * real por una mayúscula (hallazgo B5 del review adversarial 2026-07-30). El costo teórico (dos
- * dirs distintos solo por case en Linux) no existe en los repos del equipo.
+ * `file_path` con otro casing escribe el MISMO archivo — compararlo sensible dejaría pasar código
+ * real por una mayúscula. El costo teórico (dos dirs distintos solo por case en Linux) no existe en los
+ * repos del equipo.
  */
 function isInside(root, file) {
   if (!root || !file) return false;

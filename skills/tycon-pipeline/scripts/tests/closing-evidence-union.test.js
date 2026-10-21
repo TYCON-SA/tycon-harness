@@ -1,23 +1,23 @@
 'use strict';
 /**
- * closing-evidence-union.test.js — el freno del commit suma las TRES fuentes por AC (2026-10-14).
+ * closing-evidence-union.test.js — el freno del commit suma las TRES fuentes por AC.
  *
- * El caso: desde el 2026-10-13, casi todo commit que pasaba una story a `review` en un producto del equipo
- * rebotaba con «Evidencia encontrada: … PERO no menciona ACs: #…». El freno elegía UN archivo (el que
- * nombra más criterios) y le exigía que nombrara todos; la evidencia real estaba repartida entre el
- * registro de pruebas de humo, los gates E2E y las firmas del dev, y la matriz por AC la sumaba bien
- * (VERDE). La salida era habilitar a mano una escritura para que el agente redactara un `-cierre.md`.
+ * El caso: un commit que pasa una story a `review` con la evidencia repartida entre el registro de pruebas
+ * de humo, los gates E2E y las firmas del dev. Si el freno eligiera UN archivo (el que nombra más criterios)
+ * y le exigiera nombrar todos, rebotaría con «Evidencia encontrada: … PERO no menciona ACs: #…» aunque la
+ * matriz por AC los sume bien (VERDE), y la salida sería habilitar a mano una escritura para que el agente
+ * redacte un `-cierre.md`.
  *
  * Estas pruebas corren el hook DE VERDAD (on-pre-commit.js por stdin, como lo llama Claude Code) sobre
  * un repo armado en una carpeta temporal, con una HOME temporal (gates.log y firmas de ahí, nunca las
- * reales). Los cuatro casos que pidió el dueño:
+ * reales). Los casos:
  *   1. los tres orígenes repartidos, sin `-cierre.md` → pasa;
  *   2. un AC que no está en ninguno → frena, y el mensaje nombra el AC y las tres fuentes;
  *   3. un smoke con salida ≠ 0 → no cuenta (frena);
  *   4. una firma vencida (la declaración del AC cambió después de firmar) → no cuenta (frena).
  * Y uno más: si existe un `-cierre.md` que nombra todo, sigue contando.
  *
- * 🔴 rojo previo verificado: con el on-pre-commit.js de antes del cambio, el caso 1 sale 2 («no menciona ACs»).
+ * Un freno que elige un solo archivo da 2 («no menciona ACs») en el caso 1.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -100,7 +100,7 @@ function armar(t, opts = {}) {
   // 1. pruebas de humo: AC 1 (salida 0, o la que diga el caso), con su copia en gates.log como la escribe smoke-run.sh.
   const ts = SIN_MS(ahora);
   const exit = opts.smokeExit === undefined ? 0 : opts.smokeExit;
-  // Armada por el ayudante compartido (story 1.19): una línea vieja, sin `v`.
+  // Armada por el ayudante compartido: una línea vieja, sin `v`.
   require('./lib/smoke-ledger-line.js').append({ dodDir: dod, gatesLog, story: '9.9', acs: [1], ts, exit,
     cmd: 'curl -s http://app/catalogos # AC #1' });
   // 2. gate E2E PASS con su copia run-check: cubre la fila E1 → AC 2. El texto del gate no nombra criterios.

@@ -1,18 +1,17 @@
 'use strict';
 /**
- * lib/portable-tools.js — buscar una herramienta y lanzar `bash` igual en Mac, Linux y Windows (story 8.17 del arnés,
- * tanda W6 · AC 48).
+ * lib/portable-tools.js — buscar una herramienta y lanzar `bash` igual en Mac, Linux y Windows.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
- *   · `pipeline.js tooling-expected` buscaba cada herramienta con la ruta fija `/usr/bin/which`. En Windows ese
- *     programa no existe: todas salían «no está», también las instaladas, y el pipeline mandaba a instalar lo que ya
- *     estaba. `findBinary()` busca con `where` en Windows y con `which` —por el PATH, sin ruta fija— en el resto.
- *   · `marker.js run-check <check> -- bash …` lanzaba `bash` por su nombre. En Windows el primero del PATH puede ser
+ *   · `pipeline.js tooling-expected` no puede buscar con la ruta fija `/usr/bin/which`: en Windows ese
+ *     programa no existe, todas saldrían «no está» (también las instaladas) y el pipeline mandaría a instalar lo que ya
+ *     está. `findBinary()` busca con `where` en Windows y con `which` —por el PATH, sin ruta fija— en el resto.
+ *   · `marker.js run-check <check> -- bash …` no puede lanzar `bash` por su nombre: en Windows el primero del PATH puede ser
  *     el lanzador de WSL (abre una distribución de Linux que no ve una ruta `C:/…`, o que no está instalada).
  *     `runCheckLaunch()` lo cambia por el bash que devuelve `findGitBash()` del arnés (`scripts/lib/git-bash.js`, la
  *     única búsqueda del bash de Git). Si no hay, NO se lanza otro bash: vuelve el motivo, y el check sale rojo con él.
- *   · En Windows `npx` (y `npm`, `jest`…) es un `npx.cmd`, que Node no lanza sin shell: vitest y jest nunca corrían y
- *     el gate daba un rojo con totales vacíos (pase adversarial de la W6). `runCheckLaunch()` lo lanza por el bash de
+ *   · En Windows `npx` (y `npm`, `jest`…) es un `npx.cmd`, que Node no lanza sin shell: vitest y jest nunca correrían y
+ *     el gate daría un rojo con totales vacíos. `runCheckLaunch()` lo lanza por el bash de
  *     Git, y `canLaunch()` —lo que mira test-gate.sh antes de la salida 5— usa la misma búsqueda.
  *
  * ── CÓMO SE PRUEBA SIN WINDOWS ──────────────────────────────────────────────────────────────────
@@ -47,8 +46,8 @@ const isExecutable = (p) => { try { fs.accessSync(p, fs.constants.X_OK); return 
 /**
  * Dónde está `cmd`: la primera ubicación que da el buscador del sistema, o `null`. Una ruta absoluta se mira en el
  * disco, sin buscar en el PATH; en Windows, si no está tal cual, se prueban las extensiones de PATHEXT (`.exe`,
- * `.cmd`…): en Windows todo ejecutable lleva extensión, y el arnés declara algunos por su ruta sin ella (pase
- * adversarial de la W6, hallazgo #5: `~/.local/bin/codebase-memory-mcp` salía «no está» con el `.exe` instalado).
+ * `.cmd`…): en Windows todo ejecutable lleva extensión, y el arnés declara algunos por su ruta sin ella
+ * (`~/.local/bin/codebase-memory-mcp` saldría «no está» con el `.exe` instalado).
  * @param {string} cmd
  * @param {{platform?: string, exec?: Function, exists?: (p: string) => boolean, env?: object}} [ctx]
  */
@@ -142,8 +141,8 @@ function gitBashFor(ctx) {
  * Con qué se lanza el comando de `marker.js run-check`. Fuera de Windows, tal cual. En Windows:
  *   · un `bash` (o `bash.exe`) a secas se cambia por el bash de Git;
  *   · un programa que en el PATH es sólo un `.cmd`/`.bat` (`npx`, `npm`, `jest` instalados por npm) se lanza POR el
- *     bash de Git: `bash -c 'exec "$0" "$@"' <programa> <argumentos…>` (pase adversarial de la W6, hallazgos #1 y
- *     #2: run-check lanzaba `npx` sin shell, Node no lo encontraba, y vitest y jest nunca corrían en Windows);
+ *     bash de Git: `bash -c 'exec "$0" "$@"' <programa> <argumentos…>` (lanzar `npx` sin shell no
+ *     funciona: Node no lo encuentra, y vitest y jest nunca correrían en Windows);
  *   · un `.exe` (dotnet, node) y lo que no se encuentra quedan tal cual (lo que no está sale rojo con ENOENT, como
  *     siempre; test-gate.sh lo ve antes con `canLaunch()` y sale 5).
  *
@@ -188,8 +187,8 @@ function runCheckLaunch(cmdArgv, ctx = {}) {
 
 /**
  * ¿`run-check` puede lanzar `cmd`? Lo mira test-gate.sh ANTES de correr la suite, para salir 5 («no pude correr las
- * pruebas») en vez de dejar un rojo con totales vacíos (pase adversarial de la W6, hallazgo #8: `command -v npx` en
- * Git Bash encuentra el guion `npx`, pero run-check no lo podía lanzar). Usa la MISMA búsqueda que `runCheckLaunch()`.
+ * pruebas») en vez de dejar un rojo con totales vacíos (`command -v npx` en
+ * Git Bash encuentra el guion `npx`, pero run-check no lo podría lanzar sin esta búsqueda). Usa la MISMA búsqueda que `runCheckLaunch()`.
  * Fuera de Windows: un archivo del PATH que se pueda ejecutar (bash `command -v` cuenta también uno sin permiso).
  * @returns {{ok: boolean, reason: string|null}}
  */

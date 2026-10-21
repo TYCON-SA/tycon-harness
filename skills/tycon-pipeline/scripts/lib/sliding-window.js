@@ -1,13 +1,13 @@
 'use strict';
 /**
- * sliding-window.js — los verificadores del pase adversarial en una ventana de tres (story 7.19 del arnés).
+ * sliding-window.js — los verificadores del pase adversarial en una ventana de tres.
  *
- * Hasta la 7.19 la fase 2 del pase corría en tandas fijas de tres: cada tanda esperaba a su verificador más lento
- * antes de abrir la siguiente. La ventana tiene el mismo tope (el de 2026-07-30: cada verificador abre Bash en la
+ * En la fase 2 del pase, las tandas fijas de tres esperarían, cada una, a su verificador más lento
+ * antes de abrir la siguiente. La ventana tiene el mismo tope (tres: cada verificador abre Bash en la
  * máquina del dev) y repone apenas termina uno.
  *
  * El tope lo pone esta función, no el corredor: el pase corre con dos (la herramienta de flujos y `workflow-lite.js`
- * del lado Codex, cuyo tope es `TYCON_WFLITE_JOBS`), y pasarle todas las clases a su `parallel` dejaba el tope en el
+ * del lado Codex, cuyo tope es `TYCON_WFLITE_JOBS`), y pasarle todas las clases a su `parallel` dejaría el tope en el
  * del corredor. Por eso el guion la llama sobre promesas sueltas de `agent()`.
  *
  * El pase corre en una caja sin `require`, así que el núcleo va COPIADO dentro de `adversarial-verify.workflow.js`;

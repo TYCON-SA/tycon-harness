@@ -3,14 +3,14 @@
 /**
  * config-lint-real-configs.test.js — las configuraciones REALES de los proyectos de esta máquina no disparan nada.
  *
- * Vivía en `config-lint.test.js`. La primera versión del catálogo se escribió de memoria y 8 de los 10 hallazgos de
- * su primera corrida eran falsos positivos (el bloque `i18n:` entero y `visual_plan`, que sí los lee el arnés): un
+ * Un catálogo escrito de memoria da falsos positivos (por ejemplo, el bloque `i18n:` entero y
+ * `visual_plan`, que sí los lee el arnés): un
  * lint que pone en rojo config legítima se apaga en una semana. Este caso mide el catálogo contra lo que los repos
  * declaran de verdad.
  *
- * 🔴 NO va en la suite rápida del arranque (2026-10-05, story 8.18). Depende del disco del dev, no del arnés: en una
- * notebook con un proyecto viejo (una llave `advisors:` en la raíz) fallaba siempre, y la actualización automática
- * —que rechaza toda versión cuya suite rápida diga «FALLÓ»— dejó esa máquina tres versiones atrás sin que el arnés
+ * 🔴 NO va en la suite rápida del arranque. Depende del disco del dev, no del arnés: en una
+ * notebook con un proyecto viejo (una llave `advisors:` en la raíz) fallaría siempre, y la actualización automática
+ * —que rechaza toda versión cuya suite rápida diga «FALLÓ»— dejaría esa máquina atrasada sin que el arnés
  * tuviera nada roto. Acá sigue corriendo con las suites diarias y a mano; su rojo nombra el proyecto, y el arreglo va
  * en ese proyecto (o en el catálogo, si la llave sí la lee el arnés). Red: scripts/tests/quick-suite-machine-independent.test.js.
  *

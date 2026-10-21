@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * mockup.test.js — la maqueta de la pantalla antes de construirla (story 7.30).
+ * mockup.test.js — la maqueta de la pantalla antes de construirla.
  *
  * Hoy la pantalla se ve recién construida: un error de diseño se descubre cuando ya está programado y probado. La
  * maqueta es un HTML local, sin red y sin código, que el dueño aprueba con el plan; su huella queda anotada y la
@@ -311,7 +311,7 @@ test('T24 QaGuideArgs_ConAprobacion_PasaLaHuella', () => {
   assert.match(src, /qaGuideCheckArgs\(/);
   assert.match(src, /mockupApproval/);
 
-  // por el CLI: la story tenía maqueta aprobada y ya no tiene pantalla → no se compara, se dice y queda anotado
+  // por el CLI: si la story tiene maqueta aprobada y ya no tiene pantalla → no se compara, se dice y queda anotado
   const repo = mundo();
   const s = story(repo, ['src/Servicio.cs']);
   const sid = 'sess-t24';
@@ -330,7 +330,7 @@ test('T24 QaGuideArgs_ConAprobacion_PasaLaHuella', () => {
   assert.ok(gl.some((l) => l.name === 'mockup-compare' && l.status === 'skipped' && l.motivo === 'sin-pantalla'));
 });
 
-// ── Lo que encontró el pase adversarial (2026-10-17): regresiones ──────────────────────────────────────────────────
+// ── Regresiones ──────────────────────────────────────────────────
 const comparar = (src, textos) => {
   const f = path.join(fs.mkdtempSync(path.join(TMP, 'adv-')), 'Pantalla.tsx');
   fs.writeFileSync(f, src);
@@ -347,7 +347,7 @@ test('7.30-adv TextosCortos_CadenasYJsxLiteralesCuentan', () => {
     "  <p>{t('Cancelar')}</p><span>%</span></div>;",
   ].join('\n');
   const r = comparar(src, ['Número', 'Vence', 'Guardar', 'Cancelar', '%', 'Pagar']);
-  // «Pagar» sólo aparece en `onPagar`: sigue faltando (R13)
+  // «Pagar» sólo aparece en `onPagar`: sigue faltando
   assert.deepStrictEqual(r.missing.map((t) => t.text), ['Pagar']);
 });
 
@@ -456,7 +456,7 @@ test('Mockup_Capa_DatosInvalidos_NoEscribe @story-7.48 @ac-2', () => {
 });
 
 test('Mockup_SinCapa_HtmlIgualAlDeHoy @story-7.48 @ac-3', () => {
-  // la huella del HTML del modelo de muestra antes de que existieran las capas: una maqueta aprobada no cambia
+  // la huella del HTML del modelo de muestra sin capas: una maqueta aprobada no cambia
   const HOY = '4d993ecc8f381836a5a3c37b761da8614e546d93d42d2cc65950da496c3a7c0a';
   const { renderMockup } = require(MOCKUP);
   const huella = (m) => require('crypto').createHash('sha256').update(renderMockup(m)).digest('hex');

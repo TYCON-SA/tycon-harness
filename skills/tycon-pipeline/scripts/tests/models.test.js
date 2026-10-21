@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * models.test.js — story 7.29: los modelos de cada trabajo del pipeline, configurables por el admin del equipo.
+ * models.test.js — los modelos de cada trabajo del pipeline, configurables por el admin del equipo.
  *
  * Lo que no se puede perder:
  *   - Sin `team-repos.json → models` y sin pedidos, los campos de modelos de los cinco comandos son los de hoy (la foto
@@ -193,7 +193,7 @@ function medirCaso([, cmd, cual, extra], opts) {
   return { r, campos: campos(cmd, r.json) };
 }
 
-// Las tres formas de «sin configuración» del AC 2.
+// Las tres formas de «sin configuración».
 const SIN_CONFIG = {
   'home-aislado': () => ({}),
   'arbol-sin-team-repos': () => ({ tree: labTree() }),
@@ -263,7 +263,7 @@ test('T1 Defaults_UnSoloLugar_CopiasVerificadas @story-7.29 @ac-1', () => {
   // el model: de cada agents/*.md del público es el que da defaultFor
   const agentes = path.join(RAIZ, 'agents');
   const mds = fs.readdirSync(agentes).filter((f) => f.endsWith('.md'));
-  // (desde la 8.41 los revisores de un stack viven en su paquete, no en agents/ del núcleo: quedan los del núcleo)
+  // (los revisores de un stack viven en su paquete, no en agents/ del núcleo: quedan los del núcleo)
   assert.ok(mds.length >= 10, `${mds.length} revisores`);
   for (const f of mds) {
     const fm = (fs.readFileSync(path.join(agentes, f), 'utf8').match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
@@ -314,7 +314,7 @@ test('T3 Resolver_GeneralPorRevisorDefaultYFrontmatter @story-7.29 @ac-6', () =>
   assert.equal(M.normalizeSessionModel('gpt-5.6-terra', eq), 'opus');
   assert.equal(M.normalizeSessionModel('xyz', eq), null);
   assert.equal(M.normalizeSessionModel(undefined, eq), null);
-  // pase adversarial (2do): un solo valor de la organización por encima del techo es UN aviso (una clave), no uno por revisor
+  // un solo valor de la organización por encima del techo es UN aviso (una clave), no uno por revisor
   const w = [];
   M.resolveReviewers({ org: { reviewers: 'fable', mandatory_ceiling: true, ceiling: 'opus' }, set: ['acme-a', 'acme-b', 'acme-c'], agentsDir, warnings: w });
   assert.deepStrictEqual([...new Set(w.map((x) => x.key))], ['organization:reviewers']);
@@ -348,7 +348,7 @@ test('T3 Resolver_GeneralPorRevisorDefaultYFrontmatter @story-7.29 @ac-6', () =>
   assert.deepStrictEqual(M.readOrgModels({ dir: dir(JSON.stringify(equipo({ helpers: 'opus' }))), teamRepos: TR }), { declared: true, data: { helpers: 'opus' }, problem: null });
   assert.match(M.readOrgModels({ dir: dir('{ roto'), teamRepos: TR }).problem, /^no pude leer la configuración de la organización \(.*: no es JSON válido/);
   assert.match(M.readOrgModels({ dir: dir(JSON.stringify(equipo({ mandatory_ceiling: true }))), teamRepos: TR }).problem, /models\.mandatory_ceiling.*no sé si hay techo$/);
-  // pase adversarial: un problema AJENO a models con un techo declarado no puede perder el techo callado
+  // un problema AJENO a models con un techo declarado no puede perder el techo callado
   const ajeno = { ...equipo({ mandatory_ceiling: true, ceiling: 'sonnet' }), bogus: 1 };
   assert.match(M.readOrgModels({ dir: dir(JSON.stringify(ajeno)), teamRepos: TR }).problem, /no pude leer la configuración de la organización \(.*bogus: clave desconocida\): uso los valores de hoy: no sé si hay techo$/);
   assert.match(M.readOrgModels({ dir: dir(JSON.stringify({ version: 999, models: { mandatory_ceiling: true, ceiling: 'sonnet' } })), teamRepos: TR }).problem, /no sé si hay techo$/);
@@ -434,14 +434,14 @@ test('T7 Adversarial_PreguntaDeFable_OrganizacionY719 @story-7.29 @ac-8', () => 
   assert.equal(never.json.fable_upsell, undefined);
   assert.deepStrictEqual(never.json.model_question, { value: 'never', origin: 'organization' });
   assert.ok(leerGates(home).some((g) => g.check === 'model-question' && g.origin === 'organization'));
-  // la clave de la 7.19 en la máquina (never) y la de la organización (ask): gana la organización y se nombra la otra
+  // la clave de la pregunta de modelo en la máquina (never) y la de la organización (ask): gana la organización y se nombra la otra
   const home2 = tmp('home');
   const tree = labTree(equipo({ adversarial: { fable_question: 'ask' } }));
   execFileSync(process.execPath, [path.join(tree, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home: home2, tree }), stdio: 'ignore' });
   const ambas = conConfig('deep-review-gate', 'heavy', [], null, { tree, home: home2 });
   assert.ok(ambas.json.fable_upsell, 'gana la organización');
   assert.match(JSON.stringify(ambas.json) + ambas.stderr, /model_question.*no se usa|no se usa.*model_question/);
-  // la de la 7.19 sola: decide ella
+  // la de la pregunta de modelo sola: decide ella
   const home3 = tmp('home');
   const tree3 = labTree(equipo({ helpers: 'haiku' }));
   execFileSync(process.execPath, [path.join(tree3, 'scripts', 'lib', 'tycon-config.js'), 'set', 'adversarial.model_question', 'never'], { env: ambiente({ home: home3, tree: tree3 }), stdio: 'ignore' });

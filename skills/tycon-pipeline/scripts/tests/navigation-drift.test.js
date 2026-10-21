@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * navigation-drift.test.js — el mapa de navegación cambió y nadie volvió a mirar las pantallas
- * ya escritas (FIX-8, caso C7 de la auditoría del 2026-08-25).
+ * navigation-drift.test.js — si el mapa de navegación cambia, alguien tiene que volver a mirar las pantallas
+ * ya escritas.
  *
  * WIRING-C5 compara el layout del código contra el documento de arquitectura de información en UN
  * SOLO SENTIDO: código nuevo → documento. Si el documento cambia, lo ya escrito no se revisa nunca.
@@ -25,7 +25,7 @@ const nd = require('../lib/navigation-drift.js');
 
 function lab() { return fs.mkdtempSync(path.join(os.tmpdir(), 'navdrift-')); }
 
-// el revisor de cableado vive en un paquete (story 8.41): un paquete de juguete que declara el prefijo WIRING
+// el revisor de cableado vive en un paquete: un paquete de juguete que declara el prefijo WIRING
 const WIRING = 'rev-cableado-juguete';
 function paqueteDeJuguete(dir, nombre, revisor, json = null) {
   fs.mkdirSync(path.join(dir, nombre, 'agents'), { recursive: true });
@@ -38,7 +38,7 @@ paqueteDeJuguete(PAQUETES, 'juguete', WIRING);
 process.env.TYCON_PACKS_DIR = PAQUETES;
 process.env.TYCON_PACKS_DEFAULT = 'all';
 
-// story 8.41 · T45 (AC 50): el revisor sale de los paquetes ACTIVOS por su prefijo; sin él, el aviso lo dice; un manifiesto
+// T45: el revisor sale de los paquetes ACTIVOS por su prefijo; sin él, el aviso lo dice; un manifiesto
 // ilegible no se lee como «no hay paquete»
 test('T45 NavigationDrift_WiringFromActivePack_SaysWhenNone', () => {
   const d = lab();

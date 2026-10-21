@@ -3,14 +3,12 @@
  * test-scope.js — deducir QUÉ proyecto testear en un repo con más de uno, y
  * decir con todas las letras cuándo NO se puede.
  *
- * Decisiones del dev 2026-08-13 (`dec-2026-08-13-deducir-el-alcance` +
- * `dec-2026-08-13-frenar-si-no-sabe`), tomadas al cerrar la Story 4.30 de
- * un repo del equipo. El caso disparador está MEDIDO, no supuesto: ese repo tiene
- * `apinetcore/` (.NET) y `mcp/` (node --test); la story tocó SÓLO `mcp/`; el
- * gate eligió .NET porque el `.csproj` ganaba la detección por estar primero,
- * falló en 1,3s (NETSDK1045 — la máquina tiene otro SDK) y dejó un
- * `tests-result.json` en rojo con el id `4.30` puesto. Eso es peor que no dejar
- * nada: PARECE verificación. Antes de esto el gate avisaba por stderr y corría
+ * Se deduce el alcance del diff, y se frena si no se sabe. El caso está MEDIDO, no
+ * supuesto: un repo del equipo tiene `apinetcore/` (.NET) y `mcp/` (node --test); si la
+ * story toca SÓLO `mcp/` y el gate elige .NET porque el `.csproj` gana la detección por
+ * estar primero, falla en 1,3s (NETSDK1045 — la máquina tiene otro SDK) y deja un
+ * `tests-result.json` en rojo con el id de la story puesto. Eso es peor que no dejar
+ * nada: PARECE verificación. Sin esto, el gate avisaría por stderr y correría
  * igual — y la doctrina del propio equipo dice que un control que hay que
  * acordarse de invocar es un control que no corre.
  *
@@ -79,7 +77,7 @@ function parseDeclaredFiles(content) {
 }
 
 // Sólo los que la story declara CREAR. Los usa test-gate.sh como respaldo del cruce de
-// cobertura cuando git ya no reporta archivos "added" (típico: iteración de fix POSTERIOR
+// cobertura cuando git no reporta archivos "added" (típico: iteración de fix POSTERIOR
 // al commit). Vive acá y no en el bloque Python del gate a propósito: el parseo del
 // frontmatter es una sola verdad — si cambia el formato, cambia en UN lugar.
 function parseFilesToCreate(content) {
@@ -95,7 +93,7 @@ function storyIdOf(content) {
 }
 
 // ── Los proyectos que TIENEN suite de tests ─────────────────────────────────
-// Espeja la detección que ya hacía test-gate.sh (para no tener dos verdades
+// Espeja la detección de test-gate.sh (para no tener dos verdades
 // sobre "qué cuenta como proyecto testeable"): .NET por `.sln`/`.csproj` hasta
 // profundidad 3; node por `package.json` en la raíz o en un subdir inmediato,
 // con vitest o con `node --test` en el script `test`.
@@ -125,7 +123,7 @@ function walkFiles(root, maxDepth, cb) {
 function nodeRunnerOfPkg(text) {
   if (/"vitest"/.test(text)) return 'vitest';
   if (/"test"\s*:\s*"[^"]*node --test/.test(text)) return 'node-test';
-  // jest — 4to runner del equipo (2026-08-15). Va ÚLTIMO a propósito: si un package.json declara
+  // jest, otro runner del equipo. Va ÚLTIMO a propósito: si un package.json declara
   // `node --test` como script y jest en devDependencies (herramienta suelta), gana el script.
   if (/"jest"\s*:/.test(text) || /"test"\s*:\s*"[^"]*\bjest\b/.test(text)) return 'jest';
   return null;
@@ -145,11 +143,10 @@ function discoverCandidates(repoDir) {
 
   // ── .NET ───────────────────────────────────────────────────────────────────
   // 🔴 El candidato es la carpeta que CONTIENE el .sln/.csproj, no el primer segmento del camino
-  // (cambio 2026-08-15). Antes se colapsaba a `topSegment(rel)`, así que en un repo con
-  // `custom-forms/backend-api-dotnet/App.sln` el candidato salía `custom-forms` — una carpeta
+  // Colapsar a `topSegment(rel)` haría que en un repo con
+  // `custom-forms/backend-api-dotnet/App.sln` el candidato salga `custom-forms` — una carpeta
   // contenedora donde `dotnet test` responde MSB1003 ("especifique un archivo de proyecto o
-  // solución"). El gate corría igual y dejaba constancia EN ROJO con el id de la story puesto.
-  // Caso medido: el repo del framework, Story 10.2, 2026-08-15.
+  // solución"). El gate correría igual y dejaría constancia EN ROJO con el id de la story puesto.
   const slnFiles = [];
   const csprojDirs = new Set();
   walkFiles(repoDir, 3, (rel) => {
@@ -163,18 +160,16 @@ function discoverCandidates(repoDir) {
     if (![...slnDirs].some((s) => isUnder(d, s))) add(d, 'dotnet');
   }
 
-  // ── Territorio del candidato .sln (fix 2026-08-28, caso Story 1.8 de un producto del equipo — guides/maintaining/incident-log.md#case-sln-subfolders-without-vote-2026-08-28) ──
-  // El candidato RAÍZ '.' vota SÓLO por archivos sin '/' (decisión 2026-08-13 anti "la raíz
-  // gana por descarte") — correcto para docs, pero dejaba sin voto a los archivos que SÍ son
-  // del proyecto raíz y viven en subcarpetas (`src/NimboBackend/*.cs`): 0 votos → freno
-  // falso (exit 4) en los 4 repos del equipo con forma "sln raíz + subproyecto" (Pacara,
-  // dos de la plataforma y uno de un cliente). La salida NO es relajar el freno: es leer el manifest
+  // ── Territorio del candidato .sln ──
+  // El candidato RAÍZ '.' vota SÓLO por archivos sin '/' (regla anti "la raíz
+  // gana por descarte") — correcto para docs, pero deja sin voto a los archivos que SÍ son
+  // del proyecto raíz y viven en subcarpetas (`src/App/*.cs`): 0 votos → freno
+  // falso (exit 4) en los repos con forma "sln raíz + subproyecto". La salida NO es relajar el freno: es leer el manifest
   // que ya existe y no miente — las rutas de proyecto del propio .sln. Territorio = los dirs
   // de los .csproj que la solución declara; un archivo bajo uno de esos dirs vota por el
-  // candidato de la solución (ver deduceScope). Los .md/docs siguen sin votar: el caso
-  // un repo del equipo 2026-08-13 queda intacto.
+  // candidato de la solución (ver deduceScope). Los .md/docs siguen sin votar.
   // Sólo .sln a propósito: un package.json raíz no declara qué carpetas testea su suite
-  // (asimetría documentada en guide-update-proposals.md TESTGATE-DEDUCTOR-LAYOUT-GAP-1).
+  // (asimetría documentada en guide-update-proposals.md).
   for (const slnRel of slnFiles) {
     const sdir = dirOf(slnRel);
     const cand = byDir.get(sdir);
@@ -194,12 +189,12 @@ function discoverCandidates(repoDir) {
     } catch (_e) { /* .sln ilegible → fallback abajo */ }
     // Fallback (sln vacío o ilegible): los dirs de .csproj cubiertos por esta solución — la
     // misma aproximación que ya usa el descarte de candidatos. Sin datos → sin territorio →
-    // comportamiento de siempre (frena). El error degrada SIEMPRE al freno, nunca a elegir.
+    // el comportamiento de freno. El error degrada SIEMPRE al freno, nunca a elegir.
     if (!dirs.length) dirs = [...csprojDirs].filter((d) => isUnder(d, sdir));
-    // 🔴 UNIÓN, no asignación (fix 2026-08-28, pase adversarial): dos .sln en el MISMO dir
-    // comparten candidato, y asignar hacía que el último procesado PISARA el territorio del
-    // primero — con orden de readdirSync, o sea no determinístico. Caso real: un repo de la plataforma
-    // tiene `EventManager.sln` + `EventManager_release.sln` en la raíz y el _release no
+    // 🔴 UNIÓN, no asignación: dos .sln en el MISMO dir
+    // comparten candidato, y asignar haría que el último procesado PISARA el territorio del
+    // primero — con orden de readdirSync, o sea no determinístico. Ejemplo: un repo
+    // tiene `App.sln` + `App_release.sln` en la raíz y el _release no
     // declara el proyecto de tests → freno falso sobre los tests, o PEOR, elección del otro
     // candidato en un cambio mixto. La unión es lo conservador: más territorio nunca elige
     // de más (dos proyectos con votos = ambiguo = freno).
@@ -208,8 +203,7 @@ function discoverCandidates(repoDir) {
   }
 
   // ── node ───────────────────────────────────────────────────────────────────
-  // Mismo alcance de profundidad que .NET (antes: sólo raíz + 1 nivel, así que un
-  // `custom-forms/runtime-app/package.json` era invisible). `walkFiles` ya saltea node_modules,
+  // Mismo alcance de profundidad que .NET: un `custom-forms/runtime-app/package.json` también se ve. `walkFiles` ya saltea node_modules,
   // bin, obj, dist, coverage y las carpetas ocultas.
   walkFiles(repoDir, 3, (rel) => {
     if (!/(^|\/)package\.json$/.test(rel)) return;
@@ -270,11 +264,11 @@ function deduceScope({ files, candidates }) {
   // Prefijo más largo primero: un candidato `a/b` gana sobre `a` para `a/b/x.ts`.
   const dirs = cands.map((c) => c.dir).filter((d) => d !== '.').sort((a, b) => b.length - a.length);
   const hasRoot = Object.prototype.hasOwnProperty.call(votes, '.');
-  // la raíz es de una herramienta de lib/test-runners.js (no .NET ni node, que siguen con su regla de siempre)
+  // la raíz es de una herramienta de lib/test-runners.js (no .NET ni node, que siguen con su regla propia)
   const raiz = cands.find((c) => c.dir === '.');
   const raizGenerica = Boolean(raiz && !['dotnet', 'vitest', 'node-test', 'jest', 'suites-json'].includes(raiz.runner));
   const esCodigo = (f) => require('./code-files.js').isSource(f);
-  // Territorio (fix 2026-08-28): los dirs que el .sln de un candidato declara como suyos —
+  // Territorio: los dirs que el .sln de un candidato declara como suyos —
   // ver discoverCandidates. Prefijo más largo primero, igual que los candidatos. Un candidato
   // explícito SIEMPRE gana sobre un territorio (el `owner` de arriba se evalúa antes).
   const terrOwner = new Map();
@@ -297,9 +291,9 @@ function deduceScope({ files, candidates }) {
     if (hasRoot && raizGenerica && esCodigo(f)) { votes['.'] += 1; considered += 1; continue; }
     // 🔴 El candidato raíz ('.', típicamente un `.sln` en la raíz) vota SÓLO por los archivos que
     // están en la raíz misma. Con un repo que tiene proyecto raíz + subproyectos, "está contenido
-    // en la raíz" es cierto para TODO y por lo tanto no discrimina nada: `tasks/todo.md` terminaba
+    // en la raíz" es cierto para TODO y por lo tanto no discrimina nada: `tasks/todo.md` terminaría
     // eligiendo el proyecto .NET por descarte — el defecto exacto que este freno viene a cerrar.
-    // Medido en un repo del equipo el 2026-08-13: sin story, 3 archivos de documentación deducían '.'.
+    // Sin este límite, 3 archivos de documentación sin story deducirían '.'.
     // La ÚNICA otra vía de voto es el territorio declarado por un manifest (.sln): estructura,
     // no descarte. `src/App/Repo.cs` vota '.' porque el .sln de la raíz declara `src/App` —
     // `tasks/todo.md` sigue sin votar. Sin dueño ni territorio → NO vota; si nadie vota, es
@@ -326,7 +320,7 @@ function deduceScope({ files, candidates }) {
     };
   }
   // Dos o más proyectos tocados: no es ambiguo, se corren todos (cada uno con su suite) y el total es verde sólo si
-  // todos lo son. Frenar acá dejaba sin medir el back de una story que toca back y front.
+  // todos lo son. Frenar acá dejaría sin medir el back de una story que toca back y front.
   return {
     multi: true, ambiguous: false, scope: null, scopes: hit, votes,
     reason: `los archivos tocan ${hit.length} proyectos con tests (${hit.join(', ')}): corre cada uno`,
@@ -416,8 +410,8 @@ if (require.main === module) {
   if (tsv) {
     // Orden fijo, consumido por test-gate.sh. 🔴 El separador es \x1f (unit separator) y NO un
     // tabulador: el `read` de bash trata el tab como espacio en blanco de IFS, así que colapsa los
-    // separadores consecutivos y un campo VACÍO en el medio corre todos los de atrás — lo cazó el
-    // test del freno (el alcance llegaba a bash valiendo "1", que era el flag `ambiguous`).
+    // separadores consecutivos y un campo VACÍO en el medio corre todos los de atrás — el test del
+    // freno lo cubre (sin eso, el alcance llega a bash valiendo "1", que es el flag `ambiguous`).
     process.stdout.write([
       r.multi ? 1 : 0,
       r.scope || '',

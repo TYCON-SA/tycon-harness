@@ -9,11 +9,11 @@ function check(name, cond) { if (cond) console.log(`  ✓ ${name}`); else { fail
 
 console.log('qa-guide — casos:');
 
-// 2026-07-28 — ACs con encabezado `### AC1 — titulo`, el formato de las stories de un producto del equipo.
-// El parser local de qa-guide.js sólo entendía listas numeradas (`1. ...`), así que para esas
-// stories devolvía CERO ACs: la guía salía con el encabezado diciendo "4 ACs" (ese número lo
-// calcula OTRO parser, el canónico) y el cuerpo VACÍO, sin un solo caso que probar. Dos parsers
-// leyendo el mismo documento y contestando distinto. Lo vio el dev al abrir la guía.
+// ACs con encabezado `### AC1 — titulo`, el formato de las stories de un producto del equipo.
+// El parser local de qa-guide.js tiene que entender también el encabezado, no sólo listas
+// numeradas (`1. ...`): si no, para esas stories devolvería CERO ACs y la guía saldría con el encabezado
+// diciendo "4 ACs" (ese número lo calcula OTRO parser, el canónico) y el cuerpo VACÍO, sin un solo
+// caso que probar. Dos parsers leyendo el mismo documento y contestando distinto.
 {
   const spec = [
     '---', 'story: "S1"', '---',
@@ -99,7 +99,7 @@ check('parsePasos: rol none (—) → centinela', JSON.stringify(pasosRoles[17].
 check('parseDefaultRole: lee el default del tope', JSON.stringify(qa.parseDefaultRole('Usuario por defecto: Encargado general\n\n## AC 1\n...')) === JSON.stringify(['Encargado general']));
 check('parseDefaultRole: sin línea → null', qa.parseDefaultRole('## AC 1\nsin default') === null);
 
-// resolveRoles: rol explícito gana; wv→sin login; pend/run heredan default (bug 2026-07-13).
+// resolveRoles: rol explícito gana; wv→sin login; pend/run heredan default.
 const DEF = ['Encargado general'];
 check('resolveRoles: explícito gana sobre default', JSON.stringify(qa.resolveRoles(['Técnico'], 'pend', DEF)) === JSON.stringify({ roles: ['Técnico'], roleNone: false }));
 check('resolveRoles: pend SIN evidencia hereda el default (no sin-login)', JSON.stringify(qa.resolveRoles(null, 'pend', DEF)) === JSON.stringify({ roles: ['Encargado general'], roleNone: false }));
@@ -145,7 +145,7 @@ check('NO tiene botón imprimir', !/window\.print/.test(html));
 check('embebe el estado guardado (qa-state)', /id="qa-state"[^>]*>\{"v1":"pass"\}</.test(html));
 check('la nota dice que Guardar escribe el HTML', /este mismo archivo HTML/.test(html));
 check('incluye el preámbulo', /setup/.test(html));
-// Guardar usa el filename real generado (no un derivado del SID) — bug del orphan 10-4-guia-qa.html.
+// Guardar usa el filename real generado (no un derivado del SID).
 const htmlFn = qa.renderHtml({ sid: '10.4', title: 'T', cards: [], stats: { total: 0, runtime: 0, waived: 0, notVerifiable: 0 }, generatedAt: 'x', outFileName: '10-4-flujo-devolucion-guia-qa.html' });
 check('Guardar usa el outFileName real (no SID-based)', /var FNAME="10-4-flujo-devolucion-guia-qa\.html"/.test(htmlFn) && /var fname=FNAME/.test(htmlFn));
 check('sin outFileName → fallback SID-based', /var FNAME="9-9-guia-qa\.html"/.test(qa.renderHtml({ sid: '9.9', title: 'T', cards: [], stats: { total: 0, runtime: 0, waived: 0, notVerifiable: 0 }, generatedAt: 'x' })));
@@ -163,7 +163,7 @@ check('isUiStory: frontmatter con .tsx → UI', qa.isUiStory('', '  - src/App.ts
 check('isUiStory: CeiboFrontEnd → UI', qa.isUiStory('', 'files:\n  - CeiboFrontEnd/x'));
 check('isUiStory: E2E-N en el body → UI', qa.isUiStory('| E2E-1 | spec |', ''));
 check('isUiStory: puro backend → no UI', qa.isUiStory('nada de front', '  - src/Foo.cs') === false);
-// Story 7.18: con listas de archivos declaradas, la prosa del frontmatter no decide; sin listas, sí.
+// Con listas de archivos declaradas, la prosa del frontmatter no decide; sin listas, sí.
 check('isUiStory: driver con ruta HTTP /frontend + listas .cs → no UI',
   qa.isUiStory('', 'driver: "GET /api/admin/algo/frontend responde sin sesion"\nfiles_to_modify:\n  - src/AcmeBackend/Estado.cs') === false);
 check('isUiStory: título de frente sin listas → UI',
@@ -173,8 +173,8 @@ check('isUiStory: título de frente sin listas → UI',
 const seq = qa.parsePasosSequence(['## GRUPO Parte 1', '## AC 3', '## AC 1', '## GRUPO Parte 2', '## AC 2'].join('\n'));
 check('parsePasosSequence: orden respeta el archivo (3 antes que 1)', JSON.stringify(seq) === JSON.stringify([{ group: 'Parte 1' }, { ac: 3 }, { ac: 1 }, { group: 'Parte 2' }, { ac: 2 }]));
 
-// --- (6) titular legible: la regla que el dev pidió hacer EXIGIBLE (2026-08-05).
-// El harness AVISABA al generar la guía pero el gate no lo pedía, así que una guía podía
+// --- (6) titular legible: la regla que se hace EXIGIBLE.
+// El harness avisa al generar la guía y el gate lo exige: si no, una guía podría
 // cerrar en verde mostrándole al tester el texto técnico del criterio. La condición que
 // decide es el mismo detector de jerga: si el AC se lee solo, no se exige descripción.
 {

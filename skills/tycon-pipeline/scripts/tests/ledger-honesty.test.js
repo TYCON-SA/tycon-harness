@@ -3,9 +3,8 @@
  * ledger-honesty.test.js — que el pipeline sepa CUÁNDO no sabe qué cambió, y que los probes
  * transitorios del pase adversarial no se cuenten como trabajo del repo.
  *
- * Caso disparador (Story 9.3.1 del repo del framework + la M-10 de un producto del equipo, 2026-08-26): el registro de
- * ediciones de la corrida tenía 7 entradas y las 7 eran scratchpad de los probes del 5b. Cero
- * ediciones del repo. `smart-reloop` devolvió un delta chico y nadie avisó que estaba ciego —
+ * Caso que cubre: un registro de ediciones con 7 entradas que son todas scratchpad de los probes
+ * del 5b. Cero ediciones del repo. `smart-reloop` devuelve un delta chico y nadie avisa que está ciego —
  * un archivo con contenido no despierta la sospecha de "esto no se está escribiendo".
  *
  * Correr: node --test ~/.claude/agent-skills/skills/tycon-pipeline/scripts/tests/ledger-honesty.test.js
@@ -17,7 +16,7 @@ const h = require('../lib/ledger-honesty.js');
 
 const REPO = '/Users/x/SourceCode/MiRepo';
 
-// ── Reconocer los probes: los nombres REALES observados en los dos repos ──────
+// ── Reconocer los probes: nombres de probes reales ──────
 
 test('esProbe reconoce los probes .NET y JS/TS observados en producción', () => {
   const reales = [
@@ -37,10 +36,10 @@ test('esProbe reconoce los probes .NET y JS/TS observados en producción', () =>
 
 test('esProbe NO se come tests legítimos (un falso positivo acá borra trabajo real del delta)', () => {
   const legitimos = [
-    // 🔴 Los 5 primeros los aportó la revisión adversarial (2026-08-26): la 1ra versión del regex
-    // matcheaba cualquier nombre que empezara con `_adv`/`__adv`, y eso se come partials de Sass y
-    // módulos privados que son trabajo REAL. Sacar un archivo real de la foto es peor que no
-    // filtrar nada: el advisor que tenía que re-auditarlo no se entera.
+    // 🔴 Los 5 primeros fijan que el regex no matchee cualquier nombre que empiece con
+    // `_adv`/`__adv`: eso se comería partials de Sass y módulos privados que son trabajo REAL.
+    // Sacar un archivo real de la foto es peor que no filtrar nada: el advisor que tiene que
+    // re-auditarlo no se entera.
     `${REPO}/src/styles/_advanced.scss`,
     `${REPO}/src/lib/__adapter.ts`,
     `${REPO}/src/styles/_adv_layout.scss`,
@@ -65,7 +64,7 @@ test('esDelRepo distingue el repo del scratchpad', () => {
   assert.equal(h.esDelRepo(null, REPO), false);
 });
 
-// ── El diagnóstico: el caso real de la 9.3.1 ─────────────────────────────────
+// ── El diagnóstico ─────────────────────────────────
 
 test('9.3.1: registro con 7 entradas de scratchpad + git ve 4 archivos = CIEGO', () => {
   const r = h.diagnosticar({

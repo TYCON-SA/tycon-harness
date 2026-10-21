@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * mutation-check.js — CHEQUEO DE MUTANTES del harness TYCON (2026-08-13).
+ * mutation-check.js — CHEQUEO DE MUTANTES del harness TYCON.
  *
  * Por qué existe: la suite en verde NO prueba que los tests ejerzan lo que
- * dicen — ya pasó en este harness que un test pasaba sin probar nada. La
- * compensación manual era romper cada control a mano y mirar que un test se
- * ponga rojo; eso dependía de que alguien se acuerde. Esto lo mecaniza: muta
+ * dicen — un test puede pasar sin probar nada. La
+ * compensación manual es romper cada control a mano y mirar que un test se
+ * ponga rojo; eso depende de que alguien se acuerde. Esto lo mecaniza: muta
  * las líneas AGREGADAS del diff (operadores chicos y determinísticos — ver
  * lib/mutation-mutants.js), corre los tests que la story declara, y reporta
  * qué mutantes murieron (algún test los cazó) y cuáles SOBREVIVIERON (nadie
@@ -17,10 +17,10 @@
  *                          [--files a.ts b.ts] [--max-mutants N] [--json]
  *
  *   - Targets: ÚNICAMENTE lo que la story declara en files_to_create/
- *     files_to_modify, sin los que parecen test (cambio de diseño 2026-08-13:
- *     el pipeline es POR STORY — descubrir targets mirando `git diff HEAD` /
- *     `ls-files --others` mutaba archivos ajenos al scope y seguía symlinks
- *     fuera del repo; N1/N2 de la revisión adversarial #2). `--files` queda
+ *     files_to_modify, sin los que parecen test (el pipeline es POR STORY:
+ *     descubrir targets mirando `git diff HEAD` / `ls-files --others`
+ *     mutaría archivos ajenos al scope y seguiría symlinks
+ *     fuera del repo). `--files` queda
  *     como override explícito. Las LÍNEAS a mutar sí salen del delta: diff
  *     contra HEAD para tracked, archivo entero para los nuevos.
  *   - Todo target (declarado o de --files) tiene que resolver DENTRO del repo
@@ -30,7 +30,7 @@
  *   - Tests a correr: los que la story declara cuyo path parezca de test. Si no
  *     declara ninguno → exit 2 con el motivo. Sólo se sabe correr `node --test`
  *     (.js/.mjs/.cjs) — la señal es la EXTENSIÓN (estructura), jamás escanear
- *     el repo buscando nombres de herramientas (prohibición #6 del dev).
+ *     el repo buscando nombres de herramientas.
  *   - --max-mutants default 20 (los excedentes quedan en `skipped`).
  *
  * Exit codes:
@@ -79,10 +79,10 @@ function looksLikeTestPath(p) {
   return false;
 }
 
-// H4/N3 (revisiones adversariales 2026-08-13): este chequeo hoy SÓLO sabe
+// Este chequeo SÓLO sabe
 // correr `node --test`, y qué sabe correr se decide por ESTRUCTURA — la
 // extensión del test declarado — JAMÁS escaneando contenido en busca de
-// palabras como «vitest» (prohibición #6 del dev: un comentario que diga
+// palabras como «vitest» (un comentario que diga
 // vitest no puede apagar un control, y la herramienta número once lo rompe
 // igual). .js/.mjs/.cjs → corrible; todo lo demás → exit 2 estructural honesto.
 const NODE_RUNNABLE_RE = /\.(js|mjs|cjs)$/i;
@@ -127,20 +127,20 @@ function addedLinesOf(repo, relFile) {
 // Devuelve (promesa de) { code, timedOut } con el exit code REAL. Timeout/señal
 // → la suite no terminó bien → cuenta como NO-verde (code 1): un mutante que
 // cuelga la suite también fue "detectado". Pero el dato `timedOut` se PROPAGA
-// (N4, revisión #2): en la corrida BASE, «la maté yo por tiempo» y «falló» son
-// diagnósticos distintos — tirarlo convertía una suite lenta VERDE en "rota".
+// en la corrida BASE, «la maté yo por tiempo» y «falló» son
+// diagnósticos distintos — tirarlo convertiría una suite lenta VERDE en "rota".
 //
-// 🔴 Es spawn ASÍNCRONO a propósito (hallazgo H2a, 2026-08-13): con spawnSync el
+// 🔴 Es spawn ASÍNCRONO a propósito: con spawnSync el
 // event loop queda bloqueado durante toda la suite y los handlers de señal del
-// runner NO PUEDEN correr — un SIGTERM en medio de un mutante quedaba diferido
-// hasta el final y el proceso ni restauraba ni salía 2 (medido: exit 0 ignorando
+// runner NO PUEDEN correr — un SIGTERM en medio de un mutante quedaría diferido
+// hasta el final y el proceso ni restauraría ni saldría 2 (saldría 0 ignorando
 // la señal). Con await, el loop queda libre y el handler restaura al instante.
 function defaultRunTests({ repo, testFiles }) {
   // 🔴 NODE_TEST_CONTEXT se hereda cuando ESTE proceso corre bajo `node --test`
   // (p.ej. desde la propia suite del harness) y hace que el `node --test` hijo
   // salga SIEMPRE 0 — aunque los tests fallen. Con eso heredado, TODO mutante
-  // "sobrevive" y el chequeo miente. Lo cazó el control positivo de la suite
-  // (2026-08-13): sin esta limpieza, killed=0 con un mutante que a mano moría.
+  // "sobrevive" y el chequeo miente (killed=0 con un mutante que a mano moría).
+  // Por eso se limpia del entorno del hijo.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   return new Promise((resolve, reject) => {
@@ -191,15 +191,14 @@ function crearCopiaDeTrabajo(repo, log) {
         else fs.copyFileSync(src, dst);
       } catch { /* un untracked ilegible no frena la copia */ }
     }
-    // 🔴 Y lo que git IGNORA también tiene que estar (revisión adversarial 2026-09-06, hallazgos
-    // #4/#12): la primera copia sólo enlazaba `<repo>/node_modules`. Con las dependencias en una
-    // subcarpeta (11 repos del equipo; 5 sin node_modules en la raíz), un `.env`, un `local.json` o
-    // un `dist/` que la suite lee, la BASE fallaba en la copia con la suite VERDE en el original, el
-    // motivo acusaba a la suite, y el gate lo trataba como «no aplicable — sigue sin frenar»: el
-    // control se apagaba solo, en silencio, en cada corrida. Lo ignorado se ENLAZA si es un
+    // 🔴 Y lo que git IGNORA también tiene que estar. Enlazar sólo `<repo>/node_modules` no alcanza: con las
+    // dependencias en una subcarpeta, un `.env`, un `local.json` o un `dist/` que la suite lee, la BASE
+    // fallaría en la copia con la suite VERDE en el original, el motivo acusaría a la suite, y el gate lo
+    // trataría como «no aplicable — sigue sin frenar»: el control se apagaría solo, en silencio, en cada
+    // corrida. Lo ignorado se ENLAZA si es un
     // directorio (node_modules, dist, bin/obj: no se copia nada pesado) y se COPIA si es un archivo
     // suelto. Un mutante que escriba en un directorio ignorado enlazado escribe en el original —
-    // es material que git ya no cuida, y es el precio de que la suite encuentre sus dependencias.
+    // es material que git no cuida, y es el precio de que la suite encuentre sus dependencias.
     let ignorados = [];
     try {
       ignorados = g(repo, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])
@@ -254,10 +253,9 @@ async function runMutationCheck({
   let repo = repoOriginal;
   // Seam inyectable de fs para la sección SAGRADA del restore (DI con defaults
   // reales — en producción es fs puro, cero cambio de comportamiento). Existe
-  // porque la propia medicina de esta herramienta encontró que la verificación
-  // byte a byte del restore no estaba cubierta por ningún test (2026-08-13:
-  // `restoreOk = true;` hardcodeado dejaba la suite en verde): sin un seam no
-  // hay forma de simular un restore que escribe bytes distintos.
+  // porque la verificación byte a byte del restore, sin un seam, no se puede cubrir con un test
+  // (un `restoreOk = true;` hardcodeado dejaría la suite en verde): no hay forma de simular un restore
+  // que escribe bytes distintos.
   const fso = {
     readFileSync: fs.readFileSync.bind(fs),
     writeFileSync: fs.writeFileSync.bind(fs),
@@ -280,25 +278,25 @@ async function runMutationCheck({
   }
 
   // 🔴 1b. Los mutantes corren sobre una COPIA descartable, nunca sobre el working tree del dev
-  // (MUTACION-BLAST-RADIUS-1, 2026-09-06). Un mutante no es un bug: es código roto a propósito.
+  // Un mutante no es un bug: es código roto a propósito.
   // Si el archivo bajo mutación tiene efectos sobre el repo (git, borrar archivos, red), el chequeo
-  // los ejecutaba contra el repo REAL, N veces, con el código deliberadamente roto — en la story
-  // 1.1 un mutante dio vuelta el operador que elige el repo destino y una corrida de prueba dejó
-  // cosas preparadas en el índice de verdad. Y contaminaba el diagnóstico: un revisor que leyera
-  // el archivo durante la ventana veía el mutante y lo reportaba como bug (pasó).
+  // los ejecutaría contra el repo REAL, N veces, con el código deliberadamente roto — un mutante
+  // que da vuelta el operador que elige el repo destino deja cosas preparadas en el índice de verdad.
+  // Y contaminaría el diagnóstico: un revisor que lea el archivo durante la ventana vería el mutante
+  // y lo reportaría como bug.
   // La copia: `git clone --shared` (comparte objetos, cuesta lo que cuesta el checkout), el diff
   // sin commitear aplicado encima, los untracked copiados, y `node_modules` enlazado — para que el
   // árbol sea el mismo que el dev tiene delante, incluido lo que la story todavía no commiteó.
-  // Camino elegido por el dev sobre la alternativa (una lista de archivos «con efectos» que
-  // excluir): la lista hay que mantenerla, y el día que le falte un nombre vuelve.
+  // Se prefiere a la alternativa (una lista de archivos «con efectos» que
+  // excluir): la lista hay que mantenerla, y el día que le falte un nombre el problema vuelve.
   // Sin un commit del que clonar (repo recién iniciado) no hay copia posible: se muta en el propio
-  // repo, como antes del 2026-09-06, y se dice — un exit 2 acá apagaba el control en silencio.
+  // repo, y se dice — un exit 2 acá apagaría el control en silencio.
   const sinHead = !git(repoOriginal, ['rev-parse', '--verify', '-q', 'HEAD']);
   const copia = sinHead ? { dir: null, motivo: 'el repo no tiene commits' } : crearCopiaDeTrabajo(repoOriginal, log);
   if (!copia.dir && !sinHead) return fail2(`no pude armar la copia de trabajo para mutar: ${copia.motivo}`);
   if (sinHead) log(`⚠️  mutation-check: ${repoOriginal} no tiene commits todavía — se muta EN EL PROPIO REPO (con restore byte a byte), no en una copia`);
   repo = copia.dir || repoOriginal;
-  const limpiarCopia = () => { if (copia.dir) { try { fs.rmSync(copia.dir, { recursive: true, force: true }); } catch { /* ya no está */ } } };
+  const limpiarCopia = () => { if (copia.dir) { try { fs.rmSync(copia.dir, { recursive: true, force: true }); } catch { /* si no existe, no hay nada que limpiar */ } } };
   // La copia se borra al terminar (en el finally de abajo) y, para las salidas tempranas por
   // `fail2`, al salir el proceso: una copia huérfana en tmp es basura, nunca un riesgo.
   process.once('exit', limpiarCopia);
@@ -308,13 +306,13 @@ async function runMutationCheck({
   try { storyText = fs.readFileSync(storyPath, 'utf8'); } catch { /* cae abajo */ }
   if (storyText == null) return fail2(`no pude leer la story: ${storyPath}`);
   const declared = parseDeclaredFiles(storyText);
-  // H4/N3: separar «declara tests» de «los sé correr» — por ESTRUCTURA (la
+  // Separar «declara tests» de «los sé correr» — por ESTRUCTURA (la
   // extensión), jamás leyendo contenido en busca de nombres de herramientas.
   // Una story .NET declara `FooTests.cs`: decirle "no declarás tests" es FALSO;
   // la verdad honesta es que este chequeo no sabe correr esa suite. Y ante la
   // DUDA (mezcla de corribles y no corribles) → exit 2 estructural: un
   // veredicto parcial que excluye tests declarados en silencio produce
-  // sobrevivientes espurios (r3c, revisión #2).
+  // sobrevivientes espurios.
   const declaredTests = declared.filter(
     (f) => looksLikeTestPath(f) || /Tests?\.[a-z]+$|\.(test|spec)\.[a-z]+$/i.test(String(f)),
   );
@@ -340,14 +338,14 @@ async function runMutationCheck({
 
   // 3. Archivos target: --files (override explícito), o ÚNICAMENTE los NO-test
   // que la story declara. NADA de descubrir targets mirando el diff del repo:
-  // tres rondas de arreglos abrieron un agujero nuevo SIEMPRE acá, porque el
+  // descubrirlos abre un agujero nuevo SIEMPRE, porque el
   // repo tiene más vida que la story (artefactos del propio pipeline, scratch
-  // del dev, templates ajenos, symlinks) — N1/N2 de la revisión #2. Las LÍNEAS
+  // del dev, templates ajenos, symlinks). Las LÍNEAS
   // a mutar sí salen del delta (addedLinesOf), que cubre tracked y nuevos.
   const overrideExplicito = Array.isArray(files) && files.length > 0;
   const rawTargets = overrideExplicito
     // Un `--files` absoluto se relativiza contra el repo ORIGINAL (el que el dev nombró), no
-    // contra la copia: contra la copia resolvía «fuera del repo» y salía 2 (2026-09-06).
+    // contra la copia: contra la copia se resolvería «fuera del repo» y saldría 2.
     ? files.map((f) => (path.isAbsolute(f) ? path.relative(repoOriginal, f) : f))
     : declared;
   const targets = [...new Set(rawTargets.map((f) => String(f).replace(/\\/g, '/')))]
@@ -358,7 +356,7 @@ async function runMutationCheck({
   //   - Declarado que no existe en disco → `skipped` con su razón (una story
   //     puede declarar un archivo que todavía no se escribió) — nunca un crash.
   //   - Target que resuelva FUERA del repo tras symlinks → exit 2 SIN escribir
-  //     nada (N2: un symlink untracked hacía que el chequeo mutara un archivo
+  //     nada (un symlink untracked haría que el chequeo mutara un archivo
   //     externo que `git status` del repo ni muestra).
   let realRepo;
   try { realRepo = fs.realpathSync(repo); } catch (e) {
@@ -402,11 +400,10 @@ async function runMutationCheck({
   const aCorrer = todos.slice(0, maxMutants);
   skipped.push(...todos.slice(maxMutants).map((m) => ({ ...m, reason: `excede --max-mutants (${maxMutants})` })));
 
-  // 5+6. Corrida BASE + loop de mutantes, con los blindajes de la revisión
-  // adversarial 2026-08-13 (hallazgos H1 y H2, ambos MEDIDOS):
+  // 5+6. Corrida BASE + loop de mutantes, con estos blindajes:
   //   - Handlers de señal (SIGINT/SIGTERM/SIGHUP) mientras el tramo corre: el
   //     `finally` NO se ejecuta cuando una señal mata el proceso, así que un
-  //     timeout del padre (SIGTERM de spawnSync) o un Ctrl+C dejaban el repo
+  //     timeout del padre (SIGTERM de spawnSync) o un Ctrl+C dejarían el repo
   //     MUTADO en silencio. El handler restaura SINCRÓNICAMENTE el mutante en
   //     vuelo con fs real, grita y sale 2.
   //   - Deadline ENTRE mutantes (`--deadline-ms`): el corte de presupuesto nunca
@@ -416,8 +413,8 @@ async function runMutationCheck({
   //     depende del reloj y queda declarado en el reporte.)
   //   - TODO el tramo va en try/catch → cualquier excepción cae a fail2 (exit 2)
   //     con el mensaje real. Sin esto, una excepción suelta (EACCES, ENOSPC)
-  //     salía con el exit 1 default de Node — indistinguible de «cero mutantes
-  //     muertos» — y el gate bloqueaba el step acusando en falso a los tests.
+  //     saldría con el exit 1 default de Node — indistinguible de «cero mutantes
+  //     muertos» — y el gate bloquearía el step acusando en falso a los tests.
   let enVuelo = null; // { abs, origBuf, backupPath } del mutante aplicado en disco, o null
   const onSignal = (sig) => {
     // Restore de EMERGENCIA con fs REAL (no el seam): sincrónico, pase lo que pase.
@@ -453,7 +450,7 @@ async function runMutationCheck({
       return fail2(`el comando de test explotó en la corrida BASE (sin mutar nada): ${e && e.message}`);
     }
     if (!base || base.code !== 0) {
-      // N3/N4: decir la VERDAD y nada más. Un exit != 0 acá puede ser (a) la
+      // Decir la VERDAD y nada más. Un exit != 0 acá puede ser (a) la
       // suite realmente rota, (b) tests que node --test no sabe cargar (vitest
       // con globals, etc.), o (c) — si timedOut — una suite lenta VERDE que
       // matamos nosotros. Nunca afirmar «está en rojo» sin saber cuál es.
@@ -464,7 +461,7 @@ async function runMutationCheck({
         );
       }
       // ¿Es la suite, o es la COPIA? Si en el original la misma corrida está verde, la copia no
-      // tiene algo que la suite necesita — y eso se dice, en vez de acusar a la suite (2026-09-06).
+      // tiene algo que la suite necesita — y eso se dice, en vez de acusar a la suite.
       if (copia.dir) {
         let enOriginal = null;
         try {
@@ -494,7 +491,7 @@ async function runMutationCheck({
     let deadlineHit = false;
     const survived = [];
     for (let i = 0; i < aCorrer.length; i++) {
-      // H2b: el corte de presupuesto se decide ENTRE mutantes, nunca adentro de uno.
+      // El corte de presupuesto se decide ENTRE mutantes, nunca adentro de uno.
       if (deadlineMs && Date.now() - inicio > deadlineMs) {
         for (let j = i; j < aCorrer.length; j++) {
           skipped.push({ ...aCorrer[j], reason: `deadline de ${deadlineMs}ms alcanzado — no llegó a correr` });
@@ -518,8 +515,8 @@ async function runMutationCheck({
       let restoreOk = false;
       enVuelo = { abs, origBuf, backupPath };
       try {
-        // H1: el write del mutante se ATRAPA — un EACCES acá no puede escapar
-        // como exit 1 (eso acusaba a los tests del dev por un problema nuestro).
+        // El write del mutante se ATRAPA — un EACCES acá no puede escapar
+        // como exit 1 (eso acusaría a los tests del dev por un problema nuestro).
         try { fso.writeFileSync(abs, mutado, 'utf8'); } catch (e) { mutError = e; }
         if (!mutError) {
           try { outcome = await runTests({ repo, testFiles: absTests, mutant: m }); } catch (e) { runError = e; }
@@ -563,7 +560,7 @@ async function runMutationCheck({
     const result = { total, killed, survived, skipped, verdict, repoDeTrabajo: copia.dir };
     return { exitCode: killed === 0 && total > 0 ? 1 : 0, result };
   } catch (e) {
-    // H1: NUNCA dejar escapar una excepción — Node saldría con exit 1, que el
+    // NUNCA dejar escapar una excepción — Node saldría con exit 1, que el
     // gate leería como «cero mutantes muertos» y bloquearía acusando en falso.
     return fail2(`excepción inesperada del chequeo: ${e && e.message}`);
   } finally {
@@ -612,7 +609,7 @@ if (require.main === module) {
         deadlineMs: Number.isInteger(args.deadlineMs) && args.deadlineMs > 0 ? args.deadlineMs : null,
       });
     } catch (e) {
-      // H1: cinturón extra — una excepción acá saldría con exit 1 de Node, que es
+      // Cinturón extra — una excepción acá saldría con exit 1 de Node, que es
       // indistinguible de «cero mutantes muertos». Siempre exit 2 con el motivo.
       console.error(`🔴 mutation-check: excepción no manejada: ${e && e.stack ? e.stack : e}`);
       process.exit(2);

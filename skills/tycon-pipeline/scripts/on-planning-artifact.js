@@ -2,12 +2,12 @@
 /**
  * on-planning-artifact.js — Regla 12.1 de workflow-orchestration.md (advisory).
  *
- * Hallazgo H20 #3 (2026-06-10): la regla "todo artefacto de planning nuevo o
+ * La regla "todo artefacto de planning nuevo o
  * reescrito sobre dominio ya cubierto por un artefacto APROBADO declara
- * `reconciles:`/`supersedes_in:` en frontmatter" vivía solo en la guía —
- * invisible en el momento del Write. Caso disparador: el UX spec V7 de un producto del equipo
- * se escribió ignorando el catálogo de 22 pantallas aprobado por el cliente;
- * el drift fue invisible hasta 3 stories después (Story 13.0 de reconciliación) — guides/maintaining/incident-log.md#case-ux-spec-ignored-approved-catalog-2026-05-15.
+ * `reconciles:`/`supersedes_in:` en frontmatter" vive solo en la guía —
+ * invisible en el momento del Write. Caso: un UX spec
+ * escrito ignorando el catálogo de pantallas aprobado por el cliente;
+ * el drift es invisible hasta varias stories después.
  *
  * Handler ADVISORY del dispatcher pre-edit (nunca bloquea — el overlap de
  * dominio es juicio, no regex): si el Write apunta a specs/planning-artifacts/
@@ -22,8 +22,7 @@ const path = require('path');
 const ARTIFACT_NAME_RE = /(ux|design|navigation|architecture|arquitectura|prd|catalogo|catálogo|pantallas|spec)/i;
 
 function handle(event) {
-  // 🔴 `Edit` TAMBIÉN (FIX-8, 2026-08-25 — caso C7). Antes esto arrancaba con
-  // `tool_name !== 'Write'`, así que el hook sólo veía la CREACIÓN del artefacto y nunca su
+  // 🔴 `Edit` TAMBIÉN: con `tool_name !== 'Write'` el hook sólo vería la CREACIÓN del artefacto y nunca su
   // edición — que es la forma normal de cambiar un mapa de navegación ya existente.
   if (!event || (event.tool_name !== 'Write' && event.tool_name !== 'Edit')) return null;
   const filePath = String(event.tool_input?.file_path || '').replace(/\\/g, '/');

@@ -4,8 +4,8 @@
 # verifica allow / block / escalate + los frenos. NO wirea nada vivo. Limpia al final.
 set -u
 cd "$(dirname "$0")/.."
-# 🔴 HOME falso (2026-09-15). Esta suite corría contra el HOME REAL del dev: al empezar BORRABA su
-# `STOP_AUTONOMY` (soltando un freno que una persona había puesto a propósito) y en el caso H lo CREABA
+# 🔴 HOME falso. Sin él, esta suite correría contra el HOME REAL del dev: al empezar BORRARÍA su
+# `STOP_AUTONOMY` (soltando un freno que una persona puso a propósito) y en el caso H lo CREA
 # — frenando, en esa ventana, cualquier otra corrida autónoma de la máquina que cerrara turno. Un test
 # no puede tocar el estado vivo de otra corrida. Los `~` de abajo salen de acá.
 export HOME="$(mktemp -d)"
@@ -33,7 +33,7 @@ echo '{"storyId":"X","autonomous":true,"checks":{"build":"green","tests":"green"
 [ -z "$(run)" ] && echo "✓ B verde → allow" || { echo "✗ B"; fail=1; }
 
 # B2) sin checks registrados (pre-ejecución / pausa HITL) → allow.
-# 🔴 Semántica 2026-05-21: el hook bloquea SOLO ante check rojo, no ante ausencia. Un fin de
+# 🔴 Semántica: el hook bloquea SOLO ante check rojo, no ante ausencia. Un fin de
 # turno sin nada medido (Step 3 plan-approval, Step 7 waive, pregunta al humano) NO se traba.
 echo '{"storyId":"X","autonomous":true,"checks":{}}' > "$MK"
 [ -z "$(run)" ] && echo "✓ B2 sin checks (pausa HITL) → allow" || { echo "✗ B2 — gate trabó una pausa HITL"; fail=1; }
@@ -59,9 +59,9 @@ echo '{"storyId":"X","autonomous":true,"checks":{"tests":"red:x"}}' > "$MK"
 STOP_AUTONOMY=1 bash -c "printf '%s' '$EV' | node $HOOK" | grep -q 'hard-escape' && echo "✓ F hard-escape (env) → escala" || { echo "✗ F"; fail=1; }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CONTRATO + casos de seguridad agregados 2026-06-23 ("la prueba del freno"):
-# cierran el ⚠️ que el autor del hook dejó marcado ("verificar el formato exacto
-# contra el spec de Claude Code") + las propiedades de fail-open y no-escalado-prematuro.
+# CONTRATO + casos de seguridad ("la prueba del freno"):
+# fijan el formato exacto que Claude Code exige del hook + las propiedades de
+# fail-open y no-escalado-prematuro.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # G) CONTRATO DE BLOQUEO — el caso crítico. Claude Code SOLO bloquea el stop si stdout es
@@ -99,8 +99,8 @@ printf '{ no-es-json ' > "$MK"
 rm -f "$MK"
 [ -z "$(run)" ] && echo "✓ J sin marker → allow" || { echo "✗ J"; fail=1; }
 
-# K) PROGRESO resetea el streak → NO escala antes de tiempo. Antes fallaban 2 checks;
-#    ahora queda 1 (resolvió uno) → progressed → noProgressStreak vuelve a 0, sigue iterando.
+# K) PROGRESO resetea el streak → NO escala antes de tiempo. Con 2 checks en rojo;
+#    si queda 1 (resolvió uno) → progressed → noProgressStreak vuelve a 0, sigue iterando.
 echo '{"storyId":"X","autonomous":true,"iter":1,"noProgressStreak":2,"lastFailures":["tests → red:x","build → red:y"],"checks":{"tests":"red:x"}}' > "$MK"
 OUT="$(run)"
 if printf '%s' "$OUT" | grep -q 'thrashing'; then
@@ -117,7 +117,7 @@ OUT="$(printf 'not-json{' | node "$HOOK" 2>/dev/null)"; RC=$?
 [ "$RC" -eq 0 ] && [ -z "$OUT" ] && echo "✓ L stdin inválido → allow (fail-open)" || { echo "✗ L (RC=$RC)"; fail=1; }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# HARDENING set-check (2026-06-23): un green NO se puede colar sin --manual explícito.
+# Set-check endurecido: un green NO se puede colar sin --manual explícito.
 # El Stop-gate confía en marker.checks, así que escribir un green debe ser run-check
 # (ground-truth) o --manual deliberado/auditable. set-check resuelve el marker por
 # CLAUDE_CODE_SESSION_ID → se aísla en '$SID' para no tocar el marker de la sesión real.
@@ -141,11 +141,11 @@ else
   echo "✗ M2 (RC=$RC) — el override manual explícito debería funcionar"; fail=1
 fi
 
-# N) SÓLO la matriz en rojo → el bloqueo dice cómo salir (PIPE-DEBT-2.14)
-# 🔴 rojo previo: el hook loopeaba sobre un rojo que sólo el dev puede poner en verde, sin decir cómo salir.
-# 🔴 2026-09-15: la pista mandaba a `touch STOP_AUTONOMY`, que frena TODAS las corridas de la máquina.
-# Ahora manda al tercer estado (`set-flag waitingForHuman`), y este caso lo EXIGE — antes se conformaba
-# con ver la palabra STOP_AUTONOMY en cualquier contexto, así que la pista vieja y la nueva pasaban igual.
+# N) SÓLO la matriz en rojo → el bloqueo dice cómo salir
+# 🔴 Sin esto, el hook loopea sobre un rojo que sólo el dev puede poner en verde, sin decir cómo salir.
+# 🔴 La pista no puede mandar a `touch STOP_AUTONOMY`, que frena TODAS las corridas de la máquina.
+# Manda al tercer estado (`set-flag waitingForHuman`), y este caso lo EXIGE — no se conforma
+# con ver la palabra STOP_AUTONOMY en cualquier contexto, así que una pista vieja y una nueva pasarían igual.
 echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"tests":"green","acmatrix":"red:exit=1"}}' > "$MK"
 OUTN=$(run)
 if echo "$OUTN" | grep -q '"decision":"block"' && echo "$OUTN" | grep -q 'runtime-waiver' && echo "$OUTN" | grep -q 'waitingForHuman'; then
@@ -156,7 +156,7 @@ fi
 
 # N3) El tercer estado: con un rojo puesto, el agente puede cerrar el turno para preguntarle al dev,
 # sin que la autonomía se apague. De un solo uso: el flag se consume y al turno siguiente vuelve a morder.
-# 🔴 rojo previo: no existía — la única salida era el archivo global, que apaga el portón para siempre.
+# 🔴 Sin esto no existe salida: la única sería el archivo global, que apaga el portón para siempre.
 echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"acmatrix":"red:exit=1"},"waitingForHuman":true}' > "$MK"
 OUTN3=$(run)
 if [ -z "$OUTN3" ] \
@@ -179,7 +179,7 @@ fi
 
 # T8) tests «sin-acotar» (el repo hermano no se pudo acotar: la cubre la CI del pedido) → no frena el cierre del
 # turno, y complete-step 4 lo deja pasar avisando que el merge exige la CI completa en verde, con constancia en gates.log.
-# 🔴 rojo: el hook frenaba todo lo que no es 'green', y el agente quedaba en un lazo sin salida (la única era la completa).
+# 🔴 rojo: si el hook frenara todo lo que no es 'green', el agente quedaría en un lazo sin salida (la única sería la suite completa).
 echo '{"storyId":"X","autonomous":true,"iter":0,"checks":{"build":"green","tests":"sin-acotar"}}' > "$MK"
 [ -z "$(run)" ] && echo "✓ T8 sin-acotar → deja cerrar el turno" || { echo "✗ T8 — sin-acotar frenó el cierre del turno"; fail=1; }
 echo '{"storyId":"X","storyPath":"","autonomous":false,"stepsCompleted":[0,1,2,3],"stepsPending":[4,5,6,7,8],"checks":{"tests":"sin-acotar"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
@@ -192,7 +192,7 @@ else
 fi
 
 # T19) mark-tests-not-scoped sólo lo usa test-gate.sh y sólo cambia la salida 7 que puso el portón: no tapa otro rojo.
-# 🔴 rojo: sin estas negativas, cualquiera podía convertir un rojo en «sin-acotar» y dejar de frenar.
+# 🔴 rojo: sin estas negativas, cualquiera podría convertir un rojo en «sin-acotar» y dejar de frenar.
 echo '{"storyId":"X","checks":{"tests":"red:exit=7"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"
 CLAUDE_CODE_SESSION_ID=$SID node marker.js mark-tests-not-scoped "x" >/dev/null 2>&1; RA=$?
 echo '{"storyId":"X","checks":{"tests":"red:exit=1"},"checksProvenance":{"tests":"test-gate"}}' > "$MK"

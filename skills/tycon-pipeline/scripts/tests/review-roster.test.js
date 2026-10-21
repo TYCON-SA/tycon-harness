@@ -1,6 +1,6 @@
 'use strict';
 /**
- * review-roster — el registro de autoría de una story (2026-08-30, "revisor ≠ autor").
+ * review-roster — el registro de autoría de una story ("revisor ≠ autor").
  * Lo que estos casos fijan es la parte PURA: armar el roster desde el ledger y validarlo. El
  * comportamiento del hook (cuándo se escribe, que apagar la foto no lo apague, que un fallo deje
  * constancia) vive en el banco de controles: `cases/hooks/30-review-roster.json`.
@@ -84,7 +84,7 @@ test('un roster ilegible hace fallar read (no lo tapa devolviendo null)', () => 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── Hallazgos del pase adversarial (2026-08-30) ──────────────────────────────────────────────
+// ── Qué cuenta como revisor ─────────────────────────────────────────────────────────────────
 // Los tres primeros fijan la promesa central: no cualquier spawn es un revisor.
 
 test('los agentes de exploración libre NO son revisores', () => {
@@ -113,12 +113,11 @@ test('las fuentes del propio pipeline no cuentan como advisor ausente del roster
   assert.equal(v.ok, true, JSON.stringify(v.problemas));
 });
 
-// ── `iterations` = RONDAS de revisión, no escrituras del archivo (2026-09-06) ─────────────────
-// Medido en la story 2.3 del arnés: el roster publicó `iterations: 2` y la corrida tuvo 3 rondas.
-// El número salía de `iterPrevias + 1`, o sea que contaba cuántas veces se había escrito el
+// ── `iterations` = RONDAS de revisión, no escrituras del archivo ─────────────────────────────
+// Si el número saliera de `iterPrevias + 1`, contaría cuántas veces se escribió el
 // archivo — dos cosas que sólo coinciden si el roster se escribe exactamente una vez por ronda,
-// que no es lo que pasa. La constancia decía menos de lo que había, y nadie lo notaba porque
-// ningún gate lee el campo.
+// que no es lo que pasa. La constancia diría menos de lo que hubo (un roster con `iterations: 2`
+// en una corrida de 3 rondas), y nadie lo notaría porque ningún gate lee el campo.
 const ronda = (n, ...advisors) => [{ event: 'step5-start', iter: n }, ...advisors.map((a) => linea(a))];
 
 test('iterations cuenta las rondas del ledger, no las veces que se escribió el roster', () => {
@@ -137,8 +136,8 @@ test('escribir dos veces con el MISMO ledger no inventa una ronda', () => {
 });
 
 test('una marca de ronda SIN spawns de esta story no cuenta como ronda', () => {
-  // 🔴 Es el caso REAL: la suite `advisor-set-config.test.js` escribía ráfagas de 12 `step5-start`
-  // pelados en el ledger de la sesión viva. Contarlos daría 26 rondas donde hubo 2.
+  // 🔴 Una suite que escribe en el ledger de la sesión viva puede dejar ráfagas de 12 `step5-start`
+  // pelados. Contarlos daría 26 rondas donde hubo 2.
   const pelados = Array.from({ length: 12 }, () => ({ event: 'step5-start' }));
   const lines = [...pelados, ...ronda(1, 'a'), ...pelados, ...ronda(2, 'b')];
   const r = R.build({ lines, story: '9.4', sessionId: 's1' });
@@ -154,11 +153,10 @@ test('sin marcas de ronda en el ledger, el número se declara como lo que es: un
   assert.equal(dos.iterations_source, 'escrituras');
 });
 
-// ── El sha sella el contenido REVISADO, no sólo el commit anterior (2026-09-06) ───────────────
-// `head_sha` decía `3c759ea` en la 2.3 — el HEAD cuando corrieron los revisores. No es falso: es
-// INÚTIL para auditar, porque la implementación entera vive en el commit siguiente. Medido: de los
-// 25 archivos que la story tocó, 12 no existen en ese árbol y los otros 13 tienen otro contenido —
-// cero idénticos. El campo se llama ahora `base_sha` (que es lo que es) y lo acompaña `tree_sha`,
+// ── El sha sella el contenido REVISADO, no sólo el commit anterior ──────────────────────────
+// El HEAD de cuando corrieron los revisores no es falso, pero es INÚTIL para auditar, porque la
+// implementación entera vive en el commit siguiente: los archivos que toca la story no existen en
+// ese árbol o tienen otro contenido. El campo se llama `base_sha` (que es lo que es) y lo acompaña `tree_sha`,
 // el sha del ÁRBOL que los revisores realmente miraron. Ese sí se audita solo: `git ls-tree`
 // contra el árbol del commit de la story tiene que dar lo mismo.
 test('el roster publica base_sha y tree_sha (el contenido revisado, no sólo su base)', () => {
@@ -200,14 +198,13 @@ test('treeShaDe: fuera de un repo devuelve null, no rompe ni miente', () => {
   fs.rmSync(d, { recursive: true, force: true });
 });
 
-// ── Las fuentes que escribe el PROPIO pipeline no son un revisor ausente (2026-09-06) ────────
-// `FUENTES_SINTETICAS` tenía tres patrones. Medido sobre los runs reales del disco, quedaban
-// CINCO fuentes afuera — y una es una variante escrita distinto de un patrón que SÍ estaba
-// (`adversarial-verify (3 lentes)` contra `adversarial-verify:x`). Con la story 2.1 de
-// el arnés el portón de CI daba `roster-incoherente` ×3 por «orquestador» y
+// ── Las fuentes que escribe el PROPIO pipeline no son un revisor ausente ────────────────────
+// Un listado corto de patrones literales dejaría afuera fuentes del propio pipeline, incluida una
+// variante escrita distinto de un patrón conocido (`adversarial-verify (3 lentes)` contra
+// `adversarial-verify:x`). Entonces el portón de CI daría `roster-incoherente` por «orquestador» y
 // «runtime-matrix (smoke AC 14)»: el orquestador no es un revisor, es el pipeline mismo.
-// Por eso el patrón reconoce el PREFIJO y no el nombre exacto: una lista literal vuelve a morder
-// con la próxima variante, y este caso ya lo demostró.
+// Por eso el patrón reconoce el PREFIJO y no el nombre exacto: una lista literal muerde
+// con la próxima variante.
 test('las fuentes del propio pipeline se reconocen por prefijo, con sus variantes reales', () => {
   const base = { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [{ agent: 'a', kind: 'subagente' }] };
   const reales = ['orquestador', 'orquestador (smoke AC 15)', 'runtime-matrix (smoke AC 14)',
@@ -216,10 +213,10 @@ test('las fuentes del propio pipeline se reconocen por prefijo, con sus variante
   assert.equal(v.ok, true, `estas fuentes las escribe el pipeline, no un spawn: ${JSON.stringify(v.problemas)}`);
 });
 
-// Story 4.4 del arnés (2026-09-14): los pases adversariales se registraron como
-// `adversarial-verify-fable`, `-opus`, `-sonnet-final` y `-sonnet-pase2` (y otro run, `-5b`). El
-// separador `-` no estaba entre los aceptados y el portón dio `roster-incoherente` ×4 sobre un cierre
-// sano. Aceptar el guion no abre nada que `adversarial-verify:<lo que sea>` no abriera ya.
+// Los pases adversariales se registran como `adversarial-verify-fable`, `-opus`, `-sonnet-final`,
+// `-sonnet-pase2` y `-5b`. El separador `-` tiene que estar entre los aceptados, o el portón daría
+// `roster-incoherente` sobre un cierre sano. Aceptar el guion no abre nada que
+// `adversarial-verify:<lo que sea>` no abriera ya.
 test('los pases adversariales nombrados con guion también son fuentes del pipeline', () => {
   const base = { version: 1, implementer: { kind: 'sesion-principal' }, reviewers: [{ agent: 'a', kind: 'subagente' }] };
   const reales = ['adversarial-verify-fable', 'adversarial-verify-opus', 'adversarial-verify-sonnet-final',
@@ -239,8 +236,8 @@ test('un advisor INVENTADO sigue siendo incoherencia — el prefijo no abre la p
 });
 
 // Un revisor llamado DESPUÉS de sellada la ronda (el de la prueba en vivo, paso 7c) también entra al registro: si el
-// gancho lo escribiera sólo al completarse la ronda, `write-findings` rechazaría al revisor del 7c como firmante. En un
-// repo sin commits, como la primera historia de un repo recién creado.
+// gancho lo escribiera sólo al completarse la ronda, `write-findings` rechazaría al revisor del 7c como firmante. El caso
+// corre en un repo sin commits (la primera historia de un repo recién creado).
 test('Roster_RevisorDeLaPruebaEnVivo_Firma @story-8.63 @ac-10', () => {
   const { execFileSync, spawnSync } = require('child_process');
   const SCRIPTS = path.join(__dirname, '..');

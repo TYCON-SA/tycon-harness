@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * evidence-key.js — la CLAVE con que se nombra la evidencia de cierre de una story (story 1.17).
+ * evidence-key.js — la CLAVE con que se nombra la evidencia de cierre de una story.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
- * La evidencia de `.advisors/dod-runtime/` se nombraba con el número de la story y nada más
+ * La evidencia de `.advisors/dod-runtime/` se nombra con el número de la story
  * (`<id>-smoke-ledger.jsonl`, `<id>-runtime-matrix.md`, `<id>-e2e-gate-<ts>.md`…). Eso supone que el
- * número identifica UNA story en el repo, y en dos repos del equipo no es así: numeran por tema y cada
- * tema arranca en 1.1. La matriz de verificación por criterio contó un criterio como CORRIDO con el
- * registro de OTRA story del mismo número (2026-10-05, guides/maintaining/incident-log.md#evidencia-pisada-entre-stories-2026-10-05).
- * Medido ese día: 35 de 88 evidencias de un repo y 20 de 79 de otro bajo un número compartido.
+ * número identifica UNA story en el repo, y en repos que numeran por tema (cada tema arranca en 1.1) no es
+ * así: la matriz de verificación por criterio contaría un criterio como CORRIDO con el registro de OTRA
+ * story del mismo número.
+ * Medido: 35 de 88 evidencias de un repo y 20 de 79 de otro bajo un número compartido.
  *
  * ── LA REGLA ─────────────────────────────────────────────────────────────────────────────────────
- * - Número ÚNICO en el repo de la story → la clave es el número solo, como siempre. Así no cambia nada
+ * - Número ÚNICO en el repo de la story → la clave es el número solo. Así no cambia nada
  *   en el arnés ni en ningún repo que ya numera bien.
  * - Número REPETIDO → `<tema>__<número>`. El tema es la carpeta de la story, o la de arriba si esa
  *   carpeta se llama `stories` (`.specs/cobranza-deudor/stories/x.md` → `cobranza-deudor`;
@@ -22,11 +22,11 @@
  *   (nada de hashes: la clave la lee una persona). Lo que no es letra sin tilde, número, punto o guion se escribe
  *   `+<hex>+` (`clean`): dos nombres distintos nunca dan la misma clave.
  *
- * Por qué NO «la carpeta que contiene `stories/` es el tema»: medido el mismo día, un repo con 178
- * stories en carpetas `stories/` y números únicos tenía 106 evidencias que esa regla dejaba huérfanas
- * sin motivo, y otro repo con números repetidos no usa carpetas `stories/`, así que no lo arreglaba.
+ * Por qué NO «la carpeta que contiene `stories/` es el tema»: medido, un repo con 178
+ * stories en carpetas `stories/` y números únicos quedaría con 106 evidencias huérfanas sin motivo, y
+ * otro repo con números repetidos no usa carpetas `stories/`, así que esa regla no lo arreglaría.
  *
- * El costo, dicho: cuando un número único se repite (alguien crea la 1.1 de un tema nuevo), la story
+ * El costo, dicho: cuando un número único se repite (alguien crea una story con un número ya usado en otro tema), la story
  * vieja cambia de clave y su evidencia anterior pasa a huérfana. Es lo correcto: desde ese momento esa
  * evidencia es ambigua. `legacyFiles()` la nombra; nadie la borra.
  *
@@ -34,7 +34,7 @@
  * Saber si el número se repite exige ver TODAS las stories del repo. Se usa el descubridor del arnés
  * (`story-discovery.js`) SIN caché —una story creada hace un minuto tiene que contar ya— y con un tope
  * amplio. Si el recorrido sale incompleto se LANZA (`code: 'RECORRIDO_INCOMPLETO'`): devolver el número
- * solo «por las dudas» es exactamente la mentira que esta story cierra.
+ * solo «por las dudas» es exactamente la mentira que esta clave evita.
  *
  * La evidencia puede vivir en un repo distinto al de la story (un backend con la evidencia de stories
  * de un repo de proyecto): por eso la clave sale SIEMPRE de la ruta de la story, nunca de la carpeta de
@@ -57,9 +57,9 @@ const BUDGET_MS = (() => {
 
 /** El número de la story: `story:` del frontmatter, con respaldo al nombre del archivo. */
 function storyIdFrom(fm, storyPath) {
-  // IDs alfanuméricos también: hay repos con 'R-9'/'O-3' (fix 2026-07-10 — el patrón numérico-only
-  // [\d.]+ no matcheaba y el sid degradaba al basename completo → ledger de smoke-run.sh
-  // (registrado con el story: del frontmatter) quedaba invisible para la matriz).
+  // IDs alfanuméricos también: hay repos con 'R-9'/'O-3' (con un patrón numérico-only
+  // [\d.]+ el sid degradaría al basename completo y el ledger de smoke-run.sh
+  // (registrado con el story: del frontmatter) quedaría invisible para la matriz).
   const m = String(fm || '').match(/^story:\s*["']?([A-Za-z0-9][\w.-]*)/m);
   if (m) return m[1];
   const base = path.basename(storyPath, '.md');
@@ -76,8 +76,8 @@ function frontmatterOf(storyPath) {
 
 // Un nombre de carpeta pasado a algo que sirve en un nombre de archivo, SIN PERDER información: letras sin tilde,
 // números, punto y guion quedan como están; todo lo demás (tildes, espacios, guion bajo, `+`) se escribe `+<hex>+`
-// con su código. Como `+` nunca queda suelto, dos nombres distintos nunca dan el mismo (pase adversarial de la 1.17:
-// con el saneo anterior, `gestión` y `gestiòn` daban los dos `gesti-n` y compartían la evidencia).
+// con su código. Como `+` nunca queda suelto, dos nombres distintos nunca dan el mismo. Un saneo que pierda la tilde
+// daría `gesti-n` para `gestión` y para `gestiòn`, y las dos compartirían la evidencia.
 function clean(s) {
   let out = '';
   for (const ch of String(s)) out += /^[A-Za-z0-9.-]$/.test(ch) ? ch : `+${ch.codePointAt(0).toString(16)}+`; // `~` también: lo usa labelsForGroup
@@ -97,7 +97,7 @@ function topicOf(storyPath) {
  *   `Foo__1.1-…` y `foo__1.1-…` son el mismo archivo—;
  * - si dos o más lo comparten, esas usan la ruta del archivo dentro del repo (sin `.md`, las carpetas unidas con `~`),
  *   con el prefijo `+p+`: `+p+docs~voz~epic-05~1-1-x`.
- * Por qué así (pase adversarial de la 1.17): el desempate anterior, `<tema>-<archivo>`, podía dar justo el nombre de
+ * Por qué así: un desempate `<tema>-<archivo>` puede dar justo el nombre de
  * otro tema (`foo` + `bar` = `foo-bar`) o repetirse entre dos áreas con la misma carpeta (`voz/epic-05` y
  * `mensajes/epic-05`). La ruta es única por definición; `clean` no pierde nada; y `+p+` no lo produce `clean`
  * (`p` no es un dígito hexadecimal), así que una etiqueta por ruta nunca coincide con una por tema.
@@ -132,7 +132,7 @@ class EvidenceKeyError extends Error {
  */
 // La ruta como la guarda el disco. En Mac y Windows la misma story se puede nombrar con otras mayúsculas o con la
 // tilde en otra forma Unicode (Git en Mac la da compuesta, el disco la guarda descompuesta): sin esto la story se
-// contaba como su propia hermana y el tema salía distinto según quién preguntara (pase adversarial de la 1.17.1).
+// contaría como su propia hermana y el tema saldría distinto según quién preguntara.
 function canonica(p) {
   try { return fs.realpathSync.native(p); } catch { return p; }
 }
@@ -158,7 +158,7 @@ function evidenceKey(storyPath, opts = {}) {
   }
   // Las hermanas salen de las stories Y de lo que el descubridor apartó por la forma del id: un repo que numera
   // `R-9`/`O-3` sin declarar su forma en `.tycon/advisors.yaml` tiene sus stories en `excluded`, y sin esto
-  // dos `R-9` de temas distintos se veían únicas (pase adversarial de la 1.17). Contar de más sólo agrega el tema.
+  // dos `R-9` de temas distintos se veían únicas. Contar de más sólo agrega el tema.
   const siblings = [...d.stories, ...(d.excluded || [])].filter((s) => s && s.path && String(s.id) === String(id))
     .map((s) => canonica(path.resolve(s.path))).filter((p) => p !== abs);
   return { ...keyWithSiblings(abs, id, siblings, repoRoot), repoRoot };
@@ -205,7 +205,7 @@ function keyOr(storyPath, fallback) {
 
 /**
  * La evidencia VIEJA de una story de número repetido: archivos `<id>-*` en las carpetas de evidencia.
- * No cuentan para ninguna story (pertenecer ahora es explícito y estos no dicen a cuál) y NO se tocan.
+ * No cuentan para ninguna story (pertenecer es explícito y estos no dicen a cuál) y NO se tocan.
  * `handRenamed`: los que alguien ya renombró con el tema de ESTA story: el tema entero (`1.1-cobranza-deudor-*`), o
  * su primera palabra (`1.1-cobranza-*` para `cobranza-deudor`) sólo si ninguna hermana tiene un tema que empiece igual —
  * con `cobranza-deudor` y `cobranza-acreedor` como hermanas, `1.1-cobranza-*` no se sabe de cuál es y queda huérfana.
@@ -234,12 +234,12 @@ function legacyFiles(evidenceDirs, info) {
 }
 
 /**
- * La misma regla, aplicada a lo demás que el arnés nombra por story (story 1.17.1): la carpeta de corrida
+ * La misma regla, aplicada a lo demás que el arnés nombra por story: la carpeta de corrida
  * (`.advisors/pipeline-runs/<clave>-<sello>/`), la guía del tester (`qa/<clave>-pasos.md`) y las aprobaciones de la
  * matriz (`story: <clave>`). No es otra regla: es la clave de arriba más la forma de reconocer un nombre.
  */
 
-/** ¿El nombre `name` es de la story de clave `key`? Exacto o `<clave>-…`; con número único también `story-<id>-…`, que ya se aceptaba. */
+/** ¿El nombre `name` es de la story de clave `key`? Exacto o `<clave>-…`; con número único también `story-<id>-…`, que también se acepta. */
 function ownsName(name, key, id) {
   const n = String(name);
   if (n === key || n.startsWith(`${key}-`)) return true;
@@ -248,12 +248,12 @@ function ownsName(name, key, id) {
 
 /**
  * La clave con todo lo que hace falta para nombrar y para avisar: `{ key, info, error }`. Sin ruta de story (quien
- * sólo tiene el número) la clave es el número, como siempre. Con ruta y sin poder calcularla, `key: null` y el
+ * sólo tiene el número) la clave es el número solo. Con ruta y sin poder calcularla, `key: null` y el
  * motivo: el que llama decide si eso frena o avisa, pero nunca elige un nombre a ciegas.
  */
 // Un número de story que sirve para nombrar una carpeta o un archivo: la misma forma que reconoce `storyIdFrom`, sin
-// `..`. El `story:` del frontmatter llegaba tal cual a `mkdirSync`: con `story: "../../x"` la carpeta de corrida se
-// creaba fuera de `pipeline-runs/` (pase de seguridad de la 1.17.1; la causa es anterior, la 1.17.1 la usaba en más lados).
+// `..`. El `story:` del frontmatter va tal cual a `mkdirSync`: con `story: "../../x"` la carpeta de corrida se
+// crearía fuera de `pipeline-runs/`.
 const ID_NOMBRABLE = /^[A-Za-z0-9][\w.-]*$/;
 function idNombrable(id) { return ID_NOMBRABLE.test(String(id)) && !String(id).includes('..'); }
 
@@ -272,9 +272,9 @@ function keyInfoOr(storyPath, id) {
 
 /**
  * El prefijo con que se busca la evidencia de una story (`<clave>-`), con el motivo cuando no se puede: `{ prefix, error }`.
- * Una sola regla para el portón de Azure y el freno del frontmatter (story 1.17.1, tanda 2): cada uno tenía la suya, y
- * el freno caía al número solo si la story no estaba en disco — justo el chequeo que la tanda 1 cerró en el portón.
- * - sin ruta (quien sólo tiene el número): el número, como siempre;
+ * Una sola regla para el portón de Azure y el freno del frontmatter: con una regla por cada uno,
+ * el freno caería al número solo si la story no está en disco — justo el chequeo que el portón cierra.
+ * - sin ruta (quien sólo tiene el número): el número solo;
  * - con ruta y sin archivo (un Write que crea la story): null — sin la story no se sabe si el número se repite;
  * - sin clave calculable: null y el motivo. `null` nunca es «no hay evidencia»: es «no la puedo buscar», y se dice.
  */

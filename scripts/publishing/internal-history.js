@@ -171,7 +171,7 @@ const REGEX_AFTER_WORD = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 
 const regexAllowed = (prev) => prev === '' || /^[(,=:[!&|?{};+\-*%<>~^]$/.test(prev) || REGEX_AFTER_WORD.has(prev);
 
 /** JavaScript y TypeScript: `//`, `/* … *\/` en cualquier lugar; fuera de cadenas, plantillas y expresiones regulares. */
-function jsComments(src, out) {
+function jsComments(src, out, cut = null) {
   let i = 0;
   let line = 0;
   let prev = '';
@@ -209,13 +209,16 @@ function jsComments(src, out) {
     if (c === '\n') { line++; i++; continue; }
     if (c === ' ' || c === '\t' || c === '\r') { i++; continue; }
     if (c === '/' && d === '/') {
+      const start = i;
       i += 2;
       const from = i;
       skipLine();
+      if (cut) cut.push([start, i]);
       out[line] += ` ${src.slice(from, i).replace(/^\/+/, '')}`;
       continue;
     }
     if (c === '/' && d === '*') {
+      const start = i;
       i += 2;
       while (i < n && src[i] === '*' && src[i + 1] !== '/') i++;
       while (i < n && !(src[i] === '*' && src[i + 1] === '/')) {
@@ -229,6 +232,7 @@ function jsComments(src, out) {
       }
       i += 2;
       out[line] += ' ';
+      if (cut) cut.push([start, Math.min(i, n)]);
       continue;
     }
     if (c === '"' || c === "'") { string(c); prev = 'x'; continue; }
@@ -256,7 +260,7 @@ function jsComments(src, out) {
  * heredoc que no cierran en el resto del archivo no abren nada: una comilla suelta o un `<<` aritmético no apagan la
  * lectura de lo que sigue.
  */
-function shComments(lines, out) {
+function shComments(lines, out, cut = null) {
   let quote = null;   // "'" · '"' · '$' (la de `$'…'`, con escapes)
   const heredocs = [];
   let body = null;
@@ -288,7 +292,7 @@ function shComments(lines, out) {
       if ((c === "'" || c === '"') && closesLater(c, ln, i + 1)) { quote = c; continue; }
       if (c === '(' && l[i + 1] === '(') { arith++; i++; continue; }
       if (c === ')' && l[i + 1] === ')' && arith) { arith--; i++; continue; }
-      if (c === '#' && (i === 0 || /[\s;|&()<>]/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); break; }
+      if (c === '#' && (i === 0 || /[\s;|&()<>]/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); if (cut) cut.push([ln, i]); break; }
       if (c === '<' && l[i + 1] === '<' && l[i + 2] !== '<' && l[i - 1] !== '<' && !arith) {
         const m = /^<<(-?)\s*\\?(['"]?)([A-Za-z_][\w-]*)\2/.exec(l.slice(i));
         if (m) {
@@ -330,7 +334,7 @@ function psComments(lines, out) {
 }
 
 /** Python y TOML: `#` fuera de cadenas, también de las de triple comilla. */
-function pyComments(lines, out) {
+function pyComments(lines, out, cut = null) {
   let triple = null;
   lines.forEach((l, ln) => {
     if (ln === 0 && l.startsWith('#!')) return;
@@ -339,19 +343,19 @@ function pyComments(lines, out) {
       const c = l[i];
       if ((c === '"' || c === "'") && l.startsWith(c.repeat(3), i)) { triple = c.repeat(3); i += 2; continue; }
       if (c === '"' || c === "'") { i++; while (i < l.length && l[i] !== c) i += l[i] === '\\' ? 2 : 1; continue; }
-      if (c === '#') { out[ln] = l.slice(i + 1); break; }
+      if (c === '#') { out[ln] = l.slice(i + 1); if (cut) cut.push([ln, i]); break; }
     }
   });
 }
 
 /** YAML: `#` al empezar la línea o después de un blanco, fuera de un escalar entre comillas. */
-function yamlComments(lines, out) {
+function yamlComments(lines, out, cut = null) {
   lines.forEach((l, ln) => {
     for (let i = 0; i < l.length; i++) {
       const c = l[i];
       if (c === "'" && (i === 0 || /[\s:[{,-]/.test(l[i - 1]))) { i++; while (i < l.length && !(l[i] === "'" && l[i + 1] !== "'")) i += l[i] === "'" ? 2 : 1; continue; }
       if (c === '"' && (i === 0 || /[\s:[{,-]/.test(l[i - 1]))) { i++; while (i < l.length && l[i] !== '"') i += l[i] === '\\' ? 2 : 1; continue; }
-      if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); break; }
+      if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) { out[ln] = l.slice(i + 1); if (cut) cut.push([ln, i]); break; }
     }
   });
 }
@@ -376,6 +380,38 @@ function commentsOf(text, rel) {
   else if (style === 'yaml') yamlComments(lines, out);
   else if (style === 'docker') lines.forEach((l, ln) => { if (/^\s*#/.test(l)) out[ln] = l.replace(/^\s*#/, ''); });
   return out.map((c) => c.replace(/^\s*#+\s?/, '').trim().replace(TEST_TAGS, (t) => ' '.repeat(t.length))).join('\n');
+}
+
+/**
+ * El código de un archivo sin sus comentarios, con el mismo lector que `commentsOf`: cada comentario se quita, cada
+ * línea pierde los blancos del final y las líneas que quedan vacías se descartan. Dos versiones de un archivo que sólo
+ * difieren en comentarios (o en líneas en blanco) dan el mismo texto. `null` si el lenguaje no tiene lector de código
+ * (PowerShell y lo que no es código): no poder comparar no es «son iguales».
+ * @param {string} text  @param {string} rel la ruta, que dice el lenguaje
+ */
+function codeOf(text, rel) {
+  const style = commentStyle(rel);
+  const src = String(text).replace(/\r\n?/g, '\n');
+  const lines = src.split('\n');
+  const out = lines.map(() => '');
+  let kept;
+  if (style === 'js') {
+    const cut = [];
+    jsComments(src, out, cut);
+    let from = 0;
+    kept = '';
+    for (const [a, b] of cut) { kept += src.slice(from, a); from = b; }
+    kept = (kept + src.slice(from)).split('\n');
+  } else if (style === 'sh' || style === 'py' || style === 'yaml' || style === 'docker') {
+    const cut = [];
+    if (style === 'sh') shComments(lines, out, cut);
+    else if (style === 'py') pyComments(lines, out, cut);
+    else if (style === 'yaml') yamlComments(lines, out, cut);
+    else lines.forEach((l, ln) => { const m = /^\s*#/.exec(l); if (m) cut.push([ln, m.index]); });
+    kept = lines.slice();
+    for (const [ln, col] of cut) kept[ln] = kept[ln].slice(0, col);
+  } else return null;
+  return kept.map((l) => l.replace(/\s+$/, '')).filter((l) => l !== '').join('\n');
 }
 
 /**
@@ -1338,7 +1374,7 @@ function main() {
   return blocks ? 1 : 0;
 }
 
-module.exports = { scan, commentsOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
+module.exports = { scan, commentsOf, codeOf, isCodeFile, COMMENT_HINTS, FORMS, ZONES, zoneOf, teamPaths, effectiveMode, formModeOf, logicalLines, parseChanges, parseArgs, run, decisionOf, publicLookup, isPublicReference, CouldNot };
 
 // el código de salida se deja anotado y el proceso termina solo: `process.exit` corta la salida a medio escribir cuando
 // va por un tubo (la cuenta en JSON de `--all` son miles de renglones)

@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * advisor-set-config.test.js — la superficie de CONFIG como disparador (FIX-4(a) y (b), 2026-08-25).
+ * advisor-set-config.test.js — la superficie de CONFIG como disparador.
  *
- * EL AGUJERO QUE CIERRA: el arnés publica una tabla de "superficie vigilada" que incluye la config
- * de plugins, los `appsettings*.json` y los `.env`. **Su propia selección no podía entregarlos
- * nunca**: un commit que sólo toca archivos de configuración se clasificaba como "sólo
- * documentación" y el set de revisores quedaba vacío. O sea que reglas escritas sobre secretos
+ * LO QUE CUBRE: el arnés publica una tabla de "superficie vigilada" que incluye la config
+ * de plugins, los `appsettings*.json` y los `.env`. **Sin este disparador su propia selección no podría entregarlos
+ * nunca**: un commit que sólo toca archivos de configuración se clasificaría como "sólo
+ * documentación" y el set de revisores quedaría vacío. O sea que reglas escritas sobre secretos
  * (SEC-C2/C8/C9), cadenas de conexión y settings faltantes (DOTNET-C6 — en producción resuelve a
- * nulo en silencio) existían, estaban documentadas, y no podían dispararse por su propio objeto.
+ * nulo en silencio) existirían, estarían documentadas, y no podrían dispararse por su propio objeto.
  *
  * Los dos casos que sostienen el diseño y no se pueden perder:
  *   · `un-cambio-de-script-NO-dispara-nada`: 16% de los commits de un repo real tocan package.json,
@@ -48,26 +48,26 @@ function repo({ deps } = {}) {
   return d;
 }
 
-// 🔴 HOME y el id de sesión, AISLADOS (2026-09-06). `pipeline.js advisors` deja una marca
+// 🔴 HOME y el id de sesión, AISLADOS. `pipeline.js advisors` deja una marca
 // `step5-start` en `$HOME/.claude/.tycon-pipeline/advisor-runs/<sesión>.jsonl` — el ground-truth
 // con el que el arnés decide si los revisores corrieron. Sin esto, las 12 invocaciones de esta
-// suite escribían 12 eventos FALSOS en el ledger de la sesión que la estuviera corriendo.
+// suite escribirían 12 eventos FALSOS en el ledger de la sesión que la estuviera corriendo.
 // El env va como LISTA BLANCA y no como `{...process.env, HOME}`: `CLAUDE_CODE_SESSION_ID` gana
 // sobre `TYCON_SESSION_ID` en `lib/session-id.js`, así que heredarlo dejaría el id vivo aunque el
 // HOME estuviera aislado. Mismo patrón que el test hermano `advisor-ledger-cli.test.js`.
 const HOME_AISLADO = fs.mkdtempSync(path.join(os.tmpdir(), 'advset-home-'));
 
-// Los revisores de convenciones (.NET / React / Next) viven en el paquete `bizuit` desde la story
-// 8.2: esta suite lo INSTALA explícitamente (`TYCON_PACKS_DIR` a los paquetes del repo) en vez de
+// Los revisores de convenciones (.NET / React / Next) viven en el paquete `bizuit`: esta suite lo
+// INSTALA explícitamente (`TYCON_PACKS_DIR` a los paquetes del repo) en vez de
 // depender de que estén escritos en el código. Si `packs/bizuit` desaparece, esto se pone rojo.
 const PACKS_REALES = path.resolve(__dirname, '..', '..', '..', '..', 'packs');
-// Story 8.41: el paquete viaja con el perfil del equipo. En la copia pública (sin él) los casos que miden sus revisores
+// El paquete viaja con el perfil del equipo. En la copia pública (sin él) los casos que miden sus revisores
 // no se pueden medir, y se dice; con el repo del equipo encima se miden todos.
 const { SKIP_PUBLIC } = require('./lib/public-copy.js');
 const CON_PAQUETE = SKIP_PUBLIC ? { skip: `${SKIP_PUBLIC}: este caso mide un revisor del paquete del stack — NO MEDIDO acá` } : {};
-// Story 8.7 (AC 8): un repo que no declara `packs:` activa los paquetes que diga la configuración (`packs.default`, default
+// Un repo que no declara `packs:` activa los paquetes que diga la configuración (`packs.default`, default
 // «ninguno»), y para leerla el cargador ubica el arnés. Con la HOME aislada no lo encuentra solo: se resuelve antes y se
-// declara el default de esta suite («todos los instalados», lo que contaba desde la 8.2).
+// declara el default de esta suite («todos los instalados»).
 const ARNES = require('../lib/harness-path.js').rutaArnesHook().dir;
 
 function set(d, ...files) {
@@ -104,7 +104,7 @@ const SB = 'tycon-plugin-security-basics';
 const REACT = 'tycon-plugin-react-conventions';
 const NEXT = 'tycon-plugin-nextjs-conventions';
 
-// ── FIX-4(b) — config de plugins y secretos ───────────────────────────────────────────────────
+// ── Config de plugins y secretos ───────────────────────────────────────────────────
 test('la config de plugin selecciona el revisor .NET (DOTNET-C6: un setting faltante resuelve a nulo en producción)', CON_PAQUETE, () => {
   assert.deepEqual(set(repo(), 'plugin.json.example'), [DOTNET]);
 });
@@ -128,7 +128,7 @@ test('un diff de puro docs sigue sin revisores', () => {
   assert.deepEqual(set(repo(), 'README.md'), []);
 });
 
-// ── FIX-4(a) — dependencias ───────────────────────────────────────────────────────────────────
+// ── Dependencias ───────────────────────────────────────────────────────────────────
 test('un cambio de VERSIÓN de dependencia dispara el revisor de convenciones (REACT-W14)', CON_PAQUETE, () => {
   const d = repo({ deps: { react: '18.2.0' } });
   const p = path.join(d, 'package.json');
@@ -173,10 +173,10 @@ test('sin react ni next, un cambio de dependencia no trae revisor de convencione
   assert.deepEqual(set(d, 'package.json'), []);
 });
 
-// ── React/Next declarados fuera de dependencies (2026-10-15) ──────────────────────────────────
-// Un formulario de Bizuit declara React SÓLO en peerDependencies: lo provee el host. La detección leía
-// dependencies + devDependencies, así que en esos repos salía hasReact:false y el revisor de React no
-// entraba (caso real: una story de dos repos de un producto del equipo; sumado a mano encontró dos avisos
+// ── React/Next declarados fuera de dependencies ──────────────────────────────────
+// Un formulario de Bizuit declara React SÓLO en peerDependencies: lo provee el host. Leer sólo
+// dependencies + devDependencies daría hasReact:false en esos repos y el revisor de React no
+// entraría (a mano, ahí había avisos
 // reales). Se leen las cuatro secciones; y un .tsx sin framework detectado lo dice, con lo que se leyó.
 function salida(d, ...files) {
   const r = spawnSync(process.execPath, [PIPELINE, 'advisors', '--repo', d, '--files', ...files],
@@ -268,11 +268,11 @@ test('el set base de un diff CON código no cambia', CON_PAQUETE, () => {
     `lo nuevo es una rama para diffs SIN código; si tocara el set base encarecería cada entrega (dio: ${base.join(', ')})`);
 });
 
-// ── PIPE-DETECT (2026-09-17) — los guiones `.sh` son código ───────────────────────────────────
-// Los guiones de CI del arnés despliegan y frenan en producción, y un diff de sólo `.sh` salía
-// «sólo docs»: cero revisores de código. Sumados a mano sobre `scripts/ci/*.sh` encontraron un
+// ── Los guiones `.sh` son código ───────────────────────────────────
+// Los guiones de CI del arnés despliegan y frenan en producción, y un diff de sólo `.sh` saldría
+// «sólo docs»: cero revisores de código. Sumar revisores a mano sobre `scripts/ci/*.sh` encuentra un
 // nombre crudo en una URL, un error tragado, una orden ejecutada dentro de `$(( ))` y un tamaño no
-// numérico que hacía salir 0. Medido sobre 296 corridas: 42 tocaron un `.sh`, 4 sólo `.sh`.
+// numérico que hace salir 0. Medido sobre 296 corridas: 42 tocaron un `.sh`, 4 sólo `.sh`.
 // Sin filtro por palabras clave, a propósito: en un guion casi todo es «tragar un error»
 // (`|| true`, `2>/dev/null`, `set -e` ausente) y el filtro no filtraría nada.
 const SFH = 'tycon-silent-failure-hunter';
@@ -313,8 +313,8 @@ test('un `.sh` junto a un `.cs` no cambia el set base del `.cs` (sólo puede sum
 });
 
 test('un `.sh` junto a un archivo de config NO tapa al revisor de esa config (FIX-4 sigue valiendo)', CON_PAQUETE, () => {
-  // Lo cazó el revisor de fallos silenciosos sobre este mismo arreglo: la rama «sólo guiones»
-  // devolvía [seguridad] y pisaba la de config — plugin.json perdía al revisor .NET, en silencio.
+  // Si la rama «sólo guiones» devolviera [seguridad] pisaría la de config: plugin.json perdería
+  // al revisor .NET, en silencio.
   const d = conGuion('scripts/ci/humo.sh');
   assert.deepEqual(set(d, 'plugin.json.example', 'scripts/ci/humo.sh'), [DOTNET, SB, SFH].sort());
   const p = path.join(d, 'package.json');
@@ -335,18 +335,17 @@ test('pero el re-loop sí saltea al de fallos silenciosos si lo único tocado es
   assert.equal(advisorAffectedByDelta(SFH, ['/repo/scripts/tests/lab-tool.test.sh']).affected, false);
 });
 
-// ── El caso que vigila a esta misma suite (2026-09-06) ────────────────────────────────────────
-// 🔴 rojo previo: quitarle el `env` aislado a `set()`. Verificado: la suite escribe 12 eventos
+// ── El caso que vigila a esta misma suite ────────────────────────────────────────
+// 🔴 Sin el `env` aislado en `set()`, la suite escribe 12 eventos
 //    `step5-start` en el ledger de la sesión que la corre.
 //
-// QUÉ PASÓ. `pipeline.js advisors` deja una marca `step5-start` en
+// EL MECANISMO. `pipeline.js advisors` deja una marca `step5-start` en
 // `~/.claude/.tycon-pipeline/advisor-runs/<sesión>.jsonl` — el ground-truth con el que el arnés
 // decide si los revisores corrieron. Esta suite lo invoca 12 veces; sin `env` aislado esas 12
-// marcas caían en el ledger de la sesión REAL que estuviera corriendo la suite. Medido en la
-// corrida de la story 2.3: su ledger terminó con **51 `step5-start` sobre 69 líneas** — 48 falsos
-// (cuatro ráfagas de 12) y 3 reales. Y como el roster de revisores se arma «desde el último
-// `step5-start`», el cursor quedaba parado al final del archivo: la constancia de autoría de esa
-// story se armó sobre un ledger envenenado por su propia suite de pruebas.
+// marcas caen en el ledger de la sesión REAL que esté corriendo la suite, en ráfagas de 12 falsas
+// entre las pocas reales. Y como el roster de revisores se arma «desde el último
+// `step5-start`», el cursor queda parado al final del archivo: la constancia de autoría de esa
+// story se armaría sobre un ledger envenenado por su propia suite de pruebas.
 //
 // El nocturno NO es el vector (allá no hay `CLAUDE_CODE_SESSION_ID` y todo cae en `_nosession`):
 // el vector es la máquina del dev, que es justo donde el ledger significa algo.

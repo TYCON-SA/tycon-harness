@@ -3,12 +3,11 @@
  * ledger-visible.test.js — el portón no deja editar código por Bash con el pipeline abierto,
  * porque esa edición el registro NO la ve.
  *
- * Caso disparador (Story OC-1 del backend de un producto del equipo, 2026-09-21): la corrida editó casi todo con
- * `sed`/heredocs —lo que el modo bypass del arnés INSTRUYE hacer— y al re-loopear `smart-reloop`
- * no pudo calcular el delta: set COMPLETO, 7 revisores en vez de 2-3. El aviso existía y era
- * honesto, pero llegaba con el trabajo ya hecho.
+ * Si una corrida edita con `sed`/heredocs —lo que el modo bypass del arnés INSTRUYE hacer—,
+ * al re-loopear `smart-reloop` no puede calcular el delta: set COMPLETO, 7 revisores en vez de
+ * 2-3. El aviso es honesto, pero llega con el trabajo ya hecho.
  *
- * Decisión del dev: frenar la edición invisible en vez de enseñarle al arnés a leerla — atacar el
+ * Por eso se frena la edición invisible en vez de enseñarle al arnés a leerla: se ataca el
  * origen, sin relajar la garantía de `ledger-honesty` ni meter fechas inferidas en el registro que
  * usa el gate ATDD para el orden test-antes-que-código.
  *

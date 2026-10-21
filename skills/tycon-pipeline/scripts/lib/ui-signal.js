@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * ui-signal.js — ¿la story toca pantalla? Fuente ÚNICA del detector (fix 2026-08-14; story 7.18, 2026-10-08).
+ * ui-signal.js — ¿la story toca pantalla? Fuente ÚNICA del detector.
  *
  * Lo consumen cuatro controles del cierre, que no copian la lógica: `marker.js` (`markerStoryIsUi`:
  * `mark-dod-runtime-checked`, `set-check dod`, `complete-step 8` y la guía del tester), `qa-guide.js`
  * (`isUiStory`), `on-pre-commit.js` (`storyIsUiStory`) y `lib/atdd-commit-gate.js` (`storyIsHandOperable`).
- * Hasta el 2026-08-14 vivía copiado en esos cuatro, con carpetas de un producto escritas en duro.
+ * Copiado en cada control, con carpetas de un producto escritas en duro, se desincroniza; por eso vive acá.
  *
- * Las cinco reglas (story 7.18). La primera que da sí, decide:
+ * Las cinco reglas. La primera que da sí, decide:
  *
  *   1. EXTENSIÓN de pantalla (.tsx / .jsx / .vue / .svelte) en un item de lista del frontmatter, o en cualquier
  *      entrada de una lista de archivos (entre corchetes, como `path:` de un item que es un mapa, en un bloque `|`).
@@ -18,7 +18,7 @@
  *      «(Repo/Carpeta)», sus rutas, y la llave que la agrupa: `frontend:` → rutas); la prosa pegada a la ruta o en
  *      una sub-llave (`why:`, `description:`) no. Un `#` entre comillas es texto, no comentario.
  *      Una entrada cuyas rutas son TODAS documentos (.md/.txt, con ancla o número de línea) no cuenta por su ruta
- *      (un documento no es pantalla: deuda que dejó la story 7.6), salvo bajo src/app|pages|content/, donde un
+ *      (un documento no es pantalla), salvo bajo src/app|pages|content/, donde un
  *      documento puede ser una página. `.mdx` cuenta siempre: es una página en los sitios que lo usan.
  *   3. RUTA o NOMBRE DECLARADO en un CAMPO ESTRUCTURADO (`repo`, `repos`, `target_repo`, `target_repos`, `tags`,
  *      `stack`, `layer`, `component`, `area`: valor suelto, entre corchetes o en bloque) o en cualquier cosa que
@@ -30,17 +30,17 @@
  *      `~`, `[]` o sólo una lista de lectura no cuentan. Con archivos declarados, mandan las listas.
  *   5. ESCENARIOS de prueba de navegador en el cuerpo del spec.
  *
- * Por qué la prosa quedó de respaldo (story 7.18): una story de backend con sólo `.cs` en sus listas y una ruta
- * HTTP terminada en `/frontend` en el `driver` quedaba como de pantalla, y la guía del tester la bloqueaba sin
- * salida. Medido sobre 1.394 stories: leer sólo las dos llaves `files_to_*` sacaba 24 que SÍ tocan pantalla (sin
- * listas, su única señal es el título); estas cinco reglas cambian 11, ninguna de pantalla (10 en la revisión; la
- * otra es una story de backend con prosa dentro de su lista, que dejó de contar tras el pase adversarial).
+ * Por qué la prosa queda de respaldo: una story de backend con sólo `.cs` en sus listas y una ruta HTTP
+ * terminada en `/frontend` en el `driver` quedaría como de pantalla, y la guía del tester la bloquearía sin
+ * salida. Medido sobre el corpus: leer sólo las dos llaves `files_to_*` dejaría afuera 24 que SÍ tocan pantalla (sin
+ * listas, su única señal es el título); estas cinco reglas cambian 11, y una story de backend con prosa dentro
+ * de su lista deja de contar.
  *
  * Dirección de falla: este detector ENDURECE controles (exige pruebas de navegador, rechaza
  * `set-check dod --manual`, pide la guía del tester). Sobre-detectar molesta; sub-detectar deja pasar una
  * pantalla sin correr sus pruebas. Por eso la señal genérica es AMPLIA, lo declarado se suma y nunca resta, y los
  * nombres declarados se toman en unión entre lo commiteado y la carpeta (modo freno).
- * Riesgo aceptado de la regla 4: a una story de pantalla que sólo se detectaba por su título, agregarle una lista
+ * Riesgo aceptado de la regla 4: a una story de pantalla que sólo se detecta por su título, agregarle una lista
  * con archivos de backend la saca del detector. Esa baja nunca es muda: `uiSignalDetail` la marca
  * (`proseDropped`) y los controles la dicen en una línea con `proseDropNotice`.
  */
@@ -189,7 +189,7 @@ function entriesUnder(lines, keyRe) {
 /**
  * El veredicto con su porqué: `{ ui, signal, proseDropped, dropReason }`.
  *   - `signal`: 'extension' | 'lista' | 'campo' | 'tanda' | 'prosa' | 'cuerpo' | null.
- *   - `proseDropped`: true cuando NO es de pantalla pero el detector de antes de la 7.18 sí la tomaba (la palabra
+ *   - `proseDropped`: true cuando NO es de pantalla pero la prosa sola sí la tomaría (la palabra
  *     del frente o un nombre declarado aparecen en el frontmatter, fuera de lo que manda). Es la «baja».
  *   - `dropReason`: 'documentos' (la mención está en documentos de las listas) o 'prosa'.
  */
@@ -204,7 +204,7 @@ function uiSignalParts(fm, body, repoRoot) {
       // El caller puede pasar un SUBDIR del repo (el cwd de un `cd sub && git commit`, o el process.cwd() del
       // marker): se sube hasta `.git`, para que los nombres declarados no se pierdan según desde dónde corra.
       const root = discoverRepoRoot(repoRoot) || repoRoot || null;
-      // Modo FRENO (caso C9): los nombres se toman en UNIÓN entre lo commiteado y la carpeta. Sacar un nombre sin
+      // Modo FRENO: los nombres se toman en UNIÓN entre lo commiteado y la carpeta. Sacar un nombre sin
       // commitear no apaga la exigencia de navegador; agregarlo vale al toque.
       fe = f ? parseEvidenceConfig(root, { freno: true }).fePaths : [];
     }
@@ -258,7 +258,7 @@ function uiSignalDetail(content, repoRoot) {
 }
 
 /**
- * La línea que dice la baja (story 7.18, AC 6), o null si no hay baja que decir. La arma este módulo para que los
+ * La línea que dice la baja, o null si no hay baja que decir. La arma este módulo para que los
  * controles no copien el texto: la imprimen tal cual, una vez por comando, sin bloquear.
  */
 function proseDropNotice(detail) {

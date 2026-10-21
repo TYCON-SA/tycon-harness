@@ -2,19 +2,19 @@
 /**
  * story-discovery.test.js — el descubrimiento de stories y los controles que dependen de él.
  *
- * ── POR QUÉ ESTÁ EN SU PROPIO ARCHIVO (2026-08-15) ────────────────────────────────────────────
- * Vivían dentro de `unit.test.js`, que además de estos corre tests que lanzan herramientas de
+ * ── POR QUÉ ESTÁ EN SU PROPIO ARCHIVO ────────────────────────────────────────────────────────
+ * No viven dentro de `unit.test.js`, que además de estos corre tests que lanzan herramientas de
  * verdad (uno corre un jest entero: 36s con la máquina cargada). El **chequeo de mutantes**
  * necesita correr la suite UNA VEZ POR MUTANTE y aborta si una corrida pasa de 120s — con lo
- * cual, en cuanto la máquina se cargaba, la verificación de estas guardas simplemente NO se podía
- * hacer. Separarlas las deja en ~1s por corrida: el chequeo de mutantes vuelve a ser posible, que
+ * cual, en cuanto la máquina se carga, la verificación de estas guardas simplemente NO se puede
+ * hacer. Separadas quedan en ~1s por corrida: el chequeo de mutantes es posible, que
  * es la única forma de saber si estos tests prueban algo o sólo pasan.
  *
  * Correr:  node --test <este archivo>
  * Wireado: `install-tycon-hooks.sh` (SessionStart, junto a unit.test.js).
  */
 
-// Story 7.2 del arnés: estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
+// Estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
 // cada arranque). Sin esto, sus decisiones de mentira se anotarían en ~/.claude/.tycon-pipeline/frenos.jsonl, que
 // sube al buzón y alimenta la métrica «evidencias rechazadas por los hooks del cierre» del tablero.
 process.env.TYCON_CLOSURE_RECORD = 'off';
@@ -29,31 +29,26 @@ const SCRIPTS = path.join(__dirname, '..');
 const { computeNextStory } = require(path.join(SCRIPTS, 'pipeline.js'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Fix 2026-07-28 — el gate de ATDD sólo cubría corridas del PIPELINE
+// El gate de ATDD tiene que cubrir también lo implementado a mano, sin el PIPELINE
 // ═══════════════════════════════════════════════════════════════════════════════
-// Caso disparador: sesión del 2026-07-28 (Story 1.6 de un producto del equipo + front S1). Se implementó
-// a mano, sin pipeline: sin marker no hay `fileEvents`, y sin eso el gate de `complete-step 4`
-// no tiene nada que leer. El segundo freno —el aviso "estás editando archivos de una story sin
-// invocar el pipeline"— tampoco saltó, porque sólo escanea 3 rutas fijas `specs/stories/` y
-// ninguna de las dos stories de esa sesión vive ahí.
-// Lo detectó el dev preguntando "¿por qué no hicimos ATDD acá?" — otra vez, la capa de control
-// era una persona leyendo el transcript.
+// Sin pipeline no hay marker ni `fileEvents`, y sin eso el gate de `complete-step 4` no tiene nada que leer. El
+// segundo freno —el aviso "estás editando archivos de una story sin invocar el pipeline"— tampoco salta si sólo
+// escanea 3 rutas fijas `specs/stories/` y la story vive en otro lado. La capa de control no puede ser una persona
+// leyendo el transcript.
 
 const discovery = require(path.join(SCRIPTS, 'lib', 'story-discovery.js'));
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Fix 2026-08-15 — el descubridor buscaba por NOMBRE de carpeta
+// El descubridor no puede buscar por NOMBRE de carpeta
 // ═══════════════════════════════════════════════════════════════════════════════
-// El fix del 2026-07-28 cambió TRES rutas absolutas por DOS nombres de carpeta (`stories`,
-// `epic-*`). Mismo defecto, un nivel más arriba: en un repo del equipo las stories viven en
-// `specs/bizuit-bpmn-mcp/` y el descubridor devolvía CERO — el aviso de "story sin pipeline"
-// mudo, `pipeline.js next-story` en null, y el backfill de back-links diciendo "0 stories
-// Mary+GOLD encontradas". Ahora la pertenencia la decide la ESTRUCTURA (un .md cuyo frontmatter
+// Buscar por dos nombres de carpeta (`stories`, `epic-*`) falla igual que buscar por rutas absolutas, un nivel más
+// arriba: en un repo del equipo las stories viven en `specs/bizuit-bpmn-mcp/` y el descubridor devolvería CERO — el
+// aviso de "story sin pipeline" mudo, `pipeline.js next-story` en null, y el backfill de back-links diciendo "0 stories
+// Mary+GOLD encontradas". Por eso la pertenencia la decide la ESTRUCTURA (un .md cuyo frontmatter
 // declara `story:` y `status:`), nunca el nombre de la carpeta que lo contiene.
 //
-// 🔴 Los helpers de abajo escriben stories REALES en el fixture. La versión anterior de este
-// test creaba carpetas VACÍAS y afirmaba encontrarlas: eso probaba el matcher de nombres, no
-// el descubrimiento — y por eso pasaba en verde mientras el repo real devolvía cero.
+// 🔴 Los helpers de abajo escriben stories REALES en el fixture. Crear carpetas VACÍAS y afirmar encontrarlas
+// probaría el matcher de nombres, no el descubrimiento — y pasaría en verde mientras el repo real devuelve cero.
 
 /** Escribe un .md con frontmatter en `<root>/<rel>`. `fm` es el cuerpo del frontmatter. */
 function writeStoryFile(root, rel, fm, body = '# story') {
@@ -63,23 +58,23 @@ function writeStoryFile(root, rel, fm, body = '# story') {
   return abs;
 }
 
-/** Repo de juguete con los CUATRO layouts que existen hoy + el ruido que no debe entrar. */
+/** Repo de juguete con los layouts que existen + el ruido que no debe entrar. */
 function mkRepoConLayouts(prefix = 'sd-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
-  // (a) layout viejo — Ceibo / Totora / FRESNO
+  // (a) layout clásico: specs/stories
   writeStoryFile(root, 'specs/stories/1-1-alta.md', ['story: "1.1"', 'epic: 1', 'status: done']);
-  // (b) layout epic-* — backend de Pacara
+  // (b) layout epic-*
   writeStoryFile(root, 'docs/nimbo/orders/epic-labels/2-1-map.md',
     ['story: "2.1"', 'epic: 2', 'status: ready-for-dev']);
-  // (c) layout stories anidado — front de Pacara
+  // (c) layout stories anidado
   writeStoryFile(root, 'specs/route-filters/stories/3-2-filtros.md',
     ['story: "3.2"', 'epic: 3', 'status: in-progress']);
-  // (d) layout SIN carpeta de nombre conocido — un repo del equipo (el que se perdía)
+  // (d) layout SIN carpeta de nombre conocido: un repo del equipo
   writeStoryFile(root, 'specs/bizuit-bpmn-mcp/4-43-leer-no-es-crear.md',
     ['story: "4.43"', 'epic: 4', 'status: ready-for-dev']);
-  // (e) layout .specs OCULTA — los repos de specs de dos productos del equipo (DISCOVERY-DOTSPECS-1, 2026-08-30):
-  // la premisa "las ocultas no llevan specs" era falsa en casa; FRESNO medía 0 stories.
+  // (e) layout .specs OCULTA: los repos de specs de dos productos del equipo. La premisa "las ocultas no llevan specs"
+  // es falsa, y sin esta excepción esos repos miden 0 stories.
   writeStoryFile(root, '.specs/extractos/stories/5-1-extracto.md',
     ['story: "5.1"', 'epic: 5', 'status: done']);
   // ruido que NO es una story
@@ -118,7 +113,7 @@ test('story-discovery: una story es un .md que DECLARA story:+status:, viva en l
   assert.ok(!paths.some((p) => /README|notas/.test(p)),
     'un .md sin frontmatter, o con frontmatter sin story:/status:, no es una story');
 
-  // findStoryDirs sigue existiendo, pero ahora se DERIVA de dónde hay stories de verdad.
+  // findStoryDirs se DERIVA de dónde hay stories de verdad.
   const dirs = discovery.findStoryDirs(root, { cache: false }).map((d) => path.relative(root, d).split(path.sep).join('/')).sort();
   assert.deepEqual(dirs, [
     '.specs/extractos/stories',
@@ -134,7 +129,7 @@ test('story-discovery: una story es un .md que DECLARA story:+status:, viva en l
 test('story-discovery: el material de un banco de evals NO es trabajo (la forma del id lo separa)', () => {
   const root = mkRepoConLayouts('sd-ev-');
   // Los EV-* tienen frontmatter Mary+GOLD válido (story: + status:) y NO son trabajo: son
-  // insumo de las evals. Hoy ensucian los conteos de stories del repo.
+  // insumo de las evals. Si entraran, ensuciarían los conteos de stories del repo.
   writeStoryFile(root, 'mcp/eval/bancos/generacion/historias/ev1-t1-lineal.md',
     ['epic: eval', 'story: "EV-1"', 'status: ready-for-dev', 'eval_class: t1-lineal']);
   writeStoryFile(root, 'mcp/eval/bancos/generacion/historias/ev2-t2-decision.md',
@@ -214,8 +209,8 @@ test('story-discovery: respeta el presupuesto de tiempo y NUNCA cachea un parcia
     'un parcial VACÍO no se persiste: cachearlo dejaría el repo mudo una hora entera');
 
   // (b) presupuesto chico sobre un árbol que no entra → corta de verdad. Con un reloj de la prueba que avanza 1 ms
-  // cada vez que el escaneo lo mira: en una máquina rápida (medido el 2026-10-03 en un contenedor Linux: story 8.7 del
-  // arnés) el árbol entero SÍ entraba en 3 ms de reloj real, la prueba daba rojo y el instalador salía con error.
+  // cada vez que el escaneo lo mira: con el reloj real, en una máquina rápida (un contenedor Linux) el árbol entero
+  // SÍ entra en 3 ms, la prueba daría rojo y el instalador saldría con error.
   const realNow = Date.now;
   let tick = realNow();
   let corto;
@@ -258,7 +253,7 @@ test('story-discovery: un frontmatter más largo que la lectura de cabecera igua
 test('story-discovery: matchea el archivo editado contra files_to_modify, con el layout que sea', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd2-'));
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
-  // Carpeta SIN nombre conocido: es el layout que el descubridor viejo no veía.
+  // Carpeta SIN nombre conocido: el layout que un descubridor por nombre no vería.
   writeStoryFile(root, 'specs/bizuit-bpmn-mcp/4-43-leer-no-es-crear.md', [
     'story: "4.43"', 'status: in-progress',
     'files_to_modify:', '  - "mcp/src/tools/write-spec.ts"',
@@ -277,11 +272,10 @@ test('story-discovery: matchea el archivo editado contra files_to_modify, con el
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// ── Cierre de los mutantes que sobrevivieron al primer chequeo (2026-08-15) ───────────────────
-// El chequeo de mutantes dejó 7 vivos y los 7 estaban en el MISMO lugar: el parser del escape por
-// repo (`.tycon/advisors.yaml`). Tiene sentido — es la parte que ningún test tocaba de costado,
-// porque los casos felices la ejercen por un solo camino. Es exactamente para lo que sirve el
-// chequeo: decir qué línea no está probada, no qué línea está mal.
+// ── Cierre de mutantes en el parser del escape por repo ────────────────────────────────────────
+// El parser del escape por repo (`.tycon/advisors.yaml`) es la parte que los casos felices ejercen por un solo camino:
+// un mutante ahí sobrevive si ningún test la toca de costado. El chequeo de mutantes sirve para eso:
+// decir qué línea no está probada, no qué línea está mal.
 
 test('story-discovery: unquoteScalar respeta el tipo de comilla (es un REGEX lo que viaja adentro)', () => {
   const { unquoteScalar } = discovery;
@@ -374,12 +368,12 @@ test('story-discovery: isWorkStoryId separa trabajo de material', () => {
   }
 });
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2026-08-15 — los DOS gates que también decidían "esto es una story" por la RUTA
+// Los DOS gates que deciden "esto es una story" no pueden usar la RUTA
 // ═══════════════════════════════════════════════════════════════════════════════
 // Misma familia que el descubridor (ver `story-discovery`): `on-frontmatter-write` y
-// `on-pre-commit` preguntaban "¿el path contiene /specs/stories/?". En un repo del equipo
-// (`specs/bizuit-bpmn-mcp/`) ninguno de los dos se disparaba NUNCA: el freno que impide cerrar
-// una story sin evidencia estaba apagado para todo un repo, sin un solo mensaje. Ahora los dos
+// `on-pre-commit` no pueden preguntar "¿el path contiene /specs/stories/?". En un repo del equipo
+// (`specs/bizuit-bpmn-mcp/`) ninguno de los dos se dispararía NUNCA: el freno que impide cerrar
+// una story sin evidencia estaría apagado para todo un repo, sin un solo mensaje. Por eso los dos
 // deciden por el frontmatter del archivo.
 const ofwStructural = require(path.join(SCRIPTS, 'on-frontmatter-write.js'));
 const opcStructural = require(path.join(SCRIPTS, 'on-pre-commit.js'));
@@ -474,7 +468,7 @@ test('computeNextStory: encuentra la próxima story aunque el repo NO tenga spec
   assert.equal(r.ready_count, 1, 'EV-1 no cuenta como ready-for-dev');
   fs.rmSync(dir, { recursive: true, force: true });
 });
-// ── Orden de ids y next-story: movidos desde unit.test.js el 2026-08-15 para que el chequeo
+// ── Orden de ids y next-story: viven acá y no en unit.test.js para que el chequeo
 // de mutantes los cubra (la suite grande no entra en su tope de tiempo por corrida).
 const { cmpStoryId } = require(path.join(SCRIPTS, 'pipeline.js'));
 
@@ -484,8 +478,8 @@ test('cmpStoryId ordena numéricamente (2-9 antes de 2-10, no lexicográfico)', 
   assert.deepEqual(arr, ['1-2-a.md', '2-2-b.md', '2-9-y.md', '2-10-x.md']);
 });
 
-// 🔴 2026-08-15 — los ids de estos fixtures eran `1-2-done` / `2-9-old`: una forma que NINGÚN
-// repo real usa (todos escriben `story: "2.9"`). Ahora que el descubridor es único y separa
+// 🔴 Los ids de estos fixtures no pueden ser `1-2-done` / `2-9-old`: una forma que NINGÚN
+// repo real usa (todos escriben `story: "2.9"`). Como el descubridor es único y separa
 // trabajo de material por la FORMA del id, el fixture tiene que parecerse al repo. El orden
 // numérico se sigue probando igual — sale del nombre de archivo, no del id.
 test('computeNextStory: primera ready-for-dev en orden numérico + warn de in-progress', () => {
@@ -514,16 +508,15 @@ test('computeNextStory: sin ready-for-dev → menú de recuperación', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── Unificación 2026-08-15: next-story usa EL MISMO descubridor que on-edit ──────────────────
-// Antes armaba su propia lista con `readdirSync(<repo>/specs/stories)` y devolvía un error
+// ── next-story usa EL MISMO descubridor que on-edit ───────────────────────────────────────────
+// Armar su propia lista con `readdirSync(<repo>/specs/stories)` devolvería un error
 // ("no existe …/specs/stories") en todo repo con otro layout — un repo del equipo entre ellos.
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// Guardas que el chequeo de mutantes señaló como NO ejercidas (2026-08-15, corrida de los 114)
+// Guardas que el chequeo de mutantes señala como NO ejercidas
 // ═══════════════════════════════════════════════════════════════════════════════════════════════
-// El chequeo mató 84 de 114 y dejó 30 vivos. Un mutante vivo no dice "esto está mal": dice "nadie
-// probó esta línea". Los de abajo cierran los que tienen consecuencia real; los del `--doctor`
-// (formato de la salida) se dejan a propósito y quedan declarados en el mensaje del commit.
+// Un mutante vivo no dice "esto está mal": dice "nadie probó esta línea". Los de abajo cierran los que tienen
+// consecuencia real; los del `--doctor` (formato de la salida) se dejan a propósito sin probar.
 
 test('story-discovery: `story:` SIN `status:` no es una story (y al revés tampoco)', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-medio-'));
@@ -613,9 +606,9 @@ test('next-story: sin stories, avisa con el criterio y el comando de diagnóstic
 });
 
 test('on-pre-commit: el filtro del diff sólo deja pasar stories (sin mirar la ruta)', () => {
-  // 🔴 Se llama a la FUNCIÓN REAL (`selectStorySpecs`), no a una reimplementación del filtro. La
-  // primera versión de este test copiaba la lógica acá adentro y por eso pasaba en verde mientras
-  // los mutantes de esas líneas sobrevivían: el código de producción nunca se ejecutaba.
+  // 🔴 Se llama a la FUNCIÓN REAL (`selectStorySpecs`), no a una reimplementación del filtro: copiar la lógica
+  // acá adentro pasaría en verde mientras los mutantes de esas líneas sobreviven, porque el código de
+  // producción nunca se ejecutaría.
   const { selectStorySpecs } = opcStructural;
   const contenidos = {
     'specs/bizuit-bpmn-mcp/4-43.md': '---\nstory: "4.43"\nstatus: done\n---\n\n#\n',
@@ -692,14 +685,14 @@ test('story-discovery: un cache de una versión vieja se IGNORA, no se lee mal',
   writeStoryFile(root, 'specs/14-1.md', ['story: "14.1"', 'status: done']);
   const cachePath = path.join(root, '.cache.json');
 
-  // Cache con el formato VIEJO (v2 guardaba carpetas, no stories) y una entrada mentirosa.
+  // Cache con un formato VIEJO (v2 guardaba carpetas, no stories) y una entrada mentirosa.
   fs.writeFileSync(cachePath, JSON.stringify({ v: 2, [root]: { at: Date.now(), dirs: ['/inventado'] } }));
   const r = discovery.discoverStories(root, { cache: true, cachePath });
   assert.equal(r.fromCache, false, 'una versión distinta de cache no se usa');
   assert.deepEqual(idsDe(r), ['14.1'], 'se re-escanea de verdad');
 
   // Y una entrada de la versión ACTUAL pero sin stats: se usa igual, sin romperse.
-  // (v pasó a 4 con DOTSPECS-1 — el bump que invalida los índices que decían "0 stories" en FRESNO.)
+  // (el número de versión sube para invalidar los índices viejos, que podían decir "0 stories" donde sí había.)
   fs.writeFileSync(cachePath, JSON.stringify({ v: 4, [root]: { at: Date.now(), sig: 'default|6', stories: [], excluded: [] } }));
   const r2 = discovery.discoverStories(root, { cache: true, cachePath });
   assert.equal(r2.fromCache, true);
@@ -820,12 +813,12 @@ test('next-story: informa con qué criterio de id escaneó', () => {
 });
 
 test('story-discovery: cada .md que se abre se CIERRA (si no, el escaneo se trunca solo)', () => {
-  // 🔴 Este es el test que faltaba y casi doy por "equivalente". El probe abre un descriptor por
+  // 🔴 El probe abre un descriptor por
   // archivo; si no lo cierra, con el límite por defecto de 1M no se nota nada — pero el límite
   // habitual de macOS para procesos de escritorio es 256, y ahí un escaneo de 1300 `.md` se queda
   // sin descriptores a mitad de camino y devuelve MENOS stories, sin decir nada. Otra vez el
   // mismo modo de falla: un número más bajo que la verdad, indistinguible de la verdad.
-  // Medido: con el cierre roto y `ulimit -n 64`, encuentra 53 de 200 y después explota.
+  // Con el cierre roto y `ulimit -n 64`, encuentra 53 de 200 y después explota.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-fd-'));
   fs.mkdirSync(path.join(root, '.git'), { recursive: true });
   fs.mkdirSync(path.join(root, 'specs'), { recursive: true });
@@ -870,15 +863,12 @@ test('story-discovery: el --doctor lee sus flags en cualquier orden', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Fix 2026-08-28 — el spawnIf del despachador exigía la RUTA `specs/stories/`
+// El spawnIf del despachador no puede exigir la RUTA `specs/stories/`
 // ═══════════════════════════════════════════════════════════════════════════════
-// Caso disparador: crear una story en un producto del equipo no creó el work item de ADO ni corrió el
-// enlazado de follow-ups. El pre-filtro que decide spawnear esas dos hojas (dispatch.js,
-// `isStoryWrite`) todavía decidía por RUTA — el mismo defecto que el barrido del 2026-08-15
-// arregló en otros 3 gates, en la única pieza que ese barrido no vio. Medido 2026-08-28:
-// 13 de los 15 repos con stories del equipo (751 de 1083) quedaban fuera. Ahora decide la
-// IDENTIDAD DECLARADA (`story:` en el frontmatter del content), vía declaresStoryIdentity.
-// Caso: el arnés incident-log#story-write-spawn-2026-08-28.
+// Si el pre-filtro que decide spawnear las hojas de ADO y de follow-ups (dispatch.js, `isStoryWrite`) decidiera por
+// RUTA, crear una story en un repo con otro layout no crearía el work item de ADO ni correría el enlazado de
+// follow-ups: la mayoría de los repos con stories del equipo quedaría fuera. Decide la IDENTIDAD DECLARADA (`story:`
+// en el frontmatter del content), vía declaresStoryIdentity.
 
 test('declaresStoryIdentity: la identidad la declara el frontmatter, jamás la ruta', () => {
   const f = discovery.declaresStoryIdentity;
@@ -896,7 +886,7 @@ test('declaresStoryIdentity: la identidad la declara el frontmatter, jamás la r
   assert.equal(f(''), false);
 });
 
-// El ambiente de una máquina SIN configuración (2026-10-05, la copia para un dev de otra organización): HOME vacía,
+// El ambiente de una máquina SIN configuración (la copia para un dev de otra organización): HOME vacía,
 // sin el perfil del equipo y sin ninguna variable de Azure DevOps de quien corre; el arnés, el de este mismo árbol.
 const HARNESS_HERE = path.resolve(SCRIPTS, '..', '..', '..');
 function adoEnv(extra = {}) {
@@ -912,7 +902,7 @@ function adoEnv(extra = {}) {
 test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea las hojas de story-create', () => {
   // El disparo REAL, end-to-end: dispatch.js decide por contenido y spawnea la hoja de ADO,
   // cuyo reminder es la evidencia. El layout es el de Pacara (docs/<área>/<épica>/) — el
-  // caso que el guard por ruta dejaba mudo. OJO: la hoja excluye paths que contengan
+  // caso que un guard por ruta dejaría mudo. OJO: la hoja excluye paths que contengan
   // el arnés o el ~/.claude — el fixture vive en tmpdir plano a propósito.
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-spawn-'));
   const rel = 'docs/pedidos/epic-envios/story-9-9-demo.md';
@@ -920,7 +910,7 @@ test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea 
   fs.mkdirSync(path.join(root, path.dirname(rel)), { recursive: true });
   fs.writeFileSync(path.join(root, rel), contenido);
   const dispatch = path.join(SCRIPTS, 'dispatch.js');
-  // Azure DevOps prendida por variable (2026-10-05): la hoja de ADO sólo corre con la integración ado prendida, y esta
+  // Azure DevOps prendida por variable: la hoja de ADO sólo corre con la integración ado prendida, y esta
   // prueba mide el disparo, no la llave. Sin esto, en la copia pública (sin perfil del equipo) mediría la llave apagada.
   const run = (ev) => execFileSync('node', [dispatch, 'post-edit'], { input: JSON.stringify(ev), encoding: 'utf8', env: adoEnv({ TYCON_ADO_ORG: 'https://dev.azure.com/example-org' }) });
 
@@ -939,9 +929,9 @@ test('dispatch post-edit: el Write de una story FUERA de specs/stories/ spawnea 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// 2026-10-05 (la copia para un dev de otra organización): sin Azure DevOps configurado, cada story nueva inyectaba
-// «creá el work item en ADO» y mandaba a invocar una skill que después se salteaba sola. Ahora la hoja de ADO corre sólo
-// con la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story trae `.tycon/ado-config.yaml`.
+// La hoja de ADO corre sólo con la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story trae
+// `.tycon/ado-config.yaml`. Sin Azure DevOps configurado (la copia para un dev de otra organización), cada story nueva
+// inyectaría «creá el work item en ADO» y mandaría a invocar una skill que después se saltearía sola.
 test('dispatch post-edit: sin Azure DevOps configurado, la story nueva NO pide el work item; con la config del repo, sí', (t) => {
   if (!fs.existsSync(path.join(HARNESS_HERE, 'scripts', 'lib', 'tycon-config.js'))) { t.skip('sin el arnés en este árbol: no hay llave que medir'); return; }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sd-ado-off-'));

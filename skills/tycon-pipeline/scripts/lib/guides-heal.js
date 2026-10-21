@@ -1,24 +1,24 @@
 'use strict';
 /**
  * guides-heal.js — repara el CLON ATRASADO (o TRABADO) del arnés desde un hook que ya
- * está enchufado en todas las máquinas (on-prompt.js, UserPromptSubmit, registrado desde mayo).
+ * está enchufado en todas las máquinas (on-prompt.js, UserPromptSubmit).
  *
- * El problema que resuelve, medido el 2026-09-03 en la máquina de un dev del equipo:
+ * El problema que resuelve:
  *
  *   La línea de arranque de cada sesión hace `git pull` del arnés y después corre el
  *   instalador que vive ADENTRO de esa carpeta. Ese `git pull` se niega a avanzar si un archivo
  *   modificado localmente también cambió en origin — y el capturador de retrospectivas deja
- *   `guides/guide-update-proposals.md` modificado y sin commitear en la máquina donde corre. Ese
- *   archivo cambió 15 veces en origin/main en seis días. Resultado: el pull falló todos los días,
- *   el error iba a /dev/null (a propósito: una red caída no puede romper el arranque), y el
- *   instalador siguió corriendo… en su versión del 27/08, que no conoce los hooks nuevos.
- *   272 commits atrás, sin una sola línea de error. El freno de story-a-mano (que viaja por
- *   agent-skills, que SÍ se actualizaba) llegó; el hook que lo abre (que registra el instalador)
- *   no. El dev chocó contra un freno que no se podía abrir por su camino previsto.
+ *   `guides/guide-update-proposals.md` modificado y sin commitear en la máquina donde corre. Si ese
+ *   archivo cambia seguido en origin/main, el pull falla todos los días, el error va a /dev/null
+ *   (a propósito: una red caída no puede romper el arranque), y el instalador sigue corriendo…
+ *   en su versión vieja, que no conoce los hooks nuevos. La máquina queda cientos de commits
+ *   atrás, sin una sola línea de error. El freno de story-a-mano (que viaja por agent-skills,
+ *   que SÍ se actualiza) llega; el hook que lo abre (que registra el instalador) no. El dev
+ *   choca contra un freno que no se puede abrir por su camino previsto.
  *
  *   El arreglo durable —la línea de arranque con `--autostash`, que la escribe el instalador— NO
- *   puede llegar a esas máquinas: viaja por el pull que está bloqueado. Es el mismo callejón del
- *   `harness-bootstrap-heal.sh` del 27/08, por la otra puerta. La salida es la misma: entrar por
+ *   puede llegar a esas máquinas: viaja por el pull que está bloqueado. Es el mismo callejón de
+ *   `harness-bootstrap-heal.sh`, por la otra puerta. La salida es la misma: entrar por
  *   la carpeta que sí se actualiza (agent-skills lleva `--autostash` en su pull desde el
  *   principio) y por un hook que ya está registrado.
  *
@@ -28,9 +28,8 @@
  *      desde ahí ningún pull entra ("unmerged files")—, limpia SÓLO esos archivos (`checkout HEAD --
  *      <ellos>`), y sólo si verificó que están en ese stash, que tienen los marcadores adentro, y que
  *      no hay un merge/rebase del dev en curso. El resto del árbol no se toca: lo que el dev haya
- *      seguido editando después de quedar trabado sigue ahí (hallazgos H1 y H8 de las dos pasadas
- *      adversariales del 2026-09-03: sin esto la línea de arranque arreglada volvía a trabar el clon
- *      a los pocos días, y la primera versión de la limpieza —un reset --hard— borraba ese trabajo).
+ *      seguido editando después de quedar trabado sigue ahí (sin esto la línea de arranque arreglada volvería a trabar el clon
+ *      a los pocos días, y una limpieza con reset --hard borraría ese trabajo).
  *      En ese estado el pull del arranque murió ANTES de fetchear, así que acá sí se hace un fetch.
  *   1. Si el clon no existe, no está en main, o no está atrás de origin/main → silencio.
  *      origin/main ya está fresco: el `git pull` del arranque hace el fetch aunque el merge falle
@@ -45,7 +44,7 @@
  *   4. Corre el instalador NUEVO en segundo plano (el que acaba de bajar), así la máquina queda
  *      enchufada sin esperar a la próxima sesión. Los hooks nuevos igual quedan activos recién al
  *      abrir la siguiente: Claude Code lee settings.json al arrancar. Detached a propósito: la
- *      regla H11 de on-prompt.js prohíbe trabajo pesado o reescrituras de settings por prompt.
+ *      la regla de on-prompt.js prohíbe trabajo pesado o reescrituras de settings por prompt.
  *      En Windows corre el .ps1 sólo si hay `pwsh` (el instalador lo requiere; con PowerShell 5.1
  *      moriría en la primera línea y el aviso mentiría).
  *   5. Deja constancia en <stateDir>/guides-heal/<sid>.json y devuelve el aviso para el dev.
@@ -56,12 +55,11 @@
  * el que apunta el lugar ~/.claude/tycon-harness (o el nombre viejo) bajo el HOME de la sesión (lib/harness-path.js,
  * modo «sólo enlace») — en el sandbox no existe, y no hacer nada es lo correcto.
  *
- * Fail-open total. Off: TYCON_GUIDES_HEAL=0. Caso: incident-log#arnes-que-se-bloquea-a-si-mismo-2026-09-03.
- */
+ * Fail-open total. Off: TYCON_GUIDES_HEAL=0. */
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // La carpeta del estado, de una sola pieza
 const { execFileSync, spawn } = require('child_process');
 
 const FETCH_STALE_DAYS = 3;
@@ -73,7 +71,7 @@ const OUR_STASH_RE = /autostash|tycon-guides-heal/i;
 /**
  * Rutas cuyo contenido NO es trabajo de nadie: lo genera una pieza del arnés y lo publicado manda.
  * Sólo estas se apartan solas cuando traban el avance; cualquier otro archivo sin trackear se
- * respeta y se avisa (2026-09-06: una máquina 158 commits atrás por `.dashboard/sdlc-stage-*.json`).
+ * respeta y se avisa (por ejemplo, un archivo suelto de `.dashboard/`).
  */
 const REGENERABLES = [/^\.dashboard\//];
 
@@ -91,7 +89,7 @@ function makeGit(env) {
 }
 
 function repoDir(env) {
-  // Sólo el enlace bajo el HOME de la sesión, NUNCA TYCON_GUIDES_DIR (story 8.3, AC 5): bajo el banco la
+  // Sólo el enlace bajo el HOME de la sesión, NUNCA TYCON_GUIDES_DIR: bajo el banco la
   // variable apunta al repo real. Si el enlace no resuelve, la ruta nominal del enlace: no existe, y `heal`
   // no hace nada, que es lo correcto.
   if (env.TYCON_GUIDES_HEAL_REPO) return env.TYCON_GUIDES_HEAL_REPO;
@@ -99,7 +97,7 @@ function repoDir(env) {
   return hp.soloEnlace({ home: os.homedir() }).dir || hp.enlace(os.homedir());
 }
 
-/** El estado del mecanismo de instalación (story 8.13): `'ok'` si existe y es legible con `schema ≥ 1`, `'broken'` si
+/** El estado del mecanismo de instalación: `'ok'` si existe y es legible con `schema ≥ 1`, `'broken'` si
  *  existe y no se puede leer, `null` si no existe. */
 function harnessState(stateDir) {
   const p = path.join(stateDir, 'harness-state.json');
@@ -139,7 +137,7 @@ function count(git, dir, range) {
 
 /** Archivos en conflicto con sus etapas del índice (1 base · 2 la de HEAD · 3 la otra). Con `-z`: una ruta con espacio
  *  llega entera, sin las comillas que le pone `status --porcelain`. `inHead: false` = DU/UA/DD: HEAD no lo tiene, y
- *  `checkout HEAD --` sobre él falla ENTERO (story 8.5.1 del arnés). */
+ *  `checkout HEAD --` sobre él falla ENTERO. */
 function unmergedStages(git, dir) {
   const stages = new Map();
   for (const rec of git(dir, ['ls-files', '-u', '-z']).split('\0').filter(Boolean)) {
@@ -180,8 +178,8 @@ function hasConflictMarkers(dir, file) {
  * stash de arriba y tener los marcadores de git adentro (sin marcadores = el dev lo resolvió a mano
  * y le falta el `git add`: no se pisa). No puede haber un merge/rebase del dev a medias. Se limpian
  * con `checkout HEAD -- <esos>` y NO con `reset --hard`: el resto del árbol —lo que el dev haya
- * seguido editando después de quedar trabado— no se mira ni se toca (hallazgo H8 de la segunda
- * pasada adversarial: el reset borraba ese trabajo, que no estaba en ningún stash).
+ * seguido editando después de quedar trabado— no se mira ni se toca (el reset borraría ese
+ * trabajo, que no está en ningún stash).
  * @returns {null | {stuck: true, unstuck: boolean, files: string[], reason?: string}}
  */
 function unstick(git, dir) {
@@ -196,13 +194,13 @@ function unstick(git, dir) {
   if (!files.every((f) => stashFiles.has(f))) return { stuck: true, unstuck: false, files, reason: 'hay conflictos en archivos que no están en el stash' };
   // Los que HEAD no tiene (DU: lo publicado borró un archivo que el dev había tocado) no traen marcadores: git deja la
   // versión del stash entera. No se les piden, y salen del índice con `rm --cached` (el archivo del dev queda en el
-  // disco). A los demás, los marcadores y `checkout HEAD --`, como siempre. Un comando por tipo: si van juntos y uno no
-  // aplica, git no hace ninguno (story 8.5.1 del arnés).
+  // disco). A los demás, los marcadores y `checkout HEAD --`. Un comando por tipo: si van juntos y uno no
+  // aplica, git no hace ninguno.
   const gone = stages.filter((u) => !u.inHead).map((u) => u.file);
   const kept = stages.filter((u) => u.inHead).map((u) => u.file);
   if (!kept.every((f) => hasConflictMarkers(dir, f))) return { stuck: true, unstuck: false, files, reason: 'parece resuelto a mano — falta git add' };
   // Dos pasos, cada uno con su motivo: si el primero anda y el segundo falla, el clon YA cambió y hay que decirlo
-  // (revisor de fallas silenciosas, story 8.5.1: con un solo try, «el checkout falló» y «No la toco» eran falsos).
+  // (con un solo try, «el checkout falló» y «No la toco» serían falsos).
   if (gone.length) {
     try { git(dir, ['rm', '-q', '--cached', '--', ...gone], { timeout: 15000 }); } catch { return { stuck: true, unstuck: false, files, gone: [], reason: 'el rm --cached falló' }; }
   }
@@ -231,10 +229,10 @@ function collidingFiles(git, dir) {
 /**
  * Avanza a origin/main sin red: stash propio (sólo si hay cambios trackeados), merge --ff-only, pop.
  *
- * 🔴 Y los NO TRACKEADOS que lo publicado agrega (2026-09-06). git se niega a pisar un archivo no
+ * 🔴 Y los NO TRACKEADOS que lo publicado agrega. git se niega a pisar un archivo no
  * trackeado —«untracked working tree files would be overwritten by merge»— y `stash push` SIN `-u`
- * no los ve: `--autostash` tampoco. Resultado medido: una máquina del equipo quedó 158 commits
- * atrás, trabada sesión tras sesión por `.dashboard/sdlc-stage-<fecha>.json`, que el respaldo local
+ * no los ve: `--autostash` tampoco. Sin esto, una máquina queda trabada
+ * sesión tras sesión por `.dashboard/sdlc-stage-<fecha>.json`, que el respaldo local
  * del medidor escribe al arrancar y el nocturno commitea. El caso se repite en TODA máquina que
  * abra sesión antes de que llegue el arreglo del respaldo — y ese arreglo viaja por el pull que
  * este archivo destraba, así que sin esto el círculo no se corta solo.
@@ -249,10 +247,10 @@ function advance(git, dir) {
   let stashed = false;
   const guardados = [];
   // primero los no trackeados que chocan: si no, el merge ni arranca. SÓLO los REGENERABLES: un
-  // archivo que el dev escribió es trabajo suyo y no se toca (caso H5, que sigue avisando y dando el
+  // archivo que el dev escribió es trabajo suyo y no se toca (sigue avisando y dando el
   // comando). Lo de `.dashboard/` no es trabajo de nadie: lo produce el nocturno, se commitea para
   // que todas las máquinas lean la misma foto, y el respaldo local lo re-escribe en cada arranque —
-  // por eso trababa el clon sesión tras sesión y ninguna mano lo iba a mover.
+  // por eso traba el clon sesión tras sesión y ninguna mano lo iba a mover.
   for (const f of collidingFiles(git, dir).untracked.filter((x) => REGENERABLES.some((re) => re.test(x)))) {
     try {
       git(dir, ['stash', 'push', '-q', '-u', '-m', `${STASH_MSG} (no trackeado que lo publicado agrega)`, '--', f]);
@@ -280,7 +278,7 @@ function advance(git, dir) {
 }
 
 /**
- * La guarda (story 8.18 del arnés, AC 34). Desde la unión de los dos repos internos el clon del arnés trae `skills/`, y
+ * La guarda. El clon del arnés trae `skills/`, y
  * en una máquina de un solo árbol es EL LUGAR del que salen las skills (`~/.claude/agent-skills` y `~/.claude/skills`
  * apuntan a él). Si `main` vuelve a un árbol de antes de la unión —el plan de retorno—, avanzar ese clon deja a la
  * máquina sin skills: sin pipeline, sin revisores, y sin esta misma sanadora. Esta pieza es el tercer actualizador (los
@@ -288,9 +286,9 @@ function advance(git, dir) {
  * En la máquina de dos clones las skills salen del OTRO clon, y éste sigue a `main` como siempre.
  *
  * Tres respuestas, como `bringsSkills`: `comes: true` · `false` · `null` = no se pudo mirar (`error` dice qué y por qué).
- * Antes eran dos: si `~/.claude/agent-skills` no se dejaba resolver (un enlace a una carpeta sin permisos, un disco que
- * no responde) daba «son dos clones», y la sanadora avanzaba a una punta sin skills (story 8.18 del arnés, tramo 3 ·
- * segunda vuelta del revisor de fallos silenciosos). Un ENOENT sí es una respuesta: ese enlace no está.
+ * Si `~/.claude/agent-skills` no se deja resolver (un enlace a una carpeta sin permisos, un disco que
+ * no responde) no puede leerse como «son dos clones», porque la sanadora avanzaría a una punta sin skills.
+ * Un ENOENT sí es una respuesta: ese enlace no está.
  * @returns {{comes: boolean|null, error: string|null}}
  */
 function skillsOrigin(dir, home) {
@@ -298,9 +296,9 @@ function skillsOrigin(dir, home) {
   const blindOf = (p, e) => `${p} (${(e && (e.code || e.message)) || e})`;
   const real = (p) => { try { return { at: fs.realpathSync(p) }; } catch (e) { return gone(e) ? { at: null } : { error: blindOf(p, e) }; } };
   // «Es el mismo clon» se decide por QUÉ carpeta es (dispositivo e inodo), no por cómo está escrita su ruta: en un
-  // disco que no distingue mayúsculas, un enlace escrito con otra caja nombra el mismo clon, y letra por letra daba
-  // «son dos clones» — la guarda no corría (story 8.18 del arnés, tramo 3: la clase 14 del pase adversarial, acá).
-  // Si el disco no da esa identidad, vale la ruta real, como antes.
+  // disco que no distingue mayúsculas, un enlace escrito con otra caja nombra el mismo clon, y letra por letra daría
+  // «son dos clones» y la guarda no correría.
+  // Si el disco no da esa identidad, vale la ruta real.
   const identity = (p) => { try { const st = fs.statSync(p, { bigint: true }); return { id: st.ino ? `${st.dev}:${st.ino}` : null }; } catch (e) { return { error: blindOf(p, e) }; } };
   const d = real(dir);
   if (d.error) return { comes: null, error: d.error };
@@ -340,9 +338,9 @@ const SKILLS_MARK = 'skills/tycon-pipeline';
 /**
  * ¿El árbol de ese commit trae `skills/tycon-pipeline`? Tres respuestas, como `hasSkills()` de repoint.js del arnés:
  * `true` (lo trae) · `false` (git contestó y no lo trae) · `null` (git no pudo contestar: NO se sabe; `error` trae lo
- * que dijo). Antes eran dos —con `cat-file -e`, que sale ≠ 0 en los dos casos—, y «no pude mirar» se leía como «no lo
- * trae»: con el árbol de HEAD sin leer la sanadora entendía «de esta copia no salen las skills» y avanzaba, a una punta
- * sin skills (story 8.18, tramo 3 · revisor de fallos silenciosos, 2026-10-04).
+ * que dijo). No se usa `cat-file -e`, que sale ≠ 0 en los dos casos: «no pude mirar» se leería como
+ * «no lo trae». Con el árbol de HEAD sin leer, la sanadora entendería «de esta copia no salen las
+ * skills» y avanzaría a una punta sin skills.
  * @returns {{brings: boolean|null, error: string|null}}
  */
 function bringsSkills(git, dir, rev) {
@@ -391,7 +389,7 @@ function manualAdvice(git, dir, collide) {
   const d = sh(dir);
   const steps = [];
   // El mismo consejo que el aviso de arranque (branch-guard-notice.js): un comando por tipo de conflicto, citado, y
-  // `git stash` si lo que el dev tocó después de trabarse choca con lo publicado (story 8.5.1 del arnés).
+  // `git stash` si lo que el dev tocó después de trabarse choca con lo publicado.
   if (stuck) {
     const gone = unmerged.filter((u) => !u.inHead).map((u) => sh(u.file));
     const kept = unmerged.filter((u) => u.inHead).map((u) => sh(u.file));
@@ -429,11 +427,11 @@ function heal({ sessionId, stateDir, env = process.env, home = os.homedir() } = 
   if (!fs.existsSync(stamp)) return null; // no pude sellar → no arriesgo repetir el trabajo en cada prompt
   pruneStamps(path.dirname(stamp));
 
-  // story 8.13 (tanda A, AC 9): con el estado del mecanismo de instalación nuevo (`harness-state.json`, lo escribe
+  // Con el estado del mecanismo de instalación (`harness-state.json`, lo escribe
   // `scripts/setup/harness.js` del arnés) la actualización de los dos repos la hace `harness.js startup` desde la copia fija
   // de arranque, y esta sanadora se hace a un lado: registra `delegated` y no toca git. Un estado ILEGIBLE tampoco es «sin
-  // estado» (8.3 AC 2): también se hace a un lado, y lo registra como `broken` — arreglarlo es de `harness.js doctor`. Sin
-  // estado, lo de hoy. La referencia entre repos tolera las dos situaciones hasta el retiro (regla «entre repos» de la 8.9).
+  // estado» : también se hace a un lado, y lo registra como `broken` — arreglarlo es de `harness.js doctor`. Sin
+  // estado, va la actualización directa. La referencia entre repos tolera las dos situaciones.
   const hs = harnessState(stateDir);
   if (hs) { record({ result: 'delegated', state: hs }); return null; }
 
@@ -454,8 +452,8 @@ function heal({ sessionId, stateDir, env = process.env, home = os.homedir() } = 
 
   // Trabado, el pull del arranque muere ANTES de fetchear ("unmerged files") → origin/main puede
   // estar viejo. Es el único estado en que se sabe con certeza que no hubo fetch: acá sí se sale a
-  // la red (hallazgo H9 de la segunda pasada: sin esto, "al día pero trabada" podía ser falso y el
-  // instalador nuevo se posponía una sesión).
+  // la red (sin esto, "al día pero trabada" podría ser falso y el
+  // instalador nuevo se pospondría una sesión).
   if (un && un.unstuck) {
     try { git(dir, ['fetch', '--quiet', 'origin', 'main'], { timeout: 15000 }); } catch { /* sin red: seguimos con lo que hay */ }
   }
@@ -475,7 +473,7 @@ function heal({ sessionId, stateDir, env = process.env, home = os.homedir() } = 
     }
   }
 
-  // La guarda (story 8.18, AC 34): si de este clon salen las skills y lo publicado ya no las trae, no se avanza. Y si
+  // La guarda: si de este clon salen las skills y lo publicado ya no las trae, no se avanza. Y si
   // no se pudo MIRAR —el árbol de HEAD o el de lo publicado— tampoco: no saber no es «no las trae» ni «de acá no salen».
   // Y si no se pudo mirar DE DÓNDE salen las skills, tampoco se avanza: puede ser de esta copia.
   const origin = skillsOrigin(dir, home);

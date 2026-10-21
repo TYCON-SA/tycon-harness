@@ -1,5 +1,5 @@
 /**
- * lib/story-checks.js — checks DETERMINISTAS de story Mary+GOLD (auditoría 2026-06-09).
+ * lib/story-checks.js — checks DETERMINISTAS de story Mary+GOLD.
  *
  * Extrae a código las reglas mecánicas que hoy ejecutan advisors LLM (Sonnet,
  * 2-3 min + tokens por iteración del Step 5). El patrón es "executor determinista
@@ -15,7 +15,7 @@
  *   DEFTR-C2  cada *.skip() / [Fact(Skip=...)] AGREGADO está anotado con deferral.
  *   WIRING-C1 componente React exportado nuevo sin ningún import/uso externo.
  *
- * Contrato AC↔test (formalizado 2026-06-09 en story-format.md §6):
+ * Contrato AC↔test (story-format.md §6):
  *   - Tabla ### Tests con columna `AC` (lista de números).
  *   - xUnit:    [Trait("Story","4.5.3")] [Trait("AC","1")]
  *   - vitest:   describe/it con tag literal '@story-4.5.3' / '@ac-1'
@@ -45,14 +45,12 @@ function stripFrontmatter(s) {
 }
 
 // Sección `## Acceptance Criteria` → texto, o null si la story no la tiene.
-// 🔴 ANCLADA a principio de línea + sin frontmatter (fix 2026-07-25). El regex viejo
-// (`/## Acceptance Criteria/`, sin `^` ni flag `m`) matcheaba el literal EN CUALQUIER
-// POSICIÓN, incluido dentro de un backtick del frontmatter — y como el frontmatter va
-// primero, ganaba él. La "sección" resultante era el resto del frontmatter: 0 items
-// numerados → `parseAcsFromSpec` devolvía [] → en `runStoryChecks` las dos ramas de
-// ACCOV-C5 piden `acs.length`, así que el check NO CORRÍA y no emitía NADA (ni finding,
-// ni ambiguous, ni ok). Silencio total, no subconteo. Medido sobre 424 stories reales:
-// 10 casos. `pipeline.js:356` ya usaba la forma anclada — la divergencia era el bug.
+// 🔴 ANCLADA a principio de línea y sin frontmatter. Un regex sin `^` ni flag `m` matchearía
+// el literal EN CUALQUIER POSICIÓN, incluido dentro de un backtick del frontmatter — y como el
+// frontmatter va primero, ganaría él. La "sección" resultante sería el resto del frontmatter: 0 items
+// numerados → `parseAcsFromSpec` devolvería [] → en `runStoryChecks` las dos ramas de ACCOV-C5
+// piden `acs.length`, así que el check NO correría y no emitiría NADA (ni finding, ni ambiguous, ni ok).
+// Silencio total, no subconteo. `pipeline.js` usa la misma forma anclada.
 //
 // 🔴 Una sola función lee las secciones de la story, y todos los lectores pasan por ella: una expresión propia en
 // otro archivo es la que queda atrás cuando cambia el formato, y un título que no se reconoce deja la story sin
@@ -73,7 +71,7 @@ const SECTIONS = {
   // (`### AC-1`), que con el título de la sección en `###` está a su mismo nivel— o en el título de pruebas.
   // Un título de pruebas más hondo que el de criterios corta sólo si debajo hay una tabla: la de story-format es
   // `### Tests` con su tabla, pero hay stories que usan `### Tests` como grupo de criterios (sus criterios en viñetas)
-  // y se quedaban sin ellos.
+  // y quedarían sin ellos.
   criteria: {
     title: new RegExp(`^(#{2,3})[ \\t]+(?:${TITLE_WORDS.criteria})\\b[^\\n]*$`, 'i'),
     ends: (line, level, lines, i) => {
@@ -169,34 +167,30 @@ function newFormStarts(section) {
 // ACs declarados en `## Acceptance Criteria`. Dos estilos conviven en el repo y son
 // EXCLUYENTES entre sí — la story declara sus ACs como headings `### AC-N — …` O como
 // una lista numerada, nunca las dos cosas:
-//   (a) headings `### AC-N`, con listas numeradas ADENTRO que son sub-criterios (R-9 FRESNO)
-//   (b) lista numerada `N. …` corrida, con headings que son títulos de GRUPO (4.21 BIZUIT)
+//   (a) headings `### AC-N`, con listas numeradas ADENTRO que son sub-criterios
+//   (b) lista numerada `N. …` corrida, con headings que son títulos de GRUPO
 //   (c) bullets `- **ACN**: texto` (stories `epic: Hotfix` escritas en prosa)
 //
-// 🔴 Cómo se distingue (a) de (b) — fix 2026-07-25. El criterio viejo era "si hay headings
-// AC-N, devolver SOLO esos y cortar", y eso convertía todo caso (b) en subconteo silencioso:
-// la 4.21 (11 headings de grupo + 42 ACs numerados) daba 11 de 42, con 31 ACs invisibles
-// para ACCOV-C5, la matriz runtime y la evidencia DoD por-AC. El criterio correcto no es
-// la PRESENCIA de headings sino el ALCANCE de la numeración:
+// 🔴 Cómo se distingue (a) de (b). Un criterio que devuelve SOLO los headings AC-N y corta convierte
+// todo caso (b) en subconteo silencioso: un spec con 11 headings de grupo y 42 ACs numerados daría
+// 11 de 42, con 31 ACs invisibles para ACCOV-C5, la matriz runtime y la evidencia DoD por-AC. El
+// criterio correcto no es la PRESENCIA de headings sino el ALCANCE de la numeración:
 //   · Si los numerados reinician (`1,2,3,1,2,…`) son listas separadas, una por heading
-//     ⇒ sub-criterios ⇒ mandan los headings. (R-9: 8 headings, numerados reinician en 1.)
+//     ⇒ sub-criterios ⇒ mandan los headings. (8 headings, numerados que reinician en 1.)
 //   · Si corren como UNA sola secuencia creciente que además pasa el último heading
 //     ⇒ los headings no alcanzan a nombrarlos ⇒ la lista ES el universo de ACs.
-//     (4.21: headings hasta AC11, numerados 1→42.)
+//     (headings hasta AC11, numerados 1→42.)
 //   · Una sola corrida que NO pasa el último heading son los sub-items del primer heading
-//     ⇒ mandan los headings. (5.2: 6 headings, 3 sub-items dentro de AC1.)
-// El "pasa el último heading" es lo que separa 4.21 de 5.2 — sin eso, 3 sub-items de un
-// único heading también forman corrida creciente y se leen como si fueran los ACs.
+//     ⇒ mandan los headings. (6 headings, 3 sub-items dentro de AC1.)
+// El "pasa el último heading" es lo que separa una lista de ACs de tres sub-items de un único
+// heading: sin esa condición, los sub-items también forman corrida creciente y se leen como ACs.
 //
-// 🔴 El universo numerado es TODO item numerado, no solo los que arrancan con `**`
-// (fix 2026-07-25). El filtro `N. **bold**` existía como precisión anti-falso-positivo,
-// pero como el fallback plano solo corría con CERO matches, una story que mezcla estilos
-// (`1. **Given** …` junto a `12. texto pelado`) contaba solo los bold y descartaba el resto
-// en silencio: 4.8 → 11 de 13, 4.9 → 6 de 8, 4.10 → 4 de 6, 1.4 → 6 de 7.
-// El riesgo que cubría el filtro (listas numeradas anidadas en prosa) se midió sobre las
-// 424 stories del corpus: NO cambia ni un universo. Y el error que evita es peor que el que
-// causaba — un AC de más se ve como finding ruidoso de ACCOV-C5 y un humano lo resuelve;
-// un AC de menos es un verde falso que nadie ve.
+// 🔴 El universo numerado es TODO item numerado, no solo los que arrancan con `**`. El fallback
+// plano solo corre con CERO matches: una story que mezcla estilos (`1. **Given** …` junto a
+// `12. texto pelado`) contaría solo los bold y descartaría el resto en silencio. El riesgo que
+// motivaría el filtro (listas numeradas anidadas en prosa) se midió sobre el corpus de stories: no
+// cambia ni un universo. Y el error que evita es peor que el que causaría — un AC de más se ve como
+// finding ruidoso de ACCOV-C5 y un humano lo resuelve; un AC de menos es un verde falso que nadie ve.
 function parseAcsFromSpec(specContent) {
   if (!specContent) return [];
   const section = acSectionOf(specContent);
@@ -232,13 +226,12 @@ function criteriaOf(specContent) {
   return { acs, found, reason };
 }
 
-// AC → su TEXTO, para poder MOSTRARLE al usuario qué está aprobando (2026-07-27).
+// AC → su TEXTO, para poder MOSTRARLE al usuario qué está aprobando.
 //
-// 🔴 Por qué existe: el prompt de `marker.js runtime-waiver` mostraba la RAZÓN por la que un AC no se
-// puede verificar corriendo, y el test que lo cubre — pero NUNCA qué dice el AC. O sea que el usuario
-// aprobaba saltear la verificación de algo que el propio prompt no le decía qué era: la excusa sin el
-// hecho. Es exactamente el rubber-stamp que la confirmación por-AC vino a evitar, un nivel más abajo.
-// Caso disparador: el dev, Story 3.24 de un producto del equipo (guides/maintaining/incident-log.md#case-waiver-prompt-hides-ac-text-2026-07-27) — *"¿no sería necesario contarme qué dice el AC?"*.
+// 🔴 Por qué existe: el prompt de `marker.js runtime-waiver` muestra la RAZÓN por la que un AC no se
+// puede verificar corriendo, y el test que lo cubre — pero el texto del AC también hace falta. Sin él,
+// el usuario aprueba saltear la verificación de algo que el propio prompt no le dice qué es: la excusa
+// sin el hecho.
 //
 // Devuelve `{ [n]: texto }` — prosa aplanada y acotada, apta para un prompt de terminal. Best-effort
 // por diseño: si un AC no se puede aislar, se omite del mapa y el llamador cae a su texto de siempre
@@ -279,7 +272,7 @@ function acTextsFromSpec(specContent, { maxChars = 600 } = {}) {
   };
   for (const [i, raw] of lines.entries()) {
     // El filtrado de fences y citas es POR LÍNEA y va acá, no en `limpiarProsa`: una vez que las
-    // líneas se juntan en un solo string, `^`/`$` ya no distinguen dónde empezaba cada una.
+    // líneas se juntan en un solo string, `^`/`$` no distinguen dónde empieza cada una.
     if (/^[ \t]*```/.test(raw)) { enFence = !enFence; continue; }
     if (enFence && !leerBloques) continue;
     const n = startOf(raw, i);
@@ -311,7 +304,7 @@ function limpiarProsa(s, maxChars) {
   t = t.replace(/\|/g, ' ');                         // tablas embebidas
   // Énfasis. El `_` SÓLO cuenta como énfasis si NO está entre caracteres de palabra: si no,
   // `ERROR_CASE` se muestra como `ERRORCASE` y el AC que el tester lee deja de decir lo que dice
-  // el spec (detectado 2026-07-28 al reusar este extractor en la guía de QA).
+  // el spec.
   t = t.replace(/\*\*|\*/g, '');
   t = t.replace(/(^|\W)__(?=\S)|(?<=\S)__($|\W)/g, '$1$2');
   t = t.replace(/(^|\W)_(?=\S)|(?<=\S)_($|\W)/g, '$1$2');
@@ -326,19 +319,17 @@ function limpiarProsa(s, maxChars) {
 // posicional (col 0 = id, col 1 = nombre). acRefs: columna AC si existe, sino
 // cualquier `AC ?#?N` en el texto de la fila (práctica actual texto-libre).
 //
-// 🔴 El heading se acepta en CUALQUIER nivel, no solo `### Tests` (fix 2026-07-25).
-// story-format.md §6 lo escribe como H3, pero 75 de las 424 stories del corpus lo
-// tienen como `## Tests` — y el regex viejo (literal `### Tests`) devolvía
-// `found:false` con `rows:[]`. Downstream eso no se leía como "no pude parsear" sino
-// como "no hay tests": la matriz runtime pierde su voto de la columna AC
-// (runtime-matrix.js:313-317 une sección ∪ tabla justamente como defensa contra
-// parsers que subcuenten) y ACCOV-C5 emite un CRITICAL FALSO ("la story NO tiene
-// tabla ### Tests") sobre stories que sí la tienen. En 14 de esas 75 la sección AC
-// tampoco parseaba → cero señal de cualquier tipo.
+// 🔴 El heading se acepta en CUALQUIER nivel, no solo `### Tests`. story-format.md §6 lo escribe
+// como H3, pero varias stories del corpus lo tienen como `## Tests`; un regex literal `### Tests`
+// devolvería `found:false` con `rows:[]`. Downstream eso no se lee como "no pude parsear" sino como
+// "no hay tests": la matriz runtime pierde su voto de la columna AC (runtime-matrix.js une sección ∪
+// tabla justamente como defensa contra parsers que subcuentan) y ACCOV-C5 emite un CRITICAL FALSO
+// ("la story NO tiene tabla ### Tests") sobre stories que sí la tienen. Si además la sección AC no
+// parsea, no queda señal de ningún tipo.
 //
 // 🔴 Y devuelve `warnings` en vez de callar: una tabla que no se pudo leer tiene que
-// distinguirse de una story sin tests. Antes las dos daban `rows: []` y el consumidor
-// no podía separarlas — que es la forma exacta del falso verde que este archivo existe
+// distinguirse de una story sin tests. Con las dos dando `rows: []` el consumidor no
+// podría separarlas — que es la forma exacta del falso verde que este archivo existe
 // para cerrar. Campo aditivo: los consumidores que solo leen rows/found no se enteran.
 function parseTestsTable(specContent) {
   const empty = (extra) => ({ rows: [], hasAcColumn: false, found: false, headingLevel: 0, warnings: [], ...extra });
@@ -388,8 +379,8 @@ function parseTestsTable(specContent) {
     const acSource = idx.ac !== -1 ? (cells[idx.ac] || '') : cells.join(' ');
     for (const am of acSource.matchAll(/(?:AC\s*)?#\s*(\d+)|(?:^|[\s,])(\d+)(?:\.\d+)?(?=[\s,]|$)/g)) {
       // Con columna AC dedicada aceptamos números pelados; en texto libre solo `AC #N`/`#N`.
-      // Notación sub-AC `N.M` (ej `2.6` = sub-item 6 de AC-2) resuelve al AC padre N
-      // (fix 2026-07-10, caso R-9 T4: `2.6` daba acRefs=[] → el test no cubría nada).
+      // Notación sub-AC `N.M` (ej `2.6` = sub-item 6 de AC-2) resuelve al AC padre N:
+      // sin eso, `2.6` daría acRefs=[] y el test no cubriría nada.
       if (idx.ac !== -1) {
         const n = am[1] || am[2];
         if (n) acRefs.add(parseInt(n, 10));
@@ -408,7 +399,7 @@ function parseTestsTable(specContent) {
 }
 
 // Bloque frontmatter `pipelines:` → [{ name, status, acs:[N], acsPending:[N], pendingItems:[texto] }].
-// Acepta las DOS formas que conviven en el repo (2026-07-24, Story 4.18):
+// Acepta las DOS formas que conviven en el repo:
 //   (a) LISTA — la que documenta story-format.md §1.1 y valida tycon-story-validator VAL-C6:
 //         pipelines:
 //           - name: A-backend
@@ -417,12 +408,12 @@ function parseTestsTable(specContent) {
 //           - name: C-frontend
 //             status: blocked
 //             acs_pending: [7]
-//   (b) MAPA — la forma histórica que este parser leía (y que sigue apareciendo en stories viejas):
+//   (b) MAPA — la forma de mapa (sigue apareciendo en stories viejas):
 //         pipelines:
 //           A-backend:
 //             status: done
-// Antes SOLO leía (b): una story escrita como la guía manda devolvía [] → DEFTR-C1 nunca disparaba y
-// ACCOV-C5 no podía honrar los `acs_pending`. `acs`/`acs_pending` se extraen de arrays inline `[..]`.
+// Lee las dos formas: una story escrita como la guía manda (lista) y la de mapa. `acs`/`acs_pending`
+// se extraen de arrays inline `[..]`.
 function parsePipelinesBlock(specContent) {
   const fmMatch = (specContent || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!fmMatch) return [];
@@ -448,7 +439,7 @@ function parsePipelinesBlock(specContent) {
     if (!current) continue;
     const statusM = line.match(/^\s+status\s*:\s*["']?([\w-]+)/);
     if (statusM) { current.status = statusM[1]; continue; }
-    // `blocked_by` (story 7.3): lo lee VAL-C6 sin modelo. Sin comillas ni comentario inline; vacío → ''.
+    // `blocked_by`: lo lee VAL-C6 sin modelo. Sin comillas ni comentario inline; vacío → ''.
     const blockedM = line.match(/^\s+blocked_by\s*:\s*(.*?)\s*$/);
     if (blockedM) { current.blockedBy = blockedM[1].replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim(); continue; }
     const acsM = line.match(/^\s+acs\s*:\s*(\[.*\])/);
@@ -474,12 +465,12 @@ function deferredAcs(specContent) {
 
 // ── Búsqueda en código ────────────────────────────────────────────────────────
 
-// 🔴 `.test.sh` desde 2026-09-10: el arnés declara sus suites en bash (`scripts/tests/*.test.sh`,
-// registradas en `scripts/tests/suites.json`). Sin esta extensión, `walkFiles` no las abría y
-// ACCOV-C1 daba CRITICAL falso por «test declarado sin implementación» — medido en la story 2.15:
-// T2b/T3b/T3c marcados como ausentes estando rotulados literalmente en la suite, mientras los
-// T-ID numéricos «pasaban» por coincidencia de substring en OTRAS suites `.js`. Un CRITICAL
-// mecánico falso cuesta una vuelta de advisor y enseña a desconfiar del control.
+// 🔴 `.test.sh` también es prueba: el arnés declara sus suites en bash (`scripts/tests/*.test.sh`,
+// registradas en `scripts/tests/suites.json`). Sin esta extensión, `walkFiles` no las abre y
+// ACCOV-C1 da CRITICAL falso por «test declarado sin implementación»: los tests con sufijo (T2b, T3b)
+// aparecen ausentes estando rotulados literalmente en la suite, mientras los T-ID numéricos «pasan» por
+// coincidencia de substring en OTRAS suites `.js`. Un CRITICAL mecánico falso cuesta una vuelta de
+// advisor y enseña a desconfiar del control.
 // Qué es prueba y qué es código lo dice lib/code-files.js (pytest, Go, .NET, JS/TS y suites bash), con lo
 // que sume la organización. `TEST_FILE_RE` y `CODE_EXT_RE` quedan con su nombre para los llamadores de este módulo.
 const codeFiles = require('./code-files.js');
@@ -506,9 +497,8 @@ function walkFiles(root, predicate, cap = 8000) {
   // llegar a las del proyecto, y ACCOV-C1 daría un crítico falso (casos: tests/code-files.test.js).
   const SKIP = new Set(['node_modules', '.git', 'bin', 'obj', 'dist', 'build', '.next', 'coverage', 'playwright-report', 'test-results',
     'venv', 'site-packages', '__pycache__']);
-  // Cap de DIRECTORIOS visitados (perf, verificación adversarial 2026-06-11): el cap
-  // anterior era solo sobre archivos MATCHEADOS — un monorepo con pocos matches pero
-  // miles de dirs igual se walkeaba entero en cada invocación inline.
+  // Cap de DIRECTORIOS visitados: un cap sólo sobre archivos MATCHEADOS deja pasar un monorepo con
+  // pocos matches pero miles de dirs, que se walkea entero en cada invocación inline.
   let dirsVisited = 0;
   const DIR_CAP = 4000;
   while (stack.length && out.length < cap && dirsVisited++ < DIR_CAP) {
@@ -531,8 +521,8 @@ function walkFiles(root, predicate, cap = 8000) {
 //   1. Trait/tag del contrato: [Trait("AC","N")] con Story matching / '@story-X @ac-N'
 //   2. T-ID literal (T1, FullUI-2, E2E-3...) en algún archivo de test.
 //   3. Nombre PascalCase / texto del test (normalizado) como substring.
-// normCache (perf, verificación adversarial 2026-06-11): norm(contenido-completo) se
-// recomputaba por CADA fila de la tabla × CADA test file — O(rows×corpus). Cache por archivo.
+// normCache: norm(contenido-completo) se recomputaría por CADA fila de la tabla × CADA test file —
+// O(rows×corpus). Cache por archivo.
 const _normCache = new Map();
 function findTestImplementation(testFiles, contentsCache, row, storyId) {
   const evidence = [];
@@ -597,9 +587,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
 
   // Cache de contenidos de test files del repo (una pasada).
   // Los tests pueden vivir en un repo COMPAÑERO declarado (`.tycon/advisors.yaml →
-  // evidence.companion_repos`, el mismo mecanismo de la evidencia de DoD): el arnés declara sus
-  // tests de integración en agent-skills (2.13: T8b/T8c), y mirar sólo este repo daba CRITICAL
-  // falso en cada corrida (2026-09-10). Sin config o con el módulo ausente → sólo este repo.
+  // evidence.companion_repos`, el mismo mecanismo de la evidencia de DoD): mirar sólo este repo daría
+  // CRITICAL falso para los tests que viven en el compañero. Sin config o con el módulo ausente → sólo este repo.
   // la ruta relativa a la raíz: `tests/api/helpers.py` es prueba de pytest por la carpeta, no por el nombre
   const esPrueba = (raiz) => (n, abs) => TEST_FILE_RE.test(abs ? path.relative(raiz, abs) : n);
   const testFiles = walkFiles(repo, esPrueba(repo));
@@ -614,8 +603,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
     const covered = new Set(table.rows.flatMap((r) => r.acRefs));
     // Un AC en `acs_pending` de un pipeline no-done está declarado como diferido (story-format §1.1)
     // — NO es un gap de cobertura. El propio mensaje de C5 ofrece esta salida ("o marca literal de
-    // deferral en pipelines:"); antes no la implementaba y bloqueaba stories que sí declararon su
-    // deferral como la guía manda (Story 4.18, 2026-07-24).
+    // deferral en pipelines:"): sin ella se bloquearían las stories que sí declaran su deferral
+    // como manda la guía.
     const deferred = deferredAcs(story);
     const uncovered = acs.filter((a) => !covered.has(a) && !deferred.has(a));
     if (uncovered.length) {
@@ -637,13 +626,11 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   } else if (acs.length && !table.found) {
     findings.push({ rule: 'ACCOV-C5', severity: 'CRITICAL', status: 'fail', detail: `La story tiene ${acs.length} ACs pero NO tiene tabla ### Tests.` });
   } else if (!acs.length) {
-    // 🔴 NO CALLARSE cuando el parseo falla (fix 2026-07-25). Las dos ramas de arriba
-    // piden `acs.length`, así que una story cuya sección AC no parsea salía del check
-    // sin emitir NADA — ni finding, ni ambiguous, ni ok. Y "sin findings" downstream se
-    // lee como "pasó", que es el falso verde estructural exacto que ACCOV-C5 existe para
-    // cerrar: la story se ve limpia porque el instrumento no pudo mirarla. Medido sobre
-    // 424 stories reales: 10 casos, todos por el literal `## Acceptance Criteria` citado
-    // dentro del frontmatter. Es `ambiguous` y no `finding` porque una story legítimamente
+    // 🔴 NO CALLARSE cuando el parseo falla. Las dos ramas de arriba piden `acs.length`, así que
+    // una story cuya sección AC no parsea saldría del check sin emitir NADA — ni finding, ni
+    // ambiguous, ni ok. Y "sin findings" downstream se lee como "pasó", que es el falso verde
+    // estructural exacto que ACCOV-C5 existe para cerrar: la story se ve limpia porque el
+    // instrumento no pudo mirarla. Es `ambiguous` y no `finding` porque una story legítimamente
     // sin ACs existe (spikes, chores) — pero pasa por juicio, no por silencio.
     ambiguous.push({
       rule: 'ACCOV-C5',
@@ -722,8 +709,8 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   const newComponents = files.filter((f) => /\.tsx$/.test(f) && !TEST_FILE_RE.test(f) && !/\.stories\./.test(f));
   if (newComponents.length) {
     const allCodeFiles = walkFiles(repo, (n) => /\.(ts|tsx)$/.test(n), 6000);
-    // Cache de contenidos (perf, verificación adversarial 2026-06-11): antes se releía
-    // CADA archivo del repo POR componente nuevo (O(componentes×corpus) de I/O).
+    // Cache de contenidos: sin él se releería CADA archivo del repo POR componente nuevo
+    // (O(componentes×corpus) de I/O).
     const codeCache = new Map();
     const readCached = (f2) => {
       let v = codeCache.get(f2);
@@ -765,19 +752,19 @@ function runStoryChecks({ repo, storyPath, files = [] }) {
   };
 }
 
-// ── VAL-C5 / VAL-C6 sin modelo (story 7.3, 2026-09-17) ────────────────────────────────────────────
+// ── VAL-C5 / VAL-C6 sin modelo ──────────────────────────────────────────────────────────────────
 //
 // Las dos reglas por las que el validador de stories se re-lanza después de implementar son chequeos
 // mecánicos: una marca de deuda de la PROPIA story en un archivo tocado (VAL-C5) y una tanda `blocked`
-// sin causa (VAL-C6). Medido el 2026-09-17: VAL-C5 no encontró nada nuevo en 30 días y tiene 0 hallazgos
-// de siempre. Corren acá para que `pipeline.js` pueda dejar de relanzar al validador en un re-loop sin
-// perder esas dos reglas.
+// sin causa (VAL-C6). Medido: VAL-C5 tiene 0 hallazgos.
+// Corren acá para que `pipeline.js` pueda dejar de relanzar al validador en un re-loop sin perder
+// esas dos reglas.
 //
 // 🔴 APARTE de `runStoryChecks` a propósito: ésa la consume `on-pre-commit.js`, y un CRITICAL nuevo ahí
 //    frenaría commits que hoy pasan. Ésta la usa sólo la decisión del re-loop.
 const BLOCKED_BY_VACIO = new Set(['', 'tbd', 'unknown', '?', '-', 'n/a']);
 
-/** Las marcas de deuda de UNA story, con el id exacto (`Story 2.10` no es `Story 2.1`). */
+/** Las marcas de deuda de UNA story, con el id exacto (`2.10` no es `2.1`). */
 function patronesDeDeuda(id) {
   const n = String(id).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const fin = '(?![\\w]|\\.\\d)';

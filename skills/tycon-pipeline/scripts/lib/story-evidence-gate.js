@@ -3,15 +3,15 @@
  * en navegador de una story de interfaz.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
- * Sesión 2026-07-28. Sobre UNA sola story del panel de admin se me pasaron TRES cosas distintas, y
- * las tres las encontró el dev leyendo la guía de QA, no el harness:
+ * Sobre UNA sola story pueden pasarse TRES cosas distintas, y
+ * las tres las encontraría el dev leyendo la guía de QA, no el harness:
  *
- *   1. No escribí el archivo de pasos de tester (`specs/qa/<sid>-pasos.md`), así que la guía mostró
+ *   1. No se escribe el archivo de pasos de tester (`specs/qa/<sid>-pasos.md`), así que la guía muestra
  *      el texto TÉCNICO del AC — `configSchema.configuration`, `client-column-filters` — a alguien
- *      que tiene que probar la pantalla. El generador ya avisaba; nadie leía el aviso.
- *   2. Verifiqué 3 de 4 ACs y dejé el cuarto sin correr, sin declararlo.
- *   3. La verificación en navegador la corrí A MANO, así que no llegó al ledger: la guía siguió
- *      diciendo "0 verificados corriendo la app" aunque el navegador se hubiera abierto.
+ *      que tiene que probar la pantalla. El generador ya avisa; nadie lee el aviso.
+ *   2. Se verifican 3 de 4 ACs y el cuarto queda sin correr, sin declararlo.
+ *   3. La verificación en navegador se corre A MANO, así que no llega al ledger: la guía sigue
+ *      diciendo "0 verificados corriendo la app" aunque el navegador se haya abierto.
  *
  * Las tres son la MISMA falla: trabajar fuera del pipeline apaga sus garantías en silencio. La cura
  * no es más texto normativo — es que al commitear alguien pregunte.
@@ -98,11 +98,10 @@ function computeStoryEvidenceGate({ pendientes = [], acsSinPasos: sinPasos = [],
  * ¿Corresponde controlar la evidencia en ESTE commit?
  *
  * 🔴 Sólo cuando la story pasa a `review`/`done` — el momento en que alguien AFIRMA que está lista.
- * NO en cada commit: la primera versión de este gate corría siempre que el commit tocara una story
- * con ACs, incluido el commit donde la story recién se escribe (nada verificado, obviamente) y cada
+ * NO en cada commit: correr siempre que el commit toque una story
+ * con ACs incluiría el commit donde la story recién se escribe (nada verificado, obviamente) y cada
  * commit intermedio de la implementación. Eso es ruido, y un gate ruidoso se ignora o se apaga.
- * Lo detectó el dev preguntando "¿commit a dónde, a dev o a main?" — la respuesta era "a cualquiera",
- * y ahí se vio el problema. Mismo disparador que el gate de DoD, que ya lo tenía bien.
+ * Mismo disparador que el gate de DoD.
  *
  * Nota: NO depende de la rama. Da igual dev o main; lo que importa es la afirmación de que terminó.
  */
@@ -123,14 +122,13 @@ function shouldCheckEvidence(oldStatus, newStatus) {
  * porque el producto no tiene ninguna superficie que una persona pueda manejar— entonces no hay
  * ningún lector al que se le pueda mostrar nada, y pedir los pasos es pedir un archivo para nadie.
  *
- * Caso disparador 2026-08-15 (un repo del equipo, cierre de 4.40/4.41/4.42): el generador de la guía SÍ
- * consultaba la escotilla del repo (`qa_guide: off|auto|always`) y el criterio de «hay algo operable
- * a mano»; este control NO. Sobre un servidor MCP sin pantalla ni endpoints, el generador se calló
- * bien en dos de las tres stories y este control las acusó igual. Una escotilla documentada que sólo
+ * Caso: el generador de la guía consulta la escotilla del repo (`qa_guide: off|auto|always`) y el criterio de «hay algo operable
+ * a mano»; este control también. Sobre un servidor MCP sin pantalla ni endpoints, el generador se calla
+ * bien y este control, si no los consultara, acusaría igual. Una escotilla documentada que sólo
  * apaga la mitad de los avisos es peor que no tenerla: el dev la declara, el ruido sigue, y aprende
  * que el arnés no se puede callar.
  *
- * Fail-open hacia el comportamiento anterior: sin datos, se piden. Un control nuevo que se calla por
+ * Fail-open: sin datos, se piden. Un control nuevo que se calla por
  * accidente es exactamente lo que no queremos.
  *
  * @param {{qaGuideMode?: 'off'|'auto'|'always', handOperable?: boolean}} args

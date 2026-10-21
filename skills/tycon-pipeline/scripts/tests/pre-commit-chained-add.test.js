@@ -1,17 +1,17 @@
 'use strict';
 /**
- * pre-commit-chained-add.test.js — `git add X && git commit` en una sola línea (2026-10-14).
+ * pre-commit-chained-add.test.js — `git add X && git commit` en una sola línea.
  *
- * El freno del commit corre ANTES que el comando entero: con `git add X && git commit` veía la versión
- * vieja de X stageada y rebotaba por algo que el mismo comando ya arreglaba (y al revés: miraba una
- * versión sana y dejaba pasar la rota que traía el `add`). Ahora, si lo que precede al commit son `git add`
+ * El freno del commit corre ANTES que el comando entero: con `git add X && git commit` vería la versión
+ * vieja de X stageada y rebotaría por algo que el mismo comando ya arregla (y al revés: miraría una
+ * versión sana y dejaría pasar la rota que trae el `add`). Por eso, si lo que precede al commit son `git add`
  * simples, el freno evalúa una COPIA del índice con esos `add` aplicados (lib/chained-add.js); si no, mira
  * lo stageado hoy y, al frenar, dice que corra el `add` aparte.
  *
  * Corre el hook DE VERDAD sobre un repo y una HOME temporales. La story del caso declara E2E (pide
  * evidencia) y no tiene ninguna: lo único que la deja pasar es `dod_runtime_exempt: true`.
  *
- * 🔴 rojo previo verificado: con el on-pre-commit.js de antes del cambio, el caso 1 sale 2 y el caso 3 sale 0.
+ * Un freno que mirara sólo lo stageado hoy daría 2 en el caso 1 y 0 en el caso 3.
  */
 const test = require('node:test');
 const assert = require('node:assert');

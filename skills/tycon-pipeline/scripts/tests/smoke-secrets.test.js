@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * smoke-secrets.test.js — los registros de prueba de humo nunca guardan una contraseña (SMOKE-SECRETO-2, 2026-10-04).
+ * smoke-secrets.test.js — los registros de prueba de humo nunca guardan una contraseña.
  *
- * Caso disparador: contraseñas SQL escritas tal cual en `.advisors/dod-runtime/*-smoke-ledger.jsonl` de un producto,
- * una de ellas la de la base de producción (guides/maintaining/incident-log.md#case-sql-passwords-in-smoke-ledgers-2026-10-04).
- * El tapado de antes sólo reconocía valores de letras y números: `SQLCMDPASSWORD='…'` con un símbolo y el `-P` de
- * sqlcmd pasaban enteros.
+ * El riesgo: contraseñas SQL escritas tal cual en `.advisors/dod-runtime/*-smoke-ledger.jsonl`, incluso la de
+ * la base de producción. Un tapado que sólo reconozca valores de letras y números deja pasar enteros
+ * `SQLCMDPASSWORD='…'` con un símbolo y el `-P` de sqlcmd.
  *
  * Se prueba el módulo (lib/smoke-secrets.js) y su uso por smoke-run.sh. Que el freno de on-pre-commit.js frena con
  * estas formas lo mide el banco de controles (47-secretos-en-la-evidencia.json).
@@ -172,7 +171,7 @@ test('smoke-run.sh: el -P de sqlcmd con espacios no llega al registro, ni con TY
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-// Mutación: volver al `|| CMD_SAFE="$CMD_STR"` de antes → sin el módulo, el comando se escribe tal cual.
+// Mutación: usar `|| CMD_SAFE="$CMD_STR"` → sin el módulo, el comando se escribe tal cual.
 test('smoke-run.sh: si el tapado no puede correr, el comando NO se escribe', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-sin-lib-'));
   const copia = path.join(dir, 'smoke-run.sh');
@@ -187,7 +186,7 @@ test('smoke-run.sh: si el tapado no puede correr, el comando NO se escribe', () 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── Revisión adversarial del 2026-10-04: lo que la primera versión dejaba a la vista ──────────────────────────────
+// ── Lo que una versión simple del tapado deja a la vista ──────────────────────────────
 // Cada fila es el argv tal como lo recibe smoke-run.sh (el shell ya quitó las comillas y expandió las variables).
 // Mutación: volver a citar sólo los argumentos con blancos, o leer el valor como UN tramo → la cola queda detrás de `***`.
 const ARGV_CON_SECRETO = [
@@ -201,7 +200,7 @@ const ARGV_CON_SECRETO = [
   [['dotnet', 'run', '--', "Server=srv;User Id=sa;Password=Ab'cd;"], "'cd"],
   [['bash', '-c', 'sqlcmd -S srv -U sa \\\n  -P Secr3tX -Q "select 1"'], 'Secr3tX'],
   [['curl', '-H', "Authorization: Bearer abc'def"], 'def'],
-  // Segunda vuelta de la revisión: un `|` entre comillas antes del -P, `$` y comillas dentro de una cadena de
+  // Casos límite: un `|` entre comillas antes del -P, `$` y comillas dentro de una cadena de
   // conexión, valores que empiezan como un marcador, y un nombre de configuración que igual dice PASSWORD.
   [['sqlcmd', '-S', 'srv', '-s', '|', '-W', '-P', 'Secr3tX9'], 'Secr3tX9'],
   [['sqlcmd', '-Q', "print 'a && b'", '-P', 'Secr3tX9'], 'Secr3tX9'],
@@ -212,7 +211,7 @@ const ARGV_CON_SECRETO = [
   [['env', 'DB_PASSWORD_MAX=Secr3tX9', 'x'], 'Secr3tX9'],
   [['dotnet', 'run', '--', "Server=srv;Password=Ab' cd9X;"], 'cd9X'],
   [['sqlcmd', '-v', 'Password=Ab;cd9X'], 'cd9X'],
-  // Tercera vuelta: `--opción=NAME=valor` en un solo argumento, y `-eNAME=` pegado.
+  // Caso límite: `--opción=NAME=valor` en un solo argumento, y `-eNAME=` pegado.
   [['docker', 'run', '--env=SQLCMDPASSWORD=Ab;cd9X', 'img'], 'cd9X'],
   [['docker', 'build', '--build-arg=DB_PASSWORD=Ab;cd9X', '.'], 'cd9X'],
   [['docker', 'run', '-eSQLCMDPASSWORD=Ab;cd9X', 'img'], 'cd9X'],
@@ -250,7 +249,7 @@ for (const linea of SIN_SECRETO_PARA_EL_FRENO) {
   });
 }
 
-// Tercera vuelta de la revisión: el `-P` de sqlcmd con muchos tramos entre comillas y sin `-P` tardaba minutos
+// Caso límite: el `-P` de sqlcmd con muchos tramos entre comillas y sin `-P` tarda minutos
 // (retroceso exponencial), y un freno pasado de tiempo deja pasar el commit.
 // Mutación: volver a aceptar comillas en el carácter suelto de esa regla → esta prueba no termina en 2 s.
 test('el -P de sqlcmd no se cuelga con muchos tramos entre comillas', () => {
@@ -269,7 +268,7 @@ test('el guion de bash -lc va tal cual, y se tapa como texto', () => {
   assert.ok(out.includes('X=1 sqlcmd -S srv -P *** -Q'), out);
 });
 
-// ── Story 1.19 — la expectativa y la salida de un humo pasan por el MISMO tapado ─────────────────────────────────
+// ── La expectativa y la salida de un humo pasan por el MISMO tapado ─────────────────────────────────
 
 // Mutación: guardar la salida entera, o recortar sólo por el principio → el archivo pasa de 8 KB o pierde el final.
 test('la salida se recorta a 8 KB con las primeras y las últimas líneas y la marca en el medio', () => {
@@ -327,7 +326,7 @@ test('ledgerExtras: escribe la salida con su sha, y con la carpeta bloqueada dej
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── Lo que encontró el pase adversarial de la 1.19 (2026-10-15) ───────────────────────────────────────────────────
+// ── Casos límite ───────────────────────────────────────────────────
 
 // Mutación: tapar la expectativa o la salida en modo guion (sin `literal`) → un valor que empieza con `$` se toma por
 // una variable y la contraseña queda tal cual. Son textos ya resueltos, como los argumentos de `cmd`.

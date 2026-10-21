@@ -4,12 +4,12 @@
  * migrate-waivers-to-repo.js — mueve las aprobaciones humanas de waivers del log LOCAL del home
  * a un log firmado DENTRO de cada repo, re-ancladas a la DECLARACIÓN de cada AC.
  *
- * El problema que resuelve (2026-07-29, pedido DevA): los waivers vivían en
+ * El problema que resuelve: los waivers viven en
  * `~/.claude/.tycon-pipeline/runtime-waivers.jsonl`, anclados al `matrixHash`. Ese hash pinnea la
  * evidencia de `.advisors/`, que está gitignoreada — o sea que en otra máquina, o en CI, no existe,
  * el hash da distinto y la aprobación NO engancha. La consecuencia práctica: lo ÚNICO de toda la
- * cadena que una máquina no puede recomputar —el criterio del humano— era lo único que no viajaba,
- * y había que rehacerlo a mano en cada máquina.
+ * cadena que una máquina no puede recomputar —el criterio del humano— es lo único que no viaja,
+ * y hay que rehacerlo a mano en cada máquina.
  *
  * Qué hace: por cada entry del log local, ubica la story en los repos que se le pasen, lee su
  * `runtime_not_verifiable`, computa el hash de la declaración de cada AC aprobado, y re-firma la
@@ -21,10 +21,10 @@
  *   node migrate-waivers-to-repo.js --repos <dir> [<dir> ...]          # dry-run (default)
  *   node migrate-waivers-to-repo.js --repos <dir> [...] --apply        # escribe — lo corre EL DEV, en su terminal
  *
- * 🔴 `--apply` pide la terminal del dev (2026-10-07, hallazgo de la revisión adversarial de la story 7.17). Migrar
- * vuelve a firmar cada aprobación contra el texto ACTUAL de la declaración del AC. Sin candado lo podía correr el
- * agente: reescribir la razón de un AC y migrar daba una firma válida para una razón que ningún humano aprobó — la
- * vía cómoda que `lib/runtime-waiver.js` existe para cerrar. Ahora escribe sólo si hay `/dev/tty` y el dev confirma
+ * 🔴 `--apply` pide la terminal del dev. Migrar
+ * vuelve a firmar cada aprobación contra el texto ACTUAL de la declaración del AC. Sin candado lo podría correr el
+ * agente: reescribir la razón de un AC y migrar daría una firma válida para una razón que ningún humano aprobó — la
+ * vía cómoda que `lib/runtime-waiver.js` existe para cerrar. Escribe sólo si hay `/dev/tty` y el dev confirma
  * ahí lo que se va a firmar. El dry-run sigue libre: no escribe nada.
  */
 const fs = require('fs');
@@ -45,10 +45,9 @@ function walk(dir, out, depth = 0) {
   return out;
 }
 // 🔴 El destino NO es la carpeta que se pasó por `--repos`: es el repo GIT que contiene a la story.
-// `~/Proyectos/Ceibo` y `~/Proyectos/Pacara` son CONTENEDORES con varios repos adentro
-// (CeiboProject, CeiboBackend, BackEnd, FrontEnd…). Escribir el `.tycon/` en el contenedor lo deja
-// fuera de todo repo → no se commitea → no viaja, que es exactamente lo que esta migración viene a
-// arreglar. Se sube desde el archivo de la story hasta el primer `.git`.
+// La carpeta de un proyecto puede ser un CONTENEDOR con varios repos adentro (specs, backend,
+// frontend…). Escribir el `.tycon/` en el contenedor lo deja fuera de todo repo → no se commitea →
+// no viaja, que es exactamente lo que esta migración arregla. Se sube desde el archivo de la story hasta el primer `.git`.
 function gitRootDe(file) {
   let dir = path.dirname(path.resolve(file));
   for (let i = 0; i < 12; i++) {
@@ -95,10 +94,10 @@ function parseNotVerifiable(fm) {
 
 /** Arma el plan de migración (sin escribir nada): qué aprobaciones van a qué repo, y qué no se puede migrar. */
 function armarPlan(repos) {
-  // 🔴 Los ids de story CHOCAN entre repos (hay una `1.1` en Ceibo y otra en un repo del equipo). Por eso
+  // 🔴 Los ids de story CHOCAN entre repos (la `1.1` puede existir en dos repos). Por eso
   // el índice guarda TODOS los candidatos por id y la elección se hace después, mirando cuál declara
-  // los ACs que se están migrando. Quedarse con el primero mandaba la aprobación al repo equivocado
-  // — o, como pasó en el dry-run, la descartaba con un "no lo declara" que era del otro repo.
+  // los ACs que se están migrando. Quedarse con el primero mandaría la aprobación al repo equivocado
+  // — o, en el dry-run, la descartaría con un "no lo declara" que es del otro repo.
   const index = new Map(); // storyId -> [{ repo, file, decls }]
   for (const repo of repos) {
     for (const f of walk(repo, [])) {
@@ -173,7 +172,7 @@ function escribirPlan(plan) {
   let escritas = 0;
   for (const [repo, arr] of plan) {
     const logPath = waiver.repoWaiverLogPath(repo);
-    // Sólo las VÁLIDAS del destino (story 7.17): una migración que quedó descartada no está hecha, se vuelve a escribir.
+    // Sólo las VÁLIDAS del destino: una migración descartada no está hecha, se vuelve a escribir.
     const yaHay = new Set();
     for (const p of waiver.verifyChain(logPath).entries) yaHay.add(`${p.story}|${(p.acs || []).join(',')}|${p.ts}`);
     for (const a of arr) {
@@ -198,7 +197,7 @@ function main(argv) {
   }
 
   const { plan, problemas, ok, discarded } = armarPlan(repos);
-  // Story 7.17: la cadena se lee como árbol — una línea descartada no arrastra a las que vienen después.
+  // La cadena se lee como árbol — una línea descartada no arrastra a las que vienen después.
   if (!ok) console.error(`⚠️  el log local tiene ${discarded.length} línea(s) descartada(s) por la cadena (${discarded.map((d) => d.line).join(', ')}): migro las válidas, ésas no.`);
 
   let migradas = 0;
@@ -218,7 +217,7 @@ function main(argv) {
     return;
   }
 
-  // 🔴 Windows (decisión del dueño, 2026-10-15): no hay /dev/tty; firma sólo una ventana de consola NUEVA que abre este
+  // 🔴 Windows: no hay /dev/tty; firma sólo una ventana de consola NUEVA que abre este
   //    mismo comando (lib/runtime-waiver.js, «WINDOWS»). Fuera de esa ventana, se abre y se espera.
   if (waiver.esWindows() && process.env[waiver.MARCA_VENTANA] !== '1') {
     console.error(`\n🪟 Abro una ventana nueva, «Firma de la migración»: seguí ahí. Tenés ${waiver.topeVentanaS() >= 60 ? `${Math.round(waiver.topeVentanaS() / 60)} minutos` : `${waiver.topeVentanaS()} segundos`}.`);
