@@ -58,6 +58,7 @@ la fila aplica.
 | Se versionaron y redesplegaron TODOS los formularios de un repo sin motivo · por qué el detector de cambios no cuenta los merges | cabecera y bucle de `scripts/ci/forms-to-version.sh` |
 | Por qué en `main` se construyen y empaquetan TODOS los formularios aunque sólo algunos suban de versión · antes de proponer «construir sólo lo que sube» | `guides/piezas-del-arnes.md` §`affected-forms.js` («construir en `main` también los que NO suben de versión… pone al día producción») |
 | Un merge de **sólo documentación** construyó, desplegó a staging, subió la versión y pidió aprobación de PROD · qué rutas pueden ir en el `trigger` de un pipeline y cuáles no (`.tycon/**` no) · un sitio sin filtro de rutas | `scripts/ci/check-trigger-without-docs.js` (cabecera; se corre a mano sin argumentos) |
+| Escribí pruebas de navegador y quiero saber si el pipeline las corre · el control dice que un repo tiene pruebas sin correr | `scripts/ci/check-tests-without-ci.js` (cabecera; se corre a mano sin argumentos, avisa y no frena) |
 | **Correr CUALQUIER test** (vitest/jest/dotnet) — SIEMPRE antes de `npm test`/`dotnet test` | `guides/test-execution-discipline.md` |
 | Instalar/configurar tracking de Clockify en Claude Code (opcional) | `guides/integrations/clockify-mcp.md` |
 | Setup de tracking automático de tiempo (timer auto-start con confirmación + auto-close por idle) | `guides/integrations/clocki-tracking.md` |

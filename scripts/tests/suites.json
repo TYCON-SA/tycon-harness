@@ -185,6 +185,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/tests-without-ci.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/label-prs.test.sh",
       "requiere": []
     },

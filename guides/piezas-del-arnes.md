@@ -654,6 +654,16 @@ _(scripts/ci/smoke-plugin.sh + scripts/ci/smoke-forms.sh)_
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#scriptscicheck-trigger-without-docsjs)
 
+## scripts/ci/check-tests-without-ci.js
+
+**Qué es:** Un control que dice, repo por repo, si hay pruebas de navegador que ningún pipeline corre, y si al menos las cubre el portón del merge.
+
+**Por qué existe:** Pruebas escritas quedaron casi un mes sin correr porque el pipeline nunca las cableó; el aviso de antes miraba el portón, no el pipeline.
+
+**Quién la usa:** Quien escribe pruebas de navegador, a mano; los repos salen de `product-parity.json`. Avisa y no frena.
+
+**Dónde se prueba:** `scripts/tests/tests-without-ci.test.sh`
+
 ## skills/tycon-pipeline/scripts/lib/first-story.js — la primera historia de la máquina
 
 **Qué es:** Dice si una historia es la primera que cierra la máquina, por evidencia, y al cerrarla ofrece una sola vez la instalación completa en tres renglones.
