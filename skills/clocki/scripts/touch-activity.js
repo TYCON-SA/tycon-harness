@@ -12,6 +12,8 @@
 // Diseñado para ser MUY rápido (<10ms) — solo file I/O.
 // Cross-platform. Exit 0 siempre.
 
+const os = require('os');
+const path = require('path');
 const {
   readActive,
   readSessionActive,
@@ -23,6 +25,27 @@ const {
   touchHeartbeat,
   migrateLegacyEntry,
 } = require('./lib');
+
+// Las carpetas absolutas que nombra la tool: el archivo que edita o lee, la carpeta de
+// trabajo del shell de Codex, y lo que sigue a `cd` o a `git -C` en un comando.
+function toolDirs(input, cwd) {
+  if (!input || typeof input !== 'object') return [];
+  const out = [];
+  for (const k of ['file_path', 'notebook_path', 'path', 'workdir', 'cwd']) {
+    if (typeof input[k] === 'string') out.push(input[k]);
+  }
+  const command = Array.isArray(input.command) ? input.command.join(' ') : input.command;
+  if (typeof command === 'string') {
+    const re = /(?:^|[\s;&|(])(?:cd|-C)\s+(?:"([^"]+)"|'([^']+)'|([^"'\s;&|)]+))/g;
+    let m;
+    while ((m = re.exec(command)) !== null) out.push(m[1] || m[2] || m[3]);
+  }
+  return out
+    .map((d) => d.replace(/^~(?=\/|$)/, os.homedir()))
+    .filter((d) => path.isAbsolute(d))
+    .map((d) => normalizeCwd(d))
+    .filter((d) => d && d !== cwd);
+}
 
 function main() {
   const hookInput = parseHookInput();
@@ -43,8 +66,15 @@ function main() {
   }
 
   // Walk-up parent dirs: si el usuario abrió timer en un root pero está editando
-  // un subdir, igual encontramos el entry. Scopeado a ESTA sesión.
-  const found = findActiveEntryForCwd(active, cwd, sessionId);
+  // un subdir, igual encontramos el entry. Scopeado a ESTA sesión. Si la carpeta de
+  // la sesión no tiene timer, se busca por las carpetas que tocó la tool: una sesión
+  // que trabaja en un worktree sigue con el cwd del repo, y el timer está abierto
+  // con la ruta del worktree.
+  let found = findActiveEntryForCwd(active, cwd, sessionId);
+  for (const dir of toolDirs(hookInput.tool_input, cwd)) {
+    if (found) break;
+    found = findActiveEntryForCwd(active, dir, sessionId);
+  }
   if (!found) {
     process.exit(0);
   }
