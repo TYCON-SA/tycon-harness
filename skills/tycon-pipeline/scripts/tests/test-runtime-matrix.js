@@ -251,7 +251,8 @@ console.log('runtime-matrix — casos:');
 
 // 6b2. vstest (el corredor de pruebas de .NET Framework) es lo mismo que `dotnet test`: código revisándose a sí mismo.
 // Si no se lo reconociera, contaría como «corrida de la app» y daría un verde falso a criterios cubiertos sólo por pruebas.
-for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Common7/IDE/Extensions/TestPlatform/vstest.console.exe" a.dll', 'vstest.console a.dll']) {
+for (const cmd of ['vstest.console.exe App.Tests.dll --logger:trx', '"C:/VS/Common7/IDE/Extensions/TestPlatform/vstest.console.exe" a.dll', 'vstest.console a.dll',
+  '"D:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\Extensions\\TestPlatform\\VSTest.Console.exe" a.dll']) {
   const f = makeWorkspace();
   const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
   fs.writeFileSync(path.join(f.dodDir, '9.9-smoke-ledger.jsonl'),
