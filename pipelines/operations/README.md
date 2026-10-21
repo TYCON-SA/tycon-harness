@@ -198,9 +198,9 @@ Variables opcionales de cada definición (*Edit → Variables*):
 sitio: Configuración → Integraciones → «Avisos»): uno o más de `telegram`, `slack`, `teams` y `mail`; una lista vacía no
 manda nada. La noche baja el perfil del repo que declara `team-repos.json → profile` (por eso el permiso de lectura del
 punto 3). Sin la lista, o sin poder leer el perfil, vale el nombre de antes, `operations.json → notify`:
-`{ "channel": "telegram" }`, `"slack"`, `"teams"` o `"mail"`, y si fue por no poder leer el perfil el resumen lo dice. **Sin
-ninguno de los dos, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json →
-notify»). El destino (el chat, el token, el webhook, la clave del correo) va sólo en las variables secretas de arriba. El
+`{ "channel": "telegram" }`, `"slack"`, `"teams"` o `"mail"`, y si fue por no poder leer el perfil el resumen lo dice. Sin la
+lista en el perfil y **Sin `notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en
+operations.json → notify»). El destino (el chat, el token, el webhook, la clave del correo) va sólo en las variables secretas de arriba. El
 aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el
 enlace al sitio.
 

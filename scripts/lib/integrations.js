@@ -25,7 +25,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
 const KEY_RE = /^[a-z][A-Za-z0-9_]*$/;
 const ENV_RE = /^TYCON_[A-Z0-9_]+$/;
-// `canales`: una lista de canales de aviso (los de scripts/lib/notify.js); `puerto`: un entero de 1 a 65535
+// `canales`: una lista de canales de aviso (los del canal único de los avisos); `puerto`: un entero de 1 a 65535
 const PROFILE_TYPES = Object.freeze(['texto', 'url', 'canales', 'puerto']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre

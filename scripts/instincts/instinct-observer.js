@@ -1022,12 +1022,13 @@ function main() {
   for (const n of DIRS.readNotes()) log(`${n} — lo ya decidido ahí puede volver a proponerse`);
   // En --dry-run no se escribe nada, tampoco esta mudanza: la hace la próxima corrida de verdad.
   if (!dryRun) migrarDescartadosViejos();
-  // Telegram: si se pidió avisar y no hay chat configurado, se dice UNA vez y al PRINCIPIO — al final,
-  // con cero instintos nuevos, nunca se llegaría a saber. Configuración rota → un comando frena con archivo, clave y motivo.
-  if (notify && process.env.TYCON_INSTINCT_NOTIFY === '1' && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) {
-    let chat = null;
-    try { chat = chatConfigurado(); } catch (e) { if (e && e.name === 'ConfigError') { log(e.message); process.exit(2); } throw e; }
-    if (!chat) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
+  // Los canales del aviso: si se pidió avisar y no hay por dónde, se dice UNA vez y al PRINCIPIO — al final, con cero
+  // instintos nuevos, nunca se llegaría a saber. Configuración rota → un comando frena con su motivo.
+  if (notify && process.env.TYCON_INSTINCT_NOTIFY === '1') {
+    const s = require(path.join(__dirname, '..', 'lib', 'notify.js')).canalesDeLaSesion({ env: process.env });
+    if (s.problema) { log(s.problema); process.exit(2); }
+    if (!s.canales.length) log('ningún canal de aviso elegido en el perfil del equipo: el aviso de instintos nuevos no se va a mandar');
+    else if (s.origen === 'antes' && !s.chat && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) log('Telegram apagado en esta máquina: sin chat configurado — el aviso de instintos nuevos no se va a mandar (prender: telegram.chat_id en ~/.claude/tycon.json, TYCON_TELEGRAM_CHAT_ID, o el plugin de Telegram)');
   }
   const executor = resolveExecutor();
   if (!executor) {

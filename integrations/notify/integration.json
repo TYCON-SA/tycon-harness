@@ -1,0 +1,18 @@
+{
+  "__doc": "Los avisos del arnés: por qué canales salen (los elige la organización en el perfil, integrations.notify.channels) y las credenciales de cada dev para los avisos de su sesión (harness.js config set notify.<clave>, nunca en un archivo versionado). Los de la noche usan las variables secretas del servidor, con los mismos nombres. Manda scripts/lib/notify.js; guía: guides/organization-site.md, renglón «Avisos».",
+  "name": "notify",
+  "label": "Avisos",
+  "kind": "notify",
+  "hooks": [],
+  "dispatch": [],
+  "settings": [
+    { "key": "integrations.notify.channels", "type": "canales", "from": "profile" },
+    { "key": "integrations.notify.mail_host", "type": "texto", "from": "profile" },
+    { "key": "integrations.notify.mail_port", "type": "puerto", "from": "profile" },
+    { "key": "notify.slack_webhook", "type": "secreto", "env": "TYCON_SLACK_WEBHOOK_URL" },
+    { "key": "notify.teams_webhook", "type": "secreto", "env": "TYCON_TEAMS_WEBHOOK_URL" },
+    { "key": "notify.mail_user", "type": "secreto", "env": "TYCON_MAIL_USER" },
+    { "key": "notify.mail_password", "type": "secreto", "env": "TYCON_MAIL_PASSWORD" },
+    { "key": "notify.mail_address", "type": "secreto", "env": "TYCON_MAIL_ADDRESS" }
+  ]
+}

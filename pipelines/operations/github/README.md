@@ -163,7 +163,7 @@ En el repo de operaciones, *Settings → Secrets and variables → Actions*:
 sitio: Configuración → Integraciones → «Avisos»): uno o más de `telegram`, `slack`, `teams` y `mail`; una lista vacía no
 manda nada. Sin la lista, o sin poder leer el perfil, vale el nombre de antes, `operations.json → notify`:
 `{ "channel": "telegram" }`, `"slack"`, `"teams"` o `"mail"`, y si fue por no poder leer el perfil el resumen lo dice.
-**Sin ninguno de los dos, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json →
+Sin la lista en el perfil y **Sin `notify`, no se manda**, y la constancia de la noche lo dice («canal sin configurar en operations.json →
 notify»). El aviso lleva sólo cantidades y, si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin
 sesión, el enlace al sitio.
 

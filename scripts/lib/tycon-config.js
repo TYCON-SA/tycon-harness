@@ -249,7 +249,7 @@ const PROFILE_WINS = Object.freeze(['packs.default', 'adversarial.model_question
 const PROFILE_ONLY = Object.freeze(['approvals.relay_session', 'qa.manual_check']);
 /** Los paquetes que activa la organización (tipo `paquetes`): `all`, `none` o una lista de nombres de paquete. */
 const NOMBRE_DE_PAQUETE = /^[a-z0-9][a-z0-9-]*$/;
-// Los canales por los que sale un aviso; la misma lista que `CANALES` de scripts/lib/notify.js (lo fija T27).
+// Los canales por los que sale un aviso; la misma lista que `CANALES` del módulo de avisos (lo fija T27).
 const CANALES_DE_AVISO = Object.freeze(['telegram', 'slack', 'teams', 'mail']);
 /** null si el valor es `all`, `none` o una lista no vacía de nombres distintos; si no, el motivo. */
 function motivoPaquetes(valor) {
@@ -776,7 +776,7 @@ function validarTipo(tipo, valor) {
     case 'paquetes':
       return motivoPaquetes(valor);
     case 'canales': {
-      // los canales de aviso (scripts/lib/notify.js): una lista, vacía para ninguno; un canal inventado es un error
+      // los canales de aviso: una lista, vacía para ninguno; un canal inventado es un error
       if (!Array.isArray(valor)) return `tiene que ser una lista de canales (${CANALES_DE_AVISO.join(', ')}; vacía para ninguno), no ${JSON.stringify(valor)}`;
       const malo = valor.find((c) => typeof c !== 'string' || !CANALES_DE_AVISO.includes(c.trim()));
       if (malo !== undefined) return `${JSON.stringify(malo)} no es un canal de aviso (${CANALES_DE_AVISO.join(', ')})`;
