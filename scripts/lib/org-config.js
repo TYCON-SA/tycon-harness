@@ -65,7 +65,7 @@ const SECCIONES = Object.freeze([
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta Claude', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
-  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
+  Object.freeze({ id: 'integraciones', titulo: 'Integraciones', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['integrations'], rutas: Object.freeze(['integrations.timeTracking', 'integrations.clockify', 'integrations.engram', 'integrations.mailbox', 'integrations.codex', 'integrations.nightly', 'integrations.codegraph']), idCorto: 'profile', necesita: ['integrations'] }),
   Object.freeze({ id: 'ado', titulo: 'Azure DevOps', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['ado'], rutas: Object.freeze(['ado.org']), idCorto: 'profile', necesita: ['ado'] }),
   Object.freeze({ id: 'actualizacion', titulo: 'Cómo se actualizan las máquinas', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['update'], rutas: Object.freeze(['update.channel', 'update.apply']), idCorto: 'profile', necesita: ['update'] }),
   Object.freeze({ id: 'instalacion', titulo: 'Perfil de instalación', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['install'], rutas: Object.freeze(['install.profile']), idCorto: 'profile', necesita: ['install'] }),
@@ -260,6 +260,39 @@ const APPROVALS_SINCE = '2026.10.20.3';
  */
 const QA_SINCE = '2026.10.20.39';
 /**
+ * 🔴 La primera versión del arnés cuyo lector conoce `integrations.timeTracking` (la etiqueta del merge que trajo ese
+ * lector). El selector de la herramienta de horas saca la llave vieja `integrations.clockify` del perfil: una máquina
+ * anterior no entiende la clave nueva y se quedaría sin Clockify en silencio. Por eso el pedido que la cambia sube
+ * también `requires.harness` de team-layer.json a esta versión (`timeTrackingLayer`), y esa máquina sigue con la capa de
+ * antes hasta actualizarse.
+ */
+const TIME_TRACKING_SINCE = '2026.10.21.15';
+/**
+ * El team-layer.json que acompaña a un pedido que cambia `integrations.timeTracking`: `{ archivo, contenido }` con
+ * `requires.harness` en `>= TIME_TRACKING_SINCE`; null si el pedido no la cambia, si la capa ya pide eso o más, o si el
+ * perfil no tiene capa (`layerText` null: sin su declaración ninguna máquina aplica el perfil, así que no hay versión que
+ * subir); `{ problema }` si la capa no se puede leer o su `requires.harness` no tiene la forma `>= x` (no se pisa a ciegas).
+ */
+const cambiaHoras = ({ actual, doc }) => {
+  const de = (x) => (isObject(x) && isObject(x.integrations) ? x.integrations.timeTracking : undefined);
+  return de(doc) !== undefined && canonico(de(doc)) !== canonico(de(actual));
+};
+function timeTrackingLayer({ layerText, actual, doc }) {
+  if (!cambiaHoras({ actual, doc }) || layerText === null || layerText === undefined) return null;
+  let decl;
+  // con la marca de orden de bytes, como la lee la máquina (team.js validateDeclaration)
+  try { decl = JSON.parse(String(layerText).replace(/^﻿/, '')); } catch (e) {
+    return { problema: M('org.capaIlegible', { error: (e && e.message) || e }) };
+  }
+  if (!isObject(decl)) return { problema: M('org.capaIlegible', { error: 'team-layer.json no es un objeto' }) };
+  const pide = String((decl.requires || {}).harness || '').trim();
+  const m = /^>=\s*(\S+)$/.exec(pide);
+  if (m && versionAtLeast(m[1], TIME_TRACKING_SINCE)) return null;
+  if (pide && !m) return { problema: M('org.capaIlegible', { error: `requires.harness dice «${pide}», no «>= versión»` }) };
+  const nueva = { ...decl, requires: { ...(isObject(decl.requires) ? decl.requires : {}), harness: `>= ${TIME_TRACKING_SINCE}` } };
+  return { archivo: 'team-layer.json', contenido: formatJson(nueva) };
+}
+/**
  * `null` si un `team-profile.json` así lo leen todas las máquinas que pide el perfil; si no, el motivo en llano. Junta
  * las dos reglas del perfil: una LISTA de paquetes pide la versión del sitio (`packsListGateProblem`) y `response` pide
  * `RESPONSE_SINCE`. Las otras claves las lee cualquier versión que admite la capa.
@@ -373,7 +406,7 @@ function aplicarSeccion(doc, seccion, borrador) {
   if (seccion.rutas) {
     // sólo esas hojas: lo demás de la clave queda como estaba; una hoja que el borrador no trae se saca, y el objeto que
     // queda vacío por eso, también (no se escribe un `{}` que el archivo no tenía)
-    for (const ruta of seccion.rutas) {
+    for (const ruta of rutasDe(seccion)) {
       const partes = ruta.split('.');
       const valor = partes.reduce((o, k) => (isObject(o) ? o[k] : undefined), b);
       const cadena = [base];
@@ -397,11 +430,27 @@ function aplicarSeccion(doc, seccion, borrador) {
  * Las hojas que un archivo propuesto cambia contra el actual DENTRO de las claves de la sección pero fuera de sus `rutas`
  * (lo que «Proponer» rechaza). Sin `rutas`, ninguna: la sección es dueña de sus claves enteras.
  */
+/**
+ * Las hojas del perfil que pide cada herramienta de horas del árbol (`integrations.<n>`, la de su ajuste `url` del
+ * perfil): son de la sección Integraciones, como la herramienta misma. Salen de los manifiestos, no de una lista
+ * escrita acá. Sin la biblioteca, o si no se pueden leer los manifiestos, ninguna: esas hojas quedan como ajenas a la
+ * sección (el pedido que las toca no se propone, nunca se escribe a ciegas) y el motivo lo dice la pantalla de la
+ * sección, que lee la misma biblioteca (`extras.horasProblemas`).
+ */
+function rutasDeHoras() {
+  try {
+    const INT = require(path.join(__dirname, 'integrations.js'));
+    return INT.listManifests().manifests.filter((m) => m.kind === 'timeTracking' && m.settings.some((s) => s.from === 'profile' && s.key === `integrations.${m.name}.url`)).map((m) => `integrations.${m.name}`);
+  } catch { return []; }
+}
+/** Las hojas que cambia una sección: las suyas y, en Integraciones, las que piden las herramientas de horas. */
+const rutasDe = (seccion) => (seccion.id === 'integraciones' ? [...seccion.rutas, ...rutasDeHoras()] : seccion.rutas);
 function hojasAjenas(seccion, actual, doc) {
   if (!seccion || !seccion.rutas) return [];
   const out = [];
+  const rutas = rutasDe(seccion);
   const mirar = (a, b, p) => {
-    if (seccion.rutas.includes(p)) return;   // una hoja de la sección: puede cambiar
+    if (rutas.includes(p)) return;   // una hoja de la sección: puede cambiar
     // un objeto contra otro (o contra nada: la sección lo puede crear o sacar por sus hojas) se mira hoja por hoja
     if ((isObject(a) || a === undefined) && (isObject(b) || b === undefined) && (isObject(a) || isObject(b))) {
       const oa = isObject(a) ? a : {}; const ob = isObject(b) ? b : {};
@@ -1507,24 +1556,57 @@ function pantalla(idioma = 'es') {
     box.appendChild(campo(T('pantalla.largoMaximoDeProsaEn'), r.max_chars, function (v) { hoja(d, 'response', 'max_chars', v === '' ? '' : numOTexto(v)); }, 'response.max_chars', pr, { inputmode: 'numeric' }));
     return box;
   }
-  var INTEGRACIONES = [['clockify', T('pantalla.clockifyRegistraLasHorasDe')], ['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')], ['codegraph', T('pantalla.codegraphIndiceDeCodigo')]];
+  var INTEGRACIONES = [['engram', T('pantalla.memoriaEntreSesionesEngram')], ['mailbox', T('pantalla.buzonDeCorridasCadaMaquina')], ['codex', T('pantalla.codexElArnesTambienSe')], ['nightly', T('pantalla.procesosDeLaNocheDel')], ['codegraph', T('pantalla.codegraphIndiceDeCodigo')]];
+  // «Nombre: qué hace» → el nombre en negrita; sin dos puntos, todo es el nombre
+  function queDe(texto) {
+    var dos = texto.indexOf(': ');
+    return el('div', { class: 'que', role: 'cell' }, el('b', { text: dos < 0 ? texto : texto.slice(0, dos) }), dos < 0 ? null : el('span', { text: texto.slice(dos) }));
+  }
+  // la herramienta de horas que se ve elegida: la clave nueva, o la llave vieja de Clockify (prendida = Clockify, apagada = ninguna)
+  function horasElegida(i) {
+    // como la lee la máquina: recortada y en minúsculas; vacía, vale la llave vieja
+    var v = typeof i.timeTracking === 'string' ? i.timeTracking.trim().toLowerCase() : '';
+    if (v) return v;
+    if (i.clockify === true) return 'clockify';
+    if (i.clockify === false) return 'none';
+    return '';
+  }
   // story 2.59: un renglón por integración, el nombre y su descripción a la izquierda y un selector corto a la derecha
+  // el primero es la herramienta de horas, con las que traen los manifiestos del árbol (extras.horas)
   function editorIntegraciones(s, d, pr) {
     var i = d.integrations || {};
+    var horas = ((s.extras || {}).horas) || [];
     var box = el('div', { class: 'pila' });
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.telegramSeConfigura') }));
     var t = tabla('integ', T('pantalla.integraciones'));
+    var elegida = horasElegida(i);
+    var opcionesHoras = [['', T('pantalla.sinDeclararNinguno')], ['none', T('pantalla.ningunaHerramienta')]].concat(horas.map(function (h) { return [h.name, h.label]; }));
+    // la que el perfil ya tiene y este sitio no ofrece (otra versión, o su manifiesto roto) se muestra igual, dicha
+    if (elegida && !opcionesHoras.some(function (o) { return o[0] === elegida; })) opcionesHoras.push([elegida, T('pantalla.herramientaQueNoOfrece', { herramienta: elegida })]);
+    ((s.extras || {}).horasProblemas || []).forEach(function (m) { box.appendChild(el('p', { class: 'err', text: m })); });
+    // elegir una saca la llave vieja: el perfil queda con una sola fuente de verdad (el pedido sube la versión que lo lee)
+    var ch = corto(T('pantalla.registroDeHoras'), elegida, opcionesHoras, function (v) { hoja(d, 'integrations', 'clockify', undefined); hoja(d, 'integrations', 'timeTracking', v); render(); }, 'integrations.timeTracking', pr);
+    t.appendChild(renglon([queDe(T('pantalla.registroDeHoras')), el('div', { class: 'sel', role: 'cell' }, ch.sel)], ch.mios));
     INTEGRACIONES.forEach(function (par) {
       var k = par[0];
       var opciones = [['', T('pantalla.sinDeclararApagada')], ['true', T('pantalla.prendida2')], ['false', T('pantalla.apagada2')]].concat(k === 'codex' ? [['detect', T('pantalla.siEstaInstalado')]] : []);
       var p = 'integrations.' + k;
       var c = corto(par[1], i[k] === undefined ? '' : String(i[k]), opciones, function (v) { hoja(d, 'integrations', k, v === 'true' ? true : v === 'false' ? false : v); }, p, pr);
-      // «Nombre: qué hace» → el nombre en negrita; sin dos puntos, todo es el nombre
-      var dos = par[1].indexOf(': ');
-      var que = el('div', { class: 'que', role: 'cell' }, el('b', { text: dos < 0 ? par[1] : par[1].slice(0, dos) }), dos < 0 ? null : el('span', { text: par[1].slice(dos) }));
-      t.appendChild(renglon([que, el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
+      t.appendChild(renglon([queDe(par[1]), el('div', { class: 'sel', role: 'cell' }, c.sel)], c.mios));
     });
     box.appendChild(t);
+    // la elegida, si pide la URL de su instancia (la de la organización) y un token (el de cada persona, en su máquina)
+    var h = horas.filter(function (x) { return x.name === elegida; })[0];
+    if (h && h.url) {
+      var propio = esObjeto(i[h.name]) ? i[h.name] : {};
+      box.appendChild(campo(T('pantalla.urlDeLaInstancia', { herramienta: h.label }), propio.url, function (v) {
+        var o = esObjeto(d.integrations && d.integrations[h.name]) ? d.integrations[h.name] : {};
+        if (v === '') delete o.url; else o.url = v;
+        hoja(d, 'integrations', h.name, Object.keys(o).length ? o : undefined);
+      }, 'integrations.' + h.name + '.url', pr));
+    }
+    if (h && h.token) box.appendChild(el('p', { class: 'muted', text: T('pantalla.tokenEnCadaMaquina', { herramienta: h.label, comando: h.token }) }));
+    if (elegida) box.appendChild(el('p', { class: 'muted', text: T('pantalla.registroDeHorasSubeLaCapa') }));
     return box;
   }
   // ── story 2.59: las tablas de renglones de Modelos, Repos e Integraciones ──
@@ -2650,7 +2732,7 @@ function pantalla(idioma = 'es') {
 }
 
 module.exports = {
-  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
+  SECCIONES, seccionPorId, loadReader, lectorSabe, formatJson, remoteOf, TEAM_REPOS_SINCE, MERGE_SUITES_SINCE, MODELS_SINCE, MODEL_LEVELS_SINCE, WAIT_NOTICE_SINCE, COVERAGE_SINCE, REVIEW_SINCE, STACK_SINCE, RESPONSE_SINCE, APPROVALS_SINCE, QA_SINCE, TIME_TRACKING_SINCE, timeTrackingLayer, cambiaHoras, rutasDeHoras, versionQuePide, versionAtLeast, profileGateProblem, packsListGateProblem, teamProfileGateProblem,
   problemasDeSeccion, problemasDelTope, sinPipelinePorRegla, queHacePorRegla, hojasAjenas, modelosDeHoy, motivoDeHoy, modelosEnNiveles, equivalenciasDe,
   thresholdsParse, aplicarSeccion, revisar, versionesDeMaquinas, paridadPorProducto, ramaDePropuesta, tituloDePropuesta, cuerpoDePropuesta, pantalla, diferencia, reaplicar, versionDeTexto,
   SIN_NOTICIAS_DIAS,

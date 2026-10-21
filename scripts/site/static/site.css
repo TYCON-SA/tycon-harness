@@ -414,7 +414,7 @@ body.solo .corridas #fichas-corridas,body.solo .corridas #fichas-calculando{disp
 .ct-pieza.apagada .ct-nom,.ct-pieza.apagada .ct-cuando{opacity:.55}
 .ct-acc{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 .ct-chip{display:inline-block;padding:0 7px;border-radius:999px;font:11px/18px var(--sans);border:1px solid var(--line-strong);color:var(--ink-2);vertical-align:1px}
-.ct-chip.org{border-color:var(--accent);color:var(--accent)}
+.ct-chip.org,.ct-chip.horas{border-color:var(--accent);color:var(--accent)}
 .ct-chip.arnes{color:var(--muted)}
 .ct-chip.segun{border-color:var(--accent);color:var(--accent);border-style:dashed}
 .ct-chip.frena{border-color:var(--bad);color:var(--bad-ink)}
