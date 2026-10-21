@@ -1610,12 +1610,10 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
   }
 });
 
-test('PublishedGuidesAndCovers_PublicLogPage (T26) — la página pública del registro no dice que las guías enlazan a ella', () => {
-  const page = TEAM_LOG ? path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'maintaining', 'incident-log.md') : path.join(RAIZ, 'guides', 'maintaining', 'incident-log.md');
-  const text = fs.readFileSync(page, 'utf8');
-  assert.ok(!/links here|enlazan acá|Every guide still cites|Las guías los siguen citando/i.test(text), 'las guías ya no citan el caso ni enlazan a esta página');
-  assert.match(text, /repo(sitorio)? de mantenimiento|maintenance repository/i, 'dice dónde viven los casos');
-  assert.deepStrictEqual(ih.scan(text, 'prose').map((f) => f.form), [], 'y ella misma no trae formas');
+test('PublishedGuidesAndCovers_NoPublicLogPage (T26) — lo que se publica no trae una página del registro: los casos viven en el repo del equipo', () => {
+  const page = j('incident', '-log.md');
+  assert.ok(!fs.existsSync(path.join(RAIZ, 'guides', 'maintaining', page)), 'la página pública del registro no existe');
+  assert.ok(!fs.existsSync(path.join(RAIZ, 'scripts', 'publishing', 'public-files', 'guides', 'maintaining', page)), 'ni su fuente sintética');
 });
 
 // ══ las skills, los revisores y los bloques, en cero (T58) ═════════════════════

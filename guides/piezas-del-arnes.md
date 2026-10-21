@@ -266,18 +266,6 @@ _`scripts/lib/tycon-config.js` · el perfil del equipo · `~/.claude/tycon.json`
 
 **Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesadvisor-rules-catalogmd)
 
-## guides/maintaining/incident-log.md
-
-**Qué es:** El registro de incidentes del arnés: el caso concreto que motivó cada regla, hook o revisor. No se publica.
-
-**Por qué existe:** Las guías publicadas dicen la regla y su porqué; el caso queda acá, con la guía y la sección que lo citaban.
-
-**Quién la usa:** Quien va a retirar o relajar una regla, antes de hacerlo.
-
-**Dónde se prueba:** sin suite propia
-
-**Detalle:** [en la guía de detalle](maintaining/piezas-en-detalle.md#guidesmaintainingincident-logmd)
-
 ## guides/accov-governance-protocol.md
 
 **Qué es:** El protocolo de cierre de story (`ACCOV-C7` a `ACCOV-C10`): autoauditoría, meta-auditoría, convergencia y prohibición del checklist manual.

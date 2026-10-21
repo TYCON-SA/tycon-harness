@@ -108,7 +108,7 @@ Viven en el código (`EXCLUIDOS_SIEMPRE`), por repo y con su motivo, y **nunca s
 | Repo | Nunca sale | Por qué |
 |---|---|---|
 | arnes | `.engram/` `.dashboard/` `.advisors/` `inbox/` _(del repo del equipo; no está en esta copia)_ `tasks/` `specs/` `qa/` `_bmad/` | memoria, series, evidencia, hallazgos y planes del equipo |
-| arnes | `guides/maintaining/incident-log.md` `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
+| arnes | `guides/guide-update-proposals.md` _(del repo del equipo; no está en esta copia)_ `guides/decisions/telemetria-produccion-inventario-*.md` | casos nominados, propuestas internas, inventario de producción |
 | arnes | `scripts/metrics/censo-*.json` `scripts/ci/product-parity.json` `scripts/ci/pipeline-debt.json` `scripts/metrics/corridas-buzon.json` _(del repo del equipo; no está en esta copia)_ | censos, productos y deuda por repo de cliente, la llave del buzón |
 | arnes | `team-profile.json` _(del repo del equipo; no está en esta copia)_ `perfil-equipo.json` _(del repo del equipo; no está en esta copia)_ (de «clase»: el clon tiene uno de los dos, o los dos en la transición) | el perfil del equipo, con su nombre de hoy y el de antes, que sigue valiendo |
 | arnes | `pipelines/**` | los pipelines del equipo (los nocturnos, el de pull request y sus pedazos compartidos) |
@@ -340,7 +340,6 @@ La copia lleva en su raíz lo que un repo público necesita, y los repos interno
   que carga cada sesión pasó a `INDEX.md`.
 - `.github/CONTRIBUTING.md`, `.github/CODE_OF_CONDUCT.md` y `.github/SECURITY.md`.
 - `.github/workflows/ci.yml`: la CI del repo público (ver «La CI pública»).
-- `guides/maintaining/incident-log.md` público: una página que dice que los casos con nombre viven en el repo del equipo.
 - `scripts/setup/public-remotes.json`: la lista de remotos públicos, `{ "remotes": ["https://github.com/<organización>/<repo>"] }`,
   con el nombre ya puesto. Con ella el programa de instalación reconoce un clon del público y sabe
   de qué repo baja la versión publicada (`install --version`, la mudanza, la portada sin git). En los repos internos ese
@@ -839,7 +838,7 @@ la base con la configuración del cambio, y un nombre real que el cambio agregar
 **La regla**: lo que sale en la copia pública —código, pruebas, guías, catálogo de reglas,
 instrucciones de revisores, pasos y comandos— se escribe sin nombres reales. Pruebas y ejemplos usan **nombres
 neutros** (`acme` o «Cliente A» para un cliente, `acme-sql.database.windows.net` para un servidor, `example.com` para un
-dominio, «el dev» para una persona); un caso real vive con su nombre sólo en `guides/maintaining/incident-log.md` (no se publica).
+dominio, «el dev» para una persona); un caso real vive con su nombre sólo en el repo del equipo (no se publica).
 La tabla de reemplazos queda como red: tapa lo que se escape.
 
 **Un nombre neutro no delata al real**: no conserva su inicial, ni su sufijo, ni su largo
