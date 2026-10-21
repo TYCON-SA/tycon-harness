@@ -1,8 +1,8 @@
 'use strict';
 /*
- * oidc.js — el inicio de sesión OIDC genérico del sitio de la organización (story 2.23, AC 5 a 8; decisiones 9 a 11).
+ * oidc.js — el inicio de sesión OIDC genérico del sitio de la organización.
  *
- * Código de autorización con PKCE (S256), `state` y `nonce`. Sin dependencias de afuera (decisión 10): la firma del
+ * Código de autorización con PKCE (S256), `state` y `nonce`. Sin dependencias de afuera: la firma del
  * id_token la verifica `crypto` de Node con las claves del JWKS del emisor; lo nuestro son comparaciones, cada una con
  * su prueba (scripts/tests/site-oidc.test.js, T9, T10 y T35).
  *
@@ -16,7 +16,7 @@
  * El descubrimiento y el JWKS se bajan al arrancar; ante un `kid` desconocido el JWKS se vuelve a bajar, como mucho una
  * vez por minuto (un `kid` inventado no puede usar al sitio para martillar al emisor).
  *
- * Lo que se leyó de la documentación (Task 0, 2026-10-15): OpenID Connect Discovery 1.0 §4 —
+ * Lo que dice la documentación: OpenID Connect Discovery 1.0 §4 —
  * `<emisor>/.well-known/openid-configuration`, y el `issuer` del documento tiene que ser idéntico al emisor pedido. Lo
  * propio de cada proveedor (sus claims, su emisor) está en la cabecera de su archivo en auth-providers/.
  *

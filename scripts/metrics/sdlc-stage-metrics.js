@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * sdlc-stage-metrics.js — Las métricas de ETAPA del SDLC que el playbook pide y nadie medía.
+ * sdlc-stage-metrics.js — Las métricas de ETAPA del SDLC que el playbook pide.
  *
- * Nace del plan de cierre de brechas contra el AI-Native SDLC Playbook (2026-08-30, Tanda 1):
- * la evaluación dio 7.3/10 y una de las brechas era "las métricas de etapa no se miden" —
+ * Cierra una brecha contra el AI-Native SDLC Playbook: las métricas de etapa no se miden —
  * tiempo de una story hasta entregarse, cuánto sale bien al primer intento, cuánto se rehace.
- * La materia prima ya existía toda; esto es agregación, no infraestructura.
+ * La materia prima ya existe toda; esto es agregación, no infraestructura.
  *
  * LAS 4 SERIES y su fuente (nada se inventa; lo no medible se declara — `null` no es `0`,
  * regla heredada de lib/dashboard-metrics.js):
@@ -16,25 +15,24 @@
  *                        buckets mensuales para tener serie histórica desde el día uno.
  *  2. first_pass_ratio — del dashboard 2.0 (.dashboard/metrics-*.json, la métrica
  *                        advisor_rerun_loop_iterations): proporción de corridas del pipeline con UNA
- *                        sola vuelta de revisores. 🔴 El método cambió el 2026-09-16 (story 7.1): hasta
- *                        entonces la escribía el retrospective-capturer con criterio propio (en 13
- *                        archivos cotejados, 5 contaban una vuelta de más); desde entonces la escribe
- *                        retro-heartbeat.js con la última vuelta de los revisores medidos. La serie lo
- *                        dice en `nota`: un salto en esa fecha es cambio de conteo, no de conducta.
+ *                        sola vuelta de revisores. 🔴 La escribe retro-heartbeat.js con la última vuelta de
+ *                        los revisores medidos; los archivos más viejos traen el conteo del
+ *                        retrospective-capturer, de criterio propio (en 13 archivos cotejados, 5
+ *                        contaban una vuelta de más). La serie lo dice en `nota`: un salto entre los dos
+ *                        métodos es cambio de conteo, no de conducta.
  *  3. rework_ratio     — proporción de stories done con follow-ups declarados
  *                        (frontmatter `followed_up_by:` no vacío — convención §1.2 story-format).
  *  4. dod_evidence_ratio — proporción de stories done con su evidencia de cierre en el repo
  *                        (.advisors/dod-runtime/<id>-*). El escape declarado
- *                        `dod_runtime_exempt: true` NO cuenta como evidencia: desde el 2026-09-18
- *                        sale del cociente y va en `exentas` (antes sumaba arriba).
+ *                        `dod_runtime_exempt: true` NO cuenta como evidencia:
+ *                        sale del cociente y va en `exentas`.
  *
  * Descubrimiento de stories: DELEGA en lib/story-discovery.js de tycon-pipeline (fuente única —
- * lección del incident-log#story-discovery-nombres: dos buscadores en dos repos se rompen por
- * separado). Si el skill no está, cae RUIDOSAMENTE a un escaneo recursivo por identidad
+ * dos buscadores en dos repos se rompen por separado). Si el skill no está, cae RUIDOSAMENTE a un escaneo recursivo por identidad
  * declarada (`story:` en frontmatter), avisando por stderr.
  *
  * Uso:
- *   node scripts/metrics/sdlc-stage-metrics.js --repo ~/Proyectos/Totora/Backend [--repo ...]
+ *   node scripts/metrics/sdlc-stage-metrics.js --repo ~/Proyectos/Acme/Backend [--repo ...]
  *   ... [--dashboard <dir>] [--since YYYY-MM-DD] [--json]
  *
  * Exit 0 siempre (es informativo). Cobertura declarada en toda salida: un número sin
@@ -48,21 +46,21 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const FO = require(path.join(__dirname, '..', 'lib', 'followup-of.js'));
 const { readEnv } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
-// Qué archivo cuenta como «evidencia de cierre» lo decide el portón de CI, no este medidor
-// (2026-09-06): contaba cualquier `<id>-*` —matriz, self-audit, hasta un `.jsonl`— y publicaba
-// «cubierta» a stories que el portón rechaza. Medido en los repos reales el 2026-09-06: con el
-// criterio del portón SIN el ledger daba 246/538 (un repo del equipo 128 → 35: 116 de sus 272 archivos
-// son ledgers); con la decisión del dev de que el ledger de smokes SÍ cuenta, vuelve a 359/538 —
-// el mismo número de antes, pero ahora significa lo que parece: cada «cubierta» pasa el portón.
+// Qué archivo cuenta como «evidencia de cierre» lo decide el portón de CI, no este medidor:
+// contar cualquier `<id>-*` —matriz, self-audit, hasta un `.jsonl`— publicaría
+// «cubierta» a stories que el portón rechaza. Medido en los repos reales: con el
+// criterio del portón SIN el ledger da 246/538 (un repo del equipo 128 → 35: 116 de sus 272 archivos
+// son ledgers); con el ledger de smokes, que SÍ cuenta, da 359/538:
+// cada «cubierta» pasa el portón.
 const { esEvidenciaDeCierre } = require(path.join(__dirname, '..', 'ci', 'tycon-ci-gate.js'));
 
 const TCG = path.resolve(__dirname, '..', '..');
-// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js (story 8.23, tanda D): en una instalación bajada es
+// dónde vive `.dashboard` en esta máquina lo sabe tycon-home.js: en una instalación bajada es
 // ~/.tycon/state/dashboard; en un clon, el de siempre. Si este archivo viaja suelto, el de siempre.
 function dashboardDefault() {
-  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js (story 8.26, tanda J): en una versión bajada, el
-  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, lo de antes.
-  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a la ruta de antes; si no pudo saber, lo avisa ella)
+  // lo que escribe la máquina vive donde dice scripts/lib/night-data.js: en una versión bajada, el
+  // clon de mantenimiento que la máquina declara; nunca el del público. Sin esa biblioteca al lado, el de siempre.
+  // (si la biblioteca ESTÁ y no carga, tira: no se vuelve callado a otra ruta; si no pudo saber, lo avisa ella)
   { const lib = path.join(__dirname, '..', 'lib', 'night-data.js'); if (fs.existsSync(lib)) { const d = require(lib).machineDashboardDir(TCG); if (d) return d; } }
   try {
     const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'));
@@ -71,9 +69,9 @@ function dashboardDefault() {
   } catch (_) { /* el de siempre */ }
   return path.join(TCG, '.dashboard');
 }
-// Dónde están las skills lo dice LA función que usan todos (story 8.18, AC 13), no una ruta armada acá: la variable
-// TYCON_SKILLS_DIR › el propio clon si es unido › ~/.claude/agent-skills. Antes, sin variable, este medidor buscaba
-// el descubridor de stories INSTALADO aunque corriera desde un clon que trae el suyo.
+// Dónde están las skills lo dice LA función que usan todos, no una ruta armada acá: la variable
+// TYCON_SKILLS_DIR › el propio clon si es unido › ~/.claude/agent-skills. Así, corriendo desde un clon que trae su propio
+// descubridor de stories, se usa ése y no el INSTALADO.
 const SKILLS_DIR = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;
 const DISCOVERY_PATH = path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'story-discovery.js');
 
@@ -94,7 +92,7 @@ function parseArgs(argv) {
     else if (k === '--transitions-budget-ms') {
       const v = Number.parseInt(argv[++i], 10);
       // Un presupuesto ilegible NO se toma como "sin presupuesto": eso es exactamente el
-      // cuelgue que el AC 8 existe para impedir. Se avisa y se usa el default.
+      // cuelgue que este tope existe para impedir. Se avisa y se usa el default.
       if (Number.isFinite(v) && v > 0) a.budgetMs = v;
       else console.error(`⚠️  --transitions-budget-ms inválido — sigo con el default de ${BUDGET_TRANSICIONES_MS} ms`);
     } else if (k === '--help' || k === '-h') a.help = true;
@@ -106,9 +104,9 @@ function parseArgs(argv) {
  * Descubre repos git bajo una raíz (depth ≤ 2: `<raíz>/<repo>` y `<raíz>/<proyecto>/<repo>`,
  * que es como suele estar organizada la raíz de repos).
  *
- * 🔴 Existe porque pasar la lista a mano ya falló DOS VECES el mismo día (2026-08-30): la
- * primera pasada global midió los repos de implementación —que no contienen las stories— y
- * reportó "0 stories" en 15 repos que sí tienen trabajo, en otro repo del mismo proyecto. Una
+ * 🔴 Existe porque pasar la lista a mano falla: una
+ * pasada global mide los repos de implementación —que no contienen las stories— y
+ * reporta "0 stories" en 15 repos que sí tienen trabajo, en otro repo del mismo proyecto. Una
  * lista escrita a mano sólo mide lo que alguien se acordó de anotar, que es justo el modo de
  * falla que el arnés persigue en todas partes.
  */
@@ -121,8 +119,7 @@ function discoverRepos(root, depth = 0, out = []) {
   // 🔴 ORDENADO. `fs.readdirSync` no garantiza orden, y ese orden se propaga hasta el tablero: los
   //    mapas agregados (`conteo`, `sin_diccionario`, `por_grupo`) se construyen por inserción, y
   //    las fichas que muestran «los tres/cinco que más tienen» ordenan por valor — con empates,
-  //    cuáles aparecen lo decide el orden de inserción. Medido por el pase adversarial del
-  //    2026-09-05: con cuatro repos empatados en 1, invertir el orden de escaneo cambia la lista
+  //    cuáles aparecen lo decide el orden de inserción. Con cuatro repos empatados en 1, invertir el orden de escaneo cambia la lista
   //    entera de la ficha sin que haya cambiado un solo dato. En el nocturno los clones se rehacen
   //    cada noche, así que ese orden puede cambiar solo.
   for (const e of [...entries].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -136,7 +133,7 @@ function discoverRepos(root, depth = 0, out = []) {
 
 /**
  * El regex de UNA clave del frontmatter. Fuente ÚNICA: lo comparten el lector de archivos del
- * disco y el lector de versiones HISTÓRICAS que salen de git (AC 5 de la story 2.1). Dos
+ * disco y el lector de versiones HISTÓRICAS que salen de git. Dos
  * expresiones para la misma línea se separan solas el día que alguien toca una de las dos —
  * y el síntoma sería silencioso: un `status: review  # nota` leído como `review  # nota`.
  */
@@ -164,7 +161,7 @@ function parseFrontmatter(body) {
       if (next && (!nextKey || after.indexOf(next[0]) < after.indexOf(nextKey[0]))) followups = true;
     }
   }
-  // ── La causa del reproceso (story 2.3) — lado HIJA ──────────────────────────────────────────
+  // ── La causa del reproceso — lado HIJA ──────────────────────────────────────────
   // `followups` (arriba) mira `followed_up_by:`: las PADRES que volvieron, que es lo que cuenta
   // `rework_ratio`. Acá se mira la otra punta: la story que HACE el seguimiento, que es quien
   // escribe la causa. Una padre con tres hijas de causas distintas no tiene *una* causa.
@@ -192,7 +189,7 @@ function readFrontmatter(file) {
 
 // ── descubrimiento (canónico, con fallback ruidoso) ──────────────────────────────────────────
 
-// `partial` (story 1.17): un recorrido que no terminó puede dejar afuera a las stories que repiten un número, y con
+// `partial`: un recorrido que no terminó puede dejar afuera a las stories que repiten un número, y con
 // eso la clave de la evidencia se calcularía a ciegas. Quien mide la evidencia lo mira y dice «no medido».
 function discoverStoryFiles(repo, budgetMs = 15000) {
   try {
@@ -238,11 +235,11 @@ function storyDates(repo, file) {
   return { createdAt: createdAt || null, lastAt: last || null };
 }
 
-// ── el reproceso por CARRIL (story 2.7) ──────────────────────────────────────────────────────
+// ── el reproceso por CARRIL ──────────────────────────────────────────────────────
 //
 // ¿Lo que pasó por el pipeline vuelve menos que lo que no? El carril de una STORY se deduce de lo
 // que ya viaja por git: la carpeta `.advisors/pipeline-runs/<story>-<ts>/` que el pipeline deja en el
-// repo de la story (desde el 2026-09-05; medido ese día en 5 repos). Sólo árboles y commits: en un
+// repo de la story (medido en 5 repos). Sólo árboles y commits: en un
 // clon sin blobs no baja nada.
 //
 // 🔴 La VENTANA: sólo cuentan las stories cerradas desde la primera corrida guardada en ESE repo. Una
@@ -269,8 +266,8 @@ function reworkPorCarril(repo, done, cierreDe, claveDe = (s) => s.id) {
     if (!cierre) { sinFecha += 1; continue; }
     if (cierre.slice(0, 10) < desde) { fuera += 1; continue; }
     // La carpeta es `<clave>-<fecha>`: después del guion viene la fecha (8 dígitos). Así la corrida de
-    // «1.10» no le da constancia a «1.1», ni la de «1.3-B» a «1.3» (pase adversarial 2.7). La clave es el número si
-    // es único en el repo y `<tema>__<número>` si se repite (story 1.17.1): una corrida de otra story del mismo número
+    // «1.10» no le da constancia a «1.1», ni la de «1.3-B» a «1.3». La clave es el número si
+    // es único en el repo y `<tema>__<número>` si se repite: una corrida de otra story del mismo número
     // no cuenta como «pasó por el pipeline».
     const suya = new RegExp(`^${String(claveDe(s)).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-\\d{8}`);
     const g = corridas.some((c) => suya.test(c)) ? con : sin;
@@ -280,12 +277,12 @@ function reworkPorCarril(repo, done, cierreDe, claveDe = (s) => s.id) {
   return { valor: { desde, con_corrida: con, sin_constancia: sin, fuera_de_ventana: fuera, sin_fecha: sinFecha }, motivo: null };
 }
 
-// ── transiciones de estado derivadas de git (story 2.1) ──────────────────────────────────────
+// ── transiciones de estado derivadas de git ──────────────────────────────────────
 //
 // La serie de estados de cada story YA está escrita: cada cambio de `status:` fue un commit.
 // Lo caro no es leerla, es CÓMO se lee en los clones que usa el nocturno, que son
 // `--filter=blob:none`: ahí git baja cada versión de archivo BAJO DEMANDA, con un viaje de red
-// por blob. Medido sobre CeiboProject (282 stories, 1430 versiones), 2026-09-05:
+// por blob. Medido sobre un repo de 282 stories y 1430 versiones:
 //
 //   · `git log -p --follow -G'^status:'` por story ... 142 s para SÓLO 20 stories (~33 min
 //     extrapolado) y 51 viajes de red: `-G` tiene que DIFERENCIAR, así que baja los dos blobs
@@ -298,34 +295,33 @@ function reworkPorCarril(repo, done, cierreDe, claveDe = (s) => s.id) {
 //   1. UNA consulta al historial con `--raw`, que devuelve los OIDs de blob desde los ÁRBOLES:
 //      cero red, 0,06 s. (`--no-renames` es a propósito: la detección de renombres es
 //      justamente lo que obliga a bajar contenido.) 🔴 Con `--diff-merges=first-parent`
-//      EXPLÍCITO (2026-09-16): sin él, que un commit de merge emita o no sus líneas `--raw`
-//      depende de la versión de git —con la 2.50 de Apple no las emite—, y la resolución de
-//      un conflicto sobre la línea `status:` desaparecía de la serie sin error ni aviso (T23
-//      rojo en esta máquina, verde en el nocturno). Medido en este repo (1109 commits, 34
+//      EXPLÍCITO: sin él, que un commit de merge emita o no sus líneas `--raw`
+//      depende de la versión de git —con git 2.50 de Apple no las emite—, y la resolución de
+//      un conflicto sobre la línea `status:` desaparece de la serie sin error ni aviso.
+//      Medido en este repo (1109 commits, 34
 //      merges): +168 líneas leídas, mismo tiempo.
 //   2. UN `git fetch` por lote de esos OIDs — el mismo mecanismo de la bajada perezosa, pero
 //      en un viaje en vez de 1430.
 //   3. `git cat-file --batch`, ya sin red.
 //
-// El renombre (AC 4) NO se resuelve con `--follow` sino agrupando por la IDENTIDAD DECLARADA
+// El renombre NO se resuelve con `--follow` sino agrupando por la IDENTIDAD DECLARADA
 // (`story:` dentro del frontmatter) en vez de por la ruta: queda a prueba de renombres y de
 // mudanzas de carpeta por construcción, sin heurística que calibrar. Es el mismo criterio que
-// este arnés ya adoptó para DESCUBRIR stories (lib/story-discovery.js: la pertenencia la decide
-// lo declarado, no la ruta) — decidir por ruta acá sería reintroducir el defecto que ese
-// cambio cerró.
+// este arnés adopta para DESCUBRIR stories (lib/story-discovery.js: la pertenencia la decide
+// lo declarado, no la ruta) — decidir por ruta acá sería caer en el defecto que ese
+// criterio evita.
 
-// ── el diccionario de estados (story 2.2) ────────────────────────────────────────────────────
+// ── el diccionario de estados ────────────────────────────────────────────────────
 //
 // 🔴 Se lee AL MEDIR, no al cargar el módulo. Dos razones, y la segunda es la que importa:
 //   (a) `TYCON_STATES_PATH` permite inyectar un diccionario de fixture en los casos, y con la
 //       carga al `require` el fixture no tendría ningún efecto (el módulo ya leyó el canónico);
 //   (b) el criterio de «cerrado» sale de `groups.cerrado` — cachearlo al arranque haría que
-//       mover un estado de grupo NO mueva el conteo, que es justo lo que el AC 17 promete.
+//       mover un estado de grupo NO mueva el conteo, y tiene que moverlo.
 //
 // 🔴 Y la inyección DEJA RASTRO: `global.diccionario` publica ruta y hash del archivo realmente
-//    usado. Sin eso acabábamos de fabricar un control apagable por config — una máquina con esa
-//    variable puesta publicaría métricas de otro diccionario y el snapshot se vería idéntico
-//    (`guides/decisions/controles-apagables-por-config-2026-08-25.md`).
+//    usado. Sin eso sería un control apagable por config — una máquina con esa
+//    variable puesta publicaría métricas de otro diccionario y el snapshot se vería idéntico.
 const ESTADOS_PATH = path.join(__dirname, 'states.json');
 const rutaEstados = () => readEnv('TYCON_STATES_PATH', { where: 'scripts/metrics/sdlc-stage-metrics.js' }) || ESTADOS_PATH;
 
@@ -335,7 +331,7 @@ const rutaEstados = () => readEnv('TYCON_STATES_PATH', { where: 'scripts/metrics
  * 🔴 Es UNA función y no cinco `if` desperdigados: los cinco caminos terminan en el mismo cero
  *    falso, y con la guarda repetida el día que alguien agregue el sexto se olvida de uno.
  *    Los cinco, medidos: (a) archivo ausente · (b) JSON roto · (c) JSON válido SIN la clave
- *    `groups` —que es el diccionario mínimo que la 2.1 dejó, o sea a donde vuelve el archivo si
+ *    `groups` —que es el diccionario mínimo, o sea a donde vuelve el archivo si
  *    alguien lo revierte o un merge lo pisa— · (d) `groups.cerrado` presente pero vacío ·
  *    (e) `groups.cerrado` con valores que no son canónicos (un alias en vez del canónico: el
  *    archivo se ve bien formado y `done` da []).
@@ -353,17 +349,16 @@ function validarDiccionario(d) {
   if (!Array.isArray(cerrado) || !cerrado.length) {
     return 'el diccionario de estados trae `groups.cerrado` vacío: sin él no se sabe qué story está cerrada';
   }
-  // 🔴 Las DOS direcciones del AC 6, y se validan ACÁ y no sólo sobre el archivo commiteado.
-  //    El caso T6 de `states-dictionary.test.js` mira el `states.json` del repo; el que llega
+  // 🔴 Las DOS direcciones, y se validan ACÁ y no sólo sobre el archivo commiteado.
+  //    El caso de `states-dictionary.test.js` mira el `states.json` del repo; el que llega
   //    al medidor puede ser OTRO (`TYCON_STATES_PATH`, un merge que pise el archivo, una edición
-  //    a mano), y ahí no había ninguna guarda. Lo cazó el pase adversarial del 2026-09-05, con
-  //    tres lentes independientes, y son dos fallas distintas con el mismo disfraz de archivo
+  //    a mano), y ahí no habría ninguna guarda. Son dos fallas distintas con el mismo disfraz de archivo
   //    bien formado:
   //      (a) una entrada de grupo que NO es canónica (un alias, un typo) → ese estado desaparece
   //          de `por_grupo` y `sum(por_grupo) < sum(conteo)` sin que nada lo diga;
   //      (b) un canónico en DOS grupos → `porGrupo` corta en el primero que matchea, así que
   //          `por_grupo.cerrado` puede dar 0 mientras `done_total` da 2 — dos números que el
-  //          smoke del AC 14 asume iguales, desincronizados en cada corrida nocturna;
+  //          smoke asume iguales, desincronizados en cada corrida nocturna;
   //      (c) un canónico SIN grupo → sale del denominador de la ficha sin que nadie lo note.
   const grupoDe = new Map();
   for (const [g, lista] of Object.entries(d.groups)) {
@@ -395,7 +390,7 @@ let _dicKey = null;
 
 /**
  * El diccionario vigente: `{ruta, hash, canonicos, alias, grupos, motivo}`. Las claves del archivo están en inglés
- * (`canonical`, `groups`: story 8.9, tanda D1); los nombres de este objeto son internos y no cambian.
+ * (`canonical`, `groups`); los nombres de este objeto son internos y no cambian.
  */
 function diccionario() {
   const ruta = rutaEstados();
@@ -425,10 +420,10 @@ function diccionario() {
   return d;
 }
 
-// ── El vocabulario de CAUSAS del reproceso (story 2.3) ────────────────────────────────────────
+// ── El vocabulario de CAUSAS del reproceso ────────────────────────────────────────
 //
 // Mismo archivo que lee `lint-story-frontmatter.js` — dos listas del mismo vocabulario en dos
-// archivos se separan solas (los dos diccionarios de estados de la 2.2). Y misma guarda que
+// archivos se separan solas (como pasaría con los diccionarios de estados). Y misma guarda que
 // `TYCON_STATES_PATH`: la ruta y el hash del archivo REALMENTE usado se publican en el snapshot,
 // para que la variable de inyección no se vuelva un interruptor invisible.
 const CAUSAS_PATH = path.join(__dirname, 'rework-causes.json');
@@ -452,7 +447,7 @@ function causasReproceso() {
  * El conteo por CAUSA sobre las stories que declaran `followup_of:` — las HIJAS, en cualquier
  * estado (la causa se conoce al crearlas, no al cerrarlas).
  *
- * Invariante que el AC 6 verifica desde el JSON publicado:
+ * Invariante que se verifica desde el JSON publicado:
  *   sum(conteo) + sin_declarar + sum(fuera_de_vocabulario) === total
  *   sum(sin_declarar_por_type) === sin_declarar
  *
@@ -463,13 +458,13 @@ function causasReproceso() {
 function contarCausas(stories, vocab) {
   // `Object.create(null)`: la clave es el valor CRUDO del frontmatter — texto que escribe
   // cualquiera en cualquier repo. Con un objeto literal, `followup_reason: __proto__` lee la
-  // propiedad HEREDADA en vez de un contador (lo pagó la 2.2 con `status:`).
+  // propiedad HEREDADA en vez de un contador (le pasa también a `status:`).
   const conteo = Object.create(null);
   for (const c of vocab.causas) conteo[c] = 0;
   const fuera = Object.create(null);
   const porType = Object.create(null);
   // `sin_type` es un balde CONOCIDO, no un `type` cualquiera: va siempre, aunque valga 0 — igual
-  // que `sin_status` en el contador de estados de la 2.2. Que aparezca o no según el fixture haría
+  // que `sin_status` en el contador de estados. Que aparezca o no según el fixture haría
   // que el pie del tablero diga «13 sin type» un día y nada al otro, sin que cambie el criterio.
   porType.sin_type = 0;
   let sinDeclarar = 0;
@@ -500,7 +495,7 @@ function contarCausas(stories, vocab) {
     sin_declarar_por_type: porType, total };
 }
 
-const BUDGET_TRANSICIONES_MS = 60000;   // AC 8 · configurable con --transitions-budget-ms
+const BUDGET_TRANSICIONES_MS = 60000;   // configurable con --transitions-budget-ms
 const LOTE_BLOBS = 500;                 // el tamaño medido: 1430 OIDs → 3 viajes
 
 /** Canónico del estado, o `desconocido:<crudo>`. Nunca descarta: lo que no conoce, lo marca. */
@@ -528,8 +523,8 @@ function contarEstados(stories, d) {
   // 🔴 `Object.create(null)` y no `{}`: la clave es el valor CRUDO del frontmatter, o sea texto
   //    que escribe cualquiera en cualquier repo. Con un objeto literal, una story con
   //    `status: __proto__` (o `constructor`, o `toString`) lee la propiedad HEREDADA en vez de un
-  //    contador: el conteo sale mal o revienta, y el invariante del AC 8 se rompe sin decir por
-  //    qué. Lo cazó el pase adversarial del 2026-09-05.
+  //    contador: el conteo sale mal o revienta, y el invariante de los conteos se rompe sin decir por
+  //    qué.
   const conteo = Object.create(null);
   const sinDiccionario = Object.create(null);
   let sinStatus = 0;
@@ -626,16 +621,15 @@ function desescaparRuta(r) {
  * Las rutas que fueron RENOMBRADAS, encadenadas hasta la actual. Se calcula DESPUÉS de traer
  * los blobs, porque la detección de renombres compara contenido: en ese momento ya es gratis.
  *
- * Existe por un caso que ni el pase adversarial ni tres vueltas de revisores vieron y sí vio el
- * revisor de cobertura: una story que se MUDA de carpeta **y** se RENUMERA queda sin poder
+ * Cubre un caso fácil de pasar por alto: una story que se MUDA de carpeta **y** se RENUMERA queda sin poder
  * atribuirse por ninguno de los dos lados —ni por el `story:` declarado (ya no existe) ni por la
- * ruta (es la vieja)— y su historia previa se descartaba sin dejar rastro.
+ * ruta (es la vieja)— y su historia previa se descartaría sin dejar rastro.
  */
 function mapaDeRenombres(repo) {
   const mapa = new Map();
   const log = git(repo, ['-c', 'core.quotepath=false', 'log', '--topo-order', '--reverse',
     '--format=', '--raw', '--no-abbrev', '--find-renames', '--diff-merges=first-parent', '--', '*.md'], 120000);
-  // 🔴 `ok` existe porque un Map vacío por FALLO se leía igual que "miré y no hay renombres" —
+  // 🔴 `ok` existe porque un Map vacío por FALLO se leería igual que "miré y no hay renombres" —
   // y es la consulta más lenta del archivo, justo la que se cae en los repos grandes.
   if (log === null) return { mapa, ok: false };
   for (const linea of log.split('\n')) {
@@ -673,8 +667,8 @@ function derivarTransiciones(repo, stories, opts = {}) {
 
   // Dos archivos distintos que declaran el MISMO `story:` no se pueden atribuir: agruparlos por
   // ese id fusiona dos historias independientes en una serie inventada, con transiciones que no
-  // ocurrieron en ninguno de los dos, y hace desaparecer a uno adentro del otro (pase
-  // adversarial, 2026-09-05). Se sacan del cálculo y se NOMBRAN — no se adivina cuál es cuál.
+  // ocurrieron en ninguno de los dos, y hace desaparecer a uno adentro del otro.
+  // Se sacan del cálculo y se NOMBRAN — no se adivina cuál es cuál.
   const cuentaPorId = new Map();
   for (const st of stories) cuentaPorId.set(st.id, (cuentaPorId.get(st.id) || 0) + 1);
   const idsDuplicados = [...cuentaPorId].filter(([, n]) => n > 1).map(([k]) => k).sort();
@@ -690,9 +684,9 @@ function derivarTransiciones(repo, stories, opts = {}) {
   //     anterior a la mudanza si el filtro fuera por carpeta (medido: 0,14 s contra 0,06 s por
   //     acotar a una carpeta — el seguro sale 0,08 s).
   // `--topo-order --reverse`: los commits salen del más viejo al más nuevo y SIEMPRE un
-  // ancestro antes que su descendiente. Ese orden es el causal y viene gratis — el desempate
-  // que había (comparar los sha) no tiene ninguna relación con el orden real y podía INVERTIR
-  // dos transiciones e inventar una que nunca ocurrió (pase adversarial, 2026-09-05).
+  // ancestro antes que su descendiente. Ese orden es el causal y viene gratis — un desempate
+  // por sha no tiene ninguna relación con el orden real y podría INVERTIR
+  // dos transiciones e inventar una que nunca ocurrió.
   const log = git(repo, ['-c', 'core.quotepath=false', 'log', '--topo-order', '--reverse',
     '--format=C%x09%H%x09%aI', '--raw', '--no-abbrev', '--no-renames', '--diff-merges=first-parent', '--', '*.md'], 120000);
   if (log === null) {
@@ -735,7 +729,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
   //     frontmatter persigue, y no puede hacer desaparecer la serie entera de esa story.
   // La cadena de renombres se arma acá, con los blobs ya locales (antes costaría red). Con el
   // presupuesto YA agotado no se arma: es otro `git log` sobre todo el historial, con su propio
-  // tope de 2 minutos, y gastarlo reproduce el cuelgue que el AC 8 existe para impedir.
+  // tope de 2 minutos, y gastarlo reproduce el cuelgue que ese tope existe para impedir.
   // Inyectable para poder probar justamente eso.
   const armarRenombres = typeof opts.mapaRenombres === 'function' ? opts.mapaRenombres : mapaDeRenombres;
   const rn = agotado ? { mapa: new Map(), ok: true } : armarRenombres(repo);
@@ -762,10 +756,10 @@ function derivarTransiciones(repo, stories, opts = {}) {
     const fm = txt === undefined ? null : parseFrontmatter(txt);
     const declarado = fm && fm.id ? fm.id : null;
     const porRuta = rutaAId.get(e.ruta) || rutaAId.get(rutaActual(e.ruta)) || null;
-    // La identidad declarada manda (así sobrevive un renombre de ruta — AC 4). Pero si esa
+    // La identidad declarada manda (así sobrevive un renombre de ruta). Pero si esa
     // versión declara un id que HOY no existe, la RUTA sigue diciendo de qué story es: es una
-    // renumeración, y descartarla perdía toda la historia previa al cambio de número, en
-    // silencio e indistinguible de "nunca existió" (pase adversarial, 2026-09-05).
+    // renumeración, y descartarla perdería toda la historia previa al cambio de número, en
+    // silencio e indistinguible de "nunca existió".
     let id = null;
     if (declarado && idsActuales.has(declarado)) id = declarado;
     else if (porRuta) {
@@ -775,7 +769,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
     // Una versión que DECLARA ser de una story y no se puede atribuir NO se descarta callada: se
     // cuenta. La diferencia entre "no hay" y "no pude atribuirlo" es la que este arnés existe para
     // no perder. 🔴 Un `.md` que NO declara `story:` (un README, una guía) no es una huérfana: es
-    // que no es una story. Contarlo daba 683 en un repo real — un número siempre grande enseña a
+    // que no es una story. Contarlo daría 683 en un repo real — un número siempre grande enseña a
     // ignorar el aviso, que es la forma más barata de romper un control.
     if (!id) { if (declarado) versionesHuerfanas++; continue; }
     if (txt === undefined) { storiesConFalta.add(id); continue; }
@@ -784,7 +778,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
   }
 
   const transiciones = {};
-  // story 2.7: la primera versión de cada story, por su IDENTIDAD declarada. Es la fecha de cierre de
+  // La primera versión de cada story, por su IDENTIDAD declarada. Es la fecha de cierre de
   // una story que nació cerrada; `git log --follow` no sirve para eso porque confunde dos archivos
   // casi iguales y le da a la nueva la fecha de alta de la vieja.
   const altas = {};
@@ -794,7 +788,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
   const descPorStory = new Map();               // valor crudo → stories donde aparece
   for (const [id, versiones] of porId) {
     if (storiesConFalta.has(id)) continue;      // serie incompleta: no se publica a medias
-    // La fecha manda (AC 1: orden cronológico) y el empate lo rompe el ORDEN CAUSAL del log,
+    // La fecha manda (orden cronológico) y el empate lo rompe el ORDEN CAUSAL del log,
     // no el sha. Dos commits del mismo segundo son cosa de todos los días en cambios de estado
     // hechos por un guion o retro-fechados.
     versiones.sort((a, b) => (Date.parse(a.fecha) - Date.parse(b.fecha)) || (a.orden - b.orden));
@@ -811,7 +805,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
         descPorStory.get(c.desconocido).add(id);
       }
       // Se compara el VALOR, no la presencia del cambio: un commit que tocó el archivo sin
-      // mover el estado no es una transición (AC 3).
+      // mover el estado no es una transición.
       if (prev !== null && c.estado !== prev) {
         serie.push({ de: prev, a: c.estado, fecha: v.fecha, commit: v.sha.slice(0, 7) });
       }
@@ -851,7 +845,7 @@ function derivarTransiciones(repo, stories, opts = {}) {
       + 'por etapa y siguen contando en stories_total';
   }
   if (agotado) {
-    // El AC 8 pide el motivo en stories, no en blobs: es la unidad que el lector entiende.
+    // El motivo se da en stories, no en blobs: es la unidad que el lector entiende.
     motivo = `${motivo ? `${motivo} · ` : ''}transiciones: presupuesto de tiempo agotado tras ${medidas + sinTransiciones} `
       + `stories de ${stories.length} (${agotado.blobs} de ${agotado.de} versiones leídas en ${budget} ms)`;
   } else if (storiesFaltantes.length) {
@@ -869,9 +863,9 @@ function derivarTransiciones(repo, stories, opts = {}) {
 }
 
 /**
- * Tiempo por etapa, en días: de la transición que ENTRA a la etapa hasta la que SALE (AC 6).
+ * Tiempo por etapa, en días: de la transición que ENTRA a la etapa hasta la que SALE.
  *
- * Dos ausencias son deliberadas y no se rellenan con 0 (AC 7 — un cero donde hubo ausencia baja
+ * Dos ausencias son deliberadas y no se rellenan con 0 (un cero donde hubo ausencia baja
  * la mediana en silencio):
  *   · la etapa que la story SALTÓ no aparece en su cuenta;
  *   · la etapa en la que la story NACIÓ, y la etapa en la que está AHORA, no tienen transición
@@ -903,22 +897,21 @@ function tiempoPorEtapa(transiciones) {
 
 // ── series por repo ──────────────────────────────────────────────────────────────────────────
 
-// 🔴 Acá vivía `DONE_STATUSES`, una lista fija de estados de cierre (`done`, `completed`,
-//    `closed`) que contradecía al diccionario que este mismo archivo carga —él daba por cerrados
-//    a seis valores—. Dos listas que dicen casi lo mismo y que nada obliga a moverse juntas ya se
-//    separaron una vez; la próxima el desacuerdo sí va a tener consecuencias. El criterio sale
-//    ahora de `groups.cerrado`, igual que «en curso» (AC 17), y el caso T17 impide que la lista
-//    reaparezca en el código.
+// 🔴 No hay una lista fija de estados de cierre (`done`, `completed`, `closed`): contradiría
+//    al diccionario que este mismo archivo carga —él da por cerrados a seis valores—. Dos listas
+//    que dicen casi lo mismo y que nada obliga a moverse juntas se separan, y el desacuerdo
+//    tendría consecuencias. El criterio sale de `groups.cerrado`, igual que «en curso», y una
+//    prueba impide que la lista reaparezca en el código.
 
 /**
  * Las carpetas `.advisors/dod-runtime` donde el medidor busca la evidencia de cierre de un repo: la
- * propia y la de sus hermanos del MISMO proyecto. Extraída de `measureRepo` (story 2.20) para que la
+ * propia y la de sus hermanos del MISMO proyecto. Extraída de `measureRepo` para que la
  * foto por proyecto la importe en vez de copiarla: dos copias de esta regla se separan solas.
  *
- * "Hermano" es del MISMO PROYECTO, no cualquier carpeta vecina (2026-09-05). En el disco del dev el
+ * "Hermano" es del MISMO PROYECTO, no cualquier carpeta vecina. En el disco del dev el
  * layout es `Producto/Repo`, así que el padre alcanza; en el servidor el nocturno clona los repos de
  * la organización PLANOS, como `Proyecto__Repo`, y ahí "el mismo padre" son TODOS. Medido: 12 de las
- * 24 stories que un producto daba por cubiertas estaban cubiertas por archivos de otro — los números
+ * 24 stories que un producto da por cubiertas estarían cubiertas por archivos de otro — los números
  * de story se repiten entre productos (`4.3`, `5.1`, `3.2`…).
  */
 function dirsDeEvidencia(repo) {
@@ -944,7 +937,7 @@ function dirsDeEvidencia(repo) {
 /**
  * ¿El repo tiene la huella del arnés (`.tycon/` o `.advisors/`)? Es el criterio de `--only-harness`
  * —el mismo que usa unpushed-work-notice para decidir qué repos vigila—; extraído de `main`
- * (story 2.20) para que la foto por proyecto mida exactamente los mismos repos.
+ * para que la foto por proyecto mida exactamente los mismos repos.
  */
 function tieneHuellaDelArnes(repo) {
   return fs.existsSync(path.join(repo, '.tycon')) || fs.existsSync(path.join(repo, '.advisors'));
@@ -976,12 +969,12 @@ function measureRepo(repo, since, opts = {}) {
   //    tres métricas que se calculan SOBRE stories cerradas. Sin esta guarda, un `states.json`
   //    ilegible publicaría «0 cerradas» en los 20 repos, con `rework` y `dod` diciendo «sin
   //    stories done», y nada se pondría rojo — el patrón que este repo entero existe para no
-  //    repetir. Hoy no podía pasar porque la lista vivía en el código: lo introduce el AC 17.
+  //    repetir. El riesgo aparece porque el diccionario vive en un archivo.
   // 🔴 La causa del reproceso se calcula ANTES del gate del diccionario de ESTADOS, y a propósito:
   //    `contarCausas` no depende de él para nada — su dato es el `followup_of:`/`followup_reason:`
   //    del frontmatter, que está en el disco. Apagarla porque `states.json` no valida sería el
   //    «no medido falso» que este archivo entero existe para no escribir: publicar `null` teniendo
-  //    el dato. Lo cazó el pase adversarial del 2026-09-05 (clase G, dos lentes independientes).
+  //    el dato.
   const vocabCausas = causasReproceso();
   const reworkPorCausa = vocabCausas.motivo ? null : contarCausas(stories, vocabCausas);
   if (vocabCausas.motivo) notMeasured.push(`${vocabCausas.motivo} (${vocabCausas.ruta}) — sin `
@@ -1038,20 +1031,20 @@ function measureRepo(repo, since, opts = {}) {
   // .advisors/dod-runtime en el de implementación. Se barren el repo Y sus hermanos
   // — sin esto, esos proyectos medirían 0% siendo mentira.
   //
-  // 🔴 "Hermano" es del MISMO PROYECTO, no cualquier carpeta vecina (2026-09-05). En el
+  // 🔴 "Hermano" es del MISMO PROYECTO, no cualquier carpeta vecina. En el
   // disco del dev el layout es `Producto/Repo`, así que el padre alcanza; en el servidor
   // el nocturno clona los 131 repos de la organización PLANOS, como `Proyecto__Repo`, y
-  // ahí "el mismo padre" son TODOS. Medido: 12 de las 24 stories que un repo del equipo daba por
-  // cubiertas estaban cubiertas por archivos de Ceibo — los números de story se repiten
-  // entre productos (`4.3`, `5.1`, `3.2`…). De paso eso mataba el "no medido": ningún
-  // repo podía salir sin nota, aunque no tuviera una sola evidencia propia.
+  // ahí "el mismo padre" son TODOS. Medido: 12 de las 24 stories que un repo del equipo da por
+  // cubiertas estarían cubiertas por archivos de otro producto — los números de story se repiten
+  // entre productos (`4.3`, `5.1`, `3.2`…). De paso eso mata el "no medido": ningún
+  // repo podría salir sin nota, aunque no tuviera una sola evidencia propia.
   let dod = null;
   const dodDirs = dirsDeEvidencia(repo);
   const dodFiles = [];
   for (const d of dodDirs) {
     try { dodFiles.push(...fs.readdirSync(d)); } catch { /* ilegible: no suma */ }
   }
-  // Las claves de la evidencia (story 1.17) sirven también para las carpetas de corrida (story 1.17.1, rework por
+  // Las claves de la evidencia sirven también para las carpetas de corrida (rework por
   // carril): se calculan una vez, con la lista completa. Con el recorrido incompleto no hay clave: el número.
   let claves = null;
   if (partialScan) {
@@ -1061,8 +1054,8 @@ function measureRepo(repo, since, opts = {}) {
   } else if (!dodFiles.length) {
     notMeasured.push('dod_evidence: ni el repo ni sus hermanos del mismo proyecto tienen .advisors/dod-runtime con archivos — NO es 0%, es que la evidencia no llegó al servidor');
   } else {
-    // Por la CLAVE de la evidencia (story 1.17): con un número repetido en el repo, `<id>-*` es la evidencia
-    // de cualquiera de las stories que lo comparten y una sola corrida contaba como cubiertas a todas. Las
+    // Por la CLAVE de la evidencia: con un número repetido en el repo, `<id>-*` es la evidencia
+    // de cualquiera de las stories que lo comparten y una sola corrida contaría como cubiertas a todas. Las
     // claves salen de la lista completa de stories que este medidor ya tiene; sin la biblioteca, el número.
     try {
       claves = require(path.join(SKILLS_DIR, 'tycon-pipeline', 'scripts', 'lib', 'evidence-key.js'))
@@ -1071,15 +1064,15 @@ function measureRepo(repo, since, opts = {}) {
     const claveDe = (s) => (claves && claves.get(path.resolve(s.file))) || s.id;
     const tieneEvidencia = (s) => dodFiles.some((f) => f.startsWith(`${claveDe(s)}-`) && esEvidenciaDeCierre(f));
     const covered = done.filter(tieneEvidencia).length;
-    // 🔴 Una exención declara que NO hay prueba (2026-09-18): sale del cociente y se cuenta aparte.
-    //    Antes sumaba ARRIBA, como si fuera evidencia — el cierre retroactivo de 49 stories de
-    //    Pacara habría subido la ficha de 41 % a ~47 % sin que nadie probara nada. Si la story
+    // 🔴 Una exención declara que NO hay prueba: sale del cociente y se cuenta aparte.
+    //    Sumarla ARRIBA sería tratarla como evidencia — un cierre retroactivo de 49 stories
+    //    subiría la ficha de 41 % a ~47 % sin que nadie probara nada. Si la story
     //    además trae su informe real, la evidencia gana y cuenta arriba.
     const exentas = done.filter((s) => s.dodExempt && !tieneEvidencia(s)).length;
     dod = { num: covered, den: done.length - exentas, exentas };
   }
 
-  // 5 · transiciones de estado y tiempo por etapa (story 2.1). Se derivan del historial, en la
+  // 5 · transiciones de estado y tiempo por etapa. Se derivan del historial, en la
   //     MISMA corrida y sin clonar nada nuevo. `tiempo_por_etapa` es `null` —nunca `{}`, nunca
   //     0— cuando no se pudo medir, y el motivo va en `not_measured` en castellano.
   const tr = derivarTransiciones(repo, stories, opts);
@@ -1099,7 +1092,7 @@ function measureRepo(repo, since, opts = {}) {
       + '(hay que entrar Y salir de la etapa para poder medirla)');
   }
 
-  // 3b · rework por CARRIL (story 2.7) — ver reworkPorCarril(). Va DESPUÉS de las transiciones porque
+  // 3b · rework por CARRIL — ver reworkPorCarril(). Va DESPUÉS de las transiciones porque
   //      la fecha de cierre de una story es la de su entrada al estado cerrado, no la de su último
   //      commit (una story vieja retocada después entraría a la ventana — medido en real).
   let reworkPorCarrilRepo = null;
@@ -1131,7 +1124,7 @@ function measureRepo(repo, since, opts = {}) {
     //    el dato — el «no medido» falso, que es la mentira gemela del cero falso. Y no es
     //    hipotético: el presupuesto de 60 s se agota en repos reales.
     estadosPorCanonico,
-    // La causa del reproceso (story 2.3). Mismo criterio que su vecino de arriba: se lee del
+    // La causa del reproceso. Mismo criterio que su vecino de arriba: se lee del
     // frontmatter, así que no se gatea por git ni por el presupuesto. `null` sólo cuando el
     // vocabulario no se pudo leer (motivo en `notMeasured`) o cuando el repo entero no se midió.
     reworkPorCausa,
@@ -1140,9 +1133,9 @@ function measureRepo(repo, since, opts = {}) {
     rework,
     dod,
     // 🔴 Los CINCO campos se gatean por igual con el agotamiento, no sólo el del propio repo.
-    // El defecto que esto cierra (cazado por el revisor de fallos silenciosos, 2026-09-05): el
-    // presupuesto puede agotarse DESPUÉS de haber procesado algún lote, y esas stories quedaban
-    // con serie completa. El repo publicaba "no medido" en su fila y su muestra PARCIAL entraba
+    // Sin esto, el
+    // presupuesto puede agotarse DESPUÉS de haber procesado algún lote, y esas stories quedan
+    // con serie completa. El repo publica "no medido" en su fila y su muestra PARCIAL entra
     // igual al número global — y no es una muestra cualquiera: `git log` entrega los commits del
     // más nuevo al más viejo, así que lo que alcanza a leerse está sesgado hacia lo reciente.
     // Un repo que no pudo medir aporta NADA, ni siquiera lo que alcanzó a ver.
@@ -1231,7 +1224,7 @@ function main() {
   const repos = [];
   for (const r of targets) {
     const fromScan = !a.repos.includes(r);
-    // --only-harness (2026-08-30, pedido del dev al ver el barrido org-wide de 155 repos):
+    // --only-harness: en un barrido de toda la organización (155 repos),
     // cursos, demos y repos de otros equipos pueden tener fichas con formato de story y
     // ensuciarían la estadística DEL EQUIPO. El criterio de pertenencia es la huella del
     // arnés (.tycon/ o .advisors/) — el mismo que usa unpushed-work-notice para decidir
@@ -1250,7 +1243,7 @@ function main() {
   if (a.scan.length) {
     console.error(`ℹ️  escaneadas ${a.scan.length} raíz(ces) → ${targets.length} repos git · `
       + `${repos.length} con stories · ${skippedNoStories} sin stories (omitidos del reporte)`);
-    // Los omitidos se NOMBRAN (2026-08-30, el dev preguntó dos veces "¿dónde está X?"): un
+    // Los omitidos se NOMBRAN (la pregunta típica es "¿dónde está X?"): un
     // conteo a secas no distingue "no tiene fichas" de "no se midió", y esa duda se contesta
     // sola si la línea dice quiénes son.
     if (skippedNames.length) {
@@ -1306,7 +1299,7 @@ function main() {
     epcGlobal.total += e.total;
   }
 
-  // La causa del reproceso, sumada (story 2.3). Mismo trato que su vecino: un repo que no la pudo
+  // La causa del reproceso, sumada. Mismo trato que su vecino: un repo que no la pudo
   // producir aporta NADA, y si no la produjo ninguno el campo global sale `null` — un objeto con
   // las cuatro causas en cero se leería como «medí los 20 repos y no volvió nada por ningún lado».
   const rpcGlobal = { conteo: Object.create(null), sin_declarar: 0,
@@ -1339,12 +1332,12 @@ function main() {
     tiempo_por_etapa: Object.keys(tpeGlobal).length ? tpeGlobal : null,
     sin_transiciones: sinTransMedible ? sinTransGlobal : null,
     // Las stories cuyo historial no se pudo leer NO se van del recuento en silencio: se publican.
-    // Invariante que sostiene el AC 2: medidas + sin_transiciones + sin_historial = stories_total.
+    // Invariante: medidas + sin_transiciones + sin_historial = stories_total.
     sin_historial: sinTransMedible ? sinHistGlobal : null,
     // Mismo gate que sus tres hermanos: sin NINGÚN repo medible, un `{}` acá se leería como
     // "medí todo y no había nada raro" — que es exactamente la mentira que este archivo evita.
     estados_desconocidos: sinTransMedible ? descGlobal : null,
-    // El estado ACTUAL (story 2.2). Nombre distinto del de arriba a propósito: aquél es el
+    // El estado ACTUAL. Nombre distinto del de arriba a propósito: aquél es el
     // histórico —los estados que aparecieron alguna vez en una transición— y éste el presente.
     // Dos campos casi homónimos que miden cosas distintas es cómo se elige el equivocado.
     estados_por_canonico: epcMedible ? epcGlobal : null,
@@ -1352,7 +1345,7 @@ function main() {
     //    invisible: una máquina con la variable puesta publicaría métricas de otro vocabulario y
     //    el snapshot se vería idéntico al normal.
     diccionario: { ruta: diccionario().ruta, hash: diccionario().hash },
-    // La causa del reproceso (story 2.3). Es la OTRA punta de `rework_ratio`: aquél cuenta las
+    // La causa del reproceso. Es la OTRA punta de `rework_ratio`: aquél cuenta las
     // padres que volvieron (165 de 496), éste las hijas que hicieron el seguimiento y por qué.
     rework_por_causa: rpcMedible ? rpcGlobal : null,
     // Mismo rastro que `diccionario`: qué vocabulario se usó de verdad, para que
@@ -1360,8 +1353,8 @@ function main() {
     causas_reproceso: { ruta: causasReproceso().ruta, hash: causasReproceso().hash },
   };
 
-  // 🔴 UNA sola definición del snapshot, que consumen el `--snapshot` y el `--json`. Estaban
-  // duplicadas: agregar un campo obligaba a acordarse de los dos lugares, y el día que alguien
+  // 🔴 UNA sola definición del snapshot, que consumen el `--snapshot` y el `--json`. Duplicadas,
+  // agregar un campo obliga a acordarse de los dos lugares, y el día que alguien
   // se olvidara, el archivo del nocturno y la salida que se mira a mano dirían cosas distintas
   // sin que nada fallara.
   const payload = () => ({
@@ -1377,7 +1370,7 @@ function main() {
         done_total: r.doneTotal,
         lead_time_days: stats((r.leads || []).map((l) => l.days)),
         rework_ratio: r.rework,
-        // story 2.7: por repo y SÓLO por repo — sumarlo entre productos mezclaría ventanas y equipos
+        // Por repo y SÓLO por repo — sumarlo entre productos mezclaría ventanas y equipos
         // distintos, así que en `global` no existe.
         rework_por_carril: r.reworkPorCarril || null,
         dod_evidence_ratio: r.dod,
@@ -1386,8 +1379,8 @@ function main() {
         sin_historial: Number.isFinite(r.storiesSinHistorial) ? r.storiesSinHistorial : null,
         // 🔴 Estos cinco salen al archivo para que el invariante
         //    `stories_medidas + sin_transiciones + sin_historial + archivos_duplicados = stories_total`
-        //    se pueda verificar DESDE AFUERA. Vivían sólo adentro del código: quien leyera el
-        //    snapshot y quisiera reconstruir cuántas se midieron se pasaba de más, en silencio,
+        //    se pueda verificar DESDE AFUERA. Sin ellos, el invariante vive sólo adentro del código: quien lee el
+        //    snapshot y quiere reconstruir cuántas se midieron se pasa de más, en silencio,
         //    exactamente en la cantidad de archivos con id duplicado.
         stories_medidas: Number.isFinite(r.storiesMedidas) ? r.storiesMedidas : null,
         archivos_duplicados: Number.isFinite(r.archivosDuplicados) ? r.archivosDuplicados : null,
@@ -1397,12 +1390,12 @@ function main() {
         versiones_huerfanas: Number.isFinite(r.versionesHuerfanas) ? r.versionesHuerfanas : null,
         versiones_ilegibles: Number.isFinite(r.versionesIlegibles) ? r.versionesIlegibles : null,
         estados_desconocidos: r.estadosDesconocidos || null,
-        // El contador del PRESENTE (story 2.2): `null` con motivo en `not_measured` cuando el
+        // El contador del PRESENTE: `null` con motivo en `not_measured` cuando el
         // repo no se pudo medir (no es git, o el descubridor falló) o cuando el diccionario no
         // vale — nunca `{}` ni un objeto con ceros: «no pude mirar» y «miré y no hay» no se
         // escriben igual.
         estados_por_canonico: r.estadosPorCanonico || null,
-        // La causa del reproceso (story 2.3): `null` con motivo en `not_measured` cuando el repo
+        // La causa del reproceso: `null` con motivo en `not_measured` cuando el repo
         // no se pudo medir o el vocabulario no vale. Un repo SIN seguimientos sale con `total: 0`
         // y las cuatro causas en cero — eso sí es «miré y no hay».
         rework_por_causa: r.reworkPorCausa || null,
@@ -1473,11 +1466,11 @@ function main() {
   }
   const desc = Object.entries(global.estados_desconocidos || {}).sort((x, y) => y[1] - x[1]);
   if (desc.length) {
-    // Se MUESTRAN, no se descartan (AC 9): esta lista es la que dice qué alias falta declarar.
+    // Se MUESTRAN, no se descartan: esta lista es la que dice qué alias falta declarar.
     console.log(`    estados fuera del diccionario: ${desc.map(([k, n]) => `${k} (${n})`).join(' · ')}`);
   }
-  // Los repos barridos SIN stories se listan acá, al FINAL del reporte (2026-08-30, tercera
-  // pregunta del dev "¿dónde está X?"): la línea informativa del arranque sale antes del
+  // Los repos barridos SIN stories se listan acá, al FINAL del reporte (la pregunta típica es
+  // "¿dónde está X?"): la línea informativa del arranque sale antes del
   // reporte y nadie la ve — lo que se lee es el final. No puntúan; se nombran.
   if (skippedNames.length) {
     console.log('\n  ' + '─'.repeat(W - 4));

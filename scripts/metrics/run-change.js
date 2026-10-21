@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * run-change.js — QUÉ CAMBIÓ UNA CORRIDA, SEGÚN GIT (story 2.19, 2026-09-17)
+ * run-change.js — QUÉ CAMBIÓ UNA CORRIDA, SEGÚN GIT
  *
- * La vista de corridas sabía qué archivos tocó cada corrida leyendo su conversación, y eso deja afuera la
+ * La vista de corridas sabe qué archivos tocó cada corrida leyendo su conversación, y eso deja afuera la
  * mayor parte: medido sobre 121 corridas, 7.294 cambios por consola contra 3.829 con las herramientas de
  * edición, y de la consola la conversación guarda el comando, no el cambio. Lo de los subagentes no está.
  * Git tiene todo. Este guion lo junta al archivar la corrida y lo deja al lado del volcado:
@@ -13,16 +13,16 @@
  *  - los COMMITS DE LA CORRIDA: los que el reflog de HEAD anota como creados en esa copia durante la
  *    corrida (`commit`, `commit (amend)`, `rebase (pick)`, `cherry-pick`, `revert`…) y siguen alcanzables.
  *    🔴 No el diff desde el commit en que arrancó: la copia se pone al día a mitad de camino (pull, reset a
- *    origin/main) y eso mete commits de otros en la línea principal — en la 2.10, 15 de 16. El reflog
- *    distingue lo creado acá de lo que llegó (tasks/medicion-2.19-ajeno.md).
+ *    origin/main) y eso mete commits de otros en la línea principal — 15 de 16 en una medición. El reflog
+ *    distingue lo creado acá de lo que llegó.
  *  - lo que quedó SIN COMMITEAR al archivar (`git diff HEAD` y los no trackeados que git no ignora), sólo lo
  *    MODIFICADO DURANTE la corrida (fecha del archivo): una copia sucia de antes no es de la corrida. Medido: una
  *    corrida real de un repo del equipo cargaba 241 archivos sin commitear de corridas anteriores. Lo excluido se cuenta.
  *
- * Cada repo se nombra con `nombre` (el repo según su remoto; sin remoto, la carpeta) y `proyecto` (story 2.28: el
+ * Cada repo se nombra con `nombre` (el repo según su remoto; sin remoto, la carpeta) y `proyecto` (el
  * proyecto de Azure DevOps del remoto, decodificado y con su caja; `null` si el remoto no es de Azure o no hay). Con
- * los dos, la vista ubica la corrida en un producto de repos.json por `<proyecto>/<repo>`. Un cambio de antes de la
- * 2.28 no trae `proyecto`: quien lee compara sólo el nombre.
+ * los dos, la vista ubica la corrida en un producto de repos.json por `<proyecto>/<repo>`. Un cambio sin
+ * `proyecto` es válido: quien lee compara sólo el nombre.
  *
  * Qué repos: el de la story, más la carpeta git de cada archivo que la corrida escribió dentro de su
  * ventana — con las herramientas (`marker.filesTouched`, `file-events/<sesión>.jsonl`, subagentes
@@ -38,9 +38,9 @@
  *  - Sólo lecturas de git: ni stash, ni add, ni checkout.
  *
  * 🔴 Una copia que trabajaron varias sesiones a la vez (`otras_sesiones > 0`): el reflog dice qué commits se
- * hicieron EN ESA COPIA, no POR ESTA SESIÓN. Caso (2026-09-18, la primera corrida real con esto, la 1.6): en
- * el checkout compartido del arnés entraron 7 commits y 6 eran de otras sesiones, publicados como propios.
- * Cada commit se atribuye con el HILO de la conversación (`<volcado>.hilo.jsonl.gz`, story 2.13): un commit
+ * hicieron EN ESA COPIA, no POR ESTA SESIÓN. Ejemplo: en
+ * el checkout compartido del arnés entran 7 commits y 6 son de otras sesiones, que sin esto se publican como propios.
+ * Cada commit se atribuye con el HILO de la conversación (`<volcado>.hilo.jsonl.gz`): un commit
  * de esta sesión nace mientras corre una de sus herramientas (Bash, o un subagente), así que
  *  - si en ese segundo no corría ninguna → es de otra sesión: sale de la lista y se anota en
  *    `commits_de_otras_sesiones` (con sha y asunto, nunca escondido);
@@ -58,7 +58,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -74,12 +74,12 @@ const MAX_NO_TRACKEADO = 64 * 1024 * 1024;
 const ARBOL_VACIO = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 // Acciones del reflog que CREAN un commit en esta copia. Un fast-forward, un reset, un pull o un checkout
 // mueven HEAD a algo que ya existía o que llegó de afuera: no son de la corrida.
-// 🔴 Las cuatro formas del final las agregó el pase adversarial (2026-09-17), que reprodujo el agujero: cuando
+// 🔴 Las cuatro formas del final cubren un agujero: cuando
 // un rebase, un cherry-pick o un merge CHOCAN, el commit que sale de resolver el conflicto lo anota git como
 // `rebase (continue):`, `commit (cherry-pick):`, `commit (merge):` o `am:` — creado en esta copia, con la
-// resolución escrita a mano adentro. Sin ellas, una corrida que resolvió un conflicto perdía TODOS sus commits
-// y se archivaba «medido, 0 archivos»: «no pude mirar» publicado como «no cambió nada». Medido en los reflogs
-// reales de esta máquina: 2 de 239 en el arnés, 9 de 609 en Totora/Backend. Caso: T21.
+// resolución escrita a mano adentro. Sin ellas, una corrida que resolvió un conflicto perdería TODOS sus commits
+// y se archivaría «medido, 0 archivos»: «no pude mirar» publicado como «no cambió nada». Medido en los reflogs
+// reales de esta máquina: 2 de 239 en el arnés, 9 de 609 en otro repo.
 const CREA_COMMIT = /^(?:commit(?: \((?:amend|initial|cherry-pick|merge)\))?|cherry-pick|revert|am|[\w -]+ \((?:pick|reword|edit|squash|fixup|continue)\)):/;
 
 let sanear = null;
@@ -97,7 +97,7 @@ try { ({ nombreDeRepo: nombreDeRepoAzure, resolverRemoto } = require('../lib/har
 
 function git(dir, args, ok) {
   // `--literal-pathspecs`: una ruta con `[`, `*` o `?` (las rutas dinámicas de Next.js, por ejemplo) es un
-  // NOMBRE, no un patrón — sin esto, el parche de un archivo se traía el de otros (pase adversarial).
+  // NOMBRE, no un patrón — sin esto, el parche de un archivo se traería el de otros.
   const r = spawnSync('git', ['-C', dir, '--literal-pathspecs', ...args], { encoding: 'utf8', maxBuffer: MAX_BUFFER, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000 });
   if (r.error) return { error: r.error.code === 'ENOENT' ? 'git no está instalado en esta máquina' : `git no se pudo ejecutar (${r.error.code || r.error.message})` };
   if (r.status !== 0 && !(ok || []).includes(r.status)) return { error: `git ${args[0]} salió ${r.status}: ${String(r.stderr || '').trim().split('\n')[0] || 'sin detalle'}`, status: r.status };
@@ -140,7 +140,7 @@ function nombreDe(top) {
 }
 
 /**
- * El proyecto de Azure DevOps del remoto del repo (story 2.28, AC 13), o null si el remoto no es de Azure, no hay
+ * El proyecto de Azure DevOps del remoto del repo, o null si el remoto no es de Azure, no hay
  * remoto o no se puede leer. Sigue un `origin` local como `nombreDe`. Sale como `nombre`: decodificado
  * (`Beta%20Dos` → «Beta Dos») y con la caja que escribe el remoto — `identidadRemoto` lo da en minúsculas, así que
  * se toma de la URL el segmento que lo nombra. En la forma corta (`<org>/_git/<repo>`) el proyecto es el repo.
@@ -166,8 +166,8 @@ function leerJsonl(f) {
 }
 
 /**
- * Las carpetas de las escrituras por consola: `console-writes/` y, mientras dure el renombre (story 8.9, tanda D2), la
- * de su nombre viejo, que sale del mapa. Una sesión abierta con el código de antes sigue anotando en la vieja, y la
+ * Las carpetas de las escrituras por consola: `console-writes/` y, mientras dure el renombre, la
+ * de su nombre viejo, que sale del mapa. Una sesión abierta con el código anterior sigue anotando en la vieja, y la
  * migración copia la vieja UNA vez: leer sólo la nueva perdería lo que esa sesión anote después. Sin el mapa (copia
  * pública), sólo la nueva.
  */
@@ -327,7 +327,7 @@ function commitsDeLaCorrida(top, v) {
     const anc = spawnSync('git', ['-C', top, 'merge-base', '--is-ancestor', h, 'HEAD'], { stdio: 'ignore' });
     let alcanzable = anc.status === 0;
     // Cualquier otro final (error del binario, objeto ilegible) también pregunta por las ramas: dar por
-    // «no alcanzable» un fallo de git sería perder un commit de la corrida sin decirlo (pase adversarial).
+    // «no alcanzable» un fallo de git sería perder un commit de la corrida sin decirlo.
     if (!alcanzable) {
       const ramas = git(top, ['branch', '--all', '--contains', h, '--format=%(refname)']);
       alcanzable = !ramas.error && ramas.out.trim().length > 0;
@@ -343,7 +343,7 @@ function partesDeCommit(top, h, cuenta) {
   const [sha, fecha, asunto, padres] = cab.out.replace(/\n$/, '').split('\0');
   // 🔴 Un commit de MERGE no se puede leer con `git show`: los números salen del primer padre y el estado y
   // el parche del diff combinado, que sólo muestra lo que difiere de AMBOS. Medido: un merge con conflicto
-  // daba `MM a.txt` y nada para el archivo traído y el borrado (salían «modificado»), y su parche vacío.
+  // da `MM a.txt` y nada para el archivo traído y el borrado (saldrían «modificado»), y su parche vacío.
   // Con más de un padre se mira todo contra el PRIMER padre, que es lo que ese commit trajo a esta línea.
   const p1 = String(padres || '').trim().split(/\s+/).filter(Boolean);
   const esMerge = p1.length > 1;
@@ -352,7 +352,7 @@ function partesDeCommit(top, h, cuenta) {
   if (ns.error) return { error: ns.error };
   const st = git(top, cmd(['--name-status', '-z', '-M']));
   // 🔴 Si git no puede decir si un archivo es alta, baja o renombrado, el repo sale `no_medido`: leerlo como
-  // «vacío» dejaba TODO como «modificado» y la corrida en `medido`, sin aviso (revisor de fallos silenciosos).
+  // «vacío» dejaría TODO como «modificado» y la corrida en `medido`, sin aviso.
   if (st.error) return { error: st.error };
   const tipos = tiposDeNameStatus(st.out);
   const archivos = [];
@@ -390,8 +390,8 @@ function sinCommitear(top, cuenta, v) {
     let st;
     try { st = fs.lstatSync(path.join(top, ruta)); } catch { return true; }
     // 🔴 `mtime` NO alcanza: `mv`, `git mv`, `cp -p`, `tar -x` y `unzip` conservan la fecha de modificación
-    // del archivo original, así que un renombrado hecho por la corrida se descartaba como «sucio de antes»
-    // (pase adversarial). `ctime` —la fecha del último cambio de estado del inodo— sí se mueve al renombrar.
+    // del archivo original, así que un renombrado hecho por la corrida se descartaría como «sucio de antes».
+    // `ctime` —la fecha del último cambio de estado del inodo— sí se mueve al renombrar.
     const cuando = Math.max(st.mtimeMs, st.ctimeMs);
     if (cuando >= v.desde && cuando <= v.hasta) return true;
     previo += 1;
@@ -429,7 +429,7 @@ function sinCommitear(top, cuenta, v) {
     const esEnlace = st2.isSymbolicLink();
     if (!st2.isFile() && !esEnlace) { previo += 0; omitidos.push(ruta); continue; }
     // La MISMA regla que para los trackeados (la fecha de cambio de estado también cuenta): un archivo sin
-    // trackear movido durante la corrida conserva su fecha de modificación (revisor de fallos silenciosos, vuelta 2).
+    // trackear movido durante la corrida conserva su fecha de modificación.
     if (!deLaCorrida(ruta)) continue;
     if (st2.size > MAX_NO_TRACKEADO) {
       partes.push({ ruta, estado: 'A', mas: null, menos: 0, binario: false, parche: null, cortado: 0, omitido: `archivo nuevo de más de ${MAX_NO_TRACKEADO / 1024 / 1024} MB: no se lee` });
@@ -464,7 +464,7 @@ function armar({ volcado, estado }) {
   if (!sanear) return { version: VERSION, estado: 'no_publicado', motivo: motivoSinSaneado, medido_en: new Date().toISOString() };
   if (!m.repoPath) return noMedido('el volcado no dice en qué repo corrió (sin repoPath): no se sabe qué mirar');
   // Una ruta relativa se resolvería contra el cwd de ESTE proceso y se mediría otro repo, publicándolo como el
-  // de la corrida (pase adversarial). No se adivina.
+  // de la corrida. No se adivina.
   if (!path.isAbsolute(String(m.repoPath))) return noMedido(`el volcado trae una ruta relativa del repo («${sanear(String(m.repoPath))}»): resolverla contra otra carpeta mediría un repo que no es el de la corrida`);
   const ini = Date.parse(m.startedAt || '');
   if (!Number.isFinite(ini)) return noMedido('el volcado no dice cuándo arrancó la corrida (sin startedAt): no se puede saber qué commits son suyos');
@@ -520,8 +520,8 @@ function armar({ volcado, estado }) {
   const salida = [];
   let hilo = null; // se lee una sola vez, y sólo si alguna copia se compartió
   if (!topPrincipal || !principalExiste) {
-    // `otras_sesiones: null`, no 0: de un repo que no está no se puede saber quién escribió en él (revisor de
-    // fallos silenciosos, vuelta 3 — la misma confusión «0 = no medido» que se corrigió en la rama hermana).
+    // `otras_sesiones: null`, no 0: de un repo que no está no se puede saber quién escribió en él
+    // (sería la confusión «0 = no medido»).
     salida.push({ nombre: path.basename(String(m.repoPath)), principal: true, por: ['story'], estado: 'no_medido', motivo: principalExiste ? 'la carpeta de la corrida no es un repo git' : 'la carpeta del repo de la corrida ya no existe en esta máquina', otras_sesiones: null, otras_sesiones_motivo: 'no se pudo mirar este repo: no se puede saber si otra sesión escribió en él' });
   }
   const orden = [...repos.entries()].sort((a, b) => (b[1].principal - a[1].principal));
@@ -569,7 +569,7 @@ function armar({ volcado, estado }) {
     for (const p of r.sin_commitear) { archivos.add(`${r.nombre}\0${p.ruta}`); partes += 1; }
   }
   // 🔴 Si ningún repo se pudo mirar, la corrida NO está medida: publicarla como `medido` con 0 archivos es
-  // exactamente «no pude mirar» escrito como «no cambió nada» (pase adversarial). Los repos van igual, con su
+  // exactamente «no pude mirar» escrito como «no cambió nada». Los repos van igual, con su
   // motivo, porque son el detalle de por qué no se pudo.
   const medidos = salida.filter((r) => r.estado === 'medido');
   if (salida.length && !medidos.length) {

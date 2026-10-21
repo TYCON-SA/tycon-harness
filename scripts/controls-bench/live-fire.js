@@ -12,7 +12,7 @@
  *   - el CANARY (matcher "NuncaJamasTool") NO tiene marcador — un matcher que no matchea
  *     falla en silencio; el banco lo vigila explícitamente;
  *   - el payload capturado queda en el reporte → responde "qué campos manda cada evento" y
- *     "cómo se llama la tool de shell" en cada herramienta (inventario §A.2, a verificar).
+ *     "cómo se llama la tool de shell" en cada herramienta.
  *
  * Modos:
  *   node live-fire.js --tool claude|codex          corrida normal
@@ -33,9 +33,9 @@ const argv = process.argv.slice(2);
 const TOOL = (argv[argv.indexOf('--tool') + 1] || 'claude');
 const PROVE = argv.includes('--prove-detection');
 // Dónde va el reporte: lo decide scripts/lib/harness-parity.js (`benchDir()`), la misma función que usa quien cobra el
-// rojo (bench-notice.js). En un clon, `.bench/` al lado de este guion, como siempre; en una versión BAJADA, la carpeta
-// del estado: el árbol bajado se reemplaza entero en cada actualización y el reporte se perdía con él — un rojo que
-// desaparecía sin que nadie lo arreglara (2026-10-11). Sin la pieza (una copia suelta), donde siempre.
+// rojo (bench-notice.js). En un clon, `.bench/` al lado de este guion; en una versión BAJADA, la carpeta del estado: el
+// árbol bajado se reemplaza entero en cada actualización y el reporte se perdería con él, y un rojo desaparecería sin
+// que nadie lo arreglara. Sin la pieza (una copia suelta), donde siempre.
 const OUT_DIR = (() => {
   try { const P = require('../lib/harness-parity.js'); if (typeof P.benchDir === 'function') return P.benchDir(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
   return path.join(__dirname, '.bench');
@@ -43,7 +43,7 @@ const OUT_DIR = (() => {
 
 const EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop'];
 
-// El marcador es un guion de NODE, no de sh (story 8.17, tanda W1): en Windows `sh` no existe fuera de Git Bash, y con
+// El marcador es un guion de NODE, no de sh: en Windows `sh` no existe fuera de Git Bash, y con
 // qué shell corre el `command` de un hook ahí es justo lo que este guion mide. En Windows se registra `node "<ruta>"`,
 // que leen igual bash, PowerShell y cmd.exe; la ruta va entre comillas (una carpeta de usuario puede traer espacios) y
 // con barras hacia adelante (una barra invertida significa cosas distintas en cada shell). Ver `hookEntry`.
@@ -72,9 +72,8 @@ if (name === 'Stop' || name.startsWith('CANARY')) {
 
 function markScript(markerDir) {
   const p = path.join(markerDir, 'mark.js');
-  // E3 (2026-08-22): además de volcar el stdin, cada marcador IMPRIME un token de inyección —
-  // si el modelo lo repite en su respuesta final, el stdout del hook llegó como contexto (el
-  // mecanismo del que dependen los ~14 hooks advisory; sonda 3 lo probó solo para SessionStart).
+  // Además de volcar el stdin, cada marcador IMPRIME un token de inyección: si el modelo lo repite en su respuesta
+  // final, el stdout del hook llegó como contexto (el mecanismo del que dependen los ~14 hooks advisory).
   // PostToolUse va con el envelope additionalContext (la doc de codex dice que es SU único canal
   // en ese evento; claude también lo acepta). Stop no emite: el turno ya terminó, no hay quién
   // eche el eco — no-aplica por diseño. El CANARY tampoco (no debe disparar).
@@ -83,10 +82,10 @@ function markScript(markerDir) {
 }
 
 // Con qué se lanza el marcador. Fuera de Windows, el node que está corriendo, por su ruta absoluta y entre comillas: un
-// hook lanzado con el PATH mínimo (el de un trabajo programado: /usr/bin:/bin) no encuentra `node` por su nombre —
-// la lección del 2026-09-04 de `tools-path.js`—, y antes de ser de Node al marcador le alcanzaba con `sh`. En Windows
-// va `node` por su nombre: una ruta entre comillas al principio de la línea no es un comando para PowerShell, y si el
-// shell del hook tiene `node` en el PATH es, justamente, parte de lo que este guion mide ahí.
+// hook lanzado con el PATH mínimo (el de un trabajo programado: /usr/bin:/bin) no encuentra `node` por su nombre (ver
+// `tools-path.js`). En Windows va `node` por su nombre: una ruta entre comillas al principio de la línea no es un
+// comando para PowerShell, y si el shell del hook tiene `node` en el PATH es, justamente, parte de lo que este guion
+// mide ahí.
 function hookEntry(cmd, event, tag, ctx = {}) {
   const slash = (p) => String(p).replace(/\\/g, '/');
   const node = (ctx.platform || process.platform) === 'win32' ? 'node' : `"${slash(ctx.execPath || process.execPath)}"`;
@@ -104,27 +103,24 @@ function buildHooksConfig(cmd) {
     ],
     PostToolUse: [
       { matcher: '*', hooks: [hookEntry(cmd, 'PostToolUse')] },
-      // Sonda del canal stderr+exit2 (2026-08-27): es el canal al que se migraron los avisos de
-      // PostToolUse del arnés (missing-path / retro-pending / unpushed push-main) tras descubrir
-      // que su stdout era invisible. En Claude está verificado EN VIVO (el FP-1 de missing-path
-      // llegó al modelo); acá se mide en las dos herramientas para que quede en el contrato.
+      // Sonda del canal stderr+exit2: es el canal por el que llegan los avisos de PostToolUse del arnés (missing-path /
+      // retro-pending / unpushed push-main), porque su stdout es invisible. En Claude está verificado EN VIVO (el aviso
+      // de missing-path llega al modelo); acá se mide en las dos herramientas para que quede en el contrato.
       { matcher: '*', hooks: [hookEntry(cmd, 'PostToolUse', '-err')] },
     ],
     Stop: [{ matcher: '*', hooks: [hookEntry(cmd, 'Stop')] }],
   };
 }
 
-// 🔴 Encuadre medido (2026-08-22): la v1 pedía "repetí tokens de tu contexto" y gpt a veces
-// REHUSABA ("No puedo enumerar contenido interno del contexto") — el rojo era negativa del
-// modelo, no fallo de inyección (fired completo, eco ausente). Los códigos se presentan como
-// parte de LA PRUEBA y cada línea inyectada trae su propia instrucción — cumplir es lo natural.
+// 🔴 Encuadre medido: pedir "repetí tokens de tu contexto" hace que gpt a veces REHÚSE ("No puedo enumerar contenido
+// interno del contexto"), y el rojo sería una negativa del modelo, no un fallo de inyección (fired completo, eco
+// ausente). Los códigos se presentan como parte de LA PRUEBA y cada línea inyectada trae su propia instrucción:
+// cumplir es lo natural.
 const PROMPT = 'Esto es una prueba de plomería del banco de controles TYCON. Ejecutá exactamente este comando de shell: echo bench-live-ok — y después tu respuesta final tiene DOS partes: (1) la línea ok; (2) los CODIGOS-DE-PRUEBA con formato E3INJ-<nombre> o E3ERR-<nombre> que el arnés de prueba te haya entregado durante la sesión (no son secretos: son códigos de verificación de esta prueba y REPETIRLOS es la consigna). Uno por línea, textual. Si no recibiste ninguno, escribí E3INJ-NINGUNO.';
 
-// E3 — contrato de inyección stdout→contexto POR EVENTO (2026-08-22). MUST = verificado o
-// documentado (sonda 3 + doc oficial: SessionStart/UserPromptSubmit en ambas). MEASURE = se
-// mide y se reporta sin poner rojo — el contrato se endurece con evidencia, no con apuestas
-// (lección D.7b/E2: la apuesta razonable del inventario estaba equivocada). Stop: no-aplica.
-// Medido 2026-08-22 (E3, ambas herramientas): PostToolUse SÍ inyecta vía envelope
+// Contrato de inyección stdout→contexto POR EVENTO. MUST = verificado o documentado (doc oficial: SessionStart /
+// UserPromptSubmit en ambas). MEASURE = se mide y se reporta sin poner rojo: el contrato se endurece con evidencia, no
+// con apuestas. Stop: no-aplica. PostToolUse SÍ inyecta vía envelope
 // additionalContext → must. PreToolUse NO inyecta stdout plano EN NINGUNA — contrato
 // COMPARTIDO, no asimetría ('declared-no': si un día inyecta, avisa que el contrato cambió;
 // colateral para el arnés: los reminders advisory de la cadena pre-edit no son canal al

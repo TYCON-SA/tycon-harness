@@ -1,17 +1,17 @@
 'use strict';
 /*
- * views.js — LAS PESTAÑAS DEL SITIO, ARMADAS EN EL SERVIDOR (story 2.23, AC 17 a 23; decisiones 19, 23 y 24).
+ * views.js — LAS PESTAÑAS DEL SITIO, ARMADAS EN EL SERVIDOR.
  *
  * Reciben el modelo YA FILTRADO por access.js: una vista no decide qué puede ver nadie. Cada pestaña se arma en dos
  * pasos —las filas como datos (`filas*`, `inicioDev`) y el HTML— para que las pruebas lean los números sin raspar HTML.
  *
  * REGLAS DE LA CASA:
  *   · Lee, no mide: sin la fuente, la fila dice «no medido» con su motivo; nunca la recalcula, nunca 0, nunca verde.
- *   · Lista blanca (decisión 19): cantidades, fechas, días, nombres de producto, proyecto y repo, números de PR y de
+ *   · Lista blanca: cantidades, fechas, días, nombres de producto, proyecto y repo, números de PR y de
  *     pedido con su enlace, estados. Nunca texto libre de una fuente (títulos, diagnósticos, mensajes de los frenos):
- *     sources.js ya no lo copia, y todo pasa por `esc` de common.js.
- *   · Ningún <script> en línea ni nada de afuera (decisión 24): el CSS y el JS del sitio se sirven como archivos.
- *   · Los motivos que se ven son frases fijas de esta casa (la lista cerrada del AC 14); el motivo crudo va al registro.
+ *     sources.js no lo copia, y todo pasa por `esc` de common.js.
+ *   · Ningún <script> en línea ni nada de afuera: el CSS y el JS del sitio se sirven como archivos.
+ *   · Los motivos que se ven son frases fijas de esta casa (una lista cerrada); el motivo crudo va al registro.
  *   · Ningún texto visible se escribe acá: sale de la tabla de texts.js, en el idioma del pedido
  *     (`ctx.idioma`; sin él, castellano). Las funciones de filas reciben `idioma` por el mismo motivo.
  */
@@ -35,7 +35,7 @@ function hora(marca, idioma = POR_DEFECTO) {
   return Number.isFinite(d.getTime()) ? `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC` : t(idioma, 'vista.sinHora');
 }
 
-/** Los códigos de estado de la lista cerrada (AC 14) y de los propios de una fuente: su frase vive en la tabla. */
+/** Los códigos de estado de la lista cerrada y de los propios de una fuente: su frase vive en la tabla. */
 const CODIGOS = ['sin_red', 'sin_permiso', 'credencial_rechazada', 'parcial', 'cargando', 'fuente_vieja', 'sin_configurar', 'sin_foto', 'ilegible',
   'sin_buzon', 'no_corre_banco', 'sin_ayer', 'sin_dato', 'sin_donde_trabaja', 'declarados_inexistentes', 'identidad_sin_asociar', 'no_medido_noche', 'sin_rama', 'falla_git',
   'falla_interna', 'sin_paridad', 'sin_productos', 'paridad_no_medida', 'sin_clon', 'grupo_sin_comparar', 'declaracion_incompleta'];
@@ -59,7 +59,7 @@ function filaNoMedida(clave, titulo, motivo) { return { clave, titulo, estado: '
 /** Cuántos de `hoy` no estaban en `ayer`. */
 const nuevos = (hoy, ayer) => { const a = new Set(ayer || []); return (hoy || []).filter((x) => !a.has(x)).length; };
 
-/** Inicio de quien mantiene: qué decidir hoy (AC 17). Una fila por cosa, en este orden. */
+/** Inicio de quien mantiene: qué decidir hoy. Una fila por cosa, en este orden. */
 function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null, idioma = POR_DEFECTO } = {}) {
   const T = (k, v) => t(idioma, k, v);
   const cf = (f) => conFecha(f, idioma);
@@ -105,14 +105,14 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   else filas.push(filaMedida('declarados_por_vencer', tDec, (dec.lista || []).filter((d) => { const x = Date.parse(`${d.review_before}T00:00:00Z`); return Number.isFinite(x) && x - ahora <= 7 * DIA; }).length, { fecha: dec.fecha }));
   const tMaq = T('inicio.maquinas_sin_confirmar');
   if (!medida(m.corridas)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, cf(m.corridas)));
-  // sin lo que informa cada máquina la cuenta no se sabe (2.28): «no medido», nunca 0
+  // sin lo que informa cada máquina la cuenta no se sabe: «no medido», nunca 0
   else if (!Number.isFinite(m.maquinasSinConfirmar)) filas.push(filaNoMedida('maquinas_sin_confirmar', tMaq, T('inicio.maquinasSinInforme')));
   else filas.push(filaMedida('maquinas_sin_confirmar', tMaq, m.maquinasSinConfirmar, { fecha: m.corridas.fecha }));
   filas.push(filaNoMedida('retrospectivas', T('inicio.retrospectivas'), T('inicio.retrospectivasMotivo')));
   // los proyectos cuyos pedidos asignados la noche no pudo medir: a cada dev le falta lo suyo de ahí
   const sinMedir = m.pedidos && Array.isArray(m.pedidos.sin_medir) ? m.pedidos.sin_medir : [];
   if (sinMedir.length) filas.push(filaNoMedida('pedidos_asignados_sin_medir', T('inicio.loAsignado'), T('inicio.asignadoSinMedir', { proyectos: sinMedir.join(', ') })));
-  // dónde se decide cada cosa (AC 17): lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
+  // dónde se decide cada cosa: lo de las colas y lo declarado, en el repo de operaciones; lo del arnés, en Arnés;
   // los PR, en su lista de abajo, cada uno con su enlace (pueden estar en varios repos y proyectos)
   const DONDE = { dependencias_nuevas: 'ops', dependencias_aceptadas_sin_resolver: 'ops', dependencias_rechazadas_sin_deuda: 'ops', vigilante_pendientes: 'ops', vigilante_aceptadas_sin_story: 'ops', prs_trabados: '#prs-trabados', pedidos_cerrados_con_vivas: 'ops', declarados_por_vencer: 'ops', suites_rojas_nuevas: '/arnes', banco_rojos_nuevos: '/arnes' };
   for (const f of filas) {
@@ -122,7 +122,7 @@ function filasInicioMantenedor(m, { ahora = Date.now(), enlaceOperaciones = null
   return filas;
 }
 
-/** Inicio de un dev: lo suyo, con cantidades (AC 18). */
+/** Inicio de un dev: lo suyo, con cantidades. */
 function inicioDev(m, { ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
   const c = m.corridas || {};
   const lista = Array.isArray(c.lista) ? c.lista : [];
@@ -138,7 +138,7 @@ function inicioDev(m, { ahora = Date.now(), idioma = POR_DEFECTO } = {}) {
   return { corridas, prs: lado(m.prs), pedidos: { ...lado(m.pedidos), sin_medir: sinMedir }, proyectos };
 }
 
-/** Las filas de Proyectos (AC 19): una por producto, sin sumar dos veces lo compartido. */
+/** Las filas de Proyectos: una por producto, sin sumar dos veces lo compartido. */
 function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   const T = (k, v) => t(idioma, k, v);
   const productos = Array.isArray(m.productos) ? m.productos : [];
@@ -167,7 +167,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
     }
     return r;
   };
-  /** La paridad de un producto (2.25): sus repos en `por_ruta`, sólo cantidades, estados y motivos de lista cerrada. */
+  /** La paridad de un producto: sus repos en `por_ruta`, sólo cantidades, estados y motivos de lista cerrada. */
   const par = m.paridad;
   const paridadDe = (p) => {
     if (!medida(par)) return { estado: 'no_medido', texto: par && par.codigo === 'sin_paridad' ? fraseDeCodigo('sin_paridad', idioma) : T('vista.noMedidoCon', { motivo: fraseDe(par, idioma) }) };
@@ -216,7 +216,7 @@ function filasProyectos(m, { idioma = POR_DEFECTO } = {}) {
   return { filas, totales: { en_curso_total: tot.en_curso, paradas_total: tot.paradas, sin_medir_total: tot.sin_medir, bloqueadas_total: tot.bloqueadas } };
 }
 
-/** Arnés (AC 20): una línea por pieza. */
+/** Arnés: una línea por pieza. */
 function filasArnes(m, { ahora = Date.now(), version = null, ultima = null, idioma = POR_DEFECTO } = {}) {
   const T = (k, v) => t(idioma, k, v);
   const cf = (f) => conFecha(f, idioma);
@@ -421,12 +421,12 @@ function paginaArnes(ctx) {
   return layout(ctx, T('pestana.arnes'), seccion(T('arnes.comoEsta'), `<ul class="lista">${li}</ul><a class="enlace-fuerte" href="/arnes/tablero">${esc(T('arnes.enlaceTablero'))}</a>`) + fichas, T('arnes.lede'));
 }
 
-/** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea (AC 20, 23). */
+/** La página de las seis preguntas, tal cual pero sin nada de afuera ni scripts en línea. */
 function tableroServido(ctx) {
   const idioma = idiomaDe(ctx);
   const tb = ctx.modelo && ctx.modelo.tablero;
   if (!medida(tb) || typeof tb.html !== 'string') return layout(ctx, t(idioma, 'arnes.sello'), seccion(t(idioma, 'vista.noMedidoTitulo'), `<p class="q-note">${esc(conFecha(tb, idioma))}</p>`));
-  // la página de la noche es de afuera del sitio (decisión 10): se sirve como la armó el nocturno
+  // la página de la noche es de afuera del sitio: se sirve como la armó el nocturno
   return tb.html
     .replace(/<link\b[^>]*>/gi, (tag) => (/href\s*=\s*["']?(https?:)?\/\//i.test(tag) ? '' : tag))
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, (tag) => (/^<script\b[^>]*\bsrc\s*=\s*["']\/(?!\/)/i.test(tag) ? tag : ''))

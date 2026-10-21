@@ -5,12 +5,12 @@
 #   - Idempotente (corre N veces sin duplicar entries).
 #   - Silencioso si todo OK; 1 línea por hook agregado si hubo cambio.
 #   - Backup automático settings.json.bak.<timestamp> ANTES del primer cambio — salvo lanzado por harness.js
-#     (TYCON_HARNESS_SNAPSHOT_DIR puesta, story 8.13 AC 18): ahí la copia ya la tomó el mecanismo.
+#     (TYCON_HARNESS_SNAPSHOT_DIR puesta): ahí la copia ya la tomó el mecanismo.
 #   - Opt-out via env var: $env:TYCON_NO_AUTOINSTALL='1' → exit 0 silencioso.
 #   - Atomic write (tmp + Move-Item).
 #   - Match semántico de matchers ("Edit|Write" === "Write|Edit").
 #
-# Hooks que instala (set canónico TYCON — H10 dispatcher 2026-05-21):
+# Hooks que instala (set canónico TYCON, con dispatcher):
 #
 #   UserPromptSubmit:
 #     - clocki/scripts/on-prompt.js
@@ -24,21 +24,21 @@
 #     - tycon-pipeline/scripts/hook-pre-edit.js   (Edit|Write — dispatcher: DoD frontmatter gate + collision)
 #     - tycon-pipeline/scripts/on-pre-commit.js   (Bash|PowerShell — DoD gate Capa 1)
 #
-# H10: hook-pre/post-edit corren los handlers individuales in-process (1 spawn node/evento).
-# La migración remueve los 4 scripts sueltos (SUPERSEDED). ⚠️ Este .ps1 sigue UNTESTED en
-# Windows (no había pwsh) — correr una vez antes de confiar.
+# hook-pre/post-edit corren los handlers individuales in-process (1 spawn node/evento).
+# La migración remueve los 4 scripts sueltos (SUPERSEDED). ⚠️ Este .ps1 está sin probar en
+# Windows — correr una vez antes de confiar.
 #
 # Uso:
 #   pwsh ./install-tycon-hooks.ps1                       # corre el install
 #   $env:TYCON_NO_AUTOINSTALL='1'; pwsh ./install-tycon-hooks.ps1  # skip
 #   pwsh ./install-tycon-hooks.ps1 -Check                # solo reporta qué falta
-#   pwsh ./install-tycon-hooks.ps1 -Link <ruta>          # re-apunta el lugar del arnés (~/.claude/tycon-harness) a otro clon (stories 8.3 y 8.19)
-#   pwsh ./install-tycon-hooks.ps1 -ReportJson <archivo> # además, la lista de piezas que deja (story 8.13, AC 15);
+#   pwsh ./install-tycon-hooks.ps1 -Link <ruta>          # re-apunta el lugar del arnés (~/.claude/tycon-harness) a otro clon
+#   pwsh ./install-tycon-hooks.ps1 -ReportJson <archivo> # además, la lista de piezas que deja;
 #                                                        # con `pwsh -File` también anda la forma del .sh: --report-json
 
-# -Link se llamaba -Enlace (story 8.9, tanda B3a): el nombre viejo sigue andando por el alias de PowerShell hasta el
+# -Enlace es el nombre viejo de -Link (en castellano): sigue andando por el alias de PowerShell hasta el
 # retiro, y su uso se anota (más abajo, con la biblioteca ya cargada).
-# Sin parámetros por posición (story 8.13): con `& script --report-json x` desde PowerShell, la opción caía callada en
+# Sin parámetros por posición: con `& script --report-json x` desde PowerShell, la opción caería callada en
 # -Link; así falla con su nombre. `pwsh -File script --report-json x` (como lo lanza harness.js) la toma por el alias.
 [CmdletBinding(PositionalBinding = $false)]
 param(
@@ -51,9 +51,9 @@ param(
 $ErrorActionPreference = 'Stop'
 # 🔴 Lo que node escribe por su salida es UTF-8; PowerShell lo decodifica con [Console]::OutputEncoding, que sin consola
 # (lanzado por harness.js, por un hook) es la página de códigos OEM de la máquina. Una ruta con acento («usuario de
-# práctica») volvía con otros bytes, `Test-Path` no la encontraba y el instalador salía 1 diciendo que la carpeta de skills
-# «no trae tycon-pipeline» (182 measure #12408, variante accent; verde hasta la 8.23 A2). Se fija UTF-8 para lo que entra
-# y lo que sale de los programas nativos, como hacen las sondas del 182 (lab.js PWSH_UTF8). Si no se puede, se sigue.
+# práctica») volvería con otros bytes, `Test-Path` no la encontraría y el instalador saldría 1 diciendo que la carpeta de skills
+# «no trae tycon-pipeline». Se fija UTF-8 para lo que entra y lo que sale de los programas nativos (lab.js PWSH_UTF8).
+# Si no se puede, se sigue.
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
 
 # ============================================================
@@ -62,7 +62,7 @@ try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); $Outp
 if ($env:TYCON_NO_AUTOINSTALL -eq '1') {
     exit 0
 }
-# el plan es una mirada: sin -Check escribiría la máquina mientras dice que sólo la describe (story 8.16, AC 20; espejo
+# el plan es una mirada: sin -Check escribiría la máquina mientras dice que sólo la describe (espejo
 # del .sh)
 if ($PlanJson -and -not $Check) {
     [Console]::Error.WriteLine('install-tycon-hooks.ps1: -PlanJson va con -Check (el plan se arma sin escribir nada)')
@@ -70,17 +70,17 @@ if ($PlanJson -and -not $Check) {
 }
 
 # ============================================================
-# PowerShell 7 es un requisito, y si falta se DICE (story 8.17; decisión del dueño, 2026-10-03)
+# PowerShell 7 es un requisito, y si falta se DICE
 # ============================================================
-# Medido en un agente Windows (corridas 11684 y 11686): Windows PowerShell 5.1 ni siquiera podía LEER este archivo
-# (UTF-8 sin marca de codificación: lo decodifica como Windows-1252 y una raya o una flecha dentro de un texto le cierra
-# las comillas; 13 errores de sintaxis), y la línea de arranque vieja envuelve todo en `try { … } catch {}`: la máquina
-# quedaba con 0 controles y sin una sola línea de aviso. Dos arreglos, juntos:
+# Windows PowerShell 5.1 ni siquiera puede LEER este archivo sin la marca de codificación (UTF-8 sin marca: lo
+# decodifica como Windows-1252 y una raya o una flecha dentro de un texto le cierra las comillas), y la línea de arranque
+# vieja envuelve todo en `try { … } catch {}`: la máquina quedaría con 0 controles y sin una sola línea de aviso. Dos
+# arreglos, juntos:
 #   · el archivo lleva la marca de codificación (BOM) para que 5.1 lo lea — la comprueba ps1-readable.test.js;
 #   · esta guarda corre antes de escribir nada: UNA línea por la salida estándar con el comando para instalarlo, y
 #     salida 1, la misma que «falta node». El texto va sin tildes a propósito: 5.1 escribe la consola en la página de
 #     códigos de la máquina y una tilde puede llegar rota.
-# A quién le llega, medido en un Windows PowerShell 5.1 de verdad (corrida 11701): a quien corre el instalador a mano,
+# A quién le llega (comprobado en un Windows PowerShell 5.1): a quien corre el instalador a mano,
 # y a `harness.js doctor`, que marca el requisito en rojo. Por la línea de arranque vieja NO se puede contar con que
 # llegue: en Windows, Claude Code lanza los hooks por Git Bash y esa línea ahí no llega ni a correr; lanzada por cmd sí
 # imprime esta línea, pero sale 1, y lo que escribe un hook que no sale 0 no entra a la sesión.
@@ -108,10 +108,10 @@ if ($TyconPsMajor -lt 7) {
 }
 
 # ============================================================
-# La carpeta de usuario: UNA función, la misma en los tres .ps1 que la buscan (story 8.17, W4 · AC 33)
+# La carpeta de usuario: UNA función, la misma en los tres .ps1 que la buscan
 # ============================================================
-# Este archivo usaba $env:USERPROFILE para settings.json y $HOME para el CLAUDE.md; los guiones de Node que llama usan
-# os.homedir(). Con HOME distinta de USERPROFILE (Git Bash la pone así en Windows) la instalación quedaba repartida en dos
+# Los guiones de Node que este archivo llama usan os.homedir(). Con HOME distinta de USERPROFILE (Git Bash la pone así en
+# Windows), usar $env:USERPROFILE para settings.json y $HOME para el CLAUDE.md repartiría la instalación en dos
 # carpetas. La función es copia exacta en sync-claude-md-blocks.ps1 y harness/bootstrap-fallback.ps1 (lo controla
 # installer-ps1.test.sh, sección x): el respaldo vive fuera del árbol y no puede cargar una biblioteca.
 # Lo mismo que os.homedir() de Node: en Windows USERPROFILE si esta puesta y, si no, la carpeta del perfil; en Linux y
@@ -123,13 +123,13 @@ function Get-TyconHome([string]$Platform = [Environment]::OSVersion.Platform) {
 }
 
 # ============================================================
-# Requisitos (story 8.7, tanda C · AC 24; espejo del .sh)
+# Requisitos (espejo del .sh)
 # ============================================================
-# Sin `node` los bloques guardados por `Get-Command node` se salteaban callados (el enlace, las integraciones, los
-# terceros) y quedaba una instalación a medias que nadie anunciaba. Acá, ANTES de escribir nada: UNA línea que nombra lo
+# Sin `node` los bloques guardados por `Get-Command node` se saltearían callados (el enlace, las integraciones, los
+# terceros) y quedaría una instalación a medias que nadie anunciaría. Acá, ANTES de escribir nada: UNA línea que nombra lo
 # que falta y remite a los requisitos de la portada, y salida 1. Mira presencia, no versión (el piso lo comprueba
 # harness.js). El .sh chequea además `python3` porque lo ejecuta; este archivo no lo usa (es PowerShell y node), y en
-# Windows Python suele estar como `python` o `py`: exigir `python3` acá frenaría máquinas que hoy andan. Quien instala
+# Windows Python suele estar como `python` o `py`: exigir `python3` acá frenaría máquinas que andan. Quien instala
 # por `harness.js install` ya pasa por su chequeo de requisitos, que sí lo pide.
 # ⚠️ Escrito por lectura, sin máquina Windows (misma deuda declarada que el resto del .ps1).
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -138,7 +138,7 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
 }
 
 # ============================================================
-# Con qué Node corren las llamadas de este instalador (story 8.39, AC 8; espejo del .sh)
+# Con qué Node corren las llamadas de este instalador (espejo del .sh)
 # ============================================================
 # El arnés baja su propio Node a <casa>/node/current (scripts/setup/harness/harness-node.js; la casa es TYCON_HOME o
 # ~/.tycon — copia de la regla de tycon-home.js#harnessNode, declarada en scripts/tests/fixtures/harness-node-copies.json).
@@ -161,12 +161,12 @@ if ($script:HarnessNode) { function node { & $script:HarnessNode @args } }
 $script:NodeProgram = if ($script:HarnessNode) { $script:HarnessNode } else { 'node' }
 
 # ============================================================
-# El candado (story 8.17, W4 · AC 34) — el MISMO que toma harness.js
+# El candado — el MISMO que toma harness.js
 # ============================================================
 # Corrido suelto (sin TYCON_HARNESS_LOCK_HELD=1), este instalador toma el candado del mecanismo de instalación
-# (scripts/setup/harness/lock.js: ~/.claude/.tycon-pipeline/harness/harness.lock). Hasta la W4 no tomaba ninguno: dos
-# corridas a la vez (dos sesiones que arrancan juntas, o una a mano mientras harness.js actualiza) leían y escribían
-# settings.json al mismo tiempo, y la última pisaba a la primera. El segundo que llega se va diciendo «otra sesión está
+# (scripts/setup/harness/lock.js: ~/.claude/.tycon-pipeline/harness/harness.lock). Sin candado, dos
+# corridas a la vez (dos sesiones que arrancan juntas, o una a mano mientras harness.js actualiza) leerían y escribirían
+# settings.json al mismo tiempo, y la última pisaría a la primera. El segundo que llega se va diciendo «otra sesión está
 # instalando», sin escribir nada (salida 0, como el .sh: el que corre hace el mismo trabajo). Lanzado por harness.js no
 # se toma: lo tiene el padre. Con -Check tampoco: no escribe. Toda salida de acá en adelante pasa por Exit-Installer,
 # que lo suelta.
@@ -180,7 +180,7 @@ function Exit-Installer([int]$Code) {
     }
     exit $Code
 }
-# El texto de un error para UNA línea propia (story 8.17, W3W4): el de más adentro, sin el «Exception calling "X" with "2"
+# El texto de un error para UNA línea propia: el de más adentro, sin el «Exception calling "X" with "2"
 # argument(s):» con que PowerShell envuelve el de un método de .NET.
 function Get-ErrText($ErrorRecord) {
     $e = $ErrorRecord.Exception
@@ -188,8 +188,8 @@ function Get-ErrText($ErrorRecord) {
     return ("$($e.Message)" -replace '\s+', ' ').Trim()
 }
 
-# ── La tanda de Node (story 8.36) ─────────────────────────────────────────────────────────────────────────────────
-# Este aplicador corre en cada arranque y lanzaba unos 16 procesos de Node; PowerShell gasta ~50-100 ms en lanzar cada
+# ── La tanda de Node ─────────────────────────────────────────────────────────────────────────────────
+# Este aplicador corre en cada arranque y lanzaría unos 16 procesos sueltos de Node; PowerShell gasta ~50-100 ms en lanzar cada
 # uno. scripts/setup/applier-batch.js corre varios pasos en UN proceso y devuelve de cada uno su código y lo que
 # escribió, cada trozo con su canal (`o` la salida, `e` la de error) y en orden. Cada llamada de más abajo usa ese
 # resultado si la tanda lo trajo; si no (sin la tanda, o una tanda que no dejó su resultado), hace su llamada suelta de
@@ -256,7 +256,7 @@ function Get-MergedLines($Chunks) {
     foreach ($k in @('o', 'e')) { if ($buf[$k]) { $lines.Add($buf[$k].TrimEnd("`r")) } }
     return $lines.ToArray()
 }
-# lo que un paso escribió, otra vez por su canal y en su orden: donde antes salía lo que escribía su llamada suelta
+# lo que un paso escribió, otra vez por su canal y en su orden: donde saldría lo que escribe su llamada suelta
 function Write-NodeChunks($Chunks) {
     foreach ($c in @($Chunks)) {
         if (-not $c) { continue }
@@ -265,8 +265,7 @@ function Write-NodeChunks($Chunks) {
     [Console]::Out.Flush(); [Console]::Error.Flush()
 }
 # ── fin de la tanda de Node (las pruebas que corren un bloque suelto de este archivo copian hasta acá) ──────────────
-# Sin lock.js (una copia parcial del árbol) sigue sin candado, y lo DICE en una línea, como cuando lock.js no contesta
-# (story 8.17, W3W4: antes seguía callado).
+# Sin lock.js (una copia parcial del árbol) sigue sin candado, y lo DICE en una línea, como cuando lock.js no contesta.
 if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and -not (Test-Path $LockJs)) {
     Write-Host "⚠ tycon: falta $LockJs — sigo sin candado (otra corrida a la vez podría pisar settings.json)"
 }
@@ -274,7 +273,7 @@ if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and (Test-Path $LockJ
     $lockOut = ''
     $eapL = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     # a nombre de ESTE proceso ($PID), no del node que lo toma y termina enseguida: con un dueño muerto el candado se
-    # pisa en el acto (story 8.23, tanda L)
+    # pisa en el acto
     try { $lockOut = (& node -e 'process.stdout.write(JSON.stringify(require(process.argv[1]).acquire(require("os").homedir(), { ownerPid: Number(process.argv[2]) })))' $LockJs $PID 2>$null | Out-String) } catch { } finally { $ErrorActionPreference = $eapL }
     $lock = $null
     try { $lock = $lockOut | ConvertFrom-Json } catch { $lock = $null }
@@ -289,12 +288,12 @@ if (-not $Check -and $env:TYCON_HARNESS_LOCK_HELD -ne '1' -and (Test-Path $LockJ
 }
 
 # ============================================================
-# El registro de lo instalado (story 8.13, tanda B · AC 15; espejo del .sh)
+# El registro de lo instalado (espejo del .sh)
 # ============================================================
 # Con -ReportJson <archivo>, cada pieza del arnés que queda en la máquina al terminar (la que escribió esta corrida Y la que
 # ya estaba) se anota `kind<TAB>where<TAB>id` en un temporal; Write-PieceReport arma el arreglo JSON `[{kind, where, id}]`
 # sin duplicados y lo escribe atómico — también en la salida temprana de «sin cambios en settings.json», que no llega al
-# sync de CLAUDE.md ni a Codex (lo que Windows hace hoy). sync-claude-md-blocks.ps1 anota sus bloques y el espejo por
+# sync de CLAUDE.md ni a Codex (lo que Windows hace). sync-claude-md-blocks.ps1 anota sus bloques y el espejo por
 # TYCON_REPORT_PIECES. La lista declarada (con qué hace Windows): scripts/tests/fixtures/harness-managed-pieces.json.
 # Con -Check no se escribe nada; sin la opción, ni el temporal existe.
 $PiecesTmp = $null
@@ -308,7 +307,7 @@ function Record-Piece([string]$Kind, [string]$Where, [string]$Id) {
 }
 
 # ============================================================
-# El plan para un programa (story 8.16, tanda B · AC 20; espejo del .sh)
+# El plan para un programa (espejo del .sh)
 # ============================================================
 # Con -Check -PlanJson <archivo>, cada pieza que esta corrida escribiría, sacaría o dejaría como está se anota
 # `kind<TAB>where<TAB>id<TAB>action` (add · update · remove · keep) en un temporal; canonical-path.js anota los enlaces por
@@ -360,7 +359,7 @@ function Write-PlanJson {
 # Los bloques de CLAUDE.md en el plan: con -Check el sync corre también con -Check y no anota nada, así que se calculan acá
 # con la regla del cuerpo del sync: entero en su lugar → keep; el marcador está y el cuerpo no → update; no está → add. Un bloque que pide una integración apagada no se anota (el sync no lo escribe).
 # Los marcadores de las primeras líneas de un bloque y su cuerpo (la regla de read_block del sync .sh y de Read-SyncBlock
-# del sync .ps1; story 8.16, tanda C): `requires-integration` y `requires-profile`, uno de cada uno como mucho y en
+# del sync .ps1): `requires-integration` y `requires-profile`, uno de cada uno como mucho y en
 # cualquier orden; un marcador casi bien escrito (o repetido) es «no se pudo saber» y tampoco se copia.
 function Get-BlockMarkers([string]$Text) {
     $lines = $Text.Split([char]10)
@@ -390,7 +389,7 @@ function Get-BlockMarkers([string]$Text) {
     }
     return @{ Body = ($rest -join "`n").Trim("`n"); Requires = $req; Profiles = $prof; Bad = $bad }
 }
-# cómo contesta el asistente (story 2.31: idioma, estilo y tope), leído UNA vez del lector; $null si no se pudo saber
+# cómo contesta el asistente (idioma, estilo y tope), leído UNA vez del lector; $null si no se pudo saber
 $script:PlanResponse = $null
 function Get-PlanResponse([string]$Tree) {
     if ($null -eq $script:PlanResponse) {
@@ -413,9 +412,9 @@ function Record-BlocksPlan {
         $target = $env:CLAUDE_MD_PATH
         if (-not $target) { $target = Join-Path (Get-TyconHome) '.claude\CLAUDE.md' }
         if (-not (Test-Path $blocksDir)) { return }
-        # con \r\n pasados a \n, como los lee el sync (story 8.17, AC 36): si no, un bloque con \r\n salía «update» siempre
+        # con \r\n pasados a \n, como los lee el sync: si no, un bloque con \r\n saldría «update» siempre
         $content = if (Test-Path $target) { [IO.File]::ReadAllText($target).Replace("`r`n", "`n") } else { '' }
-        # cada bloque es un `.md` de la raíz; uno que declara `<!-- variants: response -->` (story 2.31) toma su texto de
+        # cada bloque es un `.md` de la raíz; uno que declara `<!-- variants: response -->` toma su texto de
         # la carpeta del mismo nombre, como lo lee el sync; orden por código de carácter, como el sync
         $list = New-Object System.Collections.Generic.List[object]
         foreach ($f in @(Get-ChildItem -Path $blocksDir -Filter '*.md' -File)) {
@@ -473,7 +472,7 @@ function Record-BlocksPlan {
             if (($mk.Bad -or ($mk.Profiles -and -not $activeProfile)) -and -not $present) { continue }
             $body = $mk.Body
             if ($null -ne $fill) { $body = $body.Replace('{{max_chars}}', "$fill").Replace('{{max_lines}}', "$([long][Math]::Floor(($fill + 50) / 100))") }
-            # las filas con su integración (story 2.31), como las escribe el sync: prendida queda, apagada no; sin saber,
+            # las filas con su integración, como las escribe el sync: prendida queda, apagada no; sin saber,
             # queda si ya estaba en el CLAUDE.md
             $end0 = "<!-- TYCON_BLOCK:$name END -->"
             $i0 = $content.IndexOf("<!-- TYCON_BLOCK:$name START"); $j0 = if ($i0 -ge 0) { $content.IndexOf($end0, $i0) } else { -1 }
@@ -517,11 +516,10 @@ function Write-PieceReport {
         $script:PiecesTmp = $null
     }
 }
-# (Hasta la W4 acá vivía Record-BlocksInPlace: anotaba los bloques que ya estaban en la salida temprana «sin cambios en
-# settings.json», que no llegaba al sync. La W4 sacó esa salida (AC 30): cada corrida llega a sync-claude-md-blocks.ps1,
-# que es quien los anota. La prueba es T18 F10 de harness-uninstall.test.sh, por ejecución.)
+# Cada corrida llega a sync-claude-md-blocks.ps1, que es quien anota los bloques (no hay salida temprana que los salte).
+# La prueba es T18 F10 de harness-uninstall.test.sh, por ejecución.
 
-# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo (stories 8.3, AC 4, y 8.19; espejo del .sh) ──
+# ── El lugar del arnés: ~/.claude/tycon-harness, y el nombre viejo (espejo del .sh) ──
 # Los revisores, pasos y skills nombran al arnés por este lugar. La regla de nacimiento vive en canonical-path.js (el
 # lugar nace hacia donde apunta el nombre viejo o el estado, no hacia el clon que corre; el viejo se re-apunta al lugar). En Windows se crea un JUNCTION
 # (fs.symlinkSync(..., 'junction') dentro de canonical-path.js): un symlink de directorio pide modo
@@ -534,11 +532,11 @@ $cfgJs = Join-Path (Join-Path $PSScriptRoot 'lib') 'tycon-config.js'
 # ¿este clon trae skills/ y agents/? (la condición de Invoke-RepoLinks, más abajo: sin ellas, sin enlaces del repo único)
 $RepoLinksHere = (Test-Path (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'agents'))
 
-# La lectura, en una tanda (story 8.36): en el orden de siempre, el lugar del arnés, el enlace de agent-skills, el aviso
+# La lectura, en una tanda: en el orden de siempre, el lugar del arnés, el enlace de agent-skills, el aviso
 # de «el arnés no está donde cree», dónde están las skills y de dónde salió esa carpeta (las dos preguntas de
 # Get-InstalledSkillsDir, sin la variable TYCON_SKILLS_DIR), qué integraciones están prendidas, el perfil de instalación
 # y las piezas del lugar. Cada respuesta se usa, y lo que dice se imprime, en su lugar de siempre. Las de la
-# configuración se hacían más abajo: leerlas acá no cambia lo que contestan (lo que corre en el medio no toca la
+# configuración se usan más abajo: leerlas acá no cambia lo que contestan (lo que corre en el medio no toca la
 # configuración del arnés). Cada paso entra sólo si su guion está, como cada llamada suelta lo mira antes de correr.
 # Con -Link no hay tanda: un -Link que no se puede cumplir sale 2 antes de tocar nada más, como siempre.
 $ReadBatch = $null
@@ -556,7 +554,7 @@ if (-not $Link) {
     if (Test-Path $cfgJs) {
         $readSteps += @{ id = 'integrations'; script = 'tycon-config'; args = @('integrations', '--json') }
         $readSteps += @{ id = 'profile'; script = 'tycon-config'; args = @('get', 'install.profile') }
-        # cómo contesta el asistente (story 2.31): lo usan el plan y el sync de bloques, en la misma tanda
+        # cómo contesta el asistente: lo usan el plan y el sync de bloques, en la misma tanda
         $readSteps += @{ id = 'response'; script = 'tycon-config'; args = @('response', '--json') }
     }
     if ($script:PiecesTmp -and (Test-Path $rutaCanonica)) {
@@ -570,7 +568,7 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
     $enlaceArgs = @('--ensure-link', '--clone', $clon)
     if ($Check) { $enlaceArgs += '--check' }
     if ($Link) { $enlaceArgs += @('--link', $Link) }
-    # EAP=Continue + try/catch (story 8.17, W3W4): con 'Stop' global, una llamada que tira acá mataba el instalador con el
+    # EAP=Continue + try/catch: con 'Stop' global, una llamada que tira acá mataría el instalador con el
     # candado tomado. Un node que sale distinto de 0 no tira: se mira $LASTEXITCODE.
     $enlaceRc = 0
     if ($ReadBatch -and $ReadBatch['place']) {
@@ -584,13 +582,13 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
     }
     if ($enlaceRc -eq 2) { Exit-Installer 2 }   # sólo un -Link que no se puede cumplir sale 2; un enlace que no se pudo escribir avisa y el instalador sigue
 } elseif ($Link) {
-    # una línea limpia por la salida de error (AC 36): Write-Error, con $ErrorActionPreference='Stop', imprime el formato de
+    # una línea limpia por la salida de error: Write-Error, con $ErrorActionPreference='Stop', imprime el formato de
     # error de PowerShell (el archivo, «Line |», la línea subrayada) en vez del mensaje
     [Console]::Error.WriteLine('install-tycon-hooks.ps1: -Link necesita node y scripts/lib/canonical-path.js')
     Exit-Installer 2
 }
 
-# ── Los enlaces del repo único (story 8.7, tanda C · AC 18; espejo del .sh) ─────────────────────
+# ── Los enlaces del repo único (espejo del .sh) ─────────────────────
 # Cuando ESTE clon trae skills/ y agents/ en su raíz (el repo público: el arnés y agent-skills juntos):
 # ~/.claude/agent-skills → el clon, ~/.claude/agents → <clon>/agents y ~/.claude/skills → <clon>/skills, con las reglas
 # del enlace de arriba; si agents/ o skills/ ya son carpetas reales, un enlace por entrada. Dos llamadas: ACÁ sólo
@@ -598,17 +596,17 @@ if ((Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContin
 # terceros. En el clon del equipo no imprime ni toca nada. Respeta -Check; las piezas `link` las anota el propio guion
 # en TYCON_REPORT_PIECES. En Windows el enlace a una carpeta es un junction; el enlace por entrada a un ARCHIVO (cada
 # revisor es un `.md`) prueba primero el enlace de archivo (pide el modo desarrollador), después un enlace duro, y si
-# tampoco puede canonical-path.js lo dice en una línea y no escribe (decisión C18; story 8.17, AC 39).
-# Story 8.18 (AC 28; espejo del .sh): desde que los dos repos internos se unieron, el clon del equipo TAMBIÉN trae skills/
-# y agents/, y la máquina sigue un tiempo con su clon viejo de agent-skills en ~/.claude/agent-skills (dos clones: la
-# transición). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js (`separateSkillsClone`), igual para este
-# archivo y para el .sh. Una carpeta real en ese lugar que NO es un clon de agent-skills sigue avisando.
+# tampoco puede canonical-path.js lo dice en una línea y no escribe.
+# El clon del equipo TAMBIÉN trae skills/ y agents/, y la máquina puede tener además su clon viejo de agent-skills en
+# ~/.claude/agent-skills (dos clones). Ahí tampoco imprime ni toca nada: lo decide canonical-path.js
+# (`separateSkillsClone`), igual para este archivo y para el .sh. Una carpeta real en ese lugar que NO es un clon de
+# agent-skills sigue avisando.
 function Invoke-RepoLinks([string]$Only) {
     # sólo si el clon trae skills/ y agents/: en un clon sin ellas ni se lanza node (este archivo corre en cada arranque)
     $root = Split-Path -Parent $PSScriptRoot
     if (-not ((Test-Path (Join-Path (Join-Path $root 'skills') 'tycon-pipeline')) -and (Test-Path (Join-Path $root 'agents')))) { return }
     if (-not (Test-Path $rutaCanonica)) { return }
-    # lo corrió una tanda (story 8.36): agent-skills la de lectura, entries la de aplicación. Lo que escribió, otra vez acá
+    # lo corrió una tanda: agent-skills la de lectura, entries la de aplicación. Lo que escribió, otra vez acá
     $fromBatch = if ($Only -eq 'agent-skills') { if ($script:ReadBatch) { $script:ReadBatch['links'] } } else { if ($script:ApplyBatch) { $script:ApplyBatch['entries'] } }
     if ($fromBatch) { Write-NodeChunks $fromBatch.Chunks; return }
     $rlArgs = @('--ensure-repo-links', '--clone', (Split-Path -Parent $PSScriptRoot), '--only', $Only)
@@ -617,15 +615,15 @@ function Invoke-RepoLinks([string]$Only) {
 }
 Invoke-RepoLinks 'agent-skills'
 
-# ── ¿El arnés está donde el arnés cree que está? (2026-09-05; desde la 8.3 mira el enlace) ────
+# ── ¿El arnés está donde el arnés cree que está? (mira el enlace) ────
 # Aviso por stdout si el clon que corre este instalador no es el que apunta el enlace (o el enlace
 # falta, está colgado o es una carpeta). Nunca frena; sin node, silencio. Detalle: scripts/lib/canonical-path.js.
-# Los nombres viejos de las variables (story 8.9): un interruptor renombrado se lee con Get-LegacyEnv, así el nombre
+# Los nombres viejos de las variables: un interruptor renombrado se lee con Get-LegacyEnv, así el nombre
 # en castellano sigue apagando hasta su retiro. Sin la biblioteca, sólo el nombre nuevo.
 $legacyNamesPs1 = Join-Path (Join-Path $PSScriptRoot 'lib') 'legacy-names.ps1'
 $legacyLoaded = $false
 if (Test-Path $legacyNamesPs1) {
-    # con try/catch (story 8.17, W3W4): una biblioteca que tira al cargarse mataba el instalador con el candado tomado
+    # con try/catch: una biblioteca que tira al cargarse mataría el instalador con el candado tomado
     try {
         . $legacyNamesPs1
         $legacyLoaded = $true
@@ -636,7 +634,7 @@ if (Test-Path $legacyNamesPs1) {
 if (-not $legacyLoaded -or -not (Get-Command Get-LegacyEnv -ErrorAction SilentlyContinue)) { function Get-LegacyEnv([string]$Name, [string]$Where) { return [Environment]::GetEnvironmentVariable($Name) } }
 if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks.ps1') -ne '1') {
     if (Test-Path $rutaCanonica) {
-        # lo corrió la tanda de lectura (story 8.36): su salida estándar acá, como la llamada suelta con `2>$null`
+        # lo corrió la tanda de lectura: su salida estándar acá, como la llamada suelta con `2>$null`
         if ($ReadBatch -and $ReadBatch['notice']) { Write-NodeChunks @($ReadBatch['notice'].Chunks | Where-Object { $_ -and $_.Substring(0, 1) -eq 'o' }) }
         else { try { & node $rutaCanonica 2>$null } catch { } }
     }
@@ -645,15 +643,14 @@ if ((Get-LegacyEnv 'TYCON_NO_CANONICAL_PATH' -Where 'scripts/install-tycon-hooks
 # ============================================================
 # Paths
 # ============================================================
-$ClaudeDir   = Join-Path (Get-TyconHome) '.claude'   # la carpeta de os.homedir() (AC 33): la misma que usan los guiones de Node
+$ClaudeDir   = Join-Path (Get-TyconHome) '.claude'   # la carpeta de os.homedir(): la misma que usan los guiones de Node
 $Settings    = Join-Path $ClaudeDir 'settings.json'
 
-# ── Dónde están las skills: lo contesta la regla, no una ruta escrita (story 8.18, AC 12; espejo del .sh) ───────────
-# Este archivo traía la ruta escrita (`agent-skills\skills` bajo ~/.claude). La regla vive en scripts/lib/skills-dir.js
-# (contrato C3 de la story) y acá se le pregunta con la variante de quien ESCRIBE en la máquina (`--installed`: lo
-# instalado mientras exista; si no, el propio clon), y SIN la variable TYCON_SKILLS_DIR: hasta hoy este archivo nunca la
-# leyó, y una variable que apunta a un clon de trabajo no puede re-apuntar los hooks de la máquina a una carpeta que
-# mañana se borra. Este archivo no corre las suites rápidas del .sh: sólo escribe, así que sólo usa esa variante.
+# ── Dónde están las skills: lo contesta la regla, no una ruta escrita (espejo del .sh) ───────────
+# La regla vive en scripts/lib/skills-dir.js (contrato C3) y acá se le pregunta con la variante de quien ESCRIBE en la
+# máquina (`--installed`: lo instalado mientras exista; si no, el propio clon), y SIN la variable TYCON_SKILLS_DIR: una
+# variable que apunta a un clon de trabajo no puede re-apuntar los hooks de la máquina a una carpeta que mañana se borra.
+# Este archivo no corre las suites rápidas del .sh: sólo escribe, así que sólo usa esa variante.
 # Devuelve la línea que da la biblioteca, o $null si la carpeta no existe (su motivo queda en $script:SkillsWhy).
 # Va acá y no antes: en el repo único, Invoke-RepoLinks 'agent-skills' acaba de dejar el enlace, que es «lo instalado».
 # ⚠️ Medido con pwsh en macOS (installer-ps1.test.sh); en Windows, NO MEDIDO (misma deuda declarada que el resto del .ps1).
@@ -665,7 +662,7 @@ function Get-InstalledSkillsDir([string]$Field) {
     $prevVar = $env:TYCON_SKILLS_DIR
     $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     $lines = @(); $rc = 0
-    # lo que trajo la tanda de la lectura (story 8.36): la misma llamada, sin la variable; si no lo trajo, la suelta
+    # lo que trajo la tanda de la lectura: la misma llamada, sin la variable; si no lo trajo, la suelta
     $fromBatch = if ($script:ReadBatch) { $script:ReadBatch[$(if ($Field -eq '--source') { 'source' } else { 'skills' })] } else { $null }
     if ($fromBatch) {
         $ErrorActionPreference = $eap
@@ -676,7 +673,7 @@ function Get-InstalledSkillsDir([string]$Field) {
         try {
             $env:TYCON_SKILLS_DIR = ''
             # Un node que sale distinto de 0 NO lanza en PowerShell: se mira $LASTEXITCODE, como las otras llamadas de este archivo.
-            # la salida y el error POR SEPARADO: con `2>&1` un aviso por stderr (el del enlace que falta) podía quedar como la
+            # Se leen la salida y el error POR SEPARADO: con `2>&1` un aviso por stderr (el del enlace que falta) puede quedar como la
             # primera línea y tomarse por la carpeta de skills
             $errTmp = [IO.Path]::GetTempFileName()
             try {
@@ -699,7 +696,7 @@ $AgentSkills = Get-InstalledSkillsDir '--skills'
 $SkillsFrom  = if ($AgentSkills) { Get-InstalledSkillsDir '--source' } else { $null }
 
 # los dos nombres del lugar (junctions) son del arnés aunque esta corrida no los haya tocado: una pieza `link` por cada
-# nombre que ES un enlace, y lo pregunta Node, como el .sh (story 8.19, AC 11 y 13). Lo trae la tanda de lectura.
+# nombre que ES un enlace, y lo pregunta Node, como el .sh. Lo trae la tanda de lectura.
 if ($script:PiecesTmp -and (Test-Path $rutaCanonica) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     $pieceLines = if ($ReadBatch -and $ReadBatch['pieces']) { @(Split-NativeLines (Get-ChunkText $ReadBatch['pieces'].Chunks 'o')) }
                   else { @(& node $rutaCanonica '--place-pieces' '--home' (Split-Path -Parent $ClaudeDir) 2>$null) }
@@ -709,9 +706,9 @@ if ($script:PiecesTmp -and (Test-Path $rutaCanonica) -and (Get-Command node -Err
     }
 }
 
-# Skeleton si no existe. Con -Check no se escribe (story 8.7, AC 24): más abajo un settings.json que falta se lee como vacío.
+# Skeleton si no existe. Con -Check no se escribe: más abajo un settings.json que falta se lee como vacío.
 # Un fallo (carpeta sin permiso, ~/.claude que es un archivo) se DICE en una línea y sale por Exit-Installer, que suelta el
-# candado (story 8.17, W3W4: antes tiraba con 'Stop' global y el candado quedaba tomado hasta 10 min).
+# candado (con 'Stop' global tiraría y el candado quedaría tomado hasta 10 min).
 if (-not (Test-Path $Settings) -and -not $Check) {
     try {
         New-Item -ItemType Directory -Force -Path $ClaudeDir -ErrorAction Stop | Out-Null
@@ -728,11 +725,11 @@ if (-not (Test-Path $Settings) -and -not $Check) {
 }
 
 # Verificar agent-skills: dónde ESCRIBE esta corrida (ver Get-InstalledSkillsDir, arriba; espejo del .sh).
-#   · lo instalado existe            → la ruta de siempre, la que queda en settings.json (dos clones, o el enlace).
-#   · no existe y el clon es unido   → sólo con -Check (story 8.7, decisión C16): -Check no crea los enlaces, así que esta
+#   · lo instalado existe            → la ruta instalada, la que queda en settings.json (dos clones, o el enlace).
+#   · no existe y el clon es unido   → sólo con -Check: -Check no crea los enlaces, así que esta
 #                                      corrida mira las skills en el propio clon —donde el enlace las va a dejar—. Sin
 #                                      -Check es que el enlace no se pudo crear (ya se avisó arriba): sale 1, como siempre.
-#   · no existe en ningún lado       → sale 1 con la línea de siempre, que ahora trae el motivo que da la biblioteca.
+#   · no existe en ningún lado       → sale 1 con una línea que trae el motivo que da la biblioteca.
 $CheckInClone = $null
 if ($AgentSkills -and -not (Test-Path (Join-Path $AgentSkills 'tycon-pipeline'))) {
     $SkillsWhy = "$AgentSkills no trae tycon-pipeline"; $AgentSkills = $null
@@ -740,7 +737,7 @@ if ($AgentSkills -and -not (Test-Path (Join-Path $AgentSkills 'tycon-pipeline'))
     $SkillsWhy = "~/.claude/agent-skills no está (el enlace al clon no se pudo crear) y sin él no registro hooks hacia $AgentSkills"; $AgentSkills = $null
 }
 if (-not $AgentSkills) {
-    [Console]::Error.WriteLine("✗ tycon: agent-skills no encontrado — $SkillsWhy — ver el README.md del arnés, 'Instalación'")   # una línea limpia (AC 36)
+    [Console]::Error.WriteLine("✗ tycon: agent-skills no encontrado — $SkillsWhy — ver el README.md del arnés, 'Instalación'")   # una línea limpia
     Exit-Installer 1
 }
 $AgentSkillsRepo = Split-Path -Parent $AgentSkills   # la raíz que trae skills/ y agents/ (el contrato: skills = <raíz>/skills)
@@ -749,16 +746,16 @@ if ($SkillsFrom -ne 'installed') {
     Write-Host "(--check) tycon: ~/.claude/agent-skills todavía no está: esta revisión mira las skills en $AgentSkills (el instalador crea el enlace)"
 }
 
-# ── El mecanismo de instalación (story 8.13, tanda A · AC 7-8) ─────────────────────────────────────
+# ── El mecanismo de instalación ─────────────────────────────────────
 # En una máquina que todavía no tiene estado (`~/.claude/.tycon-pipeline/harness-state.json`), este aplicador crea el
 # estado sobre el clon, el enlace y el agent-skills que ya están, copia el arranque fijo y migra la línea de arranque UNA
 # sola vez (`harness.js install --from-existing`: sin candado propio ni aplicador anidado — TYCON_HARNESS_LOCK_HELD=1).
 # Corre DESPUÉS de escribir settings.json cuando hubo cambios, y TAMBIÉN en el camino del `exit 0` temprano cuando no los
-# hubo: la migración de la línea no puede depender de que haya hooks nuevos (AC 7). Con -Check no se llama. Un `node` por
+# hubo: la migración de la línea no puede depender de que haya hooks nuevos. Con -Check no se llama. Un `node` por
 # debajo del piso: harness.js lo dice en una línea y deja la línea vieja, que sigue haciendo el pull.
 function Invoke-HarnessFromExisting {
     if ($Check) { return }
-    # lanzado POR harness.js: el estado lo escribe quien lo lanzó (antes se escribía dos veces, con una copia de más — tanda B)
+    # lanzado POR harness.js: el estado lo escribe quien lo lanzó (se escribiría dos veces, con una copia de más)
     if ($env:TYCON_HARNESS_LOCK_HELD -eq '1') { return }
     $harnessJs = Join-Path (Join-Path $PSScriptRoot 'setup') 'harness.js'
     $stateFile = Join-Path (Join-Path $ClaudeDir '.tycon-pipeline') 'harness-state.json'
@@ -773,7 +770,7 @@ function Invoke-HarnessFromExisting {
     }
 }
 
-# ── La aplicación, en una tanda (story 8.36) ──────────────────────────────────────────────────────────────────────
+# ── La aplicación, en una tanda ──────────────────────────────────────────────────────────────────────
 # En el orden de siempre: las skills de terceros, los enlaces de agents y skills, los nombres viejos y los hooks de
 # settings.json (más abajo). Entre esos pasos este archivo sólo imprime y anota (el estado de las integraciones y del
 # perfil, el plan, las piezas): nada de lo que hacen depende de eso. Cada resultado se usa, y lo que escribió se imprime,
@@ -812,23 +809,23 @@ if (Test-Path $LegacyNames) { $applySteps += @{ id = 'legacy'; script = 'legacy-
 if ($ApplyOut -and (Test-Path $ApplyJs)) { $applySteps += @{ id = 'apply'; script = 'apply-hooks'; args = (New-ApplyArgs $ApplyOut); env = $applyEnv } }
 $ApplyBatch = Invoke-NodeBatch $applySteps
 
-# ── Las skills de terceros vuelven a su lugar (story 8.5; espejo del .sh, mismos argumentos) ──────────────────
+# ── Las skills de terceros vuelven a su lugar (espejo del .sh, mismos argumentos) ──────────────────
 # Restituye lo ajeno desde la historia del clon (sin red) o desde su origen (con el retiro hecho, tope 20 s), sin
 # borrar ni pisar nada. Todo aviso por stdout; apagado con TYCON_THIRD_PARTY=0, y lo dice.
 if ((Test-Path $ThirdPartyJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     # lo corrió la tanda de aplicación: lo que escribió, otra vez acá; si no, la llamada suelta
     if ($ApplyBatch -and $ApplyBatch['third']) { Write-NodeChunks $ApplyBatch['third'].Chunks }
     elseif ($CheckInClone) {
-        # -Check en el repo único sin el enlace todavía (decisión C16): la revisión de terceros mira el clon, como el resto
-        # de esta corrida. Con la ruta del enlace (que no existe) decía «no es un clon de agent-skills» y no revisaba nada.
+        # -Check en el repo único sin el enlace todavía: la revisión de terceros mira el clon, como el resto
+        # de esta corrida. Con la ruta del enlace (que no existe) diría «no es un clon de agent-skills» y no revisaría nada.
         try { & node (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js') --repo $CheckInClone --check } catch { }
     } else {
         try { & node (Join-Path (Join-Path $PSScriptRoot 'publishing') 'install-third-party.js') --repo $AgentSkillsRepo @tpArgs } catch { }
     }
 }
-# ~/.claude/agents y ~/.claude/skills del repo único (story 8.7): después del paso de terceros, ver arriba
+# ~/.claude/agents y ~/.claude/skills del repo único: después del paso de terceros, ver arriba
 Invoke-RepoLinks 'entries'
-# el plan (story 8.16, AC 20; espejo del .sh): cada skill de terceros que el paso restituiría, con la ruta del reporte
+# el plan (espejo del .sh): cada skill de terceros que el paso restituiría, con la ruta del reporte
 # (~\.claude\agent-skills\…, aunque el enlace todavía no exista): completa y en su lugar → keep; si no → add
 if ($PlanTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
     try {
@@ -865,7 +862,7 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 }
 
 # ============================================================
-# Integraciones (story 8.3, tanda B) — espejo del bloque bash. Cada integración tiene su llave en la configuración
+# Integraciones — espejo del bloque bash. Cada integración tiene su llave en la configuración
 # del arnés (lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA); apagada, este
 # instalador no registra sus hooks (clockify: clocki on-prompt + touch-activity; engram: engram-drift-notice y los
 # chequeos de versión/sqlite3; nightly: tablero, dependencias y retro-staleness) ni llama a su servicio (ado: el
@@ -875,7 +872,7 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 # ============================================================
 $IntegEstado = 'sin-lector'
 $Integ = @{}
-# lo que contestó el lector (su código y su salida), para el sync de bloques: no vuelve a preguntar (story 8.36)
+# lo que contestó el lector (su código y su salida), para el sync de bloques: no vuelve a preguntar
 $CfgIntegRc = $null; $CfgIntegOut = $null
 if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     try {
@@ -885,7 +882,7 @@ if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
             $out = @(Split-NativeLines (Get-ChunkText $ReadBatch['integrations'].Chunks 'o'))
             $err = Get-ChunkText $ReadBatch['integrations'].Chunks 'e'
         } else {
-            # stderr APARTE del JSON (un aviso de node por stderr con rc 0 rompia ConvertFrom-Json y dejaba «sin-lector»), y sin
+            # stderr APARTE del JSON (un aviso de node por stderr con rc 0 rompería ConvertFrom-Json y dejaría «sin-lector»), y sin
             # $ErrorActionPreference='Stop' mientras corre node: en Windows PowerShell 5.1 una linea por stderr seria NativeCommandError
             $errTmp = [System.IO.Path]::GetTempFileName()
             $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
@@ -912,17 +909,16 @@ function Integ-Prendida([string]$k) {
     if ($IntegEstado -ne 'ok') { return $false }
     return (($Integ[$k] -eq $true) -or ($Integ[$k] -eq 'detect'))
 }
-# (Hasta la W3W4 acá se calculaban la tabla «hook → integración» y la lista de lo que se sacaba con la llave apagada, que
-# ya no usaba nadie: eso lo decide apply-hooks.js desde la lista única.)
+# La tabla «hook → integración» y la lista de lo que se saca con la llave apagada las decide apply-hooks.js desde la lista única.
 
-# ── El perfil de instalación (story 8.16, tanda C · AC 29; espejo del bloque del .sh) ─────────────────────────────
+# ── El perfil de instalación (espejo del bloque del .sh) ─────────────────────────────
 # `install.profile` de la configuración del arnés (`tycon-config.js get install.profile`), leído UNA vez. full o sin valor:
-# lo de siempre. minimal: de la tabla de abajo sólo entran los hooks que scripts/setup/install-effects.json marca `minimal`
+# todo lo del instalador. minimal: de la tabla de abajo sólo entran los hooks que scripts/setup/install-effects.json marca `minimal`
 # (más los de una integración prendida), los demás se SACAN si estaban, y los frenos que nacen prendidos sólo entran con
 # su variable en `1`. Rota o sin lector: lo que depende del perfil QUEDA COMO ESTÁ (ni se registra ni se saca), y se dice.
-# Este instalador filtra SUS listas: lo que en Windows no registra en full (story 8.17) tampoco aparece en minimal.
+# Este instalador filtra SUS listas: lo que en Windows no registra en full tampoco aparece en minimal.
 $ProfileState = 'sin-lector'; $ProfileValue = $null
-$CfgProfileRc = $null; $CfgProfileOut = $null   # para el sync de bloques (story 8.36), como $CfgIntegRc
+$CfgProfileRc = $null; $CfgProfileOut = $null   # para el sync de bloques, como $CfgIntegRc
 if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
     if ($ReadBatch -and $ReadBatch['profile']) {
         # lo leyó la tanda de la lectura (más arriba): la misma llamada
@@ -930,7 +926,7 @@ if ((Test-Path $cfgJs) -and (Get-Command node -ErrorAction SilentlyContinue)) {
         $CfgProfileRc = $pRc; $CfgProfileOut = $pOut
     } else {
         $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
-        # con catch (story 8.17, W3W4): un try/finally solo dejaba pasar lo que tiraba y mataba el instalador con el candado tomado
+        # con catch: un try/finally solo dejaría pasar lo que tira y mataría el instalador con el candado tomado
         try { $pOut = ((& node $cfgJs get install.profile 2>$null) | Out-String).Trim(); $pRc = $LASTEXITCODE; $CfgProfileRc = $pRc; $CfgProfileOut = $pOut }
         catch { $pOut = ''; $pRc = -1 } finally { $ErrorActionPreference = $eap }
     }
@@ -955,7 +951,7 @@ elseif ($ProfileState -ne 'ok') { Write-Host "! tycon: sin scripts/lib/tycon-con
 $ProfileFull = ($ProfileState -eq 'ok') -and -not $ProfileIsMinimal
 $ProfileOff = @()   # lo que se saca por el perfil (su línea lo dice)
 
-# ── Los nombres viejos (story 8.9, AC 21; espejo del .sh, la misma lista y el mismo guion) ───────────────────
+# ── Los nombres viejos (espejo del .sh, la misma lista y el mismo guion) ───────────────────
 # Las rutas de archivos renombrados a inglés, a su nombre nuevo, en settings.json (hooks y permisos),
 # settings.local.json, ~/.codex/hooks.json y ~/.git-hooks/*, comparando la ruta COMPLETA. Va antes de cargar
 # settings.json, así el bloque de hooks encuentra el nuevo ya registrado y no lo duplica. Con el mapa vacío no toca nada.
@@ -994,27 +990,25 @@ if ((Test-Path $LegacyNames) -and (Get-Command node -ErrorAction SilentlyContinu
 }
 
 # ============================================================
-# Los hooks de settings.json (story 8.17, tandas W3 y W4 · AC 23 y 29)
+# Los hooks de settings.json
 # ============================================================
 # La lista de hooks vive en scripts/setup/hooks-list.json y la aplica scripts/setup/apply-hooks.js: el mismo aplicador que
-# llama install-tycon-hooks.sh, con `--platform windows`. Este archivo ya no lleva una lista propia ni código propio para
-# settings.json. Hasta la W3 tenía las dos (su tabla canónica, la de integraciones, la de opt-in y un bloque que leía y
-# reescribía el archivo con ConvertFrom-Json/ConvertTo-Json), escritas aparte de las del .sh: se desfasaron sin que nada
-# lo dijera (medido en un agente Windows el 2026-10-04: 29 de los 42 controles del .sh). Y ConvertFrom-Json convertía una
-# cadena con forma de fecha en una fecha, y no aceptaba dos claves que sólo difieren en mayúsculas: el archivo del dev salía
-# cambiado o el instalador se caía (AC 36). Node lee y escribe el JSON tal cual.
+# llama install-tycon-hooks.sh, con `--platform windows`. Este archivo no lleva una lista propia ni código propio para
+# settings.json: una lista escrita aparte de la del .sh se desfasa sin que nada lo diga, y ConvertFrom-Json convierte una
+# cadena con forma de fecha en una fecha y no acepta dos claves que sólo difieren en mayúsculas (el archivo del dev
+# saldría cambiado o el instalador se caería). Node lee y escribe el JSON tal cual.
 # Lo que hace en Windows, además de lo de Mac y Linux (detalle en la cabecera de apply-hooks.js): un hook es «el mismo» por
-# la ruta del guion dentro de su repo (con cualquier raíz: el clon, el enlace, /c/…); un .sh va como `bash "<ruta>"` (la W4
-# lo había pasado a la ruta absoluta del bash de Git; la W3W4 lo volvió atrás: lanzado por PowerShell era un error de
-# sintaxis, y Claude Code lanza los hooks con el bash de Git, donde `bash` ya es ése); un .sh con \r\n en
-# el disco, o que no se pudo leer, no se registra (AC 67); una ruta con `$`, acento grave o comilla doble tampoco; y lo que
+# la ruta del guion dentro de su repo (con cualquier raíz: el clon, el enlace, /c/…); un .sh va como `bash "<ruta>"` (no
+# con la ruta absoluta del bash de Git: lanzado por PowerShell sería un error de sintaxis, y Claude Code lanza los hooks
+# con el bash de Git, donde `bash` ya es ése); un .sh con \r\n en
+# el disco, o que no se pudo leer, no se registra; una ruta con `$`, acento grave o comilla doble tampoco; y lo que
 # la lista excluye de Windows (platforms.windows: false, con el motivo en scripts/setup/windows-support.json) no se toca.
 # Lista rota o settings.json roto: el aplicador sale distinto de 0 nombrando el archivo, no escribe nada, y este instalador
 # sale 1 acá. Las piezas y el plan los anota el propio aplicador en TYCON_REPORT_PIECES y TYCON_PLAN_PIECES.
 if (-not $ApplyOut) {
     try { $ApplyOut = [IO.Path]::GetTempFileName() }
     catch {
-        # sin un temporal no hay dónde leer lo que hizo el aplicador (story 8.17, W3W4: antes tiraba con el candado tomado)
+        # sin un temporal no hay dónde leer lo que hizo el aplicador
         Write-Host "✗ tycon: no registré los hooks: no pude crear un archivo temporal ($(Get-ErrText $_)); settings.json quedó como estaba"
         Exit-Installer 1
     }
@@ -1045,7 +1039,7 @@ if ($applyRc -ne 0 -or $null -eq $Apply) {
     Exit-Installer 1
 }
 
-# ── Lo que NO quedó registrado, dicho (story 8.17, tanda W3a · AC 67) ──────────────────────────────
+# ── Lo que NO queda registrado, dicho ──────────────────────────────
 # Va SIEMPRE —con -Check, sin cambios y con cambios—: un clon atrasado, o con finales de línea de Windows, es justo el
 # caso en que no hay nada que agregar. Una línea por control, con su nombre y el remedio. Informa, no frena.
 foreach ($n in @($Apply.notInstalled)) {
@@ -1069,7 +1063,7 @@ if (@($Apply.deferred).Count -gt 0) {
 }
 $Added = @($Apply.added | Where-Object { $_ })
 $Removed = @($Apply.removed | Where-Object { $_ })
-# el cambio de forma de los hooks .js (story 8.39, AC 6): del node del PATH al Node propio del arnés, o de vuelta
+# el cambio de forma de los hooks .js: del node del PATH al Node propio del arnés, o de vuelta
 $Reformed = @($Apply.reformed | Where-Object { $_ })
 if ($Reformed.Count -gt 0) {
     if ($Check) { Write-Host "⚠ tycon: $($Reformed.Count) hook(s) .js con otro intérprete que el que corresponde (el Node del arnés o el del PATH) — corré install-tycon-hooks.ps1" }
@@ -1085,7 +1079,7 @@ if ($Check) {
         Write-Host "⚠ tycon: $($Removed.Count) hooks reemplazados o apagados siguen en settings.json — corré install-tycon-hooks.ps1"
         foreach ($r in $Removed) { Write-Host "  - $($r.event) → $($r.relpath)  [$($r.why)]" }
     }
-    Record-BlocksPlan   # el plan de los bloques de CLAUDE.md (story 8.16, AC 20): el sync con -Check no anota nada
+    Record-BlocksPlan   # el plan de los bloques de CLAUDE.md: el sync con -Check no anota nada
 } else {
     if ($Added.Count -gt 0) {
         Write-Host "✓ tycon: instalé $($Added.Count) hook(s) en ~/.claude/settings.json"
@@ -1096,24 +1090,23 @@ if ($Check) {
         foreach ($r in $Removed) { Write-Host "  - $($r.event) → $($r.relpath)  [$($r.why)]" }
     }
     if ($Apply.backup) { Write-Host "✓ tycon: backup en $($Apply.backup)" }
-    # story 8.13 (AC 7 y 8): la migración de la línea de arranque, después de escribir settings.json — también sin cambios
+    # la migración de la línea de arranque, después de escribir settings.json — también sin cambios
     Invoke-HarnessFromExisting
 }
-# 🔴 Ya NO hay salida temprana cuando la lista de hooks no cambió (story 8.17, W4 · AC 30). Hasta la W4, una segunda corrida
-# sin hooks nuevos salía acá con `exit 0`: no sincronizaba los bloques del CLAUDE.md (un bloque editado en el clon no
-# llegaba nunca), no revisaba la versión de engram ni sqlite3, no limpiaba el core.hooksPath vestigial ni imprimía el
-# estado de las integraciones. Cada corrida, con cambios o sin ellos, sigue hasta el final; con -Check, revisando todo sin
-# escribir nada (AC 31).
+# 🔴 NO hay salida temprana cuando la lista de hooks no cambió: una segunda corrida sin hooks nuevos que saliera acá con
+# `exit 0` no sincronizaría los bloques del CLAUDE.md (un bloque editado en el clon no llegaría nunca), no revisaría la
+# versión de engram ni sqlite3, no limpiaría el core.hooksPath vestigial ni imprimiría el estado de las integraciones.
+# Cada corrida, con cambios o sin ellos, sigue hasta el final; con -Check, revisando todo sin escribir nada.
 
 # ============================================================
-# Bloques team-wide de ~/.claude/CLAUDE.md (2026-07-25).
+# Bloques team-wide de ~/.claude/CLAUDE.md.
 # Ver el header de sync-claude-md-blocks.sh para el porqué. Quirúrgico sobre sus
 # propios marcadores TYCON_BLOCK:<nombre>; fail-open. Opt-out: TYCON_NO_CLAUDEMD_SYNC=1.
 # ============================================================
 $syncBlocks = Join-Path (Join-Path $PSScriptRoot 'setup') 'sync-claude-md-blocks.ps1'
 if (Test-Path $syncBlocks) {
-    # con -Check revisa sin escribir: dice qué bloque está desactualizado (story 8.17, W4 · AC 31)
-    # lo que el lector de configuración ya contestó (story 8.36): el sync no vuelve a preguntarle a Node. Sólo si este sync
+    # con -Check revisa sin escribir: dice qué bloque está desactualizado
+    # lo que el lector de configuración ya contestó: el sync no vuelve a preguntarle a Node. Sólo si este sync
     # sabe recibirlo (una copia parcial con el sync de antes lo llamaría con un parámetro que no conoce y no correría).
     $syncGiven = @{}
     if ($null -ne $CfgProfileRc) { $syncGiven.ProfileRc = $CfgProfileRc; $syncGiven.ProfileOut = $CfgProfileOut }
@@ -1125,7 +1118,7 @@ if (Test-Path $syncBlocks) {
     try { & $syncBlocks @syncArgs } catch { }
 }
 
-# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: desde 2026-10-14 el índice es INDEX.md y README.md es la
+# La línea de ~/.claude/CLAUDE.md que carga el índice de guías: el índice es INDEX.md y README.md es la
 # portada. Este aplicador es el del árbol NUEVO aunque la actualización la haya decidido el programa instalado antes, así
 # que la misma actualización deja la línea nueva (la vieja, reescrita en su lugar; nunca dos). No la agrega si no está:
 # eso es de harness.js. Fail-open: si no puede, la reescribe el próximo arranque. Detalle: setup/harness/import-line.js.
@@ -1136,11 +1129,11 @@ if ((Test-Path $importLineJs) -and (Get-Command node -ErrorAction SilentlyContin
 }
 
 # ============================================================
-# Versión de engram vs el pin del equipo (2026-07-25). AVISA, nunca actualiza.
+# Versión de engram vs el pin del equipo. AVISA, nunca actualiza.
 # Ver el header de check-engram-version.sh. Opt-out: TYCON_NO_ENGRAM_VERSION_CHECK=1.
 # ============================================================
 $engramVerCheck = Join-Path (Join-Path $PSScriptRoot 'setup') 'check-engram-version.ps1'
-# los chequeos de engram sólo con la integración prendida (story 8.3)
+# los chequeos de engram sólo con la integración prendida
 if ((Integ-Prendida 'engram') -and (Test-Path $engramVerCheck)) {
     try { & $engramVerCheck } catch { }
 
@@ -1152,7 +1145,7 @@ if ((Integ-Prendida 'engram') -and (Test-Path $engramVerCheck)) {
 # Opt-outs: TYCON_NO_SQLITE_CHECK=1 - TYCON_SQLITE_AUTO_INSTALL=0.
 # ============================================================
 $sqliteEnsure = Join-Path (Join-Path $PSScriptRoot 'setup') 'ensure-sqlite3.ps1'
-if ((Integ-Prendida 'engram') -and (Test-Path $sqliteEnsure) -and -not $Check) {   # instala: con -Check no (AC 31)
+if ((Integ-Prendida 'engram') -and (Test-Path $sqliteEnsure) -and -not $Check) {   # instala: con -Check no
   try { & $PSHOME\pwsh.exe -NoProfile -ExecutionPolicy Bypass -File $sqliteEnsure } catch {
     try { powershell -NoProfile -ExecutionPolicy Bypass -File $sqliteEnsure } catch { }
   }
@@ -1160,22 +1153,22 @@ if ((Integ-Prendida 'engram') -and (Test-Path $sqliteEnsure) -and -not $Check) {
 }
 
 # ============================================================
-# Lado Codex (opt-in TYCON_CODEX=1, Etapa F3 — 2026-08-22). Espeja el bloque
+# Lado Codex (opt-in TYCON_CODEX=1). Espeja el bloque
 # equivalente de install-tycon-hooks.sh: despliega profiles de advisors,
 # hooks.json (merge quirúrgico + aviso de TRUST por hash), [mcp_servers]
 # (traducción del registro de Claude, secretos jamás al TOML) y skills por
 # symlink/junction. Los deployers son node (cross-platform); requisitos en
 # Windows: node en PATH y bash.exe (git-bash) para los hooks .sh.
-# ⚠ VERIFICACIÓN PENDIENTE en máquina Windows real (el "listo" de F es por OS).
+# ⚠ Sin verificar todavía en una máquina Windows real.
 #
-# ¿Esta máquina usa Codex? (2026-09-19, deuda INSTALADOR-CODEX-PREGUNTA-AL-AMBIENTE; espejo del
+# ¿Esta máquina usa Codex? (espejo del
 # bloque de install-tycon-hooks.sh). La llave del ambiente no siempre llega al instalador: decide
 # el DISCO, con codexDeployed() de scripts/lib/harness-parity.js. TYCON_CODEX=1 → sí (estrena);
 # TYCON_CODEX=0 explícito → no; sin la variable → lo que diga el disco.
 # ============================================================
 $codexOn = $false
-# Desde la story 8.3 la llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil › apagada): $true sí,
-# $false no, 'detect' lo que diga el disco. Configuración rota: nada de Codex. Sin lector: la variable, como antes.
+# La llave es `integrations.codex` (TYCON_CODEX › ~/.claude/tycon.json › perfil › apagada): $true sí,
+# $false no, 'detect' lo que diga el disco. Configuración rota: nada de Codex. Sin lector: la variable.
 $codexLlave = 'detect'
 if ($IntegEstado -eq 'ok') { $codexLlave = $Integ['codex'] }
 elseif ($IntegEstado -eq 'rota') { $codexLlave = $false }
@@ -1198,7 +1191,7 @@ if ($codexLlave -eq $true) {
     }
     if ($motivo) { Write-Host "!! tycon: no pude saber si esta maquina usa Codex ($motivo) - sigo como si no; para desplegarlo igual: TYCON_CODEX=1" }
 }
-# Bajo el mecanismo de instalación (story 8.23, tanda C; espejo del .sh): qué herramientas enchufa la máquina lo dice su
+# Bajo el mecanismo de instalación (espejo del .sh): qué herramientas enchufa la máquina lo dice su
 # estado, y a Codex lo enchufa harness.js en Node. `TYCON_HARNESS_CODEX` se lo dice a este instalador y gana sobre la
 # llave: `done` = la máquina usa Codex y su despliegue ya lo hizo harness.js (acá se saltea, y los AGENTS.md puntero
 # siguen) · `off` = esta máquina no enchufa a Codex. Corrido suelto (sin la variable), lo de arriba vale como siempre.
@@ -1206,15 +1199,14 @@ $codexByHarness = $false
 if ($env:TYCON_HARNESS_CODEX -eq 'done') { $codexOn = $true; $codexByHarness = $true }
 elseif ($env:TYCON_HARNESS_CODEX -eq 'off') { $codexOn = $false }
 if ($codexOn) {
-    # UN solo entrypoint, el MISMO que usa install-tycon-hooks.sh (revisión 2026-08-23: la
-    # versión anterior espejaba las 4 llamadas a mano y quedó con el bug viejo — silencio
-    # total ante un deploy caído — en la primera edición del lado bash; dos copias inline
-    # del mismo bloque driftean solas). La política (fingerprint, silencio en estado
+    # UN solo entrypoint, el MISMO que usa install-tycon-hooks.sh (espejar las 4 llamadas a mano deja el silencio total
+    # ante un deploy caído en cuanto se edita el lado bash: dos copias inline del mismo bloque driftean solas). La
+    # política (fingerprint, silencio en estado
     # estable, fallo con causa) vive en deploy-codex-all.js y acá sólo se invoca.
     $deployAll = Join-Path (Split-Path -Parent $PSScriptRoot) 'build/deploy-codex-all.js'
-    # las reglas en AGENTS.md, desde los bloques (story 8.23, tanda C): hasta acá Windows no las escribía nunca
+    # las reglas en AGENTS.md, desde los bloques
     $agentsMd = Join-Path $PSScriptRoot 'setup/agents-md-blocks.js'
-    # el despliegue escribe en CODEX_HOME: con -Check no corre (story 8.17, W4 · AC 31: hasta la W4 -Check salía antes)
+    # el despliegue escribe en CODEX_HOME: con -Check no corre
     if ($codexByHarness) { }
     elseif ($Check) {
         Write-Host "(-Check) tycon/codex: no despliego el lado Codex (sólo reviso)"
@@ -1224,7 +1216,7 @@ if ($codexOn) {
         try { & node $deployAll } catch { Write-Host "!! tycon/codex: deploy-codex-all.js fallo - diagnostico: node $deployAll" }
         if (Test-Path $agentsMd) { try { & node $agentsMd } catch { Write-Host "!! tycon/codex: agents-md-blocks.js fallo - diagnostico: node $agentsMd" } }
     }
-    # Lo que el despliegue deja en CODEX_HOME y es del arnés (story 8.13, AC 15; espejo del .sh): un perfil y un subagente
+    # Lo que el despliegue deja en CODEX_HOME y es del arnés (espejo del .sh): un perfil y un subagente
     # nativo por revisor de adapters/codex/, hooks.json y config.toml, y los enlaces de skills que apuntan a agent-skills.
     # Con el despliegue hecho por harness.js, las piezas las anota él (no se anotan dos veces).
     if ($PiecesTmp -and -not $codexByHarness) {
@@ -1250,17 +1242,17 @@ if ($codexOn) {
         } catch { }
     }
 
-    # -- AGENTS.md puntero en los repos de proyecto (espejo del bloque bash, 2026-08-23) --
+    # -- AGENTS.md puntero en los repos de proyecto (espejo del bloque bash) --
     # Las reglas de proyecto (CLAUDE.md) llegan a Codex por un AGENTS.md puntero de una
     # linea, SIN segunda copia. Solo repos del equipo (origin en la organizacion configurada,
-    # ado.org), 2 niveles bajo la raiz de repos (scripts/lib/repos-root.js — story 8.3), con
+    # ado.org), 2 niveles bajo la raiz de repos (scripts/lib/repos-root.js), con
     # CLAUDE.md y sin AGENTS.md; nunca pisa uno existente. Sin raiz o sin organizacion no deposita
     # nada y lo dice. Un repo no escribible NO corta el instalador (avisa y sigue).
     # Opt-out: TYCON_NO_AGENTSMD_POINTER=1.
     # (Ambiente: en Windows las variables de usuario viven en el registro y son permanentes -
     #  no hace falta el LaunchAgent del lado Mac; TYCON_CODEX y los secretos MCP los deja el
     #  onboarding PASO 7 con [Environment]::SetEnvironmentVariable(..., 'User').)
-    # VERIFICACION PENDIENTE en maquina Windows real (F3) - escrito como espejo del .sh probado.
+    # Sin verificar en maquina Windows real - escrito como espejo del .sh probado.
     if ($env:TYCON_NO_AGENTSMD_POINTER -ne '1') {
         $puntero = @"
 # AGENTS.md - puntero (lo deposito el arnes TYCON; commitealo asi le llega al equipo)
@@ -1273,7 +1265,7 @@ No agregues reglas aca: se escriben en ``CLAUDE.md`` - este puntero existe para 
 dos copias que mantener. (Convencion: INSTALL.md del arnés, seccion Lado Codex.)
 "@
         # rc 2 = configuracion del arnes ROTA (tycon.json / perfil): se dice tal cual y no se deposita nada; rc 3 = sin valor.
-        # (story 8.3, AC 2 — espejo del .sh; escrito sin poder probarlo en Windows)
+        # (espejo del .sh; escrito sin poder probarlo en Windows)
         $srcRoot = ''; $orgNombre = ''; $cfgRota = @()
         try {
             $out = & node (Join-Path (Join-Path $PSScriptRoot 'lib') 'repos-root.js') --plain 2>&1; $rc = $LASTEXITCODE
@@ -1315,10 +1307,10 @@ dos copias que mantener. (Convencion: INSTALL.md del arnés, seccion Lado Codex.
     }
 }
 
-# -- la lista de proyectos de Azure DevOps para failed-query-notice.js (espejo del bloque bash, 2026-09-06) --
+# -- la lista de proyectos de Azure DevOps para failed-query-notice.js (espejo del bloque bash) --
 # Sin lista cacheada la segunda mirada del hook (--project inexistente) calla. Cada 7 dias, en segundo
 # plano, si hay `az`. Off: TYCON_NO_AZ_PROJECTS_REFRESH=1. ESCRITO SIN PODER PROBARLO EN WINDOWS.
-# story 8.3: sólo con Azure DevOps prendida (ado.org configurada), y con la organización del lector
+# Sólo corre con Azure DevOps prendida (ado.org configurada), y usa la organización del lector
 if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -not $Check -and (Get-Command az -ErrorAction SilentlyContinue)) {
   $azCache = Join-Path $ClaudeDir '.tycon-pipeline\az-projects.json'
   $vieja = (-not (Test-Path $azCache)) -or ((Get-Item $azCache).LastWriteTime -lt (Get-Date).AddDays(-7))
@@ -1327,9 +1319,9 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
     $orgRef = ''
     try { $o = & node $cfgJs get ado.org 2>$null; if ($LASTEXITCODE -eq 0) { $orgRef = ($o | Out-String).Trim() } } catch {}
     $argsAz = @($hookAz, '--refresh'); if ($orgRef) { $argsAz += @('--org', $orgRef) }
-    # Start-Process junta un arreglo de argumentos con espacios y SIN comillas: una carpeta de usuario con espacio partía
-    # la ruta del guion en dos (story 8.17, AC 36). Va una sola línea con cada argumento entre comillas. -WindowStyle sólo
-    # existe en Windows (fuera de Windows cortaba el instalador); fuera de Windows su salida estándar va a la nada (lo que
+    # Start-Process junta un arreglo de argumentos con espacios y SIN comillas: una carpeta de usuario con espacio partiría
+    # la ruta del guion en dos. Va una sola línea con cada argumento entre comillas. -WindowStyle sólo
+    # existe en Windows (fuera de Windows cortaría el instalador); fuera de Windows su salida estándar va a la nada (lo que
     # diga por la de error, si falla, se ve: las dos no pueden ir al mismo archivo). Nunca frena.
     if (Test-Path $hookAz) {
         # las reglas de Windows para leer una línea de comando: las barras antes de una comilla (o del cierre) se duplican
@@ -1341,10 +1333,10 @@ if ((Integ-Prendida 'ado') -and $env:TYCON_NO_AZ_PROJECTS_REFRESH -ne '1' -and -
   }
 }
 
-# -- las corridas del pipeline al buzón del equipo (espejo de la subida del .sh, story 2.16; Windows desde 2026-10-15) --
-# Hasta 2026-10-15 este aplicador no la lanzaba: las corridas de una máquina Windows nunca llegaban al buzón ni al tablero
+# -- las corridas del pipeline al buzón del equipo (espejo de la subida del .sh) --
+# Sin esto, las corridas de una máquina Windows nunca llegarían al buzón ni al tablero
 # del equipo. En cada arranque, de fondo y con la ventana oculta: no frena el arranque. Sólo con la integración del buzón
-# prendida, fuera de -Check y fuera de un agente de CI (un agente no es una máquina del equipo, story 2.12). Apagar:
+# prendida, fuera de -Check y fuera de un agente de CI (un agente no es una máquina del equipo). Apagar:
 # TYCON_NO_UPLOAD_RUNS=1. Un proceso de fondo de PowerShell no puede AGREGAR a un archivo: la subida agrega ella misma a su
 # registro (`--log`, con la rotación del .sh pasado ~512 KB). Registro: upload-runs.log en la carpeta de estado.
 $upJs = Join-Path (Join-Path $PSScriptRoot 'metrics') 'upload-runs.js'
@@ -1363,12 +1355,12 @@ if ((Integ-Prendida 'mailbox') -and (Get-LegacyEnv 'TYCON_NO_UPLOAD_RUNS' -Where
     } catch { Write-Host "!! tycon: no pude lanzar la subida de corridas al buzón ($($_.Exception.Message))" }
 }
 
-# una linea con el estado de las ocho integraciones (story 8.3)
+# una linea con el estado de las ocho integraciones
 if ($IntegEstado -eq 'ok') {
     $prend = @(); $apag = @()
     foreach ($k in @('ado', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly', 'telegram')) {
         # la cadena a la IZQUIERDA: PowerShell convierte el operando derecho al tipo del izquierdo, y `$true -eq 'detect'`
-        # es True (toda prendida salia como «(detect)» — pase adversarial de la tanda B, reproducido con pwsh 7)
+        # es True (toda prendida saldría como «(detect)»)
         if ('detect' -eq $Integ[$k]) { $prend += "$k(detect)" } elseif ($true -eq $Integ[$k]) { $prend += $k } else { $apag += $k }
     }
     $sp = if ($prend.Count) { $prend -join ' ' } else { '(ninguna)' }
@@ -1377,9 +1369,9 @@ if ($IntegEstado -eq 'ok') {
 }
 
 # ============================================================
-# Los hooks globales de git `pre-commit` y `post-commit` (story 8.17, W4 · AC 32; espejo del bloque del .sh)
+# Los hooks globales de git `pre-commit` y `post-commit` (espejo del bloque del .sh)
 # ============================================================
-# Hasta la W4 este instalador no los dejaba: en Windows ni corría la delegación al `.githooks/` de cada repo (el lint de
+# Sin ellos, en Windows no corre la delegación al `.githooks/` de cada repo (el lint de
 # las stories, el de la wiki) ni el aviso de lo que quedó afuera de un commit. Mismas reglas que el .sh: van a
 # ~/.git-hooks (o TYCON_GIT_HOOKS_DIR) sólo si difieren; uno propio de la persona no se pisa: pasa a `.local` y el
 # nuestro lo sigue llamando (si ya hay `.local`, el ajeno queda en `.bak-<fecha>`); con copia salvo bajo harness.js
@@ -1387,7 +1379,7 @@ if ($IntegEstado -eq 'ok') {
 # Git, que con \r\n sale 255. Sólo en full; con -Check sólo avisa. Se anotan como piezas `git-hook`. Opt-out:
 # TYCON_NO_GIT_HOOKS=1.
 # Un fallo (leer el guion o el que ya está, crear la carpeta, mover, copiar, escribir) se DICE en una línea y el instalador
-# sigue con el resto, como el .sh (story 8.17, W3W4: con 'Stop' global tiraba y moría con el candado tomado, sin reporte).
+# sigue con el resto, como el .sh (con 'Stop' global tiraría y moriría con el candado tomado, sin reporte).
 # La pieza no se anota: quien lee el reporte la ve faltar.
 function Install-GitHook([string]$SrcName, [string]$Name, [string]$Marker, [string]$What) {
     $dst = Join-Path $script:GitHooksDir $Name
@@ -1431,7 +1423,7 @@ function Install-GitHookCore([string]$SrcName, [string]$Name, [string]$Marker, [
 # La carpeta global de hooks que git usa ($Configured: el valor de core.hooksPath), ¿es la que el instalador llena
 # ($Installed)? Devuelve UNA de: 'same' · 'other' · 'missing' (apunta a una carpeta que no está) · 'relative' (cada repo
 # usa la suya: no hay una sola con qué comparar) · 'unix-form' (en Windows, /c/carpeta/… o /usr/…: la forma de Git Bash,
-# que PowerShell no resuelve como git) · 'unreadable' (no se pudo mirar). No escribe ni cambia nada (story 8.26, H1c · AC 65 e).
+# que PowerShell no resuelve como git) · 'unreadable' (no se pudo mirar). No escribe ni cambia nada.
 # Se juzga por lo que hay en el disco, no por cómo está escrita la ruta: el ~ expandido, la ruta completa, la ruta REAL
 # de las dos (cada enlace o junction seguido, esté en el tramo que esté: una carpeta alcanzada por un enlace es LA
 # MISMA) y, en Windows, sin distinguir mayúsculas ni \ de /. Fuera de Windows las mayúsculas cuentan: en un disco que
@@ -1459,8 +1451,8 @@ function Compare-GlobalHooksDir([string]$Configured, [string]$Installed, [string
         if (-not (Test-Path -LiteralPath $used -PathType Container)) { return 'missing' }
         # La ruta REAL entera, tramo por tramo: si un tramo es un enlace o un junction se lo sigue y se vuelve a resolver
         # desde ahí (GetFullPath no sigue enlaces, y Get-Item sólo dice si lo es el ÚLTIMO tramo). Mirando sólo el último,
-        # la misma carpeta alcanzada por un enlace intermedio —un perfil de usuario redirigido— salía «otra» y el
-        # instalador avisaba en falso, cuando el .sh la daba por la misma. Lo que no está en el disco queda como está
+        # la misma carpeta alcanzada por un enlace intermedio —un perfil de usuario redirigido— saldría «otra» y el
+        # instalador avisaría en falso, cuando el .sh la da por la misma. Lo que no está en el disco queda como está
         # escrito (la del instalador puede no existir todavía); 64 saltos como tope, por un enlace que se apunte a sí mismo.
         $real = {
             param([string]$p)
@@ -1495,16 +1487,16 @@ $GitHooksDir = if ($env:TYCON_GIT_HOOKS_DIR) { $env:TYCON_GIT_HOOKS_DIR } else {
 if ($env:TYCON_NO_GIT_HOOKS -ne '1' -and $ProfileFull) {
     Install-GitHook 'git-pre-commit-global.sh' 'pre-commit' 'git-pre-commit-global.sh' 'ahora delega en el .githooks/ de cada repo'
     Install-GitHook 'git-post-commit-global.sh' 'post-commit' 'git-post-commit-global.sh' 'avisa en una línea lo que quedó afuera de cada commit'
-    # story 8.26, tanda F1 (AC 52): el freno antes de publicar, en cualquier clon del arnés (espejo del bloque del .sh)
+    # el freno antes de publicar, en cualquier clon del arnés (espejo del bloque del .sh)
     Install-GitHook 'git-pre-push-global.sh' 'pre-push' 'git-pre-push-global.sh' 'el freno antes de publicar corre en cualquier clon del arnés'
-    # La carpeta GLOBAL de hooks de git, ¿es la que este instalador llena? (story 8.26, tanda H1c · AC 65 e; espejo del
-    # bloque del .sh). Se avisaba sólo cuando git no tenía ninguna: con OTRA, el instalador llenaba la suya, no decía
-    # nada, y ningún hook del arnés —tampoco el freno antes de publicar— corría. Se lee con --includes (con --global
+    # La carpeta GLOBAL de hooks de git, ¿es la que este instalador llena? (espejo del bloque del .sh). Avisar sólo cuando
+    # git no tiene ninguna dejaría pasar el caso de OTRA: el instalador llenaría la suya, no diría nada, y ningún hook
+    # del arnés —tampoco el freno antes de publicar— correría. Se lee con --includes (con --global
     # solo, git no sigue los archivos incluidos y diría «no tiene») y con --type=path (git expande el ~).
     # 🔴 Nunca la cambia, en ningún modo: esa clave es de la persona y puede ser de otra herramienta. Sólo avisa.
     # «Git no contestó» no es «git no tiene»: git config sale 1 cuando la clave no está, y con OTRO código cuando falló
-    # (128 con la configuración rota); y si git no está, ni arranca. Leer todo eso como «no tiene» afirmaba algo que no
-    # se midió y mandaba a pisar la clave con el comando del aviso. $ghpRc queda sin valor si git no se pudo lanzar.
+    # (128 con la configuración rota); y si git no está, ni arranca. Leer todo eso como «no tiene» afirmaría algo que no
+    # se midió y mandaría a pisar la clave con el comando del aviso. $ghpRc queda sin valor si git no se pudo lanzar.
     $ghp = ''; $ghpPath = ''; $ghpRc = $null; $ghpWhy = ''
     $eap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
@@ -1545,16 +1537,16 @@ if ($env:TYCON_NO_GIT_HOOKS -ne '1' -and $ProfileFull) {
     }
 }
 
-# -- core.hooksPath LOCAL vestigial (espejo del bloque bash, 2026-08-23) --
-# Un core.hooksPath local eclipsa al global y con el a la delegacion entera, sin aviso
-# (caso: incident-log#hookspath-eclipse). Se destapa SOLO si es vestigial comprobado (solo
-# tiene *.sample); con hooks reales se avisa y no se toca. VERIFICACION PENDIENTE (F3).
+# -- core.hooksPath LOCAL vestigial (espejo del bloque bash) --
+# Un core.hooksPath local eclipsa al global y con el se anula la delegacion entera, sin aviso.
+# Se destapa SOLO si es vestigial comprobado (solo
+# tiene *.sample); con hooks reales se avisa y no se toca. Sin verificar en Windows.
 #
-# «No tiene ningun hook real» se mira en el disco Y en lo que el repo sigue (pase adversarial del tramo 3 de la story
-# 8.18, clase 21 - 2026-10-04). El caso: un clon viejo de agent-skills con core.hooksPath = .githooks (el repo sigue esa
-# carpeta, con un hook de verdad), re-apuntado al repo unido: la vista reducida (sparse-checkout) esconde .githooks/.
-# Este lazo miraba solo el disco: la carpeta no estaba, la dio por vestigial y BORRO la clave de .git/config; la vuelta
-# no la repuso. Y una carpeta que estaba pero no se dejaba leer contaba como «sin hooks». Ahora son tres respuestas:
+# «No tiene ningun hook real» se mira en el disco Y en lo que el repo sigue. Ejemplo: un clon viejo de agent-skills con
+# core.hooksPath = .githooks (el repo sigue esa carpeta, con un hook de verdad), re-apuntado al repo unido: la vista
+# reducida (sparse-checkout) esconde .githooks/. Mirar solo el disco no alcanza: la carpeta no esta, se daria por
+# vestigial y se BORRARIA la clave de .git/config; y una carpeta que esta pero no se deja leer contaria como «sin hooks».
+# Son tres respuestas:
 #   - la carpeta esta y se puede leer -> se cuentan sus hooks, como siempre;
 #   - la carpeta no esta pero el repo la sigue con archivos que no son *.sample (la esconde la vista reducida, o se
 #     borro sin commitear) -> NO es vestigial: se avisa y no se toca;
@@ -1562,7 +1554,7 @@ if ($env:TYCON_NO_GIT_HOOKS -ne '1' -and $ProfileFull) {
 #     -> tampoco se toca, y se dice.
 # Solo lo que no esta en el disco NI en el repo, o esta con puros *.sample, es vestigial. La misma regla en el .sh.
 # Medido con pwsh: scripts/tests/installer-ps1.test.sh (k). En Windows: no medido.
-# Sólo en full (story 8.16, tanda C · AC 23, como el .sh): fuera de full no se toca el core.hooksPath de ningún repo.
+# Sólo en full (como el .sh): fuera de full no se toca el core.hooksPath de ningún repo.
 foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent $PSScriptRoot)) })) {
     if (-not (Test-Path (Join-Path $repo '.git'))) { continue }
     $lhp = ''
@@ -1596,8 +1588,8 @@ foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent 
     if ($reales -eq 0) {
         if ($Check) { Write-Host "! $repo tiene core.hooksPath LOCAL vestigial ($lhp) - eclipsa los hooks del arnes" }
         else {
-            # EAP=Continue + $LASTEXITCODE (story 8.17, W3W4): antes, con 'Stop' global, un git que tiraba mataba el instalador
-            # con el candado tomado, y uno que salía distinto de 0 se anunciaba igual como «removido»
+            # EAP=Continue + $LASTEXITCODE: con 'Stop' global, un git que tira mataría el instalador
+            # con el candado tomado, y uno que sale distinto de 0 se anunciaría igual como «removido»
             $unRc = -1; $unErr = ''
             $unEap = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
             try { $unErr = (@(& git -C $repo config --local --unset core.hooksPath 2>&1 | ForEach-Object { "$_" }) -join ' ').Trim(); $unRc = $LASTEXITCODE }
@@ -1611,6 +1603,6 @@ foreach ($repo in @(if ($ProfileFull) { @($AgentSkillsRepo, (Split-Path -Parent 
     }
 }
 
-if ($Check) { Write-PlanJson }   # el plan (story 8.16, AC 20): con todo lo que se revisó, al final
+if ($Check) { Write-PlanJson }   # el plan: con todo lo que se revisó, al final
 Write-PieceReport
 Exit-Installer 0

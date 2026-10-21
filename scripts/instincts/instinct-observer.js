@@ -10,7 +10,7 @@
  *
  * Output: archivos YAML en `pending/<YYYYMMDD>-<slug>.yaml` del lugar donde se escribe: `inbox/instincts/` del
  * árbol si el árbol trae su buzón (el clon de mantenedor); si no, la casa de la persona. Dónde es cada lugar lo
- * sabe instinct-dirs.js (story 8.27): este guion nunca arma la ruta ni crea una carpeta antes de escribir en ella.
+ * sabe instinct-dirs.js: este guion nunca arma la ruta ni crea una carpeta antes de escribir en ella.
  *
  * Threshold:
  *   - >=3 apariciones en cualquier proyecto
@@ -41,7 +41,7 @@ const { execSync, spawnSync } = require('child_process');
 // ============================================================
 // Config
 // ============================================================
-// Este guion vive en scripts/instincts/ (story 8.12, tanda R2): la raíz del arnés está dos niveles arriba.
+// Este guion vive en scripts/instincts/: la raíz del arnés está dos niveles arriba.
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 // Observations son LOCALES por máquina (no van al repo).
 // Setup 50/50 multi-máquina: cada máquina analiza su propio JSONL.
@@ -60,10 +60,10 @@ function dondeLeer(sub) {
 const MIN_OCCURRENCES = 3;
 const MIN_CONFIDENCE = 0.85;
 
-// ── Ejecutor del modelo — AGNÓSTICO de herramienta (2026-08-24) ──────────────────────────────
-// Antes esto llamaba SIEMPRE al CLI `claude`, así que un dev que trabaja SOLO en Codex no recibía
-// ninguna propuesta (el grabador sí grababa, el cerebro estaba clavado a Claude). Ahora el
-// observer usa el modelo de la herramienta que la máquina tenga: `claude` → Haiku · `codex` →
+// ── Ejecutor del modelo — AGNÓSTICO de herramienta ──────────────────────────────
+// El observer usa el modelo de la herramienta que la máquina tenga, no sólo el CLI `claude`: sin eso, un dev que trabaja
+// SOLO en Codex no recibiría ninguna propuesta (el grabador graba, pero el cerebro estaría clavado a Claude).
+// Equivalencias: `claude` → Haiku · `codex` →
 // gpt-5.4-mini (la equivalencia del arnés, build/equivalences.json) · `ollama` → modelo local.
 // El costo es el mismo (~$0 con suscripción en cualquiera de las dos herramientas).
 const EXECUTOR = (process.env.TYCON_OBSERVER_EXECUTOR || 'auto').toLowerCase(); // auto|claude|codex|ollama
@@ -182,7 +182,7 @@ function callModel(prompt, executor) {
       '--safe-mode', '--tools', ''], {
       // El arnés no le grita sus alarmas de arranque al agente que lanza: sin esto, los hooks
       // de SessionStart le inyectan "controls-bench EN ROJO — Correr: node .../runner.js" y el
-      // modelo va y lo corre en vez de hacer su tarea (incident-log#banco-se-envenena-solo).
+      // modelo va y lo corre en vez de hacer su tarea.
       input: prompt, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024, timeout: 120000,
       env: Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' }),
     });
@@ -224,14 +224,14 @@ function callModel(prompt, executor) {
 }
 
 /**
- * El contexto de ollama se dimensiona con el prompt, con 8192 como piso (2026-09-14).
+ * El contexto de ollama se dimensiona con el prompt, con 8192 como piso.
  *
  * Ollama no falla cuando el prompt y la respuesta no entran en el contexto: sigue generando y descarta en
  * silencio el PRINCIPIO del prompt. Medido con llama3.2:3b sobre un prompt de 7.807 tokens (el que proponía
- * con el catálogo adentro, en un diseño que se descartó): con 8192 contestó 474 tokens, con 16384 la misma
- * consulta contestó 930, y las dos terminaron con `done_reason: stop`. El prompt que propone (~17.700 caracteres) sigue en 8192, como antes; el de la
- * revisión (lista de decididos acotada a 8.000 caracteres para ollama, más el catálogo detallado) midió
- * 5.835 tokens el 2026-09-14 y crece con el catálogo y con la cantidad de propuestas, así que se
+ * con el catálogo adentro): con 8192 contestó 474 tokens, con 16384 la misma
+ * consulta contestó 930, y las dos terminaron con `done_reason: stop`. El prompt que propone (~17.700 caracteres) se queda en 8192; el de la
+ * revisión (lista de decididos acotada a 8.000 caracteres para ollama, más el catálogo detallado) mide
+ * 5.835 tokens y crece con el catálogo y con la cantidad de propuestas, así que se
  * dimensiona. Se estiman ~3 caracteres por token (medidos: 3,3 en aquel prompt con catálogo y 3,8 en el
  * de la revisión) más lugar para la respuesta; el techo de 32768 evita pedirle a una máquina de 16 GB un
  * contexto que no tiene.
@@ -271,24 +271,23 @@ function findCandidates(observations) {
 // ============================================================
 
 /**
- * 🔴 El observador proponía cablear lo que YA estaba cableado, porque no sabía qué existe.
+ * 🔴 El observador no sabe qué existe, y propondría cablear lo que YA está cableado.
  *
- * Caso ed8eb8ac54 (2026-09-10): propuso un hook que corriera compilación y tests después de cada
+ * Sin la lista de lo que ya existe, el modelo propone, por ejemplo, un hook que corra compilación y tests después de cada
  * edición de un `.cs`. Eso ya lo hacen el build-gate y el test-gate del Step 4, la consistencia
  * entre capas ya la revisa `tycon-feature-wiring-checker`, y correr tests sin scope mientras se
- * itera está PROHIBIDO por la regla de disciplina de tests — que nació de dos máquinas congeladas.
- * Una propuesta que duplicaba dos controles y contradecía una regla firmada.
+ * itera está PROHIBIDO por la regla de disciplina de tests, porque la suite entera congela la máquina.
+ * Esa propuesta duplica dos controles y contradice una regla firmada.
  *
  * La lista se ARMA LEYENDO EL DISCO en cada corrida, nunca se escribe en el código: una lista a
  * mano se desactualiza y vuelve a proponer duplicados sin que nadie se entere. Un revisor nuevo
  * aparece solo la próxima vez que el observador corra.
  *
  * Y se le PASA armada en vez de mandar al modelo a buscarla: el ejecutor local (`ollama`) no tiene
- * herramientas, y con los otros dos ya hay antecedente de que el modelo se va a hacer otra cosa
- * cuando algo lo invita a explorar (ver la nota de `TYCON_EVAL_SANDBOX` más arriba,
- * incident-log#banco-se-envenena-solo).
+ * herramientas, y con los otros dos el modelo se puede ir a hacer otra cosa
+ * cuando algo lo invita a explorar (ver la nota de `TYCON_EVAL_SANDBOX` más arriba).
  *
- * Fail-open: si algo de esto no se puede leer, se devuelve vacío y el prompt sale como antes. Que
+ * Fail-open: si algo de esto no se puede leer, se devuelve vacío y el prompt sale sin la lista. Que
  * el observador no sepa qué existe empeora sus propuestas; que no corra, las elimina.
  */
 function loQueYaExiste() {
@@ -299,7 +298,7 @@ function loQueYaExiste() {
   };
   const advisors = nombres(path.join(os.homedir(), '.claude', 'agent-skills', 'agents'), /^(tycon-.+)\.md$/);
   // Los hooks viven en DOS repos: los del arnés y los del pipeline (en agent-skills). Leer sólo uno
-  // dejaba fuera justo los que gatean el commit — `on-pre-commit`, `on-atdd-preedit`,
+  // dejaría fuera justo los que gatean el commit — `on-pre-commit`, `on-atdd-preedit`,
   // `on-frontmatter-write` — que son los que más se re-proponen.
   const hooks = [...new Set([
     ...nombres(path.join(REPO_ROOT, 'scripts', 'hooks'), /^(.+)\.(?:js|sh)$/),
@@ -371,37 +370,37 @@ Rules:
 // ============================================================
 
 /**
- * 🔴 OBSERVADOR-SIN-CATALOGO-2 (2026-09-14). Con el catálogo de nombres de arriba, 11 de las 14 propuestas
- * del 11 al 14 de septiembre repetían algo que existe: seis eran variantes de instintos ya aprobados (el
- * dedup por hash sólo frena el texto idéntico) y cinco pedían controles que ya corren (un nombre no dice
+ * 🔴 Una SEGUNDA llamada revisa cada propuesta contra lo que ya existe. Con sólo el catálogo de nombres de arriba, la mayoría
+ * de las propuestas repite algo que existe: unas son variantes de instintos ya aprobados (el
+ * dedup por hash sólo frena el texto idéntico) y otras piden controles que ya corren (un nombre no dice
  * qué cubre, y lo que corre al commitear y en CI no es un hook).
  *
- * Por qué una SEGUNDA llamada y no más contexto en el prompt que propone (medido con Haiku sobre una foto
- * fija de 159.696 observaciones; detalle en guide-update-proposals.md §OBSERVADOR-SIN-CATALOGO-2):
- *  - Con los decididos en el prompt que propone y la orden de no repetirlos, lo que llegó a la bandeja
- *    eran copias de lo que ese prompt mostraba: el razonamiento citaba el aprobado que las cubría
- *    («Approved instinct 75ee1790b0 already codifies this») y las proponía igual. La lista funcionaba como
+ * Por qué una segunda llamada y no más contexto en el prompt que propone (medido con Haiku sobre una foto
+ * fija de 159.696 observaciones):
+ *  - Con los decididos en el prompt que propone y la orden de no repetirlos, lo que llega a la bandeja
+ *    son copias de lo que ese prompt muestra: el razonamiento cita el aprobado que las cubre
+ *    («Approved instinct 75ee1790b0 already codifies this») y las propone igual. La lista funciona como
  *    ejemplos a imitar.
- *  - Pidiéndole además que declarara qué las cubría: nada llegó a la bandeja en 17 corridas, también con
- *    patrones nuevos inventados. Proponer y censurarse en la misma respuesta lo apagaba, e inventaba
+ *  - Pidiéndole además que declarara qué las cubría: nada llega a la bandeja (medido en 17 corridas), también con
+ *    patrones nuevos inventados. Proponer y censurarse en la misma respuesta lo apaga, e inventa
  *    coberturas genéricas («lo cubre la infraestructura de build»).
  *  - Separado —propone como siempre; otra llamada sólo clasifica lo que pasó la confianza y el hash—
  *    descarta repeticiones con cita y deja pasar lo nuevo.
  *
  * El catálogo detallado (qué audita cada revisor, el pre-commit, scripts/ci/) y los instintos decididos
- * van SÓLO acá, donde se decide; el prompt que propone quedó como estaba. Todo se lee del disco en cada
+ * van SÓLO acá, donde se decide; el prompt que propone no los lleva. Todo se lee del disco en cada
  * corrida. Tres reglas sostienen la revisión:
  *  - La cita se verifica: `covered_by` tiene que EMPEZAR por un hash o una pieza que este prompt mostró.
  *    Una categoría, una frase («not the same as [hash]») o algo que no se mostró no descarta nada.
- *  - Una variante del mismo hábito en OTRO proyecto no es una repetición: el dev aprobó variantes por repo
- *    y generaliza fundiéndolas, y sus 6 rechazos «repite lo aprobado» del 11 al 14 de septiembre eran del
- *    mismo proyecto que el aprobado (o el aprobado era global). Se le pide al modelo y además se verifica.
+ *  - Una variante del mismo hábito en OTRO proyecto no es una repetición: el dev aprueba variantes por repo
+ *    y generaliza fundiéndolas, y sus rechazos «repite lo aprobado» son del
+ *    mismo proyecto que el aprobado (o el aprobado es global). Se le pide al modelo y además se verifica.
  *  - Lo descartado no desaparece: queda en `inbox/instincts/descartados/` con su cita (un archivo por propuesta,
  *    con cuántas veces se descartó) y `/tycon-instincts review` lo muestra. Si no, un descarte de más se
  *    vería igual que una semana sin nada nuevo.
  *
  * Fail-open: sin nada contra qué revisar no hay segunda llamada (y el log lo dice); si falla o no se
- * entiende, lo propuesto sigue su camino como antes.
+ * entiende, lo propuesto sigue su camino sin revisar.
  */
 
 // «none» y sus parientes: una revisión que dice que nada lo cubre no «citó algo que no mostró» (sólo para el log).
@@ -449,8 +448,8 @@ function campoYaml(texto, clave) {
 // Qué audita un revisor, en una línea, sacado del `description:` de su frontmatter. Se descarta lo que no
 // dice QUÉ audita: el prefijo «Advisor Core <fase>.» y lo que sigue a la primera oración (IDs de reglas,
 // cuándo invocarlo). La oración se corta fuera de paréntesis —ahí adentro va la lista que importa— y no en
-// una abreviatura («vs.», «e.g.»). Tope 420: con 160 se cortaban 24 de los 28 revisores y se perdía justo esa
-// lista; con 420 no se corta ninguno (medido el 2026-09-14).
+// una abreviatura («vs.», «e.g.»). Tope 420: con 160 se cortarían 24 de los 28 revisores y se perdería justo esa
+// lista; con 420 no se corta ninguno.
 function descripcionDeRevisor(texto) {
   const fm = String(texto || '').replace(/^\uFEFF/, '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
   const d = fm && campoYaml(fm[1], 'description');
@@ -568,8 +567,8 @@ function catalogoDetallado() {
 }
 
 // Tope de la lista de decididos, en caracteres. Con Haiku o gpt-5.4-mini el contexto no es la restricción, y
-// con 8000 el revisor veía un solo día de rechazos (medido el 2026-09-14: entraban los 25 aprobados y 6
-// rechazados, todos del 14 de septiembre); ollama, con 8.192 tokens de contexto en máquinas de 16 GB, sí la tiene.
+// con 8000 el revisor vería un solo día de rechazos (entrarían los 25 aprobados y 6
+// rechazados, todos del mismo día); ollama, con 8.192 tokens de contexto en máquinas de 16 GB, sí la tiene.
 function topeDecididos(executor) {
   return executor === 'ollama' ? 8000 : 16000;
 }
@@ -581,7 +580,7 @@ function topeDecididos(executor) {
  * Con tope, y el orden decide qué entra: primero los del mismo proyecto que algún candidato (o sin
  * proyecto), primero los aprobados, primero los más nuevos. Se corta en el primero que no entra, así que
  * todo lo mostrado pesa más que todo lo omitido; lo omitido se cuenta en el texto. Sin tope, la lista
- * crecería con cada semana de decisiones — al 2026-09-14 las 156 eran ~39.000 caracteres.
+ * crecería con cada semana de decisiones — 156 decididos son ~39.000 caracteres.
  *
  * Fail-open: sin carpetas, sin archivos legibles o sin triggers, texto vacío.
  */
@@ -811,11 +810,11 @@ function extractYamlArray(text) {
 /**
  * 🔴 `evidence_count` sale del CONTEO REAL del candidato, no de lo que el modelo escriba.
  *
- * Hasta el 2026-09-10 se transcribía `inst.evidence_count` tal cual: la propuesta ed8eb8ac54 decía
- * «1982 ocurrencias» y nadie lo había contado — el modelo lo escribió y el guion lo copió. Un
+ * Transcribir `inst.evidence_count` tal cual deja pasar cifras como
+ * «1982 ocurrencias» que nadie contó — el modelo la escribe y el guion la copia. Un
  * número que parece medido y no lo es, en un arnés cuya regla madre es que nada se afirma sin
  * medirlo. El dato verdadero YA existe (`candidates[i].count`, que el propio prompt le muestra al
- * modelo como «occurred N× in last 60d»): sólo hacía falta usarlo.
+ * modelo como «occurred N× in last 60d»): sólo hace falta usarlo.
  *
  * Si el modelo no dice de qué candidato salió, el campo queda `null` con su motivo — nunca un 0,
  * que se leería como «lo conté y no hay».
@@ -862,7 +861,7 @@ function writeInstinct(inst, idx, ts, proposedBy, candidates, dir = dondeEscribi
 
 // Lo descartado queda en `descartados/` del lugar donde se escribe: UN archivo por propuesta (reemplaza el de una corrida
 // anterior y suma cuántas veces se descartó). El contador se lee de TODOS los lugares de lectura —la constancia anterior
-// puede estar en el buzón de un clon o en el que dejó una versión anterior—, pero sólo se borra la que está donde se
+// puede estar en el buzón de un clon o en el de otra copia del arnés—, pero sólo se borra la que está donde se
 // escribe: el observador no toca lo de otro lugar. Nunca tumba al observador: si no puede escribir, lo dice y sigue — la
 // constancia no puede costar las propuestas nuevas que vienen después.
 const descartadosIlegiblesAvisados = new Set();
@@ -901,9 +900,9 @@ function dejarConstanciaDeDescarte(inst, idx, ts, proposedBy, candidates, cita, 
   }
 }
 
-// ── Los descartados de la carpeta de antes de la mudanza (story 8.12, tanda R2 — pase adversarial) ─────────────
-// La carpeta de datos pasó a inbox/instincts/. En cada máquina que ya corrió el observador quedan, en la carpeta vieja,
-// archivos locales que nunca viajaron por git: el log se queda donde está (decisión 5 del dueño: un log no se migra),
+// ── Los descartados de la carpeta anterior de datos ─────────────────────────────────────────────────────────────
+// Los datos viven en inbox/instincts/. En una máquina que ya corrió el observador pueden quedar, en la carpeta vieja,
+// archivos locales que nunca viajaron por git: el log se queda donde está (un log no se migra),
 // pero `descartados/` es estado — con su `veces_descartada`, el observador sabe cuántas veces ya descartó lo mismo. La
 // primera corrida después del pull (del observador o de instinct-promote) lleva esos archivos a la carpeta nueva y lo
 // dice en una línea; la siguiente no encuentra nada. El nombre viejo sale del mapa de renombres (la entrada `folder`
@@ -932,7 +931,7 @@ function ganaElViejo(viejo, nuevo) {
 }
 
 function migrarDescartadosViejos(avisar = log) {
-  // Sólo en un árbol que trae su buzón (story 8.27): la carpeta de antes de la mudanza existió en clones del repo de
+  // Sólo en un árbol que trae su buzón: la carpeta vieja existe en clones del repo de
   // mantenimiento, y es el único caso en que un comando que sólo lee puede crear `descartados/` en el árbol.
   if (!DIRS.treeBringsInbox()) return 0;
   const DESCARTADOS_DIR = path.join(DIRS.treeInbox(), 'descartados');
@@ -988,7 +987,7 @@ function maybeNotify(count, descartados = 0) {
   if (!notify) return;
   if (process.env.TYCON_INSTINCT_NOTIFY !== '1') return;
   if (count === 0) return;
-  // Simple notify via curl al bot. El chat sale de la configuración del arnés (story 8.3): variable,
+  // Simple notify via curl al bot. El chat sale de la configuración del arnés: variable,
   // ~/.claude/tycon.json → telegram.chat_id, o el plugin de Telegram — nunca un chat escrito acá.
   const chatId = process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID || chatConfigurado();
   const botToken = process.env.TYCON_INSTINCT_TELEGRAM_BOT_TOKEN;
@@ -1034,8 +1033,8 @@ function main() {
   for (const n of DIRS.readNotes()) log(`${n} — lo ya decidido ahí puede volver a proponerse`);
   // En --dry-run no se escribe nada, tampoco esta mudanza: la hace la próxima corrida de verdad.
   if (!dryRun) migrarDescartadosViejos();
-  // Telegram (story 8.3, AC 10): si se pidió avisar y no hay chat configurado, se dice UNA vez y al PRINCIPIO — al final,
-  // con cero instintos nuevos, nunca se llegaba a saber. Configuración rota → un comando frena con archivo, clave y motivo.
+  // Telegram: si se pidió avisar y no hay chat configurado, se dice UNA vez y al PRINCIPIO — al final,
+  // con cero instintos nuevos, nunca se llegaría a saber. Configuración rota → un comando frena con archivo, clave y motivo.
   if (notify && process.env.TYCON_INSTINCT_NOTIFY === '1' && !process.env.TYCON_INSTINCT_TELEGRAM_CHAT_ID) {
     let chat = null;
     try { chat = chatConfigurado(); } catch (e) { if (e && e.name === 'ConfigError') { log(e.message); process.exit(2); } throw e; }

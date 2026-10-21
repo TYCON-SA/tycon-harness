@@ -4,33 +4,31 @@
  *
  * Corre los cuatro deployers (generate --deploy · hooks · mcp · skills) con UNA política de
  * detección de cambios, de silencio y de error, invocado por los DOS instaladores
- * (install-tycon-hooks.sh y .ps1). Nació de la revisión del 2026-08-23 sobre el commit que
- * sacó los deployers del throttle del banco: esa versión inline tenía cuatro llamadas con
- * cuatro políticas distintas, ignoraba `--check`, corría entera en cada arranque, y el espejo
- * de Windows quedó con el bug viejo — dos copias del mismo bloque driftean en la primera
- * edición, y ésta lo probó.
+ * (install-tycon-hooks.sh y .ps1). Una sola entrada evita cuatro llamadas con cuatro políticas
+ * distintas, un `--check` ignorado y una corrida entera en cada arranque; y evita que el espejo
+ * de Windows quede con otra versión: dos copias del mismo bloque driftean en la primera edición.
  *
- * QUÉ RESUELVE, PUNTO POR PUNTO (cada uno fue un hallazgo confirmado de esa revisión):
+ * QUÉ RESUELVE, PUNTO POR PUNTO:
  *   - `--check` NO escribe: reporta si el despliegue está al día o pendiente y sale. El
- *     contrato del instalador ("--check solo reporta") lo violaba el bloque anterior — y
+ *     contrato del instalador ("--check solo reporta") lo exige — y
  *     violarlo acá no es cosmético: el merge de hooks.json cambia hashes y Codex deja de
  *     correr los hooks hasta re-aprobar con /hooks.
  *   - FINGERPRINT contra un stamp: HEAD de los dos repos (en una versión bajada, su version.json y el commit de la capa
  *     del equipo) + estado sucio de adapters/build +
  *     mtime/size de ~/.claude.json. Sin cambios y con las salidas presentes → sale en ~5ms
- *     sin spawnear nada. Antes: 4 procesos node, el parse completo de ~/.claude.json y la
- *     caminata de 170 skills en CADA arranque, para concluir "sin cambios".
+ *     sin spawnear nada. Sin la huella, cada arranque correría 4 procesos node, el parse
+ *     completo de ~/.claude.json y la caminata de 170 skills, para concluir "sin cambios".
  *   - SILENCIO en el estado estable: las líneas "sin cambios" de los deployers no llegan al
  *     contexto del SessionStart. Lo único que se imprime es lo accionable: el aviso de TRUST,
  *     el nudge de adapters regenerados sin commitear, y los fallos.
  *   - FALLO CON CAUSA: si un paso falla se imprime el patrón del instalador (qué falló +
  *     "Diagnóstico: <comando>") MÁS la cola de su salida real — el "⚠ falló" sin la causa
- *     obligaba a re-correr a mano para ver el error. Un fallo NO escribe el stamp, así que se
+ *     obliga a re-correr a mano para ver el error. Un fallo NO escribe el stamp, así que se
  *     reintenta (y se re-anuncia) en el próximo arranque: un despliegue roto que persiste
  *     tiene que seguir sonando hasta que alguien lo arregle.
  *   - CLON INCOMPLETO ≠ deploy roto: si falta alguno de los cuatro scripts (git pull fallado,
  *     clon viejo) se dice ESO, una vez, en vez de cuatro avisos engañosos de "deploy falló".
- *   - El nudge que el throttle mataba: cuando generate regenera los .toml del REPO (porque el
+ *   - El nudge que un throttle ocultaría: cuando generate regenera los .toml del REPO (porque el
  *     canónico cambió y nadie commiteó la regeneración), acá se avisa con el comando — el
  *     "🛑 DESACTUALIZADO" de build/check.js no puede dispararse en máquinas Codex porque este
  *     deploy regenera antes; este aviso lo reemplaza en esas máquinas.
@@ -43,7 +41,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -54,14 +52,14 @@ const TCG = path.resolve(BUILD, '..');
 // Resolución TOLERANTE de TYCON_SKILLS_DIR: la variable convive con DOS semánticas
 // documentadas (raíz del clon en los deployers; carpeta de skills en el lint/backfill, cuyos
 // propios mensajes de error la instruyen así) — ver scripts/lib/skills-dir.js.
-// Este guion ESCRIBE rutas en la máquina: usa la variante «instalada» (story 8.18, hallazgo I12). Con «el propio
+// Este guion ESCRIBE rutas en la máquina: usa la variante «instalada». Con «el propio
 // clon primero», una máquina con dos clones cambiaría ~/.codex/hooks.json apenas el arnés traiga skills/, y Codex
 // aprueba cada hook por su texto: habría que re-aprobarlos todos.
 const SKILLS_REPO = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs().repo;
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const STAMP = path.join(stateDirOf(os.homedir()), 'codex-deploy-stamp.json');
 
-// story 8.23 (tanda C): una versión BAJADA (`~/.tycon/harness`, sin `.git`) no es un repo. Ahí git no se invoca nunca
+// Una versión BAJADA (`~/.tycon/harness`, sin `.git`) no es un repo. Ahí git no se invoca nunca
 // —la huella sale del `version.json` publicado— y el árbol no se escribe: los revisores se despliegan tal como vinieron
 // (`generate.js --deploy-only`), sin regenerarlos (regenerar un .toml lo dejaría «editado» para `doctor`).
 const isRepo = (dir) => fs.existsSync(path.join(dir, '.git'));
@@ -88,12 +86,12 @@ function git(repo, ...args) {
  *     que cada arranque despliegue lo suyo, aún sin commitear. Se usa el hash del diff, no un
  *     booleano, para que un cambio nuevo re-dispare aunque ya estuviera sucio.
  *   - mtime+size de ~/.claude.json — el registro de MCPs del que traduce deploy-codex-mcp.
- *   - las integraciones y qué hooks no van por ellas (DEF-8.23-C-hooks-codex-sin-integracion, 2026-10-09): apagar o
- *     prender una integración cambia lo que se despliega sin tocar ningún repo, y sin esto `apply` o el arranque daban
- *     el despliegue por al día — Claude Code sacaba los hooks y Codex los dejaba (revisión independiente del arreglo).
+ *   - las integraciones y qué hooks no van por ellas: apagar o
+ *     prender una integración cambia lo que se despliega sin tocar ningún repo, y sin este insumo `apply` o el arranque dan
+ *     el despliegue por al día — Claude Code saca los hooks y Codex los deja.
  * Editar un canónico de agent-skills SIN commitear NO dispara a propósito: regenerar los .toml
- * del repo desde un canónico a medio editar es exactamente el clobber silencioso que la
- * revisión marcó; el pre-commit de tcg (build/check.js) cubre ese tramo.
+ * del repo desde un canónico a medio editar es exactamente el clobber silencioso;
+ * el pre-commit de tcg (build/check.js) cubre ese tramo.
  */
 function fingerprint(env = process.env) {
   const claudeJson = path.join(os.homedir(), '.claude.json');
@@ -104,9 +102,9 @@ function fingerprint(env = process.env) {
   // con nada y mantiene la propiedad que importa: cambia si el diff cambia.
   const sha = (text) => require('crypto').createHash('sha256').update(text).digest('hex').slice(0, 12);
   // un árbol que no es un repo (la versión bajada): su identidad es el `version.json` con que se publicó; nunca git. Con la
-  // capa del equipo apilada (story 8.25, A2b · AC 30 f) también el commit de la capa, DENTRO de esta misma parte —la huella
+  // capa del equipo apilada también el commit de la capa, DENTRO de esta misma parte —la huella
   // sigue teniendo cinco—: un cambio sólo de la capa (el refresco en el lugar) redespliega sus revisores en ese arranque.
-  // Sin `.tycon-team.json`, la misma cadena de antes.
+  // Sin `.tycon-team.json`, la cadena no lleva ese tramo.
   // (un refresco a medias deja su pendiente: también entra, así el arranque que lo termina vuelve a desplegar)
   const teamId = (dir) => {
     let raw;
@@ -118,7 +116,7 @@ function fingerprint(env = process.env) {
   };
   // …y, si su `version.json` dice que el número lo pone la etiqueta del merge (`numbering: "merge-tag"`), el commit del
   // manifiesto de la bajada (`.tycon-release.json`): ese archivo queda igual entre versiones (dice el piso) y sólo con él
-  // la huella no cambiaría nunca. Sin la marca, la misma cadena de antes
+  // la huella no cambiaría nunca. Sin la marca, la cadena no lleva ese tramo
   const releaseCommit = (dir) => {
     try {
       const v = JSON.parse(fs.readFileSync(path.join(dir, 'version.json'), 'utf8'));
@@ -138,11 +136,11 @@ function fingerprint(env = process.env) {
   try {
     const dh = require(path.join(BUILD, 'deploy-codex-hooks.js'));
     const act = dh.activeFragment(JSON.parse(fs.readFileSync(dh.FRAGMENT, 'utf8')), { env });
-    // el intérprete de los hooks (story 8.39, AC 7): cuando aparece el Node del arnés, se rompe o se apaga, Codex se
+    // el intérprete de los hooks: cuando aparece el Node del arnés, se rompe o se apaga, Codex se
     // vuelve a desplegar en ese mismo arranque aunque ningún repo haya cambiado. Va DENTRO de esta parte (siguen cinco),
-    // y sólo con el Node del arnés: con `node` la cadena es la de antes y una máquina sin él no redespliega por nada
+    // y sólo con el Node del arnés: con `node` la cadena no lleva ese tramo y una máquina sin él no redespliega por nada
     // en su propio try: si el intérprete no se pudo decidir, el motivo entra como `n` y el resto de la parte sigue
-    // moviendo la huella (antes el error tapaba integraciones, descartes y aviso mientras siguiera roto)
+    // moviendo la huella (un error ahí no tapa integraciones, descartes ni aviso)
     let own = {};
     try {
       const interp = dh.harnessInterpreter ? dh.harnessInterpreter(env) : { prefix: 'node' };
@@ -166,8 +164,8 @@ function outputsPresent() {
     const skills = path.join(CODEX_HOME, 'skills');
     if (!fs.existsSync(skills) || fs.readdirSync(skills).length === 0) return false;
     if (!fs.readdirSync(CODEX_HOME).some((f) => f.endsWith('.config.toml'))) return false;
-    // config.toml (los servidores MCP y writable_roots) también es salida: sin él, `apply`/`startup` daban el despliegue
-    // por «al día» y nunca lo reponían (pase adversarial de la C, clase 2)
+    // config.toml (los servidores MCP y writable_roots) también es salida: sin él, `apply`/`startup` darían el despliegue
+    // por «al día» y nunca lo repondrían
     if (!fs.existsSync(path.join(CODEX_HOME, 'config.toml'))) return false;
     return true;
   } catch { return false; }
@@ -270,7 +268,7 @@ function selftest() {
     ['--force → corre aunque esté al día', shouldRun('a', 'a', true, true).run === true],
     ['el fingerprint es estable en el mismo estado', fingerprint() === fingerprint()],
     ['el fingerprint incluye los 5 insumos', fingerprint().split('|').length === 5],
-    // apagar una integración sin tocar ningún repo cambia la huella (DEF-8.23-C-hooks-codex-sin-integracion)
+    // apagar una integración sin tocar ningún repo cambia la huella
     ['apagar una integración cambia el fingerprint', fingerprint({ ...process.env, TYCON_NIGHTLY: '1' }) !== fingerprint({ ...process.env, TYCON_NIGHTLY: '0' })],
   ];
   let bad = 0;

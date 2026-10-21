@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * adversarial-duplication.js — cuántos de los verificadores del pase adversarial reproducen algo que
- * otro verificador ya reprodujo, medido sobre la SERIE archivada y no sobre una corrida (story 7.11).
+ * otro verificador ya reprodujo, medido sobre la SERIE archivada y no sobre una corrida.
  *
- * 🔴 De dónde sale la pregunta: la corrida de la story 7.10 abrió 25 agentes y 2.668.124 tokens en el
+ * 🔴 De dónde sale la pregunta: una corrida abrió 25 agentes y 2.668.124 tokens en el
  *    pase. 19 hallazgos confirmados que eran 9 problemas distintos → ~10 verificadores de más, el
  *    40 % del pase. Pero eso es n=1, y un ahorro prometido con n=1 es una estimación disfrazada.
  *
@@ -23,7 +23,7 @@
  *     causas que hallazgos (el reporte sumó hallazgos de otros revisores): esas se descartan.
  *   · un pase sin ninguna de las dos NO se estima: se cuenta aparte y el resumen lo dice.
  *
- * SÓLO LEE. No escribe en el buzón ni en las corridas archivadas (Task 1 de la story).
+ * SÓLO LEE. No escribe en el buzón ni en las corridas archivadas.
  *
  * Uso:
  *   node scripts/metrics/adversarial-duplication.js [--mailbox <dir>] [--repos <d1,d2>] [--json] [--out <md>]
@@ -34,7 +34,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -46,7 +46,7 @@ const BUZON_DEFAULT = path.join(stateDirOf(os.homedir()), 'corridas-buzon');
 // no es mágico — es el mínimo con el que la mediana deja de moverse entera por una sola corrida.
 const MUESTRA_MINIMA = 5;
 
-// 🔴 «No pude leer» NO es «no hay» (revisor de fallos silenciosos, 2026-09-20). El buzón lo escriben
+// 🔴 «No pude leer» NO es «no hay». El buzón lo escriben
 // 4 máquinas: una escritura a medias es realista, no hipotética. Un archivo que NO EXISTE es un caso
 // legítimo y sigue devolviendo null en silencio; cualquier otra cosa (JSON roto, permisos) se anota
 // en `diag` y sale por stderr, para que el reporte pueda decir cuántos descartó por ilegibles.
@@ -66,8 +66,8 @@ function nuevoDiag() {
   return {
     lista,
     ilegible(archivo, motivo) {
-      // `findings.json` a secas se repite en TODAS las corridas: con dos rotas, el detalle mostraba
-      // dos entradas idénticas y no se sabía cuáles (vuelta 2 del revisor). Se publica
+      // `findings.json` a secas se repite en TODAS las corridas: con dos rotas, el detalle mostraría
+      // dos entradas idénticas y no se sabría cuáles. Se publica
       // «<carpeta de la corrida>/<archivo>», que identifica sin exponer la ruta de la máquina.
       const nombre = etiqueta(archivo);
       lista.push({ archivo: nombre, motivo });
@@ -76,8 +76,8 @@ function nuevoDiag() {
   };
 }
 
-// Las rutas del buzón son absolutas y traen el usuario de la máquina donde corrió (SEC-W8, revisor de
-// seguridad 2026-09-20): al publicarlas se filtra el nombre de otro dev y el del proyecto/cliente. Se
+// Las rutas del buzón son absolutas y traen el usuario de la máquina donde corrió (SEC-W8):
+// al publicarlas se filtra el nombre de otro dev y el del proyecto/cliente. Se
 // publica sólo el nombre de la carpeta, que alcanza para identificarla.
 function corto(p) {
   return p ? path.basename(String(p)) : '';
@@ -93,12 +93,12 @@ function etiqueta(p) {
 function caminar(dir, out, diag, raiz = true) {
   let e = [];
   // una carpeta de máquina que no se deja listar se DICE (sus pases faltan, no son cero); la raíz que no existe es
-  // «buzón vacío», como antes (segunda vuelta de fallos silenciosos)
+  // «buzón vacío»
   try { e = fs.readdirSync(dir, { withFileTypes: true }); }
   catch (err) { if (diag && !(raiz && err && err.code === 'ENOENT')) diag.ilegible(dir, `la carpeta no se pudo listar (${(err && err.code) || 'error'})`); return out; }
   for (const it of e) {
     const p = path.join(dir, it.name);
-    // story 2.28: `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona
+    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona
     if (it.isDirectory()) { if (it.name !== 'registros') caminar(p, out, diag, false); }
     else if (it.name.endsWith('.json')) out.push(p);
   }
@@ -108,7 +108,7 @@ function caminar(dir, out, diag, raiz = true) {
 /** Los pases adversariales anotados en el buzón: uno por corrida que haya dejado `confirmados`. */
 function leerPases(buzon, diag) {
   const pases = [];
-  // story 2.28 (decisión 12): la misma corrida puede estar en la carpeta vieja de una máquina y en la nueva
+  // La misma corrida puede estar en la carpeta vieja de una máquina y en la nueva
   // `<nombre>-<código>`, donde la volvió a subir: cuenta UNA vez (la sesión; sin sesión, el archivo y su fecha).
   const vistas = new Set();
   for (const f of caminar(buzon, [], diag)) {
@@ -124,8 +124,8 @@ function leerPases(buzon, diag) {
     vistas.add(clave);
     // Una corrida puede anotar el mismo pase varias veces (re-anotación). Vale la anotación con más
     // confirmados: es el pase completo. 🔴 Y el par (hallazgos, causas) sale de ESA MISMA anotación —
-    // tomar cada máximo por separado cruzaba los 20 hallazgos de un lanzamiento con las 2 causas de
-    // otro, y daba un ratio que nunca existió (lo cazó el pase adversarial, 2026-09-20).
+    // tomar cada máximo por separado cruzaría los 20 hallazgos de un lanzamiento con las 2 causas de
+    // otro, y daría un ratio que nunca existió.
     const elegida = conCuenta.reduce((a, b) => (b.confirmados > a.confirmados ? b : a));
     const hallazgos = elegida.confirmados;
     pases.push({
@@ -134,7 +134,7 @@ function leerPases(buzon, diag) {
       repoPath: String(m.repoPath || ''),
       startedAt: m.startedAt || d.archivedAt || null,
       hallazgos,
-      // Desde la story 7.11 el propio pase anota las clases: cuando está, no hace falta ningún proxy.
+      // El propio pase anota las clases: cuando está, no hace falta ningún proxy.
       clases_declaradas: typeof elegida.clases === 'number' ? elegida.clases : null,
     });
   }
@@ -146,7 +146,7 @@ function corridasDe(repo, story) {
   const base = path.join(repo, '.advisors', 'pipeline-runs');
   let e = [];
   try { e = fs.readdirSync(base, { withFileTypes: true }); } catch (_e) { return []; }
-  // `<número>-<sello>` o, si el número se repite en el repo, `<tema>__<número>-<sello>` (story 1.17.1). El pase sólo
+  // `<número>-<sello>` o, si el número se repite en el repo, `<tema>__<número>-<sello>`. El pase sólo
   // trae el número: se aceptan las dos formas para no quedar ciegos a las carpetas nuevas (es una medición, no un freno).
   return e.filter((it) => it.isDirectory() && (it.name.startsWith(`${story}-`) || it.name.includes(`__${story}-`))).map((it) => path.join(base, it.name));
 }
@@ -186,12 +186,12 @@ function clasesDelPase(pase, repos, diag) {
     return { clases: pase.clases_declaradas, fuente: 'declarado', corrida: null };
   }
   // 🔴 El repo que el pase DECLARÓ manda. Buscar la story en todos los repos del buzón y desempatar
-  // por fecha podía traer las causas de una corrida ajena con el mismo número de story (lo cazó el
-  // pase adversarial). Sólo si el repo declarado no está en esta máquina se mira en los demás.
+  // por fecha podría traer las causas de una corrida ajena con el mismo número de story.
+  // Sólo si el repo declarado no está en esta máquina se mira en los demás.
   // 🔴 Y cuando NO está (el caso normal: el buzón lo escriben 4 máquinas y esas rutas no existen
   // acá), se busca en los repos locales igual —es la única fuente que hay— pero la fila queda MARCADA
   // como resuelta por coincidencia de número. Sin esa marca, una corrida ajena con el mismo número de
-  // story aportaba causas que no eran suyas y se veía igual de confiable que el resto.
+  // story aportaría causas que no son suyas y se vería igual de confiable que el resto.
   const declaradoExiste = Boolean(pase.repoPath && fs.existsSync(pase.repoPath));
   const declarado = declaradoExiste ? [pase.repoPath] : repos;
   const candidatos = [];
@@ -204,8 +204,8 @@ function clasesDelPase(pase, repos, diag) {
     return { motivo: existe ? 'la corrida no dejó sus hallazgos en el repo' : `el repo de la corrida no está en esta máquina (${corto(pase.repoPath) || 'sin declarar'})` };
   }
   // 🔴 Un pase lanzado temprano escribe en la carpeta de ESE momento y el reporte se consolida en la
-  // de la corrida: la misma story deja DOS carpetas hermanas y sólo una tiene los datos (pasó en la
-  // 7.10). Así que primero se descartan las carpetas vacías; recién entre las que tienen algo se
+  // de la corrida: la misma story deja DOS carpetas hermanas y sólo una tiene los datos.
+  // Así que primero se descartan las carpetas vacías; recién entre las que tienen algo se
   // desempata por tiempo.
   const antesDelFiltro = diag ? diag.lista.length : 0;
   const conDatos = candidatos.filter((c) =>
@@ -214,7 +214,7 @@ function clasesDelPase(pase, repos, diag) {
     findingsDesdeGit(c.repo, c.corrida, diag));
   if (!conDatos.length) {
     // Si el filtro de arriba ya anotó un ilegible, la corrida SÍ dejó algo — ilegible. Decir «no
-    // dejó nada» acá es el mismo error que la vuelta 1 cerró a nivel de resumen, reapareciendo por fila.
+    // dejó nada» acá es el mismo error que se evita a nivel de resumen, repetido por fila.
     if (diag && diag.lista.length > antesDelFiltro) {
       return { motivo: `la corrida dejó sus archivos pero son ILEGIBLES: ${diag.lista[diag.lista.length - 1].motivo}` };
     }
@@ -245,7 +245,7 @@ function clasesDelPase(pase, repos, diag) {
   if (crudo && Array.isArray(crudo.confirmed) && crudo.confirmed.length) {
     // 🔴 Si el pase ya anotó en cuántas causas agrupó, ESE es el número: re-aplicar el criterio sobre
     // `confirmed` mide sobre el subconjunto YA FILTRADO por veredicto, que no es lo que el pase vivió
-    // (lo cazó el pase adversarial, 2026-09-20). Sólo se re-agrupa cuando el volcado es viejo y no lo trae.
+    // Sólo se re-agrupa cuando el volcado es viejo y no lo trae.
     if (typeof crudo.clases === 'number') {
       return { clases: crudo.clases, fuente: 'crudo', corrida: elegido.corrida, repo: elegido.repo, repo_confirmado: declaradoExiste };
     }
@@ -281,7 +281,7 @@ function medir(opts) {
   const diag = nuevoDiag();
   const pases = leerPases(buzon, diag);
   // Las rutas se usan enteras para BUSCAR en disco, pero lo que se DEVUELVE va acortado: el objeto
-  // de `medir()` es lo que sale por `--json` y lo consume otro script (SEC-W8, vuelta 2). Taparlo
+  // de `medir()` es lo que sale por `--json` y lo consume otro script (SEC-W8). Taparlo
   // sólo al renderizar la tabla no es taparlo.
   const repos = [...new Set([...(o.repos || []), ...pases.map((p) => p.repoPath).filter(Boolean)])];
   const reposPublicables = repos.map(corto);
@@ -400,9 +400,9 @@ function tabla(r) {
   return filas.join('\n');
 }
 
-// El criterio de agrupación vive en agent-skills, que se actualiza con otro pull: su archivo se busca por el nombre de
-// hoy y, si esa copia es anterior al renombre de la story 8.9, por el de antes —que sale del mapa de renombres, nunca
-// escrito acá (guides/maintaining/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el de hoy.
+// El criterio de agrupación vive en agent-skills, que se actualiza con otro pull: su archivo se busca por el nombre actual y,
+// si esa copia es anterior al renombre, por el nombre anterior —que sale del mapa de renombres, nunca
+// escrito acá (guides/maintaining/nombres-en-ingles.md, «Entre repos»)—. Sin mapa (la copia pública) sólo vale el actual.
 const CRITERIO = 'group-findings.js';
 const CARPETA_DEL_CRITERIO = ['skills', 'tycon-pipeline', 'scripts', 'lib'];
 /** La ruta del criterio en `dir` (default: el agent-skills de la máquina), o null si no está. */

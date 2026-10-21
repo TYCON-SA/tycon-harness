@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * build/deploy-codex-hooks.js — despliega adapters/codex/hooks.json a ~/.codex/hooks.json
- * con MERGE QUIRÚRGICO (Etapa E1, 2026-08-22). Lo invoca install-tycon-hooks.sh dentro del
+ * con MERGE QUIRÚRGICO. Lo invoca install-tycon-hooks.sh dentro del
  * bloque TYCON_CODEX=1; nunca corre solo en máquinas sin la llave.
  *
  * Filosofía = la del instalador de settings.json de Claude: lo que el dev escribió a mano en
@@ -28,27 +28,26 @@ const path = require('path');
 
 const TCG = path.resolve(__dirname, '..');
 // Resolución TOLERANTE (raíz O carpeta de skills — las dos semánticas conviven documentadas).
-// La variante «instalada», porque estas rutas quedan ESCRITAS en ~/.codex/hooks.json (story 8.18, hallazgo I12):
-// medido en laboratorio, con «el propio clon primero» los 10 comandos pasaban a apuntar al clon del arnés.
+// La variante «instalada», porque estas rutas quedan ESCRITAS en ~/.codex/hooks.json:
+// con «el propio clon primero» los comandos pasarían a apuntar al clon del arnés.
 const SKILLS = require(path.join(__dirname, '..', 'scripts', 'lib', 'skills-dir.js')).resolveInstalledSkillsDirs().repo;
 
 /**
  * El fragmento con `${TCG}` y `${SKILLS}` cambiados por las rutas de esta máquina, texto por texto.
  *
- * 🔴 POR QUÉ NO SOBRE EL JSON ENTERO (story 8.23, tanda C · 2026-10-07). Se reemplazaba en el fragmento ya serializado y
- * se volvía a leer: con una ruta de Windows (`C:\<carpeta de la persona>\.tycon\harness`) las barras invertidas caían SIN escapar
- * adentro de un texto de JSON y la lectura tiraba («Bad escaped character»): el despliegue de hooks de Codex fallaba
- * entero en cualquier Windows. Nadie lo había medido porque nadie corría Codex ahí. Reemplazando en cada texto, la ruta
- * entra tal cual y quien serializa después la escapa.
+ * 🔴 POR QUÉ NO SOBRE EL JSON ENTERO. Reemplazar en el fragmento ya serializado y volver a leerlo falla: con una ruta de
+ * Windows (`C:\<carpeta de la persona>\.tycon\harness`) las barras invertidas caen SIN escapar adentro de un texto de JSON
+ * y la lectura tira («Bad escaped character»), y el despliegue de hooks de Codex falla entero en cualquier Windows.
+ * Reemplazando en cada texto, la ruta entra tal cual y quien serializa después la escapa.
  */
 function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {}) {
-  // story 8.39 (AC 7): un comando del arnés que arranca con `node ` sale con el intérprete que decide
+  // un comando del arnés que arranca con `node ` sale con el intérprete que decide
   // harness-node.js#interpreter MIRANDO EL DISCO (el Node propio del arnés, o `node`): la misma regla que el aplicador de
   // Claude Code, así quien despliega y quien audita (harness-parity.js, que llama a esta función) no se contradicen
   const prefix = (interp && interp.prefix) || 'node';
   const withInterp = (orig, str) => (prefix !== 'node' && /^node \$\{(?:TCG|SKILLS)\}/.test(orig) ? `${prefix}${str.slice('node'.length)}` : str);
   // una ruta con espacio («C:\\Users\\Nombre Apellido»): el trozo del comando que la lleva va entre comillas dobles, si no el
-  // hook queda escrito y no corre nunca (pase adversarial de la C, clase 18)
+  // hook queda escrito y no corre nunca
   const quoted = (str, name, value) => {
     if (!/\s/.test(value)) return str.split(name).join(value);
     return str.replace(new RegExp(`(\\S*)${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\S*)`, 'g'), (m0, pre, post) => (pre.startsWith('"') ? m0.split(name).join(value) : `"${pre}${value}${post}"`));
@@ -62,7 +61,7 @@ function substitute(fragment, tcg, skills, { interp = harnessInterpreter() } = {
   return walk(fragment);
 }
 
-/** El intérprete de los hooks `.js` de esta máquina (story 8.39), o `node` si el módulo no está (un árbol viejo). */
+/** El intérprete de los hooks `.js` de esta máquina o `node` si el módulo no está (un árbol viejo). */
 function harnessInterpreter(env = process.env) {
   try { return require(path.join(TCG, 'scripts', 'setup', 'harness', 'harness-node.js')).interpreter({ tree: TCG, env }); } catch (e) {
     // sólo si lo que falta es el propio harness-node.js (árbol viejo); si falta algo que él pide, se dice
@@ -71,21 +70,20 @@ function harnessInterpreter(env = process.env) {
   }
 }
 
-// ── Qué hooks del fragmento registra ESTA máquina (DEF-8.23-C-hooks-codex-sin-integracion, 2026-10-09) ────────────────
-// El fragmento trae TODOS los hooks del lado Codex, y hasta acá se desplegaba entero: con una integración apagada, sus
-// hooks (los de engram, Clockify y los nocturnos) quedaban registrados en Codex igual. Del lado Claude Code no, porque
-// el aplicador (scripts/setup/apply-hooks.js) decide cada uno por el `when` de scripts/setup/hooks-list.json. Visto en el
-// nocturno 12518: con Codex enchufado en la máquina limpia, doctor corrió engram-pre-commit.sh con engram apagada.
-// Ahora la decisión es la MISMA del aplicador (`decide`, con la configuración leída por `readConfig`) y la usan quien
+// ── Qué hooks del fragmento registra ESTA máquina ────────────────────────────────────────────────────────────────────
+// El fragmento trae TODOS los hooks del lado Codex. Desplegado entero, con una integración apagada sus hooks (los de
+// engram, Clockify y los nocturnos) quedarían registrados en Codex igual. Del lado Claude Code no, porque el aplicador
+// (scripts/setup/apply-hooks.js) decide cada uno por el `when` de scripts/setup/hooks-list.json.
+// La decisión es la MISMA del aplicador (`decide`, con la configuración leída por `readConfig`) y la usan quien
 // despliega y quien audita (scripts/lib/harness-parity.js): no pueden mirar listas distintas.
 //   · sólo se filtran los hooks de una integración (`when: integration:*`); lo de siempre, los opt-in y el perfil siguen
-//     como estaban en Codex (fuera del alcance de esta deuda). Por eso se decide como en Mac y Linux en las dos
-//     plataformas: lo que Windows excluye por `platforms.windows` tampoco es de esta deuda.
+//     como están en Codex. La decisión es la misma de Mac y Linux en las dos
+//     plataformas: lo que Windows excluye por `platforms.windows` tampoco se filtra acá.
 //   · el barrido de Clockify no está en la lista (del lado Claude Code no lo registra el aplicador): su integración va en
 //     NOT_IN_HOOKS_LIST. El hook de CodeGraph tampoco está, y NO se filtra: del lado Claude Code lo registra
-//     install-codegraph.sh sin mirar la llave `codegraph`, que es informativa y el perfil del equipo no trae (revisión
-//     independiente de este arreglo: atarlo a la llave lo sacaba de Codex a quien tiene CodeGraph instalado).
-//   · sin el aplicador o la lista al lado (este archivo copiado suelto a un laboratorio): como antes, todo el fragmento.
+//     install-codegraph.sh sin mirar la llave `codegraph`, que es informativa y el perfil del equipo no trae (atarlo a
+//     la llave lo sacaría de Codex a quien tiene CodeGraph instalado).
+//   · sin el aplicador o la lista al lado (este archivo copiado suelto a un laboratorio): todo el fragmento.
 //     Con la configuración rota o ilegible, también todo, y se dice: el aplicador tampoco toca nada en ese caso.
 const NOT_IN_HOOKS_LIST = Object.freeze({
   'clocki/scripts/sweep.js': 'integration:clockify',
@@ -152,12 +150,11 @@ function activeFragment(raw, { env = process.env, tcg = TCG } = {}) {
 /**
  * Las formas de los comandos del fragmento, con ${TCG} y ${SKILLS} como "cualquier ruta".
  *
- * 🔴 POR QUÉ (2026-09-15). La propiedad se detectaba sólo por la ruta de ESTE clon. Corrido desde
+ * 🔴 POR QUÉ. Detectar la propiedad sólo por la ruta de ESTE clon no alcanza. Corrido desde
  * una copia temporal (las sesiones trabajan en clones descartables para no pisar el checkout
- * compartido), las entradas de la ruta real parecían ajenas: se conservaban y se sumaban las de la
- * copia. Medido en la máquina del admin: cada hook del arnés registrado hasta seis veces, tres de
- * ellas apuntando a copias que ya no existían — Codex corría cada aviso varias veces y algunas
- * fallaban, sin error visible. Con las formas, un hook del arnés se reconoce venga de la ruta que
+ * compartido), las entradas de la ruta real parecerían ajenas: se conservarían y se sumarían las de la
+ * copia, y cada hook del arnés quedaría registrado varias veces, algunas apuntando a copias que ya
+ * no existen — Codex correría cada aviso varias veces y algunas fallarían, sin error visible. Con las formas de cada comando, un hook del arnés se reconoce venga de la ruta que
  * venga, y el próximo despliegue desde el clon de siempre limpia lo que dejaron las copias.
  */
 function plantillas(fragmentoCrudo) {
@@ -167,7 +164,7 @@ function plantillas(fragmentoCrudo) {
     if (Array.isArray(x)) return x.forEach(recorrer);
     if (!x || typeof x !== 'object') return;
     if (typeof x.command === 'string' && /\$\{(TCG|SKILLS)\}/.test(x.command)) {
-      // story 8.39 (AC 7): el `node` del principio puede estar escrito como la ruta del Node del arnés, con o sin comillas
+      // el `node` del principio puede estar escrito como la ruta del Node del arnés, con o sin comillas
       const head = /^node /.test(x.command) ? '(?:node|[^\\s"]*/node(?:\\.exe)?|"[^"]*/node(?:\\.exe)?") ' : '';
       const body = head ? x.command.slice('node '.length) : x.command;
       out.push(new RegExp('^' + head + body.split(/\$\{(?:TCG|SKILLS)\}/).map(escapar).join('\\S+') + '$'));
@@ -182,8 +179,7 @@ function isTycon(command, tcg, skills, formas = []) {
   const c = String(command);
   if (c.includes(tcg) || c.includes(skills) || formas.some((re) => re.test(c))) return true;
   // Un hook que apunta a scripts de una copia temporal tampoco es configuración del dev, aunque el
-  // arnés ya no lo tenga: lo dejó un despliegue desde una copia (medido el mismo día, con otra sesión
-  // desplegando desde su clon viejo mientras se limpiaba la máquina).
+  // arnés ya no lo tenga: lo dejó un despliegue desde una copia.
   const ruta = (c.match(/(\/\S*\/(?:scripts|skills)\/\S+)/) || [])[1];
   return Boolean(ruta) && enCarpetaTemporal(ruta);
 }
@@ -196,7 +192,7 @@ function isTycon(command, tcg, skills, formas = []) {
 function enCarpetaTemporal(p) {
   // Una ruta que todavía no existe se resuelve por su antepasado más cercano que sí: en macOS las
   // carpetas temporales viven detrás de un enlace (/var → /private/var), y sin esto un destino
-  // nuevo parecía no temporal.
+  // nuevo parecería no temporal.
   const real = (x) => {
     let actual = path.resolve(x), resto = [];
     for (;;) {
@@ -253,7 +249,7 @@ function selftest() {
     ['las claves top-level del dev quedan', m1.otra_clave_del_dev === true],
     ['idempotente: merge(merge(x)) === merge(x)', JSON.stringify(merge(m1, frag, tcg, skills)) === flat],
     ['sustitución de ${TCG}/${SKILLS}', JSON.stringify(substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/a ${SKILLS}/b' }] }] } }, tcg, skills)).includes('/x/tcg/a /x/skills/b')],
-    // story 8.23 (tanda C): una ruta de Windows no rompe el fragmento, y lo desplegado se vuelve a leer con la ruta entera
+    // una ruta de Windows no rompe el fragmento, y lo desplegado se vuelve a leer con la ruta entera
     ['sustitución con una ruta de Windows (barras invertidas): no tira y la ruta queda entera', (() => {
       const win = 'C:\\Users\\dev\\.tycon\\harness';
       let out;
@@ -267,7 +263,7 @@ function selftest() {
       const once = merge(null, f, win, win);
       return JSON.stringify(merge(once, f, win, win)) === JSON.stringify(once) && once.hooks.X.length === 1;
     })()],
-    // story 8.39 (AC 7): con el Node del arnés, el `node` del principio sale con su ruta; lo demás del comando igual
+    // con el Node del arnés, el `node` del principio sale con su ruta; lo demás del comando igual
     ['con el Node del arnés, node ${TCG}/… sale con su ruta y bash ${TCG}/… no cambia', (() => {
       const own = { prefix: '/h/.tycon/node/current/bin/node' };
       const out = substitute({ hooks: { X: [{ hooks: [{ command: 'node ${TCG}/scripts/hooks/a.js' }, { command: 'bash ${TCG}/scripts/hooks/b.sh' }] }] } }, tcg, skills, { interp: own });

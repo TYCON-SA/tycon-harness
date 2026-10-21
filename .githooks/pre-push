@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# .githooks/pre-push — el freno antes de publicar, para un clon con carpeta de hooks propia (story 8.26, tanda F1).
+# .githooks/pre-push — el freno antes de publicar, para un clon con carpeta de hooks propia.
 #
 # En una máquina con el arnés instalado git corre el pre-push GLOBAL (scripts/hooks/git-pre-push-global.sh, que el
 # instalador deja en ~/.git-hooks): con `core.hooksPath` global este archivo no lo llama nadie. Está para el otro caso:

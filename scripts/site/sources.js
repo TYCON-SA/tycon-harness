@@ -1,8 +1,8 @@
 'use strict';
 /*
- * sources.js — LAS FUENTES DEL SITIO DE LA ORGANIZACIÓN Y SU REFRESCO (story 2.23, AC 13 a 16; decisiones 16, 17, 20, 21).
+ * sources.js — LAS FUENTES DEL SITIO DE LA ORGANIZACIÓN Y SU REFRESCO.
  *
- * El sitio lee directo de DOS fuentes (S7), con credenciales de sólo lectura:
+ * El sitio lee directo de DOS fuentes, con credenciales de sólo lectura:
  *   · el REPO DE OPERACIONES, de `main`: un clon superficial en una carpeta del disco del contenedor (no en
  *     `SITE_DATA_DIR`: un disco de red montado por SMB no admite el `chmod` que git hace al clonar; el clon
  *     se vuelve a armar en cada arranque) y `git fetch` en cada refresco. La credencial va en una cabecera pasada por variables de git (`GIT_CONFIG_*`, el patrón de `gitAuth` del
@@ -10,10 +10,10 @@
  *   · el BUZÓN de corridas, con `bajar()` de scripts/metrics/download-runs.js y la credencial que da la plataforma —una SAS
  *     de sólo lectura, o la identidad administrada (cloud/)—. Se bajan los volcados y los registros; las conversaciones
  *     y los cambios de git, SÓLO con `site.mailbox.threads: true` y un disco del sitio (`SITE_DATA_DIR`), para el detalle
- *     de la pestaña Corridas (story 2.27, decisión 11). La bajada es incremental: lo que ya está en el disco no se vuelve a
+ *     de la pestaña Corridas. La bajada es incremental: lo que ya está en el disco no se vuelve a
  *     bajar. Esos textos sólo salen por `modelo()` de runs.js, saneados y filtrados por persona (G3).
  *
- * EL MODELO se arma en el servidor con LISTA BLANCA campo por campo (decisión 19): de cada foto se copian cantidades,
+ * EL MODELO se arma en el servidor con LISTA BLANCA campo por campo: de cada foto se copian cantidades,
  * fechas, días, nombres de producto, proyecto y repo, números con su enlace, y estados. Nada de texto libre: los títulos,
  * los diagnósticos y los mensajes no llegan al modelo, así que tampoco a una vista. Cada fuente lleva
  * `{ estado: 'medido' | 'no_medido', codigo, fecha }`; `codigo` es de una lista cerrada (`sin_red`, `sin_permiso`,
@@ -25,23 +25,23 @@
  * lo reemplaza. Una fuente que falla deja su último bueno y una banda «no se pudo actualizar desde <hora>: <estado>»; una
  * foto más vieja que su `max_age_days` (sources.json del repo de operaciones, o el del arnés) sale `fuente_vieja`.
  *
- * operations.json TIENE SU PROPIA REGLA (decisión 17; 2.28 decisión 6): si un refresco no lo puede leer o no valida, vale
+ * operations.json TIENE SU PROPIA REGLA: si un refresco no lo puede leer o no valida, vale
  * el último bueno 24 horas desde el PRIMER refresco fallido, con una banda sólo para quienes mantienen; pasado el plazo,
  * el sitio se FRENA para todos. Sin último bueno, el freno es inmediato. El último bueno y la hora de la primera falla se
  * guardan en `SITE_DATA_DIR` (escritura atómica), así despertar o reiniciar no vuelve a empezar el plazo. La cuenta la
  * hace `estadoDeLaConfiguracion` de scripts/lib/people.js: el sitio no tiene otra (`estadoDelSitio` la traduce a la
  * banda y al freno).
  *
- * LO QUE QUEDA FUERA DEL MODELO (2.28): lo que cada máquina informa en su place.json (el correo de su dev) y la lista de
+ * LO QUE QUEDA FUERA DEL MODELO: lo que cada máquina informa en su place.json (el correo de su dev) y la lista de
  * repos.json. Los usa la regla de quién es quién (access.js → people.js), pero el modelo va entero a quien mantiene: con
  * los correos adentro, una pantalla podría mostrarlos. Viajan aparte, en `personas()`.
  *
- * EL PERFIL DEL EQUIPO (story 2.29, decisión 11): con `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN`, un clon igual, al
+ * EL PERFIL DEL EQUIPO: con `SITE_PROFILE_REPO` y `SITE_PROFILE_TOKEN`, un clon igual, al
  * lado del de operaciones y por el mismo camino, para que la pestaña Configuración lea `team-repos.json` y `team-layer.json`.
  * Sin esas variables, no hay clon y la sección dice «no configurado». Un perfil que no se baja no frena nada: lo dice el
  * registro y su estado.
  *
- * EL CANDADO (story 2.29, AC 14): `exclusivo(fn)` corre `fn` sin otro trabajo de git sobre los clones en el medio. El
+ * EL CANDADO: `exclusivo(fn)` corre `fn` sin otro trabajo de git sobre los clones en el medio. El
  * refresco pasa por ahí, y la propuesta de la pestaña también: así un refresco no hace `reset --hard` mientras se arma un
  * commit, y un commit no ve un clon a medio bajar.
  *
@@ -72,7 +72,7 @@ function correr(cmd, args, { cwd, env, timeout = 180000 } = {}) {
 
 const DIA = 86400000;
 const PLAZO_CONFIG_MS = people.PLAZO_MS;
-// la edad de la copia de operaciones que todavía no cuenta como falla (decisión 7)
+// la edad de la copia de operaciones que todavía no cuenta como falla
 const PLAZO_COPIA_MS = 24 * 3600000;
 const REFRESCO_POR_DEFECTO = 15;
 const EDAD_MAXIMA_SIN_DECLARAR = 2;
@@ -82,7 +82,7 @@ const ARCHIVO_ESTADO = 'configuracion-estado.json';
 const TOPE_CONVERSACIONES_BYTES = 300 * 1024 * 1024;
 const SOURCES_DEL_ARNES = path.join(__dirname, '..', 'nightly', 'dashboard', 'sources.json');
 
-/** La regla de operations.json: la de people.js, la única (AC 10 de la 2.28). */
+/** La regla de operations.json: la de people.js, la única. */
 const { estadoDeLaConfiguracion } = people;
 
 /**
@@ -121,7 +121,7 @@ function leerJsonDe(ruta) {
 const leerJson = (ruta) => leerJsonDe(ruta).doc || null;
 
 /**
- * 🔴 Lo que se lee del clon tiene que estar ADENTRO del clon (revisión de seguridad de la 2.23): quien escribe el repo de
+ * 🔴 Lo que se lee del clon tiene que estar ADENTRO del clon: quien escribe el repo de
  * operaciones podría dejar un enlace simbólico a un archivo del servidor —las variables del proceso, con los secretos— o
  * un `dir` con `..` en sources.json. El clon se baja con `core.symlinks=false` y, además, cada lectura resuelve la ruta
  * real y exige que quede bajo la raíz real del clon.
@@ -135,7 +135,7 @@ function dentroDe(raiz, ruta) {
 }
 
 /**
- * El clon de escritura de operaciones con la copia (decisión 8): un repo vacío con `origin` en `url`, donde
+ * El clon de escritura de operaciones con la copia: un repo vacío con `origin` en `url`, donde
  * «Proponer» trae `main` fresco y arma su commit. Nunca es la carpeta de la foto. `{ dir }` o `{ motivo }`.
  */
 function prepararClonDeEscritura({ dir, url, git = 'git' }) {
@@ -210,14 +210,14 @@ function leerCorridas(dirBuzon) {
   const r = runs.leerRegistro(sinLocal, nombres, { buzon: dirBuzon, maquina: null });
   // el motivo (que nombra la carpeta) viaja sólo para el registro: quien llama lo saca antes del modelo
   if (!r.buzon || r.buzon.estado !== 'leido') return { ...noMedida('ilegible'), _motivo: r.buzon ? String(r.buzon.motivo || r.buzon.estado) : 'sin lectura del buzón' };
-  // `producto` (la carpeta del volcado, `<padre>/<repo>`) es lo que usa «dónde trabaja» (2.28) para ubicar la corrida: el
+  // `producto` (la carpeta del volcado, `<padre>/<repo>`) es lo que usa «dónde trabaja» para ubicar la corrida: el
   // sitio no baja los cambios de git (G3), así que no hay repo de la plataforma del cambio. `carpeta` es la carpeta real
-  // del volcado: `maquina` ya viene unida a la nueva, y people.js vuelve a juzgar la unión desde la vieja (pase adversarial)
+  // del volcado: `maquina` ya viene unida a la nueva, y people.js vuelve a juzgar la unión desde la vieja
   return fuente('medido', null, null, { lista: r.corridas.map((c) => ({ maquina: texto(c.maquina, 80), carpeta: texto(c.maquina_origen, 80), inicio: texto(c.inicio, 40), producto: texto(c.producto, 200) })) });
 }
 
 /**
- * La lista de repos.json para «dónde trabaja» (2.28): sólo producto, ruta y repo de la plataforma, de las entradas
+ * La lista de repos.json para «dónde trabaja»: sólo producto, ruta y repo de la plataforma, de las entradas
  * activas (como los productos del modelo). `{ repos, motivo }`: sin lista, el motivo dice por qué — no es «no hay repos».
  */
 function leerRepos(clon) {
@@ -236,7 +236,7 @@ function leerRepos(clon) {
 
 const FORMA_CARPETA = /^[a-z0-9][a-z0-9._-]{0,80}$/;
 const ESTADOS_CARPETA = new Set(['unida', 'compartida', 'siguio_recibiendo']);
-/** `.carpetas-de-maquina.json` (2.28), con lista blanca: nombres con forma de carpeta, estados conocidos, números, fechas. */
+/** `.carpetas-de-maquina.json`, con lista blanca: nombres con forma de carpeta, estados conocidos, números, fechas. */
 function carpetasProyectadas(doc) {
   if (!isObject(doc) || !isObject(doc.carpetas)) return null;
   const carpetas = {};
@@ -379,7 +379,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   if (repos.doc && Array.isArray(repos.doc.repos)) m.productosFuente = fuente('medido', null, hoy);
   else { m.productosFuente = noMedida(repos.doc ? 'ilegible' : repos.codigo); log(`repos.json del repo de operaciones: ${m.productosFuente.codigo}`); }
 
-  // fotos por proyecto (2.20): cada una con su antigüedad (2 días); una vieja no cuenta como al día, una ilegible se nombra
+  // fotos por proyecto: cada una con su antigüedad (2 días); una vieja no cuenta como al día, una ilegible se nombra
   const dirProy = path.join(dash, 'proyectos');
   const proyectos = [];
   let fechaProy = null;
@@ -404,7 +404,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     if (e.code !== 'ENOENT') log(`la carpeta de fotos por proyecto no se pudo leer (${e.code || e.message})`);
   }
 
-  // despliegues (2.22): de cada producto, estados y fechas; el motivo sólo si es un código (nunca una frase)
+  // despliegues: de cada producto, estados y fechas; el motivo sólo si es un código (nunca una frase)
   const desp = foto('deployments', 'deployments-*.json');
   if (desp.ok) {
     const productos = {};
@@ -422,7 +422,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
     m.despliegues = fuente('medido', null, desp.fecha, { productos });
   } else m.despliegues = desp.fuente;
 
-  // lo que deja la noche para el sitio: pull requests y pedidos asignados (decisión 20)
+  // lo que deja la noche para el sitio: pull requests y pedidos asignados
   const prs = foto('open-prs', 'open-prs-*.json');
   if (prs.ok && prs.doc.estado === 'medido' && Array.isArray(prs.doc.prs)) {
     m.prs = fuente('medido', null, prs.fecha, { lista: prs.doc.prs.filter(isObject).map((p) => ({ numero: num(p.numero), proyecto: texto(p.proyecto), repo: texto(p.repo), dias: num(p.dias), autor: texto(p.autor, 200), enlace: enlace(p.enlace) })) });
@@ -436,7 +436,7 @@ function construirDesdeClon(clon, { ahora = Date.now(), corridas = noMedida('sin
   } else if (asig.ok && asig.doc.estado === 'medido') { m.pedidos = noMedida('ilegible', asig.fecha); log(`la foto de pedidos asignados del ${asig.fecha} dice medido y no trae la lista`); }
   else m.pedidos = asig.ok ? noMedida('no_medido_noche', asig.fecha) : asig.fuente;
 
-  // la paridad de los productos (2.25, su AC 12): el archivo de HOY, y de él sólo las cantidades por repo de `por_ruta`.
+  // la paridad de los productos: el archivo de HOY, y de él sólo las cantidades por repo de `por_ruta`.
   // `divergencias[]` —el texto del rasgo y qué productos lo tienen— no entra al modelo.
   const MOTIVOS_PARIDAD = new Set(['sin_clon', 'ilegible', 'grupo_sin_comparar', 'declaracion_incompleta']);
   const par = fs.existsSync(path.join(dash, 'paridad')) && !dentroDe(clon, path.join(dash, 'paridad')) ? { codigo: 'ilegible' } : ultimaFoto(path.join(dash, 'paridad'), 'paridad-*.json', clon);
@@ -495,7 +495,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   topeConversacionesBytes = TOPE_CONVERSACIONES_BYTES, resumir = (o) => require('./summaries.js').resumirEnWorker({ ...o, skillsDir: process.env.TYCON_SKILLS_DIR || null }),
   leerEspejo = (o) => require('./summaries.js').leerEspejoEnWorker(o), calcularFichasEn = (o) => require('./summaries.js').fichasEnWorker(o), almacenCopia = null, urlCopia = null }) {
   // 🔴 todo lo que este módulo registra puede traer texto del repo de operaciones o del buzón (valores de operations.json,
-  //    stderr de git, nombres de archivo): sale sin caracteres de control (revisión de seguridad de la 2.23, vuelta 2)
+  //    stderr de git, nombres de archivo): sale sin caracteres de control
   const log = (l) => logCrudo(limpiarLinea(l));
   if (!dataDir) throw new Error('crearFuentes necesita SITE_DATA_DIR o una carpeta temporal');
   // los clones, en el disco del contenedor y nunca en SITE_DATA_DIR: git hace chmod al clonar, y un disco montado por
@@ -508,14 +508,14 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   const dirCopias = path.join(dataDir, 'operaciones-copia');
   const dirBuzon = path.join(dataDir, 'buzon');
   const dirPerfil = path.join(raizClones, 'perfil');
-  // el candado de los clones (AC 14 de la 2.29): una cola de promesas; un trabajo que falla no traba a los siguientes
+  // el candado de los clones: una cola de promesas; un trabajo que falla no traba a los siguientes
   let cola = Promise.resolve();
   const exclusivo = (fn) => { const p = cola.then(() => fn()); cola = p.catch(() => {}); return p; };
   const rutaEstado = path.join(dataDir, ARCHIVO_ESTADO);
-  // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva (2.28) — lo informado por cada máquina
+  // `personas`: lo que la regla de quién es quién necesita y el modelo NO lleva — lo informado por cada máquina
   // (de la última bajada entera del buzón) y la lista de repos.json
   const st = { perfil: cfg.profileRepo ? { estado: 'pendiente', motivo: 'el perfil del equipo todavía se está bajando' } : { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }, cargado: false, ultimoBueno: null, fallaDesde: null, fallaMotivo: null, fallaRutas: null, frenado: null, bandaConfig: null, modelo: null, personas: { informados: null, repos: null }, fallas: { repo: null, buzon: null }, hilos: false, buzon: { completo: false, generacion: 0, seguir: false }, copia: null, copiaHora: null };
-  // story 2.27: quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
+  // quien quiere saber que el refresco terminó (la pestaña Corridas rearma su vista si el espejo cambió)
   const oyentes = [];
   let temporizador = null;
   let enCurso = null;
@@ -555,7 +555,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     try { origen = new URL(url).origin; } catch { /* una ruta local (las pruebas): sin cabecera */ }
     const conf = [['core.symlinks', 'false'], ['credential.helper', '']];
     if (origen && cab) conf.push([`http.${origen}/.extraheader`, `Authorization: ${cab}`]);
-    // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita (revisión de seguridad de la 2.29)
+    // las variables del sitio (sus credenciales) no viajan al proceso git: no las necesita
     const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^SITE_/.test(k))), GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_COUNT: String(conf.length) };
     conf.forEach(([k, v], i) => { env[`GIT_CONFIG_KEY_${i}`] = k; env[`GIT_CONFIG_VALUE_${i}`] = v; });
     return spawn(git, args, { cwd, env, timeout: 180000 });
@@ -610,7 +610,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     return actualizarClon({ url: cfg.operationsRepo, dir: clon, cab: cab.valor, nombre: 'repo de operaciones' });
   }
 
-  // el perfil del equipo (story 2.29): sólo con SITE_PROFILE_REPO y su credencial; nunca frena el refresco
+  // el perfil del equipo: sólo con SITE_PROFILE_REPO y su credencial; nunca frena el refresco
   async function actualizarPerfil() {
     if (!cfg.profileRepo || !cfg.profileCredencial || !cfg.profileCredencial.token) { st.perfil = { estado: 'sin_configurar', motivo: 'no configurado: faltan SITE_PROFILE_REPO y SITE_PROFILE_TOKEN' }; return; }
     const cab = `Basic ${Buffer.from(`x-access-token:${cfg.profileCredencial.token}`).toString('base64')}`;
@@ -621,10 +621,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
   }
 
   // ── operations.json ────────────────────────────────────────────────────────────────────────────────────────────
-  // La banda de quienes mantienen trae las RUTAS de los problemas (AC 15); el texto entero —que puede repetir un valor del
-  // archivo, como un correo— va sólo al registro (revisión de seguridad de la 2.23).
+  // La banda de quienes mantienen trae las RUTAS de los problemas; el texto entero —que puede repetir un valor del
+  // archivo, como un correo— va sólo al registro.
   /**
-   * La falla que cuenta para la banda y el freno: la de operations.json y, con la copia, su edad (decisión 7). Una copia
+   * La falla que cuenta para la banda y el freno: la de operations.json y, con la copia, su edad. Una copia
    * de más de 24 horas cuenta como una falla desde sus 24 horas: la banda enseguida y el freno a las 48, con la misma
    * cuenta de `estadoDeLaConfiguracion`.
    */
@@ -699,7 +699,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       st.fallas.buzon = st.fallas.buzon || { desde: t, estado: 'sin_configurar' };
       return previo && previo.estado === 'medido' ? previo : noMedida('sin_configurar');
     }
-    // story 2.27 (decisión 11): las conversaciones y los cambios de git se bajan SÓLO con `site.mailbox.threads: true` y
+    // las conversaciones y los cambios de git se bajan SÓLO con `site.mailbox.threads: true` y
     // un disco del sitio (SITE_DATA_DIR): pesan casi un giga, y sin disco se volverían a bajar enteros en cada despertar
     const conHilos = mb.threads === true && Boolean(cfg.dataDir);
     if (mb.threads === true && !cfg.dataDir) log('site.mailbox.threads está en true pero SITE_DATA_DIR no está puesta: no se bajan las conversaciones (sin un disco del sitio se bajarían enteras en cada despertar)');
@@ -723,10 +723,10 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     }
     const est = r.res.estado;
     // 🔴 «leído entero» lo dice `completo` (download-runs.js), no el estado: 'bajado' también sale con el presupuesto agotado
-    // story 2.27 (pase adversarial): la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
+    // la pestaña Corridas arma SÓLO con una bajada entera, la misma que fija lo informado
     // por las máquinas; con una a medias, la foto del espejo y la de quién es quién no serían la misma
     st.buzon.completo = r.codigo === 0 && r.res.completo === true;
-    // la pasada cortó por TIEMPO pero avanzó (hotfix 2026-10-16): la siguiente va enseguida y retoma donde quedó, en vez de
+    // la pasada cortó por TIEMPO pero avanzó: la siguiente va enseguida y retoma donde quedó, en vez de
     // esperar el refresco de los minutos de siempre. Sin avance, no: sería un lazo.
     st.buzon.seguir = r.codigo === 0 && !st.buzon.completo && r.res.sin_tiempo > 0 && r.res.bajados > 0;
     if (st.buzon.seguir) log(`buzón: la pasada cortó ${r.res.por_tope ? 'por el tope de conversaciones' : 'por tiempo'} con ${r.res.sin_tiempo} archivo(s) pendientes; la siguiente sigue enseguida`);
@@ -809,7 +809,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     else log(`dónde trabaja cada uno: ${repos.motivo}${st.personas.repos ? '; queda la última lista buena' : ''}`);
     // el perfil del equipo antes que el buzón: es un clon chico, y la pestaña Configuración no espera a las corridas
     await actualizarPerfil();
-    // la espera es POR FUENTE (2026-10-16): con el repo leído, el sitio ya se navega; lo lento es el buzón. Hasta la primera
+    // la espera es POR FUENTE: con el repo leído, el sitio ya se navega; lo lento es el buzón. Hasta la primera
     // lectura del buzón, las corridas dicen «cargando» (nunca cero), y sólo la pestaña Corridas espera
     if (!st.modelo) st.modelo = construir({ corridas: noMedida('cargando'), carpetas: null, t });
     st.navegable = true;
@@ -855,7 +855,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       const fallas = [st.fallas.repo, st.fallas.buzon].filter(Boolean);
       const banda = fallas.length ? { desde: Math.min(...fallas.map((f) => f.desde)), estado: fallas[0].estado } : null;
       // el freno se cuenta con la hora de CADA pedido, no sólo al refrescar: si el repo deja de bajarse después del
-      // primer fallo, el sitio igual se frena a las 24 horas (revisores de la 2.28)
+      // primer fallo, el sitio igual se frena a las 24 horas
       if (st.cargado && (st.fallaDesde !== null || conCopia)) recontar(ahora());
       // `navegable`: ya se leyó el repo de operaciones (el sitio se navega); `cargado`: además, el buzón (lo que espera /readyz)
       return { cargado: st.cargado, navegable: Boolean(st.navegable) || st.cargado, frenado: st.frenado, bandaConfig: st.bandaConfig, bandaRefresco: banda };
@@ -866,7 +866,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     personas: () => st.personas,
     detener() { if (temporizador) clearTimeout(temporizador); temporizador = null; },
     /**
-     * Los clones que lee la pestaña Configuración (2.29): `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.
+     * Los clones que lee la pestaña Configuración: `{ operaciones: { dir } | null, perfil: { dir, estado, motivo } | null }`.
      * Con la copia, `operaciones` es la carpeta de la foto, sin git, y trae su índice (`{ dir, indice }`).
      */
     clones: () => ({
@@ -877,7 +877,7 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
     clonDeEscritura: conCopia ? () => prepararClonDeEscritura({ dir: path.join(raizClones, 'operaciones-escritura'), url: cfg.operationsRepo, git }) : undefined,
     exclusivo,
     dirBuzon,
-    /** Story 2.27: ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
+    /** ¿la última bajada entera del espejo trajo las conversaciones y los cambios de git? */
     hilos: () => st.hilos,
     /**
      * El detalle a demanda: la conversación y el cambio de git de UNA corrida (`maquina`, `base`: el volcado sin
@@ -890,12 +890,12 @@ function crearFuentes({ cfg, dataDir, dirClones = null, log: logCrudo = () => {}
       if (!mb || !nube || typeof nube.bajarUnaCorrida !== 'function' || !cfg.mailboxCredencial) return { codigo: 1, res: { estado: 'sin_configurar', motivo: 'el buzón no está configurado en el sitio' } };
       return nube.bajarUnaCorrida({ cuenta: mb.account, contenedor: mb.container, credencial: cfg.mailboxCredencial, urlBase: urlBuzon, maquina, base, dir });
     },
-    /** Story 2.27: ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
+    /** ¿la ÚLTIMA bajada del buzón terminó entera?, y cuántas enteras hubo (la pestaña arma con una entera). */
     // `siguiendo`: la última pasada cortó por tiempo y la siguiente ya está en camino (la pestaña dice «cargando»)
     buzonEstado: () => ({ completo: st.buzon.completo, generacion: st.buzon.generacion, siguiendo: st.buzon.seguir }),
     /** En cuántos ms va el próximo refresco (las pruebas lo miran). */
     proximoRefrescoMs,
-    /** Story 2.27: `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
+    /** `fn` corre al terminar cada refresco (la pestaña Corridas mira si el espejo cambió). */
     alRefrescar(fn) { oyentes.push(fn); },
   };
 }

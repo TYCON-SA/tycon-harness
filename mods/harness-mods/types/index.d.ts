@@ -1,4 +1,4 @@
-// El contrato del estado del plugin harness-mods (story 7.27): lo que el motor guarda por sesión.
+// El contrato del estado del plugin harness-mods: lo que el motor guarda por sesión.
 
 export type BoardRow = { id: string; name: string; state: string; minutes: number | null }
 

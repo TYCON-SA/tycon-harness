@@ -1,30 +1,30 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * server.js — EL SITIO DE LA ORGANIZACIÓN (story 2.23).
+ * server.js — EL SITIO DE LA ORGANIZACIÓN.
  *
  * Un servidor Node sin dependencias, en Docker o con Node solo, para toda la organización: cada persona entra con la
- * cuenta de su organización y ve lo suyo; quienes mantienen el arnés ven todo. El filtro lo hace el servidor (S6): la
+ * cuenta de su organización y ve lo suyo; quienes mantienen el arnés ven todo. El filtro lo hace el servidor: la
  * pantalla nunca recibe lo que no puede ver.
  *
- * LA TABLA DE RUTAS es el único camino de los datos (AC 11). Cada ruta declara quién puede verla (`needs`:
+ * LA TABLA DE RUTAS es el único camino de los datos. Cada ruta declara quién puede verla (`needs`:
  * 'maintainer', 'person') y recibe el modelo YA FILTRADO por access.js para quien pide. Una ruta sin esa declaración
- * hace que el sitio NO ARRANQUE. Una ruta puede tener parámetros (`/api/corridas/:id`, story 2.27): llegan en
+ * hace que el sitio NO ARRANQUE. Una ruta puede tener parámetros (`/api/corridas/:id`): llegan en
  * `ctx.params`, y la ruta sigue declarando quién la ve. Las únicas rutas sin sesión son la vida (`/livez`), la salud (`/healthz`), la carga
  * (`/readyz`), el inicio de sesión (`/auth/*`) y los dos archivos estáticos.
  *
  *   /livez    200 {"ok":true} mientras el proceso escucha; nada más (la sonda de vida y el HEALTHCHECK de la imagen).
  *   /healthz  200 {"ok":true}, también mientras carga; 503 {"ok":false,"motivo":…} sólo con el sitio FRENADO por la
- *             configuración de la organización (AC 15). El motivo nunca nombra direcciones, hosts, rutas ni cuentas; dice
+ *             configuración de la organización. El motivo nunca nombra direcciones, hosts, rutas ni cuentas; dice
  *             desde cuándo no valida (el primer refresco fallido), y la página del freno, desde cuándo está frenado.
  *   /readyz   503 con Retry-After hasta la primera lectura de las fuentes; después 200 (también frenado).
  *   /idioma   POST: cambia el idioma de las páginas, con y sin sesión, con el candado de origen de las
  *             escrituras; vuelve a la página en la que estaba (sólo una ruta propia).
  *
- * LA IDENTIDAD sale sólo del inicio de sesión del propio sitio (decisión 9): ninguna cabecera de un proxy o de la
- * plataforma cambia quién pide. El rol se recalcula en CADA pedido con la configuración vigente (decisión 12).
+ * LA IDENTIDAD sale sólo del inicio de sesión del propio sitio: ninguna cabecera de un proxy o de la
+ * plataforma cambia quién pide. El rol se recalcula en CADA pedido con la configuración vigente.
  *
- * ARRANQUE (AC 1): lee las variables de abajo; si falta una obligatoria o tiene mala forma, no arranca, sale 1 y dice
+ * ARRANQUE: lee las variables de abajo; si falta una obligatoria o tiene mala forma, no arranca, sale 1 y dice
  * cuál y por qué. El registro dice qué variable está presente, nunca su valor.
  *   obligatorias  SITE_PUBLIC_URL (https://, o http://127.0.0.1 en pruebas) · SITE_SESSION_KEY (≥ 32 bytes) ·
  *                 SITE_AUTH_PROVIDER (`oidc` o el nombre de un archivo de auth-providers/) · SITE_OIDC_CLIENT_ID ·
@@ -34,7 +34,7 @@
  *   opcionales    SITE_OIDC_EMAIL_CLAIM · PORT (8080) · SITE_MAILBOX_SAS o SITE_MAILBOX_IDENTITY=managed ·
  *                 SITE_FIRST_MAINTAINER (un correo) · SITE_AUTH_ALLOWED_DOMAINS (donde el proveedor no la exige) ·
  *                 SITE_DATA_DIR (un disco persistente; sin ella, una carpeta temporal, y se dice)
- *   de la pestaña Configuración (story 2.29, decisión 11; todas apagadas por defecto: sin una, su sección queda en sólo
+ *   de la pestaña Configuración (todas apagadas por defecto: sin una, su sección queda en sólo
  *   lectura o «no configurado», y el sitio arranca igual)
  *                 SITE_OPERATIONS_WRITE_TOKEN (proponer cambios al repo de operaciones: rama y pedido, nunca main) ·
  *                 SITE_PROFILE_REPO (https) y SITE_PROFILE_TOKEN (leer el perfil del equipo) · SITE_PROFILE_WRITE_TOKEN
@@ -181,7 +181,7 @@ function validarConfiguracion(env) {
     else cfg.firstMaintainer = fm.toLowerCase();
   }
 
-  // la pestaña Configuración (story 2.29, decisión 11): todas opcionales
+  // la pestaña Configuración: todas opcionales
   if (env.SITE_PROFILE_REPO) {
     let perfil = null;
     try { perfil = new URL(env.SITE_PROFILE_REPO); } catch { /* abajo */ }
@@ -220,7 +220,7 @@ const RUTAS = [
 ];
 
 /**
- * Una ruta con parámetros (story 2.27): un tramo `:nombre` vale un tramo cualquiera, sin `/`. Devuelve la función que
+ * Una ruta con parámetros: un tramo `:nombre` vale un tramo cualquiera, sin `/`. Devuelve la función que
  * compara una ruta pedida y da `{ nombre: valor }` (o null). Sin parámetros, la comparación es exacta, como siempre.
  */
 function patronDe(p) {
@@ -302,7 +302,7 @@ function textoDeLaRaiz(nombre, anexos = []) {
 
 /**
  * El sitio, sin escuchar todavía. `fuentes` cumple el contrato de sources.js (estado, config, modelo, refrescar,
- * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las stories 2.27 y 2.29 suman las suyas.
+ * detener); `ahora` (ms) y `log` se inyectan en las pruebas; `rutasExtra` es como las pestañas Corridas y Configuración suman las suyas.
  */
 function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) => process.stdout.write(`${l}\n`), rutasExtra = [], version = VERSION, vigia = null } = {}) {
   const v = validarConfiguracion(env);
@@ -330,7 +330,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     res.setHeader('Content-Security-Policy', CSP);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     // el Referer viaja sólo dentro del sitio (nunca a otro). Con `no-referrer`, el candado de la plataforma (el inicio de
-    // sesión integrado de una nube) tomaba cada POST de Configuración por falsificado: su anti-CSRF mira el Referer, no el
+    // sesión integrado de una nube) tomaría cada POST de Configuración por falsificado: su anti-CSRF mira el Referer, no el
     // Origin (403, subestado 60)
     res.setHeader('Referrer-Policy', 'same-origin');
     if (https) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
@@ -446,7 +446,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
     const form = await leerFormulario(req);
     const pedida = String(form.get('volver') || '');
     // sólo una ruta propia, en caracteres que una cabecera admite: nada de otra dirección (`//x`, `/\x`), de controles ni
-    // de un carácter fuera de ASCII (la cabecera Location lo rechaza y el pedido terminaba en la página de error)
+    // de un carácter fuera de ASCII (la cabecera Location lo rechaza y el pedido terminaría en la página de error)
     const volver = /^\/(?![/\\])[\x21-\x7e]{0,500}$/.test(pedida) ? pedida : '/';
     const idioma = LANG.valido(form.get('idioma'));
     if (!idioma) return enviar(res, { status: 303, cuerpo: '', extra: { Location: volver } });
@@ -567,7 +567,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
 
     const ses = sesionDe(cookies);
     const esApi = ruta.startsWith('/api/');
-    // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraba «respuesta 403»).
+    // un rechazo de /api/ dice por qué y qué hacer: la pantalla lo muestra tal cual (sin esto mostraría «respuesta 403»).
     // Nunca nombra a otra persona: a lo sumo, el correo de la propia sesión
     const rechazoApi = (status, codigo, message, extra) => json(res, status, { ok: false, codigo, message }, extra);
     if (!ses) {
@@ -618,7 +618,7 @@ function crearSitio({ env = process.env, fuentes, ahora = Date.now, log = (l) =>
       modoActualizacion: config && config.site && config.site.update === 'auto' ? 'auto' : 'notice',
     };
     if (quien.rol === 'maintainer') ultima.mirar();
-    // una ruta puede ser asíncrona y leer el pedido (las escrituras de la pestaña Configuración, story 2.29)
+    // una ruta puede ser asíncrona y leer el pedido (las escrituras de la pestaña Configuración)
     const salida = await r.handler(ctx);
     return enviar(res, salida);
   }
@@ -680,7 +680,7 @@ async function main() {
       ...require('./tabs/config.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
       // la pestaña Cómo trabaja: el recorrido de una historia, con los revisores propios editables
       ...require('./tabs/how-it-works.js').crearRutas({ cfg: v.cfg, fuentes, versionImagen: VERSION, log }),
-      // la pestaña Corridas (story 2.27): arma su vista en un hilo aparte con el espejo del buzón
+      // la pestaña Corridas: arma su vista en un hilo aparte con el espejo del buzón
       ...require('./tabs/runs.js').crearRutas({ cfg: v.cfg, fuentes, version: VERSION, skillsDir: env.TYCON_SKILLS_DIR || null, log }),
       // la pestaña Ayuda: la guía del sitio que viaja en la imagen, con lo que le toca a cada rol
       ...require('./help.js').crearRutas({ log }),

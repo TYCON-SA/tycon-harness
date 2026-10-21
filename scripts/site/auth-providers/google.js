@@ -1,6 +1,6 @@
 'use strict';
 /*
- * auth-providers/google.js — el inicio de sesión con Google (story 2.23, decisiones 9 y 11; AC 7 y 8).
+ * auth-providers/google.js — el inicio de sesión con Google.
  *
  * El emisor es fijo (`https://accounts.google.com`). Cualquier cuenta de Google puede pasar por él, así que el sitio se
  * limita a la organización con DOS cosas, las dos obligatorias:

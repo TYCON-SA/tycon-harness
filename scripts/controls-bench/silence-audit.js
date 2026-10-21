@@ -2,22 +2,19 @@
 /**
  * silence-audit — el banco no le grita sus propias alarmas al agente que está midiendo.
  *
- * EL INCIDENTE (2026-08-25): 7 corridas de advisors bajo Codex terminaban con exit≠0.
- * La causa no era el advisor: `advisor-runner.js` le pasaba `env: process.env` a `codex`
- * (mientras que a `claude`, dos líneas más arriba, le pasaba TYCON_EVAL_SANDBOX=1). Entonces
- * los hooks de arranque del arnés se disparaban DENTRO del advisor y le inyectaban
- * "🔴 controls-bench EN ROJO — Correr: node .../runner.js". El advisor, obediente, iba y
- * corría el banco: bajo sandbox de solo lectura eso es un permiso denegado, y con el tope de
- * tiempo del caso, una interrupción a los ~5 minutos. El banco se auto-envenenaba.
- * Confirmado preguntándole al agente qué aviso había recibido: contestó con el texto de la alarma.
+ * EL RIESGO QUE CIERRA: si `advisor-runner.js` le pasa `env: process.env` a `codex`, los hooks de arranque del
+ * arnés se disparan DENTRO del advisor y le inyectan "🔴 controls-bench EN ROJO — Correr: node .../runner.js". El
+ * advisor, obediente, va y corre el banco: bajo sandbox de solo lectura eso es un permiso denegado, y con el tope de
+ * tiempo del caso, una interrupción a los ~5 minutos. El banco se auto-envenena. Por eso a cada agente que lanza
+ * (`claude` o `codex`) se le pasa TYCON_EVAL_SANDBOX=1, que silencia esos hooks.
  *
  * LA INVARIANTE QUE VIGILA: todo lugar del banco que lanza un agente (claude o codex) tiene que
  * silenciar al arnés. Es mecánica, gratis y no necesita una sola llamada al modelo — por eso vive
  * acá y no como caso del banco.
  *
-  * ALCANCE (ampliado el mismo día): no sólo el banco. Los tres lanzamientos de afuera —el
- * observador de instintos (claude y codex) y el demo de advisors— tampoco silenciaban, y el
- * observador corre en cada arranque. La invariante es del arnés entero, no de una carpeta.
+ * ALCANCE: no sólo el banco. Los lanzamientos de afuera —el observador de instintos (claude y codex) y el demo de
+ * advisors— también silencian, y el observador corre en cada arranque. La invariante es del arnés entero, no de una
+ * carpeta.
  *
  * Uso: node silence-audit.js            → audita; sale ≠0 si hay un sitio sin silenciar
  *      node silence-audit.js --selftest → se prueba a sí mismo contra fuentes buenas y rotas
@@ -69,10 +66,9 @@ function silencia(src, call) {
     if (def && def[1].includes(FLAG)) return { ok: true };
     return { ok: false, motivo: `pasa \`env: ${valor}\` y esa variable no incorpora ${FLAG}` };
   }
-  // LLAMADA a un helper — `env: envDeCorrida(corral)`. Sin esta rama la auditoría denunciaba un
-  // refactor CORRECTO (el que centralizó el entorno de las corridas del banco, 2026-08-25): el
-  // silenciador estaba puesto, sólo que un nivel adentro. Un control que castiga la buena práctica
-  // que él mismo empuja es un control que se termina apagando.
+  // LLAMADA a un helper — `env: envDeCorrida(corral)`. Sin esta rama la auditoría denunciaría un refactor CORRECTO (el
+  // que centraliza el entorno de las corridas del banco): el silenciador está puesto, sólo que un nivel adentro. Un
+  // control que castiga la buena práctica que él mismo empuja es un control que se termina apagando.
   const llamada = /^([A-Za-z_$][\w$]*)\s*\(/.exec(valor);
   if (llamada) {
     const fn = new RegExp(`\\bfunction\\s+${llamada[1]}\\s*\\([^)]*\\)\\s*\\{([\\s\\S]{0,600}?)\\n\\}`).exec(src);
@@ -87,13 +83,11 @@ function auditarFuente(src, file) {
   SPAWN.lastIndex = 0;
   let m;
   while ((m = SPAWN.exec(src))) {
-    // 🔴 Prosa no es código (2026-09-05). Si la coincidencia está en una línea de comentario —de
-    // bloque (` * …`), de línea (`// …`) o detrás de un `//` en la misma línea— no es un
-    // lanzamiento: la cabecera de tools-path.js narraba el incidente del PATH con la
-    // frase literal y la auditoría la acusó como "llamada sin env" en la línea 11, un asterisco.
-    // Un control que acusa a la prosa que explica el defecto se termina apagando. Se mira SÓLO la
-    // línea de la coincidencia: un comentario arriba no exime al código de abajo (eso lo hace la
-    // escotilla declarada, con motivo).
+    // 🔴 Prosa no es código. Si la coincidencia está en una línea de comentario —de bloque (` * …`), de línea
+    // (`// …`) o detrás de un `//` en la misma línea— no es un lanzamiento: la cabecera de tools-path.js cuenta el
+    // problema del PATH con la frase literal, que no es una llamada. Un control que acusa a la prosa que explica
+    // el defecto se termina apagando. Se mira SÓLO la línea de la coincidencia:
+    // un comentario arriba no exime al código de abajo (eso lo hace la escotilla declarada, con motivo).
     const iniLinea = src.lastIndexOf('\n', m.index) + 1;
     const antes = src.slice(iniLinea, m.index);
     if (/^\s*(\/\/|\*|\/\*)/.test(antes) || /\/\/[^'"`]*$/.test(antes)) continue;
@@ -151,9 +145,8 @@ const CASOS = [
     src: `function envDeCorrida(c) {\n  return Object.assign({}, process.env, { X: c });\n}\nspawnP('codex', ['exec'], { cwd: f, env: envDeCorrida(corral), timeout_s: 9 });` },
   { nombre: 'escotilla SIN motivo: no vale', rojo: true,
     src: `// silence-audit: exento\nspawnSync('claude', ['-p'], { cwd: f, env: process.env });` },
-  // 🔴 Caso real 2026-09-05: la cabecera de tools-path.js narraba el incidente del PATH
-  // con la frase literal `spawnSync('claude', …)` y la auditoría la denunció (línea 11, un
-  // asterisco) como "llamada sin env". El arreglo no puede ser "no menciones eso en los
+  // 🔴 La cabecera de tools-path.js cuenta el problema del PATH con la frase literal `spawnSync('claude', …)` y la
+  // auditoría no debe denunciarla como "llamada sin env". El arreglo no puede ser "no menciones eso en los
   // comentarios": es la auditoría la que tiene que distinguir prosa de código.
   { nombre: 'un COMENTARIO de bloque que menciona la llamada no es un lanzamiento (caso real 2026-09-05)', rojo: false,
     src: `/**\n * el examen lanzaba por NOMBRE PELADO: \`spawnSync('claude', …)\` → ENOENT\n */\nconst x = 1;` },

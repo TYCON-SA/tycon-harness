@@ -1,13 +1,13 @@
 'use strict';
 /*
- * session.js — la cookie de sesión del sitio de la organización, y la del intento de inicio (story 2.23, decisión 12).
+ * session.js — la cookie de sesión del sitio de la organización, y la del intento de inicio.
  *
  * Sin estado en el servidor: el sitio puede tener más de una réplica, dormirse o reiniciarse en el medio, y quien entró
  * sigue adentro. Las dos cookies van firmadas con HMAC-SHA256 y `SITE_SESSION_KEY`:
  *
  *   __Host-site   la sesión, 8 horas FIJAS desde que se entró (no se renueva). Lleva el correo (en minúsculas), la
  *                 identidad estable del proveedor (`sub`: oid+tid, sub, o el id de GitHub), el proveedor y el emisor, el
- *                 vencimiento y el token de doble envío (`tok`, story 2.29, AC 3): 32 bytes al azar que nacen con la
+ *                 vencimiento y el token de doble envío (`tok`): 32 bytes al azar que nacen con la
  *                 sesión; la pestaña Configuración lo pone en la página y exige que cada escritura lo traiga en
  *                 `X-Site-Token` (la cookie es HttpOnly: el script de otro sitio no lo puede leer). NO lleva el rol: el rol
  *                 se recalcula en cada pedido con la configuración vigente.

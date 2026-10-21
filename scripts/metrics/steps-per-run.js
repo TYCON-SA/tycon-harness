@@ -3,7 +3,7 @@
  * steps-per-run.js — cuántos PASOS da una corrida del pipeline, que es lo que determina su costo.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
- * Medido el 2026-09-20 sobre **146 corridas** del buzón del equipo: el consumo de una corrida lo
+ * Medido sobre **146 corridas** del buzón del equipo: el consumo de una corrida lo
  * explica **enteramente** la cantidad de pasos que da — correlación **0,99** — y el **98,9 %** de
  * esos tokens son **relecturas del contexto acumulado** (`cache_read`), no contenido nuevo.
  *
@@ -13,25 +13,25 @@
  *
  * La consecuencia incómoda: todas las palancas de ahorro de septiembre —respuestas breves, cargar
  * menos al arrancar, la retro sin modelo— pelean por el **1,1 %** que NO son relecturas. Y se nota:
- * el consumo por corrida no se movió (173,9 M antes del 06-09 · 175,8 M después).
+ * el consumo por corrida casi no se movió (173,9 M antes de esas palancas · 175,8 M después).
  *
  * Por eso este medidor no publica tokens: publica **pasos**. Es la única variable sobre la que una
- * palanca puede mostrar efecto, y hasta hoy nadie la miraba.
+ * palanca puede mostrar efecto, y ninguna otra pieza la mira.
  *
  * ── LO QUE NO HACE, A PROPÓSITO ──────────────────────────────────────────────────────────────
  * No propone un tope ni frena nada. Primero la línea base, después —si alguna palanca la mueve— se
  * discute un umbral. Poner un número antes de tener la serie es exactamente la estimación disfrazada
- * que esta misma medición vino a desarmar.
+ * que esta misma medición existe para desarmar.
  *
  * ── LA LÍNEA BASE, Y DE QUÉ FECHA ES ─────────────────────────────────────────────────────────
- * Medida el **2026-09-20** sobre el buzón del equipo: mediana **345** pasos por corrida (p25 259 ·
+ * Medida sobre el buzón del equipo (su fecha está en `LINEA_BASE`): mediana **345** pasos por corrida (p25 259 ·
  * p75 454 · rango 61–2274), **146** corridas con consumo medido y **170** sin medir, que se declaran
  * y no se estiman. Es el número contra el que se compara cualquier palanca de ahorro de ahí en más.
  * Vive en `LINEA_BASE`, más abajo, y el tablero la toma DE AHÍ: tipeada en una página envejece sin que
  * nadie lo note. Si algún día se vuelve a fijar, se cambia acá —constante y cabecera juntas— con su
  * fecha nueva, y la vieja queda en el historial de git, no en un comentario.
  *
- * ── DÓNDE SE VE (story 7.12) ─────────────────────────────────────────────────────────────────
+ * ── DÓNDE SE VE ──────────────────────────────────────────────────────────────────────────────
  * Un medidor que hay que acordarse de correr es un medidor que no corre. Este número sale en el
  * tablero de seis preguntas (`scripts/nightly/dashboard/dashboard.js` → `pasosPorCorrida()`, pregunta 4, al
  * lado de cuánto dura una corrida) y en la vista de corridas (`scripts/nightly/dashboard/runs.js`, pegado a los
@@ -39,7 +39,7 @@
  * (`pasos-corrida`): si alguien la saca de la lista, la ficha lo dice en vez de leer igual.
  *
  * ── DE DÓNDE SALE EL DATO ────────────────────────────────────────────────────────────────────
- * De `consumo.respuestas` de cada volcado archivado (lo escribe `tokens-digest.js`, story 2.13):
+ * De `consumo.respuestas` de cada volcado archivado (lo escribe `tokens-digest.js`):
  * cuántas respuestas dio el modelo en el hilo de esa corrida. Una corrida sin `consumo.estado ==
  * "medido"` NO se cuenta ni se estima: se declara en `sin_medir`. «No pude preguntar» no es «no hay».
  *
@@ -55,7 +55,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -65,11 +65,11 @@ const BUZON_DEFAULT = path.join(stateDirOf(os.homedir()), 'corridas-buzon');
 const LINEA_BASE = Object.freeze({ mediana: 345, p25: 259, p75: 454, corridas: 146, sin_medir: 170, fecha: '2026-09-20' });
 
 // 🔴 Una carpeta que no se puede leer NO es una carpeta vacía: se anota en `malas` (con el CÓDIGO del error, nunca
-//    su mensaje, que trae la ruta). Hasta la story 7.12 esto devolvía lo acumulado y seguía: una máquina sin
-//    permiso de lectura desaparecía de la mediana «del equipo» sin dejar rastro.
+//    su mensaje, que trae la ruta). Devolver lo acumulado y seguir haría que una máquina sin
+//    permiso de lectura desaparezca de la mediana «del equipo» sin dejar rastro.
 // 🔴 Un ENLACE no es ni archivo ni carpeta para el Dirent (`isDirectory()` da false): se decide con statSync, que lo
 //    sigue — igual que `leerRegistro()` de runs.js sobre esta misma carpeta. Sin esto, una carpeta de máquina
-//    enlazada se salteaba entera (pase adversarial de la 7.12). Un enlace roto se CUENTA como carpeta ilegible: no
+//    enlazada se saltearía entera. Un enlace roto se CUENTA como carpeta ilegible: no
 //    se sabe qué había. `vistas` (rutas reales) corta un enlace que vuelve sobre el propio buzón: ni cuelga ni duplica.
 function caminar(dir, out, malas, vistas = new Set()) {
   let real;
@@ -86,7 +86,7 @@ function caminar(dir, out, malas, vistas = new Set()) {
       try { const st = fs.statSync(p); esCarpeta = st.isDirectory(); esArchivo = st.isFile(); }
       catch (err) { malas.push({ dir: p, codigo: String((err && err.code) || 'ilegible') }); continue; }
     }
-    // story 2.28: `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona: no se abre
+    // `<maquina>/registros/` nunca trae volcados, y su place.json trae el correo de git de la persona: no se abre
     if (esCarpeta) { if (it.name !== 'registros') caminar(p, out, malas, vistas); }
     else if (esArchivo && it.name.endsWith('.json')) out.push(p);
   }
@@ -117,9 +117,9 @@ function medir(opts) {
   const malas = [];
   let sinMedir = 0;
   let ilegibles = 0;
-  // story 2.28 (decisión 12): una máquina vuelve a subir lo de su disco a su carpeta nueva `<nombre>-<código>`, así que la
+  // Una máquina vuelve a subir lo de su disco a su carpeta nueva `<nombre>-<código>`, así que la
   // misma corrida puede estar en la carpeta vieja y en la nueva: cuenta UNA vez (la sesión; sin sesión, el archivo y su fecha).
-  // Entre una copia sin medir y una medida de la misma corrida, vale la medida (segunda vuelta de fallos silenciosos).
+  // Entre una copia sin medir y una medida de la misma corrida, vale la medida.
   const vistas = new Map();   // clave → 'medida' | 'sin'
   for (const f of caminar(buzon, [], malas)) {
     let d = null;
@@ -128,9 +128,9 @@ function medir(opts) {
     const clave = typeof d.marker.sessionId === 'string' && d.marker.sessionId ? `s:${d.marker.sessionId}` : `a:${path.basename(f)}|${d.archivedAt || ''}`;
     if (vistas.get(clave) === 'medida') continue;
     const m = d.marker, c = d.consumo || {};
-    // «Medida» es un ENTERO POSITIVO, el mismo criterio que el cliente de runs.js (`pasosMedidos`). Hasta la
-    // 7.12 era `if (!pasos)`, que deja pasar un negativo (en JS es «verdadero»), un texto o un decimal: un volcado
-    // con un valor absurdo entraba a la mediana y a la línea base como si fuera un dato (pase adversarial).
+    // «Medida» es un ENTERO POSITIVO, el mismo criterio que el cliente de runs.js (`pasosMedidos`). Con
+    // `if (!pasos)` pasaría un negativo (en JS es «verdadero»), un texto o un decimal: un volcado
+    // con un valor absurdo entraría a la mediana y a la línea base como si fuera un dato.
     const pasos = c.estado === 'medido' && Number.isInteger(c.respuestas) && c.respuestas > 0 ? c.respuestas : null;
     if (pasos === null) { if (!vistas.has(clave)) { vistas.set(clave, 'sin'); sinMedir++; } continue; }
     if (vistas.get(clave) === 'sin') sinMedir--;

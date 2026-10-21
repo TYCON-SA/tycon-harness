@@ -1,7 +1,7 @@
-// Del marker del pipeline al renglón del cartel y a la tabla de /pipeline (story 7.27). Puro: no usa el motor, el reloj
+// Del marker del pipeline al renglón del cartel y a la tabla de /pipeline. Puro: no usa el motor, el reloj
 // ni la sesión, para poder probarlo con node (scripts/tests/harness-mods.test.js).
 //
-// Nunca muestra dinero: el dueño lo sacó del cartel a propósito.
+// Nunca muestra dinero, a propósito.
 
 import { STEPS, SUBSTEP_FLAG, ASKS_DEV, MAIN_TOTAL } from './steps.mjs';
 
@@ -32,10 +32,10 @@ export function readRun(text, now) {
   const index = (id) => STEPS.findIndex((s) => s.id === id);
   const later = (id) => STEPS.slice(index(id) + 1);
   // `complete-step` anota sólo `completedAt` y `stepsCompleted`, sin `startedAt`: un paso posterior «tocado» es
-  // cualquiera de las tres cosas (pase adversarial de la 7.27, clase 1)
+  // cualquiera de las tres cosas
   const laterTouched = (id) => later(id).some((s) => startOf(s.id) !== null || endOf(s.id) !== null || completed.has(s.id));
   // un principal abierto queda viejo si un paso posterior se movió DESPUÉS de su arranque (el 0 que nunca se cerró);
-  // si arrancó después de todo lo posterior, es una vuelta atrás de verdad (los revisores otra vez) — clase 7
+  // si arrancó después de todo lo posterior, es una vuelta atrás de verdad (los revisores otra vez)
   const stale = (id) => {
     const st = startOf(id);
     if (st === null) return false;
@@ -149,7 +149,7 @@ export function boardParts(run, contextPercent) {
 }
 
 /**
- * El renglón del cartel. `contextPercent` puede faltar. El paso va por su nombre, sin el id (story 7.23); con el
+ * El renglón del cartel. `contextPercent` puede faltar. El paso va por su nombre, sin el id; con el
  * título de la story, va corto después del número.
  */
 export function boardLine(run, contextPercent) {
@@ -159,7 +159,7 @@ export function boardLine(run, contextPercent) {
 
 /**
  * «te espera» que no se pierde: el Stop-hook del pipeline borra `waitingForHuman` al cerrar el turno, justo cuando
- * empieza la espera (clase 6). Se recuerda la clave `story:paso` mientras la corrida siga en ese paso.
+ * empieza la espera. Se recuerda la clave `story:paso` mientras la corrida siga en ese paso.
  * Devuelve `{ run, remember }`: la corrida (con `waiting` ajustado) y la clave a guardar para el próximo refresco.
  */
 export function stickyWaiting(run, remembered) {
@@ -170,7 +170,7 @@ export function stickyWaiting(run, remembered) {
   return { run, remember: null };
 }
 
-/** Anota la clave del aviso de una vez (sin «mirar y después escribir»): `{ list, added }` (clase 4). */
+/** Anota la clave del aviso de una vez (sin «mirar y después escribir»): `{ list, added }`. */
 export function addWarned(list, key) {
   const l = Array.isArray(list) ? list.filter((x) => typeof x === 'string') : [];
   return l.includes(key) ? { list: l, added: false } : { list: [...l, key], added: true };
@@ -178,8 +178,7 @@ export function addWarned(list, key) {
 
 /**
  * Las carpetas donde buscar el estado del pipeline, como tycon-home.js: `TYCON_HOME/state` y, bajo cada raíz del
- * usuario (HOME y USERPROFILE: en Windows `os.homedir()` usa USERPROFILE), `.tycon/state` y `.claude/.tycon-pipeline`
- * (clase 2).
+ * usuario (HOME y USERPROFILE: en Windows `os.homedir()` usa USERPROFILE), `.tycon/state` y `.claude/.tycon-pipeline`.
  */
 export function stateDirs(vars) {
   const v = vars || {};
@@ -194,7 +193,7 @@ export function stateDirs(vars) {
   return out;
 }
 
-/** El texto del aviso «te espera»: el paso por su nombre, sin el id (story 7.23). */
+/** El texto del aviso «te espera»: el paso por su nombre, sin el id. */
 export function waitingToast(run) {
   const step = run && run.current ? run.current.name : 'El pipeline';
   const title = run ? shortTitle(run.title) : null;

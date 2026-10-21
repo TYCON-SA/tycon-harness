@@ -1,6 +1,6 @@
 'use strict';
 /*
- * auth-providers/github.js — el inicio de sesión con GitHub (story 2.23, decisiones 9 y 11; AC 7 y 8).
+ * auth-providers/github.js — el inicio de sesión con GitHub.
  *
  * GitHub no emite id_token: va por su OAuth (código, `state`, PKCE S256 —GitHub lo admite desde 2025; un servidor que
  * lo ignore igual exige el `state`—) y tres lecturas de su API con el token de la persona:

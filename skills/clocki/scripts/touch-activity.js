@@ -4,10 +4,10 @@
 // Invocado por el hook PostToolUse (async=true). Actualiza lastActivity del timer
 // activo de ESTA sesión en el cwd actual. Si no hay timer activo, no hace nada.
 //
-// 🔴 Multi-sesión sin race (2026-05-17): cada sesión tiene su propio archivo
+// 🔴 Multi-sesión sin race: cada sesión tiene su propio archivo
 // `~/.claude/clocki/active/<sessionId>.json`. touch-activity escribe SOLO ese
 // archivo — nunca un archivo compartido — así dos sesiones concurrentes no se
-// pisan el write (el bug read-modify-write del modelo single-file quedó cerrado).
+// pisan el write (el read-modify-write del modelo single-file no ocurre).
 //
 // Diseñado para ser MUY rápido (<10ms) — solo file I/O.
 // Cross-platform. Exit 0 siempre.
@@ -54,7 +54,7 @@ function main() {
 
   // 🔴 Heartbeat: marca esta sesión como VIVA ahora. Señal de liveness
   // independiente del timer — el sweep la usa para no cerrar timers de sesiones
-  // que están trabajando aunque su lastActivity luzca stale (fix 2026-05-17).
+  // que están trabajando aunque su lastActivity luzca stale.
   // Se escribe SIEMPRE, haya timer o no.
   touchHeartbeat(sessionId);
 
@@ -91,11 +91,10 @@ function main() {
       // `active.json` LEGACY. Migrarla al per-session (con lastActivity fresco)
       // así de acá en más se actualiza normal.
       //
-      // ANTES esto se ignoraba ("transición esperada: la entry legacy se cerrará
-      // por idle-sweep") — falso: una sesión VIVA puede tener su timer en el
-      // legacy (lo abrió con el clocki viejo). Su lastActivity quedaba congelado
-      // → el sweep la cerraba como idle estando la sesión viva y trabajando.
-      // Incidente 2026-05-17 (Story 3.3). La migración cierra ese gap.
+      // Ignorarla ("transición esperada: la entry legacy se cerrará por idle-sweep") sería falso: una
+      // sesión VIVA puede tener su timer en el legacy (lo abrió con el clocki viejo). Su lastActivity
+      // quedaría congelado → el sweep la cerraría como idle estando la sesión viva y trabajando.
+      // La migración cierra ese gap.
       migrateLegacyEntry(sessionId, found.matchedKey, found.entry);
     }
   } catch (_err) {

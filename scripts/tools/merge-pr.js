@@ -3,11 +3,11 @@
 /**
  * scripts/tools/merge-pr.js — lo que el skill de merge necesita saber y hacer cuando el repo vive en GitHub.
  *
- * POR QUÉ EXISTE. El skill de merge creaba un pedido sólo en Azure DevOps, donde el servidor lo completa solo cuando
- * sus controles dan verde. En GitHub eso no está siempre (un repo privado sin plan pago no lo permite), un pedido trae
- * VARIOS controles (el de la corrida de la validación, uno por cada trabajo y los de otras herramientas) y el número de
- * `version.json` —lo que una máquina instalada compara para saber si hay algo nuevo— ya no lo pone una sincronización:
- * subía con cada pedido. Desde que `version.json` trae `numbering: "merge-tag"`, el número lo pone el merge (una etiqueta
+ * POR QUÉ EXISTE. En Azure DevOps el servidor completa el pedido solo cuando sus controles dan verde. En GitHub eso
+ * no está siempre (un repo privado sin plan pago no lo permite), un pedido trae VARIOS controles (el de la corrida de
+ * la validación, uno por cada trabajo y los de otras herramientas) y el número de `version.json` —lo que una máquina
+ * instalada compara para saber si hay algo nuevo— no lo pone una sincronización ni cada pedido. Con
+ * `numbering: "merge-tag"` en `version.json`, el número lo pone el merge (una etiqueta
  * `v<número>`, scripts/ci/version-tag.js) y el pedido no lo toca: `bump-version` no hace nada y `check-version` pide que
  * el archivo quede igual. Este guion junta las partes mecánicas de ese camino, para que el skill no las haga a ojo:
  *
@@ -29,7 +29,7 @@
  *
  * DE DÓNDE SALE LA CONFIGURACIÓN DEL MERGE (`merge.mode` y `merge.check`). De `.tycon/advisors.yaml` del repo, como
  * siempre (`configFrom: repo`); sin ese archivo, «empuje directo». Con UNA excepción: el clon del repo PÚBLICO del arnés.
- * Quien mantiene el arnés trabaja en ese clon, que no trae `.tycon/`: leído como «no declara nada», el plan mandaba a un
+ * Quien mantiene el arnés trabaja en ese clon, que no trae `.tycon/`: leído como «no declara nada», el plan mandaría a un
  * empuje directo a la rama principal del público. Su configuración vive en el clon PRIVADO de mantenimiento que la
  * máquina declara (`paths.maintainers`), y se lee de lo COMMITEADO en la rama principal remota de ese clon —nunca de su
  * árbol de trabajo: no depende de en qué rama esté parado ni de una edición sin commitear— (`configFrom: maintainers`).
@@ -40,7 +40,7 @@
  * dirección que no se reconoce como la suya, o una declaración del público que no se deja leer, salen 2 (la tabla
  * entera está en `mergeConfigFor`).
  *
- * DÓNDE CORREN LAS SUITES COMPLETAS (story 7.28). `plan` dice también si las suites completas del merge las corre el
+ * DÓNDE CORREN LAS SUITES COMPLETAS. `plan` dice también si las suites completas del merge las corre el
  * servidor (`suites: "server"`) o esta máquina (`"machine"`), con qué regla y por qué (`suitesReason`, una línea). La
  * regla sale de `team-repos.json → merge_suites` de la raíz de este árbol (la configuración de la organización:
  * `automatico`, `siempre-en-la-maquina` o `confiar-en-el-servidor`, por repo o para toda la organización); sin esa
@@ -432,7 +432,7 @@ function bodyFiles(repo, source) {
   return { bodyFile: at(''), mergeBodyFile: at('-merge') };
 }
 
-// ── dónde corren las suites completas (story 7.28) ───────────────────────────────────────────────────────────────────
+// ── dónde corren las suites completas ───────────────────────────────────────────────────────────────────
 
 /** `team-repos.json` de la raíz de este árbol: `{ absent: true }` si no está; si no, lo que da su lector (`load`). */
 function readTeamRepos() {
@@ -463,7 +463,7 @@ function asker(run, name, budget, now) {
   };
 }
 
-/** ¿Esta política de build de Azure frena la rama `target` de este repo? `[]` si cuenta; si no, por qué no (decisión 13). */
+/** ¿Esta política de build de Azure frena la rama `target` de este repo? `[]` si cuenta; si no, por qué no. */
 function policyFaults(p, repoId, target, defaultBranch) {
   const s = (p && p.settings) || {};
   const out = [];
@@ -699,7 +699,7 @@ function suitesDecision(where, config, target, deps = {}, keepMode = null) {
 /**
  * Qué paso del skill sigue, y con qué: el servidor lo decide el remoto; el modo y el control los declara el repo — o,
  * para el clon del público del arnés, el clon de mantenimiento (`mergeConfigFor`). `configFrom` dice de dónde salieron.
- * Dónde corren las suites lo decide `suitesDecision` (story 7.28); `keepMode` fija el modo del paso 0.
+ * Dónde corren las suites lo decide `suitesDecision`; `keepMode` fija el modo del paso 0.
  */
 function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
   const at = rootOf(given, deps);
@@ -746,7 +746,7 @@ function plan({ repo: given, source, target, keepMode = null }, deps = {}) {
 }
 
 /**
- * El control a esperar (decisión 12): con las suites en el servidor y un pipeline declarado en un repo de GitHub, el
+ * El control a esperar: con las suites en el servidor y un pipeline declarado en un repo de GitHub, el
  * declarado —esperar otro no prueba que se corrieron—; si no, `merge.check` del repo, como siempre.
  */
 function checkOf(decided, where, config) {
@@ -992,7 +992,7 @@ function waitChecks({ repo: given, pr, head, target, check, timeoutMin = 90, int
     if (config.problem) return stop(config.problem, { outcome: 'cannot-ask' });
     name = config.check;
     from = config;
-    // story 7.28: el mismo control que daría el plan. Sólo hace falta preguntarle a la rama si la organización declara
+    // el mismo control que daría el plan. Sólo hace falta preguntarle a la rama si la organización declara
     // un pipeline para este repo con una regla que lo usa; si no, es `merge.check`, sin consultar nada
     const where = whereOf();
     if (!where.problem && where.host === 'github') {

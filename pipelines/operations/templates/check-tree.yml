@@ -1,8 +1,8 @@
-# pipelines/operations/templates/check-tree.yml — la guarda de antes de medir (story 8.30).
+# pipelines/operations/templates/check-tree.yml — la guarda de antes de medir.
 #
 # Cada modelo de pipelines/operations/ la incluye JUSTO ANTES del paso que mide. Compara el código de HEAD y el del disco
 # con la huella que dejó ops-data.yml en `HARNESS_TREE` (scripts/ci/harness-tree.js --check-tree --worktree). Si un paso
-# de antes movió el checkout —el caso que la motivó: un guion que hacía `git checkout -B main origin/main` antes de
+# de antes movió el checkout —por ejemplo, un guion que hace `git checkout -B main origin/main` antes de
 # medir—, el trabajo mediría otro árbol y saldría verde. Con otro árbol, o sin la huella, sale ROJO y no se mide nada.
 # La guarda de antes de GUARDAR la corre el propio guion de guardar (push-nightly-data.js), sin `--worktree`.
 

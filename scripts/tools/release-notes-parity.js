@@ -3,14 +3,12 @@
 /**
  * Paridad de las copias de `release-notes.sh` — por COMPORTAMIENTO, no por texto.
  *
- * 🔴 POR QUÉ EXISTE (2026-08-31)
+ * 🔴 POR QUÉ EXISTE
  *
- * `scripts/release-notes.sh` está COPIADO en 8 repos del equipo. Nada las mantiene iguales, y el
- * 2026-08-31 se editaron las ocho a mano DOS veces en el mismo día. Peor: se descubrió que
- * Totora —el piloto del flujo con Pull Request, con un día de uso— era el único sin filtrar
- * `^Merged PR`, así que su próxima versión iba a publicarle "Merged PR <id>: …" al administrador
- * que instala el plugin. El filtro de Totora se escribió ANTES de que existiera el flujo PR y
- * nadie volvió a mirarlo cuando el flujo cambió.
+ * `scripts/release-notes.sh` está COPIADO en 8 repos del equipo. Nada las mantiene iguales: editar
+ * las ocho a mano es lento y se desparejan. Si una copia no filtra `^Merged PR`, su próxima versión
+ * publica "Merged PR <id>: …" al administrador que instala el plugin. Un filtro escrito ANTES de que
+ * existiera el flujo con Pull Request queda sin revisar cuando el flujo cambia.
  *
  * Comparar los archivos byte a byte NO sirve: las copias difieren legítimamente (la variante de
  * formularios tiene lógica propia) y difieren en comentarios. Lo que TIENE que ser igual es lo
@@ -35,9 +33,9 @@ const CORPUS = [
   ['chore: trigger CI pipeline post-merge', true],
   ['chore(ci): quitar release/* del disparador', true],
   ['Merged PR 2597: Story 5.4 — spec', true],
-  // 2026-09-15 (story 2.17): los demás asuntos con que un merge llega a main, censados en los repos
-  // reales de seis productos. El pase adversarial encontró que la primera versión del filtro exigía
-  // dos puntos después del número y dejaba pasar «Merge PR #<id> into main» (sin los dos puntos), que existe de verdad.
+  // Los demás asuntos con que un merge llega a main, censados en los repos reales de seis productos.
+  // El filtro no puede exigir dos puntos después del número: dejaría pasar «Merge PR #<id> into main»
+  // (sin los dos puntos), que existe de verdad.
   ['Merge pull request 3137 from dev into main', true],
   ['Merge PR #2380: Story 3.1 — alta de artículos', true],
   ['Merge PR #1918 into main', true],
@@ -82,18 +80,17 @@ function filtroDe(archivo) {
 /**
  * ¿El CAMINO DE RESPALDO también filtra el ruido?
  *
- * 🔴 POR QUÉ SE AGREGÓ (2026-08-31, el mismo día que nació el detector).
+ * 🔴 POR QUÉ SE COMPRUEBA
  *
  * El guion tiene dos caminos: la lista normal desde un punto de partida, y un respaldo para
- * cuando ese punto no es confiable. El respaldo publicaba el último commit TAL CUAL — y con el
- * flujo de Pull Request ese commit se llama "Merged PR N: …". El filtro que se agregó el día
- * anterior NO servía ahí: sólo se aplicaba en el camino normal, donde los merges ya estaban
- * excluidos por otra vía. O sea que el arreglo estaba puesto y el único camino que lo necesitaba
- * no lo usaba.
+ * cuando ese punto no es confiable. El respaldo publica el último commit TAL CUAL — y con el
+ * flujo de Pull Request ese commit se llama "Merged PR N: …". Un filtro que sólo se aplica en el
+ * camino normal, donde los merges ya están excluidos por otra vía, no sirve ahí: el único camino que
+ * lo necesita no lo usa.
  *
- * Y este detector daba VERDE, porque comparaba una sola línea —la del filtro— y las copias rotas
- * la tenían igual que las sanas. Dos repos (Lapacho, backend y formularios) estaban a punto de
- * publicarle "Merged PR <id>: …" al administrador que instala el plugin, con el control en verde.
+ * Un detector que compara una sola línea —la del filtro— daría VERDE, porque las copias rotas
+ * la tienen igual que las sanas, y se publicaría "Merged PR <id>: …" al administrador que instala
+ * el plugin con el control en verde.
  *
  * La lección, que vale para cualquier control de este tipo: **comparar UNA señal no es comparar
  * el comportamiento**. Un control que mira al lado del problema es peor que no tenerlo, porque
@@ -102,12 +99,11 @@ function filtroDe(archivo) {
 function respaldoFiltra(archivo) {
   const s = fs.readFileSync(archivo, 'utf8');
   const m = s.match(/^\s*ULTIMO=\$\((.*)$/m);
-  // 🔴 "No encontré la línea" NO es "esta copia no tiene camino de respaldo" (hallazgo del revisor
-  // de fallos silenciosos, 2026-08-31). Devolver `null` acá le daba pase libre a una copia cuya
-  // línea estuviera escrita apenas distinta —partida en dos renglones, con `local`, con otras
-  // comillas—: el detector la dejaba pasar sin decir una palabra. Es EXACTAMENTE el error que este
-  // detector vino a arreglar —comparar una sola forma— reintroducido un nivel más abajo. Ahora se
-  // dice, y cae en la rama de "no se pudo leer", que ya sale por el canal de errores.
+  // 🔴 "No encontré la línea" NO es "esta copia no tiene camino de respaldo". Devolver `null` acá le daría
+  // pase libre a una copia cuya línea estuviera escrita apenas distinta —partida en dos renglones, con
+  // `local`, con otras comillas—: el detector la dejaría pasar sin decir una palabra. Es EXACTAMENTE el
+  // error que este detector existe para evitar —comparar una sola forma— un nivel más abajo. Por eso se
+  // dice, y cae en la rama de "no se pudo leer", que sale por el canal de errores.
   if (!m) throw new Error('no se pudo leer su camino de respaldo (no encontré la línea ULTIMO=)');
   return /grep\s+-vE\s+"?\$RUIDO/.test(m[1]);
 }
@@ -127,7 +123,7 @@ function main() {
   let root;
   if (explicita) root = argv[argv.indexOf('--root') + 1];
   else {
-    // La raíz la resuelve el arnés (story 8.3): nunca una carpeta escrita a mano. Sin raíz no hay copias que
+    // La raíz la resuelve el arnés: nunca una carpeta escrita a mano. Sin raíz no hay copias que
     // comparar, y se DICE: «no medido» no es «todo alineado». Un ~/.claude/tycon.json roto tira: un comando frena.
     const r = require('../lib/repos-root.js').resolveReposRoot();
     if (!r.root) { console.log(`release-notes-parity: no medido — sin raíz de repos en esta máquina (${r.motivo}); no hay copias que comparar.`); return 0; }
@@ -136,8 +132,7 @@ function main() {
 
   // 🔴 Una raíz que NO existe se trata distinto según quién la eligió, y la diferencia importa:
   //   · la pasó una persona  → es un error suyo, y callarse es el modo de falla de
-  //     `incident-log#listado-vacio-2026-08-27` (un `ls` a la carpeta equivocada leído como
-  //     "acá no hay nada"). Sale 1.
+  //     un `ls` a la carpeta equivocada leído como "acá no hay nada". Sale 1.
   //   · la dedujo el arnés    → esta máquina simplemente no tiene ese árbol de repos. Sale 0,
   //     pero DICIÉNDOLO: un silencio acá se lee como "todo alineado".
   if (!fs.existsSync(root)) {
@@ -147,7 +142,7 @@ function main() {
   }
 
   const cs = copias(root);
-  // El CANÓNICO entra en la comparación (2026-08-31): mientras las 8 copias existan, lo que
+  // El CANÓNICO entra en la comparación: mientras las 8 copias existan, lo que
   // importa es que TODAS —incluida la fuente— clasifiquen igual. Si el canónico se rompe, este
   // control tiene que gritar antes de que la rotura se propague.
   const canonico = path.join(__dirname, '..', 'ci', 'release-notes.sh');
@@ -197,13 +192,13 @@ function main() {
     });
   }
 
-  // ── Los OTROS DOS guiones copiados (2026-08-31) ────────────────────────────────────────────
+  // ── Los OTROS DOS guiones copiados ────────────────────────────────────────────
   // No es un guion duplicado: son TRES. `inject-release-notes.sh` (4 backends) y
-  // `recompute-zip-notes.sh` (4 frontends) no tenían canónico NI quien los vigilara, y el
-  // segundo YA se había partido en dos variantes sin que nadie se enterara. Acá se comparan por
+  // `recompute-zip-notes.sh` (4 frontends) son copias sin nadie que las vigile: sin esto
+  // se partirían en variantes sin que nadie se entere. Acá se comparan por
   // CONTENIDO contra el canónico —tienen que ser idénticos, no sólo parecidos— ignorando
   // comentarios y líneas en blanco, que es lo único que puede diferir legítimamente.
-  // story 8.9 (tanda C2): el canónico del arnés lleva el nombre en inglés y en su ruta vieja queda un
+  // el canónico del arnés lleva el nombre en inglés y en su ruta vieja queda un
   // reemplazo que no es el código; la copia de un producto sigue con el nombre de siempre hasta que el
   // producto la cambie. Se busca con los dos nombres, y el viejo sale del mapa de renombres (sin el mapa,
   // sólo el nuevo).
@@ -256,6 +251,5 @@ function main() {
 // ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
 // la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
 // se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
 if (require.main === module) process.exitCode = main();
 module.exports = { CORPUS, filtroDe, filtra, copias, respaldoFiltra };
