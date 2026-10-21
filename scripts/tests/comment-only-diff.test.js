@@ -8,6 +8,7 @@
  *   · Que reescribir, borrar o agregar comentarios y líneas en blanco salga 0.
  *   · Que cambiar una línea de código, una cadena con `//` adentro, o agregar o borrar un archivo salga 1.
  *   · Que un archivo cuyo lenguaje no tiene lector de código cuente como «no se puede comparar», nunca como igual.
+ *   · Que un archivo que se copia al freno de producción salga 1 aunque cambie sólo un comentario.
  *
  * Arma un repo de juguete con git de verdad.
  *
@@ -90,4 +91,36 @@ test('T10c CommentOnlyDiff_AgainstWorkTree_AndBadArgs @story-8.43 @ac-10 — con
   assert.strictEqual(run(r.dir, '--against', 'HEAD').status, 1);
   assert.strictEqual(run(r.dir).status, 2, 'sin --range ni --against no hay nada que comparar');
   assert.strictEqual(run(r.dir, '--range', 'no-existe...HEAD').status, 2, 'una referencia que no existe es «no pude mirar»');
+});
+
+test('T10d CommentOnlyDiff_ProductionGuardCopy @story-8.43 @ac-10 — un archivo que se copia al freno de producción sale 1, aunque cambie sólo un comentario', () => {
+  const r = repo();
+  fs.mkdirSync(path.join(r.dir, 'scripts', 'production'), { recursive: true });
+  fs.mkdirSync(path.join(r.dir, 'scripts', 'hooks'), { recursive: true });
+  const instalador = '#!/bin/bash\nARCHIVOS=(\n  scripts/hooks/freno.js  # el freno\n  "scripts/production/lanzador"\n)\n';
+  const base = r.commit({ 'scripts/production/install-guard.sh': instalador, 'scripts/hooks/freno.js': JS, 'a.js': JS }, 'base');
+  const comentario = r.commit({
+    'scripts/hooks/freno.js': JS.replace('// viejo comentario', '// nuevo comentario'),
+    'a.js': JS.replace('// viejo comentario', '// nuevo comentario'),
+  }, 'comentarios');
+  const out = run(r.dir, '--range', `${base}...${comentario}`, '--json');
+  assert.strictEqual(out.status, 1, out.stdout + out.stderr);
+  const j = JSON.parse(out.stdout);
+  assert.deepStrictEqual(j.files.map((f) => [f.file, f.result]), [['a.js', 'same'], ['scripts/hooks/freno.js', 'differs']]);
+  assert.match(j.files[1].reason, /se copia al freno de producción/);
+
+  // sin el instalador en la base (un repo sin freno) no hay lista: el archivo se compara como cualquier otro
+  const s = repo();
+  const b2 = s.commit({ 'freno.js': JS }, 'base');
+  const c2 = s.commit({ 'freno.js': JS.replace('// viejo comentario', '// nuevo comentario') }, 'comentario');
+  assert.strictEqual(run(s.dir, '--range', `${b2}...${c2}`).status, 0);
+
+  // una entrada que no parece una ruta es «no pude mirar», nunca un freno sin cuidar
+  const t = repo();
+  fs.mkdirSync(path.join(t.dir, 'scripts', 'production'), { recursive: true });
+  const b3 = t.commit({ 'scripts/production/install-guard.sh': 'ARCHIVOS=(\n  $RAIZ/freno.js\n)\n', 'a.js': JS }, 'base');
+  const c3 = t.commit({ 'a.js': JS.replace('// viejo comentario', '// nuevo comentario') }, 'comentario');
+  const raro = run(t.dir, '--range', `${b3}...${c3}`);
+  assert.strictEqual(raro.status, 2, raro.stdout + raro.stderr);
+  assert.match(raro.stderr, /no parece una ruta/);
 });
