@@ -38,7 +38,7 @@ const FABLE = MODELS[3];
  * Los niveles que escribe la organización, en el mismo orden que `MODELS`: cada nivel es el modelo de su
  * posición. `team-repos.js` tiene su copia (T21 las compara).
  */
-const LEVELS = ['economico', 'equilibrado', 'potente', 'maximo'];
+const LEVELS = ['economy', 'balanced', 'strong', 'max'];
 const isLevel = (v) => LEVELS.includes(v);
 /** El modelo de Claude de un nivel; un modelo queda como está; otra cosa, null. */
 const modelOf = (v) => (isLevel(v) ? MODELS[LEVELS.indexOf(v)] : MODELS.includes(v) ? v : null);

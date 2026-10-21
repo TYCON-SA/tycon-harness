@@ -29,7 +29,7 @@
 //       "reviewers"?: <modelo>, "reviewer"?: { "<revisor>": <modelo> }, "reviewers_reloop"?: <modelo>,
 //       "adversarial"?: { "model"?, "heavy"?: <modelo>, "fable_question"?: «ask» | «never» }, "helpers"?: <modelo>,
 //       "session"?: { "low"?, "normal"?, "heavy"?: <modelo> } }
-//   <modelo> = un nivel, «economico» | «equilibrado» | «potente» | «maximo» (MODEL_LEVELS), o el nombre de
+//   <modelo> = un nivel, «economy» | «balanced» | «strong» | «max» (MODEL_LEVELS), o el nombre de
 //   antes, «haiku» | «sonnet» | «opus» | «fable» (MODEL_NAMES), en el mismo orden; copias de models.js del skill. Quien la resuelve
 //   es skills/tycon-pipeline/scripts/lib/models.js (`readOrgModels`, el único que la lee).
 //     "weekly_review": {                opcional — la revisión de la semana (scripts/nightly/weekly-review/)
@@ -128,7 +128,7 @@ function runnersProblems(value) {
 const MODEL_NAMES = ['haiku', 'sonnet', 'opus', 'fable'];
 // Copia de `LEVELS` de models.js: lo que escribe la organización, en el mismo orden que MODEL_NAMES. Los nombres de
 // Claude también valen, así un archivo guardado con ellos se lee sin tocarlo
-const MODEL_LEVELS = ['economico', 'equilibrado', 'potente', 'maximo'];
+const MODEL_LEVELS = ['economy', 'balanced', 'strong', 'max'];
 /** La posición de un nivel o de un nombre (los dos en el mismo orden); -1 si no es ninguno. */
 const modelRank = (v) => (MODEL_LEVELS.includes(v) ? MODEL_LEVELS.indexOf(v) : MODEL_NAMES.indexOf(v));
 const levelName = (v) => MODEL_LEVELS[modelRank(v)];

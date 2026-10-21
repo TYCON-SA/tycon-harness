@@ -693,7 +693,7 @@ test('T4 Modelos_PorEncimaDelTope @story-2.59 @ac-4 — el lector dice qué trab
   assert.deepStrictEqual(TEAM.modelsAboveCeiling(models).map((p) => p.path).sort(),
     ['models.adversarial.heavy', 'models.reviewer.tycon-silent-failure-hunter', 'models.reviewers_reloop', 'models.session.heavy']);
   // el tope se nombra por su nivel
-  for (const p of TEAM.modelsAboveCeiling(models)) assert.match(p.message, /^pasa el tope obligatorio \(potente\)$/, p.path);
+  for (const p of TEAM.modelsAboveCeiling(models)) assert.match(p.message, /^pasa el tope obligatorio \(strong\)$/, p.path);
   // un trabajo que no se declara (queda el por defecto) no se marca; sin tope, o con el tope apagado, nada
   assert.deepStrictEqual(TEAM.modelsAboveCeiling({ ...conTope }), []);
   assert.deepStrictEqual(TEAM.modelsAboveCeiling({ reviewers: 'fable' }), []);
@@ -725,10 +725,10 @@ const conModels = (models) => TEAM.parse(JSON.stringify(Object.assign(goodTeam()
 const problemasDeModels = (models) => ((conModels(models).sectionProblems || {}).models || []);
 
 test('T5 Models_LevelsValid @story-2.70 @ac-1', () => {
-  for (const nivel of ['economico', 'equilibrado', 'potente', 'maximo']) {
+  for (const nivel of ['economy', 'balanced', 'strong', 'max']) {
     const models = { reviewers: nivel, reviewer: { 'tycon-spec-first-checker': nivel }, reviewers_reloop: nivel,
       adversarial: { model: nivel, heavy: nivel }, helpers: nivel, session: { low: nivel, normal: nivel, heavy: nivel },
-      mandatory_ceiling: true, ceiling: 'maximo' };
+      mandatory_ceiling: true, ceiling: 'max' };
     const r = conModels(models);
     assert.deepStrictEqual(problemasDeModels(models), [], nivel);
     assert.deepStrictEqual(r.data.models, models, `${nivel}: el lector no lo descarta`);
@@ -736,23 +736,23 @@ test('T5 Models_LevelsValid @story-2.70 @ac-1', () => {
 });
 
 test('T6 Models_MixedAndCeilingByLevel @story-2.70 @ac-3', () => {
-  const mezclado = { reviewers: 'equilibrado', helpers: 'haiku', adversarial: { model: 'sonnet', heavy: 'potente' } };
+  const mezclado = { reviewers: 'balanced', helpers: 'haiku', adversarial: { model: 'sonnet', heavy: 'strong' } };
   assert.deepStrictEqual(problemasDeModels(mezclado), []);
   assert.deepStrictEqual(TEAM.modelsAboveCeiling(mezclado), [], 'sin tope, ninguno');
   // tope en nivel con un nombre declarado arriba, y tope en nombre con un nivel arriba: la misma comparación
-  const arriba = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'potente', reviewers: 'fable', helpers: 'opus' });
+  const arriba = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'strong', reviewers: 'fable', helpers: 'opus' });
   assert.deepStrictEqual(arriba.map((p) => p.path), ['models.reviewers']);
-  assert.match(arriba[0].message, /^pasa el tope obligatorio \(potente\)$/);
-  const alReves = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'opus', reviewers: 'maximo', helpers: 'potente' });
+  assert.match(arriba[0].message, /^pasa el tope obligatorio \(strong\)$/);
+  const alReves = TEAM.modelsAboveCeiling({ mandatory_ceiling: true, ceiling: 'opus', reviewers: 'max', helpers: 'strong' });
   assert.deepStrictEqual(alReves.map((p) => p.path), ['models.reviewers']);
-  assert.match(alReves[0].message, /\(potente\)$/);
+  assert.match(alReves[0].message, /\(strong\)$/);
 });
 
 test('T7 Models_UnknownValueListsLevels @story-2.70 @ac-4', () => {
   for (const malo of ['gpt-5.6-luna', 'medio']) {
     const ps = problemasDeModels({ reviewers: malo });
     assert.deepStrictEqual(ps.map((p) => p.path), ['models.reviewers'], malo);
-    assert.match(ps[0].message, /«economico», «equilibrado», «potente», «maximo»/);
+    assert.match(ps[0].message, /«economy», «balanced», «strong», «max»/);
     assert.ok(ps[0].message.includes(JSON.stringify(malo)), ps[0].message);
   }
 });

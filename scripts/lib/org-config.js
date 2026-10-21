@@ -1831,7 +1831,7 @@ function pantalla(idioma = 'es') {
   // la pantalla habla en niveles (copia de LEVELS de models.js, en el orden de MODELOS: cada nivel es el modelo
   // de su posición). Lo guardado con un nombre se muestra y se propone como su nivel
   var MODELOS = ['haiku', 'sonnet', 'opus', 'fable'];
-  var NIVELES = ['economico', 'equilibrado', 'potente', 'maximo'];
+  var NIVELES = ['economy', 'balanced', 'strong', 'max'];
   function nivelDe(v) { var i = MODELOS.indexOf(v); return i >= 0 ? NIVELES[i] : v; }
   function modeloDe(v) { var i = NIVELES.indexOf(v); return i >= 0 ? MODELOS[i] : (MODELOS.indexOf(v) >= 0 ? v : null); }
   function nombreNivel(v) { return NIVELES.indexOf(nivelDe(v)) >= 0 ? T('pantalla.nivel.' + nivelDe(v)) : v; }
@@ -1925,7 +1925,7 @@ function pantalla(idioma = 'es') {
       if (conocidos.length) {
         var elegir = el('select', { class: 'corto', 'aria-label': T('pantalla.revisor2') }, el('option', { value: '', text: T('pantalla.elegiUnRevisor') }));
         conocidos.forEach(function (id) { elegir.appendChild(el('option', { value: id, text: nombreRevisor(id) })); });
-        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'equilibrado'; render(); } })));
+        box.appendChild(el('div', { class: 'agregar-revisor' }, elegir, el('button', { class: 'mas', type: 'button', text: T('pantalla.agregarUnRevisorEnParticular'), onclick: function () { if (!elegir.value) return; m.reviewer = rv || {}; m.reviewer[elegir.value] = 'balanced'; render(); } })));
       }
     }
     if (m.reviewer !== undefined && !rv) box.appendChild(editorGenerico(s, m, pr, 'reviewer', T('pantalla.revisorYModeloComoTexto')));

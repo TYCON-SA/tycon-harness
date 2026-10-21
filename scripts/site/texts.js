@@ -1110,11 +1110,11 @@ const TEXTOS = {
   'pantalla.porDefecto2': { es: 'Por defecto', en: 'Default' },
   'pantalla.tuOrganizacionUsa': { es: 'Tu organización usa', en: 'Your organization uses' },
   'pantalla.elPorDefecto': { es: 'el por defecto', en: 'the default' },
-  // los niveles de modelo (en el archivo, sin tilde) y la línea de equivalencias debajo de cada uno
-  'pantalla.nivel.economico': { es: 'económico', en: 'economy' },
-  'pantalla.nivel.equilibrado': { es: 'equilibrado', en: 'balanced' },
-  'pantalla.nivel.potente': { es: 'potente', en: 'powerful' },
-  'pantalla.nivel.maximo': { es: 'máximo', en: 'maximum' },
+  // los niveles de modelo (en el archivo, en inglés; en pantalla, en el idioma de la página) y la línea de equivalencias debajo de cada uno
+  'pantalla.nivel.economy': { es: 'económico', en: 'economy' },
+  'pantalla.nivel.balanced': { es: 'equilibrado', en: 'balanced' },
+  'pantalla.nivel.strong': { es: 'potente', en: 'strong' },
+  'pantalla.nivel.max': { es: 'máximo', en: 'max' },
   'pantalla.equivalenciaDelNivel': { es: 'Claude: {claude} · Codex: {codex}', en: 'Claude: {claude} · Codex: {codex}' },
   'pantalla.sinEquivalenciaCodex': { es: 'sin equivalencia en este árbol', en: 'no equivalent in this tree' },
   'pantalla.unRevisorEnParticular2': { es: 'un revisor en particular', en: 'a specific reviewer' },

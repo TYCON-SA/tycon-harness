@@ -429,8 +429,8 @@ only: they are changed with a request in their repo.
   lives in `team-profile.json`, in the profile repo. A maintainer reviews it.
 - **Which model each pipeline job uses** (*Qué modelo usa cada trabajo del pipeline*): the model of the reviewers, the
   adversarial pass, the helpers and the session, as a level, in one table per group with each job's default next to it;
-  «the default» keeps the one the installed version comes with. There are four levels: economy, balanced, powerful and
-  maximum (in the file, `economico`, `equilibrado`, `potente`, `maximo`). Each tool translates them to its own models,
+  «the default» keeps the one the installed version comes with. There are four levels, written in the file as
+  `economy`, `balanced`, `strong` and `max` (the Spanish page shows económico, equilibrado, potente, máximo). Each tool translates them to its own models,
   and a small line under each selector says which: «Claude: sonnet · Codex: gpt-5.6-luna». A configuration saved with
   Claude's names (sonnet, opus) still works: it shows as levels and the next change to the section saves it as levels.
   With levels, the profile has to require the harness version that reads them; otherwise the site does not let you

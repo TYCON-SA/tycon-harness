@@ -751,9 +751,9 @@ function models_() { return models(); }
 
 // el mismo archivo, en niveles y en nombres, con un valor en cada clave
 const EN_NIVELES = {
-  reviewers: 'equilibrado', reviewer: { 'tycon-spec-first-checker': 'potente' }, reviewers_reloop: 'economico',
-  adversarial: { model: 'equilibrado', heavy: 'maximo', fable_question: 'never' }, helpers: 'economico',
-  session: { low: 'equilibrado', normal: 'potente', heavy: 'maximo' }, mandatory_ceiling: true, ceiling: 'maximo',
+  reviewers: 'balanced', reviewer: { 'tycon-spec-first-checker': 'strong' }, reviewers_reloop: 'economy',
+  adversarial: { model: 'balanced', heavy: 'max', fable_question: 'never' }, helpers: 'economy',
+  session: { low: 'balanced', normal: 'strong', heavy: 'max' }, mandatory_ceiling: true, ceiling: 'max',
 };
 const EN_NOMBRES = {
   reviewers: 'sonnet', reviewer: { 'tycon-spec-first-checker': 'opus' }, reviewers_reloop: 'haiku',
@@ -763,7 +763,7 @@ const EN_NOMBRES = {
 
 test('T1 Levels_OrderAndTranslation @story-2.70 @ac-1', () => {
   const M = models();
-  assert.deepStrictEqual(M.LEVELS, ['economico', 'equilibrado', 'potente', 'maximo']);
+  assert.deepStrictEqual(M.LEVELS, ['economy', 'balanced', 'strong', 'max']);
   M.LEVELS.forEach((nivel, i) => {
     assert.equal(M.modelOf(nivel), M.MODELS[i], nivel);
     assert.equal(M.levelOf(M.MODELS[i]), nivel, M.MODELS[i]);
@@ -775,7 +775,7 @@ test('T1 Levels_OrderAndTranslation @story-2.70 @ac-1', () => {
   assert.equal(M.modelOf('medio'), null);
   assert.equal(M.levelOf('gpt-5.6-luna'), null);
   // un comentario («_…») queda como está aunque su texto sea un nivel
-  assert.deepStrictEqual(M.toClaudeModels({ _nota: 'potente', helpers: 'economico' }), { _nota: 'potente', helpers: 'haiku' });
+  assert.deepStrictEqual(M.toClaudeModels({ _nota: 'strong', helpers: 'economy' }), { _nota: 'strong', helpers: 'haiku' });
 });
 
 test('T2 ReadOrgModels_LevelsAreClaudeModels @story-2.70 @ac-1', () => {

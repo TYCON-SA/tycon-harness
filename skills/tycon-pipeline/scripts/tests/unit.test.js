@@ -7125,7 +7125,7 @@ status: in-progress
 
 // ── `set-models` acepta un nivel y guarda el modelo de Claude ───────────────────────────────────────────
 test('T12 SetModels_AceptaNivel @story-2.70 @ac-5', () => {
-  for (const [pedido, guardado] of [['potente', 'opus'], ['opus', 'opus'], ['economico', 'haiku']]) {
+  for (const [pedido, guardado] of [['strong', 'opus'], ['opus', 'opus'], ['economy', 'haiku']]) {
     const fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mk-set-models-270-'));
     const sid = 'set-models-270';
     writeFakeMarker(fakeHome, sid, {});
@@ -7139,6 +7139,6 @@ test('T12 SetModels_AceptaNivel @story-2.70 @ac-5', () => {
   writeFakeMarker(fakeHome, 'set-models-270b', {});
   const r = require('child_process').spawnSync(process.execPath, [MARKER, 'set-models', 'adversarial=medio'], markerEnv('set-models-270b', fakeHome));
   assert.strictEqual(r.status, 2);
-  assert.match(r.stderr, /economico, equilibrado, potente, maximo/);
+  assert.match(r.stderr, /economy, balanced, strong, max/);
   fs.rmSync(fakeHome, { recursive: true, force: true });
 });
