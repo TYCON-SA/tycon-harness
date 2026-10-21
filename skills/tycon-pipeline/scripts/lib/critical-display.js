@@ -11,6 +11,7 @@
  *   · `handle(event, opts)`: el despachador de ediciones (la instalación mínima no trae la puerta Bash). Un Write o Edit
  *     de `exencion-pedida.json` ({ rule, file, reason }) en la carpeta de la corrida abierta de la sesión.
  *   · `mostrado(...)`: la constancia más nueva de ese crítico con ese motivo, o null. La lee `waive-critical`.
+ *   · `primeraMuestra(...)`: la primera constancia de ese crítico en la corrida, con cualquier motivo. Desde ahí vale el ok.
  *   · `juez({ rule, file, archivos, arnes })`: `(texto) => null | motivo`. ¿El mensaje nombra ese crítico y no lo niega?
  *
  * Sin la conversación legible (otra herramienta) no se muestra ni se anota: no se sabe si el aviso se ve.
@@ -77,6 +78,19 @@ function mostrado({ stateDir, sessionId, storyId, rule, file, reason }) {
   const hits = g.lineas.filter((g) => delCaso(g, { sessionId, storyId, rule }) && (g.file || '') === String(file || '').trim() && g.sha === sha);
   if (!hits.length) return null;
   return hits.reduce((a, b) => (Date.parse(b.ts) > Date.parse(a.ts) ? b : a));
+}
+
+/**
+ * La primera muestra de ese crítico (sesión, historia, regla y archivo) desde `desde`, con cualquier motivo, null, o
+ * `{ error }`. Un motivo reescrito vuelve a mostrar el crítico, pero el ok que respondió a la primera muestra sigue valiendo.
+ */
+function primeraMuestra({ stateDir, sessionId, storyId, rule, file, desde }) {
+  const t0 = Date.parse(desde || '');
+  const g = leerGates(stateDir);
+  if (g.error) return { error: g.error };
+  const hits = g.lineas.filter((g) => delCaso(g, { sessionId, storyId, rule }) && (g.file || '') === String(file || '').trim() && !(Date.parse(g.ts) < t0));
+  if (!hits.length) return null;
+  return hits.reduce((a, b) => (Date.parse(b.ts) < Date.parse(a.ts) ? b : a));
 }
 
 /** Los archivos en que esa regla está abierta: lo que se le mostró a la persona y los CRITICAL de findings.json. */
@@ -353,4 +367,4 @@ function handle(event, opts = {}) {
   return r ? { systemMessage: r.systemMessage, alMostrar: r.anotar } : null;
 }
 
-module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, paraMostrar, handle };
+module.exports = { PEDIDO, EN_LLANO, nombreEnLlano, huella, mostrado, primeraMuestra, archivosDeLaRegla, juez, bloque, palabras, pedidosDelComando, paraMostrar, handle };
