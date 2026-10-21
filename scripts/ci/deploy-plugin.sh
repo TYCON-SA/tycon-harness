@@ -24,7 +24,8 @@
 #                                  cargar la nueva; con migraciones pendientes la nueva falla y no
 #                                  queda NINGUNA cargada. Por eso no se usa.
 #   subir con setAsDefault=false → guarda la versión, no toca la memoria. La anterior sigue viva.
-#   vista previa de marcar       → el MISMO análisis que marcar, sin efectos. Es el freno.
+#   vista previa de marcar       → el MISMO análisis que marcar, sin efectos, y qué opciones de configuración
+#                                  le faltarían. Es el freno.
 #   ejecutar migraciones         → devuelve 200 AUNQUE alguna haya fallado, con un contador.
 #   activar                      → descarga la anterior y carga la nueva. NO toca la marca.
 #   marcar como actual           → escribe la marca. NO carga nada. Se niega por: migraciones
@@ -33,9 +34,10 @@
 #   al reiniciar el host         → carga sólo lo marcado como actual Y que estaba corriendo.
 #
 # 🔴 Y DOS SEÑALES QUE NO SE PUEDEN TIRAR:
-#   · la respuesta de subir trae las opciones de configuración que faltan. Es la ÚNICA señal de
-#     configuración que el host da, y sólo frena por ella cuando se sube marcando como actual —
-#     que acá no hacemos. Si faltan, la corrida termina en rojo.
+#   · la vista previa trae las opciones de configuración que le faltarían a la versión (la subida también,
+#     pero sólo cuando la versión es nueva: en una re-corrida no viaja). Es la ÚNICA señal de configuración
+#     que el host da, y sólo frena por ella cuando se sube marcando como actual — que acá no hacemos. Si
+#     faltan, la corrida termina en rojo; si el host no la da, se dice que no se pudo medir.
 #   · activar puede devolver 200 con el plugin en MODO DEGRADADO: cargó, pero sus servicios
 #     internos no arrancaron y el host guarda el motivo en vez de fallar. Se lee y se exige vacío.
 #
@@ -86,7 +88,15 @@ done
 # grabado, no un nombre que alguien escribe; el freno de nombres cuenta los valores del mapa entre comillas).
 case "$ENTORNO" in production) ENTORNO=produccion ;; esac
 
-fatal() { echo "##vso[task.logissue type=error]$1"; exit "${2:-1}"; }
+# 🔴 TEXTO QUE VIENE DEL HOST VA EN UNA SOLA LÍNEA. Los mensajes llevan pedazos de respuestas del host (cuerpos,
+# claves, motivos). Un salto de línea seguido de `##vso[` dentro de ese texto es, para Azure, un comando de la corrida
+# (fijar una variable, marcar un resultado). Se aplanan los saltos y se desarma el prefijo.
+una_linea() { printf '%s' "$1" | tr '\r\n' '  ' | sed 's/##vso\[/##vso [/g'; }
+fatal() { echo "##vso[task.logissue type=error]$(una_linea "$1")"; exit "${2:-1}"; }
+aviso() { echo "##vso[task.logissue type=warning]$(una_linea "$1")"; }
+# El identificador de una versión va adentro de las direcciones de la API: sólo letras, números y guiones (un número o
+# un GUID). Cualquier otra cosa armaría otra dirección.
+id_valido() { [[ "$1" =~ ^[0-9A-Za-z-]+$ ]]; }
 paso()  { echo ""; echo "── $1"; }
 
 [ -n "$URL" ] && [ -n "$USUARIO" ] && [ -n "$CLAVE" ] || fatal "faltan credenciales o URL del host — un despliegue que no puede empezar NO está desplegado" 2
@@ -102,6 +112,7 @@ ZIP_NAME=$(basename "$ZIP")
 # registro dice lo contrario de lo que pasó. `smoke-plugin.sh` y `rollback-guard.sh` ya filtran
 # por nombre; este guion tiene que hacer lo mismo.
 NOMBRE_PLUGIN=$(echo "$ZIP_NAME" | sed -E 's/^([^.]*)\..*/\1/')
+VERSION_PLUGIN=$(echo "$ZIP_NAME" | sed -E 's/^[^.]*\.([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
 
 # 🔴 EL REGISTRO DE DESPLIEGUES. Tras entrar al host y antes de subir nada, la corrida
 # queda con una línea `[registro-despliegue]` «intentado» y la etiqueta `despliegue-intentado`: una
@@ -199,6 +210,10 @@ recuperar_anterior() {
     echo "   ⚠️ no encontré otra versión de '$NOMBRE_PLUGIN' marcada como actual para recuperar"
     return 1
   fi
+  if ! id_valido "$ID_ANT"; then
+    echo "   ⚠️ el identificador de la versión anterior trae caracteres que no puede tener: no la recupero — hay que volver a activarla a mano"
+    return 1
+  fi
   # 🔴 MIRAR EL CÓDIGO HTTP, NO EL DE CURL. `api()` no usa `--fail`, así que curl sale 0 con un
   # 500, un 404 o el HTML del proxy. Juzgar por el código de salida de curl afirmaría "versión
   # anterior vuelta a cargar" sin haberlo medido: la corrida quedaría en rojo pero el registro
@@ -237,24 +252,119 @@ if [ "$UP_CODE" = "409" ]; then
     fatal "el host rechazó el paquete por un conflicto de migraciones: $(echo "$UP_BODY" | head -c 300)"
   fi
   echo "   el paquete ya estaba subido (re-corrida): resuelvo el identificador y sigo"
-  VER=$(echo "$ZIP_NAME" | sed -E 's/^[^.]*\.([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-  NOMBRE=$(echo "$ZIP_NAME" | sed -E 's/^([^.]*)\..*/\1/')
+  VER="$VERSION_PLUGIN"; NOMBRE="$NOMBRE_PLUGIN"
   LISTA=$(api GET "/api/admin/plugins"); [ "$(codigo "$LISTA")" = "200" ] || fatal "no pude listar los plugins para resolver el identificador"
   PLUGIN_ID=$(cuerpo "$LISTA" | jq -r --arg n "$NOMBRE" --arg v "$VER" \
     '(if type=="array" then . else (.plugins // .data // .items // .value // []) end) | map(select((.name|ascii_downcase)==($n|ascii_downcase) and .version==$v)) | .[0].pluginId // empty')
   [ -n "$PLUGIN_ID" ] || fatal "el paquete ya existía y no pude resolver su identificador (nombre=$NOMBRE versión=$VER)"
-  # 🔴 En la re-corrida la lista de opciones faltantes NO vuelve a viajar (sólo la trae la subida
-  # que salió bien): se pide por la dirección de la versión, o es rojo. Sin esto, re-encolar
-  # ignorando un rojo que nombraba la opción la dejaría pasar.
-  DET=$(api GET "/api/admin/plugins/${PLUGIN_ID}")
-  [ "$(codigo "$DET")" = "200" ] || fatal "no pude releer la versión ya subida para verificar su configuración"
-  FALTAN=$(cuerpo "$DET" | jq -r '[(.missingSettings // [])[]] | join(", ")')
+  CAMINO=re-corrida
 elif [ "$UP_CODE" = "200" ] || [ "$UP_CODE" = "201" ]; then
   [ -n "$PLUGIN_ID" ] || fatal "la subida salió bien pero no trajo identificador de plugin — sin él no puedo migrar ni activar: $(echo "$UP_BODY" | head -c 300)"
-  FALTAN=$(echo "$UP_BODY" | jq -r '[(.missingSettings // [])[]] | join(", ")')
+  id_valido "$PLUGIN_ID" || fatal "la subida devolvió un identificador de plugin con caracteres que no puede tener: no lo uso para armar direcciones del host"
+  CAMINO=subida
   echo "   subido · identificador $PLUGIN_ID"
 else
   fatal "la subida falló (HTTP $UP_CODE): $(echo "$UP_BODY" | head -c 400)"
+fi
+id_valido "$PLUGIN_ID" || fatal "el host devolvió un identificador de plugin con caracteres que no puede tener: no lo uso para armar direcciones del host"
+
+# ── 2. preguntar ANTES de tocar la memoria ───────────────────────────────────────────────────
+# Una sola vista previa, justo después de subir: el freno de configuración y el de migraciones leen la misma
+# respuesta, y el orden de las llamadas al host no cambia (subir → vista previa → migraciones → activar → marcar).
+paso "2/5 · Vista previa: ¿qué le faltaría a esta versión, y el host va a dejar marcarla como actual?"
+PREVIA=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
+PREV_CODE=$(codigo "$PREVIA"); PREV_BODY=$(cuerpo "$PREVIA")
+[ "$PREV_CODE" = "200" ] || fatal "la vista previa falló (HTTP $PREV_CODE): $(echo "$PREV_BODY" | head -c 300) — no toco nada, la versión anterior sigue cargada y marcada"
+# 🔴 SI EL CUERPO NO SE PUDO LEER, NO ES "0 Y 0". `jq -r '.campo // 0'` sobre un cuerpo
+# vacío o que no es JSON devuelve 0 sin quejarse, así que este paso —el que el guion define como EL
+# freno— imprimiría "pendientes 0 · retrocesos 0" sin haber leído nada: no ejecutaría migraciones y no
+# revisaría retrocesos. Con migraciones o retrocesos reales, la negativa aparecería más tarde, al
+# activar o al marcar, y para entonces el host ya habría descargado la versión anterior.
+if ! printf '%s' "$PREV_BODY" | jq -e . >/dev/null 2>&1; then
+  fatal "la vista previa vino ilegible (no es JSON): $(printf '%s' "$PREV_BODY" | head -c 300). Es EL freno del despliegue: si no se pudo leer, no se sigue — no toqué nada"
+fi
+
+# 🔴 EL FRENO DE CONFIGURACIÓN MIDE EN LOS DOS CAMINOS, O DICE QUE NO PUDO.
+#
+# El host informa qué opciones de configuración quedarían sin valor. En la re-corrida (la subida contesta 409
+# «ya estaba subido») ese dato NO viaja en la subida, y `GET /api/admin/plugins/{id}` nunca lo trae: leerlo de ahí
+# con `// []` da una lista vacía y el guion concluiría «no falta nada» sin haber mirado — justo en el reintento
+# que se usa después de corregir una configuración. Por eso se lee de la vista previa, que en los hosts
+# actualizados contesta «¿qué le faltaría si la enciendo?». Tres reglas, del código del host:
+#   · se mira si la CLAVE vino, no su valor: un campo ausente no es una lista vacía;
+#   · la vista previa trae objetos `{key, reason}` y la subida trae cadenas, con el mismo nombre. Leer los objetos
+#     con la expresión de las cadenas sale con error y salida vacía, y este guion no corta por errores (sólo
+#     `set -u`): se lee con una expresión estricta y se mira su código de salida;
+#   · `manifestUnreadable: true` significa que la lista no dice nada: el paquete está roto, y es rojo.
+#
+# 🔴 EL PUENTE, MIENTRAS LOS HOSTS SE ACTUALIZAN. Un host que todavía no contesta la pregunta nueva no trae la clave.
+# Con una subida nueva, la lista sale del cuerpo de la subida. En una re-corrida no hay de dónde sacarla: se AVISA
+# que no se pudo medir y NO se frena. Frenar dejaría a todos los productos sin poder reintentar un despliegue hasta
+# que cada cliente actualice su host, y romper el despliegue es más peligroso que explicar la salida. Cada uso del puente deja una línea `[puente-config]` con el host (por producto, repo y entorno:
+# la dirección del servidor no se imprime) y la versión del plugin, para decidir con un número cuándo pasa a rojo.
+# La deuda está declarada, con fecha de revisión, en el registro de deuda de los pipelines del equipo.
+constancia_puente() { # constancia_puente <si|no> — si se pudo medir
+  local host medido=false
+  [ "$1" = si ] && medido=true
+  if [ "${TF_BUILD:-}" = "True" ] && [ -n "${SYSTEM_TEAMPROJECT:-}" ]; then
+    host="${SYSTEM_TEAMPROJECT}/${BUILD_REPOSITORY_NAME:-sin-repo}/${ENTORNO}"
+  else
+    host="host del entorno ${ENTORNO}"
+  fi
+  PUENTE_HOST="$host"
+  local linea
+  linea=$(jq -cn --arg host "$host" --arg plugin "$NOMBRE_PLUGIN" --arg version "$VERSION_PLUGIN" \
+    --arg camino "$CAMINO" --arg medido "$medido" '{host:$host,plugin:$plugin,version:$version,camino:$camino,medido:($medido == "true")}' 2>/dev/null) || linea=""
+  if [ -n "$linea" ]; then
+    printf '[puente-config] %s\n' "$linea"
+  else
+    aviso "no pude escribir la constancia del puente de configuración ($host, $NOMBRE_PLUGIN $VERSION_PLUGIN): este uso del puente no queda contado"
+  fi
+}
+# Los motivos son los valores que manda el host, tal cual; acá se les agrega qué quieren decir.
+MOTIVOS_LLANOS='{"opcion-nueva": "no existía en la versión de la que hereda", "vacia-en-ambas": "existe y está vacía también en la versión de la que hereda"}'
+motivo_llano() {
+  local llano
+  llano=$(jq -rn --arg m "$1" "${MOTIVOS_LLANOS}"' | .[$m] // empty' 2>/dev/null)
+  if [ -n "$llano" ]; then echo "$1: $llano"; else echo "$1"; fi
+}
+# Una clave de opción es texto de una línea y no vacío. Una clave vacía se descartaría sin decirlo, y una con saltos
+# de línea partiría la lista (y podría colar un comando de Azure en la salida): la lectura falla si aparece una así.
+CLAVE_OK='type == "string" and length > 0 and (test("[[:cntrl:]]") | not)'
+FALTAN=""; FALTAN_LINEAS=""; DETALLE=""; MEDIDO=si; YA_ARRANCO=no
+# El manifiesto ilegible se mira antes que la lista: con él, la lista no dice nada, venga o no venga.
+if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and .manifestUnreadable == true' >/dev/null 2>&1; then
+  fatal "el host no pudo leer el manifiesto (plugin.json) del paquete $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID): las opciones que le faltarían no se pueden saber, y eso no es «no falta nada». El paquete está roto — no toqué nada, la versión anterior sigue cargada y marcada"
+fi
+if printf '%s' "$PREV_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+  LECTURA=$(printf '%s' "$PREV_BODY" | jq -r '.missingSettings
+    | if type != "array" then error("no es una lista") else .[] end
+    | if type == "object" and (.key | '"$CLAVE_OK"')
+      then "\(.key)\t\(.reason // "" | tostring | gsub("[[:cntrl:]]"; " "))"
+      else error("un elemento sin una clave legible") end' 2>&1)
+  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la vista previa ($LECTURA) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)"
+  while IFS=$'\t' read -r OP MOT; do
+    [ -n "$OP" ] || continue
+    FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
+    DETALLE="${DETALLE}   · $OP ($(motivo_llano "${MOT:-sin motivo}"))"$'\n'
+  done <<< "$LECTURA"
+  printf '%s' "$PREV_BODY" | jq -e '.alreadyStarted == true' >/dev/null 2>&1 && YA_ARRANCO=si
+elif [ "$CAMINO" = subida ] && printf '%s' "$UP_BODY" | jq -e 'type == "object" and has("missingSettings")' >/dev/null 2>&1; then
+  LECTURA=$(printf '%s' "$UP_BODY" | jq -r '.missingSettings
+    | if type != "array" then error("no es una lista") else .[] end
+    | if '"$CLAVE_OK"' then . else error("un elemento que no es una clave legible") end' 2>&1)
+  [ $? -eq 0 ] || fatal "no pude leer la lista de opciones faltantes de la subida ($LECTURA) — una lista que no se pudo leer no es una lista vacía. Detalle: $(printf '%s' "$UP_BODY" | head -c 300)"
+  while IFS= read -r OP; do
+    [ -n "$OP" ] || continue
+    FALTAN="${FALTAN:+$FALTAN, }$OP"; FALTAN_LINEAS="${FALTAN_LINEAS}${OP}"$'\n'
+    DETALLE="${DETALLE}   · $OP (sin motivo: la subida no lo informa)"$'\n'
+  done <<< "$LECTURA"
+  echo "   el host todavía no contesta qué opciones le faltarían a esta versión: uso la lista que devolvió la subida"
+  constancia_puente si
+else
+  MEDIDO=no
+  constancia_puente no
+  aviso "NO PUDO MEDIR la configuración de $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID, $PUENTE_HOST): este host todavía no contesta qué opciones faltan; si acabás de corregir una configuración, subí el número de versión para volver al camino de la subida nueva, o actualizá el host. Si a esta versión le falta una opción, se va a encender sin ella"
 fi
 
 # 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA.
@@ -270,6 +380,22 @@ fi
 # Entonces la puerta es la misma que se usa para las vulnerabilidades: se DECLARA, con motivo y
 # fecha de revisión. Una declaración vencida vuelve a frenar. Un archivo ilegible frena. Y una
 # opción faltante que no esté declarada frena igual — que es lo que el control existe para frenar.
+#
+# 🔴 LA FECHA SE VALIDA COMO FECHA. Comparada como texto, «pronto» o «2026-13-45» nunca vencerían y ampararían
+# para siempre. Y este archivo no ampara el caso del puente sin medir: ahí la lista de faltantes
+# no está vacía, es desconocida, y no hay nada contra qué declarar.
+fecha_valida() { # fecha_valida <AAAA-MM-DD> — una fecha del calendario, no sólo con la forma
+  local a m d tope
+  [[ "$1" =~ ^([0-9]{4})-([0-9]{2})-([0-9]{2})$ ]] || return 1
+  a=$((10#${BASH_REMATCH[1]})); m=$((10#${BASH_REMATCH[2]})); d=$((10#${BASH_REMATCH[3]}))
+  [ "$m" -ge 1 ] && [ "$m" -le 12 ] && [ "$d" -ge 1 ] || return 1
+  case "$m" in
+    2) tope=28; if [ $((a % 4)) -eq 0 ] && { [ $((a % 100)) -ne 0 ] || [ $((a % 400)) -eq 0 ]; }; then tope=29; fi ;;
+    4|6|9|11) tope=30 ;;
+    *) tope=31 ;;
+  esac
+  [ "$d" -le "$tope" ]
+}
 if [ -n "$FALTAN" ]; then
   NO_DECLARADAS=""
   if [ -n "${PENDIENTES_ARCH:-}" ] && [ -f "$PENDIENTES_ARCH" ]; then
@@ -278,39 +404,41 @@ if [ -n "$FALTAN" ]; then
     VENCE=$(jq -r '.revision // ""' "$PENDIENTES_ARCH")
     HOY=$(date -u +%Y-%m-%d)
     [ -n "$VENCE" ] || fatal "el archivo de opciones pendientes no tiene fecha de revisión — una deuda sin fecha es permanente en silencio"
+    fecha_valida "$VENCE" || fatal "la fecha de revisión del archivo de opciones pendientes («${VENCE}») no es una fecha AAAA-MM-DD del calendario — una fecha que no se puede leer no vence nunca y ampararía para siempre"
     [ "$VENCE" \< "$HOY" ] && fatal "la declaración de opciones pendientes venció el $VENCE — o se configuran, o se re-declara con fecha nueva y su motivo"
-    OLD_IFS="$IFS"; IFS=','
-    for op in $FALTAN; do
-      op=$(echo "$op" | sed 's/^ *//; s/ *$//')
-      [ -z "$op" ] && continue
+    # una clave por línea, leída tal cual: sin partir por comas ni expandir comodines contra la carpeta de trabajo
+    while IFS= read -r op; do
+      [ -n "$op" ] || continue
       jq -e --arg o "$op" '.opciones[]? | select(.opcion == $o and (.motivo // "") != "")' "$PENDIENTES_ARCH" >/dev/null 2>&1 \
         || NO_DECLARADAS="$NO_DECLARADAS $op"
-    done
-    IFS="$OLD_IFS"
+    done <<< "$FALTAN_LINEAS"
   else
     NO_DECLARADAS=" $FALTAN"
   fi
   if [ -n "$NO_DECLARADAS" ]; then
-    fatal "el host dice que faltan opciones de configuración para esta versión y NO están declaradas:$NO_DECLARADAS — es la única señal de configuración que da, y con la versión sin marcar no frena sola. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
+    echo "   faltan opciones de configuración en $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID):"
+    printf '%s' "$DETALLE"
+    echo "   Se cargan en el panel de administración, en la configuración de la versión con identificador $PLUGIN_ID."
+    [ "$YA_ARRANCO" = si ] && echo "   Esta versión ya arrancó; si cargaste un valor después, cargalo en ELLA."
+    fatal "el host dice que faltan opciones de configuración para $NOMBRE_PLUGIN $VERSION_PLUGIN (identificador $PLUGIN_ID) y NO están declaradas:$NO_DECLARADAS — con la versión sin marcar el host no frena solo. Se cargan en el panel, en la configuración de la versión con identificador $PLUGIN_ID. Si son pendientes a sabiendas, declaralas con motivo y fecha en el archivo de opciones pendientes"
   fi
-  echo "##vso[task.logissue type=warning]faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
+  aviso "faltan opciones de configuración DECLARADAS como pendientes (revisar $VENCE): $FALTAN"
+elif [ "$MEDIDO" = si ]; then
+  echo "   configuración: no falta ninguna opción"
 fi
 
-# ── 2. preguntar ANTES de tocar la memoria ───────────────────────────────────────────────────
-paso "2/5 · Vista previa: ¿el host va a dejar marcar esta versión como actual?"
-PREVIA=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
-PREV_CODE=$(codigo "$PREVIA"); PREV_BODY=$(cuerpo "$PREVIA")
-[ "$PREV_CODE" = "200" ] || fatal "la vista previa falló (HTTP $PREV_CODE): $(echo "$PREV_BODY" | head -c 300) — no toco nada, la versión anterior sigue cargada y marcada"
-# 🔴 SI EL CUERPO NO SE PUDO LEER, NO ES "0 Y 0". `jq -r '.campo // 0'` sobre un cuerpo
-# vacío o que no es JSON devuelve 0 sin quejarse, así que este paso —el que el guion define como EL
-# freno— imprimiría "pendientes 0 · retrocesos 0" sin haber leído nada: no ejecutaría migraciones y no
-# revisaría retrocesos. Con migraciones o retrocesos reales, la negativa aparecería más tarde, al
-# activar o al marcar, y para entonces el host ya habría descargado la versión anterior.
-if ! printf '%s' "$PREV_BODY" | jq -e . >/dev/null 2>&1; then
-  fatal "la vista previa vino ilegible (no es JSON): $(printf '%s' "$PREV_BODY" | head -c 300). Es EL freno del despliegue: si no se pudo leer, no se sigue — no toqué nada"
-fi
-PENDIENTES=$(echo "$PREV_BODY" | jq -r '.pendingCount // 0')
-RETROCESOS=$(echo "$PREV_BODY" | jq -r '.rollbackCount // 0')
+# 🔴 LOS CONTADORES QUE NO VINIERON NO SON CERO. Los contadores de migraciones de la vista previa son nulables: si el
+# host no pudo abrir el paquete, el análisis no corre y lo dice con `migrationAnalysisFailed`. Leerlos con `// 0`
+# imprimiría «Sin migraciones pendientes» y seguiría derecho a activar. Un contador ausente o nulo es «no sé», y frena.
+CONTADORES=$(printf '%s' "$PREV_BODY" | jq -r 'if type != "object" then "sin-contadores"
+  elif .migrationAnalysisFailed == true then "fallo"
+  elif (.pendingCount | type) != "number" or (.rollbackCount | type) != "number" then "sin-contadores"
+  else "\(.pendingCount) \(.rollbackCount)" end' 2>/dev/null)
+case "$CONTADORES" in
+  fallo) fatal "el host no pudo analizar las migraciones de esta versión ($(printf '%s' "$PREV_BODY" | jq -r '.migrationAnalysisError // "sin detalle"' 2>/dev/null)): sin ese análisis no sé si hay migraciones pendientes ni retrocesos, y «no sé» no es «ninguna» — no toqué nada" ;;
+  ""|sin-contadores) fatal "la vista previa no dijo cuántas migraciones pendientes ni retrocesos hay (pendingCount o rollbackCount ausentes o nulos): «no sé» no es «ninguna» — no toqué nada. Detalle: $(printf '%s' "$PREV_BODY" | head -c 300)" ;;
+esac
+PENDIENTES=${CONTADORES% *}; RETROCESOS=${CONTADORES#* }
 echo "   migraciones pendientes: $PENDIENTES · retrocesos: $RETROCESOS"
 
 # 🔴 SE MIRA CUÁLES RETROCEDE, NO CUÁNTAS.
@@ -349,7 +477,7 @@ if [ "${RETROCESOS:-0}" -gt 0 ] 2>/dev/null; then
   if [ -n "$NO_DECL" ]; then
     fatal "esta versión NO trae migraciones que el host recuerda haber aplicado y que NO están declaradas como exclusiones:$NO_DECL — marcarla como actual sería un retroceso de base de datos. NO toqué nada: la versión anterior sigue cargada y marcada. Si la exclusión es deliberada, va en excludedMigrations con su motivo. Detalle: $(echo "$PREV_BODY" | head -c 300)"
   fi
-  echo "##vso[task.logissue type=warning]el host lee como retroceso $RETROCESOS migración(es) que el paquete excluye A PROPÓSITO ($NOMBRES) — declaradas en excludedMigrations; se sigue"
+  aviso "el host lee como retroceso $RETROCESOS migración(es) que el paquete excluye A PROPÓSITO ($NOMBRES) — declaradas en excludedMigrations; se sigue"
   # El host exige la aprobación EXPLÍCITA del retroceso al marcar como actual. Se enciende acá y
   # sólo acá: la aprobación la genera la lista de exclusiones deliberadas, no una bandera suelta.
   RETRO_APROBADO=si
@@ -364,14 +492,15 @@ if [ "${PENDIENTES:-0}" -gt 0 ] 2>/dev/null; then
   # 🔴 200 NO significa que se aplicaron: el host devuelve bien con un contador de fallidas.
   FALLIDAS=$(echo "$MIG_BODY" | jq -r '.failed // 0')
   APLICADAS=$(echo "$MIG_BODY" | jq -r '.applied // 0')
-  echo "   aplicadas: $APLICADAS · fallidas: $FALLIDAS"
+  echo "   aplicadas: $(una_linea "$APLICADAS") · fallidas: $(una_linea "$FALLIDAS")"
   [ "${FALLIDAS:-0}" -eq 0 ] 2>/dev/null || fatal "$FALLIDAS migración(es) fallaron: $(echo "$MIG_BODY" | head -c 400) — no activo nada; la versión anterior sigue cargada y marcada"
 
   paso "3b/5 · Vista previa otra vez, ya sin pendientes"
   PREVIA2=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
   [ "$(codigo "$PREVIA2")" = "200" ] || fatal "la segunda vista previa falló: $(cuerpo "$PREVIA2" | head -c 300)"
-  RESTAN=$(cuerpo "$PREVIA2" | jq -r '.pendingCount // 0')
-  [ "${RESTAN:-0}" -eq 0 ] 2>/dev/null || fatal "quedan $RESTAN migración(es) pendientes después de ejecutarlas — no activo nada"
+  # 🔴 el mismo criterio que la primera vista previa: un contador ausente o nulo no es cero
+  RESTAN=$(cuerpo "$PREVIA2" | jq -r 'if (.pendingCount | type) == "number" then .pendingCount else "?" end' 2>/dev/null)
+  [ "$RESTAN" = "0" ] || fatal "la segunda vista previa no dice que quedan 0 migraciones pendientes (dijo: ${RESTAN:-nada legible}) — no activo nada"
 else
   paso "3/5 · Sin migraciones pendientes"
 fi

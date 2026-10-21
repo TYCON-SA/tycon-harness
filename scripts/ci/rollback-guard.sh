@@ -55,12 +55,17 @@ login() {
 
 # ¿$1 es MENOR que $2? (versiones X.Y.Z; sort -V)
 es_menor() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$1" ]; }
-valida_version() { printf '%s' "$1" | grep -E '^[0-9]+(\.[0-9]+)+$' >/dev/null; }
+# 🔴 LA FORMA SE MIRA SOBRE EL TEXTO ENTERO, NO LÍNEA POR LÍNEA. `grep` aprueba si ALGUNA línea tiene forma de versión,
+# así que una versión del host como «1.0.214» + salto de línea + `##vso[...]` pasaría, y al imprimirla Azure ejecutaría
+# esa segunda línea como un comando de la corrida.
+valida_version() { [[ "$1" =~ ^[0-9]+(\.[0-9]+)+$ ]]; }
+# lo que no pasó la validación se muestra en una línea y sin `##vso[`, para que el rojo no cuele el mismo comando
+visible() { printf '%s' "$1" | tr '\r\n' '  ' | sed 's/##vso\[/##vso [/g' | cut -c1-80; }
 
 case "$MODO" in
   plugin)
     PLUGIN="${1:?nombre del plugin}"; PAQUETE="${2:?versión del paquete}"
-    valida_version "$PAQUETE" || { echo "[retroceso] la versión del paquete no tiene forma de versión: '$PAQUETE'" >&2; exit 1; }
+    valida_version "$PAQUETE" || { echo "[retroceso] la versión del paquete no tiene forma de versión: '$(visible "$PAQUETE")'" >&2; exit 1; }
     TOKEN=$(login) || exit 1
     LISTA=$(curl -s --max-time 25 "${URL}/api/admin/plugins" -H "Authorization: Bearer $TOKEN" -H "Cookie: admin_token=$TOKEN" -H 'X-Tenant-Id: default' 2>/dev/null) || LISTA=""
     # La versión INSTALADA = la marcada como default para ese nombre (como smoke-plugin.sh).
@@ -77,7 +82,7 @@ case "$MODO" in
     [ -z "$INSTALADA" ] && INSTALADA="ILEGIBLE"
     if [ "$INSTALADA" = "ILEGIBLE" ]; then echo "[retroceso] no pude leer qué versión de $PLUGIN está instalada (respuesta ilegible) — no dejo pasar sin mirar" >&2; exit 1; fi
     if [ "$INSTALADA" = "AUSENTE" ]; then echo "[retroceso] $PLUGIN no está instalado en el host: v$PAQUETE es la primera, puede subir"; exit 0; fi
-    valida_version "$INSTALADA" || { echo "[retroceso] la versión instalada de $PLUGIN no tiene forma de versión: '$INSTALADA' — no dejo pasar sin entender" >&2; exit 1; }
+    valida_version "$INSTALADA" || { echo "[retroceso] la versión instalada de $PLUGIN no tiene forma de versión: '$(visible "$INSTALADA")' — no dejo pasar sin entender" >&2; exit 1; }
     if es_menor "$PAQUETE" "$INSTALADA"; then
       echo "##vso[task.logissue type=error][retroceso] ME NIEGO: $PLUGIN v$PAQUETE es MENOR que la instalada v$INSTALADA. Este run promueve un paquete viejo (¿se encoló a mano eligiendo un run de CI anterior?). Retroceder es una acción de una persona desde el panel del host."
       exit 2
@@ -104,13 +109,13 @@ case "$MODO" in
     RETROCESOS=0
     for PAR in $ESPERADOS; do
       F="${PAR%%=*}"; V="${PAR#*=}"
-      valida_version "$V" || { echo "[retroceso] $F: la versión del paquete no tiene forma de versión: '$V'" >&2; exit 1; }
+      valida_version "$V" || { echo "[retroceso] $(visible "$F"): la versión del paquete no tiene forma de versión: '$(visible "$V")'" >&2; exit 1; }
       INSTALADA=$(printf '%s' "$LISTA" | jq -r --arg f "$F" '
         (if type=="array" then . else (.forms // .data // .items // []) end)
         | map(select((.formName // .name // "") == $f)) | .[0] | (.currentVersion // .CurrentVersion // "AUSENTE")' 2>/dev/null)
       [ -z "$INSTALADA" ] && INSTALADA="AUSENTE"
       if [ "$INSTALADA" = "AUSENTE" ] || [ "$INSTALADA" = "null" ]; then echo "[retroceso] $F: no está instalado, v$V es la primera"; continue; fi
-      valida_version "$INSTALADA" || { echo "[retroceso] $F: la versión instalada no tiene forma de versión: '$INSTALADA' — no dejo pasar sin entender" >&2; exit 1; }
+      valida_version "$INSTALADA" || { echo "[retroceso] $(visible "$F"): la versión instalada no tiene forma de versión: '$(visible "$INSTALADA")' — no dejo pasar sin entender" >&2; exit 1; }
       if es_menor "$V" "$INSTALADA"; then
         echo "##vso[task.logissue type=error][retroceso] $F: el paquete trae v$V y en producción está v$INSTALADA — es un RETROCESO"
         RETROCESOS=$((RETROCESOS+1))
