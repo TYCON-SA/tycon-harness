@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-team-codex.test.sh — los revisores de la capa del equipo del lado de Codex (story 8.25, tanda A2b · T30), en el
+# harness-team-codex.test.sh — los revisores de la capa del equipo del lado de Codex (T30), en el
 # laboratorio: una versión de juguete con las piezas REALES del enchufe de Codex (build/, harness_lab_codex_pieces), el
 # GitHub de juguete con los dos repos y una máquina con Claude Code y Codex. Nombres inventados.
 #

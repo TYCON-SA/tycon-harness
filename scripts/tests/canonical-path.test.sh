@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# canonical-path.test.sh — el aviso de "el arnés no está donde el arnés cree que está" (2026-09-05).
+# canonical-path.test.sh — el aviso de "el arnés no está donde el arnés cree que está".
 #
-# Caso: un dev con el clon fuera de ~/SourceCode/tycon-claude-guides no veía ningún error, y 15
-# revisores buscaban las guías en una ruta que en su máquina no existía: leían menos, callados.
+# Defecto que cierra: con el clon fuera de ~/SourceCode/tycon-claude-guides no se ve ningún error, y 15
+# revisores buscan las guías en una ruta que en esa máquina no existe: leen menos, callados.
 # El clon lo pone una persona a mano una sola vez; lo que se instala solo viene después. Nadie
-# miraba ese paso. Detalle: scripts/lib/canonical-path.js.
+# mira ese paso. Detalle: scripts/lib/canonical-path.js.
 #
 # 🔴 Sin pipes sobre el comando: el exit code REAL es el veredicto (regla 5 de
 # test-execution-discipline — un `| tail` enmascara el rojo).
@@ -20,8 +20,8 @@ out="$(TYCON_GUIDES_DIR= TYCON_NO_CANONICAL_PATH= node "$J" --clone "$T/b" --can
 out="$(TYCON_GUIDES_DIR= TYCON_NO_CANONICAL_PATH= node "$J" --clone "$T/a" --canonical "$T/a")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] || { echo "❌ clon canónico: esperaba silencio y exit 0 (rc=$rc, out='$out')"; exit 1; }
 
-# Caja negra de los enlaces del repo único (story 8.7, pase adversarial de la tanda C): una entrada del clon que es
-# ella misma un enlace colgado no se enlaza, y la segunda corrida no dice nada (antes se agregaba y se sacaba en cada
+# Caja negra de los enlaces del repo único: una entrada del clon que es
+# ella misma un enlace colgado no se enlaza, y la segunda corrida no dice nada (sin eso, se agregaría y se sacaría en cada
 # corrida). El espejo: la entrada sana sí queda enlazada.
 mkdir -p "$T/single/scripts" "$T/single/skills/tycon-pipeline" "$T/single/agents" "$T/home/.claude/skills" "$T/home/.claude/agents"
 : > "$T/single/scripts/install-tycon-hooks.sh"; ln -s "$T/no-such/zzz" "$T/single/skills/dangling"
@@ -31,11 +31,11 @@ out="$(TYCON_REPORT_PIECES= node "$J" --ensure-repo-links --clone "$T/single" --
 out="$(TYCON_REPORT_PIECES= node "$J" --ensure-repo-links --clone "$T/single" --home "$T/home" --only entries)"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] || { echo "❌ repo único, segunda corrida: esperaba silencio y exit 0 (rc=$rc, out='$out')"; exit 1; }
 
-# T51 · Links_AgentsRealFolder_FileLinkThenHardLinkThenSaysSo (story 8.17, W4 · AC 39; decisión C18 de la 8.7)
+# T51 · Links_AgentsRealFolder_FileLinkThenHardLinkThenSaysSo
 # Con ~/.claude/agents como carpeta real, cada revisor (un archivo) se enlaza probando primero el enlace de archivo; si
 # Windows lo niega (sin «modo desarrollador»), un enlace duro; si tampoco, lo dice y no escribe. Una carpeta va siempre
 # con junction en Windows. El creador de enlaces se inyecta: en esta máquina el enlace de archivo no falla nunca.
-# 🔴 rojo previo: linkEntries llamaba a fs.symlinkSync directo y, si fallaba, no probaba el enlace duro.
+# 🔴 sin esto, linkEntries llama a fs.symlinkSync directo y, si falla, no prueba el enlace duro.
 node - "$J" "$T/t51" <<'JS'
 'use strict';
 const fs = require('fs'); const path = require('path');
@@ -86,12 +86,12 @@ console.log('✅ T51 revisores en una carpeta real: enlace de archivo → enlace
 JS
 [ $? -eq 0 ] || exit 1
 
-# T51b · Links_HardLinkOrphan_SweptAndUninstallable (story 8.17, W4 · pase adversarial, clases 2, 3, 9 y 14)
+# T51b · Links_HardLinkOrphan_SweptAndUninstallable
 # Un enlace duro es un archivo común: no queda «colgado» cuando el revisor se borra del clon. El arnés anota los que
 # crea (~/.claude/.tycon-pipeline/hard-links.json) y la corrida siguiente saca ésos —y sólo ésos—; el desinstalador
 # pregunta lo mismo (ownHardLink). Un archivo propio con el mismo nombre no se toca.
-# 🔴 rojo previo (pruebas del pase: traversal-completeness-2, integration-contracts-5, false-positive-edge-4): el
-#    revisor borrado del clon seguía en ~/.claude/agents, sin línea, y el desinstalador decía «no lo toco».
+# 🔴 sin esto, el revisor borrado del clon sigue en ~/.claude/agents, sin línea,
+#    y el desinstalador dice «no lo toco».
 node - "$J" "$T/t51b" <<'JS'
 'use strict';
 const fs = require('fs'); const path = require('path');
@@ -160,11 +160,11 @@ console.log('✅ T51b enlaces duros: anotados, la corrida siguiente saca los hu�
 JS
 [ $? -eq 0 ] || exit 1
 
-# T51c · Links_SameFile_ComparesBigintIds (story 8.17, W4 · pase adversarial, clase 6; prueba false-negative-classification-5)
+# T51c · Links_SameFile_ComparesBigintIds
 # En Windows el ID de archivo de NTFS pasa de 2^53: como Number, dos archivos distintos dan el mismo `ino`. Se simula
 # así: lstat/stat SIN { bigint: true } devuelven el ID truncado (dos archivos distintos, mismo Number); con bigint, los
 # de verdad. Esperado: el revisor PROPIO choca (no se toma por el enlace duro del clon) y no es pieza.
-# 🔴 rojo previo: plan «keep» y pieza agents/revisor.md, sin línea de choque.
+# 🔴 sin esto, el plan es «keep» y la pieza agents/revisor.md, sin línea de choque.
 node - "$J" "$T/t51c" <<'JS'
 'use strict';
 const fs = require('fs'); const path = require('path');

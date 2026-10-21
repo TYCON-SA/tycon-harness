@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
  * expiring-debts.test.js — red del aviso de deudas declaradas que vencen
- * (scripts/hooks/dependencies-notice.js, 2026-09-29).
+ * (scripts/hooks/dependencies-notice.js).
  *
  * POR QUÉ EXISTE. Una deuda de dependencias declarada tiene fecha: mientras corre, el análisis la
  * ampara; el día que vence, deja de ampararla y el repo empieza a frenar SUS PROPIOS pull requests.
- * El dato estaba en el snapshot desde siempre y nadie lo miraba: el 2026-09-29 se descubrió de
- * casualidad que cinco declaraciones de cuatro repos vencían en 2 y 7 días — 18 vulnerabilidades,
- * 3 de ellas críticas. El equipo se habría enterado al quedar trabado, sin saber por qué.
+ * El dato está en el snapshot y, sin el aviso, nadie lo mira: el equipo se enteraría al quedar
+ * trabado, sin saber por qué.
  *
  * Los casos giran alrededor de las confusiones que matarían la pieza sin dar un solo error:
  *   · una declaración VACÍA (la que queda cuando la deuda se paga) conserva su fecha: avisar por
@@ -40,7 +39,7 @@ const repo = (nombre, vence, paquetes, extra = {}) => ({
 /** Corre evaluar+redactar sobre un snapshot de mentira y devuelve el texto. */
 function texto(repos) {
   // `resumen` entregado a propósito: sin él, el hook calla el ✅ de «no hay nada esperando
-  // decisión» (regla propia de la story 4.3 — el verde no va al lado de un resumen que no llegó),
+  // decisión» (el verde no va al lado de un resumen que no llegó),
   // y los casos que comprueban ESE ✅ estarían midiendo otra cosa.
   const snap = { corrida_completa: true, repos, no_medidos: [], hallazgos: [],
                  resumen: { entregado_el: '2026-09-29T09:00:00Z' } };

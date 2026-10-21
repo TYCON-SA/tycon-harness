@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 /**
- * adversarial-duplication.test.js — red de `scripts/metrics/adversarial-duplication.js` (story 7.11).
+ * adversarial-duplication.test.js — red de `scripts/metrics/adversarial-duplication.js`.
  *
- * Qué fija esta suite (T1 y T2 de la tabla `### Tests` de la story):
- *   T1 `Ratio_CruzaLasDosFuentes` (AC 1) — el buzón dice CUÁNTOS hallazgos tuvo cada pase; el repo
+ * Qué fija esta suite (T1 y T2):
+ *   T1 `Ratio_CruzaLasDosFuentes` — el buzón dice CUÁNTOS hallazgos tuvo cada pase; el repo
  *      dice en cuántas CAUSAS se agrupaban. Cruzarlos da el ratio por pase, con mediana y percentiles
  *      sobre TODOS los pases medibles, no sobre uno.
- *   T2 `Ratio_DiceLoQueNoPudoMedir` (AC 2) — un pase del buzón cuyos hallazgos no están en ningún
+ *   T2 `Ratio_DiceLoQueNoPudoMedir` — un pase del buzón cuyos hallazgos no están en ningún
  *      repo NO se estima ni se descarta en silencio: se cuenta aparte y el resumen dice sobre cuántos
  *      se midió y cuántos quedaron afuera.
  *
- * 🔴 Por qué importa el T2: el 40 % que originó la story salía de UNA corrida. Un medidor que promedia
+ * 🔴 Por qué importa el T2: un número que sale de UNA sola corrida engaña. Un medidor que promedia
  *    sólo lo que pudo leer y no declara el resto repite el mismo error con más decimales.
  *
  * Todo corre contra un buzón y repos de mentira armados en un tmpdir: no se lee el buzón real ni
- * ningún volcado archivado (Task 1 de la story — la medición no toca el estado guardado).
+ * ningún volcado archivado (la medición no toca el estado guardado).
  *
  * Correr: node scripts/tests/adversarial-duplication.test.js
  */
@@ -122,8 +122,8 @@ t('T1 Ratio_CruzaLasDosFuentes — da hallazgos y causas por pase, con mediana y
 });
 
 t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez, y no se abre registros/', () => {
-  // 🔴 rojo previo (pase adversarial, clase 2): cada máquina vuelve a subir lo de su disco a `<nombre>-<código>`; el
-  //    recorrido contaba cada pase dos veces y abría `registros/place.json`, que trae el correo de git de la persona.
+  // 🔴 cada máquina vuelve a subir lo de su disco a `<nombre>-<código>`; sin esto, el recorrido cuenta cada pase dos veces y
+  //    abre `registros/place.json`, que trae el correo de git de la persona.
   const { buzon, repo } = escenario();
   const nueva = path.join(buzon, 'maquina-1-1a2b3c4d');
   fs.mkdirSync(path.join(nueva, 'registros'), { recursive: true });
@@ -138,7 +138,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez
   assert.strictEqual(r.filas.filter((f) => f.story === '1.1').length, 1, `la corrida 1.1 una vez (fueron ${r.filas.filter((f) => f.story === '1.1').length})`);
   assert.ok(!abiertos.some((p) => p.endsWith('place.json')), 'no abre place.json');
   // una copia SIN pases de la misma corrida, recorrida antes, no tapa a la copia que sí los tiene
-  // 🔴 rojo previo (tercera vuelta de fallos silenciosos): la clave se marcaba vista antes de mirar si traía pases
+  // 🔴 la clave se marca vista sólo después de mirar si trae pases; si no, la copia vacía tapa a la completa
   const b4 = escenario();
   const viejaA = path.join(b4.buzon, 'aaa-vieja');
   fs.mkdirSync(viejaA, { recursive: true });
@@ -150,7 +150,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva cuenta UNA vez
   const r4 = medir({ buzon: b4.buzon, repos: [b4.repo] });
   assert.strictEqual(r4.filas.filter((f) => f.story === '1.1').length, 1, 'la corrida 1.1 sigue con su pase');
   // una carpeta de máquina que no se deja listar se dice, no desaparece
-  // 🔴 rojo previo (segunda vuelta de fallos silenciosos): el recorrido tragaba el error y sus pases faltaban sin rastro
+  // 🔴 sin esto, el recorrido traga el error y los pases faltan sin rastro
   fs.chmodSync(nueva, 0o000);
   try {
     if (fs.accessSync && (() => { try { fs.readdirSync(nueva); return true; } catch (_) { return false; } })()) return;   // root: no se puede probar
@@ -222,10 +222,10 @@ function huella(dir) {
 }
 
 
-// --------------------------------- datos ROTOS no son datos AUSENTES (SILENT-C2, vuelta 2)
+// --------------------------------- datos ROTOS no son datos AUSENTES (SILENT-C2)
 
 t('un volcado o un findings.json ilegible se cuenta aparte y avisa — no desaparece como "sin datos"', () => {
-  // 🔴 Caso del revisor de fallos silenciosos (2026-09-20): el buzón lo escriben 4 máquinas, así que
+  // 🔴 El buzón lo escriben 4 máquinas, así que
   // una escritura a medias es realista. Si un JSON corrupto se trata igual que un archivo que no
   // existe, el medidor dice «pregunté y no hay» donde la verdad es «no pude leer» — la mentira más
   // barata de producir y la más cara de detectar.
@@ -253,10 +253,10 @@ t('un volcado o un findings.json ilegible se cuenta aparte y avisa — no desapa
 });
 
 t('el motivo no publica la ruta completa de la máquina de otro dev (SEC-W8)', () => {
-  // 🔴 Caso del revisor de seguridad (2026-09-20): el `repoPath` del buzón trae el path absoluto de
+  // 🔴 el `repoPath` del buzón trae el path absoluto de
   // la máquina donde corrió — con el nombre de usuario de otro dev y el nombre del proyecto. La
-  // columna `repo` de la tabla ya lo acortaba; el `motivo` no, y por esa asimetría el path entero se
-  // coló en el .md que se iba a commitear.
+  // columna `repo` de la tabla lo acorta; el `motivo` también tiene que acortarlo: si no, el path entero se
+  // cuela en el .md que se va a commitear.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-sec-'));
   const buzon = path.join(tmp, 'buzon', 'm');
   fs.mkdirSync(buzon, { recursive: true });
@@ -271,16 +271,16 @@ t('el motivo no publica la ruta completa de la máquina de otro dev (SEC-W8)', (
   const texto = `${resumen(r)}\n${tabla(r)}`;
   assert.ok(!/\/Users\/otrodev/.test(texto), 'ni el resumen ni la tabla publican la ruta completa');
 
-  // 🔴 Y tampoco en el DATO, no sólo al imprimir (vuelta 2 del revisor de seguridad): `--json` lo
-  // consume otro script, y ahí la ruta volvía entera. Taparlo al renderizar no es taparlo.
+  // 🔴 Y tampoco en el DATO, no sólo al imprimir: `--json` lo
+  // consume otro script, y ahí la ruta saldría entera. Taparlo al renderizar no es taparlo.
   assert.ok(!/\/Users\/otrodev/.test(JSON.stringify(r.repos)), 'la lista de repos no guarda la ruta completa');
   for (const f of r.filas) assert.ok(!/\/Users\/otrodev/.test(String(f.repo)), `la fila de ${f.story} no guarda la ruta completa`);
 });
 
 t('ilegible por el HISTORIAL de git también dice "ilegible" en su fila, y se sabe de qué corrida', () => {
-  // 🔴 Vuelta 2 del cazador de fallos silenciosos: el contador global subía, pero la FILA de esa
-  // story seguía diciendo «no dejó nada». Y con el recorte de rutas, dos corridas rotas se veían
-  // iguales en el detalle («findings.json» y «findings.json»): se sabía cuántas, no cuáles.
+  // 🔴 El contador global sube, y la FILA de esa
+  // story también tiene que decirlo (no «no dejó nada»). Y con el recorte de rutas, dos corridas rotas se ven
+  // iguales en el detalle («findings.json» y «findings.json»): hay que saber cuáles, no sólo cuántas.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-git-'));
   const buzon = path.join(tmp, 'buzon', 'm');
   fs.mkdirSync(buzon, { recursive: true });
@@ -309,9 +309,9 @@ t('ilegible por el HISTORIAL de git también dice "ilegible" en su fila, y se sa
 });
 
 t('con el criterio real a mano, las causas se miden APLICÁNDOLO — no con la cota por sitio (AC 1)', () => {
-  // 🔴 Hueco que encontró el revisor de cobertura: la rama `if (agrupador)` es justo lo que el AC 1
-  // describe («se les aplica el criterio»), y hasta ahora sólo corría en producción, vía main().
-  // Todos los demás casos ejercitaban el fallback por sitio, que es la COTA, no la medición.
+  // 🔴 La rama `if (agrupador)` es justo lo que esta prueba
+  // describe («se les aplica el criterio»).
+  // Todos los demás casos ejercitan el fallback por sitio, que es la COTA, no la medición.
   const LIB = require(MOD).rutaDelCriterio();
   if (!LIB) { console.log(`  SKIP ${n} - el criterio vive en el repo hermano y no está en esta máquina`); return; }
   const { agrupar } = require(LIB);
@@ -348,10 +348,10 @@ t('con el criterio real a mano, las causas se miden APLICÁNDOLO — no con la c
     'la cota por sitio cuenta 2 (dos sitios) — por eso es una cota y no la medición');
 });
 
-// ═══════════ vuelta 3: lo que el pase adversarial encontró en el propio medidor ═══════════
+// ═══════════ bordes del propio medidor ═══════════
 
 t('un pase LIMPIO (0 hallazgos) es un dato válido, no "datos rotos"', () => {
-  // 🔴 `if (!clases || clases > hallazgos)` tomaba el 0 legítimo como falta de datos. Un pase que no
+  // 🔴 sin esto, `if (!clases || clases > hallazgos)` toma el 0 legítimo como falta de datos. Un pase que no
   // encontró nada es exactamente lo que devuelve el workflow cuando las 6 lentes salen limpias.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-limpio-'));
   const buzon = path.join(tmp, 'buzon', 'm');
@@ -371,8 +371,8 @@ t('un pase LIMPIO (0 hallazgos) es un dato válido, no "datos rotos"', () => {
 });
 
 t('los hallazgos y las causas salen de la MISMA anotación del pase, no de dos máximos sueltos', () => {
-  // 🔴 El pase lo cazó: `max(confirmados)` y `max(clases)` se tomaban por separado, así que un
-  // lanzamiento inicial sin --clases más un re-lanzamiento con --clases producían un par imposible.
+  // 🔴 `max(confirmados)` y `max(clases)` no se toman por separado: si no, un
+  // lanzamiento inicial sin --clases más un re-lanzamiento con --clases producen un par imposible.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-par-'));
   const buzon = path.join(tmp, 'buzon', 'm');
   fs.mkdirSync(buzon, { recursive: true });
@@ -398,8 +398,8 @@ t('los hallazgos y las causas salen de la MISMA anotación del pase, no de dos m
 });
 
 t('con el volcado crudo se usa lo que el pase YA dijo, no se re-agrupa lo ya filtrado', () => {
-  // 🔴 El pase lo cazó: con fuente «crudo» se re-aplicaba el criterio sobre `confirmed`, que es el
-  // subconjunto ya filtrado por veredicto — el número no es el que el pase midió en vivo.
+  // 🔴 con fuente «crudo» no se re-aplica el criterio sobre `confirmed`, que es el
+  // subconjunto ya filtrado por veredicto: el número no sería el que el pase midió en vivo.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-crudo-'));
   const buzon = path.join(tmp, 'buzon', 'm');
   fs.mkdirSync(buzon, { recursive: true });
@@ -423,8 +423,8 @@ t('con el volcado crudo se usa lo que el pase YA dijo, no se re-agrupa lo ya fil
 });
 
 t('la corrida se busca en el repo DECLARADO, no en cualquiera que tenga una story con ese número', () => {
-  // 🔴 El pase lo cazó: se buscaba en todos los repos vistos en el buzón y se desempataba por fecha,
-  // así que un id de story repetido en otro repo podía aportar las causas de una corrida ajena.
+  // 🔴 no se busca en todos los repos vistos en el buzón desempatando por fecha:
+  // un id de story repetido en otro repo aportaría las causas de una corrida ajena.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-repo-'));
   const buzon = path.join(tmp, 'buzon', 'm');
   fs.mkdirSync(buzon, { recursive: true });
@@ -444,7 +444,7 @@ t('la corrida se busca en el repo DECLARADO, no en cualquiera que tenga una stor
 
 t('si el repo declarado no está, la fila DICE que el repo se resolvió por coincidencia de número', () => {
   // 🔴 El buzón lo escriben 4 máquinas: la ruta declarada por un pase ajeno casi nunca existe acá, y
-  // ahí el medidor volvía a buscar la story en cualquier repo local. No está mal medirlo —es la única
+  // ahí el medidor vuelve a buscar la story en cualquier repo local. No está mal medirlo —es la única
   // fuente que hay— pero tiene que DECIRLO: si no, una corrida ajena con el mismo número de story
   // aporta causas que no son suyas y la fila se ve igual de confiable que las demás.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-ajeno-'));
@@ -466,9 +466,9 @@ t('si el repo declarado no está, la fila DICE que el repo se resolvió por coin
 });
 
 t('el criterio se busca por su nombre de hoy; el de antes del renombre vale sólo como respaldo, y si no está se dice (story 8.9, tanda G)', () => {
-  // 🔴 rojo previo: el medidor buscaba el archivo SÓLO por el nombre que tenía antes de la story 8.9. En el equipo andaba
-  //    por el reemplazo que deja el renombre; en la copia pública (sin reemplazos) no lo encontraba y medía con la cota
-  //    por sitio sin decirlo: el número cambiaba de método callado.
+  // 🔴 el medidor busca el archivo por su nombre de hoy y, de respaldo, por el que tenía antes del renombre. En el equipo anda
+  //    por el reemplazo que deja el renombre; la copia pública (sin reemplazos) sólo lo encuentra por el nombre de hoy, y si
+  //    buscara sólo el viejo mediría con la cota por sitio sin decirlo: el número cambiaría de método callado.
   const { rutaDelCriterio, cargarCriterio } = require(MOD);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-lib-'));
   assert.strictEqual(rutaDelCriterio(dir), null, 'sin el archivo: no hay criterio');
@@ -493,7 +493,7 @@ t('el criterio se busca por su nombre de hoy; el de antes del renombre vale sól
 });
 
 t('el criterio está y carga pero no trae la función que agrupa: se dice, como los otros dos caminos (story 8.9, tanda G, ronda 2)', () => {
-  // 🔴 rojo previo: con el archivo encontrado y sin `agrupar`, devolvía null callado; «no encontré» y «no pude cargar» avisaban.
+  // 🔴 con el archivo encontrado y sin `agrupar`, devolver null callado esconde la diferencia; «no encontré» y «no pude cargar» avisan.
   const { cargarCriterio } = require(MOD);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dup-adv-lib-'));
   fs.writeFileSync(path.join(dir, 'group-findings.js'), 'module.exports = { otraCosa: () => 1 };\n');

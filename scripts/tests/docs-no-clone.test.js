@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * docs-no-clone.test.js — las guías dicen `~/.tycon`, «usar no es mantener» y el modo desarrollador, y ninguna nombra un
- * clon como forma de USAR el arnés (story 8.23, tanda E · AC 34 · T35, la parte de las guías; las portadas públicas las
+ * clon como forma de USAR el arnés (T35, la parte de las guías; las portadas públicas las
  * mide public-papers.test.js).
  *
  * Lo que caza: una guía que, en su sección de INSTALACIÓN, siga pidiendo `git clone` para usar el arnés. El clon queda
@@ -13,9 +13,9 @@
  *   T35c · INSTALL.md y la guía del mecanismo nombran el modo desarrollador (`link --local` / `link --managed`) como la
  *          forma de probar antes de publicar.
  *   T35d · el espejo: una guía de juguete con un `git clone` en su sección de uso falla; sin la frase, falla.
- *   T35e · las guías sin dos versiones (story 8.26, tanda I · AC 35). Once guías tenían en este repo una versión
- *          propia, con bloques internos, y cada cambio a una de ellas en GitHub pedía un segundo pedido acá. Nueve ya
- *          no viven en este repo: son del público, y lo que decían sólo para el equipo vive en `onboarding/interno/`.
+ *   T35e · las guías sin dos versiones. Una guía con versión propia en este repo, con bloques internos,
+ *          obliga a un segundo pedido por cada cambio hecho en GitHub. Nueve de las once no viven en este repo: son
+ *          del público, y lo que decían sólo para el equipo vive en `onboarding/interno/`.
  *          Las otras dos esperan, declaradas en la lista del repo adelgazado (`.tycon/internal-forms.json`, `own`).
  *          Se mide: ningún `.md` de lo que viaja trae un marcador de bloque, salvo esas dos; la lista es la de un repo
  *          adelgazado, con las dos declaradas y las nueve sin declarar; y lo mudado está enlazado en su portada, dice
@@ -55,7 +55,7 @@ const GUIDES = [
   {
     file: 'INSTALL.md',
     // la sección de uso: todo «## Instalación» (§1 a §6, hasta «## Setup opcional») MENOS §1b, que es lo de quien
-    // mantiene (pase adversarial de la E, clase 8: recortar en §1b dejaba §2-§6 sin mirar)
+    // mantiene (recortar en §1b dejaría §2-§6 sin mirar)
     use: (t) => {
       const whole = t.slice(t.indexOf('## Instalación'), t.indexOf('## Setup opcional'));
       const a = whole.indexOf('### 1b. Mantener el arnés'); const b = whole.indexOf('### 2.', a);
@@ -140,12 +140,12 @@ test('T35d Mirror_ToyGuideWithCloneOrWithoutPhraseFails', () => {
   assert.ok(!whole(toy).includes('usar no es mantener'), 'control: la guía de juguete sin la frase se detecta');
 });
 
-// ── T35e · story 8.26, tanda I (AC 35): las guías sin dos versiones ──────────────────────────────────────────────
+// ── T35e · las guías: sin dos versiones ──────────────────────────────────────────────
 
-/** Las guías que tenían una versión interna (bloques internos, la marca de las rutas que no viajan) y ya son sólo del
+/** Las guías que tuvieron una versión interna (bloques internos, la marca de las rutas que no viajan) y son sólo del
  *  público: nueve de las once. En el repo privado adelgazado no están; llegan con el público encima. */
 const PUBLIC_ONLY_GUIDES = [
-  'README.md', 'INDEX.md',   // el índice de guías: hasta 2026-10-14 era README.md, que pasó a ser la portada
+  'README.md', 'INDEX.md',   // el índice de guías; README.md es la portada
   'guides/agent-architecture.md', 'guides/ci-gate.md', 'guides/codex-migration.md', 'guides/integrations/instinct-mining.md',
   'guides/maintaining/mecanismo-de-instalacion.md', 'guides/reglas-para-revisores.md',
   'guides/decisions/codex-etapa-d-retro-red.md', 'guides/decisions/controles-apagables-por-config-2026-08-25.md',
@@ -204,7 +204,7 @@ test('T35e Guides_NoBlockMarkers_InWhatTravels @story-8.26 @ac-35', () => {
 test('T35e ThinList_DeclaresTheTwoThatWait_AndNotTheNine @story-8.26 @ac-35', (t) => {
   if (!ARMED) { t.skip(NOT_ARMED); return; }
   const list = JSON.parse(read('.tycon/internal-forms.json'));
-  // la lista de un repo adelgazado: sin formas firmadas ni liberadas (eran la transición), con lo que el privado conserva
+  // la lista de un repo adelgazado: sin formas firmadas ni liberadas, con lo que el privado conserva
   assert.strictEqual(list.layout, 'thin', '.tycon/internal-forms.json: el repo privado está adelgazado y la lista no lo dice ("layout": "thin")');
   for (const old of ['forms', 'released']) assert.ok(!(old in list), `.tycon/internal-forms.json: trae "${old}", que es de antes de adelgazar`);
   const own = list.own || {};
@@ -265,10 +265,10 @@ test('T35e PrivateHome_IsIndexedInItsCover_AndOutOfTheTeamLayer @story-8.26 @ac-
   assert.deepStrictEqual([destinationsOf(toy, 'z/w.md'), destinationsOf(toy, 'z/a/b/w.md')], [['maintainers'], ['maintainers']], 'control: `**/` vale por ninguna carpeta o por varias');
 });
 
-// ── story 8.40 (T32, el pedido del AC 15: el paquete ya está publicado) ─────────────────────────────────────────────
+// ── T32 (el paquete está publicado) ─────────────────────────────────────────────
 // Las portadas abren con la línea npx como entrada principal (en un bloque de código, con `@latest`), y las tres líneas
 // de bajar, leer y correr el guion siguen como la entrada «a mano» (el bloque `install:core` de la referencia). El «sí»
-// es el del plan (decisión 6): `-y`/`--yes` —el de npm antes del nombre, o el nuestro después— sólo aparece bajo «Sin
+// (`-y`/`--yes` —el de npm antes del nombre, o el nuestro después—) sólo aparece bajo «Sin
 // nadie delante» / «With nobody at the keyboard»; en el resto de cada papel, nunca.
 const NPX_PAPERS = ['README.md', 'README.es.md', 'getting-started/mac.md', 'getting-started/windows.md', 'getting-started/linux.md', 'getting-started/reference.md', 'getting-started/reference.es.md'];
 const NPX_MAIN = 'npx @tyconsa/harness@latest';
@@ -319,8 +319,8 @@ test('T32 Docs_NpxIsMainEntry_YesOnlyUnattended_ScriptEntryStays', () => {
 });
 
 // T20 · cada línea npx que escriben las portadas, la referencia y la página del paquete pasa el freno de comandos
-// (`scripts/hooks/safety-guard-pre.sh`), una por una; la tubería `curl … | bash` sigue saliendo bloqueada con SUP-C1. La
-// story no agrega un freno a `npx -y` (frenaría a los devs en sus proyectos): lo que protege es que la portada no lo
+// (`scripts/hooks/safety-guard-pre.sh`), una por una; la tubería `curl … | bash` sigue saliendo bloqueada con SUP-C1. El
+// arnés no agrega un freno a `npx -y` (frenaría a los devs en sus proyectos): lo que protege es que la portada no lo
 // escriba (T32). Corre el freno de verdad, con una HOME de juguete y sin TYCON_SAFETY_OFF.
 test('T20 NpxInstaller_PortadaLinesPassGuard', (t) => {
   if (process.platform === 'win32') { t.skip('NO MEDIDO en Windows: el freno es un guion de bash (lo mide el ensayo de Windows)'); return; }
@@ -349,7 +349,7 @@ test('T20 NpxInstaller_PortadaLinesPassGuard', (t) => {
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 
-// ── story 8.40 (T51, AC 43: las páginas para usar) ───────────────────────────────────────────────────────────────────
+// ── T51 (las páginas para usar) ───────────────────────────────────────────────────────────────────
 // Las tres páginas guiadas instalan con la línea npx en su parte 1 (el plan con --dry-run y la misma línea sin él, sin
 // -y ni --yes: la persona contesta), con el guion de entrada a mano debajo; la referencia en los dos idiomas dice cómo
 // pasar por un proxy o por la CA de la empresa y cómo desinstalar.

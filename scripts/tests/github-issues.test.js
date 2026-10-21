@@ -1,5 +1,5 @@
 'use strict';
-// github-issues.test.js — los avisos de dependencias como issues de GitHub (story 8.31, T9 a T14).
+// github-issues.test.js — los avisos de dependencias como issues de GitHub (T9 a T14).
 //
 // No toca la red NUNCA: habla con un `gh` de mentira (scripts/tests/lib/fake-gh.js) que contesta desde un estado en JSON,
 // guarda lo que «crea» como lo haría GitHub y anota cada llamada. Los casos giran alrededor de lo que convertiría la pieza
@@ -293,7 +293,7 @@ test('T13 WorkItems_PlatformDispatch: sin team-repos o con azure, Azure; con git
   d = mundo({ issues: false });
   snapshot(d);
   r = correr(d);
-  // texto de la salida, no una ruta: con `includes` el control de nombres viejos no lo lee como la carpeta de antes
+  // texto de la salida, no una ruta: con `includes` el control de nombres viejos no lo lee como la carpeta renombrada
   assert.strictEqual(r.code, 0, r.out); assert.ok(r.out.includes('Issues de dependencias'), r.out);
   // roto
   d = mundo({});

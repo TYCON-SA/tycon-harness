@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# claude-md-blocks.test.sh — el presupuesto de los bloques del CLAUDE.md (CLAUDEMD-SIN-PRESUPUESTO, 2026-09-06).
+# claude-md-blocks.test.sh — el presupuesto de los bloques del CLAUDE.md.
 #
 # Lo que se afirma: un bloque que se pasa de su techo FRENA (exit 1) y se nombra; uno dentro del
 # techo pasa; un bloque nuevo sin techo usa el default; el total también frena; lo que el commit
@@ -7,14 +7,13 @@
 # avisa; un presupuesto ilegible NO es verde (exit 2); y los bloques REALES del repo pasan hoy — sin
 # ese último caso, el control podría nacer en rojo y se apagaría el primer día.
 #
-# 🔴 Rojo previo: sin el guion, no hay nada que frene (los seis chequeos que exigen 1 o 2 dan 0).
-# Desde la revisión adversarial del 2026-09-06 (C-10..C-18): en --staged el techo, la lista de bloques y su
+# 🔴 Sin el guion, no hay nada que frene (los seis chequeos que exigen 1 o 2 dan 0).
+# Casos C-10..C-18: en --staged el techo, la lista de bloques y su
 # contenido salen del ÍNDICE (un techo subido sin stagear no deja pasar; lo que creció en el disco después
 # del add no frena); sin git sale 2; las variantes de Codex se miden contra el techo de su bloque y suman en
 # total_codex; un techo 0 o de texto sale 2; los códigos ANSI no ciegan al detector; y «el dev preguntó»
-# —con acento— dispara la señal de cita. Rojo previo verificado contra la primera versión del guion en los
-# seis que podían ponerse rojos (C-10, C-12, C-13, C-14, C-15, C-18); C-11 ya pasaba con la primera versión
-# (el contenido de los bloques siempre salió del índice): fija la conducta, no la corrige.
+# —con acento— dispara la señal de cita. Seis de esos casos (C-10, C-12, C-13, C-14, C-15, C-18) se ponen rojos sin su arreglo;
+# C-11 pasa igual (el contenido de los bloques sale siempre del índice): fija la conducta, no la corrige.
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 G="$RAIZ/scripts/ci/check-claude-md-blocks.js"
@@ -76,7 +75,7 @@ PYX
 # C-09 · los bloques REALES del repo pasan hoy (el control no nace en rojo)
 if node "$G" --repo "$RAIZ" > /tmp/cmb-real-$$.txt 2>&1; then ok "C-09 los bloques reales del arnés están dentro de su techo"; else mal "C-09 los bloques reales NO pasan — el control nacería en rojo"; cat /tmp/cmb-real-$$.txt; fi; rm -f /tmp/cmb-real-$$.txt
 
-# ── Revisión adversarial 2026-09-06: el índice manda, las variantes de Codex se miden, no medido no es verde ──
+# ── el índice manda, las variantes de Codex se miden, no medido no es verde ──
 GIT='git -c user.email=b@b -c user.name=b'
 
 # C-10 · 🔴 el techo del DISCO no manda: presupuesto subido sin stagear, bloque stageado en 300 → 1
@@ -142,20 +141,20 @@ T=$(mktemp -d); montar "$T"; mkdir -p "$T/repo/claude-md-blocks/archivo"
 head -c 900 /dev/zero | tr '\0' 'v' > "$T/repo/claude-md-blocks/archivo/viejo.md"; ( cd "$T/repo" && git add -A )
 RC=$(correr "$T"); [ "$RC" = 0 ] && ! grep -q "viejo" "$T/out.txt" && ok "C-19 un .md anidado no se mide como bloque (el sync tampoco lo manda a ninguna máquina)" || { mal "C-19 exit $RC"; cat "$T/out.txt"; }; rm -rf "$T"
 
-# C-20 · un `names/b.md` SIN `.codex` no es una variante: no reemplaza a b ni se mide (segundo pase con Fable, [20])
+# C-20 · un `names/b.md` SIN `.codex` no es una variante: no reemplaza a b ni se mide
 T=$(mktemp -d); montar "$T"; mkdir -p "$T/repo/claude-md-blocks/names"
 head -c 900 /dev/zero | tr '\0' 'w' > "$T/repo/claude-md-blocks/names/b.md"; ( cd "$T/repo" && git add -A )
 RC=$(correr "$T"); [ "$RC" = 0 ] && ! grep -q "b (variante Codex" "$T/out.txt" && ! grep -q "lado Codex" "$T/out.txt" && ok "C-20 names/b.md sin .codex no es variante (ni se mide ni reemplaza a b)" || { mal "C-20 exit $RC"; cat "$T/out.txt"; }; rm -rf "$T"
 
-# ── Los archivos IMPORTADOS enteros en cada sesión (story 7.4, 2026-09-17) ────────────────────
-# El presupuesto medía los BLOQUES, que son 15.555 bytes; el README —que el `~/.claude/CLAUDE.md`
-# de cada dev importa ENTERO en cada sesión y en cada subagente— pesaba 235.771 y no lo medía nada.
+# ── Los archivos IMPORTADOS enteros en cada sesión ────────────────────
+# El presupuesto mide los BLOQUES; el README —que el `~/.claude/CLAUDE.md`
+# de cada dev importa ENTERO en cada sesión y en cada subagente— también pesa y hay que medirlo.
 # La sección `imported` del presupuesto le pone techo, tope por entrada, y exige que el índice y
-# la guía del detalle se nombren mutuamente. Rojo previo: sin la sección, el guion sale 0 en todos.
+# la guía del detalle se nombren mutuamente. Sin la sección, el guion sale 0 en todos.
 #
 # 🔴 Y el detector de entradas es `^- \*\*`, NO `^- \*\*\[`: cuatro de las 105 fichas del README
 # nombran un COMANDO (`` - **`pipeline.js …` ``) y el detector angosto las pierde EN SILENCIO
-# (101 contra 105). Lo cazó el validador en el Step 1 de esta story; C-27b lo fija.
+# (101 contra 105). C-27b lo fija.
 
 montar_imp() {   # repo con README (índice) + guides/p.md (detalle) + presupuesto con `imported`
   local T="$1" techo="${2:-300}" emax="${3:-200}"
@@ -215,7 +214,7 @@ sed -i.bak 's|guides/p.md#scriptsunojs|guides/p.md#no-existe|' "$T/repo/README.m
 T=$(mktemp -d); montar_imp "$T" 4000 400
 printf '\n## sobra\n\nnadie la enlaza.\n' >> "$T/repo/guides/p.md"; ( cd "$T/repo" && git add -A ); RC=$(correr "$T")
 [ "$RC" = 1 ] && grep -qi "sobra" "$T/out.txt" && ok "C-25b una sección del detalle que el índice no enlaza frena" || { mal "C-25b exit $RC"; cat "$T/out.txt"; }; rm -rf "$T"
-# C-25d · story 7.7: el README deja de ser índice (las piezas se buscan en la guía) y lo declara con
+# C-25d · el README deja de ser índice (las piezas se buscan en la guía) y lo declara con
 # `linked_sections: false`. Entonces una sección del detalle SIN enlace no frena… pero un enlace
 # que SÍ está y no tiene destino sigue frenando, y la opción mal escrita no cae al default en silencio.
 con_opcion() {   # presupuesto con la opción; $2 = valor literal JSON
@@ -243,9 +242,8 @@ printf '\nCaso disparador (2026-07-29): el dev preguntó tres veces.\n' >> "$T/r
 RC=$(correr "$T"); [ "$RC" = 0 ] && grep -q "caso disparador" "$T/out.txt" \
   && ok "C-26 la historia agregada a un importado avisa (va a la guía), no frena" || { mal "C-26 exit $RC"; cat "$T/out.txt"; }; rm -rf "$T"
 
-# C-27 · el repo REAL: tras la poda, en verde. 🔴 ROJO PREVIO EXIGIDO POR LA STORY: con el README de
-# `origin/main` (235.771 bytes contra un techo de 55.000 y 87 entradas de más de 400) sale 1 — la
-# salida de ese rojo se anota en el Dev Agent Record ANTES de podar. Sin ese rojo, este verde no
+# C-27 · el repo REAL: en verde. 🔴 Con un README que se pasa de su techo y trae entradas largas sale 1;
+# sin ese rojo posible, este verde no
 # significaría nada.
 if node "$G" --repo "$RAIZ" > /tmp/cmb-imp-$$.txt 2>&1; then
   ok "C-27 el README real del arnés está dentro de su techo y sus entradas"
@@ -255,11 +253,11 @@ fi; rm -f /tmp/cmb-imp-$$.txt
 
 # C-27b · 🔴 EL DETECTOR: las fichas que nombran un COMANDO arrancan con `` - **` `` en vez de
 # `- **[`; el detector angosto las pierde en silencio y un verificador de poda diría «no se perdió
-# nada» habiéndolas dejado afuera (hallazgo del validador, Step 1 de esta story).
+# nada» habiéndolas dejado afuera.
 #
-# 🔴 Lo que se compara es la DIFERENCIA, no un total (2026-09-17). Antes decía «105 y 101» clavados:
-# el README ganó dos fichas y el caso se puso rojo sin que el detector tuviera nada malo — una prueba
-# que se rompe cuando alguien documenta una pieza nueva enseña a ignorarla. Ahora exige que las que
+# 🔴 Lo que se compara es la DIFERENCIA, no un total (con «105 y 101» clavados:
+# si el README gana dos fichas el caso se pone rojo sin que el detector tenga nada malo) — una prueba
+# que se rompe cuando alguien documenta una pieza nueva enseña a ignorarla. Por eso exige que las que
 # encuentra de más sean EXACTAMENTE las de comando, que es lo que el par vino a fijar; y si algún día
 # no queda ninguna, lo dice en vez de pasar en verde sin haber probado nada.
 ENTRADAS=$(node -e '
@@ -283,11 +281,11 @@ else
 fi
 
 # C-27c · 🔴 una entrada MULTILÍNEA no se trunca. En markdown una viñeta sigue en las líneas
-# indentadas, y el README tiene una ficha así (`guides/que-hace-el-arnes.md`, 12 de continuación).
+# indentadas, y el README puede tener una ficha así (`guides/que-hace-el-arnes.md`).
 # `entradasDe` devuelve el primer renglón —lo que hace falta para medir el tope por entrada— y con
-# eso la primera poda de la 7.4 perdió 1.184 bytes EN SILENCIO: el verificador comparaba el mismo
-# texto truncado en los dos lados, o sea que se verificaba a sí mismo. Quien MUEVE texto usa
-# `entradasCompletasDe`. Este par es el rojo previo de ese arreglo.
+# eso una poda perdería bytes EN SILENCIO: el verificador compararía el mismo
+# texto truncado en los dos lados, o sea que se verificaría a sí mismo. Quien MUEVE texto usa
+# `entradasCompletasDe`. Este par fija esa diferencia.
 MULTI=$(node -e '
 const { entradasDe, entradasCompletasDe } = require(process.argv[1]);
 const t = "- **[a](a)** — arranca\n  y sigue acá.\n  y acá también.\n\n- **[b](b)** — sola.\n";
@@ -304,8 +302,8 @@ fi
 # C-27d · y sobre el README REAL: las fichas completas pesan MÁS que sus primeros renglones
 # (si fueran iguales, el caso de arriba no estaría probando nada sobre este repo)
 #
-# 🔴 Desde la story 7.4 el README es un índice de UN renglón por ficha —el cuerpo se mudó a
-# `guides/piezas-del-arnes.md`— así que hoy no queda ninguna multilínea que medir (2026-09-17). El
+# 🔴 El README es un índice de UN renglón por ficha —el cuerpo vive en
+# `guides/piezas-del-arnes.md`— así que no queda ninguna multilínea que medir. El
 # caso no se borra: si alguien vuelve a partir una ficha en dos renglones, vuelve a medir sola. Sin
 # multilínea deja CONSTANCIA, que no es lo mismo que un verde: C-27c sigue probando la función con
 # texto propio, y es ahí donde vive la garantía mientras el README sea de una línea.
@@ -326,7 +324,7 @@ if [ "$REAL" = "SIN-ORIGIN" ]; then
 else
   set -- $REAL
   if [ "${1:-}" = 0 ] && [ "${2:-}" = 0 ]; then
-    # Desde la story 7.7 el README ya no es índice: las piezas se buscan en la guía de piezas.
+    # El README ya no es índice: las piezas se buscan en la guía de piezas.
     echo "  ⚠️   — C-27d no verificado sobre el repo real: desde la story 7.7 el README no tiene fichas («Qué contiene» apunta a la guía de piezas). No es un verde (lo prueba C-27c)."
   elif [ "${4:-0}" -eq 0 ] 2>/dev/null && [ "${1:-0}" -gt 0 ] 2>/dev/null && [ "${1:-}" = "${2:-}" ]; then
     echo "  ⚠️   — C-27d no verificado sobre el repo real: desde la story 7.4 las ${1} fichas del README son de un solo renglón, no hay multilínea que medir. No es un verde (lo prueba C-27c)."
@@ -337,13 +335,13 @@ else
   fi
 fi
 
-# ── T34 · Blocks_RequiresProfile_OffRemoves_UnknownStays_FullByteIdentical (story 8.16, tanda C · AC 24) ─────────────
+# ── T34 · Blocks_RequiresProfile_OffRemoves_UnknownStays_FullByteIdentical ─────────────
 # Un bloque puede pedir el perfil `full` con `<!-- requires-profile: full -->` en sus primeras líneas, solo o junto a
 # `requires-integration` (uno de cada uno como mucho, en cualquier orden; ninguno se copia al CLAUDE.md). Con el perfil
 # activo fuera de la lista no se agrega y, si estaba, se quita entre sus marcadores (con --check sólo avisa que sobra). Si
 # no se pudo saber (configuración rota, o un marcador casi bien escrito), no se agrega si falta y queda si está, dicho en
-# una línea. Con `full`, o sin valor, el CLAUDE.md queda byte a byte como con el sync de antes de la tanda.
-# 🔴 rojo previo verificado: sin el marcador en el sync, un bloque con `requires-profile` se copia con el comentario
+# una línea. Con `full`, o sin valor, el CLAUDE.md queda byte a byte como con el sync sin ese marcador.
+# 🔴 sin el marcador en el sync, un bloque con `requires-profile` se copia con el comentario
 #    adentro y se escribe también en minimal.
 echo "T34 · Blocks_RequiresProfile_OffRemoves_UnknownStays_FullByteIdentical"
 P="$(mktemp -d)"; P="$(cd "$P" && pwd)"
@@ -407,17 +405,17 @@ H="$P/casi"; mkdir -p "$H"; sync_lab "$B" "$H" TYCON_INSTALL_PROFILE=full
   && ok "T34 casi bien escrito o repetido: no se agrega y se dice" || mal "T34 casi bien escrito: $(head -c 400 "$P/sync.out")"
 grep -q 'requires-profile' "$H/CLAUDE.md" 2>/dev/null && mal "T34 un marcador casi bien escrito se copió" || ok "T34 el marcador casi bien escrito tampoco se copia"
 
-# full y sin valor, con los bloques REALES: byte a byte como el sync de antes de la tanda (la punta de la tanda B), con los
+# full y sin valor, con los bloques REALES: byte a byte como el sync previo al marcador, con los
 # bloques de entonces (sin el marcador)
 BASE_REF="${TYCON_PROFILE_BASE_REF:-6f1f6dec}"
 if git -C "$RAIZ" cat-file -e "${BASE_REF}^{commit}" 2>/dev/null; then
   OLD="$P/viejo"; mkdir -p "$OLD"; git -C "$RAIZ" archive "$BASE_REF" scripts/setup/sync-claude-md-blocks.sh scripts/lib claude-md-blocks | ( cd "$OLD" && tar xf - )
-  # story 8.19 (tanda E): cambió el texto de dos bloques y la descripción de la marca de arranque («generado por … del
-  # arnés»). T34 mide el perfil, no esos textos: el sync viejo recibe los bloques de hoy (sin el marcador, que no conoce)
+  # Los textos de dos bloques y la descripción de la marca de arranque («generado por … del
+  # arnés») difieren del sync de referencia. T34 mide el perfil, no esos textos: el sync viejo recibe los bloques de hoy (sin el marcador, que no conoce)
   # y la marca se compara sin su descripción. Sigue frenando un bloque de más, de menos o con otro cuerpo.
   rm -rf "$OLD/claude-md-blocks" && cp -R "$RAIZ/claude-md-blocks" "$OLD/claude-md-blocks" \
     && for f in "$OLD"/claude-md-blocks/*.md; do grep -v '^<!-- requires-profile:' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; done
-  # story 2.31: el sync de entonces no conoce las variantes de estilo ni las filas por integración. Recibe el bloque de
+  # el sync de entonces no conoce las variantes de estilo ni las filas por integración. Recibe el bloque de
   # estilo ya elegido (sin perfil: neutral, en es, con el tope del estilo) y la tabla con las filas de las cuatro
   # integraciones prendidas (las prende ROWS_ON en los dos lados), sin sus marcas.
   python3 - "$OLD/claude-md-blocks" <<'PYX'
@@ -449,7 +447,7 @@ PYX
 elif [ ! -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
   # La copia pública (sin scripts/publishing/public-repos.json, que no se publica) no trae la historia ni el perfil del
   # equipo: lo que los necesita ahí NO SE PUEDE MEDIR y se dice como «NO MEDIDO en la copia», sin contar como rojo; en el
-  # repo interno, que falten sigue siendo rojo (la convención de harness-place.test.js, story 8.19).
+  # repo interno, que falten sigue siendo rojo (la convención de harness-place.test.js).
   echo "  ⏭   — T34 bloques reales: NO MEDIDO en la copia — no trae el commit de antes de la tanda (${BASE_REF})"
 else
   mal "T34 NO MEDIDO — no está el commit de antes de la tanda (${BASE_REF}): no puedo comparar con el sync de entonces"

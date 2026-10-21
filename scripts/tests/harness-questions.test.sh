@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# harness-questions.test.sh — las preguntas de la instalación (story 8.16, tanda D · AC 30 a 33 · T43 a T46).
+# harness-questions.test.sh — las preguntas de la instalación (T43 a T46).
 #
-# EL CASO. Hasta la tanda C, quien instalaba sin decir nada recibía el perfil `full`, y las integraciones y el paquete del
-# stack se prendían editando `~/.claude/tycon.json` a mano. El dueño decidió «que elija al instalar»: `install` pregunta
+# Quien instala sin decir nada no recibe el perfil `full` por defecto, y las integraciones y el paquete del
+# stack no se prenden editando `~/.claude/tycon.json` a mano: que elija al instalar. `install` pregunta
 # lo que no puede decidir solo, y no tiene un valor por defecto para el perfil. Lo que estas pruebas sostienen:
 #   T43 · el perfil se pregunta SIN valor por defecto: Enter vuelve a preguntar, acepta 1, 2, minimal o full, a la tercera
 #         respuesta vacía (o con fin de entrada) sale 2 «sin perfil elegido»; sin terminal sale 2 con las dos opciones,
@@ -21,9 +21,9 @@
 # (TYCON_PROFILE=0: una máquina de afuera) y con Codex sin fijar (para que se ofrezca). Las respuestas se escriben en la
 # terminal de juguete, una por línea, todas juntas: la terminal entrega de a una línea por lectura. Nunca ~/.claude ni el
 # checkout real. 🔴 Sin pipes sobre el comando medido: el exit code real es el veredicto.
-# 🔴 rojo previo verificado: antes de la tanda D, `install` sin perfil instalaba `full` sin preguntar nada.
+# 🔴 Sin las preguntas, `install` sin perfil instala `full` sin preguntar nada.
 #
-#   REV · (segunda vuelta: revisión adversarial y decisión del dueño del 2026-10-05, 14:10) fin de entrada en las
+#   REV · fin de entrada en las
 #         integraciones es «no» también para la conformidad (sin volver a leer); con `--yes` no se pregunta nada aunque
 #         haya terminal (sin perfil sale 2); con el perfil fijado por variable o por archivo no se preguntan las
 #         integraciones y el cierre da UNA línea con cómo cambiar el perfil y las integraciones; lo mismo sobre una
@@ -31,7 +31,7 @@
 #         pregunta las integraciones; `install --integrations` sobre una instalación sana escribe la llave y el plan la
 #         nombra; y el remedio que da sin terminal conserva las opciones recibidas.
 #
-#   PACKS · (story 8.29) el perfil del equipo gana sobre los paquetes elegidos al instalar: con un perfil que declara
+#   PACKS · el perfil del equipo gana sobre los paquetes elegidos al instalar: con un perfil que declara
 #         los paquetes, `--packs` con otro valor no se escribe y el plan lo dice en una línea (la instalación sigue);
 #         sin perfil se escribe como siempre, y cuando el perfil llega después los paquetes salen de él.
 #
@@ -138,15 +138,15 @@ if corre T44; then
   grep -q 'tycon-config.js set ado.org' "$T/t44-none.out" && grep -q 'telegram' "$T/t44-none.out" && ok "T44 el cierre dice cómo se prenden ado y telegram" || mal "T44 el cierre no nombra ado y telegram: $(tail -n 12 "$T/t44-none.out" | tr '\n' ' ')"
 
   qlab t44b || true
-  # (story 8.23, tanda C) contestar «codex» ENCHUFA a Codex en esa misma corrida: el árbol de juguete necesita las piezas
+  # contestar «codex» ENCHUFA a Codex en esa misma corrida: el árbol de juguete necesita las piezas
   # de su enchufe (el árbol unido y los desplegadores), como las trae el arnés de verdad
   harness_lab_release_server && harness_lab_codex_pieces || mal "T44 no pude sumar las piezas de Codex al laboratorio"
   RC=0; harness_lab_pty "2${NL}engram, codex${NL}s${NL}s" harness install > "$T/t44-some.out" 2>&1 || RC=$?
   if [ "$RC" = 0 ] && [ "$(cfg "[(d.get('integrations') or {}).get(k) for k in ('engram','codex','clockify')] + [(d.get('packs') or {}).get('default')]")" = "[True, True, None, 'all']" ]; then
     ok "T44 «engram, codex» y «s»: las dos llaves y packs.default: all (y nada más)"
   else mal "T44 «engram, codex» y «s»: rc ${RC}; tycon.json $(cfg "d")"; fi
-  # lo contestado decide también el enchufe: el estado anota a Codex y su hoja de reglas existe (antes de la tanda C se
-  # elegía con la llave de ANTES de preguntar, y la respuesta recién valía en la corrida siguiente)
+  # lo contestado decide también el enchufe: el estado anota a Codex y su hoja de reglas existe (si se eligiera con la
+  # llave de ANTES de preguntar, la respuesta recién valdría en la corrida siguiente)
   TOOLS="$(harness_lab_state | python3 -c "import json,sys; print(','.join(json.load(sys.stdin).get('tools') or []))" 2>/dev/null)"
   if [ "$TOOLS" = "claude,codex" ] && [ -f "$CODEX_HOME/AGENTS.md" ]; then ok "T44 contestar «codex» lo enchufa en esa misma corrida (estado: ${TOOLS})"
   else mal "T44 contestar «codex» no lo enchufó: estado «${TOOLS}», AGENTS.md $([ -f "$CODEX_HOME/AGENTS.md" ] && echo está || echo falta)"; fi
@@ -237,14 +237,14 @@ if corre T46; then
   fi
 fi
 
-# ══ REV · la segunda vuelta (revisión adversarial y decisión del dueño, 2026-10-05) ════════════════════════════════════
-# 🔴 rojo previo verificado: con el código de la primera vuelta, `--yes` en una terminal preguntaba, no había línea de
-# «cómo cambiarlo», y el remedio sin terminal perdía las opciones; los otros cuatro casos fijan conductas que ya estaban
-# (los mutantes de la revisión los dejaban pasar).
+# ══ REV · conductas de las preguntas ════════════════════════════════════
+# 🔴 Sin esto, `--yes` en una terminal pregunta, no hay línea de
+# «cómo cambiarlo», y el remedio sin terminal pierde las opciones; los otros cuatro casos fijan conductas que
+# ya existen y que ningún mutante debe dejar pasar.
 HINT='para cambiar el perfil o las integraciones:'
 if corre REV; then
   echo "REV · segunda vuelta: fin de entrada, --yes, perfil fijado, instalación existente, --integrations, el remedio"
-  # (C1·1) ^D en las integraciones: no, y la conformidad no vuelve a leer la terminal (sin esto se quedaría esperando)
+  # ^D en las integraciones: no, y la conformidad no vuelve a leer la terminal (sin esto se quedaría esperando)
   qlab rev-eof || true; ANTES="$(home_now)"
   RC=0; harness_lab_pty "2${NL}"$'\x04' harness install > "$T/rev-eof.out" 2>&1 || RC=$?
   { [ "$RC" = 0 ] && grep -q 'no se instaló nada' "$T/rev-eof.out" && ! grep -q '¿Instalo?' "$T/rev-eof.out" && [ "$(home_now)" = "$ANTES" ]; } \
@@ -263,7 +263,7 @@ if corre REV; then
   RC=0; harness_lab_pty "${NL}${NL}n" harness install --profile full > "$T/rev-opt.out" 2>&1 || RC=$?
   { [ "$RC" = 0 ] && grep -q 'Nombres separados por coma' "$T/rev-opt.out" && grep -q 'paquete del stack en todos tus repos' "$T/rev-opt.out" && ! grep -q 'Elegí 1, 2' "$T/rev-opt.out"; } \
     && ok "REV --profile en la primera instalación con terminal: pregunta las integraciones y el paquete, no el perfil" || mal "REV --profile con terminal: rc ${RC}; $(grep -m3 -e 'Nombres' -e 'paquete' -e 'Elegí' "$T/rev-opt.out" | tr '\n' '|')"
-  # (C1·3 y 2) el perfil fijado por variable o por archivo: no pregunta las integraciones, y la línea de cómo cambiarlo
+  # el perfil fijado por variable o por archivo: no pregunta las integraciones, y la línea de cómo cambiarlo
   for via in env file; do
     qlab "rev-fixed-$via" || true
     if [ "$via" = env ]; then export TYCON_INSTALL_PROFILE=minimal; else mkdir -p "$LAB_HOME/.claude"; printf '{ "install": { "profile": "minimal" } }\n' > "$LAB_HOME/.claude/tycon.json"; fi
@@ -274,28 +274,28 @@ if corre REV; then
       && ok "REV perfil fijado por ${via}: no pregunta las integraciones y da UNA línea con cómo cambiar perfil e integraciones" \
       || mal "REV perfil fijado por ${via}: rc ${RC}; $(grep -m3 -e 'Nombres' -e "$HINT" -e 'Elegí' "$T/rev-fixed-$via.out" | tr '\n' '|')"
   done
-  # (C1·2 y 2) una instalación que ya existe con el perfil sin elegir: no pregunta nada y dice cómo cambiarlo
+  # una instalación que ya existe con el perfil sin elegir: no pregunta nada y dice cómo cambiarlo
   qlab rev-existing || true
   TYCON_INSTALL_PROFILE=full harness install --yes >/dev/null 2>&1 < /dev/null || mal "REV instalación previa falló"
   RC=0; harness_lab_pty - harness install > "$T/rev-existing.out" 2>&1 || RC=$?
   { [ "$RC" = 0 ] && ! grep -q -e 'Elegí 1, 2' -e 'Nombres separados por coma' "$T/rev-existing.out" && grep -q 'perfil: full (sin elegir)' "$T/rev-existing.out" && grep -q "$HINT" "$T/rev-existing.out"; } \
     && ok "REV instalación existente sin perfil elegido: no pregunta, dice «full (sin elegir)» y cómo cambiarlo" || mal "REV instalación existente: rc ${RC}; $(tail -n 6 "$T/rev-existing.out" | tr '\n' ' ')"
-  # (C1·4) sobre esa instalación sana, --integrations escribe la llave y el plan la nombra
+  # sobre esa instalación sana, --integrations escribe la llave y el plan la nombra
   RC=0; harness install --integrations codegraph --dry-run > "$T/rev-int-dry.out" 2>&1 < /dev/null || RC=$?
   grep -q 'tycon.json: .*respuesta de la instalación' "$T/rev-int-dry.out" && ok "REV install --integrations sobre una instalación sana: el plan nombra la escritura en tycon.json" || mal "REV el plan de --integrations: rc ${RC}; $(grep -m3 -e 'escribe' -e 'tycon.json' -e 'sin cambios' "$T/rev-int-dry.out" | tr '\n' '|')"
   RC=0; harness install --integrations codegraph --yes > "$T/rev-int.out" 2>&1 < /dev/null || RC=$?
   { [ "$RC" = 0 ] && [ "$(cfg "(d.get('integrations') or {}).get('codegraph')")" = True ]; } && ok "REV …y con --yes escribe integrations.codegraph" || mal "REV --integrations codegraph --yes: rc ${RC}; tycon.json $(cfg "d")"
-  # (C4) sin terminal y sin --yes, el remedio conserva las opciones recibidas
+  # sin terminal y sin --yes, el remedio conserva las opciones recibidas
   qlab rev-remedy || true
   RC=0; harness install --profile full --packs all > "$T/rev-remedy.out" 2>&1 < /dev/null || RC=$?
   { [ "$RC" = 2 ] && grep -q 'harness.js install --profile full --packs all --yes' "$T/rev-remedy.out"; } && ok "REV el remedio sin terminal conserva --profile y --packs" || mal "REV el remedio: rc ${RC}; $(tail -n 1 "$T/rev-remedy.out")"
 fi
 
-# ══ PACKS · story 8.29: el perfil del equipo gana sobre los paquetes elegidos al instalar (AC 7 y 8 · T7 y T8) ═════════
+# ══ PACKS · el perfil del equipo gana sobre los paquetes elegidos al instalar (T7 y T8) ═════════
 # La página pública instala con `--packs all`. Sin perfil del equipo eso se escribe en el archivo de la máquina, como
 # siempre. Con un perfil que declara los paquetes, lo que diga `--packs` no se escribe: el perfil gana al leer, y una
 # escritura que no hace efecto sería una mentira en el archivo de la persona. La instalación no se frena por eso.
-# 🔴 rojo previo verificado: antes de la 8.29, `--packs all` contra un perfil en none escribía `all` en tycon.json.
+# 🔴 Sin esto, `--packs all` contra un perfil en none escribe `all` en tycon.json.
 if corre PACKS; then
   echo "8.29 · T7 Install_PacksOption_AgainstProfile_NotWritten · T8 Install_PacksOption_NoProfile_WritesAsToday"
   printf '{ "packs": { "default": "none" } }\n' > "$T/profile-none.json"
@@ -329,7 +329,7 @@ if corre PACKS; then
   # se escribe como siempre y no se avisa nada — el instalador no promete un orden que ese lector no cumple
   qlab packs-old || true; export TYCON_PROFILE="$T/profile-none.json"
   LECTOR="$LAB_TREE/scripts/lib/tycon-config.js"
-  # la lista vacía, traiga lo que traiga hoy (la story 7.19 le sumó `adversarial.model_question`)
+  # la lista vacía, traiga lo que traiga (por ejemplo `adversarial.model_question`)
   sed -e "s/^const PROFILE_WINS = Object.freeze(\[.*\]);\$/const PROFILE_WINS = Object.freeze([]);/" "$LECTOR" > "$LECTOR.old" \
     && printf '\ndelete module.exports.PROFILE_WINS;\n' >> "$LECTOR.old" && mv "$LECTOR.old" "$LECTOR"
   if [ "$(node -p "typeof require(process.argv[1]).PROFILE_WINS" "$LECTOR" 2>/dev/null)" != undefined ] || ! grep -q '^const PROFILE_WINS = Object.freeze(\[\]);$' "$LECTOR"; then
@@ -341,7 +341,7 @@ if corre PACKS; then
       || mal "T7 árbol anterior: rc ${RC}; tycon.json $(cfg "d"); $(grep -m2 -e 'perfil del equipo' -e 'no se escribe' "$T/packs-old.out" | tr '\n' '|')"
   fi
 
-  # (T8) sin perfil del equipo, como manda la página pública: se escribe, como hoy
+  # (T8) sin perfil del equipo, como manda la página pública: se escribe
   qlab packs-page || true
   RC=0; harness install --profile full --integrations none --packs all --yes > "$T/packs-page.out" 2>&1 < /dev/null || RC=$?
   { [ "$RC" = 0 ] && [ "$(cfg "(d.get('packs') or {}).get('default')")" = all ] && ! grep -q 'no se escribe' "$T/packs-page.out"; } \
@@ -366,7 +366,7 @@ if corre DEFAULTS; then
     ok "T4 --defaults con terminal: ninguna pregunta, sólo install.profile = minimal en tycon.json"
   else mal "T4 --defaults: rc ${RC}; tycon.json $(cfg "d"); $(grep -m3 -e 'Elegí' -e 'integraciones prendo' -e 'paquete del stack' "$T/d4.out" | tr '\n' '|')"; fi
   grep -q 'perfil: minimal (por defecto)' "$T/d4.out" && ok "T4 el plan dice que la mínima vino por defecto" || mal "T4 el plan: $(grep -m1 '^perfil' "$T/d4.out")"
-  # …y sin terminal con --yes: ya no frena pidiendo el perfil
+  # …y sin terminal con --yes: no frena pidiendo el perfil
   qlab d4y || true
   RC=0; harness install --defaults --yes > "$T/d4y.out" 2>&1 < /dev/null || RC=$?
   { [ "$RC" = 0 ] && [ "$(cfg "(d.get('install') or {}).get('profile')")" = minimal ] && ! grep -q 'elegí el perfil' "$T/d4y.out"; } \
@@ -388,7 +388,7 @@ if corre DEFAULTS; then
   { [ "$RC" = 0 ] && [ "$(cfg "(d.get('install') or {}).get('profile')")" = full ] && [ "$(cfg "(d.get('packs') or {}).get('default')")" = all ] && [ "$(cfg "(d.get('integrations') or {}).get('engram')")" = True ]; } \
     && ok "T6 --defaults --profile full --packs all --integrations engram: full, all y engram prendida" || mal "T6 opción explícita: rc ${RC}; tycon.json $(cfg "d")"
 
-  # (T7) el clon sin --defaults pregunta el perfil como hoy
+  # (T7) el clon sin --defaults pregunta el perfil
   qlab d7 || true
   RC=0; harness_lab_pty "minimal${NL}${NL}${NL}n" harness install > "$T/d7.out" 2>&1 || RC=$?
   { [ "$RC" = 0 ] && [ "$(count 'Elegí 1, 2, minimal o full' "$T/d7.out")" = 1 ] && grep -q 'no hay uno por defecto' "$T/d7.out"; } \

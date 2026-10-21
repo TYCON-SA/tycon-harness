@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-team.test.sh — la capa del equipo sobre la versión bajada (story 8.25, tanda A1a · T3, T6, T7, T8 y T9, con T2
+# harness-team.test.sh — la capa del equipo sobre la versión bajada (T3, T6, T7, T8 y T9, con T2
 # fundida en T9): el GitHub de juguete con DOS repos (la copia pública y el repo privado del equipo), cada uno con su
 # control de acceso.
 #
@@ -19,20 +19,20 @@
 #   T9 · (con T2) update: la punta del repo del equipo se apila sobre la versión nueva; el campo `team` sobrevive a update,
 #        startup y rollback; sin acceso, la capa instalada se arrastra y se dice; una versión pública que trae una ruta de la
 #        capa no se instala, queda anotada como fallida y no se vuelve a bajar.
-#   T10 · (tanda A1b) un commit SÓLO del equipo llega en el arranque fuera de la ventana, dentro de harness/: atómico como
+#   T10 · un commit SÓLO del equipo llega en el arranque fuera de la ventana, dentro de harness/: atómico como
 #        transacción (un archivo que no se puede reemplazar deja todo como estaba), lo que ya no viene se borra sólo con su
 #        blob, lo editado a mano no se pisa, el aplicador de ESE arranque lee el perfil nuevo; una punta rechazada no se
 #        revalida; dentro de la ventana, cero pedidos.
-#   T11 · (A1b) doctor: la línea de la capa, lo editado y lo faltante como aviso (nunca fail), la capa declarada y ausente,
+#   T11 · doctor: la línea de la capa, lo editado y lo faltante como aviso (nunca fail), la capa declarada y ausente,
 #        el motivo del último refresco fallido, el paquete del equipo que falta; sin capa, ninguna línea nueva.
-#   T12 · (A1b) rollback sigue a la capa del árbol que queda; uninstall conserva y nombra ~/.tycon/team y copia lo editado a
-#        kept-…/ (también desde la copia fija de arranque); sin capa, la línea de hoy.
+#   T12 · rollback sigue a la capa del árbol que queda; uninstall conserva y nombra ~/.tycon/team y copia lo editado a
+#        kept-…/ (también desde la copia fija de arranque); sin capa, la línea de siempre.
 #
-#   TPN · el perfil con su nombre de hoy, team-profile.json: install --team con el repo del equipo que ya lo renombró deja
+#   TPN · el perfil con su nombre actual, team-profile.json: install --team con el repo del equipo que ya lo renombró deja
 #        team-profile.json (y no el de antes) y explain lo lee con origen «perfil»; con el nombre de antes, el plan avisa
 #        cómo renombrarlo; con los dos, el refresco deja sólo el nuevo y explain lee el nuevo.
 #
-#   T33 · (tanda A2b-AC33) la capa con el mapa de renombres real sobre una versión que no lo trae: install sale 0 y la
+#   T33 · la capa con el mapa de renombres real sobre una versión que no lo trae: install sale 0 y la
 #        máquina traduce una variable vieja, un subcomando viejo y un archivo de estado viejo igual que el árbol interno; el
 #        commit que saca el mapa (su retiro) lo borra en el refresco y deja de traducirlos.
 #
@@ -47,8 +47,8 @@ source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 export TYCON_UPDATE_APPLY=auto
 # La llave del buzón se busca en el árbol instalado, que es lo que se mide acá (T7: la que apila la capa del equipo). Quien
 # corre esta suite puede traer TYCON_MAILBOX_JSON apuntando a otro lado: las portables la ponen en un archivo que no
-# existe, a propósito, y con ella heredada T7 daba «buzón: prendida (perfil; llave AUSENTE)» en una máquina vacía, adentro
-# de la copia y en el interno (medido el 2026-10-10). En una máquina de verdad nadie la define.
+# existe, a propósito, y con ella heredada T7 daría «buzón: prendida (perfil; llave AUSENTE)» en una máquina vacía, adentro
+# de la copia y en el interno. En una máquina de verdad nadie la define.
 unset TYCON_MAILBOX_JSON
 # Lo mismo con el interruptor del buzón que pone el corredor de suites: T7 mide justo que el buzón quede prendido por la
 # llave de la capa, y con TYCON_MAILBOX=0 heredado daría «apagada (env)». TYCON_NO_UPLOAD_RUNS=1 queda: estas
@@ -124,7 +124,7 @@ if corre T7; then
   OUT="$(harness_release install --version latest --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "install --version latest sobre la máquina instalada sale 0 (sin --team)" || mal "reinstalar: rc $RC: $OUT"
   [ -f "$(NEW)/perfil-equipo.json" ] && [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && [ "$(estado "d['version']['number']")" = 2026.10.08.2 ] && ok "…la versión nueva trae la capa que el estado recordaba" || mal "la reinstalación perdió la capa: $(estado "d.get('team')")"
-  # `install --team` SOLO (sin --version ni --repo) sobre la máquina bajada toma el camino de la versión bajada (AC 1, el
+  # `install --team` SOLO (sin --version ni --repo) sobre la máquina bajada toma el camino de la versión bajada (el
   # desvío de harness.js), no la instalación desde un clon
   # (la punta nueva apaga nightly: una clave que el laboratorio no fija por variable —TYCON_CODEX=0 le ganaría a codex—)
   publica_perfil '{ "ado": { "org": "https://dev.azure.com/acme" }, "integrations": { "engram": true, "nightly": false, "mailbox": true }, "update": { "channel": "latest", "apply": "auto" }, "packs": { "default": "all" }, "install": { "profile": "full" } }' "nightly apagada"
@@ -132,8 +132,8 @@ if corre T7; then
   [ "$RC" = 0 ] && ok "install --team solo (sin --version) sale 0 sobre la máquina bajada" || mal "install --team solo: rc $RC: $OUT"
   case "$OUT" in *"versión bajada, sin git"*) ok "…por el camino de la versión bajada" ;; *) mal "install --team solo no tomó el camino de la versión bajada: $OUT" ;; esac
   [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && [ "$(explain_key "$(NEW)" integraciones nightly)" = "false perfil" ] && ok "…y apiló la punta nueva del equipo (nightly apagada, origen perfil)" || mal "install --team solo no apiló la punta nueva: $(estado "d.get('team')") nightly=$(explain_key "$(NEW)" integraciones nightly)"
-  # la máquina bajada que PERDIÓ su árbol (~/.tycon/harness borrado) se reinstala con la capa que el estado recuerda (clase 13 del
-  # pase adversarial: antes el estado con tree_missing no se miraba y la capa se perdía para siempre)
+  # la máquina bajada que PERDIÓ su árbol (~/.tycon/harness borrado) se reinstala con la capa que el estado recuerda:
+  # sin mirar el estado con tree_missing, la capa se perdería para siempre
   rm -rf "$(NEW)"
   OUT="$(harness install --version latest --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "sin el árbol: install --version latest sale 0" || mal "sin el árbol: rc $RC: $OUT"
@@ -148,9 +148,9 @@ if corre T7; then
 fi
 
 # ───────────────────────────────────────────── T7m ────────────────────────────────────────────────────────────────────
-# (arreglo tras H7 del dueño, 2026-10-09) una máquina MUDADA a ~/.tycon (migrate --to-home, con Claude Code) suma la capa del
-# equipo con `install --version latest --team`: el guardia de la 8.23 C («vive en la casa propia: se instaló sin Claude Code»)
-# la frenaba con 2 sin escribir, y no había otro camino (update no tiene --team; migrate --team es sólo desde un clon)
+# una máquina MUDADA a ~/.tycon (migrate --to-home, con Claude Code) suma la capa del
+# equipo con `install --version latest --team`: el guardia («vive en la casa propia: se instaló sin Claude Code»)
+# no tiene que frenarla con 2 sin escribir, porque no hay otro camino (update no tiene --team; migrate --team es sólo desde un clon)
 if corre T7m; then
   echo "T7m · una máquina ya mudada a ~/.tycon suma la capa del equipo con install --version latest --team"
   harness_lab_create "$BASE/lab7m"
@@ -296,7 +296,7 @@ if corre T9; then
   [ "$RC" = 0 ] && ok "update sale 0" || mal "update rc $RC: $OUT"
   [ "$(estado "d['team']['commit']")" = "$C1" ] && [ "$(explain_key "$(NEW)" integraciones nightly)" = "false perfil" ] && ok "la capa nueva ($(printf '%s' "$C1" | cut -c1-7)) quedó en la versión nueva" || mal "la capa nueva no quedó: $(estado "d.get('team')") nightly=$(explain_key "$(NEW)" integraciones nightly)"
   [ -f "$(TYCON_DIR)/previous/.tycon-team.json" ] && [ "$(j "$(TYCON_DIR)/previous/.tycon-team.json" "d['commit']")" = "$C0" ] && ok "previous/ conserva la capa anterior ($(printf '%s' "$C0" | cut -c1-7))" || mal "previous/ sin la capa anterior"
-  # (T2) el campo sobrevive a startup y a rollback (no se pierde); un estado sin team se lee como hoy
+  # (T2) el campo sobrevive a startup y a rollback (no se pierde); un estado sin team se lee como siempre
   harness_release startup >/dev/null 2>&1
   [ "$(estado "d['team']['commit']")" = "$C1" ] && ok "T2: team sobrevive a startup" || mal "T2: startup perdió team: $(estado "d.get('team')")"
   OUT="$(harness_release rollback 2>&1)"; RC=$?
@@ -332,7 +332,7 @@ PY
   OUT="$(harness_release update 2>&1)"; RC=$?
   case "$OUT" in *"ya falló"*"no se reintenta"*) ok "el arranque siguiente no la vuelve a bajar (ya falló)" ;; *) mal "volvió a intentar: rc $RC $OUT" ;; esac
   [ "$(pedidos "tarball/")" = "$N1" ] && ok "…sin pedir ningún comprimido" || mal "pidió comprimidos: $N1 → $(pedidos "tarball/")"
-  # (d) el choque se mira ANTES de bajar la capa también en install (AC 4): una máquina nueva contra la versión que trae
+  # (d) el choque se mira ANTES de bajar la capa también en install: una máquina nueva contra la versión que trae
   # perfil-equipo.json sale 1 sin pedir el comprimido del equipo ni dejar caché
   harness_lab_release_fresh_home
   rm -rf "$(TYCON_DIR)/team"
@@ -343,7 +343,7 @@ PY
   [ "$(pedidos "/repos/$LAB_TEAM/tarball/")" = "$N1" ] && ok "…sin pedir el comprimido del equipo (el choque se mira antes de bajar)" || mal "pidió el comprimido del equipo pese al choque"
   [ -d "$(TYCON_DIR)/team" ] && mal "install colisión dejó caché en ~/.tycon/team" || ok "…y sin dejar caché"
   [ -d "$(TYCON_DIR)/harness" ] && mal "install colisión instaló igual" || ok "…ni versión instalada"
-  # (e) ni la punta del equipo ni la capa instalada sirven: la versión nueva NO se instala (AC 9)
+  # (e) ni la punta del equipo ni la capa instalada sirven: la versión nueva NO se instala
   rm -f "$LAB_AUTHOR_TREE/perfil-equipo.json"   # la versión siguiente ya no trae la ruta de la capa
   harness_lab_publish_stable 2026.10.08.5 CHANGES "sin la ruta de la capa"
   harness_lab_release_fresh_home
@@ -363,7 +363,7 @@ fi
 # ───────────────────────────────────────────── T9N ────────────────────────────────────────────────────────────────────
 # Una versión nueva que acepta en la capa una ruta que la instalada no conoce: quien valida la punta del equipo al instalar
 # es el código que corre (el de la versión instalada), que la rechaza y arrastra la capa vieja. Sin más, la versión nueva
-# queda con una capa vieja hasta otro arranque, y si la versión nueva sacó piezas que ahora trae la capa, la máquina se
+# queda con una capa vieja hasta otro arranque, y si la versión nueva saca piezas que trae la capa, la máquina se
 # queda sin ellas. Después del cambio, la capa se vuelve a intentar con el código de la versión nueva, en la misma corrida.
 if corre T9N; then
   echo "T9N · update: la punta que sólo acepta la versión nueva se apila en la misma corrida, con el código de esa versión"
@@ -403,7 +403,7 @@ PY
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-# ── ayudantes de T10-T12 (tanda A1b) ──────────────────────────────────────────────────────────────────────────────────
+# ── ayudantes de T10-T12 ──────────────────────────────────────────────────────────────────────────────────
 ventana() { # ventana now|none — la última mirada a la red: recién (dentro de la ventana) o nunca (fuera)
   python3 - "$(ESTADO)" "$1" <<'PY'
 import json,sys,datetime
@@ -600,11 +600,11 @@ PY
   harness_release startup >/dev/null 2>&1
   [ "$(estado "d['team']['commit']")" = "$(j "$(NEW)/.tycon-team.json" "d['commit']")" ] && ok "(o) el estado quedó con el commit de harness/" || mal "(o) estado $(estado "d['team']['commit']") ≠ harness/"
   [ "$(lineas)" = "$N0" ] && ok "(o) …sin pedir nada (dentro de la ventana)" || mal "(o) pidió a la red"
-  # ── lo que agregó el pase adversarial del código (5b): las pruebas que confirmaron cada hallazgo, promovidas ──
+  # ── casos de regresión, cada uno con la prueba que lo confirma ──
   ventana none; harness_release startup >/dev/null 2>&1   # la punta de (n), ya sin el tapón
   [ "$(estado "d['team']['commit']")" = "$(team_head)" ] && ok "(n') sin el tapón, el arranque siguiente trae la punta" || mal "(n') no la trajo: $(estado "d.get('team')")"
   canal_cambio() { local n; n="$(grep -c 'canal vigente cambió' "$(STARTUP_LOG)" 2>/dev/null)"; printf '%s' "${n:-0}"; }
-  # (p · C-2) el perfil borrado a mano y repuesto desde la caché: la política se relee (sin perfil el canal sería stable)
+  # (p) el perfil borrado a mano y repuesto desde la caché: la política se relee (sin perfil el canal sería stable)
   rm -f "$(NEW)/perfil-equipo.json"
   ventana none; harness_release startup >/dev/null 2>&1
   [ -f "$(NEW)/perfil-equipo.json" ] && [ "$(estado "d['channel']")" = latest ] && ok "(p) perfil repuesto desde la caché y state.channel el del perfil (latest)" || mal "(p) state.channel $(estado "d.get('channel')"), perfil $([ -f "$(NEW)/perfil-equipo.json" ] && echo está || echo falta)"
@@ -662,7 +662,7 @@ PY
   case "$(dk "' | '.join(d['ok'])")" in *"todo en su lugar"*) mal "dice «todo en su lugar» con la capa incompleta" ;; *) ok "no dice «todo en su lugar» con la capa incompleta" ;; esac
   [ "$(dk "len(d['fail'])")" = 0 ] && ok "…y ningún fail (la capa no frena la salud)" || mal "fail: $(dk "d['fail']")"
   # un refresco que quedó a medias (el pendiente nombra el blob del perfil que hay en disco): «a medio refrescar», no «editado»,
-  # y el pendiente no cuenta «de más» (pase adversarial, FP-1)
+  # y el pendiente no cuenta «de más»
   printf '{ "schema": 1, "commit": "%s", "files": [{ "path": "perfil-equipo.json", "blob": "%s" }] }\n' "$(printf '5%.0s' $(seq 1 40))" "$(git hash-object "$(NEW)/perfil-equipo.json")" > "$(NEW)/.tycon-team.pending.json"
   doc
   case "$(dk "' | '.join(d['warn'])")" in *"perfil-equipo.json quedó a medio refrescar"*) ok "el perfil a medio refrescar se dice como tal" ;; *) mal "sin la línea «a medio refrescar»: $(dk "d['warn']")" ;; esac
@@ -682,8 +682,7 @@ PY
   # las líneas de la capa no hacen red: doctor (sin --fetch) no le pide nada al servidor
   N0="$(wc -l < "$LAB_RELEASE_LOG" | tr -d ' ')"; doc
   [ "$(wc -l < "$LAB_RELEASE_LOG" | tr -d ' ')" = "$N0" ] && ok "doctor no le pide nada a la red" || mal "doctor pidió a la red"
-  # en modo desarrollador, ninguna línea de la capa (AC 16)
-  # en modo desarrollador, ninguna línea de la capa (AC 16): la misma máquina —capa declarada y rota, que en modo normal da
+  # en modo desarrollador, ninguna línea de la capa: la misma máquina —capa declarada y rota, que en modo normal da
   # su aviso— leída por las líneas de doctor de la versión bajada con el estado en `developer`
   DEVN="$(node -e '
     const R = require(process.argv[1]);
@@ -764,7 +763,7 @@ if corre T12; then
   [ "$(estado "d['team']['repo']")" = "$LAB_TEAM" ] && [ "$(estado "d['team']['commit']")" = None ] && ok "…state.team queda con el repo y sin commit (el arranque la trae)" || mal "state.team: $(estado "d.get('team')")"
   OUT="$(harness_release rollback 2>&1)"
   [ "$(estado "d['team']['commit']")" = "$C1" ] && ok "…y el rollback de vuelta la recupera" || mal "rollback de vuelta: $(estado "d.get('team')")"
-  # una máquina sin capa: la línea «deja» de hoy
+  # una máquina sin capa: la línea «deja» de siempre
   harness_lab_release_fresh_home
   OUT="$(harness install --version latest --profile full --yes 2>&1)"
   OUT="$(harness_release uninstall --yes 2>&1)"; RC=$?
@@ -773,15 +772,14 @@ if corre T12; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-# ───────────────────────────────────────────── T33 (tanda A2b-AC33) ───────────────────────────────────────────────────
-# El mapa de renombres en la capa (AC 33): la versión de juguete NO lo trae (como la copia pública) y la capa trae el mapa
+# ───────────────────────────────────────────── T33 ───────────────────────────────────────────────────
+# El mapa de renombres en la capa: la versión de juguete NO lo trae (como la copia pública) y la capa trae el mapa
 # REAL. La máquina instalada trata una variable vieja, un subcomando viejo y un archivo de estado viejo igual que el árbol
 # interno; el día del retiro (un commit que lo saca del repo del equipo) el refresco lo borra y deja de traducirlos.
 #
 # 🔴 En la copia pública el mapa real NO viaja (lo trae la capa: es lo que mide esta prueba). Ahí la prueba declara lo que
 # necesita: un mapa de juguete con los mismos tres tipos, y como referencia un árbol con el lector de la copia y ese mapa al
-# lado (lo que en el interno es el propio repo). Antes daba rojo sobre la copia, pidiendo un archivo que no existe (medido
-# el 2026-10-09 en la validación desde GitHub).
+# lado (lo que en el interno es el propio repo). Sin esto, daría rojo sobre la copia, pidiendo un archivo que no existe.
 MAPA_T33="$RAIZ/scripts/lib/renames.json"
 mapa_old() { # mapa_old <kind> <new> [<where>] — el nombre viejo, leído del mapa de la prueba (ninguno escrito a mano acá)
   python3 - "$MAPA_T33" "$1" "$2" "${3:-}" <<'PY'
@@ -794,7 +792,7 @@ PY
 }
 sondas() { # sondas <árbol> — tres líneas: la variable vieja leída, el subcomando viejo igual al nuevo (sí/no), el estado leído
   # sin TF_BUILD: en Azure el lector agrega un aviso por cada nombre viejo usado (lo que se mide acá es la traducción, no
-  # el aviso; la 170 #12639 dio rojo por eso)
+  # el aviso)
   local t="$1" a b
   env -u TF_BUILD -u TYCON_TODAY "$OLD_VAR=2026-01-02" HOME="$LAB_HOME" node -e 'const L = require(process.argv[1] + "/scripts/lib/legacy-names.js"); process.stdout.write(String(L.readEnv("TYCON_TODAY")) + "\n")' "$t" 2>&1
   a="$(env -u TF_BUILD HOME="$LAB_HOME" node "$t/scripts/lib/tycon-config.js" "$OLD_SUB" 2>&1; echo "rc=$?")"
@@ -829,7 +827,7 @@ if corre T33; then
   # la versión, como la copia pública: sin el mapa
   rm -f "$LAB_AUTHOR_TREE/scripts/lib/renames.json"
   # el aplicador de juguete vive en la ruta del real y el mapa nombra una opción del real (`link`): la máquina exige que el
-  # nombre nuevo esté en el texto de ese guion de la versión (AC 33 c), así que el de juguete lo nombra, como el real
+  # nombre nuevo esté en el texto de ese guion de la versión, así que el de juguete lo nombra, como el real
   for f in scripts/install-tycon-hooks.sh scripts/install-tycon-hooks.ps1; do
     [ -f "$LAB_AUTHOR_TREE/$f" ] && printf '\n# (laboratorio, T33) el aplicador real acepta --link: el mapa de renombres lo nombra\n' >> "$LAB_AUTHOR_TREE/$f"
   done
@@ -863,7 +861,7 @@ $INTERNO"
   OUT="$(harness_release startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ ! -e "$(NEW)/scripts/lib/renames.json" ] && ok "(retiro) el refresco borra el mapa de la máquina" || mal "(retiro) rc $RC, el mapa sigue: $OUT"
   SIN="$(sondas "$(NEW)")"
-  # el control tiene que fallar por lo que mide, no por un error de la sonda (revisor de fallos silenciosos): la variable vieja
+  # el control tiene que fallar por lo que mide, no por un error de la sonda: la variable vieja
   # no se lee (undefined), el estado se busca en su nombre nuevo, y ninguna traza de Node en la salida
   case "$SIN" in "undefined"*"subcomando viejo: distinto"*"$LAB_HOME/${NEW_STATE#\~/}") ok "(control) sin el mapa la máquina ya no traduce los nombres viejos" ;; *) mal "(control) sin el mapa no da lo esperado: $SIN" ;; esac
   case "$SIN" in *"at Module."*|*"node:internal"*|*"Error: Cannot find module"*) mal "(control) la sonda tiró: $SIN" ;; *) ok "(control) …sin trazas de error en las sondas" ;; esac
@@ -875,11 +873,11 @@ fi
 if corre TPN; then
   echo "TPN · el perfil del equipo con su nombre de hoy (team-profile.json), con el de antes y con los dos"
   lab_team "$BASE/labpn"
-  # (a) con el nombre de antes (el repo de juguete nace así): el plan avisa en una línea cómo renombrarlo
+  # (a) con el nombre viejo (el repo de juguete nace así): el plan avisa en una línea cómo renombrarlo
   OUT="$(harness install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "(a) --dry-run con perfil-equipo.json sale 0" || mal "(a) --dry-run rc $RC: $OUT"
   case "$OUT" in *"perfil-equipo.json, scripts/metrics/corridas-buzon.json — aviso: el perfil del equipo usa el nombre de antes (perfil-equipo.json): sigue andando; para pasarlo al nuevo, git mv perfil-equipo.json team-profile.json"*) ok "(a) el plan avisa cómo renombrarlo, en la misma línea" ;; *) mal "(a) el plan no avisa: $OUT" ;; esac
-  # (b) el repo del equipo renombra el perfil: install --team deja team-profile.json y no el de antes
+  # (b) el repo del equipo renombra el perfil: install --team deja team-profile.json y no el viejo
   harness_lab_git "$LAB_AUTHOR_TEAM" mv perfil-equipo.json team-profile.json >/dev/null
   harness_lab_team_publish "el perfil pasa a team-profile.json"
   OUT="$(harness install --version latest --team "$LAB_TEAM" --dry-run 2>&1)"
@@ -895,7 +893,7 @@ if corre TPN; then
   JSON="$(harness_release doctor --json 2>/dev/null)"
   [ "$(printf '%s' "$JSON" | jtxt "len(d['fail'])")" = 0 ] && ok "(b) doctor --json sin fail" || mal "(b) doctor fail: $(printf '%s' "$JSON" | jtxt "d['fail']")"
   case "$(printf '%s' "$JSON" | jtxt "' '.join(d['warn'])")" in *"team-profile.json: de más"*) mal "(b) doctor cuenta el perfil «de más»" ;; *) ok "(b) doctor no cuenta team-profile.json como «de más»" ;; esac
-  # (c) los dos en el repo del equipo (con el de antes distinto): el refresco deja sólo el nuevo, y vale el nuevo
+  # (c) los dos en el repo del equipo (con el viejo distinto): el refresco deja sólo el nuevo, y vale el nuevo
   printf '%s\n' '{ "ado": { "org": "https://dev.azure.com/viejo" }, "integrations": { "engram": false } }' > "$LAB_AUTHOR_TEAM/perfil-equipo.json"
   harness_lab_team_publish "vuelve el de antes, al lado del nuevo"
   export TYCON_STARTUP_DETACH=0

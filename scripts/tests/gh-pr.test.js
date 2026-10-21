@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * gh-pr.test.js — el lector de un comando `gh` (story 8.26, tanda F1 · AC 54).
+ * gh-pr.test.js — el lector de un comando `gh`.
  *
  * El freno antes de publicar (scripts/hooks/public-push-guard.js) necesita saber, de un comando de terminal, qué `gh`
  * trae, a qué repo apunta, qué TEXTO publica y qué parte de ese texto no se puede leer. Lo que no puede pasar:
@@ -214,11 +214,11 @@ test('GhReader_EveryGhOfAChain_EachWithItsOwnFlags', () => {
   assert.ok(texts(multi).includes('t') && texts(multi).includes('b'));
 });
 
-// ── lo que encontró la primera vuelta de revisores (cada caso es una forma de publicar sin que se mire) ──────────────
+// ── formas de publicar sin que se mire (cada caso es una) ─────────────────────────────────────────────────────────────────
 
 test('GhReader_AValueTakingOptionAlwaysTakesTheNextToken_HelpAsAValueIsNotHelp', () => {
   // `gh` toma lo que sigue a una opción con valor COMO su valor, aunque empiece con guion: esto crea un pedido cuyo
-  // título es «--help». Leído como pedido de ayuda, pasaba sin que nadie mirara el cuerpo.
+  // título es «--help». Leído como pedido de ayuda, pasaría sin que nadie mirara el cuerpo.
   let c = one('gh pr create --title --help --body "el cuerpo"');
   assert.strictEqual(c.lectura, false);
   assert.ok(texts(c).includes('--help') && texts(c).includes('el cuerpo'));
@@ -269,7 +269,7 @@ test('GhReader_WhereItRuns_LiteralCdIsFollowed_UnknownCdAndRepoAreSaid', () => {
   }
   // 🔴 un `cd` que este lector ve y cuyo efecto NO llega al `gh` (un subshell, una tubería, en segundo plano) o que no
   // está donde se lo espera (adentro de un `if`, de unas llaves, entre comillas): leído como «el `gh` corre ahí»
-  // mandaba a mirar la carpeta equivocada, y un pedido al repo público salía como si fuera de otro proyecto
+  // manda a mirar la carpeta equivocada, y un pedido al repo público sale como si fuera de otro proyecto
   for (const cmd of ['(cd otra && true); gh pr create --title a --body b', '{ cd otra; }; gh pr create --title a --body b',
     'if cd otra; then gh pr create --title a --body b; fi', "'cd' otra; gh pr create --title a --body b",
     'cd otra | cat; gh pr create --title a --body b', 'cd otra & gh pr create --title a --body b',
@@ -346,12 +346,12 @@ test('GhReader_TheBinaryCannotHideBehindQuotesOrAnExpansion', () => {
 });
 
 test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', () => {
-  // QUÉ CUBRE Y QUÉ NO (decisión escrita en la story, AC 54): el freno cubre el ACCIDENTE —un `gh` que publica,
+  // QUÉ CUBRE Y QUÉ NO (decisión de diseño): el freno cubre el ACCIDENTE —un `gh` que publica,
   // corrido de cualquiera de las formas en que se corre un comando—, no la EVASIÓN. Un `gh` pasado como TEXTO A UNA
   // TERMINAL (`bash -c "gh …"`, `iex`, `cmd /c`, `eval`, por una tubería, un bloque o un texto de entrada hacia una
   // terminal, `xargs`, `ssh`) es una forma común de correrlo: no se puede leer, no sale. El mismo texto dado a
-  // cualquier otro programa es un dato. La primera versión de esta regla frenaba todo texto con esa forma salvo en
-  // una lista de programas «inofensivos»: frenaba `sed`, `npm test -t "…"`, un `python3 - <<EOF` que edita una guía,
+  // cualquier otro programa es un dato. Frenar todo texto con esa forma salvo en
+  // una lista de programas «inofensivos» frenaría `sed`, `npm test -t "…"`, un `python3 - <<EOF` que edita una guía,
   // en CUALQUIER repo — y un freno que corta el trabajo de todos los días se apaga.
   const hidden = (cmd) => gh.comandosGh(cmd).some((c) => !c.lectura && c.ilegible.length > 0);
   for (const cmd of [
@@ -393,8 +393,8 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
     assert.deepStrictEqual(gh.comandosGh(cmd).filter((c) => !c.lectura), [], `no tenía que frenarse: ${cmd}`);
   }
   // 🔴 Las gemelas del código de una línea. El comando que la llamada corre se LEE: uno de lectura no se frena. Y el
-  // mismo código dado a un programa que no es un intérprete es un DATO (antes, buscar `execSync("gh pr` en el código
-  // quedaba frenado en cualquier repo: se frenaba por la llamada sola, con cualquier programa y cualquier verbo).
+  // mismo código dado a un programa que no es un intérprete es un DATO (buscar `execSync("gh pr` en el código
+  // se frenaría en cualquier repo: se frenaría por la llamada sola, con cualquier programa y cualquier verbo).
   for (const cmd of ["python3 -c 'import os; os.system(\"gh pr view 5\")'", "node -e 'require(\"child_process\").execSync(\"gh pr list\")'",
     "python3 -c \"import subprocess; subprocess.run(['gh','pr','view','5'])\"", "perl -e 'system(\"gh\", \"release\", \"view\", \"v1\")'",
     "python3 - <<'PY'\nimport subprocess\nsubprocess.run(\"gh pr checks 5\", shell=True)\nPY", "echo 'import os; os.system(\"gh pr view 5\")' | python3",
@@ -409,7 +409,7 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
     "uv run python -c 'import os; os.system(\"gh issue create --title a\")'", "/usr/bin/python3.12 -c 'import os; os.system(\"gh issue create --title a\")'",
     "node -e 'const {execSync}=require(\"child_process\"); execSync(\"gh pr view 5\"); execSync(\"gh pr merge 5 --squash\")'",
     "python3 -c 'import os; os.system(\"gh pr create --title \\\"a\\\" --body b\")'", "perl -e 'system(\"gh\", \"release\", \"create\", \"v1\")'",
-    // 🔴 en la lista, una VARIABLE ocupa su lugar: cortar la lista ahí dejaba `gh --repo`, que se leía «de lectura»
+    // 🔴 en la lista, una VARIABLE ocupa su lugar: cortar la lista ahí dejaría `gh --repo`, que se leería «de lectura»
     "python3 -c 'import subprocess; subprocess.run([\"gh\",\"--repo\",repo,\"pr\",\"create\"])'", "python3 -c 'import subprocess; subprocess.run([\"gh\",\"-R\",repo,\"pr\",\"create\"])'",
     "python3 -c 'import subprocess; subprocess.run([\"gh\",\"api\",url,\"-X\",\"POST\"])'", "python3 -c 'import subprocess; subprocess.run([\"gh\",\"api\",\"-X\",\"POST\",url])'",
     "python3 -c 'import subprocess; subprocess.run([\"gh\",\"--repo=\" + repo,\"pr\",\"create\"])'",
@@ -419,13 +419,13 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
     "ruby -e 'system \"gh pr create --title x --body y\"'", "ruby -e 'puts %x(gh pr create --title x)'", "perl -e 'print qx{gh release create v1}'",
     "sudo -E python3 -c 'import os; os.system(\"gh pr create --fill\")'",
     // 🔴 la lista se parte por las comas de AFUERA: una coma, un paréntesis o un corchete adentro de un texto o de una
-    // llamada no cortan (perdía la cuenta, no veía el grupo y descartaba la lista entera)
+    // llamada no cortan (si cortaran, se perdería la cuenta, no se vería el grupo y se descartaría la lista entera)
     "python3 -c 'subprocess.run([\"gh\",\"--repo\",f(\")\"),\"pr\",\"create\"])'", "python3 -c 'subprocess.run([\"gh\",\"--repo\",d[\"a]\"],\"pr\",\"create\"])'",
     "python3 -c 'subprocess.run([\"gh\",\"pr\",\"create\",\"--title\",\"a\" + \",b\"])'",
     // …y un texto con algo pegado no es el valor: no se puede leer
     "python3 -c 'subprocess.run([\"gh\",\"pr\",\"view\" if x else \"create\"])'", "python3 -c 'subprocess.run([\"gh\",\"api\",url,\"-X\"+m])'",
     "node -e \"require('child_process').execFileSync('gh', ['pr', 'create', '--title', t])\"",
-    // tres comillas (leídas como un texto vacío, el comando quedaba afuera), y los otros delimitadores de `qx`
+    // tres comillas (leídas como un texto vacío, el comando quedaría afuera), y los otros delimitadores de `qx`
     "python3 -c 'import os; os.system(\"\"\"gh pr create --title t --body b\"\"\")'", "python3 -c 'import subprocess; subprocess.run(f\"\"\"gh pr create --title {t} --body b\"\"\", shell=True)'",
     "perl -e 'print qx/gh pr create --title a/'", "perl -e 'print qx[gh pr create --title a]'", "ruby -e 'puts %x<gh pr create --title a>'",
     "ruby -e 'puts %x|gh pr create --title a|'", "ruby -e 'puts %x!gh pr create --title a!'",
@@ -458,15 +458,15 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
     assert.deepStrictEqual(gh.comandosGh(cmd), [], `no tenía que frenarse: ${cmd}`);
   }
   // 🔴 una opción CONOCIDA entre comillas es la misma opción (las comillas las saca la terminal): con `"-X" POST` tomado
-  // por un argumento, un `gh api` que escribe quedaba «de lectura»
+  // por un argumento, un `gh api` que escribe quedaría «de lectura»
   for (const cmd of ['gh api "-X" POST repos/acme/widgets/issues', 'gh api "--method" POST repos/acme/widgets/issues', 'gh api repos/acme/widgets/issues "-f" title=a']) {
     assert.deepStrictEqual(gh.comandosGh(cmd).map((c) => c.lectura), [false], cmd);
   }
   assert.deepStrictEqual(gh.comandosGh('gh api "-XGET" repos/acme/widgets/issues').map((c) => c.lectura), [true]);
   // …y el valor de una opción sigue siendo un valor, parezca lo que parezca
   assert.deepStrictEqual(texts(gh.comandosGh('gh issue create --title "-X" --body "--title"')[0]).sort(), ['--title', '-X']);
-  // 🔴 un `<<PALABRA` adentro de una cadena no abre un bloque: el lector se tragaba como «cuerpo» los renglones de
-  // abajo, y el `gh` que venía ahí salía sin mirar (el arreglo está en az-pr.js, que es de donde salen las fichas)
+  // 🔴 un `<<PALABRA` adentro de una cadena no abre un bloque: el lector se tragaría como «cuerpo» los renglones de
+  // abajo, y el `gh` que venga ahí saldría sin mirar (lo resuelve az-pr.js, que es de donde salen las fichas)
   const below = gh.comandosGh('echo "ejemplo: cat <<EOF"\ngh pr create --title a --body b');
   assert.strictEqual(below.length, 1, JSON.stringify(below));
   assert.strictEqual(below[0].resumen, 'gh pr create');
@@ -493,7 +493,7 @@ test('GhReader_AGhGivenAsTextToAShell_IsHidden_TextGivenToAnythingElse_IsData', 
 
 test('GhReader_OptionsBeforeTheGroup_AndGhAsAName_NotAsAProgram', () => {
   // `gh` acepta opciones ANTES del grupo (`gh -R a/b pr create`). Las puertas de «un texto con un `gh` que publica»
-  // pedían el grupo pegado a `gh`: con una opción en el medio el texto ni se leía, y salía sin mirar.
+  // exigir el grupo pegado a `gh` haría que, con una opción en el medio, el texto ni se leyera y saliera sin mirar.
   const hidden = (cmd) => gh.comandosGh(cmd).some((c) => !c.lectura && c.ilegible.length > 0);
   for (const cmd of ['bash -c "gh -R a/b pr create --title a --body b"', "ssh otra 'gh --repo a/b issue comment 3 --body a'",
     'echo "gh -R a/b pr create --title a --body b" | sh', "sh <<EOF\ngh -R a/b pr create --title a --body b\nEOF",
@@ -510,8 +510,8 @@ test('GhReader_OptionsBeforeTheGroup_AndGhAsAName_NotAsAProgram', () => {
   const direct = one('gh -R acme/widgets pr create --title a --body b');
   assert.strictEqual(direct.lectura, false);
   assert.strictEqual(direct.repo, 'acme/widgets');
-  // 🔴 y `gh` como NOMBRE no es un comando: tomado siempre por el programa, `brew install gh jq` era «un `gh`
-  // desconocido que publica», y en una máquina del equipo sin la lista no corría
+  // 🔴 y `gh` como NOMBRE no es un comando: tomado siempre por el programa, `brew install gh jq` sería «un `gh`
+  // desconocido que publica», y en una máquina del equipo sin la lista no correría
   for (const cmd of ['which gh', 'command -v gh >/dev/null 2>&1 || echo falta', 'brew install gh jq git', 'type gh', 'bash -c "echo gh"',
     'ssh otra "which gh"', 'alias g=gh', 'apt-get install -y gh']) {
     assert.deepStrictEqual(gh.comandosGh(cmd).filter((c) => !c.lectura), [], `no es un gh que publica: ${cmd}`);
@@ -573,7 +573,7 @@ test('GhReader_WhatTheAdversarialPassFound_EachOneLeftTheGuardGreenWithoutLookin
     assert.ok(all.some((c) => !c.lectura && texts(c).includes('a')), `${cmd}\n${JSON.stringify(all)}`);
   }
   assert.deepStrictEqual(gh.comandosGh('echo "$(gh pr view 5 --json title)"').filter((c) => !c.lectura), [], 'una de lectura adentro sigue siendo de lectura');
-  // …con SUS comillas adentro (otro contexto de comillas: partido tal cual, la primera de adentro cerraba la cadena)
+  // …con SUS comillas adentro (otro contexto de comillas: partido tal cual, la primera de adentro cerraría la cadena)
   const nested = gh.comandosGh('URL="$(gh pr create --title "dos palabras" --body "un cuerpo")"; echo "$URL"').filter((c) => !c.lectura);
   assert.strictEqual(nested.length, 1, JSON.stringify(nested));
   assert.deepStrictEqual(texts(nested[0]).sort(), ['dos palabras', 'un cuerpo']);
@@ -584,7 +584,7 @@ test('GhReader_WhatTheAdversarialPassFound_EachOneLeftTheGuardGreenWithoutLookin
   // el `gh` de afuera con su valor en una sustitución sigue siendo ilegible (el texto lo arma la terminal)
   assert.ok(hidden('gh pr comment 5 --body "$(cat notas.md)"'));
   // 🔴 Un comentario y el cuerpo de un bloque de OTRO comando no son código: un apóstrofo ahí («don't») no abre una
-  // cadena. Recorridos como código escondían la sustitución con el `gh` que venía después, y salía sin mirar.
+  // cadena. Recorridos como código esconderían la sustitución con el `gh` que viene después, y saldría sin mirar.
   for (const cmd of ["# don't forget the body\nURL=\"$(gh pr create --title a --body b)\"",
     "git commit -F - <<'EOF'\ndon't\nEOF\nURL=\"$(gh pr create --title a --body b)\"",
     "cat > notas.md <<\\FIN\nit's\nFIN\necho \"$(gh pr create --title a --body b)\"", "echo \"it's $(gh pr create --title a --body b)\""]) {
@@ -632,7 +632,7 @@ test('GhReader_WhatTheAdversarialPassFound_EachOneLeftTheGuardGreenWithoutLookin
   assert.ok(hidden("gh pr create --title a --body \"$(cat <<'EOF'\nuno\nEOF\ndos\nEOF\n)\""), 'un EOF adentro: lo leído no es lo publicado');
   assert.ok(hidden("gh pr create --title a --body \"$(cat <<'EOF'\nuno\n  EOF\n)\""), 'el cierre con sangría no cierra');
   assert.deepStrictEqual(texts(last("gh pr create --title a --body \"$(cat <<'EOF'\nuno\ndos\nEOF\n)\"")).sort(), ['a', 'uno\ndos']);
-  // lo que la lista general daba por lectura y escribe
+  // lo que la lista general da por lectura y escribe
   assert.ok(hidden('gh label clone otra-org/otro-repo'), 'copia etiquetas de otro repo: ese texto no está en el comando');
   assert.strictEqual(last('gh workflow run despliegue.yml -f nota=hola').lectura, false);
   assert.strictEqual(last('gh workflow list').lectura, true);

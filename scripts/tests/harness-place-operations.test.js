@@ -1,15 +1,15 @@
 'use strict';
 /**
- * harness-place-operations.test.js — la regla de nacimiento del lugar del arnés, con enlaces y carpetas de verdad (story 8.19,
- * tanda A). En Node a propósito: es la suite que el escenario `place` del pipeline 182 corre en el agente Windows, donde
+ * harness-place-operations.test.js — la regla de nacimiento del lugar del arnés, con enlaces y carpetas de verdad.
+ * En Node a propósito: es la suite que el escenario `place` del pipeline 182 corre en el agente Windows, donde
  * un enlace es un junction y el bash de Git no pregunta bien por él.
  *
- * EL RIESGO (S1 de la story). Con un nombre nuevo, el lugar FALTA en todas las máquinas el primer día. La regla de antes
- * lo creaba hacia el clon que corre el instalador, y el equipo trabaja desde clones descartables: el primero que corriera
- * se quedaba con el nombre y al borrarlo lo dejaba colgado. Ahora el lugar nace hacia donde apunta el nombre viejo, o lo
+ * El riesgo: con un nombre nuevo, el lugar FALTA en todas las máquinas el primer día. Si se creara hacia el clon
+ * que corre el instalador, como el equipo trabaja desde clones descartables, el primero que corriera
+ * se quedaría con el nombre y al borrarlo lo dejaría colgado. Por eso el lugar nace hacia donde apunta el nombre viejo, o lo
  * que dice el estado, y recién después hacia el clon que corre; el viejo apunta al lugar y no se borra.
  *
- * Qué fija (la tabla de pruebas de la story):
+ * Qué fija:
  *   T2  el laboratorio se niega a correr si la HOME no es la suya;
  *   T5  S1: viejo → X e instalador desde Y → el lugar va a X; viejo colgado y estado en Z → Z; sin nada → Y;
  *   T6  las 49 celdas de la matriz (y sus variantes), el lugar escrito antes que el viejo, una carpeta real que es un clon
@@ -179,11 +179,11 @@ function expected(p, v, variant) {
   if (p === 'F' || p === 'C' || p === 'N') {
     if (v === 'R') return { place: 'LR', legacy: 'same' };
     if (v === 'E') return { place: 'K', legacy: 'toPlace' };
-    if (v === 'F') return { place: 'D', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: desde la tanda C, «—»
+    if (v === 'F') return { place: 'D', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: «—»
     return { place: 'D', legacy: v === 'X' || v === 'A' ? 'same' : 'toPlace' };
   }
   // el lugar ya resuelve a un clon (E → P, o R)
-  if (v === 'F') return { place: 'same', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: desde la tanda C, «—»
+  if (v === 'F') return { place: 'same', legacy: CP.LEGACY_FOR_NEW_MACHINES ? 'toPlace' : 'same' };   // V→L*: «—»
   if (v === 'C' || v === 'N') return { place: 'same', legacy: 'toPlace' };
   if (v === 'X' || v === 'A') return { place: 'same', legacy: 'same' };
   if (v === 'R') return p === 'E' && variant === 'placeAtLegacy' ? { place: 'same', legacy: 'same' } : { place: 'same', legacy: 'same', accion: 'conflict' };
@@ -246,8 +246,8 @@ test('T6 Birth_Matrix49Cells_PlaceFirst_RealCloneUntouched_CycleResolved_Idempot
 });
 
 // ── T41 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Desde el merge de la tanda C, una máquina que no tenía el nombre viejo no lo recibe (las celdas V→L* pasan a «—»): los
-// textos ya nombran el lugar, y una máquina nueva queda con un solo nombre. Por la API y por la línea de comandos que
+// Una máquina que no tenía el nombre viejo no lo recibe (las celdas V→L* son «—»): los
+// textos nombran el lugar, y una máquina nueva queda con un solo nombre. Por la API y por la línea de comandos que
 // llama el instalador; la segunda corrida no escribe.
 test('T41 FreshMachine_NoLegacyAfterTandaC_OnboardingAgain', () => {
   assert.strictEqual(CP.LEGACY_FOR_NEW_MACHINES, false, 'la llave de máquina nueva sigue prendida después de la tanda C');
@@ -313,8 +313,8 @@ test('T7 Birth_Conflict_PlaceForeign_CannotCreate_CheckReadOnly_TwoProcessesLock
   const took = cli(['--ensure-link', '--clone', running, '--home', hl]);
   assert.strictEqual(took.status, 0); assert.strictEqual(real(placeOf(hl)), running, `el candado viejo no se tomó: ${took.stdout}`);
   assert.ok(!exists(lock), 'el candado quedó tomado');
-  // (segunda vuelta, C1) la carrera: B espera el candado mientras A crea el lugar hacia su clon. Con el plan calculado
-  // ANTES del candado, B escribía su plan viejo y el clon descartable se quedaba con el lugar. El plan se calcula con el
+  // la carrera: B espera el candado mientras A crea el lugar hacia su clon. Con el plan calculado
+  // ANTES del candado, B escribiría su plan viejo y el clon descartable se quedaría con el lugar. El plan se calcula con el
   // candado tomado: B ve el lugar que dejó A y no lo toca.
   const stable = clone('estable'); const disposable = clone('descartable'); const hr = home('carrera');
   const rlock = path.join(hr, '.claude', '.tycon-pipeline', 'place.lock'); fs.mkdirSync(rlock, { recursive: true });
@@ -339,7 +339,7 @@ test('T7 Birth_Conflict_PlaceForeign_CannotCreate_CheckReadOnly_TwoProcessesLock
 // ── T8 ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T8 Link_TempNameSwap_FourOperations_RealFolderRefused', () => {
   const A = clone('A'); const B = clone('B');
-  // una máquina del equipo: el viejo ya estaba (desde la tanda C, una máquina nueva no lo recibe)
+  // una máquina del equipo: el viejo ya estaba (una máquina nueva no lo recibe)
   const h = home('link'); link(A, legacyOf(h)); CP.ensurePlace({ clon: A, home: h });
   assert.ok(real(placeOf(h)) === A && real(legacyOf(h)) === A);
   // re-apunta con nombre temporal; después, los dos nombres resuelven a la misma carpeta
@@ -389,8 +389,8 @@ test('T8 Link_TempNameSwap_FourOperations_RealFolderRefused', () => {
 const HAS_BASH = spawnSync('bash', ['-c', 'exit 0']).status === 0;
 /**
  * La ruta como la ve el bash de Git en Windows. Se le pregunta al propio bash: su `cygpath` vive en `<Git>\usr\bin`, que
- * el bash pone en su PATH, y el PATH de Node en general no lo trae (medido en la máquina virtual Windows, 2026-10-05:
- * con sólo `Git\bin` en el PATH, `cygpath` llamado desde Node no existe). null si no se pudo: la parte de shell queda
+ * el bash pone en su PATH, y el PATH de Node en general no lo trae (con sólo `Git\bin` en el PATH,
+ * `cygpath` llamado desde Node no existe). null si no se pudo: la parte de shell queda
  * NO MEDIDO, con el motivo, en vez de reventar.
  */
 function bashPath(p) {
@@ -429,10 +429,10 @@ test('T9 Readers_PlaceFirstThenLegacy_SilentFallback_LegacyNamedOnlyIfPresent_Us
   const e = cfg.estadoEnlace({ home: onlyLegacy, arnes: B });
   assert.ok(e.estado === 'ok' && e.ruta === legacyOf(onlyLegacy), `tycon-config: con sólo el viejo, el viejo (${JSON.stringify(e)})`);
   assert.strictEqual(cfg.estadoEnlace({ home: none, arnes: A }).ruta, placeOf(none), 'tycon-config: con ninguno, nombra el lugar');
-  // el aviso de cada arranque: con sólo el viejo, callado (comparando como el sistema: samePath, segunda vuelta M5)
+  // el aviso de cada arranque: con sólo el viejo, callado (comparando como el sistema: samePath)
   assert.strictEqual(CP.aviso({ clon: B, home: onlyLegacy, env: {} }), null, 'el aviso habló con sólo el viejo');
   assert.strictEqual(CP.aviso({ clon: `${B}${path.sep}`, home: onlyLegacy, env: {} }), null, 'el aviso habló con una barra final de más');
-  // (segunda vuelta, B-1: P1 + P5) un archivo leído POR EL VIEJO, que pasa por el lugar (un junction a otro junction en
+  // un archivo leído POR EL VIEJO, que pasa por el lugar (un junction a otro junction en
   // Windows), con `[ -f ]` y `[ -d ]` del bash: es lo que hacen los hooks
   const chain = home('cadena'); link(B, placeOf(chain)); link(placeOf(chain), legacyOf(chain));
   const viaLegacy = HAS_BASH ? bashPath(legacyOf(chain)) : null;
@@ -466,7 +466,7 @@ test('T9 Readers_PlaceFirstThenLegacy_SilentFallback_LegacyNamedOnlyIfPresent_Us
   assert.strictEqual(fbRun({ HOME: none }), '');
 });
 
-// ── segunda vuelta · M1: uninstall no deja inalcanzable un lugar que la persona re-apuntó ─────────────────────────
+// ── uninstall no deja inalcanzable un lugar que la persona re-apuntó ─────────────────────────
 // El nombre viejo apunta al lugar. Si el lugar apunta a OTRO clon (un --link de la persona) se conserva, y el viejo
 // también: borrarlo dejaba ese clon fuera del alcance de todo lo que todavía lee por el viejo. Con el lugar al árbol (o
 // ya quitado), el viejo se quita.

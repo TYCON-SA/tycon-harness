@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # installer-repeated-hooks.test.sh — el aplicador REAL de Mac/Linux (`install-tycon-hooks.sh`) en dos lugares donde
-# juzgaba por cómo está escrita una ruta y no por lo que hay en el disco (story 8.18, tramo 3 · pase adversarial del
-# 2026-10-04, clases 14 y 21). El gemelo de Windows se mide en installer-ps1.test.sh, secciones (j) y (k).
+# podía juzgar por cómo está escrita una ruta y no por lo que hay en el disco. El gemelo de Windows se mide en installer-ps1.test.sh, secciones (j) y (k).
 #
-# CASE · «el mismo hook por otra ruta» no igualaba mayúsculas (clase 14)
-#   El caso: en un disco que no distingue mayúsculas (el de una Mac, el de Windows) se llamó al aplicador por la misma
-#   carpeta escrita con otra caja (`…/src/harness` por `…/Src/harness`). Comparaba la ruta real letra por letra
-#   (`os.path.realpath` resuelve enlaces, no la caja): `--check` dijo «27 hooks faltan» sin que faltara ninguno, y sin
-#   `--check` quedaron 63 hooks, 27 registrados dos veces. No se curaba solo y doctor no lo veía.
+# CASE · «el mismo hook por otra ruta» tiene que igualar mayúsculas
+#   El caso: en un disco que no distingue mayúsculas (el de una Mac, el de Windows) se llama al aplicador por la misma
+#   carpeta escrita con otra caja (`…/src/harness` por `…/Src/harness`). Si comparara la ruta real letra por letra
+#   (`os.path.realpath` resuelve enlaces, no la caja), `--check` diría «27 hooks faltan» sin que faltara ninguno, y sin
+#   `--check` quedarían hooks registrados dos veces. No se curaría solo y doctor no lo vería.
 #   Lo que no se puede perder:
 #     · llamado por la misma carpeta en otra caja, en los dos órdenes: ningún hook dos veces, `--check` no inventa
 #       faltantes y settings.json queda byte a byte;
@@ -17,12 +16,12 @@
 #     · el espejo: otro archivo con el mismo nombre en otra carpeta es OTRO hook (ni se toma por el del arnés ni se saca).
 #   En un disco que SÍ distingue mayúsculas la otra ruta no existe: NO MEDIDO (ni verde ni rojo).
 #
-# HOOKSPATH · el `core.hooksPath` local que se juzgaba vestigial porque su carpeta no estaba en el disco (clase 21)
+# HOOKSPATH · el `core.hooksPath` local no es vestigial sólo porque su carpeta no está en el disco
 #   El caso: un clon viejo de agent-skills con `core.hooksPath = .githooks` (el repo sigue esa carpeta, con un hook de
-#   verdad). Re-apuntado al repo unido, la vista reducida esconde `.githooks/`. El lazo del aplicador miraba sólo el
-#   disco: acá `find` fallaba sobre la carpeta que no está y, con `set -e`, el aplicador MORÍA sin una línea (salida 1:
-#   `harness.js update` no podía aplicar ninguna versión mientras durara); en Windows la daba por vestigial y borraba la
-#   clave, y la vuelta no la reponía.
+#   verdad). Re-apuntado al repo unido, la vista reducida esconde `.githooks/`. Si el lazo del aplicador mirara sólo el
+#   disco, `find` fallaría sobre la carpeta que no está y, con `set -e`, el aplicador MORIRÍA sin una línea (salida 1:
+#   `harness.js update` no podría aplicar ninguna versión mientras durara); en Windows la daría por vestigial y borraría la
+#   clave, y la vuelta no la repondría.
 #   Lo que no se puede perder:
 #     · con la carpeta escondida por la vista reducida el aplicador sale 0, dice que NO es vestigial y por qué, y no
 #       toca `.git/config` (tampoco con `--check`);
@@ -96,7 +95,7 @@ json.dump(s, open(path, "w", encoding="utf-8"), indent=2, ensure_ascii=False); o
 PY
 add_hook() { python3 "$BASE/add_hook.py" "$TYCON_SETTINGS_PATH" "$@"; }
 
-# ═══ CASE · la misma carpeta escrita con otras mayúsculas (clase 14) ════════════════════════════════════════════════════
+# ═══ CASE · la misma carpeta escrita con otras mayúsculas ════════════════════════════════════════════════════
 if runs CASE; then
   if ! harness_lab_team_machine "$BASE/case" real >/dev/null; then bad "CASE no pude armar la máquina del equipo de laboratorio"; else
   case "$HOME" in "$BASE"/*) ;; *) echo "❌ installer-repeated-hooks: la HOME no es la de juguete (${HOME})"; exit 1 ;; esac
@@ -179,7 +178,7 @@ if runs CASE; then
   fi
 fi
 
-# ═══ HOOKSPATH · el core.hooksPath local cuya carpeta no está en el disco (clase 21) ════════════════════════════════════
+# ═══ HOOKSPATH · el core.hooksPath local cuya carpeta no está en el disco ════════════════════════════════════
 if runs HOOKSPATH; then
   if ! harness_lab_team_machine "$BASE/hp" real >/dev/null; then bad "HOOKSPATH no pude armar la máquina del equipo de laboratorio"; else
   case "$HOME" in "$BASE"/*) ;; *) echo "❌ installer-repeated-hooks: la HOME no es la de juguete (${HOME})"; exit 1 ;; esac

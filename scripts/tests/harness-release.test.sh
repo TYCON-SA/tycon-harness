@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# harness-release.test.sh — la instalación `release`: una versión BAJADA de GitHub como archivos, sin git (story 8.23,
-# tanda B · T8 a T16).
+# harness-release.test.sh — la instalación `release`: una versión BAJADA de GitHub como archivos, sin git (T8 a T16).
 #
 # Lo que no se puede perder:
 #   T9  · `update --check` en una instalación `release` mira la API —la ref del canal (`mirror/sync` con barra), y su
@@ -17,7 +16,7 @@
 # Laboratorio: scripts/tests/lib/harness-lab.sh (la máquina sin arnés + el servidor de juguete). Nunca ~/.claude ni el
 # checkout real. 🔴 Sin pipes sobre el comando medido.
 #
-#   HP  · (2026-10-14) la carpeta global de hooks de git en la versión bajada, sin que el dev corra nada: con la
+#   HP  · la carpeta global de hooks de git en la versión bajada, sin que el dev corra nada: con la
 #         política auto el arranque la pone, la anota y lo dice una vez en el aviso; con ask el aviso la pide y la pone
 #         `update --yes`; sin el pre-push del arnés en su lugar no la pone; si la persona la sacó, el arranque no la vuelve
 #         a poner.
@@ -27,7 +26,7 @@ set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 # la política de la máquina de juguete: aplicar sin preguntar (`update --yes` sin terminal exige `auto`); lo de `ask`
-# —la pregunta, el aviso de «disponible»— lo miden las suites de la 8.13 y vale igual para la versión bajada
+# —la pregunta, el aviso de «disponible»— lo miden otras suites y vale igual para la versión bajada
 export TYCON_UPDATE_APPLY=auto
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
@@ -44,8 +43,8 @@ LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
 TYCON_DIR() { printf '%s' "$LAB_HOME/.tycon"; }
 # el nombre del lugar del arnés se lee de su definición, no se escribe (T36 de mirror-pipeline: coincide con el repo público)
 PLACE_NAME="$(node -p "require('$RAIZ/scripts/setup/harness/tycon-home.js').PLACE_NAME")"
-# por la API: sin las rutas públicas (sin TYCON_RELEASE_GIT, la salvaguarda de public-git.js): el camino de antes de la
-# story 8.34, que sigue siendo el de una máquina con permiso y el respaldo de una sin permiso cuando github.com no contesta
+# por la API: sin las rutas públicas (sin TYCON_RELEASE_GIT, la salvaguarda de public-git.js): el camino por la API,
+# el de una máquina con permiso y el respaldo de una sin permiso cuando github.com no contesta
 por_api() { ( unset TYCON_RELEASE_GIT; "$@" ); }
 # el número de peticiones del servidor que matchean un patrón (en su registro)
 pedidos() { local n; n="$(grep -c -- "$1" "$LAB_RELEASE_LOG" 2>/dev/null)"; printf '%s' "${n:-0}"; }
@@ -68,10 +67,10 @@ if corre T9; then
   [ -f "$(TYCON_DIR)/harness/version.json" ] && ok "el árbol quedó en ~/.tycon/harness" || mal "no hay ~/.tycon/harness/version.json"
 
   # al día en stable (main sin cambios): 0, y por la API el segundo pedido de version.json lleva el ETag y no pide el
-  # comprimido (sin permiso se mira por info/refs: lo cuenta release-api-count.test.sh, story 8.34)
+  # comprimido (sin permiso se mira por info/refs: lo cuenta release-api-count.test.sh)
   : > "$LAB_RELEASE_LOG"
-  # (2026-10-15, una máquina del equipo en Windows) la falla que anotaron arranques viejos se borra con una mirada sana a
-  # mano; si no, doctor y cada sesión seguían diciendo «no se pudo actualizar» con el arnés al día
+  # la falla que anotaron arranques viejos se borra con una mirada sana a
+  # mano; si no, doctor y cada sesión siguen diciendo «no se pudo actualizar» con el arnés al día
   falla="$(node -e "console.log(require(process.argv[1]).paths(process.argv[2]).failuresFile)" "$LAB_HOME/.tycon/harness/scripts/setup/harness/state.js" "$LAB_HOME")"
   mkdir -p "$(dirname "$falla")"
   printf '{"since":"2026-10-14T14:38:47.224Z","count":4,"reason":"EPERM","last":"2026-10-15T09:00:00.000Z","kind":"update"}\n' > "$falla"
@@ -91,7 +90,7 @@ if corre T9; then
   case "$out" in *undefined*|*"[object"*) mal "la línea de lo disponible trae un hueco: $out" ;; *) ok "la línea de lo disponible está entera (sin undefined)" ;; esac
 
   # latest: mirror/sync MAYOR que main → 3 por la ref con barra; MENOR → lee main (nota); AUSENTE → lee main
-  # (T44 de la story del arnés mantenido en su repo público: con un público que no tiene esa rama, o que la dejó
+  # (T44: con un público que no tiene esa rama, o que la dejó
   #  atrás, el canal de versiones sigue `main` — donde cada merge por pedido sube el número. Lo mismo, con una
   #  instalación por git, lo fija harness-channel.test.sh, casos (7) y (8).)
   harness_release channel latest >/dev/null 2>&1
@@ -227,7 +226,7 @@ if corre T8; then
   case "$out" in *"migrate --to-home"*) ok "y manda a la mudanza (tanda D)" ;; *) mal "no nombra migrate --to-home: $out" ;; esac
   [ "$(harness_lab_home_hash)" = "$antes" ] && ok "no escribió nada" || mal "install --version sobre el clon escribió en la HOME"
   [ ! -e "$(TYCON_DIR)" ] && ok "sin ~/.tycon" || mal "creó ~/.tycon"
-  # update, rollback y doctor del clon: como siempre (sus suites de la 8.13 lo miden entero; acá, que salen como antes)
+  # update, rollback y doctor del clon: como siempre (sus suites lo miden entero; acá, que salen igual)
   harness update --check >/dev/null 2>&1; rc=$?; [ "$rc" = 0 ] && ok "update --check del clon sale 0 (al día)" || mal "update --check del clon salió $rc"
   harness doctor >/dev/null 2>&1; rc=$?; [ "$rc" = 0 ] && ok "doctor del clon sale 0" || mal "doctor del clon salió $rc"
   # la máquina nueva: latest, y un número que no está
@@ -235,7 +234,7 @@ if corre T8; then
   out="$(harness install --version latest --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.1 ] && ok "install --version latest instala la punta del canal (2026.10.07.1)" || mal "latest: rc=$rc versión $(estado "d['version']['number']"): $out"
   [ -z "$(grep -E 'incoming/|previous/' "$(ESTADO)")" ] && ok "el estado no nombra incoming/ ni previous/" || mal "el estado nombra incoming/ o previous/"
-  # los enlaces de hoy, al árbol nuevo (AC 8): el lugar y agent-skills apuntan a ~/.tycon/harness
+  # los enlaces de la máquina, al árbol nuevo: el lugar y agent-skills apuntan a ~/.tycon/harness
   for l in "$PLACE_NAME" agent-skills; do
     if [ -L "$LAB_HOME/.claude/$l" ] && [ "$(cd "$LAB_HOME/.claude/$l" 2>/dev/null && pwd -P)" = "$(cd "$(TYCON_DIR)/harness" && pwd -P)" ]; then ok "el enlace ~/.claude/$l apunta a ~/.tycon/harness"; else mal "el enlace ~/.claude/$l falta o apunta a otro lado: $(readlink "$LAB_HOME/.claude/$l" 2>/dev/null)"; fi
   done
@@ -305,7 +304,7 @@ if corre T12; then
   harness_lab_create "$BASE/lab12"
   harness_lab_release_server
   harness_lab_publish_stable 2026.10.07.1
-  # el enlace del lugar ya apunta a OTRA carpeta válida: install lo fuerza a ~/.tycon/harness (pase adversarial de la B)
+  # el enlace del lugar ya apunta a OTRA carpeta válida: install lo fuerza a ~/.tycon/harness
   harness_lab_release_fresh_home
   mkdir -p "$BASE/lab12-otro-clon/.git"
   ln -s "$BASE/lab12-otro-clon" "$LAB_HOME/.claude/$PLACE_NAME"
@@ -320,7 +319,7 @@ if corre T12; then
   [ "$(j "$(TYCON_DIR)/previous/.tycon-release.json" "d['version']")" = 2026.10.07.1 ] && ok "previous/ es la 2026.10.07.1" || mal "previous/ no es la anterior"
   [ ! -e "$(TYCON_DIR)/swap.json" ] && ok "sin diario al terminar" || mal "quedó swap.json"
   # el respaldo en shell volvió a previous/ sin tocar el estado (se simula con los dos rename a mano): el arranque
-  # siguiente toma lo que hay en harness/ como la verdad y deja la versión caída como failed (pase adversarial de la B)
+  # siguiente toma lo que hay en harness/ como la verdad y deja la versión caída como failed
   T="$(TYCON_DIR)"
   mv "$T/harness" "$T/harness.tmp" && mv "$T/previous" "$T/harness" && mv "$T/harness.tmp" "$T/previous"
   node "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap.js" startup >/dev/null 2>&1
@@ -368,7 +367,7 @@ if corre T12; then
   out="$(harness_release update --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(pedidos "tar.gz/$tp_commit")" -ge 1 ] && ok "la caché tocada no se usó: volvió a bajar del origen" || mal "la caché tocada se usó igual (rc=$rc, pedidos $(pedidos "tar.gz/$tp_commit"))"
   grep -q pisado "$(TYCON_DIR)/harness/skills/lab-third/SKILL.md" && mal "la skill instalada trae el archivo pisado" || ok "la skill instalada es la del árbol declarado"
-  # ── story 8.23, tanda G (pase adversarial, clase 12 + revisores de la vuelta 2): con la versión AL DÍA, `update` repone
+  # ── con la versión AL DÍA, `update` repone
   # lo que falta o está mal de terceros (desde la caché, sin red), y la verificación del aplicador los ve por la caché ──
   TP="$RAIZ/scripts/publishing/install-third-party.js"
   M12="$BASE/lab12/manifest-check.json"
@@ -540,7 +539,7 @@ if corre T18; then
   corre_avisos "con paths.maintainers:"
   [ -z "$(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" 2>/dev/null)" ] && ok "con el clon de mantenimiento declarado, tampoco git sobre ~/.tycon" || mal "git sobre ~/.tycon: $(grep -- "/.tycon/" "$LAB_GIT_WITNESS_LOG" | head -3)"
   harness_release config unset paths.maintainers >/dev/null 2>&1
-  # el consejo «git pull» del instalador y de pipeline.js (AC 18): sobre una instalación release dice harness.js update.
+  # el consejo «git pull» del instalador y de pipeline.js: sobre una instalación release dice harness.js update.
   # El tramo del instalador sólo se imprime cuando falta un control en el disco: se ejercita su rama a mano, con el
   # estado release de esta máquina
   out="$(bash -c 'SCRIPT_DIR="$1"; HOME="$2"; _tcg_root="$(cd "$SCRIPT_DIR/.." && pwd)"; _state_file="$(node -e "process.stdout.write(require(process.argv[1]).stateDir())" "$SCRIPT_DIR/setup/harness/tycon-home.js" 2>/dev/null)/harness-state.json"; if grep -q "\"kind\":[[:space:]]*\"release\"" "$_state_file" 2>/dev/null; then echo "     node $_tcg_root/scripts/setup/harness.js update"; else echo "     git -C x pull --ff-only && git -C $_tcg_root pull --ff-only"; fi' _ "$T/harness/scripts" "$LAB_HOME")"
@@ -639,7 +638,7 @@ if corre T15; then
   [ -n "$(estado "d['hold']")" ] && [ "$(estado "d['hold']['commit']")" = 2026.10.07.2 ] && ok "deja la retención sobre la .2" || mal "sin retención: $(estado "d['hold']")"
   out="$(harness_release update --check 2>&1)"; rc=$?
   case "$out" in *retenci*) ok "con la retención, update no avanza a la .2" ;; *) mal "update sin la retención: $out" ;; esac
-  # la deshecha queda en previous/: un segundo rollback la vuelve a poner y levanta la retención (AC 15)
+  # la deshecha queda en previous/: un segundo rollback la vuelve a poner y levanta la retención
   [ "$(j "$(TYCON_DIR)/previous/.tycon-release.json" "d['version']")" = 2026.10.07.2 ] && ok "la deshecha (.2) quedó en previous/" || mal "previous/ no es la .2: $(ls "$(TYCON_DIR)")"
   out="$(harness_release rollback 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.2 ] && ok "un segundo rollback deshace la vuelta (otra vez en la .2)" || mal "segundo rollback: rc=$rc versión $(estado "d['version']['number']"): $out"
@@ -668,7 +667,7 @@ if corre T16; then
   done
   out="$(harness_release rollback 2>&1)" || mal "rollback falló: $out"
   [ "$(estado "d['version']['number']")" = 2026.10.07.10 ] && ok "diez actualizaciones y una vuelta: en la .10" || mal "versión $(estado "d['version']['number']")"
-  # lo que el arnés ESCRIBE en la máquina fuera de ~/.tycon (AC 16): los enchufes, los enlaces, el estado y la
+  # lo que el arnés ESCRIBE en la máquina fuera de ~/.tycon: los enchufes, los enlaces, el estado y la
   # configuración; el código del programa (la copia fija) nombra esas carpetas en sus textos y no es un puntero
   hits=""
   for f in "$TYCON_SETTINGS_PATH" "$CLAUDE_MD_PATH" "$CODEX_HOME/hooks.json" "$CODEX_HOME/config.toml" "$CODEX_HOME/AGENTS.md" "$(ESTADO)" "$LAB_HOME/.claude/tycon.json" "$LAB_HOME"/Library/LaunchAgents/*.plist; do
@@ -686,9 +685,9 @@ if corre T16; then
 fi
 
 # ───────────────────────────────────────────── T46 ────────────────────────────────────────────
-# Story 8.23, tanda G · AC 43 (y 44 c): `config set` acepta el valor por argumento (no para el secreto), lee una tubería
-# cuyo escritor sigue vivo (antes: «EAGAIN … read»), y en una terminal lee el secreto SIN eco y sin las marcas del
-# pegado; y doctor rotula el archivo de la máquina por su ruta real. Lo encontró la primera máquina migrada (2026-10-08).
+# `config set` acepta el valor por argumento (no para el secreto), lee una tubería
+# cuyo escritor sigue vivo (sin esto, «EAGAIN … read»), y en una terminal lee el secreto SIN eco y sin las marcas del
+# pegado; y doctor rotula el archivo de la máquina por su ruta real.
 if corre T46; then
   echo "T46 · config set: por argumento, por tubería viva, el secreto nunca por argumento, la terminal sin eco; el rótulo del archivo"
   harness_lab_create "$BASE/lab46"
@@ -724,7 +723,7 @@ if corre T46; then
   # Ctrl-C en la terminal: 130 y nada escrito
   out="$(LAB_PTY_DELAY=1.5 harness_lab_pty "$(printf '\003')" node "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" config set github.token 2>&1)"; rc=$?
   [ "$rc" = 130 ] && [ "$(cfg "d.get('github',{}).get('token')")" = None ] && ok "Ctrl-C: sale 130 sin escribir" || mal "Ctrl-C: rc $rc, token «$(cfg "d.get('github',{}).get('token')")»: $out"
-  # AC 44 (c): doctor rotula el archivo de la máquina por su ruta REAL. En esta máquina —una versión bajada instalada
+  # doctor rotula el archivo de la máquina por su ruta REAL. En esta máquina —una versión bajada instalada
   # con Claude Code, sin mudanza— el estado sigue donde siempre y la configuración de la máquina es ~/.claude/tycon.json
   # (tycon-home.js: la máquina «vive en ~/.tycon» sólo con ~/.tycon/state); la mudada dice ~/.tycon/config.json (T28y)
   [ ! -d "$LAB_HOME/.tycon/state" ] && ok "esta máquina (versión bajada con Claude Code, sin mudanza) conserva el estado donde siempre" || mal "esta máquina vive en ~/.tycon/state: el caso de abajo no es el que se quiere medir"
@@ -741,7 +740,7 @@ if corre T46; then
   node "$T/harness/scripts/lib/tycon-config.js" set integrations.engram true >/dev/null 2>&1
   out="$(harness_release install --dry-run 2>&1)"
   case "$out" in *"integraciones: engram (~/.claude/tycon.json)"*) ok "el cierre/plan de install rotula el archivo de la máquina por su ruta real" ;; *) mal "install no rotula el archivo: $(printf '%s\n' "$out" | grep -i integraciones)" ;; esac
-  # el canal vigente junto a la versión, y el aviso cuando el estado quedó atrás (AC 44 c): la variable pone latest, el
+  # el canal vigente junto a la versión, y el aviso cuando el estado quedó atrás: la variable pone latest, el
   # estado sigue diciendo stable
   out="$(TYCON_UPDATE_CHANNEL=latest harness_release doctor 2>&1)"
   case "$out" in *"versión bajada"*"canal latest (el estado todavía dice stable"*) ok "doctor dice el canal vigente (latest) y que el estado todavía dice stable" ;; *) mal "la línea de la versión con el canal cambiado: $(printf '%s\n' "$out" | grep -i 'versión bajada')" ;; esac
@@ -755,7 +754,7 @@ if corre T46; then
 fi
 
 # ───────────────────────────────────────────── T47 ────────────────────────────────────────────
-# Story 8.23, tanda G · AC 42: en una instalación bajada el paso de terceros del aplicador VERIFICA contra el manifiesto
+# En una instalación bajada el paso de terceros del aplicador VERIFICA contra el manifiesto
 # del árbol (sin git, sin escribir) en vez de decir «no es un clon de agent-skills … no restituyo nada»: calla si está
 # entero; si falta algo, una línea con lo que falta y la acción.
 if corre T47; then
@@ -773,7 +772,7 @@ if corre T47; then
   REPO="$LAB_HOME/.claude/agent-skills"
   [ -L "$REPO" ] && [ ! -e "$REPO/.git" ] && [ -f "$REPO/.tycon-release.json" ] && ok "la máquina: agent-skills es un enlace a un árbol bajado (sin .git, con su manifiesto)" || mal "la máquina no es la de una instalación bajada: $(ls -ld "$REPO" 2>&1)"
   # la carpeta de usuario versionada con git (git init ~): el árbol bajado «parece» un clon; se reconoce por su manifiesto
-  # igual, y el paso no escribe (pase adversarial de la tanda G, clase 6)
+  # igual, y el paso no escribe
   git -C "$LAB_HOME" init -q 2>/dev/null && ok "la casa de la máquina se versionó con git (el árbol bajado queda adentro de un repo)" || mal "no pude versionar la casa"
   # el bit de ejecución no cambia el veredicto: la bajada deja ejecutables donde el manifiesto declara 644 y en Windows no viaja
   chmod 755 "$T/harness/skills/lab-third/SKILL.md"
@@ -798,8 +797,8 @@ if corre T47; then
   out="$(node "$TP" --repo "$REPO" --manifest "$M" --check 2>&1)"
   case "$out" in *"lab-third"*"enlace"*) ok "con un enlace adentro del destino, lo nombra como tal" ;; *) mal "no nombra el enlace: «${out}»" ;; esac
   rm -rf "$T/harness/skills/lab-third"
-  # AC 44 (a): el reporte de paridad escrito donde la pieza lo pone en una versión bajada (la carpeta del estado) no es
-  # «de más» para doctor; el mismo archivo adentro del árbol sí lo era (la primera máquina migrada)
+  # el reporte de paridad escrito donde la pieza lo pone en una versión bajada (la carpeta del estado) no es
+  # «de más» para doctor; el mismo archivo adentro del árbol sí lo es
   STATE_DIR="$(node -e 'process.stdout.write(require(process.argv[1]).stateDir())' "$T/harness/scripts/setup/harness/tycon-home.js")"
   mkdir -p "$STATE_DIR/controls-bench"; printf '{ "kind": "harness-parity", "deployed": false, "reds": 0, "surfaces": [] }\n' > "$STATE_DIR/controls-bench/harness-parity.json"
   out="$(harness_release doctor 2>&1)"
@@ -811,10 +810,10 @@ if corre T47; then
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi
 
-# ═══ HP · la versión bajada: la carpeta global de hooks de git llega sola (2026-10-14) ═══════════════════════════════════
-# El caso: máquinas del equipo ya instaladas (versión bajada, o mudadas) con los hooks del arnés en ~/.git-hooks y git sin
-# carpeta global de hooks: el freno antes de publicar no corría, y sólo `install`, `apply` y la mudanza la ponían. El
-# dueño pidió que llegue sola. El aplicador de juguete no deja el pre-push del arnés: se pone a mano, como lo deja el real.
+# ═══ HP · la versión bajada: la carpeta global de hooks de git llega sola ═══════════════════════════════════
+# Las máquinas del equipo ya instaladas (versión bajada, o mudadas) tienen los hooks del arnés en ~/.git-hooks y git sin
+# carpeta global de hooks: el freno antes de publicar no corre, y sólo `install`, `apply` y la mudanza la ponen. Tiene que llegar
+# sola. El aplicador de juguete no deja el pre-push del arnés: se pone a mano, como lo deja el real.
 if corre HP; then
   echo "HP · la versión bajada: el arranque (auto) y update --yes ponen la carpeta global de hooks de git"
   harness_lab_create "${BASE}/labhp"
@@ -852,8 +851,8 @@ if corre HP; then
 fi
 
 # ───────────────────────────────────────────── PF ─────────────────────────────────────────────
-# story 8.40, pedido 2 (T56): `--profile` en la versión bajada —el camino de npx y de get-harness— se guardaba en ningún
-# lado: `npx … --profile minimal` instalaba full y el doctor decía «perfil sin elegir» (medido en la Mac de laboratorio).
+# T56: `--profile` en la versión bajada —el camino de npx y de get-harness— se guarda en la máquina. Sin esto, no se guarda en ningún
+# lado, `npx … --profile minimal` instala full y el doctor dice «perfil sin elegir».
 if corre PF; then
   echo "PF · --profile en la versión bajada: queda escrito antes del aplicador, el plan lo nombra, un valor que no existe sale 2, y update no cambia el perfil solo"
   harness_lab_create "$BASE/labpf"
@@ -882,7 +881,7 @@ if corre PF; then
   [ "$rc" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.07.2 ] && ok "update aplica la 2026.10.07.2" || mal "update salió $rc: $out"
   [ "$(pf_saved)" = minimal ] && [ "$(estado "d['profile']['value']")" = minimal ] && [ "$(pf_doctor)" = "minimal True False" ] \
     && ok "después del update sigue minimal" || mal "después del update: perfil=«$(pf_saved)» estado=«$(estado "d.get('profile')")» doctor=«$(pf_doctor)»"
-  # una máquina instalada sin elegir (como quedaron las de antes del arreglo): update no le elige uno por su cuenta
+  # una máquina instalada sin elegir: update no le elige uno por su cuenta
   pf_fresh
   out="$(harness install --version latest --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ -z "$(pf_saved)" ] && ok "sin --profile no escribe ninguno" || mal "sin --profile: rc=$rc perfil=«$(pf_saved)»: $out"
@@ -925,10 +924,10 @@ if corre PF; then
     && ok "el update después de full lo conserva" || mal "update tras full: rc=$rc versión=$(estado "d['version']['number']") perfil=«$(pf_saved)»: $out"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
-  # (pase adversarial del pedido 2, clases 10, 11 y 14 — sus pruebas, promovidas)
+  # casos de borde de --profile en la versión bajada
   harness_lab_create "$BASE/labpf2"
   harness_lab_release_server
-  # clase 14: reinstalar full → minimal saca lo que sólo trae full (un bloque de CLAUDE.md con profiles:[full]), como el clon
+  # reinstalar full → minimal saca lo que sólo trae full (un bloque de CLAUDE.md con profiles:[full]), como el clon
   harness_lab_publish_stable 2026.10.07.1 lab-blocks.txt "response-style"
   pf_fresh
   harness install --version latest --profile full --yes >/dev/null 2>&1
@@ -939,7 +938,7 @@ if corre PF; then
   out="$(harness_release install --version latest --profile minimal --yes 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(pf_block)" = 0 ] && [ "$(pf_managed)" = "[]" ] && [ "$(estado "d['profile']['value']")" = minimal ] \
     && ok "reinstalar con --profile minimal saca el bloque de full de CLAUDE.md y del registro" || mal "full → minimal: rc=$rc bloque=$(pf_block) registro=$(pf_managed) estado=«$(estado "d.get('profile')")»: $out"
-  # clase 11: una máquina nueva sin perfil fijado por nadie: el --dry-run dice que se va a preguntar (no promete full), y
+  # una máquina nueva sin perfil fijado por nadie: el --dry-run dice que se va a preguntar (no promete full), y
   # --yes sale 2 pidiéndolo (el aplicador del laboratorio fija el suyo con su perfil de juguete: TYCON_PROFILE vacío lo apaga)
   pf_fresh
   out="$(TYCON_PROFILE= harness install --version latest --dry-run 2>&1)"; rc=$?
@@ -947,7 +946,7 @@ if corre PF; then
     && ok "máquina nueva sin perfil: el --dry-run dice que install lo pregunta" || mal "el --dry-run sin perfil (rc $rc): $out"
   out="$(TYCON_PROFILE= harness install --version latest --yes 2>&1)"; rc=$?
   [ "$rc" = 2 ] && case "$out" in *"elegí el perfil"*) true ;; *) false ;; esac && ok "…y con --yes sale 2 pidiéndolo, como dice el plan" || mal "--yes sin perfil (rc $rc): $out"
-  # (tercera vuelta de revisores) con terminal, el perfil contestado: el plan lo nombra como respuesta, queda escrito y el
+  # con terminal, el perfil contestado: el plan lo nombra como respuesta, queda escrito y el
   # doctor lo da por elegido en la máquina
   out="$(TYCON_PROFILE= python3 - "$LAB_TREE" <<'PY'
 import os, pty, sys, time, select
@@ -977,7 +976,7 @@ PY
   case "$out" in *"perfil: minimal (respuesta)"*) ok "con terminal y el perfil contestado, el plan dice «perfil: minimal (respuesta)»" ;; *) mal "el plan con el perfil contestado: $out" ;; esac
   [ "$(pf_saved)" = minimal ] && [ "$(pf_doctor)" = "minimal True False" ] && [ "$(estado "d['profile']['origin']")" = maquina ] \
     && ok "…queda escrito y el doctor lo da por elegido en la máquina" || mal "el perfil contestado: perfil=«$(pf_saved)» doctor=«$(pf_doctor)» estado=«$(estado "d.get('profile')")»"
-  # clase 10: el perfil del equipo fija minimal: el plan (con terminal) nombra minimal, no el full del árbol que corre
+  # el perfil del equipo fija minimal: el plan (con terminal) nombra minimal, no el full del árbol que corre
   harness_lab_team_repo
   printf '{ "install": { "profile": "minimal" } }\n' > "$LAB_AUTHOR_TEAM/team-profile.json"
   harness_lab_team_publish "perfil minimal"

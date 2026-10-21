@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# harness-update.test.sh — `harness.js startup` y `update`: el candado, la red, el orden y las dos fuentes (story 8.13,
-# tanda A · T3, T4, T6, T7).
+# harness-update.test.sh — `harness.js startup` y `update`: el candado, la red, el orden y las dos fuentes (T3, T4, T6, T7).
 #
 # Lo que no se puede perder:
 #   T3 · dos `startup` a la vez con versión nueva: una aplica y la otra se va con 0 en silencio; el estado y settings.json
@@ -16,10 +15,10 @@
 #        divergida no se mueve ninguna y se nombra; lo local modificado se guarda aparte y se reaplica; un no trackeado de
 #        `.dashboard/` que lo publicado agrega se aparta; una ref que se reescribe va a `tycon/installed` con `previous` en
 #        `refs/tycon/previous/*`; con skills de terceros sin ignorar no hace `reset` y lo dice; `--check` sale 0 / 3 / 2.
-#   K1 · (story 8.7, tanda C · decisión C1) una falla de red INMEDIATA —conexión rechazada, nombre sin resolver, sin ruta—
+#   K1 · una falla de red INMEDIATA —conexión rechazada, nombre sin resolver, sin ruta—
 #        también es «sin red»: `startup` lo dice y no deja el aviso que queda; una falla que no es de red (el origen no es
 #        un repo) sigue siendo «no pude traer» y sí lo deja. La lista de errores de red es positiva, con los textos reales.
-#   T32 · (tanda D, AC 26) con `apply: ask` y versión nueva `startup` NO aplica: deja en `notice` el número de la nueva con
+#   T32 · con `apply: ask` y versión nueva `startup` NO aplica: deja en `notice` el número de la nueva con
 #        su sha corto, el comando para aplicarla y dónde ver los cambios (remoto interno: el `git log a..b`; público en
 #        `stable`: instalado contra nuevo; en `latest`: la punta de `main` contra el nuevo), y el hook síncrono lo imprime
 #        a la persona en la sesión SIGUIENTE; sale a la red una vez cada 6 horas (10 minutos en `auto`) y un intento que no
@@ -27,37 +26,37 @@
 #        deja UNA línea sólo si aplicó; ni `developer` ni una retención se pasan por encima; el canal tiene una sola
 #        verdad (la configuración) y `channel` avisa si una variable le gana. Si el canal cambia por fuera de `channel`
 #        (el archivo a mano, la variable), el arranque siguiente mira y el aviso del canal anterior no queda; y un
-#        `update` sin `--yes` en `ask` deja el mismo aviso que `startup` (pase adversarial, causas E y F).
-#   T37 · (tanda D, AC 29) `install --source <url>` re-fija la fuente cuyo `origin` ES esa URL (no la del arnés); en una
+#        `update` sin `--yes` en `ask` deja el mismo aviso que `startup`.
+#   T37 · `install --source <url>` re-fija la fuente cuyo `origin` ES esa URL (no la del arnés); en una
 #        copia pública, `channel latest` e `install --channel latest` con la aplicación en `auto` por archivo preguntan en
 #        la terminal (sin terminal, 2), con `auto` por variable o con `ask` pasan; fuera de una copia pública no preguntan.
 #
 # Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido.
 #
-#   T38 · (story 8.18, AC 35 y 37) `update` y `version` en las tres formas de máquina que deja la unión de los dos repos:
+#   T38 · `update` y `version` en las tres formas de máquina que deja la unión de los dos repos:
 #        dos clones sin re-apuntar, dos clones con el viejo re-apuntado al repo unificado (los dos al mismo commit, y
 #        `version` muestra uno solo), y un solo árbol. La llave misma, en harness-repoint.test.sh.
-#   GBH · (pase adversarial de la W3a, B1) harness.js lanza el aplicador con TYCON_HARNESS_GIT_BASH_HEALTH=1 en cada camino.
+#   GBH · harness.js lanza el aplicador con TYCON_HARNESS_GIT_BASH_HEALTH=1 en cada camino.
 #
-#   T8 · (story 8.13.1, tanda A · AC 7) el commit de la capa lo elige la máquina: trae `main` del interno a su clon de
+#   T8 · el commit de la capa lo elige la máquina: trae `main` del interno a su clon de
 #        lectura y toma el más nuevo compatible con la versión pública, sin pasar del piso de version.json; con la punta
-#        incompatible se queda y lo dice (también si la punta sólo agrega un archivo publicable que la copia no trae,
-#        AC 5); sin ninguno, el mínimo con las horas; nunca escribe en ningún repo.
-#   T9 · (story 8.13.1, tanda A · AC 8 y 9) `update` con dos fuentes: todas o ninguna, «sólo la capa», sin acceso al
+#        incompatible se queda y lo dice (también si la punta sólo agrega un archivo publicable que la copia no trae);
+#        sin ninguno, el mínimo con las horas; nunca escribe en ningún repo.
+#   T9 · `update` con dos fuentes: todas o ninguna, «sólo la capa», sin acceso al
 #        interno no mueve ninguna (en el tope y «sin red»), `--check` 0/3/2, `rollback` de las dos tras `gc --prune=now`,
 #        `TYCON_UPDATE=0` no toca la capa, y el clon de la persona queda idéntico; con el tope POR DEFECTO, el update
 #        entero sin acceso al interno termina en ≤ 15 s.
-#   T9R · (pase adversarial de la tanda A) lo editado a mano no se pisa al ir a una versión que lo sigue (update y
+#   T9R · lo editado a mano no se pisa al ir a una versión que lo sigue (update y
 #        rollback); un layer.json ilegible se dice y no mueve nada; install sin --harness-clone no suelta la capa (sin
-#        clon de lectura, o desde otro árbol); install sin acceso al interno lo dice con su propio texto. Y (revisión
-#        del paso 5, vuelta 2) un layer.json con una ruta que sale del árbol frena antes de tomar copia, y la vuelta
-#        atrás AUTOMÁTICA de un update que falla la salud tampoco pisa un agregado editado a mano (C8).
+#        clon de lectura, o desde otro árbol); install sin acceso al interno lo dice con su propio texto. Y
+#        un layer.json con una ruta que sale del árbol frena antes de tomar copia, y la vuelta
+#        atrás AUTOMÁTICA de un update que falla la salud tampoco pisa un agregado editado a mano.
 #
 # Uso: bash scripts/tests/harness-update.test.sh [--only T3|T4|T6|GBH|T7|REG|CA|K1|T32|T37|T38|S16|S16B|T8]
-#   CA · (arreglo «copia de arranque», 2026-10-05) un update que sólo re-registra la versión no corre la salud ni
+#   CA · un update que sólo re-registra la versión no corre la salud ni
 #        refresca la copia fija; `doctor` dice cuándo se refresca de verdad (versión nueva con salud en verde, o install).
-#   S16 · (story 8.16, tanda A · AC 8) un `update` aplicado dice dónde quedó la copia de antes y cómo volver.
-#   S16B · (story 8.16, tanda B · AC 18 y 44) con `ask`, versión nueva y terminal: qué cambia en el comportamiento y
+#   S16 · un `update` aplicado dice dónde quedó la copia de antes y cómo volver.
+#   S16B · con `ask`, versión nueva y terminal: qué cambia en el comportamiento y
 #         «¿Aplico ahora?»; sin terminal como antes; `auto` sin pregunta; con retención no se ofrece.
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -170,9 +169,9 @@ if corre T6; then
   export PATH="$ORIG_PATH"
 fi
 
-# ═══ GBH · Harness_LaunchesApplier_WithGitBashHealthNotice (pase adversarial de la W3a, B1) ═══════════════════════════
-# La actualización que trae la W3a la juzga la salud de la versión anterior, que en Windows revisaba un .sh con el primer
-# `bash` del PATH (puede ser el lanzador de WSL). Un harness.js de la W3a en adelante le avisa al aplicador, con
+# ═══ GBH · Harness_LaunchesApplier_WithGitBashHealthNotice ═══════════════════════════
+# La actualización la juzga la salud de la versión anterior, que en Windows puede revisar un .sh con el primer
+# `bash` del PATH (puede ser el lanzador de WSL). harness.js le avisa al aplicador, con
 # TYCON_HARNESS_GIT_BASH_HEALTH=1, que la salud que lo juzga usa el bash de Git; sin el aviso, el .ps1 deja los .sh para
 # la corrida siguiente (installer-ps1.test.sh, sección u). Acá: harness.js pone el aviso en CADA camino que lanza el
 # aplicador —install, startup, el update de un startup y apply—, y el aplicador corrido suelto no lo tiene.
@@ -237,10 +236,9 @@ if corre T7; then
   SALIDA="$(harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(harness_lab_git "$LAB_TREE" rev-parse --abbrev-ref HEAD)" = "tycon/installed" ] && [ "$(head_de "$LAB_TREE")" = "$(head_de "$LAB_AUTHOR_TREE")" ] && ok "T7 ref reescrita: tycon/installed al sha nuevo" || mal "T7 reescrita: rc $RC rama $(harness_lab_git "$LAB_TREE" rev-parse --abbrev-ref HEAD) HEAD $(head_de "$LAB_TREE"): $SALIDA"
   [ "$(harness_lab_git "$LAB_TREE" rev-parse refs/tycon/previous/harness 2>/dev/null)" = "$VIEJO" ] && ok "T7 reescrita: previous en refs/tycon/previous/harness" || mal "T7 reescrita: previous=$(harness_lab_git "$LAB_TREE" rev-parse refs/tycon/previous/harness 2>&1)"
-  # (f) una fuente que se reescribe con un archivo SEGUIDO modificado: no hace reset (lo perdería) y lo dice. Desde la
-  #     tanda D (decisión D3 del dueño) lo SIN SEGUIR —una skill de terceros sin ignorar, una skill propia— ya no traba,
-  #     salvo que choque con una ruta que la versión nueva trae: esos dos casos los mide harness-channel.test.sh (D3).
-  #     Antes este caso decía «terceros sin ignorar: no hace reset».
+  # (f) una fuente que se reescribe con un archivo SEGUIDO modificado: no hace reset (lo perdería) y lo dice.
+  #     Lo SIN SEGUIR —una skill de terceros sin ignorar, una skill propia— no traba,
+  #     salvo que choque con una ruta que la versión nueva trae: esos dos casos los mide harness-channel.test.sh.
   harness_lab_create "$BASE/t7f" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "T7 install previo (f) falló"
   estado_set "d['sources'][1]['rewrites']=True"
@@ -267,9 +265,9 @@ if corre T7; then
   [ "$RC0" = 0 ] && [ "$RC3" = 3 ] && [ "$RC2" = 2 ] && ok "T7 --check: 0 al día · 3 hay nueva · 2 no pude mirar" || mal "T7 --check: $RC0 / $RC3 / $RC2 ($SALIDA)"
 fi
 
-# ═══ Regresiones de la iteración 1 (pase adversarial y revisores, 2026-10-02) ═════════════════════════════════════════
+# ═══ Regresiones ═════════════════════════════════════════
 if corre REG; then
-  # REG-D5 · un aviso de falla se borra cuando la falla ya no se da (antes quedaba para siempre y el hook lo repetía)
+  # REG-D5 · un aviso de falla se borra cuando la falla ya no se da (si quedara, el hook lo repetiría)
   harness_lab_create "$BASE/reg-d5" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "REG-D5 install previo falló"
   LAB_APPLIER_FAIL=1 harness startup >/dev/null 2>&1
@@ -281,8 +279,8 @@ if corre REG; then
   TYCON_UPDATE_APPLY=ask harness startup >/dev/null 2>&1
   case "$(estado "d.get('notice') or ''")" in *disponible*) ok "REG-D5 el aviso de versión nueva sobrevive a un arranque sin red" ;; *) mal "REG-D5 se borró el disponible: $(estado "d.get('notice')")" ;; esac
   # REG-D5b · un aviso de update que sale DESPUÉS de mirar (fuente divergida con versión nueva: bloqueada) sobrevive a un
-  # arranque que no vuelve a salir a la red: sin volver a mirar, nadie sabe que se arregló (revisor de fallos silenciosos,
-  # iteración 2). Se borra recién cuando un arranque que sí mira ya no lo encuentra.
+  # arranque que no vuelve a salir a la red: sin volver a mirar, nadie sabe que se arregló.
+  # Se borra recién cuando un arranque que sí mira ya no lo encuentra.
   harness_lab_create "$BASE/reg-d5b" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "REG-D5b install previo falló"
   printf 'propio\n' > "$LAB_TREE/PROPIO.md"; harness_lab_git "$LAB_TREE" add PROPIO.md >/dev/null; harness_lab_git "$LAB_TREE" commit -q -m "commit propio" >/dev/null
@@ -296,10 +294,9 @@ if corre REG; then
   estado_set "d['last_fetch']=None"
   harness startup >/dev/null 2>&1
   [ "$(estado "d.get('notice')")" = None ] && ok "REG-D5b un arranque que mira y lo encuentra resuelto lo borra" || mal "REG-D5b el aviso sigue tras resolverse: $(estado "d.get('notice')")"
-  # REG-D5c · el aviso «la actualización … no quedó sana» (el aplicador falló justo después de avanzar). Desde la tanda C
-  # (AC 21) esa versión vuelve sola atrás y queda en `failed`: el aviso NO se borra en el arranque siguiente —la versión
-  # sigue sin aplicarse y no se reintenta sola—; se borra cuando `update --yes` la aplica sana (antes, en la A, se borraba
-  # al arranque siguiente porque los árboles quedaban en la versión nueva con el aplicador ya andando)
+  # REG-D5c · el aviso «la actualización … no quedó sana» (el aplicador falló justo después de avanzar). Esa versión
+  # vuelve sola atrás y queda en `failed`: el aviso NO se borra en el arranque siguiente —la versión
+  # sigue sin aplicarse y no se reintenta sola—; se borra cuando `update --yes` la aplica sana
   harness_lab_create "$BASE/reg-d5c" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "REG-D5c install previo falló"
   V1="$(harness_lab_git "$LAB_TREE" rev-parse HEAD)"
@@ -313,13 +310,13 @@ if corre REG; then
   [ "$(harness_lab_git "$LAB_TREE" rev-parse HEAD)" = "$V1" ] && case "$(estado "d.get('notice') or ''")" in *"no quedó sana"*) true ;; *) false ;; esac && ok "REG-D5c el arranque siguiente no reintenta y el aviso sigue" || mal "REG-D5c reintentó o perdió el aviso: $(estado "d.get('notice')")"
   harness update --yes >/dev/null 2>&1
   [ "$(estado "d.get('notice')")" = None ] && [ "$(estado "d.get('failed')")" = None ] && ok "REG-D5c update --yes la aplica sana y borra el aviso y failed" || mal "REG-D5c tras update --yes: notice=$(estado "d.get('notice')") failed=$(estado "d.get('failed')")"
-  # REG-D6 · un origin cambiado deja el aviso (antes sólo iba al registro y la persona nunca se enteraba)
+  # REG-D6 · un origin cambiado deja el aviso (no sólo al registro: la persona tiene que enterarse)
   harness_lab_create "$BASE/reg-d6" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "REG-D6 install previo falló"
   harness_lab_git "$LAB_TREE" remote set-url origin "$LAB_REMOTE_TREE.otro"
   harness startup >/dev/null 2>&1
   case "$(estado "d.get('notice') or ''")" in *origin*) ok "REG-D6 origin cambiado: startup deja el aviso" ;; *) mal "REG-D6 sin aviso: $(estado "d.get('notice')")" ;; esac
-  # REG-D7 · con el estado ya escrito, startup migra una línea de arranque vieja que quedó (AC 7: «el aplicador o startup»)
+  # REG-D7 · con el estado ya escrito, startup migra una línea de arranque vieja que quedó («el aplicador o startup»)
   harness_lab_create "$BASE/reg-d7" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "REG-D7 install previo falló"
   harness_lab_old_line canonical
@@ -335,7 +332,7 @@ if corre REG; then
   [ "$(head_de "$LAB_TREE")" = "$ANTES" ] && case "$SALIDA" in *TYCON_UPDATE=0*) ok "REG-D12 TYCON_UPDATE=0 gana sobre --yes y lo dice" ;; *) mal "REG-D12 no lo dice: $SALIDA" ;; esac || mal "REG-D12 --yes actualizó con TYCON_UPDATE=0"
 fi
 
-# ═══ REG-H8 (pase adversarial de la tanda C): con `apply: ask`, la retención y un intento fallido sobre las mismas
+# ═══ REG-H8: con `apply: ask`, la retención y un intento fallido sobre las mismas
 # puntas mandan sobre «arnés nuevo disponible» (no se ofrece reinstalar lo que se deshizo o lo que ya falló) ════════════
 if corre REG; then
   harness_lab_create "$BASE/reg-h8" >/dev/null
@@ -354,13 +351,13 @@ if corre REG; then
   case "$N" in *disponible*) mal "REG-H8 ask con un intento fallido sobre esas puntas la ofrece igual: $N" ;; *"no quedó sana"*) ok "REG-H8 ask con un intento fallido: el aviso es la falla, no «disponible»" ;; *) mal "REG-H8 ask con intento fallido: aviso inesperado: $N" ;; esac
 fi
 
-# ═══ CA · Update_ReRegisterOnly_DoctorSaysWhenFixedCopyRefreshes (arreglo «copia de arranque», 2026-10-05) ═══════════
-# Medido en la máquina del dueño: el clon ya estaba al día a mano y la versión registrada era la vieja. `update` corrigió
-# el registro (camino «al día»: no corre la salud) y la copia fija siguió vieja, como debe —se refresca sólo tras una
-# salud en verde—. Pero `doctor` decía «se refresca con el próximo update que pase la comprobación de salud», y ese
-# update ya había pasado sin refrescarla. El aviso dice ahora lo que pasa: la refresca la próxima actualización que
+# ═══ CA · Update_ReRegisterOnly_DoctorSaysWhenFixedCopyRefreshes ═══════════
+# Con el clon al día a mano y la versión registrada vieja, `update` corrige
+# el registro (camino «al día»: no corre la salud) y la copia fija sigue vieja, como debe —se refresca sólo tras una
+# salud en verde—. `doctor` no puede decir «se refresca con el próximo update que pase la comprobación de salud», porque ese
+# update ya pasó sin refrescarla. El aviso dice lo que pasa: la refresca la próxima actualización que
 # traiga una versión nueva y pase la salud, o `harness.js install`. El espejo: un update con versión nueva la refresca.
-# 🔴 rojo previo (medido con el programa de antes sobre este mismo guion): tras el update, el aviso prometía el update.
+# 🔴 Sin esto, tras el update el aviso prometería el update.
 if corre CA; then
   harness_lab_create "$BASE/ca" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "CA install previo falló"
@@ -400,11 +397,11 @@ print('\n'.join(w for w in d.get('warn',[]) if 'copia fija' in w))"; }
   [ -z "$(harness doctor --json 2>/dev/null | avisos)" ] && ok "CA espejo: …y doctor no avisa" || mal "CA espejo: doctor avisa: $(harness doctor --json 2>/dev/null | avisos)"
 fi
 
-# CB · el corte entre la copia fija nueva y el estado grabado (máquina Windows de un dev, 2026-10-07): la salud de v2
+# CB · el corte entre la copia fija nueva y el estado grabado: la salud de v2
 # pasó, copyBootstrap escribió la copia fija de v2, y un reinicio mató el proceso antes del S.write de cierre. El arranque
-# siguiente encontraba la salud «pendiente», doctor veía la copia fija distinta del estado y lo leía como «alguien la
-# tocó»: salud roja y vuelta atrás, que además NO reponía la copia fija → toda actualización siguiente fallaba igual.
-# Ahora: (a) el estado se graba apenas se refresca la copia; (b) con la salud pendiente, la copia distinta es un aviso,
+# siguiente encuentra la salud «pendiente»; doctor ve la copia fija distinta del estado y no puede leerlo como «alguien la
+# tocó» (salud roja y vuelta atrás, que además NO repondría la copia fija: toda actualización siguiente fallaría igual).
+# Se exige: (a) el estado se graba apenas se refresca la copia; (b) con la salud pendiente, la copia distinta es un aviso,
 # no un fallo; (c) la vuelta atrás repone la copia fija desde el árbol restaurado.
 if corre CB; then
   harness_lab_create "$BASE/cb" >/dev/null
@@ -443,10 +440,10 @@ PY
   [ -z "$FALLOS_DOC" ] && ok "CB doctor no acusa la copia fija tras la vuelta atrás" || mal "CB doctor: $FALLOS_DOC"
 fi
 
-# ═══ K1 · Harness_Fetch_ImmediateNetworkFailure_IsOffline (story 8.7, tanda C · decisión C1) ═════════════════════════
+# ═══ K1 · Harness_Fetch_ImmediateNetworkFailure_IsOffline ═════════════════════════
 # Una notebook sin wifi no agota el tope: git falla AL INSTANTE (no resolvió el nombre, conexión rechazada, sin ruta al
-# host). Eso también es «sin red»: `startup` lo dice y NO deja el aviso que queda —antes caía en «no pude traer» y dejaba
-# un aviso por algo que se arregla solo al volver la red, y la portada promete «dice sin red»—. El espejo: una falla que NO
+# host). Eso también es «sin red»: `startup` lo dice, no cae en «no pude traer» y NO deja el aviso que queda
+# por algo que se arregla solo al volver la red (la portada promete «dice sin red»). El espejo: una falla que NO
 # es de red (el origen no es un repo) sigue siendo «no pude traer» y SÍ deja el aviso: la lista de errores de red es
 # positiva, lo que no reconoce no lo calla.
 if corre K1; then
@@ -522,11 +519,11 @@ JS
   case "$(estado "d.get('notice') or ''")" in *"no pude traer"*) ok "K1 espejo: …y deja el aviso (la persona tiene que enterarse)" ;; *) mal "K1 espejo: sin aviso: $(estado "d.get('notice')")" ;; esac
 fi
 
-# ═══ T32 · Ask_NoticeViaSyncHook_Every6h_YesNeedsTty_AutoSilent_HoldRespected (tanda D, AC 26) ═══════════════════════
-# 🔴 rojo previo (medido con el programa de antes de la tanda D sobre este mismo guion): el aviso decía «arnés nuevo
+# ═══ T32 · Ask_NoticeViaSyncHook_Every6h_YesNeedsTty_AutoSilent_HoldRespected ═══════════════════════
+# 🔴 Sin esto: el aviso diría «arnés nuevo
 #    disponible (harness abc → def; …)» sin el número de la nueva ni «cambios:»; con `last_fetch` de hace una hora `ask`
-#    salía igual a la red (una sola constante de 10 minutos); un fetch fallido sellaba `last_fetch`; `update --yes` sin
-#    terminal y en `ask` aplicaba; `channel stable` con la variable en `latest` decía «latest → stable» y callaba.
+#    saldría igual a la red (una sola constante de 10 minutos); un fetch fallido sellaría `last_fetch`; `update --yes` sin
+#    terminal y en `ask` aplicaría; `channel stable` con la variable en `latest` diría «latest → stable» y callaría.
 # hace <minutos>: esa hora en UTC, con la forma que escribe el programa (2026-10-03T12:00:00.000Z)
 hace() { python3 -c "import datetime,sys; print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=int(sys.argv[1]))).strftime('%Y-%m-%dT%H:%M:%S.000Z'))" "$1"; }
 ask() { TYCON_UPDATE_APPLY=ask harness "$@"; }
@@ -656,9 +653,9 @@ if corre T32; then
   [ "$(estado "d['channel']")" = latest ] && ok "T32 startup iguala state.channel con la configuración" || mal "T32 startup no igualó el canal: $(estado "d['channel']")"
 
   # (g) el canal cambiado POR FUERA de `channel` (el archivo a mano, la variable): el arranque siguiente mira —no espera
-  #     la ventana de 6 horas de la mirada anterior— y el aviso del canal anterior no queda (pase adversarial, causa E)
-  # 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 5 MAL — el arranque después
-  #    del cambio a mano no salía a la red («última mirada … hace menos de 6 horas»), el aviso seguía ofreciendo la
+  #     la ventana de 6 horas de la mirada anterior— y el aviso del canal anterior no queda
+  # 🔴 Sin esto, 5 MAL — el arranque después
+  #    del cambio a mano no saldría a la red («última mirada … hace menos de 6 horas»), el aviso seguiría ofreciendo la
   #    versión de latest («…canal latest») con el estado ya en stable y la ref en mirror/sync; con la variable, igual.
   harness_lab_create "$BASE/t32g" >/dev/null
   harness_lab_public
@@ -691,11 +688,11 @@ if corre T32; then
   TYCON_UPDATE_APPLY=ask harness update >/dev/null 2>&1
   case "$(estado "d.get('notice') or ''")" in *"canal latest"*) mal "T32 (g) update con el canal cambiado dejó el aviso del canal anterior: $(estado "d.get('notice')")" ;; *) ok "T32 …y un update con el canal ya cambiado tampoco deja el aviso del canal anterior" ;; esac
 
-  # (h) `update` sin `--yes` en ask, con versión nueva: deja el MISMO aviso que dejaría `startup` (pase adversarial,
-  #     causa F) — si no, sella la mirada y el hook de arranque no la recuerda hasta que pasen las 6 horas
-  # 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 4 MAL — tras `update` (rc 3)
-  #    el estado quedaba con `notice: None` y `last_fetch` sellado, el hook no imprimía nada y `startup` no miraba; y un
-  #    aviso «disponible» viejo sobrevivía a un `update` que contestaba «al día».
+  # (h) `update` sin `--yes` en ask, con versión nueva: deja el MISMO aviso que dejaría `startup`
+  #     — si no, sella la mirada y el hook de arranque no la recuerda hasta que pasen las 6 horas
+  # 🔴 Sin esto, 4 MAL — tras `update` (rc 3)
+  #    el estado quedaría con `notice: None` y `last_fetch` sellado, el hook no imprimiría nada y `startup` no miraría; y un
+  #    aviso «disponible» viejo sobreviviría a un `update` que contesta «al día».
   harness_lab_create "$BASE/t32h" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "T32 install previo (h) falló"
   ANTES="$(head_de "$LAB_TREE")"
@@ -725,11 +722,11 @@ if corre T32; then
   [ "$(estado "d.get('notice')")" = "retención: de prueba" ] && ok "T32 …sin tocar un aviso que no sale de mirar" || mal "T32 (h) update borró un aviso que no era suyo: $(estado "d.get('notice')")"
 fi
 
-# ═══ T37 · Source_Pinned_OriginChangedRefuses_PublicLatestAutoNeedsConfirmation (tanda D, AC 29) ═════════════════════
+# ═══ T37 · Source_Pinned_OriginChangedRefuses_PublicLatestAutoNeedsConfirmation ═════════════════════
 # (el origen cambiado → `update` se niega y `doctor` en rojo ya lo miden REG-D4 de harness-install, REG-D6 de acá y T13 de
 # harness-doctor; el recordatorio de `doctor`, harness-doctor.test.sh)
-# 🔴 rojo previo: `install --source <url de agent-skills>` pisaba el origen fijado del ARNÉS y dejaba las dos fuentes en
-#    rojo; `channel latest` e `install --channel latest` nunca preguntaban ni miraban si había terminal.
+# 🔴 Sin esto: `install --source <url de agent-skills>` pisaría el origen fijado del ARNÉS y dejaría las dos fuentes en
+#    rojo; `channel latest` e `install --channel latest` nunca preguntarían ni mirarían si hay terminal.
 sin_variable() { env -u TYCON_UPDATE_APPLY node "$LAB_TREE/scripts/setup/harness.js" "$@"; }
 canal_en_archivo() { j "$LAB_HOME/.claude/tycon.json" "d.get('update',{}).get('channel')"; }
 if corre T37; then
@@ -789,7 +786,7 @@ if corre T37; then
   [ "$RC" = 0 ] && [ "$(estado "d['channel']")" = latest ] && ok "T37 espejo: con la variable, install --channel latest pasa" || mal "T37 install --channel latest con la variable: rc $RC: $SALIDA"
 fi
 
-# ═══ T38 (story 8.18, AC 35 y 37) · update y version en las tres formas de máquina ═══════════════════════════════════
+# ═══ T38 · update y version en las tres formas de máquina ═══════════════════════════════════
 # Dos clones sin re-apuntar, dos clones con el viejo re-apuntado al repo unificado, y un solo árbol. En las tres:
 # `update --check` sale 3 con versión nueva y 0 al día, `update` la aplica, y `version` dice lo que hay — con la fuente
 # `agent_skills` mientras hay dos clones, y un solo commit cuando los dos clones siguen el mismo repo. El recorrido de la
@@ -818,7 +815,7 @@ if corre T38; then
   done
 fi
 
-# ═══ S16-T9 · Update_Applied_SaysWhereTheBackupIs (story 8.16, tanda A · AC 8) ═══════════════════════════════════════
+# ═══ S16-T9 · Update_Applied_SaysWhereTheBackupIs ═══════════════════════════════════════
 # Un `update` que aplica una versión dice dónde quedó la copia de antes y cómo volver. `startup`, que aplica lo mismo con
 # la política `auto`, no lo imprime: sigue en una línea como mucho.
 if corre S16; then
@@ -843,11 +840,11 @@ if corre S16; then
     && ok "S16-T9 startup aplica la versión nueva y sigue en una línea como mucho" || mal "S16-T9 startup (rc $RC, VERSION $(cat "$LAB_TREE/VERSION")) habló de más: $SALIDA"
 fi
 
-# ═══ S16B · story 8.16, tanda B (AC 18 y 44 · T23 y la parte de update de T27) ═══════════════════════════════════════════
+# ═══ S16B · T23 y la parte de update de T27 ═══════════════════════════════════════════
 # Con la política `ask`, una versión nueva y una terminal, `update` sin `--yes` dice qué fuentes se mueven y qué cambia en el
 # comportamiento (la lista de efectos de la versión nueva contra la instalada) y pregunta «¿Aplico ahora? [s/N]»: con sí
 # aplica, con no sale 3 con la línea de siempre. Sin terminal, igual que antes; con `auto`, sin pregunta; con una retención,
-# no se ofrece. Y `update --yes` con `ask` sin terminal sigue saliendo 2 (8.13 D).
+# no se ofrece. Y `update --yes` con `ask` sin terminal sigue saliendo 2.
 # publish_brake <número> → una versión nueva cuya lista de efectos suma un freno
 publish_brake() {
   local a="$LAB_AUTHOR_TREE"
@@ -876,7 +873,7 @@ if corre S16B; then
   [ "$RC" = 3 ] && case "$SALIDA" in *"¿Aplico ahora?"*|*"qué cambia en el comportamiento"*) false ;; *"la política es «ask»"*) true ;; *) false ;; esac \
     && ok "S16B sin terminal: 3 con la línea de siempre, sin pregunta" || mal "S16B sin terminal (rc $RC): $SALIDA"
   [ "$(cat "$LAB_TREE/VERSION")" != 2 ] && ok "S16B sin terminal: no aplicó" || mal "S16B sin terminal aplicó la versión"
-  # `update --yes` con ask sin terminal: 2 (8.13 D), sin pregunta nueva
+  # `update --yes` con ask sin terminal: 2, sin pregunta nueva
   SALIDA="$(TYCON_UPDATE_APPLY=ask harness update --yes 2>&1 < /dev/null)"; RC=$?
   [ "$RC" = 2 ] && case "$SALIDA" in *"¿"*) false ;; *"necesita una terminal"*) true ;; *) false ;; esac && ok "S16B T27 update --yes con ask sin terminal: 2 con la línea de la 8.13 D" || mal "S16B T27 update --yes sin terminal (rc $RC): $SALIDA"
   # con terminal y «n»: la diferencia, la pregunta, y 3 sin aplicar
@@ -897,7 +894,7 @@ if corre S16B; then
   [ "$(cat "$LAB_TREE/VERSION")" = 3 ] && case "$SALIDA" in *"¿Aplico ahora?"*) false ;; *) true ;; esac && ok "S16B con retención: no la ofrece ni la aplica" || mal "S16B con retención (rc $RC, VERSION $(cat "$LAB_TREE/VERSION")): $SALIDA"
 fi
 
-# ═══ La capa privada (story 8.13.1, tanda A · AC 7, 8 y 9) — el laboratorio de T8 y T9 ════════════════════════════════
+# ═══ La capa privada — el laboratorio de T8 y T9 ════════════════════════════════
 # Una máquina del equipo que instala desde la copia PÚBLICA y apila su capa encima: el remoto del arnés del laboratorio
 # es «el público» (scripts/setup/public-remotes.json), con un solo árbol (skills/ y agents/ en la raíz) y version.json con
 # su lista de transformados. El «interno» es un repo APARTE (historia propia, como el de verdad): la copia sin lo de
@@ -934,7 +931,7 @@ mira() { # mira <subcomando…>  — corre harness (SALIDA, RC) y anota si tocó
   local b1 b2 p
   b1="$(arbol_hash "$LAB_REMOTE_TREE")"; b2="$(arbol_hash "$INTERNAL_REMOTE")"; p="$(arbol_hash "$INTERNAL/.git")"
   # MIRA_S: lo que tardó SÓLO el comando, en segundos (sin los hash de antes y después, que con la máquina cargada pasan
-  # de 15 s y no son del update: 170 #12177, 2026-10-06)
+  # de 15 s y no son del update)
   local t0; t0=$(date +%s)
   SALIDA="$(harness "$@" 2>&1)"; RC=$?
   MIRA_S=$(( $(date +%s) - t0 ))
@@ -951,7 +948,7 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
   local a="$LAB_AUTHOR_TREE" f
   mkdir -p "$a/skills/tycon-pipeline" "$a/agents" "$a/guides" "$a/scripts/tests/fixtures" "$a/scripts/setup"
   for f in layer-public-wins layer-public-only harness-tree-writers; do cp "$RAIZ/scripts/tests/fixtures/$f.json" "$a/scripts/tests/fixtures/"; done
-  # qué publica un commit interno lo dice la clasificación del exportador (AC 5): sus guiones, y la lista blanca y la
+  # qué publica un commit interno lo dice la clasificación del exportador: sus guiones, y la lista blanca y la
   # tabla de juguete, que el interno trae (la copia también: así son iguales, no agregados)
   mkdir -p "$a/scripts/publishing"; cp "$RAIZ"/scripts/publishing/*.js "$a/scripts/publishing/"
   cp "$RAIZ/scripts/tests/fixtures/layer-lab-allowlist.json" "$a/scripts/publishing/allowlist.json"
@@ -975,13 +972,13 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
   export I1="$(harness_lab_git "$INTERNAL" rev-parse HEAD)"
   version_publica 2026.10.06.1 "$I1" > "$a/version.json"
   harness_lab_git "$a" add -A >/dev/null; harness_lab_git "$a" commit -q -m "la copia pública de juguete" >/dev/null
-  # 🔴 Los dos bare, sin mantenimiento automático en SU configuración (2026-10-14). El `push` de abajo corre del otro lado
+  # 🔴 Los dos bare, sin mantenimiento automático en SU configuración. El `push` de abajo corre del otro lado
   #    un receive-pack, y git no le pasa el `-c` de harness_lab_git (en un transporte local borra GIT_CONFIG_PARAMETERS y
-  #    GIT_CONFIG_COUNT): el receive-pack lanzaba `git maintenance run --auto --detach` en el bare del público. Con git
+  #    GIT_CONFIG_COUNT): el receive-pack lanzaría `git maintenance run --auto --detach` en el bare del público. Con git
   #    2.55 eso reempaqueta los ~120 objetos sueltos del bare de fondo, mientras `mira install` saca la huella de antes:
-  #    «T8 algún comando escribió en un repo ajeno» sin que harness.js escribiera nada (public-ci, pedido #27: en la
-  #    huella faltaban objects/maintenance.lock, objects/pack/tmp_pack_* y los objetos sueltos). Con git 2.50 el
-  #    mantenimiento no reempaqueta un repo tan chico: en una Mac daba verde. Lo mide el caso de la traza, en T8.
+  #    «T8 algún comando escribió en un repo ajeno» sin que harness.js escribiera nada (en la
+  #    huella faltarían objects/maintenance.lock, objects/pack/tmp_pack_* y los objetos sueltos). Con git 2.50 el
+  #    mantenimiento no reempaqueta un repo tan chico: en una Mac da verde. Lo mide el caso de la traza, en T8.
   for f in "$LAB_REMOTE_TREE" "$INTERNAL_REMOTE"; do
     harness_lab_git "$f" config maintenance.auto false; harness_lab_git "$f" config gc.auto 0; harness_lab_git "$f" config receive.autogc false
   done
@@ -992,12 +989,12 @@ capa_lab() { # capa_lab <dir>  — la máquina del equipo con la copia pública 
   for f in "$LAB_REMOTE_TREE" "$INTERNAL_REMOTE"; do printf '#!/bin/sh\necho "rechazado: el laboratorio no acepta push" >&2\nexit 1\n' > "$f/hooks/pre-receive"; chmod +x "$f/hooks/pre-receive"; done
 }
 
-# ═══ T8 · LayerCommit_MachinePicksNewestCompatibleFromInternalMain_NeverTrusts_NeverWrites (AC 7) ═════════════════════
+# ═══ T8 · LayerCommit_MachinePicksNewestCompatibleFromInternalMain_NeverTrusts_NeverWrites ═════════════════════
 if corre T8; then
   echo "T8 · el commit de la capa: el más nuevo de main interno que es compatible"
   capa_lab "$BASE/t8"
-  # el armado no deja un mantenimiento de git corriendo de fondo en un repo que T8 mide (ver capa_lab). 🔴 rojo previo:
-  # sin la configuración de los bare, la traza del push trae el `git maintenance run --auto` que lanzó el receive-pack.
+  # el armado no deja un mantenimiento de git corriendo de fondo en un repo que T8 mide (ver capa_lab).
+  # 🔴 Sin la configuración de los bare, la traza del push trae el `git maintenance run --auto` que lanzó el receive-pack.
   [ -s "$BASE/t8/push-trace.json" ] && ! grep '"child_start"' "$BASE/t8/push-trace.json" | grep '"maintenance"' >/dev/null \
     && ok "T8 el push del armado no lanza el mantenimiento de git en el bare (la huella de antes no se cruza con un reempaquetado)" \
     || mal "T8 el push del armado lanzó el mantenimiento de git en el bare, o no dejó traza: $(grep '"child_start"' "$BASE/t8/push-trace.json" 2>/dev/null | head -c 300)"
@@ -1016,7 +1013,7 @@ if corre T8; then
   case "$SALIDA" in *"capa ${I1:0:7} → ${I2:0:7}"*) ok "T8 …y lo dice: «capa ${I1:0:7} → ${I2:0:7}»" ;; *) mal "T8 sin la línea de la capa: $SALIDA" ;; esac
   [ "$(ref_lectura refs/tycon/layer/2026.10.06.1)" = "$I2" ] && ok "T8 …la ref local de esa versión lo apunta" || mal "T8 ref de la capa: $(ref_lectura refs/tycon/layer/2026.10.06.1) (I2 $I2)"
   # (1b) un archivo NUEVO publicable en main interno (en guides/, sin tocar ningún archivo público) y sin versión pública
-  # nueva: tampoco es compatible (AC 5, segunda mitad) — la capa se queda en el último compatible y lo dice
+  # nueva: tampoco es compatible — la capa se queda en el último compatible y lo dice
   I2B="$(interno guides/nueva.md '# una guía nueva, pública')"
   mira update
   [ "$RC" = 0 ] && [ "$(capa commit)" = "$I2" ] && [ ! -e "$LAB_TREE/guides/nueva.md" ] && ok "T8 un archivo nuevo publicable sin versión pública: la capa se queda en ${I2:0:7} y no lo apila como agregado" || mal "T8 archivo nuevo publicable: rc $RC capa=$(capa commit) (I2 $I2, I2B $I2B): $SALIDA"
@@ -1043,7 +1040,7 @@ if corre T8; then
   [ "$(estado "(d['layer'] or {}).get('minimum')")" = True ] && [ "$(estado "(d['layer'] or {}).get('lag_hours')")" = 30 ] && ok "T8 …con layer.minimum y lag_hours 30 en el estado" || mal "T8 layer del estado: $(estado "d.get('layer')")"
   case "$SALIDA" in *"capa al mínimo: 30 horas detrás de main interno"*) ok "T8 …y lo dice con las horas" ;; *) mal "T8 no dice el mínimo: $SALIDA" ;; esac
   [ "$(capa commit)" != "$I6" ] && ! grep -q 'tercer cambio' "$LAB_TREE/README.md" && ok "T8 el commit incompatible nunca se usó" || mal "T8 se usó un commit incompatible"
-  # (5) (pase adversarial de la tanda A, C2) la versión 4 trae ese cambio y la capa sale del mínimo; la vuelta atrás a la
+  # (5) la versión 4 trae ese cambio y la capa sale del mínimo; la vuelta atrás a la
   # versión 3 vuelve a la capa al mínimo, y la marca y las horas vuelven con ella
   publica 2026.10.06.4 "$I6" README.md 'tercer cambio publicable'
   mira update
@@ -1054,8 +1051,8 @@ if corre T8; then
   [ "$UNTOUCHED" = 1 ] && ok "T8 ningún comando escribió en los dos bare (el interno y el público) ni en el clon de la persona" || mal "T8 algún comando escribió en un repo ajeno"
 fi
 
-# ═══ T39L · StartupUpdate_Detached_KilledMidway_NextStartTakesOverAndUpdates_NoInteractiveLogin (story 8.23, tanda L) ══
-# El caso de la máquina Windows del alta: la actualización tardaba más que el tope del hook y moría con el candado
+# ═══ T39L · StartupUpdate_Detached_KilledMidway_NextStartTakesOverAndUpdates_NoInteractiveLogin ══
+# Una actualización que tarda más que el tope del hook no puede morir con el candado
 # tomado. Con el arranque REAL: una actualización lenta (git fetch dormido) → el hook vuelve a tiempo y la deja seguir
 # aparte; `kill -9` de esa corrida a mitad → el arranque siguiente pisa el candado del muerto en el acto (sin los 10
 # minutos) y actualiza. El testigo: un `git` delante en el PATH que anota con qué ambiente se lo llamó para salir a la red.

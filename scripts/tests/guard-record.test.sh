@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# guard-record.test.sh — red de la constancia de los frenos previos a la herramienta (story 2.6).
+# guard-record.test.sh — red de la constancia de los frenos previos a la herramienta.
 #
-# Por qué existe: un freno que frenó no dejaba rastro en ningún lugar que la cuenta pueda leer. De los
-# seis, dos anotaban sólo el escape, uno sólo los bloqueos (y con el comando en claro), tres nada. Así,
-# un freno que funcionó todo el mes se ve igual que uno que nunca se disparó: ausente.
+# Por qué existe: un freno que frena sin dejar rastro en ningún lugar que la cuenta pueda leer se ve igual que uno
+# que nunca se disparó: ausente. Cada freno anota sus bloqueos, sus escapes y sus pasos, sin el comando en claro.
 #
 # Lo que prueba:
 #   T1 — una línea por decisión, con sus campos, por cada freno y veredicto válidos
@@ -18,8 +17,8 @@
 #  T10 — lo que el freno declara fuera de su alcance no entra en su denominador
 #  T11 — el escape se anota por lo que el comando HACE, no por nombrarlo
 #  T12 — un bloqueo por falla propia del freno también queda escrito
-#  T13 — la constancia no depende del nombre con que el freno encuentra su biblioteca (el de ahora o el de antes),
-#        y que no encuentre ninguna no queda callado (story 8.7: en la copia pública sólo está el de ahora)
+#  T13 — la constancia no depende del nombre con que el freno encuentra su biblioteca (el actual o el anterior al renombre),
+#        y que no encuentre ninguna no queda callado (en la copia pública sólo está el actual)
 #
 # 🔴 HOME falso siempre: la constancia vive bajo el home, en la carpeta de estado del arnés.
 # Correr: bash scripts/tests/guard-record.test.sh
@@ -129,7 +128,7 @@ if echo "$reg" | grep '"regla":"otra"' >/dev/null && ! echo "$reg" | grep -F "/U
 else
   no "T5 la línea quedó: $reg"
 fi
-# el freno antes de publicar (story 8.26, tanda F1): sus cinco reglas son códigos; cualquier otra cosa sale `otra`
+# el freno antes de publicar: sus cinco reglas son códigos; cualquier otra cosa sale `otra`
 mundo
 for regla in finding could-not-look unreadable-text; do anotar public-push-guard "$regla" bloqueo 'gh pr create'; done
 for regla in clean generic-only; do anotar public-push-guard "$regla" paso 'gh pr create'; done
@@ -141,7 +140,7 @@ if [ "$codigos" = "finding=bloqueo could-not-look=bloqueo unreadable-text=bloque
 else
   no "T5 (freno antes de publicar) quedó: $codigos"
 fi
-# el control de historia interna (story 8.26, tanda G3): cuatro reglas y los cuatro veredictos; lo demás sale `otra`
+# el control de historia interna: cuatro reglas y los cuatro veredictos; lo demás sale `otra`
 mundo
 anotar internal-history finding bloqueo 'commit'
 anotar internal-history finding aviso 'commit'
@@ -170,8 +169,8 @@ else
 fi
 
 # ── T7 — una decisión, UNA línea: el escape no suma además un «paso» ──────────────────────────
-# 🔴 rojo previo (defecto real, 2026-09-16): con TYCON_PR_BY_HAND=1 el freno anotaba «escape» y
-#    después, como ya no quedaban problemas, también «paso» — dos líneas para una sola decisión,
+# 🔴 Rojo si: con TYCON_PR_BY_HAND=1 el freno anota «escape» y
+#    después, como ya no quedan problemas, también «paso» — dos líneas para una sola decisión,
 #    inflando el denominador con algo que no pasó.
 mundo
 correr "$P2" 'TYCON_PR_BY_HAND=1 az repos pr create --source-branch x --target-branch main --title t' >/dev/null
@@ -183,9 +182,9 @@ else
 fi
 
 # ── T8 — «no pude preguntar» no se anota como «verifiqué y está bien» ─────────────────────────
-# 🔴 rojo previo (defecto real, 2026-09-16): si la consulta a Azure fallaba, el freno seguía de
-#    largo y al final anotaba «paso» — mezclando «no miré» con «miré y está bien», que es
-#    exactamente la distinción que esta story existe para no perder.
+# 🔴 Rojo si: cuando la consulta a Azure falla, el freno sigue de
+#    largo y al final anota «paso» — mezclando «no miré» con «miré y está bien», que es
+#    exactamente la distinción que esta constancia existe para no perder.
 mundo
 ev_pr="$(node -e 'process.stdout.write(JSON.stringify({tool_name:"Bash",tool_input:{command:"az repos pr create --source-branch x --target-branch main --title t"}}))')"
 printf '%s' "$ev_pr" | HOME="$CASA" TYCON_PR_ONE_PER_REPO=1 PATH=/usr/bin:/bin node "$P1" >/dev/null 2>&1
@@ -196,10 +195,9 @@ else
 fi
 
 # ── T9 — el veredicto es el del COMANDO, no el de cada segmento ───────────────────────────────
-# 🔴 rojo previo (defecto real, hallado EN VIVO por el revisor de fallos silenciosos en la vuelta 2):
-#    un comando con dos `pr create` —uno salteado con el escape y otro mal armado— escribía DOS
-#    líneas, `escape` y `bloqueo`. Dos decisiones donde hubo una; y encima el `escape` quedaba
-#    anotado como si algo hubiera pasado, cuando el comando entero murió en 2 y no corrió nada.
+# 🔴 Rojo si: un comando con dos `pr create` —uno salteado con el escape y otro mal armado— escribe DOS
+#    líneas, `escape` y `bloqueo`. Dos decisiones donde hay una; y encima el `escape` queda
+#    anotado como si algo hubiera pasado, cuando el comando entero muere en 2 y no corre nada.
 mundo
 correr "$P2" 'TYCON_PR_BY_HAND=1 az repos pr create --source-branch a --target-branch main --title a && az repos pr create --source-branch b --target-branch main --title b' >/dev/null
 n=$(lineas); v=$(grep -o '"veredicto":"[a-z]*"' "$(REG)" 2>/dev/null | tr '\n' ' ')
@@ -210,10 +208,9 @@ else
 fi
 
 # ── T10 — lo que el freno declara FUERA de su alcance no entra en su denominador ──────────────
-# 🔴 rojo previo (defecto real, revisor spec-first vuelta 2): un pull request que va a `dev`, un
-#    borrador y un `--help` son cosas que este freno declara fuera de su alcance y no juzga —
-#    anotarles un «paso» infla su denominador con comandos que nunca miró. Es el espejo exacto
-#    del arreglo de «no pude preguntar» en el freno hermano.
+# 🔴 Rojo si anota «paso» para un pull request que va a `dev`, un borrador o un `--help`: son cosas que este
+#    freno declara fuera de su alcance y no juzga — anotarles un «paso» infla su denominador con comandos
+#    que nunca miró. Es el espejo exacto de «no pude preguntar» en el freno hermano.
 mundo
 correr "$P2" 'az repos pr create --source-branch x --target-branch dev --title t' >/dev/null
 correr "$P2" 'az repos pr create --source-branch x --target-branch main --title t --draft true' >/dev/null
@@ -228,10 +225,8 @@ else
 fi
 
 # ── T11 — el escape se anota por lo que el comando HACE, no por nombrarlo ────────────────────
-# 🔴 rojo previo (defecto real, hallado por el pase adversarial ejecutando el código): el escape se
-#    reconoce por el texto, así que un mensaje de commit, un heredoc o un `grep` que MENCIONEN la
-#    variable lo disparaban. Medido sobre el registro real de esta máquina: 135 de 516 entradas
-#    (26 %) no son escapes de verdad — y es el tipo dominante de la ficha de escapes.
+# 🔴 Rojo si el escape se reconoce por el texto: un mensaje de commit, un heredoc o un `grep` que MENCIONEN la
+#    variable lo disparan, y la cuenta de escapes se llena de falsos.
 mundo
 correr "$TS" 'echo "ojo: TYCON_FULL_SUITE=1 npm test es el escape"' >/dev/null
 correr "$TS" 'git commit -m "documenta TYCON_FULL_SUITE=1 en la guia"' >/dev/null
@@ -246,8 +241,8 @@ else
 fi
 
 # ── T12 — un bloqueo por falla PROPIA del freno también queda escrito ─────────────────────────
-# 🔴 rojo previo (defecto real, pase adversarial): era el único camino de bloqueo del freno de
-#    producción que no pasaba por su función de frenar, así que frenaba y para la cuenta no existía.
+# 🔴 Rojo si: es el único camino de bloqueo del freno de
+#    producción que no pasa por su función de frenar, así que frena y para la cuenta no existe.
 mundo
 printf '%s' '{"tool_input":{"command":"sqlcmd -S prod.db' \
   | HOME="$CASA" node "$AQUI/scripts/hooks/prod-access-guard.js" >/dev/null 2>&1; ec=$?
@@ -258,14 +253,14 @@ else
   no "T12 exit=$ec reg=[$reg]"
 fi
 
-# ── T13 — la constancia no depende del NOMBRE con que el freno encuentra su biblioteca (story 8.7) ──
-# El freno de producción cargaba la biblioteca de constancias sólo por su nombre de antes del renombre a inglés. En
-# el repo del equipo ese nombre es un reemplazo generado; la copia pública no lo lleva, y ahí la carga fallaba adentro
-# de un `catch` callado: el freno frenaba y para la cuenta no existía (era el T12 rojo de la copia). En /opt/tycon
-# andaba, porque el instalador copia la biblioteca con los dos nombres.
+# ── T13 — la constancia no depende del NOMBRE con que el freno encuentra su biblioteca ──
+# El freno de producción tiene que cargar la biblioteca de constancias por sus dos nombres: el anterior al renombre a
+# inglés y el actual. En el repo del equipo el nombre anterior es un reemplazo generado; la copia pública no lo lleva, y
+# con sólo ese nombre la carga falla adentro de un `catch` callado: el freno frena y para la cuenta no existe (el T12
+# en rojo). En /opt/tycon anda, porque el instalador copia la biblioteca con los dos nombres.
 # Tres arneses de laboratorio con el freno REAL: la biblioteca sólo con el nombre nuevo (la copia pública), sólo con el
-# de antes (una instalación vieja) y sin ninguna. El nombre de antes sale del instalador, no se escribe acá.
-# 🔴 rojo previo: con el freno de antes, «sólo el nombre nuevo» frena sin dejar línea, y «sin ninguna» no lo dice.
+# nombre anterior (una instalación vieja) y sin ninguna. El nombre anterior sale del instalador, no se escribe acá.
+# 🔴 Rojo si el freno sólo conoce el nombre anterior: «sólo el nombre nuevo» frena sin dejar línea, y «sin ninguna» no lo dice.
 OLD_RECORD_REL="$(sed -n 's/^NOMBRE_VIEJO_CONSTANCIA=//p' "$AQUI/scripts/production/install-guard.sh" | head -1)"
 guard_lab(){ # $1 carpeta  $2 new|old|none → un arnés mínimo: el freno y la biblioteca bajo ese nombre
   local d="$1"; rm -rf "$d"; mkdir -p "$d/scripts/hooks" "$d/scripts/lib"
@@ -304,7 +299,7 @@ else
     no "T13 sin la biblioteca: exit=$ec reg=[$reg] hook-errors=[$(echo "$hook_errors" | head -c 300)]"
   fi
   # el camino de todos los días (la función de frenar, no la de la falla propia), con el arnés entero menos el nombre
-  # de antes: es lo que tiene la copia pública
+  # anterior: es lo que tiene la copia pública
   mundo; rm -rf "$TMP/g-full"; mkdir -p "$TMP/g-full/scripts/hooks" "$TMP/g-full/scripts/production"
   cp -R "$AQUI/scripts/lib" "$TMP/g-full/scripts/lib"; rm -f "$TMP/g-full/scripts/${OLD_RECORD_REL}"
   cp "$AQUI/scripts/hooks/prod-access-guard.js" "$TMP/g-full/scripts/hooks/"
@@ -318,9 +313,9 @@ else
   fi
 fi
 
-# ══ Story 7.2 — los tres hooks del CIERRE también dejan constancia ══════════════════════════════
+# ══ Los tres hooks del CIERRE también dejan constancia ══════════════════════════════
 # El número que decide si el cierre recortado alcanza —cuántas veces `on-frontmatter-write` y
-# `on-pre-commit` rechazan una evidencia— no existía: esos hooks (en agent-skills) no anotaban nada.
+# `on-pre-commit` rechazan una evidencia— sale de esa constancia: esos hooks (en agent-skills) la anotan.
 # Los hooks se corren REALES desde agent-skills (`TYCON_SKILLS_DIR` apunta a un clon mientras el
 # cambio no está en main). Sin agent-skills en la máquina, la parte no se puede medir y lo dice.
 SKILLS72="${TYCON_SKILLS_DIR:-$HOME/.claude/agent-skills/skills}"
@@ -354,8 +349,8 @@ de72(){ grep -o "\"freno\":\"$1\",\"regla\":\"[a-z-]*\",\"veredicto\":\"[a-z]*\"
 if [ ! -f "$FW" ] || [ ! -f "$PC" ] || [ ! -f "$EG" ]; then
   no "7.2 NO MEDIDO: no encontré los hooks del cierre en $SKILLS72 (TYCON_SKILLS_DIR) — sin agent-skills no se puede verificar"
 else
-  # ── 7.2-T1 — Constancia_HooksDelCierre_AnotanBloqueoYPaso ─────────────────────────────────────
-  # 🔴 rojo previo: contra los hooks de origin/main de agent-skills, cero líneas.
+  # ── T1 — Constancia_HooksDelCierre_AnotanBloqueoYPaso ─────────────────────────────────────
+  # 🔴 Rojo si los hooks de agent-skills no anotan: cero líneas.
   mundo; R="$TMP/r72"; repo72 "$R"
   ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" node "$FW" >/dev/null 2>&1); ec_sin=$?
   echo "# evidencia" > "$R/.advisors/dod-runtime/9.1-20260916-1200.md"
@@ -387,7 +382,7 @@ else
     no "7.2-T1 exits sin/con/pc/eg=$ec_sin/$ec_con/$ec_pc/$ec_eg líneas=$(lineas) sucias=$limpias fw=[$fw] pc=[$pc] eg=[$eg]"
   fi
 
-  # ── 7.2-T2 — Constancia_SinLib_ElHookDecideIgual ──────────────────────────────────────────────
+  # ── T2 — Constancia_SinLib_ElHookDecideIgual ──────────────────────────────────────────────
   # La lib no está (TYCON_GUIDES_DIR a una carpeta vacía): mismo exit y mismo stderr, y sin registro.
   mundo; R="$TMP/r72c"; repo72 "$R"; VACIA="$TMP/vacia"; mkdir -p "$VACIA"
   ev_done "$R/specs/historia-confidencial.md" | (cd "$R" && HOME="$CASA" TYCON_GUIDES_DIR="$AQUI" node "$FW" 2>"$TMP/err-con" >"$TMP/out-con"); e1=$?
@@ -399,11 +394,11 @@ else
     no "7.2-T2 exit con/sin=$e1/$e2 salida-igual=$(cmp -s "$TMP/err-con" "$TMP/err-sin" && echo si || echo no) registro=$( [ -f "$(REG)" ] && echo existe || echo ausente)"
   fi
 
-  # ── 7.2-T2b — las suites de agent-skills no ensucian el registro real (vuelta 1) ─────────────────
-  # 🔴 rojo previo (pase adversarial): story-discovery, unit, el humo de DoD, step-7c-macro y story-skill-gate
-  #    llaman a estos hooks con el HOME real y el instalador las corre en cada arranque → decisiones de prueba
+  # ── T2b — las suites de agent-skills no ensucian el registro real ─────────────────
+  # 🔴 Rojo si story-discovery, unit, el humo de DoD, step-7c-macro y story-skill-gate
+  #    llaman a estos hooks con el HOME real: el instalador las corre en cada arranque → decisiones de prueba
   #    en el frenos.jsonl que sube al buzón. Con TYCON_CLOSURE_RECORD=off el hook no anota; y esas suites lo ponen.
-  #    El nombre viejo del interruptor (story 8.9) sigue apagando: sale del mapa de renombres, no se escribe acá.
+  #    El nombre anterior del interruptor sigue apagando: sale del mapa de renombres, no se escribe acá.
   VIEJO_CIERRE="$(node -e 'const e=(require(process.argv[1]).entries||[]).find((x)=>x&&x.kind==="env"&&x.new==="TYCON_CLOSURE_RECORD");process.stdout.write(e?e.old:"")' "$AQUI/scripts/lib/renames.json" 2>/dev/null)"
   eoff=""; registro=""
   for interruptor in TYCON_CLOSURE_RECORD ${VIEJO_CIERRE:+"$VIEJO_CIERRE"}; do
@@ -414,10 +409,10 @@ else
   sin_marca=""
   for t in story-discovery.test.js unit.test.js dod-hook-smoke-test.sh step-7c-macro.test.js story-skill-gate.test.js; do
     f="$SKILLS72/tycon-pipeline/scripts/tests/$t"
-    # agent-skills puede estar un pull atrás o adelante (story 8.9): vale el nombre nuevo o el viejo del interruptor
+    # agent-skills puede estar un pull atrás o adelante: vale el nombre nuevo o el viejo del interruptor
     [ -f "$f" ] && grep -qE "TYCON_CLOSURE_RECORD${VIEJO_CIERRE:+|$VIEJO_CIERRE}" "$f" || sin_marca="$sin_marca $t"
   done
-  # La copia pública (story 8.7) sale sin el perfil del equipo y sin el mapa de renombres: ahí no hay nombre viejo que
+  # La copia pública sale sin el perfil del equipo y sin el mapa de renombres: ahí no hay nombre viejo que
   # probar. Se mide la mitad del nombre nuevo y se dice que la otra no se midió. En el repo del equipo, que el mapa no
   # traiga el nombre viejo sigue siendo un rojo.
   PUBLIC_COPY=0

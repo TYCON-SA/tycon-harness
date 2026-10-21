@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# legacy-names-production.test.sh — la tanda P de la story 8.9: el freno de producción renombrado a inglés con
-# ESCRITURA DOBLE (AC 45-47 · T49-T51).
+# legacy-names-production.test.sh — el freno de producción renombrado a inglés con
+# ESCRITURA DOBLE (T49-T51).
 #
 # POR QUÉ ESCRITURA DOBLE Y NO UN ALIAS: la copia del freno que corre de verdad vive en /opt/tycon, de root, y sólo se
 # actualiza cuando la persona reinstala con `sudo`. Hasta que TODAS las máquinas autorizadas reinstalen, en cada una
@@ -18,9 +18,9 @@
 #         «alguien lo cambió».
 #   Además: el catálogo con los dos nombres, las claves viejas, las opciones viejas del instalador y la mudanza de /opt.
 #
-# EL /opt DE LABORATORIO: una carpeta temporal armada con `ARCHIVOS` del commit anterior al renombre (OLD_SHA, la base
-# de la tanda). Nunca /opt real ni `sudo`. HOME de juguete siempre, con TYCON_NO_NIGHTLY_EXAM=1.
-# Los nombres viejos, en el código de esta prueba, se arman por concatenación (AC 7 de la story).
+# EL /opt DE LABORATORIO: una carpeta temporal armada con `ARCHIVOS` del commit anterior al renombre (OLD_SHA).
+# Nunca /opt real ni `sudo`. HOME de juguete siempre, con TYCON_NO_NIGHTLY_EXAM=1.
+# Los nombres viejos, en el código de esta prueba, se arman por concatenación.
 #
 # Correr: bash scripts/tests/legacy-names-production.test.sh
 set -uo pipefail
@@ -31,10 +31,10 @@ fallos=0; pasaron=0
 ok(){ echo "✅ legacy-names-production: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ legacy-names-production: $1"; fallos=$((fallos+1)); }
 
-# La base de la tanda P: el último commit de main con el freno en su carpeta vieja.
+# La base: el último commit de main con el freno en su carpeta vieja.
 OLD_SHA=a6bae2bd95bfd7dd789ee3e219bcfa565f2ea546
 
-# los nombres viejos, armados (AC 7)
+# los nombres viejos, armados
 P_OLD="produ""ccion"
 OLD_DIR="scripts/$P_OLD"
 OLD_CATALOG=".tycon/$P_OLD.json"
@@ -63,8 +63,8 @@ if ! git -C "$AQUI" cat-file -e "${OLD_SHA}^{commit}" 2>/dev/null; then
   fi
 fi
 if ! git -C "$AQUI" cat-file -e "${OLD_SHA}^{commit}" 2>/dev/null; then
-  # La copia pública nace sin historia: ese commit no está ni va a estar, y ahí esta prueba no mide (sale 0 y lo dice: la
-  # validación de un pedido del público la leía como un rojo nuevo en cada corrida — story 8.26, tanda C, 184 #12652).
+  # La copia pública nace sin historia: ese commit no está ni va a estar, y ahí esta prueba no mide (sale 0 y lo dice: sin esto, la
+  # validación de un pedido del público lo leería como un rojo nuevo en cada corrida).
   # En el repo del equipo (con su perfil) que falte el commit es «no pude medir», y eso no es un verde: sale 2.
   if [ ! -f "$AQUI/perfil-equipo.json" ]; then
     echo "⏭ legacy-names-production: NO MEDIDO — la copia pública no trae la historia del repo (el commit anterior al renombre, ${OLD_SHA:0:10}). No es un verde."
@@ -112,7 +112,7 @@ world(){
   ( cd "$REPOS/viejo" && git init -q . ) >/dev/null 2>&1
   # el catálogo nuevo, con las claves nuevas: lo declara alguien DESPUÉS del renombre
   printf '{"servers":[{"host":"%s","environment":"produccion","keychain":"tycon-prod-nuevo"}]}' "$HOST_NEW" > "$REPOS/nuevo/.tycon/production.json"
-  # un producto que todavía no pasó a los nombres nuevos (los productos migran en la story de retiro)
+  # un producto que todavía no pasó a los nombres nuevos (los productos migran aparte)
   printf '{"%s":[{"host":"%s","%s":"produccion","%s":"tycon-prod-viejo"},{"host":"test-viejo.example.com","%s":"no-produccion"}]}' \
     "$K_SERVERS" "$HOST_OLD" "$K_ENV" "$K_KEYCHAIN" "$K_ENV" > "$REPOS/viejo/$OLD_CATALOG"
   PIPE="$CASA/.claude/.tycon-pipeline"
@@ -235,7 +235,7 @@ rc="$(printf 'no es json: cat .tycon/production.json' | env HOME="$CASA" node "$
 H="$TMP/arnes-lab"
 rm -rf "$H"; mkdir -p "$H"
 git -C "$H" init -q . && git -C "$H" config user.email lab@example.com && git -C "$H" config user.name lab
-# Las bibliotecas que el aviso también compara (story 8.14, AC 21), con la ruta que tenían en el commit viejo ("-" si no
+# Las bibliotecas que el aviso también compara, con la ruta que tenían en el commit viejo ("-" si no
 # existían). Sin ellas en lo publicado del laboratorio, el aviso dice «no pude comparar… ni si alguien lo cambió» y el
 # laboratorio deja de parecerse al arnés de verdad, que sí las publica.
 LIBS="$(node -e '
@@ -355,12 +355,12 @@ else
   else ok "T49p · el freno instalado por el instalador nuevo carga y frena (su índice está en la carpeta nueva)"; fi
 fi
 
-# ═════ ~/.claude/tycon.json: las secciones con su nombre nuevo y el viejo (AC 45, la copia de tycon-config.js en /opt) ═
+# ═════ ~/.claude/tycon.json: las secciones con su nombre nuevo y el viejo (la copia de tycon-config.js en /opt) ═
 CFG_HOME="$TMP/casa-cfg"; mkdir -p "$CFG_HOME/.claude"
 cfg(){ # $1 = contenido de tycon.json → «valor de paths.repos|valor de integrations.engram|errores»
   printf '%s' "$1" > "$CFG_HOME/.claude/tycon.json"
   # Sin TF_BUILD: en Azure, leer una clave vieja escribe el warning de la corrida en stderr, y acá stderr se suma a la
-  # salida que se compara (T49r salía rojo sólo en el nocturno, 2026-10-01). El warning tiene su propia prueba.
+  # salida que se compara (T49r daría rojo sólo en el nocturno). El warning tiene su propia prueba.
   env -u TYCON_REPOS_ROOT -u TF_BUILD HOME="$CFG_HOME" node -e '
     const c = require(process.argv[1]).cargar({ env: { TYCON_PROFILE: "0" }, home: process.argv[2] });
     process.stdout.write(`${c.valores.rutas.repos || ""}|${c.valores.integraciones.engram}|${c.errores.map((e) => e.clave + " " + e.motivo).join(" / ")}`);
@@ -376,12 +376,12 @@ case "$s" in *"paths"*"valores distintos"*) ok "T49s · la misma sección con lo
 s="$(cfg "{\"$I_OLD\":{\"engram\":\"si\"}}")"
 case "$s" in *"$I_OLD.engram"*) ok "T49t · el error nombra la sección como la escribió la persona" ;; *) no "T49t · el error no nombra lo escrito: «${s}»" ;; esac
 
-# ═════ lo que confirmó el pase adversarial de la tanda (5B, 2026-09-30): cada uno con su prueba ═══════════════
+# ═════ casos de borde: cada uno con su prueba ═══════════════════════════════════════════════════════════════
 IDX="$NEW_DIR/production-index.js"
 mem_case(){ # $1 = script node que prepara el estado en $CASA y deja el catálogo; imprime «estado|alterada» de un host
   node -e "$1" "$IDX" "$CASA" "$REPOS" 2>&1
 }
-# 5B-C1: las dos memorias ilegibles → se recupera del índice (antes del renombre lo hacía; la P lo había perdido)
+# Las dos memorias ilegibles: se recupera del índice
 world
 printf '{"servers":[{"host":"b.example.com","environment":"produccion","keychain":"tycon-prod-b"}]}' > "$REPOS/nuevo/.tycon/production.json"
 s="$(mem_case '
@@ -392,7 +392,7 @@ s="$(mem_case '
   const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
 ')"
 [ "$s" = "produccion|true" ] && ok "5B-C1a · con las dos memorias ilegibles, el host de producción se recupera del índice (y se dice alterada)" || no "5B-C1a · memorias ilegibles: «${s}»"
-# 5B-C1: la memoria vieja (la que escribe la copia de /opt) borrada, con un host que la nueva no tiene → se recupera
+# La memoria vieja (la que escribe la copia de /opt) borrada, con un host que la nueva no tiene: se recupera
 world
 s="$(mem_case '
   const m = require(process.argv[1]); const fs = require("fs"); const [, , home, raiz] = process.argv;
@@ -407,7 +407,7 @@ s="$(mem_case '
   const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
 ')"
 [ "$s" = "produccion|true" ] && ok "5B-C1b · con la memoria vieja borrada, lo que aprendió la copia vieja vuelve del índice viejo (y se dice alterada)" || no "5B-C1b · memoria vieja borrada: «${s}»"
-# 5B-C2: las dos memorias borradas → se une la memoria de LOS DOS índices, no la del primero no vacío
+# Las dos memorias borradas: se une la memoria de LOS DOS índices, no la del primero no vacío
 world
 s="$(mem_case '
   const m = require(process.argv[1]); const fs = require("fs"); const [, , home, raiz] = process.argv;
@@ -420,7 +420,7 @@ s="$(mem_case '
   const i = m.construir({ home, raiz }); process.stdout.write(`${m.clasificar("b.example.com", i).estado}|${i.memoria_alterada}`);
 ')"
 [ "$s" = "produccion|true" ] && ok "5B-C2 · con las dos memorias borradas, se juntan las memorias de los dos índices" || no "5B-C2 · memorias borradas: «${s}»"
-# 5B-C3: un comodín `product*` cualquiera no es un archivo del freno; `production-*` en su carpeta sí
+# Un comodín `product*` cualquiera no es un archivo del freno; `production-*` en su carpeta sí
 world; reindex
 for cmd in "cp fixtures/product*.json out/" "rm -f build/product*" "mv product* archive/"; do
   rc="$(run_guard "$GUARD" "$cmd")"
@@ -428,15 +428,15 @@ for cmd in "cp fixtures/product*.json out/" "rm -f build/product*" "mv product* 
 done
 rc="$(run_guard "$GUARD" "rm -f $PIPE/production-*")"
 [ "$rc" = 2 ] && ok "5B-C3 · y sigue frenando un comodín sobre los estados del freno" || no "5B-C3 · el comodín sobre production-* pasó (rc=$rc)"
-# 5B-C4: `get` acepta el nombre que se ve en el archivo y en `explicar`
+# `get` acepta el nombre que se ve en el archivo y en `explicar`
 printf '{"paths":{"repos":"/tmp/repos-get"},"integrations":{"engram":true}}' > "$CFG_HOME/.claude/tycon.json" 2>/dev/null || { mkdir -p "$TMP/casa-cfg/.claude"; CFG_HOME="$TMP/casa-cfg"; printf '{"paths":{"repos":"/tmp/repos-get"},"integrations":{"engram":true}}' > "$CFG_HOME/.claude/tycon.json"; }
 g1="$(env -u TYCON_REPOS_ROOT HOME="$CFG_HOME" TYCON_PROFILE=0 node "$AQUI/scripts/lib/tycon-config.js" get paths.repos 2>&1)"; r1=$?
 g2="$(env HOME="$CFG_HOME" TYCON_PROFILE=0 node "$AQUI/scripts/lib/tycon-config.js" get integrations.engram 2>&1)"; r2=$?
 { [ "$r1" = 0 ] && [ "$g1" = "/tmp/repos-get" ] && [ "$r2" = 0 ]; } && ok "5B-C4 · tycon-config get entiende paths.* e integrations.*" || no "5B-C4 · get: «${g1}» ($r1) · «${g2}» ($r2)"
-# 5B-C6: las dos formas de una sección con el mismo contenido en otro orden no son «valores distintos»
+# Las dos formas de una sección con el mismo contenido en otro orden no son «valores distintos»
 s="$(cfg "{\"integrations\":{\"engram\":true,\"codex\":false},\"$I_OLD\":{\"codex\":false,\"engram\":true}}")"
 [ "$s" = "|true|" ] && ok "5B-C6 · el mismo contenido en otro orden no es un conflicto" || no "5B-C6 · mismo contenido, otro orden: «${s}»"
-# 5B-C7: si el registro viejo no se puede pasar al nuevo, no se escribe el nuevo (se pierde la historia) — sigue en el viejo
+# Si el registro viejo no se puede pasar al nuevo, no se escribe el nuevo (se pierde la historia) — sigue en el viejo
 world; reindex
 OLD_LOG="$PIPE/$P_OLD.log"; printf '{"ts":"antes"}\n' > "$OLD_LOG"; chmod 200 "$OLD_LOG"
 rc="$(run_guard "$GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
@@ -450,7 +450,7 @@ rc="$(run_guard "$GUARD" "sqlcmd -S $HOST_NEW -Q \"select 1\"")"
 { [ "$(head -1 "$PIPE/production.log" 2>/dev/null)" = '{"ts":"antes"}' ] && [ "$(wc -l < "$PIPE/production.log" | tr -d ' ')" = 2 ]; } \
   && ok "5B-C7 · y legible, el nuevo arranca con la historia del viejo y la línea nueva" || no "5B-C7 · el nuevo no trae la historia: $(head -c 120 "$PIPE/production.log" 2>/dev/null)"
 
-# ═════ --stale-mentions aprende los kinds de la P (folder, file, state-file, config-file, key) ═════════════════════
+# ═════ --stale-mentions aprende los kinds (folder, file, state-file, config-file, key) ═════════════════════
 out="$(node -e '
   const s = require(process.argv[1]);
   const P = "produ" + "ccion";

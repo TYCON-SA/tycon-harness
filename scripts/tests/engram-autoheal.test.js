@@ -8,11 +8,10 @@
  * Automatizar eso sólo es defendible si lo que se toca NO PUEDE estar bien de otra manera — y eso
  * lo deciden estas tres guardas.
  *
- * No son hipotéticas: la 2 y la 3 salieron de datos reales de una máquina del equipo el
- * 2026-08-25, y sin ellas el automatismo habría movido memoria ajena en silencio. El caso concreto:
- * en la carpeta de Totora había 359 observaciones bajo `nimbobackend` —alguien trabajó en
- * otro producto desde ahí— y un automatismo ingenuo ("todo lo que aparece en esta carpeta va al
- * cajón de Totora") se las habría llevado adentro, sin vuelta atrás.
+ * No son hipotéticas: la 2 y la 3 cubren datos reales, y sin ellas el automatismo movería memoria
+ * ajena en silencio. El caso concreto: una carpeta puede tener cientos de observaciones bajo el nombre de
+ * otro producto —alguien trabajó en ese producto desde ahí— y un automatismo ingenuo ("todo lo que
+ * aparece en esta carpeta va al cajón de esta carpeta") se las llevaría adentro, sin vuelta atrás.
  *
  * Cada test de abajo es una de esas guardas. Si alguien las relaja, esto se pone en rojo.
  *
@@ -106,7 +105,7 @@ test('GUARDA 1 — un proyecto TRANSVERSAL no se toca ni se reporta', { skip: SK
 });
 
 test('GUARDA 2 — el nombre declarado por OTRO repo nunca se absorbe', { skip: SKIP }, () => {
-  // EL CASO REAL: 359 observaciones de un producto del equipo guardadas desde la carpeta de otro.
+  // El caso: observaciones de un producto del equipo guardadas desde la carpeta de otro.
   const { dir, root, db } = laboratorio(
     [{ repo: 'Totora', pin: 'totora' }, { repo: 'Pacara/BackEnd', pin: 'nimbobackend' }],
     [{ dir: 'Totora', project: 'totora' }, { dir: 'Totora', project: 'nimbobackend' }],
@@ -195,8 +194,8 @@ test('el CLI corre y no rompe; como require no ejecuta nada', () => {
   assert.equal(callado.trim(), '', 'el guard require.main es lo que permite testear las guardas sin disparar el CLI');
 });
 
-// ── T23 · R3_Lib_MovedRequires (story 8.12, tanda R3, AC 20) ─────────────────────────────────────────────────────────
-// El autoarreglo y la auditoría viven en scripts/lib/. Un `require` que quedó apuntando a la carpeta de antes no rompe al
+// ── T23 · R3_Lib_MovedRequires ─────────────────────────────────────────────────────────
+// El autoarreglo y la auditoría viven en scripts/lib/. Un `require` que apunta a una carpeta que ya no tiene la función no rompe al
 // cargar: rompe cuando se llega a esa función, y la auditoría lo traga como una categoría en rojo que se lee como «el
 // arnés anda mal» y no como «la auditoría no encuentra sus piezas». Por eso el caso no se conforma con que compile: cada
 // ruta relativa escrita existe, la auditoría con `--json` corre y mira las guías y las herramientas del clon (no de
@@ -217,7 +216,7 @@ function relativePaths(file) {
 }
 const existe = (abs) => { try { require.resolve(abs); return true; } catch { return fs.existsSync(abs); } };
 // Sólo la copia pública —que no lleva el mapa— se saltea. Con el mapa presente, ilegible o sin la entrada es un rojo
-// (pase adversarial de la R3: «sin entrada» leído como «copia pública» dejaba pasar en verde un reemplazo que falta).
+// (leer «sin entrada» como «copia pública» dejaría pasar en verde un reemplazo que falta).
 const MAP_PATH = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
 const HAS_MAP = fs.existsSync(MAP_PATH);
 /** HOME de mentira: la auditoría lee ~/.claude y el reemplazo anota su uso ahí; una prueba no toca el de la máquina. */

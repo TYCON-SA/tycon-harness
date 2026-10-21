@@ -1,19 +1,19 @@
 'use strict';
 /**
- * harness-snapshot.test.js — la copia de seguridad del mecanismo de instalación (story 8.13, tanda B · T20 y la parte
+ * harness-snapshot.test.js — la copia de seguridad del mecanismo de instalación (T20 y la parte
  * del aplicador `.sh` de T21).
  *
  * Lo que no se puede perder:
- *   T20 · `Snapshot_ManifestFixedListDedupRetention5_InstallPinned` (AC 17): antes de cada cambio el mecanismo copia una
- *         lista FIJA y declarada de archivos (la de la medición §2) a `~/.claude/.tycon-pipeline/harness/backups/
+ *   T20 · `Snapshot_ManifestFixedListDedupRetention5_InstallPinned`: antes de cada cambio el mecanismo copia una
+ *         lista FIJA y declarada de archivos (la que declara snapshot.js) a `~/.claude/.tycon-pipeline/harness/backups/
  *         <YYYYMMDD-HHMMSS>/` con su `manifest.json`; si el conjunto no cambió no crea otra; retiene 5 más la copia
  *         `install` más vieja (la única que no rota); nunca toca los `.bak` que el dev ya tiene, y los cuenta.
- *   T21 · `Applier_NoLegacyBakUnderHarness_YesStandalone` (AC 18, la parte del `install-tycon-hooks.sh`): con
- *         `TYCON_HARNESS_SNAPSHOT_DIR` puesta el aplicador no escribe sus `.bak` propios; suelto, como hoy.
+ *   T21 · `Applier_NoLegacyBakUnderHarness_YesStandalone` (la parte del `install-tycon-hooks.sh`): con
+ *         `TYCON_HARNESS_SNAPSHOT_DIR` puesta el aplicador no escribe sus `.bak` propios; suelto, sí los escribe.
  *         (La parte de `sync-claude-md-blocks.sh` vive en `sync-codex-detection.test.sh`; el `.ps1`, por lectura.)
  *
- * 🔴 rojo previo verificado: sin `scripts/setup/harness/snapshot.js` los casos T20 fallan en el `require`; T21 falla
- *    mientras el aplicador escriba `settings.json.bak.<ts>` y `pre-commit.bak-<ts>` aunque la variable esté puesta.
+ * 🔴 Sin `scripts/setup/harness/snapshot.js` los casos T20 fallan en el `require`; T21 falla
+ *    si el aplicador escribe `settings.json.bak.<ts>` y `pre-commit.bak-<ts>` aunque la variable esté puesta.
  * 🔴 Nada toca el HOME real: cada caso arma su HOME en el temporal; el aplicador real corre con un esqueleto de
  *    agent-skills (nunca un enlace al real), launchd de mentira, sin examen nocturno, sin entorno gráfico y sin Codex.
  */
@@ -42,7 +42,7 @@ function makeHome(name) {
   fs.mkdirSync(path.join(h, '.claude', '.tycon-pipeline'), { recursive: true });
   return h;
 }
-/** Un árbol de juguete con los dos comandos del arnés que la medición §2 cuenta («`~/.claude/commands/*.md` (2 archivos)»). */
+/** Un árbol de juguete con los dos comandos del arnés que la foto cuenta («`~/.claude/commands/*.md` (2 archivos)»). */
 function makeTree(name, commands = ['tycon-instincts.md', 'tycon-vigilante.md']) {
   const t = path.join(BASE, `tree-${name}-${Math.random().toString(36).slice(2, 8)}`);
   fs.mkdirSync(path.join(t, 'commands'), { recursive: true });
@@ -64,12 +64,12 @@ function clock(startIso = '2026-10-02T12:00:00Z') {
 test('T20 · files() es la lista fija de la medición §2 (AC 17), con sus rutas por defecto', () => {
   const home = '/Users/Lab-user';
   const tree = makeTree('list');
-  // La tabla de la medición (tasks/measurement-8.13-un-solo-mecanismo/medicion-2026-09-30.md §2) y el AC 17 de la
-  // story: settings.json y CLAUDE.md (bloques TYCON_BLOCK), tycon.json, el espejo y el despliegue de Codex (AGENTS.md,
+  // La lista declarada de snapshot.js:
+  // settings.json y CLAUDE.md (bloques TYCON_BLOCK), tycon.json, el espejo y el despliegue de Codex (AGENTS.md,
   // hooks.json, config.toml), los git hooks globales y sus `.local`, los `~/.claude/commands/*.md` DEL ARNÉS (2) y
-  // los dos LaunchAgents. Lo que la medición marca fuera (candado, sellos, logs, sqlite3, engram, los perfiles de
+  // los dos LaunchAgents. Lo que queda fuera (candado, sellos, logs, sqlite3, engram, los perfiles de
   // Codex por agente, los AGENTS.md punteros de los repos de producto) no entra: no es «cómo estaba la máquina».
-  // Los comandos son un SUPERCONJUNTO a propósito de «los del arnés» de la medición (pase adversarial F8): además de
+  // Los comandos son un SUPERCONJUNTO a propósito de «los del arnés»: además de
   // los que trae el árbol, cada `~/.claude/commands/*.md` que ya exista — un comando nuevo de una actualización puede
   // llamarse igual que uno propio del dev y pisarlo. Este HOME de laboratorio no existe: sólo aparecen los del árbol.
   const expected = [
@@ -254,11 +254,11 @@ test('T20 · take() respeta las variables: copia el settings.json y el pre-commi
   assert.strictEqual(S.countBak({ home, env, tree }), 1, 'countBak mira donde apuntan las variables');
 });
 
-// ─── regresiones del pase adversarial (step-05b, filas F7-F9) ──────────────────────────────────────────────────────
+// ─── regresiones ──────────────────────────────────────────────────────
 
 test('T20 · F7 · copia el AGENTS.md que escribe el espejo (CODEX_AGENTS_MD_PATH o ~/.codex/AGENTS.md), no sólo el de CODEX_HOME', () => {
-  // 🔴 rojo previo (probe traversal-completeness-2): con CODEX_HOME puesta, la copia miraba $CODEX_HOME/AGENTS.md y
-  //    sync-claude-md-blocks.sh pisaba ~/.codex/AGENTS.md (no mira CODEX_HOME) sin copia y sin .bak.
+  // 🔴 Con CODEX_HOME puesta, la copia mira el AGENTS.md que escribe el espejo, no $CODEX_HOME/AGENTS.md:
+  //    sync-claude-md-blocks.sh pisa ~/.codex/AGENTS.md (no mira CODEX_HOME) y sin esto quedaría sin copia y sin .bak.
   const S = snapshot();
   const home = makeHome('f7'); const tree = makeTree('f7', []);
   const mirror = path.join(home, '.codex', 'AGENTS.md');
@@ -283,8 +283,8 @@ test('T20 · F7 · copia el AGENTS.md que escribe el espejo (CODEX_AGENTS_MD_PAT
 });
 
 test('T20 · F8 · copia también los ~/.claude/commands/*.md del dev que ya existen (unión con los del árbol, sin duplicados)', () => {
-  // 🔴 rojo previo (probe traversal-completeness-4): la lista salía del árbol de ANTES del pull; un comando nuevo de la
-  //    actualización con el mismo nombre que uno propio del dev lo pisaba sin copia.
+  // 🔴 La lista sale del árbol de ANTES del pull; si saliera del de después, un comando nuevo de la
+  //    actualización con el mismo nombre que uno propio del dev lo pisaría sin copia.
   const S = snapshot();
   const home = makeHome('f8'); const tree = makeTree('f8', ['tycon-instincts.md']);
   const commands = path.join(home, '.claude', 'commands');
@@ -300,8 +300,8 @@ test('T20 · F8 · copia también los ~/.claude/commands/*.md del dev que ya exi
 });
 
 test('T20 · F9 · con el reloj corregido hacia atrás, la copia recién tomada es la más nueva: no se borra y take no devuelve una carpeta que no existe', () => {
-  // 🔴 rojo previo (probes determinism-ordering-1 y false-positive-edge-4): el orden salía del nombre de la carpeta (el
-  //    reloj); con seis copias «del futuro», prune borraba en el acto la recién tomada y take devolvía su ruta borrada.
+  // 🔴 El orden no sale del nombre de la carpeta (el
+  //    reloj): con seis copias «del futuro», prune borraría en el acto la recién tomada y take devolvería su ruta borrada.
   const S = snapshot();
   const home = makeHome('f9'); const tree = makeTree('f9', []);
   const settings = path.join(home, '.claude', 'settings.json');
@@ -337,7 +337,7 @@ test('T20 · F9 · los manifiestos sin seq (copias viejas) ordenan por nombre y 
   assert.strictEqual(S.list(home)[0].manifest.seq, 1, 'sin ninguna con seq, la primera es 1');
 });
 
-// ─── T23/T24 (tanda C, decisiones 1 y 2 del dueño): la copia siempre nueva al mover árboles y los commits en el manifiesto
+// ─── T23/T24: la copia siempre nueva al mover árboles y los commits en el manifiesto
 
 test('T23 · take({ force: true }) crea una copia nueva aunque el conjunto sea igual al de la anterior, y se cierra con finish', () => {
   const S = snapshot();
@@ -421,7 +421,7 @@ function runApplier(name, extraEnv) {
   write(path.join(gitHooks, 'pre-commit'), '#!/bin/sh\n# git-pre-commit-global.sh (versión vieja)\nexit 0\n');
   write(path.join(gitHooks, 'post-commit'), '#!/bin/sh\n# git-post-commit-global.sh (versión vieja)\nexit 0\n');
   if (extraEnv && extraEnv.TYCON_TEST_SEED_PRE_PUSH) {
-    // un pre-push propio de la persona, de antes del arnés (story 8.26, T55)
+    // un pre-push propio de la persona, de antes del arnés
     fs.copyFileSync(extraEnv.TYCON_TEST_SEED_PRE_PUSH, path.join(gitHooks, 'pre-push'));
     fs.chmodSync(path.join(gitHooks, 'pre-push'), 0o755);
     extraEnv = Object.assign({}, extraEnv, { TYCON_TEST_SEED_PRE_PUSH: undefined });
@@ -442,8 +442,8 @@ function runApplier(name, extraEnv) {
   }, extraEnv);
   for (const k of Object.keys(env)) if (env[k] === undefined) delete env[k];
   delete env.TF_BUILD;
-  // CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés (story 7.27) y, heredada, la
-  // instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite (harness-uninstall, 2026-10-15).
+  // CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés y, heredada, la
+  // instalación de prueba anotaría la carpeta de mods DE VERDAD de quien corre la suite.
   delete env.CLAUDE_CODE_PLUGIN_DIRS;
   const r = spawnSync('bash', [INSTALLER], { encoding: 'utf8', timeout: 300000, env });
   return { home, settings, gitHooks, rc: r.status, all: (r.stdout || '') + (r.stderr || '') };
@@ -460,7 +460,7 @@ test('T21 · bajo harness.js (TYCON_HARNESS_SNAPSHOT_DIR puesta) el aplicador no
   assert.ok(/git-pre-commit-global\.sh/.test(fs.readFileSync(path.join(r.gitHooks, 'pre-commit'), 'utf8')), 'el pre-commit se actualizó igual');
 });
 
-// story 8.26, tanda F1 (AC 52): el pre-push global —el freno antes de publicar— lo deja el mismo aplicador
+// el pre-push global —el freno antes de publicar— lo deja el mismo aplicador
 test('T55 · el aplicador deja el pre-push global del arnés, y el que la persona ya tenía pasa a pre-push.local', () => {
   const own = '#!/bin/sh\n# el pre-push propio de la persona\nexit 0\n';
   const seed = path.join(BASE, 't55-seed-pre-push');

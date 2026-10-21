@@ -1,10 +1,10 @@
 'use strict';
 
 /**
- * legacy-names-d2.test.js — el estado de la máquina en inglés (story 8.9, tanda D2 · 2026-10-01). T47.
+ * legacy-names-d2.test.js — el estado de la máquina en inglés. T47.
  *
  * Lo que no se puede perder:
- *   · Cada archivo de estado de ~/.claude/.tycon-pipeline/ de la lista del dueño tiene su entrada `state-file` en el mapa,
+ *   · Cada archivo de estado de ~/.claude/.tycon-pipeline/ de la lista tiene su entrada `state-file` en el mapa,
  *     y la primera escritura con el nombre nuevo se lleva lo que había en el viejo: lo escrito antes del renombre sigue
  *     ahí, lo nuevo se suma, y el viejo queda intacto byte a byte hasta el retiro. Una segunda escritura no vuelve a
  *     copiar (lo que alguien escribió después en el viejo no pisa el nuevo).
@@ -30,7 +30,7 @@ const LIB = path.join(RAIZ, 'scripts', 'lib', 'legacy-names.js');
 const TEAM = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && fs.existsSync(MAP);
 const SKIP_PUBLIC = !TEAM && 'copia pública: sin el mapa';
 
-// La lista del dueño (story, bajo el AC 44): catorce estados, más el sello de vencimiento que sumó el plan de la D2.
+// Los archivos de estado: catorce, más el sello de vencimiento.
 const EXPECTED_STATES = 15;
 const STATE_DIR = '~/.claude/.tycon-pipeline/';
 
@@ -172,7 +172,7 @@ test('T47d · BatchD_StateFilesMigrateOnWrite — --prepare-state: lo que abre b
 // esta máquina) con los estados VIEJOS sembrados con un contenido reconocible, y mira tres cosas: el nuevo trae lo del
 // viejo y lo de la corrida (o, si el escritor reescribe entero por diseño, existe con lo de la corrida); el viejo queda
 // intacto byte a byte; y nada sale de la juguete: sin red (los buzones son servidores locales), sin `az`, sin `sqlcmd`,
-// sin launchctl (dobles), sin modelo. Rojo previo de todos: el escritor todavía escribe con el nombre viejo, o escribe
+// sin launchctl (dobles), sin modelo. Fallan todos si el escritor escribe con el nombre viejo, o escribe
 // el nuevo sin llevarse el viejo.
 
 const SCRATCH = [];
@@ -186,14 +186,14 @@ const jsonlOf = (p) => (readOr(p) || '').split('\n').filter(Boolean).map((l) => 
 /**
  * agent-skills, por la regla común (scripts/lib/skills-dir.js; el mismo criterio que legacy-names-d1.test.js):
  * TYCON_SKILLS_DIR › el propio clon si es unido › la copia de la máquina. `null` si ahí no hay skills. Sin `catch`: si
- * la biblioteca no puede contestar, la suite es roja con la causa (story 8.18).
+ * la biblioteca no puede contestar, la suite es roja con la causa.
  */
 function skillsRoot() {
   const root = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
   return fs.existsSync(path.join(root, 'skills', 'tycon-pipeline')) ? root : null;
 }
-/** ¿Ese agent-skills ya trae la D2 (el puente con prepareStateWrite)? Uno anterior es el orden de los merges, no un
- *  defecto: el caso se saltea con motivo (pase adversarial de la D2, traversal-completeness-2). */
+/** ¿Ese agent-skills ya trae el puente con prepareStateWrite? Uno anterior es el orden de los merges, no un
+ *  defecto: el caso se saltea con motivo. */
 function skillsHasD2() {
   const s = skillsRoot();
   if (!s) return false;
@@ -638,7 +638,7 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   }
   for (const e of logs) fs.writeFileSync(path.join(st, base(e.old)), `antes: ${base(e.new)}\n`);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
-    // PROFILE_FULL: lo fija el instalador antes de este bloque (8.16 C: el rescate y la recolección son de full)
+    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
     env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
   assert.strictEqual(r.status, 0, r.stderr);
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
@@ -651,8 +651,7 @@ test('T47n · BatchD_StateFilesMigrateOnWrite — el instalador copia los cuatro
   for (const e of logs) assert.strictEqual(readOr(path.join(st, base(e.old))), `antes: ${base(e.new)}\n`, `${base(e.old)}: intacto`);
 });
 
-// ── lo que encontraron los revisores y el pase adversarial (D2) ─────────────────────────────────────────────────────
-// Cada caso falla con el código de antes del arreglo (corrido contra la copia del ensayo anterior).
+// ── casos de borde del estado ─────────────────────────────────────────────────────────────────────────────────────
 
 const ROOT_USER = typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -665,7 +664,7 @@ test('T47o · BatchD_StateFilesMigrateOnWrite — oldPathOf: la ruta vieja de un
   assert.ok(!fs.existsSync(stateOf(home, 'legacy-names.jsonl')), 'mirar no es usar el nombre viejo: no se anota');
 });
 
-// revisor de fallos silenciosos (SILENT-C2): «no pude mirar» el viejo no es «no hay viejo».
+// SILENT-C2: «no pude mirar» el viejo no es «no hay viejo».
 test('T47p · BatchD_StateFilesMigrateOnWrite — un estado viejo que no se deja mirar es error, no «no hay nada que migrar»', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, () => {
   const home = toyHomeW('locked');
   const cerrado = path.join(home, 'cerrado');
@@ -706,14 +705,14 @@ async function installerBlock(p, prep) {
   }
   prep(st);
   const r = spawnSync('bash', ['-c', 'source "$1"', '_', bloque], { encoding: 'utf8', timeout: 20000,
-    // PROFILE_FULL: lo fija el instalador antes de este bloque (8.16 C: el rescate y la recolección son de full)
+    // PROFILE_FULL: lo fija el instalador antes de este bloque (el rescate y la recolección son de full)
     env: cleanEnv({ HOME: home, SCRIPT_DIR: sd, CHECK_ONLY: '0', TYCON_INTEG_MAILBOX: '1', PROFILE_FULL: '1', ORDER_LOG: orden }) });
   for (let n = 0; n < 60 && (readOr(orden) || '').split('\n').filter(Boolean).length < 4; n++) await new Promise((ok) => setTimeout(ok, 250));
   await new Promise((ok) => setTimeout(ok, 300));
   return { r, st, orden };
 }
 
-// revisor de fallos silenciosos (SILENT-C1): una copia que falla en el arranque deja rastro, y las demás se hacen igual.
+// SILENT-C1: una copia que falla en el arranque deja rastro, y las demás se hacen igual.
 test('T47q · BatchD_StateFilesMigrateOnWrite — si el instalador no puede llevar un registro viejo, queda en hook-errors.log y los otros se llevan igual', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, async () => {
   const logs = ['download-runs.log', 'upload-runs.log', 'collect-findings.log', 'thread-rescue.log'].map(byNew);
   const cerrado = byNew('collect-findings.log');
@@ -735,7 +734,7 @@ test('T47q · BatchD_StateFilesMigrateOnWrite — si el instalador no puede llev
   } finally { if (st0) try { fs.chmodSync(path.join(st0, base(cerrado.old)), 0o644); } catch (_) { /* */ } }
 });
 
-// pase adversarial (traversal-completeness / false-negative): un nombre de estado viejo que quede en agent-skills también
+// un nombre de estado viejo que quede en agent-skills también
 // es una mención de más. Un estado vive en la HOME, no en un repo: las dos fuentes se miran.
 test('T47r · BatchD_StateFilesMigrateOnWrite — --stale-mentions cuenta un estado viejo nombrado en agent-skills', { skip: SKIP_PUBLIC }, () => {
   const e = byNew('console-writes');
@@ -756,7 +755,7 @@ test('T47r · BatchD_StateFilesMigrateOnWrite — --stale-mentions cuenta un est
   assert.ok(found.some((f) => f.endsWith('skills/x/scripts/escribe.js')), found.join(', '));
 });
 
-// pase adversarial (clase 7): si la recolección falla, el sello viejo (que queda intacto) no puede volver a contestar por
+// si la recolección falla, el sello viejo (que queda intacto) no puede volver a contestar por
 // la serie con su fecha vieja: la falla queda dicha en el nuevo.
 test('T47s · BatchD_StateFilesMigrateOnWrite — collect-findings.js: una recolección que falla no resucita el sello viejo', { skip: SKIP_PUBLIC }, async () => {
   const seal = byNew('findings-seal.json');
@@ -781,7 +780,7 @@ test('T47s · BatchD_StateFilesMigrateOnWrite — collect-findings.js: una recol
   assert.strictEqual(readOr(stateOf(home, base(seal.old))), viejo, `${base(seal.old)}: intacto`);
 });
 
-// pase adversarial (clase 8): la página de corridas se regenera entera; no poder llevar la vieja no la frena.
+// la página de corridas se regenera entera; no poder llevar la vieja no la frena.
 test('T47t · BatchD_StateFilesMigrateOnWrite — la vista de corridas se escribe aunque la página vieja no se pueda copiar', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, async () => {
   const e = byNew('runs-dashboard.html');
   const home = toyHomeW('runs-err');
@@ -796,10 +795,10 @@ test('T47t · BatchD_StateFilesMigrateOnWrite — la vista de corridas se escrib
   } finally { fs.chmodSync(vieja, 0o644); }
 });
 
-// revisores de pruebas y de fallos silenciosos (vuelta 2): los lectores y los escritores que no pueden mirar o llevar un
+// Los lectores y los escritores que no pueden mirar o llevar un
 // estado lo DICEN. Los que leen el sello del examen, con la carpeta de estado cerrada; los que agregan una medición, con
-// el registro viejo sin poder copiarse. Rojo previo: el examen y el aviso caían al nombre nuevo callados, y la medición
-// de reglas y de sql no se anotaba sin decir nada.
+// el registro viejo sin poder copiarse. Sin esto, el examen y el aviso caen al nombre nuevo callados, y la medición
+// de reglas y de sql no se anota sin decir nada.
 test('T47u · BatchD_StateFilesMigrateOnWrite — no poder mirar o llevar un estado se dice: examen, aviso del banco, reglas y sql', { skip: SKIP_PUBLIC || (ROOT_USER && 'como root los permisos no frenan') }, async () => {
   // lectores del sello del examen: la carpeta de estado cerrada
   const cerrada = toyHomeW('lectores');
@@ -809,7 +808,7 @@ test('T47u · BatchD_StateFilesMigrateOnWrite — no poder mirar o llevar un est
     const ex = await run(process.execPath, [path.join(RAIZ, 'scripts', 'controls-bench', 'periodic-exam.js'), '--dry-run'], { env: cleanEnv({ HOME: cerrada }) });
     assert.match(ex.stderr, /examen-periodico: no pude mirar .*periodic-exam-last-run/, `el examen lo dice\n${ex.stderr}`);
     // la carpeta local del banco de juguete: sin ella el aviso sale antes de mirar los sellos (una copia recién
-    // clonada no la tiene; visto en el ensayo del commit)
+    // clonada no la tiene)
     const bench = scratch('bench');
     const av = await run(process.execPath, [path.join(RAIZ, 'scripts', 'hooks', 'bench-notice.js')], { input: '{"source":"startup"}', env: cleanEnv({ HOME: cerrada, TYCON_BENCH_DIR: bench }) });
     assert.match(av.stdout + av.stderr, /aviso del banco: no pude mirar .*periodic-exam-last-run/, `el aviso del arranque lo dice\n${av.stderr}`);

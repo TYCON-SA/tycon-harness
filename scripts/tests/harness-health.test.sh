@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-health.test.sh — la comprobación de salud después de aplicar una versión (story 8.13, tanda C · T25, AC 21).
+# harness-health.test.sh — la comprobación de salud después de aplicar una versión (T25).
 #
 # Lo que no se puede perder:
 #   T25 · una versión nueva que deja la máquina rota NO se da por buena porque el aplicador salió 0. Cuatro roturas: un
@@ -15,27 +15,27 @@
 #         payload mínimo desde un repo vacío temporal que se borra; sale 2 = falla, tope vencido = aviso; `node --check` /
 #         `bash -n` de cada hook del reporte (`@tcg:x` → árbol, lo demás → agent-skills); «FALLÓ» en la salida del
 #         aplicador; `doctor --json` con `fail` (o que no responde) = falla.
-#   T99 · (story 8.17, tanda W3a) en Windows la sintaxis de un hook `.sh` se revisa con el bash de Git, nunca con el
+#   T99 · en Windows la sintaxis de un hook `.sh` se revisa con el bash de Git, nunca con el
 #         `bash` del PATH (puede ser el lanzador de WSL); sin el de Git, aviso «sin comprobar» y no falla; un `.sh` con
 #         `\r\n` es un AVISO con el guion y el remedio, nunca una falla (está en el disco del clon: volver atrás no lo
 #         arregla), y uno que no se puede leer es «sin comprobar»; y el primer `.sh` de un evento se lanza con ese bash,
-#         no con cmd.exe. En Mac y Linux, como antes.
+#         no con cmd.exe. En Mac y Linux no cambia.
 #   EPIPE · un hook que sale sin leer su payload corrió: el EPIPE que trae spawnSync con el código de salida no es «no pude
-#         lanzarlo» (era un aviso falso de a ratos, y el rojo inestable de T99 en public-ci).
+#         lanzarlo» (sin esto, la salud da un aviso falso de a ratos y T99 sale rojo inestable en public-ci).
 #
-# Nota de laboratorio (el Given/Fixture de la story ya lo dice así): con `chmod 000` git no puede ni mirar el archivo y el
+# Nota de laboratorio: con `chmod 000` git no puede ni mirar el archivo y el
 # merge falla con «would be overwritten by merge» (bloqueada, no interrumpida). El texto que decide `interrupted` («unable to unlink»)
 # sale con el directorio sin permiso de ESCRITURA (`chmod 555`), que es lo que se usa acá. Como root (CI en contenedor)
 # los permisos no frenan nada: ese caso se omite y se dice.
 #
 # Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude ni el checkout real. 🔴 Sin pipes sobre el comando medido.
 #
-#   T38 · (story 8.18, AC 35 y 37) la salud en las tres formas de máquina que deja la unión de los dos repos: un hook de
+#   T38 · la salud en las tres formas de máquina que deja la unión de los dos repos: un hook de
 #         skills llega, se registra con la ruta fija ~/.claude/agent-skills y la salud pasa; en la máquina re-apuntada un
 #         hook roto hace volver las DOS fuentes al mismo commit; y una mudanza que no pudo pasar no tira abajo la salud.
 #
 # Uso: bash scripts/tests/harness-health.test.sh [--only T25|T25-DENY|T25-SYNTAX|T25-HARNESS|T25-SUITE|T25-SANA|T25-INTERRUPTED|UNIT|T38|T38-PROFILE|T99|EPIPE]
-#   (T38 de la story 8.18 y T38-PROFILE de la 8.16, tanda C: la salud en minimal, con eventos sin hooks)
+#   (T38 es la salud en las tres formas de máquina; T38-PROFILE, la salud en minimal, con eventos sin hooks)
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
@@ -197,8 +197,8 @@ if corre T25-INTERRUPTED; then
   fi
 fi
 
-# ═══ REG (pase adversarial de la tanda C, iteración 1) ══════════════════════════════════════════════════════════════════
-# H3/H4 · una instalación que falló la salud no se condena sola: el `failed` viejo no hace fallar la salud siguiente
+# ═══ REG (regresiones de la salud) ══════════════════════════════════════════════════════════════════
+# REG-H3 y REG-H4 · una instalación que falló la salud no se condena sola: el `failed` viejo no hace fallar la salud siguiente
 if corre REG-H3; then
   echo "· reg-h3"
   harness_lab_create "$BASE/reg-h3" >/dev/null
@@ -215,7 +215,7 @@ if corre REG-H3; then
   case "$(estado "d.get('notice') or ''")" in *"comprobación de salud no pasó"*) mal "REG-H3 startup --force falló la salud por el failed viejo: $(estado "d.get('notice')")" ;; *) ok "REG-H3 startup --force no falla la salud por un intento viejo registrado" ;; esac
 fi
 
-# H18 · la sesión muere en medio de la salud (después de mover los árboles): el arranque siguiente la corre y no da la
+# REG-H18 · la sesión muere en medio de la salud (después de mover los árboles): el arranque siguiente la corre y no da la
 # versión por buena sin pasarla. El hook de juguete mata a harness.js la primera vez que la salud lo lanza.
 if corre REG-H18; then
   echo "· reg-h18"
@@ -236,7 +236,7 @@ if corre REG-H18; then
   [ "$(copia_fija_hash)" != "$COPIA_V1" ] && ok "REG-H18 …y recién ahí se refrescó la copia fija" || mal "REG-H18 la copia fija no se refrescó tras la salud pendiente"
 fi
 
-# S1 (fallos silenciosos, iteración 2) · la salud pendiente que se retoma no queda ciega a la suite rápida: las líneas
+# S1 · la salud pendiente que se retoma no queda ciega a la suite rápida: las líneas
 # «FALLÓ» del aplicador de esa actualización se guardan con la constancia y el arranque siguiente las mira
 if corre REG-S1; then
   echo "· reg-s1"
@@ -255,8 +255,8 @@ if corre REG-S1; then
   [ "$(estado "(d.get('failed') or {}).get('reason')")" = health ] && [ "$(head_de "$LAB_TREE")" = "$V1_T" ] && ok "REG-S1 la salud retomada ve el «FALLÓ» guardado y vuelve a v1" || mal "REG-S1 salud retomada ciega: failed=$(estado "d.get('failed')") HEAD $(head_de "$LAB_TREE") (v1 $V1_T)"
 fi
 
-# S2 (fallos silenciosos, iteración 2) · `install` también deja la constancia de salud pendiente: si la sesión muere en
-# el medio, el arranque siguiente la corre (antes la instalación quedaba «sana» sin haberse comprobado)
+# S2 (fallos silenciosos) · `install` también deja la constancia de salud pendiente: si la sesión muere en
+# el medio, el arranque siguiente la corre (sin esto, la instalación queda «sana» sin haberse comprobado)
 if corre REG-S2; then
   echo "· reg-s2"
   harness_lab_create "$BASE/reg-s2" >/dev/null
@@ -271,7 +271,7 @@ if corre REG-S2; then
   [ "$(estado "d.get('failed')")" = None ] && [ "$(estado "d.get('last_health')")" != None ] && ok "REG-S2 el arranque siguiente corrió la salud pendiente" || mal "REG-S2 tras el arranque: failed=$(estado "d.get('failed')") last_health=$(estado "d.get('last_health')")"
 fi
 
-# H19 · una actualización sólo de agent-skills que falla se nombra con el sha de agent-skills (no «X → X»)
+# REG-H19 · una actualización sólo de agent-skills que falla se nombra con el sha de agent-skills (no «X → X»)
 if corre REG-H19; then
   echo "· reg-h19"
   harness_lab_create "$BASE/reg-h19" >/dev/null
@@ -301,8 +301,8 @@ if corre UNIT; then
   printf 'setTimeout(()=>process.exit(0), 4000);\n' > "$SK/tycon-pipeline/slow.js"
   printf 'process.exit(0);\n' > "$SK/tycon-pipeline/fine.js"
   # el hook sano lee su payload, como los de verdad: uno que sale sin leerlo deja a spawnSync con EPIPE de a ratos, y la
-  # salud lo anota como «no pude lanzarlo» (T99 rojo de a ratos en public-ci, 2026-10-14). Ese aviso de la salud es
-  # otro arreglo, aparte
+  # salud lo anota como «no pude lanzarlo» (sin esto, T99 sale rojo de a ratos en public-ci). Ese aviso de la salud se
+  # cubre aparte, en EPIPE
   printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
   # doctores de mentira: uno en rojo, uno verde, uno que no arranca
   printf 'process.stdout.write(JSON.stringify({mode:"managed",fail:["fuente harness: algo rojo de laboratorio"],warn:[],ok:[]})); process.exitCode=1;\n' > "$U/doctor-red.js"
@@ -393,7 +393,7 @@ for l in open(sys.argv[1]):
   [ "$(u "any('no-existe.js' in f for f in d['failures'])")" = True ] && ok "UNIT un hook registrado sin su archivo es falla" || mal "UNIT sin la falla de no-existe.js: $(u "d['failures']")"
 fi
 
-# ═══ T38 (story 8.18, AC 35 y 37) · la comprobación de salud en las tres formas de máquina ═══════════════════════════
+# ═══ T38 · la comprobación de salud en las tres formas de máquina ═══════════════════════════
 # Un hook nuevo de skills llega por donde corresponde a cada forma (el repo viejo, o el unificado), queda registrado con la
 # ruta fija ~/.claude/agent-skills/skills/…, y la salud entera pasa. Y el espejo: un hook de skills ROTO en la máquina
 # re-apuntada hace volver las DOS fuentes a la versión anterior — el mismo commit en los dos clones, o ninguno se movió.
@@ -439,15 +439,15 @@ if corre T38; then
   case "$(estado "d.get('notice')")" in *"comprobación de salud no pasó"*) mal "T38 una mudanza bloqueada tiró abajo la salud: $(estado "d.get('notice')")" ;; *"la llave pide el repo unificado"*) ok "T38 una mudanza que no pudo pasar no tira abajo la comprobación de salud (queda su propio aviso)" ;; *) mal "T38 aviso inesperado: $(estado "d.get('notice')")" ;; esac
 fi
 
-# ═══ T99 ·Health_ShHookSyntax_GitBashNotBareBash_CrlfIsRed (story 8.17, tanda W3a · AC 72) ═════════════════════════════
+# ═══ T99 ·Health_ShHookSyntax_GitBashNotBareBash_CrlfIsRed ═════════════════════════════
 # En Windows `bash` a secas puede ser el lanzador de WSL (sale distinto de 0 con cualquier guion): con él, la sintaxis de un
-# hook `.sh` sano daba «falla» y la actualización volvía atrás. La salud usa el bash de Git; sin él, avisa «sin comprobar».
+# hook `.sh` sano da «falla» y la actualización vuelve atrás. La salud usa el bash de Git; sin él, avisa «sin comprobar».
 # Y un `.sh` con `\r\n` se DICE (`bash -n` lo da por bueno, pero al correr sale 255 y un freno así no frena) como AVISO, no
-# como rojo (primera vuelta de revisión; el nombre del caso conserva «CrlfIsRed» porque así está en la tabla de la story).
+# como rojo (el nombre del caso conserva «CrlfIsRed»).
 # La plataforma se inyecta (no hay Windows acá). El «bash de Git» de juguete anota cada llamada y, como el de verdad, pone
 # lo suyo primero en el PATH; el `bash` de juguete que queda primero en el PATH anota y sale 1, como el lanzador de WSL.
-# 🔴 rojo previo: con la salud de antes, en Windows el `.sh` sano fallaba («bash -n falló: rc 1»), el `bash` del PATH se
-#    usaba (queda su registro) y el `.sh` con `\r\n` pasaba.
+# 🔴 Sin el arreglo, en Windows el `.sh` sano falla («bash -n falló: rc 1»), el `bash` del PATH
+#    se usa (queda su registro) y el `.sh` con `\r\n` pasa.
 if corre T99; then
   echo "· t99"
   harness_lab_create "$BASE/t99" >/dev/null
@@ -455,8 +455,8 @@ if corre T99; then
   SK="$LAB_SKILLS/skills"
   HEALTH_JS="$RAIZ/scripts/setup/harness/health.js"
   # el hook sano lee su payload, como los de verdad: uno que sale sin leerlo deja a spawnSync con EPIPE de a ratos, y la
-  # salud lo anota como «no pude lanzarlo» (T99 rojo de a ratos en public-ci, 2026-10-14). Ese aviso de la salud es
-  # otro arreglo, aparte
+  # salud lo anota como «no pude lanzarlo» (sin esto, T99 sale rojo de a ratos en public-ci). Ese aviso de la salud se
+  # cubre aparte, en EPIPE
   printf '#!/usr/bin/env bash\ncat > /dev/null\nexit 0\n' > "$LAB_TREE/scripts/hooks/fine-stop.sh"
   printf '#!/usr/bin/env bash\nif then fi\n' > "$LAB_TREE/scripts/hooks/broken.sh"
   printf '#!/usr/bin/env bash\r\nexit 0\r\n' > "$LAB_TREE/scripts/hooks/crlf-guard.sh"
@@ -504,8 +504,8 @@ JS
   [ "$(u99 "sum(1 for w in d['warnings'] if 'sin comprobar' in w and ('fine-stop.sh' in w or 'broken.sh' in w)) >= 2")" = True ] && ok "T99 Windows sin bash de Git: avisa «sin comprobar» por cada .sh" || mal "T99 Windows sin bash de Git: avisos $(u99 "d['warnings']")"
   [ ! -e "$U/bare-bash.log" ] && ok "T99 Windows sin bash de Git: tampoco usa el bash del PATH" || mal "T99 Windows sin bash de Git: usó el bash del PATH: $(tr '\n' '|' < "$U/bare-bash.log")"
 
-  # (c) Windows: un .sh con \r\n en disco es un AVISO, con el guion y el remedio; NUNCA una falla (primera vuelta de
-  #     revisión de la W3a). El \r\n está en el disco del clon, no lo trajo la versión nueva: si fuera falla, la
+  # (c) Windows: un .sh con \r\n en disco es un AVISO, con el guion y el remedio; NUNCA una falla.
+  #     El \r\n está en el disco del clon, no lo trajo la versión nueva: si fuera falla, la
   #     actualización volvería atrás, volver atrás no lo arregla, y se repetiría en cada `update`.
   OUT="$U/t99-c.json"
   CLAUDE_CODE_GIT_BASH_PATH="$U/git/bin/bash.exe" salud99 "$OUT" win32 'Stop:@tcg:fine-stop.sh' 'Stop:@tcg:crlf-guard.sh'; RC=$?
@@ -531,7 +531,7 @@ JS
   [ "$(u99 "any('locked-guard.sh' in w and 'sin comprobar' in w for w in d['warnings'])")" = True ] && ok "T99 Windows: un .sh que no se puede leer es un aviso «sin comprobar» (no un verde callado)" || mal "T99 Windows: el .sh ilegible no dio aviso «sin comprobar»: avisos $(u99 "d['warnings']") fallas $(u99 "d['failures']")"
   [ "$(u99 "d['ok']")" = True ] && [ "$(u99 "any('locked-guard.sh' in f for f in d['failures'])")" = False ] && ok "T99 Windows: …y no es falla (la salud queda en verde)" || mal "T99 Windows: el .sh ilegible salió como falla: $(u99 "d['failures']")"
   [ "$(grep -c 'locked-guard' "$U/git-bash.log" 2>/dev/null)" = 0 ] && ok "T99 Windows: …y su sintaxis no se manda a revisar (fallaría por lo mismo)" || mal "T99 Windows: el .sh ilegible se mandó al bash de Git: $(tr '\n' '|' < "$U/git-bash.log" 2>/dev/null)"
-  # el espejo: en Mac y Linux nada cambia — un .sh ilegible sigue siendo falla de `bash -n`, como antes
+  # el espejo: en Mac y Linux nada cambia — un .sh ilegible sigue siendo falla de `bash -n`
   OUT="$U/t99-c4.json"
   salud99 "$OUT" linux 'Stop:@tcg:fine-stop.sh' 'Stop:@tcg:locked-guard.sh'; RC=$?
   [ "$(u99 "any('locked-guard.sh' in f for f in d['failures'])")" = True ] && [ "$(u99 "any('sin comprobar' in w for w in d['warnings'])")" = False ] && ok "T99 espejo linux: un .sh ilegible sigue siendo falla de bash -n, como antes" || mal "T99 espejo linux del .sh ilegible: fallas $(u99 "d['failures']") avisos $(u99 "d['warnings']")"
@@ -549,7 +549,7 @@ JS
   done
 fi
 
-# ═══ T38 (story 8.16, tanda C · AC 28) · la salud en minimal: eventos sin ningún hook no son una falla ══════════════════
+# ═══ T38-PROFILE · la salud en minimal: eventos sin ningún hook no son una falla ══════════════════
 # minimal no trae hooks de Stop (ni la mayoría de los de los otros eventos): la comprobación lanza el primer hook de cada
 # evento QUE TENGA alguno, y un evento vacío no se juzga. La parte de doctor vive en harness-doctor.test.sh.
 if corre T38-PROFILE; then
@@ -584,11 +584,11 @@ JS
 fi
 
 # ═══ EPIPE · un hook que sale sin leer su payload CORRIÓ: no es «no pude lanzarlo» ═════════════════════════════════════
-# public-ci, 2026-10-14: T99 salió rojo de a ratos con «hook Stop:@tcg:fine-stop.sh: no pude lanzarlo (spawnSync …
+# En public-ci, T99 sale rojo de a ratos con «hook Stop:@tcg:fine-stop.sh: no pude lanzarlo (spawnSync …
 # EPIPE)». fine-stop.sh es `exit 0`: si termina antes de que spawnSync le escriba el payload, spawnSync trae EPIPE y
-# TAMBIÉN el código de salida del hook. La salud miraba sólo `r.error`. Acá el EPIPE se provoca siempre: un payload más
+# TAMBIÉN el código de salida del hook: la salud mira los dos, no sólo `r.error`. Acá el EPIPE se provoca siempre: un payload más
 # grande que el búfer del caño y un hijo que sale sin leer (node, no un shell: vale igual en Windows).
-# 🔴 rojo previo: `r.error` viene puesto (lo que la salud miraba antes), así que el hook sano era un aviso.
+# 🔴 Sin el arreglo, `r.error` viene puesto y el hook sano sale como aviso.
 if corre EPIPE; then
   echo "· epipe"
   U="$BASE/epipe"; mkdir -p "$U"

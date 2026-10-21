@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * legacy-names-c2.test.js — lo que llaman los productos y las guías, renombrado (story 8.9, tanda C2 · 2026-10-01).
+ * legacy-names-c2.test.js — lo que llaman los productos y las guías, renombrado.
  * T39 (T40 es manual: un pipeline de producto real corre verde una vez, por id).
  *
  * Lo que no se puede perder:
@@ -9,7 +9,7 @@
  *     en producción lo hacen desde el artefacto `arnes-ci`, que es SÓLO esa carpeta (sin `scripts/lib` ni el mapa). El
  *     reemplazo de cada guion renombrado tiene que estar en el artefacto y andar ahí solo (T39a, T39b).
  *   · Un producto nuevo nace con los nombres nuevos: las plantillas de pipeline de la skill de alta (`new-product-templates/
- *     pipelines/`) no nombran ningún guion viejo de la tanda (T39c).
+ *     pipelines/`) no nombran ningún guion viejo (T39c).
  *   · Las guías muestran sólo el nombre nuevo (T39d) y los pasos de un pipeline de producto real siguen dando lo mismo
  *     contra el árbol renombrado (T39e = T32 corrida otra vez).
  *
@@ -30,7 +30,7 @@ const TEAM = fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) && fs.existsSy
 const SKIP_PUBLIC = !TEAM && 'copia pública: sin el mapa';
 const SHIM_MARK = 'tycon-legacy-shim:';
 
-// Lo que el plan de la tanda aprobó (plan-c2.md): 30 ejecutables, 15 de ellos en scripts/ci.
+// Los ejecutables renombrados: 30, 15 de ellos en scripts/ci.
 const EXPECTED_FILES = 30;
 const EXPECTED_CI = 15;
 
@@ -128,12 +128,12 @@ test('T39d · BatchC2_GuidesShowNewName — ninguna guía ni el README nombra un
   const found = JSON.parse(r.stdout);
   const list = found.findings;
   assert.ok(Array.isArray(list), `--stale-mentions --json sin «findings»: ${r.stdout.slice(0, 200)}`);
-  // --stale-mentions sólo marca lo ya mudado: sin la tanda mudada, «nada que marcar» no dice nada
+  // --stale-mentions sólo marca lo ya mudado: si nada está mudado, «nada que marcar» no dice nada
   assert.strictEqual(c2Files().filter((e) => isShim(path.join(RAIZ, e.old))).length, EXPECTED_FILES, 'la tanda no está mudada');
   const olds = new Set(c2Files().map((e) => e.old));
   const bases = new Set(c2Files().map((e) => path.posix.basename(e.old)));
   // cada hallazgo trae su archivo en `rel` (la forma de --stale-mentions): si el campo cambiara de nombre, este filtro
-  // dejaría pasar todo en silencio — por eso se exige antes de filtrar (pase adversarial de la C2)
+  // dejaría pasar todo en silencio — por eso se exige antes de filtrar
   for (const m of list) assert.ok(typeof m.rel === 'string' && typeof m.old === 'string', `hallazgo sin rel/old: ${JSON.stringify(m)}`);
   const isOurs = (m) => /\.md$/.test(m.rel) && (olds.has(m.old) || bases.has(path.posix.basename(m.old)));
   assert.ok(isOurs({ rel: 'README.md', old: c2Files()[0].old }), 'el filtro reconoce una mención vieja en una guía');

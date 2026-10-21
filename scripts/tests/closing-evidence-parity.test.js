@@ -1,9 +1,9 @@
 'use strict';
 /**
- * Paridad de las DOS definiciones de «evidencia de cierre» (2026-09-06).
+ * Paridad de las DOS definiciones de «evidencia de cierre».
  *
- * El criterio vivía en cuatro lugares y decían cosas distintas — el freno del Edit aceptaba la
- * matriz y el self-audit, el commit y el portón no, y el medidor contaba hasta un `.jsonl`. Ahora
+ * Con el criterio repetido en cuatro lugares, cada uno dice algo distinto (el freno del Edit acepta la
+ * matriz y el self-audit, el commit y el portón no, y el medidor cuenta hasta un `.jsonl`). Por eso
  * hay UNA definición en el skill (`lib/closing-evidence.js`), que importan los dos hooks, y una
  * COPIA deliberada en el portón de CI, que corre en un agente sin `~/.claude/` y no puede importar
  * la lib. El medidor del tablero importa la del portón (mismo repo), así que son dos copias en
@@ -13,7 +13,7 @@
  * y se compara el veredicto. Sin la lib del skill en la máquina NO pasa en silencio: avisa y se
  * saltea — un skip mudo sería el mismo pecado que este test existe para evitar.
  *
- * 🔴 rojo previo verificado: quitarle un patrón a la copia del portón pone rojo este test.
+ * 🔴 quitarle un patrón a la copia del portón pone rojo este test.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -21,10 +21,9 @@ const os = require('os');
 const path = require('path');
 
 const gate = require(path.join(__dirname, '..', 'ci', 'tycon-ci-gate.js'));
-// 🔴 2026-10-14: esta ruta apuntaba a `evidencia-de-cierre.js` en las skills instaladas, y la biblioteca se llama
-// `closing-evidence.js` desde que los nombres pasaron al inglés. El require fallaba siempre y el test se salteaba
-// con su aviso: la paridad no se medía en ningún lado. Ahora las skills se buscan como el resto del arnés
-// (scripts/lib/skills-dir.js: la variable, el propio clon si es unido, o las instaladas), con el nombre de hoy.
+// 🔴 Las skills se buscan como el resto del arnés (scripts/lib/skills-dir.js: la variable, el propio clon si es unido,
+// o las instaladas), con el nombre `closing-evidence.js`. Con una ruta que no existe, el require falla siempre y el test
+// se saltea con su aviso: la paridad no se mide en ningún lado.
 const libPath = (() => {
   try {
     const skills = require(path.join(__dirname, '..', 'lib', 'skills-dir.js')).resolveSkillsDirs().skills;

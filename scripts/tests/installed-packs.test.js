@@ -1,16 +1,16 @@
 'use strict';
 
 /**
- * installed-packs.test.js — T13 de la story 8.2: lo que lee los manifiestos además del pipeline.
+ * installed-packs.test.js — T13: lo que lee los manifiestos además del pipeline.
  *
  * `harness-audit.js` (¿están instalados los revisores que el equipo espera?) e `instinct-draft.js`
- * (¿a qué revisor le toca una regla nueva por su prefijo?) tenían a los revisores de Bizuit y de
- * clientes escritos a mano. Desde la 8.2 los dos leen `scripts/lib/installed-packs.js`, que
+ * (¿a qué revisor le toca una regla nueva por su prefijo?) no llevan a los revisores de Bizuit ni de
+ * clientes escritos a mano: los dos leen `scripts/lib/installed-packs.js`, que
  * descubre los manifiestos en `TYCON_PACKS_DIR` o en `~/.claude/agent-skills/packs`.
  *
  * Lo que sostiene: un paquete de prueba con un revisor y un prefijo NUEVOS → la auditoría exige su
  * agente e `instinct-draft` le asigna el prefijo; sin el paquete, ninguno lo nombra. Y un manifiesto
- * ilegible sale como FALLA de la auditoría, no como «sin paquete» (AC 11 + el principio de la 8.2).
+ * ilegible sale como FALLA de la auditoría, no como «sin paquete».
  */
 
 const test = require('node:test');
@@ -95,14 +95,14 @@ test('un manifiesto ilegible sale como error con archivo y motivo, no como «sin
   assert.match(r.errores[0].motivo, /JSON/i);
 });
 
-// Story 8.10, AC 24 (T36): los hermanos del corral del banco viven en el paquete que los usa, no en el núcleo.
+// T36: los hermanos del corral del banco viven en el paquete que los usa, no en el núcleo.
 test('PackReader_DeliversSiblings', () => {
   const { leerPaquetes, siblingsFromPacks } = require(LIB);
   const siblings = [
     { path: 'AcmeCorp/Backend/src/AcmeCorpBackend', name: 'AcmeCorp' },
     { path: 'Zorblax/Backend/src/ZorblaxBackend', name: 'Zorblax' },
   ];
-  // lo que entrega el lector conserva su forma de siempre (story 8.9, pregunta decidida 2)
+  // lo que entrega el lector conserva su forma de siempre
   const hermanos = siblings.map((s) => ({ ruta: s.path, nombre: s.name }));
   const packsDir = paquetes({ clientes: { ...PRUEBA, name: 'clientes', siblings }, sinHermanos: PRUEBA });
   const r = leerPaquetes({ packsDir });
@@ -117,8 +117,7 @@ test('PackReader_DeliversSiblings', () => {
     const m = leerPaquetes({ packsDir: d });
     assert.equal(m.paquetes.length, 0, `un paquete con «hermanos» mal formado no se entrega (${JSON.stringify(malo)})`);
     assert.match(m.errores[0].motivo, /hermanos/);
-    // y el corral no se arma a medias: un paquete roto frena, no se lee como «sin paquete» (story 8.2; revisor de
-    // fallos silenciosos y pase adversarial de la tanda B)
+    // y el corral no se arma a medias: un paquete roto frena, no se lee como «sin paquete»
     assert.throws(() => siblingsFromPacks({ packsDir: d }), /hermanos/, 'un paquete roto frena el corral y dice por qué');
   }
   assert.throws(() => siblingsFromPacks({ packsDir: path.join(tmp('paq-x-'), 'no-existe') }), /no existe/,
@@ -129,7 +128,7 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   const packsDir = paquetes({ prueba: PRUEBA });
   const conAgente = agentes('rev-nuevo');
   const sinAgente = agentes();
-  // (story 8.41: la auditoría exige los revisores de los paquetes que la organización ACTIVA: estas pruebas los activan todos)
+  // (la auditoría exige los revisores de los paquetes que la organización ACTIVA: estas pruebas los activan todos)
   const audit = (env) => nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(AUDIT)}).checkAdvisorCoverage().checks))`, { TYCON_PACKS_DEFAULT: 'all', ...env });
 
   // la auditoría exige el agente del paquete
@@ -150,7 +149,7 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   // sin paquetes, la auditoría no lo exige
   const sinPaquete = audit({ TYCON_PACKS_DIR: tmp('paq-vacio-'), TYCON_AGENTS_DIR: conAgente });
   assert.equal(sinPaquete.filter((c) => c.name.includes('rev-nuevo')).length, 0);
-  // story 8.41 (pase adversarial): instalado = enlazado donde Claude lo carga. Con el fuente en la carpeta de agentes del
+  // instalado = enlazado donde Claude lo carga. Con el fuente en la carpeta de agentes del
   // paquete y sin enlace, sigue en rojo; un paquete que la organización no activa no se exige; uno activado que no está, sí
   const conCarpeta = paquetes({ prueba: { ...PRUEBA, agents: 'agents' } });
   fs.mkdirSync(path.join(conCarpeta, 'prueba', 'agents'));
@@ -169,7 +168,7 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
   assert.equal(owner({ TYCON_PACKS_DIR: tmp('paq-vacio-') }), 'UNKNOWN-ADVISOR');
   // los prefijos del núcleo siguen resolviendo sin paquetes
   assert.equal(nodeJson(`process.stdout.write(JSON.stringify(require(${JSON.stringify(DRAFT)}).ownerDePrefijo('SEC')))`, { TYCON_PACKS_DIR: tmp('paq-vacio-') }), 'tycon-plugin-security-basics');
-  // el prefijo se extrae con dígitos también (el vocabulario de los manifiestos los admite; pase adversarial 8.2)
+  // el prefijo se extrae con dígitos también (el vocabulario de los manifiestos los admite)
   const { prefijoDeRegla } = require(DRAFT);
   assert.equal(prefijoDeRegla('V2-C1'), 'V2');
   assert.equal(prefijoDeRegla('DODRT-C5.1'), 'DODRT');
@@ -177,8 +176,8 @@ test('HarnessAuditEInstinctDraft_LeenManifiestos', () => {
 });
 
 test('ninguna de las dos listas escribe a mano a los cinco', (t) => {
-  // (story 8.10.3 D: «los cinco» son los revisores que declaran los manifiestos de `packs/` de este repo; esta prueba
-  // tampoco los escribe a mano. Story 8.41: la copia pública no trae paquetes —llegan con el perfil del equipo—, y ahí
+  // («los cinco» son los revisores que declaran los manifiestos de `packs/` de este repo; esta prueba
+  // tampoco los escribe a mano. La copia pública no trae paquetes —llegan con el perfil del equipo—, y ahí
   // no hay a quién buscar: se dice)
   const packs = path.resolve(SCRIPTS, '..', 'packs');
   const LOS_CINCO = [...new Set((fs.existsSync(packs) ? fs.readdirSync(packs) : [])
@@ -191,8 +190,8 @@ test('ninguna de las dos listas escribe a mano a los cinco', (t) => {
   }
 });
 
-// Story 8.9, tanda D1: las claves del manifiesto en inglés. agent-skills se actualiza con su propio pull y un paquete
-// puede vivir afuera (TYCON_PACKS_DIR): uno con las claves de antes se lee igual; las dos distintas, manifiesto roto.
+// Las claves del manifiesto en inglés. agent-skills se actualiza con su propio pull y un paquete
+// puede vivir afuera (TYCON_PACKS_DIR): uno con las claves anteriores se lee igual; las dos distintas, manifiesto roto.
 // Las claves viejas salen del mapa en tiempo de ejecución (escritas acá, las contaría el termómetro).
 test('D1 PackReader_OldKeysSameAsNew_DifferentIsBroken', (t) => {
   const MAP = process.env.TYCON_LEGACY_NAMES_MAP || path.join(SCRIPTS, 'lib', 'renames.json');   // el mismo que lee legacy-names.js
@@ -223,8 +222,8 @@ test('D1 PackReader_OldKeysSameAsNew_DifferentIsBroken', (t) => {
   }
 });
 
-// Story 8.12, tanda R5 (AC 33), T37: las guías Bizuit pasaron a guides/bizuit/, pero el paquete `bizuit` de agent-skills
-// sigue nombrando la ruta vieja hasta la story de retiro. Lo que se puede romper sin que nadie lo vea: una guía del
+// T37: las guías Bizuit viven en guides/bizuit/, pero el paquete `bizuit` de agent-skills
+// puede seguir nombrando la ruta vieja. Lo que se puede romper sin que nadie lo vea: una guía del
 // paquete que ya no está en la ruta que nombra (el revisor la abre y no encuentra nada), o un reemplazo que apunta a una
 // ruta que no existe. Las rutas nuevas salen del mapa; el paquete real, de agent-skills (TYCON_SKILLS_DIR o la HOME).
 test('T37 R5_CrossRepo_PackOldPathResolvesViaShim', (t) => {
@@ -275,7 +274,7 @@ test('T37 R5_CrossRepo_PackOldPathResolvesViaShim', (t) => {
   assert.deepEqual(faltantes, [], 'harness-audit no reporta ninguna guía faltante');
 });
 
-// story 8.41 (revisión 2): la sonda «cableado en pipeline.js + guardado por test-pipeline-coverage.js» de la auditoría mira
+// La sonda «cableado en pipeline.js + guardado por test-pipeline-coverage.js» de la auditoría mira
 // sólo revisores del núcleo — con el árbol de esta rama, todos en verde y ninguno de los trece que viven en un paquete
 test('T23 Bench_And_Audit_FindReviewers · la sonda de cableado de la auditoría es del núcleo', () => {
   const casa = tmp('audit-cableado-');

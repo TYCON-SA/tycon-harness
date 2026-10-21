@@ -6,13 +6,13 @@
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
  * El lint protege contra el peor modo de falla del harness: una story cuyo frontmatter no se
  * puede leer no da error — **desaparece en silencio** del validator, del backfill, de los
- * scripts de status y del hook de DoD (caso 2026-07-24: 4 stories invisibles durante 2 meses).
+ * scripts de status y del hook de DoD.
  *
- * Pero decidía QUÉ lintear por la RUTA (`<repo>/specs/stories/`), igual que el resto del arnés
- * antes del 2026-08-15. En un repo con otro layout el lint no miraba nada y decía "✅ OK": el
+ * Pero decidir QUÉ lintear por la RUTA (`<repo>/specs/stories/`) no alcanza: en un repo con
+ * otro layout el lint no miraría nada y diría "✅ OK": el
  * control que existe para que nada se pierda en silencio, perdiéndose en silencio.
  *
- * Ahora "esto es una story" es una decisión ESTRUCTURAL:
+ * Por eso "esto es una story" es una decisión ESTRUCTURAL:
  *   (a) el archivo vive en una carpeta donde YA hay stories legibles, o
  *   (b) su frontmatter declara alguno de `story:` / `epic:` / `status:`.
  * (a) es la que importa: una story ROTA no se puede reconocer por sus campos —justamente porque
@@ -152,9 +152,9 @@ test('lint: un archivo pasado por argumento que SÍ declara campos de story se l
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// ── T23 · R3_Lib_MovedRequires (story 8.12, tanda R3, AC 20) ─────────────────────────────────────────────────────────
+// ── T23 · R3_Lib_MovedRequires ─────────────────────────────────────────────────────────
 // El lint vive en scripts/lib/: compila desde ahí, cada ruta relativa que escribe (`require('./x')`, o
-// `path.join(__dirname, …)`) apunta a un archivo que existe —sus vecinos ya no llevan `lib/` adelante y el vocabulario de
+// `path.join(__dirname, …)`) apunta a un archivo que existe —sus vecinos no llevan `lib/` adelante y el vocabulario de
 // causas queda un nivel más arriba—, y lintea una story de juguete con `followup_reason:` sin perder el vocabulario. En
 // la ruta de siempre queda el reemplazo generado (lo llaman los pre-commit de producto y agent-skills); esa ruta sale del
 // mapa, y la copia pública, que no lo lleva, lo dice.
@@ -173,7 +173,7 @@ function relativePaths(file) {
 }
 const exists = (abs) => { try { require.resolve(abs); return true; } catch { return fs.existsSync(abs); } };
 // Sólo la copia pública —que no lleva el mapa— se saltea. Con el mapa presente, ilegible o sin la entrada es un rojo:
-// tratarlo como «copia pública» dejaba pasar en verde un reemplazo que falta (pase adversarial de la R3).
+// tratarlo como «copia pública» dejaría pasar en verde un reemplazo que falta.
 const MAP_PATH = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
 const HAS_MAP = fs.existsSync(MAP_PATH);
 

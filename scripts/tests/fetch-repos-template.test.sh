@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 # fetch-repos-template.test.sh — la plantilla que deja las skills a mano en un pipeline, corrida de verdad
-# (story 8.18, T13 y T15; contrato C2).
+# (T13 y T15; contrato C2).
 #
-# EL CASO. Hasta la story 8.18 el arnés y agent-skills eran dos repos, y `pipelines/templates/fetch-repos.yml`
-# clonaba el segundo en `main`: un pull request del arnés se validaba contra `main` de agent-skills, no contra su
-# propia rama, y la identidad de build necesitaba permiso de lectura sobre otro proyecto. Con un solo repo, las
-# skills ya vienen en el checkout: la plantilla ENLAZA `~/.claude/agent-skills` al propio checkout. Lo que este
-# archivo cuida es que ese cambio no abra un verde falso:
+# EL CASO. Con un solo repo, las skills ya vienen en el checkout: `pipelines/templates/fetch-repos.yml` ENLAZA
+# `~/.claude/agent-skills` al propio checkout. Clonar un segundo repo en `main` validaría un pull request contra otra
+# rama y pediría a la identidad de build permiso de lectura sobre otro proyecto. Lo que este archivo cuida es que el
+# enlace no abra un verde falso:
 #   · un checkout que dice ser el repo unido y no trae `skills/tycon-pipeline` no puede terminar enlazado;
 #   · un checkout recortado (sin historia) que no se pudo completar tampoco: `third-party-real.test.sh` mide sobre
-#     un commit viejo, y sin historia sale «NO MEDIDO» todas las noches (corrida 11337);
+#     un commit viejo, y sin historia sale «NO MEDIDO» todas las noches;
 #   · un enlace que no se pudo crear no puede leerse como «las skills están»;
 #   · y en los tres el paso sale ROJO con el motivo: sin las skills no se mide nada, así que nunca es «no medido».
 #
@@ -17,8 +16,8 @@
 #    juguete. No una copia: si alguien edita el paso, este caso lo ejercita editado. Las macros de Azure del paso
 #    (`$(Build.SourcesDirectory)`, `$(System.CollectionUri)`, `${{ parameters.agentSkillsRepo }}`) se cambian por
 #    variables del laboratorio; una macro que el laboratorio no conoce es un rojo, no una sustitución de comandos.
-# 🔴 ROJO PREVIO: con la plantilla de antes de la 8.18 (sólo sabía clonar) salen rojos T13a, T13b, T13c y T13d, y T15
-#    por el clon propio del nocturno de métricas.
+# 🔴 Una plantilla que sólo sabe clonar saca rojos T13a, T13b, T13c y T13d, y T15 por el clon propio del nocturno de
+#    métricas.
 #
 # Sin red: los «remotos» son carpetas del laboratorio. Cero llamadas a Azure. No toca la HOME de quien la corre.
 set -uo pipefail
@@ -57,7 +56,7 @@ GIT_HOME="$LAB/git-home"; mkdir -p "$GIT_HOME/.config"
 lab_git() { HOME="$GIT_HOME" XDG_CONFIG_HOME="$GIT_HOME/.config" git -c user.email=lab@lab -c user.name=lab -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
 
 # ── El paso de la plantilla, tal cual está en el yml, con las macros de Azure cambiadas por variables ─────────
-# `${{ parameters.productRegistry }}` (story 8.26, tanda C) se cambia por `${LAB_REGISTRY}`: la lista de productos la elige
+# `${{ parameters.productRegistry }}` se cambia por `${LAB_REGISTRY}`: la lista de productos la elige
 # cada caso.
 extract_step() { # $1=displayName $2=archivo de salida
   node - "$TEMPLATE" "$1" > "$2" 2> "$LAB/extract.err" <<'JS'
@@ -190,9 +189,8 @@ if red_with_reason "$RC" 'enlazar|crear'; then ok "T13d sin poder crear ~/.claud
 else bad "T13d (~/.claude es un archivo) esperaba rojo con motivo (código $RC)"; show; fi
 
 # ── T13e · un checkout sin agents/, skills/ ni packs/: rojo, sin clonar ningún otro repo ─────────────────────────
-# Hasta la story 8.26 (tanda C) ese checkout era «el arnés de antes de la unión» y el paso clonaba el repo viejo de las
-# skills en main, con su nombre escrito en la plantilla. Ya no hay ramas sin unir, y la plantilla viaja en el público:
-# un checkout así no trae las skills, y sin ellas no se mide nada.
+# Un checkout así no trae las skills, y sin ellas no se mide nada: el paso no clona un repo aparte de las skills, y la
+# plantilla viaja en el público.
 lab_git init -q "$LAB/harness-only" && commit_file "$LAB/harness-only" scripts/tool.js uno
 HOME_E="$LAB/home-e"; mkdir -p "$HOME_E"
 run_step "$HOME_E" "$LAB/harness-only" "$LAB/remote/" lab-token; RC=$?
@@ -215,15 +213,15 @@ const t = require("fs").readFileSync(process.argv[1], "utf8");
 const head = t.slice(t.indexOf("\nparameters:"), t.indexOf("\nsteps:"));
 const out = [...head.matchAll(/- name: (\w+)\s+type: (\w+)\s+default: (.+)/g)].map((m) => `${m[1]}:${m[2]}:${m[3].trim()}`);
 process.stdout.write(out.join(" "));' "$TEMPLATE")"
-# Story 8.26, tanda C: `agentSkillsRepo` (el repo viejo de las skills) se fue con el camino de dos repos, y la lista de
-# productos pasó a parámetro, con la de siempre por defecto (el banco nocturno y la publicación no cambian).
+# No hay parámetro `agentSkillsRepo`: las skills vienen en el checkout. La lista de productos es un parámetro, con la de
+# siempre por defecto (el banco nocturno y la publicación la usan sin cambiarla).
 EXPECTED_PARAMS="agentSkills:boolean:true productos:boolean:false condicion:string:'succeeded()' productRegistry:string:'scripts/nightly/dependencies/repos.json'"
 if [ "$PARAMS" = "$EXPECTED_PARAMS" ]; then ok "T13f la plantilla declara sus parámetros, con la lista de productos de siempre por defecto (la usan también el banco y la publicación)"
 else bad "T13f los parámetros cambiaron: «${PARAMS}»"; fi
 
-# ── T11 de la story 8.26 (tanda C, AC 11) · los repos de los productos: sin lista o sin ningún clon, ROJO ──────────
-# Hasta la tanda C, sin la lista el `node` de la sustitución de proceso fallaba, el lazo no daba ninguna vuelta y el paso
-# salía verde con «repos clonados: 0»: las suites que leen productos se salteaban «con constancia» y la cobertura bajaba
+# ── T11 · los repos de los productos: sin lista o sin ningún clon, ROJO ───────────────────────────────────────────
+# Sin esto, si falta la lista el `node` de la sustitución de proceso falla, el lazo no da ninguna vuelta y el paso
+# sale verde con «repos clonados: 0»: las suites que leen productos se saltean «con constancia» y la cobertura baja
 # sin un rojo. En el árbol público la lista no está (es del repo de mantenimiento): la validación la trae aparte y se la
 # pasa por `productRegistry`. Un repo que no se clona sigue siendo AVISO, mientras se clone alguno.
 PSNIP="$LAB/products.sh"
@@ -253,7 +251,7 @@ if extract_step 'Traer los repos de los productos' "$PSNIP" && [ -s "$PSNIP" ]; 
   else bad "T11d con la lista vacía esperaba rojo (código $RC)"; show; fi
   printf '{"repos":[{"ruta":"Lab/RepoA","ado":"LabProj/RepoA"},{"ruta":"Lab/RepoX","ado":"LabProj/RepoX"}]}\n' > "$LAB/reg-half.json"
   HP5="$LAB/home-p5"; mkdir -p "$HP5"; run_products "$HP5" "$LAB/reg-half.json"; RC=$?
-  # el aviso de Azure lleva texto fijo (AC 45: el control del pedido es público); el repo y el error, en la línea común
+  # el aviso de Azure lleva texto fijo (el control del pedido es público); el repo y el error, en la línea común
   if [ "$RC" = 0 ] && grep -q '##vso\[task.logissue type=warning\]' "$OUT" && ! grep '##vso' "$OUT" | grep 'RepoX' >/dev/null && grep -q 'RepoX' "$OUT"; then
     ok "T11e un repo que no se clona avisa (con texto fijo; el nombre en el registro) y el paso sigue"
   else bad "T11e esperaba aviso de texto fijo y código 0 (código $RC)"; show; fi
@@ -265,7 +263,7 @@ fi
 if python3 -c 'import yaml' >/dev/null 2>&1; then
   BROKEN=""
   for y in "$TEMPLATE" "$METRICS_YAML" "$BENCH_YAML" "$PR_YAML"; do
-    # la copia pública lleva la validación y su plantilla, no los nocturnos (story 8.26, tanda C)
+    # la copia pública lleva la validación y su plantilla, no los nocturnos
     [ -f "$y" ] || [ -f "$ROOT/perfil-equipo.json" ] || continue
     python3 -c 'import yaml,sys; yaml.safe_load(open(sys.argv[1], encoding="utf8"))' "$y" > "$LAB/yaml.err" 2>&1 || BROKEN="$BROKEN $(basename "$y") ($(tail -1 "$LAB/yaml.err"))"
   done
@@ -277,7 +275,7 @@ fi
 # ── T15 · el nocturno del banco y el de métricas no clonan agent-skills por su cuenta, y la raíz sale de la regla ──
 # Lectura de los yml sin sus comentarios: un comentario que cuenta la historia no es un clon.
 code_of() { grep -vE '^[[:space:]]*#' "$1"; }
-# La copia pública lleva la validación (story 8.26, tanda C) pero no los dos nocturnos: lo de ellos ahí no se mide, y se
+# La copia pública lleva la validación pero no los dos nocturnos: lo de ellos ahí no se mide, y se
 # dice. En el repo del equipo (con su perfil) que falten es un rojo.
 if [ ! -f "$BENCH_YAML" ] && [ ! -f "$ROOT/perfil-equipo.json" ]; then
   echo "⏭ fetch-repos-template: T15 de los nocturnos NO MEDIDO — la copia pública no trae los pipelines nocturnos del equipo. No es un verde."
@@ -301,8 +299,8 @@ done
 for y in ${NIGHTLY_YAMLS[@]+"${NIGHTLY_YAMLS[@]}"} "$PR_YAML"; do
   B="$(basename "$y")"
   # `> /dev/null`, no `-q`: con `pipefail`, `grep -q` corta al primer acierto y `code_of` muere por SIGPIPE si lo que
-  # falta leer no entra en la tubería — el yml de pull request, partido en cuatro trabajos, ya no entra (45 KB), y el
-  # acierto salía como «no la pide».
+  # falta leer no entra en la tubería (el yml de pull request, partido en cuatro trabajos, mide 45 KB), y el
+  # acierto se lee como «no la pide».
   if code_of "$y" | grep -E 'SK="\$\(node scripts/lib/skills-dir\.js --skills\)"' > /dev/null; then ok "T15 $B pide la raíz de las skills a scripts/lib/skills-dir.js (la regla de resolveSkillsDirs)"
   else bad "T15 $B no pide la raíz de las skills a scripts/lib/skills-dir.js --skills"; fi
 done

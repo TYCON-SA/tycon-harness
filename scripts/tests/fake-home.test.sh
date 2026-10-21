@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# fake-home.test.sh — red del ayudante `scripts/tests/lib/fake-home.sh` (story 7.16).
+# fake-home.test.sh — red del ayudante `scripts/tests/lib/fake-home.sh`.
 #
-# Caso que lo motiva (story 7.15, 2026-09-29): cuatro suites dejaban constancias falsas en los registros
+# Caso que lo motiva: cuatro suites pueden dejar constancias falsas en los registros
 # reales del dev (`gates.log`, `frenos.jsonl`, `new-names.jsonl`, `reviewer-rules.jsonl`); `frenos.jsonl`
-# sube al buzón y alimenta el tablero. Cada suite armaba su carpeta personal falsa a mano y a su manera, y
-# olvidarse un paso ensuciaba la máquina sin avisar. El ayudante la arma siempre igual; esta suite prueba
+# sube al buzón y alimenta el tablero. Si cada suite arma su carpeta personal falsa a mano y a su manera,
+# olvidarse un paso ensucia la máquina sin avisar. El ayudante la arma siempre igual; esta suite prueba
 # que la arma, que se niega a usar la real y que la cuenta con evidencia POSITIVA.
 #
 # 🔴 Esta suite tampoco toca la HOME real: cada caso corre en una subshell con una HOME «real» de
@@ -27,8 +27,8 @@ LAB_VACIA="$TMP/real-vacia"; mkdir -p "$LAB_VACIA"
 # en_lab <home-real> <script>: corre <script> en una subshell limpia (sin las variables del ayudante),
 # con HOME=<home-real> y el ayudante cargado. Imprime lo que el script imprima.
 # 🔴 Con `set -uo pipefail`, como las suites que lo cargan: sin eso, un «$var» pegado a un carácter no ASCII
-#    (que el bash 3.2 de macOS con locale UTF-8 lee como otro nombre de variable) pasaba acá y tumbaba las
-#    suites de verdad con «unbound variable» (pase adversarial de la 7.16).
+#    (que el bash 3.2 de macOS con locale UTF-8 lee como otro nombre de variable) pasa acá y tumba las
+#    suites de verdad con «unbound variable».
 en_lab(){
   env -u FAKE_HOME -u REAL_HOME -u TYCON_GUIDES_DIR -u TYCON_SKILLS_DIR -u LAUNCHCTL_BIN \
       -u TYCON_NO_NIGHTLY_EXAM -u TYCON_NO_GUI_ENV HOME="$1" HELPER="$HELPER" \
@@ -125,7 +125,7 @@ if printf '%s\n' "$salida" | grep -x 'rc=1' >/dev/null && printf '%s\n' "$salida
 else no "T5c el mensaje de la HOME real se rompió con UTF-8 — salida: $(printf '%s' "$salida" | tr '\n' '|' | head -c 300)"; fi
 
 # T5d · una ruta RELATIVA se rechaza: depende del directorio actual, y desde la HOME real crearía una carpeta
-# suelta adentro de ella (pase adversarial de la 7.16).
+# suelta adentro de ella.
 salida="$(en_lab "$LAB" 'cd "$HOME" && fake_home_create casa-relativa; echo "rc=$?"; echo "home=$HOME"' 2>&1)"
 if ! printf '%s\n' "$salida" | grep -x 'rc=0' >/dev/null && printf '%s\n' "$salida" | grep -x "home=$LAB" >/dev/null \
    && [ ! -e "$LAB/casa-relativa" ] && printf '%s\n' "$salida" | grep 'fake-home:.*absoluta' >/dev/null; then

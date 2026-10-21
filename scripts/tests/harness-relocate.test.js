@@ -1,15 +1,15 @@
 'use strict';
 /**
  * harness-relocate.test.js — `harness.js relocate [--check]`: la mudanza A MANO de lo registrado por el nombre viejo del
- * lugar del arnés (story 8.19, tanda B · AC 17 y 18). En Node a propósito: corre igual en el agente Windows.
+ * lugar del arnés. En Node a propósito: corre igual en el agente Windows.
  *
- * EL CASO. El nombre viejo del lugar (place.js) sigue resolviendo, y lo que una máquina registró por él sigue
- * andando. Ninguna máquina se muda sola (la mudanza por el perfil es el primer paso del retiro, story 8.15): la persona
+ * El nombre viejo del lugar (place.js) sigue resolviendo, y lo que una máquina registró por él sigue
+ * andando. Ninguna máquina se muda sola (la mudanza por el perfil es el primer paso del retiro): la persona
  * corre `relocate` cuando quiere. Comprueba sólo leyendo (los dos nombres a la misma carpeta, la copia fija de arranque
  * al día), toma la copia del mecanismo, corre `--reroot <viejo> <lugar>`, cambia la línea de CLAUDE.md y el id de su
  * pieza, y dice qué cambió. No guarda estado: una corrida cortada se termina corriéndolo otra vez.
  *
- * Qué fija (la tabla de pruebas de la story):
+ * Qué fija:
  *   T23 --check (el plan, sin escribir), relocate (copia `relocate`, cero por el viejo salvo los permisos, una línea de
  *       CLAUDE.md, el id de la pieza), otra vez («nada que cambiar», sin escribir), en modo `developer` y con TYCON_UPDATE=0;
  *   T24 startup, update y apply NUNCA mudan: lo registrado por el viejo queda igual;
@@ -18,7 +18,7 @@
  *       permiso sigue; y `rollback` a la copia de antes: los archivos vuelven a nombrar el viejo, el viejo resuelve y
  *       doctor lo vuelve a contar.
  */
-// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+// las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
 process.env.TYCON_HARNESS_NODE = '0';
 const LABLIB = require('./lib/relocate-lab.js');
 
@@ -45,7 +45,7 @@ function fixedCopy(h, tree) {
   const dst = path.join(pipelineDir(h), 'harness');
   fs.mkdirSync(path.join(dst, 'program', 'harness'), { recursive: true });
   for (const f of ['bootstrap.js', 'bootstrap-fallback.sh', 'bootstrap-fallback.ps1']) fs.copyFileSync(path.join(src, 'harness', f), path.join(dst, f));
-  // los módulos del programa y la lista fija de skills con datos, que team.js lee de su carpeta (story 8.25, tanda A2c: la copia
+  // los módulos del programa y la lista fija de skills con datos, que team.js lee de su carpeta (la copia
   // fija la lleva; sin ella relocate dice «la copia fija de arranque no es la del árbol», como con un módulo que falta)
   for (const f of fs.readdirSync(path.join(src, 'harness')).filter((n) => n.endsWith('.js') || n === 'team-skill-extras.json')) fs.copyFileSync(path.join(src, 'harness', f), path.join(dst, 'program', 'harness', f));
   fs.copyFileSync(path.join(src, 'harness.js'), path.join(dst, 'program', 'harness.js'));
@@ -148,8 +148,8 @@ test('T24 Relocate_NeverFromStartupUpdateApply', () => {
   for (const cmd of [['startup'], ['update', '--check'], ['apply']]) harness(h, C, cmd, { TYCON_UPDATE: '0', TYCON_STARTUP_DETACH: '0' });
   assert.strictEqual(registered(h, C).total, before, 'startup, update o apply mudaron algo');
   assert.strictEqual(hookCommands(readJson(m.files.settings)).join('\n'), hooksBefore, 'cambiaron los hooks');
-  // la línea sigue por el nombre viejo; sólo cambia el archivo al que apunta (el índice pasó de README.md a INDEX.md el
-  // 2026-10-14): eso no es mudarla
+  // la línea sigue por el nombre viejo; sólo cambia el archivo al que apunta (README.md pasa a INDEX.md):
+  // eso no es mudarla
   const legacyIndex = OLD_IMPORT.replace(/README\.md$/, 'INDEX.md');
   assert.strictEqual(fs.readFileSync(m.files.claudeMd, 'utf8'), mdBefore.split(OLD_IMPORT).join(legacyIndex), 'cambió CLAUDE.md más allá del archivo del índice');
   // y después de relocate, ni startup ni update ni apply vuelven a traer nada por el viejo (las copias que gestiona el
@@ -214,7 +214,7 @@ test('T25 Relocate_Preconditions_KilledThenPersonEdits_RollbackOlderStillRuns', 
   const killed = harness(k.h, k.C, ['relocate'], { TYCON_RELOCATE_DIE_AT: 'after-reroot' });
   assert.ok(killed.rc !== 0, `no se cortó: ${killed.all}`);
   // el candado del corrido que murió queda tomado, pero su PID ya no existe: la corrida siguiente lo pisa en el acto, sin
-  // esperar los 10 minutos de antes (story 8.23, AC 37; un candado de un proceso VIVO sigue diciendo «otra sesión»: T38
+  // esperar los 10 minutos (un candado de un proceso VIVO sigue diciendo «otra sesión»: T38
   // de harness-state.test.js)
   const lockDir = path.join(pipelineDir(k.h), 'harness', 'harness.lock');
   assert.ok(fs.existsSync(lockDir), 'el corte no dejó el candado tomado: la prueba no reproduce el caso');

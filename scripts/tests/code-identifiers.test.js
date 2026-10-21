@@ -1,19 +1,19 @@
 'use strict';
 
 /**
- * code-identifiers.test.js — el buscador de identificadores de código en una copia (story 8.10.3, tanda D · T17).
+ * code-identifiers.test.js — el buscador de identificadores de código en una copia (T17).
  *
  * `scripts/publishing/code-identifiers.js` contesta una sola pregunta: ¿sale en esta carpeta un identificador de código
- * de la lista de denegación, escrito con CUALQUIER grafía? Lo usa `export-real.test.sh` (bloque «8.10.3 D») sobre la
+ * de la lista de denegación, escrito con CUALQUIER grafía? Lo usa `export-real.test.sh` (su bloque de identificadores) sobre la
  * copia pública de verdad, con la lista privada; esa suite tarda y no corre en cada cambio, así que la lógica se prueba
  * acá, con una lista y una copia de laboratorio (nombres inventados: `ZetaPanel`, `QX-7-lotes`…).
  *
- * Cada caso es un hallazgo confirmado por el pase adversarial de la tanda, con su rojo antes del arreglo:
- *   · un identificador que aplanado mide menos que escrito no se veía nunca;
- *   · no se miraban los nombres de archivos ni de carpetas;
- *   · una palabra más larga que contiene al identificador («Sprint…» por «…Print…») y una palabra común daban rojo;
- *   · un separador repetido o escapado partía el nombre, y uno que empieza con un dígito no se veía;
- *   · el verde decía haber mirado identificadores que no podía ver.
+ * Cada caso fija un defecto que el buscador no puede tener:
+ *   · un identificador que aplanado mide menos que escrito se ve igual;
+ *   · se miran los nombres de archivos y de carpetas;
+ *   · una palabra más larga que contiene al identificador («Sprint…» por «…Print…») y una palabra común no dan rojo;
+ *   · un separador repetido o escapado no parte el nombre, y uno que empieza con un dígito se ve;
+ *   · el verde no dice haber mirado identificadores que no podía ver.
  */
 
 const test = require('node:test');
@@ -27,7 +27,7 @@ const MODULE = path.resolve(__dirname, '..', 'publishing', 'code-identifiers.js'
 const ci = require(MODULE);
 
 const term = (patron, extra = {}) => ({ patron, categoria: 'interno', mayusculas: true, ...extra });
-// 30 de relleno (el buscador se niega a opinar con una lista más corta que lo que la tanda sumó) + los de cada caso
+// 30 de relleno (el buscador se niega a opinar con una lista corta) + los de cada caso
 const RELLENO = Array.from({ length: 30 }, (_, i) => term(`Relleno${String.fromCharCode(65 + (i % 26))}Cosa${i}`));
 const LISTA = [
   ...RELLENO,
@@ -98,7 +98,7 @@ test('CodeIdentifiers_LongerWordOrCommonWord_IsNotFlagged — otra palabra que l
   for (const g of ['ZonaRecreo', 'zona-recreo', 'ZONA_RECREO']) assert.deepEqual(donde({ 'a.md': `ver ${g}\n` }), ['a.md:1'], g);
   // prosa con espacios no es un nombre (la frase la ve el detector, con su término)
   assert.deepEqual(donde({ 'a.md': 'el zeta panel de la derecha\n' }), []);
-  // un nombre partido entre carpetas, o por dos puntos, es otro nombre (decisión: sólo `-`, `_` y `.` son separadores)
+  // un nombre partido entre carpetas, o por dos puntos, es otro nombre (sólo `-`, `_` y `.` son separadores)
   assert.deepEqual(donde({ 'a.md': 'ver zeta/panel.tsx y Zeta:Panel\n' }), []);
 });
 
@@ -159,8 +159,8 @@ test('CodeIdentifiers_Cli_PrintsOneVerdictLine — como lo llama export-real.tes
   assert.match(correr(copia({ 'a.md': 'nada\n' }), rota).stdout, /^❌ prueba: caso · /);
 });
 
-// Revisor de fallos silenciosos (vuelta 2): con una lista de forma inesperada el proceso se caía sin imprimir ningún
-// veredicto y salía 1 — justo lo que su contrato dice que no pasa. Cualquier cosa que no se pudo mirar es UNA línea ❌.
+// Con una lista de forma inesperada el proceso no se cae sin imprimir ningún
+// veredicto ni sale 1: su contrato lo prohíbe. Cualquier cosa que no se pudo mirar es UNA línea ❌.
 test('CodeIdentifiers_Cli_MalformedListOrMissingArgs_StillOneRedLine', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'code-ids-forma-'));
   const escribir = (nombre, contenido) => { const f = path.join(dir, nombre); fs.writeFileSync(f, JSON.stringify(contenido)); return f; };
@@ -207,8 +207,8 @@ test('CodeIdentifiers_PartsOf_SplitsOnSeparatorsAndHumps', () => {
   assert.throws(() => ci.identifiersFrom([term('OtroPanelito', { noVe: 'x' })]), /terminos\[0\].*«noVe» tiene que ser una lista/);
 });
 
-// Revisor de pruebas (vuelta 3): cada forma de «esto no es un término», SOLA en la lista — mezcladas con un `null`, el
-// `null` ya daba rojo por otro camino y la validación podía borrarse sin que ninguna prueba lo notara.
+// Cada forma de «esto no es un término», SOLA en la lista — mezcladas con un `null`, el
+// `null` ya da rojo por otro camino y la validación podría borrarse sin que ninguna prueba lo notara.
 test('CodeIdentifiers_FromList_EachMalformedTermAlone_Throws', () => {
   const formas = { 'un texto suelto': 'ZetaPanel', 'un número': 7, 'un null': null, 'una lista': ['ZetaPanel'],
     'un objeto sin patron': { categoria: 'interno', mayusculas: true }, 'un patron que no es texto': { patron: 7, categoria: 'interno', mayusculas: true } };

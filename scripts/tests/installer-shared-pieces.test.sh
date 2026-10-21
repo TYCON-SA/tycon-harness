@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# installer-shared-pieces.test.sh — las tres piezas que el aplicador y `harness.js` COMPARTEN (story 8.13, tanda D · AC 28,
-# la parte de T36 que no depende del enganche).
+# installer-shared-pieces.test.sh — las tres piezas que el aplicador y `harness.js` COMPARTEN
+# (la parte de T36 que no depende del enganche).
 #
 # Qué se protege: `cleanupPeriodDays`, la variable de `env` (`CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR`) y la copia de
-# `<árbol>/commands/` a `~/.claude/commands/` las escribía sólo `install-tycon-hooks.sh`; en Windows no las hacía nadie.
-# `scripts/setup/harness/shared.js` las hace desde Node, con las mismas reglas, y devuelve la lista de piezas con la forma
+# `<árbol>/commands/` a `~/.claude/commands/` las escribe `install-tycon-hooks.sh`; en Windows, sólo
+# `scripts/setup/harness/shared.js`, que las hace desde Node, con las mismas reglas, y devuelve la lista de piezas con la forma
 # del reporte del aplicador. Acá se prueba el MÓDULO, llamado directo sobre una HOME de juguete:
 #
 #   S1 · Shared_FreshHome_ThreePiecesAndList — deja las tres piezas y devuelve su lista (forma del reporte, `where`
@@ -49,7 +49,7 @@ MOD="$RAIZ/scripts/setup/harness/shared.js"
 INST="$RAIZ/scripts/install-tycon-hooks.sh"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
-# ── La suite corre por partes (story 8.22, tramo F: ninguna suite pasa de 45 s en la validación de una rama). Entera
+# ── La suite corre por partes (ninguna suite pasa de 45 s en la validación de una rama). Entera
 # —a mano— corre todos los casos; como parte (`installer-shared-pieces.p<k>.test.sh`), sólo los suyos: S11, que corre el
 # instalador de verdad una docena de veces, va solo en la parte 2. Cada caso arma su HOME: ninguno depende de otro
 # (scripts/tests/lib/suite-parts.sh).
@@ -83,7 +83,7 @@ printf '# adentro\n' > "$TREE/commands/sub/inner.md"              # una carpeta:
 # call <home> <salida.json> [VAR=valor…] — la función del módulo, directa (`node -e`), con el árbol $TREE (o LAB_TREE)
 call() {
   local h="$1" out="$2"; shift 2
-  # TYCON_NO_MODS=1: la carpeta de los mods (story 7.27) la prueba harness-mods.test.js; acá, los dos ajustes de siempre.
+  # TYCON_NO_MODS=1: la carpeta de los mods la prueba harness-mods.test.js; acá, los dos ajustes de siempre.
   # TYCON_NO_READ_PERMISSIONS=1: las reglas de lectura las prueba read-permissions.test.js
   env "${ENV_UNSET[@]}" HOME="$h" TYCON_NO_MODS=1 TYCON_NO_READ_PERMISSIONS=1 LAB_TREE="${LAB_TREE:-$TREE}" LAB_MOD="${LAB_MOD:-$MOD}" "$@" node -e '
     const S = require(process.env.LAB_MOD);
@@ -111,7 +111,7 @@ expected_from_empty() { printf '{\n  "hooks": {},\n  "cleanupPeriodDays": 365,\n
 
 if corre S1 && suite_part 1; then
   echo "S1 · Shared_FreshHome_ThreePiecesAndList"
-  # 🔴 rojo previo: sin scripts/setup/harness/shared.js, `require` tira «Cannot find module» y no queda nada en la HOME.
+  # 🔴 Sin scripts/setup/harness/shared.js, `require` tira «Cannot find module» y no queda nada en la HOME.
   H="$T/s1"; new_home "$H"; echo '{"hooks":{}}' > "$H/.claude/settings.json"
   rc=0; call "$H" "$T/s1.json" || rc=$?
   [ "$rc" = "0" ] && [ "$(q "$T/s1.json" 'r.ok')" = "true" ] && ok "S1 el módulo corre y dice ok" \
@@ -156,7 +156,7 @@ fi
 
 if corre S2 && suite_part 1; then
   echo "S2 · Shared_DevValueWins_NotRecorded"
-  # 🔴 rojo previo: sin el módulo no hay resultado; con un módulo que pisara, `cmp` contra el original falla.
+  # 🔴 Sin el módulo no hay resultado; con un módulo que pisara, `cmp` contra el original falla.
   H="$T/s2"; new_home "$H"
   printf '{"hooks":{},"cleanupPeriodDays":90,"env":{"%s":"0","MIA":"x"}}' "$VAR_ENV" > "$H/.claude/settings.json"
   cp "$H/.claude/settings.json" "$T/s2-before.json"
@@ -193,7 +193,7 @@ fi
 
 if corre S3 && suite_part 1; then
   echo "S3 · Shared_CommandsSyncOff_AndOwnCommands"
-  # 🔴 rojo previo: sin el módulo, ni «no copia» ni «copia» se pueden afirmar (no hay resultado).
+  # 🔴 Sin el módulo, ni «no copia» ni «copia» se pueden afirmar (no hay resultado).
   H="$T/s3"; new_home "$H"; echo '{"hooks":{}}' > "$H/.claude/settings.json"
   call "$H" "$T/s3.json" TYCON_NO_COMMANDS_SYNC=1
   [ ! -e "$H/.claude/commands" ] && [ "$(q "$T/s3.json" 'r.pieces.filter((p) => p.kind === "command").length')" = "0" ] \
@@ -223,7 +223,7 @@ fi
 
 if corre S4 && suite_part 1; then
   echo "S4 · Shared_Idempotent_ByteForByte"
-  # 🔴 rojo previo: sin el módulo las dos corridas fallan igual y la primera no deja las piezas (lo ve el primer chequeo).
+  # 🔴 Sin el módulo las dos corridas fallan igual y la primera no deja las piezas (lo ve el primer chequeo).
   H="$T/s4"; new_home "$H"; printf '{\n    "permissions": {"allow": ["Bash(ls:*)"]},\n    "hooks": {}\n}\n' > "$H/.claude/settings.json"
   call "$H" "$T/s4a.json"; A="$(home_hash "$H")"
   [ "$(q "$T/s4a.json" 'r.changed.length')" = "4" ] && ok "S4 la primera corrida escribe las cuatro piezas" || mal "S4 la primera corrida escribió $(q "$T/s4a.json" 'r.changed')"
@@ -237,7 +237,7 @@ fi
 
 if corre S5 && suite_part 1; then
   echo "S5 · Shared_SettingsMissingEmptyBlank_AsEmptyObject"
-  # 🔴 rojo previo: sin el módulo el archivo no aparece (o queda vacío como estaba).
+  # 🔴 Sin el módulo el archivo no aparece (o queda vacío como estaba).
   expected_from_empty > "$T/s5-want.json"
   H="$T/s5"; rm -rf "$H"; mkdir -p "$H"      # ni siquiera ~/.claude
   call "$H" "$T/s5a.json"
@@ -260,7 +260,7 @@ fi
 
 if corre S6 && suite_part 1; then
   echo "S6 · Shared_SettingsUnreadable_NotOverwritten"
-  # 🔴 rojo previo: sin el módulo no hay `ok: false` ni motivo; con uno que pisara, `cmp` contra el original falla.
+  # 🔴 Sin el módulo no hay `ok: false` ni motivo; con uno que pisara, `cmp` contra el original falla.
   H="$T/s6"
   for caso in 'ilegible|{"hooks": {' 'arreglo|[1, 2]' 'env-texto|{"hooks":{},"env":"x"}' 'texto|"hola"'; do
     nombre="${caso%%|*}"; cuerpo="${caso#*|}"
@@ -284,7 +284,7 @@ fi
 
 if corre S7 && suite_part 1; then
   echo "S7 · Shared_Backup_StandaloneYes_UnderHarnessNo"
-  # 🔴 rojo previo: sin el módulo no hay escritura ni .bak que contar.
+  # 🔴 Sin el módulo no hay escritura ni .bak que contar.
   H="$T/s7"; new_home "$H"; echo '{"hooks":{},"model":"x"}' > "$H/.claude/settings.json"; cp "$H/.claude/settings.json" "$T/s7-before.json"
   call "$H" "$T/s7.json"
   BAK="$(find "$H/.claude" -maxdepth 1 -name 'settings.json.bak.*' | head -1)"
@@ -310,7 +310,7 @@ fi
 
 if corre S8 && suite_part 1; then
   echo "S8 · Shared_RunsFromFixedCopy_OnlyOwnFolder"
-  # 🔴 rojo previo: sin el archivo no hay nada que copiar ni que leer.
+  # 🔴 Sin el archivo no hay nada que copiar ni que leer.
   mkdir -p "$T/fixed/program"; cp -R "$RAIZ/scripts/setup/harness" "$T/fixed/program/harness"
   H="$T/s8"; new_home "$H"; echo '{"hooks":{}}' > "$H/.claude/settings.json"
   rc=0; LAB_MOD="$T/fixed/program/harness/shared.js" call "$H" "$T/s8.json" || rc=$?
@@ -323,7 +323,7 @@ fi
 
 if corre S9 && suite_part 1; then
   echo "S9 · Shared_PiecesAreRegistryPieces"
-  # 🔴 rojo previo: sin el módulo no hay piezas que pasarle a managed.js ni a remove.js.
+  # 🔴 Sin el módulo no hay piezas que pasarle a managed.js ni a remove.js.
   H="$T/s9"; new_home "$H"; printf '{"model":"x","env":{"MIA":"x"}}' > "$H/.claude/settings.json"
   printf '# mío\n' > "$T/s9-mine.md"; mkdir -p "$H/.claude/commands"; cp "$T/s9-mine.md" "$H/.claude/commands/mine.md"
   call "$H" "$T/s9.json"
@@ -387,7 +387,7 @@ run_installer() { # run_installer <home> <salida.txt> [VAR=valor…] [-- args de
 
 if corre S10 && suite_part 1; then
   echo "S10 · Shared_ByteForByte_AgainstRealInstaller"
-  # 🔴 rojo previo: sin el módulo la HOME «M» queda con la entrada sin tocar y `cmp` contra la del instalador falla.
+  # 🔴 Sin el módulo la HOME «M» queda con la entrada sin tocar y `cmp` contra la del instalador falla.
   # El instalador REAL, suelto (sin TYCON_HARNESS_LOCK_HELD). Son TRES HOME distintas (la que prepara la entrada, la del
   # instalador y la del módulo), cada una una carpeta nueva, armadas en la misma ruta (`$HH`).
   # 1. la entrada del dev: sangría propia, texto no ASCII, un hook y una variable suyos, y una línea de arranque vieja
@@ -484,12 +484,12 @@ fi
 
 if corre S11 && suite_part 2; then
   echo "S11 · Applier_UnderSharedDone_SkipsThree_LockOnlyDoesThem"
-  # 🔴 rojo previo (medido con el `.sh` de antes del enganche, que no conocía la variable): bajo
-  #    TYCON_HARNESS_SHARED_DONE=1 escribía igual cleanupPeriodDays y la variable de env, copiaba los comandos y
-  #    reportaba las tres piezas (4 chequeos en MAL: «bajo la variable», y los dos «el reporte del .sh no las trae»).
+  # 🔴 Un `.sh` que no conociera la variable, bajo
+  #    TYCON_HARNESS_SHARED_DONE=1 escribiría igual cleanupPeriodDays y la variable de env, copiaría los comandos y
+  #    reportaría las tres piezas (4 chequeos en MAL: «bajo la variable», y los dos «el reporte del .sh no las trae»).
   DONE="$(m 'S.DONE_ENV')"
   HH="$T/s11-home"; SNAP="$T/s11-snap"; mkdir -p "$SNAP"
-  # Su propia copia del árbol, congelada al empezar (DEF-8.40-carrera-skills-de-terceros). El instalador enlaza
+  # Su propia copia del árbol, congelada al empezar. El instalador enlaza
   # ~/.claude/skills desde el skills/ de SU árbol, y en una máquina limpia otras suites que corren a la vez bajan ahí las
   # skills de terceros. Si aparecen entre la referencia y la comparación, la unión «sobra» esos enlaces. La copia lleva
   # los archivos del repo (los versionados y los nuevos sin commitear) y deja afuera lo ignorado: las de terceros.
@@ -573,7 +573,7 @@ PY
   GOT="$(look11 "$HH" "$T/s11-b0-report.json" do)"
   [ "$rc" = "0" ] && [ "$GOT" = "ok" ] && ok "S11 (espejo) con ${DONE}=0 el .sh hace y reporta las tres piezas" || mal "S11 (espejo) con ${DONE}=0 (rc $rc): ${GOT}"
 
-  # (c) con sólo el candado (un harness.js viejo, que no conoce la variable): las hace y las reporta, como hoy
+  # (c) con sólo el candado (un harness.js viejo, que no conoce la variable): las hace y las reporta, como siempre
   seed11; rc=0; run_installer "$HH" "$T/s11-c.txt" TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_SNAPSHOT_DIR="$SNAP" -- --report-json "$T/s11-c-report.json" || rc=$?
   GOT="$(look11 "$HH" "$T/s11-c-report.json" do)"
   [ "$rc" = "0" ] && [ "$GOT" = "ok" ] && cmp -s "$REF/.claude/settings.json" "$HH/.claude/settings.json" \
@@ -638,9 +638,9 @@ if corre S12 && suite_part 1; then
   # Windows: con settings.json abierto por otro proceso (un antivirus, Claude Code leyéndolo) el `rename` del temporal
   # falla con EBUSY / EPERM / EACCES durante unos milisegundos. Acá se inyecta la falla envolviendo `fs.renameSync` ANTES
   # de requerir el módulo (sólo para el reemplazo de settings.json), y se cuentan los intentos y el tiempo entre ellos.
-  # 🔴 rojo previo: con el `writeAtomic` de antes, EBUSY no se reintentaba (1 intento, ok:false, las claves sin
-  #    escribir); EPERM y EACCES se reintentaban SIN esperar (0 ms entre intentos: en Windows los tres pasan antes de que
-  #    el otro proceso suelte el archivo); y al rendirse quedaba el `.bak` que se había tomado para una escritura que no
+  # 🔴 Sin reintentos con espera, EBUSY no se reintentaría (1 intento, ok:false, las claves sin
+  #    escribir); EPERM y EACCES se reintentarían SIN esperar (0 ms entre intentos: en Windows los tres pasan antes de que
+  #    el otro proceso suelte el archivo); y al rendirse quedaría el `.bak` que se tomó para una escritura que no
   #    ocurrió.
   call_busy() { # call_busy <home> <salida.json> <código> <cuántas veces falla> [VAR=valor…]
     local h="$1" out="$2" code="$3" times="$4"; shift 4
@@ -710,7 +710,7 @@ if corre S13 && suite_part 1; then
   # escrito. Si la escritura se rinde y además no puede borrar lo que dejó, eso queda en ~/.claude: el motivo tiene que
   # nombrar la ruta. Se inyecta envolviendo `fs.renameSync` (siempre ocupado) y `fs.rmSync` (falla sólo para el temporal,
   # o sólo para el `.bak`) ANTES de requerir el módulo.
-  # 🔴 rojo previo: el motivo decía sólo «no pude escribir settings.json (EBUSY)»; el temporal o el `.bak` quedaban en
+  # 🔴 Si el motivo dijera sólo «no pude escribir settings.json (EBUSY)», el temporal o el `.bak` quedarían en
   #    ~/.claude sin que nada los nombrara.
   call_stuck() { # call_stuck <home> <salida.json> <qué no se deja borrar: tmp|bak|both|none> [half-write]
     # con `half-write`, lo que falla no es el reemplazo sino la escritura del temporal, a medio escribir (disco lleno)
@@ -766,7 +766,7 @@ if corre S13 && suite_part 1; then
     mal "S13 los dos retenidos: rc $rc · ok $(q "$T/s13d.json" 'r.ok') · quedaron «${LEFT}» y «${LEFT_BACKUP}» · motivo «$(q "$T/s13d.json" 'r.reason')»"
   fi
   # 4. la misma clase, un paso antes: falla la ESCRITURA del temporal y queda a medio escribir. Si se deja borrar, no
-  #    queda nada (🔴 rojo previo: quedaba tirado sin aviso, el reemplazo ni se intentaba); si no, el motivo lo nombra
+  #    queda nada (🔴 sin esto queda tirado sin aviso, el reemplazo ni se intenta); si no, el motivo lo nombra
   new_home "$H"; echo '{"hooks":{}}' > "$H/.claude/settings.json"; cp "$H/.claude/settings.json" "$T/s13-before.json"
   rc=0; call_stuck "$H" "$T/s13e.json" none half-write || rc=$?
   [ "$rc" = "0" ] && [ "$(q "$T/s13e.json" 'r.ok === false && /ENOSPC/.test(r.reason) && !/tmp-/.test(r.reason)')" = "true" ] \

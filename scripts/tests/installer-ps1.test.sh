@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # installer-ps1.test.sh — el instalador de Windows (`install-tycon-hooks.ps1`) y su sync de bloques
-# (`setup/sync-claude-md-blocks.ps1`), por EJECUCIÓN con `pwsh` (story 8.7, tanda C · pase adversarial).
+# (`setup/sync-claude-md-blocks.ps1`), por EJECUCIÓN con `pwsh`.
 #
-# La falla que caza: el `.ps1` se escribió «por lectura», sin máquina Windows, y sus pruebas sólo lo leían. Así pasó
-# sin que nadie lo viera (2026-10-03, hallazgo 17): en una máquina limpia `-Check` salía 1 con un error de PowerShell
+# La falla que caza: el `.ps1` se escribe «por lectura», sin máquina Windows, y sus pruebas sólo lo leen. Así pasa
+# sin que nadie lo vea: en una máquina limpia `-Check` sale 1 con un error de PowerShell
 # en vez de listar qué falta, y sin `-Check` —sobre el `settings.json` que deja `harness.js install`, que sólo trae
-# `hooks.SessionStart`— el aplicador moría con «The property 'Stop' cannot be found on this object» sin registrar un
+# `hooks.SessionStart`— el aplicador muere con «The property 'Stop' cannot be found on this object» sin registrar un
 # solo hook. Causa: las guardas `-not $x.PSObject.Properties.Match('nombre')`. `Match()` devuelve una colección que
-# PowerShell da por verdadera AUNQUE ESTÉ VACÍA, así que la guarda nunca entra. Es una clase: había nueve.
+# PowerShell da por verdadera AUNQUE ESTÉ VACÍA, así que la guarda nunca entra. Es una clase: vale para toda guarda de esa forma.
 #
 # Cómo mide (todo con el `pwsh` de esta máquina; la semántica de esas guardas es del motor, no del sistema operativo):
 #   · un clon de laboratorio armado acá: copia de `scripts/` (sin sus pruebas) y `claude-md-blocks/`, más
@@ -15,43 +15,40 @@
 #     cada hook que el set canónico busca en agent-skills.
 #   · HOME y USERPROFILE temporales, y los `XDG_*` de pwsh fuera de la HOME: lo que aparece en la HOME lo escribió el
 #     instalador, no pwsh. `env -i`: nada del ambiente de quien corre se cuela.
-#   · lo esperado sale de LA lista de hooks (`scripts/setup/hooks-list.json`, story 8.17 W3 y W4: el `.ps1` ya no lleva
+#   · lo esperado sale de LA lista de hooks (`scripts/setup/hooks-list.json`: el `.ps1` no lleva
 #     tablas propias, llama a `scripts/setup/apply-hooks.js --platform windows`): los registros que Windows no excluye,
 #     decididos por su `when` con una lógica escrita en esta prueba, cruzados con lo que el lector de configuración dice
 #     que está prendido y con los archivos que existen en el clon: cada hook esperado, UNA vez, en su evento y con su
-#     matcher; un `.js` como `node "…"` y un `.sh` como `bash "…"` (story 8.17, W3W4: la ruta absoluta del bash de Git
-#     del AC 29 se fue, medido en un agente Windows). Y «no pierde nada»: sacando esos hooks, el `settings.json` queda igual al de partida
+#     matcher; un `.js` como `node "…"` y un `.sh` como `bash "…"` (sin la ruta absoluta del bash de Git: lanzado
+#     por PowerShell sería un error de sintaxis). Y «no pierde nada»: sacando esos hooks, el `settings.json` queda igual al de partida
 #     (mismas claves, mismos valores, mismo orden).
-#   · un `node` intermediario delante del PATH anota con qué argumentos se llama al paso de terceros (hallazgo 3):
+#   · un `node` intermediario delante del PATH anota con qué argumentos se llama al paso de terceros:
 #     el paso va apagado (`TYCON_THIRD_PARTY=0`), así que su salida no lo dice. Con el mismo intermediario se ve que el
-#     `.ps1` le pregunta a `scripts/lib/skills-dir.js` dónde están las skills (story 8.18, sección (i)).
-#   · (story 8.18, tramo 3) llamado por la misma carpeta escrita con otras mayúsculas no registra nada dos veces
+#     `.ps1` le pregunta a `scripts/lib/skills-dir.js` dónde están las skills (sección (i)).
+#   · llamado por la misma carpeta escrita con otras mayúsculas no registra nada dos veces
 #     (sección (j); en un disco que las distingue, NO MEDIDO), y un `core.hooksPath` local cuya carpeta esconde la vista
 #     reducida de un clon re-apuntado no se borra por «vestigial» (sección (k), sobre un clon de git de laboratorio).
-#   · (regresión 182 measure #12408, 2026-10-08) sección (z): el clon y la HOME en «usuario de práctica» y la consola
+#   · sección (z): el clon y la HOME en «usuario de práctica» y la consola
 #     de pwsh puesta en Latin1 antes de llamar al `.ps1` —lo que Windows hace solo cuando lo lanza harness.js o un hook—:
 #     `-Check` tiene que encontrar la carpeta de skills igual, porque el `.ps1` fija UTF-8 él mismo.
 #   · el sync `.ps1` corre sobre los mismos bloques de juguete que el `.sh` y el `CLAUDE.md` se compara BYTE A BYTE
-#     (hallazgos 11 y 16: un marcador `requires-integration` casi bien escrito no es un bloque común).
-#   · story 8.17, tanda W3a (T90 a T93): el `.ps1` registraba 29 de los 42 controles que el `.sh` registra en una máquina
-#     del equipo (medido en un agente Windows: corridas 11686 y 11709); faltaban, entre otros, los dos frenos de comandos.
+#     (un marcador `requires-integration` casi bien escrito no es un bloque común).
+#   · (T90 a T93): el `.ps1` podría registrar menos controles que el `.sh` en una máquina
+#     del equipo (entre otros, los dos frenos de comandos) sin que nadie lo notara.
 #     Acá lo esperado NO sale de la lista de hooks sino de una lista escrita en esta prueba, control por control
-#     (secciones n a q): cada uno una vez, en su evento y con su matcher; un `.sh` como `bash "…"` (la forma de la
-#     W3a, que volvió en la W3W4) y un `.js` como
+#     (secciones n a q): cada uno una vez, en su evento y con su matcher; un `.sh` como `bash "…"` y un `.js` como
 #     `node "…"`; los opt-in por variable se registran y se SACAN; un `.sh` con finales `\r\n` no se registra y se dice;
 #     un guion que falta se nombra. Con las integraciones prendidas por variable (lo de fábrica de una máquina del equipo).
-#     (Las secciones de la W3a se llamaban f a m en `main`; al juntarse con las f a k de la story 8.18 pasaron a n a u,
-#     en el mismo orden: f→n, g→o, h→p, i→q, j→r, k→s, l→t, m→u.)
-#   · (story 8.26, tanda H1c · AC 65 e) sección (gh): el aviso de la carpeta GLOBAL de hooks de git — calla si es la que
+#   · sección (gh): el aviso de la carpeta GLOBAL de hooks de git — calla si es la que
 #     el instalador llena, avisa con las dos rutas y el comando si es otra, tiene su aviso si no existe, dice «no pude
 #     comparar» si es relativa o (en Windows) tiene forma de Unix, y nunca cambia la configuración de git.
 # 🔴 Nunca la HOME real: antes de correr el instalador, pwsh dice qué HOME y qué USERPROFILE ve; si no son las de
 #    laboratorio, la prueba se niega. Sin red, sin docker, sin sudo. `launchctl` de mentira, examen nocturno y entorno
 #    gráfico apagados.
 # Sin `pwsh` en el PATH: UNA línea «NO MEDIDO» y exit 0 — ni verde ni rojo.
-# Lo que NO mide: Windows de verdad (rutas con `\`, junctions, PowerShell 5.1). Esa deuda sigue declarada en el `.ps1`.
-# Correr: bash scripts/tests/installer-ps1.test.sh [<raíz del clon bajo prueba>]   (entre 1,5 y 2,5 min con las secciones
-#         de la W3a, unas 45 corridas del .ps1 de 1 a 3 s cada una; antes de la W3a medía 44 s)
+# Lo que NO mide: Windows de verdad (rutas con `\`, junctions, PowerShell 5.1). Esa deuda está declarada en el `.ps1`.
+# Correr: bash scripts/tests/installer-ps1.test.sh [<raíz del clon bajo prueba>]   (entre 1,5 y 2,5 min,
+#         unas 45 corridas del .ps1 de 1 a 3 s cada una)
 
 set -uo pipefail
 ROOT="$(cd "${1:-$(dirname "${BASH_SOURCE[0]}")/../..}" && pwd)"
@@ -81,8 +78,8 @@ CLONE="$T/clone"; mkdir -p "$CLONE/agents" "$CLONE/skills/tycon-pipeline"
 [ -f "$CLONE/scripts/install-tycon-hooks.ps1" ] || { echo "❌ installer-ps1: no pude armar el clon de laboratorio"; exit 1; }
 printf '# skill de juguete\n' > "$CLONE/skills/tycon-pipeline/SKILL.md"
 printf '# revisor de juguete\n' > "$CLONE/agents/lab-reviewer.md"
-# un archivo vacío por cada hook que la lista busca en las skills (los que no llevan `@tcg:`). Desde la story 8.17 (W3 y
-# W4) la lista es scripts/setup/hooks-list.json: el .ps1 ya no lleva tabla propia, llama a apply-hooks.js
+# un archivo vacío por cada hook que la lista busca en las skills (los que no llevan `@tcg:`). La lista es
+# scripts/setup/hooks-list.json: el .ps1 no lleva tabla propia, llama a apply-hooks.js
 HOOKS_LIST="$ROOT/scripts/setup/hooks-list.json"
 node -e 'for (const h of require(process.argv[1]).hooks) if (!h.spec.startsWith("@tcg:")) console.log(h.spec)' "$HOOKS_LIST" | sort -u | while IFS= read -r rel; do
   mkdir -p "$CLONE/skills/$(dirname "$rel")" && : > "$CLONE/skills/$rel"
@@ -94,7 +91,7 @@ printf '#!/bin/sh\n# launchctl de mentira: no carga nada en la máquina real\nex
 REAL_NODE="$(command -v node)"
 NODE_CALLS="$T/node-calls.log"; : > "$NODE_CALLS"
 # el intermediario: anota los argumentos y le pasa la posta al node de verdad
-# (story 8.36) a la tanda del aplicador (`applier-batch.js --plan <archivo>`) le anota además cada paso de su plan como
+# A la tanda del aplicador (`applier-batch.js --plan <archivo>`) le anota además cada paso de su plan como
 # la llamada suelta que reemplaza («(tanda) scripts/…/<guion>.js <argumentos>»): lo que se mira acá es a quién se le
 # pregunta y con qué, no cuántos procesos lo hacen. El que lee el plan no hereda NODE_OPTIONS (no lo cuenta el T4).
 cat > "$T/bin/node" <<EOF
@@ -104,26 +101,26 @@ case "\$1 \$2" in *applier-batch.js\ --plan) env -u NODE_OPTIONS "$REAL_NODE" -e
 exec "$REAL_NODE" "\$@"
 EOF
 chmod +x "$T/bin/node"
-# cómo empieza el comando de un .sh registrado: `bash "<ruta del guion>"`. La W4 (AC 29) lo había pasado a la ruta
-# absoluta del bash de Git entre comillas; la W3W4 lo volvió atrás (medido en el agente Windows, corrida 11979: lanzado
-# por PowerShell era un error de sintaxis, y Claude Code lanza los hooks con el bash de Git, donde `bash` ya es ése).
+# cómo empieza el comando de un .sh registrado: `bash "<ruta del guion>"`. No es la ruta
+# absoluta del bash de Git entre comillas: lanzado
+# por PowerShell esa forma es un error de sintaxis, y Claude Code lanza los hooks con el bash de Git, donde `bash` ya es ése.
 SH_PREFIX='bash '
-# TYCON_NO_GIT_HOOKS=1: los hooks globales de git que el .ps1 deja desde la W4 (AC 32) no son de esta prueba
+# TYCON_NO_GIT_HOOKS=1: los hooks globales de git que el .ps1 deja no son de esta prueba
 SAFE=(TYCON_PROFILE=0 TYCON_NO_GIT_HOOKS=1 TYCON_CODEX=0 TYCON_THIRD_PARTY=0 TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 "LAUNCHCTL_BIN=$T/bin/launchctl"
   TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_AGENTSMD_POINTER=1 TYCON_NO_ENGRAM_VERSION_CHECK=1 TYCON_NO_SQLITE_CHECK=1
   TYCON_NO_CLAUDEMD_SYNC=1 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
   GIT_TERMINAL_PROMPT=0 POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off
   # el buzón, apagado salvo que el caso lo prenda: en el árbol del equipo (el privado con el público debajo) su llave lo
-  # prende sola y en la copia pública no está, y desde que hay un hook que depende de él (owner-email-notice.js) la misma
-  # prueba contaba distinto en los dos árboles. Un caso que lo quiere prendido lo pide (TEAM, T4b).
+  # prende sola y en la copia pública no está, y como un hook depende de él (owner-email-notice.js) la misma
+  # prueba contaría distinto en los dos árboles. Un caso que lo quiere prendido lo pide (TEAM, T4b).
   TYCON_MAILBOX=0
   # y la subida de corridas, apagada: con el buzón prendido sale DE FONDO y escribe su registro después de que el
-  # instalador terminó, así que una foto de la HOME tomada enseguida cambiaba sola ((v) T26). T4b la prende y la mide.
+  # instalador terminó, así que una foto de la HOME tomada enseguida cambiaría sola ((v) T26). T4b la prende y la mide.
   TYCON_NO_UPLOAD_RUNS=1)
 lab_env() { # <home> [VAR=val ...] -- <comando…>: el comando, con la HOME de laboratorio y sin el ambiente de quien corre
   local h="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ $# -gt 0 ] && shift
-  # TYCON_HARNESS_NODE=0 (story 8.39, decisión 20): el laboratorio no baja el Node del arnés de nodejs.org
+  # TYCON_HARNESS_NODE=0: el laboratorio no baja el Node del arnés de nodejs.org
   ( cd "$h" && env -i HOME="$h" USERPROFILE="$h" PATH="$T/bin:$PATH" TMPDIR="$T/tmp" LANG="${LANG:-en_US.UTF-8}" TYCON_HARNESS_NODE=0 \
       XDG_CACHE_HOME="$T/xdg/cache" XDG_DATA_HOME="$T/xdg/data" XDG_CONFIG_HOME="$T/xdg/config" \
       "${SAFE[@]}" ${extra[@]+"${extra[@]}"} "$@" )
@@ -132,7 +129,7 @@ installer() { # <home> [VAR=val ...] [-- <args del instalador>] → corre el .ps
   local h="$1"; shift
   local extra=(); while [ $# -gt 0 ] && [ "$1" != "--" ]; do extra+=("$1"); shift; done; [ $# -gt 0 ] && shift
   # PS1_ENTRY: por qué ruta se lo llama (por defecto, la carpeta del clon; (f) lo llama por el enlace de la HOME)
-  # LAB_INSTALLER=<otro .ps1> delante de la llamada: el instalador de OTRA copia del clon de laboratorio (W3a); si están
+  # LAB_INSTALLER=<otro .ps1> delante de la llamada: el instalador de OTRA copia del clon de laboratorio; si están
   # las dos, gana LAB_INSTALLER (ningún caso las pone juntas)
   lab_env "$h" ${extra[@]+"${extra[@]}"} -- pwsh -NoProfile -NonInteractive -File "${LAB_INSTALLER:-${PS1_ENTRY:-$CLONE/scripts/install-tycon-hooks.ps1}}" "$@"
 }
@@ -254,15 +251,15 @@ if (bad.length) { console.log(bad.slice(0, 6).join(' · ')); process.exit(1); }
 console.log(`${expected.length} hooks`);
 JS
 check() { # <modo> <archivo…>: una línea con lo que encontró; exit 0 sólo si cumple (con el node de verdad, sin anotar)
-  # INTEG_FILE=<otro integrations.json> y CHECK_VARS="VAR=valor …" delante de la llamada: las integraciones y las variables de ESA corrida (W3a)
+  # INTEG_FILE=<otro integrations.json> y CHECK_VARS="VAR=valor …" delante de la llamada: las integraciones y las variables de ESA corrida
   node "$T/check.js" "$1" "$HOOKS_LIST" "$CLONE" "${INTEG_FILE:-$T/integrations.json}" "${@:2}" 2>&1 | head -3 | tr '\n' ' '
   return "${PIPESTATUS[0]}"
 }
 
-# ── La suite corre por partes (2026-10-14, public-ci: tardaba ~440 s en el agente de GitHub y en uno lento pasó los
-# 900 s del tope, a punto de terminar). Entera —a mano— corre todos los bloques; como parte
+# ── La suite corre por partes (entera tarda ~440 s en el agente de GitHub, y en uno lento puede pasar los
+# 900 s del tope). Entera —a mano— corre todos los bloques; como parte
 # (`installer-ps1.p<k>.test.sh`), sólo los suyos. Lo de afuera de los bloques —el laboratorio de arriba y las
-# funciones y listas de la tanda W3a— corre siempre: un bloque no puede depender de lo que dejó otro
+# funciones y listas de más abajo— corre siempre: un bloque no puede depender de lo que dejó otro
 # (scripts/tests/lib/suite-parts.sh). La parte 1 va de (a) a (r); la 2, de (u) al final.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/suite-parts.sh"
 suite_parts 2
@@ -281,7 +278,7 @@ if [ "$CK" -eq 0 ]; then ok "(a) -Check lista lo que falta: los ${R% } que el cl
 else no "(a) -Check no lista lo que falta: ${R}·$(brief "$T/a.out" 200)"; fi
 if [ "$BEFORE" = "$AFTER" ] && [ -z "$AFTER" ]; then ok "(a) -Check no escribió nada: la HOME sigue vacía"
 else no "(a) -Check escribió en la HOME: $(echo "$AFTER" | head -5 | tr '\n' ' ')"; fi
-# hallazgo 3: sin el enlace todavía, la revisión de terceros mira el clon (como el resto de la corrida), no un enlace que no existe
+# sin el enlace todavía, la revisión de terceros mira el clon (como el resto de la corrida), no un enlace que no existe
 if grep -qF "install-third-party.js --repo $CLONE --check" "$NODE_CALLS" && ! grep -q "install-third-party.js --repo $HA/" "$NODE_CALLS"; then
   ok "(a) -Check sin el enlace: el paso de terceros recibe el clon (--repo <clon> --check)"
 else no "(a) -Check sin el enlace: el paso de terceros recibió «$(grep 'install-third-party.js' "$NODE_CALLS" | sed 's/.*install-third-party.js//' | head -1)» (esperaba --repo $CLONE --check)"; fi
@@ -296,7 +293,7 @@ ELAPSED_INSTALL=$((SECONDS - T0))
 R="$(check settings "$HB/.claude/settings.json" "$T/b.left.json")"; CK=$?
 if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ]; then ok "(b) sin -Check sobre una HOME vacía: sale 0 y registra los ${R% }, cada uno una vez"
 else no "(b) sin -Check sobre una HOME vacía (rc $RC): ${R}·$(brief "$T/b.out")"; fi
-# el espejo del hallazgo 3: la llamada de siempre al paso de terceros no cambió
+# el espejo: la llamada de siempre al paso de terceros no cambió
 if grep -qF "install-third-party.js --repo $HB/.claude/agent-skills" "$NODE_CALLS" && ! grep -q 'install-third-party.js.*--check' "$NODE_CALLS"; then
   ok "(b) el espejo: instalando, el paso de terceros recibe el enlace de siempre (--repo ~/.claude/agent-skills, sin --check)"
 else no "(b) instalando, el paso de terceros recibió «$(grep 'install-third-party.js' "$NODE_CALLS" | sed 's/.*install-third-party.js//' | head -1)»"; fi
@@ -409,11 +406,11 @@ R="$(check settings "$HE/.claude/settings.json" "$T/e.left.json")"; CK=$?
 if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ]; then ok "(e) bloques sin «hooks» y un hook sin «command»: sale 0, registra los ${R% } y conserva lo que había"
 else no "(e) bloques sin «hooks» y un hook sin «command» (rc $RC): ${R}·$(brief "$T/e.out")"; fi
 
-# ═══ (f) llamado por el enlace `~/.claude/tycon-harness`: ningún hook dos veces (story 8.18, AC 36) ═══════
-# El par del arreglo del `.sh`: aquél reconocía sus hooks por la ruta con que lo llamaban y, llamado por el enlace,
-# registraba 32 por segunda vez (ensayo del alta, 2026-10-03). El `.ps1` los reconoce por la ruta DENTRO del repo: da
+# ═══ (f) llamado por el enlace `~/.claude/tycon-harness`: ningún hook dos veces ═══════
+# El par del `.sh`: aquél reconoce sus hooks por la ruta con que lo llaman y, llamado por el enlace,
+# no debe registrar 32 por segunda vez. El `.ps1` los reconoce por la ruta DENTRO del repo: da
 # lo mismo por dónde se llegue. Acá queda medido, en los dos órdenes, para que nadie lo «arregle» a la ruta absoluta.
-# (pwsh no resuelve el enlace: `$PSScriptRoot` es la ruta con que se lo llamó — medido el 2026-10-04.)
+# (pwsh no resuelve el enlace: `$PSScriptRoot` es la ruta con que se lo llamó.)
 BY_LINK="$HB/.claude/tycon-harness/scripts/install-tycon-hooks.ps1"
 if [ -L "$HB/.claude/tycon-harness" ] && [ -f "$BY_LINK" ]; then
   PS1_ENTRY="$BY_LINK" installer "$HB" > "$T/f1.out" 2>&1; RC=$?
@@ -437,7 +434,7 @@ R="$(check settings "$HF/.claude/settings.json" "$T/b.left.json")"; CK=$?
 if [ "$RC" -eq 0 ] && [ "$CK" -eq 0 ] && cmp -s "$HF/.claude/settings.json" "$T/f.settings.json"; then ok "(f) orden inverso: después, por la carpeta del clon, los ${R% } siguen una vez cada uno y settings.json no cambia"
 else no "(f) orden inverso (rc $RC): ${R}·$(brief "$T/f4.out")"; fi
 
-# ═══ (g) la máquina del equipo en la transición: el .ps1 calla, y la carpeta desconocida avisa (story 8.18, AC 28) ═
+# ═══ (g) la máquina del equipo en la transición: el .ps1 calla, y la carpeta desconocida avisa ═
 # Dos clones: `~/.claude/agent-skills` es un clon real (carpeta con `.git`, `skills/tycon-pipeline` y `agents/`) y
 # `skills` y `agents` son enlaces a su interior; el clon del arnés ya trae `skills/` y `agents/`. Callar lo decide
 # canonical-path.js (`separateSkillsClone`), igual para el `.sh` (harness-install.test.sh, T29) y para este archivo: acá
@@ -462,11 +459,11 @@ installer "$HT" > "$T/g3.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(grep -c 'hay una carpeta real, no un enlace: no la piso' "$T/g3.out")" = 1 ] && [ "$(links_of "$HT")" = "$LINKS_BEFORE" ]; then ok "(g) (error) una carpeta real que NO es un clon de agent-skills: el .ps1 avisa como siempre, y no la pisa"
 else no "(g) (error) carpeta desconocida (rc $RC): $(grep -c 'no la piso' "$T/g3.out") aviso(s) — $(brief "$T/g3.out" 200)"; fi
 
-# ═══ (h) Windows queda con la llave apagada: la máquina le gana al perfil (story 8.18, AC 38 · T40) ═════════════
-# Decisión del dueño (2026-10-03): las máquinas Windows del equipo no re-apuntan su clon viejo hasta probar una, con él
+# ═══ (h) Windows queda con la llave apagada: la máquina le gana al perfil (T40) ═════════════
+# Las máquinas Windows del equipo no re-apuntan su clon viejo hasta probar una, con alguien
 # mirando. Cómo: `update.skills_source: separate` en el `tycon.json` de la máquina, que le gana al perfil del equipo el
 # día que el perfil diga `unified`. La clave la lee el mismo lector en los tres sistemas (Node); el `.ps1` no re-apunta
-# nada por su cuenta. Lo que NO mide: una máquina Windows de verdad (ida y vuelta con el dueño mirando: pendiente).
+# nada por su cuenta. Lo que NO mide: una máquina Windows de verdad (ida y vuelta con alguien mirando: pendiente).
 printf '{ "update": { "skills_source": "unified" } }\n' > "$T/lab-profile.json"   # un perfil de laboratorio: el del equipo no se toca
 HK="$(new_home key-off)"; mkdir -p "$HK/.claude"; printf '{ "update": { "skills_source": "separate" } }\n' > "$HK/.claude/tycon.json"
 KEY="$(lab_env "$HK" "TYCON_PROFILE=$T/lab-profile.json" -- "$REAL_NODE" "$CLONE/scripts/lib/tycon-config.js" get update.skills_source 2> "$T/h1.err")"; RC=$?
@@ -487,14 +484,14 @@ else no "(h) el .ps1 con la llave apagada (rc $RC): $(brief "$T/h3.out" 240)"; f
 if ! grep -q -e 'set-url' -e 'skills_source' "$PS1_INSTALLER" "$ROOT/scripts/install-tycon-hooks.sh"; then ok "(h) por lectura: ni el .ps1 ni el .sh leen la llave ni cambian el remoto de un clon (re-apuntar y deshacer viven en Node, igual en los tres sistemas)"
 else no "(h) un instalador nombra la llave o cambia un remoto: $(grep -n -e 'set-url' -e 'skills_source' "$PS1_INSTALLER" "$ROOT/scripts/install-tycon-hooks.sh" | head -2 | cut -c1-200)"; fi
 
-# ═══ (i) dónde están las skills: el .ps1 le pregunta a la regla, y lo que escribe nombra lo instalado (8.18, AC 12) ═
-# El par del cambio del `.sh` (harness-install.test.sh, CANARY): el `.ps1` traía la ruta de las skills escrita; ahora se la
+# ═══ (i) dónde están las skills: el .ps1 le pregunta a la regla, y lo que escribe nombra lo instalado ═
+# El par del `.sh` (harness-install.test.sh, CANARY): el `.ps1` no trae la ruta de las skills escrita; se la
 # pregunta a scripts/lib/skills-dir.js con la variante de quien ESCRIBE (`--installed`) y sin la variable. Este archivo
 # no corre las suites rápidas: sólo escribe. Lo que se mide acá, por ejecución con pwsh: que pregunta; que en la máquina
 # de dos clones los hooks siguen nombrando ~/.claude/agent-skills aunque TYCON_SKILLS_DIR apunte al clon de trabajo
-# (hallazgo I12: si escribiera con la regla de quien lee, cambiarían los hooks registrados); y que sin skills en ningún
+# (si escribiera con la regla de quien lee, cambiarían los hooks registrados); y que sin skills en ningún
 # lado sale 1 con la línea de siempre. En Windows: NO MEDIDO.
-# 🔴 rojo previo (medido sobre 4e0c60a7, 2026-10-04): el .ps1 no llamaba a skills-dir.js.
+# 🔴 Si el .ps1 no llama a skills-dir.js, esto da rojo.
 HV="$(new_home skills-rule)"; OLD_V="$HV/.claude/agent-skills"
 mkdir -p "$OLD_V/.git" && cp -R "$CLONE/skills" "$OLD_V/skills" && cp -R "$CLONE/agents" "$OLD_V/agents"
 ln -s "$OLD_V/skills" "$HV/.claude/skills"; ln -s "$OLD_V/agents" "$HV/.claude/agents"; ln -s "$CLONE" "$HV/.claude/tycon-claude-guides"
@@ -516,11 +513,11 @@ if [ "$RC" -eq 1 ] && grep -q 'agent-skills no encontrado' "$T/i2.out" && grep -
   ok "(i) (error) un clon sin skills/ y sin ~/.claude/agent-skills: el .ps1 sale 1, dice «agent-skills no encontrado» con dónde las buscó, y no registra ningún hook"
 else no "(i) (error) sin skills en ningún lado (rc $RC): $(grep -c 'agent-skills no encontrado' "$T/i2.out") mención(es) — $(brief "$T/i2.out" 240)"; fi
 
-# ═══ (j) llamado por la misma carpeta escrita con otras mayúsculas: ningún hook dos veces (8.18, tramo 3 · clase 14) ═
-# El par del arreglo del `.sh` (installer-repeated-hooks.test.sh, CASE): en un disco que no distingue mayúsculas, aquél
-# comparaba la ruta real letra por letra y, llamado por la misma carpeta en otra caja, registró 27 hooks por segunda
+# ═══ (j) llamado por la misma carpeta escrita con otras mayúsculas: ningún hook dos veces ═
+# El par del `.sh` (installer-repeated-hooks.test.sh, CASE): en un disco que no distingue mayúsculas, aquél
+# compara la ruta real letra por letra y, llamado por la misma carpeta en otra caja, no debe registrar los hooks por segunda
 # vez. El `.ps1` reconoce sus hooks por la ruta DENTRO del repo y sin mirar la caja: la carpeta por la que se llega no
-# entra en la comparación. Acá queda medido con pwsh, en los dos órdenes (es la vara: no tenía el defecto, y que nadie se
+# entra en la comparación. Acá queda medido con pwsh, en los dos órdenes (es la vara: no tiene el defecto, y que nadie se
 # lo ponga). En un disco que SÍ distingue mayúsculas la otra ruta no existe: NO MEDIDO.
 OTHER_CLONE="$T/CLONE"
 if [ "$OTHER_CLONE/scripts/install-tycon-hooks.ps1" -ef "$CLONE/scripts/install-tycon-hooks.ps1" ]; then
@@ -545,15 +542,14 @@ else
   echo "⏭ installer-ps1: NO MEDIDO — (j) este disco distingue mayúsculas: $OTHER_CLONE no es $CLONE"
 fi
 
-# ═══ (k) el core.hooksPath local cuya carpeta no está en el disco no es vestigial si el repo la sigue (8.18 · clase 21) ═
-# El caso: un clon viejo de agent-skills con `core.hooksPath = .githooks` (el repo sigue esa carpeta, con un hook de
-# verdad). Re-apuntado al repo unido, la vista reducida (sparse-checkout) esconde `.githooks/`; el lazo del `.ps1` miraba
-# sólo el disco, la dio por vestigial y BORRÓ la clave de `.git/config`; la vuelta no la repuso. Tres respuestas, no
+# ═══ (k) el core.hooksPath local cuya carpeta no está en el disco no es vestigial si el repo la sigue ═
+# Un clon viejo de agent-skills con `core.hooksPath = .githooks` (el repo sigue esa carpeta, con un hook de
+# verdad), re-apuntado al repo unido, tiene la vista reducida (sparse-checkout) que esconde `.githooks/`; si el lazo del `.ps1` mirara
+# sólo el disco, la daría por vestigial y BORRARÍA la clave de `.git/config`. Tres respuestas, no
 # dos: la carpeta está y se lee → se cuentan sus hooks; no está pero el repo la sigue → no es vestigial, no se toca; no
 # se pudo mirar → tampoco se toca, y se dice. El par del `.sh`: installer-repeated-hooks.test.sh (HOOKSPATH).
-# Hasta la W4 el lazo del `.ps1` corría sólo cuando la corrida registraba o sacaba un hook (había una salida temprana):
-# por eso cada corrida parte de un settings.json sin hooks, como una actualización que trae hooks nuevos. Desde la W4
-# (AC 30) no hay salida temprana; partir de cero sigue siendo válido.
+# Cada corrida parte de un settings.json sin hooks, como una actualización que trae hooks nuevos. No hay salida
+# temprana; partir de cero es válido.
 gq() { env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 \
   GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com git -c core.hooksPath=/dev/null "$@"; }
 HP="$(new_home hooks-path)"; OLD_P="$HP/.claude/agent-skills"
@@ -589,7 +585,7 @@ if view_on > "$T/k.view.out" 2>&1 && [ ! -e "$OLD_P/.githooks" ] && [ -d "$OLD_P
 else
   no "(k) no pude poner la vista reducida en el clon de laboratorio: $(brief "$T/k.view.out" 200)"
 fi
-# (story 8.16, tanda C · AC 23; pase adversarial, clase 11) en minimal el lazo no mira el core.hooksPath de ningún repo:
+# en minimal el lazo no mira el core.hooksPath de ningún repo:
 # uno vestigial (una carpeta vacía) queda como está, y no se dice nada de él
 mkdir -p "$OLD_P/.vacia" && gq -C "$OLD_P" config --local core.hooksPath .vacia
 printf '{ "install": { "profile": "minimal" } }\n' > "$HP/.claude/tycon.json"
@@ -616,10 +612,10 @@ else no "(k) (espejo) carpeta inexistente (rc $RC): «$(said_hooks_path "$T/k5.o
 
 fi   # ── fin de la parte 1 (de (a) a (k)); lo que sigue, hasta (n), corre en las dos partes ──
 
-# ═══ story 8.17, tanda W3a · el .ps1 registra lo que faltaba (T90 a T93) ════════════════════════════════════════
+# ═══ el .ps1 registra todos los controles de la lista (T90 a T93) ════════════════════════════════════════
 # Lo esperado de estas secciones está ESCRITO ACÁ, control por control: si saliera de las tablas del .ps1, una fila que
-# falta en la tabla no se vería (así vivieron los 15 huecos). Todas las corridas con TYCON_HARNESS_LOCK_HELD=1 y
-# TYCON_HARNESS_GIT_BASH_HEALTH=1 (lo que pone un harness.js de esta tanda): miden el aplicador, no el mecanismo de
+# falta en la tabla no se vería. Todas las corridas con TYCON_HARNESS_LOCK_HELD=1 y
+# TYCON_HARNESS_GIT_BASH_HEALTH=1 (lo que pone un harness.js actual): miden el aplicador, no el mecanismo de
 # instalación que lo lanza. Sin la segunda variable es la sección u.
 cat > "$T/hookq.js" <<'JS'
 'use strict';
@@ -674,8 +670,8 @@ hook_order() { # <settings>: una línea por hook, en el orden del archivo (event
   node -e 'const s=require(process.argv[1]);for(const[e,b]of Object.entries(s.hooks||{}))for(const x of b)for(const h of x.hooks||[])console.log(e,x.matcher||"*",String(h.command||"").split("/").pop())' "$1" 2>&1
 }
 
-# los que faltaban y tienen sentido en Windows (AC 64), los dos reemplazados que sobraban, lo que queda afuera con su
-# motivo en windows-support.json (AC 68) y el opt-in que nace apagado
+# los que faltaban y tienen sentido en Windows, los dos reemplazados que sobraban, lo que queda afuera con su
+# motivo en windows-support.json y el opt-in que nace apagado
 MISSING_CONTROLS=(
   "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
   "PreToolUse|Bash|PowerShell|push-phantom-ref-notice.js" "PreToolUse|Bash|PowerShell|pr-auto-complete-guard.js"
@@ -686,7 +682,7 @@ MISSING_CONTROLS=(
 DUPLICATES=("PostToolUse|Write|tycon-ado-story-wi/scripts/on-story-create.js" "PostToolUse|Write|tycon-story-followup-link/scripts/on-story-create.js")
 EXCLUDED_ON_WINDOWS=("SessionStart||harness-bootstrap-heal.sh" "PreToolUse|Bash|PowerShell|pr-one-per-repo-guard.js" "SessionStart||telegram-zombie-sweep.sh" "PostToolUse|Bash|PowerShell|missing-path-notice.js")
 OFF_BY_DEFAULT=("PreToolUse|Bash|PowerShell|session-collision-guard.js" "SessionStart||session-collision-guard.js")
-# lanzado por un harness.js de esta tanda en adelante: el candado tomado Y el aviso de que la salud que lo va a juzgar
+# lanzado por un harness.js actual: el candado tomado Y el aviso de que la salud que lo va a juzgar
 # sabe revisar un .sh con el bash de Git (sin el aviso, el .ps1 deja los .sh para la corrida siguiente: sección u)
 HELD=(TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_GIT_BASH_HEALTH=1)
 # lo de fábrica de una máquina del equipo: las tres integraciones que su perfil prende, y el buzón, que prende la llave
@@ -696,8 +692,8 @@ lab_env "$GUARD" "${TEAM[@]}" -- node "$CLONE/scripts/lib/tycon-config.js" integ
 [ $? -eq 0 ] || { echo "❌ installer-ps1: el lector de configuración no contestó con las integraciones del equipo: $(brief "$T/integrations-team.err")"; exit 1; }
 # cuántos hooks registra el .ps1 en una máquina del equipo, contado de la lista declarada (scripts/setup/hooks-list.json)
 # y de lo que contestó el lector: los de Windows que corren siempre, los de cada integración prendida y los opt-in que
-# nacen prendidos. No es una cuenta escrita a mano: un hook nuevo en la lista la mueve sola (antes estaba fija en 40 y el
-# primer hook del buzón la dejó roja sin que nada estuviera mal).
+# nacen prendidos. No es una cuenta escrita a mano: un hook nuevo en la lista la mueve sola (si fuera fija, un hook nuevo la dejaría
+# roja sin que nada estuviera mal).
 ON_BY_DEFAULT=(TYCON_SAFETY_GUARD TYCON_TEST_SCOPE_GUARD)
 # Tres números: el total, los guiones del clon (`@tcg:…`) y los de las skills (su ruta pasa por ~/.claude).
 read -r TEAM_HOOKS CLONE_HOOKS SKILL_HOOKS <<< "$(node -e '
@@ -726,9 +722,9 @@ else no "(n) T90 la lista entera con lo de fábrica del equipo (esperaba «$TEAM
 BAD="$(wrong_counts "$ST" 0 "${DUPLICATES[@]}" "${EXCLUDED_ON_WINDOWS[@]}" "${OFF_BY_DEFAULT[@]}")"
 if [ -z "$BAD" ]; then ok "(n) T90 no registra los dos reemplazados, ni lo que Windows deja afuera, ni el opt-in que nace apagado"
 else no "(n) T90 registró lo que no va:$BAD"; fi
-# Doctor_ExpectedCount_EqualsInstaller_MatcherCounts (pase adversarial de la W3a, B5): la cuenta de `doctor` sobre lo
+# Doctor_ExpectedCount_EqualsInstaller_MatcherCounts: la cuenta de `doctor` sobre lo
 # que este instalador dejó es la suya —39, cada fila con su matcher— y sin la fila PostToolUse/Bash de
-# rebuild-before-verify.js dice que falta ESA (antes: 38 y «todos registrados», mientras -Check decía que faltaba una)
+# rebuild-before-verify.js dice que falta ESA (no 38 y «todos registrados» mientras -Check dice que falta una)
 cat > "$T/doctor-count.js" <<'JS'
 'use strict';
 // doctor-count.js <árbol> <home> <integraciones.json> [drop-bash-rebuild] → «<esperados> <faltantes> <etiquetas>»
@@ -794,9 +790,9 @@ LAB_INSTALLER="$SPACED/clone/scripts/install-tycon-hooks.ps1" installer "$HS" "$
 if [ "$RC" -eq 0 ] && cmp -s "$HS/.claude/settings.json" "$T/s.settings.json"; then ok "(o) T91 con un espacio en la carpeta, la segunda corrida deja settings.json byte a byte igual"
 else no "(o) T91 con un espacio en la carpeta, la segunda corrida (rc $RC) cambió settings.json: $(brief "$T/s2.out")"; fi
 # un .sh que ya estaba registrado con OTRA forma de ruta (la de Git Bash) y el matcher de antes (`Bash`): «ya está» se
-# decide por la ruta del guion dentro del repo, no se duplica, y pasa al matcher nuevo (`Bash|PowerShell`, 2026-10-04,
-# sección v); el espejo, en la misma máquina: el .sh que no estaba, entra. Su comando queda tal cual estaba (W3W4: ya
-# no se reescribe a la ruta del bash de Git) y la corrida siguiente no toca nada.
+# decide por la ruta del guion dentro del repo, no se duplica, y pasa al matcher nuevo (`Bash|PowerShell`,
+# sección v); el espejo, en la misma máquina: el .sh que no estaba, entra. Su comando queda tal cual estaba (no
+# se reescribe a la ruta del bash de Git) y la corrida siguiente no toca nada.
 HO="$(new_home other-path-form)"; mkdir -p "$HO/.claude"; ln -s "$CLONE" "$HO/.claude/agent-skills"
 printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash", "hooks": [ { "type": "command", "command": "bash \\"/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh\\"" } ] } ]\n  }\n}\n' > "$HO/.claude/settings.json"
 installer "$HO" "${HELD[@]}" > "$T/o.out" 2>&1; RC=$?
@@ -810,7 +806,7 @@ installer "$HO" "${HELD[@]}" > "$T/o2.out" 2>&1; RC2=$?
 if [ "$RC" -eq 0 ] && same_cmd "$T/o.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh 'bash "/c/lab/.claude/tycon-claude-guides/scripts/hooks/safety-guard-pre.sh"' && [ "$RC2" -eq 0 ] && cmp -s "$SO" "$T/o.settings.json"; then
   ok "(o) ese .sh con otra forma de ruta y el matcher de antes conserva su comando tal cual (sólo cambia el matcher); la siguiente corrida no cambia nada"
 else no "(o) un .sh con otra forma de ruta y el matcher de antes: tras la primera corrida quedó «$(hook_cmd "$T/o.settings.json" PreToolUse '*' safety-guard-pre.sh)» (esperaba el de antes, bash \"/c/lab/…/safety-guard-pre.sh\"); la segunda (rc $RC2) $(cmp -s "$SO" "$T/o.settings.json" && echo 'no cambió nada' || echo "lo cambió a «$(hook_cmd "$SO" PreToolUse '*' safety-guard-pre.sh)»")"; fi
-# lo que dejó la W3a (y la forma de hoy): los .sh con el matcher nuevo y `bash "<ruta>"`, entre dos hooks ajenos. Quedan
+# la forma actual: los .sh con el matcher nuevo y `bash "<ruta>"`, entre dos hooks ajenos. Quedan
 # una vez cada uno, en su mismo lugar y con su mismo matcher; lo ajeno queda; la segunda corrida no cambia nada.
 HW3A="$(new_home w3a-bare-bash)"; mkdir -p "$HW3A/.claude"; ln -s "$CLONE" "$HW3A/.claude/agent-skills"; SW3A="$HW3A/.claude/settings.json"
 printf '{\n  "hooks": {\n    "PreToolUse": [ { "matcher": "Bash|PowerShell", "hooks": [\n      { "type": "command", "command": "echo lab-antes" },\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/safety-guard-pre.sh\\"" },\n      { "type": "command", "command": "bash \\"%s/scripts/hooks/test-scope-guard-pre.sh\\"" },\n      { "type": "command", "command": "echo lab-despues" } ] } ]\n  }\n}\n' "$CLONE" "$CLONE" > "$SW3A"
@@ -824,8 +820,7 @@ if [ "$RC" -eq 0 ] && [ "$RC2" -eq 0 ] && [ -z "$(wrong_counts "$SW3A" 1 "PreToo
    && [ "$(w3a_order "$T/w3a.settings.json")" = "lab-antes safety-guard-pre.sh test-scope-guard-pre.sh lab-despues" ] && cmp -s "$SW3A" "$T/w3a.settings.json"; then
   ok "(o) los .sh registrados como «bash \"<ruta>\"» quedan una vez cada uno, en su lugar y con su matcher; lo ajeno queda; la segunda corrida no cambia nada"
 else no "(o) los .sh registrados como «bash \"<ruta>\"» (rc $RC y $RC2): $(wrong_counts "$SW3A" 1 "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh") · safety «$(hook_cmd "$T/w3a.settings.json" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh)» · orden «$(w3a_order "$T/w3a.settings.json")» · segunda corrida $(cmp -s "$SW3A" "$T/w3a.settings.json" && echo igual || echo CAMBIÓ) · $(brief "$T/w3a1.out" 200)"; fi
-# (Hasta la W3W4 acá se medía «sin el bash de Git, ningún .sh se registra» y sus avisos: el aplicador ya no busca el
-# bash de Git ni manda esos avisos, así que no hay nada que medir.)
+# (El aplicador no busca el bash de Git ni manda avisos por su ausencia, así que no hay nada que medir.)
 
 # ── (p) T92 · Ps1_OptIn_OffRemoves_BrokenConfigKeeps ────────────────────────────────────────────────────────────
 team_run() { installer "$HT" "${HELD[@]}" "$@" > "$T/h.out" 2>&1; }   # [VAR=val …]: una corrida sobre la máquina del equipo, con ESAS variables
@@ -838,7 +833,7 @@ back_to_factory() { # <qué se apagó>: con todo de fábrica otra vez, settings.
 # el espejo primero: con todo de fábrica, los tres .sh están
 if [ "$(n_of PreToolUse safety-guard-pre.sh)$(n_of PreToolUse test-scope-guard-pre.sh)$(n_of PreToolUse engram-pre-commit.sh)" = 111 ]; then ok "(p) T92 el espejo: con todo de fábrica, los tres .sh están registrados"
 else no "(p) T92 el espejo: con todo de fábrica no están los tres .sh (safety $(n_of PreToolUse safety-guard-pre.sh), test-scope $(n_of PreToolUse test-scope-guard-pre.sh), engram $(n_of PreToolUse engram-pre-commit.sh))"; fi
-# T90, el camino de las máquinas del equipo: una instalada ANTES de esta tanda (sin los doce controles) los recibe cada uno
+# T90, el camino de las máquinas del equipo: una instalada sin los doce controles los recibe cada uno
 # en su lugar, y queda igual que una instalada de cero
 cat > "$T/strip.js" <<'JS'
 'use strict';
@@ -885,7 +880,7 @@ if [ "$RC" -eq 0 ] && [ "$(n_of PreToolUse engram-pre-commit.sh)$(n_of SessionSt
 else no "(p) T92 TYCON_ENGRAM_HOOK=1 con engram apagado (rc $RC): engram-pre-commit $(n_of PreToolUse engram-pre-commit.sh), engram-drift-notice $(n_of SessionStart engram-drift-notice.js) · $(brief "$T/h.out" 200)"; fi
 back_to_factory "la integración engram apagada y vuelta a prender"
 # la configuración ROTA: el de la integración queda como estaba (registrado en esta máquina; sin registrar en una nueva),
-# los dos frenos se registran igual (story 8.16: sin saber el perfil, decisión del dueño), y una variable puesta
+# los dos frenos se registran igual (sin saber el perfil), y una variable puesta
 # (TYCON_ENGRAM_HOOK) manda también ahí
 printf '{ "integrations": { "engram": "si" } }' > "$HT/.claude/tycon.json"
 team_run; RC=$?
@@ -897,8 +892,8 @@ else no "(p) T92 con la configuración rota y TYCON_ENGRAM_HOOK=0 (rc $RC): engr
 HB="$(new_home broken-config)"; mkdir -p "$HB/.claude"; ln -s "$CLONE" "$HB/.claude/agent-skills"; printf '{ "integrations": { "engram": "si" } }' > "$HB/.claude/tycon.json"
 installer "$HB" "${HELD[@]}" > "$T/hb.out" 2>&1; RC=$?
 SB="$HB/.claude/settings.json"
-# Desde la story 8.16 (tanda C · AC 23) los dos frenos dependen del perfil de instalación (en minimal no entran sin su
-# variable), pero con la configuración rota —sin saber el perfil— se registran igual (decisión del dueño, 2026-10-04)
+# los dos frenos dependen del perfil de instalación (en minimal no entran sin su
+# variable), pero con la configuración rota —sin saber el perfil— se registran igual
 if [ "$RC" -eq 0 ] && [ "$(hook_n "$SB" PreToolUse '*' engram-pre-commit.sh)$(hook_n "$SB" PreToolUse '*' safety-guard-pre.sh)$(hook_n "$SB" PreToolUse '*' test-scope-guard-pre.sh)" = 011 ]; then
   ok "(p) T92 con la configuración rota en una máquina nueva: engram-pre-commit.sh queda como estaba (sin registrar) y los dos frenos se registran igual"
 else no "(p) T92 con la configuración rota en una máquina nueva (rc $RC): engram-pre-commit $(hook_n "$SB" PreToolUse '*' engram-pre-commit.sh), safety $(hook_n "$SB" PreToolUse '*' safety-guard-pre.sh), test-scope $(hook_n "$SB" PreToolUse '*' test-scope-guard-pre.sh) · $(brief "$T/hb.out" 200)"; fi
@@ -960,9 +955,9 @@ if [ "$(two_step_remedy "$T/r.out")" = 1 ] && [ "$(two_step_remedy "$T/k.out")" 
   ok "(q) el remedio de los finales de línea va en dos comandos («… y después …»), sin && (sin registrar, ya registrado y con -Check)"
 else no "(q) el remedio de los finales de línea no va en dos comandos sin &&: $(two_step_remedy "$T/r.out")/$(two_step_remedy "$T/k.out")/$(two_step_remedy "$T/v.out") línea(s) con «y después» (sin registrar/ya registrado/-Check) · $(grep -c '&&' "$T/r.out") con && · $(grep 'safety-guard-pre\.sh' "$T/r.out" | head -1 | cut -c1-260)"; fi
 
-# ── (s) Ps1_UnreadableShScript_NotRegistered_RetriedNextRun · primera vuelta de revisión de la W3a ───────────────
-# Tres resultados, no dos: el guion tiene \r\n / no tiene / NO SE PUDO LEER. Antes, un error al leerlo se leía como «no
-# tiene»: con el archivo tomado por otro programa (un antivirus, un editor), un .sh con \r\n quedaba registrado como si
+# ── (s) Ps1_UnreadableShScript_NotRegistered_RetriedNextRun ───────────────
+# Tres resultados, no dos: el guion tiene \r\n / no tiene / NO SE PUDO LEER. Un error al leerlo no se lee como «no
+# tiene»: con el archivo tomado por otro programa (un antivirus, un editor), un .sh con \r\n quedaría registrado como si
 # frenara, sin una línea. «No lo pude leer» va como el \r\n: si no estaba registrado NO se registra, si ya estaba queda,
 # y una línea lo nombra con el motivo y «se vuelve a intentar en la próxima corrida». También con -Check.
 # Cómo se hace ilegible acá: sin permiso de lectura (chmod 000). Corriendo como root el permiso no frena nada: ahí el
@@ -1004,7 +999,7 @@ if [ "$RC" -eq 0 ] && cmp -s "$SQ" "$T/q.settings.json" && [ "$(hook_n "$SQ" Pre
 else no "(s) un .sh ya registrado que deja de poder leerse (rc $RC): está $(hook_n "$SQ" PreToolUse 'Bash|PowerShell' safety-guard-pre.sh) vez/veces, $(unread_notice "$T/q3.out") aviso(s) · $(grep 'safety-guard-pre\.sh' "$T/q3.out" | head -1 | cut -c1-240)"; fi
 make_readable
 
-# ── (t) Ps1_UnsafePathChar_HookNotRegistered_Named · primera vuelta de revisión de la W3a ────────────────────────
+# ── (t) Ps1_UnsafePathChar_HookNotRegistered_Named ────────────────────────
 # El comando se escribe `node "<ruta>"` o `bash "<ruta>"` y Claude Code se lo pasa a un shell: con `$`, acento grave o
 # comilla doble en la ruta del clon o de la carpeta de usuario, el shell leería OTRA cosa. Ese hook no se registra y una
 # línea lo dice (el guion y qué carácter); nunca un comando roto. El espejo —un espacio en la carpeta, que sí se
@@ -1040,9 +1035,9 @@ if [ "$RC" -eq 0 ] && [ "$(unsafe_cmds "$SPC")" = "0 de $SKILL_HOOKS" ] && [ "$(
 else no "(t) con \$ en la ruta del clon (rc $RC): comandos inseguros «$(unsafe_cmds "$SPC")» (esperaba «0 de ${SKILL_HOOKS}»), $(unsafe_notice "$T/pc.out" '«\$»') línea(s) (esperaba $CLONE_HOOKS), safety-guard $(hook_n "$SPC" PreToolUse '*' safety-guard-pre.sh) · $(brief "$T/pc.out" 200)"; fi
 
 # ── (r) Ps1_LegacyEngramHookRemoved_OwnLookalikeKept · las formas viejas de engram-pre-commit.sh ────────────────
-# El .sh las saca desde julio (LEGACY_FRAGMENTS): la copia suelta en ~/.claude/hooks/ y la variante escrita a mano con
-# el sync adentro. El .ps1 no tenía ese paso, y con «ya está» decidido por el nombre del guion tomaba la copia vieja por
-# la del arnés: seguía corriendo el guion viejo y el nuevo no se registraba nunca. Y al revés: con engram apagado sacaba
+# El .sh las saca (LEGACY_FRAGMENTS): la copia suelta en ~/.claude/hooks/ y la variante escrita a mano con
+# el sync adentro. Sin ese paso en el .ps1, con «ya está» decidido por el nombre del guion tomaría la copia vieja por
+# la del arnés: seguiría corriendo el guion viejo y el nuevo no se registraría nunca. Y al revés: con engram apagado sacaría
 # CUALQUIER hook que se llamara igual, también uno propio de la persona en otra carpeta. La regla: un hook del arnés es
 # el guion EN SU LUGAR DEL REPO (`…/scripts/hooks/<guion>` o `…/skills/<ruta>`), no cualquiera con ese nombre.
 cat > "$T/legacy.js" <<'JS'
@@ -1105,11 +1100,11 @@ fi   # ── fin de la parte 1 ──
 
 if suite_part 2; then   # ── parte 2 de 2: de (u) al final ──
 
-# ── (u) Ps1_LaunchedByOldHarness_ShDeferredToNextRun · pase adversarial de la W3a (B1) ─────────────────────────────
-# La actualización que TRAE esta tanda la juzga la salud de la versión anterior (harness.js la carga antes de mover el
+# ── (u) Ps1_LaunchedByOldHarness_ShDeferredToNextRun ─────────────────────────────
+# La actualización que TRAE este cambio la juzga la salud de la versión anterior (harness.js la carga antes de mover el
 # árbol), y esa salud revisa cada .sh del reporte con el primer `bash` del PATH: en Windows puede ser el lanzador de WSL,
-# que sale 1 con un guion sano, y la actualización volvería atrás para siempre. Un harness.js de esta tanda en adelante
-# lanza el .ps1 con TYCON_HARNESS_GIT_BASH_HEALTH=1 (su salud sabe usar el bash de Git); uno de antes, no. Lanzado por
+# que sale 1 con un guion sano, y la actualización volvería atrás para siempre. Un harness.js actual
+# lanza el .ps1 con TYCON_HARNESS_GIT_BASH_HEALTH=1 (su salud sabe usar el bash de Git); uno anterior, no. Lanzado por
 # harness.js (TYCON_HARNESS_LOCK_HELD=1) SIN esa variable, el .ps1 no registra los .sh en esa corrida —no saca los que ya
 # estén, y no los pone en el reporte—, y lo dice en una línea; los .js, como siempre. Suelto, registra todo.
 OLD_HARNESS=TYCON_HARNESS_LOCK_HELD=1
@@ -1128,12 +1123,12 @@ if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 000 ] && [ "$(report_sh "$T/m1.rep
 else no "(u) lanzado por un harness.js de antes (rc $RC): .sh registrados «$(sh_state "$SM")» (esperaba 000), reporte «$(report_sh "$T/m1.report.json")» (esperaba «0 de ${NO_SH_IDS}»), $(deferred_notice "$T/m1.out") línea(s) · $(brief "$T/m1.out" 200)"; fi
 if [ "$(hook_n "$SM" Stop '*' large-read-meter.js)$(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)$(hook_n "$SM" UserPromptSubmit '*' rebuild-before-verify.js)" = 111 ]; then ok "(u) …en esa misma corrida los .js se registran como siempre"
 else no "(u) lanzado por un harness.js de antes, los .js no quedaron: large-read-meter $(hook_n "$SM" Stop '*' large-read-meter.js), push-phantom $(hook_n "$SM" PreToolUse 'Bash|PowerShell' push-phantom-ref-notice.js)"; fi
-# la corrida siguiente, ya con un harness.js de esta tanda: quedan los tres, una vez cada uno, en el reporte y sin la línea
+# la corrida siguiente, ya con un harness.js actual: quedan los tres, una vez cada uno, en el reporte y sin la línea
 installer "$HM" "${HELD[@]}" "${TEAM[@]}" -- -ReportJson "$T/m2.report.json" > "$T/m2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(sh_state "$SM")" = 111 ] && [ "$(report_sh "$T/m2.report.json")" = "${#SH_HOOKS[@]} de $REPORT_IDS" ] && [ "$(deferred_notice "$T/m2.out")" = 0 ]; then
   ok "(u) el espejo: la corrida siguiente con TYCON_HARNESS_GIT_BASH_HEALTH=1 registra los tres .sh una vez cada uno, los reporta y no dice nada"
 else no "(u) la corrida siguiente con la variable (rc $RC): .sh «$(sh_state "$SM")» (esperaba 111), reporte «$(report_sh "$T/m2.report.json")» (esperaba «${#SH_HOOKS[@]} de ${REPORT_IDS}»), $(deferred_notice "$T/m2.out") línea(s) · $(brief "$T/m2.out" 200)"; fi
-# otra vez un harness.js de antes, con los .sh ya registrados: no los saca (settings.json byte a byte igual) y no los reporta
+# otra vez un harness.js anterior, con los .sh ya registrados: no los saca (settings.json byte a byte igual) y no los reporta
 cp "$SM" "$T/m.settings.json"
 installer "$HM" "$OLD_HARNESS" "${TEAM[@]}" -- -ReportJson "$T/m3.report.json" > "$T/m3.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && cmp -s "$SM" "$T/m.settings.json" && [ "$(report_sh "$T/m3.report.json")" = "0 de $NO_SH_IDS" ] && [ "$(deferred_notice "$T/m3.out")" = 0 ]; then
@@ -1144,32 +1139,32 @@ HMS="$(new_home standalone-sh)"
 installer "$HMS" "${TEAM[@]}" > "$T/m4.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(sh_state "$HMS/.claude/settings.json")" = 111 ] && [ "$(deferred_notice "$T/m4.out")" = 0 ]; then ok "(u) el espejo: corrido suelto (sin harness.js) registra los tres .sh, sin la línea"
 else no "(u) corrido suelto (rc $RC): .sh «$(sh_state "$HMS/.claude/settings.json")» (esperaba 111), $(deferred_notice "$T/m4.out") línea(s) · $(brief "$T/m4.out" 200)"; fi
-# W4 · AC 34 · corrido suelto toma el candado de scripts/setup/harness/lock.js (el mismo de harness.js) y lo suelta al
+# Corrido suelto, toma el candado de scripts/setup/harness/lock.js (el mismo de harness.js) y lo suelta al
 # salir; con el candado tomado por otra sesión se va diciendo «otra sesión está instalando», sale 0 y no escribe nada
 LOCK_DIR="$HMS/.claude/.tycon-pipeline/harness/harness.lock"
 if [ ! -e "$LOCK_DIR" ]; then ok "(u) AC 34 · corrido suelto suelta el candado al terminar"
 else no "(u) AC 34 · corrido suelto dejó el candado tomado ($LOCK_DIR)"; fi
 HLK="$(new_home locked)"
 lab_env "$HLK" -- node -e 'const r=require(process.argv[1]).acquire(require("os").homedir());process.exit(r.ok?0:1)' "$CLONE/scripts/setup/harness/lock.js" > "$T/lk0.out" 2>&1
-# el que lo tomó ya terminó: a nombre de un proceso VIVO (esta prueba), que es «otra sesión» (story 8.23, AC 37: el de un
-# proceso muerto se pisa en el acto)
+# el que lo tomó ya terminó: a nombre de un proceso VIVO (esta prueba), que es «otra sesión»; el de un
+# proceso muerto se pisa en el acto
 printf '%s\n' "$$" > "$HLK/.claude/.tycon-pipeline/harness/harness.lock/pid"
 LK_BEFORE="$(listing "$HLK")"
 installer "$HLK" "${TEAM[@]}" > "$T/lk1.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q 'otra sesión está instalando' "$T/lk1.out" && [ ! -e "$HLK/.claude/settings.json" ] && [ "$(listing "$HLK")" = "$LK_BEFORE" ]; then
   ok "(u) AC 34 · con el candado tomado por otra sesión, corrido suelto sale 0, dice «otra sesión está instalando» y no escribe nada"
 else no "(u) AC 34 · con el candado tomado (rc $RC): $(grep -c 'otra sesión está instalando' "$T/lk1.out") línea(s), settings.json $([ -e "$HLK/.claude/settings.json" ] && echo ESCRITO || echo 'sin escribir') · $(brief "$T/lk1.out" 200)"; fi
-# -Check no se juzga con ninguna salud: lista los .sh entre los que faltan aunque lo lance un harness.js de antes
+# -Check no se juzga con ninguna salud: lista los .sh entre los que faltan aunque lo lance un harness.js anterior
 HMC="$(new_home old-harness-check)"
 installer "$HMC" "$OLD_HARNESS" "${TEAM[@]}" -- -Check > "$T/m5.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && grep -q '+ PreToolUse .*safety-guard-pre\.sh' "$T/m5.out" && [ "$(deferred_notice "$T/m5.out")" = 0 ] && [ -z "$(listing "$HMC")" ]; then ok "(u) -Check lanzado por un harness.js de antes: lista los .sh entre los que faltan, sin la línea, y no escribe nada"
 else no "(u) -Check lanzado por un harness.js de antes (rc $RC): $(grep -c '+ PreToolUse .*\.sh' "$T/m5.out") .sh listado(s), $(deferred_notice "$T/m5.out") línea(s) · $(brief "$T/m5.out" 200)"; fi
 
-# ── (v) Ps1_ShellMatcherWidened_OneEntryPerScript (2026-10-04) ────────────────────────────────────────────────────
+# ── (v) Ps1_ShellMatcherWidened_OneEntryPerScript ────────────────────────────────────────────────────
 # En Windows Claude Code corre los comandos con su herramienta PowerShell, y un hook con matcher `Bash` solo no se dispara
-# (medido en una sesión real: los frenos instalados no frenaban). Los que miran comandos pasaron a `Bash|PowerShell`. Una
-# máquina ya instalada los tiene con `Bash`, y como los matchers se comparan como conjuntos el instalador agregaba el
-# nuevo y dejaba el viejo (en Bash, el freno dos veces). La misma pieza con un matcher más angosto se MUEVE al nuevo, con
+# (los frenos instalados no frenarían). Los que miran comandos llevan `Bash|PowerShell`. Una
+# máquina ya instalada los tiene con `Bash`, y como los matchers se comparan como conjuntos el instalador agregaría el
+# nuevo y dejaría el viejo (en Bash, el freno dos veces). La misma pieza con un matcher más angosto se MUEVE al nuevo, con
 # su comando tal cual; una copia que sobre se saca; lo ajeno de ese bloque queda donde estaba.
 SHELL_ROWS=(
   "PreToolUse|Bash|PowerShell|safety-guard-pre.sh" "PreToolUse|Bash|PowerShell|test-scope-guard-pre.sh" "PreToolUse|Bash|PowerShell|engram-pre-commit.sh"
@@ -1238,7 +1233,7 @@ if [ "$RC" -eq 0 ] && cmp -s "$HW3/.claude/settings.json" "$T/n.old.json" && gre
   ok "(v) -Check sobre la de antes: sale 0, no escribe y nombra el freno con su matcher nuevo"
 else no "(v) -Check sobre la de antes (rc $RC): $(grep -m1 'safety-guard' "$T/n5.out" | cut -c1-200) · $(cmp -s "$HW3/.claude/settings.json" "$T/n.old.json" && echo 'sin escribir' || echo 'ESCRIBIÓ')"; fi
 
-# ═══ el sync de bloques: un marcador `requires-integration` CASI bien escrito (hallazgos 11 y 16) ═══════════════
+# ═══ el sync de bloques: un marcador `requires-integration` CASI bien escrito ═══════════════
 # Los seis bloques de juguete de integrations-off.test.sh (T32), por el .sh y por el .ps1: el CLAUDE.md, byte a byte.
 SLAB="$T/sync-lab"
 SYNC_ENV=(TYCON_NO_CLAUDEMD_SYNC=0)   # SAFE lo apaga para el instalador; acá es lo que se mide
@@ -1308,12 +1303,10 @@ sync_section() {
   else no "sync .ps1 · con la integración prendida: $(brief "$T/s3.ps1.out" 240)"; fi
   same_as_sh "Azure DevOps prendido" "$S3" "$P3" "$T/s3.sh.out" "$T/s3.ps1.out"
 
-  # el registro de lo instalado (-ReportJson) anota «en su lugar» los mismos bloques que el sync .sh. Hasta la W4 el
-  # instalador tenía su propia regla para eso (Record-BlocksInPlace, que servía a la salida temprana «sin cambios en
-  # settings.json») y acá se la medía recortada del .ps1; la W4 sacó la salida temprana (AC 30) y con ella la función:
-  # cada corrida llega al sync, que anota los bloques. Se mide por ejecución, con el instalador entero sobre un clon con
+  # el registro de lo instalado (-ReportJson) anota «en su lugar» los mismos bloques que el sync .sh. No hay
+  # salida temprana «sin cambios en settings.json»: cada corrida llega al sync, que anota los bloques. Se mide por ejecución, con el instalador entero sobre un clon con
   # estos bloques de juguete: dos corridas sobre el mismo CLAUDE.md sembrado; la segunda, sin nada que cambiar, anota lo
-  # mismo que la primera (lo que la salida temprana perdía).
+  # mismo que la primera.
   WANT="$(names "$T/s2.sh.pieces")"
   local BCL P4; BCL="$(blocks_clone sync "$SLAB/claude-md-blocks")"; P4="$(sync_home marker-present-installer seed)"
   LAB_INSTALLER="$BCL/scripts/install-tycon-hooks.ps1" installer "$P4" "${HELD[@]}" "${SYNC_ENV[@]}" -- -ReportJson "$T/s4a.report.json" > "$T/s4a.out" 2>&1; RC=$?
@@ -1329,7 +1322,7 @@ report_blocks() { # <reporte de -ReportJson> → los bloques que anota, como `na
   node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));for(const p of r)if(p.kind==="block")console.log(String(p.id).replace(/^TYCON_BLOCK:/,""))}catch(e){}' "$1" | LC_ALL=C sort -u | tr '\n' ' '
 }
 # el .sh es la referencia y corre con python3: sin él no hay contra qué comparar
-# ── (v) T26 · Applier_Ps1_PlanJson_ByExecution (story 8.16, tanda B · AC 20) ───────────────────────────────────────
+# ── (v) T26 · Applier_Ps1_PlanJson_ByExecution ───────────────────────────────────────
 # `-Check -PlanJson <archivo>` escribe `[{kind, where, id, action}]` y nada más: en una HOME vacía todo es `add`; después de
 # instalar, los hooks son `keep`; la HOME queda igual por hash; `-PlanJson` sin `-Check` sale 2. Lo lee harness.js install.
 hhash() { ( cd "$1" && find . -print | LC_ALL=C sort | while IFS= read -r f; do
@@ -1399,7 +1392,7 @@ installer "$HV" -- -PlanJson "$T/plan-v3.json" > "$T/v3.out" 2>&1; RC=$?
 if [ "$RC" -eq 2 ] && [ ! -e "$T/plan-v3.json" ] && [ "$(hhash "$HV")" = "$V0" ] && grep -q -- '-Check' "$T/v3.out"; then ok "(v) T26 -PlanJson sin -Check sale 2 con una línea y no escribe"
 else no "(v) T26 -PlanJson sin -Check (rc $RC): $(brief "$T/v3.out" 200)"; fi
 
-# ── (w) T39 · Applier_Ps1_Profile_ByExecution_BlocksByteIdenticalToSh (story 8.16, tanda C · AC 29) ─────────────────
+# ── (w) T39 · Applier_Ps1_Profile_ByExecution_BlocksByteIdenticalToSh ─────────────────
 # El .ps1 lee el perfil igual que el .sh (`tycon-config.js get install.profile`) y filtra SUS listas: en minimal registra
 # sólo los hooks de su tabla que la lista de efectos marca `minimal`, saca los demás si estaban, y los dos frenos que nacen
 # prendidos sólo entran con su variable en `1`; con la configuración rota no toca lo del perfil. Su sync de bloques
@@ -1420,7 +1413,7 @@ PY
 }
 # lo esperado en minimal: los hooks de la tabla del .ps1 que la lista de efectos marca `minimal`, sin los de una
 # integración (apagadas en el laboratorio) ni el freno de sesiones (nace apagado)
-# (desde la W3 y W4 de la story 8.17 «su tabla» es la lista única, sin lo que excluye de Windows)
+# («su tabla» es la lista única, sin lo que excluye de Windows)
 python3 - "$ROOT/scripts/setup/install-effects.json" "$HOOKS_LIST" > "$T/w-minimal.txt" <<'PY'
 import json, sys
 eff = json.load(open(sys.argv[1], encoding="utf-8"))["effects"]
@@ -1439,7 +1432,7 @@ if [ "$RC" -eq 0 ] && [ -s "$T/w-minimal.txt" ] && cmp -s <(ps1_ids "$HW/.claude
 else no "(w) T39 minimal (rc $RC): $(diff "$T/w-minimal.txt" <(ps1_ids "$HW/.claude/settings.json") | grep '^[<>]' | head -5 | tr '\n' ' ') · $(brief "$T/w1.out" 200)"; fi
 HW2="$(prof_home w-minimal-sg minimal)"
 # la variable manda en los dos sentidos: el freno de pruebas (sólo de full) entra con su variable en 1; el de comandos
-# destructivos (de los dos perfiles desde el 2026-10-05) sale con la suya en 0
+# destructivos (de los dos perfiles) sale con la suya en 0
 installer "$HW2" TYCON_TEST_SCOPE_GUARD=1 TYCON_SAFETY_GUARD=0 -- > "$T/w2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && ps1_ids "$HW2/.claude/settings.json" | grep -x 'PreToolUse:@tcg:test-scope-guard-pre.sh' >/dev/null && ! ps1_ids "$HW2/.claude/settings.json" | grep 'safety-guard' >/dev/null; then ok "(w) T39 minimal + TYCON_TEST_SCOPE_GUARD=1 + TYCON_SAFETY_GUARD=0: entra el de pruebas, sale el de comandos"
 else no "(w) T39 minimal + TYCON_TEST_SCOPE_GUARD=1 + TYCON_SAFETY_GUARD=0 (rc $RC): $(ps1_ids "$HW2/.claude/settings.json" | grep guard | tr '\n' ' ') · $(brief "$T/w2.out" 200)"; fi
@@ -1481,8 +1474,8 @@ sync_profile_section() {
   sync_sh "$S" TYCON_INSTALL_PROFILE=minimal > "$T/sp-sw.sh.out" 2>&1; sync_ps1 "$P" TYCON_INSTALL_PROFILE=minimal > "$T/sp-sw.ps1.out" 2>&1
   same_as_sh "T39 requires-profile, de full a minimal" "$S" "$P" "$T/sp-sw.sh.out" "$T/sp-sw.ps1.out"
   # el registro del instalador anota «en su lugar» un bloque con el marcador del perfil (lo que el sync deja en full).
-  # Hasta la W4 se medía la función Record-BlocksInPlace recortada del .ps1; la W4 la sacó (cada corrida llega al sync,
-  # que anota): ahora, por ejecución, el instalador entero con -ReportJson, dos veces (la segunda, sin nada que cambiar)
+  # Cada corrida llega al sync, que anota: se mide por ejecución, el instalador entero con -ReportJson, dos veces
+  # (la segunda, sin nada que cambiar)
   S="$(sync_home prof-record)"; sync_sh "$S" TYCON_INSTALL_PROFILE=full "TYCON_REPORT_PIECES=$T/sp-rec.sh.pieces" > /dev/null 2>&1
   local WANT BCL P RC RC2; WANT="$(names "$T/sp-rec.sh.pieces")"
   BCL="$(blocks_clone profile "$SLAB/claude-md-blocks")"; P="$(sync_home prof-record-installer)"
@@ -1504,15 +1497,15 @@ installer "$HWP" TYCON_NO_CLAUDEMD_SYNC=0 -- -Check -PlanJson "$T/plan-w.json" >
 ACT="$(python3 -c "import json,sys; print(next((x['action'] for x in json.load(open(sys.argv[1])) if x['kind']=='block' and x['id']=='TYCON_BLOCK:response-style'), 'ninguna'))" "$T/plan-w.json" 2>/dev/null)"
 [ "$RC" -eq 0 ] && [ "$ACT" = remove ] && ok "(w) T39 el plan del .ps1 en minimal trae «remove» para el bloque de estilo escrito" || no "(w) T39 plan del .ps1 en minimal (rc $RC): acción «${ACT}» · $(brief "$T/wp.out" 200)"
 
-# ═══ (x) W4 · AC 33 y 36 — una sola carpeta de usuario y los defectos ya vistos (story 8.17 · T48, T49) ═══════════════
-# La guarda de PowerShell 7 en los tres .ps1 (AC 35) la mide ps1-readable.test.js (T7 y T8): leída en cada uno y, en el
+# ═══ (x) una sola carpeta de usuario y los defectos conocidos (T48, T49) ═══════════════
+# La guarda de PowerShell 7 en los tres .ps1 la mide ps1-readable.test.js (T7 y T8): leída en cada uno y, en el
 # respaldo del arranque, por ejecución. Lo que el .ps1 deja de hacer con settings.json (el «ya está» y las fechas o
 # claves con mayúsculas) lo mide apply-hooks.test.js: el .ps1 ya no lee ni escribe settings.json.
 w4_home_section() {
   local W="$T/w4" f fn first="" same=1 h u rc
   mkdir -p "$W"
-  # (x1) AC 33 · los tres .ps1 que buscan la carpeta de usuario usan LA MISMA función, y nada más la busca por su cuenta
-  # 🔴 rojo previo: el instalador usaba $env:USERPROFILE para settings.json y $HOME para el CLAUDE.md; el respaldo, $env:HOME
+  # (x1) los tres .ps1 que buscan la carpeta de usuario usan LA MISMA función, y nada más la busca por su cuenta
+  # 🔴 Si el instalador usara $env:USERPROFILE para settings.json, $HOME para el CLAUDE.md y el respaldo $env:HOME, la instalación se partiría en carpetas distintas.
   local strays=""
   for f in scripts/install-tycon-hooks.ps1 scripts/setup/sync-claude-md-blocks.ps1 scripts/setup/harness/bootstrap-fallback.ps1; do
     fn="$(awk '/^function Get-TyconHome/{p=1} p{print} p&&/^}/{exit}' "$ROOT/$f")"
@@ -1525,7 +1518,7 @@ w4_home_section() {
   done
   [ "$same" = 1 ] && ok "(x) AC 33 · los tres .ps1 (instalador, bloques, respaldo del arranque) usan la misma Get-TyconHome y ninguno lee HOME o USERPROFILE por su cuenta" \
     || no "(x) AC 33 · la carpeta de usuario no sale de una sola función:$strays"
-  # (x2) AC 33 · la función devuelve lo mismo que os.homedir() de Node: en Windows USERPROFILE (si no, la del perfil); en
+  # (x2) la función devuelve lo mismo que os.homedir() de Node: en Windows USERPROFILE (si no, la del perfil); en
   # Linux y Mac HOME. La rama de Windows se prueba pasándole la plataforma.
   cat > "$W/home-fn.ps1" <<'PS'
 param([string]$Src)
@@ -1547,10 +1540,10 @@ PS
      && [ -n "$prof" ] && grep -qx "win=$prof" "$W/x2b.out"; then
     ok "(x) AC 33 · Get-TyconHome = os.homedir(): Windows → USERPROFILE (sin ella, la carpeta del perfil); Linux/Mac → HOME; en esta máquina, lo mismo que Node ($node_home)"
   else no "(x) AC 33 · Get-TyconHome no da lo de os.homedir() (Node: $node_home): $(tr '\n' ' ' < "$W/x2a.out") · sin USERPROFILE: $(tr '\n' ' ' < "$W/x2b.out")"; fi
-  # (x3) AC 33 · con HOME distinta de USERPROFILE, la instalación entera queda en UNA carpeta: la de os.homedir()
+  # (x3) con HOME distinta de USERPROFILE, la instalación entera queda en UNA carpeta: la de os.homedir()
   h="$(new_home w4-one-home)"; u="$(new_home w4-other-up)"
   installer "$h" "USERPROFILE=$u" TYCON_NO_CLAUDEMD_SYNC=0 -- > "$W/x3.out" 2>&1; rc=$?
-  # una máquina nueva recibe el lugar del arnés (story 8.19, tanda C: ya no el nombre viejo); el nombre, de place.js
+  # una máquina nueva recibe el lugar del arnés (no el nombre viejo); el nombre, de place.js
   local place; place="$(node -p "require(process.argv[1]).PLACE_NAME" "$ROOT/scripts/setup/harness/place.js")"
   if [ "$rc" -eq 0 ] && [ -f "$h/.claude/settings.json" ] && [ -f "$h/.claude/CLAUDE.md" ] && [ -L "$h/.claude/$place" ] && [ -z "$(find "$u" -mindepth 1 | head -1)" ]; then
     ok "(x) AC 33 · HOME distinta de USERPROFILE: settings.json, CLAUDE.md y los enlaces, todos en la carpeta de os.homedir(); la otra, vacía"
@@ -1559,9 +1552,9 @@ PS
 w4_defects_section() {
   local W="$T/w4" h rc
   mkdir -p "$W"
-  # (x4) AC 36 · el refresco de fondo (la lista de proyectos de Azure DevOps) con una carpeta de usuario con espacio y
-  # acento: la ruta del guion llega entera. 🔴 rojo previo: Start-Process con un arreglo junta los argumentos con
-  # espacios sin comillas (la ruta se partía en dos); y -WindowStyle, fuera de Windows, cortaba el instalador.
+  # (x4) el refresco de fondo (la lista de proyectos de Azure DevOps) con una carpeta de usuario con espacio y
+  # acento: la ruta del guion llega entera. 🔴 Start-Process con un arreglo junta los argumentos con
+  # espacios sin comillas (la ruta se parte en dos); y -WindowStyle, fuera de Windows, corta el instalador.
   h="$(new_home 'w4 espacio acentó')"; mkdir -p "$h/.claude" "$W/bin-az"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '#!/bin/sh\n# az de mentira: sólo la lista de proyectos\ncase "$*" in *"project list"*) echo %s ;; *) exit 1 ;; esac\n' "'[{\"name\":\"Lab\"}]'" > "$W/bin-az/az"; chmod +x "$W/bin-az/az"
   PS1_ENTRY="$h/.claude/tycon-claude-guides/scripts/install-tycon-hooks.ps1" installer "$h" "PATH=$W/bin-az:$T/bin:$PATH" TYCON_NO_AZ_PROJECTS_REFRESH=0 TYCON_ADO_ORG=https://dev.azure.com/acme -- > "$W/x4.out" 2>&1; rc=$?
@@ -1569,11 +1562,11 @@ w4_defects_section() {
   while [ ! -s "$cache" ] && [ "$i" -lt 30 ]; do sleep 0.5; i=$((i+1)); done
   if [ "$rc" -eq 0 ] && grep -q '"Lab"' "$cache" 2>/dev/null; then ok "(x) AC 36 · una carpeta de usuario con espacio y acento: el refresco de fondo recibe la ruta entera y deja la lista de proyectos"
   else no "(x) AC 36 · refresco de fondo con espacio y acento (rc $rc): $([ -s "$cache" ] && echo 'la lista salió sin el proyecto' || echo 'no dejó la lista') · $(grep -F 'failed-query-notice' "$NODE_CALLS" | tail -1 | cut -c1-200) · $(brief "$W/x4.out" 200)"; fi
-  # (x4b) la subida de corridas al buzón (2026-10-15): el arranque de Windows nunca la lanzaba, y las corridas de una
-  # máquina Windows no llegaban al buzón ni al tablero. Ahora, como en Mac: de fondo (no frena el arranque), con la
+  # (x4b) la subida de corridas al buzón: sin ella, las corridas de una
+  # máquina Windows no llegan al buzón ni al tablero. Como en Mac: de fondo (no frena el arranque), con la
   # ventana oculta y su registro agregado (`--log`). Con la carpeta de usuario con espacio y acento, la ruta llega
   # entera. Sin la llave del buzón la subida dice `sin_config` en su registro: ésa es la prueba de que se lanzó.
-  # 🔴 rojo previo: el .ps1 no nombraba upload-runs.js, y no quedaba ningún registro.
+  # 🔴 Si el .ps1 no nombra upload-runs.js, no queda ningún registro.
   h="$(new_home 'w4 buzón espacio')"; mkdir -p "$h/.claude"; ln -s "$CLONE" "$h/.claude/tycon-claude-guides"
   printf '{ "integrations": { "mailbox": true } }\n' > "$h/.claude/tycon.json"
   # (el laboratorio apaga el buzón y la subida para el resto de la suite: acá se prenden, que es lo que se mide)
@@ -1601,8 +1594,8 @@ w4_defects_section() {
   done
   [ -z "$lanzadas" ] && ok "(x) la subida de corridas al buzón NO se lanza con TYCON_NO_UPLOAD_RUNS=1, con -Check, dentro de un agente de CI ni con el buzón apagado" \
     || no "(x) la subida de corridas se lanzó donde no debía:$lanzadas"
-  # (x5) AC 36 · un error de requisitos sale como UNA línea limpia, no como un error de PowerShell (con su «Line |» y sus
-  # colores). 🔴 rojo previo: Write-Error con $ErrorActionPreference='Stop' imprimía siete renglones de PowerShell.
+  # (x5) un error de requisitos sale como UNA línea limpia, no como un error de PowerShell (con su «Line |» y sus
+  # colores). 🔴 Write-Error con $ErrorActionPreference='Stop' imprimiría siete renglones de PowerShell.
   local bare="$W/clone-bare"; mkdir -p "$bare"; cp -R "$CLONE/scripts" "$bare/scripts"; cp -R "$CLONE/claude-md-blocks" "$bare/claude-md-blocks"
   h="$(new_home w4-no-skills)"
   PS1_ENTRY="$bare/scripts/install-tycon-hooks.ps1" installer "$h" > "$W/x5.out" 2>&1; rc=$?
@@ -1617,9 +1610,9 @@ w4_defects_section() {
   if [ "$rc" -eq 2 ] && [ "$(grep -c '' "$W/x5b.out")" = 1 ] && grep -qx 'install-tycon-hooks.ps1: -Link necesita node y scripts/lib/canonical-path.js' "$W/x5b.out"; then
     ok "(x) AC 36 · -Link sin la biblioteca de enlaces: sale 2 con una línea limpia"
   else no "(x) AC 36 · -Link sin la biblioteca de enlaces (rc $rc): $(grep -c '' "$W/x5b.out") renglón(es) · $(brief "$W/x5b.out" 240)"; fi
-  # (x6) AC 36 · un bloque con \r\n (lo que deja un clon de Windows con autocrlf) deja el MISMO CLAUDE.md que el .sh, byte
+  # (x6) un bloque con \r\n (lo que deja un clon de Windows con autocrlf) deja el MISMO CLAUDE.md que el .sh, byte
   # a byte; también sobre un CLAUDE.md que ya traía \r\n. Y la segunda corrida no toca nada.
-  # 🔴 rojo previo: el .sh lee con saltos universales (python: \r\n → \n) y el .ps1 copiaba los \r al CLAUDE.md.
+  # 🔴 El .sh lee con saltos universales (python: \r\n → \n); si el .ps1 copiara los \r al CLAUDE.md, los dos diferirían.
   if ! command -v python3 >/dev/null 2>&1; then echo "⏭ installer-ps1: NO MEDIDO — (x) AC 36 bloque con \\r\\n: no hay python3 (el .sh es la referencia)"; return; fi
   local SL="$W/sync-lab"; mkdir -p "$SL/scripts/setup" "$SL/claude-md-blocks"
   cp -R "$ROOT/scripts/lib" "$SL/scripts/lib"; cp "$ROOT/scripts/setup/sync-claude-md-blocks.sh" "$ROOT/scripts/setup/sync-claude-md-blocks.ps1" "$SL/scripts/setup/"
@@ -1644,19 +1637,18 @@ w4_defects_section() {
 w4_home_section
 w4_defects_section
 
-# ═══ el guion de entrada de Windows: get-harness.ps1 (story 8.16, tanda E · T59) ═══════════════════════════════
+# ═══ el guion de entrada de Windows: get-harness.ps1 (T59) ═══════════════════════════════
 # Escrito por lectura, sin máquina Windows: acá se mide con el pwsh de esta máquina que PARSEA (y con el BOM que
-# Windows PowerShell 5.1 necesita para leer los acentos), que no usa sintaxis que 5.1 no lea, y —desde la story 8.23,
-# tanda E, SIN git— que con un PATH de mentira sin tar sale 1 nombrándolo sin bajar nada, que un node viejo se nombra
+# Windows PowerShell 5.1 necesita para leer los acentos), que no usa sintaxis que 5.1 no lea, y —SIN git— que con un PATH de mentira sin tar sale 1 nombrándolo sin bajar nada, que un node viejo se nombra
 # con su versión y el piso de harness.js, que con el repo público baja el comprimido por el «GitHub» de juguete (la
 # redirección a codeload sin credencial) y le pasa la posta a harness.js install --version latest --repo con las opciones
 # tal cual, que con el repo privado y sin permiso sale 1 con la única acción, que TYCON_GITHUB_TOKEN se guarda e instala
 # sin que el valor salga en pantalla, y que un permiso que no vale sale 1. Correrlo en Windows de punta a punta queda
-# para el 182 (hoy corre el bloque del clon).
+# para la validación en Windows (acá corre el bloque del clon).
 get_harness_ps1_section() {
   local src="$ROOT/scripts/publishing/public-files/scripts/setup/get-harness.ps1" gl="$T/get-harness" gh h rc floor
   # en el repo interno es un papel con marcadores (public-files/…); en la copia pública ya está en scripts/setup/ con el
-  # nombre real del repo puesto por el exportador (el mismo que trae su línea $Repo). Desde la story 8.23 (tanda E) el
+  # nombre real del repo puesto por el exportador (el mismo que trae su línea $Repo). El
   # guion NO clona: baja la versión por la API de GitHub (acá, el «GitHub» de juguete) y corre install --version latest.
   local copy=0 pub=""
   if [ ! -f "$src" ] && [ -f "$ROOT/scripts/setup/get-harness.ps1" ]; then copy=1; src="$ROOT/scripts/setup/get-harness.ps1"; fi
@@ -1678,7 +1670,7 @@ get_harness_ps1_section() {
   fi
   # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
   # (la primera línea trae el BOM UTF-8 antes del `#`: se saca antes de descontar los comentarios)
-  # (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
+  # (y los nombres de las rutas públicas —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
   ps1_code() { LC_ALL=C sed '1s/^\xef\xbb\xbf//' "$src" | grep -vE '^\s*#' | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g'; }
   if ! ps1_code | grep -wE 'git|--depth' >/dev/null; then ok "get-harness.ps1 · no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
   else no "get-harness.ps1 · todavía nombra git fuera de los comentarios: $(ps1_code | grep -nwE 'git|--depth' | head -2 | tr '\n' ' ')"; fi
@@ -1696,7 +1688,7 @@ PS
   # nada exclusivo de PowerShell 7 fuera de los comentarios (?? ?. && ||; el ternario no se busca: su forma choca con texto común): así 5.1 lo lee y dice qué falta
   if grep -v '^[[:space:]]*#' "$src" | grep -nE '\?\?|\?\.|&&|\|\||-Parallel' > "$gl/ps7.out"; then no "get-harness.ps1 · sintaxis de PowerShell 7 que 5.1 no lee: $(head -3 "$gl/ps7.out" | tr '\n' ' ')"
   else ok "get-harness.ps1 · sin ?? ?. && || ni -Parallel: Windows PowerShell 5.1 lo lee hasta el chequeo de versión"; fi
-  # el piso para INSTALAR es el del instalador de npm (22); harness.js sigue en 20, sólo para actualizar (story 8.40)
+  # el piso para INSTALAR es el del instalador de npm (22); harness.js sigue en 20, sólo para actualizar
   floor="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$ROOT/scripts/setup/npm/index.js")"
   if [ -n "$floor" ] && grep -qE "^\\\$NodeFloor = ${floor}( |\$)" "$src"; then ok "get-harness.ps1 · el piso de Node es el de instalar (${floor}, el de index.js)"
   else no "get-harness.ps1 · el piso de Node no es el de instalar (${floor}): $(grep -n 'NodeFloor =' "$src" | head -1)"; fi
@@ -1791,7 +1783,7 @@ PS
   ps_gh "$h" "$gl/bin-full" TYCON_GITHUB_TOKEN="otro-$permit" -- -- --yes > "$gl/bad.out" 2>&1; rc=$?
   if [ "$rc" -eq 1 ] && grep -qiE 'no vale|venci|401' "$gl/bad.out" && ! grep -q '/tarball/' "$gl/requests.log" && [ "$(tmp_left)" = 0 ]; then ok "get-harness.ps1 · un permiso que no vale: sale 1 diciéndolo (venció o se revocó) y no baja nada"
   else no "get-harness.ps1 · permiso que no vale (rc $rc): $(brief "$gl/bad.out")"; fi
-  # un permiso que VENCIÓ con el repo público (2026-10-14): GitHub contesta 401 aunque el repo se lea sin permiso. El guion
+  # un permiso que VENCIÓ con el repo público: GitHub contesta 401 aunque el repo se lea sin permiso. El guion
   # sigue sin él (main de info/refs, el comprimido de codeload) y no lo guarda; el de la variable lo dice el guion, el guardado
   # en ~/.tycon/config.json lo dice install (acá un harness.js de juguete: se mide que se instala sin mandarlo y sin guardarlo)
   local gitb cl; gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
@@ -1812,7 +1804,7 @@ PS
   else no "get-harness.ps1 · permiso guardado vencido (rc $rc): $(brief "$gl/expired-saved.out")"; fi
   printf '{ "auth": "token:%s" }\n' "$permit" > "$gl/control.json"
   # una redirección a un esquema que no es http(s) (un servidor hostil que manda a file://) no se sigue: sale 1 diciéndolo y
-  # sin llamar a install; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red (vuelta 2 de la E, seguridad)
+  # sin llamar a install; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red
   local redir_pid; node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$gl/redir.port" & redir_pid=$!
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$gl/redir.port" ] && break; sleep 0.2; done
   h="$(new_home gh-redir)"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
@@ -1821,7 +1813,7 @@ PS
   if [ "$rc" -eq 1 ] && grep -q 'esquema que no es http' "$gl/redir.out" && ! grep -q 'GitHub contestó' "$gl/redir.out" && [ "$(wc -l < "$calls" | tr -d ' ')" = "$n_calls" ] && [ "$(tmp_left)" = 0 ]; then ok "get-harness.ps1 · una redirección a file:// no se sigue: sale 1 diciéndolo (una sola vez: sin el genérico «GitHub contestó»), sin bajar ni llamar a install"
   else no "get-harness.ps1 · redirección a file:// (rc $rc): $(brief "$gl/redir.out")"; fi
   # la misma redirección hostil pero en la BAJADA del comprimido (main ya resuelta): el motivo una sola vez, sin el genérico
-  # «no pude bajar el comprimido (GitHub contestó …)» (vuelta 5 de la E)
+  # «no pude bajar el comprimido (GitHub contestó …)»
   node -e 'const s=require("http").createServer((q,r)=>{if(/\/git\/ref\//.test(q.url)){r.writeHead(200,{"Content-Type":"application/json"});r.end(JSON.stringify({object:{sha:"0123456789abcdef0123456789abcdef01234567"}}));return}r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$gl/redir2.port" & redir_pid=$!
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$gl/redir2.port" ] && break; sleep 0.2; done
   h="$(new_home gh-redir2)"; n_calls="$(wc -l < "$calls" | tr -d ' ')"
@@ -1834,7 +1826,7 @@ PS
   if [ "$rc" -eq 2 ] && grep -q 'TYCON_RELEASE_API tiene que empezar con http' "$gl/badapi.out" && [ -z "$(find "$h" -mindepth 1 | head -1)" ]; then ok "get-harness.ps1 · una TYCON_RELEASE_API que no es http(s): sale 2 diciéndolo, antes de tocar la red o la HOME"
   else no "get-harness.ps1 · API con otro esquema (rc $rc): $(brief "$gl/badapi.out")"; fi
   # el PRIMER listado del tar (-tvzf, el que ve los enlaces) falla y el segundo (-tzf) anda: el guion tiene que frenar igual —cada
-  # listado guarda su código; el segundo no tapa al primero (vuelta 3 de la E, cobertura)—. Un tar de mentira que sólo falla en -tvzf
+  # listado guarda su código; el segundo no tapa al primero—. Un tar de mentira que sólo falla en -tvzf
   mkdir -p "$gl/bin-tarshim"; for f in "$gl"/bin-full/*; do ln -sf "$(readlink "$f")" "$gl/bin-tarshim/$(basename "$f")"; done
   real="$(command -v tar)"; rm -f "$gl/bin-tarshim/tar"   # era un enlace al tar real: escribir a través de él es escribir en /usr/bin
   # el tar de mentira imprime UNA línea antes de fallar: así lo que frena es el código (-tvzf salió 1), no un listado vacío
@@ -1845,8 +1837,8 @@ PS
   if [ "$rc" -eq 1 ] && grep -q 'no se pudo leer' "$gl/tarshim.out" && grep -q '/tarball/' "$gl/requests.log" && [ "$(wc -l < "$calls" | tr -d ' ')" = "$n_calls" ] && [ "$(tmp_left)" = 0 ]; then
     ok "get-harness.ps1 · si falla el primer listado del tar (-tvzf) aunque el segundo ande: sale 1 diciéndolo, no abre el comprimido ni llama a install"
   else no "get-harness.ps1 · primer listado del tar roto (rc $rc; llamadas nuevas $(( $(wc -l < "$calls" | tr -d ' ') - n_calls ))): $(brief "$gl/tarshim.out")"; fi
-  # con `-- --tool codex` (sólo Codex) bash y python3 no hacen falta fuera de Windows: el guion pasa los requisitos y baja
-  # (pase adversarial de la E, clase 17). Un PATH con pwsh, node y tar, sin python3 ni bash
+  # con `-- --tool codex` (sólo Codex) bash y python3 no hacen falta fuera de Windows: el guion pasa los requisitos y baja.
+  # Un PATH con pwsh, node y tar, sin python3 ni bash
   printf '{ "auth": "none" }\n' > "$gl/control.json"
   mkdir -p "$gl/bin-codex"; for t in pwsh tar gzip; do real="$(command -v "$t")" && ln -sf "$real" "$gl/bin-codex/$t"; done; ln -sf "$REAL_NODE" "$gl/bin-codex/node"   # gzip: el tar de GNU lo llama (170 #12461)
   h="$(new_home gh-codex)"; : > "$gl/requests.log"
@@ -1854,7 +1846,7 @@ PS
   if ! grep -q 'falta python3\|falta bash' "$gl/codex.out" && grep -q '/tarball/' "$gl/requests.log" && [ "$(tail -1 "$calls" 2>/dev/null)" = "${INSTALL_CALL},\"--tool\",\"codex\",\"--yes\"]" ]; then
     ok "get-harness.ps1 · con -- --tool codex y sin python3 ni bash: no son requisitos (los pide el aplicador de Claude Code), baja e instala"
   else no "get-harness.ps1 · con -- --tool codex sin python3 (rc $rc; llamada: $(tail -1 "$calls" 2>/dev/null)): $(brief "$gl/codex.out")"; fi
-  # T54 (el cierre de la 8.40, AC 46): `--tool` como lo lee install (mayúsculas, comas, repetida). La red a un puerto
+  # T54: `--tool` como lo lee install (mayúsculas, comas, repetida). La red a un puerto
   # cerrado: sólo importa si pide python3 y bash o no
   for c in 'no:--tool Codex' 'no:--tool=codex' 'si:--tool claude,codex' 'si:--tool codex --tool claude'; do
     want="${c%%:*}"; read -r -a t54args <<< "${c#*:}"; h="$(new_home "gh-t54-${want}")"
@@ -1866,7 +1858,7 @@ PS
   ps_gh "$h" "$gl/bin-codex" TYCON_RELEASE_API=http://127.0.0.1:9 TYCON_RELEASE_GIT=http://127.0.0.1:9 -- -- --tool ' codex ' > "$gl/t54.out" 2>&1
   if ! grep -q 'falta python3\|falta bash' "$gl/t54.out"; then ok "get-harness.ps1 · T54 --tool ' codex ' (con espacios): python3 no se pide"
   else no "get-harness.ps1 · T54 --tool ' codex ': $(brief "$gl/t54.out")"; fi
-  # T14 (story 8.34) · sin permiso y con las rutas públicas del juguete (TYCON_RELEASE_GIT / _ARCHIVE): main de info/refs y el
+  # T14 · sin permiso y con las rutas públicas del juguete (TYCON_RELEASE_GIT / _ARCHIVE): main de info/refs y el
   # comprimido de codeload, sin ninguna consulta a la API; con la API agotada (por la API: con permiso), la hora del tope
   local gitb cdl reset hora
   gitb="$(sed -n 's/^GIT=//p' "$gl/ports.env")"; cdl="$(sed -n 's/^CODELOAD=//p' "$gl/ports.env")"
@@ -1889,15 +1881,14 @@ PS
 if command -v git >/dev/null 2>&1; then get_harness_ps1_section
 else echo "⏭ installer-ps1: NO MEDIDO — get-harness.ps1: no hay git en esta máquina"; fi
 
-# ── (y) Ps1_FailureAfterLock_SaidAndLockReleased · story 8.17, W3W4 (revisores de fallos silenciosos, de spec primero y de
-#    cobertura; pase adversarial, clase 15) ─────────────────────────────────────────────────────────────────────────────
-# Con $ErrorActionPreference='Stop' global, un sitio sin envolver que tiraba DESPUÉS de tomar el candado mataba el
-# instalador sin pasar por Exit-Installer: el candado quedaba tomado (hasta 10 min nadie más instalaba), no llegaba a
-# Write-PieceReport y no se decía nada propio (sólo el error crudo de PowerShell). 🔴 rojo previo de cada caso, abajo.
+# ── (y) Ps1_FailureAfterLock_SaidAndLockReleased ─────────────────────────────────────────────────────────────────────────────
+# Con $ErrorActionPreference='Stop' global, un sitio sin envolver que tira DESPUÉS de tomar el candado mata el
+# instalador sin pasar por Exit-Installer: el candado queda tomado (hasta 10 min nadie más instala), no llega a
+# Write-PieceReport y no se dice nada propio (sólo el error crudo de PowerShell). Cada caso, abajo, evita eso.
 no_ps_error() { ! grep -qE -e '^[[:space:]]*Line \|' -e '^install-tycon-hooks\.ps1: Exception' "$1"; }   # <salida>: sin el formato de error crudo de PowerShell
 lock_free() { lab_env "$1" -- node -e 'const r=require(process.argv[1]).acquire(require("os").homedir());if(r.ok)require(process.argv[1]).release(require("os").homedir());process.exit(r.ok?0:1)' "$CLONE/scripts/setup/harness/lock.js" > /dev/null 2>&1; }   # <home>: otro instalador puede tomar el candado YA
-# (1) Install-GitHook falla (TYCON_GIT_HOOKS_DIR es un ARCHIVO: New-Item -ItemType Directory tira). 🔴 antes: rc 1, el
-# candado quedaba tomado y no había reporte.
+# (1) Install-GitHook falla (TYCON_GIT_HOOKS_DIR es un ARCHIVO: New-Item -ItemType Directory tira). 🔴 Sin esto: rc 1, el
+# candado queda tomado y no hay reporte.
 HGF="$(new_home githook-fail)"; : > "$HGF/not-a-dir"
 installer "$HGF" TYCON_NO_GIT_HOOKS=0 "TYCON_GIT_HOOKS_DIR=$HGF/not-a-dir" -- -ReportJson "$T/y1.report.json" > "$T/y1.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(grep -c 'no pude dejar el pre-commit global de git' "$T/y1.out")" = 1 ] && [ "$(grep -c 'no pude dejar el post-commit global de git' "$T/y1.out")" = 1 ] \
@@ -1905,7 +1896,7 @@ if [ "$RC" -eq 0 ] && [ "$(grep -c 'no pude dejar el pre-commit global de git' "
    && no_ps_error "$T/y1.out" && [ ! -e "$HGF/.claude/.tycon-pipeline/harness/harness.lock" ] && lock_free "$HGF" && [ -s "$T/y1.report.json" ]; then
   ok "(y) un hook global de git que no se puede escribir: UNA línea por hook, sigue hasta el final (reporte escrito, sale 0) y suelta el candado (otro instalador entra enseguida)"
 else no "(y) hook global de git que falla (rc $RC): $(grep -c 'no pude dejar el' "$T/y1.out") línea(s), candado $([ -e "$HGF/.claude/.tycon-pipeline/harness/harness.lock" ] && echo TOMADO || echo suelto), reporte $([ -s "$T/y1.report.json" ] && echo escrito || echo FALTA) · $(brief "$T/y1.out" 240)"; fi
-# (1b) story 8.26, tanda F1 (AC 52): el pre-push global —el freno antes de publicar— también lo deja el instalador de
+# (1b) el pre-push global —el freno antes de publicar— también lo deja el instalador de
 # Windows. El de la persona pasa a pre-push.local, y el nuestro queda byte a byte como el del arnés, con saltos de línea
 # de Unix (lo corre el bash de Git: con CRLF la primera línea no es un intérprete).
 HGP="$(new_home githook-pre-push)"; mkdir -p "$HGP/git-hooks"; printf '#!/bin/sh\necho ajeno\n' > "$HGP/git-hooks/pre-push"
@@ -1921,7 +1912,7 @@ if ! grep -q 'pre-push global de git actualizado' "$T/y1c.out" && grep -q 'echo 
   ok "(y) el pre-push global en Windows: instalar otra vez no cambia nada"
 else no "(y) el pre-push global en Windows, segunda instalación: $(ls "$HGP/git-hooks" | tr '\n' ' ')"; fi
 # (2) el esqueleto de settings.json no se puede escribir (~/.claude sin permiso de escritura; el candado vive más adentro
-# y sí se toma). 🔴 antes: Set-Content tiraba y el candado quedaba tomado.
+# y sí se toma). 🔴 Sin esto: Set-Content tira y el candado queda tomado.
 HSK="$(new_home skeleton-fail)"; mkdir -p "$HSK/.claude/.tycon-pipeline/harness"; chmod 555 "$HSK/.claude"
 if [ -w "$HSK/.claude" ]; then echo "⏭ installer-ps1: NO MEDIDO — (y) esqueleto que no se puede escribir: corre como root"
 else
@@ -1931,26 +1922,25 @@ else
   else no "(y) esqueleto que falla (rc $RC): $(grep -c 'no pude crear' "$T/y2.out") línea(s), candado $([ -e "$HSK/.claude/.tycon-pipeline/harness/harness.lock" ] && echo TOMADO || echo suelto) · $(brief "$T/y2.out" 240)"; fi
 fi
 chmod 755 "$HSK/.claude"
-# (3) sin scripts/setup/harness/lock.js el instalador sigue sin candado y LO DICE. 🔴 antes: seguía callado.
+# (3) sin scripts/setup/harness/lock.js el instalador sigue sin candado y LO DICE. 🔴 Sin esto sigue callado.
 NOLOCK_CLONE="$T/clone-nolock"; cp -R "$CLONE" "$NOLOCK_CLONE"; rm -f "$NOLOCK_CLONE/scripts/setup/harness/lock.js"
 HNL="$(new_home nolock)"
 LAB_INSTALLER="$NOLOCK_CLONE/scripts/install-tycon-hooks.ps1" installer "$HNL" > "$T/y3.out" 2>&1; RC=$?
 if [ "$(grep -c 'falta .*lock\.js.*sigo sin candado' "$T/y3.out")" = 1 ] && no_ps_error "$T/y3.out"; then ok "(y) sin lock.js: UNA línea «sigo sin candado» (rc $RC)"
 else no "(y) sin lock.js (rc $RC): $(grep -c 'sigo sin candado' "$T/y3.out") línea(s) · $(brief "$T/y3.out" 200)"; fi
-# (4) código muerto (W3W4): el aplicador ya no manda los avisos `no-git-bash*` (un .sh va con `bash "<ruta>"`, sin buscar
+# (4) código muerto: el aplicador no manda los avisos `no-git-bash*` (un .sh va con `bash "<ruta>"`, sin buscar
 # el bash de Git), así que el .ps1 no los traduce
 if ! grep -q 'no-git-bash' "$PS1_INSTALLER"; then ok "(y) sin los avisos no-git-bash* en el .ps1 (el aplicador ya no los manda)"
 else no "(y) el .ps1 todavía traduce avisos no-git-bash*: $(grep -n 'no-git-bash' "$PS1_INSTALLER" | cut -c1-60 | head -3 | tr '\n' ' ')"; fi
-# (5) código muerto (revisor de cobertura de AC): la tabla de integraciones y la lista de lo que se removía por llave las
-# calculaba el .ps1 y ya no las usaba nadie (desde la W3 lo decide apply-hooks.js)
+# (5) código muerto: la tabla de integraciones y la lista de lo que se removía por llave no las calcula el .ps1
+# (lo decide apply-hooks.js)
 if ! grep -qE 'HooksDeIntegracion|RemoverPorLlave' "$PS1_INSTALLER"; then ok "(y) sin \$HooksDeIntegracion ni \$RemoverPorLlave (código muerto desde la W3)"
 else no "(y) el .ps1 todavía calcula \$HooksDeIntegracion o \$RemoverPorLlave: $(grep -nE 'HooksDeIntegracion|RemoverPorLlave' "$PS1_INSTALLER" | head -2 | tr '\n' ' ')"; fi
 
-# ═══ (z) una carpeta con acento y una consola que NO es UTF-8 (Windows lanzado sin consola: 182 measure #12408) ════════
+# ═══ (z) una carpeta con acento y una consola que NO es UTF-8 (Windows lanzado sin consola) ════════
 # PowerShell decodifica lo que node imprime con [Console]::OutputEncoding; lanzado por harness.js o por un hook, en Windows
 # es la página de códigos OEM de la máquina, y una ruta con acento vuelve con otros bytes: `Test-Path` no la encuentra y
-# el .ps1 salía 1 diciendo que la carpeta de skills «no trae tycon-pipeline» (verde hasta la 8.23 A2, rojo en main desde la
-# B). Acá se reproduce poniendo la consola en Latin1 ANTES de llamar al .ps1, con el clon y la HOME en «usuario de
+# el .ps1 saldría 1 diciendo que la carpeta de skills «no trae tycon-pipeline». Acá se reproduce poniendo la consola en Latin1 ANTES de llamar al .ps1, con el clon y la HOME en «usuario de
 # práctica»: el .ps1 tiene que fijar UTF-8 él mismo, encontrar la carpeta de skills y listar lo que falta, como en (a).
 ACC="$T/usuario de práctica"; mkdir -p "$ACC/home"; cp -R "$CLONE" "$ACC/clone"
 cat > "$T/latin1.ps1" <<'EOF'
@@ -1972,10 +1962,10 @@ else no "(z) con la consola en Latin1 el listado de -Check no es el de siempre: 
 if grep -q 'OutputEncoding = \[System.Text.UTF8Encoding\]::new(\$false)' "$PS1_INSTALLER"; then ok "(z) el .ps1 fija [Console]::OutputEncoding en UTF-8 antes de llamar a node"
 else no "(z) el .ps1 no fija [Console]::OutputEncoding en UTF-8: en Windows sin consola una ruta con acento se destroza"; fi
 
-# ═══ (gh) T79 · el aviso de la carpeta GLOBAL de hooks de git (story 8.26, tanda H1c · AC 65 e) ══════════════════════
-# El caso: los hooks de git del arnés —entre ellos el pre-push, el freno antes de publicar— corren sólo si la carpeta
-# global de hooks de git es la que el instalador llena. El .ps1 avisaba únicamente cuando git no tenía ninguna: con OTRA
-# llenaba la suya, no decía nada, y ningún hook del arnés corría. Es el gemelo de harness-install.test.sh, T79.
+# ═══ (gh) T79 · el aviso de la carpeta GLOBAL de hooks de git ══════════════════════
+# Los hooks de git del arnés —entre ellos el pre-push, el freno antes de publicar— corren sólo si la carpeta
+# global de hooks de git es la que el instalador llena. Si el .ps1 avisara únicamente cuando git no tiene ninguna, con OTRA
+# llenaría la suya sin decir nada, y ningún hook del arnés correría. Es el gemelo de harness-install.test.sh, T79.
 # Lo que se mide por EJECUCIÓN acá (pwsh en esta máquina, con la configuración global de git en un archivo propio):
 # ninguna · la del instalador (entera, con `~`, por un enlace, desde un archivo incluido) · otra · no existe · relativa ·
 # con los hooks de git apagados · y que el archivo de configuración queda byte a byte en todos.
@@ -2146,11 +2136,11 @@ else
   gh_unread "git no está en el PATH (con -Check)" "no pude lanzar git"
 fi
 
-# ═══ (ab) story 8.36 · la tanda: menos procesos de Node por arranque, y lo mismo hecho (T4, T6, T7, T8) ═══════════════
+# ═══ (ab) la tanda: menos procesos de Node por arranque, y lo mismo hecho (T4, T6, T7, T8) ═══════════════
 # El aplicador corre en cada arranque. Cada proceso de Node cuesta ~50-100 ms en lanzarse desde PowerShell en Windows.
 # Cada Node que arranca se cuenta con `NODE_OPTIONS=--require <contador>`, que ve también los que un guion lanza por su
 # cuenta con su propia ruta de node (el intermediario del PATH no los ve). Lo hecho se compara contra el mismo aplicador
-# SIN la tanda (las llamadas sueltas de antes, que quedan como respaldo): la misma salida en el mismo orden, el mismo
+# SIN la tanda (las llamadas sueltas, que quedan como respaldo): la misma salida en el mismo orden, el mismo
 # settings.json, el mismo reporte de piezas y el mismo CLAUDE.md, byte a byte.
 COUNTER="$T/node-counter.js"; COUNTED="$T/node-counted.txt"
 cat > "$COUNTER" <<EOF
@@ -2203,14 +2193,13 @@ ab_broken_old() { mkdir -p "$1/.claude"; printf '{ roto' > "$1/.claude/tycon.jso
 ab_fresh() { mkdir -p "$1/.claude"; printf '# mío\n@~/.claude/tycon-harness/README.md\n' > "$1/.claude/CLAUDE.md"; }
 
 # ── T4 · Ps1_NodeProcessesPerRun: una corrida del arranque en una máquina ya instalada lanza como mucho 3 Node ──────
-# (la tanda de lectura, la de aplicación y la línea del índice, que queda suelta; la tanda A sola dejaba 9)
+# (la tanda de lectura, la de aplicación y la línea del índice, que queda suelta)
 ab_pair steady "$CLONE_NB" ab_installed
 N_A=$(wc -l < "$T/ab-steady-a.counted" | tr -d ' '); N_B=$(wc -l < "$T/ab-steady-b.counted" | tr -d ' ')
 echo "ℹ installer-ps1: (ab) procesos de Node en una corrida del arranque — con la tanda: $N_A ($(sort "$T/ab-steady-a.counted" | uniq -c | awk '{printf "%s %s · ", $2, $1}')) · sin ella: $N_B"
 # El tope es 3. Con la capa del equipo (el árbol trae scripts/lib/renames.json, como en cada máquina del equipo y en el
-# nocturno, que pone el público encima del privado) es 4: la llamada a legacy-names.js quedó afuera de la tanda de la
-# 8.36, y ése es el cuarto. Aceptado por el dueño el 2026-10-15 (nocturno 13535); meterla en la tanda está anotado como
-# pendiente en tasks/todo.md del repo de mantenimiento. Con capa, el de más tiene que ser ése y no otro.
+# nocturno, que pone el público encima del privado) es 4: la llamada a legacy-names.js queda afuera de la tanda,
+# y ése es el cuarto. Con capa, el de más tiene que ser ése y no otro.
 AB_CAP=3; AB_WHY="≤ 3"
 if [ -f "$CLONE/scripts/lib/renames.json" ]; then AB_CAP=4; AB_WHY="≤ 4 con la capa del equipo: legacy-names.js va afuera de la tanda"; fi
 if [ "$AB_CAP" = 4 ] && [ "$N_A" = 4 ] && ! grep -qx 'legacy-names.js' "$T/ab-steady-a.counted"; then
@@ -2221,7 +2210,7 @@ ab_same steady "$AB_A" "$AB_B" "T6 máquina ya instalada, con la tanda y sin ell
 
 # ── T4b · Ps1_UploadRunsDetached_NotCountedOnlyWhileItDoesNotBlock ───────────────────────────────────────────────────
 # Con el buzón prendido (una máquina del equipo), el arranque lanza además la subida de corridas al buzón: un proceso de
-# Node DE FONDO, que no cuenta para el tope de T4 (decisión de la coordinadora por delegación del dueño, 2026-10-16) sólo
+# Node DE FONDO, que no cuenta para el tope de T4 sólo
 # mientras sea de fondo de verdad. La prueba lo exige en vez de creerlo: la subida de este clon tarda 20 s a propósito y
 # el arranque tiene que terminar antes, la lanza una sola vez, el resto sigue dentro del tope, y en Windows sale con la
 # ventana oculta por Start-Process (no `& node`, que la esperaría). Si un día se vuelve bloqueante, T4b se pone rojo.
@@ -2278,8 +2267,8 @@ ab_pair badbatch "$CLONE_BAD" ab_fresh TYCON_NO_CLAUDEMD_SYNC=0
 ab_same badbatch "$AB_A" "$AB_B" "T7 con una tanda que sale 1 sin resultado (las llamadas sueltas de respaldo)"
 
 # ── T6b · con el paso de terceros prendido, el plan y el reporte quedan en el mismo orden que sin la tanda ─────────────
-# (pase adversarial de la tanda B: el registro de hooks, dentro de la tanda, anotaba sus piezas antes que las de
-# terceros que este archivo anota después; ahora van a un temporal propio y se suman en su lugar de siempre). Sin red:
+# (el registro de hooks, dentro de la tanda, anota sus piezas en un temporal propio y se suman en su lugar de
+# siempre, no antes de las de terceros que este archivo anota después). Sin red:
 # el plan con -Check (la revisión de terceros no baja nada) y el reporte con un manifiesto vacío y una skill de terceros
 # ya «completa» en el estado.
 printf '{\n  "third_party": []\n}\n' > "$T/tp-empty-manifest.json"
@@ -2363,8 +2352,8 @@ if [ -z "$cut_diffs" ] && [ "$CUT_SAID" = 2 ]; then ok "T7b una tanda que se cor
 else no "T7b tanda cortada: distinto en:${cut_diffs:- nada} · avisos: $CUT_SAID (esperaba 2) · $(brief "$T/ab-cut-a.out" 200)"; fi
 
 # ── Esta prueba viaja en la copia pública: no puede traer escrita una ruta con forma de carpeta de usuario ─────────────
-# (story 8.26, tanda H1c: dos rutas de ejemplo de ese tipo hacían que el detector de publicación las leyera como la ruta
-# de la máquina de alguien y frenara la copia entera; el pre-commit no lo ve, lo veía recién la validación de la rama).
+# (dos rutas de ejemplo de ese tipo harían que el detector de publicación las leyera como la ruta
+# de la máquina de alguien y frenara la copia entera; el pre-commit no lo ve, lo vería recién la validación de la rama).
 # El patrón se arma por pedazos para que esta línea no se encuentre a sí misma.
 USER_DIR_SHAPES="$(printf '%s|%s|%s|%s' 'C:[\\/]+Us''ers[\\/]' '/c/Us''ers/' '/Us''ers/[A-Za-z]' '/ho''me/[a-z]')"
 if grep -nE "$USER_DIR_SHAPES" "${BASH_SOURCE[0]}" >/dev/null 2>&1; then

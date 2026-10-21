@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
-# hooks-messages-dont-run.test.sh — que el TEXTO de un mensaje no EJECUTE nada (2026-09-06).
+# hooks-messages-dont-run.test.sh — que el TEXTO de un mensaje no EJECUTE nada.
 #
-# EL DEFECTO. En `scripts/hooks/engram-pre-commit.sh` el consejo de recuperación nombraba el
-# comando entre backticks… adentro de un `echo` con comillas DOBLES. Para bash eso no es formato:
-# es **sustitución de comando**. Entonces, cada vez que se disparaba la guarda del manifest, el
-# hook CORRÍA `engram sync` —justo sobre un repo cuyo índice de memoria está roto— y además le
-# BORRABA el nombre del comando al consejo: el dev terminaba leyendo "🔴 NO borres el manifest:
+# EL DEFECTO QUE CUBRE. En `scripts/hooks/engram-pre-commit.sh` el consejo de recuperación nombra el
+# comando entre backticks adentro de un `echo` con comillas DOBLES. Para bash eso no es formato:
+# es **sustitución de comando**. Entonces, cada vez que se dispara la guarda del manifest, el
+# hook CORRE `engram sync` —justo sobre un repo cuyo índice de memoria está roto— y además le
+# BORRA el nombre del comando al consejo: el dev termina leyendo "🔴 NO borres el manifest:
 # no lo reconstruye", sin el comando del que habla. Dos daños de un solo par de comillas, y
 # ninguno da error.
 #
-# Reproducido con un `engram` falso primero en el PATH que registra cada invocación: 2 llamadas
+# Se reproduce con un `engram` falso primero en el PATH que registra cada invocación: 2 llamadas
 # donde debía haber 1. Peor: la del backtick corre SIN `--project`, así que engram deriva el
-# proyecto del basename de la carpeta — la misma familia que ENGRAM-PROJECT-NAME-DRIFT-1, que
-# este arnés ya persigue por otro lado.
+# proyecto del basename de la carpeta.
 #
 # 🔴 DOS CAPAS, y la primera es la que impide el gemelo:
-#   C-01 barre TODOS los .sh del repo. Un caso atado a cuatro números de línea no habría visto
-#        el mismo defecto en el archivo de al lado. Medido al escribirlo: 4 ocurrencias, las 4 en
-#        engram-pre-commit.sh; `ensure-sqlite3.sh` y la línea 131 del propio hook ya escapaban bien.
+#   C-01 barre TODOS los .sh del repo. Un caso atado a cuatro números de línea no vería
+#        el mismo defecto en el archivo de al lado.
 #   C-02/C-03 prueban la EJECUCIÓN y el TEXTO, no la sintaxis: un mensaje puede quedar bien
 #        escrito y seguir corriendo algo, y un backtick escapado puede seguir comiéndose la palabra.
 #
@@ -32,7 +30,7 @@ ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 
 # ── C-01 · ningún echo con comillas dobles trae un backtick sin escapar, en todo el repo ──────
-# 🔴 rojo previo: desescapar cualquiera de los backticks de engram-pre-commit.sh.
+# 🔴 Rojo si se desescapa cualquiera de los backticks de engram-pre-commit.sh.
 SALIDA=$(python3 - "$RAIZ" <<'PY'
 import re, os, sys
 raiz = sys.argv[1]
@@ -81,18 +79,18 @@ montar() {
 
 correr_hook() {
   local T="$1"
-  # HOME de la prueba: la arma fake_home_create antes de montar (story 7.16); la constancia del freno
+  # HOME de la prueba: la arma fake_home_create antes de montar; la constancia del freno
   # no va al frenos.jsonl real del dev.
   # 🔴 La prueba declara lo que necesita: la integración de engram PRENDIDA (TYCON_ENGRAM_HOOK=1, el interruptor del
-  # propio hook). Antes la daba por prendida: en la copia pública nace apagada (el perfil del equipo no viaja), el hook
-  # salía sin hacer nada y C-02, C-03 y C-05 daban rojo ahí (medido el 2026-10-09 en la validación desde GitHub).
+  # propio hook). En la copia pública nace apagada (el perfil del equipo no viaja): sin esto el hook
+  # sale sin hacer nada y C-02, C-03 y C-05 dan rojo.
   ( cd "$T/repo" && PATH="$T/bin:$PATH" ENGRAM_BIN="$T/bin/engram" TYCON_ENGRAM_HOOK=1 \
       bash "$HOOK" <<< '{"tool_input":{"command":"git commit -m prueba"}}' ) > "$T/salida.txt" 2>&1
   echo $?
 }
 
 # ── C-02 · el mensaje no dispara una invocación de más ────────────────────────────────────────
-# 🔴 rojo previo: desescapar el backtick de la línea del consejo → 2 llamadas en vez de 1.
+# 🔴 Rojo si se desescapa el backtick de la línea del consejo: 2 llamadas en vez de 1.
 T=$(mktemp -d); fake_home_create "$T/casa" || exit 1; montar "$T"
 RC=$(correr_hook "$T")
 LLAMADAS=$(wc -l < "$T/llamadas.txt" 2>/dev/null | tr -d ' '); LLAMADAS=${LLAMADAS:-0}
@@ -114,9 +112,9 @@ else
   grep -iE 'manifest|reconstruye' "$T/salida.txt" | head -2 | sed 's/^/       /'
 fi
 [ "$RC" = "0" ] && ok "C-04 el hook sigue siendo fail-open (exit 0)" || mal "C-04 el hook frenó (exit $RC) — era fail-open"
-# ── C-05 · T22 (story 7.15) la constancia del manifest roto va a la HOME de la prueba ─────────────
+# ── C-05 · la constancia del manifest roto va a la HOME de la prueba ─────────────
 # El hook deja «no pude medir» en frenos.jsonl, que sube al buzón y alimenta el tablero: en la HOME real
-# era una constancia falsa por corrida. Evidencia POSITIVA. Rojo previo: sin HOME temporal, no está acá.
+# sería una constancia falsa por corrida. Evidencia POSITIVA: sin HOME temporal, la constancia no aparece acá.
 if [ "$(fake_home_count frenos.jsonl '"freno":"engram-manifest"')" -gt 0 ]; then
   ok "C-05 la constancia engram-manifest quedó en la HOME de la prueba, no en la real"
 else

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
-# githook-renames.test.sh — un archivo MOVIDO no esquiva los controles del pre-commit que se disparan por ruta
-# (story 8.18, deuda `[DEF-8.18-listas-sin-renombres]` · 2026-10-04).
+# githook-renames.test.sh — un archivo MOVIDO no esquiva los controles del pre-commit que se disparan por ruta.
 #
 # EL CASO. Varios controles del pre-commit corren SÓLO si el commit toca ciertas rutas («un commit de guías no paga el
-# costo»). La lista de lo tocado salía de `git diff --cached --name-only`, y git, por defecto, empareja un borrado con
+# costo»). Si la lista de lo tocado sale de `git diff --cached --name-only`, git, por defecto, empareja un borrado con
 # un alta de contenido parecido y lista sólo la ruta NUEVA. Un `git mv` de un archivo vigilado a una carpeta que no lo
-# está dejaba la lista sin ninguna ruta vigilada: el control no corría, y lo que ese archivo sostenía se iba del repo
-# sin una palabra. El pase adversarial del tramo 1 lo encontró en el pipeline de pull request (un archivo movido fuera
-# de `skills/` contaba como «sin código»); acá se mide lo mismo en las dos partes del pre-commit.
+# está dejaría la lista sin ninguna ruta vigilada: el control no correría, y lo que ese archivo sostiene se iría del repo
+# sin una palabra. Lo mismo pasa en el pipeline de pull request (un archivo movido fuera de `skills/` contaría como
+# «sin código»); acá se mide en las dos partes del pre-commit.
 #
 # QUÉ SE MIDE, con los hooks REALES del repo corridos sobre repos de juguete (un doble mínimo por control, que anota
 # su llamada):
@@ -18,16 +17,16 @@
 #           leer del índice);
 #     · H3  la paridad (`build/check.js`): un hook movido fuera de `scripts/hooks/`.
 #   la parte de las skills — sus dos disparos piden la lista CON la carpeta (`-- skills agents …`, `-- 'agents/*.md'`): git
-#     compara sólo adentro de ella, no encuentra con quién emparejar y lista la ruta vieja como borrada. Ya corrían; no
-#     se tocaron, y S1 y S2 lo dejan fijado.
+#     compara sólo adentro de ella, no encuentra con quién emparejar y lista la ruta vieja como borrada. Ya corren bien y
+#     no se tocan: S1 y S2 lo dejan fijado.
 #   Los espejos: mover un archivo que ningún control vigila sigue sin correr nada; tocar uno vigilado sin moverlo sigue
 #   corriendo su control.
-#   L — una lista GRANDE en el índice (6000 archivos): con `git diff | grep -q` y `pipefail`, git moría por SIGPIPE y la
-#     paridad, los bloques y el quoting de bash 3.2 no corrían; y un índice que git no puede leer frena, no pasa.
+#   L — una lista GRANDE en el índice (6000 archivos): con `git diff | grep -q` y `pipefail`, git muere por SIGPIPE y la
+#     paridad, los bloques y el quoting de bash 3.2 no corren; y un índice que git no puede leer frena, no pasa.
 #
-# 🔴 rojo previo verificado (2026-10-04): sin `--no-renames`, H1 (los dos), H2 y H3 no corren su control y el hook sale
-#    0 callado. S1, S2 y los espejos ya daban verde. Con la lista leída por caño, L da 4 en rojo (la paridad, los
-#    bloques y el quoting no corren; el índice roto sale 0); su espejo ya daba verde.
+# 🔴 Rojo sin `--no-renames`: H1 (los dos), H2 y H3 no corren su control y el hook sale
+#    0 callado. S1, S2 y los espejos dan verde. Con la lista leída por caño, L da 4 en rojo (la paridad, los
+#    bloques y el quoting no corren; el índice roto sale 0); su espejo da verde.
 #
 # Portable (`requiere: []`): sin red, sin agent-skills instalado, sin herramientas del vocabulario; HOME de juguete y
 # git sin las variables que git le pasa a sus hooks.
@@ -124,7 +123,7 @@ variant "${HARNESS}" h1-block; move claude-md-blocks/style.md guides/style.md; r
 ran "H1 un bloque movido fuera de claude-md-blocks/ corre igual el control de los bloques" blocks
 variant "${HARNESS}" h1-detail; move guides/piezas-del-arnes.md guides/detail.md; run_hook "${HARNESS_HOOK}"
 ran "H1 la guía del detalle movida de nombre corre igual el control de los bloques" blocks
-# H2 · la versión pública del mapa: la privada movida ya no está en el índice, y el control lo dice y frena
+# H2 · la versión pública del mapa: la privada movida no está en el índice, y el control lo dice y frena
 variant "${HARNESS}" h2-map; move artifacts/mapa-arnes.html artifacts/map-old.html; run_hook "${HARNESS_HOOK}"
 if [ "${RC}" -eq 1 ] && grep -q "no pude leer del índice la privada" "${OUT}"; then ok "H2 el mapa privado movido de nombre corre igual el control del mapa, que frena: no lo puede leer del índice"
 else no "H2 con el mapa privado movido esperaba exit 1 con «no pude leer del índice la privada», dio exit ${RC}: $(tail -n 3 "${OUT}" | tr '\n' ' ')"; fi
@@ -142,12 +141,12 @@ ran "espejo: tocar un bloque sin moverlo sigue corriendo el control de los bloqu
 if called parity; then no "espejo: tocar un bloque corrió además la paridad, que no vigila esa carpeta"; else ok "espejo: …y no corre la paridad, que no vigila esa carpeta"; fi
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# L · una lista GRANDE en el índice (revisión del tramo 2, vuelta 1, 2026-10-04)
+# L · una lista GRANDE en el índice
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# EL CASO. Los disparos eran `git diff … | grep …` con `pipefail`: `grep -q` se va con la primera ruta que coincide, >/dev/null
-# y si a git le queda lista por escribir muere por SIGPIPE (141). Con la paridad, `if ! … | grep -q` daba verdadero y
-# el hook salía 0 SIN correr ningún control; con los bloques y el quoting de bash 3.2, el disparo daba falso y su control
-# se salteaba. Medido con 6000 archivos en el índice. Las rutas vigiladas van ANTES de la carga (`zz-bulk/` ordena
+# EL CASO. Un disparo `git diff … | grep -q …` con `pipefail`: `grep -q` se va con la primera ruta que coincide,
+# y si a git le queda lista por escribir muere por SIGPIPE (141). Con la paridad, `if ! … | grep -q` da verdadero y
+# el hook sale 0 SIN correr ningún control; con los bloques y el quoting de bash 3.2, el disparo da falso y su control
+# se saltea. Se mide con 6000 archivos en el índice. Las rutas vigiladas van ANTES de la carga (`zz-bulk/` ordena
 # último): así grep coincide en el primer pedazo y git todavía tiene ~400 KB por escribir, más que el caño.
 # Y si git NO puede dar la lista (un índice roto), el hook lo dice y frena: «no pude mirar» no es «no hay».
 BULK="${T}/harness-bulk"; cp -R "${HARNESS}" "${BULK}"

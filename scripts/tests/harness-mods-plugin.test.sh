@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# harness-mods-plugin.test.sh — el plugin de los mods del arnés en el motor de Claude Code (story 7.27, T17)
+# harness-mods-plugin.test.sh — el plugin de los mods del arnés en el motor de Claude Code (T17)
 # =============================================================================
 # Corre `claude plugin validate` (sin rechazos) y `claude plugin test` (tests/board.test.tsx: el cartel se dibuja con
 # una corrida, sin dinero; /mods hide lo saca en el momento; /mods off queda guardado; sin corrida no dibuja).

@@ -1,8 +1,8 @@
 'use strict';
 /**
- * eol.test.js — los finales de línea los decide el repo, no la configuración de cada máquina (story 8.17, tanda W1).
+ * eol.test.js — los finales de línea los decide el repo, no la configuración de cada máquina.
  *
- * EL CASO. La medición del arnés en un agente Windows (2026-10-03) encontró `core.autocrlf=true` en la configuración
+ * Un agente Windows puede traer `core.autocrlf=true` en la configuración
  * de sistema de Git for Windows: sin un `.gitattributes`, cada archivo de texto llega al árbol de trabajo con `\r\n`.
  * Un `.sh` con `\r\n` no es un error que se vea al clonar: `bash -n` lo da por bueno y recién al correr falla una
  * línea cualquiera (`exit 0\r` → «numeric argument required»). En Windows eso son los hooks en bash, los dos hooks
@@ -69,7 +69,7 @@ function mustGit(dir, args, env) {
  *   'clone'       la raíz de su propio árbol de trabajo: se mide;
  *   'not-a-clone' no tiene `.git` (una carpeta exportada): no hay nada que medir, y se dice;
  *   'unreadable'  tiene `.git` y git no lo puede leer (repo de otra cuenta, `.git` roto): NO es «no hay clon». Leerlo
- *                 así dejaba la prueba verde sin haber mirado el repo, justo donde más importa. Es un rojo, con lo
+ *                 así deja la prueba verde sin haber mirado el repo, justo donde más importa. Es un rojo, con lo
  *                 que dijo git.
  */
 function workTree(dir) {
@@ -189,7 +189,7 @@ const SCRIPT = '#!/usr/bin/env bash\necho hola\nexit 0\n';
 const GZIP_BYTES = Buffer.from([0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
 const realAttributes = () => fs.readFileSync(path.join(REPO, ATTRIBUTES), 'utf8');
 
-// ── T15 · AC 12, 18, 63 ───────────────────────────────────────────────────────────────────────────────────────────
+// ── T15 ───────────────────────────────────────────────────────────────────────────────────────────
 test('T15a Eol_Gitattributes — la regla está en la raíz y los binarios están declarados', () => {
   const file = path.join(REPO, ATTRIBUTES);
   assert.ok(fs.existsSync(file), `falta ${ATTRIBUTES} en la raíz del repo`);
@@ -208,7 +208,7 @@ test('T15b Eol_NoCrlfTracked_RenormalizeIsNoop — el repo real: ningún texto c
 
 test('T15c Eol_SkillsRepo — agent-skills, mientras sea un repo aparte: la misma regla y el mismo resultado', (t) => {
   // sin `catch`: si la biblioteca no puede contestar (tira cuando su vecina está y no carga), esto es ROJO con su
-  // causa. «No pude preguntar» no es «no hay un clon» (story 8.18; lo mide T15c2)
+  // causa. «No pude preguntar» no es «no hay un clon» (lo mide T15c2)
   const skills = require('../lib/skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).repo;
   if (!skills || !fs.existsSync(skills)) { t.skip('NO MEDIDO: no hay un clon de agent-skills en esta máquina'); return; }
   if (fs.realpathSync(skills) === fs.realpathSync(REPO)) { t.skip('las skills viven en este mismo repo: ya las midió T15b'); return; }
@@ -222,10 +222,10 @@ test('T15c Eol_SkillsRepo — agent-skills, mientras sea un repo aparte: la mism
 
 test('T15c2 Eol_SkillsReader_BrokenNeighborIsRed — si quien ubica las skills no puede contestar, la prueba de agent-skills es roja con la causa (no «no hay un clon»)', () => {
   // (el título no nombra a la otra prueba por su número seguido de un espacio: T15g corre una copia con ese patrón)
-  // Story 8.18 (2026-10-04): `skills-dir.js` tira cuando su vecina (canonical-path.js) está y no carga. T15c envolvía
-  // la llamada en un `catch` genérico y salteaba con «no hay un clon de agent-skills en esta máquina»: «no pude
+  // `skills-dir.js` tira cuando su vecina (canonical-path.js) está y no carga. Si T15c envolviera
+  // la llamada en un `catch` genérico, saltearía con «no hay un clon de agent-skills en esta máquina»: «no pude
   // preguntar» leído como «no hay». Se corre una COPIA de esta suite (sólo T15c) en un clon de juguete.
-  // 🔴 rojo previo verificado: con el `catch`, la copia con la vecina rota sale 0 (T15c salteada).
+  // 🔴 Falla con: con el `catch`, la copia con la vecina rota sale 0 (T15c salteada).
   const lab = (broken) => {
     const dir = fs.realpathSync(tempDir('eol-reader-'));
     const clone = path.join(dir, 'clone');
@@ -353,7 +353,7 @@ test('T15g Eol_CannotLookIsNotGreen — con un clon que git no puede leer la pru
     fs.mkdirSync(path.join(dir, 'scripts', 'lib'), { recursive: true });
     fs.copyFileSync(__filename, path.join(dir, 'scripts', 'tests', 'eol.test.js'));
     // lo que la copia importa: sin `skills-dir.js`, T15c de la copia sería roja por no poder preguntar dónde están las
-    // skills (story 8.18: ya no se traga ese error), y acá se mide otra cosa
+    // skills (ese error no se traga), y acá se mide otra cosa
     for (const f of ['clean-git-env.js', 'skills-dir.js']) fs.copyFileSync(path.join(REPO, 'scripts', 'lib', f), path.join(dir, 'scripts', 'lib', f));
     fs.writeFileSync(path.join(dir, ATTRIBUTES), realAttributes());
     fs.writeFileSync(path.join(dir, 'roto.sh'), SCRIPT.replace(/\n/g, '\r\n'));

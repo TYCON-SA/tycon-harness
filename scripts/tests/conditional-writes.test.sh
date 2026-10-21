@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # conditional-writes.test.sh — casos del control de escrituras al repositorio.
 #
-# 🔴 EL CASO QUE LE DA SENTIDO: en Azure DevOps una `condition:` explícita REEMPLAZA al
-# `succeeded()` implícito. Medido el 2026-09-02: en CUATRO de los cinco pipelines de formularios,
+# 🔴 QUÉ DEFIENDE: en Azure DevOps una `condition:` explícita REEMPLAZA al
+# `succeeded()` implícito. Medido: en CUATRO de los cinco pipelines de formularios,
 # el paso que commitea el número de versión nuevo tiene condición explícita y no nombra
 # `succeeded()`. Si la construcción falla, el paso que arma los paquetes se saltea —ése sí lo
 # tiene— pero el commit entra a la rama principal igual: la rama dice que se publicó una versión
@@ -19,7 +19,7 @@ ok() { echo "✅ escrituras: $1"; OK=$((OK+1)); }
 no() { echo "❌ escrituras: $1"; MAL=$((MAL+1)); }
 corre() { node "$CTRL" "$@" >"$TMP/out.txt" 2>&1; echo $?; }
 
-# ── 1. EL CASO REAL: commitea con condición propia y sin la cláusula ──────────────────────────
+# ── 1. commitea con condición propia y sin la cláusula ──────────────────────────
 cat > "$TMP/malo.yml" <<'YML'
 steps:
   - script: |
@@ -60,10 +60,9 @@ rc=$(corre "$TMP/always.yml")
 [ "$rc" = "0" ] && ok "always() es una decisión, no un descuido: no se marca" || no "marcó un always()"
 
 # ── 5. publicar un artefacto con condición propia y sin la cláusula TAMBIÉN es hallazgo ─────
-# (2026-09-03) Hasta hoy quedaba FUERA a propósito: los cinco pipelines de formularios publicaban
-# sus ZIP sin `succeeded()` y eso estaba declarado como deuda con fecha — un control que nace rojo
-# por diez hallazgos que el plan excluye se apaga. Ese mismo día se arreglaron los cinco, así que
-# el alcance se amplía sin nacer rojo: medido sobre los 14 pipelines publicados, cero hallazgos.
+# El alcance incluye publicar un artefacto con condición propia: los pipelines de formularios publican
+# sus ZIP con `succeeded()`, así que el control no nace rojo — medido sobre los 14 pipelines publicados, cero
+# hallazgos. Un control que nace rojo se apaga.
 cat > "$TMP/publica.yml" <<'YML'
 steps:
   - task: PublishPipelineArtifact@1
@@ -103,8 +102,8 @@ if [ -d "$EV" ] && ls "$EV"/*.yml >/dev/null 2>&1; then
   [ "$rc" = "1" ] && ok "🔴 contra la evidencia congelada se pone rojo — el rojo previo que justifica el control" || no "la evidencia congelada salió $rc"
   n=$(grep -c "escribe en el repositorio con condición propia" "$TMP/ev.txt")
   [ "$n" = "4" ] && ok "…marca exactamente los 4 commits de versión, ni uno más de los 14" || no "marcó $n commits, debía marcar 4"
-  # (2026-09-03) Con el alcance ampliado: los 5 de formularios publicaban sus ZIP sin la cláusula;
-  # los 5 de plugins ya la tenían. Es el rojo previo de la ampliación.
+  # Con el alcance ampliado: sin la cláusula en sus ZIP, los 5 de formularios se marcan;
+  # los 5 de plugins ya la tienen.
   m=$(grep -c "publica un artefacto con condición propia" "$TMP/ev.txt")
   [ "$m" = "5" ] && ok "🔴 …y las 5 publicaciones de formularios sin la cláusula, ninguna de plugins" || no "marcó $m publicaciones, debía marcar 5"
   grep -q "5 pipeline(s)" "$TMP/ev.txt" && ok "…en 5 pipelines de 14" || no "el total de pipelines no es 5: $(grep 'pipeline(s)' "$TMP/ev.txt")"

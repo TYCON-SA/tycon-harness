@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-team-a2.test.sh — la capa del equipo con revisores y skills (story 8.25, tanda A2a · T19, T20, T26, T27, T29), en el
+# harness-team-a2.test.sh — la capa del equipo con revisores y skills (T19, T20, T26, T27, T29), en el
 # laboratorio: el GitHub de juguete con los dos repos y una versión de juguete que trae el pipeline (para que el cargador de
 # paquetes y `pipeline.js advisors` corran sobre lo instalado). Nombres inventados: nunca los del paquete real del equipo.
 #
@@ -75,7 +75,7 @@ rev=lambda a,g: {"agent": a, "group": g, "when": {"detection": "codeModified"}, 
 json.dump({"name": n, "description": "paquete del equipo de juguete", "reviewers": [rev(b, "base"), rev(c, "condicional")]}, open(f, "w"), indent=2)
 PY
 }
-# la capa de la A2a, sana: un paquete con dos revisores, sus agentes, una skill de una carpeta y una anidada a tres
+# la capa sana: un paquete con dos revisores, sus agentes, una skill de una carpeta y una anidada a tres
 capa_a2() {
   mkdir -p "$LAB_AUTHOR_TEAM/agents"
   paquete equipo-juguete rev-juguete-base rev-juguete-cond
@@ -150,7 +150,7 @@ if corre T19; then
   harness_release startup >/dev/null 2>&1
   [ "$(tarballs)" = "$N0" ] && ok "(e) el arranque siguiente no vuelve a bajar esa versión" || mal "(e) volvió a bajar: $(( $(tarballs) - N0 )) comprimido(s)"
   # (f) el equipo arregla su capa PARA la versión nueva (sin paquete, y `requires.harness` subido a ella: la instalada ya no la
-  # acepta): el refresco ve otra punta y libera la versión; el arranque siguiente la instala con esa punta (pase adversarial, clase 1)
+  # acepta): el refresco ve otra punta y libera la versión; el arranque siguiente la instala con esa punta
   rm -rf "$LAB_AUTHOR_TEAM/packs" "$LAB_AUTHOR_TEAM/agents"
   printf '{ "schema": 1, "name": "equipo-lab", "requires": { "harness": ">= 2026.10.08.3" } }\n' > "$LAB_AUTHOR_TEAM/team-layer.json"
   harness_lab_team_publish "arreglada para 2026.10.08.3"
@@ -313,7 +313,7 @@ if corre T29; then
   rm -rf "$LAB_AUTHOR_TEAM/packs" "$LAB_AUTHOR_TEAM/agents"; harness_lab_team_publish "la capa sin revisores"
   instala_team
   [ "$INSTALL_RC" = 0 ] && ok "instalada (2026.10.08.1) con la capa sin revisores" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
-  # 2026.10.08.2 NO sabe validar paquetes (su cargador es anterior a la A2a); update la instala con la misma capa
+  # 2026.10.08.2 NO sabe validar paquetes (su cargador no valida paquetes); update la instala con la misma capa
   harness_lab_publish_stable 2026.10.08.2 skills/tycon-pipeline/scripts/lib/packs.js "'use strict'; module.exports = { cargarPaquetes() { return []; } };"
   OUT="$(harness_release update --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(estado "d['version']['number']")" = 2026.10.08.2 ] && ok "update a 2026.10.08.2 con la misma capa" || mal "update rc $RC: $OUT"

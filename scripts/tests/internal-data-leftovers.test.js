@@ -1,28 +1,27 @@
 'use strict';
 
 /**
- * internal-data-leftovers.test.js — tres cosas que la story 8.10.1 sacó de lo que se publica y que ninguna otra suite
- * cuidaba (T23-T25 de esa story · 2026-10-03).
+ * internal-data-leftovers.test.js — tres cosas que se sacaron de lo que se publica y que ninguna otra suite cuidaba
+ * (T23-T25).
  *
- * POR QUÉ EXISTE. La auditoría de la copia publicada encontró datos internos que la lista de nombres no ve. Casi todo
- * lo que la story cambió ya tenía una suite que lo mira. Estas tres cosas no: eran texto de guías y una lista de
- * pendientes, y volvían a entrar sin que nada se pusiera rojo.
+ * POR QUÉ EXISTE. Hay datos internos que la lista de nombres no ve. Casi todo lo que se quitó de la copia publicada ya
+ * tiene una suite que lo mira. Estas tres cosas no: son texto de guías y una lista de pendientes, y volverían a entrar
+ * sin que nada se ponga rojo.
  *
  *   · T23 — la guía de reglas para revisores no enumera, en su texto público, la cartera de repos de producto. La lista
  *     vive en un bloque interno (`tycon:internal-*`), que la copia no trae.
  *   · T24 — ninguna guía trae, en su texto público, un enlace a un repo de Azure DevOps de una organización de verdad.
  *     Un ejemplo con marcadores (`<org>`, `<repo>`) no cuenta.
- *   · T25 — cada hallazgo de la auditoría que quedó sin hacer (filas 11 a 19) tiene su línea de deuda en `tasks/todo.md`.
+ *   · T25 — cada hallazgo de la auditoría que quedó sin hacer tiene su línea de deuda en `tasks/todo.md`.
  *
  * El «texto público» se saca con la misma función que usa el exportador (`public-copy.js → internalBlocks`): adentro,
  * la guía con sus bloques internos; en la copia, la guía ya sin ellos. Las dos dan lo mismo.
  *
  * En la copia pública `tasks/` no viaja: T25 sale NO MEDIDO ahí. No usa red ni herramientas de afuera.
- * Rojo previo: las tres, contra el arnés de antes de la story (la guía enumeraba la cartera, tres guías enlazaban el
- * repo interno y no había ninguna línea de deuda).
+ * Cada una falla si la guía enumera la cartera, si tres guías enlazan el repo interno o si falta una línea de deuda.
  *
- * SEGUNDA VUELTA (2026-10-03, T26-T30 y T34). La primera vuelta dejó inventados que delataban al real y una lista que
- * se esquivaba con un cambio mínimo. Lo que se suma acá:
+ * CASOS SUMADOS (T26-T30 y T34). Cierran dos huecos: inventados que delatan al real y una lista que se esquiva con un
+ * cambio mínimo. Lo que se suma acá:
  *
  *   · T26 — formas partidas: con una lista SINTÉTICA (ningún nombre es de nadie), cada término se ve con guion, con
  *     guion bajo, pegado, con `%20`, con tilde o sin ella, en singular y en plural, en otra caja, en una ruta, en una
@@ -35,11 +34,8 @@
  *     cualquier cliente de la tabla de reemplazos se ve, sin una lista copiada a mano que se desfase.
  *   · T34 — T23 ve también una cartera partida por el corte de renglón.
  *   · T35 — las dos listas de la suite de humo no repiten ningún nombre de las de antes, ni entero ni lo de después
- *     del prefijo. Las de antes se leen de la historia del repo (no viven en el árbol); sin esa historia, NO MEDIDO.
+ *     del prefijo. Las listas viejas se leen de la historia del repo (no viven en el árbol); sin esa historia, NO MEDIDO.
  *     T29, además, exige que cada patrón de la lista traiga las dos mitades: muestras y contramuestras.
- *
- * Rojo previo de la segunda vuelta: T26, T28, T29, T30 y T34 contra el arnés de la primera vuelta; T27, contra el de
- * antes de la story; T35, con la lista de la primera vuelta puesta contra la de antes de la story (17 colas repetidas).
  */
 
 const test = require('node:test');
@@ -192,7 +188,7 @@ const SWEEP = [
       'el plugin de ZRB falló', 'la entrada llavero-prod-zrb', 'GET /api/zrb/ordenes', "project: 'zrb'", 'engram_project=zrb',
       'project: zrb', '  - cliente: zrb', '"project": "zrb",', 'los ZRBs de hoy', 'el alias zrbs-mac',
       JSON.stringify({ out: 'uno\nZRB dos' }), 'https://x.example/Mi%20ZRB%20Repo',
-      // pegada a otra palabra (revisor de seguridad, vuelta 2): con la inicial en mayúscula dentro de un CamelCase —el
+      // pegada a otra palabra: con la inicial en mayúscula dentro de un CamelCase —el
       // nombre de una etapa de pipeline, una clase— y en minúscula al principio o al final del valor de una clave que
       // nombra un proyecto
       'SYSTEM_STAGENAME=DeployZrbStaging SYSTEM_JOBNAME=DeployToZrbStaging', 'la clase ZrbBackend', 'un PanelZrb nuevo',
@@ -229,8 +225,8 @@ const SWEEP = [
     sees: ['el plugin de NOX falló', 'la entrada llavero-prod-nox', "project: 'nox'"],
     // con `glued: false` la sigla no se busca pegada: es también una palabra común y daría hallazgos en nombres legítimos
     doesNotSee: ['SYSTEM_STAGENAME=DeployNoxStaging', 'la clase NoxBackend', "project: 'proyectonox'", 'engram_project=noxviejo'] },
-  // una sigla con un dígito en el medio (revisor de fallos callados, cierre de la vuelta 2): era «sigla» para una
-  // condición y no para la otra, y pegada pasaba sin verse y sin aviso
+  // una sigla con un dígito en el medio: cuenta como «sigla» para una
+  // condición y no para la otra, y pegada pasaría sin verse y sin aviso
   { rule: 'Z4K',
     sees: ['el plugin de Z4K falló', 'SYSTEM_STAGENAME=DeployZ4kStaging', 'la clase Z4kBackend', "project: 'proyectoz4k'", 'engram_project=z4kviejo'],
     doesNotSee: ['un z4k suelto en la prosa', 'Z4KX es otra cosa', "title: 'proyectoz4k'"] },
@@ -317,7 +313,7 @@ test('T28 InternalBlocks_NearMarker_Brakes — un marcador casi bien escrito fre
     'en un ítem de lista': [`- ${MARK.start}`, `- ${MARK.end}`],
     'con un espacio duro': [`${OPEN}\u00a0tycon:internal-start ${CLOSE}`, `${OPEN}\u00a0tycon:internal-end ${CLOSE}`],
     'con texto en la misma línea': [`${MARK.start} nota`, `${MARK.end} nota`],
-    // la errata de DOS caracteres o con otro separador (revisor de fallos callados, vuelta 2): antes no era ni marcador ni error
+    // la errata de DOS caracteres o con otro separador: no es un marcador ni un error de tipeo, y se cuela
     'con dos veces los dos puntos': [`${OPEN} tycon::internal-start ${CLOSE}`, `${OPEN} tycon::internal-end ${CLOSE}`],
     'con dos guiones bajos': [`${OPEN} tycon__internal-start ${CLOSE}`, `${OPEN} tycon__internal-end ${CLOSE}`],
     'con dos guiones': [`${OPEN} tycon--internal-start ${CLOSE}`, `${OPEN} tycon--internal-end ${CLOSE}`],
@@ -376,20 +372,20 @@ test('T29 RealList_EachPatternSeesItsSamples — cada patrón de la lista de ver
   };
   (lists.list.patrones || []).forEach((p, i) => {
     if (!Array.isArray(p.ve) || p.ve.length === 0) problems.push(`patrones[${i}] (${p.nombre}): sin muestras («ve»): un patrón sin muestras no está probado`);
-    // las dos mitades (AC 30): sin contramuestras, un patrón puede estar frenando texto legítimo y nadie se entera
+    // las dos mitades: sin contramuestras, un patrón puede estar frenando texto legítimo y nadie se entera
     if (!Array.isArray(p.noVe) || p.noVe.length === 0) problems.push(`patrones[${i}] (${p.nombre}): sin contramuestras («noVe»): no está probado que deje pasar lo que no es`);
-    // (story 8.10.3, tanda E, pase adversarial) Un patrón que es una lista larga de alternativas recorre cada renglón
-    // de la copia si no lleva `pistas`: cuatro así llevaron el detector de 8 a 45 segundos. Con ocho ramas o más, las lleva.
+    // Un patrón que es una lista larga de alternativas recorre cada renglón
+    // de la copia si no lleva `pistas`: cuatro así llevan el detector de 8 a 45 segundos. Con ocho ramas o más, las lleva.
     const ramas = String(p.regex || '').split(')|(?:').length;
     if (ramas >= 8 && !(Array.isArray(p.pistas) && p.pistas.length)) problems.push(`patrones[${i}] (${p.nombre}): ${ramas} alternativas y sin «pistas»: recorre todos los renglones de la copia`);
     check(p.nombre, p, `patrones[${i}] (${p.nombre})`);
   });
-  // un término puede declarar las suyas (las formas que un revisor o el pase adversarial encontraron sin ver)
+  // un término puede declarar las suyas (las formas que la regla general no ve)
   let withSamples = 0;
   (lists.list.terminos || []).forEach((term, i) => {
     if (term.ve || term.noVe) withSamples++;
     // un término que APAGA la forma pegada (`glued: false`) tiene que mostrar qué deja pasar: sin contramuestras, si el
-    // interruptor se rompe nadie se entera (revisor de fallos callados, cierre de la vuelta 2)
+    // interruptor se rompe nadie se entera
     if (term.glued === false && (!Array.isArray(term.noVe) || term.noVe.length === 0)) problems.push(`terminos[${i}] (${term.categoria}): apaga la forma pegada (glued: false) sin contramuestras («noVe») que lo comprueben`);
     check(term.patron, term, `terminos[${i}] (${term.categoria})`);
   });
@@ -426,9 +422,9 @@ test('T30 RealList_KeychainEntry_AnyClientAliasIsSeen — la entrada de llavero 
   for (const neutral of ['acme', 'globex', 'x']) assert.strictEqual(seen(`la entrada ${prefix}-${neutral} del llavero`), false, `la entrada neutra «${neutral}» dejó de pasar`);
 });
 
-// ── Las dos listas de la suite de humo contra las de antes (AC 24) ───────────────────────────────────────────────
-// Las listas de antes no viven en el árbol: la de antes de la story traía nombres de verdad, y la de la primera vuelta
-// la seguía uno a uno. Se leen de la HISTORIA del repo del equipo, por commit, y nunca se copian acá. Sin esa historia
+// ── Las dos listas de la suite de humo contra las de antes ───────────────────────────────────────────────
+// Las listas de antes no viven en el árbol: traen nombres de verdad. Se leen de la HISTORIA del repo del equipo, por
+// commit, y nunca se copian acá. Sin esa historia
 // (la copia pública, un clon sin profundidad) no hay contra qué comparar: NO MEDIDO.
 const OLD_SMOKE_LISTS = [
   { commit: '8087e112219b05e08fd193d9952bbc16f32945a9', what: 'la de antes de la story' },
@@ -458,7 +454,7 @@ test('T35 SmokeLists_NothingFromTheOldLists — ningún nombre de las listas de 
   assert.strictEqual(now.plugins.length, 9, 'la lista de plugins de hoy');
   assert.strictEqual(now.forms.length, 65, 'la lista de formularios de hoy');
   const tail = (name) => name.replace(/^[A-Za-z0-9]+[-_]/, '').toLowerCase();   // lo de después del prefijo
-  // el control: la cola se saca bien, y una lista que repite una cola de antes se ve
+  // el control: la cola se saca bien, y una lista que repite una cola vieja se ve
   assert.strictEqual(tail('ACME-EtiquetaBolsa'), 'etiquetabolsa');
   assert.strictEqual(tail('demo_stock'), 'stock');
 
@@ -487,10 +483,10 @@ test('T35 SmokeLists_NothingFromTheOldLists — ningún nombre de las listas de 
 });
 
 // ── T36 · una sigla «pegada» que cae ADENTRO de otro nombre de la lista no es un hallazgo aparte ──────────────────────
-// Lo encontró `mirror.test.js` (tres casos en rojo, sólo en la rama de esta story): con `ACME` y `AcmeCorp` en la lista,
-// la forma pegada de la sigla (`Acme` delante de otra palabra en CamelCase) también coincidía con el comienzo de
-// `AcmeCorp`. Cada aparición contaba DOS veces, y un archivo donde `AcmeCorp` estaba permitido por una excepción pasaba
-// a tener un hallazgo: la excepción cubre el nombre entero, no el pedazo.
+// Sin esto, con `ACME` y `AcmeCorp` en la lista,
+// la forma pegada de la sigla (`Acme` delante de otra palabra en CamelCase) coincide también con el comienzo de
+// `AcmeCorp`: cada aparición cuenta DOS veces, y un archivo donde `AcmeCorp` está permitido por una excepción pasa
+// a tener un hallazgo. La excepción cubre el nombre entero, no el pedazo.
 test('T36 GluedAcronym_InsideAnotherListedName_IsNotASecondFinding — la sigla pegada dentro de otro nombre de la lista no cuenta aparte', () => {
   const list = (permitidos = []) => JSON.stringify({
     terminos: [{ patron: 'AcmeCorp', categoria: 'cliente', palabra: true }, { patron: 'ACME', categoria: 'cliente', palabra: true, mayusculas: true }],
@@ -511,9 +507,9 @@ test('T36 GluedAcronym_InsideAnotherListedName_IsNotASecondFinding — la sigla 
   assert.deepStrictEqual(rules(allowed, 'Lo pidió AcmeCorp.\n', 'docs/otra.md'), ['AcmeCorp'], 'en otro archivo, el nombre entero y nada más');
 });
 
-// ── Story 8.10.2 · lo que encontró el pase adversarial de la 8.10.1 (2026-10-06) ─────────────────────────────────────
-// Cada prueba porta la que reprodujo su causa en el pase (respaldadas en step-05b-probes/<lente>-<n>/), con la lista
-// sintética. El nombre lleva el prefijo `8.10.2` para no chocar con las T de la 8.10.1 de este mismo archivo.
+// ── Casos límite de la lista y de los bloques ─────────────────────────────────────────────────────────────────────────
+// Cada prueba reproduce el caso que la motiva, con la lista
+// sintética. El nombre lleva el prefijo `8.10.2` para no chocar con las T numeradas de este mismo archivo.
 
 /** Las muestras que una regla NO ve y las contramuestras que SÍ ve (las dos listas tienen que quedar vacías). */
 function sweepRule(cfg, rule, sees, doesNotSee = []) {
@@ -554,15 +550,15 @@ test('8.10.2 T3 InternalBlocks_CommentSplitAcrossLines_Brakes — el comentario 
   assertBrakes(['# G', '', OPEN, `tycon:internal-start ${CLOSE}`, 'SECRETO', OPEN, `tycon:internal-end ${CLOSE}`, 'fin', ''].join('\n'), 'en dos renglones');
   // …y en tres
   assertBrakes(['Público.', OPEN, 'tycon:internal-start', CLOSE, 'SECRETO', OPEN, 'tycon:internal-end', CLOSE, 'fin', ''].join('\n'), 'en tres renglones');
-  // (pase adversarial de la 8.10.2) con cualquier cosa delante del `<!--` partido: prosa, un ítem de lista numerada, o
+  // Frena con cualquier cosa delante del `<!--` partido: prosa, un ítem de lista numerada, o
   // la primera palabra del marcador en el renglón de arriba
   assertBrakes(['Público.', `Ver ${OPEN}`, `tycon:internal-start ${CLOSE}`, 'SECRETO', `Ver ${OPEN}`, `tycon:internal-end ${CLOSE}`, 'fin', ''].join('\n'), 'con prosa delante');
   assertBrakes(['Público.', `1. ${OPEN}`, `tycon:internal-start ${CLOSE}`, 'SECRETO', `2. ${OPEN}`, `tycon:internal-end ${CLOSE}`, 'fin', ''].join('\n'), 'en una lista numerada');
   assertBrakes(['Público.', `${OPEN} tycon:`, `internal-start ${CLOSE}`, 'SECRETO', `${OPEN} tycon:`, `internal-end ${CLOSE}`, 'fin', ''].join('\n'), 'partido en el medio del contenido');
-  // (revisores de la segunda vuelta) partido en tres y en cuatro renglones: el comentario sigue hasta su cierre
+  // Frena partido en tres y en cuatro renglones: el comentario sigue hasta su cierre
   assertBrakes(['Público.', OPEN, 'tycon:', `internal-start ${CLOSE}`, 'SECRETO', OPEN, 'tycon:', `internal-end ${CLOSE}`, 'fin', ''].join('\n'), 'en tres renglones, cortado en el medio');
   assertBrakes(['Público.', OPEN, 'tycon:', 'internal-start', CLOSE, 'SECRETO', OPEN, 'tycon:', 'internal-end', CLOSE, 'fin', ''].join('\n'), 'en cuatro renglones');
-  // (revisor de fallos silenciosos, tercera vuelta) un `-->` en el medio cierra el comentario antes y deja el cuerpo del
+  // Un `-->` en el medio cierra el comentario antes y deja el cuerpo del
   // marcador suelto en su renglón; y partido en más renglones que los que sigue un comentario abierto. El renglón que es
   // sólo el cuerpo de un marcador frena, esté o no adentro de un comentario
   assertBrakes(['Público.', OPEN, 'rango x--' + '>y', 'tycon:internal-start', CLOSE, 'SECRETO', OPEN, 'rango x--' + '>y', 'tycon:internal-end', CLOSE, 'fin', ''].join('\n'), 'un cierre falso en el medio');
@@ -600,15 +596,15 @@ test('8.10.2 T4 InternalBlocks_OrdinaryComments_DoNotBrake — un comentario com
   assert.deepStrictEqual(braked, [], 'comentarios comunes tomados por un marcador');
   // empezar con la palabra del arnés seguida de algo parecido a «internal» o «public» queda reservado para los marcadores
   assertBrakes(['# x', `${OPEN} tycon internals, no tocar ${CLOSE}`, 'texto', ''].join('\n'), 'la palabra del arnés + «internals»');
-  // (revisor de fallos silenciosos, cuarta vuelta) un apóstrofo o unas comillas en el comentario no lo vuelven «código
+  // Un apóstrofo o unas comillas en el comentario no lo vuelven «código
   // que arma un marcador»: eso es sólo la concatenación de cadenas
   assertBrakes(blockDoc(`${OPEN} tycon:internal-start isn't optional ${CLOSE}`, `${OPEN} tycon:internal-end, that's it ${CLOSE}`), 'con un apóstrofo');
   assertBrakes(blockDoc(`${OPEN} tycon:internal-start "nota" ${CLOSE}`, `${OPEN} tycon:internal-end \`x\` ${CLOSE}`), 'con comillas');
-  // (revisor de fallos silenciosos, quinta vuelta) una etiqueta delante del marcador, en el mismo comentario
+  // Frena una etiqueta delante del marcador, en el mismo comentario
   for (const label of ['marker:', 'BEGIN', 'inicio', 'config.js:']) {
     assertBrakes(blockDoc(`${OPEN} ${label} tycon:internal-start ${CLOSE}`, `${OPEN} ${label} tycon:internal-end ${CLOSE}`), `con la etiqueta «${label}» delante`);
   }
-  // (revisor de seguridad, cuarta vuelta) una línea enorme con guiones después de un comentario sin cerrar no la cuelga
+  // Una línea enorme con guiones después de un comentario sin cerrar no la cuelga
   const t0 = Date.now();
   markerLines(`${OPEN} ${'-'.repeat(300000)} x\n`);
   assert.ok(Date.now() - t0 < 1000, `una línea de 300.000 guiones tardó ${Date.now() - t0} ms`);
@@ -620,7 +616,7 @@ test('8.10.2 T6 GluedAcronym_UppercaseInCamelCase_IsSeen — la sigla pegada con
     ['SYSTEM_STAGENAME=DeployZRBStaging', 'job: DeployToZRB', 'class PanelZRB {}'],
     ['ZRBX es otra cosa', 'un 20ZRB cualquiera', 'un Zrbito cualquiera']);
   assert.deepStrictEqual(r, { missed: [], extra: [] });
-  // la sigla al PRINCIPIO de un nombre la ve el control de nombres pegados del exportador (el prefijo), como hoy: el
+  // la sigla al PRINCIPIO de un nombre la ve el control de nombres pegados del exportador (el prefijo): el
   // detector no la cuenta otra vez (sobre el repo, contarla en los dos sumaba 400 avisos duplicados)
   const { nombresPegados } = require(path.join(ROOT, 'scripts', 'publishing', 'export.js'));
   assert.strictEqual(nombresPegados([['x.cs', 'la clase ZRBBackend']], SWEEP_LIST.terminos).filter((h) => h.termino === 'ZRB').length, 1);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-team-init.test.sh — el alta guiada de la organización: `harness.js team-init` (story 8.40, tanda B), por
+# harness-team-init.test.sh — el alta guiada de la organización: `harness.js team-init`, por
 # EJECUCIÓN, en una HOME de juguete con el arnés instalado desde el GitHub de juguete.
 #
 # Lo que no se puede perder:
@@ -16,10 +16,10 @@
 #   · T29 — sin git imprime los dos comandos; con un push que falla deja la carpeta con su commit, repite los comandos y
 #           no ofrece instalar con el perfil.
 #   · T30 — `--dry-run` muestra los archivos y valores sin escribir (HOME idéntica); sin arnés instalado sale 2.
-#   · T38 `TeamInit_AdversarialRegressions` — (pase adversarial de la 8.40, clases 10 a 13) en una máquina instalada por versión publicada, el paso 3 y
+#   · T38 `TeamInit_AdversarialRegressions` — en una máquina instalada por versión publicada, el paso 3 y
 #           requires.harness usan la versión del estado, no el piso de version.json; la ruta del árbol va entre comillas
 #           en la línea pegable; la línea para el equipo no promete que el guion pida el permiso (dice cómo llega); un git
-#           que no puede commitear tras «s» sale 1. Y (segunda vuelta de revisores) en Azure, `ado.org` lleva la
+#           que no puede commitear tras «s» sale 1. Y en Azure, `ado.org` lleva la
 #           organización codificada, como la URL del repo, y el lector real de la configuración la acepta así.
 #   · T46 a T48 — `--local`: el perfil de un dev solo sin dirección ni cuenta, con git en la máquina; sin
 #           git sale 1; un paquete en ese perfil se instala con `install --team <carpeta>` y sobrevive a una reinstalación;
@@ -115,7 +115,7 @@ else no "T30 --dry-run (rc $RC, carpeta $([ -e "$D" ] && echo existe || echo no)
 
 # ══ T25 · con terminal: pregunta y escribe sólo los tres archivos ═══════════════════════════════════════════════════
 D="$BASE/perfiles/gh"
-# la última respuesta («no») es la del repo de historias, que se pregunta al final (el cierre, AC 38)
+# la última respuesta («no») es la del repo de historias, que se pregunta al final
 LAB_PTY_DELAY=3 harness_lab_pty $'acme\ngithub\nacme/harness-team-profile\n'"$D"$'\nn\nno' "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init > "$BASE/t25.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && [ "$(files_in "$D")" = "team-layer.json team-profile.json team-repos.json " ]; then ok "T25 con terminal escribe SÓLO los tres archivos obligatorios (sin el revisor, el paquete ni la skill del ejemplo)"
 else no "T25 los archivos (rc $RC): $(files_in "$D") — $(brief "$BASE/t25.out")"; fi
@@ -137,7 +137,7 @@ if [ "$RC" -eq 0 ] && [ "$(jget "$D/team-profile.json" ado.org)" = https://dev.a
 else no "T26 Azure (rc $RC): ado $(jget "$D/team-profile.json" ado) · profile $(jget "$D/team-repos.json" profile) — $(brief "$BASE/t26.out")"; fi
 if grep -q 'dev.azure.com/acme/Platform' "$BASE/t26.out" && grep -q 'operations' "$BASE/t26.out"; then ok "T26 el resumen enlaza la página de repos de Azure DevOps y los procesos de la noche"
 else no "T26 el resumen de Azure: $(brief "$BASE/t26.out" 600)"; fi
-# clase 12 del pase adversarial: los guiones de entrada no piden el permiso del repo del equipo; el resumen no lo promete
+# los guiones de entrada no piden el permiso del repo del equipo; el resumen no lo promete
 # y dice cómo llega (en Azure, la credencial del gestor de git)
 if grep -q 'gestor de credenciales' "$BASE/t26.out" && ! grep -q 'el instalador se lo pide' "$BASE/t26.out"; then ok "T38 (Azure) la línea para el equipo dice cómo llega la credencial y no promete que el guion la pida"
 else no "T38 el permiso del equipo en Azure: $(grep -o '4\. .*' "$BASE/t26.out" | cut -c1-400)"; fi
@@ -177,9 +177,9 @@ if [ "$RC" -eq 1 ] && [ "$("$REAL_GIT" -C "$D" rev-list --count HEAD 2>/dev/null
   ok "T29 un push que falla: sale 1, deja la carpeta con su commit local, repite los comandos y no ofrece instalar con el perfil"
 else no "T29 push que falla (rc $RC, commits $("$REAL_GIT" -C "$D" rev-list --count HEAD 2>/dev/null)): $(brief "$BASE/t29b.out" 600)"; fi
 
-# ══ T38 · pase adversarial de la 8.40: la versión, la línea pegable y el código de salida ═════════════════════════════
-# clase 11: en una máquina instalada por versión publicada, «la instalada» es la del estado, nunca el piso de version.json
-# (numbering: merge-tag): con el piso, install --version bajaría a un commit viejo. Clase 10: la ruta del árbol va entre
+# ══ T38 · la versión, la línea pegable y el código de salida ═════════════════════════════
+# en una máquina instalada por versión publicada, «la instalada» es la del estado, nunca el piso de version.json
+# (numbering: merge-tag): con el piso, install --version bajaría a un commit viejo. La ruta del árbol va entre
 # comillas en la línea que se pega (una carpeta personal con espacios)
 VJ="$LAB_HOME/.tycon/harness/version.json"; cp "$VJ" "$BASE/version.json.bak"
 "$REAL_NODE" -e 'const fs=require("fs"),f=process.argv[1];const j=JSON.parse(fs.readFileSync(f,"utf8"));j.version="2026.10.01.1";j.numbering="merge-tag";fs.writeFileSync(f,JSON.stringify(j,null,2)+"\n")' "$VJ"
@@ -192,13 +192,13 @@ if [ "$RC" -eq 0 ] && grep -qF -- "--version $STATE_V --team acme/harness-team-p
 else no "T38 la versión instalada (rc $RC, estado $STATE_V, requires $(jget "$D/team-layer.json" requires.harness)): $(grep -o '3\. .*' "$BASE/t32a.out" | cut -c1-300)"; fi
 if grep -qE 'node "[^"]+/scripts/setup/harness\.js" install --version' "$BASE/t32a.out"; then ok "T38 (clase 10) la línea para instalar con el perfil lleva la ruta del árbol entre comillas"
 else no "T38 la ruta sin comillas: $(grep -o '3\. .*' "$BASE/t32a.out" | cut -c1-300)"; fi
-# clase 13: un git que no puede commitear (sin identidad) tras «s» no sale 0: el perfil no quedó subido
+# un git que no puede commitear (sin identidad) tras «s» no sale 0: el perfil no quedó subido
 D="$BASE/perfiles/sin-identidad"
 LAB_PTY_DELAY=2 harness_lab_pty $'s\nno' env -u EMAIL -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_1=user.useConfigOnly GIT_CONFIG_VALUE_1=true GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
   "$REAL_NODE" "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" team-init --name acme --platform github --profile-repo acme/otro-perfil --dir "$D" > "$BASE/t32c.out" 2>&1; RC=$?
 if [ "$RC" -eq 1 ] && grep -q 'no pudo commitear' "$BASE/t32c.out" && ! grep -q 'Instalo esta máquina' "$BASE/t32c.out"; then ok "T38 (clase 13) git sin identidad tras «s»: sale 1 diciéndolo, como el push que falla"
 else no "T38 commit fallido (rc $RC): $(grep -m2 -E 'falló|no pudo|Instalo' "$BASE/t32c.out" | tr '\n' ' ' | cut -c1-500)"; fi
-# segunda vuelta de revisores: la organización de Azure va codificada en ado.org (como en la URL del repo que arma parseTeam),
+# la organización de Azure va codificada en ado.org (como en la URL del repo que arma parseTeam),
 # y el lector real de la configuración la acepta así
 ADO_OUT="$("$REAL_NODE" -e '
 const path=require("path"),fs=require("fs");const R=process.argv[1],F=process.argv[2];
@@ -228,7 +228,7 @@ else no "T28 el push (rc $RC; en el bare: «${PUSHED}»): $(brief "$BASE/t28.out
 TEAM_IN_STATE="$("$REAL_NODE" -e 'try{const s=require(process.argv[1]);console.log(s.team?s.team.repo:"")}catch{console.log("")}' "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")"
 if [ "$RC" -eq 0 ] && [ "$TEAM_IN_STATE" = acme/harness-team-profile ]; then ok "T28 con «s» a instalar: install --team apila la capa del perfil recién subido (estado team)"
 else no "T28 install --team (rc $RC, estado team «${TEAM_IN_STATE}»): $(brief "$BASE/t28.out" 600)"; fi
-# la línea para el resto del equipo es la de npx con --team (el paquete está publicado: AC 23 y el cierre, AC 38), con
+# la línea para el resto del equipo es la de npx con --team (el paquete está publicado), con
 # los guiones de entrada como el camino «a mano»
 if grep -qF 'npx @tyconsa/harness@latest --team acme/harness-team-profile' "$BASE/t28.out" && grep -qF 'bash get-harness.sh -- --team acme/harness-team-profile' "$BASE/t28.out" && grep -qF 'pwsh -File get-harness.ps1 -- --team acme/harness-team-profile' "$BASE/t28.out" && ! grep -qE 'npx (-y|--yes)' "$BASE/t28.out" && grep -q 'pipelines/operations' "$BASE/t28.out"; then
   ok "T28 el resumen trae la línea para el resto del equipo (npx con --team, y los guiones a mano) y el enlace de los procesos de la noche"
@@ -236,7 +236,7 @@ else no "T28 el resumen: $(brief "$BASE/t28.out" 600)"; fi
 if grep -q 'TYCON_GITHUB_TOKEN' "$BASE/t28.out" && ! grep -q 'el instalador se lo pide' "$BASE/t28.out"; then ok "T38 (clase 12, GitHub) la línea para el equipo dice que el permiso va en TYCON_GITHUB_TOKEN y no promete que el guion lo pida"
 else no "T38 el permiso del equipo en GitHub: $(grep -o '4\. .*' "$BASE/t28.out" | cut -c1-400)"; fi
 
-# ══ T45 · el repo de historias (el cierre, AC 37 y 38) ════════════════════════════════════════════════════════════════
+# ══ T45 · el repo de historias ════════════════════════════════════════════════════════════════
 # las plantillas genéricas del núcleo (scripts/setup/harness/team-stories/), llenas y en su lugar del repo, al lado de la carpeta del
 # perfil; nunca crea el repo ni sube nada: imprime los comandos y la política de rama
 no_markers() { ! grep -rqE '\{\{[A-Z0-9_]+\}\}' "$1" 2>/dev/null; }   # los de team-init (`${{ github.… }}` es de GitHub, no un marcador)
@@ -282,7 +282,7 @@ LAB_PTY_DELAY=3 harness_lab_pty $'acme\ngithub\nacme/harness-team-profile\n'"$D"
 if [ "$RC" -eq 0 ] && [ "$(files_in "$BASE/historias/tty/harness-team-stories")" = "$GH_FILES" ]; then ok "T45 con terminal, Enter acepta el nombre por defecto (<repo del perfil sin -profile>-stories)"
 else no "T45 con terminal (rc $RC): $(ls "$BASE/historias/tty" 2>/dev/null | tr '\n' ' ') — $(brief "$BASE/t45i.out" 500)"; fi
 
-# T45 · lo que señalaron los revisores y el pase adversarial del cierre
+# T45 · el contenido del repo de historias y el «no» en la terminal
 S="$BASE/historias/gh/acme-stories"
 if grep -q 'CLAUDE.md' "$S/AGENTS.md" 2>/dev/null; then ok "T45 AGENTS.md es un puntero a CLAUDE.md"; else no "T45 AGENTS.md: $(cat "$S/AGENTS.md" 2>/dev/null)"; fi
 if [ ! -e "$BASE/perfiles/harness-team-stories" ] && grep -q '6\. ¿Armo también el repo de historias' "$BASE/t25.out"; then ok "T45 con terminal, «no» al paso 6 no arma el repo de historias"
@@ -306,7 +306,7 @@ mv "$TPLD.fuera" "$TPLD"
 if [ "$RC" -eq 1 ] && grep -q 'no trae las plantillas' "$BASE/t45n.out" && [ ! -e "$BASE/historias/sin-plantillas" ] && [ "$RC2" -eq 0 ]; then ok "T45 una versión sin las plantillas: pedido a propósito (--stories-only) sale 1 diciéndolo; el alta sin pedirlo sigue y sale 0"
 else no "T45 sin plantillas (rc $RC/$RC2): $(brief "$BASE/t45n.out" 300)"; fi
 
-# T45 · vuelta 2 de revisores: un nombre inválido, una plantilla suelta que falta, --stories con --no-stories, y el código
+# T45 · un nombre inválido, una plantilla suelta que falta, --stories con --no-stories, y el código
 # de salida del paso 6 en el alta completa
 H team-init --stories-only --stories 'a b' --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/a-b" < /dev/null > "$BASE/t45p.out" 2>&1; RC=$?
 H team-init --name acme --platform github --profile-repo acme/harness-team-profile --dir "$BASE/historias/mezcla/perfil" --stories x --no-stories < /dev/null > "$BASE/t45q.out" 2>&1; RC2=$?
@@ -383,7 +383,7 @@ H doctor < /dev/null > "$BASE/t10.out" 2>&1; RC=$?
 if grep -q '! .*copia de respaldo' "$BASE/t10.out" && grep -qF "$D" "$BASE/t10.out" && ! grep -q '✗ .*copia de respaldo' "$BASE/t10.out" && ! grep -q '✗ .*svelte-fastapi' "$BASE/t10.out"; then
   ok "T10 doctor con el perfil local: aviso «sin copia de respaldo» con la carpeta, nunca en rojo (doctor salió $RC)"
 else no "T10 doctor perfil local (rc $RC): $(grep -i 'respaldo\|svelte' "$BASE/t10.out" | tr '\n' ' ' | cut -c1-500)"; fi
-# AC 4: con el perfil leído de un repo remoto (el de GitHub de juguete de T28), el aviso se va
+# con el perfil leído de un repo remoto (el de GitHub de juguete de T28), el aviso se va
 H install --version latest --team acme/harness-team-profile --yes < /dev/null > "$BASE/t10b.out" 2>&1; RC=$?
 H doctor < /dev/null > "$BASE/t10c.out" 2>&1
 if [ "$RC" -eq 0 ] && ! grep -q 'copia de respaldo' "$BASE/t10c.out"; then ok "T10 con el perfil en un repo remoto, doctor ya no avisa «sin copia de respaldo»"

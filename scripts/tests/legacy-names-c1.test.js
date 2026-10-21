@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * legacy-names-c1.test.js — lo que llaman la máquina y el otro repo, renombrado (story 8.9, tanda C1 · 2026-09-30).
+ * legacy-names-c1.test.js — lo que llaman la máquina y el otro repo, renombrado.
  * T36 y T37 (T35 es manual: el instalador en la máquina del dev; T38 es `node build/check.js`).
  *
  * Lo que no se puede perder:
- *   · T36 — un hook renombrado escribe en sus registros LO MISMO que antes: el id con que se anota no cambia (AC 32). Si
+ *   · T36 — un hook renombrado escribe en sus registros LO MISMO que antes: el id con que se anota no cambia. Si
  *     cambiara, la serie del tablero y del buzón se partiría en dos nombres para el mismo freno.
- *   · T37 — la identidad de un caso del banco es `<nombre del script>::<id>` y la de una suite, el nombre de su archivo
- *     (AC 33). El commit del renombre migra las líneas de base y las fotos (`legacy-names.js --migrate-bench`) y
+ *   · T37 — la identidad de un caso del banco es `<nombre del script>::<id>` y la de una suite, el nombre de su archivo.
+ *     El commit del renombre migra las líneas de base y las fotos (`legacy-names.js --migrate-bench`) y
  *     `pr-verdict.js` pasa las dos fotos por el mapa: un rojo viejo con la clave nueva sale como viejo, no frena el PR.
  *
  * Los laboratorios usan nombres en inglés (esta prueba sale en la copia pública); el id viejo de un freno se arma por
@@ -129,7 +129,7 @@ test('T37 BatchC1_BenchKeysMigrated_NoFalseRed — veredicto-pr: un rojo viejo c
   const root = benchLab();
   const out = tmp('ahora');
   try {
-    // la foto nocturna con las claves viejas (de antes del merge); esta corrida, con las nuevas y el mismo rojo
+    // la foto nocturna con las claves viejas; esta corrida, con las nuevas y el mismo rojo
     // (el caso del que todavía no se mudó sigue con su nombre viejo en las dos: el mapa los une igual)
     fs.writeFileSync(path.join(out, 'banco.json'), JSON.stringify({ results: { 'fresh-notice.js::a': { tools: { claude: { pass: false, failures: ['x'] } } }, 'waiting-notice.js::b': { tools: { claude: { pass: true, failures: [] } } } } }));
     fs.writeFileSync(path.join(out, 'suites.json'), JSON.stringify({ failures: ['fresh-notice.test.sh'] }));
@@ -187,14 +187,14 @@ test('T37 BatchC1_BenchKeysMigrated_NoFalseRed — en el árbol: ninguna clave v
   assert.deepStrictEqual(lost, [], 'casos de la baseline que el banco ya no tiene (se leerían como desaparecidos)');
 });
 
-// ── lo que el pase adversarial de la tanda C1 encontró en la mudanza adelantada del nocturno ─────────────────────
+// ── la mudanza adelantada del nocturno ─────────────────────────────────────────────────────────────────────────────
 test('BatchC1_NightlyFolder_CensusWalksIt — el censo del mapa recorre scripts/nightly/<x>/: una pieza nueva sin ficha ahí es roja', { skip: SKIP_PUBLIC }, (t) => {
   const lab = tmp('censo');
   try {
     // el arnés real, más una pieza sin ficha en la carpeta nueva
     fs.cpSync(path.join(RAIZ, 'scripts'), path.join(lab, 'scripts'), { recursive: true });
     for (const d of ['artifacts', 'build', 'commands']) if (fs.existsSync(path.join(RAIZ, d))) fs.cpSync(path.join(RAIZ, d), path.join(lab, d), { recursive: true });
-    // los pipelines de Azure viven en pipelines/ (R6): sin la carpeta, la copia quedaría sin ellos en silencio
+    // los pipelines de Azure viven en pipelines/: sin la carpeta, la copia quedaría sin ellos en silencio
     assert.ok(fs.existsSync(path.join(RAIZ, 'pipelines')), 'el arnés no tiene pipelines/');
     fs.cpSync(path.join(RAIZ, 'pipelines'), path.join(lab, 'pipelines'), { recursive: true });
     fs.mkdirSync(path.join(lab, 'scripts', 'nightly', 'probe'), { recursive: true });
@@ -207,8 +207,8 @@ test('BatchC1_NightlyFolder_CensusWalksIt — el censo del mapa recorre scripts/
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// La tanda F de la 8.9 terminó la mudanza (en la carpeta vieja quedan sólo reemplazos) y sacó de suites.json los
-// disparadores por la vieja: las cuatro suites se corren por la nueva, y ninguna suite nombra ya la vieja. La carpeta
+// La mudanza está terminada (en la carpeta vieja quedan sólo reemplazos) y suites.json no trae disparadores por la vieja:
+// las cuatro suites se corren por la nueva, y ninguna suite nombra la vieja. La carpeta
 // vieja sale del mapa (escrita acá, esta prueba —que sale en la copia pública— nombraría una ruta vieja).
 test('BatchC1_NightlyFolder_GateRunsItsSuites — las suites del nocturno de dependencias se corren por su carpeta nueva y ninguna por la vieja', { skip: SKIP_PUBLIC }, () => {
   const folder = JSON.parse(fs.readFileSync(MAP, 'utf8')).entries.find((e) => e.kind === 'folder' && e.new === 'scripts/nightly/dependencies');
@@ -287,11 +287,11 @@ test('BatchC1_GeneratedShimOnly — sólo un reemplazo idéntico al generado dej
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
-// ── story 8.9, tanda F · pase adversarial (clase 9) — las fichas de las dos colas son datos que escribe el nocturno ────
+// ── las fichas de las dos colas son datos que escribe el nocturno ──────────────────────────────────────────────────
 // Con las dos colas mudadas a `inbox/`, `--stale-mentions` busca la palabra de cada cola con barra en todo archivo
 // versionado. Las fichas de `pending/`, `promoted/` y `archived/` las escribe el nocturno, con texto libre de personas (el
 // motivo de un rechazo copiado del pull request: «se resuelve junto con <cola>/<id>», «la rama <cola>/<fecha>-…») y rutas
-// de los productos: la primera noche que una lo trajera, el control —que una prueba exige en cero— salía rojo sin que
+// de los productos: la primera noche que una lo trajera, el control —que una prueba exige en cero— saldría rojo sin que
 // nadie tocara código. Son zona de historia, como `.dashboard/`. El README de cada cola NO: es una guía, y una ruta vieja
 // ahí es una instrucción viva. Nombres de laboratorio (`ledgers`, `beacons`); las carpetas nuevas, las de verdad.
 test('BatchF_StaleMentions_QueueCardsAreData — una ficha que nombra la rama de su cola o la carpeta de antes no es una mención vieja; el README de la cola sí', () => {

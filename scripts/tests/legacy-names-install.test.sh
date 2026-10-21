@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # legacy-names-install.test.sh — el nombre viejo en bash y en la máquina: la biblioteca de shell, la migración del
-# instalador y la máquina atrasada (story 8.9, tanda A2 · 2026-09-30). T17 y T19 (parte bash), T26 y T27.
+# instalador y la máquina atrasada. T17 y T19 (parte bash), T26 y T27.
 #
 # Lo que no se puede perder:
 #   · En bash 3.2 (el de macOS), una variable o una opción con el nombre viejo hace lo mismo que con el nuevo, sin
@@ -16,10 +16,10 @@
 # ni entorno gráfico), un arnés y un agent-skills de laboratorio. Nunca la HOME real, nunca launchd real, nunca /opt.
 # Las etiquetas de LaunchAgent son de laboratorio (lab.legacy-names.*), nunca ar.com.tycon.*.
 #
-# Story 8.12 (tanda R1): T1 (parte --write-shims: un .yml sólo de docs/ado/same-repo no pide reemplazo), T12 y T4 (los
+# T1 (parte --write-shims: un .yml sólo de docs/ado/same-repo no pide reemplazo), T12 y T4 (los
 # permisos RELATIVOS de settings.json y settings.local.json, y el prefijo de la ruta nueva que no se reescribe dos veces).
 #
-# Story 8.9 (tanda E): T55, la máquina vieja entera —«nadie nota el cambio»—. Es la más larga (un minuto o dos: dos
+# T55, la máquina vieja entera —«nadie nota el cambio»—. Es la más larga (un minuto o dos: dos
 # arranques reales y cada control una vez), así que corre sólo cuando se la pide: --old-machine (o --only T55).
 #
 # Uso: bash scripts/tests/legacy-names-install.test.sh [--only T17|T19|T26|T27|T1|T12|T4|T55] [--old-machine]
@@ -28,12 +28,12 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB_JS="$RAIZ/scripts/lib/legacy-names.js"
 LIB_SH="$RAIZ/scripts/lib/legacy-names.sh"
 # El repo de las skills, por la biblioteca: `TYCON_SKILLS_DIR` vale como la RAÍZ del clon y como su carpeta `skills/`
-# (scripts/lib/skills-dir.js acepta las dos). Antes esta línea la leía sólo como «la carpeta de skills» (`cd …/..`): con
-# la raíz del clon unido —lo que exporta la CI— buscaba las skills en la carpeta madre del clon y T27 daba «cruce de
-# repos: antes=0 después=0» sin que el instalador tuviera nada que ver (story 8.18, medido el 2026-10-04).
+# (scripts/lib/skills-dir.js acepta las dos). Leerla sólo como «la carpeta de skills» (`cd …/..`) con
+# la raíz del clon unido —lo que exporta la CI— buscaría las skills en la carpeta madre del clon y T27 daría «cruce de
+# repos: antes=0 después=0» sin que el instalador tuviera nada que ver.
 # Si la biblioteca no contesta (su vecina está y no carga), se dice la causa y no se mide nada: caer a
-# ~/.claude/agent-skills era medir las skills INSTALADAS en vez de las del clon, y cerrar en verde (story 8.18, deuda
-# lectores-que-tragan; caso en scripts/tests/skills-dir-readers.test.js). En la falla, la salida trae la causa.
+# ~/.claude/agent-skills sería medir las skills INSTALADAS en vez de las del clon, y cerrar en verde. Caso en
+# scripts/tests/skills-dir-readers.test.js. En la falla, la salida trae la causa.
 if ! SKILLS_REPO="$(node -e 'try { process.stdout.write(require(process.argv[1]).resolveSkillsDirs().repo); } catch (e) { process.stdout.write(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$RAIZ/scripts/lib/skills-dir.js")" \
    || [ -z "$SKILLS_REPO" ]; then
   echo "⏭ legacy-names-install: NO MEDIDO — no pude resolver la carpeta de skills: ${SKILLS_REPO:-la biblioteca no contestó nada}"
@@ -52,7 +52,7 @@ BASE="$(mktemp -d)"
 trap 'rm -rf "$BASE"' EXIT
 BASH32=/bin/bash   # en macOS es el 3.2; en Linux, el que haya (la prueba vale igual)
 
-# Los nombres castellanos de los ejemplos se arman por partes: esta prueba sale en la copia pública (AC 7).
+# Los nombres castellanos de los ejemplos se arman por partes: esta prueba sale en la copia pública.
 VIEJA_ENV="TYCON_NO_$(printf 'BAJ')AR"
 NUEVA_ENV="TYCON_NO_DOWNLOAD_LAB"
 VIEJA_OPT="$(printf 'si')n-$(printf 'co')pia"
@@ -298,7 +298,7 @@ PY
      && grep -q "'legacy-names.js'" "$PS_I" && grep -q -- "'--migrate-machine', '--guides'" "$PS_I" && grep -q "lnArgs += '--check'" "$PS_I"; then
     ok "T26 el .sh y el .ps1 llaman a legacy-names.js --migrate-machine con las dos raíces y --check"
   else mal "T26 los dos instaladores no llaman a la migración igual"; fi
-  # estructura destino (§4): un archivo que CAMBIA DE CARPETA (hooks/ → setup/, como harness-env-publish.sh), en los seis lugares
+  # un archivo que CAMBIA DE CARPETA (hooks/ → setup/, como harness-env-publish.sh), en los seis lugares
   H3="$T/casa-carpeta"; ( fake_home_create "$H3" --installer ) || mal "T26 no pude armar la HOME de juguete (carpeta)"
   mkdir -p "$H3/.claude" "$H3/.codex" "$H3/.git-hooks" "$H3/Library/LaunchAgents" "$G/scripts/setup"
   echo '# nuevo' > "$G/scripts/setup/lab-env-publish.sh"
@@ -324,7 +324,7 @@ EOF
   if [ -z "$quedan" ] && grep -q '^RENAMED:6' <<<"$o" && grep -q 'bootstrap gui/[0-9]* .*lab.legacy-names.loaded.plist' "$T/launchctl.log"; then
     ok "T26 un archivo que cambia de carpeta se reescribe en los seis lugares (RENAMED:6) y su LaunchAgent cargado se recarga"
   else mal "T26 cambio de carpeta:$quedan · $(tr '\n' ' ' <<<"$o")"; fi
-  # los avisos de la migración llegan al dev (vuelta 2 de revisores): una migración que se cae lo dice con SU mensaje (no
+  # los avisos de la migración llegan al dev: una migración que se cae lo dice con SU mensaje (no
   # con la última línea de la pila), y una nota —un plist binario, un respaldo imposible— se muestra aunque no se haya
   # reescrito nada. Un node de mentira intercepta sólo la llamada a legacy-names.js; el resto usa el node real.
   REAL_NODE="$(command -v node)"; mkdir -p "$T/bin-ln"
@@ -353,9 +353,9 @@ EOF
   # el .ps1: su bloque de migración corrido con pwsh (el instalador entero es de Windows), con el mismo node de mentira
   if command -v pwsh >/dev/null 2>&1; then
     mkdir -p "$T/ps/lib"; : > "$T/ps/lib/legacy-names.js"
-    # (story 8.36) el bloque llama a las funciones de la tanda de Node: van delante. Sin applier-batch.js en esta carpeta,
-    # la tanda no corre y el bloque hace su llamada suelta, como antes. La ruta del guion y sus argumentos se definen ahora
-    # con la tanda de aplicación, antes del bloque: el recorte los trae con la misma forma
+    # El bloque llama a las funciones del aplicador de Node: van delante. Sin applier-batch.js en esta carpeta,
+    # el aplicador no corre y el bloque hace su llamada suelta. La ruta del guion y sus argumentos se definen
+    # con el aplicador, antes del bloque: el recorte los trae con la misma forma
     { printf '$ErrorActionPreference = "Stop"; $Check = $false; $ClaudeDir = "%s"\n' "$H4/.claude"
       printf '%s\n' '$LegacyNames = Join-Path (Join-Path $PSScriptRoot "lib") "legacy-names.js"' \
         '$lnArgs = @("--migrate-machine", "--guides", (Split-Path -Parent $PSScriptRoot), "--skills", $AgentSkillsRepo)'
@@ -370,7 +370,7 @@ EOF
 fi
 
 # La copia del árbol al laboratorio tiene que quedar ENTERA: el `2>/dev/null` de tar es necesario (avisa por los archivos
-# borrados del árbol y sigue), pero sin este conteo una copia partida corría la prueba sobre otro árbol (2026-10-15). Imprime
+# borrados del árbol y sigue), pero sin este conteo una copia partida correría la prueba sobre otro árbol. Imprime
 # cuántos archivos que existen en <raíz> faltan en <copia>: 0 es entera.
 faltan_en_copia() { # faltan_en_copia <raíz> <copia>
   ( cd "$1" && git ls-files -co --exclude-standard -z ) | python3 -c '
@@ -383,17 +383,17 @@ print(sum(1 for n in nombres if os.path.lexists(os.path.join(raiz, n)) and not o
 
 # ═══ T27 · la máquina atrasada, por la línea de arranque, y los dos repos desfasados ══════════════════════════════
 # El caso entero prueba el paso de un nombre viejo a uno nuevo, y lo arma con el mapa de renombres. Sin el mapa (la copia
-# pública, story 8.7) no hay nombres viejos que probar: se dice y no corre, igual que T55. No es un verde.
+# pública) no hay nombres viejos que probar: se dice y no corre, igual que T55. No es un verde.
 if corre T27 && [ ! -f "$RAIZ/scripts/lib/renames.json" ]; then
   echo "  (sin scripts/lib/renames.json — la copia pública: no hay nombres viejos que probar, T27 no corre)"
 elif corre T27; then
   T="$BASE/t27"; mkdir -p "$T"
-  # 1 · un arnés de laboratorio con el árbol de trabajo de este (lo nuevo de la tanda incluido), en un remoto propio
+  # 1 · un arnés de laboratorio con el árbol de trabajo de este (lo nuevo incluido), en un remoto propio
   SRC="$T/src"; mkdir -p "$SRC"
-  # 🔴 La lista va a tar por su entrada (`--null -T -`), nunca por `xargs -0 tar cf -` (2026-10-15): en Linux xargs parte una
+  # 🔴 La lista va a tar por su entrada (`--null -T -`), nunca por `xargs -0 tar cf -`: en Linux xargs parte una
   #    lista de ~4000 archivos en varias tandas, cada tanda es un tar aparte, y el `tar xf -` que extrae se detiene al final
-  #    del primero. El laboratorio quedaba con 2700 de 3999 archivos (sin tycon-home.js ni hooks-list.json), el instalador
-  #    fallaba y T27 salía con 7 MAL en el agente de Azure; en la Mac, con un límite más alto, entraba en una sola tanda.
+  #    del primero. El laboratorio queda con 2700 de 3999 archivos (sin tycon-home.js ni hooks-list.json), el instalador
+  #    falla y T27 sale con 7 MAL en el agente de Azure; en la Mac, con un límite más alto, entra en una sola tanda.
   #    `--null` va ANTES de `-T -`: en GNU tar (Linux y Git Bash) al revés lee la lista mal; así, un archivo «-x» es un archivo.
   ( cd "$RAIZ" && git ls-files -co --exclude-standard -z | tar --null -T - -cf - 2>/dev/null ) | ( cd "$SRC" && tar xf - )
   n_faltan="$(faltan_en_copia "$RAIZ" "$SRC")"; [ "$n_faltan" = 0 ] || mal "T27: la copia del árbol al laboratorio quedó incompleta (faltan ${n_faltan:-?} archivos)"
@@ -405,7 +405,7 @@ elif corre T27; then
   W="$T/work"; git clone -q "$T/remote.git" "$W"
   OLD_HOOK="scripts/hooks/missing-path-notice.js";    NEW_HOOK="scripts/hooks/missing-path-lab-notice.js"
   OLD_GIT="scripts/production/lint-production-json.js"; NEW_GIT="scripts/production/lint-production-json-lab.js"
-  # la lib que llama agent-skills: desde la tanda C1 la real es guard-record.js y su nombre de antes es un reemplazo; el
+  # la lib que llama agent-skills: la real es guard-record.js y su nombre anterior es un reemplazo; el
   # laboratorio la vuelve a renombrar y lleva los DOS nombres anteriores al nuevo (agent-skills sigue llamando el más
   # viejo). El más viejo sale del mapa, nunca escrito acá: la copia pública frena un archivo que nombra una ruta vieja.
   OLD_LIB="scripts/lib/guard-record.js";              NEW_LIB="scripts/lib/guard-record-lab.js"
@@ -425,8 +425,8 @@ if a[6]:   # sin el mapa real (la copia pública) no hay un nombre más viejo qu
 json.dump(m, open(p, "w"), indent=2)
 PY
   ( cd "$W" && node scripts/lib/legacy-names.js --write-shims ) >/dev/null
-  # los llamadores del mismo repo, al nombre nuevo (como lo haría la tanda)
-  # (desde la story 8.17, W3, el nombre del hook vive en la lista única que lee el instalador, no en su texto)
+  # los llamadores del mismo repo, al nombre nuevo (como lo haría el renombre)
+  # (el nombre del hook vive en la lista única que lee el instalador, no en su texto)
   sed -i.bak "s#@tcg:missing-path-notice.js#@tcg:missing-path-lab-notice.js#" "$W/scripts/setup/hooks-list.json"
   sed -i.bak "s#$OLD_GIT#$NEW_GIT#" "$W/scripts/hooks/git-pre-commit-global.sh"
   grep -rl "guard-record.js" "$W/scripts" --include='*.js' | grep -v "/$OLD_LIB\$" | grep -v '/tests/' | while read -r f; do sed -i.bak "s#guard-record.js#guard-record-lab.js#g" "$f"; done
@@ -439,7 +439,7 @@ PY
   ln -s "$SKILLS_REPO" "$H/.claude/agent-skills"
   GH="$H/.claude/tycon-claude-guides"
   # TF_BUILD vacío: en Azure el reemplazo escribe el warning de la corrida en stderr, y T27 compara la salida del hook viejo
-  # con la del nuevo (salía rojo sólo en el nocturno, 2026-10-01). Una máquina del equipo no corre con TF_BUILD.
+  # con la del nuevo (sin esto, daría rojo sólo en el nocturno). Una máquina del equipo no corre con TF_BUILD.
   INST_ENV=(TF_BUILD= TYCON_PROFILE=0 TYCON_CODEX=0 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_NO_COMMANDS_SYNC=1 TYCON_NO_SQLITE_CHECK=1 TYCON_NO_THREAD_RESCUE=1
     TYCON_NO_COLLECT_FINDINGS=1 TYCON_STAGE_METRICS=0 TYCON_BENCH_DAILY=0 TYCON_NO_CANONICAL_PATH=1 TYCON_NO_BOOTSTRAP_HEAL=1
     TYCON_THIRD_PARTY=0 TYCON_MAILBOX_URL_BASE=http://127.0.0.1:9 TYCON_GIT_HOOKS_DIR="$H/.git-hooks" TYCON_GUIDES_DIR="$GH")
@@ -485,7 +485,7 @@ PY
     ok "T27 un control sin su archivo se saltea: el commit entra y hook-errors.log queda vacío"
   else mal "T27 control sin archivo: commits=$(git -C "$P" rev-list --count HEAD 2>/dev/null) hook-errors: $(head -2 "$H/.claude/.tycon-pipeline/hook-errors.log" 2>/dev/null)"; fi
   G0 "$GH" checkout -q -- scripts/ci/sql-compile.js
-  # 6 · los dos repos desfasados: agent-skills llama la lib del arnés con el nombre viejo (regla entre repos, AC 1 d)
+  # 6 · los dos repos desfasados: agent-skills llama la lib del arnés con el nombre viejo (regla entre repos)
   CIERRE="$SKILLS_REPO/skills/tycon-pipeline/scripts/lib/constancia-cierre.js"
   anota_desde_skills() { # la constancia que anota un hook de agent-skills, contra el arnés en el sha que se le pase
     G0 "$GH" checkout -q "$1"
@@ -510,8 +510,8 @@ PY
   G0 "$GH" checkout -q main
 fi
 
-# ═══ T1 (parte --write-shims, story 8.12 AC 1) · un .yml que sólo nombran docs, ado y el mismo repo no pide reemplazo ═══
-# Decisión del dueño (2026-10-01): una extensión sin forma de reemplazo (.yml) no exige reemplazo cuando sus llamadores
+# ═══ T1 (parte --write-shims) · un .yml que sólo nombran docs, ado y el mismo repo no pide reemplazo ═══
+# Una extensión sin forma de reemplazo (.yml) no exige reemplazo cuando sus llamadores
 # son sólo `ado`, `docs` y `same-repo`; con `machine`, `other-repo` o `products` lo sigue exigiendo. La parte de
 # --check-map la cubre T1 en legacy-names.test.js.
 if corre T1; then
@@ -539,7 +539,7 @@ if corre T1; then
   [ -z "$o" ] && ok "T1 needsShim: docs exige reemplazo sólo si la extensión tiene forma; machine, other-repo y products siempre" || mal "T1 needsShim: $o"
 fi
 
-# ═══ T12 y T4 (story 8.12 AC 9 y AC 3) · los permisos RELATIVOS de la máquina, y el prefijo que no se reescribe dos veces ═══
+# ═══ T12 y T4 · los permisos RELATIVOS de la máquina, y el prefijo que no se reescribe dos veces ═══
 # Un permiso de Claude Code escrito con la ruta relativa (`Bash(bash scripts/x.sh --check)`) no lleva ninguna forma de la
 # raíz: la migración lo reescribe sólo dentro de permissions.{allow,ask,deny} de settings.json y settings.local.json, con
 # borde estricto delante, sólo para entradas del arnés ya mudadas. Hooks, Codex, git hooks y plists siguen con las formas
@@ -658,11 +658,11 @@ PY
   done
 fi
 
-# ═══ T55 (tanda E, AC 51) · la máquina vieja entera: nadie nota el cambio ════════════════════════════════════════
+# ═══ T55 · la máquina vieja entera: nadie nota el cambio ════════════════════════════════════════
 # Una máquina que se quedó con la configuración de antes del renombre —hooks y permisos de settings.json,
 # settings.local.json, ~/.codex/hooks.json, ~/.git-hooks/*, un LaunchAgent cargado, dos interruptores de apagado con su
 # nombre viejo, estados con su nombre viejo, ~/.claude/tycon.json con claves viejas y un repo de producto con su catálogo
-# de producción de antes— recibe la línea de arranque REAL (la que INSTALL.md mandaba pegar) y después cada control una vez.
+# de producción de antes— recibe la línea de arranque REAL y después cada control una vez.
 # Cómo se arma lo viejo sin escribir acá un solo nombre viejo: se instala una máquina nueva con esa misma línea (la
 # plantilla) y se la «envejece» con el mapa, del nombre nuevo al viejo, sólo donde el viejo existe como reemplazo
 # generado. Así la configuración vieja es la que el instalador de verdad escribe. Sin el mapa (la copia pública) no hay
@@ -700,8 +700,8 @@ esac
 exit 0
 EOF
     printf '#!/bin/sh\nexit 0\n' > "$T/bin/engram"; printf '#!/bin/sh\nexit 0\n' > "$T/bin/claude"; chmod +x "$T/bin/"*
-    # la línea de arranque REAL de una máquina vieja (el SessionStart de macOS/Linux que INSTALL.md mandaba pegar a
-    # mano), sin tocarla. Desde la story 8.18 INSTALL.md ya no la trae —la línea la escribe `harness.js install`—: la
+    # la línea de arranque REAL de una máquina vieja (el SessionStart de macOS/Linux que se pegaba a
+    # mano), sin tocarla. INSTALL.md no la trae —la línea la escribe `harness.js install`—: la
     # forma conocida vive en la lista de líneas de arranque del mecanismo (`canonical-posix`).
     LINEA="$(node -e '
       const f = require(process.argv[1]).forms.find((x) => x.id === "canonical-posix");
@@ -710,8 +710,8 @@ EOF
     P="$T/repos/producto"; git init -q -b main "$P"
     PIPE="$H/.claude/.tycon-pipeline"
     # T55 prueba la TRANSICIÓN: el día queda fijo en la fecha de retiro del mapa (el aviso de retiro sale recién el día
-    # siguiente). Con el reloj real, desde esa fecha el aviso nombraba los nombres viejos que la prueba misma anota
-    # (pase adversarial de la tanda E). Sin fecha en el mapa, el día real (no hay aviso que pueda salir).
+    # siguiente). Con el reloj real, desde esa fecha el aviso nombraría los nombres viejos que la prueba misma anota.
+    # Sin fecha en el mapa, el día real (no hay aviso que pueda salir).
     RETIRO_MAPA="$(node -e 'const v=require(process.argv[1]).retire_after; process.stdout.write(typeof v==="string"?v:"")' "$MAPA")"
     BASE_ENV=(${RETIRO_MAPA:+TYCON_TODAY="$RETIRO_MAPA"} PATH="$T/bin:$PATH" LAUNCHCTL_BIN="$T/bin/launchctl" TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 TF_BUILD=
       TYCON_CODEX=1 TYCON_PROFILE=0 TYCON_NO_CLAUDEMD_SYNC=1 TYCON_THIRD_PARTY=0 TYCON_BENCH_DAILY=0 TYCON_NO_DOWNLOAD_RUNS=1
@@ -725,7 +725,7 @@ EOF
     viejo_de() { node -e 'const m=require(process.argv[1]); const e=m.entries.find((x)=>x.kind===process.argv[2]&&x.new===process.argv[3]&&(!process.argv[4]||x.where===process.argv[4])); process.stdout.write(e?e.old:"")' "$MAPA" "$@"; }
     en_casa git config --global core.hooksPath "$H/.git-hooks"
     en_casa git config --global user.email lab@example.com; en_casa git config --global user.name Lab
-    # ~/.claude/tycon.json con la clave de los nocturnos como se escribía antes de la tanda G (prendidos: suman hooks) y la raíz de repos
+    # ~/.claude/tycon.json con la clave de los nocturnos como se escribía antes del cambio de claves (prendidos: suman hooks) y la raíz de repos
     printf '{ "integrations": { "nocturnos": true }, "paths": { "repos": "%s" } }\n' "$T/repos" > "$H/.claude/tycon.json"
 
     # 2 · la plantilla: la máquina nueva que deja la línea de arranque, más lo que pone un dev a mano —la línea misma como
@@ -760,7 +760,7 @@ EOF
     for f in $LUGARES .claude/tycon.json; do mkdir -p "$T/plantilla/$(dirname "$f")"; cp "$H/$f" "$T/plantilla/$f"; done
 
     # 3 · envejecer: cada ruta de hoy pasa a su nombre viejo donde el viejo existe como reemplazo generado (en las seis
-    #     configuraciones; los permisos relativos también), y las claves de tycon.json a sus nombres de antes
+    #     configuraciones; los permisos relativos también), y las claves de tycon.json a sus nombres viejos
     python3 - "$MAPA" "$GH" "$SK" "$H" $LUGARES > "$T/envejecido.json" <<'PY'
 import json, os, re, sys
 mapa, gh, sk, home = sys.argv[1:5]; lugares = sys.argv[5:]
@@ -844,7 +844,7 @@ PY
     done
     [ -z "$sin" ] && ok "T55 la configuración vieja está completa: nombres viejos en los seis lugares y en tycon.json ($(cat "$T/envejecido.json"))" \
       || mal "T55 el envejecido no tocó:$sin — la prueba no estaría probando esos lugares ($(cat "$T/envejecido.json"))"
-    # los estados de antes y los interruptores con su nombre viejo; lo que dejó la plantilla en el pipeline se va (una
+    # los estados viejos y los interruptores con su nombre viejo; lo que dejó la plantilla en el pipeline se va (una
     # máquina vieja no tiene los registros con el nombre nuevo), salvo el sello del despliegue de Codex y el estado de
     # la instalación, que una máquina vieja también tiene
     rm -rf "$PIPE"/*.log "$PIPE"/legacy-names.jsonl "$PIPE"/legacy-names.d "$PIPE"/registros-buzon "$PIPE"/findings-seal.json "$PIPE"/file-events
@@ -963,7 +963,7 @@ PY
     if [ "${n_cl:-0}" -gt 10 ] && [ "${n_cx:-0}" -gt 5 ] && [ "$(wc -l < "$T/controles.txt" | tr -d ' ')" = 1 ]; then
       ok "T55 cada control corrió una vez: $n_ctl hooks ($n_cl de Claude Code, $n_cx de Codex), cada uno con su nombre nuevo"
     else mal "T55 controles: $(tr '\n' ' ' < "$T/controles.txt")"; fi
-    # el hook global de git, con el catálogo de producción de antes: el bueno entra, el mal formado se rechaza
+    # el hook global de git, con el catálogo de producción viejo: el bueno entra, el mal formado se rechaza
     G0 "$P" add -A
     ( fake_home_create "$H" && unset TYCON_GUIDES_DIR TYCON_SKILLS_DIR && cd "$P" && env PATH="$T/bin:$PATH" git commit -q -m "catálogo de antes" ) > "$T/commit-bueno.out" 2>&1; rc=$?
     [ "$rc" = 0 ] && [ "$(git -C "$P" rev-list --count HEAD 2>/dev/null)" = 1 ] \

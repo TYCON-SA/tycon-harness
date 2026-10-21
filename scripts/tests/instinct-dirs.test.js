@@ -1,13 +1,13 @@
 'use strict';
 /**
- * instinct-dirs.test.js — dónde viven las propuestas del grabador de aprendizajes (story 8.27).
+ * instinct-dirs.test.js — dónde viven las propuestas del grabador de aprendizajes.
  *
- * EL CASO (2026-10-09). El observador, el disparador del arranque y el comando de revisión creaban `inbox/instincts/`
- * dentro del árbol del arnés aunque ese árbol no la trajera (una versión bajada, la copia pública): una prueba fallaba
- * siempre a la primera sobre la copia, y en un arnés instalado lo escrito se perdía con la actualización siguiente.
- * Ahora una sola pieza, scripts/instincts/instinct-dirs.js, dice dónde se escribe y dónde se lee.
+ * EL CASO. Si el observador, el disparador del arranque y el comando de revisión crearan `inbox/instincts/`
+ * dentro del árbol del arnés aunque ese árbol no la trajera (una versión bajada, la copia pública), una prueba fallaría
+ * siempre a la primera sobre la copia, y en un arnés instalado lo escrito se perdería con la actualización siguiente.
+ * Una sola pieza, scripts/instincts/instinct-dirs.js, dice dónde se escribe y dónde se lee.
  *
- * Qué fija (los números son los de la tabla de pruebas de la story):
+ * Qué fija:
  *   T1  un árbol que TRAE su buzón (tiene inbox/instincts/README.md) escribe en el árbol, como siempre
  *   T2  un árbol que no lo trae escribe en la casa de la persona: <estado>/inbox/instincts, con el estado que contesta
  *       tycon-home.js; una carpeta de estado vacía (el resto de una instalación cortada) no cuenta
@@ -22,8 +22,8 @@
  *       árbol no trae el suyo) y se lee, después del árbol y antes de la casa
  *   T25 un clon privado declarado que no sirve (sin buzón, no está, ruta relativa) se dice; sin declararlo, nada
  *   T26 un clon privado cuyo buzón no se deja mirar: nunca se cae, callado, a la casa
- *   y, de la vuelta de revisores: lo que no se pudo leer se dice (notas, y una carpeta ilegible no es una vacía), y
- *   las pruebas no dependen de la TYCON_HOME de quien las corre (el pase adversarial las puso rojas exportándola)
+ *   Además: lo que no se pudo leer se dice (notas, y una carpeta ilegible no es una vacía), y
+ *   las pruebas no dependen de la TYCON_HOME de quien las corre (exportándola se pondrían rojas)
  * 🔴 Nada toca la carpeta de usuario real: cada caso arma la suya en el temporal y corre la pieza en un proceso hijo.
  * Correr: node --test scripts/tests/instinct-dirs.test.js
  */
@@ -36,7 +36,7 @@ const { spawnSync } = require('child_process');
 
 // Los valores ESPERADOS de cada caso se calculan acá, con tycon-home.js, que mira TYCON_HOME antes que la carpeta de
 // usuario; la pieza corre en un hijo que no la recibe. Con una TYCON_HOME heredada del ambiente de quien corre, lo
-// esperado se iba a esa carpeta y lo medido no: 2 rojos falsos (pase adversarial de la story). Se saca al cargar; el caso
+// esperado se iría a esa carpeta y lo medido no: rojos falsos. Se saca al cargar; el caso
 // que la necesita la fija a propósito en el hijo.
 delete process.env.TYCON_HOME;
 
@@ -369,7 +369,7 @@ test('T22 InstinctDirs_NotesSayWhatWasNotRead — las notas: clon declarado que 
 });
 
 test('T23 InstinctDirs_TestsIgnoreInheritedTyconHome — las pruebas del grabador no dependen de la TYCON_HOME de quien las corre', () => {
-  // (a) esta misma suite, con una TYCON_HOME absoluta exportada: los dos casos que el pase adversarial puso en rojo
+  // (a) esta misma suite, con una TYCON_HOME absoluta exportada: los dos casos que se pondrían en rojo
   if (!process.env.INSTINCT_DIRS_NESTED) {
     const lab = tmp('instinct-dirs-t9-');
     const env = Object.assign({}, process.env, { TYCON_HOME: path.join(lab, 'una-casa-heredada'), INSTINCT_DIRS_NESTED: '1' });
@@ -389,8 +389,8 @@ test('T23 InstinctDirs_TestsIgnoreInheritedTyconHome — las pruebas del grabado
 });
 
 test('T24 InstinctDirs_MaintainersClone_WritesAndReadsThere — el clon privado declarado, si trae su buzón: se escribe y se lee ahí', () => {
-  // EL CASO (2026-10-15): en la máquina del mantenedor el arnés instalado no trae buzón y el clon que declara mantener
-  // (`paths.maintained`, el público) tampoco: las propuestas iban a la casa (~/.tycon/state), fuera de git, aunque el
+  // En la máquina del mantenedor el arnés instalado no trae buzón y el clon que declara mantener
+  // (`paths.maintained`, el público) tampoco: sin este caso, las propuestas irían a la casa (~/.tycon/state), fuera de git, aunque el
   // clon privado (`paths.maintainers`) trae el buzón versionado.
   const lab = tmp('instinct-dirs-t24-');
   const privado = tree(lab, 'privado', { inboxReadme: true });

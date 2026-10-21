@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# adversarial-launch-delay.test.sh — la medición del pase adversarial lanzado tarde, por horas (story 7.19, AC 15).
+# adversarial-launch-delay.test.sh — la medición del pase adversarial lanzado tarde, por horas.
 #
-# Por qué existe: la 7.19 original contaba el rótulo `launchedAtStep`, que tipea el agente, y en 36 de 86 casos
-# estaba mal. La cuenta buena es por horas: flujo lanzado menos primer revisor, mayor a 2 minutos.
+# Por qué existe: contar el rótulo `launchedAtStep`, que tipea el agente, da un número falso (en 36 de 86 casos
+# estaba mal). La cuenta buena es por horas: flujo lanzado menos primer revisor, mayor a 2 minutos.
 #
 # Lo que prueba (T15 · LaunchDelay_MeasuredByClock), con cuatro volcados inventados (esta carpeta se publica):
 #   · a tiempo                         → no cuenta
@@ -51,7 +51,7 @@ volcado no-se-sabe.json    G "$(H 10:00)" "$(H 10:20)" 4  none
 volcado hilo-apagado.json  K "$(H 10:00)" "$(H 10:20)" 4  none
 printf '%s\n' '{"type":"user","message":{"content":[{"type":"tool_result","content":"{\n  \"run\": true,\n  \"early_launch\": false\n}"}]}}' \
   | gzip -c > "$HIST/hilo-apagado.hilo.jsonl.gz"
-# un volcado que es JSON válido pero no un objeto (hallazgo del pase adversarial de la 7.19): se cuenta como
+# un volcado que es JSON válido pero no un objeto : se cuenta como
 # ilegible y el informe sale igual, con las demás corridas
 echo 'null' > "$HIST/nulo.json"
 

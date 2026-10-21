@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
-# bash32-quoting.test.sh — red de scripts/ci/check-bash32-quoting.sh (2026-09-18).
+# bash32-quoting.test.sh — red de scripts/ci/check-bash32-quoting.sh.
 #
 # El defecto que cierra: en el bash 3.2 de macOS, `$VAR` pegado a un carácter no ASCII se come el
-# primer byte del carácter y rompe la variable (`«$X»` → `«�`). Apareció dos veces (2.13, 1.5) y la
-# tercera vez se midió: 16 apariciones latentes en el repo, cazadas por nadie. Un control que hay que
+# primer byte del carácter y rompe la variable (`«$X»` → `«�`). Pasa sin que nadie lo vea: en el repo se
+# midieron 16 apariciones latentes. Un control que hay que
 # acordarse de correr con el intérprete viejo no corre; éste es un grep y corre en cualquier bash.
 #
 # 🔴 El primer caso es la PRUEBA del defecto, no del lint: se corre el bash 3.2 real de la máquina
 #    (si está) y se exige que rompa. Sin eso, el lint estaría marcando algo que nadie vio romperse.
-# 🔴 ROJO PREVIO: con el lint ausente (TYCON_BASH32_LINT=/dev/null) los casos 2, 4, 5 y 6 salen rojos.
+# 🔴 Con el lint ausente (TYCON_BASH32_LINT=/dev/null) los casos 2, 4, 5 y 6 salen rojos.
 # 🔴 Y los ejemplos rotos se construyen con `printf … $%s` a propósito: si este archivo contuviera la
-#    secuencia literal, el lint lo marcaría a él (le pasó a la primera versión: el propio test se rompió
-#    en bash 3.2 por un «$salida» en su mensaje — el arreglo automático después le «arregló» los ejemplos).
+#    secuencia literal, el lint lo marcaría a él, y un arreglo automático le «arreglaría» los ejemplos.
 set -uo pipefail
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LINT="${TYCON_BASH32_LINT:-$TCG/scripts/ci/check-bash32-quoting.sh}"
@@ -24,7 +23,7 @@ mal() { echo "❌ $1"; fallos=$((fallos+1)); }
 if [ -x /bin/bash ] && /bin/bash --version 2>/dev/null | grep "version 3\.2" >/dev/null; then
   printf -v cmd 'echo "«$%s»"' X                      # el comando lleva la secuencia rota de verdad; este archivo, no
   # el defecto aparece con el idioma en UTF-8 (el de la terminal de cualquier dev); sin idioma o en C, bash 3.2 lee
-  # byte a byte y la línea sale bien — una corrida de fondo sin LANG daba el rojo falso de abajo (2026-09-29)
+  # byte a byte y la línea sale bien — una corrida de fondo sin LANG daría el rojo falso de abajo
   salida="$(LC_ALL=en_US.UTF-8 X=3 /bin/bash -c "$cmd")"
   [ "$salida" != "«3»" ] && ok "C-1 el bash 3.2 real rompe «\${X}» (salió «${salida}»): el lint caza un defecto que existe" \
                         || mal "C-1 el bash 3.2 de esta máquina NO rompe «\${X}»: revisar si el lint sigue teniendo sentido"

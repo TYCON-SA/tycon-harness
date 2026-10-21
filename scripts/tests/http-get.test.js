@@ -1,10 +1,10 @@
 'use strict';
 /**
- * http-get.test.js — el cliente HTTP propio del mecanismo de instalación (story 8.23, tanda B · parte de T9 y T11).
+ * http-get.test.js — el cliente HTTP propio del mecanismo de instalación.
  *
- * POR QUÉ UNO PROPIO (2026-10-07). Instalar sin git baja de GitHub por HTTPS. Node 20 (el piso del arnés) no honra
- * `HTTPS_PROXY`/`NO_PROXY` en `fetch`, y las máquinas del equipo pueden estar detrás de un proxy corporativo (revisión
- * I6). Y la bajada del comprimido redirige a OTRO host (codeload) con una llave temporal en la URL: la credencial no
+ * POR QUÉ UNO PROPIO. Instalar sin git baja de GitHub por HTTPS. Node 20 (el piso del arnés) no honra
+ * `HTTPS_PROXY`/`NO_PROXY` en `fetch`, y las máquinas del equipo pueden estar detrás de un proxy corporativo.
+ * Y la bajada del comprimido redirige a OTRO host (codeload) con una llave temporal en la URL: la credencial no
  * puede viajar a ese host.
  *
  * Qué fija:
@@ -12,14 +12,14 @@
  *   · una redirección al MISMO origen conserva `Authorization`; a OTRO origen la saca; más de 5 es un error `redirect`;
  *   · `HTTP_PROXY` manda un destino http por el proxy (forma absoluta); `NO_PROXY` lo saca del proxy; las credenciales
  *     del proxy viajan como `Proxy-Authorization`; un destino https pasa por un túnel CONNECT; un proxy `https://` se
- *     habla por TLS, para los dos destinos (pase adversarial de la 8.40, clase 9: antes iba en claro y al puerto 80);
+ *     habla por TLS, para los dos destinos (sin esto iría en claro y al puerto 80);
  *   · un proxy que acepta y no contesta es `proxy-timeout` dentro del tope; un servidor mudo directo es `timeout`;
  *   · conexión rechazada o nombre que no resuelve son `network`, con el código; un cuerpo más grande que el tope es
  *     `too-big`;
  *   · `getSync` corre el pedido en un proceso hijo (harness.js es síncrono) y le pasa el pedido por stdin: ninguna
- *     cabecera —la credencial— va en la línea de comandos; un hijo cortado por una señal se dice con la señal (story
- *     8.40, segunda vuelta de revisores: antes salía «no devolvió nada legible»). El proxy por TLS y la señal son la fila
- *     T39 `HttpGet_HttpsProxyTls_And_SyncSignal` de la story 8.40.
+ *     cabecera —la credencial— va en la línea de comandos; un hijo cortado por una señal se dice con la señal (sin esto
+ *     saldría «no devolvió nada legible»). El proxy por TLS y la señal son la fila
+ *     T39 `HttpGet_HttpsProxyTls_And_SyncSignal`.
  * 🔴 Todo en localhost y en el temporal; el certificado de prueba se genera con openssl al correr (sin él, la prueba del
  * túnel FALLA diciendo que no midió: no medido no es verde).
  */

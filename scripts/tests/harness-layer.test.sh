@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-layer.test.sh — la capa privada: APILAR una lista sobre el árbol (story 8.13.1, tanda A · AC 4 · T5).
+# harness-layer.test.sh — la capa privada: APILAR una lista sobre el árbol (T5).
 #
 # Lo que no se puede perder:
 #   · Cada archivo de la capa se escribe desde el blob interno, leído con UN solo `git cat-file --batch`, atómico y con
@@ -14,10 +14,10 @@
 #     (harness-tree-writers.json) se escribe si falta y no se vigila: cambiado, no se avisa.
 #   · Un agregado cuya ruta pasó a ser pública sale del manifiesto y del bloque y el archivo queda (igual o con otro
 #     contenido); uno que el interno borró se borra sólo si su hash es el del manifiesto.
-#   · Pase adversarial: lo que sale de la lista editado a mano queda en el manifiesto marcado («held») y se avisa en cada
-#     corrida (clase 6); un pisado que sale de la lista vuelve al público, y editado a mano queda (clases 7, 11 y 13); el
+#   · Lo que sale de la lista editado a mano queda en el manifiesto marcado («held») y se avisa en cada
+#     corrida; un pisado que sale de la lista vuelve al público, y editado a mano queda; el
 #     bloque de exclude con CRLF, con dos bloques o con espacios al final sigue siendo uno y lo de la persona no se toca,
-#     y uno sin cierre frena sin escribir nada (clases 4 y 14).
+#     y uno sin cierre frena sin escribir nada.
 # El tope de 5 s con la capa REAL lo mide harness-layer-real (T4): acá se cuenta el proceso `cat-file`, no el reloj.
 #
 # Laboratorio: repos de juguete en un temporal (git de verdad), el exportador de juguete y un `git` envoltorio en PATH
@@ -30,7 +30,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 BASE="$(mktemp -d)"
-# el nombre viejo del lugar sale de place.js, como en el resto del arnés (story 8.19, T49: no se escribe a mano)
+# el nombre viejo del lugar sale de place.js, como en el resto del arnés (no se escribe a mano)
 VIEJO="$(node -p "require('${RAIZ}/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
 case "$BASE" in *"${VIEJO}"*|*agent-skills*|*/.claude*) echo "❌ harness-layer: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
 trap 'rm -rf "$BASE"' EXIT
@@ -90,8 +90,8 @@ put "$INTERNO" tasks/tarea.md 'una tarea'
 put "$INTERNO" tasks/vieja.md 'la versión siguiente la borra'
 put "$INTERNO" tasks/vieja-editada.md 'la versión siguiente la borra, pero alguien la editó'
 put "$INTERNO" .dashboard/sdlc-stage-2026-10-01.json '{"punto":"del día"}'
-# qué publica el interno (AC 5): su lista blanca de juguete deja afuera lo privado suelto en guides/ y scripts/; el resto
-# de lo privado (tasks/, .dashboard/, guides/maintaining/incident-log.md) ya lo dejan afuera las exclusiones fijas del exportador
+# qué publica el interno: su lista blanca de juguete deja afuera lo privado suelto en guides/ y scripts/; el resto
+# de lo privado (tasks/, .dashboard/, guides/maintaining/) ya lo dejan afuera las exclusiones fijas del exportador
 put "$INTERNO" scripts/publishing/allowlist.json '{ "packages": { "core": {
   "arnes": { "in": ["**"], "out": [
     { "glob": "guides/despues-*.md", "reason": "privados hoy: la versión siguiente los publica" },
@@ -200,8 +200,8 @@ P2A="$(g "$BASE/publico2" rev-parse HEAD~1)"
 ST="$(g "$ARBOL" status --porcelain)"
 [ "$ST" = " M scripts/tests/suites.json" ] && ok "T5 v2: git status sigue mostrando sólo el pisado" || mal "T5 v2 git status: «${ST}»"
 
-# ── pase adversarial, clase 6: el agregado que el interno borró y la persona editó no se pierde de vista ──────────────
-# Antes: se avisaba UNA vez y salía del manifiesto; la carpeta seguía excluida y nadie lo veía más. Ahora queda en el
+# ── el agregado que el interno borró y la persona editó no se pierde de vista ──────────────
+# Si se avisara UNA vez y saliera del manifiesto, la carpeta seguiría excluida y nadie lo vería más. Queda en el
 # manifiesto marcado («held») y se avisa en cada corrida (y verify sale 1), hasta que la persona lo resuelve.
 layer_apply "$BASE/git-5.log" "$BASE/capa-2.json"
 case "$SALIDA" in *tasks/vieja-editada.md*) ok "T5 clase 6: la corrida siguiente sigue avisando el borrado editado a mano" ;; *) mal "T5 clase 6: dejó de avisarlo: $SALIDA" ;; esac
@@ -216,9 +216,9 @@ case "$SALIDA" in *tasks/vieja-editada.md*) mal "T5 clase 6: lo sigue avisando d
 [ "$(j "$MANIFIESTO" "any(f['path']=='tasks/vieja-editada.md' for f in d['files'])")" = False ] \
   && ok "T5 clase 6: …y sale del manifiesto" || mal "T5 clase 6: sigue en el manifiesto"
 
-# ── pase adversarial, clases 11, 13 y 7: un pisado que sale de la lista vuelve al contenido público ───────────────────
-# Antes: salía del manifiesto como si hubiera pasado a ser público y el archivo quedaba con el contenido interno viejo
-# (git status « M», verify «todo en su lugar», doctor lo llamaba «editado a mano» y el update siguiente se trababa).
+# ── un pisado que sale de la lista vuelve al contenido público ───────────────────
+# Si saliera del manifiesto como si hubiera pasado a ser público, el archivo quedaría con el contenido interno viejo
+# (git status « M», verify «todo en su lugar», doctor lo llamaría «editado a mano» y el update siguiente se trabaría).
 # (el interno lo borra; que quede igual al público pasa por el mismo camino —sale de la lista— y el suites.json de
 # juguete transformado no es JSON válido, así que la clasificación del exportador no lo dejaría calcular)
 g "$INTERNO" rm -q scripts/tests/suites.json; g "$INTERNO" commit -q -m 'interno v3: sin suites.json'
@@ -248,7 +248,7 @@ g "$ARBOL" checkout -q -- scripts/tests/suites.json
 layer_apply "$BASE/git-11.log" "$BASE/capa-3.json"
 [ "$(j "$MANIFIESTO" "any(f['path']=='scripts/tests/suites.json' for f in d['files'])")" = False ] && [ -z "$(g "$ARBOL" status --porcelain)" ] \
   && ok "T5 clase 13: la persona lo vuelve al público → sale del manifiesto, árbol limpio" || mal "T5 clase 13: después del checkout: $(g "$ARBOL" status --porcelain)"
-# clase 7: lo que vuelve al público ya no traba nada después: lo pisado sigue siendo del mecanismo hasta que sale
+# lo que vuelve al público ya no traba nada después: lo pisado sigue siendo del mecanismo hasta que sale
 layer_apply "$BASE/git-12.log" "$BASE/capa-2.json"
 layer_apply "$BASE/git-13.log" "$BASE/capa-3.json"
 SALIDA_V="$(node "$LAYER" verify --tree "$ARBOL" --manifest "$MANIFIESTO" 2>&1)"
@@ -256,9 +256,9 @@ g "$ARBOL" diff --quiet -- scripts/tests/suites.json && case "$SALIDA_V" in *sui
   || mal "T5 clase 7: $(g "$ARBOL" status --porcelain)"
 cp "$BASE/capa-3.json" "$BASE/capa-4.json"
 
-# ── pase adversarial, clases 4 y 14: el bloque # tycon-layer con CRLF, espacios al final o sin cierre ─────────────────
-# Antes: un fin con «\r» o con espacios no se reconocía; la primera corrida agregaba otro bloque y la segunda se comía
-# las líneas de la persona que quedaban entre los dos. Ahora el fin se reconoce igual, los bloques sobrantes se juntan
+# ── el bloque # tycon-layer con CRLF, espacios al final o sin cierre ─────────────────
+# Un fin con «\r» o con espacios se reconoce igual; si no, la primera corrida agregaría otro bloque y la segunda se comería
+# las líneas de la persona que quedan entre los dos. Los bloques sobrantes se juntan
 # en uno, y un bloque que empieza y no cierra frena antes de escribir nada (nunca se adivina dónde termina).
 EXF="$ARBOL/.git/info/exclude"
 begins() { grep -c '^# tycon-layer begin' "$EXF"; }

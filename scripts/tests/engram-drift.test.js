@@ -6,18 +6,15 @@
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
  * engram autodetecta el project name desde el basename del cwd cuando el repo no lo fija. Eso
  * fragmenta la memoria SIN dar error: `mem_search` con el nombre equivocado devuelve
- * "no memories found", que es indistinguible de "este repo todavía no tiene historia". Medido el
- * 2026-08-24 en dos repos el mismo día — el repo del framework (74 obs en 6 nombres, disparado por un
- * rename de carpeta) y el arnés (135 obs en 7 nombres, porque la guía mandaba `tycon` y
- * `.engram-project` declaraba otro nombre; 11 de esas obs NUNCA se exportaron a un chunk, o sea
- * que vivían en UNA sola máquina).
+ * "no memories found", que es indistinguible de "este repo todavía no tiene historia". Pasa, por ejemplo,
+ * cuando se renombra una carpeta, o cuando la guía manda un nombre y `.engram-project` declara otro; las
+ * observaciones que nunca se exportaron a un chunk viven en UNA sola máquina.
  *
- * Los casos de abajo no son decorativos: cada uno es un modo de falla que la primera versión del
- * chequeo TENÍA, cazado corriéndolo contra la máquina real antes de commitear.
- *   · sin normalizar mayúsculas, el chequeo acusaba 17 directorios de los cuales ~11 no tenían
+ * Los casos de abajo no son decorativos: cada uno es un modo de falla que el chequeo tendría sin ellos.
+ *   · sin normalizar mayúsculas, el chequeo acusaría directorios que no tienen
  *     nada roto (`FRESNO`/`fresno` es EL MISMO cajón — engram 1.20 filtra case-insensitive). Un control
  *     que cría lobos se ignora, y se lleva puestos los casos donde sí importaba.
- *   · sin excluir los proyectos transversales, acusaba a todo repo donde alguien tocó el arnés —
+ *   · sin excluir los proyectos transversales, acusaría a todo repo donde alguien tocó el arnés —
  *     guardar bajo `tycon` desde el cwd de un producto es la CONVENCIÓN (engram-workflow.md §2),
  *     no drift. Un control que castiga el comportamiento correcto no sobrevive dos corridas.
  *   · el camino "no pude mirar la DB" tiene que devolver null y NO una lista vacía: "no sé" no es
@@ -121,11 +118,10 @@ test('scanEngramRepos: root inexistente no explota (fail-open)', () => {
   assert.deepEqual(r.nuncaSincronizo, []);
 });
 
-// ── Escaneo de DOS niveles + el tercer estado (2026-08-25) ───────────────────────────────────
-// La primera versión miraba sólo los hijos directos de ~/SourceCode y era ciega justo donde
-// estaban los casos: Ceibo, Totora, Pacara, FRESNO y URUTAU son contenedores (la carpeta de
-// arriba no es un repo git) y sus repos viven un nivel más abajo. Medido: con un solo nivel se
-// perdían 4 repos sin pin y 2 que declaran el nombre hace meses sin haber exportado jamás.
+// ── Escaneo de DOS niveles + el tercer estado ───────────────────────────────────
+// Mirar sólo los hijos directos de ~/SourceCode es ser ciego justo donde están los casos: hay
+// contenedores (la carpeta de arriba no es un repo git) cuyos repos viven un nivel más abajo. Con un
+// solo nivel se perderían los repos sin pin y los que declaran el nombre sin haber exportado jamás.
 test('scanEngramRepos: ve los sub-repos de un contenedor, y separa "declaró pero nunca sincronizó"', () => {
   const root = tmp();
   const mk = (rel, opts = {}) => {
@@ -153,8 +149,8 @@ test('scanEngramRepos: ve los sub-repos de un contenedor, y separa "declaró per
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-// ── "No pude mirar" NUNCA es "está limpio" (2026-08-25, revisión adversarial) ────────────────
-// Los tres casos de abajo devolvían exactamente lo mismo que un repo sano: listas vacías. Y una
+// ── "No pude mirar" NUNCA es "está limpio" ────────────────
+// Los tres casos de abajo devolverían exactamente lo mismo que un repo sano: listas vacías. Y una
 // lista vacía, río abajo, se lee como "no hay nada raro". Es el modo de falla que estos chequeos
 // existen para cazar, adentro de los chequeos.
 
@@ -204,8 +200,8 @@ test('un repo SIN memoria sigue sin reportarse (el filtro no se pasó de largo)'
 });
 
 test('las consultas se hacen por ARRAY, así que una ruta con espacios funciona', { skip: SKIP }, () => {
-  // 🔴 Windows normal: C:\Program Files\sqlite3.exe. Con la versión vieja —que armaba una línea
-  // de shell— el binario ni se invocaba y la consulta devolvía null, que se leía como "limpio".
+  // 🔴 Windows normal: C:\Program Files\sqlite3.exe. Si se armara una línea
+  // de shell, el binario ni se invocaría y la consulta devolvería null, que se leería como "limpio".
   const dir = tmp();
   const conEspacios = path.join(dir, 'Program Files');
   fs.mkdirSync(conEspacios, { recursive: true });
@@ -346,7 +342,7 @@ test('harness-audit.js sigue corriendo como CLI, y como require no imprime nada'
     'el guard require.main es lo que permite testear los helpers sin disparar el scorecard entero');
 });
 
-// ── story 8.12, R3: el aviso diario importa desde scripts/lib/ y dice la ruta nueva ───────────────
+// ── el aviso diario importa desde scripts/lib/ y dice la ruta de ahí ───────────────
 
 const SCRIPTS = path.join(__dirname, '..');
 
@@ -385,10 +381,10 @@ test('T28 R3_HarnessAuditAutoheal_HooksRequireLib — los comandos que imprimen 
   assert.match(bench, /correr: node scripts\/lib\/harness-audit\.js --parity/);
 });
 
-// ── 2026-10-14: sin raíz de repos el aviso dice eso, no «¿base corrupta?» ───────────────────────────────────────
-// Caso real: una máquina Windows mudada a ~/.tycon quedó sin raíz de repos. El chequeo de la memoria nunca exportada
-// devuelve null sin raíz, y el aviso lo leía como «no se pudo leer la base de engram (¿base corrupta, permisos, sqlite3
-// roto?)» — con la base sana. Además el de chunks fuera del índice listaba un repo «(sin raíz)» como si fuera un hallazgo.
+// ── sin raíz de repos el aviso dice eso, no «¿base corrupta?» ───────────────────────────────────────
+// Una máquina sin raíz de repos: el chequeo de la memoria nunca exportada devuelve null sin raíz, y leerlo como
+// «no se pudo leer la base de engram (¿base corrupta, permisos, sqlite3 roto?)» acusa a una base sana. Además el de
+// chunks fuera del índice no debe listar un repo «(sin raíz)» como si fuera un hallazgo.
 test('sin raíz de repos: el aviso dice que no sabe dónde están los repos, y no culpa a la base de engram', { skip: SKIP }, () => {
   const raiz = tmp();
   const tcg = path.join(raiz, 'tcg');

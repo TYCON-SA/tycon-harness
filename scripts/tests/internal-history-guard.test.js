@@ -1,8 +1,7 @@
 'use strict';
 
 /**
- * internal-history-guard.test.js — el control de historia interna en la prosa que se publica (story 8.26, tanda G1 ·
- * AC 27 y 28 · T27 y T28).
+ * internal-history-guard.test.js — el control de historia interna en la prosa que se publica (T27 y T28).
  *
  * Lo que no se puede perder:
  *   · Que un commit que agrega una forma de historia interna a una guía no se cree (prendido), y que el mensaje diga el
@@ -464,8 +463,8 @@ test('InternalHistoryGuard_Team_TeamPath_WhatTheExporterWouldMark — una ruta d
 });
 
 // Lo que la publicación misma escribe en la copia (la lista blanca, `generated`: version.json) está en ella: una guía que
-// lo nombra no nombra un archivo del equipo. 🔴 rojo previo: banco 13618, grupo C — las guías y el skill de merge que
-// hablan de version.json salían como `team-path` (la copia se armaba sin lo generado).
+// lo nombra no nombra un archivo del equipo. Sin esto, las guías y el skill de merge que
+// hablan de version.json salen como `team-path`.
 test('InternalHistoryGuard_Team_TeamPath_GeneratedTargetIsInTheCopy — version.json, escrito al publicar, no es del equipo', () => {
   const l = teamLab();
   const guia = ['# Guía', '', 'La versión de la copia vive en `version.json`.', ''].join('\n');
@@ -552,7 +551,7 @@ test('InternalHistoryGuard_CountLine_WrittenWithoutTheText — cada corrida con 
   assert.strictEqual(lines[0].mode, 'warn');
   assert.strictEqual(lines[0].blocked, false);
   // sin el texto encontrado: los dos fragmentos se buscan FUERA de la hora (`ts`, con milésimas: «…:24.215Z» contiene
-  // «4.2» y la prueba salía roja de a ratos en public-ci) y las dos frases enteras, en todo el renglón
+  // «4.2» y la prueba saldría roja de a ratos) y las dos frases enteras, en todo el renglón
   const sinTexto = (linea) => {
     const { ts, ...resto } = linea;
     const todo = JSON.stringify(linea);
@@ -593,8 +592,7 @@ test('InternalHistoryGuard_All_StaleDeclarationIsReported — un dato declarado 
 });
 
 // La lista de datos declarados viaja tal cual a los dos repos, y cada modo ve rutas del equipo distintas. Una ruta que
-// acá no se puede ver no es una declaración colgada (pase adversarial de la tanda G2: en la copia pública, 32 de las 38
-// rutas declaradas daban esta prueba en rojo; y una carpeta local, sin versionar, no tenía salida en el del equipo).
+// acá no se puede ver no es una declaración colgada.
 test('InternalHistoryGuard_All_TeamPathDeclaration_OnlyStaleWhereItCanBeSeen — una ruta declarada sólo sobra donde el control la puede ver', () => {
   // cada ruta, declarada para un archivo distinto: así la prueba dice CUÁL sobra, no sólo cuántas
   const entry = (file, value) => ({ file, form: 'team-path', value, reason: 'prueba' });
@@ -615,7 +613,7 @@ test('InternalHistoryGuard_All_TeamPathDeclaration_OnlyStaleWhereItCanBeSeen —
   assert.deepStrictEqual(stale(t), ['guides/plan.md', 'guides/borrada.md'], 'en el del equipo no sobra la carpeta local; sí la que tiene versionada y la que ya no ve nadie');
 });
 
-// ══ T27 · lo que encontraron los revisores y el pase adversarial ═════════════════════════════════════════════════
+// ══ T27 · casos límite del control ═════════════════════════════════════════════════════════════════════════════
 
 test('InternalHistoryGuard_Scan_FormSplitByTheLineWrap_IsSeen — un párrafo cortado a lo ancho es un solo renglón', () => {
   const wrapped = ih.scan(j('Esto se hizo en la tanda', '\n', 'B2 y quedó así.\n'), 'prose');
@@ -769,7 +767,7 @@ test('InternalHistoryGuard_PathWithNewline_IsNotPrintedRaw — una ruta rara no 
   const r = guard(l);
   assert.strictEqual(r.code, 1, r.out);
   assert.ok(!/^##vso/m.test(r.out), `ningún renglón empieza con un comando del registro\n${r.out}`);
-  // los controles de la segunda tanda (U+0080 a U+009F: una terminal lee U+009B como el comienzo de una secuencia) y los
+  // los controles C1 (U+0080 a U+009F: una terminal lee U+009B como el comienzo de una secuencia) y los
   // separadores de línea de Unicode tampoco salen crudos
   const l2 = publicLab();
   stage(l2.repo, { [j('guides/x', '\u009b', '31m', '\u2028', '\u0085', 'y.md')]: `# X\n\n${RED['batch-code']}\n` });
@@ -964,7 +962,7 @@ test('InternalHistoryGuard_MdThatIsNotProse_SaysLookedZero_AndConfigChangeLooksA
   assert.ok(!/looked=0/.test(guard(l).stdout), 'tocar la configuración del control no pasa callado');
 });
 
-// ══ T27 · el repo del equipo: lo que encontró el pase adversarial ═════════════════════════════════════════════════
+// ══ T27 · el repo del equipo: casos límite ═════════════════════════════════════════════════════════════════════
 
 test('InternalHistoryGuard_Team_All_CountsWhatShips_RepeatedPieceOnce_RealLineOfIdenticalLines — la cuenta del repo del equipo', () => {
   const l = teamLab();
@@ -1105,7 +1103,7 @@ test('InternalHistoryGuard_SummaryLine_Always_AndTheRecordForWhatWasNotLooked �
   assert.match(said.stderr, /TYCON_INTERNAL_HISTORY=warn/, 'sin poder leer el modo escrito, que la variable lo deja en aviso se dice igual');
 });
 
-// El registro de frenos (story 8.26, tanda G3 · AC 56): con el control frenando, cada commit que tocó prosa que se
+// El registro de frenos: con el control frenando, cada commit que tocó prosa que se
 // publica deja su decisión donde el tablero cuenta las de todos los frenos. Sólo códigos: nunca el texto encontrado.
 test('InternalHistoryGuard_GuardRecord_EveryDecision_ByCode — cada decisión del commit queda en el registro de frenos', () => {
   const l = publicLab();
@@ -1298,7 +1296,7 @@ test('InternalHistoryGuard_GuardRecord_DecisionTable_Unit — la decisión de un
   }
 });
 
-// La validación de los pedidos es del privado (story 8.41, tanda F2): la copia pública no la trae, y ahí no hay paso que medir.
+// La validación de los pedidos es del privado: la copia pública no la trae, y ahí no hay paso que medir.
 const PR_YAML = path.join(RAIZ, 'pipelines/azure-pipelines-maintainers-pr.yml');
 const NO_PR_YAML = !fs.existsSync(PR_YAML) && 'NO MEDIDO — no está pipelines/azure-pipelines-maintainers-pr.yml (la copia pública no trae los pipelines del equipo)';
 
@@ -1356,7 +1354,7 @@ test('InternalHistoryGuard_PreCommitHook_RunsIt_StderrVisible_MissingScriptRejec
   assert.ok(!/2>\s*\/dev\/null/.test(block), 'nunca se tapa lo que el control dice');
   assert.match(block, /COMMIT RECHAZADO — historia interna/);
   // con el control frenando, que falte el guion en un clon del equipo es «no pude mirar»: el commit no se crea
-  // (el perfil del equipo con su nombre de hoy o el de antes: los dos dicen «clon del equipo»)
+  // (el perfil del equipo con su nombre actual o el anterior: los dos dicen «clon del equipo»)
   assert.match(block, /elif \[ -f "\$REPO_ROOT\/team-profile\.json" \] \|\| \[ -f "\$REPO_ROOT\/perfil-equipo\.json" \]; then\s*\n\s*echo "⛔ COMMIT RECHAZADO — historia interna: no pude mirar \(falta \$\{INTERNAL_HISTORY\}\)[^\n]*>&2\s*\n[\s\S]{0,500}?\n\s*exit 1\s*\n\s*fi/, 'si falta el guion en un clon del equipo, rechaza');
   assert.match(block, /guard-record\.js" --guard internal-history --rule could-not-look --verdict bloqueo >\/dev\/null 2>&1 \|\| true/, 'y el rechazo queda en el registro de frenos, sin cambiar la salida');
   assert.ok(!/no encontré \$\{INTERNAL_HISTORY\}/.test(block), 'ya no avisa y sigue');
@@ -1429,7 +1427,7 @@ test('InternalHistoryGuard_PreCommitHook_MissingScript_Live — sin el guion, un
   assert.match(team.out, /COMMIT RECHAZADO — historia interna: no pude mirar/);
   assert.strictEqual(team.commits, '0');
   assert.deepStrictEqual(team.records.map((x) => `${x.freno}:${x.regla}:${x.veredicto}`), ['internal-history:could-not-look:bloqueo'], 'el rechazo queda en el registro de frenos');
-  // con el perfil en su nombre de hoy, igual: es un clon del equipo
+  // con el perfil en su nombre actual, igual: es un clon del equipo
   const teamNew = run('team-profile.json');
   assert.notStrictEqual(teamNew.status, 0, `con team-profile.json y sin el guion, el commit no se crea\n${teamNew.out}`);
   assert.match(teamNew.out, /COMMIT RECHAZADO — historia interna: no pude mirar/);
@@ -1482,9 +1480,9 @@ test('InternalHistoryGuard_RealRepo_AllRuns_NoStaleDeclarations — sobre este r
   assert.deepStrictEqual(d.stale, [], 'una declaración que ya no hace falta, sale');
 });
 
-// ══ las guías y las portadas, en cero (tanda G2 · AC 26 · T26) ═══════════════════════════════════
+// ══ las guías y las portadas, en cero (T26) ═══════════════════════════════════
 
-// Lo que la tanda G2 deja en cero, por la ruta con que el control nombra cada archivo: en el repo del equipo un papel
+// Lo que queda en cero, por la ruta con que el control nombra cada archivo: en el repo del equipo un papel
 // figura con su ruta de `scripts/publishing/public-files/`; en el público, con la de su destino.
 const isGuideOrCover = (file) => /^guides\//.test(file) || /^(README|INSTALL|story-format)\.md$/.test(file)
   || /^(getting-started|\.github)\//.test(file) || /^scripts\/publishing\/public-files\//.test(file);
@@ -1508,10 +1506,9 @@ test('PublishedGuidesAndCovers_NoInternalHistory (T26) — ninguna guía ni port
   assert.ok(looked.filter((f) => f.startsWith('guides/')).length >= 30, `las guías están entre lo mirado (al menos 30: el piso prueba que miró, no cuenta las guías) (${looked.length} archivos)`);
 });
 
-// Esta es un SELLO, no una medición: lee la cuenta que la tanda dejó escrita y mira que sea coherente. El cero de hoy
-// lo vuelve a medir la prueba de arriba. Lo que el control no ve no se vuelve a contar acá a propósito: la decisión 13
-// (f) de la story dice que el control no lo cuida después de la tanda (un techo vivo sería una forma más, sin su
-// medición de falsos positivos).
+// Esta es un SELLO, no una medición: lee la cuenta escrita y mira que sea coherente. El cero actual
+// lo vuelve a medir la prueba de arriba. Lo que el control no ve no se vuelve a contar acá a propósito: un techo vivo
+// sería una forma más, sin su medición de falsos positivos.
 test('PublishedGuidesAndCovers_CountBeforeAfter (T26) — la cuenta de antes y después, por archivo, está escrita y cuadra', (t) => {
   if (!fs.existsSync(MEASUREMENT)) return t.skip('NO MEDIDO en la copia pública: la medición de la tanda no se publica');
   const file = path.join(MEASUREMENT, 'after-g2.json');
@@ -1523,7 +1520,7 @@ test('PublishedGuidesAndCovers_CountBeforeAfter (T26) — la cuenta de antes y d
   assert.strictEqual(m.after.total, 0, 'después: cero en guías y portadas');
   assert.deepStrictEqual(m.after.files, {}, 'después: ningún archivo con formas');
   for (const f of Object.keys(m.before.files)) assert.ok(isGuideOrCover(f), `${f}: la cuenta de la tanda es de guías y portadas`);
-  // lo que el control no ve a sabiendas (decisión 13 f): contado antes y después, y lo que queda dice por qué
+  // lo que el control no ve a sabiendas: contado antes y después, y lo que queda dice por qué
   assert.ok(m.unseen && m.unseen.before.total >= m.unseen.after.total, 'lo que el control no ve también se contó antes y después');
   assert.strictEqual((m.unseen.kept || []).reduce((a, k) => a + k.count, 0), m.unseen.after.total, 'cada aparición que queda está anotada');
   for (const k of m.unseen.kept || []) assert.ok(k.file && k.reason && k.count > 0, 'lo que queda: archivo, cuántas y motivo');
@@ -1561,7 +1558,7 @@ test('PublishedGuidesAndCovers_MeasurementScripts (T26) — los dos guiones de l
     ['finding', j('el hallazgo', ' #9'), 'un hallazgo'],
     ['asked', j('el dev', ' pidió que frene'), 'pausa para decisión del dev'],
     ['adversarial', j('el pase adversarial de', ' la tanda'), 'el pase adversarial'],
-    // las variantes de la misma clase que encontró el pase adversarial de la tanda (la primera lista las dejaba pasar)
+    // las variantes de la misma clase, que una lista corta dejaría pasar
     ['pass', j('en la ronda', ' 2 de revisores'), 'dos rondas consecutivas'],
     ['batchNumber', j('la Tanda', ' 2 queda cerrada'), 'por tanda'],
     ['substep', j('el registro', ' D.4 del plan'), 'el registro de incidentes'],
@@ -1621,11 +1618,11 @@ test('PublishedGuidesAndCovers_PublicLogPage (T26) — la página pública del r
   assert.deepStrictEqual(ih.scan(text, 'prose').map((f) => f.form), [], 'y ella misma no trae formas');
 });
 
-// ══ las skills, los revisores y los bloques, en cero (tanda G3 · AC 55 · T58) ═════════════════════
+// ══ las skills, los revisores y los bloques, en cero (T58) ═════════════════════
 
-// Lo que la tanda G3 deja en cero. En esos archivos el `.md` es la conducta: un revisor decide según su texto y el
-// pipeline hace lo que dicen sus pasos. Por eso la tanda no se mide sólo con la cuenta: las traducciones a Codex salen
-// del mismo texto, y el examen de los revisores corrió dos veces antes y dos después.
+// Lo que queda en cero. En esos archivos el `.md` es la conducta: un revisor decide según su texto y el
+// pipeline hace lo que dicen sus pasos. Por eso no alcanza con la cuenta: las traducciones a Codex salen
+// del mismo texto, y el examen de los revisores se corre dos veces antes y dos después de reescribir.
 const isSkillReviewerOrBlock = (file) => /^(agents|skills|claude-md-blocks|commands)\//.test(file);
 
 test('SkillsReviewersAndBlocks_NoInternalHistory (T58) — ninguna skill, revisor ni bloque que se publica trae una forma de historia interna', () => {
@@ -1636,13 +1633,13 @@ test('SkillsReviewersAndBlocks_NoInternalHistory (T58) — ninguna skill, reviso
   assert.deepStrictEqual(left, [], 'cada revisor, cada skill y cada bloque dice la regla y su porqué, sin el caso: el ejemplo de una salida va con marcador, y un dato se declara con su motivo');
   // y el cero no es un cero vacío: el control miró los revisores, los pasos del pipeline y los bloques
   const looked = d.paths.filter(isSkillReviewerOrBlock);
-  // (desde la 8.41 los revisores de un stack viven en su paquete, fuera del núcleo: en agents/ quedan los del núcleo)
+  // (los revisores de un stack viven en su paquete, fuera del núcleo: en agents/ quedan los del núcleo)
   assert.ok(looked.filter((f) => f.startsWith('agents/')).length >= 10, `los revisores están entre lo mirado (${looked.length} archivos)`);
   assert.ok(looked.filter((f) => f.startsWith('skills/tycon-pipeline/steps/')).length >= 12, 'los pasos del pipeline están entre lo mirado');
   assert.ok(looked.filter((f) => f.startsWith('claude-md-blocks/')).length >= 2, 'los bloques siempre cargados están entre lo mirado');
 });
 
-// Un SELLO, como el de la tanda anterior: lee la cuenta que la tanda dejó escrita y mira que sea coherente.
+// Un SELLO, como el de las guías: lee la cuenta escrita y mira que sea coherente.
 test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y después, por archivo, está escrita y cuadra', (t) => {
   if (!fs.existsSync(MEASUREMENT)) return t.skip('NO MEDIDO en la copia pública: la medición de la tanda no se publica');
   const file = path.join(MEASUREMENT, 'after-g3.json');
@@ -1657,8 +1654,8 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   assert.ok(m.unseen && m.unseen.before.total >= m.unseen.after.total, 'lo que el control no ve también se contó antes y después');
   assert.strictEqual((m.unseen.kept || []).reduce((a, k) => a + k.count, 0), m.unseen.after.total, 'cada aparición que queda está anotada');
   for (const k of m.unseen.kept || []) assert.ok(k.file && k.reason && k.count > 0, 'lo que queda: archivo, cuántas y motivo');
-  // la lista de ejemplos de salida (escrita antes de reescribir): cada archivo que tenía un ejemplo con número lo
-  // tiene hoy como marcador, no borrado ni con el número de vuelta
+  // la lista de ejemplos de salida: cada archivo con un ejemplo con número lo
+  // trae como marcador, no borrado ni con el número
   const examplesFile = path.join(MEASUREMENT, 'examples-g3.md');
   assert.ok(fs.existsSync(examplesFile), 'falta la lista de ejemplos de salida (examples-g3.md)');
   const withMarker = fs.readFileSync(examplesFile, 'utf8').split('\n')
@@ -1668,7 +1665,7 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   // por archivo, al menos tantos marcadores como renglones de la lista: borrar uno de sus ejemplos se ve
   const rows = {};
   for (const rel of withMarker) rows[rel] = (rows[rel] || 0) + 1;
-  // un revisor o una skill que la story 8.41 mudó a su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
+  // un revisor o una skill que vive en su paquete se busca ahí (packs/<p>/agents/, packs/<p>/skills/)
   const packsDir = path.join(RAIZ, 'packs');
   const where = (rel) => {
     if (fs.existsSync(path.join(RAIZ, rel))) return path.join(RAIZ, rel);
@@ -1686,7 +1683,7 @@ test('SkillsReviewersAndBlocks_CountBeforeAfter (T58) — la cuenta de antes y d
   for (const step of ['pipeline.js start', 'agente tycon-story-validator', 'skill bmad-dev-story', 'pipeline.js risk-class']) {
     assert.ok(toy.split(step).length >= 3, `«${step}» está en las dos corridas`);
   }
-  // lo que la tanda no pudo medir queda dicho, no callado
+  // lo que no se pudo medir queda dicho, no callado
   assert.ok(Array.isArray(m.notMeasured) && m.notMeasured.length > 0 && m.notMeasured.every((x) => x.what && x.why), 'lo que no se midió, con su motivo');
   const md = fs.readFileSync(path.join(MEASUREMENT, 'after-g3.md'), 'utf8');
   assert.ok(md.includes(String(m.before.total)), 'el papel de la cuenta dice el mismo total de antes');
@@ -1733,7 +1730,7 @@ test('SkillsReviewersAndBlocks_ExamVerdictsUnchanged (T58) — el examen de los 
   }
   assert.deepStrictEqual(changed, [], 'ningún caso cambia de veredicto en las dos pasadas de después contra las dos de antes');
   assert.deepStrictEqual([...(m.noise || [])].map((n) => n.case).sort(), noise.sort(), 'cada caso que contestó distinto entre pasadas está anotado como ruido');
-  // de cada revisor que la tanda tocó hay al menos un caso
+  // de cada revisor tocado hay al menos un caso
   const reviewers = new Set(cases.map(([key]) => key.split('::')[0]));
   for (const r of m.reviewers) assert.ok(reviewers.has(r), `${r}: tocado por la tanda y con casos en el examen`);
   assert.ok(m.reviewers.length >= 18, 'los revisores tocados están listados');

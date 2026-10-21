@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# harness-release-links.test.sh — la versión bajada con ENLACES (story 8.33): en Windows `~/.tycon/harness` y
+# harness-release-links.test.sh — la versión bajada con ENLACES: en Windows `~/.tycon/harness` y
 # `~/.tycon/previous` son uniones a `~/.tycon/versions/<v>/`, y cambiar de versión es cambiar los enlaces; ninguna
 # carpeta en uso se mueve. Así la actualización anda con otra sesión o un VS Code abiertos.
 #
-# En Mac y Linux esa forma NO se usa (decisión 2 de la story): estas pruebas la ejercitan con la variable SÓLO de pruebas
+# En Mac y Linux esa forma NO se usa: estas pruebas la ejercitan con la variable SÓLO de pruebas
 # `TYCON_RELEASE_LINKS=1`, con enlaces simbólicos en lugar de uniones. «Tomado» se simula con una envoltura de
 # `fs.renameSync` (precargada con NODE_OPTIONS) que falla con EPERM sobre las carpetas que nombra `TYCON_TEST_HELD`: en
-# posix un archivo abierto no traba un rename, y lo que la story protege es justamente el rename que en Windows falla.
+# posix un archivo abierto no traba un rename, y lo que se protege es justamente el rename que en Windows falla.
 # Lo que prueba la propiedad de verdad es el ensayo de Windows (182, escenario no-clone: T1 y T16).
 #
 # Lo que no se puede perder:
@@ -19,8 +19,8 @@
 #         (enchufes, CLAUDE.md, estado, configuración, copia fija, enlaces de ~/.claude) nombra versions/.
 #   T5  · Repair_LinkJournal_EveryStage — un corte en cada etapa de link-swap.json (y de la conversión) lo repara el
 #         arranque y bootstrap.js: queda una versión entera apuntada por harness, y lo dice. Un swap.json viejo se sigue
-#         reparando como hoy. (El respaldo de PowerShell, en el ensayo de Windows: T16.)
-#   T6  · OldBootstrapCopy_LeavesNewJournal — el respaldo en shell de ANTES de esta story no toca link-swap.json; el
+#         reparando igual. (El respaldo de PowerShell, en el ensayo de Windows: T16.)
+#   T6  · OldBootstrapCopy_LeavesNewJournal — el respaldo en shell de una copia fija vieja no toca link-swap.json; el
 #         arranque nuevo lo repara.
 #   T7  · Rollback_SwapsLinks_TwiceUndoes — rollback con la activa tomada intercambia los destinos y sale 0; un segundo
 #         rollback lo deshace; sin previous, dice install --version.
@@ -202,8 +202,8 @@ if corre T4; then
   harness_lab_publish_stable 2026.10.07.5
   out="$(harness_release update --yes 2>&1)"
   case "$out" in *"permití leer"*|*"saqué de"*) mal "UpdateClose_ReglasNuevasYSinCambios: sin reglas nuevas, el cierre de update igual habla de permisos: $out" ;; *) ok "UpdateClose_ReglasNuevasYSinCambios: sin reglas nuevas, el cierre de update no habla de permisos" ;; esac
-  # (pase adversarial, clase 5) el modo desarrollador y la vuelta: `link --managed` vuelve a ~/.tycon/harness, no a la
-  # carpeta numerada (con real() quedaban el estado y el lugar atados a la versión de ese momento)
+  # el modo desarrollador y la vuelta: `link --managed` vuelve a ~/.tycon/harness, no a la
+  # carpeta numerada (con real() quedarían el estado y el lugar atados a la versión de ese momento)
   harness_release link --local "$LAB_TREE" --allow-temporary >/dev/null 2>&1
   out="$(harness_release link --managed 2>&1)"; rc=$?
   [ "$rc" = 0 ] && [ "$(estado "d['tree']")" = "$T/harness" ] && [ "$(readlink "$LAB_HOME/.claude/$PLACE_NAME")" = "$T/harness" ] && ok "link --managed vuelve a ~/.tycon/harness (estado y lugar), no a versions/" || mal "link --managed: rc=$rc tree=$(estado "d['tree']") lugar → $(readlink "$LAB_HOME/.claude/$PLACE_NAME") — $out"
@@ -278,7 +278,7 @@ if corre T5; then
   node "$(PROGRAM)/bootstrap.js" startup >/dev/null 2>&1
   [ "$(destino "$T/harness")" = "$V2" ] && [ -e "$T/link-swap.json" ] && ok "un diario ilegible no toca nada y queda" || mal "diario ilegible: harness → $(destino "$T/harness")"
   rm -f "$T/link-swap.json"
-  # un swap.json viejo se sigue reparando como hoy (con su forma de carpetas reales)
+  # un swap.json viejo se repara igual (con su forma de carpetas reales)
   printf '{ "schema": 1, "stage": "done", "harness": "%s", "previous": "%s" }\n' "$T/harness" "$T/previous" > "$T/swap.json"
   harness_release startup >/dev/null 2>&1
   [ ! -e "$T/swap.json" ] && ok "un swap.json viejo («done») se sigue sacando" || mal "quedó el swap.json viejo"
@@ -296,7 +296,7 @@ if corre T6; then
   harness_lab_publish_stable 2026.10.07.2
   harness_release update --yes >/dev/null 2>&1
   V1="$T/versions/2026.10.07.1"; V2="$T/versions/2026.10.07.2"
-  # el respaldo en shell no cambia con esta story (decisión 2): el de la copia fija ES el de antes. Lo que se prueba es
+  # el respaldo en shell no cambia con los enlaces: el de la copia fija ES el de antes. Lo que se prueba es
   # que su bloque del diario (swap.json) no toca link-swap.json; en Windows, el .ps1 viejo lo prueba el ensayo (T16)
   OLD="$(PROGRAM)/bootstrap-fallback.sh"
   if [ -f "$OLD" ]; then
@@ -355,7 +355,7 @@ if corre T8; then
   renombro_versiones && mal "se renombró una carpeta de versions/" || ok "sin mover carpetas de versions/"
   out="$(harness_release update 2>&1)"
   case "$out" in *"ya falló"*) ok "no se reintenta sola" ;; *) mal "reintentó: $out" ;; esac
-  # (pase adversarial, clase 3) reinstalar esa versión con su carpeta vieja TOMADA: no se borra a medias; la nueva va al
+  # reinstalar esa versión con su carpeta vieja TOMADA: no se borra a medias; la nueva va al
   # lado, con sello
   printf 'un proceso la usa\n' > "$T/versions/2026.10.07.3/en-uso.txt"
   out="$(con_tomado "$T/versions/2026.10.07.3" harness install --version 2026.10.07.3 --yes 2>&1)"; rc=$?
@@ -370,7 +370,7 @@ if corre T10; then
   harness_lab_create "$BASE/lab10"
   harness_lab_release_server
   harness_lab_publish_stable 2026.10.07.1
-  # la máquina de hoy: sin la forma nueva (carpetas reales)
+  # la máquina sin la forma con enlaces (carpetas reales)
   harness_lab_release_fresh_home
   TYCON_RELEASE_LINKS=0 harness install --version latest --yes >/dev/null 2>&1
   harness_lab_publish_stable 2026.10.07.2
@@ -386,7 +386,7 @@ PY
   [ "$rc" = 0 ] && ok "trabada: el arranque sale 0" || mal "trabada: el arranque salió $rc: $out"
   [ -d "$T/harness" ] && [ ! -L "$T/harness" ] && [ "$(estado "d['version']['number']")" = 2026.10.07.2 ] && ok "la máquina sigue en .2 (harness/ real)" || mal "estado $(estado "d['version']['number']") harness $(destino "$T/harness")"
   [ -f "$T/versions/2026.10.07.3/.tycon-release.json" ] && ok "la versión nueva no se perdió: quedó en versions/2026.10.07.3" || mal "versions/: $(ls "$T/versions" 2>&1)"
-  # ajuste del dueño (2026-10-14, «molestar lo menos posible»): los primeros arranques trabados intentan en silencio
+  # los primeros arranques trabados intentan en silencio
   case "$out" in *[Cc]"errá"*) mal "el primer arranque trabado ya avisa (tiene que intentar en silencio): $out" ;; *) ok "el primer arranque trabado no avisa: intenta en silencio" ;; esac
   [ "$(estado "d['failed']")" = None ] && ok "sin failed (no es una versión rota)" || mal "quedó failed: $(estado "d['failed']")"
   [ "$(estado "d['link_convert']['attempts']")" = 1 ] && ok "el estado cuenta el intento" || mal "link_convert: $(estado "d.get('link_convert')")"
@@ -426,7 +426,7 @@ PY
   [ "$(estado "d['version']['number']")" = 2026.10.07.3 ] && [ "$(version_en "$T/harness")" = 2026.10.07.3 ] && [ "$(version_en "$T/previous")" = 2026.10.07.2 ] && ok "y aplicó la .3 (previous en la .2)" || mal "estado $(estado "d['version']['number']") harness $(version_en "$T/harness") previous $(version_en "$T/previous")"
   d="$(harness_release doctor 2>&1)"
   case "$d" in *"conversi"*"tomada"*) mal "doctor sigue diciendo la conversión trabada: $d" ;; *) ok "doctor ya no la dice" ;; esac
-  # (pase adversarial, clase 1) la conversión A MEDIAS: harness/ libre y previous/ tomada. No se actualiza hasta que las
+  # la conversión A MEDIAS: harness/ libre y previous/ tomada. No se actualiza hasta que las
   # dos sean enlaces (con previous todavía carpeta no habría a dónde volver), el aviso sale una vez; suelta, se completa
   harness_lab_release_fresh_home
   TYCON_RELEASE_LINKS=0 harness install --version 2026.10.07.2 --yes >/dev/null 2>&1
@@ -469,13 +469,13 @@ if corre T11; then
   for i in 2 3 4 5; do harness_lab_publish_stable "2026.10.07.$i"; harness_release update --yes >/dev/null 2>&1; done
   [ "$(destino "$T/harness")" = "$T/versions/2026.10.07.5" ] && [ "$(destino "$T/previous")" = "$T/versions/2026.10.07.4" ] || mal "el armado no dio harness .5 y previous .4"
   # .1 libre · .2 tomada · .3 nombrada por settings.json. Además settings.json nombra una versión .10 (que no está): la .1
-  # es PREFIJO de ese nombre y no por eso queda «nombrada» (pase adversarial, clase 4)
+  # es PREFIJO de ese nombre y no por eso queda «nombrada»
   python3 - "$TYCON_SETTINGS_PATH" "$T/versions/2026.10.07.3" "$T/versions/2026.10.07.10" <<'PY'
 import json,sys; p=sys.argv[1]; d=json.load(open(p))
 for v in sys.argv[2:]: d.setdefault("hooks",{}).setdefault("SessionStart",[]).append({"hooks":[{"type":"command","command":"node "+v+"/scripts/hooks/lab-hook.js"}]})
 json.dump(d,open(p,"w"),indent=2)
 PY
-  # (pase adversarial, clase 2) la misma casa escrita de otra forma (la ruta real, /private/var en vez de /var en Mac; en
+  # la misma casa escrita de otra forma (la ruta real, /private/var en vez de /var en Mac; en
   # Windows, otra caja): la activa y la anterior NO se ven libres
   REAL_T="$(cd "$T" && pwd -P)"
   if [ "$REAL_T" != "$T" ]; then

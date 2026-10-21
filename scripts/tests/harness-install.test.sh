@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# harness-install.test.sh — `harness.js install`, `install --from-existing` desde el aplicador, y `link` (story 8.13,
-# tanda A · T5, T9, T11).
+# harness-install.test.sh — `harness.js install`, `install --from-existing` desde el aplicador, y `link` (T5, T9, T11).
 #
 # Lo que no se puede perder:
 #   T5  · `install` desde un clon en cualquier carpeta deja: el enlace, el estado `managed` con DOS fuentes (o una si la raíz
@@ -21,61 +20,61 @@
 # aplicador de mentira; harness.js y scripts/lib REALES). Nunca ~/.claude, nunca el checkout real, nunca launchd real.
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 #
-#   T36 · (tanda D, AC 28) las tres piezas compartidas —cleanupPeriodDays, la variable de env y los comandos de barra— las
+#   T36 · las tres piezas compartidas —cleanupPeriodDays, la variable de env y los comandos de barra— las
 #         hace `harness.js` antes de lanzar el aplicador, con `TYCON_HARNESS_SHARED_DONE=1` para que él las saltee, y las
 #         anota en `managed`: `install` y `apply` las dejan, `apply` las repone, `uninstall --yes` las quita, un `rollback`
 #         ni las quita ni las duplica (tampoco con un aplicador viejo, que las reporta), `install --from-existing` no las
 #         hace, y sin settings.json corre primero el aplicador (su esqueleto trae `"$schema"`).
 #
-#   T29 · (story 8.18, AC 28) la máquina del equipo en la TRANSICIÓN: el clon del arnés empieza a traer skills/, agents/ y
+#   T29 · la máquina del equipo en la TRANSICIÓN: el clon del arnés empieza a traer skills/, agents/ y
 #         packs/ y el aplicador real, en cada arranque y con --check, dice lo mismo que antes, no mueve nada y no registra
 #         piezas nuevas; `doctor` lo dice una vez; una carpeta real que no es un clon de agent-skills sigue avisando.
-#   T30 · (story 8.18, AC 29) settings.json y ~/.codex/hooks.json quedan iguales, por nombre y por valor, antes y después;
+#   T30 · settings.json y ~/.codex/hooks.json quedan iguales, por nombre y por valor, antes y después;
 #         los hooks de la ruta fija ~/.claude/agent-skills y los enlaces de ~/.codex/skills, intactos.
 #         Las dos usan `harness_lab_team_machine … real` (el árbol de trabajo de verdad, historia de juguete unida).
-#   CANARY · (story 8.18, AC 12: la parte del instalador de T11) las seis suites rápidas que el aplicador corre en cada
+#   CANARY · (la parte del instalador de T11) las seis suites rápidas que el aplicador corre en cada
 #         arranque salen de donde diga la regla de `scripts/lib/skills-dir.js` (la variable › el propio clon si es unido ›
 #         lo instalado): con una de ellas ROTA sólo en un clon de trabajo y un agent-skills instalado verde, el aplicador
 #         de ese clon da rojo y la línea dice de qué raíz salió. Y el espejo: lo que ESCRIBE (los hooks de settings.json)
-#         sigue nombrando lo instalado, también con `TYCON_SKILLS_DIR` puesta. Sin skills en ningún lado, sale 1 como hoy.
-#   LAB · (story 8.18) el propio laboratorio de la máquina del equipo, en sus dos variantes: historia unida de verdad, la
+#         sigue nombrando lo instalado, también con `TYCON_SKILLS_DIR` puesta. Sin skills en ningún lado, sale 1.
+#   LAB · el propio laboratorio de la máquina del equipo, en sus dos variantes: historia unida de verdad, la
 #         forma de la máquina, el corte y el retorno. Lo usan T29, T30 y las pruebas de la llave.
-#   T37 · (story 8.18, AC 36) la máquina NUEVA: una HOME vacía, UN clon del repo unido y `harness.js install` → una
+#   T37 · la máquina NUEVA: una HOME vacía, UN clon del repo unido y `harness.js install` → una
 #         fuente, los cuatro enlaces, las skills de terceros restituidas desde la historia local (sin red), `doctor` sin
 #         rojos y ningún hook registrado dos veces, se llame al aplicador por la carpeta del clon o por el enlace
 #         `~/.claude/tycon-claude-guides` (en los dos órdenes). Un clon sin `skills/` y sin agent-skills: sale 1 con una
 #         línea y no escribe nada. Usa el árbol de trabajo de verdad con la HISTORIA de verdad (un clon `--shared` del
 #         repo bajo prueba): las skills de terceros salen de ahí. En un clon recortado esa parte sale NO MEDIDO.
-#   T39 · (story 8.18, AC 36) los papeles del alta, por su texto: `INSTALL.md` y `onboarding/` piden clonar UN repo y
+#   T39 · los papeles del alta, por su texto: `INSTALL.md` y `onboarding/` piden clonar UN repo y
 #         correr el instalador; ninguna línea manda clonar agent-skills ni crear un enlace a mano.
 #
-#   S16 · (story 8.16, tanda A · AC 8 y 9) el cierre de `install`: qué quedó contado por tipo desde el reporte del
+#   S16 · el cierre de `install`: qué quedó contado por tipo desde el reporte del
 #         aplicador (y cuántos hooks pueden frenar, según `scripts/setup/install-effects.json`), cada línea de aviso del
 #         aplicador tal cual, dónde quedó la copia de respaldo y cómo volver, el registro y tres líneas de «qué sigue». La
 #         segunda corrida dice «sin cambios» y repite la copia de antes de instalar. Si el aplicador o la salud fallan:
 #         «quedó a medias», el registro, la copia y las dos salidas, sin «qué sigue». `startup` sigue en una línea.
 #
-#   T79 · (story 8.26, tanda H1c · AC 65 e) el aviso de la carpeta GLOBAL de hooks de git, con el aplicador real: calla
+#   T79 · el aviso de la carpeta GLOBAL de hooks de git, con el aplicador real: calla
 #         si es la que el instalador llena (también por un enlace, con `~` o desde un archivo incluido), avisa con las dos
 #         rutas y el comando si es otra, tiene su aviso si no existe, dice «no pude comparar» si es relativa, y nunca
 #         cambia la configuración de git.
 #
-#   HP  · (2026-10-14) la carpeta GLOBAL de hooks de git la pone `harness.js`, no sólo la avisa: el caso de una máquina
+#   HP  · la carpeta GLOBAL de hooks de git la pone `harness.js`, no sólo la avisa: el caso de una máquina
 #         instalada desde la versión bajada o mudada desde un clon, con los hooks del arnés en ~/.git-hooks y git sin
-#         carpeta global — `doctor` mandaba a `apply` y el aviso seguía igual. Con el aplicador real: `install` y `apply`
+#         carpeta global (sin esto, `doctor` manda a `apply` y el aviso sigue igual). Con el aplicador real: `install` y `apply`
 #         la ponen si git no tiene ninguna (y `doctor` deja de avisar); el arranque no; otra carpeta, el interruptor de los
 #         hooks de git y un git que no deja escribir no se pisan; el perfil mínimo y `uninstall` la sacan sólo si sigue
 #         siendo la que puso el arnés.
 #
 # Uso: bash scripts/tests/harness-install.test.sh [--only T5|T9|T11|T12|T36|LAB|T29|T30|CANARY|T37|T39|S16|S16B|REG|RELOCATE|T79|HP]
-#   S16B · (story 8.16, tanda B · AC 44, T27) fuera de `install`, nada pregunta nada nuevo: el aplicador suelto,
-#         `startup`, `apply`, `rollback` y `uninstall` sin terminal hacen lo de siempre. Desde la tanda B toda llamada a
+#   S16B · fuera de `install`, nada pregunta nada nuevo: el aplicador suelto,
+#         `startup`, `apply`, `rollback` y `uninstall` sin terminal hacen lo de siempre. Toda llamada a
 #         `install` sin terminal de esta suite pasa `--yes` escrita acá (el ayudante `harness` no lo agrega solo).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$RAIZ/scripts/tests/lib/harness-lab.sh"
 ONLY=""; [ "${1:-}" = "--only" ] && ONLY="${2:-}"
-# los dos nombres del lugar del arnés (story 8.19), de su constante
+# los dos nombres del lugar del arnés, de su constante
 PLACE_NAME="$(node -e 'process.stdout.write(require(process.argv[1]).PLACE_NAME)' "$RAIZ/scripts/setup/harness/place.js")"
 LEGACY_PLACE_NAME="$(node -e 'process.stdout.write(require(process.argv[1]).LEGACY_PLACE_NAME)' "$RAIZ/scripts/setup/harness/place.js")"
 corre() { [ -z "$ONLY" ] || [ "$ONLY" = "$1" ]; }
@@ -111,7 +110,7 @@ if corre T5; then
   harness_lab_create "$BASE/t5" >/dev/null
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "T5 install sale 0" || mal "T5 install salió $RC: $SALIDA"
-  # story 8.19: el lugar ~/.claude/tycon-harness apunta al clon; desde la tanda C una máquina nueva no recibe el nombre viejo
+  # el lugar ~/.claude/tycon-harness apunta al clon; una máquina nueva no recibe el nombre viejo
   ENLACE="$LAB_HOME/.claude/$PLACE_NAME"; VIEJO="$LAB_HOME/.claude/$LEGACY_PLACE_NAME"
   [ -L "$ENLACE" ] && [ "$(cd "$ENLACE" && pwd -P)" = "$(cd "$LAB_TREE" && pwd -P)" ] && ok "T5 el lugar apunta al clon" || mal "T5 el lugar no apunta al clon: $(readlink "$ENLACE" 2>&1)"
   [ ! -e "$VIEJO" ] && [ ! -L "$VIEJO" ] && ok "T5 una máquina nueva no recibe el nombre viejo (tanda C)" || mal "T5 el nombre viejo apareció en una máquina nueva: $(readlink "$VIEJO" 2>&1)"
@@ -164,7 +163,7 @@ if corre T5; then
   done
 fi
 
-# ═══ T12 · Writers_EitherImportPresent_LinkPiecesOnlyForLinks (story 8.19, AC 11) ════════════════════════════════════
+# ═══ T12 · Writers_EitherImportPresent_LinkPiecesOnlyForLinks ════════════════════════════════════
 # Los que ESCRIBEN no duplican: `install` da por presente la línea `@…/README.md` escrita con CUALQUIERA de los dos
 # nombres del lugar, y la pieza `link` se anota sólo por un nombre que ES un enlace (una carpeta real en el lugar —quien
 # clonó ahí— no es pieza). La tercera ruta del aplicador (por el lugar: `added: 0`) está en T37.
@@ -189,8 +188,8 @@ if corre T12; then
   ln -s "$LAB_TREE" "$LAB_HOME/.claude/$PLACE_NAME"; ln -s "$LAB_HOME/.claude/$PLACE_NAME" "$LAB_HOME/.claude/$LEGACY_PLACE_NAME"
   PIEZAS="$(node "$RAIZ/scripts/lib/canonical-path.js" --place-pieces --home "$LAB_HOME" | cut -f3 | tr '\n' ',')"
   [ "$PIEZAS" = "$PLACE_NAME,$LEGACY_PLACE_NAME," ] && ok "T12 los dos nombres como enlaces: dos piezas link (ids $PLACE_NAME y $LEGACY_PLACE_NAME)" || mal "T12 piezas con los dos enlaces: «${PIEZAS}»"
-  # (segunda vuelta, C4) `install` explícito fija el árbol: el lugar nace hacia el clon que se instala, no hacia el árbol
-  # viejo del estado (si no, el estado decía un árbol y el lugar otro, y doctor quedaba en rojo)
+  # `install` explícito fija el árbol: el lugar nace hacia el clon que se instala, no hacia el árbol
+  # viejo del estado (si no, el estado diría un árbol y el lugar otro, y doctor quedaría en rojo)
   harness_lab_create "$BASE/t12-install-tree" >/dev/null
   harness install --yes >/dev/null 2>&1
   OTHER="$BASE/t12-otro-arbol"; mkdir -p "$OTHER/scripts"; : > "$OTHER/scripts/install-tycon-hooks.sh"
@@ -211,11 +210,11 @@ fi
 if corre T9; then
   harness_lab_create "$BASE/t9" >/dev/null
   # el clon «existente» de un dev: una copia compartida del repo bajo prueba, en main, sin commits propios, con los archivos
-  # de trabajo de esta tanda encima (harness.js y compañía todavía no están commiteados)
+  # de trabajo encima (harness.js y compañía pueden estar sin commitear)
   DEV="$BASE/t9/clones/dev"
   # el «origin» de esos clones es una copia propia de la prueba con `main` y una rama de trabajo EXPLÍCITAS: no depende de
-  # las ramas del repo que corre la prueba (el agente de la CI lo baja con HEAD suelto y sin `main` local, y ahí T9 daba
-  # «couldn't find remote ref refs/heads/main» y «(sin rama)» — CI de main 11561 y 11565, 2026-10-02)
+  # las ramas del repo que corre la prueba (el agente de la CI lo baja con HEAD suelto y sin `main` local, y ahí T9 daría
+  # «couldn't find remote ref refs/heads/main» y «(sin rama)»)
   T9_ORIGIN="$BASE/t9-origin"; T9_RAMA="lab-work"
   harness_lab_git "$BASE" clone -q --shared "$RAIZ" "$T9_ORIGIN" >/dev/null 2>&1
   harness_lab_git "$T9_ORIGIN" checkout -q -B main >/dev/null 2>&1
@@ -259,8 +258,8 @@ if corre T9; then
   [ ! -f "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json" ] && ok "T9 con TYCON_NO_AUTOINSTALL=1 no se crea el estado" || mal "T9 NO_AUTOINSTALL creó el estado"
 
   # clon en otra rama, y clon con commit propio: managed igual; update no toca y avisa
-  # la rama de trabajo EXISTE en origin (la del clon bajo prueba): antes la prueba usaba una rama sólo local, el fetch
-  # fallaba y el «rama» que buscaba aparecía de casualidad en el error (pase adversarial, clase 1)
+  # la rama de trabajo EXISTE en origin (la del clon bajo prueba): con una rama sólo local, el fetch
+  # falla y el «rama» que busca aparece de casualidad en el error
   RAMA_ORIGIN="$T9_RAMA"
   for caso in rama commit; do
     harness_lab_create "$BASE/t9-$caso" >/dev/null; DEV="$BASE/t9-$caso/clones/dev"
@@ -270,7 +269,7 @@ if corre T9; then
     [ "$(estado "d['mode']")" = managed ] && ok "T9 clon con $caso: managed igual" || mal "T9 clon con $caso: mode=$(estado "d['mode']")"
     [ "$(estado "d['sources'][0]['ref']")" = main ] && [ "$(estado "d['sources'][0]['rewrites']")" = False ] && ok "T9 clon con $caso: la fuente sigue main y no se reescribe" || mal "T9 clon con $caso: ref=$(estado "d['sources'][0]['ref']") rewrites=$(estado "d['sources'][0]['rewrites']")"
     ANTES="$(harness_lab_git "$DEV" rev-parse HEAD)"; RAMA_ANTES="$(harness_lab_git "$DEV" rev-parse --abbrev-ref HEAD)"
-    # tanda D (AC 26): con la política en `ask`, `update --yes` pide una terminal; esta prueba corre sin ella, así que
+    # con la política en `ask`, `update --yes` pide una terminal; esta prueba corre sin ella, así que
     # va con la aplicación en `auto` (lo que mide es que un clon en otra rama o con un commit propio no se toca)
     SALIDA="$(TYCON_UPDATE_APPLY=auto node "$DEV/scripts/setup/harness.js" update --yes < /dev/null 2>&1)"; RC=$?
     [ "$(harness_lab_git "$DEV" rev-parse HEAD)" = "$ANTES" ] && [ "$(harness_lab_git "$DEV" rev-parse --abbrev-ref HEAD)" = "$RAMA_ANTES" ] && ok "T9 clon con $caso: update no movió el clon ni de commit ni de rama" || mal "T9 clon con $caso: update movió el clon ($(harness_lab_git "$DEV" rev-parse --abbrev-ref HEAD))"
@@ -292,8 +291,8 @@ if corre T11; then
   harness link --managed >/dev/null 2>&1
   # un clon propio con cambios sin commitear: developer, el enlace re-apuntado, tree_before guardado.
   # Tiene que vivir FUERA de las carpetas temporales (harness.js las rechaza: /tmp, /private/tmp, $TMPDIR…). En Linux
-  # —el agente de la CI— el laboratorio entero cae bajo /tmp, y ahí T11 rechazaba hasta al clon «propio» (CI de main
-  # 11568, 2026-10-02): en ese caso va al lado del repo bajo prueba o, si ése también es temporal, al HOME real; se
+  # —el agente de la CI— el laboratorio entero cae bajo /tmp, y ahí T11 rechazaría hasta al clon «propio»: en ese caso
+  # va al lado del repo bajo prueba o, si ése también es temporal, al HOME real; se
   # borra al salir.
   DEVC="$LAB/clones/dev"
   temporal() { case "$(cd "$1" && pwd -P)/" in /tmp/*|/private/tmp/*|"$(cd "${ORIG_TMPDIR:-/tmp}" 2>/dev/null && pwd -P)"/*) return 0 ;; esac; return 1; }
@@ -323,14 +322,14 @@ if corre T11; then
   [ "$RC" = 0 ] && [ "$(estado "d['mode']")" = managed ] && [ "$(cd "$LAB_HOME/.claude/$PLACE_NAME" && pwd -P)" = "$(cd "$LAB_TREE" && pwd -P)" ] && ok "T11 link --managed vuelve sobre tree_before" || mal "T11 link --managed: rc $RC mode=$(estado "d['mode']") enlace=$(readlink "$LAB_HOME/.claude/$PLACE_NAME") — $SALIDA"
 fi
 
-# ═══ T36 · Applier_Standalone_StillDoesFourPieces_SkipsUnderHarness — el lado de harness.js (tanda D · AC 28) ═════════
+# ═══ T36 · Applier_Standalone_StillDoesFourPieces_SkipsUnderHarness — el lado de harness.js ═════════
 # Las tres piezas compartidas (cleanupPeriodDays, la variable de env, los comandos de barra) las hace `harness.js` ANTES
 # de lanzar el aplicador, se lo avisa con TYCON_HARNESS_SHARED_DONE=1 y las anota en `managed`. El lado del `.sh` real
 # (las saltea bajo la variable, las hace con sólo el candado) está en installer-shared-pieces.test.sh (S11).
-# 🔴 rojo previo (medido con el harness.js de antes del enganche y el aplicador de juguete ya honrando la variable): el
-#    aplicador corría con `shared_done=` vacío y las hacía él; sin «piezas compartidas» en el registro; con un aplicador
-#    que no las hace (el `.ps1` de hoy) no quedaban en la máquina ni en `managed`; y —con `runApplier` ya enganchado y
-#    rollback.js sin tocar— el rollback QUITABA de la máquina las piezas que harness.js acababa de hacer («quitada (esta
+# 🔴 Sin el enganche de harness.js (el aplicador de juguete ya honra la variable): el
+#    aplicador corre con `shared_done=` vacío y las hace él; sin «piezas compartidas» en el registro; con un aplicador
+#    que no las hace (el `.ps1`) no quedan en la máquina ni en `managed`; y —con `runApplier` ya enganchado y
+#    rollback.js sin tocar— el rollback QUITA de la máquina las piezas que harness.js acaba de hacer («quitada (esta
 #    versión ya no la trae): setting cleanupPeriodDays»).
 if corre T36; then
   VAR_ENV="CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR"
@@ -380,7 +379,7 @@ PY
   LAB_APPLIER_OLD=1 harness apply >/dev/null 2>&1; RC=$?
   [ "$RC" = 0 ] && [ "$(shared_managed)" = "$SHARED_WANT" ] && [ "$(no_repeats)" = True ] && ok "T36 con un aplicador que también las reporta (uno viejo), el registro no las duplica" || mal "T36 aplicador viejo (rc $RC): managed $(shared_managed)"
 
-  # (d) rollback: ni las quita ni las duplica — con el aplicador de ahora y con uno viejo
+  # (d) rollback: ni las quita ni las duplica — con el aplicador actual y con uno viejo
   harness_lab_publish tree "v2" VERSION 2
   SALIDA="$(TYCON_UPDATE_APPLY=auto harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(shared_managed)" = "$SHARED_WANT" ] && ok "T36 update: las piezas compartidas siguen en el registro" || mal "T36 update (rc $RC): $SALIDA · managed $(shared_managed)"
@@ -430,7 +429,7 @@ PY
   harness apply >/dev/null 2>&1
   case "$(last_run)" in *" shared_done=1 "*) ok "T36 (espejo) con settings.json presente, el aplicador corre avisado" ;; *) mal "T36 (espejo) settings.json presente y sin aviso: $(last_run)" ;; esac
   # un settings.json que el módulo no puede tocar (su `env` no es un objeto): harness.js NO avisa —no las hizo—, aunque la
-  # variable venga heredada: las hace el aplicador, como hoy
+  # variable venga heredada: las hace el aplicador
   printf '{"hooks": {}, "env": "x"}\n' > "$TYCON_SETTINGS_PATH"
   TYCON_HARNESS_SHARED_DONE=1 harness apply >/dev/null 2>&1; RC=$?
   case "$(last_run)" in *" shared_done= "*) ok "T36 si harness.js no pudo hacerlas, no avisa (ni con la variable heredada): quedan para el aplicador" ;; *) mal "T36 harness.js avisó sin haberlas hecho: $(last_run)" ;; esac
@@ -438,7 +437,7 @@ PY
 
   # (i) TYCON_NO_AUTOINSTALL=1 apaga al aplicador entero (sale sin escribir nada): harness.js tampoco hace por él las
   #     piezas compartidas. El espejo: sin el interruptor, las repone.
-  # 🔴 rojo previo: con el interruptor puesto harness.js escribía igual cleanupPeriodDays, la variable y el comando
+  # 🔴 Sin respetar el interruptor, harness.js escribe igual cleanupPeriodDays, la variable y el comando
   #    («T36 con TYCON_NO_AUTOINSTALL=1 harness.js hizo igual las piezas compartidas»).
   printf '{\n  "hooks": {}\n}\n' > "$TYCON_SETTINGS_PATH"; rm -rf "$LAB_HOME/.claude/commands"
   H1="$(sha_de "$TYCON_SETTINGS_PATH")"
@@ -449,10 +448,10 @@ PY
   harness apply >/dev/null 2>&1
   in_machine && ok "T36 (espejo) sin el interruptor, apply las repone" || mal "T36 (espejo) sin el interruptor apply no las repuso: $(cat "$TYCON_SETTINGS_PATH" | tr -d '\n ')"
 
-  # (j) el registro no miente sobre la causa (revisión de la tanda D): «sin shared.js en esta versión» sólo cuando el
+  # (j) el registro no miente sobre la causa: «sin shared.js en esta versión» sólo cuando el
   #     módulo de verdad no está; si está y falla, dice que FALLÓ y con qué. En los dos casos las hace el aplicador.
-  # 🔴 rojo previo: con un shared.js presente que tira, el registro decía «piezas compartidas: sin shared.js en esta
-  #    versión (rota a propósito)…»: apuntaba a una causa falsa.
+  # 🔴 Con un shared.js presente que tira, un registro engañoso diría «piezas compartidas: sin shared.js en esta
+  #    versión (rota a propósito)…»: apuntaría a una causa falsa.
   lab36 "$BASE/t36j"
   harness install --yes >/dev/null 2>&1 || mal "T36 (j) install previo falló"
   HARNESS_LOG="$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"
@@ -470,7 +469,7 @@ PY
   harness apply >/dev/null 2>&1; RC=$?
   [ "$RC" = 0 ] && grep -q 'piezas compartidas: applyShared falló' "$HARNESS_LOG" && grep -q 'no-existe-lab.js' "$HARNESS_LOG" && ! grep -q 'sin shared.js' "$HARNESS_LOG" \
     && ok "T36 un shared.js al que le falta una dependencia suya: «falló», nombrando lo que falta" || mal "T36 shared.js sin su dependencia (rc $RC): $(grep 'piezas compartidas' "$HARNESS_LOG" 2>&1 | cut -c1-300)"
-  # espejo: sin el módulo (un árbol de antes de la tanda D), el mensaje de siempre
+  # espejo: sin el módulo (un árbol que no lo trae), el mensaje de siempre
   rm -f "$SHARED_JS"
   : > "$HARNESS_LOG"
   harness apply >/dev/null 2>&1; RC=$?
@@ -491,7 +490,7 @@ PY
   [ "$RC" = 0 ] && in_machine && [ "$(shared_managed)" = "$SHARED_WANT" ] && ok "T36 (espejo) el arranque siguiente las hace y las anota" || mal "T36 (espejo) startup (rc $RC): managed $(shared_managed)"
 fi
 
-# ═══ LAB · la máquina del equipo de laboratorio (story 8.18, tramo 3) ═════════════════════════════════════════════════
+# ═══ LAB · la máquina del equipo de laboratorio ═════════════════════════════════════════════════
 # Lo que las pruebas del carril dan por cierto de `harness_lab_team_machine` (scripts/tests/lib/harness-lab.sh), en sus dos
 # variantes: historia UNIDA de verdad (el repo unido contiene los commits del viejo: el clon viejo avanza en línea recta),
 # la forma de la máquina (clon real con cosas sin versionar, ignoradas y un stash; los enlaces a su interior), y el corte
@@ -546,13 +545,13 @@ if corre LAB; then
   [ "$RC" = 2 ] && ok "LAB (error) una variante que no existe sale 2" || mal "LAB variante desconocida: rc $RC: $SALIDA"
 fi
 
-# ═══ T29 · Transition_TeamMachine_SilentEveryStartup_UnknownFolderStillWarns (story 8.18, AC 28) ══════════════════════
-# La máquina del equipo de hoy —~/.claude/agent-skills es un clon real del repo viejo; skills y agents, enlaces a su
-# interior— el día que el clon del arnés empieza a traer skills/, agents/ y packs/ (porque `main` ahora los trae). El
+# ═══ T29 · Transition_TeamMachine_SilentEveryStartup_UnknownFolderStillWarns ══════════════════════
+# La máquina del equipo —~/.claude/agent-skills es un clon real del repo viejo; skills y agents, enlaces a su
+# interior— el día que el clon del arnés empieza a traer skills/, agents/ y packs/ (porque `main` los trae). El
 # aplicador REAL, corrido como en cada arranque: lo que imprime tiene que ser, línea por línea, lo que imprimía con el
 # clon de antes; nada se mueve; ninguna pieza nueva; `doctor` lo dice una vez. Y una carpeta real que no es un clon de
 # agent-skills sigue avisando.
-# 🔴 rojo previo (medido sobre la base, 2026-10-04): tres líneas más en CADA corrida, también con --check —«en
+# 🔴 Sin el arreglo, hay tres líneas más en CADA corrida, también con --check —«en
 #    ~/.claude/agent-skills hay una carpeta real, no un enlace: no la piso» y dos «el enlace … apunta a otro lado que
 #    sirve … no lo muevo»—, y `doctor` sin decir nada de los dos clones.
 if corre T29; then
@@ -600,7 +599,7 @@ links = sorted(i for k, w, i in after if k == "link")
 print("%d new=%s gone=%s links=%s" % (len(after), sorted(after - before), sorted(before - after), ",".join(links)))
 PY
 )"
-  # (story 8.19: los enlaces del arnés son los dos nombres de su lugar, el lugar y el viejo, cada uno su pieza `link`)
+  # (los enlaces del arnés son los dos nombres de su lugar, el lugar y el viejo, cada uno su pieza `link`)
   case "$PIECES" in *" new=[] gone=[] links=$LEGACY_PLACE_NAME,$PLACE_NAME") ok "T29 no registra piezas nuevas: las mismas que antes del corte, y los únicos enlaces son los dos nombres del lugar (${PIECES%% *} piezas)" ;; *) mal "T29 las piezas cambiaron: $PIECES" ;; esac
   DOCTOR="$(harness_lab_isolated harness doctor 2>&1)"
   [ "$(printf '%s\n' "$DOCTOR" | grep -c 'dos clones: en transición')" = 1 ] && printf '%s\n' "$DOCTOR" | grep 'dos clones: en transición' | grep '^  ✓ ' >/dev/null \
@@ -631,7 +630,7 @@ PY
   else mal "T29 el .sh y el .ps1 no delegan los enlaces igual, o escriben las líneas de la transición por su cuenta"; fi
 fi
 
-# ═══ T30 · Transition_HooksSameByNameAndValue_CodexLinksUntouched (story 8.18, AC 29) ══════════════════════════════════
+# ═══ T30 · Transition_HooksSameByNameAndValue_CodexLinksUntouched ══════════════════════════════════
 # settings.json y ~/.codex/hooks.json, antes y después de que el clon del arnés traiga skills/: los mismos hooks, por
 # nombre y por valor; los que nombran la ruta fija ~/.claude/agent-skills siguen nombrándola; y los enlaces de
 # ~/.codex/skills que ya estaban no se tocan. El desplegador de hooks de Codex escribe la ruta que le da
@@ -668,17 +667,17 @@ for c in sorted(c.get("command","") for ev in s.get("hooks",{}).values() for h i
   fi
 fi
 
-# ═══ CANARY · Installer_FastSuites_RunOwnClone_WritesInstalled (story 8.18, AC 12 · la parte del instalador de T11) ════
-# El aplicador corre en cada arranque seis suites rápidas de las skills («la capa determinista»). Las buscaba en una
-# ruta escrita, ~/.claude/agent-skills/skills: corrido desde un clon de trabajo del repo unido corría las INSTALADAS y
-# daba verde sin haber probado el cambio. Ahora las busca por la regla de scripts/lib/skills-dir.js (la variable › el
+# ═══ CANARY · Installer_FastSuites_RunOwnClone_WritesInstalled (la parte del instalador de T11) ════
+# El aplicador corre en cada arranque seis suites rápidas de las skills («la capa determinista»). Si las buscara en una
+# ruta escrita, ~/.claude/agent-skills/skills, corrido desde un clon de trabajo del repo unido correría las INSTALADAS y
+# daría verde sin haber probado el cambio. Las busca por la regla de scripts/lib/skills-dir.js (la variable › el
 # propio clon si es unido › lo instalado) y la línea del rojo dice de qué raíz salieron.
-# El espejo (hallazgo I12 de la revisión adversarial): lo que el aplicador ESCRIBE en la máquina —los hooks de
+# El espejo: lo que el aplicador ESCRIBE en la máquina —los hooks de
 # settings.json— sigue nombrando lo instalado: corrido desde un clon de trabajo, y también con TYCON_SKILLS_DIR puesta
 # (la variable dice de dónde LEER; no re-apunta los hooks de una máquina a un clon que mañana se borra).
-# Y el error: sin skills en ningún lado, sale 1 con la línea de siempre y sin escribir nada, como hoy.
-# 🔴 rojo previo (medido sobre 4e0c60a7, 2026-10-04): con la canario rota SÓLO en el clon de trabajo el aplicador no
-#    decía nada (corría la instalada, verde); la línea del rojo no decía de qué raíz había salido; y con la variable
+# Y el error: sin skills en ningún lado, sale 1 con la línea de siempre y sin escribir nada.
+# 🔴 Sin el arreglo, con la canario rota SÓLO en el clon de trabajo el aplicador no
+#    dice nada (corre la instalada, verde); la línea del rojo no dice de qué raíz salió; y con la variable
 #    apuntando al clon de trabajo seguía corriendo la instalada.
 if corre CANARY; then
   CANARY_REL="skills/tycon-pipeline/scripts/tests/ledger-honesty.test.js"   # una de las seis suites rápidas
@@ -776,7 +775,7 @@ for c in sorted(c.get("command","") for ev in s.get("hooks",{}).values() for h i
   else mal "CANARY el .sh o el .ps1 todavía traen la ruta de las skills escrita, o no le preguntan a skills-dir.js con --installed"; fi
 fi
 
-# ═══ T37 · NewMachine_OneClone_OneSource_ThreeLinks_ThirdPartyOffline (story 8.18, AC 36) ═════════════════════════════
+# ═══ T37 · NewMachine_OneClone_OneSource_ThreeLinks_ThirdPartyOffline ══════════════════════════════════════════════════
 # La máquina NUEVA después del corte: una HOME vacía (ni `.claude` trae), UN clon del repo unido en la carpeta que elige
 # el dev, y `node <clon>/scripts/setup/harness.js install`. Lo que tiene que quedar: una fuente, los cuatro enlaces
 # (el arnés y `agent-skills` → el clon; `skills` y `agents` → adentro), las skills de terceros en su lugar
@@ -786,10 +785,10 @@ fi
 # El laboratorio: un clon `--shared` del repo bajo prueba con su árbol de trabajo commiteado encima —así lleva la
 # HISTORIA de verdad, de la que salen las skills de terceros—, y de ése se clona cada máquina. Todo git, por
 # harness_lab_git; lo que el aplicador saca a la red, apagado (harness_lab_isolated); git, sólo con rutas locales.
-# 🔴 rojo previo (medido sobre la base, 2026-10-04): después de `install`, el aplicador por el enlace con --check decía
-#    «27 hooks faltan» (no faltaba ninguno) y sin --check registraba 27 hooks por segunda vez (32 con el perfil del
-#    equipo: ensayo del alta del 2026-10-03); y con TYCON_SAFETY_GUARD=0 por el enlace, el freno que había registrado el
-#    clon seguía en settings.json: el interruptor no apagaba nada.
+# 🔴 Sin el arreglo, después de `install` el aplicador por el enlace con --check dice
+#    «27 hooks faltan» (no falta ninguno) y sin --check registra 27 hooks por segunda vez (32 con el perfil del
+#    equipo); y con TYCON_SAFETY_GUARD=0 por el enlace, el freno que registró el
+#    clon sigue en settings.json: el interruptor no apaga nada.
 if corre T37; then
   # «<total> <repetidos>»: repetido = mismo evento, mismo matcher y el MISMO archivo (por su ruta real: el enlace y la
   # carpeta del clon son dos rutas al mismo archivo)
@@ -830,7 +829,7 @@ PY
       link="$HOME/.claude/$name"
       [ -L "$link" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$(cd "$LAB_TREE" && pwd -P)" ] || { printf '%s' "$name"; return 1; }
     done
-    # (story 8.35) skills y agents: carpetas reales del dev, con un enlace por CADA entrada del clon
+    # skills y agents: carpetas reales del dev, con un enlace por CADA entrada del clon
     for side in skills agents; do
       { [ -d "$HOME/.claude/$side" ] && [ ! -L "$HOME/.claude/$side" ]; } || { printf '%s (no es carpeta real)' "$side"; return 1; }
       for entry in "$LAB_TREE/$side"/*; do
@@ -927,7 +926,7 @@ PY
     || mal "T37 el aplicador por el enlace (rc $RC) dejó ${N_HOOKS2:-?} hooks (había $N_HOOKS), ${N_REP:-?} repetido(s): $(printf '%s\n' "$SALIDA" | grep 'instalé' | cut -c1-200)"
   by_clone >/dev/null 2>&1; RC=$?
   [ "$RC" = 0 ] && cmp -s "$BASE/t37-settings.json" "$TYCON_SETTINGS_PATH" && ok "T37 (espejo) …y por la carpeta del clon, tampoco" || mal "T37 el aplicador por el clon (rc $RC) cambió settings.json"
-  # story 8.19 · T12: la tercera ruta, el LUGAR: nada nuevo, nada repetido, la misma cuenta
+  # T12: la tercera ruta, el LUGAR: nada nuevo, nada repetido, la misma cuenta
   SALIDA="$(by_place 2>&1)"; RC=$?
   read -r N_HOOKS3 N_REP <<< "$(hooks_census)"
   [ "$RC" = 0 ] && [ "$N_REP" = 0 ] && [ "$N_HOOKS3" = "$N_HOOKS" ] && cmp -s "$BASE/t37-settings.json" "$TYCON_SETTINGS_PATH" \
@@ -944,7 +943,7 @@ PY
   # …y un hook que entra por la otra ruta entra en SU LUGAR (settings.json es función de la configuración, no de por dónde
   # se llamó al instalador). Se mide con el freno de sesiones, que va DESPUÉS de hooks del arnés registrados por el clon:
   # la vara es el orden que deja el clon al prenderlo; después se apaga y se prende por el enlace.
-  # 🔴 rojo previo (mutación, 2026-10-04): sin la otra ruta en la tabla del orden, por el enlace entraba antes del freno de
+  # 🔴 Sin la otra ruta en la tabla del orden, por el enlace entra antes del freno de
   #    comandos destructivos en vez de al final de su bloque.
   TYCON_SESSION_GUARD=1 by_clone >/dev/null 2>&1; ORDER_REF="$(hooks_order)"
   by_clone >/dev/null 2>&1
@@ -993,16 +992,16 @@ PY
   fi
 fi
 
-# ═══ T39 · Docs_InstallAndOnboarding_SayOneRepo (story 8.18, AC 36) ═══════════════════════════════════════════════════
+# ═══ T39 · Docs_InstallAndOnboarding_SayOneRepo ══════════════════════════════════════════════════
 # Los papeles del alta, por su texto: `INSTALL.md` y los archivos de `onboarding/` dicen «clonar UN repo y correr el
 # instalador». Ninguna línea manda clonar agent-skills, ni crear un enlace a mano, ni pegar la línea de arranque vieja
 # (la escribe `harness.js install`). El bloque `<!-- install:internal -->` de INSTALL.md es el que la máquina limpia
 # ejecuta tal cual (clean-machine/scenarios/unified.sh): un `git clone` y `harness.js install`, nada más.
-# El caso: el ensayo del alta (2026-10-03) siguió los pasos manuales al pie de la letra y la máquina quedó sin
+# Sin esto, quien sigue los pasos manuales al pie de la letra termina con la máquina sin
 # `~/.claude/skills` (ningún paso lo creaba), con 32 hooks dos veces y con el diagnóstico en rojo.
-# 🔴 rojo previo (2026-10-04, sobre la base): INSTALL.md §1 «Clonar los dos repos», con `git clone <URL de agent-skills>`
+# 🔴 Lo que la prueba rechaza: INSTALL.md §1 «Clonar los dos repos», con `git clone <URL de agent-skills>`
 #    (dos veces), §3 con el `ln -s` de agents a mano y §4 con la línea de arranque vieja; el prompt de onboarding con su
-#    PASO 1 «Clonar los dos repos compartidos» y su PASO 2 de enlaces a mano; sin el bloque `install:internal`.
+#    PASO 1 «Clonar los dos repos compartidos» y su PASO 2 de enlaces a mano; y la falta del bloque `install:internal`.
 if corre T39; then
   if [ ! -f "$RAIZ/INSTALL.md" ] || [ ! -d "$RAIZ/onboarding" ]; then
     echo "  ⏭ T39 NO MEDIDO — este árbol no trae INSTALL.md y onboarding/ (la copia pública no lleva el alta del equipo)"
@@ -1104,7 +1103,7 @@ PY
   fi
 fi
 
-# ═══ Regresiones de la iteración 1 (pase adversarial y revisores, 2026-10-02) ═════════════════════════════════════════
+# ═══ Regresiones ════════════════════════════════════════════════════════════
 if corre REG; then
   # REG-D4 · install --source sobre una instalación existente cambia el origen fijado (es el remedio que nombran update y doctor)
   harness_lab_create "$BASE/reg-d4" >/dev/null
@@ -1129,8 +1128,8 @@ if corre REG; then
   [ "$RC" = 1 ] && case "$SALIDA" in *python3*) ok "REG-D12 un python3 roto: install sale 1 y lo nombra" ;; *) mal "REG-D12 no nombra python3: $SALIDA" ;; esac || mal "REG-D12 python3 roto: rc $RC: $SALIDA"
   [ "$(harness_lab_home_hash)" = "$ANTES" ] && ok "REG-D12 …sin escribir nada" || mal "REG-D12 escribió en el HOME"
   # REG-LAB · el git del laboratorio se niega a una carpeta vacía o que no existe. `git -C ""` NO cambia de carpeta: opera
-  # sobre el repo donde está parado quien llama. El 2026-10-02 un guion cuyo laboratorio no se había armado (variables
-  # vacías) creó una rama y dos commits en la copia de trabajo del equipo.
+  # sobre el repo donde está parado quien llama. Un guion cuyo laboratorio no se armó (variables
+  # vacías) crearía una rama y dos commits en la copia de trabajo del equipo.
   PARADO="$BASE/reg-lab-parado"; mkdir -p "$PARADO"
   harness_lab_git "$PARADO" init -q -b main && harness_lab_git "$PARADO" commit -q --allow-empty -m base || mal "REG-LAB no pude armar el repo donde pararme"
   ANTES="$(harness_lab_git "$PARADO" rev-parse HEAD)"
@@ -1145,9 +1144,9 @@ if corre REG; then
   [ "$(harness_lab_git "$PARADO" rev-list --count HEAD)" = 1 ] && ok "REG-LAB el repo donde estaba parado quedó con su único commit" || mal "REG-LAB el repo quedó con $(harness_lab_git "$PARADO" rev-list --count HEAD) commits"
 fi
 
-# ── story 8.16, tanda A · el cierre de `install` dice lo que quedó (AC 8) y lo que hacer si quedó a medias (AC 9) ─────
-# El caso (auditoría de la copia publicada, 2026-10-03): `install` mostraba cuatro líneas («piezas escritas: link, state…»)
-# y mandaba al registro sólo las últimas tres del aplicador; la persona no veía ni los hooks que le agregaron ni los avisos.
+# ── el cierre de `install` dice lo que quedó y lo que hay que hacer si quedó a medias ─────
+# Sin esto, `install` muestra cuatro líneas («piezas escritas: link, state…»)
+# y manda al registro sólo las últimas tres del aplicador; la persona no ve ni los hooks que le agregaron ni los avisos.
 #   S16-T8  · Install_Summary_CountsWarningsBackupLogNextSteps_SecondRunSaysNoChanges
 #   S16-T10 · Install_ApplierOrHealthFails_SaysHalfInstalledAndHowToUndo
 if corre S16; then
@@ -1197,7 +1196,7 @@ if corre S16; then
   # startup no imprime nada de esto: una línea como mucho
   SALIDA="$(LAB_APPLIER_WARN="$AVISO" harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(printf '%s' "$SALIDA" | grep -c .)" -le 1 ] && ok "S16-T8 startup sigue en una línea como mucho" || mal "S16-T8 startup (rc $RC) imprimió de más: $SALIDA"
-  # una lista de efectos rota no se lee como «nada frena». Desde la tanda B (AC 15) ni se instala: sin la lista no hay
+  # una lista de efectos rota no se lee como «nada frena». Ni se instala: sin la lista no hay
   # plan que mostrar, así que sale 2 nombrando el archivo, también con --yes, y no escribe nada
   harness_lab_create "$BASE/s16-t8-rota" >/dev/null
   printf '{ "effects": [' > "$LAB_TREE/scripts/setup/install-effects.json"
@@ -1219,7 +1218,7 @@ if corre S16; then
   SALIDA="$(harness install --from-existing 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"copia de antes de instalar"*) false ;; *"sin cambios"*) true ;; *) false ;; esac \
     && ok "S16-T8 --from-existing, segunda vez: «sin cambios», sin la línea de la copia (su salida es la de siempre)" || mal "S16-T8 --from-existing segunda vez (rc $RC): $SALIDA"
-  # las piezas compartidas no se cuentan dos veces con un aplicador de antes de la 8.13 D (las reporta él también)
+  # las piezas compartidas no se cuentan dos veces con un aplicador viejo (las reporta él también)
   harness_lab_create "$BASE/s16-t8-viejo" >/dev/null
   SALIDA="$(LAB_APPLIER_OLD=1 harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$SALIDA" in *"ajustes de settings.json: 2"*) ok "S16-T8 con un aplicador viejo, que también reporta las piezas compartidas, los ajustes son 2 y no 4" ;; *) mal "S16-T8 aplicador viejo: no cuenta 2 ajustes: $SALIDA" ;; esac \
@@ -1275,7 +1274,7 @@ if corre S16; then
   AVISO_ARRANQUE="$(estado "d.get('notice') or ''")"
   case "$AVISO_ARRANQUE" in *"volvió sola"*) mal "S16-T10 el arranque afirma una vuelta atrás que no hubo: $AVISO_ARRANQUE" ;; *"la instalación quedó a medias"*"install otra vez"*) ok "S16-T10 el arranque siguiente avisa «la instalación quedó a medias» y cómo retomarla" ;; *) mal "S16-T10 el aviso del arranque no dice la instalación a medias: «${AVISO_ARRANQUE}»" ;; esac
   # la salida que el propio cierre ofrece —«install otra vez»— tiene que HACER algo: retoma el aplicador y la salud, no
-  # dice «sin cambios» (pase adversarial de la tanda A: la segunda corrida caía en el atajo y salía 0 sin correr nada)
+  # dice «sin cambios» (si la segunda corrida cae en el atajo, sale 0 sin correr nada)
   N_ANTES="$(grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null || echo 0)"
   SALIDA="$(LAB_APPLIER_FAIL=1 harness install --yes 2>&1)"; RC=$?
   N_DESPUES="$(grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null || echo 0)"
@@ -1308,10 +1307,10 @@ if corre S16; then
   [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T10 …y la corrida siguiente, ya sana, dice «sin cambios»" ;; *) mal "S16-T10 la corrida siguiente (salud) no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T10 corrida siguiente (salud): rc $RC: $SALIDA"
 fi
 
-# ═══ S16B-T27 · Applier_Standalone_Startup_Apply_NeverAsk_Contracts813Intact (story 8.16, tanda B · AC 44) ════════════
-# Desde la tanda B `install` pregunta; nada más pregunta nada nuevo: el aplicador suelto (con y sin --check), `startup`,
+# ═══ S16B-T27 · Applier_Standalone_Startup_Apply_NeverAsk_Contracts813Intact ══════════════════════════════════════════════════
+# `install` pregunta; nada más pregunta nada nuevo: el aplicador suelto (con y sin --check), `startup`,
 # `apply`, `rollback` y `uninstall` sin terminal hacen lo de siempre y su salida no trae ninguna pregunta ni pide --yes
-# (salvo la línea de siempre de `uninstall`, de la 8.13).
+# (salvo la línea de siempre de `uninstall`).
 if corre S16B; then
   echo "S16B-T27 · ninguna pregunta nueva fuera de install"
   harness_lab_create "$BASE/s16b-t27" >/dev/null
@@ -1332,9 +1331,9 @@ if corre S16B; then
   done
 fi
 
-# ── RELOCATE (story 8.19, tanda B · AC 17): después de `relocate`, el aplicador REAL no vuelve a agregar ningún hook y
+# ── RELOCATE: después de `relocate`, el aplicador REAL no vuelve a agregar ningún hook y
 # los hooks del arnés son los mismos (profile-equivalence --settings da 0) — la única red contra «relocate deja un hook
-# que el aplicador no reconoce y registra otra vez» (pase adversarial de la tanda B, C4). La máquina registra los hooks
+# que el aplicador no reconoce y registra otra vez». La máquina registra los hooks
 # por el nombre viejo como la de una persona que corrió el aplicador por el enlace viejo: se arma con `--reroot` de la
 # ruta real al nombre viejo.
 if corre RELOCATE; then
@@ -1368,10 +1367,10 @@ if corre RELOCATE; then
   fi
 fi
 
-# ═══ T79 · MaintainerMachine_…_HooksPathElsewhereWarned (story 8.26, tanda H1c · AC 65 e) ═════════════════════════════
-# El caso: los hooks de git del arnés —entre ellos el pre-push, el freno antes de publicar— corren sólo si la carpeta
-# GLOBAL de hooks de git es la que el instalador llena. El instalador avisaba únicamente cuando git no tenía ninguna:
-# con OTRA (la de otra herramienta, una vieja) llenaba la suya, no decía nada, y ningún hook del arnés corría.
+# ═══ T79 · MaintainerMachine_…_HooksPathElsewhereWarned ══════════════════════════════════════════════════
+# Los hooks de git del arnés —entre ellos el pre-push, el freno antes de publicar— corren sólo si la carpeta
+# GLOBAL de hooks de git es la que el instalador llena. Si git tiene OTRA (la de otra herramienta, una vieja), el
+# instalador llena la suya, y sin un aviso propio ningún hook del arnés corre sin que nadie lo sepa.
 # Lo que no se puede perder — el aplicador REAL sobre la máquina de laboratorio, con la configuración global de git en
 # un archivo propio (`GIT_CONFIG_GLOBAL`: nunca la de quien corre la prueba):
 #   · git no tiene ninguna          → el aviso de siempre, con su comando (también con --check);
@@ -1508,11 +1507,11 @@ if corre T79; then
   fi
 fi
 
-# ═══ HP · Apply_GitWithoutGlobalHooksDir_SetsIt_DoctorStopsWarning (2026-10-14) ═══════════════════════════════════════
-# El caso real: Windows 11, versión bajada, mudada desde un clon. `doctor` decía «el pre-push del arnés NO está puesto: git
-# no tiene carpeta global de hooks (core.hooksPath) — harness.js apply lo pone»; el dev corrió `apply`, actualizó, y el
-# aviso seguía igual: el aplicador (los dos guiones) sólo avisa y nunca toca esa clave, y nada más la ponía. Las máquinas
-# sin el aviso la tenían puesta a mano, del alta de cuando se instalaba desde un clon.
+# ═══ HP · Apply_GitWithoutGlobalHooksDir_SetsIt_DoctorStopsWarning ══════════════════════════════════════════════════
+# Una máquina con la versión bajada, o mudada desde un clon, no tiene carpeta global de hooks. `doctor` dice «el pre-push del arnés NO está puesto: git
+# no tiene carpeta global de hooks (core.hooksPath) — harness.js apply lo pone». El aplicador (los dos guiones) sólo avisa y nunca toca esa
+# clave: es `harness.js` el que la pone, y esta prueba cuida que lo haga, para que el aviso se vaya. Las máquinas
+# sin el aviso la tienen puesta a mano, del alta de cuando se instalaba desde un clon.
 # Lo que no se puede perder — `harness.js` con el aplicador REAL, y la configuración global de git en un archivo del
 # laboratorio (`GIT_CONFIG_GLOBAL`: nunca la de quien corre la prueba):
 #   · `install` sobre git sin ninguna la pone (la carpeta del instalador, con el pre-push del arnés adentro) y lo dice;
@@ -1533,7 +1532,7 @@ if corre HP; then
   hp_said_set() { printf '%s\n' "${SALIDA}" | grep -c 'git usa ahora la carpeta global de hooks del arnés'; }
   hp_doctor_warns() { GIT_CONFIG_GLOBAL="${HP_CFG}" harness_lab_isolated harness doctor 2>&1 < /dev/null | grep -c 'pre-push del arnés NO'; }
 
-  # install sobre git sin carpeta global: la pone, con el pre-push del arnés adentro, y lo dice una vez (sin el aviso viejo)
+  # install sobre git sin carpeta global: la pone, con el pre-push del arnés adentro, y lo dice una vez (sin el aviso de «git no tiene ninguna»)
   hp install --yes
   [ "${RC}" = 0 ] && [ "$(hp_value)" = "${HP_OURS}" ] && grep -q 'git-pre-push-global.sh' "${HP_OURS}/pre-push" && [ "$(hp_said_set)" = 1 ] \
     && ! printf '%s' "${SALIDA}" | grep 'git no tiene core.hooksPath global' >/dev/null \
@@ -1547,8 +1546,8 @@ if corre HP; then
   [ -z "$(hp_value)" ] && ok "HP si la puso el arnés y la persona la sacó, el arranque no la vuelve a poner" || mal "HP el arranque volvió a poner la que la persona sacó: «$(hp_value)»"
   [ "$(hp_doctor_warns)" = 1 ] && ok "HP sin la clave, doctor avisa que el pre-push no está puesto" || mal "HP doctor sin la clave no avisó el pre-push"
 
-  # una máquina YA instalada sin la carpeta, que el arnés nunca puso (la mudada, o instalada antes de este arreglo): el
-  # caso que pidió el dueño — que sea transparente, sin que el dev corra nada
+  # una máquina YA instalada sin la carpeta, que el arnés nunca puso (la mudada, o instalada antes de esta función): el
+  # caso que tiene que ser transparente, sin que el dev corra nada
   hp_forget() { python3 -c 'import json,sys; f=sys.argv[1]; d=json.load(open(f)); d.pop("git_hooks_path", None); json.dump(d, open(f, "w"), indent=2)' "${LAB_HOME}/.claude/.tycon-pipeline/harness-state.json"; }
   hp_notice() { estado "d.get('notice') or ''"; }
   hp_forget

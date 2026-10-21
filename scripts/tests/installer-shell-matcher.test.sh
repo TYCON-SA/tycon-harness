@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # installer-shell-matcher.test.sh — los hooks que miran comandos se registran con `Bash|PowerShell`, y una máquina ya
-# instalada con el matcher viejo (`Bash`) queda con UNA entrada por guion, no con dos (2026-10-04).
+# instalada con el matcher viejo (`Bash`) queda con UNA entrada por guion, no con dos.
 #
-# EL CASO. Medido en una sesión REAL de Claude Code 2.1.289 en Windows 11, con el arnés instalado y `doctor` en orden:
-# Claude Code corre los comandos con su herramienta PowerShell (`tool_name: "PowerShell"`, la misma entrada
+# EL CASO. En Windows, Claude Code corre los comandos con su herramienta PowerShell (`tool_name: "PowerShell"`, la misma entrada
 # `tool_input.command`; fuente: code.claude.com/docs/en/tools-reference §«PowerShell tool»: «Match `Bash|PowerShell` in
-# hooks that inspect shell commands»). Los frenos estaban registrados con matcher `Bash` y no se disparaban: pasaron
-# `git add -A` en agent-skills y un commit que saltea los hooks de git. Con «corré con Bash» el mismo freno sí frenó.
+# hooks that inspect shell commands»). Los frenos registrados con matcher `Bash` no se disparan: pasan
+# `git add -A` en agent-skills y un commit que saltea los hooks de git. Con «corré con Bash» el mismo freno sí frena.
 #
 # LA MIGRACIÓN. El instalador compara matchers como conjuntos: `{Bash}` no es `{Bash, PowerShell}`, así que sin más
 # AGREGARÍA el registro nuevo y dejaría el viejo, y en Bash el freno correría dos veces. Un guion registrado con un
@@ -43,12 +42,12 @@ export TYCON_NO_CANONICAL_PATH=1 TYCON_NO_AZ_PROJECTS_REFRESH=1 TYCON_NO_BOOTSTR
 #    lista busca (así se registran, con su matcher, los dos de agent-skills que miran comandos).
 HOME="$T/home"; export HOME
 SK="$HOME/.claude/agent-skills/skills"; mkdir -p "$SK/tycon-pipeline"
-# los guiones de las skills que registra el arnés, de la lista única (story 8.17, W3: antes, del texto del instalador)
+# los guiones de las skills que registra el arnés, de la lista única
 node -e 'for (const h of require(process.argv[1]).hooks) if (!h.spec.startsWith("@tcg:")) console.log(h.spec)' "$ROOT/scripts/setup/hooks-list.json" | sort -u | while IFS= read -r rel; do
   mkdir -p "$SK/$(dirname "$rel")" && : > "$SK/$rel"
 done
-# CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés (story 7.27) y, heredada, la
-# instalación de prueba anotaba la carpeta de mods DE VERDAD de quien corre la suite (harness-uninstall, 2026-10-15).
+# CLAUDE_CODE_PLUGIN_DIRS fuera: la pone el instalador en cada máquina con el arnés y, heredada, la
+# instalación de prueba anotaría la carpeta de mods DE VERDAD de quien corre la suite.
 ISOLATED=(env -u CLAUDE_CODE_PLUGIN_DIRS TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0 CODEX_HOME="$T/codex-home")
 run() { TYCON_SETTINGS_PATH="$1" "${ISOLATED[@]}" bash "$INST" "${@:2}"; }   # <settings> [args] → el instalador; exit code real
 
@@ -150,9 +149,9 @@ run "$T/check.json" --check > "$T/5.out" 2>&1; RC=$?
   && ok "5. --check sobre la de antes: sale 0, no escribe y nombra el freno con su matcher nuevo" \
   || bad "5. --check sobre la de antes (rc $RC): $(grep -m1 'safety-guard' "$T/5.out") · $(cmp -s "$T/check.json" "$T/old.before.json" && echo 'sin escribir' || echo 'ESCRIBIÓ')"
 
-# 6) la de antes, reinstalada llamando al instalador por OTRA ruta al mismo clon (un enlace) — segunda vuelta, C1:
-#    la migración reconocía el guion sólo por el texto de su ruta, y con el enlace dejaba el viejo Y el nuevo (en Bash,
-#    cada freno dos veces; engram-pre-commit, dos `engram sync` a la vez). «Ya está» lo decide names_file (story 8.18).
+# 6) la de antes, reinstalada llamando al instalador por OTRA ruta al mismo clon (un enlace):
+#    si la migración reconociera el guion sólo por el texto de su ruta, con el enlace dejaría el viejo Y el nuevo (en Bash,
+#    cada freno dos veces; engram-pre-commit, dos `engram sync` a la vez). «Ya está» lo decide names_file.
 ln -s "$ROOT" "$T/link"
 cp "$T/old.before.json" "$T/via-link.json"
 TYCON_SETTINGS_PATH="$T/via-link.json" "${ISOLATED[@]}" bash "$T/link/scripts/install-tycon-hooks.sh" > "$T/6.out" 2>&1; RC=$?
@@ -161,7 +160,7 @@ R="$(node "$T/check.js" "$T/via-link.json" foreign)"; CK=$?
   || bad "6. la de antes reinstalada por un enlace al clon (rc $RC): $R"
 
 # 7) el matcher escrito con coma («Bash, PowerShell»: la documentación de hooks acepta las dos formas) es el mismo:
-#    no se agrega otro registro (segunda vuelta, MENOR 6)
+#    no se agrega otro registro
 node -e '
   const fs = require("fs"); const [src, dst] = process.argv.slice(1);
   const s = JSON.parse(fs.readFileSync(src, "utf8"));

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# harness-rollback.test.sh — `harness.js rollback`: la vuelta atrás por piezas que se queda (story 8.13, tanda C · T23,
-# T24; AC 19-20).
+# harness-rollback.test.sh — `harness.js rollback`: la vuelta atrás por piezas que se queda (T23,
+# T24).
 #
 # Lo que no se puede perder:
 #   U   · `rollback.pickTarget` (el destino), sin laboratorio: sin `--to`, la copia más nueva (mayor `seq`) cuyos `sources`
@@ -8,26 +8,26 @@
 #         número de versión, que sale del arnés)—; si ninguna copia tiene `sources`, la más nueva y «sólo archivos»; si
 #         todas son de la versión instalada, ninguna («nada que deshacer»); `--to` por nombre de carpeta o por `seq`, y una
 #         copia sin `sources` elegida así es «sólo archivos»; un `--to` que no existe no elige nada y lo nombra.
-#   T23 · Rollback_ByPieces_HoldBlocksAuto_ReleaseAdvances (AC 19-20) — v1 → v2 (un hook nuevo que publica agent-skills y un
+#   T23 · Rollback_ByPieces_HoldBlocksAuto_ReleaseAdvances — v1 → v2 (un hook nuevo que publica agent-skills y un
 #         bloque nuevo que declara el arnés) aplicada por un `startup` con `apply: auto`; la copia de esa actualización es
 #         nueva, cerrada con `sha256_after` y con `sources` (los commits de v1); un permiso y una línea a mano; `rollback`:
 #         hooks y bloques como en v1, lo de a mano sigue, los dos árboles en v1 y en `main` (nunca un HEAD suelto), estado
 #         con `version` = v1, `sources[].previous` = v2 y `hold` = v2; dos `startup` con la red habilitada no avanzan y el
 #         aviso lo dice con el comando para liberar; `rollback --release` y otro `startup` sí avanzan a v2; `doctor` sin
 #         nada en rojo en cada paso; `rollback --list` muestra seq · from → to · reason · at.
-#   T24 · Rollback_ToOlderCopy_FilesAndTreesSameVersion_DirtyTree_FromBootstrap (AC 19) — con tres copias, `--to` la más
+#   T24 · Rollback_ToOlderCopy_FilesAndTreesSameVersion_DirtyTree_FromBootstrap — con tres copias, `--to` la más
 #         vieja lleva los árboles a SUS `sources` (no a la anterior inmediata); un archivo que cambió después de la
 #         actualización se avisa y se deja; un árbol con un archivo trackeado modificado: stash propio y reaplicado (o no
-#         se mueve), y se dice; una copia sin `sources` (anterior a la C) sólo restaura archivos y lo dice; en `developer`
+#         se mueve), y se dice; una copia sin `sources` (de una versión sin ese dato) sólo restaura archivos y lo dice; en `developer`
 #         no toca git y lo dice; desde la copia fija (`bootstrap.js rollback`) con el `harness.js` del árbol roto funciona.
 #
-# Regresiones del pase adversarial de la tanda C (cada una nació roja contra el defecto que nombra):
+# Regresiones (cada una mide el defecto que nombra):
 #   REG-H2  · el bloque que la versión vieja ya no trae se va de CLAUDE.md Y del espejo ~/.codex/AGENTS.md (si la pieza
-#             codex AGENTS.md está registrada); antes quedaba en el espejo y Codex seguía leyendo lo deshecho.
+#             codex AGENTS.md está registrada); si quedara en el espejo, Codex seguiría leyendo lo deshecho.
 #   REG-H16 · un archivo que el paso (1) volvió ENTERO a como estaba (un comando propio del dev que pisó la versión nueva)
 #             no lo borra el paso (4), y sale del registro (ya no es del arnés).
 #   REG-R3  · si `remove.removePieces` deja algo con `error: true` —o tira—, `restore` sale `ok: false` y lo que quedó
-#             lleva `error: true` (antes: `ok: true` y el fallo escondido).
+#             lleva `error: true` (nunca `ok: true` con el fallo escondido).
 #   REG-H9  · (harness.js) la copia `before-rollback` forzada corre la retención: la copia DESTINO tiene que sobrevivir
 #             y restaurarse aunque sea la quinta más nueva.
 #   REG-H11 · (harness.js) un segundo rollback que deshace el primero —vuelve a la versión nueva— no deja `hold` (levanta
@@ -36,15 +36,15 @@
 #             re-registra commits ni versión: el doctor sigue marcando el HEAD que no es el registrado.
 #   REG-H5  · (harness.js/snapshot.js) después de 6 arranques que cambian settings.json, `rollback` igual encuentra la
 #             versión anterior: la copia de antes de la actualización no se poda.
-#   REG-DB  · (pase adversarial de la tanda D, causa B) en una copia pública todavía sin `tycon/installed`, el motivo por
+#   REG-DB  · en una copia pública todavía sin `tycon/installed`, el motivo por
 #             el que `rollback` no mueve la fuente no manda a `checkout tycon/installed` (esa rama no existe): el comando
 #             que aconseja se corre y sale 0; con la rama ya creada, el consejo de siempre vale.
 #
-# El comando `harness.js rollback` lo cablea harness.js con las funciones de scripts/setup/harness/rollback.js (contratos en
-# el plan de la tanda C, §2). Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude ni el checkout real.
+# El comando `harness.js rollback` lo cablea harness.js con las funciones de scripts/setup/harness/rollback.js.
+# Laboratorio: scripts/tests/lib/harness-lab.sh. Nunca ~/.claude ni el checkout real.
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 #
-#   T38 · (story 8.18, AC 37) rollback en las tres formas de máquina que deja la unión de los dos repos: dos clones sin
+#   T38 · rollback en las tres formas de máquina que deja la unión de los dos repos: dos clones sin
 #         re-apuntar, dos clones con el viejo re-apuntado al repo unificado (vuelven LAS DOS al mismo commit, y el clon
 #         sigue re-apuntado), y un solo árbol.
 #
@@ -123,7 +123,7 @@ v1_a_v2() { # v1_a_v2 <dir>
   harness startup >/dev/null 2>&1
   V2="$(estado "d['version']['number']")"
 }
-# el nombre de v2 en `hold`/`failed`: el número (sale del arnés) más el agent-skills (pase adversarial H19)
+# el nombre de v2 en `hold`/`failed`: el número (sale del arnés) más el agent-skills
 etiqueta_v2() { printf '%s · agent-skills %s' "$V2" "${S2:0:7}"; }
 
 # ═══ U · pickTarget, sin laboratorio ═════════════════════════════════════════════════════════════════════════════════
@@ -226,14 +226,14 @@ if corre T23; then
 fi
 
 # ═══ T23b · el @import en su forma HEREDADA sobrevive a la vuelta atrás, y el arranque lo repone si falta ═══════════
-# Máquina Windows de un dev (2026-10-07): su CLAUDE.md tenía la línea de import con el nombre viejo del lugar, la vuelta
-# atrás la quitó como «pieza que esta versión ya no trae» y ningún arranque la repuso: la máquina quedó sin las guías.
+# Un CLAUDE.md con la línea de import con el nombre viejo del lugar: si la vuelta
+# atrás la quitara como «pieza que esta versión ya no trae» y ningún arranque la repusiera, la máquina quedaría sin las guías.
 if corre T23b; then
   LOG() { printf '%s' "$LAB_HOME/.claude/.tycon-pipeline/harness/startup.log"; }
   v1_a_v2 "$BASE/t23b"
   # la forma heredada sale de place.js (T38 de harness-place: la ruta del lugar viejo no se escribe a mano)
   LEGACY="@~/.claude/$(node -p "require('$RAIZ/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")/README.md"
-  # el CLAUDE.md y el registro con la forma heredada (como quedó en las máquinas instaladas antes de la 8.19)
+  # el CLAUDE.md y el registro con la forma heredada (como la dejaban las instalaciones con el nombre viejo del lugar)
   python3 - "$CLAUDE_MD_PATH" "$(ESTADO)" "$LEGACY" <<'PY'
 import json, sys, re
 md, st, legacy = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -291,7 +291,7 @@ if corre T24; then
     ok "T24 árbol sucio: no se movió, y se dice"
   else mal "T24 árbol sucio: README $(tail -1 "$LAB_TREE/README.md"): $SALIDA"; fi
 
-  # (b) una copia sin sources (anterior a la C): sólo archivos, y lo dice
+  # (b) una copia sin sources (de una versión sin ese dato): sólo archivos, y lo dice
   v1_a_v2 "$BASE/t24b"
   UPD="$(copias | awk -v t="$T1" '$4==t && $3!="install" && $6=="cerrada" {n=$2} END {print n}')"
   [ -n "$UPD" ] || mal "T24 (b) sin la copia de la actualización: $(copias | tr '\n' ';')"
@@ -495,14 +495,14 @@ if corre REG-H5; then
     && ok "REG-H5 …y rollback vuelve a v1" || mal "REG-H5 rollback (rc $RC; tree $(head_de "$LAB_TREE"), v1 $T1): $SALIDA"
 fi
 
-# ═══ REG-DB · (pase adversarial de la tanda D, causa B) el motivo de rollback no aconseja un comando que falla ════════
+# ═══ REG-DB · el motivo de rollback no aconseja un comando que falla ════════
 # Una copia pública recién instalada está en su rama por defecto y `tycon/installed` todavía no existe (la crea la primera
 # actualización). Si el clon se movió (un pull a mano) y se pide `rollback`, la fuente no se mueve —rollback sólo mueve
 # desde la rama del mecanismo— y lo dice; lo que no puede hacer es mandar a `checkout tycon/installed`, una rama que no
 # existe. El motivo sale de `sources.offInstalledBranch`, el mismo que usa `update`: los dos mensajes no divergen.
-# 🔴 rojo previo (medido sobre este mismo guion antes del arreglo): 4 MAL — «harness está en la rama main y no en
-#    tycon/installed: no se toca (git -C … checkout tycon/installed)»; ese comando: «pathspec 'tycon/installed' did not
-#    match», y sin él rollback no tenía salida.
+# 🔴 Sin esto, 4 MAL — el motivo dice «harness está en la rama main y no en
+#    tycon/installed: no se toca (git -C … checkout tycon/installed)»; ese comando falla: «pathspec 'tycon/installed' did not
+#    match», y rollback no tendría salida.
 if corre REG-DB; then
   aconsejado() { printf '%s\n' "$1" | grep -oE "git -C [^ ]* checkout( -b)? tycon/installed( [0-9a-f]{40})?" | head -1; }
   correr_aconsejado() { env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR bash -c "$1"; }
@@ -541,7 +541,7 @@ if corre REG-DB; then
     && ok "REG-DB espejo: …y ese comando funciona (rc 0)" || mal "REG-DB espejo: el comando aconsejado «${CMD}» salió $RC (rama $(rama_de "$LAB_TREE"))"
 fi
 
-# ═══ T38 (story 8.18, AC 37) · rollback en las tres formas de máquina ═════════════════════════════════════════════════
+# ═══ T38 · rollback en las tres formas de máquina ═════════════════════════════════════════════════
 # Después de una versión nueva, `rollback` vuelve a la anterior en las tres formas. En la máquina re-apuntada vuelven LAS
 # DOS fuentes al mismo commit, y el clon de skills sigue re-apuntado y mostrando sólo lo suyo: volver atrás una versión no
 # deshace la mudanza (eso es la llave). `--release` y un update vuelven a subir.
@@ -570,8 +570,8 @@ if corre T38; then
   done
 fi
 
-# ── T28 Rollback_ToFixedCommitBeforeStory_BothResolve_ImportDeduped (story 8.19, tanda B · AC 20) ────────────────────
-# Una máquina mudada (`relocate`) que vuelve al código de ANTES de la story 8.19 —el commit fijado, que sólo conoce el
+# ── T28 Rollback_ToFixedCommitBeforeStory_BothResolve_ImportDeduped ────────────────────
+# Una máquina mudada (`relocate`) que vuelve al código de ANTES del lugar nuevo —el commit fijado, que sólo conoce el
 # nombre viejo— sigue andando: los dos nombres resuelven al árbol y no aparece un hook repetido. Ese código viejo agrega
 # su línea de CLAUDE.md (no conoce la del lugar); al volver al código nuevo, `install` deja una sola. La versión vieja se
 # pone en el árbol del laboratorio tal como la deja una vuelta atrás a ella (el programa y la biblioteca del enlace de
@@ -586,17 +586,17 @@ else
   T28_LN="$(node -p "require('$RAIZ/scripts/setup/harness/place.js').LEGACY_PLACE_NAME")"
   t28_both() { node -e 'const fs=require("fs");const [h,t,a,b]=process.argv.slice(1);const r=(p)=>{try{return fs.realpathSync(p)}catch(_){return null}};process.stdout.write(String(r(h+"/.claude/"+a)===fs.realpathSync(t)&&r(h+"/.claude/"+b)===fs.realpathSync(t)))' "$LAB_HOME" "$LAB_TREE" "$T28_PN" "$T28_LN"; }
   t28_repeated() { harness_lab_settings_commands | sort | uniq -d | wc -l | tr -d ' '; }
-  # la línea de hoy la dice import-line.js (desde el 2026-10-13 carga INDEX.md; el código de antes escribía README.md):
-  # se cuentan las dos formas con los dos nombres, y lo que se espera ver es la de hoy
+  # la línea vigente la dice import-line.js (carga INDEX.md; el código viejo escribía README.md):
+  # se cuentan las dos formas con los dos nombres, y lo que se espera ver es la vigente
   T28_LINE="$(node -p "require('$RAIZ/scripts/setup/harness/import-line.js').IMPORT_LINE")"
   t28_lines() { grep -cxF -e "@~/.claude/$T28_PN/README.md" -e "@~/.claude/$T28_LN/README.md" -e "@~/.claude/$T28_PN/INDEX.md" -e "@~/.claude/$T28_LN/INDEX.md" "$CLAUDE_MD_PATH"; }
-  # la máquina como la deja esta story: los dos nombres, y lo registrado por el viejo mudado a mano
+  # la máquina con los dos nombres, y lo registrado por el viejo mudado a mano
   node -e 'const fs=require("fs");const [t,p,o]=process.argv.slice(1);const ty=process.platform==="win32"?"junction":"dir";for(const a of [p,o]){try{fs.unlinkSync(a)}catch(_){try{fs.rmdirSync(a)}catch(_){}}}fs.symlinkSync(t,p,ty);fs.symlinkSync(p,o,ty)' "$LAB_TREE" "$LAB_HOME/.claude/$T28_PN" "$LAB_HOME/.claude/$T28_LN"
   printf '@~/.claude/%s/README.md\n' "$T28_LN" > "$CLAUDE_MD_PATH"
   harness relocate >/dev/null 2>&1; RC=$?
   T28_HOOKS="$(harness_lab_settings_commands | wc -l | tr -d ' ')"
   [ "$RC" = 0 ] && [ "$(t28_lines)" = 1 ] && grep -qxF "$T28_LINE" "$CLAUDE_MD_PATH" && ok "T28 la máquina mudada: relocate 0 y una línea, la del lugar" || mal "T28 relocate rc $RC: $(cat "$CLAUDE_MD_PATH")"
-  # el código de antes de la story, en el árbol
+  # el código viejo (el commit fijado), en el árbol
   for f in $(git -C "$RAIZ" ls-tree --name-only "$T28_FIXED" scripts/setup/harness/) scripts/setup/harness.js scripts/lib/canonical-path.js; do
     git -C "$RAIZ" show "$T28_FIXED:$f" > "$LAB_TREE/$f"
   done

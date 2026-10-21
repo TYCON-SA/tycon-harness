@@ -2,16 +2,16 @@
 # lint-production-json.test.sh — red del lint del CATÁLOGO de producción (.tycon/production.json).
 #
 # POR QUÉ EXISTE. Ese archivo es de dónde el freno saca qué host es producción. El lint corre en el
-# pre-commit y es lo único que impide que entre malformado; hasta el 2026-09-29 no tenía casos
-# propios, así que un cambio en su esquema no rompía nada visible.
+# pre-commit y es lo único que impide que entre malformado; sin casos propios,
+# un cambio en su esquema no rompería nada visible.
 #
-# El disparador fue agregarle `port` (primer servidor con instancia nombrada en puerto no
-# estándar). Lo que estos casos fijan no es sólo que el campo nuevo se acepte: es que lo que estaba
+# Un servidor con instancia nombrada en puerto no estándar declara `port`. Lo que estos casos fijan
+# no es sólo que el campo se acepte: es que lo que está
 # CERRADO siga cerrado — el puerto adentro del host, la instancia con barra invertida, y cualquier
 # clave inventada. Es justo lo que un campo nuevo tiende a aflojar sin que nadie lo note.
 #
-# Desde la story 8.9 (tanda P) las claves van en inglés (`servers`, `environment`, `keychain`, `port`); las de antes
-# del renombre se siguen aceptando —los repos de producto migran en la story de retiro—, pero no las dos juntas.
+# Las claves van en inglés (`servers`, `environment`, `keychain`, `port`); las del nombre anterior
+# se siguen aceptando —los repos de producto migran aparte—, pero no las dos juntas.
 #
 # No toca ninguna base, ningún Llavero y ningún archivo real: sólo JSON en un temporal.
 #
@@ -61,8 +61,8 @@ caso "keychain que no empieza con tycon-prod-"   '{"servers":[{"host":"srv.acme.
 caso "environment que no existe"                 '{"servers":[{"host":"srv.acme.test","environment":"staging"}]}' 1
 caso "el mismo host dos veces"                   "{\"servers\":[{$SRV},{$SRV}]}"                   1
 
-# ── los nombres de antes del renombre (story 8.9, tanda P): se aceptan solos, nunca junto al nuevo ─────────────
-# Armados por concatenación (AC 7 de la story): son los nombres que se retiran.
+# ── los nombres anteriores al renombre: se aceptan solos, nunca junto al nuevo ─────────────
+# Armados por concatenación: son los nombres que se retiran.
 S_OLD="servi""dores"; E_OLD="ambi""ente"; K_OLD="llave""ro"; P_OLD="puer""to"
 caso "el catálogo con las claves de antes del renombre"  "{\"$S_OLD\":[{\"host\":\"srv.acme.test\",\"$E_OLD\":\"produccion\",\"$K_OLD\":\"tycon-prod-acme\",\"$P_OLD\":1435}]}" 0
 caso "una clave con su nombre viejo y el nuevo"          "{\"servers\":[{$SRV,\"$K_OLD\":\"tycon-prod-acme\"}]}" 1

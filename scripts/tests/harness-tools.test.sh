@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-tools.test.sh — cada herramienta, sus enchufes (story 8.23, tanda C · T21, T22, T23 y T26).
+# harness-tools.test.sh — cada herramienta, sus enchufes (T21, T22, T23 y T26).
 #
 # Lo que no se puede perder:
 #   T21 · `install` DETECTA Claude Code y Codex (el ejecutable, o la configuración propia de la herramienta), nombra en
@@ -168,7 +168,7 @@ if runs T21; then
   case "$OUT" in *"lee sin preguntar"*) bad "InstallClose_SinReglas_SinLinea: con las reglas apagadas el cierre igual las nombra: $OUT" ;; *) ok "InstallClose_SinReglas_SinLinea: con las reglas apagadas, el cierre no las nombra" ;; esac
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
-  # desde un CLON (la instalación de hoy): el plan nombra las herramientas, Claude Code va siempre, y --tool codex solo sale 2
+  # desde un CLON (la instalación actual): el plan nombra las herramientas, Claude Code va siempre, y --tool codex solo sale 2
   harness_lab_create "$BASE/lab21c"
   harness_lab_release_server   # el árbol unido (skills/, agents/): lo que el enchufe de Codex espera del clon
   harness_lab_codex_pieces
@@ -326,7 +326,7 @@ JSON
   ! grep -rq 'sekreto-del-lab' "$CODEX_HOME" "$LAB_HOME/.tycon/state" && ok "y su secreto no se copió a ningún lado" || bad "el secreto viajó"
   case "$OUT" in *"no lo puedo registrar"*) bad "dice que falta uno que sí registró: $OUT" ;; *) ok "y ya no dice que falta" ;; esac
 
-  # con Claude Code también (el estado en su lugar de hoy): writable_roots lleva el de hoy Y ~/.tycon/state
+  # con Claude Code también (el estado en su lugar actual): writable_roots lleva el actual Y ~/.tycon/state
   harness_lab_tools both; harness_lab_tools_fresh_home
   mkdir -p "$LAB_HOME/.claude"; printf '{\n  "hooks": {}\n}\n' > "$LAB_HOME/.claude/settings.json"; : > "$LAB_HOME/.claude/CLAUDE.md"
   OUT="$(harness install --version latest --yes 2>&1)"; RC=$?
@@ -398,7 +398,7 @@ if runs T26; then
   [ -z "$(harness_lab_settings_commands)" ] && ! grep -q 'lab-hook' "$TYCON_SETTINGS_PATH" && ok "settings.json quedó sin la línea de arranque y sin los hooks del arnés" || bad "settings.json conserva algo del arnés: $(cat "$TYCON_SETTINGS_PATH")"
   ! grep -q 'TYCON_BLOCK\|^@' "$CLAUDE_MD_PATH" && grep -q 'lo mío' "$CLAUDE_MD_PATH" && ok "CLAUDE.md quedó sin bloques ni @import, con lo de la persona" || bad "CLAUDE.md: $(cat "$CLAUDE_MD_PATH")"
   # el lugar se va; el enlace de las skills SE QUEDA: los enlaces de ~/.codex/skills y los hooks ${SKILLS} de Codex apuntan
-  # ahí (pase adversarial, clase 23: sacarlo dejaba a Codex colgado y doctor no lo veía)
+  # ahí (sacarlo dejaría a Codex colgado y doctor no lo vería)
   [ ! -e "$LAB_HOME/.claude/$(node -p "require('$ROOT/scripts/setup/harness/tycon-home.js').PLACE_NAME")" ] && [ -L "$LAB_HOME/.claude/agent-skills" ] && ok "sin el lugar en su carpeta, y con el enlace de las skills (lo usa Codex)" || bad "quedaron enlaces: $(ls -la "$LAB_HOME/.claude" | grep -- '->')"
   [ "$(sha "$CODEX_HOME/hooks.json")" = "$hooks1" ] && [ "$(sha "$CODEX_HOME/AGENTS.md")" = "$agents1" ] && [ -L "$CODEX_HOME/skills/tycon-pipeline" ] && ok "Codex quedó intacto (hooks.json y AGENTS.md, byte a byte; skills)" || bad "uninstall --tool claude tocó a Codex"
   [ -f "$LAB_HOME/.tycon/harness/version.json" ] && [ -n "$(harness_lab_state)" ] && ok "y el arnés sigue instalado" || bad "se fue el arnés"
@@ -438,12 +438,12 @@ if runs T26; then
 fi
 
 # ───────────────────────────────────────────── T26b ──────
-# Lo que destapó el pase adversarial de la tanda C sobre `install --tool` / `uninstall --tool` / `apply`:
-#   clase 1  · Codex enchufado DESPUÉS (install --tool) se desenchufa de verdad: hooks.json y config.toml sin lo del arnés;
-#   clase 11 · con la llave apagada (`TYCON_CODEX=0 install`) las piezas quedan registradas y `uninstall --tool codex`
-#              las quita (el plan lo prometía y el comando decía «no está enchufada»);
-#   clase 20 · el aviso «herramienta sin enchufar» se va al enchufar, sin esperar al próximo arranque;
-#   clase 2  · sin config.toml, `apply` lo repone (doctor lo mandaba y nadie lo hacía).
+# Regresiones sobre `install --tool` / `uninstall --tool` / `apply`:
+#   · Codex enchufado DESPUÉS (install --tool) se desenchufa de verdad: hooks.json y config.toml sin lo del arnés;
+#   · con la llave apagada (`TYCON_CODEX=0 install`) las piezas quedan registradas y `uninstall --tool codex`
+#     las quita (el plan lo promete; el comando no puede decir «no está enchufada»);
+#   · el aviso «herramienta sin enchufar» se va al enchufar, sin esperar al próximo arranque;
+#   · sin config.toml, `apply` lo repone (doctor lo manda y alguien tiene que hacerlo).
 if runs T26b; then
   echo "T26b · uninstall --tool codex saca lo enchufado después y lo que la llave dejó de mantener; apply repone config.toml; el aviso se va al enchufar"
   harness_lab_create "$BASE/lab26b"
@@ -454,19 +454,19 @@ if runs T26b; then
   mkdir -p "$LAB_HOME/.claude"; printf '{\n  "hooks": {}\n}\n' > "$LAB_HOME/.claude/settings.json"; printf '# lo mío\n' > "$LAB_HOME/.claude/CLAUDE.md"
   OUT="$(harness install --version latest --tool claude --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "instalada sólo con Claude Code" || bad "la instalación base salió $RC: $OUT"
-  # clase 20: el aviso de Codex sin enchufar está, y se va al enchufar
+  # el aviso de Codex sin enchufar está, y se va al enchufar
   harness_release startup >/dev/null 2>&1
   case "$(state "d.get('notice') or ''")" in *"sin enchufar"*) ok "antes de enchufar, el estado avisa «sin enchufar»" ;; *) bad "sin el aviso previo: $(state "d.get('notice')")" ;; esac
   OUT="$(harness_release install --tool codex --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "install --tool codex sale 0" || bad "install --tool codex salió $RC: $OUT"
   case "$(state "d.get('notice') or ''")" in *"sin enchufar"*) bad "el aviso «sin enchufar» sigue después de enchufar: $(state "d.get('notice')")" ;; *) ok "el aviso «sin enchufar» se fue al enchufar" ;; esac
   grep -q 'harness-startup' "$CODEX_HOME/hooks.json" && ok "hooks.json trae los hooks del arnés" || bad "hooks.json sin los hooks del arnés"
-  # clase 1: desenchufar lo enchufado después quita de verdad
+  # desenchufar lo enchufado después quita de verdad
   OUT="$(harness_release uninstall --tool codex --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "','.join(d['tools'])")" = claude ] && ok "uninstall --tool codex sale 0 y tools queda claude" || bad "uninstall --tool codex salió $RC (tools $(state "d.get('tools')")): $OUT"
   ! grep -q 'harness-startup' "$CODEX_HOME/hooks.json" 2>/dev/null && ok "hooks.json ya no trae los hooks del arnés" || bad "hooks.json conserva los hooks del arnés: $(grep -c harness "$CODEX_HOME/hooks.json" 2>/dev/null) menciones"
   [ "$(state "len([p for p in d.get('managed',[]) if p.get('kind')=='codex'])")" = 0 ] && ok "y el registro quedó sin piezas de Codex" || bad "el registro conserva piezas codex: $(state "[p['id'] for p in d.get('managed',[]) if p.get('kind')=='codex']")"
-  # clase 11: la llave apagada deja las piezas registradas; uninstall --tool las quita igual
+  # la llave apagada deja las piezas registradas; uninstall --tool las quita igual
   OUT="$(harness_release install --tool codex --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "Codex enchufado otra vez" || bad "re-enchufar salió $RC: $OUT"
   OUT="$(TYCON_CODEX=0 harness_release install --version latest --dry-run 2>&1)"
@@ -476,7 +476,7 @@ if runs T26b; then
   OUT="$(harness_release uninstall --tool codex --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && case "$OUT" in *"no está enchufad"*) false ;; *) true ;; esac && ok "uninstall --tool codex las quita (no dice «no está enchufada»)" || bad "uninstall --tool codex tras la llave apagada: rc $RC: $OUT"
   ! grep -q 'harness-startup' "$CODEX_HOME/hooks.json" 2>/dev/null && ok "hooks.json sin los hooks del arnés" || bad "hooks.json conserva los hooks del arnés"
-  # clase 2: sin config.toml, apply lo repone
+  # sin config.toml, apply lo repone
   OUT="$(harness_release install --tool codex --yes 2>&1)"; RC=$?
   [ -f "$CODEX_HOME/config.toml" ] && ok "Codex enchufado con config.toml" || bad "sin config.toml tras enchufar: $OUT"
   rm -f "$CODEX_HOME/config.toml"

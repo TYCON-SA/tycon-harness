@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
-# bench-git-deterministic.test.sh — el git del SANDBOX del banco no depende de la máquina (2026-09-18).
+# bench-git-deterministic.test.sh — el git del SANDBOX del banco no depende de la máquina.
 #
-# Caso disparador: el nocturno de Azure venía con 4 rojos —dos casos de `retro-pending.js` por cada
-# herramienta— y los mismos casos daban VERDE en la Mac del dev. La diferencia no era el control:
+# Defecto que cierra: el nocturno de Azure da rojos —dos casos de `retro-pending.js` por cada
+# herramienta— y los mismos casos dan VERDE en una Mac. La diferencia no es el control:
 # `git init --bare` toma el nombre de la rama de `init.defaultBranch`, en macOS lo fija el gitconfig
 # del SISTEMA que instala Xcode (→ main) y en el agente Linux no hay ninguno, así que git cae en
-# `master`. El remoto quedaba con HEAD apuntando a una rama que no existe, el clon no podía hacer
-# checkout y el push moría con «src refspec main does not match any». Un rojo que sólo se ve en una
-# máquina no se puede ni reproducir ni creer, y encima es el criterio (a) del corte de la Etapa 3
-# del plan de protección por pull request: «cero rojos nuevos que nadie pueda explicar».
+# `master`. El remoto queda con HEAD apuntando a una rama que no existe, el clon no puede hacer
+# checkout y el push muere con «src refspec main does not match any». Un rojo que sólo se ve en una
+# máquina no se puede ni reproducir ni creer: el criterio es «cero rojos nuevos que nadie pueda explicar».
 #
 # Lo que fija este test: un caso del banco que crea repos git se comporta IGUAL en cualquier máquina,
 # porque el sandbox ignora el gitconfig del sistema y trae el suyo. El caso de prueba corre su `git`

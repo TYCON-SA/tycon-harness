@@ -1,28 +1,28 @@
 #!/usr/bin/env bash
 # get-harness.test.sh — el guion de entrada de la portada (`get-harness.sh`), por EJECUCIÓN: la portada SIN git
-# (story 8.23, tanda E · AC 33 · la parte local de T34; reescribe T54, T55 y T57 de la 8.16 y suma T56).
+# (la parte local de T34, con T54, T55, T56 y T57).
 #
 # Lo que no se puede perder:
 #   · T54 — el guion tiene 120 líneas como mucho, `bash -n` limpio, el piso de Node para instalar (22; `harness.js`, 20), la
-#     dirección de fábrica de la portada (`REPO="<org>/<nombre>"`), y NO invoca git ni lo pide (ni `--depth`: ya no hay
+#     dirección de fábrica de la portada (`REPO="<org>/<nombre>"`), y NO invoca git ni lo pide (ni `--depth`: no hay
 #     clon). `--help` sale 0 sin tocar la red ni la HOME.
 #   · T55 — un requisito que falta (`node`, `tar`, `python3`, o un `node` viejo) sale 1 con una línea por cada uno y un
 #     comando SUGERIDO según el sistema; nadie llama a un gestor de paquetes; no se baja nada y la HOME queda igual.
-#   · T56 — el permiso ANTES de bajar (AC 11): con el repo público instala sin pedir nada; con el repo privado y sin
+#   · T56 — el permiso ANTES de bajar: con el repo público instala sin pedir nada; con el repo privado y sin
 #     permiso, sin terminal sale 1 con UNA acción (el enlace para crearlo, y cómo pegarlo) sin escribir nada; con
 #     `TYCON_GITHUB_TOKEN` lo guarda (0600) e instala; en una terminal lo pide sin eco y sigue; con uno guardado no
 #     pregunta; uno que no vale sale 1 diciéndolo. La bajada: el comprimido por la API, la redirección a «codeload» SIN
 #     la credencial, el árbol temporal se borra, `install --version latest --repo <org/nombre>` corre desde ahí (la bajada
-#     verificada y la instalación son las de la tanda B: estado `release`, `~/.tycon/harness`), la entrada estándar sigue
+#     verificada y la instalación son las de `harness.js install`: estado `release`, `~/.tycon/harness`), la entrada estándar sigue
 #     siendo la terminal (la pregunta «¿Instalo?» llega), git NUNCA se invoca y el valor del permiso no aparece en nada
 #     de lo escrito salvo `~/.tycon/config.json`.
 #   · T57 — cada línea de bash del bloque `install:script` de la portada pasa el freno de comandos; la tubería hacia un
 #     shell sale bloqueada con `SUP-C1`.
-#   · T14 (story 8.34) — sin permiso, el guion no usa la API de GitHub (main de `info/refs`, el comprimido de codeload): la
+#   · T14 — sin permiso, el guion no usa la API de GitHub (main de `info/refs`, el comprimido de codeload): la
 #     instalación entera gasta UNA consulta (la de install, que verifica); si github.com no contesta, cae a la API; con la
 #     API agotada, el guion baja igual e install dice el tope y su hora —nunca «GitHub contestó 403»—; un 403 del tope en
 #     el guion (por la API) también dice la hora.
-#   · T61 (2026-10-14) — un permiso que venció (401) con el repo público: guardado o en TYCON_GITHUB_TOKEN, el guion se
+#   · T61 — un permiso que venció (401) con el repo público: guardado o en TYCON_GITHUB_TOKEN, el guion se
 #     instala sin él por info/refs y codeload y lo dice en una línea; el de la variable no se guarda.
 #
 # Cómo mide, sin red y sin tocar la máquina: la HOME de juguete de `harness_lab_create`, el «GitHub» de juguete de
@@ -36,8 +36,8 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SRC="$RAIZ/scripts/publishing/public-files/scripts/setup/get-harness.sh"
 README_EN="$RAIZ/scripts/publishing/public-files/getting-started/reference.md"
 COPY=0
-# desde el corte el guion se escribe en el público (scripts/setup/get-harness.sh): si está, es ése el que se mide, aunque
-# el árbol armado de un nocturno traiga todavía el papel viejo del repo del equipo (que ya no sigue los cambios)
+# el guion se escribe en el público (scripts/setup/get-harness.sh): si está, es ése el que se mide, aunque
+# el árbol armado de un nocturno traiga una copia vieja del repo del equipo (que no sigue los cambios)
 if [ -f "$RAIZ/scripts/setup/get-harness.sh" ]; then
   COPY=1; SRC="$RAIZ/scripts/setup/get-harness.sh"; README_EN="$RAIZ/getting-started/reference.md"
 fi
@@ -97,7 +97,7 @@ FLOOR_HARNESS="$(sed -n 's/^const NODE_FLOOR = \([0-9][0-9]*\);.*/\1/p' "$RAIZ/s
 LINES="$(wc -l < "$SRC" | tr -d ' ')"
 if [ "$LINES" -le 120 ]; then ok "T54 el guion tiene ${LINES} líneas (tope 120: se lee entero)"; else no "T54 el guion tiene ${LINES} líneas (tope 120)"; fi
 if bash -n "$SRC" 2> "$BASE/syntax.err"; then ok "T54 bash -n limpio"; else no "T54 bash -n: $(brief "$BASE/syntax.err")"; fi
-# story 8.40 (T24, decisión del dueño 2026-10-16): los de instalación y las portadas dicen 22; harness.js dice 20 (lo
+# T24: los de instalación y las portadas dicen 22; harness.js dice 20 (lo
 # tolera sólo para actualizar una instalación existente: después de instalar, el arnés corre con su propio Node 24)
 FLOOR_SCRIPT="$(sed -n 's/^NODE_FLOOR=\([0-9][0-9]*\).*/\1/p' "$SRC")"
 FLOOR_PS1="$(sed -n 's/^\$NodeFloor = \([0-9][0-9]*\).*/\1/p' "$RAIZ/scripts/setup/get-harness.ps1")"
@@ -113,7 +113,7 @@ for f in README.md README.es.md getting-started/reference.md getting-started/ref
 done
 if [ -z "$FLOOR_COVERS" ]; then ok "T24 las portadas y las referencias dicen Node 22 o posterior, ninguna 20"; else no "T24 el piso en la documentación:${FLOOR_COVERS}"; fi
 # (la ruta `/git/ref/heads/<rama>` de la API de GitHub no es una invocación de git: se descuenta antes de mirar)
-# (y los nombres de las rutas públicas de la story 8.34 —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
+# (y los nombres de las rutas públicas —`<repo>.git/info/refs`, `git-upload-pack`— tampoco)
 if ! grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -wE 'git|--depth' >/dev/null; then ok "T54 el guion no invoca git ni lo pide (sin clon: la versión se baja como archivos)"
 else no "T54 el guion todavía nombra git fuera de los comentarios: $(grep -vE '^\s*#' "$SRC" | sed -e 's#/git/##g' -e 's#\.git/info/refs##g' -e 's#git-upload-pack##g' | grep -nwE 'git|--depth' | head -3 | tr '\n' ' ')"; fi
 if [ "$COPY" = 0 ]; then
@@ -155,12 +155,12 @@ make_path "$LAB/path-nonode" tar python3 "${BASICS[@]}";        t55 nonode "$LAB
 make_path "$LAB/path-notar" node python3 "${BASICS[@]}";        t55 notar "$LAB/path-notar" "falta tar.*$WANT_TAR" "sin tar"
 make_path "$LAB/path-nopy" node tar "${BASICS[@]}";             t55 nopy "$LAB/path-nopy" "falta python3" "sin python3"
 make_path "$LAB/path-nocurl" node tar python3 bash uname rm mktemp tr env ls grep head printf; t55 nocurl "$LAB/path-nocurl" "falta curl" "sin curl (baja por la API con él)"
-# con `-- --tool codex` (sólo Codex) python3 no hace falta: el guion pasa los requisitos y llega a bajar (pase adversarial, clase 17)
+# con `-- --tool codex` (sólo Codex) python3 no hace falta: el guion pasa los requisitos y llega a bajar
 : > "$LAB_RELEASE_LOG"
 env -u TYCON_GITHUB_TOKEN PATH="$LAB/path-nopy" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 "$REAL_BASH" "$GH" -- --tool codex --yes < /dev/null > "$BASE/t55-codex.out" 2>&1; RC=$?
 if ! grep -q 'falta python3' "$BASE/t55-codex.out" && [ "$(requests '/tar.gz/')" -ge 1 ]; then ok "T55 con -- --tool codex y sin python3: python3 no es requisito (lo pide el aplicador de Claude Code) y el guion llega a bajar"
 else no "T55 con -- --tool codex sin python3 (rc $RC, tar.gz $(requests '/tar.gz/')): $(brief "$BASE/t55-codex.out" 300)"; fi
-# 8.40·T54 (el cierre de la 8.40, AC 46; no es la T54 de arriba, la del tope): `--tool` se lee como lo lee install (tools.parseOption: repetida, con comas, sin
+# T54 de `--tool` (no es la T54 de arriba, la del tope): `--tool` se lee como lo lee install (tools.parseOption: repetida, con comas, sin
 # distinguir mayúsculas ni espacios). La red apunta a un puerto cerrado: sólo importa si pide python3 o no
 t54() { # t54 <nombre> <pide python3: si|no> <opciones…>
   local name="$1" want="$2"; shift 2
@@ -204,7 +204,7 @@ else no "T56 repo público en terminal (rc $RC, estado $(estado_kind)): $(brief 
 if [ "$(requests '/tar.gz/')" -ge 2 ] && [ "$(requests '/tarball/')" = 0 ] && [ "$(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")" = 0 ]; then
   ok "T56 sin permiso el comprimido sale de codeload (tar.gz), dos veces (la del guion y la verificada de install), sin pasar por la API y sin credencial"
 else no "T56 la bajada: tar.gz $(requests '/tar.gz/') · tarball por la API $(requests '/tarball/') · con credencial $(grep -c '"host":"codeload".*"auth":true' "$LAB_RELEASE_LOG")"; fi
-# T14 (story 8.34): la instalación entera, sin permiso, gasta UNA consulta a la API (git/commits, la verificación de install)
+# T14: la instalación entera, sin permiso, gasta UNA consulta a la API (git/commits, la verificación de install)
 if [ "$(grep -c '"host":"api"' "$LAB_RELEASE_LOG")" = 1 ] && [ "$(requests 'git/commits/')" = 1 ] && [ "$(requests 'info/refs')" -ge 2 ]; then
   ok "T14 sin permiso: el guion no le pide nada a la API (main de info/refs); la instalación entera gasta una consulta (git/commits)"
 else no "T14 consultas a la API: $(grep '"host":"api"' "$LAB_RELEASE_LOG" | sed 's/.*"path":"\([^"]*\)".*/\1/' | tr '\n' ' ') · info/refs $(requests 'info/refs')"; fi
@@ -216,7 +216,7 @@ harness_lab_release_fresh_home
 run_gh -- --profile minimal --yes > "$BASE/t56a2.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && ! grep -q '¿Instalo?' "$BASE/t56a2.out"; then ok "T56 sin terminal con -- --profile minimal --yes: las opciones llegan a install y no hay pregunta"
 else no "T56 con -- --profile minimal --yes (rc $RC): $(brief "$BASE/t56a2.out" 400)"; fi
-# story 8.40, pedido 2: el perfil pedido queda escrito (antes se perdía y la máquina quedaba full, «perfil sin elegir»)
+# el perfil pedido queda escrito (sin esto se pierde y la máquina queda full, «perfil sin elegir»)
 PROFILE_SAVED="$(node -e 'try { const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); console.log((d.install || {}).profile || "") } catch (_) { console.log("") }' "$LAB_HOME/.claude/tycon.json")"
 if [ "$PROFILE_SAVED" = minimal ]; then ok "T56 el perfil pedido (minimal) queda escrito en ~/.claude/tycon.json"
 else no "T56 el perfil pedido no quedó escrito (install.profile «${PROFILE_SAVED}»): $(brief "$BASE/t56a2.out" 300)"; fi
@@ -262,20 +262,20 @@ env TYCON_GITHUB_TOKEN="$BAD_PERMIT" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_
 if [ "$RC" -eq 1 ] && grep -qiE 'no vale|venci|401' "$BASE/t56f.out" && [ "$(requests '/tarball/')" = 0 ] && [ "$(tmp_left)" = 0 ]; then
   ok "T56 un permiso que no vale: sale 1 diciéndolo (venció o se revocó) y no baja nada"
 else no "T56 permiso que no vale (rc $RC, tarball $(requests '/tarball/')): $(brief "$BASE/t56f.out" 400)"; fi
-# (g) detrás de un proxy (HTTP_PROXY): la bajada del guion pasa por él, como la de install (pase adversarial, clase 1)
+# (g) detrás de un proxy (HTTP_PROXY): la bajada del guion pasa por él, como la de install
 harness_lab_release_control '{ "auth": "none" }'
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 env -u TYCON_GITHUB_TOKEN HTTP_PROXY="$LAB_RELEASE_PROXY" HTTPS_PROXY="$LAB_RELEASE_PROXY" TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56g.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && [ "$(requests '"via_proxy":true')" -ge 2 ]; then ok "T56 con HTTP_PROXY: la bajada del guion y la de install pasan por el proxy ($(requests '"via_proxy":true') pedidos) e instala"
 else no "T56 con HTTP_PROXY (rc $RC, por proxy $(requests '"via_proxy":true')): $(brief "$BASE/t56g.out" 300)"; fi
-# (h) un permiso con un salto de línea final (un archivo CRLF): se limpia antes de usarlo, no rompe la cabecera (clase 12)
+# (h) un permiso con un salto de línea final (un archivo CRLF): se limpia antes de usarlo, no rompe la cabecera
 harness_lab_release_control "{ \"auth\": \"token:$LAB_PERMIT\" }"
 harness_lab_release_fresh_home; : > "$LAB_RELEASE_LOG"
 env TYCON_GITHUB_TOKEN="$LAB_PERMIT"$'\r\n' TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_THIRD_PARTY=0 bash "$GH" -- --yes < /dev/null > "$BASE/t56h.out" 2>&1; RC=$?
 if [ "$RC" -eq 0 ] && installed_ok && ! grep -q 'caracteres que no valen' "$BASE/t56h.out"; then ok "T56 un permiso con CR/LF al final (pegado de un archivo CRLF): se limpia e instala"
 else no "T56 permiso con CRLF (rc $RC): $(brief "$BASE/t56h.out" 300)"; fi
 # (i) una redirección a un esquema que no es http(s) —un servidor hostil que manda a file://— no se sigue: sale 1 diciéndolo
-# y sin bajar nada; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red (vuelta 2 de revisores, seguridad)
+# y sin bajar nada; una TYCON_RELEASE_API que no es http(s) sale 2 antes de tocar la red
 node -e 'const s=require("http").createServer((q,r)=>{r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$BASE/redir.port" & REDIR_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$BASE/redir.port" ] && break; sleep 0.2; done
 harness_lab_release_fresh_home
@@ -284,7 +284,7 @@ kill "$REDIR_PID" 2>/dev/null; wait "$REDIR_PID" 2>/dev/null
 if [ "$RC" -eq 1 ] && grep -q 'esquema que no es http' "$BASE/t56i.out" && ! grep -q 'GitHub contestó' "$BASE/t56i.out" && ! installed_ok && [ "$(tmp_left)" = 0 ]; then ok "T56 una redirección a file:// no se sigue: sale 1 diciéndolo (una sola vez: sin el genérico «GitHub contestó»), sin bajar ni instalar nada"
 else no "T56 redirección a file:// (rc $RC, estado $(estado_kind)): $(brief "$BASE/t56i.out" 300)"; fi
 # (i2) la misma redirección hostil pero en la BAJADA del comprimido (la rama main se resolvió bien): el motivo se dice una vez
-# y el genérico «no pude bajar el comprimido (GitHub contestó …)» se calla (vuelta 5 de revisores)
+# y el genérico «no pude bajar el comprimido (GitHub contestó …)» se calla
 node -e 'const s=require("http").createServer((q,r)=>{if(/\/git\/ref\//.test(q.url)){r.writeHead(200,{"Content-Type":"application/json"});r.end(JSON.stringify({object:{sha:"0123456789abcdef0123456789abcdef01234567"}}));return}r.writeHead(302,{Location:"file:///etc/passwd"});r.end()});s.listen(0,"127.0.0.1",()=>require("fs").writeFileSync(process.argv[1],String(s.address().port)))' "$BASE/redir2.port" & REDIR_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do [ -s "$BASE/redir2.port" ] && break; sleep 0.2; done
 harness_lab_release_fresh_home
@@ -296,7 +296,7 @@ env -u TYCON_GITHUB_TOKEN TYCON_RELEASE_API="file:///tmp/no-es-una-api" TYCON_TH
 if [ "$RC" -eq 2 ] && grep -q 'TYCON_RELEASE_API tiene que empezar con http' "$BASE/t56j.out" && [ "$(tmp_left)" = 0 ]; then ok "T56 una TYCON_RELEASE_API que no es http(s) sale 2 diciéndolo, antes de tocar la red"
 else no "T56 API con otro esquema (rc $RC): $(brief "$BASE/t56j.out" 300)"; fi
 # (k) el listado con tipos del tar (-tvzf, el que ve los enlaces) falla y el de nombres (-tzf) anda: el guion frena igual, sin
-# abrir el comprimido ni instalar (vuelta 3 de la E: cada listado con su código). Un tar de mentira que sólo falla en -tvzf
+# abrir el comprimido ni instalar (cada listado con su código). Un tar de mentira que sólo falla en -tvzf
 make_path "$LAB/path-tarshim" node python3 gzip "${BASICS[@]}"; REAL_TAR="$(command -v tar)"   # gzip: el tar de GNU lo llama por el PATH
 printf '#!/bin/bash\ncase " $* " in *" -tvzf "*) echo "-rw-r--r-- 0 0 0 0 Jan 1 00:00 x/roto"; exit 1 ;; esac\nexec "%s" "$@"\n' "$REAL_TAR" > "$LAB/path-tarshim/tar"; chmod +x "$LAB/path-tarshim/tar"   # imprime algo y falla: frena el código, no el vacío
 harness_lab_release_control '{ "auth": "none" }'
@@ -324,7 +324,7 @@ if [ "$RC" -eq 1 ] && grep -q "hasta las $HORA" "$BASE/t14n.out" && ! grep -q 'G
 else no "T14 tope en el guion (rc $RC): $(brief "$BASE/t14n.out" 300)"; fi
 harness_lab_release_control '{ "auth": "none" }'
 
-# ══ T61 · un permiso que venció, con el repo público: se instala sin él (2026-10-14) ══════════════════════════════
+# ══ T61 · un permiso que venció, con el repo público: se instala sin él ══════════════════════════════
 # GitHub contesta 401 a un permiso vencido aunque el repo sea público: el guion sigue sin él por info/refs y codeload, y
 # no lo guarda. El guardado en ~/.tycon/config.json lo dice install (la misma línea que el arranque); el de la variable, el guion.
 EXPIRED_PERMIT="permiso-vencido-de-laboratorio"   # no es un secreto
@@ -347,8 +347,7 @@ harness_lab_release_control '{ "auth": "none" }'
 if [ ! -e "$PKG_CALLS" ]; then ok "T55/T56 en toda la suite nadie llamó a brew, apt, apt-get, sudo ni winget"; else no "alguien llamó a un gestor de paquetes: $(tr '\n' ' ' < "$PKG_CALLS")"; fi
 
 # ══ T57 · el freno de comandos: las líneas del bloque pasan, la tubería no ═════════════════════════════════════
-# Desde la tanda E de la 8.23 el bloque de la portada que instala (`install:core`) ES el guion: bajarlo por la API con el
-# permiso, leerlo, correrlo (antes vivía aparte como install:script, guardado mientras el repo fuera privado).
+# El bloque de la portada que instala (`install:core`) ES el guion: bajarlo por la API con el permiso, leerlo, correrlo.
 node - "$README_EN" > "$BASE/script-lines.txt" <<'JS'
 const fs = require('fs');
 const text = fs.readFileSync(process.argv[2], 'utf8');

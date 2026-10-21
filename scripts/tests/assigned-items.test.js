@@ -1,6 +1,6 @@
 'use strict';
 /*
- * assigned-items.test.js — los pedidos abiertos asignados a cada persona, de cada noche (story 2.23, AC 16; T27).
+ * assigned-items.test.js — los pedidos abiertos asignados a cada persona, de cada noche (T27).
  *
  * El guion deja `.dashboard/assigned/assigned-<día>.json` para el sitio de la organización, con LISTA BLANCA: id,
  * proyecto, tipo, estado, identidad del asignado, días en el estado, enlace, si es un Bug de dependencias del arnés y el
@@ -229,7 +229,7 @@ test('T5 Asignados_MasRecientePrimero', () => {
   } finally { fs.rmSync(m.d, { recursive: true, force: true }); }
 });
 
-// el pase adversarial lo reprodujo: el tipo y el estado se recortaban a 40 caracteres ANTES de buscar su categoría
+// el tipo y el estado no se recortan a 40 caracteres ANTES de buscar su categoría
 test('T9 Asignados_TipoYEstadoLargos_SeJuzganEnteros', () => {
   const TIPO = 'Requerimiento de Cambio de Configuración Mayor';   // 46 caracteres
   const ESTADO = 'En Revisión del Comité de Arquitectura Técnica';    // 46 caracteres
@@ -244,7 +244,7 @@ test('T9 Asignados_TipoYEstadoLargos_SeJuzganEnteros', () => {
     assert.deepStrictEqual(d.pedidos.map((p) => p.id), [1], 'se juzga con el tipo y el estado enteros');
     assert.strictEqual(d.pedidos[0].estado.length, 40, 'lo que se ESCRIBE sigue recortado');
   } finally { fs.rmSync(m.d, { recursive: true, force: true }); }
-  // un estado que su tipo ya no declara (medido en Azure: Tasks en «Closed» tras un cambio de proceso): no se muestra,
+  // un estado que su tipo ya no declara (por ejemplo, Tasks en «Closed» tras un cambio de proceso): no se muestra,
   // se cuenta, y el proyecto sigue medido
   const n = mundo();
   try {

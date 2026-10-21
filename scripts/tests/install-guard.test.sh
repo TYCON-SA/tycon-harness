@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # install-guard.test.sh — red del lint del catálogo de producción y del instalador del freno
-# (story 6.1, «Producción con permiso»).
+# («Producción con permiso»).
 #
-# Caso que lo motiva (2026-09-15): en una sesión sobre un producto del equipo se autorizó UNA consulta a producción y
-# en el turno siguiente el asistente corrió ~9 más sin pedir permiso, y abrió una regla de firewall
-# que quedó viva. La regla existía en la memoria del asistente y no alcanzó: un control que hay que
+# Caso que lo motiva: si en una sesión se autoriza UNA consulta a producción, el asistente puede correr ~9 más
+# sin pedir permiso y abrir una regla de firewall
+# que queda viva. La regla existe en la memoria del asistente y no alcanza: un control que hay que
 # acordarse de invocar es un control que no corre.
 #
 # Qué prueba este archivo:
@@ -14,13 +14,13 @@
 #   T32 — en una máquina con una versión BAJADA, el aviso de arranque juzga el freno contra esa versión y contra la
 #         constancia que deja el instalador, no contra el clon que la máquina mantiene: recién instalado es «al día»,
 #         tras una versión nueva «quedó viejo», y una biblioteca retocada en /opt sigue siendo «alguien lo cambió».
-#   T34 — (2026-10-14) con el permiso guardado vencido y el repo público, el instalador sigue sin él y lo dice.
+#   T34 — con el permiso guardado vencido y el repo público, el instalador sigue sin él y lo dice.
 #   T33 — el freno usa SÓLO el intérprete de root (/opt/tycon/bin/node): si falta, tiene otro dueño
 #         o su huella no coincide, un comando que nombra una base sale 2 (y uno que no, pasa).
 #
 # 🔴 Nada acá toca el sistema de verdad: raíz de sistema falsa, HOME falso, `sudo` doblado.
-#    Lección ya pagada (story 2.16): el rojo previo de una prueba nueva leyó la config REAL de la
-#    máquina y empujó datos a un repo de verdad.
+#    Lección: sin esto, una prueba nueva puede leer la config REAL de la
+#    máquina y empujar datos a un repo de verdad.
 #
 # Correr: bash scripts/tests/install-guard.test.sh
 set -uo pipefail
@@ -32,14 +32,14 @@ HOOK_GLOBAL="$AQUI/scripts/hooks/git-pre-commit-global.sh"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 source "$AQUI/scripts/tests/lib/fake-home.sh"
 fallos=0; pasaron=0
-# La foto del registro REAL antes de empezar: T33g exige que al final valga lo mismo (2026-09-18).
+# La foto del registro REAL antes de empezar: T33g exige que al final valga lo mismo.
 REAL_LOG_0="${HOME}/.claude/.tycon-pipeline/production.log"
 ANTES_REAL=0; [ -f "$REAL_LOG_0" ] && ANTES_REAL="$(wc -l < "$REAL_LOG_0" | tr -d ' ')"
 ok(){ echo "✅ instalar-freno: $1"; pasaron=$((pasaron+1)); }
 no(){ echo "❌ instalar-freno: $1"; fallos=$((fallos+1)); }
 
 # ── T11 · la declaración con una clave de más no entra ────────────────────────────────────────
-# Rojo previo: sin lint (o con lista NEGRA en vez de blanca), `usuario` pasa y la contraseña del
+# Sin lint (o con lista NEGRA en vez de blanca), `usuario` pasa y la contraseña del
 # proyecto termina versionada en el repo del cliente.
 declara(){ # $1 = json  → deja el archivo en un repo git (CON migraciones) con el archivo STAGEADO
   rm -rf "$TMP/r"; mkdir -p "$TMP/r/.tycon" "$TMP/r/database"
@@ -87,7 +87,7 @@ else
   if node "$LINT" --staged --repo "$TMP/r" >/dev/null 2>&1; then ok "T11h · juzga lo STAGEADO, no el disco"
   else no "T11h · juzgó el archivo del disco en vez del stageado"; fi
 
-  # AC 1: producción se declara en el repo con migraciones (database/ o BD/)
+  # producción se declara en el repo con migraciones (database/ o BD/)
   declara "$BUENO"; rm -rf "$TMP/r/database"
   salida="$(node "$LINT" --staged --repo "$TMP/r" 2>&1)"; rc=$?
   if [ "$rc" -ne 0 ] && printf '%s' "$salida" | grep "sin migraciones" >/dev/null; then ok "T11j · producción declarada en un repo sin migraciones se rechaza"
@@ -97,7 +97,7 @@ else
   else no "T11k · un no-produccion en un repo sin migraciones fue rechazado"; fi
 fi
 
-# el enganche en el pre-commit global: sin `|| true` (el AC 1 dice que RECHAZA)
+# el enganche en el pre-commit global: sin `|| true`, porque tiene que RECHAZAR
 if grep -q "lint-production-json.js" "$HOOK_GLOBAL" 2>/dev/null; then
   if grep -A3 "lint-production-json.js" "$HOOK_GLOBAL" | grep "|| true" >/dev/null; then
     no 'T11i · el lint está enganchado con "|| true": no rechazaría nada'
@@ -107,8 +107,8 @@ else
 fi
 
 # ── T33 · el freno usa sólo el intérprete de root ─────────────────────────────────────────────
-# Rojo previo: resolver `node` por rutas fijas del usuario (/usr/local/bin, /opt/homebrew/bin, las
-# dos escribibles por el usuario) → `cp /bin/true /opt/homebrew/bin/node` apaga el freno en silencio.
+# Resolver `node` por rutas fijas del usuario (/usr/local/bin, /opt/homebrew/bin, las
+# dos escribibles por el usuario) deja que `cp /bin/true /opt/homebrew/bin/node` apague el freno en silencio.
 if [ ! -f "$SHIM" ]; then
   no "T33 · el shim no existe todavía ($SHIM)"
 else
@@ -131,9 +131,9 @@ else
   [ $? -eq 2 ] && ok "T33c · con la huella del intérprete cambiada, sale 2" || no "T33c · huella distinta y el shim ejecutó igual"
 fi
 
-# 🔴 CONTROL POSITIVO (faltaba, y su ausencia tapaba un defecto real — pase adversarial 2026-09-15):
+# 🔴 CONTROL POSITIVO (su ausencia tapa un defecto real):
 # con TODO en su lugar, el lanzador tiene que EJECUTAR el freno y dejar pasar su veredicto. Sin este
-# caso, un lanzador que nunca ejecuta nada se veía idéntico a uno que anda: los tres casos de arriba
+# caso, un lanzador que nunca ejecuta nada se vería idéntico a uno que anda: los tres casos de arriba
 # pasan igual, porque todos miran el camino de la falla.
 if [ -f "$SHIM" ]; then
   RAIZ2="$TMP/sys-ok"; CASA2="$TMP/casa-ok"; REPOS2="$TMP/repos-ok"
@@ -159,7 +159,7 @@ if [ -f "$SHIM" ]; then
 fi
 
 # T33i · un freno que no se pudo ejecutar deja CONSTANCIA donde el aviso de arranque la lee. Sin
-# esto, «el freno está roto en esta máquina» vivía sólo en la pantalla del momento (Step 5).
+# esto, «el freno está roto en esta máquina» vive sólo en la pantalla del momento.
 if [ -f "$SHIM" ]; then
   VACIA2="$TMP/sys-vacia2"; CASA3="$TMP/casa-constancia"; rm -rf "$VACIA2" "$CASA3"; mkdir -p "$VACIA2/opt/tycon/bin" "$CASA3"
   printf '{"tool_name":"Bash","tool_input":{"command":"sqlcmd -S acme-sql.database.windows.net -Q \"select 1\""}}'     | env HOME="$CASA3" TYCON_PROD_ROOT="$VACIA2" bash "$SHIM" >/dev/null 2>&1
@@ -171,21 +171,21 @@ fi
 # 🔴 Con el freno INSTALADO el lanzador ignora `TYCON_PROD_ROOT` (a propósito: una sesión hija con esa
 # variable apagaba el freno entero), así que el caso de abajo no se puede fabricar en esta máquina: el
 # lanzador usaría el /opt/tycon REAL y contestaría con el motivo del freno de verdad, no con el suyo.
-# Se saltea DICIÉNDOLO; lo mide el nocturno, que corre sin el freno instalado (2026-09-15).
+# Se saltea DICIÉNDOLO; lo mide el nocturno, que corre sin el freno instalado.
 if [ -d /opt/tycon ]; then
   echo "⏭ instalar-freno: T33g/h/j salteados — con el freno instalado, el lanzador ignora la raíz de prueba; los mide el nocturno."
 else
 
 # T33g/h · el RELOJ del lanzador. La herramienta le da al hook 10 s y un hook que no contesta a
-# tiempo DEJA PASAR: un freno colgado se leería como «lo miré y estaba todo bien». Rojo previo: sin
-# el vigía, el caso de abajo tarda lo que tarde el freno y sale 0 (revisores del Step 5, 2026-09-15).
+# tiempo DEJA PASAR: un freno colgado se leería como «lo miré y estaba todo bien». Sin
+# el vigía, el caso de abajo tarda lo que tarde el freno y sale 0.
 if [ -f "$SHIM" ]; then
   COLG="$TMP/sys-colgado"; rm -rf "$COLG"; mkdir -p "$COLG/opt/tycon/bin" "$COLG/opt/tycon/hooks"
   cp "$(command -v node)" "$COLG/opt/tycon/bin/node"
   printf 'setTimeout(()=>process.exit(0), 60000);\n' > "$COLG/opt/tycon/hooks/prod-access-guard.js"
   printf '{"/opt/tycon/bin/node":"%s"}' "$(shasum -a 256 "$COLG/opt/tycon/bin/node" | cut -d' ' -f1)" > "$COLG/opt/tycon/huellas.json"
   COLG_CASA="$TMP/casa-colgado"
-  # HOME de la prueba (story 7.16): colgado() corre dentro de `$( … )`, así que la HOME falsa queda en esa
+  # HOME de la prueba: colgado() corre dentro de `$( … )`, así que la HOME falsa queda en esa
   # subshell y el resto de la suite sigue como estaba. Si no se puede armar, 97: ni 0 ni 2, los dos casos lo ven.
   colgado(){ fake_home_create "$COLG_CASA" 2>"$TMP/colg-err" || { echo 97; return; }
              printf '%s' "$1" | env TYCON_PROD_ROOT="$COLG" TYCON_PROD_SHIM_TIMEOUT=2 bash "$SHIM" >"$TMP/colg-out" 2>"$TMP/colg-err"; echo $?; }
@@ -198,10 +198,10 @@ if [ -f "$SHIM" ]; then
   if [ "$rc" = 0 ] && [ ! -s "$TMP/colg-err" ]; then ok "T33h · y un comando sin bases pasa limpio, sin el ruido del vigía"
   else no "T33h · con el freno colgado, un comando sin bases salió $rc — err: $(head -c 120 "$TMP/colg-err")"; fi
 
-  # T33j (story 7.16) · la constancia del reloj queda en la HOME de la PRUEBA. El lanzador que frena deja
-  # «no pude ejecutar el freno» en hook-errors.log, que el aviso de arranque lee: corrido sin HOME propia, era
-  # una constancia falsa por corrida en el registro real del nocturno. Evidencia POSITIVA (el real no sirve de
-  # control). Rojo previo: sin la HOME falsa en colgado(), la constancia no está acá.
+  # T33j · la constancia del reloj queda en la HOME de la PRUEBA. El lanzador que frena deja
+  # «no pude ejecutar el freno» en hook-errors.log, que el aviso de arranque lee: corrido sin HOME propia, deja una
+  # constancia falsa por corrida en el registro real del nocturno. Evidencia POSITIVA (el real no sirve de
+  # control). Sin la HOME falsa en colgado(), la constancia no está acá.
   n="$(FAKE_HOME="$COLG_CASA" fake_home_count hook-errors.log 'se quedó sin tiempo' 2>/dev/null)"
   if [ "${n:-0}" -gt 0 ]; then ok "T33j · la constancia del freno colgado quedó en la HOME de la prueba ($n), no en la real"
   else no "T33j · la constancia del freno colgado no está en la HOME de la prueba: fue al hook-errors.log real"; fi
@@ -210,15 +210,12 @@ fi
 
 # T33f · CADA cliente que el freno conoce, con el lanzador SIN intérprete de root, sale 2. La lista se
 # lee del propio freno: si alguien suma un cliente allá y no en el lanzador, este caso se pone rojo
-# (eran dos listas a mano y ya se habían separado — pase adversarial 2026-09-15).
-# 🔴 CASA FALSA, como el resto de los casos de este archivo (2026-09-18). T33f era el único que
-# lanzaba el shim REAL sin `HOME=`: el freno escribe su registro en `$HOME/.claude/.tycon-pipeline/`,
-# así que cada corrida de esta suite dejaba ~10 bloqueos INVENTADOS en el production.log de verdad
-# (medido: 233 → 243 líneas en una corrida). Y ese registro no es un log suelto: `guard-record.js`
-# lo declara y el reductor lo cuenta para el tablero del arnés, o sea que la suite fabricaba el
-# numerador de un número que el equipo publica. Tercera vuelta del mismo patrón (upload-runs.test.sh
-# empujó 11 commits sintéticos a un repo privado; dashboard.test.sh C-02 se puso rojo por datos reales),
-# y la primera que pasa en CADA corrida en vez de una vez. Regla: BANCO-C11.
+# (dos listas a mano se separarían).
+# 🔴 CASA FALSA, como el resto de los casos de este archivo. T33f lanza el shim REAL: el freno escribe
+# su registro en `$HOME/.claude/.tycon-pipeline/`, así que sin `HOME=` cada corrida de esta suite dejaría ~10 bloqueos
+# INVENTADOS en el production.log de verdad. Y ese registro no es un log suelto: `guard-record.js`
+# lo declara y el reductor lo cuenta para el tablero del arnés, o sea que la suite fabricaría el
+# numerador de un número que el equipo publica. Regla: BANCO-C11.
 if [ -f "$SHIM" ]; then
   VACIA="$TMP/sys-vacia"; mkdir -p "$VACIA/opt/tycon/bin"
   CASA_33F="$TMP/casa-33f"; mkdir -p "$CASA_33F"
@@ -232,9 +229,9 @@ if [ -f "$SHIM" ]; then
   done
 fi
 
-# T33g · esta suite no escribe NADA en la casa real (2026-09-18). Se mira el registro del freno de la
+# T33g · esta suite no escribe NADA en la casa real. Se mira el registro del freno de la
 # casa de verdad antes y después del bloque de arriba: si crece, algún caso perdió su `HOME=` y está
-# fabricando bloqueos que el tablero después cuenta como reales. ROJO PREVIO: +10 líneas por corrida.
+# fabricando bloqueos que el tablero después cuenta como reales. Sin el `HOME=`, la suite suma ~10 líneas por corrida.
 {
   REAL_LOG="$REAL_LOG_0"
   DESPUES=0; [ -f "$REAL_LOG" ] && DESPUES="$(wc -l < "$REAL_LOG" | tr -d ' ')"
@@ -253,19 +250,19 @@ exec "$@"
 SH
           chmod +x "$TMP/bin/sudo"
           # doble del cliente de base: el agente Linux del nocturno no tiene sqlcmd en la ruta fija
-          # que mira el instalador, y sin él el instalador muere ANTES de T19a (rojo 10502, 2026-09-16)
+          # que mira el instalador, y sin él el instalador muere ANTES de T19a
           cat > "$TMP/bin/sqlcmd" <<'SH'
 #!/usr/bin/env bash
 echo "doble de sqlcmd para T19"; exit 0
 SH
           chmod +x "$TMP/bin/sqlcmd"; }
   prep
-  # ── de qué clon instala T19 (story 8.7) ──────────────────────────────────────────────────────
+  # ── de qué clon instala T19 ──────────────────────────────────────────────────────
   # El instalador exige que el `origin` del arnés sea el https de Azure DevOps del equipo y que haya una organización
-  # configurada. Corriendo sobre ESTE clon, T19 dependía del remoto de quien corre: en la copia pública (sin remoto, o
+  # configurada. Corriendo sobre ESTE clon, T19 depende del remoto de quien corre: en la copia pública (sin remoto, o
   # con el de otro servidor), en un clon de laboratorio (`git clone --shared`: el origin es una carpeta) o en un clon
-  # por ssh, el instalador moría antes de instalar nada y nueve chequeos daban rojo sin haber medido lo suyo (medido en
-  # la copia: «no pude leer el remoto del clon»).
+  # por ssh, el instalador muere antes de instalar nada y nueve chequeos dan rojo sin haber medido lo suyo («no pude
+  # leer el remoto del clon»).
   # Con el origin https del repo del equipo se sigue instalando desde ESTE clon, con la organización del perfil: así el
   # repo del equipo mide además que su perfil y su remoto coinciden. Sin eso, se arma un clon de laboratorio con los
   # archivos del instalador, un origin de Azure DevOps inventado y esa organización por TYCON_ADO_ORG —lo mismo que ya
@@ -277,7 +274,7 @@ SH
   [ -n "$ORG_REAL" ] || HARNESS_T19=""
   # …y tiene que ser EL repo en el que el instalador confía (el `case` del remoto de install-guard.sh). Desde otro repo
   # de la misma organización —su origin también es un https de Azure DevOps— el instalador muere por el remoto antes de
-  # instalar nada, y los nueve chequeos de abajo daban rojo sin haber medido lo suyo: la misma falla que ya tenían la
+  # instalar nada, y los nueve chequeos de abajo darían rojo sin haber medido lo suyo: la misma falla que tienen la
   # copia pública y los clones de laboratorio, con otro remoto. Un clon así, además, no tiene por qué traer el freno
   # publicado en su rama principal.
   case "$ORIGIN_URL" in */tycon-claude-guides/_git/tycon-claude-guides) : ;; *) HARNESS_T19="" ;; esac
@@ -314,7 +311,7 @@ SH
   [ "$antes" = "$despues" ] && ok "T19d · la segunda corrida no cambia nada (idempotente)" || no "T19d · la segunda corrida cambió archivos"
 
   # T19j · las libs que el freno necesita en /opt/tycon viajan completas: repos-root.js requiere tycon-config.js y
-  #        skills-dir.js (story 8.3); sin ellas el freno instalado no podía ni leer el índice (pase adversarial, vuelta 1)
+  #        skills-dir.js; sin ellas el freno instalado no puede ni leer el índice
   if [ -f "$TMP/sys2/opt/tycon/lib/tycon-config.js" ] && [ -f "$TMP/sys2/opt/tycon/lib/skills-dir.js" ] \
      && node -e 'require(process.argv[1])' "$TMP/sys2/opt/tycon/lib/repos-root.js" >/dev/null 2>&1; then
     ok "T19j · el repos-root.js instalado carga con sus vecinas (tycon-config.js, skills-dir.js)"
@@ -324,7 +321,7 @@ SH
   #        organización: el instalador acepta el clon del equipo; y una organización ajena lo sigue rechazando (control).
   #        La organización se lee del origin de ESTE clon (ORG_REAL, arriba): la prueba no escribe ninguna a mano.
   #        Si este clon no es el repo en el que confía el instalador (otro repo de la misma organización), se mide lo
-  #        mismo sobre el clon de laboratorio de T19, con su organización inventada: con ESTE clon los tres daban rojo
+  #        mismo sobre el clon de laboratorio de T19, con su organización inventada: con ESTE clon los tres darían rojo
   #        por el remoto, no por la forma de escribir la organización.
   ORG_K="$ORG_REAL"; [ "$HARNESS_T19" = "$AQUI" ] || ORG_K="lab-org"
   if [ -z "$ORG_REAL" ]; then
@@ -342,7 +339,7 @@ SH
     else no "T19k · control: con otra organización el instalador aceptó el clon (rc=$rc)"; fi
   fi
 
-  # T19l · el ORIGEN DE CONFIANZA (revisor de seguridad, story 8.3 vuelta 2): la organización sale de archivos que el
+  # T19l · el ORIGEN DE CONFIANZA: la organización sale de archivos que el
   #        asistente puede escribir, así que el `case` no alcanza. La primera instalación fija URL + organización en
   #        /opt/tycon (de root) sólo si una persona confirma por teclado (en pruebas: TYCON_PROD_ACCEPT_ORIGIN=1); un
   #        remoto distinto —misma organización, pasa el case— se niega sin --change-origin, y con el flag pide otra vez
@@ -351,7 +348,7 @@ SH
     echo "⏭ instalar-freno: T19l/T19m/T19n/T19o salteados — el origin de este clon no es de Azure DevOps: el origen de confianza queda SIN PROBAR acá (no cuenta como verde)"
   else
     FALSO="$TMP/clon-falso"; rm -rf "$FALSO"; mkdir -p "$FALSO"
-    # el perfil del equipo de este árbol, con su nombre de hoy o el de antes
+    # el perfil del equipo de este árbol, con su nombre actual o el anterior
     PERFIL_AQUI=team-profile.json; [ -f "$AQUI/$PERFIL_AQUI" ] || PERFIL_AQUI=perfil-equipo.json
     for f in $(sed -n '/^ARCHIVOS=(/,/^)/p' "$INSTALADOR" | grep '^  scripts/') scripts/lib/renames.json; do mkdir -p "$FALSO/$(dirname "$f")"; cp "$AQUI/$f" "$FALSO/$f"; done
     cp "$AQUI/$PERFIL_AQUI" "$FALSO/"
@@ -380,8 +377,8 @@ SH
     if [ "$rc" -eq 0 ] && grep -q '"url": "https://dos@' "$FIJADO6"; then ok "T19l · --change-origin confirmado por la persona: instala y re-fija el origen"
     else no "T19l · --change-origin confirmado no instaló o no re-fijó (rc=$rc): $(tail -1 "$TMP/o6")"; fi
 
-    # T19m · un perfil ILEGIBLE frena con archivo y motivo (AC 2), no se lee como «sin organización» (cazador de fallos
-    #        silenciosos, vuelta 2); un perfil AUSENTE sí es «sin organización»
+    # T19m · un perfil ILEGIBLE frena con archivo y motivo, no se lee como «sin organización»;
+    #        un perfil AUSENTE sí es «sin organización»
     printf '{ roto' > "$FALSO/$PERFIL_AQUI"
     inst6 1 >"$TMP/o6" 2>&1; rc=$?
     if [ "$rc" -ne 0 ] && grep -q "ROTA" "$TMP/o6" && grep -q "$PERFIL_AQUI" "$TMP/o6" && ! grep -q "sin organización de Azure DevOps configurada" "$TMP/o6"; then ok "T19m · perfil ilegible: frena nombrando el archivo y el motivo, no lo disfraza de «sin organización»"
@@ -401,7 +398,7 @@ SH
     cp "$TMP/fijado.bak" "$FIJADO6"
 
     # T19o · el host del remoto se compara ENTERO: un remoto ajeno que sólo lleva «dev.azure.com/<org>» adentro de la ruta
-    #        no es el del equipo (antes el glob `*dev.azure.com/` lo dejaba pasar — revisor de seguridad, vuelta 3)
+    #        no es el del equipo (un glob `*dev.azure.com/` lo dejaría pasar)
     ( cd "$FALSO" && git remote set-url origin "https://ajeno.example/dev.azure.com/${ORG_REAL}/tycon-claude-guides/_git/tycon-claude-guides" )
     inst6 1 --change-origin >"$TMP/o6" 2>&1; rc=$?
     if [ "$rc" -ne 0 ] && grep -q "no es el del equipo" "$TMP/o6"; then ok "T19o · un remoto ajeno con «dev.azure.com/<org>» adentro de la ruta se rechaza: el host se compara entero"
@@ -411,7 +408,7 @@ SH
     if [ "$rc" -ne 0 ] && grep -q "no es https" "$TMP/o6"; then ok "T19o · un remoto por http (sin s) se rechaza"
     else no "T19o · remoto por http pasó (rc=$rc): $(tail -1 "$TMP/o6")"; fi
 
-    # T19p · el mapa de nombres viejos (story 8.9, tanda C0 — [DEF-8.9-COPIA], el T25 de la copia): el arnés del equipo
+    # T19p · el mapa de nombres viejos: el arnés del equipo
     #        (con perfil) lo EXIGE —sin él la copia de /opt leería sólo los nombres nuevos, callada—; la copia pública no
     #        lo lleva a propósito (nace con los nombres nuevos y legacy-names.js sin mapa es paso directo), así que sin
     #        perfil y sin mapa instala igual y no deja ningún mapa en /opt
@@ -431,8 +428,8 @@ SH
   fi
 fi
 
-# ── T19q · la organización sale del perfil del equipo con su nombre de hoy (team-profile.json) o con el de antes
-#          (perfil-equipo.json); con los dos gana el nuevo, y el de antes ni se lee (roto, no frena). Sólo sobre el clon de
+# ── T19q · la organización sale del perfil del equipo con su nombre actual (team-profile.json) o con el anterior
+#          (perfil-equipo.json); con los dos gana el nuevo, y el anterior ni se lee (roto, no frena). Sólo sobre el clon de
 #          laboratorio (nunca se escribe en el clon real). Un perfil hace que el instalador exija el mapa de nombres viejos:
 #          si este árbol no lo trae (la copia pública), el laboratorio lleva uno vacío.
 if [ -f "$INSTALADOR" ] && [ -n "${HARNESS_T19:-}" ] && [ "$HARNESS_T19" = "$TMP/harness-t19" ]; then
@@ -455,7 +452,7 @@ if [ -f "$INSTALADOR" ] && [ -n "${HARNESS_T19:-}" ] && [ "$HARNESS_T19" = "$TMP
   [ "$MAPA_Q" = 1 ] && rm -f "$HARNESS_T19/scripts/lib/renames.json"
 fi
 
-# ── T19e-i · lo que los revisores del Step 5 encontraron sin probar ─────────────────────────────
+# ── T19e-i · los demás casos del instalador ─────────────────────────────────────────────────
 if [ -f "$INSTALADOR" ]; then
   MANAGED_D="$TMP/sys2/Library/Application Support/ClaudeCode/managed-settings.d"
   for regla in 'Bash(/opt/tycon/bin/tycon-prod-sql *)' 'Bash(az sql server firewall-rule *)' 'Edit(//**/.tycon/production.json)'; do
@@ -477,34 +474,33 @@ if [ -f "$INSTALADOR" ]; then
   done
   [ -z "$faltan" ] && ok "T19g · las huellas cubren puerta, intérprete, cliente, freno y plantilla" || no "T19g · faltan huellas válidas para:$faltan"
 
-  # --no-sudo corriendo como root: se niega (antes instalaba sin chequear dueños)
+  # --no-sudo corriendo como root: se niega
   rm -rf "$TMP/sys3"; mkdir -p "$TMP/sys3"
   TYCON_PROD_AS_ROOT=1 TYCON_PROD_ROOT="$TMP/sys3" TYCON_PROD_HARNESS="$AQUI" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >/dev/null 2>&1; rc=$?
   if [ "$rc" != 0 ] && [ -z "$(find "$TMP/sys3" -type f 2>/dev/null)" ]; then ok "T19h · el modo de pruebas se niega a correr como root, sin tocar nada"
   else no "T19h · el modo de pruebas corrió como root (rc=$rc)"; fi
 
-  # sin sqlcmd NO instala a medias ni termina con ✅ (AC 29)
+  # sin sqlcmd NO instala a medias ni termina con ✅
   rm -rf "$TMP/sys4" "$TMP/sinsql"; mkdir -p "$TMP/sys4" "$TMP/sinsql"; ln -s "$(command -v node)" "$TMP/sinsql/node"
-  # 🔴 story 8.7: «falla» sólo no alcanza. Con un clon cuyo remoto el instalador rechaza, esto daba verde por el motivo
-  #    equivocado (moría por el remoto, antes de buscar el cliente). Se instala desde el mismo clon que T19a —que sí
+  # 🔴 «falla» sólo no alcanza. Con un clon cuyo remoto el instalador rechaza, esto daría verde por el motivo
+  #    equivocado (moriría por el remoto, antes de buscar el cliente). Se instala desde el mismo clon que T19a —que sí
   #    llega a instalar— y se exige que el motivo sea el cliente de base.
   salida="$(TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/sinsql:/usr/bin:/bin" TYCON_PROD_ROOT="$TMP/sys4" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo 2>&1)"; rc=$?
   if [ "$rc" != 0 ] && ! printf '%s' "$salida" | grep "✅" >/dev/null && printf '%s' "$salida" | grep -i "sqlcmd" >/dev/null; then ok "T19i · sin el cliente de base falla diciéndolo, y no termina en ✅"
   else no "T19i · sin sqlcmd terminó rc=$rc, dijo ✅ o no nombró al cliente: $(printf '%s' "$salida" | tail -1)"; fi
 fi
 
-# ── T31 · Installer_GuardRunsFromInstalledCopy (story 8.14, AC 20) ─────────────────────────────
-# Caso que lo motiva: el freno instalado requería una biblioteca que el instalador no copiaba (story 8.9, AC 20: la de
-# las constancias). El `require` estaba en un `try`, así que la copia de /opt corría, frenaba lo que tenía que frenar y
-# no anotaba nada: nadie se enteró. Una lista a mano de «lo que el freno requiere» se separa de lo que el freno requiere
+# ── T31 · Installer_GuardRunsFromInstalledCopy ─────────────────────────────
+# Caso que lo motiva: si el freno instalado requiere una biblioteca que el instalador no copia (la de las constancias)
+# y el `require` está en un `try`, la copia de /opt corre, frena lo que tiene que frenar y
+# no anota nada: nadie se entera. Una lista a mano de «lo que el freno requiere» se separa de lo que el freno requiere
 # de verdad; por eso esto NO lee los `require` del texto: instala en una raíz falsa, corre el freno INSTALADO con un
 # trazador que anota cada archivo que el intérprete busca (lo encuentre o no, dentro de un `try` o no; así se siguen
 # también los de production-index.js y la forma `require(require('path').join(__dirname, …))`), y exige que todo lo
 # que buscó esté en la copia y venga de un archivo de `ARCHIVOS`. Los comandos recorren los caminos del freno: el que
 # pasa, el que frena por un nombre entero, el que frena por una base (índice, raíz de repos, configuración) y el `rm`
-# con llaves en alcance de la story 8.14.
-# T31c (AC 21): lo que el freno requiere de verdad es lo que el aviso de arranque compara contra lo publicado.
-# Rojo previo: T31b-llaves (sale 0 hasta que la Task 3 de la 8.14 entre) y T31c (el aviso no compara bibliotecas).
+# con llaves en alcance.
+# T31c: lo que el freno requiere de verdad es lo que el aviso de arranque compara contra lo publicado.
 if [ -f "$INSTALADOR" ] && [ -d /opt/tycon ]; then
   echo "⏭ instalar-freno: T31 salteado — con el freno instalado (/opt/tycon), el freno de la raíz falsa no honra sus costuras; se corre con /opt/tycon escondido (sandbox-exec) y lo mide el nocturno."
 elif [ -f "$INSTALADOR" ]; then
@@ -526,13 +522,13 @@ elif [ -f "$INSTALADOR" ]; then
 
   # 🔴 El intérprete que se copia a la raíz falsa tiene que CORRER copiado. Uno de Homebrew carga su biblioteca por
   # ruta relativa y, copiado, aborta (134): por el lanzador eso se ve igual que un freno que frena (el lanzador frena
-  # todo lo que nombra una base cuando el intérprete se cae), y la prueba pasaba sin haber corrido el freno (medido).
+  # todo lo que nombra una base cuando el intérprete se cae), y la prueba pasaría sin haber corrido el freno.
   NODE31=""; mkdir -p "$TMP/prueba-node-31" "$TMP/bin31"
   for c in $(type -ap node); do
     cp "$c" "$TMP/prueba-node-31/node" 2>/dev/null && "$TMP/prueba-node-31/node" -e 0 >/dev/null 2>&1 && { NODE31="$c"; break; }
   done
   [ -n "$NODE31" ] && ln -sf "$NODE31" "$TMP/bin31/node"
-  # el mismo clon del que instala T19 (story 8.7): con el de quien corre, sin un origin https de Azure DevOps no instalaba
+  # el mismo clon del que instala T19: con el de quien corre, sin un origin https de Azure DevOps no instalaría
   PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="$ORG_T19" TYCON_PROD_TEST_PATH="$TMP/bin31:$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 \
     TYCON_PROD_ROOT="$R31" TYCON_PROD_HARNESS="$HARNESS_T19" TYCON_PROD_ACCEPT_ORIGIN=1 bash "$INSTALADOR" --no-sudo >"$TMP/inst-31" 2>&1
   inst31=$?
@@ -654,7 +650,7 @@ JS
        && [ "$(rc31 "$TMP/trazas-31" basesinraiz)" = 2 ]; then
       ok "T31b · el freno instalado pasa lo que no nombra nada y frena el nombre entero y la base (con y sin la raíz de repos)"
     else no "T31b · el freno instalado contestó mal ($(tr '\n' ' ' < "$TMP/trazas-31/rc"))"; fi
-    # [8.14-T3] el `rm` con llaves en alcance: sale 0 hasta que la Task 3 de la story 8.14 (el freno usa el expansor) entre.
+    # el `rm` con llaves en alcance: el freno usa el expansor de llaves para verlo.
     if [ "$(rc31 "$TMP/trazas-31" llaves)" = 2 ]; then ok "T31b-llaves · el freno instalado frena el rm con llaves sobre el índice y la memoria"
     else no "T31b-llaves · [8.14-T3] el freno instalado dejó pasar el rm con llaves sobre el índice y la memoria (rc=$(rc31 "$TMP/trazas-31" llaves))"; fi
     # y por el lanzador instalado, que es lo que corre la configuración administrada
@@ -670,12 +666,12 @@ JS
 
     # el control: un archivo que el freno requiere y que la copia no tiene (lo que pasa si sale de ARCHIVOS) hace fallar
     # al juez nombrándolo — también cuando el `require` está en un `try` y el freno sigue andando sin él
-    # la de las constancias, por su nombre de ahora: desde la story 8.7 el freno la busca primero así, y recién si no
-    # está por el nombre de antes (que el instalador también deja en /opt). Sin la de ahora el freno sigue anotando por
-    # la de antes, y el juez igual lo dice: buscó un archivo que la copia no tiene.
-    # `lib/skills-dir.js` NO va en este lazo desde la story 8.18 (tramo 1): `repos-root.js` la carga sólo si está al
+    # la de las constancias, por su nombre actual: el freno la busca primero así, y recién si no
+    # está por el nombre anterior (que el instalador también deja en /opt). Sin la actual el freno sigue anotando por
+    # la anterior, y el juez igual lo dice: buscó un archivo que la copia no tiene.
+    # `lib/skills-dir.js` NO va en este lazo: `repos-root.js` la carga sólo si está al
     # lado, y sin ella cae a lo instalado — una dependencia opcional a propósito (las copias viejas del freno no la
-    # traen). Sin ella el freno sigue andando y no la busca: el control daba rojo por diseño. Que, cuando está, el freno
+    # traen). Sin ella el freno sigue andando y no la busca: el control daría rojo por diseño. Que, cuando está, el freno
     # la carga lo cubre el positivo de T31a (está en `requeridos` y en ARCHIVOS).
     for falta in lib/guard-record.js production/production-index.js; do
       mv "$R31/opt/tycon/$falta" "$TMP/apartado-31"
@@ -693,7 +689,7 @@ JS
       ok "T31a · control: con scripts/production/guard-libs/lib/tycon-config.js fuera de ARCHIVOS, la prueba falla y lo nombra"
     else no "T31a · control: sacar tycon-config.js de ARCHIVOS no hizo fallar la prueba (rc=$rc): $(printf '%s' "$salida" | head -c 200)"; fi
 
-    # T31c (AC 21) · cada biblioteca que el freno requiere de verdad está entre las piezas que el aviso compara contra lo
+    # T31c · cada biblioteca que el freno requiere de verdad está entre las piezas que el aviso compara contra lo
     # publicado; y el aviso no compara de más (el costo de reinstalar con sudo se paga sólo por lo que el freno usa)
     salida="$(node -e '
       const req = require(process.argv[1]).requeridos;
@@ -712,8 +708,8 @@ JS
   fi
 fi
 
-# ── T30 · ProductionGuard_TrustsVerifiedHarnessDir_LocalEditRefused_OldWorksUntilReinstall (story 8.23, tanda D · AC 30) ──
-# La máquina mudada a ~/.tycon corre una versión BAJADA (sin git): el instalador ya no puede hacer `git archive origin/main`.
+# ── T30 · ProductionGuard_TrustsVerifiedHarnessDir_LocalEditRefused_OldWorksUntilReinstall ──
+# La máquina mudada a ~/.tycon corre una versión BAJADA (sin git): el instalador no puede hacer `git archive origin/main`.
 # Verifica ~/.tycon/harness contra su manifiesto (el blob de git de cada archivo, calculado en el instalador sin cargar código
 # del árbol) y contra el árbol que registra el estado, fija el repo de GitHub como origen de confianza (con `repo`, así
 # `doctor` distingue el freno nuevo del viejo) y copia tycon-home.js a /opt/tycon/setup/harness/, donde tycon-config.js y
@@ -779,11 +775,11 @@ json.dump({"schema": 1, "version": "2026.10.08.1", "ref": "main", "commit": sys.
   if [ "$salida" = "$CASA30/.claude/agent-skills" ]; then ok "T30f · la copia de /opt de skills-dir.js le pide la ruta instalada a tycon-home.js"
   else no "T30f · skills-dir.js de /opt contestó «${salida}»"; fi
 
-  # ── T32 · GuardNotice_OnDownloadedVersion_JudgesAgainstItNotTheMaintainedClone (2026-10-09) ─────────────────────
-  # EL CASO: una máquina mudada a ~/.tycon reinstaló el freno desde la versión bajada y cada arranque le decía «NO coincide
-  # con ninguna versión publicada… alguien lo cambió». El aviso comparaba contra origin/main del clon que la máquina
-  # mantiene (paths.maintained), y lo instalado venía de la versión bajada, que no trae los mismos bytes que ese clon.
-  # Ahora, corriendo una versión bajada, la referencia es ESA versión (su manifiesto) y, para distinguir «quedó viejo» de
+  # ── T32 · GuardNotice_OnDownloadedVersion_JudgesAgainstItNotTheMaintainedClone ─────────────────────
+  # Una máquina mudada a ~/.tycon que reinstala el freno desde la versión bajada diría en cada arranque «NO coincide
+  # con ninguna versión publicada… alguien lo cambió» si el aviso comparara contra origin/main del clon que la máquina
+  # mantiene (paths.maintained): lo instalado viene de la versión bajada, que no trae los mismos bytes que ese clon.
+  # Corriendo una versión bajada, la referencia es ESA versión (su manifiesto) y, para distinguir «quedó viejo» de
   # «alguien lo cambió» sin historia de git, la constancia que el instalador deja como root.
   NOTICE32="$AQUI/scripts/hooks/produccion-notice.js"
   CONST32="$SYS30/opt/tycon/production/installed-files.json"
@@ -835,9 +831,9 @@ json.dump(m, open(p, "w"), indent=1)' "$NUEVA32/.tycon-release.json" "$LIB32"
   [ "$s" = "vieja" ] && ok "T32f · un freno instalado antes de la constancia, distinto de la versión que corre: «vieja» (reinstalar la deja escrita)" || no "T32f · sin constancia salió «${s}»"
   s="$(juicio32 "$INST32" "scripts/lib/no-publicada.js" "$ARNES30/.tycon-release.json" "$CONST32")"
   [ "$s" = "sin-publicado" ] && ok "T32g · lo que la versión que corre no trae no se pudo comparar («sin-publicado»), no «al día»" || no "T32g · una ruta que la versión no trae salió «${s}»"
-  # (b2) LA TRANSICIÓN A LA COPIA PROPIA (2026-10-14): un freno instalado antes de ella tiene la constancia con las rutas de
+  # (b2) LA TRANSICIÓN A LA COPIA PROPIA: un freno instalado antes de ella tiene la constancia con las rutas de
   # las bibliotecas COMPARTIDAS, de donde se copiaban. Con la versión siguiente es «vieja» —por la ruta de antes—, no
-  # «alterada»; sin esa ruta, la misma constancia daba «alterada» (el control); y retocada sigue siendo «alterada».
+  # «alterada»; sin esa ruta, la misma constancia daría «alterada» (el control); y retocada sigue siendo «alterada».
   CONST32V="$TMP/constancia-32-antes-de-la-copia.json"
   python3 - "$CONST32" "$CONST32V" <<'PY'
 import json, sys
@@ -888,8 +884,8 @@ PY
     out="$(aviso32 "$NUEVA32")"
     if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && printf '%s' "$out" | grep "repos-root.js" >/dev/null && ! printf '%s' "$out" | grep "alguien lo cambió" >/dev/null; then
       ok "T32i · el arnés bajó una versión nueva: «el freno quedó viejo: reinstalalo», nombrando la biblioteca, y no «alguien lo cambió»"
-    # el rojo muestra las líneas que decide la condición, no los primeros 400 caracteres: el 2026-10-14 (public-ci, Node 22)
-    # salió rojo con «quedó viejo» y «repos-root.js» a la vista, y lo que lo hizo fallar quedó fuera del recorte
+    # el rojo muestra las líneas que decide la condición, no los primeros 400 caracteres: un rojo con «quedó viejo» y
+    # «repos-root.js» a la vista podría dejar fuera del recorte lo que lo hizo fallar
     else no "T32i · con una versión nueva — $(printf '%s\n' "$out" | grep -E 'quedó viejo|repos-root\.js|alguien lo cambió' | head -8 | cut -c1-300) [$(printf '%s' "$out" | wc -l | tr -d ' ') líneas]"; fi
     cp "$INST32" "$TMP/guardada-32.js"; printf '\n// retocada en /opt\n' >> "$INST32"
     out="$(aviso32 "$ARNES30")"
@@ -937,7 +933,7 @@ PY
     if printf '%s' "$out" | grep "el freno quedó viejo: reinstalalo" >/dev/null && ! printf '%s' "$out" | grep "su propia copia de las bibliotecas" >/dev/null; then
       ok "T32s · instalado con la copia propia: si algo del freno cambia pide reinstalar, sin el texto de la transición"
     else no "T32s · instalado con la copia propia — $(printf '%s\n' "$out" | grep -E 'quedó viejo|propia copia' | head -6 | cut -c1-300)"; fi
-    # EL CASO de la copia propia: una versión nueva que cambia SÓLO las bibliotecas compartidas (las de scripts/lib/ y
+    # La copia propia: una versión nueva que cambia SÓLO las bibliotecas compartidas (las de scripts/lib/ y
     # scripts/setup/harness/) no le pide reinstalar a nadie
     COMPARTIDA32="$TMP/arnes-32-compartida"; rm -rf "$COMPARTIDA32"; cp -R "$ARNES30" "$COMPARTIDA32"
     python3 -c '
@@ -970,7 +966,7 @@ json.dump(m, open(p, "w"), indent=1)' "$COMPARTIDA32/.tycon-release.json"
   if ! instala30 && grep -q 'guard-record.js (falta)' "$TMP/inst-30"; then ok "T30j · un archivo que falta en la versión bajada frena y lo nombra"
   else no "T30j · con guard-record.js faltante: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-200)"; fi
   mv "$TMP/guard-record.30" "$ARNES30/scripts/production/guard-libs/lib/guard-record.js"
-  # (e) 🔴 el manifiesto y el estado FORJADOS para que cierren con un archivo editado (revisor de seguridad de la D): el
+  # (e) 🔴 el manifiesto y el estado FORJADOS para que cierren con un archivo editado: el
   # blob y el árbol recalculados con git; GitHub dice otro árbol para ese commit → no se instala
   printf '\n// editado a mano, con el manifiesto y el estado acomodados\n' >> "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"
   cp "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js" "$SRC30/scripts/production/guard-libs/lib/skills-dir.js"
@@ -991,10 +987,10 @@ PY
   else no "T30k · el forjado pasó o frenó por otro motivo: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   [ -d "$SYS30/opt/tycon" ] && no "T30k · …y dejó algo en /opt/tycon" || ok "T30l · …sin dejar nada en /opt"
   G30 checkout -q -- scripts/production/guard-libs/lib/skills-dir.js; rm -f "$SRC30/.git/forjado.idx"; cp "$AQUI/scripts/production/guard-libs/lib/skills-dir.js" "$ARNES30/scripts/production/guard-libs/lib/skills-dir.js"; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
-  # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). EL CASO (2026-10-14): un día de más de 30
-  # publicaciones, una cada ~10 min, exigir la punta exacta hacía casi imposible instalar el freno. Ahora vale un commit
+  # (f) la versión instalada ya no es la punta publicada (alguien publicó otra). Con más de 30
+  # publicaciones por día, una cada ~10 min, exigir la punta exacta haría casi imposible instalar el freno. Vale un commit
   # PUBLICADO de main (GitHub: «behind» respecto de la punta) cuyo freno sea byte a byte el de la punta: instala y avisa.
-  # Lo que la regla de la punta cuidaba sigue frenando: una rama (fuera de main), un freno viejo, y GitHub sin contestar.
+  # Lo que la regla de la punta cuida sigue frenando: una rama (fuera de main), un freno viejo, y GitHub sin contestar.
   C1_30="$(G30 rev-parse HEAD)"
   printf 'otra\n' > "$SRC30/CHANGES"; G30 add -A >/dev/null; G30 commit -q -m "otra versión" >/dev/null; C2_30="$(G30 rev-parse HEAD)"; G30 push -q "$BARE30" main >/dev/null 2>&1; G30 reset -q --hard HEAD~1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
@@ -1022,8 +1018,8 @@ PY
   done
   printf '{ "auth": "none" }\n' > "$SRV30/control.json"
   G30 push -q -f "$BARE30" main >/dev/null 2>&1
-  # (f5) T15 (story 8.34) · sin permiso y con el github.com de juguete (TYCON_RELEASE_GIT): las puntas salen de info/refs, sin
-  # la API; a la API le queda el commit (1) y, con una versión atrasada, la comparación y el árbol de la punta (3, las del #55)
+  # (f5) T15 · sin permiso y con el github.com de juguete (TYCON_RELEASE_GIT): las puntas salen de info/refs, sin
+  # la API; a la API le queda el commit (1) y, con una versión atrasada, la comparación y el árbol de la punta (3 pedidos en total)
   GIT30="$(sed -n 's/^GIT=//p' "$SRV30/ports.env" 2>/dev/null)"
   api30(){ grep -c '"host":"api"' "$SRV30/requests.log" 2>/dev/null || true; }
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
@@ -1053,12 +1049,12 @@ PY
   else no "T30o · con el permiso guardado: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
   if ! grep -q 'permiso-de-laboratorio' "$TMP/inst-30" && ! grep -rq 'permiso-de-laboratorio' "$SYS30/opt" 2>/dev/null; then ok "T30p · el permiso no aparece en la salida ni en /opt"
   else no "T30p · el permiso de GitHub quedó escrito en la salida o en /opt"; fi
-  # T10/T15 (story 8.34) · con el permiso guardado, los pedidos del freno a la API son los de antes (el commit y las dos
+  # T10/T15 · con el permiso guardado, los pedidos del freno a la API son los de antes (el commit y las dos
   # puntas), aunque haya un github.com de juguete: con permiso no se usan las rutas públicas
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"; : > "$SRV30/requests.log"
   if TYCON_RELEASE_GIT="$GIT30" instala30 && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/commits/')" = 1 ] && [ "$(grep '"host":"api"' "$SRV30/requests.log" | grep -c 'git/ref/heads/')" = 2 ] && ! grep -q 'info/refs' "$SRV30/requests.log"; then ok "T15 · con permiso, el freno pide a la API lo mismo que antes (el commit y las dos puntas), sin info/refs"
   else no "T15 · con permiso, los pedidos cambiaron: $(sed 's/.*"path":"\([^"]*\)".*/\1/' "$SRV30/requests.log" | tr '\n' ' ')"; fi
-  # T34 (2026-10-14) · el permiso guardado VENCIÓ y el repo es público (GitHub contesta 401 al permiso, 200 sin él): instala
+  # T34 · el permiso guardado VENCIÓ y el repo es público (GitHub contesta 401 al permiso, 200 sin él): instala
   # sin el permiso y dice en una línea que venció, que no hace falta y cómo sacarlo
   printf '{ "auth": "none", "reject_unknown_token": true }\n' > "$SRV30/control.json"
   printf '{ "github": { "token": "permiso-vencido-de-laboratorio" } }\n' > "$CASA30/.tycon/config.json"
@@ -1069,7 +1065,7 @@ PY
   printf '{ "auth": "token:permiso-de-laboratorio" }\n' > "$SRV30/control.json"
   printf '{ "github": { "token": "permiso-de-laboratorio" } }\n' > "$CASA30/.tycon/config.json"
   # (h) un archivo puesto a mano en ~/.tycon/harness que la versión NO trae (renames.json en una versión pública): su sola
-  # presencia no lo mete en /opt (pase adversarial de la D, clases 4 y 17)
+  # presencia no lo mete en /opt
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt"
   if [ -f "$ARNES30/scripts/lib/renames.json" ]; then
     MAPA_BAK30="$TMP/renames.30"; mv "$ARNES30/scripts/lib/renames.json" "$MAPA_BAK30"
@@ -1087,16 +1083,16 @@ PY
     cp "$MAPA_BAK30" "$SRC30/scripts/lib/renames.json"; G30 add -A >/dev/null; G30 commit -q -m "con el mapa y skills-dir" >/dev/null; G30 push -q -f "$BARE30" main >/dev/null 2>&1; ARBOL30="$(manifiesto30)"; estado30 "$ARBOL30"
   fi
   # (i) una máquina instalada con `install --version` CON Claude Code tiene el estado donde siempre, no en ~/.tycon/state:
-  # el instalador lo mira donde esté (pase adversarial de la D, clase 13)
+  # el instalador lo mira donde esté
   rm -rf "$SYS30/opt/tycon"; mkdir -p "$SYS30/opt" "$CASA30/.claude/.tycon-pipeline"; mv "$ESTADO30" "$CASA30/.claude/.tycon-pipeline/harness-state.json"; rmdir "$CASA30/.tycon/state" 2>/dev/null
   if PATH="$TMP/bin:$PATH" TYCON_ADO_ORG="https://dev.azure.com/lab-org" TYCON_PROD_TEST_PATH="$TMP/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" TYCON_PROD_NODE_LOCAL=1 TYCON_PROD_ROOT="$SYS30" TYCON_PROD_HARNESS="$ARNES30" TYCON_RELEASE_API="$API30" TYCON_PROD_ACCEPT_ORIGIN=1 HOME="$CASA30" bash "$INSTALADOR" --no-sudo >"$TMP/inst-30" 2>&1; then ok "T30s · con el estado en la carpeta de siempre (instalada con Claude Code), instala igual"
   else no "T30s · estado en la carpeta de siempre: $(grep '⛔' "$TMP/inst-30" | head -1 | cut -c1-240)"; fi
-  # (j) 🔴 el ancla contra un repo AJENO que GitHub verifica igual (revisor de seguridad, vuelta 2): el origen fijado en
+  # (j) 🔴 el ancla contra un repo AJENO que GitHub verifica igual: el origen fijado en
   # /opt (root) la primera vez; otro repo en el estado —aunque exista y cierre— exige --change-origin y la confirmación por
   # teclado, como en el modo clon. (El estado vuelve a ~/.tycon/state para este caso.)
   mkdir -p "$CASA30/.tycon/state"; mv "$CASA30/.claude/.tycon-pipeline/harness-state.json" "$ESTADO30"
-  # (u) 🔴 LA MUDANZA OFICIAL A GITHUB (2026-10-16, decisión del dueño). Una máquina que instaló desde el clon de Azure
-  # tiene ese clon fijado; la versión bajada de GitHub frenaba pidiendo --change-origin. Declarada en origin-moves.json (al
+  # (u) 🔴 LA MUDANZA OFICIAL A GITHUB. Una máquina que instaló desde el clon de Azure
+  # tiene ese clon fijado; la versión bajada de GitHub frenaría pidiendo --change-origin. Declarada en origin-moves.json (al
   # lado del instalador; en pruebas, TYCON_PROD_ORIGIN_MOVES), se acepta SOLA —sin teclado— y se dice; otro clon fijado,
   # otro repo de destino o lo fijado desde GitHub siguen frenando; una lista rota frena diciéndolo.
   MUD30="$TMP/origin-moves-30.json"
@@ -1145,10 +1141,10 @@ import json,sys; p=sys.argv[1]; s=json.load(open(p)); s['sources'][0]['url']='ht
   kill "$SRV30_PID" 2>/dev/null; wait "$SRV30_PID" 2>/dev/null
 fi
 
-# ── T34 · la copia propia del freno (2026-10-14) ──────────────────────────────────────────────────────────────────────
-# EL CASO: el aviso de arranque pedía reinstalar el freno —con la contraseña del Mac— casi en cada versión del arnés,
-# porque comparaba las bibliotecas COMPARTIDAS, que cambian todo el tiempo por motivos que no son del freno. Decisión del
-# dueño: el freno lleva su propia copia (scripts/production/guard-libs/), que se actualiza a conciencia.
+# ── T34 · la copia propia del freno ──────────────────────────────────────────────────────────────────────
+# Sin la copia propia, el aviso de arranque pediría reinstalar el freno —con la contraseña del Mac— casi en cada versión
+# del arnés, porque compararía las bibliotecas COMPARTIDAS, que cambian todo el tiempo por motivos que no son del freno.
+# El freno lleva su propia copia (scripts/production/guard-libs/), que se actualiza a conciencia.
 #   (a) el instalador no instala ninguna biblioteca compartida, cada copia declarada se instala, y el aviso compara cada
 #       copia (con la compartida de la que salía antes, para la transición) y nada compartido;
 #   (b) el control de quien mantiene (guard-libs-check.js): sobre el repo, en verde; en un laboratorio, una diferencia en lo

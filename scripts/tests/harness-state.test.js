@@ -1,13 +1,13 @@
 'use strict';
 /**
  * harness-state.test.js — el programa de instalación (`scripts/setup/harness.js`): su forma, su estado y su versión
- * (story 8.13, tanda A · T1, T2, T12).
+ * (T1, T2, T12).
  *
  * Lo que no se puede perder:
  *   T1 · el programa corre con Node ≥ 20 y, con uno más viejo, imprime UNA línea y sale 2 antes de cargar nada; un
  *        subcomando o una opción desconocidos salen 2 con la lista; `--help` sale 0; nombres en inglés y sin nombres
  *        reales (los dos frenos del pre-commit, `spanish-names.js` y `new-names.js`, en 0 sobre `scripts/setup/`).
- *        Story 8.13.1: la tabla por nombre (`layer`, `install --harness-clone`; `migrate` todavía no), la ruta del lugar
+ *        La tabla por nombre (`layer`, `migrate`, `install --harness-clone`), la ruta del lugar
  *        sólo en place.js y en lo declarado, y el default de `paths.tree` sin el nombre del lugar.
  *   T2 · el estado se escribe atómico y bajo candado (dos escritores a la vez, ninguna escritura perdida); un archivo
  *        ilegible, un `schema` mayor o un `tree` que no existe hacen salir 2 a todo comando salvo `doctor` (rojo),
@@ -18,15 +18,15 @@
  *        bare de juguete (fuentes: detectar, mirar, planear, avanzar, volver) y un `tycon.json` de juguete (la política);
  *        el recorrido entero por la línea de comandos vive en `harness-update.test.sh` y `harness-doctor.test.sh`.
  *
- * 🔴 rojo previo verificado: sin `scripts/setup/harness.js` nada de esto existe; sin `scripts/setup/harness/*.js`
+ * 🔴 Sin `scripts/setup/harness.js` nada de esto existe; sin `scripts/setup/harness/*.js`
  *    los casos de módulo fallan en el `require`.
  * 🔴 Nada toca el HOME real: cada caso arma su HOME y, cuando hace falta, su arnés de juguete en el temporal. Y eso se
  *    mide: `lib/real-home-guard.js` frena y anota todo intento de escribir o borrar en la casa real, en este proceso y
- *    en los `node` que lanza; el último caso del archivo exige que no haya ninguno (2026-10-11: los dos frenos de
- *    nombres, lanzados sin HOME de juguete, anotaban en el registro real de la máquina).
+ *    en los `node` que lanza; el último caso del archivo exige que no haya ninguno (los dos frenos de
+ *    nombres, lanzados sin HOME de juguete, anotarían en el registro real de la máquina).
  */
 const GUARD = require('./lib/real-home-guard.js');   // primera línea que hace algo
-// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+// las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
 process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
@@ -63,7 +63,7 @@ fs.mkdirSync(path.join(BASE, 'tmp'), { recursive: true });
 /**
  * El ambiente de un freno del pre-commit lanzado suelto: el de la máquina (PATH, git) con una HOME de juguete y sin
  * `TYCON_HOME`. Los frenos anotan cada commit que miran en el estado de la máquina (`guard-record.js`, `new-names.jsonl`):
- * con el ambiente heredado tal cual, cada corrida de la suite sumaba líneas al registro REAL, el que lee el tablero.
+ * con el ambiente heredado tal cual, cada corrida de la suite sumaría líneas al registro REAL, el que lee el tablero.
  */
 function toolEnv() {
   const home = casa('tool-home');
@@ -126,13 +126,13 @@ test('T1 · nombres en inglés y sin nombres reales: los dos frenos del pre-comm
   }
 });
 
-// story 8.16 · T1 (Harness_Cli_ClosedTable_NewNamesInEnglish): la tabla sigue cerrada tanda por tanda. Las opciones que
-// la instalación guiada le suma a `install` (`--dry-run`, `--yes`, `--profile`, `--integrations`, `--packs`) entran con SU
-// tanda; mientras no entraron salen 2 con la lista, y `--help` no las ofrece. Cada tanda saca de `LATER` las suyas. Los
+// Harness_Cli_ClosedTable_NewNamesInEnglish: la tabla está cerrada. Las opciones que
+// la instalación guiada le suma a `install` (`--dry-run`, `--yes`, `--profile`, `--integrations`, `--packs`) están declaradas;
+// una opción inventada sale 2 con la lista, y `--help` no la ofrece. Los
 // nombres nuevos de scripts/setup/ (`install-effects.json` y sus claves) los mira el caso de arriba.
 test('8.16 · T1 · install sólo acepta las opciones de la tanda mergeada: las de después salen 2 con la lista y --help no las ofrece', () => {
-  // la tanda B trae --dry-run y --yes (y apply --dry-run), la C --profile y la D --integrations y --packs: ya no queda
-  // ninguna para después. Una opción inventada sigue saliendo 2 con la lista (la tabla está cerrada)
+  // --dry-run y --yes (y apply --dry-run), --profile, --integrations y --packs ya están declaradas: no queda
+  // ninguna para después. Una opción inventada sale 2 con la lista (la tabla está cerrada)
   const LATER = ['--profiles', '--integration'];
   const help = run(['--help']);
   assert.strictEqual(help.rc, 0, `rc ${help.rc}: ${help.all}`);
@@ -149,17 +149,17 @@ test('8.16 · T1 · install sólo acepta las opciones de la tanda mergeada: las 
   }
 });
 
-// ─── story 8.13.1 · T1 (AC 1) ───────────────────────────────────────────────────────────────────────────────────────
-// La tabla de subcomandos sigue cerrada y se mira POR NOMBRE (nunca por cuántos hay): en la tanda A entran `layer` y
-// `install --harness-clone`; `migrate` entra con la tanda B, junto con su código, y hasta entonces no está. Nombres en
-// inglés y sin nombres reales (los dos frenos sobre la rama). La ruta del lugar (categoría (a) de la 8.19, con los dos
+// ─── T1 · la tabla de subcomandos ───────────────────────────────────────────────────────────────────────────────────────
+// La tabla de subcomandos está cerrada y se mira POR NOMBRE (nunca por cuántos hay): incluye `layer` y
+// `install --harness-clone`, y `migrate` con su código. Nombres en
+// inglés y sin nombres reales (los dos frenos sobre la rama). La ruta del lugar (la categoría (a) de harness-place.test.js, con los dos
 // nombres) sólo en place.js y en lo declarado en harness-place-names.json; el default de `paths.tree` sin el nombre del
 // lugar. Los nombres salen de place.js: escribirlos acá sería otra copia.
 const PLACE = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'place.js'));
 const PLACE_LIST = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'tests', 'fixtures', 'harness-place-names.json'), 'utf8'));
 const LAYER_OPTS = ['--check', '--list', '--json', '--public', '--harness-clone'];
-// los subcomandos anunciados por una tanda posterior, que todavía NO están: la tanda que los trae los saca de acá.
-// `migrate` lo trajo la tanda D (2026-10-08): ahora se exige, con --to-home (MIGRATE_OPTS)
+// los subcomandos anunciados que todavía NO están: quien los trae los saca de acá.
+// `migrate` se exige, con --to-home (MIGRATE_OPTS)
 const LATER_SUBCOMMANDS = [];
 const MIGRATE_OPTS = ['--to-home', '--dry-run', '--repo'];
 /** Los subcomandos de `--help` con sus opciones, por nombre: { nombre: [opciones] }. */
@@ -171,7 +171,7 @@ function helpTable(helpOut) {
   }
   return t;
 }
-/** Lo que la tabla de la tanda A no cumple, por nombre. */
+/** Lo que la tabla no cumple, por nombre. */
 function tableProblems(t) {
   const p = [];
   if (!t.layer) p.push('falta layer');
@@ -183,7 +183,7 @@ function tableProblems(t) {
   return p;
 }
 // La expresión de la ruta del lugar es la de harness-place.test.js (LEGACY_PATH_RX / PLACE_PATH_RX, la categoría (a) de
-// la 8.19), con los dos nombres juntos; codeOnly, codeFiles y la marca de los envoltorios son copias de las suyas (un
+// esa prueba), con los dos nombres juntos; codeOnly, codeFiles y la marca de los envoltorios son copias de las suyas (un
 // archivo de pruebas no se puede requerir sin correr sus casos). Si cambian allá, se cambian acá.
 const PLACE_NAMES_RX = `(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME})`;
 const PLACE_ANY_PATH_RX = new RegExp(`\\.claude[/\\\\]+${PLACE_NAMES_RX}(?![A-Za-z0-9_-])|['"]\\.claude['"],\\s*['"]${PLACE_NAMES_RX}['"]`);
@@ -196,7 +196,7 @@ function codeOnly(text) {
     return quotes % 2 === 0 ? before : l;
   }).join('\n');
 }
-/** Los .js/.sh/.ps1 de scripts/ que corren (sin pruebas ni sus fixtures: el mismo filtro que codeFiles de la 8.19). */
+/** Los .js/.sh/.ps1 de scripts/ que corren (sin pruebas ni sus fixtures: el mismo filtro que codeFiles de harness-place.test.js). */
 function placeSweepFiles(root) {
   const r = spawnSync('git', ['-C', root, 'ls-files', '-co', '--exclude-standard', 'scripts'], { encoding: 'utf8' });
   assert.strictEqual(r.status, 0, `git ls-files: ${r.stderr}`);
@@ -220,7 +220,7 @@ function placePathOffenders(root, files, list) {
   return out;
 }
 
-// ─── story 8.23 · tanda C (AC 1): `install --tool` y `uninstall --tool` entran a la tabla cerrada, con su código ─────
+// ─── `install --tool` y `uninstall --tool` entran a la tabla cerrada, con su código ─────
 test('8.23 C · AC 1 Harness_Cli_ToolOption_OnlyInstallAndUninstall_NeedsAValue_ClosedValues', () => {
   const t = helpTable(run(['--help']).out);
   for (const cmd of ['install', 'uninstall']) assert.ok(t[cmd] && t[cmd].includes('--tool'), `--help no ofrece ${cmd} --tool: ${JSON.stringify(t[cmd])}`);
@@ -307,10 +307,10 @@ test('T1 Harness_Cli_LayerAndHarnessClone_ClosedTableByName_EnglishNames_NoRealN
   fs.rmSync(t, { recursive: true, force: true });
 
   // los dos frenos de nombres sobre la rama (como en harness-place.test.js T1): sin origin/main, o sin commits propios,
-  // NO MEDIDO y se dice. El rango trae lo de la rama: scripts/setup/ y las fixtures nuevas de la story entre eso.
+  // NO MEDIDO y se dice. El rango trae lo de la rama: scripts/setup/ y las fixtures nuevas entre eso.
   // 🔴 En un árbol armado —el repo privado con el público encima, como lo arma la validación de sus pedidos— la punta
   // es el commit local de esa superposición. Medido desde ahí, todo el público cuenta como «nuevo» y los frenos marcan
-  // nombres que ya existían (16 hallazgos en la corrida #13239); medido hasta el commit anterior, el privado adelgazado
+  // nombres que ya existían; medido hasta el commit anterior, el privado adelgazado
   // no trae la lista de palabras y el freno no puede mirar. Ahí este caso no mide los frenos sobre la rama, y lo dice.
   const tipSubject = spawnSync('git', ['-C', RAIZ, 'log', '-1', '--format=%s', 'HEAD'], { encoding: 'utf8' });
   if (tipSubject.status === 0 && tipSubject.stdout.includes('[superposición local, no se empuja]')) {
@@ -560,7 +560,7 @@ test('T2 · un candado huérfano (> 10 min) se pisa y queda con el pid nuevo; un
   assert.strictEqual(fs.readFileSync(path.join(p.lockDir, 'pid'), 'utf8').split('\n')[0], String(process.pid));
   assert.ok(!fs.existsSync(`${p.lockDir}.takeover`), 'quedó el mutex de takeover');
   lock.release(home);
-  // uno fresco de un proceso VIVO de esta máquina no se pisa (story 8.23, AC 37: el de un proceso muerto sí, abajo)
+  // uno fresco de un proceso VIVO de esta máquina no se pisa (el de un proceso muerto sí, abajo)
   fs.mkdirSync(p.lockDir, { recursive: true });
   fs.writeFileSync(path.join(p.lockDir, 'pid'), `${process.ppid}\n`);
   const b = lock.acquire(home, { env });
@@ -658,7 +658,7 @@ test('T7·módulo · detect: dos fuentes (harness, agent_skills) con url, ref, r
   assert.strictEqual(sources.head(L.tree, { env: L.env }), h.commit);
   assert.strictEqual(sources.origin(L.tree, { env: L.env }), h.url);
 
-  // una sola fuente: sin ~/.claude/agent-skills y con skills/ + agents/ en la raíz del clon (8.7 AC 18)
+  // una sola fuente: sin ~/.claude/agent-skills y con skills/ + agents/ en la raíz del clon
   const home2 = casa('t7-detect-single');
   const tree2 = L.harness.clone(path.join(BASE, 't7-detect-single-clones', 'harness'));
   fs.mkdirSync(path.join(tree2, 'skills', 'tycon-pipeline'), { recursive: true });
@@ -671,7 +671,7 @@ test('T7·módulo · detect: dos fuentes (harness, agent_skills) con url, ref, r
   assert.deepStrictEqual(sources.detect({ tree: tree3, home: casa('t7-detect-none'), env: L.env }).map((s) => s.name), ['harness']);
 
   // la rama en la que esté el clon NO cambia la ref ni la vuelve «reescrita»: la ref seguida es main; lo que se reescribe
-  // lo decide el remoto público (tanda D). Corrección de la iteración 1 (pase adversarial, clases 1, 7 y 8).
+  // lo decide el remoto público.
   git(tree2, ['checkout', '-q', '-b', 'mirror/sync']);
   const rw = sources.detect({ tree: tree2, home: home2, env: L.env })[0];
   assert.strictEqual(rw.ref, 'main');
@@ -694,7 +694,7 @@ test('T7·módulo · check: al día / hay nueva / no pude mirar — un origin ca
   assert.strictEqual(c.to, v2);
   assert.strictEqual(git(L.tree, ['rev-parse', 'HEAD']), h.commit, 'check movió el árbol');
 
-  // el origin del clon ya no es el fijado en el estado: se niega sin salir a la red (AC 29a)
+  // el origin del clon ya no es el fijado en el estado: se niega sin salir a la red
   const other = path.join(BASE, 'no-such-remote.git');
   git(L.tree, ['remote', 'set-url', 'origin', other]);
   c = sources.check(h, { env: L.env, budgetS: 5 });
@@ -769,12 +769,11 @@ test('T7·módulo · ref fija: plan + advance con merge --ff-only y previous en 
   assert.match(b.reason, /feature\/x/);
 });
 
-// Tanda D (D3 y A5): este caso decía «lo que no está ni ignorado ni declarado traba el reset». El dueño decidió lo
-// contrario para lo SIN SEGUIR: no traba, salvo que choque con una ruta que la versión nueva trae. Lo modificado en lo que
+// Lo SIN SEGUIR no traba el reset, salvo que choque con una ruta que la versión nueva trae. Lo modificado en lo que
 // el arnés sigue traba como siempre.
-// 🔴 rojo previo: con el `plan` de la tanda A, `skills/other` sin seguir daba `ok: false` («el árbol tiene cambios fuera
-//    de lo ignorado…»), el choque de `README.md` no se nombraba como tal (`colliding` no existía) y desde otra rama el
-//    plan daba `ok: true` (`checkout -B` sacaba a la persona de su rama).
+// 🔴 Si lo sin seguir trabara, `skills/other` sin seguir daría `ok: false` («el árbol tiene cambios fuera
+//    de lo ignorado…»), el choque de `README.md` no se nombraría como tal (`colliding`) y desde otra rama el
+//    plan daría `ok: true` (`checkout -B` sacaría a la persona de su rama).
 test('T7·módulo · ref reescrita: tycon/installed + reset --hard; lo modificado en lo que el arnés sigue traba; lo sin seguir no, salvo el que choca con una ruta nueva (D3); sólo desde tycon/installed o la primera vez (A5); previous sobrevive a un gc; revert vuelve', () => {
   const sources = mod('sources');
   const L = lab('t7-rewrite');
@@ -785,7 +784,7 @@ test('T7·módulo · ref reescrita: tycon/installed + reset --hard; lo modificad
   assert.notStrictEqual(to, from);
   assert.strictEqual(sources.fetch(src, { env: L.env, budgetS: 5 }).ok, true);
 
-  // una skill de terceros declarada y una skill propia que nadie declaró ni ignoró: sin seguir, ninguna traba (D3)
+  // una skill de terceros declarada y una skill propia que nadie declaró ni ignoró: sin seguir, ninguna traba
   fs.mkdirSync(path.join(L.skillsDir, 'skills', 'vendor-x'), { recursive: true });
   fs.writeFileSync(path.join(L.skillsDir, 'skills', 'vendor-x', 'SKILL.md'), '# de terceros\n');
   fs.writeFileSync(path.join(L.home, '.claude', '.tycon-pipeline', 'third-party-state.json'),
@@ -824,7 +823,7 @@ test('T7·módulo · ref reescrita: tycon/installed + reset --hard; lo modificad
   assert.strictEqual(git(L.skillsDir, ['rev-parse', 'HEAD']), from, 'hizo reset con el árbol modificado');
   git(L.skillsDir, ['checkout', '-q', '--', 'VERSION']);
 
-  // desde otra rama con un commit propio (HEAD ya no es el commit registrado): no se toca y se dice (A5)
+  // desde otra rama con un commit propio (HEAD ya no es el commit registrado): no se toca y se dice
   git(L.skillsDir, ['checkout', '-q', '-b', 'mine']);
   git(L.skillsDir, ['commit', '-q', '--allow-empty', '-m', 'commit propio']);
   p = sources.plan(src, { env: L.env, home: L.home });
@@ -871,11 +870,11 @@ test('T7·módulo · ref reescrita: tycon/installed + reset --hard; lo modificad
   assert.strictEqual(exists(to), false, 'sin la ref ni el reflog el commit tenía que podarse: el caso de arriba no probaría nada');
 });
 
-// Pase adversarial de la tanda D (causa B, 5 hallazgos): un clon del público cuyo HEAD avanzó en `main` ANTES de su
-// primera actualización (un `git pull` a mano, o el respaldo en shell) quedaba bloqueado para siempre, y el remedio
-// impreso (`checkout tycon/installed`) fallaba porque esa rama todavía no existe. La regla no cambia —no se saca a una
+// Un clon del público cuyo HEAD avanzó en `main` ANTES de su
+// primera actualización (un `git pull` a mano, o el respaldo en shell) no puede quedar bloqueado para siempre, y el remedio
+// impreso (`checkout tycon/installed`) no puede fallar porque esa rama todavía no existe. La regla no cambia —no se saca a una
 // persona de una rama propia ni se pisan commits propios—; «la primera vez» vale también para un avance simple.
-// 🔴 rojo previo: `offInstalledBranch` devolvía «agent_skills está en la rama main y no en tycon/installed: no se toca
+// 🔴 Sin esto, `offInstalledBranch` devolvería «agent_skills está en la rama main y no en tycon/installed: no se toca
 //    (git -C … checkout tycon/installed)» para el clon que sólo hizo `git pull` (el primer `strictEqual(…, null)`), y
 //    `sources.ownCommits is not a function`.
 test('T7·módulo · ref reescrita, la primera vez con HEAD movido: un avance simple en la rama por defecto pasa; commits propios, otra rama, hacia atrás o archivos seguidos modificados no — y el remedio que se imprime se puede correr', () => {
@@ -997,12 +996,12 @@ test('T7·módulo · ref reescrita, la primera vez con HEAD movido: un avance si
   assert.deepStrictEqual([branchOf(loose), git(loose.dir, ['rev-parse', 'saved'])], ['tycon/installed', kept]);
 });
 
-// Segunda vuelta de revisores de la tanda D (bloqueante): `offInstalledBranch` decidía «la rama tycon/installed no existe»
-// por un `.ok` falso de git. Un ref roto (basura en el archivo, un commit que no está, un tope de tiempo) sale con ese
-// mismo `.ok` falso: «no sé» se leía como «primera vez» y el clon se movía. Es la clase de `versionAt`: «no pude leer» no
+// `offInstalledBranch` no puede decidir «la rama tycon/installed no existe»
+// por un `.ok` falso de git: un ref roto (basura en el archivo, un commit que no está, un tope de tiempo) sale con ese
+// mismo `.ok` falso: «no sé» leído como «primera vez» movería el clon. Es la clase de `versionAt`: «no pude leer» no
 // es «no hay». Lo mismo con `merge-base --is-ancestor` (un objeto roto no es «no es ancestro») y con HEAD.
-// 🔴 rojo previo: `sources.refState is not a function`; y, medido aparte con el programa de antes sobre el mismo repo de
-//    juguete, `offInstalledBranch` con el archivo de la ref lleno de basura devolvía `null` («podés moverte»).
+// 🔴 Sin esto: `sources.refState is not a function`; y, sobre el mismo repo de
+//    juguete, `offInstalledBranch` con el archivo de la ref lleno de basura devolvería `null` («podés moverte»).
 test('T7·módulo · una ref en tres estados (existe / no existe / no se pudo leer): una rama tycon/installed ilegible NO es «la primera vez»; un merge-base que falla no es «no es ancestro»; un HEAD ilegible no es «sin versión»', () => {
   const sources = mod('sources');
   const L = lab('t7-ref-state');
@@ -1064,7 +1063,7 @@ test('T7·módulo · una ref en tres estados (existe / no existe / no se pudo le
   assert.strictEqual(sources.advance(src, opts).ok, false);
   assert.strictEqual(git(dir, ['rev-parse', 'HEAD']), v1, 'movió el clon sin saber si la rama existe');
   assert.strictEqual(fs.readFileSync(file, 'utf8'), GARBAGE, 'pisó la ref que no pudo leer');
-  // espejo: ausente de verdad → el camino de hoy (la primera vez: pasa, y avanza a tycon/installed)
+  // espejo: ausente de verdad → el camino de siempre (la primera vez: pasa, y avanza a tycon/installed)
   fs.rmSync(file);
   assert.strictEqual(sources.offInstalledBranch(src, opts), null);
   const adv = sources.advance(src, opts);
@@ -1112,11 +1111,11 @@ test('T7·módulo · una ref en tres estados (existe / no existe / no se pudo le
   assert.ok(a.reason && /origin\/main/.test(a.reason), `el motivo no nombra la ref: ${a.reason}`);
 });
 
-// Pase adversarial de la tanda D (causas C y D): `untrackedInTheWay` no veía (C) una carpeta sin seguir que es un repo de
-// git propio —git la lista como `carpeta/`, con barra final— ni (D) una ruta que difiere sólo en la caja o en la forma de
-// los acentos, que en el disco de Mac y de Windows es el MISMO archivo: `reset --hard` las pisaba sin avisar. La
+// `untrackedInTheWay` tiene que ver (C) una carpeta sin seguir que es un repo de
+// git propio —git la lista como `carpeta/`, con barra final— y (D) una ruta que difiere sólo en la caja o en la forma de
+// los acentos, que en el disco de Mac y de Windows es el MISMO archivo: `reset --hard` las pisaría sin avisar. La
 // comparación se prueba con RUTAS (vale igual en un disco que sí distingue: ahí frena de más, que es lo aceptado).
-// 🔴 rojo previo: `sources.collidingPaths is not a function`; y con el repo anidado, `untrackedInTheWay` devolvía `[]`.
+// 🔴 Sin esto: `sources.collidingPaths is not a function`; y con el repo anidado, `untrackedInTheWay` devolvería `[]`.
 test('T7·módulo · D3, los choques que no son «el mismo texto»: un repo anidado sin seguir (carpeta con barra final), la caja y la forma de los acentos; archivo contra carpeta en los dos sentidos; rutas con espacios y no ASCII', () => {
   const sources = mod('sources');
   const hit = (untracked, incoming) => sources.collidingPaths(untracked, incoming);
@@ -1291,13 +1290,13 @@ test('T12 · versionLine con version.json imprime la estampada y sus shas; versi
   assert.strictEqual(j.version.stamped, false);
   s.hold = { commit: 'c'.repeat(40), at: '2026-10-02T00:00:00.000Z', reason: 'rollback' };
   assert.deepStrictEqual(report.versionJson(s, { env: L.env }).hold, s.hold);
-  // tanda C (AC 19): la retención la dice también `version`, con el comando para levantarla
+  // la retención la dice también `version`, con el comando para levantarla
   const held = report.versionLine(s, { env: L.env });
   assert.ok(held.includes('retención') && held.includes('rollback --release'), `version sin la retención: ${held}`);
   s.hold = null;
   assert.ok(!report.versionLine(s, { env: L.env }).includes('retención'));
 
-  // la forma del contrato de la tanda D (A20): sin `channel` — el mismo archivo llega a `main` (estable) con el merge
+  // la forma del contrato: sin `channel` — el mismo archivo llega a `main` (estable) con el merge
   const stamped = { version: '2026.10.02.1', source: { harness: 'a'.repeat(40), agent_skills: 'b'.repeat(40) } };
   fs.writeFileSync(path.join(L.tree, 'version.json'), `${JSON.stringify(stamped)}\n`);
   const line = report.versionLine(s, { env: L.env });
@@ -1343,7 +1342,7 @@ test('T12 · report: log va a startup.log con fecha y rota al pasar 1 MB; setNot
   assert.ok(text.includes('estado ilegible') && text.includes('máquina del equipo en ask') && text.includes('enlace'));
   assert.deepStrictEqual(report.doctorJson(rep), { mode: 'managed', fail: ['estado ilegible'], warn: ['máquina del equipo en ask'], ok: ['enlace'] });
 
-  // story 8.16, AC 8: el cierre cuenta lo que QUEDÓ (las piezas del reporte del aplicador), no los pasos del programa
+  // el cierre cuenta lo que QUEDÓ (las piezas del reporte del aplicador), no los pasos del programa
   const hook = (id) => ({ kind: 'hook', where: '/h/.claude/settings.json', id });
   const effects = { ok: true, effects: [
     { id: 'PreToolUse:@tcg:safety-guard-pre.sh', kind: 'hook', blocks: 'any-repo' },
@@ -1370,7 +1369,7 @@ test('T12 · report: log va a startup.log con fecha y rota al pasar 1 MB; setNot
   assert.match(same.join('\n'), /sin cambios/);
   assert.match(same.join('\n'), /copia de antes de instalar: \/h\/backups\/primera/);
   assert.ok(!/qué sigue/.test(same.join('\n')), 'una segunda corrida no repite «qué sigue»');
-  // AC 9: a medias
+  // a medias
   const failed = report.installFailure({ what: 'el aplicador salió 1', log: '/h/startup.log', backup: '/h/backups/b' }).join('\n');
   for (const s of ['el aplicador salió 1', 'quedó a medias', 'doctor', 'registro: /h/startup.log', 'copia de respaldo: /h/backups/b', 'install otra vez', 'uninstall']) assert.ok(failed.includes(s), `installFailure no dice «${s}»:\n${failed}`);
   assert.ok(!/qué sigue/.test(failed), 'a medias no hay «qué sigue»');
@@ -1385,7 +1384,7 @@ test('T12 · report: log va a startup.log con fecha y rota al pasar 1 MB; setNot
     const copies = lines.filter((l) => l.startsWith('copia de respaldo:'));
     assert.deepStrictEqual(copies.length, 1, `${what}: una línea de la copia, también cuando no se pudo tomar`);
     assert.ok(/no se pudo tomar/.test(copies[0]) && /sin copia/.test(copies[0]) && !/rollback/.test(copies[0]) && !/null|undefined/.test(copies[0]), `${what} sin copia: ${copies[0]}`);
-    // …y no promete ningún `.bak`: medido en el pase adversarial, los que quedan no traen lo de antes de instalar
+    // …y no promete ningún `.bak`: los que quedan no traen lo de antes de instalar
     assert.ok(!/\.bak/.test(copies[0]), `${what} sin copia promete un .bak que no trae lo de antes: ${copies[0]}`);
   }
   // las skills de terceros con el paso apagado: ni «en su lugar» ni «pendientes» (el aplicador no reporta ninguna)
@@ -1413,8 +1412,8 @@ test('T12 · report: log va a startup.log con fecha y rota al pasar 1 MB; setNot
   assert.deepStrictEqual(report.warningLines('uno\n⚠ dos\n  🔴 tres\n⚠ dos\n🛑 cuatro\ncinco ⚠'), ['⚠ dos', '  🔴 tres', '🛑 cuatro'], 'los avisos: las líneas que EMPIEZAN con la marca, sin repetir');
 });
 
-// ─── Regresiones del pase adversarial y de los revisores (iteración 1, 2026-10-02) ───────────────────────────────────
-// Cada caso fija un defecto CONFIRMADO (la prueba que lo reprodujo está en la carpeta de la corrida, step-05b-probes/).
+// ─── Regresiones ───────────────────────────────────
+// Cada caso fija un defecto confirmado.
 
 test('REG-D1 · un clon en una rama de trabajo NO es una ref que se reescribe: ref main, rewrites false, update no lo toca y lo dice', () => {
   const sources = mod('sources');
@@ -1555,7 +1554,7 @@ test('T19·módulo · iteración 2 del pase adversarial: sin registrar = sólo l
   assert.strictEqual(M.present({ kind: 'setting', where: settings, id: 'cleanupPeriodDays', value: 30 }, { home, env }), true);
   assert.strictEqual(M.present({ kind: 'setting', where: settings, id: 'cleanupPeriodDays' }, { home, env }), true, 'sin valor declarado, alcanza la clave');
   assert.strictEqual(M.parseReport(JSON.stringify([{ kind: 'setting', where: settings, id: 'cleanupPeriodDays', value: 365 }])).pieces[0].value, 365, 'el reporte conserva el valor');
-  // …y el registro guardado también (paso cero de la C, 2026-10-02: merge armaba la pieza sin `value` y el estado lo perdía)
+  // …y el registro guardado también (merge tiene que armar la pieza con `value`, o el estado lo pierde)
   const setting = { kind: 'setting', where: settings, id: 'cleanupPeriodDays', value: 365 };
   const kept = M.merge([], [setting], { version: 'v1' });
   assert.strictEqual(kept[0].value, 365, 'merge conserva el valor de un ajuste nuevo');
@@ -1570,9 +1569,9 @@ test('T19·módulo · iteración 2 del pase adversarial: sin registrar = sólo l
   assert.strictEqual(M.present(block, { home, env }), false, 'sin el marcador de cierre el bloque no está en su lugar');
 });
 
-// ─── tanda D (AC 25, 29) · el orden de las versiones, el remoto público y la ref de cada canal, a nivel módulo ───────
+// ─── el orden de las versiones, el remoto público y la ref de cada canal, a nivel módulo ───────
 
-// 🔴 rojo previo: sin `scripts/setup/harness/version-order.js` el caso muere en el `require` (MODULE_NOT_FOUND).
+// 🔴 Sin `scripts/setup/harness/version-order.js` el caso muere en el `require` (MODULE_NOT_FOUND).
 test('T31·módulo · version-order: compara por partes numéricas (.10 > .9); la interna +sha7, lo vacío y lo sin forma no se ordenan', () => {
   const VO = mod('version-order');
   assert.deepStrictEqual(VO.parse('2026.09.30.10'), [2026, 9, 30, 10]);
@@ -1591,7 +1590,7 @@ test('T31·módulo · version-order: compara por partes numéricas (.10 > .9); l
   assert.strictEqual(VO.isOrdered('2026.09.30+abc1234'), false);
   // la forma es la MISMA que estampa la publicación (`VERSION_SHAPE` de scripts/publishing/export.js, copiada: este
   // módulo corre desde la copia fija y no puede requerir nada de afuera de su carpeta): mes 01-12, día 01-31, N desde 1
-  // sin ceros adelante. 🔴 rojo previo: con la primera expresión (`\d{2}` y `\d+`) estos cuatro se ordenaban.
+  // sin ceros adelante. 🔴 Con una expresión más laxa (`\d{2}` y `\d+`) estos cuatro se ordenarían.
   for (const bad of ['2026.13.01.1', '2026.10.00.1', '2026.10.03.0', '2026.10.03.01', '2026.00.10.1', '2026.10.32.1']) {
     assert.strictEqual(VO.parse(bad), null, `«${bad}» no es un número que la publicación estampe`);
   }
@@ -1601,8 +1600,8 @@ test('T31·módulo · version-order: compara por partes numéricas (.10 > .9); l
   assert.strictEqual(String(VO.PUBLISHED), shape[1], 'version-order.js y export.js tienen que aceptar la misma forma de número');
 });
 
-// 🔴 rojo previo: `sources.remoteIdentity` no existía (TypeError: … is not a function) e `isPublicRemote` leía
-//    `scripts/publishing/public-repos.json` buscando la URL como texto: con la lista nueva contestaba siempre «no».
+// 🔴 Sin esto: `sources.remoteIdentity` no existe (TypeError: … is not a function) e `isPublicRemote` leería
+//    `scripts/publishing/public-repos.json` buscando la URL como texto: con la lista del árbol contestaría siempre «no».
 test('T31·módulo · el remoto público se reconoce por la lista del árbol (scripts/setup/public-remotes.json), por identidad: host + ruta, con o sin .git, https o ssh', () => {
   const sources = mod('sources');
   const tree = path.join(BASE, 't31-public-tree');
@@ -1656,7 +1655,7 @@ test('T31·módulo · el remoto público se reconoce por la lista del árbol (sc
   assert.strictEqual(sources.webBase(`${bare}/`), bare);
 });
 
-// 🔴 rojo previo: `sources.channelRef` no existía (TypeError); la ref era siempre `main`.
+// 🔴 Sin esto: `sources.channelRef` no existe (TypeError); la ref sería siempre `main`.
 test('T31·módulo · la ref sale del canal sólo en una fuente que se reescribe: latest → mirror/sync, stable → main; con remoto no público, main siempre', () => {
   const sources = mod('sources');
   assert.strictEqual(sources.channelRef({ rewrites: true }, 'latest'), 'mirror/sync');
@@ -1666,10 +1665,10 @@ test('T31·módulo · la ref sale del canal sólo en una fuente que se reescribe
   assert.strictEqual(sources.channelRef({ rewrites: true }, undefined), 'main', 'sin canal, el estable');
 });
 
-// Tanda D (A28): en Windows el aplicador es el `.ps1`, que no usa Python (decisión C23 de la 8.7). Sin máquina Windows
+// En Windows el aplicador es el `.ps1`, que no usa Python. Sin máquina Windows
 // se mide por módulo (la lista de requisitos por sistema) y por lectura (el `.ps1` no invoca a python).
-// 🔴 rojo previo: `harness.js` no exportaba `requirementsFor` (TypeError) y la lista de Windows era
-//    ['git', 'python3', 'pwsh']: `install` salía 1 «falta python3 en el PATH» en una máquina que no lo necesita.
+// 🔴 Sin esto: `harness.js` no exporta `requirementsFor` (TypeError) y la lista de Windows sería
+//    ['git', 'python3', 'pwsh']: `install` saldría 1 «falta python3 en el PATH» en una máquina que no lo necesita.
 test('A28 · en Windows harness.js no exige python3 (el aplicador de ahí no usa Python); en Mac y Linux sí', () => {
   const H = require(HARNESS);
   assert.deepStrictEqual(H.requirementsFor('win32'), ['git', 'pwsh']);
@@ -1681,7 +1680,7 @@ test('A28 · en Windows harness.js no exige python3 (el aplicador de ahí no usa
   assert.deepStrictEqual(calls, [], `install-tycon-hooks.ps1 llama a python: ${calls.join(' | ')}`);
 });
 
-// 🔴 rojo previo: `report.numberAt` no existía (TypeError); `derive` devolvía `channel` leído de `version.json`.
+// 🔴 Sin esto: `report.numberAt` no existe (TypeError); `derive` devolvería `channel` leído de `version.json`.
 test('T12 · tanda D: version.json no trae `channel` y su `source` es un mapa con las claves que traiga; numberAt da el número de un commit traído', () => {
   const report = mod('report');
   const sources = mod('sources');
@@ -1689,7 +1688,7 @@ test('T12 · tanda D: version.json no trae `channel` y su `source` es un mapa co
   const L = lab('t12-stamped-d');
   const list = sources.detect({ tree: L.tree, home: L.home, env: L.env });
   const s = state.defaults({ tree: L.tree, sources: list, mode: 'managed' });
-  // el contrato de la tanda D: { version, source: { <fuente>: <sha> } }, sin channel; una sola clave también vale
+  // el contrato: { version, source: { <fuente>: <sha> } }, sin channel; una sola clave también vale
   fs.writeFileSync(path.join(L.tree, 'version.json'), `${JSON.stringify({ version: '2026.10.03.2', source: { harness: 'c'.repeat(40) } })}\n`);
   const d = report.derive(s, { env: L.env });
   assert.strictEqual(d.number, '2026.10.03.2');
@@ -1720,11 +1719,11 @@ test('T12 · tanda D: version.json no trae `channel` y su `source` es un mapa co
   assert.match(unreadable.problem, /version\.json/);
 });
 
-// Revisión de la tanda D (fallos silenciosos, iteración 1): `versionAt` devolvía `null` tanto si el commit no traía
-// `version.json` (legítimo) como si no se podía leer (git falló, tope de tiempo, JSON roto); `assess` ahí decidía «nueva»
-// y `update` hacía `reset --hard` a un commit cuyo número nunca leyó: «no bajar» (AC 25) se salteaba sin avisar.
-// 🔴 rojo previo: `versionAt` devolvía un texto o `null` (el primer `deepStrictEqual` fallaba: `null` contra
-//    `{ status: 'absent', … }`), y `assess` con el `version.json` de lo traído roto daba `new` en los dos canales.
+// `versionAt` no puede devolver `null` tanto si el commit no traía
+// `version.json` (legítimo) como si no se podía leer (git falló, tope de tiempo, JSON roto); `assess` ahí decidiría «nueva»
+// y `update` haría `reset --hard` a un commit cuyo número nunca leyó: «no bajar» se saltearía sin avisar.
+// 🔴 Sin esto: `versionAt` devuelve un texto o `null` (el primer `deepStrictEqual` falla: `null` contra
+//    `{ status: 'absent', … }`), y `assess` con el `version.json` de lo traído roto daría `new` en los dos canales.
 test('T31·módulo · versionAt distingue número / ausente / problema, y assess con un número que no se pudo leer es «no sé» en los dos canales (nunca «nueva»)', () => {
   const sources = mod('sources');
   const L = lab('t31-version-at');
@@ -1788,9 +1787,9 @@ test('T31·módulo · versionAt distingue número / ausente / problema, y assess
   assert.strictEqual(sources.assess({ name: 'harness', dir: L.tree, rewrites: false }, v1, broken, { env }).status, 'new');
 });
 
-// Revisión de la tanda D (cobertura): la rama «no se pudo listar lo sin seguir» de `untrackedInTheWay` no tenía caso. Si
+// Rama «no se pudo listar lo sin seguir» de `untrackedInTheWay`. Si
 // git no puede listar, NO se mueve y se dice: nunca «no hay nada en el camino» (un `[]` dejaría pasar el `reset --hard`).
-// (Sin rojo previo: la rama ya existía; el caso la cubre. Probado al revés a mano: devolviendo `[]` en esa rama, falla.)
+// (Probado al revés a mano: devolviendo `[]` en esa rama, el caso falla.)
 test('T7·módulo · untrackedInTheWay: si git no puede listar lo sin seguir (o el árbol de la versión nueva), devuelve null y plan no mueve nada', () => {
   const sources = mod('sources');
   const L = lab('t7-untracked-null');
@@ -1825,7 +1824,7 @@ test('T7·módulo · untrackedInTheWay: si git no puede listar lo sin seguir (o 
   assert.ok(fs.existsSync(path.join(L.skillsDir, 'NOTA.md')));
 });
 
-// ─── story 8.18 (T38·módulo, AC 34, 35 y 37): las tres formas de máquina, a nivel require() ────────────────────────────
+// ─── T38·módulo: las tres formas de máquina, a nivel require() ────────────────────────────
 // Desde la unión de los dos repos internos una máquina tiene una de tres formas: dos clones sin re-apuntar (las skills
 // salen del clon viejo), dos clones con el viejo RE-APUNTADO al repo unificado, o un solo árbol. Las piezas del mecanismo
 // —`sources.detect`, `report.versionLine`, la política y `repoint.js`— tienen que contestar bien en las tres. El recorrido
@@ -1967,13 +1966,13 @@ test('T38·módulo · doctorItems: en transición calla (lo dice harness.js); pe
   assert.deepStrictEqual(levels(Object.assign({}, base, { repoint: { pending: { step: 'forward', at: 'hoy', from: {}, to: {} } } }), 'unified'), ['fail'], 'una mudanza en curso es rojo');
 });
 
-// ─── FUP-8.13-D-unreadable-refs-coverage · «no se pudo leer» en lo que decide un movimiento del clon ────────────────
-// La tanda D de la 8.13 cambió las consultas a git para que contesten en tres estados (existe / no existe / no se pudo
+// ─── «no se pudo leer» en lo que decide un movimiento del clon ────────────────
+// Las consultas a git contestan en tres estados (existe / no existe / no se pudo
 // leer). Tenían caso en «no se pudo leer» la función de los tres estados, `offInstalledBranch` con la rama del mecanismo
-// rota y los recorridos por la línea de comandos. Acá van los que faltaban (revisor de pruebas, 2026-10-03), cada uno con
+// rota y los recorridos por la línea de comandos. Acá van los casos de «no se pudo leer», cada uno con
 // su ESPEJO: el mismo escenario con la cosa sana, o ausente de verdad, sigue el camino de siempre.
-// Ninguno tiene rojo previo (la rama del código ya existía): cada uno se probó AL REVÉS, a mano —rompiendo la rama que
-// cubre y restaurándola—, y su comentario dice con qué rotura se puso rojo.
+// Cada uno se prueba AL REVÉS, a mano —rompiendo la rama que
+// cubre y restaurándola—, y su comentario dice con qué rotura se pone rojo.
 //
 // Tres maneras de romper, todas en el disco del laboratorio (sin un `git` de mentira):
 //   · una REF: basura en su archivo suelto (el patrón de los casos de arriba);
@@ -2032,7 +2031,7 @@ function publishSync(remote, base, rel, content) {
   return sha;
 }
 
-// El chequeo de HEAD de `offInstalledBranch`. En el caso de arriba la rama del mecanismo estaba rota y lo tapaba: acá esa
+// El chequeo de HEAD de `offInstalledBranch`. En el caso de arriba la rama del mecanismo está rota y lo tapa: acá esa
 // rama está SANA (git contesta «no existe»: la primera vez) y lo ilegible es HEAD, por la rama en la que está parado.
 // 🔴 rojo comprobado al revés: sin la línea `if (!h) return unreadable('HEAD', …)`, `offInstalledBranch` sigue con un
 //    HEAD nulo y tira (`Cannot read properties of null (reading 'slice')`) en vez de decir qué no pudo leer.
@@ -2409,7 +2408,7 @@ test('FUP-8.13-D · Plan_FixedRefOwnCountUnreadable_NothingMoves: en una ref fij
 
 // `dirtyTracked` (`git status` de lo que git sigue) en `plan` de una ref fija y en `revert`: «no pude mirar si hay cambios
 // sin commitear» no es «no hay». En `revert` es lo que separa a la persona de un `reset --hard` sin copia.
-// 🔴 rojo comprobado al revés: (plan) sin la línea `if (dirty === null) return …`, `plan` devuelve `ok: true`;
+// 🔴 Al revés: (plan) sin la línea `if (dirty === null) return …`, `plan` devuelve `ok: true`;
 //    (revert) sin su línea `if (dirty === null) return …`, `revert` sigue hasta el `reset --hard` y el motivo ya no es
 //    «no pude mirar si hay cambios sin commitear».
 test('FUP-8.13-D · PlanAndRevert_StatusUnreadable_NothingMoves: si git status no puede contestar, ni plan (ref fija) ni revert mueven nada, y lo modificado sin commitear sigue donde estaba', () => {
@@ -2513,7 +2512,7 @@ function rollbackLab(name) {
 }
 
 // `planTrees` de rollback.js, su HEAD: ilegible no es «no es un clon de git» (ni «nada que mover»).
-// 🔴 rojo comprobado al revés: con el bloqueo de `if (!from)` diciendo siempre «no es un clon de git» (sin mirar
+// 🔴 Al revés: con el bloqueo de `if (!from)` diciendo siempre «no es un clon de git» (sin mirar
 //    `isRepo`), la línea ya no dice que no pudo leer HEAD.
 test('FUP-8.13-D · Rollback_PlanTreesHeadUnreadable_NothingTouched: una fuente con HEAD ilegible frena la vuelta atrás entera (ni archivos ni árboles) y dice que no pudo leer HEAD, no que «no es un clon»', () => {
   const R = rollbackLab('fup-rollback-head');
@@ -2536,7 +2535,7 @@ test('FUP-8.13-D · Rollback_PlanTreesHeadUnreadable_NothingTouched: una fuente 
 });
 
 // `planTrees` de rollback.js, el commit de la copia: «no pude mirar si está» no es «no está en el clon» ni «está».
-// 🔴 rojo comprobado al revés: sin la línea `if (target.status === 'problem') { … }`, la vuelta atrás sigue de largo:
+// 🔴 Al revés: sin la línea `if (target.status === 'problem') { … }`, la vuelta atrás sigue de largo:
 //    restaura el archivo de la copia y recién falla en el `reset --hard`.
 test('FUP-8.13-D · Rollback_PlanTreesCopyCommitUnreadable_NothingTouched: si no se puede mirar el commit al que vuelve la copia, la vuelta atrás no toca nada (ni archivos ni árboles) y no dice «no está en el clon»', () => {
   const R = rollbackLab('fup-rollback-commit');
@@ -2558,10 +2557,10 @@ test('FUP-8.13-D · Rollback_PlanTreesCopyCommitUnreadable_NothingTouched: si no
   R.restored(R.restore(R.v1));
 });
 
-// ─── story 8.17, tanda W3a (AC 70) · los controles ESPERADOS contra la máquina, a nivel módulo ──────────────────────
-// `doctor` comparaba sólo lo que el aplicador reportó (`managed`): un control que el aplicador nunca registró no salía, y
-// decía «todas en su lugar» (pipeline 182: al instalador de Windows le faltaban 15 y `doctor` no decía nada).
-// 🔴 rojo previo: sin `expectedControls` en managed.js el caso muere en «M.expectedControls is not a function».
+// ─── los controles ESPERADOS contra la máquina, a nivel módulo ──────────────────────
+// `doctor` no puede comparar sólo con lo que el aplicador reportó (`managed`): un control que el aplicador nunca registra no saldría, y
+// diría «todas en su lugar» (aunque al instalador de Windows le faltaran 15).
+// 🔴 Sin `expectedControls` en managed.js el caso muere en «M.expectedControls is not a function».
 
 /** Un árbol de juguete con las cuatro fuentes de la cuenta: la lista del `.sh`, la del `.ps1`, las condiciones y lo
  *  excluido en Windows. Lo que se pasa en `null` no se escribe (el archivo falta). */
@@ -2623,7 +2622,7 @@ function expectedLab(name, { ps1 = undefined, conditions = undefined, support = 
       const [event, rel] = [id.slice(0, i), id.slice(i + 1)];
       const root = platform === 'win32' ? 'C:/lab/.claude' : path.join(home, '.claude');
       const file = rel.startsWith('@tcg:') ? `${root}/tycon-claude-guides/scripts/hooks/${rel.slice(5)}` : `${root}/agent-skills/skills/${rel}`;
-      // el guion, en el disco (la cuenta mira que exista: B5); la forma de Windows (`C:/lab/…`) no se puede crear acá, y
+      // el guion, en el disco (la cuenta mira que exista); la forma de Windows (`C:/lab/…`) no se puede crear acá, y
       // fuera de Windows esa ruta no es absoluta: la cuenta no la puede mirar y no la da por faltante
       if (platform !== 'win32') { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ''); }
       const matcher = /^(PreToolUse|PostToolUse)$/.test(event) ? (rel.includes('on-create.js') ? 'Write' : 'Bash') : undefined;
@@ -2716,7 +2715,7 @@ test('T96 · Managed_ExpectedControls_MissingCounted_ByPlatformAndConfig: en Win
   r = both.count('win32');
   assert.deepStrictEqual(r.missing, [], JSON.stringify(r.missing));
   assert.deepStrictEqual(r.excluded, [{ id: 'toy-guard-pre.sh', reason: 'sin medir en Windows' }]);
-  // la lista vacía de hoy: nada excluido, y no es un problema
+  // la lista vacía actual: nada excluido, y no es un problema
   const empty = expectedLab('t96-win-empty', { support: { native: 'preparing', excluded: [] } });
   empty.register(WINDOWS_ALL, 'win32');
   r = empty.count('win32');
@@ -2762,9 +2761,9 @@ test('T96 · Managed_ExpectedControls_MissingCounted_ByPlatformAndConfig: sin la
   }
 });
 
-// Primera vuelta de revisión de la W3a: el lector de la lista del `.ps1` tomaba también una fila COMENTADA, y `doctor` la
-// contaba como un control esperado que falta (el aplicador no la registra: PowerShell no la lee).
-// 🔴 rojo previo: con la fila comentada, `ps1Hooks` devolvía también `PreToolUse:@tcg:toy-guard-pre.sh` y `Stop:@tcg:retired-meter.js`.
+// El lector de la lista del `.ps1` no toma una fila COMENTADA: si la tomara, `doctor` la
+// contaría como un control esperado que falta (el aplicador no la registra: PowerShell no la lee).
+// 🔴 Sin esto, con la fila comentada, `ps1Hooks` devolvería también `PreToolUse:@tcg:toy-guard-pre.sh` y `Stop:@tcg:retired-meter.js`.
 test('T96 · Ps1Hooks_CommentedRow_NotExpected: una fila del .ps1 comentada con # no es un control esperado; la misma fila sin comentar, sí', () => {
   const M = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'managed.js'));
   const list = (commented) => [
@@ -2796,16 +2795,16 @@ test('T96 · Ps1Hooks_CommentedRow_NotExpected: una fila del .ps1 comentada con 
   r = on.count('win32');
   assert.deepStrictEqual(idsOf(r.missing), ['PreToolUse:@tcg:toy-guard-pre.sh'], 'sin comentar, se espera y falta');
   // y con la lista real del árbol, el lector lee lo mismo que las filas que empiezan la línea (las que PowerShell lee)
-  // desde la W3 (story 8.17) la lista real es scripts/setup/hooks-list.json: en Windows, lo que no excluye
+  // la lista real es scripts/setup/hooks-list.json: en Windows, lo que no excluye
   const realList = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
   const realPairs = new Set(realList.filter((h) => h.platforms.windows !== false).map((h) => `${h.event}:${h.spec}`));
   assert.deepStrictEqual(ids(RAIZ), [...realPairs].sort(), 'la lista real: la lista única, menos lo que excluye de Windows');
 });
 
-// Pase adversarial de la W3a (B6, clase 5): la condición `optin:telegram-plugin` miraba «existe» (cualquier cosa, también
-// un archivo) donde install-tycon-hooks.sh pide una CARPETA (`[[ -d … ]]`): con un archivo en esa ruta doctor esperaba
-// telegram-zombie-sweep.sh y lo daba por faltante para siempre, aunque el aplicador nunca lo registra.
-// 🔴 rojo previo: con un archivo en la ruta del plugin, el control salía en `expected` y en `missing`.
+// La condición `optin:telegram-plugin` mira una CARPETA (`[[ -d … ]]`), como install-tycon-hooks.sh; si mirara «existe» (cualquier cosa, también
+// un archivo), con un archivo en esa ruta doctor esperaría
+// telegram-zombie-sweep.sh y lo daría por faltante para siempre, aunque el aplicador nunca lo registra.
+// 🔴 Sin esto, con un archivo en la ruta del plugin, el control saldría en `expected` y en `missing`.
 test('T96 · Managed_TelegramOptIn_NeedsDirectory: un archivo donde va la carpeta del plugin no prende el control; la carpeta, sí', () => {
   const L = expectedLab('t96-telegram', { conditions: { pieces: [
     { kind: 'hook', id: 'SessionStart:@tcg:telegram-zombie-sweep.sh', where_pattern: 'settings\\.json$', when: 'optin:telegram-plugin' },
@@ -2830,11 +2829,11 @@ test('T96 · Managed_TelegramOptIn_NeedsDirectory: un archivo donde va la carpet
   assert.deepStrictEqual(idsOf(r.missing), [ID], `con la carpeta se espera: ${JSON.stringify(r.missing)}`);
 });
 
-// Pase adversarial de la W3a (B5): «está» era evento + final de ruta. Un control es evento + MATCHER + guion, corrido
+// «Está» no es evento + final de ruta: un control es evento + MATCHER + guion, corrido
 // con el intérprete de su extensión y con el guion en el disco. Las dos filas PostToolUse de rebuild-before-verify.js
-// (`Edit|Write` y `Bash`) son DOS controles: sin una, doctor decía «todos registrados» y el aplicador, que falta una.
-// 🔴 rojo previo: sin la fila `Bash` la cuenta salía sin faltantes; `node "…/x.sh"`, un freno bajo otro matcher y un
-// comando a un guion borrado también se daban por registrados; y la cuenta era 1 menos que la del aplicador.
+// (`Edit|Write` y `Bash`) son DOS controles: sin una, doctor diría «todos registrados» y el aplicador, que falta una.
+// 🔴 Sin esto: sin la fila `Bash` la cuenta sale sin faltantes; `node "…/x.sh"`, un freno bajo otro matcher y un
+// comando a un guion borrado también se darían por registrados; y la cuenta sería 1 menos que la del aplicador.
 test('T96 · Managed_ExpectedControls_MatcherInterpreterScriptOnDisk: dos matchers son dos controles; otro matcher, otro intérprete o un guion que no está = faltante con su motivo', () => {
   const sh = [
     'HOOKS_CANONICAL=(',
@@ -2924,7 +2923,7 @@ test('T96 · Managed_ExpectedControls_MatcherInterpreterScriptOnDisk: dos matche
   assert.deepStrictEqual([twoSh.length, twoSh[0] && twoSh[0].matchers], [1, ['Edit|Write', 'Bash']], `applierHooks: ${JSON.stringify(twoSh)}`);
 });
 
-// story 8.16, tanda C (revisor de fallos silenciosos, re-loop): `profile.resolve` dice el motivo REAL cuando no puede leer
+// `profile.resolve` dice el motivo REAL cuando no puede leer
 // el perfil — un lector que no carga no es «no conoce el perfil», y uno sin la sección install tampoco es «roto».
 test('8.16 C · profile.resolve: el motivo real del lector (falta, no carga, es anterior) y el perfil de un árbol sano', () => {
   const P = mod('profile');
@@ -2947,15 +2946,15 @@ test('8.16 C · profile.resolve: el motivo real del lector (falta, no carga, es 
   fs.rmSync(base, { recursive: true, force: true });
 });
 
-// ─── story 8.13.1, tanda A · T2 · State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKeysWithOrigin ─────────
+// ─── T2 · State_AdditiveFields_OldStateReadsAsInternalNoLayer_ConfigKeysWithOrigin ─────────
 // El estado sigue en `schema: 1` y gana campos ADITIVOS: `source` (internal | public), `sources[].kind` (tree | layer),
-// `sources[].reference` (sólo layer), `layer`, `migration` y `migration_hold` —que no reusan `tree_before` ni `hold` de la
-// 8.13—. Un estado de la 8.13, que no trae ninguno, se lee como `source: internal` sin capa: las suites de la 8.13 de
+// `sources[].reference` (sólo layer), `layer`, `migration` y `migration_hold` —que no reusan `tree_before` ni `hold` del estado
+// base—. Un estado base, que no trae ninguno, se lee como `source: internal` sin capa: las suites de
 // arriba no cambian. La mitad de configuración de T2 vive en tycon-config.test.js.
-// 🔴 rojo previo verificado: antes de la tanda A `read` devolvía el estado tal cual (sin `source`) y no había `kindOf`
+// 🔴 Sin esto, `read` devolvería el estado tal cual (sin `source`) y no habría `kindOf`
 //    ni `layerSources`.
 
-/** Un estado como lo escribía la 8.13: los campos de su `defaults`, ninguno de los de la 8.13.1. */
+/** Un estado base: los campos de su `defaults`, ninguno de `source`, `layer` ni `migration`. */
 function stateOf813(tree) {
   return {
     schema: 1, mode: 'managed', tree, tree_before: null,
@@ -2981,7 +2980,7 @@ test('8.13.1 · T2 · un estado de la 8.13 sin source se lee como internal sin c
   assert.strictEqual(state.kindOf(r.state.sources[0]), 'tree', 'una fuente sin kind es el árbol');
   assert.strictEqual(r.state.sources[0].kind, undefined, 'la fuente de la 8.13 no se reescribe al leerla');
   assert.strictEqual(fs.readFileSync(p.file, 'utf8'), text, 'leer no escribe');
-  // lo de la 8.13 sigue donde estaba
+  // lo del estado base sigue donde estaba
   assert.strictEqual(r.state.tree_before, null);
   assert.strictEqual(r.state.hold, null);
 });
@@ -2991,7 +2990,7 @@ test('8.13.1 · T2 · defaults trae source, layer, migration y migration_hold; l
   const sources = mod('sources');
   assert.strictEqual(state.SCHEMA, 1, 'sigue schema 1');
   assert.deepStrictEqual([state.TREE_SOURCE, state.LAYER_SOURCE], ['harness', 'internal']);
-  // `release` entró con la story 8.23 (tanda B): la versión bajada como archivos, al lado del clon y la capa
+  // `release`: la versión bajada como archivos, al lado del clon y la capa
   assert.deepStrictEqual([state.SOURCE_VALUES, state.KINDS], [['internal', 'public'], ['tree', 'layer', 'release']]);
   assert.strictEqual(sources.previousRef(state.LAYER_SOURCE), 'refs/tycon/previous/internal', 'la ref de vuelta de la capa');
 
@@ -3015,7 +3014,7 @@ test('8.13.1 · T2 · defaults trae source, layer, migration y migration_hold; l
   assert.deepStrictEqual(state.layerSources(r.state).map((x) => x.name), ['internal']);
   assert.deepStrictEqual(r.state.sources.map(state.kindOf), ['tree', 'layer']);
   assert.strictEqual(state.layerSources(r.state)[0].dir, readClone, 'el clon de lectura va en su dir');
-  // no reusa los de la 8.13
+  // no reusa los del estado base
   assert.deepStrictEqual([r.state.tree_before, r.state.hold], [null, null]);
 });
 
@@ -3042,9 +3041,9 @@ test('8.13.1 · T2 · un source, un kind o un reference fuera de lugar es un est
   }
 });
 
-// ─── story 8.23, tanda L · el candado que no se traba (T38-T40) ──────────────────────────────────────────────────────
-// EL CASO (2026-10-06): en una máquina Windows del equipo cada arranque decía «otra sesión está actualizando (candado,
-// pid N) — me voy»; el PID ya había muerto y el arnés quedó 240 commits atrás. El candado sólo miraba la edad.
+// ─── el candado que no se traba (T38-T40) ──────────────────────────────────────────────────────
+// Un candado de dueño muerto no puede trabar los arranques: si sólo se mirara su edad, cada arranque diría «otra sesión está actualizando (candado,
+// pid N) — me voy» aunque el PID ya no viva, y el arnés quedaría atrasado.
 
 /** Un PID que seguro ya no vive: el de un proceso que terminó. */
 function deadPid() {
@@ -3070,12 +3069,12 @@ test('T38 · Lock_DeadPidTakenAtOnce_LivePidWaits_UnknownOrReusedPidByAge', () =
   const b = lock.acquire(home, { env });
   assert.strictEqual(b.ok, true, `no pisó el candado de un proceso muerto: ${JSON.stringify(b)}`);
   assert.deepStrictEqual(b.reclaimed, { pid: dead }, 'no dice de quién era el candado que pisó');
-  // y lo dice el registro, para cualquier comando que tome el candado (revisor de criterios de la tanda L)
+  // y lo dice el registro, para cualquier comando que tome el candado
   assert.match(fs.readFileSync(p.log, 'utf8'), new RegExp(`era del pid ${dead}, que ya no existe`), 'el registro no dice qué candado pisó');
   assert.strictEqual(fs.readFileSync(path.join(p.lockDir, 'pid'), 'utf8').split('\n')[0], String(process.pid));
   assert.ok(!fs.existsSync(`${p.lockDir}.takeover`), 'quedó el mutex de takeover');
   lock.release(home);
-  // el formato de antes (sólo el PID) es de esta máquina: muerto → se pisa
+  // el formato viejo (sólo el PID) es de esta máquina: muerto → se pisa
   put(`${deadPid()}\n`);
   assert.strictEqual(lock.acquire(home, { env }).ok, true, 'no pisó el candado viejo de un proceso muerto');
   lock.release(home);
@@ -3091,7 +3090,7 @@ test('T38 · Lock_DeadPidTakenAtOnce_LivePidWaits_UnknownOrReusedPidByAge', () =
   put('');
   assert.strictEqual(lock.acquire(home, { env }).ok, false, 'pisó un candado fresco sin PID');
   // el que toma el candado EN NOMBRE de otro proceso (el instalador de Windows lo toma con un `node -e` que termina
-  // enseguida): queda a nombre del proceso que lo usa, no del que lo tomó (pase adversarial de la tanda L)
+  // enseguida): queda a nombre del proceso que lo usa, no del que lo tomó
   fs.rmSync(p.lockDir, { recursive: true, force: true });
   const viaShortLived = spawnSync(process.execPath, ['-e', `process.stdout.write(JSON.stringify(require(${JSON.stringify(path.join(MODULES, 'lock.js'))}).acquire(${JSON.stringify(home)}, { ownerPid: ${process.pid} })))`], { encoding: 'utf8', env: labEnv(home) });
   assert.strictEqual(JSON.parse(viaShortLived.stdout).ok, true);
@@ -3108,7 +3107,7 @@ test('T38 · Lock_DeadPidTakenAtOnce_LivePidWaits_UnknownOrReusedPidByAge', () =
 });
 
 test('T38 · el candado de bootstrap.js con el dueño muerto: varios arranques a la vez, nunca dos dueños', async () => {
-  // (revisor de seguridad de la tanda L: la copia de bootstrap.js pisaba sin el mutex de takeover de lock.js)
+  // (la copia de bootstrap.js tiene que usar el mutex de takeover de lock.js)
   const home = casa('t38-bootstrap-race');
   const hdir = path.join(home, '.claude', '.tycon-pipeline', 'harness');
   const lockDir = path.join(hdir, 'harness.lock');
@@ -3162,7 +3161,7 @@ test('T39 · StartupUpdate_Detached_HookCutDoesNotKillIt_EarlyErrorStillReported
   assert.strictEqual(rt.detached, false);
   assert.notStrictEqual(rt.code, 0, 'un hijo que tira no puede salir 0');
   // un hijo que NI SIQUIERA ARRANCA (el programa no está, justo en un cambio de versión) no es «sigue aparte»: sale ≠ 0
-  // a los pocos segundos, para que la línea caiga al respaldo y quede anotado (revisor de fallos silenciosos de la L)
+  // a los pocos segundos, para que la línea caiga al respaldo y quede anotado
   const t1 = Date.now();
   const rn = D.runDetached({ script: path.join(dir, 'no-existe.js'), args: [], env, resultFile: resultFile('n'), waitMs: 10000, startWaitMs: 1500 });
   assert.deepStrictEqual([rn.detached, rn.notStarted], [false, true], `un hijo que no arrancó se dio por «sigue aparte»: ${JSON.stringify(rn)}`);
@@ -3170,7 +3169,7 @@ test('T39 · StartupUpdate_Detached_HookCutDoesNotKillIt_EarlyErrorStillReported
   assert.match(rn.lines.join(' '), /no arrancó/);
   assert.ok(Date.now() - t1 < 5000, 'esperó el tope entero por un hijo que no arrancó');
   // y un hijo LENTO para arrancar que se da por no arrancado se corta: no queda actualizando a la vez que el respaldo en
-  // shell (pase adversarial de la L)
+  // shell
   const slowStart = path.join(dir, 'slow-start.js');
   const slowOut = path.join(dir, 'slow-start.txt');
   fs.writeFileSync(slowStart, `const t = Date.now() + 2500; while (Date.now() < t) { /* Node frío, antivirus */ }
@@ -3212,8 +3211,8 @@ process.stdout.write(JSON.stringify(r)); process.exit(0);`);
 });
 
 test('T39b · StartupDetached_WindowsShim_WorkerIsGrandchild_ResultAndStartedFromWorker_AllSpawnsHideWindow', () => {
-  // ── EL CASO (2026-10-07, máquina Windows de un dev): el desprendido no tiene consola y cada git/pwsh/node que lanzaba
-  // abría una ventana visible (20 o más por arranque). El relevo: el desprendido lanza al que trabaja SIN desprender y con
+  // ── En Windows el desprendido no tiene consola y cada git/pwsh/node que lanzara
+  // abriría una ventana visible (20 o más por arranque). El relevo: el desprendido lanza al que trabaja SIN desprender y con
   // ventana oculta, y lo espera. Acá se fuerza con TYCON_STARTUP_SHIM=1 (en Windows es lo de siempre).
   const D = mod('detach');
   const dir = fs.mkdtempSync(path.join(BASE, 't39b-'));
@@ -3234,7 +3233,7 @@ test('T39b · StartupDetached_WindowsShim_WorkerIsGrandchild_ResultAndStartedFro
   const [workerPid, workerPpid] = fs.readFileSync(pidFile, 'utf8').trim().split(' ').map(Number);
   assert.notStrictEqual(workerPid, r.pid, 'el que trabajó es el desprendido mismo: no hubo relevo');
   assert.strictEqual(workerPpid, r.pid, 'el que trabajó no es hijo del desprendido (el relevo tiene que esperarlo)');
-  // con el relevo apagado, el desprendido trabaja él mismo (lo de antes)
+  // con el relevo apagado, el desprendido trabaja él mismo (sin relevo)
   const env0 = Object.assign({}, env, { TYCON_STARTUP_SHIM: '0' });
   fs.rmSync(pidFile, { force: true });
   const r0 = D.runDetached({ script, args: [], env: env0, resultFile: path.join(dir, 'result0.json'), waitMs: 10000 });
@@ -3297,9 +3296,9 @@ function optionsHideWindow(call) {
 }
 
 test('T3b · CodexHooksHealth_TreeBehindSymlinkAndSpace_BrokenHookFails_UnknownCommandsWarn', () => {
-  // ── EL CASO (pase adversarial de la 8.23 C, clases 4, 12, 17 y 18): la comprobación de salud de los hooks de Codex
-  // reconocía «los del árbol» comparando texto con `state.tree`; hooks.json lleva la ruta RESUELTA (realpath) y, con la
-  // HOME o ~/.tycon detrás de un enlace, o con un espacio en la ruta, no reconocía ninguno y pasaba en silencio.
+  // ── La comprobación de salud de los hooks de Codex
+  // reconoce «los del árbol» sin comparar texto con `state.tree`; hooks.json lleva la ruta RESUELTA (realpath) y, con la
+  // HOME o ~/.tycon detrás de un enlace, o con un espacio en la ruta, la comparación de texto no reconocería ninguno y pasaría en silencio.
   const H = mod('health');
   const base = fs.mkdtempSync(path.join(BASE, 't3b-'));
   const real = path.join(base, 'mi arbol');            // con espacio, como «Nombre Apellido» en Windows
@@ -3342,7 +3341,7 @@ test('T40 · CannotUpdateSince_RecordedByWhoCouldNot_ClearedOnSuccess_SaidFromSe
   // un archivo roto no tira: se lee como «no sé» y el aviso lo dice
   fs.writeFileSync(mod('state').paths(home).failuresFile, '{roto');
   assert.match(R.updateFailureText(R.readUpdateFailure(home)), /no pude leer/);
-  // dos clases (pase adversarial de la L): un candado ocupado se borra con cualquier arranque sano que tuvo el candado; lo
+  // dos clases: un candado ocupado se borra con cualquier arranque sano que tuvo el candado; lo
   // que es de mirar la red (sin red, sin credencial) sólo con una mirada sana
   R.clearUpdateFailure(home);
   R.recordUpdateFailure(home, 'otra sesión tiene el candado hace 7 min', { kind: 'busy' });

@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# 🔴 AISLAMIENTO PRIMERO (story 2.5, lección del rojo previo que tocó lo real): HOME falso antes de
+# 🔴 AISLAMIENTO PRIMERO (si no, la suite toca lo real): HOME falso antes de
 #    cualquier línea que ejecute algo. El recolector ESCRIBE en ~/.claude/.tycon-pipeline/, así que
 #    sin esta línea una corrida de la suite pisaría el archivo real de la máquina.
 HOME="$(mktemp -d)"; export HOME
 #
-# collect-findings.test.sh — el recolector de hallazgos de todos los repos (story 2.9).
+# collect-findings.test.sh — el recolector de hallazgos de todos los repos.
 #
 # Qué defiende, y por qué existe cada caso:
 #   · T1 proyeccion_por_lista_blanca — de cada hallazgo salen SEIS claves (con la huella de corrida). `reason` es prosa libre
 #        (3 rutas del home, 6 menciones a una persona por nombre, un host de cliente y 34 decisiones
 #        citadas, medidos en el material real) y `file` son rutas. No se publican, ni hoy ni mañana.
 #   · T2 baja_dos_niveles — `repos-root.js` devuelve una CARPETA, no una lista. Medido: los 3 repos
-#        de nivel 1 son EXACTAMENTE los 3 que ya commitean `.advisors/`; los 49 archivos de nivel 2
-#        son los que esta story existe para traer. Un glob de un nivel junta lo que ya viaja, y la
+#        de nivel 1 son los que ya commitean `.advisors/`; los archivos de nivel 2
+#        son los que este recolector existe para traer. Un glob de un nivel junta lo que ya viaja, y la
 #        cobertura dice «medido».
 #   · T3 vocabularios_cerrados + una_vez_por_dia — sin lista escrita, el implementador la inventa
 #        mirando sus propios datos. Y re-comprimir en cada arranque es trabajo por nada.
@@ -24,7 +24,7 @@ HOME="$(mktemp -d)"; export HOME
 #        identificador crudo NO sale: son 324 valores escritos a mano y cualquiera puede traer
 #        adentro el nombre de un cliente.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la forma en que se pone rojo. El exit code se lee ANTES de cualquier
 #    pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
@@ -275,10 +275,9 @@ grep -q . "${ERR}" && ok "T5 · con motivo en stderr" || mal "T5 · sin motivo �
   || ok "T5 · no deja un archivo que se leería como cero"
 
 # ── T6 · el camino por DEFECTO (sin raíz declarada) ─────────────────────────────────────────────
-# 🔴 Existe por un defecto REAL de la primera versión: llamaba a una función que no existe en
-#    repos-root.js (`reposRoot().raiz` en vez de `resolveReposRoot().root`). Todos los demás casos
-#    inyectaban la raíz por variable de entorno, así que el ÚNICO camino que iba a correr en la
-#    máquina del dev era el único sin probar — y habría reventado con un TypeError.
+# 🔴 Cubre el camino que usa la máquina del dev: los demás casos inyectan la raíz por variable de entorno, así que
+#    el ÚNICO camino real sería el único sin probar (llamar a una función que no existe en
+#    `repos-root.js` —`reposRoot().raiz` en vez de `resolveReposRoot().root`— reventaría con un TypeError).
 #    Lo que resuelve el resolvedor depende del disco (bajo HOME falso a veces encuentra una raíz y a
 #    veces no), así que se exige lo invariante: o midió y dice de dónde salió la raíz, o no pudo y el
 #    motivo habla de la raíz. Nunca un error de programación.
@@ -307,15 +306,15 @@ fi
 [ -f "${C}/estado/hallazgos.jsonl" ] && mal "T6 · una simulación escribió la serie" || ok "T6 · la simulación no escribe la serie"
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
-# Vuelta 2 de la revisión — la clase «una lectura que falla termina contada como dato bueno»
+# Una lectura que falla no termina contada como dato bueno
 # ══════════════════════════════════════════════════════════════════════════════════════════════════
 jq_out() { py "
 import json
 print(json.load(open('${OUT}')).get('$1'))"; }
 
 # ── T7 · fechas con guiones, y una corrida sin fecha NO emite ────────────────────────────────────
-# 🔴 rojo previo: sólo se entendía AAAAMMDD; 11 de 17 corridas «sin fecha» la tenían con guiones, y a
-#    todas se les ponía la fecha de hoy — o sea que caían en la ventana actual aunque fueran de mayo.
+# 🔴 sin esto, sólo se entiende AAAAMMDD; 11 de 17 corridas «sin fecha» la tienen con guiones, y a
+#    todas se les pondría la fecha de hoy — o sea que caerían en la ventana actual aunque fueran de mayo.
 C="$(nuevo t7)"; repo "${C}/raiz/repoA"
 corrida "${C}/raiz/repoA" "3.25-2026-07-27-2308" '[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","file":"x","disposition":"fixed","reason":"y"}]'
 corrida "${C}/raiz/repoA" "D.6.6-2026-05-02T21-56-13" '[{"rule_id":"SILENT-C2","severity":"WARNING","advisor":"tycon-silent-failure-hunter","file":"x","disposition":"fixed","reason":"y"}]'
@@ -436,8 +435,8 @@ recolectar "${C}" --budget-ms 0 --json; RC=$?
   || mal "T15 rc=${RC} — rojo previo: sin tope, un recolector colgado frenaba la subida y la bajada sin rastro"
 
 # ── T16 · UNA lista por corrida: las copias intermedias no se suman ──────────────────────────────
-# 🔴 rojo previo (pase adversarial): se sumaban findings-input, -iterN, -final y findings.json; un solo
-#    refutado real llegaba a 3 y mandaba la regla a revisión humana.
+# 🔴 sin esto, se suman findings-input, -iterN, -final y findings.json; un solo
+#    refutado real llega a 3 y manda la regla a revisión humana.
 C="$(nuevo t16)"; repo "${C}/raiz/repoA"
 D="${C}/raiz/repoA/.advisors/pipeline-runs/9.1-20260825T003248"; mkdir -p "${D}"
 UNO='[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","file":"x","disposition":"refuted","reason":"y"}]'
@@ -459,8 +458,8 @@ print([json.loads(l)['disposicion'] for l in open('${C}/estado/hallazgos.jsonl')
   || mal "T16 disposiciones=${DISP} — la foto de ANTES de arreglar no es la verdad de la corrida"
 
 # ── T17 · la identidad de la corrida es la misma en todos los clones ─────────────────────────────
-# 🔴 rojo previo: un findings.json commiteado existe en cada clon; sin identidad, el total del equipo lo
-#    contaba una vez por máquina.
+# 🔴 un findings.json commiteado existe en cada clon; sin identidad, el total del equipo lo
+#    cuenta una vez por máquina.
 C="$(nuevo t17)"
 for clon in uno otro-nombre; do
   repo "${C}/raiz/${clon}"
@@ -524,15 +523,15 @@ recolectar "${C}" --json; RC=$?
 [ "$(jq_out elementos_otro_esquema)" = "3" ] && [ "$(jq_out hallazgos)" = "0" ] && ok "T22 un elemento con ruleId, o que no es un objeto, se cuenta como otro esquema y no emite" \
   || mal "T22 otro_esquema=$(jq_out elementos_otro_esquema) hallazgos=$(jq_out hallazgos)"
 
-# ════════════════════════ vuelta 2 (segunda revisión) ════════════════════════════════════════════
+# ════════════════════════ cruce con los volcados de historia y lectura de la serie ════════════════════════
 volcado_h() {   # $1 = dir historia ; $2 = nombre ; $3 = storyId ; $4 = repoPath ; $5 = inicio UTC ; $6 = fin UTC
   mkdir -p "$1"
   printf '{"archivedAt":"%s","marker":{"storyId":"%s","repoPath":"%s","startedAt":"%s","lastTouch":"%s","sessionId":"s-%s"},"revisores":{"estado":"medido","por_tipo":{"tycon-plugin-security-basics":2}}}\n' \
     "$6" "$3" "$4" "$5" "$6" "$2" > "$1/$2.json"
 }
 # ── T23 · el denominador: cada volcado se empareja con su corrida, y sólo cuenta si se LEYÓ ───────
-# 🔴 rojo previo: el cruce sumaba oportunidades de toda corrida con conteo, también de las que no dejaron
-#    hallazgos legibles — medido: 49 de 113. Esas se leían como «cero hallazgos».
+# 🔴 sin esto, el cruce suma oportunidades de toda corrida con conteo, también de las que no dejaron
+#    hallazgos legibles (49 de 113 en el material real). Esas se leen como «cero hallazgos».
 C="$(nuevo t23)"; R="${C}/raiz/repoA"; repo "${R}"; H="${C}/historia"
 # 2.1: con hallazgos (carpeta 09:51 hora local = 12:51Z; sesión 12:45Z → 13:20Z)
 corrida "${R}" "2.1-20260831-095132" '[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","disposition":"fixed"}]'
@@ -568,8 +567,8 @@ E="$(node -e 'const r=require(process.argv[1]).estadoDeLaSerie({salida:process.a
 [ "${E}" = "medido" ] && ok "T23 la serie con líneas de corrida sigue medida" || mal "T23 estado=${E}"
 
 # ── T24 · la serie que no coincide con su sello NO está medida ────────────────────────────────────
-# 🔴 rojo previo: una serie vacía (a medio escribir) con un sello bueno se leía «medida, 0 hallazgos» y todo
-#    lo probado salía candidata (4 → 14); una línea de otro formato, también.
+# 🔴 sin esto, una serie vacía (a medio escribir) con un sello bueno se lee «medida, 0 hallazgos» y todo
+#    lo probado sale candidata (4 → 14); una línea de otro formato, también.
 C="$(nuevo t24)"; repo "${C}/raiz/repoA"
 corrida "${C}/raiz/repoA" "1.1-20260901T090000" '[{"rule_id":"SEC-C1","severity":"WARNING","advisor":"tycon-plugin-security-basics","disposition":"fixed"}]'
 recolectar "${C}" --json; RC=$?
@@ -615,8 +614,8 @@ node -e '
   || mal "T27 $(cat "${BASE}/t27.err") — rojo previo: el filtro miraba el valor y dejaba pasar texto en el nombre de la clave"
 
 # ── T28 · la copia repetida es `repetida` en CUALQUIER balde, y la que se pudo leer es la que cuenta ──
-# 🔴 rojo previo (alcance, vuelta 3): sólo las corridas leídas se marcaban repetidas; una sin archivo en dos
-#    clones sumaba dos veces a su balde, y una ilegible en un clon y legible en el otro quedaba mal contada.
+# 🔴 sin esto, sólo las corridas leídas se marcan repetidas; una sin archivo en dos
+#    clones suma dos veces a su balde, y una ilegible en un clon y legible en el otro queda mal contada.
 C="$(nuevo t28)"
 for clon in a-clon b-clon; do
   repo "${C}/raiz/${clon}"
@@ -641,8 +640,8 @@ recolectar "${C}" --json; RC=$?
 [ "$(jq_out hallazgos)" = "1" ] && [ "$(jq_out run_dirs)" = "1" ] && ok "T29 el subproyecto-repo se lee una vez (1 corrida, 1 hallazgo)" \
   || mal "T29 hallazgos=$(jq_out hallazgos) run_dirs=$(jq_out run_dirs) — rojo previo: se leía como subproyecto del padre y como repo propio, con huellas distintas"
 
-# ── T30 · el sello con su nombre en inglés, y el viejo sigue valiendo (story 8.9, tanda D2) ────────
-# 🔴 rojo previo: renombrar el sello sin leer el viejo deja la serie de cada máquina «no medida» (la subida y el
+# ── T30 · el sello con su nombre en inglés, y el viejo sigue valiendo ────────
+# 🔴 renombrar el sello sin leer el viejo deja la serie de cada máquina «no medida» (la subida y el
 #    tablero lo dirían) hasta la próxima recolección; y escribirlo sin pasar el viejo al nuevo perdería la historia.
 #    El nombre viejo sale del mapa de renombres, no se escribe acá.
 # en la copia pública el mapa no viaja: sin nombre viejo no hay migración que mirar (se saltea con motivo)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-map-public.test.sh — la versión pública del mapa del arnés se deriva de la privada (2026-09-15).
+# harness-map-public.test.sh — la versión pública del mapa del arnés se deriva de la privada.
 #
 # Lo que se protege: que la pública (la del sitio abierto) diga lo mismo que la privada sin llevar nada interno, y que
 # ninguna de las dos se separe de la otra sin que nadie se entere. Cada caso trabaja sobre copias en un directorio
@@ -14,7 +14,7 @@
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
-# el mapa del arnés vive en scripts/tools/harness-map/ desde la story 8.12, tanda R4
+# el mapa del arnés vive en scripts/tools/harness-map/
 HMAP="scripts/tools/harness-map"
 GEN="$RAIZ/$HMAP/public-version.js"
 # el mapa de juguete
@@ -25,7 +25,7 @@ FI18N="$FIX/i18n/inject.js"
 # el mapa de verdad, si este árbol lo trae
 PRIV="$RAIZ/artifacts/mapa-arnes.html"
 CFG="$RAIZ/$HMAP/publica.json"
-# la pública vive con la mini-clase en onboarding/mini-class/ desde la story 8.9, tanda F
+# la pública vive con la mini-clase en onboarding/mini-class/
 PUBDIR="onboarding/mini-class"
 PUB="$RAIZ/$PUBDIR/mapa-del-arnes.html"
 TMP="$(mktemp -d)"
@@ -119,7 +119,7 @@ node "$GEN" --input "$TMP/priv.html" --config "$FCFG" --i18n "$TMP/no-existe/inj
   && ok "C-08 sin el selector de idioma no se genera nada, y dice dónde lo buscó" || { mal "C-08 sin selector de idioma (rc=$rc)"; cat "$TMP/out"; }
 
 # C-09 · la pública muestra, como la privada, el nombre en el código y el repo y archivo de cada pieza. El repo, con el
-# nombre que ve alguien de afuera, no con el del repo interno (2026-10-06, pedido del dueño).
+# nombre que ve alguien de afuera, no con el del repo interno.
 cp "$FPRIV" "$TMP/priv.html"
 rc=$(correr)
 if [ "$rc" = 0 ] && grep -q 'check-hook-coverage' "$TMP/pub.html" && grep -q '"tcg": "acme-harness"' "$TMP/pub.html" \
@@ -139,7 +139,7 @@ else
   mal "C-10 el nombre de una ficha no llegó a la pública (rc=$rc)"; cat "$TMP/out"
 fi
 
-# C-11 · T47 (story 8.12, R7) · la pública trae en cada ficha el mismo `tipo` que la privada, y ninguna va sin tipo.
+# C-11 · T47 · la pública trae en cada ficha el mismo `tipo` que la privada, y ninguna va sin tipo.
 hereda_de() {
   node -e '
     const fs = require("fs");
@@ -154,7 +154,7 @@ correr >/dev/null
 hereda=$(hereda_de "$TMP/priv.html" "$TMP/pub.html")
 [ "${hereda%% *}" = OK ] && ok "C-11 la pública hereda el tipo de cada pieza (${hereda#OK } fichas)" || mal "C-11 la pública no trae el tipo de la privada: $hereda"
 
-# C-13 · T31 R4_HarnessMap_PreCommitAndCensusFolders (mitad del pre-commit, story 8.12, tanda R4, AC 27): con commits
+# C-13 · T31 R4_HarnessMap_PreCommitAndCensusFolders (mitad del pre-commit): con commits
 # de verdad en un repo de laboratorio, el pre-commit regenera la pública desde la carpeta nueva del mapa —(a) si el
 # commit toca la privada, (b) si toca sólo publica.json en su ruta nueva— y la pública regenerada entra en el commit.
 # Si el pre-commit siguiera buscando el generador o publica.json en la carpeta vieja, (a) entraría sin regenerar o
@@ -196,8 +196,8 @@ ficha_lab "$L/repo/artifacts/mapa-arnes.html"
 ( cd "$L/repo" && git add artifacts/mapa-arnes.html )
 rc=$(commit_lab "$L" "privada con una ficha nueva")
 # 🔴 La pública del commit se vuelca a un archivo y se busca ahí. Con `git show … | grep -q` y pipefail, grep corta al
-#    encontrar la ficha y git, que todavía escribe el final del archivo, muere por la tubería: la línea daba falso con
-#    la pública bien regenerada (validaciones 12355 y 12364, en Linux; en la Mac no pasaba).
+#    encontrar la ficha y git, que todavía escribe el final del archivo, muere por la tubería: la línea da falso con
+#    la pública bien regenerada (en Linux; en la Mac no pasa).
 git -C "$L/repo" show "HEAD:$PUBDIR/mapa-del-arnes.html" > "$L/publica-del-commit.html" 2> "$L/publica-del-commit.err"
 if [ "$rc" = 0 ] && [ "$(git -C "$L/repo" rev-list --count HEAD)" = "$((antes + 1))" ] \
    && grep -q "Pieza de laboratorio R4" "$L/publica-del-commit.html" \
@@ -228,8 +228,8 @@ rc=$(commit_lab "$L" "pública a mano")
   || { mal "C-13 T31 (c) la pública editada a mano entró (rc=$rc)"; sed -n '1,12p' "$L/out"; }
 
 # C-14 · en un repo que no trae el mapa interno (el público), un commit que toca sólo el código del mapa entra y dice por
-# qué no regeneró nada: antes de que el código viajara, el pre-commit rechazaba ese commit porque no encontraba la
-# privada en el índice, y por eso el código no podía vivir en el repo público.
+# qué no regeneró nada: sin esto, el pre-commit rechaza ese commit porque no encuentra la
+# privada en el índice, y el código no puede vivir en el repo público.
 L="$TMP/lab-d"; lab_mapa "$L" sin-mapa
 printf '\n// cambio de prueba\n' >> "$L/repo/$HMAP/census.js"
 ( cd "$L/repo" && git add "$HMAP/census.js" )

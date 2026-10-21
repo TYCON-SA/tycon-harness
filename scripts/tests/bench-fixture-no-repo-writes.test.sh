@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # bench-fixture-no-repo-writes.test.sh — el sandbox del banco no puede commitear en el repo
-# de verdad (2026-09-27).
+# de verdad.
 #
-# EL CASO. Un commit que tocaba `agents/tycon-e2e-realness-checker.md` disparó el chequeo de vida del
-# pre-commit; el chequeo armó su fixture, y los `git init && git add -A && git commit -qm fixture` del
-# fixture cayeron SOBRE LA RAMA DEL DEV: dos commits `fixture` en la punta y el árbol del repo
-# reemplazado por el del fixture. El commit del dev se perdió (se recuperó con `git reset`, y estuvo a
+# EL RIESGO. El chequeo de vida del pre-commit arma un fixture, y los `git init && git add -A && git commit -qm fixture`
+# del fixture pueden caer SOBRE LA RAMA DEL DEV: dos commits `fixture` en la punta y el árbol del repo
+# reemplazado por el del fixture. El commit del dev se pierde (se recupera con `git reset`, y queda a
 # un `git gc` de no volver).
 #
 # POR QUÉ. git le exporta a sus hooks `GIT_DIR` y `GIT_INDEX_FILE`, cualquier `git` que el hook lance
@@ -13,14 +12,14 @@
 # con el cwd en el sandbox apunta al sandbox— y no se ve nunca; desde un worktree es ABSOLUTO y se ve.
 # Por eso este caso exporta las dos variables en absoluto: reproduce el hook del worktree.
 #
-# 🔴 ROJO PREVIO: se corre contra la versión anterior del corredor dejándola al lado de la actual
+# 🔴 Para ver el rojo: se corre contra una versión del corredor sin el arreglo, dejándola al lado de la actual
 # (necesita su `../lib`), y apuntándole el override:
 #    git show HEAD:scripts/controls-bench/advisor-runner.js > scripts/controls-bench/.viejo.js
 #    TYCON_ADVISOR_RUNNER=scripts/controls-bench/.viejo.js bash scripts/tests/bench-fixture-no-repo-writes.test.sh
 # Ahí C-1 sale rojo: el repo de juguete termina con TRES commits, dos puestos por el fixture. C-2 y
 # C-3 quedan verdes en este banco y eso es correcto —los archivos del dev siguen en el disco, lo que
 # cambia es el árbol del commit— y son las guardas de que el arreglo no rompa nada por el otro lado.
-# En el incidente real eso se vio al revés: `git status` mostraba TODO el repo como no rastreado,
+# Sin el arreglo se ve al revés: `git status` muestra TODO el repo como no rastreado,
 # porque el árbol de la punta ya no era el del repo.
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

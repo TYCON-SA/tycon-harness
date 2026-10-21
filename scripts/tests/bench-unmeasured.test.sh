@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# bench-unmeasured.test.sh — un TIEMPO AGOTADO no es un control roto (2026-09-04).
+# bench-unmeasured.test.sh — un TIEMPO AGOTADO no es un control roto.
 #
-# Caso disparador: el aviso del arranque venía diciendo "3 regresiones" y después "5" del banco
-# determinista. Ninguna era real. Dos de ellas eran dos casos del grabador de instintos a los que
-# se les agotaban los 20 s cuando la máquina estaba cargada — corridos solos daban verde. El banco
-# los contaba como rojos Y como regresiones contra la línea de base, o sea que gritaba por algo
-# que no tenía nada que ver con los controles. Un banco que grita en falso es un banco que se deja
+# Defecto que cierra: el aviso del arranque dice "3 regresiones" o "5" del banco
+# determinista sin que ninguna sea real. Por ejemplo, a dos casos del grabador de instintos
+# se les agotan los 20 s cuando la máquina está cargada, y corridos solos dan verde. El banco
+# los cuenta como rojos Y como regresiones contra la línea de base, o sea que grita por algo
+# que no tiene nada que ver con los controles. Un banco que grita en falso es un banco que se deja
 # de mirar, y con él se pierde el rojo verdadero.
 #
 # Lo que fija este test: un caso al que se le acaba el tiempo DOS veces (hay un reintento) se
@@ -59,8 +59,8 @@ salida="$(TYCON_BENCH_CASES_DIR="$TMP/casos" node "$TCG/scripts/controls-bench/r
 
 # 1 · lo dice, y lo dice como NO MEDIDO
 # 🔴 Se busca la marca 🟡, que sólo se imprime cuando hay al menos uno. Buscar el texto
-# "NO MEDIDO" a secas no servía: la línea de resumen lo nombra SIEMPRE ("0 NO MEDIDOS"), así
-# que el chequeo pasaba incluso con el arreglo desactivado — un chequeo que no puede fallar.
+# "NO MEDIDO" a secas no sirve: la línea de resumen lo nombra SIEMPRE ("0 NO MEDIDOS"), así
+# que el chequeo pasa incluso con el arreglo desactivado — un chequeo que no puede fallar.
 echo "$salida" | grep -q "🟡" \
   && ok "1 · lo marca como NO MEDIDO (🟡) en la salida" \
   || { mal "1 · no lo marcó — un caso que no se pudo medir no puede pasar en silencio"; echo "$salida"; }
@@ -93,9 +93,9 @@ n_reg="$(node -e "console.log(require('$REP2').baselineRegressions)")"
   && ok "4 · no lo cuenta como regresión contra la línea de base" \
   || { mal "4 · lo contó como regresión ($n_reg) — así se fabrican los rojos falsos que vació el banco"; echo "$salida2"; }
 
-# 5 · un hook que SE VA SIN LEER su entrada no es un rojo (corrida 10001 en Linux, 2026-09-05).
+# 5 · un hook que SE VA SIN LEER su entrada no es un rojo.
 # Se fuerza el EPIPE en cualquier sistema: la entrada del caso lleva un campo de 300 KB (más que el
-# buffer del pipe) y el hook sale en su primera línea sin leer nada. Antes: "ERROR: spawnSync bash
+# buffer del pipe) y el hook sale en su primera línea sin leer nada. Sin esto sale: "ERROR: spawnSync bash
 # EPIPE", contado como rojo y como paridad rota. El proceso corrió y terminó: se evalúa lo que hizo.
 cat > "$TMP/bin/callado.sh" <<'EOF'
 #!/usr/bin/env bash

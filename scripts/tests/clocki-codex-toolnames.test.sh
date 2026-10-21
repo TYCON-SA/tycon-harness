@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # clocki-codex-toolnames.test.sh — guard de regresión del fix "tools de Clockify agnósticas".
 #
-# Caso: incident-log#clockify-tool-names-codex (2026-08-24). Las tools de Clockify tienen guiones
-# en el nombre; bajo Codex vienen con guiones bajos (regla D.5). Las skills llegan a Codex por
-# symlink sin traducir, y el guard "si la tool no está → saltear" apagaba el tracking EN SILENCIO.
+# Por qué: las tools de Clockify tienen guiones
+# en el nombre; bajo Codex vienen con guiones bajos. Las skills llegan a Codex por
+# symlink sin traducir, y el guard "si la tool no está → saltear" apagaría el tracking EN SILENCIO.
 # Este test falla si alguien REINTRODUCE el patrón peligroso: un guard de salteo atado al nombre
 # EXACTO con guiones, o la desaparición de la nota agnóstica.
 #

@@ -1,9 +1,9 @@
 'use strict';
 // git-hooks-path.test.js — la carpeta GLOBAL de hooks de git que pone `harness.js` (scripts/setup/harness/git-hooks-path.js).
 //
-// El caso (2026-10-14): una máquina con la versión bajada, mudada desde un clon, tenía los hooks del arnés en ~/.git-hooks
-// y git sin carpeta global de hooks: el freno antes de publicar no corría. `doctor` mandaba a `harness.js apply`, y el
-// aplicador sólo avisaba. Lo de punta a punta (install, apply, el arranque, el perfil mínimo, uninstall) lo mide
+// El caso: una máquina con la versión bajada, mudada desde un clon, tiene los hooks del arnés en ~/.git-hooks
+// y git sin carpeta global de hooks: el freno antes de publicar no corre. `doctor` manda a `harness.js apply`, que
+// tiene que ponerla y no sólo avisar. Lo de punta a punta (install, apply, el arranque, el perfil mínimo, uninstall) lo mide
 // harness-install.test.sh, sección HP; acá, el módulo, igual en cualquier sistema:
 //
 //   G1 · git sin ninguna, perfil full, con el pre-push del arnés en la carpeta: la pone y la relee.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-team-azure.test.sh — la capa del equipo desde AZURE DEVOPS sobre la versión bajada (story 8.25, tanda A1a-azure: la
+# harness-team-azure.test.sh — la capa del equipo desde AZURE DEVOPS sobre la versión bajada (la
 # fuente de TYCON). Mismo laboratorio que harness-team.test.sh (la copia pública en el GitHub de juguete) más un Azure DevOps de
 # juguete (scripts/tests/fixtures/toy-azure-server.js) que atiende el repo del equipo.
 #
@@ -29,8 +29,7 @@ FALLOS=0
 ok()  { echo "  ok   — $1"; }
 mal() { echo "  MAL  — $1"; FALLOS=$((FALLOS+1)); }
 # el PAT de juguete se guarda por el comando real (`config set azure.token`, en harness_lab_team_azure_pat); si ese comando falla,
-# acá queda como MAL con su causa — sin esto la prueba seguía y fallaba más abajo con un mensaje que no apuntaba al origen
-# (revisor de fallos silenciosos, vuelta 2)
+# acá queda como MAL con su causa — sin esto la prueba seguiría y fallaría más abajo con un mensaje que no apuntaría al origen
 pat_guardado() { harness_lab_team_azure_pat "$@" || { mal "no pude guardar el PAT por config set azure.token (la causa, arriba): lo que sigue de esta prueba no vale"; return 1; }; }
 BASE="$(mktemp -d)"
 case "$BASE" in "$RAIZ"*|*agent-skills*|*/.claude*) echo "❌ harness-team-azure: el laboratorio cayó en ${BASE}"; exit 1 ;; esac
@@ -120,7 +119,7 @@ if corre TZ8; then
   FOUND="$(grep -rl -- pat-que-no-vale-8 "$LAB_HOME" 2>/dev/null | grep -v '/config.json$' || true)"
   [ -z "$FOUND" ] && ok "el valor del PAT no está en nada escrito salvo su archivo" || mal "el PAT aparece en: $FOUND"
   grep -q -- pat-que-no-vale-8 "$LAB_AZURE_LOG" && mal "el PAT en claro en el registro del servidor" || ok "…ni en el registro del servidor"
-  # el modo se lee con node: en Linux `stat -f` es otra cosa (el sistema de archivos) y sale 0 con «File: …» (170 #12521)
+  # el modo se lee con node: en Linux `stat -f` es otra cosa (el sistema de archivos) y sale 0 con «File: …»
   [ "$(node -e 'process.stdout.write((require("fs").statSync(process.argv[1]).mode & 0o777).toString(8))' "$LAB_HOME/.tycon/config.json" 2>/dev/null)" = 600 ] && ok "config.json queda 0600" ||mal "config.json: $(stat -f '%Lp' "$LAB_HOME/.tycon/config.json" 2>/dev/null)"
   # (c) vale pero sin permiso de lectura: 403
   sin_acceso "sin permiso de lectura" '{ "pat": "pat-lab", "blind": true }' pat-lab

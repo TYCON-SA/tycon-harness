@@ -1,5 +1,5 @@
 'use strict';
-// harness-team.test.js — la capa del equipo (story 8.25, tanda A1a): lo que se decide SIN red ni laboratorio, como pruebas
+// harness-team.test.js — la capa del equipo: lo que se decide SIN red ni laboratorio, como pruebas
 // unitarias de scripts/setup/harness/team.js.
 //
 //   T1 · Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames — `--team <org>/<repo>` en install y migrate,
@@ -13,12 +13,12 @@
 //        valor personal, una clave desconocida y las tres llaves que no viajan lo rechazan; uno sano pasa.
 //   T6w · sin la versión que va a quedar (la mudanza, antes de bajarla), el perfil y team-repos.json no se juzgan con otro
 //        árbol: se difieren y vuelven nombrados; la declaración se sigue juzgando.
-//   T33 · (tanda A2b-AC33) el mapa de renombres como tercera ruta exacta, validado contra la versión que va a quedar con el
+//   T33 · el mapa de renombres como tercera ruta exacta, validado contra la versión que va a quedar con el
 //        lector de esa versión: un mapa sano pasa; cada forma mala rechaza la capa nombrando la entrada; el mapa real pasa.
-//   TPN · el perfil con su nombre de hoy (team-profile.json) y el de antes (perfil-equipo.json): la capa acepta los dos, con
+//   TPN · el perfil con su nombre actual (team-profile.json) y el de antes (perfil-equipo.json): la capa acepta los dos, con
 //        el de antes avisa cómo renombrarlo, con los dos gana el nuevo y el de antes no se apila; el refresco que renombra
 //        deja el nuevo y borra el viejo.
-//   T80 · (story 8.26, tanda H1c) el texto del alta del equipo, `onboarding/<nombre>.md`, entra a la lista cerrada: un nivel y
+//   T80 · el texto del alta del equipo, `onboarding/<nombre>.md`, entra a la lista cerrada: un nivel y
 //        sólo `.md`; la charla, un guion, un dato o una subcarpeta rechazan la capa entera; se apila, se arrastra y, cuando la
 //        capa deja de traerlo, se va con su carpeta vacía; no va a Codex.
 //
@@ -53,7 +53,7 @@ function teamNameDeclared() {
 test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames', () => {
   // la forma org/nombre
   assert.deepEqual(TEAM.parseTeam('acme/equipo-perfil'), { ok: true, host: 'github', org: 'acme', name: 'equipo-perfil', repo: 'acme/equipo-perfil', url: 'https://github.com/acme/equipo-perfil' });
-  // las tres formas (story 8.25, fuente Azure): org/nombre y la URL de GitHub son la misma fuente; la URL de Azure DevOps, la otra
+  // las tres formas: org/nombre y la URL de GitHub son la misma fuente; la URL de Azure DevOps, la otra
   assert.deepEqual(TEAM.parseTeam('https://github.com/acme/equipo-perfil.git'), TEAM.parseTeam('acme/equipo-perfil'));
   const az = TEAM.parseTeam('https://dev.azure.com/acme/proyecto/_git/equipo-perfil');
   assert.deepEqual(az, { ok: true, host: 'azure', org: 'acme', project: 'proyecto', name: 'equipo-perfil', repo: 'https://dev.azure.com/acme/proyecto/_git/equipo-perfil', url: 'https://dev.azure.com/acme/proyecto/_git/equipo-perfil' });
@@ -83,7 +83,7 @@ test('T1 Cli_TeamOption_InstallAndMigrate_ClosedTable_EnglishNames_NoRealNames',
   // un --team sin forma sale 2 sin escribir y antes de la red (install; la mudanza, que necesita una máquina con clon, lo
   // mide T13 en harness-move-home.test.sh)
   // (la máquina de juguete «tiene» Claude Code por su llave, como en el laboratorio: en el agente de la validación, sin ninguna
-  // herramienta instalada, `install` saldría 1 por «sin herramienta» antes de leer la opción — 170 #12506)
+  // herramienta instalada, `install` saldría 1 por «sin herramienta» antes de leer la opción)
   const toolsBin = path.join(home, 'tools-bin'); fs.mkdirSync(toolsBin);
   for (const cmd of [['install', '--version', 'latest', '--team', 'a/b/c', '--yes'], ['install', '--team', 'sin-barra', '--yes']]) {
     const before = fs.readdirSync(home).sort().join(',');
@@ -150,7 +150,7 @@ test('T4 Team_ClosedPaths_OutsideRefusedAllNamed_SymlinkSubmoduleUnsafePath_Publ
 });
 
 test('T4b Team_ShaShapeFromGitHub_RefOrTreeNotHex_RefusedBeforeAnyUrlOrPath', () => {
-  // lo que GitHub contesta se usa en la URL siguiente y en la ruta de la caché: sin forma de sha, no se usa (revisor de seguridad)
+  // lo que GitHub contesta se usa en la URL siguiente y en la ruta de la caché: sin forma de sha, no se usa
   const home = casa('sha');
   const fake = (refSha, treeSha) => ({
     token: null, repos: null,
@@ -172,22 +172,22 @@ test('T4b Team_ShaShapeFromGitHub_RefOrTreeNotHex_RefusedBeforeAnyUrlOrPath', ()
 });
 
 test('T4c AdversarialPass_ParseDots_GitattributesRefused_RequiresExtraKey_CarryValidatesWithNewReader_CacheNeverOverridesResolved_StateSyncedWithTree', () => {
-  // clase 7: «.» y «..» pasan la forma pero no son nombres
+  // «.» y «..» pasan la forma pero no son nombres
   for (const bad of ['../..', './x', 'acme/..', '../acme']) assert.equal(TEAM.parseTeam(bad).ok, false, `«${bad}»`);
-  // clases 9 y 10: un .gitattributes rompe el comprimido que GitHub arma → se rechaza nombrándolo
+  // un .gitattributes rompe el comprimido que GitHub arma → se rechaza nombrándolo
   const ga = TEAM.planTeam([...SANE, blob('.gitattributes', 20)]);
   assert.equal(ga.ok, false);
   assert.match(ga.problems.find((p) => p.path === '.gitattributes').reason, /gitattributes|comprimido/);
-  // clase 6: una clave de más adentro de requires
+  // una clave de más adentro de requires
   const r6 = TEAM.validateDeclaration('{ "schema": 1, "name": "e", "requires": { "harness": ">= 2026.10.01.1", "node": ">= 20" } }', '2026.10.09.1');
   assert.equal(r6.ok, false); assert.match(r6.reason, /requires.*node/);
-  // clases 1, 4 y 12: la capa arrastrada se valida con el lector de la versión que VA A QUEDAR (y por la lista cerrada)
+  // la capa arrastrada se valida con el lector de la versión que VA A QUEDAR (y por la lista cerrada)
   const GH = require(path.join(ROOT, 'scripts', 'lib', 'git-tree-hash.js'));
   const lab = casa('carry');
   const harness = path.join(lab, 'harness'); const incoming = path.join(lab, 'incoming');
   fs.mkdirSync(path.join(incoming, 'scripts'), { recursive: true });
   fs.cpSync(path.join(ROOT, 'scripts', 'lib'), path.join(incoming, 'scripts', 'lib'), { recursive: true });
-  // el lector de la versión nueva ya no conoce la sección `packs`: un perfil que hoy vale queda «roto» ahí
+  // el lector de la versión nueva ya no conoce la sección `packs`: un perfil que vale con el lector actual queda «roto» ahí
   const reader = path.join(incoming, 'scripts', 'lib', 'tycon-config.js');
   fs.writeFileSync(reader, fs.readFileSync(reader, 'utf8').replace(/\n\s*packs:\s*Object\.freeze\([^\n]*\n/, '\n'));
   const makeHarness = (profileText) => {
@@ -203,7 +203,7 @@ test('T4c AdversarialPass_ParseDots_GitattributesRefused_RequiresExtraKey_CarryV
   assert.equal(fs.existsSync(path.join(incoming, 'perfil-equipo.json')), false, 'no escribió nada');
   makeHarness('{ "integrations": { "engram": true } }\n');
   assert.equal(TEAM.carryTeam(harness, incoming, { home: lab, env: {} }).ok, true, 'un perfil que el lector nuevo acepta sí se arrastra');
-  // clase 3: el manifiesto apilado dice lo RESUELTO ahora, no lo que la caché traía de otra corrida
+  // el manifiesto apilado dice lo RESUELTO, no lo que la caché traía de otra corrida
   const cacheDir = path.join(lab, 'cache'); fs.mkdirSync(cacheDir, { recursive: true });
   const text = '{ "integrations": { "engram": true } }\n';
   fs.writeFileSync(path.join(cacheDir, 'perfil-equipo.json'), text);
@@ -215,7 +215,7 @@ test('T4c AdversarialPass_ParseDots_GitattributesRefused_RequiresExtraKey_CarryV
   assert.equal(st.ok, true, JSON.stringify(st));
   assert.equal(st.manifest.repo, 'acme/equipo'); assert.equal(st.manifest.etag, '"nuevo"'); assert.equal(st.manifest.name, 'equipo');
   assert.equal(st.manifest.fetched_at, '2026-01-01T00:00:00.000Z', 'de la caché sólo cuándo se bajó');
-  // clase 2: tras una vuelta a previous/ que el estado no vio, state.team pasa a ser lo que hay en el árbol
+  // tras una vuelta a previous/ que el estado no vio, state.team pasa a ser lo que hay en el árbol
   const state = { team: { repo: 'acme/equipo', ref: 'main', commit: SHA(11), tree: null, etag: null, name: 'e', files: 2, applied_at: 'x' } };
   assert.equal(TEAM.syncStateWithTree(state, inc2), true); assert.equal(state.team.commit, SHA(9), 'la capa del árbol que quedó');
   assert.equal(TEAM.syncStateWithTree(state, inc2), false, 'ya coincide: nada cambia');
@@ -281,7 +281,7 @@ test('T6u Team_ProfileValidatedWithReaderOfTree_TempDir_NoProfileVar_PersonalAnd
 });
 
 test('T6v Team_TeamReposInTheClosedList_ValidatedWithReaderOfTree — dónde vive cada repo viaja en la capa, validado por la versión que va a quedar', () => {
-  // story 8.26, tanda J: sin esta ruta en la lista cerrada, una capa con team-repos.json se rechazaba ENTERA en cada máquina
+  // sin esta ruta en la lista cerrada, una capa con team-repos.json se rechazaría ENTERA en cada máquina
   assert.equal(TEAM.layerPathProblem(TEAM.TEAM_REPOS_PATH), null, 'team-repos.json entra en la capa');
   assert.equal(TEAM.isContentChecked(TEAM.TEAM_REPOS_PATH), true, 'y se juzga por su contenido antes de escribir nada');
   const repo = (r) => ({ platform: 'azure', org: 'acme', project: 'Main', repo: r });
@@ -300,7 +300,7 @@ test('T6v Team_TeamReposInTheClosedList_ValidatedWithReaderOfTree — dónde viv
 });
 
 test('T6w Team_DeferReaders_ProfileAndTeamReposLeftForTheVersionThatStays — sin la versión que va a quedar, los lectores no juzgan: se difieren y se dicen', () => {
-  // la mudanza de un clon viejo (sin scripts/lib/team-repos.js): juzgar con los lectores del clon frenaba una capa válida.
+  // la mudanza de un clon viejo (sin scripts/lib/team-repos.js): juzgar con los lectores del clon frenaría una capa válida.
   // Con deferReaders, el perfil y team-repos.json NO se juzgan con readerTree y vuelven nombrados en readersDeferred; todo
   // lo demás (la declaración) se sigue juzgando
   const repo = (r) => ({ platform: 'github', org: 'acme', repo: r });
@@ -332,7 +332,7 @@ test('T6w Team_DeferReaders_ProfileAndTeamReposLeftForTheVersionThatStays — si
   TEAM.dropStaged(full.dir);
 });
 
-// tanda A1b (T10 en unidad; revisión adversarial C1, C2, W5, W7, W8, W9): el refresco en el lugar como transacción, sobre
+// T10 en unidad: el refresco en el lugar como transacción, sobre
 // carpetas temporales y sin red; y la copia de lo editado que hace `uninstall`
 test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_PublicNeverTouched_KeepEditedNeverThrows', () => {
   const GH = require(path.join(ROOT, 'scripts', 'lib', 'git-tree-hash.js'));
@@ -391,7 +391,7 @@ test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_Publ
   assert.equal(fs.readFileSync(path.join(harness, TEAM.MANIFEST_NAME), 'utf8'), before, 'el manifiesto no cambió');
   assert.deepEqual(fs.readdirSync(harness).filter((n) => n.startsWith('.tycon-team.tmp-')), [], 'sin temporales');
   fs.rmSync(path.join(harness, 'scripts', 'metrics', 'corridas-buzon.json'), { recursive: true, force: true });
-  // (5) un manifiesto con una entrada sin forma es «sin capa» (W5): nunca tira
+  // (5) un manifiesto con una entrada sin forma es «sin capa»: nunca tira
   fs.writeFileSync(path.join(harness, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', commit: SHA(1), files: [null] }));
   assert.equal(TEAM.readTeamManifest(harness), null);
   assert.deepEqual(TEAM.layerPaths(harness), []);
@@ -411,7 +411,7 @@ test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_Publ
   assert.notEqual(k2.dir, k.dir, 'una segunda copia en el mismo segundo no pisa la primera');
   assert.equal(TEAM.keepEdited([['harness', path.join(lab, 'no-existe')]], keepRoot).copied.length, 0, 'sin capa: nada');
 
-  // (7 · pase adversarial FP-1) un refresco que murió entre los renames y el manifiesto: el archivo YA es del commit B y el
+  // (7) un refresco que murió entre los renames y el manifiesto: el archivo YA es del commit B y el
   // manifiesto dice A. Con el pendiente, ni doctor ni uninstall lo llaman «editado», y si la punta pasa a C, el refresco lo pisa
   // (no queda en `kept` para siempre)
   const K2 = '{ "cuenta": "z" }\n';
@@ -426,7 +426,7 @@ test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_Publ
   assert.equal(fs.readFileSync(path.join(harness, 'scripts', 'metrics', 'corridas-buzon.json'), 'utf8'), K2);
   assert.equal(fs.existsSync(path.join(harness, TEAM.PENDING_NAME)), false, 'el pendiente se borra con el manifiesto');
 
-  // (8 · pase adversarial S-1) lo que doctor no ve: `kept` del manifiesto local sólo cuenta si es de la lista cerrada, y el
+  // (8) lo que doctor no ve: `kept` del manifiesto local sólo cuenta si es de la lista cerrada, y el
   // prefijo de los temporales sólo vale para ARCHIVOS al lado de un destino de la capa
   fs.writeFileSync(path.join(harness, TEAM.MANIFEST_NAME), JSON.stringify({ schema: 1, repo: 'acme/equipo', commit: SHA(1), files: [{ path: 'version.json', blob: b('x') }], kept: ['scripts'] }));
   assert.deepEqual(TEAM.layerPaths(harness), [TEAM.MANIFEST_NAME], 'ni «scripts» ni version.json se esconden');
@@ -446,7 +446,7 @@ test('T10u RefreshInPlace_Transaction_EditedKept_RemovedOnlyClosedAndIntact_Publ
   assert.equal(TEAM.teamStatus(harness).pendingCorrupt, true);
 });
 
-// ── tanda A2a · los revisores y las skills del equipo ─────────────────────────────────────────────────────────────────────
+// ── los revisores y las skills del equipo ─────────────────────────────────────────────────────────────────────
 //   T17 · la lista cerrada por patrón (paquete, agentes, skills de una a tres carpetas, sólo `.md` bajo skills/ y agents/), la
 //         regla del conjunto (cada archivo de skills/ con su SKILL.md; nada dentro de una skill de la versión ni de terceros;
 //         rutas iguales sin caja), `hooks:` en un frontmatter, los topes, y la función contra team-layer-paths.json.
@@ -511,7 +511,7 @@ test('T17 Team_ClosedPatterns_A2a_PacksAgentsNestedSkillsMdOnly_NoSkillInsidePub
   assert.equal(cp.length, 1, JSON.stringify(cp));
   // la función de pertenencia contra la copia que leen las personas (team-layer-paths.json: exactas + expresiones regulares)
   assert.ok(Array.isArray(FIXTURE.patterns) && FIXTURE.patterns.length >= 3, 'team-layer-paths.json trae los patrones');
-  // (story 8.26, H1c · AC 66) el texto del alta: la copia trae su patrón y muestras de los dos lados
+  // el texto del alta: la copia trae su patrón y muestras de los dos lados
   assert.ok(FIXTURE.patterns.some((re) => new RegExp(re).test('onboarding/step-0-mac.md')), 'la copia trae el patrón del texto del alta');
   assert.ok(FIXTURE.samples.in.includes('onboarding/step-0-mac.md'), 'una muestra del alta adentro');
   for (const sample of ['onboarding/mini-class/charla.md', 'onboarding/mini-class/index.html', 'onboarding/x.sh', 'onboarding/x.json', 'onboarding/sub/x.md', 'Onboarding/x.md']) assert.ok(FIXTURE.samples.out.includes(sample), `la copia muestra ${sample} afuera`);
@@ -528,12 +528,12 @@ test('T17 Team_ClosedPatterns_A2a_PacksAgentsNestedSkillsMdOnly_NoSkillInsidePub
   assert.equal(TEAM.isLayerTemp(`scripts/setup/${TEAM.TMP_PREFIX}x`), false);
 });
 
-// ── story 8.25, tanda A2c · T31: la lista fija de skills con algo más que texto ───────────────────────────────────────
+// ── T31: la lista fija de skills con algo más que texto ───────────────────────────────────────
 const EXTRAS_FILE = path.join(ROOT, 'scripts', 'setup', 'harness', 'team-skill-extras.json');
 const EXTRAS = JSON.parse(fs.readFileSync(EXTRAS_FILE, 'utf8'));
 
 test('T31 Team_FixedSkillList_FolderWhitelistAndDataFiles_ProcessesCustomPilotsTestsScriptsConfigRefused_Mode100644Only_NotDeclarableByLayer_MaxThreeEntries_PerEntryBudget_RetireDateOnlyWarns', () => {
-  // la lista de la versión: como máximo 3 entradas, hoy una, con todo lo que el AC 31 pide
+  // la lista de la versión: como máximo 3 entradas, con todo lo que pide la lista
   assert.deepEqual(TEAM.validateExtras(EXTRAS), [], 'la lista de la versión se valida sola');
   assert.equal(EXTRAS.entries.length, 1);
   const E = EXTRAS.entries[0];
@@ -587,7 +587,7 @@ test('T31 Team_FixedSkillList_FolderWhitelistAndDataFiles_ProcessesCustomPilotsT
   const dh = TEAM.dataHomeOf(E, { home, env: {} });
   assert.equal(dh.file, path.join(home, E.dataHome.dir, E.dataHome.file));
   // 🔴 el texto de la skill sólo está en el clon interno: `skills/bizuit-sdd` no viaja en la copia pública (la trae la capa
-  // del equipo). Allá este cruce no se mide, y se dice; antes la prueba entera daba rojo sobre la copia por leer ese archivo.
+  // del equipo). Allá este cruce no se mide, y se dice, en vez de dar rojo por leer ese archivo.
   const authFile = path.join(ROOT, S, 'rules', 'bizuit', 'common', 'api-auth.md');
   if (fs.existsSync(path.join(ROOT, S, 'SKILL.md'))) {
     const auth = fs.readFileSync(authFile, 'utf8');
@@ -608,7 +608,7 @@ test('T31 Team_FixedSkillList_FolderWhitelistAndDataFiles_ProcessesCustomPilotsT
   for (const s of FIXTURE.extras_samples.out) assert.notEqual(TEAM.layerPathProblem(s), null, `${s} no entra`);
 });
 
-// ── tanda A2c · AC 35 (la parte unitaria de T35): la conexión vieja llega a la casa nueva, una vez, sin pisar ni mostrarse ──
+// ── la parte unitaria de T35: la conexión vieja llega a la casa nueva, una vez, sin pisar ni mostrarse ──
 test('A2c MoveSkillData_FixedOrder_OncePerSkill_NeverOverwrites_RegularUnder64K_SensitiveKeySaid_ContentNeverShown_DryRunWritesNothing', () => {
   const E = EXTRAS.entries[0];
   const SUB = E.skill.slice('skills/'.length);
@@ -693,7 +693,7 @@ test('A2c MoveSkillData_FixedOrder_OncePerSkill_NeverOverwrites_RegularUnder64K_
   fs.rmSync(lab, { recursive: true, force: true });
 });
 
-// ── tanda A2c · lo que sumaron los revisores (vuelta 1): nada se calla, kept- no sigue enlaces y queda sólo para el usuario ──
+// ── nada se calla, kept- no sigue enlaces y queda sólo para el usuario ──
 test('A2c Review_UnreadableIsSaid_KeptStraysNoLinksUserOnlyBudget_CompareFailureSaid_HomeLineIsWarn', { skip: process.platform === 'win32' && 'los permisos que se niegan a leer se miden en posix' }, () => {
   const E = EXTRAS.entries[0];
   const SUB = E.skill.slice('skills/'.length);
@@ -758,14 +758,14 @@ test('A2c Review_UnreadableIsSaid_KeptStraysNoLinksUserOnlyBudget_CompareFailure
         assert.ok(!r.lines.some((l) => /es distinta/.test(l)), JSON.stringify(r.lines));
       } finally { fs.chmodSync(dest, 0o600); }
     }
-    // (5) la casa resuelta se dice con `warn` (AC 36), nunca `fail`
+    // (5) la casa resuelta se dice con `warn`, nunca `fail`
     const doc = TEAM.skillDataDoctor({ home, env, tree });
     assert.ok(doc.items.some((i) => i.level === 'warn' && /la casa de sus datos es/.test(i.text)), JSON.stringify(doc.items));
     assert.ok(doc.items.every((i) => i.level !== 'fail'));
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// ── tanda A2c · lo que confirmó el pase adversarial (opus): cada clase con la prueba que la reproduce ─────────────────────
+// ── casos de regresión: cada uno con la prueba que lo reproduce ─────────────────────
 test('A2c Adversarial_CaseFoldedWhitelist_WindowsSafeCharsAndDepth_RealDates_BomSensitive_KeptOnlyWithLayer_UnsafeStrayNamesSaid', () => {
   const E = EXTRAS.entries[0];
   const S = E.skill;
@@ -795,7 +795,7 @@ test('A2c Adversarial_CaseFoldedWhitelist_WindowsSafeCharsAndDepth_RealDates_Bom
     fs.writeFileSync(own, '﻿password: x\nurl: y\n');
     const r = TEAM.moveSkillData({ home, env, team: {}, layerPaths: [`${S}/SKILL.md`] });
     assert.ok(r.lines.some((l) => /clave sensible/.test(l)), JSON.stringify(r.lines));
-    // (8) un árbol SIN capa del equipo: kept- no recorre la skill (AC 16: sin team, nada nuevo)
+    // (8) un árbol SIN capa del equipo: kept- no recorre la skill (sin team, nada nuevo)
     const tree = path.join(home, '.tycon', 'harness');
     fs.mkdirSync(path.join(tree, S, 'processes', 'x'), { recursive: true });
     fs.writeFileSync(path.join(tree, '.tycon-release.json'), JSON.stringify({ schema: 1, version: '2026.10.09.1', files: [] }));
@@ -816,7 +816,7 @@ test('A2c Adversarial_CaseFoldedWhitelist_WindowsSafeCharsAndDepth_RealDates_Bom
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// (revisores, vuelta 2) una lista fija que no se lee no se calla en la mudanza: lo dice y no registra nada
+// una lista fija que no se lee no se calla en la mudanza: lo dice y no registra nada
 test('A2c Review2_BrokenFixedListIsSaidByTheMove_NothingRecorded', () => {
   const lab = casa('a2c-broken-list');
   try {
@@ -891,7 +891,7 @@ test('T18 Team_Names_FrontmatterMatchesFileAndFolder_NoCollisionWithVersionToSta
   assert.equal(r2.ok, true, JSON.stringify(r2.problems));
 });
 
-// ── story 8.41 · AC 46 (T41): la capa trae un paquete ENTERO en texto — su manifiesto y los .md de sus skills/, agents/ y
+// ── T41: la capa trae un paquete ENTERO en texto — su manifiesto y los .md de sus skills/, agents/ y
 //    guides/ — y vale igual que uno de la versión; lo que no es texto, o está fuera de esas carpetas, rechaza la capa ──────
 test('T41 TeamLayer_WholePack_StackedAndLinked', () => {
   const whole = [
@@ -938,7 +938,7 @@ test('T41 TeamLayer_WholePack_StackedAndLinked', () => {
   assert.ok(rc.problems.some((x) => x.path === 'packs/eq/agents/tycon-core.md'), JSON.stringify(rc.problems));
   assert.ok(rc.problems.some((x) => x.path === 'packs/eq/skills/publica/SKILL.md'), JSON.stringify(rc.problems));
   // dentro de la misma capa, un agente o una skill con el mismo nombre en dos lugares (la raíz y un paquete, o dos
-  // paquetes) se enlazarían en el mismo lugar de ~/.claude: la capa no pasa (pase adversarial, clase 6)
+  // paquetes) se enlazarían en el mismo lugar de ~/.claude: la capa no pasa
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
   const twice = toyLayer(lab, [['packs/eq/pack.json', pack], ['packs/eq/agents/rev-eq.md', agentMd('rev-eq')], ['agents/rev-eq.md', agentMd('rev-eq')], ['packs/eq/skills/s-eq/SKILL.md', skillMd('s-eq')], ['skills/s-eq/SKILL.md', skillMd('s-eq')]]);
   const rt = TEAM.checkAgainstVersion(twice.dir, twice.files, v, { env: {} });
@@ -987,7 +987,7 @@ test('A2a validateTree_AndCheckAgainstVersion_PackLoaderOfVersion_EnvIgnored_NoV
 });
 
 test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyUnreadableSaid_PruneEmptyDirsNested', () => {
-  // (revisor de seguridad) lo que Claude Code ejecuta desde un frontmatter, escrito de cualquier forma
+  // lo que Claude Code ejecuta desde un frontmatter, escrito de cualquier forma
   const lab = casa('rev');
   const cases = {
     'agents/a1.md': '---\nname: a1\n"hooks":\n  PreToolUse: []\n---\n',
@@ -999,7 +999,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   for (const [p, txt] of Object.entries(cases)) { const f = path.join(lab, ...p.split('/')); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, txt); }
   const cp = TEAM.contentProblems(lab, Object.keys(cases).map((p) => ({ path: p })));
   for (const p of Object.keys(cases)) assert.ok(cp.some((x) => x.path === p && /hooks|mcpServers/i.test(x.reason)), `${p}: ${JSON.stringify(cp)}`);
-  // (pase adversarial, clases 4, 8, 10, 11) el frontmatter leído como YAML en lo que importa: lo que está DENTRO de un valor
+  // el frontmatter leído como YAML en lo que importa: lo que está DENTRO de un valor
   // no es una clave, el comentario no es parte del nombre, el cierre admite espacios; un name repetido o escondido en un texto
   // de varias líneas no engaña al chequeo de nombres
   const fmCase = (name, txt) => { const f = path.join(lab, 'agents', `${name}.md`); fs.writeFileSync(f, txt); return TEAM.contentProblems(lab, [{ path: `agents/${name}.md` }]); };
@@ -1015,13 +1015,13 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   assert.ok(bad.some((x) => /repite/.test(x.reason)), `un name repetido se rechaza: ${JSON.stringify(bad)}`);
   bad = fmCase('flujo', '---\n{ name: flujo, hooks: [] }\n---\n');
   assert.ok(bad.length > 0, 'un frontmatter en forma de flujo no se juzga ni se apila');
-  // (revisor de seguridad, vuelta 2) lo que un lector de YAML vuelve clave de primer nivel sin que se vea: ancla, tag, escape,
+  // lo que un lector de YAML vuelve clave de primer nivel sin que se vea: ancla, tag, escape,
   // clave compleja, fusión
   for (const [nm, body] of [['ancla', '&a hooks:\n  x: 1'], ['tag', '!!str hooks: []'], ['escape', '"\\x68ooks": []'], ['compleja', '? hooks\n: []'], ['fusion', 'x: &a\n  hooks: []\n<<: *a']]) {
     bad = fmCase(nm, `---\nname: ${nm}\n${body}\n---\n`);
     assert.ok(bad.some((x) => /complejas|anclas|no se juzga/.test(x.reason)), `${nm}: ${JSON.stringify(bad)}`);
   }
-  // (cobertura, vuelta 2) las comillas con escape no esconden ni inventan una clave; CRLF y BOM se leen igual
+  // las comillas con escape no esconden ni inventan una clave; CRLF y BOM se leen igual
   assert.deepEqual(fmCase('esc1', '---\nname: esc1\ndescription: "dice \\"hooks: x\\" y sigue"\n---\n'), [], 'un \\" dentro del valor no cierra la comilla');
   assert.deepEqual(fmCase('esc2', "---\nname: esc2\ndescription: 'it''s hooks: nada'\n---\n"), [], "un '' dentro de comillas simples no cierra");
   bad = fmCase('esc3', "---\nname: esc3\n'ho''oks': x\n'hooks': []\n---\n");
@@ -1029,7 +1029,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   assert.deepEqual(fmCase('crlf', '﻿---\r\nname: crlf\r\ndescription: x\r\n---\r\ncuerpo\r\n'), [], 'CRLF y BOM');
   bad = fmCase('crlf2', '---\r\nname: crlf2\r\nhooks: []\r\n---\r\n');
   assert.ok(bad.some((x) => /hooks/.test(x.reason)), 'con CRLF también se ve hooks');
-  // (revisor de seguridad, vuelta 3) un \r suelto es salto de línea para un lector de YAML: no se juzga
+  // un \r suelto es salto de línea para un lector de YAML: no se juzga
   for (const [nm, body] of [['cr1', 'description: x\rhooks: []'], ['cr2', '# c\rhooks: []'], ['cr3', '# nota hooks:\n  - command: x'], ['cr4', '# nota\u0085mcpServers: {}']]) {
     bad = fmCase(nm, `---\nname: ${nm}\n${body}\n---\n`);
     assert.ok(bad.some((x) => /no se juzga/.test(x.reason)), `${nm}: ${JSON.stringify(bad)}`);
@@ -1038,13 +1038,13 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   fs.mkdirSync(path.join(lab, 'packs', 'viejo'), { recursive: true });
   fs.writeFileSync(path.join(lab, 'packs', 'viejo', 'pack.json'), JSON.stringify({ nombre: 'viejo', descripcion: 'x', revisores: [] }));
   assert.deepEqual(TEAM.contentProblems(lab, [{ path: 'packs/viejo/pack.json' }]), []);
-  // (pase adversarial, clase 7) el revisor del paquete y su agente con distinta caja: rechazado igual en cualquier disco
+  // el revisor del paquete y su agente con distinta caja: rechazado igual en cualquier disco
   const vv = toyVersion(path.join(lab, 'vv'), { agents: ['tycon-core'] });
   fs.rmSync(path.join(lab, 'layer'), { recursive: true, force: true });
   const caseL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['team-rev', 'base']])], ['agents/Team-Rev.md', agentMd('Team-Rev')]]);
   const rc = TEAM.checkAgainstVersion(caseL.dir, caseL.files, vv, { env: {} });
   assert.equal(rc.ok, false); assert.ok(rc.problems.some((x) => /caja/.test(x.reason)), JSON.stringify(rc.problems));
-  // (fallos silenciosos, vuelta 2) un paquete PÚBLICO de la versión con sus claves viejas (`revisores`/`agente`): su agente no
+  // un paquete PÚBLICO de la versión con sus claves viejas (`revisores`/`agente`): su agente no
   // es del núcleo, y una capa sana no choca falsamente con él
   const vOld = toyVersion(path.join(lab, 'vold'), { agents: ['tycon-core', 'pub-viejo'] });
   const oldPack = JSON.stringify({ nombre: 'publico', descripcion: 'público con claves viejas', revisores: [{ agente: 'pub-viejo', grupo: 'base', cuando: { deteccion: 'csModified' }, superficie: { paths: ['**/*.cs'] }, profundidad: 'standard', prefijos: ['PUB'] }] });
@@ -1055,7 +1055,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   const saneL = toyLayer(lab, [['packs/eq/pack.json', packJson('eq', [['rev-a', 'base']])], ['agents/rev-a.md', agentMd('rev-a')]]);
   const ro = TEAM.checkAgainstVersion(saneL.dir, saneL.files, vOld, { env: {} });
   assert.equal(ro.ok, true, `un paquete público con claves viejas no vuelve núcleo a su agente: ${JSON.stringify(ro.problems)}`);
-  // (revisor de seguridad) un tramo con punto final o un nombre reservado de Windows pisaría otro archivo en ese disco
+  // un tramo con punto final o un nombre reservado de Windows pisaría otro archivo en ese disco
   for (const p of ['packs/clients./pack.json', 'agents/con.md', 'skills/aux/SKILL.md', 'skills/x./SKILL.md']) assert.notEqual(TEAM.layerPathProblem(p), null, `${p} no entra`);
   assert.equal(TEAM.layerPathProblem('agents/consola.md'), null, 'un nombre que sólo empieza como uno reservado entra');
   // (fallos silenciosos) un third-party-skills.json ilegible en la versión se dice; ausente, no
@@ -1080,7 +1080,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   assert.equal(fs.existsSync(path.join(h, 'skills', 'projects', 'solo')), false, 'un cliente que se queda sin skills no deja su carpeta');
   assert.equal(fs.existsSync(path.join(h, 'skills', 'projects', 'cli2', 'conservada', 'notas.md')), true, 'una carpeta con un editado conservado se queda');
   assert.equal(fs.existsSync(path.join(h, 'skills')), true, 'skills/ nunca se borra');
-  // (cobertura, vuelta 3) las ramas de error del disco, forzadas sin mocks: la temporal del momento 1 en una ruta que es un
+  // las ramas de error del disco, forzadas sin mocks: la temporal en una ruta que es un
   // archivo (TMPDIR apunta a un archivo) da un motivo, no un volcado
   const notDir = path.join(lab, 'no-es-carpeta'); fs.writeFileSync(notDir, 'x');
   const savedTmp = process.env.TMPDIR;
@@ -1089,7 +1089,7 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
     const jc = TEAM.judgeContent({ files: [], declaration: { sha: null } }, () => ({ ok: true, buf: null }), { head: 'capa de prueba', version: '2026.10.09.9' });
     assert.equal(jc.ok, false); assert.match(jc.reason, /carpeta temporal/);
   } finally { if (savedTmp === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = savedTmp; }
-  // (fallos silenciosos, vuelta 3) uninstall: un archivo de la capa que está y no se puede leer no se saltea callado — su árbol
+  // uninstall: un archivo de la capa que está y no se puede leer no se saltea callado — su árbol
   // queda en failedTrees (no se quita) y el motivo en problems
   if (process.getuid && process.getuid() !== 0) {
     const t = path.join(lab, 'tree-ilegible');
@@ -1104,14 +1104,14 @@ test('A2a Review_HooksAnyForm_McpServers_TrailingDotAndReservedNames_ThirdPartyU
   }
 });
 
-// ── story 8.26, tanda H1c · T80: el texto del alta del equipo viaja con la capa (AC 66) ────────────────────────────────────
+// ── T80: el texto del alta del equipo viaja con la capa ────────────────────────────────────
 // Los `.md` de la RAÍZ de onboarding/ —lo que un dev nuevo le pega al asistente— entran a la lista cerrada. La charla
 // (onboarding/mini-class/, con HTML) y cualquier otra cosa bajo onboarding/ siguen afuera: una sola de esas rutas rechaza la
 // capa ENTERA, como toda ruta fuera de la lista. Es lo que una máquina ACEPTA de un repo privado: un patrón, un nivel, sólo `.md`.
 const T80 = 'T80 TeamOnboardingText_InTeamLayer_GettingStartedWithoutRepoPermission';
 const TEAM_TEXT = '# El alta del equipo de juguete\n\nPegale este texto al asistente.\n';
 /** Una capa ya bajada de juguete (la forma que devuelve `fetchTeam`): los archivos en una caché y lo resuelto, con el commit `n`. */
-// ── story 8.41 · AC 49 (T44): las plantillas de un paquete viajan en la capa como datos — una lista cerrada de extensiones,
+// ── T44: las plantillas de un paquete viajan en la capa como datos — una lista cerrada de extensiones,
 //    sin permiso de ejecución; lo que no es de la lista rechaza la capa entera nombrando la ruta ─────────────────────────
 test('T44 TeamLayer_PackTemplates_ClosedExtensionsNoExec', () => {
   const pack = [blob('packs/eq/pack.json', 300), blob('packs/eq/agents/rev-eq.md', 100)];
@@ -1148,7 +1148,7 @@ test('T44 TeamLayer_PackTemplates_ClosedExtensionsNoExec', () => {
   assert.ok(exec.problems.some((x) => x.path === 'packs/eq/templates/pipelines/ci.yml' && /100644/.test(x.reason)), JSON.stringify(exec.problems));
   // el motivo dice qué sí entra en templates/
   assert.match(TEAM.layerPathProblem('packs/eq/templates/run.sh'), /templates/);
-  // el tope de la capa entera es 2 MB (decisión 12): con los paquetes de un equipo, 1,5 MB entra; más de 2 MB no
+  // el tope de la capa entera es 2 MB: con los paquetes de un equipo, 1,5 MB entra; más de 2 MB no
   assert.equal(TEAM.MAX_TOTAL_BYTES, 2 * 1024 * 1024);
   const big = TEAM.planTeam([...SANE, ...pack, blob('packs/eq/templates/grande.yml', 1.5 * 1024 * 1024)], {});
   assert.equal(big.ok, true, JSON.stringify(big.problems));
@@ -1302,7 +1302,7 @@ test(`${T80} — apilar y desapilar: el alta queda en el árbol al apilar; cuand
   assert.equal(fs.existsSync(path.join(h, 'onboarding')), false, 'sin la versión de por medio, vacía se va');
 });
 
-// ── tanda A2b-AC33 · T33: el mapa de renombres, tercera ruta exacta, validado contra la versión que va a quedar ─────────────
+// ── T33: el mapa de renombres, tercera ruta exacta, validado contra la versión que va a quedar ─────────────
 const MAP_PATH = 'scripts/lib/renames.json';
 /** Una versión de juguete con el lector del mapa de ESTA rama (scripts/lib/legacy-names.js) y un guion que lee una opción. */
 function mapVersion(lab, { reader = true, readerText = null } = {}) {
@@ -1317,7 +1317,7 @@ function mapVersion(lab, { reader = true, readerText = null } = {}) {
   fs.writeFileSync(relmFile, JSON.stringify(relm));
   return v;
 }
-/** El mapa sano de juguete: una entrada por clase de la regla del AC 33 (c). */
+/** El mapa sano de juguete: una entrada por clase de la regla del mapa. */
 const saneMap = () => ({
   retire_after: '2026-11-17',
   entries: [
@@ -1370,7 +1370,7 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   bad((m) => { m.entries[1].new = '../outside.js'; }, /entries\[1\]/);
   bad((m) => { delete m.entries[3].new; }, /entries\[3\]/);
   bad((m) => { m.entries[2] = 'texto'; }, /entries\[2\]/);
-  // la forma más estricta (revisor de seguridad de la tanda): la HOME sólo bajo ~/.claude, ningún tramo .git, nombres con la
+  // la forma más estricta: la HOME sólo bajo ~/.claude, ningún tramo .git, nombres con la
   // forma de su tipo, `where` y `repo` sanos
   bad((m) => { m.entries[6].new = '~/.ssh/config'; }, /entries\[6\].*~\/\.claude/);
   bad((m) => { m.entries.push({ kind: 'config-file', old: '~/.zshrc', new: '~/.claude/zshrc', batch: 'X' }); }, /entries\[8\].*~\/\.claude/);
@@ -1379,7 +1379,7 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   bad((m) => { m.entries[5].new = 'tycon-lower'; }, /entries\[5\].*forma/);
   bad((m) => { m.entries[3].new = 'two words'; }, /entries\[3\].*forma/);
   bad((m) => { m.entries[7].new = 'a b'; }, /entries\[7\].*forma/);
-  // el lado viejo se juzga igual que el nuevo (revisor de cobertura, vuelta 2): forma por tipo, `.git` y la HOME
+  // el lado viejo se juzga igual que el nuevo: forma por tipo, `.git` y la HOME
   bad((m) => { m.entries[5].old = 'tycon old'; }, /entries\[5\].*old.*forma/);
   bad((m) => { m.entries.push({ kind: 'subcommand', old: 'bad sub', new: 'check', where: 'scripts/ci/tool.js', batch: 'X' }); }, /entries\[8\].*forma/);
   bad((m) => { m.entries.push({ kind: 'value', old: 'quick', new: 'two words', where: 'scripts/ci/tool.js', option: 'mode', batch: 'X' }); }, /entries\[8\].*forma/);
@@ -1418,7 +1418,7 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   readerCase('no-carga', "throw new Error('lector roto');\n", /no carga/);
   readerCase('sin-kinds', 'module.exports = {};\n', /KINDS/);
   readerCase('tira', "module.exports = { KINDS: ['file', 'folder', 'option', 'env', 'state-file', 'key'], pathProblem() { throw new Error('boom'); } };\n", /boom/);
-  // pase adversarial de la tanda (5 confirmados, 4 clases), cada uno con su prueba:
+  // casos de regresión, cada uno con su prueba:
   // (1) `.git` con puntos al final o en otra caja: en Windows es la misma carpeta
   bad((m) => { m.entries[0].new = 'scripts/.git./x'; }, /entries\[0\].*\.git/);
   bad((m) => { m.entries[0].new = 'scripts/.GIT../x'; }, /entries\[0\].*\.git/);
@@ -1445,7 +1445,7 @@ test('T33 Team_RenamesMapThirdExactPath_ShapeValidated_OldVariableOptionAndState
   const l2 = mapLayer(lab2, saneMap());
   const r2 = TEAM.checkAgainstVersion(l2.dir, l2.files, v2, { env: {} });
   assert.equal(r2.ok, false); assert.ok(r2.problems.some((x) => /legacy-names\.js/.test(x.reason)), JSON.stringify(r2.problems));
-  // una versión sin manifiesto acepta el perfil y la llave (A1) pero no el mapa: no hay contra qué validarlo
+  // una versión sin manifiesto acepta el perfil y la llave pero no el mapa: no hay contra qué validarlo
   const bare = path.join(lab2, 'sin-manifiesto'); fs.mkdirSync(bare, { recursive: true });
   const r3 = TEAM.checkAgainstVersion(l2.dir, [{ path: 'perfil-equipo.json' }, ...l2.files], bare, { env: {} });
   assert.equal(r3.ok, false, 'sin manifiesto el mapa no pasa');

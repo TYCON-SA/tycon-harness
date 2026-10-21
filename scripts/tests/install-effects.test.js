@@ -1,14 +1,14 @@
 'use strict';
 /**
  * install-effects.test.js — lo que la instalación cambia en la máquina y en el asistente sale de UN archivo, y ese
- * archivo no puede callar una pieza ni nombrar una que ya no existe (story 8.16, tanda A · AC 4 y AC 10).
+ * archivo no puede callar una pieza ni nombrar una que ya no existe.
  *
- * EL CASO. La auditoría de la copia publicada (2026-10-03) encontró que la sección «qué escribe en tu máquina» de la
- * portada se presentaba como lista completa y no lo era: dos ajustes de `settings.json`, los comandos copiados, un
- * barrido diario de los repos vecinos y lo que queda guardado bajo `~/.claude/` no estaban; y los tres bloques que
- * cambian cómo contesta el asistente en todos los proyectos salían como «bloques entre sus marcadores». La portada, el
- * cierre de `install`, el plan y `doctor` eran textos sueltos que nadie cruzaba con el instalador. Desde esta tanda leen
- * `scripts/setup/install-effects.json`, y estas reglas lo atan al instalador en los dos sentidos:
+ * EL CASO. La sección «qué escribe en tu máquina» de la portada tiene que ser una lista completa: dos ajustes de
+ * `settings.json`, los comandos copiados, un barrido diario de los repos vecinos y lo que queda guardado bajo
+ * `~/.claude/` entran en ella, y los tres bloques que cambian cómo contesta el asistente en todos los proyectos no se
+ * presentan como «bloques entre sus marcadores». Si la portada, el cierre de `install`, el plan y `doctor` fueran textos
+ * sueltos, nadie los cruzaría con el instalador. Leen `scripts/setup/install-effects.json`, y estas reglas lo atan al
+ * instalador en los dos sentidos:
  *   · una entrada por hook de `HOOKS_CANONICAL` y de `OPTIN_HOOKS` (y por los que sólo registra el `.ps1`), con el
  *     mismo `id` que el reporte de piezas; por bloque de `claude-md-blocks/`; por ajuste de `TOP_CANONICAL` y
  *     `ENV_CANONICAL`; por pieza de la lista declarada del aplicador (`fixtures/harness-managed-pieces.json`);
@@ -19,14 +19,14 @@
  *     el `.ps1` la nombra (`source.ps1_pattern`);
  *   · `stores` de cada hook dice la carpeta que su script nombra bajo `~/.claude/`, y `uninstall` la lista en «deja»;
  *   · cada cosa que la lista de piezas declara como «excluida» está mirada: o tiene su entrada, o tiene su motivo;
- *   · (story 8.16, tanda C · T31) cada entrada dice en `profiles` en qué perfil existe, con las reglas de la
+ *   · (T31) cada entrada dice en `profiles` en qué perfil existe, con las reglas de la
  *     clasificación (lo que frena, lo que cambia cómo contesta, los ajustes y los hooks de git, sólo en full; lo de una
  *     integración, en los dos), y la columna «Perfil» de la tabla de hooks de INSTALL.md lo repite fila por fila.
  * Una pieza sin entrada, una entrada sin pieza o un lanzamiento de fondo sin declarar dan rojo nombrándolo.
  *
  * LO QUE NO VE (dicho, para que nadie lo lea como cubierto): un paso que el instalador corre en PRIMER plano y que no
  * es una pieza registrable ni un lanzamiento de fondo no tiene de dónde salir solo; entra cuando alguien lo declara
- * (así entraron `task:sqlite` y `task:agents-pointer`, por el pase adversarial de la tanda A).
+ * (así entraron `task:sqlite` y `task:agents-pointer`).
  *
  * No usa bash ni toca la HOME. Correr:   node scripts/tests/install-effects.test.js
  */
@@ -56,14 +56,14 @@ function blockNames(root) {
 }
 
 /**
- * Las claves de `TOP_CANONICAL` (tal cual) y de `ENV_CANONICAL` (con `env.` adelante). Desde la story 8.17 (tanda W3)
- * las escribe el aplicador de settings.json, scripts/setup/apply-hooks.js (antes, el bloque de Python del instalador).
+ * Las claves de `TOP_CANONICAL` (tal cual) y de `ENV_CANONICAL` (con `env.` adelante). Las escribe el aplicador de
+ * settings.json, scripts/setup/apply-hooks.js.
  */
 const APPLIER = 'scripts/setup/apply-hooks.js';
 function canonicalSettings(root) {
   const { TOP_CANONICAL, ENV_CANONICAL } = require(path.join(root, APPLIER));
   assert.ok(TOP_CANONICAL && ENV_CANONICAL, `${APPLIER}: no exporta TOP_CANONICAL y ENV_CANONICAL`);
-  // story 7.27: más la carpeta de los mods, que el aplicador SUMA a CLAUDE_CODE_PLUGIN_DIRS (no es una clave canónica)
+  // más la carpeta de los mods, que el aplicador SUMA a CLAUDE_CODE_PLUGIN_DIRS (no es una clave canónica)
   const { PLUGIN_DIRS_ID } = require(path.join(root, PLUGIN_DIRS));
   return [...Object.keys(TOP_CANONICAL), ...Object.keys(ENV_CANONICAL).map((k) => `env.${k}`), PLUGIN_DIRS_ID];
 }
@@ -99,12 +99,12 @@ const NOT_A_TASK = [
   { pattern: '--prepare-state', why: 'copia los registros con nombre viejo antes de abrirlos (story 8.9): no hace nada por su cuenta' },
 ];
 /** Los renglones de una tanda de varios renglones que invocan un programa (los pasos que la tanda corre). */
-// un paso de la tanda llama a `node`, o al Node del arnés que la tanda recibe como argumento (`"$N"`, story 8.39)
+// un paso de la tanda llama a `node`, o al Node del arnés que la tanda recibe como argumento (`"$N"`)
 const NODE_CALL = /(?:\bnode|"\$N")\s+["$]/;
 const stepsOf = (launch) => launch.text.split('\n').slice(1).filter((l) => !/^\s*#/.test(l) && NODE_CALL.test(l));
 
 /**
- * Los hooks que registra el aplicador de Windows: `<EVENTO>:<spec>`. Desde la story 8.17 (tanda W3) los dos aplicadores
+ * Los hooks que registra el aplicador de Windows: `<EVENTO>:<spec>`. Los dos aplicadores
  * leen scripts/setup/hooks-list.json, y Windows registra lo que no excluye (`platforms.windows: false`): lo lee
  * `managed.ps1Hooks`, el mismo lector que usa doctor.
  */
@@ -416,8 +416,8 @@ test('Effects_WindowsFlag_MatchesPs1Lists', () => {
   assert.deepStrictEqual(windowsProblems(ROOT, flipped).map((m) => m.split(':').slice(0, 3).join(':')), ['PreToolUse:@tcg:safety-guard-pre.sh']);
 });
 
-// ── T31 (story 8.16, tanda C · AC 22): cada entrada dice en qué perfil existe, y la tabla de INSTALL.md lo repite ────
-// La regla (Dev Notes, «La clasificación de perfiles»): `minimal` trae lo que hace falta para las guías, las skills, los
+// ── T31: cada entrada dice en qué perfil existe, y la tabla de INSTALL.md lo repite ────
+// La clasificación de perfiles: `minimal` trae lo que hace falta para las guías, las skills, los
 // revisores, el pipeline como skill y el aviso de versión nueva. Sólo en `full`: lo que puede frenar, lo que cambia cómo
 // contesta el asistente, lo que toca git fuera del clon y lo que corre solo de fondo sin ser de una integración. Lo de
 // una integración va en los dos (lo trae su llave). Los seis hooks de `minimal` se nombran acá: sumar uno es una decisión.
@@ -425,7 +425,7 @@ const MINIMAL_HOOKS = [
   'UserPromptSubmit:tycon-pipeline/scripts/on-prompt.js', 'PostToolUse:tycon-pipeline/scripts/hook-post-edit.js',
   'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:tycon-pipeline/scripts/on-advisor-run.js',
   'SessionStart:@tcg:harness-bootstrap-heal.sh', 'SessionStart:@tcg:branch-guard-notice.js',
-  // el freno de comandos destructivos y el portón de edición están en los dos perfiles (decisiones del dueño): sin el
+  // el freno de comandos destructivos y el portón de edición están en los dos perfiles: sin el
   // portón, en la mínima el agente implementa una historia sin recorrido y nadie se entera
   'PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/hook-pre-edit.js',
 ];
@@ -497,11 +497,11 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
   assert.deepStrictEqual(problems, []);
 });
 
-// ── story 8.16, tanda D (AC 31): las integraciones que `install` ofrece en su pregunta ───────────────────────────────
+// ── Las integraciones que `install` ofrece en su pregunta ───────────────────────────────
 // `integrations` de la lista nombra las ocho llaves de scripts/lib/tycon-config.js una vez cada una; se ofrecen sólo las
 // que se prenden con un sí (clockify, engram, codegraph, codex), cada una con qué hace y qué pide; ado y telegram no
 // (piden un dato) y mailbox y nightly tampoco (son del equipo). Una lista mal armada no pasa la validación.
-// 🔴 rojo previo verificado: antes de la tanda D la lista no traía `integrations` ni `readIntegrations` existía.
+// 🔴 Sin `integrations` en la lista, o sin `readIntegrations`, esta prueba da rojo.
 test('8.16 D · Effects_Integrations_OfferedAreTheFourWithASwitch_AllEightNamed', () => {
   const config = require(path.join(ROOT, 'scripts', 'lib', 'tycon-config.js'));
   const list = managed.readIntegrations(ROOT);

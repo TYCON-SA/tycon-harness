@@ -1,13 +1,12 @@
 'use strict';
 
 /**
- * legacy-names-c3.test.js — los internos y las pruebas, renombrados (story 8.9, tanda C3 · 2026-10-01). T41, T42.
+ * legacy-names-c3.test.js — los internos y las pruebas, renombrados. T41, T42.
  *
  * Lo que no se puede perder:
  *   · Lo que nadie llama de afuera se renombra SIN reemplazo: en la ruta vieja no queda nada, y el que una guía manda a
  *     correr a mano deja el reemplazo generado (T41). El mapa pasa `--check-map` y no queda ningún ejecutable interno con
- *     nombre en castellano salvo los que esperan a otra tanda: el aviso del freno de producción, hasta su reinstalación
- *     ([DEF-8.9-C1-FRENO]), y el mapa del arnés, que muda la story 8.12, tanda R4 ([DEF-8.9-C2-HARNESS-MAP]).
+ *     nombre en castellano salvo el aviso del freno de producción, que se queda con su nombre hasta su reinstalación.
  *   · Renombrar una prueba no la hace «desaparecer» del reporte nocturno: el reporte une la foto anterior con la de hoy
  *     por el mapa de renombres, y sólo anota como desaparecida una suite que de verdad no corrió (T42).
  *
@@ -30,18 +29,17 @@ const SKIP_PUBLIC = !TEAM && 'copia pública: sin el mapa';
 const SHIM_MARK = 'tycon-legacy-shim:';
 const REPORT = path.join(RAIZ, 'scripts', 'ci', 'suites-report.js');
 
-// Lo que el plan de la tanda aprobó (AC 37, re-medido al abrir la C3): 30 archivos, 1 con reemplazo.
+// Lo que se espera mudar: 30 archivos, 1 con reemplazo.
 const EXPECTED_FILES = 30;
 const EXPECTED_SHIMS = 1;
-// Los ejecutables internos que quedan en castellano a propósito: el aviso del freno (lo protege el freno por nombre). El
-// código del mapa del arnés se renombró al inglés al pasar al repo público (census.js y public-version.js).
+// Los ejecutables internos que quedan en castellano a propósito: el aviso del freno (lo protege el freno por nombre).
 const STILL_SPANISH = ['arnes:scripts/hooks/produccion-notice.js'];
 
 /**
  * agent-skills, por la regla común de scripts/lib/skills-dir.js: TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el
  * propio clon si es unido › la copia de la máquina. `null` si ahí no hay skills. Sin `catch`: si la biblioteca no puede
- * contestar, la suite es roja con la causa (story 8.18, pase adversarial del tramo 2, clase 3: sin variable miraba sólo
- * la ruta instalada y, en un clon unido, salteaba T41 y T41b o juzgaba las entradas de agent-skills en OTRO clon).
+ * contestar, la suite es roja con la causa (mirar sólo la ruta instalada saltearía T41 y T41b en un clon unido, o
+ * juzgaría las entradas de agent-skills en OTRO clon).
  */
 function skillsRoot() {
   const root = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
@@ -82,13 +80,13 @@ test('T41 · BatchC3_InternalsRenamedNoShim — los 30 mudados; sin reemplazo sa
   }
 });
 
-// ── los dos repos, o el repo unido (story 8.18) ─────────────────────────────────────────────────────────────────────
-// Desde que el arnés trae agent-skills adentro, «los dos repos» pueden ser la MISMA carpeta: a la pregunta «dónde está
+// ── los dos repos, o el repo unido ─────────────────────────────────────────────────────────────────────
+// Como el arnés trae agent-skills adentro, «los dos repos» pueden ser la MISMA carpeta: a la pregunta «dónde está
 // agent-skills» le contestan el propio clon (por el enlace ~/.claude/agent-skills o por TYCON_SKILLS_DIR). Recorrerla una
-// vez por repo contaba cada archivo dos veces, y `scripts/` del arnés salía además como si fuera de agent-skills (medido
-// en Azure sobre la rama junta, corrida 11741). Cada archivo se mira UNA vez y con su fuente lógica: la misma partición
+// vez por repo contaría cada archivo dos veces, y `scripts/` del arnés saldría además como si fuera de agent-skills.
+// Cada archivo se mira UNA vez y con su fuente lógica: la misma partición
 // por ruta de los frenos de nombres (new-names.js → sourceOfPath). Con dos clones no cambia nada: en el árbol del arnés
-// de antes no hay ninguna ruta de la fuente agent-skills, y el otro clon es esa fuente entera.
+// sin unir no hay ninguna ruta de la fuente agent-skills, y el otro clon es esa fuente entera.
 const SPANISH_NAMES = path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js');
 const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
 const HIST = /^(specs|tasks|qa|\.advisors|\.dashboard|\.engram|inbox\/instincts\/archived)\//;
@@ -139,7 +137,7 @@ test('T41b · BatchC3_MapChecksAndNoSpanishInternals — --check-map pasa y no q
   else for (const x of left) assert.ok(STILL_SPANISH.includes(x), `${x}: ejecutable interno en castellano que no se esperaba (sin diccionario)`);
 });
 
-// El mismo veredicto con un repo que con dos (story 8.18): un ejecutable en castellano sale UNA vez y con su fuente, esté
+// El mismo veredicto con un repo que con dos: un ejecutable en castellano sale UNA vez y con su fuente, esté
 // agent-skills en otro clon, en el mismo, o dado por un enlace al mismo. Árboles de juguete; el nombre en castellano es el
 // del aviso del freno, que el detector reconoce con o sin el diccionario del sistema.
 test('T41b · BatchC3_MapChecksAndNoSpanishInternals — el repo unido y los dos repos dan el mismo veredicto, cada archivo con su fuente', { skip: SKIP_PUBLIC }, () => {
@@ -169,7 +167,7 @@ test('T41b · BatchC3_MapChecksAndNoSpanishInternals — el repo unido y los dos
     assert.deepStrictEqual(spanishInternals(unified, link, det).sort(), expected, 'el repo unido, con agent-skills dado por un enlace al mismo clon');
     const skillsOnly = make(skillsFiles);
     assert.deepStrictEqual(spanishInternals(make(harnessFiles), skillsOnly, det).sort(), expected, 'dos repos: lo de siempre');
-    // el clon unido con agent-skills dado en OTRO clon (el instalado de antes, todavía en la máquina): lo de `skills/`
+    // el clon unido con agent-skills dado en OTRO clon (el instalado en la máquina): lo de `skills/`
     // del clon unido sigue siendo de la fuente agent-skills, nunca del arnés; el otro clon se mira además, entero
     assert.deepStrictEqual(spanishInternals(unified, skillsOnly, det).sort(), [expected[0], ...expected], 'el repo unido más otro clon de agent-skills');
   } finally { for (const d of dirs) fs.rmSync(d, { recursive: true, force: true }); }
@@ -211,7 +209,7 @@ test('T42 · BatchC3_SuitesReportSameCount — una suite renombrada no «desapar
     assert.deepStrictEqual(again.out.disappeared, ['a.test.sh']);
 
     // Una suite que todavía corre por su nombre VIEJO (suites.json la nombra por su reemplazo) tampoco desaparece de una
-    // noche a la otra: las dos fotos pasan por el mapa (pase adversarial de la C3: sólo se traducía la de antes).
+    // noche a la otra: las dos fotos pasan por el mapa.
     const conViejo = report(dir, { ran: [viejo, 'a.test.sh'], runs: 2 });
     const otraNoche = report(dir, { ran: [viejo, 'a.test.sh'], runs: 2 });
     assert.deepStrictEqual(conViejo.out.disappeared, [], `primera noche: ${conViejo.stderr}`);

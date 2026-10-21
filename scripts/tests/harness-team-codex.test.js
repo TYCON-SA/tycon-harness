@@ -1,10 +1,10 @@
 'use strict';
-// harness-team-codex.test.js — los revisores de la capa del equipo del lado de Codex (story 8.25, tanda A2b · T30u), como
+// harness-team-codex.test.js — los revisores de la capa del equipo del lado de Codex (T30u), como
 // pruebas unitarias de build/generate.js y del registro de lo desplegado (scripts/setup/harness/tools.js).
 //
 //   T30u · Codex_GenerateOneTakesRootAndEquivalences_SameFrontmatterRuleAsLayer_AdvisorsToDeployManifestPlusLayer_EnvIgnored_
 //          PerAgentFailure_RecordValidatedBeforeDelete — `generateOne(root, name)` lee los agentes y las equivalencias de
-//          ESA raíz (nunca de la constante del módulo); el frontmatter se lee con la regla de la A2a (BOM, CRLF, `name` entre
+//          ESA raíz (nunca de la constante del módulo); el frontmatter se lee con la regla de la capa (BOM, CRLF, `name` entre
 //          comillas, `model:` con comentario); `advisorsToDeploy(root)` da `{ manifest, team }` sin mirar TYCON_PACKS_DIR ni
 //          TYCON_AGENTS_DIR; un agente que no se puede generar vuelve como SU falla y los demás se generan; una entrada del
 //          registro con `..` o con un nombre fuera de la forma no se borra.
@@ -194,7 +194,7 @@ test('T30u una máquina con clon (generate.js --deploy) hace lo de hoy: sólo el
   assert.doesNotMatch(r.stdout, /capa del equipo/);
 });
 
-// ── vuelta 2: lo que encontraron los revisores y el pase adversarial (cada caso falla sin su arreglo) ──────────────────
+// ── casos de regresión (cada uno falla sin su arreglo) ──────────────────
 const caseInsensitiveFs = (() => { const d = casa('caja'); fs.writeFileSync(path.join(d, 'A'), 'x'); return fs.existsSync(path.join(d, 'a')); })();
 
 test('T30u un registro ilegible o de otra carpeta de Codex: no se despliega la capa, no se reescribe el registro, y se dice', () => {
@@ -346,7 +346,7 @@ test('T30u codexPieces suma los dos archivos de cada revisor que el despliegue d
   for (const p of TOOLS.codexPieces({ tree: root, home, env })) assert.equal(p.kind, 'codex');
 });
 
-// ── story 7.29: el modelo de la organización en lo que se despliega a Codex ─────────────────────────────────────────
+// ── el modelo de la organización en lo que se despliega a Codex ─────────────────────────────────────────
 const equipoModels = (models) => JSON.stringify({
   version: 1, public: { platform: 'github', org: 'acme', repo: 'h' }, profile: { platform: 'github', org: 'acme', repo: 'p' },
   operations: { platform: 'github', org: 'acme', repo: 'o' }, ...(models ? { models } : {}),
@@ -381,7 +381,7 @@ test('T24 Codex_DespliegueConModeloDeLaOrganizacion @story-7.29 @ac-16', () => {
   GEN.deployTeam({ root, codexHome: codex, recordFile: TOOLS.codexTeamRecordPath({ home }) });
   assert.equal(modelLine(fs.readFileSync(path.join(codex, 'agents', 'rev-capa-uno.toml'), 'utf8')), '"gpt-5.4-mini"');
   assert.equal(modelLine(fs.readFileSync(path.join(codex, 'rev-capa-uno.config.toml'), 'utf8')), '"gpt-5.4-mini"');
-  // sin models, y con el archivo ilegible: byte a byte lo de hoy (el ilegible, con la línea)
+  // sin models, y con el archivo ilegible: byte a byte lo de siempre (el ilegible, con la línea)
   for (const [nombre, texto] of [['sin', equipoModels(null)], ['ilegible', '{ roto']]) {
     const r = treeConModelos(nombre, texto);
     const g = GEN.generateOne(r, 'rev-version');
@@ -428,7 +428,7 @@ test('T25 Codex_SinEquivalente_SinLineaDeModelo @story-7.29 @ac-17', () => {
   assert.equal(modelLine(fs.readFileSync(path.join(home, '.codex', 'agents', 'rev-capa-uno.toml'), 'utf8')), null);
 });
 
-// ── story 8.41 · AC 48 (T43): un revisor de un PAQUETE que llega por la capa (`packs/<p>/agents/<r>.md`) también va a Codex
+// ── T43: un revisor de un PAQUETE que llega por la capa (`packs/<p>/agents/<r>.md`) también va a Codex
 //    si el paquete está activo para la organización; con el paquete apagado, no, igual que del lado de Claude. Con los
 //    paquetes reales lo mide el privado ───────────────────────────────────────────────────────────────────────────────────
 function withPacksDefault(value, fn) {
@@ -469,7 +469,7 @@ test('T43 Codex_TeamLayerPackAgents_DeployedWhenPackActive_SameAsClaude', () => 
   });
 });
 
-// ── story 8.41 · T46 (AC 51) y el pase adversarial: un paquete roto de la capa no es «ausente»; la carpeta de agentes que
+// ── T46: un paquete roto de la capa no es «ausente»; la carpeta de agentes que
 //    declara el manifiesto; un nombre repetido se queda con el primero; lo que salió de la versión no queda en Codex ────
 test('T46 Codex_BrokenLayerPack_NothingDeployedNorRemoved · AgentsKey · FirstWins · RetiredRemoved', () => {
   // (a) el manifiesto de un paquete de la capa, roto: team null y se dice; nada de la capa se borra de Codex
@@ -550,7 +550,7 @@ test('T46 Codex_BrokenLayerPack_NothingDeployedNorRemoved · AgentsKey · FirstW
   assert.deepEqual(real.filter((n) => enVersion.includes(n)), []);
 });
 
-// ── story 8.41 · revisión 2: un nombre repetido entre paquetes se dice; un nombre como `constructor` no se pierde; el canónico
+// ── un nombre repetido entre paquetes se dice; un nombre como `constructor` no se pierde; el canónico
 //    de un paquete fuera del árbol (TYCON_PACKS_DIR) se nombra igual; una carpeta de un paquete sin su pack.json tira ────
 test('T46b Codex_PackNames_DuplicateSaid · PrototypeNames · CanonicalOutsideTree', () => {
   const otro = toyTree(casa('dup'), { team: [] });
@@ -595,7 +595,7 @@ test('T46b Codex_PackNames_DuplicateSaid · PrototypeNames · CanonicalOutsideTr
   assert.throws(() => GEN.generateOne(raiz, 'rev-huerfano', { agentsDir: path.join(fuera, 'packs', 'sin-manifiesto', 'agents') }), /no encuentro el pack\.json/);
 });
 
-// ── story 8.41 · T18 del lado de la paridad: la superficie «skills» de la paridad Claude↔Codex cuenta las skills de los
+// ── T18, del lado de la paridad: la superficie «skills» de la paridad Claude↔Codex cuenta las skills de los
 //    paquetes activos igual que las del núcleo (una que falta en Codex es rojo), y si no las puede leer lo dice ──────────
 test('T18 Codex_PackSkillsLinked · la paridad cuenta las skills de los paquetes', () => {
   const PAR = require(path.join(ROOT, 'scripts', 'lib', 'harness-parity.js'));

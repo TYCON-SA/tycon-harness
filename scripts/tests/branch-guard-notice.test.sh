@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# branch-guard-notice.test.sh — el consejo que da el aviso de arranque para un clon trabado FUNCIONA (story 8.5.1, T1-T3).
+# branch-guard-notice.test.sh — el consejo que da el aviso de arranque para un clon trabado FUNCIONA (T1-T3).
 #
 # Lo que no se puede perder:
 #   · Que los comandos que imprime el aviso, corridos tal cual y en orden, destraben el clon: con un conflicto que HEAD
 #     no tiene (DU: el retiro borró un archivo que el dev había modificado) `checkout HEAD --` falla ENTERO y no resuelve
-#     ni los demás (pase adversarial de la 8.5 tanda B). Por eso esto corre los comandos, no busca texto.
+#     ni los demás. Por eso esto corre los comandos, no busca texto.
 #   · Que ninguna ruta de un tipo caiga en el comando del otro, que lo del dev siga en el disco y en el stash, y que una
 #     ruta o una carpeta con espacio llegue citada.
 #
@@ -91,8 +91,8 @@ if [ "$u0" -gt 0 ] && grep -qF "git -C '$AS' rm --cached -- 'skills/con espacio/
   ok "T3 ruta y carpeta con espacio: citadas con comillas simples, la ruta simple sin ellas, y los comandos destraban"
 else bad "T3 (conflictos ${u0} → $(unmerged "$AS"), consejo rc=$rca): $out"; fi
 
-# ═══ T15 · trabado Y atrasado, con un archivo que el dev tocó después y que lo publicado también cambia (pase adversarial,
-# vuelta 2): la secuencia trae `git stash` entre los conflictos y el merge, y corrida entera el merge entra ═════════════
+# ═══ T15 · trabado Y atrasado, con un archivo que el dev tocó después y que lo publicado también cambia:
+# la secuencia trae `git stash` entre los conflictos y el merge, y corrida entera el merge entra ═════════════
 H="$BASE/h15"; AS="$H/.claude/agent-skills"; UP="$H.up"
 g init -q -b main "$UP"; mkdir -p "$UP/skills/own" "$UP/skills/acme" "$UP/docs"
 printf 'propia v1\n' > "$UP/skills/own/SKILL.md"; printf 'ajena v1\n' > "$UP/skills/acme/SKILL.md"; printf 'notas v1\n' > "$UP/docs/NOTAS.md"
@@ -120,7 +120,7 @@ if [ "$u0" -gt 0 ] && grep -qF "'skills/it'\\''s \$(touch PWNED) \`touch PWNED2\
   ok "T16 un nombre con comilla, \$(…) y comillas invertidas va citado; corrido, destraba y no ejecuta nada"
 else bad "T16 (conflictos ${u0} → $(unmerged "$AS"), consejo rc=$rca, PWNED: $(find "$BASE" "$AS" -name 'PWNED*' 2>/dev/null | head -2)): $out"; fi
 
-# ═══ story 8.13 (tanda A, T10) · el aviso síncrono lee el estado del mecanismo nuevo ══════════════════════════════════
+# ═══ T10 · el aviso síncrono lee el estado de actualización ══════════════════════════════════
 # (a) imprime el `notice` pendiente que dejó `startup`, dirigido a la persona; (b) grita «atrasado» SÓLO en `managed` con
 # `apply: auto` (en `developer`, en `ask` o con TYCON_UPDATE=0 el atraso es decisión de esa persona: lo dice `doctor`);
 # (c) `harness-bootstrap-heal.sh` considera sana una línea de arranque que llama a `bootstrap.js`.
@@ -162,8 +162,8 @@ else bad "T10 notice (rc=$rc): $out"; fi
 H="$BASE/h10e"; mkdir -p "$H/.claude/.tycon-pipeline"; printf '{ roto' > "$H/.claude/.tycon-pipeline/harness-state.json"
 out="$(notice "$H")"; rc=$?
 [ "$rc" -eq 0 ] && grep -qi 'estado' <<<"$out" && ok "T10 estado ilegible: lo dice y sale 0" || bad "T10 estado ilegible (rc=$rc): $out"
-# REG-D6 · un estado de una versión más nueva (schema 9) o que apunta a un árbol que no está también se dice: antes el
-# hook sólo veía un JSON roto (revisor de alcance, iteración 1)
+# un estado de una versión más nueva (schema 9) o que apunta a un árbol que no está también se dice: sin esto, el
+# hook sólo vería un JSON roto
 H="$BASE/h10f"; mkdir -p "$H/.claude/.tycon-pipeline"
 estado "$H" '{"schema":9,"mode":"managed","tree":"/","notice":null}'
 out="$(notice "$H")"; rc=$?
@@ -171,7 +171,7 @@ out="$(notice "$H")"; rc=$?
 estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"$BASE/no-existe\",\"notice\":null}"
 out="$(notice "$H")"; rc=$?
 [ "$rc" -eq 0 ] && grep -qi 'no está\|no existe' <<<"$out" && ok "REG-D6 estado con un árbol que no está: lo dice y sale 0" || bad "REG-D6 tree ausente (rc=$rc): $out"
-# ═══ story 8.13 (tanda C, T23) · con `hold` (la retención que deja `harness.js rollback`) el aviso NO grita «atrasado»
+# ═══ T23 · con `hold` (la retención que deja `harness.js rollback`) el aviso NO grita «atrasado»
 # —el atraso es a propósito: la persona deshizo esa versión— e imprime la retención, dirigida a la persona: qué versión se
 # deshizo, desde cuándo y el comando para volver a actualizar. Sin `hold`, lo de siempre (T10). Si el `notice` de
 # `startup` ya trae el comando para liberarla, no se repite.
@@ -191,7 +191,7 @@ estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"/\",\"notice\":\"rete
 out="$(TYCON_UPDATE_APPLY=auto notice "$H")"
 [ "$(grep -c 'rollback --release' <<<"$out")" = 1 ] && ! grep -q 'ARNÉS ATRASADO' <<<"$out" && ok "T23 hold con el notice que ya lo dice: el comando para liberarla sale una vez" || bad "T23 hold + notice: $out"
 
-# ═══ story 8.13 (tanda D, T32 / AC 26) · el aviso de versión nueva, con su número, su sha y el enlace de cambios, sale
+# ═══ T32 · el aviso de versión nueva, con su número, su sha y el enlace de cambios, sale
 # ENTERO por el hook síncrono (lo arma `startup`; acá se mide que nada lo corta: es una línea larga con una URL) ═════════
 H="$BASE/h32"; mkdir -p "$H/.claude/.tycon-pipeline"
 AVISO='arnés 2026.10.02.1 (abc1234) disponible (instalada 2026.10.01.1, canal stable) · aplicar: node ~/.claude/tycon-harness/scripts/setup/harness.js update --yes · cambios: https://example.com/example-org/example-harness/compare/1111111111111111111111111111111111111111...2222222222222222222222222222222222222222'
@@ -201,11 +201,11 @@ if [ "$rc" -eq 0 ] && grep -qF "decile a la persona: $AVISO" <<<"$out" && grep -
   ok "T32 el aviso con número, sha y enlace de cambios sale entero, dirigido a la persona"
 else bad "T32 aviso con enlace (rc=$rc): $out"; fi
 
-# ═══ story 8.13 (tanda D, A4 / AC 25) · una copia pública vive en la rama local `tycon/installed`: con el estado diciendo
+# ═══ una copia pública vive en la rama local `tycon/installed`: con el estado diciendo
 # que esa fuente se reescribe, el aviso NO grita «FUERA de main» y mide el atraso contra la ref del estado. Sin estado, o
 # con una fuente que no se reescribe, lo de siempre (el banco de controles corre este hook suelto).
-# 🔴 rojo previo: cualquier rama distinta de `main` era un infractor sin mirar el estado, y el atraso se medía siempre
-#    contra `origin/main`: cada sesión de una persona de afuera arrancaba con «BRANCH GUARD — FUERA de main».
+# 🔴 sin esto, cualquier rama distinta de `main` es un infractor sin mirar el estado, y el atraso se mide siempre
+#    contra `origin/main`: cada sesión de una persona de afuera arranca con «BRANCH GUARD — FUERA de main».
 # publico <home>: $home/.claude/agent-skills en tycon/installed, parado en la punta de origin/mirror/sync; origin/main
 # tiene un commit que esa rama no (el remoto estable siguió de largo: no es atraso de `latest`)
 publico() {
@@ -252,14 +252,14 @@ if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && grep -q 'origin/mir
   ok "A4 la rama del canal se movió en el remoto: «atrasado» contra origin/mirror/sync, y el consejo es harness.js update"
 else bad "A4 atraso contra la ref del estado (rc=$rc): $out"; fi
 
-# ═══ story 8.13 (tanda D, causa A del pase adversarial · AC 25) · la FORMA REAL de la copia pública de UN SOLO repo ═════
+# ═══ la FORMA REAL de la copia pública de UN SOLO repo ═════
 # `harness.js install` deja el estado con UNA fuente (`harness`, que se reescribe) y `~/.claude/agent-skills` es un ENLACE
 # al mismo clon (lo crea canonical-path.js). El aviso recorre dos repos: los dos son ese clon. Tiene que encontrar la
 # fuente por la CARPETA real y no por el nombre, juzgar el clon una sola vez, y no mandar nunca a `checkout main` a un
-# clon cuya fuente se reescribe (seguirlo dejaba a `update` bloqueado: «está en la rama main y no en tycon/installed»).
-# 🔴 rojo previo (REG-A1): buscaba la fuente `agent_skills` por nombre, no la encontraba, tomaba `main` como rama de casa
-#    e imprimía en CADA sesión «BRANCH GUARD — repos compartidos del harness FUERA de main: agent-skills está en
-#    "tycon/installed"… Volver: git -C <repo> checkout main». La A4 no lo veía: su estado trae una fuente `agent_skills`.
+# clon cuya fuente se reescribe (seguirlo deja a `update` bloqueado: «está en la rama main y no en tycon/installed»).
+# 🔴 sin esto, se busca la fuente `agent_skills` por nombre, no se encuentra, se toma `main` como rama de casa
+#    y se imprime en CADA sesión «BRANCH GUARD — repos compartidos del harness FUERA de main: agent-skills está en
+#    "tycon/installed"… Volver: git -C <repo> checkout main».
 # single <home>: remoto `<home>.up` con el hook real, skills/ y agents/ en la raíz; clon `<home>.clone`; y en la HOME de
 # juguete los dos enlaces al MISMO clon (el de agent-skills, con el canonical-path.js real)
 single() {
@@ -297,16 +297,16 @@ run_back() { # run_back <salida del aviso>
 offenders() { grep -c '^  - ' <<<"$1"; }
 branch_of() { g -C "$1" rev-parse --abbrev-ref HEAD; }
 
-# REG-A1 · después de la primera actualización, el clon en tycon/installed y al día: silencio, con cualquier política
+# después de la primera actualización, el clon en tycon/installed y al día: silencio, con cualquier política
 H="$BASE/h-ra1"; single "$H"; first_update "$H"; single_state "$H"; CL="$H.clone"
 o1="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; r1=$?; o2="$(TYCON_UPDATE_APPLY=ask notice_at "$H")"; r2=$?; o3="$(notice_at "$H")"; r3=$?
 if [ "$(branch_of "$CL")" = tycon/installed ] && [ "$(branch_of "$H/.claude/agent-skills")" = tycon/installed ] \
    && [ "$r1$r2$r3" = 000 ] && [ -z "$o1$o2$o3" ]; then
   ok "REG-A1 repo único (una fuente «harness», agent-skills enlazado al mismo clon) en tycon/installed: el aviso calla (auto, ask y por defecto)"
 else bad "REG-A1 repo único en tycon/installed (rc=$r1$r2$r3): $o1"; fi
-# REG-A2 · espejo: ese MISMO clon en una rama propia de la persona → avisa, lo nombra UNA vez, y el consejo NO es
+# espejo: ese MISMO clon en una rama propia de la persona → avisa, lo nombra UNA vez, y el consejo NO es
 # `checkout main`: es volver a tycon/installed, y corrido tal cual funciona (y el aviso vuelve a callar)
-# 🔴 rojo previo: dos renglones para el mismo clon (el arnés y agent-skills) y «Volver: git -C <repo> checkout main»
+# 🔴 sin esto salen dos renglones para el mismo clon (el arnés y agent-skills) y «Volver: git -C <repo> checkout main»
 g -C "$CL" checkout -q -b mine
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 run_back "$out"; rcb=$?; after="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
@@ -315,9 +315,9 @@ if [ "$rc" -eq 0 ] && grep -q 'BRANCH GUARD' <<<"$out" && [ "$(offenders "$out")
    && [ "$rcb" -eq 0 ] && [ "$(branch_of "$CL")" = tycon/installed ] && [ -z "$after" ]; then
   ok "REG-A2 espejo: el mismo clon en otra rama avisa, lo nombra una vez, y el consejo (volver a tycon/installed, nunca a main) corrido funciona"
 else bad "REG-A2 espejo en otra rama (rc=$rc, renglones $(offenders "$out"), consejo rc=$rcb, quedó en $(branch_of "$CL")): $out"; fi
-# REG-A3 · alguien siguió el consejo viejo: el clon en `main` DESPUÉS de su primera actualización (tycon/installed ya
+# el clon en `main` DESPUÉS de su primera actualización (tycon/installed ya
 # existe). `update` no lo toca desde ahí: el aviso lo dice, y su consejo lo devuelve a tycon/installed
-# 🔴 rojo previo: `main` valía siempre para una fuente que se reescribe → silencio, con `update` bloqueado
+# 🔴 sin esto, `main` vale siempre para una fuente que se reescribe → silencio, con `update` bloqueado
 g -C "$CL" checkout -q main
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 run_back "$out"; rcb=$?
@@ -325,8 +325,8 @@ if [ "$rc" -eq 0 ] && [ "$(offenders "$out")" = 1 ] && grep -q 'está en "main" 
    && ! grep -q 'checkout main' <<<"$out" && [ "$rcb" -eq 0 ] && [ "$(branch_of "$CL")" = tycon/installed ]; then
   ok "REG-A3 en main después de la primera actualización: avisa (update no lo toca desde ahí) y el consejo lo devuelve a tycon/installed"
 else bad "REG-A3 en main con tycon/installed ya creada (rc=$rc, consejo rc=$rcb, quedó en $(branch_of "$CL")): $out"; fi
-# REG-A4 · atrasado: una vez, contra la ref que el estado dice para ESA fuente, y el consejo es `harness.js update`
-# 🔴 rojo previo: el atraso salía para el arnés y, además, «FUERA de main» para agent-skills (el mismo clon)
+# atrasado: una vez, contra la ref que el estado dice para ESA fuente, y el consejo es `harness.js update`
+# 🔴 sin esto sale el atraso para el arnés y, además, «FUERA de main» para agent-skills (el mismo clon)
 printf 'v3\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'C: otra version'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 if [ "$rc" -eq 0 ] && grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q '1 commit' <<<"$out" \
@@ -338,15 +338,15 @@ g -C "$H.up" branch -q mirror/sync "$(g -C "$CL" rev-parse HEAD)"; g -C "$CL" fe
 single_state "$H" mirror/sync
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
 [ -z "$out" ] && ok "REG-A4 la ref sale del estado de esa fuente: al día con origin/mirror/sync, calla aunque origin/main siguió" || bad "REG-A4 ref del estado: $out"
-# REG-A5 · antes de la primera actualización (la rama tycon/installed todavía no existe): en main calla; en una rama
+# antes de la primera actualización (la rama tycon/installed todavía no existe): en main calla; en una rama
 # propia avisa una vez, y el consejo no es `checkout main` ni un `checkout tycon/installed` que fallaría
-# 🔴 rojo previo: dos renglones, «Volver: git -C <repo> checkout main» y «checkout tycon/installed» (rama que no existe)
+# 🔴 sin esto salen dos renglones, «Volver: git -C <repo> checkout main» y «checkout tycon/installed» (rama que no existe)
 H="$BASE/h-ra5"; single "$H"; single_state "$H"; CL="$H.clone"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-A5 repo único recién instalado (en main, sin tycon/installed): calla" || bad "REG-A5 recién instalado (rc=$rc): $out"
 # …y atrasado ahí: un renglón y `harness.js update`. Nunca `merge --ff-only origin/main`: un clon del público que avanza
 # en main a mano queda fuera de lo que `update` mueve
-# 🔴 rojo previo: dos renglones, y para «agent-skills» (el mismo clon) el consejo `git stash` + `merge --ff-only origin/main`
+# 🔴 sin esto salen dos renglones, y para «agent-skills» (el mismo clon) el consejo `git stash` + `merge --ff-only origin/main`
 printf 'v2\n' > "$H.up/skills/tycon-pipeline/SKILL.md"; g -C "$H.up" commit -q -am 'B: version nueva'; g -C "$CL" fetch -q origin
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
 if grep -q 'ARNÉS ATRASADO' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'harness.js update' <<<"$out" \
@@ -359,28 +359,28 @@ if [ "$(offenders "$out")" = 1 ] && grep -q 'está en "mine"' <<<"$out" && ! gre
    && ! grep -qi 'volver a main' <<<"$out" && grep -q 'harness.js update' <<<"$out"; then
   ok "REG-A5 recién instalado y en otra rama: avisa una vez; el consejo no es checkout main ni un checkout de una rama que no existe"
 else bad "REG-A5 recién instalado en otra rama (renglones $(offenders "$out")): $out"; fi
-# REG-A6 · una fuente `harness` sin `dir` en el estado: su carpeta es el `tree` del estado
-# 🔴 rojo previo: el mismo de REG-A1
+# una fuente `harness` sin `dir` en el estado: su carpeta es el `tree` del estado
+# 🔴 sin esto, la fuente no se encuentra por su carpeta (como en el primer caso de esta forma)
 H="$BASE/h-ra6"; single "$H"; first_update "$H"; CL="$(cd "$H.clone" && pwd -P)"
 estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"$CL\",\"notice\":null,\"sources\":[{\"name\":\"harness\",\"ref\":\"main\",\"rewrites\":true}]}"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-A6 fuente «harness» sin dir: se la encuentra por el tree del estado, y calla" || bad "REG-A6 harness sin dir (rc=$rc): $out"
-# REG-A7 · en un disco que no distingue mayúsculas, la carpeta del estado escrita con otra caja ES el mismo clon
-# 🔴 rojo previo: el mismo de REG-A1 (y, comparando rutas letra por letra, seguiría en rojo)
+# en un disco que no distingue mayúsculas, la carpeta del estado escrita con otra caja ES el mismo clon
+# 🔴 sin esto, la fuente no se encuentra por su carpeta, y comparar rutas letra por letra no alcanza
 ALT="$(dirname "$CL")/$(basename "$CL" | tr '[:lower:]' '[:upper:]')"
 if [ "$ALT" != "$CL" ] && [ -d "$ALT" ]; then
   estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"$ALT\",\"notice\":null,\"sources\":[{\"name\":\"harness\",\"ref\":\"main\",\"rewrites\":true,\"dir\":\"$ALT\"}]}"
   out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
   [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-A7 la carpeta del estado con otra caja es el mismo clon: calla" || bad "REG-A7 otra caja (rc=$rc): $out"
 else echo "⚪ branch-guard-notice: REG-A7 NO MEDIDO — este disco distingue mayúsculas (la carpeta con otra caja no existe)"; fi
-# REG-A8 · espejo: un estado que NO nombra ese clon (su fuente vive en otra carpeta) no lo ampara: lo de siempre
+# espejo: un estado que NO nombra ese clon (su fuente vive en otra carpeta) no lo ampara: lo de siempre
 g init -q -b main "$BASE/h-ra8-other"; g -C "$BASE/h-ra8-other" commit -q --allow-empty -m x; OTHER="$(cd "$BASE/h-ra8-other" && pwd -P)"
 estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"$OTHER\",\"notice\":null,\"sources\":[{\"name\":\"harness\",\"ref\":\"main\",\"rewrites\":true,\"dir\":\"$OTHER\"},{\"name\":\"agent_skills\",\"ref\":\"main\",\"rewrites\":true,\"dir\":\"$OTHER\"}]}"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"
 if grep -q 'FUERA de main' <<<"$out" && [ "$(offenders "$out")" = 1 ] && grep -q 'Volver: git -C <repo> checkout main' <<<"$out"; then
   ok "REG-A8 espejo: un estado cuyas fuentes viven en otra carpeta no ampara a este clon (lo de siempre, y una sola vez)"
 else bad "REG-A8 estado que no nombra el clon (renglones $(offenders "$out")): $out"; fi
-# REG-A9 · espejo: el clon interno de siempre fuera de main → el aviso de hoy, letra por letra, con su consejo de hoy;
+# espejo: el clon interno de siempre fuera de main → el aviso de siempre, letra por letra, con su consejo de siempre;
 # sin estado, y con un estado que nombra ese clon con `rewrites: false`
 H="$BASE/h-ra9"; AS="$H/.claude/agent-skills"; mkdir -p "$H/.claude/.tycon-pipeline"
 g init -q -b main "$AS"; g -C "$AS" commit -q --allow-empty -m x; g -C "$AS" checkout -q -b codex/etapa-x
@@ -399,7 +399,7 @@ estado "$H" "{\"schema\":1,\"mode\":\"managed\",\"tree\":\"/\",\"notice\":null,$
 out="$(TYCON_UPDATE_APPLY=auto notice "$H")"
 [ "$out" = "$EXPECTED" ] && ok "REG-A9 clon interno fuera de main, con estado y rewrites: false: el mismo aviso, con su consejo de hoy" || bad "REG-A9 interno con estado: $out"
 
-# ═══ story 8.13 (tanda D, segunda vuelta de revisores) · «no pude leer» no es «no hay» ════════════════════════════════
+# ═══ «no pude leer» no es «no hay» ════════════════════════════════
 # Una ref rota (basura adentro, un lock, el tope de tiempo) hace fallar a git igual que una ref ausente. Leer ese fallo
 # como «la rama tycon/installed no existe», «no es un clon» o «está al día» es inventar: el aviso ni grita «FUERA de main»
 # ni calla como si todo estuviera bien; dice en UNA línea qué no pudo leer de qué clon, sin veredicto ni consejo de rama.
@@ -409,20 +409,20 @@ only_unread() {
   [ "$(grep -c . <<<"$1")" = 1 ] && grep -q 'no pude leer' <<<"$1" && grep -qF -- "$2" <<<"$1" \
     && ! grep -q 'FUERA de\|Volver:\|checkout\|ARNÉS ATRASADO\|merge --ff-only\|harness.js update' <<<"$1"
 }
-# REG-R1 · la rama tycon/installed con basura adentro, y el clon del público parado en main
-# 🔴 rojo previo: el `rev-parse --verify` fallido se leía como «todavía no existe» → main valía como rama de casa y el
-#    aviso seguía de largo (acá, «ARNÉS ATRASADO» con `harness.js update`), sin decir que la ref estaba rota
+# la rama tycon/installed con basura adentro, y el clon del público parado en main
+# 🔴 sin esto, el `rev-parse --verify` fallido se lee como «todavía no existe» → main vale como rama de casa y el
+#    aviso sigue de largo (acá, «ARNÉS ATRASADO» con `harness.js update`), sin decir que la ref está rota
 H="$BASE/h-rr1"; single "$H"; first_update "$H"; single_state "$H"; CL="$H.clone"; REF="$CL/.git/refs/heads/tycon/installed"
 SHA="$(g -C "$CL" rev-parse HEAD)"; g -C "$CL" checkout -q main; printf 'esto no es un sha\n' > "$REF"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && only_unread "$out" '"tycon/installed"' && ok "REG-R1 tycon/installed rota, parado en main: dice que no pudo leer esa rama, sin veredicto ni consejo de rama" || bad "REG-R1 ref rota en main (rc=$rc): $out"
 # …parado en una rama propia
-# 🔴 rojo previo: «FUERA de su rama» con «"tycon/installed" todavía no existe: la crea la primera actualización» (existe, rota)
+# 🔴 sin esto sale «FUERA de su rama» con «"tycon/installed" todavía no existe: la crea la primera actualización» (existe, rota)
 g -C "$CL" checkout -q -b mine >/dev/null 2>&1
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ "$(branch_of "$CL")" = mine ] && only_unread "$out" '"tycon/installed"' && ok "REG-R1 tycon/installed rota, parado en otra rama: lo mismo (no inventa que la rama no existe)" || bad "REG-R1 ref rota en otra rama (rc=$rc, rama $(branch_of "$CL")): $out"
 # …y parado EN la rama rota: git no puede decir en qué rama está
-# 🔴 rojo previo: silencio (el fallo se leía como «repo no clonado»)
+# 🔴 sin esto, silencio (el fallo se lee como «repo no clonado»)
 printf '%s\n' "$SHA" > "$REF"; g -C "$CL" checkout -q tycon/installed; printf 'esto no es un sha\n' > "$REF"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && only_unread "$out" 'el arnés' && ok "REG-R1 parado en la rama rota: dice que no pudo leer en qué rama está ese clon (no calla como si no fuera un clon)" || bad "REG-R1 parado en la rama rota (rc=$rc): $out"
@@ -430,8 +430,8 @@ out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 printf '%s\n' "$SHA" > "$REF"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-R1 espejo: con la ref sana, en su rama y al día, calla" || bad "REG-R1 espejo ref sana (rc=$rc): $out"
-# REG-R2 · la ref contra la que se mide el atraso (origin/main) con basura adentro
-# 🔴 rojo previo: el `rev-list` fallido se leía como «0 commits atrás» → silencio
+# la ref contra la que se mide el atraso (origin/main) con basura adentro
+# 🔴 sin esto, el `rev-list` fallido se lee como «0 commits atrás» → silencio
 printf 'basura\n' > "$CL/.git/refs/remotes/origin/main"
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && only_unread "$out" 'origin/main' && ok "REG-R2 origin/main rota: dice que no pudo medir el atraso contra esa ref (no «al día»)" || bad "REG-R2 ref remota rota (rc=$rc): $out"
@@ -441,12 +441,12 @@ out="$(TYCON_UPDATE_APPLY=ask notice_at "$H")"
 printf '%s\n' "$SHA" > "$CL/.git/refs/remotes/origin/main"; g -C "$CL" update-ref -d refs/remotes/origin/main
 out="$(TYCON_UPDATE_APPLY=auto notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-R2 espejo: sin esa ref remota en el clon, no se juzga y calla (como siempre)" || bad "REG-R2 espejo ref remota ausente (rc=$rc): $out"
-# espejo · tycon/installed ausente de verdad, parado en main: main vale como rama de casa (lo de REG-A5)
+# espejo · tycon/installed ausente de verdad, parado en main: main vale como rama de casa (como antes de la primera actualización)
 g -C "$CL" fetch -q origin; g -C "$CL" checkout -q main; g -C "$CL" branch -q -D tycon/installed
 out="$(TYCON_UPDATE_APPLY=ask notice_at "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-R1 espejo: tycon/installed ausente de verdad y parado en main: calla, como hoy" || bad "REG-R1 espejo ref ausente (rc=$rc): $out"
-# REG-R3 · un clon con el HEAD roto no es «una carpeta sin clonar»
-# 🔴 rojo previo: silencio
+# un clon con el HEAD roto no es «una carpeta sin clonar»
+# 🔴 sin esto, silencio
 H="$BASE/h-rr3"; AS="$H/.claude/agent-skills"; mkdir -p "$H/.claude"
 g init -q -b main "$AS"; g -C "$AS" commit -q --allow-empty -m x; printf 'basura\n' > "$AS/.git/HEAD"
 out="$(notice "$H")"; rc=$?
@@ -455,16 +455,16 @@ out="$(notice "$H")"; rc=$?
 H="$BASE/h-rr3b"; mkdir -p "$H/.claude/agent-skills"
 out="$(notice "$H")"; rc=$?
 [ "$rc" -eq 0 ] && [ -z "$out" ] && ok "REG-R3 espejo: una carpeta que no es un clon calla (como siempre)" || bad "REG-R3 espejo sin clon (rc=$rc): $out"
-# REG-R4 · el índice ilegible: «no pude mirar si hay conflictos abiertos» no es «no hay»
-# 🔴 rojo previo: silencio (el `ls-files -u` fallido se leía como «sin conflictos»)
+# el índice ilegible: «no pude mirar si hay conflictos abiertos» no es «no hay»
+# 🔴 sin esto, silencio (el `ls-files -u` fallido se lee como «sin conflictos»)
 H="$BASE/h-rr4"; AS="$H/.claude/agent-skills"; mkdir -p "$H/.claude"
 g init -q -b main "$H.up"; printf 'v1\n' > "$H.up/a.txt"; g -C "$H.up" add -A && g -C "$H.up" commit -q -m A; g clone -q "$H.up" "$AS"
 out="$(notice "$H")"
 cp "$AS/.git/index" "$H.index"; printf 'basura\n' > "$AS/.git/index"
 out2="$(notice "$H")"; rc=$?
 [ -z "$out" ] && [ "$rc" -eq 0 ] && only_unread "$out2" 'agent-skills' && ok "REG-R4 el índice ilegible: lo dice (y con el índice sano, el mismo clon calla)" || bad "REG-R4 índice ilegible (rc=$rc, sano: «${out}»): $out2"
-# REG-R5 · la carpeta de una fuente del estado que no se puede mirar (sin permiso): no se sabe si es este clon
-# 🔴 rojo previo: «no la pude mirar» se leía como «no es este clon» → «FUERA de main» con `checkout main`
+# la carpeta de una fuente del estado que no se puede mirar (sin permiso): no se sabe si es este clon
+# 🔴 sin esto, «no la pude mirar» se lee como «no es este clon» → «FUERA de main» con `checkout main`
 H="$BASE/h-rr5"; single "$H"; first_update "$H"; CL="$(cd "$H.clone" && pwd -P)"
 mkdir -p "$BASE/locked/inner"; chmod 000 "$BASE/locked"
 if [ -d "$BASE/locked/inner" ]; then
@@ -493,11 +493,11 @@ printf '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"cd ~/.c
 out="$(TYCON_SETTINGS_PATH="$S" TYCON_NO_AUTOINSTALL=1 bash "$HR/scripts/hooks/harness-bootstrap-heal.sh")"; rc=$?
 [ "$rc" -eq 0 ] && grep -q 'install-tycon-hooks' "$S" && ok "T10 bootstrap-heal: la línea vieja sin instalador se sigue reparando" || bad "T10 bootstrap-heal con la vieja (rc=$rc): $out"
 
-# ═══ story 8.9 (tanda E, T57 / AC 53) · los nombres viejos después de la fecha de retiro ═══════════════════════════════
+# ═══ T57 · los nombres viejos después de la fecha de retiro ═══════════════════════════════
 # Pasada `retire_after` del mapa, si esta máquina anotó usos de nombres viejos en los últimos 14 días (legacy-names.jsonl),
 # UNA línea dice cuáles y dónde cambiarlos. Antes de la fecha (o el mismo día), sin usos recientes, sin registro o sin
 # fecha: nada. Es parte de este aviso y no un hook nuevo: así no hay que registrar otro hook en el instalador, el banco y
-# Codex para una línea que vive hasta la story de retiro. El mapa es de laboratorio (TYCON_LEGACY_NAMES_MAP), con
+# Codex para una línea que vive hasta el retiro de los nombres viejos. El mapa es de laboratorio (TYCON_LEGACY_NAMES_MAP), con
 # nombres inventados; el hook corre suelto y con un HOME de juguete sin repos (nada más que decir).
 RH="$BASE/retiro"; mkdir -p "$RH/.claude/.tycon-pipeline"; RMAP="$BASE/retiro-map.json"
 printf '{ "__about": "laboratorio", "retire_after": "2026-11-20", "entries": [] }\n' > "$RMAP"
@@ -536,8 +536,7 @@ usos "$U_ENV" "$U_OPT" "$U_FILE" \
 out="$(retiro 2026-11-21)"
 [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'y 2 más' <<<"$out" && ok "T57 con muchos nombres sigue siendo una línea («y N más»)" || bad "T57 muchos nombres: $out"
 # el mismo nombre viejo usado contra varios guiones (el mapa tiene opciones del mismo nombre en varios): se nombra cada
-# guion, el más reciente primero — quedarse con la primera línea nombraba sólo el más viejo, quizás ya corregido
-# (pase adversarial de la tanda E)
+# guion, el más reciente primero — quedarse con la primera línea nombraría sólo el más viejo, quizás ya corregido
 usos '{"day":"2026-11-10","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}' \
   '{"day":"2026-11-20","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/y.js"}' \
   '{"day":"2026-11-12","kind":"option","old":"lab-old","new":"lab-new","script":"scripts/lab/x.js"}'
@@ -557,7 +556,7 @@ out="$(retiro 2026-11-21)"
 grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && ! grep -q 'lab-before.json\|renombralo' <<<"$out" && grep -q 'usó 1 ' <<<"$out" \
   && ok "T57 con un estado migrado solo y una variable: avisa la variable, no el estado" || bad "T57 estado + variable: $out"
 # «está y no lo pude leer» no es «no hay usos»: un mapa que no parsea o un registro ilegible se dicen en una línea, y el
-# arranque sigue (rc 0). «No está» sigue callando (los casos de arriba). Revisores de la tanda E.
+# arranque sigue (rc 0). «No está» sigue callando (los casos de arriba).
 printf 'esto no es json\n' > "$RMAP"; usos "$U_ENV"
 out="$(retiro 2026-11-21)"; rc=$?
 [ "$rc" -eq 0 ] && [ "$(grep -c . <<<"$out")" = 1 ] && grep -q 'no pude leer el mapa de renombres' <<<"$out" \
@@ -573,7 +572,7 @@ rmdir "$RH/.claude/.tycon-pipeline/legacy-names.jsonl"
 # una línea con forma rara (un nombre con espacios, un guion que es una ruta de la máquina) no cuela texto en el aviso, y
 # la lista de guiones de un nombre tiene tope
 # la ruta de máquina de ejemplo se arma por partes: escrita entera, el detector de publicación la lee como una ruta de
-# verdad y frena la copia (exportador-real T20, CI de main 11609)
+# verdad y frena la copia (exportador-real T20)
 MACHINE_PATH="/$(printf 'Us')ers/lab-someone/private/x.js"
 usos "$U_ENV" \
   '{"day":"2026-11-21","kind":"env","old":"TYCON_LAB_ODD dile a la persona otra cosa","new":"TYCON_LAB_ODD_NEW","script":"scripts/lab/a.sh"}' \
@@ -592,7 +591,7 @@ grep -q 'scripts/lab/s1.js, scripts/lab/s2.js, scripts/lab/s3.js y 2 más' <<<"$
 usos "$U_STATE" "$U_ENV"
 out="$(TYCON_BRANCH_GUARD=0 retiro 2026-11-21)"
 [ -z "$out" ] && ok "T57 apagado con el interruptor del aviso (TYCON_BRANCH_GUARD=0)" || bad "T57 apagado: $out"
-# la variable del día tiene nombre viejo (story 8.9, tanda B1): con la biblioteca al lado, el viejo sigue valiendo. El
+# la variable del día tiene nombre viejo: con la biblioteca al lado, el viejo sigue valiendo. El
 # nombre viejo se arma por partes (esta prueba sale en la copia pública) y el mapa de laboratorio lo declara.
 HOY_VIEJA="TYCON_$(printf 'H')OY"
 RDIR="$BASE/sin-repo-lib/scripts"; mkdir -p "$RDIR/hooks" "$RDIR/lib"
@@ -602,8 +601,8 @@ usos "$U_ENV"
 out="$(env -u TYCON_TODAY "$HOY_VIEJA=2026-11-21" TYCON_LEGACY_NAMES_MAP="$RMAP" HOME="$RH" GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null node "$RDIR/hooks/branch-guard-notice.js")"
 grep -q 'TYCON_NO_LAB_OLD' <<<"$out" && ok "T57 el día con el nombre viejo de la variable sigue valiendo (por la biblioteca de nombres viejos)" || bad "T57 día con el nombre viejo: «${out}»"
 
-# ═══ story 8.18 (T36 / AC 35) · las tres formas de máquina, al día: ni «atrasado» ni «fuera de main» ═════════════════
-# Desde la unión de los dos repos internos una máquina puede tener: (1) dos clones sin re-apuntar (el arnés ya trae
+# ═══ T36 · las tres formas de máquina, al día: ni «atrasado» ni «fuera de main» ═════════════════
+# Una máquina puede tener: (1) dos clones sin re-apuntar (el arnés ya trae
 # skills/ y las skills salen del clon viejo), (2) dos clones con el viejo RE-APUNTADO al repo unificado (el mismo remoto y
 # el mismo commit que el arnés, mostrando sólo agents/, skills/ y packs/), o (3) un solo árbol. En las tres, al día, este
 # aviso calla; y después de DESHACER el re-apuntado, también (la ref de lo traído vuelve a ser la del repo viejo: si
@@ -648,7 +647,7 @@ else
   bad "T36 no pude armar la máquina de un solo árbol"
 fi
 
-# ═══ T12 / T13 (story 8.35) · el aviso de PowerShell 7 faltante: Windows (simulado), una vez; nunca en posix ═══════════
+# ═══ T12 / T13 · el aviso de PowerShell 7 faltante: Windows (simulado), una vez; nunca en posix ═══════════
 # @story-8.35 · T12 PwshMissing_NoticeOnce · T13 PwshPresentOrPosix_Silent
 NODE_BIN="$(command -v node)"
 PW_BIN="$BASE/con-pwsh"; mkdir -p "$PW_BIN"; printf '#!/bin/sh\nexit 0\n' > "$PW_BIN/pwsh.exe"; chmod +x "$PW_BIN/pwsh.exe"

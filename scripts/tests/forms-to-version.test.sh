@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Prueba de forms-to-version.sh — a qué formularios hay que subirles la versión.
 #
-# Nace de la revisión adversarial del 2026-09-02: con `batch: true` una corrida junta varios
-# merges y `git diff HEAD~1` sólo ve el último, así que el formulario del primer merge no subía
-# de versión y el host lo deduplicaba — el cambio nunca llegaba, en verde. Esa corrida "dos
+# Cuida el caso de `batch: true`: una corrida junta varios
+# merges y `git diff HEAD~1` sólo ve el último, así que el formulario del primer merge no sube
+# de versión y el host lo deduplica — el cambio nunca llega, en verde. Esa corrida "dos
 # merges agrupados" NO se puede provocar a voluntad en Azure DevOps (hace falta un run en curso
 # cuando entra el segundo merge, con 2 carriles para toda la organización): acá se reproduce con
 # una historia git sintética, que es la única forma de verificarla.
@@ -15,11 +15,11 @@ fallos=0
 ok(){ echo "✅ versionar: $1"; }
 no(){ echo "❌ versionar: $1"; fallos=$((fallos+1)); }
 export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
-# 🔴 SIN LOS GANCHOS DEL EQUIPO (2026-09-02). Los repos de esta suite son de mentira: nacen en una
+# 🔴 SIN LOS GANCHOS DEL EQUIPO. Los repos de esta suite son de mentira: nacen en una
 # carpeta temporal, hacen nueve commits y se borran. Correrles los ganchos globales del dev
 # (`core.hooksPath`) no verifica nada y cuesta ~4 s por commit — medido: 4846 ms con ganchos contra
-# 1248 ms sin ellos. Esos 36 s de más caían enteros en el ARRANQUE de cada sesión, que tiene 60 s
-# antes de que la extensión de VS Code se rinda (ya pasó: el arranque llegó a 59 s el 2026-09-01).
+# 1248 ms sin ellos. Esos 36 s de más caen enteros en el ARRANQUE de cada sesión, que tiene 60 s
+# antes de que la extensión de VS Code se rinda.
 # Se apagan SÓLO acá, con una variable de entorno: la configuración del dev no se toca.
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
 
@@ -90,7 +90,7 @@ bash "$TMP/solo/forms-to-version.sh" --repo "$R" >"$TMP/o7.txt" 2>"$TMP/e7.txt";
 [ "$rc" -eq 1 ] && grep -q "affected-forms.js" "$TMP/e7.txt" && ok "sin affected-forms.js al lado, sale 1 y lo dice" || no "🔴 sin el guion hermano salió $rc: $(cat "$TMP/e7.txt")"
 
 # ---------------------------------------------------------------- T25 (7b). sin la base compartida tampoco
-# La base la decide scripts/ci/run-base.sh, compartido con label-prs.sh desde la story 2.17.
+# La base la decide scripts/ci/run-base.sh, compartido con label-prs.sh.
 # Si no está al lado, el guion no puede decidir y tiene que salir 1 diciéndolo — no vacío + 0.
 mkdir -p "$TMP/sinbase" && cp "$SH_V" "$AQUI/scripts/ci/affected-forms.js" "$TMP/sinbase/"
 mundo
@@ -101,12 +101,12 @@ bash "$TMP/sinbase/forms-to-version.sh" --repo "$R" >"$TMP/o7b.txt" 2>"$TMP/e7b.
 mkdir -p "$TMP/nogit"; bash "$SH_V" --repo "$TMP/nogit" >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 1 ] && ok "fuera de un repo git sale 1" || no "🔴 fuera de git salió $rc"
 
-# ---------------------------------------------------------------- 9. 🔴 EL BUMP REBASADO (2026-09-03)
-# El defecto que motivó que la base sea el commit ANOTADO y no el commit del bot. La corrida A parte
+# ---------------------------------------------------------------- 9. 🔴 EL BUMP REBASADO
+# Por esto la base es el commit ANOTADO y no el commit del bot. La corrida A parte
 # del merge 1; mientras corre entra el merge 2; el push de A rebota y su commit de versiones queda
-# ENCIMA del merge 2. La corrida siguiente tomaba ese commit como base y el merge 2 caía afuera: su
-# formulario nunca subía de versión, el host lo deduplicaba por versión igual, y el cambio no
-# llegaba ni a staging ni a producción — TODO VERDE. Reproducido con el guion real.
+# ENCIMA del merge 2. Si la corrida siguiente tomara ese commit como base, el merge 2 caería afuera: su
+# formulario nunca subiría de versión, el host lo deduplicaría por versión igual, y el cambio no
+# llegaría ni a staging ni a producción — TODO VERDE. Se reproduce con el guion real.
 D="$TMP/rebasado"; mkdir -p "$D"
 ( cd "$D" && git init -q -b main . && git config user.email t@t && git config user.name t
   for f in F G H; do mkdir -p "$f/src"; printf '{"name":"%s","version":"1.0.0"}\n' "$f" > "$f/package.json"; echo x > "$f/src/i.ts"; done
@@ -124,9 +124,9 @@ echo "$L" | grep -x "G" >/dev/null && ok "🔴 el bump rebasado NO esconde el me
 echo "$L" | grep -x "H" >/dev/null && ok "…y el formulario de la corrida propia también (H)" || no "H no se versiona: [$(echo $L)]"
 
 # ---------------------------------------------------------------- 9b. y NO re-versiona lo de la corrida anterior
-# El gemelo del caso 9, y el que casi se me escapa: si la base es el commit del que partió la corrida
+# El gemelo del caso 9: si la base es el commit del que partió la corrida
 # anterior, el commit de versiones de ESA corrida cae dentro del rango. Con un diff plano, F volvería
-# a versionarse en cada corrida para siempre — el arreglo del caso 9 pagado con ruido perpetuo.
+# a versionarse en cada corrida para siempre: el caso 9 se resolvería con ruido perpetuo.
 echo "$L" | grep -x "F" >/dev/null \
   && no "🔴 F se re-versiona: el commit de versiones de la corrida anterior está entrando al rango" \
   || ok "…y NO vuelve a versionar lo que ya versionó la corrida anterior (F queda afuera)"
@@ -159,11 +159,11 @@ grep -q "AVISO.*no anota de qué commit partió" "$TMP/e10.txt" \
   || no "🔴 sin la anotación se cae al modo viejo EN SILENCIO: $(cat "$TMP/e10.txt")"
 
 # ---------------------------------------------------------------- 11. 🔴 DOS PREGUNTAS, DOS BASES
-# El primer intento del 2026-09-03 usó UNA base para las dos preguntas y ROMPIÓ el caso normal
-# mientras arreglaba el raro: `--base` devolvía el commit del que partió la corrida anterior, así que
-# el pipeline leía de ahí la "versión anterior" — o sea la ANTERIOR AL BUMP. El número nuevo repetía
-# el que la corrida previa ya había publicado, el host lo deduplicaba, el humo lo aprobaba porque la
-# versión coincide, y el cambio NO LLEGABA NUNCA. Lo cazó el revisor de formularios el mismo día.
+# Usar UNA base para las dos preguntas rompe el caso normal
+# mientras arregla el raro: si `--base` devolviera el commit del que partió la corrida anterior, el
+# pipeline leería de ahí la "versión anterior" — o sea la ANTERIOR AL BUMP. El número nuevo repetiría
+# el que la corrida previa ya publicó, el host lo deduplicaría, el humo lo aprobaría porque la
+# versión coincide, y el cambio NO LLEGARÍA NUNCA.
 D4="$TMP/dos-bases"; mkdir -p "$D4"
 ( cd "$D4" && git init -q -b main . && git config user.email t@t && git config user.name t
   mkdir -p A/src B/src
@@ -196,10 +196,10 @@ IFS='.' read -r MA MI PA <<< "$VER_PUB"; ESPERADO="$MA.$MI.$((PA+1))"
 
 # ---------------------------------------------------------------- 13. 🔴 LA MARCA VACÍA
 # Cuando una corrida no deja cambio de versión —una persona la subió a mano en el pull request, o un
-# formulario nuevo nació en 1.0.0— el bot no tenía nada que commitear y NO dejaba rastro. La corrida
-# siguiente partía de una base VIEJA y proponía un número YA PUBLICADO: el host lo deduplicaba, el
-# humo lo aprobaba porque la versión coincide, y el cambio del cliente no llegaba nunca, EN VERDE.
-# Desde el 2026-09-03 el bot deja igual un commit VACÍO con la anotación. Este caso prueba que ese
+# formulario nuevo nació en 1.0.0— el bot no tiene nada que commitear y, sin marca, NO deja rastro. La corrida
+# siguiente partiría de una base VIEJA y propondría un número YA PUBLICADO: el host lo deduplicaría, el
+# humo lo aprobaría porque la versión coincide, y el cambio del cliente no llegaría nunca, EN VERDE.
+# Por eso el bot deja igual un commit VACÍO con la anotación. Este caso prueba que ese
 # commit vacío sirve para las dos preguntas: la versión publicada se lee bien de él, y el rango de
 # "qué cambió" arranca donde debe.
 D5="$TMP/marca-vacia"; mkdir -p "$D5"
@@ -222,14 +222,13 @@ echo "$(bash "$SH_V" --repo "$D5" 2>/dev/null)" | grep -x "A" >/dev/null \
   && ok "…y el rango de qué cambió ve el merge posterior a la marca" \
   || no "🔴 con la marca vacía se perdió el formulario del merge siguiente"
 
-# ================================================================ MERGES REALES (story 1.9)
-# 🔴 UN MERGE NO VERSIONA LO QUE YA ESTABA VERSIONADO (2026-09-21). El bucle recorría TODOS los
-# commits del rango y además diffeaba cada merge contra su primer padre: ahí re-aparecía el commit
+# ================================================================ MERGES REALES
+# 🔴 UN MERGE NO VERSIONA LO QUE YA ESTABA VERSIONADO. Un bucle que recorra TODOS los
+# commits del rango y además diffee cada merge contra su primer padre re-descubre el commit
 # de versiones del bot, que vive sólo en `main` y vuelve a entrar a `dev` con cada merge (rama de
-# feature cortada de `main`, o «chore: bajar main a dev»). Resultado real en un repo de formularios: las
-# cuatro corridas de `main` de septiembre versionaron y redesplegaron los 33 formularios con 1 a 3
-# cambiados de verdad. Los dos casos de abajo son las dos variantes, con merges de git reales.
-# Medición: tasks/medicion-1.9-merges-que-reversionan-2026-09-21.md
+# feature cortada de `main`, o «chore: bajar main a dev»). El resultado es que cada corrida de `main` versiona y
+# redespliega todos los formularios aunque sólo 1 a 3 hayan cambiado de verdad. Los dos casos de abajo son las dos
+# variantes, con merges de git reales.
 #
 # Mundo común: tres formularios INDEPENDIENTES en 1.0.0 (así "sólo form-c" no depende del grafo de
 # imports) y el commit del bot que los sube a 1.0.1 con su marca `Commit: <inicial>` — o sea, la
@@ -252,7 +251,7 @@ mundo_merges(){          # $1 = carpeta; deja el sha del commit inicial en $INIT
 }
 
 # ---------------------------------------------------------------- T1. 🔴 RAMA CORTADA DE MAIN
-# La variante del build 10816: `feature/g-12` nació de `main` (que ya tenía el commit del bot) y se
+# Primera variante: una rama de feature nació de `main` (que ya tenía el commit del bot) y se
 # mergeó a `dev` (que no lo tenía). El diff de ESE merge contra su primer padre re-muestra los tres
 # package.json. Sólo se tocó form-c: sólo form-c tiene que versionarse.
 T1D="$TMP/t1-rama-desde-main"; mundo_merges "$T1D"
@@ -275,7 +274,7 @@ grep -qF "] 1 archivo(s) cambiado(s)" "$TMP/e-t1.txt" \
   || no "🔴 T1: la cuenta de archivos salió [$(grep -F 'archivo(s) cambiado' "$TMP/e-t1.txt")], esperaba 1"
 
 # ---------------------------------------------------------------- T2. 🔴 BAJAR MAIN A DEV
-# La otra variante (corrida del 16/09): nadie corta de `main`, pero `dev` baja `main` con un merge
+# La otra variante: nadie corta de `main`, pero `dev` baja `main` con un merge
 # para ponerse al día y ese merge trae el commit del bot. Mismo daño, misma cuenta.
 T2D="$TMP/t2-bajar-main-a-dev"; mundo_merges "$T2D"
 ( cd "$T2D"
@@ -341,7 +340,7 @@ L=$(bash "$SH_V" --repo "$T4D" 2>/dev/null)
   || no "🔴 T4 dio [$(echo $L)] en vez de form-a"
 
 # ---------------------------------------------------------------- T7. una RAÍZ dentro del rango se saltea
-# El AC 9 pide dos cosas y son distintas: (a) que un commit cuyo primer padre no resuelve se saltee
+# Se miden dos cosas distintas: (a) que un commit cuyo primer padre no resuelve se saltee
 # como siempre, y (b) que eso pase ANTES de mirar el segundo padre. Ojo con el caso 4 (`--orphan`):
 # ahí la raíz es la BASE, así que queda FUERA del rango `BASE..HEAD` y no ejercita nada. Para meter
 # una raíz DENTRO del rango hace falta una historia con DOS raíces: la huérfana entra por un merge
@@ -385,7 +384,7 @@ grep -qF 'segundo padre' "$SH_V" && grep -qF '2026-09-21' "$SH_V" \
   || no "🔴 T9 el guion no explica el salteo de merges (falta «segundo padre» o la fecha 2026-09-21)"
 
 # ---------------------------------------------------------------- T10. queda registrado dónde leerlo
-# El índice de «cuándo leer cada guía» vive en INDEX.md desde 2026-10-14 (antes, en el README).
+# El índice de «cuándo leer cada guía» vive en INDEX.md.
 grep -qF 'Se versionaron y redesplegaron TODOS los formularios' "$AQUI/INDEX.md" \
   && ok "T10 el índice (INDEX.md) tiene la fila para «se versionaron todos los formularios sin motivo»" \
   || no "🔴 T10 falta la fila en la tabla «Cuándo leer cada guía» de INDEX.md"

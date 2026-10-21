@@ -1,7 +1,7 @@
 'use strict';
-// story 8.39 (decisión 20): las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
+// las suites que lanzan harness.js no bajan el Node del arnés de nodejs.org
 process.env.TYCON_HARNESS_NODE = '0';
-// harness-team-azure.test.js — la capa del equipo desde AZURE DEVOPS (story 8.25, la fuente de TYCON), contra el Azure de
+// harness-team-azure.test.js — la capa del equipo desde AZURE DEVOPS (la fuente de TYCON), contra el Azure de
 // juguete (scripts/tests/fixtures/toy-azure-server.js) sobre un repo bare real. Sin red, sin tocar ~/.tycon ni ~/.claude.
 //
 //   TA1 · la URL del repo del equipo: https://dev.azure.com/<org>/<proyecto>/_git/<repo> (con usuario@, barra final o .git)
@@ -77,7 +77,7 @@ async function lab(name, { pat = 'pat-lab' } = {}) {
 test('TA1 TeamAzure_Url_DevAzureCom_WithUserSlashOrGit_Parsed_OthersRefused', () => {
   const ok = AZ.parseAzureUrl('https://dev.azure.com/acme/proyecto/_git/equipo-lab');
   assert.deepEqual(ok, { ok: true, host: 'azure', org: 'acme', project: 'proyecto', name: 'equipo-lab', url: 'https://dev.azure.com/acme/proyecto/_git/equipo-lab' });
-  // las URL con `usuario@` se arman acá: escritas enteras, el detector de la copia pública las lee como un correo (170 #12521)
+  // las URL con `usuario@` se arman acá: escritas enteras, el detector de la copia pública las lee como un correo
   const conUsuario = (usuario, resto) => `https://${usuario}@dev.azure.com/${resto}`;
   for (const v of [conUsuario('acme', 'acme/proyecto/_git/equipo-lab'), 'https://dev.azure.com/acme/proyecto/_git/equipo-lab/', 'https://dev.azure.com/acme/proyecto/_git/equipo-lab.git', 'https://dev.azure.com/acme/Mi%20Proyecto/_git/equipo-lab']) {
     assert.equal(AZ.parseAzureUrl(v).ok, true, v);
@@ -88,12 +88,12 @@ test('TA1 TeamAzure_Url_DevAzureCom_WithUserSlashOrGit_Parsed_OthersRefused', ()
     assert.equal(r.ok, false, `«${bad}» tendría que rechazarse`);
     assert.match(r.problem, /dev\.azure\.com|caracteres/);
   }
-  // una URL mal escrita con `usuario:clave@` no repite la clave al citarla (revisión adversarial, W3)
+  // una URL mal escrita con `usuario:clave@` no repite la clave al citarla
   const leak = AZ.parseAzureUrl(conUsuario('alguien:SECRETO-PEGADO', 'acme/_git/x'));
   assert.equal(leak.ok, false); assert.doesNotMatch(leak.problem, /SECRETO-PEGADO/); assert.match(leak.problem, /dev\.azure\.com\/acme\/_git\/x/);
   const leak2 = TEAM.parseTeam(conUsuario('alguien:SECRETO-PEGADO', 'acme/_git/x'));
   assert.equal(leak2.ok, false); assert.doesNotMatch(leak2.problem, /SECRETO-PEGADO/);
-  // nombres que Azure DevOps admite y una empresa de habla hispana va a tener (pase adversarial): acentos y paréntesis pasan,
+  // nombres que Azure DevOps admite y una empresa de habla hispana va a tener: acentos y paréntesis pasan,
   // y en la URL de la API viajan codificados; lo que cambiaría la ruta (`/`, `:`, `?`, `#`, `%`, `&`, `@`, `~`) sigue afuera
   const acento = AZ.parseAzureUrl('https://dev.azure.com/acme/Facturaci%C3%B3n/_git/capa');
   assert.equal(acento.ok, true, acento.problem); assert.equal(acento.project, 'Facturación'); assert.match(acento.url, /\/Facturaci%C3%B3n\/_git\/capa$/);
@@ -169,7 +169,7 @@ test('TA3 TeamAzure_Resolve_RefCommitTreeHashRecomputed_ClosedList_ItemsVerified
     const cut = AZ.resolve(c, { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(cut.ok, false); assert.match(cut.reason, /no da el árbol del commit/);
     // una lista con una entrada sin forma (nula, sin ruta, sin sha, sin tipo): «no se usa», dicho — nunca un TypeError que suba
-    // hasta harness.js como volcado de pila (pase adversarial)
+    // hasta harness.js como volcado de pila
     const SHA = (ch) => ch.repeat(40);
     for (const entry of [null, { mode: '100644', gitObjectType: 'blob', objectId: SHA('c') }, { relativePath: 'team-layer.json', mode: '100644', gitObjectType: 'blob', objectId: null }, { relativePath: 'team-layer.json', mode: '100644', objectId: SHA('c') }, { relativePath: 'team-layer.json', gitObjectType: 'blob', objectId: 'no-es-sha' }]) {
       const fake = { src: L.src, get: (p) => /^refs\?/.test(p) ? { ok: true, status: 200, json: { value: [{ name: 'refs/heads/main', objectId: SHA('a') }] } }
@@ -218,11 +218,11 @@ test('TA4 TeamAzure_Access_LoginPageIsMissingOrInvalidCredential_403NoRead_404Re
     const otherSrc = AZ.parseAzureUrl('https://dev.azure.com/acme/otro-proyecto/_git/equipo-lab');
     const proj = AZ.resolve(AZ.client(otherSrc, AZ.credential(otherSrc, { env: L.env }), { env: L.env }), { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(proj.ok, false); assert.match(proj.reason, /proyecto otro-proyecto no existe/);
-    // TYCON_AZURE_API por http hacia OTRO host: la credencial no se manda en claro (W2)
+    // TYCON_AZURE_API por http hacia OTRO host: la credencial no se manda en claro
     const insecure = AZ.resolve(AZ.client(L.src, AZ.credential(L.src, { env: L.env }), { env: Object.assign({}, L.env, { TYCON_AZURE_API: 'http://ejemplo.invalid:8080' }) }), { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(insecure.ok, false); assert.match(insecure.reason, /no se manda en claro/);
     assert.equal(L.requests().filter((q) => q.path.includes('ejemplo')).length, 0);
-    // la rama `main` tiene que ser exacta: con `main-old` y sin `main`, no se usa «la primera» (W1)
+    // la rama `main` tiene que ser exacta: con `main-old` y sin `main`, no se usa «la primera»
     git(['branch', '-m', 'main', 'main-old'], L.bare);
     const noMain = AZ.resolve(AZ.client(L.src, AZ.credential(L.src, { env: L.env }), { env: L.env }), { version: '2026.10.09.1', readerTree: ROOT, home: L.home, env: L.env });
     assert.equal(noMain.ok, false); assert.match(noMain.reason, /no tiene la rama main/); assert.match(noMain.reason, /main-old/);
@@ -233,9 +233,9 @@ test('TA4 TeamAzure_Access_LoginPageIsMissingOrInvalidCredential_403NoRead_404Re
   } finally { L.stop(); }
 });
 
-// pase adversarial (8.25 A1a-azure): `config set azure.token` —la acción que recomiendan todos los mensajes— no pasaba la tabla
-// del analizador de argumentos de harness.js, y un config.json que trae SÓLO el PAT de Azure se reescribía sin volver a dejarlo
-// para el usuario (la lista de secretos era `github.token` a mano). Las dos cosas, por el camino real.
+// `config set azure.token` —la acción que recomiendan todos los mensajes— tiene que pasar la tabla
+// del analizador de argumentos de harness.js, y un config.json que trae SÓLO el PAT de Azure se reescribe dejándolo
+// para el usuario (la lista de secretos no puede ser sólo `github.token`). Las dos cosas, por el camino real.
 test('TA6 TeamAzure_ConfigSetAzureToken_CliSavesByStdinUserOnlyNeverEchoes_RewriteKeepsUserOnly', () => {
   const home = casa('cli');
   const tyconHome = path.join(home, '.tycon');
@@ -298,7 +298,7 @@ test('TA5 TeamAzure_Fetch_ItemsToCacheWithManifest_SecondTimeFromCacheWithoutReq
   } finally { L.stop(); }
 });
 
-// ── story 8.25, tanda A2c · T40 (AC 39): una punta nueva no vuelve a pedir lo que la máquina ya tiene con ese blob ─────────
+// ── T40: una punta nueva no vuelve a pedir lo que la máquina ya tiene con ese blob ─────────
 test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequested', async () => {
   const L = await lab('reuse');
   try {
@@ -365,9 +365,9 @@ test('T40 TeamAzure_NewTipReusesBlobsFromHarnessOrCache_OnlyChangedItemsRequeste
   } finally { L.stop(); }
 });
 
-// ── el reloj de la BAJADA (2026-10-09) ──────────────────────────────────────────────────────────────────────────────────────
-// La primera capa de 115 archivos contra el Azure real no entró: el refresco bajaba archivo por archivo con el reloj de MIRAR,
-// al archivo N le quedaban 118 ms y la salida decía «sin red». El Azure de juguete contesta al instante: acá va LENTO.
+// ── el reloj de la BAJADA ──────────────────────────────────────────────────────────────────────────────────────
+// Una capa grande no puede bajarse con el reloj de MIRAR: si el refresco bajara archivo por archivo con ese reloj,
+// al archivo N le quedarían pocos ms y la salida diría «sin red». El Azure de juguete contesta al instante: acá va LENTO.
 /** Una capa con `n` referencias en una skill de juguete (más el perfil, la llave y su SKILL.md). */
 function publishSkill(L, n) {
   const skill = 'skills/sola-juguete';

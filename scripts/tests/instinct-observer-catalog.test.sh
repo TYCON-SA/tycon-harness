@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# instinct-observer-catalog.test.sh — red de OBSERVADOR-SIN-CATALOGO-2, sin modelo.
+# instinct-observer-catalog.test.sh — red del observador contra lo que ya existe, sin modelo.
 #
-# El grabador de instintos re-proponía lo que ya existe: 11 de las 14 propuestas del 11 al 14 de
-# septiembre de 2026 repetían un instinto ya decidido o un control que ya corre. Desde la versión 2, lo
+# Sin la segunda llamada, el grabador de instintos re-propondría lo que ya existe: repetiría
+# un instinto ya decidido o un control que ya corre. Lo
 # que pasa la confianza y el hash va a una SEGUNDA llamada que lo revisa contra los instintos decididos
 # (con su proyecto; los rechazados con su motivo) y contra el catálogo detallado (qué audita cada revisor,
 # el pre-commit, scripts/ci/), todo leído del disco. Se descarta lo que la revisión cita con un hash o una
 # pieza que su prompt mostró; lo descartado queda en inbox/instincts/descartados/ y `instinct-promote.js list`
-# lo resume. El prompt que PROPONE no cambia: con los decididos adentro, el modelo los copiaba (medido).
+# lo resume. El prompt que PROPONE no cambia: con los decididos adentro, el modelo los copiaría.
 #
 # Cómo corre: el observador se COPIA a un árbol de prueba (así su REPO_ROOT es el árbol, no el arnés)
 # y HOME apunta a una casa de prueba. PATH no tiene ni claude ni codex: si el guion no exportara lo que
@@ -17,7 +17,7 @@
 # Manual: bash scripts/tests/instinct-observer-catalog.test.sh
 set -uo pipefail
 # Una TYCON_HOME heredada del ambiente de quien corre movería la carpeta de usuario de cada caso (tycon-home.js la mira
-# antes que HOME): acá manda la del árbol de prueba (story 8.27, pase adversarial).
+# antes que HOME): acá manda la del árbol de prueba.
 unset TYCON_HOME
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OBS="$TCG/scripts/instincts/instinct-observer.js"
@@ -27,8 +27,7 @@ bad() { echo "❌ $1 — $2"; fallos=$((fallos+1)); }
 
 LAB=$(mktemp -d)
 # Al salir —también cortada con Ctrl-C, Esc o un kill— se cierra todo lo que corre desde el laboratorio.
-# Sin esto, un observador colgado sobrevivió dos días al 100 % de un núcleo con su carpeta ya borrada
-# (lanzado 2026-09-14 17:46, encontrado 2026-09-16).
+# Sin esto, un observador colgado puede sobrevivir días al 100 % de un núcleo con su carpeta ya borrada.
 limpiar() {
   pkill -9 -f "$LAB/" 2>/dev/null
   chmod -R u+rwX "$LAB" 2>/dev/null; rm -rf "$LAB"
@@ -41,8 +40,8 @@ mkdir -p "$LAB/bin"
 ln -sf "$(command -v node)" "$LAB/bin/node"
 
 # Un árbol vacío con el observador (y sus compañeros instinct-promote e instinct-draft) adentro, en
-# scripts/instincts/ y con la biblioteca del arnés en scripts/lib/, como en el arnés (story 8.12, R2).
-# Es un árbol de MANTENEDOR: trae su buzón (inbox/instincts/README.md, la señal que mira instinct-dirs.js — story 8.27),
+# scripts/instincts/ y con la biblioteca del arnés en scripts/lib/, como en el arnés.
+# Es un árbol de MANTENEDOR: trae su buzón (inbox/instincts/README.md, la señal que mira instinct-dirs.js),
 # así que todo se escribe y se lee adentro, como siempre. El árbol que NO lo trae (una versión bajada, la copia pública)
 # tiene su suite: instinct-outside-tree.test.sh. Imprime su ruta.
 arbol() {
@@ -515,9 +514,9 @@ SALIDA=$(punta seco ok claude --dry-run)
   || bad "C-25 dry-run" "$SALIDA"
 
 # ── /tycon-instincts review muestra lo descartado ──────────────────────────────────────────────────
-# Con la carpeta de usuario del árbol de prueba (story 8.27): el comando lee TODOS los lugares donde puede haber
+# Con la carpeta de usuario del árbol de prueba: el comando lee TODOS los lugares donde puede haber
 # propuestas, también el clon que la máquina declara que mantiene. Con la carpeta de usuario real, en una máquina que
-# declara uno, la lista sumaba los descartados de ese clon (medido el 2026-10-09: «2 propuesta(s)» en vez de 1).
+# declara uno, la lista sumaría los descartados de ese clon («2 propuesta(s)» en vez de 1).
 en_e1() { ( cd "$E1" && HOME="$E1/home" USERPROFILE="$E1/home" node scripts/instincts/instinct-promote.js "$@" ); }
 LISTA=$(en_e1 list 2>&1)
 HASH_DESC=$(grep -h '^hash:' "$E1/inbox/instincts/descartados/"*.yaml 2>/dev/null | head -1 | awk '{print $2}')
@@ -581,7 +580,7 @@ CTX=$(con_observador "$A" '[17702, 25526, 500000].map((n) => o.contextoOllama("x
   && ok "C-30 ollama: 8192 para el prompt que propone, 16384 para uno de ~25.000 caracteres, techo 32768" \
   || bad "C-30 contexto de ollama" "dio: $(echo "$CTX" | head -c 200)"
 
-# ── T18 R2_Instincts_ScriptsFindRepoRootAndLib (story 8.12, tanda R2) ────────────────────────────────
+# ── T18 R2_Instincts_ScriptsFindRepoRootAndLib ────────────────────────────────
 # Los tres guiones viven en scripts/instincts/ y los datos en inbox/instincts/: desde ahí tienen que encontrar
 # la raíz del arnés (dos niveles arriba), sus carpetas de datos y la biblioteca (scripts/lib/). El hook que los
 # lanza, el medidor del perfil y los reemplazos de la ruta vieja también. Todo en un árbol de prueba: nada
@@ -636,7 +635,7 @@ else
 fi
 
 # Las rutas viejas salen del mapa de renombres, nunca escritas acá: la copia pública no lleva ni el mapa ni los
-# reemplazos, y ahí lo que las necesita se saltea como NO MEDIDO (convención de la story 8.9).
+# reemplazos, y ahí lo que las necesita se saltea como NO MEDIDO.
 CON_MAPA=""; [ -f "$TCG/scripts/lib/renames.json" ] && CON_MAPA=1
 viejo_de() { # $1 = ruta nueva → la vieja según el mapa (vacío si no hay mapa o entrada)
   [ -n "$CON_MAPA" ] || return 0
@@ -698,9 +697,9 @@ else
   fi
 fi
 
-# ── T18b R2_Instincts_LegacyDiscardedFolderMigrates (story 8.12, tanda R2 — adversarial R2) ─────────────
-# El pase adversarial R2 confirmó: en cada máquina que ya corrió el observador quedan, en la carpeta de antes de la
-# mudanza, archivos locales que nunca viajaron por git. El log se queda (decisión 5), pero `descartados/` es estado: con
+# ── T18b R2_Instincts_LegacyDiscardedFolderMigrates ─────────────
+# En cada máquina que ya corrió el observador quedan, en la carpeta de antes de la
+# mudanza, archivos locales que nunca viajaron por git. El log se queda, pero `descartados/` es estado: con
 # su contador `veces_descartada`, el observador sabe cuántas veces ya descartó lo mismo. Sin migrarlo, el observador e
 # instinct-promote miran sólo inbox/instincts/descartados/ y esa memoria se pierde. La primera corrida después del pull
 # lleva los archivos a la carpeta nueva y lo dice en una línea; la segunda no hace nada. Si un archivo está en las dos

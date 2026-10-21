@@ -1,10 +1,10 @@
 'use strict';
-// agents-md-blocks.test.js — `~/.codex/AGENTS.md` armado desde los bloques del arnés (story 8.23, tanda C · AC 22).
+// agents-md-blocks.test.js — `~/.codex/AGENTS.md` armado desde los bloques del arnés.
 //
 // Lo que no se puede perder:
 //   · los bloques de `claude-md-blocks/` quedan ENTRE SUS MARCAS, con la variante `names/<bloque>.codex.md` donde existe;
 //   · lo que la persona escribió fuera de las marcas queda byte a byte;
-//   · NO depende de `~/.claude/CLAUDE.md`: ni lo lee ni copia lo suyo (hasta la tanda C era una copia entera);
+//   · NO depende de `~/.claude/CLAUDE.md`: ni lo lee ni copia lo suyo;
 //   · no escribe ningún `@import` (Codex no los resuelve);
 //   · un bloque con su integración apagada o fuera del perfil no se agrega, y si estaba se quita; «no se pudo saber» no
 //     es «apagada» (lo que falta no se agrega, lo que está queda y se actualiza);
@@ -208,12 +208,12 @@ test('con los bloques de verdad del arnés: todos entre marcas y la variante de 
   const r = A().sync({ blocksDir: blocks, target, integrations: { ado: true, clockify: true, engram: true, codegraph: true, mailbox: true, codex: true, nightly: true, telegram: true }, profile: 'full', response: { language: 'es', style: 'executive', max_chars: 1300 }, quiet: true });
   assert.strictEqual(r.ok, true);
   const t = read(target);
-  // los bloques de un archivo y los de una carpeta de variantes (story 2.31: response-style)
+  // los bloques de un archivo y los de una carpeta de variantes (response-style)
   const names = [...fs.readdirSync(blocks).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)), 'response-style'];
   assert.ok(names.length >= 3);
   for (const n of names) assert.ok(t.includes(startOf(n)) && t.includes(endOf(n)), `falta ${n}`);
   for (const v of fs.readdirSync(path.join(blocks, 'names')).filter((f) => f.endsWith('.codex.md'))) {
-    // con todas las integraciones prendidas, cada fila sin su marca de integración (story 2.31)
+    // con todas las integraciones prendidas, cada fila sin su marca de integración
     const body = read(path.join(blocks, 'names', v)).replace(/^\n+|\n+$/g, '').replace(/[ \t]*<!--\s*integration:\s*[a-z]+\s*-->/g, '');
     assert.strictEqual(between(t, v.replace(/\.codex\.md$/, '')).replace(/\n$/, ''), body, `la variante ${v} es el cuerpo del bloque`);
   }

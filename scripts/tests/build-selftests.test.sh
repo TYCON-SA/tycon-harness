@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # build-selftests.test.sh — corre los autotests de los controles del pre-commit.
 #
-# POR QUÉ EXISTE (2026-08-25, FIX-7): los tres —ahora cuatro— controles de `build/check.js` traen
-# su propio `--selftest`, y hasta hoy **nadie los corría**. Es exactamente la lección que el propio
-# arnés ya pagó dos veces (`test-runtime-matrix.js` estuvo 8 días en rojo sin que nadie lo viera):
+# POR QUÉ EXISTE: los controles de `build/check.js` traen
+# su propio `--selftest`, y sin esta prueba **nadie los corre**. Es exactamente la lección que el propio
+# arnés ya aprendió (`test-runtime-matrix.js` puede estar días en rojo sin que nadie lo vea):
 # una suite que nada ejecuta es indistinguible de una suite verde. Los autotests son la red de los
 # controles que cuidan a todos los demás — si se pudren, el pre-commit dice OK sobre nada.
 #
@@ -44,9 +44,9 @@ if [ "$rc" -eq 0 ]; then echo "✅ hook-coverage sobre el repo real"; else
   echo "❌ hook-coverage sobre el repo real (exit=$rc)"; printf '%s\n' "$out" | tail -5; fallos=$((fallos+1)); fi
 
 # El censo mira las skills que dice TYCON_SKILLS_DIR —el resolvedor de todo el arnés (scripts/lib/skills-dir.js)—, no
-# sólo las de la HOME (pase adversarial de la story 8.7, tanda B, 2026-10-03). Las ubicaba por ~/.claude/agent-skills e
-# ignoraba la variable: en una máquina sin instalación (la CI pública) dejaba las skills «sin censar» y salía verde, y con
-# otro clon instalado censaba las instaladas y no las del repo que se revisa. Y una raíz que se PIDIÓ por variable y no
+# sólo las de la HOME. Ubicarlas por ~/.claude/agent-skills e
+# ignorar la variable dejaría, en una máquina sin instalación (la CI pública), las skills «sin censar» y saldría verde, y con
+# otro clon instalado censaría las instaladas y no las del repo que se revisa. Y una raíz que se PIDIÓ por variable y no
 # se puede enumerar es rojo, no un aviso: no censar lo que se pidió no es un verde.
 COV="$BUILD/check-hook-coverage.js"
 LAB="$(mktemp -d "${TMPDIR:-/tmp}/hook-coverage.XXXXXX")"; LAB="$(cd "$LAB" && pwd -P)"
@@ -62,7 +62,7 @@ cov_case() { # <nombre> <exit esperado> <texto que tiene que aparecer> <valor de
 cov_case "con TYCON_SKILLS_DIR (la carpeta skills/) censa ESAS skills: un hook sin casos es rojo" 1 "on-new-without-cases.js" "$LAB/repo/skills"
 cov_case "con TYCON_SKILLS_DIR (la raíz del clon) censa ESAS skills: un hook sin casos es rojo" 1 "on-new-without-cases.js" "$LAB/repo"
 cov_case "una raíz de skills pedida por variable que no se puede enumerar es rojo, no un aviso" 1 "no pude enumerar $LAB/partial/skills/tycon-pipeline/scripts" "$LAB/partial/skills"
-# Sin la variable manda el propio clon cuando trae las skills adentro (story 8.18): ahí no falta ninguna raíz y el
+# Sin la variable manda el propio clon cuando trae las skills adentro: ahí no falta ninguna raíz y el
 # censo es el de siempre. Sólo en un arnés sin skills/ (dos repos) y sin instalación la raíz que falta es un aviso.
 if [ -d "$BUILD/../skills/tycon-pipeline" ] && [ -d "$BUILD/../agents" ]; then
   cov_case "sin la variable, en el repo unido, censa las skills del propio clon (ninguna raíz falta)" 0 "hooks en disco" ""

@@ -1,14 +1,12 @@
 'use strict';
 /**
  * hooks-lists-parity.test.js — lo que Windows registra y lo que deja afuera no se desfasan sin que alguien lo diga
- * (story 8.17, tanda W3a · AC 69, T95; desde la tanda W3 · AC 23, sobre la lista única).
+ * (sobre la lista única).
  *
- * EL CASO. Hasta la W3, `install-tycon-hooks.sh` y `install-tycon-hooks.ps1` llevaban cada uno su lista y nada las
- * comparaba: medido el 2026-10-04 en un agente Windows, el `.ps1` registraba 29 de los 42 controles del `.sh` (faltaban
- * 15, entre ellos los dos frenos de comandos). La W3a agregó esta prueba sobre las dos listas; la W3 dejó UNA lista
- * (`scripts/setup/hooks-list.json`) que leen los dos aplicadores, y lo que Windows deja afuera es su campo
- * `platforms.windows: false`. Ya no hay dos listas que se desfasen: quedan tres archivos que dicen cosas sobre los
- * mismos hooks, y esta prueba los cruza.
+ * EL CASO. `install-tycon-hooks.sh` y `install-tycon-hooks.ps1` leen UNA lista (`scripts/setup/hooks-list.json`), y lo
+ * que Windows deja afuera es su campo `platforms.windows: false`. Con dos listas propias, el `.ps1` registraría menos
+ * controles que el `.sh` (entre ellos los dos frenos de comandos) sin que nada lo dijera. Con la lista única quedan tres
+ * archivos que dicen cosas sobre los mismos hooks, y esta prueba los cruza.
  *
  * QUÉ FRENA. Tres reglas:
  *   (a) cada registro con `platforms.windows: false` tiene su guion en `scripts/setup/windows-support.json` → `excluded`
@@ -16,10 +14,10 @@
  *   (b) los guiones excluidos no se registran en Windows por ningún otro de sus eventos;
  *   (c) el campo `windows` de `scripts/tests/fixtures/harness-managed-pieces.json` dice lo mismo que la lista, pieza por
  *       pieza, y no hay pieza «hook» que la lista no tenga ni registro de la lista sin pieza.
- * Y una cuarta (2026-10-04): (d) todo registro de PreToolUse/PostToolUse con `Bash` en el matcher lleva también
+ * Y una cuarta: (d) todo registro de PreToolUse/PostToolUse con `Bash` en el matcher lleva también
  * `PowerShell`. En Windows Claude Code corre los comandos con su herramienta PowerShell (`tool_name: "PowerShell"`), y un
- * hook con matcher `Bash` solo no se dispara: medido ese día en una sesión real, `git add -A` en agent-skills y
- * `git commit --no-verify` pasaron sin que el freno los mirara (code.claude.com/docs/en/tools-reference, «PowerShell tool»).
+ * hook con matcher `Bash` solo no se dispara: `git add -A` en agent-skills y `git commit --no-verify` pasarían sin que
+ * el freno los mirara (code.claude.com/docs/en/tools-reference, «PowerShell tool»).
  * Cada rojo nombra el guion. Las copias de los casos de rojo se arman en memoria.
  *
  * Lo que NO mide: que el aplicador registre de verdad lo que la lista dice (eso es apply-hooks.test.js e
@@ -119,7 +117,7 @@ const copy = (change) => { const c = real(); change(c); return c; };
 const row = (c, spec, event) => { const h = c.list.hooks.find((x) => x.spec === spec && (!event || x.event === event)); assert.ok(h, `no hay registro ${spec}`); return h; };
 const named = (problems, script) => problems.filter((p) => p.includes(script));
 
-// ── T95 · AC 69 (sobre la lista única desde la W3) ────────────────────────────────────────────────────────────────
+// ── T95 (sobre la lista única) ────────────────────────────────────────────────────────────────
 test('T95a HooksLists_RealFiles_NoDrift — con los archivos reales, la lista, lo excluido y la lista de piezas coinciden', () => {
   assert.deepStrictEqual(parityProblems(real()), []);
 });
@@ -193,7 +191,7 @@ test('T95h HooksLists_EmptyReader_IsRed — un lector que no lee nada no da verd
   assert.ok(problems.some((p) => p.startsWith('reader: sólo leí 0 registros de la lista')), problems.join('\n'));
 });
 
-// ── (d) la herramienta PowerShell de Claude Code (2026-10-04) ───────────────────────────────────────────────────────
+// ── (d) la herramienta PowerShell de Claude Code ───────────────────────────────────────────────────────
 test('PS1a HooksLists_ShellCommandRows_CoverPowerShell — todo registro que mira comandos cubre también la herramienta PowerShell', () => {
   assert.deepStrictEqual(shellToolProblems(real()), []);
   for (const g of ['@tcg:safety-guard-pre.sh', '@tcg:test-scope-guard-pre.sh']) {

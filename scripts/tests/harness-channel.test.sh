@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# harness-channel.test.sh — los dos canales del repo público, de punta a punta (story 8.13, tanda D · AC 25 · T31:
+# harness-channel.test.sh — los dos canales del repo público, de punta a punta (T31:
 # `Channel_BothRefsReset_NumericNoDowngrade_LatestToStable_PreviousSurvivesGc`).
 #
 # Lo que no se puede perder:
@@ -23,19 +23,20 @@
 #
 #   ROTO · un `version.json` que no se deja leer NO es «sin número»: `update` no mueve el clon, sale 2 («no pude mirar») y
 #          nombra la ref y el archivo, en los dos canales; `startup` lo deja en el aviso y la mirada no cuenta.
-#   PULL · (pase adversarial, causa B) un clon del público cuyo `HEAD` avanzó en `main` ANTES de su primera actualización
+#   PULL · un clon del público cuyo `HEAD` avanzó en `main` ANTES de su primera actualización
 #          —un `git pull` a mano, o el respaldo en shell— no queda bloqueado: `update` lo re-registra y la versión
 #          siguiente entra; ya en `tycon/installed`, con `HEAD` en la punta sin registrar, también se re-registra. Una
 #          rama propia con un commit propio no se toca, y el comando que el mensaje aconseja SE PUEDE correr.
-#   NEST · (causa C) una carpeta sin seguir que es un repo de git propio, contra una versión que trae rutas bajo ella:
+#   NEST · una carpeta sin seguir que es un repo de git propio, contra una versión que trae rutas bajo ella:
 #          no se toca nada, se nombra, y lo que la persona tenía sin commitear sigue ahí.
-#   CASE · (causa D) una ruta sin seguir que difiere sólo en la caja de una que la versión nueva trae: en el disco de Mac
+#   CASE · una ruta sin seguir que difiere sólo en la caja de una que la versión nueva trae: en el disco de Mac
 #          y de Windows es el mismo archivo; no se toca nada y se nombran las dos.
-#   REF  · (segunda vuelta de revisores) una rama `tycon/installed` que no se puede LEER no es «todavía no existe»:
+#   REF  · una rama `tycon/installed` que no se puede LEER no es «todavía no existe»:
 #          `update` y `rollback` no mueven el clon, salen con su código de «no pude» y nombran la ref; `doctor`, en rojo.
 #
-#   T48  · (story 8.16, tanda D · AC 34) `channel` escribe con el escritor único de la configuración (`setKey`) y el
-#          archivo queda byte a byte como lo dejaba antes: las otras secciones, su orden y sus nombres, intactos.
+#   T48  · `channel` escribe con el escritor único de la configuración (`setKey`) y el
+#          archivo queda byte a byte como lo dejaría un escritor propio de `channel`:
+#          las otras secciones, su orden y sus nombres, intactos.
 #
 # Uso: bash scripts/tests/harness-channel.test.sh [--only T31|OTRO|D3|A5|ROTO|PULL|NEST|CASE|REF|T48]
 set -uo pipefail
@@ -59,9 +60,9 @@ fuente() { estado "d['sources'][0]['$1']"; }
 export TYCON_UPDATE_APPLY=auto   # las actualizaciones se aplican con `update` a secas (la política `ask` la mide T32)
 
 # ═══ T31 · Channel_BothRefsReset_NumericNoDowngrade_LatestToStable_PreviousSurvivesGc ════════════════════════════════
-# 🔴 rojo previo (medido con el programa de antes de la tanda D sobre este mismo guion): `install` dejaba `rewrites:
-#    False` (el clon público no se reconocía), `update` no traía `mirror/sync` («arnés al día» con la ref en `main`), y
-#    `channel stable` no decía «no se baja»: bajaba, o no hacía nada.
+# 🔴 Rojo con un programa sin esta conducta: `install` deja `rewrites:
+#    False` (el clon público no se reconoce), `update` no trae `mirror/sync` («arnés al día» con la ref en `main`), y
+#    `channel stable` no dice «no se baja»: baja, o no hace nada.
 if corre T31; then
   harness_lab_create "$BASE/t31" >/dev/null
   harness_lab_public
@@ -149,7 +150,7 @@ if corre T31; then
 fi
 
 # ═══ OTRO · con un remoto que no es el público: main sin reescritura, y lo dice ═══════════════════════════════════════
-# 🔴 rojo previo: `doctor` y `channel` no decían nada del remoto (el caso «es un clon interno» no se nombraba).
+# 🔴 Rojo con un programa sin esta conducta: `doctor` y `channel` no dicen nada del remoto (el caso «es un clon interno» no se nombra).
 if corre OTRO; then
   harness_lab_create "$BASE/otro" >/dev/null
   harness_lab_public "https://example.invalid/example-org/example-harness"
@@ -169,10 +170,10 @@ if corre OTRO; then
 fi
 
 # ═══ D3 · una skill propia sin seguir dentro del clon: sin choque avanza, con choque no ═══════════════════════════════
-# 🔴 rojo previo: está en el caso de módulo (`harness-state.test.js`, «T7·módulo · ref reescrita»): con el `plan` de la
-#    tanda A cualquier archivo sin seguir trababa el reset («el árbol tiene cambios fuera de lo ignorado…»). ESTE recorrido
-#    entero pasaba con el programa viejo por otro camino —no reconocía el clon público y avanzaba con `merge --ff-only`—:
-#    acá se mide que, ya reconocido como público (rama `tycon/installed` + `reset --hard`), el archivo de la persona no
+# 🔴 Está en el caso de módulo (`harness-state.test.js`, «T7·módulo · ref reescrita»): con un `plan` que no distinga,
+#    cualquier archivo sin seguir traba el reset («el árbol tiene cambios fuera de lo ignorado…»). ESTE recorrido
+#    entero pasaría con un programa que no reconociera el clon público y avanzara con `merge --ff-only`:
+#    acá se mide que, reconocido como público (rama `tycon/installed` + `reset --hard`), el archivo de la persona no
 #    se pisa.
 if corre D3; then
   harness_lab_create "$BASE/d3" >/dev/null
@@ -197,7 +198,7 @@ if corre D3; then
 fi
 
 # ═══ A5 · con una ref que se reescribe se mueve sólo desde tycon/installed ════════════════════════════════════════════
-# 🔴 rojo previo: desde otra rama `update` hacía `checkout -B tycon/installed` + `reset --hard` y sacaba a la persona de
+# 🔴 Rojo con un programa sin esta conducta: desde otra rama `update` hace `checkout -B tycon/installed` + `reset --hard` y saca a la persona de
 #    su rama sin avisar.
 if corre A5; then
   harness_lab_create "$BASE/a5" >/dev/null
@@ -219,11 +220,11 @@ if corre A5; then
 fi
 
 # ═══ ROTO · la versión nueva trae un version.json que no se deja leer: «no sé», nunca «nueva» ═════════════════════════
-# (revisión de la tanda D, fallos silenciosos) Sin poder leer el número de lo traído no se sabe si es más nuevo: `update`
+# Sin poder leer el número de lo traído no se sabe si es más nuevo: `update`
 # NO mueve el clon, sale con el código de «no pude mirar» (2) y lo dice nombrando la ref y el archivo; `startup` lo deja
 # en el aviso y en el registro como cualquier «no pude mirar», y esa mirada no cuenta. En los dos canales.
-# 🔴 rojo previo: `update` daba «arnés … → …» y dejaba el clon en el commit del version.json roto (rc 0), en los dos
-#    canales: un número ilegible se leía como «sin número» y `latest` aplicaba (y `stable`, por no ser ancestro).
+# 🔴 Rojo con un programa sin esta conducta: `update` da «arnés … → …» y deja el clon en el commit del version.json roto (rc 0), en los dos
+#    canales: un número ilegible se lee como «sin número» y `latest` aplica (y `stable`, por no ser ancestro).
 if corre ROTO; then
   LOG="$BASE/roto/home/.claude/.tycon-pipeline/harness/startup.log"
   harness_lab_create "$BASE/roto" >/dev/null
@@ -256,7 +257,7 @@ if corre ROTO; then
   harness_lab_publish_stable 2026.10.02.3
   SALIDA="$(harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$(harness_lab_remote_head main)" ] && [ "$(estado "d['version']['number']")" = 2026.10.02.3 ] && ok "ROTO espejo: arreglado el archivo, update aplica" || mal "ROTO espejo: rc $RC HEAD $(head_de "$LAB_TREE"): $SALIDA"
-  # latest: la sincronización trae el archivo roto — tampoco se aplica (antes, «sin número» en latest era «aplicar»)
+  # latest: la sincronización trae el archivo roto — tampoco se aplica (un «sin número» en latest no se lee como «aplicar»)
   harness channel latest >/dev/null 2>&1 || mal "ROTO channel latest falló"
   SANO="$(head_de "$LAB_TREE")"
   LAB_VERSION_RAW='{ "version": roto' harness_lab_publish_sync rota
@@ -268,7 +269,7 @@ if corre ROTO; then
 
   # A11 («si su número es menor que el de main, latest lee main»): con el número de main ilegible no se elige rama a
   # ciegas — «no pude mirar»; y `channel stable`, que dice «no se baja» con lo último traído, dice que no lo pudo leer
-  # 🔴 rojo previo (channel): `channel stable` no decía nada del archivo (sólo «canal: latest → stable»).
+  # 🔴 Rojo con un programa sin esta conducta: `channel stable` no dice nada del archivo (sólo «canal: latest → stable»).
   SANO="$(head_de "$LAB_TREE")"
   LAB_VERSION_RAW='{ "version": roto' harness_lab_publish_stable rota
   SALIDA="$(harness update 2>&1)"; RC=$?
@@ -279,8 +280,8 @@ if corre ROTO; then
 
   # un remoto que NO es el público va por ancestría (main no se reescribe: no hay cómo bajar), así que la versión se
   # ofrece igual; pero el AVISO no le inventa un número a un version.json que no se pudo leer
-  # 🔴 rojo previo: con `numberAt` ya devolviendo «problema» y el aviso sin tocar, `startup` no dejaba aviso (falla
-  #    interna al armarlo); con el programa de antes de este arreglo el aviso llevaba el número derivado (fecha+sha), como
+  # 🔴 Rojo con un programa sin esta conducta: con `numberAt` devolviendo «problema» y el aviso sin adaptar, `startup` no deja aviso (falla
+  #    interna al armarlo); un aviso que no distinga lleva el número derivado (fecha+sha), como
   #    si el commit no trajera el archivo.
   harness_lab_create "$BASE/roto-interno" >/dev/null
   harness install --yes >/dev/null 2>&1 || mal "ROTO install previo (interno) falló"
@@ -294,15 +295,15 @@ if corre ROTO; then
   [ "$(head_de "$LAB_TREE")" = "$ANTES" ] && ok "ROTO …y ask no aplica" || mal "ROTO ask aplicó"
 fi
 
-# ═══ PULL · el clon que avanzó en main antes de su primera actualización no queda bloqueado (causa B) ════════════════
+# ═══ PULL · el clon que avanzó en main antes de su primera actualización no queda bloqueado ════════════════
 # La regla aprobada no cambia: no se saca a una persona de una rama propia ni se pisan commits propios. Lo que se cierra
 # es el callejón: «la primera vez» vale también para un avance simple en la rama por defecto (un `git pull` a mano, el
 # `git pull --ff-only` del respaldo en shell), y ningún mensaje aconseja un comando que no puede funcionar.
-# 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 21 MAL — con el pull a mano y
-#    con el respaldo en shell, `update` y `update --check` salían 2 con «harness está en la rama main y no en
-#    tycon/installed: no se toca (git -C … checkout tycon/installed)», la versión siguiente nunca entraba y `doctor`
-#    quedaba en rojo; en `tycon/installed` con HEAD en la punta, «arnés al día» sin re-registrar y `doctor` en rojo; con
-#    la rama propia, el comando aconsejado fallaba («pathspec 'tycon/installed' did not match»).
+# 🔴 Rojo con un programa sin esta conducta: 21 MAL — con el pull a mano y
+#    con el respaldo en shell, `update` y `update --check` salen 2 con «harness está en la rama main y no en
+#    tycon/installed: no se toca (git -C … checkout tycon/installed)», la versión siguiente nunca entra y `doctor`
+#    queda en rojo; en `tycon/installed` con HEAD en la punta, «arnés al día» sin re-registrar y `doctor` en rojo; con
+#    la rama propia, el comando aconsejado falla («pathspec 'tycon/installed' did not match»).
 fallos_de_doctor() { harness doctor --json 2>/dev/null | python3 -c "import json,sys; print(' | '.join(json.loads(sys.stdin.read())['fail']))" 2>/dev/null; }
 hay_rama() { harness_lab_git "$1" rev-parse --verify -q "refs/heads/$2" >/dev/null 2>&1; }
 # el comando que un mensaje aconseja, corrido TAL CUAL (sin las variables de git de quien corre la prueba)
@@ -329,7 +330,7 @@ if corre PULL; then
   [ "$RC" = 0 ] && [ "$(fuente commit)" = "$P1" ] && [ "$(estado "d['version']['number']")" = 2026.10.02.1 ] && ok "PULL …update re-registra el commit y la versión (2026.10.02.1)" || mal "PULL (a) update: rc $RC registrado $(fuente commit) (HEAD $P1) versión $(estado "d['version']['number']"): $SALIDA"
   case "$SALIDA" in *"commit re-registrado: harness ${R0:0:7} → ${P1:0:7}"*) ok "PULL …y lo dice" ;; *) mal "PULL (a) update no dice el re-registro: $SALIDA" ;; esac
   [ -z "$(fallos_de_doctor)" ] && ok "PULL …y doctor no queda en rojo" || mal "PULL (a) doctor sigue en rojo: $(fallos_de_doctor)"
-  # sale otra versión: otro pull a mano, y la que sigue ENTRA (antes: bloqueado para siempre)
+  # sale otra versión: otro pull a mano, y la que sigue ENTRA (sin bloqueo permanente)
   harness_lab_publish_stable 2026.10.02.2
   harness_lab_git "$LAB_TREE" pull -q --ff-only origin main >/dev/null 2>&1
   harness_lab_publish_stable 2026.10.03.1
@@ -358,7 +359,7 @@ if corre PULL; then
   SALIDA="$(harness update 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$(harness_lab_remote_head main)" ] && [ "$(rama_de "$LAB_TREE")" = tycon/installed ] && [ -z "$(fallos_de_doctor)" ] && ok "PULL …y update aplica la versión siguiente (tycon/installed, doctor sin rojo)" || mal "PULL (b) update: rc $RC rama $(rama_de "$LAB_TREE") HEAD $(head_de "$LAB_TREE") doctor: $(fallos_de_doctor): $SALIDA"
 
-  # (c) ya en tycon/installed, HEAD llevado a mano a la punta de lo traído: «al día» re-registra (antes: doctor en rojo
+  # (c) ya en tycon/installed, HEAD llevado a mano a la punta de lo traído: «al día» re-registra (sin dejar doctor en rojo
   #     hasta la versión siguiente)
   harness_lab_create "$BASE/pull-c" >/dev/null
   harness_lab_public
@@ -413,11 +414,11 @@ if corre PULL; then
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$(harness_lab_remote_head main)" ] && [ "$(harness_lab_git "$LAB_TREE" rev-parse mine)" = "$MIO" ] && [ -z "$(fallos_de_doctor)" ] && ok "PULL …después update aplica, sin tocar la rama de la persona, y doctor sin rojo" || mal "PULL (d) update tras el remedio: rc $RC: $SALIDA · doctor: $(fallos_de_doctor)"
 fi
 
-# ═══ NEST · una carpeta sin seguir que es un repo de git propio (causa C) ════════════════════════════════════════════
+# ═══ NEST · una carpeta sin seguir que es un repo de git propio ════════════════════════════════════════════
 # git la lista como `carpeta/`, con barra final, y no dice qué hay adentro: choca con cualquier ruta que la versión nueva
 # traiga bajo ella.
-# 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 5 MAL — `update` salía 0
-#    («arnés … → …»), el clon avanzaba y `skills/mine/SKILL.md` quedaba con «la del arnés»: el trabajo sin commitear del
+# 🔴 Rojo con un programa sin esta conducta: 5 MAL — `update` sale 0
+#    («arnés … → …»), el clon avanza y `skills/mine/SKILL.md` queda con «la del arnés»: el trabajo sin commitear del
 #    repo anidado, perdido sin copia.
 if corre NEST; then
   harness_lab_create "$BASE/nest" >/dev/null
@@ -443,12 +444,12 @@ if corre NEST; then
   [ "$(cat "$MIA/SKILL.md" 2>/dev/null)" = "TRABAJO SIN COMMITEAR" ] && [ "$(cat "$MIA/NOTES.md" 2>/dev/null)" = "notas mías" ] && [ "$(harness_lab_git "$MIA" status --porcelain | tr -s ' \n' ' ')" = " M SKILL.md ?? NOTES.md " ] && ok "NEST …y el repo anidado queda igual (lo modificado y lo sin seguir, en su lugar)" || mal "NEST espejo: el repo anidado cambió: «$(harness_lab_git "$MIA" status --porcelain | tr -s ' \n' ' ')»"
 fi
 
-# ═══ CASE · una ruta que difiere sólo en la caja (causa D) ═══════════════════════════════════════════════════════════
+# ═══ CASE · una ruta que difiere sólo en la caja ═══════════════════════════════════════════════════════════
 # En el disco de Mac y de Windows `Notes.md` y `notes.md` son el MISMO archivo. La comparación iguala la caja (y la forma
 # de los acentos) sin mirar el disco: en uno que sí distingue frena de más, que es lo aceptado; por eso este caso vale
 # igual en Linux. El criterio, con rutas sueltas, lo mide `harness-state.test.js` («T7·módulo · D3, los choques…»).
-# 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion, en un disco de Mac): 6 MAL —
-#    `update` salía 0 las dos veces y `Notes.md` y `skills-own/Mine/SKILL.md` quedaban con el contenido publicado.
+# 🔴 Rojo con un programa sin esta conducta: 6 MAL, en un disco de Mac —
+#    `update` sale 0 las dos veces y `Notes.md` y `skills-own/Mine/SKILL.md` quedan con el contenido publicado.
 if corre CASE; then
   harness_lab_create "$BASE/case" >/dev/null
   harness_lab_public
@@ -480,14 +481,14 @@ if corre CASE; then
   [ "$RC" = 0 ] && [ "$(cat "$LAB_TREE/skills-own/mine/SKILL.md" 2>/dev/null)" = "DEL ARNES" ] && [ "$(cat "$LAB_TREE/skills-own/Mine-propia/SKILL.md" 2>/dev/null)" = "MIO (Mine)" ] && ok "CASE espejo: una carpeta con nombre realmente distinto no traba, y queda como estaba" || mal "CASE espejo (carpeta): rc $RC: $SALIDA"
 fi
 
-# ═══ REF · una rama tycon/installed que no se puede leer no es «la primera vez» (segunda vuelta de revisores) ═══════
-# «La primera vez» se decidía por un `.ok` falso de git, y un ref roto (basura en su archivo) sale igual que uno ausente:
-# el clon se movía sin saber si la rama del mecanismo existía. Ahora es «no pude leer»: no se mueve nada, se nombra la
+# ═══ REF · una rama tycon/installed que no se puede leer no es «la primera vez» ═══════
+# Decidir «la primera vez» por un `.ok` falso de git sería un error: un ref roto (basura en su archivo) sale igual que uno ausente,
+# y el clon se movería sin saber si la rama del mecanismo existe. Por eso es «no pude leer»: no se mueve nada, se nombra la
 # ref y cada comando sale con su código de «no pude» (update 2; rollback 1; doctor en rojo).
-# 🔴 rojo previo (medido con el programa de antes de este arreglo sobre este mismo guion): 5 MAL — `update` no decía qué
-#    ref no pudo leer (salía 2 de casualidad: `offInstalledBranch` daba vía libre y el que tropezaba era el fetch de git,
-#    «no pude traer … bad object»); `doctor` prometía «update lo re-registra»; `startup` no dejaba aviso; `rollback`
-#    aconsejaba `checkout -b tycon/installed`, como si la rama no existiera. El «podés moverte» con la ref rota, medido
+# 🔴 Rojo con un programa sin esta conducta: 5 MAL — `update` no dice qué
+#    ref no pudo leer (sale 2 de casualidad: `offInstalledBranch` da vía libre y el que tropieza es el fetch de git,
+#    «no pude traer … bad object»); `doctor` promete «update lo re-registra»; `startup` no deja aviso; `rollback`
+#    aconseja `checkout -b tycon/installed`, como si la rama no existiera. El «podés moverte» con la ref rota, medido
 #    sobre la función, está en `harness-state.test.js` («T7·módulo · una ref en tres estados…»).
 if corre REF; then
   LA_REF="refs/heads/tycon/installed"
@@ -531,11 +532,11 @@ if corre REF; then
   [ "$RC" = 0 ] && [ "$(head_de "$LAB_TREE")" = "$P1" ] && [ "$(rama_de "$LAB_TREE")" = tycon/installed ] && ok "REF espejo: y rollback, con la rama sana, vuelve a la versión anterior" || mal "REF espejo rollback: rc $RC rama $(rama_de "$LAB_TREE") HEAD $(head_de "$LAB_TREE") (esperado $P1): $SALIDA"
 fi
 
-# ═══ T48 · Channel_Set_WritesThroughSetKey_SameResult (story 8.16, tanda D · AC 34) ══════════════════════════════════
-# Desde la tanda D hay UN escritor de ~/.claude/tycon.json (`setKey` de scripts/lib/tycon-config.js), y `channel` lo usa.
-# Lo que no puede cambiar es el resultado: el archivo queda como lo dejaba el escritor de antes —el JSON leído, con
+# ═══ T48 · Channel_Set_WritesThroughSetKey_SameResult ══════════════════════════════════
+# Hay UN escritor de ~/.claude/tycon.json (`setKey` de scripts/lib/tycon-config.js), y `channel` lo usa.
+# Lo que no puede cambiar es el resultado: el archivo queda como lo dejaría un escritor propio de `channel` —el JSON leído, con
 # `update.channel` fijado y todo lo demás en su orden y con sus nombres, escrito con dos espacios y un salto final—.
-# Fija la conducta: con el escritor de antes también pasa (es lo que se compara). Lo que la haría fallar es un escritor
+# Fija la conducta: con un escritor propio también pasa (es lo que se compara). Lo que la haría fallar es un escritor
 # que reordene, renombre o pierda una sección o una clave.
 if corre T48; then
   echo "T48 · Channel_Set_WritesThroughSetKey_SameResult"
@@ -544,7 +545,7 @@ if corre T48; then
   harness install --yes >/dev/null 2>&1 || mal "T48 install previo falló"
   printf '%s\n' '{' '  "ado": { "org": "https://dev.azure.com/acme" },' '  "integrations": { "engram": true, "clockify": false },' \
     '  "update": { "apply": "auto" },' '  "packs": { "default": "all" },' '  "install": { "profile": "full" }' '}' > "$LAB_HOME/.claude/tycon.json"
-  # lo que dejaba el escritor de antes (channel.js hasta la tanda C), calculado aparte
+  # lo que dejaría un escritor propio de `channel`, calculado aparte
   python3 - "$LAB_HOME/.claude/tycon.json" "$BASE/t48/esperado.json" <<'PY2'
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -557,7 +558,7 @@ PY2
   if [ "$RC" = 0 ] && cmp -s "$LAB_HOME/.claude/tycon.json" "$BASE/t48/esperado.json"; then ok "T48 channel latest sobre un tycon.json con otras secciones: el mismo archivo que dejaba el escritor de antes, byte a byte"
   else mal "T48 channel latest: rc $RC · $(diff "$LAB_HOME/.claude/tycon.json" "$BASE/t48/esperado.json" | head -6 | tr '\n' ' ') · $SALIDA"; fi
   case "$SALIDA" in *"canal: (por defecto) → latest en "*) ok "T48 …y dice antes → después como siempre" ;; *) mal "T48 la línea de channel cambió: $SALIDA" ;; esac
-  # un tycon.json roto: no se escribe (lo mismo que antes)
+  # un tycon.json roto: no se escribe (el archivo roto queda como está)
   printf '{ roto\n' > "$LAB_HOME/.claude/tycon.json"
   SALIDA="$(harness channel stable 2>&1)"; RC=$?
   [ "$RC" = 2 ] && [ "$(cat "$LAB_HOME/.claude/tycon.json")" = '{ roto' ] && ok "T48 un tycon.json roto: 2 y no se escribe" || mal "T48 tycon.json roto: rc $RC · $(cat "$LAB_HOME/.claude/tycon.json") · $SALIDA"

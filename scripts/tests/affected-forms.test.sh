@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Prueba de affected-forms.js — qué formularios hay que probar y construir por un cambio.
 #
-# Nace de una pregunta del dev (2026-09-01): "hacemos las pruebas sólo de los formularios que
-# cambiaron, pero construimos todos, ¿está bien?". Medido, los dos criterios estaban mal en algún
-# producto: en Totora los 4 formularios se importan entre sí (probar sólo lo cambiado pierde
-# roturas) y en FRESNO ninguno depende de otro (construir todos tira 32 de 33).
+# Pregunta que motiva la prueba: "hacemos las pruebas sólo de los formularios que
+# cambiaron, pero construimos todos, ¿está bien?". Medido, cada uno de los dos criterios falla en algún
+# producto: en uno los 4 formularios se importan entre sí (probar sólo lo cambiado pierde
+# roturas) y en otro ninguno depende de otro (construir todos tira 32 de 33).
 set -uo pipefail
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SH_JS="$AQUI/scripts/ci/affected-forms.js"
@@ -23,7 +23,7 @@ mundo(){
   echo "import { x } from '../../form-a/src/x';" > "$R/form-b/src/y.ts"
   echo "export const z = 3;" > "$R/form-c/src/z.ts"
   echo "export const s = 0;" > "$R/shared/s.ts"
-  # 🔴 El mundo es un repo git con una deuda YA DECLARADA en la base (2026-09-05). Sin eso no se
+  # 🔴 El mundo es un repo git con una deuda YA DECLARADA en la base. Sin eso no se
   # puede probar lo que importa: qué pasa cuando una declaración de deuda ENTRA o SALE. HEAD~1
   # tiene que existir, así que van dos commits.
   ( cd "$R" \
@@ -90,8 +90,8 @@ G2=$(node "$SH_JS" --repo "$R" --graph 2>/dev/null)
 echo "$G2" | grep "form-c -> (nada)" >/dev/null && ok "un import a un paquete de npm no cuenta como dependencia entre formularios" || no "🔴 confundió un paquete de npm con un formulario"
 
 # ---------------------------------------------------------------- 9. el pipeline y la documentación NO afectan
-# 🔴 Caso visto en vivo (2026-09-01): un cambio a `azure-pipelines.yml` disparaba las pruebas de
-# los 34 formularios. Era la regla de seguridad funcionando —lo de afuera afecta a todos— pero es
+# 🔴 Sin esto, un cambio a `azure-pipelines.yml` dispara las pruebas de
+# los 34 formularios. Es la regla de seguridad funcionando —lo de afuera afecta a todos— pero es
 # el caso MÁS FRECUENTE (se edita el pipeline todo el tiempo) y probar los 34 no verifica ese
 # cambio mejor que probar uno: el pipeline nuevo ya se está usando en esa misma corrida.
 R8=$(corre "azure-pipelines.yml")
@@ -100,8 +100,8 @@ R8=$(corre "azure-pipelines.yml")
   || no "🔴 un cambio al pipeline afectó a [$(echo $R8)] — vuelve a probar los 34 por nada"
 grep -q "no afectan a ningún formulario" "$TMP/err.txt" && ok "…y lo explica" || no "no explicó por qué no afecta a nadie"
 
-# 🔴 2026-09-02: la memoria del agente (.engram/) tampoco — medido: aparece en casi cada merge de
-# 4 de los 5 repos y, con el bump por afectados, habría versionado y desplegado TODOS.
+# 🔴 la memoria del agente (.engram/) tampoco afecta — aparece en casi cada merge de
+# 4 de los 5 repos y, con el bump por afectados, versionaría y desplegaría TODOS.
 R9b=$(corre ".engram/chunks/abc123.jsonl.gz" ".engram/manifest.json")
 [ -z "$(echo "$R9b" | tr -d '[:space:]')" ] && ok "la memoria del agente (.engram/) no afecta a ningún formulario" || no "🔴 .engram/ afectó a [$(echo $R9b)] — cada merge versionaría todos"
 R9=$(corre "README.md" "docs/algo.md")
@@ -121,9 +121,9 @@ R11=$(corre "azure-pipelines.yml" "form-a/src/x.ts")
   || no "🔴 la mezcla dio [$(echo $R11)]"
 
 # ---------------------------------------------------------------- 10. 🔴 "SIN FORMULARIOS" NO ES "NADA AFECTADO"
-# (2026-09-02, revisión adversarial B#4). Devolvía vacío + exit 0 en los dos casos, y el README
-# prometía "devuelve todos". Un `--repo` mal resuelto dejaba el pull request VERDE sin construir
-# nada. Ahora "no encontré ningún formulario" sale 3, para que quien llama pueda distinguirlo.
+# Devolver vacío + exit 0 en los dos casos los haría indistinguibles, y el README
+# promete "devuelve todos". Un `--repo` mal resuelto dejaría el pull request VERDE sin construir
+# nada. "No encontré ningún formulario" sale 3, para que quien llama pueda distinguirlo.
 mkdir -p "$TMP/sin-forms/cosas"; echo x > "$TMP/sin-forms/cosas/a.ts"
 printf 'cosas/a.ts\n' | node "$SH_JS" --repo "$TMP/sin-forms" --changed - >"$TMP/o10.txt" 2>"$TMP/e10.txt"; rc=$?
 [ "$rc" -eq 3 ] && ok "🔴 un repo sin formularios sale 3 (no vacío + 0, que se lee como 'nada afectado')" || no "🔴 sin formularios salió $rc: $(cat "$TMP/e10.txt")"
@@ -133,8 +133,8 @@ R12=$(corre "azure-pipelines.yml"); rc=$?
 [ "$rc" -eq 0 ] && [ -z "$(echo "$R12" | tr -d '[:space:]')" ] && ok "…mientras que 'nada afectado' sigue siendo vacío + 0" || no "🔴 nada afectado salió $rc / [$(echo $R12)]"
 
 # ---------------------------------------------------------------- 11. 🔴 FORMULARIO BORRADO O RENOMBRADO → no afecta a todos
-# (2026-09-02, B#3). Sus rutas viejas no caen en ningún formulario, así que por posición eran "de
-# afuera" → TODOS (33 bumps en FRESNO por borrar uno). Se reconoce por el package.json en el diff.
+# Sus rutas viejas no caen en ningún formulario, así que por posición serían "de
+# afuera" → TODOS (33 bumps por borrar uno). Se reconoce por el package.json en el diff.
 mundo
 R13=$(corre "form-viejo/package.json" "form-viejo/src/x.ts"); rc=$?
 [ "$rc" -eq 0 ] && [ -z "$(echo "$R13" | tr -d '[:space:]')" ] && ok "🔴 borrar un formulario (su package.json en el diff, carpeta ausente) no afecta a nadie" || no "🔴 un formulario borrado afectó a [$(echo $R13)] (rc=$rc)"
@@ -146,15 +146,15 @@ R15=$(corre "shared-vieja/s.ts")
 [ "$(echo "$R15" | sort | tr '\n' ' ')" = "form-a form-b form-c " ] && ok "…y una carpeta compartida borrada (sin package.json) sigue afectando a todos" || no "🔴 la excepción del borrado se comió una carpeta compartida: [$(echo $R15)]"
 
 # ---------------------------------------------------------------- 12. 🔴 LOS ARCHIVOS DEL PROPIO ARNÉS
-# (2026-09-04). Medido sobre los últimos 80 commits de main de los SEIS repos de formularios: lo
-# que más disparaba "afecta a TODOS" eran archivos que sólo LEE EL PIPELINE, nunca el compilador.
+# Medido sobre los últimos 80 commits de main de los SEIS repos de formularios: lo
+# que más dispara "afecta a TODOS" son archivos que sólo LEE EL PIPELINE, nunca el compilador.
 # Y en main eso no es sólo tiempo: sube la versión de todos los formularios y los redespliega.
-# Pasó en un producto del equipo el 2026-09-04 — ocho formularios redesplegados sin una línea de código nueva.
+# Sin esto, ocho formularios se redesplegarían sin una línea de código nueva.
 #
-# 🔴 2026-09-23: volvió a pasar, y por la carpeta que faltaba en la lista. `.advisors/` guarda la
+# 🔴 La lista incluye `.advisors/`: guarda la
 # evidencia de cada corrida y VIAJA por git a propósito, así que crece en cada story: es la que
-# más cambia de todas. En Totora FrontEnd, un `findings.json` de la corrida CO-3 —de hace un
-# mes— mandó a versionar y redesplegar los CUATRO formularios.
+# más cambia de todas. Sin esa entrada, un `findings.json` de una corrida vieja
+# mandaría a versionar y redesplegar los CUATRO formularios.
 mundo
 for inerte in pruebas-pendientes.json vulnerabilidades-pendientes.json \
               vulnerabilidades-formularios-pendientes.json .tycon/advisors.yaml \
@@ -190,15 +190,15 @@ RM=$(corre "pruebas-pendientes.json" "form-c/src/z.ts")
 
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
-# LA DECLARACIÓN DE DEUDA DE PRUEBAS: no afecta al paquete, pero sí a quién se JUZGA (2026-09-05)
+# LA DECLARACIÓN DE DEUDA DE PRUEBAS: no afecta al paquete, pero sí a quién se JUZGA
 #
-# Caso real: un pull request de los formularios de un producto del equipo. Decía "<formulario> pagó su deuda de
-# pruebas" y lo único que hacía era BORRAR su entrada de pruebas-pendientes.json, sin agregar una
-# sola prueba. El pull request salió VERDE —el archivo estaba en NO_AFECTAN, así que no se juzgó a
-# nadie— y el rojo llegó recién en main, con el merge ya hecho.
+# Caso: un pull request de los formularios de un producto dice "<formulario> pagó su deuda de
+# pruebas" y lo único que hace es BORRAR su entrada de pruebas-pendientes.json, sin agregar una
+# sola prueba. Sin el control, sale VERDE —el archivo está en NO_AFECTAN, así que no se juzga a
+# nadie— y el rojo llega recién en main, con el merge ya hecho.
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ---- 12. EL CASO REAL: sale una entrada → ese formulario tiene que probarse
+# ---- 12. sale una entrada → ese formulario tiene que probarse
 mundo
 deuda '{"sin_pruebas":[],"con_pruebas_en_rojo":[{"formulario":"form-a","fallan":3,"de":10,"motivo":"m","fecha":"2026-09-01","revision":"2026-12-01"}]}'
 RD=$(corre "pruebas-pendientes.json")
@@ -239,7 +239,7 @@ fi
 
 # ---- 16. el bump de versión NO cambia de conducta (--no-debt)
 # Tocar la declaración no cambia una línea del código construido: versionar por eso redesplegaría
-# formularios idénticos, que es justo lo que NO_AFECTAN vino a evitar (un producto del equipo, 2026-09-04).
+# formularios idénticos, que es justo lo que NO_AFECTAN evita.
 mundo
 deuda '{"sin_pruebas":[],"con_pruebas_en_rojo":[]}'
 RH=$(corre_flags "--no-debt" "pruebas-pendientes.json"); rc=$?

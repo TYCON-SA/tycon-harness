@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# clean-machine.test.sh — la máquina limpia (story 8.7, tanda C · T24, T26-T31, T34; story 8.13, tanda D · su T34).
+# clean-machine.test.sh — la máquina limpia (T24, T26-T31, T34).
 #
 # Instala el arnés en un contenedor que trae SÓLO lo que la portada pública declara como requisito, como lo haría
 # alguien de afuera: con el bloque `install:core` de la portada, tal cual. Y mide lo que sólo se ve ahí:
@@ -10,7 +10,7 @@
 #         una herramienta que la portada no pide; con una versión nueva servida por la copia, `startup` no la aplica y
 #         deja el aviso; y `harness.js uninstall --yes` deja todo como estaba. Dos variantes: HOME vacía, y
 #         `~/.claude/skills` y `~/.claude/agents` como carpetas reales con algo propio.
-#         LA T34 DE LA STORY 8.13 (`CleanMachine_OneLineInstall_AskDoesNotApply_Doctor_Uninstall`, su AC 27) se cumple
+#         La prueba `CleanMachine_OneLineInstall_AskDoesNotApply_Doctor_Uninstall` se cumple
 #         acá: es esta T26 ampliada con «version da la estampada» y «versión nueva que no se aplica». Sus líneas salen
 #         como «T26 (…)», porque en este archivo «T34» ya nombra otra prueba (abajo). Mide «`ask` no aplica y avisa»; el
 #         camino del clon público (la rama propia, no bajar de número) lo mide `harness-channel.test.sh` en
@@ -29,9 +29,9 @@
 #         mal formadas; y lo que el escenario del núcleo hace con la copia servida y con el estado («T26
 #         (laboratorio)»): leer la versión estampada, servir una versión nueva y soltar el sello de la última mirada,
 #         sobre copias y un estado de juguete.
-#   T37 y T39 DE LA STORY 8.18 (`NewMachine_OneClone_OneSource_ThreeLinks_ThirdPartyOffline` y
-#         `Docs_InstallAndOnboarding_SayOneRepo`, su AC 36) · la máquina NUEVA del equipo después de la unión de los dos
-#         repos internos: el contenedor del núcleo, SIN RED, con un clon del repo unido interno (no pasa por el
+#   T37 y T39 (`NewMachine_OneClone_OneSource_ThreeLinks_ThirdPartyOffline` y
+#         `Docs_InstallAndOnboarding_SayOneRepo`) · la máquina NUEVA del equipo con el repo unido:
+#         el contenedor del núcleo, SIN RED, con un clon del repo unido interno (no pasa por el
 #         exportador), ejecuta tal cual el bloque `<!-- install:internal -->` de INSTALL.md —un clon y `harness.js
 #         install`— y mide lo que queda: una fuente, los cuatro enlaces, las skills de terceros restituidas desde la
 #         historia local, `doctor` sin rojos, ningún hook dos veces (tampoco llamando al instalador por el enlace), y
@@ -49,7 +49,7 @@
 # USO:  bash scripts/tests/clean-machine.test.sh [--keep] [--only unified]          (otro argumento: salida 2)
 #   --keep   no mide: deja un contenedor vivo, instalado y con el repo de ejemplo, para la corrida con modelo
 #            (`tycon-clean-machine-keep`; sale 0 si quedó listo, 1 si no). No trae Claude Code ni credenciales.
-#   --only unified   mide SÓLO el escenario de la máquina nueva del equipo (story 8.18): no exporta ninguna copia ni
+#   --only unified   mide SÓLO el escenario de la máquina nueva del equipo: no exporta ninguna copia ni
 #            corre los otros escenarios (construye la imagen del núcleo y la del clon unido, y una corrida sin red).
 #
 # CUÁNDO MIDE (gana la primera):
@@ -65,14 +65,14 @@
 #     commit SUELTO del árbol de trabajo del arnés (TYCON_CLEAN_MACHINE_HARNESS_REF lo cambia) y agent-skills de
 #     origin/main (TYCON_CLEAN_MACHINE_SKILLS_REF=<ref>, o `worktree` para su árbol de trabajo). Cada copia sale
 #     estampada con un número de laboratorio (`export.js --stamp-version`, LAB_VERSION): es el que `version` tiene que dar.
-#     En el repo UNIDO (story 8.18: el commit del arnés trae skills/ y agents/) las dos fuentes salen del MISMO commit,
+#     En el repo UNIDO (el commit del arnés trae skills/ y agents/) las dos fuentes salen del MISMO commit,
 #     el del arnés: TYCON_CLEAN_MACHINE_SKILLS_REF no hace falta, y si pide otro commit se niega (`second_source`; lo
 #     prueba, sin docker, «T26 (fuentes)»).
 #   público (TYCON_CLEAN_MACHINE_SOURCE=<raíz del repo público>) — sobre ese repo, que es la unión. T29 sale NO MEDIDO.
-#   En el árbol del repo de MANTENIMIENTO adelgazado (`.tycon/internal-forms.json` con `layout: thin`, story 8.26) el
-#     modo interno ya no corre (AC 36: ese árbol no arma la copia; la copia es el repo público, que mide la máquina
+#   En el árbol del repo de MANTENIMIENTO adelgazado (`.tycon/internal-forms.json` con `layout: thin`) el
+#     modo interno no corre (ese árbol no arma la copia; la copia es el repo público, que mide la máquina
 #     limpia en cada pedido). En Azure (TF_BUILD) sale NO MEDIDO con ese motivo, con cualquier BUILD_REASON y aunque la
-#     corrida la pida con TYCON_CLEAN_MACHINE=1 (story 2.21, AC 5: el banco a mano la llevaba roja); pedida a mano fuera
+#     corrida la pida con TYCON_CLEAN_MACHINE=1 (sin esto, el banco a mano la lleva roja); pedida a mano fuera
 #     de Azure, sale 1 diciendo cómo medir (con TYCON_CLEAN_MACHINE_SOURCE). Lo prueba, sin docker, «T34 (mantenimiento)»
 #     y «T34 Mantenimiento_PedidaAMano_NoMedido». El reporte de suites la cuenta «se mide en otro lado» (suites.json).
 #     La versión esperada es la del `version.json` del árbol; si no lo trae, esa verificación sale NO MEDIDO.
@@ -83,11 +83,9 @@
 # EL ENTORNO: base fija `mktemp -d /tmp/tycon-clean-machine.XXXXXX` (nunca el TMPDIR de quien corre). La copia entra a
 #   la imagen en una CAPA con su dueño (`COPY --chown`), nunca montada: ningún `docker run` lleva `-v`. El listado
 #   privado de reemplazos queda fuera de los contextos de docker y se borra apenas termina cada exportación.
-# DURACIÓN MEDIDA (2026-10-03, con las imágenes base ya bajadas): modo interno 263 s en linux/arm64, con la tanda D de
-#   la story 8.13 adentro (dos exportaciones, seis escenarios, 115 verificaciones). En linux/amd64, la del nocturno, la
-#   última medición es de ANTES de esa tanda: 415 s con 108 verificaciones; la tanda le suma al escenario del núcleo un
-#   `startup` y siete verificaciones. Modo público entre 50 y 142 s (antes de la tanda D). Sin la llave, 3 a 4 s. La
-#   primera corrida de una máquina suma la bajada de las dos bases (~1 GB).
+# DURACIÓN con las imágenes base ya bajadas: modo interno ~260 s en linux/arm64 (dos exportaciones, seis escenarios,
+#   115 verificaciones); en linux/amd64, la del nocturno, es mayor (~415 s). Modo público entre 50 y 142 s. Sin la llave,
+#   3 a 4 s. La primera corrida de una máquina suma la bajada de las dos bases (~1 GB).
 
 set -uo pipefail
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_COMMON_DIR
@@ -105,7 +103,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --keep) KEEP=1 ;;
     --only)
-      # un solo escenario: hoy, el de la máquina nueva del equipo (story 8.18). Otro nombre es un error de uso
+      # un solo escenario: el de la máquina nueva del equipo. Otro nombre es un error de uso
       [ "${2:-}" = unified ] || { echo "${USAGE}" >&2; exit 2; }
       ONLY="$2"; shift ;;
     *) echo "${USAGE}" >&2; exit 2 ;;
@@ -196,12 +194,12 @@ read_cover() {
   local readme="$1" out="$2" why url
   [ -f "${readme}" ] || { echo "no está ${readme}"; return 1; }
   cover_block "${readme}" requirements text > "${out}/requirements.txt" || { echo 'falta el bloque <!-- requirements --> con su valla ```text y su cierre'; return 1; }
-  # story 8.23, tanda E: `install:core` pasó a ser la portada SIN git (baja la versión por la API: la miden los escenarios
+  # `install:core` es la portada SIN git (baja la versión por la API: la miden los escenarios
   # release-*); lo que estos escenarios corren tal cual es el bloque que CLONA —el modo desarrollador— `install:clone`
-  # (y `install:clone-unattended`). Los archivos conservan su nombre de siempre para que los escenarios no cambien.
+  # (y `install:clone-unattended`). Los archivos se llaman install-core.sh e install-unattended.sh: los escenarios leen esos nombres.
   cover_block "${readme}" install:clone bash > "${out}/install-core.sh" || { echo 'falta el bloque <!-- install:clone --> con su valla ```bash y su cierre'; return 1; }
-  # (story 8.41: el bloque install:bizuit salió con el paquete: los paquetes llegan con el perfil del equipo)
-  # story 8.16, tanda B: la misma línea más --yes, para una máquina sin terminal (la corre folders.sh)
+  # (no hay bloque install:bizuit: los paquetes llegan con el perfil del equipo)
+  # la misma línea más --yes, para una máquina sin terminal (la corre folders.sh)
   cover_block "${readme}" install:clone-unattended bash > "${out}/install-unattended.sh" || { echo 'falta el bloque <!-- install:clone-unattended --> con su valla ```bash y su cierre'; return 1; }
   why="$(req_check_file "${out}/requirements.txt" "${KNOWN_PACKS}")" || { echo "requisitos: $(echo "${why}" | tr '\n' ';')"; return 1; }
   url="$(cover_url "${out}/install-core.sh")" || { echo "el bloque install:clone no trae, después de «git clone», la URL completa y resuelta del repo público: $(head -n 1 "${out}/install-core.sh")"; return 1; }
@@ -243,7 +241,7 @@ cover_selfcheck() {
 }
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# La versión: el número de laboratorio de la copia, y la versión nueva que `ask` no aplica (T34 de la story 8.13)
+# La versión: el número de laboratorio de la copia, y la versión nueva que `ask` no aplica (T34)
 # ═════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # El número con que el modo interno estampa sus copias (`export.js --stamp-version`): fijo y lejano, para que no se
 # confunda con uno publicado. Adentro, `harness.js version` tiene que dar ESTE número, exacto.
@@ -253,8 +251,8 @@ LAB_VERSION="2030.01.15.1"
 # (leer la versión estampada, servir una versión nueva, soltar el sello de la última mirada), probado sin docker sobre
 # copias y un estado de juguete: corre con T34, en toda máquina, cada caso con su espejo. Con docker lo vuelve a medir
 # el escenario (las líneas «T26 (versión nueva)»).
-# 🔴 rojo previo: las cuatro líneas en rojo con «stamped_version_of: command not found», y lo mismo para
-#    serve_new_version y forget_last_fetch (salida 127): lib.sh todavía no las traía.
+# 🔴 sin las funciones de lib.sh, las cuatro líneas salen en rojo con «stamped_version_of: command not found», y lo mismo para
+#    serve_new_version y forget_last_fetch (salida 127).
 version_selfcheck() {
   local d="${T}/version" sha_a="1111111111111111111111111111111111111111" sha_b="2222222222222222222222222222222222222222"
   local next v rc r_plain r_shape r_json r_broken r_missing before before_broken
@@ -318,7 +316,7 @@ version_selfcheck() {
   # el número que el anfitrión le pasa al contenedor: en modo interno el de laboratorio (no lo lee de la copia); en modo
   # público el de la copia; sin version.json no deja nada (adentro sale NO MEDIDO), y uno ilegible es un rojo.
   # (En subshell: el modo es de cada caso, y el rojo del caso ilegible no puede contarse como rojo de esta corrida.)
-  # 🔴 rojo previo: «expected_version: command not found» (salida 127 en los cuatro casos).
+  # 🔴 sin la función, los cuatro casos salen con «expected_version: command not found» (salida 127).
   version_bytes "2031.02.03.4" > "${d}/served/version.json"
   ( MODE=internal; expected_version "${d}/plain" "${d}/expected-internal.txt" ) > /dev/null 2>&1; rc=$?
   ( MODE=public; expected_version "${d}/served" "${d}/expected-public.txt" ) > /dev/null 2>&1; r_shape=$?
@@ -337,7 +335,7 @@ version_selfcheck() {
 BASE_CORE="tycon-clean-machine:base-core"; BASE_BIZUIT="tycon-clean-machine:base-bizuit"   # quedan entre corridas
 IMG_CORE="tycon-clean-machine:${RUN_ID}-core"; IMG_UNION="tycon-clean-machine:${RUN_ID}-union"   # se borran al salir
 IMG_NOPYTHON="tycon-clean-machine:${RUN_ID}-nopython"; IMG_NONODE="tycon-clean-machine:${RUN_ID}-nonode"
-IMG_UNIFIED="tycon-clean-machine:${RUN_ID}-unified"   # el núcleo más un clon del repo unido interno (story 8.18)
+IMG_UNIFIED="tycon-clean-machine:${RUN_ID}-unified"   # el núcleo más un clon del repo unido interno
 KEEP_NAME="tycon-clean-machine-keep"; KEEP_IMAGE="tycon-clean-machine:keep"
 FROM_RE='^FROM ([^[:space:]]+@sha256:[0-9a-f]{64})( AS [A-Za-z0-9_-]+)?$'
 
@@ -393,8 +391,8 @@ run_scenario() {
   local name="$1" cap="$2" image="$3" net="$4" script="$5" closes="$6" container rc; shift 6
   container="tycon-clean-machine-${RUN_ID}-${name#run-}"
   if [ "${net}" = yes ]; then
-    # con red: el tope del paso de terceros sube, para no depender de la red del momento (AC 23)
-    # TYCON_HARNESS_NODE=0 (story 8.39, decisión 20): la máquina limpia no baja el Node del arnés de nodejs.org
+    # con red: el tope del paso de terceros sube, para no depender de la red del momento
+    # TYCON_HARNESS_NODE=0: la máquina limpia no baja el Node del arnés de nodejs.org
     step "${name}" "${cap}" --container "${container}" -- docker run --rm --name "${container}" --label "${LABEL}" \
       -e TYCON_THIRD_PARTY_NETWORK_BUDGET_S=120 -e TYCON_HARNESS_NODE=0 "${image}" bash "/opt/lab/scenarios/${script}.sh" "$@"; rc=$?
   else
@@ -472,11 +470,10 @@ export_copy() {
 }
 # second_source <repo del arnés> <repo de las skills> <sha del arnés> → «sha qué» de la segunda fuente (agent-skills); si no
 # puede, una línea con el motivo y 1.
-# Desde la unión de los dos repos internos (story 8.18) el commit del arnés puede ser el del repo UNIDO (su árbol trae
-# skills/tycon-pipeline y agents/, el criterio del exportador): ahí las dos fuentes salen de un solo repo y del MISMO
-# commit, y el exportador sale 2 si se le pasan dos distintos. Antes acá se tomaba `origin/main` del repo de las skills
-# —que en el repo unido es el mismo repo, en OTRO commit que el árbol de trabajo bajo prueba—. Con dos repos físicos,
-# lo de siempre: `origin/main` de agent-skills, el commit pedido, o su árbol de trabajo (`worktree`).
+# En el repo UNIDO (su árbol trae skills/tycon-pipeline y agents/, el criterio del exportador) el commit del arnés es el de
+# las dos fuentes: salen de un solo repo y del MISMO commit, y el exportador sale 2 si se le pasan dos distintos.
+# Tomar `origin/main` del repo de las skills daría OTRO commit que el árbol de trabajo bajo prueba (en el repo unido es el
+# mismo repo). Con dos repos físicos, lo de siempre: `origin/main` de agent-skills, el commit pedido, o su árbol de trabajo (`worktree`).
 second_source() {
   local names sha
   names="$(git -C "$1" ls-tree -d --name-only "$3^{tree}" -- skills/tycon-pipeline agents)" \
@@ -546,7 +543,7 @@ expected_version() {
   esac
 }
 
-# ── la máquina nueva del equipo: un clon del repo unido interno, sin red (story 8.18, AC 36 · T37 y T39) ─────
+# ── la máquina nueva del equipo: un clon del repo unido interno, sin red (T37 y T39) ─────
 # unified_copy <contexto> — la copia del escenario `unified`: el repo unido INTERNO tal como lo baja una máquina nueva
 # —todo lo alcanzable desde el commit, y nada más: de esa historia salen las skills de terceros—, parado en un commit
 # SUELTO con el árbol de trabajo bajo prueba (TYCON_CLEAN_MACHINE_HARNESS_REF lo cambia). No pasa por el exportador. Se
@@ -621,7 +618,7 @@ unified_scenario() {
   run_scenario run-unified 600 "${IMG_UNIFIED}" no unified unified
 }
 
-# ── --keep: el contenedor para la corrida con modelo (decisión C19) ──────────────────────────────────────────
+# ── --keep: el contenedor para la corrida con modelo ──────────────────────────────────────────
 keep_container() {
   local rc
   step keep-remove 60 -- docker rm -f "${KEEP_NAME}" || true       # el de una corrida anterior, si quedó
@@ -650,7 +647,7 @@ main() {
   local ctx_core="${T}/ctx-core" ctx_union="${T}/ctx-union" empty="${T}/ctx-empty" left
   mkdir -p "${T}/export" "${ctx_core}" "${ctx_union}" "${empty}"
 
-  # --only unified: sólo la máquina nueva del equipo (story 8.18). La imagen del núcleo y el clon del repo unido; ninguna
+  # --only unified: sólo la máquina nueva del equipo. La imagen del núcleo y el clon del repo unido; ninguna
   # exportación, ningún otro escenario.
   if [ "${ONLY}" = unified ]; then
     if ! pull_step build-core 600 docker build -t "${BASE_CORE}" -f "${LAB}/Dockerfile" "${empty}"; then
@@ -685,10 +682,10 @@ main() {
   run_scenario run-core 600 "${IMG_CORE}" yes core core "${MODE}"
   run_scenario run-folders 600 "${IMG_CORE}" yes folders folders
   run_scenario run-no-network 600 "${IMG_CORE}" no no-network no-network
-  # el instalador del paquete de npm (story 8.40, el cierre: T46), sin red: el GitHub de juguete corre adentro
+  # el instalador del paquete de npm (T46), sin red: el GitHub de juguete corre adentro
   run_scenario run-npx 600 "${IMG_CORE}" no npx npx
 
-  # las dos derivadas de la AC 24: la del núcleo con la copia, menos una herramienta (un Dockerfile en línea, no un archivo)
+  # las dos derivadas del caso anterior: la del núcleo con la copia, menos una herramienta (un Dockerfile en línea, no un archivo)
   printf 'ARG BASE\nFROM ${BASE}\nUSER root\nRUN rm -f /usr/bin/python3*\nUSER node\n' > "${T}/nopython.Dockerfile"
   if docker_step build-nopython 300 docker build -t "${IMG_NOPYTHON}" --build-arg "BASE=${IMG_CORE}" -f "${T}/nopython.Dockerfile" "${empty}"; then
     run_scenario run-nopython 600 "${IMG_NOPYTHON}" no missing-tool sin-python3 python3
@@ -704,7 +701,7 @@ main() {
     run_scenario run-union 900 "${IMG_UNION}" yes union union
   else skip "T28: no hay imagen del paquete con la copia (ver build-bizuit y build-src-union)"; fi
 
-  # la máquina nueva del equipo (story 8.18): un clon del repo unido interno, sin red. En modo público no hay repo
+  # la máquina nueva del equipo: un clon del repo unido interno, sin red. En modo público no hay repo
   # interno del que clonar (ni el bloque del alta del equipo en INSTALL.md).
   if [ "${MODE}" = internal ]; then unified_scenario
   else skip "T37 y T39 (story 8.18) la máquina nueva del equipo: sólo en modo interno (la copia pública no lleva el alta del equipo)"; fi
@@ -712,7 +709,7 @@ main() {
 
 # lab_git — git para los repos de laboratorio que esta prueba ARMA (no para el repo del arnés): sin la configuración
 # global ni la del sistema de quien corre. Con ellas, una máquina con firma de commits obligatoria o con hooks globales
-# daba rojo, o quedaba esperando una contraseña (pase adversarial de la tanda C).
+# da rojo, o queda esperando una contraseña.
 lab_git() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 \
     git -c core.hooksPath=/dev/null -c commit.gpgsign=false -c user.name=lab -c user.email=lab@example.com "$@"
@@ -778,7 +775,7 @@ t34() {
   else no "T34 sin la variable y fuera del nocturno: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
 
   # corrida dentro del árbol de MANTENIMIENTO adelgazado (el banco del privado, con el público encima), el motivo es el de
-  # mantenimiento con cualquier BUILD_REASON (story 2.21, AC 5); en cualquier otro árbol, el del control de cada cambio.
+  # mantenimiento con cualquier BUILD_REASON; en cualquier otro árbol, el del control de cada cambio.
   # (`maintenance_tree` se define más abajo: acá se lee el archivo directo, con la misma regla)
   why3='BUILD_REASON=PullRequest'
   if [ -f "${ROOT}/.tycon/internal-forms.json" ] && node -e 'try { process.exit(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).layout === "thin" ? 0 : 1); } catch (_) { process.exit(1); }' "${ROOT}/.tycon/internal-forms.json"; then why3='AC 36'; fi
@@ -793,7 +790,7 @@ t34() {
     ok "T34 con TYCON_CLEAN_MACHINE=0 no mide ni en el nocturno: NO MEDIDO con su motivo, ningún ✅, salida 0"
   else no "T34 con TYCON_CLEAN_MACHINE=0 en el nocturno: salida ${rc}, $(greens "${out}") ✅ — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
 
-  # el árbol del repo de mantenimiento adelgazado (story 8.26, AC 36): esta misma prueba, copiada a una raíz cuyo
+  # el árbol del repo de mantenimiento adelgazado: esta misma prueba, copiada a una raíz cuyo
   # `.tycon/internal-forms.json` dice `layout: thin`. En el nocturno no arma ninguna copia: NO MEDIDO con el motivo,
   # salida 0. Pedida a mano (con un docker de mentira en el PATH, para llegar a la elección del modo): salida 1, mismo
   # motivo. El espejo: con TYCON_CLEAN_MACHINE_SOURCE puesta ya no es «el árbol de mantenimiento» y sigue de largo
@@ -821,9 +818,9 @@ t34() {
   if [ "${rc}" -eq 1 ] && ! grep -q 'AC 36' "${out}" && grep -q 'NO MEDIDO — .*docker' "${out}"; then
     ok "T34 (mantenimiento) el espejo: con TYCON_CLEAN_MACHINE_SOURCE el árbol de mantenimiento sí mide (acá, sin docker, hasta su NO MEDIDO por docker)"
   else no "T34 (mantenimiento) el espejo con TYCON_CLEAN_MACHINE_SOURCE: salida ${rc} — $(tail -n 2 "${out}" | tr '\n' ' ')"; fi
-  # story 2.21 (AC 5, R1 de su revisión): en Azure el árbol de mantenimiento no la mide con NINGÚN motivo de la corrida.
-  # La corrida a mano del banco (BUILD_REASON=Manual) la llevaba roja cuando su parámetro pedía medirla
-  # (TYCON_CLEAN_MACHINE=1), y sin pedirla salía NO MEDIDO con el motivo de otro caso. Las dos, con el de mantenimiento.
+  # En Azure el árbol de mantenimiento no la mide con NINGÚN motivo de la corrida.
+  # La corrida a mano del banco (BUILD_REASON=Manual) con su parámetro pidiendo medirla
+  # (TYCON_CLEAN_MACHINE=1), y sin pedirla, tienen que dar NO MEDIDO con el motivo de mantenimiento.
   for asked in "" "TYCON_CLEAN_MACHINE=1"; do
     out="${d}/case-thin-manual${asked:+-asked}.out"
     # shellcheck disable=SC2086 # ${asked} vacío no es un argumento
@@ -846,7 +843,7 @@ t34() {
   if [ "${rc}" -eq 0 ] && [ "${t}" -eq 3 ] && grep -q '^dicho$' "${d}/mirror3.out"; then
     ok "T34 el espejo: un paso que termina dentro del tope sale con su propio código (0 y 3) y su salida pasa"
   else no "T34 el espejo: un paso sano salió ${rc} (esperado 0) y ${t} (esperado 3)"; fi
-  # un tope gigante no desborda el reloj de Node (más de 2^31-1 ms lo bajaba a 1 ms y cortaba un paso sano al instante)
+  # un tope gigante no desborda el reloj de Node (más de 2^31-1 ms lo bajaría a 1 ms y cortaría un paso sano al instante)
   node "${CAPPED}" mirror 99999999 -- sh -c 'exit 0' > "${d}/mirror-big.out" 2>&1; rc=$?
   if [ "${rc}" -eq 0 ]; then ok "T34 un tope gigante (99999999 s) no corta un paso sano"
   else no "T34 un tope gigante cortó un paso sano (exit ${rc}): $(tail -n 1 "${d}/mirror-big.out")"; fi
@@ -858,9 +855,9 @@ t34() {
 }
 # sources_selfcheck — de qué commit sale la segunda fuente de la copia interna, probado sin docker (corre con T34, en
 # toda máquina) sobre repos de juguete: en el repo UNIDO es el mismo commit que el del arnés (el exportador sale 2 si
-# difieren); con dos repos físicos, el de siempre (el espejo). El caso: desde la unión de los dos repos internos (story
-# 8.18) `internal_copies` le pasaba al exportador un commit suelto del árbol de trabajo como arnés y `origin/main` del
-# MISMO repo como agent-skills: dos commits distintos, y la exportación —que sólo corre con docker— salía 2.
+# difieren); con dos repos físicos, el de siempre (el espejo). El caso: sin esto,
+# `internal_copies` le pasa al exportador un commit suelto del árbol de trabajo como arnés y `origin/main` del
+# MISMO repo como agent-skills: dos commits distintos, y la exportación —que sólo corre con docker— sale 2.
 sources_selfcheck() {
   local d="${T}/sources" a b got why rc
   mkdir -p "${d}/unified/skills/tycon-pipeline" "${d}/unified/agents" "${d}/tree/scripts" "${d}/skills/skills/tycon-pipeline" "${d}/skills/agents"
@@ -892,9 +889,9 @@ if [ "${TYCON_CLEAN_MACHINE_INNER:-}" != 1 ] && [ "${KEEP}" -eq 0 ]; then t34; c
 
 # ── compuerta 3 · política: ¿le toca medir? ──────────────────────────────────────────────────────────────────
 POLICY_WHY=""
-# maintenance_tree <raíz> — sale 0 si la raíz es el árbol del repo de MANTENIMIENTO adelgazado (story 8.26, tanda I): su
-# `.tycon/internal-forms.json` declara `"layout": "thin"`. Ese árbol (lo privado con el público encima) ya no arma la
-# copia pública (story 8.26, AC 36): la copia ES el repo público, y su CI mide la máquina limpia en cada pedido
+# maintenance_tree <raíz> — sale 0 si la raíz es el árbol del repo de MANTENIMIENTO adelgazado: su
+# `.tycon/internal-forms.json` declara `"layout": "thin"`. Ese árbol (lo privado con el público encima) no arma la
+# copia pública: la copia ES el repo público, y su CI mide la máquina limpia en cada pedido
 # (`public-ci.sh --clean-machine`, modo público). Un archivo ilegible no cuenta como adelgazado: se mide como siempre.
 MAINTENANCE_WHY="el árbol del repo de mantenimiento ya no arma la copia pública (story 8.26, AC 36): la máquina limpia la mide el repo público en cada pedido (public-ci.sh --clean-machine); acá va con TYCON_CLEAN_MACHINE_SOURCE=<clon del público>"
 maintenance_tree() {
@@ -904,9 +901,9 @@ maintenance_tree() {
 }
 measures() {
   [ "${TYCON_CLEAN_MACHINE:-}" = 0 ] && { POLICY_WHY="TYCON_CLEAN_MACHINE=0: quien corre pidió no medir"; return 1; }
-  # el árbol de mantenimiento corrido en Azure, con CUALQUIER motivo de la corrida (story 2.21, AC 5): sin un público que
+  # el árbol de mantenimiento corrido en Azure, con CUALQUIER motivo de la corrida: sin un público que
   # medir no le toca — tampoco cuando la corrida a mano del banco la pide (TYCON_CLEAN_MACHINE=1, su parámetro
-  # cleanMachine): ese pedido la llevaba roja (corrida 13553). Pedida a mano fuera de Azure sigue saliendo 1, con cómo medir
+  # cleanMachine): ese pedido la llevaría roja. Pedida a mano fuera de Azure sigue saliendo 1, con cómo medir
   if [ -n "${TF_BUILD:-}" ] && [ -z "${TYCON_CLEAN_MACHINE_SOURCE:-}" ] && [ -z "${ONLY}" ] && maintenance_tree "${ROOT}"; then
     POLICY_WHY="${MAINTENANCE_WHY}"; return 1
   fi
@@ -922,8 +919,8 @@ measures() {
 if ! measures; then
   # --keep no es una medición: sin la llave no deja nada listo, y eso es un 1
   if [ "${KEEP}" -ne 0 ]; then skip "${POLICY_WHY}"; exit 1; fi
-  # 🔴 La ÚLTIMA línea dice NO MEDIDO (DEF-8.7-C, banco a mano #12543): con un «✅ … verificaciones» al final, el trabajo
-  # de suites contaba la máquina limpia como verde sin haberla medido. Las verificaciones propias de la prueba se
+  # 🔴 La ÚLTIMA línea dice NO MEDIDO: con un «✅ … verificaciones» al final, el trabajo
+  # de suites contaría la máquina limpia como verde sin haberla medido. Las verificaciones propias de la prueba se
   # cuentan en la misma línea; si alguna está en rojo, la salida es roja, como siempre.
   if [ "${CM_FAILS}" -gt 0 ]; then echo "❌ clean-machine: ${CM_FAILS} de ${CM_TOTAL} en rojo"; exit 1; fi
   LAB_NOTE=""; [ "${CM_TOTAL}" -gt 0 ] && LAB_NOTE=" · las ${CM_TOTAL} verificaciones propias de la prueba, en verde"
@@ -961,7 +958,7 @@ else
     [ -e "${ROOT}/${need}" ] || unable "modo interno sin exportador (falta ${need}): en el repo público va con TYCON_CLEAN_MACHINE_SOURCE=<raíz>"
   done
   # «No pude mirar» no es «no hay»: si la biblioteca tira (su vecina está y no carga), se dice la causa; no se lee como
-  # «sin agent-skills» (story 8.18, deuda lectores-que-tragan; caso en scripts/tests/skills-dir-readers.test.js).
+  # «sin agent-skills» (caso en scripts/tests/skills-dir-readers.test.js).
   if ! SK_REPO="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || "").repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "${ROOT}/scripts/lib/skills-dir.js" 2> "${T}/skills-dir.err")"; then
     unable "no pude resolver la carpeta de skills: $(head -n 1 "${T}/skills-dir.err")"
   fi

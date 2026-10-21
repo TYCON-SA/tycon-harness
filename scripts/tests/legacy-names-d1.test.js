@@ -1,15 +1,15 @@
 'use strict';
 
 /**
- * legacy-names-d1.test.js — configuración: archivos y claves en inglés (story 8.9, tanda D1 · 2026-10-01). T45, T46, T48.
+ * legacy-names-d1.test.js — configuración: archivos y claves en inglés. T45, T46, T48.
  *
  * Lo que no se puede perder:
  *   · Los ocho archivos de configuración que lee sólo su propio repo se mudan una sola vez, con su entrada en el mapa; el
  *     que lee otra versión del arnés (el control de los bloques del CLAUDE.md lee el índice o el disco de otro repo) lo
  *     encuentra por cualquiera de los dos nombres, con sus claves viejas, y dos distintos son «no pude mirar» (T45).
- *   · Cada clave quedó como dice la clasificación commiteada: las de esquema y documentación, en inglés; las 38 con
- *     historia (ids de métricas, estados, causas, el id de fuente y la clave del techo de la 8.10), intactas; el recuento
- *     es el de la story y `schemaFiles` nombra cada archivo de esquema (con sus dos nombres si se mudó). `readKeysDeep`
+ *   · Cada clave queda como dice la clasificación commiteada: las de esquema y documentación, en inglés; las 38 con
+ *     historia (ids de métricas, estados, causas, el id de fuente y la clave del techo), intactas; el recuento
+ *     es el de la clasificación y `schemaFiles` nombra cada archivo de esquema (con sus dos nombres si se mudó). `readKeysDeep`
  *     traduce en todos los niveles, nunca toca valores ni ids, y dos valores distintos son error (T46).
  *   · El paquete Bizuit sale sin nombres en castellano (T48).
  *
@@ -31,11 +31,11 @@ const SKIP_PUBLIC = !TEAM && 'copia pública: sin el mapa';
 const CLASSES = path.join(__dirname, 'fixtures', 'legacy-names-d1', 'key-classes.tsv');
 const WORDS = path.join(RAIZ, 'scripts', 'lib', 'spanish-words.json');
 
-// Lo que decidió el dueño sobre la medición (story, bajo el AC 44): ocho archivos renombrados y el recuento de claves
+// Lo esperado de la medición: ocho archivos renombrados y el recuento de claves
 // distintas por archivo.
 const EXPECTED_RENAMED_FILES = 8;
 const EXPECTED_COUNT = { key: 118, comment: 26, 'value-vocabulary': 38, path: 1 };
-// Claves opcionales que hoy ninguna entrada usa (la 8.7 A sacó la última exclusión con vencimiento): `archivo\tclave` →
+// Claves opcionales que hoy ninguna entrada usa: `archivo\tclave` →
 // quién la lee. La clave no se puede buscar en el archivo; se busca, con su nombre nuevo, en su lector.
 const UNUSED_TODAY = new Map([['scripts/publishing/allowlist.json\tuntil', 'scripts/publishing/export.js']]);
 const BUDGET_NEW = 'claude-md-blocks/budget.json';
@@ -44,7 +44,7 @@ const PACK = 'packs/bizuit/pack.json';
 /**
  * agent-skills, por la regla común (scripts/lib/skills-dir.js): TYCON_SKILLS_DIR (el clon o su carpeta `skills`) › el
  * propio clon si es unido › la copia de la máquina. `null` si ahí no hay skills. Sin `catch`: si la biblioteca no puede
- * contestar, la suite es roja con la causa (story 8.18: antes cada suite tenía la ruta instalada escrita a mano).
+ * contestar, la suite es roja con la causa.
  */
 function skillsRoot() {
   const root = require(path.join(RAIZ, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR || '').repo;
@@ -199,7 +199,7 @@ test('T46c · BatchD_KeysClassifiedAndRecounted — el termómetro no cuenta nin
 test('T46d · BatchD_KeysClassifiedAndRecounted — readKeysDeep traduce en todos los niveles y nunca toca valores ni ids', { skip: SKIP_PUBLIC }, () => {
   const { readKeysDeep, LegacyNamesError } = require(path.join(RAIZ, 'scripts', 'lib', 'legacy-names.js'));
   assert.strictEqual(typeof readKeysDeep, 'function', 'legacy-names.js no exporta readKeysDeep');
-  // palabras de laboratorio armadas por partes (AC 7): una clave vieja, su nueva, y un id que no está en el mapa
+  // palabras de laboratorio armadas por partes: una clave vieja, su nueva, y un id que no está en el mapa
   const OLD = ['mot', 'ivo'].join('');
   const OLD2 = ['hast', 'a'].join('');
   const ID = ['en_', 'curso'].join('');
@@ -229,7 +229,7 @@ test('T46d · BatchD_KeysClassifiedAndRecounted — readKeysDeep traduce en todo
 });
 
 test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango desde antes de la D1 no avisan «nombre viejo»', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, (t) => {
-  // la base de un rango anterior a la D1 trae la lista blanca y los manifiestos con las claves viejas: es historia, y en
+  // la base de un rango anterior a la mudanza de las claves trae la lista blanca y los manifiestos con las claves viejas: es historia, y en
   // Azure cada aviso sería un warning en el pull request (y un uso falso en el registro del retiro)
   const BASE = '1779dc1';
   if (spawnSync('git', ['-C', RAIZ, 'cat-file', '-e', `${BASE}^{commit}`]).status !== 0) { t.skip(`NO MEDIDO: el clon no trae ${BASE} (superficial)`); return; }
@@ -239,8 +239,8 @@ test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango de
       { encoding: 'utf8', env: cleanEnv({ HOME: home, TF_BUILD: 'True', TYCON_SKILLS_DIR: SKILLS }), maxBuffer: 64 * 1024 * 1024 });
     // Cualquiera de los dos frenos puede decir 1 sobre este rango y está bien: una excepción (del glosario, o de la lista
     // de nombres reales) cuenta sólo si ya estaba en la base, y la base es fija; toda excepción aprobada después (en su
-    // PR aparte, como manda el freno) no existe para ella. Le pasó primero al de castellano y, con las tres excepciones de
-    // la story 8.10.1 (los servidores y las entradas de llavero inventados de las pruebas del freno de producción), al de
+    // PR aparte, como manda el freno) no existe para ella. Le pasa al de castellano y, con las tres excepciones de
+    // las pruebas del freno de producción (los servidores y las entradas de llavero inventados), al de
     // nombres reales. Lo que esta prueba mide es el «nombre viejo»; lo que no puede pasar es que no haya podido mirar (2)
     assert.ok(r.status === 0 || r.status === 1, `${script} --range no pudo mirar (exit ${r.status}): ${r.stderr.slice(-1500)}`);
     assert.doesNotMatch(r.stderr, /nombre viejo/, `${script} --range ${BASE}...HEAD avisa nombres viejos al leer la base: ${r.stderr.split('\n').filter((l) => /nombre viejo/.test(l)).slice(0, 3).join(' | ')}`);
@@ -251,8 +251,8 @@ test('T46e · BatchD_KeysClassifiedAndRecounted — los frenos sobre un rango de
 // ── T48 ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('T48 · BatchD_BizuitPackage — el paquete Bizuit sale sin nombres en castellano', { skip: SKIP_PUBLIC || (!SKILLS && 'sin agent-skills'), timeout: 240000 }, (t) => {
-  // Desde la story 8.26 (AC 36) el exportador ya no arma la copia: el repo público es la fuente. El paquete se mide sobre
-  // el árbol con el termómetro de nombres en castellano (`--count`), el mismo que antes devolvía el exportador.
+  // El exportador no arma la copia: el repo público es la fuente. El paquete se mide sobre
+  // el árbol con el termómetro de nombres en castellano (`--count`).
   const r = spawnSync(process.execPath, [path.join(RAIZ, 'scripts', 'publishing', 'spanish-names.js'), '--count', '--json', '--repo', RAIZ],
     { encoding: 'utf8', env: cleanEnv({ TYCON_SKILLS_DIR: SKILLS, TYCON_GUIDES_DIR: RAIZ }), maxBuffer: 64 * 1024 * 1024 });
   assert.strictEqual(r.status, 0, `el termómetro no pudo contar: ${r.stderr.slice(-2000)}`);
