@@ -56,7 +56,7 @@ COPY scripts/ci/check-product-parity.js scripts/ci/legacy-options.js scripts/ci/
 # nombre). Sin pruebas: la lista de exclusiones las saca. how-it-works.test.js frena si algo de eso no entra
 COPY skills/tycon-pipeline/scripts/ skills/tycon-pipeline/scripts/
 COPY skills/tycon-pipeline/steps/ skills/tycon-pipeline/steps/
-COPY skills/clocki/scripts/ skills/clocki/scripts/
+COPY integrations/ integrations/
 COPY scripts/hooks/ scripts/hooks/
 COPY scripts/setup/hooks-list.json scripts/setup/
 COPY guide[s]/ guides/

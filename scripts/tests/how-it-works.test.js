@@ -859,11 +859,24 @@ test('T28 ComoTrabaja_IntegracionesSonPiezasDeSuPaso @story-2.61.3 @ac-3 — el 
       assert.ok(sec.includes(`href="${PUBLICO}/blob/main/${f.code}"`) && sec.includes(`data-piece="${f.code}"`), `${f.id}: «Ver el código» y «Proponer una mejora»`);
     }
   }
-  // lo que se ve de la pestaña no dice «Clockify»: el registro de horas puede ser otro servicio
-  const visible = html.replace(/<[^>]+>/g, ' ');
-  assert.doesNotMatch(visible, /clockify/i);
-  for (const idioma of ['es', 'en']) assert.doesNotMatch(TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' }).replace(/<[^>]+>/g, ' '), /clockify/i, idioma);
+  // lo que se ve de la pestaña no dice «Clockify»: el registro de horas puede ser otro servicio. La ruta del código de un
+  // control (`integrations/<integración>/…`) es dónde vive el archivo, no un texto de la pestaña: no cuenta
+  const visibleDe = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\bintegrations\/[\w./-]+/g, ' ');
+  assert.doesNotMatch(visibleDe(html), /clockify/i);
+  for (const idioma of ['es', 'en']) assert.doesNotMatch(visibleDe(TAB().renderPage(m, { idioma, publicRepo: PUBLICO, version: 'v' })), /clockify/i, idioma);
 });
+
+test('T47 ComoTrabaja_HorasPorLaHerramientaElegida @story-7.40 @ac-4 — la de horas la decide timeTracking, no la llave vieja', () => conCasa(() => {
+  const H2 = HIW();
+  const todos = (m) => [...m.allSteps.controls, ...m.steps.flatMap((x) => x.controls)];
+  // Clockify elegida, con la llave vieja en false: sus controles se ven (la llave vieja no la apaga)
+  const elegida = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'clockify', clockify: false, engram: true }) });
+  assert.strictEqual(elegida.org.timeTracking, 'clockify');
+  assert.ok(todos(elegida).some((c) => c.integration === 'clockify' && c.timeTool), 'los controles de la herramienta elegida');
+  // otra elegida: los de Clockify no
+  const otra = H2.buildModel({ treeDir: ROOT, profileDir: perfilIntegraciones({ timeTracking: 'solidtime', engram: true }) });
+  assert.ok(!todos(otra).some((c) => c.integration === 'clockify'), 'con Solidtime, nada de Clockify');
+}));
 
 test('T29 ComoTrabaja_SoloLoQueTuOrganizacionUsa @story-2.61.3 @ac-4 — apagada no aparece; prendida o sin perfil, «según tu organización»', () => conCasa(() => {
   const H2 = HIW();

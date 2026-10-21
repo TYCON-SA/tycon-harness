@@ -50,7 +50,7 @@ if [ "$rc" -eq 0 ]; then echo "✅ hook-coverage sobre el repo real"; else
 # se puede enumerar es rojo, no un aviso: no censar lo que se pidió no es un verde.
 COV="$BUILD/check-hook-coverage.js"
 LAB="$(mktemp -d "${TMPDIR:-/tmp}/hook-coverage.XXXXXX")"; LAB="$(cd "$LAB" && pwd -P)"
-mkdir -p "$LAB/home" "$LAB/repo/skills/tycon-pipeline/scripts" "$LAB/repo/skills/clocki/scripts" "$LAB/partial/skills/clocki/scripts"
+mkdir -p "$LAB/home" "$LAB/repo/skills/tycon-pipeline/scripts" "$LAB/partial/skills/otra/scripts"
 printf '// un hook nuevo, sin casos en el banco\n' > "$LAB/repo/skills/tycon-pipeline/scripts/on-new-without-cases.js"
 cov_case() { # <nombre> <exit esperado> <texto que tiene que aparecer> <valor de TYCON_SKILLS_DIR ("" = sin la variable)>
   local out rc

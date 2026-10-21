@@ -85,17 +85,52 @@ function harnessInterpreter(env = process.env) {
 //     la llave lo sacaría de Codex a quien tiene CodeGraph instalado).
 //   · sin el aplicador o la lista al lado (este archivo copiado suelto a un laboratorio): todo el fragmento.
 //     Con la configuración rota o ilegible, también todo, y se dice: el aplicador tampoco toca nada en ese caso.
-const NOT_IN_HOOKS_LIST = Object.freeze({
-  'clocki/scripts/sweep.js': 'integration:clockify',
-});
+//   · los hooks de una integración de horas no están en el fragmento: los declara su manifiesto (integrations/<nombre>/,
+//     los de `tools` con codex) y activeFragment los suma con `${TCG}/integrations/…`; van sólo los de la elegida.
+const NOT_IN_HOOKS_LIST = Object.freeze({});
 
-/** El `spec` de la lista que nombra el comando de un hook del fragmento (`@tcg:<guion>` o `<skill>/…`), o null. */
+/** El `spec` de la lista que nombra el comando de un hook del fragmento (`@tcg:<guion>`, `@int:…` o `<skill>/…`), o null. */
 function specOf(command) {
   const c = String(command || '');
   let m = /\$\{TCG\}\/scripts\/hooks\/(\S+)/.exec(c);
   if (m) return `@tcg:${m[1].replace(/"$/, '')}`;
+  m = /\$\{TCG\}\/integrations\/([a-z0-9][a-z0-9-]*)\/(\S+)/.exec(c);
+  if (m) return `@int:${m[1]}/${m[2].replace(/"$/, '')}`;
   m = /\$\{SKILLS\}\/skills\/(\S+)/.exec(c);
   return m ? m[1].replace(/"$/, '') : null;
+}
+
+/**
+ * El fragmento con los hooks de Codex de las integraciones de horas (de sus manifiestos) agregados: cada uno en el
+ * primer grupo sin matcher de su evento (o uno nuevo), con `node ${TCG}/integrations/<nombre>/<guion>`. Devuelve también
+ * sus registros, para decidir cuáles van. Sin la biblioteca de integraciones, el fragmento tal cual.
+ */
+function withIntegrationHooks(raw, tcg) {
+  let INT;
+  const lib = path.join(tcg, 'scripts', 'lib', 'integrations.js');
+  // sin la biblioteca en el árbol, no hay integraciones; con ella y sin poder cargarla, se dice
+  try { INT = require(lib); } catch (e) { return { raw, entries: [], broken: fs.existsSync(lib) ? [`no pude cargar integrations.js (${e.code || e.message}): los hooks de Codex de las integraciones no se registran`] : [] }; }
+  const dir = path.join(tcg, 'integrations');
+  const entries = [];
+  const all = INT.listManifests({ dir });
+  // un manifiesto roto no suma hooks, y se dice: la integración elegida quedaría sin los suyos
+  const broken = all.problems.map((b) => `la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus hooks de Codex no se registran`);
+  for (const m of all.manifests) entries.push(...INT.hookEntries(m, { tool: 'codex' }));
+  if (!entries.length) return { raw, entries, broken };
+  const hooks = JSON.parse(JSON.stringify(raw.hooks || {}));
+  for (const e of entries) {
+    // la ruta ya pasó la regla del manifiesto (sólo letras, números, «.», «-», «_» y «/»): nada de ella llega al comando
+    // como otra cosa que una ruta
+    const p = INT.parseIntSpec(e.spec);
+    if (!p) continue;
+    const runner = /\.sh$/.test(p.rel) ? 'bash' : (/\.py$/.test(p.rel) ? 'python3' : 'node');
+    const hook = { type: 'command', command: `${runner} \${TCG}/integrations/${p.name}/${p.rel}` };
+    const groups = hooks[e.event] || (hooks[e.event] = []);
+    let g = groups.find((x) => !x.matcher && !e.matcher) || groups.find((x) => x.matcher === e.matcher && e.matcher);
+    if (!g) { g = e.matcher ? { matcher: e.matcher, hooks: [] } : { hooks: [] }; groups.push(g); }
+    g.hooks.push(hook);
+  }
+  return { raw: Object.assign({}, raw, { hooks }), entries, broken };
 }
 
 /**
@@ -105,8 +140,13 @@ function specOf(command) {
  * @returns {{fragment: object, dropped: {event: string, spec: string, when: string}[], filtered: boolean, aviso: string|null,
  *   integrations?: object}}  `integrations`: los valores leídos (sólo si se filtró), para la huella de deploy-codex-all.js
  */
-function activeFragment(raw, { env = process.env, tcg = TCG } = {}) {
-  const asIs = (aviso) => ({ fragment: raw, dropped: [], filtered: false, aviso });
+function activeFragment(raw0, { env = process.env, tcg = TCG } = {}) {
+  const { raw, entries: intEntries, broken } = withIntegrationHooks(raw0, tcg);
+  const rotos = broken.length ? broken.join(' · ') : null;
+  const juntar = (...a) => a.filter(Boolean).join(' · ') || null;
+  // sin poder decidir, los de una integración de horas NO van (registrarlos con la herramienta sin elegir haría
+  // correr sus avisos en cada sesión); lo demás del fragmento, como siempre
+  const asIs = (aviso) => ({ fragment: raw0, dropped: [], filtered: false, aviso: juntar(aviso, rotos) });
   const listFile = path.join(tcg, 'scripts', 'setup', 'hooks-list.json');
   let ah;
   try { ah = require(path.join(tcg, 'scripts', 'setup', 'apply-hooks.js')); } catch (e) {
@@ -114,14 +154,15 @@ function activeFragment(raw, { env = process.env, tcg = TCG } = {}) {
     throw e;
   }
   if (!fs.existsSync(listFile)) return asIs(null);
-  const list = ah.loadList(listFile);   // una lista rota tira: no es «no hay hooks»
+  const list = ah.loadList(listFile, { integrationsDir: path.join(tcg, 'integrations') });   // una lista rota tira: no es «no hay hooks»
   const cfg = ah.readConfig({ env, libDir: path.join(tcg, 'scripts', 'lib') });
   if (cfg.integ.state !== 'ok') {
     return asIs(`la configuración del arnés ${cfg.integ.state === 'rota' ? 'está ROTA' : 'no se pudo leer'}: los hooks de Codex de las integraciones quedan registrados sin filtrar, como antes`);
   }
   const extra = Object.entries(NOT_IN_HOOKS_LIST).map(([spec, when]) => ({ event: null, spec, when, platforms: { windows: true } }));
-  const all = list.hooks.concat(extra);
-  const gated = all.filter((h) => /^integration:/.test(h.when));
+  const all = list.hooks.concat(extra, intEntries);
+  const GATED = /^(integration|time):/;   // los que dependen de una integración (llave o herramienta de horas)
+  const gated = all.filter((h) => GATED.test(h.when));
   const { active } = ah.decide({ hooks: gated }, { env, integ: cfg.integ, profile: { state: 'ok', value: 'full' }, minimalIds: null, platform: 'posix' });
   const dropped = [];
   const keep = (event, command) => {
@@ -130,7 +171,7 @@ function activeFragment(raw, { env = process.env, tcg = TCG } = {}) {
     const hits = all.filter((h) => h.spec === spec);
     const sameEvent = hits.filter((h) => h.event === event);
     const relevant = sameEvent.length ? sameEvent : hits;
-    if (!relevant.length || relevant.some((h) => !/^integration:/.test(h.when))) return true;
+    if (!relevant.length || relevant.some((h) => !GATED.test(h.when))) return true;
     if (relevant.some((h) => active.includes(h))) return true;
     dropped.push({ event, spec, when: relevant[0].when });
     return false;
@@ -144,7 +185,7 @@ function activeFragment(raw, { env = process.env, tcg = TCG } = {}) {
     }
     if (kept.length) hooks[event] = kept;
   }
-  return { fragment: Object.assign({}, raw, { hooks }), dropped, filtered: true, aviso: null, integrations: cfg.integ.values };
+  return { fragment: Object.assign({}, raw, { hooks }), dropped, filtered: true, aviso: rotos, integrations: Object.assign({}, cfg.integ.values, { timeTracking: cfg.integ.timeTracking }) };
 }
 
 /**
@@ -304,7 +345,9 @@ function main() {
   const fragment = substitute(act.fragment, TCG, SKILLS);
   let existing = null;
   try { existing = JSON.parse(fs.readFileSync(target, 'utf8')); } catch (_) { existing = null; }
-  const merged = merge(existing, { hooks: fragment.hooks }, TCG, SKILLS, plantillas(crudo));
+  // las formas incluyen los hooks de las integraciones: uno desplegado desde otro clon se reconoce como del arnés y no
+  // queda duplicado
+  const merged = merge(existing, { hooks: fragment.hooks }, TCG, SKILLS, plantillas(withIntegrationHooks(crudo, TCG).raw));
   const next = JSON.stringify(merged, null, 1) + '\n';
   const current = existing !== null ? fs.readFileSync(target, 'utf8') : null;
   if (current === next) { console.log('deploy-codex-hooks: sin cambios'); return 0; }
@@ -325,5 +368,5 @@ function main() {
   return 0;
 }
 
-module.exports = { substitute, plantillas, merge, enCarpetaTemporal, activeFragment, specOf, harnessInterpreter, NOT_IN_HOOKS_LIST, SKILLS, TCG, FRAGMENT: path.join(TCG, 'adapters', 'codex', 'hooks.json') };
+module.exports = { substitute, plantillas, merge, enCarpetaTemporal, activeFragment, withIntegrationHooks, specOf, harnessInterpreter, NOT_IN_HOOKS_LIST, SKILLS, TCG, FRAGMENT: path.join(TCG, 'adapters', 'codex', 'hooks.json') };
 if (require.main === module) process.exit(main());

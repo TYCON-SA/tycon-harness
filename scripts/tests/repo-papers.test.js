@@ -250,13 +250,18 @@ function runHarnessScript(rel, args) {
  */
 function installerHooks() {
   const list = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'setup', 'hooks-list.json'), 'utf8')).hooks;
+  // más los del lado Claude Code de cada integración, de su manifiesto (el instalador los registra si es la elegida)
+  const INT = require(path.join(RAIZ, 'scripts', 'lib', 'integrations.js'));
+  const intHooks = INT.listManifests({ dir: path.join(RAIZ, 'integrations') }).manifests.flatMap((m) => INT.hookEntries(m, { tool: 'claude' }));
+  const all = list.concat(intHooks);
   const pairs = new Map();
-  for (const h of list) {
+  for (const h of all) {
     assert.ok(EVENTS.includes(h.event) && /\.(js|sh)$/.test(h.spec), `no entiendo el registro de la lista: ${JSON.stringify(h).slice(0, 120)}`);
-    const name = h.spec.replace(/^@tcg:/, '');
+    // en la tabla, un hook de una integración se escribe con su carpeta: `integrations/<n>/…`
+    const name = h.spec.replace(/^@tcg:/, '').replace(/^@int:/, 'integrations/');
     pairs.set(`${h.event} ${name}`, { event: h.event, script: name });
   }
-  return { count: list.length, pairs };
+  return { count: all.length, pairs };
 }
 
 /** El texto donde una variable `TYCON_*` nombrada tiene que existir (AC 4, T14). */
@@ -1119,7 +1124,7 @@ function profilesProblems(text, lang, effects) {
   if (lines.length > PROFILES_MAX_LINES) out.push(`AC 22 · «${titleOf(at('Minimal or full install'), lang)}» tiene ${lines.length} renglones (tope ${PROFILES_MAX_LINES})`);
   for (const k of [...PROFILES_KEYWORDS.both, ...PROFILES_KEYWORDS[lang]]) if (!says(where, k)) out.push(`AC 22 · falta «${k}»`);
   // cuántos hooks trae minimal (sin los de una integración ni el freno de sesiones, que nace apagado en los dos)
-  const n = effects.filter((e) => e.kind === 'hook' && Array.isArray(e.profiles) && e.profiles.includes('minimal') && !/^integration:/.test(e.when) && e.when !== 'optin:TYCON_SESSION_GUARD').length;
+  const n = effects.filter((e) => e.kind === 'hook' && Array.isArray(e.profiles) && e.profiles.includes('minimal') && !/^(integration|time):/.test(e.when) && e.when !== 'optin:TYCON_SESSION_GUARD').length;
   const word = NUMBER_WORDS[lang][n] || String(n);
   if (!says(where, `${word} hooks`) && !says(where, `${n} hooks`)) out.push(`AC 22 · no dice cuántos hooks trae minimal (${word} hooks, según la lista de efectos)`);
   return out;

@@ -13,12 +13,10 @@
 # Hooks que instala (set canónico TYCON, con dispatcher):
 #
 #   UserPromptSubmit:
-#     - clocki/scripts/on-prompt.js
 #     - tycon-pipeline/scripts/on-prompt.js
 #
 #   PostToolUse:
-#     - clocki/scripts/touch-activity.js          (sin matcher — cualquier tool, async)
-#     - tycon-pipeline/scripts/hook-post-edit.js  (Edit|Write — dispatcher: clocki-enforce + on-edit)
+#     - tycon-pipeline/scripts/hook-post-edit.js  (Edit|Write — dispatcher: el control de la integración de horas + on-edit)
 #
 #   PreToolUse:
 #     - tycon-pipeline/scripts/hook-pre-edit.js   (Edit|Write — dispatcher: DoD frontmatter gate + collision)
@@ -864,7 +862,7 @@ if ($PiecesTmp -and $env:TYCON_THIRD_PARTY -ne '0') {
 # ============================================================
 # Integraciones — espejo del bloque bash. Cada integración tiene su llave en la configuración
 # del arnés (lib/tycon-config.js: variable › ~/.claude/tycon.json › perfil del equipo › APAGADA); apagada, este
-# instalador no registra sus hooks (clockify: clocki on-prompt + touch-activity; engram: engram-drift-notice y los
+# instalador no registra sus hooks (la herramienta de horas: los de su manifiesto en integrations/; engram: engram-drift-notice y los
 # chequeos de versión/sqlite3; nightly: tablero, dependencias y retro-staleness) ni llama a su servicio (ado: el
 # refresco de proyectos con az; codex: el despliegue). Configuración ROTA o sin lector: se dice y las integraciones
 # quedan COMO ESTÁN (ni se registran ni se remueven hooks; no se llama a nada) — un archivo roto no es «todo apagado».

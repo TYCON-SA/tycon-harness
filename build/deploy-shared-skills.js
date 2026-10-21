@@ -33,7 +33,7 @@ function deploySkills(srcDir, dstDir, packs = null) {
   fs.mkdirSync(dstDir, { recursive: true });
   const under = (t, d) => t === d || t.startsWith(d + path.sep);
   const ours = (p) => {
-    try { const t = fs.readlinkSync(p); return under(t, srcDir) || (!!packs && !!packs.root && under(t, packs.root)); }
+    try { const t = fs.readlinkSync(p); return under(t, srcDir) || (!!packs && !!packs.root && under(t, packs.root)) || (!!packs && !!packs.intRoot && under(t, packs.intRoot)); }
     catch (_) { return false; } // no es symlink → del dev, intocable
   };
   // lo que se enlaza: las del núcleo y, sin pisarlas, las de los paquetes activos
@@ -100,7 +100,7 @@ function selftest() {
     fs.mkdirSync(path.join(dir, skill), { recursive: true });
     if (withMd) fs.writeFileSync(path.join(dir, skill, 'SKILL.md'), '# x');
   };
-  mk(src, 'tycon-pipeline'); mk(src, 'clocki'); mk(src, 'carpeta-sin-skill', false);
+  mk(src, 'tycon-pipeline'); mk(src, 'acme-skill'); mk(src, 'carpeta-sin-skill', false);
   fs.symlinkSync(path.join(tmp, 'target-muerto'), path.join(src, 'symlink-roto')); // el caso del clon real
   fs.mkdirSync(dst, { recursive: true });
   mk(dst, 'skill-real-del-dev');                                   // dir real → intocable
@@ -109,7 +109,7 @@ function selftest() {
   const r1 = deploySkills(src, dst).actions;
   const r2 = deploySkills(src, dst).actions;
   const checks = [
-    ['linkea solo dirs con SKILL.md', r1.linked.sort().join(',') === 'clocki,tycon-pipeline'],
+    ['linkea solo dirs con SKILL.md', r1.linked.sort().join(',') === 'acme-skill,tycon-pipeline'],
     ['la carpeta sin SKILL.md no se linkea', !fs.existsSync(path.join(dst, 'carpeta-sin-skill'))],
     ['el dir real del dev queda intacto', fs.existsSync(path.join(dst, 'skill-real-del-dev'))],
     ['el symlink ajeno queda intacto', fs.readlinkSync(path.join(dst, 'ajeno')) === '/tmp/otro-lado'],
@@ -148,6 +148,42 @@ function main() {
 /** Las skills de los paquetes del clon `tree` para `deploySkills` (null si el clon no trae paquetes o no se sabe qué activa
  *  la organización: entonces no se agrega ni se saca nada de ningún paquete). */
 function packSkills(tree) {
+  return withIntegrationSkills(tree, packOnlySkills(tree));
+}
+
+/**
+ * Suma las skills de las integraciones (`skills` de su manifiesto): las de la integración de horas elegida se enlazan
+ * como las de un paquete activo; las de las demás se retiran. `intRoot`: un enlace que apunta ahí también es nuestro.
+ */
+function withIntegrationSkills(tree, packs) {
+  let INT;
+  const lib = path.join(tree, 'scripts', 'lib', 'integrations.js');
+  try { INT = require(lib); } catch (e) {
+    if (fs.existsSync(lib)) console.error(`deploy-shared-skills: no pude cargar integrations.js (${e.code || e.message}): las skills de las integraciones quedan como están`);
+    return packs;
+  }
+  const dir = path.join(tree, 'integrations');
+  const listing = INT.listManifests({ dir });
+  // un manifiesto roto no enlaza ni retira sus skills, y se dice (si es el elegido, su /skill queda como estaba)
+  for (const b of listing.problems) console.error(`deploy-shared-skills: la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus skills quedan como están`);
+  const manifests = listing.manifests.filter((m) => m.skills.length);
+  if (!manifests.length) return packs;
+  let chosen;
+  try { const TC = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')); chosen = TC.timeTracking(TC.leer({ arnes: tree })).value; } catch (e) {
+    console.error(`deploy-shared-skills: no pude leer qué integración de horas está elegida (${String((e && e.message) || e).split('\n')[0]}): no agrego ni saco sus skills`);
+    return packs;
+  }
+  const out = Object.assign({ root: null, extra: [], retire: [] }, packs || {}, { intRoot: dir });
+  out.extra = out.extra.slice(); out.retire = out.retire.slice();
+  for (const m of manifests) for (const rel of m.skills) {
+    const src = path.join(m.dir, rel);
+    if (m.name === chosen) out.extra.push({ name: path.basename(rel), src, pack: `integración ${m.name}` });
+    else out.retire.push(src);
+  }
+  return out;
+}
+
+function packOnlySkills(tree) {
   const lib = path.join(tree, 'scripts', 'lib', 'pack-pieces.js');
   if (!fs.existsSync(lib)) return null;
   const PP = require(lib);
@@ -166,5 +202,5 @@ function packSkills(tree) {
   return { root, extra: skills, retire };
 }
 
-module.exports = { deploySkills, linkState, packSkills };
+module.exports = { deploySkills, linkState, packSkills, withIntegrationSkills };
 if (require.main === module) process.exit(main());

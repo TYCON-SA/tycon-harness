@@ -22,7 +22,7 @@
 !scripts/ci/legacy-options.js
 !skills/tycon-pipeline/scripts/
 !skills/tycon-pipeline/steps/
-!skills/clocki/scripts/
+!integrations/
 !scripts/hooks/
 !scripts/setup/hooks-list.json
 !guides/**/*.md

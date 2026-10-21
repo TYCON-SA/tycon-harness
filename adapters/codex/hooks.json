@@ -22,10 +22,6 @@
           },
           {
             "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/sweep.js"
-          },
-          {
-            "type": "command",
             "command": "node ${TCG}/scripts/hooks/bench-notice.js"
           },
           {
@@ -82,10 +78,6 @@
     "UserPromptSubmit": [
       {
         "hooks": [
-          {
-            "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/on-prompt.js"
-          },
           {
             "type": "command",
             "command": "node ${SKILLS}/skills/tycon-pipeline/scripts/on-prompt.js"
@@ -181,10 +173,6 @@
           {
             "type": "command",
             "command": "bash ${TCG}/scripts/hooks/instinct-observe.sh"
-          },
-          {
-            "type": "command",
-            "command": "node ${SKILLS}/skills/clocki/scripts/touch-activity.js"
           }
         ]
       },
@@ -358,6 +346,14 @@
       "verdict": "UserPromptSubmit · large-read-notice.js — NO se registra en NINGUNA de las dos herramientas, a propósito (2026-09-20, decisión del dev). El script existe y está probado (12 casos en el banco, suite propia), pero su único efecto es empujar al agente a leer por rango, y eso se MIDIÓ como pérdida de hallazgos: el banco de 115 casos de revisores corrido dos veces —lectura normal contra «leé por rango, nunca el archivo entero»— dio 0 defectos no encontrados leyendo normal y 2 leyendo por rango, con 0 mejoras. El más claro: para ver que la cobertura de un archivo nuevo es baja hay que mirarlo ENTERO. Su compañero large-read-meter.js SÍ se registra (Stop): mide y anota, no empuja. Prender el aviso se decide en unas semanas con los datos de su propio --report. La paridad NO está rota: las dos herramientas lo dejan igualmente fuera.",
       "scripts": [
         "scripts/hooks/large-read-notice.js"
+      ]
+    },
+    {
+      "log": "SessionStart · sweep.js y PostToolUse · touch-activity.js (integración de horas)",
+      "verdict": "Los registra el despliegue desde el manifiesto de la integración elegida (integrations/<nombre>/integration.json, build/deploy-codex-hooks.js withIntegrationHooks): este fragmento no los trae escritos. Sin herramienta de horas elegida no se registran, a propósito.",
+      "scripts": [
+        "sweep.js",
+        "touch-activity.js"
       ]
     }
   ]

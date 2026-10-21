@@ -59,7 +59,24 @@ const SCRIPTS_DIR = path.dirname(SETUP_DIR);
 
 // `Notification` y `SessionEnd` sirven al aviso de espera: el pedido de permiso y la sesión que se cierra
 const EVENTS = ['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd'];
-const WHEN_RE = /^(always|integration:[a-z]+|optin:TYCON_[A-Z_]+)$/;
+// `time:<integración>`: un hook de una integración de horas, que va sólo si es la elegida (los suma loadList de su
+// manifiesto en integrations/)
+const WHEN_RE = /^(always|integration:[a-z]+|time:[a-z0-9-]+|optin:TYCON_[A-Z_]+)$/;
+// La carpeta de las integraciones del árbol, y su lector. Se carga al leer la lista (quien carga este archivo solo,
+// sin su árbol, no tiene integraciones: la lista queda como está).
+const INTEGRATIONS_DIR = path.join(SCRIPTS_DIR, '..', 'integrations');
+// null sin la biblioteca; si está y no carga, `{ error }` (loadList lo dice: la integración elegida quedaría sin sus hooks)
+const INTmod = () => {
+  const lib = path.join(SCRIPTS_DIR, 'lib', 'integrations.js');
+  try { return require(lib); } catch (e) { return fs.existsSync(lib) ? { error: e.code || e.message } : null; }
+};
+/** El spec `@int:<integración>/<ruta>` → `{ name, rel }`, o null. */
+// La ruta, con la misma regla que el manifiesto (scripts/lib/integrations.js): sólo letras, números, «.», «-» y «_»
+// separados por `/`, sin `..` ni `.`; así nada de una ruta de manifiesto sale de su carpeta ni llega a un comando.
+function intSpec(spec) {
+  const m = /^@int:([a-z0-9][a-z0-9-]*)\/([A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*)$/.exec(String(spec || ''));
+  return m && !m[2].split('/').some((s) => s === '..' || s === '.') ? { name: m[1], rel: m[2] } : null;
+}
 const NEEDS = new Set(['telegram-plugin']);
 const STEP_RE = /^(all|\d+[a-z]?)$/;
 const EFFECTS = ['blocks', 'warns', 'records'];
@@ -116,7 +133,7 @@ function validateList(list) {
 }
 
 /** Lee y valida la lista. Tira ApplyError con el archivo y el motivo: una lista rota nunca es «no hay hooks». */
-function loadList(file) {
+function loadList(file, { integrationsDir = INTEGRATIONS_DIR } = {}) {
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) {
     throw new ApplyError(`${file}: la lista de hooks no está (${e.code || e.message}) — no escribo nada: una lista que no se puede leer no es «no hay hooks»`);
@@ -127,7 +144,20 @@ function loadList(file) {
   }
   const problems = validateList(list);
   if (problems.length) throw new ApplyError(`${file}: la lista de hooks no pasa su validación — no escribo nada:\n  · ${problems.join('\n  · ')}`);
-  return { hooks: list.hooks, superseded: list.superseded || [], legacy: list.legacy_fragments || [] };
+  // los hooks del lado Claude Code de cada integración de horas, de su manifiesto: `decide` prende sólo los de la elegida
+  // y saca los de las otras. Un manifiesto roto no suma nada y se dice (la integración elegida quedaría sin sus hooks).
+  const INT = INTmod();
+  const hooks = list.hooks.slice();
+  const warnings = [];
+  if (INT && INT.error && integrationsDir && fs.existsSync(integrationsDir)) warnings.push(`no pude cargar integrations.js (${INT.error}): los hooks de las integraciones no se registran`);
+  else if (INT && integrationsDir && fs.existsSync(integrationsDir)) {
+    const { manifests, problems: broken } = INT.listManifests({ dir: integrationsDir });
+    for (const b of broken) warnings.push(`la integración «${b.name}» tiene el manifiesto roto (${b.reasons.join('; ')}): sus hooks no se registran`);
+    for (const m of manifests) hooks.push(...INT.hookEntries(m, { tool: 'claude' }));
+    const extra = validateList({ hooks });
+    if (extra.length) throw new ApplyError(`${integrationsDir}: los hooks de las integraciones no pasan la validación de la lista — no escribo nada:\n  · ${extra.join('\n  · ')}`);
+  }
+  return { hooks, superseded: list.superseded || [], legacy: list.legacy_fragments || [], warnings };
 }
 
 /** Los ids `<EVENTO>:<spec>` que la lista de efectos marca `minimal`. null si no se pudo leer. */
@@ -160,6 +190,17 @@ function readConfig({ env = process.env, libDir = path.join(SCRIPTS_DIR, 'lib'),
       if (m) integ.values[m[1].toLowerCase()] = m[2];
     }
   } else if (r.status === 2) integ.state = 'rota';
+  // la integración de horas elegida (sólo con la configuración legible: rota, sus hooks quedan como están)
+  if (integ.state === 'ok') {
+    const t = ask(['time-tracking']);
+    const v = String(t.stdout || '').trim();
+    // un valor con otra forma no es «ninguna»: no se sabe cuál es, así que sus hooks quedan como están, y se dice
+    if (t.status === 0 && /^[a-z0-9][a-z0-9-]*$/.test(v)) integ.timeTracking = v;
+    else {
+      integ.timeTracking = null;
+      integ.timeTrackingProblem = t.status === 0 ? `la herramienta de horas no se entiende («${v.slice(0, 40)}»)` : `no pude leer la herramienta de horas (salida ${t.status})`;
+    }
+  }
   const p = ask(['get', 'install.profile']);
   const out = String(p.stdout || '').trim();
   if (p.status === 3) profile.state = 'ok';
@@ -202,6 +243,14 @@ function decide(list, ctx) {
   for (const h of list.hooks) {
     if (windows && h.platforms.windows === false) continue;   // lo excluido en Windows no se registra ni se saca
     const [kind, arg] = h.when.split(':');
+    if (kind === 'time') {
+      // sin saber cuál está elegida (un lector viejo que no tiene `time-tracking`), quedan como están
+      const chosen = integOk ? ctx.integ.timeTracking : undefined;
+      if (chosen === undefined || chosen === null) { leave.add(h.spec); continue; }
+      addKnown(h.spec);
+      if (chosen === arg) active.push(h);
+      continue;
+    }
     if (kind === 'integration') {
       if (h.override) {
         const o = v(h.override);
@@ -394,9 +443,19 @@ const ENV_CANONICAL = { CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: '1' };
 function applyToSettings(settings, o) {
   const windows = o.platform === 'windows';
   const env = o.env || {};
-  const resolve = (spec) => (spec.startsWith('@tcg:') ? path.join(o.hooksDir, spec.slice(5)) : path.join(o.skills, spec));
-  const repoPathOf = (spec) => (spec.startsWith('@tcg:') ? `scripts/hooks/${spec.slice(5)}` : `skills/${spec}`);
-  const repoOf = (spec) => (spec.startsWith('@tcg:') ? path.dirname(path.dirname(o.hooksDir)) : path.dirname(o.skills));
+  // tres clases de spec: `@tcg:` (scripts/hooks del árbol), `@int:` (integrations/ del árbol) y el resto (skills/)
+  const intDir = o.integrationsDir || path.join(path.dirname(path.dirname(o.hooksDir)), 'integrations');
+  const resolve = (spec) => {
+    if (spec.startsWith('@tcg:')) return path.join(o.hooksDir, spec.slice(5));
+    const i = intSpec(spec);
+    return i ? path.join(intDir, i.name, i.rel) : path.join(o.skills, spec);
+  };
+  const repoPathOf = (spec) => {
+    if (spec.startsWith('@tcg:')) return `scripts/hooks/${spec.slice(5)}`;
+    const i = intSpec(spec);
+    return i ? `integrations/${i.name}/${i.rel}` : `skills/${spec}`;
+  };
+  const repoOf = (spec) => (spec.startsWith('@tcg:') ? path.dirname(path.dirname(o.hooksDir)) : (intSpec(spec) ? path.dirname(intDir) : path.dirname(o.skills)));
   if (!settings.hooks || typeof settings.hooks !== 'object' || Array.isArray(settings.hooks)) settings.hooks = settings.hooks && typeof settings.hooks === 'object' && !Array.isArray(settings.hooks) ? settings.hooks : {};
   const hooks = settings.hooks;
   const r = { added: [], existed: [], removed: [], missing: [], notInstalled: [], deferred: [], normalized: [], reformed: [], present: [], topAdded: [], envAdded: [] };
@@ -407,6 +466,7 @@ function applyToSettings(settings, o) {
   const activeSpecs = new Set(active.map((h) => h.spec));
   const inactive = o.decision.known.filter((s) => !activeSpecs.has(s));
   const cmdOf = (hk) => (hk && typeof hk === 'object' && typeof hk.command === 'string' ? hk.command : '');
+  const keptByLeave = new Set([...(o.decision.leave || [])].map(intSpec).filter(Boolean).map((i) => path.posix.basename(i.rel)));
 
   // 1 · sacar lo reemplazado, lo apagado y lo viejo
   for (const ev of Object.keys(hooks)) {
@@ -420,7 +480,9 @@ function applyToSettings(settings, o) {
         const cmdFwd = fwd(cmd);
         let why = null; let what = null;
         const sup = o.list.superseded.find((s) => (windows ? invokesRepoPath(cmd, s) : cmd.includes(s) && JS_RUNNER.test(cmd)));
-        if (sup) { what = sup; why = 'superseded by H10 dispatcher'; }
+        // la ruta vieja de un hook de integración que queda como está (no se sabe qué herramienta eligió) no se saca:
+        // sacarla dejaría a la herramienta sin su hook hasta que la configuración se lea
+        if (sup && !keptByLeave.has(path.posix.basename(sup))) { what = sup; why = 'superseded by H10 dispatcher'; }
         if (!what) {
           const off = inactive.find((s) => (windows ? invokesRepoPath(cmd, repoPathOf(s)) : namesFile(cmd, resolve(s))));
           if (off) { what = off; why = o.decision.profileOff.has(off) ? 'fuera del perfil minimal' : 'disabled by env var'; }
@@ -643,7 +705,10 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   const hooksDir = path.resolve(a.hooksDir || path.join(SCRIPTS_DIR, 'hooks'));
   if (!a.skills) throw new ApplyError('apply-hooks: falta --skills (la carpeta skills/ del arnés)');
   const skills = path.resolve(a.skills);
-  const list = loadList(a.list || path.join(SETUP_DIR, 'hooks-list.json'));
+  // las integraciones del mismo árbol que los hooks del núcleo
+  const integrationsDir = path.join(path.dirname(path.dirname(hooksDir)), 'integrations');
+  const list = loadList(a.list || path.join(SETUP_DIR, 'hooks-list.json'), { integrationsDir });
+  for (const w of list.warnings || []) process.stderr.write(`apply-hooks: ${w}\n`);
 
   let raw = '';
   let existed = true;
@@ -661,12 +726,13 @@ function main(argv = process.argv.slice(2), env = process.env, { runConfig = nul
   if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new ApplyError(`${settingsPath}: settings.json no es un objeto JSON — no lo toco`);
 
   const { integ, profile } = readConfig({ env, runConfig });
+  if (integ.timeTrackingProblem) process.stderr.write(`apply-hooks: ${integ.timeTrackingProblem}: los hooks de las integraciones de horas quedan como están\n`);
   const minimalIds = loadMinimalIds(a.effects || path.join(SETUP_DIR, 'install-effects.json'));
   const has = (need) => need === 'telegram-plugin' && fs.existsSync(path.join(home, '.claude', 'plugins', 'cache', 'claude-plugins-official', 'telegram'));
   const decision = decide(list, { env, integ, profile, minimalIds, platform, has });
   // el intérprete de los hooks `.js`: mirando el disco, también si este instalador corre suelto
   const interp = require('./harness/harness-node.js').interpreter({ env, platform: windows ? 'win32' : (process.platform === 'win32' ? 'linux' : process.platform) });
-  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, check: a.check, env, settingsPath, interp });
+  const r = applyToSettings(settings, { list, decision, platform, hooksDir, skills, integrationsDir, check: a.check, env, settingsPath, interp });
 
   // las dos claves del arnés (posix): como el .sh, salvo que las haya hecho harness.js o el perfil no sea full
   // fuera de full (minimal, o el perfil sin saber) las dos claves tampoco se escriben ni se anotan; en

@@ -457,7 +457,7 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
   }
   // los hooks de minimal: los seis de la regla, más los de una integración (y el freno de sesiones, que nace apagado en
   // los dos y lo prende su variable)
-  const minimalHooks = eff.effects.filter((e) => e.kind === 'hook' && e.profiles.includes('minimal') && !/^integration:/.test(e.when) && e.when !== 'optin:TYCON_SESSION_GUARD').map((e) => e.id);
+  const minimalHooks = eff.effects.filter((e) => e.kind === 'hook' && e.profiles.includes('minimal') && !/^(integration|time):/.test(e.when) && e.when !== 'optin:TYCON_SESSION_GUARD').map((e) => e.id);
   assert.deepStrictEqual(minimalHooks.sort(), [...MINIMAL_HOOKS].sort(), 'los hooks de minimal (sin contar los de una integración)');
   for (const e of eff.effects.filter((x) => /^integration:/.test(x.when))) assert.deepStrictEqual(e.profiles, ['minimal', 'full'], `${nameOf(e)}: lo de una integración va en los dos perfiles`);
   // las reglas de lo que queda sólo en full
@@ -486,7 +486,8 @@ test('Effects_EveryEntryHasProfiles_InstallTableColumnMatches', () => {
   const rows = installTableRows(read(ROOT, 'INSTALL.md'));
   assert.ok(rows, 'la tabla «Los hooks que instala» de INSTALL.md tiene la columna «Perfil»');
   const hooks = eff.effects.filter((e) => e.kind === 'hook' && e.when !== 'platform:windows');
-  const same = (r, e) => { const h = managed.hookId(e.id); return h.event === r.event && (h.relpath === r.hook || h.relpath === `@tcg:${r.hook}`); };
+  // la tabla escribe un hook de una integración con su carpeta (`integrations/<n>/…`); la lista, `@int:<n>/…`
+  const same = (r, e) => { const h = managed.hookId(e.id); return h.event === r.event && (h.relpath === r.hook || h.relpath === `@tcg:${r.hook}` || `integrations/${h.relpath.replace(/^@int:/, '')}` === r.hook && h.relpath.startsWith('@int:')); };
   const problems = [];
   for (const r of rows) {
     const hit = hooks.find((e) => same(r, e));

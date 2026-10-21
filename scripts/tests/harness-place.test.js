@@ -471,7 +471,7 @@ test('T36 Reviewers_PlacePath_AdaptersRegenerated_NoHandEdits', () => {
 
 // ── T37 ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const AC27_FILES = ['scripts/hooks/branch-guard-notice.js', 'scripts/hooks/engram-drift-notice.js', 'scripts/tools/context-budget.js',
-  'scripts/tools/rules-distill.js', 'skills/clocki/scripts/install-clocki-hooks.sh', 'skills/clocki/scripts/install-clocki-hooks.ps1',
+  'scripts/tools/rules-distill.js',
   'skills/tycon-pipeline/scripts/on-pre-commit.js', 'skills/tycon-pipeline/scripts/on-frontmatter-write.js', 'skills/tycon-pipeline/scripts/pipeline.js',
   'build/check.js', 'scripts/ci/nightly-dod-notice.sh', 'scripts/hooks/instinct-trigger.sh', 'scripts/lib/harness-audit.js',
   'scripts/lib/hook-io.js', 'scripts/lib/lint-story-frontmatter.js', 'scripts/setup/install-clockify-mcp.sh', 'scripts/setup/install-clockify-mcp.ps1',

@@ -303,7 +303,9 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   // con la lista actual (45 registros), la cuenta exacta del análisis: faltan 18
   if (team.hooks.length === 45) assert.deepStrictEqual(missing.slice().sort(), MISSING_AT_BASELINE.slice().sort(), `faltan ${missing.length}: ${missing.join(', ')}`);
   else assert.ok(missing.length >= 12, `la lista del instalador cambió (${team.hooks.length} registros) y faltan ${missing.length}`);
-  assert.deepStrictEqual(today.superseded.map((s) => s.hook).sort(), ['PostToolUse:tycon-ado-story-wi/scripts/on-story-create.js', 'PostToolUse:tycon-story-followup-link/scripts/on-story-create.js'], 'los 2 que correrían dos veces, por nombre');
+  // más los dos de Clockify con la ruta vieja de la foto (skills/clocki/): el instalador los cambia por los de
+  // integrations/clockify/
+  assert.deepStrictEqual(today.superseded.map((s) => s.hook).sort(), ['PostToolUse:clocki/scripts/touch-activity.js', 'PostToolUse:tycon-ado-story-wi/scripts/on-story-create.js', 'PostToolUse:tycon-story-followup-link/scripts/on-story-create.js', 'UserPromptSubmit:clocki/scripts/on-prompt.js'], 'los que correrían dos veces, por nombre');
   // Desde que los frenos miran también la herramienta PowerShell (main 05c1a625: matcher `Bash|PowerShell`), lo que la
   // foto vieja del .ps1 registra con `Bash` está en su evento pero con otro matcher: «mal ubicado», por nombre. Nada en
   // otro evento.
@@ -313,7 +315,7 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   assert.deepStrictEqual(today.startup_line, { count: 1, events: ['SessionStart'], is_async: [true] });
   assert.deepStrictEqual(today.runners, { node: 29 }, 'el de Windows sólo sabe escribir node');
   const ids = count.findingsOf(today).map((f) => f.id);
-  assert.strictEqual(ids.length, missing.length + 2 + today.misplaced.length, 'un hallazgo por cada hook que falta, por cada uno que corre dos veces y por cada uno con otro matcher');
+  assert.strictEqual(ids.length, missing.length + today.superseded.length + today.misplaced.length, 'un hallazgo por cada hook que falta, por cada uno que corre dos veces y por cada uno con otro matcher');
   assert.ok(ids.includes('hooks:missing:PreToolUse:@tcg:safety-guard-pre.sh') && ids.includes('hooks:superseded:PostToolUse:tycon-ado-story-wi/scripts/on-story-create.js'));
   assert.strictEqual(new Set(ids).size, ids.length, 'un id por hallazgo');
 

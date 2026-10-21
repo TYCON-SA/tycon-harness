@@ -39,7 +39,7 @@ function fakeIntegrations({ name = 'fake', kind = 'timeTracking' } = {}) {
     "let raw = ''; process.stdin.on('data', (c) => { raw += c; }); process.stdin.on('end', () => {",
     "  const ev = JSON.parse(raw);",
     "  fs.appendFileSync(path.join(__dirname, '..', 'got.jsonl'), JSON.stringify(ev) + '\\n');",
-    "  process.stdout.write(JSON.stringify(ev.event === 'stop' ? { seconds: 1080 } : {}) + '\\n');",
+    "  process.stdout.write(JSON.stringify(ev.event === 'stop' ? { seconds: 1080 } : (ev.event === 'start' ? { action: 'abrí la entrada', otra: 'no pasa' } : {})) + '\\n');",
     "});",
   ].join('\n'));
   return { dir, got: path.join(own, 'got.jsonl') };
@@ -88,6 +88,8 @@ test('WorkSignal_Start_PassesNeutralEvent @story-7.40 @ac-2', () => {
   assert.match(ev.at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/, 'la hora va en UTC con Z, sin milésimas');
   assert.ok(ev.stateDir.startsWith(l.tyconHome), 'el estado de la integración va en la casa del arnés');
   assert.deepStrictEqual(ev.settings, {}, 'una integración que no pide ajustes no recibe ninguno');
+  // la acción para el agente pasa; lo demás que devuelva la integración, no
+  assert.deepStrictEqual(JSON.parse(r.stdout.trim()), { action: 'abrí la entrada' });
 });
 
 test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
@@ -100,8 +102,11 @@ test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
       assert.match(r.stderr, /integración de horas desconocida/);
       assert.match(r.stderr, /harvest/);
       assert.ok(!fs.existsSync(f.got));
+      assert.strictEqual(r.stdout.trim(), '{}');
+    } else {
+      // con espacios y mayúsculas es la misma integración: corre
+      assert.ok(fs.existsSync(f.got), 'el nombre se compara sin espacios ni mayúsculas');
     }
-    assert.strictEqual(r.stdout.trim(), '{}');
   }
   // la carpeta de la integración elegida no existe
   const l = lab();
@@ -138,10 +143,11 @@ test('WorkSignal_UnknownTool_TreatedAsNone @story-7.40 @ac-14', () => {
 // El techo: archivos del núcleo que nombran una herramienta de horas, fuera de las carpetas de integraciones, la vieja
 // carpeta de la skill y las pruebas. Sólo baja: llega a 0 cuando la última integración sale del núcleo.
 // Tampoco cuentan las capturas de la guía del sitio: son la página tal cual la guarda site-guide-captures.js, y la
-// página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito
-const TOOL_NAMES_CEILING = 68;
+// página de Configuración trae la sección de integraciones con sus nombres; no es núcleo escrito. Ni el registro de las
+// firmas del dueño (.github/control-changes.jsonl): anota las rutas de los controles que firma, también las borradas
+const TOOL_NAMES_CEILING = 56;
 const TOOL_NAMES_OUTSIDE_CORE = [':!integrations', ':!skills/clocki', ':!guides/integrations', ':!guides/sitio-de-la-organizacion/capturas',
-  ':!**/tests/**', ':!**/*.test.*'];
+  ':!.github/control-changes.jsonl', ':!**/tests/**', ':!**/*.test.*'];
 /** Los archivos del núcleo que nombran una herramienta de horas en el clon `root`. `--untracked`: un archivo nuevo cuenta desde que existe. */
 function coreFilesNamingTimeTool(root) {
   const r = spawnSync('git', ['-C', root, 'grep', '--untracked', '-il', '-E', 'clocki|clockify|solidtime', '--', '.', ...TOOL_NAMES_OUTSIDE_CORE], { encoding: 'utf8' });

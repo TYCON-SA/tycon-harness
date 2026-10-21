@@ -155,6 +155,8 @@ function parse(argv) {
     if (a === '--help' || a === '-h') return { help: true, cmd };
     if (a.startsWith('-')) {
       const kind = spec.opts[a];
+      // en `config`, lo que empieza con guion puede ser un secreto pegado en el lugar equivocado: no se repite
+      if (!kind && cmd === 'config') return { error: 'opción desconocida para config (no se muestra: config no lleva opciones)' };
       if (!kind) return { error: `opción desconocida «${a}» para ${cmd}. Opciones: ${Object.keys(spec.opts).join(', ') || '(ninguna)'}` };
       if (kind === 'value' || kind === 'list') {
         const v = argv[i + 1];
@@ -3838,7 +3840,12 @@ function cmdDoctor(ctx) {
   // configuración. Lo que el aplicador nunca registró no está en `managed`, y lo de arriba no lo ve. Siempre un AVISO,
   // nunca un rojo: la comprobación de salud llama a doctor, y un rojo acá haría volver atrás una actualización sana
   const integrations = (() => {
-    try { const cfg = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js')); return cfg.integraciones(cfg.leer({ env, home: ctx.home, arnes: tree })); } catch (_) { return null; }
+    try {
+      const cfg = require(path.join(tree, 'scripts', 'lib', 'tycon-config.js'));
+      const c = cfg.leer({ env, home: ctx.home, arnes: tree });
+      // con la integración de horas elegida (los hooks `time:<integración>`), si el lector la conoce
+      return Object.assign(cfg.integraciones(c), typeof cfg.timeTracking === 'function' ? { timeTracking: cfg.timeTracking(c).value } : {});
+    } catch (_) { return null; }
   })();
   // el perfil de instalación: se dice con su origen, y lo que el perfil no trae no es un
   // control que falta. Con la configuración rota no se sabe: lo que depende del perfil no se cuenta, y se avisa
@@ -4735,9 +4742,11 @@ function cmdConfig(ctx) {
   // los secretos que declaran las integraciones van en su propio archivo (scripts/lib/integrations.js): el freno de
   // producción lee config.json con su copia del lector, que no los conoce
   const INT = require('../lib/integrations.js');
-  // con una clave secreta, lo que sobra puede ser un pedazo del secreto: el mensaje no lo repite
-  const secret = !!key && (GA.SECRET_KEYS.includes(key) || INT.isSecretKey(key, { env: ctx.env }));
-  if (rest.length) return { code: 2, lines: [`harness.js config: un solo valor para ${key || 'la clave'} (sobran ${secret ? `${rest.length} argumento(s), que no se muestran` : `: ${rest.join(' ')}`})`] };
+  // lo que sobra no se repite nunca: con una clave secreta mal escrita (que ya no se reconoce como secreta) puede ser un
+  // pedazo del secreto; tampoco la clave, si no tiene forma de clave
+  // forma de clave: `<sección>.<nombre>`, corta; un secreto pegado en lugar de la clave no la tiene
+  const shownKey = key && key.length <= 40 && /^[a-z][a-z0-9-]*\.[A-Za-z][A-Za-z0-9_]*$/.test(key) ? key : 'la clave';
+  if (rest.length) return { code: 2, lines: [`harness.js config: un solo valor para ${shownKey} (sobran ${rest.length} argumento(s), que no se muestran)`] };
   if (verb === 'show') {
     const c = GA.readConfig({ env: ctx.env });
     if (!c.ok) return { code: 2, lines: [`harness.js config: ${c.reason}`] };
@@ -4747,7 +4756,7 @@ function cmdConfig(ctx) {
     return { code: 0, stdout: true, lines: [`${c.file}: ${keys.length ? `claves guardadas: ${keys.join(', ')} (los valores no se muestran)` : 'sin claves'}`, ...(secrets.length ? [`secretos de las integraciones (${INT.secretsDir(ctx.env)}): ${secrets.join(' · ')}`] : [])] };
   }
   if (key && INT.isSecretKey(key, { env: ctx.env })) return configIntegrationSecret(ctx, INT, verb, key, argValue);
-  if (!key || !GA.KEYS.includes(key)) return { code: 2, lines: [`harness.js config: la clave tiene que ser una de ${GA.KEYS.join(', ')}${key ? ` (dice «${key}»)` : ''}`] };
+  if (!key || !GA.KEYS.includes(key)) return { code: 2, lines: [`harness.js config: la clave tiene que ser una de ${GA.KEYS.join(', ')}${key ? (shownKey === key ? ` (dice «${key}»)` : ' (lo que pusiste no tiene forma de clave y no se muestra)') : ''}`] };
   if (verb === 'unset') {
     const r = GA.setKey(key, null, { env: ctx.env, platform: ctx.platform });
     return r.ok ? { code: 0, lines: [`${key} sacada de ${r.file}`] } : { code: 2, lines: [`harness.js config: ${r.reason}`] };

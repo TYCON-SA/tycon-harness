@@ -95,7 +95,7 @@ mapa "$TMP/c8/m.html" '  "rev": {"nombre":"r","tipo":"revisor","archivos":[["as"
   "pack": {"nombre":"p","tipo":"revisor","archivos":[["as","packs/bizuit/pack.json"]]},
   "hook": {"nombre":"h","tipo":"control de sesión","archivos":[["tcg","scripts/hooks/aviso.js"]]},
   "freno": {"nombre":"f","tipo":"control de sesión","archivos":[["as","skills/tycon-pipeline/scripts/on-story-gate.js"]]},
-  "horas": {"nombre":"c","tipo":"control de sesión","archivos":[["as","skills/clocki/scripts/sweep.js"]]},
+  "horas": {"nombre":"c","tipo":"skill","archivos":[["tcg","integrations/clockify/"]]},
   "skill": {"nombre":"s","tipo":"skill","archivos":[["as","skills/tycon-pipeline/scripts/pipeline.js (model-hint)"]]},
   "guia": {"nombre":"g","tipo":"guía","archivos":[["tcg","guides/guide-update-proposals.md"]]},
   "bloque": {"nombre":"b","tipo":"bloque","archivos":[["tcg","claude-md-blocks/"]]},
@@ -116,7 +116,7 @@ for t in "revisor" "control de sesión" "skill" "guía" "bloque" "comando" "pipe
   grep -q "$t" "$TMP/c8/tabla" || { todos=0; echo "    falta «${t}» en la tabla"; }
 done
 J="$(tipos "$TMP/c8/m.html")"
-esperado='rev=revisor pack=revisor hook=control de sesión freno=control de sesión horas=control de sesión skill=skill guia=guía bloque=bloque cmd=comando yml=pipeline plantilla=pipeline mudado=pipeline script=script spec=especificación pin=configuración arranque=configuración dev=externo maltipeada=script sinregla=null'
+esperado='rev=revisor pack=revisor hook=control de sesión freno=control de sesión horas=skill skill=skill guia=guía bloque=bloque cmd=comando yml=pipeline plantilla=pipeline mudado=pipeline script=script spec=especificación pin=configuración arranque=configuración dev=externo maltipeada=script sinregla=null'
 obtenido="$(printf '%s' "$J" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).map(p=>p.ficha+"="+p.tipo).join(" "))}catch(e){console.log("NO-JSON")}})')"
 node "$CENSO" --check --map "$TMP/c8/m.html" > "$TMP/c8/check" 2>&1; rc=$?
 [ "$todos" = 1 ] && [ "$obtenido" = "$esperado" ] && [ "$rc" = 1 ] \

@@ -396,12 +396,20 @@ function install({ tree, env, platform, list, entry, pk, p, log, rec }) {
 
 // ── doctor ───────────────────────────────────────────────────────────────────────────────────
 const HOOK_JS = /"([^"]+\.js)"\s*$/;
-/** Las rutas en su repo de los guiones `.js` de hooks-list.json (`scripts/hooks/x.js`, `skills/…/y.js`), o null. */
+/**
+ * Las rutas en su repo de los guiones `.js` de hooks-list.json y de los manifiestos de integrations/
+ * (`scripts/hooks/x.js`, `integrations/<n>/x.js`, `skills/…/y.js`), o null.
+ */
 function listedHookPaths(tree = DEFAULT_TREE) {
   try {
     const j = JSON.parse(fs.readFileSync(path.join(tree, 'scripts', 'setup', 'hooks-list.json'), 'utf8'));
-    return [...new Set((j.hooks || []).map((h) => String(h.spec || '')).filter((s) => s.endsWith('.js'))
-      .map((s) => (s.startsWith('@tcg:') ? `scripts/hooks/${s.slice(5)}` : `skills/${s}`)))];
+    const specs = (j.hooks || []).map((h) => String(h.spec || ''));
+    try {
+      const INT = require(path.join(tree, 'scripts', 'lib', 'integrations.js'));
+      for (const m of INT.listManifests({ dir: path.join(tree, 'integrations') }).manifests) specs.push(...INT.hookEntries(m, { tool: 'claude' }).map((h) => h.spec));
+    } catch (_) { /* un árbol sin integraciones: sólo la lista */ }
+    const repoPath = (s) => (s.startsWith('@tcg:') ? `scripts/hooks/${s.slice(5)}` : (s.startsWith('@int:') ? `integrations/${s.slice(5)}` : `skills/${s}`));
+    return [...new Set(specs.filter((s) => s.endsWith('.js')).map(repoPath))];
   } catch (_) { return null; }
 }
 

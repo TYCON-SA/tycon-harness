@@ -4,7 +4,6 @@
   "retirement": "done",
   "own": [
     {"glob": "skills/tycon-*", "why": "las skills del arnés"},
-    {"glob": "skills/clocki", "why": "registro de horas del equipo"},
     {"glob": "skills/check-story-drift", "why": "del equipo"},
     {"glob": "skills/bizuit-sdd", "why": "su única casa desde 7662c54 (se sacó el autoactualizador que bajaba de un repo público)"},
     {"glob": "skills/core/*", "why": "skills del equipo (no cargan como skill: sin SKILL.md en su raíz)"},

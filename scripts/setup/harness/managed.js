@@ -63,9 +63,14 @@ function hookId(id) {
   if (i > 0 && EVENTS.includes(id.slice(0, i))) return { event: id.slice(0, i), relpath: id.slice(i + 1) };
   return { event: null, relpath: id };
 }
-/** Lo que tiene que aparecer en el `command` de un hook: `@tcg:x.js` vive en scripts/hooks/ del árbol; lo demás en agent-skills. */
+/**
+ * Lo que tiene que aparecer en el `command` de un hook: `@tcg:x.js` vive en scripts/hooks/ del árbol, `@int:<n>/x.js`
+ * en integrations/<n>/ del árbol; lo demás en agent-skills.
+ */
 function hookNeedle(relpath) {
-  return relpath.startsWith('@tcg:') ? `/scripts/hooks/${relpath.slice(5)}` : `/${relpath.replace(/^\/+/, '')}`;
+  if (relpath.startsWith('@tcg:')) return `/scripts/hooks/${relpath.slice(5)}`;
+  if (relpath.startsWith('@int:')) return `/integrations/${relpath.slice(5)}`;
+  return `/${relpath.replace(/^\/+/, '')}`;
 }
 
 /** Barras normales: el `.ps1` escribe los commands con `/` y las rutas de Windows vienen con `\`. */
@@ -85,7 +90,7 @@ function settingsCommands(settings) {
 }
 
 const SPEC_RE = new RegExp(`"((?:${EVENTS.join('|')})\\|[^"\\n]*)"`, 'g');
-const PATH_TOKEN = /^(@tcg:[\w.-]+|[\w.-]+(?:\/[\w.-]+)+\.(?:js|sh|py|mjs|cjs))$/;
+const PATH_TOKEN = /^(@tcg:[\w.-]+|@int:[a-z0-9-]+(?:\/[\w.-]+)+\.(?:js|sh|py)|[\w.-]+(?:\/[\w.-]+)+\.(?:js|sh|py|mjs|cjs))$/;
 /**
  * Los hooks que el aplicador del árbol conoce —su lista canónica y sus opt-in, escritos como
  * `"EVENTO|matcher|ruta|etiqueta"`—: `[{ event, relpath, needle }]`, o `null` si no se puede leer. Es la frontera de
@@ -125,7 +130,14 @@ function hooksListRows(tree, keep) {
   if (!isObject(doc) || !Array.isArray(doc.hooks)) return null;
   const out = [];
   const seen = new Map();
-  for (const h of doc.hooks) {
+  // los hooks del lado Claude Code de las integraciones, de sus manifestos (su condición, `time:<integración>`, la dice la
+  // lista de condiciones como la de cualquier otro)
+  const intHooks = [];
+  try {
+    const INT = require(path.join(tree, 'scripts', 'lib', 'integrations.js'));
+    for (const m of INT.listManifests({ dir: path.join(tree, 'integrations') }).manifests) intHooks.push(...INT.hookEntries(m, { tool: 'claude' }));
+  } catch (_) { /* un árbol sin integraciones: sólo la lista */ }
+  for (const h of doc.hooks.concat(intHooks)) {
     if (!isObject(h) || !EVENTS.includes(h.event) || typeof h.spec !== 'string' || !keep(h)) continue;
     addRow(out, seen, h.event, h.spec, typeof h.matcher === 'string' ? h.matcher : '');
   }
@@ -305,7 +317,7 @@ const PROFILES = ['minimal', 'full'];
 // dónde frena: en ningún lado, en cualquier repo, sólo en un repo bajo el arnés, o sólo con el pipeline en modo autónomo
 const EFFECT_BLOCKS = ['no', 'any-repo', 'harness-repos', 'autonomous-only'];
 // cuándo existe la pieza: el vocabulario de scripts/tests/fixtures/harness-managed-pieces.json
-const EFFECT_WHEN = /^(always|shared|single-repo|legacy-place|harness\.js|integration:[a-z]+|optin:[A-Za-z][A-Za-z_-]*|platform:(windows|darwin)( & (optin:[A-Z_]+|designated-machine))?)$/;
+const EFFECT_WHEN = /^(always|shared|single-repo|legacy-place|harness\.js|integration:[a-z]+|time:[a-z0-9-]+|optin:[A-Za-z][A-Za-z_-]*|platform:(windows|darwin)( & (optin:[A-Z_]+|designated-machine))?)$/;
 // las llaves de integración que existen (las de scripts/lib/tycon-config.js): una mal escrita o vieja da rojo, no pasa
 const EFFECT_INTEGRATIONS = ['ado', 'telegram', 'clockify', 'engram', 'codegraph', 'mailbox', 'codex', 'nightly'];
 const textOrNull = (v) => v === null || (typeof v === 'string' && v.trim().length > 0);
@@ -489,6 +501,12 @@ function conditionState(id, when, { platform, integrations, env, home }) {
   for (const term of String(when).split('&').map((t) => t.trim()).filter(Boolean)) {
     if (term === 'always') continue;
     const [kind, arg] = [term.slice(0, term.indexOf(':')), term.slice(term.indexOf(':') + 1)];
+    if (kind === 'time') {
+      // la integración de horas elegida (`integrations.timeTracking`)
+      if (!isObject(integrations) || typeof integrations.timeTracking !== 'string') return { on: null, why: `no se sabe qué integración de horas está elegida: lo de ${arg} queda como estaba` };
+      if (integrations.timeTracking !== arg) return { on: false, why: `la integración de horas elegida no es ${arg}` };
+      continue;
+    }
     if (kind === 'integration') {
       const sw = SWITCH_OVER_INTEGRATION[id];
       if (sw && env[sw] !== undefined && env[sw] !== '') {

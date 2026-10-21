@@ -93,7 +93,7 @@ afuera "$C1" -- bash "$INST" > "$C1/instalador.out" 2>&1; RC=$?
   || no "T9 el instalador salió $RC sin integraciones: $(tail -5 "$C1/instalador.out" | tr '\n' ' ')"
 [ -f "$C1/.claude/settings.json" ] || no "T9 el instalador no escribió settings.json en la HOME temporal"
 
-for h in clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js engram-pre-commit.sh engram-drift-notice.js \
+for h in integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js engram-pre-commit.sh engram-drift-notice.js \
          dashboard-notice.js dependencies-notice.js retro-staleness-notice.js; do
   if registrado "$C1" "$h"; then no "T9 apagada, y el instalador igual registró $h"; else ok "T9 apagada: $h no se registra"; fi
 done
@@ -132,7 +132,7 @@ C2="$(casa prendida)"
 rm -f "$LLAMADAS"
 afuera "$C2" TYCON_ADO_ORG=https://dev.azure.com/equipo TYCON_CLOCKIFY=1 TYCON_ENGRAM=1 TYCON_NIGHTLY=1 -- bash "$INST" > "$C2/instalador.out" 2>&1; RC=$?
 [ "$RC" -eq 0 ] || no "T9 control: el instalador salió $RC con las llaves prendidas: $(tail -3 "$C2/instalador.out" | tr '\n' ' ')"
-for h in clocki/scripts/on-prompt.js clocki/scripts/touch-activity.js engram-pre-commit.sh engram-drift-notice.js \
+for h in integrations/clockify/scripts/on-prompt.js integrations/clockify/scripts/touch-activity.js engram-pre-commit.sh engram-drift-notice.js \
          dashboard-notice.js dependencies-notice.js retro-staleness-notice.js; do
   registrado "$C2" "$h" && ok "T9 control: prendida, $h registrado" || no "T9 control: prendida y $h NO se registró"
 done
@@ -140,7 +140,7 @@ if esperar_llamada '^az ' 8; then ok "T9 control: con Azure DevOps prendida el i
 else no "T9 control: con Azure DevOps prendida az nunca fue llamado (el registro está vacío: ¿el test mide el refresco?)"; fi
 # y apagar después REMUEVE lo registrado (la misma HOME, ahora sin llaves)
 afuera "$C2" -- bash "$INST" > "$C2/instalador-2.out" 2>&1
-if registrado "$C2" clocki/scripts/on-prompt.js || registrado "$C2" dashboard-notice.js || registrado "$C2" engram-drift-notice.js; then
+if registrado "$C2" integrations/clockify/scripts/on-prompt.js || registrado "$C2" dashboard-notice.js || registrado "$C2" engram-drift-notice.js; then
   no "T9 al apagar las llaves, el instalador dejó registrados hooks de integraciones apagadas"
 else ok "T9 al apagar las llaves, el instalador remueve los hooks que había registrado"; fi
 # configuración ROTA: aviso, y los hooks de integraciones quedan como estaban (ni se agregan ni se remueven)
@@ -151,7 +151,7 @@ afuera "$C3" -- bash "$INST" > "$C3/instalador-rota.out" 2>&1; RC=$?
 [ "$RC" -eq 0 ] || no "T9 con la configuración rota el instalador salió $RC (un hook de arranque no frena por esto)"
 grep -q 'clokify' "$C3/instalador-rota.out" && ok "T9 configuración rota: el instalador nombra el archivo, la clave y el motivo" \
   || no "T9 configuración rota: el instalador no dijo qué está roto: $(grep -i 'config' "$C3/instalador-rota.out" | head -2 | tr '\n' ' ')"
-if registrado "$C3" clocki/scripts/on-prompt.js && registrado "$C3" dashboard-notice.js; then ok "T9 configuración rota: los hooks quedan como estaban (no se lee como «todo apagado»)"
+if registrado "$C3" integrations/clockify/scripts/on-prompt.js && registrado "$C3" dashboard-notice.js; then ok "T9 configuración rota: los hooks quedan como estaban (no se lee como «todo apagado»)"
 else no "T9 configuración rota: el instalador removió hooks de integraciones (leyó el archivo roto como «todo apagado»)"; fi
 
 # ═════════════════════════════════════════════════════════════════════════════════════════════════

@@ -29,6 +29,10 @@ const PROFILE_TYPES = Object.freeze(['texto', 'url']);
 const KIND_RE = /^[a-z][A-Za-z0-9]*$/;
 // los tipos que el núcleo busca por nombre
 const KINDS = Object.freeze(['timeTracking']);
+const TOOLS = Object.freeze(['claude', 'codex']);
+const DISPATCH_ON = Object.freeze(['post-edit']);
+// Un hook de una integración, en la lista del instalador: `@int:<integración>/<ruta dentro de su carpeta>`.
+const INT_PREFIX = '@int:';
 
 const isObject = (x) => x !== null && typeof x === 'object' && !Array.isArray(x);
 
@@ -37,6 +41,15 @@ function integrationsDir(env = process.env) {
   const v = String(env.TYCON_INTEGRATIONS_DIR || '').trim();
   return v ? path.resolve(v) : path.join(ROOT, 'integrations');
 }
+
+/** Una ruta dentro de la carpeta de la integración: sólo letras, números, punto, guion y guion bajo, separados por `/`. */
+const SAFE_REL = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
+const inside = (p) => typeof p === 'string' && SAFE_REL.test(p) && !p.split('/').some((s) => s === '..' || s === '.');
+// el vocabulario de un hook, el mismo que valida la lista del aplicador (scripts/setup/apply-hooks.js): un hook que el
+// aplicador rechazaría deja al manifiesto roto, con su motivo, en vez de frenar la instalación de todo lo demás
+const EVENTS = Object.freeze(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'Stop', 'SessionStart', 'Notification', 'SessionEnd']);
+const STEP_RE = /^(all|\d+[a-z]?)$/;
+const EFFECTS = Object.freeze(['blocks', 'warns', 'records']);
 
 /** Los motivos por los que un manifiesto no vale (vacío si vale). */
 function problemsOf(m, folder) {
@@ -48,7 +61,28 @@ function problemsOf(m, folder) {
   if (typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) out.push('falta «kind»');
   // el tipo se compara tal cual: uno conocido con otras mayúsculas no se encontraría nunca
   else for (const k of KINDS) if (m.kind !== k && m.kind.toLowerCase() === k.toLowerCase()) out.push(`«kind» se escribe ${k}`);
-  if (m.onWork !== undefined && (typeof m.onWork !== 'string' || path.isAbsolute(m.onWork) || m.onWork.split(/[\\/]/).includes('..'))) out.push('«onWork» es una ruta dentro de la carpeta');
+  if (m.onWork !== undefined && !(inside(m.onWork) && /\.js$/.test(m.onWork))) out.push('«onWork» es un .js dentro de la carpeta');
+  for (const k of ['hooks', 'dispatch', 'skills', 'settings']) if (m[k] !== undefined && !Array.isArray(m[k])) out.push(`«${k}» es una lista`);
+  for (const h of Array.isArray(m.hooks) ? m.hooks : []) {
+    const who = h && typeof h.script === 'string' ? h.script : 'un hook';
+    if (!h || typeof h !== 'object' || !inside(h.script) || !/\.(js|sh|py)$/.test(h.script)) { out.push(`${who}: «script» es un .js, .sh o .py dentro de la carpeta (letras, números, «.», «-», «_» y «/»)`); continue; }
+    if (!EVENTS.includes(h.event)) out.push(`${who}: «event» fuera del vocabulario (${EVENTS.join(', ')})`);
+    if (h.matcher !== undefined && typeof h.matcher !== 'string') out.push(`${who}: «matcher» es un texto`);
+    if (typeof h.label !== 'string' || !h.label) out.push(`${who}: falta «label»`);
+    if (!h.platforms || typeof h.platforms.windows !== 'boolean') out.push(`${who}: falta platforms.windows (true o false)`);
+    if (h.async !== undefined && h.async !== true) out.push(`${who}: «async» sólo puede ser true`);
+    if (h.steps !== undefined && !(Array.isArray(h.steps) && h.steps.length && h.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${who}: «steps» es una lista de pasos del pipeline o ["all"]`);
+    if (h.effect !== undefined && !EFFECTS.includes(h.effect)) out.push(`${who}: «effect» es ${EFFECTS.join(', ')}`);
+    if (h.tools !== undefined && !(Array.isArray(h.tools) && h.tools.length && h.tools.every((t) => TOOLS.includes(t)))) out.push(`${who}: «tools» es una lista de ${TOOLS.join(', ')}`);
+  }
+  for (const d of Array.isArray(m.dispatch) ? m.dispatch : []) {
+    if (!d || typeof d !== 'object' || !inside(d.script) || !/\.js$/.test(d.script)) { out.push('una entrada del despachador: «script» es un .js dentro de la carpeta'); continue; }
+    if (!DISPATCH_ON.includes(d.on)) out.push(`${d.script}: «on» es ${DISPATCH_ON.join(' o ')}`);
+    if (typeof d.name !== 'string' || !NAME_RE.test(d.name)) out.push(`${d.script}: falta «name»`);
+    if (d.steps !== undefined && !(Array.isArray(d.steps) && d.steps.length && d.steps.every((s) => typeof s === 'string' && STEP_RE.test(s)))) out.push(`${d.script}: «steps» es una lista de pasos del pipeline o ["all"]`);
+    if (d.effect !== undefined && !EFFECTS.includes(d.effect)) out.push(`${d.script}: «effect» es ${EFFECTS.join(', ')}`);
+  }
+  for (const s of Array.isArray(m.skills) ? m.skills : []) if (!inside(s)) out.push(`la skill «${s}» es una carpeta dentro de la integración`);
   for (const s of Array.isArray(m.settings) ? m.settings : []) {
     if (!isObject(s) || typeof s.key !== 'string') { out.push('un ajuste sin «key»'); continue; }
     const parts = s.key.split('.');
@@ -70,7 +104,11 @@ const cache = new Map();   // carpeta → { stamp, result }
  */
 function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
   let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (_) { return { manifests: [], problems: [] }; }
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); } catch (e) {
+    // sin carpeta, ninguna; una carpeta que está y no se puede leer es un problema que se dice, no «sin integraciones»
+    if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return { manifests: [], problems: [] };
+    return { manifests: [], problems: [{ name: '(integrations/)', reasons: [`la carpeta no se puede leer (${e.code || e.message})`] }] };
+  }
   const stamp = entries.map((n) => { try { return `${n}:${fs.statSync(path.join(dir, n, 'integration.json')).mtimeMs}`; } catch (_) { return `${n}:-`; } }).join('|');
   const hit = cache.get(dir);
   if (hit && hit.stamp === stamp) return hit.result;
@@ -87,7 +125,7 @@ function listManifests({ env = process.env, dir = integrationsDir(env) } = {}) {
       name: m.name, label: m.label.trim(), kind: m.kind, dir: path.join(dir, name),
       onWork: m.onWork ? path.join(dir, name, m.onWork) : null,
       hooks: Array.isArray(m.hooks) ? m.hooks : [], dispatch: Array.isArray(m.dispatch) ? m.dispatch : [],
-      settings: Array.isArray(m.settings) ? m.settings : [],
+      skills: Array.isArray(m.skills) ? m.skills : [], settings: Array.isArray(m.settings) ? m.settings : [],
     });
   }
   const result = { manifests, problems };
@@ -201,7 +239,45 @@ function writeSecret(key, value, { env = process.env, platform = process.platfor
   }
 }
 
+/** `@int:<integración>/<ruta>` → `{ name, rel }`, o null si el spec no es de una integración. */
+function parseIntSpec(spec) {
+  const s = String(spec || '');
+  if (!s.startsWith(INT_PREFIX)) return null;
+  const rest = s.slice(INT_PREFIX.length);
+  const i = rest.indexOf('/');
+  if (i <= 0) return null;
+  const name = rest.slice(0, i);
+  const rel = rest.slice(i + 1);
+  // la misma regla que el manifiesto: un spec con `..`, `\`, espacios o comillas no es de una integración
+  if (!NAME_RE.test(name) || !inside(rel)) return null;
+  return { name, rel };
+}
+/** La ruta de un spec `@int:` dentro del árbol (`integrations/<integración>/<ruta>`), o null. */
+function intSpecRepoPath(spec) { const p = parseIntSpec(spec); return p ? `integrations/${p.name}/${p.rel}` : null; }
+/** La ruta absoluta de un spec `@int:`, con la carpeta de las integraciones dada. */
+function intSpecPath(spec, dir) { const p = parseIntSpec(spec); return p ? path.join(dir, p.name, p.rel) : null; }
+
+/**
+ * Los hooks de una integración como registros de la lista del instalador: `spec` = `@int:<integración>/<script>` y
+ * `when` = `time:<integración>` para una de horas (el instalador los prende sólo si es la elegida). `tool` filtra por
+ * herramienta (`claude` o `codex`; un hook sin `tools` es de las dos).
+ */
+function hookEntries(m, { tool = null } = {}) {
+  if (m.kind !== 'timeTracking') return [];
+  return m.hooks.filter((h) => !tool || !h.tools || h.tools.includes(tool)).map((h) => {
+    const e = { event: h.event, matcher: h.matcher || '', spec: `${INT_PREFIX}${m.name}/${h.script}`, when: `time:${m.name}`, platforms: { windows: h.platforms.windows }, label: h.label };
+    for (const k of ['async', 'steps', 'effect']) if (h[k] !== undefined) e[k] = h[k];
+    return e;
+  });
+}
+
+/** Las entradas del despachador de una integración para el modo dado: `[{ name, path, steps, effect, integration }]`. */
+function dispatchEntries(m, mode) {
+  return m.dispatch.filter((d) => d.on === mode).map((d) => ({ name: d.name, path: path.join(m.dir, d.script), steps: d.steps || ['all'], effect: d.effect || 'warns', integration: m.name }));
+}
+
 module.exports = {
+  INT_PREFIX, TOOLS, parseIntSpec, intSpecRepoPath, intSpecPath, hookEntries, dispatchEntries,
   integrationsDir, listManifests, find, profileSettings, secretKeys, isSecretKey,
   tyconHome, secretsDir, secretsFile, readSecret, secretState, writeSecret, PROFILE_TYPES,
 };

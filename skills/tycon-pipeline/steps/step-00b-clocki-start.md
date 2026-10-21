@@ -48,7 +48,7 @@ Construir descripción: `"Story <id> — <title>"`. Ej: `"Story <N.M> — Webhoo
 
 ### 2. Invocar clocki:start (transición atómica close+open — anti billing-gap)
 
-Seguir el flujo de `~/.claude/agent-skills/skills/clocki/SKILL.md` (sección "Flujo de `start`" + "Regla atómica close+open") **SIN pedir confirmación al user** — el pipeline es intent explícito.
+Seguir el flujo de `~/.claude/skills/clocki/SKILL.md` (la skill de la integración de Clockify) (sección "Flujo de `start`" + "Regla atómica close+open") **SIN pedir confirmación al user** — el pipeline es intent explícito.
 
 **🔴 REGLA ATÓMICA (no-negociable)**: los pasos b + d + e deben ejecutarse en el MISMO bloque de tool calls (mismo turn). Si b se ejecuta y d/e no (ej: error MCP en el medio), abortar el pipeline con CRITICAL — un timer cerrado sin sucesor genera billing-gap: el tiempo entre el cierre de una entry y la apertura de la siguiente queda sin registrar.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// clocki/scripts/clocki-enforce.js
+// integrations/clockify/scripts/clocki-enforce.js
 //
 // Invocado por hook PostToolUse (matcher Edit|Write). Verifica que haya un timer
 // clocki activo para el cwd actual cuando Claude realiza un Edit/Write. Si no

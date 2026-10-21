@@ -171,7 +171,7 @@ perfil) y `adversarial.model_question` (no tiene variable). Qué puede pisar cad
 | Integración | Qué prende | Apagada, qué pasa |
 |---|---|---|
 | Azure DevOps | `ado.org` (perfil, o `TYCON_ADO_ORG`) | work items y PR abiertos no se consultan; el instalador no refresca la lista de proyectos con `az`. Los frenos que sólo leen los comandos `az` del agente siguen |
-| Clockify | `integrations.clockify` | no se registran `on-prompt.js` ni `touch-activity.js`; el despachador de ediciones sigue y saltea `clocki-enforce` |
+| Registro de horas | `integrations.timeTracking` (`none`, `clockify` o `solidtime`; sin ella, la llave vieja `integrations.clockify`) | no se registra ningún hook de horas; el despachador de ediciones sigue, sin el control de la integración. Cada integración trae los suyos en `integrations/<nombre>/` |
 | engram | `integrations.engram` | no se registran el sync de commit ni el aviso diario; los chequeos de versión/proyecto no corren; cada comando de engram lo dice y sale 0 |
 | CodeGraph | `integrations.codegraph` (informativa) | la instala cada dev con `install-codegraph.sh`; el arnés no registra nada de CodeGraph por sí mismo |
 | Buzón de corridas | la llave scripts/metrics/corridas-buzon.json del arnés interno (o `integrations.mailbox`) | no se sube ni se baja nada; la vista de corridas es sólo de esta máquina |
@@ -198,9 +198,9 @@ apaga sólo con su variable en `0`, y el portón de edición, `hook-pre-edit.js`
 
 | Hook | Evento | Qué hace | ¿Bloquea? | Perfil | Interruptor |
 |---|---|---|---|---|---|
-| `clocki/scripts/on-prompt.js` | UserPromptSubmit | Detecta en el pedido que empieza o termina un trabajo y propone abrir o cerrar el timer de Clockify | No | minimal y full | integración Clockify (`TYCON_CLOCKIFY=0`) |
+| `integrations/clockify/scripts/on-prompt.js` | UserPromptSubmit | Detecta en el pedido que empieza o termina un trabajo y propone abrir o cerrar el timer de Clockify | No | minimal y full | con Clockify como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `tycon-pipeline/scripts/on-prompt.js` | UserPromptSubmit | Reconoce el pedido de implementar una story y avisa si otra sesión trabaja en lo mismo | No | minimal y full | ninguno propio |
-| `clocki/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de Clockify por inactividad | No | minimal y full | integración Clockify (`TYCON_CLOCKIFY=0`) |
+| `integrations/clockify/scripts/touch-activity.js` | PostToolUse | Anota la última actividad, para cerrar el timer de Clockify por inactividad | No | minimal y full | con Clockify como herramienta de horas (`TYCON_TIME_TRACKING=none` lo saca) |
 | `tycon-pipeline/scripts/hook-post-edit.js` | PostToolUse (Edit\|Write) | Después de editar: registra la edición para el pipeline y el timer; al escribir una story, sus pasos de alta | No | minimal y full | ninguno propio |
 | `tycon-pipeline/scripts/hook-pre-edit.js` | PreToolUse (Edit\|Write) | Antes de editar: el portón de carril (código sin pipeline ni ad-hoc declarado), el frontmatter de la definición de hecho, el orden de las pruebas (ATDD), la story escrita a mano y el choque entre sesiones | Sí: deniega la edición | minimal y full | `TYCON_STORY_GATE=off` (carril) · `TYCON_STORY_SKILL_GATE=off` (story a mano) |
 | `tycon-pipeline/scripts/on-skill-invoke.js` | PostToolUse (Skill) | Deja constancia de que se invocó la skill que crea stories: es la evidencia que pide el freno de la story escrita a mano | No | minimal y full | `TYCON_STORY_SKILL_GATE=off` |

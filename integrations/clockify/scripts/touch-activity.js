@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// clocki/scripts/touch-activity.js
+// integrations/clockify/scripts/touch-activity.js
 //
 // Invocado por el hook PostToolUse (async=true). Actualiza lastActivity del timer
 // activo de ESTA sesión en el cwd actual. Si no hay timer activo, no hace nada.
