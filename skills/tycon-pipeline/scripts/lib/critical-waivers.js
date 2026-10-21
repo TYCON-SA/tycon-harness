@@ -223,6 +223,9 @@ function juezDesignacion(rol) {
   const rolRe = r.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const anula = new RegExp(`\\b(?:ya\\s+)?no\\s+(?:es|sos|ser[aá]s?)\\s+(?:m[aá]s\\s+)?(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
     + `|\\bdej[aáeó]s?\\s+de\\s+ser\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
+    + `|\\bya\\s+no\\s+(?:vas\\s+a\\s+ser|eres)\\s+(?:la\\s+|el\\s+)?${rolRe}(?![\\p{L}\\p{N}])`
+    + `|${rolRe}\\s+ya\\s+no\\s+(?:sos|es|eres)\\b`
+    + `|\\b(?:sac|quit|anul|revoc)\\p{L}*\\s+(?:la\\s+)?designaci[oó]n\\b`
     + `|\\b(?:is|are)\\s+(?:no\\s+longer|not)\\s+(?:the\\s+)?${rolRe}(?![\\p{L}\\p{N}])`, 'iu');
   juez.retracta = (texto) => !!r && anula.test(String(texto || ''));
   return juez;

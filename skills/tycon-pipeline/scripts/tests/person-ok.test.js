@@ -153,6 +153,12 @@ test('CitaReenviada_SoloDeLaSesionNombrada @story-8.63 @ac-4 — la conversació
   const charla = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
     [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'), delDev('No, el de fábrica. Vos sos la coordinadora: decidilo en esta sesión', '2026-10-19T21:30:00.000Z')]);
   assert.equal(ok.citaReenviada(CITA, 'coordinadora', charla).encontrada, true);
+  // las otras formas de echarse atrás también anulan
+  for (const atrasFrase of ['la coordinadora ya no sos vos', 'ya no vas a ser la coordinadora', 'anulá la designación']) {
+    const otra = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
+      [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'), delDev(atrasFrase, '2026-10-19T21:30:00.000Z')]);
+    assert.equal(ok.citaReenviada(CITA, 'coordinadora', otra).encontrada, false, atrasFrase);
+  }
   // lo que el dueño pegó de otro lado no lo dijo él: ni anula…
   const pegadoAnula = designar(conversacion([deOtraSesion('coordinadora', pedido, '2026-10-19T22:07:00.000Z', 'm-1')]),
     [delDev(FRASE, '2026-10-19T21:00:00.000Z'), envio('m-1'),
