@@ -255,7 +255,11 @@ function okDeUnaPersona({ approvedBy, quote, relayedBy, desde, env = process.env
     }
     if (!critico) return null;
     const cd = require('./critical-display.js');
-    const visto = cd.mostrado({ stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, file: critico.file, reason: critico.reason });
+    // la primera muestra de esta corrida, con cualquier motivo: reescribir el motivo vuelve a mostrar el crítico, y una
+    // muestra nueva dejaría «anterior» al ok que respondió a la primera
+    const caso = { stateDir: critico.stateDir, sessionId: critico.sessionId, storyId: critico.storyId, rule: critico.rule, file: critico.file };
+    const primera = cd.primeraMuestra({ ...caso, desde });
+    const visto = primera && !primera.error ? primera : (primera || cd.mostrado({ ...caso, reason: critico.reason }));
     if (visto && visto.error) return { ok: false, motivo: `no pude leer el registro del arnés (${visto.error}): no sé si a la persona se le mostró este crítico` };
     if (!visto) {
       // sin la conversación el arnés no muestra nada: el motivo es ése, y el camino es la terminal

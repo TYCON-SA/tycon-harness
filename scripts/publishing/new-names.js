@@ -818,9 +818,9 @@ function isTeamMachine(env) {
 }
 
 /** El aviso de la lista atrasada, si lo hay (una línea). Sin red: un commit no sale a la red. Nunca cambia el veredicto. */
-function staleListNote(guard, file, env) {
+function staleListNote(guard, file, env, readFrom) {
   try {
-    const f = guard.listFreshness(file, { env });
+    const f = guard.listFreshness(file, { env, readFrom });
     const t = guard.freshnessText(f);
     if (t.level !== 'warn') return [];
     // qué hacer lo dice el freno antes de publicar (`advice`: traerlo · mirarlo primero · subir lo propio), que es quien
@@ -873,7 +873,7 @@ function publishedRun(args, repo, parents, afterTree) {
     const blind = new CouldNotLook(`${String(e.message).replace('que se empuja', 'que se commitea')} (este árbol es la forma publicada del arnés: se mira con la `
       + 'lista privada de esta máquina. Si la declaración quedó vieja: harness.js config set paths.maintainers <clon de mantenimiento>)');
     blind.extra = { form: 'published', list: e.listSource || null };
-    blind.notes = e.listFile ? staleListNote(guard, e.listFile, env) : [];
+    blind.notes = e.listFile ? staleListNote(guard, e.listFile, env, e.listReadFrom) : [];
     throw blind;
   }
   if (list.generic) {
@@ -883,7 +883,9 @@ function publishedRun(args, repo, parents, afterTree) {
   }
   // los términos tal como están escritos (los pide el control de nombres pegados); el freno ya validó que la lista se lee
   let terms;
-  try { terms = JSON.parse(fs.readFileSync(list.file, 'utf8')).terminos; } catch (_) { terms = null; }
+  // los que leyó el freno (de la rama principal remota del clon, o del disco); un freno viejo no los trae
+  if (Array.isArray(list.termList)) terms = list.termList;
+  else try { terms = JSON.parse(fs.readFileSync(list.file, 'utf8')).terminos; } catch (_) { terms = null; }
   if (!Array.isArray(terms)) throw new CouldNotLook(`la lista de ${list.label} no se puede leer (no es una lista válida)`);
   const det = list.cfg;
 
@@ -930,7 +932,7 @@ function publishedRun(args, repo, parents, afterTree) {
   const notes = [];
   // la variable cambia con qué lista se mira sin que nada más lo diga: como apagar el freno, se dice en cada commit
   if (list.source === 'env') notes.push('⚠️  nombres nuevos: se miró con la lista de TYCON_PUBLISH_DENYLIST, no con la que declara esta máquina — queda anotado.');
-  notes.push(...staleListNote(guard, list.file, env));
+  notes.push(...staleListNote(guard, list.file, env, list.readFrom));
   return { published: true, outcome: findings.length ? 'blocked' : 'clean', list: list.source, label: list.label, findings, files, notes };
 }
 
@@ -954,7 +956,7 @@ function publishedReport(result) {
     '  (a) Un nombre neutro: `acme` o «Cliente A» para un cliente, `example.com` para un dominio, «el dev» para una persona,',
     '      o un sujeto genérico («un cliente», «un servidor interno»). Que no conserve del real ni la inicial ni el rubro.',
     '  (b) Si es un freno falso —el texto no es un nombre real, o tiene que quedar—: una excepción con motivo en «permitidos»',
-    '      de la lista privada, en su clon (nunca en este árbol), y ese clon al día en esta máquina.',
+    '      de la lista privada, en su clon (nunca en este árbol), mergeada en su rama principal: se lee de ahí.',
     '  (c) TYCON_NEW_NAMES=0 apaga el freno para ese commit, y lo dice. El freno al empujar lo mira igual.',
     '', 'Guía: guides/maintaining/publicacion-espejo.md §«El núcleo sin nombres».');
   return l.join('\n');
