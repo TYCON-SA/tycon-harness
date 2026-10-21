@@ -2542,6 +2542,39 @@ test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas 
   assert.strictEqual(celdasEn('go')[2].textContent, 'built in · can be changed');
 });
 
+test('T30c SiteConfig_OrgRunner_LabelAndRepoFiltersSurviveChange — el nombre para personas, el filtro de cada repo a la vista y conservado al guardar', async () => {
+  // 🔴 rojo: la fila o el formulario muestran el id en vez del nombre; el formulario no muestra el filtro de un repo; o
+  //    «Guardar» pierde `repos`/`args_default` (la máquina volvería a correr sin el filtro).
+  const NETFX = {
+    name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1, command: 'bash -c x', results: { format: 'trx', path: '{results}/**/*.trx' },
+    args_default: 'TestCategory!=Slow',
+    repos: [{ repo: { platform: 'azure', org: 'acme', project: 'Prod', repo: 'api' }, args: 'TestCategory=Unit' }],
+  };
+  const p = await pantallaTec({ stack: { test_runners: [NETFX] } });
+  const fila = p.todos().find((x) => x.attrs['data-runner'] === 'netfx-vstest');
+  assert.strictEqual((fila.hijos || []).filter((x) => x.tag === 'span')[0].textContent, '.NET Framework (vstest)', 'la fila con el nombre para personas');
+  const cambiar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila); return out.find((x) => x.tag === 'button' && x.textContent === 'Cambiar'); })();
+  cambiar.on.click(); await p.esperar();
+  assert.match(p.texto(), /Cambiar la herramienta \.NET Framework \(vstest\)/);
+  const campoDe = (k) => p.todos().filter((n) => n.attrs['data-path'] === `runner.${k}`).pop();
+  assert.ok(campoDe('repos.0.args'), 'el filtro del repo, a la vista');
+  assert.strictEqual(campoDe('repos.0.args').attrs.value, 'TestCategory=Unit');
+  assert.match(p.texto(), /azure · acme\/Prod\/api/, 'el repo de ese filtro, con su nombre');
+  assert.strictEqual(campoDe('args_default').attrs.value, 'TestCategory!=Slow');
+  // la cobertura dice que es un formato
+  assert.ok(p.todos().some((n) => n.tag === 'option' && n.textContent === 'Cobertura (formato XML)'), 'la opción «Cobertura» aclara que es un formato');
+  // guardar sin tocar el filtro lo conserva entero; editarlo cambia sólo el args
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  assert.deepStrictEqual((await p.revisado()).stack.test_runners[0], NETFX, 'guardar sin cambios no pierde nada');
+  cambiar.on.click(); await p.esperar();
+  campoDe('repos.0.args').on.input({ target: { value: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' } });
+  p.boton(/^Guardar$/).on.click(); await p.esperar();
+  const guardada = (await p.revisado()).stack.test_runners[0];
+  assert.deepStrictEqual(guardada.repos, [{ repo: NETFX.repos[0].repo, args: '(TestCategory=Unit|TestCategory=Component)&TestCategory!=PendingSeed' }]);
+  assert.strictEqual(guardada.args_default, 'TestCategory!=Slow');
+  assert.strictEqual(guardada.label, '.NET Framework (vstest)');
+});
+
 test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíselo a tu agente» deja la frase y la guía dice qué hace el agente', async () => {
   // 🔴 rojo: el botón no deja la frase a mano, o la guía no tiene la sección que el agente sigue.
   const p = await pantallaTec({});

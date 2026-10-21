@@ -182,7 +182,7 @@ const PERFIL = {
 // una herramienta de prueba agregada por la organización: la tabla de «Cómo se corren las pruebas» la muestra junto a
 // las internas y las recetas de fábrica
 const RECETA_NETFX = {
-  name: 'netfx-vstest', detect: 'packages.config', detect_depth: 1,
+  name: 'netfx-vstest', label: '.NET Framework (vstest)', detect: 'packages.config', detect_depth: 1,
   command: 'bash -c \'vstest.console.exe $(find . -path "*/bin/Debug/*Tests.dll") --logger:trx "--ResultsDirectory:{results}"\'',
   results: { format: 'trx', path: '{results}/**/*.trx' },
 };

@@ -544,7 +544,8 @@ Lo que la persona ve en la sección y lo que hace el agente cuando le piden una 
      comando, qué reporte deja y dónde, y si mide la cobertura y en qué formato (Cobertura, lcov, istanbul, JaCoCo o el
      perfil de Go). `{results}` es la carpeta de la corrida.
   2. Arma la entrada de `stack.test_runners` en `team-repos.json` del repo del perfil: `name` (minúsculas y guiones),
-     `detect`, `command`, `results` y, si mide, `coverage`.
+     `label` (el nombre que ve una persona en el sitio, por ejemplo «.NET Framework (vstest)»), `detect`, `command`,
+     `results` y, si mide, `coverage`.
   3. La valida con el lector de las máquinas antes de proponer:
      `node -e 'console.log(JSON.stringify(require("<arnés>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      Sin problemas en `stack`, la propone como pedido al repo del perfil.

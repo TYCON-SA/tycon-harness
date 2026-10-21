@@ -565,7 +565,8 @@ What the person sees in the section, and what the agent does when asked for a to
      measures coverage and in what format (Cobertura, lcov, istanbul, JaCoCo or the Go profile). `{results}` is the
      run's folder.
   2. Writes the `stack.test_runners` entry in `team-repos.json` of the profile repo: `name` (lowercase and hyphens),
-     `detect`, `command`, `results` and, if it measures, `coverage`.
+     `label` (the name a person sees on the site, for example «.NET Framework (vstest)»), `detect`, `command`,
+     `results` and, if it measures, `coverage`.
   3. Validates it with the machines' reader before proposing:
      `node -e 'console.log(JSON.stringify(require("<harness>/scripts/lib/team-repos.js").parse(require("fs").readFileSync("team-repos.json","utf8")).sectionProblems || {}))'`.
      With no problems in `stack`, it proposes it as a request to the profile repo.

@@ -2276,6 +2276,13 @@ function pantalla(idioma = 'es') {
   var TEC_REEMPLAZAR = null;  // la interna cuya explicación de «Reemplazar» está abierta
   var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
+  // el nombre para personas: el de fábrica, o el «label» que le puso la organización a su receta; si no, el id
+  function nombreDe(r) { return TEC_NOMBRES[r.name] || (typeof r.label === 'string' && r.label) || r.name; }
+  // un <repo> de team-repos.json en una línea: «azure · org/proyecto/repo» o «github · org/repo»
+  function repoEnTexto(x) {
+    if (!esObjeto(x)) return '?';
+    return (x.platform || '?') + ' · ' + [x.org, x.project, x.repo].filter(function (v) { return v != null && v !== ''; }).join('/');
+  }
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
   function limpiarStack(d) {
     if (!esObjeto(d.stack)) return;
@@ -2298,17 +2305,28 @@ function pantalla(idioma = 'es') {
     var upd = function (k) { return function (v) { r[k] = v; }; };
     var dentro = function (o, k) { return function (v) { if (!esObjeto(r[o])) r[o] = {}; r[o][k] = v; }; };
     var res = esObjeto(r.results) ? r.results : {}; var cov = esObjeto(r.coverage) ? r.coverage : null;
-    return el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecCambiarLaHerramienta', { nombre: TEC_NOMBRES[r.name] || r.name }) }),
+    // el filtro de cada repo y el de por defecto: se ven y se editan; lo demás de la receta viaja intacto en la copia
+    var repos = Array.isArray(r.repos) ? r.repos : [];
+    var porRepo = null;
+    if (repos.length || r.args_default !== undefined) {
+      porRepo = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecFiltroPorRepo') }), el('p', { class: 'sub-d', text: T('pantalla.tecFiltroPorRepoAyuda') }),
+        campo(T('pantalla.tecFiltroPorDefecto'), r.args_default, function (v) { if (v === '') delete r.args_default; else r.args_default = v; }, 'runner.args_default', []));
+      repos.forEach(function (x, i) {
+        porRepo.appendChild(campo(repoEnTexto(x && x.repo), x && x.args, function (v) { if (esObjeto(r.repos[i])) r.repos[i].args = v; }, 'runner.repos.' + i + '.args', []));
+      });
+    }
+    return el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecCambiarLaHerramienta', { nombre: nombreDe(r) }) }),
       el('div', { class: 'msg warn' }, el('b', { text: T('pantalla.tecElComandoCorreEnCadaComputadora') })),
       campo(T('pantalla.tecArchivoQueLaDetecta'), r.detect, upd('detect'), 'runner.detect', []),
       campo(T('pantalla.tecComando'), r.command, upd('command'), 'runner.command', []),
       selector(T('pantalla.tecQueReporteDeja'), res.format, [['junit', T('pantalla.tecReporteJunit')], ['jest-json', T('pantalla.tecReporteJest')], ['trx', T('pantalla.tecReporteTrx')]], dentro('results', 'format'), 'runner.results.format', []),
       campo(T('pantalla.tecDondeQuedaElReporte'), res.path, dentro('results', 'path'), 'runner.results.path', []),
-      selector(T('pantalla.tecMideLaCobertura'), cov ? cov.format : '', [['', T('pantalla.tecNoMide')], ['cobertura', 'Cobertura'], ['lcov', 'lcov'], ['istanbul-json', 'istanbul'], ['jacoco', 'JaCoCo'], ['go-cover', 'Go']], function (v) {
+      selector(T('pantalla.tecMideLaCobertura'), cov ? cov.format : '', [['', T('pantalla.tecNoMide')], ['cobertura', T('pantalla.tecFormatoCobertura')], ['lcov', 'lcov'], ['istanbul-json', 'istanbul'], ['jacoco', 'JaCoCo'], ['go-cover', 'Go']], function (v) {
         if (!v) delete r.coverage; else { if (!esObjeto(r.coverage)) r.coverage = { path: '' }; r.coverage.format = v; }
         render();
       }, 'runner.coverage.format', []),
       cov ? campo(T('pantalla.tecDondeQuedaLaCobertura'), cov.path, dentro('coverage', 'path'), 'runner.coverage.path', []) : null,
+      porRepo,
       f.fabrica ? el('p', { class: 'sub-d', text: T('pantalla.tecAlGuardarUsaEsta') }) : null,
       el('div', { class: 'fila' }, el('button', { type: 'button', text: T('pantalla.tecGuardar'), onclick: function () { guardarRunner(d, r); TEC_FORM = null; render(); } }), boton(T('pantalla.tecCancelar'), function () { TEC_FORM = null; render(); })));
   }
@@ -2342,7 +2360,7 @@ function pantalla(idioma = 'es') {
     });
     org.forEach(function (r) {
       if (!r || !r.name || fabrica.some(function (f) { return f.name === r.name; })) return;
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': r.name }, el('span', { text: r.name }), el('span', { class: 'muted', text: r.detect || '' }), el('span', { text: T('pantalla.tecAgregadaPorTuOrganizacion') }),
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': r.name }, el('span', { text: nombreDe(r) }), el('span', { class: 'muted', text: r.detect || '' }), el('span', { text: T('pantalla.tecAgregadaPorTuOrganizacion') }),
         el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: r.name, r: copia(r), fabrica: null }; render(); }), boton(T('pantalla.tecBorrar'), function () { quitarRunner(d, r.name); render(); }))));
     });
     (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });

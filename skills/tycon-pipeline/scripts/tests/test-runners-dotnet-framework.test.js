@@ -135,6 +135,11 @@ const SDK = {
 };
 
 test('@story-7.51 @ac-1 @ac-8 T1 Trx_Format_Valid_BothReaders', () => {
+  // con su nombre para personas (`label`) también vale en los dos
+  const conNombre = netfx({ label: '.NET Framework (vstest)' });
+  assert.deepStrictEqual(runners.validateRunners([conNombre]).problems, []);
+  const tn = team.parse(JSON.stringify({ ...REPOS_BASE, stack: { test_runners: [conNombre] } }));
+  assert.deepStrictEqual((tn.sectionProblems && tn.sectionProblems.stack) || [], []);
   const v = runners.validateRunners([netfx()]);
   assert.deepStrictEqual(v.problems, [], JSON.stringify(v.problems));
   const t = team.parse(JSON.stringify({ ...REPOS_BASE, stack: { test_runners: [netfx()] } }));
@@ -296,6 +301,8 @@ test('@story-7.51 @ac-8 @ac-9 T9 RepoArgs_Validation_AndNotFromTestedRepo', () =
     [{ repos: [{ repo: { platform: 'github', org: 'acme' }, args: 'x' }] }, 'stack.test_runners.0.repos.0.repo'],
     [{ repos: [{ repo: r, args: 'x', otra: 1 }] }, 'stack.test_runners.0.repos.0.otra'],
     [{ repos: 'api' }, 'stack.test_runners.0.repos'],
+    [{ label: 5 }, 'stack.test_runners.0.label'],
+    [{ label: '' }, 'stack.test_runners.0.label'],
   ];
   for (const [extra, ruta] of casos) {
     const v = runners.validateRunners([netfx(extra)]);

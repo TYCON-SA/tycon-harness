@@ -126,11 +126,16 @@ function runnersProblems(value) {
 }
 
 /**
- * Los problemas de `detect_depth`, `args_default` y `repos` de una herramienta: hasta dónde busca su archivo detector y
- * el detalle de cada repo (`{args}` en el comando). Las mismas reglas que `detalleProblemas` de test-runners.js del skill.
+ * Los problemas de `label`, `detect_depth`, `args_default` y `repos` de una herramienta: su nombre para personas,
+ * hasta dónde busca su archivo detector y el detalle de cada repo (`{args}` en el comando). Las mismas reglas que
+ * `detalleProblemas` de test-runners.js del skill.
  */
 function runnerDetailProblems(r, p) {
   const out = [];
+  // el nombre para personas que muestra el sitio: texto de 1 a 80 caracteres
+  if (r.label !== undefined && (typeof r.label !== 'string' || !r.label.trim() || r.label.length > 80)) {
+    out.push({ path: `${p}.label`, message: 'el nombre para personas: texto de 1 a 80 caracteres' });
+  }
   if (r.detect_depth !== undefined && (!Number.isInteger(r.detect_depth) || r.detect_depth < 0 || r.detect_depth > RUNNER_DETECT_DEPTH_MAX)) {
     out.push({ path: `${p}.detect_depth`, message: `un entero de 0 a ${RUNNER_DETECT_DEPTH_MAX} (es ${JSON.stringify(r.detect_depth)})` });
   }
