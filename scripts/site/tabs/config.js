@@ -791,6 +791,48 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
     return { ok: true, nombres: Object.fromEntries(pasos.propuestos.filter((x) => x.nombre).map((x) => [x.identificador, x.nombre])) };
   }
 
+  // ── los tipos de pedido de trabajo y sus campos, para elegirlos en «Pedidos de vulnerabilidades» ──
+  // Se leen de los proyectos de los productos declarados (repos.json del repo de operaciones), con el mismo token de
+  // sólo lectura; lo de cada plataforma vive en repo-proposal.js. Sin lista, la pantalla deja escribir como siempre.
+  function dondeLeerPedidos() {
+    const cl = clones();
+    const r = cl.operaciones ? leerDe(cl.operaciones.dir, 'scripts/nightly/dependencies/repos.json') : { estado: 'nuevo' };
+    const d = r.estado === 'leido' ? docDe(r.texto) : null;
+    return RP.dondeLeerPedidos(d);
+  }
+  const pedidosGuardados = new Map();
+  async function pedidoGuardado(clave, leer) {
+    const g = pedidosGuardados.get(clave);
+    if (g && ahora() - g.t < VIGENCIA_MS) return g.r;
+    const r = await leer();
+    if (r.ok || r.codigo !== 'sin_respuesta') pedidosGuardados.set(clave, { t: ahora(), r });
+    return r;
+  }
+  const tiposDe = (org, project) => pedidoGuardado(`t\0${org}\0${project}`, () => RP.tiposDePedido({ org, project, token: cfg.pipelinesToken, urlBase, fetch }));
+  /** Los tipos de todos los proyectos: `{ ok, tipos, sinLeer: [{ proyecto, message }] }`; sin ninguno leído, el motivo del primero. */
+  async function tiposDePedido() {
+    const donde = dondeLeerPedidos();
+    if (!donde) return { ok: false, codigo: 'no_reconozco', message: M('config.pedidosSinProyectos') };
+    const leidos = await Promise.all(donde.proyectos.map(async (p) => ({ proyecto: p, r: await tiposDe(donde.org, p) })));
+    const ok = leidos.filter((x) => x.r.ok);
+    if (!ok.length) return { ok: false, codigo: leidos[0].r.codigo, message: leidos[0].r.message };
+    const tipos = [...new Set(ok.flatMap((x) => x.r.tipos))].sort((a, b) => a.localeCompare(b, 'es'));
+    return { ok: true, tipos, sinLeer: leidos.filter((x) => !x.r.ok).map((x) => ({ proyecto: x.proyecto, message: x.r.message })) };
+  }
+  /** Los campos de un tipo, del primer proyecto que lo tiene: `{ ok, campos, proyecto }`. */
+  async function camposDePedido(tipo) {
+    const t = String(tipo || '').trim();
+    const donde = dondeLeerPedidos();
+    if (!donde) return { ok: false, codigo: 'no_reconozco', message: M('config.pedidosSinProyectos') };
+    for (const p of donde.proyectos) {
+      const ts = await tiposDe(donde.org, p);
+      if (!ts.ok || !ts.tipos.includes(t)) continue;
+      const r = await pedidoGuardado(`c\0${donde.org}\0${p}\0${t}`, () => RP.camposDelTipo({ org: donde.org, project: p, tipo: t, token: cfg.pipelinesToken, urlBase, fetch }));
+      return r.ok ? { ...r, proyecto: p } : r;
+    }
+    return { ok: false, codigo: 'no_reconozco', message: M('config.pedidosTipoEnNinguno', { tipo: t }) };
+  }
+
   // ── la página ──
   function pagina(ctx) {
     const tok = ctx.sesion && typeof ctx.sesion.tok === 'string' ? ctx.sesion.tok : '';
@@ -864,6 +906,18 @@ function crearRutas({ cfg, fuentes, versionImagen = null, ahora = Date.now, hoy 
         const e = await escritura(ctx); if (e.error) return e.error;
         const b = e.body || {};
         return json(200, await pipelines(String(b.org || '').trim(), String(b.project || '').trim()));
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/tipos-de-pedido', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        return json(200, await tiposDePedido());
+      }),
+    },
+    {
+      method: 'POST', path: '/api/config/campos-de-pedido', needs: solo, handler: enIdioma(async (ctx) => {
+        const e = await escritura(ctx); if (e.error) return e.error;
+        return json(200, await camposDePedido(e.body && e.body.tipo));
       }),
     },
     {

@@ -1658,6 +1658,16 @@ function pantalla(idioma = 'es') {
   }
   // ── los nombres en lugar de los números: los pipelines de un proyecto y los nombres de los pasos, pedidos una vez ──
   var PIPES = {}; var PASOS = {};
+  // los tipos de pedido y los campos de cada tipo, pedidos una vez por página: { estado: 'cargando' | 'listo', r }
+  var TIPOS_PEDIDO = null; var CAMPOS_PEDIDO = {}; var OPCIONES_N = 0;
+  function tiposDePedidoLeidos() {
+    if (!TIPOS_PEDIDO) { TIPOS_PEDIDO = { estado: 'cargando' }; api('/tipos-de-pedido', {}).then(function (r) { TIPOS_PEDIDO = { estado: 'listo', r: r }; render(); }); }
+    return TIPOS_PEDIDO;
+  }
+  function camposDeTipoLeidos(tipo) {
+    if (!CAMPOS_PEDIDO[tipo]) { CAMPOS_PEDIDO[tipo] = { estado: 'cargando' }; api('/campos-de-pedido', { tipo: tipo }).then(function (r) { CAMPOS_PEDIDO[tipo] = { estado: 'listo', r: r }; render(); }); }
+    return CAMPOS_PEDIDO[tipo];
+  }
   /** Los pipelines de un proyecto de Azure DevOps: null sin organización o proyecto; { estado: 'cargando' | 'listo', r }. */
   function pipelinesDe(org, proyecto) {
     if (!org || !proyecto) return null;
@@ -1898,8 +1908,12 @@ function pantalla(idioma = 'es') {
   // nombre (la referencia, como «Microsoft.VSTS.Common.Priority») y su valor. Todo lo escrito lo valida el lector al
   // revisar; los comentarios «__…» del archivo se conservan y no se muestran
   var GRAVEDADES = [['critical', T('pantalla.gravedadCritica')], ['high', T('pantalla.gravedadAlta')], ['moderate', T('pantalla.gravedadMedia')], ['low', T('pantalla.gravedadBaja')]];
-  function camposDePedido(titulo, ayuda, mapa, set, p, pr) {
+  // la lista que leyó el sitio, si la hay: los nombres de los campos del tipo y los valores permitidos de cada uno se
+  // ofrecen para elegir; escribir otra cosa sigue valiendo (lo valida el lector)
+  function opciones(id, valores) { var d = el('datalist', { id: id }); (valores || []).forEach(function (v) { d.appendChild(el('option', { value: v })); }); return d; }
+  function camposDePedido(titulo, ayuda, mapa, set, p, pr, catalogo) {
     var m = esObjeto(mapa) ? mapa : {};
+    var porRef = {}; (catalogo || []).forEach(function (c) { porRef[c.referencia] = c; });
     var box = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: titulo }), ayuda ? el('p', { class: 'sub-d', text: ayuda }) : null);
     var nombres = Object.keys(m).filter(function (k) { return k.indexOf('__') !== 0; });
     if (!nombres.length) box.appendChild(el('p', { class: 'muted', text: T('pantalla.pedidosSinCampos') }));
@@ -1909,9 +1923,12 @@ function pantalla(idioma = 'es') {
     nombres.forEach(function (k) {
       var ref = { k: k };
       var aviso = el('div', { class: 'err', 'data-path': p + '.' + k + '.repetido' });
+      var idValores = 'pedidos-valores-' + (++OPCIONES_N);   // único en la página: un nombre de campo no lo arma
+      var valores = porRef[k] && porRef[k].valores.length ? porRef[k].valores : null;
+      if (valores) box.appendChild(opciones(idValores, valores));
       box.appendChild(el('div', { class: 'fila quitar' },
-        campo(T('pantalla.pedidosCampo'), k, function (v) { var ok = reArmar(ref.k, v, m[ref.k]); if (ok) ref.k = v; aviso.textContent = ok ? '' : T('pantalla.pedidosCampoRepetido'); }, p + '.' + k, pr, { placeholder: 'Microsoft.VSTS.Common.Priority' }),
-        campo(T('pantalla.pedidosValor'), m[k], function (v) { m[ref.k] = numOTexto(v); set(m); }, p + '.' + k + '.valor', pr),
+        campo(T('pantalla.pedidosCampo'), k, function (v) { var ok = reArmar(ref.k, v, m[ref.k]); if (ok) ref.k = v; aviso.textContent = ok ? '' : T('pantalla.pedidosCampoRepetido'); }, p + '.' + k, pr, { placeholder: 'Microsoft.VSTS.Common.Priority', list: catalogo ? 'pedidos-campos' : null }),
+        campo(T('pantalla.pedidosValor'), m[k], function (v) { m[ref.k] = numOTexto(v); set(m); }, p + '.' + k + '.valor', pr, { list: valores ? idValores : null }),
         quitar(function () { delete m[ref.k]; set(m); render(); })));
       box.appendChild(aviso);
     });
@@ -1925,13 +1942,23 @@ function pantalla(idioma = 'es') {
     var limpiar = function () { var x = d.work_items; if (!esObjeto(x)) return; ['fixed_fields', 'by_severity'].forEach(function (k) { if (esObjeto(x[k]) && !Object.keys(x[k]).length) delete x[k]; }); if (!Object.keys(x).length) delete d.work_items; };
     var actual = esObjeto(d.work_items) ? d.work_items : {};
     var box = el('div', { class: 'pila' });
-    box.appendChild(campo(T('pantalla.pedidosTipo'), actual.type, function (v) { if (v === '') { if (esObjeto(d.work_items)) delete d.work_items.type; } else w().type = v; limpiar(); }, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo') }));
+    var L = tiposDePedidoLeidos();
+    var tipos = L.estado === 'listo' && L.r && L.r.ok && Array.isArray(L.r.tipos) ? L.r.tipos : null;
+    if (tipos) box.appendChild(opciones('pedidos-tipos', tipos));
+    box.appendChild(campo(T('pantalla.pedidosTipo'), actual.type, function (v) { if (v === '') { if (esObjeto(d.work_items)) delete d.work_items.type; } else w().type = v; limpiar(); }, 'work_items.type', pr, { placeholder: T('pantalla.pedidosTipoEjemplo'), list: tipos ? 'pedidos-tipos' : null, onchange: function () { render(); } }));
     box.appendChild(el('p', { class: 'sub-d', text: T('pantalla.pedidosTipoAyuda') }));
-    box.appendChild(camposDePedido(T('pantalla.pedidosCamposFijos'), T('pantalla.pedidosCamposFijosAyuda'), actual.fixed_fields, function (m) { w().fixed_fields = m; limpiar(); }, 'work_items.fixed_fields', pr));
+    // sin la lista se escribe a mano, como siempre; la pantalla dice por qué no hay lista
+    if (L.estado === 'listo' && !tipos) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.lista', text: T('pantalla.pedidosSinLista', { motivo: (L.r && L.r.message) || T('pantalla.pedidosSinRespuesta') }) }));
+    if (tipos && L.r.sinLeer && L.r.sinLeer.length) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.lista', text: T('pantalla.pedidosListaParcial', { proyectos: L.r.sinLeer.map(function (x) { return x.proyecto; }).join(', ') }) }));
+    var C = tipos && typeof actual.type === 'string' && tipos.indexOf(actual.type) >= 0 ? camposDeTipoLeidos(actual.type) : null;
+    var catalogo = C && C.estado === 'listo' && C.r && C.r.ok && Array.isArray(C.r.campos) ? C.r.campos : null;
+    if (catalogo) box.appendChild(opciones('pedidos-campos', catalogo.map(function (c) { return c.referencia; })));
+    if (C && C.estado === 'listo' && !catalogo) box.appendChild(el('p', { class: 'muted', 'data-path': 'work_items.campos', text: T('pantalla.pedidosSinCamposLeidos', { motivo: (C.r && C.r.message) || T('pantalla.pedidosSinRespuesta') }) }));
+    box.appendChild(camposDePedido(T('pantalla.pedidosCamposFijos'), T('pantalla.pedidosCamposFijosAyuda'), actual.fixed_fields, function (m) { w().fixed_fields = m; limpiar(); }, 'work_items.fixed_fields', pr, catalogo));
     var gs = esObjeto(actual.by_severity) ? actual.by_severity : {};
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.pedidosPorGravedad') }), el('p', { class: 'sub-d', text: T('pantalla.pedidosPorGravedadAyuda') }));
     GRAVEDADES.forEach(function (g) {
-      tabla.appendChild(camposDePedido(g[1], '', gs[g[0]], function (m) { var x = w(); if (!esObjeto(x.by_severity)) x.by_severity = {}; if (Object.keys(m).length) x.by_severity[g[0]] = m; else delete x.by_severity[g[0]]; limpiar(); }, 'work_items.by_severity.' + g[0], pr));
+      tabla.appendChild(camposDePedido(g[1], '', gs[g[0]], function (m) { var x = w(); if (!esObjeto(x.by_severity)) x.by_severity = {}; if (Object.keys(m).length) x.by_severity[g[0]] = m; else delete x.by_severity[g[0]]; limpiar(); }, 'work_items.by_severity.' + g[0], pr, catalogo));
     });
     problemasEn(pr, 'work_items.by_severity').forEach(function (x) { tabla.appendChild(el('div', { class: 'err', text: x.message })); });
     box.appendChild(tabla);

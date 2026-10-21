@@ -80,7 +80,13 @@ const TEXTOS = {
   'rp.permisoCorto': { es: 'el permiso del sitio no alcanza para leer los pipelines de {proyecto} (necesita lectura de Build): escribí el número del pipeline', en: 'the site\'s permission is not enough to read the pipelines of {proyecto} (it needs Build read): type the pipeline\'s number' },
   'rp.proyectoDesconocido': { es: 'Azure DevOps no conoce el proyecto {proyecto} en {org}: revisá los dos nombres', en: 'Azure DevOps does not know the project {proyecto} in {org}: check both names' },
   'rp.azureContesto': { es: 'Azure DevOps contestó {estado}: escribí el número del pipeline', en: "Azure DevOps responded with {estado}: type the pipeline's number" },
-  'rp.respuestaIlegible': { es: 'la respuesta de Azure DevOps no se pudo leer: escribí el número del pipeline', en: 'the answer from Azure DevOps could not be read: type the pipeline\'s number' },
+  'rp.respuestaIlegible': { es: 'la respuesta de Azure DevOps no se pudo leer: escribí el número del pipeline', en: 'the answer from Azure DevOps could not be read: type the pipeline\'s number' },  // los tipos de pedido de trabajo y sus campos: sin la lista se escribe a mano, como siempre, y lo valida el lector
+  'rp.sinPermisoPedidos': { es: 'el sitio no puede leer los tipos de pedido: falta su permiso de lectura de pedidos de trabajo. Mientras tanto, escribí el nombre', en: 'the site cannot read the work item types: it lacks the work item read permission. Meanwhile, type the name' },
+  'rp.permisoPedidos': { es: 'el permiso del sitio no alcanza para leer los tipos de pedido de {proyecto} (necesita lectura de pedidos de trabajo): escribí el nombre', en: 'the site\'s permission is not enough to read the work item types of {proyecto} (it needs work item read): type the name' },
+  'rp.pedidosNoContesto': { es: 'Azure DevOps no contestó: escribí el nombre', en: 'Azure DevOps did not answer: type the name' },
+  'rp.pedidosContesto': { es: 'Azure DevOps contestó {estado}: escribí el nombre', en: 'Azure DevOps responded with {estado}: type the name' },
+  'rp.pedidosIlegible': { es: 'la respuesta de Azure DevOps no se pudo leer: escribí el nombre', en: 'the answer from Azure DevOps could not be read: type the name' },
+  'rp.tipoDesconocido': { es: 'el proyecto {proyecto} no tiene el tipo de pedido {tipo}', en: 'the project {proyecto} has no work item type {tipo}' },
 };
 const M = (clave, valores = {}) => TEXTOS[clave].es.replace(/\{([A-Za-z][A-Za-z0-9_]*)\}/g, (m, n) => (Object.prototype.hasOwnProperty.call(valores, n) ? String(valores[n]) : m));
 
@@ -672,5 +678,66 @@ async function pipelinesDelProyecto({ org, project, token, urlBase = {}, fetch =
   return { ok: true, pipelines: lista };
 }
 
+// ── los tipos de pedido de trabajo de un proyecto y los campos de un tipo, con sus valores permitidos ──
+// Lo de cada plataforma vive acá; quien llama recibe siempre la misma forma: { ok, tipos } / { ok, campos }, o
+// { ok: false, codigo: sin_permiso | sin_respuesta | no_reconozco, message }. Sólo lee.
+const nombreDeRuta = (x) => typeof x === 'string' && x.trim() !== '' && !/^\.+$/.test(x.trim()) && !/[/\\?#]/.test(x);
+async function leerPedidos({ org, project, token, urlBase = {}, fetch = globalThis.fetch, ruta }) {
+  if (!nombreDeRuta(org) || !nombreDeRuta(project)) return { ok: false, codigo: 'no_reconozco', message: M('rp.faltaOrgProyecto') };
+  if (!token) return { ok: false, codigo: 'sin_permiso', message: M('rp.sinPermisoPedidos') };
+  const base = `${(urlBase.azure || 'https://dev.azure.com').replace(/\/$/, '')}/${encodeURIComponent(org.trim())}/${encodeURIComponent(project.trim())}/_apis/wit/workitemtypes`;
+  const headers = { Authorization: `Basic ${Buffer.from(`:${token}`).toString('base64')}`, Accept: 'application/json' };
+  let r;
+  try { r = await fetch(`${base}${ruta}`, { headers, signal: AbortSignal.timeout(20000) }); } catch {
+    return { ok: false, codigo: 'sin_respuesta', message: M('rp.pedidosNoContesto') };
+  }
+  if (r.status === 401 || r.status === 403) return { ok: false, codigo: 'sin_permiso', message: M('rp.permisoPedidos', { proyecto: project.trim() }) };
+  if (r.status === 404) return { ok: false, codigo: 'no_reconozco', message: M('rp.proyectoDesconocido', { proyecto: project.trim(), org: org.trim() }) };
+  if (!r.ok) return { ok: false, codigo: 'sin_respuesta', message: M('rp.pedidosContesto', { estado: r.status }) };
+  try { const doc = await r.json(); return { ok: true, value: doc && Array.isArray(doc.value) ? doc.value : [] }; } catch {
+    return { ok: false, codigo: 'sin_respuesta', message: M('rp.pedidosIlegible') };
+  }
+}
+/**
+ * De qué organización y proyectos leer, según la lista de productos (repos.json del repo de operaciones):
+ * `{ org, proyectos }` o null. El proyecto va codificado en la lista («Beta%20Dos/Back»): se decodifica, como la noche.
+ */
+function dondeLeerPedidos(doc) {
+  const esObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
+  const org = esObj(doc) && esObj(doc.azure) && typeof doc.azure.org === 'string' ? doc.azure.org.trim() : '';
+  const decodificar = (x) => { try { return decodeURIComponent(x); } catch { return x; } };
+  const proyectos = [...new Set((esObj(doc) && Array.isArray(doc.repos) ? doc.repos : [])
+    .filter((x) => esObj(x) && x.activo !== false && typeof x.ado === 'string' && x.ado.includes('/'))
+    .map((x) => decodificar(x.ado.split('/')[0]).trim()).filter(Boolean))];
+  return org && proyectos.length ? { org, proyectos } : null;
+}
+/** Los tipos de pedido de un proyecto que se pueden crear: `{ ok, tipos: [nombre] }`, en orden alfabético. */
+async function tiposDePedido(opts) {
+  const r = await leerPedidos({ ...opts, ruta: '?api-version=7.1' });
+  if (!r.ok) return r;
+  // los tipos internos del proceso (planes de prueba, pasos compartidos, revisiones de código) los declara la propia
+  // plataforma en su categoría oculta: no se ofrecen. Si esa lectura falla, van todos (escribir sigue valiendo)
+  const ocultos = new Set();
+  try {
+    const h = await (opts.fetch || globalThis.fetch)(`${(opts.urlBase && opts.urlBase.azure || 'https://dev.azure.com').replace(/\/$/, '')}/${encodeURIComponent(opts.org.trim())}/${encodeURIComponent(opts.project.trim())}/_apis/wit/workitemtypecategories/Microsoft.HiddenCategory?api-version=7.1`,
+      { headers: { Authorization: `Basic ${Buffer.from(`:${opts.token}`).toString('base64')}`, Accept: 'application/json' }, signal: AbortSignal.timeout(20000) });
+    if (h.ok) { const d = await h.json(); for (const t of (d && Array.isArray(d.workItemTypes) ? d.workItemTypes : [])) if (t && typeof t.name === 'string') ocultos.add(t.name); }
+  } catch { /* sin la categoría, la lista entera */ }
+  const tipos = [...new Set(r.value.filter((x) => x && typeof x.name === 'string' && x.name.trim() && x.isDisabled !== true && !ocultos.has(x.name)).map((x) => x.name))]
+    .sort((a, b) => a.localeCompare(b, 'es'));
+  return { ok: true, tipos };
+}
+/** Los campos de un tipo: `{ ok, campos: [{ referencia, nombre, valores: [] }] }`; `valores` vacío = texto libre. */
+async function camposDelTipo({ tipo, ...opts }) {
+  if (!nombreDeRuta(tipo)) return { ok: false, codigo: 'no_reconozco', message: M('rp.tipoDesconocido', { proyecto: String(opts.project || '').trim(), tipo: String(tipo || '') }) };
+  const r = await leerPedidos({ ...opts, ruta: `/${encodeURIComponent(tipo.trim())}/fields?$expand=allowedValues&api-version=7.1` });
+  if (!r.ok) return r.codigo === 'no_reconozco' && nombreDeRuta(opts.project) && nombreDeRuta(opts.org) ? { ...r, message: M('rp.tipoDesconocido', { proyecto: opts.project.trim(), tipo: tipo.trim() }) } : r;
+  const campos = r.value.filter((x) => x && typeof x.referenceName === 'string' && x.referenceName.trim())
+    .map((x) => ({ referencia: x.referenceName, nombre: typeof x.name === 'string' ? x.name : x.referenceName,
+      valores: Array.isArray(x.allowedValues) ? x.allowedValues.filter((v) => typeof v === 'string' || typeof v === 'number').map(String) : [] }))
+    .sort((a, b) => a.referencia.localeCompare(b.referencia, 'es'));
+  return { ok: true, campos };
+}
+
 module.exports = {
-  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
+  TEXTOS, remoteOf, stagesPropuestos, pipelinesDelProyecto, tiposDePedido, camposDelTipo, dondeLeerPedidos, enlaceArchivo, politicaDeRevision, pedidoAbierto, pedidoDeMarca, cuerpoDelPedido, FORMA_DE_MARCA, proponer, correrGit, enlaceManual, stamp, NO_PERMISSION, TIPO_REVISORES_AZURE };
