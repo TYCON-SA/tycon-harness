@@ -178,7 +178,7 @@ test('8.40 T3 NpmPackage_Shebang_Floor_Help', () => {
   const src = read(INDEX);
   assert.strictEqual(src.split('\n')[0], '#!/usr/bin/env node', 'el shebang en la línea 1');
   assert.strictEqual((src.match(/^const REPO = '[^']+';/gm) || []).length, 1, 'el repo de fábrica, una sola vez');
-  // el piso para INSTALAR es 22 (decisión del dueño, 2026-10-16); harness.js sigue en 20: lo tolera sólo para actualizar
+  // el piso para INSTALAR es 22; harness.js sigue en 20: lo tolera sólo para actualizar
   const floorHarness = /^const NODE_FLOOR = (\d+);/m.exec(read(path.join(ROOT, 'scripts', 'setup', 'harness.js')))[1];
   const floorPkg = /^const NODE_FLOOR = (\d+);/m.exec(src);
   assert.ok(floorPkg, 'index.js declara NODE_FLOOR');
@@ -240,7 +240,7 @@ test('T10b NpmPackageVersion_PrereleaseComparedBySemver', () => {
     assert.ok(compareSemver(b, a) > 0, `${b} > ${a}`);
   }
   assert.strictEqual(compareSemver('1.0.0-rc.1', '1.0.0-rc.1'), 0, 'la misma versión');
-  // con metadatos de build npm publica OTRA versión (los saca): no es una versión del paquete (pase adversarial, clase 8)
+  // con metadatos de build npm publica OTRA versión (los saca): no es una versión del paquete
   assert.strictEqual(require(VERSION_TOOL).parseSemver('1.0.0-rc.1+build.5'), null);
 });
 

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * packs-per-repo.test.js — ningún repo pierde un revisor cuando los revisores cambian de lugar (story 8.41, AC 9 · T34).
+ * packs-per-repo.test.js — ningún repo pierde un revisor cuando los revisores cambian de lugar (T34).
  *
  * Qué sostiene: `package-equivalence.js per-repo` calcula, para cada repo, el set de revisores sobre sus commits recientes
  * con dos árboles (el de antes y el del cambio) y sale en rojo si algún repo pierde un revisor o declara en `packs:` un

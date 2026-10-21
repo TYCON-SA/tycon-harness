@@ -2,7 +2,7 @@
 
 /**
  * queue-validation.test.js — el lanzador de la validación corta las de la MISMA rama que no terminaron y encola la
- * nueva (2026-10-05, pedido del dueño: la fila de Azure no avanzaba).
+ * nueva.
  *
  * Contra un Azure de mentira en esta máquina (un servidor http local que anota cada llamada). Lo que no puede pasar:
  *   · que corte una validación de OTRA rama (la de otra rama prueba otro código);
@@ -60,7 +60,7 @@ function run(url, extra = [], env = {}) {
   return new Promise((resolve) => {
     // Parado fuera de cualquier clon y sin la configuración de la máquina: estos casos pasan organización, proyecto y
     // rama por opción, y no pueden depender del origin de quien corre la suite (en el agente de Azure es otro que en una
-    // máquina del equipo: 170 #12645).
+    // máquina del equipo).
     const p = spawn(process.execPath, [SCRIPT, '--org', 'acme', '--project', 'lab', '--branch', 'fix/mia', ...extra], {
       cwd: require('os').tmpdir(),
       env: Object.assign({}, process.env, { AZURE_DEVOPS_EXT_PAT: 'llave-de-laboratorio', TYCON_ADO_BASE_URL: url,
@@ -175,7 +175,7 @@ test('QueueValidation_NoKey_Exit2_NoCalls', async () => {
   } finally { await az.close(); }
 });
 
-// Story 8.22, AC 6 — la validación completa de una rama se pide con `--all`: el pedido lleva el parámetro `runAll` de
+// La validación completa de una rama se pide con `--all`: el pedido lleva el parámetro `runAll` de
 // la 170 (pipelines/azure-pipelines-maintainers-pr.yml) en `true`. Sin `--all`, el pedido no lo lleva (lo de arriba exige el cuerpo exacto).
 test('T9 QueueValidation_AllPassesRunAll', async () => {
   const az = await fakeAzure({});
@@ -196,8 +196,8 @@ test('QueueValidation_OrgAndProjectFromOrigin', () => {
   assert.strictEqual(fromOrigin('git@github.com:acme/repo.git'), null);
 });
 
-// ── T10 de la story 8.26 (tanda C, AC 10): un clon de GitHub ─────────────────────────────────────────────────────────
-// Desde el corte el dueño trabaja en un clon del repo público. La organización, el proyecto y la definición de Azure no
+// ── T10: un clon de GitHub ─────────────────────────────────────────────────────────
+// El dueño trabaja en un clon del repo público. La organización, el proyecto y la definición de Azure no
 // se escriben en el guion (viaja en el público): salen de la configuración de la máquina o de una opción. Y si la rama
 // ya tiene un pedido abierto, la validación la dispara el pedido: encolar otra sería una segunda corrida por cambio.
 const fs = require('fs');
@@ -273,9 +273,9 @@ test('T10 QueueValidation_GithubClone_ConfigNotRepo_RefusesWhenPrOpen_CutsOlderS
 });
 
 test('T10 QueueValidation_AnyNonAzureOrigin_IsThePublicClone_BranchPrefixStripped', async () => {
-  // (pase adversarial de la tanda C de la 8.26) un origin de GitHub con usuario en la URL o con un alias de SSH (varias
+  // Un origin de GitHub con usuario en la URL o con un alias de SSH (varias
   // cuentas) no es de Azure: es el clon del público, con su configuración y su consulta de pedidos. Y `--branch
-  // refs/heads/<rama>` le llega a `gh` sin el prefijo: con él, gh no encontraba el pedido abierto y la rama se encolaba.
+  // refs/heads/<rama>` le llega a `gh` sin el prefijo: con él, gh no encuentra el pedido abierto y la rama se encola.
   const az = await fakeAzure({});
   try {
     const cfg = { TYCON_VALIDATION_ORG: 'acme', TYCON_VALIDATION_PROJECT: 'lab', TYCON_VALIDATION_PIPELINE: '184' };
@@ -297,9 +297,9 @@ test('T10 QueueValidation_AnyNonAzureOrigin_IsThePublicClone_BranchPrefixStrippe
 });
 
 test('T10 QueueValidation_EveryAzureOriginForm_IsTheInternalClone', async () => {
-  // La 170 #12645 lo mostró: en el agente de Azure el origin es `https://<org>.visualstudio.com/<proyecto>/_git/<repo>`, que
-  // también es Azure. Con «todo origin que no es dev.azure.com es el clon del público», ese clon pedía la definición del
-  // público y salía 2. Las cuatro formas de una dirección de Azure son el interno: sin `gh`, con la 170 y su origin.
+  // En el agente de Azure el origin es `https://<org>.visualstudio.com/<proyecto>/_git/<repo>`, que
+  // también es Azure. Con «todo origin que no es dev.azure.com es el clon del público», ese clon pediría la definición del
+  // público y saldría 2. Las cuatro formas de una dirección de Azure son el interno: sin `gh`, con la 170 y su origin.
   const { isAzure } = require(SCRIPT);
   const at = (user, rest) => [user, rest].join('@');
   const forms = [
@@ -337,7 +337,7 @@ test('T10 QueueValidation_EveryAzureOriginForm_IsTheInternalClone', async () => 
 
 test('T10 QueueValidation_AzureClone_IgnoresThePublicDefinitionConfig', async () => {
   // La configuración de la máquina es la del público: desde un origin de Azure (el interno) manda el origin y la 170,
-  // aunque la máquina tenga cargada la definición de GitHub (revisor de alcance de la tanda C).
+  // aunque la máquina tenga cargada la definición de GitHub.
   const az = await fakeAzure({});
   try {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queue-az-'));
@@ -356,9 +356,9 @@ test('T10 QueueValidation_AzureClone_IgnoresThePublicDefinitionConfig', async ()
 });
 
 test('T10 QueueValidation_AzureIsRecognizedByItsServer_NotByAPathThatNamesIt', async () => {
-  // (revisor de seguridad, vuelta 3 de la tanda C) «de Azure» es el SERVIDOR del origin. Una dirección de otro servidor
-  // que lleva el nombre de Azure en la ruta no es el interno: leída por su texto, ese clon se salteaba la consulta de
-  // pedidos abiertos y encolaba la 170 con la organización y el proyecto que la ruta quisiera.
+  // «de Azure» es el SERVIDOR del origin. Una dirección de otro servidor
+  // que lleva el nombre de Azure en la ruta no es el interno: leída por su texto, ese clon se saltearía la consulta de
+  // pedidos abiertos y encolaría la 170 con la organización y el proyecto que la ruta quisiera.
   const { isAzure } = require(SCRIPT);
   const notAzure = [
     'https://git.example.com/dev.azure.com/acme/lab/_git/harness',
@@ -403,9 +403,9 @@ test('T10 QueueValidation_AzureIsRecognizedByItsServer_NotByAPathThatNamesIt', a
 });
 
 test('T10 QueueValidation_OriginThatCouldNotBeRead_IsNotAMissingOrigin', async () => {
-  // (revisor de fallos silenciosos, vuelta 3) si git no deja leer el origin —un clon de otro dueño, un git roto—, «no
-  // pude leer» no es «no hay»: leído como vacío, el clon pasaba por el interno, sin la consulta de pedidos abiertos, y
-  // con la organización y el proyecto por opción encolaba igual. Fuera de un clon, o sin remoto `origin`, sí es «no hay».
+  // Si git no deja leer el origin —un clon de otro dueño, un git roto—, «no
+  // pude leer» no es «no hay»: leído como vacío, el clon pasaría por el interno, sin la consulta de pedidos abiertos, y
+  // con la organización y el proyecto por opción encolaría igual. Fuera de un clon, o sin remoto `origin`, sí es «no hay».
   const az = await fakeAzure({});
   try {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queue-git-'));

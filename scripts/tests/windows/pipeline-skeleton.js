@@ -2,7 +2,7 @@
 'use strict';
 /**
  * pipeline-skeleton.js — el esqueleto mecánico del pipeline de stories, sobre un repo de ejemplo de Node, con la
- * instalación que dejó el paso `install` (story 8.17, tanda W6 · AC 49, T74).
+ * instalación que dejó el paso `install` (T74).
  *
  * POR QUÉ EXISTE. Instalar el arnés en Windows no alcanza: lo que el equipo usa todos los días es el pipeline de
  * stories, y sus guiones se escribieron en una Mac. La máquina limpia de Linux ya corre su esqueleto mecánico (T27 de
@@ -18,7 +18,7 @@
  *                                                                                                    node-test, todo verde
  * Los guiones salen de la instalación (el enlace `~/.claude/agent-skills` y el lugar del arnés, `place.js`, de la
  * carpeta de usuario de laboratorio), como los llama el pipeline; el repo de ejemplo es el de la máquina limpia
- * (`scripts/tests/fixtures/example-repo`), armado como ahí: la story en `specs/`, rama `story/1.1` y un commit.
+ * (`scripts/tests/fixtures/example-repo`), armado como ahí: la story en `specs/`, rama de la story y un commit.
  *
  * CÓMO FALLA. Cada paso que no sale como en Linux es un HALLAZGO con su nombre (`skeleton:<paso>`), con su salida y
  * su código. «No medido»: no hay instalación (el paso `install` no dejó ninguna) o la copia no trae el pipeline de
@@ -30,7 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const L = require('./lab.js');
-const PLACE = require('../../setup/harness/place.js');   // el lugar del arnés y su nombre viejo (story 8.19)
+const PLACE = require('../../setup/harness/place.js');   // el lugar del arnés y su nombre viejo
 
 const NAME = 'pipeline-skeleton';
 const CHECKS = Object.freeze(['lint', 'start', 'mech-check', 'advisors', 'test-gate']);
@@ -137,7 +137,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   const claude = path.join(variant.home, '.claude');
   let pipe = path.join(claude, 'agent-skills', 'skills', 'tycon-pipeline', 'scripts');
   if (!fs.existsSync(path.join(pipe, 'pipeline.js'))) { rec.note('no está el enlace ~/.claude/agent-skills: el esqueleto corre desde el clon'); pipe = path.join(variant.clone, 'skills', 'tycon-pipeline', 'scripts'); }
-  // primero el lugar, después el nombre viejo (una instalación anterior a la 8.19 sólo tiene ése)
+  // primero el lugar, después el nombre viejo (una instalación con el nombre anterior sólo tiene ése)
   let harness = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME].map((n) => path.join(claude, n))
     .find((h) => fs.existsSync(path.join(h, 'scripts', 'lib', 'lint-story-frontmatter.js')));
   if (!harness) { rec.note(`no está el lugar ~/.claude/${PLACE.PLACE_NAME}: el lint corre desde el clon`); harness = variant.clone; }
@@ -158,7 +158,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   rec.fact('repo', repo);
   rec.fact('scripts', { pipeline: pipe, harness });
 
-  // el bash con que el arnés corre un guion de bash en esta máquina (W1): en Windows, el de Git, nunca el de WSL
+  // el bash con que el arnés corre un guion de bash en esta máquina: en Windows, el de Git, nunca el de WSL
   let gitBash;
   try { gitBash = require(GIT_BASH).findGitBash({ platform, env: baseEnv }); } catch (e) { gitBash = { path: null, reason: `no pude cargar scripts/lib/git-bash.js: ${e.message}` }; }
   rec.fact('bash', gitBash);

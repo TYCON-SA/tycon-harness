@@ -3,22 +3,21 @@
 /**
  * quick-suite-machine-independent.test.js — la suite rápida del arranque prueba el ARNÉS, no el disco del dev.
  *
- * EL CASO (2026-10-05, story 8.18). El instalador corre en cada arranque seis suites rápidas, y la actualización
- * automática rechaza toda versión cuya salida diga «FALLÓ» (vuelve sola a la anterior). Una de esas seis,
- * `config-lint.test.js`, traía un caso que recorre `~/SourceCode` y exige que la configuración de CADA proyecto de la
- * máquina use sólo llaves conocidas. En una notebook con un proyecto viejo (una llave `advisors:` en la raíz, de
- * junio) ese caso fallaba siempre: la máquina rechazó tres versiones seguidas, el corte de la 8.18 incluido, y quedó
- * 634 commits atrás sin que el arnés tuviera nada roto. Una configuración vieja de un proyecto es un aviso para ese
- * proyecto, no un motivo para que el arnés no se actualice.
+ * El instalador corre en cada arranque seis suites rápidas, y la actualización automática rechaza toda versión cuya
+ * salida diga «FALLÓ» (vuelve sola a la anterior). Una de esas seis, `config-lint.test.js`, tiene un caso que recorre
+ * `~/SourceCode` y exige que la configuración de CADA proyecto de la máquina use sólo llaves conocidas. En una
+ * notebook con un proyecto viejo (una llave `advisors:` en la raíz) ese caso fallaría siempre: la máquina rechazaría
+ * cada versión nueva y quedaría atrás sin que el arnés tuviera nada roto. Una configuración vieja de un proyecto es un
+ * aviso para ese proyecto, no un motivo para que el arnés no se actualice.
  *
  * Lo que sostiene:
  *   · la suite rápida —la lista EXACTA del instalador— pasa con una HOME que trae un proyecto con una llave
  *     desconocida;
  *   · el espejo: el caso que mira las configuraciones reales sigue existiendo (en su propia suite, fuera del
  *     arranque) y SÍ marca esa misma HOME. Sacarlo del arranque no es apagarlo;
- *   · la misma clase por el AMBIENTE (hallazgo de la revisión del arreglo): un dev que deja exportada una variable que
- *     el propio arnés le recomienda subir (`TYCON_STORY_SCAN_BUDGET_MS`, «subilo si el repo es grande») no voltea la
- *     suite. Antes, `story-discovery.test.js` leía el presupuesto «por defecto» del ambiente y fallaba.
+ *   · lo mismo por el AMBIENTE: un dev que deja exportada una variable que el propio arnés le recomienda subir
+ *     (`TYCON_STORY_SCAN_BUDGET_MS`, «subilo si el repo es grande») no voltea la suite. `story-discovery.test.js` no
+ *     lee el presupuesto «por defecto» del ambiente.
  */
 
 const test = require('node:test');

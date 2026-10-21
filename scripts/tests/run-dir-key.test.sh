@@ -1,34 +1,32 @@
 #!/usr/bin/env bash
-# run-dir-key.test.sh — red de la story 1.17.1: lo demás que el arnés nombraba con el número de la story.
+# run-dir-key.test.sh — red de la clave por tema de lo que el arnés nombra con el número de la story.
 #
-# Por qué existe: la 1.17 separó por tema la evidencia de cierre (`.advisors/dod-runtime/`), pero quedaron con el
-# número solo cuatro cosas que los frenos también miran: la carpeta de los revisores (`.advisors/pipeline-runs/`),
+# Por qué existe: la evidencia de cierre se separa por tema (`.advisors/dod-runtime/`), y otras cuatro cosas que los
+# frenos también miran tendrían el número solo: la carpeta de los revisores (`.advisors/pipeline-runs/`),
 # la guía del tester (`qa/<id>-pasos.md`), las aprobaciones de la matriz (`.tycon/runtime-waivers.jsonl`) y el aviso
-# de «otra sesión ya trabaja esta story» (PIPE-C0). En los repos que numeran por tema, una story podía pasar a `done`
-# con la carpeta de revisores de OTRA del mismo número. Medido el 2026-10-06: 10 de 28 carpetas de un repo bajo un
-# número compartido, y 8 guías de QA compartidas en otro.
+# de «otra sesión ya trabaja esta story» (PIPE-C0). En los repos que numeran por tema, una story podría pasar a `done`
+# con la carpeta de revisores de OTRA del mismo número.
 #
-# La regla es la de la 1.17 (`lib/evidence-key.js`), sin otra: número único → el nombre de siempre; número repetido →
+# La regla es la de la evidencia de cierre (`lib/evidence-key.js`), sin otra: número único → el nombre de siempre; número repetido →
 # `<tema>__<número>`.
 #
-# Lo que prueba (story 1.17.1, tabla «Tests»):
-#   T1  dos stories 1.1 en temas a y b → carpetas de corrida a__1.1-<ts> y b__1.1-<ts>
+# Lo que prueba:
+#   T1  dos stories con el número 1.1 en temas a y b → carpetas de corrida a__1.1-<ts> y b__1.1-<ts>
 #   T2  sólo b tiene carpeta de revisores (y constancia en gates.log) → el freno del commit y el portón de Azure no se la dan a a
 #   T3  carpetas de a y b, la de b más nueva → retomar la corrida de a devuelve la de a
 #   T4  dos 1.1 que comparten la carpeta qa/ → cada una su guía; el chequeo de a no acepta la de b
 #   T5  aprobación de la matriz de b con el mismo texto de declaración que a → la matriz de a no la aplica
 #   T6  dos sesiones sobre dos 1.1 distintas no se frenan; sobre la MISMA story sí (también desde otra copia del repo)
 #   T7  carpeta, guía y aprobación viejas bajo el número compartido → siguen en disco, no cuentan, se nombran
-#   T8  forma del arnés (número único) → los cuatro nombres son los de hoy
+#   T8  forma del arnés (número único) → los cuatro nombres no cambian
 #   T9  `story: "../../fuera"` → no se crea ni se elige carpeta fuera de pipeline-runs/, y el motivo se dice
 #   T10 marker.js escribe la constancia de gates.log con la ruta de la story
 #   T11 marker.js clear deja el volcado de tiempos en la carpeta de la story, no en la de la otra del mismo número
 #   T12 los medidores (rework por carril, puntero de la retro, duplicación del pase) ven las carpetas `<tema>__<número>-`
 #   T13 el portón de Azure con una ruta de story que no existe no da nada por bueno, y lo avisa
-# T9–T13 los pidieron los revisores de la primera vuelta (seguridad, fallas silenciosas, cobertura de pruebas).
-# T14–T19 los pidió el pase adversarial (T16, «storyId: sin story:», lo reemplazó T24 en la tanda 2).
+#   T14–T19 cubren los bordes de la clave.
 #
-# Tanda 2 (las tres deudas que dejó la tanda 1, DEF-1.17.1-*):
+# Más casos:
 #   T20 el registro de revisores (`on-advisor-run.js`, el hook real) sin clave anota el motivo y no crea carpeta
 #   T21 `marker.js complete-step 8` sin clave anota «no medido» con el motivo y no bloquea por el findings.json
 #   T22 el freno del frontmatter con una story que todavía no está en disco no le da la evidencia de otra del mismo número
@@ -141,7 +139,7 @@ story "$M4/docs/voz/epic-05/1-1-x.md" 1.1 "$UI"; story "$M4/docs/voz/epic-07/1-1
 QA4="$M4/docs/voz/qa"; mkdir -p "$QA4"
 printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$QA4/epic-07__1.1-pasos.md"
 printf 'veredicto: OK\n' > "$QA4/epic-07__1.1-legibilidad.md"
-# Story 7.24: una story de pantalla también necesita la revisión de su pantalla, con la misma clave.
+# Una story de pantalla también necesita la revisión de su pantalla, con la misma clave.
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$QA4/epic-07__1.1-legibilidad-ui.md"
 mkdir -p "$M4/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M4/src/Pantalla.tsx"
 ca="$(node "$SK/qa-guide.js" --story "$M4/docs/voz/epic-05/1-1-x.md" --check 2>&1)"; rca=$?
@@ -217,13 +215,13 @@ f7=""
 [[ "$adv7" == no-cuenta*1.1-20261005090000* ]] || f7="$f7 carpeta($adv7)"
 { [ "$rq7" -ne 0 ] && printf '%s' "$qa7" | grep '1\.1-pasos\.md.*no cuenta\|no cuenta.*1\.1-pasos\.md' >/dev/null; } || f7="$f7 guía(rc=$rq7)"
 # Sin tildes en el patrón: `[oó]` no es UN carácter en el locale C. (El comentario va en su línea: al final de la de
-# abajo se tragaba el `|| f7=…` y la rama no podía fallar nunca — lo cazaron dos revisores en la primera vuelta.)
+# abajo se tragaría el `|| f7=…` y la rama no podría fallar nunca.)
 { [ "$v7" != "WAIVED-USER" ] && printf '%s' "$mx7" | grep 'vieja de la matriz' >/dev/null; } || f7="$f7 aprobación($v7)"
 [ "$antes" = "$despues" ] || f7="$f7 se-tocó-algo"
 if [ -z "$f7" ]; then ok "T7 LoViejo_NoSeTocaNiCuenta"
 else no "T7 LoViejo_NoSeTocaNiCuenta — falla en:$f7"; fi
 
-# ── T8 — número único (forma del arnés): los cuatro nombres son los de hoy ────────────────────────
+# ── T8 — número único (forma del arnés): los cuatro nombres no cambian ────────────────────────
 M8="$(mundo m8)"
 S8="$M8/specs/story-1-9-x.md"; story "$S8" 1.9 "$NV
 files_to_modify:
@@ -231,7 +229,7 @@ files_to_modify:
 mkdir -p "$M8/qa"; printf 'Usuario por defecto: operador\n\n## AC 1\nAbrir la pantalla y mirar el resultado.\n' > "$M8/qa/1.9-pasos.md"
 printf 'veredicto: OK\n' > "$M8/qa/1.9-legibilidad.md"
 printf 'veredicto: OK\nscreens: src/Pantalla.tsx\ncaptures: ninguna — sin E2E en esta prueba\n' > "$M8/qa/1.9-legibilidad-ui.md"
-# Story 7.24: una pantalla declarada que no está en el disco frena (no se puede revisar lo que no se ve).
+# Una pantalla declarada que no está en el disco frena (no se puede revisar lo que no se ve).
 mkdir -p "$M8/src"; printf 'export const P = () => <p>Pantalla de prueba</p>;\n' > "$M8/src/Pantalla.tsx"
 node -e '
   const [sk, repo] = process.argv.slice(1);
@@ -326,7 +324,7 @@ t13="$(node -e '
 if [ "$t13" = "azure:false roster:0 cierre:false" ] && grep -q 'no encuentro la story' "$TMP/m13/err"; then ok "T13 PortonSinStory_FallaCerrado"
 else no "T13 PortonSinStory_FallaCerrado — $t13 · aviso: $(head -c 160 "$TMP/m13/err")"; fi
 
-# ── T14 — la carpeta de corrida la da un comando (los pasos ya no la arman a mano) ─────────────────
+# ── T14 — la carpeta de corrida la da un comando (los pasos no la arman a mano) ─────────────────
 M14="$(mundo m14)"; story "$M14/.specs/a/stories/1-1-x.md" 1.1; story "$M14/.specs/b/stories/1-1-y.md" 1.1
 U14="$(mundo m14u)"; story "$U14/specs/story-1-9-x.md" 1.9
 rd(){ node "$SK/pipeline.js" run-dir "$@" 2>/dev/null; }
@@ -358,7 +356,7 @@ f17=""
 # La story no es su propia hermana (el tema, no la ruta): en todos los sistemas de archivos.
 [[ "$k17a" != +p+* ]] && [[ "$k17a" != ERR:* ]] || f17="$f17 tildes($k17a)"
 # Las dos formas de la tilde, sólo donde el disco las trata como el mismo archivo (Mac). En Linux (ext4) son dos nombres
-# distintos y la ruta en NFC no existe: igual que con las mayúsculas, ahí no hay nada que comparar (CI de Linux, 2026-10-06).
+# distintos y la ruta en NFC no existe: igual que con las mayúsculas, ahí no hay nada que comparar (CI de Linux).
 if [ -f "$M17/.specs/$NFC/stories/1-1-x.md" ]; then
   k17b="$(k17 "$M17/.specs/$NFC/stories/1-1-x.md")"
   [ "$k17a" = "$k17b" ] || f17="$f17 tildes($k17a vs $k17b)"
@@ -469,10 +467,10 @@ p24="$(node -e '
   console.log(mio(r.hallazgos).length + " " + mio(r.avisos).map((a) => a.regla).join(","));
 ' "$CI" "$M24" "$base24" 2>/dev/null | tail -1)"
 [ "$p24" = "0 storyid-sin-story" ] || f24="$f24 portón($p24, esperaba «0 storyid-sin-story»)"
-# La salida de texto: el aviso va en su bloque, no bajo el de `review → done` (que decía que frenaba; pase adversarial).
+# La salida de texto: el aviso va en su bloque, no bajo el de `review → done` (que diría que frena).
 o24="$(node "$CI" --repo "$M24" --base "$base24" 2>&1)"
 [[ "$o24" == *'no los trata como tal'* ]] && [[ "$o24" != *'TYCON_REVIEW_A_DONE'* ]] || f24="$f24 texto(el aviso salió bajo otro encabezado)"
-# Los otros dos caminos al silencio (pase adversarial): renombrar `story:` a `storyId:` sin tocar el estado, y un
+# Los otros dos caminos al silencio: renombrar `story:` a `storyId:` sin tocar el estado, y un
 # frontmatter que no cierra.
 printf -- '---\nepic: 1\nstory: "1.2"\ntitle: "t"\nstatus: done\n---\n\n# Story 1.2\n' > "$M24/.specs/a/stories/b-y.md"
 gc24 add -A; gc24 commit -q -m b; base24b="$(git -C "$M24" rev-parse HEAD)"

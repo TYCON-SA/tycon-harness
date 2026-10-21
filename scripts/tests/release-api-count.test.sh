@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# release-api-count.test.sh — cuántas consultas a la API de GitHub gasta cada operación de una versión bajada (story 8.34).
+# release-api-count.test.sh — cuántas consultas a la API de GitHub gasta cada operación de una versión bajada.
 #
 # Sin permiso guardado, la API de GitHub tiene un tope de 60 consultas por hora POR CONEXIÓN, aunque el repo sea público:
-# dos máquinas que comparten conexión se quedaban sin consultas. Desde la 8.34, sin permiso el arnés mira por `info/refs`
+# dos máquinas que comparten conexión se quedarían sin consultas. Por eso, sin permiso el arnés mira por `info/refs`
 # (lo que lee `git ls-remote`, sin el programa git) y el número por el raw de cada commit, y baja por codeload. A la API le
-# queda UNA consulta por bajada (`git/commits/<sha>`, el árbol con el que se verifica: decisión D1 = A del dueño).
+# queda UNA consulta por bajada (`git/commits/<sha>`, el árbol con el que se verifica).
 #
 # Lo que no se puede perder:
 #   T2  · ApiCount_PerOperation — sin permiso: mirar sin novedad 0 · mirar con versión nueva 0 · bajar 1 (+0 por terceros) ·
@@ -18,7 +18,7 @@
 #   T8  · Verify_TamperedOrWrongCommit_Refused — comprimido cambiado o cortado: nada instalado, el motivo dicho.
 #   T9  · Verify_VersionJsonMatchesRaw — el raw dice un número y el árbol otro: no se instala, y lo dice.
 #   T10 · WithToken_SameApiRequestsAsBaseline — con permiso: los pedidos a la API, pedido por pedido, iguales a la línea de
-#         base grabada sobre el código anterior a la 8.34 (`--record-baseline` la graba; fixtures/release-api-baseline-token.txt).
+#         base grabada sobre el código de referencia (`--record-baseline` la graba; fixtures/release-api-baseline-token.txt).
 #   T11 · RateLimit_WaitsUntilReset_NotAFailure — con la API agotada: el aviso en el primer arranque y no en los dos
 #         siguientes, ningún pedido a la API antes de la hora, sin «no se pudo actualizar»; pasada la hora, se baja.
 #   T12 · RateLimit_ManualUpdate_TriesOnce — `update` a mano durante la espera: un pedido, sale 2, la hora, sin «5000».
@@ -234,7 +234,7 @@ if corre T6; then
   [ "$rc" = 3 ] && ok "raw caído: igual 3" || mal "raw caído: salió $rc: $out"
   [ "$(api)" = 1 ] && [ "$(api 'contents/version.json')" = 1 ] && ok "…con UNA consulta: ese version.json" || mal "raw caído gastó: $(api_seq | tr '\n' ' ')"
   # el raw contesta otra cosa que el version.json (la página de un proxy que filtra, con 200 o con 404), o no contesta:
-  # también es «raw caído» → ese único version.json por la API, dentro del tope (pase adversarial de la story 8.34)
+  # también es «raw caído» → ese único version.json por la API, dentro del tope
   # (cada caso con una punta NUEVA: el número de una punta ya vista queda guardado y no se vuelve a pedir)
   v=3
   for bloqueo in 200 404; do

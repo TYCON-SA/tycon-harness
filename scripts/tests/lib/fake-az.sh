@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # fake-az.sh — el `az` de mentira de las suites que hablan con Azure DevOps.
 #
-# Nace con la story 4.4 (los pedidos de trabajo del líder) y vive en `lib/` porque la 4.5 lo reusa
-# en vez de copiarlo: dos dobles del mismo CLI se separan solos, igual que dos copias de un guion.
+# Vive en `lib/` para que las suites lo reusen en vez de copiarlo: dos dobles del mismo CLI se separan solos, igual que dos copias de un guion.
 # La suite lo elige con `TYCON_ADO_CMD`. NUNCA habla con la red.
 #
 # ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
 # · Decide qué le pidieron por los ARGUMENTOS (no por el orden de las llamadas) y contesta desde
-#   fixtures en `$FIXAZ/`, con la forma medida contra Azure el 2026-09-10 y el 2026-09-13.
+#   fixtures en `$FIXAZ/`, con la forma que devuelve Azure.
 # · Anota CADA llamada en `$FIXAZ/llamadas.log`: `<paso>\t{"args":[…],"archivos":{ruta: contenido}}`.
 #   Los archivos son los que el comando lee (`@archivo`, `Campo=@archivo`, `--in-file`), para poder
 #   afirmar sobre el cuerpo de un Bug o de un comentario.
@@ -34,22 +33,22 @@
 # · `campos`: `devops invoke --area wit --resource workitemtypesfield --route-parameters project=P type=T` →
 #   `campos-P-T.json`; sin fixture, el Bug de siempre (con Severity y ReproSteps) y cualquier otro tipo no existe.
 #
-# ── LO QUE SUMÓ LA 2.23 (los pedidos asignados, para el sitio de la organización) ───────────────────────────────
+# ── LOS PEDIDOS ASIGNADOS, PARA EL SITIO DE LA ORGANIZACIÓN ───────────────────────────────
 # · `lote`: `devops invoke --area wit --resource workitemsbatch --in-file <{ids, fields}>` → `{ count, value }` con el
 #   `wi-<id>.json` de cada id que tenga fixture (los que no, no vuelven: como Azure con un id borrado).
 #
-# ── LO QUE SUMÓ LA 4.5 (el estado de cada pedido) ────────────────────────────────────────────────
+# ── EL ESTADO DE CADA PEDIDO ────────────────────────────────────────────────
 # · `revisiones`: `devops invoke --area wit --resource revisions --route-parameters id=N` → `revisiones-N.json`
 #   (sin fixture sale 1 con TF401232, como el `show` de un id que no existe).
 # · `estados`: `devops invoke --area wit --resource workItemTypeStates --route-parameters project=P type=Bug`
 #   → `estados-P.json` (sin fixture sale 1: el tipo o el proyecto no existe). Por tipo:
 #   `estados-P-<tipo>.json`; el `estados-P.json` de siempre vale sólo para `type=Bug`.
 #
-# ── LO QUE SUMÓ LA 4.6 (los PR abiertos de la organización) ──────────────────────────────────────
+# ── LOS PR ABIERTOS DE LA ORGANIZACIÓN ──────────────────────────────────────
 # · `prs`: `devops invoke --area git --resource pullRequests --query-parameters … $skip=N` → `prs-N.json`
 #   (sin fixture: una página vacía, `{count:0,value:[]}` — como Azure pasada la última página).
 #
-# ── LO QUE SUMÓ LA 2.22 (la foto de despliegues) ─────────────────────────────────────────────────
+# ── LA FOTO DE DESPLIEGUES ─────────────────────────────────────────────────
 # · `definiciones`: `pipelines list --name N --project P` → `definiciones-P.json` filtrada por PREFIJO de nombre, sin
 #   distinguir mayúsculas (como Azure: «Acme Backend» también trae «Acme Backend Prod»).
 # · `builds`: `pipelines runs list --pipeline-ids ID --project P [--top N]` → `builds-ID.json`, cortada en N. El orden
@@ -58,7 +57,7 @@
 # · `timeline`: `devops invoke --area build --resource timeline --route-parameters project=P buildId=N`
 #   → `timeline-N.json` (sin fixture: `{records:[]}`, como una corrida que no llegó a correr nada).
 #
-# ── LO QUE SUMÓ LA 2.30 (la instalación del sitio en Azure Container Apps) ──────────────────────────────────────
+# ── LA FAMILIA DE LA INSTALACIÓN DEL SITIO EN AZURE CONTAINER APPS ──────────────────────────────────────
 # Una familia aparte, que NO pasa por las trampas de `--org` ni de `-o json` (son de `devops`/`boards`): `account`,
 # `provider`, `group`, `monitor`, `storage`, `containerapp`, `role` y `rest`. Recuerda lo que crea en
 # `$FIXAZ/azure.json` (la segunda corrida tiene que saltear lo que ya existe) y contesta las consultas `--query … -o tsv`

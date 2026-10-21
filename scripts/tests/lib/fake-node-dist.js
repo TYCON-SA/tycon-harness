@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * fake-node-dist.js — el servidor local que hace de nodejs.org en las pruebas de la story 8.39 (harness-node.test.sh).
+ * fake-node-dist.js — el servidor local que hace de nodejs.org en las pruebas de la bajada del Node (harness-node.test.sh).
  *
- * La bajada del Node del arnés nunca se prueba contra nodejs.org (decisión 20 de la story): esta prueba levanta este
+ * La bajada del Node del arnés nunca se prueba contra nodejs.org: esta prueba levanta este
  * servidor en 127.0.0.1, con un puerto libre, y le sirve los archivos de una carpeta (el comprimido y el `.exe` de
  * juguete que arma la prueba). Cuenta cada pedido en un archivo y se porta según un archivo de modo, que la prueba
  * cambia sin reiniciarlo:

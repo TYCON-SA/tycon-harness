@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# projects-snapshot.test.sh — los casos de la foto por proyecto (story 2.20).
+# projects-snapshot.test.sh — los casos de la foto por proyecto.
 #
 # La foto proyecta, por cada repo con stories, la lista que lee el control de proyectos de un producto del equipo:
 # stories, épicas, sprints, plan, alertas y las métricas que el medidor ya calculó. Todo lo que
@@ -82,8 +82,8 @@ foto() { node "$FOTO" "$@"; }
 
 [ -f "$FOTO" ] || echo "  ·    — $FOTO no existe todavía: los casos que lo corren salen en rojo"
 
-# ── T1 · Contrato_ClavesExactasYUnArchivoPorRepo (AC 1, 2, 8) ──
-# 🔴 rojo previo: sin el guion no hay archivos; volcar el frontmatter → claves de más en stories[].
+# ── T1 · Contrato_ClavesExactasYUnArchivoPorRepo ──
+# 🔴 Mutación que lo pone en rojo: sin el guion no hay archivos; volcar el frontmatter → claves de más en stories[].
 R="$TMP/t1"; mkdir -p "$R"
 repo_nuevo "$R/A__S"; for i in 1 2 3 4; do story "$R/A__S" "1.$i" backlog; done; commit_en "$R/A__S" 2026-09-01T10:00:00Z inicial
 repo_nuevo "$R/A__Code"; echo x > "$R/A__Code/a.txt"; commit_en "$R/A__Code" 2026-09-01T10:00:00Z inicial
@@ -104,10 +104,10 @@ grep -q "A__Code" <<<"$SALIDA" && ok "T1 A__Code se nombra como «sin stories»"
 foto --repo "$R/B__P" --out "$TMP/t1-uno" >/dev/null 2>&1; RC=$?
 [ "$RC" = 0 ] && [ -f "$TMP/t1-uno/B__P.json" ] && ok "T1 --repo mide un solo repo" || mal "T1 --repo no escribió B__P.json (exit $RC)"
 
-# ── T2 · Estados_CanonicoGrupoYDesconocido (AC 2, 6) ──
-# 🔴 rojo previo: una lista propia de estados en vez del diccionario → `implemented` sale desconocido;
+# ── T2 · Estados_CanonicoGrupoYDesconocido ──
+# 🔴 Mutación que lo pone en rojo: una lista propia de estados en vez del diccionario → `implemented` sale desconocido;
 #    leer el estado con un escalar que no corta el comentario → `done   # nota` sale desconocido
-#    (pasó en un repo real el 2026-10-07: el medidor lo contaba cerrado y la foto, no).
+#    (el medidor lo cuenta cerrado y la foto, no).
 R="$TMP/t2"; repo_nuevo "$R/P__S"
 story "$R/P__S" 1.1 done; story "$R/P__S" 1.2 implemented; story "$R/P__S" 1.3 review
 story "$R/P__S" 1.4 deferred; story "$R/P__S" 1.5 cancelled; story "$R/P__S" 1.6 "done   # habilitada, sin depender de nada"
@@ -120,8 +120,8 @@ G="$(j "$TMP/t2-out/P__S.json" 'j.stories.map(s=>s.id+":"+s.canonico+":"+s.grupo
   && ok "T2 cobertura.desconocidos cuenta el estado fuera del diccionario" || mal "T2 cobertura.desconocidos mal"
 [ "$(j "$TMP/t2-out/P__S.json" 'j.stories[1].estado')" = "implemented" ] && ok "T2 estado crudo intacto" || mal "T2 estado crudo perdido"
 
-# ── T3 · Epicas_TituloDesdeArchivoOEpicsMd_ONull (AC 3) ──
-# 🔴 rojo previo: inventar el título desde el slug del archivo o desde el id.
+# ── T3 · Epicas_TituloDesdeArchivoOEpicsMd_ONull ──
+# 🔴 Mutación que lo pone en rojo: inventar el título desde el slug del archivo o desde el id.
 R="$TMP/t3"; repo_nuevo "$R/P__S"
 story "$R/P__S" 1.1 done epic=1; story "$R/P__S" 2.1 backlog epic=2; story "$R/P__S" 3.1 backlog epic=3
 printf '# Épica 1 — Encuesta\n\nTexto.\n' > "$R/P__S/specs/epica-1-encuesta.md"
@@ -133,8 +133,8 @@ E="$(j "$TMP/t3-out/P__S.json" 'j.epicas.map(e=>e.id+"="+e.titulo).join(" | ")' 
 C="$(j "$TMP/t3-out/P__S.json" 'Object.keys(j.epicas[2].conteo).sort().join(",")+"/"+j.epicas[0].conteo.cerrado' 2>/dev/null)"
 [ "$C" = "backlog,bloqueado,cerrado,en_curso,sin_entrega/1" ] && ok "T3 conteo con las cinco claves" || mal "T3 conteo: $C"
 
-# ── T4 · Sprints_OrdenYSinSprint (AC 4) ──
-# 🔴 rojo previo: perder las stories sin sprint o con sprint no entero.
+# ── T4 · Sprints_OrdenYSinSprint ──
+# 🔴 Mutación que lo pone en rojo: perder las stories sin sprint o con sprint no entero.
 R="$TMP/t4"; repo_nuevo "$R/P__S"
 story "$R/P__S" 1.1 backlog sprint=2; story "$R/P__S" 1.2 backlog sprint=1
 story "$R/P__S" 1.3 backlog 'sprint="x"'; story "$R/P__S" 1.4 backlog sprint=-
@@ -145,8 +145,8 @@ foto --repo "$R/P__S" --out "$TMP/t4-out" >/dev/null 2>&1
 S="$(j "$TMP/t4-out/P__S.json" 'j.sprints.map(s=>s.n+":"+s.stories.join("+")).join(" ")' 2>/dev/null)"
 [ "$S" = "1:1.2 2:1.1 null:1.3+1.4" ] && ok "T4 sprints en orden y el balde sin sprint al final" || mal "T4 sprints: $S"
 
-# ── T5 · Plan_SoloLoQueExisteConSuUltimoCommit (AC 5) ──
-# 🔴 rojo previo: listar rutas que no existen, o inventar una fecha para lo no commiteado.
+# ── T5 · Plan_SoloLoQueExisteConSuUltimoCommit ──
+# 🔴 Mutación que lo pone en rojo: listar rutas que no existen, o inventar una fecha para lo no commiteado.
 R="$TMP/t5"; repo_nuevo "$R/P__S"; story "$R/P__S" 1.1 backlog
 echo "# PRD" > "$R/P__S/specs/prd.md"
 commit_en "$R/P__S" 2026-09-03T10:00:00Z inicial
@@ -155,8 +155,8 @@ foto --repo "$R/P__S" --out "$TMP/t5-out" >/dev/null 2>&1
 P="$(j "$TMP/t5-out/P__S.json" 'j.plan.map(p=>p.ruta+"@"+(p.ultimo_commit?p.ultimo_commit.slice(0,10):null)).join(" ")' 2>/dev/null)"
 [ "$P" = "specs/epics.md@null specs/prd.md@2026-09-03" ] && ok "T5 plan con lo que existe y su último commit" || mal "T5 plan: $P"
 
-# ── T6 · Evidencia_PropiaYDeCompanero_NullSiParcial (AC 9) ──
-# 🔴 rojo previo: mirar sólo el repo propio → 1.3 y 1.4 salen false; dar false con escaneo parcial.
+# ── T6 · Evidencia_PropiaYDeCompanero_NullSiParcial ──
+# 🔴 Mutación que lo pone en rojo: mirar sólo el repo propio → 1.3 y 1.4 salen false; dar false con escaneo parcial.
 R="$TMP/t6"; repo_nuevo "$R/A__S"
 for i in 1 2 3 4 5; do story "$R/A__S" "1.$i" done; done
 printf 'evidence:\n  companion_repos:\n    - C\n' > "$R/A__S/.tycon/advisors.yaml"
@@ -188,8 +188,8 @@ node -r "$TMP/parcial.js" "$FOTO" --repo "$R/A__S" --out "$TMP/t6-parcial" >/dev
 EV="$(j "$TMP/t6-parcial/A__S.json" 'j.cobertura.partial+"|"+j.stories.map(s=>String(s.evidencia_de_cierre)).join(",")' 2>/dev/null)"
 [ "$EV" = "true|null,null,null,null,null" ] && ok "T6 con escaneo parcial la evidencia es null, nunca false" || mal "T6 parcial: $EV"
 
-# ── T7 · Alertas_LasSeisYNingunaOtra (AC 7) ──
-# 🔴 rojo previo: emitir `estancada` con dias_en_estado null; una alerta fuera de la lista.
+# ── T7 · Alertas_LasSeisYNingunaOtra ──
+# 🔴 Mutación que lo pone en rojo: emitir `estancada` con dias_en_estado null; una alerta fuera de la lista.
 R="$TMP/t7"; repo_nuevo "$R/P__S"
 story "$R/P__S" 2.1 done
 story "$R/P__S" 2.2 backlog
@@ -223,8 +223,8 @@ TYCON_TODAY=2026-10-30 node -r "$TMP/sin-transiciones.js" "$FOTO" --repo "$R/P__
 A="$(j "$TMP/t7-null/P__S.json" 'j.cobertura.transiciones.estado+"|"+j.stories.every(s=>s.dias_en_estado===null)+"|"+j.alertas.some(a=>a.tipo==="estancada")' 2>/dev/null)"
 [ "$A" = "no_medido|true|false" ] && ok "T7 sin transiciones: días null en todas y ninguna estancada" || mal "T7 sin transiciones: $A"
 
-# ── T8 · Ilegibles_SeCuentanNoSeSaltean (AC 6) ──
-# 🔴 rojo previo: el descubridor devuelve null para el frontmatter roto y nadie lo cuenta.
+# ── T8 · Ilegibles_SeCuentanNoSeSaltean ──
+# 🔴 Mutación que lo pone en rojo: el descubridor devuelve null para el frontmatter roto y nadie lo cuenta.
 R="$TMP/t8"; repo_nuevo "$R/P__S"; story "$R/P__S" 1.1 backlog
 printf -- '---\nstory: "1.2"\nstatus: backlog\n\nsin cierre\n' > "$R/P__S/specs/story-1.2.md"
 printf -- '---\nstory: "1.3"\nstatus: done\ntitle: x\n' > "$R/P__S/specs/story-1.3.md"
@@ -236,7 +236,7 @@ case "$I" in
   "2|2|"*specs/story-1.2.md*specs/story-1.3.md*) ok "T8 dos ilegibles contados y alertados con su ruta" ;;
   *) mal "T8 ilegibles: $I" ;;
 esac
-# Iter 2 (chequeo de alcance): un repo SIN una sola story legible no escribe foto (AC 1), pero se nombra con
+# Un repo SIN una sola story legible no escribe foto, pero se nombra con
 # su cuenta de frontmatters rotos — no se calla.
 R="$TMP/t8b"; repo_nuevo "$R/P__Rotas"
 printf -- '---\nstory: "1.1"\nstatus: backlog\n\nsin cierre\n' > "$R/P__Rotas/specs/story-1.1.md"
@@ -246,24 +246,24 @@ case "$RC|$([ -f "$TMP/t8b-out/P__Rotas.json" ] && echo con || echo sin)|$SALIDA
   "0|sin|"*"P__Rotas (1 con el frontmatter roto)"*) ok "T8 repo sólo con stories rotas: sin foto, nombrado con su cuenta" ;;
   *) mal "T8 repo sólo con stories rotas: exit $RC, «${SALIDA}»" ;;
 esac
-# Iter 3 (fallos silenciosos): en Azure DevOps ese repo es un AVISO visible — su foto de anoche quedaría vieja.
+# En Azure DevOps ese repo es un AVISO visible — su foto de anoche quedaría vieja.
 SALIDA="$(TF_BUILD=True foto --repo "$R/P__Rotas" --out "$TMP/t8b-out" 2>/dev/null)"
 case "$SALIDA" in
   *"##vso[task.logissue type=warning]"*P__Rotas*) ok "T8 bajo Azure DevOps el repo con stories rotas sale como logissue" ;;
   *) mal "T8 sin logissue para el repo con stories rotas: «${SALIDA}»" ;;
 esac
 
-# ── T9 · Fuga_SinMarcadorCorreoNiRutaAbsoluta (AC 10) ──
-# 🔴 rojo previo: volcar el frontmatter o el cuerpo entero.
+# ── T9 · Fuga_SinMarcadorCorreoNiRutaAbsoluta ──
+# 🔴 Mutación que lo pone en rojo: volcar el frontmatter o el cuerpo entero.
 R="$TMP/t9"; repo_nuevo "$R/P__S"
 story "$R/P__S" 1.1 backlog body="Texto secreto ZQX-FUGA-1 del cuerpo." owner=dev@ejemplo.test \
   'files_to_create=["/Users/x/repo/a.cs", "/home/dev/b.cs"]'
-# Revisión de seguridad (iter 1): el estado crudo viaja como CLAVE de `cobertura.desconocidos`, y una ruta de
+# El estado crudo viaja como CLAVE de `cobertura.desconocidos`, y una ruta de
 # máquina puede no empezar por /Users ni /home.
 # (Los ataques van en campos que VIAJAN —estado, épica—: el ayudante `story` ya escribe una `priority:`, y una
-#  segunda nunca se leía; así estaba en la iter 2 y el caso no probaba nada.)
+#  segunda nunca se leería y el caso no probaría nada.)
 story "$R/P__S" 1.2 "esperando-a-dev@ejemplo.test" "epic=P1 en /private/var/folders/x"
-# Iter 2 y 3: rutas pegadas a `:` o `<`, `file://`, `C:/` con barras normales, `**/…` y `-/…`.
+# Rutas pegadas a `:` o `<`, `file://`, `C:/` con barras normales, `**/…` y `-/…`.
 story "$R/P__S" 1.3 "ruta:/Users/u/a.cs <\/home/u/b> file:///Volumes/u/c C:/Users/u/d **/home/u/e** -/Users/u/f"
 # Control: lo que NO es una ruta de máquina sigue igual (relativa, fecha, URL).
 story "$R/P__S" 1.4 backlog "epic=specs/a/b.md 2026/10/07 https://dev.ejemplo.test/org/x"
@@ -288,8 +288,8 @@ case "$T" in
   *) mal "T9 control positivo: el título no aparece ($T)" ;;
 esac
 
-# ── T10 · Exportador_SigueExcluyendoDashboard (AC 10) ──
-# 🔴 rojo previo: sacar `.dashboard/**` de las exclusiones fijas del exportador.
+# ── T10 · Exportador_SigueExcluyendoDashboard ──
+# 🔴 Mutación que lo pone en rojo: sacar `.dashboard/**` de las exclusiones fijas del exportador.
 # T10, T12 y T14 miran cómo está cableada la pieza en el repo del equipo (la lista del exportador, el pipeline nocturno,
 # el .gitignore que deja pasar la foto, el mapa del arnés). La copia pública no trae nada de eso (no tiene los papeles
 # del exportador, ni pipelines/, ni artifacts/, y su .gitignore ignora .dashboard/ entero porque no hay nocturno):
@@ -302,8 +302,8 @@ elif node "$RAIZ/scripts/publishing/export.js" --explain 2>&1 | grep -E '\.dashb
   ok "T10 la copia pública sigue excluyendo .dashboard/** como fija"
 else mal "T10 el exportador ya no lista .dashboard/** como exclusión fija"; fi
 
-# ── T11 · ModosDeFalla_NoGit_DiccionarioRoto_ExitCodes (AC 11) ──
-# 🔴 rojo previo: un throw sin atrapar → exit ≠ 0/2 y el paso del nocturno se cae.
+# ── T11 · ModosDeFalla_NoGit_DiccionarioRoto_ExitCodes ──
+# 🔴 Mutación que lo pone en rojo: un throw sin atrapar → exit ≠ 0/2 y el paso del nocturno se cae.
 R="$TMP/t11"; mkdir -p "$R/P__NoGit/specs"; story "$R/P__NoGit" 1.1 backlog
 SALIDA="$(foto --repo "$R/P__NoGit" --out "$TMP/t11-a" 2>&1)"; RC=$?
 if [ "$RC" = 2 ] && [ ! -f "$TMP/t11-a/P__NoGit.json" ] && grep -q "P__NoGit" <<<"$SALIDA" && grep -qi "git" <<<"$SALIDA"; then
@@ -321,14 +321,14 @@ chmod 755 "$TMP/t11-c"
 [ "$RC" = 2 ] && ok "T11 --out sin permiso: exit 2" || mal "T11 --out sin permiso: exit $RC"
 foto --out "$TMP/t11-d" >/dev/null 2>&1; RC=$?
 [ "$RC" = 1 ] && ok "T11 sin --repo ni --scan: exit 1" || mal "T11 argumentos faltantes: exit $RC"
-# Revisión de fallos silenciosos (iter 1): todos sin stories NO es una falla; una raíz sin repos, sí.
+# Todos sin stories NO es una falla; una raíz sin repos, sí.
 R2="$TMP/t11-vacio"; repo_nuevo "$R2/P__Code"; echo x > "$R2/P__Code/a.txt"; commit_en "$R2/P__Code" 2026-09-01T10:00:00Z inicial
 foto --scan "$R2" --only-harness --out "$TMP/t11-e" >/dev/null 2>&1; RC=$?
 [ "$RC" = 0 ] && ok "T11 todos los repos sin stories: exit 0 (no es una falla)" || mal "T11 todos sin stories: exit $RC"
 mkdir -p "$TMP/t11-sin-repos"
 foto --scan "$TMP/t11-sin-repos" --out "$TMP/t11-f" >/dev/null 2>&1; RC=$?
 [ "$RC" = 2 ] && ok "T11 raíz sin ningún repo: exit 2" || mal "T11 raíz sin repos: exit $RC"
-# Iter 3 (cobertura): un repo que falla, bajo Azure DevOps, es un logissue; fuera de Azure, no se imprime.
+# Un repo que falla, bajo Azure DevOps, es un logissue; fuera de Azure, no se imprime.
 SALIDA="$(TF_BUILD=True foto --repo "$R/P__NoGit" --repo "$R/P__S" --out "$TMP/t11-h" 2>/dev/null)"; RC=$?
 case "$RC|$SALIDA" in
   "0|"*"##vso[task.logissue type=warning]Foto por proyecto, no escrito — P__NoGit"*) ok "T11 repo fallido con otro escrito: exit 0 y logissue en Azure DevOps" ;;
@@ -341,21 +341,21 @@ foto --repo "$R/P__S" --out "$TMP/t11-i" --transitions-budget-ms abc >/dev/null 
 [ "$RC" = 1 ] && ok "T11 --transitions-budget-ms ilegible: exit 1" || mal "T11 --transitions-budget-ms ilegible: exit $RC"
 foto --repo "$R/P__S" --out "$TMP/t11-i" --transitions-budget-ms 30000 >/dev/null 2>&1; RC=$?
 [ "$RC" = 0 ] && [ -f "$TMP/t11-i/P__S.json" ] && ok "T11 --transitions-budget-ms válido: corre" || mal "T11 --transitions-budget-ms válido: exit $RC"
-# Pase adversarial (iter 1): un --sdlc que no existe (el medidor no escribió hoy) no copia nada viejo.
+# Un --sdlc que no existe (el medidor no escribió hoy) no copia nada viejo.
 foto --repo "$R/P__S" --sdlc "$TMP/no-existe/sdlc-stage-2026-10-07.json" --out "$TMP/t11-g" >/dev/null 2>&1; RC=$?
 D="$(j "$TMP/t11-g/P__S.json" 'j.metricas+"|"+j.cobertura.metricas.estado' 2>/dev/null)"
 [ "$RC" = 0 ] && [ "$D" = "null|no_medido" ] && ok "T11 --sdlc ausente: metricas null con motivo" || mal "T11 --sdlc ausente: exit $RC, $D"
 
-# ── T12 · Nocturno_PasoDespuesDeMedirYAntesDelCommit (AC 11, 13) ──
-# 🔴 rojo previo: correr la foto antes de medir, sin --sdlc, o sin aviso en su falla.
+# ── T12 · Nocturno_PasoDespuesDeMedirYAntesDelCommit ──
+# 🔴 Mutación que lo pone en rojo: correr la foto antes de medir, sin --sdlc, o sin aviso en su falla.
 YML="$RAIZ/pipelines/azure-pipelines.yml"
 if [ "$INTERNO" = 0 ] && [ ! -f "$YML" ]; then
   echo "  ⏭️   — T12 NO MEDIDO: la copia pública no trae los pipelines del equipo. No es un verde."
 elif [ -f "$YML" ]; then
   L_MED=$(grep -n 'node scripts/metrics/sdlc-stage-metrics.js' "$YML" | head -1 | cut -d: -f1)
   L_FOTO=$(grep -n 'node scripts/nightly/projects/snapshot.js' "$YML" | head -1 | cut -d: -f1)
-  # El paso que guarda ya no hace `git add`: llama a push-nightly-data.js save con sus rutas (story 8.26, tanda H1a).
-  # Lo que se fija es lo mismo: la foto corre antes de ese paso, y el paso lleva la carpeta de las fotos.
+  # El paso que guarda no hace `git add`: llama a push-nightly-data.js save con sus rutas.
+  # Se fija que la foto corre antes de ese paso, y que el paso lleva la carpeta de las fotos.
   L_ADD=$(grep -n 'push-nightly-data.js save' "$YML" | head -1 | cut -d: -f1)
   if [ -n "$L_FOTO" ] && [ -n "$L_ADD" ] && [ "$L_MED" -lt "$L_FOTO" ] && [ "$L_FOTO" -lt "$L_ADD" ]; then ok "T12 la foto corre después de medir y antes del commit"
   else mal "T12 orden: medir=$L_MED foto=${L_FOTO:-ausente} guardar=${L_ADD:-ausente}"; fi
@@ -366,12 +366,12 @@ elif [ -f "$YML" ]; then
   # entre comillas simples: el comodín lo resuelve git (también contra lo borrado), no el shell
   sed -n "${L_ADD:-1},\$p" "$YML" | sed -n '1,6p' | grep -- "-- .*'.dashboard/proyectos/\*.json'" >/dev/null \
     && ok "T12 commitea .dashboard/proyectos/*.json" || mal "T12 el paso que guarda no lleva .dashboard/proyectos/*.json"
-  # Pase adversarial (iter 1): «el más nuevo» por nombre puede ser el de ayer si el medidor no escribió hoy.
+  # «El más nuevo» por nombre puede ser el de ayer si el medidor no escribió hoy.
   if grep -q 'sdlc-stage-\$(date -u +%Y-%m-%d).json' <<<"$BLOQUE$(sed -n "$((L_FOTO-3)),${L_FOTO}p" "$YML")" && ! grep -q 'sdlc-stage-\*.json | tail' "$YML"; then
     ok "T12 --sdlc es el snapshot de HOY, no el más nuevo por nombre"
   else mal "T12 --sdlc no apunta al snapshot del día"; fi
 else mal "T12 no encuentro $YML"; fi
-# Pase adversarial (iter 1): `.dashboard/*` está ignorado — sin excepción, el `git add` sale 1 y con `set -e`
+# `.dashboard/*` está ignorado — sin excepción, el `git add` sale 1 y con `set -e`
 # aborta el commit del nocturno (y con él el snapshot SDLC del día).
 if [ "$INTERNO" = 0 ]; then
   echo "  ⏭️   — T12 NO MEDIDO: el .gitignore de la copia pública ignora .dashboard/ entero (no hay nocturno que commitee). No es un verde."
@@ -379,8 +379,8 @@ elif git -C "$RAIZ" check-ignore -q .dashboard/proyectos/X__Y.json; then
   mal "T12 .gitignore ignora .dashboard/proyectos/*.json: el git add del nocturno aborta el commit"
 else ok "T12 .gitignore deja pasar .dashboard/proyectos/*.json"; fi
 
-# ── T13 · Idempotente_ReemplazaYNoAcumula (AC 1, 12) ──
-# 🔴 rojo previo: fecha en el nombre del archivo → se acumulan; un .tmp que queda.
+# ── T13 · Idempotente_ReemplazaYNoAcumula ──
+# 🔴 Mutación que lo pone en rojo: fecha en el nombre del archivo → se acumulan; un .tmp que queda.
 R="$TMP/t1"
 G1="$(j "$TMP/t1-out/A__S.json" 'j.generated_at' 2>/dev/null)"; sleep 1
 foto --scan "$R" --only-harness --out "$TMP/t1-out" >/dev/null 2>&1
@@ -389,8 +389,8 @@ G2="$(j "$TMP/t1-out/A__S.json" 'j.generated_at' 2>/dev/null)"
 [ "$ARCH2" = "A__S.json B__P.json " ] && [ -n "$G1" ] && [ "$G1" != "$G2" ] \
   && ok "T13 dos corridas: los mismos dos archivos, reemplazados" || mal "T13 tras dos corridas: «${ARCH2}» (${G1} → ${G2})"
 
-# ── T14 · Registro_SuitesMapaYPiezas (AC 14) ──
-# 🔴 rojo previo: olvidar registrar la pieza en alguno de los tres.
+# ── T14 · Registro_SuitesMapaYPiezas ──
+# 🔴 Mutación que lo pone en rojo: olvidar registrar la pieza en alguno de los tres.
 for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/piezas-del-arnes.md; do
   case "$f" in
     *suites.json) PAT='tests/projects-snapshot.test.sh' ;;
@@ -400,8 +400,8 @@ for f in scripts/tests/suites.json artifacts/mapa-arnes.html guides/piezas-del-a
   grep -q "$PAT" "$RAIZ/$f" && ok "T14 $f nombra la pieza" || mal "T14 $f no nombra $PAT"
 done
 
-# ── T15 · SnapshotSdlc_IdenticoConYSinElPaso (AC 9, 13) ──
-# 🔴 rojo previo: que la foto escriba o reordene el snapshot SDLC.
+# ── T15 · SnapshotSdlc_IdenticoConYSinElPaso ──
+# 🔴 Mutación que lo pone en rojo: que la foto escriba o reordene el snapshot SDLC.
 R="$TMP/t1"; D="$TMP/t15-dash"; mkdir -p "$D"
 node "$MEDIDOR" --scan "$R" --only-harness --dashboard "$D" --snapshot >/dev/null 2>&1
 S1="$(ls "$D"/sdlc-stage-*.json 2>/dev/null | head -1)"
@@ -416,8 +416,8 @@ if [ -n "$S1" ]; then
   case "$ARCH" in *proyectos*) mal "T15 la foto escribió en la carpeta del tablero" ;; *) ok "T15 nada nuevo en la carpeta del tablero" ;; esac
 else mal "T15 el medidor no escribió snapshot sobre las fixtures"; fi
 
-# ── T16 · Metricas_CopiadasDelSnapshotSdlc (AC 8) ──
-# 🔴 rojo previo: recalcular las métricas, o volcar la entrada entera (aparece `rework_por_carril`).
+# ── T16 · Metricas_CopiadasDelSnapshotSdlc ──
+# 🔴 Mutación que lo pone en rojo: recalcular las métricas, o volcar la entrada entera (aparece `rework_por_carril`).
 if [ -n "${S1:-}" ] && [ -f "$TMP/t15-foto/B__P.json" ]; then
   M="$(node -e '
     const fs=require("fs");const path=require("path");
@@ -436,8 +436,8 @@ if [ -n "${S1:-}" ] && [ -f "$TMP/t15-foto/B__P.json" ]; then
   rm -rf "$R/C__Nuevo"
 else mal "T16 sin snapshot SDLC o sin la foto de T15"; fi
 
-# ── T17 · Frontmatter_VaciosYNulosSonNull (AC 2, 7) ──
-# 🔴 rojo previo (pase adversarial, iter 1): el regex de una clave cruza el salto de línea y `epic:` vacío toma
+# ── T17 · Frontmatter_VaciosYNulosSonNull ──
+# 🔴 Mutación que lo pone en rojo: el regex de una clave cruza el salto de línea y `epic:` vacío toma
 #    la línea siguiente → `epica: "priority:"` y una épica inventada; `depends_on: null` → alerta por «null».
 R="$TMP/t17"; repo_nuevo "$R/P__S"; story "$R/P__S" 1.1 backlog
 python3 - "$R/P__S/specs/story-1.1.md" <<'PY'
@@ -452,8 +452,8 @@ foto --repo "$R/P__S" --out "$TMP/t17-out" >/dev/null 2>&1
 V="$(j "$TMP/t17-out/P__S.json" '[j.stories[0].epica,j.stories[0].prioridad,j.stories[0].sprint,j.stories[0].depends_on.length,j.stories[0].followup_of.length,j.epicas.map(e=>e.id).join(),j.alertas.filter(a=>a.tipo==="dependencia_rota").length].join("|")' 2>/dev/null)"
 [ "$V" = "|||0|0||0" ] && ok "T17 vacíos y nulos del frontmatter dan null y listas vacías, sin épicas ni alertas inventadas" || mal "T17 vacíos/nulos: $V"
 
-# ── T18 · Tandas_ConListasAnidadas (AC 2) ──
-# 🔴 rojo previo (pase adversarial, iter 1): partir el bloque `pipelines:` en cada `- ` separa el `status:` del
+# ── T18 · Tandas_ConListasAnidadas ──
+# 🔴 Mutación que lo pone en rojo: partir el bloque `pipelines:` en cada `- ` separa el `status:` del
 #    `name:` cuando la tanda trae una sublista antes del status.
 T="$(node -e '
 const { tandasPendientes } = require(process.argv[1]);

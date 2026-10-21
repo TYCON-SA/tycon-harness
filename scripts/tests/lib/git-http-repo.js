@@ -1,6 +1,6 @@
 'use strict';
 /*
- * git-http-repo.js — un repo git local servido por HTTP que ANOTA cada empuje (story 2.29, T15, T18, T26, T27).
+ * git-http-repo.js — un repo git local servido por HTTP que ANOTA cada empuje (T15, T18, T26, T27).
  *
  * Envuelve lib/git-http-server.js (el `git http-backend` que exige la cabecera) y le suma lo que las pruebas de la
  * propuesta por rama y pedido necesitan ver: qué refs se empujaron, desde qué commit hasta cuál y si fue forzado. Lo
@@ -12,7 +12,7 @@
  *   r.cambiar({ ruta: contenido | null }) · r.rechazarEmpuje = 403 · await r.cerrar()
  *
  * `rechazarEmpuje`: con un código, el servidor contesta ESE código a todo pedido de `git-receive-pack` (el empuje), sin
- * tocar las lecturas: es el «403 al crear la rama» del AC 18. Se hace con un servidor de adelante que reenvía al de
+ * tocar las lecturas: es el «403 al crear la rama». Se hace con un servidor de adelante que reenvía al de
  * git-http-server.js, así ese archivo no cambia. NUNCA habla con la red.
  */
 const http = require('http');

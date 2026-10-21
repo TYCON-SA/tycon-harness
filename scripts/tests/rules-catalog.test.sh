@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
-# 🔴 AISLAMIENTO PRIMERO (regla heredada de la story 2.5): HOME falso antes de cualquier línea que
+# 🔴 AISLAMIENTO PRIMERO (regla de la familia): HOME falso antes de cualquier línea que
 #    ejecute algo. Este lector no escribe nada, pero la regla es de la familia y no se negocia.
-# 🔴 La casa REAL se guarda ANTES de falsear HOME (2026-09-18). Se reconstruía con la entrada de
-#    passwd del usuario, que en el agente de Azure NO es la casa donde el pipeline clona AgentSkills:
-#    el enlace a los revisores quedaba colgado y C7/C7b morían con «Agents dir not found», verdes acá
-#    y rojos todas las noches. Mismo criterio que trimmed-close.test.sh: resolver agent-skills
-#    ANTES del home falso.
+# 🔴 La casa REAL se guarda ANTES de falsear HOME. Reconstruirla con la entrada de passwd del usuario
+#    falla: en el agente de Azure NO es la casa donde el pipeline clona AgentSkills, el enlace a los
+#    revisores queda colgado y C7/C7b mueren con «Agents dir not found», verdes en las máquinas y rojos
+#    en el nocturno. Mismo criterio que trimmed-close.test.sh: resolver agent-skills ANTES del home falso.
 CASA_REAL="${HOME}"
 HOME="$(mktemp -d)"; export HOME
 #
-# rules-catalog.test.sh — el parser ÚNICO de guides/advisor-rules-catalog.md (story 2.9).
+# rules-catalog.test.sh — el parser ÚNICO de guides/advisor-rules-catalog.md.
 #
 # Qué defiende, y por qué existe cada caso:
 #   · C1  un_solo_contador — una regla se DEFINE en la primera columna en negrita de una fila; nombrarla
-#         en la prosa es una REFERENCIA. Y el identificador admite DÍGITOS en el prefijo (`I18N`), que es
-#         el defecto de rules-distill.js:79 (`[A-Z]{2,12}`): 7 reglas invisibles y un revisor sin dueño.
+#         en la prosa es una REFERENCIA. Y el identificador admite DÍGITOS en el prefijo (`I18N`), que un
+#         patrón como `[A-Z]{2,12}` (el de rules-distill.js) no admite: reglas invisibles y un revisor sin dueño.
 #   · C2  clave_es_dueno_mas_regla — `SEC-C1` está DEFINIDO por dos dueños distintos (el revisor de
 #         seguridad y el freno de mano) con contenido sin relación. Clavear por identificador los fusiona.
 #         `PIPE-C5`, definida dos veces por el MISMO dueño, es UNA regla.
@@ -22,16 +21,16 @@ HOME="$(mktemp -d)"; export HOME
 #         no entra en ningún veredicto de poda. Contarlo como cubierto sería verde falso.
 #   · C4  modos_de_falla — «no pude leer» sale 2 con motivo. Un catálogo ilegible que devuelva 0 reglas
 #         se leería como «el catálogo está vacío» y la tabla de poda marcaría candidata a todo.
-#   · C5  el_catalogo_real — los números que la story publica salen de acá, no de una lista tipeada.
+#   · C5  el_catalogo_real — los números que se publican salen de acá, no de una lista tipeada.
 #
-# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo. El exit code se lee ANTES de cualquier
+# 🔴 REGLA DE ADMISIÓN: cada caso trae escrito qué rompería (la mutación que lo pone en rojo). El exit code se lee ANTES de cualquier
 #    pipe. bash 3.2 (macOS): siempre `${v}`.
 
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LECTOR="${RAIZ}/scripts/lib/rules-catalog.js"
 CATALOGO_REAL="${RAIZ}/guides/advisor-rules-catalog.md"
-# La señal de «copia pública», la de siempre: sin el perfil del equipo o sin el mapa de renombres (story 8.7, C5 y C7).
+# La señal de «copia pública», sin el perfil del equipo o sin el mapa de renombres (C5 y C7).
 PUBLIC_COPY=0
 if [ ! -f "${RAIZ}/perfil-equipo.json" ] || [ ! -f "${RAIZ}/scripts/lib/renames.json" ]; then PUBLIC_COPY=1; fi
 FALLOS=0
@@ -177,11 +176,11 @@ leer "${BASE}/vacio.md" "${C2}/revisores" --json; RC=$?
 [ "${RC}" = "2" ] && ok "C4 · catálogo sin una sola regla → exit 2, no 0 reglas" \
   || mal "C4 · catálogo sin reglas salió ${RC}, esperaba 2 — rojo previo: idéntico al anterior, con el agravante de que el archivo existe"
 
-# ── C6 · iter 2: sufijo, reutilización, padrón vacío, catálogo sin dueños, «sin verificación» ─────
-# 🔴 Cinco caminos por los que el lector devolvía algo que parecía bueno y no lo era (revisión de la vuelta 1):
-#    un identificador con sufijo (`ACCOV-C1-EXT`) desaparecía del total; un identificador retirado y vuelto a
-#    usar no se decía; un padrón vacío dejaba TODO «sin revisor» como si fuera una medición; un catálogo sin
-#    un solo dueño salía «medido»; y la marca «sin verificación» del AC 7 no existía.
+# ── C6 · sufijo, reutilización, padrón vacío, catálogo sin dueños, «sin verificación» ─────
+# 🔴 Cinco caminos por los que el lector podría devolver algo que parece bueno y no lo es:
+#    un identificador con sufijo (`ACCOV-C1-EXT`) desaparecería del total; un identificador retirado y vuelto a
+#    usar no se diría; un padrón vacío dejaría TODO «sin revisor» como si fuera una medición; un catálogo sin
+#    un solo dueño saldría «medido»; y faltaría la marca «sin verificación».
 C6="${BASE}/c6"; mkdir -p "${C6}"
 cat > "${C6}/catalogo.md" <<'MD'
 # Catálogo
@@ -261,7 +260,7 @@ SP="$(jq_py "d['duenos_sin_padron']")"
 [ "${SP}" = "['build/banco.js']" ] && ok "C6 · los dueños que no están en el padrón se nombran" \
   || mal "C6 · duenos_sin_padron=${SP} — rojo previo: si falta el .toml de un revisor, sus reglas pasan a «sin revisor» sin que nadie lo vea"
 
-# ── T22 (story 8.41, AC 26) · el revisor de un paquete: su sección lo dice, y fuera del padrón no es un .toml que falta ──
+# ── T22 · el revisor de un paquete: su sección lo dice, y fuera del padrón no es un .toml que falta ──
 T22="${BASE}/t22"; mkdir -p "${T22}"
 cat > "${T22}/catalogo.md" <<'MD'
 # Catálogo
@@ -297,8 +296,8 @@ PY
 [ "${SINP}" -ge 13 ] && ok "T22 · el catálogo real marca con su paquete las secciones de los revisores de paquete (${SINP})" \
   || mal "T22 · el catálogo real marca ${SINP} secciones con su paquete (esperado al menos 13: los nueve de bizuit y los cuatro de nextjs-postgres)"
 
-# ── T22b (story 8.41, revisión de la F2) · rules-distill: un paquete sin pack.json es un paquete ROTO, no uno ausente ─
-# Antes se salteaba callado y las reglas que sólo citan sus revisores contaban como no citadas sin que nada lo dijera.
+# ── T22b · rules-distill: un paquete sin pack.json es un paquete ROTO, no uno ausente ─
+# Si se salteara callado, las reglas que sólo citan sus revisores contarían como no citadas sin que nada lo dijera.
 T22B="${BASE}/t22b"; mkdir -p "${T22B}/arbol/guides" "${T22B}/arbol/packs/roto/agents" "${T22B}/arbol/packs/sano/agents" "${T22B}/home/.claude/agents"
 printf '# Catálogo\n\n## Del stack — `rev-roto`\n\n| Regla | Qué detecta | Fix |\n|---|---|---|\n| **ROT-C1** | algo | idem |\n' > "${T22B}/arbol/guides/advisor-rules-catalog.md"
 printf -- '---\nname: rev-roto\n---\nROT-C1\n' > "${T22B}/arbol/packs/roto/agents/rev-roto.md"
@@ -350,20 +349,19 @@ RP="$(jq_py "sorted(r['regla'] for r in d['retiradas'])")"
   || mal "C6b · retiradas=${RP} rc=${RC} — rojo previo: sólo se leían las filas, y los reservados de la prosa salían huérfanos"
 
 # ── C7 · el guion viejo y el lector cuentan LO MISMO (una sola gramática, un solo universo) ───────
-# 🔴 Existe porque «un solo contador» no lo era: la revisión adversarial de la vuelta 1 encontró que
-#    rules-distill.js escondía una regla VIVA (SEC-W4, reutilizada) por tratarla como retirada, y contaba
-#    como regla del catálogo un identificador que sólo se MENCIONA. Y al agregar el sufijo apareció un
-#    zombi falso (ACCOV-C1-EXT), porque los dos usaban gramáticas distintas.
+# 🔴 Existe porque «un solo contador» no lo es si cada lado usa su gramática: rules-distill.js escondería una
+#    regla VIVA (SEC-W4, reutilizada) por tratarla como retirada, contaría como regla del catálogo un
+#    identificador que sólo se MENCIONA, y al agregar el sufijo daría un zombi falso (ACCOV-C1-EXT).
 if [ -f "${CATALOGO_REAL}" ]; then
   RD="${RAIZ}/scripts/tools/rules-distill.js"
   # rules-distill lee los revisores de ~/.claude/agents y las skills de ~/.claude/agent-skills: con el HOME
   # falso se enlazan los REALES, sólo para leer.
   # 🔴 Los revisores se enlazan desde agent-skills/agents, no desde el atajo ~/.claude/agents de la casa
   # real: ese atajo se crea A MANO (paso 3 de INSTALL.md, el instalador no lo crea) y el job Suites del
-  # nocturno no lo tiene — C7 y C7b daban «Agents dir not found» en Azure y verde en las máquinas.
+  # nocturno no lo tiene — C7 y C7b darían «Agents dir not found» en Azure y verde en las máquinas.
   # Mismo criterio que trimmed-close.test.sh (T8). En una máquina con el atajo, el contenido es el mismo.
   # Los revisores, en orden: la variable explícita · el clon que declara TYCON_SKILLS_DIR · la casa
-  # real (la de antes del home falso) · y recién al final la entrada de passwd, que es la que fallaba
+  # real (la de antes del home falso) · y recién al final la entrada de passwd, que falla
   # en el agente. Lo que no exista NO se enlaza: un enlace colgado se lee como «no hay revisores».
   AGENTES=""
   for CAND in "${TYCON_AGENTS_DIR:-}" "$( [ -n "${TYCON_SKILLS_DIR:-}" ] && echo "${TYCON_SKILLS_DIR%/skills}/agents" )" "${CASA_REAL}/.claude/agent-skills/agents" \
@@ -372,7 +370,7 @@ if [ -f "${CATALOGO_REAL}" ]; then
   done
   mkdir -p "${HOME}/.claude"
   # `TYCON_AGENTS_DIR` (la misma variable del banco y del generador de adapters) permite verificar contra
-  # los revisores de un clon de agent-skills antes de instalarlo (story 7.3: VAL-W15 nace en los dos repos).
+  # los revisores de un clon de agent-skills antes de instalarlo (una regla nueva nace en los dos repos).
   if [ -z "${AGENTES}" ]; then
     mal "C7 · NO MEDIDO: no encontré los revisores (probé TYCON_AGENTS_DIR, TYCON_SKILLS_DIR, ${CASA_REAL}/.claude/agent-skills/agents y la casa de passwd) — no medido no es verde"
   else
@@ -388,7 +386,7 @@ if [ -f "${CATALOGO_REAL}" ]; then
     [ "${IDS_RD}" = "${IDS_LECTOR}" ] && ok "C7 · rules-distill y el lector cuentan los mismos identificadores (${IDS_RD})" \
       || mal "C7 · rules-distill cuenta ${IDS_RD} y el lector ${IDS_LECTOR} — rojo previo: dos universos para la misma pregunta"
     ORF="$(python3 -c "import json;print([o.get('id') for o in json.load(open('${BASE}/rd.json'))['orphans']])")"
-    # La copia pública (story 8.7) sale sin las secciones del catálogo de los revisores del paquete de clientes, y un
+    # La copia pública sale sin las secciones del catálogo de los revisores del paquete de clientes, y un
     # revisor del núcleo cita por su identificador una regla de uno de ellos. Ahí —y sólo ahí— se tolera un huérfano
     # cuyo PREFIJO no tiene ninguna fila en el catálogo (la familia entera no viajó), y se dice cuál. Un huérfano de una
     # familia que sí está en el catálogo sigue siendo rojo en los dos lados; en el repo del equipo no se tolera ninguno.
@@ -410,7 +408,7 @@ print([o.get('id') for o in rd['orphans'] if o.get('id','').split('-')[0] in fam
     SW4="$(python3 -c "import json;d=json.load(open('${BASE}/rd.json'));print('SEC-W4' in [z['id'] for z in d['zombies']] or 'SEC-W4' in [o['id'] for o in d['orphans']])")"
     [ "${SW4}" = "False" ] && ok "C7 · SEC-W4 está en el catálogo de rules-distill (ya no la esconde el ejemplo de la guía)" \
       || mal "C7 · SEC-W4 sigue fuera del catálogo de rules-distill"
-    # TEST-W8 la cita sólo el revisor de convenciones .NET, que desde la 8.41 vive en el paquete bizuit: en un árbol sin ese
+    # TEST-W8 la cita sólo el revisor de convenciones .NET, que vive en el paquete bizuit: en un árbol sin ese
     # paquete queda sin quien la cite y no cuenta; con el paquete, cuenta como cualquiera
     SIN_BIZUIT=0; [ -d "${RAIZ}/packs/bizuit" ] || SIN_BIZUIT=1
     ZOMB="$(python3 -c "import json;print([z.get('id') for z in json.load(open('${BASE}/rd.json'))['zombies'] if not (${SIN_BIZUIT} and z.get('id') == 'TEST-W8')])")"
@@ -420,11 +418,11 @@ print([o.get('id') for o in rd['orphans'] if o.get('id','').split('-')[0] in fam
   fi
 fi
 
-# ── C7b · una regla definida sin dueño no tumba a rules-distill (vuelta 2) ──────────────────────────
+# ── C7b · una regla definida sin dueño no tumba a rules-distill ──────────────────────────
 # Sin revisores no corre (los lee del home): C7 ya lo dijo como NO MEDIDO, y acá se repite para que
 # la ausencia no se lea como «pasó».
-# 🔴 rojo previo: la capa de definiciones copiaba el dueño sin mirarlo, y classifyOwner(null) tiraba
-#    TypeError: el chequeo de salud del arnés se caía entero por una fila fuera de sección.
+# 🔴 Falla si: la capa de definiciones copia el dueño sin mirarlo, y classifyOwner(null) tira
+#    TypeError: el chequeo de salud del arnés se caería entero por una fila fuera de sección.
 if [ -f "${CATALOGO_REAL}" ] && [ -n "${AGENTES:-}" ]; then
   GSD="${BASE}/guias-sin-dueno"; mkdir -p "${GSD}/guides"; ln -sfn "${RAIZ}/scripts" "${GSD}/scripts"
   cat > "${GSD}/guides/advisor-rules-catalog.md" <<'MD'
@@ -453,8 +451,8 @@ if [ -f "${CATALOGO_REAL}" ] && [ -z "${AGENTES:-}" ]; then
   mal "C7b · NO MEDIDO: sin revisores en el home no se puede correr rules-distill"
 fi
 
-# ── C5 · el catálogo REAL: los números que publica la story ──────────────────────────────────────
-# Los controles y los números viven en scripts/lib/rules-catalog-count.js (EXPECTED, con su historia): los usa también el
+# ── C5 · el catálogo REAL: los números que se publican ──────────────────────────────────────
+# Los controles y los números viven en scripts/lib/rules-catalog-count.js (EXPECTED): los usa también el
 # freno de antes del commit cuando un commit toca agents/ o el catálogo, y dos copias de los números se separan solas.
 # Los tres exactos son los del NÚCLEO: en el repo del equipo se leen sin las secciones de su paquete de clientes.
 C5_OUT="${BASE}/c5.out"

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * windows-probe.test.js — los guiones que miden el arnés en Windows (story 8.17, tanda W0 · T1 a T5, T12 y T13).
+ * windows-probe.test.js — los guiones que miden el arnés en Windows (T1 a T5, T12 y T13).
  *
  * Lo que se mide acá NO es Windows: es que los guiones de medición (`scripts/tests/windows/`) y el pipeline que los
  * corre (`pipelines/azure-pipelines-windows.yml`) hagan lo que dicen. Lo que no se puede perder:
@@ -10,7 +10,7 @@
  *         agente por `git clone` de un bundle, nunca por una copia de archivos.
  *   T2  · una herramienta que no está es un HECHO; un buscador que falla por otra cosa es un ERROR del paso; dos `bash`
  *         en el PATH salen los dos, en orden.
- *   T3  · contra la lista leída del instalador de bash, el `settings.json` que deja hoy el de Windows: los 18 que faltan
+ *   T3  · contra la lista leída del instalador de bash, el `settings.json` que deja el de Windows: los 18 que faltan
  *         y los 2 que correrían dos veces, por nombre; y el mal ubicado, el repetido y el que nombra un archivo que no existe.
  *   T4  · el veredicto: rojo con un reporte vacío, con un hallazgo fuera de la lista, con un hueco que ya no se
  *         reproduce y con un paso que vence su tope; verde sólo con todo medido y la lista al día.
@@ -18,7 +18,7 @@
  *         la carpeta de usuario real; y cada paso lleva `TYCON_NO_NIGHTLY_EXAM=1`.
  *   T12 · sin la sesión real el paso dice «no medido» y la corrida no cambia de color; la credencial no aparece nunca.
  *   T13 · los quince «no se sabe» del análisis, cada uno como hecho con su corrida o como «no medido» con su motivo.
- *   T74 · (W6) el paso `pipeline-skeleton`: el esqueleto mecánico del pipeline de stories sobre el repo de ejemplo de
+ *   T74 · el paso `pipeline-skeleton`: el esqueleto mecánico del pipeline de stories sobre el repo de ejemplo de
  *         Node, en el modo de laboratorio; cada paso que no sale como en Linux es un hallazgo con su nombre.
  *   Y un recorrido entero en modo de laboratorio sobre un arnés de juguete (bundle → clon → bloque de la portada →
  *   contar → disparar → reporte): es lo que el agente Windows corre de verdad (T6 a T10), sin el instalador real.
@@ -29,7 +29,7 @@
  * Correr: node --test scripts/tests/windows-probe.test.js
  */
 
-// story 8.39 (decisión 20): los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
+// Los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
 process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
@@ -43,7 +43,7 @@ const DIR = path.join(ROOT, 'scripts', 'tests', 'windows');
 const FIXTURES = path.join(ROOT, 'scripts', 'tests', 'fixtures', 'windows');
 const PIPELINE = path.join(ROOT, 'pipelines', 'azure-pipelines-windows.yml');
 const L = require(path.join(DIR, 'lab.js'));
-// el lugar del arnés y el nombre viejo (story 8.19): el instalador de juguete deja lo que deja el de verdad
+// el lugar del arnés y el nombre viejo: el instalador de juguete deja lo que deja el de verdad
 const PLACE = require(path.join(__dirname, '..', 'setup', 'harness', 'place.js'));
 const { PLACE_NAME, LEGACY_PLACE_NAME } = PLACE;
 const inventory = require(path.join(DIR, 'inventory.js'));
@@ -69,7 +69,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   assert.match(code, /^trigger: none\b/m, 'trigger: none');
   assert.match(code, /^pr: none\b/m, 'pr: none');
   assert.doesNotMatch(code, /^\s*schedules:/m, 'sin horario: lo suma W7');
-  // sin recursos que lo disparen: el único es el del arnés en GitHub (story 8.26 B), sin disparador propio
+  // sin recursos que lo disparen: el único es el del arnés en GitHub, sin disparador propio
   const resources = code.match(/^resources:\n((?:\s+\S.*\n)+)/m);
   if (resources) {
     assert.deepStrictEqual([...resources[1].matchAll(/-\s+repository:\s*(\S+)/g)].map((m) => m[1]), ['arnes'], 'el único recurso es el del arnés');
@@ -77,7 +77,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   }
   // los dos trabajos, y dónde mide
   const jobs = [...code.matchAll(/^ {2}- job: (\w+)/gm)].map((m) => m[1]);
-  // los dos de la medición, y detrás los dos de los ensayos del equipo (su contrato: windows-rehearsal.test.js, R1)
+  // los dos de la medición, y detrás los dos de los ensayos del equipo (su contrato: windows-rehearsal.test.js)
   assert.deepStrictEqual(jobs, ['Bundle', 'Windows', 'Sources', 'Rehearsal'], `los trabajos, en orden: ${jobs.join(', ')}`);
   const windows = code.slice(code.indexOf('- job: Windows'), code.indexOf('- job: Sources'));
   const bundle = code.slice(code.indexOf('- job: Bundle'), code.indexOf('- job: Windows'));
@@ -93,7 +93,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   assert.match(params, /- name: realSession\n\s+displayName: .*\n\s+type: boolean\n\s+default: false/, 'realSession: falso por defecto');
   // la copia: exportada por build-bundle.sh, entregada como artefacto y CLONADA en el agente
   assert.match(bundle, /bash scripts\/tests\/windows\/build-bundle\.sh /, 'el trabajo de Linux arma el bundle con build-bundle.sh');
-  // agent-skills de antes de la unión, clonado por el trabajo en una carpeta propia (no la plantilla: desde la 8.18
+  // agent-skills de antes de la unión, clonado por el trabajo en una carpeta propia (no la plantilla: la plantilla
   // enlaza ~/.claude/agent-skills al arnés); sólo lo usa un commit de antes de la unión
   assert.doesNotMatch(bundle, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'Bundle no toma agent-skills de la plantilla');
   assert.match(bundle, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK" 2>&1\); then\s+echo "##vso\[task\.logissue type=error\]No se pudo clonar AgentSkills: [^\n]*\$ERR[^\n]*"\s+exit 1/, 'clona el repo viejo; un clon fallido sale rojo con su motivo');
@@ -119,13 +119,13 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
   // los pasos de la medición, cada uno por run.js (que los corre bajo su tope), y el reporte como artefacto
   for (const s of run.STEPS) assert.match(windows, new RegExp(`run\\.js step ${s.name} `), `el paso ${s.name} corre por run.js`);
-  // el esqueleto del pipeline de stories (W6 · T74): sobre la instalación que dejó `install`, antes del reporte
+  // el esqueleto del pipeline de stories (T74): sobre la instalación que dejó `install`, antes del reporte
   assert.ok(windows.indexOf('run.js step install ') < windows.indexOf('run.js step pipeline-skeleton '), 'el esqueleto corre después de instalar');
   assert.ok(windows.indexOf('run.js step pipeline-skeleton ') < windows.indexOf('run.js finish '), 'y antes de escribir el reporte');
   assert.match(fs.readFileSync(path.join(DIR, 'run.js'), 'utf8'), /clean-machine', 'run-capped\.js'/, 'run.js corre cada paso bajo run-capped.js');
   assert.match(windows, /run\.js finish /, 'el reporte se escribe');
   assert.match(windows, /run\.js verdict /, 'el veredicto decide el color');
-  // la lista de huecos propuesta, impresa en el registro y conservando la de los pasos no medidos: hoy nadie puede bajar el artefacto
+  // la lista de huecos propuesta, impresa en el registro y conservando la de los pasos no medidos: nadie puede bajar el artefacto
   assert.match(windows, /run\.js propose-gaps "\$\(report\)\\windows-report\.json" --keep scripts\\tests\\windows\\known-gaps\.json\n\s+displayName: .*\n\s+workingDirectory: .*\n\s+condition: always\(\)/, 'el paso que imprime la lista propuesta corre siempre');
   assert.match(windows, /PublishPipelineArtifact@1[\s\S]*artifact: windows-report/, 'el reporte se publica como artefacto windows-report');
   assert.ok(windows.indexOf('artifact: windows-report') < windows.indexOf('run.js verdict'), 'el reporte se publica ANTES del veredicto: una corrida roja también lo entrega');
@@ -141,7 +141,7 @@ test('WindowsPipeline_Yaml_NoPushNoPr_TwoJobs_BundleIsCloned', { skip: !fs.exist
   assert.doesNotMatch(code.replace(/\$\(System\.AccessToken\)/g, ''), /AccessToken|PAT\b/, 'sin otras credenciales');
 });
 
-// ── story 8.26, tanda D · `init --same-tree` ──────────────────────────────────────────────────────────────────────────
+// ── `init --same-tree` ──────────────────────────────────────────────────────────────────────────
 // Cuando lo que se mide y los guiones que miden salen del mismo repo, tienen que ser el mismo commit: si no, se estaría
 // midiendo un árbol con los guiones de otro, y el reporte no lo diría.
 test('Probe_Init_SameTree_BundleMustBeTheScriptsCommit_LabelSaysIt', { skip: !has('git') && 'NO MEDIDO — sin git' }, () => {
@@ -195,7 +195,7 @@ test('Probe_Init_SameTree_BundleMustBeTheScriptsCommit_LabelSaysIt', { skip: !ha
     // la etiqueta sin un nombre de fuente: «tree» y el commit
     assert.strictEqual(run.sameTreeLabel(null, commit), `tree:${commit}`);
     // el commit de un árbol es el de SU repo: una carpeta con un .git que no es un repo, dentro de otro repo, no
-    // contesta con el commit del de arriba (pase adversarial de la tanda)
+    // contesta con el commit del de arriba
     assert.deepStrictEqual(run.scriptsCommit(undefined, toy), { sha: commit });
     const inside = path.join(toy, 'adentro');
     fs.mkdirSync(path.join(inside, '.git'), { recursive: true });
@@ -265,7 +265,7 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   const allOn = { ado: true, clockify: true, engram: true, codegraph: true, mailbox: true, codex: true, nightly: true, telegram: true };
   const allOff = Object.fromEntries(Object.keys(allOn).map((k) => [k, false]));
   const HOME = 'C:/lab/profile'; const CLONE = 'C:/lab/work/harness-clone';
-  // desde la W3 la lista esperada sale de la lista única del clon (scripts/setup/hooks-list.json), decidida con la
+  // la lista esperada sale de la lista única del clon (scripts/setup/hooks-list.json), decidida con la
   // función del aplicador para Windows: con todo prendido, y la de una instalación pública
   const win = (integrations, env, exists) => count.expectedFromList(ROOT, { integrations, env, home: HOME, exists, platform: 'win32' });
   const team = win(allOn, { TYCON_SESSION_GUARD: '1' }, () => true);
@@ -277,14 +277,14 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   assert.ok(pub.skipped.some((s) => /integración/.test(s.why)), 'los hooks de una integración apagada se dicen');
   assert.ok(team.skipped.some((s) => s.relpath === '@tcg:harness-bootstrap-heal.sh' && /fuera en Windows/.test(s.why)), 'lo que Windows excluye no se espera, y se dice');
   assert.strictEqual(win(allOff, { TYCON_SAFETY_GUARD: '0' }, () => false).hooks.length, pub.hooks.length - 1, 'un opt-in apagado por su variable sale de la lista');
-  // sin la lista (un clon de antes de la W3) no hay lista que dar: se lee el instalador, como en W0
+  // sin la lista (un clon que no la trae) no hay lista que dar: se lee el instalador
   assert.strictEqual(count.expectedFromList(path.join(ROOT, 'scripts', 'tests')), null);
   const edit = team.hooks.find((h) => h.relpath === 'tycon-pipeline/scripts/hook-pre-edit.js');
   assert.deepStrictEqual([edit.event, edit.matcher], ['PreToolUse', 'Edit|Write'], 'un matcher con | se lee entero');
 
   // el settings.json que deja HOY el instalador de Windows, contra la lista de todo prendido
   const today = count.compare(team.hooks, fixture('settings-ps1-today.json'), { superseded: team.superseded, home: HOME, clone: CLONE, exists: () => true, platform: 'win32' });
-  // Los 18 que faltaban el 2026-10-03, por nombre. La lista del instalador de bash está viva y esta fixture es una foto:
+  // Los 18 que faltan en la línea de base, por nombre. La lista del instalador de bash está viva y esta fixture es una foto:
   // si un hook de éstos se retira del instalador, deja de esperarse (y de faltar); si se suma uno nuevo, falta también.
   const MISSING_AT_BASELINE = [
     'PostToolUse:tycon-pipeline/scripts/on-skill-invoke.js', 'PreToolUse:@tcg:push-phantom-ref-notice.js', 'PreToolUse:@tcg:pr-one-per-repo-guard.js',
@@ -300,7 +300,7 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   for (const name of MISSING_AT_BASELINE) assert.ok(missing.includes(name) || !expectedNames.includes(name), `falta, por nombre: ${name}`);
   const brakesMissing = ['PreToolUse:@tcg:safety-guard-pre.sh', 'PreToolUse:@tcg:test-scope-guard-pre.sh', 'PreToolUse:tycon-pipeline/scripts/on-bash-write-gate.js'];
   for (const name of brakesMissing) assert.ok(missing.includes(name), `los frenos que el de Windows no registra, por nombre: ${name}`);
-  // con la lista de hoy (45 registros), la cuenta exacta del análisis: faltan 18
+  // con la lista actual (45 registros), la cuenta exacta del análisis: faltan 18
   if (team.hooks.length === 45) assert.deepStrictEqual(missing.slice().sort(), MISSING_AT_BASELINE.slice().sort(), `faltan ${missing.length}: ${missing.join(', ')}`);
   else assert.ok(missing.length >= 12, `la lista del instalador cambió (${team.hooks.length} registros) y faltan ${missing.length}`);
   assert.deepStrictEqual(today.superseded.map((s) => s.hook).sort(), ['PostToolUse:tycon-ado-story-wi/scripts/on-story-create.js', 'PostToolUse:tycon-story-followup-link/scripts/on-story-create.js'], 'los 2 que correrían dos veces, por nombre');
@@ -343,8 +343,8 @@ test('Probe_CountHooks_NamesMissingDuplicatedMisplacedAndDangling', () => {
   } finally { fs.rmSync(toy, { recursive: true, force: true }); }
 });
 
-// La 8.16 C (perfiles) decide los opt-in en una línea aparte, `_OP=0; _optin_por_perfil VAR [freno] || _OP=$?`, y el
-// `if` pregunta `"$_OP" == 0`. El 182 #11872 salió «no sé evaluar la condición» con esa forma: el lector la sigue con
+// El instalador con perfiles decide los opt-in en una línea aparte, `_OP=0; _optin_por_perfil VAR [freno] || _OP=$?`, y el
+// `if` pregunta `"$_OP" == 0`. El lector sigue esa forma con
 // la misma regla que el instalador (en minimal sólo con VAR=1; VAR=0 apaga; perfil ilegible: los frenos se registran
 // y lo demás queda como está).
 test('Probe_CountHooks_ProfileOptinForm_FollowsInstallerRule', () => {
@@ -360,7 +360,7 @@ test('Probe_CountHooks_ProfileOptinForm_FollowsInstallerRule', () => {
   assert.match(minimal.problems.join(' '), /perfil minimal/, 'minimal: lo dice, no compara contra la lista de full');
   const orphan = text.replace(/^_OP=0; _optin_por_perfil TYCON_SAFETY_GUARD freno \|\| _OP=\$\?\n/m, '');
   assert.match(count.expectedHooks(orphan, { integrations: {}, env: {}, home: 'H', exists: () => true }).problems.join(' '), /no sé evaluar la condición/, 'sin la línea que decide _OP: problema, no un sí callado');
-  // y contra el instalador de la 8.16 C de verdad, si está a mano
+  // y contra el instalador con perfiles de verdad, si está a mano
   const real = process.env.COUNT_HOOKS_C_INSTALLER;
   if (real) {
     const allOff = { ado: false, clockify: false, engram: false, codegraph: false, mailbox: false, codex: false, nightly: false, telegram: false };
@@ -370,14 +370,12 @@ test('Probe_CountHooks_ProfileOptinForm_FollowsInstallerRule', () => {
   }
 });
 
-// Pase adversarial de la corrida 8.17-W0-20261005T0153 (clases 1, 12 y 17): el id de un hallazgo es lo que se declara
-// en known-gaps.json. Un archivo esperado dos veces en el mismo evento con matchers distintos (rebuild-before-verify.js
-// en PostToolUse: Edit|Write y Bash) daba un solo id y uno de los dos registros quedaba sin medir; y un archivo
-// esperado en dos eventos salía con los nombres cruzados si estaba corrido de matcher.
-// Pase adversarial de la W3W4 (clases 1 y 12, 2026-10-05): desde la W4 un .sh se registra en Windows con la ruta del bash
-// de Git ENTRE COMILLAS («"C:/…/bash.exe" "…/x.sh"»), y el lector sólo entendía un intérprete como palabra suelta: daba
-// los frenos por faltantes estando registrados, y no veía un .sh repetido ni uno colgado. 🔴 rojo previo: missing con los
-// dos frenos, duplicated y dangling vacíos.
+// El id de un hallazgo es lo que se declara en known-gaps.json. Un archivo esperado dos veces en el mismo evento con
+// matchers distintos (rebuild-before-verify.js en PostToolUse: Edit|Write y Bash) tiene que dar dos ids, no uno con uno
+// de los dos registros sin medir; y un archivo esperado en dos eventos no sale con los nombres cruzados si está corrido de matcher.
+// Un .sh se registra en Windows con la ruta del bash de Git ENTRE COMILLAS («"C:/…/bash.exe" "…/x.sh"»), y el lector
+// tiene que entender un intérprete entre comillas, no sólo como palabra suelta: si no, da los frenos por faltantes estando
+// registrados, y no ve un .sh repetido ni uno colgado. 🔴 Atrapa: missing con los dos frenos, duplicated y dangling vacíos.
 test('Probe_CountHooks_QuotedGitBashInterpreter_IsReadAsRegistered', () => {
   const HOME = 'C:/lab/profile'; const CLONE = 'C:/lab/work/harness-clone';
   const GB = '"C:/Program Files/Git/bin/bash.exe"';
@@ -422,7 +420,7 @@ test('Probe_CountHooks_SameFileTwiceInAnEvent_IdsCarryTheMatcher_MisplacedPrefer
 // ═══ T4 ════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 // La lista se escribe desde una corrida de `measure`, pero también la leen el banco y los ensayos (los huecos
-// `bench:red:…` de W1, con su `match`): proponer desde una medición no los borra — conserva los huecos declarados de
+// `bench:red:…`, con su `match`): proponer desde una medición no los borra — conserva los huecos declarados de
 // los pasos que esa corrida no mide, tal cual, y reemplaza los de los pasos que sí midió.
 test('Probe_ProposeGaps_KeepsTheDeclaredGapsOfStepsTheReportDoesNotMeasure', () => {
   const report = fixture('report-no-session.json');
@@ -528,7 +526,7 @@ test('Probe_Verdict_EmptyReportRed_NewFindingRed_StaleGapRed_CappedStepRed', () 
   const shipped = JSON.parse(fs.readFileSync(path.join(DIR, 'known-gaps.json'), 'utf8'));
   assert.ok(Array.isArray(shipped.gaps) && Object.prototype.hasOwnProperty.call(shipped, 'baseline'));
   for (const g of shipped.gaps) assert.ok(g.id && g.step && run.BATCHES.includes(g.closes), `${g.id}: cada hueco dice su paso y su tanda`);
-  // sin línea de base, los únicos huecos escritos son los del banco (`bench:red:…`, tanda W1): los lee además
+  // sin línea de base, los únicos huecos escritos son los del banco (`bench:red:…`): los lee además
   // scripts/controls-bench/runner.js y cada uno trae el motivo con que falla su caso, medido en una corrida
   if (shipped.baseline === null) for (const g of shipped.gaps) assert.ok(g.step === 'bench' && /^bench:red:/.test(g.id) && g.match && /corrida \d+/.test(g.note || ''), `${g.id}: sin línea de base sólo hay huecos del banco, con su motivo y su corrida`);
   // el resumen legible sale de cualquier reporte, también del rojo
@@ -547,7 +545,7 @@ test('Probe_NamesInEnglish_RefusesRealUserFolder', async (t) => {
     let sn;
     try { sn = require(path.join(ROOT, 'scripts', 'publishing', 'spanish-names.js')); } catch (e) { t.diagnostic(`NO MEDIDO — no pude cargar el freno de nombres: ${e.message}`); return; }
     const det = sn.makeDetector(sn.loadWords(fs.readFileSync(path.join(ROOT, sn.WORDS_PATH), 'utf8'), sn.WORDS_PATH));
-    // sin el diccionario inglés el detector no distingue (el agente Linux de Azure no lo trae: corrida 11874), como en
+    // sin el diccionario inglés el detector no distingue (el agente Linux de Azure no lo trae), como en
     // spanish-names.test.js: NO MEDIDO con su motivo, nunca un falso rojo ni un verde vacío
     if (!det.dictionary) { t2.skip(`NO MEDIDO: esta máquina no tiene ${det.dictPath} — sin él el detector de castellano no distingue`); return; }
     const names = new Set(mine.map((f) => path.basename(f).replace(/\.(test\.)?(js|json|sh)$/, '')));
@@ -563,8 +561,8 @@ test('Probe_NamesInEnglish_RefusesRealUserFolder', async (t) => {
     assert.strictEqual(det.isSpanish('contar-hooks').spanish, true, 'control positivo: el detector reconoce un nombre en castellano');
   });
 
-  // Pase adversarial de la corrida 8.17-W0-20261005T0153 (clase 19): la organización de Azure escrita en un fixture y una
-  // credencial de mentira escrita entera frenaban al exportador, y con ellos la medición `measure` y la copia pública.
+  // La organización de Azure escrita en un fixture y una credencial de mentira escrita entera frenarían al exportador,
+  // y con ellos la medición `measure` y la copia pública.
   await t.test('el detector de publicación no frena ningún archivo del instrumento', (t2) => {
     const config = path.join(ROOT, 'scripts', 'publishing', 'denylist.json');
     if (!fs.existsSync(config)) { t2.skip('NO MEDIDO — sin la lista privada (copia pública): ahí el detector no tiene con qué mirar'); return; }
@@ -615,7 +613,7 @@ test('Probe_NamesInEnglish_RefusesRealUserFolder', async (t) => {
     // (~/.claude/<repo>) y con el del comando que deja el paquete de npm, que estas pruebas nombran a propósito
     const needle = `${name.org}/${name.repo}`.toLowerCase();
     assert.ok(String(name.repo).length > 3 && String(name.org).length > 1, 'el lector del exportador no devolvió el nombre');
-    // Una sola excepción, desde el corte (story 8.26, AC 61): el recurso «arnes» del pipeline nombra el repo público,
+    // Una sola excepción: el recurso «arnes» del pipeline nombra el repo público,
     // porque `resources` de Azure no acepta variables ni parámetros. Sólo esa línea, y sólo en el pipeline
     const resourceLine = new RegExp(`^\\s+name:\\s*${String(name.org).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${String(name.repo).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'im');
     const textOf = (f) => { const t = fs.readFileSync(f, 'utf8'); return f === PIPELINE ? t.replace(resourceLine, '') : t; };
@@ -768,7 +766,7 @@ test('Facts_EveryUnknownIsAFactWithRunOrNotMeasuredWithReason', () => {
   // con la sesión, los tres primeros son hechos; sin ella, «no medido» por la sesión
   assert.deepStrictEqual(facts.points(full).slice(0, 3).map((p) => p.state), ['fact', 'fact', 'fact']);
   for (const p of facts.points(bare).slice(0, 3)) { assert.strictEqual(p.state, 'not-measured'); assert.match(p.text, /falta la sesión real/); }
-  // los que W0 no contesta dicen quién los contesta
+  // los que la medición no contesta dicen quién los contesta
   const later = facts.points(full).filter((p) => [10, 11, 13, 14, 15].includes(p.n));
   assert.deepStrictEqual(later.map((p) => p.state), Array(5).fill('not-measured'));
   assert.match(later.map((p) => p.text).join(' | '), /W1.*W6.*W8.*nadie en esta story.*W8/);
@@ -802,7 +800,7 @@ test('Facts_EveryUnknownIsAFactWithRunOrNotMeasuredWithReason', () => {
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// Pase adversarial de la corrida 8.17-W0-20261005T0153 (clases 8 y 14): «no pude preguntar» no es un hecho, y una
+// «no pude preguntar» no es un hecho, y una
 // instalación que no dejó ningún enlace contradice el supuesto del junction más que una a la que le falta uno.
 test('Facts_CouldNotAskIsNotAFact_NoLinksAtAllContradictsS7', () => {
   const report = fixture('report-complete.json');
@@ -955,7 +953,7 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
     }
     assert.match(ins.variants.accent.home, /usuario de práctica$/, 'la segunda carpeta de usuario lleva espacio y acento');
     assert.ok(L.isInside(ins.variants.accent.clone, ins.variants.accent.home), '…y su clon vive adentro');
-    // el equipo usa el perfil completo (la portada instala el mínimo, desde la 8.16 D): la variante «team» instala con
+    // el equipo usa el perfil completo (la portada instala el mínimo): la variante «team» instala con
     // el bloque de la portada tal cual y después pasa a --profile full --yes, y es la que se cuenta y se dispara
     const team = ins.variants.team;
     assert.ok(team && team.profile_switch, 'corre la variante del equipo');
@@ -1007,7 +1005,7 @@ test('Probe_LabRun_ToyHarness_BundleCloneInstallCountFireReport', { skip: (proce
     for (const form of ['bash-c', 'bash-file', 'default-shell']) {
       const s = startup.by_form.find((x) => x.form === form);
       assert.deepStrictEqual([s.healthy.bootstrap_ran, s.broken.bootstrap_said_broken, s.broken.fallback_ran], [true, true, true], `${form}: arranca y, rota, cae al respaldo`);
-      // los dos nombres del lugar (8.19 A): romper sólo el viejo dejaba arrancar por el nuevo y el respaldo no corría
+      // los dos nombres del lugar: si se rompiera sólo el viejo, el arranque seguiría por el nuevo y el respaldo no correría
       assert.deepStrictEqual(s.broken_links, [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME], `${form}: rompe los dos nombres`);
     }
     for (const n of [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME]) assert.ok(fs.existsSync(path.join(ins.variants[ins.measured_variant].home, '.claude', n, 'scripts')), `el enlace ${n} roto a propósito quedó repuesto`);
@@ -1178,8 +1176,8 @@ test('Probe_Fire_PayloadsAndBenchCases', () => {
   assert.strictEqual(fire.benchCases(path.join(ROOT, 'no-such-folder'), process.platform), null);
 });
 
-// Pase adversarial de la corrida 8.17-W0-20261005T0153 (clases 2 y 4): un hook que frena la entrada legítima con el
-// JSON de bloqueo y sale 0 no daba hallazgo; y el mismo archivo registrado dos veces en un evento daba un solo id.
+// Un hook que frena la entrada legítima con el JSON de bloqueo y sale 0 tiene que dar hallazgo; y el mismo archivo
+// registrado dos veces en un evento tiene que dar dos ids.
 test('Probe_Fire_JsonBlockIsAFinding_SameFileTwiceHasTwoIds', { skip: !has('bash') && 'NO MEDIDO — sin bash' }, () => {
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'fire-lab-'));
   try {
@@ -1216,7 +1214,7 @@ test('Probe_Cover_PrefersUnattendedBlock_FallsBackToCore', () => {
   try {
     fs.mkdirSync(path.join(dir, '.github'));
     const url = 'https://example.com/acme/toy';
-    // desde la story 8.23 (tanda E) los bloques que clonan son install:clone / install:clone-unattended (install:core es la
+    // los bloques que clonan son install:clone / install:clone-unattended (install:core es la
     // portada sin git, que esta sonda no corre)
     const core = `<!-- install:clone -->\n\`\`\`bash\ngit clone ${url} toy && node toy/scripts/setup/harness.js install\n\`\`\`\n<!-- /install:clone -->\n`;
     const unattended = `<!-- install:clone-unattended -->\n\`\`\`bash\ngit clone ${url} toy && node toy/scripts/setup/harness.js install --yes\n\`\`\`\n<!-- /install:clone-unattended -->\n`;
@@ -1233,7 +1231,7 @@ test('Probe_Cover_PrefersUnattendedBlock_FallsBackToCore', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// story 8.25 (A1a-azure) · TZ14 = Windows_MigrateAzure_NoCredentialSaid_AndHappyPathWithToyPat_Pipeline182: lo que mide la 182
+// TZ14 = Windows_MigrateAzure_NoCredentialSaid_AndHappyPathWithToyPat_Pipeline182: lo que mide la 182
 // es la mudanza en Windows con la capa del equipo servida por un Azure DevOps de juguete —sin credencial lo dice y no escribe;
 // con el PAT de juguete apila la capa—. Eso sólo lo mide el agente de la 182 (por número de corrida). Acá se fija que el
 // guión de la sonda DECLARA ese escenario con sus hallazgos nombrados y sin ningún nombre real: si alguien lo recorta, esta
@@ -1249,15 +1247,15 @@ test('Probe_Migrate_DeclaresAzureScenario_TZ14', () => {
     assert.ok(src.includes(`'${id}'`), `la sonda nombra el hallazgo ${id}`);
   }
   assert.match(src, /rec\.fact\('azure_no_credential'/, 'la rama «sin credencial» queda como hecho (dijo / no dijo / no vale)');
-  // la versión de juguete sale sin los dos archivos de la capa, como la copia pública (182 #12528: con la llave del buzón adentro,
-  // la mudanza se negaba a apilar la capa — el arnés bien; la sonda armaba una versión que en producción no existe)
+  // la versión de juguete sale sin los dos archivos de la capa, como la copia pública (con la llave del buzón adentro,
+  // la mudanza se niega a apilar la capa — el arnés bien; una versión así no existe en producción)
   for (const layerPath of ["'perfil-equipo.json'", "'scripts', 'metrics', 'corridas-buzon.json'"]) {
     assert.ok(src.includes(`fs.rmSync(path.join(author, ${layerPath}), { force: true })`), `la sonda saca ${layerPath} del árbol antes de publicar la versión de juguete`);
   }
   assert.ok(src.includes("'migrate:azure-pat-printed'"), 'la sonda busca el PAT de juguete en toda la salida: si aparece, es hallazgo');
 });
 
-// story 8.25 (A1b) · T14 = Windows_NoCloneAndMigrate_WithTeamRepo_Pipeline182, su mitad `no-clone`: la instalación sin clon en
+// T14 = Windows_NoCloneAndMigrate_WithTeamRepo_Pipeline182, su mitad `no-clone`: la instalación sin clon en
 // Windows CON la capa del equipo —el Azure de juguete (install, el refresco en el lugar, update, rollback, doctor, uninstall) y
 // el GitHub de juguete con dos repos (install)—. Lo mide sólo el agente de la 182; acá se fija que la sonda lo DECLARA, con su
 // propio entorno (sin el perfil del laboratorio, que taparía la capa; el arranque sin desprenderse; el gestor de credenciales
@@ -1279,13 +1277,13 @@ test('Probe_NoClone_DeclaresTeamScenario_T14', () => {
     assert.ok(src.includes(`'${id}'`), `la sonda nombra el hallazgo ${id}`);
   }
   assert.match(src, /rec\.fact\('team_refresh'/, 'el refresco en el lugar queda como hecho');
-  // 182 #12551: el archivo tomado deja LEER (si no, el arranque ni corre el refresco) y el GitHub de juguete arma el comprimido sin
+  // el archivo tomado deja LEER (si no, el arranque ni corre el refresco) y el GitHub de juguete arma el comprimido sin
   // la conversión de finales de línea del agente (Git for Windows trae core.autocrlf=true; GitHub de verdad no convierte)
   assert.ok(src.includes("holdOpen(path.join(tree, 'perfil-equipo.json'), env0, 'Read')"), 'el perfil se toma dejando leerlo');
   assert.match(src, /GIT_CONFIG_KEY_0: 'core\.autocrlf', GIT_CONFIG_VALUE_0: 'false'/, 'el GitHub de juguete del equipo, sin autocrlf');
 });
 
-// story 8.25 (A2b) · T28 = Windows_NoClone_TeamLayerA2_ReviewersNestedSkillCodexTomls_…_Pipeline182: en una carpeta de usuario
+// T28 = Windows_NoClone_TeamLayerA2_ReviewersNestedSkillCodexTomls_…_Pipeline182: en una carpeta de usuario
 // NUEVA con Claude Code y Codex enchufados, la capa de la A2 de juguete (un paquete con un revisor `base` y uno `condicional`, una
 // skill de una carpeta y una anidada a tres, nombres inventados) servida por el Azure de juguete: install --team, los revisores en
 // ~/.claude/agents y sus dos traducciones en $CODEX_HOME (ninguna en adapters/), la anidada por su ruta, un commit que saca un
@@ -1327,7 +1325,7 @@ test('Probe_NoClone_DeclaresTeamA2Scenario_T28', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// story 8.25 (A2c) · T37 = Windows_NoClone_LayerSkillWithDataFiles_LegacyConfigMigratedToUserProfile_DoctorWarnsOwnFolder_Pipeline182:
+// T37 = Windows_NoClone_LayerSkillWithDataFiles_LegacyConfigMigratedToUserProfile_DoctorWarnsOwnFolder_Pipeline182:
 // en una carpeta de usuario NUEVA, la capa de juguete trae la skill de la lista fija (su nombre de la lista; el contenido,
 // inventado) con sus dos archivos de datos: install --team los apila y la skill se ve en ~/.claude/skills; una carpeta propia con
 // un `.bizuit-config.yaml` de juguete y un `update`: la conexión llega a %USERPROFILE%\.bizuit-sdd\config.yaml y el original queda;
@@ -1366,7 +1364,7 @@ test('Probe_NoClone_DeclaresSkillDataScenario_T37', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// story 8.34 · T1 (en Windows) y T16 = Windows182_NoClone_TraceCounts: contra el GitHub REAL y sin permiso, el sondeo del tope
+// T1 (en Windows) y T16 = Windows182_NoClone_TraceCounts: contra el GitHub REAL y sin permiso, el sondeo del tope
 // anónimo de la API (las rutas públicas no lo mueven; un 304 sin permiso sí) y el registro de pedidos (`TYCON_HTTP_TRACE`) de la
 // instalación (1 consulta: la verificación), de mirar (0) y de mirar con la API en un puerto cerrado (anda); en Windows,
 // get-harness.ps1 con la API cerrada. Lo mide sólo el agente de la 182 (TF_BUILD): acá se fija que la sonda lo DECLARA, que no
@@ -1396,9 +1394,9 @@ test('Probe_NoClone_DeclaresRealGithubScenario_8_34_T16', () => {
 });
 
 test('Probe_MailboxUpload_LeavesMeasuredSettingsAsTheyWere — medir la subida al buzón no deja hooks en la instalación medida', { skip: !has('pwsh') && 'NO MEDIDO — sin pwsh' }, () => {
-  // la 182 #13698 (2026-10-17): la medición vuelve a correr el aplicador con el buzón prendido sobre la misma HOME, y el
-  // aviso del correo (un hook «sólo con el buzón») quedaba registrado en una instalación que no lo tiene; el conteo de
-  // hooks lo daba por inesperado. La medición mide la subida: lo que el aplicador escriba en settings.json se devuelve.
+  // la medición vuelve a correr el aplicador con el buzón prendido sobre la misma HOME, y el
+  // aviso del correo (un hook «sólo con el buzón») quedaría registrado en una instalación que no lo tiene; el conteo de
+  // hooks lo daría por inesperado. La medición mide la subida: lo que el aplicador escriba en settings.json se devuelve.
   const base = tmp('mailbox-settings');
   try {
     const home = path.join(base, 'home'); const clone = path.join(base, 'clone');

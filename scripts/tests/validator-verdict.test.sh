@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# validator-verdict.test.sh — red del renglón `Veredicto:` del validador de stories (story 7.3 del arnés).
+# validator-verdict.test.sh — red del renglón `Veredicto:` del validador de stories.
 #
 # Lo que cuida, en una frase: que lo que encuentra cada lanzamiento de `tycon-story-validator` quede
 # legible por una máquina —limpio, o qué reglas y si bloquea— sin inferir nada de la prosa, y que se lea
@@ -14,7 +14,7 @@
 #    · T2d — un lanzamiento que no volvió no tiene veredicto: `no_medido`, nunca `limpio`.
 #
 # Sin red, sin modelo, sin tocar el registro de la máquina: todo va a un temporal.
-# bash 3.2 (macOS): siempre `${v}`, nunca una variable pegada a comillas angulares (lección de la 2.13).
+# bash 3.2 (macOS): siempre `${v}`, nunca una variable pegada a comillas angulares.
 #
 # Correr: bash scripts/tests/validator-verdict.test.sh
 
@@ -34,7 +34,7 @@ trap 'rm -rf "${TMP}"' EXIT
 export HOME="${TMP}/home"
 mkdir -p "${HOME}"
 
-# ── T1 · Veredicto_Parser_EstadosYReglas (AC 2) ─────────────────────────────────────────────────────
+# ── T1 · Veredicto_Parser_EstadosYReglas ─────────────────────────────────────────────────────
 # Mutación que lo pone en rojo: leer el PRIMER renglón en vez del último (T1g), aceptar «limpio» con
 # reglas (T1c), o normalizar tokens que no son VAL- (T1h).
 if [ ! -f "${LIB}" ]; then
@@ -69,7 +69,7 @@ JS
   if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T1 Veredicto_Parser_EstadosYReglas"; else bad "T1 Veredicto_Parser_EstadosYReglas" "$(printf '%s' "${salida}" | tr '\n' ' ' | cut -c1-600)"; fi
 fi
 
-# ── T2 · Veredicto_Conversacion_NotificacionEncoladaYTraspaso (AC 3) ─────────────────────────────────
+# ── T2 · Veredicto_Conversacion_NotificacionEncoladaYTraspaso ─────────────────────────────────
 # Conversación sintética: cuatro lanzamientos del validador (notificación como mensaje · encolada ·
 # informe por traspaso con sangría y un veredicto FALSO después del marco · sin resultado) y un revisor de
 # otro tipo que también dice «limpio».
@@ -129,14 +129,14 @@ JS
 )"
 if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso"; else bad "T2 Veredicto_Conversacion_NotificacionEncoladaYTraspaso" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-700)"; fi
 
-# ── T2g · el marco del traspaso cierra en el renglón SIN sangría (pase adversarial 2026-09-17) ───────
+# ── T2g · el marco del traspaso cierra en el renglón SIN sangría ───────────────────────────────────
 # Medido en 78 traspasos reales (135 hilos guardados): los 78 cierran con `</agent-message>` al principio de
 # renglón y los 353 renglones del informe van sangrados dos espacios. Mutaciones que lo ponen en rojo: cortar
 # en el PRIMER `</agent-message>` (un informe que cita el tag pierde su renglón Veredicto → sin_veredicto) o en
 # el ÚLTIMO (dos marcos seguidos se funden y el veredicto del segundo pasa al primero).
-# ── T2h · «no es una story» por nombre exacto o por carpeta, nunca por un pedazo (pase adversarial) ────
-# Con un substring («catalog», «README», «-pasos.md»), la story de otro tema salía «no sé» (null), contaba
-# como propia en la racha y podía soltar al validador con la mitad de la evidencia. Mutación: volver al
+# ── T2h · «no es una story» por nombre exacto o por carpeta, nunca por un pedazo ────────────────────
+# Con un substring («catalog», «README», «-pasos.md»), la story de otro tema saldría «no sé» (null), contaría
+# como propia en la racha y podría soltar al validador con la mitad de la evidencia. Mutación: volver al
 # substring. Guarda: lo que sí es contexto, guía o planificación sigue sin contar como otra story.
 salida="$(METER="${METER}" LIB="${LIB}" node - <<'JS' 2>&1
 let m, v;
@@ -167,7 +167,7 @@ JS
 )"
 if printf '%s' "${salida}" | grep '^VERDE$' >/dev/null; then ok "T2g/T2h traspaso cerrado sin sangría · otra story por nombre o carpeta"; else bad "T2g/T2h traspaso y otra story" "$(printf '%s' "${salida}" | grep -v '^OK' | tr '\n' ' ' | cut -c1-900)"; fi
 
-# ── T16 · Banco_ExpectVeredicto_AutotestYCasos (AC 13) ──────────────────────────────────────────────
+# ── T16 · Banco_ExpectVeredicto_AutotestYCasos ──────────────────────────────────────────────
 # Mutación: un caso sin `expect_veredicto`, o con el estado que no corresponde a su tipo; o el autotest del
 # runner sin el parse del renglón.
 salida="$(CASES="${CASES}" node - <<'JS' 2>&1

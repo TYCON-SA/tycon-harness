@@ -1,12 +1,11 @@
 'use strict';
 /**
  * lab-guard.js — la guarda del laboratorio: la carpeta de prueba no puede caer en un clon del arnés ni en las
- * herramientas de la máquina (2026-10-15).
+ * herramientas de la máquina.
  *
- * Por qué existe: diecinueve suites de shell, el laboratorio del instalador (harness-lab.sh) y cinco suites de
- * JavaScript escribían la misma guarda a mano, con el nombre viejo del lugar adentro. Ese nombre se define una sola vez,
- * en scripts/setup/harness/place.js. Quien escribía una suite nueva copiaba la guarda de una vieja, y el control de lo
- * publicado (harness-place.test.js, T49) la frenaba recién en el pedido: pasó en siete ramas. Ahora el nombre sale de
+ * Por qué existe: el nombre viejo del lugar se define una sola vez, en scripts/setup/harness/place.js. Si cada suite
+ * escribiera la guarda a mano, con ese nombre adentro, quien escribe una suite nueva copiaría la de una vieja, y el
+ * control de lo publicado (harness-place.test.js, T49) la frenaría recién en el pedido. Por eso el nombre sale de
  * place.js y ninguna suite lo escribe (lo cuida T60 de harness-place.test.js).
  *
  * Qué frena: una carpeta cuya ruta contiene el nombre viejo del lugar, `agent-skills` o `.claude` (en cualquier lugar de la

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * suite-parts.js — partir una suite de Node SIN mover sus pruebas (story 8.22, tramo F, AC 34).
+ * suite-parts.js — partir una suite de Node SIN mover sus pruebas.
  *
  * POR QUÉ: ninguna suite pasa de 45 s en la validación de una rama. Una suite con decenas de pruebas de pocos segundos
  * (la del mecanismo de publicación: 61 pruebas, ~6 min) sólo baja partiéndola, y cortar a mano un archivo de 4.500 líneas
@@ -39,8 +39,8 @@ const REGISTRY_NAME = 'suite-parts.json';
 // Mientras se carga el archivo entero para una parte, las pruebas se anotan acá en vez de registrarse.
 let pending = null;
 // Ya repartido (el nombre del archivo entero): una prueba que llega después —registrada dentro de un `await` o de un
-// `then`— no se puede repartir, y registrarla tal cual la haría correr en TODAS las partes sin que nadie lo note
-// (revisor de fallos silenciosos, tramo F). Se registra una prueba que falla diciéndolo: la parte queda roja.
+// `then`— no se puede repartir, y registrarla tal cual la haría correr en TODAS las partes sin que nadie lo note.
+// Se registra una prueba que falla diciéndolo: la parte queda roja.
 let dealt = null;
 const defer = (via) => (...args) => {
   // (devuelve algo que se puede encadenar, como el `test` de node: una suite que hace `test(…).then(…)` no revienta al cargar)
@@ -92,7 +92,7 @@ const validParts = (n) => Number.isInteger(n) && n >= 2;
 // entera —el archivo y sus partes— sin dejar una entrada colgada en un registro.
 const SHELL_DECLARES = /^\s*suite_parts\s+(\d+)\s*(?:#.*)?$/m;
 // `unreadable` junta las que existen y no se dejan leer: de ésas no se sabe si corren por partes, y callarlo las daría por
-// «no partidas» (revisor de fallos silenciosos, tramo F).
+// «no partidas».
 function shellSuites(dir, unreadable = []) {
   const out = new Map();
   for (const file of fs.readdirSync(dir)) {
@@ -130,7 +130,7 @@ function runPart(partFile) {
   const orphans = Object.keys(spec.seconds || {}).filter((name) => !names.includes(name));
   if (orphans.length) process.stderr.write(`⚠️  suite-parts: ${orphans.length} duraciones de ${registry.file} no son de ninguna prueba de ${base}: ${orphans.map((o) => `«${o}»`).join(', ')}\n`);
   const part = assign(names, spec.seconds, spec.parts);
-  // Una parte sin pruebas no es un verde: node la contaría como un archivo que pasó (revisor de fallos silenciosos).
+  // Una parte sin pruebas no es un verde: node la contaría como un archivo que pasó.
   if (!part.includes(k - 1)) stop(`la parte ${k} de ${base} no recibió ninguna prueba (${mine.length} pruebas para ${spec.parts} partes): bajá «parts» en ${registry.file}`);
   mine.forEach((t, i) => { if (part[i] === k - 1) (t.via ? real[t.via] : real)(...t.args); });
   dealt = base;

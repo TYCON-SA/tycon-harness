@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * install-probe.js — instalar el arnés como lo haría alguien de afuera, y anotar cómo quedó (story 8.17, W0 · AC 6).
+ * install-probe.js — instalar el arnés como lo haría alguien de afuera, y anotar cómo quedó.
  *
- * POR QUÉ EXISTE. El instalador de Windows se escribió sin una máquina Windows y nunca corrió en una. Este paso lo
- * corre: toma el bloque `install:clone` de la PORTADA DEL CLON (el que clona: el modo desarrollador; hasta la tanda E de
- * la 8.23 era `install:core`, que ahora es la portada sin git) —la valla `powershell` en Windows—, sin cambiarle una
+ * POR QUÉ EXISTE. Un instalador de Windows que no corrió en un Windows no se puede dar por bueno. Este paso lo
+ * corre: toma el bloque `install:clone` de la PORTADA DEL CLON (el que clona: el modo desarrollador; `install:core` es la
+ * portada sin git) —la valla `powershell` en Windows—, sin cambiarle una
  * letra, y lo ejecuta en una carpeta de usuario de laboratorio. La dirección del repo público que el bloque nombra se
  * sirve desde el clon del bundle (un desvío de git por variables de ambiente: no se escribe ningún archivo de
  * configuración), así que el `git clone` del bloque es un clon de verdad y aplica la conversión de finales de línea.
@@ -43,17 +43,17 @@ const PLACE = require('../../setup/harness/place.js');
 
 const NAME = 'install';
 const BLOCK_TIMEOUT_MS = 20 * 60 * 1000;
-// el lugar y el nombre viejo (story 8.19): se mira el que esté; falta el arnés sólo si no está ninguno (y se nombra el lugar)
+// el lugar y el nombre viejo: se mira el que esté; falta el arnés sólo si no está ninguno (y se nombra el lugar)
 const LINKS = [[PLACE.PLACE_NAME, ''], [PLACE.LEGACY_PLACE_NAME, ''], ['agent-skills', ''], ['agents', 'agents'], ['skills', 'skills']];
-// la línea de import en cualquiera de sus formas (los dos nombres del lugar, story 8.19; README.md o INDEX.md): se cuentan
+// la línea de import en cualquiera de sus formas (los dos nombres del lugar; README.md o INDEX.md): se cuentan
 // todas, y tiene que haber una
 const IMPORT_LINES = require('../../setup/harness/import-line.js').ALL_FORMS;
 const VARIANTS = [
   { id: 'plain', home: ['users', 'lab-user'], work: ['work', 'plain'] },
   { id: 'accent', home: ['users', 'usuario de práctica'], workInHome: ['proyectos'] },
-  // El equipo usa el perfil completo y la portada instala el mínimo (desde la 8.16 D): con el bloque de la portada tal
+  // El equipo usa el perfil completo y la portada instala el mínimo: con el bloque de la portada tal
   // cual y después `harness.js install --profile full --yes`, como lo hace un dev. Es la que se cuenta y se dispara: sin
-  // ella, 26 controles del equipo quedaban sin medir en Windows (corrida 12019).
+  // ella, 26 controles del equipo quedarían sin medir en Windows.
   { id: 'team', home: ['users', 'lab-team'], work: ['work', 'team'], profile: 'full' },
 ];
 
@@ -104,9 +104,9 @@ function seenHomes({ home, env, platform, gitBash, pwsh }) {
 
 /**
  * Los `.sh` del clon que llegaron con `\r`: cuántos, y los primeros por nombre.
- * 🔴 Un nombre por línea, sin comillas. Hasta la corrida 11677 se pedían separados por ceros (`-z`), y `lab.run` borra
- * los ceros de toda salida: quedaba UN solo «archivo» —todos los nombres pegados—, que no existía y no se contaba. El
- * reporte dijo «0 de 1 .sh con \r» sobre una copia con decenas de `.sh`: no había medido nada.
+ * 🔴 Un nombre por línea, sin comillas. Pedirlos separados por ceros (`-z`) no sirve: `lab.run` borra
+ * los ceros de toda salida y quedaría UN solo «archivo» —todos los nombres pegados—, que no existe y no se cuenta. El
+ * reporte diría «0 de 1 .sh con \r» sobre una copia con decenas de `.sh`: sin medir nada.
  */
 function shellFilesWithCr(clone, env) {
   const r = L.run('git', ['-c', 'core.quotePath=false', '-C', clone, 'ls-files', '--', '*.sh'], { env, timeoutMs: 60000, cap: 4 * 1024 * 1024 });
@@ -142,7 +142,7 @@ function measureLinks({ home, clone, platform, pwsh, env }) {
     if (types[name]) Object.assign(out, types[name]);
     try { out.readlink = fs.readlinkSync(p); } catch (_) { /* no es un enlace */ }
     try { out.resolves_to = fs.realpathSync(p); out.to_clone = L.samePath(out.resolves_to, want, platform); } catch (e) { out.resolves_to = null; out.to_clone = false; out.problem = e.code || e.message; }
-    // story 8.35: `skills` y `agents` son carpetas REALES del dev con un enlace por entrada del arnés, no un enlace a la
+    // `skills` y `agents` son carpetas REALES del dev con un enlace por entrada del arnés, no un enlace a la
     // carpeta entera. Lo que se pide: carpeta real y al menos una entrada que resuelva adentro del clon.
     if (sub && out.kind === 'folder') {
       out.harness_entries = harnessEntries(p, want, platform);
@@ -153,7 +153,7 @@ function measureLinks({ home, clone, platform, pwsh, env }) {
   }).filter(Boolean);
 }
 
-/** Cuántas entradas de una carpeta real resuelven adentro de `want` (los enlaces por entrada de la story 8.35). */
+/** Cuántas entradas de una carpeta real resuelven adentro de `want` (los enlaces por entrada). */
 function harnessEntries(dir, want, platform) {
   const base = L.comparable(want, platform);
   let n = 0;
@@ -228,7 +228,7 @@ function findClone(work, block) {
 function measureResult({ v, home, clone, env, platform, pwsh, out, finding, redact }) {
   const facts = {};
   // el registro del mecanismo en la carpeta de usuario: cuando `install` no arma el plan, la salida ENTERA del aplicador
-  // queda ahí (182 #12408: la instalación en una carpeta con acento sólo mostraba el tail; el motivo real quedaba tapado)
+  // queda ahí (sin eso, la instalación en una carpeta con acento sólo mostraría el tail y el motivo real quedaría tapado)
   try {
     const log = fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'harness', 'startup.log'), 'utf8').trim().split('\n');
     facts.startup_log_tail = redact(log.slice(-60).join('\n')).slice(-6000);
@@ -298,7 +298,7 @@ function measureResult({ v, home, clone, env, platform, pwsh, out, finding, reda
 }
 
 /**
- * Cuánto tarda el arranque en la variante que se cuenta (story 8.36, T9). Sólo hechos, sin hallazgos:
+ * Cuánto tarda el arranque en la variante que se cuenta (T9). Sólo hechos, sin hallazgos:
  *   · una corrida del aplicador como la lanza `harness.js` (`pwsh -File … --report-json`, el candado ya tomado) con cada
  *     Node anotado por `NODE_OPTIONS=--require <contador>` (sin intermediarios que cambien cómo se pasan los argumentos);
  *   · cinco corridas más igual, sin contador, y su mediana en segundos;
@@ -346,12 +346,12 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
 }
 
 /**
- * La subida de corridas al buzón, como la lanza el arranque de Windows (2026-10-15: hasta ese día el aplicador no la
- * lanzaba, y las corridas de una máquina Windows nunca llegaban al buzón). El aplicador corre con el buzón prendido
+ * La subida de corridas al buzón, como la lanza el arranque de Windows (el aplicador tiene que lanzarla, o las corridas de una
+ * máquina Windows nunca llegan al buzón). El aplicador corre con el buzón prendido
  * contra un buzón de MENTIRA en esta máquina (un proceso aparte que contesta 201 y anota cada pedido), con una llave de
- * mentira y una corrida de muestra (un volcado y su hilo comprimido). Mide lo que en Windows nunca se había corrido: que
+ * mentira y una corrida de muestra (un volcado y su hilo comprimido). Mide lo que sólo se sabe corriéndolo en Windows: que
  * el arranque la lanza de fondo, las rutas de Windows, el comprimido y el HTTP. Nunca toca el buzón real.
- * Sin TF_BUILD a propósito: dentro de un agente de CI la subida no se lanza (story 2.12), y acá se mide una máquina.
+ * Sin TF_BUILD a propósito: dentro de un agente de CI la subida no se lanza, y acá se mide una máquina.
  * stable-data: el reloj sólo mide la espera (cuánto tardó en llegar la subida, hasta un tope); ningún dato que se compara
  * sale de la hora, y los nombres de la corrida de muestra son fijos.
  */
@@ -386,7 +386,7 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
   srv.on('error', (e) => { spawnError = e; });
   // 🔴 Esta medición corre el aplicador otra vez, con el buzón prendido, sobre la instalación que después cuentan los
   // pasos siguientes: los hooks que registre (los de «sólo con el buzón», como el aviso del correo) no son de esa
-  // instalación. Mide la subida; el settings.json queda como estaba (la 182 #13698, 2026-10-17).
+  // instalación. Mide la subida; el settings.json queda como estaba.
   const settingsFile = path.join(home, '.claude', 'settings.json');
   let settingsBefore = null;
   try { settingsBefore = fs.readFileSync(settingsFile); } catch (_) { settingsBefore = null; }
@@ -443,7 +443,7 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
 function measureUninstall({ v, home, clone, env, finding }) {
   const harness = path.join(clone, 'scripts', 'setup', 'harness.js');
   const r = L.run(process.execPath, [harness, 'uninstall', '--yes'], { env, cwd: clone, timeoutMs: 300000 });
-  // story 8.35: la carpeta real de `skills` o `agents` es del dev y se queda; lo que no puede quedar es un enlace al arnés
+  // la carpeta real de `skills` o `agents` es del dev y se queda; lo que no puede quedar es un enlace al arnés
   // (la carpeta entera enlazada, o una entrada suya que todavía lleve al clon)
   const realClone = L.realOrSelf(clone);
   const left = LINKS.map(([n, sub]) => [n, sub]).filter(([n, sub]) => {
@@ -527,7 +527,7 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
       const s = L.run(process.execPath, [path.join(clone, 'scripts', 'setup', 'harness.js'), 'install', '--profile', v.profile, '--yes'], { cwd: clone, env, timeoutMs: BLOCK_TIMEOUT_MS });
       facts.profile_switch = { profile: v.profile, exit: s.exit, error: s.error, timed_out: s.timed_out, output: L.clip(`${s.stdout}\n${s.stderr}`.trim(), 1500) };
       // salir 0 no prueba que el perfil quedó: se relee del estado. Sin esto, un cambio que no se aplicó se mediría como
-      // si fuera el perfil del equipo (revisión del hotfix, 2026-10-05)
+      // si fuera el perfil del equipo
       try {
         const st = readJson(path.join(home, '.claude', '.tycon-pipeline', 'harness-state.json'));
         facts.profile_switch.installed = st.profile && typeof st.profile.value === 'string' ? st.profile.value : null;
@@ -586,7 +586,7 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
     rec.fact('variants', variants);
   }
   rec.fact('measured_variant', chosen ? chosen.id : null);
-  // cuánto tarda el arranque en la variante que se cuenta (story 8.36): sólo en Windows, que es lo que se mide
+  // cuánto tarda el arranque en la variante que se cuenta: sólo en Windows, que es lo que se mide
   if (chosen && L.isWin(platform)) {
     try {
       const env = L.labEnv(chosen.home, { base: baseEnv, extra: chosen.env, platform });
@@ -594,7 +594,7 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
       process.stdout.write(`install: ${chosen.id} — mido el arranque (aplicador y startup)\n`);
       rec.fact('startup_timing', Object.assign({ variant: chosen.id }, measureStartupTiming({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'startup-timing') })));
     } catch (e) { rec.fact('startup_timing', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
-    // la subida de corridas al buzón que lanza el arranque (2026-10-15), contra un buzón de mentira
+    // la subida de corridas al buzón que lanza el arranque, contra un buzón de mentira
     try {
       const env = L.labEnv(chosen.home, { base: baseEnv, extra: chosen.env, platform });
       if (chosen.path_first) { const k = L.pathKey(env); env[k] = `${chosen.path_first}${path.delimiter}${env[k] || ''}`; }

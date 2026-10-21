@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * migrate-probe.js — la mudanza de una máquina del clon a `~/.tycon` en un Windows (story 8.23, tanda D · AC 27-29 ·
- * escenario `migrate` del pipeline 182).
+ * migrate-probe.js — la mudanza de una máquina del clon a `~/.tycon` en un Windows
+ * (escenario `migrate` del ensayo de Windows).
  *
  * POR QUÉ EXISTE. `harness.js migrate --to-home` mueve el estado, funde la configuración, re-apunta tres enlaces y
  * re-enchufa los hooks desde el árbol nuevo. En Windows cada una de esas cosas es distinta: los enlaces de carpeta son
@@ -12,7 +12,7 @@
  * «GitHub» de juguete sirviendo el remoto del laboratorio, y lo dice.
  *
  * QUÉ HACE, en una carpeta de usuario de laboratorio:
- *   1. Instala el arnés DESDE UN CLON (`harness.js install --yes` corrido desde ese clon): la máquina de hoy.
+ *   1. Instala el arnés DESDE UN CLON (`harness.js install --yes` corrido desde ese clon): la máquina antes de mudar.
  *   2. Publica una versión en el remoto (el clon NO se actualiza: la mudanza no hace git) y mira `migrate --to-home
  *      --dry-run`: sale 0, dice qué mueve, qué enchufa y qué deja como enlace, y no escribe.
  *   3. En Windows, con un archivo del estado abierto por otro proceso: `migrate --to-home` sale 1, nombra la carpeta
@@ -40,7 +40,7 @@ const T = require('./team-lab.js');
 const NAME = 'migrate';
 const HERE = __dirname;
 const SERVER = path.join(HERE, '..', 'fixtures', 'toy-release-server.js');
-// story 8.25 (A1a-azure, TZ14): el Azure DevOps de juguete que atiende el repo del equipo —la capa viaja desde ahí—
+// el Azure DevOps de juguete que atiende el repo del equipo —la capa viaja desde ahí—
 const AZURE_SERVER = path.join(HERE, '..', 'fixtures', 'toy-azure-server.js');
 const TEAM_URL = 'https://dev.azure.com/acme/proyecto/_git/equipo-lab';
 const CMD_TIMEOUT_MS = 10 * 60 * 1000;
@@ -53,10 +53,10 @@ const wait = (ms) => { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4
 const kill = (p) => { if (p) { try { p.kill(); } catch (_) { /* ya */ } } };
 const realOrNull = (p) => { try { return fs.realpathSync(p); } catch (_) { return null; } };
 
-// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128 (182 #12314)
-// …y sin los hooks de git de la carpeta de usuario del laboratorio: desde el 2026-10-14 `install` y la mudanza ponen ahí la
-// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaba las publicaciones de juguete del
-// propio ensayo, que van a un remoto de laboratorio declarado público (182 #13452). Lo que se mide es el arnés, no esto
+// con identidad propia: el agente de Windows no tiene user.name/user.email y `git commit` sale 128
+// …y sin los hooks de git de la carpeta de usuario del laboratorio: `install` y la mudanza ponen ahí la
+// carpeta global de hooks del arnés, y su pre-push (el freno antes de publicar) frenaría las publicaciones de juguete del
+// propio ensayo, que van a un remoto de laboratorio declarado público. Lo que se mide es el arnés, no esto
 const LAB_NO_HOOKS = path.join(require('os').tmpdir(), 'tycon-lab-no-git-hooks');
 function git(dir, args, env) { return L.run('git', ['-C', dir, '-c', 'user.name=Lab', '-c', 'user.email=lab@example.com', '-c', `core.hooksPath=${LAB_NO_HOOKS}`, ...args], { env, timeoutMs: 5 * 60 * 1000 }); }
 
@@ -77,7 +77,7 @@ function holdOpen(file, env) {
   const ps = L.scanPath('pwsh', { env })[0] || L.scanPath('powershell', { env })[0];
   if (!ps) return null;
   // compartido para LEER: lo que se mide es que la carpeta no se puede renombrar con un archivo abierto adentro, no que el
-  // estado quede ilegible (con 'None' el propio harness.js no podía leer su estado y salía 2 por otro motivo: 182 #12395)
+  // estado quede ilegible (con 'None' el propio harness.js no puede leer su estado y sale 2 por otro motivo)
   const script = `$f = [System.IO.File]::Open('${file.replace(/'/g, "''")}', 'Open', 'Read', 'Read'); Start-Sleep -Seconds 600`;
   return spawn(ps, ['-NoProfile', '-NonInteractive', '-Command', script], { env, stdio: 'ignore', windowsHide: true });
 }
@@ -121,7 +121,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
   }
   let org = 'TYCON-LAB', name = 'arnes-lab', repoOption = ['--repo', 'TYCON-LAB/arnes-lab'];
   try { const pr = readJson(path.join(clone, 'scripts', 'publishing', 'public-repos.json')); if (pr.org && pr.repo) { org = pr.org; name = pr.repo; repoOption = []; } } catch (_) { /* --repo lo dice */ }
-  // story 8.25: el clon de juguete NO hereda el repo del equipo del repo real (la clave `team`): este ensayo mide la mudanza
+  // el clon de juguete NO hereda el repo del equipo del repo real (la clave `team`): este ensayo mide la mudanza
   // SIN capa (regresión); el servidor de juguete atiende un solo repo y con la clave la mudanza exigiría ver el otro
   try {
     const prFile = path.join(clone, 'scripts', 'publishing', 'public-repos.json');
@@ -142,7 +142,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     if (!fs.existsSync(ports)) return { status: L.STATUS.error, reason: 'el servidor de versiones de juguete no arrancó' };
     const api = /^API=(.+)$/m.exec(fs.readFileSync(ports, 'utf8'))[1].trim();
     rec.fact('toy_server', { api, org, name });
-    // el repo del equipo de juguete (los tres archivos de la capa) y el Azure DevOps de juguete que lo atiende (story 8.25, TZ14):
+    // el repo del equipo de juguete (los tres archivos de la capa) y el Azure DevOps de juguete que lo atiende:
     // la mudanza de esta máquina va a traer la capa desde ahí; sin credencial, tiene que DECIRLO y no escribir
     const teamWork = path.join(base, 'team-work'), teamBare = path.join(base, 'team.git');
     fs.mkdirSync(path.join(teamWork, 'scripts', 'metrics'), { recursive: true });
@@ -159,10 +159,10 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     if (!fs.existsSync(azurePorts)) return { status: L.STATUS.error, reason: 'el Azure DevOps de juguete no arrancó' };
     const azureApi = /^AZURE=(.+)$/m.exec(fs.readFileSync(azurePorts, 'utf8'))[1].trim();
     rec.fact('toy_azure', { api: azureApi, team: TEAM_URL });
-    // T48 (story 8.23, tanda G · AC 41): el perfil del equipo vive EN EL CLON de la persona (perfil-equipo.json en su raíz,
+    // T48: el perfil del equipo vive EN EL CLON de la persona (perfil-equipo.json en su raíz,
     // como en toda máquina del equipo), no por variable: así la mudanza tiene que pasarlo a ~/.tycon/config.json, porque la
-    // versión publicada (el autor) no lo trae. Antes la sonda lo ponía por TYCON_PROFILE, que sobrevivía a la mudanza y
-    // tapaba justo la pérdida que la primera máquina migrada mostró (2026-10-08).
+    // versión publicada (el autor) no lo trae. Ponerlo por TYCON_PROFILE sobreviviría a la mudanza y
+    // taparía justo esa pérdida.
     const teamProfile = { ado: { org: 'https://dev.azure.com/acme' }, integrations: { engram: true, nightly: true, codex: 'detect' }, update: { channel: 'latest', apply: 'auto' }, packs: { default: 'all' }, install: { profile: 'full' } };
     fs.writeFileSync(path.join(clone, 'perfil-equipo.json'), `${JSON.stringify(teamProfile, null, 2)}\n`);
     fs.writeFileSync(path.join(home, '.claude', 'settings.json'), '{\n  "hooks": {}\n}\n');
@@ -192,7 +192,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     // la carpeta que precede a /scripts/hooks/ en el comando: entre comillas puede llevar espacios (una carpeta de usuario «Nombre Apellido»)
     const namesDir = (cmd, dir) => { const m = /"([^"]+?)[/\\]scripts[/\\]hooks[/\\]/.exec(cmd) || /'([^']+?)[/\\]scripts[/\\]hooks[/\\]/.exec(cmd) || /(?:^|\s)([^"'\s]+?)[/\\]scripts[/\\]hooks[/\\]/.exec(cmd); if (!m) return false; const r = realOrNull(m[1]); const d = realOrNull(dir); return Boolean(r && d && slash(r).toLowerCase() === slash(d).toLowerCase()); };
 
-    // 1. la máquina de hoy: instalada desde el clon
+    // 1. la máquina antes de mudar: instalada desde el clon
     const inst = run(clone, ['install', '--yes'], 'install_from_clone');
     if (inst.exit !== 0 || kindOf() !== 'tree') {
       rec.finding('migrate:install-from-clone-fails', 'install', `install --yes desde el clon salió ${inst.exit} (kind ${kindOf()}): sin máquina que mudar`, 'W8', { severity: 'breaks' });
@@ -201,7 +201,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     const hooks0 = hookCmds();
     let cloneHash0 = dirHash(clone);
     rec.fact('before', { hooks: hooks0.length, hooks_naming_clone: hooks0.filter((c) => namesDir(c, clone)).length, place: linkKind(placeLink), skills: linkKind(skillsLink) });
-    // T43 (story 8.23, tanda F · AC 40): lo PERSONAL del dev en la carpeta vieja —una skill y un agente que no son del arnés
+    // T43: lo PERSONAL del dev en la carpeta vieja —una skill y un agente que no son del arnés
     // ni de terceros— tiene que seguir activo después de la mudanza. Sólo si la carpeta vieja es una carpeta real (en esta
     // sonda el install desde el clon la deja como enlace: entonces se arma como la máquina de un dev: una carpeta real con
     // las entradas del clon y lo personal, y ~/.claude/skills y ~/.claude/agents como enlaces que pasan por ella)
@@ -228,10 +228,10 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     // 2. una versión publicada (el clon NO se actualiza) y el plan. La versión que se publica acá sale del repo INTERNO
     // (el bundle del ensayo), que trae el perfil del equipo real; la copia pública de verdad NO lo trae (el exportador lo
     // deja afuera): se saca antes de publicar, para que la máquina mudada lea sólo lo que la mudanza fundió. Sin esto,
-    // #12493-#12495: la máquina mudada leía el perfil REAL del árbol bajado (clockify prendida) y aparecían los dos hooks
+    // la máquina mudada lee el perfil REAL del árbol bajado (clockify prendida) y aparecen los dos hooks
     // de clocki, que el perfil del ensayo no prende
     try { fs.rmSync(path.join(author, 'perfil-equipo.json'), { force: true }); } catch (_) { /* no estaba */ }
-    // y lo mismo con la llave del buzón (story 8.25, 182 #12528): la versión bajada de verdad tampoco la trae; con ella adentro,
+    // y lo mismo con la llave del buzón: la versión bajada de verdad tampoco la trae; con ella adentro,
     // el arnés —bien— se niega a apilar la capa del equipo sobre una versión que ya trae una ruta de su lista cerrada
     try { fs.rmSync(path.join(author, 'scripts', 'metrics', 'corridas-buzon.json'), { force: true }); } catch (_) { /* no estaba */ }
     const v1 = publish(author, '2030.03.01.1', env0);
@@ -242,16 +242,15 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
     for (const word of ['mueve:', 'enlace:', 'enchufa:']) if (!dryOut.includes(word)) rec.finding(`migrate:plan-without-${word.replace(':', '')}`, 'plan', `el plan no dice «${word}»: ${lastLines(dryOut, 4)}`, 'W8', { severity: 'noise' });
     if (personalArmed && !/conserva 1 skills y 1 agente tuyos/.test(dryOut)) rec.finding('migrate:plan-without-personal', 'plan', `el plan no dice «conserva 1 skills y 1 agente tuyos» (T43): ${(dryOut.match(/.*conserva.*/) || ['sin línea conserva'])[0].slice(0, 300)}`, 'W8', { severity: 'loses-control' });
     if (personalArmed && !(dryOut.includes(personal.skill) && dryOut.includes(personal.agent))) rec.finding('migrate:plan-personal-unnamed', 'plan', 'el plan no nombra la skill y el agente personales (T43)', 'W8', { severity: 'noise' });
-    // T48 (tanda G): el plan anticipa que el perfil del equipo pasa al archivo de la máquina, con sus valores
+    // T48: el plan anticipa que el perfil del equipo pasa al archivo de la máquina, con sus valores
     if (!/perfil del equipo: .*perfil-equipo\.json → .*config\.json, como valores de la máquina/.test(dryOut)) rec.finding('migrate:plan-without-profile', 'plan', `el plan no dice que el perfil del equipo pasa a ~/.tycon/config.json (T48): ${(dryOut.match(/.*perfil del equipo.*/) || ['sin línea «perfil del equipo»'])[0].slice(0, 300)}`, 'W8', { severity: 'loses-control' });
     else if (!(dryOut.includes('engram') && dryOut.includes('canal latest') && dryOut.includes('paquete del stack all'))) rec.finding('migrate:plan-profile-unnamed', 'plan', 'la línea del perfil del equipo no nombra engram, canal latest y paquete del stack all (T48)', 'W8', { severity: 'noise' });
     if (kindOf() !== 'tree' || fs.existsSync(newTree)) rec.finding('migrate:dry-run-wrote', 'plan', '--dry-run escribió: la máquina cambió o apareció ~/.tycon/harness', 'W8', { severity: 'breaks' });
 
-    // 2 bis. la capa del equipo desde AZURE DEVOPS (story 8.25, TZ14 = Windows_MigrateAzure_NoCredentialSaid_AndHappyPathWithToyPat_Pipeline182,
-    // la mide el agente de la 182 por número de corrida): el clon declara el repo del equipo por su URL (la clave
+    // la capa del equipo desde AZURE DEVOPS: el clon declara el repo del equipo por su URL (la clave
     // `team` de public-repos.json). (a) SIN credencial —el gestor de credenciales del agente no tiene nada para dev.azure.com y
-    // no hay PAT guardado—, la mudanza no arranca, lo DICE con las dos formas de ponerla y no escribe (el caso de la máquina
-    // Windows que dejó de actualizarse sin avisar); (b) con el PAT de juguete guardado, el plan nombra la capa y la mudanza
+    // no hay PAT guardado—, la mudanza no arranca, lo DICE con las dos formas de ponerla y no escribe (sin esto, la máquina
+    // Windows deja de actualizarse sin avisar); (b) con el PAT de juguete guardado, el plan nombra la capa y la mudanza
     // real (abajo) la apila: el perfil llega con origen «perfil», no se funde
     {
       const prFile = path.join(clone, 'scripts', 'publishing', 'public-repos.json');
@@ -262,9 +261,9 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       const homeHash0 = dirHash(home);
       const noCred = run(clone, ['migrate', '--to-home', ...repoOption], 'migrate_azure_no_credential', 6000);
       const noOut = `${noCred.stdout}\n${noCred.stderr}`;
-      // qué rama salió: «sin credencial» (el gestor del agente no tiene nada para dev.azure.com: lo que D-9 supone) o «no vale»
+      // qué rama salió: «sin credencial» (el gestor del agente no tiene nada para dev.azure.com: el caso que se quiere medir) o «no vale»
       // (el gestor TENÍA una credencial —la de otra organización— y el Azure de juguete la rechazó): las dos son «lo dice», pero
-      // sólo la primera mide D-9, y la segunda queda anotada para que se sepa
+      // sólo la primera mide ese caso, y la segunda queda anotada para que se sepa
       const branch = /sin credencial de Azure DevOps/.test(noOut) ? 'missing' : (/no vale para/.test(noOut) ? 'invalid' : null);
       rec.fact('azure_no_credential', { exit: noCred.exit, branch, said_missing: branch !== null, said_how: /config set azure\.token/.test(noOut) && /gestor de credenciales/.test(noOut), wrote: dirHash(home) !== homeHash0 || fs.existsSync(newTree), kind: kindOf() });
       const anc = rec.step.facts.azure_no_credential;
@@ -299,9 +298,9 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
         kill(held); holders.pop();
         wait(1500);
       } else rec.note('archivo tomado: sin PowerShell para abrirlo, no medido');
-      // 3 bis. una carpeta tomada que NO es el estado: agent-skills como carpeta real, con un archivo de una skill personal
-      // abierto (el caso de una máquina Windows: la mudanza falló a mitad de camino, al apartar agent-skills, con EPERM).
-      // Ya el plan (--dry-run) frena, nombra agent-skills con su código y dice qué cerrar; no escribe nada
+      // una carpeta tomada que NO es el estado: agent-skills como carpeta real, con un archivo de una skill personal
+      // abierto (sin esto, en una máquina Windows la mudanza falla a mitad de camino, al apartar agent-skills, con EPERM).
+      // El plan (--dry-run) ya frena, nombra agent-skills con su código y dice qué cerrar; no escribe nada
       const personalFile = path.join(skillsLink, 'skills', personal.skill, 'SKILL.md');
       const heldSkills = personalArmed && linkKind(skillsLink) === 'directory' ? holdOpen(personalFile, env0) : null;
       if (heldSkills) {
@@ -328,7 +327,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       links: { place: linkKind(placeLink), place_to_new: resolvesTo(placeLink, newTree), skills: linkKind(skillsLink), skills_to_new: resolvesTo(skillsLink, newTree), pipeline: linkKind(oldStateDir), pipeline_to_state: resolvesTo(oldStateDir, path.join(own, 'state')) },
       hooks: hookCmds().length, hooks_naming_clone: hookCmds().filter((c) => namesDir(c, clone)).length, hooks_naming_new: hookCmds().filter((c) => namesDir(c, newTree)).length,
       // qué hooks aparecieron o se fueron, por el NOMBRE del guion y contados (la mudanza re-apunta todos los comandos, así
-      // que comparar el texto entero los daba todos como «idos» y «aparecidos»: #12494): si la cuenta cambia, que se sepa CUÁLES
+      // que comparar el texto entero los daría todos como «idos» y «aparecidos»): si la cuenta cambia, que se sepa CUÁLES
       ...(() => {
         const name = (c) => (String(c).match(/([^\\/"' ]+\.(?:js|sh|ps1|cmd))/) || [null, String(c).slice(0, 60)])[1];
         const count = (list) => list.reduce((m, c) => m.set(name(c), (m.get(name(c)) || 0) + 1), new Map());
@@ -375,7 +374,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
       if (!pf.said) rec.finding('migrate:personal-not-said', 'personal', 'la salida de migrate no dice «conservadas 1 skills y 1 agente tuyos» (T43)', 'W8', { severity: 'noise' });
     }
 
-    // T48 (tanda G · AC 41): después de mudar, el lector del árbol NUEVO (sin perfil) da las mismas integraciones, el mismo
+    // T48: después de mudar, el lector del árbol NUEVO (sin perfil) da las mismas integraciones, el mismo
     // paquete por defecto y la misma política que el clon (con perfil), con origen «maquina»; y la salida lo contó
     {
       const ex = L.run(process.execPath, [path.join(newTree, 'scripts', 'lib', 'tycon-config.js'), 'explain', '--json'], { env, timeoutMs: 60000 });
@@ -385,7 +384,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, allo
         engram: v.integraciones.engram, nightly: v.integraciones.nightly, codex: v.integraciones.codex, ado: v.ado.org,
         channel: v.update.channel, apply: v.update.apply, packs: v.packs.default, profile: v.install.profile,
         origin_engram: o['integraciones.engram'], origin_packs: o['packs.default'],
-        // con la capa del equipo (TZ14) el perfil NO se funde: la salida dice que viaja en la capa y los valores llegan con origen «perfil»
+        // con la capa del equipo el perfil NO se funde: la salida dice que viaja en la capa y los valores llegan con origen «perfil»
         said: /perfil del equipo: viaja en la capa del equipo/.test(`${mig.stdout}\n${mig.stderr}`),
       } : { explain_exit: ex.exit, err: lastLines(`${ex.stdout}\n${ex.stderr}`, 2) };
       rec.fact('profile_after', pf);

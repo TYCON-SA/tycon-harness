@@ -1,7 +1,7 @@
 'use strict';
 /**
- * npx-probe.js — el instalador del paquete de npm en un Windows (story 8.40, tanda A · AC 5 y 34 · T34; escenario `npx`
- * del pipeline 182).
+ * npx-probe.js — el instalador del paquete de npm en un Windows (T34; escenario `npx`
+ * del ensayo de Windows).
  *
  * El paquete (`scripts/setup/npm/`) se arma con `npm pack` (con LICENSE copiado, como el workflow que publica) y se corre
  * con `npx --yes --package <tgz> tycon-harness --profile minimal --integrations none --packs none --yes` contra el
@@ -14,10 +14,10 @@
  * fuera de la carpeta de usuario de juguete, y un .tgz rearmado con la misma ruta podría salir de una caché vieja).
  * Fuera de Windows corre igual (modo laboratorio) y lo dice: lo que importa medir de Windows es el punto 2 y el `.cmd`.
  *
- * Con `--from registry` (escenario `npx-published`, story 8.40 · AC 40 · T47) mide el paquete PUBLICADO: `npx --yes
+ * Con `--from registry` (escenario `npx-published`, T47) mide el paquete PUBLICADO: `npx --yes
  * @tyconsa/harness@latest` del registro de npm real contra el GitHub real, en otra carpeta de usuario de juguete y sin
  * ninguna variable del GitHub de juguete. Mide que instala (lo mismo que el punto 1) y que la misma línea, corrida otra
- * vez sobre esa carpeta, dice «está al día» sin tocar el árbol instalado (AC 35). Lo que no depende del
+ * vez sobre esa carpeta, dice «está al día» sin tocar el árbol instalado. Lo que no depende del
  * paquete no se disfraza: sin red, el registro caído o el límite de GitHub salen «no medido» con su motivo, y una punta de
  * `main` que se movió entre las dos corridas también (el «al día» no se pudo comparar). Nunca verde sin medir.
  *
@@ -32,7 +32,7 @@ const L = require('./lab.js');
 const T = require('./team-lab.js');
 
 const NAME = 'npx';
-// el escenario del paquete publicado (AC 40): la misma sonda, con `--from registry`
+// el escenario del paquete publicado: la misma sonda, con `--from registry`
 const NAME_PUBLISHED = 'npx-published';
 const PACKAGE = '@tyconsa/harness';
 const FROM = Object.freeze(['pack', 'registry']);
@@ -102,11 +102,11 @@ function installFailureKind(out, { timedOut = false } = {}) {
 }
 
 /**
- * La segunda corrida sobre la misma carpeta (AC 35): `{ ok }` si dijo «al día» y el árbol no cambió; `{ notMeasured }` si
+ * La segunda corrida sobre la misma carpeta: `{ ok }` si dijo «al día» y el árbol no cambió; `{ notMeasured }` si
  * no se pudo comparar por algo que no es el paquete (la red o el registro, la punta que se movió entre las dos); `{ finding }`
  * con lo que dijo, si no.
  */
-/** El commit que el estado dice instalado (40 hex), o '' si no lo trae: sin él no se puede comparar la punta (AC 35). */
+/** El commit que el estado dice instalado (40 hex), o '' si no lo trae: sin él no se puede comparar la punta. */
 function installedCommitOf(st) {
   const c = st && Array.isArray(st.sources) && st.sources[0] ? st.sources[0].commit : '';
   return typeof c === 'string' && /^[0-9a-f]{40}$/.test(c) ? c : '';
@@ -130,10 +130,10 @@ function againVerdict({ exit, out, treeSame, timedOut = false, installedCommit =
     return { finding: `la segunda corrida salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
   }
   const fresh = /hay una versión nueva \(([0-9a-f]{7,40})\)/.exec(said);
-  // la «nueva» es el commit que quedó instalado: no se movió nada, la comparación del paquete está mal (AC 35)
+  // la «nueva» es el commit que quedó instalado: no se movió nada, la comparación del paquete está mal
   if (fresh && installedCommit && installedCommit.startsWith(fresh[1])) return { finding: `la segunda corrida dice que hay una versión nueva (${fresh[1]}), pero es el mismo commit que quedó instalado` };
   if (/hay una versión nueva/.test(said)) return { notMeasured: 'la punta de main del arnés se movió entre las dos corridas: el «al día» no se pudo comparar (volvé a encolar)' };
-  // el paquete de hoy baja la punta y dice «No cambié nada»; el de antes decía «No bajé nada»: lo que se mide es el árbol
+  // el paquete baja la punta y dice «No cambié nada» (o «No bajé nada»): lo que se mide es el árbol
   if (/está al día\. No (?:bajé|cambié) nada/.test(said)) return treeSame ? { ok: true } : { finding: 'dijo «al día», pero el árbol instalado cambió entre las dos corridas' };
   return { finding: `la segunda corrida salió ${exit} y no dijo «al día»: ${lastLines(said, 3)}` };
 }
@@ -163,7 +163,7 @@ function doctorCheck(harnessJs, env, rec, id) {
   return parsed;
 }
 
-/** null si el doctor dice el perfil pedido y elegido; si no, qué quedó (story 8.40, pedido 2: `--profile` se perdía). */
+/** null si el doctor dice el perfil pedido y elegido; si no, qué quedó (para que `--profile` no se pierda). */
 function profileProblem(doctor, wanted) {
   const p = doctor && doctor.profile;
   if (!p || typeof p.value !== 'string') return 'el doctor no dice el perfil de la instalación';
@@ -183,7 +183,7 @@ function measure(opts) {
   return opts.from === 'registry' ? measureRegistry(opts) : measurePack(opts);
 }
 
-/** El paquete publicado (AC 40 · T47): del registro y el GitHub reales, instala y la segunda corrida dice «al día». */
+/** El paquete publicado (T47): del registro y el GitHub reales, instala y la segunda corrida dice «al día». */
 function measureRegistry({ lab, platform = process.platform, baseEnv = process.env, allowTemp = false, rec }) {
   const npm = npmProgram('npm'); const npx = npmProgram('npx');
   if (!npm || !npx) return { status: L.STATUS.notMeasured, reason: `este Node (${process.execPath}) no trae npm/npx a su lado` };
@@ -232,10 +232,10 @@ function measureRegistry({ lab, platform = process.platform, baseEnv = process.e
     rec.finding('npx-published:install-fails', 'install', `npx ${PACKAGE}@latest (${published}) salió ${inst.exit} (estado ${kind || 'ninguno'}): ${lastLines(said, 3)}`, 'W8', { severity: 'breaks' });
     return { status: L.STATUS.measured, reason: null };
   }
-  // sin el commit en el estado, la segunda corrida no tiene contra qué comparar la punta (AC 35): se dice, no se saltea
+  // sin el commit en el estado, la segunda corrida no tiene contra qué comparar la punta: se dice, no se saltea
   if (!installedCommit) rec.finding('npx-published:state-without-commit', 'install', 'el estado de la versión bajada no trae su commit: la máquina no puede saber si está al día', 'W8', { severity: 'breaks' });
   const doctor = doctorCheck(harnessJs, env, rec, 'npx-published:doctor-red');
-  // la línea pide --profile minimal: tiene que quedar elegido (sin el arreglo del pedido 2 quedaba full «sin elegir»)
+  // la línea pide --profile minimal: tiene que quedar elegido (si se perdiera, quedaría full «sin elegir»)
   if (doctor) {
     rec.fact('profile', doctor.profile || null);
     const pp = profileProblem(doctor, 'minimal');
@@ -269,7 +269,7 @@ function measurePack({ lab, platform = process.platform, baseEnv = process.env, 
   rec.fact('home', home);
   rec.fact('lab_mode', !L.isWin(platform));
 
-  // el remoto en el commit de hoy, una versión numerada publicada encima, y el servidor de juguete
+  // el remoto en el commit actual, una versión numerada publicada encima, y el servidor de juguete
   const point = T.pointRemotes(state, 'target', env0);
   if (point) return { status: L.STATUS.error, reason: point };
   const bare = state.remotes.harness.dir;
@@ -322,7 +322,7 @@ function measurePack({ lab, platform = process.platform, baseEnv = process.env, 
     if (inst.exit !== 0 || kind !== 'release' || !fs.existsSync(harnessJs)) {
       rec.finding('npx:install-fails', 'install', `npx --package <tgz> tycon-harness salió ${inst.exit} (estado ${kind || 'ninguno'}): ${lastLines(`${inst.stdout}\n${inst.stderr}`, 3)}`, 'W8', { severity: 'breaks' });
     } else {
-      // la línea pide --profile minimal: con el árbol de la rama tiene que quedar elegido por la máquina (AC 48)
+      // la línea pide --profile minimal: con el árbol de la rama tiene que quedar elegido por la máquina
       const doctor = doctorCheck(harnessJs, env, rec, 'npx:doctor-red');
       const pp = doctor ? profileProblem(doctor, 'minimal') : null;
       if (doctor) rec.fact('profile', doctor.profile || null);

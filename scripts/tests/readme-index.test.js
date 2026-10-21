@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
  * readme-index.test.js — el README se achica, pero ninguna pieza se queda sin dónde encontrarla
- * (story 7.7, 2026-09-19).
  *
- * Desde el 2026-10-14 el índice se llama INDEX.md: README.md quedó como la portada para personas que muestra GitHub.
- * Lo que este archivo dice del «README» vale para el índice, hoy INDEX.md; la base de T6 sigue siendo el README de antes.
+ * El índice se llama INDEX.md; README.md es la portada para personas que muestra GitHub.
+ * Lo que este archivo dice del «README» vale para el índice, INDEX.md; la base de T6 es el README previo al recorte.
  *
- * El README se importa ENTERO en cada sesión y en cada subagente de cada dev. La 7.4 lo había vuelto
- * índice (una línea por pieza, 110 líneas); la 7.7 saca también el índice —las piezas se buscan en
- * `guides/piezas-del-arnes.md`, que se lee a demanda— y el README queda con lo que se usa en cada
- * sesión: la tabla «Cuándo leer cada guía», las reglas siempre activas y los comandos del día a día.
+ * El README se importa ENTERO en cada sesión y en cada subagente de cada dev. Por eso no lleva el índice de piezas
+ * (una línea por pieza, 110 líneas): las piezas se buscan en `guides/piezas-del-arnes.md`, que se lee a demanda, y el
+ * README queda con lo que se usa en cada sesión: la tabla «Cuándo leer cada guía», las reglas siempre activas y los comandos del día a día.
  *
  * Sacar 110 líneas de un índice es la forma más barata de perder una pieza sin que nadie lo note, así
  * que el recorte vive detrás de esta guarda:
@@ -22,7 +20,6 @@
  *
  * Correr:   node --test scripts/tests/readme-index.test.js
  * Regenerar la lista (sólo si cambia la base, con git): node scripts/tests/readme-index.test.js --generate
- * (`--generar` hasta la story 8.9, tanda E)
  */
 'use strict';
 
@@ -44,8 +41,8 @@ function rutasDe(texto) {
 
 // ¿La ruta está nombrada ENTERA? No alcanza con que sea subcadena: `buzon/` está dentro de
 // `scripts/buzon/buzon.js` y `engram-version` dentro de `scripts/setup/check-engram-version.sh`, así
-// que perder la carpeta o el archivo de la raíz daba verde igual (pase adversarial de la 7.7: 11 de
-// las 144 rutas eran parte de otra). Antes no puede venir otro carácter de ruta; después, ni letra ni
+// que perder la carpeta o el archivo de la raíz daría verde igual (hay
+// rutas del índice que son parte de otra). Antes no puede venir otro carácter de ruta; después, ni letra ni
 // guion, y un archivo tampoco puede seguir como `.algo` (`engram-version.md` no nombra a `engram-version`).
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 function nombrada(ruta, texto) {
@@ -96,7 +93,7 @@ test('Readme_IndiceCompleto (T6): una ruta dentro de otra más larga NO cuenta c
   assert.equal(nombrada('release-notes.sh', 'el `release-notes.sh` copiado'), true);
 });
 
-// story 8.40, tanda B (T33): el alta de una organización tiene su fila en el índice y su sección en las dos referencias.
+// T33: el alta de una organización tiene su fila en el índice y su sección en las dos referencias.
 // Hasta la primera publicación del paquete de npm el alta se cuenta con `harness.js team-init` (cambio 2 de la
 // coordinadora): la sección no promete npx
 test('Index_HasTeamInitRow (T33): la fila del alta apunta a la referencia, y la sección existe sin prometer npx', () => {
@@ -115,7 +112,7 @@ test('Index_HasTeamInitRow (T33): la fila del alta apunta a la referencia, y la 
   }
 });
 
-// story 8.40, el cierre (T52): la guía para mantener el paquete de npm dice lo que hace falta saber el día que sale una
+// T52: la guía para mantener el paquete de npm dice lo que hace falta saber el día que sale una
 // versión, falla o hay que retirarla, y la nombran la guía de mantener el arnés y la ficha de la pieza
 test('Guides_NpmPackageMaintainerGuide (T52): cómo sale, se aprueba, falla y se retira una versión del paquete', () => {
   const g = leer('guides/maintaining/paquete-npm.md');

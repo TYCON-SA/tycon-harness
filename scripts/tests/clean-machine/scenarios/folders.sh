@@ -26,8 +26,8 @@ own_intact() {
 }
 
 serve_copy
-# story 8.16, tanda B (AC 19 · T25): esta variante corre el bloque sin terminal de la portada (install:unattended), tal cual;
-# desde la tanda D (AC 36 · T51) ese bloque nombra el perfil (--profile minimal --yes) y lo que queda es minimal
+# T25: esta variante corre el bloque sin terminal de la portada (install:unattended), tal cual; ese bloque nombra el
+# perfil (--profile minimal --yes) y lo que queda es minimal
 run_block unattended "${OUT_DIR}/install.out" < /dev/null; RC=$?
 if [ "${RC}" -eq 0 ] && find_clone; then ok "T26 (carpetas reales) el bloque install:unattended de la portada, tal cual y sin terminal, sale 0"
 else
@@ -37,7 +37,7 @@ fi
 
 # los dos enlaces enteros, y un enlace POR ENTRADA dentro de las dos carpetas reales
 BAD=""
-# el enlace del arnés es el LUGAR (HARNESS_LINK, story 8.19): una máquina nueva ya no recibe el nombre viejo
+# el enlace del arnés es el LUGAR (HARNESS_LINK): una máquina nueva no recibe el nombre viejo
 for name in "$(basename "${HARNESS_LINK}")" agent-skills; do
   if [ ! -L "${HOME}/.claude/${name}" ] || [ "$(real "${HOME}/.claude/${name}")" != "${CLONE}" ]; then BAD="${BAD} ${name}"; fi
 done

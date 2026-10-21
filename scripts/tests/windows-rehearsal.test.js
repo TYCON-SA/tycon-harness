@@ -2,7 +2,7 @@
 
 /**
  * windows-rehearsal.test.js — los guiones que ENSAYAN la instalación del equipo en un agente Windows: el alta de un dev
- * nuevo (`onboarding`) y la máquina del viernes que se actualiza a lo de hoy (`update`). Story 8.17, tanda W0.
+ * nuevo (`onboarding`) y la máquina del viernes que se actualiza a lo de hoy (`update`).
  *
  * Como `windows-probe.test.js`, lo que se mide acá NO es Windows: es que los guiones (`scripts/tests/windows/`) y el
  * pipeline que los corre hagan lo que dicen. Lo que no se puede perder:
@@ -19,13 +19,13 @@
  *   R5 · nunca la carpeta de usuario real: sin la marca del laboratorio nadie mide ni escribe.
  *   R6 · los bundles de los dos repos: `main` es lo de hoy, `friday` la marca; sin la marca, no hay bundle.
  *   R7 · la copia que mide `measure` se arma con el exportador y las listas DEL COMMIT QUE SE MIDE, no con los de la
- *        rama del pipeline (corrida 11678): un commit que no trae los archivos de la W0 se puede medir igual.
- *   R8 · los `.sh` y `.ps1` con `\r` se cuentan archivo por archivo (la corrida 11677 contó «0 de 1»: no había contado).
+ *        rama del pipeline: un commit que no trae los archivos del ensayo se puede medir igual.
+ *   R8 · los `.sh` y `.ps1` con `\r` se cuentan archivo por archivo (un conteo sobre la lista cruda daría «0 de 1»).
  *   R9 · el texto del alta se lee en sus DOS formas, y el ensayo dice cuál leyó: la de dos clones (el arnés y
  *        agent-skills, con los enlaces, el import y la línea de arranque a mano) y la de un solo clon (el repo trae
  *        `skills/` y `agents/` en su raíz y `harness.js install` lo deja todo). Con un clon, la carpeta de las skills
- *        ES el clon. Un texto que no calza con ninguna no se ensaya a medias: dice qué buscó de cada forma (la corrida
- *        11745 salió roja sin medir nada: el ensayo sólo entendía la de dos clones).
+ *        ES el clon. Un texto que no calza con ninguna no se ensaya a medias: dice qué buscó de cada forma (si
+ *        sólo entendiera la de dos clones, saldría rojo sin medir nada).
  *   Y un recorrido entero en modo de laboratorio sobre dos repos de juguete con su viernes y su hoy: el alta, la
  *   actualización con sus cuatro variantes, y el reporte. Y otro, más corto, sobre un arnés de juguete de un solo clon.
  *
@@ -36,7 +36,7 @@
  * Para leer el reporte que deja el recorrido de juguete: TYCON_WINDOWS_REHEARSAL_KEEP=<carpeta> node --test …
  */
 
-// story 8.39 (decisión 20): los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
+// Los laboratorios que lanzan harness.js no bajan el Node del arnés de nodejs.org (lo heredan)
 process.env.TYCON_HARNESS_NODE = '0';
 const test = require('node:test');
 const assert = require('node:assert');
@@ -76,9 +76,9 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   const scenario = /- name: scenario\n\s+displayName: .*\n\s+type: string\n\s+default: (\w+)\n\s+values:\n((?:\s+- [\w-]+\n)+)/.exec(params);
   assert.ok(scenario, 'el parámetro scenario, con su lista cerrada de valores');
   assert.strictEqual(scenario[1], 'measure', 'por defecto, measure');
-  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all']);   // no-clone: story 8.23 B · codex-only: 8.23 C · npx y npx-published: 8.40
+  assert.deepStrictEqual(scenario[2].trim().split('\n').map((l) => l.replace(/^\s*-\s*/, '').trim()).filter(Boolean), ['measure', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all']);
   for (const p of ['harnessRef', 'skillsRef', 'fridayTag']) assert.match(params, new RegExp(`- name: ${p}\\n\\s+displayName: .*\\n\\s+type: string\\n`), `el parámetro ${p}`);
-  // la marca del viernes: el parámetro va vacío y cada fuente lo resuelve (story 8.26, tanda D): con azure, la de
+  // la marca del viernes: el parámetro va vacío y cada fuente lo resuelve: con azure, la de
   // siempre —en el paso que arma los bundles de los dos repos—; con github no hay una por defecto
   assert.match(params, /- name: fridayTag\n\s+displayName: .*\n\s+type: string\n\s+default: ''\n/, 'fridayTag: vacío por defecto');
   assert.match(code, /FRIDAY_TAG: \$\{\{ coalesce\(parameters\.fridayTag, 'retorno\/2026-10-02-fin-del-viernes'\) \}\}/, 'con azure, sin decir nada, la marca del viernes de siempre');
@@ -89,8 +89,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   for (const name of ['Bundle', 'Windows']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'measure', 'all'\)/, `${name} corre con measure y all`);
   // (y con portable, el escenario de la base portable: su contrato es windows-portable.test.js, P1)
   for (const name of ['Sources', 'Rehearsal']) assert.match(job(name), /condition: .*in\('\$\{\{ parameters\.scenario \}\}', 'onboarding', 'update', 'portable', 'no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published', 'all'\)/, `${name} corre con onboarding, update, portable, no-clone, codex-only, console-windows, migrate, waiver, npx, npx-published y all`);
-  // cada escenario aparte corre SU paso del ensayo, y sólo con su valor (story 8.23, tandas B y C; npx y npx-published:
-  // story 8.40, AC 34 y 40)
+  // cada escenario aparte corre SU paso del ensayo, y sólo con su valor
   for (const own of ['no-clone', 'codex-only', 'console-windows', 'migrate', 'waiver', 'npx', 'npx-published']) {
     assert.match(job('Rehearsal'), new RegExp(`- \\$\\{\\{ if eq\\(parameters\\.scenario, '${own}'\\) \\}\\}:\\n\\s+- script: node scripts/tests/windows/rehearse\\.js step ${own} --lab "\\$\\(lab\\)" --out "\\$\\(report\\)"`), `el escenario ${own} corre su paso`);
   }
@@ -100,7 +99,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   assert.match(src, /fetchDepth: 0\b/, 'el checkout trae la historia');
   assert.match(src, /fetchTags: true\b/, 'y las etiquetas');
   // agent-skills es su repo de ANTES de la unión, clonado por el trabajo con el token de la corrida: la plantilla compartida,
-  // en el repo unido (story 8.18), lo enlaza al propio checkout, y ahí no está la marca del viernes de agent-skills
+  // en el repo unido, lo enlaza al propio checkout, y ahí no está la marca del viernes de agent-skills
   assert.doesNotMatch(src, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
   assert.match(src, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK"/, 'clona el repo viejo de agent-skills');
   assert.match(src, /SK="\$\(Agent\.TempDirectory\)\/agent-skills"/, 'en una carpeta propia, nunca ~/.claude/agent-skills');
@@ -141,7 +140,7 @@ function assertOneCloneDoc(doc) {
   assert.match(doc.blocks.clone_harness, /git clone https:\/\/\S+/);
   assert.doesNotMatch(doc.blocks.clone_harness, /agent-skills/, 'un solo clon: agent-skills no se clona');
   assert.deepStrictEqual([doc.urls.skills, doc.blocks.clone_skills, doc.blocks.links, doc.blocks.import_line, doc.startup, doc.installer], [null, undefined, undefined, undefined, null, null], 'nada de lo que la otra forma hace a mano');
-  // `install --yes` desde la 8.16 B (sin terminal, `install` solo muestra el plan); el recorte de la 8.18, sin él
+  // `install --yes` (sin terminal, `install` solo muestra el plan); el texto recortado, sin él
   assert.match(doc.blocks.install, /^node ".*scripts[\\/]setup[\\/]harness\.js" install( --yes)?$/, 'el PASO 2 corre el instalador');
   assert.match(doc.blocks.check_links, /^Get-Item .*agent-skills.*Format-List/m, 'el PASO 3 mira los cuatro enlaces');
   assert.match(doc.blocks.check_links, /README\.md'\)\.Count/, 'y el import');
@@ -155,8 +154,8 @@ function assertOneCloneDoc(doc) {
 test('Rehearsal_TeamDoc_RealTextHasEveryPieceTheRehearsalRuns', { skip: !fs.existsSync(path.join(ROOT, T.DOC)) && 'NO MEDIDO — copia sin el texto del alta del equipo' }, () => {
   const doc = T.parseTeamDoc(fs.readFileSync(path.join(ROOT, T.DOC), 'utf8'), fs.readFileSync(path.join(ROOT, T.STEP_ZERO), 'utf8'));
   assert.strictEqual(doc.problem, undefined, doc.problem);
-  // desde la story 8.23 (tanda E) el alta no clona: la versión la instala el guion de la portada. Esa forma se lee como
-  // `no-clone` y, en el árbol interno, el ensayo la reporta NO MEDIDO con su motivo: desde la story 8.28 ese alta se
+  // el alta no clona: la versión la instala el guion de la portada. Esa forma se lee como
+  // `no-clone` y, en el árbol interno, el ensayo la reporta NO MEDIDO con su motivo: ese alta se
   // ensaya siguiendo la página pública, contra una copia publicada (ahí la página y el guion de entrada están en su
   // lugar). Lo de abajo es lo que las dos formas con clon tienen que seguir trayendo.
   if (doc.shape === 'no-clone') {
@@ -238,7 +237,7 @@ test('Rehearsal_OneClone_TheSkillsFolderIsTheClone_LinksReposAndHeads', { skip: 
     assert.strictEqual(git(['commit', '-q', '-m', 'x'], repo).status, 0);
     git(['checkout', '-q', '-B', 'main'], repo);
     fs.mkdirSync(dot, { recursive: true });
-    // el lugar y, como en una máquina instalada antes de la 8.19, el nombre viejo apuntando al lugar
+    // el lugar y, como en una máquina instalada antes del lugar, el nombre viejo apuntando al lugar
     const PLACE = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'place.js'));
     for (const [name, to] of [[PLACE.PLACE_NAME, repo], [PLACE.LEGACY_PLACE_NAME, path.join(dot, PLACE.PLACE_NAME)], ['agent-skills', repo], ['skills', path.join(repo, 'skills')], ['agents', path.join(repo, 'agents')]]) fs.symlinkSync(to, path.join(dot, name), 'junction');
     fs.writeFileSync(path.join(dot, 'settings.json'), '{}\n');
@@ -324,7 +323,6 @@ test('Rehearsal_ComparePhotos_EveryDifferenceHasItsSeverity', () => {
   assert.ok(alta.some((f) => f.id === 'hooks:missing:PreToolUse:@tcg:bash-brake.sh' && f.severity === 'loses-control'), 'en el alta, lo que falta de la lista sí es un hallazgo');
 });
 
-// Pase adversarial de la corrida 8.17-W0-20261005T0153 (clases 5, 15 y 16).
 test('Rehearsal_ComparePhotos_JsonBlockBreaks_ManualPullIsNotEverySession_FailureChangeIsReported', () => {
   const friday = fixture('rehearsal-photo-friday.json');
   const today = fixture('rehearsal-photo-today.json');
@@ -399,7 +397,7 @@ test('Rehearsal_RefusesToRunOutsideALab_AndWritesNothing', () => {
     assert.match(rehearse.initLab({ lab: real, out, sources: base, scenario: 'all' }).reason, /carpeta de usuario real/);
     assert.match(rehearse.initLab({ lab: path.join(base, 'lab'), out, sources: base, scenario: 'all', allowTemp: true }).reason, /no encuentro los bundles/);
     assert.match(rehearse.initLab({ lab: path.join(base, 'lab'), out, sources: base, scenario: 'everything', allowTemp: true }).reason, /escenario desconocido/);
-    // story 8.40 (AC 34): el escenario npx existe en la lista cerrada, con su paso y su tope (sin eso: «escenario desconocido»)
+    // el escenario npx existe en la lista cerrada, con su paso y su tope (sin eso: «escenario desconocido»)
     assert.deepStrictEqual(rehearse.SCENARIOS.npx, ['inventory', 'npx']);
     assert.ok(rehearse.STEP_ORDER.includes('npx') && !rehearse.SCENARIOS.all.includes('npx'), 'npx va aparte: all no lo corre');
     assert.ok(rehearse.OWN_STEPS.npx && fs.existsSync(rehearse.OWN_STEPS.npx.script) && rehearse.OWN_STEPS.npx.cap > 0 && rehearse.OWN_STEPS.npx.cap <= 2400, 'la sonda npx-probe.js con su tope');
@@ -744,7 +742,7 @@ test('Rehearsal_BuildSources_MainIsTodayFridayIsTheTag_NoTagNoBundle', { skip: !
     assert.ok(!fs.existsSync(path.join(base, 's3', 'sources-info.json')));
     assert.strictEqual(node([path.join(DIR, 'build-sources.js'), '--output', path.join(base, 's4'), '--harness', toy.harness, '--skills', toy.skills, '--harness-ref', 'no-such-branch', '--friday-tag', TOY_TAG]).status, 1);
     assert.strictEqual(node([path.join(DIR, 'build-sources.js'), '--output', path.join(base, 's5')]).status, 2, 'sin los dos clones: uso');
-    // el repo unido (story 8.18): ~/.claude/agent-skills es un enlace al arnés; como --skills, no son dos repos y frena
+    // el repo unido: ~/.claude/agent-skills es un enlace al arnés; como --skills, no son dos repos y frena
     fs.symlinkSync(toy.harness, path.join(base, 'skills-link'));
     const same = node([path.join(DIR, 'build-sources.js'), '--output', path.join(base, 's6'), '--harness', toy.harness, '--skills', path.join(base, 'skills-link'), '--friday-tag', TOY_TAG]);
     assert.strictEqual(same.status, 1, same.stderr);
@@ -759,8 +757,8 @@ test('Rehearsal_BuildSources_MainIsTodayFridayIsTheTag_NoTagNoBundle', { skip: !
 // ═══ R8 · los finales de línea se cuentan archivo por archivo ══════════════════════════════════════════════════
 
 test('Rehearsal_LineEndings_CountsEveryFile_AndSeesTheOnesWithCr', { skip: !has('git') && 'NO MEDIDO — sin git' }, () => {
-  // La primera medición (corrida 11677) dijo «0 de 1 .sh con \\r» sobre una copia con decenas de .sh: la lista de
-  // archivos venía separada por ceros, que el recorte de la salida borra, y quedaba un solo «archivo» que no existía.
+  // Una medición ingenua dice «0 de 1 .sh con \\r» sobre una copia con decenas de .sh: la lista de
+  // archivos viene separada por ceros, que el recorte de la salida borra, y queda un solo «archivo» que no existía.
   const base = tmp('r8');
   try {
     const repo = path.join(base, 'repo');
@@ -801,11 +799,11 @@ console.log('{}');
 `;
     const repo = path.join(base, 'fake-harness');
     fs.mkdirSync(repo); git(['init', '-q'], repo);
-    // el commit viejo: no trae los archivos de la W0 (ni la suite en suites.json, ni su entrada en la lista)
+    // el commit viejo: no trae los archivos del ensayo (ni la suite en suites.json, ni su entrada en la lista)
     write(repo, { 'scripts/publishing/export.js': exporter('old'), 'scripts/publishing/allowlist.json': JSON.stringify({ suitesOutside: [] }), 'scripts/tests/suites.json': JSON.stringify({ diarias: [] }) });
     git(['add', '-A'], repo); assert.strictEqual(git(['commit', '-q', '-m', 'sin la W0'], repo).status, 0);
     const old = git(['rev-parse', 'HEAD'], repo).stdout.trim();
-    // la rama del pipeline: suma la suite de la W0 a los dos archivos
+    // la rama del pipeline: suma la suite del ensayo a los dos archivos
     write(repo, { 'scripts/publishing/export.js': exporter('new'), 'scripts/publishing/allowlist.json': JSON.stringify({ suitesOutside: [{ root: 'arnes', path: 'tests/windows-probe.test.js', reason: 'x' }] }), 'scripts/tests/suites.json': JSON.stringify({ diarias: [{ ruta: 'tests/windows-probe.test.js' }] }) });
     git(['add', '-A'], repo); assert.strictEqual(git(['commit', '-q', '-m', 'con la W0'], repo).status, 0);
     const skills = path.join(base, 'fake-skills');
@@ -828,7 +826,7 @@ console.log('{}');
     for (const name of ['old', 'new']) assert.deepStrictEqual(fs.readdirSync(path.join(base, name)).sort(), ['bundle-info.json', 'harness.bundle']);
     assert.strictEqual(git(['status', '--porcelain'], repo).stdout, '');
     // el control positivo: la mezcla de antes (el exportador y la lista de la rama, contra el suites.json del commit
-    // viejo) es la que frenaba con el mensaje de la corrida 11678
+    // viejo) es la que frena con el mensaje del exportador
     const mixed = spawnSync(process.execPath, [path.join(repo, 'scripts', 'publishing', 'export.js'), '--harness', old, '--output', path.join(base, 'mixed')], { encoding: 'utf8', env: Object.assign({}, process.env, { TYCON_GUIDES_DIR: repo }) });
     assert.strictEqual(mixed.status, 2);
     assert.match(mixed.stderr, /suitesOutside: arnes:tests\/windows-probe\.test\.js no está en scripts\/tests\/suites\.json/);
@@ -839,9 +837,9 @@ console.log('{}');
     assert.strictEqual(c.status, 1);
     assert.match(c.stderr, /no trae scripts\/publishing\/export\.js/);
 
-    // El repo unido (story 8.18): un commit que trae skills/ exporta las dos fuentes de sí mismo, aunque
-    // ~/.claude/agent-skills sea un enlace al propio arnés (lo que deja la plantilla compartida) — el pase adversarial
-    // lo encontró rojo para toda rama que no fuera main. Y un commit de antes de la unión con ese enlace frena.
+    // El repo unido: un commit que trae skills/ exporta las dos fuentes de sí mismo, aunque
+    // ~/.claude/agent-skills sea un enlace al propio arnés (lo que deja la plantilla compartida); sin eso, daría rojo
+    // para toda rama que no fuera main. Y un commit de antes de la unión con ese enlace frena.
     write(repo, { 'skills/toy/SKILL.md': 'x\n' });
     git(['add', '-A'], repo); assert.strictEqual(git(['commit', '-q', '-m', 'unido'], repo).status, 0);
     const unified = git(['rev-parse', 'HEAD'], repo).stdout.trim();
@@ -1060,7 +1058,7 @@ test('Rehearsal_LabRun_OneCloneHarness_OnboardingAndFridayToToday', { skip: (pro
 });
 
 test('Rehearsal_TeamDoc_OneClone_PlanThenInstall_RunsTheInstallingBlock', () => {
-  // tanda B de la 8.16: el PASO 2 trae primero el plan (`install --dry-run`) y después la instalación (`install --yes`)
+  // el PASO 2 trae primero el plan (`install --dry-run`) y después la instalación (`install --yes`)
   const text = fs.readFileSync(path.join(FIXTURES, 'onboarding-one-clone.md'), 'utf8');
   const line = 'node "$env:USERPROFILE\\SourceCode\\tycon-claude-guides\\scripts\\setup\\harness.js" install';
   assert.ok(text.includes(line), 'el fixture cambió: no encuentro la línea del PASO 2');
@@ -1074,9 +1072,9 @@ test('Rehearsal_TeamDoc_OneClone_PlanThenInstall_RunsTheInstallingBlock', () => 
   assert.doesNotMatch(T.parseTeamDoc(text, zero).blocks.install, /--yes|--dry-run/);
 });
 
-// ── story 8.19 (revisión de C+E, C1): una máquina NUEVA sólo tiene el lugar; las sondas lo buscan primero ──────────────
-// Desde la tanda C una máquina nueva no recibe el nombre viejo: el lugar (`place.js`) y su import
-// `@~/.claude/<lugar>/README.md`. 🔴 rojo previo: team-lab.js e install-probe.js miraban sólo el viejo y cobraban
+// ── una máquina NUEVA sólo tiene el lugar; las sondas lo buscan primero ──────────────
+// Una máquina nueva no recibe el nombre viejo: el lugar (`place.js`) y su import
+// `@~/.claude/<lugar>/README.md`. 🔴 Atrapa: que team-lab.js e install-probe.js miren sólo el viejo y cobren
 // `links:missing:<viejo>` («el arnés no se encuentra a sí mismo») e `import:missing` en una máquina sana.
 test('Rehearsal_FreshMachine_PlaceOnly_ProbesFindIt_LegacyOnlyIfPresent', { skip: !has('git') && 'NO MEDIDO — sin git' }, () => {
   const PLACE = require(path.join(ROOT, 'scripts', 'setup', 'harness', 'place.js'));
@@ -1103,7 +1101,7 @@ test('Rehearsal_FreshMachine_PlaceOnly_ProbesFindIt_LegacyOnlyIfPresent', { skip
     fs.symlinkSync(path.join(dot, PLACE.PLACE_NAME), path.join(dot, PLACE.LEGACY_PLACE_NAME), 'junction');
     assert.deepStrictEqual(T.linkFacts(home, { clone: repo, skills: repo, shape: 'one-clone' }).map((l) => [l.name, l.ok]).slice(0, 2),
       [[PLACE.PLACE_NAME, true], [PLACE.LEGACY_PLACE_NAME, true]]);
-    // sólo el viejo (una máquina de antes de la 8.19): el arnés se encuentra, sin hallazgo
+    // sólo el viejo (una máquina de antes del lugar): el arnés se encuentra, sin hallazgo
     fs.unlinkSync(path.join(dot, PLACE.LEGACY_PLACE_NAME)); fs.unlinkSync(path.join(dot, PLACE.PLACE_NAME));
     fs.symlinkSync(repo, path.join(dot, PLACE.LEGACY_PLACE_NAME), 'junction');
     assert.deepStrictEqual(T.linkFacts(home, { clone: repo, skills: repo, shape: 'one-clone' }).map((l) => [l.name, l.ok]).slice(0, 2), [[PLACE.LEGACY_PLACE_NAME, true], ['agent-skills', true]]);
@@ -1114,7 +1112,7 @@ test('Rehearsal_FreshMachine_PlaceOnly_ProbesFindIt_LegacyOnlyIfPresent', { skip
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// ═══ story 8.26, tanda D · el ensayo sobre UN SOLO REPO (el árbol publicado) ═══════════════════════════════════════
+// ═══ el ensayo sobre UN SOLO REPO (el árbol publicado) ═══════════════════════════════════════
 // Con la fuente github el pipeline ensaya el árbol de GitHub tal cual: un repo, con las skills adentro, traído por el
 // agente con `HEAD` suelto en el commit pedido. Lo que no se puede perder:
 //   · «hoy» es ESE commit, nunca la rama principal del repo (T50);
@@ -1279,7 +1277,7 @@ test('Rehearsal_PublishedCopyWithoutTeamText_NotMeasuredWithNotice_OtherwiseErro
       const report = JSON.parse(fs.readFileSync(path.join(out, 'windows-report.json'), 'utf8'));
       return { r, report, step: (n) => report.steps.find((s) => s.name === n), md: fs.readFileSync(path.join(out, 'windows-report.md'), 'utf8') };
     };
-    // ── una copia publicada (trae version.json): desde la story 8.28 los dos ensayos ya no dicen «no medido» ahí. Eligen
+    // ── una copia publicada (trae version.json): los dos ensayos no dicen «no medido» ahí. Eligen
     // por lo que el árbol ES y van al ensayo que sigue la página pública de instalación (windows-guided*.test.js lo
     // prueba). Esta copia de juguete no trae la página: en una copia publicada tiene que estar, así que es «no pude
     // ensayar» —un error, con lo que buscó—, nunca «no medido», y la corrida sale ROJA, no «con avisos»
@@ -1340,7 +1338,7 @@ test('Rehearsal_PublishedCopyWithoutTeamText_NotMeasuredWithNotice_OtherwiseErro
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// ── lo que encontraron los revisores y el pase adversarial de la tanda D: cada caso, con la prueba que lo reprodujo ──
+// ── casos de borde: cada uno, con la prueba que lo reproduce ──
 
 test('Rehearsal_BuildSources_FailedRun_LeavesNothingInTheOutputFolder_NotEvenAPreviousDelivery', { skip: !has('git') && 'NO MEDIDO — sin git' }, () => {
   const base = tmp('leftovers');
@@ -1511,7 +1509,7 @@ test('Rehearsal_Init_SameTree_ScriptsTreeMustBeTheRehearsedCommit', { skip: !has
   } finally { fs.rmSync(base, { recursive: true, force: true }); }
 });
 
-// ═══ story 8.40 (AC 40 · T47) · el escenario `npx-published`: el paquete PUBLICADO, del registro y el GitHub reales ════
+// ═══ T47 · el escenario `npx-published`: el paquete PUBLICADO, del registro y el GitHub reales ════
 
 test('NpxPublished_Scenario_OwnStepFromRegistry_OutsideAll_WithItsCap', () => {
   // el escenario existe en la lista cerrada (sin eso, la 182 dice «escenario desconocido»), va aparte (como `npx`) y
@@ -1559,7 +1557,7 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
     '',
   ]) assert.strictEqual(npx.installFailureKind(out), 'breaks', out);
 
-  // (pase adversarial del pedido 2, clases 1, 7, 8 y 12) la segunda etapa —el harness.js install del árbol bajado, que
+  // la segunda etapa —el harness.js install del árbol bajado, que
   // imprime por la misma salida— y los topes del propio instalador también son la red, no el paquete
   for (const out of [
     'harness.js install: sin red: no pude hablar con la ref main (ECONNREFUSED)',
@@ -1580,7 +1578,7 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   // la corrida que cortó el tope de la sonda: no se sabe si es la red o el paquete, y no es verde
   assert.strictEqual(npx.installFailureKind('tycon-harness: bajo acme/arnes (main abc1234) a una carpeta temporal', { timedOut: true }), 'not-measured');
 
-  // la segunda corrida (clases 4 y 9): la red o el registro caído también ahí es «no medido»; «no pude mirar» por una causa
+  // la segunda corrida: la red o el registro caído también ahí es «no medido»; «no pude mirar» por una causa
   // que no es la red (404, la rama que no está, una respuesta que no es la de git) es un hallazgo
   assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code ENOTFOUND\nnpm error network request to https://registry.npmjs.org/@tyconsa%2fharness failed', treeSame: true }).notMeasured);
   assert.ok(npx.againVerdict({ exit: 1, out: 'npm error code E503\nnpm error 503 Service Unavailable', treeSame: true }).notMeasured);
@@ -1593,7 +1591,7 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   }
   // «hay una versión nueva» con una salida que no es 0: no es la punta que se movió
   assert.ok(npx.againVerdict({ exit: 1, out: `${AT}: hay una versión nueva (abc1234).\nError: algo tiró`, treeSame: true }).finding);
-  // (segunda vuelta de revisores) «hay una versión nueva» con el MISMO commit que quedó instalado: la comparación del
+  // «hay una versión nueva» con el MISMO commit que quedó instalado: la comparación del
   // paquete está mal, no se movió nada; con otro commit, sí puede ser la punta que se movió
   const installed = 'abc1234' + '0'.repeat(33);
   assert.match(npx.againVerdict({ exit: 0, out: `${AT}: hay una versión nueva (abc1234).\npara actualizarlo: x. No bajé nada.`, treeSame: true, installedCommit: installed }).finding || '', /el mismo commit que quedó instalado/);
@@ -1602,8 +1600,8 @@ test('NpxPublished_Classify_UpToDateIsGreen_NewVersionOrNoNetworkIsNotMeasured_O
   assert.strictEqual(npx.didNotStart({ exit: null, error: 'ENOENT', timed_out: false }), 'ENOENT');
   assert.strictEqual(npx.didNotStart({ exit: null, error: 'ETIMEDOUT', timed_out: true }), null);
   assert.strictEqual(npx.didNotStart({ exit: 1, error: null, timed_out: false }), null);
-  // (tercera vuelta) el estado de una versión bajada sin su commit: el control de «la nueva es la instalada» no puede
-  // correr, y eso es un hallazgo (el AC 35 compara contra ese commit), no un salteo callado
+  // el estado de una versión bajada sin su commit: el control de «la nueva es la instalada» no puede
+  // correr, y eso es un hallazgo (la comparación es contra ese commit), no un salteo callado
   assert.strictEqual(npx.installedCommitOf({ sources: [{ kind: 'release', commit: installed }] }), installed);
   for (const st of [{ sources: [{ kind: 'release' }] }, { sources: [{ kind: 'release', commit: 'abc' }] }, { sources: [] }, null]) assert.strictEqual(npx.installedCommitOf(st), '', JSON.stringify(st));
 });
@@ -1629,7 +1627,7 @@ test('NpxProbe_NpmProgram_FindsTheNpmOfThisNode_AlsoHomebrewLayout', () => {
 });
 
 test('NpxPublished_RegistryAnswers404_IsAFinding_NotNotMeasured', { skip: !npx.npmProgram('npm') && `NO MEDIDO — este Node (${process.execPath}) no trae npm a su lado` }, async () => {
-  // (pase adversarial del pedido 2, clase 13) el registro contesta, pero el paquete no está: eso no es la red
+  // el registro contesta, pero el paquete no está: eso no es la red
   const base = tmp('npx-404');
   // en otro proceso: la sonda llama a npm sin soltar este (spawnSync), y un servidor de acá nunca contestaría
   const server = require('child_process').spawn(process.execPath, ['-e', "const s = require('http').createServer((q, r) => { r.writeHead(404, { 'content-type': 'application/json' }); r.end('{\"error\":\"Not found\"}'); }); s.listen(0, '127.0.0.1', () => console.log(s.address().port));"], { stdio: ['ignore', 'pipe', 'ignore'] });
@@ -1646,7 +1644,7 @@ test('NpxPublished_RegistryAnswers404_IsAFinding_NotNotMeasured', { skip: !npx.n
 });
 
 test('NpxPublished_ProfileKept_TheAskedProfileIsChosen_ElseAFinding', () => {
-  // la línea pide --profile minimal: el doctor tiene que decir minimal y elegido (antes del arreglo del pedido 2 quedaba
+  // la línea pide --profile minimal: el doctor tiene que decir minimal y elegido (sin eso, quedaría
   // full, «perfil sin elegir»)
   assert.strictEqual(npx.profileProblem({ profile: { value: 'minimal', origin: 'maquina', chosen: true } }, 'minimal'), null);
   assert.match(npx.profileProblem({ profile: { value: 'full', origin: 'sin-valor', chosen: false } }, 'minimal'), /pidió minimal y quedó full \(sin-valor, sin elegir\)/);
@@ -1664,7 +1662,6 @@ test('NpxPublished_Env_RealRegistryAndGitHub_NoToyServers_CacheInTheLab', () => 
     const env = npx.registryEnv(home, { lab: base, base: { PATH: process.env.PATH, TYCON_RELEASE_API: 'http://127.0.0.1:1', TYCON_RELEASE_GIT: 'http://127.0.0.1:2', TYCON_RELEASE_ARCHIVE: 'http://127.0.0.1:3', TYCON_RELEASE_RAW: 'http://127.0.0.1:4', tycon_release_links: 'x', TYCON_HOME: '/otra/casa', TYCON_GUIDES_DIR: '/otro/arnes', TYCON_SKILLS_DIR: '/otras/skills', TYCON_INSTALL_PROFILE: 'minimal', TYCON_PROFILE: '/un/perfil.json', npm_config_cache: '/la/de/fabrica' } });
     // contra el GitHub real: ninguna variable del GitHub de juguete pasa, aunque quien lo corre la tenga puesta (en
     // Windows sin distinguir mayúsculas); tampoco las que mandan el arnés a otra casa o eligen el perfil por su cuenta
-    // (pase adversarial del pedido 2, clase 3)
     for (const k of ['TYCON_RELEASE_API', 'TYCON_RELEASE_GIT', 'TYCON_RELEASE_ARCHIVE', 'TYCON_RELEASE_RAW', 'tycon_release_links', 'TYCON_HOME', 'TYCON_GUIDES_DIR', 'TYCON_SKILLS_DIR', 'TYCON_INSTALL_PROFILE', 'TYCON_PROFILE']) assert.ok(!(k in env), `${k} no llega a la medición`);
     // la caché de npm en el laboratorio (la de fábrica, en Windows, vive fuera de la HOME de juguete)
     assert.strictEqual(env.npm_config_cache, path.join(base, 'npx-published', 'npm-cache'));

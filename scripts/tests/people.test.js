@@ -1,7 +1,7 @@
 'use strict';
-// people.test.js — quién es quién (story 2.28): los correos que informan las máquinas, la regla de quién ve qué máquina,
+// people.test.js — quién es quién: los correos que informan las máquinas, la regla de quién ve qué máquina,
 // el plazo de la configuración rota, las máquinas por confirmar y dónde trabaja cada persona.
-// Correos, máquinas y productos inventados. Cada caso trae su rojo previo.
+// Correos, máquinas y productos inventados.
 
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -15,10 +15,10 @@ const ARCHIVO = path.join(RAIZ, 'scripts', 'lib', 'people.js');
 const P = require(ARCHIVO);
 
 const sha = (c) => crypto.createHash('sha256').update(String(c).trim().toLowerCase()).digest('hex');
-// la huella de una carpeta sin corridas (story 2.28: la unión pide la huella de lo que la máquina subió a la vieja)
+// la huella de una carpeta sin corridas (la unión pide la huella de lo que la máquina subió a la vieja)
 const HUELLA_VACIA = crypto.createHash('sha256').update('').digest('hex');
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'people-'));
-/** espejo(dir, { maq: place | 'roto' | null, ... }) — la forma que deja el bajador después de la 2.24 */
+/** espejo(dir, { maq: place | 'roto' | null, ... }) — la forma que deja el bajador */
 function espejo(dir, maquinas, corridas = {}) {
   for (const [m, place] of Object.entries(maquinas)) {
     const reg = path.join(dir, m, 'registros');
@@ -33,7 +33,7 @@ const informa = (correo, day = '2026-10-15', folder) => ({ schema: 1, day, owner
 const noMedido = (reason, day = '2026-10-15') => ({ schema: 1, day, owner: { status: 'no_medido', reason } });
 const conf = (person, reported, by = 'jefa@acme.example') => ({ person, reported_sha256: reported, confirmed_by: by, confirmed_on: '2026-10-15' });
 
-// ── T4 · LeerCorreosInformados_DelEspejo (AC 4) ── 🔴 rojo previo: tirar con el JSON roto.
+// ── T4 · LeerCorreosInformados_DelEspejo ── 🔴 Falla si tira con el JSON roto.
 test('2.28 T4 LeerCorreosInformados_DelEspejo', () => {
   const dir = espejo(tmp(), { 'maq-a': informa('dev-a@ejemplo.test'), 'maq-b': null, 'maq-c': 'roto', 'maq-d': noMedido('esta máquina no tiene configuración global de git') });
   const antes = fs.readdirSync(dir).sort();
@@ -60,7 +60,7 @@ function ctx({ machines = {}, projects, maintainers = ['jefa@acme.example'], esp
   return P.contexto({ operations: { people: { machines, ...(projects ? { projects } : {}) }, site: { maintainers } }, informados: P.leerCorreosInformados(dir) });
 }
 
-// ── T7 · EstadoDeMaquina_CuatroEstados (AC 7) ──
+// ── T7 · EstadoDeMaquina_CuatroEstados ──
 test('2.28 T7 EstadoDeMaquina_CuatroEstados', () => {
   const c = ctx({
     maquinas: { 'maq-a': informa('dev-a@ejemplo.test'), 'maq-b': informa('dev-b@ejemplo.test'), 'maq-c': informa('otro@ejemplo.test'), 'maq-d': null },
@@ -73,7 +73,7 @@ test('2.28 T7 EstadoDeMaquina_CuatroEstados', () => {
   for (const m of ['maq-a', 'maq-b', 'maq-c', 'maq-d']) assert.ok(P.estadoDeMaquina(m, c).motivo, `motivo de ${m}`);
 });
 
-// ── T8 · PuedeVer_MantenedorTodo_PersonaLoSuyo_SueltaSoloMantenedor (AC 8) ── 🔴 rojo previo: la suelta visible para una
+// ── T8 · PuedeVer_MantenedorTodo_PersonaLoSuyo_SueltaSoloMantenedor ── 🔴 Falla si la suelta es visible para una
 //    persona; la de `cambio` sin rol.
 test('2.28 T8 PuedeVer_MantenedorTodo_PersonaLoSuyo_SueltaSoloMantenedor', () => {
   const c = ctx({
@@ -95,7 +95,7 @@ test('2.28 T8 PuedeVer_MantenedorTodo_PersonaLoSuyo_SueltaSoloMantenedor', () =>
   assert.equal(P.esPersona('jefa@acme.example', c), false, 'mantener no es tener una máquina');
 });
 
-// ── T9 · PuedeVer_CambioEsComoSinConfirmar (AC 7, 8) ── 🔴 rojo previo: seguir mostrándola.
+// ── T9 · PuedeVer_CambioEsComoSinConfirmar ── 🔴 Falla si la persona confirmada sigue viendo la máquina cuando informa otro correo.
 test('2.28 T9 PuedeVer_CambioEsComoSinConfirmar', () => {
   const c = ctx({ maquinas: { 'maq-a': informa('otro@ejemplo.test') }, machines: { 'maq-a': conf('dev-a@ejemplo.test', sha('dev-a@ejemplo.test')) } });
   assert.equal(P.estadoDeMaquina('maq-a', c).estado, 'cambio');
@@ -103,7 +103,7 @@ test('2.28 T9 PuedeVer_CambioEsComoSinConfirmar', () => {
   assert.equal(P.puedeVer('jefa@acme.example', 'maq-a', c), true);
 });
 
-// ── T10 · PuedeVer_SinCorreoConfirmadaVale_YCaeSiDespuesInformaOtro (AC 7, 8; decisión 5) ── 🔴 rojo previo: seguir
+// ── T10 · PuedeVer_SinCorreoConfirmadaVale_YCaeSiDespuesInformaOtro ── 🔴 Falla si la máquina sigue
 //    confirmada con huella null y otro correo.
 test('2.28 T10 PuedeVer_SinCorreoConfirmadaVale_YCaeSiDespuesInformaOtro', () => {
   const machines = { 'maq-x': conf('dev-x@ejemplo.test', null) };
@@ -117,7 +117,7 @@ test('2.28 T10 PuedeVer_SinCorreoConfirmadaVale_YCaeSiDespuesInformaOtro', () =>
   assert.equal(P.estadoDeMaquina('maq-x', c).estado, 'confirmada');
 });
 
-// ── T11 · Correo_SinMayusculasNiEspacios (AC 9) ──
+// ── T11 · Correo_SinMayusculasNiEspacios ──
 test('2.28 T11 Correo_SinMayusculasNiEspacios', () => {
   const c = ctx({ maquinas: { 'maq-a': informa('dev.uno@ejemplo.test') }, machines: { 'maq-a': conf('dev.uno@ejemplo.test', sha('dev.uno@ejemplo.test')) } });
   assert.equal(P.puedeVer('Dev.Uno@Ejemplo.test ', 'maq-a', c), true);
@@ -127,8 +127,8 @@ test('2.28 T11 Correo_SinMayusculasNiEspacios', () => {
   assert.equal(P.puedeVer(' jefa@acme.example', null, m), true);
 });
 
-// ── T12 · OperationsIlegible_UltimoBueno24HorasYFreno (AC 10) ── 🔴 rojo previo: apagar todo con el primer refresco roto;
-//    mantenedores con datos a las 25 horas.
+// ── T12 · OperationsIlegible_UltimoBueno24HorasYFreno ── 🔴 Falla si apaga todo con el primer refresco roto, o si
+//    a las 25 horas sigue usando los datos de mantenedores del último refresco bueno.
 test('2.28 T12 OperationsIlegible_UltimoBueno24HorasYFreno', () => {
   const ahora = Date.parse('2026-10-15T12:00:00Z');
   const hace = (h) => new Date(ahora - h * 3600000).toISOString();
@@ -168,7 +168,7 @@ test('MaquinasSinActividad_NoSeOfrecenParaConfirmar', () => {
   assert.deepEqual(P.maquinasSinActividad(c), [{ maquina: 'lab-2' }]);
 });
 
-// ── T13 · MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras (AC 11) ── 🔴 rojo previo: dejar afuera la `sin_correo`.
+// ── T13 · MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras ── 🔴 Falla si deja afuera la `sin_correo`.
 test('2.28 T13 MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras', () => {
   const c = ctx({
     maquinas: {
@@ -189,7 +189,7 @@ test('2.28 T13 MaquinasPorConfirmar_EstadoCorreoDiaCorridasYOtras', () => {
   assert.deepEqual(por['maq-a'].otras, []);
 });
 
-// ── repos.json y fotos de prueba (T14-T17): un repo `Project` en tres fotos, como el caso real ──
+// ── repos.json y fotos de prueba (T14-T17): un repo `Project` en tres fotos ──
 const REPOS = [
   { producto: 'Alfa', ruta: 'Alfa/Web', ado: 'Alfa/Web' }, { producto: 'Alfa', ruta: 'Alfa/Api', ado: 'Alfa/Api' },
   { producto: 'Beta', ruta: 'Beta/Front', ado: 'Beta/Front' }, { producto: 'Gama', ruta: 'Gama/Front', ado: 'Gama/Front' },
@@ -219,8 +219,8 @@ function datosDeA(extra = {}) {
   };
 }
 
-// ── T14 · DondeTrabaja_ClaveDeRepoDeAzureYCarpeta (AC 13) ── 🔴 rojo previo: `Project` sin ubicar con el proyecto guardado;
-//    partir el nombre de la foto.
+// ── T14 · DondeTrabaja_ClaveDeRepoDeAzureYCarpeta ── 🔴 Falla si `Project` queda sin ubicar con el proyecto guardado;
+//    o si parte el nombre de la foto.
 test('2.28 T14 DondeTrabaja_ClaveDeRepoDeAzureYCarpeta', () => {
   const { c, datos } = datosDeA();
   const d = P.dondeTrabaja('dev.a@ejemplo.test', c, datos);
@@ -230,7 +230,7 @@ test('2.28 T14 DondeTrabaja_ClaveDeRepoDeAzureYCarpeta', () => {
   assert.deepEqual(d.sin_ubicar, []);
 });
 
-// ── T15 · DondeTrabaja_AgregaYQuita (AC 14) ──
+// ── T15 · DondeTrabaja_AgregaYQuita ──
 test('2.28 T15 DondeTrabaja_AgregaYQuita', () => {
   const { c, datos } = datosDeA({
     projects: { 'dev.a@ejemplo.test': { add: ['Gama', 'Delta'], remove: ['Beta'] } },
@@ -245,7 +245,7 @@ test('2.28 T15 DondeTrabaja_AgregaYQuita', () => {
   assert.ok(!por.Alfa.agregado);
 });
 
-// ── T16 · DondeTrabaja_SinUbicar_ConMotivo (AC 15) ── 🔴 rojo previo: ubicar `Project` en el primer producto que aparece.
+// ── T16 · DondeTrabaja_SinUbicar_ConMotivo ── 🔴 Falla si ubica `Project` en el primer producto que aparece.
 test('2.28 T16 DondeTrabaja_SinUbicar_ConMotivo', () => {
   const repos = { repos: [...REPOS, { producto: 'Uno', ruta: 'Mixto/Uno', ado: 'Mixto/Uno' }, { producto: 'Dos', ruta: 'Mixto/Dos', ado: 'Mixto/Dos' }] };
   const { c, datos } = datosDeA({ repos });
@@ -267,7 +267,7 @@ test('2.28 T16 DondeTrabaja_SinUbicar_ConMotivo', () => {
   assert.match(d.pedidos_no_medidos[0].motivo, /correo/);
 });
 
-// ── T17 · DondeTrabaja_SinReposJson_NoMedido (AC 16) ──
+// ── T17 · DondeTrabaja_SinReposJson_NoMedido ──
 test('2.28 T17 DondeTrabaja_SinReposJson_NoMedido', () => {
   const { c, datos } = datosDeA({ repos: null, projects: { 'dev.a@ejemplo.test': { add: ['Gama'] } } });
   const d = P.dondeTrabaja('dev.a@ejemplo.test', c, datos);
@@ -283,7 +283,7 @@ test('2.28 T17 DondeTrabaja_SinReposJson_NoMedido', () => {
   assert.ok(!/foto/.test(m), m);
 });
 
-// ── T18 · VistaDePersona_NadaDeOtro (AC 17) ── 🔴 rojo previo: devolver la tabla entera.
+// ── T18 · VistaDePersona_NadaDeOtro ── 🔴 Falla si devuelve la tabla entera.
 test('2.28 T18 VistaDePersona_NadaDeOtro', () => {
   const c = ctx({
     maquinas: { 'maq-a': informa('dev-a@ejemplo.test'), 'maq-zqx-b': informa('zqx-dev-b@ejemplo.test') },
@@ -301,7 +301,7 @@ test('2.28 T18 VistaDePersona_NadaDeOtro', () => {
   assert.ok(!/zqx/i.test(JSON.stringify(v)), JSON.stringify(v));
 });
 
-// ── T19 · Codigo_SinValoresDeUnaOrganizacion (AC 19) ──
+// ── T19 · Codigo_SinValoresDeUnaOrganizacion ──
 test('2.28 T19 Codigo_SinValoresDeUnaOrganizacion', () => {
   const texto = fs.readFileSync(ARCHIVO, 'utf8');
   // sin nombrar a nadie acá (esta prueba también se publica): ningún dominio de correo fuera de los de ejemplo, ningún
@@ -313,7 +313,7 @@ test('2.28 T19 Codigo_SinValoresDeUnaOrganizacion', () => {
   assert.ok(!/\b(mac|imac|macbook|pc|laptop|desktop)-?[a-z]*\b/.test(literales.join(' ')), 'ningún nombre de máquina');
 });
 
-// ── T22 · SesionDeOtroProveedor_MismaRegla (AC 19) ──
+// ── T22 · SesionDeOtroProveedor_MismaRegla ──
 test('2.28 T22 SesionDeOtroProveedor_MismaRegla', () => {
   const { c, datos } = datosDeA();
   // la sesión de un OIDC genérico trae el correo en el claim `email`; los pedidos de GitHub, con un correo asignado
@@ -325,9 +325,9 @@ test('2.28 T22 SesionDeOtroProveedor_MismaRegla', () => {
   assert.deepEqual(r.productos.find((p) => p.producto === 'Beta').de.slice().sort(), ['corridas', 'pedidos']);
 });
 
-// ── pase adversarial (2026-10-15): lo que confirmó sobre people.js, cada uno con su rojo previo ──
+// ── casos de borde de people.js, cada uno con su falla ──
 test('2.28 adversarial: una cadena de uniones con ciclo no revienta y no confirma nada', () => {
-  // 🔴 rojo previo (clase 3): estadoDeMaquina seguía `unida` sin cortar ciclos → RangeError en puedeVer.
+  // 🔴 Falla si estadoDeMaquina sigue `unida` sin cortar ciclos → RangeError en puedeVer.
   const c = P.contexto({
     operations: { people: { machines: { 'maq-x': conf('a@ejemplo.test', null) } }, site: { maintainers: ['jefa@acme.example'] } },
     informados: { maquinas: { 'maq-x': { estado: 'no_informa', motivo: 'x', corridas: 0 }, 'maq-y': { estado: 'no_informa', motivo: 'x', corridas: 0 } },
@@ -340,8 +340,8 @@ test('2.28 adversarial: una cadena de uniones con ciclo no revienta y no confirm
 });
 
 test('2.28 adversarial: otras sale ordenada, corridas null sigue null, el empate de ruta queda sin ubicar, y las claves __ no cuentan', () => {
-  // 🔴 rojos previos: `otras` en el orden del disco (clase 5); «no pude contar» volvía a 0 (clase 12); el empate de la
-  //    ruta exacta caía al paso del padre y elegía un producto (clase 15); una clave de comentario `__…` hacía persona (16).
+  // 🔴 Falla si: `otras` sale en el orden del disco; «no pude contar» vuelve a 0; el empate de la
+  //    ruta exacta cae al paso del padre y elige un producto; una clave de comentario `__…` hace persona.
   const c = ctx({
     maquinas: { 'zz-maq': informa('a@ejemplo.test'), 'aa-maq': informa('a@ejemplo.test'), 'mm-maq': informa('a@ejemplo.test') },
     machines: { 'zz-maq': conf('a@ejemplo.test', sha('a@ejemplo.test')), 'aa-maq': conf('a@ejemplo.test', sha('a@ejemplo.test')), '__ejemplo': { person: 'comentario@ejemplo.test' } },
@@ -360,8 +360,8 @@ test('2.28 adversarial: otras sale ordenada, corridas null sigue null, el empate
 });
 
 test('2.28 seguridad (iter 2): una unión que pasaría la carpeta confirmada de una persona a otra no se aplica; día y correo ajenos saneados', () => {
-  // 🔴 rojos previos: la carpeta con código de A, unida a la de B, pasaba a ser de B; un `day` cualquiera y un correo con
-  //    caracteres de control llegaban tal cual a quien mantiene.
+  // 🔴 Falla si la carpeta con código de A, unida a la de B, pasa a ser de B, o si un `day` cualquiera y un correo con
+  //    caracteres de control llegan tal cual a quien mantiene.
   const c = P.contexto({
     operations: { people: { machines: { 'beta-bbbbbbbb': conf('a@ejemplo.test', null), 'beta-aaaaaaaa': conf('b@ejemplo.test', null) } }, site: { maintainers: [] } },
     informados: { maquinas: { 'beta-bbbbbbbb': { estado: 'no_informa', motivo: 'x', corridas: 1 }, 'beta-aaaaaaaa': { estado: 'no_informa', motivo: 'x', corridas: 1 } },
@@ -369,8 +369,8 @@ test('2.28 seguridad (iter 2): una unión que pasaría la carpeta confirmada de 
   });
   assert.equal(P.puedeVer('b@ejemplo.test', 'beta-bbbbbbbb', c), false);
   assert.equal(P.estadoDeMaquina('beta-bbbbbbbb', c).estado, 'compartida');
-  // tercera vuelta: la vieja SIN entrada, que informa otro correo que su nueva, tampoco hereda la confirmación
-  // 🔴 rojo previo: sólo frenaba si la vieja tenía entrada; una vieja sin confirmar pasaba a verla la persona de la nueva
+  // la vieja SIN entrada, que informa otro correo que su nueva, tampoco hereda la confirmación
+  // 🔴 Falla si sólo frena cuando la vieja tiene entrada: una vieja sin confirmar la vería la persona de la nueva
   const c3 = P.contexto({
     operations: { people: { machines: { 'beta-aaaaaaaa': conf('b@ejemplo.test', null) } }, site: { maintainers: [] } },
     informados: { maquinas: { 'beta': { estado: 'informa', correo: 'a@ejemplo.test', dia: null, corridas: 1 }, 'beta-aaaaaaaa': { estado: 'informa', correo: 'b@ejemplo.test', dia: null, corridas: 1 } },
@@ -378,8 +378,8 @@ test('2.28 seguridad (iter 2): una unión que pasaría la carpeta confirmada de 
   });
   assert.equal(P.puedeVer('b@ejemplo.test', 'beta', c3), false);
   assert.equal(P.estadoDeMaquina('beta', c3).estado, 'compartida');
-  // y una vieja cuya unión se descarta sale en la lista de quien mantiene, para resolverla (AC 11)
-  // 🔴 rojo previo (alcance, cuarta vuelta): toda vieja marcada `unida` salía de la lista, también la descartada
+  // y una vieja cuya unión se descarta sale en la lista de quien mantiene, para resolverla
+  // 🔴 Falla si toda vieja marcada `unida` sale de la lista, también la descartada
   const lista = P.maquinasPorConfirmar(c3);
   assert.ok(lista.some((x) => x.maquina === 'beta' && x.estado === 'compartida'), JSON.stringify(lista));
   const r = P.leerCorreosInformados(espejo(tmp(), {
@@ -390,7 +390,7 @@ test('2.28 seguridad (iter 2): una unión que pasaría la carpeta confirmada de 
   assert.equal(r.maquinas['maq-e'].estado, 'no_informa');
 });
 
-// ── T41 · CarpetaVieja_CompartidaSoloMantenedores_EntradaViejaNoCuenta (AC 11, 26-28) ── 🔴 rojo previo: confirmar la
+// ── T41 · CarpetaVieja_CompartidaSoloMantenedores_EntradaViejaNoCuenta ── 🔴 Falla si confirma la
 //    compartida por su entrada vieja.
 test('2.28 T41 CarpetaVieja_CompartidaSoloMantenedores_EntradaViejaNoCuenta', () => {
   const dir = espejo(tmp(), {

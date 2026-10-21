@@ -1,17 +1,17 @@
 'use strict';
 /**
- * skills-dir.test.js — dónde busca el arnés las skills, y en qué orden (story 8.18, AC 11 · T10 · contrato C3).
+ * skills-dir.test.js — dónde busca el arnés las skills, y en qué orden (T10 · contrato C3).
  *
- * EL CASO (2026-10-03). Los dos repos internos (el arnés y agent-skills) se unen en uno, con `skills/` y `agents/`
- * en la raíz. `resolveSkillsDirs()` sin variable contestaba siempre `~/.claude/agent-skills`: una prueba corrida en
- * un clon de trabajo del repo unido leía las skills INSTALADAS en la máquina y daba verde sin haber probado el
- * cambio. La regla nueva: la variable › el propio clon si es unido › lo instalado.
+ * Los dos repos internos (el arnés y agent-skills) están unidos en uno, con `skills/` y `agents/`
+ * en la raíz. Si `resolveSkillsDirs()` sin variable contestara siempre `~/.claude/agent-skills`, una prueba corrida en
+ * un clon de trabajo del repo unido leería las skills INSTALADAS en la máquina y daría verde sin haber probado el
+ * cambio. La regla: la variable › el propio clon si es unido › lo instalado.
  *
  * Lo que no puede pasar:
- *   · que una máquina del equipo de hoy (arnés sin `skills/` + `~/.claude/agent-skills`) cambie en algo;
+ *   · que una máquina con dos repos físicos (arnés sin `skills/` + `~/.claude/agent-skills`) cambie en algo;
  *   · que quien ESCRIBE rutas en la máquina (los desplegadores del lado Codex) empiece a escribir la del clon del
- *     arnés apenas ese clon traiga `skills/`, con el clon de skills de siempre todavía instalado (hallazgo I12 de la
- *     revisión adversarial): para ellos está `resolveInstalledSkillsDirs()`;
+ *     arnés apenas ese clon traiga `skills/`, con el clon de skills de siempre todavía instalado:
+ *     para ellos está `resolveInstalledSkillsDirs()`;
  *   · que la forma de pedirlo desde bash conteste una ruta que no existe con código 0.
  *
  * El «propio clon» sale de dónde vive el archivo, así que cada caso arma un clon de juguete con una copia de
@@ -84,7 +84,7 @@ function cli(l, args, variable) {
 // ── T10 · el orden: la variable › el propio clon si es unido › lo instalado ─────────────────────────────────────────
 
 test('T10 SkillsDir_OwnCloneFirst_VariableWins_FallbackInstalled — con la variable como RAÍZ, gana la variable (aunque el clon sea unido y haya algo instalado)', () => {
-  // 🔴 rojo previo: mirar el propio clon antes que la variable → sale `clone`.
+  // 🔴 rojo: mirar el propio clon antes que la variable → sale `clone`.
   const l = lab({ unified: true, installed: true });
   const other = path.join(l.dir, 'other');
   fs.mkdirSync(path.join(other, 'skills', 'x'), { recursive: true });
@@ -101,7 +101,7 @@ test('T10 — con la variable como CARPETA de skills, gana la variable y la raí
 });
 
 test('T10 — sin variable, en un clon unido: el propio clon, aunque en la máquina haya un agent-skills instalado', () => {
-  // 🔴 rojo previo (lo de antes de la story): sin variable contesta siempre ~/.claude/agent-skills → una prueba
+  // 🔴 rojo: sin variable contesta siempre ~/.claude/agent-skills → una prueba
   //    corrida en el clon de trabajo lee las skills instaladas.
   const l = lab({ unified: true, installed: true });
   const r = call(l);
@@ -119,7 +119,7 @@ test('T10 — sin variable, en un clon SIN skills/ (la máquina del equipo de ho
 });
 
 test('T10 — un clon con skills/ pero sin agents/ NO es unido: sigue lo instalado (el criterio es isSingleRepo, no «hay skills/»)', () => {
-  // 🔴 rojo previo: decidir por `fs.existsSync(<clon>/skills)` en vez de importar isSingleRepo.
+  // 🔴 rojo: decidir por `fs.existsSync(<clon>/skills)` en vez de importar isSingleRepo.
   const l = lab({ skillsOnly: true, installed: true });
   assert.strictEqual(call(l).source, 'installed');
 });
@@ -143,9 +143,9 @@ test('T10 — el propio clon de ESTA corrida: unido → él mismo; si no, lo ins
 });
 
 test('T10 — una copia SUELTA del archivo (sin canonical-path.js al lado) no es un clon: contesta lo instalado y no tira', () => {
-  // 🔴 rojo previo: importar canonical-path.js sin más → MODULE_NOT_FOUND en cada lugar que copia este archivo solo:
+  // 🔴 rojo: importar canonical-path.js sin más → MODULE_NOT_FOUND en cada lugar que copia este archivo solo:
   //    el freno de producción instalado (/opt/tycon/lib), deploy-codex-copies.test.sh, mirror.test.js, public-ci.test.sh.
-  //    Con dos repos físicos esos lugares tienen que seguir exactamente como antes.
+  //    Con dos repos físicos esos lugares tienen que seguir funcionando igual.
   const l = lab({ unified: true, installed: true });
   fs.rmSync(path.join(l.clone, 'scripts', 'lib', 'canonical-path.js'));
   assert.deepStrictEqual(call(l), { repo: l.inst, skills: path.join(l.inst, 'skills'), source: 'installed' });
@@ -156,11 +156,11 @@ test('T10 — una copia SUELTA del archivo (sin canonical-path.js al lado) no es
   assert.strictEqual(call(l, { variable: other }).repo, other);
 });
 
-// ── hallazgo 19 del pase adversarial del tramo 1 (2026-10-04) ───────────────────────────────────────────────────────
-// La vecina que ESTÁ y no carga porque a su cadena de `require` le falta un archivo se leía como «no es unido»: el
-// `catch` dejaba pasar todo MODULE_NOT_FOUND como «copia incompleta». Medido por el verificador: en un clon unido, un
-// `require` roto en legacy-names.js → `--source` contesta «installed» con código 0 y el corredor de suites corre la
-// suite INSTALADA y da verde. «No es unido» es sólo «canonical-path.js no está»; todo lo demás es un error que se dice.
+// ── la vecina que ESTÁ y no carga ───────────────────────────────────────────────────────────────────────────────────
+// La vecina que ESTÁ y no carga porque a su cadena de `require` le falta un archivo no se lee como «no es unido»: si el
+// `catch` dejara pasar todo MODULE_NOT_FOUND como «copia incompleta», en un clon unido un `require` roto en
+// legacy-names.js haría que `--source` contestara «installed» con código 0 y que el corredor de suites corriera la
+// suite INSTALADA y diera verde. «No es unido» es sólo «canonical-path.js no está»; todo lo demás es un error que se dice.
 
 /** Llama a resolveSkillsDirs() del clon de juguete sin exigir que conteste: devuelve el código de salida y lo que escribió. */
 function attempt(l, { variable } = {}) {
@@ -178,7 +178,7 @@ function breakRequire(l, file, missing) {
 }
 
 test('5b-19 SkillsDir_NeighborPresentButBroken_ThrowsNamingTheMissingFile — legacy-names.js ESTÁ y un require suyo no existe: tira y nombra el archivo, no contesta «installed»', () => {
-  // 🔴 rojo previo: `if (e.code === 'MODULE_NOT_FOUND') return false` → contesta «installed» con código 0.
+  // 🔴 rojo: `if (e.code === 'MODULE_NOT_FOUND') return false` → contesta «installed» con código 0.
   const l = lab({ unified: true, installed: true });
   assert.strictEqual(attempt(l).code, 0, 'control: el clon sano contesta');
   assert.strictEqual(call(l).source, 'own-clone', 'control: y contesta el propio clon');
@@ -198,8 +198,8 @@ test('5b-19 SkillsDir_NeighborPresentButBroken_ThrowsNamingTheMissingFile — le
 });
 
 test('5b-19 — canonical-path.js ESTÁ y falta legacy-names.js (lo que importa): tira y nombra a legacy-names.js', () => {
-  // 🔴 rojo previo: esta misma prueba fijaba lo contrario («la copia está incompleta, no es un clon» → installed). El
-  //    caso a propósito —la copia del freno de producción en /opt— viaja SIN canonical-path.js: ése sigue arriba.
+  // 🔴 rojo: tratar la copia incompleta como «no es un clon» → installed. El caso a propósito —la copia del freno de
+  //    producción en /opt— viaja SIN canonical-path.js: ése se prueba arriba.
   const l = lab({ unified: true, installed: true });
   fs.rmSync(path.join(l.clone, 'scripts', 'lib', 'legacy-names.js'));
   const r = attempt(l);
@@ -233,7 +233,7 @@ test('5b-19 — los espejos sanos: con la vecina rota la variable sigue ganando 
 });
 
 test('T10 — un canonical-path.js que está pero ROMPE al cargarse no se lee como «no es unido»: el error sale', () => {
-  // 🔴 rojo previo: un `catch` que traga todo → una biblioteca rota en el clon hace que se lean las skills instaladas,
+  // 🔴 rojo: un `catch` que traga todo → una biblioteca rota en el clon hace que se lean las skills instaladas,
   //    callado: vuelve el verde que no probó nada.
   const l = lab({ unified: true, installed: true });
   fs.writeFileSync(path.join(l.clone, 'scripts', 'lib', 'canonical-path.js'), 'throw new Error("biblioteca rota a propósito")\n');
@@ -246,7 +246,7 @@ test('T10 — un canonical-path.js que está pero ROMPE al cargarse no se lee co
 // ── I12 · quien ESCRIBE rutas en la máquina sigue escribiendo la instalada mientras exista ──────────────────────────
 
 test('I12 SkillsDir_Installed_TwoClonesKeepInstalledPath — con dos clones, resolveInstalledSkillsDirs() da ~/.claude/agent-skills y no el clon del arnés', () => {
-  // 🔴 rojo previo: que los desplegadores usen resolveSkillsDirs() → apenas el clon del arnés trae skills/, escriben
+  // 🔴 rojo: que los desplegadores usen resolveSkillsDirs() → apenas el clon del arnés trae skills/, escriben
   //    su ruta en ~/.codex/hooks.json y re-enlazan ~/.codex/skills, con la llave apagada.
   const l = lab({ unified: true, installed: true });
   assert.strictEqual(call(l).source, 'own-clone', 'quien LEE mira su clon');
@@ -271,15 +271,15 @@ test('I12 — sin nada instalado: el propio clon si es unido; y la variable gana
   fs.mkdirSync(path.join(other, 'skills'), { recursive: true });
   assert.deepStrictEqual(call(l2, { fn: 'resolveInstalledSkillsDirs', variable: other }),
     { repo: other, skills: path.join(other, 'skills'), source: 'variable' });
-  // en la máquina del equipo de hoy las dos funciones contestan lo mismo
+  // con dos repos físicos las dos funciones contestan lo mismo
   const l3 = lab({ installed: true });
   assert.deepStrictEqual(call(l3, { fn: 'resolveInstalledSkillsDirs' }), call(l3));
 });
 
-// ── AC 13 · un lector que armaba la ruta a su modo: el medidor de etapas ────────────────────────────────────────────
+// ── un lector que arma la ruta a su modo: el medidor de etapas ────────────────────────────────────────────
 
 test('AC 13 SkillsDir_StageMetrics_FindsDiscoveryByTheRule — sin variable, el medidor de etapas usa el descubridor de stories del propio clon unido, no el instalado', (t) => {
-  // 🔴 rojo previo: `process.env.TYCON_SKILLS_DIR || ~/.claude/agent-skills/skills` en scripts/metrics/sdlc-stage-metrics.js
+  // 🔴 rojo: `process.env.TYCON_SKILLS_DIR || ~/.claude/agent-skills/skills` en scripts/metrics/sdlc-stage-metrics.js
   //    → sin variable busca el descubridor instalado (acá, uno que rompe a propósito), cae al escaneo plano y lo dice
   //    nombrando la carpeta instalada.
   const { isSingleRepo } = require(path.join(LIB, 'canonical-path.js'));
@@ -338,7 +338,7 @@ test('C3 SkillsDir_Cli_PrintsPathOrFailsWithReason — --skills, --repo y --sour
 });
 
 test('C3 — si la carpeta de skills resuelta NO existe: sale 1, no imprime ruta y dice el motivo y de dónde salió', () => {
-  // 🔴 rojo previo: imprimir la ruta por defecto y salir 0 → `SK="$(node skills-dir.js --skills)"` queda con una
+  // 🔴 rojo: imprimir la ruta por defecto y salir 0 → `SK="$(node skills-dir.js --skills)"` queda con una
   //    carpeta que no existe y todo lo que cuelga de ella «no está», en silencio.
   const l = lab();   // ni clon unido ni nada instalado
   const r = cli(l, ['--skills']);

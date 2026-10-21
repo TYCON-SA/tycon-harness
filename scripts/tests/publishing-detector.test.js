@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * publishing-detector.test.js — el detector de lo que no puede salir (épica 8, story 8.1, 2026-09-26).
+ * publishing-detector.test.js — el detector de lo que no puede salir.
  *
  * Lo que no se puede perder, en orden de gravedad:
  *   · Que NUNCA dé «limpio» cuando no pudo mirar: sin config, config rota, excepción sin motivo,
@@ -77,7 +77,7 @@ test('TerminoCorto_PalabraYMayusculas_NoDisparaConLaPalabraComun', () => {
 });
 
 test('Secretos_SeDetectanYSalenEnmascarados', () => {
-  // Armados por partes (story 8.8, AC 3): este archivo sale en la copia pública y el escaneo de secretos de GitHub no
+  // Armados por partes: este archivo sale en la copia pública y el escaneo de secretos de GitHub no
   // lee las excepciones del equipo. Ninguna línea trae la forma entera; el detector recibe el texto de siempre.
   const secretos = [
     'https://x.blob.core.windows.net/c?sv=2022&sig=' + 'AbCdEfGhIjKlMnOpQrStUv%3D',
@@ -205,9 +205,9 @@ test('Json_TraeConteosPorCategoriaYArchivo', () => {
   for (const h of r.json.hallazgos) assert.deepStrictEqual(Object.keys(h).sort(), ['archivo', 'categoria', 'linea', 'regla', 'texto']);
 });
 
-// story 8.10.2, AC 17 — el pase adversarial de la 8.10.1 (causa 4): el conteo por archivo se rearmaba como objeto y un
-// archivo de nombre numérico (`7`) quedaba primero aunque tuviera un solo hallazgo, y podía empujar fuera de los 15
-// primeros a uno con más. Y la carpeta se recorría en el orden del sistema de archivos (en Linux, otro que en la Mac).
+// El conteo por archivo, rearmado como objeto, dejaría un archivo de nombre numérico (`7`) primero aunque tuviera un
+// solo hallazgo, y podría empujar fuera de los 15 primeros a uno con más. Y la carpeta se recorre en un orden fijo, no
+// en el del sistema de archivos (que en Linux es otro que en la Mac).
 test('8.10.2 T17 Detector_Report_SortedByCount_NumericNameDoesNotJump — el informe ordena por cantidad aunque un archivo tenga nombre de número', () => {
   const archivos = { 7: 'ZORB\n', 'zz.md': 'ZORB\nZORB\nZORB\n', 'a/q.md': 'ZORB\nZORB\nZORB\n', 'a/y.md': 'ZORB\nZORB\n', 'b/x.md': 'ZORB\nZORB\n' };
   for (let i = 1; i <= 15; i++) archivos[`b/f${i}.md`] = 'ZORB\nZORB\n';
@@ -227,9 +227,9 @@ test('8.10.2 T17 Detector_Report_SortedByCount_NumericNameDoesNotJump — el inf
   assert.deepStrictEqual(vistos, [...vistos].sort(), 'los archivos se recorren en orden de nombre');
 });
 
-// story 8.10.2, pase adversarial — el recorrido de una carpeta salteaba en silencio los enlaces simbólicos (ni mirados ni
-// excluidos): con un nombre prohibido en el archivo de destino, el detector decía «limpio». Ahora se mira lo que
-// apuntan (una vez, aunque el enlace dé la vuelta), y un enlace roto es un «no pude mirar».
+// El recorrido de una carpeta no saltea en silencio los enlaces simbólicos (ni mirados ni excluidos): con un nombre
+// prohibido en el archivo de destino, el detector diría «limpio». Se mira lo que apuntan (una vez, aunque el enlace dé
+// la vuelta), y un enlace roto es un «no pude mirar».
 test('8.10.2 T23 Detector_Symlinks_AreLookedAt — un enlace simbólico se mira; uno roto no se da por limpio', (t) => {
   const { dir, cfgPath } = sandbox({ 'afuera/real.txt': 'Acmecorp\n', 'adentro/ok.md': 'nada\n', 'adentro/sub/x.md': 'nada\n' }, CFG);
   const base = path.join(dir, 'adentro');
@@ -250,8 +250,8 @@ test('8.10.2 T23 Detector_Symlinks_AreLookedAt — un enlace simbólico se mira;
   assert.match(roto.err, /roto\.txt/);
 });
 
-// T13 (story 8.4, AC 15): la contraseña entre comillas que la auditoría marcó ALTO y el detector no veía —la regla
-// de cadenas de conexión corta en la comilla—. Los marcadores de una plantilla (`$X`, `{0}`, `%X%`, `***`, `<clave>`) y
+// T13: la contraseña entre comillas es un hallazgo ALTO, aunque la regla de cadenas de conexión corte en la
+// comilla. Los marcadores de una plantilla (`$X`, `{0}`, `%X%`, `***`, `<clave>`) y
 // un booleano (`requirePassword="true"`) no son una contraseña.
 test('Detector_SecretoEntreComillas', () => {
   const lineas = [
@@ -271,16 +271,16 @@ test('Detector_SecretoEntreComillas', () => {
   assert.deepStrictEqual(secretos.map((h) => [h.linea, h.regla]), [[1, 'clave-entre-comillas'], [2, 'clave-entre-comillas']],
     `sólo las dos contraseñas reales; los marcadores no disparan:\n${JSON.stringify(r.json.hallazgos, null, 1)}`);
   for (const h of secretos) assert.ok(!h.texto.includes('Zq9xw7Lk') && h.texto.endsWith('***'), `enmascarada: ${h.texto}`);
-  // El exportador (8.4) decide texto o binario con la MISMA regla que el detector: se exporta en vez de copiarse.
+  // El exportador decide texto o binario con la MISMA regla que el detector: se exporta en vez de copiarse.
   const { esBinario } = require(DETECTOR);
   assert.strictEqual(typeof esBinario, 'function', 'detector.js exporta esBinario');
   assert.strictEqual(esBinario(Buffer.from([0x41, 0x00, 0x42])), true);
   assert.strictEqual(esBinario(Buffer.from('texto plano\n')), false);
 });
 
-// ── T27 · AC 30 (8.4, vuelta 1 de revisión) ─────────────────────────────────────────────────────────────────────
-// Un término que distingue mayúsculas se escapaba en OTRA caja dentro de un identificador (`tycon-prod-sol`,
-// `/api/globex/…`): la copia real salía con el detector en cero y el nombre del cliente adentro. La palabra común en
+// ── T27 ─────────────────────────────────────────────────────────────────────
+// Un término que distingue mayúsculas puede escaparse en OTRA caja dentro de un identificador (`tycon-prod-sol`,
+// `/api/globex/…`): sin esto, la copia real saldría con el detector en cero y el nombre del cliente adentro. La palabra común en
 // prosa no es un hallazgo: en minúscula, el nombre corto de un cliente puede ser una palabra de todos los días (`sol`)
 // o el principio de otro identificador (`globexImage`).
 test('Detector_OtraCajaEnIdentificador', () => {
@@ -314,7 +314,7 @@ test('Detector_OtraCajaEnIdentificador', () => {
   assert.ok(r.json.hallazgos.filter((h) => h.linea === 1).every((h) => /SOL/.test(h.regla)), 'la regla nombra el término');
 });
 
-// story 8.10 · el freno revisa textos en memoria (el índice de un commit) con un filtro previo: una regla de término sólo se
+// El freno revisa textos en memoria (el índice de un commit) con un filtro previo: una regla de término sólo se
 // evalúa si el texto trae sus letras, y el freno pide sólo las categorías de nombres. Lo que da tiene que ser lo mismo que
 // da el archivo, variante por variante: el filtro acelera, nunca pierde.
 test('Detector_ReviewTextInMemory_SameAsFileAndCategoryFilter', () => {
@@ -349,7 +349,7 @@ test('Detector_ReviewTextInMemory_SameAsFileAndCategoryFilter', () => {
   assert.deepStrictEqual(det.reviewText(desdeTexto, `${texto}\n`, 'a.md').hallazgos, det.reviewText(config, `${texto}\n`, 'a.md').hallazgos);
 });
 
-// T12 (story 8.6, AC 13): un proceso exportado con la organización como sufijo del nombre (`<algo>__<org>.bpmn`) es un
+// T12: un proceso exportado con la organización como sufijo del nombre (`<algo>__<org>.bpmn`) es un
 // hallazgo aunque la organización no esté en ninguna lista: el patrón es de forma. Como el exportador le pasa al
 // detector la lista de rutas de la copia, cubre también el nombre del archivo a la salida. Las líneas se arman
 // pegando partes para que este archivo, que se exporta, no traiga el patrón literal.
@@ -360,7 +360,7 @@ test('Detector_SufijoDeOrganizacionEnNombre', () => {
     'procesoconforms_v1.bpmn', //                           3 · un solo guion bajo
     `notas${'__'}x.md`, //                                  4 · otra extensión
     `${'__'}init${'__'}.py`, //                             5 · el archivo de Python
-    `ALTA${'__'}ZORBLAX.BPMN`, //                            6 · la extensión en otra caja (pase adversarial, 5b)
+    `ALTA${'__'}ZORBLAX.BPMN`, //                            6 · la extensión en otra caja
   ];
   const { dir, cfgPath } = sandbox({ 'rutas.txt': `${lineas.join('\n')}\n` }, CFG);
   const r = correrJson(dir, cfgPath);
@@ -371,7 +371,7 @@ test('Detector_SufijoDeOrganizacionEnNombre', () => {
     `hallazgos: ${JSON.stringify(r.json.hallazgos)}`);
 });
 
-// T21 (story 8.5): una licencia ajena que no se puede redistribuir no sale en una copia pública
+// T21: una licencia ajena que no se puede redistribuir no sale en una copia pública
 test('T21 Detector_ForeignLicense — el aviso de derechos reservados y la licencia propietaria son hallazgo; la prosa no', () => {
   // armadas por partes: este archivo sale en la copia pública y el detector lo mira como a cualquier otro
   const reserved = ['All', 'rights', 'reserved'].join(' ');
@@ -390,10 +390,10 @@ test('T21 Detector_ForeignLicense — el aviso de derechos reservados y la licen
   assert.strictEqual(correrJson(clean.dir, clean.cfgPath).code, 0, 'el contrato 0/1/2 no cambia');
 });
 
-// ── story 8.10.1, segunda vuelta (pase adversarial de la primera) ──────────────────────────────────────────────
+// ── más casos del pase adversarial ──────────────────────────────────────────────
 
-// T31 (causa C8): `main()` escribía el informe y llamaba `process.exit()` enseguida. Por un pipe, un informe largo
-// llegaba cortado y sin aviso (8.192 bytes por `spawnSync`): el código de salida estaba bien y el detalle, no.
+// T31: si `main()` escribiera el informe y llamara `process.exit()` enseguida, por un pipe un informe largo
+// llegaría cortado y sin aviso (8.192 bytes por `spawnSync`): el código de salida estaría bien y el detalle, no.
 test('T31 Detector_LongReportThroughAPipe_ArrivesWhole — un informe largo por un pipe llega entero', () => {
   const lines = [];
   for (let i = 0; i < 900; i++) lines.push(`fila ${i}: lo pidió Pepe para Acmecorp`);
@@ -413,9 +413,9 @@ test('T31 Detector_LongReportThroughAPipe_ArrivesWhole — un informe largo por 
   assert.match(none.err, /no pude mirar/);
 });
 
-// T32 (causa C10): un término de palabra entera que distingue mayúsculas era invisible justo después de un escape
+// T32: un término de palabra entera que distingue mayúsculas se ve justo después de un escape
 // (`\n`, `\t`, `\r\n` dentro de una cadena JSON o de un printf) o entre `%20`: la letra del escape y el dígito del
-// código contaban como «pegado a otra palabra». El borde ahora los reconoce.
+// código no cuentan como «pegado a otra palabra».
 test('T32 Detector_WholeWordAfterAnEscape — un nombre justo después de un salto escapado o de %20 se ve', () => {
   // eslint-disable-next-line global-require
   const det = require(DETECTOR);
@@ -443,11 +443,10 @@ test('T32 Detector_WholeWordAfterAnEscape — un nombre justo después de un sal
   }
 });
 
-// story 8.10.3, tanda C (pase adversarial, traversal-completeness-2 y false-negative-classification-2): un término de
-// palabra entera y caja exacta escrito en caja MIXTA (`ZetaRepo`, el nombre de un repo) no se veía pegado después de otra
-// palabra: la forma pegada se armaba con la inicial en mayúscula y el resto en minúscula (`Zetarepo`), que no es su
-// grafía. Con el nombre de un producto adelante (`AcmeZetaRepoBackEnd`, el nombre de un sitio; `DeployZetaRepoStaging`,
-// una etapa de pipeline) pasaba el detector, y el control de nombres pegados del exportador sólo mira el prefijo.
+// Un término de palabra entera y caja exacta escrito en caja MIXTA (`ZetaRepo`, el nombre de un repo) se ve pegado
+// después de otra palabra: la forma pegada no se arma con la inicial en mayúscula y el resto en minúscula (`Zetarepo`),
+// que no es su grafía. Con el nombre de un producto adelante (`AcmeZetaRepoBackEnd`, el nombre de un sitio;
+// `DeployZetaRepoStaging`, una etapa de pipeline) el detector pasaría de largo, y el control de nombres pegados del exportador sólo mira el prefijo.
 test('8.10.3 Detector_MixedCaseTermGluedAfterAnotherWord_IsSeen — la grafía propia del término, pegada en medio de un nombre', () => {
   // eslint-disable-next-line global-require
   const det = require(DETECTOR);

@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * spanish-names.test.js — la convención, la lista de palabras y el conteo del freno de nombres en castellano
- * (story 8.9, tanda A1 · 2026-09-29). T1-T5 y las piezas del extractor.
+ * spanish-names.test.js — la convención, la lista de palabras y el conteo del freno de nombres en castellano.
+ * T1-T5 y las piezas del extractor.
  *
  * Lo que no se puede perder:
  *   · Que la guía diga las cinco reglas con su ejemplo y que su glosario sea el de la lista.
@@ -10,10 +10,10 @@
  *     «no pude mirar» (2), nunca un verde.
  *   · Que decidir «castellano» no dependa sólo de la lista cerrada: una palabra que no estaba en la medición y no es
  *     inglesa también cuenta; un plural también; una palabra de las dos lenguas sola no.
- *   · Que el conteo sobre los shas de la medición dé las cifras de la story.
+ *   · Que el conteo sobre los shas de la medición dé las cifras de la medición corregida.
  *
  * Los nombres castellanos de los ejemplos se arman por concatenación (`'--' + 'sin-copia'`): esta prueba sale en la
- * copia pública y el freno la mira como a cualquier ejecutable (AC 7). Los commits del freno de verdad, disparados por
+ * copia pública y el freno la mira como a cualquier ejecutable. Los commits del freno de verdad, disparados por
  * git, están en githook-livefire.test.sh (T6-T13, T15); el termómetro, en export-real.test.sh (T14).
  */
 
@@ -276,7 +276,7 @@ test('AllowedPath_IgnoredInBrakeAndCount — una excepción por ruta (AC 2) apag
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// ── lo que confirmó el pase adversarial (5b, 2026-09-29): cada caso es una prueba que el freno de antes fallaba ─────
+// ── casos de borde: cada caso es una prueba que un freno sin ellos fallaría ────────────────────────────────────────
 test('Adversarial_Detector_PluralsAcronymsAndExactEnglish — plural castellano, siglas pegadas e inglés exacto', (t) => {
   const real = sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json');
   const d = sn.makeDetector(real, {});
@@ -392,7 +392,7 @@ test('B3a Ceiling_PackageRenamedByMap — pasar la clave del paquete a su nombre
   const OLD = 'nuc' + 'leo';   // armado por partes: el termómetro no cuenta los nombres de esta prueba
   const nums = { files: 1, folders: 1, options: 1, subcommands: 0, values: 0, env: 0, keys: 0, total: 3 };
   const entry = { kind: 'value', old: OLD, new: 'core', where: 'scripts/publishing/export.js', batch: 'lab', option: 'package' };
-  // el mapa de una foto de antes de la tanda C2 nombra el valor con la ruta vieja del exportador, y la declara en su
+  // el mapa de una foto de antes de la mudanza del exportador nombra el valor con la ruta vieja del exportador, y la declara en su
   // entrada `file`: la ruta vieja sale del mapa real, nunca escrita acá (sin mapa, la copia pública, no hay variante vieja)
   const realMap = (() => { try { return JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'lib', 'renames.json'), 'utf8')); } catch (_) { return null; } })();
   const movedExporter = realMap && realMap.entries.find((x) => x && x.kind === 'file' && x.new === entry.where);
@@ -429,7 +429,7 @@ test('B3a Ceiling_PackageRenamedByMap — pasar la clave del paquete a su nombre
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// ── story 8.9, tanda C4 · el techo se muda con su carpeta ─────────────────────────────────────────────────────────────
+// ── el techo se muda con su carpeta ─────────────────────────────────────────────────────────────
 // En el pull request de la mudanza (y en su pre-commit, contra HEAD) la base tiene el techo en la carpeta vieja. El freno
 // lee primero la ruta nueva y, si en esa foto no está, la vieja que dice el mapa (la `folder` de su carpeta). Sin eso, el
 // techo de la base no se ve y subirlo en la mudanza pasa callado. La ruta vieja sale del mapa real, nunca escrita acá.
@@ -472,8 +472,8 @@ test('SpanishNames_BaseCeilingUnderOldFolder_ReadsItViaTheMap — la base con el
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// Pase adversarial de la C4: con la PUNTA del rango de antes de la mudanza, el techo está en la carpeta vieja también en
-// la punta: subirlo ahí frena igual (repetir un rango histórico con el código de hoy).
+// Con la PUNTA del rango de antes de la mudanza, el techo está en la carpeta vieja también en
+// la punta: subirlo ahí frena igual (repetir un rango histórico con el código actual).
 test('SpanishNames_TipCeilingUnderOldFolder_StillBlocks — un rango que termina antes de la mudanza sigue viendo el techo', { skip: OLD_CEILING ? false : 'sin el mapa de renombres no hay ruta vieja' }, () => {
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-techo-punta-'));
   try {
@@ -514,7 +514,7 @@ test('SpanishNames_BaseCeilingUnderNewFolder_ReadsTheNewOne — con las dos ruta
   } finally { fs.rmSync(lab, { recursive: true, force: true }); }
 });
 
-// ── story 8.9, tanda D1 · --stale-mentions y las claves: lo que se escribe igual pero no es la clave ─────────────────
+// ── --stale-mentions y las claves: lo que se escribe igual pero no es la clave ─────────────────
 // Una clave vieja cuenta como clave JSON o en prosa; no cuenta en otro .json, en una línea de un esquema ajeno DECLARADO
 // (FOREIGN_SCHEMAS: una entrada de suites.json, la tabla de reemplazos), como «x» privado (la tabla privada) ni, en
 // prosa, cuando es el id de una transformación. Las claves de los esquemas ajenos salen de la lista del script.
@@ -545,10 +545,9 @@ test('D1 StaleKeys_OtherSchemaPrivateAndTransformationIds — positivos y negati
   assert.ok(m.test(`{ ${q(W.motivo)}: "x", ${q(sn.FOREIGN_SCHEMAS[0].marker)}: [] }`, 'scripts/x.js'));
 });
 
-// Las sondas del pase adversarial de la D1 (false-negative-classification-2 y algorithmic-correctness-1): la regla de
-// «otro esquema» tomaba por clave cualquier `"x":` de la línea —datos (nombres de bloques), textos dentro de un string y
-// ternarios— y, con el .json de la clave legible y sin esas «claves», dejaba de contar menciones viejas reales. Se arma
-// como las sondas: un arnés de laboratorio con su mapa, el .json de las claves (legible, con sus claves nuevas) y los
+// La regla de «otro esquema» no puede tomar por clave cualquier `"x":` de la línea —datos (nombres de bloques), textos
+// dentro de un string y ternarios—: con el .json de la clave legible y sin esas «claves», dejaría de contar menciones
+// viejas reales. Se arma como una sonda: un arnés de laboratorio con su mapa, el .json de las claves (legible, con sus claves nuevas) y los
 // archivos que lo nombran; --stale-mentions de punta a punta. Con los esquemas ajenos declarados, todas cuentan.
 test('D1 false-negative-classification-2 + algorithmic-correctness-1 — datos, textos y ternarios no esconden la clave vieja', () => {
   const dirs = [];
@@ -582,7 +581,7 @@ test('D1 false-negative-classification-2 + algorithmic-correctness-1 — datos, 
     };
     const arnes = repo({
       'scripts/lib/renames.json': { __about: 'mapa de laboratorio', retire_after: null, entries },
-      // legible y sin «lab», «acme», «cita» ni «a»: lo que la regla vieja tomaba por claves ajenas
+      // legible y sin «lab», «acme», «cita» ni «a»: lo que una regla laxa tomaría por claves ajenas
       [where]: { glob: 'x/**', reason: 'r', data: { otro: 1 } },
       ...Object.fromEntries(Object.entries(lines).map(([f, ls]) => [f, `${ls.join('\n')}\n`])),
     });
@@ -601,15 +600,14 @@ test('D1 false-negative-classification-2 + algorithmic-correctness-1 — datos, 
 
 // ── T5 · el conteo sobre los shas de la medición ─────────────────────────────────────────────────────────────────
 const MEASURED = { arnes: '8ac1904', 'agent-skills': '42c77f0' };
-// La columna «corregida» de §Punto de partida de la story, re-medida con el freno al empezar la tanda A1 (lista corta de
-// ambiguas, sin .md ni casos del banco, subcomandos del despacho, claves sólo de schemaFiles). Si una tanda cambia la
-// lista de palabras, se re-mide y se corrigen juntas la story y esta tabla. Tanda D1 (2026-10-01): `schemaFiles` suma los
-// archivos cuyas claves son esquema puro según la clasificación de la tanda; en el núcleo de la medición eso son 3 claves
-// más (`adapters/codex/hooks.json` 2, `build/equivalences.json` 1): 44 → 47. Tanda G (2026-10-03): `sin`, `solo`, `vista` y
-// `de` pasan de ambiguas a castellanas, y en los commits de la medición empieza a contar lo que la lista corta dejaba
-// afuera a propósito: el freno de pull requests y su prueba (ejecutables 86 → 87, pruebas 100 → 101), su interruptor
-// (variables 115 → 116) y cinco opciones —la vista, las dos «local», el alias de otra máquina y la de instalar sin
-// permisos de administrador— (opciones 118 → 123, 114 → 119 fuera de pruebas). La que es sólo `en` sigue afuera.
+// La columna «corregida» de la medición, re-medida con el freno (lista corta de ambiguas, sin .md ni
+// casos del banco, subcomandos del despacho, claves sólo de schemaFiles). Si cambia la lista de palabras, se re-mide y se
+// corrigen juntas la medición y esta tabla. `schemaFiles` suma los archivos cuyas claves son esquema puro; en el núcleo de
+// la medición eso son 3 claves más (`adapters/codex/hooks.json` 2, `build/equivalences.json` 1). `sin`, `solo`, `vista` y
+// `de` son castellanas (no ambiguas), y en los commits de la medición cuenta lo que la lista corta deja afuera a propósito:
+// el freno de pull requests y su prueba (ejecutables 87, pruebas 101), su interruptor (variables 116) y cinco opciones
+// —la vista, las dos «local», el alias de otra máquina y la de instalar sin permisos de administrador— (opciones 123,
+// 119 fuera de pruebas). La que es sólo `en` sigue afuera.
 const CORRECTED = { executables: 87, tests: 101, folders: 5, options: 123, optionsOutsideTests: 119, subcommands: 49, env: 116, keys: 47 };
 
 test('T5 SpanishNames_Count_MatchesCorrectedMeasurement — --count --json sobre los shas de la medición da la columna «corregida»', (t) => {
@@ -648,8 +646,8 @@ test('T5 SpanishNames_Count_MatchesCorrectedMeasurement — --count --json sobre
   }
 });
 
-// ── story 8.12, tanda R1 · el nombre que sólo cambia de carpeta (T53) y el borde de la ruta vieja (T3) ───────────────
-// T53: un archivo o carpeta que sólo se muda conserva su nombre —también uno en castellano que la 8.9 decidió dejar así—:
+// ── el nombre que sólo cambia de carpeta (T53) y el borde de la ruta vieja (T3) ───────────────
+// T53: un archivo o carpeta que sólo se muda conserva su nombre —también uno en castellano que se decidió dejar así—:
 // del `new` se juzgan sólo los segmentos que el `old` no tenía. Si el nombre cambia, el nombre nuevo se juzga entero.
 test('T53 Restructure_CheckMap_FolderOnlyMoveKeepsName — sólo se juzgan en castellano los segmentos nuevos del destino', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-t53-'));
@@ -667,7 +665,7 @@ test('T53 Restructure_CheckMap_FolderOnlyMoveKeepsName — sólo se juzgan en ca
       ['file: sólo cambia a una carpeta en inglés', { kind: 'file', old: `scripts/${name}.js`, new: `scripts/tools/${name}.js` }, 0],
       ['file: el mismo nombre a una carpeta nueva en castellano', { kind: 'file', old: `scripts/${name}.js`, new: `scripts/${carpeta}/${name}.js` }, 2],
       ['file: además cambia el nombre a otro en castellano', { kind: 'file', old: `scripts/${name}.js`, new: `scripts/tools/${W.copia}-lab.js` }, 2],
-      // un archivo que cambia de nombre se juzga ENTERO, también la carpeta en castellano que ya tenía (pase spec-first, R1)
+      // un archivo que cambia de nombre se juzga ENTERO, también la carpeta en castellano que ya tenía
       ['file: cambia el nombre a uno en inglés dentro de una carpeta en castellano que ya estaba', { kind: 'file', old: `scripts/${tablero}/a.js`, new: `scripts/${tablero}/report-lab.js` }, 2],
       ['folder: sólo cambia a una carpeta en inglés', { kind: 'folder', old: `scripts/${tablero}`, new: `scripts/nightly/${tablero}` }, 0],
       ['folder: a una carpeta nueva en castellano', { kind: 'folder', old: `scripts/${tablero}`, new: `scripts/${carpeta}/${tablero}` }, 2],
@@ -702,12 +700,12 @@ test('T3 Restructure_StaleMentions_BasenameInsideNewPathNotStale — la ruta nue
       'scripts/lib/renames.json': { __about: 'mapa de laboratorio', retire_after: null, entries },
       'pipelines/azure-pipelines-banco-lab.yml': 'trigger: none\n',
       // el archivo que sólo cambia de carpeta se mira también a sí mismo: su «Uso:» con la ruta vieja es una instrucción
-      // viva (pase adversarial de la R1: la exclusión de la propia ruta era para la cabecera de un archivo RENOMBRADO)
+      // viva (la exclusión de la propia ruta es para la cabecera de un archivo RENOMBRADO)
       'scripts/lib/x-lab.js': '// Uso: node scripts/x-lab.js\nmodule.exports = 1;\n',
       'guides/clean.md': 'Ver `pipelines/azure-pipelines-banco-lab.yml` y `scripts/lib/x-lab.js`.\nTambién /repo/tcg/pipelines/azure-pipelines-banco-lab.yml y bash pipelines/azure-pipelines-banco-lab.yml\nWindows: pwsh ~\\repo\\scripts\\lib\\x-lab.js\n',
       'guides/stale.md': 'bash azure-pipelines-banco-lab.yml\nnode scripts/x-lab.js\n',
       'guides/absolute.md': 'El de antes: /repo/tcg/azure-pipelines-banco-lab.yml y /repo/tcg/scripts/x-lab.js\n',
-      // la forma de Windows (con barras invertidas) también es una mención (pase adversarial de la R1)
+      // la forma de Windows (con barras invertidas) también es una mención
       'guides/windows.md': 'pwsh ~\\.claude\\tycon-harness\\scripts\\x-lab.js\n.\\scripts\\x-lab.js\n',
     });
     const skills = repo({ 'README.md': 'nada\n' });
@@ -728,9 +726,9 @@ test('T3 Restructure_StaleMentions_BasenameInsideNewPathNotStale — la ruta nue
   }
 });
 
-// ── story 8.12, tanda R2 · la barra que completa OTRA ruta real (T3b) y la carpeta de un solo pedazo (T3c) ─────────
-// T3b: una carpeta de la raíz que se muda a `inbox/` (en la R2, la de los instintos) se llama igual que el último pedazo
-// de `scripts/<misma>/`, una carpeta de verdad que nació en la misma tanda. Detrás de esa barra no es la vieja: es otra
+// ── la barra que completa OTRA ruta real (T3b) y la carpeta de un solo pedazo (T3c) ─────────
+// T3b: una carpeta de la raíz que se muda a `inbox/` (la de los instintos) se llama igual que el último pedazo
+// de `scripts/<misma>/`, una carpeta de verdad que nació en la misma mudanza. Detrás de esa barra no es la vieja: es otra
 // ruta del repo que existe. La vieja suelta, al final de una absoluta o detrás de `$TCG/` sigue contando. Nombres de
 // laboratorio (`notions`): la prueba no escribe el nombre viejo real, que el propio control contaría.
 const t3Repo = (dirs, prefix) => (files) => {
@@ -778,7 +776,7 @@ test('T3b Restructure_StaleMentions_SlashCompletesAnotherRealPath — una barra 
 
 // T3c: una carpeta cuyo nombre viejo es de UN solo pedazo es también una palabra común («propone notions», «accionar
 // notions»): cuenta sólo escrita como ruta, con una barra detrás (`notions/pending/`, `notions\pending\`). La palabra suelta
-// es prosa. Las de varios pedazos siguen como antes (T3).
+// es prosa. Las de varios pedazos siguen como en T3.
 test('T3c Restructure_StaleMentions_SingleSegmentFolderOnlyAsPath — la palabra suelta no es la carpeta vieja; con barra detrás sí', () => {
   const dirs = [];
   const repo = t3Repo(dirs, 'sn-t3c-');
@@ -800,8 +798,8 @@ test('T3c Restructure_StaleMentions_SingleSegmentFolderOnlyAsPath — la palabra
   }
 });
 
-// ── story 8.12, tanda R2 · pase adversarial R2 ───────────────────────────────────────────────────────────────────────
-// T3d (clases 1, 2, 4 y 5): tras el pull de la mudanza, la carpeta vieja queda en cada máquina con lo que git nunca
+// ── restos en la carpeta vieja ───────────────────────────────────────────────────────────────────────
+// T3d: tras el pull de la mudanza, la carpeta vieja queda en cada máquina con lo que git nunca
 // versionó (el log del grabador, sus descartados, un `.DS_Store`). Eso no la vuelve «real»: la entrada sigue mudada, las
 // menciones viejas se cuentan (nunca un verde callado) y --check-map no ve un choque. Igual si esos restos quedan
 // ignorados por un `.gitignore` de la raíz. Un archivo versionado en la vieja sí la vuelve real (no mudada).
@@ -836,7 +834,7 @@ test('T3d R2Adversarial_StaleMentionsAndCheckMap_LeftoversInOldFolder — advers
     cm = checkMap();
     assert.strictEqual(cm.status, 0, `con los restos ignorados, el mapa no choca\n${cm.stdout}${cm.stderr}`);
 
-    // un archivo que git versiona en la vieja: la carpeta vieja vuelve a ser la de verdad (no mudada), como antes
+    // un archivo que git versiona en la vieja: la carpeta vieja vuelve a ser la de verdad (no mudada)
     git(arnes, ['add', '-f', 'notions/descartados/a.md']);
     const r = run(['--stale-mentions', '--json', '--repo', arnes], { TYCON_SKILLS_DIR: skills });
     assert.strictEqual(r.status, 0, `con un archivo versionado en la vieja, todavía no está mudada: nada que marcar\n${r.stdout}${r.stderr}`);
@@ -848,8 +846,8 @@ test('T3d R2Adversarial_StaleMentionsAndCheckMap_LeftoversInOldFolder — advers
   }
 });
 
-// T3f (pase adversarial R2, revisor de fallos silenciosos): --check-map, al ver si la carpeta nueva tiene sólo lo que
-// llegó antes que su carpeta, pregunta a git qué versiona. Si no es un repo, mira el disco, como hoy; si git falla de
+// T3f: --check-map, al ver si la carpeta nueva tiene sólo lo que
+// llegó antes que su carpeta, pregunta a git qué versiona. Si no es un repo, mira el disco; si git falla de
 // verdad («dubious ownership», un permiso, un repo roto), frena diciendo qué pasó: no cae callado al disco.
 test('T3f R2AdversarialSilent_CheckMapArrivals_GitFailsForReal_Stops — adversarial R2 / silent: sólo «no es un repo» mira el disco', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-t3f-'));
@@ -886,7 +884,7 @@ test('T3f R2AdversarialSilent_CheckMapArrivals_GitFailsForReal_Stops — adversa
   }
 });
 
-// T3e (clase 7): detrás de una carpeta vieja de un solo pedazo, una `\` seguida de una letra de escape (`\n`, `\t`, `\b`,
+// T3e: detrás de una carpeta vieja de un solo pedazo, una `\` seguida de una letra de escape (`\n`, `\t`, `\b`,
 // `\r`, `\f`, `\v`, `\0`, `\x`, `\u`, una comilla o un acento grave) es una secuencia de escape de un string o de una
 // expresión regular, no una barra de ruta. `\\` (la barra de Windows escrita dentro de un string) y `\/` (la barra
 // escapada) sí son barras. Borde elegido: `<vieja>\notas` (Windows, con el pedazo siguiente empezando por una letra de
@@ -927,7 +925,7 @@ test('T3e R2Adversarial_StaleMentions_EscapeSequenceIsNotPathSeparator — adver
   }
 });
 
-// ── story 8.12, tanda R6 · T41: el campo `homonyms` de una entrada del mapa ──────────────────────────────────────────
+// ── T41: el campo `homonyms` de una entrada del mapa ──────────────────────────────────────────
 // Un yml del arnés que se mudó a `pipelines/` puede llamarse igual que el pipeline de cada producto: en los archivos que
 // hablan del producto, el nombre suelto es OTRO archivo. La entrada lo declara con `homonyms` (glob + motivo) y
 // --stale-mentions no cuenta ESA entrada ahí; afuera, sí; otra entrada en el mismo archivo, también. Un glob que no
@@ -954,7 +952,7 @@ test('T41 R6_StaleMentions_HomonymsNotCountedInsideCountedOutside — adentro de
   const repo = t3Repo(dirs, 'sn-t41-');
   try {
     const skills = repo({ 'README.md': 'nada\n' });
-    // sin el campo, todo igual que antes: cada mención cuenta
+    // sin el campo, cada mención cuenta
     const plain = repo(HOMONYM_FILES(null));
     assert.deepStrictEqual(staleFound(plain, skills), [
       'guides/stale.md:1 azure-pipelines-lab.yml',
@@ -993,7 +991,7 @@ test('T41 R6_StaleMentions_HomonymsDeadGlobStops — un glob que no matchea ning
     const b = run(['--stale-mentions', '--json', '--repo', broken], { TYCON_SKILLS_DIR: skills });
     assert.strictEqual(b.status, 2, `un homonyms mal formado frena (rc ${b.status})\n${b.stderr}`);
     assert.match(b.stderr, /homonyms/);
-    // homonyms en una entrada de un repo que este modo no mira: tampoco se saltea callado (pase del revisor de pruebas, R6)
+    // homonyms en una entrada de un repo que este modo no mira: tampoco se saltea callado
     const foreign = HOMONYM_FILES([{ glob: 'templates/product/**', reason: 'el pipeline de cada producto' }]);
     foreign['scripts/lib/renames.json'].entries[0].repo = 'lab-other-repo';
     const f = run(['--stale-mentions', '--json', '--repo', repo(foreign)], { TYCON_SKILLS_DIR: skills });
@@ -1036,10 +1034,10 @@ test('T41 R6_StaleMentions_HomonymsShapeInCheckMap — --check-map acepta homony
   } finally { fs.rmSync(repo, { recursive: true, force: true }); }
 });
 
-// ── story 8.7 (AC 11, T19) · el repo único: el arnés y agent-skills en la MISMA raíz ───────────────────────────────────
+// ── T19 · el repo único: el arnés y agent-skills en la MISMA raíz ───────────────────────────────────
 // La copia de un solo repo corre el pre-commit de agent-skills con el arnés en su propia raíz. En modo público el freno
-// del lado agent-skills tiene que leer la lista de palabras del índice de ese mismo repo; antes la buscaba en el árbol
-// del «otro» repo, que en modo público no arma, y frenaba todo commit con «no pude mirar».
+// del lado agent-skills tiene que leer la lista de palabras del índice de ese mismo repo; no la busca en el árbol
+// del «otro» repo, que en modo público no arma (frenaría todo commit con «no pude mirar»).
 test('SingleRepo_SkillsSourceReadsHarnessFromSameRoot — en el repo único, el lado agent-skills lee la lista del arnés en la misma raíz', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-single-'));
   try {
@@ -1060,11 +1058,11 @@ test('SingleRepo_SkillsSourceReadsHarnessFromSameRoot — en el repo único, el 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// ── story 8.18 · el repo unido del equipo: cada parte mira lo de su fuente lógica, sin leer «el otro repo» ──────────
+// ── el repo unido del equipo: cada parte mira lo de su fuente lógica, sin leer «el otro repo» ──────────
 // El arnés y agent-skills son un repo y su pre-commit corre el freno dos veces sobre la misma raíz. Con el perfil del
 // equipo (no es la copia pública) cada corrida arma las dos fuentes partiendo el mismo árbol por ruta.
-// 🔴 rojo previo verificado: sin «el otro repo» a mano la corrida del arnés salía 0 con «no encontré agent-skills»,
-//    sin haber mirado nada, aunque las skills estaban en el propio repo.
+// 🔴 rojo verificado: sin «el otro repo» a mano la corrida del arnés sale 0 con «no encontré agent-skills»,
+//    sin haber mirado nada, aunque las skills están en el propio repo.
 test('Unified_TeamRepo_SourceByPath — en el repo unido cada parte frena lo suyo, y no busca el otro repo', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-unified-'));
   try {
@@ -1119,7 +1117,7 @@ test('Unified_TeamRepo_SourceByPath — en el repo unido cada parte frena lo suy
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// ── story 8.18, AC 25 (T25) · lo que faltaba del repo unido ─────────────────────────────────────────────────────────
+// ── T25 · el repo unido ─────────────────────────────────────────────────────────
 // Un repo unido de laboratorio: el arnés del equipo (perfil, lista blanca, lista de palabras) con agent-skills adentro.
 const UNIFIED_LIST = {
   packages: { core: {
@@ -1170,9 +1168,9 @@ function unionMergeLab({ inTheMerge = null } = {}) {
   return { dir, harness, skills, main, side, union: git(harness, ['rev-parse', 'HEAD']), part };
 }
 
-// 🔴 rojo previo verificado sobre la base de la story (`c37fd79f`): el rango del pull request del corte (desde el main
-//    de antes de la unión) salía 1 con las dos fuentes, por 7 variables de agent-skills que su techo ya contaba: para
-//    el freno, toda la mitad de skills/ «empezaba a salir» porque la base del rango no la traía.
+// 🔴 rojo verificado: el rango del pull request del corte (desde el main de antes de la unión) sale 1 con las
+//    dos fuentes, por variables de agent-skills que su techo ya contaba: para el freno, toda la mitad de skills/
+//    «empieza a salir» porque la base del rango no la trae.
 test('Unified_RangeCrossingTheUnion_EachHalfAgainstItsOwnHistory — T25: el rango del pull request que trae la unión pasa, y lo nuevo de después frena', () => {
   const l = unionMergeLab();
   try {
@@ -1224,10 +1222,10 @@ test('Unified_RangeCrossingTheUnion_HalfWithoutHistory_IsAllNew — sin la histo
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// Pase adversarial del tramo 2 de la 8.18 (clase 10), lo mismo que en new-names.js (la función es la misma): el lado de
-// skills de la unión (rama aparte) y el main de agent-skills mezclado después no se contienen. Una variable en castellano
-// que el main ya había pasado a inglés seguía «estando» en el lado viejo, y volver a meterla pasaba la red del rango.
-// 🔴 rojo previo verificado: la parte de skills salía 0 sobre el rango del pull request.
+// Lo mismo que en new-names.js (la función es la misma): el lado de skills de la unión (rama aparte) y el main de
+// agent-skills mezclado después no se contienen. Una variable en castellano que el main ya pasó a inglés sigue «estando»
+// en el lado viejo, y volver a meterla pasa la red del rango.
+// 🔴 rojo verificado: la parte de skills sale 0 sobre el rango del pull request.
 test('Unified_RangeCrossingTheUnion_TwoSidesNotContained_ComparedWithTheLatest — lo que la última punta pasó a inglés no vuelve por la red', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-twosides-'));
   try {
@@ -1260,9 +1258,9 @@ test('Unified_RangeCrossingTheUnion_TwoSidesNotContained_ComparedWithTheLatest �
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// El doble aviso ([DEF-8.18-doble-aviso]): en el repo unido las dos partes ven cambiar las DOS mitades en el mismo commit.
-// 🔴 rojo previo verificado: un commit con un ejecutable nuevo en cada mitad salía 1 por las dos partes, y cada una
-//    nombraba también el archivo de la otra: el mismo hallazgo dos veces, y doble en el registro.
+// El doble aviso: en el repo unido las dos partes ven cambiar las DOS mitades en el mismo commit.
+// 🔴 rojo verificado: un commit con un ejecutable nuevo en cada mitad sale 1 por las dos partes, y cada una
+//    nombra también el archivo de la otra: el mismo hallazgo dos veces, y doble en el registro.
 test('Unified_BothHalvesInOneCommit_EachFindingOnce — el doble aviso: cada hallazgo lo reporta una sola parte', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-double-'));
   try {
@@ -1298,10 +1296,10 @@ test('Unified_BothHalvesInOneCommit_EachFindingOnce — el doble aviso: cada hal
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// Pase adversarial del tramo 2 de la 8.18 (clase 8): un ejecutable con nombre en castellano que EMPIEZA A SALIR porque
-// cambia la lista blanca, y que el mismo commit además modifica. El reparto del doble aviso se lo deja a la parte de su
-// fuente (lo tocó), y ésa lo veía como «modificado»: no juzgaba su ruta. Ninguna de las dos corridas lo frenaba.
-// 🔴 rojo previo verificado: las dos partes salían 0, con lo stageado y con el rango del pull request.
+// Un ejecutable con nombre en castellano que EMPIEZA A SALIR porque cambia la lista blanca, y que el mismo commit
+// además modifica. El reparto del doble aviso se lo deja a la parte de su fuente (lo tocó), y ésa lo ve como
+// «modificado»: no juzga su ruta. Ninguna de las dos corridas lo frena.
+// 🔴 rojo verificado: las dos partes salen 0, con lo stageado y con el rango del pull request.
 test('Unified_StartsShippingAndModified_PathJudged — lo que empieza a salir se juzga por su ruta aunque el mismo commit lo modifique', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-starts-'));
   try {
@@ -1341,10 +1339,10 @@ test('Unified_StartsShippingAndModified_PathJudged — lo que empieza a salir se
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-// `--count`, `--check-map` y `--stale-mentions` buscaban «el otro repo» también en el repo unido: sin él no contaban ni
-// validaban, y con él a mano (el clon viejo de la máquina) recorrían el repo unido entero como si fuera el arnés.
-// 🔴 rojo previo verificado: sin «el otro repo» los tres salían 2 («no encontré agent-skills»); con la variable en el
-//    propio clon, --stale-mentions contaba como del arnés las menciones de skills/ (legacy-names-c4 T43b, 9 de más).
+// `--count`, `--check-map` y `--stale-mentions` no buscan «el otro repo» en el repo unido: si lo buscaran, sin él no
+// contarían ni validarían, y con él a mano (un clon viejo de la máquina) recorrerían el repo unido entero como si fuera el arnés.
+// 🔴 rojo verificado: sin «el otro repo» los tres salen 2 («no encontré agent-skills»); con la variable en el
+//    propio clon, --stale-mentions cuenta como del arnés las menciones de skills/.
 test('Unified_CountCheckMapStaleMentions_SourceByPath_NoOtherRepo — T25: en el repo unido los tres modos parten el árbol por ruta', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-modes-'));
   const dir = path.join(tmp, 'unified');
@@ -1391,7 +1389,7 @@ test('Unified_CountCheckMapStaleMentions_SourceByPath_NoOtherRepo — T25: en el
     assert.doesNotMatch(m.stderr, /no encontré agent-skills/);
 
     // --stale-mentions: cada archivo, de su fuente por su ruta; la mención desde la otra mitad es una referencia entre
-    // repos y no cuenta (AC 1 d de la story 8.9), y ninguna sale dos veces — lo mismo que con dos repos
+    // repos y no cuenta, y ninguna sale dos veces — lo mismo que con dos repos
     const stale = (repo, e) => {
       const st = run(['--stale-mentions', '--json', '--repo', repo], e, repo);
       assert.equal(st.status, 1, `rc ${st.status}: ${st.stderr}`);
@@ -1405,8 +1403,8 @@ test('Unified_CountCheckMapStaleMentions_SourceByPath_NoOtherRepo — T25: en el
 
 // La unión DE VERDAD (los commits anotados en scripts/tests/fixtures/union-commits.json). En un clon que no los trae
 // (la copia pública, un clon recortado) o que no es el del equipo, sale NO MEDIDA.
-// 🔴 Sólo que el archivo FALTE es «no medido» (revisión del tramo 2, vuelta 1): antes un `catch` general convertía un
-// union-commits.json roto en NO MEDIDO, y las pruebas de la unión se salteaban calladas. Roto, las dos fallan diciéndolo.
+// 🔴 Sólo que el archivo FALTE es «no medido»: un `catch` general convertiría un union-commits.json roto en
+// NO MEDIDO, y las pruebas de la unión se saltearían calladas. Roto, las dos fallan diciéndolo.
 const UNION_FILE = path.join(RAIZ, 'scripts', 'tests', 'fixtures', 'union-commits.json');
 let UNION_BROKEN = null;
 const UNION = (() => {
@@ -1431,8 +1429,8 @@ test('Unified_RealUnionRange_PassesBothSources — T25: el rango del commit de l
   const UNION = unionOrFail();
   const nowhere = fs.mkdtempSync(path.join(os.tmpdir(), 'sn-nowhere-'));
   try {
-    // 🔴 La salida 0 también la dan «quiet» y «not-measured»: cada rango y cada fuente tiene su resultado ESPERADO, medido
-    // el 2026-10-04 (revisión del tramo 2, vuelta 1; el porqué de cada «quiet», en la T25 de new-names.test.js). «quiet»
+    // 🔴 La salida 0 también la dan «quiet» y «not-measured»: cada rango y cada fuente tiene su resultado ESPERADO
+    // (el porqué de cada «quiet», en la T25 de new-names.test.js). «quiet»
     // no escribe nada; «not-measured» avisa: por eso «quiet» se exige con la salida vacía, no sólo sin --json.
     const expected = [
       [`${UNION.harness_resolved}...${UNION.union}`, { arnes: 'quiet', 'agent-skills': 'quiet' }],
@@ -1455,8 +1453,8 @@ test('Unified_RealUnionRange_PassesBothSources — T25: el rango del commit de l
   } finally { fs.rmSync(nowhere, { recursive: true, force: true }); }
 });
 
-// AC 25: el techo es el mismo antes y después de la unión. Si el commit de la unión lo tocara, la cuenta «igual» se habría
-// conseguido subiendo el techo; y esta comparación no depende del diccionario inglés, así que mide en cualquier máquina.
+// El techo es el mismo antes y después de la unión. Si el commit de la unión lo tocara, la cuenta «igual» se
+// conseguiría subiendo el techo; y esta comparación no depende del diccionario inglés, así que mide en cualquier máquina.
 test('Unified_RealUnion_SpanishCeilingUnchanged — T25: spanish-names-ceiling.json es el mismo del lado del arnés que en el repo unido', { skip: NO_UNION }, () => {
   const UNION = unionOrFail();
   const show = (sha) => spawnSync('git', ['-C', RAIZ, 'show', `${sha}:scripts/publishing/spanish-names-ceiling.json`], { encoding: 'utf8', env: cleanEnv() });
@@ -1486,10 +1484,10 @@ test('Unified_Count_SameBeforeAndAfterTheUnion — T25: el termómetro da la mis
     assert.equal(after.status, 0, `en el repo unido cuenta sin buscar el otro repo: ${after.stderr}`);
     const b = JSON.parse(before.stdout); const a = JSON.parse(after.stdout);
     assert.deepStrictEqual(a.packages, b.packages, 'la misma cuenta por paquete, antes y después de la unión');
-    // 🔴 sin diccionario la prueba salía VERDE sin comparar contra el techo (revisión del tramo 2, vuelta 1): ahora es un
+    // 🔴 sin diccionario la prueba saldría VERDE sin comparar contra el techo: por eso es un
     // «no medido» que cuenta en el resumen (la cuenta de arriba sí se comparó; el techo lo cubre también *SpanishCeilingUnchanged*)
     if (!a.dictionary) { t.skip('NO MEDIDO: sin diccionario inglés en esta máquina — se comparó la cuenta, no las cifras del techo'); return; }
-    // y es la del techo: lo que el termómetro mide hoy no supera lo que el techo deja
+    // y es la del techo: lo que el termómetro mide no supera lo que el techo deja
     const ceiling = JSON.parse(fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'spanish-names-ceiling.json'), 'utf8'));
     for (const [pkg, nums] of Object.entries(a.packages)) {
       assert.ok(ceiling[pkg], `el techo no trae el paquete ${pkg}`);
@@ -1501,12 +1499,12 @@ test('Unified_Count_SameBeforeAndAfterTheUnion — T25: el termómetro da la mis
   }
 });
 
-// ── story 8.9, tanda G, pase adversarial (causas 1 y 2) · --stale-mentions y los valores que no son de una opción ────
-// Un valor viejo se buscaba sólo como `--<opción> <viejo>`. Los de la tanda G son de una clave de configuración o de una
+// ── --stale-mentions y los valores que no son de una opción ────
+// Un valor viejo se busca como `--<opción> <viejo>`. Algunos son de una clave de configuración o de una
 // variable (`"codex": "<viejo>"`, `TYCON_ROSTER_NAMES=<viejo>`, `"scheduled_days": [...]`): esa forma no puede aparecer
-// nunca, y el modo salía 0 callado. Ahora el valor declara a qué nombres se asigna (`assigned_to`) y se busca ahí; un valor
+// nunca, y el modo saldría 0 callado. Por eso el valor declara a qué nombres se asigna (`assigned_to`) y se busca ahí; un valor
 // que no es de una opción y no lo declara es «no pude mirar». Las claves de tycon.json se buscan también con punto
-// (`integrations.<vieja>`) y como argumento de tycon-config.js (`key <vieja>`). 🔴 ROJO PREVIO: ninguna contaba.
+// (`integrations.<vieja>`) y como argumento de tycon-config.js (`key <vieja>`). 🔴 ROJO: ninguna contaría.
 test('G stale-mentions: los valores asignados a una clave o una variable, y las claves con punto o como argumento, cuentan', () => {
   const dirs = [];
   const repo = (files) => {
@@ -1585,17 +1583,17 @@ test('G stale-mentions: los valores asignados a una clave o una variable, y las 
   }
 });
 
-// Pase adversarial de la tanda G (causa 9): con la lista real, dos de los siete días que la tanda retira no contaban como
-// castellano (el diccionario inglés del sistema trae «lune» y «Martes»): un nombre nuevo con esas palabras pasaba el freno.
-// Los días salen del mapa, no de esta prueba. 🔴 ROJO PREVIO: dos de los siete no contaban.
+// Con la lista real, los siete días que se retiran tienen que contar como castellano aunque el diccionario inglés del
+// sistema traiga «lune» y «Martes»: si no, un nombre nuevo con esas palabras pasa el freno.
+// Los días salen del mapa, no de esta prueba. 🔴 ROJO: dos de los siete no cuentan.
 test('G SpanishNames_RealList_TheSevenOldDaysCount — con la lista real, los siete días que la tanda G retira cuentan como castellano', (t) => {
   const mapa = path.join(RAIZ, 'scripts', 'lib', 'renames.json');
   if (!fs.existsSync(mapa)) { t.skip('NO MEDIDO — copia pública sin el mapa de renombres'); return; }
   const dias = JSON.parse(fs.readFileSync(mapa, 'utf8')).entries.filter((e) => e.kind === 'value' && e.batch === 'G' && e.option === 'scheduled_days').map((e) => e.old);
   assert.strictEqual(dias.length, 7, 'el mapa trae los siete días de la tanda');
   const real = sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json');
-  // el peor caso: un diccionario que trae los siete días como inglés (el de Linux de la CI no es el de macOS; la corrida
-  // 11781 cayó acá). Contar no puede depender del diccionario de la máquina: los siete tienen que estar en la lista.
+  // el peor caso: un diccionario que trae los siete días como inglés (el de Linux de la CI no es el de macOS).
+  // Contar no puede depender del diccionario de la máquina: los siete tienen que estar en la lista.
   const peor = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sn-dias-')), 'words');
   fs.writeFileSync(peor, `${dias.join('\n')}\n`);
   for (const dictPath of [undefined, peor, '/usr/share/dict/words']) {
@@ -1608,10 +1606,10 @@ test('G SpanishNames_RealList_TheSevenOldDaysCount — con la lista real, los si
   }
 });
 
-// ── Tanda G (2026-10-03) · una palabra «ambigua» pegada a una inglesa ya no pasa sin contar ─────────────────────────
-// 🔴 rojo previo verificado: la lista real tenía a estas cuatro palabras como «ambiguas» (cuentan sólo junto a otra
-//    castellana), así que cuatro opciones del tablero y el interruptor de un freno —una ambigua más palabras inglesas— no
-//    frenaban ni contaban en el termómetro. Las encontró una auditoría de la copia publicada, no el freno.
+// ── una palabra «ambigua» pegada a una inglesa cuenta ─────────────────────────
+// 🔴 rojo verificado: si estas cuatro palabras fueran «ambiguas» (cuentan sólo junto a otra castellana), cuatro
+//    opciones del tablero y el interruptor de un freno —una ambigua más palabras inglesas— no frenarían ni contarían en
+//    el termómetro.
 test('T73 SpanishNames_RealList_AmbiguousPlusEnglishCounts — con la lista real, las cuatro opciones y la variable que el termómetro no veía cuentan; sus nombres en inglés no', async (t) => {
   const real = sn.loadWords(fs.readFileSync(WORDS, 'utf8'), 'scripts/lib/spanish-words.json');
   const solo = 'so' + 'lo'; const vista = 'vis' + 'ta';
@@ -1621,7 +1619,7 @@ test('T73 SpanishNames_RealList_AmbiguousPlusEnglishCounts — con la lista real
   }
   const viejos = [`${W.sin}-local`, `${solo}-local`, vista, `alias-${W.de}`, `TYCON_PR_${W.sin.toUpperCase()}_AUTO_COMPLETE`];
   const nuevos = ['without-local', 'local-only', 'view', 'alias-of', 'TYCON_PR_AUTO_COMPLETE_GUARD', 'mailbox', 'nightly', 'detect', 'block'];
-  /** Las dos mitades con un detector: los nombres de antes cuentan, los de hoy no, y el extractor los ve en un guion. */
+  /** Las dos mitades con un detector: los nombres de antes cuentan, los nuevos no, y el extractor los ve en un guion. */
   const lasDosMitades = (det, con) => {
     for (const name of viejos) assert.ok(det.isSpanish(name).spanish, `${con}: ${name} tiene que contar`);
     for (const name of nuevos) assert.ok(!det.isSpanish(name).spanish, `${con}: ${name} es inglés, no cuenta (${det.isSpanish(name).words.join(', ')})`);
@@ -1630,9 +1628,9 @@ test('T73 SpanishNames_RealList_AmbiguousPlusEnglishCounts — con la lista real
     assert.deepStrictEqual(found.sort(), [`env:${viejos[4]}`, `option:${viejos[0]}`].sort(), `${con}: el extractor ve los de antes y no los de hoy`);
   };
 
-  // Revisión de la tanda G (revisor de cobertura): la mitad de los nombres en inglés corría sólo si la máquina tenía el
-  // diccionario del sistema; sin él (un agente de CI puede no traerlo) la prueba salía sin haberla medido. Ahora se mide
-  // SIEMPRE, de las dos maneras que el freno sabe trabajar, y el diccionario del sistema es una tercera, aparte y visible.
+  // La mitad de los nombres en inglés tiene que medirse aunque la máquina no tenga el diccionario del sistema (un agente
+  // de CI puede no traerlo): si no, la prueba saldría sin haberla medido. Se mide SIEMPRE, de las dos maneras que el
+  // freno sabe trabajar, y el diccionario del sistema es una tercera, aparte y visible.
   await t.test('sin diccionario: el respaldo del freno (sólo la lista de palabras)', () => {
     const det = sn.makeDetector(real, { dictPath: path.join(os.tmpdir(), 'no-existe-este-diccionario') });
     assert.strictEqual(det.dictionary, false, 'este detector trabaja sin diccionario, como el freno en una máquina que no lo tiene');
@@ -1660,8 +1658,8 @@ test('T73 SpanishNames_RealList_AmbiguousPlusEnglishCounts — con la lista real
   });
 });
 
-// ── story 8.22, tramo F (AC 35 a) · --stale-mentions mira si el archivo nombra la ruta antes de probarle sus expresiones ──
-// Las 316 entradas de ruta del mapa, probadas contra cada archivo del repo, eran 41 s de cálculo puro (todo el peso de
+// ── --stale-mentions mira si el archivo nombra la ruta antes de probarle sus expresiones ──
+// Probar cada entrada de ruta del mapa contra cada archivo del repo es cálculo puro y caro (todo el peso de
 // guides-moved.test.js). El filtro es el último pedazo de la ruta vieja (`needle`): ninguna expresión de la entrada puede
 // encontrar nada en un texto que no lo tenga escrito. Acá se mide que eso es cierto para CADA entrada del mapa real.
 // El mapa real es del equipo: la copia pública no lo trae (ahí no hay rutas viejas que filtrar).

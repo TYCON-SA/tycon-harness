@@ -1,22 +1,22 @@
 'use strict';
 
 /**
- * public-copy.test.js — las funciones puras con que el exportador arma la copia pública (story 8.7, tanda A, plan §2.3).
+ * public-copy.test.js — las funciones puras con que el exportador arma la copia pública.
  *
  * Lo que no se puede perder:
  *   · `internalBlocks`: el bloque interno sale entero con sus marcadores; el sólo-público queda visible sin sus dos
  *     líneas; un marcador sin par, anidado, dentro de un cerco o entre dos filas de tabla es un error con archivo y
- *     línea (AC 5). `markerLines` encuentra el marcador que quedó fuera de un `.md`.
+ *     línea. `markerLines` encuentra el marcador que quedó fuera de un `.md`.
  *   · `brokenLinks`: un enlace relativo de Markdown a algo que no está en la copia es hallazgo; los de un cerco, los de
- *     código en línea, `https://`, `mailto:` y `#ancla` no cuentan (AC 6).
+ *     código en línea, `https://`, `mailto:` y `#ancla` no cuentan.
  *   · `readmePaths`: una ruta entre comillas invertidas del README o del INSTALL de la raíz que empieza con una entrada
  *     de primer nivel y no está en la copia es hallazgo; `:N` y `#…` se quitan, un glob tiene que coincidir con algo,
- *     `<placeholder>`, `{…}` y `.tycon/` se saltean (AC 5).
- *   · `attributions`: el NOTICE nombra exactamente los `derived` que salen: ni uno de menos ni uno de más (AC 2).
+ *     `<placeholder>`, `{…}` y `.tycon/` se saltean.
+ *   · `attributions`: el NOTICE nombra exactamente los `derived` que salen: ni uno de menos ni uno de más.
  *   · `renameSkill` / `renameLeft`: el identificador viejo se reemplaza en todo texto salvo la lista cerrada de
- *     excepciones; lo que queda es hallazgo con archivo y línea (AC 10).
+ *     excepciones; lo que queda es hallazgo con archivo y línea.
  *   · `publicThirdParty`: quedan sólo las `download` usadas (cierre transitivo) con licencia MIT o Apache-2.0; el resto
- *     del manifiesto, byte a byte (AC 12).
+ *     del manifiesto, byte a byte.
  *
  * Funciones puras: la prueba no toca disco ni git. Los marcadores se arman por partes, para que ninguna línea de este
  * archivo sea exactamente un marcador (el exportador frena un marcador solo en su línea fuera de un `.md`).
@@ -80,9 +80,8 @@ test('InternalBlocks_NoMarkers_Unchanged', () => {
   assert.strictEqual(r.text, src);
 });
 
-// Desde la story 8.10.1 (AC 33, pase adversarial C16) un marcador con texto en la misma línea ya no es «texto»: es un
-// marcador casi bien escrito y FRENA. Antes pasaba callado, y con la apertura y el cierre escritos igual el bloque
-// entero salía en la copia. Para nombrarlo en la prosa: sin el comentario (`tycon:internal-start`).
+// Un marcador con texto en la misma línea no es «texto»: es un marcador casi bien escrito y FRENA. Si pasara callado,
+// con la apertura y el cierre escritos igual el bloque entero saldría en la copia. Para nombrarlo en la prosa: sin el comentario (`tycon:internal-start`).
 test('InternalBlocks_MarkerNotAloneOnLine_Brakes', () => {
   const src = lines('se escribe así: ' + IS, 'fin');
   const r = pc.internalBlocks(src, 'guides/x.md');
@@ -159,7 +158,7 @@ test('MarkerLines_FindsEachMarkerLine', () => {
   assert.ok(r.every((m) => typeof m.marker === 'string' && m.marker.includes('tycon:')));
 });
 
-// Fuera de un .md (story 8.10.1, AC 33): el marcador ENTERO dentro de una línea de código también se ve —el exportador
+// Fuera de un .md: el marcador ENTERO dentro de una línea de código también se ve —el exportador
 // frena: los bloques internos van sólo en los .md—. Lo que no es un marcador: el cierre suelto, y el marcador armado
 // por partes (como lo arma el propio código, para que ninguna línea suya lo sea).
 test('MarkerLines_WholeMarkerInCodeIsSeen_PartsAndBareCloserAreNot', () => {
@@ -271,7 +270,7 @@ test('ReadmePaths_TwoRepoLayout_HarnessReadme', () => {
   assert.deepStrictEqual(r, [{ file: 'arnes/README.md', line: 2, path: 'skills/nada-*' }]);
 });
 
-// ── not-in-copy (story 8.10.3, tanda B · T8, AC 8) ────────────────────────────────────────────────────────────────
+// ── not-in-copy ────────────────────────────────────────────────────────────────
 // Una ruta entre comillas invertidas, en prosa de un .md, que existe en el repo del equipo y no en la copia lleva la
 // marca a su lado. No la llevan: lo que está en la copia, lo que no existe en el repo, un bloque de código, un ancla al
 // registro de incidentes, el README y el INSTALL, ni las convenciones del repo del lector.
@@ -315,8 +314,8 @@ test('PublicCopy_PathThatDoesNotTravel_IsMarked', () => {
   assert.deepStrictEqual(r2.marked, []);
 });
 
-// Pase adversarial de la tanda B (clase 1): una ruta escrita relativa a la carpeta del archivo, que existe en el repo del
-// equipo desde ahí y no en la copia, también lleva la marca (antes sólo se miraba desde la raíz).
+// Una ruta escrita relativa a la carpeta del archivo, que existe en el repo del equipo desde ahí y no en la copia,
+// también lleva la marca (no sólo se mira desde la raíz).
 test('PublicCopy_NotInCopy_RelativeTeamPath_IsMarked', () => {
   const opts = { inRepo: existsIn('guides/vecina.md', 'guides/a.md'), inCopy: existsIn('guides/a.md'), conventions: [] };
   const r = pc.markPathsNotInCopy('Ver `vecina.md` y `a.md`.', 'guides/a.md', opts);
@@ -324,7 +323,7 @@ test('PublicCopy_NotInCopy_RelativeTeamPath_IsMarked', () => {
   assert.strictEqual(r.text, `Ver \`vecina.md\`${pc.NOT_IN_COPY_MARK} y \`a.md\`.`);
 });
 
-// Pase adversarial de la tanda B (clase 2): la forma con que las skills nombran un archivo del arnés instalado (un prefijo
+// La forma con que las skills nombran un archivo del arnés instalado (un prefijo
 // de `installPrefixes`, que el exportador arma con el nombre del lugar) es una ruta del repo. Acá, prefijos de mentira.
 test('PublicCopy_NotInCopy_HarnessInstallPrefix_IsMarked', () => {
   const opts = { inRepo: existsIn('tasks/plan.md', 'skills/s/x.md', 'guides/a.md'), inCopy: existsIn('guides/a.md'), conventions: [],
@@ -337,7 +336,7 @@ test('PublicCopy_NotInCopy_HarnessInstallPrefix_IsMarked', () => {
   assert.deepStrictEqual(pc.markPathsNotInCopy('`~/.claude/acme-lugar/tasks/plan.md`', 'guides/b.md', { ...opts, installPrefixes: [] }).marked, []);
 });
 
-// Pase adversarial de la tanda B (clases 3, 6, 7, 8): el código en línea se lee como CommonMark — una tanda de comillas
+// El código en línea se lee como CommonMark: una tanda de comillas
 // invertidas sin su pareja de igual largo es texto, y no se come la apertura de un código en línea posterior.
 test('PublicCopy_NotInCopy_UnbalancedBackticks_FollowCommonMark', () => {
   const opts = { inRepo: existsIn('scripts/y.js', 'tasks/x.md'), inCopy: () => false, conventions: [] };
@@ -349,7 +348,7 @@ test('PublicCopy_NotInCopy_UnbalancedBackticks_FollowCommonMark', () => {
   assert.deepStrictEqual(marcadas('dos: ``tasks/x.md`` y `scripts/y.js`'), ['tasks/x.md', 'scripts/y.js']);
 });
 
-// Pase adversarial de la tanda B (clase 4): un código en línea que empieza en un renglón y termina en el siguiente (mismo
+// Un código en línea que empieza en un renglón y termina en el siguiente (mismo
 // párrafo) no despareja las comillas de lo que sigue.
 test('PublicCopy_NotInCopy_CodeSpanAcrossLines_IsMarked', () => {
   const opts = { inRepo: existsIn('scripts/secret.js'), inCopy: () => false, conventions: [] };
@@ -361,7 +360,7 @@ test('PublicCopy_NotInCopy_CodeSpanAcrossLines_IsMarked', () => {
   assert.deepStrictEqual(r2.marked.map((m) => m.line), [3]);
 });
 
-// Revisión de fallos silenciosos de la tanda B (vuelta 2): una carpeta vecina del archivo que se llama igual que una
+// Una carpeta vecina del archivo que se llama igual que una
 // convención suelta del lector (`tasks`) y que es del equipo se marca: la lectura relativa a la carpeta es la más
 // específica. La convención sigue valiendo cuando no hay tal vecina.
 test('PublicCopy_NotInCopy_NeighbourNamedLikeConvention_IsMarked', () => {
@@ -603,7 +602,7 @@ test('PublicThirdParty_AllRemoved_EmptyArray', () => {
   assert.deepStrictEqual(JSON.parse(r.text).third_party, []);
 });
 
-// 2026-10-05 (la copia para un dev de otra organización): `publish: true` hace que la copia baje una skill libre aunque
+// `publish: true` hace que la copia baje una skill libre aunque
 // nada de lo que sale la nombre en `used_by` —el README promete BMAD completo y las de .NET/React—; su cierre transitivo
 // entra con ella. Sin licencia libre, o si no se baja, la marca no alcanza.
 test('PublicThirdParty_PublishFlag_KeptOnlyIfFreeDownload', () => {
@@ -629,7 +628,7 @@ test('PublicThirdParty_InvalidJson_Throws', () => {
   assert.throws(() => pc.publicThirdParty('{ "third_party": [', []), /third-party-skills\.json/);
 });
 
-// Pase adversarial de la tanda A (hallazgos 3 y 7): el nombre viejo dentro del NOMBRE de un archivo (no sólo como una
+// El nombre viejo dentro del NOMBRE de un archivo (no sólo como una
 // carpeta entera) también es un resto que el renombre no movió.
 test('RenameLeft_OldIdInsideFileName_Flagged', () => {
   const rule = { from: 'skills/acme-make-story', to: 'skills/acme-made-story' };
@@ -637,7 +636,7 @@ test('RenameLeft_OldIdInsideFileName_Flagged', () => {
   assert.deepStrictEqual(r.map(({ file, line }) => [file, line]).sort(), [['docs/acme-make-story-notes.txt', 0], ['skills/tycon-pipeline/acme-make-story.md', 0]]);
 });
 
-// Pase adversarial de la tanda A (hallazgo 10): un enlace a un archivo con paréntesis balanceados en el nombre es válido
+// Un enlace a un archivo con paréntesis balanceados en el nombre es válido
 // en CommonMark y resuelve; un enlace dentro de un comentario HTML no se muestra y no cuenta.
 test('BrokenLinks_ParensInNameAndHtmlComments', () => {
   const files = new Map([['guides/a.md', ['Ver [la guía](notas(2026).md).', '<!-- [viejo](no-existe.md) -->', '<!--', '[otro viejo](tampoco.md)', '-->', '[roto](falta.md)'].join('\n')]]);
@@ -646,7 +645,7 @@ test('BrokenLinks_ParensInNameAndHtmlComments', () => {
   assert.deepStrictEqual(r.map(({ line, target }) => [line, target]), [[6, 'falta.md']]);
 });
 
-// Pase adversarial de la tanda A: esta prueba viaja en la copia, y el renombre real de la skill (skillRenames de la lista
+// Esta prueba viaja en la copia, y el renombre real de la skill (skillRenames de la lista
 // blanca) reescribe en la copia todo texto que la nombre. Por eso sus casos usan nombres inventados: si uno nombra la
 // skill real, la copia le cambia los datos y la prueba falla afuera y no adentro.
 test('PublicCopyTest_DoesNotNameTheRealRenamedSkill', () => {

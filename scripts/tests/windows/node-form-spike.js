@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * node-form-spike.js — la medición de la story 8.39 (Task 1.1 · AC 27 · E1): ¿un hook `.js` registrado con la ruta del
+ * node-form-spike.js — la medición E1: ¿un hook `.js` registrado con la ruta del
  * Node del arnés SIN comillas (`C:/…/node/current/node.exe "<guion>"`) corre por los cinco lanzadores con que se dispara
  * un hook en Windows?
  *
- * POR QUÉ EXISTE. La 8.39 hace que cada hook `.js` arranque con el Node propio del arnés en vez del `node` del PATH. La
+ * POR QUÉ EXISTE. Cada hook `.js` arranca con el Node propio del arnés en vez del `node` del PATH. La
  * ruta del intérprete va escrita en el comando del hook, y en Windows eso tiene una trampa medida: con la ruta del bash de
- * Git entre comillas, PowerShell lee el comando como dos textos y no ejecuta nada (182 #11979). La forma elegida es sin
+ * Git entre comillas, PowerShell lee el comando como dos textos y no ejecuta nada. La forma elegida es sin
  * comillas, y sólo se puede escribir en el aplicador si los cinco lanzadores la corren. Si alguno no la corre, todas las
- * Windows quedan con `node "<guion>"` (decisión 22, opción a, del dueño).
+ * Windows quedan con `node "<guion>"`.
  *
  * QUÉ MIDE, en una carpeta del laboratorio (nunca en la carpeta del usuario del agente):
  *   · copia el Node con que corre este sondeo a `<lab>/node-form/node/current/node.exe` (ruta con barras normales y sin
@@ -74,8 +74,8 @@ function measureNodeForm({ base, env, rec, isWin = L.isWin(), platform = process
       { kind: 'must-not-block', input: { tool_name: 'Bash', tool_input: { command: 'echo hola' } } },
     ];
     const unquoted = `${binFwd} "${guionFwd}"`;
-    // la vara es la forma de HOY (`node "<guion>"`) por el mismo lanzador: PowerShell no devuelve el 2 de un programa
-    // tal cual (`-Command` sale 1, `-File` sale 0, medido en Mac con pwsh 7) y eso ya pasa con la forma de hoy; lo que
+    // la vara es la forma actual (`node "<guion>"`) por el mismo lanzador: PowerShell no devuelve el 2 de un programa
+    // tal cual (`-Command` sale 1, `-File` sale 0, medido en Mac con pwsh 7) y eso ya pasa con la forma actual; lo que
     // la forma nueva no puede hacer es salir DISTINTO que ella
     const today = `node "${guionFwd}"`;
     const realBin = L.realOrSelf(bin).replace(/\\/g, '/').toLowerCase();

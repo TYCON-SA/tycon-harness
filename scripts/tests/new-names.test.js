@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * new-names.test.js — el freno de nombres reales nuevos en lo que se publica (story 8.10, tanda A · 2026-09-28).
+ * new-names.test.js — el freno de nombres reales nuevos en lo que se publica.
  *
  * Lo que no se puede perder:
  *   · Que un commit que mete un nombre real en un archivo que sale en la copia pública no se cree, y que el mensaje
@@ -13,7 +13,7 @@
  * Arma en un temporal un arnés y un agent-skills DE LABORATORIO con git de verdad y configuraciones SINTÉTICAS
  * (AcmeCorp, Globex, Initech, Vandelay…): nunca lee la lista de denegación ni la tabla de reemplazos reales, que son
  * privadas y en la copia pública, donde esta suite también corre, no existen. Los registros van a una HOME temporal.
- * Una sola excepción (story 8.18, T25): `Unified_RealUnionRange_PassesBothSources` corre el freno sobre el commit de la
+ * Una sola excepción (T25): `Unified_RealUnionRange_PassesBothSources` corre el freno sobre el commit de la
  * unión de verdad, sólo en el clon del equipo, y mira su código de salida y sus conteos — nunca un texto encontrado.
  */
 
@@ -120,7 +120,7 @@ function buildTemplate() {
   const arnes = path.join(dir, 'arnes');
   const skills = path.join(dir, 'agent-skills');
   for (const d of [arnes, skills]) { fs.mkdirSync(d, { recursive: true }); git(d, ['init', '-q', '-b', 'main']); }
-  // c0 y c1: la historia de antes de la configuración (T10 la repite con --config-from disk)
+  // c0 y c1: la historia previa a la configuración (T10 la repite con --config-from disk)
   write(arnes, { 'README.md': '# Arnés de laboratorio\n', 'guides/viejo.md': '# Viejo\n\nLínea limpia.\n' });
   git(arnes, ['add', '-A']); commit(arnes, 'c0');
   write(arnes, { 'guides/viejo.md': '# Viejo\n\nLínea limpia.\nLo usa AcmeCorp.\n' });
@@ -189,7 +189,7 @@ const skillsBrake = (l, opts = {}) => brake(l, { repo: l.skills, args: ['--sourc
 const resetLab = (repo) => { git(repo, ['reset', '-q', '--hard']); git(repo, ['clean', '-qfd']); };
 const edit = (repo, rel, fn) => fs.readFileSync(path.join(repo, rel), 'utf8').split('\n').map(fn).join('\n');
 
-// ── T1 · AC 1 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T1 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_NewNameInShippedFile_Blocks', () => {
   const l = lab();
   stage(l.arnes, { 'guides/x.md': '# Guía\n\nPrimera línea.\nLo usa AcmeCorp.\n' });
@@ -199,7 +199,7 @@ test('NewNames_NewNameInShippedFile_Blocks', () => {
   assert.match(r.out, /guides\/x\.md:\d+[^\n]*AcmeCorp/, 'el freno miró y nombró el hallazgo (no es un node que no arrancó)');
 });
 
-// ── T2 · AC 1 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T2 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_MessageSaysWhereWhatAndHowOut', () => {
   const l = lab();
   stage(l.arnes, { 'guides/x.md': '# Guía\n\nPrimera línea.\nLo usa AcmeCorp.\n' });
@@ -215,7 +215,7 @@ test('NewNames_MessageSaysWhereWhatAndHowOut', () => {
   assert.ok(a > 0 && a < b && b < c, `las salidas (a), (b) y (c), en ese orden\n${r.out}`);
   assert.match(r.out.slice(c), /sólo si lo decide una persona, en un commit aparte/i);
   assert.match(r.out.slice(b, c), /incident-log/, '(b) dice dónde vive el caso');
-  // story 8.26 (tanda G1): el freno ya no manda a enlazar el registro desde una guía; eso lo mira internal-history.js
+  // el freno no manda a enlazar el registro desde una guía; eso lo mira internal-history.js
   assert.match(r.out.slice(b, c), /no se enlaza/, '(b) no manda a enlazar el registro desde la prosa');
   assert.match(r.out.slice(b, c), /internal-history\.js/);
   // un término sin par en la tabla: la salida (a) ofrece el sujeto genérico o un par nuevo
@@ -229,19 +229,19 @@ test('NewNames_MessageSaysWhereWhatAndHowOut', () => {
   assert.match(s.out.slice(s.out.indexOf('(a)'), s.out.indexOf('(b)')), /sujeto genérico[\s\S]*par nuevo/);
 });
 
-// ── T33 de la story 8.10.1 (segunda vuelta) ──────────────────────────────────────────────────────────────────
-// El mensaje mandaba a escribir «el nombre inventado de la tabla». Esos inventados corresponden uno a uno a un real:
+// ── T33 ──────────────────────────────────────────────────────────────────────────────────────────────────────
+// El mensaje no manda a escribir «el nombre inventado de la tabla». Esos inventados corresponden uno a uno a un real:
 // usarlos en un ejemplo nuevo es dejar una pista. La salida (a) manda a un nombre NEUTRO; el de la tabla se muestra
 // sólo como lo que la copia va a poner si el real queda.
 test('T33 NewNames_Message_SendsToNeutralNames — la salida (a) manda a un nombre neutro, no al inventado de la tabla', () => {
-  // la otra mitad del criterio: la sección de la guía dice lo mismo y nombra la story que cambió la regla
+  // la otra mitad del criterio: la sección de la guía dice lo mismo
   {
     const guide = fs.readFileSync(path.join(__dirname, '..', '..', 'guides', 'maintaining', 'publicacion-espejo.md'), 'utf8');
     const from = guide.indexOf('El núcleo sin nombres');
     assert.ok(from >= 0, 'la guía trae la sección «El núcleo sin nombres»');
     const section = guide.slice(from);
     assert.match(section, /nombre neutro/i, 'la sección manda a un nombre neutro');
-    // (hasta la tanda G2 de la story 8.26 la sección nombraba la story que cambió la regla; una guía que se publica dice el porqué)
+    // una guía que se publica dice el porqué, no la story que cambió la regla
     assert.match(section, /inventados de la tabla de reemplazos \*\*no\*\* se usan para escribir algo nuevo/, 'la sección dice que los inventados de la tabla no se usan en lo nuevo');
     assert.match(section, /cada uno corresponde a un\s+real/, 'y por qué: cada inventado corresponde a un real');
   }
@@ -260,7 +260,7 @@ test('T33 NewNames_Message_SendsToNeutralNames — la salida (a) manda a un nomb
   assert.match(finding, /la tabla lo tapa con «Ceibo»/, 'el de la tabla se muestra como lo que tapa, no como lo que hay que escribir');
 });
 
-// ── T3 · AC 2 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T3 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_EditMoveAndRename_DoNotBlock', () => {
   const l = lab();
   const cases = [
@@ -278,7 +278,7 @@ test('NewNames_EditMoveAndRename_DoNotBlock', () => {
   }
 });
 
-// ── T4 · AC 3 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T4 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_Merge_CountsAgainstAllParents', () => {
   const l = lab();
   git(l.arnes, ['checkout', '-q', '-b', 'x']);
@@ -300,7 +300,7 @@ test('NewNames_Merge_CountsAgainstAllParents', () => {
   assert.doesNotMatch(r.out, /«AcmeCorp»/, 'el que venía de un padre no se nombra');
 });
 
-// ── T5 · AC 4 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T5 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_GluedName_Blocks', () => {
   const l = lab();
   stage(l.arnes, { 'scripts/app.js': "'use strict';\nconst AcmeCorpBackend = 1;\nmodule.exports = AcmeCorpBackend;\n" });
@@ -309,7 +309,7 @@ test('NewNames_GluedName_Blocks', () => {
   assert.match(r.out, /AcmeCorpBackend/);
 });
 
-// ── T6 · AC 5 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T6 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_PathWithName_Blocks', () => {
   const l = lab();
   stage(l.arnes, { 'guides/acmecorp-notas.md': '# Notas\n' });
@@ -323,7 +323,7 @@ test('NewNames_PathWithName_Blocks', () => {
   assert.match(r.out, /\(ruta\)[^\n]*scripts\/AcmeCorpBackend\.js/);
 });
 
-// ── T7 · AC 6 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T7 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_FileThatDoesNotShip_Silent', () => {
   const l = lab();
   const add = (rel) => stage(l.arnes, { [rel]: `${fs.readFileSync(path.join(l.arnes, rel), 'utf8')}Lo usa AcmeCorp.\n` });
@@ -347,7 +347,7 @@ test('NewNames_FileThatDoesNotShip_Silent', () => {
   assert.strictEqual(r.out, '');
 });
 
-// ── T8 · AC 7 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T8 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_ContentTransformedLikeTheCopy', () => {
   const l = lab();
   const cases = [
@@ -365,7 +365,7 @@ test('NewNames_ContentTransformedLikeTheCopy', () => {
   }
 });
 
-// ── T9 · AC 7 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T9 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_UnclassifiedEntry_Blocks', () => {
   const l = lab();
   stage(l.arnes, { 'carpeta-nueva/x.md': '# Nada que ver\n' });
@@ -380,7 +380,7 @@ test('NewNames_UnclassifiedEntry_Blocks', () => {
   assert.strictEqual(r.code, 0, `un commit que no toca esa carpeta sigue su curso\n${r.out}`);
 });
 
-// ── T10 · AC 8 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T10 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_OtherRepoAndConfig', () => {
   const l = lab();
   // (a) sin el otro repo: aviso fuerte, y deja pasar
@@ -408,7 +408,7 @@ test('NewNames_OtherRepoAndConfig', () => {
   assert.match(r.out, /guides\/viejo\.md:4/);
 });
 
-// ── T11 · AC 8 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T11 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_Reclassify_WhitelistPrivateOutAndPack', () => {
   const l = lab();
   // (1) el commit saca el «out» de la lista blanca
@@ -434,8 +434,8 @@ test('NewNames_Reclassify_WhitelistPrivateOutAndPack', () => {
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /scripts\/controls-bench\/cases\/advisors\/revisor-cliente\.json/);
   resetLab(l.skills);
-  // (4) el commit trae su propio export.js, que deja de excluir el incident-log: el freno clasifica el después con ESE
-  // código (compilado desde el índice, no el del disco) y el incident-log, que ya tenía un nombre, se mira entero
+  // (4) el commit trae su propio export.js, que deja de excluir el registro de incidentes: el freno clasifica el después con ESE
+  // código (compilado desde el índice, no el del disco) y el registro, que ya tenía un nombre, se mira entero
   stage(l.arnes, { 'guides/maintaining/incident-log.md': '# Incidentes\n\nEl de AcmeCorp.\n' });
   commit(l.arnes, 'el incident-log con un nombre (no sale: exclusión fija)');
   const own = fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'export.js'), 'utf8');
@@ -447,7 +447,7 @@ test('NewNames_Reclassify_WhitelistPrivateOutAndPack', () => {
   assert.match(r.out, /guides\/maintaining\/incident-log\.md:3/);
 });
 
-// ── T12 · AC 9 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T12 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_SameListAndExceptions', () => {
   const l = lab();
   // el commit suma el término y el archivo ya lo tenía: lo que ya existía no frena
@@ -465,7 +465,7 @@ test('NewNames_SameListAndExceptions', () => {
   assert.strictEqual(r.code, 0, r.out);
 });
 
-// ── T13 · AC 9 ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── T13 ───────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_ExceptionWithItsName_Blocks', () => {
   const l = lab();
   const withName = { 'guides/x.md': '# Guía\n\nLo usa Initech.\n' };
@@ -489,7 +489,7 @@ test('NewNames_ExceptionWithItsName_Blocks', () => {
   assert.strictEqual(r.code, 0, r.out);
 });
 
-// ── T14 · AC 11 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T14 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_CouldNotLook_Blocks', () => {
   const l = lab();
   const name = { 'guides/x.md': '# Guía\n\nLo usa AcmeCorp.\n' };
@@ -533,7 +533,7 @@ test('NewNames_CouldNotLook_Blocks', () => {
   assert.match(r.out, /no pude mirar/);
 });
 
-// ── T15 · AC 11 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T15 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_PublicCopyLabAndProfile', () => {
   const l = lab();
   const mini = (name, { profile = false, script = false } = {}) => {
@@ -542,7 +542,7 @@ test('NewNames_PublicCopyLabAndProfile', () => {
     fs.copyFileSync(HOOK, path.join(repo, '.githooks', 'pre-commit'));
     if (profile) write(repo, { 'perfil-equipo.json': '{}\n' });
     if (script) {
-      // el freno, el exportador y el detector, en su carpeta (story 8.9, tanda C4)
+      // el freno, el exportador y el detector, en su carpeta
       for (const f of ['publishing/new-names.js', 'publishing/export.js', 'publishing/detector.js']) {
         fs.mkdirSync(path.dirname(path.join(repo, 'scripts', f)), { recursive: true });
         fs.copyFileSync(path.join(RAIZ, 'scripts', f), path.join(repo, 'scripts', f));
@@ -568,7 +568,7 @@ test('NewNames_PublicCopyLabAndProfile', () => {
   assert.match(r.out, /no pude mirar/);
 });
 
-// ── T16 · AC 12 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T16 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_Disabled_SaysItEveryTime', () => {
   const l = lab();
   for (const n of [1, 2]) {
@@ -580,7 +580,7 @@ test('NewNames_Disabled_SaysItEveryTime', () => {
   }
 });
 
-// ── T17 · AC 13 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T17 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_LogWithoutNames', () => {
   const l = lab();
   stage(l.arnes, { 'guides/x.md': '# Guía\n\nLo usa AcmeCorp.\n' });
@@ -607,7 +607,7 @@ test('NewNames_LogWithoutNames', () => {
   assert.doesNotMatch(own + brakes, /AcmeCorp|Ceibo|guides\/x\.md/, 'ningún texto encontrado ni ruta');
 });
 
-// ── T18 · AC 14 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T18 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_NothingThatShips_DoesNotLoad', () => {
   const l = lab();
   stage(l.arnes, { 'scripts/publishing/denylist.json': '{ la lista rota' });
@@ -629,7 +629,7 @@ test('NewNames_NothingThatShips_DoesNotLoad', () => {
   assert.match(r.out, /no pude mirar/);
 });
 
-// ── T19 · AC 15 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T19 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_Range_SameVerdictAndEmpty', () => {
   const l = lab();
   const base = git(l.arnes, ['rev-parse', 'HEAD']);
@@ -651,7 +651,7 @@ test('NewNames_Range_SameVerdictAndEmpty', () => {
   assert.match(e.out, /no medido: el rango no trae commits/);
 });
 
-// ── T20 · AC 17 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T20 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_CeilingRisesOnlyWithTheList', () => {
   const l = lab();
   const ceiling = clone(CEILING);
@@ -678,7 +678,7 @@ test('NewNames_CeilingRisesOnlyWithTheList', () => {
   assert.match(r.out, /core\.glued pasa de 1 a sin cifra/);
 });
 
-// ── T21 · AC 19 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T21 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_NewProductWithoutTerm_Blocks', () => {
   const l = lab();
   const parity = { grupos: { g: [{ producto: 'AcmeCorp', ruta: 'AcmeCorp/x' }, { producto: 'Wonka', ruta: 'Wonka/x' }] } };
@@ -698,7 +698,7 @@ test('NewNames_NewProductWithoutTerm_Blocks', () => {
   assert.strictEqual(r.code, 0, r.out);
 });
 
-// ── T49 · AC 41 ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── T49 ──────────────────────────────────────────────────────────────────────────────────────────────
 test('NewNames_TermWithoutPairInIndex_Blocks', () => {
   const l = lab();
   const denied = clone(DENIED);
@@ -716,9 +716,9 @@ test('NewNames_TermWithoutPairInIndex_Blocks', () => {
   assert.strictEqual(r.code, 0, r.out);
 });
 
-// ── Los hallazgos del pase adversarial (paso 5b de la corrida, 2026-09-28): una prueba por defecto ───────────────
+// ── Casos de borde del pase adversarial: una prueba por defecto ───────────────
 test('NewNames_Adversarial_VaciarEntryRemoved_Blocks', () => {
-  // sacar de `empty` la entrada entera de un archivo publica la clave que antes se vaciaba: se mira
+  // sacar de `empty` la entrada entera de un archivo publica la clave que se vaciaba: se mira
   const l = lab();
   stage(l.arnes, { 'scripts/config.json': '{\n  "maquina": "AcmeCorp-01",\n  "hora": "02:00"\n}\n' });
   commit(l.arnes, 'la máquina con nombre, vaciada');
@@ -777,9 +777,9 @@ test('NewNames_Adversarial_SuiteEntryStartsShipping_Blocks', () => {
   assert.match(r.out, /scripts\/tests\/suites\.json:\d+ [^\n]*AcmeCorp/);
 });
 
-// story 8.9 (tanda C2): una suite que la base dejaba fuera y que el cambio renombra sigue tapada con su nombre nuevo — es
-// el mismo archivo. Sólo si el mapa de renombres lo declara y el archivo se mudó de verdad (pase adversarial de la C2:
-// sin esto, renombrar una prueba con datos que no salen frenaba el PR entero sin orden de commits que pasara).
+// Una suite que la base deja fuera y que el cambio renombra sigue tapada con su nombre nuevo — es
+// el mismo archivo. Sólo si el mapa de renombres lo declara y el archivo se mudó de verdad (sin esto, renombrar una
+// prueba con datos que no salen frenaría el PR entero sin orden de commits que pasara).
 function suiteHiddenThenRenamed({ withMap = true, mapOld = 'scripts/tests/before-lab.test.sh', mapText = null } = {}) {
   const l = lab();
   const list = clone(LIST);
@@ -816,7 +816,7 @@ test('NewNames_HiddenSuiteRenamed_WithoutTheMap_Blocks', () => {
 
 test('NewNames_HiddenSuiteRenamed_BrokenMap_BlocksAndSaysWhy', () => {
   // un mapa que no se deja leer no tapa nada (el freno queda más estricto) y lo DICE: sin el aviso, quien renombra ve
-  // «excepción nueva» sin pista de que la causa es el mapa (revisor de fallos silenciosos, re-vuelta de la C2)
+  // «excepción nueva» sin pista de que la causa es el mapa
   const r = suiteHiddenThenRenamed({ mapText: '{ roto' });
   // frena: 1 (la excepción cuenta como nueva) o 2 (el exportador tampoco puede leer el mapa: «no pude mirar») — nunca 0
   assert.ok(r.code === 1 || r.code === 2, `un mapa roto nunca deja pasar (exit ${r.code})\n${r.out}`);
@@ -829,8 +829,8 @@ test('NewNames_HiddenSuiteRenamed_MapNamesAnotherFile_Blocks', () => {
   assert.strictEqual(r.code, 1, r.out);
 });
 
-// story 8.12 (FUP-8.12-R5-CASES): lo mismo con un caso del banco que la base dejaba fuera (`casesOutside`, rutas enteras
-// del arnés, sin el prefijo `scripts/` de las suites). Sólo `suitesOutside` tenía prueba del traslado por renombre.
+// Lo mismo con un caso del banco que la base deja fuera (`casesOutside`, rutas enteras
+// del arnés, sin el prefijo `scripts/` de las suites).
 function caseHiddenThenRenamed({ withMap = true, mapOld = 'scripts/controls-bench/cases/hooks/before-lab.json', mapText = null } = {}) {
   const l = lab();
   const list = clone(LIST);
@@ -876,9 +876,9 @@ test('NewNames_HiddenCaseRenamed_MapNamesAnotherFile_Blocks', () => {
   assert.strictEqual(r.code, 1, r.out);
 });
 
-// story 8.12 (tanda R5, pase adversarial): una guía que el núcleo dejaba afuera y que el cambio muda de carpeta, con su
+// Una guía que el núcleo deja afuera y que el cambio muda de carpeta, con su
 // `out` mudado en el mismo commit, sigue tapada con su ruta nueva — es el mismo archivo y la base ya lo tapaba. Sin esto,
-// mudar una guía privada frenaba el commit y el PR (el rango compara contra la base) sin orden de commits que pasara.
+// mudar una guía privada frenaría el commit y el PR (el rango compara contra la base) sin orden de commits que pasara.
 function guideOutThenMoved({ withMap = true, outNew = 'guides/decisions/fuera.md', extra = {}, mapOld = 'guides/fuera.md' } = {}) {
   const l = lab();
   const guide = '# Guía\nlo usa AcmeCorp\n';
@@ -910,7 +910,7 @@ test('NewNames_HiddenGuideMovedWithItsOut_WithoutTheMap_Blocks', () => {
 
 test('NewNames_HiddenGuideMoved_MapNamesAnotherFile_Blocks', () => {
   // un mapa que nombra un viejo que la base no tenía no traslada nada: la mudanza tiene que ser de verdad. La ruta vieja
-  // puede seguir existiendo después (el reemplazo .md que deja la R5), así que eso no se exige
+  // puede seguir existiendo después (el reemplazo .md que deja la mudanza), así que eso no se exige
   const r = guideOutThenMoved({ mapOld: 'guides/never-existed.md' });
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /guides\/decisions\/fuera\.md:\d+[^\n]*AcmeCorp/);
@@ -1054,10 +1054,9 @@ test('NewNames_Adversarial_TermRemovedWithItsMention_Blocks', () => {
   assert.strictEqual(r.code, 0, r.out);
 });
 
-// ── story 8.10.2, AC 18 — apagar la forma pegada en el mismo commit que la trae es una excepción ───────────────────
-// El pase adversarial de la 8.10.1 (causa 14): la identidad de un término no traía `glued`, así que poner
-// `"glued": false` en el mismo commit que agrega el nombre pegado pasaba callado, a diferencia de sacar el término o
-// cambiarle `palabra`/`mayusculas`.
+// ── apagar la forma pegada en el mismo commit que la trae es una excepción ──────────────────────────────────────
+// La identidad de un término tiene que traer `glued`: si no, poner `"glued": false` en el mismo commit que agrega el
+// nombre pegado pasaría callado, a diferencia de sacar el término o cambiarle `palabra`/`mayusculas`.
 test('8.10.2 T18 NewNames_GluedFalseInTheSameCommit_IsAnException — apagar la forma pegada en el mismo commit que la trae frena', () => {
   const mention = { 'guides/x.md': '# Guía\n\nstage: DeployZrbStaging\n' };
   const withZrb = (l) => {
@@ -1082,7 +1081,7 @@ test('8.10.2 T18 NewNames_GluedFalseInTheSameCommit_IsAnException — apagar la 
   stage(sola.arnes, mention);
   let r = brake(sola);
   assert.strictEqual(r.code, 1, `control: el nombre pegado solo frena\n${r.out}`);
-  // cambiar `mayusculas` en el mismo commit: frena (como antes)
+  // cambiar `mayusculas` en el mismo commit: frena
   r = withChange((t) => { t.mayusculas = false; });
   assert.strictEqual(r.code, 1, `cambiar mayusculas en el mismo commit\n${r.out}`);
   // apagar la forma pegada en el mismo commit: también es una excepción
@@ -1091,7 +1090,7 @@ test('8.10.2 T18 NewNames_GluedFalseInTheSameCommit_IsAnException — apagar la 
   assert.match(r.out, /la excepción va en un commit aparte, y la decide una persona/);
 });
 
-// ── Revisor de fallos silenciosos, vuelta 4: una configuración del antes rota no se reemplaza callada ─────────────
+// ── una configuración de base rota no se reemplaza callada ─────────────
 test('NewNames_BrokenBaseList_SaysExceptionsAreBlind', () => {
   // la lista blanca de HEAD rota (alguien salteó el freno): el commit que la arregla pasa, pero dice que las
   // excepciones que agrega no se pueden separar de las que ya estaban
@@ -1131,7 +1130,7 @@ test('NewNames_BrokenBaseParity_AllProductsCountAndSaysSo', () => {
   assert.match(r.out, /product-parity\.json del antes no es JSON válido[\s\S]*todos sus productos cuentan como nuevos/, r.out);
 });
 
-// ── story 8.9 (AC 29) · el paquete del núcleo cambia de nombre en la lista blanca ───────────────────────────────
+// ── el paquete del núcleo cambia de nombre en la lista blanca ───────────────────────────────────────────────
 // En el commit del renombre la base nombra al núcleo con el nombre viejo y la punta con `core`: es el MISMO paquete. Si el
 // freno los viera como dos, `core` no tendría los «out» de la base y guides/fuera.md (que nombra a AcmeCorp) «empezaría
 // a salir». El viejo sale del mapa de renombres, nunca escrito acá; sin mapa (la copia pública) no hay nombre viejo.
@@ -1174,8 +1173,8 @@ test('NewNames_CorePackageRenamed_SamePackageNotNewShipping', { skip: OLD_CORE ?
   assert.match(r.out, /guides\/fuera\.md/);
 });
 
-// ── story 8.9, tanda C2 · el exportador se muda antes que su carpeta ────────────────────────────────────────────
-// En el commit de la mudanza, la foto de antes trae el exportador en su ruta vieja, con sus `require` relativos a ella (el
+// ── el exportador se muda antes que su carpeta ────────────────────────────────────────────
+// En el commit de la mudanza, la foto anterior trae el exportador en su ruta vieja, con sus `require` relativos a ella (el
 // detector, al lado suyo). Compilado en la ruta nueva no carga, y el commit de la mudanza —y todo --range que lo cruce—
 // saldría «no pude mirar». La ruta vieja sale del mapa, nunca escrita acá; sin mapa (la copia pública) no hay mudanza.
 const OLD_EXPORTER = (() => {
@@ -1191,8 +1190,8 @@ const OLD_EXPORTER = (() => {
 test('NewNames_ExporterMoved_BeforeSnapshotLoadsFromItsOldPath', { skip: OLD_EXPORTER ? false : 'sin el mapa de renombres no hay ruta vieja' }, () => {
   const l = lab();
   const own = fs.readFileSync(path.join(RAIZ, 'scripts', 'publishing', 'export.js'), 'utf8');
-  // el exportador como era antes de la mudanza: el detector y el freno de castellano, en su misma carpeta. Desde la tanda
-  // C4 el de hoy también los pide al lado suyo (los tres viven en scripts/publishing/), así que es el mismo texto
+  // el exportador previo a la mudanza: el detector y el freno de castellano, en su misma carpeta. El
+  // actual también los pide al lado suyo (los tres viven en scripts/publishing/), así que es el mismo texto
   const before = own;
   assert.match(own, /require\('\.\/detector\.js'\)/, 'la prueba necesita los require relativos del exportador');
   stage(l.arnes, { [OLD_EXPORTER]: before });
@@ -1204,7 +1203,7 @@ test('NewNames_ExporterMoved_BeforeSnapshotLoadsFromItsOldPath', { skip: OLD_EXP
   let r = brake(l);
   assert.strictEqual(r.code, 0, `la foto de antes se clasifica con su exportador, cargado desde su ruta vieja\n${r.out}`);
   // compilado en la ruta nueva no carga y el freno cae, avisando, a la configuración del después: pasa igual, pero a ciegas
-  // (rojo previo medido: «no se pudo clasificar con su propia configuración (el exportador de esa foto no carga…»)
+  // (el aviso que no tiene que salir: «no se pudo clasificar con su propia configuración (el exportador de esa foto no carga…»)
   assert.doesNotMatch(r.out, /no se pudo clasificar con su propia configuración|no pude mirar/, r.out);
   // lo mismo por --range, como lo mira el pull request
   commit(l.arnes, 'el exportador en su carpeta nueva');
@@ -1213,7 +1212,7 @@ test('NewNames_ExporterMoved_BeforeSnapshotLoadsFromItsOldPath', { skip: OLD_EXP
   assert.doesNotMatch(r.out, /no se pudo clasificar con su propia configuración|no pude mirar/, r.out);
 });
 
-// ── story 8.9, tanda C4 · la configuración se muda, y la lista, la tabla y la de denegación cambian de nombre ─────
+// ── la configuración se muda, y la lista, la tabla y la de denegación cambian de nombre ──────────────────────────
 // En el pull request de la mudanza (y en su pre-commit, contra HEAD) la base tiene la configuración en su ruta vieja. El
 // freno lee primero la nueva y, si en esa foto no está, la vieja que dice el mapa: la entrada `file` del archivo, o la
 // `folder` de su carpeta. Sin eso, los permisos de la base cuentan como nuevos (frena sin salida) y el techo de la base
@@ -1273,8 +1272,8 @@ test('NewNames_BaseConfigUnderOldFolder_ReadsItViaTheMap', { skip: OLD_CONFIG ? 
   assert.match(r.out, /core\.content/);
 });
 
-// Pase adversarial de la C4: un rango cuya PUNTA es de antes de la mudanza (repetir un rango histórico con el código de
-// hoy) tiene la configuración en la carpeta vieja; lo tocado se reconoce por las dos rutas, si no el techo que sube pasa.
+// Un rango cuya PUNTA es anterior a la mudanza (repetir un rango histórico con el código actual) tiene la
+// configuración en la carpeta vieja; lo tocado se reconoce por las dos rutas, si no el techo que sube pasa.
 test('NewNames_TipConfigUnderOldFolder_StillSeesTheCeiling', { skip: OLD_CONFIG ? false : 'sin el mapa de renombres no hay ruta vieja' }, () => {
   const l = lab();
   const base = configToOldFolder(l);
@@ -1310,9 +1309,9 @@ test('NewNames_BaseConfigUnderNewFolder_ReadsTheNewOne',{ skip: OLD_CONFIG ? fal
   assert.strictEqual(r.code, 1, r.out);
 });
 
-// ── story 8.9, tanda D1 · las claves de la lista blanca y el registro de productos, en inglés ───────────────────
+// ── las claves de la lista blanca y el registro de productos, en inglés ─────────────────────────────────────────
 // La base de un rango (o el HEAD del commit que las muda) trae la lista con las claves viejas y el registro de productos
-// por su nombre viejo. El freno lee las dos fotos con las claves de hoy (`readKeysDeep`) y el registro por los dos
+// por su nombre viejo. El freno lee las dos fotos con las claves actuales (`readKeysDeep`) y el registro por los dos
 // nombres; una lista con una clave vieja y su nueva con valores distintos es «no pude mirar». Las claves y la ruta viejas
 // salen del mapa real en tiempo de ejecución, nunca escritas acá; sin mapa (la copia pública) no hay nada que probar.
 const D1_MAP = (() => {
@@ -1325,7 +1324,7 @@ const D1_MAP = (() => {
     return null;
   }
 })();
-/** La lista con las claves de antes de la D1 (del mapa). */
+/** La lista con las claves viejas (del mapa). */
 const withOldKeys = (v) => {
   if (Array.isArray(v)) return v.map(withOldKeys);
   if (!v || typeof v !== 'object') return v;
@@ -1338,7 +1337,7 @@ test('BatchD1_BaseListWithOldKeys_SameListNotNewShipping', { skip: D1_MAP ? fals
   assert.ok(!('packages' in old) && Object.keys(old).length === Object.keys(LIST).length, 'la lista de laboratorio, con las claves viejas');
   stage(l.arnes, { 'scripts/publishing/allowlist.json': old });
   const base = commit(l.arnes, 'la lista blanca con las claves de antes de la D1');
-  // lo stageado: la misma lista con las claves de hoy. Si la base no se leyera con las de hoy, sus «out» no taparían
+  // lo stageado: la misma lista con las claves nuevas. Si la base no se leyera con las nuevas, sus «out» no taparían
   // nada y guides/fuera.md (que nombra a AcmeCorp) «empezaría a salir» por una excepción de este commit
   stage(l.arnes, { 'scripts/publishing/allowlist.json': LIST });
   let r = brake(l);
@@ -1359,9 +1358,9 @@ test('BatchD1_BaseListWithOldKeys_SameListNotNewShipping', { skip: D1_MAP ? fals
   assert.match(r.out, /guides\/fuera\.md/);
 });
 
-// En el commit de la D1 (y en su pull request) la base trae además SU exportador, que lee las claves de su época: el freno
-// se la devuelve con esas claves. El exportador de laboratorio de la base es el de hoy detrás de una puerta que exige las
-// claves viejas (como el de antes de la D1): si le llegaran las nuevas, el antes caería callado a la configuración del
+// En el commit del cambio de nombres (y en su pull request) la base trae además SU exportador, que lee las claves de su época: el freno
+// se la devuelve con esas claves. El exportador de laboratorio de la base es el actual detrás de una puerta que exige las
+// claves viejas (como un exportador anterior al cambio de nombres): si le llegaran las nuevas, el antes caería callado a la configuración del
 // después («no se pudo clasificar con su propia configuración»).
 test('BatchD1_BaseExporterReadsOldKeys_GetsThemBack', { skip: D1_MAP ? false : 'sin el mapa de renombres no hay claves viejas' }, () => {
   const l = lab();
@@ -1383,7 +1382,7 @@ test('BatchD1_BaseExporterReadsOldKeys_GetsThemBack', { skip: D1_MAP ? false : '
   ].join('\n');
   stage(l.arnes, { 'scripts/publishing/export.js': oldExporter, 'scripts/publishing/allowlist.json': withOldKeys(LIST) });
   const base = commit(l.arnes, 'la base: su exportador y su lista, con las claves de antes de la D1');
-  // el después: sin exportador propio (usa el de hoy) y la lista con las claves de hoy
+  // el después: sin exportador propio (usa el actual) y la lista con las claves nuevas
   stage(l.arnes, { 'scripts/publishing/export.js': null, 'scripts/publishing/allowlist.json': LIST });
   let r = brake(l);
   assert.strictEqual(r.code, 0, r.out);
@@ -1392,7 +1391,7 @@ test('BatchD1_BaseExporterReadsOldKeys_GetsThemBack', { skip: D1_MAP ? false : '
   r = brake(l, { args: ['--range', `${base}...HEAD`] });
   assert.strictEqual(r.code, 0, r.out);
   assert.doesNotMatch(r.out, /no se pudo clasificar con su propia configuración|no pude mirar/, r.out);
-  // control: la puerta de verdad cierra con las claves de hoy (si no, la prueba no prueba nada): la punta con ese
+  // control: la puerta de verdad cierra con las claves nuevas (si no, la prueba no prueba nada): la punta con ese
   // exportador y la lista nueva no se deja clasificar
   stage(l.arnes, { 'scripts/publishing/export.js': oldExporter });
   commit(l.arnes, 'el exportador viejo con la lista nueva');
@@ -1401,7 +1400,7 @@ test('BatchD1_BaseExporterReadsOldKeys_GetsThemBack', { skip: D1_MAP ? false : '
   assert.match(r.out, /claves de antes de la D1/, r.out);
 });
 
-// Pase adversarial de la D1 (false-negative-classification-1): un archivo de `empty` que el commit renombra sigue
+// Un archivo de `empty` que el commit renombra sigue
 // vaciándose con su nombre nuevo, pero las claves del después valen sólo si cada una es una de la base o su nombre nuevo
 // según el mapa. Cambiar la clave vaciada por otra de la misma cantidad es una excepción de este commit, como sin renombre.
 function emptyRenamed(afterKeys) {
@@ -1437,7 +1436,7 @@ test('BatchD1 false-negative-classification-1 — renombrar un archivo de empty 
   assert.match(r.out, exception);
 });
 
-// La otra cara: un archivo de empty que se muda Y renombra su clave vaciada según el mapa (la D1 lo hace con el examen)
+// La otra cara: un archivo de empty que se muda Y renombra su clave vaciada según el mapa (el examen lo hace)
 // sigue tapado. El archivo y la clave salen del mapa real en tiempo de ejecución (por la clave: escrito acá, el nombre del
 // archivo haría que las claves del laboratorio de esta prueba contaran como suyas en --stale-mentions).
 const EXAM = (() => {
@@ -1471,7 +1470,7 @@ test('BatchD1_EmptyFileAndKeyRenamedByMap_StaysHidden', { skip: EXAM ? false : '
   // el renombre de verdad: la clave de la máquina con su nombre nuevo (del mapa) y «otra», que no cambia
   let r = moveTo([EXAM.newKey, 'otra'], { [EXAM.newKey]: 'AcmeCorp-01', otra: '', tercera: '' });
   assert.strictEqual(r.code, 0, `la clave vaciada con su nombre nuevo (del mapa) es la misma: no es una excepción\n${r.out}`);
-  // MENOS claves que la base, pero una que no es renombre de ninguna (comparar tamaños la dejaba pasar): excepción
+  // MENOS claves que la base, pero una que no es renombre de ninguna (comparar tamaños la dejaría pasar): excepción
   const hidden = { [EXAM.newKey]: '', otra: '', tercera: 'AcmeCorp-02' };
   r = moveTo(['tercera'], hidden);
   assert.strictEqual(r.code, 1, `vaciar en el mismo commit una clave que no es renombre frena\n${r.out}`);
@@ -1529,10 +1528,10 @@ test('BatchD1_BaseParityUnderOldName_ReadsItViaTheMap', { skip: D1_MAP ? false :
   assert.doesNotMatch(r.out, /«Wonka»/, 'el que ya estaba en la base no se reclama');
 });
 
-// ── T19 · story 8.12, AC 16 (tanda R2) — el commit que estrena `inbox/` (el buzón de decisiones del equipo) no frena ──
+// ── T19 — el commit que estrena `inbox/` (el buzón de decisiones del equipo) no frena ──
 // La carpeta nueva de primer nivel la clasifica la exclusión fija `inbox/**` del exportador en el mismo commit: el freno
 // no la ve «sin clasificar», ni cuando el commit la crea ni cuando le mueve entera la carpeta de los instintos con
-// `git mv`. El nombre de antes de esa carpeta sale del mapa de renombres, nunca escrito acá (esta prueba también sale en
+// `git mv`. El nombre viejo de esa carpeta sale del mapa de renombres, nunca escrito acá (esta prueba también sale en
 // la copia); sin mapa —la copia pública— la mudanza no se prueba.
 const INBOX_OLD = (() => {
   try {
@@ -1573,14 +1572,14 @@ test('T19 R2_Inbox_ExporterGlobAndFirstLevel — la mudanza con git mv a inbox/i
   assert.strictEqual(r.out, '');
 });
 
-// ── story 8.18 · el repo unido: una fuente física y dos lógicas, partidas por ruta (el mínimo del AC 25) ──────────
+// ── el repo unido: una fuente física y dos lógicas, partidas por ruta ───────────────────────────────────────────
 // El arnés y agent-skills son UN repo y su pre-commit corre las dos partes sobre la misma raíz: el freno con
 // `--source arnes` y con `--source agent-skills`. Cada corrida mira sólo lo de SU fuente lógica (agent-skills es
 // agents/, skills/, packs/, .tycon/post-commit-ignore y .githooks/pre-commit-skills; el arnés, todo lo demás), sin
 // leer «el otro repo».
-// 🔴 rojo previo verificado sobre el commit de la unión: agregar `guides/x.md` salía 1 por la parte de skills
+// 🔴 Sin esa partición, agregar `guides/x.md` saldría 1 por la parte de skills
 //    («guides/ sin clasificar: el commit le agrega archivos»), y un archivo nuevo en `skills/`, 1 por la parte del
-//    arnés: ningún commit que agregara un archivo se podía crear.
+//    arnés: ningún commit que agregara un archivo se podría crear.
 /** El laboratorio con la forma del repo unido: agent-skills adentro del arnés, en su misma raíz. */
 function unifiedLab() {
   const l = lab();
@@ -1687,11 +1686,11 @@ test('Unified_RenameAcrossSources_AddForOneRemovalForTheOther — un renombre qu
   assert.strictEqual(same.code, 0, same.out);
 });
 
-// Pase adversarial del tramo 2 de la 8.18 (clase 14): la detección de renombres corría sobre el árbol ENTERO y después
-// se partía por fuente. Un archivo de la otra mitad con el mismo texto se quedaba con el origen del renombre, y el movido
-// dentro de la propia mitad pasaba a ser un alta: sus nombres de siempre salían como nuevos. El veredicto de la parte del
-// arnés dependía de cambios de skills/ que no le tocan.
-// 🔴 rojo previo verificado: (a) la parte del arnés salía 1 con «guides/movido.md:3 [cliente] AcmeCorp»; (b) el rango
+// La detección de renombres se hace por fuente, no sobre el árbol ENTERO. Si se hiciera sobre el árbol entero, un
+// archivo de la otra mitad con el mismo texto se quedaría con el origen del renombre, y el movido dentro de la propia
+// mitad pasaría a ser un alta: sus nombres de siempre saldrían como nuevos. El veredicto de la parte del
+// arnés dependería de cambios de skills/ que no le tocan.
+// 🔴 Sin eso: (a) la parte del arnés saldría 1 con «guides/movido.md:3 [cliente] AcmeCorp»; (b) el rango
 //    que cruza la unión, lo mismo (y desde la unión, sin cruzarla, 0).
 const ORIGINAL_GUIDE = '# Ya nombra\n\nEsto lo usa AcmeCorp desde siempre.\nOtra línea.\n';
 test('Unified_RenameWithinHalf_TwinInOtherHalf_StillARename — un gemelo en la otra mitad no le roba el renombre a la propia', () => {
@@ -1738,12 +1737,12 @@ test('Unified_RenameWithinHalf_TwinInOtherHalf_StillARename — un gemelo en la 
 test('Unified_RangeWhoseTipPredatesTheUnion_FallsBackToTwoRepos — un rango de antes de la unión se mira como dos repos', () => {
   const l = unifiedLab();
   const empty = fs.mkdtempSync(path.join(l.dir, 'vacia-'));
-  // la punta del rango (c1) es de antes de la unión: su árbol no trae skills/ ni agents/, así que no se parte por ruta
+  // la punta del rango (c1) es anterior a la unión: su árbol no trae skills/ ni agents/, así que no se parte por ruta
   const range = ['--range', `${l.c1}^..${l.c1}`, '--config-from', 'disk'];
   let r = unifiedBrake(l, 'arnes', { args: range, env: { TYCON_SKILLS_DIR: l.skills } });
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /guides\/viejo\.md:4/);
-  // y sin el otro repo a mano lo dice, como siempre con dos repos (el repo unido de hoy no cuenta para esa punta)
+  // y sin el otro repo a mano lo dice, como siempre con dos repos (el repo unido no cuenta para esa punta)
   r = unifiedBrake(l, 'arnes', { args: range, env: { TYCON_SKILLS_DIR: empty } });
   assert.strictEqual(r.code, 0, r.out);
   assert.match(r.out, /no encontré agent-skills/);
@@ -1761,14 +1760,14 @@ test('Unified_TwoReposStillWork — con dos repos de verdad el freno sigue leyen
   assert.match(alone.out, /no encontré arnes/);
 });
 
-// ── story 8.18, AC 25 (T25) · un rango que CRUZA la unión: el pull request del corte ─────────────────────────────────
+// ── T25 · un rango que CRUZA la unión: el pull request del corte ─────────────────────────────────
 // El pull request que lleva la unión a `main` sale de un `main` de ANTES de la unión: a su base le falta una mitad
 // entera, que entra con su historia por el merge de la unión. Esa mitad no es nueva —cada commit suyo ya pasó por este
 // freno en su repo—: se compara contra el commit desde donde entró (el padre con la forma del otro repo). Lo que el
 // propio merge, o un commit posterior, cambia sobre esa historia se mira como cualquier cambio: el rango pasa porque
 // el freno sabe de dónde viene cada mitad, nunca porque la saltee.
-// 🔴 rojo previo verificado: con la base de antes de la unión, la parte de skills veía TODO `skills/` como recién
-//    agregado y frenaba un nombre que agent-skills traía desde siempre; y el rango desde el padre de skills frenaba
+// 🔴 Con la base de antes de la unión, la parte de skills vería TODO `skills/` como recién
+//    agregado y frenaría un nombre que agent-skills trae desde siempre; y el rango desde el padre de skills frenaría
 //    lo mismo del lado del arnés.
 /** El laboratorio con la unión hecha como la de verdad: las dos historias, juntadas por un merge en una rama. */
 function unionMergeLab({ inTheMerge = null } = {}) {
@@ -1847,11 +1846,11 @@ test('Unified_RangeCrossingTheUnion_TwoSidesMerged_ComparedWithTheLatest — si 
   }
 });
 
-// Pase adversarial del tramo 2 de la 8.18 (clase 10): la topología real del pull request del corte. El lado de skills
-// de la unión (S1) sale de una rama aparte, y el main de agent-skills (A1) siguió desde el mismo punto y se mezcló
-// después: ninguno contiene al otro, y la mitad de skills se comparaba contra LOS DOS. Un nombre que A1 limpió seguía
-// «estando» en S1 (que nunca lo limpió), así que volver a meterlo después pasaba la red del pull request.
-// 🔴 rojo previo verificado: `--range <main de antes>...HEAD` salía 0 ({"outcome":"clean"}); desde la mezcla de A1, 1.
+// La topología real del pull request del corte: el lado de skills
+// de la unión (S1) sale de una rama aparte, y el main de agent-skills (A1) sigue desde el mismo punto y se mezcla
+// después: ninguno contiene al otro, y la mitad de skills se compara contra LOS DOS. Un nombre que A1 limpió seguiría
+// «estando» en S1 (que nunca lo limpió), así que volver a meterlo después pasaría la red del pull request.
+// 🔴 Sin eso, `--range <main de antes>...HEAD` saldría 0 ({"outcome":"clean"}); desde la mezcla de A1, 1.
 /** Las dos historias de agent-skills que no se contienen: S1 (rama aparte, en la unión) y A1 (main, mezclado después). */
 function twoSidesLab({ sideOnly = null } = {}) {
   const l = lab();
@@ -1906,10 +1905,10 @@ test('Unified_RangeCrossingTheUnion_TwoSidesNotContained_ComparedWithTheLatest �
   }
 });
 
-// ── story 8.18, AC 25 · el doble aviso ([DEF-8.18-doble-aviso]) ─────────────────────────────────────────────────────
+// ── el doble aviso ─────────────────────────────────────────────────────
 // En el repo unido las dos partes ven cambiar las DOS mitades en el mismo commit. Cada hallazgo sale UNA vez: lo que el
 // commit toca lo mira la parte de su fuente; lo que no toca y empieza a salir, la parte de la fuente que lo reclasifica.
-// 🔴 rojo previo verificado: con un cambio de la lista blanca en el commit, la parte del arnés reportaba también el
+// 🔴 Con un cambio de la lista blanca en el commit, la parte del arnés reportaría también el
 //    archivo nuevo de skills/ (que ya reporta su parte): el mismo hallazgo dos veces, y doble en el registro.
 test('Unified_BothHalvesInOneCommit_EachFindingOnce — el doble aviso: cada hallazgo lo reporta una sola parte', () => {
   const l = unifiedLab();
@@ -1945,7 +1944,7 @@ test('Unified_BothHalvesInOneCommit_PackReclassifies_SkillsPartReports — lo qu
   assert.strictEqual(h.code, 0, `la parte del arnés no repite lo que reclasificó un paquete: ${h.out}`);
 });
 
-// ── story 8.18, AC 25 (T25) · la unión DE VERDAD ────────────────────────────────────────────────────────────────
+// ── T25 · la unión DE VERDAD ────────────────────────────────────────────────────────────────
 // La única prueba de esta suite que corre el freno sobre el repo real (con sus listas privadas): mira sólo el código de
 // salida y los conteos del --json, nunca un texto encontrado. Los commits están anotados en
 // scripts/tests/fixtures/union-commits.json; en un clon que no trae esa historia (la copia pública, un clon recortado)
@@ -1961,7 +1960,7 @@ test('Unified_RealUnionRange_PassesBothSources — T25: el rango del commit de l
   created.push(home);
   const empty = fs.mkdtempSync(path.join(home, 'vacia-'));
   // 🔴 La salida 0 también la dan «quiet» (no había nada que mirar) y «not-measured» (no pudo): cada rango y cada fuente
-  // tiene su resultado ESPERADO, medido el 2026-10-04 (revisión del tramo 2, vuelta 1). Un rango que cruza la unión
+  // tiene su resultado ESPERADO. Un rango que cruza la unión
   // compara la mitad que su base no trae con la historia de esa mitad: la mitad que llega entera por la unión no trae
   // nada nuevo y da «quiet»; la que cambió en la resolución de los choques MIRA (clean, con archivos). Cada fuente mira
   // en al menos un rango: si una dejara de clasificar su mitad, su «clean» pasaría a otra cosa.
@@ -1987,8 +1986,8 @@ test('Unified_RealUnionRange_PassesBothSources — T25: el rango del commit de l
   }
 });
 
-// AC 25: el techo de los nombres reales es el mismo antes y después de la unión. El commit de la unión no lo toca: si lo
-// tocara, la cuenta «igual» se habría conseguido subiendo el techo. Compara sin imprimir el contenido (es privado).
+// El techo de los nombres reales es el mismo antes y después de la unión. El commit de la unión no lo toca: si lo
+// tocara, la cuenta «igual» se conseguiría subiendo el techo. Compara sin imprimir el contenido (es privado).
 test('Unified_RealUnion_NamesCeilingUnchanged — T25: names-ceiling.json es el mismo del lado del arnés que en el repo unido', (t) => {
   const fixture = path.join(RAIZ, 'scripts', 'tests', 'fixtures', 'union-commits.json');
   if (!fs.existsSync(path.join(RAIZ, 'perfil-equipo.json')) || !fs.existsSync(fixture)) { t.skip('NO MEDIDO: no es el clon del equipo (sin perfil o sin los commits de la unión anotados)'); return; }
@@ -2011,7 +2010,7 @@ test.after(() => {
   for (const d of [...created, template && template.dir]) if (d) fs.rmSync(d, { recursive: true, force: true });
 });
 
-// ── story 8.10.3, tanda A (pase adversarial, clase 6) — `empty` con una ruta de puntos: el freno la entiende como el exportador
+// ── `empty` con una ruta de puntos: el freno la entiende como el exportador
 test('8.10.3 NewNames_EmptyWithDottedPath_IsUnderstood — una clave anidada declarada en `empty` no deja al freno en «no pude mirar»', () => {
   const l = lab();
   const list = clone(LIST);
@@ -2029,9 +2028,9 @@ test('8.10.3 NewNames_EmptyWithDottedPath_IsUnderstood — una clave anidada dec
   assert.match(r.out, /reducer\.no_existe/);
 });
 
-// story 8.10.3, tanda C (pase adversarial, false-positive-edge-1): el freno le pasa las excepciones exactas al control de
-// nombres pegados, y se las pasaba también cuando miraba RUTAS. El exportador no acepta excepción en una ruta: un nombre
-// pegado en una ruta se arregla renombrando. Con un permitido de glob amplio el commit pasaba y la publicación frenaba.
+// El freno le pasa las excepciones exactas al control de nombres pegados, pero no cuando mira RUTAS. El exportador no
+// acepta excepción en una ruta: un nombre pegado en una ruta se arregla renombrando. Si el freno las aplicara a las
+// rutas, con un permitido de glob amplio el commit pasaría y la publicación frenaría.
 test('8.10.3 NewNames_GluedNameInAPath_NoAllowanceApplies — un pegado en una ruta frena aunque haya una excepción que lo nombre', () => {
   const l = lab();
   // la excepción ya está en HEAD (una nueva es, por sí sola, un hallazgo del freno)
@@ -2039,7 +2038,7 @@ test('8.10.3 NewNames_GluedNameInAPath_NoAllowanceApplies — un pegado en una r
   denied.permitidos.push({ archivo: '**', patron: '^AcmeCorpBackend$', motivo: 'un identificador declarado (prueba)' });
   stage(l.arnes, { 'scripts/publishing/denylist.json': denied });
   commit(l.arnes, 'la lista ya trae la excepción');
-  // en el CONTENIDO la excepción vale: es lo que la tanda C agregó
+  // en el CONTENIDO la excepción vale
   stage(l.arnes, { 'scripts/app.js': "'use strict';\nconst AcmeCorpBackend = 1;\nmodule.exports = AcmeCorpBackend;\n" });
   let r = brake(l);
   assert.doesNotMatch(r.out, /nombre pegado/, `con su excepción, el pegado del contenido no es un nombre nuevo\n${r.out}`);
@@ -2051,9 +2050,9 @@ test('8.10.3 NewNames_GluedNameInAPath_NoAllowanceApplies — un pegado en una r
   assert.match(r.out, /\(ruta\)[^\n]*AcmeCorpBackend/);
 });
 
-// ══ story 8.26, tanda H1c (AC 65 c · T79) — el árbol que ES la forma publicada ═══════════════════════════════════
-// Quien mantiene commitea en un clon del repo PÚBLICO: ese árbol no trae la lista, la tabla ni el perfil, y el freno
-// callaba («ahí no hay lista por diseño»): el nombre se veía recién al empujar, con el commit ya hecho. Acá se arma un
+// ══ T79 — el árbol que ES la forma publicada ═══════════════════════════════════════════════════════════════════
+// Quien mantiene commitea en un clon del repo PÚBLICO: ese árbol no trae la lista, la tabla ni el perfil, y si el freno
+// callara («ahí no hay lista por diseño»), el nombre se vería recién al empujar, con el commit ya hecho. Acá se arma un
 // clon del público DE JUGUETE (trae scripts/setup/public-remotes.json y los guiones; nunca una lista), una máquina de
 // laboratorio (HOME y TYCON_HOME propios: la configuración real queda fuera de alcance) y un clon de mantenimiento de
 // juguete con una lista SINTÉTICA. Corre el freno del propio clon de juguete, como en el hook: «el arnés desde el que
@@ -2149,7 +2148,7 @@ function leaveMaintBehind(l) {
   git(l.maint, ['checkout', '-q', 'main']);
 }
 
-// a · AC 65 c
+// a
 test(`${T79} — a · un término de la lista de la máquina en un archivo cualquiera frena, y dice archivo y línea, no el término`, () => {
   const l = publishedLab();
   stage(l.pub, { 'guides/x.md': withName });
@@ -2217,7 +2216,7 @@ test(`${T79} — b · la máquina declara su clon de mantenimiento y la lista no
 
 // c · sin declarar nada
 test(`${T79} — c · sin lista en ningún lugar: la máquina del equipo lo dice en una línea y deja pasar; la de afuera calla`, () => {
-  // alguien de afuera con su copia: no hay lista por diseño, como hoy
+  // alguien de afuera con su copia: no hay lista por diseño
   const l = publishedLab({ maintainers: false });
   stage(l.pub, { 'guides/x.md': withName });
   let r = pubBrake(l);
@@ -2315,8 +2314,8 @@ test(`${T79} — e · una lista plantada en el propio árbol que se commitea no 
   assert.strictEqual(r.code, 2, r.out);
   assert.match(r.out, /no pude mirar/);
   // 5 · la máquina nombra ESTE MISMO clon con otras mayúsculas (un disco que no las distingue): sigue siendo el árbol que
-  //     se commitea, y la lista plantada ahí no vale. Pasó: comparadas letra por letra, las dos rutas «eran» carpetas
-  //     distintas y la plantada salía como «la lista privada de esta máquina»
+  //     se commitea, y la lista plantada ahí no vale. Comparadas letra por letra, las dos rutas serían carpetas
+  //     distintas y la plantada saldría como «la lista privada de esta máquina»
   const otherCase = path.join(l.dir, 'PUB');
   let sameFolder = false;
   try { sameFolder = fs.realpathSync.native(otherCase) === fs.realpathSync.native(l.pub); } catch { sameFolder = false; }
@@ -2502,7 +2501,7 @@ test(`${T79} — j · git commit de verdad en el clon del público: el commit no
   assert.strictEqual(jsonl(stateFileOf(l, 'new-names.jsonl')).length, 3);
 });
 
-// k · AC 65 f, en el commit
+// k · en el commit
 test(`${T79} — k · la lista de un clon atrasado: el aviso sale junto al veredicto y no lo cambia`, () => {
   // (con el clon al día el freno no avisa: lo miden los casos a y g, que piden la salida vacía o sin esa línea)
   const l = publishedLab();
@@ -2596,8 +2595,8 @@ test(`${T79} — m · sólo nombres: un secreto, un correo, un binario o un enla
   assert.match(r.out, /guides\/y\.md:1\b/);
 });
 
-// n · la forma del árbol es la que el árbol ERA. Lo dejó el pase adversarial: mirando sólo cómo queda el índice, un commit
-// en un clon INTERNO que sacaba la lista y agregaba la señal caía al modo nuevo y salía 0; con el freno de antes, 2.
+// n · la forma del árbol es la que el árbol ERA. Si sólo se mirara cómo queda el índice, un commit
+// en un clon INTERNO que sacara la lista y agregara la señal caería al modo nuevo y saldría 0; con la forma del árbol previo, sale 2.
 test(`${T79} — n · la forma se decide por lo que el árbol era: un commit no cambia de modo trayendo la señal ni sacando la lista`, () => {
   const asTheHook = (repo) => ({ TYCON_GUIDES_DIR: repo, TYCON_SKILLS_DIR: repo });   // el despachador: una sola raíz
   const guide = { 'guides/zz.md': 'Lo usa AcmeCorp.\n' };
@@ -2653,11 +2652,11 @@ test(`${T79} — n · la forma se decide por lo que el árbol era: un commit no 
   assert.match(r.out, /guides\/zz\.md:1\b[^\n]*\[cliente\]/);
 });
 
-// ── El perfil del equipo con su nombre de hoy (team-profile.json): sigue diciendo «este árbol es del equipo» ──────────────
+// ── El perfil del equipo con su nombre actual (team-profile.json): sigue diciendo «este árbol es del equipo» ──────────────
 test('NewNames_TeamProfileNewName_StillTeamTree_FindsAndMissingListSaysWhichProfile', () => {
   const l = lab();
   git(l.arnes, ['mv', 'perfil-equipo.json', 'team-profile.json']); commit(l.arnes, 'el perfil con su nombre de hoy');
-  // con la lista: mira igual que con el nombre de antes
+  // con la lista: mira igual que con el nombre viejo
   stage(l.arnes, { 'guides/x.md': withName });
   let r = brake(l);
   assert.strictEqual(r.code, 1, `con team-profile.json el árbol sigue siendo del equipo y mira\n${r.out}`);

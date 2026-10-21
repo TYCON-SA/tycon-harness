@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# smoke-expectation.test.sh — red de la story 1.19: la prueba dice qué esperaba y qué salió.
+# smoke-expectation.test.sh — red: la prueba dice qué esperaba y qué salió.
 #
-# Por qué existe: un humo por terminal (`smoke-run.sh`) dejaba sólo el código de salida. Un `curl` que devuelve 200
-# con el cuerpo equivocado contaba igual que uno correcto, y nada quedaba para que el revisor de cierre viera si la
-# prueba encontró algo que el propio agente había escrito. Caso: la revisión de otro arnés del 2026-10-15, donde el
-# agente insertó a mano en la base el resultado que la prueba debía encontrar y la marcó aprobada.
+# Por qué existe: un humo por terminal (`smoke-run.sh`) que deja sólo el código de salida cuenta igual un `curl` que
+# devuelve 200 con el cuerpo equivocado que uno correcto, y no deja nada para que el revisor de cierre vea si la
+# prueba encontró algo que el propio agente había escrito (por ejemplo, el agente inserta a mano en la base el
+# resultado que la prueba debe encontrar y la marca aprobada).
 #
 # La regla: un humo que nombra criterios (`--acs`) escribe ANTES de correr qué tiene que pasar (`--pass-if`); su
 # salida se guarda recortada y tapada, con su sha256 en el espejo del home. La línea lleva `"v":2`.
 #
-# Lo que prueba (story 1.19, tabla «Tests»):
+# Lo que prueba:
 #   T1   PasaSi_Registered_AndMirrored        --pass-if y --fail-if tapados en el registro; su sha en el espejo
 #   T2   Acs_WithoutPasaSi_Refuses             --acs sin --pass-if no corre (exit 2); sin --acs corre
 #   T3   PasaSi_Empty_Refuses                  --pass-if "" o --pass-if -- → exit 2, nada corre
@@ -21,7 +21,7 @@
 #   T9   SameSecond_TwoFiles                   dos humos del mismo segundo → dos archivos; la matriz cuenta los dos
 #   T10  KilledSmoke_TempRemoved               SIGTERM a mitad → no queda temporal ni nada escrito en el repo
 #   T17  Step7c_DocumentsSeedGivenRule         el paso 7c tiene el párrafo de la regla
-# Y lo que encontró la revisión de la story (pase adversarial y revisores, 2026-10-15), fuera de la tabla:
+# Y los casos de borde, fuera de la tabla:
 #   T20  un proceso de fondo con la salida abierta no cuelga el humo; la salida guardada dice que siguió
 #   T21  `smoke-run.sh … | head` corta la copia de la salida → output: null, nunca una salida a medias
 #   T22  la salida se guarda con finales de línea \n (git no puede reescribirlos y dejarla por editada)
@@ -115,7 +115,7 @@ else
 fi
 
 # ── T5 — el guardado no cambia el código de salida ───────────────────────────────────────────────────────────
-# Sin --acs a propósito: T5 corre igual contra el envoltorio de antes y el de después (tiene que ser verde en los dos).
+# Sin --acs a propósito: T5 comprueba que el guardado no cambia el código de salida de un humo sin criterios.
 bash "$SMOKE" "$EV" 9.5 -- sh -c 'echo algo; exit 3' >/dev/null 2>&1; rc=$?
 if [ "$rc" = 3 ] && [ "$(ultima "$EV/9.5-smoke-ledger.jsonl" 'e.exit')" = 3 ] && [ "$(ultima "$GATES" 'e.exit')" = 3 ]; then
   ok "T5 el comando sale 3: el registro dice 3 y smoke-run.sh sale 3"
@@ -222,9 +222,9 @@ else
   no "T10 humo cortado: temporal visto=$visto, quedan: $(ls -A "$TMPDIR" | tr '\n' ' ')"
 fi
 
-# ── Lo que encontró el pase adversarial (2026-10-15) ─────────────────────────────────────────────────────────
+# ── casos de borde ──────────────────────────────────────────────────────────────────────
 # Un humo que deja un proceso de fondo con la salida abierta (arrancar la app para sembrar el «Given») no puede colgar
-# el envoltorio: con `| tee` se esperaba al último que tuviera la salida abierta, que con un servidor es nunca.
+# el envoltorio: con `| tee` se espera al último que tenga la salida abierta, que con un servidor es nunca.
 inicio=$(date +%s)
 # El proceso de fondo dura 8 s: más que los 5 s que se lo espera, y menos que la prueba, que después mira que su `tee`,
 # al terminar, no dejó el `.rc` suelto en $TMPDIR (el trap ya había borrado el temporal).

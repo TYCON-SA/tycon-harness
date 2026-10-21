@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * wait-notice.test.js — la corrida avisa por Telegram cuando queda esperando a una persona (story 7.20).
+ * wait-notice.test.js — la corrida avisa por Telegram cuando queda esperando a una persona.
  *
  * Telegram es un servidor HTTP local (`TYCON_TELEGRAM_API`) con un permiso de bot falso: NUNCA se manda un mensaje de
  * verdad. Cada caso tiene su HOME temporal (el estado real de la máquina no se toca) y el plazo se acorta con
@@ -106,7 +106,7 @@ async function waitFor(cond, ms = 15000) {
 const waitFile = (w, sid) => { try { return JSON.parse(fs.readFileSync(path.join(w.dir, 'waits', `${sid}.json`), 'utf8')); } catch { return null; } };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-// ── T1 · AC 1 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T1 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T1 Stop_ActiveRun_NotifiesAfterThreshold — id de la story, «Revisores» y la línea de espera; el autónomo escalado lleva su motivo', async () => {
   const tg = await fakeTelegram();
   try {
@@ -133,7 +133,7 @@ test('T1 Stop_ActiveRun_NotifiesAfterThreshold — id de la story, «Revisores»
   } finally { await tg.close(); }
 });
 
-// ── T2 · AC 2 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T2 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T2 Question_NotifiesAfterThreshold — la primera línea de la pregunta; «permiso para <herramienta>»', async () => {
   const tg = await fakeTelegram();
   try {
@@ -155,7 +155,7 @@ test('T2 Question_NotifiesAfterThreshold — la primera línea de la pregunta; �
   } finally { await tg.close(); }
 });
 
-// ── T3 · AC 3 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T3 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T3 Answered_BeforeThreshold_NoNotice — contestó · siguió · registros ajenos sí avisan · stop_hook_active sí avisa', async () => {
   const tg = await fakeTelegram();
   try {
@@ -193,7 +193,7 @@ test('T3 Answered_BeforeThreshold_NoNotice — contestó · siguió · registros
   } finally { await tg.close(); }
 });
 
-// ── T4 · AC 4 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T4 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T4 SecondWait_NewMessageListingBoth — un mensaje nuevo que lista las dos; el primero se reescribe', async () => {
   const tg = await fakeTelegram();
   try {
@@ -215,7 +215,7 @@ test('T4 SecondWait_NewMessageListingBoth — un mensaje nuevo que lista las dos
   } finally { await tg.close(); }
 });
 
-// ── T5 · AC 5 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T5 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T5 EveryWait_LeavesOneLine — la avisada y la contestada a tiempo dejan su línea', async () => {
   const tg = await fakeTelegram();
   try {
@@ -245,7 +245,7 @@ test('T5 EveryWait_LeavesOneLine — la avisada y la contestada a tiempo dejan s
   } finally { await tg.close(); }
 });
 
-// ── T6 · AC 6 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T6 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T6 NoBot_SkipsAndSaysSo — con chat y sin bot: no-channel; con el chat sólo en la configuración de la máquina: envío', async () => {
   const tg = await fakeTelegram();
   try {
@@ -267,7 +267,7 @@ test('T6 NoBot_SkipsAndSaysSo — con chat y sin bot: no-channel; con el chat s�
   } finally { await tg.close(); }
 });
 
-// ── T7 · AC 7 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T7 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T7 TelegramFails_NoRetry — 500 y sin respuesta: un intento, failed con el motivo', async () => {
   const tg = await fakeTelegram({ status: 500 });
   try {
@@ -289,7 +289,7 @@ test('T7 TelegramFails_NoRetry — 500 y sin respuesta: un intento, failed con e
   assert.strictEqual(l && l.result, 'failed');
 });
 
-// ── T8 · AC 8 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T8 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T8 NoRunOrFinishedRun_Nothing — sin marcador · corrida terminada · SessionEnd · espera de 13 horas', async () => {
   const tg = await fakeTelegram();
   try {
@@ -340,7 +340,7 @@ test('T8 NoRunOrFinishedRun_Nothing — sin marcador · corrida terminada · Ses
   } finally { await tg.close(); }
 });
 
-// ── T9 · AC 9 ──────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T9 ──────────────────────────────────────────────────────────────────────────────────────────────────
 test('T9 KillSwitch_Nothing — TYCON_WAIT_NOTICE=0', () => {
   const w = world({ api: 'http://127.0.0.1:9', extraEnv: { TYCON_WAIT_NOTICE: '0' } });
   marker(w, 'k1');
@@ -349,7 +349,7 @@ test('T9 KillSwitch_Nothing — TYCON_WAIT_NOTICE=0', () => {
   assert.ok(!fs.existsSync(w.dir), 'ni una carpeta');
 });
 
-// ── T10 · AC 10 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T10 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T10 BrokenState_FailsOpen — marcador que no es JSON; carpeta sin permiso de escritura', () => {
   const w = world({ api: 'http://127.0.0.1:9' });
   fs.mkdirSync(path.join(w.sd, 'active'), { recursive: true });
@@ -371,7 +371,7 @@ test('T10 BrokenState_FailsOpen — marcador que no es JSON; carpeta sin permiso
   assert.strictEqual(r4.status, 0); assert.strictEqual(r4.stdout + r4.stderr, '');
 });
 
-// ── T12 · AC 12 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T12 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T12 Message_OnlyThreeFields — id sin título, nombre del paso, 200 caracteres de la primera línea, credencial tapada', () => {
   const { buildMessage } = require(HOOK);
   // el token de mentira se arma por partes: entero en el texto de la prueba, el freno de publicación lo toma por uno real
@@ -389,7 +389,7 @@ test('T12 Message_OnlyThreeFields — id sin título, nombre del paso, 200 carac
   assert.doesNotMatch(conBot, new RegExp(BOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-// ── T13 · AC 13 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T13 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T13 Timer_LaunchedHidden — desprendido y oculto, y lo lanza el hook, no el arranque', () => {
   const { timerSpawnOptions } = require(HOOK);
   const o = timerSpawnOptions({});
@@ -402,7 +402,7 @@ test('T13 Timer_LaunchedHidden — desprendido y oculto, y lo lanza el hook, no 
   assert.doesNotMatch(ps1, /wait-notice\.js'.*Start-Process|Start-Process.*wait-notice/, 'el instalador de Windows tampoco');
 });
 
-// ── T14 · AC 13 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T14 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T14 Timer_OneSleeperPerSession — tres cierres seguidos: un solo proceso vivo', async () => {
   const w = world({ api: 'http://127.0.0.1:9', ms: 30000 });
   marker(w, 'o1');
@@ -420,7 +420,7 @@ test('T14 Timer_OneSleeperPerSession — tres cierres seguidos: un solo proceso 
   process.kill(pids[2]);
 });
 
-// ── T15 · AC 1 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T15 ─────────────────────────────────────────────────────────────────────────────────────────────────
 test('T28 Espera_AbiertaConElNombreViejoSeCierra @story-2.61.3 @ac-2 — una espera guardada con «Validar la story» se cierra y el aviso usa el nombre de hoy', async () => {
   const w = world({ ms: 60000 });
   marker(w, 'viejo', { pending: [1, 2, 3] });
@@ -438,7 +438,7 @@ test('T28 Espera_AbiertaConElNombreViejoSeCierra @story-2.61.3 @ac-2 — una esp
   assert.ok(l, 'la espera quedó en el registro');
   assert.strictEqual(l.result, 'answered');
   assert.strictEqual(waitFile(w, 'viejo'), null, 'y se cerró');
-  // el aviso arma el nombre por el número del paso: sale el de hoy
+  // el aviso arma el nombre por el número del paso: sale el nombre del paso
   const { buildMessage } = require(HOOK);
   const texto = buildMessage([{ story: '9.9', step: '1', waiting: '¿sigo?' }]);
   assert.match(texto, /Validar la historia/);
@@ -454,7 +454,7 @@ test('T15 Steps_FromTheTable — el nombre de la tabla; un id desconocido, tal c
   assert.strictEqual(u.name, '42z'); assert.strictEqual(u.unknown, true);
 });
 
-// ── T16 · AC 2 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T16 ─────────────────────────────────────────────────────────────────────────────────────────────────
 test('T16 WaitTools_SameAsBlockingMeter — la misma lista que ESPERAN_AL_DEV', () => {
   const { WAIT_TOOLS } = require(HOOK);
   const m = /const ESPERAN_AL_DEV = new Set\(\[([^\]]*)\]\)/.exec(fs.readFileSync(BLOCKING_METER, 'utf8'));
@@ -463,7 +463,7 @@ test('T16 WaitTools_SameAsBlockingMeter — la misma lista que ESPERAN_AL_DEV', 
   assert.deepStrictEqual([...WAIT_TOOLS].sort(), delMedidor);
 });
 
-// ── T17 · AC 6 ─────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T17 ─────────────────────────────────────────────────────────────────────────────────────────────────
 test('T17 TelegramOff_DoesNothing — sin chat: ningún archivo y ningún proceso', async () => {
   const w = world({ api: 'http://127.0.0.1:9', chat: null });
   marker(w, 't1');
@@ -482,7 +482,7 @@ test('T17 TelegramOff_DoesNothing — sin chat: ningún archivo y ningún proces
   if (f.pid) try { process.kill(f.pid); } catch { /* ya no está */ }
 });
 
-// ── T18 · AC 14 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T18 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T18 OrgMinutes_FromTeamRepos — minutos de la organización; inválidos dan 5 y el problema; la variable gana', () => {
   const { thresholdMs } = require(HOOK);
   const TR = require(path.join(ROOT, 'scripts', 'lib', 'team-repos.js'));
@@ -508,7 +508,7 @@ test('T18 OrgMinutes_FromTeamRepos — minutos de la organización; inválidos d
   assert.strictEqual(thresholdMs({ env: { TYCON_WAIT_NOTICE_MS: '1234' }, tree: d2 }).ms, 1234);
 });
 
-// ── Los hallazgos del pase adversarial (2026-10-17): cada caso, rojo antes del arreglo ──────────────────────────
+// ── Casos de borde de la espera: cada uno atrapa un rojo propio ──────────────────────────────────────────
 const codexUser = (text) => ({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } });
 const codexAgent = (text) => ({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text }] } });
 const codexCall = () => ({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'function_call', name: 'shell', arguments: '{}' } });
@@ -674,7 +674,7 @@ test('T25 RedactBeforeCut — una credencial partida por el corte de 200 caracte
   assert.doesNotMatch(t, /ghp_A/, 'ni el pedazo del token');
 });
 
-// ── T19 · AC 15 ────────────────────────────────────────────────────────────────────────────────────────────────
+// ── T19 ────────────────────────────────────────────────────────────────────────────────────────────────
 test('T19 Codex_OnlyStop — del lado Codex, sólo el cierre de turno', () => {
   const raw = JSON.parse(fs.readFileSync(CODEX_HOOKS, 'utf8'));
   const events = Object.entries(raw.hooks || {}).filter(([, groups]) => JSON.stringify(groups).includes('wait-notice.js')).map(([e]) => e);

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# harness-lab.sh — el laboratorio compartido de las suites `harness-*.test.sh` (story 8.13, tanda A · 2026-10-02).
+# harness-lab.sh — el laboratorio compartido de las suites `harness-*.test.sh`.
 #
 # Por qué existe: cinco suites prueban el mecanismo de instalación (`scripts/setup/harness.js`) sobre una máquina de
 # juguete con git DE VERDAD: una HOME propia, dos remotos bare (el arnés y agent-skills), un clon de cada uno, y un
 # «arnés de juguete» con la forma mínima que el programa exige —`install-tycon-hooks.sh` de mentira que registra un hook y
 # honra `--check`, `--report-json`, `TYCON_HARNESS_LOCK_HELD` y `TYCON_HARNESS_SNAPSHOT_DIR`; `scripts/lib/` y
-# `scripts/setup/` REALES copiados del repo bajo prueba—. Armarlo en cada suite a mano eran tres copias que divergen.
+# `scripts/setup/` REALES copiados del repo bajo prueba—. Armarlo a mano en cada suite daría tres copias que divergen.
 #
 # Nunca toca `~/.claude`, el checkout real ni `~/.claude/agent-skills`: todo vive bajo la carpeta que recibe (de
 # `mktemp -d`), la HOME de la sesión se reemplaza por la de juguete, launchd es un `launchctl` de mentira, el examen
@@ -24,47 +24,46 @@
 #   harness_lab_state                       # el estado (harness-state.json) o nada
 #   harness_lab_settings_commands           # los `command` de SessionStart, uno por línea
 #
-#   harness_lab_publish_hook PreToolUse tycon-pipeline/x.js   # tanda C: un hook nuevo de agent-skills en el remoto
-#   harness_lab_publish_block lab-extra     # tanda C: un bloque TYCON_BLOCK nuevo declarado por el árbol
-#   harness_lab_bootstrap rollback          # tanda C: la copia fija de arranque (~/.claude/.tycon-pipeline/harness/)
+#   harness_lab_publish_hook PreToolUse tycon-pipeline/x.js   # un hook nuevo de agent-skills en el remoto
+#   harness_lab_publish_block lab-extra     # un bloque TYCON_BLOCK nuevo declarado por el árbol
+#   harness_lab_bootstrap rollback          # la copia fija de arranque (~/.claude/.tycon-pipeline/harness/)
 #
-#   harness_lab_public                      # tanda D: el remoto del arnés pasa a ser «el repo público» (lo declara
+#   harness_lab_public                      # el remoto del arnés pasa a ser «el repo público» (lo declara
 #                                           #   scripts/setup/public-remotes.json en el árbol, con la ruta del bare)
-#   harness_lab_publish_sync 2026.10.02.1   # tanda D: una sincronización: commit sobre la punta de main con ese número
+#   harness_lab_publish_sync 2026.10.02.1   # una sincronización: commit sobre la punta de main con ese número
 #                                           #   en version.json, y push --force a mirror/sync (la rama se reescribe)
-#   harness_lab_publish_stable 2026.10.02.1 # tanda D: un commit en main con ese número en version.json
-#   harness_lab_merge_sync                  # tanda D: el merge del pull request (merge --no-ff de mirror/sync a main)
-#   harness_lab_delete_sync                 # tanda D: el remoto se queda sin mirror/sync (se borró al mergear)
-#   harness_lab_pty s harness channel latest   # tanda D: corre con una terminal de juguete y contesta «s» («-» = nada)
+#   harness_lab_publish_stable 2026.10.02.1 # un commit en main con ese número en version.json
+#   harness_lab_merge_sync                  # el merge del pull request (merge --no-ff de mirror/sync a main)
+#   harness_lab_delete_sync                 # el remoto se queda sin mirror/sync (se borró al mergear)
+#   harness_lab_pty s harness channel latest   # corre con una terminal de juguete y contesta «s» («-» = nada)
 #
-#   harness_lab_team_machine "$BASE/lab" [toy|real]   # story 8.18: la máquina del equipo en la TRANSICIÓN, en vez de
+#   harness_lab_team_machine "$BASE/lab" [toy|real]   # la máquina del equipo en la TRANSICIÓN, en vez de
 #                                           #   harness_lab_create (detalle en «La máquina del equipo», más abajo)
-#   harness_lab_single_tree "$BASE/lab"     # 8.18: la máquina NUEVA de un solo árbol (la tercera forma), en vez de las otras dos
-#   harness_lab_worktree_hash "$LAB_SKILLS" # 8.18: un hash de todo el árbol de trabajo de ese clon (sin su .git)
-#   harness_lab_shape "$BASE/lab" repointed # 8.18: una máquina ya instalada en una de las tres formas (two-clones|repointed|single)
-#   harness_lab_cut                         # 8.18: el corte — `main` del remoto del arnés pasa a traer skills/, agents/ y packs/
-#   harness_lab_pull_tree                   # 8.18: el clon del arnés avanza a lo publicado (lo que hace el arranque)
-#   harness_lab_publish_without_skills      # 8.18: una punta de `main` que NO trae skills/ (el retorno a antes de la unión)
-#   harness_lab_clone_extras "$LAB_SKILLS"  # 8.18: un hash de lo que git no sigue en ese clon y de sus stash
-#   harness_lab_links                       # 8.18: a dónde apunta cada enlace de ~/.claude (o qué hay en su lugar)
-#   harness_lab_isolated harness update     # 8.18: corre un comando con apagado lo que el aplicador real saca a la red
-#   harness_lab_real_applier [--check]      # 8.18: el aplicador REAL del clon del laboratorio (sólo con `real`), aislado
-#   harness_lab_seed_codex_links            # 8.18: los enlaces de ~/.codex/skills hacia el clon viejo, como en el equipo
-#   harness_lab_codex_links                 # 8.18: esos enlaces, uno por línea («nombre -> destino»)
+#   harness_lab_single_tree "$BASE/lab"     # la máquina NUEVA de un solo árbol (la tercera forma), en vez de las otras dos
+#   harness_lab_worktree_hash "$LAB_SKILLS" # un hash de todo el árbol de trabajo de ese clon (sin su .git)
+#   harness_lab_shape "$BASE/lab" repointed # una máquina ya instalada en una de las tres formas (two-clones|repointed|single)
+#   harness_lab_cut                         # el corte — `main` del remoto del arnés pasa a traer skills/, agents/ y packs/
+#   harness_lab_pull_tree                   # el clon del arnés avanza a lo publicado (lo que hace el arranque)
+#   harness_lab_publish_without_skills      # una punta de `main` que NO trae skills/ (el estado anterior al corte)
+#   harness_lab_clone_extras "$LAB_SKILLS"  # un hash de lo que git no sigue en ese clon y de sus stash
+#   harness_lab_links                       # a dónde apunta cada enlace de ~/.claude (o qué hay en su lugar)
+#   harness_lab_isolated harness update     # corre un comando con apagado lo que el aplicador real saca a la red
+#   harness_lab_real_applier [--check]      # el aplicador REAL del clon del laboratorio (sólo con `real`), aislado
+#   harness_lab_seed_codex_links            # los enlaces de ~/.codex/skills hacia el clon viejo, como en el equipo
+#   harness_lab_codex_links                 # esos enlaces, uno por línea («nombre -> destino»)
 #
-# El perfil del equipo del laboratorio (story 8.16, tanda D): `TYCON_PROFILE=$LAB/lab-profile.json`, que sólo fija
+# El perfil del equipo del laboratorio: `TYCON_PROFILE=$LAB/lab-profile.json`, que sólo fija
 # `install.profile: full` — una máquina cuyo perfil ya está elegido, así `install --yes` sin terminal instala como
 # siempre y nada pregunta. La máquina de afuera que pregunta la arma harness-questions.test.sh con TYCON_PROFILE=0.
 #
 # Variables que respeta: LAB_APPLIER_SLEEP (segundos que duerme el aplicador de juguete), LAB_APPLIER_FAIL=1 (sale 1),
-# LAB_APPLIER_SUITE_FAIL=1 (imprime «FALLÓ» como su suite rápida y sale 0; tanda C), LAB_APPLIER_OLD=1 (un aplicador de
-# antes de la tanda D: no conoce TYCON_HARNESS_SHARED_DONE y hace y reporta las piezas compartidas igual),
-# LAB_APPLIER_WARN (una línea de aviso que el aplicador de juguete imprime tal cual, entre otras dos; story 8.16),
-# LAB_APPLIER_NO_REPORT=1 (acepta --report-json y no escribe el reporte de piezas; story 8.16),
+# LAB_APPLIER_SUITE_FAIL=1 (imprime «FALLÓ» como su suite rápida y sale 0), LAB_APPLIER_OLD=1 (un aplicador
+# viejo: no conoce TYCON_HARNESS_SHARED_DONE y hace y reporta las piezas compartidas igual),
+# LAB_APPLIER_WARN (una línea de aviso que el aplicador de juguete imprime tal cual, entre otras dos),
+# LAB_APPLIER_NO_REPORT=1 (acepta --report-json y no escribe el reporte de piezas),
 # LAB_APPLIER_EDIT (una ruta del árbol que el aplicador de juguete reescribe con LAB_APPLIER_EDIT_TEXT antes de su
-# suite, una sola vez por HOME: la persona que edita un archivo entre que se apila la capa y la salud; story 8.13.1,
-# revisión del paso 5).
-# Tanda B de la 8.16: el aplicador de juguete honra `--check --plan-json <archivo>` (y `--plan-json` sin `--check` sale
+# suite, una sola vez por HOME: la persona que edita un archivo entre que se apila la capa y la salud).
+# El aplicador de juguete honra `--check --plan-json <archivo>` (y `--plan-json` sin `--check` sale
 # 2); LAB_APPLIER_CHECK_FAIL=1 (su --check sale 1), LAB_APPLIER_BAD_PLAN=1 (deja un plan ilegible),
 # LAB_APPLIER_PLAN_LOST=1 (dice que no pudo anotar una pieza en el plan y lo deja igual),
 # harness_lab_old_applier (un aplicador que no conoce la opción), LAB_PTY_DELAY y la respuesta «EOF» de harness_lab_pty.
@@ -76,30 +75,30 @@ HARNESS_LAB_RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 harness_lab_git() { # harness_lab_git <dir> <args…>  — git sin la configuración de la máquina
   # 🔴 Sin carpeta no hay git. `git -C ""` NO cambia de carpeta: opera sobre el repo donde está parado quien llama. Un
   #    guion cuyo laboratorio no se armó (harness_lab_create se niega bajo una ruta con el nombre del repo del equipo, y
-  #    deja LAB_* sin valor) terminaba creando ramas y commits en la copia de trabajo real (2026-10-02).
+  #    deja LAB_* sin valor) terminaría creando ramas y commits en la copia de trabajo real.
   local d="${1:-}"
   if [ -z "$d" ] || [ ! -d "$d" ]; then
     echo "harness-lab: harness_lab_git sin carpeta («${d}» no existe): ¿se armó el laboratorio? — no corro git" >&2
     return 2
   fi
   shift
-  # 🔴 Sin mantenimiento automático (2026-10-11). Sin configuración, git lanza `git maintenance run --auto` después de
+  # 🔴 Sin mantenimiento automático. Sin configuración, git lanza `git maintenance run --auto` después de
   #    cada commit y de cada fetch y lo deja corriendo de fondo: empaqueta y borra objetos sueltos cuando quiere. Una
-  #    suite que saca la huella de un repo (find + shasum) antes y después de un comando leía un repo que se movía solo:
-  #    harness-update.test.sh T8 dio «algún comando escribió en un repo ajeno» sin que nadie escribiera (con git 2.55.0;
-  #    la misma corrida, media hora después, verde). Lo mide scripts/tests/harness-lab-git.test.sh. `gc.auto=0` es por
-  #    un git viejo, que lanzaba `git gc --auto` en vez de `maintenance`.
+  #    suite que saca la huella de un repo (find + shasum) antes y después de un comando lee un repo que se mueve solo
+  #    y da «algún comando escribió en un repo ajeno» sin que nadie escriba (harness-update.test.sh T8).
+  #    Lo mide scripts/tests/harness-lab-git.test.sh. `gc.auto=0` es por un git viejo, que lanza `git gc --auto` en vez de
+  #    `maintenance`.
   env -u GIT_DIR -u GIT_INDEX_FILE -u GIT_WORK_TREE -u GIT_COMMON_DIR \
     GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0 LC_ALL=C \
     GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com \
     git -c core.hooksPath=/dev/null -c maintenance.auto=false -c gc.auto=0 -C "$d" "$@"
 }
 
-# 🔴 Sin mantenimiento automático TAMBIÉN para el git que corre el código bajo prueba (2026-10-14). harness_lab_git lo
-#    apaga para el git del laboratorio, pero el `fetch` y el `commit` de harness.js lo lanzaban igual
+# 🔴 Sin mantenimiento automático TAMBIÉN para el git que corre el código bajo prueba. harness_lab_git lo
+#    apaga para el git del laboratorio, pero el `fetch` y el `commit` de harness.js lo lanzarían igual
 #    (`git maintenance run --auto --detach`, de fondo). Con git 2.55 eso reempaqueta el clon y escribe `.git/info/refs`:
-#    harness-repoint.test.sh, que compara la máquina byte a byte después de la ida y la vuelta, salía rojo de a ratos
-#    (public-ci, LINK y VIEW: «info: exclude» antes, «info: exclude refs» después). Va por el entorno, que lo hereda todo
+#    harness-repoint.test.sh, que compara la máquina byte a byte después de la ida y la vuelta, saldría rojo de a ratos.
+#    Va por el entorno, que lo hereda todo
 #    git hijo (sources.js pasa el entorno; layer.js borra las GIT_* pero sólo hace checkout, que no lo lanza). Lo mide
 #    scripts/tests/harness-lab-git.test.sh.
 harness_lab_no_auto_maintenance() {
@@ -112,23 +111,23 @@ _harness_lab_toy_tree() { # _harness_lab_toy_tree <dir>
   mkdir -p "$d/scripts/setup" "$d/scripts/lib" "$d/scripts/hooks" "$d/.dashboard"
   cp -R "$HARNESS_LAB_RAIZ/scripts/setup/harness.js" "$d/scripts/setup/" 2>/dev/null || true
   [ -d "$HARNESS_LAB_RAIZ/scripts/setup/harness" ] && cp -R "$HARNESS_LAB_RAIZ/scripts/setup/harness" "$d/scripts/setup/"
-  # la lista de efectos REAL (story 8.16): el cierre de `install` cuenta con ella los hooks que pueden frenar
+  # la lista de efectos REAL: el cierre de `install` cuenta con ella los hooks que pueden frenar
   [ -f "$HARNESS_LAB_RAIZ/scripts/setup/install-effects.json" ] && cp "$HARNESS_LAB_RAIZ/scripts/setup/install-effects.json" "$d/scripts/setup/"
   cp "$HARNESS_LAB_RAIZ"/scripts/lib/*.js "$d/scripts/lib/" 2>/dev/null || true
   cp "$HARNESS_LAB_RAIZ"/scripts/lib/*.sh "$d/scripts/lib/" 2>/dev/null || true
   cp "$HARNESS_LAB_RAIZ"/scripts/lib/*.json "$d/scripts/lib/" 2>/dev/null || true
-  # dos listas REALES de la publicación: los repos públicos, y las skills de terceros (story 8.16: el cierre de `install`
+  # dos listas REALES de la publicación: los repos públicos, y las skills de terceros (el cierre de `install`
   # cuenta con ella las que quedan pendientes). Se nombra cada archivo, nunca la carpeta: el lector de dependencias de la
   # validación (scripts/ci/suite-deps.js) cuenta una carpeta nombrada entera, y con ella cualquier cambio en la publicación
-  # corría todas las suites del laboratorio (story 8.22, tramo E). La carpeta se crea igual, vacía si faltan las dos.
+  # corre todas las suites del laboratorio. La carpeta se crea igual, vacía si faltan las dos.
   local pub
   for pub in scripts/publishing/public-repos.json scripts/publishing/third-party-skills.json; do
     mkdir -p "$d/$(dirname "$pub")"
     [ -f "$HARNESS_LAB_RAIZ/$pub" ] && cp "$HARNESS_LAB_RAIZ/$pub" "$d/$pub"
   done
-  # 🔴 el laboratorio NO hereda el repo del equipo del repo real (story 8.25, AC 16): con la clave `team` puesta, cada máquina
-  #    de juguete tendría repo del equipo declarado y la mudanza exigiría verlo (el servidor de juguete atiende un solo repo)
-  #    → T27-T32 de harness-move-home rojas. Sólo las pruebas de la capa la ponen, con el nombre que atiende el segundo repo
+  # 🔴 el laboratorio NO hereda el repo del equipo del repo real: con la clave `team` puesta, cada máquina
+  #    de juguete tendría repo del equipo declarado y la mudanza exigiría verlo (el servidor de juguete atiende un solo repo),
+  #    y T27-T32 de harness-move-home saldrían rojas. Sólo las pruebas de la capa la ponen, con el nombre que atiende el segundo repo
   [ -f "$d/scripts/publishing/public-repos.json" ] && node -e '
     const fs = require("fs"); const f = process.argv[1];
     const j = JSON.parse(fs.readFileSync(f, "utf8")); if (j.team === undefined) process.exit(0);
@@ -365,44 +364,44 @@ _harness_lab_machine() {
   export REAL_HOME="${REAL_HOME:-$HOME}" HOME="$LAB_HOME" TMPDIR="$LAB_TMP"
   harness_lab_no_auto_maintenance
   # en Windows, Node saca la carpeta de la persona de USERPROFILE y no de HOME: sin esto, `harness.js` corrido desde el
-  # laboratorio en Git Bash trabajaría sobre la máquina DE VERDAD (story 8.18: la ida y la vuelta se miden en Windows)
+  # laboratorio en Git Bash trabajaría sobre la máquina DE VERDAD (la ida y la vuelta se miden en Windows)
   export USERPROFILE="$LAB_HOME"
   export TYCON_SETTINGS_PATH="$LAB_HOME/.claude/settings.json" CLAUDE_MD_PATH="$LAB_HOME/.claude/CLAUDE.md"
   export CODEX_HOME="$LAB_HOME/.codex" TYCON_GIT_HOOKS_DIR="$LAB_HOME/.git-hooks" LAUNCHCTL_BIN="$LAB_BIN/launchctl"
-  export LAB_APPLIER_CHECK_LOG="$LAB/lab-applier-check.log"   # las corridas con --check, fuera de la HOME (story 8.16)
+  export LAB_APPLIER_CHECK_LOG="$LAB/lab-applier-check.log"   # las corridas con --check, fuera de la HOME
   export TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1 TYCON_CODEX=0 TYCON_BENCH_DAILY=0 TYCON_STAGE_METRICS=0
-  # story 7.27: la carpeta de los mods no se suma a CLAUDE_CODE_PLUGIN_DIRS en el laboratorio (la prueba propia es
-  # scripts/tests/harness-mods.test.js); así los settings.json esperados de las demás suites quedan como estaban
+  # La carpeta de los mods no se suma a CLAUDE_CODE_PLUGIN_DIRS en el laboratorio (la prueba propia es
+  # scripts/tests/harness-mods.test.js); así los settings.json esperados de las demás suites no cambian
   export TYCON_NO_MODS=1
-  # story 8.23 (tanda C): `install` enchufa las herramientas que DETECTA; la máquina de juguete de siempre es «con
+  # `install` enchufa las herramientas que DETECTA; la máquina de juguete de siempre es «con
   # Claude Code y sin Codex», dicho por sus llaves (el agente de la validación no tiene ninguna de las dos instalada).
   # Las suites que prueban la detección (harness-tools.test.sh) las sacan con `harness_lab_tools`.
   export TYCON_CLAUDE=1
   # y nunca detecta sobre la máquina DE VERDAD: una suite que saca una llave (las preguntas de `install` sacan la de
-  # Codex para contestarla) encontraba el `codex` del PATH de quien la corre. Se busca en una carpeta vacía del laboratorio
+  # Codex para contestarla) encontraría el `codex` del PATH de quien la corre. Se busca en una carpeta vacía del laboratorio
   export LAB_TOOLS_BIN="$LAB/tools-bin"
   mkdir -p "$LAB_TOOLS_BIN"
   export TYCON_TOOLS_DETECT_PATH="$LAB_TOOLS_BIN"
-  # el perfil del laboratorio (story 8.16, tanda D): una máquina cuyo perfil de instalación ya está elegido (`full`) y nada
-  # más — sin integraciones, sin política: lo que antes daba TYCON_PROFILE=0 —. Desde la tanda D, `install` sin perfil
+  # el perfil del laboratorio: una máquina cuyo perfil de instalación ya está elegido (`full`) y nada
+  # más — sin integraciones, sin política —. `install` sin perfil
   # elegido pregunta (y sin terminal sale 2); las suites del mecanismo no prueban eso: lo prueba harness-questions.test.sh,
   # que corre con TYCON_PROFILE=0. Un `~/.claude/tycon.json` con `install.profile` le gana, como en cualquier máquina.
   printf '{ "install": { "profile": "full" } }\n' > "$LAB/lab-profile.json"
   export TYCON_PROFILE="$LAB/lab-profile.json" TYCON_UPDATE_NETWORK_BUDGET_S="${TYCON_UPDATE_NETWORK_BUDGET_S:-5}"
-  # story 8.39 (decisión 20): el laboratorio no baja el Node del arnés; una suite que lo prueba pone TYCON_HARNESS_NODE=1
+  # El laboratorio no baja el Node del arnés; una suite que lo prueba pone TYCON_HARNESS_NODE=1
   # después de armar el laboratorio, y una lista de laboratorio con un servidor local, nunca nodejs.org
   export TYCON_HARNESS_NODE=0
   export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_TERMINAL_PROMPT=0
   export GIT_AUTHOR_NAME=Lab GIT_AUTHOR_EMAIL=lab@example.com GIT_COMMITTER_NAME=Lab GIT_COMMITTER_EMAIL=lab@example.com
   unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_COMMON_DIR TYCON_GUIDES_DIR TYCON_SKILLS_DIR TYCON_HARNESS_LOCK_HELD TYCON_HARNESS_SNAPSHOT_DIR
   unset TYCON_HARNESS_SHARED_DONE TYCON_NO_COMMANDS_SYNC TYCON_NO_AUTOINSTALL LAB_APPLIER_OLD
-  unset TYCON_UPDATE_SKILLS_SOURCE LAB_SHAPE   # la llave de la 8.18: cada laboratorio nace con ella apagada
+  unset TYCON_UPDATE_SKILLS_SOURCE LAB_SHAPE   # la llave de la fuente de las skills: cada laboratorio nace con ella apagada
   return 0
 }
 
 harness() { node "$LAB_TREE/scripts/setup/harness.js" "$@"; }
 
-# harness_lab_old_applier  — el aplicador de juguete pasa a ser uno de ANTES de la tanda B de la 8.16: no conoce
+# harness_lab_old_applier  — el aplicador de juguete pasa a ser uno viejo: no conoce
 # --plan-json (sin las líneas que la nombran ni su bloque). harness.js lo tiene que decir en el plan y preguntar igual.
 harness_lab_old_applier() {
   local f="$LAB_TREE/scripts/install-tycon-hooks.sh"
@@ -421,7 +420,7 @@ harness_lab_publish() {
 }
 
 # harness_lab_publish_hook <EVENTO> <ruta en skills/> [<contenido js>]  — un hook nuevo de agent-skills en el remoto: el
-# script y su línea en lab-hooks.txt (el aplicador de juguete lo registra y lo reporta). Tanda C.
+# script y su línea en lab-hooks.txt (el aplicador de juguete lo registra y lo reporta).
 harness_lab_publish_hook() {
   local ev="$1" rel="$2" content="${3:-process.exit(0);}" a="$LAB_AUTHOR_SKILLS"
   harness_lab_git "$a" pull -q --ff-only origin main >/dev/null 2>&1 || true
@@ -433,7 +432,7 @@ harness_lab_publish_hook() {
   harness_lab_git "$a" push -q origin main >/dev/null 2>&1
 }
 
-# harness_lab_publish_block <nombre>  — un bloque TYCON_BLOCK nuevo declarado por el árbol, en el remoto. Tanda C.
+# harness_lab_publish_block <nombre>  — un bloque TYCON_BLOCK nuevo declarado por el árbol, en el remoto.
 harness_lab_publish_block() {
   local name="$1" a="$LAB_AUTHOR_TREE"
   harness_lab_git "$a" pull -q --ff-only origin main >/dev/null 2>&1 || true
@@ -443,7 +442,7 @@ harness_lab_publish_block() {
   harness_lab_git "$a" push -q origin main >/dev/null 2>&1
 }
 
-# ── tanda D: el repo público de juguete (canales, versiones numeradas) y la terminal de juguete ─────────────────────
+# ── el repo público de juguete (canales, versiones numeradas) y la terminal de juguete ─────────────────────
 # El remoto del arnés pasa a ser «el público»: el árbol declara su remoto en scripts/setup/public-remotes.json (en la
 # copia real ese archivo lo deja el exportador; en un clon interno no existe). Llamarlo ANTES de `harness install`: que
 # una fuente se reescriba lo decide el remoto al instalar. Con un argumento, declara ESA url en vez de la del bare (un
@@ -514,7 +513,7 @@ harness_lab_remote_head() { harness_lab_git "$LAB_REMOTE_TREE" rev-parse --verif
 # una tty), escribe la respuesta («-» = no escribe nada), imprime lo que salió y devuelve el código de salida del
 # comando. Con python3 + pty: igual en Mac y en Linux (`script` no lo es). Las funciones del laboratorio (`harness`) se
 # pueden pasar por nombre: se resuelven antes.
-# Story 8.16 (tanda B): «EOF» como respuesta cierra la entrada (Ctrl-D: la lectura vuelve vacía, como una terminal que
+# «EOF» como respuesta cierra la entrada (Ctrl-D: la lectura vuelve vacía, como una terminal que
 # se cerró); con LAB_PTY_DELAY=<segundos> la respuesta se escribe recién después de esa espera (otra instalación puede
 # terminar mientras ésta espera su respuesta: T21).
 harness_lab_pty() {
@@ -573,7 +572,7 @@ sys.exit(os.WEXITSTATUS(status) if os.WIFEXITED(status) else 1)
 PY
 }
 
-# harness_lab_bootstrap <args…>  — la copia fija de arranque (la que corre la línea de arranque). Tanda C.
+# harness_lab_bootstrap <args…>  — la copia fija de arranque (la que corre la línea de arranque).
 harness_lab_bootstrap() { node "$LAB_HOME/.claude/.tycon-pipeline/harness/bootstrap.js" "$@"; }
 
 # harness_lab_fake_node <version>  — deja en $LAB_BIN un `node` que dice esa versión; usar con PATH="$LAB_BIN:$PATH"
@@ -628,8 +627,8 @@ for h in s.get("hooks",{}).get("SessionStart",[]):
 
 # __harness_lab_tree_digest <find: lo que se poda>…  — desde la carpeta actual, una línea por enlace («ruta -> destino»)
 # y una por archivo («suma  ruta»), en orden fijo. Los archivos van todos a UN shasum (xargs): con un shasum por archivo,
-# cada comparación «doctor no escribió nada» costaba ~4 s en la Mac por un HOME de ~200 archivos, y el doble en el
-# agente de GitHub; harness-doctor.test.sh hace decenas (public-ci, 2026-10-14: cortada a los 900 s en un agente lento).
+# cada comparación «doctor no escribió nada» cuesta ~4 s en la Mac por un HOME de ~200 archivos, y el doble en el
+# agente de GitHub; harness-doctor.test.sh hace decenas.
 # `xargs -r`: sin archivos no corre shasum (que leería la entrada estándar).
 __harness_lab_tree_digest() {
   find . "$@" -o -type l -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' f; do printf '%s -> %s\n' "$f" "$(readlink "$f")"; done
@@ -641,11 +640,11 @@ harness_lab_home_hash() {
   ( cd "$LAB_HOME" && __harness_lab_tree_digest -path '*/.git' -prune ) | shasum -a 256 | cut -d' ' -f1
 }
 
-# ══ La máquina del equipo en la transición (story 8.18, tramo 3 · 2026-10-04) ══════════════════════════════════════════
-# El caso: los dos repos internos (el arnés y agent-skills) se unen en uno, y cada máquina del equipo sigue un tiempo
+# ══ La máquina del equipo en la transición ══════════════════════════════════════════
+# Los dos repos internos (el arnés y agent-skills) se unen en uno, y cada máquina del equipo sigue un tiempo
 # con sus DOS clones. Lo que hay que poder probar sin tocar ninguna máquina de verdad: que el instalador calle cuando el
-# clon del arnés empieza a traer skills/ (AC 28), que los hooks no cambien (AC 29), y —el implementador que sigue— que
-# la llave re-apunte el clon viejo al repo unido y lo deshaga (AC 31 a 35). Para eso hace falta la forma de esa máquina
+# clon del arnés empieza a traer skills/, que los hooks no cambien, y que
+# la llave re-apunte el clon viejo al repo unido y lo deshaga. Para eso hace falta la forma de esa máquina
 # y, sobre todo, HISTORIA UNIDA DE VERDAD: el repo unido contiene los commits del viejo, así el clon viejo avanza en
 # línea recta. Un laboratorio con dos remotos sin relación daría verde sin haber probado eso.
 #
@@ -730,7 +729,7 @@ harness_lab_team_machine() { # harness_lab_team_machine <dir> [toy|real]
   else
     _harness_lab_toy_tree "$hs"
     # como el arnés de verdad: sigue archivos bajo .advisors/ (las evidencias), la misma carpeta donde el clon viejo de un
-    # dev tiene lo suyo IGNORADO. Es lo que una vista reducida «en cono» borraría al re-apuntar (repoint.js, AC 31 c)
+    # dev tiene lo suyo IGNORADO. Es lo que una vista reducida «en cono» borraría al re-apuntar (repoint.js)
     mkdir -p "$hs/.advisors/dod-runtime"
     printf 'evidencia de juguete, versionada\n' > "$hs/.advisors/dod-runtime/lab-evidence.md"
   fi
@@ -751,7 +750,7 @@ harness_lab_team_machine() { # harness_lab_team_machine <dir> [toy|real]
     printf '# revisor de juguete\n' > "$ss/agents/lab-reviewer.md"
     printf '{ "name": "lab" }\n' > "$ss/packs/lab/pack.json"
     # dos carpetas de la raíz que el repo viejo de verdad sigue y que NO son agents/, skills/ ni packs/ (.githooks/ y
-    # .tycon/): al re-apuntar dejan de verse (AC 31 d) y al deshacer vuelven, byte a byte (AC 33)
+    # .tycon/): al re-apuntar dejan de verse y al deshacer vuelven, byte a byte
     mkdir -p "$ss/.githooks" "$ss/.tycon"
     printf '#!/bin/sh\n# hook de juguete del repo viejo\nexit 0\n' > "$ss/.githooks/pre-commit"
     printf 'lab: true\n' > "$ss/.tycon/lab-config.yaml"
@@ -792,7 +791,7 @@ harness_lab_team_machine() { # harness_lab_team_machine <dir> [toy|real]
   _harness_lab_machine
 }
 
-# harness_lab_single_tree <dir>  — la máquina NUEVA de un solo árbol (story 8.18, AC 36 y 37): la tercera forma de
+# harness_lab_single_tree <dir>  — la máquina NUEVA de un solo árbol: la tercera forma de
 # máquina. Un clon del repo unido (el corte ya hecho) y ~/.claude/agent-skills, skills y agents enlazados a él: no hay
 # clon aparte. Se arma sobre la misma historia unida que la máquina del equipo (de juguete), así las tres formas se
 # prueban con los mismos remotos. $LAB_SKILLS queda como la ruta del enlace.
@@ -809,7 +808,7 @@ harness_lab_single_tree() { # harness_lab_single_tree <dir>
 }
 
 # harness_lab_shape <dir> <two-clones|repointed|single>  — una máquina YA INSTALADA con `harness.js`, en una de las tres
-# formas que deja la unión de los dos repos (story 8.18, AC 37), para probar que cada comando del mecanismo anda en las tres:
+# formas que deja la unión de los dos repos, para probar que cada comando del mecanismo anda en las tres:
 #   two-clones  dos clones sin re-apuntar: el arnés ya en la unión, las skills en el clon viejo (la llave apagada)
 #   repointed   dos clones con el viejo RE-APUNTADO al repo unificado; la llave queda prendida en ~/.claude/tycon.json
 #               (si no, el arranque siguiente lo desharía)
@@ -837,7 +836,7 @@ harness_lab_shape() { # harness_lab_shape <dir> <two-clones|repointed|single>
 }
 
 # harness_lab_worktree_hash <clon>  — un hash de TODO lo que hay en el árbol de trabajo de ese clon (rutas y contenido,
-# sin su .git): «quedó byte a byte como al principio» se prueba comparando dos (story 8.18, AC 33)
+# sin su .git): «quedó byte a byte como al principio» se prueba comparando dos
 harness_lab_worktree_hash() {
   local d="${1:-}"
   [ -n "$d" ] && [ -d "$d" ] || { echo "harness-lab: harness_lab_worktree_hash <clon> — «${d}» no existe" >&2; return 2; }
@@ -933,7 +932,7 @@ harness_lab_codex_links() {
   done | LC_ALL=C sort
 }
 
-# ── story 8.23, tanda B: la máquina que instala una versión BAJADA (sin git) del servidor de juguete ────────────────
+# ── la máquina que instala una versión BAJADA (sin git) del servidor de juguete ────────────────
 #
 #   harness_lab_release_server [org name]  — el «GitHub» de juguete (scripts/tests/fixtures/toy-release-server.js) sobre el
 #                                            remoto bare del arnés: la API, «codeload», un proxy y un proxy mudo, cada
@@ -942,7 +941,7 @@ harness_lab_codex_links() {
 #                                            unido). Exporta LAB_RELEASE_API, LAB_RELEASE_CODELOAD, LAB_RELEASE_PROXY,
 #                                            LAB_RELEASE_MUTE_PROXY, LAB_RELEASE_CONTROL, LAB_RELEASE_LOG y
 #                                            TYCON_RELEASE_API (la variable de prueba que apunta el cliente al servidor).
-#                                            Desde la story 8.34 también las rutas públicas: «git» (info/refs) y «raw»,
+#                                            También las rutas públicas: «git» (info/refs) y «raw»,
 #                                            en LAB_RELEASE_GIT / LAB_RELEASE_RAW, y TYCON_RELEASE_GIT / _RAW / _ARCHIVE.
 #                                            El servidor usa el git REAL por ruta absoluta: así un `git` testigo en el
 #                                            PATH sólo ve lo que invoca el mecanismo. Muere con la suite (su proceso en
@@ -981,7 +980,7 @@ harness_lab_release_server() { # harness_lab_release_server [<org> <name>]
   [ -f "$LAB_RELEASE_DIR/ports.env" ] || { echo "harness-lab: el servidor de versiones de juguete no arrancó" >&2; return 1; }
   _harness_lab_release_ports
 }
-# las direcciones del servidor de juguete: la API y, desde la story 8.34, las rutas públicas (git, raw, codeload) — sin
+# las direcciones del servidor de juguete: la API y las rutas públicas (git, raw, codeload) — sin
 # TYCON_RELEASE_GIT, una máquina con la API apuntada al juguete mira por la API (la salvaguarda de public-git.js)
 _harness_lab_release_ports() {
   local f="$LAB_RELEASE_DIR/ports.env"
@@ -991,16 +990,16 @@ _harness_lab_release_ports() {
   export TYCON_RELEASE_API="$LAB_RELEASE_API" TYCON_RELEASE_GIT="$LAB_RELEASE_GIT" TYCON_RELEASE_RAW="$LAB_RELEASE_RAW" TYCON_RELEASE_ARCHIVE="$LAB_RELEASE_CODELOAD"
 }
 harness_lab_release_control() { printf '%s\n' "$1" > "$LAB_RELEASE_CONTROL"; }
-# ── El repo del equipo de juguete (story 8.25) ────────────────────────────────────────────────────────────────────────
+# ── El repo del equipo de juguete ────────────────────────────────────────────────────────────────────────
 #   harness_lab_team_repo [<org> <name>]  — el repo PRIVADO del equipo, de juguete: un bare ($LAB_REMOTE_TEAM) con su autor
-#                                           ($LAB_AUTHOR_TEAM) y los tres archivos de la A1: team-layer.json, perfil-equipo.json
+#                                           ($LAB_AUTHOR_TEAM) y los tres archivos: team-layer.json, perfil-equipo.json
 #                                           (organización inventada; engram, nightly y el buzón prendidos) y la llave de
 #                                           juguete del buzón. Exporta LAB_TEAM=<org>/<name>.
 #   harness_lab_team_publish "<mensaje>"  — commit + push de lo que haya en el autor del repo del equipo
 #   harness_lab_team_server               — reinicia el servidor de versiones de juguete atendiendo los DOS repos (el público
 #                                           con LAB_RELEASE_ORG/NAME y el del equipo); mismo control y registro
 #   harness_lab_team_set_clone_key        — la clave `team` en public-repos.json del CLON de juguete ($LAB_TREE): la máquina
-#                                           con clon que «sabe» cuál es su repo del equipo (AC 13)
+#                                           con clon que «sabe» cuál es su repo del equipo
 harness_lab_team_repo() { # harness_lab_team_repo [<org> <name>]
   local org="${1:-TYCON-LAB}" name="${2:-equipo-lab}"
   export LAB_TEAM_ORG="$org" LAB_TEAM_NAME="$name" LAB_TEAM="$org/$name"
@@ -1037,7 +1036,7 @@ harness_lab_team_server() {
   [ -f "$LAB_RELEASE_DIR/ports.env" ] || { echo "harness-lab: el servidor de versiones de juguete (dos repos) no arrancó" >&2; return 1; }
   _harness_lab_release_ports
 }
-# ── El repo del equipo en AZURE DEVOPS, de juguete (story 8.25, la fuente de TYCON) ──────────────────────────────────
+# ── El repo del equipo en AZURE DEVOPS, de juguete ──────────────────────────────────
 #   harness_lab_team_azure_server [<org> <proyecto> <repo>]  — un Azure DevOps de juguete (scripts/tests/fixtures/toy-azure-server.js)
 #                                           que atiende el MISMO repo bare del equipo ($LAB_REMOTE_TEAM, de harness_lab_team_repo)
 #                                           con PAT «pat-lab»; exporta TYCON_AZURE_API y LAB_TEAM_URL (la URL que se declara con
@@ -1066,8 +1065,8 @@ harness_lab_team_azure_server() { # harness_lab_team_azure_server [<org> <proyec
 }
 harness_lab_team_azure_control() { printf '%s\n' "$1" > "$LAB_AZURE_CONTROL"; }
 harness_lab_team_azure_pat() { # harness_lab_team_azure_pat [<valor>]
-  # por el MISMO camino que el dev: `harness.js config set azure.token` con el valor por stdin (pase adversarial 8.25 A1a-azure:
-  # el laboratorio escribía el archivo a mano y nadie notó que el comando recomendado salía 2). Si el comando falla, la prueba
+  # por el MISMO camino que el dev: `harness.js config set azure.token` con el valor por stdin (escribir el archivo a
+  # mano no detectaría que el comando recomendado sale 2). Si el comando falla, la prueba
   # que lo llamó falla con su salida: no hay otro camino.
   local v="${1:-$LAB_AZURE_PAT}" out rc
   mkdir -p "$LAB_HOME/.tycon"
@@ -1092,7 +1091,7 @@ harness_lab_release_fresh_home() {
   : > "$LAB_HOME/.claude/CLAUDE.md"
 }
 harness_release() { node "$LAB_HOME/.tycon/harness/scripts/setup/harness.js" "$@"; }
-# ── Las herramientas de la máquina de juguete (story 8.23, tanda C) ──────────────────────────────────────────────────
+# ── Las herramientas de la máquina de juguete ──────────────────────────────────────────────────
 #   harness_lab_tools <claude|codex|both|none>  — qué herramientas «tiene» la máquina: un `claude` y/o un `codex` de
 #                                            mentira en $LAB_TOOLS_BIN, que es DONDE el arnés las busca en el laboratorio
 #                                            (TYCON_TOOLS_DETECT_PATH: variable de prueba, reemplaza al PATH sólo para

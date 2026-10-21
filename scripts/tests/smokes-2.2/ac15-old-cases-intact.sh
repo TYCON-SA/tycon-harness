@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# ac15-old-cases-intact.sh — los casos de la 2.1 siguen ahí, sin retocar.
+# ac15-old-cases-intact.sh — los casos de las transiciones siguen ahí, sin retocar.
 #
-# El AC 15 pide que `sdlc-transitions.test.js` y `sdlc-stage-metrics.test.js` sigan verdes
+# `sdlc-transitions.test.js` y `sdlc-stage-metrics.test.js` tienen que seguir verdes
 # **sin tocar sus casos existentes**, salvo el único que asserta el contenido del diccionario
-# MÍNIMO, que esta story reemplaza por el completo y que se nombra en el commit.
+# completo y que se nombra en el commit.
 #
 # 🔴 POR QUÉ ES UN SMOKE Y NO UN CASO DE LA SUITE. La única forma de verificarlo es comparar
-#    contra `origin/main`, y eso deja de significar nada en cuanto la story se mergea: el diff
+#    contra `origin/main`, y eso deja de significar nada en cuanto el cambio se mergea: el diff
 #    se vacía y el caso pasaría para siempre sin poder ponerse rojo. Un control que no puede
 #    fallar es peor que no tenerlo — así que vive acá, se corre UNA vez antes del merge, y su
-#    resultado queda en el ledger con su código de salida real. Mismo criterio que el último
-#    smoke de la story 2.1, que ya chequeaba esto para su propio diff.
+#    resultado queda en el ledger con su código de salida real.
 #
 # Uso: bash ac15-old-cases-intact.sh <raiz-del-repo>
 # =============================================================================
@@ -25,7 +24,7 @@ git -C "$RAIZ" rev-parse --verify origin/main >/dev/null 2>&1 || {
 CASO_PERMITIDO='T14 · los estados del diccionario son los medidos'
 FALLAS=0
 
-# ── (a) la suite que esta story NO toca: cero líneas borradas ──
+# ── (a) la suite que no se toca: cero líneas borradas ──
 BORRADAS=$(git -C "$RAIZ" diff origin/main -- scripts/tests/sdlc-stage-metrics.test.js \
   | grep -cE '^-[^-]' || true)
 if [ "$BORRADAS" != "0" ]; then
@@ -49,11 +48,11 @@ if viejo.returncode != 0:
     sys.exit(2)
 lineas = viejo.stdout.split('\n')
 
-# 🔴 Se juzga por POSICIÓN, no por texto. La primera versión de este smoke comparaba el TEXTO de
-#    cada línea borrada contra el conjunto de líneas del caso permitido: una línea borrada en
-#    cualquier otro caso pasaba desapercibida con sólo parecerse a una de adentro — y en un archivo
+# 🔴 Se juzga por POSICIÓN, no por texto. Comparar el TEXTO de
+#    cada línea borrada contra el conjunto de líneas del caso permitido dejaría pasar una línea borrada en
+#    cualquier otro caso con sólo parecerse a una de adentro — y en un archivo
 #    de tests las líneas se repiten todo el tiempo (`});`, `const { repo } = nuevoRepo(...)`, un
-#    assert idéntico). Lo cazó el pase adversarial del 2026-09-05. Ahora se miran los NÚMEROS DE
+#    assert idéntico). Por eso se miran los NÚMEROS DE
 #    LÍNEA del archivo publicado, que es lo único que distingue un caso de otro.
 ini = next((i for i, l in enumerate(lineas) if permitido in l), None)
 if ini is None:

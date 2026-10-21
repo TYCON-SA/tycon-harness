@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# smoke-forms-reason.test.sh — cuando un formulario no pasa el humo, smoke-forms.sh dice POR QUÉ (2026-10-14).
+# smoke-forms-reason.test.sh — cuando un formulario no pasa el humo, smoke-forms.sh dice POR QUÉ.
 #
-# EL CASO. El humo de formularios decía «falló» y nada más. Un día lo rompió el host de pruebas con su circuit breaker
-# abierto, y hubo que averiguarlo a mano. Desde ese día cada falla al consultar el host muestra el código HTTP y un
+# Un humo de formularios que dice «falló» y nada más obliga a averiguar a mano si lo rompió el host de pruebas
+# (por ejemplo, con su circuit breaker abierto). Por eso cada falla al consultar el host muestra el código HTTP y un
 # recorte del cuerpo, con lo que parezca una llave tapado, y una línea que dice si parece del host o nuestro.
 #
 # A diferencia de smoke.test.sh (un `curl` de mentira), acá el host es un servidor de verdad en 127.0.0.1 y el `curl`
@@ -13,7 +13,7 @@
 #        arma una orden; el código de salida sigue siendo 1.
 #   R2 · la lista bien y el código de un formulario 404: «parece nuestro», HTTP 404 y el cuerpo; sale 1.
 #   R3 · la lista tarda más que el tope (SMOKE_FORMS_MAX_TIME=1): «tiempo agotado», «parece del host»; sale 1.
-#   R0 · el host bien: sale 0 y no habla de respuestas del host (el camino verde no cambió).
+#   R0 · el host bien: sale 0 y no habla de respuestas del host (el camino verde queda igual).
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 HF="$RAIZ/scripts/ci/smoke-forms.sh"

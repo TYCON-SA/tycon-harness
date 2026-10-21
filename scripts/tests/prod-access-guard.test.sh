@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# prod-access-guard.test.sh — red del freno de producción y de su índice (story 6.1).
+# prod-access-guard.test.sh — red del freno de producción y de su índice.
 #
-# Caso que lo motiva (2026-09-15, sesión sobre un producto del equipo): autorizada UNA consulta a producción, en el
-# turno siguiente el asistente corrió ~9 más sin pedir permiso y abrió una regla de firewall que
-# quedó viva. La regla estaba escrita en la memoria del asistente: no alcanzó.
+# Qué evita: autorizada UNA consulta a producción, en el turno siguiente el asistente podría correr varias más sin
+# pedir permiso y abrir una regla de firewall que quede viva. Una regla escrita en la memoria del asistente no alcanza.
 #
 # Lo que prueba (los casos del banco cubren el resto — `40-prod-access-guard.json`):
 #   T4  — todas las formas de nombrar un servidor (cadena de conexión, az, nombre corto, comillas partidas)
@@ -16,7 +15,7 @@
 #   T30 — sin snapshot (Claude Code 2.1.272 ya no lo escribe) se le pregunta al shell de login en vivo:
 #         limpio pasa; secuestrado, mudo, colgado o de un shell que no sé leer frena
 #   T31 — se mira el snapshot de ESTA sesión, no el más nuevo
-#   T32 — la guía declara que la regla de firewall es de cortesía (AC 17)
+#   T32 — la guía declara que la regla de firewall es de cortesía
 #
 # 🔴 HOME falso siempre: el hook lee ~/.claude (snapshots, índice, registros).
 # Correr: bash scripts/tests/prod-access-guard.test.sh
@@ -83,7 +82,7 @@ if [ ! -f "$HOOK" ] || [ ! -f "$INDICE" ]; then
 fi
 
 # ── T12 · el índice: sólo repos clonados bajo la raíz, y acotado ──────────────────────────────
-# Rojo previo: leer de cualquier carpeta (o sin acotar) → entra un catálogo sembrado en node_modules
+# Sin esto, leer de cualquier carpeta (o sin acotar) deja entrar un catálogo sembrado en node_modules
 # y tarda ~17 s; y un repo de FUERA de la raíz haría conocido un host que esta máquina no debería conocer.
 mundo
 mkdir -p "$REPOS/backend-acme/node_modules/x/.tycon"
@@ -96,7 +95,7 @@ if printf '%s' "$JSON_INDICE" | grep "prod-b.database.windows.net" >/dev/null; t
 frena "T12c · un host de fuera de la raíz es DESCONOCIDO y se frena" "sqlcmd -S prod-b.database.windows.net -Q \"select 1\""
 
 # ── T13 · el mismo host con dos ambientes: gana producción ────────────────────────────────────
-# Rojo previo: quedarse con el último leído → el orden de lectura decide si producción está protegida.
+# Sin esto, quedarse con el último leído hace que el orden de lectura decida si producción está protegida.
 mundo
 printf '{"servers":[{"host":"'$PROD'","environment":"no-produccion"}]}' > "$REPOS/otro/.tycon/production.json"
 rc="$(corre "sqlcmd -S $PROD -Q \"select 1\"")"
@@ -104,7 +103,7 @@ if [ "$rc" = 2 ] && grep -q "backend-acme" "$TMP/err" && grep -q "otro" "$TMP/er
 else no "T13 · rc=$rc y/o el mensaje no nombra los dos repos — err: $(head -c 160 "$TMP/err")"; fi
 
 # ── T15 · producción pegajosa ─────────────────────────────────────────────────────────────────
-# Rojo previo: regenerar el índice desde cero → reescribir el catálogo a no-produccion destraba
+# Sin esto, regenerar el índice desde cero haría que reescribir el catálogo a no-produccion destrabe
 # producción sin que nadie lo apruebe.
 mundo
 corre "sqlcmd -S $PROD -Q \"select 1\"" >/dev/null                     # primera vez: queda en la memoria
@@ -115,7 +114,7 @@ if [ "$rc" = 2 ] && grep -q -- "--reclasificar" "$TMP/err"; then ok "T15 · sigu
 else no "T15 · el host se destrabó reescribiendo el catálogo (rc=$rc)"; fi
 
 # ── T4 · todas las formas de nombrar un servidor ──────────────────────────────────────────────
-# Rojo previo: mirar sólo `sqlcmd -S`, no des-entrecomillar, o no completar el nombre corto.
+# Sin esto, mirar sólo `sqlcmd -S`, no des-entrecomillar o no completar el nombre corto deja pasar alguna de las formas.
 mundo
 frena "T4a · cadena de conexión con tcp: y puerto" "python3 -c 'x=\"Server=tcp:ACME-SQL.database.windows.net,1433;Database=d\"'"
 frena "T4b · az con nombre corto" "az sql db list --server acme-sql -g ACME"
@@ -133,9 +132,9 @@ frena "T4m · en los grupos de az sql server, -s es el servidor" "az sql server 
 frena "T4n · la palabra server en otra posición no apaga el -s" "az sql db list -s acme-sql -g ACME --query server"
 
 # ── T6 · la puerta sólo en su forma canónica ──────────────────────────────────────────────────
-# Rojo previo: lista negra de envoltorios → los cinco que la Task 0 vio esquivar pasan.
+# Sin esto, una lista negra de envoltorios deja pasar los cinco que la esquivan.
 mundo
-# la forma canónica exige poder mirar el shell de esta sesión (AC 12): con snapshot se mira el
+# la forma canónica exige poder mirar el shell de esta sesión: con snapshot se mira el
 # snapshot; sin snapshot, el shell de login en vivo (eso lo prueba T30). Acá se siembra uno limpio
 # para poder juzgar SÓLO la forma del comando.
 snapshot "" ""
@@ -153,14 +152,14 @@ frena "T6j · sentencia por sustitución de comando" "$PUERTA $PROD \"\$(cat /tm
 frena "T6k · ruta partida con comillas" "/opt/tycon/bin/tycon-prod-sq\"\"l $PROD 'select 1'"
 
 # ── T16 · secuestro de la puerta ──────────────────────────────────────────────────────────────
-# Rojo previo: no revisar el shell → una función `tycon-prod-sql` en el .zshrc se queda con la
+# Sin esto, no revisar el shell deja que una función `tycon-prod-sql` en el .zshrc se quede con la
 # sentencia; y marcar cualquier alias que CONTENGA la palabra → falso positivo que apaga el control.
 mundo; snapshot "" ""
 pasa  "T16a · sin secuestro, la forma canónica pasa" "$PUERTA $PROD 'select 1'"
 mundo; snapshot "tycon-prod-sql () { echo tomada }" ""
 frena "T16b · función con el nombre de la puerta" "$PUERTA $PROD 'select 1'"
-# 🔴 zsh vuelca los alias como `alias -- nombre=valor`. El caso sembraba `alias nombre=`, un formato
-# que zsh no emite nunca: pasaba en verde y la detección real estaba muerta (pase adversarial 2026-09-15).
+# 🔴 zsh vuelca los alias como `alias -- nombre=valor`. Sembrar `alias nombre=` sería un formato
+# que zsh no emite nunca: pasaría en verde y la detección real quedaría muerta.
 mundo; snapshot "" "alias -- tycon-prod-sql='otra cosa'"
 frena "T16c · alias en el formato REAL de zsh (alias -- nombre=)" "$PUERTA $PROD 'select 1'"
 mundo; snapshot "" "alias -- command='/tmp/x'"
@@ -174,9 +173,9 @@ mundo; snapshot "" ""
 frena "T16f · la función definida en el propio comando" "tycon-prod-sql() { :; }; $PUERTA $PROD 'select 1'"
 
 # ── T31 · el snapshot de ESTA sesión, no el más nuevo ─────────────────────────────────────────
-# Medido en la Task 0b: con 3 sesiones vivas, elegir «el más nuevo» le erra a 2 de 3. Los candidatos
+# Con 3 sesiones vivas, elegir «el más nuevo» le erra a 2 de 3. Los candidatos
 # son los snapshots nacidos DESPUÉS del arranque de esta sesión; con más de uno se revisan todos
-# (superconjunto = lado seguro). Rojo previo: elegir por fecha.
+# (superconjunto = lado seguro). Elegir por fecha deja pasar.
 mundo
 snapshot "tycon-prod-sql () { echo tomada }" "" 1000000000000     # de OTRA sesión, anterior a la mía
 snapshot "" "" 2000000000000                                      # el mío, limpio
@@ -191,20 +190,19 @@ frena "T31b · el secuestro en el snapshot de mi sesión sí frena" "$PUERTA $PR
 DESDE=0
 
 # ── T30 · sin snapshot: se le pregunta al shell de login en vivo ──────────────────────────────
-# Claude Code 2.1.272 (extensión de VS Code, medido el 2026-09-16 con `ps` sobre el propio comando)
-# ya no escribe snapshot: corre cada comando como `zsh -c -l …`, sin sourcear nada. Frenar por «no
-# hay snapshot» dejaba la puerta cerrada PARA SIEMPRE en esas sesiones (rojo previo: T30a frenaba).
+# Claude Code 2.1.272 (extensión de VS Code) no escribe snapshot: corre cada comando como `zsh -c -l …`, sin sourcear
+# nada. Frenar por «no hay snapshot» dejaría la puerta cerrada PARA SIEMPRE en esas sesiones (T30a frenaría).
 # Lo que ESE shell define sí secuestra —un alias con la ruta absoluta como nombre se queda con la
 # invocación canónica (zsh 5.9)— y lo lee de .zshenv/.zprofile/.zlogin y de lo que ellos sourceen:
 # justo lo que el barrido estático de los rc no alcanza. ZDOTDIR/HOME apuntan a la casa falsa para
-# que el shell vivo lea de ahí. Un snapshot ilegible sigue frenando: eso no cambió.
+# que el shell vivo lea de ahí. Un snapshot ilegible frena.
 ZD="ZDOTDIR=$TMP/casa"
 mundo; printf 'esto no es un snapshot\n' > "$CASA/.claude/shell-snapshots/snapshot-zsh-1-aaaaaa.sh"
 frena "T30b · snapshot que no parece un snapshot" "$PUERTA $PROD 'select 1'" $ZD SHELL=/bin/zsh
 if [ -x /bin/zsh ]; then
   mundo   # sin ningún snapshot ni archivos de arranque: sesión de la extensión de VS Code, limpia
   pasa  "T30a · sin snapshot y shell de login limpio, la puerta pasa" "$PUERTA $PROD 'select 1'" $ZD SHELL=/bin/zsh
-  # .zlogin no está en el barrido estático de los rc: sólo el shell vivo lo ve. Rojo previo: pasa.
+  # .zlogin no está en el barrido estático de los rc: sólo el shell vivo lo ve.
   mundo; printf 'tycon-prod-sql() { echo tomada; }\n' > "$CASA/.zlogin"
   frena "T30c · sin snapshot, una función en .zlogin frena" "$PUERTA $PROD 'select 1'" $ZD SHELL=/bin/zsh
   # el alias con la RUTA ABSOLUTA como nombre, en un archivo sourceado desde .zshenv (el barrido
@@ -234,21 +232,20 @@ frena "T30i · sin snapshot, bash: una función en .profile frena" "$PUERTA $PRO
 
 # ── T34 · lo escondido que NO se puede ver ────────────────────────────────────────────────────
 # 🔴 Un tramo inofensivo del mismo comando NO compra permiso para el tramo opaco de al lado: el
-# `sqlcmd -S localhost` se mira y se descarta, pero el `bash -c "$CMD"` sigue siendo invisible
-# (revisión final del Step 5, 2026-09-15). Rojo previo verificado.
+# `sqlcmd -S localhost` se mira y se descarta, pero el `bash -c "$CMD"` sigue siendo invisible.
 mundo
 frena "T34a · un tramo inofensivo no tapa a uno opaco" 'sqlcmd -S localhost -Q "select 1"; bash -c "$CMD"'
 frena "T34b · un intérprete con el texto en una variable de afuera" 'bcp x out y.dat; bash -c "$LO_QUE_SEA"'
 pasa  "T34c · el mismo comando sin nada de bases pasa" 'bash -c "$CMD"'
 
 # ── T17 · falla propia del hook, con y sin base ───────────────────────────────────────────────
-# Rojo previo: `require` fuera del try, o sin reloj propio → el hook se rompe y DEJA PASAR.
+# Sin esto, un `require` fuera del try, o sin reloj propio, rompe el hook y DEJA PASAR.
 mundo
 frena "T17a · con el índice ilegible y una base nombrada, frena" "sqlcmd -S $PROD -Q \"select 1\"" TYCON_PROD_FAIL=1
 pasa  "T17b · con el mismo fallo y sin base, pasa" "git status" TYCON_PROD_FAIL=1
 
-# T17c · CADA cliente que el freno conoce, ante una falla propia, sale 2. Rojo previo: la lista del
-# criterio de falla-cerrado estaba escrita a mano y no tenía `tsql` ni `sqlpackage`.
+# T17c · CADA cliente que el freno conoce, ante una falla propia, sale 2. Una lista del
+# criterio de falla-cerrado escrita a mano podría no tener `tsql` ni `sqlpackage`.
 mundo
 clientes="$(node -e 'const s=require("fs").readFileSync(process.argv[1],"utf8"); const m=/const CLIENTES = \{([\s\S]*?)\};/.exec(s); console.log([...m[1].matchAll(/([\w-]+)\x27?\s*:/g)].map(x=>x[1]).join(" "))' "$HOOK")"
 for cli in $clientes; do
@@ -256,8 +253,8 @@ for cli in $clientes; do
 done
 
 # T17d · un comando GIGANTE con miles de `<<` que nombra producción: se frena sin parsearlo, y a
-# tiempo. Rojo previo: el parseo de heredocs tardaba ~17 s, el timeout del registro mataba el hook
-# antes de frenar, y un timeout vencido DEJA PASAR el comando (pase adversarial 2026-09-15).
+# tiempo. Parsear los heredocs tardaría ~17 s, el timeout del registro mataría el hook
+# antes de frenar, y un timeout vencido DEJA PASAR el comando.
 mundo
 node -e 'const c="<<A\n".repeat(55000)+"\nsqlcmd -S '"$PROD"' -Q \"select 1\""; process.stdout.write(JSON.stringify({tool_name:"Bash",tool_input:{command:c}}))' > "$TMP/gigante.json"
 t0=$(date +%s)
@@ -266,32 +263,31 @@ dur=$(( $(date +%s) - t0 ))
 if [ "$rc" = 2 ] && [ "$dur" -lt 5 ]; then ok "T17d · el comando gigante que nombra producción se frena en ${dur} s (antes del reloj)"
 else no "T17d · rc=$rc en ${dur} s (esperaba 2 y menos de 5 s)"; fi
 
-# T17e · un payload ILEGIBLE que nombra una base frena (AC 14): antes salía 0 sin mirar el texto crudo
+# T17e · un payload ILEGIBLE que nombra una base frena: si no, saldría 0 sin mirar el texto crudo
 mundo
 printf '{no es json sqlcmd -S %s' "$PROD" | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" node "$HOOK" >/dev/null 2>&1; rc=$?
 [ "$rc" = 2 ] && ok "T17e · un payload ilegible que nombra una base frena" || no "T17e · payload ilegible con base salió rc=$rc"
 printf '{no es json, git status' | env HOME="$CASA" TYCON_REPOS_ROOT="$REPOS" node "$HOOK" >/dev/null 2>&1; rc=$?
 [ "$rc" = 0 ] && ok "T17f · un payload ilegible sin bases deja pasar" || no "T17f · payload ilegible sin base salió rc=$rc"
 
-# ── story 8.14 · el freno lee los nombres como el shell (T17-T26 de la story) ─────────────────
-# Caso que lo motiva (pase adversarial de la tanda P de la 8.9, 2026-09-30): `rm -f …/production-{index,memory}.json`
-# pasaba. La tabla entera de formas vive en prod-guard-shell-forms.test.sh; acá van las pruebas con nombre de la
-# story, una por AC. Los nombres protegidos se arman por concatenación: el freno vivo frena un comando que los lleva
-# enteros. «<P>» es la raíz del pipeline del HOME falso y «$R» un repo con su catálogo.
+# ── el freno lee los nombres como el shell (T17-T26) ─────────────────
+# Caso que lo motiva: `rm -f …/production-{index,memory}.json` tiene que frenar. La tabla entera de formas vive en
+# prod-guard-shell-forms.test.sh; acá van las pruebas con nombre, una por forma. Los nombres protegidos se arman por
+# concatenación: el freno vivo frena un comando que los lleva enteros. «<P>» es la raíz del pipeline del HOME falso y «$R» un repo con su catálogo.
 NI="production""-index.json"; NM="production""-memory.json"; CAT="production"".json"
 P='~/.claude/.tycon-pipeline'
 mundo; R="$REPOS/backend-acme"
 regla_de_la_ultima(){ tail -n 1 "$CASA/.claude/.tycon-pipeline/frenos.jsonl" 2>/dev/null | sed -n 's/.*"regla":"\([^"]*\)".*/\1/p'; }
 
-# T17 · mayúsculas (AC 2, 9): el disco de macOS no distingue y el shell toca el mismo archivo. Rojo previo: pasa.
+# T17 · mayúsculas: el disco de macOS no distingue y el shell toca el mismo archivo.
 frena "8.14 T17a CaseInsensitive_ProtectedName_Blocks (Production-Index)" "rm -f $P/Production-Index.json"
 frena "8.14 T17b CaseInsensitive_ProtectedName_Blocks (.Tycon/)" "rm -f $R/.Tycon/$CAT"
 
-# T18 · comodín en la carpeta del catálogo (AC 10). Rojo previo: pasa.
+# T18 · comodín en la carpeta del catálogo.
 frena "8.14 T18a WildcardFolder_Catalog_Blocks (.tyc*)" "rm -f $R/.tyc*/$CAT"
 frena "8.14 T18b WildcardFolder_Catalog_Blocks (.tycon?)" "rm -f $R/.tycon?/$CAT"
 
-# T19 · todas las redirecciones (AC 11), leídas del tokenizador. Rojo previo: se miraba sólo la primera.
+# T19 · todas las redirecciones, leídas del tokenizador (no sólo la primera).
 frena "8.14 T19a EveryRedirection_IsJudged (JQ1)" "jq '.x=1' /tmp/f.json 2>/dev/null > $P/$NI"
 frena "8.14 T19b EveryRedirection_IsJudged (RD1)" "cat /dev/null 2>&1 > $P/$NI"
 frena "8.14 T19c EveryRedirection_IsJudged (RD3)" "cat /dev/null >/tmp/lab814-b >$P/$NI"
@@ -299,7 +295,7 @@ frena "8.14 T19d EveryRedirection_IsJudged (RD7)" "cat /dev/null 2>/dev/null 1> 
 frena "8.14 T19e EveryRedirection_IsJudged (comillas con >)" "grep \"a>b\" f > $P/$NI"
 pasa  "8.14 T19f EveryRedirection_IsJudged (nada protegido)" "cmd 2>/dev/null > /tmp/x"
 
-# T20 · la carpeta de trabajo (AC 12). Rojo previo: sólo `cd <una palabra>`.
+# T20 · la carpeta de trabajo: todas las formas de `cd`, no sólo `cd <una palabra>`.
 frena "8.14 T20a WorkingDirectory_AllForms (cd -P)" "cd -P $R/.tycon && rm -f $CAT"
 frena "8.14 T20b WorkingDirectory_AllForms (cd --)" "cd -- $R/.tycon && rm -f $CAT"
 frena "8.14 T20c WorkingDirectory_AllForms (pushd)" "pushd $R/.tycon && rm -f $CAT"
@@ -312,7 +308,7 @@ frena "8.14 T20i WorkingDirectory_AllForms (cd a una variable sin resolver)" "cd
 CWD="$R/.tycon" frena "8.14 T20j WorkingDirectory_AllForms (cwd del payload)" "rm -f $CAT"
 pasa  "8.14 T20k WorkingDirectory_AllForms (cd /tmp)" "cd /tmp && rm -f $CAT"
 
-# T21 · xargs alimentado por cualquier segmento anterior del pipeline (AC 13a). Rojo previo: pasan X5, FX1, FX2, FX8.
+# T21 · xargs alimentado por cualquier segmento anterior del pipeline.
 frena "8.14 T21a Xargs_AnyFeedingSegment_Blocks (X3)" "echo $P/$NI | xargs rm -f"
 frena "8.14 T21b Xargs_AnyFeedingSegment_Blocks (X4)" "printf '%s\\n' $P/production-{index,memory}.json | xargs rm -f"
 frena "8.14 T21c Xargs_AnyFeedingSegment_Blocks (X5)" "ls $P/ | grep production | xargs -I@ rm -f $P/@"
@@ -322,24 +318,24 @@ frena "8.14 T21f Xargs_AnyFeedingSegment_Blocks (FX2)" "ls $P/production-* | xar
 frena "8.14 T21g Xargs_AnyFeedingSegment_Blocks (FX8)" "grep -l . $P/*.json | xargs rm -f"
 pasa  "8.14 T21h Xargs_AnyFeedingSegment_Blocks (cp a /tmp)" "ls | xargs -I{} cp {} /tmp/{}.bak"
 
-# T22 · find recursivo desde una carpeta protegida o un ancestro (AC 13b). Rojo previo: pasan las cuatro primeras.
+# T22 · find recursivo desde una carpeta protegida o un ancestro.
 frena "8.14 T22a Find_Recursive_FromProtectedOrAncestor (G7)" "find $P -name 'prod*' -delete"
 frena "8.14 T22b Find_Recursive_FromProtectedOrAncestor (FX4)" "find ~/.claude -name '*-index.json' -delete"
 frena "8.14 T22c Find_Recursive_FromProtectedOrAncestor (FX5)" "cd $R && find . -name '*.json' -delete"
 frena "8.14 T22d Find_Recursive_FromProtectedOrAncestor (FX6)" "find $P -regex '.*index.*' -delete"
 pasa  "8.14 T22e Find_Recursive_FromProtectedOrAncestor (N17 -exec cat)" "find $R/.tycon -type f -exec cat {} \\;"
 pasa  "8.14 T22f Find_Recursive_FromProtectedOrAncestor (X10 llaves literales)" "find $P -name 'production-{index,memory}.json' -delete"
-# una carpeta temporal SIN repos adentro: el /tmp de la máquina puede tener clones con `.tycon/` (esta Mac tiene once), y
-# ahí `find /tmp … -delete` sí borra catálogos — antes pasaba sólo porque /tmp tiene más de 300 entradas y no se miraba
+# una carpeta temporal SIN repos adentro: el /tmp de la máquina puede tener clones con `.tycon/` (una máquina puede tener varios), y
+# ahí `find /tmp … -delete` sí borra catálogos — con más de 300 entradas en /tmp no se miraría y el caso pasaría sin querer
 mkdir -p "$TMP/lab-tmp/a" "$TMP/lab-tmp/b"
 pasa  "8.14 T22g Find_Recursive_FromProtectedOrAncestor (carpeta temporal sin repos)" "find $TMP/lab-tmp -name '*.json' -delete"
 pasa  "8.14 T22h Find_Recursive_FromProtectedOrAncestor (-maxdepth 0)" "find ~/.claude -maxdepth 0 -name x -delete"
 
-# T23 · una sustitución que nombra el alcance, como argumento de un escritor (AC 13c). Rojo previo: X9 pasa.
+# T23 · una sustitución que nombra el alcance, como argumento de un escritor.
 frena "8.14 T23a Substitution_NamingProtectedScope_Blocks (X9)" "rm -f \$(ls -d $P/* | grep -E 'production-(index|memory)')"
 pasa  "8.14 T23b Substitution_NamingProtectedScope_Blocks (lista ajena)" "rm -f \$(cat /tmp/lista)"
 
-# T24 · lo indecidible en alcance frena con su motivo y su regla, sin ensuciar hook-errors.log (AC 2, 14). Fuera del
+# T24 · lo indecidible en alcance frena con su motivo y su regla, sin ensuciar hook-errors.log. Fuera del
 # alcance, «no sé» no frena (nombres que no empiezan con production: ésos están en alcance en cualquier carpeta).
 for caso in "rm -f $P/production-(index" "setopt extendedglob; rm -f $P/^STOP_AUTONOMY" "setopt braceccl; rm -f $P/production-{i}ndex.json"; do
   mundo
@@ -357,8 +353,8 @@ pasa "8.14 T24 Undecidable_OutOfScope_Passes (timing-history)" "rm -f $P/timing-
 pasa "8.14 T24 Undecidable_OutOfScope_Passes (setopt, /tmp)" "setopt extendedglob; rm -f /tmp/^foo"
 pasa "8.14 T24 Undecidable_OutOfScope_Passes (setopt, timing-history)" "setopt braceccl; rm -f $P/timing-history/foo-{i}ndex.json"
 
-# T25 · el peor comando de ~32 KB se decide en menos de 1 s (AC 15): palabras de 1.024 expansiones cada una fuera
-# del alcance, y la escritura protegida al final. Rojo previo: con un tope por palabra, ~10 s y el reloj deja pasar.
+# T25 · el peor comando de ~32 KB se decide en menos de 1 s: palabras de 1.024 expansiones cada una fuera
+# del alcance, y la escritura protegida al final. Con un tope por palabra, tardaría ~10 s y el reloj dejaría pasar.
 mundo
 for con in 1 0; do
   r25="$(CON="$con" LAB_HOME="$CASA" REPOS="$REPOS" HOOK="$HOOK" node -e '
@@ -375,13 +371,13 @@ for con in 1 0; do
     const indecidible = /no sabe leer como el shell/.test(r.stderr || "") ? "indecidible" : "otro";
     console.log(`${r.status} ${Date.now() - t} ${c.length} ${indecidible}`);')"
   set -- $r25
-  # con la escritura, el presupuesto ya se agotó cuando llega: frena por «no lo pude leer a tiempo» (AC 14, 15)
+  # con la escritura, el presupuesto ya se agotó cuando llega: frena por «no lo pude leer a tiempo»
   esperado=$([ "$con" = 1 ] && echo "2 indecidible" || echo "0 otro")
   if [ "$1 $4" = "$esperado" ] && [ "$2" -lt 1000 ]; then ok "8.14 T25 ExpansionBudget_Worst32KB_UnderOneSecond (con escritura=$con: rc=$1 en $2 ms, $3 bytes)"
   else no "8.14 T25 ExpansionBudget_Worst32KB_UnderOneSecond (con escritura=$con: rc=$1 $4 en $2 ms, esperaba «${esperado}» y < 1000 ms)"; fi
 done
 
-# T26 · el motivo nombra el archivo que el shell iba a tocar y la palabra de donde sale; lo que no escribe pasa (AC 16)
+# T26 · el motivo nombra el archivo que el shell iba a tocar y la palabra de donde sale; lo que no escribe pasa
 mundo
 rc="$(corre "rm -f $P/production-{index,memory}.json")"
 if [ "$rc" = 2 ] && grep "Motivo:" "$TMP/err" | grep "$NI" >/dev/null && grep "Motivo:" "$TMP/err" | grep "{index,memory}" >/dev/null; then
@@ -395,15 +391,14 @@ pasa "8.14 T26c NonWritersPass (N6: otros archivos de la raíz del pipeline)" "r
 pasa "8.14 T26d NonWritersPass (FP1: echo del nombre)" "echo $P/$NI"
 pasa "8.14 T26e NonWritersPass (FP2: asignación y cat)" "F=$P/$NI; cat \"\$F\""
 
-# Las sustituciones no rompen el partidor (hallado al medir esta story con measure-guard sobre comandos reales):
-# (a) una `$(…)` sin comillas pegaba el resto del comando en un solo segmento — el `cd` se tragaba el `&& rm` y pasaba;
-# (b) una `"…$(cmd "x")…"` se cerraba en la primera comilla de adentro, y el freno frenaba un `echo` que no escribe.
+# Las sustituciones no rompen el partidor:
+# (a) una `$(…)` sin comillas no pega el resto del comando en un solo segmento — si no, el `cd` se traga el `&& rm` y pasa;
+# (b) una `"…$(cmd "x")…"` no se cierra en la primera comilla de adentro — si no, el freno frena un `echo` que no escribe.
 frena "8.14 SubstitutionDoesNotGlueSegments (cd tras X=\$(…) y rm con comodín)" "X=\$(pwd); cd $P && rm -f *.json"
 pasa  "8.14 QuotedSubstitutionWithQuotes_IsOneWord (echo con \$(ls -d \"…/.tycon\"))" "X=\$(pwd); git fetch -q origin && echo \"t=\$(ls -d \"\$D/.tycon\" 2>/dev/null && echo ok)\""
 
-# ── story 8.14 · arreglos de la revisión de la tanda A (2026-10-03) ─────────────────────────────────────────────────
-# Lo encontraron los revisores del Step 5 y la medición T30 sobre comandos reales. Cada caso fue rojo antes del arreglo.
-# Frena con la regla de lo indecidible (AC 14), sin ensuciar hook-errors.log: «no lo pude mirar» no es una falla del freno.
+# ── casos de revisión ─────────────────────────────────────────────────
+# Frena con la regla de lo indecidible, sin ensuciar hook-errors.log: «no lo pude mirar» no es una falla del freno.
 frena_indecidible(){ local etiqueta="$1" cmd="$2"; shift 2
   local rc; rc="$(corre "$cmd" "$@")"
   if [ "$rc" = 2 ] && grep -q "no sabe leer como el shell" "$TMP/err" && [ "$(regla_de_la_ultima)" = "nombre-indecidible" ]; then ok "$etiqueta"
@@ -415,9 +410,9 @@ mkdir -p "$LAB/few/a" "$LAB/few/b" "$LAB/few/c/.tycon" "$LAB/locked/repo/.tycon"
 i=1; while [ "$i" -le 301 ]; do mkdir -p "$LAB/many/d$i"; i=$((i+1)); done; mkdir -p "$LAB/many/d301/.tycon"
 ( cd "$LAB/huge" && seq 1 5001 | sed 's/^/d/' | xargs mkdir )
 
-# (1) `find … -delete` desde una carpeta de repos: el repo número 301 se busca igual (el tope de 300 lo daba por «fuera
+# (1) `find … -delete` desde una carpeta de repos: el repo número 301 se busca igual (un tope de 300 lo daría por «fuera
 # de alcance» sin mirar); con más subcarpetas de las que se revisan, o sin permiso para leerla, NO se miró: indecidible.
-# Rojo previo: many, huge y locked salían 0.
+# Sin esto, many, huge y locked saldrían 0.
 frena "8.14 FindDelete_ReposFolder_FewChildren_Blocks (control)" "find $LAB/few -name '*.json' -delete"
 frena "8.14 FindDelete_ReposFolder_Child301_Blocks" "find $LAB/many -name '*.json' -delete"
 frena_indecidible "8.14 FindDelete_ReposFolder_TooManyChildren_IsUndecidable" "find $LAB/huge -name '*.json' -delete"
@@ -428,7 +423,7 @@ pasa "8.14 FindDelete_TooManyChildren_PatternCannotBeCatalog_Passes" "find $LAB/
 pasa "8.14 FindDelete_MissingFolder_Passes" "find $LAB/no-existe -name '*.json' -delete"
 
 # (4a) Un comodín que NO empieza con punto no casa con un nombre que empieza con punto (sin dotglob/globdots): `*-*`
-# no es la carpeta del pipeline. Rojo previo (T30, frenos 7 y 8): frenaban «ESCRIBE sobre …/*-*».
+# no es la carpeta del pipeline; frenar «ESCRIBE sobre …/*-*» sería un falso positivo.
 pasa "8.14 WildcardWithoutDot_IsNotHiddenFolder (rm *-*)" "rm -rf $LAB/x/*-*"
 pasa "8.14 WildcardWithoutDot_IsNotHiddenFolder (\$A-\$B)" "rm -rf \"$LAB/x/\$A-\$B\""
 pasa "8.14 WildcardWithoutDot_IsNotHiddenFolder (D=…; \$D/x/\$A-\$B)" "D=$LAB; rm -rf \"\$D/x/\$A-\$B\""
@@ -441,8 +436,8 @@ frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (setopt globdots)" "
 frena_indecidible "8.14 DotGlobOn_WildcardMayBeHiddenFolder (GLOBIGNORE)" "GLOBIGNORE=x; rm -rf ~/.claude/*-*"
 
 # (4b) Con la carpeta de trabajo en la raíz del pipeline: `sed` sin -i no escribe sus archivos, y lo que un intérprete
-# recibe de una variable o sustitución sin resolver es dato de su programa (el programa calcula qué abre, AC 17).
-# Rojo previo (T30, frenos 1-6): frenaban «ESCRIBE sobre …/production-index.json (el shell arma ese nombre desde «"$F"»)».
+# recibe de una variable o sustitución sin resolver es dato de su programa (el programa calcula qué abre).
+# Frenar «ESCRIBE sobre …/production-index.json (el shell arma ese nombre desde «"$F"»)» sería un falso positivo.
 PIPE_CWD="$CASA/.claude/.tycon-pipeline"
 CWD="$PIPE_CWD" pasa "8.14 InterpreterUnknownArg_Passes (F=\$(ls …) && python3 - \"\$F\")" "F=\$(ls -t runs/*/step-*.json | head -1) && python3 - \"\$F\" <<'PY'
 import json, sys
@@ -458,15 +453,14 @@ CWD="$PIPE_CWD" frena "8.14 InterpreterArgFromNamingSubstitution_StillBlocks (co
 # el motivo de un nombre sin resolver es el de lo indecidible: el shell no arma «production-index.json» desde «"$X"»
 CWD="$PIPE_CWD" frena_indecidible "8.14 UnknownName_InScope_SaysUndecidable (rm \"\$X\" en la raíz)" "rm -f \"\$X\""
 
-# (5b) `make -C<carpeta>` pegado y `make --directory=<carpeta>` fijan la carpeta de su segmento (AC 12). Guarda: el
-# código ya estaba, sin prueba propia.
+# (5b) `make -C<carpeta>` pegado y `make --directory=<carpeta>` fijan la carpeta de su segmento. Guarda: esta prueba fija
+# ese comportamiento.
 frena "8.14 MakeDirectory_Glued_SetsFolder (make -C<dir>)" "make -C$R/.tycon $CAT"
 frena "8.14 MakeDirectory_Long_SetsFolder (make --directory=<dir>)" "make --directory=$R/.tycon $CAT"
 pasa  "8.14 MakeDirectory_Glued_SetsFolder (control /tmp)" "make -C/tmp $CAT"
 
-# ── story 8.14 · pase adversarial de la tanda A (carril H, 2026-10-03) ──────────────────────────────────────────────
-# Los confirmados del pase sobre el freno (`~/.claude/respaldos/8.14/adversarial-8.14A.md`, sección del freno), uno por
-# clase con su número. Cada caso fue rojo antes del arreglo; los «control» son guardas de lo que tiene que seguir igual.
+# ── casos del pase adversarial ──────────────────────────────────────────────
+# Uno por clase con su número; los «control» son guardas de lo que tiene que seguir igual.
 mundo; R="$REPOS/backend-acme"; PIPE_CWD="$CASA/.claude/.tycon-pipeline"
 mkdir -p "$TMP/lab-tmp/a" "$TMP/lab-tmp/b"
 
@@ -493,13 +487,13 @@ frena "8.14 #3 ParameterDefault_IsAPossibleValue (\${F-…})" "rm -f \${F-$P/$NI
 frena "8.14 #3 ParameterDefault_IsAPossibleValue (\${F:=…} en redirección)" "echo x > \${F:=$P/$NI}"
 pasa  "8.14 #3 ParameterDefault_IsAPossibleValue (control: \${F:-/tmp/x})" "rm -f \"\${F:-/tmp/x}\""
 
-# #5 (REGRESIÓN) · una variable que sale de una sustitución conserva el texto de esa sustitución (AC 13c por variable).
+# #5 (REGRESIÓN) · una variable que sale de una sustitución conserva el texto de esa sustitución, variable por variable.
 frena "8.14 #5 VariableFromSubstitution_KeepsItsText (\$(…))" "F=\$(echo $P/$NI); rm -f \"\$F\""
 frena "8.14 #5 VariableFromSubstitution_KeepsItsText (comilla invertida)" "F=\`echo $P/$NI\`; rm -f \$F"
 frena "8.14 #5 VariableFromSubstitution_KeepsItsText (copiada a otra variable)" "F=\$(echo $P/$NI); G=\$F; rm -f \"\$G\""
 pasa  "8.14 #5 VariableFromSubstitution_KeepsItsText (control: lista ajena)" "F=\$(cat /tmp/lista); rm -f \$F"
 
-# #6 y #17 · `find` que alimenta a un `xargs` escritor baja a las subcarpetas como con -delete (AC 13b).
+# #6 y #17 · `find` que alimenta a un `xargs` escritor baja a las subcarpetas como con -delete.
 frena "8.14 #6 FindFeedingXargs_Descends (desde ~/.claude)" "find ~/.claude -name '*-index.json' | xargs rm -f"
 frena "8.14 #6 FindFeedingXargs_Descends (-print0 | xargs -0)" "find ~/.claude -name '*.json' -print0 | xargs -0 rm -f"
 CWD="$R" frena "8.14 #17 FindFeedingXargs_Descends (desde un repo)" "find . -name '$CAT' | xargs rm -f"
@@ -520,7 +514,7 @@ frena "8.14 #8 ShellScript_AnyFlagForm (find -exec sh -c)" "find /tmp -maxdepth 
 frena "8.14 #8 ShellScript_AnyFlagForm (xargs sh -c)" "echo | xargs sh -c 'rm -f $P/production-{index,memory}.json'"
 pasa  "8.14 #8 ShellScript_AnyFlagForm (control: bash -lc a /tmp)" "bash -lc 'rm -f /tmp/{a,b}.json'"
 
-# #9 (REGRESIÓN) · un texto de bash -c / zsh -c con variables se lee como shell, con las variables del comando (AC 8).
+# #9 (REGRESIÓN) · un texto de bash -c / zsh -c con variables se lee como shell, con las variables del comando.
 frena "8.14 #9 ShellScriptWithVariables_IsRead (export n)" "export n=index; bash -c 'rm -f $P/production-\$n.json'"
 frena "8.14 #9 ShellScriptWithVariables_IsRead (asignación adentro)" "bash -c 'X=production; rm -f $P/\${X}-index.json'"
 frena "8.14 #9 ShellScriptWithVariables_IsRead (for adentro)" "zsh -c 'for f in index memory; do rm -f $P/production-\$f.json; done'"
@@ -585,13 +579,13 @@ frena "8.14 #25 FindPatterns_AreAnded (control: -o)" "find $R -name a.json -o -n
 frena "8.14 #25 FindPatterns_AreAnded (control: grupo negado)" "find $R ! \\( -name a -o -name b \\) -delete"
 
 # #28 · una reasignación seguida (detrás de `;`, fuera de ramas) REEMPLAZA el valor, como el shell; detrás de `&&` puede
-# no correr y vale la unión (contrato del carril G: `applyAssignments(ctx, pp, { previousSep })`).
+# no correr y vale la unión (contrato del partidor: `applyAssignments(ctx, pp, { previousSep })`).
 pasa  "8.14 #28 SequentialReassignment_Replaces (OUT=.tycon; …; OUT=build)" "OUT=$R/.tycon; ls \$OUT; OUT=build; rm -rf \$OUT/*"
 pasa  "8.14 #28 SequentialReassignment_Replaces (D=<P>; …; D=/tmp/work)" "D=$P; ls \$D; D=/tmp/work; rm -rf \$D/*"
 frena "8.14 #28 SequentialReassignment_Replaces (control: detrás de &&, la unión)" "D=$P; ls \$D; true && D=/tmp/work; rm -rf \$D/*"
 
-# Tope de anidamiento (repaso de fallos silenciosos): más de 6 niveles de lo que corre adentro (eval, sh -c, $(…), heredoc a
-# un shell) no se leen; en alcance protegido eso es indecidible y frena (AC 14), afuera pasa. Rojo previo: pasaba siempre.
+# Tope de anidamiento: más de 6 niveles de lo que corre adentro (eval, sh -c, $(…), heredoc a
+# un shell) no se leen; en alcance protegido eso es indecidible y frena, afuera pasa.
 e7(){ local t="$1" i; for i in 1 2 3 4 5 6 7; do t="eval '$(printf '%s' "$t" | sed "s/'/'\\\\''/g")'"; done; printf '%s' "$t"; }
 frena_indecidible "8.14 NestingLimit_InScope_IsUndecidable (eval ×7 sobre el índice)" "$(e7 "rm -f $P/$NI")"
 frena_indecidible "8.14 NestingLimit_InScope_IsUndecidable (\$(…) ×7 sobre el índice)" "echo \$(echo \$(echo \$(echo \$(echo \$(echo \$(echo \$(rm -f $P/$NI)))))))"
@@ -599,9 +593,8 @@ pasa  "8.14 NestingLimit_OutOfScope_Passes (eval ×7 sobre /tmp)" "$(e7 "rm -f /
 pasa  "8.14 NestingLimit_OutOfScope_Passes (\$(…) ×7 sobre /tmp)" "echo \$(echo \$(echo \$(echo \$(echo \$(echo \$(echo \$(rm -f /tmp/x.json)))))))"
 
 # Una subshell que el partidor no cortó queda como PALABRA (programa o argumento): `time -p ( … )`, `coproc p ( … )`. La red
-# del freno no depende del partidor: en alcance es indecidible y frena; afuera pasa (repaso de seguridad). Con el partidor
-# que ya corta estas dos formas (carril G) frenan por la lectura precisa; la red se probó con el partidor de antes (rojo
-# previo: rc 0; con la red, nombre-indecidible) — ver carril-H.md.
+# del freno no depende del partidor: en alcance es indecidible y frena; afuera pasa. Como el partidor
+# corta estas dos formas, frenan por la lectura precisa; sin la red, un partidor que no las cortara dejaría rc 0.
 frena "8.14 UncutSubshellWord_InScope_Blocks (time -p ( … ))" "time -p ( rm -f $P/production-{index,memory}.json )"
 frena "8.14 UncutSubshellWord_InScope_Blocks (coproc p ( … ))" "coproc p ( rm -f $P/production-{index,memory}.json )"
 pasa  "8.14 UncutSubshellWord_OutOfScope_Passes (time -p ( … ) sobre /tmp)" "time -p ( rm -f /tmp/{a,b}.json )"
@@ -770,10 +763,10 @@ pasa  "6.1.1 T18 RamasDeRechazo_Frenan (control: lo mismo a un archivo nuevo)" "
 $CUERPO_SQL
 EOF"
 
-# T27 · el criterio crudo NO cambia (AC 17, decisión del dueño): `CRUDO` decide la caída del freno, el tope de 32 KB, la red
+# T27 · el criterio crudo NO cambia: `CRUDO` decide la caída del freno, el tope de 32 KB, la red
 # de lo opaco y lo que measure-guard cuenta como falso positivo; su copia `nombra_bases()` vive en node-shim.sh. Se compara
-# con el de `6e01463` (donde se midió la story) veredicto por veredicto sobre las 119 filas y los comandos del banco 40; si
-# ese commit no está en el clon (un clon superficial), contra su huella fijada acá. Ampliarlo frenaba 11 de 4.000 comandos
+# con el de un commit fijo (`REF`) veredicto por veredicto sobre las 119 filas y los comandos del banco 40; si
+# ese commit no está en el clon (un clon superficial), contra su huella fijada acá. Ampliarlo frenaría comandos
 # reales que no tocan nada.
 t27="$(REPO_ROOT="$AQUI" node - <<'JS'
 const fs = require('fs'); const path = require('path'); const crypto = require('crypto'); const { spawnSync } = require('child_process');
@@ -822,15 +815,15 @@ case "$t27" in
   *)   no "8.14 T27 BasesCriterion_Unchanged — ${t27#NO }" ;;
 esac
 
-# ── T32 · la guía declara la cortesía de la regla de firewall (AC 17) ─────────────────────────
+# ── T32 · la guía declara la cortesía de la regla de firewall ─────────────────────────
 if [ -f "$GUIA" ] && grep -qi "cortes" "$GUIA" && grep -qi "firewall" "$GUIA"; then
   ok "T32 · la guía dice que la regla de firewall es de cortesía"
 else
   no "T32 · la guía no declara que la regla de firewall es de cortesía (y que el control es el hook)"
 fi
 
-# ── story 8.14 · T33 Guide_DeclaresShellFormsAndLimits — la guía dice qué lee el freno y qué no (AC 22) ──────────────
-# Las formas que el freno ahora lee como el shell, la medición de antes y los cinco límites: sin esto, el que lee la guía
+# ── T33 Guide_DeclaresShellFormsAndLimits — la guía dice qué lee el freno y qué no ──────────────
+# Las formas que el freno lee como el shell, la medición y los cinco límites: sin esto, el que lee la guía
 # cree que el freno cubre más (o menos) de lo que cubre.
 t33_falta=""
 if [ -f "$GUIA" ]; then

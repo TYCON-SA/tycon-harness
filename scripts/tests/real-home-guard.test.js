@@ -2,8 +2,8 @@
 // real-home-guard.test.js — la red de scripts/tests/lib/real-home-guard.js, medida contra una HOME de mentira.
 //
 // La red la cargan las suites que llaman código capaz de borrar (move-home.test.js, harness-state.test.js): si dejara
-// de frenar o de anotar, esas suites seguirían verdes y la máquina de quien las corre quedaría otra vez sin resguardo
-// (2026-10-11: una prueba de «deshacer la mudanza» borró el arnés instalado). Acá cada caso lanza un `node` con su
+// de frenar o de anotar, esas suites seguirían verdes y la máquina de quien las corre quedaría sin resguardo
+// (una prueba de «deshacer la mudanza» sin esta red borra el arnés instalado). Acá cada caso lanza un `node` con su
 // HOME apuntando a una carpeta temporal —que hace de «casa real»— y mira qué frenó, qué anotó y con qué código salió.
 //
 //   G1 · escribir, crear, mover y borrar en ~/.tycon, ~/.claude y ~/.codex se frena (EPERM), queda anotado y, aunque el

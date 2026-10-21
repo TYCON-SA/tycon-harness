@@ -1,9 +1,9 @@
 'use strict';
 /**
  * portable-report.js — lo que el escenario `portable` del pipeline de Windows hace con lo que midió: leer la salida de
- * una suite, resumir un reporte del banco de controles, y armar el «En corto» y el resumen legible (story 8.17).
+ * una suite, resumir un reporte del banco de controles, y armar el «En corto» y el resumen legible.
  *
- * POR QUÉ EXISTE. La tanda W1 de la 8.17 («base portable») trae la regla de finales de línea, la función que busca el
+ * POR QUÉ EXISTE. La «base portable» trae la regla de finales de línea, la función que busca el
  * bash de Git y el banco de controles andando en Windows. Se escribió y se probó en una Mac: lo que pasa en un Windows
  * de verdad lo dice una corrida. `portable-probe.js` corre los comandos en el agente; acá vive todo lo que NO toca el
  * disco ni lanza un proceso, para poder probarlo con datos de juguete (`scripts/tests/windows-portable.test.js`):
@@ -14,7 +14,7 @@
  *   · `shortRows`      el «En corto»: una fila por pregunta, lo esperado contra lo medido;
  *   · `renderMarkdown` el resumen que lee una persona.
  *
- * LO ESPERADO sale de `para-medir-en-windows.md` (el informe de la tanda W1). Lo que depende de la máquina se calcula
+ * LO ESPERADO sale de `para-medir-en-windows.md` (el informe de lo que hay que medir). Lo que depende de la máquina se calcula
  * de lo medido («todos con \r» sólo si el clon tiene `core.autocrlf=true`); los números del informe que son de ese
  * commit (cuántas pruebas trae cada suite, cuántos casos tiene el banco) van como referencia, no como condición.
  *
@@ -31,7 +31,7 @@ const SHAPES = Object.freeze([
   { id: 'native', suffix: 'forma-nativa', looks: '/a/b (sólo Linux y Mac)' },
 ]);
 const WINDOWS_SHAPES = SHAPES.filter((s) => s.id !== 'native');
-// Lo que el informe de W1 midió en una Mac sobre el commit de la tanda: sólo referencia.
+// Lo que el informe midió en una Mac: sólo referencia.
 const REFERENCE = Object.freeze({
   tests: { 'line-endings': 6, 'git-bash': 7, 'windows-support': 4, 'bench-portable': 7 },
   bench: 'el informe de W1 esperaba 919 casos en la lista y 721 con veredicto en Windows',
@@ -185,7 +185,7 @@ function shortRows(report) {
   const fresh = factsOf(report, 'fresh-clone');
   if (fresh.repos) {
     for (const [name, r] of Object.entries(fresh.repos)) {
-      // un «0 de 0» no es un verde: la primera medición contó un solo archivo y dijo «0 de 1»
+      // un «0 de 0» no es un verde: un conteo equivocado de un solo archivo diría «0 de 1»
       const ok = Boolean(r.scripts) && typeof r.scripts.total === 'number' && r.scripts.total > 0;
       row('1', `Clon nuevo ${OF_REPO[name] || `de ${name}`}: guiones de bash (.sh y hooks de git) con \\r`, ok ? `0 de ${r.scripts.total}` : '0', `${scriptsText(r.scripts)} · core.autocrlf: ${r.autocrlf || 'sin fijar'} · .gitattributes: ${r.gitattributes ? 'sí' : 'no'}`, ok ? r.scripts.with_cr === 0 : null);
     }
@@ -202,7 +202,7 @@ function shortRows(report) {
       const crlf = r.autocrlf === 'true';
       const who = REPO_TEXT[name] || name;
       const base = n('at-base');
-      // si el «antes» ya trae el .gitattributes de W1 (una rama que sale del main de hoy), con eol=lf no llega ningún \r
+      // si el «antes» ya trae el .gitattributes (una rama que sale del main actual), con eol=lf no llega ningún \r
       const attrs = Boolean(r.gitattributes_at_base);
       row('2', `Clon que ya existía ${OF_REPO[name] || `de ${name}`}, antes de traer la rama`, attrs ? 'ninguno con \\r: el antes ya trae .gitattributes' : (crlf ? 'todos con \\r (es lo que la tanda viene a arreglar)' : 'sin core.autocrlf=true en el clon, ninguno llega con \\r'), `${scriptsText(base)} · core.autocrlf: ${r.autocrlf || 'sin fijar'} · .gitattributes en el antes: ${attrs ? 'sí' : 'no'}`, !base ? null : (attrs ? base.with_cr === 0 : (crlf ? base.with_cr === base.total && base.total > 0 : null)));
       const pulled = n('after-pull');

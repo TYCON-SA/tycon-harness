@@ -1,11 +1,11 @@
 'use strict';
 /*
- * site-access.test.js — quién es quién en el sitio de la organización y qué ve cada uno (story 2.23, AC 8, 10 a 12).
+ * site-access.test.js — quién es quién en el sitio de la organización y qué ve cada uno.
  *
  * T14 Identidad_NoSaleDeCabeceras      T18 Rol_SinRol_PaginaSinDatos     T43 Corridas_CarpetaNuevaYViejas
  * T17 Rol_SeRecalculaEnCadaPedido      T20 Filtro_QueEsDeQuien
  *
- * Y las de la regla de quién es quién (story 2.28, AC 8, 10 y 22), que el sitio toma de scripts/lib/people.js:
+ * Y las de la regla de quién es quién, que el sitio toma de scripts/lib/people.js:
  * T26 2.28-Rol_PersonaSaleDePeople     T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja
  * T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h
  *
@@ -65,7 +65,7 @@ test('T18 Rol_SinRol_PaginaSinDatos', async () => {
     proyectos: { estado: 'medido', fecha: '2026-10-15', lista: [{ proyecto: 'Proyecto X', repo: 'Repo X', stories: [] }] },
     productos: [{ producto: 'Producto X', proyectos: ['Proyecto X'] }],
   };
-  // la máquina informa otro correo: caída («cambio»). Lo informado llega aparte del modelo (2.28)
+  // la máquina informa otro correo: caída («cambio»). Lo informado llega aparte del modelo
   const personas = { informados: H.informados({ 'maq-a-1a2b3c4d': 'otra.persona@acme.example' }), repos: null };
   await conSitio(H.fuentesFijas({ config, modelo, personas }), async ({ h, entrar }) => {
     const sinRol = await h.pedir('/', { cookie: await entrar(A) });
@@ -178,7 +178,7 @@ test('T43 Corridas_CarpetaNuevaYViejas', () => {
   assert.strictEqual(reglas.maquina('maq').carpeta, 'maq-1a2b3c4d');
 });
 
-// ── story 2.28: la regla de quién es quién viene de people.js ─────────────────────────────────────────────────────
+// ── la regla de quién es quién viene de people.js ─────────────────────────────────────────────────────
 const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
 const views = require(path.join(H.SITE, 'views.js'));
 const sources = require(path.join(H.SITE, 'sources.js'));
@@ -246,7 +246,7 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   const inicio = new Date(haceHoras(1)).toISOString();
   const modelo = {
     corridas: { estado: 'medido', fecha: '2026-10-15', lista: [
-      // el sitio no baja los cambios de git: la corrida se ubica por la carpeta del volcado (paso 2 del AC 13)
+      // el sitio no baja los cambios de git: la corrida se ubica por la carpeta del volcado
       { maquina: 'maq-a-11111111', inicio, producto: 'Alfa/Web', cambio: null },
       { maquina: 'maq-x-22222222', inicio, producto: 'Zeta/Nada', cambio: null },
       { maquina: 'maq-s1-33333333', inicio, producto: 'Beta/Front', cambio: null },
@@ -279,7 +279,7 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   assert.ok(!JSON.stringify(mL).includes(OTRO) && !JSON.stringify(mA).includes(OTRO), 'ningún correo informado en el modelo');
 });
 
-// Pase adversarial de la vuelta 2: runs.js pasa la corrida de una carpeta vieja `unida` a su nueva; el sitio tiene que
+// runs.js pasa la corrida de una carpeta vieja `unida` a su nueva; el sitio tiene que
 // darle a people.js la carpeta DE ORIGEN, para que sus guardas (la vieja informa otro correo, o está confirmada para otra
 // persona) se apliquen. Espejo real, uniones del bajador real, corridas con el lector del sitio.
 test('2.28-R1 Union_QuePeopleRechaza_NoPasaLaCorridaALaNueva', () => {
@@ -323,7 +323,7 @@ test('2.28-R1 Union_QuePeopleRechaza_NoPasaLaCorridaALaNueva', () => {
   }
 });
 
-// Revisores de la vuelta 2: lo informado que no se pudo leer NO es «ninguna máquina informa nada» (falla hacia cerrar)
+// Lo informado que no se pudo leer NO es «ninguna máquina informa nada» (falla hacia cerrar)
 test('2.28-R2 Informados_SinLeer_FallaHaciaCerrar', () => {
   const config = opsBase({ people: { machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A) } }, projects: { [A]: { add: ['Gama'] } } } });
   const modelo = { corridas: { estado: 'medido', fecha: '2026-10-15', lista: [{ maquina: 'maq-a-11111111', inicio: new Date(haceHoras(1)).toISOString(), producto: 'Alfa/Web' }] },
@@ -347,7 +347,7 @@ test('2.28-R2 Informados_SinLeer_FallaHaciaCerrar', () => {
   }
 });
 
-// Revisores de la vuelta 2: la deducción por pedidos asignados también llega por el sitio (el modelo trae `asignado` y `proyecto`)
+// La deducción por pedidos asignados también llega por el sitio (el modelo trae `asignado` y `proyecto`)
 test('2.28-R3 DondeTrabaja_PorPedidosAsignados', () => {
   const config = opsBase({ people: { machines: { 'maq-a-11111111': { person: A, reported_sha256: sha(A) } } } });
   const modelo = {
@@ -361,7 +361,7 @@ test('2.28-R3 DondeTrabaja_PorPedidosAsignados', () => {
   assert.strictEqual(reglas.proyectosDe(A), null, 'una sugerencia no decide qué ve');
 });
 
-// Revisores de la vuelta 2: el ayudante de las pruebas tiene la misma forma que el lector real
+// El ayudante de las pruebas tiene la misma forma que el lector real
 test('2.28-R4 Ayudante_InformadosConLaFormaDelLector', () => {
   const fs = require('fs'); const os = require('os');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site-r4-'));
@@ -475,8 +475,8 @@ test('T3 Productos_DeclaradoInexistente_NoSale', () => {
   assert.deepStrictEqual(otro.reglas.proyectosDe(A), ['Beta'], 'el correo de la clave sin distinguir mayúsculas');
 });
 
-// el pase adversarial lo reprodujo: la vista de una persona recorta las fotos a las de sus productos, y «no usa stories del
-// arnés» se perdía si ninguno de los suyos tenía foto al día
+// la vista de una persona recorta las fotos a las de sus productos, y «no usa stories del
+// arnés» se perdería si ninguno de los suyos tuviera foto al día
 test('T12 Producto_SinStories_TambienParaLaPersona', () => {
   const { config, modelo } = mundoDeclarado({ [A]: { add: ['Gama', 'Delta'] } });
   modelo.productos.push({ producto: 'Delta', proyectos: ['Delta'], rutas: ['Delta/Back'] });
@@ -486,7 +486,7 @@ test('T12 Producto_SinStories_TambienParaLaPersona', () => {
   assert.strictEqual(delta.motivo, 'sus repos no usan stories del arnés', 'la persona ve lo mismo que quien mantiene');
 });
 
-// revisor de fallos silenciosos: si todo lo declarado no existe, «no te asignó productos» sería falso
+// si todo lo declarado no existe, «no te asignó productos» sería falso
 test('T13 Productos_DeclaradosInexistentes_LoDice', () => {
   const { ve } = mundoDeclarado({ [A]: { add: ['Inexistente'] } });
   const mA = ve(A);

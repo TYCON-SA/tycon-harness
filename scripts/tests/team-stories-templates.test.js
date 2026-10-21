@@ -1,9 +1,9 @@
 'use strict';
 /**
- * team-stories-templates.test.js — las plantillas genéricas del repo de stories de un equipo nuevo (story 8.40, AC 37 ·
- * T44). Viven en el núcleo (`scripts/setup/harness/team-stories/`) y las usa `harness.js team-init` (AC 38). Lo que se mide:
+ * team-stories-templates.test.js — las plantillas genéricas del repo de stories de un equipo nuevo (T44).
+ * Viven en el núcleo (`scripts/setup/harness/team-stories/`) y las usa `harness.js team-init`. Lo que se mide:
  *   - están todas: las comunes y el portón de cada plataforma;
- *   - no nombran ningún producto (las de productos BIZUIT viven en el perfil del equipo de TYCON: la 8.41);
+ *   - no nombran ningún producto (las de productos BIZUIT viven en el perfil del equipo de TYCON);
  *   - cada marcador `{{…}}` es uno de los que `team-init` sabe llenar (`STORIES_MARKERS`): uno que no está quedaría
  *     escrito tal cual en el repo de la persona;
  *   - el portón de GitHub pasa las reglas que valen para cualquier workflow de un repo público
@@ -51,8 +51,8 @@ test('T44 TeamStoriesTemplates_MarkersAreFilledByTeamInit — cada marcador lo l
   assert.ok(!/\{\{ADO_/.test(gh), 'el portón de GitHub no lleva marcadores de Azure DevOps');
 });
 
-// el hook de pre-commit del repo de historias, corrido de verdad en un repo de juguete (pase adversarial del cierre,
-// clases 1, 5 y 9): una story con el frontmatter roto no entra ni renombrada, ni con tildes en el nombre, ni con espacios
+// el hook de pre-commit del repo de historias, corrido de verdad en un repo de juguete:
+// una story con el frontmatter roto no entra ni renombrada, ni con tildes en el nombre, ni con espacios
 test('T44 TeamStoriesTemplates_PreCommitHook_CatchesRenamedAccentedAndSpacedStories', (t) => {
   const { spawnSync } = require('child_process');
   if (spawnSync('git', ['--version'], { stdio: 'ignore' }).status !== 0) return t.skip('NO MEDIDO: sin git en esta máquina');
@@ -81,7 +81,7 @@ test('T44 TeamStoriesTemplates_PreCommitHook_CatchesRenamedAccentedAndSpacedStor
     git('reset', '-q', '--hard'); git('clean', '-qfd');
     story('.specs/story 1.6 válida.md', '1.6', 'draft'); git('add', '-A');
     assert.strictEqual(hook().status, 0, 'una story válida con espacios y tildes en el nombre pasa');
-    // un `git diff --cached` que falla no deja pasar el commit sin revisar (vuelta 2 de revisores)
+    // un `git diff --cached` que falla no deja pasar el commit sin revisar
     const fake = fs.mkdtempSync(path.join(os.tmpdir(), 'team-stories-git-'));
     try {
       fs.writeFileSync(path.join(fake, 'git'), '#!/bin/sh\necho "fatal: roto a propósito" >&2\nexit 128\n', { mode: 0o755 });
@@ -102,7 +102,7 @@ test('T44 TeamStoriesTemplates_GithubGate_PublicWorkflowRules — las reglas de 
   assert.match(text, /node "\$\{GATE\}" --repo "\$\{GITHUB_WORKSPACE\}" --base "origin\/\$\{BASE\}"/, 'corre el portón contra la rama destino del pedido');
   assert.match(text, /^on:\n {2}pull_request:/m, 'corre en los pedidos');
   // Actions corre los pasos con `bash -e`: el código de gitleaks se captura sin cortar el paso, así un hallazgo se muestra
-  // antes del rojo (pase adversarial del cierre, clase 6)
+  // antes del rojo
   assert.match(text, /2>&1\) && RC=0 \|\| RC=\$\?/, 'el código de gitleaks se captura sin que bash -e corte el paso');
   assert.ok(!/^\s*RC=\$\?\s*$/m.test(text), 'ningún RC=$? suelto después de una sustitución que puede salir distinto de 0');
   // el espejo: la misma plantilla con un secreto sale rota en la regla `secrets`

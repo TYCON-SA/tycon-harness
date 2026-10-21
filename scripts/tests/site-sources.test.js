@@ -1,12 +1,12 @@
 'use strict';
 /*
- * site-sources.test.js — las fuentes del sitio de la organización y su refresco (story 2.23, AC 13 a 15).
+ * site-sources.test.js — las fuentes del sitio de la organización y su refresco.
  *
  * T21 RepoDeOperaciones_CredencialNuncaEnElDisco    T25 Refresco_FallaYConservaElUltimoBueno
  * T22 Buzon_SoloConCredencialDeLectura              T40 Configuracion_UltimoBuenoBandaYFreno
  * T24 Despertar_CargandoYDespues                    T41 Configuracion_PlazoNoSeReiniciaAlDespertar
- * T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos (story 2.28: lo informado aparte del modelo)
- * T26 2.27-Espejo_BajaHilosYCambios_SoloConThreads (story 2.27: hilos y cambios sólo con `site.mailbox.threads` y disco)
+ * T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos (lo informado aparte del modelo)
+ * T26 2.27-Espejo_BajaHilosYCambios_SoloConThreads (hilos y cambios sólo con `site.mailbox.threads` y disco)
  *
  * Sin red: el repo de operaciones es un repo git por HTTP local que exige la cabecera (lib/git-http-server.js), el buzón
  * un servidor local con la forma de Azure Blob, y la identidad administrada un servidor local que hace de la plataforma.
@@ -33,7 +33,7 @@ const HORA = 3600000;
 const TOKEN = `tok-${require('crypto').randomBytes(6).toString('hex')}`;
 const CABECERA = `Basic ${Buffer.from(`x-access-token:${TOKEN}`).toString('base64')}`;
 // sin git http-backend se saltea con constancia; en CI (CI=true) NO se saltea: un «verde» con estas pruebas salteadas no
-// cubre el AC 13 a 15 (revisor de cobertura de la 2.23)
+// cubre las fuentes
 const SIN_BACKEND = !hayHttpBackend() && !process.env.CI && 'git http-backend no está en esta máquina: el repo por HTTP no se puede armar';
 const tmp = (p) => fs.mkdtempSync(path.join(os.tmpdir(), p));
 /** Entrar con el reloj del sitio: el id_token lleva iat y exp de ESE reloj, no del real. */
@@ -276,7 +276,7 @@ test('T40 Configuracion_UltimoBuenoBandaYFreno', { skip: SIN_BACKEND }, async ()
     assert.strictEqual(e.frenado, null);
     assert.ok(e.bandaRefresco, 'banda de la otra fuente');
   } finally { if (h) await h.cerrar(); await m.cerrar(); await emisor.cerrar(); }
-  // una persona no ve la banda de la configuración (con fuentes fijas: el lector todavía no admite `people`, 2.28)
+  // una persona no ve la banda de la configuración (con fuentes fijas: el lector todavía no admite `people`)
   const emisor2 = await arrancarEmisor();
   const cfgPersona = { version: 1, owners: { default: 'lead@acme.example' }, site: { maintainers: ['lead@acme.example'] }, people: { machines: { 'maq-a-11111111': { person: 'dev.a@acme.example', reported_sha256: null } } } };
   const h2 = await H.arrancarSitio({ env: H.envBase({ SITE_OIDC_ISSUER: emisor2.issuer }), fuentes: H.fuentesFijas({ config: cfgPersona, bandaConfig: { desde: T0, motivo: 'clave_nueva: clave desconocida' } }) });
@@ -327,7 +327,7 @@ test('T41 Configuracion_PlazoNoSeReiniciaAlDespertar', { skip: SIN_BACKEND }, as
   } finally { if (h) await h.cerrar(); await m2.cerrar(); await emisor.cerrar(); }
 });
 
-// ── Revisores y pase adversarial de la story 2.23, vuelta 1 ─────────────────────────────────────────────────────────
+// ── casos de borde de las fuentes ───────────────────────────────────────────────────────────────────────────────────
 const g = (cwd, ...a) => { const r = spawnSync('git', ['-c', 'maintenance.auto=false', '-c', 'gc.auto=0', ...a], { cwd, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'p', GIT_AUTHOR_EMAIL: 'p@acme.example', GIT_COMMITTER_NAME: 'p', GIT_COMMITTER_EMAIL: 'p@acme.example', GIT_AUTHOR_DATE: '2026-10-15T12:00:00Z', GIT_COMMITTER_DATE: '2026-10-15T12:00:00Z' } }); if (r.status !== 0) throw new Error(r.stderr); };
 
 test('2.23-R1 Buzon_IncompletoEsParcial', async () => {
@@ -423,7 +423,7 @@ test('2.23-R3 Clon_SinEnlacesNiRutasDeAfuera', { skip: SIN_BACKEND }, async () =
 });
 
 test('2.23-R4 Repo_ConIdentidadAdministradaYErroresDeLaPlataforma', { skip: SIN_BACKEND }, async () => {
-  // AC 1 y 15: el repo de operaciones con SITE_OPERATIONS_IDENTITY=managed (el token lo da la plataforma, va como Bearer)
+  // El repo de operaciones con SITE_OPERATIONS_IDENTITY=managed (el token lo da la plataforma, va como Bearer)
   const raiz = tmp('site-r4-');
   repoConArchivos(raiz, 'ops.git', H.archivosDeOperaciones(), path.join(raiz, 'trabajo'));
   const git = await arrancarRepoHttp({ raiz, cabecera: 'Bearer tok-del-repo' });
@@ -486,10 +486,10 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', (t) => {
     assert.strictEqual(m.paridad.codigo, 'ilegible', 'una paridad rota no es «la noche no la dejó»');
     assert.deepStrictEqual([m.prs.codigo, m.pedidos.codigo], ['ilegible', 'ilegible'], 'medido sin la lista: ilegible');
     assert.ok(registro.some((l) => /PR del .* dice medido y no trae la lista/.test(l)) && registro.some((l) => /pedidos asignados del .* dice medido/.test(l)), 'y se registra');
-    // el registro sale sin saltos de línea aunque el nombre de un archivo los traiga (revisión de seguridad, vuelta 2)
+    // el registro sale sin saltos de línea aunque el nombre de un archivo los traiga
     assert.ok(registro.length > 0 && registro.every((l) => !/[\n\r]/.test(l)), 'ninguna línea del registro con saltos');
     if (conSalto) assert.ok(registro.some((l) => /Raro nombre__X/.test(l)), 'el nombre con salto se registra en una sola línea');
-    // una foto que no se puede leer se nombra en el registro, también la de las fuentes sin registro propio (vuelta 3)
+    // una foto que no se puede leer se nombra en el registro, también la de las fuentes sin registro propio
     escribir(`.dashboard/vigilante/vigilante-${HOY}.json`, '{ roto');
     const r2 = [];
     const m2 = sources.construirDesdeClon(clon, { ahora: T0, log: (l) => r2.push(l) });
@@ -498,8 +498,8 @@ test('2.23-R5 Fotos_IlegiblesYAusentesNoSonCero', (t) => {
   } finally { fs.rmSync(raiz, { recursive: true, force: true }); }
 });
 
-// ── story 2.28: lo que el sitio necesita para la regla de quién es quién ──────────────────────────────────────────
-// Revisores de la vuelta 2: repos.json que falta, está roto o fuera del clon no es «no hay repos»; el freno con un reloj
+// ── lo que el sitio necesita para la regla de quién es quién ──────────────────────────────────────────
+// repos.json que falta, está roto o fuera del clon no es «no hay repos»; el freno con un reloj
 // que no se puede leer, o con la primera falla en el futuro, frena
 test('2.28-R5 Repos_Y_Reloj_FallanHaciaDecirlo', () => {
   const people = require(path.join(H.SITE, '..', 'lib', 'people.js'));
@@ -569,7 +569,7 @@ test('T45 2.28-Fuentes_InformadosFueraDelModelo_YCorridasConRepos', { skip: SIN_
   } finally { await m.cerrar(); }
 });
 
-// 🔴 rojo previo: el espejo bajado como `--no-threads` siempre deja el detalle sin cambios ni antes y después
+// 🔴 rojo: el espejo bajado como `--no-threads` siempre deja el detalle sin cambios ni antes y después
 test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: SIN_BACKEND }, async () => {
   const zlib = require('zlib');
   const blobs = {
@@ -598,7 +598,7 @@ test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: S
     assert.strictEqual(gets(m, 's1.cambio.json.gz'), 1);
   } finally { await m.cerrar(); }
 
-  // sin la clave (como la 2.23): sólo volcados y registros
+  // sin la clave: sólo volcados y registros
   m = await montar({ blobs, config: cfgOps(undefined) });
   try {
     await m.fuentes.refrescar();
@@ -623,10 +623,9 @@ test('T26 Espejo_BajaHilosYCambios_SoloConThreads @story-2.27 @ac-18', { skip: S
   } finally { await m.cerrar(); fs.rmSync(disco, { recursive: true, force: true }); }
 });
 
-// El hotfix de la bajada parcial (2026-10-16): en el sitio real, la primera pasada de un espejo vacío cortaba por el tope
-// de 120 s (bajaba de a un archivo) y la siguiente llegaba recién al refresco de los 15 minutos: la pestaña Corridas
-// quedaba «no medido (parcial)» todo ese tiempo.
-// 🔴 rojo previo: un blob por vez (maxEnVuelo 1), y después de un corte el próximo refresco a los minutos de siempre
+// La bajada parcial: si la primera pasada de un espejo vacío corta por el tope de 120 s (baja de a un archivo) y la
+// siguiente llega recién al refresco de los 15 minutos, la pestaña Corridas queda «no medido (parcial)» todo ese tiempo.
+// 🔴 rojo: un blob por vez (maxEnVuelo 1), y después de un corte el próximo refresco a los minutos de siempre
 test('T26b BajadaEnParalelo_YSiCortaLaSiguienteEnseguida @story-2.27 @ac-18', { skip: SIN_BACKEND }, async () => {
   const blobs = {};
   for (let i = 0; i < 24; i++) blobs[`maq-a-11111111/s${i}.json`] = H.volcado(`s${i}`, `${HOY}T08:${String(i).padStart(2, '0')}:00Z`);

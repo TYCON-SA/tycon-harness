@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# fake-home.sh — la carpeta personal de prueba de las suites que simulan la máquina del dev (story 7.16).
+# fake-home.sh — la carpeta personal de prueba de las suites que simulan la máquina del dev.
 #
-# Por qué existe: la story 7.15 encontró cuatro suites que dejaban constancias falsas en los registros REALES
-# del dev (`~/.claude/.tycon-pipeline/gates.log`, `frenos.jsonl`, `new-names.jsonl`, `reviewer-rules.jsonl`);
-# `frenos.jsonl` sube al buzón y alimenta el tablero. Cada suite armaba su HOME falsa a mano y a su manera, y
-# olvidarse un paso ensuciaba la máquina sin avisar. Las librerías resuelven esos registros con `$HOME` /
-# `os.homedir()` y NO se les agregan variables para redirigirlos (decisión de la 7.15): se aísla cambiando HOME.
+# Por qué existe: una suite que simula la máquina del dev sin aislar su HOME deja constancias falsas en los registros
+# REALES (`~/.claude/.tycon-pipeline/gates.log`, `frenos.jsonl`, `new-names.jsonl`, `reviewer-rules.jsonl`);
+# `frenos.jsonl` sube al buzón y alimenta el tablero. Si cada suite arma su HOME falsa a mano y a su manera,
+# olvidarse un paso ensucia la máquina sin avisar. Las librerías resuelven esos registros con `$HOME` /
+# `os.homedir()` y NO se les agregan variables para redirigirlos: se aísla cambiando HOME.
 #
 # Se usa con `source` (tiene que cambiar el ambiente de la suite que lo carga, por eso no se ejecuta):
 #
@@ -29,7 +29,7 @@ fake_home_create() {
     echo "fake-home: opción desconocida «${modo}» — la única es --installer" >&2; return 2
   fi
   # Absoluta: una relativa depende del directorio actual, y desde la HOME real crearía una carpeta suelta
-  # adentro de ella (pase adversarial de la 7.16). Las suites pasan rutas de `mktemp -d`.
+  # adentro de ella (sin esto, una suite la dejaría ahí). Las suites pasan rutas de `mktemp -d`.
   case "$dir" in
     /*) ;;
     *) echo "fake-home: «${dir}» no es una ruta absoluta — pasá una carpeta de mktemp -d" >&2; return 2 ;;
@@ -67,7 +67,7 @@ fake_home_create() {
 
   # El arnés y agent-skills: los guiones los buscan bajo `$HOME/.claude/` cuando no les pasan la variable. Se
   # fijan con lo que resolvía la HOME real, y sólo si existen: una ruta inventada cambiaría lo que ven.
-  # (el arnés por el lugar y, si no está, por el nombre viejo: story 8.19, con los nombres de scripts/setup/harness/place.js)
+  # (el arnés por el lugar y, si no está, por el nombre viejo, con los nombres de scripts/setup/harness/place.js)
   if [ -z "${TYCON_GUIDES_DIR:-}" ]; then
     for _fh_name in $(node -e 'const p=require(process.argv[1]); process.stdout.write(p.PLACE_NAME + " " + p.LEGACY_PLACE_NAME)' "$(cd "$(dirname "${BASH_SOURCE[0]}")/../../setup/harness" 2>/dev/null && pwd)/place.js" 2>/dev/null); do
       if [ -d "$real/.claude/$_fh_name" ]; then export TYCON_GUIDES_DIR="$real/.claude/$_fh_name"; break; fi
@@ -80,7 +80,7 @@ fake_home_create() {
     export LAUNCHCTL_BIN="$abs/.fake-bin/launchctl" TYCON_NO_NIGHTLY_EXAM=1 TYCON_NO_GUI_ENV=1
   fi
   export REAL_HOME="$real" FAKE_HOME="$abs" HOME="$abs"
-  # story 8.39 (decisión 20): con la HOME de prueba, el instalador no baja el Node del arnés de nodejs.org
+  # Con la HOME de prueba, el instalador no baja el Node del arnés de nodejs.org
   export TYCON_HARNESS_NODE=0
   return 0
 }

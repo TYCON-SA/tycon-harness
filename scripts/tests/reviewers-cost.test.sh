@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# reviewers-cost.test.sh — red de `scripts/metrics/reviewers-cost.js` (story 2.15 del arnés, 2026-09-09).
+# reviewers-cost.test.sh — red de `scripts/metrics/reviewers-cost.js`.
 #
 # Lo que cuida, en una frase: que de cada corrida del pipeline quede escrito cuánto costó la REVISIÓN
 # —cuántos revisores, de qué tipo, cuánto tardó cada uno, cuánto devolvió y cuánto consumió cuando
@@ -17,7 +17,7 @@
 # hilo comprimido sin conversación viva) no existen en ningún archivo real: los fabrica cada caso.
 # Sin red. Nunca se lee el registro de la máquina: todo va a un temporal.
 #
-# bash 3.2 (macOS): siempre `${v}`, nunca `«$v»` (lección de la 2.13).
+# bash 3.2 (macOS): siempre `${v}`, nunca `«$v»`.
 #
 # Correr: bash scripts/tests/reviewers-cost.test.sh
 
@@ -41,8 +41,8 @@ trap 'rm -rf "${TMP}"' EXIT
 PROJ="${TMP}/projects"; HIST="${TMP}/history"; RUNS="${TMP}/advisor-runs"
 mkdir -p "${PROJ}/carpeta-cualquiera" "${HIST}" "${RUNS}"
 HOY="2026-09-10"
-# 🔴 Los casos usan un supuesto PROPIO, no el del repo: el real se renueva con cada medición (lo hizo el
-# 2026-09-10) y los números de T5/T6 no pueden moverse con él. El real tiene su caso aparte (T16).
+# 🔴 Los casos usan un supuesto PROPIO, no el del repo: el real se renueva con cada medición y los números
+# de T5/T6 no pueden moverse con él. El real tiene su caso aparte (T16).
 SUPUESTO="${TMP}/supuesto.json"
 cat > "${SUPUESTO}" <<'JSON'
 { "tokens_per_launch_range": [60000, 100000], "ten_reviewers_pass_tokens": 1000000,
@@ -65,7 +65,7 @@ with open('${destino}', 'w', encoding='utf-8') as fh:
         fh.write('\n')
 "
 }
-# Igual que jsonl, pero comprimido: el hilo que guarda la story 2.13 (`<volcado>.hilo.jsonl.gz`).
+# Igual que jsonl, pero comprimido: el hilo que guarda el rescate (`<volcado>.hilo.jsonl.gz`).
 jsonl_gz() {
   local destino="$1"
   python3 -c "
@@ -78,7 +78,7 @@ with gzip.open('${destino}', 'wt', encoding='utf-8') as fh:
         fh.write('\n')
 "
 }
-# Un volcado de corrida con la forma que escribe `marker.js cmdClear` (+ lo que dejó la 2.13).
+# Un volcado de corrida con la forma que escribe `marker.js cmdClear` (+ el hilo que deja el rescate).
 #   $1 destino · $2 sessionId · $3 consumo JSON ('null' = sin consumo) · $4 costo JSON
 volcado() {
   python3 -c "
@@ -142,7 +142,7 @@ COMUNES=(--projects-dir "${PROJ}" --runs-dir "${RUNS}" --assumption "${SUPUESTO}
 # LO MEDIDO
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T1 (AC1) · cuenta por tipo, por modelo y por vuelta desde el registro ────────────────────────
+# ── T1 · cuenta por tipo, por modelo y por vuelta desde el registro ────────────────────────
 S=sesion-t1
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -188,7 +188,7 @@ else
   bad "T1 · conteos" "rc=${RC} n=${n} tipos=${tipos} modelos=${modelos} vueltas=${vueltas} (leer el modelo del lanzamiento equivocado cruza los conteos) · ${OUT}"
 fi
 
-# ── T2 (AC1) · la duración se empareja por IDENTIFICADOR, no por orden de llegada ────────────────
+# ── T2 · la duración se empareja por IDENTIFICADOR, no por orden de llegada ────────────────
 S=sesion-t2
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -221,7 +221,7 @@ else
   bad "T2 · emparejado por identificador" "A=${dA}/${bA}/${tA} B=${dB}/${bB} mediana=${med} tokens=${tk} fuente=${fuente} (por orden de llegada, A y B se cruzan) · ${OUT}"
 fi
 
-# ── T2b (AC1/AC3) · la notificación ENCOLADA es un resultado: cuenta una vez, no es «sin resultado» ─
+# ── T2b · la notificación ENCOLADA es un resultado: cuenta una vez, no es «sin resultado» ─
 S=sesion-t2b
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -242,7 +242,7 @@ else
   bad "T2b · notificación encolada" "estado=${e} dur=${d} bytes=${b} tokens=${tk} fuente=${f} sin_resultado=${sr} con_resultado=${cr} (leer sólo los mensajes user daba 769 «sin resultado» de 1930 reales) · ${OUT}"
 fi
 
-# ── T3c (AC2) · el hilo que guarda tokens-digest CONSERVA la notificación encolada ─────────────────
+# ── T3c · el hilo que guarda tokens-digest CONSERVA la notificación encolada ─────────────────
 S=sesion-t3c
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -268,7 +268,7 @@ else
   bad "T3c · hilo con la encolada" "fuente=${f} tokens=${tk} relleno_en_hilo=${relleno} (descartar todo queue-operation pierde el único resultado de ese revisor) · ${OUT}"
 fi
 
-# ── T2c (AC1) · un adjunto que NO es queued_command no cuenta como notificación ─────────────────
+# ── T2c · un adjunto que NO es queued_command no cuenta como notificación ─────────────────
 S=sesion-t2c
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -288,7 +288,7 @@ else
   bad "T2c · adjunto ajeno" "estado=${e} sin_resultado=${sr} (sin verificar el tipo, cualquier adjunto con texto parecido cuenta como resultado) · ${OUT}"
 fi
 
-# ── T13 (AC1) · un informe que contiene «</result>» y un «<usage>» de ejemplo NO rompe el parseo ──
+# ── T13 · un informe que contiene «</result>» y un «<usage>» de ejemplo NO rompe el parseo ──
 S=sesion-t13
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -310,7 +310,7 @@ else
   bad "T13 · texto libre del informe" "bytes=${b} (esperaba ${esperado}) tokens=${tk} (esperaba 5000) dur=${d} (la regex perezosa truncaba y el primer <usage> era el del ejemplo) · ${OUT}"
 fi
 
-# ── T14 (AC1) · emparejado de cardinalidad máxima: nadie queda sin ubicar si hay pareja válida ────
+# ── T14 · emparejado de cardinalidad máxima: nadie queda sin ubicar si hay pareja válida ────
 S=sesion-t14
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -333,7 +333,7 @@ else
   bad "T14 · emparejado óptimo" "no_ubicados=${nu} con_resultado=${cr} tokens=${tk} (el greedy le roba a r2 su única pareja → 1 sin ubicar) · ${OUT}"
 fi
 
-# ── T12 (AC1/AC3) · lo que la conversación muestra y el registro no tiene ENTRA al padrón ─────────
+# ── T12 · lo que la conversación muestra y el registro no tiene ENTRA al padrón ─────────
 S=sesion-t12
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -356,7 +356,7 @@ else
   bad "T12 · fuera del registro" "lanzamientos=${n} fuera=${fr} tokens=${tk} sin_registro=${vs} fuente=${fl} en_registro=${er} (sólo contarlo lo dejaba fuera de TODOS los totales) · ${OUT}"
 fi
 
-# ── T3 (AC2) · sin conversación ni hilo NO es cero: el conteo igual se publica ──────────────────
+# ── T3 · sin conversación ni hilo NO es cero: el conteo igual se publica ──────────────────
 S=sesion-t3
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -376,7 +376,7 @@ else
   bad "T3 · ausencia ≠ cero" "rc=${RC} estado=${est} n=${n} tipos=${ntipos} dur=${dEst}/mediana:${dMed} tokens=${tEst} cubiertos=${cub} (devolver 0 hace leer un cero donde hubo ausencia) · ${OUT}"
 fi
 
-# ── T3b (AC2) · el hilo guardado por la 2.13 es fuente válida cuando la conversación ya no está ──
+# ── T3b · el hilo guardado es fuente válida cuando la conversación ya no está ──
 S=sesion-t3b
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -396,7 +396,7 @@ else
   bad "T3b · hilo guardado" "fuente=${fuente} dur=${d} tokens=${tk} (exigir la transcripción viva deja inútil lo que rescató la 2.13) · ${OUT}"
 fi
 
-# ── T4 (AC3) · un revisor que no volvió es `sin_resultado`, no duración 0 ───────────────────────
+# ── T4 · un revisor que no volvió es `sin_resultado`, no duración 0 ───────────────────────
 S=sesion-t4
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -428,7 +428,7 @@ fi
 # LO ESTIMADO
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T5 (AC4) · el estimado va aparte y NUNCA se suma a lo medido ────────────────────────────────
+# ── T5 · el estimado va aparte y NUNCA se suma a lo medido ────────────────────────────────
 S=sesion-t5
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -478,7 +478,7 @@ else
   bad "T5 · verificarSeparacion" "esperaba true|false|false, salió ${sep}"
 fi
 
-# ── T5b (AC4) · sin huella del consumo (se midió antes de que existiera) el chequeo NO pasa en silencio ─
+# ── T5b · sin huella del consumo (se midió antes de que existiera) el chequeo NO pasa en silencio ─
 sep2="$(node -e "
 const m = require('${MEDIDOR}'); const fs = require('fs');
 const d = JSON.parse(fs.readFileSync('${HIST}/t5.json', 'utf8'));
@@ -493,7 +493,7 @@ else
   bad "T5b · huella ausente" "esperaba false|true, salió ${sep2} (saltear el chequeo dejaba pasar exactamente la contaminación que existe para atrapar)"
 fi
 
-# ── T6 (AC5) · supuesto vencido → el estimado sale no_medido con el motivo; lo medido no cambia ──
+# ── T6 · supuesto vencido → el estimado sale no_medido con el motivo; lo medido no cambia ──
 correr --run "${HIST}/t5.json" --projects-dir "${PROJ}" --runs-dir "${RUNS}" --assumption "${SUPUESTO}" --today "2027-01-15" --json
 eest="$(leer "${HIST}/t5.json" "r['estimado']['estado']")"; emot="$(leer "${HIST}/t5.json" "r['estimado'].get('motivo')")"
 emin="$(leer "${HIST}/t5.json" "'tokens_min' in r['estimado']")"; tk="$(leer "${HIST}/t5.json" "r['tokens_medidos']['total']")"
@@ -517,7 +517,7 @@ fi
 # LA VISTA Y EL BARRIDO
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T7 (AC6) · la vista de corridas separa lo medido de lo estimado ──────────────────────────────
+# ── T7 · la vista de corridas separa lo medido de lo estimado ──────────────────────────────
 # Corre el cliente REAL de la página sobre un DOM mínimo (misma técnica que dashboard-runs.test.sh).
 CL="${TMP}/cliente.js"
 cat > "${CL}" <<'JS'
@@ -602,7 +602,7 @@ PY2
   grep -q 'FUGA_RUTA' "${TMP}/vista.html" && bad "T7 · fuga" "la fuente del supuesto (ruta) llegó a la página" || ok "T7 · la ruta del supuesto no llega a la página"
 fi
 
-# ── T9 (AC1, encadenado) · el barrido de tokens-digest llama al medidor ──────────────────────────
+# ── T9 (encadenado) · el barrido de tokens-digest llama al medidor ──────────────────────────
 S=sesion-t9
 jsonl "${RUNS}/${S}.jsonl" <<PY
 ${LADRILLOS}
@@ -627,7 +627,7 @@ else
   bad "T9 · encadenado" "rc=${RC} consumo=${cEst} revisores=${rEst} tokens=${rTk} (sin encadenar, cada corrida nueva queda sin medir) · ${OUT}"
 fi
 # Sin el medidor en la ruta canónica (arnés partido), el rescate del hilo se escribe igual y revisores queda con motivo.
-# La copia lleva scripts/lib/legacy-names.js (story 8.9: la carga al arrancar y vive siempre al lado); falta sólo el medidor.
+# La copia lleva scripts/lib/legacy-names.js (la carga al arrancar y vive siempre al lado); falta sólo el medidor.
 SOLO="${TMP}/solo/scripts/metrics"; mkdir -p "${SOLO}" "${TMP}/solo/scripts/lib"; cp "${DIGEST}" "${SOLO}/tokens-digest.js"
 cp "${RAIZ}/scripts/lib/legacy-names.js" "${TMP}/solo/scripts/lib/"
 volcado "${HIST9}/t9b.json" "${S}" 'null' '{"spawns": 1}'
@@ -692,14 +692,14 @@ raw=sys.argv[1]; d=json.loads(raw[raw.find('{'):])
 print(d.get('revisores_medidos'), d.get('revisores_no_medidos'), d.get('revisores_separacion_rota'))
 " "${OUT}" 2>/dev/null)"
 OUTT="$(node "${DIGEST}" --all --history-dir "${HIST9}" --projects-dir "${PROJ}" --runs-dir "${RUNS}" 2>&1)"
-# En --all el medidor se vuelve a encadenar sobre los 4: t9, t9b, t9c → medidos ahora (el medidor está y no está apagado); t9d sigue borrada.
+# En --all el medidor se vuelve a encadenar sobre los 4: t9, t9b, t9c → medidos (el medidor está y no está apagado); t9d sigue borrada.
 if [ "${RC}" -eq 0 ] && [ "${r15}" = "3 1 0" ] && echo "${OUTT}" | grep "revisores medidos (story 2.15): 3 · no medidos: 1" >/dev/null; then
   ok "T15 · el barrido de tokens-digest cuenta revisores medidos 3 · no medidos 1 · separación rota 0, en JSON y en texto"
 else
   bad "T15 · contadores del barrido" "rc=${RC} json=«${r15}» (esperaba «3 1 0») texto=$(echo "${OUTT}" | grep revisores | head -2) (sin esto una separación rota en el arranque de sesión no se ve en ningún lado)"
 fi
 
-# ── T10 (AC1) · la salida en texto plano dice lo mismo que el JSON ─────────────────────────────────
+# ── T10 · la salida en texto plano dice lo mismo que el JSON ─────────────────────────────────
 correr --run "${HIST}/t2.json" "${COMUNES[@]}"
 if [ "${RC}" -eq 0 ] && echo "${OUT}" | grep "2 lanzamientos" >/dev/null && echo "${OUT}" | grep "tokens medidos 3000 (n=2 de 2)" >/dev/null && echo "${OUT}" | grep "estimado: vacio" >/dev/null; then
   ok "T10 · sin --json: «2 lanzamientos · … tokens medidos 3000 (n=2 de 2) · estimado: vacio …»"
@@ -713,7 +713,7 @@ else
   bad "T10 · resumen en texto plano" "rc=${RC} salida=${OUT}"
 fi
 
-# ── T11 (AC7) · un fallo del PROPIO medidor no se disfraza de «volcado ilegible» ─────────────────
+# ── T11 · un fallo del PROPIO medidor no se disfraza de «volcado ilegible» ─────────────────
 r11="$(node -e "
 const m = require('${MEDIDOR}');
 const vs = ['/x/a.json', '/x/b.json'];
@@ -729,7 +729,7 @@ else
   bad "T11 · fallo propio ≠ volcado ilegible" "salió «${r11}» (tragar la excepción la contaba como «volcado ilegible», tapando un defecto del propio medidor)"
 fi
 
-# ── El resumen del barrido propio (AC7): los cuatro números, y salida ≠ 0 si no puede arrancar ──
+# ── El resumen del barrido propio: los cuatro números, y salida ≠ 0 si no puede arrancar ──
 OUT="$(node "${MEDIDOR}" --all --history-dir "${HIST}" "${COMUNES[@]}" --json 2>&1)"; RC=$?
 res="$(python3 -c "
 import json,sys
@@ -744,7 +744,7 @@ fi
 OUT="$(node "${MEDIDOR}" --run "${TMP}/no-existe.json" "${COMUNES[@]}" 2>&1)"; RC=$?
 [ "${RC}" -eq 2 ] && ok "T8-resumen · --run sobre un volcado inexistente sale 2" || bad "T8-resumen · salida" "esperaba 2, fue ${RC}"
 
-# ── T16 (AC5) · el supuesto REAL del repo es legible, completo y no está vencido ──────────────────
+# ── T16 · el supuesto REAL del repo es legible, completo y no está vencido ──────────────────
 r16="$(python3 -c "
 import json,sys,datetime
 s=json.load(open('${SUPUESTO_REAL}'))
@@ -760,7 +760,7 @@ if datetime.date.today() > datetime.date.fromisoformat(s['review_before']): prin
 "
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
-# STORY 7.3 — el veredicto del validador de stories, por lanzamiento y por fase
+# El veredicto del validador de stories, por lanzamiento y por fase
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 # 🔴 En carpetas PROPIAS: `T8-resumen` cuenta los volcados de ${HIST} y no puede moverse con estos casos.
 H73="${TMP}/hist-7.3"; mkdir -p "${H73}"
@@ -787,7 +787,7 @@ open('$1', 'w', encoding='utf-8').write(json.dumps(d, indent=2))
 "
 }
 
-# ── 7.3-T3 (AC3) · CostoRevisores_DetalleYResumenPorFase ─────────────────────────────────────────────
+# ── T3 · CostoRevisores_DetalleYResumenPorFase ─────────────────────────────────────────────
 # Mutación que lo pone en rojo: fase por la vuelta sin mirar «otra story» (v3 cae en re-loop), el veredicto
 # del traspaso leído del aviso (v2 sale sin_veredicto), o los campos nuevos también en otros revisores.
 S=sesion-73-t3
@@ -833,7 +833,7 @@ else
   bad "7.3-T3 · detalle y resumen por fase" "rc=${RC} det=${det} otro=${otro} fases=${fases} · ${OUT}"
 fi
 
-# ── 7.3-T4 (AC4) · CostoRevisores_SinConversacion_NoMedido ──────────────────────────────────────────
+# ── T4 · CostoRevisores_SinConversacion_NoMedido ──────────────────────────────────────────
 # Mutación: tratar la ausencia como «sin_veredicto» o, peor, como «limpio».
 S=sesion-73-t4a
 jsonl "${RUNS}/${S}.jsonl" <<PY
@@ -863,8 +863,8 @@ else
   bad "7.3-T4 · no medido" "a=${a} b=${b}"
 fi
 
-# ── 7.3-T5 (AC3, AC15) · CostoRevisores_NumerosMedidos_NoCambian ────────────────────────────────────
-# Los números del fixture del 7.3-T3 fijados a mano (no contra origin/main: después del merge esa comparación
+# ── T5 · CostoRevisores_NumerosMedidos_NoCambian ────────────────────────────────────
+# Los números del fixture del T3 fijados a mano (no contra origin/main: después del merge esa comparación
 # se vuelve trivial). Mutación: medir el aviso del traspaso en vez del informe (bytes de v2), o que un
 # campo nuevo toque tokens, duración o la separación medido/estimado.
 nums="$(leer "${H73}/t3.json" "[r.get('lanzamientos'), r.get('con_resultado'), r.get('tokens_medidos'), r.get('duracion_ms',{}).get('mediana'), r.get('estimado',{}).get('estado')]")"

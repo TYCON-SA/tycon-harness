@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# ac-real-measurement.sh — T13 · AC 11 de la story 2.3: el medidor corre sobre los repos REALES del disco y
-# el número se PUBLICA en Dev Notes. Es el único caso de esta story que toca la realidad; todos los
+# ac-real-measurement.sh — T13: el medidor corre sobre los repos REALES del disco y
+# el número se PUBLICA en Dev Notes. Es el único caso que toca la realidad; todos los
 # demás son fixtures.
 #
-# 🔴 Asserta `total > 0` antes de creerle a nada: un cero acá es «no miré», no «no hay». Lo pagó
-#    esta misma story — la primera corrida del censo devolvió 0 repos en silencio porque
-#    `discoverStories()` devuelve `{stories: [...]}` y el guion esperaba un array.
+# 🔴 Asserta `total > 0` antes de creerle a nada: un cero acá es «no miré», no «no hay». Si el
+#    guion esperara un array cuando `discoverStories()` devuelve `{stories: [...]}`, el censo
+#    devolvería 0 repos en silencio.
 #
 # Correr: bash scripts/tests/smokes-2.3/ac-real-measurement.sh
 
@@ -50,11 +50,10 @@ else
   mal "falta el censo" "$CENSO"
 fi
 
-# Y el número tiene que estar ESCRITO en la story: publicar es parte del AC, no un extra.
+# Y el número tiene que estar ESCRITO en la story: publicar es parte del criterio, no un extra.
 # 🔴 `[ -n "$N" ]` primero: con $N vacío (si el `python3` de arriba falló) el patrón `\b\b` matchea
-#    CUALQUIER texto y este sub-chequeo daría «ok» falso. Hoy queda enmascarado porque el chequeo
+#    CUALQUIER texto y este sub-chequeo daría «ok» falso. Queda enmascarado porque el chequeo
 #    `total > 0` ya falla en ese escenario — pero un ok que depende de que otro falle no es un ok.
-#    Lo cazó el cazador de fallos silenciosos.
 for N in "$TOTAL" "$SINTYPE"; do
   if [ -z "$N" ]; then mal "no pude leer un número del medidor" "el valor llegó vacío — no se puede juzgar"; continue; fi
   grep -q "\b$N\b" "$STORY" && ok "el número $N está escrito en la story" || mal "el número $N no aparece en la story" "AC 11 exige publicarlo en Dev Notes"

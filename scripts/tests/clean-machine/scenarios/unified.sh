@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
-# unified.sh — la máquina NUEVA del equipo después de la unión de los dos repos internos (story 8.18, AC 36 · T37 y T39).
+# unified.sh — la máquina NUEVA del equipo después de la unión de los dos repos internos (T37 y T39).
 # Corre DENTRO del contenedor del núcleo (sólo los requisitos de la portada), lanzado con `--network none`, sobre un clon
 # del repo unido INTERNO: la copia que sirve el desvío (COPY_DIR, en lib.sh) es el árbol de trabajo bajo prueba con su historia, tal como lo
 # baja una máquina nueva; no pasó por el exportador.
 #
-# El caso: el ensayo del alta de un dev nuevo (2026-10-03) siguió los pasos manuales de INSTALL.md al pie de la letra y
-# la máquina quedó sin `~/.claude/skills` (ningún paso lo creaba), con 32 hooks registrados dos veces (el instalador
-# llamado por el enlace) y con el diagnóstico en rojo. Desde la unión el alta es UN clon y UN comando, y esta prueba
-# hace lo que haría esa persona: ejecuta el bloque `<!-- install:internal -->` de INSTALL.md.
+# El alta es UN clon y UN comando, y esta prueba hace lo que haría un dev nuevo: ejecuta el bloque
+# `<!-- install:internal -->` de INSTALL.md.
 #   T39 · el bloque de INSTALL.md, tal cual. Lo único que se cambia es `<URL del arnés>` por la carpeta que sirve la
 #         copia (la URL del equipo no está en el repo: vive en onboarding/datos-del-equipo.md, y acá no hay red).
 #   T37 · lo que tiene que quedar: una fuente; los cuatro enlaces; las skills de terceros restituidas desde la historia
@@ -27,9 +25,9 @@ SETTINGS="${HOME}/.claude/settings.json"
 BLOCK="${LAB_DIR}/blocks/install-internal.sh"        # el bloque <!-- install:internal -->, como lo extrajo el anfitrión
 
 if [ -z "$(ls -A "${HOME}")" ]; then ok "T37 la HOME del contenedor arranca vacía"; else no "T37 la HOME del contenedor no arranca vacía: $(ls -A "${HOME}" | tr '\n' ' ')"; fi
-# «sin red» medido adentro: con --network none el contenedor no tiene ninguna ruta. Antes se miraba que la única
-# interfaz fuera la local, y en el motor de contenedores de Mac el núcleo trae además túneles apagados (tunl0, gre0,
-# sit0…) que no llevan a ningún lado: la primera corrida de verdad (2026-10-04) dio rojo ahí con el alta ya en verde.
+# «sin red» medido adentro: con --network none el contenedor no tiene ninguna ruta. Mirar que la única
+# interfaz sea la local daría rojo: en el motor de contenedores de Mac el núcleo trae además túneles apagados (tunl0,
+# gre0, sit0…) que no llevan a ningún lado.
 # La tabla de rutas del núcleo trae una línea de encabezado y, sin red, nada más.
 if [ ! -r /proc/net/route ]; then no "T37 no pude leer la tabla de rutas del contenedor: «sin red» NO MEDIDO"
 else
@@ -49,7 +47,7 @@ N_CLONE="$(grep -c -E '^[[:space:]]*git clone ' "${OUT_DIR}/install-internal.sh"
 if [ "${N_CLONE}" = 1 ] && grep -q -F "git clone ${COPY_DIR} " "${OUT_DIR}/install-internal.sh" && ! grep -q -F '<URL' "${OUT_DIR}/install-internal.sh"; then
   ok "T39 el bloque de INSTALL.md trae UN git clone, y su URL es lo único que se reemplaza (por la copia que sirve este contenedor)"
 else no "T39 el bloque de INSTALL.md no trae exactamente un «git clone ${PLACEHOLDER} …» (encontré ${N_CLONE}): $(head -c 300 "${BLOCK}" | tr '\n' ' ')"; fi
-# el bloque es para una persona en su terminal: desde la story 8.16 (tanda B) `install` muestra el plan y pregunta
+# el bloque es para una persona en su terminal: `install` muestra el plan y pregunta
 ( cd "${WORK_DIR}" && pty_run s bash "${OUT_DIR}/install-internal.sh" ) > "${OUT_DIR}/install.out" 2>&1; RC=$?
 if [ "${RC}" -eq 0 ] && [ -f "${CLONE}/scripts/setup/harness.js" ]; then ok "T39 el bloque <!-- install:internal --> de INSTALL.md, tal cual, sale 0 (un clon y harness.js install)"
 else
@@ -67,8 +65,8 @@ if [ "${V}" = "latest|auto" ]; then ok "T37 la política es la del perfil del eq
 else no "T37 la política del estado es «${V:-ilegible}» (esperado «latest|auto»: el perfil del equipo viene en el clon)"; fi
 
 BAD=""
-# el enlace del arnés es el LUGAR (HARNESS_LINK, story 8.19): una máquina nueva ya no recibe el nombre viejo
-# skills y agents: carpetas reales del dev con un enlace por entrada del clon (story 8.35)
+# el enlace del arnés es el LUGAR (HARNESS_LINK): una máquina nueva no recibe el nombre viejo
+# skills y agents: carpetas reales del dev con un enlace por entrada del clon
 for name in "$(basename "${HARNESS_LINK}")" agent-skills; do
   if [ ! -L "${HOME}/.claude/${name}" ] || [ "$(real "${HOME}/.claude/${name}")" != "$(real "${CLONE}")" ]; then BAD="${BAD} ${name}"; fi
 done

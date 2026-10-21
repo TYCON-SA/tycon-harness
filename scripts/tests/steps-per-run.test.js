@@ -5,11 +5,11 @@
  * Lo que fija, y por qué cada caso:
  *   · la mediana y los percentiles salen de las corridas MEDIDAS, no de todas;
  *   · una corrida sin consumo medido se cuenta aparte y NO se estima — «no pude preguntar» no es
- *     «no hay», que es la regla que el arnés ya se comió cara en dos medidores distintos;
+ *     «no hay», que es una regla de todos los medidores del arnés;
  *   · la serie por mes existe (sin serie no hay forma de saber si una palanca sirvió);
  *   · un buzón vacío lo DICE en vez de publicar un cero, que es el mismo error con otra cara.
  *
- * Y desde la story 7.12, un piso más arriba: la FICHA que lo publica en el tablero de seis preguntas
+ * Y un piso más arriba: la FICHA que lo publica en el tablero de seis preguntas
  * (`pasosPorCorrida()` de dashboard.js) — denominador, fecha, serie, línea base y fuente declarada.
  *
  * Todo contra un buzón de mentira en un tmpdir: no se lee el buzón real.
@@ -75,7 +75,7 @@ t('la mediana y los percentiles salen de las corridas medidas', () => {
 });
 
 t('story 2.28: no entra a registros/ — place.json trae el correo de git de la persona y no es un volcado', () => {
-  // 🔴 rojo previo: el recorrido abría todo .json del espejo, también `<maq>/registros/place.json` (con `owner`).
+  // 🔴 rojo: el recorrido abría todo .json del espejo, también `<maq>/registros/place.json` (con `owner`).
   const { medir } = require(MOD);
   const buzon = escenario();
   const reg = path.join(buzon, 'maquina-1', 'registros');
@@ -91,8 +91,8 @@ t('story 2.28: no entra a registros/ — place.json trae el correo de git de la 
 });
 
 t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquina cuenta UNA vez', () => {
-  // 🔴 rojo previo (pase adversarial, clase 2): cada máquina vuelve a subir lo de su disco a su carpeta nueva
-  //    `<nombre>-<código>`, y el recorrido sumaba la copia vieja y la nueva: corridas 2, mediana corrida.
+  // 🔴 rojo: cada máquina vuelve a subir lo de su disco a su carpeta nueva
+  //    `<nombre>-<código>`, y un recorrido que sume la copia vieja y la nueva cuenta de más: corridas 2, mediana corrida.
   const { medir } = require(MOD);
   const buzon = escenario();
   const nueva = path.join(buzon, 'maquina-1-1a2b3c4d');
@@ -102,7 +102,7 @@ t('story 2.28: la misma corrida en la carpeta vieja y en la nueva de una máquin
   assert.strictEqual(r.corridas, 4, `las cuatro corridas medidas, una vez cada una (fueron ${r.corridas})`);
   assert.strictEqual(r.sin_medir, 1, 'y la sin medir también una vez');
   // entre una copia sin medir (la vieja) y una medida (la nueva) de la MISMA corrida, vale la medida
-  // 🔴 rojo previo (segunda vuelta de fallos silenciosos): la primera copia, sin medir, tapaba a la medida
+  // 🔴 rojo: la primera copia, sin medir, tapaba a la medida
   const b2 = escenario();
   const vieja = path.join(b2, 'maquina-1', '1.5-2026-09-18.json');
   const d = JSON.parse(fs.readFileSync(vieja, 'utf8'));
@@ -155,7 +155,7 @@ t('el medidor sólo LEE: no toca el buzón', () => {
   assert.deepStrictEqual(huella(b), antes, 'ningún archivo del buzón cambió');
 });
 
-// ─────────────── story 7.12: el medidor, cableado al tablero de seis preguntas ───────────────
+// ─────────────── el medidor, cableado al tablero de seis preguntas ───────────────
 // Lo que sigue ya no prueba al medidor sino a quien lo PUBLICA: `pasosPorCorrida()` de dashboard.js, que
 // arma la ficha. Las mismas reglas, un piso más arriba — y es donde se rompen: el medidor puede
 // devolver `null` y la página dibujar igual un cero.
@@ -166,7 +166,7 @@ const cfgReal = () => JSON.parse(fs.readFileSync(FUENTES, 'utf8'));
 const HOY = Date.parse('2026-09-20T12:00:00Z');
 
 t('@story-7.12 @ac-2 NoMedidasSeCuentanAparte — la ficha las cuenta aparte, no entran en la mediana, y lo dice', () => {
-  // 🔴 rojo previo: armar el denominador con `r.corridas` solo → la sin medir desaparece en silencio.
+  // 🔴 rojo: armar el denominador con `r.corridas` solo → la sin medir desaparece en silencio.
   const { pasosPorCorrida } = require(TABLERO);
   const f = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: escenario(), hoy: HOY });
   assert.strictEqual(f.estado, 'medido');
@@ -177,7 +177,7 @@ t('@story-7.12 @ac-2 NoMedidasSeCuentanAparte — la ficha las cuenta aparte, no
 });
 
 t('@story-7.12 @ac-4 SerieMensual — un punto por mes, con su mediana y su n', () => {
-  // 🔴 rojo previo: publicar sólo la mediana global → no hay contra qué comparar la línea base.
+  // 🔴 rojo: publicar sólo la mediana global → no hay contra qué comparar la línea base.
   const { pasosPorCorrida } = require(TABLERO);
   const f = pasosPorCorrida(cfgReal(), { estado: 'no_aplica' }, { dir: escenario(), hoy: HOY });
   assert.deepStrictEqual(f.serie, [{ mes: '2026-08', n: 2, mediana: 200 }, { mes: '2026-09', n: 2, mediana: 600 }]);
@@ -185,7 +185,7 @@ t('@story-7.12 @ac-4 SerieMensual — un punto por mes, con su mediana y su n', 
 });
 
 t('@story-7.12 @ac-3 la ficha trae la fecha del número y la línea base contra la que se compara', () => {
-  // 🔴 rojo previo: tipear «345» en el template → envejece sin que nadie lo note (y C-13 de dashboard.test.sh lo caza).
+  // 🔴 rojo: tipear «345» en el template → envejece sin que nadie lo note (y C-13 de dashboard.test.sh lo caza).
   const { pasosPorCorrida } = require(TABLERO);
   const { LINEA_BASE } = require(MOD);
   assert.strictEqual(LINEA_BASE.mediana, 345);
@@ -198,7 +198,7 @@ t('@story-7.12 @ac-3 la ficha trae la fecha del número y la línea base contra 
 });
 
 t('@story-7.12 @ac-5 BuzonVacioNoEsCero — «no medido» con su motivo; ningún cero publicado', () => {
-  // 🔴 rojo previo: `medida(r.pasos.mediana || 0, …)` → un buzón vacío publica «0 pasos».
+  // 🔴 rojo: `medida(r.pasos.mediana || 0, …)` → un buzón vacío publica «0 pasos».
   const { pasosPorCorrida } = require(TABLERO);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pasos-vacio-'));
   fs.mkdirSync(path.join(tmp, 'buzon'), { recursive: true });
@@ -224,7 +224,7 @@ t('@story-7.12 @ac-5 BuzonVacioNoEsCero — «no medido» con su motivo; ningún
 });
 
 t('@story-7.12 @ac-6 FuenteDeclarada — sin la entrada en sources.json, la ficha lo reporta en vez de leer igual', () => {
-  // 🔴 rojo previo: leer el buzón por su ruta fija, sin mirar la lista → sacar la entrada no cambia nada.
+  // 🔴 rojo: leer el buzón por su ruta fija, sin mirar la lista → sacar la entrada no cambia nada.
   const { pasosPorCorrida } = require(TABLERO);
   const real = cfgReal();
   const f = real.sources.find((x) => x.id === 'pasos-corrida');
@@ -244,23 +244,23 @@ t('@story-7.12 @ac-6 FuenteDeclarada — sin la entrada en sources.json, la fich
 });
 
 t('@story-7.12 @ac-3 en el nocturno, sin el buzón leído entero, la ficha dice que no lo pudo leer', () => {
-  // 🔴 rojo previo: en el nocturno caer al buzón por defecto del agente → «buzón vacío» en vez de «no pude leer».
+  // 🔴 rojo: en el nocturno caer al buzón por defecto del agente → «buzón vacío» en vez de «no pude leer».
   const { pasosPorCorrida } = require(TABLERO);
   const r = pasosPorCorrida(cfgReal(), { estado: 'no_leido', motivo: 'sin red o sin respuesta del buzón' }, { dir: escenario(), hoy: HOY, nocturno: true });
   assert.strictEqual(r.estado, 'no_medido');
   assert.ok(/no pudo leer el buzón/.test(r.motivo));
 });
 
-// ─────────────── lo que NO se pudo leer se cuenta y se dice (revisión de fallos silenciosos, iter 1) ───────────────
-// El medidor saltaba callado una carpeta sin permiso y un volcado cortado: la ficha publicaba la mediana «del
+// ─────────────── lo que NO se pudo leer se cuenta y se dice ───────────────
+// Si el medidor saltara callado una carpeta sin permiso y un volcado cortado, la ficha publicaría la mediana «del
 // equipo» faltándole una máquina, con un denominador más chico, sin rastro. «No pude preguntar» no es «no hay».
 const sinPermiso = (dir, fn) => { fs.chmodSync(dir, 0o000); try { return fn(); } finally { fs.chmodSync(dir, 0o755); } };
 // A root el chmod no lo frena: esos dos casos se SALTEAN y lo dicen (no salen «ok»). Los agentes del nocturno
-// (Azure, ubuntu-latest sin contenedor) no corren como root, así que hoy las dos ramas se prueban de verdad ahí.
+// (Azure, ubuntu-latest sin contenedor) no corren como root, así que las dos ramas se prueban de verdad ahí.
 const esRoot = typeof process.getuid === 'function' && process.getuid() === 0;
 
 t('@story-7.12 @ac-2 una carpeta de máquina que no se puede leer se CUENTA, y la ficha se calla en vez de publicar sin ella', () => {
-  // 🔴 rojo previo: `catch (_e) { return out; }` en caminar() → la máquina desaparece y sale un número igual.
+  // 🔴 rojo: `catch (_e) { return out; }` en caminar() → la máquina desaparece y sale un número igual.
   if (esRoot) return salteado('corriendo como root: chmod 000 no le quita la lectura, la rama «carpeta de máquina ilegible» NO se probó');
   const { medir } = require(MOD);
   const { pasosPorCorrida } = require(TABLERO);
@@ -278,7 +278,7 @@ t('@story-7.12 @ac-2 una carpeta de máquina que no se puede leer se CUENTA, y l
 });
 
 t('@story-7.12 @ac-5 un buzón que EXISTE pero no se puede leer no es un buzón vacío', () => {
-  // 🔴 rojo previo: existsSync da true, caminar() traga el EACCES → «el buzón está vacío», que es falso.
+  // 🔴 rojo: existsSync da true, caminar() traga el EACCES → «el buzón está vacío», que es falso.
   if (esRoot) return salteado('corriendo como root: chmod 000 no le quita la lectura, la rama «buzón ilegible» NO se probó');
   const { medir } = require(MOD);
   const { pasosPorCorrida } = require(TABLERO);
@@ -295,7 +295,7 @@ t('@story-7.12 @ac-5 un buzón que EXISTE pero no se puede leer no es un buzón 
 });
 
 t('@story-7.12 @ac-2 un volcado cortado (JSON roto) sigue en el denominador y se dice; uno que no es un volcado, no cuenta', () => {
-  // 🔴 rojo previo: `catch (_e) { continue; }` → el volcado desaparece de N sin contarse ni como «sin medir».
+  // 🔴 rojo: `catch (_e) { continue; }` → el volcado desaparece de N sin contarse ni como «sin medir».
   const { medir } = require(MOD);
   const { pasosPorCorrida } = require(TABLERO);
   const b = escenario(); const m1 = path.join(b, 'maquina-1');
@@ -312,7 +312,7 @@ t('@story-7.12 @ac-2 un volcado cortado (JSON roto) sigue en el denominador y se
 });
 
 t('@story-7.12 @ac-6 una antigüedad máxima mal declarada NO apaga el control en silencio', () => {
-  // 🔴 rojo previo: `Number.isFinite(max) && …` → con null o "14" el control de vejez se saltea entero y publica.
+  // 🔴 rojo: `Number.isFinite(max) && …` → con null o "14" el control de vejez se saltea entero y publica.
   const { pasosPorCorrida } = require(TABLERO);
   const real = cfgReal();
   for (const malo of [null, '14', -1, 0, undefined]) {
@@ -324,7 +324,7 @@ t('@story-7.12 @ac-6 una antigüedad máxima mal declarada NO apaga el control e
 });
 
 t('@story-7.12 el motivo de una falla de carga nunca publica el mensaje del error (trae rutas del disco)', () => {
-  // 🔴 rojo previo: `${e.code || e.message}` → un SyntaxError del medidor publica su mensaje en la página commiteada.
+  // 🔴 rojo: `${e.code || e.message}` → un SyntaxError del medidor publica su mensaje en la página commiteada.
   const fuente = fs.readFileSync(TABLERO, 'utf8');
   const fn = fuente.slice(fuente.indexOf('function pasosPorCorrida('), fuente.indexOf('const ETIQUETA_ESTADO'));
   assert.ok(fn.length > 500, 'no encontré pasosPorCorrida() para mirarla');
@@ -332,7 +332,7 @@ t('@story-7.12 el motivo de una falla de carga nunca publica el mensaje del erro
 });
 
 t('@story-7.12 @ac-4 sin línea base, la vista de corridas lo DICE (con su motivo) en vez de no dibujarla y listo', () => {
-  // 🔴 rojo previo: `catch (e) {}` → null → el cliente omite la línea y la frase: «no pude cargarla» se ve igual que «no hay».
+  // 🔴 rojo: `catch (e) {}` → null → el cliente omite la línea y la frase: «no pude cargarla» se ve igual que «no hay».
   const corridas = require(path.resolve(__dirname, '..', 'nightly', 'dashboard', 'runs.js'));
   assert.strictEqual(typeof corridas.lineaBasePasos, 'function', 'runs.js exporta lineaBasePasos()');
   const ok = corridas.lineaBasePasos();
@@ -346,12 +346,11 @@ t('@story-7.12 @ac-4 sin línea base, la vista de corridas lo DICE (con su motiv
   assert.strictEqual(corridas.lineaBasePasos(malo).estado, 'sin_linea_base', 'una fecha que no es una fecha tampoco vale');
 });
 
-// ─────────────── los dos hallazgos que el pase adversarial CONFIRMÓ corriendo el código (2026-09-20) ───────────────
-// Sus pruebas originales quedaron en la carpeta de la corrida (step-05b-probes/); éstas son las de regresión.
+// ─────────────── regresiones: enlaces y valores absurdos ───────────────
 
 t('@story-7.12 @ac-2 [adversarial] una carpeta de máquina que es un ENLACE se recorre; un enlace roto se cuenta', () => {
-  // 🔴 rojo previo: `it.isDirectory()` del Dirent da false para un enlace → la máquina entera se saltea, sin contarse
-  //    ni como corrida ni como «sin medir». runs.js ya lo resolvía (statSync); el medidor nuevo no.
+  // 🔴 rojo: `it.isDirectory()` del Dirent da false para un enlace → la máquina entera se saltea, sin contarse
+  //    ni como corrida ni como «sin medir». runs.js lo resuelve con statSync.
   const { medir } = require(MOD);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pasos-enlace-'));
   const real = path.join(tmp, 'real-maquina'); fs.mkdirSync(real);
@@ -376,8 +375,8 @@ t('@story-7.12 @ac-2 [adversarial] una carpeta de máquina que es un ENLACE se r
 });
 
 t('@story-7.12 @ac-2 [adversarial] un `respuestas` absurdo (negativo, infinito, texto) NO es una corrida medida', () => {
-  // 🔴 rojo previo: `if (!pasos)` sólo atrapa 0/null/NaN — un negativo es «verdadero» en JS y entraba a la mediana.
-  //    El cliente de runs.js ya exigía `> 0`; los dos lados decían tener «el mismo criterio» y no lo tenían.
+  // 🔴 rojo: `if (!pasos)` sólo atrapa 0/null/NaN — un negativo es «verdadero» en JS y entraba a la mediana.
+  //    El cliente de runs.js exige `> 0`: los dos lados tienen que tener el mismo criterio.
   const { medir } = require(MOD);
   const { pasosPorCorrida } = require(TABLERO);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pasos-neg-'));
@@ -398,7 +397,7 @@ t('@story-7.12 @ac-2 [adversarial] un `respuestas` absurdo (negativo, infinito, 
 });
 
 t('@story-7.12 @ac-7 MapaLoIncluye — el medidor figura en el mapa, con su archivo y dónde corre', () => {
-  // 🔴 rojo previo: cablear el medidor y no anotarlo → el mapa se ve completo y no lo es (el censo lo caza).
+  // 🔴 rojo: cablear el medidor y no anotarlo → el mapa se ve completo y no lo es (el censo lo caza).
   const RAIZ = path.resolve(__dirname, '..', '..');
   // El mapa del arnés y su censo viven en el repo de mantenimiento (el árbol armado de los nocturnos los trae); el
   // público no los publica. Sin ellos este caso no puede mirar nada, y se dice: SALTEADO con su motivo, nunca verde.
@@ -413,13 +412,13 @@ t('@story-7.12 @ac-7 MapaLoIncluye — el medidor figura en el mapa, con su arch
   assert.ok(f, 'ninguna ficha del mapa cita scripts/metrics/steps-per-run.js en «Repo y archivo»');
   assert.ok(f.donde && f.cuando, 'la ficha que lo cita dice dónde corre y cuándo');
   assert.ok(/pasos/i.test(f.por), `y su descripción nombra lo que mide — dice: ${f.por}`);
-  // Y el censo, que es el control de verdad, ya no lo lista entre las piezas sin lugar.
+  // Y el censo, que es el control de verdad, no lo lista entre las piezas sin lugar.
   // las skills, como en todo el arnés (TYCON_SKILLS_DIR › el propio clon si es unido › las instaladas): el censo las pide
   const skills = require('../lib/skills-dir.js').resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).skills;
   const r = require('child_process').spawnSync(process.execPath, [censo, '--map', rutaMapa, '--skills', skills], { encoding: 'utf8' });
   assert.notStrictEqual(r.status, 2, `el censo no pudo medir: ${r.stderr}`);
-  // que haya corrido de verdad: un `Cannot find module` también sale 1 y no nombra al medidor (pase adversarial de la
-  // story 8.12, R4: el censo se mudó y esta prueba daba verde sin medir nada)
+  // que haya corrido de verdad: un `Cannot find module` también sale 1 y no nombra al medidor (sin eso,
+  // la prueba da verde sin medir nada)
   assert.ok(/censo del mapa/.test(`${r.stdout}${r.stderr}`), `el censo no corrió (status ${r.status}): ${r.stderr.slice(0, 300)}`);
   assert.ok(!/steps-per-run\.js/.test(`${r.stdout}${r.stderr}`),'el censo sigue listando al medidor como pieza sin lugar');
 });

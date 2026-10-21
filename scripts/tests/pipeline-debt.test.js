@@ -55,7 +55,7 @@ for (const d of lista) {
 }
 if (fallos === 0) ok('todas tienen motivo, fecha y una revisión que todavía no venció');
 
-// Una deuda saldada por una story sale del registro y su seguimiento queda cerrado (story 7.18). Sin
+// Una deuda saldada por una story sale del registro y su seguimiento queda cerrado. Sin
 // esto, el registro sólo mira fechas: la entrada de una deuda ya pagada seguiría dando verde hasta vencer.
 const SALDADAS = [
   { id: 'PIPELINE-UI-SIGNAL-FRONTEND', story: '7.18',
@@ -66,7 +66,7 @@ for (const s of SALDADAS) {
   else ok(`${s.id}: saldada por la story ${s.story}, fuera del registro`);
   const ruta = path.join(ROOT, s.seguimiento.archivo);
   // El seguimiento vive en una story, y las stories no viajan en la copia pública: ahí no hay dónde mirarlo, y se dice
-  // (story 8.26, tanda C: la validación de un pedido del público lo leía como un rojo nuevo en cada corrida). En el repo
+// para que la validación de un pedido del público no lo lea como un rojo nuevo en cada corrida. En el repo
   // del equipo que falte el seguimiento —o la carpeta entera de stories— sigue siendo rojo.
   if (PUBLIC_COPY && !fs.existsSync(path.dirname(ruta))) {
     console.log(`⏭ deuda: ${s.seguimiento.clave}: NO MEDIDO — esta copia no trae ${path.dirname(s.seguimiento.archivo)}/ (las stories no viajan). No es un verde.`);
@@ -79,9 +79,9 @@ for (const s of SALDADAS) {
   else ok(`${s.seguimiento.clave}: cerrado con referencia a la ${s.story}`);
 }
 
-// El control del «no medido» (revisores de la vuelta 3 de la tanda C de la 8.26): sólo la copia pública se saltea el
+// El control del «no medido»: sólo la copia pública se saltea el
 // seguimiento. Dos árboles de juguete con el registro y sin stories: con el perfil del equipo tiene que dar rojo; sin él,
-// no medido. Reconocida la copia por la carpeta que falta, un repo del equipo que perdiera sus stories daba verde.
+// no medido. Si la copia se reconociera por la carpeta que falta, un repo del equipo que perdiera sus stories daría verde.
 if (iRoot < 0) {
   const os = require('os');
   const { spawnSync } = require('child_process');

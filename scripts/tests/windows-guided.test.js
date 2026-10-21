@@ -2,7 +2,7 @@
 
 /**
  * windows-guided.test.js — los guiones que ensayan el alta y la actualización en Windows SIGUIENDO LA PÁGINA PÚBLICA
- * (`getting-started/windows.md`), comando por comando, y después la capa del equipo (story 8.28).
+ * (`getting-started/windows.md`), comando por comando, y después la capa del equipo.
  *
  * Como las otras suites de esta carpeta, lo que se mide acá NO es Windows: es que los guiones hagan lo que dicen. Lo que
  * no se puede perder:
@@ -85,7 +85,7 @@ test('GuidedPage_RealPage_BlockIsReadByItsMark', { skip: !fs.existsSync(PAGE) &&
   // lo que la persona copia no cambió en ninguna letra: es el primer bloque `text` de la página, con marca o sin ella
   assert.strictEqual(block, /```text\n([\s\S]*?)\n```/.exec(text.replace(/\r\n/g, '\n'))[1]);
   assert.strictEqual(G.readBlock(text, m).block, block);
-  // AC 34: lo que public-papers le exige a la página sigue en su lugar, incluido el que depende de dónde corta un renglón
+  // lo que public-papers le exige a la página sigue en su lugar, incluido el que depende de dónde corta un renglón
   for (const literal of ['node v24 (con v22 también anda)', 'quiero el perfil mínimo', '--profile minimal', '.git/hooks/', 'si configura la carpeta global de hooks de git) y preguntame si sigo']) assert.ok(text.includes(literal), `la página sigue diciendo «${literal}»`);
   // una marca repetida, o metida adentro del bloque, no se lee a medias
   assert.match(G.readBlock(text.replace('<!-- /guided:base -->', '<!-- /guided:base -->\n\n<!-- guided:base -->'), m).problem, /guided:base.*más de una vez|una sola vez/);
@@ -114,7 +114,7 @@ test('GuidedSteps_Manifest_HasItsShape', () => {
     }
   }
   assert.deepStrictEqual(m.steps.filter((s) => s.runs === 'person').map((s) => s.id), ['report']);
-  // (story 8.40, AC 43) la instalación es la línea npx de la página, la misma en el plan y en instalar; el laboratorio
+  // la instalación es la línea npx de la página, la misma en el plan y en instalar; el laboratorio
   // declara sus dos cambios: el paquete armado en lugar del publicado, y la respuesta de la persona en el paso install
   const npxOf = (id) => m.steps.find((s) => s.id === id).commands[0].text;
   assert.strictEqual(npxOf('plan'), 'npx @tyconsa/harness@latest --audience me --profile full --integrations none --packs all --dry-run');
@@ -217,7 +217,7 @@ test('GuidedSteps_EveryCommand_IsInTheMarkedBlock', { skip: !fs.existsSync(PAGE)
 });
 
 test('GuidedPage_NpxOrNpmLineTheManifestDoesNotKnow_IsACommand', () => {
-  // npx es ahora el comando principal de la página: uno que la ficha no conoce, sangrado como los que corre el asistente,
+  // npx es el comando principal de la página: uno que la ficha no conoce, sangrado como los que corre el asistente,
   // es un comando (no prosa) y el ensayo lo nombra
   for (const line of ['   npx --yes @otro/paquete --dry-run', '   npm install -g @openai/codex', '      npx @tyconsa/harness@latest --audience me']) assert.strictEqual(G.looksLikeCommand(line), true, `«${line.trim()}» es un comando`);
   for (const line of ['   npx no anda en esta red: pará y avisame', '   npm es un paquete aparte en algunas distribuciones']) assert.strictEqual(G.looksLikeCommand(line), false, `«${line.trim()}» es prosa`);
@@ -250,7 +250,7 @@ test('GuidedSteps_PageChanged_NamesTheStepAndRehearsesNothing', () => {
   // un paso de más: las dos cuentas
   const extra = G.prepare({ read: read(ok.replace('\nPara trabajar con BIZUIT Extensions', '\n7. Un paso nuevo que la ficha no conoce.\n\nPara trabajar con BIZUIT Extensions')), manifest: m });
   assert.match(extra.problem, /7 .*6|6 .*7/);
-  // la página de ANTES (con la bajada del guion de entrada como paso propio, story 8.40) contra la ficha de hoy: no
+  // la página de ANTES (con la bajada del guion de entrada como paso propio) contra la ficha actual: no
   // calza, y no se ensaya nada. Es lo que pasa si la página y la ficha no cambian juntas
   const pageBefore = ok
     .replace('2. Ver el plan', '2. Bajar el guion de instalación: dame estas dos líneas.\n       Invoke-WebRequest -OutFile get-harness.ps1 https://raw.githubusercontent.com/acme-lab/arnes-lab/main/scripts/setup/get-harness.ps1\n\n3. Ver el plan');
@@ -261,7 +261,7 @@ test('GuidedSteps_PageChanged_NamesTheStepAndRehearsesNothing', () => {
   const prefix = G.prepare({ read: read(ok.replace('Si no devuelve nada, corré:  git config', 'Si está vacío:  git config')), manifest: m });
   assert.match(prefix.problem, /git-hooks/);
   assert.match(prefix.problem, /Si no devuelve nada, corré:/);
-  // con otra organización en sus nombres, calza igual (story 8.40): la línea npx no nombra el repo; el nombre sólo dice
+  // con otra organización en sus nombres, calza igual: la línea npx no nombra el repo; el nombre sólo dice
   // qué sirve el GitHub de juguete
   const other = G.prepare({ read: (rel) => (rel === 'scripts/setup/public-remotes.json' ? '{ "remotes": ["https://github.com/otra-org/otro-repo"] }' : read(ok)(rel)), manifest: m });
   assert.strictEqual(other.problem, undefined, other.problem);
@@ -345,7 +345,7 @@ test('GuidedPage_NamesAndLabChanges_AreTheOnlyDifferences', () => {
   assert.match(G.namesOf('no es json').problem, /JSON/);
   const block = G.readBlock(toyPage('guided-page-ok.md'), m).block;
   assert.strictEqual(G.checkPage(m, block, { names }).ok, true, 'con los nombres, calza');
-  // en el laboratorio cambian dos cosas, y sólo en los renglones que las traen (story 8.40, AC 43): el paquete publicado
+  // en el laboratorio cambian dos cosas, y sólo en los renglones que las traen: el paquete publicado
   // por el armado, en el plan y en instalar; y la respuesta de la persona («s»), sumada al final de instalar
   const api = 'http://127.0.0.1:4455';
   const pkg = '/lab/guided/onboarding/package/tyconsa-harness-1.0.2.tgz';
@@ -531,7 +531,7 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
   assert.deepStrictEqual(G.shouldRun(windowsOnly, null, { platform: 'linux' }), { run: false, not_comparable: 'la ruta con barras invertidas sólo resuelve en Windows' });
 
   // ── seguir la página anota cada comando APENAS corre: si el paso se corta por su tope con un comando colgado, el
-  // parcial dice cuáles habían corrido y cuál no volvió (antes se anotaban todos juntos al final, y se perdían)
+  // parcial dice cuáles habían corrido y cuál no volvió (si se anotaran todos juntos al final, se perderían)
   if (process.platform !== 'win32') {
     const base = tmp('t8');
     try {
@@ -576,8 +576,8 @@ test('GuidedInstall_Judge_ExitsExpectAndRunWhen', () => {
       // ── y sin permiso de GitHub en el laboratorio (el repo servido como público, que es lo que la página supone):
       // ningún paso lo lleva en su ambiente, TRAIGA LO QUE TRAIGA el ambiente que le pasan. Acá el ambiente llega con un
       // permiso puesto (el de quien lanza, que se coló): el PowerShell de juguete lo imprimiría en cada paso.
-      // 🔴 rojo previo: el paso heredaba la variable tal cual (la primera versión de este caso la vaciaba antes de
-      // probar, y por eso no distinguía nada: la revisión lo mostró volviendo el código atrás, con todo en verde)
+      // 🔴 Atrapa: que el paso herede la variable tal cual (el caso tiene que dejarla puesta al probar: si la vaciara antes,
+      // no distinguiría nada y quedaría todo en verde aun volviendo el código atrás)
       // (el permiso de juguete se arma por partes: escrito entero junto al nombre de la variable, el detector de
       // publicación lo toma por una credencial)
       const plain = GI.followPage({
@@ -958,7 +958,7 @@ test('ReleasePhoto_Compare_EveryIdHasItsSeverity', () => {
   assert.deepStrictEqual(bySeverity(TL.sessionFindings(leaky)), { 'guided:secret-printed': 'breaks' });
   assert.strictEqual(bySeverity(RP.comparePhotos(before, clone(before), { sessions: [leaky] }))['guided:secret-printed'], 'breaks');
   // la máquina DESPUÉS de sumar la capa se juzga con esta misma comparación: un rojo nuevo del diagnóstico y una
-  // sesión con la capa que falla salen con su gravedad (antes esa foto sólo se anotaba)
+  // sesión con la capa que falla salen con su gravedad (la foto no se limita a anotarse)
   const withTeam = clone(before);
   withTeam.doctor.fail = [...before.doctor.fail, 'settings.json: 12 hooks del arnés ya no están registrados'];
   const afterTeam = bySeverity(RP.comparePhotos(before, withTeam, { sessions: [{ label: 'con-la-capa', form: 'default-shell', hooks: [{ hook: 'startup-line', startup: 'new', exit: 1, error: null, out: '', err: 'bootstrap: no arranca' }], wait: { detached: false } }] }));
@@ -1167,7 +1167,7 @@ test('Probes_ChooseByWhatTheTreeIs', { skip: !has('git') && 'NO MEDIDO — sin g
     const page = toyPage('guided-page-ok.md').replace('<!-- guided:base -->\n', '').replace('<!-- /guided:base -->\n', '');
     const noMark = run(toyTree(base, 'no-mark', { friday: { 'version.json': '{ "version": "2026.01.01.1" }\n', 'getting-started/windows.md': page, 'scripts/setup/npm/package.json': '{ "name": "@tyconsa/harness", "version": "1.0.2" }\n', 'scripts/setup/public-remotes.json': TOY_REMOTES } }), 'no-mark', 'onboarding');
     assert.deepStrictEqual([noMark.step('onboarding').status, /la marca.*guided:base/.test(noMark.step('onboarding').reason)], ['error', true], noMark.step('onboarding').reason);
-    // ── el árbol interno con el texto de dos clones: el ensayo de hoy, sin cambios (acá, su error de siempre)
+    // ── el árbol interno con el texto de dos clones: el ensayo común, sin cambios (acá, su error de siempre)
     const two = run(toyTree(base, 'two', { friday: { 'onboarding/new-dev-harness-setup.md': TWO_CLONES_DOC, 'onboarding/step-0-windows.md': 'sin clon en el paso cero\n' } }), 'two', 'all');
     for (const name of ['update', 'onboarding']) {
       assert.strictEqual(two.step(name).status, 'error');
@@ -1239,7 +1239,7 @@ test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
       assert.deepStrictEqual(stopped, ['github', 'azure'], 'cerró los dos servidores (y nunca levantó los del segundo intento)');
       assert.ok(!fs.existsSync(path.join(lab, 'guided', 'update')), 'sacó la carpeta del paso');
       assert.ok(/no pude clonar/.test(why) && !why.includes(TOY_NAMES.repo), why);
-      // y ahora sí se puede volver a intentar
+      // y entonces sí se puede volver a intentar
       const retry = GI.openLab({ lab, name: 'update', state: good, start: { github: fake('github-3'), azure: fake('azure-3') } });
       assert.strictEqual(retry.problem, undefined, retry.problem);
       retry.stop();
@@ -1250,8 +1250,8 @@ test('PublishedCopy_WithoutWhatItMustBring_IsAnError', () => {
       // ── cómo se sirve el repo lo decide la ficha (`lab.auth`), no el guion. Con `none` —lo que la página supone: baja
       // el guion sin credencial— el GitHub de juguete se levanta SIN permiso y el laboratorio no arma ninguno de GitHub
       // (así ningún paso puede llevarlo en su ambiente); con `token`, privado y con su permiso de juguete.
-      // 🔴 rojo previo: el guion levantaba el repo SIEMPRE como privado y ponía el permiso en los pasos que bajan e
-      // instalan, dijera lo que dijera la ficha — con la página nueva, la bajada sin credencial daba 404
+      // 🔴 Atrapa: que el guion levante el repo SIEMPRE como privado y ponga el permiso en los pasos que bajan e
+      // instalan, diga lo que diga la ficha — así la bajada sin credencial da 404
       const served = [];
       const spy = (which) => (args) => { served.push({ which, token: args.token, pat: args.pat }); return { url: `http://127.0.0.1:1/${which}`, stop: () => {} }; };
       const lab2 = path.join(base, 'lab-auth');
@@ -1342,7 +1342,7 @@ test('Secrets_AreSearchedInTheRawOutput', () => {
         "if (a[0] === 'doctor') { console.log(JSON.stringify({ mode: 'managed', fail: ['settings.json: 12 hooks del arnés ya no están registrados'], warn: [], ok: ['capa del equipo equipo-lab ccccccc'] })); process.exit(0); }",
         'process.exit(9);',
       ].join('\n'),
-      // de dónde dice el programa de juguete que salen los paquetes: del perfil (lo que hace el arnés desde la story 8.29)
+      // de dónde dice el programa de juguete que salen los paquetes: del perfil (lo que hace el arnés)
       // o de donde diga `TOY_PACKS_ORIGIN`
       'scripts/lib/tycon-config.js': "console.log(JSON.stringify({ origenes: { 'ado.org': 'perfil del equipo', 'integraciones.engram': 'perfil del equipo', 'paquetes.default': process.env.TOY_PACKS_ORIGIN || 'perfil del equipo' } }));\n",
     });
@@ -1356,8 +1356,8 @@ test('Secrets_AreSearchedInTheRawOutput', () => {
     const clean = team(m, false);
     assert.strictEqual(fs.readFileSync(path.join(home, 'saved-permit'), 'utf8'), azure, 'el permiso llegó por la entrada estándar del comando que lo guarda');
     assert.deepStrictEqual(fs.readFileSync(path.join(home, 'calls.log'), 'utf8').trim().split('\n'), ['config set azure.token', `install --version latest --team ${TL.TEAM_URL} --yes`], 'nunca por argumento');
-    // 8.29 · T14 GuidedTeam_CleanRun_NoProfileOriginFinding @story-8.29 @ac-13 @ac-16 — con los paquetes saliendo del perfil
-    // (story 8.29: el perfil del equipo gana sobre lo elegido al instalar) la capa sumada no deja ningún hallazgo…
+    // T14 GuidedTeam_CleanRun_NoProfileOriginFinding @story-8.29 @ac-13 @ac-16 — con los paquetes saliendo del perfil
+    // (el perfil del equipo gana sobre lo elegido al instalar) la capa sumada no deja ningún hallazgo…
     assert.deepStrictEqual(bySeverity(clean.findings), {}, 'la organización, las integraciones y los paquetes salen del perfil: nada que informar');
     assert.ok(Object.keys(clean.facts.profile_origin).some((k) => /^pa[a-z]*\.default$/.test(k)), 'los paquetes figuran entre lo que sale del perfil');
     // …y el chequeo no se aflojó: si los paquetes vuelven a salir de la máquina, el hallazgo vuelve a salir
@@ -1386,7 +1386,7 @@ test('Secrets_AreSearchedInTheRawOutput', () => {
       write(tree, { 'scripts/setup/harness.js': src });
       return team(m, false);
     };
-    // (hasta la story 8.29 acá se descontaba `guided:team:profile-origin`, que salía en toda corrida; ya no sale: cada
+    // (acá no se descuenta ningún hallazgo del origen del perfil, porque `guided:team:profile-origin` no sale: cada
     // juguete roto tiene que dar su hallazgo y ningún otro)
     const without = (findings) => bySeverity(findings);
     assert.deepStrictEqual(without(broken('not-stacked').findings), { 'guided:team:not-stacked': 'breaks' });
@@ -1428,7 +1428,7 @@ test('Probe_OneVariantThrows_TheOthersStillRun', () => {
     assert.deepStrictEqual([result.variants.first.threw, result.variants.first.reached, result.variants.second.done, result.variants.third.not_run], ['se cayó a mitad', 'la mitad', true, 'no hay powershell en esta máquina']);
     assert.deepStrictEqual([result.ran, result.broke], [2, ['la variante first tiró: se cayó a mitad']]);
     assert.deepStrictEqual(Object.keys(rec.step.facts.variants), ['first', 'second', 'third'], 'las tres anotadas');
-    // el paso: «error» si alguna tiró (como hoy), «error» si ninguna pudo correr, «medido» si corrieron
+    // el paso: «error» si alguna tiró, «error» si ninguna pudo correr, «medido» si corrieron
     assert.deepStrictEqual(TL.variantsStatus(result).status, L.STATUS.error);
     assert.match(TL.variantsStatus(result).reason, /no pude ensayar: la variante first tiró: se cayó a mitad/);
     assert.deepStrictEqual(TL.variantsStatus({ variants: { a: { done: true } }, ran: 1, broke: [] }), { status: L.STATUS.measured, reason: null });
@@ -1597,7 +1597,7 @@ test('Rehearsal_Caps_TheFortyMinuteCut_AndNoCredentials', { skip: !fs.existsSync
   for (const f of ['guided-install.js', 'guided-update.js', 'toy-lab.js']) assert.doesNotMatch(fs.readFileSync(path.join(DIR, f), 'utf8'), /process\.env\.(TYCON_GITHUB_TOKEN|TYCON_AZURE_PAT|SYSTEM_ACCESSTOKEN)/, f);
   assert.match(TL.toyToken('github'), /^[a-z0-9-]{20,}$/);
   assert.notStrictEqual(TL.toyToken('github'), TL.toyToken('azure'));
-  // la cabecera cuenta los dos ensayos como son ahora
+  // la cabecera cuenta los dos ensayos como son
   assert.match(src, /página pública/);
   assert.match(src, /40 minutos/);
 });
@@ -1681,7 +1681,7 @@ test('Report_GuidedRun_RendersItsSectionsAndIsGreen', () => {
   assert.match(md, /`aaaaaaaaaa`/, 'dice qué commit se ensayó');
   // el hallazgo que rompe sale con su gravedad, en su variante
   assert.match(md, /\*\*rompe el trabajo del dev \(1\)\*\*[\s\S]*guided:expected:verify/);
-  // lo que el pase adversarial encontró que el reporte callaba
+  // lo que el reporte no puede callar
   assert.match(md, /\| git-hooks \| la máquina \| .* \| 0 · NO ENCONTRÓ: git \|/, 'un programa que no estaba, aunque el proceso salió 0');
   assert.match(md, /NO VOLVIÓ \(arrancó 2026-10-10T20:00:00\.000Z y el paso se cortó\)/, 'el comando que quedó corriendo cuando se cortó el paso');
   assert.match(md, /Cómo quedó la máquina con la capa puesta: 4 hook\(s\) · línea de arranque .* · doctor .*rojo\(s\).* · versión \d{4}\.\d\d\.\d\d\.\d+ — en rojo: .*enlace ~\/\.claude\/skills roto/, 'la máquina DESPUÉS de sumar la capa');
@@ -1754,7 +1754,7 @@ test('Report_GuidedRun_RendersItsSectionsAndIsGreen', () => {
   assert.match(ranMd, /\| sin-pwsh-1 \| bash-c \| salió 127 /);
   assert.match(ranMd, /¿Algo le avisa a la persona\? Un hook de la sesión: no · el diagnóstico: no\./);
   assert.match(ranMd, /\*\*pierde un control[^*]*\(2\)\*\*[\s\S]*not-updated[\s\S]*silent/);
-  // 🔴 el hallazgo del paso entero cuenta en el total Y tiene su renglón (antes sumaba a «rompe» y nadie lo nombraba)
+  // 🔴 el hallazgo del paso entero cuenta en el total Y tiene su renglón (si sólo sumara a «rompe», nadie lo nombraría)
   assert.strictEqual(ran.verdict.by_severity.breaks, 2);
   assert.match(ranMd, /## onboarding: hallazgos del paso entero \(no de una variante\)\n\n\*\*rompe el trabajo del dev \(1\)\*\*\n\n- `guided:secret-printed:saved` — /);
   assert.match(ranMd, /## Notas del ensayo\n\n[\s\S]*- fire-registered: la línea de arranque lanzada por default-shell: la parte del enlace roto NO se midió/, 'las notas de todos los pasos, no sólo de los dos guiados');
@@ -1891,13 +1891,13 @@ test('FireRegistered_DownloadedVersion_BrokenLinkDoesNotApply', { skip: process.
     assert.match(item.broken.not_applicable, /estado/);
     assert.ok(!('fallback_ran' in item.broken) && !item.broken_links, 'no rompe ningún enlace');
     assert.deepStrictEqual(release.findings.filter((f) => /^startup:fallback-did-not-run:/.test(f.id)), []);
-    // ── con un clon: igual que hoy (rompe el enlace, espera el respaldo, y lo repone)
+    // ── con un clon: rompe el enlace, espera el respaldo, y lo repone
     const cloned = run(toyHome('clone', { name: 'harness', kind: 'tree', commit: 'b'.repeat(40) }));
     const was = cloned.facts.startup.by_form[0];
     assert.deepStrictEqual([was.broken_links, was.broken.fallback_ran, was.broken.not_applicable], [[PLACE.PLACE_NAME], false, undefined]);
     assert.deepStrictEqual(cloned.findings.map((f) => f.id), ['startup:fallback-did-not-run:default-shell']);
     assert.strictEqual(cloned.facts.startup.link_restored, true);
-    // sin estado (una instalación de antes del mecanismo): también como hoy
+    // sin estado (una instalación de antes del mecanismo): rompe el enlace igual que con un clon
     const bare = toyHome('no-state', { name: 'harness', kind: 'tree' });
     fs.rmSync(path.join(bare.home, '.claude', '.tycon-pipeline', 'harness-state.json'));
     assert.deepStrictEqual(run(bare).findings.map((f) => f.id), ['startup:fallback-did-not-run:default-shell']);

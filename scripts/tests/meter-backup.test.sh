@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 # meter-backup.test.sh — el respaldo local del medidor NO corre antes de que el nocturno haya
-# tenido su oportunidad (2026-09-06).
+# tenido su oportunidad.
 #
-# EL DEFECTO. El instalador lanzaba el medidor local si «el snapshot de hoy no llegó con el pull».
+# POR QUÉ. El instalador lanza el medidor local si «el snapshot de hoy no llegó con el pull».
 # Pero el nocturno lo commitea a las 03:00 hora local, así que en toda sesión entre las 00:00 y las
-# 03:00 el archivo de hoy NUNCA está — y el respaldo corría siempre, no sólo cuando el nocturno
-# falló. Medido: sesión a las 01:38 → sello escrito a las 01:38:55, snapshot local a las 01:41; a
+# 03:00 el archivo de hoy NUNCA está — y un respaldo que sólo mira «¿existe el archivo?» correría siempre, no sólo
+# cuando el nocturno falló. Ejemplo: sesión a las 01:38 → sello escrito a las 01:38:55, snapshot local a las 01:41; a
 # las 03:20 el nocturno commitea el suyo y el `git pull` de la mañana rebota contra el archivo
 # suelto. Dos escritores del mismo archivo por día es justo lo que la serie no puede tener.
-#
-# 🔴 rojo previo verificado: con la decisión vieja (que sólo miraba «¿existe el archivo?»), el caso
-#    de la 01:41 dice «correr».
 set -uo pipefail
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 . "$RAIZ/scripts/lib/meter-backup.sh"
@@ -33,12 +30,12 @@ caso 09 1 0 1 "09:00, el archivo YA llegó con el pull → NO corre (escritor ú
 caso 09 0 1 1 "09:00, sin archivo pero ya se lanzó hoy → NO corre (no se reintenta en loop)"
 caso 23 0 0 0 "23:00, sin archivo → SÍ corre"
 
-# ── El respaldo sólo corre donde el arnés es un CLON (2026-10-13) ────────────────────────────────
-# EL DEFECTO. En una versión instalada el árbol del arnés no es un clon: el instalador buscaba la foto del día en
-# `<árbol>/.dashboard/`, que ahí no existe nunca, así que el respaldo corría TODOS los días; barría la carpeta madre
-# del árbol (sin repos) y escribía una foto vacía. Medido: 939 bytes, contra los 49.945 de la del nocturno, con el
+# ── El respaldo sólo corre donde el arnés es un CLON ─────────────────────────────────────────────
+# POR QUÉ. En una versión instalada el árbol del arnés no es un clon: buscar la foto del día en
+# `<árbol>/.dashboard/`, que ahí no existe nunca, haría correr el respaldo TODOS los días; barrería la carpeta madre
+# del árbol (sin repos) y escribiría una foto vacía (unos 939 bytes, contra los 49.945 de la del nocturno), con el
 # mismo nombre. Escrita en el clon donde el nocturno deja la suya, la pisa o traba el `pull` siguiente.
-# 🔴 rojo previo verificado: sin `meter_backup_has_own_tree`, estos casos fallan por «command not found».
+# Sin `meter_backup_has_own_tree`, estos casos fallan por «command not found».
 T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/clon/.git" "$T/enlazado" "$T/instalado/scripts"
 echo "gitdir: /otro/lado" > "$T/enlazado/.git"
@@ -58,7 +55,7 @@ if awk '/^STAGE_METRICS_JS=/{on=1} on&&/nohup node "\$STAGE_METRICS_JS"/{exit} o
 else
   mal "el instalador lanza el respaldo sin preguntar si el arnés es un clon"
 fi
-# …y si la biblioteca del respaldo no está, lo dice (antes el `source` fallaba a la vista; saltearlo callado no)
+# …y si la biblioteca del respaldo no está, lo dice (el `source` falla a la vista; saltearlo callado no)
 if grep -q 'falta scripts/lib/meter-backup.sh' "$RAIZ/scripts/install-tycon-hooks.sh"; then
   ok "sin scripts/lib/meter-backup.sh el instalador dice que el respaldo no corre"
 else

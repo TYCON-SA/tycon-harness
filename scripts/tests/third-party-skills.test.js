@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * third-party-skills.test.js — el manifiesto de las skills de terceros y su control sin red (story 8.5, tanda A).
+ * third-party-skills.test.js — el manifiesto de las skills de terceros y su control sin red.
  *
  * Lo que no se puede perder:
  *   · Que un manifiesto mal formado no pase: una entrada que agrupa carpetas, un commit que es una rama, una licencia
@@ -115,7 +115,7 @@ test('T1 Manifest_ShapeUniversesOneEntryPerTarget — cada manifiesto inválido 
     ['una derivada sin copyright', baseManifest({ derived: [{ ...baseManifest().derived[0], copyright: '' }] }), /skills\/acme-story.*copyright/],
     ['un retiro con otro valor', baseManifest({ retirement: 'mañana' }), /retirement/],
     ['dos entradas con el mismo target', baseManifest({ third_party: [baseManifest().third_party[0], baseManifest().third_party[0]] }), /skills\/acme-helper.*(duplic|repet|dos veces)/i],
-    // 2026-10-05: `publish: true` pide que la copia pública la baje aunque nada de lo que sale la use; sólo vale en
+    // `publish: true` pide que la copia pública la baje aunque nada de lo que sale la use; sólo vale en
     // una entrada que se baja y con licencia libre (MIT o Apache-2.0): en otra, la marca mentiría y se rechaza
     ['un publish que no es booleano', tp({ publish: 'sí' }), /skills\/acme-helper.*publish/],
     ['un publish con licencia sin declarar', tp({ publish: true, license: 'NOASSERTION', license_source: 'ninguna' }), /skills\/acme-helper.*publish/],
@@ -156,7 +156,7 @@ test('T3 Coverage_PathWithoutUniverseOrRepeated_Red — sin universo o en dos: 1
   assert.doesNotMatch(src, /['"](fetch|clone|ls-remote|pull)['"]|https?\.request|require\(['"]https?['"]\)/, 'el control no abre la red');
 });
 
-// ── story 8.7 (AC 10 y 11; pase adversarial de la tanda A) · el repo único y la derivada renombrada ───────────────────
+// ── el repo único y la derivada renombrada ───────────────────
 // En la copia de un solo repo el arnés vive en la misma raíz: el control mira sólo lo de agent-skills (skills/, agents/,
 // packs/, .agents/, .claude/), no LICENSE, guides/ ni el resto del arnés. Y una derivada declarada por su ruta exacta
 // gana sobre un patrón de las propias (la copia publica `tycon-create-story` como `tycon-create-story`, que también cae
@@ -178,18 +178,17 @@ test('SingleRepo_Coverage_AgentSkillsAreaOnly_DerivedOverOwnGlob', () => {
   assert.strictEqual(r.status, 1, r.out);
   assert.match(r.out, /skills\/foo/, 'lo de agent-skills se sigue mirando');
   assert.doesNotMatch(r.out, /LICENSE/, 'lo del arnés no');
-  // sin el arnés en la raíz (el agent-skills de siempre), un archivo suelto sigue siendo un hallazgo
+  // sin el arnés en la raíz (un agent-skills solo), un archivo suelto sigue siendo un hallazgo
   const interno = toyRepo({ ...EMPTY_REPO_FILES, 'skills/acme-helper/SKILL.md': 'h\n', 'skills/zorblax-story/SKILL.md': 's\n', 'guides/x.md': '# guía\n' });
   const r3 = runCoverage(interno, m, ['--skip-content']);
   assert.strictEqual(r3.status, 1, r3.out);
   assert.match(r3.out, /guides\/x\.md/);
 });
 
-// ── story 8.18 (AC 26, T26) · el repo unido del equipo, con el retiro hecho ─────────────────────────────────────────
+// ── T26 · el repo unido del equipo, con el retiro hecho ─────────────────────────────────────────
 // El arnés y agent-skills son un repo: los destinos del manifiesto se resuelven contra la raíz que trae skills/, y el
 // retiro se juzga con el .gitignore de ESA raíz (el unido). Sin --repo, la raíz sale de TYCON_SKILLS_DIR, que puede
-// nombrar el clon o su carpeta skills/. (Verde de entrada: el control ya miraba sólo el área de agent-skills desde la
-// story 8.7; estos casos lo dejan atado al repo unido.)
+// nombrar el clon o su carpeta skills/. (El control mira sólo el área de agent-skills; estos casos lo atan al repo unido.)
 test('Unified_Coverage_RetirementDone_TargetsAgainstTheSameRoot — T26: en el repo unido el retiro se juzga contra su propio árbol y su .gitignore', () => {
   const manifest = baseManifest({ retirement: 'done',
     own: [...baseManifest().own, { glob: 'agents/*.md', why: 'los revisores, propios' }, { glob: 'skills/tycon-*', why: 'del equipo' }] });
@@ -240,7 +239,7 @@ test('T4 Coverage_DeadDeclarationAndIncompleteRetirement — tres salidas 1, cad
   assert.strictEqual(r4.status, 0, r4.out);
 });
 
-// ── Regresiones del pase adversarial (tanda A): cómo se decide «está en el .gitignore» y los `links` ─────────────
+// ── cómo se decide «está en el .gitignore» y los `links` ─────────────
 test('adv-E Coverage_IgnoreCheck_FolderWithDotAndOnlyTheRepoGitignore — carpeta con punto ignorada = verde; un *.md o un exclude ajeno no cuentan', () => {
   const dotted = baseManifest({ retirement: 'done', third_party: [{ ...baseManifest().third_party[0], target: 'skills/next.js', path: 'skills/next.js' }] });
   const files = { ...EMPTY_REPO_FILES, 'skills/acme-story/SKILL.md': 's\n' };
@@ -288,7 +287,7 @@ test('T5 Links_VersionedAnywhere_Red — un enlace sin declarar sale 1; el decla
   assert.match(r2.out, /\.claude\/skills\/y/);
 });
 
-// ── AC 5 (con contenido): el árbol declarado es el de hoy ───────────────────────────────────────────────────────
+// ── Con contenido: el árbol declarado es el real ───────────────────────────────────────────────────────
 test('T5b Coverage_ContentByTree — con el retiro pendiente, un árbol distinto sale 1 nombrando entrada y archivo', () => {
   const repo = toyRepo({ ...EMPTY_REPO_FILES, 'skills/acme-helper/SKILL.md': 'h\n', 'skills/acme-helper/ref.md': 'r\n', 'skills/acme-story/SKILL.md': 's\n' });
   const tree = git(repo, ['rev-parse', 'HEAD:skills/acme-helper']);
@@ -335,7 +334,7 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
   git(repo, ['reset', '-q', '--hard', 'HEAD']);
   fs.rmSync(path.join(repo, 'skills', 'foo'), { recursive: true, force: true });
 
-  // un enlace simbólico stageado FUERA de esas rutas también dispara el control (AC 9), y sin declarar frena
+  // un enlace simbólico stageado FUERA de esas rutas también dispara el control, y sin declarar frena
   fs.mkdirSync(path.join(repo, 'notes'), { recursive: true });
   fs.symlinkSync('../README.md', path.join(repo, 'notes', 'link'));
   git(repo, ['add', 'notes/link']);
@@ -370,7 +369,7 @@ test('T6 AgentSkillsPreCommit_StopsForeignCopy — frena la skill ajena copiada;
 // ── T22 ───────────────────────────────────────────────────────────────────────────────────────────────────────
 test('T22 Docs_PointToManifest — cada guía nombra el manifiesto; INSTALL ya no manda a copiar tal cual; BMAD sin versión propia', () => {
   const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
-  // el índice de guías: INDEX.md desde 2026-10-14 (README.md quedó como la portada)
+  // el índice de guías es INDEX.md (README.md es la portada)
   for (const rel of ['guides/maintaining/bmad-contract.md', 'INSTALL.md', 'guides/maintaining/publicacion-espejo.md', 'guides/piezas-del-arnes.md', 'INDEX.md']) {
     assert.match(read(rel), /third-party-skills\.json/, `${rel} no nombra el manifiesto`);
   }

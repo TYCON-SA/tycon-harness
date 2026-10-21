@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tokens-digest.test.sh — red de `scripts/metrics/tokens-digest.js` (story 2.13 del arnés, 2026-09-09).
+# tokens-digest.test.sh — red de `scripts/metrics/tokens-digest.js` .
 #
 # Lo que cuida, en una frase: que de cada corrida del pipeline queden guardados el CONSUMO (bien
 # contado), el HILO (sin adjuntos y sin perder lo ilegible en silencio) y el MENSAJE REAL del error
@@ -8,11 +8,11 @@
 # 🔴 REGLA DE ADMISIÓN: cada caso trae escrita la MUTACIÓN que lo pone en rojo. Los tres que más
 #    pesan:
 #    · T1b — el mismo `usage` se repite en hasta 8 líneas de la transcripción. Sumar por línea da
-#      3,22× (medido en la corrida de la 2.3: 579 líneas → 251 respuestas reales).
+#      3,22× (579 líneas son 251 respuestas reales).
 #    · T10/T11b — la marca del freno se escribe cuando el comando TERMINA, no al verlo. Mirar hacia
 #      adelante rescata la re-ejecución POSTERIOR, que suele estar en verde: se publicaría el texto
-#      de la corrida que salió bien bajo el rótulo de error. Medido: 36 de 37 emparejamientos están
-#      antes de la marca; la ventana hacia adelante acierta 1 de 22.
+#      de la corrida que salió bien bajo el rótulo de error. En datos reales casi todos los emparejamientos
+#      están antes de la marca; la ventana hacia adelante casi nunca acierta.
 #    · T4/T7c — «no la encontré» tiene dos causas que NO son la misma, y ninguna es cero.
 #
 # Los universos que estos casos necesitan (una respuesta partida en 4 líneas, dos pasos con las
@@ -81,7 +81,7 @@ print(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
 # EL CONSUMO
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T1 (AC1) · el consumo se reparte por paso según la HORA, no según el orden de llegada ───────
+# ── T1 · el consumo se reparte por paso según la HORA, no según el orden de llegada ───────
 S=sesion-t1
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 def a(mid, ts, out):
@@ -105,7 +105,7 @@ else
   bad "T1 · reparto por paso" "esperaba 0=310 y 1=510; salió 0=$p0 y 1=$p1 · $OUT"
 fi
 
-# ── T1b (AC1b) · una respuesta partida en 4 líneas se cuenta UNA vez ─────────────────────────────
+# ── T1b · una respuesta partida en 4 líneas se cuenta UNA vez ─────────────────────────────
 S=sesion-t1b
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 u = {"input_tokens": 100, "output_tokens": 50,
@@ -128,7 +128,7 @@ else
   bad "T1b · dedup por message.id" "esperaba 1 respuesta / in=100 / out=50; salió $r / $ti / $to (sumar por línea da 4× ) · $OUT"
 fi
 
-# ── T1c (AC1c) · dos marcas invertidas se publican FUSIONADAS, no repartidas a ojo ──────────────
+# ── T1c · dos marcas invertidas se publican FUSIONADAS, no repartidas a ojo ──────────────
 S=sesion-t1c
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 def a(mid, ts, out):
@@ -140,8 +140,8 @@ def a(mid, ts, out):
 lineas = [a("m1", "2026-09-01T10:02:00.000Z", 100),   # después del paso 4, dentro del tramo 5+6
           a("m2", "2026-09-01T10:04:00.000Z", 200)]
 PY
-# El paso 6 cierra ANTES que el 5 — pasa de verdad: en el volcado de la 2.3, el 6 a las 23:49:54
-# y el 5 a las 23:50:33. Es lo que la story 2.7 arregla; acá se declara, no se finge.
+# El paso 6 cierra ANTES que el 5: pasa de verdad en los volcados reales (el 6 a las 23:49:54 y el 5 a las 23:50:33).
+# Acá se declara, no se finge.
 volcado "$HIST/t1c.json" "$S" '{"4": {"completedAt": "2026-09-01T10:01:00.000Z"}, "5": {"completedAt": "2026-09-01T10:05:00.000Z"}, "6": {"completedAt": "2026-09-01T10:03:00.000Z"}}' '[]'
 correr --run "$HIST/t1c.json" --projects-dir "$PROJ" --json
 pasos="$(leer "sorted(d['consumo']['por_paso'].keys())")"
@@ -152,7 +152,7 @@ else
   bad "T1c · fusión de marcas invertidas" "esperaba 5+6=300 sin claves 5 ni 6; salió pasos=$pasos, 5+6=$fus (asignar al primer corte deja el 6 en cero, en silencio) · $OUT"
 fi
 
-# ── T2 (AC2) · lo posterior al último paso NO se reparte ─────────────────────────────────────────
+# ── T2 · lo posterior al último paso NO se reparte ─────────────────────────────────────────
 S=sesion-t2
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 def a(mid, ts, out):
@@ -173,7 +173,7 @@ else
   bad "T2 · fuera de ventana" "esperaba fuera=900 y paso 8=100; salió $fv y $p8 (aplastarlo contra el último paso lo infla 10×) · $OUT"
 fi
 
-# ── T3 (AC3) · `<synthetic>` se cuenta aparte y NO suma ──────────────────────────────────────────
+# ── T3 · `<synthetic>` se cuenta aparte y NO suma ──────────────────────────────────────────
 S=sesion-t3
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 def a(mid, modelo, out):
@@ -193,7 +193,7 @@ else
   bad "T3 · sintéticos" "esperaba sinteticos=1 y out=100; salió $sin y $to · $OUT"
 fi
 
-# ── T4 (AC4) · sin conversación NO es cero ───────────────────────────────────────────────────────
+# ── T4 · sin conversación NO es cero ───────────────────────────────────────────────────────
 volcado "$HIST/t4.json" "sesion-que-ya-no-existe" '{}' '[]'
 correr --run "$HIST/t4.json" --projects-dir "$PROJ" --json
 est="$(leer "d['consumo']['estado']")"; mot="$(leer "d['consumo'].get('motivo','')")"
@@ -204,7 +204,7 @@ else
   bad "T4 · ausencia ≠ cero" "esperaba estado=borrada + motivo + sin tokens; salió estado=$est motivo=$mot tokens=$tk (devolver ceros hace leer 0 donde hubo ausencia) · $OUT"
 fi
 
-# ── T7c (Cómo se ubica) · «no la encontré» tiene DOS causas y no se confunden ────────────────────
+# ── T7c · «no la encontré» tiene DOS causas y no se confunden ────────────────────
 # `projects/` ilegible (acá: no es un directorio) → no_medido. Ausente con projects legible → borrada (T4).
 touch "$TMP/projects-que-no-es-carpeta"
 volcado "$HIST/t7c.json" "sesion-cualquiera" '{}' '[]'
@@ -220,7 +220,7 @@ fi
 # EL HILO
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T5 (AC5) · adjuntos e instantáneas quedan afuera; el tamaño se registra ──────────────────────
+# ── T5 · adjuntos e instantáneas quedan afuera; el tamaño se registra ──────────────────────
 S=sesion-t5
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 relleno = "B" * 40000
@@ -249,7 +249,7 @@ else
   bad "T5 · hilo sin adjuntos" "esperaba 2 mensajes, tamaño registrado y ningún relleno adentro; salió mensajes=$msgs bytes=$bytes (copiar el crudo lo hace pesar ~3×) · $OUT"
 fi
 
-# ── T6 (AC5) · una línea ilegible se CUENTA, no se descarta callada ──────────────────────────────
+# ── T6 · una línea ilegible se CUENTA, no se descarta callada ──────────────────────────────
 S=sesion-t6
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY'
 lineas = [
@@ -267,7 +267,7 @@ else
   bad "T6 · lo ilegible se declara" "esperaba 1; salió $ile (ignorarla deja el contador en 0 y nadie se entera) · $OUT"
 fi
 
-# ── T7 (AC6) · idempotente sobre la misma entrada ────────────────────────────────────────────────
+# ── T7 · idempotente sobre la misma entrada ────────────────────────────────────────────────
 correr --run "$HIST/t5.json" --projects-dir "$PROJ" --json
 b1="$(leer "d['hilo']['bytes']")"; h1="$(leer "d['consumo']['hilo_hasta']")"
 correr --run "$HIST/t5.json" --projects-dir "$PROJ" --json
@@ -278,7 +278,7 @@ else
   bad "T7 · idempotencia" "esperaba el mismo tamaño y el mismo hilo_hasta; salió $b1/$h1 y $b2/$h2 (anexar en vez de reescribir lo duplica) · $OUT"
 fi
 
-# ── T7b (AC6) · si la conversación CRECIÓ, la segunda pasada la incorpora ────────────────────────
+# ── T7b · si la conversación CRECIÓ, la segunda pasada la incorpora ────────────────────────
 # Es el caso del cierre truncado: el archivador corre en el `clear` y el pipeline sigue hablando.
 python3 -c "
 import json
@@ -296,7 +296,7 @@ else
   bad "T7b · actualiza si creció" "esperaba 12 mensajes y hilo_hasta en 11:00:09; salió $m3 y $h3 (saltear si ya hay rescate pierde el cierre de CADA corrida, para siempre) · $OUT"
 fi
 
-# ── T14 (AC7b) · el barrido del arranque procesa SÓLO lo que hace falta ──────────────────────────
+# ── T14 · el barrido del arranque procesa SÓLO lo que hace falta ──────────────────────────
 BARR="$TMP/barrido"; mkdir -p "$BARR"
 for n in sin-rescate al-dia atrasada; do
   S="sesion-$n"
@@ -331,7 +331,7 @@ fi
 #
 # 🔴 La marca del freno se escribe cuando el comando TERMINA (`marker.js cmdRunCheck` toma t0,
 #    ejecuta, y recién entonces escribe la línea con su durationMs). Por eso la invocación está
-#    ANTES de la marca — medido: 36 de 37 casos reales, mediana −0,8 s.
+#    ANTES de la marca (en datos reales, casi siempre, a menos de un segundo).
 
 # Arma una transcripción con pares comando→resultado. Cada trío: id, hora, comando, salida.
 transcripcion_cmds() {
@@ -354,7 +354,7 @@ with open('$destino', 'w', encoding='utf-8') as fh:
 " "$1"
 }
 
-# ── T10 (AC9) · con dos ejecuciones, se rescata LA QUE FALLÓ ─────────────────────────────────────
+# ── T10 · con dos ejecuciones, se rescata LA QUE FALLÓ ─────────────────────────────────────
 S=sesion-t10
 # La que falló corre antes de la marca (10:00:59); el reintento en verde, 30 s DESPUÉS.
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
@@ -374,7 +374,7 @@ else
   bad "T10 · la corrida que falló" "esperaba el texto del error; salió: $msg (tomar la más cercana sin acotar dirección, o mirar hacia adelante, publica el VERDE bajo el rótulo de error)"
 fi
 
-# ── T11 (AC9) · no se inventa por cercanía temática ──────────────────────────────────────────────
+# ── T11 · no se inventa por cercanía temática ──────────────────────────────────────────────
 S=sesion-t11
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["v1","2026-09-01T10:00:58.000Z","git status","On branch main. error: nothing added to commit"]
@@ -392,7 +392,7 @@ else
   bad "T11 · nada por cercanía" "no debía rescatar nada; salió: $msg (buscar por parecido temático arrastra 169 casos de basura)"
 fi
 
-# ── T11b (AC9) · la ventana mira hacia ATRÁS ─────────────────────────────────────────────────────
+# ── T11b · la ventana mira hacia ATRÁS ─────────────────────────────────────────────────────
 S=sesion-t11b
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["w1","2026-09-01T10:00:30.000Z","cd /repo && npm test","FALLAN 4 pruebas"]
@@ -419,7 +419,7 @@ else
   bad "T11b · ventana hacia atrás" "esperaba rescatar la de antes y NO la de después; antes='$antes' después='$despues' (la marca es la hora de FIN: mirar hacia adelante agarra la re-ejecución posterior)"
 fi
 
-# ── T12 (AC10) · el preámbulo de «segundo plano» no es el mensaje del error ──────────────────────
+# ── T12 · el preámbulo de «segundo plano» no es el mensaje del error ──────────────────────
 S=sesion-t12
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["x1","2026-09-01T10:00:59.000Z","cd /repo && npm test","Command running in background (bash_1). Output: /tmp/x.log"]
@@ -436,7 +436,7 @@ else
   bad "T12 · segundo plano" "no debía guardar nada; salió: $msg (guardarlo hace pasar un preámbulo por evidencia)"
 fi
 
-# ── T13 (AC11) · el rescatado sale saneado ───────────────────────────────────────────────────────
+# ── T13 · el rescatado sale saneado ───────────────────────────────────────────────────────
 S=sesion-t13
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["y1","2026-09-01T10:00:59.000Z","cd /repo && npm run build","falló en /Users/usuarioa/SourceCode/Cliente/src/a.ts y en /private/tmp/claude-501/abc/scratchpad — sesión 00000000-0000-4000-8000-000000000002"]
@@ -455,12 +455,12 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
-# LOS CUATRO QUE AGREGARON LOS REVISORES (2026-09-09, Step 5 del pipeline)
+# CASOS DE BORDE
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T15 (AC9) · el DESEMPATE: con dos ejecuciones válidas, gana la más cercana a la marca ────────
-# 🔴 Lo trajo el revisor de cobertura: en T10 sólo un candidato sobrevivía el filtro de ventana, así
-#    que borrar la comparación de distancia no ponía nada en rojo. La regla existía sin red.
+# ── T15 · el DESEMPATE: con dos ejecuciones válidas, gana la más cercana a la marca ────────
+# 🔴 En T10 sólo un candidato sobrevive el filtro de ventana, así que borrar la comparación de
+#    distancia no pondría nada en rojo: este caso es la red de esa regla.
 S=sesion-t15
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["z1","2026-09-01T09:59:30.000Z","cd /repo && npm test","ESTA ES LA VIEJA, de hace 90 segundos"],
@@ -478,8 +478,8 @@ else
   bad "T15 · desempate por cercanía" "esperaba «LA BUENA»; salió: $msg (sin la comparación de distancia se publica una ejecución anterior del mismo comando)"
 fi
 
-# ── T16 (AC1) · el reparto POR MODELO se publica de verdad ───────────────────────────────────────
-# También del revisor de cobertura: `por_modelo` se calculaba y ningún caso lo leía.
+# ── T16 · el reparto POR MODELO se publica de verdad ───────────────────────────────────────
+# `por_modelo` se calcula y tiene que haber un caso que lo lea.
 S=sesion-t16
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
 def a(mid, modelo, out):
@@ -501,11 +501,10 @@ else
   bad "T16 · reparto por modelo" "esperaba caro 2/130 y barato 20; salió $caro_r/$caro_o y $barato_o · $OUT"
 fi
 
-# ── T17 (AC6) · si el hilo NO se pudo guardar, la corrida NO queda marcada como resuelta ─────────
-# 🔴 Del cazador de fallos silenciosos, y es el peor de los cuatro: `hilo_hasta` se fijaba con lo
-#    leído de la transcripción, sin mirar si el archivo llegó a escribirse. Con el disco lleno o un
-#    permiso mal, ese tramo de conversación se perdía PARA SIEMPRE y el barrido lo contaba como
-#    salvado — un número diciendo «todo bien» sobre algo que no se guardó.
+# ── T17 · si el hilo NO se pudo guardar, la corrida NO queda marcada como resuelta ─────────
+# 🔴 Si `hilo_hasta` se fijara con lo leído de la transcripción, sin mirar si el archivo llegó a escribirse,
+#    con el disco lleno o un permiso mal ese tramo de conversación se perdería PARA SIEMPRE y el barrido lo
+#    contaría como salvado: un número diciendo «todo bien» sobre algo que no se guardó.
 S=sesion-t17
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
 lineas = [{"type": "user", "timestamp": "2026-09-01T10:00:0%d.000Z" % i,
@@ -528,10 +527,10 @@ else
   bad "T17 · el hilo perdido no se da por salvado" "error=$err hilo_hasta=$hh sigue_pendiente=$sigue (fijar hilo_hasta sin mirar si se escribió pierde ese tramo para siempre, contándolo como salvado)"
 fi
 
-# ── T18 (AC11) · el saneado corta la ruta ENTERA, no sólo la carpeta personal ────────────────────
-# 🔴 Del revisor de seguridad. El saneado colapsaba el home a `~` ANTES de borrar la ruta, así que
-#    la regla que la borraba ya no la reconocía y sobrevivía justo el tramo que nombra al CLIENTE.
-#    T13 no lo detectaba porque sólo miraba que no quedara `/Users/`.
+# ── T18 · el saneado corta la ruta ENTERA, no sólo la carpeta personal ────────────────────
+# 🔴 Si el saneado colapsara el home a `~` ANTES de borrar la ruta, la regla que la borra ya no la
+#    reconocería y sobreviviría justo el tramo que nombra al CLIENTE. T13 no lo detecta porque sólo
+#    mira que no quede `/Users/`.
 S=sesion-t18
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["y2","2026-09-01T10:00:59.000Z","cd /repo && npm run build","falló en /Users/usuarioa/SourceCode/NombreDelCliente/src/Pagos.cs · también C:\\Users\\devb\\SourceCode\\OtroCliente\\a.ts · avisar a alguien@clientex.com.ar · AZURE_DEVOPS_PAT=abc123def456"]
@@ -554,7 +553,7 @@ else
 fi
 
 # ── T19 · un volcado que no se puede escribir se CUENTA y se DICE, no desaparece ─────────────────
-# 🔴 Del cazador de fallos silenciosos. El barrido corre en CADA arranque de sesión, con la salida
+# 🔴 El barrido corre en CADA arranque de sesión, con la salida
 #    mandada a un archivo de registro: si una corrida no se puede persistir y eso no se cuenta en
 #    ningún lado, se reintenta para siempre sin que nadie se entere. «No pude» tiene que verse.
 BARR2="$TMP/barrido-ro"; mkdir -p "$BARR2"
@@ -576,9 +575,8 @@ else
 fi
 
 # ── T20 · un identificador de sesión con forma de ruta no se usa para armar rutas ────────────────
-# Del revisor de seguridad (aviso). Hoy el origen es confiable (un volcado que escribe el arnés),
-# pero el identificador sale de un JSON y se concatena a una ruta: si algún día deja de serlo, esto
-# ya no se puede convertir en una lectura fuera de lugar.
+# El origen es confiable (un volcado que escribe el arnés), pero el identificador sale de un JSON y se
+# concatena a una ruta: si algún día deja de serlo, esto no se puede convertir en una lectura fuera de lugar.
 volcado "$HIST/t20.json" "../../../etc/passwd" '{}' '[]'
 correr --run "$HIST/t20.json" --projects-dir "$PROJ" --json
 est="$(leer "d['consumo']['estado']")"
@@ -588,11 +586,10 @@ else
   bad "T20 · identificador validado" "esperaba no_medido; salió $est · $OUT"
 fi
 
-# ── T21 (AC11) · rutas con espacios y credenciales sin nombre de variable ────────────────────────
-# 🔴 Segunda vuelta del revisor de seguridad. Una ruta con espacio en el nombre del cliente
-#    (`Cliente Grande SA`) se cortaba en el primer espacio y el resto sobrevivía; y una credencial
-#    embebida en una URL (`user:pass@host`) o un `Bearer <token>` no tienen «NOMBRE=» adelante, así
-#    que la regla de credenciales no las veía. Criterio: antes tapar de más que dejar pasar.
+# ── T21 · rutas con espacios y credenciales sin nombre de variable ────────────────────────
+# 🔴 Una ruta con espacio en el nombre del cliente (`Cliente Grande SA`) se cortaría en el primer espacio
+#    y el resto sobreviviría; y una credencial embebida en una URL (`user:pass@host`) o un `Bearer <token>`
+#    no tienen «NOMBRE=» adelante, así que la regla de credenciales no las vería. Criterio: antes tapar de más que dejar pasar.
 S=sesion-t21
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["y3","2026-09-01T10:00:59.000Z","cd /repo && npm run build","falló en /Users/deva/Cliente Grande SA/src/x.ts línea 40 · curl https://admin:P4ssw0rd@host.clientegrande.com/api · Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.abc.def"]
@@ -614,15 +611,14 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════════════════════
-# LO QUE TRAJO EL PASE ADVERSARIAL (Step 5b, 2026-09-09) — 10 confirmados contra datos reales
+# CASOS CONTRA DATOS REALES
 # ══════════════════════════════════════════════════════════════════════════════════════════════
 
-# ── T22 (AC9) · comando compuesto: el mensaje es la salida del FRENO, no el preámbulo ────────────
-# 🔴 Caso real: volcado 4.56 (2026-08-17), freno 9. El comando del freno corrió al FINAL de un Bash
-#    compuesto (`npm run baseline | tail; echo === next ===; pipeline.js next; echo ===; <freno>`).
-#    El resultado concatena las tres salidas (2700 caracteres) y el veredicto real empieza en el
-#    carácter 807: recortar los primeros 700 publicaba el listado de próximos pasos y cortaba justo
-#    ANTES de «🔴 ROJO».
+# ── T22 · comando compuesto: el mensaje es la salida del FRENO, no el preámbulo ────────────
+# 🔴 El comando del freno puede correr al FINAL de un Bash compuesto
+#    (`npm run baseline | tail; echo === next ===; pipeline.js next; echo ===; <freno>`). El resultado
+#    concatena las tres salidas y el veredicto real empieza lejos del principio: recortar los primeros 700
+#    caracteres publicaría el listado de próximos pasos y cortaría justo ANTES de «🔴 ROJO».
 S=sesion-t22
 PREAMBULO="$(python3 -c "print('byte-baseline: 45/45 filas coinciden · ' * 30)")"
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" "[
@@ -640,10 +636,9 @@ else
   bad "T22 · preámbulo de comando compuesto" "el veredicto real quedó afuera del recorte · salió: ${msg:0:160}…"
 fi
 
-# ── T23 (AC9) · con un candidato ANTES y uno DESPUÉS, gana el de antes aunque esté más lejos ──────
-# 🔴 Caso real: volcado QA-1 (2026-08-15, un producto del equipo), freno 1 (`npm run type-check`). El run-check
-#    real estaba a −11,8 s con el error del compilador; a +7,3 s había un script de triage que
-#    también contenía el comando. Se elegía el de +7,3 s por cercanía absoluta y se publicaba
+# ── T23 · con un candidato ANTES y uno DESPUÉS, gana el de antes aunque esté más lejos ──────
+# 🔴 El run-check real puede estar a −11,8 s con el error del compilador, y a +7,3 s un script de triage que
+#    también contiene el comando. Elegir por cercanía absoluta tomaría el de +7,3 s y publicaría
 #    «NINGUNO de mis archivos» sin un solo error de TypeScript adentro.
 S=sesion-t23
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
@@ -662,9 +657,9 @@ else
   bad "T23 · antes > después" "esperaba el error real de −11,8 s; salió: $msg (la cercanía absoluta elige el triage posterior)"
 fi
 
-# ── T24 (AC1c) · dos pasos EMPATADOS al milisegundo también se fusionan ──────────────────────────
-# Del pase adversarial: la fusión sólo miraba marcas INVERTIDAS (estricto `<`); dos pasos distintos
-# con la misma hora exacta dejaban un intervalo de ancho cero y el segundo salía en cero, callado.
+# ── T24 · dos pasos EMPATADOS al milisegundo también se fusionan ──────────────────────────
+# Si la fusión sólo mirara marcas INVERTIDAS (estricto `<`), dos pasos distintos con la misma hora exacta
+# dejarían un intervalo de ancho cero y el segundo saldría en cero, callado.
 S=sesion-t24
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
 def a(mid, ts, out):
@@ -685,7 +680,7 @@ else
   bad "T24 · empate al milisegundo" "esperaba 2+3=100 sin clave 3; salió pasos=$pasos 2+3=$fus"
 fi
 
-# ── T25/T26/T27 (AC11) · el saneado: tmp real de macOS, credencial pelada, y NO romper texto legítimo
+# ── T25/T26/T27 · el saneado: tmp real de macOS, credencial pelada, y NO romper texto legítimo
 S=sesion-t25
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["e1","2026-09-01T10:00:59.000Z","cd /repo && npm run build","log en /var/folders/lr/q2ypfbq1399147mpvylqrxcr0000gn/T/tmp.abc/salida.log · PASSWORD=hunter2 · SECRET: s3cr3t · PATH=/usr/local/bin:/usr/bin · TaskCanceledException: cancelado · primary_key=duplicada · keyId=7"]
@@ -704,7 +699,7 @@ else
   bad "T27 · no romper texto legítimo" "el saneado tapó de más y arruinó el mensaje: $msg"
 fi
 
-# ── T28 (AC9) · la contención respeta el borde del comando: `npm test` no es `npm testx` ─────────
+# ── T28 · la contención respeta el borde del comando: `npm test` no es `npm testx` ─────────
 S=sesion-t28
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["f1","2026-09-01T10:00:55.000Z","cd /repo && npm test","EL CORRECTO"],
@@ -722,10 +717,10 @@ else
   bad "T28 · borde de token" "salió: $msg (la subcadena plana atribuye la salida de otro comando)"
 fi
 
-# ── T29 (AC4/AC6) · un resumen ya MEDIDO no se pisa con «borrada» por una pasada que no vio la conversación
-# 🔴 Del pase adversarial: `--all` reprocesa todo sin condición; si en ESA pasada la carpeta de
-#    conversaciones estaba mal apuntada o inaccesible, sobreescribía tokens reales e hilo ya guardado
-#    por `estado: borrada` — y como «borrada» es terminal para el barrido, no se recuperaba nunca.
+# ── T29 · un resumen ya MEDIDO no se pisa con «borrada» por una pasada que no vio la conversación
+# 🔴 `--all` reprocesa todo sin condición; si en ESA pasada la carpeta de conversaciones está mal apuntada
+#    o inaccesible, sobreescribiría tokens reales e hilo ya guardado por `estado: borrada` — y como
+#    «borrada» es terminal para el barrido, no se recuperaría nunca.
 S=sesion-t29
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
 lineas = [{"type": "assistant", "timestamp": "2026-09-01T10:00:00.000Z",
@@ -748,11 +743,10 @@ else
   bad "T29 · no degradar lo medido" "esperaba 'medido 1234'; salió '$est' (una pasada con la carpeta mal apuntada borraba tokens e hilo reales)"
 fi
 
-# ── T30 (AC7) · `--run` que no pudo persistir sale ≠ 0: es lo ÚNICO que mira el archivador ────
-# 🔴 Segunda vuelta del cazador de fallos silenciosos: el arreglo de T19 (no lanzar al no poder
-#    escribir) reabrió el hueco en el punto de entrada más importante. `marker.js` llama a
-#    `--run` en CADA cierre del pipeline con la salida ignorada y sólo mira el código de salida;
-#    con 0, creía que la corrida quedó rescatada mientras el volcado seguía sin `consumo`.
+# ── T30 · `--run` que no pudo persistir sale ≠ 0: es lo ÚNICO que mira el archivador ────
+# 🔴 No lanzar al no poder escribir (T19) deja un hueco en el punto de entrada más importante. `marker.js`
+#    llama a `--run` en CADA cierre del pipeline con la salida ignorada y sólo mira el código de salida;
+#    con 0, creería que la corrida quedó rescatada mientras el volcado sigue sin `consumo`.
 RO="$TMP/solo-lectura"; mkdir -p "$RO"
 S=sesion-t30
 transcripcion "$PROJ/carpeta-cualquiera/$S.jsonl" <<'PY2'
@@ -770,11 +764,10 @@ else
   bad "T30 · exit≠0 al no persistir" "salió 0: el archivador creería que la corrida quedó rescatada · $OUT"
 fi
 
-# ── T31 (AC11) · credenciales en camelCase, en encabezados con guion y en JSON pegado ─────────────
-# 🔴 Tercera vuelta, dos revisores a la vez: la regla «componente separado por _» dejó de tapar
-#    `dbPassword=`, `apiKey=`, `X-Api-Key:` y —lo peor, porque es el formato nativo de un curl—
-#    `"password":"x"` / `"access_token":"x"`. La versión anterior (por subcadena) SÍ los tapaba: era
-#    una regresión introducida por el arreglo de T27.
+# ── T31 · credenciales en camelCase, en encabezados con guion y en JSON pegado ─────────────
+# 🔴 La regla «componente separado por _» no tapa `dbPassword=`, `apiKey=`, `X-Api-Key:` ni —lo peor,
+#    porque es el formato nativo de un curl— `"password":"x"` / `"access_token":"x"`. Una regla por
+#    subcadena SÍ los tapa: sin estos casos, afinar la regla de T27 los dejaría pasar.
 S=sesion-t31
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["g1","2026-09-01T10:00:59.000Z","cd /repo && curl -v api","dbPassword=hunter3 · myApiKey=AKIA123 · authToken: tok-999 · X-Api-Key: xk-555 · {\"user\":\"deva\",\"password\":\"p4ss\",\"access_token\":\"eyJ.abc\",\"client_secret\":\"cs-1\"}"]
@@ -793,10 +786,10 @@ else
   bad "T31 · credenciales en otros formatos" "se filtró:$fuga · salió: $msg"
 fi
 
-# ── T32 (AC11) · un parámetro inocente pegado no se traga al siguiente; `Authorization:` pelado ──
-# 🔴 Cuarta vuelta de seguridad: en `curl -d "user=admin&password=secreto"` el valor de `user=` (no
-#    credencial) se tragaba `admin&password=secreto` entero, y `password=` nunca se miraba. Y un
-#    `Authorization: <token>` sin `Bearer` adelante no se reconocía como credencial.
+# ── T32 · un parámetro inocente pegado no se traga al siguiente; `Authorization:` pelado ──
+# 🔴 En `curl -d "user=admin&password=secreto"` el valor de `user=` (no credencial) no puede tragarse
+#    `admin&password=secreto` entero, o `password=` nunca se miraría. Y un `Authorization: <token>` sin
+#    `Bearer` adelante también es una credencial.
 S=sesion-t32
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["h1","2026-09-01T10:00:59.000Z","cd /repo && curl -d x api","curl -d \"user=admin&password=secreto&scope=all\" · GET /api?user=x&client_secret=cs9&page=2 · Authorization: tok-pelado-77 · key=k-solo-1"]
@@ -815,8 +808,8 @@ else
   bad "T32 · parámetros pegados y Authorization pelado" "se filtró:$fuga · salió: $msg"
 fi
 
-# ── T33 (AC11) · las ramas del valor: comillas simples, nombre citado con valor suelto, comilla sin cerrar, valor vacío
-# Quinta vuelta de cobertura: el bucle maneja los cuatro casos por lectura de código, «pero sin test es fe».
+# ── T33 · las ramas del valor: comillas simples, nombre citado con valor suelto, comilla sin cerrar, valor vacío
+# El bucle maneja los cuatro casos por lectura de código, «pero sin test es fe».
 S=sesion-t33
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["i1","2026-09-01T10:00:59.000Z","cd /repo && curl api","password='\''p-simple'\'' · \"password\": p-suelto · TOKEN= · fin=ok · secret=\"sin-cierre y lo que sigue"]
@@ -835,14 +828,13 @@ else
   bad "T33 · ramas del valor" "se filtró:$fuga · salió: $msg"
 fi
 
-# ── T34..T37 · la COLA que guarda `marker.js run-check` al dar rojo (2026-09-17) ──────────────────
-# Desde el 2026-09-14, 0 de 43 frenos en rojo tenían mensaje: el comando lo lanzaba un script y 26
-# corrían en segundo plano, así que en la conversación sólo quedaba «Command running in background».
-# Ahora run-check guarda la cola saneada en `cola` y el rescate la usa primero.
+# ── T34..T37 · la COLA que guarda `marker.js run-check` al dar rojo ──────────────────
+# Si el comando lo lanza un script, o corre en segundo plano, en la conversación sólo queda «Command running in
+# background». Por eso run-check guarda la cola saneada en `cola` y el rescate la usa primero.
 
-# T34 — el caso real: test-gate.sh lanzado en segundo plano; el freno registra el subproceso
+# T34 — test-gate.sh lanzado en segundo plano; el freno registra el subproceso
 # (run-suites-json.js), que ni aparece en la conversación.
-# Mutación que lo pone en rojo: no leer `cola` (origin/main antes de este arreglo) → sin mensaje.
+# Mutación que lo pone en rojo: no leer `cola` → sin mensaje.
 S=sesion-t34
 transcripcion_cmds "$PROJ/carpeta-cualquiera/$S.jsonl" '[
   ["b1","2026-09-01T10:00:00.000Z","cd /repo && bash test-gate.sh","Command running in background with ID: bxyz. Output is being written to: /private/tmp/claude-501/tasks/bxyz.output"]
@@ -875,7 +867,7 @@ else
   bad "T35 · cola sin conversación" "salió: $r35 · $OUT"
 fi
 
-# T36 — una cola escrita con un saneado viejo se vuelve a sanear al publicarse.
+# T36 — una cola escrita con un saneado anterior se vuelve a sanear al publicarse.
 # Mutación: copiar `cola` a `mensaje` sin pasar por colaDeSalida → sale el correo y la ruta.
 volcado "$HIST/t36.json" "sesion-que-no-existe-t36" '{}' '[{"ts": "2026-09-01T10:14:00.000Z", "check": "dod", "status": "red:exit=1", "cmd": "bash dod.sh", "exit": 1, "durationMs": 900, "cola": "falló /Users/fulano/SourceCode/ClienteSecretoSA/a.cs para persona@cliente.com"}]'
 correr --run "$HIST/t36.json" --projects-dir "$PROJ" --json
@@ -903,8 +895,8 @@ else
   bad "T37 · verde con cola" "salió: $m37"
 fi
 
-# ── 2.24 T23 · Cabecera_DiceQueElHiloViajaAlBuzon (story 2.24, AC 20) ──────────────────────────────────────────
-# 🔴 rojo previo: la cabecera decía «POR QUÉ NO VIAJA» y no nombraba la subida al buzón (story 2.16), que sí lo lleva.
+# ── T23 · Cabecera_DiceQueElHiloViajaAlBuzon ──────────────────────────────────────────
+# 🔴 Una cabecera que dice «POR QUÉ NO VIAJA» sin nombrar la subida al buzón miente: el buzón sí lleva el hilo.
 CAB23="$(awk '/DÓNDE VIVE/{p=1} p{print} /CUATRO COSAS QUE SE MIDIERON/{exit}' "$DIGEST")"
 if echo "$CAB23" | grep 'buzón' >/dev/null && echo "$CAB23" | grep 'upload-runs.js' >/dev/null && echo "$CAB23" | grep 'sin vencimiento' >/dev/null \
    && ! echo "$CAB23" | grep 'POR QUÉ NO VIAJA' >/dev/null; then

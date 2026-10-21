@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # reviewer-rules.test.sh — red de `scripts/ci/reviewer-rules.js`, el aviso de «regla fuera de la
-# sección» al commitear un CLAUDE.md (story 7.5, 2026-09-19).
+# sección» al commitear un CLAUDE.md.
 #
-# Por qué existe el aviso: desde la 7.5 los revisores del pipeline no cargan el CLAUDE.md; las reglas
+# Por qué existe el aviso: los revisores del pipeline no cargan el CLAUDE.md; las reglas
 # propias del repo les llegan SÓLO por la sección `## Reglas para revisores`. Una regla escrita en otra
 # parte del archivo el revisor no la ve.
 #
@@ -41,7 +41,7 @@ Texto.
 repo(){ # repo nuevo con un CLAUDE.md commiteado; deja el cwd ahí
   rm -rf "${TMP}/r" "${TMP}/h"
   mkdir -p "${TMP}/r"
-  # HOME falsa y nueva por caso, para toda la suite (story 7.16): el commit de abajo no lee el core.hooksPath
+  # HOME falsa y nueva por caso, para toda la suite: el commit de abajo no lee el core.hooksPath
   # global del dev (no corren sus ganchos) y las mediciones van a ${TMP}/h, no a su reviewer-rules.jsonl.
   fake_home_create "${TMP}/h" || exit 9
   cd "${TMP}/r" || exit 9
@@ -75,11 +75,11 @@ grep -q 'sin TypeSafe' "${TMP}/o.txt" && ok "T10 dice «sin TypeSafe»" || no "T
 grep -q 'movela a «Reglas para revisores»' "${TMP}/o.txt" && ok "T10 el aviso dice qué hacer" || no "T10 el aviso no dice qué hacer"
 grep -Eq 'CLAUDE\.md:1[0-9]' "${TMP}/o.txt" && ok "T10 cita el número de línea" || no "T10 sin número de línea: $(cat "${TMP}/o.txt")"
 
-# ── T15 (story 7.16) · los commits de juguete no corren los ganchos del dev ──────────────────────
-# Con la HOME real, git lee el core.hooksPath GLOBAL del dev y el commit de repo() corría su pre-commit, que
-# anotaba cada commit de juguete en SU registro de reglas (728 líneas «repo r» sólo el 2026-09-29).
+# ── T15 · los commits de juguete no corren los ganchos del dev ───────────────────────────────────
+# Con la HOME real, git lee el core.hooksPath GLOBAL del dev y el commit de repo() correría su pre-commit, que
+# anotaría cada commit de juguete en SU registro de reglas.
 # Evidencia POSITIVA: git no ve ganchos globales y la medición del caso quedó en la HOME falsa.
-# Rojo previo: sin el ayudante en repo(), git ve el core.hooksPath del dev y la HOME falsa no existe.
+# Falla si: sin el ayudante en repo(), git ve el core.hooksPath del dev y la HOME falsa no existe.
 hp="$(git -C "${TMP}/r" config --get core.hooksPath 2>/dev/null)"
 [ -z "${hp}" ] && ok "T15 el repo de juguete no ve un core.hooksPath global (no corren los ganchos del dev)" \
   || no "T15 🔴 el repo de juguete ve core.hooksPath=${hp}: sus commits corren los ganchos del dev"
@@ -87,10 +87,10 @@ n="$(fake_home_count reviewer-rules.jsonl '"repo":"r"' 2>/dev/null)"
 [ "${n:-0}" -gt 0 ] && ok "T15 la medición del caso quedó en la HOME falsa (${n}), no en la real" \
   || no "T15 🔴 la medición del caso no está en la HOME falsa: fue al reviewer-rules.jsonl real"
 
-# ── T16 (story 8.9, tanda D2) · el registro con nombre viejo pasa al nuevo sin perder su historia ─────
+# ── T16 · el registro con nombre viejo pasa al nuevo sin perder su historia ─────
 # El nombre viejo sale del mapa de renombres (no se escribe literal). Con sólo el viejo en la HOME falsa,
 # la primera medición lo copia al nuevo y anota ahí; el viejo queda intacto hasta el retiro.
-# La copia pública (story 8.7) sale sin el perfil del equipo y sin el mapa: ahí no hay nombre viejo que probar, y se dice.
+# La copia pública sale sin el perfil del equipo y sin el mapa: ahí no hay nombre viejo que probar, y se dice.
 PUBLIC_COPY=0
 if [ ! -f "${AQUI}/perfil-equipo.json" ] || [ ! -f "${AQUI}/scripts/lib/renames.json" ]; then PUBLIC_COPY=1; fi
 not_measured=0
@@ -205,7 +205,7 @@ for modo in slow error; do
   grep -q 'abc123' "${TMP}/o.txt" && no "T11 (${modo}) imprimió la contraseña" || ok "T11 (${modo}) no imprime la contraseña"
 done
 
-# ── T35 ReglasRevisores_ListaDeLaListaPrivada (story 8.10, AC 24) ─────────────────────────────────
+# ── T35 ReglasRevisores_ListaDeLaListaPrivada ─────────────────────────────────
 # La lista a tachar son los términos `cliente` de la lista de denegación, con sus reglas de palabra y caja.
 repo
 printf -- '- En Zorblaxiano y en ACME y acme el prefijo es AC_.\n- Lo pidió Vandelay: prefijo VD_.\n' >> CLAUDE.md
@@ -218,7 +218,7 @@ grep -q 'y acme el' "${TMP}/cuerpo.json" && ok "T35 un término que distingue la
   || no "T35 tachó otra caja: $(cat "${TMP}/cuerpo.json")"
 grep -q 'Vandelay' "${TMP}/cuerpo.json" && ok "T35 sólo los términos cliente (una persona no está en la lista a tachar)" \
   || no "T35 tachó un término que no es cliente"
-# Pase adversarial de la tanda B: las formas que el detector cuenta como el mismo nombre (story 8.4, AC 30) también
+# Las formas que el detector cuenta como el mismo nombre también
 # se tachan —otra caja en un identificador, todo en mayúsculas, el compuesto separado— y un nombre que contiene a
 # otro más corto se tacha entero.
 repo
@@ -249,8 +249,8 @@ awk '/^## Nombres que se tachan/{p=1;next} /^## /{p=0} p&&/^```/{f=1} END{exit !
   && no "T35 la guía todavía trae la lista de nombres (un bloque bajo «Nombres que se tachan»)" \
   || ok "T35 la guía ya no trae la lista de nombres: dice dónde vive"
 
-# ── Hallazgos del pase adversarial (story 7.5, paso 5b) ──────────────────────────────────────────
-# A-1 · una cerca SIN CERRAR antes del encabezado no esconde la sección: la línea agregada adentro no se
+# ── Casos de borde ──────────────────────────────────────────────────────────────────────────────
+# Una cerca SIN CERRAR antes del encabezado no esconde la sección: la línea agregada adentro no se
 # avisa y no dice «no tiene la sección».
 repo
 printf '# Proyecto\n\n## Ejemplos\n\n```bash\necho sin cerrar\n\n## Reglas para revisores\n\n- Nunca SQL concatenado.\n\n## Otra\n\nTexto.\n' > CLAUDE.md
@@ -265,7 +265,7 @@ rc=$(correr)
 grep -q 'ADENTRO pese a la cerca' "${TMP}/o.txt" && no "A-1 avisó una línea de adentro (la cerca abierta escondió la sección)" || ok "A-1 cerca abierta antes: la línea de adentro no se avisa"
 grep -q 'no tiene «## Reglas para revisores»' "${TMP}/o.txt" && no "A-1 dijo que no tiene la sección" || ok "A-1 cerca abierta antes: reconoce la sección"
 
-# A-2 · mover CLAUDE.md → .claude/CLAUDE.md y agregar una regla afuera en el mismo commit: se avisa (y
+# Mover CLAUDE.md → .claude/CLAUDE.md y agregar una regla afuera en el mismo commit: se avisa (y
 # sólo la línea nueva, no todo el archivo).
 repo
 mkdir -p .claude && git mv CLAUDE.md .claude/CLAUDE.md
@@ -275,7 +275,7 @@ rc=$(correr)
 grep -q 'prefijo XX_' "${TMP}/o.txt" && ok "A-2 renombrado + regla afuera: se avisa" || no "A-2 renombrado: silencio ($(cat "${TMP}/o.txt"))"
 grep -q 'Texto\.' "${TMP}/o.txt" && no "A-2 renombrado: avisó líneas que no son nuevas" || ok "A-2 renombrado: sólo la línea nueva"
 
-# A-3 · una línea agregada que empieza con «+++» o «---» no se pierde, y las de después conservan su número.
+# Una línea agregada que empieza con «+++» o «---» no se pierde, y las de después conservan su número.
 repo
 python3 - <<'PY'
 p = 'CLAUDE.md'; s = open(p).read()
@@ -288,7 +288,7 @@ grep -q 'regla con dos más' "${TMP}/o.txt" && grep -q 'regla con tres guiones' 
   && ok "A-3 las líneas que empiezan con ++ / --- se avisan" || no "A-3 se perdieron: $(cat "${TMP}/o.txt")"
 grep -q 'CLAUDE.md:14 .*Última regla nueva' "${TMP}/o.txt" && ok "A-3 la línea siguiente conserva su número (14)" || no "A-3 número corrido: $(grep 'Última' "${TMP}/o.txt")"
 
-# A-4 · los dos CLAUDE.md tocados en el mismo commit → UN solo pedido a TypeSafe.
+# Los dos CLAUDE.md tocados en el mismo commit → UN solo pedido a TypeSafe.
 repo
 mkdir -p .claude && printf '## Reglas para revisores\n\n- x\n' > .claude/CLAUDE.md
 git add .claude/CLAUDE.md && git -c user.email=t@t -c user.name=t commit -q -m dos
@@ -300,8 +300,8 @@ rc=$(con_llave normal)
 [ "$(wc -l < "${TMP}/pedidos.log" | tr -d ' ')" = "1" ] && ok "A-4 dos CLAUDE.md, un solo pedido" || no "A-4 pedidos: $(wc -l < "${TMP}/pedidos.log" 2>/dev/null)"
 grep -q 'XX_' "${TMP}/o.txt" && grep -q 'YY_' "${TMP}/o.txt" && ok "A-4 avisa las de los dos archivos" || no "A-4 falta alguna: $(cat "${TMP}/o.txt")"
 
-# S-1 · si la lista de nombres a tachar no se puede leer, NO se manda nada a TypeSafe: se cae al modo
-# sin llave y se dice por qué (hallazgo SILENT-C2 del paso 5).
+# Si la lista de nombres a tachar no se puede leer, NO se manda nada a TypeSafe: se cae al modo
+# sin llave y se dice por qué.
 repo; cambio_tipico
 rm -f "${TMP}/pedidos.log"
 rc=$(con_llave no-list)
@@ -317,14 +317,14 @@ printf '%s' "${out}" | grep 'movela a «Reglas para revisores»' >/dev/null && o
 # ── T9 Codex_GeneradorYCheck ─────────────────────────────────────────────────────────────────────
 cd "${AQUI}" || exit 9
 # Los revisores de ESTE árbol, nunca los instalados: fake-home.sh apunta TYCON_SKILLS_DIR a la copia
-# instalada, y con ella el --check comparaba las copias de Codex de la rama contra los revisores de la máquina (rojo
-# cuando la máquina va atrasada, verde aunque la rama esté rota). Es lo mismo que ya hacía T14.
+# instalada, y con ella el --check compararía las copias de Codex de la rama contra los revisores de la máquina (rojo
+# cuando la máquina va atrasada, verde aunque la rama esté rota). Es lo mismo que hace T14.
 env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/generate.js --check > "${TMP}/gen.txt" 2>&1 && ok "T9 los .toml de Codex están al día" || no "T9 generate --check: $(tail -3 "${TMP}/gen.txt")"
 env -u TYCON_SKILLS_DIR TYCON_AGENTS_DIR="${AQUI}/agents" node build/check.js > "${TMP}/chk.txt" 2>&1 && ok "T9 build/check.js verde" || no "T9 check.js: $(tail -3 "${TMP}/chk.txt")"
 # T9b · con TYCON_SKILLS_DIR apuntando a una copia de revisores DISTINTA (la instalada atrasada), T9 sigue midiendo el árbol
 _otra="$(mktemp -d)"; mkdir -p "${_otra}/skills"; cp -R "${AQUI}/agents" "${_otra}/agents"
 printf '\nUna línea que la copia de la rama no tiene.\n' >> "${_otra}/agents/tycon-plugin-tests-coverage.md"
-# la forma de antes (sólo la variable heredada) lee esa copia y sale roja: la exposición existe
+# con sólo la variable heredada, el generador lee esa copia y sale rojo: la exposición existe
 if TYCON_SKILLS_DIR="${_otra}" node build/generate.js --check > "${TMP}/gen9b-antes.txt" 2>&1; then
   no "T9b la copia distinta no cambió nada: la prueba no prueba (¿el generador ya no lee TYCON_SKILLS_DIR?)"
 # la forma de T9 mide el árbol aunque la variable apunte a otra copia
@@ -336,12 +336,12 @@ fi
 rm -rf "${_otra}"
 con=$(grep -l 'Límites de ejecución (no vienen del CLAUDE.md)' adapters/codex/agents/*.toml | xargs -n1 basename | sort | tr '\n' ' ')
 esperado='tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml tycon-sibling-pattern-reviewer.toml tycon-signed-scope-audit.toml tycon-silent-failure-hunter.toml '
-# Tres de los cinco son de paquetes del equipo (clientes y bizuit, que viajan con su perfil, story 8.41): en la copia
+# Tres de los cinco son de paquetes del equipo (clientes y bizuit, que viajan con su perfil): en la copia
 # pública sus .toml no están y se esperan los otros dos, diciéndolo. En el repo del equipo siguen siendo los cinco, y que
 # falte uno es un rojo.
 PRIVATE_TOMLS='tycon-sibling-pattern-reviewer.toml tycon-feature-wiring-checker.toml tycon-plugin-dotnet-conventions.toml'
-# Desde la 8.41 los .toml de los revisores de un paquete se generan desde la capa al instalar y no se guardan en el
-# repo: en el árbol armado se esperan los que estén (hoy, el de plugins hermanos), nunca los que no.
+# Los .toml de los revisores de un paquete se generan desde la capa al instalar y no se guardan en el
+# repo: en el árbol armado se esperan los que estén (el de plugins hermanos), nunca los que no.
 for t in ${PRIVATE_TOMLS}; do [ -f "adapters/codex/agents/${t}" ] || esperado="${esperado/${t} /}"; done
 if [ "${PUBLIC_COPY}" = 1 ] && [ ! -f "adapters/codex/agents/tycon-sibling-pattern-reviewer.toml" ]; then
   for t in ${PRIVATE_TOMLS}; do esperado="${esperado/${t} /}"; done

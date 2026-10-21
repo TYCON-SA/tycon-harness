@@ -2,13 +2,13 @@
 /**
  * ps1-readable.test.js — los guiones de PowerShell del arnés se dejan LEER por el PowerShell que trae Windows
  * (5.1), y el instalador, si no hay PowerShell 7, lo DICE en vez de dejar la máquina sin controles callada
- * (story 8.17 · prerequisitos; decisión del dueño, 2026-10-03: PowerShell 7 es un requisito y se controla).
+ * (PowerShell 7 es un requisito y se controla).
  *
- * La falla que caza (medida en un agente Windows, corridas 11684 y 11686): Windows PowerShell 5.1 lee un `.ps1` UTF-8
+ * La falla que caza: Windows PowerShell 5.1 lee un `.ps1` UTF-8
  * sin marca de codificación como Windows-1252. Ahí los bytes de una raya (—), una flecha (→) o una Ó quedan como
  * comillas tipográficas, que el analizador de PowerShell toma por comillas de verdad: el texto se cierra antes de
- * tiempo y el archivo entero no se puede leer (13 errores de sintaxis en `install-tycon-hooks.ps1`). Como la línea
- * de arranque vieja envuelve todo en `try { … } catch {}`, la máquina quedaba con 0 controles y sin una línea de aviso.
+ * tiempo y el archivo entero no se puede leer (13 errores de sintaxis en `install-tycon-hooks.ps1`). Como una línea
+ * de arranque que envuelve todo en `try { … } catch {}` lo calla, la máquina queda con 0 controles y sin una línea de aviso.
  *
  * Lo que no se puede perder:
  *   T1 · todo `.ps1` versionado y escrito a mano empieza con la marca de codificación (BOM). Los reemplazos generados
@@ -27,9 +27,8 @@
  *
  * Sin `pwsh` en el PATH: T2 a T5 dicen «NO MEDIDO» (salteadas, no verdes). T1 y T6 corren igual.
  * Lo que NO mide: un Windows PowerShell 5.1 de verdad. Eso lo mide el pipeline de Windows (`pipelines/azure-pipelines-windows.yml`:
- * su tabla «¿Cada PowerShell puede leer los .ps1 del arnés de hoy?» y las máquinas `ps51`). Medido el 2026-10-04,
- * corrida 11701, con Windows PowerShell 5.1.26100: 0 errores de sintaxis en los tres guiones del arranque, y la
- * máquina con sólo 5.1 recibe la línea «tycon: FALTA PowerShell 7 (pwsh)…» y `doctor` marca el requisito en rojo.
+ * su tabla «¿Cada PowerShell puede leer los .ps1 del arnés de hoy?» y las máquinas `ps51`). Con un Windows PowerShell 5.1 real, los tres
+ * guiones del arranque dan 0 errores de sintaxis, y la máquina con sólo 5.1 recibe la línea «tycon: FALTA PowerShell 7 (pwsh)…» y `doctor` marca el requisito en rojo.
  * 🔴 Nunca la HOME real: cada caso arma la suya en el temporal, y los `XDG_*` de pwsh van fuera de ella.
  */
 const test = require('node:test');
@@ -190,7 +189,7 @@ test('T5 Guard_TestVariableCannotSkipIt', { skip: sinPwsh }, () => {
     assert.match(src, /\[int\]\$env:TYCON_PS_MAJOR_FOR_TEST -lt \$TyconPsMajor/, `${path.basename(f)}: la variable sólo puede BAJAR la versión`);
     assert.strictEqual((src.match(/TYCON_PS_MAJOR_FOR_TEST/g) || []).length >= 2, true);
   }
-  // la guarda va antes del primer requisito que ya se controlaba, o sea, antes de cualquier escritura
+  // la guarda va antes del primer requisito que se controla, o sea, antes de cualquier escritura
   const src = fs.readFileSync(INSTALLER, 'utf8');
   assert.ok(src.indexOf('if ($TyconPsMajor -lt 7)') > 0);
   assert.ok(src.indexOf('if ($TyconPsMajor -lt 7)') < src.indexOf("Get-Command node -ErrorAction SilentlyContinue"), 'la guarda de PowerShell va antes que la de node');
@@ -249,14 +248,13 @@ test('T6 Harness_MissingRequirement_BringsItsInstallCommand', () => {
   assert.ok(!health.fail.some((x) => /en el PATH/.test(x)), JSON.stringify(health));
 });
 
-// ── story 8.17, W4 · AC 35 (T48: «la guarda, leída en cada .ps1») ────────────────────────────────────────────────────
+// ── la guarda, leída en cada .ps1 ────────────────────────────────────────────────────
 // Los TRES .ps1 que buscan la carpeta de usuario (el instalador, el de los bloques y el respaldo del arranque) llevan la
 // guarda de PowerShell 7 arriba, antes de escribir nada, en ASCII y con sintaxis que 5.1 entiende (T2 mide la sintaxis).
-// 🔴 rojo previo: bootstrap-fallback.ps1 no tenía guarda: con 5.1 creaba ~/.claude/.tycon-pipeline/harness y seguía.
+// 🔴 sin guarda, bootstrap-fallback.ps1 con 5.1 crearía ~/.claude/.tycon-pipeline/harness y seguiría.
 const FALLBACK = path.join(RAIZ, 'scripts', 'setup', 'harness', 'bootstrap-fallback.ps1');
-// story 8.17, W3W4 (revisores de spec primero y de deudas): los cuatro .ps1 de scripts/setup/ que el instalador llama o
-// que se corren a mano también llevan la guarda. 🔴 rojo previo: ninguno la tenía; con 5.1 seguían (y el de sqlite3
-// escribía su sello en la carpeta de usuario).
+// Los cuatro .ps1 de scripts/setup/ que el instalador llama o que se corren a mano también llevan la guarda. 🔴 Sin
+// ella, con 5.1 seguirían (y el de sqlite3 escribiría su sello en la carpeta de usuario).
 const SETUP_GUARDED = ['check-engram-version.ps1', 'ensure-sqlite3.ps1', 'install-codegraph.ps1', 'install-clockify-mcp.ps1']
   .map((f) => path.join(RAIZ, 'scripts', 'setup', f));
 const GUARDED = [INSTALLER, SYNC, FALLBACK, ...SETUP_GUARDED];

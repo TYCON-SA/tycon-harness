@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # third-party-origin.test.sh — cada skill de terceros sigue estando en su origen, tal cual la fija el manifiesto
-# (story 8.5, T20 · nocturna, CON red; nunca en el pre-commit ni en el arranque).
+# (T20 · nocturna, CON red; nunca en el pre-commit ni en el arranque).
 #
 # Por cada entrada `download` del manifiesto real trae `commit`:`path` de su `origin` (git fetch --depth 1 sin blobs:
 # un commit por su sha, ~1 s), le quita `omit`, le aplica `mode_fixes` y compara el hash de árbol con `tree`. Es lo que
@@ -9,7 +9,7 @@
 #
 # Salida: 0 = todas coinciden · 1 = una no coincide, o su commit / su origen ya no está (se nombra) · 2 = NO MEDIDO: no
 # pude preguntar (sin red, o GitHub no contesta). NO MEDIDO nunca es verde: una salida vacía puede ser un comando que
-# falló (regla de ADO §5). Control negativo: una entrada con el árbol alterado a mano tiene que salir 1.
+# falló. Control negativo: una entrada con el árbol alterado a mano tiene que salir 1.
 # 🔴 Sin pipes sobre el comando medido: el exit code REAL es el veredicto.
 set -u
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -21,8 +21,8 @@ ok() { echo "✅ third-party-origin: $1"; }
 bad() { echo "❌ third-party-origin: $1"; FALLAS=$((FALLAS + 1)); }
 
 # Dónde está agent-skills (lo usa T9, más abajo). Se pregunta ACÁ, antes de salir a la red: si la biblioteca no puede
-# contestar —tira cuando su vecina está y no carga—, no se mide nada. Con `2>/dev/null` la carpeta quedaba vacía, T9
-# decía «no encontré … (sin ubicar)» sin sumar nada, y el guion podía cerrar con «todo verde» (story 8.18, 2026-10-04).
+# contestar —tira cuando su vecina está y no carga—, no se mide nada. Con `2>/dev/null` la carpeta queda vacía, T9
+# dice «no encontré … (sin ubicar)» sin sumar nada, y el guion puede cerrar con «todo verde».
 if ! AS="$(node -e 'try { console.log(require(process.argv[1]).resolveSkillsDirs().repo); } catch (e) { console.error(String((e && e.message) || e).split("\n")[0]); process.exit(1); }' "$TCG/scripts/lib/skills-dir.js" 2> "$BASE/skills-dir.err")"; then
   echo "⏭ third-party-origin: NO MEDIDO — no pude resolver la carpeta de skills: $(head -n 1 "$BASE/skills-dir.err")"
   exit 2
@@ -82,7 +82,7 @@ case "$rc" in
   *) bad "T20 hay entradas que su origen ya no da (rc=$rc) — arriba dice cuáles" ;;
 esac
 
-# ── T9 (story 8.5.1) · el LICENSE de tycon-create-story es el de su origen, byte a byte ──────────────────────────────
+# ── T9 · el LICENSE de tycon-create-story es el de su origen, byte a byte ──────────────────────────────
 # La derivada viaja a la copia pública con el LICENSE de BMAD sin editar; esto lo compara con el del commit fijado en
 # `based_on`. Sin agent-skills o sin red: NO MEDIDO, dicho, nunca verde (ni rojo: no es un defecto de la derivada).
 read -r BO_ORIGIN BO_COMMIT <<<"$(node -e 'const d=require(process.argv[1]).derived.find((x)=>x.target==="skills/tycon-create-story");console.log(d?`${d.based_on.origin} ${d.based_on.commit}`:"- -")' "$MANIFEST")"

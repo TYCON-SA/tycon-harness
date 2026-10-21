@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 'use strict';
-// fake-gh.js — un `gh` de mentira para las pruebas de los issues de GitHub (story 8.31). No toca la red NUNCA.
+// fake-gh.js — un `gh` de mentira para las pruebas de los issues de GitHub. No toca la red NUNCA.
 //
 // Contesta `gh --version` y `gh api [--method M] [-H …] <ruta> [--input <archivo>]` desde un estado en JSON
 // (FAKE_GH_STATE), que también GUARDA lo que «crea» (como GitHub), y anota cada llamada en FAKE_GH_LOG (una línea JSON
@@ -69,7 +69,7 @@ if (method === 'GET' && base === 'installation/repositories') {
   out({ total_count: l.length, repositories: pag(l) });
 }
 if (method === 'GET' && base === 'user/repos') out(pag(porNombre(st.visible)));
-// story 2.22 (la foto de despliegues): environments, deployments con sus statuses, corridas de Actions y sus despliegues
+// La foto de despliegues: environments, deployments con sus statuses, corridas de Actions y sus despliegues
 // pendientes. Estado: "environments": { "<o>/<r>": [nombres] }, "default_branch": { "<o>/<r>": "main" },
 //   "deployments": { "<o>/<r>": [ { id, sha, environment, created_at, statuses: [ { id, state, created_at } ] } ] },
 //   "runs": { "<o>/<r>": [ { id, run_number, status, conclusion, created_at, head_branch, workflow, pending: [env] } ] }.

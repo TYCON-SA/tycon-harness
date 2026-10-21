@@ -2,15 +2,15 @@
 /**
  * uncut-output.test.js — que ningún guión del arnés termine con `process.exit(main())`.
  *
- * POR QUÉ EXISTE (2026-09-28/29). En Node las escrituras a una TUBERÍA son asincrónicas:
+ * POR QUÉ EXISTE. En Node las escrituras a una TUBERÍA son asincrónicas:
  * `process.exit()` mata el proceso con parte de lo escrito todavía en el aire. Casi todos los
  * guiones de acá los ejecuta OTRO proceso y le parsea la salida, así que la tubería es el caso
  * normal, no el raro.
  *
- * Apareció en `audit-dependencies.js`: un informe de 9782 bytes llegaba cortado en 8192, el
- * JSON no parseaba, y el repo salía «no devolvió JSON legible (exit 0)» — NO MEDIDO, con un
- * motivo que no nombra la causa y que manda a buscar el problema al repo equivocado. Durmió
- * meses porque sólo muerde cuando la salida pasa de 8 KB.
+ * Ejemplo: `audit-dependencies.js` con un informe de 9782 bytes que llega cortado en 8192, el
+ * JSON no parsea, y el repo sale «no devolvió JSON legible (exit 0)» — NO MEDIDO, con un
+ * motivo que no nombra la causa y que manda a buscar el problema al repo equivocado. Pasa
+ * inadvertido porque sólo muerde cuando la salida pasa de 8 KB.
  *
  * El primer caso de abajo demuestra el mecanismo con la forma exacta y un tamaño mayor que el
  * buffer del caño (el snapshot del nocturno pesa ~41 KB, el listado del banco ~112 KB); el segundo

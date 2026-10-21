@@ -1,7 +1,7 @@
 'use strict';
 /**
  * team-lab.js — lo que comparten los dos ensayos de la instalación DEL EQUIPO en Windows: el alta de un dev nuevo
- * (`onboarding-probe.js`) y la máquina del viernes que se actualiza a lo de hoy (`update-probe.js`). Story 8.17, W0.
+ * (`onboarding-probe.js`) y la máquina del viernes que se actualiza a lo de hoy (`update-probe.js`).
  *
  * POR QUÉ EXISTE. El escenario `measure` instala la copia pública (un repo, una línea). El equipo se instala distinto:
  * dos repos internos y un texto (`onboarding/new-dev-harness-setup.md`) que el dev le pega al asistente, con una rama
@@ -41,11 +41,11 @@ const DOC = 'onboarding/new-dev-harness-setup.md';
 const STEP_ZERO = 'onboarding/step-0-windows.md';
 const KNOWN_LINES = 'scripts/tests/fixtures/startup-lines.json';
 const PLACE = require('../../setup/harness/place.js');
-// el lugar del arnés y el nombre viejo (story 8.19): se mira el que esté. Una máquina nueva sólo tiene el lugar; una de
-// antes de la 8.19 (la del viernes), sólo el viejo. Falta el arnés sólo si no está ninguno, y entonces se nombra el lugar.
+// el lugar del arnés y el nombre viejo: se mira el que esté. Una máquina nueva sólo tiene el lugar; una anterior
+// (la del viernes), sólo el viejo. Falta el arnés sólo si no está ninguno, y entonces se nombra el lugar.
 const LINK_NAMES = [PLACE.PLACE_NAME, PLACE.LEGACY_PLACE_NAME, 'agent-skills', 'agents', 'skills'];
 const placeNames = (home) => { const has = (n) => { try { fs.lstatSync(path.join(home, '.claude', n)); return true; } catch (_) { return false; } }; return has(PLACE.LEGACY_PLACE_NAME) && !has(PLACE.PLACE_NAME) ? new Set([PLACE.PLACE_NAME]) : new Set([PLACE.LEGACY_PLACE_NAME]); };
-const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*(?:INDEX|README)\\.md\\s*$`);   // el índice: INDEX.md desde 2026-10-14 (antes README.md)
+const IMPORT_RX = new RegExp(`^@.*(?:${PLACE.PLACE_NAME}|${PLACE.LEGACY_PLACE_NAME}).*(?:INDEX|README)\\.md\\s*$`);   // el índice: INDEX.md (README.md en una instalación anterior)
 // las dos formas del texto del alta (ver la cabecera)
 const SHAPE = Object.freeze({ two: 'two-clones', one: 'one-clone', none: 'no-clone' });
 const SHAPE_TEXT = Object.freeze({ 'two-clones': 'dos clones', 'one-clone': 'un solo clon', 'no-clone': 'sin clon (la versión instalada por la portada, story 8.23 E)' });
@@ -216,7 +216,7 @@ function parseTwoClones(docText) {
     if (hook && /^\s*(pwsh|powershell)\b/.test(hook.command || '')) startup = { command: hook.command, async: hook.async === true };
   }
   need(startup, 'la línea de arranque de Windows del PASO 4 (el bloque json cuyo comando empieza con pwsh)');
-  // el texto del alta nombraba el PowerShell como `<PS>` (el que hubiera); desde que PowerShell 7 es obligatorio dice
+  // el texto del alta nombra el PowerShell como `<PS>` (el que hubiera) o, con PowerShell 7 obligatorio, como
   // `pwsh`. Se leen las dos formas y se llevan a `<PS>`: cada máquina del ensayo corre el comando con SU PowerShell.
   const inline = s4.map((l) => /^\s*- Windows: `((?:<PS>|pwsh) [^`]+)`\s*$/.exec(l)).filter(Boolean).map((m) => m[1].replace(/^pwsh /, "<PS> "));
   const installer = need(inline.find((c) => /install-tycon-hooks\.ps1/.test(c)), 'el comando de Windows que corre el instalador a mano (PASO 4)');
@@ -241,7 +241,7 @@ function parseTwoClones(docText) {
 function parseOneClone(docText) {
   const s1 = fencedBlocks(need(docSection(docText, 1), 'el PASO 1'), 'powershell');
   need(s1.length === 1, 'un solo bloque powershell en el PASO 1 (clonar el repo del equipo)');
-  // Desde la tanda B de la 8.16 el PASO 2 puede traer dos bloques: `install --dry-run` (el plan, para que el dev diga
+  // El PASO 2 puede traer dos bloques: `install --dry-run` (el plan, para que el dev diga
   // que sí) y `install --yes` (la instalación). El ensayo no tiene a quién preguntarle: corre el que instala.
   const installBlocks = fencedBlocks(docSection(docText, 2), 'powershell').filter((b) => /harness\.js["']?\s+install\b/.test(b));
   const install = need(installBlocks.find((b) => /\binstall\b[^\n]*--yes\b/.test(b)) || installBlocks.find((b) => !/--dry-run\b/.test(b)) || installBlocks[0], 'el bloque powershell del PASO 2 que corre «harness.js install»');
@@ -269,7 +269,7 @@ function parseOneClone(docText) {
  */
 function parseTeamDoc(docText, stepZeroText) {
   if (!docText) return { problem: `no encuentro ${DOC} en el commit que se ensaya` };
-  // la forma SIN CLON (story 8.23, tanda E): el PASO 1 ya no clona —la versión publicada la instaló el guion de la
+  // la forma SIN CLON: el PASO 1 no clona —la versión publicada la instaló el guion de la
   // portada con el permiso de lectura de la persona— y no trae ningún `git clone`. Ese alta se ensaya siguiendo la página
   // pública de instalación (`guided-install.js`), y sólo contra una copia publicada: en el árbol interno la página y el
   // guion de entrada son papeles con marcadores sin resolver, en otra ruta. Acá se dice NO MEDIDO con ese motivo, no
@@ -590,7 +590,7 @@ function doctorFacts(harness, env, cwd) {
   try {
     const d = JSON.parse(r.stdout);
     out.mode = d.mode || null;
-    // el Node propio del arnés (story 8.39): con qué corre el arnés y cuántos hooks con él
+    // el Node propio del arnés: con qué corre el arnés y cuántos hooks con él
     out.harness_node = d.harness_node || null;
     for (const level of ['fail', 'warn', 'ok']) out[level] = Array.isArray(d[level]) ? d[level].map((x) => L.clip(typeof x === 'string' ? x : JSON.stringify(x), 400)) : [];
     out.readable = Array.isArray(d.fail);
@@ -912,7 +912,7 @@ function answers(before, after, differences, { sessions = [], target = null } = 
 }
 
 /**
- * La capa del equipo de la A2, de juguete (story 8.25, tanda A2b · T28): la declaración, el perfil y la llave de la A1 más un
+ * La capa del equipo, de juguete (T28): la declaración, el perfil y la llave de la capa base más un
  * paquete con un revisor `base` y uno `condicional`, sus dos agentes, una skill de una carpeta y una anidada a tres (con una
  * referencia). Nombres inventados. `second: false` es el commit siguiente: sin el revisor condicional (ni en el paquete) y sin
  * la skill de una carpeta. Escribe en `dir` (lo que había de la capa lo reemplaza) y devuelve las rutas, ordenadas.
@@ -948,7 +948,7 @@ function writeTeamLayerA2(dir, { second = true } = {}) {
 }
 
 /**
- * La capa de juguete de la A2c (story 8.25 · T37): la skill de la lista FIJA de la versión (`skills/bizuit-sdd`, el nombre de la
+ * La capa de juguete (T37): la skill de la lista FIJA de la versión (`skills/bizuit-sdd`, el nombre de la
  * lista; TODO su contenido inventado) con sus dos archivos de datos, más el perfil, la llave y la declaración. Devuelve las rutas.
  */
 const LAYER_A2C = Object.freeze({ skill: 'skills/bizuit-sdd', version: '2.0.0-ensayo', legacy: '.bizuit-config.yaml', home: '.bizuit-sdd', file: 'config.yaml' });

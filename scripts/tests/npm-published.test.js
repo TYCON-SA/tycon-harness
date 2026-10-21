@@ -1,6 +1,6 @@
 'use strict';
 /**
- * npm-published.test.js — lo que el paquete de npm tiene PUBLICADO (story 8.40, el cierre: AC 12, 13 y 41 · T48 y T49).
+ * npm-published.test.js — lo que el paquete de npm tiene PUBLICADO (T48 y T49).
  *
  * Las otras pruebas del paquete miran el código; ésta mira el registro de npm, con red:
  *   · T48 — la versión de scripts/setup/npm/package.json está publicada con su constancia de procedencia

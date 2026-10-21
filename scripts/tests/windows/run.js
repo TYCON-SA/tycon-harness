@@ -2,10 +2,10 @@
 'use strict';
 /**
  * run.js — la medición del arnés en Windows: arma el laboratorio, corre cada paso bajo su tope, escribe el reporte y
- * da el veredicto (story 8.17, tanda W0 · AC 2, 4 y 11). Lo llama `pipelines/azure-pipelines-windows.yml`.
+ * da el veredicto. Lo llama `pipelines/azure-pipelines-windows.yml`.
  *
- * POR QUÉ EXISTE. Antes de arreglar el instalador de Windows hay que saber qué hace hoy en un Windows de verdad: el
- * análisis previo dejó quince «no se sabe». Este programa los cambia por hechos, sin arreglar nada.
+ * POR QUÉ EXISTE. Antes de arreglar el instalador de Windows hay que saber qué hace en un Windows de verdad: el
+ * análisis por lectura deja «no se sabe». Este programa lo cambia por hechos, sin arreglar nada.
  *
  * SUBCOMANDOS
  *   init     --lab <carpeta> --out <carpeta> --bundle <archivo> [--run-id N] [--run-number X] [--harness-ref R]
@@ -28,7 +28,7 @@
  * CADA PASO TERMINA EN UNO DE TRES ESTADOS: `measured` (con sus hallazgos), `not-measured` (con su motivo) o `error`
  * («no pude medir: <motivo>»). Un paso que vence su tope es un error con su nombre, y lo que alcanzó a medir queda.
  *
- * EL VEREDICTO sale de `known-gaps.json`, la lista declarada de lo que hoy no anda en Windows, cada hueco con la tanda
+ * EL VEREDICTO sale de `known-gaps.json`, la lista declarada de lo que no anda en Windows, cada hueco con la tanda
  * que lo cierra. La corrida es ROJA si hay un error, si falta un paso, si aparece un hallazgo que no está en la lista,
  * si un hueco de la lista ya no se reproduce (hay que borrarlo) o si un hueco no dice qué tanda lo cierra.
  *   🔴 Mientras la lista no tenga línea de base (`baseline: null`: todavía no se escribió desde una corrida), los
@@ -59,7 +59,7 @@ const STEPS = Object.freeze([
   { name: 'install', script: 'install-probe.js', cap: 2400, lab: true, pass: ['disposable', 'allow-temp', 'fence'] },
   { name: 'count-hooks', script: 'count-hooks.js', cap: 300, lab: true },
   { name: 'fire-registered', script: 'fire-registered.js', cap: 2400, lab: true },
-  // W6 (AC 49): el esqueleto mecánico del pipeline de stories sobre el repo de ejemplo, con la instalación de `install`
+  // el esqueleto mecánico del pipeline de stories sobre el repo de ejemplo, con la instalación de `install`
   { name: 'pipeline-skeleton', script: 'pipeline-skeleton.js', cap: 1800, lab: true },
   { name: 'session-probe', script: 'session-probe.js', cap: 2400, lab: true, pass: ['real-session', 'allow-temp'] },
 ]);
@@ -343,7 +343,7 @@ function renderMarkdown(report) {
 
 /** El `known-gaps.json` que sale de una corrida: un hueco por hallazgo, con la tanda sugerida (a revisar por una persona). */
 /**
- * La lista que sale de una corrida. Con `keep` (la lista declarada de hoy), conserva tal cual los huecos de los pasos que
+ * La lista que sale de una corrida. Con `keep` (la lista declarada), conserva tal cual los huecos de los pasos que
  * esa corrida no mide —los `bench:red:…` que también lee el banco, con su `match`— y reemplaza los de los pasos medidos.
  */
 function proposeGaps(report, keep = null) {
@@ -353,7 +353,7 @@ function proposeGaps(report, keep = null) {
   for (const g of (keep && Array.isArray(keep.gaps) ? keep.gaps : [])) if (g && !measured.has(g.step)) gaps.push(g);
   for (const s of report.steps || []) for (const f of s.findings || []) gaps.push({ id: f.id, step: s.name, closes: BATCHES.includes(f.closes_hint) ? f.closes_hint : '?', note: f.detail });
   return {
-    // con la lista de hoy, su explicación se conserva (trae además cómo lee el banco sus huecos)
+    // con la lista declarada, su explicación se conserva (trae además cómo lee el banco sus huecos)
     __doc: keep && typeof keep.__doc === 'string' ? keep.__doc : 'Lo que HOY no anda en Windows, medido: un hueco por hallazgo de la corrida de base, con la tanda de la story 8.17 que lo cierra (closes). Lo lee scripts/tests/windows/run.js: la corrida es roja si aparece un hallazgo que no está acá, si un hueco de acá ya no se reproduce (se borra) o si un hueco no dice su tanda. Se escribe desde una corrida (run.js propose-gaps), nunca desde el análisis. W7 la deja vacía.',
     baseline: { run: report.run ? report.run.id : null, date: report.run ? (report.run.finished || report.run.started || null) : null, harness_ref: report.run ? report.run.harness_ref || null : null },
     gaps,

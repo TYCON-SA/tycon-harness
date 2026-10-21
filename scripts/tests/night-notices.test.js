@@ -2,13 +2,13 @@
 /**
  * night-notices.test.js — los avisos de arranque leen la noche del clon de mantenimiento (T85).
  *
- * EL CASO (2026-10-12). La máquina de quien mantiene el arnés usa la versión bajada y tiene dos clones: el del repo
- * público (el código) y el del repo de mantenimiento (donde los nocturnos dejan sus datos). Los avisos de arranque
- * buscaban esos datos en el clon del público, que no los trae, y callaban: de cinco nocturnos sanos el arranque mostraba
- * una línea, y una pieza muerta se veía igual que una sana. Lo que la máquina escribía (el registro de cada merge) caía
- * en una carpeta ignorada del clon del público y no viajaba a ningún repo.
+ * POR QUÉ. La máquina de quien mantiene el arnés usa la versión bajada y tiene dos clones: el del repo
+ * público (el código) y el del repo de mantenimiento (donde los nocturnos dejan sus datos). Si los avisos de arranque
+ * buscaran esos datos en el clon del público, que no los trae, callarían: de cinco nocturnos sanos el arranque mostraría
+ * una línea, y una pieza muerta se vería igual que una sana. Lo que la máquina escribe (el registro de cada merge) caería
+ * en una carpeta ignorada del clon del público y no viajaría a ningún repo.
  *
- * QUÉ FIJA. En una máquina con versión bajada que declara su clon de mantenimiento (`paths.maintainers`):
+ * QUÉ VERIFICA. En una máquina con versión bajada que declara su clon de mantenimiento (`paths.maintainers`):
  *   · una línea por nocturno —dependencias, vigilante, banco, suites, tablero—, leída de lo publicado en ese clon;
  *   · una pieza muerta, una sin foto y una con la foto ilegible lo dicen, cada una con su texto;
  *   · foto vencida y copia del clon sin traer desde antes: «no sé si corrió», no «no está corriendo»;
@@ -139,7 +139,7 @@ function machine({ published = night(Date.now() - HOUR), fetched = 60 * 1000, fe
       if (text === null) fs.rmSync(f, { recursive: true, force: true }); else write(f, text);
     }
   }
-  // el repo de operaciones, aparte (story 8.30): `ops` = lo que trae su origin/main; sin `ops`, no hay clon de operaciones
+  // el repo de operaciones, aparte: `ops` = lo que trae su origin/main; sin `ops`, no hay clon de operaciones
   if (ops) lab.ops = dataClone(lab, 'operaciones', ops, opsFetched);
   // `both`: el mismo clon hace de mantenimiento y de operaciones (los datos viven en las mismas rutas en los dos repos)
   const paths = config === 'both' ? { maintained: lab.pub, maintainers: lab.priv, operations: lab.priv }
@@ -369,7 +369,7 @@ test('T85 MachineThatDoesNotMaintain_OrNightliesOff_SeesNothing', () => {
   assert.strictEqual(startup(machine({}), { TYCON_NIGHTLY: '0' }).all, '', 'con los nocturnos apagados vio algo');
 });
 
-// ── 9 · desde un clon: exactamente lo de antes ────────────────────────────────────────────────────────────────────────
+// ── 9 · desde un clon: lo mismo de siempre ────────────────────────────────────────────────────────────────────────────
 /** Un árbol que corre desde un clon (no es una versión bajada): los avisos y sus bibliotecas, con sus propios datos. */
 function ownClone(lab, files) {
   const tree = path.join(lab.base, 'clon-propio');
@@ -385,14 +385,14 @@ function ownClone(lab, files) {
 test('T85 RunningFromAClone_SameOutputAsBefore_ByteForByte', () => {
   const at = Date.now() - HOUR;
   const d = day(at);
-  // sana: lo que decía el código de antes (medido sobre el commit base de la pieza) — dependencias y el tablero hablan,
+  // máquina sana: dependencias y el tablero hablan,
   // el vigilante que entregó calla, el banco y las suites frescos y limpios callan
   const lab = machine({ release: false, config: 'none' });
   const s = startup(lab, { TYCON_EXAM_CONFIG: undefined, TYCON_BENCH_DIR: undefined }, ownClone(lab, night(at)));
   assert.strictEqual(s.deps, `✅ dependencias (${d}): miró y no hay nada esperando decisión. · resumen entregado (Telegram)\n`);
   assert.strictEqual(s.bench, '');
   assert.strictEqual(s.board, `✅ tablero del arnés (${d} ${iso(at).slice(11, 16)} UTC): completo · artifacts/tablero-del-arnes.html\n`);
-  // sin ningún dato (alguien de afuera que clonó el público): silencio, salvo el tablero, que ya decía que no está
+  // sin ningún dato (alguien de afuera que clonó el público): silencio, salvo el tablero, que dice que no está
   const empty = machine({ release: false, config: 'none' });
   const e = startup(empty, { TYCON_EXAM_CONFIG: undefined, TYCON_BENCH_DIR: undefined }, ownClone(empty, { 'README.md': 'x\n' }));
   assert.strictEqual(e.deps + e.bench, '');
@@ -515,7 +515,7 @@ test('T85 TheGuide_SaysWhoBringsTheMaintainersClone_AndWhen', () => {
   assert.match(section, /paths\.maintainers/);
   assert.match(section, /cada noche/, 'la guía dice quién trae el clon y no dice cuándo');
   assert.match(section, /git fetch|git pull/, 'la guía no dice con qué se trae');
-  // y los dos textos del arnés que aconsejaban declarar `paths.maintained` «para que los avisos hablen» ya no lo dicen
+  // y los dos textos del arnés no aconsejan declarar `paths.maintained` «para que los avisos hablen»
   const doctor = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness.js'), 'utf8');
   assert.doesNotMatch(doctor, /los avisos de los nocturnos callan/, 'doctor sigue aconsejando paths.maintained para que los avisos hablen');
   const moved = fs.readFileSync(path.join(ROOT, 'scripts', 'setup', 'harness', 'move-home.js'), 'utf8');
@@ -639,8 +639,8 @@ test('T85 NightData_EachFunction_AnsweredDirectly', () => {
   const failedWrite = askBroken(writes);
   assert.deepStrictEqual([failedWrite.dir, failedWrite.travels], [null, false], 'sin poder saber, no se devuelve una carpeta donde escribir');
   assert.match(failedWrite.why, /no pude saber dónde escribe/);
-  // …y el registro de un merge, sin poder saber dónde va, NO se escribe en ningún lado y lo dice (no vuelve callado a
-  // la ruta de antes, que en una versión bajada es el clon del público)
+  // …y el registro de un merge, sin poder saber dónde va, NO se escribe en ningún lado y lo dice (no vuelve callado al
+  // clon del público, que en una versión bajada no es donde se escribe)
   fs.mkdirSync(path.join(brokenTree, 'scripts', 'metrics'), { recursive: true });
   for (const f of fs.readdirSync(path.join(ROOT, 'scripts', 'lib'))) { const from = path.join(ROOT, 'scripts', 'lib', f); if (fs.statSync(from).isFile()) fs.copyFileSync(from, path.join(brokenTree, 'scripts', 'lib', f)); }
   fs.copyFileSync(path.join(ROOT, 'scripts', 'metrics', 'retro-heartbeat.js'), path.join(brokenTree, 'scripts', 'metrics', 'retro-heartbeat.js'));
@@ -662,7 +662,7 @@ test('T85 NightData_EachFunction_AnsweredDirectly', () => {
   const never = machine({ fetched: null });
   assert.match(ask(never, `N.copyAfter(${J(never.priv)}, 0)`), /no consta ninguna traída/);
   // 🔴 la traída de la rama principal cuenta aunque git anote la dirección del remoto de otro modo que la configuración
-  // (reescrita por `insteadOf`, con `file://`, con `.git`): comparada letra por letra no se contaba nunca. Sólo se
+  // (reescrita por `insteadOf`, con `file://`, con `.git`): comparada letra por letra, no se contaría nunca. Sólo se
   // descarta la que es, con certeza, de OTRO remoto del clon.
   const rewritten = machine({});
   const fh = path.join(rewritten.priv, '.git', 'FETCH_HEAD');
@@ -805,12 +805,12 @@ test('T85 PhotoDatedInTheFuture_IsNotGreen', () => {
   for (const k of ['banco', 'suites']) { assert.match(n[k], /^🟡 .*posterior a hoy/, `${k} con la foto en el futuro: ${n[k]}`); assert.doesNotMatch(n[k], /✅/); }
 });
 
-// ── 23 · los datos de operaciones se leen del clon de operaciones (2026-10-14) ────────────────────────────────────────
-// EL CASO. Desde las stories 8.30 y 8.31, dependencias, vigilante, el resumen diario, las métricas y el tablero guardan
-// en el repo de OPERACIONES; el banco, las suites y el examen siguen guardando en el de mantenimiento. Los avisos leían
-// todo del de mantenimiento: el 14 decían la noche del 13 con la del 14 ya guardada en operaciones, y desde el día
-// siguiente habrían dicho «foto vieja» con los nocturnos sanos. Rojo previo: con el clon de mantenimiento viejo y el de
-// operaciones al día, dependencias, vigilante y tablero acusaban al nocturno (NO ESTÁ CORRIENDO).
+// ── 23 · los datos de operaciones se leen del clon de operaciones ─────────────────────────────────────────────────────
+// Dependencias, vigilante, el resumen diario, las métricas y el tablero guardan
+// en el repo de OPERACIONES; el banco, las suites y el examen guardan en el de mantenimiento. Si los avisos leyeran
+// todo del de mantenimiento, mostrarían la noche anterior con la de hoy ya guardada en operaciones, y al día
+// siguiente dirían «foto vieja» con los nocturnos sanos. Con el clon de mantenimiento viejo y el de
+// operaciones al día, dependencias, vigilante y tablero no acusan al nocturno (NO ESTÁ CORRIENDO).
 const OPS_ONLY = (files) => Object.fromEntries(Object.entries(files).filter(([k]) => !k.startsWith('scripts/controls-bench/')));
 const MAINT_ONLY = (files) => Object.fromEntries(Object.entries(files).filter(([k]) => k === 'README.md' || k.startsWith('scripts/controls-bench/')));
 const split = (lab) => ({ maintained: lab.pub, maintainers: lab.priv, operations: lab.ops });
@@ -820,8 +820,8 @@ const BY_CONFIG = { TYCON_BENCH_REPORT: undefined, TYCON_SUITES_REPORT: undefine
 test('T86 OperationsClone_DependenciesWatcherAndBoardReadFromIt_BenchAndSuitesFromMaintainers', () => {
   const at = Date.now() - HOUR;
   const old = Date.now() - 6 * DAY;
-  // el clon de mantenimiento trae el banco y las suites de hoy, y la noche de operaciones VIEJA (lo que quedó antes de la
-  // mudanza); el de operaciones trae la de hoy
+  // el clon de mantenimiento trae el banco y las suites de hoy, y la noche de operaciones VIEJA;
+  // el de operaciones trae la de hoy
   const maint = { ...OPS_ONLY(night(old)), ...MAINT_ONLY(night(at)) };
   const s = startup(machine({ published: maint, ops: OPS_ONLY(night(at)), config: split }), BY_CONFIG);
   const n = perNightly(s);

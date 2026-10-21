@@ -1,7 +1,6 @@
 'use strict';
 /**
- * sdlc-stage-metrics.test.js — red del agregador de métricas de etapa del SDLC (Tanda 1 del
- * plan vs playbook, 2026-08-30). Fixture determinista: repo git efímero con commits
+ * sdlc-stage-metrics.test.js — red del agregador de métricas de etapa del SDLC. Fixture determinista: repo git efímero con commits
  * retro-fechados + dashboard 2.0 de juguete. Fuerza el descubridor de FALLBACK
  * (TYCON_SKILLS_DIR inexistente) para que el test no dependa de agent-skills — el descubridor
  * canónico tiene su propia suite (story-discovery.test.js).
@@ -62,8 +61,8 @@ function buildFixture() {
   gitCommit(repo, 'T-1 cierra 10 días después', '2026-08-11T10:00:00-03:00');
 
   // Evidencia DoD: solo T-1 la tiene por archivo (T-2 por exención, T-3 nada).
-  // 🔴 Es el INFORME de cierre, no la matriz (2026-09-06): la matriz dejó de contar como evidencia
-  // en las cuatro capas — este fixture la usaba y por eso el criterio viejo parecía correcto.
+  // 🔴 Es el INFORME de cierre, no la matriz: la matriz no cuenta como evidencia
+  // en las cuatro capas.
   fs.mkdirSync(path.join(repo, '.advisors', 'dod-runtime'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.advisors', 'dod-runtime', 'T-1-dod-runtime-checker.md'), 'AC #1 ✅\n');
   gitCommit(repo, 'evidencia', '2026-08-11T11:00:00-03:00');
@@ -115,16 +114,15 @@ test('las ratios declaran numerador y denominador', () => {
   const r = run(['--repo', fx.repo, '--dashboard', fx.dash]);
   const repo = r.repos[0];
   assert.deepEqual(repo.rework_ratio, { num: 1, den: 3 });       // solo T-1 tiene follow-up
-  // T-1 archivo → cubre. T-2 exenta SIN archivo → sale del cociente y se cuenta aparte (2026-09-18:
-  // antes contaba como cubierta, y la exención es «no hay prueba», no «hay prueba»). T-3 nada → no cubre.
+  // T-1 archivo → cubre. T-2 exenta SIN archivo → sale del cociente y se cuenta aparte
+  // (la exención es «no hay prueba», no «hay prueba»). T-3 nada → no cubre.
   assert.deepEqual(repo.dod_evidence_ratio, { num: 1, den: 2, exentas: 1 });
 });
 
-// 🔴 Caso que lo motivó (2026-09-18): el cierre retroactivo de 49 stories de un producto del equipo declaró
-// `dod_runtime_exempt: true` para pasar el portón, y el tablero las contaba como «cierres que dejaron
-// prueba de que la cosa anda corriendo» — la ficha subía de 41 % a ~47 % con stories que justamente
-// NO la dejaron. Una exención es una declaración de que no hay prueba; no puede sumar como prueba.
-// rojo previo: con el criterio viejo esto daba { num: 2, den: 3 } (la exenta sumaba arriba).
+// 🔴 Una story que declara `dod_runtime_exempt: true` para pasar el portón no puede contarse como «cierre que dejó
+// prueba de que la cosa anda corriendo»: inflaría la ficha con stories que justamente NO la dejaron.
+// Una exención es una declaración de que no hay prueba; no puede sumar como prueba.
+// Falla si: esto da { num: 2, den: 3 } (la exenta suma arriba).
 test('una exenta sin evidencia sale del cociente y se cuenta aparte; con evidencia real, cuenta', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-exenta-'));
   const repo = path.join(root, 'repo');
@@ -225,13 +223,11 @@ test('--snapshot deja el punto de serie en el dashboard', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-// ── El medidor cuenta evidencia con el MISMO criterio que el portón (2026-09-06) ─────────────
-// Antes contaba cualquier `<id>-*` — la matriz por AC, el self-audit, hasta un `.jsonl`. Medido
-// sobre los repos reales: 359/538 stories «cubiertas» con ese criterio, 246/538 con el del portón.
-// un repo del equipo: 128/138 → 35/138, porque 116 de sus 272 archivos son ledgers y 87 son matrices.
-// Un número que no significa lo que parece es peor que no tenerlo: el tablero decía «cubierta» de
-// stories que el portón rechaza. Ahora importa `esEvidenciaDeCierre` del portón (mismo repo).
-// 🔴 rojo previo: con el criterio viejo, la matriz sola cubría la story.
+// ── El medidor cuenta evidencia con el MISMO criterio que el portón ─────────────
+// Si contara cualquier `<id>-*` — la matriz por AC, el self-audit, hasta un `.jsonl` —, el tablero diría «cubierta»
+// de stories que el portón rechaza. Un número que no significa lo que parece es peor que no tenerlo: por eso
+// importa `esEvidenciaDeCierre` del portón (mismo repo).
+// 🔴 Falla si: la matriz sola cubre la story.
 test('la matriz por AC sola NO cubre una story en el tablero (mismo criterio que el portón)', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sdlc-matriz-'));
   const repo = path.join(root, 'repo');
@@ -248,8 +244,7 @@ test('la matriz por AC sola NO cubre una story en el tablero (mismo criterio que
   fs.writeFileSync(path.join(dod, 'M-1-self-audit-iter2.md'), 'self\n');
   // M-2: el informe de cierre real.
   fs.writeFileSync(path.join(dod, 'M-2-dod-runtime-checker.md'), 'AC #1 ✅\n');
-  // M-3: SÓLO el ledger de smokes — el registro crudo de lo que corrió. CUENTA (decisión del dev,
-  // 2026-09-06): es más difícil de falsear que un informe redactado.
+  // M-3: SÓLO el ledger de smokes — el registro crudo de lo que corrió. CUENTA: es más difícil de falsear que un informe redactado.
   fs.writeFileSync(path.join(dod, 'M-3-smoke-ledger.jsonl'), '{"story":"M-3","acs":[1],"exit":0}\n');
   gitCommit(repo, 'evidencia', '2026-08-02T10:00:00-03:00');
   const dash = path.join(root, 'dash'); fs.mkdirSync(dash);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prueba del release-notes.sh CANÓNICO (el unificado, 2026-08-31).
+# Prueba del release-notes.sh CANÓNICO (el unificado).
 #
 # Lo que se prueba: que UN archivo con una bandera hace lo mismo que hacían las dos variantes
 # copiadas en 8 repos — y que la bandera no rompe las invocaciones que ya existen (sin --type
@@ -14,17 +14,16 @@ no(){ echo "❌ notas: $1"; fallos=$((fallos+1)); }
 
 cd "$TMP" && git init -q . && git config user.email t@t && git config user.name t
 mkdir -p src
-# 🔴 Cada commit escribe un número que sube, no `$RANDOM`: si `$RANDOM` repetía el valor anterior (~1 en 4000 corridas),
-#    el commit no se creaba («nothing to commit», que acá no frena) y se perdía un cambio que la prueba busca. Fecha fija y
-#    sin el mantenimiento automático de git: nada cambia entre corridas ni queda corriendo de fondo (story 8.38).
+# 🔴 Cada commit escribe un número que sube, no `$RANDOM`: si `$RANDOM` repitiera el valor anterior (~1 en 4000 corridas),
+#    el commit no se crearía («nothing to commit», que acá no frena) y se perdería un cambio que la prueba busca. Fecha fija y
+#    sin el mantenimiento automático de git: nada cambia entre corridas ni queda corriendo de fondo.
 N_COMMIT=0
 export GIT_AUTHOR_DATE=2026-10-15T00:00:00Z GIT_COMMITTER_DATE=2026-10-15T00:00:00Z
 export GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=maintenance.auto GIT_CONFIG_VALUE_0=false GIT_CONFIG_KEY_1=gc.auto GIT_CONFIG_VALUE_1=0
 c(){ N_COMMIT=$((N_COMMIT + 1)); echo "$N_COMMIT" > src/a.txt; git add -A; git commit -q -m "$1" || no "el commit «$1» del laboratorio no se creó"; }
-# 🔴 El marcador del build anterior va SOLO al principio. Cazado por este mismo test al
-# escribirlo: con un "chore: update versions" en el medio, el guion arranca la lista DESDE AHÍ
-# —que es lo correcto, porque ese commit ES un build anterior— y los cambios previos quedan fuera
-# a propósito, porque ya se publicaron. El test estaba mal, no el guion.
+# 🔴 El marcador del build anterior va SOLO al principio: con un "chore: update versions" en el medio, el guion
+# arranca la lista DESDE AHÍ —que es lo correcto, porque ese commit ES un build anterior— y los cambios previos
+# quedan fuera a propósito, porque ya se publicaron.
 c "chore: bump version to 1.0.1 [skip ci]"
 c "feat(pedidos): listado con filtro por fecha"
 c "fix(ci): el porton no podia actualizar la rama destino"
@@ -65,7 +64,7 @@ git add -A && git commit -q -m "feat: primer commit sin build anterior"
 S5=$(bash "$SH" --local prueba src/ 2>&1)
 echo "$S5" | grep "sin punto de partida confiable" >/dev/null && ok "sin build anterior avisa que la lista puede estar incompleta" || no "no avisó que no tenía punto de partida"
 
-# ---------------------------------------------------------------- reintento del login (2026-09-01)
+# ---------------------------------------------------------------- reintento del login
 # Un curl de mentira: el login falla con 000 dos veces y a la tercera entra; /versions devuelve el
 # commit de la versión publicada. Así se prueba SIN red que (a) reintenta, (b) llega a la nota
 # "desde la versión que está publicada" en vez de caer al build anterior, y (c) un 401 NO reintenta.
@@ -112,12 +111,11 @@ S8=$(STUB_401=1 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://s
 [ "$(grep -c '/api/auth/login' "$STUB_LOG")" -eq 1 ] && ok "un 401 (clave mala) NO se reintenta" || no "reintentó un 401: $(grep -c login "$STUB_LOG") intentos"
 
 # ---------------------------------------------------------------- 11. ingreso REUTILIZADO (BZ_TOKEN)
-# 🔴 Caso del 2026-09-01, medido en un producto del equipo (build 9280). Este guion se invoca UNA VEZ POR FORMULARIO,
-# y cada invocación abría su propio ingreso al host. Con 4 formularios no se nota; con 34 el host
-# corta por límite de velocidad (`login HTTP 429`), los reintentos se agotan y las 34 notas salen
+# 🔴 Este guion se invoca UNA VEZ POR FORMULARIO, y si cada invocación abriera su propio ingreso al host, con 4
+# formularios no se notaría; con 34 el host corta por límite de velocidad (`login HTTP 429`), los reintentos se agotan y las 34 notas salen
 # calculadas contra el build anterior en vez de contra la versión PUBLICADA — o sea, el guion
 # corre y ninguna nota dice lo que tiene que decir.
-# Quien invoca en lote ahora entra UNA vez y pasa el ingreso por `BZ_TOKEN`.
+# Quien invoca en lote entra UNA vez y pasa el ingreso por `BZ_TOKEN`.
 : > "$STUB_LOG"
 S9=$(BZ_TOKEN=tok123 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ 2>/dev/null)
 [ "$(grep -c '/api/auth/login' "$STUB_LOG")" -eq 0 ] \
@@ -130,7 +128,7 @@ echo "$S9" | grep "la versión que está publicada" >/dev/null \
   && ok "…y la nota sale contra la versión PUBLICADA" \
   || no "🔴 con BZ_TOKEN la nota cayó al build anterior: $(head -1 <<<"$S9")"
 
-# Sin BZ_TOKEN el comportamiento tiene que ser EXACTAMENTE el de antes: si esto se rompe, todos
+# Sin BZ_TOKEN el comportamiento tiene que ser EXACTAMENTE el de siempre: si esto se rompe, todos
 # los invocadores sueltos (los pipelines de plugins) dejan de calcular contra el servidor.
 : > "$STUB_LOG"
 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >/dev/null 2>&1
@@ -139,9 +137,8 @@ PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clav
   || no "🔴 sin BZ_TOKEN ya no entra — se rompió el camino de siempre"
 
 # ---------------------------------------------------------------- 12. el mensaje DISTINGUE la causa
-# 🔴 Caso del 2026-09-01 (el mismo producto): los 33 formularios decían "el servidor no dijo qué versión tiene
-# publicada" — una frase que tapa TRES causas distintas y manda a buscar el problema en cualquiera
-# de las tres. Se perdió una tarde adivinando cuál era. Ahora se dice cuál.
+# 🔴 Una frase como "el servidor no dijo qué versión tiene publicada" taparía TRES causas distintas y mandaría a
+# buscar el problema en cualquiera de las tres. El mensaje dice cuál es.
 : > "$STUB_LOG"
 STUB_VERSIONS_CODE=404 PATH="$STUB:$PATH" bash "$SH" --type form --from-server http://stub usuario clave prueba src/ >/dev/null 2>"$TMP/e12.txt"
 grep -q "HTTP 404" "$TMP/e12.txt" && grep -q "no se pudo preguntar" "$TMP/e12.txt" \
@@ -158,10 +155,9 @@ grep -qE "Campos que sí devuelve: .*version" "$TMP/e13.txt" \
   || no "no dijo qué campos devolvió: $(head -2 "$TMP/e13.txt")"
 
 # ---------------------------------------------------------------- 13. la CUARTA causa
-# 🔴 La que de verdad pasó en ese producto (2026-09-01): el host contesta perfecto, el commit llega, y NO
-# ESTÁ EN EL CLON porque el job del despliegue no clonaba con historia. El mensaje decía "sin
-# punto de partida confiable", que se lee como "el host no contestó" — y manda a buscar el
-# problema al host. Sin este caso, el diagnóstico vuelve a tapar la causa real.
+# 🔴 El host contesta perfecto, el commit llega, y NO ESTÁ EN EL CLON porque el job del despliegue no clona con
+# historia. Un mensaje "sin punto de partida confiable" se leería como "el host no contestó" y mandaría a buscar el
+# problema al host. Sin este caso, el diagnóstico tapa la causa real.
 cd "$TMP" && (git checkout -q master 2>/dev/null || git checkout -q main)
 : > "$STUB_LOG"
 cat > "$STUB/curl" <<'STUB2'
@@ -185,17 +181,15 @@ grep -q "fetchDepth" "$TMP/e14.txt" \
   && ok "…y dice CÓMO se arregla (clonar con historia), no sólo que pasó" \
   || no "no dijo cómo arreglarlo"
 
-# ---------------------------------------------------------------- 14. MERGES REALES (story 2.17)
-# 🔴 Hasta el 2026-09-15 este archivo sólo probaba commits lineales: nunca un merge de verdad. Y el
-# commit que llega a main por el flujo de Pull Request ES un merge (`--no-ff`, squash prohibido). Tres
+# ---------------------------------------------------------------- 14. MERGES REALES
+# 🔴 Los commits lineales no alcanzan: el commit que llega a main por el flujo de Pull Request ES un merge (`--no-ff`, squash prohibido). Tres
 # formatos: «Merge pull request N from dev into main» (Azure completando solo, sin mensaje),
-# «Merged PR N: título» (la pantalla de Azure y, desde la 2.17, el skill de merge) y «Merge PR #N: …»
-# (visto en TIMBO y URUTAU). El filtro se había escrito sólo para el segundo, así que el camino de
-# RESPALDO publicaba los otros dos tal cual al administrador. Sólo se ve cuando main tiene un cambio
-# propio que dev no trae — si no, git simplifica la historia y el merge ni aparece —: por eso cada
-# repo de este bloque lleva uno.
-# Suma core.hooksPath a lo de arriba (el mantenimiento automático apagado): reasignar GIT_CONFIG_COUNT a 1 lo volvía a
-# prender en los commits de este bloque (story 8.38).
+# «Merged PR N: título» (la pantalla de Azure y el skill de merge) y «Merge PR #N: …».
+# Un filtro escrito sólo para el segundo haría que el camino de RESPALDO publicara los otros dos tal cual al
+# administrador. Sólo se ve cuando main tiene un cambio propio que dev no trae —
+# si no, git simplifica la historia y el merge ni aparece —: por eso cada repo de este bloque lleva uno.
+# Suma core.hooksPath a lo de arriba (el mantenimiento automático apagado): reasignar GIT_CONFIG_COUNT a 1 lo volvería a
+# prender en los commits de este bloque.
 export GIT_CONFIG_COUNT=3 GIT_CONFIG_KEY_2=core.hooksPath GIT_CONFIG_VALUE_2=/dev/null
 armar_merge(){  # $1 = asunto del merge · $2 = "con-build" deja un build anterior antes de ramificar
   local d; d="$(mktemp -d "$TMP/merge.XXXX")"
@@ -209,9 +203,8 @@ armar_merge(){  # $1 = asunto del merge · $2 = "con-build" deja un build anteri
   echo x > src/b.txt; git add -A; git commit -q -m "fix(hotfix): directo a main"
   git merge -q --no-ff dev -m "$1"
 }
-# Los asuntos REALES con que un merge llega a main, censados en seis productos (2026-09-15). La
-# primera versión del filtro sólo conocía los tres primeros: el pase adversarial reprodujo que
-# «Merge PR #<id> into main» —que existe en ese producto— se publicaba crudo al administrador.
+# Los asuntos con que un merge llega a main. Un filtro que sólo conociera los tres primeros publicaría crudo al
+# administrador «Merge PR #<id> into main».
 for asunto in \
   "Merge pull request 3137 from dev into main" \
   "Merged PR 3137: fix(stock): stock vigente" \

@@ -1,5 +1,5 @@
 'use strict';
-// operations-pipelines.test.js — los modelos de pipelines de operaciones para cualquier organización (story 8.30,
+// operations-pipelines.test.js — los modelos de pipelines de operaciones para cualquier organización
 // T1 a T5). Lee los YAML como texto (no hay biblioteca de YAML en el arnés, a propósito) y corre de verdad el guion de
 // la plantilla ops-data.yml sobre dos repos de juguete.
 const test = require('node:test');
@@ -162,7 +162,7 @@ function runOpsData(w) {
 test('T4 OpsData_CopiesAndRetargets: trae los datos y la configuración de la lista, los fija en un commit local, apunta origin a operaciones y deja la huella', () => {
   const w = agent({
     'operations.json': '{"version":1,"owners":{"default":"lider@acme.example"}}\n',
-    'team-repos.json': '{"version":1,"operations":{"platform":"azure"}}\n', // story 8.31 (T15): la plataforma viaja
+    'team-repos.json': '{"version":1,"operations":{"platform":"azure"}}\n', // T15: la plataforma viaja
     'scripts/nightly/dependencies/repos.json': '{"repos":[]}\n',
     'scripts/nightly/dashboard/sources.json': '{"de":"operaciones"}\n',
     '.dashboard/sdlc-stage-2026-01-01.json': '{}\n',
@@ -192,7 +192,7 @@ test('T4 OpsData_CopiesAndRetargets: trae los datos y la configuración de la li
   assert.strictEqual(guard.status, 0, guard.stderr);
 });
 
-// story 2.29 (AC 24, decisión 12): el sitio de la organización sabe qué configuración aplicó la noche por la marca
+// el sitio de la organización sabe qué configuración aplicó la noche por la marca
 // `.dashboard/applied-config.json` — una entrada por archivo de configuración copiado, con el identificador del objeto
 // en el repo de operaciones. Viaja en el commit local; a operaciones la sube el paso de guardar, sólo si la noche salió bien.
 const APPLIED = '.dashboard/applied-config.json';
@@ -231,7 +231,7 @@ test('T5 OpsData_FreshOrg_NotRed: un repo de operaciones recién creado (sin dat
   const r = runOpsData(w);
   assert.strictEqual(r.code, 0, r.out);
   assert.match(r.out, /HARNESS_TREE\]/);
-  // story 2.29 (AC 24): la marca se deja igual; sin otra configuración que la que copió, sólo con ésa. Sin datos, nada más.
+  // la marca se deja igual; sin otra configuración que la que copió, sólo con ésa. Sin datos, nada más.
   assert.deepStrictEqual(fs.readdirSync(path.join(w.s, '.dashboard')), ['applied-config.json'], 'no inventa carpetas de datos: sólo la marca');
   assert.deepStrictEqual(appliedMark(w).files, { 'operations.json': git(path.join(w.build, 'ops'), ['rev-parse', 'HEAD:operations.json']) });
   // sin ningún archivo de configuración, files queda vacío
@@ -241,10 +241,10 @@ test('T5 OpsData_FreshOrg_NotRed: un repo de operaciones recién creado (sin dat
   assert.deepStrictEqual(appliedMark(w2).files, {}, 'sin configuración copiada, files es {}');
 });
 
-// ── las copias del arnés en las métricas: de team-repos.json, no de una variable (DEF-8.30-copias-del-arnes-en-team-repos)
-// EL CASO: las métricas del modelo sabían qué repos son copias del arnés por una variable de la definición
-// (HARNESS_COPIES, y HARNESS_MEASURED_COPY la que cuenta). El dueño decidió (2026-10-14) que lo diga team-repos.json,
-// como el resto de los repos: un lugar menos que configurar. Se corre el paso «Descubrir y clonar» REAL del modelo, con
+// ── las copias del arnés en las métricas: de team-repos.json, no de una variable ──────────────────────────────────
+// Las métricas del modelo saben qué repos son copias del arnés por lo que dice team-repos.json, como el resto de los
+// repos, y no por una variable de la definición (HARNESS_COPIES, y HARNESS_MEASURED_COPY la que cuenta): un lugar menos
+// que configurar. Se corre el paso «Descubrir y clonar» REAL del modelo, con
 // un `az` de mentira que contesta lo que el laboratorio declara y git de verdad contra repos locales.
 function discoverScript(vars) {
   const block = steps(read('stage-metrics.yml')).find((s) => /displayName: 'Descubrir y clonar \(liviano\) los repos'/.test(s));
@@ -354,7 +354,7 @@ test('T7 StageMetrics_OldVariables_NotReadAnymore: la variable de antes avisa; s
   assert.deepStrictEqual(r.cloned, []);
 });
 
-// ── story 2.25: la paridad de los productos, cada noche, dentro de la revisión de dependencias (T10-T12) ──────────
+// ── la paridad de los productos, cada noche, dentro de la revisión de dependencias (T10-T12) ──────────────────────
 const PARITY = 'Comparar los pipelines de los productos (paridad)';
 const named = (text, name) => steps(text).findIndex((s) => s.includes(`displayName: '${name}'`));
 /** El guion de un paso `- script: |` de un modelo, con las macros de Azure reemplazadas. */
@@ -482,9 +482,8 @@ test('T12 OpsData_TraeLaListaDeLaOrganizacion @story-2.25 @ac-9: la lista de pro
   }
 });
 
-// story 2.23 (AC 16, T32): lo que deja la noche para el sitio de la organización. Los dos productores corren con los datos
+// T32: lo que deja la noche para el sitio de la organización. Los dos productores corren con los datos
 // de operaciones ya traídos y antes de generar la página, y se guardan con la página (bajo .dashboard, que el sync trajo).
-// La foto de despliegues de la 2.22 todavía no está en el modelo: cuando entre, los productores van después de ella.
 test('T32 TeamDashboard_ProductoresDelSitio', () => {
   const y = read('team-dashboard.yml');
   const i = (re) => y.search(re);
@@ -498,7 +497,7 @@ test('T32 TeamDashboard_ProductoresDelSitio', () => {
   assert.match(y, /push-nightly-data\.js sync -- \.dashboard /, 'el sync trae .dashboard: guardar sus carpetas no sale 2');
 });
 
-// story 2.22 (AC 13): la foto de despliegues corre ANTES de la página, tolerante (naranja, nunca roja), con el permiso de la
+// la foto de despliegues corre ANTES de la página, tolerante (naranja, nunca roja), con el permiso de la
 // corrida, y la carpeta se guarda con la página.
 test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
   const y = read('team-dashboard.yml');
@@ -511,7 +510,7 @@ test('T21 TeamDashboard_PasoDeDesplieguesAntesDelTablero (2.22)', () => {
   assert.match(paso, /AZURE_DEVOPS_EXT_PAT: \$\(System\.AccessToken\)/);
 });
 
-// tanda C de la 2.29 (AC 24): la marca tiene que llegar a main de operaciones, que es lo que lee el sitio. El paso del
+// la marca tiene que llegar a main de operaciones, que es lo que lee el sitio. El paso del
 // tablero que trae los datos de main la pisa; por eso ops-data.yml deja una copia en la carpeta temporal del trabajo, y el
 // guardado del tablero la devuelve y la nombra. Se corre dos veces el mismo día: la segunda no puede chocar.
 test('T40 TableroGuarda_LaMarcaLlegaAOperaciones_DosVecesElMismoDia @story-2.29 @ac-24 (tanda C): ops-data, el sync, la devolución y el guardado reales', () => {
@@ -607,9 +606,9 @@ test('T37 Nocturnos_NoTocanLasRutasProtegidas (Azure) @story-2.30 @ac-22', () =>
   assert.match(readme, /archivo por archivo/);
 });
 
-// story 2.26 (AC 17, T21): la concentración por persona corre en el nocturno de métricas, en el MISMO paso que la foto
+// T21: la concentración por persona corre en el nocturno de métricas, en el MISMO paso que la foto
 // por proyecto y después de ella; una falla avisa y no apaga el snapshot; el guardado suma su archivo. Las líneas nuevas
-// no suman un paso, un `displayName` ni las palabras «clone»/«clones» (la red de la story 2.1 las cuenta).
+// no suman un paso, un `displayName` ni las palabras «clone»/«clones» (otra prueba las cuenta).
 function pasoConConcentracion(y, nombre, donde) {
   const i = y.indexOf('node scripts/nightly/projects/snapshot.js');
   const j = y.indexOf(`displayName: '${nombre}'`, i);

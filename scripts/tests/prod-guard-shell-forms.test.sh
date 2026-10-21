@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# prod-guard-shell-forms.test.sh — el freno de producción lee los nombres como los lee el shell (story 8.14).
+# prod-guard-shell-forms.test.sh — el freno de producción lee los nombres como los lee el shell.
 #
-# Caso que lo motiva (pase adversarial de la tanda P de la 8.9, 2026-09-30): `rm -f …/production-{index,memory}.json`
-# pasaba el freno — el partidor cortaba la palabra en las llaves y el nombre protegido nunca llegaba entero. Medidas 119
-# formas del shell contra main 6e01463: 65 no hacían lo que tenían que hacer. Este archivo es esa medición, vuelta
-# prueba: `scripts/tests/fixtures/prod-guard-shell-forms.json` trae las filas y lo que cada una tiene que hacer.
+# Caso que lo motiva: `rm -f …/production-{index,memory}.json` tiene que frenar — si el partidor cortara la palabra en
+# las llaves, el nombre protegido nunca llegaría entero. Son 119 formas del shell y cada una tiene que hacer lo que
+# dice su fila. Este archivo es esa medición, vuelta prueba: `scripts/tests/fixtures/prod-guard-shell-forms.json` trae
+# las filas y lo que cada una tiene que hacer.
 #
 # Lo que prueba:
 #   T7-T13 — la prueba respaldada (R1-R6 y `echo {a,b}`), cada una con su nombre
 #   T14    — toda fila «frena» sale 2 (si no, la lista de las que no)
-#   T15    — toda fila «pasa» sale 0, los límites del AC 22 incluidos (para que un cambio que los empiece a frenar se vea)
+#   T15    — toda fila «pasa» sale 0, los límites de la guía incluidos (para que un cambio que los empiece a frenar se vea)
 #   T16    — la columna «toca» se vuelve a medir en esta corrida: las filas medidas por el shell con zsh y bash REALES
 #            (bloque 1: expandir las palabras y mirar por inodo; bloque 2: zsh ejecuta el comando sobre copias). Un shell
 #            que cambió hace fallar la fila en vez de dejarla vieja; un shell que falta sale NO MEDIDO (≠ 0), nunca verde.

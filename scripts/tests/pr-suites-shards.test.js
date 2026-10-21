@@ -2,17 +2,17 @@
 
 /**
  * pr-suites-shards.test.js — la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml) corre sus suites
- * en trabajos paralelos: lo que dice el YAML (2026-10-04).
+ * en trabajos paralelos: lo que dice el YAML.
  *
- * Hasta ese día era UN job en serie: lint, banco, ~217 suites (cada roja reintentada una vez) y el veredicto, con un tope
- * de 60 minutos. Con rojos y reintentos no entraba: las corridas 11761 y 11788 se cortaron sin veredicto, y un job
- * cortado no dice nada. Ahora: `Validar` (lint + la lista de suites que corren) → `Bench` y una matriz `Suites` a la vez
+ * Un solo job en serie (lint, banco, ~217 suites con cada roja reintentada una vez y el veredicto) con un tope
+ * de 60 minutos no entra con rojos y reintentos: se corta sin veredicto, y un job
+ * cortado no dice nada. Por eso: `Validar` (lint + la lista de suites que corren) → `Bench` y una matriz `Suites` a la vez
  * → `Verdict`, que junta lo de todos y da el veredicto. Lo que se mide acá, porque todos los errores posibles son mudos:
  *   · que la matriz tenga un número de trabajos y los pasos pidan «<i> de OTRO número»: suites que nadie corre;
  *   · que un trabajo que no terminó se lea como verde, o que el veredicto no se dé porque un trabajo se cortó;
  *   · que el reintento de una vez por roja se pierda al repartir: la intermitente y la firme se siguen distinguiendo;
  *   · que un cambio de sólo documentación cree trabajos que fallan;
- *   · (story 8.22, tramo C) que la cantidad de trabajos no salga del peso de lo que corre, o que la matriz y algún
+ *   · que la cantidad de trabajos no salga del peso de lo que corre, o que la matriz y algún
  *     `--of` lean cosas distintas: todos salen de la matriz que publica «Qué suites corren».
  *
  * 🔴 SE CORREN LOS PASOS REALES DEL YAML, extraídos por su `displayName` (como nightly-suites-shards.test.js, del que
@@ -36,22 +36,22 @@ const PLAN_STEP = 'Qué suites corren';
 const RUN_STEP = 'Correr las suites de este trabajo';
 const JOIN_STEP = 'Juntar lo que midió cada trabajo';
 const VERDICT_STEP = 'Veredicto: ¿algún rojo NUEVO?';
-// story 8.22, tramo C: el parámetro es el MÁXIMO de trabajos; cuántos corren lo calcula «Qué suites corren» y lo publica como
+// el parámetro es el MÁXIMO de trabajos; cuántos corren lo calcula «Qué suites corren» y lo publica como
 // la matriz misma (`suites.matrix`). De esa salida salen la matriz del job Suites y los cuatro `--of`.
 const MAX_EXPR = '${{ parameters.suiteShards }}';
 const MATRIX_OUTPUT = "dependencies.Validar.outputs['suites.matrix']";
 const HAS_CODE = "eq(dependencies.Validar.outputs['change.hayCodigo'], 'si')";
 
-// Los pasos que corren las suites viven en una plantilla que usan dos trabajos, el de suites y el del banco (story 8.22,
-// tramo I). Los jobs se leen del pipeline; un paso se busca en los dos archivos, y «el código» es el de los dos.
+// Los pasos que corren las suites viven en una plantilla que usan dos trabajos, el de suites y el del banco.
+// Los jobs se leen del pipeline; un paso se busca en los dos archivos, y «el código» es el de los dos.
 const TEMPLATE = path.join(ROOT, 'pipelines/templates/run-suites.yml');
 const TEMPLATE_USE = '      - template: /pipelines/templates/run-suites.yml\n';
-// Story 8.26, tanda C (AC 11 y 43): la foto nocturna y lo privado de la validación los trae una plantilla, una vez.
+// La foto nocturna y lo privado de la validación los trae una plantilla, una vez.
 const SNAPSHOT_TEMPLATE = path.join(ROOT, 'pipelines/templates/fetch-snapshot.yml');
 const SNAPSHOT_STEP = 'La foto nocturna y lo privado de la validación';
 const SNAPSHOT_PICK_STEP = 'La foto nocturna que trajo Validar';
 const BENCH = 'bench';
-// La validación y sus plantillas son del privado (story 8.41, tanda F2): la copia pública no las trae. Ahí cada caso se
+// La validación y sus plantillas son del privado: la copia pública no las trae. Ahí cada caso se
 // saltea con este motivo, en vez de abortar al cargar.
 const NO_PIPELINE = !(fs.existsSync(YAML) && fs.existsSync(TEMPLATE))
   && 'NO MEDIDO — no están pipelines/azure-pipelines-maintainers-pr.yml y su plantilla run-suites.yml (la copia pública no trae los pipelines del equipo)';
@@ -106,7 +106,7 @@ function shardCall(sub) {
   return found[0];
 }
 
-/** El máximo de trabajos que declara el parámetro `suiteShards` (un número, story 8.22 tramo C). */
+/** El máximo de trabajos que declara el parámetro `suiteShards` (un número). */
 function maxShards() {
   const at = code.findIndex((l) => /^\s*-\s+name:\s*suiteShards\s*$/.test(l));
   assert.ok(at >= 0, 'el pipeline no declara el parámetro suiteShards');
@@ -140,18 +140,18 @@ nodeTest.after(() => { for (const d of toys) fs.rmSync(d, { recursive: true, for
 
 // 🔴 LA FOTO NOCTURNA ES DE JUGUETE. «Qué suites corren» lee la red de `--deps` con
 // `git show origin/main:scripts/controls-bench/ultimo-suites.json`, parado en el arnés de verdad: la foto que haya dejado
-// el último nocturno de `main`. El 2026-10-08 ese nocturno cortó una suite por su tope y la foto quedó `complete: false`;
-// con eso `--deps` no saltea nada, las pesadas corren igual y la prueba que espera verlas salteadas se puso roja en
-// `main` sin que nadie tocara código (ni la prueba ni el pipeline estaban mal). Una prueba no puede depender de cómo
+// el último nocturno de `main`. Si ese nocturno corta una suite por su tope, la foto queda `complete: false`;
+// con eso `--deps` no saltea nada, las pesadas corren igual y la prueba que espera verlas salteadas se pondría roja en
+// `main` sin que nadie tocara código (ni la prueba ni el pipeline estarían mal). Una prueba no puede depender de cómo
 // salió el nocturno de anoche: cada clon de juguete trae un `git` que contesta ESA pregunta con la foto del caso y le
 // pasa todo lo demás al git de verdad. `photo`: un objeto (se escribe tal cual) o null (origin/main no trae la foto).
-// Story 8.26, tanda C (AC 43): desde la tanda C «Qué suites corren» no le pregunta más a git: lee la foto que trajo el
-// paso de la plantilla fetch-snapshot.yml, en la carpeta temporal (`runPlan` la deja ahí). El git de juguete sigue: es el
+// «Qué suites corren» no le pregunta a git: lee la foto que trajo el
+// paso de la plantilla fetch-snapshot.yml, en la carpeta temporal (`runPlan` la deja ahí). El git de juguete sirve igual: es el
 // que contesta ese paso cuando el repo propio es de Azure (`git show origin/main:…`, la foto de suites y la del banco).
 const FRESH_PHOTO = () => ({ kind: 'bash-tests', ts: new Date().toISOString(), failures: [], complete: true });
 const PHOTO_ASK = 'origin/main:scripts/controls-bench/ultimo-suites.json';
 const BENCH_PHOTO_ASK = 'origin/main:scripts/controls-bench/ultimo-banco.json';
-// El registro de suites de main, que «Juntar lo que midió cada trabajo» pide para decidir qué no viaja (story 8.26, tanda C):
+// El registro de suites de main, que «Juntar lo que midió cada trabajo» pide para decidir qué no viaja:
 // el git de juguete contesta con el `suites.json` del clon de juguete (main = la rama), o falla si el caso lo pide.
 const REGISTRY_ASK = 'origin/main:scripts/tests/suites.json';
 // Un reporte del banco de juguete, sin rojos: la copia pública no trae las fotos del banco de verdad (son datos de los
@@ -202,7 +202,7 @@ function toy(suites, { exclusive = [], photo = FRESH_PHOTO() } = {}) {
   for (const [name, body] of suites) {
     entries.push(Object.assign({ raiz: 'arnes', ruta: `tests/${name}`, requiere: [] }, exclusive.includes(name) ? { exclusive: true } : {}));
     // Cada suite de juguete se declara de «todo el repo» (scripts/ci/suite-deps.js la ve listar los archivos): así corre
-    // con cualquier cambio, como corrían todas antes de `--deps` (story 8.22), y estas pruebas siguen midiendo el reparto.
+    // con cualquier cambio, sin depender de `--deps`, y estas pruebas siguen midiendo el reparto.
     const whole = name.endsWith('.js') ? '// recorre el repo entero (git ls-files)\n' : '# recorre el repo entero (git ls-files)\n';
     if (body !== null) fs.writeFileSync(path.join(dir, 'repo', 'scripts', 'tests', name), whole + body.split('@DIR@').join(slash(dir)));
   }
@@ -225,7 +225,7 @@ function bash(dir, script, name, env = {}) {
     cwd: ROOT, encoding: 'utf8', timeout: STEP_TIMEOUT_MS, killSignal: 'SIGKILL',
     env: {
       ...process.env, HOME: path.join(dir, 'home'), TF_BUILD: '', SYSTEM_PULLREQUEST_TARGETBRANCH: '', AGENT_JOBSTATUS: 'Succeeded',
-      // story 8.26, tanda C: el repo propio y el interruptor del freno los fija cada caso (esta suite corre también en
+      // el repo propio y el interruptor del freno los fija cada caso (esta suite corre también en
       // una corrida de Azure, que trae los suyos)
       BUILD_REPOSITORY_PROVIDER: '', HARNESS_SUITES_BLOCK: '', HARNESS_PRIVATE_REPO: '', SYSTEM_PULLREQUEST_ISFORK: '',
       // el git de juguete del clon va primero: contesta la foto nocturna y delega el resto (ver toyGit)
@@ -252,7 +252,7 @@ function runPlan(dir, max, changed = ['scripts/lab.js'], env = {}) {
   fs.mkdirSync(staging, { recursive: true });
   if (changed) {
     fs.writeFileSync(path.join(temp, 'cambiados.txt'), changed.map((l) => `${l}\n`).join(''));
-    // la lista de código, como la arma «Qué trae este cambio» (story 8.22: los .md no eligen suites)
+    // la lista de código, como la arma «Qué trae este cambio» (los .md no eligen suites)
     const code = changed.filter((l) => !l.endsWith('.md') || /^(agents|skills|packs)\//.test(l));
     fs.writeFileSync(path.join(temp, 'cambiados-codigo.txt'), code.map((l) => `${l}\n`).join(''));
   }
@@ -300,7 +300,7 @@ function publishBench(dir) {
 }
 
 /**
- * La foto que el job Verdict bajó (story 8.26, tanda C, AC 43): la que trajo Validar, en `<temp>/snapshot/`. `suites`: la
+ * La foto que el job Verdict bajó: la que trajo Validar, en `<temp>/snapshot/`. `suites`: la
  * foto de suites (por defecto una sin rojas); `null` en las dos = no llegó.
  */
 function placeSnapshot(temp, { suites = FRESH_PHOTO(), bench = TOY_BENCH() } = {}) {
@@ -347,7 +347,7 @@ const SIX = [
 
 // ── la forma del YAML ────────────────────────────────────────────────────────────────────────────────────────────
 test('PrShards_MatrixAndEveryOfFromSameOutput', () => {
-  // story 8.22, tramo C (AC 14): cuántos trabajos sale del peso del plan, y la matriz y los cuatro `--of` leen la MISMA
+  // cuántos trabajos sale del peso del plan, y la matriz y los cuatro `--of` leen la MISMA
   // salida de Validar. Si dos de ellos leyeran cosas distintas, habría suites que ningún trabajo corre.
   assert.strictEqual(maxShards(), 2, 'el máximo es 2: a una corrida le tocan dos carriles');
   assert.doesNotMatch(code.join('\n'), /length\(parameters\.suiteShards\)|each shard in parameters\.suiteShards/,
@@ -393,14 +393,14 @@ test('PrShards_PlanStep_AsksForAsManyJobsAsThePlanWeighs', { skip: NO_BASH }, ()
 });
 
 test('SuitesShard_JobCountUnknown_UsesMax', { skip: NO_BASH }, () => {
-  // AC 15: si no se pudo calcular cuántos, corren todos los del máximo, y se dice. Nunca menos por no saber.
+  // Si no se pudo calcular cuántos, corren todos los del máximo, y se dice. Nunca menos por no saber.
   const r = runPlan(toy(SIX), maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: 'ilegible' });
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(r.of, 2, `con el cálculo roto, el máximo\n${r.out}`);
-  // (story 8.26, tanda C, AC 45: el aviso con texto fijo y cuentas; el motivo, en la línea de abajo)
+  // (el aviso con texto fijo y cuentas; el motivo, en la línea de abajo)
   assert.match(r.out, /##vso\[task\.logissue type=warning\]suites: no pude calcular cuántos trabajos hacen falta — uso el máximo, 2[^\n]*\n {3}el cálculo: .*--budget/);
-  // Con menos suites que el máximo, el máximo posible es una por trabajo: pedir 2 para 1 dejaba la corrida sin medir
-  // (el reparto se niega a armar un trabajo vacío). Revisión del tramo C.
+  // Con menos suites que el máximo, el máximo posible es una por trabajo: pedir 2 para 1 dejaría la corrida sin medir
+  // (el reparto se niega a armar un trabajo vacío).
   const one = runPlan(toy([['lab-green-a.test.sh', GREEN_SH]]), maxShards(), ['scripts/lab.js'], { SUITES_JOB_BUDGET: 'ilegible' });
   assert.strictEqual(one.code, 0, one.out);
   assert.strictEqual(one.of, 1, `una sola suite, un solo trabajo, aunque el cálculo falle\n${one.out}`);
@@ -408,10 +408,10 @@ test('SuitesShard_JobCountUnknown_UsesMax', { skip: NO_BASH }, () => {
 });
 
 test('T48 PrShards_JobCountUnknownWithExclusiveSuites_CountsOnlyTheOnesTheSuitesJobsShare — con el cálculo roto, el máximo cuenta sólo las suites que se reparten', { skip: NO_BASH }, () => {
-  // Pase adversarial del tramo I (2026-10-08, tres lentes, el mismo hallazgo): con el cálculo de cuántos trabajos roto,
-  // el respaldo contaba TODAS las suites del plan, también las que corren solas, que ya no se reparten (van al trabajo
-  // del banco). Con 1 común y 1 exclusiva pedía 2 trabajos, el reparto se negaba a armar uno vacío y la validación
-  // entera quedaba roja sin medir nada: ni las suites ni el banco arrancan si Validar falla.
+  // Con el cálculo de cuántos trabajos roto, el respaldo no puede contar TODAS las suites del plan,
+  // también las que corren solas, que no se reparten (van al trabajo
+  // del banco). Con 1 común y 1 exclusiva pediría 2 trabajos, el reparto se negaría a armar uno vacío y la validación
+  // entera quedaría roja sin medir nada: ni las suites ni el banco arrancan si Validar falla.
   const broken = { SUITES_JOB_BUDGET: 'ilegible' };
   const plan = (common, alone, { noSplit = false } = {}) => {
     const names = [...common, ...alone];
@@ -437,13 +437,13 @@ test('T48 PrShards_JobCountUnknownWithExclusiveSuites_CountsOnlyTheOnesTheSuites
   assert.strictEqual(three.code, 0, three.out);
   assert.strictEqual(three.of, 2, `3 comunes: el máximo del parámetro\n${three.out}`);
 
-  // todas corren solas: igual se pide UN trabajo de suites, que termina sin correr ninguna (AC 37)
+  // todas corren solas: igual se pide UN trabajo de suites, que termina sin correr ninguna
   const none = plan([], ['lab-solo-a.test.sh', 'lab-solo-b.test.sh']);
   assert.strictEqual(none.code, 0, none.out);
   assert.strictEqual(none.of, 1, none.out);
   assert.match(none.out, /uso el máximo, 1 \(hay 0 suite\(s\)\) · 2 corren solas, en el trabajo del banco/);
 
-  // sin poder separarlas tampoco: la cuenta de todas, como antes de este tramo, y sin decir cuántas corren solas (no
+  // sin poder separarlas tampoco: la cuenta de todas, y sin decir cuántas corren solas (no
   // lo sabe). Con 3 comunes y 1 sola alcanza para el máximo; con 1 y 1, el reparto se niega y es «no se midieron»:
   // rojo, nunca un verde armado a ciegas.
   const blind = plan(['lab-a.test.sh', 'lab-b.test.sh', 'lab-c.test.sh'], ['lab-solo-a.test.sh'], { noSplit: true });
@@ -474,7 +474,7 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
   assert.ok(verdict.includes(`\n    condition: and(always(), ${HAS_CODE})\n`),
     'y corre aunque el banco o un trabajo de suites hayan fallado o los haya cortado el tope — salvo un cambio sin código');
 
-  // Los topes: 40 por trabajo de suites (45 hasta el cierre de la story 8.22; de dónde sale el número, en T33), 10 el veredicto.
+  // Los topes: 40 por trabajo de suites (de dónde sale el número, en T33), 10 el veredicto.
   assert.match(suites, /\n {4}timeoutInMinutes: 40\n/, 'cada trabajo de suites tiene 40 minutos de tope');
   assert.ok(suites.endsWith(`${TEMPLATE_USE}`) || suites.includes(`${TEMPLATE_USE}\n`), 'los pasos del trabajo de suites son los de la plantilla');
   assert.match(verdict, /\n {4}timeoutInMinutes: 10\n/, 'el veredicto, 10');
@@ -487,7 +487,7 @@ test('PrShards_Jobs_ValidateThenBenchAndSuitesThenAVerdictThatAlwaysRuns', () =>
   assert.match(template, /itemPattern: 'suites-plan-a\*\/\*\*'\n {6}targetPath: '\$\(Pipeline\.Workspace\)\/suites-plan'\n/, 'cada trabajo baja sólo la lista');
   assert.match(verdict, /continueOnError: true\n(?: {8}.*\n)*? {10}targetPath: '\$\(Pipeline\.Workspace\)\/artifacts'\n/, 'el veredicto baja todo');
 
-  // El veredicto, en modo Azure, con el modo aviso decidido por el interruptor (story 8.26, tanda C, AC 14), y el reintento
+  // El veredicto, en modo Azure, con el modo aviso decidido por el interruptor, y el reintento
   // de una vez por roja.
   assert.match(stepBody(VERDICT_STEP), /node scripts\/ci\/pr-verdict\.js [^\n]*--ado[^\n]*; RC=\$\?/);
   assert.ok(stepBody(VERDICT_STEP).includes('node scripts/ci/suites-block.js'), 'el modo aviso lo decide el interruptor');
@@ -555,10 +555,10 @@ const LIVE_SH = 'N=$(basename "$0"); L="@DIR@/live"; mkdir -p "$L"; touch "$L/$N
 const LIVE = ['lab-p1.test.sh', 'lab-p2.test.sh', 'lab-p3.test.sh', 'lab-p4.test.sh', 'lab-solo.test.sh'];
 
 test('PrShards_SuitesRunInParallel_ExclusiveAloneInTheBenchJob_UnreadableListRunsOneByOne', { skip: NO_BASH }, () => {
-  // 2026-10-05 (pedido del dueño: la validación en 15 min o menos): en serie, un trabajo de 214 suites tardaba 18 min
+  // La validación apunta a 15 min o menos: en serie, un trabajo de 214 suites tarda 18 min
   const shards = maxShards();
   const peaks = (dir) => Object.fromEntries(LIVE.map((n) => [n, Number(fs.readFileSync(path.join(dir, `seen.${n}`), 'utf8').trim())]));
-  // desde el tramo I (story 8.22) la exclusiva la corre el trabajo del banco, después del banco: los de suites, ninguna
+  // la exclusiva la corre el trabajo del banco, después del banco: los de suites, ninguna
   const runAll = (dir) => { const outs = []; for (const i of [...Array(shards).keys()].map((n) => n + 1).concat(BENCH)) { const r = runShard(dir, i, shards, { env: { SUITES_JOBS: '4' } }); assert.strictEqual(r.code, 0, r.out); assert.ok(fs.existsSync(path.join(r.artifact, 'finished')), r.out); outs.push(r.out); } return outs.join('\n'); };
 
   const dir = toy(LIVE.map((n) => [n, LIVE_SH]), { exclusive: ['lab-solo.test.sh'] });
@@ -598,7 +598,7 @@ test('SuitesExclusive_SplitsByRouteEnd_CouldNotReadIsNotNoneExclusive', () => {
 test('DEF-8.7-C PrShards_SuiteThatSaysItDidNotMeasure_IsNotShownGreen_AndDoesNotStopTheVerdict — en la validación no sale con ✅, y no frena', { skip: NO_BASH }, () => {
   // En la validación de cada cambio la máquina limpia no mide nunca, a propósito (su T34): contarla como no medida
   // haría salir 2 a todas las validaciones. Se dice en su línea y el veredicto queda como estaba. Lo que la cuenta como
-  // NO MEDIDA es el nocturno (caso DEF-8.7-C de nightly-suites-shards.test.js), que es el reporte que viaja.
+  // NO MEDIDA es el nocturno (nightly-suites-shards.test.js), que es el reporte que viaja.
   const dir = toy([['lab-says-not-measured.test.sh', 'echo "⏭ lab-says-not-measured: NO MEDIDO — no hay docker"\nexit 0\n'], ['lab-green-a.test.sh', GREEN_SH]]);
   const plan = runPlan(dir, maxShards());
   assert.strictEqual(plan.code, 0, plan.out);
@@ -667,7 +667,7 @@ test('PrShards_NoPlan_NoSuitesAreJudgedAsGreen', { skip: NO_BASH }, () => {
 });
 
 test('PrShards_VerdictWithoutAReadableMatrix_SuitesAreNotMeasured', { skip: NO_BASH }, () => {
-  // story 8.22, tramo C: el veredicto saca su --of de la matriz que publicó Validar. Sin poder leerla no sabe qué
+  // el veredicto saca su --of de la matriz que publicó Validar. Sin poder leerla no sabe qué
   // reparto esperar: «no se midieron», rojo — nunca juntar con un número inventado.
   const dir = toy(SIX);
   const plan = runPlan(dir, maxShards());
@@ -691,17 +691,17 @@ test('PrShards_PlanStep_RunsEverythingWhenTheChangeIsUnknown', { skip: NO_BASH }
 });
 
 // ── segunda parte: las dos suites más largas, sólo si el cambio toca lo que miden ─────────────────────────────────
-// Desde la story 8.26 (tanda I) queda una sola de las dos más largas: la copia pública armada (export-real) se retiró,
-// porque de ningún repo sale ya una copia. Los casos conservan su nombre (el reparto en partes los usa).
+// Queda una sola de las dos más largas: la copia pública armada (export-real) no existe,
+// porque de ningún repo sale una copia. Los casos conservan su nombre (el reparto en partes los usa).
 const HEAVY_TOY = [['clean-machine.test.sh', GREEN_SH], ['lab-green-a.test.sh', GREEN_SH],
   ['lab-green-b.test.js', 'process.exit(0);\n'], ['lab-red.test.sh', RED_SH]];
 const planned = (r, file) => fs.readFileSync(path.join(r.plan, file), 'utf8').split('\n').filter(Boolean).map((l) => path.posix.basename(slash(l.split('\t')[0])));
 
 test('PrShards_HeavySuites_TheStepsPassTheCriterionAndTheVerdictGetsWhatDidNotRun', () => {
   assert.ok(stepBody(PLAN_STEP).includes('--heavy "$(Build.SourcesDirectory)/scripts/ci/heavy-suites.json"'), 'el plan aplica el criterio de las dos más largas');
-  // story 8.22, tramo B: con la lista del cambio, el de las dependencias de cada suite (scripts/ci/suite-deps.js), la
+  // con la lista del cambio, el de las dependencias de cada suite (scripts/ci/suite-deps.js), la
   // lista de código para elegir y la entera para la pesada que mira .md, y la foto nocturna de origin/main como red
-  // (story 8.26, tanda C, AC 43: la foto, la que trajo Validar; ya no `git show origin/main:…` en este paso)
+  // (la foto, la que trajo Validar; no `git show origin/main:…` en este paso)
   for (const piece of ['--deps', '--changed "$LISTA_CODIGO_SUITES"', '--changed-with-docs "$CAMB"', '--nightly "$FOTO"', '$(Agent.TempDirectory)/snapshot/nightly-suites.json']) {
     assert.ok(stepBody(PLAN_STEP).includes(piece), `el plan pasa ${piece}`);
   }
@@ -710,7 +710,7 @@ test('PrShards_HeavySuites_TheStepsPassTheCriterionAndTheVerdictGetsWhatDidNotRu
 });
 
 test('PrShards_HeavySuites_ChangeThatDoesNotShip_SkipsBothAndTheVerdictSaysSo', { skip: NO_BASH }, () => {
-  // (2026-10-06: las guías y los guiones viajan en la copia y ya corren la copia pública de verdad; esto no viaja)
+  // (las guías y los guiones viajan en la copia y corren la copia pública de verdad; esto no viaja)
   const shards = maxShards();
   const dir = toy(HEAVY_TOY);
   const r = runPlan(dir, shards, ['specs/story-9.9-lab.md', 'tasks/lab.md']);
@@ -730,7 +730,7 @@ test('PrShards_HeavySuites_ChangeThatDoesNotShip_SkipsBothAndTheVerdictSaysSo', 
 
 test('PrShards_HeavySuites_NightlyPhotoIncompleteOldOrMissing_NothingIsSkippedAndTheStepSaysWhy', { skip: NO_BASH }, () => {
   // El mismo cambio que arriba saltea las dos. Sin red —el nocturno no midió todo, la foto es vieja, o origin/main no
-  // la trae— no se saltea ninguna, y el paso dice por qué: es lo que pasó en `main` el 2026-10-08, y se leía como una
+  // la trae— no se saltea ninguna, y el paso dice por qué: sin eso, en `main` se leería como una
   // prueba rota. Acá la foto la pone el caso (toyGit), no el nocturno de anoche.
   const old = new Date(Date.now() - 40 * 3600 * 1000).toISOString();
   const cases = [
@@ -764,7 +764,7 @@ test('PrShards_HeavySuites_PublishingChangeOrFailedDiff_RunsBoth', { skip: NO_BA
   assert.strictEqual(publishing.code, 0, publishing.out);
   for (const name of ['clean-machine.test.sh']) assert.ok(planned(publishing, 'run.txt').includes(name), `scripts/publishing/ corre ${name}`);
   // El diff del pedido de merge falló («Qué trae este cambio» dejó todo=si): corren todas, nunca «no hace falta».
-  // (story 8.22: el motivo lo trae «Qué trae este cambio» en motivoTodo y el paso lo repite)
+  // (el motivo lo trae «Qué trae este cambio» en motivoTodo y el paso lo repite)
   const failed = runPlan(toy(HEAVY_TOY), shards, null, { SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main', MOTIVOTODO: 'el diff contra origin/main falló: x' });
   assert.strictEqual(failed.code, 0, failed.out);
   assert.match(failed.out, /suites: corren todas — el diff contra origin\/main falló: x/);
@@ -782,9 +782,9 @@ test('PrShards_ShardNumberOutsideTheMatrix_GoesRedWithoutRunningAnything', { ski
   assert.doesNotMatch(r.out, /✅/);
 });
 
-// story 8.22, tramo F (AC 21): las suites que pasan de 45 s y van al nocturno las saltea la validación de cada rama. El
+// Las suites que pasan de 45 s y van al nocturno las saltea la validación de cada rama. El
 // selector las conoce por --over-limit; el banco nocturno no lee esa lista: corre todas. (El salteo mismo lo mide
-// suites-for-change.test.js, T29; acá, que el pipeline se lo pida. Desde la story 8.26, tanda C, esta prueba viaja con la
+// suites-for-change.test.js, T29; acá, que el pipeline se lo pida. Esta prueba viaja con la
 // validación; el nocturno no: su mitad ahí no se mide.)
 const NIGHTLY_BENCH = path.join(ROOT, 'pipelines/azure-pipelines-banco.yml');
 test('T29 PrSuites_PlanStepPassesTheOverLimitList_NightlyDoesNot — la validación le pasa la lista al selector; el nocturno no la lee', () => {
@@ -796,9 +796,9 @@ test('T29 PrSuites_NightlyDoesNotReadTheOverLimitList', { skip: !fs.existsSync(N
   assert.ok(!fs.readFileSync(NIGHTLY_BENCH, 'utf8').includes('suites-over-limit'), 'el nocturno corre todas: no lee la lista');
 });
 
-// ── story 8.22, tramo I (AC 37 y 38): las suites que corren solas, en el carril del banco ──────────────────────────
-// Medido el 2026-10-08 con cuatro validaciones de un solo archivo: la copia pública de verdad tardaba 370 a 383 s sola,
-// al final de un trabajo de suites, mientras el trabajo del banco terminaba a los ~5 min y dejaba su carril ocioso.
+// ── las suites que corren solas, en el carril del banco ──────────────────────────
+// Ejemplo con cuatro validaciones de un solo archivo: la copia pública de verdad tarda 370 a 383 s sola,
+// al final de un trabajo de suites, mientras el trabajo del banco termina a los ~5 min y deja su carril ocioso.
 const SOLO = ['lab-p1.test.sh', 'lab-p2.test.sh', 'lab-p3.test.sh', 'lab-solo-green.test.sh', 'lab-solo-red.test.sh'];
 const SOLO_EXCLUSIVE = ['lab-solo-green.test.sh', 'lab-solo-red.test.sh'];
 const soloToy = () => toy(SOLO.map((n) => [n, n === 'lab-solo-red.test.sh' ? RED_SH : LIVE_SH]), { exclusive: SOLO_EXCLUSIVE });
@@ -919,7 +919,7 @@ test('T49 PrShards_BenchJobThatDoesNotFinishItsSuites_TheyAreNotMeasured — si 
   assert.ok(!fs.existsSync(path.join(broken.artifact, 'finished')), 'y no deja la marca de terminado');
 });
 
-// AC 38 (b): un banco COLGADO no puede llevarse puesto el trabajo. Si lo cortara el tope del trabajo, Azure cancela lo
+// Un banco COLGADO no puede llevarse puesto el trabajo. Si lo cortara el tope del trabajo, Azure cancela lo
 // que sigue —las suites que corren solas no correrían— y esa hora de carril se pierde. El paso del banco corre con su
 // propio tope (scripts/ci/run-capped.js): colgado, se corta, el paso sale rojo «NO se midió» y el trabajo sigue.
 const BENCH_STEP = 'Banco de controles (--tool both)';
@@ -942,16 +942,16 @@ const TOY_RUNNER = (exit) => `const fs = require('fs'); const at = process.argv.
 test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco colgado se corta por su tope y no se lleva puestas las suites', { skip: NO_BASH }, () => {
   const { Bench: bench } = jobs();
   assert.match(bench, /\n {4}timeoutInMinutes: 40\n/, 'el trabajo: 10 min del banco más la suma de los topes de las suites que corren solas');
-  // 🔴 La cuenta, con los archivos de verdad (2026-10-11): el tope del trabajo es su PEOR caso —el banco colgado hasta
-  // su tope y cada suite que corre sola colgada hasta el suyo—. Cuando una suite más pasó a correr sola la cuenta dejó
-  // de entrar (43,6 min contra 40) y nadie lo vio hasta hacerla a mano. Si vuelve a pasar, esto se pone rojo: se le da
+  // 🔴 La cuenta, con los archivos de verdad: el tope del trabajo es su PEOR caso —el banco colgado hasta
+  // su tope y cada suite que corre sola colgada hasta el suyo—. Si una suite más pasa a correr sola, la cuenta puede dejar de
+  // entrar (por ejemplo 43,6 min contra 40) y esto se pone rojo: se le da
   // tope propio a alguna (`suite_cap.per_suite` del juego `pr`) o lo decide el dueño; el número del YAML no se sube solo.
   const registry = JSON.parse(fs.readFileSync(path.join(ROOT, 'scripts', 'tests', 'suites.json'), 'utf8'));
   const alone = Object.values(registry).filter(Array.isArray).flat().filter((s) => s && s.exclusive === true).map((s) => path.basename(s.ruta));
-  // 🔴 Cuántas son depende de DÓNDE corre esta prueba (2026-10-11): en el repo del equipo son 7; en la copia pública
+  // 🔴 Cuántas son depende de DÓNDE corre esta prueba: en el repo del equipo son 7; en la copia pública
   // quedan 4, porque tres no viajan (la copia de verdad, la capa de verdad y el laboratorio guiado de Windows). Exigir
-  // «al menos 6» dejó esta prueba roja en la copia sin llegar a hacer la cuenta, y con el freno de suites prendido eso
-  // frena todo pedido al repo público. El piso es que haya alguna: sin ninguna, la cuenta de abajo no mide nada.
+  // «al menos 6» dejaría esta prueba roja en la copia sin llegar a hacer la cuenta, y con el freno de suites prendido eso
+  // frenaría todo pedido al repo público. El piso es que haya alguna: sin ninguna, la cuenta de abajo no mide nada.
   assert.ok(alone.length >= 1, `suites.json no trae ninguna suite que corra sola: la cuenta del tope no mide nada (${alone.join(' ')})`);
   const asked = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'ci', 'suites-shard.js'), 'caps', '--weight-set', 'pr'], { cwd: ROOT, encoding: 'utf8' });
   assert.strictEqual(asked.status, 0, asked.stderr);
@@ -996,9 +996,9 @@ test('T48 PrShards_BenchThatHangs_IsCutByItsOwnCapAndTheJobGoesOn — un banco c
 
 // Los pasos de bash de los pipelines corren también en ESTA prueba, con el bash de la máquina: en la Mac, el 3.2. Ahí `$VAR`
 // pegado a un carácter que no es ASCII parte la variable (el control de scripts/ci/check-bash32-quoting.sh, que el
-// pre-commit pasa sólo sobre los .sh). Caso 2026-10-15: un «($CAP)» con comillas angulares en el paso del banco dejó roja la
-// prueba del banco colgado en toda Mac (`CAP` más un byte: unbound variable), y en Azure, con bash 5, no se veía.
-// ROJO PREVIO: con el «$CAP» de antes en pipelines/azure-pipelines-maintainers-pr.yml, este caso sale rojo nombrando la línea 671.
+// pre-commit pasa sólo sobre los .sh). Un «($CAP)» con comillas angulares en el paso del banco dejaría roja la
+// prueba del banco colgado en toda Mac (`CAP` más un byte: unbound variable), y en Azure, con bash 5, no se vería.
+// Con ese «$CAP» en pipelines/azure-pipelines-maintainers-pr.yml, este caso sale rojo nombrando la línea del paso.
 test('T48 PrShards_PipelineBashSteps_NoVariableGluedToNonAscii — ningún pipeline pega $VAR a un carácter no ASCII', { skip: NO_BASH }, () => {
   const yamls = fs.readdirSync(path.join(ROOT, 'pipelines'), { recursive: true }).map(String).filter((f) => /\.ya?ml$/.test(f)).map((f) => path.join('pipelines', f));
   assert.ok(yamls.length > 0, 'no encontré pipelines que mirar: el caso no mide nada');
@@ -1016,15 +1016,15 @@ test('T48 PrShards_PipelineBashSteps_NoVariableGluedToNonAscii — ningún pipel
   assert.strictEqual(r.status, 0, `${r.stdout}${r.stderr}`);
 });
 
-// story 8.22, cierre (AC 29): el tope de cada trabajo de suites baja de los 45 min de antes a 40. El número lo decidió
-// el dueño del arnés el 2026-10-08 con lo medido a la vista —el trabajo más largo dura 26,0 min con un cambio de un
+// El tope de cada trabajo de suites es 40 min. El número sale de lo medido
+// —el trabajo más largo dura 26,0 min con un cambio de un
 // archivo (el del instalador) y 31,4 en una validación que corre casi todo—: una suite colgada cuesta menos carril, y un
-// trabajo sano no se corta. Y el pipeline ya no dice que la organización tiene 2 carriles: son 4 hospedados, de los que a
+// trabajo sano no se corta. Y el pipeline no dice que la organización tiene 2 carriles: son 4 hospedados, de los que a
 // una corrida le tocan 2 en la práctica. (El valor exacto lo fija el caso «cada trabajo de suites tiene 40 minutos de
-// tope», más arriba; acá van los límites entre los que puede moverse sin volver a preguntar, y que la historia lo cuente.)
+// tope», más arriba; acá van los límites entre los que puede moverse sin volver a preguntar.)
 // Los topes que un job nombra a su nivel, se escriban como se escriban: con un comentario al lado, con espacios de más, con
-// la clave entre comillas o con un parámetro. (Pase adversarial del cierre: contando sólo `timeoutInMinutes: <número>` a
-// secas, un segundo tope escrito de otra forma en el mismo job no se veía y «UN tope» pasaba con dos.)
+// la clave entre comillas o con un parámetro. (Contando sólo `timeoutInMinutes: <número>` a
+// secas, un segundo tope escrito de otra forma en el mismo job no se vería y «UN tope» pasaría con dos.)
 const jobTops = (job) => [...job.matchAll(/^ {4}["']?timeoutInMinutes["']?[ \t]*:(.*)$/gm)].map((m) => m[1].trim());
 
 test('T33 PrPipeline_SuitesTimeoutBelow45AndFourLanes — el tope del trabajo de suites baja de 45 y el pipeline habla de 4 carriles', () => {
@@ -1051,7 +1051,7 @@ test('T33 PrPipeline_SuitesTimeoutBelow45AndFourLanes — el tope del trabajo de
   assert.match(pr, /a una corrida le tocan 2 (carriles )?en la práctica/, 'y que a una corrida le tocan 2 en la práctica');
 });
 
-// ── Story 8.26, tanda C: la validación con un repo de GitHub como propio ────────────────────────────────────────────
+// ── la validación con un repo de GitHub como propio ────────────────────────────────────────────
 /** Corre el paso que trae la foto (Validar). Devuelve el código, la salida y las dos carpetas donde la deja. */
 function runFetch(dir, env) {
   const temp = path.join(dir, 'temp-fetch');
@@ -1069,7 +1069,7 @@ function privateRepo(dir, { photo = true, list = true } = {}) {
   const g = (...a) => spawnSync('git', a, { cwd: repo, env, encoding: 'utf8' });
   fs.mkdirSync(path.join(repo, 'scripts', 'nightly', 'dependencies'), { recursive: true });
   fs.writeFileSync(path.join(repo, 'scripts', 'nightly', 'dependencies', 'repos.json'), '{"repos":[{"ruta":"Lab/A","ado":"LabProj/A"}]}\n');
-  // la lista privada con que el freno de publicación mira el pedido (tanda F2): inventada, como todo acá
+  // la lista privada con que el freno de publicación mira el pedido: inventada, como todo acá
   if (list) {
     fs.mkdirSync(path.join(repo, 'scripts', 'publishing'), { recursive: true });
     fs.writeFileSync(path.join(repo, 'scripts', 'publishing', 'denylist.json'), GUARD_LIST);
@@ -1120,7 +1120,7 @@ test('T11 Validation_GithubSelf_PrivateOnceOutsideTheCheckout_RedWithoutTheVaria
   assert.notStrictEqual(noRepo.code, 0, noRepo.out);
   assert.match(noRepo.out, /##vso\[task\.logissue type=error\]no pude traer lo privado de la validación/);
   assert.ok(!noRepo.out.split('\n').some((l) => l.includes('##vso') && l.includes('no-such')), 'el aviso no nombra el repo');
-  // un pedido desde una copia ajena (fork): rojo antes de traer nada (la segunda capa del AC 46; revisor de seguridad)
+  // un pedido desde una copia ajena (fork): rojo antes de traer nada (la segunda capa)
   const fork = runFetch(dir, { BUILD_REPOSITORY_PROVIDER: 'GitHub', ...priv, SYSTEM_PULLREQUEST_ISFORK: 'True' });
   assert.notStrictEqual(fork.code, 0, fork.out);
   assert.match(fork.out, /##vso\[task\.logissue type=error\]pedido desde una copia ajena/);
@@ -1132,7 +1132,7 @@ test('T11 Validation_GithubSelf_PrivateOnceOutsideTheCheckout_RedWithoutTheVaria
   assert.match(noPhoto.out, /##vso\[task\.logissue type=warning\]no pude traer la foto nocturna/);
 });
 
-// ── Story 8.26, tanda F2 (AC 23): el freno de publicación sobre el pedido ──────────────────────────────────────────
+// ── el freno de publicación sobre el pedido ──────────────────────────────────────────
 // El paso REAL del YAML, con el freno de verdad copiado a un clon de juguete que hace de checkout del pedido. Lo único
 // de mentira es quien lee el título y el cuerpo: el paso llama a `scripts/ci/pr-texts.js` de su checkout, y acá ese
 // archivo es un doble que no sale a la red (el de verdad se mide contra una API de juguete en pr-texts.test.js).
@@ -1375,8 +1375,8 @@ test('T63 PrValidation_WhatTheGuardSays_GoesToTheLogWithoutHashes_AndAVerdictWit
     assert.strictEqual(x.texts, null, 'ni pide el título: frena antes');
   }
   // 🔴 un pedido sin el nombre de su rama (la variable vacía, o el literal que Azure deja cuando no existe): tampoco se
-  // sale verde — ese nombre figura en la página del pedido, y sin él quedaría sin mirar y nadie lo diría (pase
-  // adversarial de la tanda F2). Aunque el freno diga que pasó.
+  // sale verde — ese nombre figura en la página del pedido, y sin él quedaría sin mirar y nadie lo diría.
+  // Aunque el freno diga que pasó.
   for (const branch of ['', '$(System.PullRequest.SourceBranch)']) {
     const x = runGuard(lab, clean, { SYSTEM_PULLREQUEST_SOURCEBRANCH: branch, TOY_GUARD_RC: '0', TOY_GUARD_OUT: PASS });
     assert.strictEqual(x.code, 1, `un pedido con la rama «${branch}»\n${x.out}`);

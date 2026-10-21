@@ -2,9 +2,7 @@
 # Prueba del detector de paridad de release-notes.sh.
 #
 # 🔴 Lo que se prueba NO es que salga verde: es que sepa ponerse ROJO. Un control que nunca se pone
-# rojo es decoración, y de eso se trata el incidente que lo motivó
-# (incident-log#porton-instalado-donde-no-hay-stories-2026-08-31, lección 1: un señuelo prueba el
-# mecanismo sólo si el mecanismo puede fallar).
+# rojo es decoración: un señuelo prueba el mecanismo sólo si el mecanismo puede fallar.
 set -u
 AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$AQUI/scripts/tools/release-notes-parity.js"
@@ -13,12 +11,11 @@ fallos=0
 ok() { echo "✅ parity: $1"; }
 no() { echo "❌ parity: $1"; fallos=$((fallos+1)); }
 
-# 🔴 La siembra tiene que parecerse a una copia REAL, no al mínimo que el detector leía AYER
-# (2026-09-01). Estos señuelos traían sólo `RUIDO=`; el mismo día que nacieron, el detector pasó a
-# exigir además la línea `ULTIMO=` y a FALLAR cuando no está —fail-closed deliberado: "no encontré
-# el camino de respaldo" no puede leerse como "esta copia no lo necesita"—. Desde entonces TODAS
-# las copias sembradas caían como "no se pudo leer", y los casos 1, 2 y 3 fallaban por la siembra,
-# no por lo que querían probar. El test acusaba al guion teniendo el guion razón.
+# 🔴 La siembra tiene que parecerse a una copia REAL, no al mínimo que el detector lee. El detector exige la línea
+# `RUIDO=` y también la línea `ULTIMO=`, y FALLA cuando falta —fail-closed deliberado: "no encontré el camino de
+# respaldo" no puede leerse como "esta copia no lo necesita"—. Con una siembra que traiga sólo `RUIDO=`, TODAS las
+# copias sembradas caerían como "no se pudo leer", y los casos 1, 2 y 3 fallarían por la siembra, no por lo que quieren
+# probar.
 sembrar() { # $1=nombre  $2=RUIDO
   mkdir -p "$TMP/Prod/$1/scripts"
   {
@@ -26,14 +23,14 @@ sembrar() { # $1=nombre  $2=RUIDO
     printf 'ULTIMO=$(git log --format=%%s "$RANGO" | grep -vE "$RUIDO" | head -50)\n'
   } > "$TMP/Prod/$1/scripts/release-notes.sh"
 }
-# 2026-09-15 (story 2.17): suma los dos formatos de merge que el filtro no conocía.
+# Incluye los dos formatos de merge `Merge PR` y `Merge branch`.
 BUENO='^chore: bump version|^chore\(ci\)|^chore: trigger|^Merged PR|^Merge pull request |^Merge PR[ :#]|^Merge branch |^chore: update versions|\[skip ci\]|^ci[:(]|^[a-z]+\(ci\)'
 
 # 1) dos copias sanas → verde
 sembrar A "$BUENO"; sembrar B "$BUENO"
 node "$GATE" --root "$TMP" >/dev/null 2>&1 && ok "dos copias alineadas salen verde" || no "dos copias alineadas deberían salir verde"
 
-# 2) 🔴 el caso REAL: una copia sin ^Merged PR (lo que le pasaba a un producto del equipo)
+# 2) 🔴 una copia sin ^Merged PR: el commit de merge se colaría en las notas
 sembrar B '^chore: bump version|^chore\(ci\)|^chore: trigger|\[skip ci\]'
 S=$(node "$GATE" --root "$TMP" 2>&1); R=$?
 [ $R -eq 1 ] && ok "caza la copia sin ^Merged PR (el caso Totora)" || no "NO cazó la copia sin ^Merged PR (exit $R)"
@@ -50,10 +47,9 @@ sembrar B "$BUENO"
 printf "#!/usr/bin/env bash\n# sin RUIDO\n" > "$TMP/Prod/B/scripts/release-notes.sh"
 node "$GATE" --root "$TMP" >/dev/null 2>&1; [ $? -eq 1 ] && ok "una copia sin RUIDO= falla (ilegible ≠ aprobado)" || no "una copia sin RUIDO= debería fallar"
 
-# 4b) 🔴 una copia CON su RUIDO pero SIN la línea ULTIMO= también falla. Es la conducta que rompió
-# esta suite el 2026-08-31 y que, hasta hoy, no tenía un solo caso que la probara: se había vuelto
-# fail-closed en el detector y el único lugar donde se notaba era en los OTROS casos, cayéndose por
-# la siembra. Una conducta deliberada sin caso propio es una conducta que el próximo la borra.
+# 4b) 🔴 una copia CON su RUIDO pero SIN la línea ULTIMO= también falla. Es el fail-closed del
+# detector: sin un caso propio, el único lugar donde se notaría es en los OTROS casos, cayéndose por la siembra. Una conducta deliberada sin caso propio es una conducta que
+# el próximo la borra.
 sembrar B "$BUENO"
 printf "#!/usr/bin/env bash\nRUIDO='%s'\n# sin ULTIMO=\n" "$BUENO" > "$TMP/Prod/B/scripts/release-notes.sh"
 S=$(node "$GATE" --root "$TMP" 2>&1); R=$?

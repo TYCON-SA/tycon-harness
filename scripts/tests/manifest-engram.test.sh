@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Prueba de manifest-engram.js — el índice de memoria de engram se cruza con sus archivos (story 1.6).
+# Prueba de manifest-engram.js — el índice de memoria de engram se cruza con sus archivos.
 #
 # La memoria del equipo viaja por git en dos piezas: los chunks (`.engram/chunks/<id>.jsonl.gz`) y el
 # índice (`.engram/manifest.json`). `engram sync --import` lee el ÍNDICE: un chunk sin entrada no
-# existe para las demás máquinas, y no da error. El 2026-09-17 el commit ad4f498 dejó 205 entradas
-# para 210 archivos y nada lo objetó. Acá se prueba el criterio único (la lib), la reparación, y los
+# existe para las demás máquinas, y no da error. Un commit que deja 205 entradas
+# para 210 archivos pasa sin que nada lo objete. Acá se prueba el criterio único (la lib), la reparación, y los
 # dos consumidores que delegan en ella (el audit y el rescate). El hook y el portón tienen su propia
 # red: el banco de controles (04-rebuild-engram.json) y `tycon-ci-gate.js --selftest`.
 #
@@ -24,7 +24,7 @@ no(){ echo "❌ manifest-engram: $1"; fallos=$((fallos+1)); }
 # ── Entorno de mentira ──────────────────────────────────────────────────────────────────────────
 # HOME falso: ni el gitconfig del dev ni su ~/.claude entran a la prueba.
 export HOME="$TMP/home"; mkdir -p "$HOME"
-# story 8.3: la integración engram se declara por variable — esta HOME no tiene perfil del equipo, y sin la llave los
+# La integración engram se declara por variable — esta HOME no tiene perfil del equipo, y sin la llave los
 # comandos de engram dicen «apagado» y salen 0 en vez de hacer lo que esta suite mide (con dobles, sin red).
 export TYCON_ENGRAM=1
 # PATH sin engram: node va por symlink (con nvm vive fuera de /usr/bin); git, gzip y cmp salen de
@@ -138,7 +138,7 @@ cruzar
   && ok "T5 índice con 2 entradas y sin chunks/ → no-medido, declarados=2, huérfanos null" \
   || no "T5 dio estado=$(j estado) codigo=$(j codigo) declarados=$(j declarados) huerfanos=[$(j huerfanos)] rc=$RC"
 
-# ════════════════════════════════════════════════════════ NUEVO vs HEREDADO (AC 2, 3)
+# ════════════════════════════════════════════════════════ NUEVO vs HEREDADO
 # ---------------------------------------------------------------- T6. Clasifica_PerdidaContraHEAD_EsNueva
 nuevo_repo; chunk aaaa1111; chunk bbbb2222; chunk cccc3333
 indice 'aaaa1111' 'bbbb2222' 'cccc3333'; commitear "3 de 3"
@@ -223,12 +223,12 @@ reparar --apply
   || no "T11 nació=[$NACIO] · cccc=[$(entrada cccc3333)] dddd=[$(entrada dddd4444)] rc=$RC — $ERR"
 
 # ---------------------------------------------------------------- T11b. Reparar_RescataDelLadoQueGitPoda
-# 🔴 El caso CANÓNICO, que T11 no cubría (pase adversarial, 2026-09-17): un pull con conflicto en el
+# 🔴 El caso CANÓNICO, que T11 no cubre: un pull con conflicto en el
 # índice, resuelto quedándose con un lado (`git checkout --theirs`, la maniobra que la propia guía
 # prescribe). El merge queda TREESAME a ese padre para el índice, y `git log` SIN `--full-history`
 # poda el otro lado entero: la entrada perdida vive justo ahí, y no está en ningún ref. Sin la
-# bandera, `reparar` la reconstruía desde el chunk (autor y fecha equivocados); con el chunk
-# ilegible, la declaraba irreparable teniéndola git entera.
+# bandera, `reparar` la reconstruye desde el chunk (autor y fecha equivocados); con el chunk
+# ilegible, la declara irreparable teniéndola git entera.
 nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "base publicada"
 git -C "$R" checkout -q -b remoto; chunk cccc3333
 indice 'aaaa1111|t|2026-01-01T00:00:00Z' 'cccc3333|fer|2026-02-03T00:00:00Z|1|1|0'; commitear "el compañero publica cccc3333"
@@ -245,8 +245,8 @@ reparar --apply
   || no "T11b podados=$PODADOS (2 = git poda sin --full-history) · bbbb=[$(entrada bbbb2222)] esperaba [$ENT_LUZ] · origen=$(j reparadas.0.origen) rc=$RC"
 
 # ---------------------------------------------------------------- T15b. Reparar_ConSoloFantasmas_NoDiceNadaQueReparar
-# Sin huérfanos pero con fantasmas/duplicados, `reparar` decía «✅ no hay nada que reparar» y salía 0
-# sobre un índice que el cruce acababa de declarar en deriva (pase adversarial). Ahora lo lista,
+# Sin huérfanos pero con fantasmas/duplicados, `reparar` no puede decir «✅ no hay nada que reparar» ni salir 0
+# sobre un índice que el cruce declara en deriva. Lo lista,
 # aclara que este comando no lo toca (borrar es otra decisión), y sale 1.
 nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z' 'xxxx9999|t|2026-02-01T00:00:00Z'
 (cd "$R" && node "$LIB" repair --repo "$R") >"$TMP/t15b" 2>&1; RC=$?
@@ -255,9 +255,9 @@ nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z' 'xxxx9999|t
   || no "T15b rc=$RC: $(head -3 "$TMP/t15b")"
 
 # ---------------------------------------------------------------- T16c. Reparar_StageaTambienElChunkQueDeclara
-# El caso `chunk-sin-entrada`: el archivo todavía NO está en git. Stagear sólo el índice producía el
-# commit INVERSO al que la story combate —una entrada cuyo archivo no viaja— y el cruce del disco lo
-# daba por sano porque en disco están los dos (pase adversarial).
+# El caso `chunk-sin-entrada`: el archivo todavía NO está en git. Stagear sólo el índice produciría el
+# commit INVERSO al que se combate —una entrada cuyo archivo no viaja— y el cruce del disco lo
+# daría por sano porque en disco están los dos.
 nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "base"
 chunk dddd4444                                   # nuevo, sin entrada, sin stagear
 reparar --apply
@@ -267,8 +267,8 @@ STAGED=$(git -C "$R" diff --cached --name-only | sort | tr '\n' ' ')
   || no "T16c staged=[$STAGED] rc=$RC"
 
 # ---------------------------------------------------------------- T16d. Reparar_SiElAddFalla_LoDice
-# El `git add` de lo reparado se VERIFICA (cazador de fallos silenciosos, vuelta 2): un chunk que un
-# `.gitignore` excluye dejaba el mensaje diciendo «stageado» sin haberlo corroborado. Acá el chunk a
+# El `git add` de lo reparado se VERIFICA: un chunk que un
+# `.gitignore` excluye dejaría el mensaje diciendo «stageado» sin haberlo corroborado. Acá el chunk a
 # declarar está ignorado: el índice se escribe, pero se avisa que no se pudo stagear y no se dice
 # «reparado».
 nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "base"
@@ -336,8 +336,8 @@ reparar --apply
   || no "T13 quedó [$(entrada zzzz0000)] origen=$(j reparadas.0.origen) rc=$RC — $ERR"
 
 # ---------------------------------------------------------------- T13b. Reparar_AutorConBarraVertical
-# El autor del commit se parte del `%an|%aI` por el ÚLTIMO `|`, no el primero (pase adversarial):
-# con un `|` en el nombre, la fecha quedaba ilegible y la entrada se escribía con created_at de 1970.
+# El autor del commit se parte del `%an|%aI` por el ÚLTIMO `|`, no el primero:
+# con un `|` en el nombre, la fecha quedaría ilegible y la entrada se escribiría con created_at de 1970.
 nuevo_repo; chunk aaaa1111; indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "base"
 chunk yyyy0000 1 0 0
 GIT_AUTHOR_NAME='R|D' GIT_AUTHOR_DATE="2026-05-06T07:08:09Z" git -C "$R" add -A >/dev/null
@@ -349,8 +349,8 @@ reparar --apply
 
 # ---------------------------------------------------------------- T6c. Cruzar_ModoArbol_DesdeUnSubdirectorio
 # En modo árbol el índice se lee relativo a la RAÍZ (`git show <ref>:<path>`) y los archivos con un
-# pathspec: sin `:/`, ese pathspec era relativo al CWD, y con `dir` en un subdirectorio la lista
-# salía vacía y TODAS las entradas se reportaban como fantasma (pase adversarial).
+# pathspec: sin `:/`, ese pathspec sería relativo al CWD, y con `dir` en un subdirectorio la lista
+# saldría vacía y TODAS las entradas se reportarían como fantasma.
 nuevo_repo; chunk aaaa1111; chunk bbbb2222; indice 'aaaa1111' 'bbbb2222'; mkdir -p "$R/sub/mas"; echo x > "$R/sub/mas/f.txt"; commitear "2 de 2 con subdirectorio"
 node -e 'const l=require(process.argv[1]);const r=l.cruzar(process.argv[2],{arbol:"HEAD",contra:null});process.stdout.write(JSON.stringify(r));' "$LIB" "$R/sub/mas" >"$OUT" 2>"$TMP/err"
 [ "$(j estado)" = "sano" ] && [ "$(j archivos)" = "2" ] && [ "$(j fantasmas)" = "" ] \
@@ -434,9 +434,9 @@ node "$RESCATE" --reindex --repo Z >"$TMP/out17z" 2>&1; RC=$?
 [ "$RC" -eq 2 ] && grep -q "A" "$TMP/out17z" && grep -q "B" "$TMP/out17z" && grep -q "Z" "$TMP/out17z" \
   && ok "T17 una etiqueta desconocida sale 2 nombrando los repos conocidos" \
   || no "T17 --repo Z dio rc=$RC: $(tail -3 "$TMP/out17z")"
-# 🔴 T17c — el verde falso que cazó el cazador de fallos silenciosos (2026-09-17). Un índice que el
+# 🔴 T17c — el verde falso. Un índice que el
 # criterio NO puede medir (entradas sin `id` de texto — el pre-check propio del rescate no lo cubre)
-# salía con las listas vacías, y el rescate imprimía «✅ Todo chunk está en el índice» y código 0.
+# saldría con las listas vacías, y el rescate imprimiría «✅ Todo chunk está en el índice» y código 0.
 # Un verde falso dentro del comando que existe para reparar exactamente eso. Mutación que lo pone en
 # rojo: sacar el `if (arreglo.estado === 'no-medido')` de `reindexar`, o devolver `[]` en vez de
 # `null` desde `reparar` cuando no se pudo medir.
@@ -454,9 +454,9 @@ ANTES="$(cat "$R/.engram/manifest.json")"
 unset TYCON_REPOS_ROOT
 
 # ---------------------------------------------------------------- T17b. Reindex_CorreSinBaseLocal
-# 🔴 El guard de `~/.engram/engram.db` estaba ANTES de mirar `--reindex`, así que el comando salía 1
+# 🔴 El guard de `~/.engram/engram.db` tiene que ir DESPUÉS de mirar `--reindex`; si va antes, el comando sale 1
 # con «nada que hacer» en toda máquina sin base local: un clon recién hecho, un agente de CI, o el
-# dev que todavía no corrió engram. O sea que el arreglo que el aviso diario recomienda no arrancaba
+# dev que todavía no corrió engram. O sea que el arreglo que el aviso diario recomienda no arrancaría
 # justo donde más falta. El reindex mira ARCHIVOS, no la base. Esta suite corre con HOME falso, así
 # que la condición es real; la aserción la deja EXPLÍCITA para que nadie devuelva el guard a su lugar.
 raiz_falsa 17b
@@ -476,11 +476,11 @@ unset TYCON_REPOS_ROOT
 nuevo_repo; chunk aaaa1111; chunk bbbb2222
 indice 'aaaa1111|t|2026-01-01T00:00:00Z' 'bbbb2222|t|2026-02-01T00:00:00Z'; commitear "2 de 2"
 indice 'aaaa1111|t|2026-01-01T00:00:00Z'; commitear "pierde una"
-# 🔴 El falso imita la salida REAL de engram 1.20.0, capturada el 2026-09-17: «Imported 2 new chunk(s)
-# from .engram/» + tres líneas de contadores. La primera versión de este caso decía «imported 2 chunks»
-# —un formato que engram no usa— y confirmaba un regex que en la máquina de cualquiera con engram
-# instalado no matcheaba NUNCA (lo cazó el pase adversarial). Un doble que no imita al real mide un
-# mundo que no existe: la lección de la 1.5, repetida acá y anotada para que no sea tres.
+# 🔴 El falso imita la salida REAL de engram 1.20.0: «Imported 2 new chunk(s)
+# from .engram/» + tres líneas de contadores. Un formato inventado como «imported 2 chunks»
+# —que engram no usa— confirmaría un regex que en la máquina de cualquiera con engram
+# instalado no matchearía NUNCA. Un doble que no imita al real mide un
+# mundo que no existe.
 printf '#!/bin/sh\necho "Imported 2 new chunk(s) from .engram/"\necho "  Sessions:     0"\necho "  Observations: 2"\necho "  Prompts:      0"\nexit 0\n' > "$TMP/bin/engram" && chmod +x "$TMP/bin/engram"
 reparar --apply
 [ "$RC" -eq 0 ] && printf '%s' "$(j verificado.importador)" | grep "vio los 2 chunks" >/dev/null \
@@ -540,7 +540,7 @@ VISTOS=$(node -e 'const a=require(process.argv[1]);process.stdout.write(a.scanEn
 [ "$VISTOS" = "Proyectos/Acme/Codigo/n4 Proyectos/Acme/n3 grupo/n2 n1" ] \
   && ok "T20 ve repos a 1, 2, 3 y 4 niveles con su ruta relativa; no entra a node_modules ni baja al 5º" \
   || no "T20 el escaneo vio [$VISTOS] — $(cat "$TMP/err")"
-# T20b (corrección del AC 20, medida el 2026-09-17): la carpeta madre con memoria PROPIA no tapa a sus repos
+# T20b: la carpeta madre con memoria PROPIA no tapa a sus repos
 raiz_falsa 20b
 repo_en Orbita; repo_en Orbita/OrbitaBackend; repo_en Orbita/OrbitaFrontEnd
 VISTOS=$(node -e 'const a=require(process.argv[1]);process.stdout.write(a.scanEngramRepos(process.argv[2]).pinned.map((x)=>x.repo).sort().join(" "));' "$AUDIT" "$RAIZ" 2>"$TMP/err")
@@ -557,9 +557,9 @@ VISTOS=$(node -e 'const a=require(process.argv[1]);process.stdout.write(a.scanEn
   || no "T21 el escaneo vio [$VISTOS]"
 unset TYCON_REPOS_ROOT
 
-# ════════════════════════════════════════════════════════ EL HOOK SIN NODE (AC 8)
+# ════════════════════════════════════════════════════════ EL HOOK SIN NODE
 # ---------------------------------------------------------------- T35b. Hook_SinNode_Python3ValidaYElCruceDiceQueNoPudo
-# El camino de respaldo de `json_valido` (revisor de cobertura, vuelta 3): sin node, python3 valida
+# El camino de respaldo de `json_valido`: sin node, python3 valida
 # el índice —el staging de lo del sync sigue— y el cruce, que sí exige node, dice «no pude medir».
 # El PATH de este caso lleva jq y python3 pero NO node. Si en la máquina node vive en /usr/bin (un
 # Linux con node del sistema) el caso no puede esconderlo: se declara NO MEDIDO, nunca verde.
@@ -581,10 +581,10 @@ else
     || no "T35b rc=$RC · err=[$(head -c 300 "$TMP/t35b.err")]"
 fi
 
-# ════════════════════════════════════════════════════════ LA MEMORIA NO VA AL REPO PÚBLICO (story 8.26, AC 39)
-# ---------------------------------------------------------------- Memory_NotInPublicRepo (T39 de la story 8.26)
+# ════════════════════════════════════════════════════════ LA MEMORIA NO VA AL REPO PÚBLICO
+# ---------------------------------------------------------------- Memory_NotInPublicRepo (T39)
 # Después del corte a GitHub, quien mantiene commitea en un clon del repo PÚBLICO, que no guarda memoria (no trae
-# `.engram-project`), y declara en su máquina el clon PRIVADO de mantenimiento, que sí. Decisión de la tanda H1c: al
+# `.engram-project`), y declara en su máquina el clon PRIVADO de mantenimiento, que sí. Al
 # commitear en el público NO se exporta nada, en ningún lado; lo pendiente lo exporta y lo prepara el próximo commit
 # hecho EN el clon de mantenimiento (`engram sync --project X` exporta todo lo pendiente del proyecto, se haya guardado
 # desde la sesión que sea). Se descartó exportar al clon de mantenimiento en cada commit del público: lo que queda ahí
@@ -632,7 +632,7 @@ hook39 "$PUB39" "cd \"$MAINT39\" && git commit -m \"la memoria viaja con este co
   && ok "Memory_NotInPublicRepo (T39): el commit siguiente en el clon de mantenimiento exporta ahí lo pendiente y lo deja preparado; el público sigue sin memoria" \
   || no "Memory_NotInPublicRepo (T39) la otra mitad: rc=$RC39 · engram corrió en [$(tr '\n' ' ' < "$M39/calls.log")] · preparado=[$(git -C "$MAINT39" diff --cached --name-only | tr '\n' ' ')] · $(head -c 300 "$M39/err")"
 
-# ════════════════════════════════════════════════════════ LA RED ESTÁ ENCHUFADA (AC 32)
+# ════════════════════════════════════════════════════════ LA RED ESTÁ ENCHUFADA
 # ---------------------------------------------------------------- T39. SuiteRegistrada_YPortable
 node -e 'const d=require(process.argv[1]);const t=[...d.diarias,...(d.semanales||[])];process.exit(t.some((x)=>x.raiz==="arnes"&&x.ruta==="tests/manifest-engram.test.sh")?0:1)' "$AQUI/scripts/tests/suites.json" \
   && ok "T39 la suite está registrada en suites.json (raiz: arnes)" || no "T39 la suite no está en suites.json"
@@ -648,8 +648,7 @@ done
 # Los casos que ejercen el hook y el aviso diario no son archivos de test: son JSON del banco de
 # controles. El chequeo mecánico de cobertura (ACCOV-C1) sólo abre `*.test.sh` / `*.test.js` /
 # `*Tests.cs`, así que esos casos le resultan invisibles y los reporta como «declarado sin
-# implementación» — un CRITICAL falso, el mismo modo de falla que ya se corrigió en 2026-09-10
-# cuando el escáner no abría los `.test.sh`. Acá se verifica desde un archivo que SÍ escanea que
+# implementación» — un CRITICAL falso, el mismo modo de falla de un escáner que no abre los `.test.sh`. Acá se verifica desde un archivo que SÍ escanea que
 # cada caso está registrado, con su T-ID al lado para que el grep lo encuentre. Si alguien borra un
 # caso del banco, esto se pone rojo.
 faltan_casos=""
@@ -682,7 +681,7 @@ caso_en 04-rebuild-engram.json con-a-despues-del-mensaje-tambien-se-cruza-el-dis
   || no "T22–T32b faltan casos en el banco:$faltan_casos"
 # T41b: el congelador del portón (T12 de trimmed-close.test.sh) compara POR FUNCIÓN, no el
 # archivo entero — si vuelve al `git diff --quiet` del archivo, toda story que agregue un chequeo
-# nace en rojo. Verificado además con 4 mutantes en la corrida (ver el reporte del Step 4).
+# nace en rojo.
 # T38b/T38c: las dos comprobaciones nuevas del selftest del portón (base de merge · los avisos llegan al
 # CLI) viven en tycon-ci-gate.js, que el cruce de cobertura no escanea; se verifica acá que existan.
 grep -q "BASE DE MERGE" "$AQUI/scripts/ci/tycon-ci-gate.js" && grep -q "LLEGAN al CLI" "$AQUI/scripts/ci/tycon-ci-gate.js" && grep -q "sin base de merge" "$AQUI/scripts/ci/tycon-ci-gate.js" \
@@ -693,13 +692,13 @@ grep -q "funcion_js" "$AQUI/scripts/tests/trimmed-close.test.sh" 2>/dev/null \
   && ok "T41b el congelador del portón compara por función, no el archivo entero" \
   || no "T41b cierre-recortado volvió a congelar el archivo entero de tycon-ci-gate.js"
 
-# ---------------------------------------------------------------- Cli_SalidaGrandePorUnCano_LlegaEntera (story 8.18)
-# El CLI cerraba con `process.exit(main(…))` justo después de un `console.log` grande. Con la salida por un caño y un
-# lector que tarda, en macOS lo que el caño todavía no tomó se pierde al salir: llegaron 8192 bytes de 12 495 (el
-# intermitente de T34 de legacy-names-b3.test.js, 2026-10-04, con la máquina cargada). Acá el reporte pasa de 200 KB
+# ---------------------------------------------------------------- Cli_SalidaGrandePorUnCano_LlegaEntera
+# Si el CLI cierra con `process.exit(main(…))` justo después de un `console.log` grande, con la salida por un caño y un
+# lector que tarda, en macOS lo que el caño todavía no tomó se pierde al salir (por ejemplo, 8192 bytes de 12 495).
+# Acá el reporte pasa de 200 KB
 # —más que lo que guarda un caño— y el lector espera antes de leer: lo que llega por el caño tiene que ser, byte a
-# byte, lo escrito a un archivo. (En Linux el caño se escribe entero antes de salir: allá esto ya daba verde.)
-# 🔴 rojo previo verificado en macOS: con `process.exit(main(…))` por el caño llega sólo el principio.
+# byte, lo escrito a un archivo. (En Linux el caño se escribe entero antes de salir: allá esto da verde igual.)
+# 🔴 En macOS, con `process.exit(main(…))` por el caño llega sólo el principio.
 nuevo_repo; chunk aaaa1111
 # shellcheck disable=SC2046  # una palabra por id, a propósito
 indice 'aaaa1111' $(node -e 'for (let i = 0; i < 4000; i++) console.log("phantom-" + String(i).padStart(6, "0") + "-0123456789abcdef0123456789abcdef")')

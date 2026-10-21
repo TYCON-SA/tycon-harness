@@ -2,12 +2,11 @@
 # Prueba de pr-auto-complete-guard.js — el freno que impide armar un pull request A MANO sin
 # auto-complete, o con squash.
 #
-# 🔴 Nace de un pull request del backend de un producto del equipo (2026-09-03): el skill de merge sabía crear el PR
-# bien y el agente lo creó suelto, sin auto-complete. Lo vio el dev en la pantalla de Azure. Una
-# regla escrita («usá el skill») es justo lo que falló; esto no depende de que nadie se acuerde.
+# 🔴 Un agente puede crear un pull request suelto, sin auto-complete, aunque el skill de merge sepa crearlo
+# bien. Una regla escrita («usá el skill») es justo lo que puede fallar; esto no depende de que nadie se acuerde.
 #
-# 🔴 Los casos 11 a 18 son los SEIS caminos por los que la primera versión se dejaba pasar, cazados
-# por la revisión adversarial del mismo día. Sin ellos, un verde no significaría nada.
+# 🔴 Los casos 11 a 18 son los SEIS caminos por los que un freno armado a la ligera se deja pasar.
+# Sin ellos, un verde no significaría nada.
 #
 # Sin red: el freno mira sólo el texto del comando.
 set -uo pipefail
@@ -19,13 +18,12 @@ fallos=0; casos=0
 ok(){ casos=$((casos+1)); echo "✅ pr-sin-ac: $1"; }
 no(){ casos=$((casos+1)); echo "❌ pr-sin-ac: $1"; fallos=$((fallos+1)); }
 
-# El sujeto de esta prueba es un script de Node: pedirle a python3 que arme el JSON metía un
-# intérprete más (y 39 arranques) en la suite diaria, que ya se pasó de tiempo una vez.
-# 🔴 HOME aislado (2026-09-06): el hook deja constancia de cada escape en
+# El sujeto de esta prueba es un script de Node: pedirle a python3 que arme el JSON metería un
+# intérprete más (y 39 arranques) en la suite diaria, que tiene poco margen de tiempo.
+# 🔴 HOME aislado: el hook deja constancia de cada escape en
 # `$HOME/.claude/.tycon-pipeline/bypass.log`, y esta suite lo ejercita (caso 8) — sin aislar,
-# escribía escapes de PRUEBA en el registro de escapes HUMANOS del dev y después afirmaba sobre
-# ese registro vivo. Medido: los 9 escapes reales del log no tenían la huella del test, o sea que
-# el assert pasaba con datos de otro. Misma familia que el hallazgo #3 del pase del 2026-09-06.
+# escribiría escapes de PRUEBA en el registro de escapes HUMANOS del dev y después afirmaría sobre
+# ese registro vivo: el assert podría pasar con datos de otro.
 export HOME="$TMP/home"; mkdir -p "$HOME/.claude/.tycon-pipeline"
 corre(){ # <comando>
   node -e 'process.stdout.write(JSON.stringify({tool_input:{command:process.argv[1]}}))' "$1" \
@@ -35,7 +33,7 @@ corre(){ # <comando>
 BASE='az repos pr create --organization https://dev.azure.com/org-del-equipo --project Ceibo --repository CeiboBackend --source-branch fix/health-build-info --target-branch main --title "fix(health): x"'
 BIEN="$BASE --auto-complete true --squash false"
 
-# ---------------------------------------------------------------- 1. 🔴 EL CASO REAL (tal cual se tipeó)
+# ---------------------------------------------------------------- 1. 🔴 EL COMANDO TAL CUAL SE TIPEÓ
 rc=$(corre "$BASE --description \"a\" \"\" \"b\" -o json")
 [ "$rc" -eq 2 ] && ok "🔴 el comando del caso real (sin auto-complete) queda BLOQUEADO (exit 2)" || no "🔴 dejó pasar el comando del caso real ($rc)"
 grep -q "tycon-merge-to-main" "$TMP/err.txt" && ok "…y dice el camino: el skill de merge" || no "no nombró el skill"
@@ -142,48 +140,48 @@ rc=$(corre "az repos pr update --id 2859 --auto-complete true --squash false --d
 rc=$(corre "az repos pr update --id 2859 --title \"otro título\"")
 [ "$rc" -eq 0 ] && ok "'pr update' que no toca esas dos banderas pasa" || no "🔴 bloqueó un update inocente ($rc)"
 
-# ---------------------------------------------------------------- 19. 🔴 2ª REVISIÓN: el valor ENTRE COMILLAS es válido para az
+# ---------------------------------------------------------------- 19. 🔴 el valor ENTRE COMILLAS es válido para az
 rc=$(corre "$BASE --auto-complete \"true\" --squash 'false'")
 [ "$rc" -eq 0 ] && ok "🔴 '--auto-complete \"true\"' (comillas en el VALOR) pasa: es válido para az" || no "🔴 bloqueó un comando correcto por las comillas ($rc) — un freno que corta el camino bueno se apaga"
 rc=$(corre "az repos pr update --id 5 --squash \"true\"")
 [ "$rc" -eq 2 ] && ok "🔴 …y '--squash \"true\"' en un update sigue BLOQUEANDO" || no "🔴 las comillas abrieron la puerta del update ($rc)"
 
-# ---------------------------------------------------------------- 20. 🔴 2ª REVISIÓN: `&` de fondo también separa
+# ---------------------------------------------------------------- 20. 🔴 `&` de fondo también separa
 rc=$(corre "$BIEN & az repos pr create --org https://x --source-branch ci/b --target-branch main --title t")
 [ "$rc" -eq 2 ] && ok "🔴 dos creaciones separadas por '&' se juzgan por separado" || no "🔴 la segunda heredó las banderas por el '&' ($rc)"
 rc=$(corre "$BIEN 2>&1")
 [ "$rc" -eq 0 ] && ok "…y '2>&1' NO se confunde con un separador" || no "🔴 leyó la redirección como separador ($rc)"
 
-# ---------------------------------------------------------------- 21. 🔴 2ª REVISIÓN: az acepta opciones globales antes del grupo
+# ---------------------------------------------------------------- 21. 🔴 az acepta opciones globales antes del grupo
 rc=$(corre "az -o json repos pr create --org https://x --source-branch ci/a --target-branch main --title t")
 [ "$rc" -eq 2 ] && ok "🔴 'az -o json repos pr create' NO esquiva el freno" || no "🔴 las opciones globales lo esquivaron ($rc)"
 rc=$(corre "az repos pr \\
   create --org https://x --source-branch ci/a --target-branch main --title t")
 [ "$rc" -eq 2 ] && ok "🔴 una continuación de línea entre 'pr' y 'create' tampoco lo esquiva" || no "🔴 la continuación lo esquivó ($rc)"
 
-# ---------------------------------------------------------------- 22. 🔴 2ª REVISIÓN: publicar un borrador es la tercera puerta
+# ---------------------------------------------------------------- 22. 🔴 publicar un borrador es la tercera puerta
 rc=$(corre "az repos pr update --id 5 --draft false")
 [ "$rc" -eq 2 ] && ok "🔴 publicar un borrador ('--draft false') sin las banderas BLOQUEA" || no "🔴 el camino borrador→publicar quedó abierto ($rc)"
 rc=$(corre "az repos pr update --id 5 --draft false --auto-complete true --squash false")
 [ "$rc" -eq 0 ] && ok "…y publicarlo CON las dos banderas pasa" || no "🔴 bloqueó una publicación correcta ($rc)"
 
-# ---------------------------------------------------------------- 23. 🔴 2ª REVISIÓN: código adentro de una cadena que ejecuta otro intérprete
+# ---------------------------------------------------------------- 23. 🔴 código adentro de una cadena que ejecuta otro intérprete
 rc=$(corre "bash -c \"az repos pr create --target-branch main --title t\"")
 [ "$rc" -eq 2 ] && ok "🔴 'bash -c \"az repos pr create…\"' BLOQUEA: no puedo leer lo que se ejecuta" || no "🔴 el intérprete lo escondió ($rc)"
 rc=$(corre "echo \"az repos pr create --target-branch main\"")
 [ "$rc" -eq 0 ] && ok "…pero un 'echo' con el mismo texto NO se toca: echo no ejecuta nada" || no "🔴 bloqueó un echo ($rc)"
 
-# ---------------------------------------------------------------- 24. 🔴 2ª REVISIÓN: sólo los PR a main
+# ---------------------------------------------------------------- 24. 🔴 sólo los PR a main
 rc=$(corre "az repos pr create --org https://x --source-branch feat/x --target-branch dev --title t")
 [ "$rc" -eq 0 ] && ok "🔴 un PR a 'dev' NO se toca: el skill es el camino de main, no de dev" || no "🔴 frenó un PR a dev con un consejo equivocado ($rc)"
 
-# ---------------------------------------------------------------- 25. 🔴 2ª REVISIÓN: la rama del mensaje, tal cual
+# ---------------------------------------------------------------- 25. 🔴 la rama del mensaje, tal cual
 rc=$(corre "az repos pr create --org https://x --source-branch fix/Health-Build --target-branch main --title t")
 grep -q "source=fix/Health-Build" "$TMP/err.txt" && ok "🔴 la rama del mensaje conserva las mayúsculas (git distingue)" || no "🔴 el mensaje sugiere una rama que no existe"
 rc=$(corre "az repos pr create --org https://x -s fix/corta -t main --title t")
 grep -q "source=fix/corta" "$TMP/err.txt" && ok "…y entiende la forma corta '-s'" || no "🔴 no leyó '-s' y sugiere <rama>"
 
-# ---------------------------------------------------------------- 26. 🔴 2ª REVISIÓN: un comentario con apóstrofo no desarma el freno
+# ---------------------------------------------------------------- 26. 🔴 un comentario con apóstrofo no desarma el freno
 rc=$(corre "$(printf '# no uses el skill, don%s t\naz repos pr create --org https://x --source-branch ci/a --target-branch main --title t' "'")")
 [ "$rc" -eq 2 ] && ok "🔴 un comentario con apóstrofo NO se traga el comando de la línea siguiente" || no "🔴 una comilla suelta desarmó el freno ($rc)"
 

@@ -1,10 +1,10 @@
 'use strict';
 /**
- * waiver-probe.js — en Windows, ¿el agente puede firmar un waiver? (decisión del dueño, 2026-10-15, opción A)
+ * waiver-probe.js — en Windows, ¿el agente puede firmar un waiver?
  *
- * ── EL CASO ─────────────────────────────────────────────────────────────────────────────────────────────────────────
- * Un dev del equipo en Windows no podía firmar nunca: `marker.js runtime-waiver` pedía /dev/tty, que en Windows no existe.
- * El arreglo abre una ventana de consola NUEVA y visible donde la persona aprueba y escribe una frase al azar; sólo esa
+ * ── POR QUÉ EXISTE ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+ * Un dev del equipo en Windows no puede firmar por terminal: `marker.js runtime-waiver` pide /dev/tty, que en Windows no existe.
+ * Por eso el comando abre una ventana de consola NUEVA y visible donde la persona aprueba y escribe una frase al azar; sólo esa
  * ventana firma, y vence a los 5 minutos. Esta sonda mide, en el agente Windows y sin ninguna persona, lo que le importa
  * al candado: que desde un proceso como el del agente no se firma.
  *
@@ -90,7 +90,7 @@ function measure({ lab, platform = process.platform, baseEnv = process.env, rec 
   rec.fact('agent_console', c);
   if (c.nueva) rec.finding('waiver:agent-console-is-new', 'waiver', `la consola del agente pasa por «nueva» (${c.conectados} conectados): el candado no la distingue`);
 
-  // 4 · el caso POSITIVO (revisión adversarial): una ventana nueva de verdad SÍ pasa por «nueva». Sin esto, el paso 3 sale
+  // 4 · el caso POSITIVO: una ventana nueva de verdad SÍ pasa por «nueva». Sin esto, el paso 3 sale
   //     bien también cuando la cuenta da 1 en todas partes —y entonces la persona tampoco podría firmar—.
   const salida = path.join(dir, 'ventana-nueva.json');
   const guion = path.join(dir, 'ventana-nueva.js');
