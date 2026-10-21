@@ -2525,12 +2525,12 @@ test('T30b SiteConfig_RunnerTable_SameColumnsAndClearOrigin — todas las filas 
   assert.strictEqual(origen('dotnet'), 'incluida en el arnés · no se edita');
   assert.strictEqual(origen('go'), 'de fábrica · se puede cambiar');
   assert.strictEqual(origen('cargo'), 'agregada por tu organización');
-  // «Reemplazar» despliega cómo hacerlo, en la fila
+  // «Reemplazar» deja, en la fila, la frase para el agente (el detalle, en T30d)
   const reemplazar = (() => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(fila('dotnet')); return out.find((x) => x.tag === 'button'); })();
   assert.strictEqual(reemplazar.textContent, 'Reemplazar');
-  assert.doesNotMatch(p.texto(), /agregá una receta que se detecte con el mismo archivo/i, 'plegado hasta que se toca');
+  assert.doesNotMatch(p.texto(), /quiero reemplazar la herramienta de pruebas/, 'plegado hasta que se toca');
   reemplazar.on.click(); await p.esperar();
-  assert.match(p.texto(), /Agregá una receta que se detecte con el mismo archivo y gana la de tu organización/);
+  assert.match(p.texto(), /quiero reemplazar la herramienta de pruebas \.NET de mi proyecto/);
   // una de fábrica cambiada lo dice
   const cambiada = await pantallaTec({ stack: { test_runners: [{ name: 'go', detect: 'go.mod', command: 'go test ./...', results: { format: 'junit', path: '{results}/j.xml' } }] } });
   const celdasGo = (cambiada.todos().find((x) => x.attrs['data-runner'] === 'go').hijos || []).filter((x) => x.tag === 'span');
@@ -2597,6 +2597,54 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
   assert.match(sec, /team-repos\.js/);
   assert.match(sec, /archivo que la detecta|detect/);
   assert.match(fs.readFileSync(path.join(ROOT, 'guides', 'organization-site.en.md'), 'utf8'), /\n### Your technology\n/);
+});
+
+test('T30d SiteConfig_ReplaceBuiltIn_CopiesPhraseForThatTool — «Reemplazar» de una incluida deja la frase armada para esa herramienta y qué pasa después', async () => {
+  // 🔴 rojo: «Reemplazar» sólo despliega una explicación, o la frase no nombra la herramienta y su archivo.
+  const antes = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  const copiado = [];
+  Object.defineProperty(globalThis, 'navigator', { value: { clipboard: { writeText: (t) => { copiado.push(t); return Promise.resolve(); } } }, configurable: true, writable: true });
+  try {
+    for (const [idioma, frase, despues] of [
+      ['es', 'quiero reemplazar la herramienta de pruebas Node (node --test) de mi proyecto por una receta propia en la configuración del arnés, detectada por package.json (la receta está en la sección «Tu tecnología» de guides/organization-site.md del arnés)',
+        'El agente arma el pedido, lo aprueba un admin y desde la próxima ejecución se usa la tuya.'],
+      ['en', 'I want to replace the Node (node --test) test tool in my project with our own recipe in the harness configuration, detected by package.json (the recipe is in the «Your technology» section of the harness guides/organization-site.en.md)',
+        'The agent builds the request, an admin approves it, and from the next execution on yours is used.'],
+    ]) {
+      const p = await pantallaTec({}, idioma);
+      const fila = p.todos().find((n) => n.attrs['data-runner'] === 'node');
+      const deFila = []; (function walk(x) { deFila.push(x); (x.hijos || []).forEach(walk); })(fila);
+      deFila.find((n) => n.tag === 'button').on.click(); await p.esperar();
+      assert.strictEqual(copiado.pop(), frase, `${idioma}: la frase copiada nombra la herramienta y su archivo`);
+      const msg = p.todos().find((n) => n.attrs['data-reemplazar'] === 'node');
+      assert.ok(msg, `${idioma}: la frase queda a la vista debajo de la fila`);
+      assert.ok(p.texto().includes('«' + frase + '»'), `${idioma}: la frase, entera`);
+      assert.ok(p.texto().includes(despues), `${idioma}: qué pasa después`);
+    }
+  } finally {
+    if (antes) Object.defineProperty(globalThis, 'navigator', antes); else delete globalThis.navigator;
+  }
+  // .NET: dos archivos que la detectan, sin el agregado entre paréntesis
+  const q = await pantallaTec({});
+  const filaNet = q.todos().find((n) => n.attrs['data-runner'] === 'dotnet');
+  const deNet = []; (function walk(x) { deNet.push(x); (x.hijos || []).forEach(walk); })(filaNet);
+  deNet.find((n) => n.tag === 'button').on.click(); await q.esperar();
+  assert.match(q.texto(), /herramienta de pruebas \.NET de mi proyecto .* detectada por \.sln, \.csproj \(la receta/);
+  // sin portapapeles, la frase igual queda a la vista; un segundo clic no la pliega
+  const sinPortapapeles = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  delete globalThis.navigator;
+  try {
+    const z = await pantallaTec({});
+    const filaJest = z.todos().find((n) => n.attrs['data-runner'] === 'jest');
+    const deJest = []; (function walk(x) { deJest.push(x); (x.hijos || []).forEach(walk); })(filaJest);
+    const b = deJest.find((n) => n.tag === 'button');
+    b.on.click(); await z.esperar();
+    assert.match(z.texto(), /herramienta de pruebas Jest de mi proyecto/, 'sin portapapeles, la frase a la vista');
+    const filaJest2 = z.todos().find((n) => n.attrs['data-runner'] === 'jest');
+    const deJest2 = []; (function walk(x) { deJest2.push(x); (x.hijos || []).forEach(walk); })(filaJest2);
+    deJest2.find((n) => n.tag === 'button').on.click(); await z.esperar();
+    assert.match(z.texto(), /herramienta de pruebas Jest de mi proyecto/, 'el segundo clic la deja a la vista');
+  } finally { if (sinPortapapeles) Object.defineProperty(globalThis, 'navigator', sinPortapapeles); }
 });
 
 test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 — la sección en su pestaña, al lado de Cobertura, de punta a punta', async () => {
@@ -3039,8 +3087,11 @@ test('T9 Compacta_HojaConTemaYTelefono @story-2.59 @ac-9 @ac-10', () => {
   const reglas = css.match(/[^{}]*\.(tabla2|tope|repo-t|ic|pc|integ)\b[^{}]*\{[^{}]*\}/g) || [];
   assert.ok(reglas.length >= 8, `las reglas de las tablas (${reglas.length})`);
   for (const r of reglas) assert.doesNotMatch(r.slice(r.indexOf('{')), /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i, `sin colores fijos: ${r.trim().slice(0, 80)}`);
-  // las columnas de Modelos: el mismo ancho fijo en las tres tablas
-  assert.match(css, /\.tabla2\.modelos\{[^}]*grid-template-columns:minmax\(0,1fr\) \d+px \d+px/);
+  // las columnas de Modelos: el trabajo con un ancho acotado y el resto para el selector y su equivalencia; el selector,
+  // del mismo ancho en todos los renglones de las tres tablas, y la equivalencia en un renglón
+  assert.match(css, /\.tabla2\.modelos\{[^}]*grid-template-columns:minmax\(\d+em,\d+em\) max-content minmax\(0,1fr\)/);
+  assert.match(css, /\.tabla2\.modelos select\.corto\{[^}]*width:\d+em/);
+  assert.match(css, /\.tabla2\.modelos \.equiv\{[^}]*white-space:nowrap/);
   // nada cortado en Repos: sin puntos suspensivos
   for (const r of reglas.filter((x) => /\.(repo-t|pc)\b/.test(x))) assert.doesNotMatch(r, /text-overflow:ellipsis/, r.trim().slice(0, 80));
   const tel = /@media \(max-width:640px\)\{([\s\S]*?)\n\}/.exec(css);
@@ -3215,16 +3266,52 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
     assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
-    // sólo sí o no: el «sí» escribe el rol que ya tenga o «coordinadora»; la sesión se designa en la máquina
+    // sí o no: el «sí» escribe el rol que ya tenga o «coordinadora» (su nombre se cambia aparte; la prueba de abajo);
+    // la sesión se designa en la máquina, así que la pantalla nunca pide el nombre de una sesión
     assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
     assert.match(js, /x === 'si' \? \(rol \|\| 'coordinadora'\) : ''/);
-    assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'ya no pide el nombre de una sesión');
+    assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'no pide el nombre de una sesión');
   }
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.match(textos.t('es', 'pantalla.quienReenviaElOkAyuda'), /se designa en cada máquina/);
   for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkNo', 'pantalla.quienReenviaElOkSi', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
     assert.ok(textos.t('es', k, { req: 'x', version: 'y' }) !== textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
   }
+});
+
+test('Seccion_ReenvioDelOk_ElNombreDelRol — con «Sí», el nombre del rol se cambia y la frase de la ayuda lo usa', async () => {
+  // 🔴 rojo: no hay dónde poner el nombre, la ayuda dice siempre «coordinadora», o se lee «Cuál sesión es se designa».
+  const abrir = async (borrador, idioma = 'es') => {
+    const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('aprobaciones', { repo: 'perfil', borrador })], idioma, hash: '#seccion-aprobaciones' });
+    const todos = () => { const out = []; (function walk(x) { out.push(x); (x.hijos || []).forEach(walk); })(r.creados.filter((n) => n.attrs.id === 'seccion-aprobaciones').pop()); return out; };
+    const esperar = async () => { for (let i = 0; i < 10; i++) await new Promise((x) => setImmediate(x)); };
+    return { r, todos, esperar, texto: () => todos().map((n) => n.textContent || '').join(' | ') };
+  };
+  // con «No» no se pide el nombre, y la ayuda sale sin la errata
+  const no = await abrir({});
+  assert.ok(!no.todos().some((n) => n.tag === 'input'), 'sin «Sí», no hay campo');
+  assert.match(no.texto(), /La sesión se designa en cada máquina: el dev escribe en el chat de esa sesión «Esta sesión es la coordinadora»/);
+  assert.doesNotMatch(no.texto(), /Cuál sesión es se designa/);
+  // elegir «Sí» trae el campo con «coordinadora», el nombre de fábrica
+  no.todos().find((n) => n.tag === 'select' && n.attrs['data-path'] === 'approvals.relay_session').on.change({ target: { value: 'si' } }); await no.esperar();
+  const deFabrica = no.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === '¿Cómo la llaman?');
+  assert.ok(deFabrica, 'con «Sí», aparece el campo');
+  assert.strictEqual(deFabrica.attrs.value, 'coordinadora');
+  // con un nombre propio: el campo lo trae, la ayuda lo nombra y avisa que cambiarlo pide designar de nuevo
+  const si = await abrir({ approvals: { relay_session: 'líder' } });
+  const campoNombre = si.todos().find((n) => n.tag === 'input' && n.attrs['aria-label'] === '¿Cómo la llaman?');
+  assert.ok(campoNombre, 'con «Sí», el campo del nombre');
+  assert.strictEqual(campoNombre.attrs.value, 'líder');
+  assert.match(si.texto(), /«Esta sesión es la líder»/);
+  assert.match(si.texto(), /Si cambiás el nombre, la designación anterior deja de valer/);
+  // escribir otro nombre lo guarda y la ayuda cambia en el lugar; vacío vuelve a «coordinadora»
+  campoNombre.on.input({ target: { value: '  jefa  ' } }); await si.esperar();
+  assert.match(si.texto(), /«Esta sesión es la jefa»/);
+  campoNombre.on.input({ target: { value: '' } }); await si.esperar();
+  assert.match(si.texto(), /«Esta sesión es la coordinadora»/);
+  const en = await abrir({ approvals: { relay_session: 'lead' } }, 'en');
+  assert.ok(en.todos().some((n) => n.tag === 'input' && n.attrs['aria-label'] === 'What do you call it?'));
+  assert.match(en.texto(), /names the role \(lead\)/);
 });
 
 // ── Una persona marca cada criterio como probado a mano (qa.manual_check) ───────────────────────────────
@@ -3781,6 +3868,19 @@ test('T8 Modelos_SelectoresConNiveles @story-2.70 @ac-6', async () => {
   }
   const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
   assert.deepStrictEqual(MOD_JS.LEVELS.map((n) => t('en', `pantalla.nivel.${n}`)), ['economy', 'balanced', 'strong', 'max']);
+});
+
+test('Modelos_PreguntarAntesDelNivelMaximo_GenericoConSuEquivalencia — la fila no nombra un modelo; la equivalencia del máximo va al costado y no cambia con la respuesta', async () => {
+  // 🔴 rojo: la etiqueta vuelve a nombrar un modelo, o la fila no dice a qué modelo equivale el nivel máximo.
+  const p = await compacta(secNiveles({ reviewers: 'balanced' }));
+  const fila = p.tablas().map((t) => p.renglones(t)).flat().find((r) => p.todo(r).some((n) => n.textContent === 'Preguntar antes de usar el nivel máximo'));
+  assert.ok(fila, 'la fila, con su etiqueta genérica');
+  const equiv = () => p.todo(fila).filter((n) => /\bequiv\b/.test(n.attrs.class || '')).map((n) => n.textContent);
+  assert.deepStrictEqual(equiv(), [`Claude: fable · Codex: ${EQUIV.fable}`]);
+  p.todo(fila).find((n) => n.tag === 'select').on.change({ target: { value: 'never' } }); await p.esperar();
+  assert.deepStrictEqual(equiv(), [`Claude: fable · Codex: ${EQUIV.fable}`], 'responder «nunca» no la cambia');
+  const { t } = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
+  for (const idioma of ['es', 'en']) assert.doesNotMatch(t(idioma, 'pantalla.preguntarAntesDelNivelMaximo'), /fable/i, `${idioma}: sin el nombre de un modelo`);
 });
 
 test('T9 Modelos_EquivalenciasDebajo @story-2.70 @ac-7', async () => {
