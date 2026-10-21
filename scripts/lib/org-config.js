@@ -2273,6 +2273,7 @@ function pantalla(idioma = 'es') {
   // fábrica, cambiadas o agregadas) y las tres reglas. Una clave que queda vacía se saca: no se propone un «{}»
   var TEC_FORM = null;     // la herramienta que se está cambiando: { name, r, fabrica }
   var TEC_AGENTE = false;  // se tocó «Pedíselo a tu agente»
+  var TEC_REEMPLAZAR = null;  // la interna cuya explicación de «Reemplazar» está abierta
   var TEC_NOMBRES = { dotnet: '.NET', vitest: 'Vitest', jest: 'Jest', node: 'Node (node --test)', pytest: 'pytest (Python)', go: 'Go', maven: 'Maven (Java)', gradle: 'Gradle (Java, Kotlin)', karma: 'Karma (Angular)', playwright: 'Playwright (punta a punta)' };
   var TEC_ARCHIVOS = { dotnet: '.sln, .csproj', vitest: 'package.json (vitest)', jest: 'package.json (jest)', node: 'package.json (node --test)' };
   function stackDe(d) { if (!esObjeto(d.stack)) d.stack = {}; return d.stack; }
@@ -2323,8 +2324,13 @@ function pantalla(idioma = 'es') {
     var deOrg = {}; org.forEach(function (r) { if (r && r.name) deOrg[r.name] = r; });
     var fabrica = ex.fabrica || [];
     var tabla = el('div', { class: 'sub' }, el('p', { class: 'sub-t', text: T('pantalla.tecComoSeCorrenLasPruebas') }), el('p', { class: 'sub-d', text: T('pantalla.tecComoSeCorrenAyuda') }));
+    // cada fila con las mismas cuatro columnas: nombre, archivo que la detecta, origen y acción. Las internas no se
+    // editan: «Reemplazar» despliega, en la fila, cómo ganarle con una receta de la organización
     (ex.internos || []).forEach(function (n) {
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecDeFabricaLaCorreLaPuerta') })));
+      var abierta = TEC_REEMPLAZAR === n;
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': n }, el('span', { text: TEC_NOMBRES[n] || n }), el('span', { class: 'muted', text: TEC_ARCHIVOS[n] || '' }), el('span', { text: T('pantalla.tecIncluidaEnElArnes') }),
+        el('span', {}, boton(T('pantalla.tecReemplazar'), function () { TEC_REEMPLAZAR = abierta ? null : n; render(); }))));
+      if (abierta) tabla.appendChild(el('p', { class: 'sub-d', 'data-reemplazar': n, text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
     });
     // el motivo exacto, plegado: lo arma el servidor y no está traducido
     if (!ex.fabrica) tabla.appendChild(aviso('nm', T('pantalla.tecSinListaDeFabrica'), ex.motivo || null));
@@ -2332,7 +2338,7 @@ function pantalla(idioma = 'es') {
       var mia = deOrg[f.name];
       var acciones = el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: f.name, r: copia(mia || { name: f.name, detect: f.detect, command: f.command, results: f.results, coverage: f.coverage }), fabrica: f }; if (!TEC_FORM.r.coverage) delete TEC_FORM.r.coverage; render(); }));
       if (mia) acciones.appendChild(boton(T('pantalla.tecVolverALaDeFabrica'), function () { quitarRunner(d, f.name); render(); }));
-      tabla.appendChild(el('div', { class: 'fila', 'data-runner': f.name }, el('span', { text: TEC_NOMBRES[f.name] || f.name }), el('span', { class: 'muted', text: (f.files || []).join(', ') }), el('span', { text: mia ? T('pantalla.tecCambiadaPorTuOrganizacion') : T('pantalla.tecDeFabrica') }), acciones));
+      tabla.appendChild(el('div', { class: 'fila', 'data-runner': f.name }, el('span', { text: TEC_NOMBRES[f.name] || f.name }), el('span', { class: 'muted', text: (f.files || []).join(', ') }), el('span', { text: mia ? T('pantalla.tecCambiadaPorTuOrganizacion') : T('pantalla.tecDeFabricaSeCambia') }), acciones));
     });
     org.forEach(function (r) {
       if (!r || !r.name || fabrica.some(function (f) { return f.name === r.name; })) return;
@@ -2340,7 +2346,6 @@ function pantalla(idioma = 'es') {
         el('span', {}, boton(T('pantalla.tecCambiar'), function () { TEC_FORM = { name: r.name, r: copia(r), fabrica: null }; render(); }), boton(T('pantalla.tecBorrar'), function () { quitarRunner(d, r.name); render(); }))));
     });
     (pr || []).filter(function (x) { return String(x.path).indexOf('stack.test_runners') === 0; }).forEach(function (x) { MOSTRADOS.push(x); tabla.appendChild(el('div', { class: 'err', text: x.donde + ': ' + x.message })); });
-    tabla.appendChild(el('p', { class: 'sub-d', text: T('pantalla.tecComoReemplazarUnaDeLaPuerta') }));
     box.appendChild(tabla);
     if (TEC_FORM) box.appendChild(formRunner(d));
     // pedirle al agente una herramienta que no está: la frase, y qué pasa después

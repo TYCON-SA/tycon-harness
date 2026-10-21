@@ -525,11 +525,18 @@ en su repo.
 Lo que la persona ve en la sección y lo que hace el agente cuando le piden una herramienta que no está.
 
 - **En el sitio**: los lenguajes que el arnés ya reconoce, las terminaciones que suma tu equipo, la tabla de
-  herramientas de prueba y las tres reglas. Las que la puerta de pruebas corre por dentro (.NET, Vitest, Jest y Node)
-  se muestran «de fábrica · el arnés la corre por dentro» y no se cambian desde acá. pytest, Go, Maven, Gradle, Karma y Playwright se pueden
-  cambiar: el formulario llega lleno con la de fábrica, y al guardar queda una copia de la organización con el mismo
-  nombre que la reemplaza. «Volver a la de fábrica» borra la copia. El comando de una herramienta lo corre la
-  computadora de cada persona del equipo.
+  herramientas de prueba y las tres reglas. Cada herramienta muestra su nombre, el archivo que la detecta, su origen y
+  qué se puede hacer:
+  - **incluida en el arnés · no se edita**: .NET, Vitest, Jest y Node, que la puerta de pruebas corre por dentro.
+    «Reemplazar» explica cómo: una receta de la organización que se detecte con el mismo archivo le gana.
+  - **de fábrica · se puede cambiar**: pytest, Go, Maven, Gradle, Karma y Playwright. «Cambiar» trae el formulario lleno
+    con la de fábrica, y al guardar queda una copia de la organización con el mismo nombre que la reemplaza.
+  - **cambiada por tu organización**: esa copia. «Volver a la de fábrica» la borra.
+  - **agregada por tu organización**: una herramienta nueva, como la de .NET Framework con vstest.
+  El comando de una herramienta lo corre la computadora de cada persona del equipo.
+
+  ![Cómo se corren las pruebas](sitio-de-la-organizacion/capturas/configuracion-tecnologia.png)
+
 - **«Pedíselo a tu agente»** deja la frase «configurá las pruebas de mi proyecto en la configuración del arnés». La
   persona la pega en su agente de código, abierto en el proyecto.
 - **Lo que hace el agente** con esa frase:
