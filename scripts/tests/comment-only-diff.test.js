@@ -97,7 +97,7 @@ test('T10d CommentOnlyDiff_ProductionGuardCopy @story-8.43 @ac-10 — un archivo
   const r = repo();
   fs.mkdirSync(path.join(r.dir, 'scripts', 'production'), { recursive: true });
   fs.mkdirSync(path.join(r.dir, 'scripts', 'hooks'), { recursive: true });
-  const instalador = '#!/bin/bash\nARCHIVOS=(\n  scripts/hooks/freno.js\n  scripts/production/lanzador\n)\n';
+  const instalador = '#!/bin/bash\nARCHIVOS=(\n  scripts/hooks/freno.js  # el freno\n  "scripts/production/lanzador"\n)\n';
   const base = r.commit({ 'scripts/production/install-guard.sh': instalador, 'scripts/hooks/freno.js': JS, 'a.js': JS }, 'base');
   const comentario = r.commit({
     'scripts/hooks/freno.js': JS.replace('// viejo comentario', '// nuevo comentario'),
@@ -114,4 +114,13 @@ test('T10d CommentOnlyDiff_ProductionGuardCopy @story-8.43 @ac-10 — un archivo
   const b2 = s.commit({ 'freno.js': JS }, 'base');
   const c2 = s.commit({ 'freno.js': JS.replace('// viejo comentario', '// nuevo comentario') }, 'comentario');
   assert.strictEqual(run(s.dir, '--range', `${b2}...${c2}`).status, 0);
+
+  // una entrada que no parece una ruta es «no pude mirar», nunca un freno sin cuidar
+  const t = repo();
+  fs.mkdirSync(path.join(t.dir, 'scripts', 'production'), { recursive: true });
+  const b3 = t.commit({ 'scripts/production/install-guard.sh': 'ARCHIVOS=(\n  $RAIZ/freno.js\n)\n', 'a.js': JS }, 'base');
+  const c3 = t.commit({ 'a.js': JS.replace('// viejo comentario', '// nuevo comentario') }, 'comentario');
+  const raro = run(t.dir, '--range', `${b3}...${c3}`);
+  assert.strictEqual(raro.status, 2, raro.stdout + raro.stderr);
+  assert.match(raro.stderr, /no parece una ruta/);
 });

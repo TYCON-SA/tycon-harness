@@ -11,7 +11,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const { codeOf } = require('./internal-history.js');
 
 function parseArgs(argv) {
@@ -52,11 +52,17 @@ function firstDifference(a, b) {
  * instalador en la base (un repo sin freno), ninguno.
  */
 function guardCopies(repo, base) {
-  let src;
-  try { src = contentAt(repo, base, 'scripts/production/install-guard.sh'); } catch (_) { return new Set(); }
+  const installer = 'scripts/production/install-guard.sh';
+  // sólo «no está en la base» es «repo sin freno»; cualquier otra falla de git sale como «no pude mirar»
+  if (spawnSync('git', ['-C', repo, 'cat-file', '-e', `${base}:${installer}`]).status !== 0) return new Set();
+  const src = contentAt(repo, base, installer).replace(/\r/g, '');
   const m = /^ARCHIVOS=\(\n([\s\S]*?)\n\)/m.exec(src);
-  if (!m) throw new Error('scripts/production/install-guard.sh no trae la lista ARCHIVOS: no sé qué se copia al freno');
-  return new Set(m[1].split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#')));
+  if (!m) throw new Error(`${installer} no trae la lista ARCHIVOS: no sé qué se copia al freno`);
+  const entries = m[1].split('\n').map((l) => l.replace(/\s#.*$/, '').trim().replace(/^(["'])(.*)\1$/, '$2')).filter((l) => l && !l.startsWith('#'));
+  // una entrada que no parece una ruta no coincidiría con ningún archivo del diff y el freno quedaría sin cuidar, callado
+  const odd = entries.find((e) => !/^[\w.@+/-]+$/.test(e));
+  if (odd) throw new Error(`${installer}: una entrada de ARCHIVOS no parece una ruta («${odd}»)`);
+  return new Set(entries);
 }
 
 function compare(args) {
