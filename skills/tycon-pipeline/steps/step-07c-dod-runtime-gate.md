@@ -694,7 +694,7 @@ conversación (razón + test que lo cubre) y el usuario decide AC por AC: con su
 **Un crítico de este paso también lo decide una persona**. Si el revisor de la prueba en vivo marca un
 CRITICAL que el dev decide no arreglar, el agente nunca se exime solo: le pregunta al dev y, con el ok del dev escrito
 en el chat, `marker.js waive-critical --rule <regla> --file <archivo> --reason "<por qué>" --approved-by "<el dev>"
---quote "<sus palabras>"` (o `--relayed-by <sesión>`, o el dev desde su terminal con `--terminal`). Recién ahí el
+--quote "<sus palabras>"` (o `--relayed-by <rol>`, o el dev desde su terminal con `--terminal`). Recién ahí el
 hallazgo se anota `waived`. El límite es el mismo: la cita prueba que el mensaje está en la conversación, no prueba
 quién está detrás de la sesión que reenvía.
 

@@ -3491,8 +3491,9 @@ function runtimeWaiverConOk(storyPath, argv, m) {
 // sólo así `write-findings` y los cierres de los pasos 7 y 8 aceptan un CRITICAL `waived`. Tres caminos, en este orden:
 //   1. `--approved-by "<el dev>" --quote "<sus palabras>"`: la cita, textual, en un mensaje escrito por el dev en esta
 //      conversación (lib/person-ok.js). Manual, a su nombre, con la cita y la hora del mensaje.
-//   2. lo mismo + `--relayed-by <sesión>`: la cita llegó en un mensaje de esa sesión, que la organización declara en
-//      `approvals.relay_session`. Automática, por delegación del dev, a nombre de la sesión.
+//   2. lo mismo + `--relayed-by <rol>`: la cita llegó en un mensaje de la sesión designada en esta máquina para el rol
+//      que la organización declara en `approvals.relay_session` (`designate-relay`). Automática, por delegación del dev,
+//      a nombre de la sesión.
 //   3. `--terminal`: lo corre el dev en su terminal (o la ventana nueva en Windows), como `runtime-waiver`.
 // El agente solo no exime: sin ok de nadie, a nombre de «orquestador» o de un agente, o con una cita que no aparece, frena.
 function opcionesDe(argv) {
@@ -3585,6 +3586,31 @@ function cmdWaiveCritical(argv) {
   anotarAprobacion(m, { que: `exencion ${rule}${file ? ` en ${file}` : ''}`, via: entrada.via, tipo: entrada.tipo, quien: entrada.quien,
     ...(entrada.delegacion ? { delegacion: entrada.delegacion } : {}), ...(entrada.cita ? { cita: entrada.cita, cita_cuando: entrada.cita_cuando } : {}) });
   console.error(`✅ ${rule}${file ? ` en ${file}` : ''} eximido (${linea.tipo === 'manual' ? 'manual' : 'automático, por delegación'}, ${linea.quien}${linea.delegacion ? ` por ${linea.delegacion}` : ''}). Ahora sí se puede anotar como waived en findings.json.`);
+  process.exit(0);
+}
+
+// `designate-relay --approved-by "<el dev>" --quote "<su frase>"` designa ESTA sesión, en esta máquina, como la que
+// reenvía el ok de un dev (el rol de `approvals.relay_session`). La frase la escribe el dev en el chat de esta sesión y
+// nombra el rol («Esta sesión es la coordinadora»). Queda un renglón en el gates.log; una designación nueva reemplaza a
+// la anterior. Cada reenvío vuelve a buscar la frase en esta conversación (lib/person-ok.js `citaReenviada`).
+function cmdDesignateRelay(argv) {
+  const cw = require('./lib/critical-waivers.js');
+  const { val } = opcionesDe(argv);
+  const r = cw.designar({ approvedBy: val('--approved-by'), quote: val('--quote') });
+  if (!r.ok) {
+    console.error(`🚫 marker.js designate-relay: no se designó nada — ${r.motivo}.`);
+    console.error('   El dev escribe en el chat de ESTA sesión una frase que la nombra (por ejemplo «Esta sesión es la coordinadora»),');
+    console.error(`   y con su cita: node ${__filename} designate-relay --approved-by '<el dev>' --quote '<su frase, textual>'`);
+    process.exit(1);
+  }
+  const e = r.entrada;
+  appendLog('gates.log', { name: cw.DESIGNACION, status: 'ok', ts: nowIso(), sesion: e.sesion, rol: e.rol, quien: e.quien, cita: e.cita, cita_cuando: e.cita_cuando });
+  const quedo = cw.designacionVigente();
+  if (!quedo || quedo.error || quedo.sesion !== e.sesion) {
+    console.error(`🚫 marker.js designate-relay: no pude dejar la designación en el registro del arnés${quedo && quedo.error ? ` (${quedo.error})` : ''}.`);
+    process.exit(2);
+  }
+  console.error(`✅ Esta sesión (${e.sesion}) es la «${e.rol}» de esta máquina, designada por ${e.quien}. Sus mensajes valen como reenvío del ok de un dev (--relayed-by ${cw.sh(e.rol)}).`);
   process.exit(0);
 }
 
@@ -4188,6 +4214,9 @@ switch (cmd) {
     break;
   case 'waive-critical':
     cmdWaiveCritical(process.argv.slice(3));
+    break;
+  case 'designate-relay':
+    cmdDesignateRelay(process.argv.slice(3));
     break;
   case 'mark-tested':
     cmdMarkTested(process.argv.slice(3));

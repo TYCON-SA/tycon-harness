@@ -75,9 +75,11 @@ quita la fricción, no la trazabilidad.
      en su mensaje («eximo TEST-C1», con su motivo si quiere) y **cualquier otra cosa, en otro mensaje**. Una aclaración
      en un mensaje aparte no tumba el ok; uno posterior que nombra el crítico, habla de eximir o es un «No.» / «Esperá.»
      corto, sí. Ante la duda no exime, y el arnés dice qué escribir. Queda manual, con la cita y su hora.
-  2. **Reenviado por la sesión coordinadora**, si la organización la declara en `approvals.relay_session` (perfil del
-     equipo; por defecto ninguna): lo mismo con `--relayed-by <sesión>`. La cita tiene que llegar textual en un
-     mensaje de esa sesión, posterior a la muestra y nombrando el crítico. Queda automático, por delegación del dev.
+  2. **Reenviado por la sesión coordinadora**, si la organización la usa (`approvals.relay_session` del perfil del
+     equipo, con el nombre del rol; por defecto ninguna): lo mismo con `--relayed-by <rol>`. La cita tiene que llegar
+     textual en un mensaje que mandó la sesión designada en esta máquina (`marker.js designate-relay`, con la frase del
+     dev en su chat), posterior a la muestra y nombrando el crítico. El nombre de la sesión no cuenta. Queda
+     automático, por delegación del dev.
   3. **Desde su terminal**, si el dev prefiere: `marker.js waive-critical … --terminal` (lo corre el dev).
 
   Recién con la constancia, el hallazgo se anota `waived` en `pipeline.js write-findings`: sin ella, `write-findings`

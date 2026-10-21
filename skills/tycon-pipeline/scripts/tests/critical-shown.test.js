@@ -62,8 +62,18 @@ const delDev = (texto, ts = T(1)) => ({ type: 'user', timestamp: ts, message: { 
 const delAgente = (texto, ts = T(0)) => ({ type: 'assistant', timestamp: ts, message: { role: 'assistant', content: [{ type: 'text', text: texto }] } });
 const deOtraSesion = (nombre, texto, ts = T(5)) => ({
   ...delDev(`Another Claude session sent a message:\n<cross-session-message from="uds:/tmp/x.sock" from-name="${nombre}" from-mode="bypass">\n${texto}\n</cross-session-message>`, ts),
-  isMeta: true, promptSource: 'system', origin: { kind: 'peer', from: 'uds:/tmp/x.sock', name: nombre, body: texto },
+  isMeta: true, promptSource: 'system', origin: { kind: 'peer', from: 'uds:/tmp/x.sock', name: nombre, msg_id: 'm-1', body: texto },
 });
+// la sesión designada en la máquina: la frase del dev en su chat, el envío con el número del mensaje y el renglón del
+// gates.log
+function designarCoordinadora(home) {
+  const frase = 'Esta sesión es la coordinadora';
+  escribirConversacion(home, 's-coord', [delDev(frase, T(-50)), { type: 'user', timestamp: T(4), toolUseResult: { success: true, msg_id: 'm-1' },
+    message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: 'enviado' }] } }]);
+  const st = require(path.join(SCRIPTS, 'lib', 'state-dir.js')).stateDir(home);
+  fs.mkdirSync(st, { recursive: true });
+  fs.appendFileSync(path.join(st, 'gates.log'), JSON.stringify({ name: 'relay-designation', status: 'ok', sesion: 's-coord', rol: 'coordinadora', quien: 'Dev de Prueba', cita: frase, ts: T(-49) }) + '\n');
+}
 
 const sh = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
 const comando = (rule = REGLA, file = ARCHIVO, reason = MOTIVO, extra = '') => `node ${MARKER} waive-critical --rule ${rule} --file ${sh(file)} --reason ${sh(reason)}${extra}`;
@@ -174,6 +184,7 @@ test('CriticalShown_OkAOtroCritico_NoExime @story-8.71 @ac-7', () => {
 function okReenviado(lab, cuerpo, arnes) {
   const cw = require(path.join(SCRIPTS, 'lib', 'critical-waivers.js'));
   lab.conversar([deOtraSesion('coordinadora', cuerpo)]);
+  designarCoordinadora(lab.home);
   return cw.okDeUnaPersona({
     approvedBy: 'Dev de Prueba', quote: cuerpo.split('.')[0], relayedBy: 'coordinadora', arnes, home: lab.home,
     env: { HOME: lab.home, CLAUDE_CODE_SESSION_ID: lab.sid, TYCON_PROFILE: '0' }, desde: new Date(Date.now() - 60000).toISOString(),

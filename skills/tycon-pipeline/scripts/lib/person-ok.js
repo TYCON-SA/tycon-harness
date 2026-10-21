@@ -8,17 +8,17 @@
  *     texto. NO cuenta lo que escribió el agente, la salida de una herramienta, un subagente (ni el aviso con que vuelve
  *     su resultado), un mensaje de otra sesión, un aviso del sistema ni la salida de un comando local o de `!`: todo
  *     eso también se guarda como «mensaje de usuario», y el agente podría imprimir la cita para después encontrarla.
- *   · `citaReenviada(cita, sesion)`: ¿llegó dentro de un mensaje de otra sesión con ese nombre? Es la variante en la
- *     que una sesión coordinadora reenvía textual el ok del dev.
+ *   · `citaReenviada(cita, rol)`: ¿llegó dentro de un mensaje que mandó la sesión designada en esta máquina para ese rol?
+ *     Es la variante en la que una sesión coordinadora reenvía textual el ok del dev.
  *   · `planEnLaConversacion(plan)`: ¿el agente le mostró el plan a la persona (en un mensaje, en una pregunta con opciones
  *     o en el modo plan)?
  *
  * La cita se compara sin mayúsculas, con los espacios juntados y sin comillas alrededor, y tiene que tener al menos
  * `CITA_MINIMA` letras o dígitos: un «sí» suelto aparece en cualquier conversación.
  *
- * Lo que esto NO prueba: quién está detrás de la sesión que reenvía, ni que el registro no se haya editado (lo puede
- * editar el mismo usuario del sistema). Es el nivel de la firma por terminal: no hay camino cómodo ni accidental, y
- * forzarlo queda a la vista. Sin registro legible (Codex, u otra herramienta) devuelve `legible: false` y quien llama
+ * Lo que esto NO prueba: quién está detrás de la sesión que reenvía, más allá de la frase del dev que la designó, ni
+ * que el registro no se haya editado (lo puede editar el mismo usuario del sistema). Es el nivel de la firma por
+ * terminal: no hay camino cómodo ni accidental, y forzarlo queda a la vista. Sin registro legible (Codex, u otra herramienta) devuelve `legible: false` y quien llama
  * falla cerrado.
  */
 const fs = require('fs');
@@ -154,17 +154,54 @@ function citaDeLaPersona(cita, opts = {}) {
   return { legible: true, archivo: conv.archivo, ...buscar(cita, propios, opts.desde, opts.juzgar) };
 }
 
-/** ¿La cita llegó dentro de un mensaje de la sesión `sesion`? `{ legible, motivo?, encontrada, cuando?, corta? }`. */
+/**
+ * ¿La cita llegó dentro de un mensaje de la sesión designada en esta máquina para el rol `sesion` (por ejemplo
+ * «coordinadora»)? `{ legible, motivo?, encontrada, cuando?, corta?, rechazo? }`.
+ * Cuenta un mensaje de otra sesión cuyo número de mensaje (`origin.msg_id`, lo pone Claude Code al entregarlo) figura
+ * entre los que mandó la conversación designada (el `msg_id` del resultado de cada envío, en su registro). El nombre de
+ * la sesión que manda no cuenta: lo pone el sistema, cambia al reiniciar y otra sesión puede llevar el mismo. La
+ * designación vale mientras la frase del dev que la nombra siga en esa conversación (lib/critical-waivers.js).
+ */
 function citaReenviada(cita, sesion, opts = {}) {
   const conv = leerConversacion(opts);
   if (!conv.legible) return { legible: false, motivo: conv.motivo, encontrada: false };
-  const nombre = String(sesion || '').trim().toLowerCase();
+  const rol = String(sesion || '').trim();
+  const cw = require('./critical-waivers.js');
+  const d = cw.designacionVigente({ home: opts.home });
+  if (!d || d.error) {
+    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: d && d.error ? d.error
+      : `ninguna sesión de esta máquina está designada como «${rol}»: el dev escribe en el chat de esa sesión «Esta sesión es la ${rol}» y la sesión corre marker.js designate-relay con su frase` };
+  }
+  if (d.rol && d.rol.toLowerCase() !== rol.toLowerCase()) {
+    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `la sesión designada en esta máquina es la «${d.rol}», no la «${rol}»` };
+  }
+  // una sesión no se reenvía a sí misma: su propio ok tiene que ser del dev, en su chat
+  const propia = String((opts.env || process.env).CLAUDE_CODE_SESSION_ID || '');
+  if (d.sesion === propia) {
+    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `esta sesión es la «${rol}» designada: no puede reenviarse un ok a sí misma` };
+  }
+  const juez = cw.juezDesignacion(rol);
+  if (juez(d.cita)) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `la designación de esta máquina no vale: ${juez(d.cita)}` };
+  const designada = leerConversacion({ ...opts, sesion: d.sesion });
+  if (!designada.legible) return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: `no puedo leer la conversación designada como «${rol}» (${designada.motivo})` };
+  const frase = buscar(d.cita, textosDeUsuario(designada.registros).filter((t) => (!t.origen || t.origen.kind === 'human') && !t.sistema)
+    .map((t) => ({ texto: escritoPorLaPersona(t.texto), cuando: t.cuando })).filter((t) => t.texto !== null), null, juez);
+  if (!frase.encontrada) {
+    return { legible: true, archivo: conv.archivo, encontrada: false, rechazo: frase.rechazo
+      ? `la designación de esta máquina no vale: ${frase.rechazo}`
+      : `la designación de esta máquina no vale: la frase del dev que nombra la sesión «${rol}» no está en esa conversación` };
+  }
+  // los mensajes que mandó la conversación designada: el número que devuelve cada envío, fuera de sus subagentes
+  const enviados = new Set();
+  for (const r of designada.registros) {
+    if (r && !r.isSidechain && r.toolUseResult && typeof r.toolUseResult.msg_id === 'string') enviados.add(r.toolUseResult.msg_id);
+  }
   const reenviados = [];
-  // el mensaje de otra sesión lo marca Claude Code (`origin.kind: peer`, con el nombre de la sesión y el cuerpo): se
-  // lee la marca, no las etiquetas del texto, que el agente puede imprimir
+  // el mensaje de otra sesión lo marca Claude Code (`origin.kind: peer`, con su número y el cuerpo): se lee la marca, no
+  // las etiquetas del texto, que el agente puede imprimir
   for (const t of textosDeUsuario(conv.registros)) {
     const o = t.origen;
-    if (!nombre || !o || o.kind !== 'peer' || String(o.name || '').trim().toLowerCase() !== nombre) continue;
+    if (!o || o.kind !== 'peer' || typeof o.msg_id !== 'string' || !enviados.has(o.msg_id)) continue;
     const m = typeof o.body === 'string' ? { cuerpo: o.body } : mensajeDeOtraSesion(t.texto);
     if (m && !RE_AJENO.test(m.cuerpo)) reenviados.push({ texto: m.cuerpo, cuando: t.cuando });
   }

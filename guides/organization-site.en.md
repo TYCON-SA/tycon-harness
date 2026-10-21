@@ -521,10 +521,15 @@ only: they are changed with a request in their repo.
   style, which screens need a browser test and the application's language. Without saying anything, the harness does
   not impose any team's style. It lives in `team-repos.json` → `stack`, in the profile repo. A maintainer reviews it. A
   tool that is not on the list is requested with «Ask your agent» (below, §Your technology).
-- **Who relays a developer's OK** (*Quién reenvía el ok de un dev*): the coordinating session that may pass a
-  developer's OK on to the session doing the work, to waive a reviewer's critical finding or sign off a criterion that
-  cannot be tested live. Empty means none: the developer writes the OK in their own session's chat. It only counts from
-  here, never from a machine.
+- **Who relays a developer's OK** (*Quién reenvía el ok de un dev*): whether the organization works with a
+  coordinating session that passes a developer's OK on to the session doing the work, to waive a reviewer's critical
+  finding or sign off a criterion that cannot be tested live. «No» (the default): the developer writes the OK in their
+  own session's chat. Here you only say yes or no, and it only counts from here, never from a machine. Which session is
+  the coordinator is designated on each machine: in that session's chat, the developer writes a sentence that names the
+  role and says it is this session, and the session records it with
+  `marker.js designate-relay --approved-by "<the developer>" --quote "<their sentence>"`. It is recognized by its
+  conversation, not by its name: it keeps counting after the session restarts, and has to be designated again after a
+  new chat or a `/clear`. A session with the same name cannot relay.
 - **Hand-testing each criterion** (*Prueba a mano de cada criterio*): whether, besides what the harness tests, a person
   has to mark each criterion of the tester guide before the story is closed. «No» (the default): the guide says what the
   harness tested. «Yes»: closing stops until a person marks each criterion by answering in their own session's chat,

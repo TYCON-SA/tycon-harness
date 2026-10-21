@@ -46,7 +46,7 @@ node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js risk-class
   - el no → `node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/e2e-setup.js defer --repo <repo> --story <spec> --approved-by "<el dev>" --no "<su respuesta>"`:
     la historia queda con la prueba con navegador pendiente, y la próxima historia con pantalla vuelve a recibir la oferta.
   Los dos comandos piden el ok de la persona como las otras decisiones en su nombre: lo que ella escribió en la
-  conversación, o lo que reenvió la sesión relevo que declara la organización (`--relayed-by <sesión>`). La tuya, o la
+  conversación, o lo que reenvió la sesión relevo designada en la máquina (`--relayed-by <rol>`). La tuya, o la
   de otra sesión, no cuenta; el no, además, tiene que ser posterior a la oferta, y el cierre lo vuelve a buscar en la
   conversación. Por qué: medido en un repo nuevo, el agente instaló Playwright fuera del repo sin preguntar, y sin eso
   el cierre frenaba sin salida.
