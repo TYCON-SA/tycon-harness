@@ -342,7 +342,7 @@ test('T15 Workflows_OnlyCiAndTagger_TaggerHasItsExactShape', () => {
   assert.deepStrictEqual(WF.check(text, { tagger: true }), [], 'el workflow que etiqueta cumple su forma');
   const broken = (from, to) => WF.check(text.replace(from, to), { tagger: true }).map((b) => b.rule);
   assert.ok(broken('  contents: read\n', '  contents: write\n').includes('shape'), 'escritura para todo el workflow: rojo');
-  assert.ok(broken('cancel-in-progress: false', 'cancel-in-progress: true').includes('shape'), 'cortar una corrida en fila: rojo');
+  assert.ok(broken('cancel-in-progress: false', 'cancel-in-progress: true').includes('shape'), 'cortar una ejecución en fila: rojo');
   assert.ok(broken('  push:\n', '  pull_request_target:\n  push:\n').includes('pull-request-target'));
   assert.ok(broken('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1', `actions/checkout@${'e'.repeat(40)}`).includes('shape'), 'con escritura, otro sha de la acción: rojo');
   assert.ok(broken('run: node scripts/ci/version-tag.js', 'env:\n          T: ${{ secrets.X }}\n        run: node scripts/ci/version-tag.js').includes('secrets'));

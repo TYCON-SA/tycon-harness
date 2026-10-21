@@ -184,8 +184,8 @@ if corre GBH; then
   harness apply >/dev/null 2>&1
   [ "$(head_de "$LAB_TREE")" = "$(head_de "$LAB_AUTHOR_TREE")" ] || mal "GBH el startup no aplicó la versión nueva (el update no corrió): $(head_de "$LAB_TREE")"
   CON="$(grep -c '^run check=0 lock_held=1 .* git_bash_health=1 ' "$LAB_LOG" 2>/dev/null)"; TODAS="$(grep -c '^run check=0 lock_held=1 ' "$LAB_LOG" 2>/dev/null)"
-  [ "${TODAS:-0}" -ge 4 ] && [ "$CON" = "$TODAS" ] && ok "GBH harness.js lanza el aplicador con TYCON_HARNESS_GIT_BASH_HEALTH=1 en las $TODAS corridas (install, startup, el update y apply)" \
-    || mal "GBH el aplicador corrió sin el aviso: $CON de $TODAS corridas con git_bash_health=1 · $(tail -3 "$LAB_LOG" 2>&1 | cut -c1-200)"
+  [ "${TODAS:-0}" -ge 4 ] && [ "$CON" = "$TODAS" ] && ok "GBH harness.js lanza el aplicador con TYCON_HARNESS_GIT_BASH_HEALTH=1 en las $TODAS ejecuciones (install, startup, el update y apply)" \
+    || mal "GBH el aplicador corrió sin el aviso: $CON de $TODAS ejecuciones con git_bash_health=1 · $(tail -3 "$LAB_LOG" 2>&1 | cut -c1-200)"
   # el espejo: el aplicador corrido suelto (a mano, sin harness.js) no lo tiene
   bash "$LAB_TREE/scripts/install-tycon-hooks.sh" >/dev/null 2>&1
   case "$(tail -1 "$LAB_LOG")" in *" lock_held= "*" git_bash_health= "*) ok "GBH el espejo: el aplicador suelto corre sin el aviso" ;; *) mal "GBH el aplicador suelto corrió avisado: $(tail -1 "$LAB_LOG" | cut -c1-200)" ;; esac
@@ -1080,7 +1080,7 @@ SH
   HIJO="$(sed -n 's/.*sigue aparte del hook (pid \([0-9]*\)).*/\1/p' "$(LOG)" | tail -1)"
   [ -n "$HIJO" ] && kill -0 "$HIJO" 2>/dev/null && ok "T39L la actualización sigue aparte (pid $HIJO) después de que el hook terminó" || mal "T39L no quedó corriendo aparte: $(tail -3 "$(LOG)")"
   for _ in 1 2 3 4 5 6 7 8 9 10; do [ -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && break; sleep 0.5; done
-  [ -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L la corrida aparte tiene el candado" || mal "T39L la corrida aparte no tomó el candado"
+  [ -d "$LAB_HOME/.claude/.tycon-pipeline/harness/harness.lock" ] && ok "T39L la ejecución aparte tiene el candado" || mal "T39L la ejecución aparte no tomó el candado"
   # se corta a mitad (lo que hacía el tope del hook): con el candado tomado
   # (sólo los dos procesos de esta prueba, por su PID: nunca por nombre, que se lleva puestos procesos ajenos)
   [ -n "$HIJO" ] && kill -9 "$HIJO" 2>/dev/null; [ -s "$BASE/t39l/git-lento.pid" ] && kill -9 "$(cat "$BASE/t39l/git-lento.pid")" 2>/dev/null; sleep 0.5

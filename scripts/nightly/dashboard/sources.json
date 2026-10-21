@@ -81,25 +81,25 @@
     },
     {
       "id": "corridas",
-      "title": "Corridas del pipeline (vista sesión por sesión)",
+      "title": "Ejecuciones del pipeline (vista sesión por sesión)",
       "pattern": "*.json",
       "dir": "~/.claude/.tycon-pipeline/timing-history",
       "required": false,
       "local": true,
       "max_age_days": null,
-      "written_by": "el archivador del pipeline (marker.js), al cerrar cada corrida — en el disco de cada máquina, fuera de todo repo",
+      "written_by": "el archivador del pipeline (marker.js), al cerrar cada ejecución — en el disco de cada máquina, fuera de todo repo",
       "_note": "La lee `dashboard.js --view runs` (story 2.14). Local y NO obligatoria: una máquina sin pipeline corrido no rompe el tablero, la página sale gris con motivo y exit 0. Sin umbral de edad: el registro no envejece, se acumula."
     },
     {
       "id": "pasos-corrida",
-      "title": "Pasos por corrida (la variable que explica el costo)",
+      "title": "Pasos por ejecución (la variable que explica el costo)",
       "pattern": "*.json",
       "dir": "~/.claude/.tycon-pipeline/corridas-buzon",
       "required": false,
       "local": true,
       "max_age_days": 14,
-      "written_by": "download-runs.js al abrir la sesión (en las máquinas con permiso de lectura) y el nocturno del tablero, que baja el buzón entero — los volcados los sube cada máquina al cerrar una corrida",
-      "_note": "La lee `pasosPorCorrida()` de dashboard.js con `scripts/metrics/steps-per-run.js` (story 7.12), y la BUSCA POR ID en esta lista: sin la entrada, la ficha sale «no medido — la fuente no está declarada» en vez de leer el buzón igual. Fuera de .dashboard, por eso `local: true` (el colector de las fuentes nocturnas la saltea). NO obligatoria: una máquina sin permiso sobre el buzón no rompe el tablero. La antigüedad se mide sobre la corrida MEDIDA más nueva: pasados 14 días sin ninguna, el número se calla — una mediana vieja tranquiliza sobre lo que cambió después. 14 y no 2: el buzón no se llena cada noche, se llena cuando alguien corre el pipeline."
+      "written_by": "download-runs.js al abrir la sesión (en las máquinas con permiso de lectura) y el nocturno del tablero, que baja el buzón entero — los volcados los sube cada máquina al cerrar una ejecución",
+      "_note": "La lee `pasosPorCorrida()` de dashboard.js con `scripts/metrics/steps-per-run.js` (story 7.12), y la BUSCA POR ID en esta lista: sin la entrada, la ficha sale «no medido — la fuente no está declarada» en vez de leer el buzón igual. Fuera de .dashboard, por eso `local: true` (el colector de las fuentes nocturnas la saltea). NO obligatoria: una máquina sin permiso sobre el buzón no rompe el tablero. La antigüedad se mide sobre la ejecución MEDIDA más nueva: pasados 14 días sin ninguna, el número se calla — una mediana vieja tranquiliza sobre lo que cambió después. 14 y no 2: el buzón no se llena cada noche, se llena cuando alguien corre el pipeline."
     },
     {
       "id": "concentracion",
@@ -257,7 +257,7 @@
         "source": "gates",
         "dim": "control",
         "type": "ratio_evaluo",
-        "_note": "story 2.4: de las corridas de test-gate, cuántas pudieron evaluar el 75 % sobre las líneas tocadas (`cumple` o `habria-frenado` sobre todas, `no-medido` incluido). Reemplaza a la ficha que caminaba el disco buscando tests-result.json.",
+        "_note": "story 2.4: de las ejecuciones de test-gate, cuántas pudieron evaluar el 75 % sobre las líneas tocadas (`cumple` o `habria-frenado` sobre todas, `no-medido` incluido). Reemplaza a la ficha que caminaba el disco buscando tests-result.json.",
         "values": [
           "cobertura-tocada"
         ]
@@ -266,7 +266,7 @@
         "source": "gates",
         "dim": "control",
         "type": "ratio_habria_frenado",
-        "_note": "story 2.4: de las corridas que evaluaron, cuántas habrían frenado. Observación sin freno hasta el 2026-10-06; con este número se decide si el 75 % pasa a frenar.",
+        "_note": "story 2.4: de las ejecuciones que evaluaron, cuántas habrían frenado. Observación sin freno hasta el 2026-10-06; con este número se decide si el 75 % pasa a frenar.",
         "values": [
           "cobertura-tocada"
         ]
@@ -292,7 +292,7 @@
         "source": "carriles",
         "dim": "carril",
         "type": "conteo",
-        "_note": "story 2.7: commits hechos desde una sesión, por el carril por el que entraron (una corrida del pipeline, un atajo declarado, o ninguno). Los commits hechos fuera de toda sesión (terminal, VS Code) no pasan por ningún hook: no se ven, y la ficha lo dice como «no medido». `ilegible`: el estado de la sesión existía pero no se pudo leer — no dice nada del carril, y por eso no se cuenta como `ninguno`.",
+        "_note": "story 2.7: commits hechos desde una sesión, por el carril por el que entraron (una ejecución del pipeline, un atajo declarado, o ninguno). Los commits hechos fuera de toda sesión (terminal, VS Code) no pasan por ningún hook: no se ven, y la ficha lo dice como «no medido». `ilegible`: el estado de la sesión existía pero no se pudo leer — no dice nada del carril, y por eso no se cuenta como `ninguno`.",
         "values": [
           "pipeline",
           "adhoc",
@@ -326,7 +326,7 @@
         "values": [
           "tests"
         ],
-        "_note": "story 2.21: la duración de cada corrida de la suite (control tests, durationMs número finito ≥ 0, en segundos), JUNTADA de todas las máquinas dentro de la ventana. gates.log ya sube entero al buzón (story 2.5): no hace falta un registro nuevo."
+        "_note": "story 2.21: la duración de cada ejecución de la suite (control tests, durationMs número finito ≥ 0, en segundos), JUNTADA de todas las máquinas dentro de la ventana. gates.log ya sube entero al buzón (story 2.5): no hace falta un registro nuevo."
       },
       "mutacion_chequeos": {
         "source": "gates",
@@ -471,13 +471,13 @@
       "ok_min": 0.8,
       "bad_max": 0.5,
       "direction": "mayor_es_mejor",
-      "_note": "vista de corridas (2.14): qué fracción llega al paso 8"
+      "_note": "vista de ejecuciones (2.14): qué fracción llega al paso 8"
     },
     "corridas_con_error": {
       "ok_max": 0.4,
       "bad_min": 0.8,
       "direction": "menor_es_mejor",
-      "_note": "vista de corridas (2.14): corridas donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
+      "_note": "vista de ejecuciones (2.14): ejecuciones donde un control encontró un error — es el control funcionando, así que el rojo recién con 8 de 10"
     }
   },
   "params": {
@@ -502,7 +502,7 @@
   "instrument": [
     {
       "what": "Ingesta de compilaciones",
-      "sub": "duración, éxito, cola, despliegues, corridas a medias",
+      "sub": "duración, éxito, cola, despliegues, ejecuciones a medias",
       "cost": "Es la única que sale a un sistema externo. Desbloquea las cuatro métricas DORA de una vez."
     }
   ],

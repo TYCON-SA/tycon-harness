@@ -124,7 +124,7 @@ function problemas(c, fase) {
     pide('oidcClientId', GUID, 'el identificador del cliente del registro de Entra ID');
     const mb = c.mailbox;
     if (!mb || typeof mb !== 'object' || !/^[A-Za-z0-9._()-]{1,90}$/.test(mb.resourceGroup || '') || !CUENTA.test(mb.account || '') || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(mb.container || '')) {
-      p.push('mailbox: { resourceGroup, account, container } del buzón de corridas');
+      p.push('mailbox: { resourceGroup, account, container } del buzón de ejecuciones');
     } else if (mb.account === c.storageAccount) p.push('storageAccount: el disco va en una cuenta propia del sitio, nunca en la del buzón (su llave abre la cuenta entera)');
     let repo = null;
     try { repo = new URL(c.operationsRepo); } catch { repo = null; }

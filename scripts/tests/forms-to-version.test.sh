@@ -121,7 +121,7 @@ D="$TMP/rebasado"; mkdir -p "$D"
 L=$(bash "$SH_V" --repo "$D" 2>"$TMP/e9.txt")
 echo "$L" | grep -x "G" >/dev/null && ok "🔴 el bump rebasado NO esconde el merge que quedó debajo (G se versiona)" \
   || no "🔴 G NO se versiona — sale con código nuevo y versión vieja, el host lo deduplica y el cambio no llega, en verde. Dio: [$(echo $L)]"
-echo "$L" | grep -x "H" >/dev/null && ok "…y el formulario de la corrida propia también (H)" || no "H no se versiona: [$(echo $L)]"
+echo "$L" | grep -x "H" >/dev/null && ok "…y el formulario de la ejecución propia también (H)" || no "H no se versiona: [$(echo $L)]"
 
 # ---------------------------------------------------------------- 9b. y NO re-versiona lo de la corrida anterior
 # El gemelo del caso 9: si la base es el commit del que partió la corrida
@@ -129,7 +129,7 @@ echo "$L" | grep -x "H" >/dev/null && ok "…y el formulario de la corrida propi
 # a versionarse en cada corrida para siempre: el caso 9 se resolvería con ruido perpetuo.
 echo "$L" | grep -x "F" >/dev/null \
   && no "🔴 F se re-versiona: el commit de versiones de la corrida anterior está entrando al rango" \
-  || ok "…y NO vuelve a versionar lo que ya versionó la corrida anterior (F queda afuera)"
+  || ok "…y NO vuelve a versionar lo que ya versionó la ejecución anterior (F queda afuera)"
 
 D3="$TMP/sin-rebase"; mkdir -p "$D3"
 ( cd "$D3" && git init -q -b main . && git config user.email t@t && git config user.name t
@@ -268,7 +268,7 @@ RUIDO=$(cd "$T1D" && git diff --name-only 'dev^' dev | grep -c 'package.json')
 L=$(bash "$SH_V" --repo "$T1D" 2>"$TMP/e-t1.txt")
 [ "$(echo "$L" | tr '\n' ' ')" = "form-c " ] \
   && ok "🔴 T1 rama cortada de main y mergeada a dev: versiona SÓLO el formulario tocado (form-c)" \
-  || no "🔴 T1 dio [$(echo $L)] en vez de form-c — un merge está volviendo a versionar lo que la corrida anterior ya versionó"
+  || no "🔴 T1 dio [$(echo $L)] en vez de form-c — un merge está volviendo a versionar lo que la ejecución anterior ya versionó"
 grep -qF "] 1 archivo(s) cambiado(s)" "$TMP/e-t1.txt" \
   && ok "…y la cuenta de archivos no incluye lo que sólo el merge mostraba (1, no 4)" \
   || no "🔴 T1: la cuenta de archivos salió [$(grep -F 'archivo(s) cambiado' "$TMP/e-t1.txt")], esperaba 1"

@@ -1174,7 +1174,7 @@ function rangeMessage(result) {
   const texts = title && body ? 'el título y el cuerpo, mirados'
     : title ? 'el título, mirado (sin cuerpo que mirar)'
       : body ? 'el cuerpo, mirado (sin título que mirar)'
-        : 'sin título ni cuerpo que mirar: esta corrida no es de un pedido';
+        : 'sin título ni cuerpo que mirar: esta ejecución no es de un pedido';
   const branch = result.looked.refs ? 'el nombre de la rama, mirado' : 'sin nombre de rama que mirar';
   if (result.verdict === 'pass') {
     L.push(`✓ freno de publicación: ${result.looked.commits} commit(s) y ${result.looked.objects} archivo(s) del pedido mirados; ${branch}; ${texts}`);

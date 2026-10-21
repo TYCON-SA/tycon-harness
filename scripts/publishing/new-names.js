@@ -986,7 +986,7 @@ function run(args) {
     const tip = rev(m[3]);
     const base = m[2] === '...' ? isolated(repo, ['merge-base', rev(m[1]), tip]).stdout.trim() : rev(m[1]);
     const commits = Number(isolated(repo, ['rev-list', '--count', `${base}..${tip}`]).stdout.trim());
-    if (!commits) return { outcome: 'not-measured', message: `nombres: no medido: el rango no trae commits (${args.range}) — la red de esta corrida es el termómetro nocturno` };
+    if (!commits) return { outcome: 'not-measured', message: `nombres: no medido: el rango no trae commits (${args.range}) — la red de esta ejecución es el termómetro nocturno` };
     parents = [{ sha: base, changes: parseChanges(isolated(repo, ['diff', '-M', '-z', '--name-status', base, tip]).stdout) }];
     afterTree = () => commitTree(repo, tip);
     range = { base, tip };

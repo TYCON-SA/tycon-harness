@@ -78,7 +78,7 @@ else
   fi
   cp "$TMP/CLAUDE.md" "$TMP/CLAUDE.antes"
   corre ""
-  cmp -s "$TMP/CLAUDE.md" "$TMP/CLAUDE.antes" && ok "T15 la segunda corrida no cambia nada" || no "T15 la segunda corrida volvió a cambiar el archivo"
+  cmp -s "$TMP/CLAUDE.md" "$TMP/CLAUDE.antes" && ok "T15 la segunda ejecución no cambia nada" || no "T15 la segunda ejecución volvió a cambiar el archivo"
 fi
 
 # ── 5. T21 Applier_NoLegacyBakUnderHarness_YesStandalone lanzado por harness.js

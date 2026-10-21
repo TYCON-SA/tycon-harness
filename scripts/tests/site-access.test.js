@@ -210,10 +210,10 @@ test('T26 2.28-Rol_PersonaSaleDePeople', async () => {
   await conSitio(fuentes, async ({ h, entrar }) => {
     const sA = await entrar(A); const sC = await entrar(C); const sD = await entrar(D);
     const iniA = await h.pedir('/', { cookie: sA });
-    assert.match(iniA.texto, /1 corridas en 7 días/, 'A ve la corrida de su máquina confirmada');
+    assert.match(iniA.texto, /1 ejecuciones en 7 días/, 'A ve la ejecución de su máquina confirmada');
     const iniC = await h.pedir('/', { cookie: sC });
     assert.match(iniC.texto, /href="\/proyectos"/, 'C es persona aunque su única máquina esté caída');
-    assert.match(iniC.texto, /0 corridas en 7 días/, 'de una máquina caída no ve nada');
+    assert.match(iniC.texto, /0 ejecuciones en 7 días/, 'de una máquina caída no ve nada');
     assert.match((await h.pedir('/', { cookie: sD })).texto, /Tu cuenta no está en la lista/, 'sin entrada: sin rol');
     // el primer refresco fallido fue hace 25 horas: freno para todos, la persona incluida
     const falla = haceHoras(25);
@@ -221,7 +221,7 @@ test('T26 2.28-Rol_PersonaSaleDePeople', async () => {
     const frenada = await h.pedir('/', { cookie: sA });
     assert.strictEqual(frenada.status, 503);
     assert.ok(frenada.texto.includes(`el sitio está frenado desde ${views.hora(falla + 24 * 3600000)}: la configuración de la organización no valida; se destraba cuando un refresco la lee bien`), 'desde cuándo está frenado y el motivo');
-    assert.doesNotMatch(frenada.texto, /corridas en 7 días|people\.machines/, 'sin datos ni rutas del archivo');
+    assert.doesNotMatch(frenada.texto, /ejecuciones en 7 días|people\.machines/, 'sin datos ni rutas del archivo');
   });
 });
 
@@ -263,10 +263,10 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   const ve = (email) => access.filtrar(modelo, access.quienPide(persona(email), { config }), access.crearReglas({ config, modelo, personas }));
   const mA = ve(A);
   // lo que ve la persona es sólo lo declarado; sus corridas en Alfa quedan como sugerencia para quien mantiene
-  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], 'Gama declarado; Alfa (sus corridas) no decide');
+  assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], 'Gama declarado; Alfa (sus ejecuciones) no decide');
   assert.deepStrictEqual(views.inicioDev(mA).proyectos, { estado: 'medido', lista: ['Gama'] }, 'la línea de proyectos del Inicio');
   assert.deepStrictEqual(views.filasProyectos(mA).filas.map((f) => f.producto), ['Gama'], 'la pestaña Proyectos');
-  assert.deepStrictEqual(access.crearReglas({ config, modelo, personas }).sugeridosDe(A), ['Alfa'], 'Alfa, por sus corridas, como sugerencia; Beta no');
+  assert.deepStrictEqual(access.crearReglas({ config, modelo, personas }).sugeridosDe(A), ['Alfa'], 'Alfa, por sus ejecuciones, como sugerencia; Beta no');
   // X tiene corridas y nada declarado: la tabla cerrada con su frase, nunca todos los productos
   const mX = ve(X);
   assert.strictEqual(mX.proyectos.lista, null);
@@ -275,7 +275,7 @@ test('T27 2.28-Modelo_ProyectosEInicioDesdeDondeTrabaja', () => {
   // quien mantiene: la cuenta de máquinas sin confirmar con corridas (la de OTRO y la que no informa), sin correos
   const mL = ve(LEAD);
   assert.strictEqual(mL.maquinasSinConfirmar, 2);
-  assert.match(views.paginaInicio({ modelo: mL, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.now() }), /Máquinas sin confirmar con corridas[\s\S]*?t-val">2</);
+  assert.match(views.paginaInicio({ modelo: mL, quien: { rol: 'maintainer', email: LEAD }, pestanas: [], ahora: Date.now() }), /Máquinas sin confirmar con ejecuciones[\s\S]*?t-val">2</);
   assert.ok(!JSON.stringify(mL).includes(OTRO) && !JSON.stringify(mA).includes(OTRO), 'ningún correo informado en el modelo');
 });
 
@@ -314,7 +314,7 @@ test('2.28-R1 Union_QuePeopleRechaza_NoPasaLaCorridaALaNueva', () => {
       const personas = { informados: people.leerCorreosInformados(dir), repos: [{ producto: 'Alfa', ruta: 'Alfa/Web', ado: '' }, { producto: 'Beta', ruta: 'Beta/Front', ado: '' }] };
       const reglas = access.crearReglas({ config, modelo, personas });
       const deB = access.filtrar(modelo, access.quienPide(persona(B), { config }), reglas);
-      assert.deepStrictEqual(deB.corridas.lista.map((c) => c.inicio.slice(0, 10)).sort(), unida ? ['2026-10-01', '2026-10-03'] : ['2026-10-03'], `${nombre}: las corridas que ve B`);
+      assert.deepStrictEqual(deB.corridas.lista.map((c) => c.inicio.slice(0, 10)).sort(), unida ? ['2026-10-01', '2026-10-03'] : ['2026-10-03'], `${nombre}: las ejecuciones que ve B`);
       assert.deepStrictEqual(reglas.sugeridosDe(B), unida ? ['Alfa', 'Beta'] : ['Beta'], `${nombre}: los productos sugeridos para B`);
       const lead = access.filtrar(modelo, access.quienPide(persona(LEAD), { config }), reglas);
       assert.strictEqual(lead.corridas.lista.length, 2, `${nombre}: quien mantiene ve las dos`);
@@ -336,8 +336,8 @@ test('2.28-R2 Informados_SinLeer_FallaHaciaCerrar', () => {
     const personas = { informados, repos };
     const reglas = access.crearReglas({ config, modelo, personas });
     const mA = access.filtrar(modelo, access.quienPide(persona(A), { config }), reglas);
-    assert.deepStrictEqual(mA.corridas.lista, [], `${nombre}: la persona no ve corridas que no se pueden verificar`);
-    assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], `${nombre}: sus corridas no ubican productos; lo agregado a mano sí cuenta`);
+    assert.deepStrictEqual(mA.corridas.lista, [], `${nombre}: la persona no ve ejecuciones que no se pueden verificar`);
+    assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama'], `${nombre}: sus ejecuciones no ubican productos; lo agregado a mano sí cuenta`);
     const mL = access.filtrar(modelo, access.quienPide(persona(LEAD), { config }), reglas);
     assert.strictEqual(mL.corridas.lista.length, 1, `${nombre}: quien mantiene ve todo`);
     assert.strictEqual(mL.maquinasSinConfirmar, null, `${nombre}: la cuenta no se sabe`);
@@ -397,7 +397,7 @@ test('T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h', async () => {
     assert.ok(iniL.texto.includes(`la configuración de la organización no se pudo releer desde ${views.hora(falla)}: ${rutasDelProblema}`), 'la banda de quien mantiene');
     const iniA = await h.pedir('/', { cookie: sA });
     assert.doesNotMatch(iniA.texto, /no se pudo releer|people\.machines/, 'la persona no ve la banda');
-    assert.match(iniA.texto, /1 corridas en 7 días/, 'y sigue viendo lo suyo');
+    assert.match(iniA.texto, /1 ejecuciones en 7 días/, 'y sigue viendo lo suyo');
     assert.strictEqual((await h.pedir('/healthz')).status, 200);
     // a las 25 horas: nadie recibe datos, quien mantiene incluido; /healthz en falso con la hora del primer fallo
     fijar(falla + 25 * 3600000);
@@ -405,7 +405,7 @@ test('T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h', async () => {
       const r = await h.pedir('/', { cookie: s });
       assert.strictEqual(r.status, 503);
       assert.ok(r.texto.includes(`el sitio está frenado desde ${views.hora(falla + 24 * 3600000)}`));
-      assert.doesNotMatch(r.texto, /corridas en 7 días|people\.machines|Máquinas sin confirmar/);
+      assert.doesNotMatch(r.texto, /ejecuciones en 7 días|people\.machines|Máquinas sin confirmar/);
     }
     const hz = await h.pedir('/healthz');
     assert.deepStrictEqual([hz.status, hz.json], [503, { ok: false, motivo: `la configuración de la organización no valida desde ${views.hora(falla)}` }]);
@@ -414,7 +414,7 @@ test('T44 2.28-Config_BandaSoloMantenedores_YFrenoA24h', async () => {
     const otraVez = await h.pedir('/', { cookie: sL });
     assert.strictEqual(otraVez.status, 200);
     assert.doesNotMatch(otraVez.texto, /no se pudo releer/);
-    assert.match((await h.pedir('/', { cookie: sA })).texto, /1 corridas en 7 días/);
+    assert.match((await h.pedir('/', { cookie: sA })).texto, /1 ejecuciones en 7 días/);
     assert.strictEqual((await h.pedir('/healthz')).status, 200);
   });
 });
@@ -445,7 +445,7 @@ function mundoDeclarado(projects) {
 
 test('T1 Productos_SoloLoDeclarado', () => {
   const { reglas, ve } = mundoDeclarado({ [A]: { add: ['Gama'] } });
-  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'ni Alfa (sus corridas) ni Beta (su pedido): sólo lo declarado');
+  assert.deepStrictEqual(reglas.proyectosDe(A), ['Gama'], 'ni Alfa (sus ejecuciones) ni Beta (su pedido): sólo lo declarado');
   const mA = ve(A);
   assert.deepStrictEqual(mA.productos.map((p) => p.producto), ['Gama']);
   assert.deepStrictEqual(mA.proyectos.lista.map((p) => p.proyecto), ['Gama'], 'las fotos de proyectos, sólo las del declarado');
@@ -501,6 +501,6 @@ test('T4 Inicio_LoPersonal_SinCambios', () => {
   const mA = ve(A);
   assert.deepStrictEqual(mA.pedidos.lista.map((p) => p.id), [9], 'su pedido asignado, aunque Beta no esté declarado');
   assert.deepStrictEqual(mA.prs.lista.map((p) => p.numero), [7], 'su pull request');
-  assert.strictEqual(mA.corridas.lista.length, 1, 'su corrida');
+  assert.strictEqual(mA.corridas.lista.length, 1, 'su ejecución');
   assert.strictEqual(views.inicioDev(mA).corridas.en7dias, 1);
 });

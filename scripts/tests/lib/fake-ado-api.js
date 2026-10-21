@@ -135,13 +135,13 @@ async function arrancarAdoFalso({ org = 'acme', project = 'Proy', repo = 'ops', 
       return p ? json(200, { id: Number(m[1]), name: p.name, configuration: { path: p.path, type: 'yaml' } }) : json(404, { message: 'no existe el pipeline' });
     }
     if (req.method === 'GET' && resto === 'build/builds') {
-      if (st.pipelines403) return json(403, { message: 'sin permiso sobre corridas' });
+      if (st.pipelines403) return json(403, { message: 'sin permiso sobre ejecuciones' });
       const def = u.searchParams.get('definitions');
       const v = (st.builds[def] || []).slice(0, Number(u.searchParams.get('$top') || 1)).map((b) => ({ id: b.id, result: b.result || 'succeeded', sourceBranch: 'refs/heads/main' }));
       return json(200, { value: v, count: v.length });
     }
     if (req.method === 'GET' && (m = /^build\/builds\/(\d+)\/timeline$/.exec(resto))) {
-      if (st.pipelines403) return json(403, { message: 'sin permiso sobre corridas' });
+      if (st.pipelines403) return json(403, { message: 'sin permiso sobre ejecuciones' });
       return json(200, { records: st.timeline });
     }
     return json(404, { message: `ruta desconocida: ${req.method} ${resto}` });

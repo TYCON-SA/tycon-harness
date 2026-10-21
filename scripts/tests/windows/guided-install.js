@@ -147,7 +147,7 @@ function openLab({ lab, name, state, baseEnv = process.env, platform = process.p
   const dir = path.join(lab, 'guided', name);
   // el laboratorio de un paso es de una sola corrida: lo que dejó la anterior (el repo del equipo, la copia «autor»,
   // las carpetas de usuario ya instaladas) haría fallar a ésta más adelante, con un motivo que no orienta
-  if (fs.existsSync(dir)) return { problem: `el paso ${name} ya corrió sobre este laboratorio (existe ${dir}): el laboratorio de un paso es de una sola corrida — para repetirlo, o para correr otra variante, armá un laboratorio nuevo con «init»` };
+  if (fs.existsSync(dir)) return { problem: `el paso ${name} ya corrió sobre este laboratorio (existe ${dir}): el laboratorio de un paso es de una sola ejecución — para repetirlo, o para correr otra variante, armá un laboratorio nuevo con «init»` };
   const noTools = path.join(dir, 'no-tools');
   try { fs.mkdirSync(noTools, { recursive: true }); } catch (e) { return { problem: `no pude crear ${dir}: ${e.code || e.message}` }; }
   // lo que ya levantó se cierra pase lo que pase: un servidor de juguete no queda vivo si lo que sigue falla o tira

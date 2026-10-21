@@ -1124,7 +1124,7 @@ test('Mensajes_EnLlano_SinRutasNiClaves — la pantalla muestra dónde con los n
   const r = await pantallaConPestanas({ secciones: TODAS.map((id) => SEC(id, id === 'sitio' ? { problems } : {})) });
   const textos = []; const walk = (n) => { if (n.textContent) textos.push(n.textContent); (n.hijos || []).forEach(walk); }; walk(r.panelDe('seccion-sitio'));
   const err = textos.filter((t) => / › /.test(t)).join('\n');
-  assert.match(err, /el sitio › dónde dejan sus corridas › cuenta: tiene que tener la forma de una cuenta/);
+  assert.match(err, /el sitio › dónde dejan sus ejecuciones › cuenta: tiene que tener la forma de una cuenta/);
   assert.match(err, /personas › máquinas › «mac-1» › persona: el arnés no conoce este dato/);
   assert.match(err, /modelos › techo: con el techo obligatorio, falta elegir el modelo del techo/);
   assert.match(err, /despliegues › productos › «acme»: tiene que tener el paso de prueba, el de producción o los dos/);
@@ -1378,7 +1378,7 @@ async function conEquipo({ profile = PERFIL_TYCON, layer = capa(ORG.RESPONSE_SIN
 
 test('2.31-T1 ResponseSection_ShowsCurrentValueAndSource @story-2.31 @ac-1 — idioma, estilo y largo, con el valor vigente y de dónde sale', async () => {
   const s = ORG.seccionPorId('respuesta');
-  assert.ok(s, 'hay una sección «Cómo contesta Claude»');
+  assert.ok(s, 'hay una sección «Cómo contesta el agente»');
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves], ['team-profile.json', 'perfil', 'harness-config', ['response']]);
   await conEquipo({ profile: CON_RESPUESTA }, async ({ seccion }) => {
     const v = await seccion('respuesta');
@@ -1609,7 +1609,7 @@ test('T12 7.31-Cobertura_SeccionConSuPorton @story-7.31 @ac-11 @ac-12 — el umb
   }
 });
 
-test('T13 7.31-Cobertura_EnSuBloque @story-7.31 @ac-11 — la sección va en «Cómo trabaja Claude», después de «Pruebas al mergear»', async () => {
+test('T13 7.31-Cobertura_EnSuBloque @story-7.31 @ac-11 — la sección va en «Cómo trabaja el agente», después de «Pruebas al mergear»', async () => {
   // 🔴 rojo: la sección en otra pestaña, o fuera de su lugar.
   const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura'].map((id) => SEC(id)) });
   const panel = r.panelDe('seccion-cobertura');
@@ -1665,7 +1665,7 @@ test('Review_MaxRounds_EditableOnSite @story-7.37 @ac-4 — el tope de vueltas d
     assert.strictEqual(malo.ok, false, JSON.stringify(lista));
     assert.deepStrictEqual(malo.problems.map((p) => p.path), [ruta]);
   }
-  // el campo está en la pantalla, dentro de «Cómo trabaja Claude»
+  // el campo está en la pantalla, dentro de «Cómo trabaja el agente»
   const r = await pantallaConPestanas({ secciones: [...TODAS.map((id) => SEC(id)), SEC('revision', { repo: 'perfil', borrador: {} })] });
   const caja = r.creados.filter((n) => n.attrs.id === 'seccion-revision').pop();
   const hallados = []; const walk = (x) => { if (x.tag === 'input' && x.attrs['data-path'] === 'review.max_rounds') hallados.push(x); (x.hijos || []).forEach(walk); }; walk(caja);
@@ -1767,8 +1767,8 @@ test('Perfil_PorTema_ElMinimoYLoQueSumaElCompleto — grupos con su cuenta, una 
   const grupos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').map((d) => d.hijos[0].textContent);
   assert.deepStrictEqual(grupos, ['Frenos de seguridad (1)', 'Registro de tiempo (1)', 'Frenos de seguridad (1)', 'Instalación y actualización (1)'], 'por grupo, con su cuenta');
   assert.ok(p.todo(p.sec('instalacion')).filter((n) => n.tag === 'details' && n.attrs.class === 'grupo').every((d) => !d.attrs.open), 'cerrados');
-  assert.match(t, /Viene con su integración\. Se cambia en Configuración → Cómo trabaja Claude → Integraciones\./, 'lo de la organización, en su sección');
-  assert.match(t, /Viene prendido\. Sólo en tu máquina, con TYCON_SAFETY_GUARD=0\. Pendiente: que se pueda cambiar desde Configuración → Cómo trabaja Claude\./);
+  assert.match(t, /Viene con su integración\. Se cambia en Configuración → Cómo trabaja el agente → Integraciones\./, 'lo de la organización, en su sección');
+  assert.match(t, /Viene prendido\. Sólo en tu máquina, con TYCON_SAFETY_GUARD=0\. Pendiente: que se pueda cambiar desde Configuración → Cómo trabaja el agente\./);
   assert.match(t, /Viene apagado\. Sólo en tu máquina, con TYCON_SESSION_GUARD=1 lo prende\./);
   assert.match(t, /Viene prendido\. Es parte del arnés: no se apaga\./);
   const titulos = p.todo(p.sec('instalacion')).filter((n) => n.tag === 'summary').map((n) => n.textContent);
@@ -2338,7 +2338,7 @@ test('T17b 2.36-Editor_CasillaPorFicha @story-2.36 @ac-2 — una casilla por fic
   const p = await pantallaFalsa([sec]);
   assert.strictEqual(p.error, null);
   const casillas = p.todo(p.sec('fichas')).filter((n) => n.tag === 'input' && n.attrs.type === 'checkbox');
-  assert.deepStrictEqual(casillas.map((c) => c.attrs['data-path']), ['site.hidden_cards.mutacion', 'site.hidden_cards.backlog', 'site.hidden_cards.pasos'], 'agrupadas por pestaña: Arnés, Proyectos, Corridas');
+  assert.deepStrictEqual(casillas.map((c) => c.attrs['data-path']), ['site.hidden_cards.mutacion', 'site.hidden_cards.backlog', 'site.hidden_cards.pasos'], 'agrupadas por pestaña: Arnés, Proyectos, Ejecuciones');
   assert.deepStrictEqual(casillas.map((c) => Boolean(c.checked)), [true, true, false], 'la oculta viene destildada');
   assert.match(p.textoDe('fichas'), /ficha_de_otra_version/, 'una oculta que esta versión no conoce se nombra y se conserva');
   // destildar una la agrega al borrador; volver a tildar la oculta la saca
@@ -2600,7 +2600,7 @@ test('T30a SiteConfig_AskYourAgent_CopiesPhrase @story-8.48 @ac-36 — «Pedíse
 });
 
 test('E1 SiteConfig_TuTecnologia_RendersInPage @story-8.48 @ac-25 @ac-28 @ac-36 — la sección en su pestaña, al lado de Cobertura, de punta a punta', async () => {
-  // 🔴 rojo: la sección no está en «Cómo trabaja Claude» o el recorrido se corta.
+  // 🔴 rojo: la sección no está en «Cómo trabaja el agente» o el recorrido se corta.
   const r = await pantallaConPestanas({ secciones: [...TODAS, 'cobertura', 'tecnologia'].map((id) => SEC(id, id === 'tecnologia' ? { repo: 'perfil', extras: TEC_EXTRAS } : {})) });
   const panel = r.panelDe('seccion-tecnologia');
   assert.strictEqual((panel || { attrs: {} }).attrs.id, 'pestana-claude');
@@ -3199,7 +3199,7 @@ test('T4 Repos_QueHace_HojaConTema @story-2.59.2 @ac-4', () => {
 });
 
 // ── Quién puede reenviar el ok de un dev (approvals.relay_session) ─────────────────────────────────────
-test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja Claude»', () => {
+test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el lector de la máquina y va en «Cómo trabaja el agente»', () => {
   const s = ORG.seccionPorId('aprobaciones');
   assert.ok(s, 'la sección existe');
   assert.deepStrictEqual([s.archivo, s.repo, s.lector, s.claves, s.rutas], ['team-profile.json', 'perfil', 'harness-config', ['approvals'], ['approvals.relay_session']]);
@@ -3210,7 +3210,7 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
   const malo = rev({ approvals: { relay_session: 42 } });
   assert.strictEqual(malo.ok, false);
   assert.ok(malo.problems.some((p) => p.path === 'approvals.relay_session'), JSON.stringify(malo.problems));
-  // la pantalla la dibuja en «Cómo trabaja Claude», con sus textos en las dos lenguas
+  // la pantalla la dibuja en «Cómo trabaja el agente», con sus textos en las dos lenguas
   for (const idioma of ['es', 'en']) {
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);

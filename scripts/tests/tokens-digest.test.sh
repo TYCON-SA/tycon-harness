@@ -369,9 +369,9 @@ d=json.load(open('$HIST/t10.json'))
 print(d['gates'][0].get('mensaje',''))
 ")"
 if [[ "$msg" == *"no compila"* ]] && [[ "$msg" != *"Build OK"* ]]; then
-  ok "T10 · se rescata el texto de la corrida que FALLÓ, no el del reintento verde"
+  ok "T10 · se rescata el texto de la ejecución que FALLÓ, no el del reintento verde"
 else
-  bad "T10 · la corrida que falló" "esperaba el texto del error; salió: $msg (tomar la más cercana sin acotar dirección, o mirar hacia adelante, publica el VERDE bajo el rótulo de error)"
+  bad "T10 · la ejecución que falló" "esperaba el texto del error; salió: $msg (tomar la más cercana sin acotar dirección, o mirar hacia adelante, publica el VERDE bajo el rótulo de error)"
 fi
 
 # ── T11 · no se inventa por cercanía temática ──────────────────────────────────────────────
@@ -522,7 +522,7 @@ correr --pending --history-dir "$HIST" --projects-dir "$PROJ" --json
 sigue="$(leer "'t17' in d['procesadas']")"
 rmdir "$HIST/t17.hilo.jsonl.gz" 2>/dev/null
 if [ "$err" != "null" ] && [ -n "$err" ] && [ "$hh" = "None" ] && [ "$sigue" = "true" ]; then
-  ok "T17 · hilo que no se pudo guardar → sin hilo_hasta, y la corrida sigue pendiente para el próximo barrido"
+  ok "T17 · hilo que no se pudo guardar → sin hilo_hasta, y la ejecución sigue pendiente para el próximo barrido"
 else
   bad "T17 · el hilo perdido no se da por salvado" "error=$err hilo_hasta=$hh sigue_pendiente=$sigue (fijar hilo_hasta sin mirar si se escribió pierde ese tramo para siempre, contándolo como salvado)"
 fi
@@ -569,7 +569,7 @@ chmod 700 "$BARR2"
 nop="$(leer "d.get('no_persistidas')")"
 salv="$(leer "d.get('salvadas')")"
 if [ "$nop" = "1" ] && [ "$salv" = "0" ]; then
-  ok "T19 · la corrida que no se pudo escribir se cuenta aparte (no_persistidas=1) y NO como salvada"
+  ok "T19 · la ejecución que no se pudo escribir se cuenta aparte (no_persistidas=1) y NO como salvada"
 else
   bad "T19 · no pude ≠ salvada" "esperaba no_persistidas=1 y salvadas=0; salió $nop y $salv (sin contarlo, el barrido la reintenta en cada arranque y nadie se entera) · $OUT"
 fi

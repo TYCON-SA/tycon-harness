@@ -134,7 +134,7 @@ function medir(volcados, opts = {}) {
 function texto(r) {
   return [
     `pase adversarial lanzado tarde (más de ${r.umbral_ms / 60000} min después del primer revisor), por horas`,
-    `  corridas: ${r.corridas} · con pase: ${r.con_pase} · medidas: ${r.medidas}` +
+    `  ejecuciones: ${r.corridas} · con pase: ${r.con_pase} · medidas: ${r.medidas}` +
       `${r.sin_revisores ? ` · con pase y sin revisores medidos: ${r.sin_revisores}` : ''}${r.ilegibles ? ` · ilegibles: ${r.ilegibles}` : ''}`,
     `  tardías: ${r.tardias} de ${r.medidas}`,
     `    con el temprano apagado: ${r.tardias_con_temprano_apagado}`,

@@ -321,7 +321,7 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
   try { fs.rmSync(calls, { force: true }); } catch (_) { /* nada */ }
   fs.writeFileSync(counter, `require('fs').appendFileSync(${JSON.stringify(calls)}, (process.argv[1] ? require('path').basename(process.argv[1]) : '-e') + '\\n');\n`);
   const counted = runApplier({ NODE_OPTIONS: `--require "${counter.replace(/\\/g, '/')}"` });
-  if (counted.error || counted.exit !== 0) facts.problems.push(`la corrida contada salió ${counted.error || counted.exit}: ${lastLines(counted.stderr) || lastLines(counted.stdout)}`);
+  if (counted.error || counted.exit !== 0) facts.problems.push(`la ejecución contada salió ${counted.error || counted.exit}: ${lastLines(counted.stderr) || lastLines(counted.stdout)}`);
   try {
     const names = fs.readFileSync(calls, 'utf8').split('\n').filter(Boolean);
     facts.node_processes = names.length;
@@ -329,7 +329,7 @@ function measureStartupTiming({ home, clone, env, pwsh, scratch, runs = 5, start
   } catch (e) { facts.problems.push(`no pude leer el conteo de procesos: ${e.code || e.message}`); }
   for (let i = 0; i < runs; i++) {
     const r = runApplier();
-    if (r.error || r.exit !== 0) { facts.problems.push(`la corrida ${i + 1} del aplicador salió ${r.error || r.exit}`); continue; }
+    if (r.error || r.exit !== 0) { facts.problems.push(`la ejecución ${i + 1} del aplicador salió ${r.error || r.exit}`); continue; }
     facts.applier_runs_s.push(Math.round(r.ms / 10) / 100);
   }
   facts.applier_median_s = median(facts.applier_runs_s);
@@ -397,7 +397,7 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     // la corrida de muestra y la llave de mentira (sólo crear, como la de verdad; la firma armada por partes)
     const hist = path.join(scratch, 'timing-history');
     fs.mkdirSync(hist, { recursive: true });
-    const hilo = Buffer.from('{"tipo":"muestra","texto":"una corrida de ensayo con acentos: corrida, buzón"}\n');
+    const hilo = Buffer.from('{"tipo":"muestra","texto":"una ejecución de ensayo con acentos: ejecución, buzón"}\n');
     fs.writeFileSync(path.join(hist, '9.9-20261015T000000Z.json'), JSON.stringify({ story: '9.9', muestra: true }));
     fs.writeFileSync(path.join(hist, '9.9-20261015T000000Z.hilo.jsonl.gz'), zlib.gzipSync(hilo));
     const cfg = path.join(scratch, 'llave-de-mentira.json');
@@ -420,7 +420,7 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     let texto = '';
     try { texto = fs.readFileSync(log, 'utf8'); } catch (_) { /* sin registro */ }
     // la constancia que deja el .ps1 al lanzarla (el registro se borró antes de medir: es de esta corrida)
-    facts.launched = /el arranque lanza la subida de corridas/.test(texto);
+    facts.launched = /el arranque lanza la subida de ejecuciones/.test(texto);
     facts.log_lines = texto.split('\n').filter(Boolean).length;
     const all = pedidos();
     facts.puts = all.filter((p) => p.method === 'PUT').length;
@@ -429,7 +429,7 @@ function measureMailboxUpload({ home, clone, env, pwsh, scratch, waitMs = 90000 
     const gz = all.find((p) => p.url.endsWith('9.9-20261015T000000Z.hilo.jsonl.gz'));
     if (gz) { try { facts.gz_intact = zlib.gunzipSync(fs.readFileSync(gz.file)).equals(hilo); } catch (e) { facts.gz_intact = false; facts.problems.push(`el hilo que llegó no se descomprime: ${e.message}`); } }
     if (!facts.launched) facts.problems.push(`el arranque no lanzó la subida: ${texto ? `el registro no trae la constancia (${lastLines(texto)})` : 'no quedó upload-runs.log'}`);
-    else if (!facts.arrived) facts.problems.push(`la subida corrió pero no llegó la corrida de muestra entera (${facts.puts} PUT): ${lastLines(texto)}`);
+    else if (!facts.arrived) facts.problems.push(`la subida corrió pero no llegó la ejecución de muestra entera (${facts.puts} PUT): ${lastLines(texto)}`);
     return facts;
   } finally {
     try { srv.kill(); } catch (_) { /* ya terminó */ }
@@ -598,9 +598,9 @@ function measure({ lab, out, fence, platform = process.platform, disposable = fa
     try {
       const env = L.labEnv(chosen.home, { base: baseEnv, extra: chosen.env, platform });
       if (chosen.path_first) { const k = L.pathKey(env); env[k] = `${chosen.path_first}${path.delimiter}${env[k] || ''}`; }
-      process.stdout.write(`install: ${chosen.id} — mido la subida de corridas al buzón (contra un buzón de mentira)\n`);
+      process.stdout.write(`install: ${chosen.id} — mido la subida de ejecuciones al buzón (contra un buzón de mentira)\n`);
       const up = rec.fact('mailbox_upload', Object.assign({ variant: chosen.id }, measureMailboxUpload({ home: chosen.home, clone: chosen.clone, env, pwsh, scratch: path.join(scratch, 'mailbox-upload') })));
-      if (!up.launched || !up.arrived || up.gz_intact !== true) finding(`install:${chosen.id}:mailbox-upload`, 'install', up.problems.join(' · ') || 'la corrida de muestra no llegó entera al buzón de mentira', 'W4');
+      if (!up.launched || !up.arrived || up.gz_intact !== true) finding(`install:${chosen.id}:mailbox-upload`, 'install', up.problems.join(' · ') || 'la ejecución de muestra no llegó entera al buzón de mentira', 'W4');
     } catch (e) { rec.fact('mailbox_upload', { variant: chosen.id, problems: [`la medición tiró: ${e.message}`] }); }
   }
   L.writeJsonAtomic(path.join(lab, 'lab-state.json'), { schema: L.SCHEMA, source, allow_temp: allowTemp, measured_variant: chosen });

@@ -56,7 +56,7 @@ const writeSettings = (home, obj) => fs.writeFileSync(path.join(home, '.claude',
 test('T1 Board_LineFromMarker_NoMoney — el renglón trae story, el nombre del paso, n de 9, minutos y contexto, sin dinero', async () => {
   const { readRun, boardLine } = await mod('run.mjs');
   const run = readRun(markerEnPaso4(), NOW);
-  assert.ok(run, 'la corrida se lee');
+  assert.ok(run, 'la ejecución se lee');
   const line = boardLine(run, 37);
   assert.match(line, /Story 9\.9/);
   assert.match(line, / · Implementar y correr las pruebas · /, 'el paso por su nombre llano (story 7.23)');
@@ -101,18 +101,18 @@ test('T4 Board_PipelineTable_NoCostColumn — /pipeline: Paso | Estado | Tiempo,
   assert.doesNotMatch(t, /gasto|USD|\$/i);
   const fila = (name) => t.split('\n').find((l) => l.startsWith(`| ${name} |`));
   assert.match(fila('Validar la historia'), /\| hecho \| 8 min \|/);
-  assert.match(fila('Arranque: aviso de trabajo'), /\| hecho \|/, 'sub-paso por bandera (la vieja, de una corrida en vuelo)');
+  assert.match(fila('Arranque: aviso de trabajo'), /\| hecho \|/, 'sub-paso por bandera (la vieja, de una ejecución en vuelo)');
   assert.match(fila('Implementar y correr las pruebas'), /\| corriendo \| 12 min \|/);
   assert.match(fila('Revisores'), /\| pendiente \| — \|/);
   assert.match(t.split('\n')[0], /Story 9\.9/);
 });
 
-test('T5 Board_NoMarkerOrBroken_Nothing — sin corrida no dibuja y /pipeline lo dice', async () => {
+test('T5 Board_NoMarkerOrBroken_Nothing — sin ejecución no dibuja y /pipeline lo dice', async () => {
   const { readRun, NO_RUN_TEXT } = await mod('run.mjs');
   for (const txt of [null, undefined, '', '{roto', '[]', '"texto"', '{}']) {
-    assert.strictEqual(readRun(txt, NOW), null, `no es corrida: ${JSON.stringify(txt)}`);
+    assert.strictEqual(readRun(txt, NOW), null, `no es ejecución: ${JSON.stringify(txt)}`);
   }
-  assert.match(NO_RUN_TEXT, /no hay una corrida del pipeline en esta sesión/i);
+  assert.match(NO_RUN_TEXT, /no hay una ejecución del pipeline en esta sesión/i);
 });
 
 test('T6 Board_UnknownStepsAndNoTimings — pasos que no conoce y sin horas: se arma igual', async () => {
@@ -255,7 +255,7 @@ test('T11 Mods_BadInput_NoChange — lo que no entiende no cambia nada', async (
 
 // ── El instalador ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('T12 Installer_PluginDirs_AddIdempotent — sin la variable, la crea; dos corridas, una sola vez', () => {
+test('T12 Installer_PluginDirs_AddIdempotent — sin la variable, la crea; dos ejecuciones, una sola vez', () => {
   const PD = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'plugin-dirs.js'));
   const SH = require(path.join(RAIZ, 'scripts', 'setup', 'harness', 'shared.js'));
   const home = labHome();

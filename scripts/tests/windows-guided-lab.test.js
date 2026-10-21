@@ -426,5 +426,5 @@ test('GuidedUpdate_LabRun_Auto_ReachesTheNewVersionByItself', { skip: SKIP }, ()
     /`harness\.js update --yes` lanzado sin una terminal: salió \d+ y quedó la versión .* \(se negó y dijo por qué: es lo esperado\)/,
     /- update · auto: carpeta de usuario /, /- update · ask: carpeta de usuario /, /## No ensayado/,
   ]) assert.match(md, said);
-  assert.doesNotMatch(md, /no se midió|NO SE PUDO ENSAYAR/, 'nada de lo que esta corrida midió sale como «no se midió»');
+  assert.doesNotMatch(md, /no se midió|NO SE PUDO ENSAYAR/, 'nada de lo que esta ejecución midió sale como «no se midió»');
 });

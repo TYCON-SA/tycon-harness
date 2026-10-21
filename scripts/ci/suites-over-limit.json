@@ -85,7 +85,7 @@
       "exception": {
         "signed_by": "el dueño del arnés",
         "date": "2026-10-07",
-        "why": "Parte 1 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
+        "why": "Parte 1 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una ejecución de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
         "until": "la medición final de la story 8.22 (tramo H)"
       }
     },
@@ -93,7 +93,7 @@
       "exception": {
         "signed_by": "el dueño del arnés",
         "date": "2026-10-07",
-        "why": "Parte 2 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una corrida de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
+        "why": "Parte 2 de 2 de installer-ps1.test.sh. La suite se partió el 2026-10-14 para que cada mitad entre con margen en el tope de 900 s de public-ci (entera tardaba ~440 s en el agente de GitHub y en uno lento lo pasó); cada mitad sigue pasando de 45 s. Es la excepción que el dueño firmó para la suite entera, pasada a sus dos partes sin cambiar la decisión: El gemelo de Windows del instalador, corrido con pwsh: 23 secciones parejas, casi todas una ejecución de pwsh, que en el agente tarda ~1,9 veces lo de una Mac. No se pudo partir: tres secciones solas ya pasan de 45 s, y cortar por adentro de una sección es reescribirla.",
         "until": "la medición final de la story 8.22 (tramo H)"
       }
     },

@@ -199,15 +199,15 @@ test('T2 Config_ArchivoRoto_FallaNombrandoArchivoYClave — un comando frena con
   assert.equal(v.status, 2);
 });
 
-test('T2 Config_ArchivoRoto — un hook lo dice en CADA corrida, sale 0 y no hace la parte de la integración', () => {
+test('T2 Config_ArchivoRoto — un hook lo dice en CADA ejecución, sale 0 y no hace la parte de la integración', () => {
   const home = casa();
   const rota = maquina(home, '{ "integrations": { "engram": "si" } }');
   // (a) el modo hook del lector: aviso por stderr dos veces seguidas (sin sello), exit 0, stdout vacío
   for (let i = 0; i < 2; i++) {
     const h = cli(['validate', '--hook'], { home, env: { TYCON_PROFILE: '0' } });
-    assert.equal(h.status, 0, `corrida ${i + 1}: un hook nunca sale ≠ 0 por la config`);
-    assert.match(h.stderr, /integrations\.engram/, `corrida ${i + 1}: el aviso nombra la clave`);
-    assert.match(h.stderr, new RegExp(rota.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `corrida ${i + 1}: y el archivo`);
+    assert.equal(h.status, 0, `ejecución ${i + 1}: un hook nunca sale ≠ 0 por la config`);
+    assert.match(h.stderr, /integrations\.engram/, `ejecución ${i + 1}: el aviso nombra la clave`);
+    assert.match(h.stderr, new RegExp(rota.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `ejecución ${i + 1}: y el archivo`);
     assert.equal(h.stdout, '', 'nada por stdout: un PreToolUse no debe emitir JSON de decisión por esto');
   }
   const ph = lib().leerParaHook({ env: {}, home, arnes: arnesCon(null) });
@@ -238,10 +238,10 @@ test('T2 Config_ArchivoRoto — un hook lo dice en CADA corrida, sale 0 y no hac
   });
   for (let i = 0; i < 2; i++) {
     const r = correrHook(home);
-    assert.equal(r.status, 0, `hook, corrida ${i + 1}: exit 0 (stderr: ${r.stderr})`);
-    assert.match(r.stderr, /integrations\.engram/, `hook, corrida ${i + 1}: el aviso sale`);
+    assert.equal(r.status, 0, `hook, ejecución ${i + 1}: exit 0 (stderr: ${r.stderr})`);
+    assert.match(r.stderr, /integrations\.engram/, `hook, ejecución ${i + 1}: el aviso sale`);
     assert.doesNotMatch(r.stdout, /"decision"/, 'no deniega la herramienta');
-    assert.ok(!fs.existsSync(registro), `hook, corrida ${i + 1}: engram NO se llamó`);
+    assert.ok(!fs.existsSync(registro), `hook, ejecución ${i + 1}: engram NO se llamó`);
   }
   const sano = correrHook(casa());
   assert.equal(sano.status, 0, sano.stderr);
@@ -349,7 +349,7 @@ test('T4 Config_ComentarioTecnico_NoEsPersonal — una ruta, una clave del vocab
     'llave: scripts/metrics/corridas-buzon.json',
     'TYCON_NO_ENGRAM_PROJECT_CHECK_VERBOSE apaga el aviso',
     'build 1234567890 salió verde',
-    'la corrida 20260926213714 y el PR 3482123456, id de corrida 987654321, sha 1234567890123',
+    'la ejecución 20260926213714 y el PR 3482123456, id de ejecución 987654321, sha 1234567890123',
     'clave ado.org; ver guides/integraciones-por-configuracion-del-equipo.md',
     // sin espacio después de los dos puntos, y un archivo sin carpeta
     'clave:integraciones.engram',

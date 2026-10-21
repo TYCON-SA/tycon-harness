@@ -309,7 +309,7 @@ function renderGuided(report) {
   const from = (key) => { const s = guidedSteps.find((x) => x.facts[key] !== undefined && x.facts[key] !== null); return s ? s.facts[key] : undefined; };
   const any = { facts: { rehearsed_version: from('rehearsed_version'), page: from('page'), not_rehearsed: from('not_rehearsed') } };
   M.push('# El arnés en Windows — el ensayo sobre la página pública de instalación', '');
-  M.push(`Corrida **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
+  M.push(`Ejecución **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
   if (run.commits && run.commits.harness) M.push('| Lo que se ensaya | Commit | Versión de la copia |', '|---|---|---|', `| una copia publicada del arnés | \`${short(run.commits.harness.today)}\` (${cell(run.commits.harness.today_ref)}) | ${cell(any.facts.rehearsed_version)} |`, '');
   M.push(`## Veredicto: ${v.color !== 'green' ? 'ROJO — NO se pudo ensayar' : (v.nothing_measured ? 'CON AVISOS — se pudo correr, pero ningún paso del escenario midió' : 'VERDE — se pudo ensayar')}`, '');
   M.push('El color dice si el ensayo PUDO CORRER, no si Windows anda bien: lo que encontró está abajo, con su gravedad.', '');
@@ -446,7 +446,7 @@ function renderGuided(report) {
   const skipped = any.facts.not_rehearsed;
   M.push('## No ensayado', '');
   // sin la lista no es «nada quedó sin ensayar»: es que ningún paso llegó a anotarla
-  if (!skipped) M.push('Ningún paso de esta corrida llegó a anotar la lista de lo que no se ensaya (está en `scripts/tests/windows/guided-steps.json`): que acá no haya filas NO quiere decir que se ensayó todo.', '');
+  if (!skipped) M.push('Ningún paso de esta ejecución llegó a anotar la lista de lo que no se ensaya (está en `scripts/tests/windows/guided-steps.json`): que acá no haya filas NO quiere decir que se ensayó todo.', '');
   else {
     M.push('| De la página | Qué | Por qué no |', '|---|---|---|');
     for (const n of skipped) M.push(`| ${cell(n.step ? `paso ${n.step}` : null)} | ${cell(n.what)} | ${cell(n.why)} |`);
@@ -485,7 +485,7 @@ function renderMarkdown(report) {
   const run = report.run || {};
   const M = [];
   M.push('# El arnés del equipo en Windows — el ensayo (story 8.17, W0)', '');
-  M.push(`Corrida **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
+  M.push(`Ejecución **${run.id === null || run.id === undefined ? 'sin número' : run.id}**${run.number ? ` (${run.number})` : ''} · escenario \`${run.scenario || '—'}\` · ${run.platform || '—'}${run.lab_mode ? ' — **modo de laboratorio: esto NO es un Windows**' : ''} · Node ${run.node || '—'}`, '');
   if (run.commits) {
     M.push('| Repo | El viernes | Hoy | Commits en el medio |', '|---|---|---|---|');
     // sin marca (un solo repo, y no se pasó una) no hay un viernes que mostrar
@@ -681,7 +681,7 @@ function cmdVerdict(args) {
   // «no medido» no es un rojo, pero tampoco pasa callado: un aviso por paso, y si ningún paso del escenario midió la
   // corrida termina CON AVISOS —nunca en un verde liso que parezca un ensayo hecho—
   for (const l of v.not_measured || []) say(`##vso[task.logissue type=warning]no medido — ${L.clip(l, 400)}`);
-  if (v.color === 'green' && v.nothing_measured) say('##vso[task.complete result=SucceededWithIssues;]ningún paso del escenario midió: la corrida termina con avisos');
+  if (v.color === 'green' && v.nothing_measured) say('##vso[task.complete result=SucceededWithIssues;]ningún paso del escenario midió: la ejecución termina con avisos');
   if (report.run && report.run.scenario === 'portable') {
     // el «En corto», también en el registro de la corrida: que nadie tenga que abrir el artefacto para enterarse
     const rows = P.shortRows(report);

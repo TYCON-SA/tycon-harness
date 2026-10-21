@@ -44,7 +44,7 @@ echo "  medido: total=$TOTAL · sin_declarar=$SINDEC · las cuatro causas=$CUATR
 # El censo commiteado tiene que coincidir con lo que el medidor cuenta hoy.
 if [ -f "$CENSO" ]; then
   CTOT="$(python3 -c "import json;print(json.load(open('$CENSO'))['con_followup_of'])" 2>/dev/null)"
-  [ "$CTOT" = "$TOTAL" ] && ok "el censo commiteado coincide con la corrida ($CTOT)" \
+  [ "$CTOT" = "$TOTAL" ] && ok "el censo commiteado coincide con la ejecución ($CTOT)" \
     || mal "el censo dice $CTOT y el medidor $TOTAL" "el censo es salida de una medición: se regenera, no se edita"
 else
   mal "falta el censo" "$CENSO"

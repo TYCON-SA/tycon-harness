@@ -119,7 +119,7 @@ REGISTRO_OK=no
 if [ -f "$AQUI/deploy-record.sh" ] && . "$AQUI/deploy-record.sh"; then REGISTRO_OK=si; fi
 registrar_formularios() {
   if [ "$REGISTRO_OK" != si ]; then
-    [ "${TF_BUILD:-}" = "True" ] && echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del humo (¿el artefacto arnes-ci llegó incompleto?) — esta corrida queda SIN registro de despliegue"
+    [ "${TF_BUILD:-}" = "True" ] && echo "##vso[task.logissue type=warning]registro-despliegue: no está deploy-record.sh al lado del humo (¿el artefacto arnes-ci llegó incompleto?) — esta ejecución queda SIN registro de despliegue"
     return 0
   fi
   registro_activo || return 0
@@ -148,9 +148,9 @@ registrar_formularios() {
       ya=$((ya+1))
     fi
   done
-  echo "[registro] $n desplegado(s) en esta corrida · $ya ya estaban · $sc sin constancia · $na sin anotar" >&2
-  [ "$puede" = no ] && [ "$na" -gt 0 ] && registro_aviso "falta jq o una herramienta de huella (sha256sum/shasum): $na formulario(s) publicados por esta corrida quedan SIN registro de despliegue"
-  [ "$sc" -gt 0 ] && registro_aviso "$sc formulario(s) sin constancia de con qué commit los subió el host — esta corrida queda SIN registro de despliegue para ellos"
+  echo "[registro] $n desplegado(s) en esta ejecución · $ya ya estaban · $sc sin constancia · $na sin anotar" >&2
+  [ "$puede" = no ] && [ "$na" -gt 0 ] && registro_aviso "falta jq o una herramienta de huella (sha256sum/shasum): $na formulario(s) publicados por esta ejecución quedan SIN registro de despliegue"
+  [ "$sc" -gt 0 ] && registro_aviso "$sc formulario(s) sin constancia de con qué commit los subió el host — esta ejecución queda SIN registro de despliegue para ellos"
   return 0
 }
 
@@ -270,7 +270,7 @@ for intento in 1 2 3; do
     # se verifica igual.
     if [ -n "$ESP_TAM" ] && [ "$ESP_TAM" != "$SIZE" ]; then
       D=$(( 10#$SIZE > 10#$ESP_TAM ? 10#$SIZE - 10#$ESP_TAM : 10#$ESP_TAM - 10#$SIZE ))   # los dos ya son números (es_numero)
-      echo "[humo] 🔴 $F v$V: el host sirve $SIZE bytes y el paquete de esta corrida declara $ESP_TAM (difieren en $D) — el código servido NO es el que se acaba de instalar" >&2
+      echo "[humo] 🔴 $F v$V: el host sirve $SIZE bytes y el paquete de esta ejecución declara $ESP_TAM (difieren en $D) — el código servido NO es el que se acaba de instalar" >&2
       FALLAS=$((FALLAS+1)); continue
     fi
     echo "[humo] ✅ $F v$V: en su versión y sirviendo código ($SIZE bytes${ESP_TAM:+, el paquete declara $ESP_TAM})"

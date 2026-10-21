@@ -72,9 +72,9 @@ for p in "$@"; do
   git add -- "$p" 2>/dev/null || advertencia "publicar-bump: el pathspec «${p}» no matchea ningún archivo — se sigue con el resto"
 done
 if git diff --staged --quiet; then
-  echo "publicar-bump: sin cambios en: $* — igual se deja la marca (commit vacío con Commit: $DESDE) para que la próxima corrida sepa desde dónde mirar"
+  echo "publicar-bump: sin cambios en: $* — igual se deja la marca (commit vacío con Commit: $DESDE) para que la próxima ejecución sepa desde dónde mirar"
   git commit -q --allow-empty -m "$MENSAJE" \
-    -m "Sin cambios de versión en esta corrida; la marca queda para que la siguiente sepa desde dónde mirar." \
+    -m "Sin cambios de versión en esta ejecución; la marca queda para que la siguiente sepa desde dónde mirar." \
     -m "Commit: $DESDE"
 else
   git commit -q -m "$MENSAJE" -m "Commit: $DESDE"
@@ -96,7 +96,7 @@ for intento in 1 2 3; do
 done
 
 if [ "$OK" != true ]; then
-  aviso "no se pudo publicar el bump de versión en $RAMA tras 3 intentos — los formularios de esta corrida NO van a llegar hasta el próximo merge"
+  aviso "no se pudo publicar el bump de versión en $RAMA tras 3 intentos — los formularios de esta ejecución NO van a llegar hasta el próximo merge"
   exit 1
 fi
 echo "✅ bump publicado en $RAMA (Commit: $DESDE)"

@@ -70,7 +70,7 @@ for otro in "az repos pr update --id 1 --auto-complete true" "az repos pr list -
   rc=$(AZ_SALIDA="$TMP/pr.json" AZ_POLICY="$TMP/corriendo.json" corre "$otro")
   [ "$rc" -eq 0 ] || { no "🔴 bloqueó un comando que no crea nada: $otro"; break; }
 done
-[ "$rc" -eq 0 ] && ok "actualizar, listar o consultar corridas no se tocan"
+[ "$rc" -eq 0 ] && ok "actualizar, listar o consultar ejecuciones no se tocan"
 
 # ---------------------------------------------------------------- 4b. 🔴 un pull request ya construido no bloquea
 # Bloquear ante CUALQUIER pull request abierto le impediría a dos personas trabajar en cosas

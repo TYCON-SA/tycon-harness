@@ -83,7 +83,7 @@ function crearReglas({ config, modelo, personas } = {}) {
 
   /** La máquina de una carpeta del buzón: { carpeta (la nueva, si es una vieja unida), estado, motivo, person }. */
   function maquina(nombre) {
-    if (!nombre) return { carpeta: null, estado: 'sin_maquina', motivo: 'una corrida sin máquina', person: null };
+    if (!nombre) return { carpeta: null, estado: 'sin_maquina', motivo: 'una ejecución sin máquina', person: null };
     const e = people.estadoDeMaquina(nombre, c);
     return { carpeta: e.antes_de || nombre, estado: e.estado, motivo: e.motivo || null, person: e.person || null };
   }
@@ -275,12 +275,12 @@ function filtrarCorridas(M, quien, reglas) {
   // medido». Pasa hasta la primera bajada entera del buzón, o si lo informado no se pudo leer.
   if (reglas.quienEsQuienMedido === false) {
     out.buzon = { estado: buzon ? buzon.estado : 'no_medido', parcial: true };
-    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus corridas faltan, no son cero';
+    out.vacio_motivo = 'no medido: todavía no se pudo saber de quién es cada máquina (lo que informan las máquinas se lee con la primera bajada entera del buzón); tus ejecuciones faltan, no son cero';
     return out;
   }
   if (!corridas.length) {
     const suyas = reglas.maquinasDe ? reglas.maquinasDe(quien.email) : [];
-    out.vacio_motivo = `todavía no hay corridas de tus máquinas en el buzón (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
+    out.vacio_motivo = `todavía no hay ejecuciones de tus máquinas en el buzón (${suyas.join(', ') || 'ninguna confirmada'}): la primera llega sola al terminar un pipeline`;
   }
   return out;
 }

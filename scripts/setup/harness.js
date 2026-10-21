@@ -1794,7 +1794,7 @@ function cmdInstall(ctx) {
   if (ctx.opts['harness-clone'] !== undefined) {
     const hc = real(ctx.opts['harness-clone']);
     if (!hc || !isHarnessClone(hc) || !mod('sources').isRepo(hc, { env: ctx.env })) return { code: 2, lines: [`harness.js install: --harness-clone ${ctx.opts['harness-clone']} no es un clon de git del arnés (sin scripts/install-tycon-hooks.sh)`] };
-    if (fromExisting) return { code: 2, lines: ['harness.js install: --harness-clone no va con --from-existing (esa corrida no instala nada)'] };
+    if (fromExisting) return { code: 2, lines: ['harness.js install: --harness-clone no va con --from-existing (esa ejecución no instala nada)'] };
     // sobre una copia pública la máquina queda en `source: public` con la fuente `internal` (la capa): su clon de lectura
     // (--bare, con --reference a ése, que no se toca) se arma, se elige el commit y la capa se apila antes del
     // aplicador. Si la capa no se puede preparar, no se instala nada (no se instala a medias, sin la capa pedida)
@@ -1877,13 +1877,13 @@ function cmdInstall(ctx) {
   const PR = mod('profile');
   // `--from-existing` lo lanza el aplicador sobre lo que ya está y no corre el aplicador: `--profile` ahí no haría nada, y
   // una opción que no hace efecto no pasa en silencio
-  if (fromExisting && ctx.opts.profile !== undefined) return { code: 2, lines: ['harness.js install: --profile no va con --from-existing (esa corrida no aplica nada): el perfil se elige con install --profile, o con install.profile en ~/.claude/tycon.json'] };
+  if (fromExisting && ctx.opts.profile !== undefined) return { code: 2, lines: ['harness.js install: --profile no va con --from-existing (esa ejecución no aplica nada): el perfil se elige con install --profile, o con install.profile en ~/.claude/tycon.json'] };
   const profileError = PR.checkOption(ctx.opts.profile, ctx.env);
   if (profileError) return { code: 2, lines: [`harness.js install: ${profileError}`] };
   // las preguntas, y las opciones que las contestan, ANTES del plan: lo contestado
   // viaja como si hubiera venido por opción (el plan lo muestra) y se escribe recién después de la conformidad
   let asked = { writes: [], over: {}, head: [], guided: false, eof: false };
-  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa corrida no aplica nada): se contestan con install, o con node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`] };
+  if (fromExisting && (ctx.opts.integrations !== undefined || ctx.opts.packs !== undefined)) return { code: 2, lines: [`harness.js install: --integrations y --packs no van con --from-existing (esa ejecución no aplica nada): se contestan con install, o con node ~/.claude/${PLACE.PLACE_NAME}/scripts/lib/tycon-config.js set`] };
   if (!fromExisting) {
     asked = installQuestions(ctx, tree, read.status === 'ok' ? read.state : null);
     if (asked.code !== undefined) return { code: asked.code, lines: asked.lines };
@@ -1894,7 +1894,7 @@ function cmdInstall(ctx) {
   // qué herramientas se enchufan: el plan las nombra. Desde un clon, Claude Code siempre
   // (el clon vive en su carpeta); Codex, si se pidió con `--tool` o está instalado y su llave no lo apaga
   let tc = null;
-  if (ctx.opts.tool !== undefined && fromExisting) return { code: 2, lines: ['harness.js install: --tool no va con --from-existing (esa corrida no aplica nada)'] };
+  if (ctx.opts.tool !== undefined && fromExisting) return { code: 2, lines: ['harness.js install: --tool no va con --from-existing (esa ejecución no aplica nada)'] };
   // una máquina que vive en la casa propia del arnés (se instaló sin Claude Code) no se instala desde un clon: el
   // aplicador en shell tiene escrito el lugar de antes y el estado quedaría partido en dos
   if (!fromExisting && mod('tycon-home').livesInOwnHome(ctx.home) && !mod('tycon-home').ownHomeStale(ctx.home)) {

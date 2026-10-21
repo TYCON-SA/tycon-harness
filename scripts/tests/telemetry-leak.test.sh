@@ -349,8 +349,8 @@ print('|'.join(['leido' if sys.argv[2] in txt else 'NO-LEIDO', 'clave-tapada' if
 PYC
 )"
 [ "${RC_C}" = "0" ] && [ "${R_GIT}" = "leido|clave-tapada" ] \
-  && ok "T17 la vista de corridas sí lo lee (control positivo: el parche sembrado llegó) y la clave sale tapada" \
-  || mal "T17 vista de corridas (rc=${RC_C}): ${R_GIT} — $(head -c 200 "${BASE}/corridas.err")"
+  && ok "T17 la vista de ejecuciones sí lo lee (control positivo: el parche sembrado llegó) y la clave sale tapada" \
+  || mal "T17 vista de ejecuciones (rc=${RC_C}): ${R_GIT} — $(head -c 200 "${BASE}/corridas.err")"
 for m in "${M_CLAVE_GIT}"; do grep -F "${m}" "${BASE}/corridas.out" "${BASE}/corridas.err" >/dev/null && mal "T17 «${m}» salió por la pantalla de la vista"; done
 
 # ── el latido de la retrospectiva no saca nada del volcado ni de los hallazgos ──────────
@@ -437,8 +437,8 @@ for M in "${M_CORREO}" "${M_RUTA}" "/Users/fulano" "${M_CLIENTE}" "${M_CMD}" "FU
 done
 [ "${FUGA}" -eq 0 ] && ok "2.21-T20 ni la story, ni la ruta, ni el comando, ni el prompt, ni la sesión de un volcado o de una línea tests salen en la página del nocturno"
 grep -E '/timing-history(/|$)' "${BASE}/n.espia" >/dev/null && mal "2.21-T20 el nocturno leyó timing-history/ del disco: $(grep -E '/timing-history' "${BASE}/n.espia" | head -2 | tr '\n' ' ')" \
-  || ok "2.21-T20 el nocturno no lee timing-history/ del disco: las corridas salen sólo del buzón"
-python3 - "${BASE}/tablero-n.out" <<'PY' && ok "2.21-T20 control positivo: corrida (mediana de 40 min y 2 h), 7 agentes, 3 vueltas y la duración de la suite (1 s, 4 muestras) llegan con su número" || mal "2.21-T20 control positivo: $(python3 -c "import sys;t=open(sys.argv[1]).read();i=t.find(chr(10)+'{');print(t[i:i+600])" "${BASE}/tablero-n.out")"
+  || ok "2.21-T20 el nocturno no lee timing-history/ del disco: las ejecuciones salen sólo del buzón"
+python3 - "${BASE}/tablero-n.out" <<'PY' && ok "2.21-T20 control positivo: ejecución (mediana de 40 min y 2 h), 7 agentes, 3 vueltas y la duración de la suite (1 s, 4 muestras) llegan con su número" || mal "2.21-T20 control positivo: $(python3 -c "import sys;t=open(sys.argv[1]).read();i=t.find(chr(10)+'{');print(t[i:i+600])" "${BASE}/tablero-n.out")"
 import json, sys
 t = open(sys.argv[1]).read(); i = t.find('\n{')
 d, _ = json.JSONDecoder().raw_decode(t[i+1:] if i >= 0 else t)

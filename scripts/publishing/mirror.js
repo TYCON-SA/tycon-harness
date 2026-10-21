@@ -1036,7 +1036,7 @@ async function verify(ctx) {
  */
 /** Lo que va al informe: un error no previsto trae su traza en el mensaje, y al informe —que termina en un aviso— va sólo que lo hubo. */
 const reportForFile = (report) => (/^error no previsto: /.test(report.message || '')
-  ? { ...report, message: 'error no previsto (el detalle, en el registro de la corrida)' } : report);
+  ? { ...report, message: 'error no previsto (el detalle, en el registro de la ejecución)' } : report);
 /** La corrida cuyo informe no se pudo escribir: un 1 sigue siendo un 1 (hay hallazgos); cualquier otro código pasa a 2. */
 const reportUnwritten = (report, failed) => ({ ...report, exit: report.exit === 1 ? 1 : 2, message: report.message ? `${report.message}. Además, ${failed}` : failed });
 function writeReport(file, command, report) {

@@ -47,7 +47,7 @@ function world(on: any, files: Record<string, string>, store: Record<string, unk
 const start = ($: any) => $.session.start({ cwd: HOME, surface: 'terminal', isInteractive: true })
 const mount = ($: any) => $.ui.mount({ plugin: 'harness-mods', surface: 'terminal', component: 'AbovePrompt', props: PROPS })
 
-test('el cartel se dibuja con la corrida de la sesión y sin dinero', async ($, on) => {
+test('el cartel se dibuja con la ejecución de la sesión y sin dinero', async ($, on) => {
   world(on, { [MARKER_PATH]: MARKER })
   await start($)
   const ui = await mount($)
@@ -105,12 +105,12 @@ test('Windows: con HOME en otra carpeta, el marker se busca también bajo USERPR
   expect(await (await mount($)).find({ type: 'Text', text: /Story 9\.9/ })).toBeDefined()
 })
 
-test('sin corrida en la sesión no dibuja y /pipeline lo dice', async ($, on) => {
+test('sin ejecución en la sesión no dibuja y /pipeline lo dice', async ($, on) => {
   world(on, {})
   await start($)
   expect(await (await mount($)).find({ type: 'Text', text: /Story/ })).toBeUndefined()
   const r = await $.command.run({ command: 'pipeline', args: '', ...RUN })
-  expect((r as any).text).toMatch(/No hay una corrida del pipeline/)
+  expect((r as any).text).toMatch(/No hay una ejecución del pipeline/)
 })
 
 test('el cartel trae el título corto de la story desde su spec, y el completo abajo', async ($, on) => {

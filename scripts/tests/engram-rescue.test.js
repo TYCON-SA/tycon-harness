@@ -226,7 +226,7 @@ test('--target que NO es un sub-repo legítimo del proyecto aborta sin tocar nad
   assert.equal(r.patches.length, 0);
 });
 
-test('si el destino DESAPARECE mientras corre, no se sincroniza y la corrida sale con error', SKIP, () => {
+test('si el destino DESAPARECE mientras corre, no se sincroniza y la ejecución sale con error', SKIP, () => {
   // 🔴 El escenario `rescue-missing-repo`: el repo se fue, pero el PATCH ya había
   // salido. Omitir el sync y terminar en 0 sería una mutación a medias declarada
   // como éxito. El destino se REVALIDA justo antes de sincronizar.
@@ -243,13 +243,13 @@ test('si el destino DESAPARECE mientras corre, no se sincroniza y la corrida sal
 });
 
 // ── nada de éxitos parciales ───────────────────────────────────────────────────────
-test('si un PATCH falla, NO se sincroniza y la corrida sale con error', SKIP, async () => {
+test('si un PATCH falla, NO se sincroniza y la ejecución sale con error', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
   repo(L, 'Solo', { pin: 'p' });
   const api = fakeApi(L, 'error500'); fakeEngram(L, 'exports', ['s1']);
   const r = correr(L, api); api.close();
-  assert.notEqual(r.status, 0, '🔴 un HTTP 500 terminaba la corrida en 0');
+  assert.notEqual(r.status, 0, '🔴 un HTTP 500 terminaba la ejecución en 0');
   assert.equal(r.engramCalls.length, 0, 'exportar la mitad y declararlo hecho es el modo de falla que se está cerrando');
   assert.match(r.stderr, /NO se sincroniz/);
 });
@@ -299,7 +299,7 @@ test('si el sync exporta SÓLO LA MITAD, el post-check lo caza', SKIP, async () 
 });
 
 // ── rastro de hasta dónde llegó ────────────────────────────────────────────────────
-test('la corrida deja journal de cada fase que muta', SKIP, async () => {
+test('la ejecución deja journal de cada fase que muta', SKIP, async () => {
   const L = lab();
   db(L, [{ id: 'o1', project: 'p', sync_id: 's1' }]);
   repo(L, 'Solo', { pin: 'p' });
@@ -309,7 +309,7 @@ test('la corrida deja journal de cada fase que muta', SKIP, async () => {
   const j = path.join(L.home, '.claude', '.tycon-pipeline', 'engram-rescue.jsonl');
   const fases = fs.readFileSync(j, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l).fase);
   for (const f of ['resolucion', 'tocar', 'tocado', 'postcheck', 'cierre']) {
-    assert.ok(fases.includes(f), `falta la fase "${f}" en el journal: si la corrida se corta, nadie sabe hasta dónde llegó`);
+    assert.ok(fases.includes(f), `falta la fase "${f}" en el journal: si la ejecución se corta, nadie sabe hasta dónde llegó`);
   }
 });
 
@@ -333,7 +333,7 @@ test('el dry-run no toca NADA', SKIP, async () => {
 // verificar que la copia se pueda leer, un backup corrupto sería peor que ninguno, porque se
 // decide mutar confiando en él.
 
-test('el backup del autoheal no se pisa entre corridas y se verifica que se pueda leer', SKIP, () => {
+test('el backup del autoheal no se pisa entre ejecuciones y se verifica que se pueda leer', SKIP, () => {
   // 🔴 Corre en OTRO PROCESO con HOME de laboratorio: `engram-autoheal.js` resuelve la ruta de la
   // base AL CARGARSE, así que pisar `process.env.HOME` después del require no aísla nada — y el
   // test terminaría haciendo backups de la base REAL del dev. Un test que toca producción para
@@ -354,7 +354,7 @@ console.log(JSON.stringify({ a, b }));
   const { a, b } = JSON.parse(r.stdout.trim().split('\n').pop());
   assert.ok(!a.error, `primer backup: ${a.error}`);
   assert.ok(!b.error, `segundo backup: ${b.error}`);
-  assert.notEqual(a.destino, b.destino, '🔴 dos corridas no pueden compartir el único punto de restauración');
+  assert.notEqual(a.destino, b.destino, '🔴 dos ejecuciones no pueden compartir el único punto de restauración');
   assert.equal(typeof a.observaciones, 'number', 'el backup se verifica consultándolo, no mirando si el archivo existe');
   assert.equal(fs.existsSync(a.destino), true, 'el primer punto de restauración sigue estando después del segundo');
 });
@@ -404,7 +404,7 @@ test('un chunk ilegible se AVISA — sus observaciones van a aparecer como varad
   fs.writeFileSync(path.join(d, '.engram', 'chunks', 'roto.jsonl.gz'), Buffer.from('esto no es gzip'));
   const api = fakeApi(L, 'ok'); fakeEngram(L, 'exports', ['s1']);
   const r = correr(L, api, ['--apply']); api.close();
-  assert.match(r.stderr, /ILEGIBLE/, 'ignorarlo en silencio era re-tocar sus observaciones en cada corrida sin que nadie supiera por qué');
+  assert.match(r.stderr, /ILEGIBLE/, 'ignorarlo en silencio era re-tocar sus observaciones en cada ejecución sin que nadie supiera por qué');
 });
 
 test('reindex: chunks sin manifest es ROJO, no "todo está en el índice"', SKIP, () => {
@@ -511,7 +511,7 @@ test('reindex: un manifest con schema ajeno es ROJO y no se toca', SKIP, () => {
 
 // ── el tope es de la CORRIDA, no por observación ──────────────────────────────────
 
-test('el presupuesto global corta limpio: lo no tocado queda anotado y la corrida sale con error', SKIP, () => {
+test('el presupuesto global corta limpio: lo no tocado queda anotado y la ejecución sale con error', SKIP, () => {
   // Con timeout POR OBSERVACIÓN, mil varadas serían horas de peor caso. Acá: 2 repos, la API tarda
   // 1,5 s por PATCH y el presupuesto es 1 s — el primer repo entra (el corte se mira ENTRE repos, no
   // a mitad de uno), y al terminar ya se pasó del presupuesto: el segundo se corta ANTES de empezar

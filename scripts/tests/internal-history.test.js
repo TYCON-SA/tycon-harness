@@ -195,7 +195,7 @@ test('PublicHistory_GithubMergeSubject_PublicPullRequest_Passes', (t) => {
   const lookup = ih.publicLookup(fx.work, fx.publico);
   assert.deepStrictEqual(ih.scan(subject, 'message', lookup), [], 'el pedido 100 es del repo público: no es historia interna');
   assert.deepStrictEqual(ih.scan(`lo del PR ${n('#', 100)}`, 'prose', lookup), [], 'en la prosa también');
-  assert.deepStrictEqual(ih.scan(n('ver #', 10000), 'prose', lookup).length, 1, 'un #N suelto que el público no tiene sigue siendo una corrida');
+  assert.deepStrictEqual(ih.scan(n('ver #', 10000), 'prose', lookup).length, 1, 'un #N suelto que el público no tiene sigue siendo una ejecución');
   assert.strictEqual(lookup.problem(), null);
 });
 
@@ -210,7 +210,7 @@ test('PublicHistory_AzurePullRequestNumber_Blocked', (t) => {
     assert.deepStrictEqual(formsOf(ih.scan(text, 'message', lookup)), ['pr-number'], text);
   }
   // las corridas son de Azure siempre, con numeral o sin él
-  assert.deepStrictEqual(formsOf(ih.scan(n('la corrida #', 12511), 'prose', lookup)), ['azure-run']);
+  assert.deepStrictEqual(formsOf(ih.scan(n('la ejecución #', 12511), 'prose', lookup)), ['azure-run']);
 });
 
 test('PublicHistory_PublicCommit_Passes', (t) => {

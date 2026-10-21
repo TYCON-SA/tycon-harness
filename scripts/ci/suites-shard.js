@@ -496,14 +496,14 @@ function readShard(found, expected) {
   const foreign = [...ran, ...red, ...absent, ...capped].filter((name) => !expected.includes(name));
   if (foreign.length) return all(`lo que publicó nombra suites que no eran de su lista (${[...new Set(foreign)].slice(0, 3).join(' ')})`, true);
   const neverRan = [...red, ...capped].filter((name) => !ran.includes(name));
-  if (neverRan.length) return all(`lo que publicó trae rojas que no figuran entre las corridas (${neverRan.slice(0, 3).join(' ')})`, true);
+  if (neverRan.length) return all(`lo que publicó trae rojas que no figuran entre las ejecuciones (${neverRan.slice(0, 3).join(' ')})`, true);
   const mark = readLines(path.join(found.dir, FINISHED_FILE));
   const finished = mark !== null;
   if (finished) {
     // La marca es la cuenta que hizo el propio trabajo al terminar: «<corridas> <fallas>».
     const counts = (mark[0] || '').match(/^(\d+) (\d+)$/);
     if (mark.length !== 1 || !counts || Number(counts[1]) !== ran.length || Number(counts[2]) !== recorded.length) {
-      return all(`su marca de terminado dice «${mark.join(' ').slice(0, 40)}» y lo publicado trae ${ran.length} corrida(s) y ${recorded.length} falla(s)`, true);
+      return all(`su marca de terminado dice «${mark.join(' ').slice(0, 40)}» y lo publicado trae ${ran.length} ejecución(es) y ${recorded.length} falla(s)`, true);
     }
   }
   const retries = readRetries(path.join(found.dir, RETRIES_FILE), { expected, ran, red });
@@ -598,7 +598,7 @@ function commandMerge(argv, write) {
       const some = result.unmeasured.slice(0, 5).join(' ') + (result.unmeasured.length > 5 ? ' …' : '');
       lines.push(`##vso[task.logissue type=error]El ${label} de las suites no terminó: ${result.problem}. ${result.unmeasured.length} suite(s) quedan como NO MEDIDAS, no como verdes: ${some}`);
     } else {
-      lines.push(`${label}: terminó · ${result.ran.length} corrida(s) · ${result.recorded.length} en rojo o ausente(s)`);
+      lines.push(`${label}: terminó · ${result.ran.length} ejecución(es) · ${result.recorded.length} en rojo o ausente(s)`);
     }
   });
   fs.mkdirSync(path.join(out, RED_OUTPUT_DIR), { recursive: true });

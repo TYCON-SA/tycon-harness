@@ -57,7 +57,7 @@ STATE="$(find "${HOME}/.tycon" "${HOME}/.claude" -name harness-state.json -type 
 before="$([ -n "${STATE}" ] && cksum < "${STATE}" || echo sin-estado)"
 npx_run > "${OUT_DIR}/npx-again.out" 2>&1; RC=$?
 after="$([ -n "${STATE}" ] && cksum < "${STATE}" || echo sin-estado)"
-if [ "${RC}" -eq 0 ] && grep -q 'al día' "${OUT_DIR}/npx-again.out" && grep -q 'No cambié nada' "${OUT_DIR}/npx-again.out" && [ -n "${STATE}" ] && [ "${before}" = "${after}" ]; then ok "T46 la segunda corrida sobre la misma máquina dice «al día» y no instala ni actualiza nada"
+if [ "${RC}" -eq 0 ] && grep -q 'al día' "${OUT_DIR}/npx-again.out" && grep -q 'No cambié nada' "${OUT_DIR}/npx-again.out" && [ -n "${STATE}" ] && [ "${before}" = "${after}" ]; then ok "T46 la segunda ejecución sobre la misma máquina dice «al día» y no instala ni actualiza nada"
 else no "T46 la segunda corrida salió ${RC} (estado del arnés: ${STATE:-no encontrado}; ${before} → ${after}): $(tail -n 3 "${OUT_DIR}/npx-again.out" | tr '\n' ' ')"; fi
 kill "${SERVER}" 2>/dev/null
 scenario_end npx

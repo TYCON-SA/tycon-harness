@@ -54,7 +54,7 @@ y `~/.claude/agent-skills` (al clon), `~/.claude/skills` y `~/.claude/agents` (a
   node "$env:USERPROFILE\SourceCode\tycon-claude-guides\scripts\setup\harness.js" install
   ```
 
-Es idempotente (una segunda corrida dice «sin cambios»). **NO crees ningún enlace a mano, ni
+Es idempotente (una segunda ejecución dice «sin cambios»). **NO crees ningún enlace a mano, ni
 agregues el `@import`, ni escribas un bloque `SessionStart`**: todo eso lo hace el instalador, y
 hecho a mano encima deja cosas duplicadas.
 

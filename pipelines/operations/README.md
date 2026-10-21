@@ -77,9 +77,9 @@ una noche verde. Hasta entonces la sección dice «tu nocturno todavía no lee e
 ### Quién es quién: la clave `people` (opcional)
 
 `people` dice de quién es cada máquina del equipo, para que en el sitio de la organización cada persona vea sólo sus
-corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confirmar las ve sólo quien mantiene.
+ejecuciones. Sin `people`, nadie ve ejecuciones ajenas y las de una máquina sin confirmar las ve sólo quien mantiene.
 
-- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de corridas
+- **`people.machines`**: una entrada por máquina, con el nombre de su carpeta en el buzón de ejecuciones
   (`<nombre>-<código>`, por ejemplo `maq-uno-1a2b3c4d`). Cada máquina informa el correo de git de su dev; un
   mantenedor lo revisa y confirma la máquina escribiendo `person` (el correo de la persona en la organización, que puede
   no ser el informado), `reported_sha256`, `confirmed_by` (quién confirma) y `confirmed_on` (el día, `AAAA-MM-DD`).
@@ -88,7 +88,7 @@ corridas. Sin `people`, nadie ve corridas ajenas y las de una máquina sin confi
   espejo del buzón. Si la máquina no informaba correo, va `null`. Si la máquina empieza a informar otro correo, la
   confirmación se cae hasta que alguien la vuelva a confirmar.
 - **`people.projects`**: corrige en qué productos trabaja cada persona (los productos de `repos.json`). `add` suma
-  productos a los que se deducen de sus corridas y sus pedidos; `remove` los saca. Un producto no va en las dos.
+  productos a los que se deducen de sus ejecuciones y sus pedidos; `remove` los saca. Un producto no va en las dos.
 
 La huella se calcula así, con el correo tal como lo informa la máquina (se pasa a minúsculas y sin espacios alrededor):
 
@@ -131,7 +131,7 @@ rama del repo de operaciones»). Ponela **antes** de publicar el sitio.
    most recent pusher from approving their own changes* apagado y *Reset code reviewer votes when there are new changes*
    prendido.
 2. *Security*: **Bypass policies when pushing** en «Allow» **sólo** para la identidad de compilación de los nocturnos
-   (la de esta sección; mirá cuál es en una corrida). Los nocturnos guardan empujando a `main`; sin la excepción, su
+   (la de esta sección; mirá cuál es en una ejecución). Los nocturnos guardan empujando a `main`; sin la excepción, su
    guardado rebota. Nadie más la tiene, tampoco la identidad del sitio.
 3. En `operations.json`, `site.auto_apply: true`: el sitio aprueba y completa los pedidos que propone. Su identidad de
    escritura (`SITE_OPERATIONS_WRITE_TOKEN`) lleva *Contribute* y *Contribute to pull requests*, nunca *Bypass policies*.
@@ -159,7 +159,7 @@ la excepción del punto 2.
 La pestaña Configuración lee estas políticas: sin ninguna de las dos, «Proponer» queda apagado con el motivo, y desde el
 sitio sólo se valida y se descarga. Ningún nocturno guarda `operations.json` ni nada bajo `pipelines/`.
 
-**La foto de despliegues** (el tablero, story 2.22) lee las corridas y el timeline de los pipelines de producto que
+**La foto de despliegues** (el tablero, story 2.22) lee las ejecuciones y el timeline de los pipelines de producto que
 declarás en `operations.json → deployments` (abajo). Qué identidad lee depende de la opción anterior: con *Limit job
 authorization scope* apagada es la de la **colección**, `Project Collection Build Service (<organización>)`; prendida, la
 del proyecto. Esa identidad necesita, en *Pipelines → Security* de **cada proyecto de producto**, **View builds** y
@@ -168,7 +168,7 @@ del proyecto. Esa identidad necesita, en *Pipelines → Security* de **cada proy
 
 Qué declarar: el proveedor y, por producto, los pipelines de `staging` y de `production` con el **identificador
 exacto** de cada stage que despliega (el nombre del stage en el YAML, no el que se ve en la pantalla). La pestaña
-Configuración del sitio los propone leyendo la última corrida terminada de main, y guarda sólo lo que confirmás. El
+Configuración del sitio los propone leyendo la última ejecución terminada de main, y guarda sólo lo que confirmás. El
 ejemplo `examples/operations.json` trae la forma. Un producto sin declarar sale «no medido».
 
 ## 4. Dar de alta los tres pipelines
@@ -196,17 +196,17 @@ destino (el chat, el token, el webhook) va sólo en las variables secretas de ar
 si `operations.json → site.url` está y el sitio pasó esa mañana la prueba sin sesión, el enlace al sitio.
 
 Las copias del repo del arnés ya no van en variables de la definición: van en `team-repos.json` (punto 2). Si tu
-definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASURED_COPY`, borralas: la corrida lo avisa, y
+definición de `stage-metrics` todavía tiene `HARNESS_COPIES` o `HARNESS_MEASURED_COPY`, borralas: la ejecución lo avisa, y
 sale en rojo mientras `team-repos.json` no declare las copias.
 
 El tablero tiene un parámetro opcional, `mailboxConnection`: la conexión de servicio de Azure con lectura sobre un buzón
-de corridas, si tu organización junta los registros de las máquinas. Sin buzón, las fichas del equipo salen «no leído».
+de ejecuciones, si tu organización junta los registros de las máquinas. Sin buzón, las fichas del equipo salen «no leído».
 
 Los pedidos de trabajo (un Bug por proyecto con hallazgos) se prenden en `repos.json`, `azure.pedidos_activos: true`.
 Antes, la identidad necesita en esos proyectos permiso para crear y comentar work items y para leer grupos. Apagados, los
 dos pasos que hablan con Azure Boards no corren.
 
-## 5. La primera corrida: sin efectos
+## 5. La primera ejecución: sin efectos
 
 Corré cada pipeline a mano con el parámetro **efectos** destildado (*Run pipeline → efectos*). Mide y escribe en el
 disco del agente, pero no guarda nada ni abre pull requests. La primera vez Azure pide permiso para usar el repo del
@@ -214,7 +214,7 @@ arnés (*This pipeline needs permission to access a resource*): *Permit*.
 
 Mirá que termine en verde. Si sale «NO MEDIDO» o «Repos NO medidos», es un permiso de lectura que falta (punto 3).
 
-## 6. La primera corrida de verdad, en orden
+## 6. La primera ejecución de verdad, en orden
 
 Con efectos, a mano, en este orden (es el mismo de la noche):
 
@@ -222,7 +222,7 @@ Con efectos, a mano, en este orden (es el mismo de la noche):
 2. `dependency-audit` — deja la foto de la noche. **La primera noche es la línea base**: lista lo que encuentra y no
    abre nada, porque no hay con qué comparar. Desde la segunda abre un pull request por cada hallazgo (como mucho dos
    por noche, más las críticas: `presupuesto_de_ruido` en `repos.json`). La cola de fichas (`inbox/dependencies/`) la
-   crea la primera corrida.
+   crea la primera ejecución.
 3. `team-dashboard` — arma la página y la guarda.
 
 Después quedan programados solos: métricas 06:00 UTC, dependencias 04:00 UTC, tablero 08:30 UTC. Para cambiar el
@@ -241,7 +241,7 @@ horario, el `cron` de cada YAML.
   enlace y si es un Bug de dependencias). **Nunca títulos.** El sitio lee sólo el repo de operaciones (y el buzón): no
   consulta Azure DevOps. Si una consulta falla, el archivo dice `no_medido` y el paso avisa sin frenar la página. La
   clave `site` de `operations.json` (mantenedores, buzón, refresco) la lee el sitio; ver el ejemplo.
-- **Una corrida en rojo** dice en su primer error por qué. Las causas de siempre: un permiso del punto 3, un JSON que no
+- **Una ejecución en rojo** dice en su primer error por qué. Las causas de siempre: un permiso del punto 3, un JSON que no
   valida, o el repo de operaciones sin rama `main`.
 
 ## 8. El vigilante de producción (apagado de fábrica)
@@ -269,14 +269,14 @@ cada una: la guía del sitio (`guides/organization-site.md`, «De dónde lee ope
 1. **El contenedor**: lo crea el alta del sitio (`azure-container-apps.js`), en una cuenta con la llave apagada.
 2. **La conexión de servicio del trabajo que copia** (*Project settings → Service connections → Azure Resource Manager,
    Workload identity federation*), con el rol «Storage Blob Data Contributor» sobre **ese contenedor** y nada más. Es
-   propia: ni la del sitio, que sólo lee, ni ninguna que vea el buzón de corridas.
+   propia: ni la del sitio, que sólo lee, ni ninguna que vea el buzón de ejecuciones.
 3. **El pipeline**: copiá `site-copy.yml` a `pipelines/` del repo de operaciones, cambiá las dos líneas marcadas (el
    recurso `harness` y `azureSubscription` con el nombre de la conexión) y cargá las variables `SITE_COPY_ACCOUNT` y
    `SITE_COPY_CONTAINER`. Corre en cada push a `main` (también el que hacen los nocturnos al guardar) y una vez por día.
-4. **La primera corrida** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
+4. **La primera ejecución** tiene que salir verde y decir «subida la foto de <commit>». Recién entonces el sitio pasa a
    `SITE_OPERATIONS_SOURCE=copy`.
 
-Si una corrida falla, el índice queda como estaba y el sitio sigue con la copia anterior. Con una copia de más de 24
+Si una ejecución falla, el índice queda como estaba y el sitio sigue con la copia anterior. Con una copia de más de 24
 horas, quienes mantienen ven la banda; con más de 48, el sitio se frena, como cuando el repo no se puede leer.
 
 ## 10. El sitio al día con stable (opcional)

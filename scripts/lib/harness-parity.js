@@ -348,7 +348,7 @@ function sWritableRoots(ctx) {
       return { name: 'writable-roots', ok: false, detail: `la raíz ${x.root} pasa por un enlace (${x.component})${more}: con una raíz así Codex rechaza TODOS los comandos de shell y no lo dice al arrancar — ${fix}` };
     }
   }
-  return { name: 'writable-roots', ok, detail: ok ? 'el estado del arnés es escribible desde el sandbox' : 'falta la ruta del arnés como ELEMENTO de [sandbox_workspace_write] writable_roots — el pipeline bajo Codex no puede escribir su marker (delta 1 de la corrida dorada)' };
+  return { name: 'writable-roots', ok, detail: ok ? 'el estado del arnés es escribible desde el sandbox' : 'falta la ruta del arnés como ELEMENTO de [sandbox_workspace_write] writable_roots — el pipeline bajo Codex no puede escribir su marker (delta 1 de la ejecución dorada)' };
 }
 
 function sTrust(ctx) {

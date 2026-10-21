@@ -127,7 +127,7 @@ grep -qF "\"command\": \"$(printf '%s' "$SG" | sed 's/"/\\"/g')\"" "$T/old.json"
 # 3) idempotente
 cp "$T/old.json" "$T/old.after.json"
 run "$T/old.json" > "$T/3.out" 2>&1; RC=$?
-[ "$RC" -eq 0 ] && cmp -s "$T/old.json" "$T/old.after.json" && ok "3. una segunda corrida deja settings.json byte a byte igual" \
+[ "$RC" -eq 0 ] && cmp -s "$T/old.json" "$T/old.after.json" && ok "3. una segunda ejecución deja settings.json byte a byte igual" \
   || bad "3. la segunda corrida (rc $RC) cambió settings.json: $(diff "$T/old.after.json" "$T/old.json" | head -4 | tr '\n' ' ')"
 
 # 4) el viejo y el nuevo a la vez

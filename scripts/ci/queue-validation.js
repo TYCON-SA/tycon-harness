@@ -207,7 +207,7 @@ async function main(argv) {
     // gh compara con el nombre corto de la rama: con `refs/heads/` adelante no encontraba el pedido abierto
     const prs = openPrs(branch.replace(/^refs\/heads\//, ''));
     if (!prs.ok) return fail(2, `no pude mirar si la rama tiene un pedido abierto en GitHub (${prs.reason}): no se cortó ni se encoló nada`);
-    if (prs.numbers.length) return fail(4, `${branch} tiene un pedido abierto (#${prs.numbers.join(', #')}): la validación la dispara el pedido; otra a mano serían dos corridas por el mismo cambio`);
+    if (prs.numbers.length) return fail(4, `${branch} tiene un pedido abierto (#${prs.numbers.join(', #')}): la validación la dispara el pedido; otra a mano serían dos ejecuciones por el mismo cambio`);
   }
 
   const ref = branch.startsWith('refs/') ? branch : `refs/heads/${branch}`;

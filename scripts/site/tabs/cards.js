@@ -164,7 +164,7 @@ function fichasDelClon({ clon, dirBuzon = null, buzonLeido = false, ocultas = []
       dir: path.join(clon, '.dashboard'), raiz: clon, nocturno: true, config, ahora,
       hoy: new Date(ahora).toISOString().slice(0, 10),
       mailbox: dirBuzon || undefined,
-      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el buzón de corridas' },
+      estadoBuzon: buzonLeido && dirBuzon ? { estado: 'leido' } : { estado: 'no_leido', motivo: 'el sitio no tiene el buzón de ejecuciones' },
     });
     return modeloDeFichas(d.paneles, { cfg: d.cfg, ocultas });
   } catch (e) {

@@ -547,7 +547,7 @@ function podarEspejo(dirBuzon, listado, log) {
       catch (e) { log(`no se pudo podar ${maquina}/${f} (${e.code || e.message})`); }
     }
   }
-  if (n) log(`el espejo borró ${n} archivo(s) de corridas que ya no están en el buzón`);
+  if (n) log(`el espejo borró ${n} archivo(s) de ejecuciones que ya no están en el buzón`);
   // una carpeta de máquina que ya no tiene NINGÚN archivo en el buzón (la borró quien mantiene: un laboratorio que
   // escribió ahí) se va entera, registros incluidos; si no, el sitio la seguiría mostrando. Con un listado vacío no se
   // borra ninguna: un buzón vacío de golpe es más probable que sea un error que una limpieza total.
@@ -597,7 +597,7 @@ async function credencialDelSitio(opts) {
 async function bajarUnaCorrida(opts = {}) {
   const res = { estado: null, motivo: null, bajados: 0 };
   const fin = (codigo, estado, motivo) => { res.estado = estado; res.motivo = motivo || null; return { codigo, res }; };
-  if (!opts.dir || !FORMA_MAQUINA.test(String(opts.maquina || '')) || !/^[^/\\]+$/.test(String(opts.base || ''))) return fin(2, 'config_rota', 'falta la carpeta, la máquina o la corrida');
+  if (!opts.dir || !FORMA_MAQUINA.test(String(opts.maquina || '')) || !/^[^/\\]+$/.test(String(opts.base || ''))) return fin(2, 'config_rota', 'falta la carpeta, la máquina o la ejecución');
   const c = await credencialDelSitio(opts);
   if (c.falla) return fin(...c.falla);
   const base = `${String(opts.urlBase || urlBase(c.cfg)).replace(/\/+$/, '')}/${encodeURIComponent(c.cfg.contenedor)}`;
@@ -623,7 +623,7 @@ async function bajarUnaCorrida(opts = {}) {
     fs.writeFileSync(destino, r.cuerpo);
     res.bajados += 1;
   }
-  return alguna ? fin(0, 'bajado') : fin(1, 'sin_partes', 'la corrida no tiene su conversación ni su cambio en el buzón');
+  return alguna ? fin(0, 'bajado') : fin(1, 'sin_partes', 'la ejecución no tiene su conversación ni su cambio en el buzón');
 }
 
 async function bajar(opts = {}) {
@@ -682,7 +682,7 @@ async function bajar(opts = {}) {
   // Sin permiso para leer: exit 0, sin carpeta, una vez por día.
   const sinPermiso = (estado, motivo) => {
     res.aviso = selloDiario(path.join(casa, 'download-runs-no-permission.seal'), `${estado}: ${motivo}`);
-    if (res.aviso === 'emitido') log(`no se bajan las corridas del buzón: ${motivo}`);
+    if (res.aviso === 'emitido') log(`no se bajan las ejecuciones del buzón: ${motivo}`);
     return fin(0, estado, motivo);
   };
 

@@ -75,7 +75,7 @@ for (const f of archivos) {
     tolerantes++;
     if (INOFENSIVOS.some((c) => c.re.test(p.nombre))) continue;
     console.log(`🔴 ${f}:${p.linea} · paso tolerante a fallos que no está en ninguna clase conocida: "${p.nombre}"`);
-    console.log('     Su fallo deja la corrida en "parcialmente exitosa", y eso APRUEBA la política del pull request.');
+    console.log('     Su fallo deja la ejecución en "parcialmente exitosa", y eso APRUEBA la política del pull request.');
     console.log('     Si de verdad no decide nada, agregá su clase a INOFENSIVOS con el motivo; si decide, sacale continueOnError.');
     hallazgos++;
   }

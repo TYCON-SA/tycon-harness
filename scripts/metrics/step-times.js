@@ -58,7 +58,7 @@ const aMs = (iso) => {
 function tiempos(stepTimings, opts = {}) {
   const ini = aMs(opts.inicio);
   if (ini === null) {
-    return { estado: 'sin_inicio', motivo: 'la corrida no anotó su hora de inicio: sin eje de tiempo', pasos: [],
+    return { estado: 'sin_inicio', motivo: 'la ejecución no anotó su hora de inicio: sin eje de tiempo', pasos: [],
       trabajo_ms: null, espera_humana_ms: null, entre_pasos_ms: null, sin_repartir_ms: null, estimados: [], trabajo_medido: false };
   }
   const st = stepTimings && typeof stepTimings === 'object' ? stepTimings : {};
@@ -144,7 +144,7 @@ function tiempos(stepTimings, opts = {}) {
   // La espera se publica sólo si TODOS los pasos de espera que la corrida tiene están medidos: con uno
   // solo, el número sería parcial y se leería como completo (hallazgos 4 y 10).
   const esperaCompleta = esperaMedida && !esperaSinMedir.length;
-  if (!algunoMedido) motivo = 'la corrida no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia';
+  if (!algunoMedido) motivo = 'la ejecución no anotó el arranque de ningún paso (es anterior a la story 2.7): las duraciones son estimadas por diferencia';
   else if (esperaSinMedir.length) motivo = `la espera no se puede medir: el paso ${[...new Set(esperaSinMedir)].join(' y el ')} no tiene arranque medido`;
   else if (!esperaMedida) motivo = 'los pasos de espera (3 y 7) no tienen arranque: la espera no se puede medir';
   return {

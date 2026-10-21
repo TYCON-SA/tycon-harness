@@ -85,11 +85,11 @@ function decidir(primera, confirmacion) {
   const soloPlomeria = primera.rojos.every((r) => ['fuga', 'error', 'artefactos'].includes(r.clase));
   if (soloPlomeria) return { accion: 'warn', motivo: 'el rojo es de plomería, no de criterio — el commit pasa' };
 
-  if (!confirmacion) return { accion: 'warn', motivo: 'hubo un rojo de criterio pero no se pudo confirmar con 3 corridas — el commit pasa' };
+  if (!confirmacion) return { accion: 'warn', motivo: 'hubo un rojo de criterio pero no se pudo confirmar con 3 ejecuciones — el commit pasa' };
   const f = confirmacion.flags.filter((x) => x === true || x === false);
-  if (!f.length) return { accion: 'warn', motivo: 'la confirmación no produjo corridas válidas — el commit pasa' };
+  if (!f.length) return { accion: 'warn', motivo: 'la confirmación no produjo ejecuciones válidas — el commit pasa' };
   const todasMal = confirmacion.todasMal;
-  if (todasMal) return { accion: 'block', motivo: 'el revisor falló su caso canario en las 3 corridas — esta edición lo rompió' };
+  if (todasMal) return { accion: 'block', motivo: 'el revisor falló su caso canario en las 3 ejecuciones — esta edición lo rompió' };
   return { accion: 'warn', motivo: 'la confirmación salió MIXTA: el problema es el caso, no el revisor — el commit pasa' };
 }
 
@@ -129,7 +129,7 @@ function selftest() {
       decidir({ rojos: [{ key: 'x', clase: 'criterio' }] }, { flags: [true, true, false], todasMal: false }).accion === 'warn'],
     ['una fuga del corral no frena un commit',
       decidir({ rojos: [{ key: 'x', clase: 'fuga' }] }, null).accion === 'warn'],
-    ['una corrida caída no frena un commit',
+    ['una ejecución caída no frena un commit',
       decidir({ rojos: [{ key: 'x', clase: 'error' }] }, null).accion === 'warn'],
     ['un rojo de criterio SIN confirmación no frena (no se bloquea sobre una sospecha)',
       decidir({ rojos: [{ key: 'x', clase: 'criterio' }] }, null).accion === 'warn'],
@@ -171,7 +171,7 @@ function main(argv) {
     let confirmacion = null;
     const deCriterio = rojos.filter((x) => x.clase === 'criterio');
     if (deCriterio.length) {
-      console.error(`▸ salió rojo — confirmando con 3 corridas antes de decidir (un rojo de una corrida es una SOSPECHA)…`);
+      console.error(`▸ salió rojo — confirmando con 3 ejecuciones antes de decidir (un rojo de una ejecución es una SOSPECHA)…`);
       const c = correr(['--tool', 'claude', '--runs', '3', '--only', deCriterio[0].key.split('::')[1], '--json', `/tmp/vida-confirm-${process.pid}.json`]);
       if (!c.infra) {
         const rc = rojosDelReporte(`/tmp/vida-confirm-${process.pid}.json`) || [];

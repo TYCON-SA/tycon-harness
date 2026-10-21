@@ -10,7 +10,7 @@
 const PALABRAS = new Set(('el la los las del que con para una uno unos unas por sin como cómo qué cuál cuando cuándo dónde ' +
   'está están esta este estos estas ese esa eso hay son ser fue tiene tienen todavía también desde hasta cada sus tus ' +
   'nada ningún ninguno ninguna más menos días hoy ayer ver entrar salir página sitio fuente fuentes medido medida falta ' +
-  'pedido pedidos corridas corrida tuyas tuyos lista cuenta cambio cambios guardar proponer revisar descargar quién ' +
+  'pedido pedidos ejecuciones ejecución tuyas tuyos lista cuenta cambio cambios guardar proponer revisar descargar quién ' +
   'otra otro mantiene arnés prueba pruebas producción configuración sección secciones ayuda proyectos inicio tema claro oscuro ' +
   'versión nueva nuevo nuevos abiertos abiertas cerrados vencen vence decidir asignado asignada bloqueadas paradas curso ' +
   'aprobación vigilado vulnerabilidades vivas paridad orden filtrar compartido licencia créditos componentes terceros ' +

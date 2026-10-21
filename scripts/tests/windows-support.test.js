@@ -54,12 +54,12 @@ function supportProblems(s) {
     for (const k of ['os', 'arch']) if (!text(m[k])) problems.push(`measured[${i}]: falta «${k}»`);
     if (!HOW.includes(m.how)) problems.push(`measured[${i}]: how vale ${JSON.stringify(m.how)} y sólo puede ser ${HOW.join(' o ')}`);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(m.date || ''))) problems.push(`measured[${i}]: date tiene que ser una fecha AAAA-MM-DD`);
-    if (m.how === 'azure-agent' && !(Number.isInteger(m.run) && m.run > 0)) problems.push(`measured[${i}]: una medición en un agente lleva su número de corrida en «run»`);
+    if (m.how === 'azure-agent' && !(Number.isInteger(m.run) && m.run > 0)) problems.push(`measured[${i}]: una medición en un agente lleva su número de ejecución en «run»`);
   }
   const onAgent = (measured || []).some((m) => m && m.how === 'azure-agent' && Number.isInteger(m.run) && m.run > 0);
   const onRealMachine = (measured || []).some((m) => m && m.how === 'real-machine');
   if ((s.native === 'agent-measured' || s.native === 'supported') && !onAgent) {
-    problems.push(`evidence-agent: native es «${s.native}» y no hay ninguna medición azure-agent con su número de corrida`);
+    problems.push(`evidence-agent: native es «${s.native}» y no hay ninguna medición azure-agent con su número de ejecución`);
   }
   if (s.native === 'supported' && !onRealMachine) problems.push('evidence-real-machine: native es «supported» y no hay ninguna medición real-machine');
   if (s.recommended === 'native' && s.native !== 'supported') {
@@ -101,13 +101,13 @@ test('T23a WindowsSupport_RealFile — el archivo real cumple, con WSL recomenda
 // El instalador de Windows registra los controles que puede, lo que queda
 // afuera está acá con su motivo, y el camino nativo es «agent-measured» con la corrida que lo respalda. `recommended`
 // no se toca sin una medición en una máquina real.
-test('T94 WindowsSupport_ExcludedWithReasons_AgentMeasured — lo que queda afuera en Windows dice por qué, y «agent-measured» trae su corrida', () => {
+test('T94 WindowsSupport_ExcludedWithReasons_AgentMeasured — lo que queda afuera en Windows dice por qué, y «agent-measured» trae su ejecución', () => {
   const s = real();
   assert.deepStrictEqual(supportProblems(s), []);
   assert.strictEqual(s.native, 'agent-measured');
   assert.strictEqual(s.recommended, 'wsl', 'recommended no cambia sin una medición en una máquina real');
   const onAgent = s.measured.filter((m) => m.how === 'azure-agent');
-  assert.ok(onAgent.length >= 1 && onAgent.every((m) => Number.isInteger(m.run) && m.run > 0), 'cada medición en un agente trae su número de corrida');
+  assert.ok(onAgent.length >= 1 && onAgent.every((m) => Number.isInteger(m.run) && m.run > 0), 'cada medición en un agente trae su número de ejecución');
   assert.ok(!s.measured.some((m) => m.how === 'real-machine'), 'ninguna máquina real midió todavía: si aparece una, esta prueba y `recommended` se revisan juntas');
   // los controles que el instalador de Windows NO registra: cada uno, un hook con su motivo escrito (no una palabra suelta)
   const hooks = s.excluded.filter((e) => e.kind === 'hook');

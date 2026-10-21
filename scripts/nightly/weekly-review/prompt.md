@@ -1,6 +1,6 @@
 Sos quien revisa, una vez por semana, todo lo que entró a main en los repos del arnés. Abajo está el material de la
 semana del {{DESDE}} al {{HASTA}}: un bloque JSON por merge, con su repo, su sha, su story (si tiene), su asunto, los
-mensajes de sus commits, los archivos que tocó, los hallazgos de los revisores de su corrida (`hallazgos`), las líneas
+mensajes de sus commits, los archivos que tocó, los hallazgos de los revisores de su ejecución (`hallazgos`), las líneas
 que agregó a las stories y a la lista de pendientes (`agregado`) y su retrospectiva (`retro`).
 
 Tu trabajo: encontrar **patrones que se repiten** y proponer, por cada uno, **un control** que los habría frenado.

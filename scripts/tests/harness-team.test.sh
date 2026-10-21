@@ -366,7 +366,7 @@ fi
 # queda con una capa vieja hasta otro arranque, y si la versión nueva saca piezas que trae la capa, la máquina se
 # queda sin ellas. Después del cambio, la capa se vuelve a intentar con el código de la versión nueva, en la misma corrida.
 if corre T9N; then
-  echo "T9N · update: la punta que sólo acepta la versión nueva se apila en la misma corrida, con el código de esa versión"
+  echo "T9N · update: la punta que sólo acepta la versión nueva se apila en la misma ejecución, con el código de esa versión"
   lab_team "$BASE/lab9n"
   instala_team
   [ "$INSTALL_RC" = 0 ] && ok "instalada con la capa" || mal "install: rc $INSTALL_RC: $INSTALL_OUT"
@@ -389,7 +389,7 @@ PY
   [ "$RC" = 0 ] && ok "update sale 0" || mal "update rc $RC: $OUT"
   [ "$(estado "d['version']['number']")" = 2026.10.08.2 ] && ok "la versión nueva quedó instalada" || mal "versión: $(estado "d['version']['number']")"
   [ "$(estado "d['team']['commit']")" = "$C1" ] && [ -f "$(NEW)/notes/extra.md" ] && [ "$(j "$(NEW)/.tycon-team.json" "d['commit']")" = "$C1" ] \
-    && ok "la capa nueva ($(printf '%s' "$C1" | cut -c1-7)) quedó apilada en la misma corrida" \
+    && ok "la capa nueva ($(printf '%s' "$C1" | cut -c1-7)) quedó apilada en la misma ejecución" \
     || mal "la capa quedó en $(estado "d.get('team',{}).get('commit','—')[:7]") (la vieja era $(printf '%s' "$C0" | cut -c1-7)); notes/extra.md: $([ -f "$(NEW)/notes/extra.md" ] && echo está || echo falta) · $OUT"
   case "$OUT" in *"con el código de la versión nueva"*) ok "…y lo dice" ;; *) mal "no dice que la capa se apiló con el código de la versión nueva: $OUT" ;; esac
   # una punta que tampoco acepta la versión nueva: la capa sigue arrastrada, la versión se instala y se dice por qué

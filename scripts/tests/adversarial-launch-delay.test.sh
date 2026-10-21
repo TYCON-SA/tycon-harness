@@ -59,7 +59,7 @@ OUTPUT="$(node "$GUION" --history-dir "$HIST" --projects-dir "$PROY" --json 2>&1
 [ "$rc" -eq 0 ] && ok "sale 0 (un volcado null no aborta el informe)" || no "salió $rc: $OUTPUT"
 campo(){ OUTPUT="$OUTPUT" node -e 'const r = JSON.parse(process.env.OUTPUT); process.stdout.write(String(r[process.argv[1]]));' "$1" 2>/dev/null; }
 
-[ "$(campo con_pase)" = "6" ] && ok "cuenta las 6 corridas con pase (ni la sin pase ni la ilegible)" || no "con_pase = $(campo con_pase)"
+[ "$(campo con_pase)" = "6" ] && ok "cuenta las 6 ejecuciones con pase (ni la sin pase ni la ilegible)" || no "con_pase = $(campo con_pase)"
 [ "$(campo ilegibles)" = "1" ] && ok "el volcado null cuenta como ilegible" || no "ilegibles = $(campo ilegibles)"
 [ "$(campo tardias)" = "4" ] && ok "cuatro tardías por horas" || no "tardias = $(campo tardias)"
 [ "$(campo tardias_con_temprano_prendido)" = "1" ] && ok "1 tarde con el temprano prendido" || no "prendido = $(campo tardias_con_temprano_prendido)"

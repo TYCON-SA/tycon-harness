@@ -42,7 +42,7 @@ schedules:
 
 parameters:
   - name: efectos
-    displayName: 'Con efectos fuera de la corrida (guardar el punto del día en el repo de operaciones)'
+    displayName: 'Con efectos fuera de la ejecución (guardar el punto del día en el repo de operaciones)'
     type: boolean
     default: true
 

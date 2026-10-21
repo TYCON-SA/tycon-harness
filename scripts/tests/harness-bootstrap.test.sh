@@ -382,7 +382,7 @@ for impl in sh ps1; do
   if [ -s "$BASE/net-$impl.log" ] && ! grep -v -q '^GCM_INTERACTIVE=never GIT_TERMINAL_PROMPT=0$' "$BASE/net-$impl.log"; then ok "T39 · $F: sus $(wc -l < "$BASE/net-$impl.log" | tr -d ' ') salidas a la red corren con GCM_INTERACTIVE=never y GIT_TERMINAL_PROMPT=0"
   else bad "T39 · $F: una salida a la red pudo preguntar: $(sort -u "$BASE/net-$impl.log" 2>/dev/null | head -3)"; fi
 done
-[ "$(fixed_hash)" = "$H0" ] && ok "T35 · la copia fija sigue igual después de las corridas sin poder mirar" || bad "T35 · la copia fija cambió"
+[ "$(fixed_hash)" = "$H0" ] && ok "T35 · la copia fija sigue igual después de las ejecuciones sin poder mirar" || bad "T35 · la copia fija cambió"
 
 # la máquina de UN SOLO árbol (~/.claude/agent-skills es un enlace al clon del arnés): el árbol no avanza a la punta sin skills
 harness_lab_single_tree "$BASE/lab-single" >/dev/null || bad "T35 · no pude armar la máquina de un solo árbol"

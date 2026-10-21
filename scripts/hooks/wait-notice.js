@@ -229,7 +229,7 @@ function oneLine(s, botToken) {
 /** El texto del aviso: por cada espera, el id de la story, el nombre llano del paso y una línea. Nada más. */
 function buildMessage(entries, { botToken } = {}) {
   const lines = entries.map((e) => `· Story ${e.story} — ${stepLabel(e.step).name}: ${oneLine(e.waiting, botToken) || 'esperando tu respuesta'}`);
-  const head = entries.length === 1 ? '⏳ Una corrida te espera hace rato:' : `⏳ ${entries.length} corridas te esperan:`;
+  const head = entries.length === 1 ? '⏳ Una ejecución te espera hace rato:' : `⏳ ${entries.length} ejecuciones te esperan:`;
   return [head, ...lines].join('\n');
 }
 

@@ -286,9 +286,9 @@ PY
   new_home "$H"; all_off "$H"
   rc=0; "${RUN_ENV[@]}" TYCON_HARNESS_LOCK_HELD=1 TYCON_HARNESS_SHARED_DONE=1 bash "$INST" --report-json "$H/reporte.json" > "$T/salida-1c.txt" 2>&1 || rc=$?
   if [ "$rc" = "0" ] && [ -f "$H/reporte.json" ] && python3 "$T/verify.py" "$FIX" "$H/reporte.json" off "$H" "$RAIZ" harness > "$T/v-1c.txt"; then
-    ok "T18 corrida real bajo harness.js (TYCON_HARNESS_SHARED_DONE=1): el reporte casa con la lista sin las piezas compartidas ($(tail -1 "$T/v-1c.txt"))"
+    ok "T18 ejecución real bajo harness.js (TYCON_HARNESS_SHARED_DONE=1): el reporte casa con la lista sin las piezas compartidas ($(tail -1 "$T/v-1c.txt"))"
   else
-    mal "T18 corrida real bajo harness.js (rc $rc): el reporte no casa con la lista"; grep '^MAL' "$T/v-1c.txt" 2>/dev/null | head -8 | sed 's/^/        /'
+    mal "T18 ejecución real bajo harness.js (rc $rc): el reporte no casa con la lista"; grep '^MAL' "$T/v-1c.txt" 2>/dev/null | head -8 | sed 's/^/        /'
   fi
   if [ ! -e "$H/.claude/commands" ] && ! grep -q -E 'cleanupPeriodDays|CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR' "$H/.claude/settings.json"; then
     ok "T18 …y el .sh no dejó en la máquina ninguna de las tres (ni las dos claves ni ~/.claude/commands)"
@@ -298,7 +298,7 @@ PY
   new_home "$H"; all_off "$H"
   rc=0; "${RUN_ENV[@]}" TYCON_HARNESS_LOCK_HELD=1 bash "$INST" --report-json "$H/reporte.json" > "$T/salida-1c-lock.txt" 2>&1 || rc=$?
   if [ "$rc" = "0" ] && [ -f "$H/reporte.json" ] && python3 "$T/verify.py" "$FIX" "$H/reporte.json" off "$H" "$RAIZ" applier > "$T/v-1c-lock.txt"; then
-    ok "T18 (espejo) corrida real con sólo TYCON_HARNESS_LOCK_HELD=1 (un programa viejo): el reporte trae las piezas compartidas, como suelto"
+    ok "T18 (espejo) ejecución real con sólo TYCON_HARNESS_LOCK_HELD=1 (un programa viejo): el reporte trae las piezas compartidas, como suelto"
   else
     mal "T18 (espejo) con sólo el candado (rc $rc): el reporte no casa como suelto"; grep '^MAL' "$T/v-1c-lock.txt" 2>/dev/null | head -8 | sed 's/^/        /'
   fi
@@ -321,9 +321,9 @@ PY
     cp "$H/reporte.json" "$T/primera.json"
     rc=0; "${RUN_ENV[@]}" bash "$INST" --report-json "$H/reporte.json" > /dev/null 2>&1 || rc=$?
     if [ "$rc" = "0" ] && python3 -c "import json,sys; a,b=(sorted(map(json.dumps, json.load(open(f)))) for f in sys.argv[1:]); sys.exit(0 if a==b else 1)" "$T/primera.json" "$H/reporte.json"; then
-      ok "T18 la segunda corrida, sin nada que escribir, reporta las mismas piezas (las que ya estaban)"
+      ok "T18 la segunda ejecución, sin nada que escribir, reporta las mismas piezas (las que ya estaban)"
     else
-      mal "T18 la segunda corrida reportó otras piezas (rc $rc)"
+      mal "T18 la segunda ejecución reportó otras piezas (rc $rc)"
     fi
   fi
 
@@ -462,7 +462,7 @@ PY
     f10_run "$P10/r2.json"
     n1=$(f10_blocks "$P10/r1.json"); n2=$(f10_blocks "$P10/r2.json")
     if [ "$n1" = "$n_want" ] && [ "$n2" = "$n_want" ] && ! grep -q '  + ' "$P10/r2.json.out"; then
-      ok "T18 F10 la segunda corrida (sin hooks nuevos, CLAUDE.md en \\r\\n) llega al sync y anota los $n_want bloques, igual que la primera"
+      ok "T18 F10 la segunda ejecución (sin hooks nuevos, CLAUDE.md en \\r\\n) llega al sync y anota los $n_want bloques, igual que la primera"
     else
       mal "T18 F10 bloques anotados: primera $n1, segunda $n2 (esperaba $n_want en las dos, sin hooks nuevos en la segunda)"; tail -5 "$P10/r2.json.out" | sed 's/^/        /'
     fi
@@ -934,8 +934,8 @@ PY
     fi
     grep -q 'no está' "$L/run.txt" && ok "T26 sin árbol lo dice (trabaja con el registro)" || mal "T26 sin árbol no dice que el árbol no está"
     rc=0; "${RUN_ENV[@]}" node "$T/uninstall-direct.js" "$RAIZ" run > "$L/run2.txt" 2>&1 || rc=$?
-    [ "$rc" = 0 ] && grep -q 'nada que quitar' "$L/run2.txt" && ok "T26 segunda corrida: «nada que quitar», 0" \
-      || { mal "T26 segunda corrida (rc $rc)"; head -5 "$L/run2.txt" | sed 's/^/        /'; }
+    [ "$rc" = 0 ] && grep -q 'nada que quitar' "$L/run2.txt" && ok "T26 segunda ejecución: «nada que quitar», 0" \
+      || { mal "T26 segunda ejecución (rc $rc)"; head -5 "$L/run2.txt" | sed 's/^/        /'; }
   else
     mal "T26 la instalación real falló"; tail -15 "$L/install.txt" | sed 's/^/        /'
   fi
@@ -966,8 +966,8 @@ ms = [json.load(open(m)) for m in glob.glob(os.path.join(sys.argv[1], ".claude/.
 sys.exit(0 if any(m.get("reason") == "uninstall" for m in ms) else 1)
 PY
     rc=0; "${RUN_ENV[@]}" node "$RAIZ/scripts/setup/harness.js" uninstall --yes < /dev/null > "$L/again.txt" 2>&1 || rc=$?
-    [ "$rc" = 0 ] && grep -q 'nada que quitar' "$L/again.txt" && ok "T26 segunda corrida por harness.js: «nada que quitar», 0" \
-      || { mal "T26 segunda corrida por harness.js (rc $rc)"; head -3 "$L/again.txt" | sed 's/^/        /'; }
+    [ "$rc" = 0 ] && grep -q 'nada que quitar' "$L/again.txt" && ok "T26 segunda ejecución por harness.js: «nada que quitar», 0" \
+      || { mal "T26 segunda ejecución por harness.js (rc $rc)"; head -3 "$L/again.txt" | sed 's/^/        /'; }
     rc=0; "${RUN_ENV[@]}" node "$RAIZ/scripts/setup/harness.js" doctor < /dev/null > "$L/doctor.txt" 2>&1 || rc=$?
     [ "$rc" = 3 ] && grep -q 'no instalado' "$L/doctor.txt" && ok "T26 doctor después: «no instalado» (3)" \
       || { mal "T26 doctor después salió $rc"; head -3 "$L/doctor.txt" | sed 's/^/        /'; }
@@ -1482,7 +1482,7 @@ if corre T38; then
       [ "$S_ORIGEN" = "$LAB_REMOTE_UNIFIED" ] && [ ! -e "$LAB_SKILLS/scripts" ] && ok "T38 (repointed) …y sigue re-apuntado al repo unificado, mostrando sólo lo suyo" || mal "T38 (repointed) el clon dejó de estar re-apuntado"
     fi
     SALIDA="$(harness uninstall --yes < /dev/null 2>&1)"; RC=$?
-    [ "$RC" = 0 ] && case "$SALIDA" in *"nada que quitar"*) ok "T38 ($shape) la segunda corrida: «nada que quitar»" ;; *) mal "T38 ($shape) segunda corrida: $SALIDA" ;; esac || mal "T38 ($shape) segunda corrida: rc $RC"
+    [ "$RC" = 0 ] && case "$SALIDA" in *"nada que quitar"*) ok "T38 ($shape) la segunda ejecución: «nada que quitar»" ;; *) mal "T38 ($shape) segunda ejecución: $SALIDA" ;; esac || mal "T38 ($shape) segunda ejecución: rc $RC"
   done
 fi
 

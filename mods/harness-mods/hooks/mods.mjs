@@ -5,7 +5,7 @@
 // Un mod nuevo se suma a CATALOG. Llega prendido: sólo está apagado lo que el dev apagó.
 
 export const CATALOG = [
-  { id: 'pipeline-board', description: 'el renglón con el estado de la corrida del pipeline, arriba del cuadro donde escribís, y /pipeline' },
+  { id: 'pipeline-board', description: 'el renglón con el estado de la ejecución del pipeline, arriba del cuadro donde escribís, y /pipeline' },
 ];
 
 const USAGE = [

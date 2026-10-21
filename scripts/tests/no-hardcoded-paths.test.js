@@ -333,7 +333,7 @@ test('T25 RutasSinFijas_RepoUnico_Enlaces — repo único, HOME limpia: los cuat
   // segunda corrida: nada que decir de los enlaces
   const again = install(single, home);
   assert.equal(again.status, 0, again.out);
-  assert.doesNotMatch(again.out, /repo único|enlace\(s\) por entrada/, 'la segunda corrida no vuelve a hablar de los enlaces');
+  assert.doesNotMatch(again.out, /repo único|enlace\(s\) por entrada/, 'la segunda ejecución no vuelve a hablar de los enlaces');
 });
 
 test('T25 — el clon del equipo (sin skills/ en la raíz): ningún enlace nuevo, y ni una línea sobre ellos', () => {
@@ -361,7 +361,7 @@ test('T25 — ~/.claude/agent-skills apunta a OTRO clon válido: no se mueve y s
   assert.match(r.out, /agent-skills apunta a otro lado que sirve[^\n]*no lo muevo/);
 });
 
-test('T25 — skills/ y agents/ como carpetas reales con una entrada propia y una que choca: un enlace por entrada, lo propio intacto, el choque nombrado; la segunda corrida agrega y saca lo suyo', () => {
+test('T25 — skills/ y agents/ como carpetas reales con una entrada propia y una que choca: un enlace por entrada, lo propio intacto, el choque nombrado; la segunda ejecución agrega y saca lo suyo', () => {
   const clone = labClone({ single: true });   // propio: este caso le agrega y le borra entradas
   const home = cleanHome();
   write(claude(home, 'skills', 'mine', 'SKILL.md'), '# mi skill\n');
@@ -393,7 +393,7 @@ test('T25 — skills/ y agents/ como carpetas reales con una entrada propia y un
   assert.match(again.out, /agents es una carpeta real[^\n]*1 enlace\(s\) por entrada agregado\(s\) y 1 sacado/);
 });
 
-test('T25 — skills/ y agents/ ENLAZADAS a una carpeta propia (los archivos de configuración de la persona): el enlace no se mueve, adentro va un enlace por entrada, lo propio intacto y la línea dice «carpeta propia»; la segunda corrida, muda', () => {
+test('T25 — skills/ y agents/ ENLAZADAS a una carpeta propia (los archivos de configuración de la persona): el enlace no se mueve, adentro va un enlace por entrada, lo propio intacto y la línea dice «carpeta propia»; la segunda ejecución, muda', () => {
   // Mover el enlace dejaría sus skills fuera de la vista de Claude. Las carpetas propias
   // se llaman `skills` y `agents` a propósito: el nombre solo no las vuelve «otro clon del arnés».
   const single = singleRepo();
@@ -430,7 +430,7 @@ test('T25 — skills/ y agents/ ENLAZADAS a una carpeta propia (los archivos de 
   // segunda corrida: la carpeta propia ya tiene `tycon-pipeline` adentro (como enlace) y no pasa a ser «otro clon»
   const again = install(single, home);
   assert.equal(again.status, 0, again.out);
-  assert.doesNotMatch(again.out, /carpeta propia|no lo muevo|enlace\(s\) por entrada|repo único/, 'la segunda corrida no dice nada de los enlaces');
+  assert.doesNotMatch(again.out, /carpeta propia|no lo muevo|enlace\(s\) por entrada|repo único/, 'la segunda ejecución no dice nada de los enlaces');
   assert.equal(real(claude(home, 'skills')), path.join(own, 'skills'), 'y el enlace sigue donde estaba');
   assert.equal(real(claude(home, 'agents')), path.join(own, 'agents'));
 });

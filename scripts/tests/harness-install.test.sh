@@ -134,8 +134,8 @@ if corre T5; then
   H1="$(sha_de "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")$(sha_de "$TYCON_SETTINGS_PATH")$(sha_de "$CLAUDE_MD_PATH")$(sha_de "$COPIA/bootstrap.js")"
   SALIDA2="$(harness install --yes 2>&1)"; RC2=$?
   H2="$(sha_de "$LAB_HOME/.claude/.tycon-pipeline/harness-state.json")$(sha_de "$TYCON_SETTINGS_PATH")$(sha_de "$CLAUDE_MD_PATH")$(sha_de "$COPIA/bootstrap.js")"
-  [ "$RC2" = 0 ] && [ "$H1" = "$H2" ] && ok "T5 la segunda corrida no cambia nada" || mal "T5 la segunda corrida cambió algo (rc $RC2)"
-  case "$SALIDA2" in *"sin cambios"*) ok "T5 …y lo dice" ;; *) mal "T5 la segunda corrida no dice «sin cambios»: $SALIDA2" ;; esac
+  [ "$RC2" = 0 ] && [ "$H1" = "$H2" ] && ok "T5 la segunda ejecución no cambia nada" || mal "T5 la segunda ejecución cambió algo (rc $RC2)"
+  case "$SALIDA2" in *"sin cambios"*) ok "T5 …y lo dice" ;; *) mal "T5 la segunda ejecución no dice «sin cambios»: $SALIDA2" ;; esac
 
   # una fuente: la raíz del clon trae skills/ y agents/ y no hay ~/.claude/agent-skills aparte
   harness_lab_create "$BASE/t5b" >/dev/null
@@ -373,7 +373,7 @@ PY
   [ "$RC" = 0 ] && in_machine && [ "$(shared_managed)" = "$SHARED_WANT" ] && ok "T36 apply repone las piezas compartidas y siguen en el registro" || mal "T36 apply (rc $RC) no repuso: managed $(shared_managed)"
   # una segunda corrida no cambia nada
   H1="$(sha_de "$TYCON_SETTINGS_PATH")"; harness apply >/dev/null 2>&1
-  [ "$(sha_de "$TYCON_SETTINGS_PATH")" = "$H1" ] && [ "$(no_repeats)" = True ] && ok "T36 una segunda corrida no reescribe settings.json ni repite piezas" || mal "T36 la segunda corrida cambió settings.json o repitió piezas"
+  [ "$(sha_de "$TYCON_SETTINGS_PATH")" = "$H1" ] && [ "$(no_repeats)" = True ] && ok "T36 una segunda ejecución no reescribe settings.json ni repite piezas" || mal "T36 la segunda ejecución cambió settings.json o repitió piezas"
 
   # (c) un aplicador viejo (no conoce la variable: las hace y las reporta también): el registro no las duplica
   LAB_APPLIER_OLD=1 harness apply >/dev/null 2>&1; RC=$?
@@ -654,7 +654,7 @@ for c in sorted(c.get("command","") for ev in s.get("hooks",{}).values() for h i
 
   harness_lab_cut && harness_lab_pull_tree || mal "T30 el corte del laboratorio falló"
   [ -d "$LAB_TREE/skills/tycon-pipeline" ] && [ -d "$LAB_TREE/agents" ] || mal "T30 el clon del arnés no trae skills/ después del corte"
-  for i in 1 2 3; do TYCON_CODEX=1 harness_lab_real_applier >/dev/null 2>&1 || mal "T30 el aplicador salió con error después del corte (corrida $i)"; done
+  for i in 1 2 3; do TYCON_CODEX=1 harness_lab_real_applier >/dev/null 2>&1 || mal "T30 el aplicador salió con error después del corte (ejecución $i)"; done
   cmp -s "$BASE/t30-settings-before.json" "$TYCON_SETTINGS_PATH" && ok "T30 settings.json: byte a byte el de antes del corte" \
     || mal "T30 settings.json cambió: $(diff "$BASE/t30-settings-before.json" "$TYCON_SETTINGS_PATH" | head -6)"
   SALIDA="$(node "$RAIZ/scripts/publishing/profile-equivalence.js" --settings "$BASE/t30-settings-before.json" "$TYCON_SETTINGS_PATH" 2>&1)"; RC=$?
@@ -1189,10 +1189,10 @@ if corre S16; then
   case "$SALIDA" in *"harness.js doctor"*) ok "S16-T8 «qué sigue» nombra doctor" ;; *) mal "S16-T8 «qué sigue» no nombra doctor" ;; esac
   # la segunda corrida
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
-  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T8 la segunda corrida dice «sin cambios»" ;; *) mal "S16-T8 la segunda corrida no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T8 segunda corrida rc $RC: $SALIDA"
+  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T8 la segunda ejecución dice «sin cambios»" ;; *) mal "S16-T8 la segunda ejecución no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T8 segunda ejecución rc $RC: $SALIDA"
   ANTES_DE="$(printf '%s\n' "$SALIDA" | sed -n 's/^copia de antes de instalar: \(.*\) · volver: .*$/\1/p' | head -1)"
-  [ -n "$ANTES_DE" ] && [ "$ANTES_DE" = "$COPIA" ] && ok "S16-T8 …y repite dónde está la copia de antes de instalar (la misma carpeta)" || mal "S16-T8 la segunda corrida no repite la copia de antes de instalar («${ANTES_DE}» vs «${COPIA}»): $SALIDA"
-  case "$SALIDA" in *"qué sigue:"*) mal "S16-T8 la segunda corrida repite «qué sigue»" ;; *) ok "S16-T8 la segunda corrida no repite «qué sigue»" ;; esac
+  [ -n "$ANTES_DE" ] && [ "$ANTES_DE" = "$COPIA" ] && ok "S16-T8 …y repite dónde está la copia de antes de instalar (la misma carpeta)" || mal "S16-T8 la segunda ejecución no repite la copia de antes de instalar («${ANTES_DE}» vs «${COPIA}»): $SALIDA"
+  case "$SALIDA" in *"qué sigue:"*) mal "S16-T8 la segunda ejecución repite «qué sigue»" ;; *) ok "S16-T8 la segunda ejecución no repite «qué sigue»" ;; esac
   # startup no imprime nada de esto: una línea como mucho
   SALIDA="$(LAB_APPLIER_WARN="$AVISO" harness startup 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(printf '%s' "$SALIDA" | grep -c .)" -le 1 ] && ok "S16-T8 startup sigue en una línea como mucho" || mal "S16-T8 startup (rc $RC) imprimió de más: $SALIDA"
@@ -1279,13 +1279,13 @@ if corre S16; then
   SALIDA="$(LAB_APPLIER_FAIL=1 harness install --yes 2>&1)"; RC=$?
   N_DESPUES="$(grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log" 2>/dev/null || echo 0)"
   [ "$RC" = 1 ] && [ "$N_DESPUES" = $((N_ANTES + 1)) ] && case "$SALIDA" in *"sin cambios"*) false ;; *"quedó a medias"*) true ;; *) false ;; esac \
-    && ok "S16-T10 «install otra vez» con el aplicador todavía roto: lo vuelve a correr y sale 1, no «sin cambios»" || mal "S16-T10 install otra vez (roto): rc $RC, corridas ${N_ANTES}→${N_DESPUES}: $SALIDA"
+    && ok "S16-T10 «install otra vez» con el aplicador todavía roto: lo vuelve a correr y sale 1, no «sin cambios»" || mal "S16-T10 install otra vez (roto): rc $RC, ejecuciones ${N_ANTES}→${N_DESPUES}: $SALIDA"
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(grep -c '^run check=0' "$LAB_HOME/.claude/.tycon-pipeline/lab-applier.log")" = $((N_DESPUES + 1)) ] && case "$SALIDA" in *"sin cambios"*) false ;; *"qué quedó:"*"qué sigue:"*) true ;; *) false ;; esac \
     && ok "S16-T10 «install otra vez» con el aplicador sano: corre el aplicador y la salud, y da el cierre completo" || mal "S16-T10 install otra vez (sano): rc $RC: $SALIDA"
   [ "$(estado "d.get('failed')")" = None ] && ok "S16-T10 …y el estado deja de decir que el aplicador falló" || mal "S16-T10 el estado sigue con failed: $(estado "d.get('failed')")"
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
-  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T10 …y la corrida siguiente, ya sana, sí dice «sin cambios»" ;; *) mal "S16-T10 la corrida siguiente no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T10 corrida siguiente: rc $RC: $SALIDA"
+  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T10 …y la ejecución siguiente, ya sana, sí dice «sin cambios»" ;; *) mal "S16-T10 la ejecución siguiente no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T10 ejecución siguiente: rc $RC: $SALIDA"
   harness_lab_create "$BASE/s16-t10-salud" >/dev/null
   harness_lab_publish_hook PreToolUse tycon-pipeline/deny.js 'console.log(JSON.stringify({decision:"block"}));process.exit(2);'
   harness_lab_git "$LAB_SKILLS" pull -q --ff-only origin main >/dev/null 2>&1
@@ -1304,7 +1304,7 @@ if corre S16; then
     && ok "S16-T10 «install otra vez» con la salud arreglada: corre el aplicador y la salud, y da el cierre completo" || mal "S16-T10 install otra vez (salud arreglada): rc $RC: $SALIDA"
   [ "$(estado "d.get('failed')")" = None ] && ok "S16-T10 …y el estado deja de decir que la instalación falló" || mal "S16-T10 el estado sigue con failed: $(estado "d.get('failed')")"
   SALIDA="$(harness install --yes 2>&1)"; RC=$?
-  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T10 …y la corrida siguiente, ya sana, dice «sin cambios»" ;; *) mal "S16-T10 la corrida siguiente (salud) no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T10 corrida siguiente (salud): rc $RC: $SALIDA"
+  [ "$RC" = 0 ] && case "$SALIDA" in *"sin cambios"*) ok "S16-T10 …y la ejecución siguiente, ya sana, dice «sin cambios»" ;; *) mal "S16-T10 la ejecución siguiente (salud) no dice «sin cambios»: $SALIDA" ;; esac || mal "S16-T10 ejecución siguiente (salud): rc $RC: $SALIDA"
 fi
 
 # ═══ S16B-T27 · Applier_Standalone_Startup_Apply_NeverAsk_Contracts813Intact ══════════════════════════════════════════════════

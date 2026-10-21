@@ -111,7 +111,7 @@ test('T5 Porton_HuellaVieja_Frena @story-1.22 @ac-4: el resultado de otra versi�
   commit(dir);
   const r = run(dir, ['check', '--base', base]);
   assert.strictEqual(r.code, 1, r.out);
-  assert.match(r.out, /la corrida es de otra versión/);
+  assert.match(r.out, /la ejecución es de otra versión/);
   // con --staged mira el índice: el mismo freno antes de commitear
   const d2 = harness();
   change(d2);
@@ -217,7 +217,7 @@ test('T22 Examen_LineaDeBase_NuncaBorraClaves @story-1.22 @ac-3: actualizar la l
   assert.strictEqual(bl[`${AGENT}::c`], true);
 });
 
-test('T23 Examen_Resultado_ConCasosYSinMomento @story-1.22 @ac-3: el resultado trae los casos y es idéntico byte a byte entre dos corridas iguales', () => {
+test('T23 Examen_Resultado_ConCasosYSinMomento @story-1.22 @ac-3: el resultado trae los casos y es idéntico byte a byte entre dos ejecuciones iguales', () => {
   const dir = harness();
   const env2 = { TYCON_REVIEWER_EXAM_RUNNER: runner(ALL(true)) };
   assert.strictEqual(run(dir, ['run', '--agent', AGENT], env2).code, 0);

@@ -274,7 +274,7 @@ rm -rf "$T"
 
 # ── C-09 · el módulo no ejecuta al requerirse ──
 # 🔴 rojo previo: quitar el guard `require.main === module`.
-node -e "require('$TABLERO')" >/dev/null 2>&1 && ok "C-09 requerirlo no dispara una corrida" || mal "C-09 el módulo corre al requerirse"
+node -e "require('$TABLERO')" >/dev/null 2>&1 && ok "C-09 requerirlo no dispara una ejecución" || mal "C-09 el módulo corre al requerirse"
 
 # ── C-10 · sin silenciadores en el colector ──
 # 🔴 rojo previo: agregar un `?? 0` o un `2>/dev/null` a cualquier línea.
@@ -824,7 +824,7 @@ assert d['estado']=='medido', d
 assert abs(d['valor']-0.8)<1e-9 and d['medidos']==8 and d['total']==10, d
 assert 'habría frenado 3 de 8' in d['detalle'], d
 " "$CT" 2>/dev/null \
-  && ok "C-47 8 de 10 corridas evaluaron el umbral y 3 de esas 8 habrían frenado" || mal "C-47 cobertura_tocada=$CT"
+  && ok "C-47 8 de 10 ejecuciones evaluaron el umbral y 3 de esas 8 habrían frenado" || mal "C-47 cobertura_tocada=$CT"
 TYCON_MACHINE=maquina-local-l node "$TABLERO" --dir "$T" --logs "$T/local" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
 FIC="$(ficha_html "$T/o.html" 'evaluaron el umbral')"
 { [ -n "$FIC" ] && ! grep -q 'archivos nuevos' "$T/o.html" && ! grep -q 'cobertura_nuevos' "$T/o.html"; } \
@@ -949,7 +949,7 @@ B="$(json_local "$T/j.out" bloqueos)"; E="$(json_local "$T/j.out" escapes)"
 python3 -c "import json,sys; b,e=[json.loads(x) for x in sys.argv[1:3]]; assert b['estado']=='medido' and b['valor']==4 and 'otro: 4' in b['detalle'], b; assert e['valor']==4 and 'otro: 4' in e['detalle'], e" "$B" "$E" 2>/dev/null \
   && ! grep -q 'control-crudo\|TIPO-CRUDO' "$T/o.html" "$T/j.out" \
   && ok "C-32 los registros de esta máquina se cuentan como «otro» y ningún nombre crudo llega a la página ni al --json" || mal "C-32 bloqueos=$B escapes=$E $(grep -o 'control-crudo[^<]*' "$T/o.html" | head -1)"
-grep -q 'Frenos y escapes, de todas las máquinas: reportaron 0 de' "$T/o.html" && ! grep -q 'Frenos, escapes y corridas salen de los registros de esta máquina' "$T/o.html" \
+grep -q 'Frenos y escapes, de todas las máquinas: reportaron 0 de' "$T/o.html" && ! grep -q 'Frenos, escapes y ejecuciones salen de los registros de esta máquina' "$T/o.html" \
   && ok "C-32 la nota de la pregunta 4 dice la cobertura de máquinas y ya no «esta máquina» para frenos y escapes" || mal "C-32 la nota de la pregunta 4 no cambió"
 rm -rf "$T"
 
@@ -1442,18 +1442,18 @@ PY2
 # 🔴 rojo previo: no conectar el medidor → la ficha no existe; o conectarlo sin denominador ni fecha.
 T=$(mktemp -d); montar_sano "$T"; buzon_de_mentira "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1
-F="$(ficha_html "$T/o.html" 'Pasos de una corrida')"
-[ -n "$F" ] && ok "C-59 la ficha de pasos por corrida existe" || mal "C-59 la ficha de pasos por corrida no está en la página"
+F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
+[ -n "$F" ] && ok "C-59 la ficha de pasos por ejecución existe" || mal "C-59 la ficha de pasos por ejecución no está en la página"
 echo "$F" | grep '<div class="t-val">400</div>' >/dev/null && ok "C-59 con la mediana de las medidas (400)" || mal "C-59 la mediana no es 400: ${F:0:200}"
-echo "$F" | grep 'n=4 de 5 corridas' >/dev/null && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
-echo "$F" | grep "$(fecha_hace 3)" >/dev/null && ok "C-59 con la fecha de la corrida medida más nueva" || mal "C-59 la ficha no trae su fecha"
-echo "$F" | grep '1 sin consumo medido' >/dev/null && ok "C-59 y dice la que quedó sin medir (AC 2)" || mal "C-59 no dice la corrida sin medir"
+echo "$F" | grep 'n=4 de 5 ejecuciones' >/dev/null && ok "C-59 con su denominador al lado (n=4 de 5: la sin medir sigue contando)" || mal "C-59 falta el denominador n=4 de 5"
+echo "$F" | grep "$(fecha_hace 3)" >/dev/null && ok "C-59 con la fecha de la ejecución medida más nueva" || mal "C-59 la ficha no trae su fecha"
+echo "$F" | grep '1 sin consumo medido' >/dev/null && ok "C-59 y dice la que quedó sin medir (AC 2)" || mal "C-59 no dice la ejecución sin medir"
 # va al lado de la ficha de la duración de una corrida: son la misma pregunta
-python3 - "$T/o.html" <<'PY2' && ok "C-59 la ficha vive en la pregunta 4, pegada a la duración de una corrida" || mal "C-59 la ficha no está al lado de «Una corrida del pipeline, de punta a punta»"
+python3 - "$T/o.html" <<'PY2' && ok "C-59 la ficha vive en la pregunta 4, pegada a la duración de una ejecución" || mal "C-59 la ficha no está al lado de «Una ejecución del pipeline, de punta a punta»"
 import sys
 t = open(sys.argv[1], encoding='utf8').read().split('<div class="tile ')[1:]
-i = [k for k, x in enumerate(t) if 'Pasos de una corrida' in x[:600]]
-j = [k for k, x in enumerate(t) if 'Una corrida del pipeline, de punta a punta' in x[:600]]
+i = [k for k, x in enumerate(t) if 'Pasos de una ejecución' in x[:600]]
+j = [k for k, x in enumerate(t) if 'Una ejecución del pipeline, de punta a punta' in x[:600]]
 assert i and j and abs(i[0] - j[0]) == 1, (i, j)
 PY2
 rm -rf "$T"
@@ -1463,8 +1463,8 @@ rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/buzon"
 node "$TABLERO" --dir "$T" --mailbox "$T/buzon" --output "$T/o.html" >/dev/null 2>&1; RC=$?
 [ "$RC" -eq 0 ] && ok "C-59b con el buzón vacío el tablero mide igual (exit 0): la fuente no es obligatoria" || mal "C-59b el buzón vacío rompió el tablero (exit $RC)"
-[ "$(ficha_estado "$T/o.html" 'Pasos de una corrida')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
-F="$(ficha_html "$T/o.html" 'Pasos de una corrida')"
+[ "$(ficha_estado "$T/o.html" 'Pasos de una ejecución')" = "blind" ] && ok "C-59b buzón vacío → la ficha sale con trama" || mal "C-59b buzón vacío y la ficha no salió «no medido»"
+F="$(ficha_html "$T/o.html" 'Pasos de una ejecución')"
 echo "$F" | grep 'buzón' >/dev/null && ok "C-59b con su motivo" || mal "C-59b sin motivo: ${F:0:200}"
 echo "$F" | grep '<div class="t-val">0' >/dev/null && mal "C-59b publicó un cero" || ok "C-59b ningún cero publicado"
 rm -rf "$T"
@@ -1671,12 +1671,12 @@ T=$(mktemp -d); montar_sano "$T"
 con_carril "$T" "[{\"repo\":\"Prod__A\",\"x\":$(carril_x 1 6 3 7)},{\"repo\":\"<script>alert(1)<script>\",\"x\":$(carril_x 2 6 2 7)}]"
 node "$TABLERO" --dir "$T" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
 python3 - "$T/o.html" "$T/j.out" <<'PY' && ok "C-64 el texto por repo sale una vez, sin <b> a la vista, el nombre escapado una sola vez y el --json sin etiquetas" || mal "C-64 $(python3 - "$T/o.html" <<'PY2'
-import sys; h=open(sys.argv[1],encoding='utf8').read(); print(h.count('con corrida volvieron 1 de 6'), h.count('&lt;b&gt;'), h.count('&amp;lt;'))
+import sys; h=open(sys.argv[1],encoding='utf8').read(); print(h.count('con ejecución volvieron 1 de 6'), h.count('&lt;b&gt;'), h.count('&amp;lt;'))
 PY2
 )"
 import json, sys
 h = open(sys.argv[1], encoding='utf8').read()
-assert h.count('con corrida volvieron 1 de 6') == 1, h.count('con corrida volvieron 1 de 6')
+assert h.count('con ejecución volvieron 1 de 6') == 1, h.count('con ejecución volvieron 1 de 6')
 assert '&lt;b&gt;' not in h, 'hay <b> escapado a la vista'
 # el nombre, una sola vez DENTRO de la ficha de carriles (la de «los que más vuelven» lo nombra aparte, con su escape)
 f = [x for x in h.split('<div class="tile ')[1:] if '¿Vuelve menos lo que pasó por el pipeline?' in x[:600]]
@@ -1754,7 +1754,7 @@ volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
 volcado "$T/buzon" maq-uno 2 2026-10-02T10:00:00Z 2026-10-02T14:00:00Z 20 3
 volcado "$T/buzon" maq-dos 3 2026-10-03T10:00:00Z 2026-10-03T16:00:00Z 30 4
 node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
-python3 - "$(jpanel "$T/j.out" local corridas)" "$(jpanel "$T/j.out" local vueltas)" "$(jpanel "$T/j.out" local agentes)" "$(jpanel "$T/j.out" local trabajo_espera)" <<'PY' && ok "C-66 corrida (4 h), vueltas (3), agentes (20) y trabajo/espera medidos sobre los tres volcados, «de 2 máquinas»" || mal "C-66 $(jpanel "$T/j.out" local corridas) · $(jpanel "$T/j.out" local trabajo_espera)"
+python3 - "$(jpanel "$T/j.out" local corridas)" "$(jpanel "$T/j.out" local vueltas)" "$(jpanel "$T/j.out" local agentes)" "$(jpanel "$T/j.out" local trabajo_espera)" <<'PY' && ok "C-66 ejecución (4 h), vueltas (3), agentes (20) y trabajo/espera medidos sobre los tres volcados, «de 2 máquinas»" || mal "C-66 $(jpanel "$T/j.out" local corridas) · $(jpanel "$T/j.out" local trabajo_espera)"
 import json, sys
 c, v, a, te = [json.loads(x) for x in sys.argv[1:5]]
 assert c['estado'] == 'medido' and c['valor'] == 4 and c['medidos'] == 3 and c['total'] == 3, c
@@ -1792,8 +1792,8 @@ python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='med
 rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; mkdir -p "$T/buzon"; bajada_ok "$T/bajada.json"
 node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
-python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'el buzón no tiene corridas' in d['motivo'], d" "$(jpanel "$T/j.out" local corridas)" 2>/dev/null \
-  && ok "C-66b buzón leído y vacío: «el buzón no tiene corridas»" || mal "C-66b vacío: $(jpanel "$T/j.out" local corridas)"
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'el buzón no tiene ejecuciones' in d['motivo'], d" "$(jpanel "$T/j.out" local corridas)" 2>/dev/null \
+  && ok "C-66b buzón leído y vacío: «el buzón no tiene ejecuciones»" || mal "C-66b vacío: $(jpanel "$T/j.out" local corridas)"
 volcado "$T/buzon" maq-uno 1 2026-10-01T10:00:00Z 2026-10-01T12:00:00Z 10 2
 echo '{ cortado' > "$T/buzon/maq-uno/2-2026-10-02.json"
 node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
@@ -1835,8 +1835,8 @@ rm -rf "$T"
 T=$(mktemp -d); montar_sano "$T"; bajada_ok "$T/bajada.json"; mkdir -p "$T/uno"
 reg_gates "$T/uno/gates.log" "$AYER25" build 5 0; maq_buzon "$T/buzon" maq-uno "$AYER25" "$T/uno"
 node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
-python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'ninguna corrida de tests dejó su duración' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
-  && ok "C-67 sin líneas tests: «no medido · ninguna corrida de tests dejó su duración»" || mal "C-67 sin muestras: $(jpanel "$T/j.out" local gates_dur)"
+python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'ninguna ejecución de tests dejó su duración' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
+  && ok "C-67 sin líneas tests: «no medido · ninguna ejecución de tests dejó su duración»" || mal "C-67 sin muestras: $(jpanel "$T/j.out" local gates_dur)"
 # el piso del reductor, como toda ficha del equipo (pase adversarial): dos corridas de la suite no son una estadística
 python3 - "$T/uno/gates.log" "$AYER25" <<'PY'
 import json, sys
@@ -1846,7 +1846,7 @@ PY
 maq_buzon "$T/buzon" maq-uno "$AYER25" "$T/uno"
 node "$TABLERO" --nightly --dir "$T" --mailbox "$T/buzon" --mailbox-state "$T/bajada.json" --output "$T/o.html" --json > "$T/j.out" 2>/dev/null
 python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['estado']!='medido' and 'por debajo del piso' in d['motivo'], d" "$(jpanel "$T/j.out" local gates_dur)" 2>/dev/null \
-  && ok "C-67 con 2 corridas de la suite (piso 3): «no medido · por debajo del piso», no una mediana" || mal "C-67 piso: $(jpanel "$T/j.out" local gates_dur)"
+  && ok "C-67 con 2 ejecuciones de la suite (piso 3): «no medido · por debajo del piso», no una mediana" || mal "C-67 piso: $(jpanel "$T/j.out" local gates_dur)"
 rm -rf "$T"
 
 # ── C-68 · Frenos_TituloDeControles_YLasDosFichas @story-2.21 @ac-18 ──
@@ -1960,7 +1960,7 @@ const b = c.concentracion({ repos: c.resolverNocturno(e, process.argv[4]), maqui
 console.log(JSON.stringify(a) === JSON.stringify(b) ? `igual ${a[0].concentracion}` : `distinto ${JSON.stringify(a)} ${JSON.stringify(b)}`);
 ' "$RAIZ/scripts/metrics/author-concentration.js" "$RAIZ/scripts/nightly/dashboard/sources.json" "$T/disco" "$T/scan")
 { [ "$R" = "igual 0.75" ] && grep -q 'resolverLocal' "$TABLERO" && ! grep -q "format=%an'" "$TABLERO"; } \
-  && ok "C-2.26 la corrida local y el nocturno dan lo mismo con la misma función (alias unidos: 0.75)" || mal "C-2.26 local contra nocturno: $R"
+  && ok "C-2.26 la ejecución local y el nocturno dan lo mismo con la misma función (alias unidos: 0.75)" || mal "C-2.26 local contra nocturno: $R"
 rm -rf "$T"
 
 # ── C-2.26-Organizacion_SinRepos_NoMedido_EdadPorProyecto @story-2.26 @ac-21 ──

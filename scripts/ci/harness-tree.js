@@ -84,7 +84,7 @@ function guardTree({ repo, expect, worktree = false, env = process.env } = {}) {
     if (nowHash !== wasHash) {
       let changed = [];
       if (git(repo, ['cat-file', '-e', `${wasCommit}^{commit}`], env).ok) changed = names([wasCommit, nowCommit], 'no pude comparar los dos commits');
-      throw new Red(`el árbol que se mide ya no es el que se armó: HEAD era ${wasCommit.slice(0, 12)} y es ${nowCommit.slice(0, 12)}, con otro código${changed.length ? ` (${changed.length} archivo(s): ${some(changed)})` : ''}. Algún paso movió el checkout: lo que se mida o se guarde desde acá no es el arnés que dice la corrida`);
+      throw new Red(`el árbol que se mide ya no es el que se armó: HEAD era ${wasCommit.slice(0, 12)} y es ${nowCommit.slice(0, 12)}, con otro código${changed.length ? ` (${changed.length} archivo(s): ${some(changed)})` : ''}. Algún paso movió el checkout: lo que se mida o se guarde desde acá no es el arnés que dice la ejecución`);
     }
     if (worktree) {
       // lo cambiado o borrado sin commitear, y lo que está de más sin que el .gitignore lo ignore

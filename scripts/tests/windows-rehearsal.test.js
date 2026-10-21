@@ -103,7 +103,7 @@ test('RehearsalPipeline_Yaml_ScenarioParameter_TwoJobs_NoSecrets_TagsFetched', {
   assert.doesNotMatch(src, /template: \/pipelines\/templates\/(?:fetch|traer)-repos\.yml/, 'el ensayo no toma agent-skills de la plantilla (en el repo unido es un enlace al arnés)');
   assert.match(src, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK"/, 'clona el repo viejo de agent-skills');
   assert.match(src, /SK="\$\(Agent\.TempDirectory\)\/agent-skills"/, 'en una carpeta propia, nunca ~/.claude/agent-skills');
-  assert.match(src, /AUTHORIZATION: bearer \$SYSTEM_ACCESSTOKEN/, 'con el token de la corrida');
+  assert.match(src, /AUTHORIZATION: bearer \$SYSTEM_ACCESSTOKEN/, 'con el token de la ejecución');
   // y si el clon o sus etiquetas fallan, el trabajo sale rojo con el error del clon, nunca sigue sin agent-skills
   assert.match(src, /clone --quiet "\$\{ORG\}AgentSkills\/_git\/AgentSkills" "\$SK" 2>&1\); then\s+echo "##vso\[task\.logissue type=error\]No se pudo clonar AgentSkills: [^\n]*\$ERR[^\n]*"\s+exit 1/, 'un clon fallido: error con su motivo y exit 1');
   assert.match(src, /fetch --quiet --tags origin 2>&1\); then\s+echo "##vso\[task\.logissue type=error\]No pude traer las etiquetas de AgentSkills: [^\n]*\$ERR[^\n]*"\s+exit 1/, 'sin etiquetas: error con su motivo y exit 1');
@@ -349,7 +349,7 @@ test('Rehearsal_Verdict_RedOnlyWhenItCouldNotRehearse', () => {
   const report = fixture('rehearsal-report.json');
   const green = rehearse.verdict(report);
   assert.strictEqual(green.color, 'green', JSON.stringify(green));
-  assert.ok(green.by_severity.breaks >= 1 && green.by_severity['loses-control'] >= 1, 'hay hallazgos graves y la corrida es verde: se pudo ensayar');
+  assert.ok(green.by_severity.breaks >= 1 && green.by_severity['loses-control'] >= 1, 'hay hallazgos graves y la ejecución es verde: se pudo ensayar');
   for (const empty of [{ steps: [] }, {}, null]) {
     const v = rehearse.verdict(empty);
     assert.strictEqual(v.color, 'red');
@@ -972,7 +972,7 @@ test('Rehearsal_LabRun_ToyRepos_OnboardingAndFridayToToday', { skip: (process.pl
     // un laboratorio no se usa dos veces; y un escenario solo corre sólo sus pasos
     const twice = node([path.join(DIR, 'rehearse.js'), 'init', '--lab', lab, '--out', out, '--sources', src, '--allow-temp'], { env });
     assert.strictEqual(twice.status, 2);
-    assert.match(twice.stderr, /el laboratorio es de una sola corrida/);
+    assert.match(twice.stderr, /el laboratorio es de una sola ejecución/);
     const lab2 = path.join(base, 'lab2'); const out2 = path.join(base, 'out2');
     const one = node([path.join(DIR, 'rehearse.js'), 'all', '--lab', lab2, '--out', out2, '--sources', src, '--scenario', 'update', '--only', 'canonical', '--allow-temp'], { env, timeout: 600000 });
     const r2 = JSON.parse(fs.readFileSync(path.join(out2, 'windows-report.json'), 'utf8'));
@@ -1319,7 +1319,7 @@ test('Rehearsal_PublishedCopyWithoutTeamText_NotMeasuredWithNotice_OtherwiseErro
     assert.match(noMark.step('update').reason, /sin una marca/);
     assert.deepStrictEqual([noMark.report.verdict.color, noMark.report.verdict.nothing_measured, noMark.r.status], ['green', true, 0], 'no sale roja por eso');
     assert.match(noMark.r.stdout, /##vso\[task\.logissue type=warning\]no medido — update: /, 'un aviso por el paso no medido');
-    assert.match(noMark.r.stdout, /##vso\[task\.complete result=SucceededWithIssues;\]/, 'la corrida termina con avisos');
+    assert.match(noMark.r.stdout, /##vso\[task\.complete result=SucceededWithIssues;\]/, 'la ejecución termina con avisos');
     assert.match(noMark.r.stdout, /veredicto CON AVISOS/);
     assert.doesNotMatch(noMark.r.stdout, /veredicto VERDE/, 'nunca un verde liso');
     assert.match(noMark.md, /## Veredicto: CON AVISOS/);
@@ -1521,7 +1521,7 @@ test('NpxPublished_Scenario_OwnStepFromRegistry_OutsideAll_WithItsCap', () => {
   // la misma sonda que `npx`, en su modo del registro
   assert.strictEqual(own.script, rehearse.OWN_STEPS.npx.script);
   assert.deepStrictEqual(own.args, ['--from', 'registry']);
-  assert.ok(own.cap > 0 && own.cap <= 2400, `su tope (${own.cap} s) deja la corrida bajo 40 minutos`);
+  assert.ok(own.cap > 0 && own.cap <= 2400, `su tope (${own.cap} s) deja la ejecución bajo 40 minutos`);
   assert.deepStrictEqual(own.pass, ['allow-temp']);
   // y `npx` sigue armando el paquete con npm pack, como antes
   assert.ok(!rehearse.OWN_STEPS.npx.args || !rehearse.OWN_STEPS.npx.args.includes('registry'));

@@ -185,7 +185,7 @@ if runs T21; then
   mkdir -p "$CODEX_HOME"; printf '{ "hooks": {} }\n' > "$CODEX_HOME/hooks.json"
   OUT="$(harness install --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && ok "desde un clon con Codex ya desplegado, install sale 0" || bad "install salió $RC: $OUT"
-  [ "$(state "','.join(d['tools'])")" = "claude,codex" ] && ok "y Codex se conserva enchufado aunque esta corrida no lo detecte (tools: claude, codex)" || bad "tools: $(state "d.get('tools')") — install dejó a Codex sin mantener"
+  [ "$(state "','.join(d['tools'])")" = "claude,codex" ] && ok "y Codex se conserva enchufado aunque esta ejecución no lo detecte (tools: claude, codex)" || bad "tools: $(state "d.get('tools')") — install dejó a Codex sin mantener"
   grep -q 'harness-startup.js' "$CODEX_HOME/hooks.json" && ok "y su lado se mantiene por el enchufe en Node (el hook de arranque quedó registrado)" || bad "el lado Codex no se re-enchufó: $(cat "$CODEX_HOME/hooks.json")"
   # con la llave apagada a propósito: deja de mantenerse, y lo dice
   OUT="$(TYCON_CODEX=0 harness install --dry-run 2>&1)"
@@ -339,7 +339,7 @@ JSON
   mkdir -p "$LAB_HOME/.claude"; printf '{\n  "hooks": {}\n}\n' > "$LAB_HOME/.claude/settings.json"; : > "$LAB_HOME/.claude/CLAUDE.md"
   OUT="$(harness install --version latest --integrations codex --yes 2>&1)"; RC=$?
   [ "$RC" = 0 ] && [ "$(state "','.join(d['tools'])")" = "claude,codex" ] && [ -f "$CODEX_HOME/AGENTS.md" ] \
-    && ok "prender la integración de Codex al instalar lo enchufa en esa misma corrida" \
+    && ok "prender la integración de Codex al instalar lo enchufa en esa misma ejecución" \
     || bad "--integrations codex salió $RC, tools: $(state "d.get('tools')"), AGENTS.md $([ -f "$CODEX_HOME/AGENTS.md" ] && echo está || echo falta): $OUT"
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 fi

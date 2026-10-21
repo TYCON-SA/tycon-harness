@@ -133,7 +133,7 @@ $(grep '^dup=' <<<"$o")"
     done
     [ "$(printf '%s\n' "$msgs" | grep -c .)" = 5 ] && [ "$(printf '%s\n' "$msgs" | grep . | sort -u | wc -l | tr -d ' ')" = 1 ] \
       && grep -qF -- "--$VIEJA_OPT y --$NUEVA_OPT" <<<"$msgs" && ok "T17 ps1: sin argumentos da 0 y el mensaje de «dos veces» es siempre el primero del argv" \
-      || mal "T17 ps1: el mensaje de «dos veces» cambia entre corridas: $(printf '%s' "$msgs" | sort -u | tr '\n' ' ')"
+      || mal "T17 ps1: el mensaje de «dos veces» cambia entre ejecuciones: $(printf '%s' "$msgs" | sort -u | tr '\n' ' ')"
   else echo "  (sin pwsh en esta máquina: el .ps1 queda revisado por lectura)"; fi
 fi
 
@@ -242,7 +242,7 @@ EOF
   else mal "T26 --check: «${chk}» o escribió"; fi
   out="$(migrar)"; rc=$?
   n="$(sed -n 's/^RENAMED:\([0-9]*\).*/\1/p' <<<"$out" | head -1)"
-  [ "$rc" -eq 0 ] && [ -n "$n" ] && [ "$n" -gt 0 ] && ok "T26 primera corrida: RENAMED:$n" || mal "T26 primera corrida rc=$rc «${out}» $(cat "$T/err")"
+  [ "$rc" -eq 0 ] && [ -n "$n" ] && [ "$n" -gt 0 ] && ok "T26 primera ejecución: RENAMED:$n" || mal "T26 primera ejecución rc=$rc «${out}» $(cat "$T/err")"
   SJ="$H/.claude/settings.json"
   grep -q "$CORRIDAS\.js\"" "$SJ" | true
   if python3 - "$SJ" "$OLD_ABS" "$NEW_ABS" "$SUB_ABS" "$OLD_LNK" <<'PY'
@@ -273,8 +273,8 @@ PY
   else mal "T26 launchctl: $(tr '\n' ' ' < "$T/launchctl.log")"; fi
   cp "$SJ" "$T/despues.json"
   out2="$(migrar)"
-  if grep -q '^RENAMED:0' <<<"$out2" && cmp -s "$T/despues.json" "$SJ"; then ok "T26 segunda corrida: no cambia nada"
-  else mal "T26 segunda corrida: «${out2}»"; fi
+  if grep -q '^RENAMED:0' <<<"$out2" && cmp -s "$T/despues.json" "$SJ"; then ok "T26 segunda ejecución: no cambia nada"
+  else mal "T26 segunda ejecución: «${out2}»"; fi
   # sin HOME real y sin launchctl de prueba, no toca launchd
   : > "$T/launchctl.log"
   sed -i.bak "s#metrics/runs.js#metrics/$CORRIDAS.js#" "$H/Library/LaunchAgents/lab.legacy-names.loaded.plist"
@@ -605,8 +605,8 @@ EOF
   out="$(migrar12)"; rc=$?
   # 6 = settings.json (hook absoluto + 2 permisos relativos) + settings.local.json (1) + Codex (1) + el LaunchAgent (1)
   if corre T12; then
-    [ "$rc" -eq 0 ] && grep -q '^RENAMED:6$' <<<"$out" && ok "T12 primera corrida: RENAMED:6 (hook, los dos permisos relativos, el local, Codex y el LaunchAgent)" \
-      || mal "T12 primera corrida rc=$rc «$(tr '\n' ' ' <<<"$out")» $(cat "$T/err")"
+    [ "$rc" -eq 0 ] && grep -q '^RENAMED:6$' <<<"$out" && ok "T12 primera ejecución: RENAMED:6 (hook, los dos permisos relativos, el local, Codex y el LaunchAgent)" \
+      || mal "T12 primera ejecución rc=$rc «$(tr '\n' ' ' <<<"$out")» $(cat "$T/err")"
     if python3 - "$H" "$HOOK_OLD" "$HOOK_NEW" "$ENV_OLD" "$ENV_NEW" <<'PY'
 import json, sys
 h, hook_old, hook_new, env_old, env_new = sys.argv[1:6]
@@ -653,8 +653,8 @@ PY
   igual=1; for f in $LUGARES; do cmp -s "$H/$f" "$T/despues/$(basename "$f")" || igual=0; done
   for t in T12 T4; do
     corre "$t" || continue
-    grep -q '^RENAMED:0$' <<<"$out2" && [ "$igual" = 1 ] && ! grep -q bootstrap "$T/launchctl.log" && ok "$t segunda corrida: RENAMED:0 y no cambia nada" \
-      || mal "$t segunda corrida: «$(tr '\n' ' ' <<<"$out2")» igual=$igual"
+    grep -q '^RENAMED:0$' <<<"$out2" && [ "$igual" = 1 ] && ! grep -q bootstrap "$T/launchctl.log" && ok "$t segunda ejecución: RENAMED:0 y no cambia nada" \
+      || mal "$t segunda ejecución: «$(tr '\n' ' ' <<<"$out2")» igual=$igual"
   done
 fi
 

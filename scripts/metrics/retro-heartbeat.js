@@ -81,7 +81,7 @@ const CUBIERTAS = {
   advisor_warnings_actioned_ratio:
     'la disposición de cada hallazgo la publica collect-findings.js (story 2.9) en hallazgos.jsonl',
   advisor_pipeline_runtime_failures:
-    'los revisores que no volvieron los publica reviewers-cost.js (story 2.15) en el volcado de la corrida',
+    'los revisores que no volvieron los publica reviewers-cost.js (story 2.15) en el volcado de la ejecución',
   step_8_commit_skipped_rerun:
     'no es una serie: lo impide el portón del pipeline (marker.js complete-step 5 y 8 exigen los revisores de la iteración)',
   advisor_findings_on_verification_artifacts:
@@ -254,11 +254,11 @@ function senialDeCarril({ repo, merge }) {
 }
 
 function metricaDeVueltas({ repo, repoReal, merge, story }) {
-  if (!story) return nulo('push sin story (sin --story): no hubo corrida del pipeline de la que contar vueltas');
+  if (!story) return nulo('push sin story (sin --story): no hubo ejecución del pipeline de la que contar vueltas');
   const prefijo = `${storySegura(story)}-`;
   let archivos = [];
   try { archivos = fs.readdirSync(HISTORIAL).filter((f) => f.startsWith(prefijo) && f.endsWith('.json')); }
-  catch { return nulo(`sin volcado de corrida para este repo+story (no hay ${HISTORIAL.replace(os.homedir(), '~')})`); }
+  catch { return nulo(`sin volcado de ejecución para este repo+story (no hay ${HISTORIAL.replace(os.homedir(), '~')})`); }
 
   let elegido = null;
   let ilegibleMasNuevo = null;
@@ -289,9 +289,9 @@ function metricaDeVueltas({ repo, repoReal, merge, story }) {
   if (ilegibleMasNuevo && (!elegido || ilegibleMasNuevo > elegido.clave)) {
     return nulo('volcado ilegible: el más nuevo de esta story no se pudo leer, y no se toma uno más viejo en su lugar');
   }
-  if (!elegido) return nulo('sin volcado de corrida para este repo+story');
+  if (!elegido) return nulo('sin volcado de ejecución para este repo+story');
 
-  const desde = elegido.cuando ? ` — corrida archivada el ${elegido.cuando.slice(0, 16)}Z` : '';
+  const desde = elegido.cuando ? ` — ejecución archivada el ${elegido.cuando.slice(0, 16)}Z` : '';
   const v = vueltaDeVolcado(elegido.d);
   if (!v) return nulo('el volcado no registra vueltas: sin revisores por vuelta ni fotos de iteración');
   const como = v.fuente === 'revisores.por_vuelta'

@@ -55,7 +55,7 @@ const MOTIVOS = Object.freeze([
   'plataforma desconocida',
   'no se pudo leer site.update',
   'no se pudieron comparar las versiones',
-  'la imagen que corre cambió durante la corrida',
+  'la imagen que corre cambió durante la ejecución',
   'no se pudo leer el estado del actualizador',
 ]);
 const HUELLA = /^sha256:[0-9a-f]{64}$/;
@@ -247,7 +247,7 @@ async function actualizar(o) {
   const probar = o.probar || (plataforma === 'local' ? probarLocal() : probarDe());
   // dos corridas a la vez: si la imagen que corre cambió desde que se miró (otra la actualizó), ésta no toca nada
   const otraVez = p.actual();
-  if (otraVez.error || otraVez.huella !== a.huella) return fin('no_pudo', desde, st.version, 'la imagen que corre cambió durante la corrida');
+  if (otraVez.error || otraVez.huella !== a.huella) return fin('no_pudo', desde, st.version, 'la imagen que corre cambió durante la ejecución');
   const anterior = `${nombre}@${a.huella}`;
   const cambio = p.aplicar(ref);
   if (cambio.error) {

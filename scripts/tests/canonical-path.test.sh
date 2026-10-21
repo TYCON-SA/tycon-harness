@@ -29,7 +29,7 @@ out="$(TYCON_REPORT_PIECES= node "$J" --ensure-repo-links --clone "$T/single" --
 [ "$rc" -eq 0 ] && [ -L "$T/home/.claude/skills/tycon-pipeline" ] && [ ! -L "$T/home/.claude/skills/dangling" ] \
   || { echo "❌ repo único, entrada colgada: esperaba la sana enlazada y la colgada sin enlazar (rc=$rc, out='$out')"; exit 1; }
 out="$(TYCON_REPORT_PIECES= node "$J" --ensure-repo-links --clone "$T/single" --home "$T/home" --only entries)"; rc=$?
-[ "$rc" -eq 0 ] && [ -z "$out" ] || { echo "❌ repo único, segunda corrida: esperaba silencio y exit 0 (rc=$rc, out='$out')"; exit 1; }
+[ "$rc" -eq 0 ] && [ -z "$out" ] || { echo "❌ repo único, segunda ejecución: esperaba silencio y exit 0 (rc=$rc, out='$out')"; exit 1; }
 
 # T51 · Links_AgentsRealFolder_FileLinkThenHardLinkThenSaysSo
 # Con ~/.claude/agents como carpeta real, cada revisor (un archivo) se enlaza probando primero el enlace de archivo; si
@@ -156,7 +156,7 @@ forget({ where: ag('rev-d.md'), home: h });
 check('forgetHardLink: ya no está anotado', own({ where: ag('rev-d.md'), home: h }) === false);
 
 if (fails.length) { console.log(`❌ T51b enlaces duros del arnés: ${fails.join(' · ')}`); process.exit(1); }
-console.log('✅ T51b enlaces duros: anotados, la corrida siguiente saca los huérfanos (sólo los suyos), el desinstalador los reconoce');
+console.log('✅ T51b enlaces duros: anotados, la ejecución siguiente saca los huérfanos (sólo los suyos), el desinstalador los reconoce');
 JS
 [ $? -eq 0 ] || exit 1
 

@@ -47,7 +47,7 @@ function shipped(entries, label) {
   let missing = entries.filter((e) => !here(e.path || e));
   const layer = missing.filter((e) => fromTeamLayer(e.path || e));
   if (layer.length && !WITH_TEAM_LAYER && !IN_COPY) {
-    if (process.env.TF_BUILD) assert.deepStrictEqual(layer, [], `${label}: falta la capa del equipo (perfil-equipo.json) en una corrida que siempre la pone`);
+    if (process.env.TF_BUILD) assert.deepStrictEqual(layer, [], `${label}: falta la capa del equipo (perfil-equipo.json) en una ejecución que siempre la pone`);
     console.log(`⏭ ${label}: NO MEDIDO sin la capa del equipo — ${layer.length} declarado(s) que llegan con ella`);
     missing = missing.filter((e) => !fromTeamLayer(e.path || e));
   }

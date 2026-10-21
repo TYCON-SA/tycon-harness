@@ -167,7 +167,7 @@ test('T2 Agente_UnaCorrida_ConTope @story-1.27 @ac-2 @ac-6: una sola llamada, co
   const r = review(['--out', out, '--repo', `acme-a=${s.a.dir}`, '--repo', `acme-ops=${s.ops}`, '--no-push', '--max-chars', String(tope)], { TYCON_WEEKLY_REVIEW_AGENT: ag.script });
   assert.strictEqual(r.code, 0, r.out);
   const calls = ag.calls();
-  assert.strictEqual(calls.length, 1, 'una sola corrida del agente');
+  assert.strictEqual(calls.length, 1, 'una sola ejecución del agente');
   const j = informe(out);
   assert.ok(j.tope.material_chars <= tope, `el material respeta el tope: ${j.tope.material_chars} de ${tope}`);
   assert.ok(j.merges_no_leidos.length >= 1, 'algo quedó afuera y se nombra');
@@ -273,7 +273,7 @@ test('T7 SinRetros_LoDice @story-1.27 @ac-6: sin archivos de retro de la semana 
   const j = informe(out);
   assert.strictEqual(j.estado, 'sin_retros');
   assert.strictEqual(j.propuestas.length, 0);
-  assert.strictEqual(ag.calls().length, 0, 'sin retros no se gasta la corrida');
+  assert.strictEqual(ag.calls().length, 0, 'sin retros no se gasta la ejecución');
   // y sin agente: lo dice y sale distinto de 0 (no pudo mirar)
   const out2 = maintainers();
   const r2 = review(['--out', out2, '--repo', `acme-a=${s.a.dir}`, '--repo', `acme-ops=${s.ops}`, '--no-push'], { TYCON_WEEKLY_REVIEW_AGENT: path.join(tmp(), 'no-existe.js') });
@@ -390,7 +390,7 @@ test('T10 Disparador_UnaVezPorSemana @story-1.27 @ac-9: con --if-due corre sólo
   r = review(base, { ...e, TYCON_WEEKLY_REVIEW_NOW: '2026-10-20T02:00:00Z' });
   assert.strictEqual(r.code, 0, r.out);
   assert.strictEqual(ag.calls().length, 1, 'a los 6 días y 23 h (martes a martes) le toca');
-  assert.ok(fs.readFileSync(stamp, 'utf8').startsWith('2026-10-20'), 'el sello se escribe al terminar, con la hora de la corrida');
+  assert.ok(fs.readFileSync(stamp, 'utf8').startsWith('2026-10-20'), 'el sello se escribe al terminar, con la hora de la ejecución');
   // el disparador del examen la llama sólo en la máquina designada, y no con --dry-run ni --help
   const PE = require(path.join(ROOT, 'scripts', 'controls-bench', 'periodic-exam.js'));
   const llamadas = [];

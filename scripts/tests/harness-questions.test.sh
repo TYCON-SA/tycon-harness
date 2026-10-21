@@ -148,7 +148,7 @@ if corre T44; then
   # lo contestado decide también el enchufe: el estado anota a Codex y su hoja de reglas existe (si se eligiera con la
   # llave de ANTES de preguntar, la respuesta recién valdría en la corrida siguiente)
   TOOLS="$(harness_lab_state | python3 -c "import json,sys; print(','.join(json.load(sys.stdin).get('tools') or []))" 2>/dev/null)"
-  if [ "$TOOLS" = "claude,codex" ] && [ -f "$CODEX_HOME/AGENTS.md" ]; then ok "T44 contestar «codex» lo enchufa en esa misma corrida (estado: ${TOOLS})"
+  if [ "$TOOLS" = "claude,codex" ] && [ -f "$CODEX_HOME/AGENTS.md" ]; then ok "T44 contestar «codex» lo enchufa en esa misma ejecución (estado: ${TOOLS})"
   else mal "T44 contestar «codex» no lo enchufó: estado «${TOOLS}», AGENTS.md $([ -f "$CODEX_HOME/AGENTS.md" ] && echo está || echo falta)"; fi
   kill "$LAB_RELEASE_PROCESS" 2>/dev/null
 
@@ -221,14 +221,14 @@ if corre T46; then
   RC=0; harness_lab_pty - harness install > "$T/t46-again.out" 2>&1 || RC=$?
   if [ "$RC" = 0 ] && ! grep -q '¿' "$T/t46-again.out" && grep -q '^perfil: full (~/.claude/tycon.json)' "$T/t46-again.out" \
      && grep -q '^integraciones: engram (~/.claude/tycon.json)' "$T/t46-again.out" && grep -q '^paquete del stack por defecto: all (~/.claude/tycon.json)' "$T/t46-again.out"; then
-    ok "T46 segunda corrida: no pregunta nada y dice los valores con su origen"
-  else mal "T46 segunda corrida: rc ${RC}; $(grep -e '¿' -e '^perfil' -e '^integraciones' -e '^paquete' "$T/t46-again.out" | head -5 | tr '\n' '|')"; fi
+    ok "T46 segunda ejecución: no pregunta nada y dice los valores con su origen"
+  else mal "T46 segunda ejecución: rc ${RC}; $(grep -e '¿' -e '^perfil' -e '^integraciones' -e '^paquete' "$T/t46-again.out" | head -5 | tr '\n' '|')"; fi
 
   # con el perfil del equipo (lo que fija el perfil no se pregunta nunca): sólo la conformidad de siempre. El perfil
   # llega con la capa del equipo (`overlay-harness.js --team-from`), que deja perfil-equipo.json. Sin la capa no se mide;
   # en una corrida de Azure (TF_BUILD) del repo interno la capa siempre se pone, así que ahí que falte es rojo.
   if [ ! -f "$RAIZ/perfil-equipo.json" ] && [ -n "${TF_BUILD:-}" ] && [ -f "$RAIZ/scripts/publishing/public-repos.json" ]; then
-    mal "T46 perfil del equipo: falta la capa del equipo (perfil-equipo.json) en una corrida que siempre la pone — revisá el paso del repo del equipo de traer-arnes.yml"
+    mal "T46 perfil del equipo: falta la capa del equipo (perfil-equipo.json) en una ejecución que siempre la pone — revisá el paso del repo del equipo de traer-arnes.yml"
   elif [ ! -f "$RAIZ/perfil-equipo.json" ]; then
     echo "  ⏭   — T46 perfil del equipo: NO MEDIDO sin la capa del equipo — no está perfil-equipo.json"
   else

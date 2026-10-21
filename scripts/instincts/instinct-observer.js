@@ -965,7 +965,7 @@ function migrarDescartadosViejos(avisar = log) {
     }
     fs.rmdirSync(origen);
   } catch (e) {
-    avisar(`No pude llevar los descartados de ${rel}/ a inbox/instincts/descartados/ (${e.code || e.message}): ${movidos} de ${archivos.length} pasaron; lo demás sigue en la carpeta vieja y se reintenta en la próxima corrida.`);
+    avisar(`No pude llevar los descartados de ${rel}/ a inbox/instincts/descartados/ (${e.code || e.message}): ${movidos} de ${archivos.length} pasaron; lo demás sigue en la carpeta vieja y se reintenta en la próxima ejecución.`);
     return movidos;
   }
   if (movidos) {

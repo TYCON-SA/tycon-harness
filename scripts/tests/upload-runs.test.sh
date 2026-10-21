@@ -282,7 +282,7 @@ T="${BASE}/te"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "9.1-20
 subir "${T}" "${T}/h" "maq-a" --dry-run
 [ "${RC}" -eq 0 ] && [ "$(campo "${T}" estado)" = "dry_run" ] && [ "$(campo "${T}" a_subir)" = "4" ] && [ "$(pedidos "${T}/b")" = "0" ] && [ ! -e "${T}/estado/mailbox-uploads.json" ] && ok "T-E --dry-run → exit 0, a_subir 4, ningún pedido, sin registro" || mal "T-E dry-run rc=${RC} estado=$(campo "${T}" estado) a_subir=$(campo "${T}" a_subir) pedidos=$(pedidos "${T}/b")"
 subir "${T}" "${T}/h" "maq-a"
-[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" subido)" = "false" ] && [ "$(campo "${T}" subidos)" = "2" ] && ok "T-E un 409 (los dos archivos de la corrida rechazada) → parcial, exit 1, subido=false, los otros 2 sí subieron" || mal "T-E parcial rc=${RC} estado=$(campo "${T}" estado) subido=$(campo "${T}" subido) subidos=$(campo "${T}" subidos)"
+[ "${RC}" -eq 1 ] && [ "$(campo "${T}" estado)" = "parcial" ] && [ "$(campo "${T}" subido)" = "false" ] && [ "$(campo "${T}" subidos)" = "2" ] && ok "T-E un 409 (los dos archivos de la ejecución rechazada) → parcial, exit 1, subido=false, los otros 2 sí subieron" || mal "T-E parcial rc=${RC} estado=$(campo "${T}" estado) subido=$(campo "${T}" subido) subidos=$(campo "${T}" subidos)"
 en_registro "${T}" | grep rechazado >/dev/null && mal "T-E el rechazado quedó anotado" || ok "T-E el rechazado no quedó anotado"
 # una máquina que nunca corrió el pipeline NO tiene timing-history: eso es «nada que subir», no un fallo en cada arranque
 # 🔴 Atrapa: exit 1 «sin_registro» en TODAS las máquinas nuevas del equipo, cada arranque.
@@ -369,7 +369,7 @@ echo 150 > "${T}/b/demora"
 subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a" --budget-ms 1500
 R="$(regdir "${T}")"
 gunzip -c "${R}/gates.log.gz" 2>/dev/null | cmp -s - "${T}/reg/gates.log" && gunzip -c "${R}/bypass.log.gz" 2>/dev/null | cmp -s - "${T}/reg/bypass.log" \
-  && [ "$(num "${T}" sin_tiempo)" -gt 0 ] && ok "2.5-T1 con presupuesto chico y 20 corridas atrasadas, los dos registros subieron primero y descomprimen idénticos" || mal "2.5-T1 registros no llegaron primero o distintos (rc=${RC}, sin_tiempo=$(num "${T}" sin_tiempo)): $(ls "${R}" 2>&1)"
+  && [ "$(num "${T}" sin_tiempo)" -gt 0 ] && ok "2.5-T1 con presupuesto chico y 20 ejecuciones atrasadas, los dos registros subieron primero y descomprimen idénticos" || mal "2.5-T1 registros no llegaron primero o distintos (rc=${RC}, sin_tiempo=$(num "${T}" sin_tiempo)): $(ls "${R}" 2>&1)"
 python3 - "${T}/b/pedidos.jsonl" "${R}/cobertura.json" <<'PY' && ok "2.5-T1 los tres primeros PUT son los registros, con la cobertura al final; la cobertura dice la fecha y las dos fuentes medidas" || mal "2.5-T1 orden o cobertura: $(head -3 "${T}/b/pedidos.jsonl" | cut -c1-120) $(cat "${R}/cobertura.json" 2>&1 | head -c 200)"
 import json, re, sys
 ps = [json.loads(l)['ruta'] for l in open(sys.argv[1]) if '"PUT"' in l]
@@ -405,7 +405,7 @@ subir_reg "${T}" "${T}/h" "${T}/reg" 2026-09-15 "maq-a"
 R="$(regdir "${T}")"
 gunzip -c "${R}/frenos.jsonl.gz" 2>/dev/null | cmp -s - "${T}/reg/frenos.jsonl" \
   && ok "2.6-T10 la constancia de los frenos sube comprimida y descomprime idéntica" || mal "2.6-T10 no subió o difiere: $(ls "${R}" 2>&1)"
-python3 - "${T}/b/pedidos.jsonl" "${R}/cobertura.json" <<'PY2' && ok "2.6-T10 los TRES registros van antes que las corridas, la cobertura última, y declara las tres fuentes medidas" || mal "2.6-T10 orden/cobertura: $(head -5 "${T}/b/pedidos.jsonl" | cut -c1-110) $(cat "${R}/cobertura.json" 2>&1 | head -c 250)"
+python3 - "${T}/b/pedidos.jsonl" "${R}/cobertura.json" <<'PY2' && ok "2.6-T10 los TRES registros van antes que las ejecuciones, la cobertura última, y declara las tres fuentes medidas" || mal "2.6-T10 orden/cobertura: $(head -5 "${T}/b/pedidos.jsonl" | cut -c1-110) $(cat "${R}/cobertura.json" 2>&1 | head -c 250)"
 import json, sys
 import re
 ps = [re.sub(r'/registros/v\d{8}T\d{9}Z/', '/registros/', json.loads(l)['ruta']) for l in open(sys.argv[1]) if '"PUT"' in l]
@@ -455,7 +455,7 @@ mkdir -p "${T}/estado/registros-buzon"; echo "viejo" | gzip -c > "${T}/estado/re
 subir_reg "${T}" "${T}/no-existe" "${T}/reg" 2026-09-15 "maq-a"
 R="$(regdir "${T}")"
 [ "${RC}" -eq 0 ] && [ -f "${R}/gates.log.gz" ] && [ ! -e "${R}/bypass.log.gz" ] && [ ! -e "${T}/estado/registros-buzon/bypass.log.gz" ] \
-  && ok "2.5-T2 sin bypass.log (y sin corridas): sube el de frenos y la cobertura, no sube un vacío y borra el .gz de ayer de la preparación" || mal "2.5-T2 rc=${RC} buzón: $(ls "${R}" 2>&1) prep: $(ls "${T}/estado/registros-buzon" 2>&1)"
+  && ok "2.5-T2 sin bypass.log (y sin ejecuciones): sube el de frenos y la cobertura, no sube un vacío y borra el .gz de ayer de la preparación" || mal "2.5-T2 rc=${RC} buzón: $(ls "${R}" 2>&1) prep: $(ls "${T}/estado/registros-buzon" 2>&1)"
 python3 -c "import json,sys; c=json.load(open(sys.argv[1])); b=c['fuentes']['bypass']; assert b['estado']=='no_medido' and b['motivo'] and sys.argv[2] not in b['motivo'], c" "${R}/cobertura.json" "${T}" 2>/dev/null \
   && ok "2.5-T2 la cobertura declara bypass no_medido con motivo, sin la ruta de la máquina" || mal "2.5-T2 cobertura: $(cat "${R}/cobertura.json" 2>&1 | head -c 300)"
 grep -Eq 'lane|advisor-runs|safety-guard|secreto' "${T}/b/pedidos.jsonl" && mal "2.5-T2 subió algo más que los registros: $(grep -E 'lane|advisor-runs|safety' "${T}/b/pedidos.jsonl" | head -2)" || ok "2.5-T2 de la carpeta del pipeline sólo suben los dos registros"
@@ -483,13 +483,13 @@ R2="$(regdir "${T}")"
 # 🔴 Atrapa: el return temprano no mira el error anotado.
 T="${BASE}/t2c-25"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"; echo x > "${T}/archivo"
 TYCON_LOGS_SOURCE="${T}/reg" TYCON_LOGS_DIR="${T}/archivo/sub" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/no-existe" "maq-a"
-[ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2c no se pudo preparar la carpeta de registros (y no hay corridas) → sale 1 y lo dice" || mal "2.5-T2c rc=${RC} $(head -c 200 "${T}/err.txt")"
+[ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2c no se pudo preparar la carpeta de registros (y no hay ejecuciones) → sale 1 y lo dice" || mal "2.5-T2c rc=${RC} $(head -c 200 "${T}/err.txt")"
 # T2d · la carpeta del pipeline que existe pero no se puede mirar NO es «no participa».
 # 🔴 Atrapa: el catch del stat que devuelve «sin carpeta» ante cualquier error → la máquina deja de subir
 #    registros para siempre, en silencio.
 T="${BASE}/t2d-25"; buzon "${T}/b"; config "${T}/cfg.json"; echo x > "${T}/archivo"; corrida "${T}/h" "9.2-2026-09-09T0900"
 TYCON_LOGS_SOURCE="${T}/archivo/sub" TYCON_LOGS_DIR="${T}/estado/registros-buzon" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/h" "maq-a"
-[ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2d la carpeta del pipeline no se puede mirar (ENOTDIR) → sale 1 y lo dice (las corridas igual suben)" || mal "2.5-T2d rc=${RC} $(head -c 200 "${T}/err.txt")"
+[ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2d la carpeta del pipeline no se puede mirar (ENOTDIR) → sale 1 y lo dice (las ejecuciones igual suben)" || mal "2.5-T2d rc=${RC} $(head -c 200 "${T}/err.txt")"
 TYCON_LOGS_SOURCE="${T}/archivo" TYCON_LOGS_DIR="${T}/estado2/registros-buzon" TYCON_TODAY=2026-09-15 subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 1 ] && grep -q 'registros' "${T}/err.txt" && ok "2.5-T2d la «carpeta» del pipeline es un archivo → sale 1 y lo dice" || mal "2.5-T2d archivo: rc=${RC} $(head -c 200 "${T}/err.txt")"
 # T2e · una cobertura de la preparación que no se puede leer no cuenta como «ya preparado hoy»: se rehace.
@@ -503,7 +503,7 @@ R="$(regdir "${T}")"
 T="${BASE}/t2b-25"; buzon "${T}/b"; config "${T}/cfg.json"; corrida "${T}/h" "9.1-2026-09-09T0900"
 subir_reg "${T}" "${T}/h" "${T}/no-hay-carpeta" 2026-09-15 "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(puts "${T}/b")" = "2" ] && ! grep -q registros "${T}/b/pedidos.jsonl" \
-  && ok "2.5-T2 una máquina sin carpeta del pipeline no sube registros ni cobertura (sólo sus corridas)" || mal "2.5-T2 sin carpeta: rc=${RC} puts=$(puts "${T}/b")"
+  && ok "2.5-T2 una máquina sin carpeta del pipeline no sube registros ni cobertura (sólo sus ejecuciones)" || mal "2.5-T2 sin carpeta: rc=${RC} puts=$(puts "${T}/b")"
 
 # ── T18 (parte subida) · sin rastro de git ni del repo privado ───────────────────────────
 # 🔴 Atrapa: dejar el camino de git vivo «por las dudas» → dos vehículos para lo mismo.
@@ -646,7 +646,7 @@ DESC
 # una falla de lectura de hallazgos.jsonl.gz ANTES de la cola retiene la cobertura; una de una corrida, NO
 # 🔴 Atrapa: una guarda que reconoce sólo «.log.gz », o que se amplía a «.jsonl.gz » a
 #    secas y se dispara también por un hilo de corrida (`*.hilo.jsonl.gz`).
-node - "${SUBIR}" <<'GUARDA' && ok "2.9 la guarda reconoce los tres registros por su NOMBRE, y no se dispara por un hilo de corrida" || mal "2.9 la guarda de registros no distingue un registro de un hilo"
+node - "${SUBIR}" <<'GUARDA' && ok "2.9 la guarda reconoce los tres registros por su NOMBRE, y no se dispara por un hilo de ejecución" || mal "2.9 la guarda de registros no distingue un registro de un hilo"
 const s = require('fs').readFileSync(process.argv[2], 'utf8');
 const m = /const esFallaDeRegistro = \(x\) => ([^\n]+);/.exec(s);
 if (!m) { console.error('no encontré esFallaDeRegistro'); process.exit(1); }
@@ -784,7 +784,7 @@ subir_casa "${T}" "${T}/h" "maq-d2"
 N="$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(sum(1 for k in d['archivos'] if '2.1-2026-09-01T1000' in k or '2.2-2026-09-02T1000' in k))" "${CASA}/mailbox-uploads.json" 2>/dev/null)"
 [ "${RC}" -eq 0 ] && [ "${N}" = "4" ] && cmp -s "${T}/registro-antes" "${CASA}/${REG_VIEJO}" && cmp -s "${T}/sello-antes" "${CASA}/${SELLO_VIEJO}" \
   && ok "8.9-D2 al escribir, el registro nuevo arranca con lo del viejo y los viejos quedan intactos" \
-  || mal "8.9-D2 migración del registro: rc=${RC} corridas en el registro nuevo=${N} · $(ls "${CASA}" 2>&1 | tr '\n' ' ')"
+  || mal "8.9-D2 migración del registro: rc=${RC} ejecuciones en el registro nuevo=${N} · $(ls "${CASA}" 2>&1 | tr '\n' ' ')"
 rm -rf "${HOME}/.claude"
 fi
 
@@ -1025,7 +1025,7 @@ subir "${T}" "${T}/h" "maq-a"
 for i in 1 2 3; do head -c 3000 /dev/urandom | base64 | gzip -c > "${T}/h/2.${i}-2026-10-02T1000.hilo.jsonl.gz"; done
 TYCON_NOW=2026-10-21T08:30:00.250Z subir "${T}" "${T}/h" "maq-a"
 [ "${RC}" -eq 0 ] && [ "$(versiones "${T}" maq-a | wc -l | tr -d ' ')" = "1" ] && [ "$(ls "${T}/b/blobs/corridas/maq-a/v20261021T083000250Z" | wc -l | tr -d ' ')" = "3" ] \
-  && ok "2.24-T29 tres corridas que cambiaron en una pasada van bajo la MISMA carpeta v<inicio de la pasada>" || mal "2.24-T29 rc=${RC} versiones: $(versiones "${T}" maq-a | tr '\n' ' ')"
+  && ok "2.24-T29 tres ejecuciones que cambiaron en una pasada van bajo la MISMA carpeta v<inicio de la pasada>" || mal "2.24-T29 rc=${RC} versiones: $(versiones "${T}" maq-a | tr '\n' ' ')"
 
 # ── T3 · Registros_UnJuegoPorPreparacion_CoberturaUltima ── 🔴 Atrapa: registros/<archivo> plano.
 T="${BASE}/t224-3"; buzon "${T}/b"; config "${T}/cfg.json"; registros "${T}/reg"
@@ -1420,7 +1420,7 @@ done
 # declarar como suya la carpeta vieja de otra máquina con el mismo nombre.
 ESPERADA="$(node -e 'console.log(require(process.argv[1]).huellaDeCorridas(["9.1-2026-10-14T0900.json","9.2-2026-10-14T1000.json"]))' "${SUBIR}" 2>&1)"
 [ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['folder'].get('previous_runs_sha256'))" "${T}/estado/registros-buzon/place.json" 2>&1)" = "${ESPERADA}" ] \
-  && ok "2.28-T34 la carpeta nueva declara la huella de las corridas que subió a la vieja" || mal "2.28-T34 huella: $(folder_de "${T}")"
+  && ok "2.28-T34 la carpeta nueva declara la huella de las ejecuciones que subió a la vieja" || mal "2.28-T34 huella: $(folder_de "${T}")"
 python3 - "${T}/b/pedidos.jsonl" "${N}" <<'PY' && ok "2.28-T34 en la carpeta nueva, los registros primero" || mal "2.28-T34 orden de la re-subida"
 import json, sys
 ps = [json.loads(l)["ruta"] for l in open(sys.argv[1]) if f"/corridas/{sys.argv[2]}/" in l]
@@ -1440,7 +1440,7 @@ for i in 1 2; do env -u TF_BUILD TYCON_MAILBOX_JSON="${T}/no-esta.json" node "${
 RC=$?
 N=$(grep -c 'sin_config' "${LOG}" 2>/dev/null || echo 0)
 if [ "${RC}" -eq 1 ] && [ "${N}" = "2" ] && [ ! -s "${T}/salida-1.txt" ] && [ ! -s "${T}/salida-2.txt" ]; then
-  ok "Windows · --log: la salida va al registro, se AGREGA (dos corridas, dos líneas sin_config) y el código de salida es el de siempre"
+  ok "Windows · --log: la salida va al registro, se AGREGA (dos ejecuciones, dos líneas sin_config) y el código de salida es el de siempre"
 else
   mal "Windows · --log: rc=${RC}, líneas sin_config en el registro=${N}, en la terminal: $(head -c 160 "${T}/salida-1.txt")"
 fi

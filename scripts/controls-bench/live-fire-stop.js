@@ -217,7 +217,7 @@ function proveDetection() {
     for (let i = 0; i < 2; i++) {
       const hookRun = spawnSync('node', [HOOK], { input: JSON.stringify({ session_id: sid }), encoding: 'utf8', env });
       if (!/"decision":\s*"block"/.test(hookRun.stdout || ''))
-        throw new Error(`el hook real no emitió el block en el escenario simulado (corrida ${i + 1}): ${hookRun.stdout}`);
+        throw new Error(`el hook real no emitió el block en el escenario simulado (ejecución ${i + 1}): ${hookRun.stdout}`);
     }
     fs.appendFileSync(path.join(sandbox, 'stops.txt'), 'stop\n');
     const fails = verifyBlockHonored('simulada', collectMarkers(sandbox, true)[0], null, countStops(sandbox));
