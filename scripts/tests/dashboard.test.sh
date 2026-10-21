@@ -1995,6 +1995,27 @@ node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
 ficha_html "$T/o.html" "$CONC_226" | grep '3 de 5 repos declarados medidos' >/dev/null && ok "C-2.26-adv el detalle dice «X de Y repos declarados medidos»" || mal "C-2.26-adv detalle: $(ficha_html "$T/o.html" "$CONC_226" | head -c 300)"
 rm -rf "$T"
 
+# ── T11 1.31-Tablero_SinArchivoDelDia_NoMedido @story-1.31 @ac-6 ──
+# 🔴 rojo previo: la ficha no existe; o sin el archivo del día sale 0 en vez de «no medido» con el motivo; o el detalle
+#    trae un correo (D7: la persona va con su nombre, nunca con su correo).
+SINHIST_131='Cambios de código sin historia'
+T=$(mktemp -d); montar_sano "$T"
+printf '{"v":1,"generated_at":"%s","ventana":{"desde":"x","hasta":"y","dias":28},"cobertura":{"repos_declarados":2,"repos_medidos":1},"totales":{"codigo":8,"con":6,"sin":2,"por_persona":{"Ana Uno":{"con":5,"sin":1},"Beto Dos":{"con":1,"sin":1}},"por_tipo":{"hotfix":1,"dependencias":0,"arnes_ci":0,"merge_dev":1,"otro":0},"por_via":{"pedido":{"con":6,"sin":1},"directo":{"con":0,"sin":1}}},"repos":[{"producto":"Alfa","repo":"Alfa/Back","estado":"medido","motivo":null,"codigo":8,"con":6,"sin":2},{"producto":"Beta","repo":"Beta/Back","estado":"no_medido","motivo":"no está entre los clones del nocturno","codigo":null,"con":null,"sin":null}]}\n' "$(hace 0)" > "$T/story-reference-$(fecha_hace 0).json"
+node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+F="$(ficha_html "$T/o.html" "$SINHIST_131")"
+D="$(python3 -c "import sys;h=open(sys.argv[1]).read();i=h.find('Los cambios de código sin historia, por repo');print(h[i:i+4000] if i>=0 else '')" "$T/o.html")"
+{ echo "$F" | grep '<div class="t-val">25%</div>' >/dev/null && echo "$D" | grep 'Beto Dos' >/dev/null && echo "$D" | grep 'Alfa/Back' >/dev/null \
+  && echo "$D" | grep 'no está entre los clones' >/dev/null && echo "$D" | grep 'hotfix' >/dev/null && ! grep -q '@' <<<"$D"; } \
+  && ok "C-1.31 la ficha de cambios sin historia: 25 %, y al abrirla las tablas por repo, por persona y por tipo" || mal "C-1.31 ficha: ${F:0:300} · detalle: ${D:0:300}"
+# el detalle de la ficha va una vez (el pase adversarial lo encontró repetido en el pie)
+[ "$(grep -o 'en 28 días' <<<"$F" | wc -l | tr -d ' ')" = "1" ] && ok "C-1.31 el detalle de la ficha no se repite" || mal "C-1.31 el detalle se repite: ${F:0:400}"
+rm -rf "$T"
+T=$(mktemp -d); montar_sano "$T"
+node "$TABLERO" --nightly --dir "$T" --output "$T/o.html" >/dev/null 2>&1
+[ "$(ficha_estado "$T/o.html" "$SINHIST_131")" = "blind" ] && ficha_html "$T/o.html" "$SINHIST_131" | grep 'story-reference' >/dev/null \
+  && ok "C-1.31 sin el archivo del día: la ficha sale gris con el motivo, nunca 0" || mal "C-1.31 sin archivo: $(ficha_html "$T/o.html" "$SINHIST_131" | head -c 300)"
+rm -rf "$T"
+
 echo
 if [ "$FALLOS" -gt 0 ]; then echo "FALLARON $FALLOS chequeo(s)"; exit 1; fi
 echo "todo verde"

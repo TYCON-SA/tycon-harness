@@ -976,10 +976,56 @@ function detalleEdad(m) {
   </details>`;
 }
 
+/**
+ * Los cambios de código que llegaron a main sin nombrar su historia, del archivo que deja el nocturno de
+ * métricas (`scripts/metrics/story-reference.js`). El número es la parte sin historia de las entradas de código de los 28
+ * días; el detalle trae las tablas por repo, por persona (con su nombre, para saber con quién hablar) y por tipo. Al sitio
+ * llega sólo el número (`scripts/site/tabs/cards.js`).
+ */
+function fichaSinHistoria(f) {
+  return desde(f, (d) => {
+    const t = d.totales; const c = d.cobertura || {};
+    if (!t || !Number.isFinite(t.codigo) || !Number.isFinite(t.sin)) throw new Error('faltan los totales');
+    if (!c.repos_medidos) return noMedida('ningún repo medido en el archivo del día');
+    const r = ratio(t.sin, t.codigo, 'ninguna entrada de código en la ventana');
+    if (r.estado !== 'medido') return r;
+    const v = t.por_via || {};
+    const via = (k) => (v[k] && Number.isFinite(v[k].sin) && Number.isFinite(v[k].con) ? `${v[k].sin} de ${v[k].con + v[k].sin}` : '—');
+    return { ...r, den_etiqueta: 'entradas de código', fecha: (f.ts || '').slice(0, 10),
+      detalle: `${t.sin} de ${t.codigo} en ${(d.ventana && d.ventana.dias) || 28} días · por pedido ${via('pedido')}, directo a main ${via('directo')} · ${c.repos_medidos} de ${c.repos_declarados} repos medidos`,
+      sin_historia: { repos: Array.isArray(d.repos) ? d.repos : [], por_persona: t.por_persona || {}, por_tipo: t.por_tipo || {} } };
+  });
+}
+const TIPOS_SIN_HISTORIA = { hotfix: 'hotfix', dependencias: 'dependencias', arnes_ci: 'arnés y CI', merge_dev: 'merge de dev sin detalle', otro: 'otro' };
+// El detalle desplegable de la ficha de cambios sin historia: por repo, por persona y por tipo.
+function detalleSinHistoria(m) {
+  if (!m || m.estado !== 'medido' || !m.sin_historia) return '';
+  const { repos, por_persona: pp, por_tipo: pt } = m.sin_historia;
+  // un número que falta o no se lee sale «—», nunca 0
+  const ok = (x) => Number.isFinite(x);
+  const n = (x) => (ok(x) ? String(x) : '—');
+  const fr = repos.map((r) => (r.estado === 'medido'
+    ? `<tr><td>${esc(r.repo)}</td><td>${n(r.codigo)}</td><td>${n(r.sin)}</td><td>${ok(r.sin) && ok(r.codigo) && r.codigo ? pct(r.sin / r.codigo) : '—'}</td></tr>`
+    : `<tr><td>${esc(r.repo)}</td><td colspan="3" class="muted">no medido: ${esc(r.motivo || '')}</td></tr>`));
+  const sinDe = (c) => (c && ok(c.sin) ? c.sin : -1);
+  const fp = Object.entries(pp).sort((a, b) => sinDe(b[1]) - sinDe(a[1]) || a[0].localeCompare(b[0]))
+    .map(([quien, c]) => `<tr><td>${esc(quien)}</td><td>${c && ok(c.con) && ok(c.sin) ? c.con + c.sin : '—'}</td><td>${n(c && c.sin)}</td></tr>`);
+  const ft = Object.entries(TIPOS_SIN_HISTORIA).map(([k, nombre]) => `<tr><td>${esc(nombre)}</td><td>${n(pt[k])}</td></tr>`);
+  return `<details style="margin-top:10px"><summary>Los cambios de código sin historia, por repo, por persona y por tipo</summary>
+    <table><tr><th>Repo</th><th>Entradas de código</th><th>Sin historia</th><th>%</th></tr>
+    ${fr.join('\n    ')}</table>
+    <table><tr><th>Persona</th><th>Entradas de código</th><th>Sin historia</th></tr>
+    ${fp.join('\n    ')}</table>
+    <table><tr><th>Tipo (de las que no nombran historia)</th><th>Entradas</th></tr>
+    ${ft.join('\n    ')}</table>
+  </details>`;
+}
+
 function extra(por, ctx, cfg) {
   const m = {};
   m.despliegues = desde(por.deployments, (d) => fichaDespliegues(d, new Date().toISOString()));
   m.edad_estado = fichaEdad(cfg, ctx);
+  m.sin_historia = fichaSinHistoria(por['story-reference']);
   const sdlc = por['sdlc-stage'];
 
   m.por_repo = desde(sdlc, (d) => ({
@@ -1540,6 +1586,10 @@ footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);font-si
     ${F('', `Stories empezadas que llevan más de ${E.edad_estado && E.edad_estado.edad ? E.edad_estado.edad.dias[0] : 'N'} días en su estado`, E.edad_estado, entero, {}, E.edad_estado && E.edad_estado.estado === 'medido' ? `${esc(E.edad_estado.detalle)}. Cuenta lo empezado (en curso y bloqueado); el backlog va en el detalle. Sale de las fotos por proyecto: no se mide nada de nuevo.` : null)}
   </div>
   ${detalleEdad(E.edad_estado)}
+  <div class="grid" style="margin-top:14px">
+    ${F('', 'Cambios de código sin historia: entradas a main de los últimos 28 días que no nombran ninguna', E.sin_historia, pct, {}, E.sin_historia && E.sin_historia.estado === 'medido' ? 'Sólo se mide: no frena ni le avisa a nadie.' : null)}
+  </div>
+  ${detalleSinHistoria(E.sin_historia)}
 </section>
 
 <section class="q">

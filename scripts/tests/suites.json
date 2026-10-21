@@ -604,6 +604,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.31: los cambios de código que llegan a main sin nombrar su historia (scripts/metrics/story-reference.js) — qué nombra, el tipo, lo que no cuenta, la persona, la ventana de 28 días, el «no medido» y el archivo que lee el tablero, sobre repos git de juguete; y que la guía del portón dice dónde se mide.",
+      "raiz": "arnes",
+      "ruta": "tests/story-reference.test.js",
+      "requiere": []
+    },
+    {
       "raiz": "arnes",
       "__nota": "story 7.15: exclusiva — sus casos de candado esperan 2-2,5 s a que otro proceso arranque; con el gate en paralelo y la máquina cargada, T41 dio rojo (sola: 72/72, dos veces).",
       "ruta": "tests/periodic-exam.test.js",

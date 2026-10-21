@@ -241,7 +241,7 @@ function siteProblems(site) {
  * lector viaja solo (no carga nada fuera de fs); una prueba compara las dos listas (Casos: scripts/tests/site-config.test.js).
  */
 const CARD_IDS = Object.freeze([
-  'contrato_v2', 'fechas_declaradas', 'backlog', 'estados_sin_diccionario', 'tiempo_por_etapa', 'edad_estado', 'dod', 'rework',
+  'contrato_v2', 'fechas_declaradas', 'backlog', 'estados_sin_diccionario', 'tiempo_por_etapa', 'edad_estado', 'sin_historia', 'dod', 'rework',
   'rework_por_causa', 'rework_por_carril', 'mutacion', 'cobertura_tocada_evaluo', 'qa_guia', 'gates_dur', 'bloqueos', 'frenos',
   'evidencia_cierre', 'escapes_regla_dominante', 'reglas_candidatas', 'reglas_probadas', 'corridas', 'pasos', 'carriles',
   'bus_factor', 'sin_pipeline_de_prod',

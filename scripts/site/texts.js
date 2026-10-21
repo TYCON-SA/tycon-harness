@@ -322,6 +322,8 @@ const TEXTOS = {
   'ficha.tiempo_por_etapa.paraQue': { es: 'Dónde se queda parado el trabajo entre una etapa y la siguiente.', en: 'Where work stalls between one stage and the next.' },
   'ficha.edad_estado.titulo': { es: 'Stories empezadas que llevan mucho en su estado', en: 'Started stories stuck in the same status for a long time' },
   'ficha.edad_estado.paraQue': { es: 'El trabajo empezado que no se mueve hace días.', en: 'Started work that has not moved for days.' },
+  'ficha.sin_historia.titulo': { es: 'Cambios de código sin historia', en: 'Code changes without a story' },
+  'ficha.sin_historia.paraQue': { es: 'Las entradas a main de los últimos 28 días que no nombran su historia. Sólo se mide: no frena a nadie.', en: 'Changes that reached main in the last 28 days without naming their story. Only measured: it blocks no one.' },
   'ficha.dod.titulo': { es: 'Cierres que dejaron prueba de que la cosa anda corriendo', en: 'Closed stories that left proof it works at runtime' },
   'ficha.dod.paraQue': { es: 'De las stories cerradas, cuántas dejaron evidencia de que se probó en vivo.', en: 'Of the closed stories, how many left evidence that they were tested live.' },
   'ficha.rework.titulo': { es: 'Lo que vuelve: stories con un seguimiento posterior', en: 'What comes back: stories with a later follow-up' },
