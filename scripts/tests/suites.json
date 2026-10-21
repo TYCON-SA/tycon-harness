@@ -846,6 +846,12 @@
       "requiere": []
     },
     {
+      "__nota": "story 1.15: lo que las pruebas de una story necesitan instalar se mira al validarla — pipeline.js validators trae dependencias_de_pruebas (cobertura de vitest, @playwright/test, @types/node y «node» en compilerOptions.types, los @scope/paquete que la story nombra); un archivo ilegible sale «no medido», y un proyecto sin vitest ni Playwright no da avisos falsos.",
+      "raiz": "agent-skills",
+      "ruta": "tycon-pipeline/scripts/tests/test-deps.test.js",
+      "requiere": []
+    },
+    {
       "__nota": "el lector del lcov que deja el medidor de cobertura de Node — el mismo mapa archivo → línea → cubierta que coverage-final.json sobre las líneas que los dos cuentan, rutas reales con «/» (enlaces y barras de Windows), lo de fuera del árbol descartado, y un lcov vacío, cortado o roto da «sin cruce» con el archivo y el motivo.",
       "raiz": "agent-skills",
       "ruta": "tycon-pipeline/scripts/tests/node-coverage.test.js",

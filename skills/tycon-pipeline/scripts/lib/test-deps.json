@@ -1,0 +1,31 @@
+{
+  "__doc": "Lo que cada herramienta de pruebas exige sin que la story lo escriba.Lo lee lib/test-deps.js. Cada entrada trae el motivo y el caso que la trajo: se agregan con un caso nuevo, no a ojo. `anyOf`: alcanza con uno de esos paquetes; `suggest`: el que se nombra en el aviso.",
+  "rules": [
+    {
+      "tool": "vitest",
+      "when": "project-uses-tool",
+      "detect": ["vitest"],
+      "anyOf": ["@vitest/coverage-v8", "@vitest/coverage-istanbul"],
+      "suggest": "@vitest/coverage-v8",
+      "reason": "el portón de pruebas del arnés corre `vitest run --coverage`: sin proveedor de cobertura (@vitest/coverage-v8 o @vitest/coverage-istanbul) no pasa, aunque todas las pruebas pasen",
+      "case": "2026-10-01: una story con pruebas vitest nuevas no verificó la cobertura contra el package.json del producto"
+    },
+    {
+      "tool": "playwright",
+      "when": "story-tests-use-tool",
+      "anyOf": ["@playwright/test"],
+      "suggest": "@playwright/test",
+      "reason": "las pruebas de Playwright importan @playwright/test: sin el paquete no corren",
+      "case": "2026-10-01: lo vio el pase adversarial por criterio propio, no por una regla"
+    },
+    {
+      "tool": "typescript",
+      "when": "ts-tests-use-node",
+      "anyOf": ["@types/node"],
+      "suggest": "@types/node",
+      "tsconfigType": "node",
+      "reason": "una prueba TypeScript que usa Node (node:fs, process) necesita @types/node; y si tsconfig.json fija compilerOptions.types, TypeScript carga sólo esa lista: sin «node» ahí no compila aunque el paquete esté instalado",
+      "case": "2026-10-01: una story con pruebas TS nuevas no verificó @types/node contra package.json y tsconfig.json"
+    }
+  ]
+}

@@ -85,6 +85,14 @@ fan-out no ocurrió (0b/0c skippeados, orden secuencial), lanzar los subagentes 
      (el patrón citado está realmente en el código hermano, no es un "(asumo)"). Los dos gates juntos
      cierran el loop: una story de backend no avanza con un patrón asumido.
 
+   - **`dependencias_de_pruebas`**: la misma salida trae lo que las pruebas de la story necesitan y el
+     proyecto no declara —el proveedor de cobertura de vitest que exige el portón, `@playwright/test`, `@types/node` y
+     `node` en `compilerOptions.types`, los paquetes `@scope/nombre` que la story nombra—, cada uno con `paquete`,
+     `herramienta`, `motivo`, `caso` y `donde`. Lo calcula un programa, no el validador. Cada faltante se suma al reporte del
+     paso como **`VAL-W18`** (WARNING: pausa como cualquier WARNING fuera de la whitelist, no bloquea). Una entrada
+     `no_medido` («no medido: <archivo>, <motivo>») se muestra igual: es «no pude mirar», nunca «está todo». Lista
+     vacía = no falta nada.
+
 3. Recibir los reportes de los subagentes.
 
    **Cost tiering**: el `modelo` de cada lanzamiento viene del manifiesto del paquete (para el
