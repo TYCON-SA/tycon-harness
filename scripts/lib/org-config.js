@@ -910,7 +910,10 @@ function pantalla(idioma = 'es') {
   var copia = function (v) { return JSON.parse(JSON.stringify(v)); };
   // bases: la versión de cada sección sobre la que se carga ({ texto, oid }); conflictos: los valores que se pisaron con
   // un cambio de afuera; recuperar: lo que quedó guardado de antes de recargar, hasta que la persona elige
-  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {} };
+  // abiertos: el texto con que se abrió cada bloque de texto de una sección (por sección y clave): «Ver qué cambió»
+  // compara contra él aunque la pantalla se vuelva a dibujar con el borrador
+  var S = { pestana: null, secciones: [], borradores: {}, originales: {}, problemas: {}, avisos: {}, notas: {}, textos: {}, extras: null, diferencias: {}, resumenes: {}, marcas: {}, proponiendo: {}, terminadas: {}, bases: {}, conflictos: {}, recuperar: {}, abiertos: {} };
+  function olvidarAbiertos(id) { Object.keys(S.abiertos).forEach(function (k) { if (k.indexOf(id + '\u0000') === 0) delete S.abiertos[k]; }); }
   // cuánto espera la página antes de cada consulta por el pedido de una propuesta cortada; la prueba pasa los suyos
   var ESPERAS = typeof esperasConsulta !== 'undefined' && esperasConsulta ? esperasConsulta : [2000, 5000, 10000];
   // con el pedido abierto, cada cuánto pregunta si ya entró y cuántas veces (10 s, hasta 10 minutos); la prueba pasa los suyos
@@ -950,6 +953,7 @@ function pantalla(idioma = 'es') {
   function ponerBase(s, sec) {
     S.bases[s.id] = { texto: sec.texto === undefined ? null : sec.texto, oid: sec.oid === undefined ? null : sec.oid };
     S.originales[s.id] = copia(sec.borrador === undefined ? {} : sec.borrador);
+    olvidarAbiertos(s.id);
   }
 
   // ── la pestaña oculta no pregunta: lo pendiente espera a que vuelva a verse ──
@@ -1249,6 +1253,14 @@ function pantalla(idioma = 'es') {
     var ta = el('textarea', { rows: '8', spellcheck: 'false', 'aria-label': titulo, 'data-path': clave, oninput: function (e) { try { d[clave] = JSON.parse(e.target.value); S.notas[s.id] = null; } catch (err) { S.notas[s.id] = { ok: false, text: T('pantalla.elTextoNoEstaBien') + err.message }; } } });
     ta.value = JSON.stringify(d[clave] === undefined ? {} : d[clave], null, 2);
     var box = el('div', { class: 'pila' }, ta);
+    // el editor de texto largo del sitio: «Ver qué cambió» contra el texto con que se abrió la sección (no contra el
+    // borrador con que se vuelve a dibujar), sin vista previa (es JSON)
+    var abierto = s.id + '\u0000' + clave;
+    if (!Object.prototype.hasOwnProperty.call(S.abiertos, abierto)) S.abiertos[abierto] = ta.value;
+    if (typeof window !== 'undefined' && window && window.LongTextEditor) window.LongTextEditor.montar(ta, { vistaPrevia: false, queCambio: true, original: S.abiertos[abierto], textos: {
+      escribir: T('pantalla.lte.escribir'), vistaPrevia: T('pantalla.lte.vistaPrevia'), buscar: T('pantalla.lte.buscar'), buscarQue: T('pantalla.lte.buscarQue'),
+      siguiente: T('pantalla.lte.siguiente'), unaVez: T('pantalla.lte.unaVez'), vecesN: T('pantalla.lte.vecesN'), queCambio: T('pantalla.lte.queCambio'),
+      sinCambios: T('pantalla.lte.sinCambios'), ampliar: T('pantalla.lte.ampliar'), volver: T('pantalla.lte.volver') } });
     problemasEn(pr, clave).forEach(function (x) { box.appendChild(el('div', { class: 'err', text: x.message })); });
     return box;
   }
@@ -2344,7 +2356,7 @@ function pantalla(idioma = 'es') {
   function terminarPropuesta(s, marca, nota, bien) {
     if (S.terminadas[marca]) { delete S.proponiendo[s.id]; render(); return; }
     delete S.proponiendo[s.id];
-    if (bien) { S.terminadas[marca] = true; S.originales[s.id] = copia(S.borradores[s.id]); delete S.conflictos[s.id]; olvidar(s.id); }
+    if (bien) { S.terminadas[marca] = true; S.originales[s.id] = copia(S.borradores[s.id]); delete S.conflictos[s.id]; olvidar(s.id); olvidarAbiertos(s.id); }
     S.notas[s.id] = nota; render();
     if (!bien) return;
     // aplicado: la versión nueva ya está; abierto: se pregunta hasta que entre o se cierre, y entonces se relee (decisión 10)

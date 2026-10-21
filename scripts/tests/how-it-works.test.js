@@ -1318,6 +1318,28 @@ test('T6b Usos_NombreYPasoSeCuidan @story-2.63 @ac-5 @ac-8 (pase adversarial) �
   assert.ok(nuevo.problems.some((x) => /no pasa de revisar el cambio a validar la historia/.test(x)));
 });
 
+test('T12 TextosYTema @story-2.63 @ac-12 — los textos del editor en es y en, el inglés sin castellano; los estilos con las variables del tema y la regla del teléfono', () => {
+  // 🔴 rojo: un texto del editor sin su inglés (o con castellano), un color escrito a mano, o las solapas sin la regla
+  // de pantalla angosta.
+  const claves = Object.keys(TX().TEXTOS).filter((k) => /^comoTrabaja\.(uso|campo|profundidad\.|rutas|quitarRuta|prefijo|prompt|condicionPropia|verComoEsta|herramienta\.|lte\.|err\.(usos|usoCambiado|profundidad|nombreEnUso|modelo)|revisorSoloLee|motivo)|^pantalla\.lte\./.test(k));
+  assert.ok(claves.length >= 40, `los textos del editor (${claves.length})`);
+  for (const k of claves) {
+    const e = TX().TEXTOS[k];
+    assert.ok(e && e.es && e.en, `${k}: es y en`);
+    assert.deepStrictEqual(enCastellano([TX().t('en', k, { ruta: 'x', prefijo: 'X', modelo: 'x', revisor: 'x', techo: 'x', motivo: 'x', n: 2 })]), [], `${k}: el inglés sin castellano`);
+  }
+  // los estilos del editor: sólo variables del tema (nada de colores escritos a mano)
+  const css = fs.readFileSync(path.join(ROOT, 'scripts', 'site', 'static', 'site.css'), 'utf8');
+  const editor = css.split('\n').filter((l) => /^\.(ct-solapa|ct-usos|ct-uso|ct-campo|ct-rutas|ct-x|ct-propia|ct-panel \.ct-rutas|ct-etiqueta|ct-herramientas|ct-casilla|lte)/.test(l));
+  assert.ok(editor.length >= 10, 'las reglas del editor');
+  for (const l of editor) assert.doesNotMatch(l, /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/, `sólo variables del tema: ${l}`);
+  // en pantalla angosta: las solapas se parten en renglones y las casillas van de a una (sin scroll lateral)
+  assert.match(css, /\.ct-solapas\{[^}]*flex-wrap:wrap/);
+  const angosta = css.slice(css.indexOf('@container (max-width:700px)'));
+  assert.match(angosta, /\.ct-herramientas\{grid-template-columns:1fr\}/);
+  assert.match(angosta, /\.ct-dos\{grid-template-columns:1fr\}/);
+});
+
 test('T7 CondicionPropia_ViajaIgual @story-2.63 @ac-6 — una condición escrita a mano se muestra de sólo lectura y viaja sin cambios', () => {
   // 🔴 rojo: la condición propia sale como «la condición escrita en el paquete» y se pierde al elegir otra.
   const cuando = { any: [{ added: { pattern: ':\\s*IBackendPlugin\\b', extensions: ['.cs'] } }, { detection: 'csModified' }] };
