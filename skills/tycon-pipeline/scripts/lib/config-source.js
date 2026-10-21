@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * config-source.js — de dónde leen los FRENOS la config del repo (FIX-1, 2026-08-25).
+ * config-source.js — de dónde leen los FRENOS la config del repo.
  *
  * ── EL PROBLEMA QUE CIERRA ──────────────────────────────────────────────────────────────────────
  * Casi todos los frenos del arnés consultan `.tycon/advisors.yaml` **como está en la carpeta de
@@ -9,14 +9,13 @@
  * ningún commit— para apagarlos. Y como un `.yaml` no es código, tampoco despierta a los revisores
  * automáticos ni al freno de commit. El resultado no es un error: es **silencio**.
  *
- * Reproducido el 2026-08-25 (auditoría del arnés, casos C1/C3/C8/C9): con
- * `stories.id_pattern: '^ZZZ-[0-9]+$'` escrito sólo en la carpeta, **ninguna story es una story** y
+ * Ejemplo: con `stories.id_pattern: '^ZZZ-[0-9]+$'` escrito sólo en la carpeta, **ninguna story es una story** y
  * los dos frenos que impiden cerrar una story sin evidencia —el del commit y el de la edición—
  * dejan de existir, con exit 0 y cero mensajes.
  *
- * El arnés YA había decidido no permitir esto en un freno hermano: `pipeline.story_gate` se lee de
+ * El arnés ya decide no permitir esto en un freno hermano: `pipeline.story_gate` se lee de
  * lo COMMITEADO, y su comentario explica por qué — *"si apagarlo fuera un Write a un yaml, el
- * agente lo apagaría en un turno"*. Lo que faltaba era extender esa disciplina al resto de las
+ * agente lo apagaría en un turno"*. Esa disciplina se extiende al resto de las
  * llaves que aflojan frenos. Esto es esa extensión.
  *
  * ── LA REGLA, EN UNA FRASE ──────────────────────────────────────────────────────────────────────
@@ -31,9 +30,8 @@
  *     ids de story, los nombres de carpeta que marcan el frente). Se gatea si matchea lo commiteado
  *     **o** lo de la carpeta: ampliar entra al instante, recortar espera al commit.
  *
- * 🔴 **La unión, no "manda lo commiteado" a secas**: el commit que *introduce* un patrón nuevo
- * —caso real en el backend de un producto del equipo, que hace visibles 18 stories `AP-*`/`CO-*`— dejaría esas stories
- * fuera del freno justo en ese commit si sólo mirara HEAD — guides/maintaining/incident-log.md#config-de-frenos-en-la-carpeta-2026-08-25
+ * 🔴 **La unión, no "manda lo commiteado" a secas**: el commit que *introduce* un patrón nuevo (por ejemplo, uno que hace
+ * visibles 18 stories `AP-*`/`CO-*`) dejaría esas stories fuera del freno justo en ese commit si sólo mirara HEAD.
  *
  * ── EFECTO DE BORDE, A PROPÓSITO ────────────────────────────────────────────────────────────────
  * El primer commit que declare un **repo hermano nuevo** dará rojo hasta que ese commit esté hecho.
@@ -41,8 +39,8 @@
  * adivinando.
  *
  * Costo: una lectura de git (~10ms) que el freno hermano ya paga, cacheada por proceso. El
- * comportamiento sólo cambia cuando la carpeta difiere de lo commiteado — medido, `.tycon/` se toca
- * entre 2 y 15 veces cada 6 meses por repo.
+ * comportamiento sólo cambia cuando la carpeta difiere de lo commiteado, y `.tycon/` se toca pocas veces
+ * (entre 2 y 15 por repo cada 6 meses).
  */
 
 const fs = require('fs');
@@ -110,9 +108,9 @@ function textoParaFreno(repoRoot) {
  * el COMMITEADO. Sin historia git todavía, la carpeta.
  *
  * Existe para las escotillas de emergencia — archivos de una palabra como `.tycon/atdd-gate`, que
- * apagan un control. Se leían de la carpeta: escribir `off` sin commitear alcanzaba, y crear ese
+ * apagan un control. Leídos de la carpeta, escribir `off` sin commitear alcanzaría, y crear ese
  * archivo tampoco genera evento de implementación (`.tycon` está en NEVER_CODE_SEGMENTS y los
- * archivos sin extensión no están en CODE_EXTS), así que no lo miraba nada.
+ * archivos sin extensión no están en CODE_EXTS), así que no lo mira nada.
  *
  * @param {string} repoRoot
  * @param {string} relativo  ruta dentro del repo, ej. `.tycon/atdd-gate`

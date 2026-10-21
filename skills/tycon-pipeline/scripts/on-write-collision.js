@@ -2,8 +2,8 @@
 /**
  * tycon-pipeline PreToolUse hook — Write/Edit cross-session collision detection.
  *
- * Fix robusto 2026-05-20 (caso disparador Story 4.2). Defense-in-depth para
- * cuando `on-prompt.js` cross-session detect falló (user ignoró reminder).
+ * Defensa en profundidad: actúa cuando la detección entre sesiones de `on-prompt.js`
+ * falló (el usuario ignoró el reminder).
  *
  * Triggered ANTES de cada Write|Edit. Detecta el patrón "estoy por crear/modificar
  * un archivo que ya fue tocado por OTRA sesión del pipeline".
@@ -22,7 +22,7 @@
  * Hook output NO bloquea (exit 0 siempre) — es advisory. El agente debe leer
  * el reminder y decidir.
  *
- * H10 2026-05-21: refactor a `handle(event)` exportable para que el dispatcher
+ * `handle(event)` exportable para que el dispatcher
  * lo corra in-process (1 spawn node por evento en vez de 1 por hook). El shim CLI
  * del fondo preserva el comportamiento standalone idéntico (backward compat + tests).
  *
@@ -34,16 +34,15 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
-// Las formas de una ruta de Windows (story 8.17 del arnés, W1). Sin la lib, la comparación de siempre.
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
+// Las formas de una ruta de Windows. Sin la lib, la comparación de siempre.
 let nativePath = (p) => p;
-try { ({ nativePath } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
+try { ({ nativePath } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: se compara el texto */ }
 
 /**
  * ¿Las dos rutas nombran el mismo archivo? Fuera de Windows, texto contra texto, como siempre. En Windows el mismo
  * archivo se escribe de varias formas (`C:\a\b`, `C:/a/b`, `/c/a/b`, con otras mayúsculas): comparadas como texto, lo
- * que anotó una sesión y lo que trae el evento de otra podían no coincidir y el aviso no salía. Medido en el banco
- * del arnés en Windows (corridas 11694 y 11699).
+ * que anotó una sesión y lo que trae el evento de otra pueden no coincidir y el aviso no sale.
  */
 function samePath(a, b, platform = process.platform) {
   if (platform !== 'win32') return a === b;
@@ -166,7 +165,7 @@ function handle(rawEvent) {
 
 module.exports = { handle, samePath };
 
-// ── CLI shim (standalone) — preserva el comportamiento original byte-a-byte ──
+// ── CLI shim (standalone) — preserva el comportamiento standalone ──
 if (require.main === module) {
   let raw = null;
   try {

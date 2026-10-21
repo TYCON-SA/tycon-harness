@@ -2,14 +2,12 @@
  * story-gate.js — el portón de CARRIL: en un repo que trabaja con el arnés TYCON, no se edita código
  * sin haber decidido por qué carril va el trabajo (story + pipeline, o ajuste chico declarado).
  *
- * ── POR QUÉ EXISTE (2026-08-19) ──────────────────────────────────────────────────────────────────
- * Caso disparador, máquina de otro dev del equipo: pidió una funcionalidad; el agente anunció que
- * iba a armar la story (Mary+GOLD) y el pipeline… y se largó a codear igual, después de un par de
- * preguntas. Segundo síntoma, del mismo dev: "empieza el pipeline, va tomando confianza y se
- * saltea etapas; lo acomodo y vuelve". Las dos cosas tienen la misma causa: TODO lo que pasa ANTES
- * de que exista un marker era advisory (un `<system-reminder>` que el modelo puede leer y seguir de
- * largo), y dentro del pipeline el orden de los steps tampoco estaba gateado (ver `complete-step`
- * en marker.js). La regla del equipo es la de siempre: **un control que hay que acordarse de
+ * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────
+ * Ante una funcionalidad pedida, el agente puede anunciar que va a armar la story (Mary+GOLD) y el
+ * pipeline… y largarse a codear igual. Y dentro del pipeline puede ir tomando confianza y saltearse
+ * etapas. Las dos cosas tienen la misma causa: TODO lo que pasa ANTES de que exista un marker es
+ * advisory (un `<system-reminder>` que el modelo puede leer y seguir de largo), y el orden de los
+ * steps dentro del pipeline lo gatea `complete-step` (ver marker.js). La regla del equipo: **un control que hay que acordarse de
  * respetar es un control que no corre** — lo que funciona en este harness (ATDD pre-edit, DoD,
  * suite completa) funciona porque algo lo DENIEGA, no porque algo lo recuerda.
  *
@@ -20,7 +18,7 @@
  *
  *   BLOQUEA siempre · (state-dir) un Write/Edit bajo `~/.claude/.tycon-pipeline/` — el único escritor
  *                     legítimo del estado del pipeline es `marker.js`; fabricar un marker/ad-hoc con
- *                     la tool Write era el bypass más barato (hallazgo R4 del review adversarial).
+ *                     la tool Write es el bypass más barato.
  *
  *   PASA si:  · el archivo no es código (md, json, yaml, specs, docs, salidas del arnés…)
  *             · está en un repo del harness (agent-skills / el arnés)
@@ -28,12 +26,11 @@
  *               juzgan el portón ATDD, los gates del complete-step y el DoD. La ÚNICA excepción es
  *               el sub-portón de PLAN (abajo). 🔴 El marker se mira ANTES que cualquier criterio de
  *               repo: un marker con step 3 pendiente frena aunque el descubrimiento de stories no
- *               vea nada (hallazgo R2).
+ *               vea nada.
  *             · el repo NO trabaja con el arnés: sin `.tycon/` y sin stories Mary+GOLD (propias) —
  *               un script suelto, un repo legacy: acá no hay carril que decidir. 🔴 `.tycon/` es la
  *               señal principal: en 4 de 6 productos del equipo las stories viven en OTRO repo git
- *               que el código (Ceibo, Totora, Bigua, FRESNO) y "repo con stories" dejaba el
- *               portón apagado justo ahí (hallazgo R1, medido).
+ *               que el código, y "repo con stories" dejaría el portón apagado justo ahí.
  *             · hay carril AD-HOC declarado para esta sesión (hotfix / ajuste chico SIN story) y
  *               no se pasó del cupo de archivos de implementación.
  *
@@ -42,27 +39,27 @@
  *                           código antes de que el user apruebe el plan. Esto es lo que convierte
  *                           "tomó confianza y se salteó el HITL" en algo que no puede pasar.
  *               · (adhoc-cap) el ad-hoc ya tocó su cupo de archivos de implementación distintos →
- *                           eso ya no es un hotfix, es una feature: story + pipeline (o re-declarar
+ *                           eso no es un hotfix, es una feature: story + pipeline (o re-declarar
  *                           con cupo mayor y motivo, que queda logueado).
  *
  * ── CALIBRADO (por qué bloquea poco y dónde están las salidas) ──────────────────────────────────
  * El portón ATDD enseñó que un gate con falsos positivos se apaga, y apagado no sirve. Por eso:
  *   · Sólo CÓDIGO (`CODE_EXTS` de atdd-order + sql/css/html/razor…). `.md`, `.json`, `.yaml` pasan
  *     siempre — crear la story, tocar `plugin.json`, escribir la evidencia del DoD, todo eso es
- *     trabajo legítimo sin carril. (Decisión explícita, R15: implementación hecha 100% en config
+ *     trabajo legítimo sin carril. (Explícito: implementación hecha 100% en config
  *     —`plugin.json`, `appsettings`, `.csproj`, `.bpmn`— no dispara el carril.)
  *   · El carril ad-hoc es UN comando (`marker.js adhoc set '{"reason":"…"}'`) — pero el mensaje de
  *     bloqueo exige que el USER lo decida, y reconoce que si el user ya pidió "Barry"/quick-dev/un
- *     hotfix con esas palabras, ESO es la decisión (no se re-pregunta, R8). Queda en `adhoc.log`.
- *   · Resume cross-session (R6): antes de decir "no hay carril", el handler busca markers de OTRAS
+ *     hotfix con esas palabras, ESO es la decisión (no se re-pregunta). Queda en `adhoc.log`.
+ *   · Resume cross-session: antes de decir "no hay carril", el handler busca markers de OTRAS
  *     sesiones cuyo repo contenga el archivo y ofrece `adopt-session`.
  *   · Kill-switch del dev: env `TYCON_STORY_GATE=off` (el agente no puede setearlo: las env de los
  *     hooks vienen del proceso de Claude Code) — apaga los DOS hooks enteros (carril, plan y state-dir).
  *     Por repo: `.tycon/advisors.yaml → pipeline.story_gate: false`, leído de lo COMMITEADO (`git show
- *     HEAD:`), no del working tree — si no, apagarlo era un Write a un yaml (R5). La config por repo
- *     apaga SOLO el carril (no-lane / adhoc-cap): el sub-portón de plan y el state-dir siguen (H7).
+ *     HEAD:`), no del working tree — si no, apagarlo sería un Write a un yaml. La config por repo
+ *     apaga SOLO el carril (no-lane / adhoc-cap): el sub-portón de plan y el state-dir siguen.
  *   · Es un portón ANTI-OLVIDO, no anti-evasión: el agente puede declarar el ad-hoc él mismo. Lo
- *     que cambia es que saltearse el carril deja de ser una omisión silenciosa y pasa a ser un
+ *     que se logra es que saltearse el carril deja de ser una omisión silenciosa y pasa a ser un
  *     comando explícito, logueado y auditable.
  *
  * Función PURA: sin fs, sin Date, sin process — recibe el estado y devuelve el veredicto. El I/O
@@ -83,8 +80,8 @@ const EXTRA_CODE_EXTS = new Set([
 
 // Segmentos de path que NUNCA son "código de la story": salidas de build, dependencias, y las
 // carpetas del propio arnés dentro del repo (evidencia, config, memoria, waivers).
-// `.claude` se excluye SALVO que el segmento siguiente sea `worktrees` (R12: un worktree de la
-// tool Agent puede colgar de `<repo>/.claude/worktrees/<name>` y ahí SÍ hay código).
+// `.claude` se excluye SALVO que el segmento siguiente sea `worktrees`: un worktree de la
+// tool Agent puede colgar de `<repo>/.claude/worktrees/<name>` y ahí SÍ hay código.
 const NEVER_CODE_SEGMENTS = new Set([
   'node_modules', 'bin', 'obj', 'dist', 'build', 'out', 'coverage', 'target', 'vendor',
   '.git', '.advisors', '.tycon', '.engram', '.dashboard', '.specs',
@@ -92,14 +89,14 @@ const NEVER_CODE_SEGMENTS = new Set([
 
 // Repos del harness: se editan TODO el tiempo sin story ni pipeline (es el trabajo sobre el
 // harness mismo).
-// 🔴 Quién es un repo del harness lo dice su REMOTO, no la carpeta (2026-09-17). Por segmento de
-// path, un clon descartable del arnés (…/scratchpad/tcg) chocaba con el portón que en el checkout
-// canónico no existe, y —la cara— un repo de PRODUCTO clonado debajo de una carpeta llamada
-// el arnés pasaba el portón sin story ni pipeline ni revisores, en silencio. El remoto
+// 🔴 Quién es un repo del harness lo dice su REMOTO, no la carpeta. Por segmento de
+// path, un clon descartable del arnés (…/scratchpad/tcg) chocaría con el portón que en el checkout
+// canónico no existe, y —peor— un repo de PRODUCTO clonado debajo de una carpeta con el nombre
+// del arnés pasaría el portón sin story ni pipeline ni revisores, en silencio. El remoto
 // lo lee el BORDE (story-gate-io.js → isHarnessRepo, con el criterio único del arnés:
 // ~/.claude/tycon-harness/scripts/lib/harness-repo.js) y llega acá como `isHarness`. Esta lista queda
 // como RESPALDO: decide sólo cuando nadie resolvió el dato (llamador viejo, lib del arnés ausente).
-// Los dos nombres del arnés (story 8.19, AC 12): el repo interno y el público, que se clona con el nombre del lugar.
+// Los dos nombres del arnés: el repo interno y el público, que se clona con el nombre del lugar.
 // Escritos acá: las skills pueden vivir en un clon aparte sin scripts/ al lado (copia declarada en
 // scripts/tests/fixtures/harness-place-names.json → recognizers).
 const HARNESS_REPO_SEGMENTS = new Set(['agent-skills', 'tycon-claude-guides', 'tycon-harness']);
@@ -231,12 +228,12 @@ function computeStoryGate({
  * @param {object} r            veredicto de computeStoryGate
  * @param {object} ctx          { filePath, repoRoot, marker, adhoc, otherMarkers: [{sessionId, storyId, repoPath}], via }
  */
-// Story 7.30: ¿la story del marcador lleva maqueta? (mockup.screenStory, perezoso). Ante un error, el mensaje de hoy.
+// ¿La story del marcador lleva maqueta? (mockup.screenStory, perezoso). Ante un error, el mensaje común.
 function storyNeedsMockup(marker) {
   try {
     const sp = marker && marker.storyPath;
     if (!sp) return false;
-    // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js (pase adversarial)
+    // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js
     const abs = path.isAbsolute(sp) ? sp : path.join(marker.repoPath || process.cwd(), sp);
     return require('../mockup.js').screenStory(abs).screen === true;
   } catch { return false; }
@@ -359,26 +356,25 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
   ].join('\n');
 }
 
-// ── Carril: se DECLARA o se PREGUNTA — nunca se adivina (2026-08-27) ────────────────────────────
-// Acá vivió detectLane: ~120 líneas de expresiones regulares que leían el prompt del user y fijaban
-// el carril de la sesión ('pipeline' si pedía una story, 'adhoc' si pedía un atajo). Se BORRÓ a
-// propósito, y la historia de por qué es la razón para que no vuelva:
+// ── Carril: se DECLARA o se PREGUNTA — nunca se adivina ────────────────────────────
+// Un detector por expresiones regulares (~120 líneas que lean el prompt del user y fijen
+// el carril de la sesión: 'pipeline' si pide una story, 'adhoc' si pide un atajo) está descartado
+// a propósito; los casos que lo justifican son la razón para que no vuelva:
 //
-//   · 2026-08-25: los patrones matcheaban "tycon-pipeline" DENTRO de una ruta pegada → carril
-//     clavado toda la sesión → un hotfix legítimo denegado sin salida (#carril-sin-salida).
-//   · 2026-08-27 mañana: "arranca con la 1.1" no matcheaba NADA → una story entera se implementó
-//     por fuera del pipeline sin que el portón se enterara (#carril-no-detecta).
-//   · 2026-08-27 tarde: el arreglo del punto anterior agregó "dale/vamos/hacé" a los verbos → 19 de
-//     25 frases cotidianas fijaban carril ("dale, probá con 2.5 segundos") y ANULABAN un ad-hoc ya
-//     declarado — la reedición del primer incidente, con superficie más ancha. Lo cazó una revisión
-//     adversarial ANTES de que le pasara a alguien; las 19 frases quedaron en el test como cerca.
+//   · Un patrón que matchee "tycon-pipeline" DENTRO de una ruta pegada deja el carril
+//     clavado toda la sesión: un hotfix legítimo queda denegado sin salida.
+//   · Una frase como "arranca con la N.M" tiene que matchear: si no, una story entera se implementa
+//     por fuera del pipeline sin que el portón se entere.
+//   · Sumar verbos cotidianos ("dale/vamos/hacé") a la lista fija de carril fija carril en 19 de
+//     25 frases cotidianas ("dale, probá con 2.5 segundos") y anula un ad-hoc ya declarado. Es el
+//     caso con más superficie, y las 19 frases quedan en el test como cerca.
 //
-// Tres incidentes en tres días, y cada arreglo produjo la falla opuesta: apretar los patrones traba
+// Cada arreglo de estos produce la falla opuesta: apretar los patrones traba
 // al dev; aflojarlos deja pasar al agente. No hay punto medio porque el problema no es de
 // calibración: es que EL CASTELLANO NO SE DEJA REGEXEAR, y un freno que adivina castellano falla
 // para un lado o para el otro con cada frase nueva del equipo.
 //
-// El diseño actual no adivina:
+// El diseño no adivina:
 //   · Carril PIPELINE = hay marker (el pipeline CORRIÓ su Step 0 — estado real, no una frase).
 //   · Carril AD-HOC   = `marker.js adhoc set` citando palabras del user (reasonInPrompts, mecánico)
 //                       o, si la cita no alcanza, el clasificador por modelo leyendo los prompts
@@ -386,12 +382,12 @@ function blockMessage(r, { filePath, repoRoot, marker, otherMarkers = [], via } 
 //                       (lib/lane-classifier.js; sin modelo, se deniega y se le pregunta al user).
 //   · Sin carril       = el portón bloquea el primer toque de código y el agente PREGUNTA en
 //                       castellano llano. Una pregunta por sesión: ése es el costo total de no
-//                       adivinar, y es más barato que cualquiera de los tres incidentes.
+//                       adivinar, y es más barato que cualquiera de esos casos.
 
 // Pedido explícito de implementar una STORY (id N.M o pipeline nombrado). Fuente ÚNICA: los usa
 // el reminder de on-prompt.js (avisar "esto va por pipeline") y el veto mecánico de marker.js
-// (H1 de la revisión adversarial 2026-08-27: sin modelo disponible, el agente podía citar
-// "implementemos la story 1.1" como motivo de un AD-HOC y pasar — el texto citado ES un pedido de
+// (sin modelo disponible, el agente puede citar
+// "implementemos la story X" como motivo de un AD-HOC y pasar — el texto citado ES un pedido de
 // story, y eso se detecta sin adivinar nada: el user lo escribió con id y todo).
 // 🔴 Esto NO es detectLane volviendo: no corre en cada prompt ni fija carril — juzga UNA
 // declaración explícita, mirando sólo el prompt que la declaración cita como su autorización.

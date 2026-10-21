@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 /**
- * adversarial-result.test.js — el resultado del pase adversarial deja de ser opcional
- * (story 1.8 del arnés, 2026-09-18).
+ * adversarial-result.test.js — el resultado del pase adversarial no es opcional.
  *
- * 🔴 Caso disparador (story 1.6): el pase confirmó 21 hallazgos, los 21 se arreglaron con su prueba, y el 5b se
- *    cerró con `set-flag deepReviewDone true`; el paso 8 cerró a las 04:00:29 y el resultado se anotó a las
- *    04:06:46, sólo porque el dev preguntó. Medido: 4 de las 9 corridas que lanzaron el pase desde el 14/9 lo
- *    cerraron con la bandera y sin resultado, y 3 de esas 4 pasaron el paso 8 igual. Y las dos que anotaron
- *    tuvieron que llamar «diferido» a lo que estaba arreglado con una prueba escrita a mano.
+ * Sin esto, el 5b se puede cerrar con `set-flag deepReviewDone true` sin anotar qué confirmó el pase, y el paso 8
+ * cierra igual: los hallazgos arreglados con una prueba escrita a mano quedan sin constancia, o se anotan como
+ * «diferidos».
  *
  * Qué fija esta suite: (1) la bandera ya no se escribe a mano; (2) el salteo lo decide el portón
  * (`pipeline.js deep-review-gate` REAL, como proceso — el doble de un portón que no imita al real confirma lo
@@ -15,7 +12,7 @@
  * registro de ediciones; (4) el paso 8 no cierra sin el pase atendido, y `DOD_BYPASS` no lo abre; (5) lo del pase
  * no se hereda entre stories.
  *
- * Nunca se toca el `gates.log` real: cada caso corre con un HOME falso (commit 62d37e6 del arnés).
+ * Nunca se toca el `gates.log` real: cada caso corre con un HOME falso.
  *
  * Correr: node --test skills/tycon-pipeline/scripts/tests/adversarial-result.test.js
  */
@@ -36,7 +33,7 @@ const LANZADO = '2026-09-18T01:00:00.000Z';
 const DESPUES = '2026-09-18T02:00:00.000Z';
 const ANTES = '2026-09-18T00:30:00.000Z';
 
-// Los nombres viejos de las opciones de marker.js (story 8.9 del arnés, tanda B3b) salen de la tabla del puente,
+// Los nombres viejos de las opciones de marker.js salen de la tabla del puente,
 // nunca escritos acá: el freno y el termómetro cuentan los nombres de todo lo que se publica, pruebas incluidas.
 const { OWN_ARGS } = require(path.join(SCRIPTS, 'lib', 'legacy-names.js'));
 const VIEJA_DE = Object.fromEntries(Object.entries(OWN_ARGS['skills/tycon-pipeline/scripts/marker.js'].option)
@@ -146,7 +143,7 @@ const lineaDelFreno = (home) => lineas(home, 'gates.log').filter((l) => l.name =
 // ─────────────────────────────── La bandera deja de escribirse a mano ───────────────────────────────
 
 test('T1 SetFlag_DeepReviewDone_SeNiega @story-1.8 @ac-1', () => {
-  // 🔴 rojo previo: `deepReviewDone` está en VALID_FLAGS y cmdSetFlag la escribe sin mirar (exit 0).
+  // Sin el freno, `deepReviewDone` (que está en VALID_FLAGS) lo escribiría cmdSetFlag sin mirar (exit 0).
   const home = casa(); const SID = 't1';
   writeFakeMarker(home, SID);
   const antes = crudoMarker(home, SID);
@@ -181,7 +178,7 @@ test('T3 Set_PayloadConDeepReviewDone_NoLoEscribe @story-1.8 @ac-3', () => {
 // ─────────────────────────── El salteo lo decide el portón (mark-adversarial-skipped) ───────────────────────────
 
 test('T4 Skipped_PortonLow_AnotaSalteoYCierra5b @story-1.8 @ac-4', () => {
-  // 🔴 rojo previo: el comando no existe («comando desconocido», exit 2).
+  // Sin el comando, marker.js responde «comando desconocido» (exit 2).
   const home = casa(); const SID = 't4'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
   const r = correr(home, SID, ['mark-adversarial-skipped', '--files', 'scripts/x.js']);
@@ -214,7 +211,7 @@ test('T5 Skipped_PortonNormal_SeNiega @story-1.8 @ac-5', () => {
   assert.equal(r.status, 2);
   assert.match(r.stderr, /NORMAL/, 'stderr trae el reason del portón');
   assert.match(r.stderr, /Lanzamiento temprano|lanz/i, 'y la instrucción: el pase se lanza');
-  // Desde la story 7.19 el portón que el salteo consulta deja su veredicto en la corrida (`adversarialGate`, AC 1):
+  // El portón que el salteo consulta deja su veredicto en la corrida (`adversarialGate`, AC 1):
   // `next` lo usa para pedir el lanzamiento. Lo que no se anota es el salteo ni el cierre del 5b.
   const despues = leerMarker(home, SID);
   assert.strictEqual(despues.adversarialGate && despues.adversarialGate.run, true, 'el veredicto «corre» queda anotado');
@@ -224,7 +221,7 @@ test('T5 Skipped_PortonNormal_SeNiega @story-1.8 @ac-5', () => {
 });
 
 test('T6 Skipped_FilesEnUnSoloArgumento_SeNiega @story-1.8 @ac-6', () => {
-  // El caso 9.1: `--files` llegó sin partir → 1 archivo → LOW → salteo que «selló el step».
+  // Un `--files` sin partir cuenta 1 archivo → LOW → salteo que «selló el step».
   const home = casa(); const SID = 't6'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md') });
   const antes = crudoMarker(home, SID);
@@ -311,7 +308,7 @@ test('T11 Skipped_SinCorrida_SeNiega @story-1.8 @ac-9', () => {
 // ─────────────────────────── El resultado cierra el 5b (mark-adversarial-result) ───────────────────────────
 
 test('T12 Result5b_CierraEl5bEnLaMismaEscritura @story-1.8 @ac-10', () => {
-  // 🔴 rojo previo: mark-adversarial-result no escribe deepReviewDone.
+  // Sin el comando, mark-adversarial-result no escribiría deepReviewDone.
   const home = casa(); const SID = 't12';
   writeFakeMarker(home, SID);
   const r = correr(home, SID, ['mark-adversarial-result', '0', '--type', '5b']);
@@ -453,7 +450,7 @@ test('T22 Result_FormaDeHoy_SigueAndando @story-1.8 @ac-15', () => {
 // ─────────────────────────── El paso 8 no cierra sin el pase atendido ───────────────────────────
 
 test('T23 Paso8_LanzadoSinResultado_Bloquea @story-1.8 @ac-16', () => {
-  // 🔴 rojo previo: complete-step 8 no mira el pase (cierra con dodRuntimeChecked y el resto).
+  // Sin el freno, complete-step 8 no mira el pase y cierra con dodRuntimeChecked y el resto.
   const home = casa(); const SID = 't23'; const repo = mkRepo();
   enPaso8(home, SID, repo, { adversarial: lanzamiento('wf_SIN'), adversarialPasses: [] });
   const r = correr(home, SID, ['complete-step', '8']);
@@ -569,7 +566,7 @@ test('T30 Paso8_RegistroIlegible_Bloquea @story-1.8 @ac-23', () => {
 // ─────────────────────────── Lo que no se hereda entre stories ───────────────────────────
 
 test('T31 Set_StoryNueva_ReseteaLoAdversarial @story-1.8 @ac-24', () => {
-  // 🔴 rojo previo: cmdSet reseteaba adversarial y deepReviewDone, pero no adversarialPasses ni adversarialRegressions.
+  // Sin esto, cmdSet resetea adversarial y deepReviewDone pero no adversarialPasses ni adversarialRegressions.
   const home = casa(); const SID = 't31';
   writeFakeMarker(home, SID, {
     adversarialPasses: [{ ts: DESPUES, tipo: '5b', confirmados: 0 }],
@@ -632,7 +629,7 @@ test('T34 Paso8_FrenosExistentes_MismaLinea @story-1.8 @ac-31', () => {
   assert.equal(r.status, 2);
   const f = lineas(home, 'gates.log').filter((x) => x.name === 'findings-json');
   assert.equal(f.length, 1);
-  // `storyPath` lo suma a cada línea la story 1.17.1 (con número repetido, sólo cuenta la línea que trae la ruta propia):
+  // `storyPath` se suma a cada línea (con número repetido, sólo cuenta la línea que trae la ruta propia):
   // como `ts`, `sessionId` y `repoPath`, va aparte de lo que esta prueba compara.
   const { ts, sessionId, repoPath, storyPath, ...campos } = f[0];
   assert.ok(storyPath && storyPath.endsWith('a.md'), `la línea trae la ruta de la story: ${storyPath}`);
@@ -659,8 +656,7 @@ test('T40 Textos_SinSetFlagDeepReviewDone @story-1.8 @ac-27', () => {
 });
 
 test('T42 Next_NotaDel5b_NombraLosComandos @story-1.8 @ac-27 @ac-30', () => {
-  // 🔴 rojo previo: el `note` del 5b decía «Al completar: marker.js set-flag deepReviewDone true» — el comando
-  //    que esta story hace salir 2 (decisión D1 del checkpoint del plan).
+  // El `note` del 5b no puede decir «Al completar: marker.js set-flag deepReviewDone true»: ese comando sale 2.
   const d = next(casa(), 't42', mkRepo(), {});
   assert.equal(d.next_step, '5b');
   assert.ok(!d.note.includes('set-flag deepReviewDone'), d.note);
@@ -668,8 +664,7 @@ test('T42 Next_NotaDel5b_NombraLosComandos @story-1.8 @ac-27 @ac-30', () => {
   assert.match(d.note, /mark-adversarial-skipped/);
 });
 
-// ─────────────────── Lo que encontró el pase adversarial de esta misma corrida (AC 34-41) ───────────────────
-// 16 confirmados en 8 clases (Opus, 31 agentes). Cada caso nace en rojo contra la primera versión del código.
+// ─────────────────── Casos límite del resultado (AC 34-41) ───────────────────
 
 /** Un resultado con UNA prueba propia; devuelve el proceso. */
 function propia(home, sid, ruta, { cwd } = {}) {
@@ -677,8 +672,8 @@ function propia(home, sid, ruta, { cwd } = {}) {
 }
 
 test('T43 Result_En_AliasDeEnlace_Acepta @story-1.8 @ac-34', () => {
-  // 🔴 rojo previo: «fuera del repo» se decidía sobre la ruta ESCRITA contra el repo RESUELTO: una ruta absoluta
-  //    escrita igual que marker.repoPath (/tmp en vez de /private/tmp) quedaba afuera.
+  // «Fuera del repo» se decide sobre la ruta resuelta: si se comparara la ruta ESCRITA contra el repo RESUELTO, una
+  // ruta absoluta escrita igual que marker.repoPath (/tmp en vez de /private/tmp) quedaría afuera.
   const home = casa(); const SID = 't43'; const repo = mkRepo();
   const alias = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'res-adv-alias-')), 'repo');
   fs.symlinkSync(repo, alias);
@@ -690,7 +685,7 @@ test('T43 Result_En_AliasDeEnlace_Acepta @story-1.8 @ac-34', () => {
 });
 
 test('T44 Result_En_MayusculasDistintas_Acepta @story-1.8 @ac-34', () => {
-  // 🔴 rojo previo: la (d) comparaba exacto después de fs.realpathSync (JS), que conserva las mayúsculas como vienen.
+  // La (d) compara sin distinguir mayúsculas: fs.realpathSync (JS) las conserva como vienen y una comparación exacta fallaría.
   const home = casa(); const SID = 't44'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), adversarial: lanzamiento(),
     fileEvents: [{ path: path.join(repo, 'TESTS', 'X.test.js'), ts: DESPUES }] });
@@ -700,7 +695,7 @@ test('T44 Result_En_MayusculasDistintas_Acepta @story-1.8 @ac-34', () => {
 });
 
 test('T45 Result_En_EditadaPorConsola_Acepta @story-1.8 @ac-35', () => {
-  // 🔴 rojo previo: sin evento en fileEvents (edición por sed/heredoc: on-edit.js sólo escucha Edit|Write) → exit 2.
+  // Sin evento en fileEvents (edición por sed/heredoc: on-edit.js sólo escucha Edit|Write) sale 2.
   const home = casa(); const SID = 't45'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), adversarial: lanzamiento(), fileEvents: [] });
   const t = Date.parse(DESPUES) / 1000; fs.utimesSync(path.join(repo, 'tests', 'x.test.js'), t, t);
@@ -718,8 +713,8 @@ function repoHermano() {
 }
 
 test('T46 Result_En_RepoHermanoEditado_Acepta @story-1.8 @ac-36', () => {
-  // 🔴 rojo previo: toda ruta fuera de marker.repoPath salía «fuera del repo» — en esta misma story, las pruebas
-  //    viven en agent-skills y el repo de la corrida es el arnés.
+  // Una ruta fuera de marker.repoPath no es «fuera del repo» si es de un repo hermano de la corrida: las pruebas
+  // pueden vivir en agent-skills mientras el repo de la corrida es el arnés.
   const home = casa(); const SID = 't46'; const repo = mkRepo(); const r2 = repoHermano();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), adversarial: lanzamiento(),
     fileEvents: [{ path: path.join(r2, 'tests', 'y.test.js'), ts: DESPUES }] });
@@ -740,7 +735,7 @@ test('T47 Result_En_RepoHermanoNoEditado_SeNiega @story-1.8 @ac-36', () => {
 });
 
 test('T48 Paso8_ResultadoSinLanzamiento_Pasa @story-1.8 @ac-37', () => {
-  // 🔴 rojo previo: el resultado cerraba el 5b (next avanzaba) pero el paso 8 decía «no-atendido» para siempre.
+  // El resultado que cierra el 5b (next avanza) también tiene que dar por atendido el pase en el paso 8.
   const home = casa(); const SID = 't48'; const repo = mkRepo();
   enPaso8(home, SID, repo, { adversarialPasses: [{ ts: DESPUES, tipo: '5b', confirmados: 0 }] });
   const r = correr(home, SID, ['complete-step', '8']);
@@ -752,7 +747,7 @@ test('T48 Paso8_ResultadoSinLanzamiento_Pasa @story-1.8 @ac-37', () => {
 });
 
 test('T49 Result_Pruebas_CuentaSoloDelLanzamientoVigente @story-1.8 @ac-38', () => {
-  // 🔴 rojo previo: se contaban las promovidas de TODA la corrida, también las del lanzamiento anterior.
+  // Se cuentan sólo las promovidas del lanzamiento actual, no las de toda la corrida.
   const home = casa(); const SID = 't49'; const repo = mkRepo();
   writeFakeMarker(home, SID, { repoPath: repo, storyPath: path.join(repo, 'specs', 'a.md'), adversarial: lanzamiento(),
     adversarialRegressions: [{ dest: 'tests/viejo.test.js', ts: ANTES }, { dest: 'tests/nuevo.test.js', ts: DESPUES }] });
@@ -763,7 +758,7 @@ test('T49 Result_Pruebas_CuentaSoloDelLanzamientoVigente @story-1.8 @ac-38', () 
 });
 
 test('T50 Result_OtraStory_NoTocaLaCorrida @story-1.8 @ac-39', () => {
-  // 🔴 rojo previo: el resultado de la story B se sumaba a la corrida de A y le cerraba el 5b.
+  // El resultado de la story B no se suma a la corrida de A ni le cierra el 5b.
   const home = casa(); const SID = 't50';
   writeFakeMarker(home, SID);
   const antes = crudoMarker(home, SID);
@@ -774,7 +769,7 @@ test('T50 Result_OtraStory_NoTocaLaCorrida @story-1.8 @ac-39', () => {
 });
 
 test('T52 Skipped_ArchivosCuentaComoElPorton @story-1.8 @ac-41', () => {
-  // 🔴 rojo previo: marker.js contaba sólo el primer --files y contaba el argumento vacío; el portón no.
+  // marker.js cuenta todos los --files y no cuenta el argumento vacío, igual que el portón.
   const casos = [[['--files', 'scripts/x.js', '--files', 'scripts/x2.js'], 2], [['--files', 'scripts/x.js', '', 'scripts/x2.js'], 1]];
   for (const [args, n] of casos) {
     const home = casa(); const repo = mkRepo({ codigo: 2 });

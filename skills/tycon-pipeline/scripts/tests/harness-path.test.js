@@ -1,23 +1,22 @@
 'use strict';
 
 /**
- * harness-path.test.js — dónde está el arnés, visto desde agent-skills (story 8.3 del arnés, T5 / AC 5).
+ * harness-path.test.js — dónde está el arnés, visto desde agent-skills (T5).
  *
- * EL AGUJERO QUE CIERRA. Doce lectores distintos de `TYCON_GUIDES_DIR` en los dos repos, todos con
- * el mismo último recurso escrito a mano: `~/SourceCode/tycon-claude-guides`. En una máquina con el
- * arnés en otra carpeta, un hook «no encontraba la lib» y seguía sin ella, callado. Ahora hay UN
- * lector, `lib/harness-path.js`: la variable, o el enlace `~/.claude/tycon-harness` que crea el
- * instalador del arnés. Nunca `~/SourceCode`.
+ * LO QUE CUBRE. Hay UN lector de `TYCON_GUIDES_DIR`, `lib/harness-path.js`: la variable, o el
+ * enlace `~/.claude/tycon-harness` que crea el instalador del arnés. Nunca `~/SourceCode`: con un
+ * último recurso escrito a mano, en una máquina con el arnés en otra carpeta un hook «no
+ * encuentra la lib» y seguiría sin ella, callado.
  *
  *   · con `TYCON_GUIDES_DIR` → ésa (también `TCG`, que exporta el banco de controles);
  *   · sin variable, con el enlace → el enlace;
  *   · sin ninguno: un COMANDO frena nombrando las dos cosas que buscó; un HOOK lo dice y sigue (fail-open,
- *     como hoy `hook-io.js` y `.githooks/pre-commit`: la CI nocturna no exporta la variable ni tiene el
+ *     como `hook-io.js` y `.githooks/pre-commit`: la CI nocturna no exporta la variable ni tiene el
  *     enlace, y una máquina antes del primer instalador tampoco);
  *   · el modo «sólo el enlace» ignora la variable (para `guides-heal.js`: bajo el banco la variable
  *     apunta al repo REAL y un merge desde un caso sería un efecto colateral).
  *
- * 🔴 rojo previo verificado: sin `lib/harness-path.js` todo falla; el código viejo caía a `~/SourceCode`.
+ * 🔴 Sin `lib/harness-path.js` todo falla; un último recurso a mano caería a `~/SourceCode`.
  * 🔴 Nada acá toca el HOME real: cada caso arma su HOME en el temporal.
  */
 
@@ -40,7 +39,7 @@ function clon() {
   fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/usr/bin/env bash\n');
   return fs.realpathSync(d);
 }
-// los dos nombres (story 8.19): el lugar y el viejo, leídos de lib/harness-path.js (su copia declarada)
+// los dos nombres: el lugar y el viejo, leídos de lib/harness-path.js (su copia declarada)
 function enlaceEn(home, destino) { fs.symlinkSync(destino, path.join(home, '.claude', lib().LEGACY_PLACE_NAME)); }
 function lugarEn(home, destino) { fs.symlinkSync(destino, path.join(home, '.claude', lib().PLACE_NAME)); }
 function lib() { return require(LIB); }
@@ -119,7 +118,7 @@ test('T5 — el modo «sólo enlace» ignora la variable (guides-heal)', () => {
 });
 
 test('T5 — `~` en la variable se expande al HOME (como en el lector del arnés); un enlace COLGADO se describe como colgado, no como «falta»', () => {
-  // (pase adversarial, vuelta 1) una `~` literal llega a la variable por el bloque `env` de settings.json o por
+  // Una `~` literal puede llegar a la variable por el bloque `env` de settings.json o por
   // `export X="~/…"` con comillas; el lector de configuración la expande y este lector tiene que hacer lo mismo
   const home = casa();
   const c = path.join(home, 'clon');
@@ -128,7 +127,7 @@ test('T5 — `~` en la variable se expande al HOME (como en el lector del arnés
   const r = lib().resolver({ env: { TYCON_GUIDES_DIR: '~/clon' }, home, modo: 'comando' });
   assert.equal(r.dir, fs.realpathSync(c));
   assert.equal(r.fuente, 'env');
-  // …y una ruta relativa también va contra el HOME, como en el lector del arnés (no contra el cwd — vuelta 2)
+  // …y una ruta relativa también va contra el HOME, como en el lector del arnés (no contra el cwd)
   assert.equal(lib().resolver({ env: { TYCON_GUIDES_DIR: 'clon' }, home, modo: 'comando' }).dir, fs.realpathSync(c));
   // el enlace existe pero apunta a nada: «colgado (apunta a …)», que es lo que hay que arreglar; no «falta»
   const home2 = casa();
@@ -142,13 +141,13 @@ test('T5 — `~` en la variable se expande al HOME (como en el lector del arnés
 });
 
 test('T5 — el idioma para shell es el mismo orden, escrito una sola vez', () => {
-  // story 8.19 (AC 9): el idioma nombra el lugar
+  // El idioma nombra el lugar
   assert.equal(lib().IDIOMA_SHELL, '${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}');
   const cli1 = cli(['--shell-idiom'], { HOME: casa() });
   assert.equal(cli1.stdout.trim(), '${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}');
 });
 
-// ── story 8.19 · T9 (parte de las skills): primero el lugar, después el viejo ─────────────────────────────────────
+// ── T9 (parte de las skills): primero el lugar, después el viejo ─────────────────────────────────────
 test('T9 Readers_PlaceFirstThenLegacy — los dos: el lugar; sólo el lugar: el lugar; sólo el viejo: el viejo, sin decir nada', () => {
   const a = clon(); const b = clon();
   const both = casa(); lugarEn(both, a); enlaceEn(both, b);

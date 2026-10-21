@@ -3,16 +3,14 @@
 /**
  * Atribución de REPO y STORY para los registros del arnés.
  *
- * POR QUÉ EXISTE (auditoría 2026-08-25, Tema 2 del plan de controles apagables): hoy no se
- * puede contestar mecánicamente "¿corrieron los revisores de la story X?". El registro de
- * arranques (`advisor-runs/<sid>.jsonl`, que escribe el hook on-advisor-run.js en CADA spawn
- * real) guardaba sólo `{ts, advisor, model}` — sin repo y sin story. Medido el 2026-08-25:
- * 756 líneas acumuladas, CERO con repo. Y el registro voluntario (`gates.log`, `check=advisors`)
- * tenía 142 de 149 entradas sin repo atribuido.
+ * POR QUÉ EXISTE: sin repo ni story en los registros no se puede contestar mecánicamente
+ * "¿corrieron los revisores de la story X?". El registro de arranques (`advisor-runs/<sid>.jsonl`, que
+ * escribe el hook on-advisor-run.js en CADA spawn real) y el registro voluntario (`gates.log`,
+ * `check=advisors`) llevan este par `{repo, story}` además de `{ts, advisor, model}`.
  *
- * El dato SIEMPRE estuvo al alcance: el marker del pipeline (`active/<sid>.json`) trae
+ * El dato está al alcance: el marker del pipeline (`active/<sid>.json`) trae
  * `repoPath` y `storyId`, y cuando no hay marker la raíz de git del directorio actual alcanza
- * para el repo. Nadie lo estampaba.
+ * para el repo.
  *
  * Todo acá es best-effort y NUNCA tira: un registro que rompe el spawn que quería registrar
  * es peor que no registrar.
@@ -21,13 +19,13 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // la carpeta del estado, de una sola pieza
 const { execFileSync } = require('child_process');
 
 // Resolución PEREZOSA del directorio de estado: `os.homedir()` congelado al cargar el módulo hace
 // que un HOME de laboratorio no tenga efecto, y un test que no puede aislar el estado real o lo
-// ensucia o se vuelve vacuo (pasó: el primer test de esta tanda escribió en el registro de verdad
-// y otro se saltó sus propias aserciones sin fallar). Un hook corre con un HOME fijo, así que
+// ensucia (escribe en el registro de verdad) o se vuelve vacuo (se salta sus propias aserciones sin
+// fallar). Un hook corre con un HOME fijo, así que
 // resolverlo al usarlo no cambia nada en producción.
 function stateDir() {
   return path.join(stateDirOf(os.homedir()));

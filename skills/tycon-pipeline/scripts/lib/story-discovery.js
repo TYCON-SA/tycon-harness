@@ -8,19 +8,15 @@
  * cubre el trabajo hecho a mano — justo el que se saltea el gate de ATDD, que vive dentro del
  * pipeline (`complete-step 4`).
  *
- * ── LAS TRES VERSIONES DE ESTE ARCHIVO (y por qué la tercera es distinta) ─────────────────────────
- *   v1  Tres rutas ABSOLUTAS clavadas (`Ceibo/…/specs/stories`, `Totora/…`, `FRESNO/…`). Caso
- *       disparador 2026-07-28 (un producto del equipo): dos stories implementadas a mano en carpetas que no
- *       estaban en la lista → el aviso nunca salió y el ATDD se saltó, en silencio — guides/maintaining/incident-log.md#case-hand-made-stories-without-warning-2026-07-28.
- *   v2  Dos NOMBRES de carpeta (`stories`, `epic-*`). El propio comentario de v2 decía "un freno que
- *       sólo conoce 3 carpetas se queda viejo el día que alguien crea la cuarta" — y v2 era ese
- *       mismo defecto un nivel más arriba. Caso disparador 2026-08-15 (un repo del equipo): las stories
- *       viven en `specs/bizuit-bpmn-mcp/` → CERO carpetas encontradas. Consecuencias medidas: el
- *       aviso de on-edit mudo, `pipeline.js next-story` en null, y `tycon-backfill-followups.js`
- *       reportando "0 stories Mary+GOLD encontradas".
- *   v3  (este) La pertenencia la decide la ESTRUCTURA, nunca el nombre: **una story es un `.md`
- *       cuyo frontmatter declara `story:` y `status:`**. Es el mismo principio que el repo aplica
- *       en todos lados (el frontmatter es el contrato; el layout es decoración).
+ * ── CÓMO DECIDE QUÉ ES UNA STORY ──────────────────────────────────────────────────────────────────
+ * La pertenencia la decide la ESTRUCTURA, nunca el nombre ni la ubicación: **una story es un `.md`
+ * cuyo frontmatter declara `story:` y `status:`**. Es el mismo principio que el repo aplica
+ * en todos lados (el frontmatter es el contrato; el layout es decoración).
+ * Una lista de rutas o de nombres de carpeta se queda vieja el día que alguien crea otra: dos stories
+ * hechas a mano fuera de la lista no dispararían el aviso y el ATDD se saltaría en silencio. Con un repo
+ * cuyas stories viven en `specs/<producto>/`, el escaneo por nombre encontraría CERO carpetas: el
+ * aviso de on-edit mudo, `pipeline.js next-story` en null, y `tycon-backfill-followups.js`
+ * reportando "0 stories Mary+GOLD encontradas".
  *
  * ── DOS COSAS QUE LA ESTRUCTURA SOLA NO RESUELVE ─────────────────────────────────────────────────
  * 1. **No todo lo que tiene forma de story es trabajo.** `mcp/eval/bancos/…/ev*.md` declara
@@ -34,7 +30,7 @@
  *    nunca tienen specs, se recorre primero lo que suele tener specs (`specs/`, `docs/`… — el
  *    nombre decide el ORDEN, jamás la pertenencia), y el resultado se cachea por raíz de repo.
  *    Un resultado incompleto se marca `partial` y, si además vino VACÍO, NO se persiste: cachear
- *    un cero dejaría el repo mudo una hora entera — que es exactamente cómo se veía el bug de v2.
+ *    un cero dejaría el repo mudo una hora entera.
  *
  * Diagnóstico: `node lib/story-discovery.js --doctor [--repo <dir>]`.
  */
@@ -43,21 +39,21 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // La carpeta del estado, de una sola pieza
 /**
  * Tope de tiempo del escaneo FRÍO (el caliente sale del cache y cuesta ~2ms).
  *
- * 🔴 Es un TOPE, no un costo: en una máquina sana el escaneo completo del repo más grande que
- * tenemos (un repo del equipo, 1215 carpetas / 1331 `.md`) midió ~330ms, y los otros dos entre 60 y
- * 100ms — o sea que este número casi nunca se toca. Estaba en 200ms y la medición del 2026-08-15
- * mostró el problema: con la máquina cargada (load average 40 sobre 8 cpus) 200ms no alcanzaban
- * ni para llegar a `specs/`, y el escaneo devolvía CERO stories — el mismo síntoma del bug que
- * este archivo arregla, ahora por presupuesto en vez de por nombre. Subirlo no cuesta nada cuando
+ * 🔴 Es un TOPE, no un costo: en una máquina sana el escaneo completo del repo más grande del
+ * equipo (1215 carpetas / 1331 `.md`) mide ~330ms, y los otros entre 60 y
+ * 100ms — o sea que este número casi nunca se toca. Con la máquina
+ * cargada (load average 40 sobre 8 cpus), 200ms no alcanzan
+ * ni para llegar a `specs/`, y el escaneo devolvería CERO stories: el síntoma que se evita
+ * con un presupuesto de tiempo en vez de un filtro por nombre. Subirlo no cuesta nada cuando
  * las cosas van bien y evita quedarse mudo cuando no.
  */
 const DEFAULT_BUDGET_MS = 500;
-// El que se usa: la variable del dev si la puso, si no el default. Separados (2026-10-05): con uno solo, la prueba del
-// default leía la variable del ambiente, y el dev que la subía —como le recomienda el aviso de abajo— dejaba la suite
+// El que se usa: la variable del dev si la puso, si no el default. Separados: con uno solo, la prueba del
+// default leería la variable del ambiente, y el dev que la subiera —como le recomienda el aviso de abajo— dejaría la suite
 // del arranque en «FALLÓ» y el arnés sin actualizarse.
 const BUDGET_MS = Number(process.env.TYCON_STORY_SCAN_BUDGET_MS) || DEFAULT_BUDGET_MS;
 const MAX_DEPTH = 6;
@@ -79,13 +75,12 @@ const SKIP_DIRS = new Set([
  * corridas en un repo del equipo). Es una regla general, no una lista de nombres que haya que mantener:
  * mismo criterio que `hasPlaywrightSpecs` de pipeline.js.
  *
- * 🔴 …salvo `.specs/` (DISCOVERY-DOTSPECS-1, 2026-08-30): la premisa "las ocultas no llevan
- * specs" resultó FALSA en casa — FRESNOProyecto y TIMBO guardan sus fichas en `.specs/<área>/stories/`
- * y este buscador les devolvía 0 stories (reproducido local y en el pipeline nocturno de métricas;
- * el escaneo de respaldo de las métricas encontraba las 11 done reales de FRESNO). La excepción es,
- * a sabiendas, una lista-de-nombres del tipo que el párrafo de arriba jura evitar — se acepta como
+ * 🔴 …salvo `.specs/`: la premisa "las ocultas no llevan
+ * specs" es FALSA en algunos repos, que guardan sus fichas en `.specs/<área>/stories/`; sin la excepción
+ * el buscador devolvería 0 stories para ellos. La excepción es,
+ * a sabiendas, una lista-de-nombres del tipo que el párrafo de arriba evita — se acepta como
  * escape CONSCIENTE y mínimo (1 nombre, convención propia del equipo, con sus casos en la suite);
- * si aparece un tercer nombre oculto con specs, ahí se repiensa el criterio, no se agranda la lista.
+ * si aparece otro nombre oculto con specs, ahí se repiensa el criterio, no se agranda la lista.
  */
 const HIDDEN_WITH_SPECS = new Set(['.specs']);
 const isHidden = (name) => name.startsWith('.') && !HIDDEN_WITH_SPECS.has(name);
@@ -103,9 +98,8 @@ const DEFAULT_ID_RE = /^\d+(?:[.-]\d+)*$/;
 
 const CACHE_PATH = path.join(stateDirOf(os.homedir()), 'story-dirs-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h — el árbol de carpetas casi no cambia
-const CACHE_VERSION = 4;             // v4 = entra `.specs/` (DOTSPECS-1) — un índice v3 de FRESNO decía
-                                     // "0 stories" COMPLETO (no parcial) y se habría servido 1h más;
-                                     // el bump lo invalida al instante (caza del pase adversarial).
+const CACHE_VERSION = 4;             // subir el número invalida al instante los índices cacheados con otro criterio:
+                                     // uno que dijera "0 stories" COMPLETO (no parcial) se serviría 1h más.
 
 /** Sube desde un archivo/carpeta hasta encontrar la raíz del repo git. Null si no hay. */
 function findRepoRoot(startPath) {
@@ -202,16 +196,16 @@ function storiesConfig(repoRoot) {
 }
 
 /**
- * 🔴 La versión que deben usar los FRENOS (FIX-1, 2026-08-25 — casos C1 y C9 de la auditoría).
+ * 🔴 La versión que deben usar los FRENOS.
  *
  * `storiesConfig` lee la carpeta de trabajo, y eso convierte a este archivo en un interruptor:
- * escribir `stories.id_pattern: '^ZZZ-[0-9]+$'` —sin commitear— hacía que **ninguna story fuera una
- * story**, y los dos frenos que impiden cerrar una sin evidencia se apagaban con exit 0 y cero
- * mensajes (reproducido). Acá se gatea si el id matchea el patrón COMMITEADO **o** el de la
+ * escribir `stories.id_pattern: '^ZZZ-[0-9]+$'` —sin commitear— haría que **ninguna story fuera una
+ * story**, y los dos frenos que impiden cerrar una sin evidencia se apagarían con exit 0 y cero
+ * mensajes. Acá se gatea si el id matchea el patrón COMMITEADO **o** el de la
  * carpeta: recortar el alcance del freno exige un commit, ampliarlo vale al toque.
  *
- * La UNIÓN, y no "manda lo commiteado": el commit que *introduce* un patrón nuevo (caso real en
- * Totora/Backend, 18 stories `AP-*`/`CO-*`) dejaría esas stories fuera del freno justo en ese
+ * La UNIÓN, y no "manda lo commiteado": el commit que *introduce* un patrón nuevo (por ejemplo
+ * un repo que adopta `AP-*`/`CO-*`) dejaría esas stories fuera del freno justo en ese
  * commit. Ver `lib/config-source.js` para la regla completa.
  *
  * @returns {{idPattern: (RegExp|{test:Function}|null), warnings: string[], difieren: boolean}}
@@ -225,7 +219,7 @@ function storiesConfigForGate(repoRoot) {
 
   let ambas;
   try { ambas = require('./config-source.js').leerAmbas(root); } catch (_e) { ambas = null; }
-  // Sin git utilizable no hay contra qué contrastar: se cae al comportamiento de siempre.
+  // Sin git utilizable no hay contra qué contrastar: se cae al comportamiento por defecto.
   if (!ambas || !ambas.hayHistoria) {
     const w = storiesConfig(root);
     return { idPattern: w.idPattern, warnings: w.warnings, difieren: false };
@@ -235,7 +229,7 @@ function storiesConfigForGate(repoRoot) {
   const work = parseStoriesConfigText(ambas.carpeta);
   out.warnings = [...new Set([...head.warnings, ...work.warnings])];
 
-  // Ninguno declara patrón → la forma por default, igual que siempre (y sin costo).
+  // Ninguno declara patrón → la forma por default (y sin costo).
   if (!head.idPattern && !work.idPattern) return out;
 
   const pHead = head.idPattern || DEFAULT_ID_RE;
@@ -271,10 +265,9 @@ function fmScalar(fm, key) {
 /**
  * ¿Este TEXTO (contenido completo de un `.md`) declara identidad de story — `story:` en su
  * frontmatter cerrado? Es el lado-CONTENIDO del criterio que decide todo el arnés desde
- * 2026-08-23 (lint-story-frontmatter.js `DECLARES_STORY`): **la identidad la declara el
- * frontmatter, jamás la ruta**. Nació para el `spawnIf` del despachador de edición (caso
- * incident-log#story-write-spawn-2026-08-28: el guard exigía el segmento `/specs/stories/` y los
- * hooks de story-create no corrían NUNCA en 13 de los 15 repos con stories del equipo).
+ * lint-story-frontmatter.js `DECLARES_STORY`: **la identidad la declara el
+ * frontmatter, jamás la ruta**. Lo usa el `spawnIf` del despachador de edición: un guard que exigiera el segmento
+ * `/specs/stories/` dejaría sin correr los hooks de story-create en cada repo que guarda sus stories en otra carpeta.
  *
  * Deliberadamente TOLERANTE (indentación, mayúsculas) y deliberadamente BARATO (regex en memoria,
  * cero IO): quien llama decide spawnear/avisar y las hojas re-verifican con su propia exigencia —
@@ -479,8 +472,8 @@ function discoverStories(repoRoot, opts = {}) {
 
   const scanned = scanTree(repoRoot, { ...opts, idPattern: cfg.idPattern });
 
-  // 🔴 Un parcial VACÍO no se persiste. Cachear un cero durante una hora es exactamente cómo se
-  // veía el bug que este archivo arregla: el descubridor mudo y nadie enterándose.
+  // 🔴 Un parcial VACÍO no se persiste. Cachear un cero durante una hora dejaría al descubridor
+  // mudo y a nadie enterándose.
   if (useCache && !(scanned.partial && scanned.stories.length === 0)) {
     const cache = readCache(cachePath);
     cache[repoRoot] = {

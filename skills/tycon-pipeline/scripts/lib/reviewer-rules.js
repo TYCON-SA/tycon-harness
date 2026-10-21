@@ -1,6 +1,6 @@
 'use strict';
 /**
- * Las reglas del repo que el revisor verifica (story 7.5, 2026-09-19).
+ * Las reglas del repo que el revisor verifica.
  *
  * Cada repo de producto declara sus reglas de revisión en una sección fija de su `CLAUDE.md`:
  * `## Reglas para revisores`. Esta lib la recorta para que `pipeline.js` la pegue al principio del
@@ -8,7 +8,7 @@
  *
  * Por qué pegada y no leída: con el `CLAUDE.md` entero cargado, el revisor VE la regla pero no la
  * controla — 10 de 20 violaciones plantadas detectadas; con la sección pegada como reglas a
- * verificar, 17 de 20 (~/.claude/tycon-harness/tasks/medicion-7.5-reglas-para-revisores-2026-09-19.md §5).
+ * verificar, 17 de 20 (medición de las reglas para revisores).
  *
  * Nunca tira: lo que no se pudo leer vuelve como `estado: 'no_medido'` con su motivo, para que el
  * pipeline lo diga en vez de tratarlo como «el repo no tiene reglas».
@@ -28,8 +28,8 @@ const ARCHIVOS = ['CLAUDE.md', path.join('.claude', 'CLAUDE.md')];
 /**
  * Índice (0-based) de la línea del encabezado, o -1. Un encabezado dentro de una cerca de código
  * (un ejemplo de cómo se escribe la sección) no cuenta. Pero si el archivo tiene una cerca SIN CERRAR,
- * el estado de cerca ya no es confiable y una cerca abierta en una sección anterior escondería la
- * sección real (hallazgo del pase adversarial de la 7.5): en ese caso se busca el encabezado sin
+ * el estado de cerca no es confiable y una cerca abierta en una sección anterior escondería la
+ * sección real: en ese caso se busca el encabezado sin
  * mirar cercas. Mismo criterio en `scripts/ci/reviewer-rules.js` del arnés.
  */
 function lineaDelEncabezado(lineas) {

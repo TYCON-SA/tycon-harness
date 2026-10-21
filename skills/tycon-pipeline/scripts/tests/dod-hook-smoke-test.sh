@@ -7,18 +7,18 @@
 #   3. ACCOV-C10 Case 3: iter2 converged (mismos gaps) → PERMIT.
 #   4. ACCOV-C10 Case 4: iter2 subset (menos gaps) → PERMIT.
 #   5. Self-audit exclusion: archivo `<id>-self-audit-iter*.md` NO debe ser
-#      tomado como evidencia DoD (compartían prefix → bug 2026-05-20).
+#      tomado como evidencia DoD (compartían prefix).
 #   6. parseAcsFromSpec ignora cross-story refs (`Story X.Y AC #N` ≠ AC del story actual).
 #   7. parseAcsFromEvidence soporta heading combinado `AC #N/#M`.
 #   8. DODRT-C6: transición a done SIN matriz runtime verde/ackeada → BLOCK (matrix-red).
 #
-# NOTA contrato DODRT-C6 (2026-07-10): las transiciones a review/done ahora exigen ADEMÁS
+# NOTA contrato DODRT-C6: las transiciones a review/done exigen ADEMÁS
 # la matriz de verificación runtime verde-o-ackeada (runtime-matrix.js, re-computada en
 # vivo por el hook). Los fixtures 1/3/4/6/7 (que esperan PERMIT) satisfacen esa capa vía
 # `add_matrix_ack` — plan manual + bloque runtime_verification_ack con el hash real.
 #
-# Casos disparadores:
-#   - Story 4.2 review→done 2026-05-20: ACCOV-C10 + dedupe audits + selfaudit excl + AC parse.
+# Caso de fondo:
+#   - review→done: ACCOV-C10 + dedupe audits + selfaudit excl + AC parse.
 #
 # Uso: bash dod-hook-smoke-test.sh
 
@@ -35,11 +35,11 @@ FAIL=0
 dir=""
 # Log de waivers aislado (no ensuciar el real). El hook y las inyecciones lo comparten via env.
 export TYCON_WAIVER_LOG="$BASE/waivers.jsonl"
-# Story 7.2 del arnés: el hook corre con el HOME real — que sus decisiones de prueba no se anoten en frenos.jsonl.
+# El hook corre con el HOME real — que sus decisiones de prueba no se anoten en frenos.jsonl.
 export TYCON_CLOSURE_RECORD=off
-# Esta prueba mira la capa de evidencia DoD (runtime, matriz por AC). El portón de constancia de revisores (F.iv, 2026-08-24)
-# llegó después y sus fixtures no traen reportes del Step 5: con él prendido los 7 casos que esperan «pasa» frenaban por
-# otra capa y la prueba quedó roja sin que nadie la corriera (visto el 2026-09-30, story 8.9 B1). Esa capa tiene sus pruebas.
+# Esta prueba mira la capa de evidencia DoD (runtime, matriz por AC). El portón de constancia de revisores (F.iv)
+# exige reportes del Step 5 que estos fixtures no traen: con él prendido los 7 casos que esperan «pasa» frenarían por
+# otra capa. Esa capa tiene sus pruebas.
 export TYCON_ADVISORS_GATE=off
 : > "$TYCON_WAIVER_LOG"
 
@@ -231,7 +231,7 @@ fi
 # ---------- Case 6: cross-story AC ref NO debe disparar missing ----------
 echo "=== Case 6: cross-story AC ref (Story 1.1 AC #10) NO debe ser exigida ==="
 new_case 6
-# evidence cubre AC #1 y #2/#3 — el spec menciona "Story 1.1 AC #10" como nota.
+# evidence cubre AC #1 y #2/#3 — el spec menciona "Story X.Y AC #10" como nota.
 # El hook NO debería pedir AC #10 (que pertenece a otra story).
 make_self_audit "$dir/.advisors/dod-runtime/9.9-self-audit-iter1.md" A
 add_matrix_ack "$dir"
@@ -313,9 +313,9 @@ else
   FAIL=$((FAIL+1))
 fi
 
-# ---------- Case 9: story 7.17 (T17) — la firma existe pero se descartó: el bloqueo lo DICE ----------
-# Caso: épico 11 de un producto del equipo (2026-10-07). El registro del repo tenía la firma del dev, la cadena se había
-# roto al unir ramas, y el bloqueo decía «esperan waiver del USUARIO»: parecía que el dev no había firmado.
+# ---------- Case 9: la firma existe pero se descartó: el bloqueo lo DICE ----------
+# Caso: el registro del repo tiene la firma del dev pero la cadena se rompió al unir ramas; un bloqueo que dijera
+# «esperan waiver del USUARIO» haría parecer que el dev no había firmado.
 echo "=== Case 9: firma descartada por la cadena → el bloqueo lo dice (story 7.17) ==="
 new_case 9
 make_self_audit "$dir/.advisors/dod-runtime/9.9-self-audit-iter1.md" A

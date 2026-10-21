@@ -1,19 +1,16 @@
 /**
  * late-snapshot.js — ¿se tocó CÓDIGO después del último revisor de la ronda?
  *
- * ── POR QUÉ EXISTE (2026-09-15) ──────────────────────────────────────────────────────────────────
- * La FOTO del estado auditado (`marker.js snapshot-iter N`) se toma sola desde el 2026-08-15, en el
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
+ * La FOTO del estado auditado (`marker.js snapshot-iter N`) se toma sola, en el
  * spawn del último revisor esperado — que es el momento correcto: entre ese spawn y el primer fix no
- * se toca código. Pero el TEXTO del skill nunca se actualizó: siguió mandando una segunda llamada
- * «al cierre del step», y `cmdSnapshotIter` PISABA la foto buena sin mirar nada.
+ * se toca código. Pero una segunda llamada manual «al cierre del step» PISARÍA la foto buena si
+ * `cmdSnapshotIter` no mirara nada.
  *
- * Medido sobre la corrida real de la story 2.5 del arnés: **15 de 15** fotos automáticas
- * fueron pisadas por la llamada manual, y en **2 de 15** había código editado en el medio. En la
- * iteración 11 la foto automática salió a las 16:52:52, `reductor.js` se arregló a las 16:58:16 y la
- * llamada manual la re-fechó a las 17:03:17: el arreglo quedó ADENTRO de la foto, el delta de la
- * iteración 12 salió VACÍO, y `security-basics` y `silent-failure-hunter` se saltearon como
- * «superficie no tocada». Las trece restantes no dañaron porque no hubo código en el medio — no
- * porque algo lo impidiera.
+ * Si entre la foto automática y la llamada manual se arregla un archivo, la llamada manual re-fecha la foto: el
+ * arreglo queda ADENTRO de la foto, el delta de la vuelta siguiente sale VACÍO, y `security-basics` y
+ * `silent-failure-hunter` se saltean como «superficie no tocada». Cuando no hay código en el medio la foto pisada no
+ * daña, pero sólo de casualidad: nada lo impide.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
  * Contesta UNA pregunta, con los datos que ya existen: ¿hay archivos de código con hora POSTERIOR al
@@ -33,7 +30,7 @@
  * 🔴 Falla siempre hacia MÁS revisión: sin registro de spawns no se puede medir y se dice (`medible:
  * false`), nunca se finge un «está todo bien». Un mtime movido sin cambio de contenido (un checkout,
  * un rebase) se lee como «posterior» y cuesta un revisor de más; el error al revés —un fix sin
- * re-auditar— es el que produjo este defecto.
+ * re-auditar— es el defecto que esta guarda evita.
  *
  * 🔴 Sólo CÓDIGO (`isCodeFile` de story-gate.js, el mismo criterio de `post-revision.js`): escribir
  * los reportes de los revisores, la story y la evidencia entre la foto y el cierre del step es lo
@@ -77,12 +74,12 @@ function esRevisor(a) {
 /**
  * El último lanzamiento de REVISOR de la ronda abierta (desde el `step5-start` que corresponda).
  *
- * 🔴 `iterEsperada` no es un detalle (lo cazó el replay de punta a punta al escribirlo): `smart-reloop`
+ * 🔴 `iterEsperada` no es un detalle: `smart-reloop`
  * ANOTA un `step5-start` nuevo al terminar de calcular, así que una SEGUNDA llamada para la misma
  * iteración —un reintento, o el `--force-full-reloop` que sigue— encontraría como «ronda abierta» la
  * que ella misma acaba de abrir, todavía sin un solo revisor: la medición se perdería en silencio.
  * Con la iteración esperada se busca SU ronda; si no hay ninguna con ese número, se cae a la última,
- * que es el comportamiento de siempre.
+ * que es el comportamiento por defecto.
  *
  * @param {string[]} lineas líneas crudas del `advisor-runs/<sessionId>.jsonl`.
  * @param {number|null} [iterEsperada] la iteración cuya ronda se busca.
@@ -124,7 +121,7 @@ function ultimoRevisorDeLaRonda(lineas, iterEsperada) {
 }
 
 /**
- * Qué versión del cambio vio CADA revisor de una vuelta: la hora en que se lanzó (2026-10-14).
+ * Qué versión del cambio vio CADA revisor de una vuelta: la hora en que se lanzó.
  *
  * 🔴 Por qué no alcanza con el último revisor: la foto de la vuelta se toma al lanzar el último, y
  * un arreglo hecho mientras corrían los demás queda ADENTRO de la foto. El revisor que se lanzó
@@ -207,7 +204,7 @@ function archivosDeGit(repoRoot) {
 /** ¿El path cuenta como «código que ningún revisor vio»? */
 function cuenta(p) {
   if (!p) return false;
-  if (honesty.sinProbes([p]).length === 0) return false;             // probe transitorio del pase adversarial
+  if (honesty.sinProbes([p]).length === 0) return false;             // probe transitorio de diagnóstico
   const enHome = path.join(os.homedir(), '.claude');
   if (String(p) === enHome || String(p).startsWith(`${enHome}${path.sep}`)) return false;  // estado del arnés
   return isCodeFile(p);

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 /**
  * validator-reloop.test.js — los re-loops sueltan al validador de stories después de dos veredictos
- * limpios seguidos, y VAL-C5/VAL-C6 corren sin modelo (story 7.3 del arnés, 2026-09-17).
+ * limpios seguidos, y VAL-C5/VAL-C6 corren sin modelo.
  *
- * Medición que lo ordena (`~/.claude/tycon-harness/tasks/medicion-7.3-validador-2026-09-17.md`): en 30 días
- * el validador corrió 508 veces; en los re-loops posteriores a dos veredictos limpios seguidos después de
- * implementar trajo algo nuevo en 2 de 24 lanzamientos, ninguno bloqueante. Antes de eso, en 62 de 125.
+ * Medido en 30 días: el validador corrió 508 veces; en los re-loops posteriores a dos veredictos limpios
+ * seguidos después de implementar trajo algo nuevo en 2 de 24 lanzamientos, ninguno bloqueante (en los
+ * anteriores a ese punto: 62 de 125).
  *
  * 🔴 REGLA DE ADMISIÓN: cada caso dice la mutación que lo pone en rojo. Los que más pesan:
  *    · T9 — cualquier cosa que no sea `limpio` CORTA la racha (hallazgos, inconsistente, sin veredicto,
  *      un lanzamiento que no volvió). Contar «no hallazgos» en vez de «limpio» descontaría a ciegas.
  *    · T10 — lo de antes de implementar y lo de otra story no suma ni corta.
  *    · T12 — no poder mirar es INVOCAR, nunca descontar.
- *    · T13 — `Story 2.10` no es `Story 2.1`, y la marca en `tasks/todo.md` o en la propia story no cuenta.
+ *    · T13 — `Story N.10` no es `Story N.1`, y la marca en `tasks/todo.md` o en la propia story no cuenta.
  *    · T14 — `runStoryChecks` (lo que usa el pre-commit) NO gana VAL-*: un CRITICAL nuevo ahí frenaría
  *      commits que hoy pasan.
  *
@@ -38,9 +38,9 @@ const SID = 'test-validador-reloop';
 const VAL = 'tycon-story-validator';
 
 // El arnés se resuelve ANTES de falsear el HOME (con HOME falso la ruta canónica no existe).
-// 🔴 Primero el repo en el que vive esta prueba, y los guiones por su nombre de hoy. Antes buscaba
-// `costo-revisores.js` y `veredicto-validador.js` (los nombres de antes del paso al inglés) y, en una máquina con el
-// clon viejo todavía en `~/SourceCode/tycon-claude-guides`, tomaba esa carpeta: ocho casos en rojo sobre main (story 8.38).
+// 🔴 Primero el repo en el que vive esta prueba, y los guiones por su nombre de hoy. Buscar
+// `costo-revisores.js` y `veredicto-validador.js` (los nombres en castellano de antes del paso al inglés) dejaría
+// que, en una máquina con un clon viejo en una carpeta conocida, ese clon tomara el lugar del arnés: casos en rojo sobre main.
 // El repo propio va antes que TYCON_GUIDES_DIR: lo que se prueba es este árbol, no el que diga el ambiente.
 const TCG = [path.resolve(__dirname, '..', '..', '..', '..'), process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd()]
   .filter(Boolean)
@@ -147,14 +147,14 @@ const LIMPIO = 'limpio';
 const HALLAZGOS = 'hallazgos (VAL-W15) · bloquea: no';
 
 // El repo en el que vive esta prueba siempre trae los dos guiones: si no los encuentra, el árbol está roto, y los casos
-// de abajo no pueden salir «salteados» en verde (story 8.38).
+// de abajo no pueden salir «salteados» en verde.
 test('ValidatorReloop_HarnessFound_NotSkipped', () => {
   assert.ok(TCG, SIN_ARNES);
 });
 
 // ── T8 · ValidadorReloop_DosLimpios_SeDescuenta (AC 6) ─────────────────────────────────────────────
 // Mutación: no descontar nunca (el validador sigue en el set), o descontar sin sacarlo del `expected`
-// (check-count exigiría un lanzamiento que el set ya no pide).
+// (check-count exigiría un lanzamiento que el set no pide).
 test('T8 · dos veredictos limpios seguidos después de implementar → el re-loop no relanza al validador', (t) => {
   if (!TCG) return t.skip(SIN_ARNES);
   const repo = mkRepo();
@@ -170,14 +170,14 @@ test('T8 · dos veredictos limpios seguidos después de implementar → el re-lo
   assert.deepEqual([g[0].invoca, g[0].limpias_seguidas, g[0].iter, g[0].storyId], [false, 2, 3, '9.9']);
   assert.equal(path.resolve(g[0].repoPath), path.resolve(repo));
 
-  // La vuelta 3 ya se sirvió: pedir otra cuenta como la 4 (el helper le pone su nota).
+  // Pedir la cuenta 4 después de servir la 3 (el helper le pone su nota).
   const r2 = correr(home, repo, ['advisors', '--iter', '4']);
   assert.equal(r2.status, 0, r2.stderr);
   assert.ok(!r2.json.all.includes(VAL), `advisors en la vuelta siguiente tampoco: ${JSON.stringify(r2.json.all)}`);
   assert.equal(r2.json.validador_reloop.invoca, false);
 });
 
-// ── T8b · sin story en los argumentos, los dos chequeos usan la del marcador (revisor de fallos silenciosos) ──
+// ── T8b · sin story en los argumentos, los dos chequeos usan la del marcador ──
 // Por la línea de comandos no se llega: sin --story el set no trae al validador. Se prueba la decisión directa.
 // Mutación: pasarle a runValidatorChecks el `args.story` crudo (null) mientras la racha usa el marcador: el
 // chequeo sin modelo sale «no pude mirar» y la decisión invoca por un motivo falso.
@@ -191,10 +191,10 @@ test('T8b · sin story en los argumentos, la decisión usa la del marcador tambi
   assert.deepEqual([d.invoca, d.limpias_seguidas], [false, 2], d.motivo);
 });
 
-// ── T8d · las libs del arnés se buscan por su nombre de hoy (story 8.9 del arnés, tanda G) ────────────────────────
-// El medidor se buscaba sólo por su nombre de antes del renombre: en el equipo andaba por el reemplazo; en una copia sin
-// reemplazos la decisión decía «sin las libs del arnés» y el validador se relanzaba siempre, callado.
-// ROJO PREVIO: con un arnés que trae sólo `reviewers-cost.js`, el motivo era «sin las libs del arnés».
+// ── T8d · las libs del arnés se buscan por su nombre de hoy ────────────────────────
+// Buscar el medidor sólo por su nombre de antes del renombre anda en el equipo (por el reemplazo) pero no en una copia
+// sin reemplazos: la decisión diría «sin las libs del arnés» y el validador se relanzaría siempre, callado.
+// Un arnés que trae sólo `reviewers-cost.js` (el nombre de hoy) no debe decir «sin las libs del arnés».
 test('T8d · un arnés que trae el medidor sólo con su nombre de hoy: la decisión lo encuentra', () => {
   const lab = fs.mkdtempSync(path.join(os.tmpdir(), 'valrl-arnes-'));
   fs.mkdirSync(path.join(lab, 'scripts', 'metrics'), { recursive: true });
@@ -212,7 +212,7 @@ test('T8d · un arnés que trae el medidor sólo con su nombre de hoy: la decisi
   assert.match(d2.motivo, /sin las libs del arnés/);
 });
 
-// ── T8c · check-count sin step5-start recalcula lo mismo que decidió el re-loop (pase adversarial) ──────
+// ── T8c · check-count sin step5-start recalcula lo mismo que decidió el re-loop ──────
 // Mutación: recalcular el set sólo con el descuento MECH-2 — exige al validador que el re-loop soltó y
 // check-count da un rojo falso. Control: con UN limpio, el recálculo lo sigue exigiendo.
 test('T8c · check-count sin step5-start aplica la decisión del validador al recalcular', (t) => {
@@ -261,7 +261,7 @@ test('T10 · lo de antes de implementar y lo de otra story no suma ni corta', (t
     ['dos limpios antes del paso 5 + uno después', [{ min: -40, dice: LIMPIO }, { min: -20, dice: LIMPIO }, { min: 5, dice: LIMPIO }], true, 1],
     ['uno propio + dos limpios de otra story', [{ min: 5, dice: LIMPIO }, { min: 10, dice: LIMPIO, historia: 'otra' }, { min: 15, dice: LIMPIO, historia: 'otra' }], true, 1],
     ['los hallazgos de otra story no cortan', [{ min: 5, dice: LIMPIO }, { min: 10, dice: HALLAZGOS, historia: 'otra' }, { min: 20, dice: LIMPIO }], false, 2],
-    // pase adversarial 2026-09-17: con «catalogo» en el nombre, la otra story contaba como propia y soltaba al validador
+    // Con «catalogo» en el nombre, la otra story contaba como propia y soltaba al validador
     ['un limpio de otra story con «catalogo» en el nombre no suma', [{ min: 5, dice: LIMPIO }, { min: 10, dice: LIMPIO, prompt: 'Validá la story specs/story-9.10-armar-el-catalogo-de-productos.md antes de implementarla.' }], true, 1],
   ];
   for (const [nombre, pasos, invoca, k] of casos) {
@@ -284,7 +284,7 @@ test('T11 · la vuelta 1 no decide nada y el re-loop forzado invoca', (t) => {
   assert.equal(r1.json.validador_reloop, undefined, 'la vuelta 1 no anota decisión');
   assert.equal(lineasValidador(home).length, 0);
 
-  // El marcador ya lleva dos fotos: la primera llamada fue la vuelta 3, así que la forzada es la 4.
+  // El marcador lleva dos fotos: la primera llamada es la 3, así que la forzada es la 4.
   const r3 = correr(home, repo, ['smart-reloop', '--iter', '4', '--force-full-reloop']);
   assert.equal(r3.status, 0, r3.stderr);
   assert.ok(r3.json.rerun.includes(VAL), 'forzado → el validador está');
@@ -301,7 +301,7 @@ test('T12 · no poder mirar es invocar, con el motivo', (t) => {
     ['sin conversación', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { conversacion: false }), {}]; }, /no pude|conversaci/i],
     ['conversación ilegible', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { lineasCrudas: '{no es json\n{tampoco' }), {}]; }, /no pude|ilegible/i],
     ['sin arranque del paso 5', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos, { marker: { stepTimings: {} } }), {}]; }, /paso 5/i],
-    // sin paquetes instalados (story 8.7): sin arnés, el cargador no tiene a quién preguntar el default de `packs:`
+    // sin paquetes instalados: sin arnés, el cargador no tiene a quién preguntar el default de `packs:`
     ['sin las libs del arnés', () => { const repo = mkRepo(); return [repo, mkHome(repo, dos), { TYCON_GUIDES_DIR: vacio, TYCON_PACKS_DIR: vacio }]; }, /arn[eé]s|lib/i],
   ];
   for (const [nombre, armar, motivo] of casos) {
@@ -334,7 +334,7 @@ test('T13 · VAL-C5 y VAL-C6 corren sin modelo', (t) => {
   assert.deepEqual(reglas(runValidatorChecks({ repo, storyPath: path.join(repo, 'specs', 'story-9.9-algo.md'), files: ['tasks/todo.md', 'specs/story-9.9-algo.md', 'src/a.js'] })), [], 'todo.md y la propia story no cuentan');
 
   // Un archivo que no se puede leer por algo que no es «no existe» (acá, una carpeta): no mirado ≠ sin deuda.
-  // Mutación: saltearlo como un ENOENT, o anotar «sin marcas de deuda» en `ok` igual (revisor de pruebas).
+  // Mutación: saltearlo como un ENOENT, o anotar «sin marcas de deuda» en `ok` igual.
   repo = mkRepo();
   const noLeido = runValidatorChecks({ repo, storyPath: path.join(repo, 'specs', 'story-9.9-algo.md'), files: ['src', 'src/a.js'] });
   assert.deepEqual([reglas(noLeido), noLeido.ambiguous.map((a) => a.rule)], [[], ['VAL-C5']], 'ilegible → ambiguo');

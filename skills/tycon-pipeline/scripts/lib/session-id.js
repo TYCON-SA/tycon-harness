@@ -12,14 +12,13 @@
  * Cadena, en orden: el id que expone la herramienta anfitriona (Claude Code), el override
  * explícito del banco de pruebas, el id nativo de Codex, y `_nosession` como sentinel.
  *
- * `CODEX_SESSION_ID` (medido 2026-08-22, pasada 2 de la corrida dorada): Codex lo exporta al
+ * `CODEX_SESSION_ID`: Codex lo exporta al
  * ambiente de TODO shell que corre el modelo, con el mismo valor que manda en el `session_id`
  * de cada payload de hook — o sea que ata las dos puntas sin que nadie tenga que exportar
- * nada. Sin este eslabón el CLI caía a `_nosession` mientras los hooks escribían bajo el id
- * real de la sesión: el marker arrancaba huérfano y `check-count` leía un ledger vacío
- * ("CERO spawns registrados") con los advisors REALMENTE corridos, lo que empujaba al
- * `--trust-ran` y de ahí al `--force-manual`. Los dos deltas de la primera pasada dorada
- * fueron esa misma desalineación vista en dos lugares.
+ * nada. Sin este eslabón el CLI caería a `_nosession` mientras los hooks escriben bajo el id
+ * real de la sesión: el marker arrancaría huérfano y `check-count` leería un ledger vacío
+ * ("CERO spawns registrados") con los advisors REALMENTE corridos, lo que empujaría al
+ * `--trust-ran` y de ahí al `--force-manual`.
  *
  * `TYCON_SESSION_ID` va ANTES que el nativo a propósito: es el override del banco de pruebas,
  * y un banco que no puede fijar la identidad de la sesión no puede aislar sus casos.

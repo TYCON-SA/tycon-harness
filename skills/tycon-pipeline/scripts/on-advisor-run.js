@@ -3,19 +3,18 @@
  * tycon-pipeline PreToolUse hook (matcher: Task) — log de invocaciones de subagents
  * + freno advisory sobre los spawns AD-HOC de la primera mitad del pipeline.
  *
- * CF-2 (auditoría fresca 2026-05-21): el determinismo de H17 §4 era de SELECCIÓN
- * (pipeline.js computa el set), pero `check-count` confiaba en el `--ran` que el LLM
- * REDACTA — el LLM podía pasar el set esperado sin haberlo corrido. Este hook registra
- * cada subagent realmente spawneado, y `pipeline.js check-count` lo lee como ground-truth
- * en vez de confiar en el self-report. Así el conteo deja de ser "disciplina con asistencia".
+ * El determinismo de la SELECCIÓN (pipeline.js computa el set) no alcanza: `check-count`
+ * confiaría en el `--ran` que el LLM REDACTA — el LLM podría pasar el set esperado sin haberlo
+ * corrido. Este hook registra cada subagent realmente spawneado, y `pipeline.js check-count` lo lee
+ * como ground-truth en vez de confiar en el self-report. Así el conteo deja de ser "disciplina con asistencia".
  *
- * GOBIERNO DE SPAWNS AD-HOC (2026-07-28) — medición sobre 58 runs / 795 spawns:
+ * GOBIERNO DE SPAWNS AD-HOC — medición sobre 58 runs / 795 spawns:
  *   - El subagent más spawneado del pipeline NO es un advisor: es `general-purpose`,
  *     156 de 795 (20%). Sumando `Explore` (30) son 186 — el 23% del total.
  *   - 133 de esos 156 ocurren ANTES del `step5-start`, o sea en los Steps 0-4, donde
  *     NO hay ninguna de las reglas de costo del pipeline (ni context curado, ni
  *     model hints, ni mech-check, ni batch_rule).
- *   - Un spawn cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline 2026-07-28):
+ *   - Un spawn cuesta ~60.000-100.000 tokens ANTES de leer nada (baseline medido):
  *     el más barato medido consumió 67K con un contexto de apenas 6K. El contexto es
  *     como mucho un cuarto del costo — la palanca es abrir MENOS agentes, no alimentarlos
  *     mejor.
@@ -24,7 +23,7 @@
  *       (`.codegraph/`), que contesta lo mismo por ~0 tokens;
  *   (b) se acumulan más de N agentes ad-hoc en la fase actual;
  *   (c) el spawn no declara `model:` — para buscar alcanza uno barato.
- * Es advisory a propósito: la lección del run 9.4 es que las reglas de costo mandatorias
+ * Es advisory a propósito: las reglas de costo mandatorias
  * mal calibradas degradan el sistema. Acá se mide y se avisa; decide el dev.
  *
  * Append-only, per-session: ~/.claude/.tycon-pipeline/advisor-runs/<sessionId>.jsonl
@@ -42,7 +41,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const { sessionIdFileKey } = require('./lib/session-id.js');
 const { attribution } = require('./lib/repo-attrib.js');
 
@@ -64,7 +63,7 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
   try {
     const roster = require('./lib/review-roster.js');
     const { resolveRunDir } = require('./pipeline.js');
-    // Con la ruta de la story: si su número se repite en el repo, la carpeta lleva la clave (story 1.17.1). La
+    // Con la ruta de la story: si su número se repite en el repo, la carpeta lleva la clave. La
     // misma ruta sirve después para proyectar la corrida al repo de la story.
     const m = require('./lib/repo-attrib.js').readMarkerFile(sessionId);
     const storyPath = m && m.storyPath ? (path.isAbsolute(m.storyPath) ? m.storyPath : path.join(m.repoPath || repo, m.storyPath)) : null;
@@ -83,8 +82,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
       } catch { /* repo sin commits todavía */ }
       // El sello del ÁRBOL que los revisores están mirando. `headSha` sólo dice sobre qué commit
       // se apoya: la implementación se commitea DESPUÉS de la revisión, así que por sí solo no
-      // sirve para auditar qué se revisó (medido en la story 2.3: de los 25 archivos que tocó,
-      // cero coincidían con ese árbol). Medido acá: ~130 ms por spawn en repos reales, y null
+      // sirve para auditar qué se revisó (el commit base no coincide con el contenido de los
+      // archivos que toca la story). Medido acá: ~130 ms por spawn en repos reales, y null
       // limpio cuando no se puede — nunca un sello inventado.
       const treeSha = roster.treeShaDe(repo);
       roster.write(runDir, {
@@ -95,8 +94,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
         treeSha,
         implementerModel: roster.modelFromTranscript(transcriptPath),
       });
-      // Story en OTRO repo (URUTAU: stories en Project, código en Backend/VidrieraWeb) → el portón de
-      // CI del repo de la story exige esta constancia AHÍ (2026-09-05). Se proyectan sólo roster y
+      // Story en OTRO repo (las stories en un repo, el código en otro) → el portón de
+      // CI del repo de la story exige esta constancia AHÍ. Se proyectan sólo roster y
       // findings; una copia que falla deja constancia en el ledger como cualquier otra falla.
       // Un fallo acá NO se disfraza de `roster-write-failed` (el roster SÍ se escribió): evento propio.
       let motivoProyeccion = null;
@@ -131,8 +130,8 @@ function escribirRoster({ logPath, repo, story, sessionId, transcriptPath }) {
 
 // Blanco declarado de una retrospectiva, leído del prompt del spawn. Formato que emite el propio
 // aviso del freno: "Post-merge retrospective: repo <ruta absoluta>, merge <sha> …". Se acepta
-// cualquier orden y se toleran comillas; si el prompt no lo dice, se devuelve null y el freno cae a
-// su comportamiento anterior (nunca inventa un repo: un blanco inventado es peor que ninguno).
+// cualquier orden y se toleran comillas; si el prompt no lo dice, se devuelve null y el freno cae al
+// comportamiento sin blanco declarado (nunca inventa un repo: un blanco inventado es peor que ninguno).
 function retroTarget(prompt) {
   if (!prompt || typeof prompt !== 'string') return null;
   const mRepo = prompt.match(/\brepo[:=\s]+["'`]?((?:[A-Za-z]:[\\/]|[\\/])[^\s,;"'`)]+)/i);
@@ -149,24 +148,22 @@ function main() {
   } catch {
     return;
   }
-  // CF-2 re-check: el spawn de subagents se llama `Agent` (VSCode/Agent-SDK) o `Task`
-  // (CLI). Aceptar ambos — si solo escuchara 'Task', en el entorno de TYCON (VSCode) el
-  // hook nunca dispararía y check-count caería al --ran self-reportado.
-  // Codex (Etapa E2, 2026-08-22, sonda con payload real): el spawn es la tool
-  // `collaborationspawn_agent` y el nombre del agente viaja en tool_input.task_name
-  // (Codex lo underscorea: "tycon_plugin_security_basics"). El evento SubagentStart NO
-  // sirve acá: su payload trae solo agent_id + agent_type="default", sin el nombre —
-  // por eso este hook se registra en Codex como PreToolUse + matcher
-  // collaborationspawn_agent, no como SubagentStart (revierte la apuesta del inventario
-  // §A.2 con la evidencia de la sonda E2: guides/codex-migration.md, Registro E2).
+  // El spawn de subagents se llama `Agent` (VSCode/Agent-SDK) o `Task` (CLI). Aceptar ambos:
+  // si solo escuchara 'Task', en el entorno de TYCON (VSCode) el hook nunca dispararía y
+  // check-count caería al --ran self-reportado.
+  // Codex (sonda con payload real): el spawn es la tool `collaborationspawn_agent` y el nombre
+  // del agente viaja en tool_input.task_name (Codex lo underscorea: "tycon_plugin_security_basics").
+  // El evento SubagentStart NO sirve acá: su payload trae solo agent_id + agent_type="default", sin
+  // el nombre — por eso este hook se registra en Codex como PreToolUse + matcher
+  // collaborationspawn_agent, no como SubagentStart.
   const TOOLS = new Set(['Task', 'Agent', 'collaborationspawn_agent']);
   if (!event || !TOOLS.has(event.tool_name)) return;
 
-  // Codex (sonda G-1, 2026-08-22, payload completo): la IDENTIDAD del agent viaja en
+  // Codex (payload completo): la IDENTIDAD del agent viaja en
   // tool_input.agent_type (el nombre EXACTO del TOML, con guiones); task_name es una etiqueta
-  // LIBRE que elige el orquestador (se midió "sonda-alfa" para un agent llamado otra cosa) —
+  // LIBRE que elige el orquestador (puede no coincidir con el agente real) —
   // como ground truth de check-count es falsificable. agent_type gana; task_name queda de
-  // fallback (underscoreado → se normaliza) para payloads viejos.
+  // fallback (underscoreado → se normaliza) para payloads sin agent_type.
   const ti = event.tool_input || {};
   const rawName = ti.subagent_type || (event.tool_name === 'collaborationspawn_agent' && ti.agent_type) || ti.task_name;
   if (!rawName || typeof rawName !== 'string') return;
@@ -177,17 +174,15 @@ function main() {
   const cwd = event.cwd || process.cwd();
   const dir = path.join(stateDirOf(os.homedir()), 'advisor-runs');
   const logPath = path.join(dir, `${sessionId}.jsonl`);
-  // REPO y STORY en cada línea (2026-08-25, Tema 2 del plan de controles apagables). Sin esto el
-  // registro no puede contestar "¿corrieron los revisores de la story X?": se medían 756 líneas
-  // acumuladas con CERO repo. El dato ya estaba a mano — el marker de la sesión lo tiene, y si no
+  // REPO y STORY en cada línea. Sin esto el registro no puede contestar "¿corrieron los revisores
+  // de la story X?". El dato está a mano — el marker de la sesión lo tiene, y si no
   // hay marker la raíz de git del cwd alcanza para el repo. Se estampa acá, en el momento del
   // spawn REAL, no en un comando que alguien tiene que acordarse de tipear.
   const { repo, story } = attribution(sessionId, cwd);
-  // 🔴 EL BLANCO de una retrospectiva no es el repo de la sesión (2026-08-31,
-  // incident-log#retro-gate-cuenta-sin-repo-2026-08-31). `attribution()` contesta "¿en qué repo
+  // 🔴 EL BLANCO de una retrospectiva no es el repo de la sesión. `attribution()` contesta "¿en qué repo
   // está trabajando esta sesión?" — perfecto para los advisors, MENTIRA para el capturer: se lanza
-  // POST-merge, muchas veces desde el workspace-root (que no es repo git → `repo: null`: medido,
-  // 46 de 90 spawns del capturer, 51%) o con el marker de una story de OTRO repo, que gana sobre el
+  // POST-merge, muchas veces desde el workspace-root (que no es repo git → `repo: null`, en cerca de
+  // la mitad de los spawns del capturer) o con el marker de una story de OTRO repo, que gana sobre el
   // cwd. Sobre ese dato, el freno de retrospectiva (retro-pending.js) empareja merge↔retro: con
   // `null` empareja cualquier cosa, y con el repo del marker empareja la equivocada.
   // El dato correcto ya viaja en el prompt del propio spawn (lo arma `launchHint`): a qué repo y a
@@ -211,25 +206,24 @@ function main() {
 
   // ── La FOTO del estado auditado, tomada sola ──────────────────────────────
   // 🔴 `snapshot-iter N` tiene un único momento correcto: ronda de advisors terminada, ANTES del
-  // primer fix. Dependía de que el orquestador se acordara, y falló DOS veces en cinco semanas
-  // (stories 3.25 y 4.42) con el mismo síntoma: delta vacío en el re-loop y recuperación a mano con
-  // `--force-full-reloop` — el set completo de advisors donde el delta real eran dos archivos.
-  // El dato para detectarlo ya vivía en este mismo log; nadie lo cruzaba.
+  // primer fix. Depender de que el orquestador se acuerde falla con el mismo síntoma:
+  // delta vacío en el re-loop y recuperación a mano con `--force-full-reloop` — el set completo de
+  // advisors donde el delta real son dos archivos.
+  // El dato para detectarlo vive en este mismo log.
   // Se dispara en el SPAWN del último advisor esperado: entre ese spawn y el primer fix no se toca
   // código, así que la foto sale del estado correcto. Kill-switch: TYCON_AUTO_SNAPSHOT=0.
   // 🔴 Dos cosas cuelgan del MISMO momento (ronda completa) pero tienen interruptores distintos y
   // a propósito: apagar la foto no puede apagar el registro de autoría, que es la evidencia que el
-  // portón de CI exige para cerrar una story. Meterlos bajo el mismo `if` fue el primer intento —
-  // y habría dejado el control sin cobertura con sólo poner TYCON_AUTO_SNAPSHOT=0 (que es
-  // exactamente lo que hace el banco de pruebas de otros casos).
+  // portón de CI exige para cerrar una story. Meterlos bajo el mismo `if` dejaría el control
+  // sin cobertura con sólo poner TYCON_AUTO_SNAPSHOT=0 (que es exactamente lo que hace el banco de controles).
   try {
     const { rondaCompleta } = require('./lib/advisor-round.js');
     const r = rondaCompleta(fs.readFileSync(logPath, 'utf8').split('\n'));
     if (r.completa && !r.yaFotografiada && r.iter !== null) {
       // 🔴 El registro de autoría va PRIMERO, y en su propio try: es EVIDENCIA (el portón la
-      // exige), la foto es una optimización. Al revés —como estaba— un fallo del snapshot
-      // (timeout de 10 s en un repo grande, marker.js con exit ≠ 0) se tragaba todo y el roster
-      // no se escribía NI dejaba constancia, que es justo la falla que esta pieza predica evitar.
+      // exige), la foto es una optimización. Al revés, un fallo del snapshot (timeout de 10 s en un
+      // repo grande, marker.js con exit ≠ 0) tragaría todo y el roster no se escribiría NI dejaría
+      // constancia, que es justo la falla que esta pieza predica evitar.
       escribirRoster({ logPath, repo, story, sessionId, transcriptPath: event.transcript_path });
       if (process.env.TYCON_AUTO_SNAPSHOT !== '0') {
         const { execFileSync } = require('child_process');
@@ -256,10 +250,10 @@ function main() {
     }
   } catch { /* fail-open: nada de esto puede romper un spawn — el freno real vive en el portón */ }
 
-  // ── Las VUELTAS MANUALES también cuentan (2026-09-06, ADVISORS-ITER-MANUAL-RELOOP-UNDERCOUNT-1) ──
+  // ── Las VUELTAS MANUALES también cuentan ──
   // Después del sello de la ronda formal, los revisores que se vuelven a llamar «a mano» (dos o tres
   // puntuales tras el pase adversarial, hasta que confirman limpio) no completan ninguna ronda y no
-  // dejaban rastro: la story 1.1 tuvo 5 vueltas reales y la métrica dio 2. Acá cada vuelta manual
+  // dejarían rastro (con cinco vueltas reales, la métrica daría dos). Cada vuelta manual
   // sella `manual-iter` en el ledger y escribe su `advisors-iter` en gates.log con iter `<N>.<k>`,
   // que el capturador cuenta como un iter distinto sin cambiar su fórmula. Sin foto: la foto es
   // del re-loop formal. Kill-switch compartido con la foto: TYCON_AUTO_SNAPSHOT=0 apaga las dos.
@@ -268,7 +262,7 @@ function main() {
       const { vueltaManual } = require('./lib/advisor-round.js');
       const v = vueltaManual(fs.readFileSync(logPath, 'utf8').split('\n'));
       if (v.abre) {
-        // sin `advisor`: en el ledger «línea con advisor» ES un spawn para summarize/cost-report/contarRondas (#31)
+        // sin `advisor`: en el ledger «línea con advisor» ES un spawn para summarize/cost-report/contarRondas
         fs.appendFileSync(logPath, JSON.stringify({ ts: new Date().toISOString(), event: 'manual-iter', iter: v.iter, abierta_por: advisor }) + '\n', 'utf8');
         fs.appendFileSync(
           path.join(path.dirname(dir), 'gates.log'),
@@ -281,7 +275,7 @@ function main() {
 
   if (process.env.TYCON_SPAWN_GOVERNANCE === '0') return;
 
-  // ── El techo de la organización (story 7.29, decisión 20) ─────────────────
+  // ── El techo de la organización ───────────────────────────────────────────
   // En Claude el techo lo cumple el modelo que da el pipeline; si un lanzamiento lo pasa (con `model:` o, sin él, el
   // `model:` de su `.md` instalado), se AVISA: no se frena ni se cambia el pedido. Vale para cualquier agente (revisor
   // o ad hoc), por eso va antes del corte por tipo. En Codex no: el modelo ya se recortó al desplegar, y
@@ -319,7 +313,7 @@ function main() {
 
   // ── Aviso (b) — cuántos ad-hoc van en esta fase ───────────────────────────
   // "Fase" = desde el último step5-start (o desde el arranque de la sesión si no hubo).
-  // Es exactamente el corte que usó la medición: Steps 0-4 vs la revisión.
+  // Es el corte de la medición de arriba: Steps 0-4 vs la revisión.
   let adhocEnFase = 0;
   try {
     const lines = fs.readFileSync(logPath, 'utf8').split('\n');
@@ -352,13 +346,13 @@ function main() {
     );
   }
   if (!model && (hasCodegraph || pasoUmbral)) {
-    // con la configuración de la organización, el modelo de los ayudantes (story 7.29, AC 9)
+    // con la configuración de la organización, el modelo de los ayudantes
     let barato = 'uno barato';
     if (org && org.declared) {
       try {
         const h = require('./lib/models.js').resolveHelpers({ org: org.data });
         barato = `\`${h.model}\` (${h.origin === 'default' ? 'valor de hoy' : 'configuración de la organización'})`;
-      } catch { /* queda el texto de hoy */ }
+      } catch { /* queda `uno barato` */ }
     }
     notes.push(`este spawn no declara \`model:\` — para buscar/explorar alcanza ${barato}`);
   }

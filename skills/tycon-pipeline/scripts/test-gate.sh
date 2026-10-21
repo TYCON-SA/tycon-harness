@@ -3,14 +3,13 @@
 # tycon-pipeline — Test Gate (cierre del Step 4)
 # =============================================================================
 # Corre la suite de tests + coverage UNA SOLA VEZ y persiste el resultado como
-# artefacto machine-parseable. Nace de la auditoría 2026-06-09:
+# artefacto machine-parseable.
 #
-#   - tycon-plugin-tests-coverage (advisor LLM con Bash) corría la FULL SUITE
-#     dentro del fan-out del Step 5, EN CADA iteración (3-4x por corrida) y en
-#     paralelo con 4-5 subagentes — la combinación exacta que congeló la máquina
-#     del dev 2 veces. Ahora el advisor LEE este artefacto (sin Bash).
-#   - El gate de coverage 75% lo "afirmaba" el LLM. Ahora el % sale de parsear
-#     el cobertura.xml / coverage-final.json REAL.
+#   - El advisor tycon-plugin-tests-coverage LEE este artefacto (sin Bash): nunca corre la
+#     suite. Así la suite no se repite dentro del fan-out del Step 5 ni corre en paralelo con
+#     subagentes, que es lo que congela la máquina.
+#   - El gate de coverage 75% sale del parseo del cobertura.xml / coverage-final.json real,
+#     no de una afirmación del LLM.
 #   - marker.checks.tests se setea vía `marker.js run-check` (exit code real,
 #     provenance=run-check, gates.log) — el Stop-gate autónomo lee ground-truth.
 #
@@ -25,19 +24,19 @@
 #   En un repo con MÁS DE UN proyecto testeable, el alcance se DEDUCE de los
 #   archivos que la story declara (`files_to_create`/`files_to_modify`) o, si no
 #   hay story, del diff real. Si no se puede deducir, FRENA (exit 4) en vez de
-#   elegir mal — decisiones del dev 2026-08-13. Ver `lib/test-scope.js`.
+#   elegir mal. Ver `lib/test-scope.js`.
 #   Pasar la RUTA de la story en $2 (en vez del id) habilita la deducción por
 #   declaración y saca el id del frontmatter.
 #
 # Exit: el exit code REAL de la suite (0 verde, !=0 rojo) · 3 «sin medir»: no reconoce ninguna herramienta de pruebas
 #       (deja tests-result.json con `no_stack` y el motivo en llano, y el check `tests` en `sin-medir`)
 #       · 4 alcance ambiguo (no se corrió NADA) · 5 falta la herramienta que corre las
-#       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA; story 8.17, AC 50)
+#       pruebas, `npx`, `dotnet` o `npm` (no se corrió NADA)
 #       · 6 la suite salió 0 sin ninguna prueba corrida, o sin informe que lo cuente (no es verde).
 #       · 7 «sin acotar»: la corrida del repo hermano no pudo acotarse a lo tocado (no se sabe qué se tocó, o ninguna
 #       suite lo lee) y no corrió nada: no es verde ni rojo; la cubre la CI del pedido, y el merge la exige en verde.
 #
-# Sin `python3`, `timeout` ni `realpath` (story 8.17, AC 46 y 50): en Windows no son
+# Sin `python3`, `timeout` ni `realpath`: en Windows no son
 # requisito. El informe es lib/test-gate-report.js.
 #
 # Coverage sobre archivos NUEVOS (git diff --diff-filter=A + untracked): el
@@ -46,24 +45,24 @@
 # =============================================================================
 set -uo pipefail
 
-# 🔴 Lanzado DENTRO de `node --test` (una prueba que corre este gate), el hijo heredaba NODE_TEST_CONTEXT y el
-# `node --test` de la suite escribía en el formato interno de Node, no el resumen `ℹ tests N`: el informe no contaba
-# ninguna prueba y quedaba verde (hallazgo de la tanda W6 de la story 8.17). La suite corre como en una terminal.
+# 🔴 Lanzado DENTRO de `node --test` (una prueba que corre este gate), el hijo heredaría NODE_TEST_CONTEXT y el
+# `node --test` de la suite escribiría en el formato interno de Node, no el resumen `ℹ tests N`: el informe no contaría
+# ninguna prueba y quedaría verde. Por eso la suite corre como en una terminal.
 unset NODE_TEST_CONTEXT
 
-# REPO canonicalizado a ABSOLUTO (verificación adversarial 2026-06-11): la rama
+# REPO canonicalizado a ABSOLUTO: la rama
 # multi-proyecto embebe los paths de los .csproj en un bash -c que corre tras
 # `cd $REPO_RUN` — con un repo-dir relativo dejaban de resolver (MSB1009 falso).
 REPO="$(cd "${1:?Falta <repo-dir>}" && pwd)"
 STORY_ARG="${2:-}"
 STORY_ID="${STORY_ARG:-unknown}"
-# La CLAVE con que se nombra la copia sellada del resultado (story 1.17): el número solo si es único en el
+# La CLAVE con que se nombra la copia sellada del resultado: el número solo si es único en el
 # repo de la story, `<tema>__<número>` si se repite. La calcula lib/evidence-key.js desde la RUTA de la
 # story; si no puede decidirla, la copia no se escribe (lo dice el informe) — las pruebas corren igual.
 unset TYCON_EVIDENCE_KEY TYCON_EVIDENCE_KEY_FAILED
 case "$STORY_ARG" in
   *.md)
-    # La corrida del repo hermano (story 7.26) no escribe copia sellada: se nombra con la clave de la story y pisaría
+    # La corrida del repo hermano no escribe copia sellada: se nombra con la clave de la story y pisaría
     # la del repo de la story. Su resultado viaja en `companions` del artefacto de ese repo.
     if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" ]]; then
       export TYCON_EVIDENCE_KEY_FAILED="corrida del repo hermano: la copia sellada es la del repo de la story (su resultado va en companions)"
@@ -98,8 +97,8 @@ TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$OUT_DIR"
 
 # 🔴 Una salida que NO corrió la suite (4 freno, 5 falta el corredor) deja el check `tests` del marcador en ROJO con
-# su código, igual que la 6. Sin esto, un verde de una corrida anterior quedaba en pie y `complete-step 4` lo aceptaba:
-# «no pude correr» quedaba dicho en el artefacto y no en el marcador (pase adversarial de la W6, hallazgo #10). Sin
+# su código, igual que la 6. Sin esto, un verde de una corrida anterior queda en pie y `complete-step 4` lo acepta:
+# «no pude correr» se dice en el artefacto y también en el marcador. Sin
 # corrida activa, run-check no escribe nada. Nunca corta el gate.
 # «Sin acotar» se lee de la CONSTANCIA, no del número: un corredor (jest, vitest, npm test, dotnet) o una suite también
 # pueden salir 7 porque fallan, y eso es un rojo. Sólo la corrida cruzada de suites.json escribe `unscoped: true`.
@@ -113,12 +112,12 @@ marcar_tests_en_rojo() {
       node -e 'console.error("test-gate: " + process.argv[1]); process.exit(Number(process.argv[2]))' "$motivo" "$codigo" ) >&2 || true
 }
 
-# --- El repo hermano (story 7.26) ----------------------------------------------
+# --- El repo hermano ----------------------------------------------
 # Una story que vive en este repo y cambia otro declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el repo
 # hermano): al SALIR —por cualquiera de las salidas de abajo, también la 3 «sin pruebas acá», porque el repo de la story
 # puede no tener suite y el código vivir en el hermano— se corre este mismo gate sobre cada hermano en el que la story
-# declara archivos, con el alcance deducido de esos archivos. Antes la suite del hermano no la corría ningún portón
-# (corrida de una story de dos repos de un producto del equipo, 2026-10-14).
+# declara archivos, con el alcance deducido de esos archivos. Sin esto, la suite del hermano no la corre ningún portón
+# (por ejemplo, una story que toca dos repos de un producto del equipo).
 #   · El resultado de cada hermano va a `companions` del artefacto de ESTE repo, y `all_green` dice el total.
 #   · La salida combina: el código de este repo si falló; si no, el del primer hermano que falló. «Sin pruebas» (3) no
 #     es falla; un repo sin pruebas con el hermano verde sale 0.
@@ -134,7 +133,7 @@ if [[ "${TYCON_TEST_GATE_COMPANION:-}" == "1" ]]; then
   TG_CROSS=1
 elif [[ "$STORY_ARG" == *.md && -f "$STORY_ARG" ]]; then
   # Se compara el repo (su carpeta .git común), no el checkout: un worktree del mismo repo no es otro repo.
-  # Vacío si git no contesta: con bash 3.2, `cd ""` no falla y devolvía la carpeta misma, que se comparaba como otro repo.
+  # Vacío si git no contesta: con bash 3.2, `cd ""` no falla y devuelve la carpeta misma, que se compararía como otro repo.
   _tg_repo_git() {
     local d
     d="$(cd "$1" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" || return 0
@@ -159,7 +158,7 @@ TG_NO_COMPANIONS=""
 TG_TREE_TOUCHED_FILE=""
 borrar_arbol_privado() {
   # La corrida de las suites va en su propio grupo de procesos (ver la rama suites.json): se corta el grupo entero, así
-  # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaba vivas
+  # run-check y el corredor reciben la señal y el corredor corta sus suites. Cortar sólo el subshell las dejaría vivas
   # sobre el árbol ya borrado (casos: tests/test-gate-private-tree.test.js, el corte).
   if [[ -n "${TG_SUITES_PID:-}" ]]; then
     kill -TERM -- "-$TG_SUITES_PID" 2>/dev/null || kill -TERM "$TG_SUITES_PID" 2>/dev/null || true
@@ -194,7 +193,7 @@ correr_hermanos_al_salir() {
   story_abs="$(cd "$(dirname "$STORY_ARG")" && pwd)/$(basename "$STORY_ARG")"
   err="$(mktemp /tmp/test-gate-hermanos-XXXXXX)"
   if ! blancos="$(node "$SCRIPT_DIR/lib/companion-repos.js" targets "$REPO_STORY" "$story_abs" 2>"$err")"; then
-    # «No pude averiguar» no es «no hay hermanos»: con el repo en verde, salir 0 dejaba sin correr la suite de un
+    # «No pude averiguar» no es «no hay hermanos»: con el repo en verde, salir 0 dejaría sin correr la suite de un
     # hermano que la story toca. Sale 4 (el «no sé qué correr» del gate) y el check `tests` queda en rojo.
     echo "[test-gate] 🔴 no pude averiguar los repos hermanos que toca la story ($(head -1 "$err")): sus suites NO se corrieron, y eso no es verde" >&2
     rm -f "$err"
@@ -212,7 +211,7 @@ correr_hermanos_al_salir() {
     [[ -z "$root" ]] && continue
     hrc=0
     # El público que fue debajo del árbol armado ya se midió ahí, con lo privado encima (las mismas suites
-    # que leen lo tocado). Correrlo otra vez solo duplicaba la corrida (medido: 7,5 + 8,5 min); su resultado es el de
+    # que leen lo tocado). Correrlo otra vez solo duplicaría la corrida (unos 8 minutos más); su resultado es el de
     # este repo.
     if [[ -n "${TG_TREE_PUB_ROOT:-}" && "$root" == "$TG_TREE_PUB_ROOT" ]]; then
       echo "[test-gate] repo hermano $(basename "$root"): se midió dentro del árbol armado del privado (no se corre dos veces)" >&2
@@ -222,8 +221,8 @@ correr_hermanos_al_salir() {
     echo "[test-gate] repo hermano $(basename "$root"): la story declara ahí ${archivos//,/, } → corre su suite${scope:+ (alcance $scope)}" >&2
     # TYCON_TEST_GATE_STORY_REPO: el repo de la story, para que el cruce de cobertura del hermano mire sólo lo que la
     # story crea en él (lib/companion-repos.js declared-in).
-    # `< /dev/null`: la lista de hermanos entra al bucle por la entrada estándar; una suite que la lee se tragaba los
-    # hermanos siguientes, que quedaban sin correr y sin aviso (revisor de fallas silenciosas, vuelta 2).
+    # `< /dev/null`: la lista de hermanos entra al bucle por la entrada estándar; una suite que la lee se traga los
+    # hermanos siguientes: quedarían sin correr y sin aviso.
     if [[ -n "$scope" ]]; then
       TYCON_TEST_GATE_COMPANION=1 TYCON_TEST_GATE_STORY_REPO="$REPO_STORY" TYCON_TEST_SCOPE= bash "$SCRIPT_DIR/test-gate.sh" "$root" "$story_abs" "$scope" < /dev/null || hrc=$?
     else
@@ -299,25 +298,18 @@ trap correr_hermanos_al_salir EXIT
 SCOPE="${3:-${TYCON_TEST_SCOPE:-}}"
 SCOPE_SOURCE="explicito"
 
-# 🔴 REPO MULTI-STACK: DEDUCIR, y si no se puede, FRENAR (decisiones del dev 2026-08-13,
-# tags `dec-2026-08-13-deducir-el-alcance` + `dec-2026-08-13-frenar-si-no-sabe`).
+# 🔴 REPO MULTI-STACK: DEDUCIR, y si no se puede, FRENAR.
 #
-# Historia de este bloque, en dos pasos:
-#   - 2026-08-04 (Story 4.27 de un repo del equipo): el repo tiene `apinetcore/` (.NET) y `mcp/` (node
-#     --test); la story tocaba SÓLO `mcp/`, el `.csproj` ganaba por estar primero, y el gate corría
-#     `dotnet test`. Se puso un AVISO por stderr y se siguió corriendo el stack equivocado, para no
-#     romper a los repos que andaban.
-#   - 2026-08-13 (cierre de la Story 4.30, MEDIDO): el aviso salía por stderr y nadie lo leyó. El
-#     gate corrió .NET, falló en 1,3s y dejó `tests-result.json` en ROJO con el id `4.30` puesto —
-#     de un proyecto que la story jamás tocó. Un control que avisa y sigue es un control que se
-#     aprende a ignorar; y una constancia en rojo del proyecto equivocado es PEOR que ninguna,
-#     porque parece verificación. Ahora: se deduce de lo que la story declara (o del diff), y si
-#     hay ambigüedad NO se corre nada.
+# Con `apinetcore/` (.NET) y `mcp/` (node --test) en el mismo repo, y la story tocando sólo `mcp/`, un
+# `dotnet test` por el .csproj que aparece primero es el stack equivocado. Un aviso por stderr no alcanza: un
+# control que avisa y sigue se aprende a ignorar, y una constancia en rojo del proyecto equivocado es PEOR que
+# ninguna, porque parece verificación. Se deduce de lo que la story declara (o del diff), y si hay ambigüedad
+# NO se corre nada.
 DEDUC_TSV="$(node "$SCRIPT_DIR/lib/test-scope.js" "$REPO" "$STORY_ARG" --tsv 2>/dev/null || true)"
 TG_MULTI=0; TG_SCOPE=""; TG_SOURCE=""; TG_STORY_ID=""; TG_AMBIG=0; TG_CANDS=""; TG_REASON=""; TG_SCOPES=""
 # 🔴 El separador es \x1f, NO un tabulador: bash trata el tab como espacio en blanco de IFS y
 # colapsa los separadores consecutivos, así que un campo vacío en el medio corre todos los de
-# atrás (el alcance llegaba valiendo "1", que era el flag de ambigüedad). Lo cazó el test del freno.
+# atrás (el alcance llegaría valiendo "1", que es el flag de ambigüedad).
 IFS=$'\x1f' read -r TG_MULTI TG_SCOPE TG_SOURCE TG_STORY_ID TG_AMBIG TG_CANDS TG_REASON TG_SCOPES <<< "$DEDUC_TSV"
 TG_MULTI="${TG_MULTI:-0}"; TG_AMBIG="${TG_AMBIG:-0}"
 # Cuando $2 es la RUTA de la story, el id sale del frontmatter — una sola verdad: lo lee el
@@ -327,7 +319,7 @@ if [[ -n "$TG_STORY_ID" ]]; then STORY_ID="$TG_STORY_ID"; fi
 # --- Varios proyectos tocados: una corrida por proyecto ---------------------------------------------------------
 # Una story que toca dos o más proyectos con pruebas del mismo repo (el back en pytest y el front en Vitest) corre cada
 # uno con su suite, en serie, cada uno con su artefacto; el de la raíz junta los resultados en `parts` y es verde sólo
-# si todas lo son. Antes esto frenaba con 4 y el back quedaba sin medir. Archivos que no caen en ningún proyecto siguen
+# si todas lo son. Frenar con 4 dejaría el back sin medir. Archivos que no caen en ningún proyecto siguen
 # frenando con 4, y una story de otro repo sigue con la salida 7 de la corrida cruzada.
 correr_partes() {
   local partes="$1" story_abs="" final=0 filas="" scope hrc out
@@ -458,10 +450,9 @@ fi
 
 # 🔴 Un `.csproj` en el subárbol NO alcanza: `dotnet test` necesita una solución o un proyecto
 # EN la carpeta donde corre. Sin este chequeo, un alcance que es un CONTENEDOR de proyectos
-# (ej. `custom-forms/`, con la solución un nivel más abajo) pasaba la detección, corría
-# `dotnet test` ahí, salía MSB1003 y dejaba `tests-result.json` en ROJO con el id de la story
-# puesto — de un comando que no podía funcionar nunca. Caso medido: el repo del framework, Story 10.2,
-# 2026-08-15. Misma familia que el caso 4.30: una constancia falsa es peor que ninguna.
+# (ej. `custom-forms/`, con la solución un nivel más abajo) pasaría la detección, correría
+# `dotnet test` ahí, saldría MSB1003 y dejaría `tests-result.json` en ROJO con el id de la story
+# puesto — de un comando que no puede funcionar nunca. Una constancia falsa es peor que ninguna.
 _DOTNET_CORRIBLE=""
 if ls "$REPO"/*.sln >/dev/null 2>&1 || ls "$REPO"/*.csproj >/dev/null 2>&1; then
   _DOTNET_CORRIBLE="sí"
@@ -486,25 +477,22 @@ elif [ -f "$REPO/package.json" ] && grep -q '"vitest"' "$REPO/package.json" 2>/d
   RUNNER="vitest"
 elif [ -f "$REPO/package.json" ] && grep -qE '"test"[[:space:]]*:[[:space:]]*"[^"]*node --test' "$REPO/package.json" 2>/dev/null; then
   # Runner nativo de Node (`node --test`) — el 3er stack del equipo, sin jest ni vitest.
-  # Caso disparador: `mcp/` de un repo del equipo (Story 4.23, 2026-07-25). Antes caía en el `exit 3`
-  # de "no se detectó stack" y la matriz runtime se quedaba SIN artefacto → marcaba los 35 ACs
-  # como NOT-RUN con la suite realmente verde. Un gate que no puede mirar bloquea igual que uno
-  # que mira y ve rojo, pero por la razón equivocada.
+  # Sin esta rama, un repo así cae en el `exit 3` de «no se detectó
+  # stack» y la matriz runtime queda SIN artefacto: marca los ACs como NOT-RUN con la suite realmente
+  # verde. Un gate que no puede mirar bloquea igual que uno que mira y ve rojo, pero por la razón equivocada.
   RUNNER="node-test"
 elif [ -f "$REPO/package.json" ] && grep -qE '"jest"[[:space:]]*:|"test"[[:space:]]*:[[:space:]]*"[^"]*jest' "$REPO/package.json" 2>/dev/null; then
-  # jest — 4to stack del equipo (2026-08-15). Caso disparador: `custom-forms/runtime-app` de
-  # el repo del framework (596 tests) quedaba SIN medir: el gate decía "no se detectó stack" y salía 3,
-  # así que la suite del frontend nunca pasó por un control y había que correrla a mano.
+  # jest: sin esta rama,
+  # el gate dice «no se detectó stack» y sale 3, y la suite del frontend no pasa por ningún control.
   # Su JSON (`--json`) y su coverage (`coverage/coverage-final.json`) tienen el MISMO formato que
   # vitest, así que el parser de abajo los lee sin ramas nuevas.
   RUNNER="jest"
 elif [ -f "$REPO/scripts/tests/suites.json" ]; then
-  # suites.json — 5to stack del equipo (2026-09-05). Caso disparador: el repo del ARNÉS
-  # (el arnés, story 2.2) no tiene package.json ni .csproj: sus 57 suites son archivos
-  # sueltos declarados en `scripts/tests/suites.json`, que el pipeline de Azure ya corre cada
-  # noche. El gate salía 3 («no se detectó stack») y NUNCA escribía tests-result.json → la matriz
-  # de DoD marcaba 11 criterios como NOT-RUN con la suite realmente verde. Tercera vez del mismo
-  # patrón (node --test en julio, jest en agosto). El runner usa la MISMA lista que el nocturno.
+  # suites.json. El repo del ARNÉS no tiene package.json ni .csproj: sus suites son
+  # archivos sueltos declarados en `scripts/tests/suites.json`, que el pipeline de Azure ya corre cada
+  # noche. Sin este runner el gate sale 3 («no se detectó stack») y nunca escribe tests-result.json: la
+  # matriz de DoD marcaría criterios como NOT-RUN con la suite realmente verde. El runner usa la MISMA
+  # lista que el nocturno.
   RUNNER="suites-json"
 elif [[ -n "$GENERICO_NOMBRE" ]]; then
   # una herramienta de fábrica con su detector EN esta carpeta (go.mod, pytest.ini…) gana sobre la búsqueda de un
@@ -541,7 +529,7 @@ fi
 
 if [[ -z "$RUNNER" ]]; then
   # 🔴 La salida 3 deja constancia y el check `tests` queda «sin medir»: sin artefacto, el revisor de
-  # pruebas lo leía como «el portón no corrió» (un crítico falso), y sin tocar el marcador la historia cerraba sin decir
+  # pruebas lo leería como «el portón no corrió» (un crítico falso), y sin tocar el marcador la historia cerraría sin decir
   # que nadie midió nada (o con el verde de una corrida anterior).
   _MIRADAS="$(cd "$REPO" && { echo "."; for d in */; do [[ -d "$d" ]] && echo "${d%/}/"; done; } | head -12 | paste -sd ',' - | sed 's/,/, /g')"
   _RAZON="el portón no sabe correr las pruebas de este repo: miré ${_MIRADAS} y no encontré un proyecto de .NET, Vitest, Jest, node --test, pytest, Go, Maven, Gradle, Karma ni Playwright. Para medirlas, declará el comando de pruebas del repo en el sitio de la organización: pestaña Configuración → Tu tecnología → Cómo se corren las pruebas (stack.test_runners de team-repos.json)"
@@ -607,9 +595,9 @@ if [[ "$RUNNER" == "dotnet" && -z "$_DOTNET_CORRIBLE" ]]; then
   exit 4
 fi
 
-# --- La herramienta que corre las pruebas tiene que estar (story 8.17, AC 50) ---
+# --- La herramienta que corre las pruebas tiene que estar ---
 # Sin `npx` o sin `dotnet` en el PATH (en Windows pasa: Git Bash no ve lo que instaló otro shell), `run-check`
-# lanzaba un comando inexistente y quedaba un rojo con totales vacíos que nadie sabía leer. Ahora se dice qué falta,
+# lanzaría un comando inexistente y dejaría un rojo con totales vacíos. Acá se dice qué falta,
 # el artefacto lo anota, y NO se corre nada: «no pude correr» no es «pasaron» ni «fallaron».
 case "$RUNNER" in
   dotnet) _HERRAMIENTA="dotnet" ;;
@@ -618,7 +606,7 @@ case "$RUNNER" in
   *) _HERRAMIENTA="node" ;;
 esac
 [[ -n "$GENERICO" ]] && _HERRAMIENTA="$(_campo_generico tool)"
-# `command -v` sólo no alcanza (pase adversarial de la W6, hallazgo #8): en Windows Git Bash encuentra el guion `npx`
+# `command -v` sólo no alcanza: en Windows Git Bash encuentra el guion `npx`
 # sin extensión, pero run-check lo lanza desde Node, que no lanza un `npx.cmd` sin shell; y bash cuenta también un
 # archivo sin permiso de ejecución. `portable-tools.js can-launch` mira con la MISMA búsqueda con la que run-check lanza.
 _NO_LANZA=""
@@ -665,12 +653,10 @@ RESULTS_DIR="$(mktemp -d /tmp/test-gate-XXXXXX)"
 SUITE_EXIT=0
 TEST_PROJECTS=()  # declarado arriba: la rama vitest también lo expande (set -u safe)
 
-# 🔴 Marca de procedencia del check `tests` (decisión del dev 2026-08-13, tag
-# `dec-2026-08-13-suite-completa-al-cerrar`). `marker.js run-check tests` la lee y anota
+# 🔴 Marca de procedencia del check `tests`. `marker.js run-check tests` la lee y anota
 # provenance='test-gate' en vez de 'run-check'; `complete-step 4` BLOQUEA un verde que no venga
-# de acá. Motivo medido: en el cierre de la 4.30 el check quedó verde con 872 de 2400 tests —
-# los que la story declaraba, corridos a mano. La única corrida completa salió en rojo con 13
-# fallas, dos de la propia story. Un verde parcial no puede pasar por control.
+# de acá. Un check verde con una fracción de las pruebas (sólo las que la story declara) no puede
+# pasar por control: la corrida completa es la que cuenta.
 export TYCON_TEST_GATE=1
 # El buzón apagado para cada prueba: ninguna sube al buzón real del equipo, aunque se equivoque (la llave de esta
 # máquina está en el árbol). La llave apunta a un archivo que no existe; una prueba que mide la subida pone sus propias
@@ -706,13 +692,12 @@ if [[ -n "$GENERICO" ]]; then
     SUITE_EXIT=1
   fi
 elif [[ "$RUNNER" == "dotnet" ]]; then
-  # Fix auditoría 9.4 (2026-06-11) — race bi-assembly: `dotnet test` a nivel solución
-  # corre los assemblies de test EN PARALELO y, si comparten la BD de test (DatabaseFixture
-  # droppea/recrea el schema), se pisan entre sí → exit=1 con 0 failed reales. En 9.4 esto
-  # costó 2 corridas full rojas (~14 min) + 1 tercera secuencial manual. Si hay >1 proyecto
-  # de test, se corren SECUENCIALES (un solo run-check envuelve la cadena && — exit code real).
+  # Race bi-assembly: `dotnet test` a nivel solución corre los assemblies de test EN PARALELO y, si
+  # comparten la BD de test (DatabaseFixture droppea/recrea el schema), se pisan entre sí → exit=1 con
+  # 0 failed reales. Si hay >1 proyecto de test, se corren SECUENCIALES (un solo run-check envuelve la
+  # cadena && — exit code real).
   while IFS= read -r tp; do TEST_PROJECTS+=("$tp"); done < <(find "$REPO_RUN" -maxdepth 3 -path '*/tests/*' -name '*.csproj' -not -path '*/node_modules/*' -not -path '*/bin/*' -not -path '*/obj/*' 2>/dev/null | sort)
-  # Cross-check contra el .sln (verificación adversarial 2026-06-11): el find por
+  # Cross-check contra el .sln: el find por
   # layout '*/tests/*' puede DROPEAR un test project que viva fuera de tests/ o a
   # depth>3. Si el .sln declara MÁS proyectos test que los encontrados → warning
   # explícito + fallback a solución-level (corre TODO, aunque re-exponga la race —

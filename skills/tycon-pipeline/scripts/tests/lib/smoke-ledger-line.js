@@ -2,9 +2,9 @@
 'use strict';
 /**
  * smoke-ledger-line.js — arma, para las pruebas, la línea que smoke-run.sh deja en el registro de humos del repo
- * (`<clave>-smoke-ledger.jsonl`) y la que deja en el espejo del home (`gates.log`). Story 1.19.
+ * (`<clave>-smoke-ledger.jsonl`) y la que deja en el espejo del home (`gates.log`).
  *
- * Por qué existe: las pruebas escribían esas líneas a mano, cada una con su copia del formato. Con la línea `"v":2`
+ * Por qué existe: sin él, cada prueba escribiría esas líneas a mano, con su propia copia del formato. Con la línea `"v":2`
  * (la que trae la salida guardada y sus sellos) el formato tiene dos versiones, y una copia desactualizada en una
  * prueba pasa en verde probando el formato de ayer. Un solo lugar que las arma, igual que el envoltorio.
  *
@@ -15,19 +15,19 @@
  *     outputText: 'HTTP 200 …' } });                                                 // línea `v:2` con su salida
  *
  * Uso desde un .sh (agrega las dos líneas):
- *   node smoke-ledger-line.js --dod <dir> --gates <archivo> --story 1.1 --acs 1 [--ts <iso>] [--exit 0]
+ *   node smoke-ledger-line.js --dod <dir> --gates <archivo> --story N.M --acs 1 [--ts <iso>] [--exit 0]
  *        [--cmd 'curl -s http://app/x'] [--mutates] [--repo <ruta>] [--no-mirror]
  *        [--pass-if <texto> [--fail-if <texto>] [--output-text <texto>]]
  */
 // stable-data: el sello por defecto es la hora real a propósito: la matriz descarta la evidencia más vieja que el código,
-// y una hora fija se pudriría (caso «fechas podridas», 2026-08-13). Quien necesita un sello fijo lo pasa con `ts`.
+// y una hora fija se pudriría (fechas podridas). Quien necesita un sello fijo lo pasa con `ts`.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
 function sha256(text) { return crypto.createHash('sha256').update(text).digest('hex'); }
 
-/** Sello de ahora en el formato del envoltorio (`2026-10-15T21:45:00Z`, sin milésimas). */
+/** Sello de ahora en el formato del envoltorio (`2026-01-01T00:00:00Z`, sin milésimas). */
 function nowTs() { return new Date().toISOString().replace(/\.\d+Z$/, 'Z'); }
 
 /** El sello compacto del nombre de la salida (`20261015T214500Z`), como el portón E2E. */

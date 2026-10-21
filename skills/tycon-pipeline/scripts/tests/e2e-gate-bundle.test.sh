@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# e2e-gate-bundle.test.sh — que las pruebas de navegador no aprueben CÓDIGO VIEJO (2026-09-06).
+# e2e-gate-bundle.test.sh — que las pruebas de navegador no aprueben CÓDIGO VIEJO.
 #
 # EL DEFECTO QUE CIERRA. La página de desarrollo carga un archivo ya compilado (`dist/form.dev.js`)
 # mientras el build del pipeline genera otro (`dist/form.js`). Si alguien cambia el fuente y no
 # recompila, Playwright ejercita la versión ANTERIOR y sale **verde** — el peor resultado posible,
 # porque un verde sobre el artefacto equivocado se lee exactamente igual que un verde de verdad.
-# Pasó TRES veces (2026-08-22, story M-11, y el merge del 2026-08-27) y las tres se resolvió
-# acordándose a mano. Un control que depende de que alguien se acuerde no es un control.
+# Se resuelve acordándose a mano, y un control que depende de que alguien se acuerde no es un control.
 #
-# 🔴 ROJO PREVIO VERIFICADO contra la versión PUBLICADA del guion (la que no trae el bloque):
-#    los casos 1, 2, 5 y 6 salen rojos ahí y verdes con el control. Se corre con
+# 🔴 Contra una versión del guion que no trae el bloque, los casos 1, 2, 5 y 6 salen rojos, y con el
+#    control salen verdes. Se corre con
 #      TYCON_E2E_GATE=<ruta a la versión vieja> bash <este archivo>
 #    que es el mismo mecanismo que usa esta suite para poder probar su propio rojo.
 #
@@ -42,10 +41,10 @@ montar() {
   touch -t "$fuente_ts" "$T/repo/front/src/app.js"
   # npx falso: no corre Playwright, deja un JSON mínimo y sale 0 (verde).
   #
-  # 🔴 El JSON trae UNA prueba que PASÓ, y no `{}` como hasta el 2026-09-27. Motivo: estos casos
+  # 🔴 El JSON trae UNA prueba que PASÓ, y no `{}`. Motivo: estos casos
   # miden la dimensión BUNDLE (¿recompila?, ¿de dónde salió?) y para eso necesitan una corrida que
-  # por lo demás sea verde. Con `{}` la corrida no ejecutaba NADA, y desde que el gate distingue
-  # "no ejerció" de "pasó" (veredicto SIN_EJERCER, story FIX-Q1), `{}` hacía frenar a los cinco
+  # por lo demás sea verde. Con `{}` la corrida no ejecuta NADA, y como el gate distingue
+  # "no ejerció" de "pasó" (veredicto SIN_EJERCER), `{}` frena a los cinco
   # casos por un motivo ajeno a lo que quieren probar.
   printf '#!/bin/sh\ncat <<JSON\n{"suites":[{"specs":[{"title":"probe del banco","tests":[{"results":[{"status":"passed"}]}]}]}]}\nJSON\nexit 0\n' > "$T/bin/npx"; chmod +x "$T/bin/npx"
   # el comando de recompilado deja rastro Y toca el bundle, como haría uno de verdad
@@ -142,13 +141,13 @@ RC=$(correr "$T")
                  || mal "C-06 corrió las pruebas sin que exista el archivo que el navegador carga"
 rm -rf "$T"
 
-# ── C-07 a C-09 · SIN declarar, con una página de desarrollo que carga el bundle (2026-09-18) ────
-# 🔴 El control nació opt-in y medido doce días después NINGÚN repo lo declaraba — ni Totora
-#    FrontEnd, donde mordió tres veces y tiene cuatro apps con `dev.html` + `dist/form.dev.js`.
+# ── C-07 a C-09 · SIN declarar, con una página de desarrollo que carga el bundle ────
+# 🔴 Un control que sólo corre si el repo lo declara queda apagado incluso en los repos que tienen el problema
+#    (apps con `dev.html` + `dist/form.dev.js`).
 #    Un control que depende de que alguien se acuerde de DECLARARLO es el mismo olvido corrido
-#    un casillero. Ahora, si hay un `dev.html` que carga un bundle que existe, la frescura se
+#    un casillero. Si hay un `dev.html` que carga un bundle que existe, la frescura se
 #    juzga aunque nadie la haya declarado; `e2e.bundle` queda para apuntar el `rebuild:`.
-#    ROJO PREVIO: C-07 salía exit 0 (corría las pruebas sobre el bundle viejo, en verde).
+#    Sin esto, C-07 sale exit 0 y corre las pruebas sobre el bundle viejo, en verde.
 pagina_dev() { printf '<html><body><script src="dist/form.dev.js"></script></body></html>\n' > "$1/repo/front/dev.html"; }
 
 T=$(mktemp -d); montar "$T" "$VIEJO" "$NUEVO"; declarar "$T" nada; pagina_dev "$T"

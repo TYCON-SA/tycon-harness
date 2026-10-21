@@ -1,10 +1,9 @@
-// adversarial-verify.workflow.js — Step 5b del tycon-pipeline (decisión DevA 2026-07-03).
+// adversarial-verify.workflow.js — Step 5b del tycon-pipeline.
 //
 // Pase adversarial reproduce-or-refute que corre DESPUÉS de los 6 advisors single-pass del Step 5.
 // La diferencia clave: los advisors LEEN el diff; este workflow EJECUTA el código (bundlea, parsea,
-// corre probes contra datos/corpus reales) para CONFIRMAR o REFUTAR cada finding. Fue lo que cazó el
-// falso negativo de traversal de Story 1.5 (bizuit:* sobre lanes/participants no se escaneaban) que
-// los 6 advisors NO vieron — 4to caso en E1 (1.2/1.3/1.4/1.5).
+// corre probes contra datos/corpus reales) para CONFIRMAR o REFUTAR cada finding. Atrapa lo que la
+// lectura no ve, por ejemplo un falso negativo de recorrido (un tipo de nodo que no se escanea).
 //
 // Invocación (desde step-05b, vía la tool Workflow):
 //   Workflow({ scriptPath: '<este archivo>', args: {
@@ -20,14 +19,13 @@
 // reporte consolidado del Step 6 con tag `adversarial-verify` y disparan el re-loop D.i si se aplican
 // fixes. Cada CONFIRMED trae `probe_dir`: la carpeta donde quedó la prueba que lo reprodujo.
 //
-// 🔴 LAS PRUEBAS QUE CONFIRMAN SE GUARDAN (2026-09-17, pedido del dev). Hasta acá el verificador
-// borraba su prueba al terminar —bien: no puede quedar en el repo— y a los 30 días Claude Code
-// borraba también su conversación. Del hallazgo quedaba el relato, nunca el código: en la story A-2
-// de Totora el verificador escribió una prueba de integración que devolvía 200 donde la story pedía
-// 403, y esa prueba —lista para volverse la de regresión— se perdió. Ahora, ANTES de borrarla, el
+// 🔴 LAS PRUEBAS QUE CONFIRMAN SE GUARDAN. El verificador borra su prueba al terminar —bien: no
+// puede quedar en el repo—, y sin copia del hallazgo queda el relato y nunca el código: una prueba de
+// integración que devuelve 200 donde la story pide 403, lista para volverse la de regresión, se
+// perdería. Por eso, ANTES de borrarla, el
 // verificador copia sus archivos y el comando a `<runDir>/step-05b-probes/<lente>-<n>/`, con `.txt`
 // agregado al nombre (así ningún compilador ni corredor de pruebas los levanta) y las credenciales
-// tapadas. La carpeta de la corrida está en el `.gitignore` canónico (PIPE-C2): no viaja por git.
+// tapadas. La carpeta de la corrida está en el `.gitignore` canónico: no viaja por git.
 
 export const meta = {
   name: 'adversarial-verify',
@@ -39,7 +37,7 @@ export const meta = {
 }
 
 // Normalización defensiva: la tool Workflow a veces entrega `args` como STRING JSON en vez de objeto
-// (visto 2026-07-04). Parse-guard para no degradar a FILES=[] (no-op silencioso).
+// Parse-guard para no degradar a FILES=[] (no-op silencioso).
 const A = (typeof args === 'string')
   ? ((() => { try { return JSON.parse(args) } catch { return {} } })())
   : (args || {})
@@ -55,12 +53,12 @@ const MODEL = (A && A.model) || 'sonnet'
 const RUN_DIR = String((A && A.runDir) || `${REPO}/.advisors/pipeline-runs/adversarial-sin-corrida`).replace(/\/+$/, '')
 const PROBES_DIR = `${RUN_DIR}/step-05b-probes`
 
-// Agrupar los hallazgos por causa antes de verificarlos (story 7.11). Se apaga con la variable
+// Agrupar los hallazgos por causa antes de verificarlos. Se apaga con la variable
 // TYCON_5B_GROUP=0 —como los demás recortes del arnés— o con `agrupar: false` en los args (que es
 // como se lo pasa el step cuando la variable está puesta y el guion corre en una caja sin env). Acá se lee
 // directo porque la caja no tiene `require`: el nombre viejo de la variable lo resuelve el step con
-// `legacy_env` al armar los args (story 8.9 del arnés, tanda B1, AC 24).
-// Apagado = exactamente el comportamiento de antes: un verificador por hallazgo.
+// `legacy_env` al armar los args.
+// Apagado = un verificador por hallazgo.
 const AGRUPAR = (A && A.agrupar === false)
   ? false
   : !(typeof process !== 'undefined' && process && process.env && process.env.TYCON_5B_GROUP === '0')
@@ -207,10 +205,9 @@ const VERDICT_SCHEMA = {
     // guardar (y entonces `reasoning` dice por qué). Requerido: bajo Codex el esquema estricto exige
     // todas las propiedades, y así las dos herramientas devuelven lo mismo.
     probe_dir: { type: 'string' },
-    // 🔴 El escape hatch, ahora con lugar en la respuesta (2026-09-20). Antes el prompt le pedía al
-    // verificador que avisara si algún miembro de la clase NO era el mismo defecto, pero su
-    // respuesta sólo tenía un veredicto de clase y nadie leía ese texto: el aviso era decorativo y
-    // un bug real quedaba marcado como verificado sin que nadie lo hubiera reproducido.
+    // 🔴 El escape hatch tiene lugar en la respuesta. El prompt pide avisar si algún miembro de la
+    // clase NO era el mismo defecto: sin este campo, ese aviso caería en un texto que nadie lee, y un
+    // bug real quedaría marcado como verificado sin que nadie lo hubiera reproducido.
     todos_el_mismo_defecto: { type: 'boolean' },
   },
   required: ['verdict', 'reasoning', 'adjusted_severity', 'probe_dir', 'todos_el_mismo_defecto'],
@@ -274,8 +271,8 @@ if (A && A.modo === 'single-finding') {
 // ===== NUCLEO-AGRUPAR: INICIO =====
 // 🔴 Este bloque está COPIADO LITERAL dentro de adversarial-verify.workflow.js: el pase corre en
 // una caja sin `require`, así que no puede importarlo. `tests/test-group-findings.js` compara las
-// dos copias carácter por carácter y se pone rojo si se separan — que es exactamente el defecto
-// («una lista duplicada y desincronizada») que este mismo pase encontró en la corrida 7.10.
+// dos copias carácter por carácter y se pone rojo si se separan: es el defecto de una lista
+// duplicada y desincronizada.
 // Para re-sincronizar: node lib/group-findings.js --emit-core > /tmp/n.js y pegarlo.
 // Categorías de síntoma. Cerradas a propósito: una lista abierta se vuelve parecido de texto con
 // otro nombre. Cada una se reconoce por marcas de CÓDIGO (identificadores, operadores, literales),
@@ -366,7 +363,7 @@ function compatibles(a, b, ctx) {
     if (sa.line !== sb.line) {
       return { ok: false, motivo: `mismo archivo pero líneas declaradas distintas (${sa.line} vs ${sb.line})`, cerca: true };
     }
-    // 🔴 El sitio SOLO no alcanza (lo reprodujo el pase adversarial con un bug de índice y una
+    // 🔴 El sitio SOLO no alcanza (un bug de índice y una
     // condición de carrera en la misma línea): hace falta algo más que compartan.
     if (sintomasEnComun.length) {
       return { ok: true, motivo: `mismo sitio (${sa.file}:${sa.line}) y mismo síntoma (${sintomasEnComun.join('/')})` };
@@ -410,8 +407,8 @@ function agrupar(hallazgos, opts) {
     for (const x of s) cuenta.set(x, (cuenta.get(x) || 0) + 1);
   }
   // Un símbolo que aparece en buena parte de los hallazgos no distingue nada: es el nombre del
-  // módulo que todos tocan. El corte era la MITAD y el pase mostró que era demasiado permisivo con
-  // pases chicos (con 2 hallazgos, un símbolo compartido por los dos nunca llegaba a «genérico»).
+  // módulo que todos tocan. Un corte en la MITAD sería demasiado permisivo con pases chicos (con 2
+  // hallazgos, un símbolo compartido por los dos nunca llegaría a «genérico»); el corte es un tercio.
   const tope = Math.max(1, Math.ceil(hs.length / 3));
   const genericos = new Set([...cuenta.entries()].filter(([, n]) => n > tope).map(([k]) => k));
   const ctx = { simbolos, sintomas, genericos };
@@ -458,12 +455,11 @@ if (FILES.length === 0) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 // Fase 1 — los 6 cazadores, en paralelo.
 //
-// 🔴 ACÁ HAY UNA BARRERA, y antes no la había (story 7.11). Hasta 2026-09-20 esto era
-// `pipeline(LENSES, cazar, verificar)`: cada lente empezaba a verificar apenas terminaba de cazar,
-// sin esperar a las demás. Se solapaba lindo, pero la agrupación NO PUEDE cruzar lentes si cada
-// lente ya verificó lo suyo — y justamente el 90 % de los duplicados medidos son el mismo defecto
-// visto por lentes distintas. Lo que se paga: la cola del cazador más lento. Lo que se lleva:
-// ~40 % de los verificadores.
+// 🔴 ACÁ HAY UNA BARRERA: los cazadores terminan antes de verificar. Con `pipeline(LENSES, cazar,
+// verificar)` cada lente empezaría a verificar apenas terminara de cazar, y la agrupación NO PUEDE
+// cruzar lentes si cada lente ya verificó lo suyo — y el grueso de los duplicados medidos son el
+// mismo defecto visto por lentes distintas. Lo que se paga: la cola del cazador más lento. Lo que se
+// gana: ~40 % de los verificadores.
 const hunts = await parallel(
   LENSES.map((lens) => () =>
     agent(`${COMMON}\n\n${lens.prompt}`, {
@@ -477,8 +473,8 @@ const hunts = await parallel(
 )
 
 // 🔴 UN CAZADOR MUERTO NO ES UNA LENTE LIMPIA. `agent()` devuelve null cuando el agente
-// muere o no contesta lo pedido —en la herramienta Workflow y en workflow-lite.js por igual—, y acá se leía como
-// «cero hallazgos»: con Codex en su tope el pase salió «6 lentes limpias» sin haber revisado nada. Una lente vale
+// muere o no contesta lo pedido —en la herramienta Workflow y en workflow-lite.js por igual—, y eso
+// se leería como «cero hallazgos»: un pase con todos los cazadores muertos saldría «6 lentes limpias» sin haber revisado nada. Una lente vale
 // `medida` sólo con una respuesta que trae su lista de hallazgos (vacía o no); si no, `sin-medir`.
 const lentes = LENSES.map((lens, i) => {
   const r = hunts[i]
@@ -512,7 +508,7 @@ if (todos.length === 0) {
 }
 
 // Fase 1b — agrupar por causa. Con el agrupamiento apagado, cada hallazgo es su propia clase y el
-// pase se comporta exactamente como antes.
+// pase corre un verificador por hallazgo.
 const grupos = AGRUPAR
   ? agrupar(todos)
   : {
@@ -552,11 +548,10 @@ async function runWindow(tareas, opts) {
 // ===== NUCLEO-VENTANA: FIN =====
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
-// Fase 2 — UN escéptico por CLASE, en una ventana de 3 (story 7.19): el cap de concurrencia de
-// 2026-07-30 (RIESGO-4) sigue valiendo —cada verificador abre Bash en la máquina del dev—, pero
-// apenas termina uno entra el siguiente; con tandas fijas cada tanda esperaba a su más lento. La
-// ventana se arma acá, sobre promesas sueltas de `agent()`, y NO con el `parallel` del corredor:
-// con él el tope pasaba a ser el suyo (4 en workflow-lite, más en la herramienta de flujos).
+// Fase 2 — UN escéptico por CLASE, en una ventana de 3: el cap de concurrencia sigue valiendo
+// —cada verificador abre Bash en la máquina del dev—, pero apenas termina uno entra el siguiente;
+// con tandas fijas cada tanda espera a su más lento. La ventana se arma acá, sobre promesas
+// sueltas de `agent()`, y NO con el `parallel` del corredor: con él el tope pasaría a ser el suyo.
 const veredictos = await runWindow(
   grupos.clases.map((c) => () => {
     const rep = todos[c.representante]
@@ -588,16 +583,16 @@ const veredictos = await runWindow(
   }),
   {
     size: 3,
-    // el verificador que tira queda «sin veredicto» (abajo se cuenta); acá se dice por qué, que si no se perdía
+    // el verificador que tira queda «sin veredicto» (abajo se cuenta); acá se dice por qué, que si no se pierde
     onError: (k, e) => log(`adversarial-verify: el verificador de la clase ${k + 1} tiró: ${(e && e.message) || e}`),
   }
 )
 
-// 🔴 UN VERIFICADOR MUERTO NO ES UN «REFUTED» (2026-09-20, cazador de fallos silenciosos). `agent()`
-// devuelve null cuando el agente muere o no contesta JSON válido, y eso se trataba igual que un
-// veredicto real. Antes costaba un hallazgo; con la agrupación cuesta la CLASE ENTERA — varios
+// 🔴 UN VERIFICADOR MUERTO NO ES UN «REFUTED». `agent()`
+// devuelve null cuando el agente muere o no contesta JSON válido, y eso se tomaría por un
+// veredicto real. Sin agrupación costaría un hallazgo; con la agrupación cuesta la CLASE ENTERA — varios
 // hallazgos de lentes distintas desaparecen del reporte y el pase sale igual de verde. El default
-// sigue siendo REFUTED (no se confirma lo que no se reprodujo), pero AHORA SE CUENTA Y SE DICE.
+// es REFUTED (no se confirma lo que no se reprodujo), pero se cuenta y se dice.
 const sinVeredicto = []
 veredictos.forEach((v, k) => { if (!v || (v.verdict !== 'CONFIRMED' && v.verdict !== 'REFUTED')) sinVeredicto.push(grupos.clases[k]) })
 if (sinVeredicto.length) {
@@ -616,9 +611,8 @@ grupos.clases.forEach((c, k) => {
   // El verificador reprodujo UNO. Si dice que los demás no eran lo mismo, los demás no están
   // verificados por nadie: se listan aparte en vez de heredar un veredicto que no les corresponde.
   // 🔴 `!== true`, no `=== false`. El esquema exige la clave, pero el validador sólo mira que ESTÉ,
-  // no su tipo: con `null`, `""` o el string `"false"`, un `=== false` daba falso y la clase entera
-  // heredaba CONFIRMED sin que nadie la hubiera reproducido. Ante la duda se SEPARA, que es la regla
-  // de la story — no se hereda (lo cazó el cazador de fallos silenciosos, 2026-09-20).
+  // no su tipo: con `null`, `""` o el string `"false"`, un `=== false` daría falso y la clase entera
+  // heredaría CONFIRMED sin que nadie la hubiera reproducido. Ante la duda se SEPARA: no se hereda.
   const soloElRepresentante = v.todos_el_mismo_defecto !== true
   for (const m of c.miembros) {
     if (soloElRepresentante && m !== c.representante) { aVerificarAparte.push(todos[m]); continue }
@@ -679,7 +673,7 @@ return {
   confirmed,
   probes_dir: PROBES_DIR,
   all_lenses: results,
-  // Para que el ratio de duplicación se siga midiendo solo (story 7.11, AC 7): estos tres números
+  // Para que el ratio de duplicación se mida solo: estos tres números
   // los anota el step con `marker.js mark-adversarial-result --classes <k>`.
   hallazgos: todos.length,
   clases: grupos.clases.length,

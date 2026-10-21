@@ -3,13 +3,13 @@
  * files-arity-gate.test.js — la guarda de word-split de `--files` y su cableado en los DOS gates
  * que la necesitaban y no la tenían (`risk-class`, `deep-review-gate`).
  *
- * POR QUÉ EXISTE (casos 9.1 / 9.3 / 9.3.1, el repo del framework 2026-08-26): zsh no word-splitea
+ * POR QUÉ EXISTE: zsh no word-splitea
  * `$VAR` sin comillas, así que los N paths del diff llegaban como UN argumento con espacios.
  * `computeRiskClass` contaba 1 archivo → `superficie-chica` ✅ → LOW. Y LOW hace DOS cosas a la
  * vez: `auto_approve_plan: true` (se saltea el checkpoint donde el dev aprueba el plan) y
  * `deep-review-gate → run:false` (se saltea el pase adversarial, sellando `deepReviewDone`).
- * Ninguna de las dos dejaba rastro de que se apagó por un error de parseo. El validador ya
- * existía (`validateFilesExist`) pero SÓLO lo llamaban `advisors` y `smart-reloop`.
+ * Ninguna de las dos deja rastro de que se apagó por un error de parseo. El validador
+ * (`validateFilesExist`) tiene que correr también en esos dos gates, no sólo en `advisors` y `smart-reloop`.
  *
  * Correr: node --test ~/.claude/agent-skills/skills/tycon-pipeline/scripts/tests/files-arity-gate.test.js
  * 0 deps (node:test). Lanza el CLI real contra repos temporales.
@@ -24,7 +24,7 @@ const { spawnSync } = require('child_process');
 
 const PIPELINE = path.join(__dirname, '..', 'pipeline.js');
 
-// 🔴 Un repo git de verdad (2026-10-15): el portón mide cada archivo en SU repo, y fuera de todo repo git ya no cuenta
+// 🔴 Un repo git de verdad: el portón mide cada archivo en SU repo, y fuera de todo repo git no cuenta
 //    el archivo entero en silencio. Sin commits, los archivos son nuevos.
 function mkRepo() {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'arity-'));
@@ -40,7 +40,7 @@ function mkRepo() {
 // HOME temporal: `deep-review-gate` deja constancia en `~/.claude/.tycon-pipeline/gates.log` cuando
 // el repo no declaró superficie compartida, y ese log es de donde la retrospectiva saca métricas.
 // Sin aislarlo, cada corrida de este test mete repos de /var/folders en el log real del dev
-// (revisión adversarial 2026-08-26 — ya había pasado: hubo que limpiar 75 entradas).
+// (ya pasó: hubo que limpiar 75 entradas).
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'arity-home-'));
 
 function run(cmd, repo, files) {
@@ -49,7 +49,7 @@ function run(cmd, repo, files) {
     { encoding: 'utf8', env: { ...process.env, HOME } });
 }
 
-// ── El caso que motivó todo: los 3 paths en UN argumento ──────────────────────
+// ── El caso central: los 3 paths en UN argumento ──────────────────────
 
 test('risk-class: --files word-splitteado ABORTA (exit 2), no devuelve LOW', () => {
   const repo = mkRepo();
@@ -109,10 +109,10 @@ test('el mensaje explica QUÉ apaga un LOW falso (los dos frenos, no sólo el 5b
   assert.match(r.stderr, /\$\{=VAR\}/, 'y cómo se arregla');
 });
 
-// ── La cerca que NO se pisa: story ilegible tiene su propia decisión (Story 4.18, 2026-07-24) ──
+// ── La cerca que NO se pisa: story ilegible tiene su propia decisión ──
 // Un gate que aborta feo empuja al bypass, así que con --story inválido estos dos devuelven el
-// default SEGURO con el error a la vista, no exit 2. Al cablear la validación de --files había
-// que traer SÓLO esa parte; este test es lo que impide que vuelva a colarse la otra.
+// default SEGURO con el error a la vista, no exit 2. Al cablear la validación de --files hay
+// que traer SÓLO esa parte; este test es lo que impide que se cuele la otra.
 
 test('deep-review-gate: --story inexistente sigue devolviendo run:true, no aborta', () => {
   const repo = mkRepo();
@@ -143,10 +143,9 @@ test('advisors SÍ sigue abortando con --story inexistente (su contrato no cambi
   assert.match(r.stderr, /--story NO existe/);
 });
 
-// ── Story 7.25: un archivo que no está en el disco NI en HEAD es un fantasma, no un borrado ─────────
-// Caso de un producto del equipo (2026-10-14): `--files a.cs,b.cs,c.cs` en UN argumento, sin espacios. La guarda de
-// arriba sólo mira el argumento con espacios, así que pasaba; `densidadDelDiff` contaba 0 líneas y el gate daba LOW con
-// `run:false` sobre un cambio de ~955 líneas. Un borrado del cambio sigue pasando: git lo conoce en HEAD.
+// ── Un archivo que no está en el disco NI en HEAD es un fantasma, no un borrado ─────────
+// Con `--files a.cs,b.cs,c.cs` en UN argumento, sin espacios, la guarda de arriba (que sólo mira el argumento con
+// espacios) pasa; `densidadDelDiff` cuenta 0 líneas y el gate daría LOW con `run:false` sobre un cambio de ~955 líneas. Un borrado del cambio sigue pasando: git lo conoce en HEAD.
 
 const { execFileSync } = require('child_process');
 

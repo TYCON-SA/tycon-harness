@@ -1,8 +1,8 @@
 'use strict';
-// state-dir.js — la carpeta del estado del pipeline, vista desde las skills (story 8.23, tanda A2).
+// state-dir.js — la carpeta del estado del pipeline, vista desde las skills.
 //
 // Dónde vive el estado lo sabe scripts/setup/harness/tycon-home.js. En el repo unido está en el mismo clon que este
-// archivo y se le pregunta; en un clon de skills APARTE (máquinas en transición, 8.18) no hay scripts/ al lado y vale la
+// archivo y se le pregunta; en un clon de skills APARTE (máquinas en transición) no hay scripts/ al lado y vale la
 // ruta de siempre, que es la misma (T5 de scripts/tests/tycon-home.test.js compara las dos). Si está y no carga, tira.
 // Un solo lugar para todas las skills: así el respaldo no se repite en cada hook.
 const fs = require('fs');

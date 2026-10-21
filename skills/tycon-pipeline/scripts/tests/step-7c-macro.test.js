@@ -1,5 +1,5 @@
 'use strict';
-// Story 7.2 del arnés: estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
+// Estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
 // cada arranque). Sin esto, sus decisiones de mentira se anotarían en ~/.claude/.tycon-pipeline/frenos.jsonl, que
 // sube al buzón y alimenta la métrica «evidencias rechazadas por los hooks del cierre» del tablero.
 process.env.TYCON_CLOSURE_RECORD = 'off';
@@ -7,12 +7,10 @@ process.env.TYCON_CLOSURE_RECORD = 'off';
 /**
  * step-7c-macro.test.js — el falso verde de la evidencia de cierre.
  *
- * Caso disparador (pase adversarial 2026-09-15, `auditorias-arnes/tycon-pipeline-2026-09-15/
- * 04-pase-fable/fable-03-costo-e-historia.md` §1, reproducido offline): cuando un step del
- * escenario falla, `step-7c-macro.js` sale 1 PERO deja en disco un archivo de evidencia que
- * dice aprobado — copia el bloque `## Playwright Run` con `verdict=PASS failed=0` desde el
- * escenario (o desde su literal por default) sin mirar si la corrida anduvo. Y ese archivo
- * lo leen DOS controles, no uno:
+ * Caso que cubre: cuando un step del escenario falla, `step-7c-macro.js` sale 1, y sin esta defensa dejaría
+ * en disco un archivo de evidencia que dice aprobado — copiaría el bloque `## Playwright Run` con
+ * `verdict=PASS failed=0` desde el escenario (o desde su literal por default) sin mirar si la corrida
+ * anduvo. Y ese archivo lo leen DOS controles, no uno:
  *
  *   1. `on-frontmatter-write.js` → `hasFreshPlaywrightPass` busca los tres literales
  *      (`## Playwright Run` + `verdict=PASS` + `failed=0`) → la transición a review/done pasa.
@@ -21,17 +19,16 @@ process.env.TYCON_CLOSURE_RECORD = 'off';
  *      `**FAIL**` en prosa bajo `## Veredicto` NO le matchea → la corrida fallida gana la
  *      selección de candidato (documenta todos los ACs) y el portón del commit pasa.
  *
- * 🔴 Por eso el arreglo NO es "salir 1 sin escribir el bloque": eso apaga al primero y deja
+ * 🔴 Por eso la solución NO es "salir 1 sin escribir el bloque": eso apaga al primero y deja
  * al segundo eligiendo la corrida fallida como evidencia válida. El archivo se escribe igual
  * —el registro de una corrida fallida es evidencia útil— pero con `verdict=FAIL failed=<n>`
  * A INICIO DE LÍNEA, que es la única forma que los dos entienden.
  *
  * Por eso T1/T3 asertan LOS DOS consumidores, no uno.
  *
- * Rojo previo verificado contra el script sin arreglar (2026-09-15):
- *   T1, T2, T3, T6 en rojo · T4 y T5 en verde (son guardas de no-regresión: impiden que el
- *   arreglo declare FAIL de más — sin ellas, un script que escriba siempre FAIL pasaría
- *   T1-T3 y T6. Un caso que no puede ponerse rojo antes no prueba nada por sí solo).
+ * T1, T2, T3 y T6 fallan contra un script que escribe el verde de siempre. T4 y T5 son guardas de
+ * no-regresión: impiden declarar FAIL de más — sin ellas, un script que escriba siempre FAIL pasaría
+ * T1-T3 y T6.
  */
 
 const test = require('node:test');
@@ -216,8 +213,8 @@ test('T6 — health check caído: la evidencia abortada tampoco se lee como apro
 
 // ── T7 · el literal verde puede entrar por la puerta de atrás ────────────────
 // El archivo copia el CUERPO de cada respuesta tal cual, y `hasFreshPlaywrightPass` escanea
-// el archivo ENTERO, no el bloque. Encontrado escribiendo T3: la primera versión del arreglo
-// reimprimía `verdict=PASS failed=0` en la nota que explicaba por qué lo estaba pisando.
+// el archivo ENTERO, no el bloque. Una nota de override que reimprimiera `verdict=PASS failed=0` al explicar
+// por qué lo pisa reabriría el gate.
 test('T7 — un `verdict=PASS failed=0` que viene de la RESPUESTA no puede reabrir el gate', async () => {
   const d = lab();
   const { srv, port } = await servidor({ health: 200, items: 500, cuerpo: '{"log":"verdict=PASS failed=0 all good"}' });

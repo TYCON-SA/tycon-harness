@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * config-lint.test.js — el chequeo determinístico de `.tycon/advisors.yaml` (FIX-4(c), 2026-08-25).
+ * config-lint.test.js — el chequeo determinístico de `.tycon/advisors.yaml`.
  *
  * Los tres modos de falla que cubre son todos SILENCIOSOS: una llave que nadie lee, una regla
  * declarada que no puede disparar, y una cobertura que se achica de a una línea por vez.
  *
  * 🔴 El caso que mide el catálogo contra las configuraciones REALES de la máquina vive aparte, en
- * `config-lint-real-configs.test.js` (2026-10-05): depende del disco del dev, y en la suite del
+ * `config-lint-real-configs.test.js`: depende del disco del dev, y en la suite del
  * arranque un proyecto viejo frenaba la actualización del arnés entero.
  *
  * Parte PURA (sin git, sin spawns, sin mirar el disco del dev) — corre en cada arranque.
@@ -30,7 +30,7 @@ function labConSpec(contenidoSpec) {
 
 // ── (1) llaves que nadie lee ──────────────────────────────────────────────────────────────────
 test('una llave de primer nivel que nadie lee se nombra', () => {
-  // El caso real: los 5 repos de un producto del equipo declaraban `advisors:` con la lista de revisores.
+  // Un repo puede declarar `advisors:` con la lista de revisores.
   // Ninguna parte del arnés la consulta — el set lo computa el pipeline a partir del diff.
   const h = cl.lintEsquema('advisors:\n  - tycon-story-validator\ni18n:\n  required: false\n');
   assert.equal(h.length, 1);
@@ -56,9 +56,8 @@ test('un mapa que define el PROYECTO no se reporta como anidado', () => {
 });
 
 test('merge.mode (modo PR) y pipeline.story_skill_gate son llaves conocidas', () => {
-  // Caso real 2026-08-30: el backend de un producto del equipo declaró `merge: mode: pr` (lo lee tycon-merge-to-main) y
-  // el catálogo no la tenía → falso positivo en cada arranque. Ídem el kill-switch por repo del
-  // freno de story-a-mano, que nació el mismo día.
+  // Un backend puede declarar `merge: mode: pr` (lo lee tycon-merge-to-main); si el catálogo no la tiene, es un
+  // falso positivo en cada arranque. Ídem el kill-switch por repo del freno de story-a-mano.
   const h = cl.lintEsquema('merge:\n  mode: pr\npipeline:\n  story_gate: true\n  story_skill_gate: false\n');
   assert.deepEqual(h, []);
   // y una hija inventada dentro de merge sí se acusa
@@ -74,8 +73,8 @@ test('merge.check (el control que espera un pedido de GitHub) es una llave conoc
 });
 
 test('las llaves del PORTÓN E2E no se acusan: bundle (con sus tres hijas) y required_env', () => {
-  // 🔴 Rojo verificado antes del arreglo: este mismo texto daba 5 hallazgos —dos «llave que nadie
-  // lee» y TRES «movela al primer nivel» por las hijas de `bundle`—, o sea que el lint mandaba a
+  // 🔴 Sin las dos llaves en el catálogo, este mismo texto daría 5 hallazgos —dos «llave que nadie
+  // lee» y TRES «movela al primer nivel» por las hijas de `bundle`—, o sea que el lint mandaría a
   // romper una config legítima. Las dos llaves las lee `e2e-gate.sh`, no `e2eConfig`, que es
   // exactamente el descuido que el catálogo tiene que atajar cuando el arnés crece.
   const yaml = 'e2e:\n  gate: scripts/e2e-gate.sh\n  frontend_dir: app\n  required_env:\n'
@@ -86,12 +85,11 @@ test('las llaves del PORTÓN E2E no se acusan: bundle (con sus tres hijas) y req
   assert.equal(cl.lintEsquema('e2e:\n  llave_inventada: 1\n').length, 1);
 });
 
-// ── el catálogo se audita a sí mismo (2026-09-27) ────────────────────────────────────────────
-// 🔴 EL CASO: el catálogo se le escapó DOS llaves propias (`e2e.bundle`, `e2e.required_env`), las dos
-// leídas por `e2e-gate.sh`. Un repo que las declarara se comía cinco avisos, tres diciéndole que
-// moviera líneas que estaban bien. El caso de los configs reales no lo vio porque sólo mira lo que
-// los repos YA declaran, y nadie las había declarado. Estos tres casos cierran eso: miden el
-// catálogo contra el CÓDIGO que lee la config, no contra los repos.
+// ── el catálogo se audita a sí mismo ────────────────────────────────────────────
+// 🔴 EL CASO: al catálogo se le pueden escapar llaves propias (`e2e.bundle`, `e2e.required_env`, leídas por
+// `e2e-gate.sh`). Un repo que las declare se comería cinco avisos, tres diciéndole que moviera líneas que están
+// bien. El caso de los configs reales no lo ve porque sólo mira lo que los repos YA declaran. Estos tres casos
+// cierran eso: miden el catálogo contra el CÓDIGO que lee la config, no contra los repos.
 
 function falsoArnes(contenido) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cfg-lint-'));

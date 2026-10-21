@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * mockup.js — la maqueta de la pantalla antes de construirla (story 7.30).
+ * mockup.js — la maqueta de la pantalla antes de construirla.
  *
- * Hoy la pantalla se ve recién construida: un error de diseño (qué se muestra, dónde, con qué palabras) se descubre
+ * Sin maqueta, la pantalla se ve recién construida: un error de diseño (qué se muestra, dónde, con qué palabras) se descubre
  * cuando ya está programado y probado, y arreglarlo cuesta otra vuelta de revisores, del pase adversarial y de las
  * pruebas de navegador. La maqueta es un HTML local, de un archivo, sin red y sin código, con los textos reales de la
- * pantalla. En las stories con pantalla el dueño la aprueba junto con el plan (paso 3, `marker.js complete-step 3
+ * pantalla. En las stories con pantalla la persona que pide la story la aprueba junto con el plan (paso 3, `marker.js complete-step 3
  * --mockup-approved`), su huella queda anotada, y la revisión de la pantalla (`qa-guide.js --check`, capas 9 y 10)
  * compara lo construido contra ella.
  *
@@ -55,7 +55,7 @@ function mockupHash(content) {
 const isStr = (v) => typeof v === 'string' && v.trim() !== '';
 
 // Los textos que se comparan con la pantalla, de un elemento del modelo. El rótulo de un `box` describe una imagen o un
-// gráfico para el dueño y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows` y `notes` son
+// gráfico para quien aprueba y no está en la pantalla: se compara sólo con `compare: true`. `value`, `rows` y `notes` son
 // datos de ejemplo y no se comparan.
 function comparedOf(el) {
   if (['heading', 'text', 'button', 'link', 'message'].includes(el.kind)) return [el.text];
@@ -66,9 +66,9 @@ function comparedOf(el) {
   return [];
 }
 
-// Relleno: la maqueta lleva los textos reales de la pantalla (decisión 6 del dueño). `lorem`/`ipsum` como palabra
+// Relleno: la maqueta lleva los textos reales de la pantalla. `lorem`/`ipsum` como palabra
 // entera; `TBD`/`TODO`/`XXX` en mayúsculas, solos o al principio («TODO: …»). «VER TODO», «Seleccionar todo» o «Pagar
-// TODO el saldo» son textos reales (pase adversarial: con la palabra suelta en cualquier lugar, se rechazaban).
+// TODO el saldo» son textos reales (con la palabra suelta en cualquier lugar, se rechazarían).
 function isFiller(t) {
   const s = String(t).replace(/\s+/g, ' ').trim();
   if (/\b(lorem|ipsum)\b/i.test(s)) return true;
@@ -159,7 +159,7 @@ const STYLE = `
   .box { border: 2px dashed #b4bccb; border-radius: 8px; padding: 24px; color: #5a6475; min-width: 280px; text-align: center; }
   .notes { max-width: 760px; font-size: 13px; color: #5a6475; }
 `;
-// Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale igual que antes y su huella aprobada sigue valiendo.
+// Sólo va cuando la maqueta tiene una capa: una maqueta sin capas sale sin esa parte y su huella aprobada sigue valiendo.
 const LAYER_STYLE = `
   .layer { background: transparent; border: 0; }
   .layer-backdrop { background: rgba(29, 36, 51, 0.45); border-radius: 10px; padding: 32px 24px; }
@@ -237,8 +237,8 @@ const LOADS = [
 ];
 /**
  * ¿Es una maqueta de este guion, sin cargas? `{ ok, findings: [{ line, what }] }`. Se busca en el archivo ENTERO: una
- * etiqueta o un atributo partido en varias líneas (`<a\nhref\n=…>`) también cuenta (pase adversarial: línea por línea
- * se escapaba). Los textos no dan falsos hallazgos porque salen con `mockupEsc`.
+ * etiqueta o un atributo partido en varias líneas (`<a\nhref\n=…>`) también cuenta (una búsqueda línea por línea
+ * los dejaría escapar). Los textos no dan falsos hallazgos porque salen con `mockupEsc`.
  */
 function validateMockupHtml(html) {
   const findings = [];
@@ -268,7 +268,7 @@ function mockupTexts(html) {
 }
 
 /**
- * ¿La story tiene pantalla? Con la MISMA detección que la revisión de la 7.24 (`qa-guide.js#isUiStory` con la raíz del
+ * ¿La story tiene pantalla? Con la MISMA detección que la guía de QA (`qa-guide.js#isUiStory` con la raíz del
  * repo de la STORY), no la de `markerStoryIsUi` (raíz del repo del código). Una story ilegible TIRA: «no pude mirar»
  * nunca es «no hay pantalla».
  */
@@ -315,12 +315,11 @@ function writeApproval({ approvalPath, mockupPath, story, sha256, approvedAt }) 
 const wordCount = (s) => String(s).trim().split(/\s+/).filter(Boolean).length;
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const collapse = (s) => String(s).replace(/\s+/g, ' ').trim();
-// Un texto corto como palabra entera, respetando mayúsculas: «Pagar» no está en «sin pagar» ni en `onPagar` (R13).
+// Un texto corto como palabra entera, respetando mayúsculas: «Pagar» no está en «sin pagar» ni en `onPagar`.
 const wordIn = (needle, hay) => new RegExp(`(^|[^\\p{L}\\p{N}_])${reEsc(collapse(needle))}(?=$|[^\\p{L}\\p{N}_])`, 'u').test(collapse(hay));
 // Un texto corto que la pantalla trae como cadena literal ENTERA (`'Guardar'`, `"Número"`, `` `%` ``) o como texto de
 // JSX entero (`>Guardar<`): `visibleTexts` descarta las cadenas de una palabra fuera del JSX y los textos sin letras, y
-// así una columna definida en un arreglo, un `{cond ? 'A' : 'B'}` o un `t('Cancelar')` salían como faltantes (pase
-// adversarial). Entera: `onPagar` sigue sin contar como «Pagar».
+// sin esto una columna definida en un arreglo, un `{cond ? 'A' : 'B'}` o un `t('Cancelar')` saldrían como faltantes. Entera: `onPagar` sigue sin contar como «Pagar».
 const literalIn = (needle, src) => {
   const t = reEsc(collapse(needle)).replace(/ /g, '\\s+');
   return new RegExp(`(['"\`])\\s*${t}\\s*\\1|>\\s*${t}\\s*<`, 'u').test(String(src));
@@ -341,7 +340,7 @@ function declaredDiffs(md) {
  * Lo construido contra la maqueta. `texts`: los de `mockupTexts`; `screens`: [{ rel, abs }]; `md`: la revisión de la
  * pantalla (para `differs:`). Devuelve `{ missing, extras, declared, unreadable }`. Un texto de 3 palabras o más se
  * busca como en la capa 8 (`whereInScreens`: literal o mensaje armado); uno más corto sólo entre los textos visibles,
- * como palabra entera (R13): `whereInScreens` busca primero en el archivo entero, y «Pagar» aparece en `onPagar`.
+ * como palabra entera: `whereInScreens` busca primero en el archivo entero, y «Pagar» aparece en `onPagar`.
  */
 function compareWithScreens({ texts, screens, md }) {
   const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
@@ -353,7 +352,7 @@ function compareWithScreens({ texts, screens, md }) {
   const visibles = readable.map((s) => ({ rel: s.rel, texts: ui.visibleTexts(s.src) }));
   const seen = new Set(); const missing = []; const declared = [];
   for (const t0 of texts || []) {
-    // espacios colapsados, como los textos de la pantalla (pase adversarial: «Ver  todo» nunca coincidía)
+    // espacios colapsados, como los textos de la pantalla («Ver  todo» tiene que coincidir con «Ver todo»)
     const t = { ...t0, text: collapse(t0.text) };
     if (!t.text || seen.has(t.text)) continue;
     seen.add(t.text);
@@ -382,9 +381,9 @@ function qaGuideCheckArgs(storyPath, marker) {
 }
 
 /**
- * Qué hace el paso 8 con la maqueta (R10, R12). `{ block, skip, compare, screenNow }`:
+ * Qué hace el paso 8 con la maqueta. `{ block, skip, compare, screenNow }`:
  *   block   — la story ganó una pantalla después de aprobar el plan sin maqueta (el paso 3 anotó `screen: false`).
- *   skip    — tenía maqueta aprobada y ya no se detecta pantalla: no se compara, se dice y se anota.
+ *   skip    — tenía maqueta aprobada y no se detecta pantalla: no se compara, se dice y se anota.
  *   compare — hay maqueta aprobada y la story sigue con pantalla (o no se pudo leer: «no pude mirar» no saltea).
  */
 function mockupStep8(marker, storyPath) {
@@ -398,7 +397,7 @@ function mockupStep8(marker, storyPath) {
   if (!ap && dec && dec.screen === false && screenNow === true) {
     block = `la story ganó una pantalla después de aprobar el plan: armá la maqueta (\`mockup.js render --story ${storyPath}\`), mostrásela al dueño (o a quien tenga su delegación) y \`marker.js approve-mockup --approved "<cita>"\``;
   } else if (!ap && dec && dec.screen === false && screenNow === null) {
-    // «no pude mirar» nunca es «no hay»: sin leer la story no se sabe si ganó una pantalla (revisor de fallas silenciosas)
+    // «no pude mirar» nunca es «no hay»: sin leer la story no se sabe si ganó una pantalla
     block = `no pude leer la story (${storyPath || '(sin ruta en el marcador)'}: ${leerError}): no sé si ganó una pantalla después de aprobar el plan. Arreglá la ruta (\`marker.js set\` con \`storyPath\`) y volvé a cerrar.`;
   }
   return { block, skip: !!ap && screenNow === false, compare: !!ap && screenNow !== false, screenNow };

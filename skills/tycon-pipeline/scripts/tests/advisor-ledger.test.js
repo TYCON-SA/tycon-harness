@@ -1,16 +1,16 @@
 'use strict';
 
 /**
- * advisor-ledger.test.js — el registro de corridas de revisores (Tema 2, 2026-08-25).
+ * advisor-ledger.test.js — el registro de corridas de revisores.
  *
  * QUÉ PROTEGE: que la pregunta "¿corrieron los revisores de la story X?" se pueda contestar
- * mecánicamente. Antes no se podía: el registro automático guardaba `{ts, advisor, model}` sin
- * repo ni story (756 líneas medidas, CERO con repo) y se borraba solo a los 7 días.
+ * mecánicamente. Sin repo ni story en cada línea, y con el borrado a los 7 días, el registro
+ * automático no contesta esa pregunta.
  *
  * 🔴 El caso que más importa acá es `archive-no-habilita-borrar-si-no-pudo-escribir`: la poda
  * borra el archivo SÓLO si el resumen quedó escrito. Sin ese contrato, un fallo de escritura se
  * traduce en pérdida silenciosa de la única constancia no-falsificable de que los revisores
- * corrieron — que es exactamente el problema que este trabajo vino a cerrar.
+ * corrieron — que es exactamente el problema que el módulo cierra.
  *
  * Parte PURA (sin spawns) — corre en cada arranque. Lo que lanza procesos vive en
  * `advisor-ledger-cli.test.js` (throttle diario).
@@ -70,7 +70,7 @@ test('archive — escribe el resumen durable y habilita el borrado', () => {
 test('archive — si NO puede escribir el resumen, NO habilita el borrado', () => {
   // 🔴 EL CASO QUE MÁS IMPORTA. La poda borra sólo si esto devuelve true. Si un fallo de
   // escritura devolviera true igual, la única constancia no-falsificable de que los revisores
-  // corrieron se perdería EN SILENCIO — el modo de falla exacto que este trabajo vino a cerrar.
+  // corrieron se perdería EN SILENCIO — el modo de falla exacto que el módulo cierra.
   const d = tmp();
   const f = path.join(d, 'sesion-1.jsonl');
   fs.writeFileSync(f, LOG_OK);
@@ -161,12 +161,12 @@ test('attribution — un marker sin storyId no se usa (no inventa atribución)',
   } finally { process.env.HOME = prev; }
 });
 
-// ── El clon descartable es el MISMO repo (deuda ROSTER-CLON-DESCARTABLE, 2026-09-07) ───────────
+// ── El clon descartable es el MISMO repo ─────────────────────────────────────────────────────
 // El portón de cierre pregunta por el repo del checkout y el ledger tiene estampada la ruta del
 // clon descartable del scratchpad —el patrón que el arnés recomienda cuando hay otras sesiones
-// vivas—, así que la consulta devolvía 0 revisores y el portón pedía `sin_testigo` con un motivo
-// falso («implementado en otra máquina»). Medido al cerrar la story 2.3: 14 invocaciones en el
-// ledger de la MISMA máquina, invisibles. La señal correcta es el `origin`, no la ruta ni el
+// vivas—, así que la consulta devolvería 0 revisores y el portón pediría `sin_testigo` con un motivo
+// falso («implementado en otra máquina»): las invocaciones de la MISMA máquina quedarían
+// invisibles. La señal correcta es el `origin`, no la ruta ni el
 // nombre de la carpeta: dos repos distintos que se llamen igual NO pueden confundirse.
 function repoGit(dir, origin) {
   fs.mkdirSync(dir, { recursive: true });
@@ -177,7 +177,7 @@ function repoGit(dir, origin) {
 }
 // Esta suite la corre el aplicador en cada instalación (la «capa determinista»). Una máquina sin git —la que instala sin
 // clon, por npx— no puede armar los repos de juguete: esas dos pruebas dicen «no medido» en vez de tumbar la instalación
-// con `spawnSync git ENOENT` (story 8.40, AC 47). Un git que existe y no corre (el /usr/bin/git de una Mac sin las
+// con `spawnSync git ENOENT`. Un git que existe y no corre (el /usr/bin/git de una Mac sin las
 // herramientas de línea de comandos: arranca y sale 1) tampoco es git, como en health.js
 const GIT_PROBE = require('child_process').spawnSync('git', ['--version'], { stdio: 'ignore' });
 const NO_GIT = GIT_PROBE.error || GIT_PROBE.status !== 0 ? 'NO MEDIDO: sin git en esta máquina (arma repos de juguete con git)' : false;

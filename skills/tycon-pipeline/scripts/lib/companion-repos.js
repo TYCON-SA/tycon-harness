@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * companion-repos.js — el repo hermano de una story (story 7.26).
+ * companion-repos.js — el repo hermano de una story.
  *
  * Una story puede vivir en un repo y cambiar otro, declarado en `.tycon/advisors.yaml → evidence.companion_repos` (el
- * repo hermano). Hasta la 7.26 el pipeline miraba sólo `--repo` en seis lugares: la detección de React, los
+ * repo hermano). Sin esto, el pipeline mira sólo `--repo` en seis lugares: la detección de React, los
  * disparadores por líneas agregadas, el contexto de los revisores, el portón de pruebas, el delta de las vueltas y las
- * pruebas propias del pase adversarial (corrida de una story de un producto del equipo, 2026-10-14). Este módulo es lo
+ * pruebas propias (una story de un producto del equipo, con el código en otro repo). Este módulo es lo
  * que esos lugares comparten: quiénes son los hermanos, a qué repo pertenece cada archivo y cómo se escribe uno del
  * hermano.
  *
@@ -34,8 +34,8 @@ const { parseEvidenceConfig, discoverRepoRoot } = require('./evidence-config.js'
 /**
  * La ruta real (enlaces resueltos; en macOS /tmp ↔ /private/tmp). Si no existe (un archivo borrado en el diff, o uno
  * que la story todavía va a crear), la real del ancestro que sí existe más el resto tal cual — la misma regla que
- * `verificarPruebasPropias` de marker.js. Antes caía a la ruta sin resolver: bajo un enlace, un archivo borrado del
- * repo salía «de otro repo» con una ruta `../../../../tmp/…` (pase adversarial de la 7.26, causa A).
+ * `verificarPruebasPropias` de marker.js. Sin esto, la ruta quedaría sin resolver: bajo un enlace, un archivo borrado del
+ * repo saldría «de otro repo» con una ruta `../../../../tmp/…`.
  */
 function real(p) {
   let actual = path.resolve(p);
@@ -64,7 +64,7 @@ function esArchivo(p) { try { return fs.statSync(p).isFile(); } catch { return f
  * Los hermanos de una corrida: los que declara `--repo` más los que declara el repo que contiene la story, sin el
  * propio `--repo`, sin repetidos (por ruta real), en el orden en que aparecen.
  * `opts.onMissing(nombre, repoQueLoDeclara)`: un hermano declarado que no está en disco. Sin el aviso, «lo declaré y no
- * existe» se leía igual que «no hay hermanos» (revisor de fallas silenciosas, vuelta 1). Un error al leer la config
+ * existe» se leería igual que «no hay hermanos». Un error al leer la config
  * NO se traga: sube a quien llama.
  */
 function companionRoots(repo, storyPath, opts) {
@@ -126,7 +126,7 @@ function numeroDeLaStory(storyPath) {
 
 /**
  * ¿La rama nombra a la story? Las partes del número, con `.`, `-` o `_` indistintos entre ellas y sin distinguir
- * mayúsculas (`1.4` en `feature/<nombre>-1-4-<nombre>`, `CA-3` en `feature/ca-3-<nombre>`), como palabra entera y no como parte de un
+ * mayúsculas (`1.4` en `feature/<nombre>-1-4-<nombre>`, `CA-3` en `feature/<nombre>-ca-3`), como palabra entera y no como parte de un
  * número más largo: `1.4` no es `11-4`, `1-45`, `1.4.2` ni `2-1-4`.
  */
 function ramaNombraLaStory(rama, numero) {
@@ -255,7 +255,7 @@ function resolveDeclared(decl, repo, companions) {
   const d = String(decl || '').replace(/\\/g, '/').replace(/^\.\//, '').trim();
   if (!d) return { where: null, root: null, rel: d };
   // Del repo sólo si cae ADENTRO: `path.join(repo, '../Front/x')` sale del repo y encuentra el archivo del hermano;
-  // sin esta guarda, `../<hermano>/ruta` —una forma que el AC 7 promete— se tomaba como del repo (pase adversarial).
+  // sin esta guarda, `../<hermano>/ruta` —una forma que se promete en el contrato— se tomaría como del repo.
   const enRepo = path.join(repo, d);
   if (adentro(enRepo, repo) && esArchivo(enRepo)) return { where: 'repo', root: real(repo), rel: d };
   for (const c of companions || []) {
@@ -268,7 +268,7 @@ function resolveDeclared(decl, repo, companions) {
     const decl = DECLARADO.get(real(c));
     if (decl && adentro(deRepo, decl)) candidatos.push(path.relative(decl, real(deRepo)).split(path.sep).join('/'));
     for (const rel of candidatos) {
-      // Adentro del hermano, como la guarda del repo: `sub/../../x` no empieza con `../` y sale de su raíz (seguridad, vuelta 2).
+      // Adentro del hermano, como la guarda del repo: `sub/../../x` no empieza con `../` y sale de su raíz.
       const enHermano = path.join(c, rel);
       if (rel && adentro(enHermano, c) && esArchivo(enHermano)) {
         return { where: 'companion', root: real(c), rel: path.relative(real(c), real(enHermano)).split(path.sep).join('/') };
@@ -285,7 +285,7 @@ function parseRepoPrefixed(entry) {
 }
 
 /**
- * La raíz de `<repo>` en `(<repo>) <ruta>`, probando en orden (decisión D7 de la story 7.26): un hermano declarado con
+ * La raíz de `<repo>` en `(<repo>) <ruta>`, probando en orden: un hermano declarado con
  * ese nombre, una ruta relativa a la base (`../FrontEnd`) o absoluta, y una carpeta vecina de la base con ese nombre.
  * `{ root, tried }` — `root` es la raíz git, o null; `tried` dice qué se probó (para el mensaje de error).
  */
@@ -362,7 +362,7 @@ function declaredHere(repo, storyPath) {
 /**
  * En la corrida de UN hermano: los `files_to_create` de la story que viven en ese hermano, vistos desde el repo de la
  * story y relativos al hermano. Sin esto, el artefacto del hermano listaba como «declarados que no existen» los que la
- * story crea en el repo de la story, y no encontraba los suyos escritos con `<nombre>/` (pase adversarial, causa C).
+ * story crea en el repo de la story, y no encontraba los suyos escritos con `<nombre>/`.
  */
 function declaredIn(storyRepo, storyPath, companionRoot) {
   const ts = require('./test-scope.js');

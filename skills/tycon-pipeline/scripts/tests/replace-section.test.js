@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * replace-section.test.js — story 7.25 del arnés (AC 6; T10-T11).
+ * replace-section.test.js — la receta de reemplazo de tramos (T10-T11).
  *
  * QUÉ CUIDA: la receta registrada para reemplazar un tramo grande de un archivo de código con el pipeline abierto.
- * Caso de un producto del equipo (2026-10-14): reemplazar ~300 líneas de un archivo de pruebas obligó a escribir por
- * consola con el escape del freno y a hacer después un Edit chico para que el registro viera el archivo. La receta
+ * Caso: reemplazar ~300 líneas de un archivo de pruebas sin la receta obliga a escribir por
+ * consola con el escape del freno y a hacer después un Edit chico para que el registro vea el archivo. La receta
  * (`replace-section.js`) hace el reemplazo por la MISMA cadena que un Edit: los frenos del Edit antes de escribir
  * (`dispatch.js pre-edit`) y el registro de ediciones después (`dispatch.js post-edit`).
  *
@@ -91,7 +91,7 @@ test('T11b ReplaceSection_RangoInvalido_SaleDosSinTocar', () => {
   assert.equal(fs.readFileSync(c.archivo, 'utf8'), antes);
 });
 
-// T25 — vuelta 2 de revisores (seguridad): por consola, la receta no pasa por las reglas de permisos del Edit de la
+// T25 — seguridad: por consola, la receta no pasa por las reglas de permisos del Edit de la
 // herramienta, así que no puede escribir fuera del repo de la corrida ni de la carpeta desde donde se la llama (con la
 // ruta real: un enlace no la saca).
 test('T25 ReplaceSection_FueraDelRepoYDeLaCarpeta_NoEscribe', () => {
@@ -109,7 +109,7 @@ test('T25 ReplaceSection_FueraDelRepoYDeLaCarpeta_NoEscribe', () => {
   assert.equal(fs.readFileSync(afuera, 'utf8'), 'uno\ndos\n');
 });
 
-// T27 — vuelta 3 de revisores (seguridad): sin repo de la corrida, la carpeta de la llamada vale sólo si es un repo
+// T27 — seguridad: sin repo de la corrida, la carpeta de la llamada vale sólo si es un repo
 // git; y nunca algo bajo `.git/` (un hook de git es código que corre solo).
 test('T27 ReplaceSection_SinRepoYDentroDeGit_NoEscribe', () => {
   const c = corral();
@@ -126,7 +126,7 @@ test('T27 ReplaceSection_SinRepoYDentroDeGit_NoEscribe', () => {
   assert.equal(g.status, 2, g.stderr);
   assert.match(g.stderr, /\.git/);
   assert.equal(fs.readFileSync(hook, 'utf8'), 'echo uno\n');
-  // vuelta 4: en un disco que no distingue mayúsculas (macOS), `.GIT/hooks/…` es el mismo lugar
+  // en un disco que no distingue mayúsculas (macOS), `.GIT/hooks/…` es el mismo lugar
   const mayus = path.join(c2.repo, '.GIT', 'hooks', 'pre-commit');
   if (fs.existsSync(mayus)) {
     const m = receta(c2, ['--file', mayus, '--from', '1', '--to', '1', '--with', c2.nuevo]);
@@ -135,7 +135,7 @@ test('T27 ReplaceSection_SinRepoYDentroDeGit_NoEscribe', () => {
   }
 });
 
-// T30 — vuelta 5 de revisores (seguridad): un archivo que no es UTF-8 (un .cs en Windows-1252) no se reescribe: leerlo
+// T30 — seguridad: un archivo que no es UTF-8 (un .cs en Windows-1252) no se reescribe: leerlo
 // como UTF-8 cambia en silencio los bytes de las líneas que ni se tocaron.
 test('T30 ReplaceSection_ArchivoQueNoEsUtf8_NoEscribe', () => {
   const c = corral();
@@ -155,7 +155,7 @@ test('T30 ReplaceSection_ArchivoQueNoEsUtf8_NoEscribe', () => {
   assert.ok(fs.readFileSync(c2.archivo).equals(antes));
 });
 
-// T23 — dos detalles que confirmó el pase adversarial (2026-10-15): un archivo con finales CRLF no puede quedar mezclado,
+// T23 — dos detalles: un archivo con finales CRLF no puede quedar mezclado,
 // y el mensaje cuenta LÍNEAS, no saltos (un reemplazo sin salto final es una línea igual).
 test('T23 ReplaceSection_ArchivoCrlf_ConservaLosFinalesYCuentaLineas', () => {
   const c = corral();

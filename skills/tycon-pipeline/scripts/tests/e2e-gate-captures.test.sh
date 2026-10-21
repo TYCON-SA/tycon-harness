@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # =============================================================================
-# e2e-gate-captures.test.sh — el gate E2E guarda las capturas de los specs de la story (story 7.24, AC 4)
+# e2e-gate-captures.test.sh — el gate E2E guarda las capturas de los specs de la story
 # =============================================================================
-# Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
-# nadie la vio antes del merge; el dueño la encontró «inentendible» en staging. El gate ahora deja una captura por test
-# para que el cierre se la muestre al dev antes de pedir el commit.
+# Una ventana puede pasar todos los controles y que nadie la vea antes del merge. Por eso el gate deja una captura
+# por test, para que el cierre se la muestre al dev antes de pedir el commit.
 #
 #   C-01 con filtro: `## Capturas` lista las imágenes copiadas a la evidencia (y sólo imágenes), el veredicto no
 #        cambia, la corrida usó el envoltorio y la config del repo queda igual
@@ -118,7 +117,7 @@ else mal "C-04 sin config —$f"; fi
 rm -rf "$T"
 
 # ── C-05 · con filtro y una imagen que el reporte nombra pero no está: copia la otra y dice cuál faltó ───────────
-# (revisores del paso 5: un error al copiar salía como «ningún test llegó a correr»)
+# (sin la guarda, un error al copiar saldría como «ningún test llegó a correr»)
 T=$(mktemp -d); montar "$T" con-config list-ok; rm -f "$T/pw-out/b.png"
 RC=$(correr "$T" facturas)
 f=""

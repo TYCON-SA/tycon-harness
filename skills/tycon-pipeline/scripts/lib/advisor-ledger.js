@@ -3,46 +3,45 @@
 /**
  * advisor-ledger.js — el registro de corridas de revisores, legible y DURABLE.
  *
- * ── POR QUÉ EXISTE (auditoría 2026-08-25, Tema 2 del plan de controles apagables) ───────────────
- * No se podía contestar mecánicamente **"¿corrieron los revisores automáticos de la story X?"**.
- * Había dos registros y a los dos les faltaba algo:
+ * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
+ * Para contestar mecánicamente **"¿corrieron los revisores automáticos de la story X?"** hay
+ * dos registros, y a los dos les falta algo:
  *
  *   1. `gates.log` (`check=advisors`) — el registro VOLUNTARIO: sólo se escribe si alguien tipea el
- *      comando que lo escribe. Medido: 149 entradas históricas, **142 sin repo atribuido**. Y como
- *      no hay diferencia entre "no corrieron" y "corrieron sin registrarse", **el silencio se lee
- *      como incumplimiento**.
+ *      comando que lo escribe, y casi todas sus entradas no traen repo atribuido. Y como no hay
+ *      diferencia entre "no corrieron" y "corrieron sin registrarse", **el silencio se lee como
+ *      incumplimiento**.
  *   2. `advisor-runs/<sid>.jsonl` — el registro AUTOMÁTICO (lo escribe el hook `on-advisor-run.js`
- *      en cada spawn REAL, no hay forma de saltearlo sin desinstalar el hook). Tenía el dato de que
- *      corrieron, pero **sin repo, sin story, y se borraba solo a los 7 días**: 756 líneas medidas,
- *      CERO con repo.
+ *      en cada spawn REAL, no hay forma de saltearlo sin desinstalar el hook). Tiene el dato de que
+ *      corrieron, pero **sin repo, sin story, y se borra solo a los 7 días**.
  *
- * O sea: el registro confiable no servía para preguntar, y el que servía para preguntar no era
+ * O sea: el registro confiable no sirve para preguntar, y el que sirve para preguntar no es
  * confiable. Este módulo cierra las dos mitades sobre el registro automático:
  *   · el hook estampa `repo` y `story` en cada línea (ver lib/repo-attrib.js);
  *   · antes de que la limpieza de 7 días borre un archivo, acá se vuelca un **resumen durable**
  *     que no se borra nunca (`advisor-runs-summary.jsonl`);
  *   · `pipeline.js advisor-runs` lee las dos capas y contesta la pregunta.
  *
- * 🔴 **Escribe, no bloquea — a propósito.** La lección del 2026-08-25 (un hook bloqueante revertido
- * tras dos bloqueos equivocados en cinco minutos) manda: un control que no interrumpe a nadie no se
- * apaga por molesto, y por eso sigue estando cuando importa. **Medir primero, bloquear después —
+ * 🔴 **Escribe, no bloquea — a propósito.** Un control que no interrumpe a nadie no se
+ * apaga por molesto, y por eso sigue estando cuando importa (un hook bloqueante con bloqueos
+ * equivocados termina revertido). **Medir primero, bloquear después —
  * si alguna vez.**
  *
- * ── RETENCIÓN (decisión D2 del dev, 2026-08-25) ────────────────────────────────────────────────
- * Se eligió **resumen durable antes de borrar**, no subir la retención de 7 a 90 días:
+ * ── RETENCIÓN ──────────────────────────────────────────────────────────────────────────────────
+ * **Resumen durable antes de borrar**, y no subir la retención de 7 a 90 días:
  * el volumen medido es ~10 KB/semana (menos de 1 MB al año en resúmenes) y **no toca la lógica que
- * hoy depende de los 7 días** (`check-count` sólo mira la corrida actual).
+ * depende de los 7 días** (`check-count` sólo mira la corrida actual).
  */
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // la carpeta del estado, de una sola pieza
 const { execFileSync } = require('child_process');
 
 // Resolución PEREZOSA (mismo motivo que en repo-attrib.js): con las rutas congeladas al cargar el
 // módulo, un test no puede aislarse del estado real — o lo ensucia, o se salta sus aserciones sin
-// fallar. Las dos cosas pasaron al escribir esta suite.
+// fallar.
 function stateDir() {
   return path.join(stateDirOf(os.homedir()));
 }
@@ -197,18 +196,16 @@ function origenDe(dir) {
 /**
  * ¿Las dos rutas son el MISMO repo?
  *
- * 🔴 La señal es el `origin`, no la ruta ni el nombre de la carpeta (deuda ROSTER-CLON-DESCARTABLE,
- * medida el 2026-09-07 al cerrar la story 2.3): una story implementada en un clon descartable del
- * scratchpad —el patrón que el arnés recomienda cuando hay otras sesiones vivas sobre el checkout—
- * queda estampada en el ledger con la ruta del clon, y la consulta por el repo real devolvía 0
- * revisores. Los 14 spawns estaban ahí, en la misma máquina, invisibles; el portón pedía
- * `sin_testigo` con un motivo que no era el real, y un escape que se usa por rutina deja de
- * significar algo.
+ * 🔴 La señal es el `origin`, no la ruta ni el nombre de la carpeta: una story implementada en un clon
+ * descartable del scratchpad —el patrón que el arnés recomienda cuando hay otras sesiones vivas sobre el
+ * checkout— queda estampada en el ledger con la ruta del clon, y la consulta por el repo real devolvería 0
+ * revisores: el portón pediría `sin_testigo` con un motivo que no es el real, y un escape que se usa por
+ * rutina deja de significar algo.
  *
- * El basename NO alcanza y tampoco es inofensivo: `Totora/Backend` y `FRESNO/Backend` se llaman
+ * El basename NO alcanza y tampoco es inofensivo: `ProductoA/Backend` y `ProductoB/Backend` se llaman
  * igual y son repos distintos. Por eso el orden es: misma ruta → mismo origin → y recién si
  * alguno de los dos no es un repo git (clon ya borrado, ruta de otra máquina) se cae al nombre
- * de la carpeta, que es lo que había antes.
+ * de la carpeta.
  */
 function mismoRepo(a, b) {
   if (!a || !b) return false;

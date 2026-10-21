@@ -1,14 +1,14 @@
 'use strict';
 
 /**
- * config-lint.js — chequeo determinístico de `.tycon/advisors.yaml` (FIX-4(c), 2026-08-25).
+ * config-lint.js — chequeo determinístico de `.tycon/advisors.yaml`.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * La config del repo es una **superficie de control sin control**: cambiarla cambia qué frenos
- * corren y sobre qué, y hasta hoy nada la miraba. Los tres modos de falla medidos en la auditoría
- * del 2026-08-25, los tres SILENCIOSOS:
+ * corren y sobre qué, y nada la mira. Los tres modos de falla que
+ * detecta son SILENCIOSOS:
  *
- *   1. **Llave que nadie lee.** Los 5 repos de Bigua declaraban una lista `advisors:` que
+ *   1. **Llave que nadie lee.** Un repo puede declarar una lista `advisors:` que
  *      NINGUNA parte del arnés consulta. No da error — da la impresión de que el repo está
  *      configurado, y nadie revisa si los revisores que hacen falta corren de verdad.
  *   2. **Regla publicada y muerta.** `e2e_realness.dev_seam_pattern` es el GATE de una regla
@@ -30,10 +30,9 @@ const path = require('path');
 /**
  * EL CATÁLOGO: las llaves que el arnés LEE y QUIÉN las lee.
  *
- * 🔴 Cada entrada se verificó contra su lector real el 2026-08-25 — no contra la documentación.
- * Escribir este catálogo de memoria fue el primer intento y **8 de los 10 hallazgos de la primera
- * corrida eran falsos positivos míos** (el bloque `i18n:` completo y `visual_plan`, que sí los lee
- * el advisor de i18n y el Step 3). Un lint que pone en rojo config legítima se apaga en una semana.
+ * 🔴 Cada entrada se verifica contra su lector real — no contra la documentación.
+ * Un catálogo escrito de memoria da falsos positivos: el bloque `i18n:` completo y `visual_plan`
+ * sí los lee el advisor de i18n y el Step 3. Un lint que pone en rojo config legítima se apaga en una semana.
  *
  * 🔴 Al agregar una llave nueva al arnés, agregarla ACÁ con su lector. Si no, el lint la va a
  * reportar como desconocida en todos los repos que la usen.
@@ -44,9 +43,9 @@ const path = require('path');
 const ESQUEMA = {
   repo_group: null,       // ~/.claude/tycon-harness/scripts/hooks/unpushed-work-notice.js (grupo de
                           // repos del aviso de trabajo sin subir) + tycon-merge-to-main step-00.
-                          // Faltaba desde que el hook entró (2026-08-25): la llave la usan 4 repos
-                          // de FRESNO y el lint la reportaba como desconocida en todos — el propio
-                          // test 'los 13 configs reales del equipo no disparan NADA' estaba en rojo.
+                          // Sin esta entrada, el lint reporta la llave como desconocida en todos
+                          // los repos que la usan — el propio test 'los 13 configs reales del
+                          // equipo no disparan NADA' queda en rojo.
   visual_plan: null,      // tycon-pipeline SKILL.md G.ii / step-03 / scripts/visual-plan.js
   qa_guide: null,         // lib/atdd-commit-gate.js → qaGuideMode
   deep_review: null,      // pipeline.js → deepReviewConfig
@@ -59,11 +58,11 @@ const ESQUEMA = {
     libres: ['audiences'],
   },
   e2e: {                  // pipeline.js → e2eConfig · scripts/e2e-gate.sh (bundle, required_env)
-    // `bundle` y `required_env` las lee el PORTÓN, no `e2eConfig`, y por eso faltaban: `bundle` desde
-    // que la frescura del artefacto entró (2026-09-18) y `required_env` desde la llave exigente
-    // (2026-09-27). Medido antes de agregarlas: un repo que declarara las dos se comía CINCO avisos,
-    // y tres de ellos le decían mover al primer nivel las hijas de `bundle` — o sea, el lint mandaba
-    // a ROMPER una config buena. Es el mismo modo de falla que el catálogo vino a cerrar, del lado
+    // `bundle` y `required_env` las lee el PORTÓN, no `e2eConfig`, y por eso hacen falta acá: `bundle` para
+    // la frescura del artefacto y `required_env` para la llave exigente.
+    // Medido: un repo que declare las dos se come CINCO avisos,
+    // y tres de ellos le dicen mover al primer nivel las hijas de `bundle` — o sea, el lint manda
+    // a ROMPER una config buena. Es el mismo modo de falla que el catálogo existe para cerrar, del lado
     // de adentro: una llave nueva en el arnés que nadie registró acá.
     hijas: ['gate', 'frontend_dir', 'frontend_dirs', 'critical_manifest', 'shared_paths',
       'preconditions', 'bundle', 'required_env'],
@@ -85,20 +84,20 @@ const ESQUEMA = {
     libres: [],
   },
   pipeline: {             // lib/story-gate-io.js → gateEnabledForRepo(root, key)
-    hijas: ['story_gate', 'story_skill_gate'],  // story_skill_gate: freno de story-a-mano (2026-08-30)
+    hijas: ['story_gate', 'story_skill_gate'],  // story_skill_gate: freno de story-a-mano
     libres: [],
   },
   merge: {                // tycon-merge-to-main step-00 / step-09b → merge.mode (push | pr)
     hijas: ['mode', 'check'],  // `check`: el control que espera un pedido de GitHub (lo lee scripts/tools/merge-pr.js del arnés).
-                          // `mode` faltaba desde que el modo PR entró (2026-08-30): el backend de un producto lo
-    libres: [],           // declaró y el lint lo acusaba de desconocido — el test de los configs
-  },                      // reales del equipo estaba en rojo (mismo patrón que repo_group) — guides/maintaining/incident-log.md#case-merge-mode-unknown-to-lint-2026-08-30.
+                          // `mode` se registra porque los repos lo declaran: si no, el lint lo
+    libres: [],           // acusaría de desconocido y el test de los configs
+  },                      // reales del equipo quedaría en rojo (mismo patrón que repo_group).
 
   audit: {                // el revisor de convenciones .NET del paquete bizuit → DOTNET-W11
     hijas: ['interface', 'exclude_attribute'],
     libres: [],
   },
-  packs: null,            // lib/packs.js → paquetesActivos (story 8.2): la lista EXACTA de paquetes
+  packs: null,            // lib/packs.js → paquetesActivos: la lista EXACTA de paquetes
                           // de revisores activos en el repo. Sin la llave, están activos todos los
                           // instalados. Un nombre que no está instalado FRENA `pipeline.js advisors`;
                           // acá se avisa antes (lintPaquetes).
@@ -159,22 +158,21 @@ function escalar(txt, bloque, llave) {
 /**
  * ── EL CATÁLOGO SE AUDITA A SÍ MISMO ────────────────────────────────────────────────────────────
  *
- * 🔴 EL CASO (2026-09-27). El catálogo de arriba existe para cazar la llave que nadie lee, y se le
- * escaparon DOS propias: `e2e.bundle` (2026-09-18) y `e2e.required_env` (2026-09-27), las dos leídas
- * por `e2e-gate.sh` en vez de por `e2eConfig`. Un repo que las declarara se comía cinco avisos, tres
- * de ellos diciéndole que MOVIERA líneas que estaban bien: el lint mandando a romper una config que
- * funciona. Ninguna prueba lo vio, porque el caso de los configs reales del equipo sólo mira lo que
- * los repos YA declaran, y nadie las había declarado todavía.
+ * 🔴 El catálogo de arriba existe para cazar la llave que nadie lee. Dos propias se le escapan:
+ * `e2e.bundle` y `e2e.required_env`, las dos leídas por `e2e-gate.sh` en vez de por `e2eConfig`. Un repo
+ * que las declara se come cinco avisos, tres de ellos diciéndole que MUEVA líneas que están bien: el lint
+ * manda a romper una config que funciona. Ninguna prueba lo ve, porque el caso de los configs reales del
+ * equipo sólo mira lo que los repos YA declaran, y nadie las declara todavía.
  *
- * La regla escrita arriba —«al agregar una llave nueva, agregarla ACÁ»— dependía de que alguien se
- * acordara, que es la misma forma de falla que el arnés persigue en todo lo demás. Esto la mide:
+ * La regla escrita arriba —«al agregar una llave nueva, agregarla ACÁ»— depende de que alguien se
+ * acuerde, que es la misma forma de falla que el arnés persigue en todo lo demás. Esto la mide:
  * busca en los archivos del arnés que LEEN la config los nombres de llave que parsean —los patrones
  * anclados de awk (`[[:space:]]*<nombre>:`) y de JavaScript (`\s*<nombre>\??:`)— y exige que cada
  * uno esté registrado. Una llave nueva sin registrar pone el caso en rojo el mismo día que se
  * escribe, no el día que un repo la usa.
  *
  * NO pretende encontrar toda forma de leer una llave (un `split(':')` a mano se le escapa): cubre
- * las dos formas con las que el arnés parsea hoy, que son las que produjeron el defecto. Si aparece
+ * las dos formas con las que el arnés parsea hoy, que son las que producen este defecto. Si aparece
  * una tercera, entra acá con su caso.
  */
 
@@ -333,7 +331,7 @@ function lintExclusionesQueCrecen(txtCarpeta, txtCommiteado) {
   }];
 }
 
-/** ── (4) un paquete que el repo nombra y no está instalado (story 8.2) ──────────────────────── */
+/** ── (4) un paquete que el repo nombra y no está instalado ──────────────────────── */
 function lintPaquetes(txt, opts = {}) {
   const packs = require('./packs.js');
   let declarados;
@@ -345,7 +343,7 @@ function lintPaquetes(txt, opts = {}) {
     return [{ tipo: 'packs-sin-lista', llave: 'packs', mensaje: `${e.message}. Con esa clave \`pipeline.js advisors\` FRENA.` }];
   }
   if (!declarados || !declarados.length) return [];
-  declarados = declarados.map((n) => packs.nombreActual(n));   // un nombre viejo de paquete sigue andando (story 8.9, B3b)
+  declarados = declarados.map((n) => packs.nombreActual(n));   // un nombre viejo de paquete sigue andando
   // La carpeta por defecto ausente es «ninguno instalado» (máquina sin paquetes); sólo una
   // TYCON_PACKS_DIR explícita inexistente es «no se pudo leer». `opts` es para las pruebas.
   const dir = opts.packsDir || packs.dirPaquetes();

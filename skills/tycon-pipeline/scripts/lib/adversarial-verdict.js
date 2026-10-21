@@ -1,10 +1,10 @@
 'use strict';
 /**
- * adversarial-verdict.js — ¿el pase adversarial está atendido? (story 1.8) y qué hacer con uno de otra sesión
- * (story 7.19). Lo usan `marker.js` (el freno del paso 8) y `pipeline.js` (`next`): una sola copia del criterio.
+ * adversarial-verdict.js — ¿el pase adversarial está atendido? Y qué hacer con uno de otra sesión.
+ * Lo usan `marker.js` (el freno del paso 8) y `pipeline.js` (`next`): una sola copia del criterio.
  *
- * Hasta la 7.19 `veredictoPaseAdversarial` vivía en `marker.js`, que no exporta nada; `next` no lo podía usar y
- * pedía relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea el paso 8.
+ * `veredictoPaseAdversarial` vive acá y no en `marker.js` (que no exporta nada) para que `next` lo use: sin
+ * él, `next` pediría relanzar siempre un pase de otra sesión —también uno ya cerrado, y relanzar un pase cerrado bloquea el paso 8.
  */
 
 const fs = require('fs');
@@ -12,12 +12,12 @@ const os = require('os');
 const path = require('path');
 
 /**
- * ¿El 5b quedó atendido? (story 1.8, 2026-09-18). Pura: lee el marker y devuelve
+ * ¿El 5b quedó atendido? Pura: lee el marker y devuelve
  * `{ veredicto: 'paso'|'bloqueo', motivo, runId, launchedAt }`.
  *
  * Lanzado → pasa con un resultado `tipo: '5b'` anotado en o después del ÚLTIMO lanzamiento (`resultado`), o con
  * el abandono de ESE lanzamiento (`abandonado`); si los resultados que hay son de un lanzamiento anterior —el
- * pase se relanzó, como en la 2.12— bloquea (`resultado-de-otro-lanzamiento`); sin nada, `sin-resultado`.
+ * pase se relanzó— bloquea (`resultado-de-otro-lanzamiento`); sin nada, `sin-resultado`.
  * No lanzado → pasa con el salteo que decidió el portón (`salteado` / `salteado-forzado`), o con un resultado 5b
  * anotado aunque nadie haya registrado el lanzamiento (`resultado-sin-lanzamiento`), y si no, `no-atendido`:
  * la bandera `deepReviewDone` de una corrida vieja NO cuenta, porque es justo lo que cualquiera escribía a mano.
@@ -42,7 +42,7 @@ function veredictoPaseAdversarial(marker) {
     const del5b = pases.filter((p) => p && p.tipo === '5b');
     const vigentes = del5b.filter((p) => Date.parse(p.ts) >= desde);
     // El abandono de ESTE lanzamiento con el interruptor es la decisión del dev y gana: es la salida que el propio
-    // freno del pase no medido ofrece (con el orden al revés, no destrababa). Casos: tests/adversarial-unmeasured.test.js.
+    // freno del pase no medido ofrece (con el orden al revés, no destrabaría). Casos: tests/adversarial-unmeasured.test.js.
     if (skip && skip.abandonado === true && skip.runId === runId) return res('paso', 'abandonado');
     // Un pase que no revisó todo es un pase que falta: cuenta el ÚLTIMO resultado del lanzamiento.
     if (vigentes.length && vigentes[vigentes.length - 1].veredicto === 'no-medido') return res('bloqueo', 'pase-no-medido', { pase: vigentes[vigentes.length - 1] });
@@ -51,7 +51,7 @@ function veredictoPaseAdversarial(marker) {
     return res('bloqueo', 'sin-resultado');
   }
   if (skip) return res('paso', skip.forzado === true || skip.abandonado === true ? 'salteado-forzado' : 'salteado');
-  // Resultado 5b anotado sin lanzamiento registrado (decisión D6 del dev, hallazgo del pase adversarial de la 1.8):
+  // Resultado 5b anotado sin lanzamiento registrado:
   // el resultado ES la constancia que el paso pide; queda con su propio motivo, visible en el registro.
   const del5b = pases.filter((p) => p && p.tipo === '5b');
   if (del5b.length && del5b[del5b.length - 1].veredicto === 'no-medido') return res('bloqueo', 'pase-no-medido', { pase: del5b[del5b.length - 1] });
@@ -60,24 +60,23 @@ function veredictoPaseAdversarial(marker) {
 }
 
 /**
- * Para `next` (story 7.19, AC 4): «atendido» es `paso`, y también un `bloqueo` por `resultado-de-otro-lanzamiento`
+ * Para `next`: «atendido» es `paso`, y también un `bloqueo` por `resultado-de-otro-lanzamiento`
  * —ése lo frena el paso 8, y pedir otro lanzamiento desde `next` lo empeora—.
  */
 function paseAtendido(v) {
   return !!v && (v.veredicto === 'paso' || v.motivo === 'resultado-de-otro-lanzamiento');
 }
 
-// La regla para un pase lanzado por otra sesión y sin resultado (story 7.19, AC 5; decisión del dueño del
-// 2026-10-15: sin preguntarle a nadie). Preguntar sería una espera humana nueva justo donde se quieren ganar
-// minutos; relanzar siempre (lo de antes) tiraba 20 a 40 minutos cuando la otra sesión seguía viva y entregaba sola
-// (caso de la 8.23, adoptada con el pase en vuelo: anotó el resultado 26 minutos después sin relanzar nada).
+// La regla para un pase lanzado por otra sesión y sin resultado (sin preguntarle a
+// nadie). Preguntar sería una espera humana nueva justo donde se quieren ganar minutos; relanzar siempre
+// tiraría 20 a 40 minutos cuando la otra sesión sigue viva y entrega sola.
 const ESPERA_MAX_MIN = 45;
 const HILO_VIVO_MIN = 10;
 const REGLA_PASE_AJENO =
   `se espera si el lanzamiento tiene menos de ${ESPERA_MAX_MIN} min y la sesión que lo lanzó sigue viva ` +
   `(su conversación cambió hace menos de ${HILO_VIVO_MIN} min); si no, se relanza en el paso del pase adversarial`;
 
-/** HH:MM en la hora de la máquina (la que ve el dueño). */
+/** HH:MM en la hora de la máquina (la que ve quien usa la máquina). */
 function horaCorta(iso) {
   const d = new Date(iso);
   if (!Number.isFinite(d.getTime())) return '??:??';
@@ -143,7 +142,7 @@ const SALIDA_APROBADA = 'la salida aprobada: un pase propio con agentes de Claud
 /**
  * ¿El resultado del pase revisó todo? Pura: recibe el objeto que devolvió el guion y devuelve
  * `{ medido, confirmados, lentes_sin_medir, hallazgos_sin_veredicto, motivo }`. Medido = todas las lentes con su
- * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin `lentes` (un formato anterior) o sin lentes
+ * cazador contestado y ningún hallazgo sin veredicto. Un resultado sin el campo `lentes` o con la lista vacía
  * (sin archivos que auditar) no está medido: «no revisé nada» nunca es «limpio».
  */
 function medicionDelResultado(obj) {

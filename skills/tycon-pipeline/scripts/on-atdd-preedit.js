@@ -5,8 +5,8 @@
  * DENIEGA la edición del primer archivo de código de una corrida de pipeline si todavía no se tocó
  * ningún archivo de test. Es la capa que faltaba: las otras dos (`complete-step 4` y el gate de
  * commit) detectan la inversión cuando la implementación ya está escrita; ésta la hace imposible.
- * Caso disparador 2026-07-30: Tasks 2-9 implementadas completas antes de ningún test en la máquina
- * de otro dev — lo cazó él leyendo el transcript, no el harness. Ver `lib/atdd-preedit.js` (la
+ * Una implementación completa antes de ningún test no la caza el harness sino quien lee el
+ * transcript. Ver `lib/atdd-preedit.js` (la
  * lógica y su calibrado viven ahí, en funciones puras testeadas).
  *
  * Corre in-process vía dispatch.js ('pre-edit'). Contrato: handle(event) →
@@ -15,15 +15,14 @@
  *
  * Fail-open VISIBLE, no silencioso: este handler NO envuelve todo en try/catch — si tira, el
  * dispatcher lo loguea a `hook-errors.log` y sigue (su contrato de siempre). Un catch-todo acá
- * hacía que "explotó" y "salteó bien" devolvieran lo mismo (`null`), o sea un gate roto invisible
- * — exactamente el defecto del gate ciego que motivó todo esto (hallazgo del review adversarial
- * 2026-07-30, chequeo de mutantes: 6 sobrevivientes por ese catch). Las lecturas que PUEDEN fallar
+ * haría que "explotó" y "salteó bien" devolvieran lo mismo (`null`), o sea un gate roto invisible
+ * — exactamente el defecto del gate ciego. Las lecturas que PUEDEN fallar
  * legítimamente (marker ausente, story ilegible) tienen su try puntual con el default documentado.
  *
  * Evidencia de "qué se editó antes": la UNIÓN de `marker.fileEvents` (dentro del pipeline) y el
  * `.jsonl` por sesión de `atdd-commit-gate.js` (que `on-edit.js` graba SIEMPRE, haya marker o no).
  * Sin la unión, los tests escritos ANTES de crear el marker (Step 0/1, o el reminder de "seteá el
- * marker AHORA") no contaban y el portón denegaba un ATDD impecable — falso positivo F2 del review.
+ * marker AHORA") no contarían y el portón denegaría un ATDD impecable — falso positivo.
  *
  * Escapes: marker flag `atddBypass` (marker.js set-flag atddBypass true — cada edición que el
  * bypass deja pasar queda en bypass.log, y el MISMO flag satisface el gate del complete-step 4) ·
@@ -36,7 +35,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const { computeAtddPreEdit, preEditBlockMessage, storyDeclaresTests } = require('./lib/atdd-preedit.js');
 const { readFileEvents } = require('./lib/atdd-commit-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
@@ -77,13 +76,13 @@ function handle(event, opts = {}) {
   const stateDir = opts.stateDir || DEFAULT_STATE_DIR;
   const sessionId = resolveSessionId(event?.session_id);
   const marker = readMarker(stateDir, sessionId);
-  // Sin pipeline activo no se frena nada (decisión DevA 2026-07-30) — el gate de commit
+  // Sin pipeline activo no se frena nada — el gate de commit
   // (`atdd-commit-gate.js`) sigue cubriendo el trabajo a mano, en modo aviso.
   if (!marker) return null;
 
   // storyPath puede venir relativo (marker armado a mano / adoptado) — resolver contra repoPath,
   // misma regla que `resolveStoryPath` de marker.js. Sin esto, el read falla → "no declara Tests"
-  // → portón apagado toda la corrida CON UNA RAZÓN FALSA (hallazgo F4 del review adversarial).
+  // → portón apagado toda la corrida CON UNA RAZÓN FALSA.
   let storyAbs = String(marker.storyPath || '');
   if (storyAbs && !path.isAbsolute(storyAbs) && marker.repoPath) {
     storyAbs = path.join(marker.repoPath, storyAbs);
@@ -110,7 +109,7 @@ function handle(event, opts = {}) {
 
   if (r.action !== 'block') {
     // El bypass se audita SOLO cuando evitó un bloqueo real (sin esto, una línea por CADA
-    // edición de la sesión — ruido que entierra las entradas que importan, hallazgo F6).
+    // edición de la sesión — ruido que entierra las entradas que importan).
     if (marker.atddBypass === true && computeAtddPreEdit({ ...base, bypassed: false }).action === 'block') {
       appendLog(stateDir, 'bypass.log', sessionId, {
         repoPath: marker.repoPath || null, kind: 'ATDD_PREEDIT_BYPASS', story: marker.storyId, file: filePath,
@@ -119,7 +118,7 @@ function handle(event, opts = {}) {
     return null;
   }
 
-  // repoPath: namespace por repo (GATESLOG-STORYID-NS-1) — misma key que marker.js.
+  // repoPath: namespace por repo — misma key que marker.js.
   appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: marker.repoPath || null, name: 'atdd-preedit', status: 'blocked', story: marker.storyId, file: filePath, reason: r.reason,
   });

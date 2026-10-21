@@ -1,12 +1,12 @@
 'use strict';
 /**
- * chained-add.js — los `git add` que vienen ANTES del `git commit` en la misma línea (2026-10-14).
+ * chained-add.js — los `git add` que vienen ANTES del `git commit` en la misma línea.
  *
  * ── El caso ──────────────────────────────────────────────────────────────────────────────────
  * El freno del commit (on-pre-commit.js) corre ANTES de que se ejecute el comando entero. Con
- * `git add X && git commit`, lo stageado todavía es la versión VIEJA de X: el freno rebotaba por algo
- * que el mismo comando ya arreglaba. Y al revés, que es peor: si lo stageado estaba sano y el `add`
- * traía una versión rota, el freno miraba la sana y dejaba pasar la rota.
+ * `git add X && git commit`, lo stageado todavía es la versión VIEJA de X: el freno rebotaría por algo
+ * que el mismo comando ya arregla. Y al revés, que es peor: si lo stageado está sano y el `add` trae una
+ * versión rota, el freno mira la sana y deja pasar la rota.
  *
  * ── Qué hace ─────────────────────────────────────────────────────────────────────────────────
  * Si TODO lo que precede al commit son `git add` simples, encadenados con `&&` o `;`, el freno los
@@ -18,13 +18,13 @@
  * Un `add` encadenado no puede servir para colar algo que el freno no vio. Por eso se simula sólo lo
  * que se puede reproducir igual que el shell:
  *   · cualquier otro comando antes del commit (un `cd`, un `sed` que cambia el archivo entre dos
- *     `add`, un `git rm`): lo que va a quedar stageado ya no es lo que ve el freno;
+ *     `add`, un `git rm`): lo que va a quedar stageado no es lo que ve el freno;
  *   · `||`, `|`, `&` o un envoltorio `bash -c` entre medio;
  *   · variables, comodines sin comillas, `~`, sustituciones, redirecciones o barras invertidas: los
  *     expande el shell y el freno no;
  *   · `git -C`, opciones globales o asignaciones delante del `git add`, y cualquier opción del `add` fuera de una
  *     lista cerrada de las que se reproducen igual (las interactivas, como `-p`, quedan afuera).
- * En esos casos el freno mira lo stageado hoy (lo de siempre) y, si frena, lo dice: que corra el
+ * En esos casos el freno mira lo stageado (lo de siempre) y, si frena, lo dice: que corra el
  * `add` en una llamada aparte y después el commit.
  */
 

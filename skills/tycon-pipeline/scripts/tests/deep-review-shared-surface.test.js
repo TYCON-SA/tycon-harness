@@ -3,14 +3,14 @@
  * deep-review-shared-surface.test.js — el pase adversarial corre aunque el diff sea chico cuando
  * toca la superficie compartida que el repo declaró, y el repo que NO la declaró lo dice.
  *
- * Caso disparador (el repo del framework, epic 9, 2026-08-26): el gate mide TAMAÑO de diff (≤6 archivos
- * → LOW → skip). Los tres defectos del epic no eran función del tamaño sino de quién ejecuta el
- * código roto — los tres terminan en terminación del proceso del host, o sea que se llevan puestos
- * a todos los plugins. En la Story 9.3 el skip dejó pasar la regresión y costó el hotfix 9.3.1.
+ * Por qué: el gate mide TAMAÑO de diff (≤6 archivos → LOW → skip). Los defectos de la
+ * superficie compartida no son función del tamaño sino de quién ejecuta el código roto —
+ * terminan en terminación del proceso del host, o sea que se llevan puestos a todos los plugins.
+ * Un skip por tamaño dejaría pasar la regresión.
  *
  * La 2da mitad del test es igual de importante que la 1ra: la lista es opt-in por repo, así que un
  * repo que nunca la declaró NO está cubierto — y sin constancia eso se lee igual que "no hacía
- * falta". Decisión del dev 2026-08-26: se declara por repo, y la ausencia deja rastro.
+ * falta". Se declara por repo, y la ausencia deja rastro.
  *
  * Correr: node --test .../scripts/tests/deep-review-shared-surface.test.js
  */
@@ -25,8 +25,8 @@ const { spawnSync } = require('child_process');
 const SCRIPTS = path.join(__dirname, '..');
 const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 
-// 🔴 Cada laboratorio es un repo git (2026-10-15): el portón mide la densidad de cada archivo en SU repo, y un archivo
-//    fuera de todo repo git ya no se cuenta entero en silencio (lo dice y corta). Sin commits, los archivos son nuevos.
+// 🔴 Cada laboratorio es un repo git: el portón mide la densidad de cada archivo en SU repo, y un archivo
+//    fuera de todo repo git no se cuenta entero en silencio (lo dice y corta). Sin commits, los archivos son nuevos.
 function mkRepo(yaml) {
   const r = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-'));
   spawnSync('git', ['-C', r, '-c', 'maintenance.auto=false', 'init', '-q'], { env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' } });
@@ -44,11 +44,10 @@ function mkRepo(yaml) {
   return r;
 }
 
-// 🔴 HOME temporal SIEMPRE (revisión adversarial 2026-08-26): el gate escribe una constancia en
-// `~/.claude/.tycon-pipeline/gates.log` cuando el repo no declaró superficie, así que la versión
-// anterior de este test ensuciaba el log REAL del dev con entradas de repos temporales — y ese log
-// es de donde la retrospectiva saca sus métricas. Un test que contamina lo que otro control mide
-// es exactamente el "instrumento que miente" que este mismo cambio vino a atacar.
+// 🔴 HOME temporal SIEMPRE: el gate escribe una constancia en `~/.claude/.tycon-pipeline/gates.log`
+// cuando el repo no declaró superficie. Sin HOME temporal, el log REAL del dev se ensuciaría con
+// entradas de repos temporales, y ese log es de donde la retrospectiva saca sus métricas. Un test que contamina lo que otro control mide
+// es un "instrumento que miente".
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'shared-home-'));
 
 function gate(repo, ...files) {
@@ -68,7 +67,7 @@ e2e:
   gate: scripts/e2e-gate.sh
 `;
 
-// ── Lo que motivó el cambio ──────────────────────────────────────────────────
+// ── El caso: un diff chico sobre la superficie ──────────────────────────────────────────────────
 
 test('diff CHICO que toca la superficie declarada → corre igual', () => {
   const repo = mkRepo(YAML_CON_LISTA);
@@ -87,7 +86,7 @@ test('diff chico que NO toca la superficie declarada → sigue salteando (el aho
   assert.equal(out.shared_surface_note, undefined);
 });
 
-// ── La 2da condición del dev: la ausencia deja rastro ────────────────────────
+// ── La ausencia deja rastro ────────────────────────
 
 test('repo SIN la lista → saltea, pero deja escrito que decidió a ciegas', () => {
   const repo = mkRepo('e2e:\n  gate: scripts/e2e-gate.sh\n');
@@ -105,7 +104,7 @@ test('repo sin .tycon/advisors.yaml → mismo rastro, sin romperse', () => {
   assert.equal(out.shared_surface_declared, false);
 });
 
-// ── Lo que NO debía cambiar ──────────────────────────────────────────────────
+// ── Lo que NO cambia ──────────────────────────────────────────────────
 
 test('NORMAL sigue corriendo por su propio criterio, sin pasar por la lista', () => {
   const repo = mkRepo(YAML_CON_LISTA);
@@ -131,7 +130,7 @@ test('`deep_review: off` del repo sigue ganando sobre la superficie compartida',
   assert.match(out.reason, /deep_review: off/);
 });
 
-// ── La llave nueva no puede quedar fuera del lint de config ──────────────────
+// ── La llave no puede quedar fuera del lint de config ──────────────────
 
 test('el lint de config NO reporta `deep_review_always_paths` como llave desconocida', () => {
   const repo = mkRepo(YAML_CON_LISTA);
@@ -142,9 +141,9 @@ test('el lint de config NO reporta `deep_review_always_paths` como llave descono
 });
 
 // ── Las formas de escribir la lista (todas las que YAML acepta) ──────────────
-// La 1ra versión del parser entendía SÓLO el bloque con guiones y descartaba las otras EN SILENCIO:
-// el repo declaraba, el pase adversarial se salteaba igual, y el veredicto afirmaba que no había
-// nada declarado. Lo encontró la revisión adversarial reproduciendo cada forma.
+// Un parser que entienda SÓLO el bloque con guiones descarta las otras formas EN SILENCIO: el repo
+// declara, el pase se saltea igual, y el veredicto afirma que no hay nada declarado. Cada forma de
+// la lista está probada por separado.
 
 const FORMAS = {
   'bloque con guiones': 'deep_review_always_paths:\n  - Services/Plugins/**\n\ne2e:\n  gate: x\n',
@@ -193,8 +192,8 @@ test('`deep_review: off` con lista declarada lo DICE, no mata en silencio', () =
 });
 
 test('@story-7.26 story de dos repos: un archivo del repo hermano se juzga contra la superficie que declara SU repo', () => {
-  // 🔴 rojo previo (2026-10-15): el archivo del hermano se salteaba («fuera del repo») y un cambio en su superficie
-  //    compartida no pedía el pase adversarial.
+  // 🔴 Sin esto, el archivo del hermano se saltea («fuera del repo») y un cambio en su superficie
+  //    compartida no pide el pase adversarial.
   const a = mkRepo(null);
   const b = mkRepo(YAML_CON_LISTA);
   const out = gate(a, path.join(b, 'Services', 'Plugins', 'PluginManager.cs'));

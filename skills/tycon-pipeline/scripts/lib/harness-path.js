@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * lib/harness-path.js — dónde está el arnés, visto desde las skills. UN lector
- * (story 8.3 del arnés, AC 5, 2026-09-26).
+ * lib/harness-path.js — dónde está el arnés, visto desde las skills. UN lector.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
- * Hasta la 8.3 `TYCON_GUIDES_DIR` se leía en doce lugares de los dos repos, todos con el mismo último
- * recurso escrito a mano: la carpeta donde UNA máquina tenía el clon. En cualquier otra máquina un
- * hook «no encontraba la lib del arnés» y seguía sin ella, callado — el modo de falla que el arnés
- * existe para cazar. Ahora el orden es uno solo y vive acá:
+ * Leer `TYCON_GUIDES_DIR` en cada lugar, con el mismo último recurso escrito a mano (la carpeta donde UNA máquina
+ * tiene el clon), hace que en cualquier otra máquina un hook «no encuentre la lib del arnés» y siga sin ella,
+ * callado — el modo de falla que el arnés existe para cazar. Por eso el orden es uno solo y vive acá:
  *
  *   1. `TYCON_GUIDES_DIR` (o `TCG`, que exporta el runner del banco de controles) — la salida explícita;
  *   2. el lugar `~/.claude/tycon-harness`, que crea y cuida el instalador del arnés
  *      (`scripts/lib/canonical-path.js`): un prompt no puede leer una variable, pero sí una ruta estable;
- *   3. el nombre viejo `~/.claude/tycon-claude-guides`, que sigue resolviendo en las máquinas ya instaladas
- *      (story 8.19): con sólo el viejo se usa sin decir nada.
+ *   3. el nombre viejo `~/.claude/tycon-claude-guides`, que sigue resolviendo en las máquinas ya instaladas:
+ *      con sólo el viejo se usa sin decir nada.
  *   Nunca una carpeta escrita a mano.
  *
  * Los dos nombres están ESCRITOS acá, no importados de `scripts/setup/harness/place.js`: este archivo es el que BUSCA
- * el arnés, y en una máquina con dos clones en transición (8.18) el clon de las skills no tiene `scripts/` al lado.
+ * el arnés, y en una máquina con dos clones en transición el clon de las skills no tiene `scripts/` al lado.
  * Es una copia declarada en `scripts/tests/fixtures/harness-place-names.json`; una prueba frena si se desfasa.
  *
  * Si ninguno resuelve —una máquina antes del primer instalador, la CI nocturna, que no exporta la
@@ -46,14 +44,14 @@ const path = require('path');
 
 const PLACE_NAME = 'tycon-harness';
 const LEGACY_PLACE_NAME = 'tycon-claude-guides';
-// Story 8.23 (A1): dónde vive el arnés lo sabe scripts/setup/harness/tycon-home.js. En el repo unido está en el mismo clon
+// Dónde vive el arnés lo sabe scripts/setup/harness/tycon-home.js. En el repo unido está en el mismo clon
 // que este archivo y se le piden las rutas del lugar; se carga SI ESTÁ, por su ruta (como la vecina de skills-dir.js): en
 // un clon de skills APARTE no hay scripts/ al lado y valen los dos nombres escritos arriba, que son los mismos (copia
 // declarada en scripts/tests/fixtures/harness-place-names.json; T2 de tycon-home.test.js compara las dos). Si está y no
 // carga, tira.
 const TYCON_HOME_LIB = path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'tycon-home.js');
 const tyconHome = fs.existsSync(TYCON_HOME_LIB) ? require(TYCON_HOME_LIB) : null;
-const NOMBRE_ENLACE = PLACE_NAME;   // el nombre de siempre de la exportación: hoy, el lugar
+const NOMBRE_ENLACE = PLACE_NAME;   // el nombre de la exportación: el lugar
 const IDIOMA_SHELL = '${TYCON_GUIDES_DIR:-$HOME/.claude/tycon-harness}';
 
 class RutaArnesError extends Error {
@@ -80,7 +78,7 @@ function byName(home) {
 }
 /** Un clon del arnés tiene `scripts/install-tycon-hooks.sh` — el MISMO criterio que usa el instalador para decir
  *  «clon válido» (scripts/lib/canonical-path.js). No alcanza con una carpeta `scripts/`: de acá se hace `require()`
- *  de código en hooks que corren en cada edición (revisor de seguridad, vuelta 1). */
+ *  de código en hooks que corren en cada edición (por seguridad). */
 function esClon(dir) { return !!dir && fs.existsSync(path.join(dir, 'scripts', 'install-tycon-hooks.sh')); }
 
 function expandirHome(v, home) { return String(v).replace(/^~(?=$|[\\/])/, home || os.homedir()); }
@@ -120,7 +118,7 @@ function resolver(opts = {}) {
   const avisos = [];
 
   // `~` se expande como en el lector de configuración del arnés (una `~` literal llega por el bloque `env` de
-  // settings.json o por `export X="~/…"` con comillas — pase adversarial, vuelta 1)
+  // settings.json o por `export X="~/…"` con comillas)
   const cruda = (env.TYCON_GUIDES_DIR && String(env.TYCON_GUIDES_DIR).trim()) || (env.TCG && String(env.TCG).trim()) || '';
   const expandida = cruda ? expandirHome(cruda, home) : '';
   const variable = expandida ? (path.isAbsolute(expandida) ? expandida : path.join(home, expandida)) : '';   // relativa: contra el HOME, como el lector del arnés
@@ -165,7 +163,7 @@ function lib(relativo, opts) {
 module.exports = { NOMBRE_ENLACE, PLACE_NAME, LEGACY_PLACE_NAME, IDIOMA_SHELL, RutaArnesError, enlace, legacyLink, esClon, resolver, rutaArnes, rutaArnesHook, soloEnlace, lib };
 
 if (require.main === module) {
-  // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
+  // la opción vieja sigue andando hasta el retiro
   require('./legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/lib/harness-path.js');
   const argv = process.argv.slice(2);
   if (argv.includes('--shell-idiom')) { process.stdout.write(IDIOMA_SHELL + '\n'); process.exit(0); }

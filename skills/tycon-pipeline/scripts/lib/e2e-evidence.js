@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * e2e-evidence.js — pieza ÚNICA del contrato de evidencia del gate E2E (2026-08-05).
+ * e2e-evidence.js — pieza ÚNICA del contrato de evidencia del gate E2E.
  *
  * Por qué existe: el contrato (qué campos tiene que traer la evidencia para que
- * runtime-matrix.js la lea) se cumplía copiando código en el gate de cada repo. Cuando
- * DODRT-C8 sumó la sección "## Tests corridos", Totora la tuvo y Ceibo no — y la regla
- * habría bloqueado a Ceibo por un detalle del script, no por la calidad de sus tests.
+ * runtime-matrix.js la lea) se cumple copiando código en el gate de cada repo, y una copia
+ * que se desvía bloquea por un detalle del script, no por la calidad de los tests.
  *
  * Dos usos, para que el contrato no dependa de que alguien copie bien:
  *   1) PRODUCIR — `titles <playwright.json>`: imprime los títulos de los tests que PASARON,
@@ -46,7 +45,7 @@ function passedTitles(reportJson) {
   return out;
 }
 
-/** Totales, con `skipped` contado aparte (contarlo como failed daba evidencia contradictoria). */
+/** Totales, con `skipped` contado aparte (contarlo como failed daría evidencia contradictoria). */
 function totals(reportJson) {
   const t = { total: 0, passed: 0, failed: 0, skipped: 0 };
   const walk = (suites) => (suites || []).forEach((s) => {
@@ -64,24 +63,23 @@ function totals(reportJson) {
 }
 
 /**
- * Veredicto del gate — TRES estados, no dos (story FIX-Q1 de un producto del equipo, 2026-09-27 — guides/maintaining/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27).
+ * Veredicto del gate — TRES estados, no dos.
  *
  * 🔴 Por qué no alcanza el exit code de Playwright: Playwright devuelve **0 cuando todos los tests
- * se saltean**. El 2026-09-27, con el set crítico de un producto del equipo y una base sin datos, el gate reportó
- * `PASS (0/4)` — verde, exit 0, merge habilitado, y CERO flujos ejercidos. Eso es peor que un rojo:
- * un rojo se discute, un verde hueco se firma sin mirar. El día anterior, dos merges a `main` se
- * habían hecho waiveando el rojo de ese mismo gate.
+ * se saltean**. Con una base sin datos, el gate podría reportar `PASS (0/4)`: verde, exit 0, merge
+ * habilitado, y CERO flujos ejercidos. Eso es peor que un rojo: un rojo se discute, un verde hueco
+ * se firma sin mirar.
  *
  * La regla: si Playwright falló, manda el rojo (`FAIL`). Si no falló pero **no ejecutó ni un test**,
  * el gate NO puede decir que pasó: `SIN_EJERCER`, con exit != 0. Alcanza con UN test ejecutado para
  * que un verde sea legítimo — saltear algunos es normal y está declarado en los specs.
  *
  * 🔴 Los códigos de salida NO son libres: el contrato del step 7c (`steps/step-07c-dod-runtime-gate.md`)
- * ya le dio significado a cada uno, y el orquestador ACTÚA según el número. `SIN_EJERCER` nació con
- * exit 3 (2026-09-27) y 3 ya significaba «el stack no levantó»: el remedio que ese código manda a
+ * le da significado a cada uno, y el orquestador ACTÚA según el número. `SIN_EJERCER` no usa
+ * exit 3: 3 significa «el stack no levantó», y el remedio que ese código manda a
  * hacer es levantar servicios que están perfectamente arriba, re-correr, y sacar 3 otra vez. Un
- * veredicto que manda a mirar donde no está el problema es el mismo defecto que este veredicto vino
- * a cerrar. El mapa vigente, y el único lugar donde se decide:
+ * veredicto que manda a mirar donde no está el problema es el defecto que este veredicto
+ * existe para cerrar. El mapa, y el único lugar donde se decide:
  *   1 → falló (lo que devuelva Playwright)      3 → el stack no levantó (precondición)
  *   2 → el filtro no matcheó ningún test        4 → había tests y TODOS se saltearon solos
  * 2 y 4 se separan porque la acción difiere: 2 es un nombre de spec mal escrito (se arregla el
@@ -103,10 +101,10 @@ function veredicto({ exitCode = 0, total = 0, passed = 0, failed = 0, skipped = 
 }
 
 /**
- * Los filtros declarados que la app NO tiene (story FIX-Q1).
+ * Los filtros declarados que la app NO tiene.
  *
- * 🔴 Caso real del 2026-09-27 — guides/maintaining/incident-log.md#case-e2e-gate-green-with-zero-flows-2026-09-27: el set crítico de un producto del equipo declara 5 recorridos, el gate corrió sobre
- * `totora-catalogo` —que tiene UNO— y su línea final fue idéntica a la de una corrida completa. Un
+ * 🔴 Un set crítico que declara 5 recorridos puede hacer que el gate corra sobre
+ * un solo spec y dar una línea final idéntica a la de una corrida completa. Un
  * control que no dice qué parte de su alcance no encontró no se puede auditar: "0/4" se lee como
  * "casi todo" cuando en realidad fue un quinto.
  *
@@ -188,7 +186,7 @@ const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 /**
  * Copia las capturas a `destDir` como `NN-<test>.<ext>`. Devuelve { copied, missing, index }: una imagen que el reporte
  * nombra y no está (o que no se pudo copiar, o que no sirve: enlace simbólico, extensión o primeros bytes que no son de
- * una imagen, más de 50 MB) se DEVUELVE con su motivo — callada, salía como «ningún test corrió».
+ * una imagen, más de 50 MB) se DEVUELVE con su motivo — callada, saldría como «ningún test corrió».
  * `index` es lo que va a `captures.json`: [{ file, title, acs, sha256 }], con `file` relativo a `destDir`.
  */
 function copyCaptures(reportJson, destDir) {
@@ -251,7 +249,7 @@ if (require.main === module) {
     try { j = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) {
       console.error(`el reporte de Playwright no se pudo leer (${e.code || e.message}): no hay de dónde sacar capturas`);
     }
-    // Un JSON que se lee pero no trae `suites` no es «ningún test corrió»: es otra forma de reporte (revisores, vuelta 2).
+    // Un JSON que se lee pero no trae `suites` no es «ningún test corrió»: es otra forma de reporte.
     if (j && Object.keys(j).length && !Array.isArray(j.suites)) console.error('el reporte de Playwright no tiene la forma esperada (sin `suites`): no hay de dónde sacar capturas');
     const { copied, missing, index } = copyCaptures(j, dest);
     if (copied.length) console.log(copied.map((c) => `- ${c}`).join('\n'));

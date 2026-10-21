@@ -115,7 +115,7 @@ test('io.evaluate: repo sin .tycon ni stories → pass; con .tycon → no-lane; 
   const r1 = io.evaluate({ filePath: f, sessionId: 's1', stateDir });
   assert.equal(r1.verdict.kind, 'no-lane'); assert.match(r1.message, /CÓDIGO SIN CARRIL/);
   assert.match(fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8'), /"name":"story-gate"/);
-  // GATESLOG-STORYID-NS-1: la entry lleva el repo (namespace) — misma key `repoPath` que marker.js.
+  // La entry lleva el repo (namespace) — misma key `repoPath` que marker.js.
   const sgEntry = fs.readFileSync(path.join(stateDir, 'gates.log'), 'utf8').split('\n').filter(Boolean)
     .map((l) => JSON.parse(l)).find((e) => e.name === 'story-gate' && e.status === 'blocked');
   assert.ok(sgEntry && sgEntry.repoPath, 'story-gate blocked lleva repoPath');
@@ -199,16 +199,16 @@ test('on-bash-write-gate.handle: bloquea heredoc a código sin carril; deja pasa
   // Write al state dir por Bash también se deniega
   const sd = bash.handle(ev(`echo '{}' > ${path.join(stateDir, 'active', 's1.json')}`), { stateDir });
   assert.ok(sd && /ESTADO DEL PIPELINE/.test(sd.block));
-  // `cd <dir> &&` resuelve el target contra ese dir (H10)
+  // `cd <dir> &&` resuelve el target contra ese dir
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'nocwd-'));
   io.writeAdhoc(stateDir, 's9', { reason: 'x', files: [], declaredAt: new Date(Date.now() - 7 * 3600e3).toISOString(), lastTouch: new Date(Date.now() - 7 * 3600e3).toISOString() }); // stale → no vale
   const cdb = bash.handle({ tool_name: 'Bash', session_id: 's9', cwd: outside, tool_input: { command: `cd ${repo} && cat > src/Foo.cs <<'EOF'\nx\nEOF` } }, { stateDir });
   assert.ok(cdb && /CÓDIGO SIN CARRIL/.test(cdb.block));
-  // pasa bajo ad-hoc Y registra el archivo en el cupo (H9)
+  // pasa bajo ad-hoc Y registra el archivo en el cupo
   const f2 = path.join(repo, 'src', 'Bar.cs');
   assert.equal(bash.handle(ev(`cat > ${f2} <<'EOF'\nx\nEOF`), { stateDir }), null);
   assert.ok(io.readAdhoc(stateDir, 's1').files.some((f) => f === f2));
-  // env off apaga el hook entero (documentado así — H7)
+  // env off apaga el hook entero (documentado así)
   process.env.TYCON_STORY_GATE = 'off';
   try { assert.equal(bash.handle(ev("cat > src/Foo.cs <<'EOF'\nx\nEOF"), { stateDir: tmpState() }), null); } finally { delete process.env.TYCON_STORY_GATE; }
 });
@@ -240,11 +240,10 @@ test('listOtherMarkers: ignora stale, terminados (stepsPending []) y markers de 
 });
 
 
-// ── Carril: se declara o se pregunta — la detección por frase se BORRÓ (2026-08-27) ─────────────
-// Acá vivían ~180 líneas de tests de detectLane. Se fueron con la función: tres incidentes en tres
-// días (#carril-sin-salida, #carril-no-detecta, y el "dale, probá con 2.5 segundos" cazado por
-// revisión adversarial) demostraron que cada calibración del regex producía la falla opuesta.
-// El contrato nuevo que estos tests protegen:
+// ── Carril: se declara o se pregunta — no hay detección por frase ─────────────
+// El carril no se detecta por regex sobre la frase: cada calibración de un regex produce la falla
+// opuesta (un "dale, probá con 2.5 segundos" fijaría carril, por ejemplo).
+// El contrato que estos tests protegen:
 //   1. recordPrompt guarda el ring de prompts y NO fija carril — y LIMPIA un carril viejo.
 //   2. Un ad-hoc declarado no se anula por lo que diga un prompt posterior.
 //   3. Sin marker y sin ad-hoc, el portón bloquea y el mensaje manda a PREGUNTAR al user.
@@ -254,18 +253,18 @@ test('listOtherMarkers: ignora stale, terminados (stepsPending []) y markers de 
 test('el carril no se adivina: ningún prompt fija lane, y un lane viejo se limpia', () => {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'state-'));
   const sid = 's-nolane';
-  // Frases de los TRES incidentes: ninguna puede volver a fijar carril.
+  // Frases que un regex clasificaría mal: ninguna puede fijar carril.
   const frases = [
-    'implementemos la story 2.3',                 // pipeline según el regex viejo
-    'dale, probá con timeout de 2.5 segundos',    // el falso positivo del 2026-08-27
-    'es un hotfix, hacelo sin story',             // adhoc según el regex viejo
-    'arranca con la 1.1',                         // el miss del 2026-08-27
+    'implementemos la story 2.3',                 // pipeline según un regex
+    'dale, probá con timeout de 2.5 segundos',    // un falso positivo conocido
+    'es un hotfix, hacelo sin story',             // adhoc según un regex
+    'arranca con la 1.1',                         // un caso que un regex dejaría escapar
   ];
   for (const f of frases) {
     const l = io.recordPrompt(stateDir, sid, f);
     assert.equal(l.lane, undefined, `"${f}" no debe fijar carril`);
   }
-  // Un lane que quedó escrito por la versión vieja del hook se limpia al primer prompt nuevo.
+  // Un lane escrito por una versión anterior del hook se limpia al primer prompt nuevo.
   const file = io.lanePath(stateDir, sid);
   const stale = JSON.parse(fs.readFileSync(file, 'utf8'));
   stale.lane = 'pipeline'; stale.laneSetAt = new Date().toISOString(); stale.lanePrompt = 'viejo';
@@ -284,7 +283,7 @@ test('un ad-hoc declarado NO se anula por un prompt posterior (el voiding se fue
   fs.mkdirSync(path.join(repo, '.git')); fs.mkdirSync(path.join(repo, '.tycon')); fs.mkdirSync(path.join(repo, 'src'));
   const file = path.join(repo, 'src', 'Foo.cs');
   assert.equal(io.evaluate({ filePath: file, sessionId: sid, stateDir, via: 'Edit' }).verdict.action, 'pass');
-  // El caso que ayer ANULABA el ad-hoc a mitad de trabajo: una frase con pinta de story.
+  // Una frase con pinta de story no anula el ad-hoc a mitad de trabajo.
   io.recordPrompt(stateDir, sid, 'implementemos la spec spec/x.md, tests scoped');
   const r = io.evaluate({ filePath: file, sessionId: sid, stateDir, via: 'Edit' });
   assert.equal(r.verdict.action, 'pass', 'el ad-hoc declarado sigue cubriendo — nadie lo anuló por regex');
@@ -321,7 +320,7 @@ test('harness: `isHarness` booleano manda sobre la carpeta; sin él decide la ca
   // Clon del arnés en una carpeta con otro nombre: el borde dijo que SÍ → pasa.
   const clon = gate.computeStoryGate({ ...BASE, filePath: '/tmp/scratchpad/tcg/scripts/hooks/a.js', repoRoot: '/tmp/scratchpad/tcg', isHarness: true });
   assert.equal(clon.action, 'pass'); assert.match(clon.reason, /harness/);
-  // Nadie resolvió el dato (llamador viejo): la conducta de siempre, por carpeta.
+  // Nadie resolvió el dato (llamador sin el dato): la conducta por defecto, por carpeta.
   assert.equal(gate.computeStoryGate(producto).action, 'pass');
   // El state-dir bloquea siempre, también en un repo del harness.
   assert.equal(gate.computeStoryGate({ ...BASE, filePath: '/home/u/.claude/.tycon-pipeline/active/s1.json', isHarness: true }).kind, 'state-dir');
@@ -411,7 +410,7 @@ test('BashWrite_InstalledTree_Denied', () => {
 });
 
 test('BashWrite_InstalledTree_OtherForms', () => {
-  // las formas que el pase adversarial mostró que pasaban: sed/perl en sitio sobre un archivo que no es código, el
+  // otras formas posibles: sed/perl en sitio sobre un archivo que no es código, el
   // destino de cp/mv escondido por una redirección final o dado con -t, y las redirecciones &> >| >&
   const { tree, link } = mkInstalled();
   fs.writeFileSync(path.join(tree, 'guia.md'), 'x\n');
@@ -490,7 +489,7 @@ test('BashWrite_InstalledTree_OtherForms', () => {
 });
 
 test('StateDir_RealPathOfALinkedStateDir', () => {
-  // la carpeta del estado puede ser un enlace (la de ~/.claude antes de la mudanza): escribir por su destino real también
+  // la carpeta del estado puede ser un enlace (por ejemplo la de ~/.claude): escribir por su destino real también
   // es escribir el estado
   const real = fs.realpathSync(tmpState());
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'lnk2-')));

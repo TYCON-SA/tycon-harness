@@ -2,16 +2,16 @@
 /**
  * ledger-visible.js — que el pipeline no se quede ciego POR CONSTRUCCIÓN.
  *
- * EL PROBLEMA (caso Story OC-1 del backend de un producto del equipo, 2026-09-21 — guides/maintaining/incident-log.md#case-bash-edits-blind-ledger-2026-09-21). El registro de ediciones
+ * EL PROBLEMA. El registro de ediciones
  * (`marker.fileEvents`) lo alimenta `on-edit.js` desde el hook PostToolUse matcher `Edit|Write`.
  * Una edición hecha por Bash —`sed -i`, un heredoc, `python3 -c "open(...,'w')"`— es invisible
  * para ese hook **por construcción**: no es que falle, es que no hay evento.
  *
- * Consecuencia medida: al re-loopear, `smart-reloop` no pudo calcular el delta y cayó al set
- * COMPLETO — 7 revisores en vez de los 2-3 que el cambio real justificaba. El aviso fue honesto
- * ("registro de ediciones CIEGO"), pero llegó tarde: cuando el trabajo ya estaba hecho.
+ * Consecuencia: al re-loopear, `smart-reloop` no puede calcular el delta y cae al set
+ * COMPLETO — 7 revisores en vez de los 2-3 que el cambio real justifica. El aviso es honesto
+ * ("registro de ediciones CIEGO"), pero llega tarde: cuando el trabajo ya está hecho.
  *
- * POR QUÉ ACÁ Y NO ENSEÑÁNDOLE AL ARNÉS A LEER BASH (decisión del dev, 2026-09-21). Las dos
+ * POR QUÉ ACÁ Y NO ENSEÑÁNDOLE AL ARNÉS A LEER BASH. Las dos
  * alternativas parchean el síntoma y las dos tienen un costo peor:
  *   · Confiar en la 4ta fuente (git + mtime) cuando el registro está ciego RELAJA una decisión de
  *     seguridad deliberada (`ledger-honesty.js`: "ciego → set COMPLETO"), cuyo modo de falla es el
@@ -22,10 +22,9 @@
  * Frenar la edición invisible ataca el ORIGEN: si no se puede editar de una forma que el arnés no
  * ve, el registro no se queda ciego y las dos garantías (delta honesto, orden ATDD) siguen intactas.
  *
- * 🔴 EL CONFLICTO QUE ESTO RESUELVE, y que ya estaba anotado en `on-bash-write-gate.js`: *"en «auto
- * mode» el propio arnés INSTRUYE editar con sed/heredocs en vez de Edit/Write"* (hallazgo R3 del
- * review adversarial 2026-08-19). Ese hallazgo se resolvió para el CARRIL (quién puede editar) y no
- * para el REGISTRO (si queda anotado). Ésta es la otra mitad.
+ * 🔴 EL CONFLICTO QUE ESTO RESUELVE: en «auto mode» el propio arnés INSTRUYE editar con sed/heredocs en vez de
+ * Edit/Write. Eso se resuelve para el CARRIL (quién puede editar) pero no para el REGISTRO (si queda anotado).
+ * Ésta es la otra mitad.
  *
  * Alcance deliberadamente angosto: sólo CÓDIGO, sólo con pipeline ABIERTO, sólo dentro del repo de
  * la corrida. Un `.md`, un `.json` de configuración, un script del scratchpad o cualquier cosa con
@@ -62,15 +61,15 @@ function evaluarVisibilidad({ marker, codeTargets, dentroDelRepo, off }) {
 
   const files = (codeTargets || []).filter((f) => dentroDelRepo(f, repo));
   if (!files.length) return { ...nada, reason: escape ? 'kill-switch TYCON_LEDGER_VISIBLE=off' : 'ningún target de código dentro del repo de la corrida' };
-  // El escape deja pasar, pero devuelve QUÉ habría frenado (story 7.25): el llamador lo anota en gates.log. Antes el
-  // mensaje prometía esa constancia y no se escribía nada.
+  // El escape deja pasar, pero devuelve QUÉ habría frenado: el llamador lo anota en gates.log, como promete el
+  // mensaje.
   if (escape) return { ...nada, escaped: files, reason: 'kill-switch TYCON_LEDGER_VISIBLE=off' };
   return { block: true, files, reason: 'edición de código por Bash con pipeline abierto: el registro no la vería' };
 }
 
 /**
  * El mensaje que ve el agente. Explica la CONSECUENCIA, no sólo la regla.
- * `opts.sinResolver`: `[{ file, vars }]` — destinos con variables que ni el comando ni el ambiente definen (story 7.25):
+ * `opts.sinResolver`: `[{ file, vars }]` — destinos con variables que ni el comando ni el ambiente definen:
  * se frenan del lado seguro, pero el mensaje lo dice en vez de presentarlos como código del repo sin más.
  */
 function mensaje(files, storyId, opts = {}) {

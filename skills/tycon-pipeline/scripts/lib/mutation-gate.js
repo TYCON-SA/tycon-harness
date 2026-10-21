@@ -1,10 +1,10 @@
 'use strict';
 /**
  * lib/mutation-gate.js — cableado del CHEQUEO DE MUTANTES en `marker.js
- * complete-step 4` (decisión del dev 2026-08-13: AVISA, NO FRENA).
+ * complete-step 4` (AVISA, NO FRENA).
  *
  * Por qué existe: `scripts/mutation-check.js` rompe el código nuevo a propósito
- * y verifica que algún test se ponga rojo — pero como script suelto dependía de
+ * y verifica que algún test se ponga rojo — pero como script suelto depende de
  * que alguien se acuerde de correrlo, y la doctrina del equipo dice que un
  * control que hay que acordarse de invocar es un control que no corre. Este
  * módulo lo corre solo al cerrar la etapa de implementación.
@@ -26,18 +26,17 @@
  * impresión. Escapes: TYCON_MUTATION_CHECK=off (apaga todo) ·
  * `complete-step 4 --no-mutation` (saltea esa corrida, queda en bypass.log).
  *
- * Presupuesto (números MEDIDOS por la revisión adversarial, no deseados): el
+ * Presupuesto (números medidos, no deseados): el
  * costo es (duración de la suite declarada) × (1 base + mutantes ejecutados) —
  * NO un fijo. Frenos: --max-mutants 12 · deadline 180s ENTRE mutantes (los
  * restantes quedan skipped) · cap 120s por corrida de suite · timeout duro del
- * spawn 300s. Peor caso real: el cierre del Step 4 puede irse hasta ~5 minutos
+ * spawn 300s. Peor caso: el cierre del Step 4 puede irse hasta ~5 minutos
  * con una suite lenta (medido); con la suite del harness (~10s) queda en ~1 min.
  *
  * Testeable por inyección: `invokeCheck` (reemplaza el spawn), `appendLog` y
  * `log`. El borde real `defaultInvokeCheck` (flags del CLI, --json, parseo)
  * está cubierto por un test E2E que spawnea el chequeo DE VERDAD contra la
- * fixture — un rename de flag pone la suite en rojo (cazado como mutante
- * sobreviviente mg-H en la revisión #2, cerrado 2026-08-13).
+ * fixture — un rename de flag pone la suite en rojo.
  */
 
 const fs = require('fs');
@@ -46,10 +45,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const DEFAULT_MAX_MUTANTS = 12;
-// H2b: el corte de presupuesto lo maneja el RUNNER entre mutantes (corta limpio
+// El corte de presupuesto lo maneja el RUNNER entre mutantes (corta limpio
 // y reporta los restantes como skipped). El timeout del spawn queda como red de
 // ÚLTIMO recurso, MÁS ALTO que el deadline — si se dispara, el hijo murió por
-// señal y sus handlers restauraron (o gritaron); el gate igual avisa (H2c).
+// señal y sus handlers restauraron (o gritaron); el gate igual avisa.
 const DEFAULT_DEADLINE_MS = 180000;
 const HARD_TIMEOUT_MS = 300000;
 
@@ -142,8 +141,8 @@ function runMutationGate({
     verdict: res.verdict || null,
     maxMutants,
   };
-  // H1c: cuando el chequeo falla, el stderr del hijo es la ÚNICA pista del dev
-  // — capturarlo y no mostrarlo nunca lo dejaba a ciegas. Acotado a 15 líneas.
+  // Cuando el chequeo falla, el stderr del hijo es la ÚNICA pista del dev
+  // — capturarlo y no mostrarlo lo dejaría a ciegas. Acotado a 15 líneas.
   const volcarStderr = () => {
     const s = ((out && out.stderr) || '').trim();
     if (!s) return;
@@ -151,7 +150,7 @@ function runMutationGate({
     for (const l of s.split('\n').slice(0, 15)) log(`  │ ${l}`);
   };
 
-  // H2c: timeout duro del spawn / muerte por señal. El hijo pudo morir con un
+  // Timeout duro del spawn / muerte por señal. El hijo pudo morir con un
   // mutante aplicado (sus handlers restauran, pero acá NO hay confirmación) —
   // no bloquear está bien; no avisar, no.
   if (!out || out.timedOut || code === null) {
@@ -168,10 +167,10 @@ function runMutationGate({
   }
 
   // exit 1 — el ÚNICO caso que frena: se rompió el código y NINGÚN test se
-  // enteró. H1b: SOLO con veredicto COHERENTE del runner (result parseado +
+  // enteró. SOLO con veredicto COHERENTE del runner (result parseado +
   // verdict correcto + killed 0 + total > 0). exit 1 es también el default de
   // Node ante una excepción no atrapada: sin esta guarda, un crash del chequeo
-  // bloqueaba el step acusando en falso a los tests del dev (medido: EACCES).
+  // bloquearía el step acusando en falso a los tests del dev (p. ej. EACCES).
   const veredictoCoherente = out.result != null
     && res.verdict === 'TESTS_NO_EJERCEN_EL_CODIGO'
     && res.killed === 0

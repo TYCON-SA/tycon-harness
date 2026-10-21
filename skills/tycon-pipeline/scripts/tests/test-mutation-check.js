@@ -4,11 +4,11 @@
  * test-mutation-check.js — suite del CHEQUEO DE MUTANTES del harness TYCON.
  *
  * Por qué existe el chequeo: una suite en verde NO prueba que los tests ejerzan
- * el código nuevo — ya pasó que un test pasaba sin probar nada. El chequeo
+ * el código nuevo — puede pasar que un test pase sin probar nada. El chequeo
  * rompe el código a propósito (mutantes chicos y determinísticos sobre las
  * líneas AGREGADAS) y verifica que ALGÚN test se ponga rojo.
  *
- * Esta suite se escribió ANTES que la implementación (TDD) e incluye el
+ * Esta suite incluye el
  * CONTROL POSITIVO obligatorio: una fixture donde un mutante SOBREVIVE a
  * propósito (función sin test) y otro donde MUERE (función testeada). Sin esa
  * fila que TIENE que encenderse, "0 sobrevivientes" es indistinguible de un
@@ -269,9 +269,8 @@ test('restore: el archivo queda byte-idéntico tras una corrida normal', async (
 
 test('restore FALLIDO end-to-end: exit 2 gritando, motivo con path y backup, y backup recuperable', async () => {
   // El invariante sagrado tiene que estar ANCLADO por un test: un mutante
-  // `restoreOk = true;` sobre la verificación byte a byte dejaba la suite en
-  // verde (lo cazó el coordinador aplicándole a la herramienta su propia
-  // medicina, 2026-08-13). Acá se inyecta un fs cuyo write de RESTAURACIÓN
+  // `restoreOk = true;` sobre la verificación byte a byte dejaría la suite en
+  // verde. Acá se inyecta un fs cuyo write de RESTAURACIÓN
   // (el del finally: target + Buffer) escribe bytes DISTINTOS a los originales.
   const repo = mkRepo();
   const target = path.join(repo, 'calc.js');
@@ -283,7 +282,7 @@ test('restore FALLIDO end-to-end: exit 2 gritando, motivo con path y backup, y b
     storyPath: path.join(repo, 'story-con-tests.md'),
     runTests: ({ mutant }) => { if (mutant) corridas += 1; return { code: 0 }; },
     fsOps: {
-      // (2026-09-06) Los mutantes corren sobre una COPIA: el path que llega es el de la copia, así
+      // Los mutantes corren sobre una COPIA: el path que llega es el de la copia, así
       // que el archivo se reconoce por nombre, no por el path del repo original.
       writeFileSync: (p, data, ...rest) => {
         if (p.endsWith('/calc.js') && Buffer.isBuffer(data)) {
@@ -325,7 +324,7 @@ test('camino feliz del restore: el runner LEE el archivo para verificar byte a b
     runTests: ({ mutant }) => { if (mutant) corridas += 1; return { code: mutant ? 1 : 0 }; },
     fsOps: {
       readFileSync: (p, ...rest) => {
-        if (p.endsWith('/calc.js') && rest.length === 0) lecturasBinarias += 1;   // el path es el de la COPIA (2026-09-06)
+        if (p.endsWith('/calc.js') && rest.length === 0) lecturasBinarias += 1;   // el path es el de la COPIA
         return fs.readFileSync(p, ...rest);
       },
     },
@@ -343,7 +342,7 @@ test('la corrida BASE no sale en verde → exit 2 HONESTO: no acusa a la suite d
   // Si la base falla, el veredicto de mutantes no significa nada (todo mutante
   // "muere" gratis). Pero afirmar "la suite está en ROJO" sería mentir cuando lo
   // que pasa es que node --test no sabe correr esos tests (vitest globals, etc.)
-  // — N3/N4 de la revisión adversarial #2. Exit 2 con la duda declarada.
+  // Exit 2 con la duda declarada.
   const repo = mkRepo();
   const r = await checker.runMutationCheck({
     repo,
@@ -358,8 +357,8 @@ test('la corrida BASE no sale en verde → exit 2 HONESTO: no acusa a la suite d
 });
 
 test('la corrida BASE se pasa del tope de tiempo → exit 2 que dice TIMEOUT, no acusa a la suite', async () => {
-  // N4: el runner SABE que mató al hijo por timeout — tirar ese dato y reportar
-  // "exit 1" convertía una suite lenta VERDE en "suite en rojo".
+  // El runner SABE que mató al hijo por timeout — tirar ese dato y reportar
+  // "exit 1" convertiría una suite lenta VERDE en "suite en rojo".
   const repo = mkRepo();
   const r = await checker.runMutationCheck({
     repo,
@@ -377,11 +376,11 @@ test('la corrida BASE se pasa del tope de tiempo → exit 2 que dice TIMEOUT, no
 // tiene ninguno (sus mutantes SOBREVIVEN). Si alguna de las dos filas no se
 // enciende, el instrumento está roto.
 
-// ── La copia descartable tiene que ser el repo que el dev tiene delante (revisión 2026-09-06) ──
-// Hallazgos #4/#12: la primera copia (1152c8e) sólo enlazaba `<repo>/node_modules`. Lo que git
-// ignora (un `local.json`, `sub/node_modules`), los submódulos y un `--files` absoluto hacían que el
-// chequeo saliera 2 con la suite VERDE en el original — y el gate lo trata como «no aplicable»: el
-// control se apagaba solo. Rojo previo: los cinco daban exit 2 con el mutation-check de 1152c8e.
+// ── La copia descartable tiene que ser el repo que el dev tiene delante ──
+// Una copia que sólo enlaza `<repo>/node_modules` no alcanza: lo que git
+// ignora (un `local.json`, `sub/node_modules`), los submódulos y un `--files` absoluto hacen que el
+// chequeo salga 2 con la suite VERDE en el original — y el gate lo trata como «no aplicable»: el
+// control se apaga solo. Cada uno de los cinco casos de abajo cubre una de esas formas.
 function sinLog() { return () => {}; }
 
 test('copia: `--files` ABSOLUTO se relativiza contra el repo original, no contra la copia', async () => {
@@ -518,7 +517,7 @@ test('JSON de salida tiene la forma del contrato', async () => {
 });
 
 // ── Capa de CABLEADO: el gate de `marker.js complete-step 4` ─────────────────
-// Decisión del dev 2026-08-13: AVISA, NO FRENA — salvo el único caso que frena:
+// AVISA, NO FRENA — salvo el único caso que frena:
 // exit 1 (cero mutantes muertos habiendo generado alguno). Estos tests ejercitan
 // `lib/mutation-gate.js` con el runner del chequeo INYECTADO (acá no se corre
 // ningún mutante de verdad) y los logs capturados.
@@ -667,20 +666,19 @@ test('gate: script ausente → fail-open avisando', async () => {
   assert.equal(h.entries['gates.log'][0].status, 'error');
 });
 
-// ── Ronda 4: fixes de la revisión adversarial (H1..H4) ───────────────────────
-// Detalle de los hallazgos: scratchpad/revision-mutantes.md (11 escenarios reales).
+// ── Fallas del chequeo: nunca un veredicto falso ───────────────────────
 
 const { spawn } = require('child_process');
 
-// H1a — un crash del runner NUNCA puede salir exit 1 (ambiguo con "cero muertos").
+// Un crash del runner NUNCA puede salir exit 1 (ambiguo con "cero muertos").
 test('H1a: target sin permiso de escritura → exit 2 con el motivo REAL y archivo intacto', async () => {
   const repo = mkRepo();
   const target = path.join(repo, 'calc.js');
   const original = fs.readFileSync(target);
   fs.chmodSync(target, 0o444);
   try {
-    // (2026-09-06) Los mutantes corren sobre una copia, así que el chmod del original no lo alcanza
-    // — y ésa es la garantía nueva. El «no pude escribir» se simula sobre el archivo de la copia.
+    // Los mutantes corren sobre una copia, así que el chmod del original no lo alcanza
+    // — y ésa es la garantía. El «no pude escribir» se simula sobre el archivo de la copia.
     const eacces = Object.assign(new Error('EACCES: permission denied, open calc.js'), { code: 'EACCES' });
     const r = await checker.runMutationCheck({
       repo,
@@ -697,7 +695,7 @@ test('H1a: target sin permiso de escritura → exit 2 con el motivo REAL y archi
   }
 });
 
-// H1b — el gate bloquea SOLO con veredicto coherente; exit 1 sin result es problema del chequeo.
+// El gate bloquea SOLO con veredicto coherente; exit 1 sin result es problema del chequeo.
 test('H1b: gate con exit 1 SIN result parseado → fail-open avisando, con el stderr del hijo impreso', async () => {
   const h = gateHarness();
   const r = runMutationGate({
@@ -727,7 +725,7 @@ test('H1b2: gate con exit 1 pero result INCOHERENTE (killed>0) → fail-open, no
   assert.equal(h.entries['gates.log'][0].status, 'error');
 });
 
-// H2a — señal en medio de un mutante: restore sincrónico + grito + exit 2 (proceso REAL).
+// Señal en medio de un mutante: restore sincrónico + grito + exit 2 (proceso REAL).
 test('H2a: SIGTERM con un mutante APLICADO → el handler restaura byte a byte, grita y sale 2', async () => {
   const repo = mkRepo();
   const target = path.join(repo, 'calc.js');
@@ -751,7 +749,7 @@ test('H2a: SIGTERM con un mutante APLICADO → el handler restaura byte a byte, 
   ], { stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += d; });
-  // (2026-09-06) El mutante se aplica en la COPIA, que el CLI anuncia por stderr. Se espera a que
+  // El mutante se aplica en la COPIA, que el CLI anuncia por stderr. Se espera a que
   // aparezca, se espera a ver el mutante ahí, y se manda la señal. El original tiene que quedar
   // byte-idéntico DURANTE y DESPUÉS — no sólo restaurado: nunca tocado.
   const t0 = Date.now();
@@ -772,7 +770,7 @@ test('H2a: SIGTERM con un mutante APLICADO → el handler restaura byte a byte, 
   assert.match(stderr, /SIGTERM/i, 'el grito nombra la señal');
 });
 
-// H2b — deadline ENTRE mutantes: corta limpio y reporta los restantes como skipped.
+// Deadline ENTRE mutantes: corta limpio y reporta los restantes como skipped.
 test('H2b: --deadline-ms corta entre mutantes y los restantes quedan skipped con razón deadline', async () => {
   const repo = mkRepo();
   const r = await checker.runMutationCheck({
@@ -792,7 +790,7 @@ test('H2b: --deadline-ms corta entre mutantes y los restantes quedan skipped con
   assert.ok(r.result.total < r.result.total + porDeadline.length, 'total = solo los ejecutados');
 });
 
-// H2c — timeout duro del spawn en el gate: puede haber un archivo mutado y HAY que decirlo.
+// Timeout duro del spawn en el gate: puede haber un archivo mutado y HAY que decirlo.
 test('H2c: gate ante timeout duro → NO bloquea pero GRITA posible mutación y lo deja en gates.log', async () => {
   const h = gateHarness();
   const r = runMutationGate({
@@ -807,7 +805,7 @@ test('H2c: gate ante timeout duro → NO bloquea pero GRITA posible mutación y 
   assert.equal(h.entries['gates.log'][0].status, 'timeout-posible-mutacion');
 });
 
-// H3 — los archivos NUEVOS (untracked) que la story DECLARA son el caso más
+// Los archivos NUEVOS (untracked) que la story DECLARA son el caso más
 // común: TIENEN que chequearse (sus líneas = el archivo entero).
 test('H3: archivos nuevos declarados por la story (untracked, sin `git add`) generan mutantes', async () => {
   // Repo cuyo commit base NO contiene calc.js: la story lo CREA (queda untracked).
@@ -832,9 +830,9 @@ test('H3: archivos nuevos declarados por la story (untracked, sin `git add`) gen
   assert.ok(r.result.total >= 1, `un chequeo que calla ante archivos nuevos es un verde falso (total=${r.result.total})`);
 });
 
-// H4/N3 — qué runner sabe correr el chequeo se decide por ESTRUCTURA (extensión
+// Qué runner sabe correr el chequeo se decide por ESTRUCTURA (extensión
 // ejecutable por `node --test`), JAMÁS escaneando el repo en busca de palabras
-// como «vitest» (prohibición #6 del dev: ningún control decide buscando frases).
+// como «vitest» (ningún control decide buscando frases).
 test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr node --test»), sin correr nada', async () => {
   const repo = mkRepo();
   fs.mkdirSync(path.join(repo, 'tests'), { recursive: true });
@@ -865,8 +863,8 @@ test('N3a: test declarado .ts → exit 2 estructural honesto («sólo sé correr
 });
 
 test('N3b: la palabra «vitest» en un comentario NO apaga el chequeo (nada de decidir por palabras)', async () => {
-  // Regresión del falso positivo r3b de la revisión #2: un test node:test VERDE
-  // con `// Migrado desde 'vitest'` dejaba el chequeo deshabilitado para siempre.
+  // Un test node:test VERDE
+  // con `// Migrado desde 'vitest'` no deshabilita el chequeo.
   const repo = mkRepo();
   const original = fs.readFileSync(path.join(FIXTURES, 'calc.test.js'), 'utf8');
   fs.writeFileSync(
@@ -908,11 +906,10 @@ test('H4b: tests .NET declarados (FooTests.cs) → exit 2 honesto, no «la story
   assert.ok(!/no declara ning/i.test(r.result.motivo || ''), 'la story SÍ declara tests — decir lo contrario es falso');
 });
 
-// ── Ronda 4: los targets salen ÚNICAMENTE de lo que la story declara ─────────
-// Cambio de diseño del dev 2026-08-13 tras N1/N2 de la revisión #2: el
-// descubrimiento por `git diff HEAD` + `ls-files --others` miraba TODO el repo
-// cuando el pipeline es POR STORY — mutaba artefactos ajenos (bloqueo en falso
-// comiéndose el presupuesto) y seguía symlinks fuera del repo.
+// ── Los targets salen ÚNICAMENTE de lo que la story declara ─────────
+// El descubrimiento por `git diff HEAD` + `ls-files --others` miraría TODO el repo
+// cuando el pipeline es POR STORY — mutaría artefactos ajenos (bloqueo en falso
+// comiéndose el presupuesto) y seguiría symlinks fuera del repo.
 
 test('N1: los targets salen SOLO de la story — untracked ajenos y tracked modificados NO declarados no se mutan', async () => {
   const repo = mkRepo();
@@ -920,7 +917,7 @@ test('N1: los targets salen SOLO de la story — untracked ajenos y tracked modi
   fs.mkdirSync(path.join(repo, '.advisors'), { recursive: true });
   fs.writeFileSync(path.join(repo, '.advisors', 'smoke.mjs'), 'if (a >= 1 && b === 2) { console.log(true); }\n');
   fs.writeFileSync(path.join(repo, 'ajeno.js'), 'const x = a && b;\nmodule.exports = x;\n');
-  // Y un tracked MODIFICADO que la story tampoco declara (el viejo camino `git diff HEAD`):
+  // Y un tracked MODIFICADO que la story tampoco declara (el camino `git diff HEAD`):
   fs.writeFileSync(path.join(repo, 'tracked-ajeno.js'), 'const t = 1;\n');
   sh('git', ['add', 'tracked-ajeno.js'], repo);
   sh('git', ['commit', '-q', '-m', 'tracked ajeno'], repo);
@@ -1021,8 +1018,8 @@ test('un declarado que no existe en disco queda en skipped con su razón — nun
 });
 
 // ── Cobertura del borde REAL del cableado: defaultInvokeCheck ────────────────
-// mg-H de la revisión #2: renombrar --deadline-ms dejaba la suite 37/37 verde y
-// cada corrida real degradaba a ruido estructural. Este test spawna el CLI de
+// Renombrar --deadline-ms dejaría la suite verde y
+// cada corrida real degradaría a ruido estructural. Este test spawna el CLI de
 // verdad (flags, --json, parseo) contra la fixture — si el CLI y el gate
 // driftean, esto se pone ROJO.
 test('gate E2E con el invoke REAL (defaultInvokeCheck): flags, --json y veredicto de punta a punta', async () => {
@@ -1050,14 +1047,14 @@ test('gate E2E con el invoke REAL (defaultInvokeCheck): flags, --json y veredict
 });
 
 
-// ── El chequeo de mutantes corre sobre una COPIA, no sobre el repo del dev (2026-09-06) ──────
-// MUTACION-BLAST-RADIUS-1: un mutante no es un bug, es código roto a propósito. Si el archivo bajo
-// mutación tiene efectos sobre el repo (git, borrar archivos, red), el chequeo los ejecutaba contra
-// el working tree REAL, N veces, con el código deliberadamente roto — durante la story 1.1 un
-// mutante dio vuelta el operador que elige el repo destino y una corrida de prueba dejó cosas
-// preparadas en el índice del repo de verdad. Camino elegido por el dev: copia descartable (una
-// lista de archivos excluidos hay que mantenerla, y el día que falte un nombre vuelve).
-// 🔴 rojo previo: el efecto del test aparecía en el repo original.
+// ── El chequeo de mutantes corre sobre una COPIA, no sobre el repo del dev ──────
+// Un mutante no es un bug, es código roto a propósito. Si el archivo bajo
+// mutación tiene efectos sobre el repo (git, borrar archivos, red), correrlo contra
+// el working tree REAL los ejecutaría N veces, con el código deliberadamente roto: un
+// mutante que dé vuelta el operador que elige el repo destino puede dejar cosas
+// preparadas en el índice del repo de verdad. Por eso se usa una copia descartable (una
+// lista de archivos excluidos hay que mantenerla, y el día que falte un nombre vuelve el problema).
+// 🔴 Rojo si: el efecto del test aparece en el repo original.
 test('los mutantes corren sobre una copia: un efecto del test NO toca el repo original', async () => {
   const repo = mkRepo();
   // el test de la fixture, además de probar, deja un rastro en su cwd — como haría un script que commitea
@@ -1065,7 +1062,7 @@ test('los mutantes corren sobre una copia: un efecto del test NO toca el repo or
     "\nrequire('fs').writeFileSync(require('path').join(process.cwd(), 'efecto-del-test.txt'), 'toqué el repo');\n");
   sh('git', ['add', '.'], repo);
   sh('git', ['commit', '-q', '-m', 'test con efecto'], repo);
-  // y ahora una línea nueva a mutar
+  // y una línea nueva a mutar
   fs.appendFileSync(path.join(repo, 'calc.js'), '\nfunction esMayor(a, b) { return a >= b; }\nmodule.exports.esMayor = esMayor;\n');
   const r = await checker.runMutationCheck({ repo, storyPath: path.join(repo, 'story-con-tests.md'), log: () => {} });
   // (exit 1 es el veredicto normal acá: la línea nueva no tiene test y su mutante sobrevive)

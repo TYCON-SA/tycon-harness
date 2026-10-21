@@ -1,8 +1,8 @@
 'use strict';
 
 /**
- * guard-config.test.js —la superficie de config del repo: de dónde la lee un FRENO (FIX-1) y qué
- * pasa cuando está mal escrita (FIX-3). 2026-08-25.
+ * guard-config.test.js — la superficie de config del repo: de dónde la lee un FRENO y qué
+ * pasa cuando está mal escrita.
  *
  * La regla que fija esta suite, en una frase: **aflojar exige commit, apretar vale al toque.**
  * De ahí salen dos modos y cada llave usa el que le corresponde por su DIRECCIÓN:
@@ -68,7 +68,7 @@ test('un recorte COMMITEADO sí saca a la story del freno (union ≠ ignorar la 
 });
 
 test('AMPLIAR el alcance vale al toque, sin esperar al commit', () => {
-  // El commit que INTRODUCE un patrón nuevo (caso del backend de un producto del equipo: 18 stories AP-*/CO-*) no puede
+  // El commit que INTRODUCE un patrón nuevo (el de un backend con varias stories AP-*/CO-*) no puede
   // dejar esas stories fuera del freno justo en ese commit — de ahí que sea unión y no "manda HEAD".
   const d = repo({ commiteado: null, carpeta: 'stories:\n  id_pattern: ^(AP|CO)-[0-9]+$\n' });
   const cfg = storiesConfigForGate(d);
@@ -141,9 +141,9 @@ test('sacar un nombre de carpeta del frente NO apaga la exigencia hasta commitea
   assert.equal(ui.storyTouchesUi(story, d), true, 'sigue siendo story de interfaz → sigue exigiendo navegador');
 });
 
-// Story 7.18: el nombre declarado se busca en las LISTAS de archivos; en la prosa (driver, título) sólo
-// cuando la story no declara archivos a tocar. Antes, nombrarlo en el driver de una story de backend
-// encendía la exigencia de navegador.
+// El nombre declarado se busca en las LISTAS de archivos; en la prosa (driver, título) sólo
+// cuando la story no declara archivos a tocar. Si no, nombrarlo en el driver de una story de backend
+// encendería la exigencia de navegador.
 test('la prosa del frontmatter no enciende la exigencia de navegador cuando hay listas; el nombre declarado en una lista sí', () => {
   const d = repo({ commiteado: 'evidence:\n  fe_paths:\n    - acme-deposito\n', carpeta: 'evidence:\n  fe_paths:\n    - acme-deposito\n' });
   const enProsa = '---\nstory: "1.1"\ndriver: "el panel de acme-deposito necesita este endpoint"\nfiles:\n  - src/Backend/Endpoint.cs\n---\n# x\n';
@@ -166,12 +166,12 @@ test('qa_guide: off sin commitear no apaga nada; commiteado sí', () => {
   assert.equal(atdd.qaGuideMode(cs.textoParaFreno(commiteado)), 'off', 'commiteado, el escape del repo funciona');
 });
 
-// ── FIX-3 — el lector de config: primer nivel, y avisar ante llaves desconocidas ───────────────
+// ── el lector de config: primer nivel, y avisar ante llaves desconocidas ───────────────
 //
-// El lector del bloque `e2e:` aceptaba llaves a CUALQUIER profundidad. El caso real (el frontend de un producto del equipo):
-// un bloque `forms:` anidado por error hacía que la lista de specs críticos de UN formulario se
-// tomara como la del repo entero — y las pruebas de un formulario terminaban apuntando al otro,
-// donde ese archivo no existe. No daba error: daba una config que no era la que el repo creía tener.
+// Si el lector del bloque `e2e:` aceptara llaves a CUALQUIER profundidad, un bloque `forms:` anidado por error
+// haría que la lista de specs críticos de UN formulario se tomara como la del repo entero — y las pruebas de un
+// formulario terminarían apuntando al otro, donde ese archivo no existe. No daría error: daría una config que no es
+// la que el repo cree tener.
 
 function e2eCfg(repoDir) {
   const r = spawnSync(process.execPath, [path.join(SCRIPTS, 'pipeline.js'), 'e2e-config', '--repo', repoDir],
@@ -213,18 +213,17 @@ test('una llave mal escrita se avisa en vez de ignorarse en silencio', () => {
     'el typo tiene que nombrarse: "se ignora y el repo queda sin la config que cree tener"');
 });
 
-// ── `e2e.bundle`: dos controles del mismo arnés se contradecían (2026-09-22) ─────────────────
+// ── `e2e.bundle`: dos controles del mismo arnés no pueden contradecirse ─────────────────
 // `e2e-gate.sh` LEE y USA esta llave —está documentada en su cabecera, `leer_bundle` parsea sus
 // hijas `artifact`/`sources`/`rebuild`, y con `rebuild:` recompila sola antes de correr— pero el
-// validador de config no la conocía: le decía al dev que su configuración no servía, y de yapa que
-// moviera las hijas al primer nivel, que es exactamente al revés de lo que el gate parsea.
-// El dev que obedecía el aviso ROMPÍA una configuración correcta.
+// validador de config que no la conozca le dice al dev que su configuración no sirve, y de yapa que
+// mueva las hijas al primer nivel, que es exactamente al revés de lo que el gate parsea.
+// El dev que obedeciera el aviso ROMPERÍA una configuración correcta.
 //
-// Lo destapó la Story CA-1 de Totora: la autodetección del bundle apuntó a `dev-credentials.js`
-// —un archivo de agosto que no es el bundle— porque `dev.html` carga el suyo con un `import()`
-// dinámico que ninguna heurística de `<script src>` puede ver. El escape documentado para ese caso
-// es justo esta llave. Hallazgo: `tasks/hallazgo-e2e-bundle-clave-desconocida-2026-09-22.md`.
-// 🔴 rojo previo: dos avisos ("NO conoce `bundle`" + "`artifact`… están ANIDADAS").
+// La autodetección del bundle puede apuntar a un archivo que no es el bundle (p. ej. `dev-credentials.js`) porque
+// `dev.html` carga el suyo con un `import()` dinámico que ninguna heurística de `<script src>` puede ver. El escape
+// documentado para ese caso es justo esta llave.
+// 🔴 Mutación: dos avisos ("NO conoce `bundle`" + "`artifact`… están ANIDADAS").
 test('e2e.bundle es una llave conocida y sus hijas viven anidadas a propósito', () => {
   const d = repoConE2e([
     'e2e:',
@@ -277,8 +276,7 @@ test('una config bien escrita no produce ni un aviso', () => {
 
 // Los repos de verdad de ESTA máquina: toda carpeta con `.tycon/advisors.yaml` bajo la raíz de repos (la única variable
 // del arnés para eso, `TYCON_REPOS_ROOT`; sin ella, `~/SourceCode`), hasta dos niveles. Sin nombres escritos: la lista de
-// repos de un equipo no vive en una prueba (story 8.10.3, tanda C — la lista de antes nombraba cuatro repos y, al quedar
-// todos con nombres inventados, la prueba pasaba sin mirar nada).
+// repos de un equipo no vive en una prueba (una lista con nombres inventados pasaría sin mirar nada).
 function reposConConfig(raiz) {
   const out = [];
   const ilegibles = [];

@@ -1,11 +1,9 @@
 #!/usr/bin/env node
 /**
- * test-skill-contract.js — el SKILL.md del pipeline se puede achicar, pero no puede perder nada
- * (story 7.7 del arnés, 2026-09-19).
+ * test-skill-contract.js — el SKILL.md del pipeline se puede achicar, pero no puede perder nada.
  *
- * El SKILL.md se carga ENTERO en cada corrida y el hilo principal lo relee en cada respuesta: con
- * 107 KB era la pieza más pesada del piso que controla el arnés. La story lo bajó a menos de 25 KB
- * mudando la historia (casos, fechas, mediciones) a HISTORIA.md, que no se carga sola. Recortar a
+ * El SKILL.md se carga ENTERO en cada corrida y el hilo principal lo relee en cada respuesta: por eso
+ * pesa menos de 25 KB, con la historia (casos, fechas, mediciones) en HISTORIA.md, que no se carga sola. Recortar a
  * mano un archivo de reglas es exactamente cómo se pierde una en silencio, así que el recorte vive
  * detrás de esta guarda:
  *
@@ -18,7 +16,7 @@
  *      (`en_historia`): donde está HISTORIA.md (el árbol armado de los nocturnos) se verifica que cada uno esté de
  *      verdad; en el público solo, un párrafo de la base tiene que estar en el SKILL.md o figurar en esa lista.
  *   3. FORMA — el SKILL.md pesa ≤ 25 KB, su frontmatter es el de la base, y trae las tres
- *      correcciones que encontró el laboratorio (exit 4 del test-gate, cierre del Step 8 con
+ *      correcciones obligatorias (exit 4 del test-gate, cierre del Step 8 con
  *      `marker.js clear` + review, resumen de la matriz en el Step 7).
  *
  * La base es el SKILL.md del commit fijado en el contrato (`base`), no «el anterior»: después del
@@ -29,7 +27,7 @@
  *   node test-skill-contract.js --generate   regenera fixtures/skill-contract.json desde la base
  *                                            (conserva `historicos`; pide git)
  *   node test-skill-contract.js --history    escribe HISTORIA.md con los párrafos de la base que
- *                                            el SKILL.md actual ya no tiene literales (pide git)
+ *                                            el SKILL.md actual no tiene literales (pide git)
  *   --skill <ruta>                           verificar otro SKILL.md (para probar mutantes)
  */
 'use strict';
@@ -78,13 +76,13 @@ function extraer(texto) {
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // ¿La entrada sigue nombrada? Ids, flags y env: con el MISMO extractor que armó el contrato — si
-// presencia y extracción usaran reglas distintas, la base misma daría faltas falsas (pasó: un id
-// pegado a un guion, `#done-sin-advisors-S1-…`, se extraía y no se «encontraba»).
+// presencia y extracción usaran reglas distintas, la base misma daría faltas falsas (por ejemplo, un id
+// pegado a un guion, `#done-sin-advisors-S1-…`, se extraería y no se «encontraría»).
 // Comandos: `marker.js X` literal, o X como token ENTERO en backticks (`X`, `X N`, `X|Y`) dentro de
 // un bloque —viñeta o párrafo— que nombra el mismo script: así lista la referencia rápida,
 // «**marker.js**: `get` · `set` …». 🔴 Sin esas dos condiciones un nombre de archivo o de otro
-// script contaba como el comando: `adhoc.log` hacía pasar a `marker.js adhoc`, y el `start` de
-// otra skill a `pipeline.js start` (pase adversarial de la 7.7, 2 hallazgos confirmados).
+// script contaría como el comando: `adhoc.log` haría pasar a `marker.js adhoc`, y el `start` de
+// otra skill a `pipeline.js start`.
 function bloques(texto) {
   return texto.split(/\n(?=[ \t]*(?:[-*] |\d+\. |#)|[ \t]*\n)/);
 }
@@ -112,8 +110,8 @@ const hash = (p) => crypto.createHash('sha1').update(p.replace(/\s+/g, ' ')).dig
 
 // ── Lectura ─────────────────────────────────────────────────────────────────────────────────
 // Todo se lee con finales de línea LF: agent-skills no tiene .gitattributes, y un checkout de Git
-// para Windows (autocrlf) trae CRLF — el frontmatter no matcheaba y todos los párrafos salían
-// «perdidos» sobre un SKILL.md sin cambios (pase adversarial de la 7.7).
+// para Windows (autocrlf) trae CRLF — el frontmatter no matchearía y todos los párrafos saldrían
+// «perdidos» sobre un SKILL.md sin cambios.
 const lf = (t) => String(t).replace(/\r\n/g, '\n');
 const leer = (p) => lf(fs.readFileSync(p, 'utf8'));
 function leerBase(sha) {
@@ -165,7 +163,7 @@ function historia() {
 }
 
 // La guarda se prueba a sí misma antes de juzgar: si el criterio de «presente» se afloja, un
-// comando puede desaparecer y T2 seguir verde. Cada caso es uno que el pase adversarial reprodujo.
+// comando puede desaparecer y T2 seguir verde. Cada caso es un fallo concreto.
 function autoprueba() {
   const f = [];
   const esta = (e, t) => presente('comando', e, t);
@@ -180,7 +178,7 @@ function autoprueba() {
 }
 
 // Mínimos del contrato: un fixture vaciado (regeneración contra la base equivocada, git que falla a
-// medias) daba «✅ contrato completo» sin haber verificado nada. Los números son la base de hoy con
+// medias) daría «✅ contrato completo» sin haber verificado nada. Los números son la base con
 // margen: 282 entradas y 161 párrafos.
 const MIN_ENTRADAS = 200, MIN_PARRAFOS = 100;
 
@@ -228,10 +226,10 @@ function verificar(skillPath) {
   for (const p of perdidos.slice(0, 20)) fallas.push(`T3 Historia_TodoParrafoConservado: párrafo perdido: «${p.inicio}…»`);
   if (perdidos.length > 20) fallas.push(`T3 Historia_TodoParrafoConservado: … y ${perdidos.length - 20} párrafos perdidos más`);
 
-  // T4 — las tres correcciones del laboratorio
+  // T4 — las tres correcciones obligatorias
   const cuerpo = sinFrontmatter(skill);
   if (!/test-gate[\s\S]{0,400}\b4\b[^\n]*(FRENO|frena)/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el exit 4 (FRENO) del test-gate');
-  // los pasos, por su nombre llano (story 7.23): «Preparar el commit» es el que era el Step 8; «Hallazgos», el 7
+  // los pasos, por su nombre llano: «Preparar el commit» es el Step 8; «Hallazgos», el 7
   if (!/Preparar el commit[^\n]*marker\.js clear[^\n]*review/i.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el cierre de «Preparar el commit» (`marker.js clear` + story en review)');
   if (!/Corrido de verdad: N de T/.test(cuerpo)) fallas.push('T4 SkillMd_CorreccionesLab: falta el resumen de la matriz en «Hallazgos» («Corrido de verdad: N de T…»)');
 
@@ -240,7 +238,7 @@ function verificar(skillPath) {
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────
 if (require.main === module) {
-  // story 8.9 (tanda B3b): las opciones viejas siguen andando hasta el retiro
+  // Las opciones viejas siguen andando hasta el retiro
   require('../lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/tests/test-skill-contract.js');
   const args = process.argv.slice(2);
   try {

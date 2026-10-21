@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# e2e-gate-key.test.sh — que el portón corra SIEMPRE en modo exigente (2026-09-27).
+# e2e-gate-key.test.sh — que el portón corra SIEMPRE en modo exigente.
 #
-# EL DEFECTO QUE CIERRA. Los specs del set crítico de Totora se saltean solos cuando la base no
+# EL DEFECTO QUE CIERRA. Los specs del set crítico se saltean solos cuando la base no
 # tiene los datos que consumen (`test.skip(cantidad === 0, …)`). Playwright devuelve 0, y una corrida
-# que no probó nada se leía igual que una que probó todo. El veredicto SIN_EJERCER (2026-09-27) frenó
+# que no probó nada se lee igual que una que probó todo. El veredicto SIN_EJERCER frena
 # el caso extremo —CERO ejecutados—, pero 1 de 4 sigue siendo verde: contar no cierra el hueco.
-# La convención que sí lo cierra ya existía (`guides/definition-of-done.md` §2, regla REAL-C8): una
-# env var `<DOMAIN>_REQUIRED=1` cuya rama LANZA en vez de saltear. Lo que faltaba era quién la
+# La convención que sí lo cierra (`guides/definition-of-done.md` §2, regla REAL-C8): una
+# env var `<DOMAIN>_REQUIRED=1` cuya rama LANZA en vez de saltear. Falta quién la
 # prende — y pedirle al dev que se acuerde es el mismo olvido corrido un casillero.
 #
-# 🔴 ROJO PREVIO VERIFICADO contra la versión publicada del guion (la que no trae el bloque de la
-#    llave): 6 de las 9 aserciones salen rojas ahí —las de C-01, C-02, C-03 y los dos avisos de
+# 🔴 ROJO VERIFICABLE contra una versión del guion que no trae el bloque de la
+#    llave: 6 de las 9 aserciones salen rojas ahí —las de C-01, C-02, C-03 y los dos avisos de
 #    C-04— y las 3 que quedan verdes son justamente las guardas (una corrida verde sigue verde, un
 #    salteo no frena, y el veredicto SIN_EJERCER sigue dando 4). Se corre con
 #      TYCON_E2E_GATE=<ruta a la copia vieja> bash <este archivo>
@@ -131,7 +131,7 @@ rm -rf "$T"
 
 # ── C-05 · con TODO salteado sigue mandando el veredicto SIN_EJERCER (exit 4) ─────────────────
 # La llave no reemplaza al veredicto: lo acompaña. Si ningún spec la honra y se saltean todos, el
-# freno tiene que seguir siendo el de la story FIX-Q1.
+# freno tiene que seguir siendo el del veredicto SIN_EJERCER.
 T="$(mktemp -d)"; montar "$T" 0 4
 correr "$T"
 [ "$(cat "$T/exit.txt")" = "4" ] \

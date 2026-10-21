@@ -2,14 +2,14 @@
 
 /**
  * navigation-drift.js — el mapa de navegación cambió y las pantallas ya escritas no se
- * volvieron a mirar (FIX-8, caso C7 de la auditoría del 2026-08-25).
+ * volvieron a mirar.
  *
- * ── QUÉ SE ROMPE HOY ────────────────────────────────────────────────────────────────────────────
+ * ── QUÉ SE ROMPE ────────────────────────────────────────────────────────────────────────────
  * `WIRING-C5` compara el layout y la navegación del código contra el documento de arquitectura de
  * información del repo, y funciona en UN SOLO SENTIDO: **código nuevo → se compara contra el
  * documento**. Al revés no. Si el documento cambia, el código ya escrito **no se vuelve a revisar
- * nunca**. La mitigación que existía no cerraba el hueco: sólo se disparaba al CREAR el documento
- * (nunca al editarlo), era un aviso que jamás bloquea, y pedía otra cosa —declarar qué reconcilia—
+ * nunca**. La mitigación que hay no cierra el hueco: sólo se dispara al CREAR el documento
+ * (nunca al editarlo), es un aviso que jamás bloquea, y pide otra cosa —declarar qué reconcilia—
  * en vez de volver a correr la regla.
  *
  * ── CÓMO SE CIERRA, BARATO ──────────────────────────────────────────────────────────────────────
@@ -20,16 +20,16 @@
  *
  * ── POR QUÉ SE LIMPIA SOLA, Y CON QUÉ ────────────────────────────────────────────────────────────
  * Un aviso que no se apaga nunca se aprende a ignorar. La marca se levanta cuando el revisor de
- * wiring CORRIÓ DE VERDAD en este repo después del cambio — dato que existe desde el mismo día en
- * el registro de arranques (`lib/advisor-ledger.js`, Tema 2): spawns reales, no self-report. Es la
- * primera cosa que se apoya en ese registro, y muestra para qué servía tenerlo atribuido por repo.
+ * wiring CORRIÓ DE VERDAD en este repo después del cambio — dato que sale del
+ * registro de arranques (`lib/advisor-ledger.js`): spawns reales, no self-report. Es lo que se
+ * apoya en ese registro, y por eso tiene que estar atribuido por repo.
  */
 
 const fs = require('fs');
 const path = require('path');
 
 /**
- * El revisor de cableado (el que aplica WIRING-C5) vive en un paquete (story 8.41): es el revisor de un paquete ACTIVO para
+ * El revisor de cableado (el que aplica WIRING-C5) vive en un paquete: es el revisor de un paquete activo para
  * este repo que declara el prefijo WIRING, leído con el MISMO cargador que usa el pipeline (`paquetesActivos` de pipeline.js:
  * claves viejas incluidas, manifiesto validado, y un paquete que redeclara un revisor del núcleo frena igual que allá).
  * `{ agente, motivo }`: sin ese paquete, `agente: null` y el motivo («ningún paquete activo lo trae»); si los paquetes no se

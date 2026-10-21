@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
-// steps-names.test.js — los pasos del pipeline con nombre llano (story 7.23, tanda A).
+// steps-names.test.js — los pasos del pipeline con nombre llano.
 //
-// Lo que ve el dueño nombra cada paso por su nombre en castellano, sin número: el `step_name` de `pipeline.js next`,
-// los títulos de los `steps/*.md` y los textos de los hooks. Los comandos y las rutas siguen con el número de hoy, y el
-// marcador no cambia de forma (eso es la tanda B).
+// Lo que ve la persona que usa el pipeline nombra cada paso por su nombre en castellano, sin número: el `step_name` de `pipeline.js next`,
+// los títulos de los `steps/*.md` y los textos de los hooks. Los comandos y las rutas siguen con el número, y el
+// marcador no cambia de forma.
 //
 // Corre los comandos reales con un HOME temporal (el skill enlazado en ~/.claude/agent-skills, como en una máquina) y el
 // id de sesión fijado en el proceso hijo.
@@ -22,7 +22,7 @@ const SCRIPTS = path.join(__dirname, '..');
 const SKILL = path.join(SCRIPTS, '..');
 const RAIZ = path.join(SKILL, '..', '..');
 
-// La tabla de la tanda A, escrita acá a propósito: es la de la story, no la del código que se prueba.
+// La tabla, escrita acá a propósito: es la de la story, no la del código que se prueba.
 const ESPERADOS = {
   0: 'Arranque',
   '0b': 'Arranque: reloj de Clockify',
@@ -155,7 +155,7 @@ test('T1 Display_PlainNamesOnly — lo que ve el dueño nombra cada paso por su 
   assert.strictEqual(nf.step_name, null);
   sinNumero(nf.note, 'el note sin pasos pendientes');
 
-  // los hooks que le hablan al dueño
+  // los hooks que le hablan a la persona
   const salida = (r) => r.stdout + r.stderr;
   //   on-prompt: «listo» con los revisores pendientes
   const sidStop = 's-stop';
@@ -202,8 +202,8 @@ test('T3 TandaA_MarkerAndHooksUnchanged — el marcador y las decisiones de los 
   const r = E.correr('pipeline.js', ['start', '--story', E.story, '--repo', E.repo, '--brief'], sid);
   assert.strictEqual(r.status, 0, r.stderr + r.stdout);
   const m = JSON.parse(fs.readFileSync(E.activo(sid), 'utf8'));
-  // las claves de hoy (medidas el 2026-10-15 con `start` sobre el código anterior a la tanda A, más las cuatro del
-  // tamaño de la corrida: size, size_reason, estimate_min, estimate_source), y ni una más
+  // las claves que deja `start`, más las cuatro del tamaño de la corrida: size, size_reason,
+  // estimate_min, estimate_source), y ni una más
   assert.deepStrictEqual(Object.keys(m).sort(), [
     'autonomous', 'baseSha', 'checks', 'estimate_min', 'estimate_source', 'evidenceDir', 'fileEvents', 'filesTouched',
     'filesTouchedAt', 'iter', 'iterations', 'lastFailures', 'lastTouch', 'noProgressStreak', 'repoPath', 'sessionId',

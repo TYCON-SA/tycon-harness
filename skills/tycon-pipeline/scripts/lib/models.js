@@ -1,10 +1,10 @@
 'use strict';
 /**
- * lib/models.js — el modelo de cada trabajo del pipeline (story 7.29).
+ * lib/models.js — el modelo de cada trabajo del pipeline.
  *
- * POR QUÉ EXISTE: el modelo de cada trabajo estaba escrito a mano en seis lugares (el `model:` de cada revisor, las
+ * POR QUÉ EXISTE: el modelo de cada trabajo estaría escrito a mano en seis lugares (el `model:` de cada revisor, las
  * tablas de pipeline.js, el portón del pase adversarial, la regla de los ayudantes, la sugerencia de sesión y las
- * equivalencias de Codex) y ninguna organización lo podía elegir. Ahora:
+ * equivalencias de Codex) y ninguna organización lo podría elegir. Por eso:
  *   - los valores de hoy viven acá (`DEFAULTS`, `TIERS`); el `model:` de cada `agents/*.md`, el `MODEL` de
  *     adversarial-verify.workflow.js y el valor por defecto de build/generate.js son copias que verifica una prueba;
  *   - una organización los cambia en `team-repos.json → models` (lector scripts/lib/team-repos.js) y este módulo es el
@@ -19,7 +19,7 @@
  * `pedido` = lo que el dev pidió para la corrida (`marker.js set-models`) y las banderas de hoy (--cost-tier, …).
  *
  * Nada de esto lee la máquina salvo `readOrgModels` y `defaultFor` (el `.md` instalado de un revisor): las funciones
- * que deciden reciben la configuración por argumento (decisión 24), así las pruebas nunca ven la de la máquina.
+ * que deciden reciben la configuración por argumento, así las pruebas nunca ven la de la máquina.
  */
 
 const fs = require('fs');
@@ -32,7 +32,7 @@ const SONNET = MODELS[1];
 const OPUS = MODELS[2];
 const FABLE = MODELS[3];
 
-/** Los valores de hoy: sin configuración, cada trabajo usa éstos (decisión 6). */
+/** Los valores de hoy: sin configuración, cada trabajo usa éstos. */
 const DEFAULTS = {
   reviewers: SONNET,
   reviewer: { 'tycon-spec-first-checker': OPUS },
@@ -59,14 +59,14 @@ function capAt(m, ceiling) {
   return rank(m) > rank(ceiling) ? ceiling : m;
 }
 
-/** El techo de una configuración ya validada: sólo con `mandatory_ceiling: true` (decisión 15). */
+/** El techo de una configuración ya validada: sólo con `mandatory_ceiling: true`. */
 function ceilingOf(org) {
   return isObject(org) && org.mandatory_ceiling === true && isModel(org.ceiling) ? org.ceiling : null;
 }
 
-/** La carpeta `agents/` de donde se leen los `.md` instalados: la misma que traduce generate.js (decisión 11). */
+/** La carpeta `agents/` de donde se leen los `.md` instalados: la misma que traduce generate.js. */
 function agentsDirDefault() {
-  // la misma precedencia que los paquetes (packs.js, dirAgentes): TYCON_AGENTS_DIR primero (pase adversarial de la 7.29)
+  // la misma precedencia que los paquetes (packs.js, dirAgentes): TYCON_AGENTS_DIR primero
   if (process.env.TYCON_AGENTS_DIR) return process.env.TYCON_AGENTS_DIR;
   try {
     const { resolveSkillsDirs } = require(path.resolve(__dirname, '..', '..', '..', '..', 'scripts', 'lib', 'skills-dir.js'));
@@ -78,7 +78,7 @@ function agentsDirDefault() {
 
 /**
  * El `.md` de un revisor: en la carpeta de agentes de la raíz o, si no está ahí, en la de un paquete del mismo árbol
- * (`packs/<p>/agents/`, story 8.41: un paquete puede traer sus agentes). null si no está en ninguna.
+ * (`packs/<p>/agents/`: un paquete puede traer sus agentes). null si no está en ninguna.
  */
 const LOOKUP_PROBLEMS = new Set();
 function agentFile(name, agentsDir) {
@@ -170,7 +170,7 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
     else if (isModel(orgRev[r])) { model = orgRev[r]; origin = 'organization-reviewer'; }
     else if (isModel(o.reviewers)) { model = o.reviewers; origin = 'organization'; }
     else { model = defaultFor(r, { agentsDir }); origin = 'default'; }
-    // un solo valor (el pedido o `models.reviewers`) es un solo aviso, no uno por revisor (d7: avisa una vez)
+    // un solo valor (el pedido o `models.reviewers`) es un solo aviso, no uno por revisor (avisa una vez)
     const general = !pedido && origin === 'organization';
     const first = aplicarTecho(model, ceiling, {
       key: pedido ? 'request:reviewers' : (general ? 'organization:reviewers' : `reviewer:${r}`),
@@ -178,7 +178,7 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
     }, warnings);
     const entry = { model: first, origin };
     if (iter && iter > 1) {
-      // las vueltas siguientes: un tope (decisión 16); con --cost-tier deep no bajan, como hoy
+      // las vueltas siguientes: un tope; con --cost-tier deep no bajan
       const reloop = isModel(req.reviewers_reloop) ? req.reviewers_reloop : (isModel(o.reviewers_reloop) ? o.reviewers_reloop : DEFAULTS.reviewers_reloop);
       const tope = capAt(reloop, ceiling);
       entry.model = costTier === 'deep' || rank(first) <= rank(tope) ? first : tope;
@@ -202,7 +202,7 @@ function resolveReviewers({ org, requests, costTier, tierOf, set, fullSet, iter,
 
 /**
  * El modelo del pase adversarial y la pregunta de Fable. opts: org · requests · flags { fable, opus, ultracode } ·
- * heavy · modelQuestion (la clave de la 7.19: `{ value, origin }`) · warnings.
+ * heavy · modelQuestion (la clave de la pregunta de modelo: `{ value, origin }`) · warnings.
  * → `{ model, origin, reason, question: { value, origin }, upsell, otherQuestion? }`
  */
 function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, warnings = [] }) {
@@ -224,7 +224,7 @@ function resolveAdversarial({ org, requests, flags = {}, heavy, modelQuestion, w
   else { model = DEFAULTS.adversarial.model; origin = 'default'; reason = `${DEFAULTS.adversarial.model} (valor de hoy)`; }
   const final = aplicarTecho(model, ceiling, { key: pedido ? 'request:adversarial' : (heavy ? 'adversarial.heavy' : 'adversarial.model'), que: heavy ? 'el pase en una story pesada' : 'el pase adversarial', pedido }, warnings);
   if (final !== model) reason = pedido ? `pediste ${model}; el techo de la organización es ${ceiling} → ${final}` : `${reason}; el techo de la organización es ${ceiling} → ${final}`;
-  // la pregunta: la de la organización gana; si no, la de la 7.19; con un techo debajo de fable, nunca (AC 14)
+  // la pregunta: la de la organización gana; si no, la de la sugerencia de sesión; con un techo debajo de fable, nunca
   let question;
   let otherQuestion = null;
   if (adv.fable_question === 'ask' || adv.fable_question === 'never') {
@@ -333,14 +333,14 @@ function readOrgModels({ dir, teamRepos } = {}) {
       if (r.problems[0] && r.problems[0].path === '' ) return decir(r.problems[0].message);
       if (conModels) return decir(`${conModels.path}: ${conModels.message}`);
       // el archivo entero no vale por un problema ajeno a models: si trae `models`, eso que declaró (un techo, quizás)
-      // no se aplica, y se dice (pase adversarial de la 7.29: el techo se perdía callado)
+      // no se aplica, y se dice (un techo no se pierde en silencio)
       let crudo = null;
       try { crudo = JSON.parse(String(text).replace(/^﻿/, '')); } catch (_) { crudo = null; }
       if (crudo && typeof crudo === 'object' && !Array.isArray(crudo) && crudo.models !== undefined) {
         const p = r.problems[0];
         return decir(`${p.path || '(el archivo)'}: ${p.message}`);
       }
-      return nada;   // sin models: un problema ajeno lo reclaman el instalador y los avisos de arranque, como hoy
+      return nada;   // sin models: un problema ajeno lo reclaman el instalador y los avisos de arranque
     }
     if (!r.data || r.data.models === undefined) return nada;
     return { declared: true, data: r.data.models, problem: null };

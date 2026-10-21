@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 /**
  * qa-guide.js — genera una GUÍA DE PRUEBA MANUAL en HTML, pensada para un TESTER humano
- * (segundo control de calidad sobre lo que se verificó automáticamente). Regla DODRT-C7,
- * 2026-07-10 (pedido DevA): "que el pipeline deje armado una guía paso a paso para que yo
- * pueda probar manualmente lo que se probó automáticamente... un html pensado para un tester,
- * y quede almacenado en los documentos de trabajo de la historia".
+ * (control de calidad sobre lo que se verificó automáticamente). Regla DODRT-C7.
+ * Una guía paso a paso para probar a mano lo que ya se probó automáticamente: un html pensado para
+ * un tester, guardado con los documentos de trabajo de la historia.
  *
  * NO reemplaza la verificación automática (la matriz DODRT-C6) — la COMPLEMENTA: le da a un
  * humano responsable una checklist facilitada (qué hacer, qué esperar, pasó/falló + notas) para
@@ -38,21 +37,20 @@ function readStory(p) {
 
 // AC número → texto completo (une líneas hasta el próximo `N.` o `### ` o fin de la sección).
 // La sección se resuelve con lib/story-checks.js — misma anclada-a-línea-y-sin-frontmatter que
-// usa mech-check. El regex local que había acá era la copia SIN anclar: matcheaba el literal
-// citado en un comentario del frontmatter (que va primero y por eso ganaba) y devolvía como
-// "sección de ACs" el resto del frontmatter → 0 ACs, y la guía de QA salía sin ningún criterio
-// que probar. Mismo bug que en lib/story-checks.js, corregido allá el 2026-07-25.
+// usa mech-check. Un regex local sin anclar matchearía el literal citado en un comentario del
+// frontmatter (que va primero y por eso ganaría) y devolvería como "sección de ACs" el resto del
+// frontmatter → 0 ACs, y la guía de QA saldría sin ningún criterio que probar. Por eso se usa la
+// sección que resuelve lib/story-checks.js.
 function parseAcsWithText(content) {
   const sc = require(path.join(__dirname, 'lib', 'story-checks.js'));
 
-  // 🔴 2026-07-28 — PRIMERO el parser CANÓNICO, y sólo después el local.
+  // 🔴 PRIMERO el parser CANÓNICO, y sólo después el local.
   //
-  // El de abajo entiende ACs como lista numerada (`1. ...`) y NADA más. Las stories de Pacara
+  // El de abajo entiende ACs como lista numerada (`1. ...`) y NADA más. Hay stories que
   // los escriben como encabezado (`### AC1 — título`), un formato que el corpus usa y que
-  // `parseAcsFromSpec` sí soporta. Resultado: para esas stories esta función devolvía 0 ACs
-  // mientras el ENCABEZADO de la guía —que sale de la matriz, o sea del parser canónico— decía
-  // "4 ACs". La guía se generaba con el resumen correcto y el cuerpo VACÍO: ni un caso que probar.
-  // Lo vio el dev al abrirla ("esto no está bien").
+  // `parseAcsFromSpec` sí soporta. Para esas stories esta función devolvería 0 ACs
+  // mientras el ENCABEZADO de la guía —que sale de la matriz, o sea del parser canónico— diría
+  // "4 ACs". La guía se generaría con el resumen correcto y el cuerpo VACÍO: ni un caso que probar.
   //
   // Es la misma clase de bug que ya está documentada arriba en este archivo: dos parsers leyendo
   // el MISMO documento y contestando distinto. La cura no es un tercer regex, es usar el canónico.
@@ -105,7 +103,7 @@ function normalizeRoles(raw) {
 }
 
 // Rol/usuario por defecto declarado UNA vez al tope del archivo de pasos ("Usuario por defecto:
-// Encargado general"). Se aplica a los AC que NO declaran su propio `Usuario:`. DODRT-C7 (2026-07-13).
+// Encargado general"). Se aplica a los AC que NO declaran su propio `Usuario:`.
 function parseDefaultRole(md) {
   if (!md) return null;
   const m = md.match(/^\s*Usuario\s+por\s+defecto\s*:\s*(.+?)\s*$/im);
@@ -141,8 +139,8 @@ function isFirstTimeStory(fm, storyAbs, storyId) {
 //   - `pasosRole` explícito (`Usuario:` del AC) gana siempre; `[ROLE_NONE]` → "sin login".
 //   - Sin explícito: SOLO los AC genuinamente no-verificables por la app (tier 'wv') caen a
 //     "sin login". Un AC 'pend' (todavía no corrido) o 'run' (verificado) mantiene el rol default
-//     — se va a correr/se corrió con ese usuario. (Bug 2026-07-13: antes 'pend' caía a sin-login,
-//     rompiendo el default en guías sin evidencia runtime.)
+//     — se va a correr/se corrió con ese usuario. Si 'pend' cayera a sin-login, el default se
+//     rompería en guías sin evidencia runtime.
 function resolveRoles(pasosRole, tier, defaultRole) {
   if (pasosRole && pasosRole.length) {
     if (pasosRole.length === 1 && pasosRole[0] === ROLE_NONE) return { roles: [], roleNone: true };
@@ -276,7 +274,7 @@ function esc(s) {
 }
 // Detector de JERGA DE SOFTWARE en un paso de tester (candado del criollo, regla DODRT-C7).
 // Marca lo que un tester del negocio NO entendería: identificadores de código (camelCase,
-// PascalCase multi-palabra), CONSTANTES, nombres de tabla (CEIX_/snake_case), referencias
+// PascalCase multi-palabra), CONSTANTES, nombres de tabla (PREFIJO_/snake_case), referencias
 // `archivo:línea`, llamadas `.metodo()`, código entre backticks y códigos HTTP crudos (4xx/5xx).
 // NO marca vocabulario del DOMINIO del producto — para sus siglas hay allowlist.
 const JARGON_ALLOW = new Set(['H&E', 'LIS', 'REC', 'ID', 'OK', 'PDF', 'URL']);
@@ -288,7 +286,7 @@ function detectJargon(text) {
     /\b[a-z]+[A-Z][a-zA-Z]+\b/g,             // camelCase (openCasePinned)
     /\b[A-Z][a-z]+[A-Z][a-zA-Z]+\b/g,        // PascalCase multi (RoleConstants, PedidosService)
     /\b[A-Z]{2,}_[A-Z0-9_]+\b/g,             // CONSTANT_CASE (ORDER_RBAC_VIOLATION)
-    /\b[A-Za-z]\w*_[A-Za-z]\w*\b/g,          // snake_case / CEIX_Articulos
+    /\b[A-Za-z]\w*_[A-Za-z]\w*\b/g,          // snake_case / PREFIJO_Articulos
     /\b\w+:\d{2,4}\b/g,                      // archivo:línea (PedidosService:891)
     /\.[a-zA-Z_]\w*\(\)/g,                   // .metodo()
     /\b[45]\d\d\b/g,                         // HTTP 4xx/5xx crudo
@@ -518,17 +516,16 @@ function renderHtml({ sid, title, preambleHtml, cards, stats, generatedAt, embed
 </body></html>`;
 }
 
-// ¿La story toca UI (donde un tester humano aporta)? Fuente única: lib/ui-signal.js (fix
-// 2026-08-14 — señal genérica + evidence.fe_paths del repo; nada de productos en duro).
+// ¿La story toca UI (donde un tester humano aporta)? Fuente única: lib/ui-signal.js (señal genérica + evidence.fe_paths del repo; nada de productos en duro).
 // La firma (content, fm) se mantiene: acá el frontmatter llega ya separado.
 function isUiStory(content, fm, repoRoot) {
   return require(path.join(__dirname, 'lib', 'ui-signal.js')).touchesUiParts(fm, content, repoRoot);
 }
 
-// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave (story 7.30:
-// la maqueta la ubica con esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar).
-// La guía se nombra con la CLAVE de la story (story 1.17.1): con un número que se repite en el repo, dos stories que
-// comparten la carpeta qa/ escribían y leían el mismo `<id>-pasos.md`, y el chequeo de una daba por buena la guía de la
+// Dónde viven la guía del tester, las revisiones de legibilidad y la maqueta de una story, y con qué clave.
+// La maqueta la ubica esta MISMA función, para que su nombre y el que busca la revisión no puedan discrepar.
+// La guía se nombra con la CLAVE de la story: con un número que se repite en el repo, dos stories que
+// comparten la carpeta qa/ escribirían y leerían el mismo `<id>-pasos.md`, y el chequeo de una daría por buena la guía de la
 // otra. Con número único la clave es el número: el nombre de siempre. Si la matriz no computa, tira: no hay clave.
 function qaLocation(storyPath) {
   const abs = path.resolve(storyPath);
@@ -544,8 +541,8 @@ function qaLocation(storyPath) {
 // declarados en `.tycon/advisors.yaml`, cada uno en el worktree de la rama de la story — el mismo criterio con que la
 // matriz y el portón de pruebas eligen el hermano (`companionRoots`). Una ruta que nombra a un hermano (`<hermano>/x`,
 // `../<hermano>/x`, `(<hermano>) x`) se busca sólo en el que se eligió: en el checkout principal estaría el código de
-// otra rama. Una config que no se puede leer se DICE (revisores del paso 5): callada, las pantallas de un acompañante se
-// leían como «no están en el disco» sin que nadie supiera por qué.
+// otra rama. Una config que no se puede leer se DICE: callada, las pantallas de un acompañante se
+// leerían como «no están en el disco» sin que nadie supiera por qué.
 function screenSearch(repoRoot, notes, storyPath) {
   if (!repoRoot) return { roots: [], resolve: undefined };
   const roots = screenRoots(repoRoot, notes, storyPath);
@@ -586,7 +583,7 @@ function screenRoots(repoRoot, notes, storyPath) {
   const { parseEvidenceConfig } = require(path.join(__dirname, 'lib', 'evidence-config.js'));
   let companions = [];
   const decir = (m) => { if (notes) notes.push(m); };
-  // `parseEvidenceConfig` trata un yaml ilegible como «sin yaml» (revisores, vuelta 2): acá se mira si existe y no se lee.
+  // `parseEvidenceConfig` trata un yaml ilegible como «sin yaml»: acá se mira si existe y no se lee.
   for (const name of ['advisors.yaml', 'advisors.yml']) {
     const f = path.join(repoRoot, '.tycon', name);
     if (fs.existsSync(f)) {
@@ -627,10 +624,10 @@ function readListField(md, key) {
   return { present: true, values };
 }
 
-// ── Capa 4 de la PANTALLA (story 7.24) ─────────────────────────────────────────────────────────────────────────────
-// Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y el
-// dueño la vio «inentendible» en staging. La capa 4 leía sólo la guía; las marcas sobre textos de la pantalla se
-// «resolvieron» reescribiendo la guía, y el texto malo siguió en el código. Ahora: (a) la pasada del tester también
+// ── Capa 4 de la PANTALLA ─────────────────────────────────────────────────────────────────────────────
+// Una ventana puede pasar todos los controles y verse «inentendible» en staging si la capa 4 lee sólo la guía:
+// las marcas sobre textos de la pantalla se «resolverían» reescribiendo la guía, y el texto malo quedaría en el
+// código. Por eso: (a) la pasada del tester también
 // lee la pantalla y deja `<clave>-legibilidad-ui.md`; (b) una marca citada con «» que sigue en la pantalla frena.
 function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
@@ -638,10 +635,10 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   const problems = []; const notes = [];
   const busqueda = screenSearch(repoRoot, notes, storyPath);
   const { found, missing } = ui.screenFiles(fm, body, busqueda.roots, busqueda.resolve);
-  // Una pantalla declarada que no está no se puede revisar: frena (revisores del paso 5). Callada, una story cuyas
-  // pantallas no se encontraban pasaba el candado sin que nadie mirara nada.
+  // Una pantalla declarada que no está no se puede revisar: frena. Callada, una story cuyas
+  // pantallas no se encuentran pasaría el candado sin que nadie mirara nada.
   if (missing.length) problems.push(`(7) Pantallas declaradas por la story que no están en el disco (no se pueden revisar): ${missing.join(', ')} — si la story ya no las toca, sacalas de la lista; si viven en otro repo, declaralo en .tycon/advisors.yaml → evidence.companion_repos`);
-  // Una pantalla que está pero no se lee tampoco se puede revisar, haya o no marcas citadas (revisores, vuelta 2).
+  // Una pantalla que está pero no se lee tampoco se puede revisar, haya o no marcas citadas.
   for (const s of found) {
     try { fs.accessSync(s.abs, fs.constants.R_OK); } catch (e) { problems.push(`(7) No pude leer la pantalla ${s.rel} (${e.code || e.message}): no se puede revisar lo que no se ve.`); }
   }
@@ -673,8 +670,8 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
 
   // (8) Una marca resuelta sólo en la guía: el texto citado sigue en una pantalla de la story.
   for (const file of [`${qk}-legibilidad.md`, `${qk}-legibilidad-ui.md`].map((f) => path.join(qaDir, f)).filter(isFile)) {
-    // Story 7.30: una línea `differs:` declara una diferencia con la maqueta, no es una marca de la revisión (como
-    // `keep:`). Se vacía conservando la numeración: una `differs:` vieja cuyo texto sigue en la pantalla no frena acá.
+    // Una línea `differs:` declara una diferencia con la maqueta, no es una marca de la revisión (como
+    // `keep:`). Se vacía conservando la numeración: una `differs:` cuyo texto sigue en la pantalla no frena acá.
     const sinDiffers = fs.readFileSync(file, 'utf8').split('\n').map((l) => (/\bdiffers:/.test(l) ? '' : l)).join('\n');
     for (const mk of ui.quotedMarks(sinDiffers)) {
       const hits = ui.whereInScreens(mk.quote, found);
@@ -689,10 +686,10 @@ function uiReadabilityCheck({ content, fm, qaDir, qk, repoRoot, storyPath }) {
   return { problems, notes, screens: found, missing };
 }
 
-// ── Capas 9 y 10 de la PANTALLA (story 7.30) ─────────────────────────────────────────────────────────────────────────
-// Hoy la pantalla se ve recién construida. Con la 7.30 el dueño aprueba una maqueta con el plan (mockup.js) y queda su
+// ── Capas 9 y 10 de la PANTALLA ─────────────────────────────────────────────────────────────────────────
+// El dueño aprueba una maqueta con el plan (mockup.js) y queda su
 // huella; acá se exige que (9) la maqueta aprobada esté intacta, y (10) lo construido tenga sus textos. Sin aprobación
-// anotada (stories aprobadas antes de la 7.30, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
+// anotada (stories sin aprobación, o el chequeo corrido fuera del pipeline) no se compara y se dice; con
 // `--mockup-sha` (lo pasa el paso 8 desde el marcador) borrar el archivo de aprobación no saltea la comparación.
 function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   const mk = require(path.join(__dirname, 'mockup.js'));
@@ -742,7 +739,7 @@ function mockupLayers({ qaDir, qk, mockupSha, screens }) {
   if (!campo.present || !campo.values.some((x) => x === nombre || x.endsWith(`/${nombre}`))) {
     problems.push(`(10) la revisión de la pantalla no nombra la maqueta aprobada: agregá "mockup: ${nombre}" en ${uiPath} (la pasada del tester compara la pantalla contra ella)`);
   }
-  // El motivo va en la MISMA línea: con `\s*` un `mockup-compare: no —` vacío tomaba la línea de abajo (pase adversarial).
+  // El motivo va en la MISMA línea: con `\s*` un `mockup-compare: no —` vacío tomaría la línea de abajo.
   const imposible = md.match(/^[ \t]*[-*]?[ \t]*mockup-compare:[ \t]*no[ \t]*[—–-]+[ \t]*(\S.*?)[ \t]*$/im);
   if (imposible) {
     notes.push(`comparación con la maqueta declarada imposible: ${imposible[1]}`);
@@ -786,10 +783,10 @@ function main() {
   const acs = parseAcsWithText(content);
   const tests = parseTestsFull(content);
   // La atribución de evidencia la decide runtime-matrix.js (repo de la story + companions
-  // declarados — fix 2026-08-14): esta guía usa los MISMOS dirs, no re-barre el workspace.
-  // La copia local del barrido por hermanos mostraba en la guía smokes de OTROS repos.
+  // declarados): esta guía usa los MISMOS dirs, no re-barre el workspace.
+  // Una copia local del barrido por hermanos mostraría en la guía smokes de OTROS repos.
   const evidenceDirs = matrix.evidenceDirs || [];
-  // El registro de humos se nombra con la CLAVE de la evidencia (story 1.17), que la matriz ya calculó.
+  // El registro de humos se nombra con la CLAVE de la evidencia, que la matriz ya calculó.
   const smokeByAc = readSmokeLedgerByAc(evidenceDirs, matrix.key || sid);
 
   // preámbulo (setup del entorno) — --preamble o convención specs/qa/preamble.md del repo de la story
@@ -832,7 +829,7 @@ function main() {
     pasosRaw = rawMd;
   }
 
-  // ── MODO --ui-texts (story 7.24): los textos que ve el usuario en cada pantalla de la story, sin el código alrededor.
+  // ── MODO --ui-texts: los textos que ve el usuario en cada pantalla de la story, sin el código alrededor.
   // Es el insumo de la pasada del "tester no técnico" sobre la pantalla (paso 7c.7), junto con las capturas del gate.
   if (argv.includes('--ui-texts')) {
     const ui = require(path.join(__dirname, 'lib', 'ui-texts.js'));
@@ -850,7 +847,7 @@ function main() {
       console.log('');
     }
     for (const m of missing) console.log(`· declarada y no está en el disco: ${m}`);
-    // Story 7.30: con una maqueta aprobada, lo que la pantalla tiene distinto de ella es insumo de la pasada del tester.
+    // Con una maqueta aprobada, lo que la pantalla tiene distinto de ella es insumo de la pasada del tester.
     const mk = require(path.join(__dirname, 'mockup.js'));
     const qaDirU = qaDirStory;
     const mockupPath = path.join(qaDirU, `${qk}-mockup.html`);
@@ -887,10 +884,9 @@ function main() {
     const problems = [];
     const qaDir = qaDirStory;
     const runtimeAcs = acs.map((a) => a.n).filter((n) => (matrix.perAc[n] || {}).verdict === 'RUNTIME');
-    // 🔴 La ruta del mensaje se CALCULA de la misma forma que la búsqueda (2026-08-05): decía
-    // `specs/qa/...` mientras el script buscaba en `<repo>/qa/...`, así que mandaba a crear el
-    // archivo donde nunca lo iba a encontrar — y el gate seguía fallando después de obedecerlo.
-    // Lo destapó una prueba en frío con una story nueva; con la story ya armada no se veía.
+    // 🔴 La ruta del mensaje se CALCULA de la misma forma que la búsqueda. Si no, el mensaje indica
+    // `specs/qa/...` mientras el script busca en `<repo>/qa/...`: manda a crear el archivo donde nunca
+    // se lo encuentra, y el gate sigue fallando aunque se obedezca. Una story nueva lo muestra en frío.
     const pasosEsperado = path.join(qaDirStory, `${qk}-pasos.md`);
     if (!pasosPath) problems.push(`(1) Falta el archivo de pasos-tester: ${pasosEsperado}`);
     const sinPasos = runtimeAcs.filter((n) => !tienePasos(pasosByAc[n]));
@@ -904,7 +900,7 @@ function main() {
     const readPath = path.join(qaDir, `${qk}-legibilidad.md`);
     if (!isFile(readPath)) problems.push(`(4) Falta la review de legibilidad (pasada del "tester no técnico"): ${readPath} con "veredicto: OK"`);
     else if (!/veredicto:\s*ok/i.test(fs.readFileSync(readPath, 'utf8'))) problems.push(`(4) La review de legibilidad no tiene "veredicto: OK" — resolver las marcas del tester y re-revisar.`);
-    // (5) DODRT-C7 2026-07-13: cada AC verificado corriendo declara CON QUÉ USUARIO se prueba
+    // (5) DODRT-C7: cada AC verificado corriendo declara CON QUÉ USUARIO se prueba
     // (badge de rol en la guía). Explícito por AC (`Usuario: <rol>`) o un `Usuario por defecto:`
     // al tope del archivo. Un `Usuario: —` (sin login) cuenta como declarado.
     const sinRol = runtimeAcs.filter((n) => {
@@ -912,9 +908,8 @@ function main() {
       const explicit = b && b.role && b.role.length;
       return !explicit && !(defaultRole && defaultRole.length);
     });
-    // (6) DESCRIPCIÓN EN CRIOLLO — 2026-08-05, pregunta del dev: "¿el harness no le dice que
-    // lo tiene que hacer?". Lo AVISABA al generar la guía y no lo exigía acá, así que la guía
-    // podía cerrar en verde mostrándole al tester el texto TÉCNICO del criterio (nombres de
+    // (6) DESCRIPCIÓN EN CRIOLLO: un aviso al generar la guía no alcanza, y acá se exige. Sin
+    // esto, la guía podría cerrar en verde mostrándole al tester el texto TÉCNICO del criterio (nombres de
     // método, tablas, Given/When/Then). Un aviso que no frena es un aviso que se ignora.
     // Calibrado para no pedir de más: sólo se exige descripción cuando el texto del AC NO se
     // entiende solo — si ya está en castellano llano, sirve como titular y no hay nada que
@@ -1047,9 +1042,9 @@ function main() {
   const sinDesc = cards.filter((c) => c.needsDesc).map((c) => c.n);
   console.log(`✅ Guía QA generada: ${out}`);
   console.log(`   ${stats.total} ACs · ${stats.runtime} verificados corriendo · ${stats.waived + stats.notVerifiable} no verificables por la app`);
-  // La ruta que se sugiere es la MISMA que se busca (PIPE-DEBT-2.14): antes el mensaje decía
-  // `specs/qa/` fijo y la búsqueda es `<carpeta padre de la story>/../qa/` — en un repo con las
-  // stories en `specs/` eso es `qa/`, y el dev escribía el archivo donde el mensaje decía.
+  // La ruta que se sugiere es la MISMA que se busca: un mensaje con la ruta `specs/qa/` fija no sirve
+  // cuando la búsqueda es `<carpeta padre de la story>/../qa/` — en un repo con las
+  // stories en `specs/` eso es `qa/`, y el dev escribe el archivo donde el mensaje dice.
   const pasosHint = path.relative(process.cwd(), path.join(qaDirStory, `${qk}-pasos.md`)) || `${qk}-pasos.md`;
   for (const v of qaViejos) console.log(`   ⚠ ${v} no cuenta: el número ${sid} lo comparten varias stories de este repo (no se tocó). La guía de esta story va en ${pasosHint}.`);
   if (faltan.length) console.log(`   ⚠ Sin pasos-tester: AC ${faltan.join(', ')} — escribir en ${pasosHint}`);
@@ -1057,7 +1052,7 @@ function main() {
   const sinRol = cards.filter((c) => c.needsRole).map((c) => c.n);
   if (sinRol.length) console.log(`   ⚠ Sin usuario de prueba declarado: AC ${sinRol.join(', ')} — agregar 'Usuario: <rol>' en ${pasosHint} (o 'Usuario por defecto:' al tope)`);
 
-  // --open (pedido del dev 2026-08-14): abrir la guía en el navegador al generarla —
+  // --open: abrir la guía en el navegador al generarla —
   // SOLO con el flag explícito, nunca por default: qa-guide corre también desde hooks
   // (on-pre-commit --check no pasa por acá, pero cualquier automatización futura que
   // genere no debe abrir ventanas sin pedirlo). Cross-platform, fail-open (best-effort).
@@ -1079,7 +1074,7 @@ function main() {
 
 module.exports = { estadoDelArnes, cuandoEnLlano, parseAcsWithText, parseTestsFull, parsePasos, tienePasos, parseDefaultRole, resolveRoles, parsePasosSequence, detectJargon, isUiStory, renderHtml, qaLocation, parseOpenApp, teamLines };
 if (require.main === module) {
-  // story 8.9 (tanda B3b): la opción vieja sigue andando hasta el retiro
+  // La opción vieja sigue andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/qa-guide.js');
   main();
 }

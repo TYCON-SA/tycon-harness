@@ -2,32 +2,30 @@
  * atdd-order.js — el freno mecánico del sub-paso 4.0 (ATDD: los tests se escriben ANTES del código).
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
- * El ATDD era la ÚNICA regla del pipeline sin gate mecánico. Todo lo demás que se cumple —build,
+ * Sin este gate, el ATDD sería la ÚNICA regla del pipeline sin gate mecánico. Todo lo demás que se cumple —build,
  * tests, advisors, lints, la matriz de DoD, el safety-guard— se cumple porque algo lo VERIFICA; el
- * ATDD era un párrafo en un step file, y por eso es el que se saltea. Más texto normativo no lo
- * arregla: es la misma lección que dejó la auditoría 2026-06-11 ("reglas mandatorias + optimizaciones
- * opt-in = el sistema degrada al camino más caro").
+ * ATDD sería un párrafo en un step file, y por eso el que se saltea. Más texto normativo no lo
+ * arregla: reglas mandatorias + optimizaciones
+ * opt-in = el sistema degrada al camino más caro.
  *
- * Caso disparador: Story 3.21 de un repo del equipo (2026-07-27). El orquestador escribió implementación y
- * después su test, tarea por tarea. Lo detectó el DEV preguntando "¿por qué no hicimos ATDD acá?" —
- * o sea, la capa de control era una persona leyendo el transcript. Se compensó con un chequeo de
- * mutantes que salió 6/6, PERO destapó un test que no probaba lo que decía: se apoyaba en un dato que
- * el propio test fabricaba, así que el hallazgo de fondo sólo lo cazaba otra suite. Ése es exactamente
+ * Caso: el orquestador escribe la implementación y después su test, tarea por tarea. Sin este gate la capa de
+ * control es una persona leyendo el transcript, y un test escrito después puede apoyarse en un dato que el propio test
+ * fabrica: el hallazgo de fondo sólo lo caza otra suite. Ése es exactamente
  * el defecto que el test-primero previene por construcción — con el test escrito antes, no puede
  * apoyarse en un dato que todavía no existe.
  *
  * ── DE DÓNDE SALE LA EVIDENCIA (no hace falta disciplina nueva) ──────────────────────────────────
  * El hook `on-edit.js` (PostToolUse Edit|Write) ya registra CADA edición en `marker.fileEvents` con
- * `{path, ts}` — lo agregó el fix HOLE-1 de la auditoría 2026-06-11 para `smart-reloop`. Este gate NO
- * pide nada nuevo al orquestador: lee un dato que el pipeline ya venía guardando para otra cosa.
+ * `{path, ts}` — también lo usa `smart-reloop`. Este gate NO
+ * pide nada nuevo al orquestador: lee un dato que el pipeline ya guarda para otra cosa.
  *
  * ── QUÉ BLOQUEA Y QUÉ NO (calibrado para no dar falsos positivos) ───────────────────────────────
  *   · Se tocó código Y se tocaron tests, y el PRIMER test es POSTERIOR al PRIMER código → 🔴 BLOQUEA.
- *     Es la inversión inequívoca, y es el caso de la 3.21.
+ *     Es la inversión inequívoca.
  *   · Se tocó código Y tests, y el primer test PRECEDE → ✅ verde.
  *   · No se tocó código (story de docs/specs/config) → ✅ verde, no hay nada que gatear.
  *   · Se tocó código y CERO tests → ⚠️ AVISA, no bloquea. Un refactor con red preexistente es
- *     legítimo y no toca ningún archivo de test (la Task 2 de la propia 3.21 fue exactamente eso).
+ *     legítimo y no toca ningún archivo de test.
  *     Bloquearlo sería un falso positivo, y un gate que da falsos positivos se termina desactivando.
  *   · Sin `fileEvents` (marker viejo, sesión adoptada) → ⚠️ AVISA `unknown`, no bloquea. No se puede
  *     afirmar una violación sin evidencia; lo que NO se hace es callarse.
@@ -51,13 +49,12 @@ function esFuente(p, extra) {
  * ¿El path es un archivo de TEST? Patrones de los stacks del equipo (vitest/jest/node:test/xunit).
  * Se mira el path COMPLETO normalizado a `/` — en Windows los eventos llegan con `\`.
  *
- * 🔴 La heurística de DIRECTORIO exige además EXTENSIÓN DE CÓDIGO (fix 2026-07-30). Sin eso,
+ * 🔴 La heurística de DIRECTORIO exige además EXTENSIÓN DE CÓDIGO. Sin eso,
  * `specs/stories/<story>.md` —que el pipeline edita SIEMPRE antes que el código (status →
- * in-progress)— contaba como "primer test tocado" y el gate del `complete-step 4` salía verde en
- * TODAS las corridas: 15/15 en `gates.log` con `firstTest` apuntando al `.md` de la propia story.
- * El gate nació ciego y nadie lo notó porque verde no llama la atención — lo destapó el rojo de un
- * test del portón pre-edit (caso disparador: Tasks 2-9 implementadas sin un test en la máquina de
- * otro dev, 2026-07-30). Misma razón excluye fixtures (`tests/fixtures/*.json`): tocar un dato de
+ * in-progress)— contaría como "primer test tocado" y el gate del `complete-step 4` saldría verde en
+ * TODAS las corridas, con `firstTest` apuntando al `.md` de la propia story.
+ * Un gate ciego así no se nota, porque verde no llama la atención.
+ * Misma razón excluye fixtures (`tests/fixtures/*.json`): tocar un dato de
  * prueba no es escribir un test. Los patrones por NOMBRE de archivo ya traen extensión de código.
  */
 function isTestPath(p, { extra } = {}) {
@@ -65,7 +62,7 @@ function isTestPath(p, { extra } = {}) {
   const base = s.slice(s.lastIndexOf('/') + 1);
   if (
     /\.(test|spec)\.[cm]?[jt]sx?$/i.test(base) ||            // foo.test.ts · foo.spec.js
-    // Suite bash (2026-09-14, cuatro stories frenadas y con `atddBypass` a mano: 2.13–2.15 y 4.4).
+    // Suite bash (sin esto, una story con tests `.test.sh` queda frenada y pide `atddBypass` a mano).
     // SÓLO por nombre y SÓLO como test: `.sh` no entra a CODE_EXTS, así que un script de pipeline o
     // de hook no pasa a exigir un test previo, y un ayudante bash bajo tests/ no cuenta como suite.
     /\.(test|spec)\.sh$/i.test(base) ||                      // foo.test.sh
@@ -86,7 +83,7 @@ function isTestPath(p, { extra } = {}) {
  * (APFS y NTFS no distinguen mayúsculas, y en Windows los eventos llegan con `\`).
  */
 function adentroDelRepo(evs, repoPath) {
-  // una raíz, o varias (la del repo de la story más sus hermanos declarados, story de dos repos 2026-10-15)
+  // una raíz, o varias (la del repo de la story más sus hermanos declarados)
   const lista = (Array.isArray(repoPath) ? repoPath : [repoPath]).filter((r) => typeof r === 'string' && r !== '');
   if (!lista.length) return evs;
   const raices = lista.map((r) => r.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase());
@@ -109,17 +106,17 @@ function isImplPath(p, { extra } = {}) {
  * Función PURA — sin fs, sin Date, sin process: recibe los eventos y devuelve el veredicto. Es lo que
  * la hace testeable sin montar un marker en disco (misma disciplina que `lib/story-checks.js`).
  *
- * 🔴 `repoPath` (opcional, 2026-08-04) DESCARTA los eventos de fuera del repo de la story. Sin él,
+ * 🔴 `repoPath` (opcional) DESCARTA los eventos de fuera del repo de la story. Sin él,
  * cualquier script que el agente escriba en el scratchpad de la sesión —una sonda de diagnóstico, un
  * probe de una medición— cuenta como "primer archivo de código" y bloquea una corrida cuyo orden real
- * fue correcto. Caso disparador (Story 4.27 de un repo del equipo): su Task 1 era una SALVAGUARDA, o sea
+ * fue correcto. Caso: una story cuya Task 1 es una SALVAGUARDA, o sea
  * verificar contra el código que las anclas que la story cita sigan existiendo, y esa verificación se
  * hace con un `.mjs` throwaway. Toda story que arranque con una salvaguarda o una medición escribe un
  * script de diagnóstico antes que cualquier test — y eso NO es implementar primero.
  *
- * Es la MISMA clase de falso positivo que el fix del 2026-07-30 cerró para las stories `.md` bajo
- * `specs/`: el clasificador miraba la forma del archivo y no su pertenencia al trabajo gateado.
- * Omitirlo mantiene el comportamiento anterior (compatibilidad con markers viejos y con los callers
+ * Es la MISMA clase de falso positivo que el de las stories `.md` bajo
+ * `specs/`: un clasificador que mira la forma del archivo y no su pertenencia al trabajo gateado se equivoca igual.
+ * Omitirlo no filtra nada (compatibilidad con markers viejos y con los callers
  * que no tienen el dato).
  *
  * @param {Array<{path: string, ts: string}>} fileEvents

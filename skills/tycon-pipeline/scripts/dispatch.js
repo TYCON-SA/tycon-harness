@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * tycon hook dispatcher (H10 2026-05-21).
+ * tycon hook dispatcher.
  *
  * Corre múltiples handlers de hook en UN solo proceso Node por evento, en vez de
  * spawnear un proceso por hook. Reduce los ~4 cold-starts de Node por Edit a ~2
@@ -18,7 +18,7 @@
  *                   reminders adentro), salvo que un handler lanzado aparte ya haya escrito: ahí va como reminder
  *   { block: msg }  → BLOQUEAR → stderr + exit 2 (solo válido en PreToolUse)
  *
- * Fail-open + VISIBLE (H19): si un handler tira, se loguea a
+ * Fail-open + VISIBLE: si un handler tira, se loguea a
  * ~/.claude/.tycon-pipeline/hook-errors.log y se sigue con el resto — un bug de
  * un handler no debe romper el Edit ni esconder en silencio que un gate no corrió.
  *
@@ -30,17 +30,17 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
-// Normalización apply_patch→Edit/Write (Etapa E2 Codex, 2026-08-22): en Codex la tool de
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
+// Normalización apply_patch→Edit/Write (Codex): en Codex la tool de
 // edición es `apply_patch` y su tool_input es un TEXTO de patch — editEventsFrom() lo convierte
 // en N eventos claude-shaped (uno por archivo) y las hojas de la cadena no se enteran.
-// Require con FALLBACK deliberado: si la lib no está en esta máquina (el branch de
-// el arnés todavía no mergeó), todo se comporta EXACTAMENTE como hoy — el rollout
+// Require con FALLBACK deliberado: si la lib no está en esta máquina, todo se comporta
+// EXACTAMENTE igual que sin esta normalización — el rollout
 // cross-repo es seguro por orden. Lado Claude: editEventsFrom es identidad, cero cambio.
 let editEventsFrom = null;
 let ARNES_DIR = null;
 try {
-  // Dónde está el arnés lo dice UN lector (lib/harness-path.js, story 8.3): TYCON_GUIDES_DIR (o TCG, que
+  // Dónde está el arnés lo dice UN lector (lib/harness-path.js): TYCON_GUIDES_DIR (o TCG, que
   // exporta el runner del banco, cuyo HOME va sandboxeado) › el lugar `~/.claude/tycon-harness`.
   // Nunca una carpeta escrita a mano. Un hook no frena por esto: lo dice y sigue (fail-open).
   const r = require('./lib/harness-path.js').rutaArnesHook();
@@ -48,10 +48,10 @@ try {
   else process.stderr.write(r.aviso + '\n');
 } catch { /* fallback: sin normalización, conducta actual */ }
 
-// Clockify (story 8.3 del arnés, AC 9): este despachador es un hook COMPARTIDO con el núcleo — no se desregistra;
+// Clockify: este despachador es un hook COMPARTIDO con el núcleo — no se desregistra;
 // con la llave `integraciones.clockify` apagada saltea `clocki-enforce` (los otros dos hooks de clocki los deja sin
-// registrar el instalador). Configuración ROTA: el aviso en cada edición y sin clocki-enforce (AC 2). Sin arnés, o
-// con un arnés anterior a la tanda B (sin `integracionParaHook`): como hoy — fail-open.
+// registrar el instalador). Configuración ROTA: el aviso en cada edición y sin clocki-enforce. Sin arnés, o
+// con un arnés sin `integracionParaHook`: fail-open.
 function integrationOn(key) {
   if (!ARNES_DIR) return true;
   try {
@@ -64,10 +64,10 @@ function integrationOn(key) {
 }
 const clockifyPrendida = () => integrationOn('clockify');
 
-// Azure DevOps (2026-10-05, la copia para un dev de otra organización): la hoja que pide el work item de una story nueva
+// Azure DevOps (la copia para un dev de otra organización): la hoja que pide el work item de una story nueva
 // corre sólo si la máquina tiene la integración ado prendida (ado.org o TYCON_ADO_ORG) o si el repo de la story declara
 // su Azure DevOps (`.tycon/ado-config.yaml`, la primera fuente de la skill). Sin ninguna de las dos, la skill se
-// salteaba sola después de un turno de aviso: ruido para quien no usa Azure DevOps. Sin arnés: como antes (fail-open).
+// saltea sola después de un turno de aviso: ruido para quien no usa Azure DevOps. Sin arnés: fail-open.
 function repoDeclaresAdo(filePath) {
   let dir = path.dirname(path.resolve(String(filePath || '.')));
   for (;;) {
@@ -80,8 +80,8 @@ function repoDeclaresAdo(filePath) {
 }
 const adoForStory = (event) => repoDeclaresAdo(event?.tool_input?.file_path) || integrationOn('ado');
 
-// Las tres formas de una ruta de Windows (story 8.17 del arnés, W1): el evento llega a los portones con su ruta ya
-// nativa. Sin la lib (un skill a medias), como antes: el evento tal cual.
+// Las tres formas de una ruta de Windows: el evento llega a los portones con su ruta ya
+// nativa. Sin la lib (un skill a medias): el evento tal cual.
 let nativeEvent = (event) => event;
 try { ({ nativeEvent } = require('./lib/path-shape.js')); } catch { /* sin normalización de rutas: conducta previa */ }
 
@@ -93,27 +93,25 @@ const SKILLS_DIR = path.join(__dirname, '..', '..');
 // on-frontmatter-write) va primero en pre-edit: si bloquea, no tiene sentido
 // acumular reminders advisory.
 //
-// Entries `spawn: true` (H10 residual, auditoría 2026-06-09): scripts top-level
+// Entries `spawn: true`: scripts top-level
 // de OTROS skills que no exportan handle() — se spawnean como subproceso, pero
-// SOLO si spawnIf(event) matchea. Antes corrían como hooks standalone en CADA
-// Write (2 spawns Node extra por evento); ahora solo cuando el Write toca una
+// SOLO si spawnIf(event) matchea. Si no, correrían como hooks standalone en CADA
+// Write (2 spawns Node extra por evento); sólo cuando el Write toca una
 // story Mary+GOLD (el único caso que les importa).
 //
 // Qué es "una story" lo decide la IDENTIDAD DECLARADA (`story:` en el frontmatter del content),
-// con el criterio del descubridor canónico (lib/story-discovery.js — el mismo del lint del
-// 2026-08-23). Hasta 2026-08-28 acá había un regex de RUTA (`/specs/stories/`): medido ese día,
-// 13 de los 15 repos con stories del equipo (751 de 1083 stories) usan otro layout, o sea que
-// los dos hooks de story-create no corrían NUNCA fuera de CeiboProject — sin un solo error.
-// Las hojas ya detectaban por contenido; el pre-filtro las dejaba sin spawnear. El barrido del
-// 2026-08-15 (incident-log#story-discovery-nombres) arregló 3 gates con este mismo defecto y a
-// éste no lo vio. Caso: el arnés incident-log#story-write-spawn-2026-08-28.
+// con el criterio del descubridor canónico (lib/story-discovery.js, el mismo del lint).
+// Un regex de RUTA (`/specs/stories/`) no sirve: 13 de los 15 repos con stories del equipo
+// (751 de 1083 stories) usan otro layout, así que los dos hooks de story-create no correrían
+// fuera de ese layout — sin un solo error. Las hojas ya detectan por contenido; un pre-filtro
+// por ruta las dejaría sin spawnear.
 //
 // Por qué NO genera falsos positivos caros (esto corre en CADA Write): el 99% de los Writes se
 // descartan por extensión sin mirar content; un `.md` se decide con un regex EN MEMORIA sobre el
 // content que ya vino en el evento — sin IO, sin spawn. PRDs/épicos/arquitectura declaran
-// `status:` pero no `story:` (medición 2026-08-23: 0 de los 13 docs de planning del corpus).
+// `status:` pero no `story:` (medido: 0 de los 13 docs de planning del corpus).
 // Plantillas y material de evals sí declaran `story:` y pasan el pre-filtro: las HOJAS deciden
-// (mismo comportamiento que siempre tuvieron bajo specs/stories/; el skill ADO además pide
+// (mismo comportamiento que bajo specs/stories/; el skill ADO además pide
 // confirmación al dev). El disco se lee SOLO si el evento no trae content (forma Codex
 // apply_patch→Write sin la extracción de hook-io): esto es PostToolUse — el archivo ya existe.
 let declaresStoryIdentity = null;
@@ -131,24 +129,24 @@ const isStoryWrite = (event) => {
   try {
     return declaresStoryIdentity(fs.readFileSync(fp, 'utf8'));
   } catch {
-    return false; // el archivo no está / no se puede leer → no era un Write real de una story
+    return false; // el archivo no está / no se puede leer → no es un Write real de una story
   }
 };
 
 const CHAINS = {
   'pre-edit': [
-    // Portón de CARRIL (2026-08-19): deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
+    // Portón de CARRIL: deniega código sin pipeline/ad-hoc, código antes del plan aprobado,
     // y escrituras directas al estado del pipeline. Va PRIMERO: es el más amplio. Ver lib/story-gate.js.
     // `steps` (los pasos del pipeline donde actúa, o 'all') y `effect` (blocks · warns · records) no los usa el
     // despachador: los muestra «Cómo trabaja», en el sitio de la organización, en lugar del despachador mismo.
     { name: 'on-story-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-gate.js'), steps: ['3', '4'], effect: 'blocks' },
-    // Freno de STORY A MANO (2026-08-30): deniega CREAR un .md con identidad de story sin constancia
+    // Freno de STORY A MANO: deniega CREAR un .md con identidad de story sin constancia
     // de tycon-create-story en la sesión (la deja on-skill-invoke.js, PostToolUse Skill). Editar una
-    // story existente pasa siempre. Ver lib/story-skill-gate.js. Caso: stories AS-1 / PERF-1 de un producto del equipo — guides/maintaining/incident-log.md#story-a-mano-sin-skill-2026-08-30.
+    // story existente pasa siempre. Ver lib/story-skill-gate.js.
     { name: 'on-story-skill-gate', path: path.join(PIPELINE_SCRIPTS, 'on-story-skill-gate.js'), steps: ['1'], effect: 'blocks' },
     { name: 'on-dod-evidence-guard', path: path.join(PIPELINE_SCRIPTS, 'on-dod-evidence-guard.js'), steps: ['7c'], effect: 'blocks' },
     { name: 'on-frontmatter-write', path: path.join(PIPELINE_SCRIPTS, 'on-frontmatter-write.js'), steps: ['7c', '8'], effect: 'blocks' },
-    // Portón ATDD preventivo (2026-07-30): deniega el PRIMER archivo de código de una corrida de
+    // Portón ATDD preventivo: deniega el PRIMER archivo de código de una corrida de
     // pipeline si no se tocó ningún test antes. Las capas post-mortem (complete-step 4, commit)
     // detectan; ésta impide. Ver on-atdd-preedit.js + lib/atdd-preedit.js.
     { name: 'on-atdd-preedit', path: path.join(PIPELINE_SCRIPTS, 'on-atdd-preedit.js'), steps: ['4'], effect: 'blocks' },
@@ -159,7 +157,7 @@ const CHAINS = {
     // sin la integración clockify no corre (`saltarClocki`, más abajo): `integration` lo dice para «Cómo trabaja»
     { name: 'clocki-enforce', path: path.join(CLOCKI_SCRIPTS, 'clocki-enforce.js'), steps: ['all'], effect: 'warns', integration: 'clockify' },
     { name: 'on-edit', path: path.join(PIPELINE_SCRIPTS, 'on-edit.js'), steps: ['all'], effect: 'records' },
-    // Lint de la config del repo (FIX-4(c), 2026-08-25): `.tycon/advisors.yaml` es la única
+    // Lint de la config del repo: `.tycon/advisors.yaml` es la única
     // superficie que puede apagar frenos y NO dispara revisores (un commit que sólo la toca se
     // clasifica como docs). Determinístico, sin modelo, avisa y nunca bloquea.
     { name: 'on-config-lint', path: path.join(PIPELINE_SCRIPTS, 'on-config-lint.js'), steps: ['all'], effect: 'warns' },
@@ -207,7 +205,7 @@ function readEvent() {
 /**
  * Los eventos que va a ver la cadena: apply_patch (Codex) → N eventos claude-shaped, uno por archivo del patch;
  * cualquier otro pasa como identidad. Y en Windows, cada uno con su ruta en forma nativa: un `file_path` en la forma
- * de Git Bash (`/c/a/b`) no encontraba su repo y los portones dejaban pasar (medido, corrida 11694).
+ * de Git Bash (`/c/a/b`) no encontraría su repo y los portones dejarían pasar.
  */
 function prepareEvents(rawEvent, platform = process.platform) {
   const events = editEventsFrom ? editEventsFrom(rawEvent) : [rawEvent];
@@ -252,7 +250,7 @@ function dispatch(mode) {
         if (!h.spawnIf || h.spawnIf(spawnEvent)) {
           if (fs.existsSync(h.path)) {
             const { execFileSync } = require('child_process');
-            // el mismo Node que corre este despachador (el del arnés, si lo lanzó así: story 8.39), no el del PATH
+            // el mismo Node que corre este despachador (el del arnés, si lo lanzó así), no el del PATH
             const out = execFileSync(process.execPath, [h.path], {
               input: JSON.stringify(spawnEvent || {}),
               encoding: 'utf8',

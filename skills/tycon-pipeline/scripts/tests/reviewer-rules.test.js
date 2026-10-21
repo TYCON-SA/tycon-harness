@@ -1,13 +1,13 @@
 'use strict';
 /**
- * Story 7.5 — las reglas del repo que el revisor verifica.
+ * Las reglas del repo que el revisor verifica.
  *
  * T1–T4: `lib/reviewer-rules.js` lee la sección `## Reglas para revisores` del CLAUDE.md del repo.
  * T5–T6: `buildAdvisorContext` la antepone al contexto de cada revisor (y al del validador).
  * T7:    `pipeline.js advisors` informa el estado en su JSON.
  * T8:    las definiciones de `agents/*.md` deciden `omitClaudeMd` (dos exceptuados, por nombre).
  *
- * T11:   nada de este archivo va a la HOME real (story 7.16 del arnés).
+ * T11:   nada de este archivo va a la HOME real.
  *
  * Todo corre sobre repos de juguete en una carpeta temporal y con una HOME temporal para el proceso; el
  * contexto se escribe bajo un id de sesión propio del test y la HOME temporal se borra al final.
@@ -15,25 +15,25 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-// Story 8.7 (AC 8): un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
-// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados», como desde la 8.2: lo declara.
+// Un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
+// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados»: lo declara.
 process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all';   // recortada, como el cargador
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
 
-// Story 7.16 del arnés: HOME temporal para TODO el proceso, devuelta en `test.after`. Sin esto, T5–T7 escribían
-// en advisor-context/ y advisor-runs/ de la HOME real, y los commits de repoDeJuguete corrían los ganchos
-// GLOBALES de git del dev (el core.hooksPath de su ~/.gitconfig), que anotaban cada commit de juguete en su
+// HOME temporal para TODO el proceso, devuelta en `test.after`. Sin esto, T5–T7 escribirían
+// en advisor-context/ y advisor-runs/ de la HOME real, y los commits de repoDeJuguete correrían los ganchos
+// GLOBALES de git del dev (el core.hooksPath de su ~/.gitconfig), que anotarían cada commit de juguete en su
 // reviewer-rules.jsonl. Va ANTES de todo `require` de pipeline.js: fija rutas con os.homedir() al cargarse.
-// El arnés y agent-skills se fijan con lo que resolvían con la HOME real, si no venían puestos (lo mismo que
+// El arnés y agent-skills se fijan con lo que resuelven con la HOME real, si no venían puestos (lo mismo que
 // hace scripts/tests/lib/fake-home.sh del arnés para las suites bash).
 const REAL_HOME = os.homedir();
 const FAKE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'reglas-rev-home-'));
 const PREV_ENV = { HOME: process.env.HOME, TYCON_SKILLS_DIR: process.env.TYCON_SKILLS_DIR, TYCON_GUIDES_DIR: process.env.TYCON_GUIDES_DIR };
 const REAL_SKILLS = path.join(REAL_HOME, '.claude', 'agent-skills', 'skills');
-// el arnés de la máquina por su lugar y, si no, por el nombre viejo (story 8.19): los dos nombres, escritos (copia declarada)
+// el arnés de la máquina por su lugar y, si no, por el nombre viejo: los dos nombres, escritos (copia declarada)
 const REAL_GUIDES = [path.join(REAL_HOME, '.claude', 'tycon-harness'), path.join(REAL_HOME, '.claude', 'tycon-claude-guides')].find((p) => fs.existsSync(p)) || '';
 if (!process.env.TYCON_SKILLS_DIR && fs.existsSync(REAL_SKILLS)) process.env.TYCON_SKILLS_DIR = REAL_SKILLS;
 if (!process.env.TYCON_GUIDES_DIR && REAL_GUIDES) process.env.TYCON_GUIDES_DIR = REAL_GUIDES;
@@ -93,7 +93,7 @@ function repoDeJuguete({ claude, claudeDot, conCambio = true } = {}) {
 }
 
 function cargarLib() {
-  // ROJO PREVIO: la lib no existe todavía → el require falla y cada test lo dice.
+  // Sin la lib, el require falla y cada test lo dice.
   return require(LIB);
 }
 
@@ -124,8 +124,8 @@ test('T1b un # dentro de una cerca de código no corta la sección', () => {
 });
 
 test('T1c (5b) una cerca SIN CERRAR antes del encabezado no esconde la sección', () => {
-  // Hallazgo del pase adversarial: el estado de cerca se arrastraba por todo el archivo y una cerca
-  // abierta en una sección anterior dejaba la sección real «ausente» — el revisor sin reglas.
+  // El estado de cerca no se arrastra por todo el archivo: una cerca abierta en una sección anterior
+  // no puede dejar la sección real «ausente» — el revisor quedaría sin reglas.
   const { reglasRevisores } = cargarLib();
   const claude = '# Proyecto\n\n## Ejemplos previos\n\n```bash\necho sin cerrar la cerca\n\n## Reglas para revisores\n\n- Nunca SQL concatenado.\n\n## Otra\n\nfin\n';
   const r = reglasRevisores(repoDeJuguete({ claude, conCambio: false }));
@@ -219,7 +219,7 @@ function sinBloque(txt) {
 }
 
 test.after(() => {
-  // el contexto (T5–T6) y el step5-start de `pipeline.js advisors` (T7) quedaron en la HOME temporal: se va entera
+  // el contexto (T5–T6) y el step5-start de `pipeline.js advisors` (T7) quedan en la HOME temporal: se va entera
   for (const [k, v] of Object.entries(PREV_ENV)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
   fs.rmSync(FAKE_HOME, { recursive: true, force: true });
 });
@@ -300,7 +300,7 @@ function frontmatter(md) {
 }
 
 test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los del paquete de clientes), exactamente dos exceptuados por nombre, límites en los que tienen Bash', (t) => {
-  // las definiciones de la raíz y las de la carpeta de agentes de cada paquete instalado (story 8.41: los revisores de un
+  // las definiciones de la raíz y las de la carpeta de agentes de cada paquete instalado (los revisores de un
   // stack viven en su paquete, que viaja con el perfil del equipo)
   const PACKS = path.join(AGENTS, '..', 'packs');
   const carpetas = [AGENTS, ...(fs.existsSync(PACKS) ? fs.readdirSync(PACKS) : []).map((p) => {
@@ -312,11 +312,11 @@ test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los
   }));
   // sin los paquetes del equipo (la copia pública) quedan las 13 del núcleo, 11 con el campo
   const DEL_NUCLEO = SKIP_PUBLIC ? 13 : 26;
-  // Story 8.7 (tanda B): la copia pública sale sin las definiciones de los revisores del paquete de clientes. Los números
+  // La copia pública sale sin las definiciones de los revisores del paquete de clientes. Los números
   // de este caso son los del núcleo (26 definiciones, 24 con el campo), que valen en los dos lados; en el repo del equipo
-  // se les suman los revisores que declara el manifiesto de ese paquete, leídos de él y no escritos acá (antes era un 2
-  // fijo, y sacar un revisor de ese paquete ponía rojo este caso). Que falte la definición de uno de ellos en el repo del
-  // equipo es un rojo. (Story 8.10.3 D: sin sus nombres escritos — al que no viaja se lo reconoce porque le falta su
+  // se les suman los revisores que declara el manifiesto de ese paquete, leídos de él y no escritos acá (un número
+  // fijo haría que sacar un revisor de ese paquete ponga rojo este caso). Que falte la definición de uno de ellos en el repo
+  // del equipo es un rojo. (Sin sus nombres escritos: al que no viaja se lo reconoce porque le falta su
   // definición.)
   const deClientes = clientPackReviewers();
   const CON_BASH = [
@@ -345,11 +345,11 @@ test('T8 Agentes_OmitClaudeMd_Decidido — 24 del núcleo con el campo (más los
   }
 });
 
-// ── T11 (story 7.16 del arnés): nada de este archivo va a la HOME real ───────────────────────────
+// ── T11: nada de este archivo va a la HOME real ──────────────────────────────────────────────────
 // Evidencia POSITIVA: lo que escribieron T5–T7 está en la HOME temporal (el registro real no sirve de control:
 // las sesiones del dev escriben ahí al mismo tiempo). Y el mecanismo del otro escape: sin la HOME real, git no
-// lee el core.hooksPath global del dev, así que los commits de repoDeJuguete no corren sus ganchos (que anotaban
-// cada commit de juguete en el reviewer-rules.jsonl real). Rojo previo: con la HOME real, las dos fallan.
+// lee el core.hooksPath global del dev, así que los commits de repoDeJuguete no corren sus ganchos (que anotarían
+// cada commit de juguete en el reviewer-rules.jsonl real). Con la HOME real, las dos fallan.
 test('T11 ReglasRevisores_NoRealHome — advisor-context y advisor-runs en la HOME temporal; git sin los ganchos globales', () => {
   const pipe = path.join(FAKE_HOME, '.claude', '.tycon-pipeline');
   let ctx = [];
