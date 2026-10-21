@@ -2915,6 +2915,11 @@
     },
     {
       "raiz": "arnes",
+      "ruta": "tests/backend-to-version.test.sh",
+      "requiere": []
+    },
+    {
+      "raiz": "arnes",
       "ruta": "tests/trimmed-close.test.sh",
       "requiere": []
     },
