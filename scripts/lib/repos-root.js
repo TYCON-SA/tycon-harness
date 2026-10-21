@@ -3,13 +3,12 @@
  * scripts/lib/repos-root.js — dónde viven los repos del equipo en ESTA máquina.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────
- * Los chequeos de memoria de engram recorren los repos para encontrar los `.engram/`. Hasta el
- * 2026-08-25 cada uno hardcodeaba la carpeta de UNA máquina. Eso funciona en la máquina donde se
- * escribió y falla EN SILENCIO en cualquier otra: el escaneo devuelve cero repos, y cero repos se lee
+ * Los chequeos de memoria de engram recorren los repos para encontrar los `.engram/`. Si cada uno hardcodeara la
+ * carpeta de UNA máquina, funcionaría en la máquina donde se escribió y fallaría EN SILENCIO en cualquier otra: el escaneo devuelve cero repos, y cero repos se lee
  * exactamente igual que "está todo bien". Es el mismo modo de falla que estos chequeos vinieron a
  * cazar, en la herramienta que los caza — y el equipo tiene máquinas con otra estructura y con Windows.
  *
- * ── UNA SOLA VARIABLE (2026-09-05) ────────────────────────────────────────────────────────────
+ * ── UNA SOLA VARIABLE ────────────────────────────────────────────────────────────
  * `TYCON_REPOS_ROOT` es LA salida explícita para "dónde están los repos del equipo", y la leen
  * también los revisores que descubren plugins hermanos (`tycon-sibling-pattern-reviewer`,
  * `tycon-story-validator`). El banco de controles la apunta al corral de hermanos en cada corrida
@@ -18,7 +17,7 @@
  *
  * ── CÓMO SE RESUELVE (en orden) ──────────────────────────────────────────────────────────────
  *   1. `TYCON_REPOS_ROOT` — explícita. Gana siempre.
- *   2. **El archivo de la máquina** (`~/.claude/tycon.json` → `rutas.repos`, story 8.3): lo que toda
+ *   2. **El archivo de la máquina** (`~/.claude/tycon.json` → `rutas.repos`): lo que toda
  *      sesión ve, incluidas las de la extensión de VS Code, que no cargan el rc del shell. Un archivo
  *      ROTO no se lee como «sin raíz»: tira `ConfigError` (un comando frena; un hook la atrapa, avisa
  *      y sigue sin raíz — nunca deniega nada por un archivo de configuración).
@@ -32,16 +31,14 @@
  *      unidad). Se deduce de lo que la persona hace, no de dónde se clonó nada.
  *   4. **La carpeta padre del arnés** — la premisa del onboarding (INSTALL.md) es que el arnés se
  *      clona al lado de los repos. Pero SÓLO si ahí hay al menos otro repo git DE TRABAJO (el clon de
- *      las skills, como el del arnés, es infraestructura y no cuenta): el 2026-09-05 una
- *      máquina tenía el arnés en su carpeta de repos y los proyectos en otra, y esta regla elegía
- *      una carpeta con un solo repo (el arnés) como "la raíz" — cero repos que auditar, y cero se lee
- *      como "todo bien".
- *   5. **La carpeta del clon desde el que se MUDÓ la máquina** (2026-10-14): el estado la recuerda (`migrate_home.from`).
- *      Antes de la mudanza esa carpeta salía en el paso 4; con el arnés en `~/.tycon` se perdía. Mismas condiciones que
+ *      las skills, como el del arnés, es infraestructura y no cuenta): en una
+ *      máquina con el arnés en su carpeta de repos y los proyectos en otra, elegir una carpeta con un solo
+ *      repo (el arnés) como "la raíz" daría cero repos que auditar, y cero se lee como "todo bien".
+ *   5. **La carpeta del clon desde el que se MUDÓ la máquina**: el estado la recuerda (`migrate_home.from`).
+ *      Sin este paso, con el arnés en `~/.tycon` esa carpeta se perdería (con el arnés en el clon, la da el paso 4). Mismas condiciones que
  *      el vecino: existe y tiene otros repos de trabajo. (La mudanza, además, la anota en `paths.repos`.)
- *   6. **Sin raíz** (story 8.3, AC 6): `root: null`, `fuente: 'sin-raiz'` y el motivo. Hasta la 8.3
- *      acá había un último recurso escrito a mano —la carpeta de una máquina— que en cualquier otra
- *      inventaba una raíz que no existía; las auditorías que la usan reportan «no medido: sin raíz».
+ *   6. **Sin raíz**: `root: null`, `fuente: 'sin-raiz'` y el motivo. Un último recurso escrito a mano
+ *      —la carpeta de una máquina— inventaría en cualquier otra una raíz que no existe; las auditorías que la usan reportan «no medido: sin raíz».
  *
  * Quien lo llama recibe `{ root, fuente, evidencia, motivo }` y puede decir de dónde salió: "raíz
  * deducida de tus sesiones (7 repos)" no es lo mismo que "sin raíz".
@@ -60,13 +57,12 @@ function real(p) { try { return fs.realpathSync(p); } catch (_) { return null; }
 function esRepoGit(p) { try { return fs.existsSync(path.join(p, '.git')); } catch (_) { return false; } }
 
 /**
- * Las rutas según la plataforma. 🔴 En Windows (2026-10-14) la extensión de VS Code abre Claude Code con la letra de
+ * Las rutas según la plataforma. 🔴 En Windows la extensión de VS Code abre Claude Code con la letra de
  * unidad en MINÚSCULA (`c:\Users\…`, como la escribe VS Code), y eso queda en el `cwd` de cada transcripción; el home
  * (`os.homedir()`) viene con mayúscula (`C:\Users\…`) y `fs.realpathSync` no corrige la letra. Comparando con `===`
- * ningún repo quedaba «debajo del home»: cada uno votaba sólo por su carpeta padre, y con los repos repartidos en
- * carpetas de producto ninguna llegaba a la mayoría — «sin sesiones con repos» en una máquina que usa Claude Code todos
- * los días. En otra máquina andaba por casualidad: sus repos estaban en `d:\workspace`, fuera del home, todos con el
- * mismo padre. En Windows las rutas se comparan sin distinguir mayúsculas, y la letra de unidad se escribe en mayúscula.
+ * ningún repo quedaría «debajo del home»: cada uno votaría sólo por su carpeta padre, y con los repos repartidos en
+ * carpetas de producto ninguna llegaría a la mayoría — «sin sesiones con repos» en una máquina que usa Claude Code todos
+ * los días. En Windows las rutas se comparan sin distinguir mayúsculas, y la letra de unidad se escribe en mayúscula.
  */
 function rutasDe(platform) {
   const win = platform === 'win32';
@@ -149,7 +145,7 @@ function reposDeSesiones({ projectsDir, home, tmp, excluir, R, fsx }) {
 
 // Las carpetas personales que el sistema pone en el home (el Escritorio, Documentos, OneDrive y sus nombres en castellano)
 // cuentan como el home: nadie las elige como «la carpeta de los repos», y si la raíz fuera el Escritorio entero los
-// repos de `Escritorio/<carpeta>/<producto>/<repo>` quedarían más hondo de lo que miran las auditorías (2026-10-14).
+// repos de `Escritorio/<carpeta>/<producto>/<repo>` quedarían más hondo de lo que miran las auditorías.
 const CARPETA_PERSONAL = /^(desktop|documents|escritorio|documentos|onedrive( - .+)?)$/i;
 /** El tope de la subida de un repo bajo el home: el home, o la carpeta personal más honda que lo contiene. */
 function topeEnElHome(r, home, R) {
@@ -259,7 +255,7 @@ function resolveReposRoot(envValue, opts = {}) {
   const home = fsx.real(home0) || R.canon(home0);
   const v = envValue !== undefined ? envValue : env[ENV];
   // `~` se expande igual que en el lector de configuración (tycon-config.js): una `~` literal llega a la variable
-  // por el bloque `env` de settings.json o por `export X="~/…"` con comillas (pase adversarial, vuelta 1).
+  // por el bloque `env` de settings.json o por `export X="~/…"` con comillas.
   if (v && String(v).trim()) {
     // varias carpetas, separadas como en el PATH (`:` en Mac y Linux, `;` en Windows)
     const roots = String(v).split(R.win ? ';' : ':').map((x) => x.trim()).filter(Boolean)
@@ -280,16 +276,15 @@ function resolveReposRoot(envValue, opts = {}) {
     if (lista.length) return { root: lista[0], roots: lista, fuente: 'maquina' };
   }
 
-  // La infraestructura son los DOS clones, en las tres formas de máquina (story 8.18): el del arnés, «donde están las
+  // La infraestructura son los DOS clones, en las tres formas de máquina: el del arnés, «donde están las
   // skills» según la regla, y lo INSTALADO en `~/.claude/agent-skills`. Lo instalado va siempre y por su ruta real:
-  // desde la 8.18 la regla contesta el propio clon cuando trae `skills/`, y un clon de skills instalado que vive fuera
-  // de `~/.claude` (un enlace) dejaba de estar excluido — con un solo producto, su carpeta salía como «la raíz».
+  // la regla contesta el propio clon cuando trae `skills/`, y un clon de skills instalado que vive fuera
+  // de `~/.claude` (un enlace) dejaría de estar excluido — con un solo producto, su carpeta saldría como «la raíz».
   const installed = P.join(home, '.claude', 'agent-skills');
   let skills = installed;
-  // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Antes un `catch`
-  //    tragaba CUALQUIER error de la regla (segunda vuelta de los revisores del tramo 1 de la story 8.18, 2026-10-04):
-  //    skills-dir.js TIRA cuando su vecina canonical-path.js está y no carga, y acá se tapaba — medido: con la regla
-  //    rota salía una raíz tranquila, con código 0 y sin una línea. Se mira si el archivo ESTÁ, no el mensaje del
+  // 🔴 El valor de siempre (lo instalado) es SÓLO para la copia que viaja sin skills-dir.js al lado. Un `catch`
+  //    que tragara CUALQUIER error de la regla taparía que skills-dir.js TIRA cuando su vecina canonical-path.js está
+  //    y no carga: con la regla rota saldría una raíz tranquila, con código 0 y sin una línea. Se mira si el archivo ESTÁ, no el mensaje del
   //    error (el «Require stack» de un MODULE_NOT_FOUND nombra a skills-dir.js aunque falte otro). Mismo criterio que
   //    harness-repo.js y legacy-names.js.
   if (fs.existsSync(path.join(__dirname, 'skills-dir.js'))) skills = require('./skills-dir.js').resolveSkillsDirs(env.TYCON_SKILLS_DIR).repo;
@@ -301,10 +296,10 @@ function resolveReposRoot(envValue, opts = {}) {
   if (grupos.length) return { root: grupos[0].root, roots: grupos.map((g) => g.root), fuente: 'sesiones', evidencia: grupos.reduce((n, g) => n + g.repos, 0) };
 
   // 4. el vecino del arnés — sólo si de verdad hay vecinos. Un vecino es un repo de TRABAJO: la infraestructura que
-  //    el paso 3 dejó afuera tampoco cuenta acá, y se compara por ruta real (lo instalado puede ser un enlace). Hasta
-  //    el pase adversarial del tramo 1 de la 8.18 (hallazgo 1) este paso sólo descartaba al clon del arnés: con el clon
-  //    de las skills como único repo al lado, su carpeta salía como «la raíz» con evidencia 1 —cero repos que auditar,
-  //    y aguas abajo «no pude mirar» se leía «miré y no hay nada»— en vez de «sin raíz».
+  //    el paso 3 dejó afuera tampoco cuenta acá, y se compara por ruta real (lo instalado puede ser un enlace). Si este
+  //    paso sólo descartara al clon del arnés, con el clon de las skills como único repo al lado su carpeta saldría
+  //    como «la raíz» con evidencia 1 —cero repos que auditar, y aguas abajo «no pude mirar» se leería «miré y no
+  //    hay nada»— en vez de «sin raíz».
   const vecino = P.dirname(clon);
   try {
     if (fs.existsSync(P.join(clon, 'scripts')) && fs.statSync(vecino).isDirectory()) {
@@ -313,9 +308,9 @@ function resolveReposRoot(envValue, opts = {}) {
     }
   } catch (_) { /* sigue */ }
 
-  // 5. la carpeta del clon desde el que se MUDÓ la máquina (2026-10-14). Antes de la mudanza esa carpeta salía en el paso
-  //    4 (el arnés vivía ahí); mudado a `~/.tycon`, el vecino es `~/.tycon` y la raíz se perdía sin que nada cambiara en
-  //    los repos. Vale con las mismas condiciones que el vecino: la carpeta existe y tiene OTROS repos de trabajo.
+  // 5. la carpeta del clon desde el que se MUDÓ la máquina. Mientras el arnés vive en ese clon, la carpeta sale en el paso
+  //    4; mudado a `~/.tycon`, el vecino es `~/.tycon` y la raíz se perdería sin que nada cambiara
+  //    en los repos. Vale con las mismas condiciones que el vecino: la carpeta existe y tiene OTROS repos de trabajo.
   const desde = opts.clonMudanza !== undefined ? opts.clonMudanza : clonDeLaMudanza(home);
   const padreMudanza = desde ? P.dirname(desde) : null;
   if (padreMudanza) {
@@ -399,9 +394,9 @@ function selftest() {
   const r3 = resolveReposRoot('', Object.assign({}, o, { projectsDir: proj2 }));
   casos.push(['todos los repos dentro de un contenedor de producto: la raíz es la carpeta de arriba, no el contenedor',
     r3.fuente === 'sesiones' && r3.root === SC]);
-  // ── story 8.18: el clon instalado de las skills vive FUERA de ~/.claude (un enlace) — sigue siendo infraestructura ──
+  // ── el clon instalado de las skills vive FUERA de ~/.claude (un enlace) — sigue siendo infraestructura ──
   // Otra casa: un producto, y el clon de skills en `Infra/`, enlazado desde ~/.claude/agent-skills. Sin la exclusión
-  // explícita de lo instalado la raíz salía `Infra` (un repo contra uno, desempata el nombre).
+  // explícita de lo instalado la raíz sale `Infra` (un repo contra uno, desempata el nombre).
   const casa2 = real(mk('casa2')); mk('casa2', '.claude');
   const prod2 = repo('casa2', 'Proyectos', 'A');
   const skills2 = repo('casa2', 'Infra', 'skills-clone');
@@ -411,7 +406,7 @@ function selftest() {
   const r3b = resolveReposRoot('', { home: casa2, clon, tmp: tmpFalso, projectsDir: proj3, env: {}, sinConfig: true });
   casos.push(['🔴 el clon instalado de las skills, enlazado desde ~/.claude/agent-skills, no cuenta como repo de trabajo aunque viva fuera de ~/.claude',
     r3b.fuente === 'sesiones' && r3b.root === path.join(casa2, 'Proyectos') && r3b.evidencia === 1]);
-  // ── pase adversarial del tramo 1 de la 8.18 (hallazgo 1): el paso «vecino» tampoco cuenta a la infraestructura ──
+  // ── el paso «vecino» tampoco cuenta a la infraestructura ──
   // Cada forma en su propia casa, sin sesiones de producto, sin variable y sin archivo. Lo esperado en las cuatro es
   // «sin raíz»: al lado del arnés sólo está el clon de las skills, y una raíz con cero repos que auditar se lee «todo bien».
   const house = (name) => { const h = real(mk(name)); mk(name, '.claude'); return { h, projectsDir: mk(name, '.claude', 'projects'), name }; };
@@ -443,9 +438,9 @@ function selftest() {
   const rAp = ask(hA, clonA);
   casos.push(['(espejo) con un producto al lado, además del clon de las skills: vecino, y la evidencia cuenta al producto y no a la infraestructura (1, no 2)',
     rAp.fuente === 'vecino' && rAp.root === path.join(hA.h, 'Infra') && rAp.evidencia === 1]);
-  // ── Windows (2026-10-14): la extensión de VS Code deja el cwd con la letra de unidad en MINÚSCULA (`c:\Users\…`) y el
-  //    home viene con mayúscula. Comparando con `===` ningún repo quedaba bajo el home, cada uno votaba sólo por su padre
-  //    y, con los repos repartidos en carpetas de producto, ninguna carpeta llegaba a la mayoría: «sin raíz» en una máquina
+  // ── Windows: la extensión de VS Code deja el cwd con la letra de unidad en MINÚSCULA (`c:\Users\…`) y el
+  //    home viene con mayúscula. Comparando con `===` ningún repo quedaría bajo el home, cada uno votaría sólo por su padre
+  //    y, con los repos repartidos en carpetas de producto, ninguna carpeta llegaría a la mayoría: «sin raíz» en una máquina
   //    que usa Claude Code todos los días. Las rutas de Windows se prueban acá con un disco inyectado (corre en cualquier
   //    máquina); los nombres de carpeta de las sesiones son los que Claude Code crea en Windows.
   {
@@ -475,7 +470,7 @@ function selftest() {
       rW.evidencia === 3]);
     casos.push(['Windows: el Escritorio no es «la raíz» aunque contenga a todos (es una carpeta personal, como el home)', rW.root !== `${W}\\Desktop`]);
   }
-  // ── la máquina mudada (2026-10-14): el arnés vive en ~/.tycon y los repos siguen al lado del clon viejo ──
+  // ── la máquina mudada: el arnés vive en ~/.tycon y los repos siguen al lado del clon viejo ──
   {
     const hM = house('casaM'); const clonM = harnessAt('casaM', '.tycon', 'harness');
     const viejoM = real(repo('casaM', 'Fuentes', 'tycon-claude-guides'));
@@ -492,7 +487,7 @@ function selftest() {
     fs.writeFileSync(path.join(hM.h, '.tycon', 'state', 'harness-state.json'), JSON.stringify({ migrate_home: { status: 'failed', from: viejoM } }));
     casos.push(['mudada: una mudanza que falló no da raíz (la máquina sigue en su clon)', noRoot(ask(hM, clonM))]);
   }
-  // ── T6 (story 8.3): sin sesiones, sin vecino, sin variable, sin archivo → SIN RAÍZ, con motivo ──
+  // ── T6: sin sesiones, sin vecino, sin variable, sin archivo → SIN RAÍZ, con motivo ──
   const vacio = mk('casa', 'projects-vacio');
   const r4 = resolveReposRoot('', Object.assign({}, o, { projectsDir: vacio }));
   casos.push(['🔴 T6 sin sesiones y con el arnés SOLO en su carpeta: NO se elige por ser el vecino (sería cero repos que auditar) — «sin raíz», con motivo, sin inventar ninguna ruta',

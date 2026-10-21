@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 # deploy-plugin.sh — subir, migrar, activar y marcar como actual. En ese orden, sin atajos.
 #
-# 🔴 POR QUÉ EXISTE (2026-09-02).
+# 🔴 POR QUÉ EXISTE.
 #
-# La secuencia de despliegue estuvo MAL escrita cuatro veces seguidas en el plan de cierre, cada una
-# por un extremo distinto, porque se escribía desde informes y no desde el código del host. Las
-# cuatro habrían dejado producción rota con la corrida en verde:
+# La secuencia de despliegue tiene tres formas tentadoras y mal escritas, cada una por un extremo
+# distinto, que salen de escribirla desde informes y no desde el código del host. Todas dejan
+# producción rota con la corrida en verde:
 #
-#   v3 · subir sin marcar → ejecutar → marcar como actual.   Marcar NO CARGA el plugin: producción
-#        sigue sirviendo la versión anterior con la nueva marcada. Es el incidente de un producto del equipo del
-#        2026-08-15, y el staging de otro producto ya lo tenía comentado con esa fecha
-#        — guides/maintaining/incident-log.md#case-mark-without-load-2026-08-15.
-#   v4 · subir sin marcar → ejecutar → activar.              Activar carga pero NO marca. Funciona
-#        hasta el próximo reinicio del App Service: al arrancar, el host carga sólo lo que está
-#        marcado como actual Y estaba corriendo, así que después del reinicio no carga NINGUNA.
-#   v5 · las cuatro llamadas, pero marcando al final sin preguntar. Si marcar se niega (y se niega
-#        por cuatro motivos), queda el estado de la v4: en rojo, pero con la bomba armada.
-#   hoy · se PREGUNTA primero (la vista previa hace el mismo análisis sin tocar nada), así una
-#        negativa termina la corrida con la versión anterior todavía cargada y marcada.
+#   a · subir sin marcar → ejecutar → marcar como actual.   Marcar NO CARGA el plugin: producción
+#       sigue sirviendo la versión anterior con la nueva marcada.
+#   b · subir sin marcar → ejecutar → activar.              Activar carga pero NO marca. Funciona
+#       hasta el próximo reinicio del App Service: al arrancar, el host carga sólo lo que está
+#       marcado como actual Y estaba corriendo, así que después del reinicio no carga NINGUNA.
+#   c · las cuatro llamadas, pero marcando al final sin preguntar. Si marcar se niega (y se niega
+#       por cuatro motivos), queda el estado de b: en rojo, pero con la bomba armada.
+#   la correcta · se PREGUNTA primero (la vista previa hace el mismo análisis sin tocar nada), así una
+#       negativa termina la corrida con la versión anterior todavía cargada y marcada.
 #
 # 🔴 LO QUE EL HOST HACE, llamada por llamada (leído en PluginAdminController.cs / PluginManager.cs,
 # no en un informe). Esta tabla es el motivo de que el orden sea éste y no otro:
@@ -46,9 +44,9 @@
 #                    [--environment staging|production] [--pending-options <archivo.json>]
 #                       [--exclusions <números de migración excluidos a propósito>]
 #
-#   --environment: «production» tenía su nombre castellano hasta la story 8.9 (tanda B3a) y el viejo sigue
-#   andando hasta el retiro. Lo que queda escrito para el humo del job (deploy-record.sh) NO cambia:
-#   es un dato de registro y sigue con el nombre de siempre.
+#   --environment: «production» tiene un nombre viejo en castellano que sigue andando hasta el retiro.
+#   Lo que queda escrito para el humo del job (deploy-record.sh) NO cambia: es un dato de registro y
+#   sigue con el nombre de siempre.
 #
 #   --pending-options: archivo con las opciones de configuración que el equipo deja vacías A
 #   SABIENDAS, con motivo y fecha. Forma: {"revision":"AAAA-MM-DD","opciones":[{"opcion":"X:Y",
@@ -59,7 +57,7 @@
 set -u
 
 URL=""; USUARIO=""; CLAVE=""; ZIP=""; ENDPOINT=""; ENTORNO="staging"; PENDIENTES_ARCH=""; EXCLUSIONES=""; RETRO_APROBADO=no
-# Las opciones renombradas a inglés (story 8.9, tanda B2): los pipelines de los productos siguen pasando las viejas hasta
+# Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas hasta
 # el retiro, y este guion corre en producción desde el artefacto arnes-ci (sólo scripts/ci): el traductor vive al lado.
 _AQUI_LO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then
@@ -67,7 +65,7 @@ if [ -f "${_AQUI_LO}/legacy-options.sh" ]; then
   legacy_options 'usuario:user clave:password entorno:environment opciones-pendientes:pending-options exclusiones:exclusions environment=produccion:production' "$@" || exit 2
   set -- ${LEGACY_OPTIONS[@]+"${LEGACY_OPTIONS[@]}"}
 fi
-# story 2.10: el entorno sólo se DECLARA al humo del job si vino por --environment (el default no es una declaración)
+# el entorno sólo se DECLARA al humo del job si vino por --environment (el default no es una declaración)
 case " $* " in *" --environment "*) ENTORNO_EXPLICITO=si ;; *) ENTORNO_EXPLICITO=no ;; esac
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -83,7 +81,7 @@ while [ $# -gt 0 ]; do
     *) echo "[desplegar] argumento desconocido: $1" >&2; exit 2 ;;
   esac
 done
-# story 8.9 (B3a): la opción dice «production», pero el registro de despliegues que lee el humo —y la línea del
+# La opción dice «production», pero el registro de despliegues que lee el humo —y la línea del
 # ingreso, que los pipelines de los productos ya muestran así— guardan su dato de siempre (sin comillas: es el dato
 # grabado, no un nombre que alguien escribe; el freno de nombres cuenta los valores del mapa entre comillas).
 case "$ENTORNO" in production) ENTORNO=produccion ;; esac
@@ -102,10 +100,10 @@ ZIP_NAME=$(basename "$ZIP")
 # actual que no sea yo" — en un host con varios plugins eso reactiva uno AJENO, imprime "versión
 # anterior vuelta a cargar" y deja el nuestro descargado: se toca algo que nadie pidió tocar y el
 # registro dice lo contrario de lo que pasó. `smoke-plugin.sh` y `rollback-guard.sh` ya filtran
-# por nombre; este guion era el único que no.
+# por nombre; este guion tiene que hacer lo mismo.
 NOMBRE_PLUGIN=$(echo "$ZIP_NAME" | sed -E 's/^([^.]*)\..*/\1/')
 
-# 🔴 EL REGISTRO DE DESPLIEGUES (story 2.10). Tras entrar al host y antes de subir nada, la corrida
+# 🔴 EL REGISTRO DE DESPLIEGUES. Tras entrar al host y antes de subir nada, la corrida
 # queda con una línea `[registro-despliegue]` «intentado» y la etiqueta `despliegue-intentado`: una
 # corrida con esa etiqueta y sin `desplegado` es un despliegue que falló. También deja el entorno
 # declarado para el humo del mismo job. Contrato en deploy-record.sh. Nunca cambia el resultado.
@@ -115,19 +113,18 @@ if [ -f "$AQUI/deploy-record.sh" ] && . "$AQUI/deploy-record.sh"; then REGISTRO_
 
 # ── login ────────────────────────────────────────────────────────────────────────────────────
 #
-# 🔴 CON REINTENTO, Y NO POR PRUDENCIA: los tres modos de abajo son incidentes medidos, y la
-# primera versión de este guion los perdió todos al unificar el despliegue en un solo lugar.
+# 🔴 CON REINTENTO, Y NO POR PRUDENCIA: los tres modos de abajo son fallos transitorios reales que
+# un despliegue unificado pierde si no los reintenta.
 #
-#   · "Too Many Requests" → el host LIMITA los ingresos seguidos. Medido en URUTAU (build 9060):
-#     el paso que recalcula las notas se loguea una vez por formulario, y con ocho el ingreso del
-#     despliegue caía justo detrás del límite.
+#   · "Too Many Requests" → el host LIMITA los ingresos seguidos. El paso que recalcula las notas
+#     se loguea una vez por formulario, y con ocho el ingreso del despliegue cae justo detrás del límite.
 #   · "circuit is now open" → el host CORTA LA CORRIENTE: tras varios fallos rechaza todo por
 #     minutos, sin mirar la contraseña. Espera más larga a propósito: reintentar cada 15 s sólo
 #     gasta los intentos sin llegar a que el candado se cierre.
-#   · 404/502/503/504 → el host TODAVÍA NO LEVANTÓ. Medido el 2026-08-31: el despliegue devolvió
-#     404 y el cuerpo era la pantalla web del panel — el proxy contestó con el front porque la
-#     parte de servidor no estaba arriba. Cuatro corridas antes, el mismo día y la misma URL,
-#     había funcionado. Eso es "esperá", no "la dirección está mal".
+#   · 404/502/503/504 → el host TODAVÍA NO LEVANTÓ. A veces el despliegue devuelve 404 y el cuerpo
+#     es la pantalla web del panel — el proxy contesta con el front porque la parte de servidor no
+#     está arriba, con la misma URL que funcionó minutos antes. Eso es "esperá", no "la dirección
+#     está mal".
 #
 # Cualquier OTRO error aborta de una: no es transitorio y reintentar sólo demora el rojo.
 paso "Ingreso al host ($ENTORNO)"
@@ -179,18 +176,17 @@ api() { # api <método> <ruta> [datos-curl-extra...]
 cuerpo() { echo "$1" | sed '$d'; }
 codigo() { echo "$1" | tail -1; }
 
-# 🔴 TODA SALIDA POSTERIOR A "ACTIVAR" TIENE QUE RECUPERAR LA ANTERIOR (2026-09-03).
+# 🔴 TODA SALIDA POSTERIOR A "ACTIVAR" TIENE QUE RECUPERAR LA ANTERIOR.
 #
 # Activar descarga la versión vieja y carga la nueva, pero NO toca la marca de "actual". Entonces,
 # cualquier fallo DESPUÉS de ese punto deja el peor estado posible: la nueva a medias y la anterior
 # marcada pero descargada — o sea que el host sirve algo roto AHORA y, al próximo reinicio, no carga
-# NINGUNA versión. Es exactamente el estado por el que se descartó la variante v4 de este guion: "en
-# rojo, pero con la bomba armada".
+# NINGUNA versión. Es exactamente el estado por el que se descarta la variante «activar sin marcar»:
+# "en rojo, pero con la bomba armada".
 #
-# Esto era una función porque la recuperación estaba escrita a mano en dos lugares y, al agregar el
-# tercer camino de salida (el chequeo de salud del mismo día), se olvidó — tres salidas nuevas sin
-# recuperación y sin que nadie lo dijera. Repetir a mano una secuencia de recuperación es cómo se
-# pierde: ahora hay UN solo lugar y todas las salidas lo llaman.
+# Esto es una función porque una recuperación escrita a mano en cada salida se olvida en la
+# siguiente: al agregar un camino de salida nuevo (como el chequeo de salud) queda sin recuperación
+# y sin que nadie lo diga. Hay UN solo lugar y todas las salidas lo llaman.
 recuperar_anterior() {
   local ANT ID_ANT
   ANT=$(api GET "/api/admin/plugins")
@@ -203,12 +199,12 @@ recuperar_anterior() {
     echo "   ⚠️ no encontré otra versión de '$NOMBRE_PLUGIN' marcada como actual para recuperar"
     return 1
   fi
-  # 🔴 MIRAR EL CÓDIGO HTTP, NO EL DE CURL (2026-09-03, corrección del mismo día). `api()` no usa
-  # `--fail`, así que curl sale 0 con un 500, un 404 o el HTML del proxy. El `if` juzgaba por el
-  # código de salida de curl y afirmaba "versión anterior vuelta a cargar" sin haberlo medido: la
-  # corrida quedaba en rojo pero el registro decía lo contrario de lo que pasó, y el operador creía
-  # que el host seguía sirviendo la versión vieja cuando no había NINGUNA cargada. La incoherencia
-  # era interna a esta misma función: la lectura de la lista sí mira el código; la escritura no.
+  # 🔴 MIRAR EL CÓDIGO HTTP, NO EL DE CURL. `api()` no usa `--fail`, así que curl sale 0 con un
+  # 500, un 404 o el HTML del proxy. Juzgar por el código de salida de curl afirmaría "versión
+  # anterior vuelta a cargar" sin haberlo medido: la corrida quedaría en rojo pero el registro
+  # diría lo contrario de lo que pasó, y el operador creería que el host sigue sirviendo la
+  # versión vieja cuando no hay NINGUNA cargada. La lectura de la lista mira el código; la
+  # escritura también tiene que mirarlo.
   local RES CODE
   RES=$(api POST "/api/admin/plugins/${ID_ANT}/activate" -H "Content-Type: application/json" --data '')
   CODE=$(codigo "$RES")
@@ -221,12 +217,11 @@ recuperar_anterior() {
 }
 
 
-# 🔴 CÓMO SE LEE LA LISTA DE PLUGINS (2026-09-03). El host la devuelve a veces como arreglo y a
-# veces envuelta. La primera versión de este guion sólo entendía el arreglo, así que ante una
-# respuesta envuelta la recuperación de la versión anterior fallaba EN SILENCIO —y el aviso de "no
-# pude recuperar" quedaba dentro del bloque que no se ejecutaba, o sea que el plugin quedaba
-# descargado sin que nadie lo dijera. `smoke-plugin.sh` ya manejaba las dos formas: los dos guiones
-# discrepaban sobre el mismo host. Se usa el mismo criterio que el humo.
+# 🔴 CÓMO SE LEE LA LISTA DE PLUGINS. El host la devuelve a veces como arreglo y a
+# veces envuelta. Entender sólo el arreglo haría que, ante una respuesta envuelta, la recuperación
+# de la versión anterior fallara EN SILENCIO —y el aviso de "no pude recuperar" quedaría dentro
+# del bloque que no se ejecuta, o sea que el plugin quedaría descargado sin que nadie lo diga.
+# `smoke-plugin.sh` maneja las dos formas; este guion usa el mismo criterio que el humo.
 LISTA_DE_PLUGINS='(if type=="array" then . else (.plugins // .data // .items // .value // []) end)'
 
 # ── 1. subir SIN marcar como actual ──────────────────────────────────────────────────────────
@@ -262,7 +257,7 @@ else
   fatal "la subida falló (HTTP $UP_CODE): $(echo "$UP_BODY" | head -c 400)"
 fi
 
-# 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA (2026-09-03).
+# 🔴 UNA OPCIÓN PENDIENTE SE DECLARA; LO NO DECLARADO FRENA.
 #
 # El host avisa qué opciones de configuración no tienen valor. Eso es lo único que dice sobre
 # configuración, y con la versión sin marcar no frena sola: si no se mira, el plugin queda corriendo
@@ -270,15 +265,11 @@ fi
 #
 # Pero hay opciones que el equipo deja vacías A SABIENDAS: una credencial de un servicio externo que
 # todavía no existe, con el código preparado para devolver un error claro en el único endpoint que la
-# usa. Frenar por ésas no protege nada — sólo enseña a apagar el control. Medido el 2026-09-03 en
-# URUTAU: `Nimbo:ServiceSid` está declarada como bloqueante de una story en su propio
-# `tasks/todo.md`, el servicio lanza un 503 explícito cuando falta, y los otros dos caminos de envío
-# ni la usan (hay un comentario en el código explicando que dejaron de reusar ese servicio porque
-# exigirla hacía fallar TODAS las confirmaciones por WhatsApp).
+# usa. Frenar por ésas no protege nada — sólo enseña a apagar el control.
 #
-# Entonces la puerta es la misma que ya usamos para las vulnerabilidades: se DECLARA, con motivo y
+# Entonces la puerta es la misma que se usa para las vulnerabilidades: se DECLARA, con motivo y
 # fecha de revisión. Una declaración vencida vuelve a frenar. Un archivo ilegible frena. Y una
-# opción faltante que no esté declarada frena igual que antes — que es el 90% del valor del control.
+# opción faltante que no esté declarada frena igual — que es lo que el control existe para frenar.
 if [ -n "$FALTAN" ]; then
   NO_DECLARADAS=""
   if [ -n "${PENDIENTES_ARCH:-}" ] && [ -f "$PENDIENTES_ARCH" ]; then
@@ -310,11 +301,11 @@ paso "2/5 · Vista previa: ¿el host va a dejar marcar esta versión como actual
 PREVIA=$(api POST "/api/admin/plugins/${PLUGIN_ID}/set-default/preview" -H "Content-Type: application/json" --data '')
 PREV_CODE=$(codigo "$PREVIA"); PREV_BODY=$(cuerpo "$PREVIA")
 [ "$PREV_CODE" = "200" ] || fatal "la vista previa falló (HTTP $PREV_CODE): $(echo "$PREV_BODY" | head -c 300) — no toco nada, la versión anterior sigue cargada y marcada"
-# 🔴 SI EL CUERPO NO SE PUDO LEER, NO ES "0 Y 0" (2026-09-03). `jq -r '.campo // 0'` sobre un cuerpo
+# 🔴 SI EL CUERPO NO SE PUDO LEER, NO ES "0 Y 0". `jq -r '.campo // 0'` sobre un cuerpo
 # vacío o que no es JSON devuelve 0 sin quejarse, así que este paso —el que el guion define como EL
-# freno— imprimía "pendientes 0 · retrocesos 0" sin haber leído nada: no ejecutaba migraciones y no
-# revisaba retrocesos. Con migraciones o retrocesos reales, la negativa aparecía más tarde, al
-# activar o al marcar, y para entonces el host ya había descargado la versión anterior.
+# freno— imprimiría "pendientes 0 · retrocesos 0" sin haber leído nada: no ejecutaría migraciones y no
+# revisaría retrocesos. Con migraciones o retrocesos reales, la negativa aparecería más tarde, al
+# activar o al marcar, y para entonces el host ya habría descargado la versión anterior.
 if ! printf '%s' "$PREV_BODY" | jq -e . >/dev/null 2>&1; then
   fatal "la vista previa vino ilegible (no es JSON): $(printf '%s' "$PREV_BODY" | head -c 300). Es EL freno del despliegue: si no se pudo leer, no se sigue — no toqué nada"
 fi
@@ -322,19 +313,19 @@ PENDIENTES=$(echo "$PREV_BODY" | jq -r '.pendingCount // 0')
 RETROCESOS=$(echo "$PREV_BODY" | jq -r '.rollbackCount // 0')
 echo "   migraciones pendientes: $PENDIENTES · retrocesos: $RETROCESOS"
 
-# 🔴 SE MIRA CUÁLES RETROCEDE, NO CUÁNTAS (2026-09-03).
+# 🔴 SE MIRA CUÁLES RETROCEDE, NO CUÁNTAS.
 #
 # Un retroceso de base de datos frena, y eso no cambia. Pero hay migraciones que el paquete deja
 # afuera A PROPÓSITO: el pipeline las declara en `excludedMigrations`, cada una con su motivo escrito,
 # porque volver a aplicarlas reinstalaría un parche que se quitó a mano. El host, que las tiene
-# aplicadas, las lee como retroceso — así que contar retrocesos frenaba un despliegue por una decisión
-# que el equipo ya había tomado y documentado.
+# aplicadas, las lee como retroceso — así que contar retrocesos frenaría un despliegue por una decisión
+# que el equipo ya tomó y documentó.
 #
-# Medido en un producto del equipo el 2026-09-03: la 006 está excluida desde el 29 de agosto con su motivo (una
-# columna de compatibilidad que otro sistema arregló y que, si viaja, se reinstala sola), y el host la
-# devolvía como el único retroceso — guides/maintaining/incident-log.md#case-excluded-migration-as-rollback-2026-09-03. Ahora se compara POR NOMBRE contra esa misma lista: no hay un
-# segundo lugar donde declarar lo mismo, y no se puede tolerar un retroceso que no se haya excluido
-# deliberadamente. Cualquier retroceso que NO esté en la lista frena igual que antes.
+# Ejemplo: una migración excluida con su motivo (una columna de compatibilidad que otro sistema
+# arregló y que, si viaja, se reinstala sola), que el host devuelve como el único retroceso. Por eso
+# se compara POR NOMBRE contra esa misma lista: no hay un segundo lugar donde declarar lo mismo, y no
+# se puede tolerar un retroceso que no se haya excluido deliberadamente. Cualquier retroceso que NO
+# esté en la lista frena.
 #
 # Si el host no dice CUÁLES retrocede, frena: sin los nombres no se puede comparar, y "no sé" no es
 # "está declarado".
@@ -400,10 +391,10 @@ fi
 # en vez de fallar. Respuesta 200, estado "corriendo", y el plugin a medias.
 SALUD=$(api GET "/api/admin/plugins/${PLUGIN_ID}/health")
 SALUD_CODE=$(codigo "$SALUD")
-# 🔴 MIRAR EL CÓDIGO, NO SÓLO EL CUERPO (2026-09-03). Antes se leía `errorMessage` del cuerpo sin
-# mirar el código HTTP: con un 500, un HTML del proxy o un cuerpo vacío, jq no encontraba el campo,
-# el motivo quedaba vacío y se imprimía "activado y sin motivo de degradación". O sea "verde que
-# significa no miré nada", adentro del guion que existe para evitar exactamente eso.
+# 🔴 MIRAR EL CÓDIGO, NO SÓLO EL CUERPO. Leer `errorMessage` del cuerpo sin mirar el código HTTP
+# no alcanza: con un 500, un HTML del proxy o un cuerpo vacío, jq no encuentra el campo, el motivo
+# queda vacío y se imprimiría "activado y sin motivo de degradación". O sea "verde que significa
+# no miré nada", adentro del guion que existe para evitar exactamente eso.
 # El 404 es el único caso que no frena: quiere decir que ESA versión del host no tiene el chequeo.
 # Eso no es "sano", es "no se puede preguntar" — y se dice, para que quede constancia.
 case "$SALUD_CODE" in
@@ -425,7 +416,7 @@ echo "   activado y sin motivo de degradación"
 
 # ── 5. marcar como actual (lo que sobrevive al reinicio) ─────────────────────────────────────
 paso "5/5 · Marcar como actual — sin esto, el próximo reinicio del host no carga ninguna versión"
-# 🔴 LA APROBACIÓN DEL RETROCESO VIAJA ACÁ, Y SÓLO SI TODO RETROCESO ESTABA DECLARADO (2026-09-03).
+# 🔴 LA APROBACIÓN DEL RETROCESO VIAJA ACÁ, Y SÓLO SI TODO RETROCESO ESTABA DECLARADO.
 # El host se niega a marcar como actual una versión que retrocede migraciones, salvo que se le
 # mande `rollbackApproved` habiendo consultado antes la vista previa —que es exactamente lo que
 # hace este guion en el paso 2—. La aprobación NO es una bandera de conveniencia: se enciende

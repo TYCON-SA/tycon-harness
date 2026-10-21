@@ -1,17 +1,17 @@
 'use strict';
 /*
- * cloud/azure.js — LO ÚNICO DE AZURE DEL NÚCLEO DEL SITIO (story 2.23, AC 4 y 13).
+ * cloud/azure.js — LO ÚNICO DE AZURE DEL NÚCLEO DEL SITIO.
  *
  * El núcleo no depende de ninguna nube: corre igual en Azure Container Apps, Render, Google Cloud Run o una máquina con
  * Docker. Lo de Azure vive acá y sólo se usa con `SITE_OPERATIONS_IDENTITY=managed` o `SITE_MAILBOX_IDENTITY=managed`:
  *
  *   · `tokenDeIdentidad(recurso)` pide el token de la IDENTIDAD ADMINISTRADA del contenedor al endpoint que la
  *     plataforma inyecta (`IDENTITY_ENDPOINT` + `IDENTITY_HEADER`, la forma de App Service y Container Apps,
- *     api-version 2019-08-01). Sin esas variables —el sitio no está en Azure— dice por qué y no inventa nada.
+ *     api-version `2019-08-01`). Sin esas variables —el sitio no está en Azure— dice por qué y no inventa nada.
  *   · Los recursos: el almacenamiento (`https://storage.azure.com/`, para leer el buzón con el rol de lector de datos) y
  *     Azure DevOps (el id PÚBLICO de la aplicación de Azure DevOps en Entra, el mismo para todas las organizaciones —no
- *     es un valor de ninguna—; leído en Microsoft Learn, «Use service principals & managed identities in Azure DevOps»,
- *     2026-10-15). La identidad se agrega a la organización de Azure DevOps una vez (2.30).
+ *     es un valor de ninguna—; leído en Microsoft Learn, «Use service principals & managed identities in Azure DevOps»).
+ *     La identidad se agrega a la organización de Azure DevOps una vez.
  *   · La lectura de Azure Blob la hace `bajar()` de scripts/metrics/download-runs.js, con la credencial que le pasa el
  *     sitio: la SAS de sólo lectura o este token.
  *   · `almacenDeCopia()`: el contenedor de la copia de operaciones, para `operations-copy.js` (el sitio lee,
@@ -48,7 +48,7 @@ const PROVEEDORES_DE_BUZON = ['azure-blob'];
 
 /**
  * Baja el buzón con `bajar()` de download-runs.js: { codigo, res }. Sin `sinHilos: false` explícito, no baja las
- * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads` (story 2.27).
+ * conversaciones ni los cambios de git (lo seguro); la pestaña Corridas los pide con `site.mailbox.threads`.
  */
 function bajarBuzon({ cuenta, contenedor, credencial, dir, urlBase, log, sinHilos = true, budgetMs = 120000, resumenes = false, topeBytesHilos = null, podar = false }) {
   const { bajar } = require('../../metrics/download-runs.js');

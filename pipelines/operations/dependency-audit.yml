@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# Revisión nocturna de dependencias — MODELO para cualquier organización en Azure DevOps (story 8.30)
+# Revisión nocturna de dependencias — MODELO para cualquier organización en Azure DevOps
 #
 # Cómo darlo de alta: pipelines/operations/README.md. Se copia a `pipelines/` del repo de operaciones y se cambia el
 # `name:` del recurso `harness` (marcado abajo).
@@ -199,7 +199,7 @@ jobs:
       - template: pipelines/operations/templates/check-tree.yml@harness
 
       - script: |
-          # ¿Los pipelines de los productos hacen lo mismo? (story 2.25). Va ANTES de correr la revisión, que ejecuta código
+          # ¿Los pipelines de los productos hacen lo mismo? Va ANTES de correr la revisión, que ejecuta código
           # de los productos, y sobre los mismos clones de main. Deja .dashboard/paridad/paridad-<día>.json para el sitio de
           # la organización. Nunca pone roja la noche: una divergencia o un repo sin medir son un aviso. El aviso sale de lo
           # que dice el archivo, no del código de salida solo (un «parcial» sin divergencias sale 0).
@@ -411,7 +411,7 @@ jobs:
       - script: |
           set -eu
           cd "$(Build.SourcesDirectory)"
-          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas carpetas (la paridad, story 2.25),
+          # A main del repo de operaciones llega SÓLO lo que la noche escribió en estas carpetas (la paridad),
           # sobre la punta recién traída y con reintento. El checkout no se mueve. La foto de hoy tiene que estar.
           node scripts/ci/push-nightly-data.js save \
             --message "chore(dependencias): revisión nocturna $(date -u +%Y-%m-%d) [nocturno]" \

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pipelines/operations/github/prepare-tree.sh — el árbol que mide un workflow de operaciones en GitHub (story 8.31).
+# pipelines/operations/github/prepare-tree.sh — el árbol que mide un workflow de operaciones en GitHub.
 #
 # Es el equivalente de la plantilla `pipelines/operations/templates/ops-data.yml` de Azure, para los tres workflows de
 # esta carpeta. Va JUSTO DESPUÉS de traer el repo de operaciones (`ops/`) y el arnés (`harness/`):
@@ -10,7 +10,7 @@
 #      código del arnés): los datos `.dashboard/`, `inbox/`, `artifacts/` (cada uno queda igual al de operaciones; los
 #      que falten no son error: es la primera noche) y la configuración `operations.json`, `team-repos.json`,
 #      `scripts/nightly/dependencies/{repos,summary}.json`, `scripts/nightly/dashboard/{sources,declared}.json` y
-#      `scripts/ci/product-parity.json` (los productos que comparan su pipeline; story 2.25).
+#      `scripts/ci/product-parity.json` (los productos que comparan su pipeline).
 #      Lo demás del repo de operaciones (salvo `.github/`, `pipelines/`, `README.md` y `.gitignore`) se nombra y no se trae.
 #   3. Lo fija en un commit LOCAL que no se empuja (guardar toma HEAD como base), con la identidad `github-actions[bot]`.
 #   4. `origin` pasa a ser el repo de operaciones; el arnés queda como `harness`. Trae `main` de operaciones con la
@@ -72,7 +72,7 @@ for F in "${CONFIG_FILES[@]}"; do
   APPLIED+=("${F}" "${OID}")
 done
 # la marca: qué configuración aplicó esta corrida, con el identificador de cada archivo en operaciones, como la deja
-# ops-data.yml en Azure (story 2.29, decisión 12; tanda C). Sin ella la pestaña Configuración del sitio muestra Umbrales
+# ops-data.yml en Azure. Sin ella la pestaña Configuración del sitio muestra Umbrales
 # sólo para mirar. Viaja en el commit local de abajo.
 mkdir -p "${S}/.dashboard"
 node -e '

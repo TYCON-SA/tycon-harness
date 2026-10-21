@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * snapshot.js — La foto por proyecto (story 2.20): por cada repo con stories, UN archivo JSON con la
+ * snapshot.js — La foto por proyecto: por cada repo con stories, UN archivo JSON con la
  * lista que muestra el control de proyectos de un producto del equipo —stories, épicas, sprints, plan,
  * alertas— y las métricas que el medidor ya calculó. Ese producto lee el archivo; no vuelve a parsear
  * ningún `.md`.
@@ -13,11 +13,11 @@
  *   · con qué clave se nombra ..... `keysForStories` (lib/evidence-key.js)
  *   · dónde se busca .............. `dirsDeEvidencia` del medidor + `productEvidenceRoots` (lib/evidence-config.js)
  *   · qué repo es del arnés ....... `tieneHuellaDelArnes` del medidor (`--only-harness`)
- * Dos definiciones de la misma regla se separan solas (caso T17 de la story 2.2).
+ * Dos definiciones de la misma regla se separan solas.
  *
  * LAS MÉTRICAS SE COPIAN, no se recalculan: con `--sdlc <sdlc-stage-<día>.json>` (lo que pasa el
- * nocturno) salen de la entrada del repo en el snapshot que el medidor acaba de escribir. Medido el
- * 2026-10-07: `measureRepo` tarda 11,8 s en un repo de 140 stories; descubrir y derivar las
+ * nocturno) salen de la entrada del repo en el snapshot que el medidor acaba de escribir.
+ * `measureRepo` tarda 11,8 s en un repo de 140 stories; descubrir y derivar las
  * transiciones, 1,2 s. Medir dos veces se comería el tope del paso. Sin `--sdlc` (modo a mano) se
  * llama a `measureRepo` para ese repo.
  *
@@ -128,8 +128,8 @@ function parseArgs(argv) {
 /**
  * Saca correos y rutas absolutas de máquina de un texto que va a viajar al JSON. Ruta absoluta es
  * CUALQUIER `/<carpeta>/…` que arranca un token —no sólo `/Users/` y `/home/`: también `/private/var/…`,
- * `/opt/…`, `/Volumes/…` (revisión de seguridad, iter 1)—, también pegada a `:` o `<` (`ruta:/Users/…`),
- * `file://…`, y `C:\…` o `C:/…` (iter 2). Una ruta relativa (`specs/x.md`) no arranca un token con `/`
+ * `/opt/…`, `/Volumes/…`—, también pegada a `:` o `<` (`ruta:/Users/…`),
+ * `file://…`, y `C:\…` o `C:/…`. Una ruta relativa (`specs/x.md`) no arranca un token con `/`
  * y queda como está; una URL (`https://host/x`) tampoco: después de `://` viene otra barra, no un nombre.
  */
 function sanear(s) {
@@ -138,8 +138,8 @@ function sanear(s) {
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '[correo]')
     .replace(/\bfile:\/\/[^\s"'`)\],;]*/gi, '[ruta]')
     // Una barra que arranca una ruta es la que NO viene pegada a una letra, un punto u otra barra: así entran
-    // `ruta:/…`, `**/…`, `-/…`, `<\/…` sin enumerar prefijos (la lista de prefijos se quedaba corta cada vuelta:
-    // iter 2 y 3), y quedan afuera `specs/a/b`, `2026/10/07` y el `//host/` de una URL.
+    // `ruta:/…`, `**/…`, `-/…`, `<\/…` sin enumerar prefijos (una lista de prefijos siempre queda corta)
+    // y quedan afuera `specs/a/b`, `2026/10/07` y el `//host/` de una URL.
     .replace(/(?<![\w./])\/[\w.-]+\/[^\s"'`)\],;<>*]*/g, '[ruta]')
     .replace(/\b[A-Za-z]:[\\/][^\s"'`)\],;<>]*/g, '[ruta]');
 }
@@ -164,7 +164,7 @@ function cuerpoFrontmatter(texto) {
 /**
  * El escalar de una clave, con el regex del medidor (`fmKeyRe`, que corta el comentario de fin de línea).
  * 🔴 Ese regex lleva `\s*` después de los dos puntos, y `\s` cruza el salto de línea: con `epic:` VACÍO
- *    capturaba la línea siguiente (`epica: "priority:"`, y una épica inventada — pase adversarial, iter 1).
+ *    captura la línea siguiente (`epica: "priority:"`, y una épica inventada).
  *    Un valor que no está en la MISMA línea que su clave es un valor vacío.
  */
 function escalar(fm, clave) {
@@ -196,8 +196,8 @@ function listaDeIds(fm, clave) {
 /**
  * Los `name` de las tandas del bloque `pipelines:` con status blocked o pending.
  * 🔴 Las tandas se separan por la SANGRÍA del primer item, no por cada `- `: una tanda puede traer
- *    sublistas (`files:`, `tasks_partial:`) antes de su `status:`, y partir ahí dejaba el status en un
- *    trozo sin `name` (pase adversarial, iter 1).
+ *    sublistas (`files:`, `tasks_partial:`) antes de su `status:`, y partir ahí dejaría el status en un
+ *    trozo sin `name`.
  */
 function tandasPendientes(fm) {
   const m = /^pipelines:[ \t]*(.*)$/m.exec(fm);
@@ -223,7 +223,7 @@ const valorEpica = (v) => (v == null ? null : (/^\d+$/.test(v) ? Number(v) : v))
 /**
  * Los `.md`/`.yaml` del repo que git conoce (commiteados o nuevos sin ignorar) y que están en disco, o
  * `null` si git no pudo listarlos: una lista vacía se leería como «el repo no tiene plan ni épicas ni
- * ilegibles» (revisión de fallos silenciosos, iter 1), así que quien llama no escribe la foto.
+ * ilegibles», así que quien llama no escribe la foto.
  */
 function archivosDelRepo(repo) {
   const salida = git(repo, ['-c', 'core.quotepath=false', 'ls-files', '-co', '--exclude-standard', '-z',
@@ -291,8 +291,8 @@ function plan(repo, archivos) {
 /**
  * Los archivos de evidencia del repo, sus hermanos y sus compañeros declarados: `{archivos}`, o
  * `{motivo}` si alguna fuente no se pudo leer. 🔴 Mirar con una carpeta de menos da `false` donde la
- * respuesta es «no sé» —y una alerta `done_sin_evidencia` falsa— (revisión de fallos silenciosos,
- * iter 1): una carpeta que no existe no es un problema; una que existe y no se lee, sí.
+ * respuesta es «no sé» —y una alerta `done_sin_evidencia` falsa—:
+ * una carpeta que no existe no es un problema; una que existe y no se lee, sí.
  */
 function archivosDeEvidencia(repo) {
   const dirs = [...M.dirsDeEvidencia(repo)];
@@ -357,7 +357,7 @@ function fotoDeRepo(repo, opts) {
     const il = esIlegible(f);
     if (il) ilegibles.push({ id: il.id, ruta: rel(repo, f) });
   }
-  // Sin una sola story legible no hay foto (AC 1: `stories_total > 0`), pero los ilegibles no se callan:
+  // Sin una sola story legible no hay foto (`stories_total > 0`), pero los ilegibles no se callan:
   // el repo sale nombrado como «sin stories» CON su cuenta de frontmatters rotos.
   if (!stories.length) return { vacio: true, ilegibles: ilegibles.length };
 
@@ -371,10 +371,10 @@ function fotoDeRepo(repo, opts) {
     s.grupo = 'desconocido';
     if (dic.motivo) continue;
     // El estado lo lee el MEDIDOR (`fmKeyRe`, que corta el comentario de fin de línea): con el escalar
-    // del descubridor, `status: done   # habilitada…` salía «desconocido» y el medidor lo contaba cerrado.
+    // del descubridor, `status: done   # habilitada…` saldría «desconocido» y el medidor lo contaría cerrado.
     const c = M.canonEstado(s.status);
     if (!c) continue;
-    // La CLAVE es el estado crudo: viaja saneada como cualquier otro texto (revisión de seguridad, iter 1).
+    // La CLAVE es el estado crudo: viaja saneada como cualquier otro texto.
     if (c.desconocido) { const k = sanear(c.desconocido); desconocidos[k] = (desconocidos[k] || 0) + 1; continue; }
     s.canonico = c.estado;
     s.grupo = grupoDe.get(c.estado) || 'desconocido';
@@ -628,7 +628,7 @@ function main() {
     if (f.error) { fallidos.push(`${nombre}: ${sanear(f.error)}`); continue; }
     if (f.vacio) {
       sinStories.push(f.ilegibles ? `${nombre} (${f.ilegibles} con el frontmatter roto)` : nombre);
-      // Todas sus stories rotas: su foto de anoche quedaría vieja sin que nada lo diga (fallos silenciosos, iter 3).
+      // Todas sus stories rotas: su foto de anoche quedaría vieja sin que nada lo diga.
       if (f.ilegibles && process.env.TF_BUILD) {
         console.log(`##vso[task.logissue type=warning]Foto por proyecto, no escrito — ${nombre}: sus ${f.ilegibles} story(s) tienen el frontmatter roto`);
       }
@@ -661,10 +661,10 @@ function main() {
     console.error(`⚠️  no escrito — ${f}`);
     // En Azure DevOps (`TF_BUILD`), un repo que no se pudo fotografiar es un AVISO visible en la corrida: con
     // otros repos escritos el guion sale 0 y el `|| logissue` del paso no se dispara; sin esto, quien la lee vería la
-    // foto vieja de ese repo y el único rastro sería una línea en el log (revisión de fallos silenciosos, iter 2).
+    // foto vieja de ese repo y el único rastro sería una línea en el log.
     if (process.env.TF_BUILD) console.log(`##vso[task.logissue type=warning]Foto por proyecto, no escrito — ${f}`);
   }
-  // Todos los repos sin stories y ninguna falla NO es una falla (revisión de fallos silenciosos, iter 1);
+  // Todos los repos sin stories y ninguna falla NO es una falla;
   // una raíz sin ningún repo, sí: casi siempre es una ruta equivocada.
   if (escritos > 0) return 0;
   if (!fallidos.length && sinStories.length) return 0;

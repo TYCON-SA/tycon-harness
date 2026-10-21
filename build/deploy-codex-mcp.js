@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
  * build/deploy-codex-mcp.js — registra los servidores MCP del arnés en ~/.codex/config.toml
- * (Etapa F1, 2026-08-22). Lo invoca install-tycon-hooks.sh dentro del bloque TYCON_CODEX=1.
+ * Lo invoca install-tycon-hooks.sh dentro del bloque TYCON_CODEX=1.
  *
  * Por qué TRADUCE en vez de copiar un fragmento estático: los comandos de los MCP son
  * ESPECÍFICOS de cada máquina (paths absolutos de node, ubicación del server de Clockify) —
  * la fuente única real es el registro de Claude de ESA máquina (~/.claude.json) más la tabla
  * canónica de equivalences.json (engram/codebase_memory, cuyas etiquetas replican las de
- * Claude para que el nombre de la tool salga byte-igual — regla D.4/D.5).
+ * Claude para que el nombre de la tool salga byte-igual).
  *
- * POLÍTICA DE SECRETOS (inventario §D, deuda declarada): un env cuyo nombre matchea
+ * POLÍTICA DE SECRETOS: un env cuyo nombre matchea
  * /KEY|TOKEN|PAT|SECRET/ NUNCA se copia al TOML — el server lo hereda del ambiente del
  * proceso de codex. Si el ambiente no lo tiene, este script lo dice A GRITOS con la
  * instrucción exacta (export a ~/.zshrc) y sigue (fail-open: el resto de los servers quedan).
@@ -19,13 +19,12 @@
  * de las etiquetas PROPIAS; cualquier server que el dev haya registrado a mano queda intacto.
  * Backup una vez (config.toml.bak-tycon-mcp) · atomic write · idempotente · --dry-run.
  *
- * SIN CLAUDE CODE (story 8.23, tanda C · AC 23). Qué servidores ESPERA el arnés sale de su configuración (las
+ * SIN CLAUDE CODE. Qué servidores ESPERA el arnés sale de su configuración (las
  * integraciones prendidas: engram, codegraph, clockify) y de la tabla de equivalences.json; `~/.claude.json` es sólo de
- * donde se toma la definición de los que son de cada máquina (clockify, spokenly), SI EXISTE. Antes, sin ese archivo este
- * guion callaba: un dev que sólo usa Codex quedaba sin Clockify y sin una palabra. Ahora un servidor esperado que no se
+ * donde se toma la definición de los que son de cada máquina (clockify, spokenly), SI EXISTE. Sin ese archivo este
+ * guion callaría: un dev que sólo usa Codex quedaría sin Clockify y sin una palabra. Por eso un servidor esperado que no se
  * puede registrar SE DICE, con su motivo (`missingServers`). Y `writable_roots` lleva el estado vigente y además
- * `~/.tycon/state` (la casa propia del arnés: donde vive el estado de una máquina sin Claude Code, y adonde lo muda la
- * tanda D), para que el pipeline bajo Codex pueda escribir su marcador en cualquiera de las dos.
+ * `~/.tycon/state` (la casa propia del arnés: donde vive el estado de una máquina sin Claude Code), para que el pipeline bajo Codex pueda escribir su marcador en cualquiera de las dos.
  *
  * Uso: node deploy-codex-mcp.js [--dry-run] [--selftest]
  */
@@ -34,23 +33,23 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
-// las carpetas del estado que el sandbox de Codex tiene que poder escribir: la vigente y la de la casa propia (tanda C)
+// las carpetas del estado que el sandbox de Codex tiene que poder escribir: la vigente y la de la casa propia
 const stateDirsOf = (() => { const lib = path.join(__dirname, '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); const m = require('fs').existsSync(lib) ? require(lib) : null; return m && typeof m.stateDirs === 'function' ? m.stateDirs : (h) => [stateDirOf(h)]; })();
 // la carpeta vieja del estado; sin la pieza (una copia suelta), la de siempre: la misma que da `stateDirOf`
 const legacyStateDirOf = (() => { const lib = path.join(__dirname, '..', 'scripts', 'setup', 'harness', 'tycon-home.js'); const m = require('fs').existsSync(lib) ? require(lib) : null; return m && typeof m.legacyStateDir === 'function' ? m.legacyStateDir : stateDirOf; })();
 const TCG = path.resolve(__dirname, '..');
 // Con borde: el token tiene que ser un SEGMENTO del nombre (inicio/fin o entre _/-), no un
-// substring — /PAT/ a secas clasificaba PATH y DATA_PATH como secretos: la variable se dropeaba
-// del TOML y se le gritaba al dev que exporte algo que nunca fue secreto (revisión 2026-08-23).
+// substring — /PAT/ a secas clasificaría PATH y DATA_PATH como secretos: la variable se dropearía
+// del TOML y se le gritaría al dev que exporte algo que nunca fue secreto.
 const SECRET_RE = /(^|[_-])(KEY|TOKEN|PAT|SECRET)([_-]|$)/i;
 const OWN_LABELS = ['plugin_engram_engram', 'codebase_memory', 'clockify', 'spokenly', 'codegraph'];
 // los que se definen EN CADA MÁQUINA (salen de ~/.claude.json): si el despliegue no los resolvió y la tabla ya está en
-// config.toml (la persona la escribió a mano, como manda el aviso), se queda — antes se borraba en cada despliegue y el
-// aviso se repetía para siempre (pase adversarial de la C, clases 3 y 24)
+// config.toml (la persona la escribió a mano, como manda el aviso), se queda — si se borrara en cada despliegue, el
+// aviso se repetiría para siempre
 const MACHINE_LABELS = ['clockify', 'spokenly'];
 
 function tomlStr(s) { return JSON.stringify(String(s)); }
@@ -93,14 +92,13 @@ function resolveServers(claudeCfg, eq) {
   }
   if (srv.spokenly && srv.spokenly.url) out.spokenly = { url: srv.spokenly.url };
   // codegraph: global por convención — el server resuelve el índice por cwd.
-  // --mcp es OBLIGATORIO (sin el flag no habla stdio — canario F1). Dos lecciones que costaron
-  // 3 canarios (F1, 2026-08-22): (a) codex DIFIERE las tools MCP tras su tool search
-  // (ToolSearchAlwaysDeferMcpTools) — un canario que pregunta "¿tenés mcp__X__*?" mide el
-  // listado inicial y da NO aunque el server esté sano; el canario correcto ORDENA llamar la
-  // tool. (b) el protocolo viejo (2024-11-05) NO es problema: codex lo inicializa igual — la
-  // hipótesis del shim de protocolo quedó REFUTADA por RUST_LOG=debug y el shim, descartado.
-  // 🔴 PIN: codegraph se queda en 0.7.9 — la 1.5.0 expone 1 sola tool contra 9 (rediseño
-  // breaking que rompería el lado Claude entero; probado y rollbackeado el 2026-08-22).
+  // --mcp es OBLIGATORIO (sin el flag no habla stdio). Para probarlo: (a) codex DIFIERE las
+  // tools MCP tras su tool search (ToolSearchAlwaysDeferMcpTools) — una prueba que pregunta
+  // "¿tenés mcp__X__*?" mide el listado inicial y da NO aunque el server esté sano; la prueba
+  // correcta ORDENA llamar la tool. (b) el protocolo MCP anterior NO es problema: codex
+  // lo inicializa igual, no hace falta un shim de protocolo.
+  // 🔴 PIN: codegraph se queda en 0.7.9 — la versión 1.5.0 expone 1 sola tool contra 9 (rediseño
+  // breaking que rompería el lado Claude entero).
   const probe = process.platform === 'win32' ? 'where codegraph' : 'command -v codegraph';
   try { require('child_process').execSync(probe, { stdio: 'ignore', shell: true }); out.codegraph = { command: 'codegraph', args: ['serve', '--mcp'], approval: 'approve' }; } catch (_) { /* sin codegraph en esta máquina */ }
   return { servers: out, missingEnv };
@@ -175,17 +173,15 @@ function spliceToml(existing, servers) {
 
 /**
  * `[sandbox_workspace_write] writable_roots` con el directorio de estado del arnés. Sin esa
- * ruta el pipeline bajo Codex no puede escribir su marker — el delta 1 de la primera pasada
- * dorada. Hasta 2026-08-23 esto existía sólo a mano mientras el Registro G-5a afirmaba que lo
- * desplegaba este script (P3 de la Etapa H lo cierra acá).
+ * ruta el pipeline bajo Codex no puede escribir su marker.
  *
- * 🔴 Endurecida por la revisión adversarial del mismo día, que EJECUTÓ la primera versión y la
- * rompió de tres maneras: (a) el detector exigía el header en forma canónica exacta, así que un
- * `[sandbox_workspace_write] # comentario` o la forma inline `sandbox_workspace_write = {...}`
- * (TOML válido) caían al append y DUPLICABAN la tabla — config.toml entero ilegible para codex,
- * con el deploy imprimiendo "DESPLEGADO"; (b) la idempotencia era un substring sobre TODO el
- * archivo, así que la ruta mencionada en un comentario o en un arg de server hacía creer el
- * trabajo hecho para siempre; (c) cero cobertura en el selftest. Ahora: header tolerante a
+ * 🔴 Endurecida contra tres maneras de romperse: (a) un detector que exija el header en forma
+ * canónica exacta deja que un `[sandbox_workspace_write] # comentario` o la forma inline
+ * `sandbox_workspace_write = {...}` (TOML válido) caigan al append y DUPLIQUEN la tabla —
+ * config.toml entero ilegible para codex, con el deploy imprimiendo "DESPLEGADO"; (b) una
+ * idempotencia por substring sobre TODO el archivo haría creer el trabajo hecho para siempre si
+ * la ruta se menciona en un comentario o en un arg de server; (c) sin cobertura en el selftest.
+ * Por eso: header tolerante a
  * comentario, forma inline detectada y NO tocada (se avisa; editar un inline-table a ciegas es
  * cómo se corrompe un TOML), idempotencia por el predicado SCOPED de abajo, un solo paso, y
  * casos en el selftest — incluido el que reproduce la duplicación.
@@ -195,15 +191,13 @@ const SANDBOX_INLINE_RE = /^(\s*sandbox_workspace_write\s*=\s*\{.*writable_roots
 
 /**
  * 🔴 Codex rechaza TODOS los comandos de shell si una raíz de escritura pasa por un enlace
- * (incident-log#case-codex-no-shell-after-move-linked-writable-root-2026-10-11; medido el 2026-10-11 con
- * codex-cli 0.154 y 0.162: «writable root … contains symlink component …; symlinked writable roots are not supported»).
- * No avisa al arrancar: la sesión abre, y cada comando falla. Pasó en la primera máquina mudada a `~/.tycon`: la mudanza
- * deja la carpeta vieja del estado como enlace al estado nuevo, y esa ruta —puesta acá antes de la mudanza— seguía en
- * `writable_roots` al lado de la real, porque este guion agregaba raíces y nunca sacaba ninguna.
+ * (medido con codex-cli 0.154 y 0.162: «writable root … contains symlink component …; symlinked writable roots are not supported»).
+ * No avisa al arrancar: la sesión abre, y cada comando falla. Pasa en una máquina mudada a `~/.tycon`: la mudanza
+ * deja la carpeta vieja del estado como enlace al estado nuevo, y esa ruta —puesta acá antes de la mudanza— seguiría en
+ * `writable_roots` al lado de la real si este guion sólo agregara raíces y nunca sacara ninguna.
  *
  * `linkComponent(p)`: el primer tramo de la ruta que es un enlace (o una unión de Windows), o null. Los enlaces del
- * sistema de macOS (`/tmp`, `/var`, `/etc` → `/private/…`) no cuentan: Codex acepta una raíz bajo `/tmp` (medido el
- * mismo día). Se mira tramo por tramo con lstat —como lo dice Codex— y no comparando contra realpath, que en Windows
+ * sistema de macOS (`/tmp`, `/var`, `/etc` → `/private/…`) no cuentan: Codex acepta una raíz bajo `/tmp` (medido). Se mira tramo por tramo con lstat —como lo dice Codex— y no comparando contra realpath, que en Windows
  * también cambia los nombres cortos y las mayúsculas. Una ruta que no existe no tiene enlaces. Nunca tira.
  */
 const SYSTEM_LINKS = process.platform === 'darwin' ? new Set(['/tmp', '/var', '/etc']) : new Set();
@@ -243,11 +237,11 @@ function legacyRoot() { return legacyStateDirOf(os.homedir()); }
 /**
  * Localiza el ARRAY de writable_roots dentro de la sección (o la forma inline) y lo devuelve
  * PARSEADO en elementos, con las coordenadas para reescribirlo. Es la única lectura del array
- * en este archivo y en el audit de paridad — la 2ª ronda adversarial ejecutó la versión por
- * líneas y la rompió de tres maneras: el array multilínea (formato que el propio codex emite)
- * era invisible → rojo eterno tras seguir la instrucción "agregá a mano"; una coma final
- * (TOML válido) producía doble coma → config ilegible imprimiendo DESPLEGADO; y el substring
- * aceptaba `.tycon-pipeline-old` como si fuera la ruta. Parsear elementos mata las tres.
+ * en este archivo y en el audit de paridad — una versión que lo lea por
+ * líneas se rompe de tres maneras: el array multilínea (formato que el propio codex emite)
+ * es invisible → rojo eterno tras seguir la instrucción "agregá a mano"; una coma final
+ * (TOML válido) produce doble coma → config ilegible imprimiendo DESPLEGADO; y el substring
+ * acepta `.tycon-pipeline-old` como si fuera la ruta. Parsear elementos mata las tres.
  *
  * Devuelve null si no hay array reconocible. Formas: sección con array en una línea, sección
  * con array multilínea, inline table de una línea.
@@ -291,10 +285,10 @@ function findWritableRoots(lines) {
 /**
  * Los elementos del array, cada uno como la RUTA que dice.
  *
- * 🔴 Un texto básico de TOML (comillas dobles) lleva sus barras invertidas ESCAPADAS (story 8.23, tanda C · 2026-10-07).
- * Se le sacaban sólo las comillas: una ruta de Windows quedaba con las barras dobles, nunca era igual a la ruta buscada
- * y cada despliegue la agregaba OTRA vez —y al re-emitir el array volvía a escapar las que ya estaban, rompiéndolas—.
- * Nadie lo había medido: nadie corría Codex en Windows. Uno literal (comillas simples) va tal cual.
+ * 🔴 Un texto básico de TOML (comillas dobles) lleva sus barras invertidas ESCAPADAS. Si se le sacaran sólo las
+ * comillas, una ruta de Windows quedaría con las barras dobles, nunca sería igual a la ruta buscada y cada despliegue
+ * la agregaría OTRA vez —y al re-emitir el array volvería a escapar las que ya estaban, rompiéndolas—. Uno literal
+ * (comillas simples) va tal cual.
  */
 function parseElems(raw) {
   return String(raw).split(',').map((e) => e.trim()).filter((e) => e !== '').map((e) => {
@@ -393,13 +387,13 @@ function ensureWritableRoot(toml, root) {
   }
   if (found.kind === 'inline' || found.kind === 'linea') {
     // El array se RE-EMITE desde los elementos parseados + la ruta: reescribir sobre el texto
-    // crudo era lo que duplicaba la coma final.
+    // crudo duplicaría la coma final.
     const nuevos = [...found.elems, root].map((e) => JSON.stringify(e)).join(', ');
     lines[found.start] = `${found.pre}${nuevos}${found.post}`;
     return lines.join('\n');
   }
   // multi: la ruta entra como elemento propio antes del cierre, respetando el formato del dev. Si el último elemento no
-  // lleva coma final (TOML lo permite), hay que ponérsela: sin eso el archivo quedaba inválido (pase adversarial, clase 5)
+  // lleva coma final (TOML lo permite), hay que ponérsela: sin eso el archivo queda inválido
   for (let k = found.end - 1; k > found.start; k--) {
     const body = lines[k].replace(/#.*$/, '').trimEnd();
     if (!body) continue;
@@ -414,7 +408,7 @@ function ensureWritableRoot(toml, root) {
 /**
  * ¿`[mcp_servers.<label>]` está registrado? Anclado por línea (una línea comentada no
  * registra nada) y tolerante a la forma con comillas. Compartido con el audit de paridad —
- * el `includes()` del auditor daba verde con el header comentado.
+ * un `includes()` en el auditor daría verde con el header comentado.
  */
 function serverRegistered(toml, label) {
   const re = new RegExp(`^\\s*\\[mcp_servers\\.("?)${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\1(\\.env)?\\]\\s*(?:#.*)?$`, 'm');
@@ -440,8 +434,8 @@ function selftest() {
     ['idempotente', merged2 === merged],
   ];
   let bad = 0;
-  // ensureWritableRoots — la función que puede corromper el TOML si se ablanda (revisión
-  // 2026-08-23: la 1ª versión duplicaba la tabla ante un header con comentario).
+  // ensureWritableRoots — la función que puede corromper el TOML si se ablanda (un header con comentario no debe
+  // duplicar la tabla).
   const root = markerRoot();
   const rs = JSON.stringify(root);
   const conComentario = ensureWritableRoots('[sandbox_workspace_write]  # del dev\nwritable_roots = []\n');
@@ -453,7 +447,7 @@ function selftest() {
       const out = ensureWritableRoots(inline);
       return out.split('\n').length === inline.split('\n').length && out.includes(rs) && out.includes('"/x"');
     })()],
-    // pase adversarial de la C (clases 5 y 22): multilínea cuyo último elemento no lleva coma final → el nuevo entra con
+    // multilínea cuyo último elemento no lleva coma final → el nuevo entra con
     // la coma que faltaba, y el archivo sigue siendo TOML
     ['wr: multilínea sin coma final recibe el elemento con la coma que faltaba', (() => {
       const out = ensureWritableRoots('[sandbox_workspace_write]\nwritable_roots = [\n  "/a",\n  "/b"\n]\n', ['/c']);
@@ -487,7 +481,7 @@ function selftest() {
     ['wr: suma a un array existente preservando el comentario', ensureWritableRoots('[sandbox_workspace_write]\nwritable_roots = ["/x"] # roots\n').includes(`writable_roots = ["/x", ${markerRoots().map((r) => JSON.stringify(r)).join(', ')}] # roots`)],
     ['wr: la ruta en un comentario NO satisface la idempotencia', ensureWritableRoots('# ' + root + '\n[mcp_servers]\n').includes('[sandbox_workspace_write]')],
     ['wr: writableRootsHas es scoped (comentario no cuenta)', writableRootsHas('# ' + root + '\n', root) === false],
-    // story 8.23 (tanda C): las dos raíces —el estado vigente y la casa propia del arnés—, cada una como elemento propio
+    // las dos raíces —el estado vigente y la casa propia del arnés—, cada una como elemento propio
     ['wr: con dos raíces entran las dos, una sola tabla, e idempotente', (() => {
       const two = ['/h/estado-de-siempre', '/h/.tycon/state'];
       const out = ensureWritableRoots('model = "x"\n', two);
@@ -499,7 +493,7 @@ function selftest() {
       const twice = ensureWritableRoots(once, win);
       return twice === once && win.every((r) => writableRootsHas(once, r)) && (once.match(/Users/g) || []).length === 2;
     })()],
-    // 2026-10-11: una raíz que pasa por un enlace deja a Codex sin shell. Con disco de verdad: una carpeta, un enlace a
+    // una raíz que pasa por un enlace deja a Codex sin shell. Con disco de verdad: una carpeta, un enlace a
     // ella (la carpeta vieja del estado tras la mudanza) y un enlace ajeno (del dev)
     ...(() => {
       const lab = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-codex-roots-')));
@@ -572,7 +566,7 @@ function main() {
   try { claudeCfg = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')); claudeJson = 'present'; } catch (e) { if (e && e.code !== 'ENOENT') claudeJson = 'present'; }
   const eq = JSON.parse(fs.readFileSync(path.join(TCG, 'build', 'equivalences.json'), 'utf8'));
   const { servers, missingEnv } = resolveServers(claudeCfg, eq);
-  // un servidor que el arnés espera y no se puede registrar se dice (antes: silencio)
+  // un servidor que el arnés espera y no se puede registrar se dice
   for (const line of missingServers({ integrations: readIntegrations(), servers, claudeJson, has: (b) => inPath(b), target, registered: (label) => serverRegistered(fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '', label) })) console.log(line);
   for (const [k, srv, dónde] of missingEnv)
     console.log(`🛑 tycon: el server MCP "${srv}" necesita ${k} en el AMBIENTE y no está — agregá \`export ${k}=<valor>\` a ~/.zshrc (el valor actual vive en ${dónde}). Sin eso, ese server va a fallar bajo codex. El secreto NO se copia a ningún archivo.`);

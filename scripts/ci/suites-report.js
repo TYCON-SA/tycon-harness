@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
  * suites-report.js — arma `ultimo-suites.json`, el reporte del nocturno de suites, con el MOTIVO de
- * cada suite roja y no sólo su nombre (2026-09-14, propuesta PIPE-DEBT-2.13-b). Tuvo nombre en castellano
- * hasta la story 8.9 (tanda C3), sin reemplazo: sólo lo llaman los pipelines del arnés.
+ * cada suite roja y no sólo su nombre. Sólo lo llaman los pipelines del arnés.
  *
- * Caso: esa mañana el aviso de arranque decía «1 en rojo — pipeline-debt.test.js» y para saber por
- * qué hubo que volver a correr la suite a mano: era una deuda vencida por fecha, no un defecto. Con
- * sólo el nombre, tampoco se puede saber si la roja de hoy es la misma causa que la de ayer.
+ * Con sólo el nombre («1 en rojo — pipeline-debt.test.js») hay que volver a correr la suite a mano para saber por
+ * qué falló (¿una deuda vencida por fecha, no un defecto?), y tampoco se puede saber si la roja de hoy es la misma
+ * causa que la de ayer.
  *
  * El reporte viaja por git a todas las máquinas del equipo, así que el motivo se SANEA con el mismo
  * `sanear` de tokens-digest.js (importado, no copiado): ni rutas de la máquina ni credenciales. Y se
@@ -15,36 +14,36 @@
  * `failures` sigue siendo la lista de nombres de siempre (lo leen bench-notice y el tablero); los
  * motivos van en un campo aparte, `motivos`, que existe aunque esté vacío.
  *
- * 🔴 «No medida» no es «roja» (2026-10-04). Con las suites del nocturno en trabajos paralelos, las de un trabajo que
+ * 🔴 «No medida» no es «roja». Con las suites del nocturno en trabajos paralelos, las de un trabajo que
  * no terminó llegan en `--failures` con la marca «(no-medida)» (scripts/ci/suites-shard.js). Siguen en `failures`, con
  * su marca, y además van a `unmeasured`; `complete` es false si hay alguna. Los que leen el reporte (el aviso de
  * arranque, el tablero, pr-verdict.js) miran esos dos campos, no la marca. Tampoco se cuentan como desaparecidas.
  *
- * 🔴 Ninguna suite «desaparece» sin que se note (story 8.9, tanda C3, AC 38). Renombrar una prueba
+ * 🔴 Ninguna suite «desaparece» sin que se note. Renombrar una prueba
  * cambia su nombre, que es la clave de la suite: sin unir las dos fotos por el mapa de renombres, la
  * suite vieja se leería como perdida y la nueva como recién llegada. Con `--ran` (la lista de suites
  * que corrieron) el reporte guarda la lista en `ran` y compara contra la foto anterior (`--previous`,
  * por defecto el propio `--rep` antes de pisarlo): las suites de antes —su `ran`, o sus `failures` si la
- * foto es de antes de este cambio—, pasadas por el mapa (scripts/lib/renames.json), que hoy no corrieron
+ * foto no trae `ran`—, pasadas por el mapa (scripts/lib/renames.json), que hoy no corrieron
  * van a `disappeared` y se avisan (en Azure, como warning de la corrida). Sin mapa —la copia pública—
- * se compara sin traducir. Sin `--ran` no hay lista que comparar y el reporte sale como antes.
+ * se compara sin traducir. Sin `--ran` no hay lista que comparar y el reporte sale sin esa comparación.
  *
- * 🔴 «No corrió» tampoco es «roja», ni «verde», ni «desaparecida» (2026-10-04). La validación de cada pedido de merge
+ * 🔴 «No corrió» tampoco es «roja», ni «verde», ni «desaparecida». La validación de cada pedido de merge
  * deja para el nocturno las suites que el cambio no toca (scripts/ci/suites-for-change.js; las dos más largas, por
  * scripts/ci/heavy-suites.json). Con `--not-run <archivo>` (una por línea: nombre<TAB>motivo) van a `notRun`
  * ({nombre: motivo}) y no se cuentan como desaparecidas. Sin la opción —el nocturno, que corre todas— no hay `notRun`.
  *
- * 🔴 «No viaja» (story 8.26, tanda C, AC 11). Con la validación sobre el repo público, la foto nocturna (la del repo de
- * mantenimiento) nombra suites que el árbol validado no trae: no son desaparecidas, y nombrarlas en el aviso escondía
+ * 🔴 «No viaja». Con la validación sobre el repo público, la foto nocturna (la del repo de
+ * mantenimiento) nombra suites que el árbol validado no trae: no son desaparecidas, y nombrarlas en el aviso esconde
  * entre ellas la que el cambio borró de verdad. Con `--registry <suites.json>` (repetible: el de la rama y el de main),
  * una suite de la foto que hoy no corrió y no está en ningún registro va a `notTravelling` (se cuenta, no se nombra en
  * el aviso); la que está en alguno sigue siendo desaparecida. Un registro que no se deja leer no esconde nada: sin él no
  * se sabe qué viaja, y ninguna se da por «no viaja».
  *
- * 🔴 `--public-notices` (story 8.26, tanda C, AC 45): el aviso de Azure lleva la cuenta y texto fijo; los nombres, en la
+ * 🔴 `--public-notices`: el aviso de Azure lleva la cuenta y texto fijo; los nombres, en la
  * salida común (el control del pedido del repo público es público).
  *
- * 🔴 «Se mide en otro lado» (story 2.21, AC 3-4). Una suite cuya entrada del registro declara `measured_elsewhere: "<dónde
+ * 🔴 «Se mide en otro lado». Una suite cuya entrada del registro declara `measured_elsewhere: "<dónde
  * y por qué>"` y que llega «(no-medida)» no es una suite que faltó: la mide otro pipeline (clean-machine, la CI pública en
  * cada pedido). Sale de `failures`, `motivos` y `unmeasured`, va a `measuredElsewhere` ({nombre: motivo}), sigue en `ran`
  * y no vuelve incompleta la noche. La declaración cubre SÓLO «no medida»: corrida y roja, sigue roja. El registro es
@@ -57,7 +56,7 @@
  *     --failures "<nombres separados por espacio>" --detail <dir con <nombre>.txt de cada roja> [--retries <json>]
  *     [--ran <archivo con un nombre de suite por línea>] [--previous <foto anterior>] [--not-run <nombre<TAB>motivo por línea>]
  *     [--registry <suites.json>]… [--public-notices]
- *   (--runs, --failures, --detail y --retries tenían nombre en castellano hasta la story 8.9, tanda B3a; los
+ *   (--runs, --failures, --detail y --retries tienen también su nombre en castellano; los
  *   viejos siguen andando hasta el retiro. Las claves del reporte —`corridas`, `failures`…— no cambian.)
  * Red: scripts/tests/suites-report.test.sh · scripts/tests/legacy-names-c3.test.js (T42)
  */
@@ -65,15 +64,15 @@
 const fs = require('fs');
 const path = require('path');
 const { sanear } = require('../metrics/tokens-digest.js');
-// El traductor de las opciones viejas vive al lado (story 8.9).
+// El traductor de las opciones viejas vive al lado.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
 })();
 let ARGV = process.argv.slice(2);
 
 // «MAL» (23 suites) y «✗» (5; no es el «✖» de node) son las marcas de falla de las suites bash y de
-// algunos selftests: medido el 2026-09-17 sobre las 110 de suites.json. Sin ellas el motivo de
-// publish-bump.test.sh mostró un caso verde y «FALLARON 1» sin decir cuál. Van anclados al principio
+// algunos selftests. Sin ellas el motivo de
+// una suite bash mostraría un caso verde y «FALLARON 1» sin decir cuál. Van anclados al principio
 // (la línea ya viene sin sangría): en la prosa de un chequeo verde no son una falla.
 const LINEA_DE_FALLO = /❌|\bnot ok\b|✖|AssertionError|\bError:|\bFAIL\b|^MAL\b|^✗/;
 
@@ -112,7 +111,7 @@ const UNMEASURED = /\(no-medida\)$/;
 
 /**
  * Las suites que algún registro declara «se mide en otro lado» ({nombre: motivo}), o { problema } si alguno no se deja
- * leer o trae una declaración sin forma: entonces no se reclasifica ninguna (story 2.21, AC 4).
+ * leer o trae una declaración sin forma: entonces no se reclasifica ninguna.
  */
 function medidasEnOtroLado(rutas) {
   const declaradas = {};
@@ -177,7 +176,7 @@ function desaparecidas(anterior, ran, f, noMedidas = [], noCorrieron = []) {
   const antes = Array.isArray(anterior.ran) ? anterior.ran
     : (Array.isArray(anterior.failures) ? anterior.failures.map((x) => String(x).replace(/\s*\(ausente\)$/, '')) : []);
   // Las DOS fotos pasan por el mapa: una suite que suites.json todavía corre por su nombre viejo (su reemplazo) es la
-  // misma que la renombrada, de una noche a la otra (pase adversarial de la C3; pr-verdict.js une igual las dos).
+  // misma que la renombrada, de una noche a la otra (pr-verdict.js une igual las dos).
   // Una suite que hoy no se midió no «desapareció»: está en el reporte, nombrada como no medida.
   // Tampoco la que hoy no corrió porque el cambio no toca lo que mide: está nombrada en `notRun`.
   const hoy = new Set([...ran, ...noMedidas.map((n) => n.replace(UNMEASURED, '')), ...noCorrieron].map(f));
@@ -192,7 +191,7 @@ function main() {
   }
   const rep = arg('--rep');
   if (!rep) { console.error('uso: suites-report.js --rep <archivo> --build <id> --runs <N> --failures "<nombres>" --detail <dir> [--retries <json>] [--ran <archivo>] [--previous <foto>]'); process.exit(2); }
-  // La lista de suites corridas y la foto anterior (AC 38): sin `--ran`, el reporte sale como antes.
+  // La lista de suites corridas y la foto anterior: sin `--ran`, el reporte sale sin esa comparación.
   let ran = null;
   const rutaRan = arg('--ran');
   if (rutaRan) {
@@ -201,7 +200,7 @@ function main() {
   }
   const anterior = ran ? fotoAnterior(arg('--previous') || rep) : null;
   let failures = String(arg('--failures') || '').trim().split(/\s+/).filter(Boolean);
-  // «Se mide en otro lado» (story 2.21): sólo las que llegan «(no-medida)» y su registro declara dónde se miden.
+  // «Se mide en otro lado»: sólo las que llegan «(no-medida)» y su registro declara dónde se miden.
   const rutasRegistro = args('--registry');
   const otroLado = medidasEnOtroLado(rutasRegistro.length ? rutasRegistro : [path.join(__dirname, '..', 'tests', 'suites.json')]);
   const measuredElsewhere = {};
@@ -215,14 +214,14 @@ function main() {
   } else console.error(`⚠️  suites-report: ${otroLado.problema}`);
   const motivos = {};
   for (const f of failures) motivos[f] = motivoDe(f, arg('--detail'));
-  // 🔴 «No medida» no es «roja» (revisión del 2026-10-04). Las dos viajan en `failures` —el control de cada cambio
+  // 🔴 «No medida» no es «roja». Las dos viajan en `failures` —el control de cada cambio
   // compara por ese nombre, y una suite que anoche no se midió no puede excusar un rojo de verdad—, pero el reporte las
   // separa para quien lo lee: `unmeasured` son las mismas entradas de `failures` que no se midieron, y `complete` dice
   // si la noche midió todo. Existen siempre, también vacío y true: «no hubo» y «este reporte no lo anota» no se leen igual.
   const unmeasured = failures.filter((f) => UNMEASURED.test(f));
-  // 🔴 Las DOS corridas de cada suite que salió roja alguna vez (decisión del dev, 2026-09-17).
-  // Es el dato que la Etapa 3 necesita para decidir si las suites vuelven a frenar: `rojo→rojo` es
-  // una suite firme y `rojo→verde` una intermitente, y hoy no hay forma de distinguirlas. Existe
+  // 🔴 Las DOS corridas de cada suite que salió roja alguna vez.
+  // Permiten decidir si las suites frenan: `rojo→rojo` es
+  // una suite firme y `rojo→verde` una intermitente. El campo existe
   // aunque esté vacío —como `motivos`— para que «no hubo reintentos» y «este reporte no los anota»
   // no se lean igual. El nocturno no reintenta y lo deja en {}.
   let reintentos = {};

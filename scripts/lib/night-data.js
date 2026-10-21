@@ -1,19 +1,19 @@
 'use strict';
 // night-data.js — dónde están en esta máquina los datos de la noche, y de cuándo es la copia que se lee.
 //
-// ── EL CASO (2026-10-12) ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── POR QUÉ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
 // Quien mantiene el arnés usa la versión bajada y tiene dos clones: el del repo público (el código) y el del repo de
-// mantenimiento (donde los nocturnos dejan sus datos: `.dashboard/`, `artifacts/`, los reportes del banco). Los avisos de
-// arranque buscaban esos datos en el clon que la máquina «mantiene» (`paths.maintained`), que desde que el código vive en
-// el repo público es el del público y no los trae. Medido: cinco nocturnos sanos, una sola línea en el arranque («el
-// tablero no está publicado»), y una pieza muerta se veía igual que una sana. Y lo que la máquina escribe —el registro
-// de cada merge— caía en `.dashboard/` del clon del público, una carpeta ignorada que no viaja a ningún repo.
+// mantenimiento (donde los nocturnos dejan sus datos: `.dashboard/`, `artifacts/`, los reportes del banco). El clon que
+// la máquina «mantiene» (`paths.maintained`) es el del público, y no trae esos datos: buscarlos ahí deja a los avisos de
+// arranque con una sola línea («el tablero no está publicado») y una pieza muerta se ve igual que una sana. Y lo que la
+// máquina escribe —el registro de cada merge— caería en `.dashboard/` del clon del público, una carpeta ignorada que
+// no viaja a ningún repo.
 //
-// ── EL CASO (2026-10-14): DOS REPOS DE DATOS ─────────────────────────────────────────────────────────────────────────
-// Desde las stories 8.30 y 8.31, los nocturnos de la organización (dependencias, vigilante, el resumen diario, las
-// métricas y el tablero) guardan en el REPO DE OPERACIONES, no en el de mantenimiento; el banco, las suites y el examen
-// siguen guardando en el de mantenimiento. Los avisos leían todo del de mantenimiento: el 14 mostraban la noche del 13,
-// y desde el día siguiente habrían dicho «foto vieja» con los nocturnos sanos. Por eso hay dos resoluciones:
+// ── DOS REPOS DE DATOS ───────────────────────────────────────────────────────────────────────────────────────────────
+// Los nocturnos de la organización (dependencias, vigilante, el resumen diario, las métricas y el tablero) guardan en
+// el REPO DE OPERACIONES, no en el de mantenimiento; el banco, las suites y el examen guardan en el de mantenimiento.
+// Leer todo del de mantenimiento mostraría la noche anterior y, al día siguiente, «foto vieja» con los nocturnos
+// sanos. Por eso hay dos resoluciones:
 //   · resolve(ownTree)             → el clon de mantenimiento (`paths.maintainers`): banco, suites y examen;
 //   · resolveOperations(ownTree)   → el clon de operaciones (`paths.operations`): dependencias, vigilante, resumen,
 //                                    métricas y tablero.
@@ -217,7 +217,7 @@ function problemLine(problem, ops = null) {
  * → `{ dir, travels, why }`. `travels: false` = queda en la carpeta del estado de la máquina; `why` dice por qué.
  * 🔴 Nunca el clon del público. Y nunca para el respaldo de algo que escribe un nocturno: ése no va a ningún clon.
  * 🔴 Si no se puede saber (algo de acá tiró), `dir` es `null` y `why` lo dice: quien escribe NO vuelve en silencio a la
- * ruta de antes —que en una versión bajada es el clon del público, el defecto original—; se niega o lo avisa.
+ * ruta de antes —que en una versión bajada es el clon del público—; se niega o lo avisa.
  */
 function machineDashboard(ownTree, opts = {}) {
   const inTree = { dir: ownTree ? path.join(ownTree, '.dashboard') : null, travels: true, why: null };
@@ -305,8 +305,8 @@ const ages = new Map();
  * nuevo al más viejo), leído del disco: sin llamar a git, que puede no contestar.
  * 🔴 Cuenta SÓLO una traída que nombra `branch 'main'` y no es de OTRO remoto del clon. `git fetch origin <otra rama>`, `git pull origin
  *    <rama>` o la traída de la referencia de un pedido reescriben ese archivo con fecha de hoy y NO mueven
- *    `origin/main`, que es lo único que leen los avisos: contadas, la foto vencida de un nocturno sano se acusaba como
- *    «no está corriendo» —justo el error que mirar la copia vino a evitar—. Tampoco cuenta la de otro remoto.
+ *    `origin/main`, que es lo único que leen los avisos: contadas, la foto vencida de un nocturno sano se acusaría como
+ *    «no está corriendo» —justo el error que mirar la copia viene a evitar—. Tampoco cuenta la de otro remoto.
  * 🔴 «Vacío» es «la última traída falló» (git lo vacía antes de conectarse), y lo que no se deja leer es `unknown`:
  *    ninguno de los dos se devuelve como «nunca se trajo».
  */
@@ -365,7 +365,7 @@ function copyOlderThan(dir, ms, now = Date.now()) {
 const SHORTEST_PHOTO_LIFE_MS = 2 * 24 * 60 * 60 * 1000;
 /**
  * El renglón que dice cómo traer la copia. Se dice una vez por arranque. La ruta va entre comillas (se copia y se pega:
- * con espacios quedaba rota) y sin caracteres de control; si trae una comilla, una barra invertida, un `$` o un acento
+ * con espacios quedaría rota) y sin caracteres de control; si trae una comilla, una barra invertida, un `$` o un acento
  * grave, no se arma un comando para pegar: se nombra la carpeta.
  */
 function fetchHint(dir) {

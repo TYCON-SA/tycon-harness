@@ -14,15 +14,12 @@
 // Rate-limit: a lo sumo 1 reminder cada 10min por cwd para evitar spam en bursts
 // de edits consecutivos (típico cuando se escribe un archivo grande).
 //
-// Anti-patrón histórico que motivó este hook (Story 2.3, 2026-05-12):
-//   El modelo cerró el timer al final del Step 8 del tycon-pipeline "por
-//   prolijidad". Luego el usuario pidió 27min adicionales de trabajo (smoke
-//   check, commits, push, integration tests) — sin tracking. El usuario tuvo
-//   que flagear "para, no estás registrando tiempo en clocki!" y se hizo
-//   recuperación retroactiva. Este hook impide que vuelva a pasar.
+// Anti-patrón que evita este hook: el modelo cierra el timer al final del Step 8 del tycon-pipeline "por
+//   prolijidad", y el usuario pide más trabajo (smoke check, commits, push, integration tests) — sin tracking,
+//   con recuperación retroactiva de las horas. Con el timer exigido, ese trabajo no queda sin registrar.
 //
-// H10 2026-05-21: refactor a `handle(event)` exportable para que el dispatcher
-// lo corra in-process. El shim CLI del fondo preserva el comportamiento standalone.
+// `handle(event)` es exportable para que el dispatcher lo corra in-process. El shim CLI del fondo
+// preserva el comportamiento standalone.
 //
 // Cross-platform (Mac/Linux/Windows). Exit 0 siempre (los errores no rompen el hook).
 
@@ -68,7 +65,7 @@ function handle(hookInput) {
 
   // 🔴 Heartbeat: un Edit/Write es evidencia directa de que la sesión está VIVA
   // y trabajando. Marcala — el sweep usa el heartbeat para no cerrar timers de
-  // sesiones activas (fix 2026-05-17).
+  // sesiones activas.
   lib.touchHeartbeat(sessionKey);
 
   // No cwd = hook context broken, no podemos verificar nada.
@@ -86,7 +83,7 @@ function handle(hookInput) {
   // el lookup directo `active[cwd]` falla. findActiveEntryForCwd sube por parents.
   // El match está scopeado a ESTA sesión: si otra sesión tiene timer activo en el
   // mismo cwd pero esta sesión no, igual emitimos el reminder — el trabajo de esta
-  // sesión necesita su propio timer (multi-sesión, 2026-05-17).
+  // sesión necesita su propio timer (multi-sesión).
   const found = lib.findActiveEntryForCwd(active, cwd, sessionId);
   if (found) {
     // Timer activo de esta sesión (en este cwd o algún parent), todo OK. Exit silent.

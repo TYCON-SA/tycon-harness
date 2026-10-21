@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * git-bash.js — dónde está el bash de Git for Windows. LA única función del arnés que lo busca (story 8.17, tanda W1).
+ * git-bash.js — dónde está el bash de Git for Windows. LA única función del arnés que lo busca.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────────────────────
- * En Windows, `bash` a secas no dice qué bash. La medición en un agente Windows (2026-10-03) encontró CUATRO en el
+ * En Windows, `bash` a secas no dice qué bash. Puede haber CUATRO en el
  * PATH: el de Git (`…\Git\bin\bash.exe`), el de `System32`, el de `…\Git\usr\bin` y el alias de `WindowsApps`. El de
  * `System32` y el de `WindowsApps` son el lanzador de WSL: abren una distribución de Linux, que no ve una ruta
  * `C:/…` y que puede no estar instalada. Cuál queda primero depende del orden del PATH de cada máquina. Un guion

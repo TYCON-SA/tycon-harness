@@ -1,28 +1,28 @@
 'use strict';
 /*
- * tabs/runs.js — LA PESTAÑA CORRIDAS DEL SITIO DE LA ORGANIZACIÓN (story 2.27).
+ * tabs/runs.js — LA PESTAÑA CORRIDAS DEL SITIO DE LA ORGANIZACIÓN.
  *
  * Qué resuelve: todo lo de la vista de corridas (scripts/nightly/dashboard/runs.js) —la cabecera, las fichas, los
  * gráficos, la tabla y el detalle de cada corrida con sus cambios— en el sitio, para cada persona sólo lo suyo. Quien
- * mantiene ve todas; un dev, las de sus máquinas confirmadas (2.28). El filtro lo hace el SERVIDOR antes de armar cada
- * respuesta (S6): al navegador nunca llega lo que no puede ver.
+ * mantiene ve todas; un dev, las de sus máquinas confirmadas. El filtro lo hace el SERVIDOR antes de armar cada
+ * respuesta: al navegador nunca llega lo que no puede ver.
  *
- * UN SOLO CÓDIGO (decisión 1): el modelo es `modelo()` de runs.js, la página son sus `cabecera`, `ejecutiva`, `tabla` y
+ * UN SOLO CÓDIGO: el modelo es `modelo()` de runs.js, la página son sus `cabecera`, `ejecutiva`, `tabla` y
  * `pie`, y el cliente es su `CLIENTE`, servido como archivo. Acá no se lee ningún volcado ni conversación: sólo el modelo.
  *
- * EL ARMADO (decisión 8): en un hilo aparte (`worker_threads`), así el hilo principal nunca lee el espejo y `/healthz` y
- * las otras pestañas contestan mientras arma (medido el 2026-10-16 con 551 corridas: 34 s y 690 MB de pico). Se rearma
- * cuando el refresco de la 2.23 deja el espejo distinto (la huella de nombres, tamaños y fechas); mientras rearma, y si
+ * EL ARMADO: en un hilo aparte (`worker_threads`), así el hilo principal nunca lee el espejo y `/healthz` y
+ * las otras pestañas contestan mientras arma (medido con 551 corridas: 34 s y 690 MB de pico). Se rearma
+ * cuando el refresco de las fuentes deja el espejo distinto (la huella de nombres, tamaños y fechas); mientras rearma, y si
  * el rearmado falla (también por memoria), se sirve el modelo anterior ENTERO, con su hora, y una banda lo dice. Sin
  * modelo todavía: «cargando» (503 con Retry-After); sin modelo y con el armado fallado: 503 con el código del error,
  * nunca un mensaje con rutas. Los textos (cambios y parches) quedan en el disco del sitio, uno por corrida: en memoria
  * vive el modelo sin ellos.
  *
- * LO QUE VIAJA (decisión 2): la lista (`paraLista`, lista blanca) con la página; el detalle al abrir una corrida; los
+ * LO QUE VIAJA: la lista (`paraLista`, lista blanca) con la página; el detalle al abrir una corrida; los
  * textos al abrir un cambio. Una corrida que no es tuya, una sin máquina o un id que no existe contestan IGUAL: 404 sin
- * cuerpo (decisión 4).
+ * cuerpo.
  *
- * Rutas (todas `person`, que incluye a quien mantiene; AC 13): GET /corridas (la página) · GET /api/corridas (la lista)
+ * Rutas (todas `person`, que incluye a quien mantiene): GET /corridas (la página) · GET /api/corridas (la lista)
  * · GET /api/corridas/:id (el detalle) · GET /api/corridas/:id/textos ({ texto, textoGit }: gzip en base64) ·
  * GET /corridas/cliente.js · GET /corridas/vista.css. Casos: scripts/tests/site-runs.test.js.
  */
@@ -52,7 +52,7 @@ function huellaDelEspejo(dir, extra = []) {
   // las carpetas no cuentan por su fecha (cambia al agregar o borrar adentro; lo de adentro ya se anota uno por uno)
   const anotar = (ruta, nombre) => { try { const st = fs.statSync(ruta); h.update(st.isDirectory() ? `${nombre}\0d\n` : `${nombre}\0${st.size}\0${st.mtimeMs}\n`); } catch (e) { h.update(`${nombre}\0${(e && e.code) || 'error'}\n`); } };
   // los archivos de la raíz que empiezan con «.» los reescribe la bajada en cada pasada (las uniones de carpetas, con
-  // escritura atómica: fecha nueva aunque no cambie nada). Cuentan por su CONTENIDO, nunca por su fecha (pase adversarial)
+  // escritura atómica: fecha nueva aunque no cambie nada). Cuentan por su CONTENIDO, nunca por su fecha
   const porContenido = (ruta, nombre) => { try { h.update(`${nombre}\0${crypto.createHash('sha256').update(fs.readFileSync(ruta)).digest('hex')}\n`); } catch (e) { h.update(`${nombre}\0${(e && e.code) || 'error'}\n`); } };
   let raiz = [];
   try { raiz = fs.readdirSync(dir).sort(); } catch (e) { h.update(`sin espejo\0${(e && e.code) || 'error'}`); }
@@ -70,7 +70,7 @@ function huellaDelEspejo(dir, extra = []) {
 
 /**
  * El armado, en el hilo donde corre: el modelo de runs.js desde el espejo, sin registro propio, sin unificar productos
- * (eso va por persona, decisión 13). Los textos de cada corrida van a `textosDir/<id>.json`; vuelve el modelo sin ellos
+ * (eso va por persona). Los textos de cada corrida van a `textosDir/<id>.json`; vuelve el modelo sin ellos
  * y el pico de memoria del proceso.
  */
 async function armarEnElHilo({ buzon, skillsDir = null, sinHilos = false, umbralesArchivo = null, textosDir }) {
@@ -142,8 +142,8 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
   };
 
   // las carpetas de textos de armados de ANTES de este arranque (un reinicio o un despliegue) no las sirve nadie: se borran.
-  // Supone UNA réplica del sitio por SITE_DATA_DIR (como lo despliega la 2.30): dos réplicas sobre el mismo disco se
-  // borrarían los textos entre sí (revisor de seguridad, vuelta 5: disponibilidad, no fuga)
+  // Supone UNA réplica del sitio por SITE_DATA_DIR (como se despliega): dos réplicas sobre el mismo disco se
+  // borrarían los textos entre sí (disponibilidad, no fuga)
   //    (antes del primer armado, y sin esperar a nadie: si no, la limpieza podría borrar la carpeta del armado nuevo)
   try { for (const n of fs.readdirSync(base)) fs.rmSync(path.join(base, n), { recursive: true, force: true }); } catch (e) { if (!e || e.code !== 'ENOENT') log(`corridas: no se pudieron borrar los textos de un arranque anterior (${codigoDe(e)})`); }
 
@@ -212,12 +212,12 @@ function crearVista({ cfg, fuentes, armar = armarEnWorker, skillsDir = null, dem
     if (!fuentes.estado().cargado) return;
     st.sinBuzon = !conBuzon();
     if (st.sinBuzon || st.armando) return;
-    // se arma SÓLO con una bajada entera (pase adversarial): con una a medias, el espejo sería más nuevo que lo informado
+    // se arma SÓLO con una bajada entera: con una a medias, el espejo sería más nuevo que lo informado
     // por las máquinas, y una máquina que cambió de dueño mostraría corridas nuevas a su dueño anterior. Mientras tanto
     // se sirve el último armado, y la respuesta dice que puede faltar alguna corrida.
     if (!bajada().completo) return;
     const umbralesArchivo = umbralesDeLaOrganizacion();
-    // las conversaciones sólo cuentan con un disco del sitio (decisión 11): sin SITE_DATA_DIR, lo del hilo es «no medido»
+    // las conversaciones sólo cuentan con un disco del sitio: sin SITE_DATA_DIR, lo del hilo es «no medido»
     const sinHilos = !(typeof fuentes.hilos === 'function' && fuentes.hilos() && cfg.dataDir);
     // la huella recorre el espejo en el disco montado: en un hilo aparte (el principal contesta las sondas), una a la vez
     if (st.huellaEnCurso) return;
@@ -351,7 +351,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     if (!g || g.deps.some((d, i) => d !== deps[i])) {
       const reglas = access.crearReglas({ config, modelo: modeloFondo, personas });
       const vis = access.filtrarCorridas(M, ctx.quien, reglas);
-      // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna (AC 19)
+      // la última bajada no terminó entera: se sirve el último armado entero, y la respuesta dice que puede faltar alguna
       if (vis && !completo) vis.buzon = { ...(vis.buzon || { estado: 'leido' }), parcial: true, ...(ctx.quien.rol === 'maintainer' ? { incompleto: true } : {}) };
       g = { deps, vis, salidas: {} };
       porPersona.set(clave, g);
@@ -414,7 +414,7 @@ function crearRutas({ cfg, fuentes, version = null, skillsDir = null, armar, dem
     },
     { method: 'GET', path: '/corridas/cliente.js', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/javascript; charset=utf-8', cuerpo: runs.CLIENTE }) },
     // sólo lo propio de la vista: el tema, la grilla y las fichas ya vienen en /static/site.css con la paleta del sitio;
-    // repetirlos acá (esta hoja carga después) volvía a poner la paleta de la página de la noche en toda la pestaña
+    // repetirlos acá (esta hoja carga después) volvería a poner la paleta de la página de la noche en toda la pestaña
     { method: 'GET', path: '/corridas/vista.css', needs: ['maintainer', 'person'], handler: () => ({ status: 200, tipo: 'text/css; charset=utf-8', cuerpo: runs.CSS_PROPIO }) },
   ];
   rutas.vista = vista;

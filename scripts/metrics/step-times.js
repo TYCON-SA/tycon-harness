@@ -1,27 +1,27 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * step-times.js — CUÁNTO TRABAJÓ Y CUÁNTO ESPERÓ UNA CORRIDA (story 2.7, 2026-09-16)
+ * step-times.js — CUÁNTO TRABAJÓ Y CUÁNTO ESPERÓ UNA CORRIDA
  *
- * El agente marca cada paso del pipeline al TERMINARLO. Hasta la 2.7 nadie anotaba cuándo empezaba,
- * así que la duración de un paso era «del fin del anterior al fin de éste», y todo lo que pasó en el
- * medio —incluido el tiempo en que no pasó nada— caía en el paso siguiente. Medido: 208 de 237
+ * El agente marca cada paso del pipeline al TERMINARLO. Sin el arranque,
+ * la duración de un paso sería «del fin del anterior al fin de éste», y todo lo que pasa en el
+ * medio —incluido el tiempo en que no pasó nada— caería en el paso siguiente. Medido: 208 de 237
  * corridas archivadas tienen pasos «marcados juntos», y el paso 8 de una corrida real aparentaba
  * 3,3 h con 2,7 h sin un solo evento adentro.
  *
- * Desde la 2.7 `marker.js` anota también el arranque (`stepTimings[N].startedAt`). Este archivo es la
+ * `marker.js` anota también el arranque (`stepTimings[N].startedAt`). Este archivo es la
  * ÚNICA cuenta que lo usa, y trata igual a la corrida nueva y a la vieja:
  *
  *   · Paso con arranque válido → duración MEDIDA = fin − arranque. Lo que hay entre el fin del paso
  *     anterior y este arranque es HUECO (`entre_pasos_ms`), nunca del paso.
- *   · Paso sin arranque (toda corrida anterior a la 2.7) → duración ESTIMADA = fin − fin del anterior,
- *     como siempre, y se dice (`estimados`). 🔴 No se rellena: inventar un arranque mezclaría en
+ *   · Paso sin arranque (corrida vieja) → duración ESTIMADA = fin − fin del anterior,
+ *     y se dice (`estimados`). 🔴 No se rellena: inventar un arranque mezclaría en
  *     silencio lo estimado con lo medido y arruinaría la serie.
- *   · Marcas invertidas o empatadas → se fusionan (`5+6`) con la misma regla de la 2.13
+ *   · Marcas invertidas o empatadas → se fusionan (`5+6`) con la misma regla
  *     (`cortesDePaso`, importado: una sola implementación) y cuentan como estimadas.
  *   · Pasos que se PISAN (una vuelta de revisión vuelve a cerrar el 5 después del 6 y el 7), un
  *     arranque anterior al fin del paso previo o anterior al inicio de la corrida → estimados: la marca
- *     existe, pero no dice lo que parece (pase adversarial de la 2.7).
+ *     existe, pero no dice lo que parece.
  *   · Sub-pasos (0b, 0c, 5b, 7c): tienen arranque y no fin; su tramo va hasta el arranque del paso
  *     siguiente y es TRABAJO, no hueco.
  *
@@ -63,7 +63,7 @@ function tiempos(stepTimings, opts = {}) {
   }
   const st = stepTimings && typeof stepTimings === 'object' ? stepTimings : {};
   // Un arranque sirve si es legible y no es anterior al inicio de la corrida: uno de antes es heredado
-  // de otra story de la misma sesión (pase adversarial 2.7, hallazgo 9).
+  // de otra story de la misma sesión.
   const arranque = (k) => {
     const t = st[k] && typeof st[k] === 'object' ? aMs(st[k].startedAt) : null;
     return t !== null && t >= ini ? t : null;
@@ -71,7 +71,7 @@ function tiempos(stepTimings, opts = {}) {
   const cortes = cortesDePaso(st);
   // Los arranques de los pasos enteros, para detectar pasos que se PISAN: en una vuelta de revisión
   // el 5 se vuelve a cerrar después del 6 y el 7, conserva su arranque de la primera vuelta, y su
-  // intervalo se come la espera del 7 (hallazgo 3). Un paso que contiene el arranque de otro no se mide.
+  // intervalo se come la espera del 7. Un paso que contiene el arranque de otro no se mide.
   const arranquesEnteros = cortes.filter((c) => !String(c.paso).includes('+'))
     .map((c) => ({ paso: String(c.paso), t: arranque(String(c.paso)) })).filter((x) => x.t !== null);
   // Los sub-pasos (0b, 0c, 5b, 7c) tienen arranque y no fin: su trabajo va desde su arranque hasta el
@@ -126,7 +126,7 @@ function tiempos(stepTimings, opts = {}) {
       sinRepartir += dur;
       esperaSinMedir.push(...ids.filter((i) => PASOS_DE_ESPERA.has(i)));
       // Un tramo que junta un paso de espera con uno de trabajo no se puede partir: el trabajo que
-      // quedó adentro tampoco está medido (hallazgo 10).
+      // quedó adentro tampoco está medido.
       if (ids.some((i) => !PASOS_DE_ESPERA.has(i))) trabajoMedido = false;
     } else { trabajo += dur; if (!medida) trabajoMedido = false; }
     const huecoPrevio = pasos.length && pasos[pasos.length - 1].subpaso && pasos[pasos.length - 1].fin === arr
@@ -161,7 +161,7 @@ function tiempos(stepTimings, opts = {}) {
 }
 
 /**
- * La espera por una persona que el hilo muestra FUERA de los pasos 3 y 7 (2026-09-17): una pregunta al dev
+ * La espera por una persona que el hilo muestra FUERA de los pasos 3 y 7: una pregunta al dev
  * a mitad del paso 5, o un turno que terminó esperando su mensaje. Se descuenta de lo que la cuenta por
  * pasos había dado como trabajo (y del tiempo entre pasos, si cayó ahí) y se suma a la espera. Lo que cae
  * adentro del 3 o del 7 ya era espera: no se cuenta dos veces.

@@ -2,7 +2,7 @@
  * instinct-draft.js — generador de drafts cuando un instinct aprobado
  * tiene `tycon_artifact_suggestion`. Output a `drafts/` del lugar donde vive el
  * instinct aprobado (inbox/instincts/drafts/ en un árbol que trae su buzón; la
- * casa de la persona si no — lo dice instinct-dirs.js, story 8.27).
+ * casa de la persona si no — lo dice instinct-dirs.js).
  *
  * Tipos de draft soportados:
  *   - advisor:<rule-id>      → markdown block listo para advisor-rules-catalog.md
@@ -19,11 +19,11 @@ const path = require('path');
 
 // Dónde van los borradores lo dice quien llama (la carpeta `drafts/` del lugar del instinct aprobado) o, si no lo dice,
 // instinct-dirs.js. No se resuelve al cargar este archivo —otras piezas lo requieren sólo por `ownerDePrefijo`— y la
-// carpeta se crea recién al escribir el borrador (story 8.27).
+// carpeta se crea recién al escribir el borrador.
 
 // Prefijo de regla → revisor dueño. Sólo el NÚCLEO va escrito acá; los prefijos de los revisores de
 // un producto o de un cliente (DOTNET/REACT/NEXT, XPAT…) los declaran sus manifiestos en los
-// paquetes de revisores instalados (story 8.2) y se suman leyéndolos. Sin el paquete, el prefijo no
+// paquetes de revisores instalados y se suman leyéndolos. Sin el paquete, el prefijo no
 // tiene dueño — y eso se ve en el borrador como UNKNOWN-ADVISOR, no como un nombre inventado.
 const OWNER_NUCLEO = {
   SEC: 'tycon-plugin-security-basics',
@@ -43,7 +43,7 @@ function ownerDePrefijo(prefix) {
 }
 
 // El prefijo de un id de regla (DOTNET-C7 → DOTNET). Con dígitos también (V2-C1 → V2): el vocabulario
-// de los manifiestos los admite, y `/^[A-Z]+/` los dejaba sin dueño (pase adversarial de la 8.2).
+// de los manifiestos los admite, y `/^[A-Z]+/` los dejaría sin dueño.
 function prefijoDeRegla(ruleId) {
   return String(ruleId || '').match(/^([A-Z][A-Z0-9]*)/)?.[1] || 'UNKNOWN';
 }
@@ -152,8 +152,8 @@ TODO: describir qué retorna la skill al user
 }
 
 /**
- * El comando que el borrador propone registrar: el script bajo el lugar del arnés (story 8.19). En Windows, la ruta
- * absoluta con `/` y sin `$`: un `$` en un comando de settings.json no lo expande el shell que lo corre ahí (AC 13 c).
+ * El comando que el borrador propone registrar: el script bajo el lugar del arnés. En Windows, la ruta
+ * absoluta con `/` y sin `$`: un `$` en un comando de settings.json no lo expande el shell que lo corre ahí.
  */
 function hookCommand(fname, { platform = process.platform, home = require('os').homedir() } = {}) {
   const place = require('../setup/harness/place.js').PLACE_NAME;

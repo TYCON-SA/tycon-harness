@@ -48,8 +48,8 @@ if (-not (Test-Path $cachePath)) { "{}" | Set-Content -Path $cachePath -Encoding
 if (-not (Test-Path $settingsLocalPath)) {
     # Nota: NO sembrar intentKeywords/stopKeywords vacios. readSettings() (lib.js) usa
     # la lista narrow/precision-first de DEFAULT_SETTINGS cuando el field falta o esta vacio.
-    # Sembrar `[]` aca degradaba a una lista ANCHA y disparaba falsos positivos sobre
-    # charla/meta-discusion (H14, 2026-05-21). El dev puede agregar estos campos para OVERRIDE.
+    # Sembrar `[]` aca degradaria a una lista ANCHA y dispararia falsos positivos sobre
+    # charla/meta-discusion. El dev puede agregar estos campos para OVERRIDE.
     @"
 {
   "idleTimeoutMinutes": 15,

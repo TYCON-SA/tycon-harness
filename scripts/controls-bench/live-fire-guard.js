@@ -27,8 +27,8 @@ const TCG = path.resolve(__dirname, '..', '..');
 const GUARD = path.join(TCG, 'scripts', 'hooks', 'safety-guard-pre.sh');
 // Dónde va el reporte: lo decide scripts/lib/harness-parity.js (`benchDir()`), la misma función que usa quien cobra el
 // rojo (bench-notice.js). En un clon, `.bench/` al lado de este guion, como siempre; en una versión BAJADA, la carpeta
-// del estado: el árbol bajado se reemplaza entero en cada actualización y el reporte se perdía con él — un rojo que
-// desaparecía sin que nadie lo arreglara (2026-10-11). Sin la pieza (una copia suelta), donde siempre.
+// del estado: el árbol bajado se reemplaza entero en cada actualización y el reporte se perdería con él — un rojo que
+// desaparecería sin que nadie lo arreglara. Sin la pieza (una copia suelta), donde siempre.
 const OUT_DIR = (() => {
   try { const P = require('../lib/harness-parity.js'); if (typeof P.benchDir === 'function') return P.benchDir(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
   return path.join(__dirname, '.bench');

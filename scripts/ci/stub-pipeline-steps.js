@@ -4,12 +4,11 @@
 // jobs, dependencias y condiciones, pero con cada paso reemplazado por un `echo`, para que el
 // corredor local (Runner.Client) pueda recorrer la cadena entera sin ejecutar nada de verdad.
 //
-// 🔴 POR QUÉ EXISTE (2026-09-04). El corredor local sin agente sólo evalúa las condiciones de la
+// 🔴 POR QUÉ EXISTE. El corredor local sin agente sólo evalúa las condiciones de la
 // PRIMERA capa: un job que tiene pasos y nadie que los ejecute termina `Failed`, y todo lo que
-// depende de él se saltea en cascada. Simulando `main` sobre URUTAU abrió `TraerArnes` y `Pruebas`
-// y saltó `Build` y `Deploy` — no porque su condición estuviera mal, sino porque `Pruebas` "falló".
-// O sea que la condición de `Deploy` —la que más cuesta cuando está mal— no se podía probar sin
-// una corrida real. Con los pasos vaciados y `-P ubuntu-latest=-`, cada job termina
+// depende de él se saltea en cascada. Al simular `main`, `Build` y `Deploy` se saltan — no porque su condición esté
+// mal, sino porque `Pruebas` "falló". O sea que la condición de `Deploy` —la que más cuesta cuando está mal— no se
+// puede probar sin una corrida real. Con los pasos vaciados y `-P ubuntu-latest=-`, cada job termina
 // bien en segundos y la cadena se evalúa completa; con `--fail` se hace fallar UN paso a
 // propósito y se ve que corta lo que tiene que cortar (Pruebas en rojo → Build no arma).
 //
@@ -24,13 +23,13 @@
 // Uso:
 //   node stub-pipeline-steps.js <azure-pipelines.yml> [--a <salida.yml>]
 //        [--fail <regex sobre displayName|name>] [--output NOMBRE=VALOR ...]
-//   (--fail y --output tenían nombre en castellano hasta la story 8.9, tanda B3a; los viejos siguen andando hasta
+//   (--fail y --output tienen también su nombre en castellano; los viejos siguen andando hasta
 //   el retiro. La vieja y la nueva juntas salen 2.)
 //
 // Casos: scripts/tests/stub-pipeline-steps.test.sh
 
 const fs = require('fs');
-// El traductor de las opciones viejas vive al lado y viaja con este archivo en el artefacto arnes-ci (story 8.9).
+// El traductor de las opciones viejas vive al lado y viaja con este archivo en el artefacto arnes-ci.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
 })();

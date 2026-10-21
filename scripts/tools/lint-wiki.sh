@@ -10,10 +10,9 @@
 #
 # Exit code: 0 si OK, 1 si errors.
 #
-# Perf (reescrito 2026-06-27): antes la Pasada 1 hacía `grep -lE` sobre TODO
-# stories/*.md por CADA related_id de CADA topic → O(topics × ids × N_stories) y
-# ~1300 forks (grep/sed/tr por archivo, ×2 pasadas). Con 270 stories pasaba >90s
-# y reventaba el timeout del git pre-commit (parecía "colgado"). Ahora se construyen
+# Perf: hacer `grep -lE` sobre TODO stories/*.md por CADA related_id de CADA topic sería
+# O(topics × ids × N_stories) y ~1300 forks (grep/sed/tr por archivo, ×2 pasadas): con 270 stories
+# pasaría >90s y reventaría el timeout del git pre-commit (parecería "colgado"). Por eso se construyen
 # 2 índices con UNA pasada awk cada uno y los cross-checks leen esos índices chicos.
 # Compatible con el bash 3.2 de macOS (sin `declare -A`; comparación de STRING forzada
 # en awk con `("" )` para que "13.3" != "13.30").
@@ -26,9 +25,9 @@ set -uo pipefail
 #   3. Raíz del repo git desde el cwd  ← el caso normal (pre-commit del repo, o
 #      correrlo a mano parado en el repo). Permite que este script viva SOLO en
 #      el arnés y que los proyectos lo referencien por path, sin copia.
-#   4. Fallback histórico: ../../specs relativo al script, que vive en scripts/tools/
+#   4. Fallback: ../../specs relativo al script, que vive en scripts/tools/
 #      (cuando el script SÍ vive dentro del repo que lintea — compatibilidad con
-#      clones viejos; hasta la story 8.12 vivía en scripts/ y era ../specs).
+#      clones viejos, que traen el script en scripts/, donde es ../specs).
 if [ "${1:-}" != "" ]; then
   SPECS_DIR="$1"
 elif [ "${SPECS_DIR:-}" != "" ]; then

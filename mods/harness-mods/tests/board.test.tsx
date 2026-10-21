@@ -1,4 +1,4 @@
-// La prueba del motor del plugin harness-mods (story 7.27, T17): el cartel se dibuja con una corrida en la sesión,
+// La prueba del motor del plugin harness-mods (T17): el cartel se dibuja con una corrida en la sesión,
 // no muestra dinero, /mods hide lo saca en el momento y /mods off queda guardado.
 //
 // Correr: claude plugin test mods/harness-mods (lo envuelve scripts/tests/harness-mods-plugin.test.sh).

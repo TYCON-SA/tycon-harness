@@ -3,7 +3,7 @@
 // rules-catalog-count.js — el conteo del catálogo real de reglas (el caso C5 de scripts/tests/rules-catalog.test.sh),
 // en un solo lugar.
 //
-// Los números que la story publica salen de acá, no de una lista tipeada en dos sitios. Lo usan dos: la prueba
+// Los números que se publican salen de acá, no de una lista tipeada en dos sitios. Lo usan dos: la prueba
 // (C5, que imprime cada control) y el freno de antes del commit (scripts/ci/check-staged-ci-rules.js), que lo corre
 // sobre el catálogo del índice cuando el commit toca agents/ o el catálogo. Lee con el único parser del catálogo
 // (scripts/lib/rules-catalog.js).
@@ -23,16 +23,7 @@ const CATALOG = path.join('guides', 'advisor-rules-catalog.md');
 const REVIEWERS = path.join('adapters', 'codex', 'agents');
 const CLIENT_PACK = path.join('packs', 'clients', 'pack.json');
 
-// La historia de los números:
-// story 7.2 (2026-09-16): ACCOV-C9 retirada → su fila deja de ser una definición: uno menos en los tres.
-// story 7.3 (2026-09-17): VAL-W15 («la story no dice lo que se implementó») → uno más en los tres.
-// 2026-09-18 (BANCO-C5, «el caso se derrama sobre el entorno real»): uno más en los tres, y una «sin verificación» más —
-// la familia BANCO la verifica el rojo previo, no un guion.
-// 2026-10-02 (REACT-C6, «el backend llamado desde la raíz del servidor»): uno más en los tres.
-// 2026-10-14 (story 7.24, VAL-W16 «el AC le muestra al usuario identificadores internos»): uno más en los tres (y la
-// misma fila en la copia del catálogo del repo del equipo).
-// 2026-10-14: los números pasan a ser los del núcleo, sin las secciones del paquete de clientes (en el repo del equipo
-// eran 364/363/361 con las dos secciones de ese paquete: 15 filas, 15 reglas, 15 identificadores).
+// Los números cambian cuando una regla se agrega, se retira o se une a otra: se actualizan acá junto con el catálogo.
 const EXPECTED = {
   filas: 355,
   reglas: 354,

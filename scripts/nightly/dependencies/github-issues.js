@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * github-issues.js — el aviso de dependencias como issue de GitHub (story 8.31).
+ * github-issues.js — el aviso de dependencias como issue de GitHub.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * En Azure DevOps cada ficha viva de la revisión nocturna se convierte en un Bug en el proyecto del equipo dueño del
@@ -25,7 +25,7 @@
  *   sí. Sólo se CIERRA un issue con la marca en el cuerpo y abierto por esa identidad; sólo se REABRE uno que esa
  *   identidad cerró el día de su marca de cierre. Sin identidad conocida no se cierra ni se reabre nada (se comenta).
  *
- * ── LO QUE NO CAMBIA (las reglas de la 4.4 y la 4.5) ────────────────────────────────────────────
+ * ── LO QUE NO CAMBIA (las reglas de work-items.js) ────────────────────────────────────────────
  * · Un pedido tiene dos identidades: la línea en la ficha y la etiqueta `arnes:<id>` en GitHub. Se busca por el LISTADO
  *   de issues del repo (`state=all`, sin pull requests, paginado), nunca por la búsqueda: la búsqueda tarda en ver un
  *   issue recién creado y nacerían duplicados. «No pude preguntar» no es «no hay»: no se crea nada.
@@ -151,7 +151,7 @@ function leerSuIssue(gh, repo, n, idFicha, { exigirEtiqueta = true } = {}) {
 const abiertoPorArnes = (issue, ident) => !!(ident && ident.ok && TIENE_MARCA.test(String(issue.body || ''))
   && igual(issue.user && issue.user.login, ident.login));
 
-/** Categoría de Azure equivalente (decisión 9): abierto → Proposed; completed → Completed; lo demás → Removed. */
+/** Categoría de Azure equivalente: abierto → Proposed; completed → Completed; lo demás → Removed. */
 function categoriaDe(issue) {
   if (issue.state === 'open') return 'Proposed';
   return issue.state_reason === 'completed' ? 'Completed' : 'Removed';
@@ -183,7 +183,7 @@ function resolverRespaldo(gh, login) {
   return r.ok ? { ok: true, login: r.valor.login } : { ok: false, motivo: `no pude resolver al responsable de respaldo ${login} (${r.motivo})` };
 }
 
-/** Los repos de GitHub de la config; una entrada de Azure es una mezcla de plataformas (decisión 19). */
+/** Los repos de GitHub de la config; una entrada de Azure es una mezcla de plataformas. */
 function validarConfig(cfg) {
   const repos = Array.isArray(cfg.repos) ? cfg.repos : [];
   const azure = repos.filter((r) => r && r.ado).map((r) => r.ruta);
@@ -496,7 +496,7 @@ function avisarCerradosVivos(ctx, res, comentar, respaldoDe, textos) {
 // ── el estado de cada issue ────────────────────────────────────────────────────────────────────
 
 /**
- * La última vez que una PERSONA tocó el issue (decisión 10): un evento de alguien que no es la identidad ni un `[bot]`,
+ * La última vez que una PERSONA tocó el issue: un evento de alguien que no es la identidad ni un `[bot]`,
  * o un comentario de la identidad SIN la marca. La creación cuenta si la hizo otra persona. Sin identidad conocida,
  * todo lo que no es un bot cuenta: ante la duda, «nadie la miró» no se afirma.
  */

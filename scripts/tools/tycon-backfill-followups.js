@@ -10,8 +10,8 @@
  *
  * Flags:
  *   --dir <path>      Raíz desde la que descubrir stories, RECURSIVA. Default: cwd.
- *                     (Hasta 2026-08-15 era "directorio con stories `.md`" y NO bajaba niveles:
- *                     contra un repo con las stories anidadas avisaba "0 stories encontradas".)
+ *                     (Baja todos los niveles: contra un repo con las stories anidadas, un directorio plano
+ *                     avisaría "0 stories encontradas".)
  *   --apply           Aplicar los cambios. Default: dry-run (solo reporta).
  *   --story <id>      Procesar solo follow-ups que involucren la story <id>
  *                     (filtro — útil para back-fillear UNA padre puntual).
@@ -37,7 +37,7 @@
  * Idempotente: corre N veces sin duplicar entries.
  * Sin dependencias de npm a propósito (sin lib YAML — parser minimalista local). La ÚNICA
  * dependencia externa es `lib/story-discovery.js` del skill `tycon-pipeline`, resuelto por ruta
- * fija con fail-open: es el descubridor único del arnés, y tenerlo duplicado acá fue el bug.
+ * fija con fail-open: es el descubridor único del arnés, y tenerlo duplicado dejaría un buscador roto.
  */
 
 'use strict';
@@ -175,12 +175,11 @@ function parseListField(fm, fieldName) {
 // Scan: build index of stories in dir
 // ============================================================
 
-// ── Descubrimiento: EL MISMO del resto del arnés, no uno propio (2026-08-15) ─────────────────
-// Este script tenía su propio buscador: un `readdirSync(dir)` PLANO, que sólo veía los `.md`
-// sueltos del directorio recibido. En un repo del equipo —stories en `specs/bizuit-bpmn-mcp/`— corrido
-// desde la raíz del repo avisaba "0 stories Mary+GOLD encontradas". El arnés tenía DOS buscadores
-// en dos repos distintos, así que arreglar uno dejaba el otro roto: es lo que efectivamente pasó.
-// Ahora delega en `lib/story-discovery.js` del skill `tycon-pipeline` (fuente única), con la misma
+// ── Descubrimiento: EL MISMO del resto del arnés, no uno propio ─────────────────────────────
+// Un buscador propio con un `readdirSync(dir)` PLANO sólo vería los `.md` sueltos del directorio recibido: en un
+// repo con las stories en una subcarpeta, corrido desde la raíz, avisaría "0 stories Mary+GOLD encontradas". Con
+// dos buscadores en dos repos, arreglar uno dejaría el otro roto.
+// Por eso delega en `lib/story-discovery.js` del skill `tycon-pipeline` (fuente única), con la misma
 // convención de referencia-por-path que `lint-story-frontmatter.js`: el módulo vive en un solo
 // lado y se resuelve por ruta fija, con override por env y fail-open RUIDOSO si no está.
 const SKILLS_DIR = process.env.TYCON_SKILLS_DIR || path.join(os.homedir(), '.claude', 'agent-skills', 'skills');
@@ -473,10 +472,10 @@ function injectBacklink(parentParsed, child, item, today) {
 // ============================================================
 
 /**
- * `from` = carpeta desde la que se leerá la tabla (la de la story raíz de la cascada). Desde que el
- * descubrimiento es recursivo (2026-08-15), padre e hija pueden vivir en carpetas distintas: un
- * link `./<basename>` sólo era correcto cuando todas las stories estaban en un mismo directorio
- * plano. Se calcula relativo de verdad, y en POSIX porque es markdown, no filesystem.
+ * `from` = carpeta desde la que se leerá la tabla (la de la story raíz de la cascada). Como el
+ * descubrimiento es recursivo, padre e hija pueden vivir en carpetas distintas: un link
+ * `./<basename>` sólo sería correcto con todas las stories en un mismo directorio plano. Se calcula
+ * relativo de verdad, y en POSIX porque es markdown, no filesystem.
  */
 function renderCascade(byId, storyId, depth = 0, visited = new Set(), from = null) {
   const lines = [];

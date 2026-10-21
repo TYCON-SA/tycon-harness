@@ -1,4 +1,4 @@
-# npm-publish — publica el instalador de npm (@tyconsa/harness, scripts/setup/npm/) desde la CI pública (story 8.40).
+# npm-publish — publica el instalador de npm (@tyconsa/harness, scripts/setup/npm/) desde la CI pública.
 #
 # Sin ningún token: trusted publishing (OIDC). npm le cree a esta corrida porque el paquete declara como publicador de
 # confianza ESTE repo y ESTE archivo; la constancia de procedencia se genera sola (repo y paquete públicos). Por eso el
@@ -9,7 +9,7 @@
 # salió). Nunca en un pedido. La publicación se HABILITA con la variable de repositorio NPM_PUBLISH_ENABLED=true (no es un
 # secreto: la pestaña «Variables» de Actions, en la configuración del repo). Sin ella, el job que publica sale salteado, en verde,
 # con un aviso que dice qué falta configurar (la organización de npm, el publicador de confianza y la variable: tareas
-# del dueño, story 8.40). Con ella, CUALQUIER error es rojo, también la identidad que npm no acepta (E401/E403/OIDC). El
+# del dueño). Con ella, CUALQUIER error es rojo, también la identidad que npm no acepta (E401/E403/OIDC). El
 # paquete que todavía no existe en npm (E404) se publica: es la primera publicación, también en etapas.
 #
 # Su forma exacta la lleva scripts/ci/check-public-workflow.js (`--publisher`): cambiar este archivo es cambiar

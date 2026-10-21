@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * public-copy.js — funciones puras con que el exportador arma la copia pública (story 8.7, tanda A, plan §2.3).
+ * public-copy.js — funciones puras con que el exportador arma la copia pública.
  *
  * Sin git, sin disco, sin dependencias: reciben texto y devuelven texto o hallazgos. Las llama `export.js` dentro de
  * `transformar` (transformaciones `internal-blocks`, `skill-rename`, `public-third-party`) y de `controles` (`links`,
@@ -23,22 +23,22 @@ const INTERNAL_START = '<!-- tycon:' + 'internal-start -->';
 const INTERNAL_END = '<!-- tycon:' + 'internal-end -->';
 const PUBLIC_START = '<!-- tycon:' + 'public-only';
 const PUBLIC_END = '-' + '->';
-// Un marcador «casi» bien escrito (story 8.10.1, pase adversarial C16): un comentario HTML que empieza como un marcador
+// Un marcador «casi» bien escrito: un comentario HTML que empieza como un marcador
 // y no ES uno —un espacio de más o de menos, otra caja, un guion bajo, dentro de una cita o de un ítem de lista, con
-// texto en la misma línea—. Antes no era ni marcador ni error: si la apertura y el cierre traían la misma errata, el
-// bloque entero salía en la copia con todo en verde. Ahora frena. Nombrar el marcador en la prosa, sin el comentario
+// texto en la misma línea—. No es ni marcador ni error, y frena: si la apertura y el cierre traen la misma errata, el
+// bloque entero saldría en la copia con todo en verde. Nombrar el marcador en la prosa, sin el comentario
 // (`tycon:internal-start`), no cuenta.
-// Dos formas, las dos frenan (revisores de la segunda vuelta: una errata de DOS caracteres —`::`, `__`, `--`— o con otro
-// separador —`.`, `,`, `/`— no era ni marcador ni error, y el bloque salía):
+// Dos formas, las dos frenan (una errata de DOS caracteres —`::`, `__`, `--`— o con otro separador —`.`, `,`, `/`— no
+// sería ni marcador ni error, y el bloque saldría):
 //   · un comentario que empieza con la palabra del arnés y, tras cualquier separador corto, «internal» o «public»;
 //   · un comentario que nombra el cuerpo de un marcador (`internal-start`, `internal-end`, `public-only`, con guion,
 //     guion bajo o espacio) aunque la primera palabra esté mal escrita o falte.
 // Sin comillas ni `+` en el medio: el código que ARMA un marcador por partes (este archivo, las pruebas) no es un marcador.
 //
-// (story 8.10.2, pase adversarial de la 8.10.1) Las dos formas eran expresiones que pedían palabras exactas: una errata
-// DENTRO de «internal» (`intenral`, `interal`) no era ni marcador ni error, un comentario partido en renglones tampoco, y
-// al revés frenaban comentarios comunes que nombran «internal endpoints» o «public only». Ahora se compara el CONTENIDO
-// del comentario, sólo sus letras, contra el cuerpo de cada marcador, con hasta dos letras de distancia:
+// Las dos formas no piden palabras exactas: una errata DENTRO de «internal» (`intenral`, `interal`) o un comentario
+// partido en renglones también cuentan, y los comentarios comunes que nombran «internal endpoints» o «public only» no
+// frenan. Se compara el CONTENIDO del comentario, sólo sus letras, contra el cuerpo de cada marcador, con hasta dos
+// letras de distancia:
 //   · el contenido entero (con o sin la palabra del arnés adelante) a ≤2 letras de un cuerpo de marcador;
 //   · o el contenido EMPIEZA con la palabra del arnés (a ≤1 letra), un separador corto y una palabra a ≤2 letras de
 //     «internal» o «public»: ese comienzo queda reservado para los marcadores;
@@ -47,13 +47,13 @@ const PUBLIC_END = '-' + '->';
 const HARNESS_WORD = 'tycon';
 const MARKER_BODIES = ['internalstart', 'internalend', 'publiconly'].flatMap((b) => [b, HARNESS_WORD + b]);
 // El código que arma un marcador por partes es una concatenación de cadenas (`'…' + '…'`); una comilla o un apóstrofo
-// sueltos en el comentario no (revisor de fallos silenciosos, cuarta vuelta: `isn't` dejaba salir el bloque).
+// sueltos en el comentario no (un `isn't` dejaría salir el bloque).
 const BUILT_BY_PARTS = /['"`]\s*\+|\+\s*['"`]/;
 // Un renglón que es una cadena de código (`'tycon:internal-start',`) no es un marcador suelto.
 const QUOTED = /['"`]/;
 
 /** Los comentarios de un renglón: `[{ content, closed }]`. Con `indexOf` y no con un regex: con una línea enorme de
- *  guiones y sin cierre, el regex tardaba en proporción al cuadrado del largo (revisor de seguridad, cuarta vuelta). */
+ *  guiones y sin cierre, un regex tardaría en proporción al cuadrado del largo. */
 function commentsOf(raw) {
   const out = [];
   let pos = 0;
@@ -105,12 +105,12 @@ function nearContent(content, ownLine = content) {
   if (MARKER_BODIES.some((b) => distance(letters, b, 2) <= 2)) return true;
   if (harnessPair(content.match(/[A-Za-z]+/g) || [], 0)) return true;
   // La palabra del arnés + «internal»/«public» en CUALQUIER lugar del renglón del comentario: con una etiqueta delante
-  // (`BEGIN`, `marker:`) el bloque salía (revisor de fallos silenciosos, quinta vuelta de la 8.10.2). Sólo en ese
+  // (`BEGIN`, `marker:`) el bloque saldría. Sólo en ese
   // renglón: en los de abajo de un comentario abierto pescaba código que nombra `<!--` en un comentario.
   return harnessPair(ownLine.match(/[A-Za-z]+/g) || [], -1);
 }
 
-/** (story 8.10.2, revisor de fallos silenciosos) Un renglón que es SÓLO el cuerpo de un marcador con la palabra del
+/** Un renglón que es SÓLO el cuerpo de un marcador con la palabra del
  *  arnés (`tycon:internal-start`, con hasta dos letras de diferencia), sin comentario: un `-->` en el medio cerró el
  *  comentario antes, o el comentario se partió en más renglones de los que se siguen. Nombrarlo en una frase trae texto
  *  de más, y un título como «Internal start» no trae la palabra del arnés. */
@@ -129,8 +129,7 @@ const OPEN_COMMENT_LINES = 5;
 /** Un renglón que trae un marcador casi bien escrito (`below`: los renglones de abajo, para el comentario partido). Un
  *  comentario que el renglón deja abierto sigue en los de abajo hasta su cierre (como mucho `OPEN_COMMENT_LINES`):
  *  cualquier cosa delante del `<!--` (prosa, un ítem de lista numerada) o el corte en el medio del contenido no lo
- *  esconden (pase adversarial y revisores de la 8.10.2: `Ver <!--` y el comentario partido en tres o cuatro renglones
- *  dejaban salir el bloque). */
+ *  esconden (`Ver <!--` y el comentario partido en tres o cuatro renglones dejarían salir el bloque). */
 function isNearMarker(raw, below = []) {
   if (isMarker(raw.trim())) return false;
   if (!raw.includes('<!-')) return bareBody(raw);
@@ -382,14 +381,14 @@ function readmePaths(files, firstLevel, exists) {
   return found;
 }
 
-// ── not-in-copy (story 8.10.3, tanda B, AC 8) ──────────────────────────────────────────────────────────────────────
+// ── not-in-copy ──────────────────────────────────────────────────────────────────────
 
 /** La marca que lleva al lado una ruta del repo del equipo que la copia no trae. Un solo lugar: la usan la transformación
  *  y el control `pathsNotInCopy` del exportador. */
 const NOT_IN_COPY_MARK = ' _(del repo del equipo; no está en esta copia)_';
 
 /**
- * El código en línea de la prosa de un `.md`, leído como CommonMark (pase adversarial de la tanda B, clases 3, 4, 6-8):
+ * El código en línea de la prosa de un `.md`, leído como CommonMark:
  * fuera de los cercos, párrafo por párrafo (un renglón en blanco corta), una tanda de comillas invertidas abre y la cierra
  * la próxima tanda del MISMO largo — puede estar en el renglón siguiente del párrafo—; una tanda sin pareja es texto y no
  * se come la apertura de un código posterior. El contenido: los saltos de renglón pasan a espacio y, si empieza y termina
@@ -691,7 +690,7 @@ function renameLeft(files, rule, exceptions = renameExceptions(rule)) {
 
 /**
  * Deja en `third_party` del manifiesto sólo las entradas `install: "download"` que el arnés usa —su `used_by` nombra
- * una skill que sale o una entrada que queda (cierre transitivo), o la entrada trae `publish: true` (2026-10-05: la
+ * una skill que sale o una entrada que queda (cierre transitivo), o la entrada trae `publish: true` (la
  * copia la ofrece aunque nada de lo que sale la nombre, como BMAD completo o las de .NET y React)— y cuya licencia (la
  * de la entrada, o la de su `origins[from]`) es MIT o Apache-2.0. Se van las demás, `official-plugin` y `retire` incluidas; `own`, `derived`,
  * `origins` y el resto del archivo quedan byte a byte. `shippedSkills`: nombres (o rutas `skills/<nombre>`) de las
@@ -733,9 +732,9 @@ module.exports = {
   INTERNAL_START, INTERNAL_END, PUBLIC_START, PUBLIC_END,
   internalBlocks, markerLines, brokenLinks, readmePaths, attributions,
   renameSkill, renameLeft, renameExceptions, publicThirdParty,
-  // story 8.10.3, tanda B: la marca de las rutas que no viajan (la usan la transformación y el control del exportador)
+  // la marca de las rutas que no viajan (la usan la transformación y el control del exportador)
   NOT_IN_COPY_MARK, markPathsNotInCopy, proseCodeSpans, ROOT_DOCS,
-  // story 8.26, tanda G1: el control de historia interna (internal-history.js) busca las rutas del equipo con los mismos
+  // el control de historia interna (internal-history.js) busca las rutas del equipo con los mismos
   // lectores que la marca
   codePath, isReaderConvention,
 };

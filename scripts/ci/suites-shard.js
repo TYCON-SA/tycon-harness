@@ -5,10 +5,10 @@
  * suites-shard.js — reparte las suites de `scripts/tests/suites.json` en trabajos que corren a la vez, y después junta
  * lo que midió cada uno.
  *
- * POR QUÉ (2026-10-04): el job de suites del nocturno (pipelines/azure-pipelines-banco.yml) corría las 213 suites una
- * detrás de otra en un solo trabajo: 62 minutos en `main` (corrida 11738), con un tope de 75. Ocupaba un carril de
- * Azure más de una hora y, si pasaba el tope, se cortaba sin escribir el reporte: la noche quedaba sin medición (ya
- * pasó con el tope en 45, corrida 11616). Una sola suite, la copia pública de verdad, se lleva 24 de esos minutos.
+ * POR QUÉ: correr las ~213 suites del nocturno (pipelines/azure-pipelines-banco.yml) una detrás de otra en un solo
+ * trabajo son ~62 minutos, con un tope de 75. Ocupa un carril de
+ * Azure más de una hora y, si pasa el tope, se corta sin escribir el reporte: la noche queda sin medición.
+ * Una sola suite, la copia pública de verdad, se lleva 24 de esos minutos.
  *
  * EL REPARTO es por PESO y siempre da lo mismo con la misma entrada: los segundos medidos de cada suite larga están en
  * `scripts/ci/suites-weights.json`, y las demás (también una suite nueva, que nadie midió todavía) llevan el peso por
@@ -26,10 +26,10 @@
  * servirle de excusa a un rojo de verdad. Quien lee el reporte no mira la marca: suites-report.js separa esas entradas
  * en `unmeasured` y pone `complete` en false.
  *
- * SÓLO LAS QUE CORREN (`--only`, 2026-10-04): la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml)
+ * SÓLO LAS QUE CORREN (`--only`): la validación de los pedidos de merge (pipelines/azure-pipelines-maintainers-pr.yml)
  * no corre todas las suites —scripts/ci/suites-for-change.js deja para el nocturno las que el cambio no toca—, y el
  * reparto se hace sobre las que de verdad corren: sobre la lista entera, la copia pública (la más pesada, casi siempre
- * salteada) se quedaba un trabajo para ella sola y el otro cargaba con todo lo demás. `--only` es un archivo con una
+ * salteada) se quedaría un trabajo para ella sola y el otro cargaría con todo lo demás. `--only` es un archivo con una
  * suite por línea (su ruta o su nombre); `list`, `plan` y `merge` tienen que recibir el MISMO, o `merge` esperaría
  * otro reparto. Las que no están en ese archivo no son fallas ni no medidas: no le tocaban a ningún trabajo.
  *
@@ -63,27 +63,27 @@
  *   (sólo las suites que nombra, una por línea) · --weight-set <nombre> (un juego de pesos de adentro del archivo;
  *   la validación de cada rama pide `pr`, ver abajo)
  *
- * LOS PESOS DE LA VALIDACIÓN (`--weight-set pr`, story 8.22): una suite no tarda lo mismo en el nocturno que en la
+ * LOS PESOS DE LA VALIDACIÓN (`--weight-set pr`): una suite no tarda lo mismo en el nocturno que en la
  * validación de cada rama. clean-machine son minutos en el nocturno y ~3 s en la validación; export-real, ~391 s en la
  * validación contra los 1439 anotados para el nocturno. La validación pide su juego, `pr`, medido en sus propias
  * corridas; el nocturno sigue con el de arriba. Lo mismo que con `--only`: `list`, `plan` y `merge` tienen que pedir el
  * MISMO juego, o `merge` esperaría otro reparto.
  *
- * CUÁNTOS TRABAJOS (`jobs`, story 8.22 tramo C): la validación de cada rama ya no pide siempre el máximo. Un trabajo
+ * CUÁNTOS TRABAJOS (`jobs`): la validación de cada rama no pide siempre el máximo. Un trabajo
  * de suites cuesta un carril de Azure, y a una corrida le tocan dos en la práctica: un plan chico en dos trabajos más el
- * banco eran tres pedidos, y el tercero esperaba ~5 min. La cuenta es el peso total del plan dividido por lo que entra
+ * banco son tres pedidos, y el tercero espera ~5 min. La cuenta es el peso total del plan dividido por lo que entra
  * en un trabajo (`job_budget` del juego pedido, o `--budget`), redondeada para arriba, entre 1 y el máximo (y nunca más
  * trabajos que suites). Un juego sin `job_budget` es un pedido negado: el número no se adivina. Quien la usa (el YAML)
  * cae al máximo si esto sale 2: nunca menos trabajos por no saber. El número viaja como la matriz misma (`matrix`) y
  * cada paso que necesita la cuenta la saca de ella (`of`): así la matriz y los `--of` no pueden quedar distintos.
  *
- * EL TOPE DE CADA SUITE (`caps`, story 8.22 tramo D): en la validación de cada rama una suite colgada se comía el
- * trabajo entero (harness-update: 1185 y 1373 s contra ~161). Cada trabajo pide los topes de su lista una vez y corre
+ * EL TOPE DE CADA SUITE (`caps`): en la validación de cada rama una suite colgada se come el
+ * trabajo entero (1185 s contra ~161). Cada trabajo pide los topes de su lista una vez y corre
  * cada suite con `scripts/ci/run-capped.js`. El tope es el peso de la suite en el juego pedido por `suite_cap.factor`,
- * nunca menos que `suite_cap.floor` (regla del dueño, 2026-10-06: el doble, con piso de 180 s; en las corridas medidas
- * ninguna suite sana pasó de 1,3 veces su peso). Un juego sin `suite_cap` es un pedido negado: el tope no se adivina.
+ * nunca menos que `suite_cap.floor` (el doble, con piso de 180 s; ninguna suite sana pasa de 1,3 veces su
+ * peso). Un juego sin `suite_cap` es un pedido negado: el tope no se adivina.
  * Una suite cortada la anota su trabajo como «(no-medida)», con el motivo en `red-output/<suite>(no-medida).txt`, y
- * `merge` la deja así, con ese motivo: ni verde ni roja. Desde el AC 32 (2026-10-07) también el banco nocturno: su
+ * `merge` la deja así, con ese motivo: ni verde ni roja. El banco nocturno hace lo mismo: su
  * regla es el `suite_cap` de arriba del archivo de pesos, con `per_suite` para la suite cuyo tiempo depende de su
  * resultado (export-real: ~405 s con la copia verde, ~17 min más con la roja).
  *
@@ -101,9 +101,9 @@
  * cuya marca no coincide con lo que trae, no se le toma nada, y todas las suites de ese trabajo quedan no medidas, con
  * el motivo «no medida: lo que publicó el trabajo <i> está incompleto».
  *
- * LAS QUE CORREN SOLAS, AL TRABAJO DEL BANCO (`--exclusive-apart`, story 8.22 tramo I): en la validación de cada rama las
- * suites `exclusive: true` de suites.json corrían solas al final de un trabajo de suites. Medido el 2026-10-08: la copia
- * pública de verdad tardaba 370 a 383 s ahí, mientras el trabajo del banco terminaba a los ~5 min y dejaba su carril
+ * LAS QUE CORREN SOLAS, AL TRABAJO DEL BANCO (`--exclusive-apart`): en la validación de cada rama las
+ * suites `exclusive: true` de suites.json correrían solas al final de un trabajo de suites: la copia
+ * pública de verdad tarda 370 a 383 s ahí, mientras el trabajo del banco termina a los ~5 min y deja su carril
  * ocioso. Con la opción, las exclusivas salen del reparto: `list --shard bench` da su lista (en el orden de
  * suites.json), `jobs` y `plan` cuentan el peso de las que quedan, y `merge` junta también lo que publicó el trabajo
  * del banco (`suites-shard-bench-a<intento>`), con las mismas exigencias que a cualquier trabajo: lo que no publique
@@ -194,7 +194,7 @@ function checkWeights(data, where) {
 }
 
 /**
- * Los segundos medidos de las suites largas y el peso por defecto de las demás. Con `set` (story 8.22), el juego de
+ * Los segundos medidos de las suites largas y el peso por defecto de las demás. Con `set`, el juego de
  * pesos con ese nombre: el peso de una suite sale de ese juego, si no está ahí del juego de arriba (el del nocturno: algo
  * medido es mejor que el por defecto) y si tampoco, del `default` del juego pedido. Un juego que no existe o está roto
  * es un pedido negado: seguir con el de siempre repartiría con pesos que quien lo pidió no quería.
@@ -208,7 +208,7 @@ function readWeights(file, set = null) {
   }
   const base = checkWeights(data, `el archivo de pesos (${file})`);
   // El juego del nocturno no trae `job_budget`: el nocturno corre siempre todos sus trabajos. Su `suite_cap` (el de
-  // arriba) es el tope de cada suite del banco nocturno (story 8.22, AC 32).
+  // arriba) es el tope de cada suite del banco nocturno.
   if (set === null) return { ...base, budget: null, cap: readCapRule(data.suite_cap, `el archivo de pesos (${file})`) };
   const chosen = data[set];
   if (!chosen || typeof chosen !== 'object' || Array.isArray(chosen)) throw new Refused(`el archivo de pesos (${file}) no trae el juego «${set}» que pide --weight-set`);
@@ -225,7 +225,7 @@ function readWeights(file, set = null) {
 }
 
 /**
- * La regla del tope de cada suite (`suite_cap`, story 8.22 tramo D): `{ factor, floor }`, los dos números mayores que 0,
+ * La regla del tope de cada suite (`suite_cap`): `{ factor, floor }`, los dos números mayores que 0,
  * y opcional `per_suite` (AC 32): un tope propio en segundos, por nombre, para la suite cuyo tiempo depende de su
  * resultado (export-real en el nocturno). No está: null. Está y no cumple: pedido negado, igual que un peso roto.
  */
@@ -343,7 +343,7 @@ function commandList(argv, write) {
     picked = shards[index - 1].suites;
     if (!picked.length) throw new Nothing('todas las suites de este plan corren solas: este trabajo de suites no tiene ninguna que correr (van al trabajo del banco)');
   }
-  // La misma cuenta que hacía el YAML: la raíz y la ruta pegadas con «/», sin normalizar.
+  // La raíz y la ruta pegadas con «/», sin normalizar.
   const lines = picked.map((s) => `${s.root === 'agent-skills' ? skillsRoot : scriptsRoot}/${s.rel}`);
   write(`${lines.join('\n')}\n`);
 }
@@ -386,7 +386,7 @@ function commandJobs(argv, write, complain) {
 }
 
 /**
- * El tope de cada suite (story 8.22, tramo D): una línea `<suite>\t<segundos>` por suite de la lista, en el orden de
+ * El tope de cada suite: una línea `<suite>\t<segundos>` por suite de la lista, en el orden de
  * suites.json. Sin `suite_cap` en el juego pedido no hay tope que adivinar: pedido negado (quien llama corre sin tope y
  * lo dice).
  */
@@ -394,7 +394,7 @@ function commandCaps(argv, write) {
   const { suites, weights } = load(argv);
   if (weights.cap === null) throw new Refused('el juego de pesos no trae «suite_cap» (la regla del tope de cada suite): el tope no se adivina');
   // Un tope propio para una suite que no está en suites.json (un renombre, un error de tipeo) frena: si no, la suite de
-  // verdad volvía en silencio al doble de su peso (pase adversarial del AC 32). Se mira la lista entera, no sólo --only.
+  // verdad volvería en silencio al doble de su peso. Se mira la lista entera, no sólo --only.
   const scriptsRoot = option(argv, '--scripts') || path.resolve(__dirname, '..');
   const known = new Set(readSuites(option(argv, '--suites') || path.join(scriptsRoot, 'tests', 'suites.json')).map((s) => s.name));
   const stale = Object.keys(weights.cap.perSuite).filter((name) => !known.has(name));
@@ -476,8 +476,8 @@ function latestAttempt(artifacts, number) {
  * Lo que midió un trabajo, cruzado con lo que TENÍA que correr. Devuelve las que corrió, las fallas, las no medidas y,
  * si algo no cierra, por qué.
  *
- * 🔴 A lo publicado no se le cree sin mirar (revisión del 2026-10-04): una bajada a medias dejaba la carpeta con su
- * marca y sin `failures.txt`, y «no hay archivo» se leía como «no hubo fallas». Si a la carpeta le falta `ran.txt` o
+ * 🔴 A lo publicado no se le cree sin mirar: una bajada a medias deja la carpeta con su
+ * marca y sin `failures.txt`, y «no hay archivo» se leería como «no hubo fallas». Si a la carpeta le falta `ran.txt` o
  * `failures.txt` (el trabajo crea los dos antes de correr nada), si trae un nombre que no era de su lista, una roja
  * que no figura entre las corridas, o una marca cuya cuenta no coincide con lo publicado, NADA de ese trabajo se da
  * por bueno: todas sus suites quedan no medidas (`broken`).
@@ -490,7 +490,7 @@ function readShard(found, expected) {
   const missing = [ran === null && RAN_FILE, recorded === null && FAILURES_FILE].filter(Boolean);
   if (missing.length) return all(`lo que publicó está incompleto (falta ${missing.join(' y ')})`, true);
   const absent = new Set(recorded.filter((f) => f.endsWith(ABSENT_MARK)).map((f) => f.slice(0, -ABSENT_MARK.length)));
-  // Las que el trabajo cortó por su tope (story 8.22, tramo D): corrieron y no se midieron. Las anota él mismo.
+  // Las que el trabajo cortó por su tope: corrieron y no se midieron. Las anota él mismo.
   const capped = recorded.filter((f) => f.endsWith(UNMEASURED_MARK)).map((f) => f.slice(0, -UNMEASURED_MARK.length));
   const red = recorded.filter((f) => !f.endsWith(ABSENT_MARK) && !f.endsWith(UNMEASURED_MARK));
   const foreign = [...ran, ...red, ...absent, ...capped].filter((name) => !expected.includes(name));
@@ -510,7 +510,7 @@ function readShard(found, expected) {
   if (retries.problem) return all(`lo que publicó trae las dos pasadas de sus rojas y no cuadran (${retries.problem})`, true);
   const unmeasured = [];
   // Sin la marca, lo que arrancó y no terminó quedó a medias: no se sabe cómo terminó. Con `done.txt` (cada suite que
-  // termina, de cualquier forma: story 8.22 tramo D) son todas las que arrancaron y no figuran ahí; con `xargs -P` hay
+  // termina, de cualquier forma) son todas las que arrancaron y no figuran ahí; con `xargs -P` hay
   // varias a la vez. Sin `done.txt` (el nocturno, que corre de a una) es la última que arrancó, si no se anotó como roja.
   const done = readLines(path.join(found.dir, DONE_FILE));
   const halfway = new Set();

@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 'use strict';
-// internal-history.js — el control de historia interna en la prosa que se publica (story 8.26, tanda G1 · 2026-10-09)
+// internal-history.js — el control de historia interna en la prosa que se publica
 //
-// POR QUÉ EXISTE: el arnés se va a escribir directo en un repo público. Hasta ahora, lo que una guía contaba de la
-// historia del equipo —el número de una story, el código de una tanda, el caso que motivó la regla con su enlace al
-// registro de incidentes, una rama, un commit, una corrida— lo tapaba en parte el exportador al armar la copia. Sin
-// exportador, lo que se escribe es lo que sale: desde afuera nada de eso lleva a ningún lado, y dice con quién y sobre
-// qué trabaja el equipo. La guía pública explica la regla y su porqué; el caso vive en el registro, que no se publica.
+// POR QUÉ EXISTE: el arnés se escribe directo en un repo público, así que lo que se escribe es lo que sale. Lo que una
+// guía cuente de la historia del equipo —el número de una story, el código de una tanda, el caso que motivó la regla
+// con su enlace al registro de incidentes, una rama, un commit, una corrida— queda a la vista: desde afuera nada de eso lleva a ningún lado,
+// y dice con quién y sobre qué trabaja el equipo. La guía pública explica la regla y su porqué; el caso vive en el registro, que no se publica.
 // Este control mira lo que un commit AGREGA a la prosa que se publica y, prendido, no deja crear el commit.
 //
 // QUÉ MIRA:
@@ -65,7 +64,7 @@ const CONFIG_PATH = 'scripts/publishing/internal-history.json';
 const ALLOWED_PATH = 'scripts/tests/fixtures/internal-history-allowed.json';
 const LIST_PATH = 'scripts/publishing/allowlist.json';
 const TABLE_PATH = 'scripts/publishing/replacements.json';
-// el perfil del equipo con su nombre de hoy o el de antes (los dos dicen «este árbol es del equipo»)
+// el perfil del equipo con su nombre actual o el anterior (los dos dicen «este árbol es del equipo»)
 const PROFILES = ['team-profile.json', 'perfil-equipo.json'];
 // el repo de mantenimiento adelgazado: su lista de lo que repite del público, y la marca del commit local que pone el
 // público encima (la escribe overlay-harness.js del repo de mantenimiento; los dos textos tienen que coincidir)
@@ -100,11 +99,11 @@ const FORMS = {
   'product-story': { re: new RegExp(`\\b${STORY}${STORY_ID}${SAME_SENTENCE}${TEAM_OWNER}|${TEAM_OWNER}${SAME_SENTENCE}\\b${STORY}${STORY_ID}`, 'g'), key: pick(/[0-9]+(?:\.[0-9]+)*|[A-Z]{1,3}-[0-9]+/) },
   // la misma expresión que usa scripts/tests/internal-history.test.js (la toma de acá): las dos redes ven lo mismo
   'pr-number': { re: /\b(?:PR|PRs|[Pp]ull [Rr]equests?)(?: de prueba)? [#!]?[0-9]{3,5}/g, key: pick(/[0-9]{3,5}/), zones: ['prose', 'code', 'message'] },
-  // acotada a propósito: con `[^)]*` un renglón con muchos «](…incident-log» sin cerrar colgaba el control
+  // acotada a propósito: con `[^)]*` un renglón con muchos enlaces al registro de incidentes sin cerrar colgaría el control
   'incident-log': { re: /incident-log(?:\.md)?#[\w.-]+|\]\([\w./-]{0,160}incident-log(?:\.md)?(?:#[\w.-]{0,160})?\)/g, key: (v) => (v.includes('#') ? v.slice(v.indexOf('#')).replace(/\)$/, '') : 'link').toLowerCase() },
   // sin `docs/`: una rama `docs/8.25-…` no se distingue de una ruta `docs/v2/…` (límite conocido)
   'work-branch': { re: /(?<![\w./-])(?:story|fix|feat|feature|chore|hotfix|bugfix)\/[0-9a-z][\w.-]*[0-9][\w.-]*/g, key: (v) => v.toLowerCase() },
-  // «corrida 2026-05-23» es una fecha, no una corrida: el número no puede seguir con un guion
+  // «corrida» seguida de una fecha no es una corrida: el número no puede seguir con un guion
   'azure-run': { re: /(?<![\w&/#])#[0-9]{5}\b|\b(?:corridas?|builds?) #?[0-9]{4,6}\b(?!-)/gi, key: pick(/[0-9]{4,6}/) },
   // sólo con la palabra adelante: un identificador hexadecimal suelto entre comillas invertidas no es un commit
   'private-commit': { re: /\b(?:[Cc]ommits?|[Mm]erge|sha|SHA|[Hh]ash) `?(?=[0-9a-f]*[0-9])(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}`?(?![0-9A-Za-z])/g, key: pick(/[0-9a-f]{7,40}(?=`?$)/) },
@@ -485,8 +484,8 @@ function scan(text, zone, lookup = null) {
 }
 
 // ── lo que ya es del repo público ───────────────────────────────────────────────────────────────────────────────
-// Después del corte, un pedido o un commit del repo público son referencias legítimas, y el asunto con que GitHub
-// mergea («Merge pull request #N from …») es `pr-number` desde el pedido 100. Tres formas los confundían con la historia
+// Un pedido o un commit del repo público son referencias legítimas, y el asunto con que GitHub
+// mergea («Merge pull request #N from …») es `pr-number`. Tres formas los confundirían con la historia
 // del equipo; con este lector distinguen:
 //   · `pr-number`: el número escrito con numeral (`#N`, la forma de GitHub) y N es un pedido del público. «PR N» sin
 //     numeral y «PR !N» son las formas de Azure («Merge pull request N from …» es el asunto de un merge de Azure): ésas
@@ -497,7 +496,7 @@ function scan(text, zone, lookup = null) {
 // publica cada pedido como `refs/pull/<N>/head`, y las puntas de sus ramas, marcas y pedidos dicen qué commits tiene. Se
 // pregunta sólo cuando hay algo que distinguir: un control sin candidatos no sale a la red.
 // 🔴 Si el público no contesta —sin red, un remoto que no es un repo, el tope de tiempo, un clon sin repo público—
-// nada es suyo: las tres formas frenan como antes, y `problem()` dice por qué (la salida lo muestra).
+// nada es suyo: las tres formas frenan como si ninguna fuera del público, y `problem()` dice por qué (la salida lo muestra).
 // Cuál es el público: el que se pasa (el freno de publicar pasa la dirección a la que empuja) o, si no, `origin` cuando
 // es un repo de GitHub. Límite: un número de Azure escrito `#N` que coincida con un pedido del público pasa.
 const GITHUB_REMOTE = /^(?:https?:\/\/(?:[^@/]+@)?github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)/i;
@@ -600,7 +599,7 @@ function teamPaths(text, file, env) {
     const cp = pc.codePath(s.content, env.installPrefixes || []);
     if (!cp) continue;
     const p = cp.path;
-    if (cp.anchor && /(^|\/)incident-log\.md$/.test(p)) continue;   // eso es `incident-log`
+    if (cp.anchor && /(^|\/)incident-log\.md$/.test(p)) continue;   // ese archivo es el registro de incidentes
     const relative = !cp.rootOnly && dir !== '.' ? path.posix.normalize(`${dir}/${p}`) : null;
     if (env.has(p) || (relative && env.has(relative))) continue;
     let hit = null;
@@ -806,7 +805,7 @@ function loadAllowed(text) {
   if (text === null) return [];
   const data = parseJson(text, ALLOWED_PATH);
   if (!data || !Array.isArray(data.allowed)) throw new CouldNot(`${ALLOWED_PATH} no trae la lista «allowed»`);
-  // `form` es una de las formas del control, o falta (una entrada de antes: es `pr-number`): cualquier otra cosa no se
+  // `form` es una de las formas del control, o falta (una entrada sin forma es `pr-number`): cualquier otra cosa no se
   // adivina, y no llega a un mensaje
   const bad = data.allowed.findIndex((e) => e && e.form !== undefined && !Object.prototype.hasOwnProperty.call(FORMS, e.form));
   if (bad !== -1) throw new CouldNot(`${ALLOWED_PATH}: la entrada ${bad + 1} trae un «form» que no es una forma del control`);
@@ -983,7 +982,7 @@ function commentKind(repo, ref) {
   }
   return PROFILES.some(has) ? 'team' : 'public';
 }
-/** La zona de comentarios mira el árbol que se publica. En el repo del equipo de antes del corte no aplica: el código que
+/** La zona de comentarios mira el árbol que se publica. En el repo del equipo no aplica: el código que
  *  sale de ahí se escribe y se mide en el público. */
 const commentNotApplicable = (repo, zone, ref) => zone === 'comment' && commentKind(repo, ref) === 'team';
 /**
@@ -1033,7 +1032,7 @@ function runAll(repo, args) {
   const folders = {};
   const seen = new Set();
   const list = [];   // sólo para quien llama a `run` desde un guion (la muestra de falsos positivos): la línea de comandos nunca imprime el texto
-  const paths = [];   // cada archivo de prosa mirado, también los que miden cero: quien cuenta otra cosa sobre lo mismo (la medición de la tanda G) parte de acá
+  const paths = [];   // cada archivo de prosa mirado, también los que miden cero: quien cuenta otra cosa sobre lo mismo (la medición) parte de acá
   let total = 0;
   let looked = 0;
   for (const dest of [...pub.files.keys()].sort()) {

@@ -3,8 +3,7 @@
 /**
  * ¿La condición de cada etapa (y de cada job) dice la verdad sobre de qué depende?
  *
- * 🔴 POR QUÉ EXISTE (2026-09-01, encontrado alineando un producto del equipo al flujo
- * canónico — guides/maintaining/incident-log.md#case-stage-condition-names-other-stage-2026-09-01).
+ * 🔴 POR QUÉ EXISTE.
  *
  * En Azure DevOps hay DOS maneras de que una etapa quede mal enganchada, y NINGUNA da error:
  * el pipeline corre, se ve verde, y falla el día que alguien reordena las etapas.
@@ -13,8 +12,7 @@
  *       `dependsOn: Build` + `condition: ... in(dependencies.TraerArnes.result, ...)`.
  *       Anda de casualidad: ADO resuelve dependencias TRANSITIVAS (si Build depende de
  *       TraerArnes, Deploy la alcanza). El día que Build deje de depender de TraerArnes, la
- *       condición pasa a evaluar contra la nada. Caso real: el Deploy del backend de un producto del equipo
- *       — guides/maintaining/incident-log.md#case-stage-condition-names-other-stage-2026-09-01.
+ *       condición pasa a evaluar contra la nada. Ejemplo: el Deploy del backend de un producto.
  *
  *   (b) 🔴 LA PEOR: DEPENDE DE UNA ETAPA QUE SU CONDICIÓN NO NOMBRA.
  *       Un `condition:` explícito REEMPLAZA al `succeeded()` implícito — `dependsOn` a secas
@@ -25,20 +23,19 @@
  * Sin condición explícita NO hay hallazgo en (a)/(b): ahí rige `succeeded()`, que es lo correcto
  * por default. Esas dos reglas sólo juzgan a quien escribió una condición propia.
  *
- *   (c) 🔴 `succeeded()` SOBRE UNA DEPENDENCIA QUE TIENE CONDICIÓN PROPIA (2026-09-02, revisión
- *       adversarial, hallazgo #3 — el humo de Ceibo). Si la dependencia queda `Skipped` porque
+ *   (c) 🔴 `succeeded()` SOBRE UNA DEPENDENCIA QUE TIENE CONDICIÓN PROPIA. Si la dependencia queda `Skipped` porque
  *       su condición dio falso, `succeeded()` —el implícito de no escribir condición, o el
- *       explícito— se envenena y el dependiente TAMBIÉN se saltea, sin ponerse rojo. Caso real:
- *       `ActivatePlugin` (y el humo adentro) dependía de `RecycleAppPool`, que sólo corre si el
- *       upload devolvió 200; con un 409 el reciclado se salteaba, la activación se salteaba, el
- *       humo no corría y el stage quedaba VERDE. La única forma de no pisar esa trampa es nombrar
+ *       explícito— se envenena y el dependiente TAMBIÉN se saltea, sin ponerse rojo. Ejemplo:
+ *       `ActivatePlugin` (y el humo adentro) depende de `RecycleAppPool`, que sólo corre si el
+ *       upload devuelve 200; con un 409 el reciclado se saltea, la activación se saltea, el
+ *       humo no corre y el stage queda VERDE. La única forma de no pisar esa trampa es nombrar
  *       a esa dependencia en la condición diciendo qué resultados se aceptan (incluido `Skipped`
  *       si corresponde). Esta regla aplica a etapas Y a jobs.
  *
- *   🔴 Por qué (a) y (b) NO se copian a los jobs (revisión del plan, 2026-09-02): los jobs sin
+ *   🔴 Por qué (a) y (b) NO se copian a los jobs: los jobs sin
  *   `dependsOn` corren EN PARALELO —no cuelgan del anterior como las etapas—, y un
  *   `condition: succeeded()` explícito SÍ honra a las dependencias. Copiar (a)/(b) tal cual daría
- *   falsos positivos y no describiría el defecto real de Ceibo, que es (c).
+ *   falsos positivos y no describiría el defecto real de los jobs, que es (c).
  *
  * Uso:  node check-stage-dependencies.js [ruta ...]
  *       Sin argumentos revisa los `azure-pipelines*.yml` del repo donde corre.

@@ -1,16 +1,16 @@
 'use strict';
 /*
- * auth-providers/microsoft.js — el inicio de sesión con Entra ID (story 2.23, decisiones 9 y 11; AC 7 y 8).
+ * auth-providers/microsoft.js — el inicio de sesión con Entra ID.
  *
- * Lo leído en Microsoft Learn (Task 0, 2026-10-15): «ID token claims reference» y «Optional claims reference».
+ * Lo leído en Microsoft Learn: «ID token claims reference» y «Optional claims reference».
  *   · El emisor de un solo inquilino es `https://login.microsoftonline.com/<inquilino>/v2.0`.
  *   · Entra no publica `email_verified`, y la claim opcional `email` NO es confiable sin `xms_edov: true` (el dominio del
- *     correo está verificado en el inquilino). Las dos son opcionales: las pide el registro de la aplicación (2.30).
+ *     correo está verificado en el inquilino). Las dos son opcionales: las pide el registro de la aplicación.
  *   · La identidad estable es `oid` + `tid` (el `sub` de Entra cambia por aplicación): la sesión guarda `<oid>:<tid>`.
  * Nunca se cae a `preferred_username` ni a `upn`.
  *
  * DOS MODOS (`SITE_AUTH_MICROSOFT_ACCOUNTS`). Quién entra lo decide la lista del sitio en los dos.
- *   · `organization` (por defecto, lo de antes): un solo inquilino. Los emisores de varios inquilinos (`common`,
+ *   · `organization` (por defecto): un solo inquilino. Los emisores de varios inquilinos (`common`,
  *     `organizations`, `consumers`, `{tenantid}`) no arrancan. Sin `xms_edov`, la página dice «el registro de la
  *     aplicación no pide la claim xms_edov».
  *   · `any`: cualquier cuenta de trabajo o escuela, de cualquier inquilino. `SITE_OIDC_ISSUER` es el de `common` u

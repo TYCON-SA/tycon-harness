@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * pipeline.js — H17 atajo §4 (2026-05-21).
+ * pipeline.js — comandos mecánicos del pipeline.
  *
- * Saca del LLM la DECISIÓN de qué advisors correr en el Step 5. El LLM ya no infiere
+ * Saca del LLM la DECISIÓN de qué advisors correr en el Step 5. El LLM no infiere
  * ni cuenta a mano (reglas D.i/E.i/B/C); le pregunta a este script.
  *
  *   node pipeline.js advisors --repo <dir> --story <spec.md> --files a.cs b.tsx ...
@@ -11,28 +11,28 @@
  *
  *   node pipeline.js check-count --repo <dir> --story <spec.md> --files ... --ran x,y,z
  *     → exit 0 si `ran` ⊇ `all` esperado; exit 2 + lista de faltantes si no.
- *       Reemplaza el post-flight count-check que hoy hace el LLM a mano (Regla C).
+ *       Es el post-flight count-check, sin que el LLM lo haga a mano (Regla C).
  *
  * Fuente de verdad de la matriz: este archivo. step-05-advisors-parallel.md la
  * describe en prosa pero la AUTORIDAD es computeAdvisorSet() acá (el step la referencia).
  *
  * Determinismo de SELECCIÓN (mismo diff → mismo set), NO de output (los advisors son LLMs).
  *
- * Desde la story 8.2 (2026-09-26) los revisores de un producto o de un cliente (convenciones de
+ * Los revisores de un producto o de un cliente (convenciones de
  * plugins Bizuit, plugins hermanos, el adaptador de un cliente) NO están en este archivo: viven en `packs/<nombre>/pack.json`
  * (lib/packs.js) y se suman al set por manifiesto. La salida de `advisors` lleva `packs`.
  */
 
 const fs = require('fs');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const os = require('os');
 const honesty = require('./lib/ledger-honesty.js');
-const companionLib = require('./lib/companion-repos.js');   // story 7.26: el repo hermano de una story de dos repos
+const companionLib = require('./lib/companion-repos.js');   // el repo hermano de una story de dos repos
 const codeFiles = require('./lib/code-files.js');         // qué es código, qué es prueba (una sola lista)
 const stackConfig = require('./lib/stack-config.js');     // lo que sume la organización (team-repos.json → stack)
 
-// ── log de invocaciones reales de advisors (CF-2 2026-05-21) ─────────────────
+// ── log de invocaciones reales de advisors ─────────────────
 // El hook on-advisor-run.js (PreToolUse Task) registra cada subagent spawneado acá.
 // `advisors` marca el inicio del Step 5; `check-count` lee lo corrido DESDE esa marca
 // como ground-truth, en vez de confiar en el `--ran` que el LLM redacta.
@@ -41,12 +41,10 @@ function sessionLogPath() {
   const sid = sessionIdFileKey();
   return path.join(RUNS_DIR, `${sid}.jsonl`);
 }
-// `expected` (auditoría 2026-06-09, fix incoherencia smart-reloop↔check-count):
-// el set ESPERADO de esta iteración queda persistido en la línea step5-start.
+// `expected`: el set ESPERADO de esta iteración queda persistido en la línea step5-start.
 // check-count valida contra ESE expected (que en un smart-reloop legítimo es el
-// subset `rerun`), no contra el set completo recomputado — antes, tras un
-// smart-reloop válido, check-count daba exit 2 siempre (o se ignoraba el gate,
-// anulando CF-2 o SPEED-1 según cuál cediera).
+// subset `rerun`), no contra el set completo recomputado — sin esto, tras un
+// smart-reloop válido, check-count daría exit 2 siempre (o se ignoraría el gate).
 function logStep5Start(expected, meta) {
   try {
     fs.mkdirSync(RUNS_DIR, { recursive: true });
@@ -63,9 +61,8 @@ function logStep5Start(expected, meta) {
 // — sawStart=false → no hay log/marca (hook no instalado o pipeline.js no corrió).
 // — sawStart=true + ran=[] → pipeline.js SÍ corrió pero el hook no registró NINGÚN
 //   spawn: o no se corrieron los advisors o la registración está rota. El caller
-//   (check-count) FALLA CERRADO en este caso (auditoría 2026-06-09 — el fallback
-//   silencioso al --ran del LLM reabrió CF-2 en producción: sesión real con 6
-//   step5-start y 0 spawns pasó sin que nada lo detectara).
+//   (check-count) FALLA CERRADO en este caso: caer en silencio al --ran del LLM
+//   dejaría pasar un Step 5 sin ningún spawn registrado.
 function advisorsRunSinceStart() {
   let raw;
   try { raw = fs.readFileSync(sessionLogPath(), 'utf8'); } catch { return { sawStart: false, expected: null, ran: [] }; }
@@ -83,21 +80,21 @@ function advisorsRunSinceStart() {
 function readText(p) {
   try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
 }
-// Dónde nace la evidencia de cierre de una story (2026-09-05): el repo que la CONTIENE.
+// Dónde nace la evidencia de cierre de una story: el repo que la CONTIENE.
 const { evidenceDirForStory } = require('./lib/evidence-config.js');
 const { evidenceKey, keyOr: evidenceKeyOr } = require('./lib/evidence-key.js');
-// story 7.5 — la sección «Reglas para revisores» del CLAUDE.md del repo, al principio del contexto.
+// La sección «Reglas para revisores» del CLAUDE.md del repo, al principio del contexto.
 const { reglasRevisores, bloqueParaContexto, resumen: resumenReglas } = require('./lib/reviewer-rules.js');
 /**
  * PIPE-C2 · qué carpetas le faltan al `.gitignore` del repo, decidido carpeta por carpeta.
  *
  * 🔴 La pregunta NO es «¿existe la línea `.advisors/`?» sino «¿el repo ya decidió algo sobre esa
- *    carpeta?». La diferencia costó caro (2026-09-05, story 2.2 del arnés): ese repo
+ *    carpeta?». Un repo que
  *    la ignora con `**\/.advisors/*` + `!**\/.advisors/dod-runtime/` —el patrón que deja viajar la
- *    evidencia de cierre—, la comparación por línea exacta la daba por ausente, y el `.advisors/`
- *    que el preflight appendeaba **anulaba la negación** (git no re-incluye nada dentro de un
- *    directorio excluido). Resultado: la evidencia de cierre dejaba de viajar y el medidor SDLC la
- *    leía como 0%, en cada `start`, y había que revertir el archivo a mano.
+ *    evidencia de cierre—, comparado por línea exacta, parece no haber decidido nada, y el `.advisors/`
+ *    que el preflight appendearía **anularía la negación** (git no re-incluye nada dentro de un
+ *    directorio excluido). Resultado: la evidencia de cierre dejaría de viajar y el medidor SDLC la
+ *    leería como 0%, en cada `start`, y habría que revertir el archivo a mano.
  *
  * Reglas, y las tres son deliberadas:
  *   · **Un comentario NO es una regla**: nombrar `.advisors` en un `#` no la ignora, así que la
@@ -106,7 +103,7 @@ const { reglasRevisores, bloqueParaContexto, resumen: resumenReglas } = require(
  *   · **Se decide carpeta por carpeta**: que una esté cubierta no dice nada de la otra.
  */
 // El bloque canónico de `.advisors`, copiado del `.gitignore` del arnés. Es UNO y se
-// escribe entero: `.advisors/` a secas es exactamente la línea del incidente — excluye el
+// escribe entero: `.advisors/` a secas excluye el
 // directorio y con eso ANULA cualquier negación, así que la evidencia deja de viajar.
 // El registro de aprobaciones de la corrida viaja también: el portón de CI lo lee.
 const LINEA_APROBACIONES = '!**/.advisors/pipeline-runs/*/approvals.jsonl';
@@ -128,26 +125,26 @@ const GITIGNORE_ADVISORS = [
 ];
 
 /** Las sondas: rutas que NO existen en el disco, sólo para preguntarle a git qué haría con ellas. */
-// 🔴 La sonda de lo efímero es un NIETO de `pipeline-runs/`, no un hijo directo (2026-09-05): el
+// 🔴 La sonda de lo efímero es un NIETO de `pipeline-runs/`, no un hijo directo: el
 // bloque canónico re-incluye `pipeline-runs/` para que viaje el registro de revisores, así que un
-// hijo directo podía no estar ignorado con el bloque puesto, el preflight leía "sin decisión" y
-// volvía a agregar el bloque en CADA start (medido: 14 → 26 → 37 → 48 líneas). Un nieto está
+// hijo directo podría no estar ignorado con el bloque puesto, el preflight leería "sin decisión" y
+// volvería a agregar el bloque en CADA start. Un nieto está
 // ignorado con el bloque viejo, con el nuevo y con `.advisors/` a secas, y no lo está sin regla.
 const SONDA_EFIMERO = '.advisors/pipeline-runs/__sonda-pipe-c2__/__sonda__';
 const SONDA_EVIDENCIA = '.advisors/dod-runtime/__sonda-pipe-c2__';
 const SONDA_DASHBOARD = '.dashboard/__sonda-pipe-c2__';
-// Lo que el portón de CI exige para `done`: el registro de revisores de la corrida (2026-09-05).
+// Lo que el portón de CI exige para `done`: el registro de revisores de la corrida.
 const SONDA_ROSTER = '.advisors/pipeline-runs/__sonda-pipe-c2__/review-roster.json';
 const SONDA_APROBACIONES = '.advisors/pipeline-runs/__sonda-pipe-c2__/approvals.jsonl';
 
 /**
  * PIPE-C2 · qué le falta al `.gitignore`, preguntándole a GIT y no al texto.
  *
- * 🔴 La primera versión de este arreglo comparaba TEXTO (¿el archivo menciona `.advisors`?) y se
- *    equivocaba del lado caro: con una negación suelta, una subruta (`FrontEnd/.advisors/x/`), un
+ * 🔴 Comparar TEXTO (¿el archivo menciona `.advisors`?) se equivoca del lado caro:
+ *    con una negación suelta, una subruta (`FrontEnd/.advisors/x/`), un
  *    archivo suelto (`.advisors/tests-result.json`) o un comentario pegado al final de la línea,
- *    decía «ya está cubierta» y git NO ignoraba nada — el repo commiteaba los artefactos efímeros.
- *    Once `.gitignore` plausibles reproducían el error. La única fuente de verdad sobre si una ruta
+ *    diría «ya está cubierta» y git NO ignoraría nada — el repo commitearía los artefactos efímeros.
+ *    Muchos `.gitignore` plausibles reproducen el error. La única fuente de verdad sobre si una ruta
  *    está ignorada es git, así que se le pregunta a él.
  *
  * `probe(rutaRelativa)` devuelve `true` (git la ignora), `false` (no la ignora) o `null` (no se
@@ -169,11 +166,11 @@ function computeGitignoreNeeds(probe) {
   } else {
     // Cubierta, pero de más: se está tragando lo que SÍ tiene que viajar. NO se reescribe sola —
     // es una decisión del repo y pisarla en silencio sería el mismo pecado al revés. UN aviso con
-    // todo lo que falta (2026-09-05: el registro de revisores también viaja, por el `done` por PR).
+    // todo lo que falta (el registro de revisores también viaja, por el `done` por PR).
     const traga = [];
     if (probe(SONDA_EVIDENCIA) === true) traga.push('`.advisors/dod-runtime/` (la evidencia de cierre de cada story NO viaja y el medidor SDLC la lee como 0%)');
     if (probe(SONDA_ROSTER) === true) traga.push('`.advisors/pipeline-runs/*/review-roster.json` + `findings.json` + `approvals.jsonl` (el registro de revisores y el de aprobaciones NO viajan y el portón de CI no deja pasar la story)');
-    // Un repo con el bloque estándar de antes (el registro de revisores viaja) y sin la línea del registro
+    // Un repo con el bloque estándar (el registro de revisores viaja) y sin la línea del registro
     // de aprobaciones. Agregar esa única negación es aditivo —no cambia lo que el repo decidió ignorar— y corre antes
     // de toda aprobación, así que la línea llega en el mismo commit que el primer registro.
     if (probe(SONDA_ROSTER) === false && probe(SONDA_APROBACIONES) === true) {
@@ -200,9 +197,8 @@ function computeGitignoreNeeds(probe) {
 /** El `probe` real: le pregunta a git. 0 = ignorada · 1 = no · cualquier otra cosa = no sé. */
 function gitIgnoraProbe(repo) {
   // 🔴 `execFileSync` NO está en el scope del módulo (cada función lo requiere local). Sin esta
-  // línea la sonda tiraba ReferenceError adentro del try, devolvía `null` en TODOS los casos, y el
-  // preflight decía "no pude preguntarle a git" sin agregar ni avisar nada — un control muerto
-  // desde el día que nació (2026-09-05, mismo día). Lo destapó el comando `evidence-dir`.
+  // línea la sonda tiraría ReferenceError adentro del try, devolvería `null` en TODOS los casos, y el
+  // preflight diría "no pude preguntarle a git" sin agregar ni avisar nada — un control muerto.
   const { execFileSync } = require('child_process');
   return (rel) => {
     try {
@@ -233,14 +229,14 @@ function readDiffContents(repo, files, exts) {
   return out;
 }
 
-// ── Triggers sobre HUNKS, no archivo completo (auditoría 2026-06-09) ──────────
-// Antes los triggers de contenido evaluaban el archivo ENTERO (readDiffContents):
-// silent-failure-hunter disparaba en el 100% de los diffs (todo .cs tiene un `try`
-// en alguna parte) y el set degeneraba en 10-13 advisors → 2-3 tandas seriales
+// ── Triggers sobre HUNKS, no archivo completo ──────────
+// Evaluar el archivo ENTERO (readDiffContents) en los triggers de contenido haría que:
+// silent-failure-hunter disparara en el 100% de los diffs (todo .cs tiene un `try`
+// en alguna parte) y el set degenerara en 10-13 advisors → 2-3 tandas seriales
 // bajo el cap de máquina (4-5 subagentes). Esto evalúa SOLO las líneas AGREGADAS
 // (git diff -U0 HEAD): lo que el dev cambió, que es lo que los advisors auditan.
 //
-// Fallbacks conservadores (= comportamiento viejo, archivo completo):
+// Fallbacks conservadores (= archivo completo):
 //   - archivo UNTRACKED (nuevo): todo el contenido ES agregado → full content.
 //   - git falla / repo sin git / archivo tracked SIN diff vs HEAD (p.ej. ya
 //     commiteado en un re-run): full content — preferimos un advisor de más a
@@ -281,9 +277,9 @@ function readAddedContents(repo, files, exts) {
     const abs = path.isAbsolute(f) ? f : path.join(repo, f);
     let rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
     let raiz = repo;
-    // Story 7.26: un archivo del repo hermano (fuera de `--repo`) se mira con el git de SU repo. Antes quedaba
-    // `../Front/…`, no aparecía en el diff de `--repo` y se leía el archivo entero: un `try` viejo del hermano
-    // disparaba al cazador de fallos silenciosos como si fuera nuevo.
+    // Un archivo del repo hermano (fuera de `--repo`) se mira con el git de SU repo. Sin esto quedaría
+    // `../Front/…`, no aparecería en el diff de `--repo` y se leería el archivo entero: un `try` viejo del hermano
+    // dispararía al cazador de fallos silenciosos como si fuera nuevo.
     if (path.relative(path.resolve(repo), path.resolve(abs)).startsWith('..')) {
       const o = companionLib.ownerOf(f, repo);
       if (o.root) { raiz = o.root; rel = o.rel; }
@@ -347,12 +343,10 @@ function hasPlaywrightSpecs(repo) {
       if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
       if (e.isFile()) {
         if (/^playwright\.config\.[cm]?[jt]s$/.test(e.name)) hasConfig = true;
-        // 🔴 `tests/e2e/` Y `e2e/` (FIX-5, 2026-08-25). El patrón exigía la carpeta `tests/`
-        // intermedia, así que un repo que pone los specs en `<app>/e2e/` quedaba INVISIBLE:
-        // `e2eConfig` devolvía `{}` —"este repo no tiene E2E"— en vez del aviso "tenés specs
-        // Playwright y NO declaraste el gate". Caso real (2026-08-25): el frontend de un producto del equipo,
-        // 9 specs + playwright.config en `calden-tablero/e2e/`, cero aviso — guides/maintaining/incident-log.md#case-e2e-specs-folder-unseen-2026-08-25. Y no era un repo raro:
-        // URUTAU/FrontEnd usa el mismo layout (`UTAU_*/e2e/`). El aviso es el único mecanismo de
+        // 🔴 `tests/e2e/` Y `e2e/`. Si el patrón exigiera la carpeta `tests/`
+        // intermedia, un repo que pone los specs en `<app>/e2e/` quedaría INVISIBLE:
+        // `e2eConfig` devolvería `{}` —"este repo no tiene E2E"— en vez del aviso "tenés specs
+        // Playwright y NO declaraste el gate". El aviso es el único mecanismo de
         // descubrimiento que tiene un repo para enterarse de que le falta declarar el gate, así
         // que un layout no contemplado no da error: da silencio.
         else if (/\.spec\.ts$/.test(e.name) && /(^|\/)(tests\/)?e2e\//.test(path.join(dir, e.name))) hasSpec = true;
@@ -370,35 +364,34 @@ function hasPlaywrightSpecs(repo) {
 // compartidos (step-07c, tycon-merge-to-main) lo resuelven acá y corren lo que el proyecto declare —
 // sin conocer puertos/specs/stack de NINGÚN repo. Sin bloque `e2e:` (o sin `gate:`) → {} → no-op.
 // Mismo parser-YAML-mínimo-sin-deps que i18nRequired (los valores son paths, sin espacios → \S+).
-// Las llaves que el arnés LEE del bloque `e2e:`. Todo lo demás se avisa (FIX-3, 2026-08-25):
-// el lector aceptaba llaves a CUALQUIER profundidad, así que un bloque anidado por error —el
-// caso real de los formularios de un producto del equipo— hacía que la lista de pruebas críticas de un formulario se
+// Las llaves que el arnés LEE del bloque `e2e:`. Todo lo demás se avisa:
+// si el lector aceptara llaves a CUALQUIER profundidad, un bloque anidado por error
+// haría que la lista de pruebas críticas de un formulario se
 // aplicara al OTRO, donde ese archivo no existe. Y una llave con el nombre mal escrito no
-// producía ningún error: se ignoraba, y el repo quedaba sin la config que creía tener — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25.
+// produciría ningún error: se ignoraría, y el repo quedaría sin la config que cree tener.
 const CLAVES_E2E = new Set([
   'gate', 'frontend_dir', 'frontend_dirs', 'critical_manifest', 'shared_paths', 'preconditions',
   // `bundle` la lee y la USA `e2e-gate.sh` (ver su cabecera y `leer_bundle`): compara la fecha del
-  // artefacto que el navegador carga contra las fuentes y, con `rebuild:`, recompila sola. Faltaba
-  // acá, así que este validador le decía al dev que su configuración no servía —y de yapa que
-  // moviera las hijas al primer nivel, al revés de lo que el gate parsea—. Quien obedecía el aviso
-  // ROMPÍA una config correcta. Lo destapó la Story CA-1 de Totora, donde la autodetección apuntó
-  // a un archivo de credenciales de agosto porque el bundle se carga con un `import()` dinámico que
-  // ninguna heurística de `<script src>` puede ver: declarar `bundle` es el escape documentado para
-  // ese caso. Hallazgo: `tasks/hallazgo-e2e-bundle-clave-desconocida-2026-09-22.md`.
+  // artefacto que el navegador carga contra las fuentes y, con `rebuild:`, recompila sola. Tiene que estar
+  // en esta lista: si no, este validador le diría al dev que su configuración no sirve —y de yapa que
+  // moviera las hijas al primer nivel, al revés de lo que el gate parsea—. Quien obedeciera el aviso
+  // ROMPERÍA una config correcta. Declarar `bundle` es el escape documentado cuando la autodetección apunta a
+  // un archivo equivocado porque el bundle se carga con un `import()` dinámico que
+  // ninguna heurística de `<script src>` puede ver.
   'bundle',
 ]);
 
-// Las llaves que SÍ admiten hijas anidadas, y cuáles. El chequeo de anidamiento nació porque una
-// lista de specs críticos colgada de un formulario terminó aplicándose al otro (un producto del equipo, 2026-08-25 — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25)
-// — sigue vigente para todo lo demás. Esto no lo afloja: dice cuáles son las excepciones legítimas,
+// Las llaves que SÍ admiten hijas anidadas, y cuáles. El chequeo de anidamiento existe porque una
+// lista de specs críticos colgada de un formulario se aplicaría al otro;
+// el chequeo sigue vigente para todo lo demás. Esto no lo afloja: dice cuáles son las excepciones legítimas,
 // y sus hijas al primer nivel siguen siendo un error, porque de ahí el gate no las lee.
 const HIJAS_E2E = { bundle: new Set(['artifact', 'sources', 'rebuild']) };
 const _e2eAvisado = new Set();
 
 function e2eConfig(repo) {
   // Sin gate declarado: distinguir "el repo no tiene E2E" (ok → {}) de "tiene E2E pero se
-  // OLVIDARON de declarar el gate" (gap → aviso ruidoso; discoverability — caso 2026-06-23,
-  // "¿cómo sabe el proyecto que tiene que declarar el archivo?"). El no-op silencioso ocultaba
+  // OLVIDARON de declarar el gate" (gap → aviso ruidoso; discoverability).
+  // El no-op silencioso ocultaría
   // que un repo con specs Playwright sin bloque `e2e:` NO corre E2E (ni el tier crítico frena).
   const noGate = () => (hasPlaywrightSpecs(repo)
     ? { gap: true, warning: 'El repo tiene specs Playwright (`**/e2e/*.spec.ts` o `**/tests/e2e/*.spec.ts` + playwright.config.*) pero NO declara `e2e.gate` en .tycon/advisors.yaml → el pipeline NO va a correr E2E para este repo (ni el tier crítico frena el merge). Declaralo agregando este bloque: `e2e: { gate: <ruta-a-tu-script-de-gate-relativa-al-repo>, frontend_dir: <dir-con-playwright.config>, critical_manifest: <ruta-a-tu-lista-de-specs-criticos (opcional)> }`. Schema + contrato del gate: tycon-pipeline/SKILL.md sección "Gate E2E del proyecto".' }
@@ -417,8 +410,7 @@ function e2eConfig(repo) {
   const dirs = [];
   const shared = [];
   // Un valor del bloque es SIEMPRE un path sin espacios: quedarse con el primer token deja
-  // afuera comentarios inline sin necesidad de parsear YAML de verdad (mismo criterio que la
-  // versión que sólo soportaba escalares: `\S+`).
+  // afuera comentarios inline sin necesidad de parsear YAML de verdad (`\S+`).
   const token = (s) => String(s).trim().split(/\s+/)[0].replace(/^['"]|['"]$/g, '');
   for (const line of txt.split(/\r?\n/)) {
     if (/^\s*#/.test(line) || line.trim() === '') continue;
@@ -438,10 +430,10 @@ function e2eConfig(repo) {
     const [, key, resto] = kv;
     if (nivelHijo === null) nivelHijo = indent;
     if (indent > nivelHijo) {
-      // Llave ANIDADA dentro de otra. Antes se aceptaba igual: así fue como la lista de specs
-      // críticos de un formulario terminó aplicándose al otro (los formularios de un producto, 2026-08-25 — guides/maintaining/incident-log.md#config-anidada-se-lee-igual-2026-08-25).
+      // Llave ANIDADA dentro de otra. Aceptarla sin avisar hace que la lista de specs
+      // críticos de un formulario termine aplicándose al otro.
       // Excepción declarada en `HIJAS_E2E`: hay llaves cuyas hijas el gate SÍ lee anidadas
-      // (`bundle`). Avisar ahí mandaba al dev a romper una config correcta.
+      // (`bundle`). Avisar ahí mandaría al dev a romper una config correcta.
       const permitidas = HIJAS_E2E[padre];
       if (!(permitidas && permitidas.has(key)) && !anidadas.includes(key)) anidadas.push(key);
       continue;
@@ -451,15 +443,15 @@ function e2eConfig(repo) {
       if (!desconocidas.includes(key)) desconocidas.push(key);
       continue;
     }
-    // `frontend_dirs:` (2026-08-15, Story QA-1) — un monorepo tiene más de una app con
-    // Playwright y declarar UNA sola hacía que el gate del merge ejerciera la equivocada
+    // `frontend_dirs:` — un monorepo tiene más de una app con
+    // Playwright y declarar UNA sola haría que el gate del merge ejerciera la equivocada
     // sin fallar. Admite lista en bloque, flow style `[a, b]` y un valor suelto.
     if (key === 'frontend_dirs' || key === 'shared_paths') {
       const destino = key === 'frontend_dirs' ? dirs : shared;
-      // El comentario inline se pela ANTES de mirar el flow style: `[a, b]  # nota` cerraba el
-      // corchete DESPUÉS del comentario, así que el regex no matcheaba, caía al valor suelto y
-      // guardaba `[a,` como directorio — un dir basura + el resto de la lista descartado, en
-      // silencio (cazado por el pase adversarial de QA-1, 2026-08-15).
+      // El comentario inline se pela ANTES de mirar el flow style: si no, `[a, b]  # nota` cierra el
+      // corchete DESPUÉS del comentario, el regex no matchea, cae al valor suelto y
+      // guarda `[a,` como directorio — un dir basura + el resto de la lista descartado, en
+      // silencio.
       const v = resto.replace(/\s+#.*$/, '').trim();
       if (v === '') { juntandoDirs = destino; continue; }
       const flow = v.match(/^\[(.*)\]$/);
@@ -471,7 +463,7 @@ function e2eConfig(repo) {
       out[key] = token(resto);
     }
   }
-  // ── Avisos de la config (FIX-3) ─────────────────────────────────────────────────────────────
+  // ── Avisos de la config ─────────────────────────────────────────────────────────────
   // RUIDOSOS y no bloqueantes: una config mal escrita no da error, da silencio — el repo cree
   // estar configurado y no lo está. Se emite una sola vez por repo y por proceso.
   const avisos = [];
@@ -498,10 +490,10 @@ function e2eConfig(repo) {
   // Lista efectiva de apps: la plural manda; el escalar de siempre se normaliza a una de uno,
   // así ningún consumidor tiene que saber cuál de las dos formas usó el repo.
   const dirsDeclarados = dirs.length ? dirs : (out.frontend_dir ? [out.frontend_dir] : []);
-  // Gate por DEFAULT del harness (2026-08-05): si el repo declara el bloque `e2e:` con su
-  // frontend_dir pero NO un `gate:` propio, se usa el gate genérico del harness. Antes cada
-  // repo tenía su copia del script y el CONTRATO de la evidencia se desincronizaba solo
-  // (Totora escribía "## Tests corridos" y Ceibo no → DODRT-C8 lo habría bloqueado por un
+  // Gate por DEFAULT del harness: si el repo declara el bloque `e2e:` con su
+  // frontend_dir pero NO un `gate:` propio, se usa el gate genérico del harness. Si cada
+  // repo tuviera su copia del script, el CONTRATO de la evidencia se desincronizaría solo
+  // (un repo escribiría "## Tests corridos" y otro no → DODRT-C8 lo bloquearía por un
   // detalle del script, no por su calidad). El `gate:` propio sigue valiendo como escape.
   if (!out.gate && dirsDeclarados.length) {
     out.gate = path.join(__dirname, 'e2e-gate.sh');
@@ -522,7 +514,7 @@ function e2eConfig(repo) {
     config_warnings: avisos,
   };
   // Parsear el manifest crítico EN JS (determinístico) — el merge skill consume el array,
-  // NO un grep de shell (el `\s` de grep BSD/macOS no matchea whitespace → bug 2026-06-23).
+  // NO un grep de shell (el `\s` de grep BSD/macOS no matchea whitespace).
   // Strip de comentarios (línea entera o inline `#...`) + whitespace; líneas vacías fuera.
   if (cfg.critical_manifest) {
     const mtxt = readText(cfg.critical_manifest);
@@ -533,11 +525,11 @@ function e2eConfig(repo) {
   return cfg;
 }
 
-// ── qué apps del monorepo ejerce esta entrega (Story QA-1, 2026-08-15) ───────
+// ── qué apps del monorepo ejerce esta entrega ───────
 //
-// El agujero que cierra: `FrontEnd` de Totora son 4 apps y el gate corría SIEMPRE la única
-// declarada (stock). El merge de una story —pedidos y catálogo— corrió los E2E de
-// stock: no falló, ejerció otra cosa. Un control que mira la app equivocada es
+// El agujero que cierra: en un monorepo con 4 apps, un gate que corra SIEMPRE la única
+// declarada ejerce los E2E de esa app al mergear un cambio de otra:
+// no falla, ejerce otra cosa. Un control que mira la app equivocada es
 // indistinguible de un control que anda, y por eso es peor que no tenerlo.
 //
 // `changedFiles` son paths RELATIVOS al repo (lo que devuelve `git diff --name-only`).
@@ -554,23 +546,21 @@ function selectE2eApps(cfg, changedFiles) {
   const raiz = (cfg && cfg.repo) ? cfg.repo : null;
   const norm = (p) => String(p).replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '');
 
-  // 🔴 NORMALIZACIÓN DE ENTRADA (2026-08-15, cazado por el pase adversarial de la propia QA-1
-  // con 4 lentes independientes reproduciéndolo). La primera versión comparaba los paths de
-  // `changedFiles` TAL CUAL contra el path relativo de cada app, así que sólo funcionaba con
-  // entradas repo-relativas. Con paths ABSOLUTOS no matcheaba NADA y devolvía `[]` — y el
+  // 🔴 NORMALIZACIÓN DE ENTRADA. Comparar los paths de
+  // `changedFiles` TAL CUAL contra el path relativo de cada app sólo funcionaría con
+  // entradas repo-relativas. Con paths ABSOLUTOS no matchearía NADA y devolvería `[]` — y el
   // consumidor no lo rescata, porque en JS `[] || fallback` devuelve `[]` (un array vacío es
-  // truthy): el loop del gate itera CERO veces y sale 0. O sea: el control decía verde
-  // habiendo ejercido nada. Es LITERALMENTE la clase de bug que esta función vino a matar,
-  // reintroducida un nivel más arriba.
+  // truthy): el loop del gate iteraría CERO veces y saldría 0. O sea: el control diría verde
+  // habiendo ejercido nada, la clase de bug que esta función existe para evitar.
   //
-  // Y no era un caso teórico: `step-07c` documenta `marker.filesTouched` como fuente válida de
+  // Y no es un caso teórico: `step-07c` documenta `marker.filesTouched` como fuente válida de
   // `--changed`, y esos paths son ABSOLUTOS por construcción (`on-edit.js` descarta los que no
-  // lo son antes de guardarlos). Reproducido con el marker real de esta story.
+  // lo son antes de guardarlos).
   //
-  // También se contempla el caso "relativo a un ancestro del repo" (`FrontEnd/totora-catalogo/…`,
+  // También se contempla el caso "relativo a un ancestro del repo" (`FrontEnd/mi-app/…`,
   // que es lo que devuelve `git diff` cuando la raíz git está por ENCIMA de `--repo`), y el
   // entrecomillado con escapes octales de `git diff --name-only` (core.quotePath viene ON por
-  // default: un path con acentos llega como `"totora-catalogo/src/p\303\241gina.tsx"`).
+  // default: un path con acentos llega como `"mi-app/src/p\303\241gina.tsx"`).
   const desescapar = (p) => {
     let s = String(p);
     if (s.length > 1 && s.startsWith('"') && s.endsWith('"')) {
@@ -582,7 +572,7 @@ function selectE2eApps(cfg, changedFiles) {
     }
     return s;
   };
-  // 🔴 Symlinks (QA-1 iter-3, 2026-08-15): en macOS `/tmp` es un symlink a `/private/tmp` y el
+  // 🔴 Symlinks: en macOS `/tmp` es un symlink a `/private/tmp` y el
   // TMPDIR real vive bajo `/var/folders`. Si `--repo` y los paths de `--changed` vienen resueltos
   // DISTINTO, `path.relative` los ve fuera del repo y se descartan. Lo peligroso es el caso
   // PARCIAL: el fail-safe de "no sé → todas" sólo dispara si fallan TODOS, así que con uno solo
@@ -621,35 +611,33 @@ function selectE2eApps(cfg, changedFiles) {
   if (!tocados.length) return todas.slice();
 
   // Rutas de código COMPARTIDO entre apps (`e2e.shared_paths`). Un cambio ahí involucra a
-  // TODAS, no sólo a la app en cuyo directorio vive el archivo. En Totora esto no es teórico:
-  // casi todo el código común vive DENTRO de `totora-encargos/src` y las otras apps lo importan
+  // TODAS, no sólo a la app en cuyo directorio vive el archivo. Esto no es teórico:
+  // casi todo el código común puede vivir DENTRO de una app y las otras lo importan
   // (por eso existe el gate `docs/cross-form-imports-gate.sh`), así que sin esto un cambio en
-  // pedidos dejaba catálogo y stock sin ejercer.
+  // una app dejaría a las otras sin ejercer.
   const compartidos = (cfg && Array.isArray(cfg.shared_paths) ? cfg.shared_paths : []).map(norm).filter(Boolean);
 
-  // 🔴 La config del PROPIO control es compartida SIEMPRE (2026-08-24 — guides/maintaining/incident-log.md#case-e2e-gate-own-config-2026-08-24). El
-  // commit que dio de alta el tier crítico en el frontend de un producto se mergeó a main SIN
-  // que el tier corriera: sólo tocaba `.tycon/advisors.yaml` + el manifest, que no caían bajo
-  // ninguna app ni bajo `shared_paths`, así que esto devolvía `[]` ("0 apps tocadas") — y NO es
-  // el fail-safe de arriba, porque sí había archivos tocados; simplemente ninguna declaración
-  // los cubría. Es la MISMA clase de bug que motivó `shared_paths` (QA-1), un nivel más arriba:
-  // en la config del control en vez de en código de producto. Una edición futura que rompa el
+  // 🔴 La config del PROPIO control es compartida SIEMPRE. Un
+  // commit que da de alta el tier crítico en un frontend y sólo toca `.tycon/advisors.yaml` + el manifest
+  // no cae bajo ninguna app ni bajo `shared_paths`, así que esto devolvería `[]` ("0 apps tocadas") — y NO es
+  // el fail-safe de arriba, porque sí hay archivos tocados; simplemente ninguna declaración
+  // los cubre. Es la MISMA clase de bug que motiva `shared_paths`, un nivel más arriba:
+  // en la config del control en vez de en código de producto. Una edición que rompa el
   // manifest (path mal escrito, substring que deja de matchear, puerto equivocado en una
   // precondition) se mergearía sin que el tier la detecte. Se trata como compartido sin
-  // depender de que cada repo se acuerde de declararlo — la declaración manual es justo lo que
-  // falló acá y en QA-1. Test: `GateMerge_LaConfigDelControlEsCompartida`.
+  // depender de que cada repo se acuerde de declararlo: la declaración manual es justo lo que
+  // falla. Test: `GateMerge_LaConfigDelControlEsCompartida`.
   //
-  // 🔴 PREFIJOS, no rutas exactas (FIX-6, 2026-08-25). La lista era `['.tycon/advisors.yaml']`
-  // + el manifest declarado, o sea que había que ACORDARSE de agregar cada archivo de config
-  // nuevo — y ése es exactamente el modo de falla que GAP-TOTORA-008 documenta un nivel más
+  // 🔴 PREFIJOS, no rutas exactas. Una lista como `['.tycon/advisors.yaml']`
+  // + el manifest declarado obligaría a ACORDARSE de agregar cada archivo de config
+  // nuevo — ése es el modo de falla de depender de una declaración manual, un nivel más
   // abajo. Con `.tycon` entero como prefijo, una precondición, un manifest nuevo o cualquier
   // config futura entran solas.
   //
-  // Y se suma el SCRIPT DEL GATE que declara el repo (`e2e.gate`): faltaba, así que un commit
-  // que MODIFICA el ejecutor de las pruebas no seleccionaba ninguna app y salía "ninguna de las
-  // apps declaradas fue tocada" — se podía romper el runner de E2E sin que corriera un solo E2E.
-  // Reproducido: `--changed scripts/e2e-gate.sh` daba `[]` en el repo del framework y URUTAU/FrontEnd
-  // (CeiboFrontEnd zafaba por accidente: declara `frontend_dir: .`, así que todo la selecciona).
+  // Y se suma el SCRIPT DEL GATE que declara el repo (`e2e.gate`): sin él, un commit
+  // que MODIFICA el ejecutor de las pruebas no seleccionaría ninguna app y saldría "ninguna de las
+  // apps declaradas fue tocada" — se podría romper el runner de E2E sin que corra un solo E2E.
+  // Con `frontend_dir: .` todo selecciona la app, así que ahí no hace falta.
   // Sólo cuenta si el gate vive DENTRO del repo — el gate por default del harness vive en el
   // skill y `path.relative` lo deja afuera, que es lo correcto: no es código de este repo.
   const propios = ['.tycon'];
@@ -676,16 +664,15 @@ function selectE2eApps(cfg, changedFiles) {
 }
 
 // ── detección de stack ───────────────────────────────────────────────────────
-// Multi-root aware (auditoría 2026-06-09): antes solo se leía package.json en la
-// raíz de --repo → falso negativo SILENCIOSO en workspaces contenedores (caso
-// Ceibo: --repo=…/Ceibo sin package.json raíz, los reales viven en
-// CeiboFrontEnd/ceibo-*) — react-conventions y el trigger React de
-// feature-wiring se perdían. Ahora: por cada archivo modificado se busca el
+// Multi-root aware: leer sólo el package.json en la
+// raíz de --repo daría un falso negativo SILENCIOSO en workspaces contenedores (sin
+// package.json raíz, con los reales en subcarpetas) — react-conventions y el trigger React de
+// feature-wiring se perderían. Por eso: por cada archivo modificado se busca el
 // package.json ancestro más cercano (bounded al repo) y se mergean las deps;
 // fallback adicional: subdirectorios de primer nivel del repo.
-// Las secciones de un package.json que declaran dependencias. 2026-10-15: se leían sólo dependencies y devDependencies, y
-// un formulario de Bizuit declara React SÓLO en peerDependencies (lo provee el host): la detección daba hasReact:false y
-// el revisor de React no entraba (story de dos repos de un producto del equipo; sumado a mano encontró dos avisos reales).
+// Las secciones de un package.json que declaran dependencias. Un formulario de Bizuit declara React SÓLO en
+// peerDependencies (lo provee el host): leer sólo dependencies y devDependencies daría hasReact:false y
+// el revisor de React no entraría.
 // Una sola lista para la detección y para dependenciaCambiada.
 const SECCIONES_DE_DEPENDENCIAS = ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'];
 // `sinPeerOptativos`: para DETECTAR el stack, un peer marcado optativo (`peerDependenciesMeta.<x>.optional`) no cuenta —
@@ -719,9 +706,9 @@ function collectPackageDeps(repo, files) {
     if (!/\.(tsx|ts|jsx|js)$/i.test(f)) continue;
     let dir = path.resolve(path.dirname(path.isAbsolute(f) ? f : path.join(repo, f)));
     // Walk-up acotado: no salir del repo, no pasar por node_modules.
-    // Story 7.26: un archivo del repo hermano (fuera de `--repo`) sube hasta la raíz git de SU repo. Antes el tope era
-    // siempre `--repo`, así que su package.json no se leía nunca: «detección React/Next ciega» y, con ella, afuera
-    // los revisores de React y de cableado (corrida de una story de dos repos de un producto del equipo, 2026-10-14).
+    // Un archivo del repo hermano (fuera de `--repo`) sube hasta la raíz git de SU repo. Con el tope
+    // siempre en `--repo`, su package.json no se leería nunca: «detección React/Next ciega» y, con ella, afuera
+    // los revisores de React y de cableado.
     let tope = repoNorm;
     if (!dir.startsWith(repoNorm)) {
       const raizDelArchivo = companionLib.gitRootOf(dir);
@@ -747,13 +734,13 @@ function collectPackageDeps(repo, files) {
       }
     } catch { /* ignore */ }
   }
-  // «Encontrado» es «se leyó alguno», aunque no traiga dependencias: antes pedía además alguna dependencia, y un
-  // package.json sin ellas daba el aviso falso «sin package.json encontrado» (revisión del 2026-10-15).
+  // «Encontrado» es «se leyó alguno», aunque no traiga dependencias: pedir además alguna dependencia daría, con un
+  // package.json sin ellas, el aviso falso «sin package.json encontrado».
   return { deps, packagesFound: leidos.length > 0, fueraDeGit, leidos };
 }
 
-// ── FIX-4(a) (2026-08-25): ¿el diff de un package.json toca una DEPENDENCIA? ────────────────────
-// Medido en CeiboFrontEnd, 6 meses: 730 commits, 115 tocan `package.json` (16% — meter el set base
+// ── ¿el diff de un package.json toca una DEPENDENCIA? ────────────────────
+// Medido en un frontend, 6 meses: 730 commits, 115 tocan `package.json` (16% — meter el set base
 // ahí sería caro), pero sólo 8 cambian una línea de dependencia (7% de esos) y sólo 3 tocan
 // react/next. O sea ~1% de los commits, con 1 revisor extra. Un bump de versión de script o un
 // cambio de `"scripts"` NO cuenta.
@@ -762,7 +749,7 @@ function collectPackageDeps(repo, files) {
 // vez de caminar el diff: con `-U0` no hay contexto, así que una línea `+  "react": "18.3.0"` es
 // indistinguible de una entrada de `"scripts"`. Comparar los objetos parseados dice exactamente lo
 // que la regla quiere saber.
-// Las cuatro secciones cuentan (2026-10-15). peerDependencies ya contaba y se mantiene a propósito: en un formulario de
+// Las cuatro secciones cuentan. peerDependencies cuenta a propósito: en un formulario de
 // Bizuit el rango peer de react ES el React que tiene que poner el host, y cambiarlo cambia ese contrato — lo que mira
 // REACT-W14 (peer desalineado). optionalDependencies se suma: se instalan cuando se puede, así que un cambio ahí cambia lo
 // que corre igual que uno en dependencies.
@@ -795,8 +782,8 @@ function detectStack(repo, files) {
   const { deps, packagesFound, fueraDeGit, leidos } = collectPackageDeps(repo, files);
   const csModified = anyFileMatches(files, /\.(cs|csproj)$/i);
   const tsxModified = anyFileMatches(files, /\.(tsx|ts|jsx|js)$/i);
-  // PIPE-DETECT (2026-09-17): un guion `.sh` es código. Los de CI despliegan y frenan en
-  // producción, y un diff de sólo `.sh` salía `onlyDocs`: cero revisores de código. Medido sobre
+  // Un guion `.sh` es código. Los de CI despliegan y frenan en
+  // producción, y un diff de sólo `.sh` saldría `onlyDocs`: cero revisores de código. Medido sobre
   // 296 corridas: 42 tocaron un `.sh`, 4 sólo `.sh`.
   const shModified = anyFileMatches(files, /\.sh$/); // minúsculas, como `matchGlob` en la tabla del re-loop
   // Python, Svelte, Vue y cualquier archivo fuente de lib/code-files.js (con lo que sume la organización) también son
@@ -807,11 +794,11 @@ function detectStack(repo, files) {
   const vueModified = anyFileMatches(files, /\.vue$/i);
   const sourceModified = files.some((f) => codeFiles.isSource(f, { extra: extraOrg }));
   const codeModified = csModified || tsxModified || shModified || sourceModified;
-  // FIX-4(b) (2026-08-25): la superficie de CONFIG. El arnés publica una tabla que dice vigilar
-  // `plugin.json`, los `appsettings*.json` y los `.env` — y su propia selección no los podía
-  // entregar nunca: un diff de sólo config se clasificaba `onlyDocs` y el set quedaba vacío. O sea
-  // que reglas escritas sobre secretos, cadenas de conexión y settings faltantes existían,
-  // documentadas, y no podían dispararse por su propio objeto.
+  // La superficie de CONFIG. El arnés publica una tabla que dice vigilar
+  // `plugin.json`, los `appsettings*.json` y los `.env`; sin esto, su propia selección no los podría
+  // entregar nunca: un diff de sólo config se clasificaría `onlyDocs` y el set quedaría vacío. O sea
+  // que reglas escritas sobre secretos, cadenas de conexión y settings faltantes existirían,
+  // documentadas, y no podrían dispararse por su propio objeto.
   const norm = (f) => String(f).replace(/\\/g, '/');
   const pluginCfgModified = files.some((f) => /(^|\/)plugin\.json(\.example)?$/i.test(norm(f)));
   // `appsettings.Development.json` queda AFUERA a propósito: hay repos que lo regeneran en cada
@@ -843,14 +830,14 @@ function detectStack(repo, files) {
   if (tsxModified && !packagesFound) {
     det.warning = 'sin package.json encontrado (ni en raíz, ni ancestros de los files, ni subdirs) — detección React/Next ciega; verificá --repo';
   }
-  // 2026-10-15: con algún package.json leído y un .tsx/.jsx en el diff, que no aparezca ningún framework no puede pasar
-  // callado — fue así como el revisor de React quedó afuera sin que nadie lo viera. Sólo .tsx/.jsx: un .ts de un backend
+  // Con algún package.json leído y un .tsx/.jsx en el diff, que no aparezca ningún framework no puede pasar
+  // callado: así el revisor de React quedaría afuera sin que nadie lo vea. Sólo .tsx/.jsx: un .ts de un backend
   // de Node no tiene por qué traer React.
   if (packagesFound && !det.hasReact && !det.hasNext && anyFileMatches(files, /\.(tsx|jsx)$/i)) {
     const nota = `hay .tsx/.jsx y no detecté React ni Next en ${leidos.slice(0, 4).join(', ')}${leidos.length > 4 ? ', …' : ''} (se leen dependencies, devDependencies, peerDependencies y optionalDependencies)`;
     det.warning = det.warning ? `${det.warning} · ${nota}` : nota;
   }
-  // Story 7.26: un archivo JS/TS fuera de `--repo` y de todo repo git no tiene package.json que buscar. Se dice.
+  // Un archivo JS/TS fuera de `--repo` y de todo repo git no tiene package.json que buscar. Se dice.
   if (fueraDeGit.length) {
     const nota = `${fueraDeGit.length} archivo(s) JS/TS fuera de --repo y de todo repo git (${fueraDeGit.slice(0, 3).join(', ')}${fueraDeGit.length > 3 ? ', …' : ''}): su package.json no se buscó`;
     det.warning = det.warning ? `${det.warning} · ${nota}` : nota;
@@ -858,29 +845,28 @@ function detectStack(repo, files) {
   return det;
 }
 
-// story 8.2 — las banderas que produce detectStack, publicadas para el vocabulario `detection` de
+// Las banderas que produce detectStack, publicadas para el vocabulario `detection` de
 // los manifiestos de paquetes (lib/packs.js): una bandera que no está acá invalida el manifiesto,
 // nunca se evalúa como falso. tests/packs.test.js verifica que coincidan con las claves reales.
-// Viven en lib/packs.js (story 8.25, tanda A2a): el instalador valida la capa del equipo con ese módulo solo, sin cargar
+// Viven en lib/packs.js: el instalador valida la capa del equipo con ese módulo solo, sin cargar
 // este archivo; una sola fuente.
 const BANDERAS_DETECCION = require('./lib/packs.js').BANDERAS;
 
 // ── set BASE (matriz top-down de step-05) ─────────────────────────────────────
-// `extras`: los revisores del grupo `base` de los paquetes activos cuya condición se cumplió (story
-// 8.2). Van PRIMERO, como iban los de convenciones por stack en la matriz escrita a mano — el orden
-// no es contrato (check-count y el marker comparan conjuntos), pero así la equivalencia con el
-// pipeline anterior es también de orden en todos los diffs con código.
+// `extras`: los revisores del grupo `base` de los paquetes activos cuya condición se cumplió.
+// Van PRIMERO — el orden
+// no es contrato (check-count y el marker comparan conjuntos).
 function computeBase(det, extras = []) {
   const TC = 'tycon-plugin-tests-coverage';
   const SB = 'tycon-plugin-security-basics';
 
-  // Sin archivos fuente: docs, config y/o guiones. (Era `det.onlyDocs` hasta PIPE-DETECT: con un
-  // `.sh` contando como código, un guion junto a un `plugin.json` dejaba de entrar acá y la
-  // config perdía a su revisor en silencio — lo cazó el revisor de fallos silenciosos.)
+  // Sin archivos fuente: docs, config y/o guiones. (No se usa `det.onlyDocs`: con un
+  // `.sh` contando como código, un guion junto a un `plugin.json` dejaría de entrar acá y la
+  // config perdería a su revisor en silencio.)
   if (!det.csModified && !det.tsxModified && !det.sourceModified) {
-    // 🔴 Ya no es un `[]` a secas (FIX-4(a) y (b), 2026-08-25). Un diff sin código puede seguir
+    // 🔴 No es un `[]` a secas. Un diff sin código puede seguir
     // siendo puro docs —y ahí sí va vacío—, pero si tocó la superficie de CONFIG hay reglas
-    // escritas sobre ella que hasta hoy no podían dispararse por su propio objeto.
+    // escritas sobre ella que no podrían dispararse por su propio objeto.
     // **UN revisor por tipo, no el set base**: el objetivo es hacer verdadera una declaración que
     // el arnés ya publica, no encarecer los commits de config. Los de convenciones (config de
     // plugin → .NET, DOTNET-C6/W7/W10; dependencia nueva → React/Next, REACT-W14) vienen en
@@ -893,7 +879,7 @@ function computeBase(det, extras = []) {
   }
 
   // Con código fuente (.cs, JS/TS, Python, Svelte, Vue…): las convenciones del stack las traen los paquetes; pruebas y
-  // seguridad son del núcleo y NUNCA faltan (AC 8 de la 8.2: sin paquetes, un diff .cs sigue
+  // seguridad son del núcleo y NUNCA faltan (sin paquetes, un diff .cs sigue
   // teniendo revisor de pruebas y de seguridad).
   return [...new Set([...extras, TC, SB])];
 }
@@ -905,7 +891,7 @@ function computeCompletitud(storyPath, repo, files) {
   const sc = require('./lib/story-checks.js');
   const isGold = sc.storySection(story, 'criteria') !== null || sc.storySection(story, 'tests') !== null;
 
-  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (line 130/133 step-05)
+  // story-validator post-impl + spec-first SIEMPRE en Mary+GOLD (ver step-05)
   if (story) {
     out.push('tycon-story-validator');
     out.push('tycon-spec-first-checker');
@@ -926,8 +912,8 @@ function computeCompletitud(storyPath, repo, files) {
 }
 
 // ── set CONDICIONAL (additive por triggers de file/contenido) ─────────────────
-// Los triggers de CONTENIDO evalúan las líneas AGREGADAS del diff (auditoría
-// 2026-06-09) — un `try` pre-existente en el archivo no justifica re-auditar
+// Los triggers de CONTENIDO evalúan las líneas AGREGADAS del diff
+// — un `try` pre-existente en el archivo no justifica re-auditar
 // silent failures de código que el dev no tocó. Los triggers de PATH no cambian.
 function computeConditional(repo, files, extras = []) {
   const out = [];
@@ -935,7 +921,7 @@ function computeConditional(repo, files, extras = []) {
   const csContents = readAddedContents(repo, csFiles, ['.cs']);
   // Svelte y Vue llevan JavaScript adentro; el resto de los archivos fuente (Python, Go, Java…) se mira con
   // las palabras de manejo de errores de su lenguaje.
-  // `.mjs`/`.cjs`/`.mts`/`.cts` también: la superficie de este revisor ya los cubría y un `catch` mudo ahí es lo mismo.
+  // `.mjs`/`.cjs`/`.mts`/`.cts` también: la superficie de este revisor ya los cubre y un `catch` mudo ahí es lo mismo.
   const jsTsContents = readAddedContents(repo, files, ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts', '.svelte', '.vue']);
   const extraOrg = stackConfig.orgExtra();
   // Los fuentes que no son .cs ni de la familia JS/TS (Python, Go, Java… y las extensiones de la organización).
@@ -946,8 +932,7 @@ function computeConditional(repo, files, extras = []) {
   // (los revisores de un stack —.NET y BIZUIT, Next.js + Postgres— y los de clientes viven en sus paquetes: entran por `extras`)
 
   // e2e-realness: cualquier spec Playwright en el diff (stack-agnostic).
-  // 🔴 CF-1 (auditoría fresca 2026-05-21): este advisor se omitió al portar la matriz a
-  // código — regresión sobre su propio caso disparador (E2E falsos-verdes Story 4.3.1).
+  // 🔴 Este advisor no puede omitirse: caza los E2E falsos-verdes.
   if (anyFileMatches(files, /(^|\/)tests\/e2e\/.*\.spec\.ts$/)) {
     out.push('tycon-e2e-realness-checker');
   }
@@ -977,15 +962,14 @@ function computeConditional(repo, files, extras = []) {
   // Único advisor gatillado por capacidad del proyecto (.tycon/advisors.yaml →
   // i18n.required: true), no por el diff. Requiere además que el diff toque código
   // con texto visible posible. El advisor scopea al diff y devuelve OK si no hay
-  // texto nuevo hardcodeado. Caso disparador: un producto del equipo, 2026-06-01 (512 textos
-  // acumulados sin gate — guides/maintaining/incident-log.md#case-hardcoded-ui-text-backlog-2026-06-01). Es ratchet de "no deuda nueva", no sweep del backlog.
+  // texto nuevo hardcodeado. Es ratchet de "no deuda nueva", no sweep del backlog.
   if (i18nRequired(repo) &&
       (anyFileMatches(files, /\.(tsx|ts|jsx|js)$/) || anyFileMatches(files, /\.cs$/i)
         || files.some((f) => /\.(svelte|vue)$/i.test(f) || (esOtroFuente(f) && !codeFiles.isTestFile(f))))) {
     out.push('i18n-hardcoded-text-reviewer');
   }
 
-  // story 8.2 — los condicionales de los paquetes activos (hermanos, el adaptador de un cliente…) entran al final, con la
+  // Los condicionales de los paquetes activos (hermanos, el adaptador de un cliente…) entran al final, con la
   // condición que declara su manifiesto.
   out.push(...extras);
 
@@ -1014,12 +998,12 @@ function computeAdvisorSet({ repo, story, files }) {
     // una terminación mal escrita en `stack.code_extensions` no se usa; que se vea en el anuncio del set
     // (casos: tests/code-files.test.js)
     stack_problems: stackConfig.codeExtensions().problems,
-    // story 8.2 — que se vea en la primera corrida con qué paquetes se eligió el set, no al mes.
+    // Que se vea en la primera corrida con qué paquetes se eligió el set, no al mes.
     // `packs_declarados`: null = el repo no restringe (activos todos los instalados); [] o lista = lo
     // que el repo fijó en `packs:` — así «restringido a ninguno» no se confunde con «ninguno instalado».
     packs: resumenPaquetes(activos), packs_dir: packsLib.dirPaquetes(),
     packs_declarados: packsLib.declaracionDelRepo(repo).declarados,
-    // story 8.23, tanda G: sin paquetes activos, POR QUÉ (ninguno instalado ≠ ninguno activo); con activos, null
+    // Sin paquetes activos, POR QUÉ (ninguno instalado ≠ ninguno activo); con activos, null
     packs_nota: packsLib.notaDePaquetes({ repo, instalados: paquetesInstalados(), activos }),
     story_path_para: necesitanStory(activos),
   };
@@ -1086,12 +1070,12 @@ function coreReviewersDrift({ table = CORE_REVIEWERS } = {}) {
   };
 }
 
-// ── SPEED-1 (2026-05-27) — Smart re-loop advisors (refinement de regla D.i) ──
+// ── Smart re-loop advisors (refinement de regla D.i) ──
 //
 // Cuando iter N>1 del Step 5 corre (fix-loop post-HITL), regla D.i.1 obliga el set
 // completo de iter 1 (no cherry-pick). Pero si los fixes son no-impl (specs, tests
 // añadidos, docs), muchos advisors no tienen surface nueva que evaluar y devuelven
-// reportes idénticos. SPEED-1 computa el delta de files iter N vs iter N-1 (snapshot
+// reportes idénticos. El smart-reloop computa el delta de files iter N vs iter N-1 (snapshot
 // en marker.iterations[N-1]) y skipea advisors cuya audited_surface no se tocó.
 //
 // Cada advisor declara su surface acá. `always: true` = re-correr siempre (frontmatter
@@ -1107,12 +1091,12 @@ const SOURCE_GLOBS = [...codeFiles.SOURCE_EXTS, ...stackConfig.orgExtra()]
   .map((e) => `**/*${e}`);
 const TEST_GLOBS_8_48 = ['**/test_*.py', '**/*_test.py', '**/*_test.go'];
 const ADVISOR_AUDITED_SURFACE = {
-  // ── Set base ── (los de convenciones por stack viven en packs/ desde la story 8.2: su
+  // ── Set base ── (los de convenciones por stack viven en packs/: su
   // `surface` está en el manifiesto y la lee superficieDe())
-  // `.js`/`.mjs`/`.cjs` desde 2026-09-10: el arnés MISMO es JavaScript sin transpilar (scripts/,
-  // hooks, el tablero). Sin ellos, un re-loop cuyo fix vive en un `.js` salteaba a este advisor
-  // por «superficie no tocada» — medido en la story 2.15: 4 re-loops seguidos, con el hallazgo
-  // del cazador de fallos silenciosos arreglado justamente en un `.js`.
+  // `.js`/`.mjs`/`.cjs`: el arnés MISMO es JavaScript sin transpilar (scripts/,
+  // hooks, el tablero). Sin ellos, un re-loop cuyo fix vive en un `.js` saltearía a este advisor
+  // por «superficie no tocada», aunque el hallazgo del cazador de fallos silenciosos
+  // se arreglara justamente en un `.js`.
   // Más los archivos fuente de Python, Svelte, Vue y los demás lenguajes de lib/code-files.js.
   'tycon-plugin-security-basics': { paths: ['**/*.cs', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.mjs', '**/*.cjs', '**/*.sh', ...SOURCE_GLOBS, '**/appsettings*.json', '**/.env*'] },
   'tycon-plugin-tests-coverage': { always: true }, // recuento de tests + coverage cambia con cualquier test edit
@@ -1137,7 +1121,7 @@ const ADVISOR_AUDITED_SURFACE = {
   'tycon-e2e-realness-checker': { paths: ['**/tests/e2e/**/*.spec.ts', '**/tests/e2e/**/*.spec.tsx'] },
 
   // (los revisores de un stack declaran su `surface` en el manifiesto de su paquete: la lee superficieDe())
-  // llm-cost: sin '**/*.ts' genérico (auditoría 2026-06-09) — cualquier .ts del repo
+  // llm-cost: sin '**/*.ts' genérico — cualquier .ts del repo
   // NO es superficie de costo LLM; los paths específicos + el trigger por contenido
   // (@anthropic-ai/sdk etc.) cubren el caso real.
   'llm-cost-reviewer': { paths: ['**/lib/llm/**', '**/lib/embeddings/**', '**/matcher/**'] },
@@ -1148,7 +1132,7 @@ const ADVISOR_AUDITED_SURFACE = {
   },
 };
 
-// ── COST-1 (2026-05-27) — Model tier hints (opt-in via --cost-tier lean) ─────
+// ── Model tier hints (opt-in via --cost-tier lean) ─────
 //
 // Patrón Anthropic "executor + advisor on-demand": el executor barato corre la
 // inspección mecánica; el advisor caro entra solo en juicio sintético. Acá lo
@@ -1162,19 +1146,19 @@ const ADVISOR_AUDITED_SURFACE = {
 // El orchestrator (skill tycon-pipeline) puede leerlo y pasar `model:` override
 // a `Agent()`; si lo ignora, el frontmatter del advisor decide (default actual).
 //
-// DEFAULT (`--cost-tier standard` o sin flag): output IDÉNTICO al previo. Cero
+// DEFAULT (`--cost-tier standard` o sin flag): output sin `model_hints`. Cero
 // riesgo de regresión. Opt-in solo cuando el dev/equipo lo pide explícito.
 //
-// Fuente del mapping: misma lógica que para downgradear el `model:` field del
-// frontmatter del agent en Movement 1. Si en producción los advisors `lean`
+// Fuente del mapping: misma lógica que el `model:` field del
+// frontmatter del agent. Si en producción los advisors `lean`
 // muestran falsos negativos, revertir acá (single source of truth) y los
 // frontmatters individuales.
 const ADVISOR_COST_TIER = {
   // Lean (grep + parse + checks binarios) → Haiku
   'tycon-ac-coverage-checker': 'lean',
   'tycon-deferral-tracker': 'lean',
-  // Standard (default Sonnet — donde están hoy la mayoría). Los de convenciones por stack, hermanos
-  // y el adaptador de un cliente declaran su `depth` en su manifiesto (packs/, story 8.2) y la lee tierDe().
+  // Standard (default Sonnet — donde está la mayoría). Los de convenciones por stack, hermanos
+  // y el adaptador de un cliente declaran su `depth` en su manifiesto (packs/) y la lee tierDe().
   'tycon-plugin-tests-coverage': 'standard',
   'tycon-plugin-security-basics': 'standard',
   'tycon-story-validator': 'standard',
@@ -1189,19 +1173,19 @@ const ADVISOR_COST_TIER = {
   'tycon-spec-first-checker': 'deep',
 };
 
-// Los valores de hoy viven en lib/models.js (story 7.29): un solo lugar para el modelo de cada trabajo.
+// Los valores viven en lib/models.js: un solo lugar para el modelo de cada trabajo.
 const MODELOS = require('./lib/models.js');
 const TIER_TO_MODEL = MODELOS.TIERS;
 
-// ── Paquetes de revisores (story 8.2 del arnés, 2026-09-26) ─────────────────────────────────────
+// ── Paquetes de revisores ─────────────────────────────────────
 //
 // Los revisores de un producto o de un cliente (convenciones de plugins Bizuit; plugins hermanos;
-// el adaptador de un cliente) ya no viven en las tablas de arriba: viven en `packs/<nombre>/pack.json` (agent-skills, o
+// el adaptador de un cliente) no viven en las tablas de arriba: viven en `packs/<nombre>/pack.json` (agent-skills, o
 // `TYCON_PACKS_DIR`) y entran al set según la condición de su manifiesto, en el grupo que declaran,
 // con su superficie para las vueltas y su profundidad de modelo. El cargador (`lib/packs.js`) falla
 // fuerte: un paquete roto, un agente inexistente o un revisor repetido FRENAN el comando (exit 2,
 // nombrando archivo · revisor · motivo) — nunca degradan a «sin ese paquete», que es exactamente la
-// falla silenciosa que la story existe para impedir. La salida de `advisors` / `smart-reloop` lleva
+// falla silenciosa que esto existe para impedir. La salida de `advisors` / `smart-reloop` lleva
 // `packs` para que se vea en la primera corrida, no al mes. La carga es PEREZOSA: los hooks que
 // importan este módulo por otras funciones no la disparan.
 const packsLib = require('./lib/packs.js');
@@ -1224,8 +1208,8 @@ function paquetesActivos(repo) {
   return packsLib.paquetesActivos({ repo, instalados: paquetesInstalados() });
 }
 // Lo que viaja en la salida: nombre, carpeta y cada revisor con lo que declara. Las claves de la salida
-// son las de siempre aunque el manifiesto ya las escriba en inglés (story 8.9, pregunta decidida 2):
-// lib/packs.js ya entrega cada paquete con esos nombres.
+// están en castellano aunque el manifiesto las escriba en inglés:
+// lib/packs.js entrega cada paquete con esos nombres.
 function resumenPaquetes(activos) {
   return activos.map((p) => ({
     nombre: p.nombre, dir: p.dir, descripcion: p.descripcion, guias: p.guias,
@@ -1275,10 +1259,10 @@ function necesitanStory(activos) {
   ]);
 }
 
-// ── pipeline.js validators — los revisores de validación del paso 1 (story 8.2) ────────────────
+// ── pipeline.js validators — los revisores de validación del paso 1 ────────────────
 // El paso 1 lanza al validador de stories y, si la story es de backend, a los revisores del grupo
-// `validacion` de los paquetes activos (hoy: el de plugins hermanos, del paquete clients). Antes
-// eso era prosa del step-01 con el nombre escrito; ahora el step corre este comando y lanza lo que
+// `validacion` de los paquetes activos (hoy: el de plugins hermanos, del paquete clients). El step corre
+// este comando y lanza lo que
 // devuelve. «Story de backend» = la story nombra .cs/.csproj, o el repo tiene *.csproj / *Plugin.cs:
 // esos archivos son el contexto sobre el que se evalúa `when` (`added` lee el archivo entero:
 // en el paso 1 no hay diff).
@@ -1319,7 +1303,7 @@ function hermanosDelRepo(activos) {
 
 function computeValidadores({ story, repo }) {
   if (!story) throw new Error('validators: falta --story <spec.md>');
-  // Una ruta mal tipeada no puede dar un set «válido» a medias (lo reprodujo el pase adversarial de la 8.2):
+  // Una ruta mal tipeada no puede dar un set «válido» a medias:
   // sin story legible o sin repo no hay contexto sobre el que decidir nada.
   const content = readText(story);
   if (!content) throw new Error(`validators: no se pudo leer la story ${story}`);
@@ -1356,22 +1340,20 @@ function computeValidadores({ story, repo }) {
   };
 }
 
-// ── MECH-2 (fix auditoría 2026-06-11, run 9.4) — mech-check descuenta advisors ──
+// ── mech-check descuenta advisors ──
 //
-// mech-check (lib/story-checks.js) existía desde 2026-06-09 pero computeAdvisorSet
-// NO lo integraba: el expected[] persistido EXIGÍA los advisors LLM que el script
-// reemplaza — aunque el orquestador corriera mech-check, igual tenía que spawnear
-// los lean para que check-count diera verde (en 9.4: ac-coverage 4 spawns +
-// deferral hubiera sido igual). Acá el descuento es AUTOMÁTICO y coherente con
+// computeAdvisorSet integra mech-check (lib/story-checks.js): sin eso, el expected[] persistido EXIGIRÍA
+// los advisors LLM que el script
+// reemplaza — aunque el orquestador corriera mech-check, igual tendría que spawnear
+// los lean para que check-count diera verde. Acá el descuento es AUTOMÁTICO y coherente con
 // el expected[]: si mech-check corre limpio (sin ambiguos de esa familia), el
 // advisor se DESCUENTA del set y del expected — sus checks corrieron a costo 0.
 //
-// Matriz de descuento (deliberadamente conservadora; recalibrada por la verificación
-// adversarial 2026-06-11 — la versión inicial de ese mismo día descontaba deferral
-// desde iter 1 con la claim FALSA "mech cubre DEFTR-C1/C2 completos": story-checks
+// Matriz de descuento (deliberadamente conservadora). Descontar deferral desde iter 1
+// con la claim FALSA "mech cubre DEFTR-C1/C2 completos" sería un error: story-checks
 // solo hace un includes() global del storyId en todo.md, mientras el advisor chequea
 // CADA item per-item + engram + W1/W2/W3; y como story-checks JAMÁS emite ambiguos
-// DEFTR, el advisor quedaba muerto PERMANENTE — la misma clase de bug del hallazgo):
+// DEFTR, el advisor quedaría muerto PERMANENTE:
 //   - deferral-tracker: iter 1 SIEMPRE corre (per-item + engram + DEFTR-W1..W3 son
 //     juicio LLM no mecanizado). En re-loops (iter≥2) se descuenta si mech salió
 //     limpio: el delta lo cubren DEFTR-C2 mecánico (skips nuevos sin anotación) +
@@ -1379,8 +1361,8 @@ function computeValidadores({ story, repo }) {
 //   - ac-coverage: ídem — mech cubre ACCOV-C1/C5; C2/C3/C6 son juicio LLM que corre
 //     en iter 1; en re-loops el delta lo cubren los checks mecánicos.
 //   - feature-wiring: NO se descuenta NUNCA — mech solo cubre WIRING-C1; C2..C5/W1..W3
-//     (callsites, testids, endpoints sin caller) son del advisor (caso 9.4: el gap
-//     real de `updateNotificacionRule` sin UI vivía exactamente ahí).
+//     (callsites, testids, endpoints sin caller) son del advisor (un store action sin UI
+//     vive exactamente ahí).
 const MECH_DISCOUNTABLE = {
   'tycon-deferral-tracker': { minIter: 2, family: 'DEFTR' },
   'tycon-ac-coverage-checker': { minIter: 2, family: 'ACCOV' },
@@ -1396,9 +1378,9 @@ function computeMechDiscount(allList, args) {
     return null; // sin mech-check disponible → sin descuento (conservador)
   }
   const escalateFams = new Set((mech.ambiguous || []).map((a) => String(a.rule || '').split('-')[0]));
-  // FIX verificación adversarial 2026-06-11 (H3): ambiguo de familia MECH = mech-check
-  // NO PUDO correr (story ilegible/parse roto) → NINGÚN check quedó cubierto → cero
-  // descuentos. Antes esto descontaba con la razón falsa "checks cubiertos mecánicamente".
+  // Ambiguo de familia MECH = mech-check
+  // NO PUDO correr (story ilegible/parse roto) → NINGÚN check queda cubierto → cero
+  // descuentos. Descontar igual daría la razón falsa "checks cubiertos mecánicamente".
   if (escalateFams.has('MECH')) return null;
   const discounted = [];
   // una story sin criterios detectados no tiene nada que el control mecánico haya cubierto
@@ -1422,15 +1404,15 @@ function computeMechDiscount(allList, args) {
   };
 }
 
-// ── El validador de stories en los re-loops (story 7.3 del arnés, 2026-09-17) ──────────────────────
+// ── El validador de stories en los re-loops ──────────────────────
 //
-// Medido (~/.claude/tycon-harness/tasks/medicion-7.3-validador-2026-09-17.md): en los re-loops, después de
+// Medido: en los re-loops, después de
 // DOS veredictos limpios seguidos del validador tras implementar, trajo algo nuevo en 2 de 24 lanzamientos
-// (ninguno bloqueante); antes de eso, en 62 de 125. Entonces, desde la vuelta 2: si sus dos últimos
+// (ninguno bloqueante); con menos veredictos limpios seguidos, trajo algo nuevo en 62 de 125. Entonces, desde la vuelta 2: si sus dos últimos
 // veredictos sobre ESTA story desde el arranque del paso 5 dicen `limpio` y VAL-C5/VAL-C6 salen limpios sin
-// modelo, el validador sale del set (y del `expected`, como MECH-2). Todo lo demás INVOCA: no poder leer la
+// modelo, el validador sale del set (y del `expected`). Todo lo demás INVOCA: no poder leer la
 // conversación, faltar el arnés o el arranque del paso 5, un chequeo que no pudo mirar. La duda va hacia más
-// control (regla de la 7.2). Cualquier veredicto que no sea `limpio` —hallazgos, inconsistente, sin
+// control. Cualquier veredicto que no sea `limpio` —hallazgos, inconsistente, sin
 // veredicto, un lanzamiento que no volvió— corta la racha.
 //
 // Lee la conversación con las libs del ARNÉS (reviewers-cost.js, que ya carga tokens-digest.js): la
@@ -1439,13 +1421,13 @@ const VALIDADOR_STORIES = 'tycon-story-validator';
 const RACHA_PARA_SOLTAR = 2;
 
 function libsDelArnes(guidesDir) {
-  // Dónde está el arnés lo dice UN lector (lib/harness-path.js, story 8.3): la variable o el enlace; nunca una carpeta a mano.
+  // Dónde está el arnés lo dice UN lector (lib/harness-path.js): la variable o el enlace; nunca una carpeta a mano.
   const r = guidesDir ? { dir: guidesDir } : require('./lib/harness-path.js').rutaArnesHook();
   if (!r.dir) return { error: `${r.aviso}: no puedo leer los veredictos` };
   const base = r.dir;
-  // El medidor del arnés por su nombre de hoy y, con un arnés un pull atrás, por el de antes de la story 8.9 (armado por
-  // pedazos: el nombre viejo no se escribe entero). Buscarlo sólo por el viejo andaba en el equipo por el reemplazo que
-  // deja el renombre; en una copia sin reemplazos dejaba al pipeline sin leer los veredictos, callado.
+  // El medidor del arnés por su nombre y, con un arnés desactualizado, por el nombre viejo (armado por
+  // pedazos: el nombre viejo no se escribe entero). Buscarlo sólo por el nuevo funciona en el equipo por el reemplazo que
+  // deja el renombre; en una copia sin reemplazos dejaría al pipeline sin leer los veredictos, callado.
   const costo = ['reviewers-cost.js', `${['costo', 'revisores'].join('-')}.js`]
     .map((n) => path.join(base, 'scripts', 'metrics', n)).find((p) => fs.existsSync(p));
   if (!costo) return { error: `sin las libs del arnés en ${base}: no puedo leer los veredictos` };
@@ -1478,7 +1460,7 @@ function decidirValidadorEnReloop({ args, marker, sessionId, guidesDir, projects
     for (let i = propios.length - 1; i >= 0 && propios[i].veredicto === 'limpio'; i--) racha += 1;
     const { runValidatorChecks } = require('./lib/story-checks.js');
     // La MISMA story que la racha (con el fallback al marcador): con `args.story` crudo, sin --story el chequeo
-    // salía «no pude mirar» e invocaba por un motivo falso (revisor de fallos silenciosos, 2026-09-17).
+    // saldría «no pude mirar» e invocaría por un motivo falso.
     const chk = runValidatorChecks({ repo: args.repo, storyPath, files: args.files || [] });
     if (chk.findings.length) return invoca(`los chequeos sin modelo encontraron ${[...new Set(chk.findings.map((f) => f.rule))].join(', ')}: se invoca`, { limpias_seguidas: racha, mech_findings: chk.findings });
     if (chk.ambiguous.length) return invoca(`los chequeos sin modelo no pudieron mirar (${chk.ambiguous[0].detail}): se invoca`, { limpias_seguidas: racha });
@@ -1513,17 +1495,17 @@ function aplicarDecisionValidador(salida, clave, args, { anotar = true } = {}) {
   logGate({ name: 'validador-reloop', repoPath: args.repo ? path.resolve(args.repo) : null, storyId: deriveStoryId(args.story), iter: Number(args.iter), invoca: dv.invoca, limpias_seguidas: dv.limpias_seguidas, motivo: dv.motivo });
 }
 
-// Hints de modelo para re-loops (FIX auditoría 2026-06-11): antes solo los emitía
-// el path mode='smart-reloop' — los paths force-full-reloop y `advisors --iter N>1`
+// Hints de modelo para re-loops: los emite CUALQUIER iteración N>1, no sólo
+// el path mode='smart-reloop'. Sin ellos, los paths force-full-reloop y `advisors --iter N>1`
 // (exactamente los que se usan cuando smart-reloop no aplica, el caso más caro)
-// corrían los tier 'deep' a Opus precio pleno. Ahora CUALQUIER iteración N>1 los
-// emite. El orquestador DEBE pasarlos como `model:` al Agent() (step-05) salvo
+// correrían los tier 'deep' a Opus precio pleno.
+// El orquestador DEBE pasarlos como `model:` al Agent() (step-05) salvo
 // que el delta toque specs (juicio de scope nuevo → Opus se justifica).
 function reloopHintsFor(list, iter, costTier) {
   if (!iter || iter <= 1) return null;
-  // Precedencia (fix verificación adversarial 2026-06-11): `--cost-tier deep` es el
+  // Precedencia: `--cost-tier deep` es el
   // escape hatch "auditoría paranoica → todo a Opus" — gana sobre los hints de re-loop.
-  // Sin este guard el output traía dos directivas opuestas para los mismos advisors.
+  // Sin este guard el output traería dos directivas opuestas para los mismos advisors.
   if (costTier === 'deep') return null;
   const hints = {};
   for (const adv of list) {
@@ -1532,10 +1514,10 @@ function reloopHintsFor(list, iter, costTier) {
   return Object.keys(hints).length ? hints : null;
 }
 
-// ── Los modelos de la organización (story 7.29) ─────────────────────────────────────────────────────────────────
+// ── Los modelos de la organización ─────────────────────────────────────────────────────────────────
 // Con `team-repos.json → models` declarado (o un pedido del dev en el marcador), `advisors` y `smart-reloop` dan
 // `reviewer_models` —un modelo por revisor, con su origen y, en las vueltas siguientes, `first_round`— y dejan de dar
-// `model_hints`/`reloop_model_hints`: un solo campo con modelos por revisor. Sin nada de eso, lo de hoy (decisión 18).
+// `model_hints`/`reloop_model_hints`: un solo campo con modelos por revisor. Sin nada de eso, siguen esos campos.
 // Las funciones que deciden reciben la configuración por argumento (`args.orgModels`, `args.modelRequests`); sólo las
 // ramas de línea de comandos la leen (`orgModels`, `pedidosDeModelos`), así las pruebas nunca ven la de la máquina.
 const CODEX_NOTE = 'en Codex los revisores usan el modelo con que se desplegaron; el pedido de esta corrida y las vueltas siguientes no aplican ahí';
@@ -1571,7 +1553,7 @@ function pedidosDeModelos(marker) {
 
 /**
  * Suma `reviewer_models` (y `codex_note`) a la salida de `advisors`/`smart-reloop` para la lista de revisores, cuando
- * hay configuración o pedido; saca los campos de hoy. Devuelve los avisos (`{ key, message }`).
+ * hay configuración o pedido; saca `model_hints`/`reloop_model_hints`. Devuelve los avisos (`{ key, message }`).
  */
 function aplicarModelosDeRevisores(out, list, args, fullSet = list) {
   const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
@@ -1744,12 +1726,12 @@ function readSessionMarker() {
   try { return JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch { return null; }
 }
 
-// ── Lo que ve GIT (2026-08-26) — la 4ta fuente del delta, y la única que no depende del hook ──
+// ── Lo que ve GIT — la 4ta fuente del delta, y la única que no depende del hook ──
 // Las otras tres (nombres nuevos, fileEvents, mtime) salen todas de `marker.filesTouched`, que
 // escribe on-edit.js desde PostToolUse matcher Edit|Write. Incluso el fallback por mtime ITERA
 // sobre filesTouched — o sea que cubre "un archivo que el hook ya vio y se re-editó por fuera",
-// NO "un archivo que el hook no vio nunca". Ese es el agujero que dejó ciego al re-loop de la
-// Story 9.3.1 (ver lib/ledger-honesty.js). git no tiene ese punto ciego: ve el working tree.
+// NO "un archivo que el hook no vio nunca". Ese agujero deja ciego al re-loop (ver
+// lib/ledger-honesty.js). git no tiene ese punto ciego: ve el working tree.
 function gitArchivosDelWorkingTree(repo) {
   const { execFileSync } = require('child_process');
   const correr = (args) => {
@@ -1758,10 +1740,10 @@ function gitArchivosDelWorkingTree(repo) {
         .split(/\r?\n/).filter(Boolean);
     } catch { return []; }   // sin git / no es repo → fail-open: la ceguera no se puede diagnosticar
   };
-  // 🔴 La base de los paths es la RAÍZ del repo git, NO el `--repo` que nos pasaron (revisión
-  // adversarial 2026-08-26). Con `--repo` apuntando a un subdirectorio —un monorepo, o el caso
-  // normal de estos repos con varios proyectos adentro— `path.join(repo, f)` armaba rutas
-  // inexistentes: la 4ta fuente quedaba inerte (ningún statSync encontraba nada) justo en los
+  // 🔴 La base de los paths es la RAÍZ del repo git, NO el `--repo` que nos pasaron.
+  // Con `--repo` apuntando a un subdirectorio —un monorepo, o el caso
+  // normal de estos repos con varios proyectos adentro— `path.join(repo, f)` armaría rutas
+  // inexistentes: la 4ta fuente quedaría inerte (ningún statSync encontraría nada) justo en los
   // repos donde más falta hace. Se pregunta la raíz y se recorta a lo que cae dentro de --repo.
   const raizGit = (correr(['rev-parse', '--show-toplevel'])[0] || repo);
   const rel = [
@@ -1770,8 +1752,7 @@ function gitArchivosDelWorkingTree(repo) {
   ];
   // realpath en las DOS puntas: en macOS `os.tmpdir()` y `/tmp` son symlinks a `/private/...`, y
   // `git rev-parse --show-toplevel` devuelve el path YA resuelto. Comparar uno resuelto contra uno
-  // sin resolver descartaba TODOS los archivos y dejaba la 4ta fuente inerte — lo cazó el propio
-  // test de ceguera al correr sobre un repo temporal (2026-08-26).
+  // sin resolver descartaría TODOS los archivos y dejaría la 4ta fuente inerte.
   const real = (x) => { try { return fs.realpathSync(x); } catch { return path.resolve(x); } };
   const dentro = real(repo);
   return [...new Set(rel)]
@@ -1791,9 +1772,9 @@ function logGate(obj) {
 }
 
 /**
- * El re-loop reducido, con los modelos de la organización (story 7.29): en sus tres caminos, `reviewer_models` para
+ * El re-loop reducido, con los modelos de la organización: en sus tres caminos, `reviewer_models` para
  * los revisores que se vuelven a correr cuando hay configuración o pedido (`args.orgModels`, `args.modelRequests`);
- * sin eso, `reloop_model_hints` como hoy. Los avisos quedan en `_avisos` (los dice la línea de comandos).
+ * sin eso, `reloop_model_hints`. Los avisos quedan en `_avisos` (los dice la línea de comandos).
  */
 function computeSmartReloop(args) {
   const out = computeSmartReloopBase(args);
@@ -1814,8 +1795,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       skipped: [],
       delta_files: [],
     };
-    // FIX auditoría 2026-06-11: el path force-full (el MÁS caro — set completo en
-    // re-loop) salía sin reloop_model_hints → los tier deep corrían a Opus pleno.
+    // El path force-full (el MÁS caro — set completo en
+    // re-loop) sin reloop_model_hints haría que los tier deep corrieran a Opus pleno.
     const hints = reloopHintsFor(fullSet.all, iter, costTier);
     if (hints) {
       out.reloop_model_hints = hints;
@@ -1837,8 +1818,8 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       skipped: [],
       delta_files: [],
     };
-    // FIX verificación adversarial 2026-06-11 (H4): este es un path iter>1 con set
-    // COMPLETO (el más caro) — también emite hints. "TODA invocación iter>1" en serio.
+    // Este es un path iter>1 con set
+    // COMPLETO (el más caro) — también emite hints: TODA invocación iter>1 los emite.
     const hints = reloopHintsFor(fullSet.all, iter, costTier);
     if (hints) {
       out.reloop_model_hints = hints;
@@ -1847,21 +1828,20 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     return out;
   }
 
-  // 🔴 Los probes se filtran ACÁ, no sólo en la foto (revisión adversarial 2026-08-26). Filtrar
-  // únicamente el `filesSnapshot` dejaba `filesTouched` con los probes adentro, y `deltaByName`
-  // compara uno contra otro: cada probe aparecía como "archivo nuevo" en la iteración 2 — y en la
-  // 3, y en todas, porque la foto se re-filtra y la lista cruda no. Efecto medido: delta fantasma
-  // de 3 archivos sin que nadie hubiera editado nada, un advisor de más por iteración, y de yapa
-  // apagaba el guard `suspect_empty_delta` (que existe desde el caso Story 2.5). O sea que el
-  // arreglo, a medias, reintroducía la contaminación que venía a cerrar.
-  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo (2026-10-07, épico 11 de un producto del
-  // equipo): los cazadores del pase 5b escribieron `/tmp/probe.*`, el hook de ediciones los registró y la
-  // iteración 2 los contó en el delta. Esos nombres no siguen la convención de probes, así que el filtro
+  // 🔴 Los probes se filtran ACÁ, no sólo en la foto. Filtrar
+  // únicamente el `filesSnapshot` dejaría `filesTouched` con los probes adentro, y `deltaByName`
+  // compara uno contra otro: cada probe aparecería como "archivo nuevo" en la iteración 2 — y en la
+  // 3, y en todas, porque la foto se re-filtra y la lista cruda no. Efecto: delta fantasma
+  // de 3 archivos sin que nadie haya editado nada, un advisor de más por iteración, y de yapa
+  // apagaría el guard `suspect_empty_delta`. O sea que filtrar a medias reintroduciría la contaminación que viene a cerrar.
+  // 🔴 Lo que cae FUERA del repo tampoco es trabajo del repo: los cazadores del pase 5b escriben
+  // `/tmp/probe.*`, el hook de ediciones los registra y la
+  // iteración 2 los contaría en el delta. Esos nombres no siguen la convención de probes, así que el filtro
   // por nombre no los ve; el filtro por lugar sí. Se conserva la carpeta de la story: en los productos
   // con repo de specs aparte, la story vive fuera de `--repo` y editarla es trabajo de la corrida.
-  // 🔴 Los repos hermanos también (story 7.26): en una story de dos repos, los arreglos del hermano quedaban afuera del
-  // delta y los revisores de su superficie se salteaban por «superficie no tocada» — tres vueltas seguidas en la corrida
-  // de una story de un producto del equipo (2026-10-14). Sus archivos entran por las mismas fuentes que los del repo.
+  // 🔴 Los repos hermanos también: en una story de dos repos, los arreglos del hermano quedarían afuera del
+  // delta y los revisores de su superficie se saltearían por «superficie no tocada».
+  // Sus archivos entran por las mismas fuentes que los del repo.
   const hermanosDelDelta = companionLib.companionRoots(repo, story, {
     onMissing: (nombre, quien) => process.stderr.write(`⚠ el repo hermano «${nombre}» que declara ${companionLib.label(quien)}/.tycon/advisors.yaml no está en disco: sus ediciones no entran al delta\n`),
   });
@@ -1872,17 +1852,17 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   const prevSet = new Set(prevSnapshot);
   // Delta por NOMBRES nuevos (legacy) — atrapa archivos que aparecieron en iter N.
   const deltaByName = currentFiles.filter((f) => !prevSet.has(f));
-  // Delta por EVENTOS de edición (fix auditoría 2026-06-09): un archivo YA tocado
+  // Delta por EVENTOS de edición: un archivo YA tocado
   // en iter N-1 que se RE-EDITA en iter N (el caso típico del fix-loop) no aparece
-  // en deltaByName porque filesTouched dedupea — el bug hacía que el advisor que
-  // reportó el finding NUNCA re-auditara su propio fix (caso real: fix SILENT-W2
-  // de la story 4.5.3). marker.fileEvents (escritos por on-edit.js directo; marker.js append-file existe como CLI manual)
+  // en deltaByName porque filesTouched dedupea — sin eventos, el advisor que
+  // reportó el finding NUNCA re-auditaría su propio fix.
+  // marker.fileEvents (escritos por on-edit.js directo; marker.js append-file existe como CLI manual)
   // conserva cada edición con ts; delta = ediciones POSTERIORES al snapshot previo.
   const prevTs = marker.iterations[String(iter - 1)].ts;
-  // ── SEGUNDA CAPA: el corte es el ÚLTIMO REVISOR, no la hora de la foto (2026-09-15) ────────────
-  // La hora de la foto es justamente el dato que puede estar mal: la corrida de la story 2.5 fechó
-  // la foto de la iteración 11 a las 17:03 con un arreglo de las 16:58 adentro, y el delta de la 12
-  // salió VACÍO → `security-basics` y `silent-failure-hunter` se saltearon por «superficie no
+  // ── SEGUNDA CAPA: el corte es el ÚLTIMO REVISOR, no la hora de la foto ────────────
+  // La hora de la foto es justamente el dato que puede estar mal: si fecha la foto de una iteración a las 17:03 con
+  // un arreglo de las 16:58 adentro, el delta de la siguiente
+  // sale VACÍO → `security-basics` y `silent-failure-hunter` se saltean por «superficie no
   // tocada». La guarda de `marker.js snapshot-iter` cierra el caso en origen; ésta es la que cubre
   // lo que aquélla no puede ver: TYCON_SNAPSHOT_GUARD=0, una foto escrita a mano en el marker, o un
   // `snapshot-iter` viejo de una máquina con el arnés atrasado. Al momento de calcular, el último
@@ -1899,16 +1879,16 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     const ur = ultimoRevisorDeLaRonda(lineasRegistro || [], iter - 1);
     if (Number.isFinite(ur.ts)) ultimoRevisorMs = ur.ts;
   } catch { /* ídem */ }
-  // Delta = UNIÓN de TRES fuentes (fix verificación adversarial 2026-06-11 —
-  // antes fileEvents/mtime eran either/or: un fileEvents truncado, p.ej. por un
-  // `marker.js set` mid-pipeline pre-fix, o ediciones hechas SOLO por Bash
-  // (sed/heredoc, fuera del hook Edit|Write), SUPRIMÍA el fallback por mtime y
-  // las re-ediciones caían del delta en silencio):
+  // Delta = UNIÓN de TRES fuentes (si fileEvents y mtime fueran either/or,
+  // un fileEvents truncado, p.ej. por un
+  // `marker.js set` mid-pipeline, o ediciones hechas SOLO por Bash
+  // (sed/heredoc, fuera del hook Edit|Write), SUPRIMIRÍA el fallback por mtime y
+  // las re-ediciones caerían del delta en silencio):
   //   1. nombres nuevos (deltaByName — archivos que aparecieron en iter N),
   //   2. fileEvents posteriores al snapshot (escritos por on-edit.js),
   //   3. mtime de filesystem > ts del snapshot (cubre ediciones fuera del hook).
   // Conservador en la dirección correcta: un falso positivo = un advisor de más;
-  // un falso negativo = un fix sin re-auditar (el failure mode del run 9.4).
+  // un falso negativo = un fix sin re-auditar.
   let deltaByEvents = [];
   let deltaByMtime = [];
   const deltaByGit = [];
@@ -1941,7 +1921,7 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
       } catch { /* archivo borrado/inaccesible → names-only lo cubre si es nuevo */ }
     }
     sources.push('mtime de filesystem post-snapshot');
-    // 4ta fuente (2026-08-26): el working tree según git, filtrado por mtime posterior a la foto.
+    // 4ta fuente: el working tree según git, filtrado por mtime posterior a la foto.
     // Las tres de arriba iteran sobre `filesTouched` — si el hook nunca vio el archivo, ninguna lo
     // encuentra. Ésta sí. Los probes del pase adversarial NO cuentan (no son trabajo del repo).
     for (const f of honesty.sinProbes(workingTreeDeTodos())) {
@@ -1958,11 +1938,11 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     : 'names-only (sin ts de snapshot previo — el delta puede PERDER re-ediciones → usá --force-full-reloop si hubo fixes sobre archivos existentes)';
   const delta = [...new Set([...deltaByName, ...deltaByEvents, ...deltaByMtime, ...deltaByGit])];
 
-  // ── ¿El registro ve lo que ve git? (2026-08-26, caso Story 9.3.1 del repo del framework) ──
+  // ── ¿El registro ve lo que ve git? ──
   // Antes de devolver un delta "chico", la pregunta honesta: ¿el registro de ediciones aportó
   // ALGO del repo? Si git ve trabajo y el registro no aporta nada, el delta no es chico: es
-  // ciego, y el modo correcto es el set COMPLETO **anunciado con la razón**. Hoy el orquestador
-  // llega igual a force-full, pero a ciegas y 21 segundos más tarde, sin saber por qué.
+  // ciego, y el modo correcto es el set COMPLETO **anunciado con la razón**. Sin eso el orquestador
+  // llegaría igual a force-full, pero a ciegas y más tarde, sin saber por qué.
   const diag = honesty.diagnosticar({
     repoPath: repo,
     registro: [...currentFiles, ...(Array.isArray(marker.fileEvents) ? marker.fileEvents.map((e) => e && e.path) : [])],
@@ -1995,13 +1975,13 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     return out;
   }
 
-  // ── La versión del cambio que vio CADA revisor (2026-10-14) ─────────────────────────────────────
+  // ── La versión del cambio que vio CADA revisor ─────────────────────────────────────
   // 🔴 El delta de arriba es de la VUELTA: mira desde la foto, y la foto se toma sola al lanzar el
   // último revisor. Un arreglo hecho mientras corrían los demás, antes de ese último lanzamiento, queda
   // adentro de la foto: el delta no lo trae y el revisor que se había lanzado ANTES del arreglo —que no
-  // lo vio— se salteaba por «superficie no tocada». Por eso, para cada revisor, también cuenta lo
+  // lo vio— se saltearía por «superficie no tocada». Por eso, para cada revisor, también cuenta lo
   // editado después de SU lanzamiento (la hora la escribe el hook en cada spawn real).
-  // Sólo SUMA: el delta de la vuelta se sigue aplicando igual a todos, así que nadie que antes entraba
+  // Sólo SUMA: el delta de la vuelta se sigue aplicando igual a todos, así que nadie que entre por él
   // puede quedar afuera por esto.
   //   · lanzado en la vuelta anterior → lo editado después de su lanzamiento;
   //   · no estaba en esa vuelta (la anterior lo había salteado) → lo editado desde que arrancó la vuelta;
@@ -2066,14 +2046,14 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
     }
   }
 
-  // Hint de modelo para re-loops (auditoría 2026-06-09; single source 2026-06-11):
+  // Hint de modelo para re-loops:
   // los advisors tier 'deep' (Opus) corren en CADA iteración por ser always:true.
   // El juicio sintético grande ya pasó en iter 1; el re-check sobre un delta de fix
   // es más angosto → Sonnet alcanza. El orquestador DEBE aplicarlo (step-05) salvo
   // que el delta incluya specs editadas.
   const reloopModelHints = reloopHintsFor(rerun.map((r) => r.name), iter, costTier) || {};
 
-  // GUARD delta-vacío (fix 2026-07-06, caso Story 2.5 de un repo del equipo): un smart-reloop es POR
+  // GUARD delta-vacío: un smart-reloop es POR
   // DEFINICIÓN un re-loop que sigue a fixes de código — un delta VACÍO ahí casi siempre significa
   // que `snapshot-iter ${iter-1}` se tomó DESPUÉS de aplicar los fixes (la foto ya los contiene, así
   // que "qué cambió desde la foto" da vacío). Sin este guard el orquestador ve "N/M skip por surface
@@ -2081,10 +2061,10 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   // repetido en cada iteración. El warning lo hace accionable en vez de degradar en silencio.
   // ── ¿La foto de la iteración anterior se fechó TARDE, y tapó código? ─────────────────────
   // Los archivos que entran al delta SÓLO porque el corte se movió al último revisor son, literalmente,
-  // los que ningún revisor vio y la foto había escondido. Con el corte viejo el delta habría salido
-  // vacío (o más corto) y esos revisores se saltearan por «superficie no tocada».
-  // 🔴 El aviso sale TAMBIÉN por stderr: en la corrida de la 2.5 el orquestador filtró este JSON con un
-  // `python3 -c` que imprime sólo `correr/hints/ctx`, así que la advertencia existió y no la leyó nadie.
+  // los que ningún revisor vio y la foto escondió. Con el corte en la hora de la foto el delta saldría
+  // vacío (o más corto) y esos revisores se saltearían por «superficie no tocada».
+  // 🔴 El aviso sale TAMBIÉN por stderr: el orquestador puede filtrar este JSON con un
+  // `python3 -c` que imprime sólo `correr/hints/ctx`, y entonces la advertencia existe y no la lee nadie.
   // Un aviso que vive sólo dentro de un JSON que el llamador puede filtrar no es un control.
   const lateSnapshotFiles = fotoTardia
     ? delta.filter((f) => { const t = horaDe.get(f); return Number.isFinite(t) && t <= prevTsMs; })
@@ -2161,22 +2141,20 @@ function computeSmartReloopBase({ repo, story, files, iter, forceFullReloop, cos
   };
 }
 
-// ── SPEED-2 (2026-05-27) — Pre-flight hook validation ───────────────────────────
+// ── Pre-flight hook validation ───────────────────────────
 //
 // Cuando el orquestador va a Edit el frontmatter para transicionar status a
 // review/done o agregar pipelines.X.status: done, los hooks (on-frontmatter-write.js,
 // hook-pre-edit.js, on-pre-commit.js) chequean pre-condiciones al momento del Edit
-// y bloquean si no se cumplen. El orquestador hoy descubre por failure (Edit →
+// y bloquean si no se cumplen. El orquestador descubre por failure (Edit →
 // hook block → leer error → ajustar → retry = ~30-60s/ciclo).
 //
 // `preflight-frontmatter` simula el chequeo ANTES del Edit: lee la story actual,
 // el target state, evalúa todas las pre-condiciones, devuelve qué falta + cómo
 // satisfacerlo. El orquestador prepara TODO upfront en un solo paso.
 //
-// Caso disparador: Story 13.29 de un producto del equipo, 2026-05-27 — 2 ciclos de hook-block durante
-// Step 7c→8 (pipelines.A.status: done sin evidence file → crear evidence; evidence
-// sin `## Playwright Run verdict=PASS failed=0` → buscar regex en hook source +
-// ajustar formato). Total overhead ~1.5 min — guides/maintaining/incident-log.md#case-dod-gate-hook-block-cycles-2026-05-27.
+// Ejemplo de dos ciclos de hook-block: pipelines.A.status: done sin evidence file → crear evidence; evidence
+// sin `## Playwright Run verdict=PASS failed=0` → buscar regex en hook source + ajustar formato. Cuestan ~1.5 min de overhead.
 
 function parseFrontmatterPipeline(content) {
   const m = (content || '').match(/^---\r?\n([\s\S]*?)\r?\n---/);
@@ -2190,9 +2168,9 @@ function parseFrontmatterPipeline(content) {
 }
 
 // Resuelve el/los repo-root(s) donde buscar la evidencia DoD de una story.
-// BUG-PIPELINE-004 (2026-07-05): antes hacía `storyPath.split('/specs/stories/')[0]`, que en
-// repos con las stories en `docs/…` (no `specs/stories/`) devolvía el path del PROPIO .md como
-// "root" → candidate dirs tipo `<story.md>/.advisors/dod-runtime` → PRE-1 falso negativo. Ahora
+// Sacar el root con `storyPath.split('/specs/stories/')[0]` falla en
+// repos con las stories en `docs/…` (no `specs/stories/`): devuelve el path del PROPIO .md como
+// "root" → candidate dirs tipo `<story.md>/.advisors/dod-runtime` → PRE-1 falso negativo. Por eso
 // es layout-agnóstico: honra `explicitRepo` (--repo) y, si no, camina hacia arriba hasta el `.git`.
 function findRepoRootsForStory(storyPath, explicitRepo) {
   const roots = [];
@@ -2224,7 +2202,7 @@ function findRepoRootsForStory(storyPath, explicitRepo) {
   }
   add(repoRoot);
 
-  // 3. Repos hermanos (cross-repo: frontmatter en un repo, impl en otro — caso Ceibo).
+  // 3. Repos hermanos (cross-repo: frontmatter en un repo, impl en otro).
   const base = repoRoot || (roots.length ? roots[0] : null);
   if (base) {
     const parent = path.dirname(base);
@@ -2308,11 +2286,11 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
   const preconditions = [];
   const repoRoots = findRepoRootsForStory(storyPath, repo);
   const candidateDirs = repoRoots.map((r) => path.join(r, '.advisors', 'dod-runtime'));
-  // El destino canónico de la evidencia: el repo de la STORY (2026-09-05). Es el que le va a
+  // El destino canónico de la evidencia: el repo de la STORY. Es el que le va a
   // pedir el portón de CI, así que el "cómo satisfacerla" apunta ahí y no a un `<repo>` genérico.
   const evidDir = evidenceDirForStory(storyPath, repo).dir || '<repo>/.advisors/dod-runtime';
 
-  // Pre-condition 1: evidence file existe — buscada por la CLAVE de la story (story 1.17): con un número
+  // Pre-condition 1: evidence file existe — buscada por la CLAVE de la story: con un número
   // repetido en el repo, `<id>-*` es la evidencia de cualquiera de las stories que lo comparten.
   const evKey = evidenceKeyOr(storyPath, storyId);
   const evPrefix = evKey.key ? `${evKey.key}-` : null;
@@ -2345,7 +2323,7 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
 
   // Pre-condition 2: si la story declara E2E reales, el evidence debe tener
   // bloque "## Playwright Run" + verdict=PASS + failed=0 (macro) o "- failed: 0" (e2e-gate.sh
-  // genérico) — mismo regex que on-frontmatter-write.js (fix 2026-08-25, deriva de contrato).
+  // genérico) — mismo regex que on-frontmatter-write.js, para que el contrato no derive.
   const needsPlaywright = storyNeedsPlaywrightCheck(content);
   if (needsPlaywright) {
     const requiredLiterals = ['## Playwright Run', 'verdict=PASS', 'failed=0 | - failed: 0'];
@@ -2391,9 +2369,9 @@ function computePreflightFrontmatter({ storyPath, targetStatus, targetPipelineDo
   };
 }
 
-// ── Advisor context compartido (auditoría 2026-06-09) ────────────────────────
-// Antes cada advisor del fan-out re-descubría el mismo contexto: ~5-6 releían la
-// story completa (15-18K tokens en stories grandes) + cada uno corría su git diff.
+// ── Advisor context compartido ────────────────────────
+// Si cada advisor del fan-out re-descubriera el mismo contexto: ~5-6 releerían la
+// story completa (15-18K tokens en stories grandes) + cada uno correría su git diff.
 // Esto genera UN artefacto por iteración con: digest de la story (solo las
 // secciones operativas — sin Dev Notes/Change Log/narrativa), la lista de files
 // y el diff unificado con hunks. Los advisors lo reciben como input primario;
@@ -2431,9 +2409,9 @@ function buildAdvisorContext({ repo, story, files, iter }) {
   const sid = sessionIdFileKey();
   const ctxDir = path.join(stateDirOf(os.homedir()), 'advisor-context');
   const outPath = path.join(ctxDir, `${sid}-iter${iter || 1}.md`);
-  // story 7.5 — las reglas propias del repo (sección `## Reglas para revisores` de su CLAUDE.md)
+  // Las reglas propias del repo (sección `## Reglas para revisores` de su CLAUDE.md)
   // van AL PRINCIPIO del contexto, marcadas como reglas a verificar. Sin sección, el archivo queda
-  // byte a byte como antes. La lectura nunca tira (lib/reviewer-rules.js).
+  // byte a byte igual. La lectura nunca tira (lib/reviewer-rules.js).
   const reglas = reglasRevisores(repo);
   const bloqueReglas = bloqueParaContexto(reglas);
   try {
@@ -2441,11 +2419,11 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     const { execFileSync } = require('child_process');
     const storyContent = story ? readText(story) : '';
     const digest = buildStoryDigest(storyContent);
-    // ── El diff POR REPO (story 7.26) ─────────────────────────────────────────────────────────────────────────
-    // ANTES: un solo `git -C repo diff HEAD -- <todas las rutas>`. Con UNA ruta del repo hermano, git sale con
-    // «… is outside repository» y se perdía el diff de TODOS los archivos, también los del repo; el texto de reemplazo
-    // decía «repo sin git» y un revisor lo repitió como causa (corrida de una story de dos repos de un producto del
-    // equipo, 2026-10-14). AHORA: los archivos se agrupan por su repo git; el del `--repo` va como siempre y cada
+    // ── El diff POR REPO ─────────────────────────────────────────────────────────────────────────
+    // Un solo `git -C repo diff HEAD -- <todas las rutas>` fallaría: con UNA ruta del repo hermano, git sale con
+    // «… is outside repository» y se perdería el diff de TODOS los archivos, también los del repo; el texto de reemplazo
+    // diría «repo sin git» y un revisor lo repetiría como causa.
+    // Por eso los archivos se agrupan por su repo git; el del `--repo` va como siempre y cada
     // hermano en su propia sección, con sus archivos escritos `(<nombre>) <ruta>`, la forma del step-05b. Si git falla
     // en un repo, se dice cuál y por qué, y los demás conservan su diff.
     const grupos = companionLib.groupByRepo(files, repo);
@@ -2468,15 +2446,15 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       : gitDiff(repo, propios.map((f) => (path.isAbsolute(f) ? f : path.join(repo, f))));
     const rawDiff = principal.text;
 
-    // ── Cap POR ARCHIVO, no global (fix 2026-07-28) ────────────────────────
-    // ANTES: `.slice(0, 150000)` global. Cortaba por la cola A MITAD DE UN HUNK y en
-    // silencio: los últimos archivos del diff desaparecían y el advisor auditaba creyendo
-    // que había visto todo. Caso testigo medido el 2026-07-28 (baseline MCP-1):
-    // tycon-plugin-tests-coverage reportó "`parallel-gateway.test.js` T10 queda truncado a
+    // ── Cap POR ARCHIVO, no global ────────────────────────
+    // Un `.slice(0, 150000)` global cortaría por la cola A MITAD DE UN HUNK y en
+    // silencio: los últimos archivos del diff desaparecerían y el advisor auditaría creyendo
+    // que vio todo. Por ejemplo,
+    // tycon-plugin-tests-coverage reportaría "`parallel-gateway.test.js` T10 queda truncado a
     // mitad de un assert.ok; no puedo confirmar que cubra los edge cases que declara".
-    // Es la misma clase de truncación silenciosa que la auditoría 2026-06-11 prohibió para
-    // la sección de untracked — faltaba aplicarla al diff, que es el grueso del payload.
-    // AHORA: cap por archivo + cap global que descarta ARCHIVOS ENTEROS, nunca media línea,
+    // Es truncación silenciosa, la misma clase que se evita en
+    // la sección de untracked, aplicada al diff, que es el grueso del payload.
+    // Por eso: cap por archivo + cap global que descarta ARCHIVOS ENTEROS, nunca media línea,
     // y todo lo recortado queda LISTADO explícito para que el advisor sepa qué abrir.
     const PER_FILE_CAP = 12000;
     const DIFF_TOTAL_CAP = 150000;
@@ -2491,7 +2469,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       return out;
     };
     const diffChunks = trocear(rawDiff, null);
-    // Los hermanos, cada uno con su git (story 7.26). `seccionesHermanos` conserva el orden y el error de cada uno.
+    // Los hermanos, cada uno con su git. `seccionesHermanos` conserva el orden y el error de cada uno.
     const seccionesHermanos = hermanos.map((g, i) => {
       const etiqueta = g.root ? companionLib.label(g.root) : null;
       if (!g.root) return { etiqueta: null, root: null, error: 'no están dentro de ningún repo git', files: g.files, diff: '' };
@@ -2527,8 +2505,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     }
 
     // Lista de archivos REAL: la que se muestra sale del diff + los untracked, no del
-    // `--files` recibido. Fix 2026-07-28: cuando `--files` venía vacío el encabezado decía
-    // "Archivos del diff (0)" con 42 archivos adentro (medido en el baseline NET-1). Esa
+    // `--files` recibido. Si `--files` viene vacío, el encabezado diría
+    // "Archivos del diff (0)" con 42 archivos adentro. Esa
     // lista es la ÚNICA red de seguridad del context — es lo que le permite al advisor
     // saber qué existe y abrirlo. Vacía, el escape no existe.
     const filesFromDiff = diffChunks.map((c) => c.file).filter(Boolean);
@@ -2542,7 +2520,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       const rel = path.isAbsolute(f) ? path.relative(repo, f) : f;
       return git.untracked.has(rel);
     }).map((f) => ({ nombre: path.isAbsolute(f) ? path.relative(repo, f) : f, abs: path.isAbsolute(f) ? f : path.join(repo, f) }));
-    // Los nuevos sin seguimiento de cada hermano, con el git de SU repo (story 7.26).
+    // Los nuevos sin seguimiento de cada hermano, con el git de SU repo.
     const hermanosSinNuevos = [];   // hermanos cuyo git no pudo listar sus archivos nuevos: se dice, no se calla
     for (const s of seccionesHermanos) {
       if (!s.root) continue;
@@ -2550,9 +2528,8 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       if (!gh.gitOk) { hermanosSinNuevos.push(s.etiqueta); continue; }
       for (const x of s.files) if (gh.untracked.has(x.rel)) untrackedInDiff.push({ nombre: `(${s.etiqueta}) ${x.rel}`, abs: x.abs });
     }
-    // Cap del payload (auditoría 2026-06-11): el context de 9.4 iter 1 pesó 147KB
-    // (22 archivos con contenido completo, incl. CLAUDE.md y otra story .md) y viajó
-    // a 41 spawns ≈ ~1.5M tokens SOLO de payload repetido. Reglas: (a) contenido
+    // Cap del payload: un context de 147KB (22 archivos con contenido completo, incl. CLAUDE.md y otra story .md)
+    // que viaja a 41 spawns son ~1.5M tokens SOLO de payload repetido. Reglas: (a) contenido
     // completo SOLO para archivos de CÓDIGO nuevos (los .md/docs ya viajan vía story
     // digest o no son surface de los advisors — Read on demand); (b) cap GLOBAL
     // además del cap por archivo; (c) lo omitido queda LISTADO explícito (nunca
@@ -2589,7 +2566,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
       ...filesFromDiff,
       ...untrackedInDiff.map((u) => u.nombre),
     ])].filter(Boolean).sort();
-    // Una sección por hermano, después del diff del repo (story 7.26).
+    // Una sección por hermano, después del diff del repo.
     const bloquesHermanos = seccionesHermanos.flatMap((s) => [
       '',
       s.root ? `## Diff del repo hermano \`${s.etiqueta}\` (git diff HEAD en ${s.root})` : '## Archivos fuera de todo repo git',
@@ -2642,19 +2619,18 @@ function buildAdvisorContext({ repo, story, files, iter }) {
     ].join('\n');
     fs.writeFileSync(outPath, bloqueReglas + content, 'utf8');
 
-    // ── Context recortado para `tycon-story-validator` (2026-07-28) ─────────
+    // ── Context recortado para `tycon-story-validator` ─────────
     // Único recorte por advisor que se cablea, y por qué SOLO éste:
-    //   - Paga en TODO stack: -44% de tokens medido en Ceibo (.NET), donde el recorte
+    //   - Paga en TODO stack: -44% de tokens medido en un backend .NET, donde el recorte
     //     general no ahorra NADA (todo el diff es código y le corresponde a todos).
     //   - Es el advisor que más corre: 90 de 96 iteraciones registradas.
     //   - Su superficie real es la STORY, no el código: valida frontmatter, ACs, tests,
     //     back-links. Del diff sólo necesita una cosa —VAL-C5, marcas de deuda abierta.
-    // El A/B del 2026-07-28 midió las dos caras: con el recorte encontró UN HALLAZGO MÁS
+    // Un A/B mostró las dos caras: con el recorte encontró UN HALLAZGO MÁS
     // que con el contexto completo (VAL-W13, bloque bash vacío — menos ruido, más atención),
-    // pero la primera versión, que le daba la story y CERO código, lo cegó para VAL-C5.
+    // pero darle la story y CERO código lo cegaría para VAL-C5.
     // Por eso el filtro es POR CONTENIDO (líneas agregadas con marcas de deferral), no por
     // tipo de archivo: conserva la regla y sigue recortando ~85% de un diff de 42 archivos.
-    // Baseline y evidencia: ~/.claude/.tycon-pipeline/baseline/
     const DEFERRAL_RE = /TODO\(Story|FIXME:\s*Story|HACK:\s*Story|\[DEF-|DEFERRED-|deferral|pendiente\s+Story/i;
     const chunksConDeuda = [];
     const chunksSinDeuda = [];
@@ -2697,7 +2673,7 @@ function buildAdvisorContext({ repo, story, files, iter }) {
 
     return { context_file: outPath, overrides: { 'tycon-story-validator': svPath }, reglas };
   } catch {
-    return null; // best-effort: sin contexto compartido, los advisors caen al flujo viejo
+    return null; // best-effort: sin contexto compartido, cada advisor descubre el contexto por su cuenta
   }
 }
 
@@ -2726,29 +2702,28 @@ function parseFrontmatterList(content, key) {
   return out;
 }
 
-// ── pipeline.js next — H17 §5 incremental (auditoría 2026-06-09) ─────────────
-// Primer comando de la máquina de estados: el LLM sigue siendo el loop (decisión
-// H17 aprobada) pero le PREGUNTA al script cuál es el próximo step y qué
+// ── pipeline.js next — máquina de estados incremental ─────────────
+// Primer comando de la máquina de estados: el LLM sigue siendo el loop
+// pero le PREGUNTA al script cuál es el próximo step y qué
 // skip-conditions se cumplen mecánicamente, en vez de derivarlo de la prosa del
-// SKILL (fuente de los skips-por-inferencia E.i). Validar en corridas reales
-// antes de borrar prosa del SKILL (secuencia acordada con el plan H17).
-// La secuencia sale de la tabla única de pasos (story 7.23): los trece que recorre `next`, sin el 7b ni el 9.
+// SKILL (fuente de los skips-por-inferencia E.i).
+// La secuencia sale de la tabla única de pasos: los trece que recorre `next`, sin el 7b ni el 9.
 const STEPS_TABLE = require('./lib/steps.js');
 const STEP_SEQUENCE = STEPS_TABLE.STEPS.filter((s) => s.inSequence !== false).map(({ id, file }) => ({ id, file }));
 const STEPS_DIR = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'steps');
 // Sub-steps que se cierran con un marker FLAG (no con complete-step N): computeNext lo usa para el hint.
 const SUBSTEP_FLAG = { '0b': 'clockiStarted', '0c': 'adoMarkedActive', '5b': 'deepReviewDone' };
-// El 5b NO se cierra con `set-flag` (story 1.8, 2026-09-18): `deepReviewDone` la escriben sólo los dos comandos
-// que dejan constancia. `SUBSTEP_FLAG` sigue diciendo QUÉ bandera mira `next` para darlo por hecho (eso no cambia);
-// lo que cambia es el texto que le dice al orquestador cómo cerrarlo — sin esto, `next` mandaba a correr un
+// El 5b NO se cierra con `set-flag`: `deepReviewDone` la escriben sólo los dos comandos
+// que dejan constancia. `SUBSTEP_FLAG` dice QUÉ bandera mira `next` para darlo por hecho;
+// el texto le dice al orquestador cómo cerrarlo — sin esto, `next` mandaría a correr un
 // comando que sale 2.
-// Story 7.30: ¿la story lleva maqueta? Con la detección de la revisión de la pantalla (mockup.screenStory, perezoso).
-// Ante un error, como hoy: el que frena «no pude leer la story» es `complete-step 3`, no este texto.
+// ¿La story lleva maqueta? Con la detección de la revisión de la pantalla (mockup.screenStory, perezoso).
+// Ante un error, el que frena «no pude leer la story» es `complete-step 3`, no este texto.
 function storyNeedsMockup(storyPath) {
   try { return !!storyPath && require('./mockup.js').screenStory(storyPath).screen === true; } catch { return false; }
 }
 function notaCierre3(marker) {
-  // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js (pase adversarial)
+  // una ruta relativa se resuelve contra el repo del marcador, como hace marker.js
   const sp = marker && marker.storyPath;
   const abs = sp && !path.isAbsolute(sp) ? path.join(marker.repoPath || process.cwd(), sp) : sp;
   const maqueta = storyNeedsMockup(abs)
@@ -2759,19 +2734,18 @@ function notaCierre3(marker) {
 const NOTA_CIERRE_5B = 'si el pase corrió, marker.js mark-adversarial-result <N confirmados> --type 5b --result <RUN_DIR>/step-05b-adversarial.json --run <runId> --model <modelo> '
   + '--tests <k> [--own <p> --in "<rutas>"] [--deferred <d> --reason "…"]; si no corre, marker.js mark-adversarial-skipped '
   + '--files <archivos de código del diff> (lo decide el portón). Los dos cierran el pase adversarial (la bandera ya no se escribe a mano)';
-// El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio (2026-10-03). El cierre del paso 8 exige
+// El 7c tampoco se cierra con `complete-step`, ni se saltea en silencio. El cierre del paso 8 exige
 // `dodRuntimeChecked` SIEMPRE —la story exenta la deja con «exenta: …»—, así que `next` no puede dar el 7c por
-// salteado y mandar al 8: dos corridas del mismo día chocaron contra ese freno después de obedecer a `next` (una con
-// modelo en una máquina limpia, otra del arnés). El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
+// salteado y mandar al 8: chocaría contra ese freno después de obedecer a `next`. El motivo mecánico del salteo sigue a la vista en `skip_mechanical`.
 const NOTA_CIERRE_7C = 'marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"<ruta de la evidencia>"}\'';
 const NOTA_7C_EXENTA = 'La story está exenta de la verificación en vivo (dod_runtime_exempt: true): no hay nada que correr, pero el cierre '
   + 'de «Preparar el commit» pide su constancia. Dejala con: marker.js mark-dod-runtime-checked \'{"verdict":"PASS","evidencePath":"exenta: <la razón del frontmatter>"}\'.';
 
 /**
- * Qué le falta al pase adversarial, para `next` (story 7.19, AC 2 a 6, 12 y 13). Sólo con el paso 4 cerrado.
+ * Qué le falta al pase adversarial, para `next`. Sólo con el paso 4 cerrado.
  *
- * El lanzamiento temprano era un párrafo del paso 4 que nadie le recordaba al agente: 52 de 208 corridas con pase
- * lo lanzaron más de 2 minutos después del primer revisor. Ahora `next` lo pide, ANTES del primer revisor, con el
+ * El lanzamiento temprano es un párrafo del paso 4 que el agente no recuerda por sí solo (52 de 208 corridas con pase
+ * lo lanzaron más de 2 minutos después del primer revisor): `next` lo pide, ANTES del primer revisor, con el
  * veredicto que el portón dejó anotado (`adversarialGate`): no lo recalcula, porque no tiene los archivos del cambio.
  * Sin veredicto, lo que pide es consultar el portón —la falta de veredicto no es «no corre»—.
  *
@@ -2872,9 +2846,9 @@ function computeNext() {
     let skip = null;
     if (s.id === '0b') {
       done = marker.clockiStarted === true;
-      // 2026-10-05: con la integración clockify apagada (la copia pública sin perfil, o quien no la usa) el paso dice
-      // «saltear»; `next` lo repetía hasta un `set-flag clockiStarted true` que dejaba dicho «timer abierto» sin timer.
-      // `harnessIntegrations` es null si no se sabe (sin arnés o configuración rota): ahí, como antes.
+      // Con la integración clockify apagada (la copia pública sin perfil, o quien no la usa) el paso dice
+      // «saltear»; `next` lo repetiría hasta un `set-flag clockiStarted true` que dejaría dicho «timer abierto» sin timer.
+      // `harnessIntegrations` es null si no se sabe (sin arnés o configuración rota): ahí, el texto general.
       if (!done && clockifyOff === null) {
         const integ = harnessIntegrations();
         clockifyOff = !!integ && integ.clockify === false;
@@ -2921,9 +2895,9 @@ function computeNext() {
     }
   }
 
-  // Fase B (2026-07-30, review Opus MENOR-5): el estado del pase adversarial viaja en el
+  // El estado del pase adversarial viaja en el
   // comando canónico "¿qué sigue?" — el cap de ventana del Step 5 y el JOIN de 3 ramas del
-  // step-05b dependen de él, y sin esto había que acordarse de un `marker.js get` extra.
+  // step-05b dependen de él, y sin esto habría que acordarse de un `marker.js get` extra.
   const adv = marker.adversarial || null;
   const sidNow = resolveSessionId();
   const advIsOurs = adv ? adv.sessionId === sidNow : null;
@@ -2939,7 +2913,7 @@ function computeNext() {
     adversarial: adv,
     adversarial_is_ours: advIsOurs,
     next_step: nextStep ? nextStep.step : null,
-    // el nombre llano del paso (story 7.23): es lo que se le dice al dueño; `next_step` queda para los comandos
+    // el nombre llano del paso: es lo que se le dice al dueño; `next_step` queda para los comandos
     step_name: nextStep ? nextStep.name : null,
     next_step_file: nextStep ? nextStep.file : null,
     preconditions,
@@ -2955,19 +2929,19 @@ function computeNext() {
   };
 }
 
-// ── pipeline.js start — preflight mecánico en UN comando (auditoría 2026-06-09) ─
+// ── pipeline.js start — preflight mecánico en UN comando ─
 // Colapsa los 5 checks de step-00 (PIPE-C0 cross-session, C1 branch guard,
-// C2 gitignore, C4 marker, C5 status in-progress) que el LLM ejecutaba
+// C2 gitignore, C4 marker, C5 status in-progress) que el LLM ejecutaría
 // check-por-check en prosa (5 turnos → 1). PAUSA (ready:false, sin mutar nada)
 // solo ante conflicto cross-session, rama protegida o pipeline abandonado.
-// ── Specs que envejecen sin revalidar (STORY-STALE-REVALIDATION-1, 2026-08-25) ────────────────
+// ── Specs que envejecen sin revalidar ────────────────
 // Una story queda `ready-for-dev` y se implementa MESES después. El spec no envejece solo: el
-// código que cita se mueve abajo. Caso que lo motivó — epic-9 del repo del framework, 2.5 meses en
-// `ready-for-dev`: la revalidación manual encontró 4 correcciones de fondo, y una de ellas era que
-// el esqueleto mandaba a llamar `PluginManager.GetLoadedPlugin(name)`, un método que NO EXISTE.
-// Sin esa revisión, la story mandaba a escribir código que no compila. También habían cambiado los
-// hechos del dominio (un 3er plugin afectado que la story daba por inexistente) y un bug que la
-// story documentaba como abierto ya estaba cerrado.
+// código que cita se mueve abajo. Ejemplo: tras 2.5 meses en
+// `ready-for-dev`, una revalidación puede encontrar correcciones de fondo, como un esqueleto que
+// manda a llamar `PluginManager.GetLoadedPlugin(name)`, un método que NO EXISTE.
+// Sin esa revisión, la story manda a escribir código que no compila. También pueden cambiar los
+// hechos del dominio (un 3er plugin afectado que la story da por inexistente) y un bug que la
+// story documenta como abierto puede estar cerrado.
 //
 // Esto AVISA, no frena: la antigüedad no es un defecto, es una señal de que conviene reverificar
 // las anclas `archivo:línea` antes de codear. Frenar por una fecha sería castigar el backlog.
@@ -3013,7 +2987,7 @@ function computeStart(args) {
   const storyId = fm.story || path.basename(storyPath, '.md');
   const pauses = [];
   const actions = [];
-  // La identidad de una story es `story:` en todo el arnés (story 1.17.1, tanda 2): `storyId:` ya no se lee. Si el
+  // La identidad de una story es `story:` en todo el arnés: `storyId:` no se lee. Si el
   // archivo sólo trae ésa, se dice — si no, la corrida arranca con el nombre del archivo como número sin que nadie lo note.
   if (!fm.story && fm.storyId) {
     const aviso = `⚠️ ${path.basename(storyPath)} declara \`storyId:\` y no \`story:\`: para el arnés no es una story (el portón de Azure no la revisa). Renombrá la clave a \`story:\`; mientras tanto el número es el nombre del archivo (${storyId}).`;
@@ -3022,10 +2996,10 @@ function computeStart(args) {
   }
 
   // PIPE-C0: cross-session conflict.
-  // «La misma story» es el mismo número Y la misma ruta dentro de su repo (story 1.17.1): en los repos que numeran por
-  // tema, dos sesiones sobre dos `1.1` distintas se frenaban entre sí. La ruta va RELATIVA al repo a propósito: dos
-  // copias del repo (dos clones o worktrees) trabajando la misma story se siguen frenando. Un marcador viejo sin ruta
-  // legible se compara como antes, por el número: ante la duda, pausa de más.
+  // «La misma story» es el mismo número Y la misma ruta dentro de su repo: en los repos que numeran por
+  // tema, dos sesiones sobre dos `1.1` distintas se frenarían entre sí. La ruta va RELATIVA al repo a propósito: dos
+  // copias del repo (dos clones o worktrees) trabajando la misma story se siguen frenando. Un marcador sin ruta
+  // legible se compara por el número: ante la duda, pausa de más.
   // Relativa al repo de la STORY (no al del marcador: el pipeline puede correr en el repo del código con la story en
   // otro). Sin repo git que la contenga, o si el archivo ya no está (la story se movió o se renombró después de que la
   // otra sesión arrancó), no hay ruta comparable → null, y se compara por el número: ante la duda, pausa de más.
@@ -3099,8 +3073,8 @@ function computeStart(args) {
     }
   }
   // Una carpeta sin NINGÚN git (ni ella ni de arriba) se inicia aunque la historia no traiga la marca: ahí
-  // no hay rama de otra sesión que pisar, que es por lo que la marca hace falta. El caso: una historia escrita a mano
-  // llegó al commit sin git, con el chequeo de dependencias salteado sin aviso. No en la carpeta personal, ni en la raíz,
+  // no hay rama de otra sesión que pisar, que es por lo que la marca hace falta. Sin esto, una historia escrita a mano
+  // llegaría al commit sin git, con el chequeo de dependencias salteado sin aviso. No en la carpeta personal, ni en la raíz,
   // ni con la historia afuera: ahí pausa y da el comando a mano.
   if (!firstTimeGit && !firstTimeOk) {
     let hasGit = true;
@@ -3157,9 +3131,9 @@ function computeStart(args) {
   }
 
   // PIPE-C2: .gitignore fix (mutación segura e idempotente — se hace siempre).
-  // 🔴 Y también sobre el repo de la STORY cuando es otro (2026-09-05, un producto del equipo — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05): la evidencia de
+  // 🔴 Y también sobre el repo de la STORY cuando es otro: la evidencia de
   // cierre nace ahí (ver `evidenceDirForStory`), así que ese `.gitignore` es el que decide si
-  // viaja. Un repo de specs con `.advisors/` a secas se tragaba la evidencia y el portón daba rojo.
+  // viaja. Un repo de specs con `.advisors/` a secas se tragaría la evidencia y el portón daría rojo.
   const evid = evidenceDirForStory(storyPath, repo);
   const reposGitignore = [repo];
   if (evid.crossRepo && evid.storyRepo) reposGitignore.push(evid.storyRepo);
@@ -3197,17 +3171,17 @@ function computeStart(args) {
   // PIPE-C4: marker set (vía marker.js — único owner de writes del marker).
   const markerJs = path.join(os.homedir(), '.claude', 'agent-skills', 'skills', 'tycon-pipeline', 'scripts', 'marker.js');
   try {
-    // marker.js con el mismo Node que corre este programa, no el del PATH (story 8.39)
+    // marker.js con el mismo Node que corre este programa, no el del PATH
     execFileSync(process.execPath, [markerJs, 'set', JSON.stringify({
-      // storyPath ABSOLUTO (2026-09-05): `start` lo validaba contra el cwd y el marker lo guardaba
-      // crudo, pero on-advisor-run.js y marker.js lo resuelven contra repoPath — coincidían sólo si
+      // storyPath ABSOLUTO: si `start` lo validara contra el cwd y el marker lo guardara
+      // crudo, on-advisor-run.js y marker.js lo resolverían contra repoPath — coinciden sólo si
       // cwd == --repo. Con `--repo backend --story project/specs/x.md` desde el padre, la proyección
-      // del roster resolvía un path inexistente y callaba con "mismo repo". Todo lector acepta absolutos.
+      // del roster resolvería un path inexistente y callaría con "mismo repo". Todo lector acepta absolutos.
       storyId, storyPath: path.resolve(storyPath), repoPath: repo, sprint: fm.sprint ? parseInt(fm.sprint, 10) || null : null,
-      // Dónde nace la evidencia de cierre (2026-09-05): el repo de la story, aunque el código
-      // esté en otro. Lo leen los steps 7c/8 para no volver a adivinarlo.
+      // Dónde nace la evidencia de cierre: el repo de la story, aunque el código
+      // esté en otro. Lo leen los steps 7c/8 para no tener que adivinarlo.
       evidenceDir: evid.dir || null,
-      // Commit de partida (story 2.4): la base de las «líneas tocadas» que mide test-gate.sh.
+      // Commit de partida: la base de las «líneas tocadas» que mide test-gate.sh.
       // Sin git queda null y test-gate cae a HEAD diciéndolo.
       baseSha: (() => {
         try { return execFileSync('git', ['-C', repo, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() || null; } catch (e) {
@@ -3242,13 +3216,13 @@ function computeStart(args) {
     actions.push('PIPE-C6: modo autónomo OFF (--no-autonomous o TYCON_PIPELINE_NO_AUTONOMOUS=1) → HITL puro');
   }
 
-  // PIPE-C7 (discoverability 2026-06-23): si el repo tiene specs Playwright pero NO declaró su
+  // PIPE-C7 (discoverability): si el repo tiene specs Playwright pero NO declaró su
   // gate E2E en .tycon/advisors.yaml → avisar FUERTE acá (si no, el pipeline saltearía los E2E
   // en silencio y el tier crítico no frenaría el merge). El orquestador relaya el warning al user.
   const e2eCfg = e2eConfig(args.repo);
   if (e2eCfg.gap) actions.push(`⚠️ PIPE-C7 E2E-GAP — ${e2eCfg.warning}`);
 
-  // STORY-STALE-REVALIDATION-1: `fm` es el frontmatter leído ARRIBA, antes de que PIPE-C5 pise el
+  // Revalidación de specs viejas: `fm` es el frontmatter leído ARRIBA, antes de que PIPE-C5 pise el
   // status a in-progress — o sea que refleja cuánto tiempo estuvo la story esperando de verdad.
   const stale = computeSpecStaleness(fm, Date.now());
   if (stale) actions.push(`⚠️ SPEC-STALE — ${stale.aviso}`);
@@ -3260,7 +3234,7 @@ function computeStart(args) {
     run_size: runSize,
     risk: computeRiskClass({ story: storyPath, files: [], repo, runSize: args.runSize }),
     model_hint: computeModelHint({ story: storyPath, files: [], repo, runSize: args.runSize, orgModels: args.orgModels, sessionModel: args.sessionModel }),
-    // story 7.29: el modelo de los ayudantes sueltos (SPAWN-1), con configuración de la organización o pedido
+    // El modelo de los ayudantes sueltos, con configuración de la organización o pedido
     ...((args.orgModels && args.orgModels.declared) || args.modelRequests
       ? { models: { helpers: MODELOS.resolveHelpers({ org: args.orgModels && args.orgModels.declared ? args.orgModels.data : null, requests: args.modelRequests }) } }
       : {}),
@@ -3274,11 +3248,11 @@ function computeStart(args) {
 
 /**
  * Recorta la salida de `start` a lo que el orquestador realmente consume, y deja el JSON ENTERO en
- * un archivo cuya ruta viaja en la salida (story 7.10, AC 5).
+ * un archivo cuya ruta viaja en la salida.
  *
  * Por qué: `start` devuelve ~4 KB de los que el orquestador usa una docena de campos — y ese texto
- * vuelve a entrar en contexto en CADA respuesta posterior del turno. Medido en el análisis de tokens
- * del 2026-09-19: el 10 % de lo releído es el texto de las propias llamadas del agente.
+ * vuelve a entrar en contexto en CADA respuesta posterior del turno. Medido en un análisis de tokens:
+ * el 10 % de lo releído es el texto de las propias llamadas del agente.
  *
  * 🔴 Recortar NO es perder: sin la ruta del archivo, el que necesite el detalle vuelve a correr
  *    `start` — y `start` MUTA (frontmatter de la story, marker, .gitignore). Por eso `completo`
@@ -3332,7 +3306,7 @@ function recortarStart(result) {
     // Sólo los NOMBRES: el orquestador es el único que puede saber cuáles tiene en su sesión, y el
     // cómo-levantarlo (que es el grueso del texto) vive en el archivo.
     breve.tools_esperadas = result.tooling.expected.map((x) => x.name);
-    // Las skills de terceros que faltan (story 8.5): ésas sí las sabe el script, con su acción.
+    // Las skills de terceros que faltan: ésas sí las sabe el script, con su acción.
     const missing = result.tooling.expected.filter((x) => (x.kind === 'skill' || x.kind === 'manifest') && x.present === false);
     if (missing.length) breve.skills_faltantes = missing.map((x) => `${x.name} → ${x.action}`);
   }
@@ -3344,7 +3318,7 @@ function recortarStart(result) {
   return breve;
 }
 
-// ── pipeline.js risk-class — Autonomía Nivel 2 (decisión DevA 2026-06-09) ───
+// ── pipeline.js risk-class — Autonomía Nivel 2 ───
 // Clasifica la story para el auto-approve CONDICIONAL del plan (Step 3):
 // LOW-risk → step-03 se auto-aprueba y el plan se muestra igual; cualquier criterio
 // fallido → NORMAL → checkpoint HITL como siempre. Reglas de oro intactas:
@@ -3353,7 +3327,7 @@ function recortarStart(result) {
 // pre-requisito del flujo — Step 1 corre antes que Step 3, no se re-evalúa acá).
 // ── El tamaño de la corrida: liviana (sólo documentación) o completa. Lo clasifica lib/run-size.js por
 // lo que la story DECLARA; `args.runSize` (el forzado del marcador, que sólo leen las ramas de línea de comandos)
-// manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial (decisión 7).
+// manda. Sin story legible, completa. El repo aporta sus superficies del pase adversarial.
 const runSizeLib = require('./lib/run-size.js');
 function computeRunSize(args) {
   if (args.runSize && runSizeLib.SIZES.includes(args.runSize.size)) {
@@ -3428,22 +3402,22 @@ function computeRiskClass(args) {
   };
 }
 
-// ── pipeline.js tooling-expected — aviso de tooling no disponible (2026-07-06) ──
+// ── pipeline.js tooling-expected — aviso de tooling no disponible ──
 // El pipeline ASUME herramientas del harness (CodeGraph para symbol lookup, engram
 // para memoria persistente, la tool Workflow para el 5b). Si están declaradas pero
 // NO disponibles en la sesión, el orquestador degrada a fallbacks (grep / sin
-// memoria / sin pase adversarial) — hasta hoy EN SILENCIO: el user no se enteraba
-// de que el run corría más lento o con menos cobertura. Contrato (PIPE-C9):
+// memoria / sin pase adversarial), y sin aviso el user no se entera
+// de que el run corre más lento o con menos cobertura. Contrato (PIPE-C9):
 // este script detecta la EXPECTATIVA (mecánica, verificable); la disponibilidad
 // real del MCP/tool la conoce SOLO el orquestador (las tools viven en su harness,
 // no en el shell) → él la verifica y AVISA al user ANTES de degradar.
-// ── Las skills de terceros que el pipeline invoca por nombre (story 8.5 del arnés) ──
+// ── Las skills de terceros que el pipeline invoca por nombre ──
 // Lo ajeno sale de agent-skills y lo restituye el paso del instalador desde el manifiesto del arnés
 // (scripts/publishing/third-party-skills.json). Si una skill que el pipeline invoca (Steps 2 y 4, el portón de
 // stories, el Step 5 a pedido) no está, el pipeline no puede enterarse en silencio: se suma al tooling esperado con
 // `present` y la acción. Sin manifiesto legible, una entrada que lo dice. opts: { skillsDir, manifestPath } (pruebas).
-// La carpeta se llamó scripts/publishing hasta la tanda C4 de la story 8.9 del arnés, y un `.json` no tiene reemplazo:
-// primero la nueva, la vieja sólo con un arnés atrasado que todavía no la trae; sin ninguna, la nueva (el aviso la nombra).
+// El manifiesto vive en scripts/publishing; una copia atrasada del arnés lo tiene en scripts/publicacion (un `.json` no tiene reemplazo):
+// primero publishing, luego publicacion; sin ninguna, publishing (el aviso la nombra).
 function thirdPartyManifestPath(harnessDir) {
   if (!harnessDir) return null;
   const at = (dir) => path.join(harnessDir, 'scripts', dir, 'third-party-skills.json');
@@ -3497,7 +3471,7 @@ function expectedThirdPartySkills(opts = {}) {
 /**
  * Las integraciones según el lector de configuración del arnés (`{ ado: false, engram: true, … }`), o `null` si no se
  * puede saber: arnés no encontrado, arnés sin lector o con uno anterior a las integraciones, configuración rota. Quien
- * llama trata `null` como hasta la story 8.7 del arnés (todo esperado): no saber no es «apagada».
+ * llama trata `null` como todo esperado: no saber no es «apagada».
  * @param {object} [opts] env (default process.env) · home (default os.homedir())
  */
 function harnessIntegrations(opts = {}) {
@@ -3511,15 +3485,15 @@ function harnessIntegrations(opts = {}) {
     if (typeof cfg.leer !== 'function' || typeof cfg.integraciones !== 'function') return null;
     const all = cfg.integraciones(cfg.leer({ env, home: opts.home }));
     return all && typeof all === 'object' ? all : null;
-  } catch (_) { return null; }   // rota o lector que no carga: la configuración la reclama el instalador; acá, como siempre
+  } catch (_) { return null; }   // rota o lector que no carga: la configuración la reclama el instalador; acá, todo esperado
 }
 
 /**
- * La pregunta del modelo mayor en el pase adversarial (story 7.19, AC 10 y 11): `adversarial.model_question`, `ask`
+ * La pregunta del modelo mayor en el pase adversarial: `adversarial.model_question`, `ask`
  * (por defecto) o `never`. Mismo camino que `harnessIntegrations`, pero con `cargar()` y no `leer()`: trae el origen
  * del valor y los errores sin tirar. Con la configuración rota o un valor fuera del vocabulario se comporta como sin
  * la clave (pregunta) y lo dice en `aviso`: no se apaga una pregunta por una configuración que no se pudo leer.
- * Gana el perfil del equipo (`PROFILE_WINS`; decisión del dueño, 2026-10-15). → `{ value, origin, aviso? }`
+ * Gana el perfil del equipo (`PROFILE_WINS`). → `{ value, origin, aviso? }`
  */
 function preguntaDelModelo(opts = {}) {
   const env = opts.env || process.env;
@@ -3556,8 +3530,8 @@ function preguntaDelModelo(opts = {}) {
 function computeToolingExpected(repo, opts = {}) {
   const integrations = 'integrations' in opts ? opts.integrations : harnessIntegrations(opts);
   const integrationOff = (name) => !!integrations && integrations[name] === false;
-  // `where` en Windows y `which` en Mac y Linux, sin ruta fija (story 8.17, W6 · AC 48): con el `which` de Unix por su ruta, en
-  // Windows todas las herramientas salían «no está». `opts.platform` y `opts.exec` son para las pruebas.
+  // `where` en Windows y `which` en Mac y Linux, sin ruta fija: con el `which` de Unix por su ruta, en
+  // Windows todas las herramientas saldrían «no está». `opts.platform` y `opts.exec` son para las pruebas.
   const findBinary = (cmd) => require('./lib/portable-tools.js').findBinary(cmd, { platform: opts.platform, exec: opts.exec });
   // CLIs conocidos: mismo índice/store que el MCP → sirven para ESTE run vía Bash
   // aunque el MCP server no haya levantado. `raise_install` re-cablea el MCP para
@@ -3606,7 +3580,7 @@ function computeToolingExpected(repo, opts = {}) {
       if_unavailable: 'AVISAR al user en 1 línea ANTES de degradar: "el repo tiene CodeGraph pero el MCP no está en esta sesión". Después seguir `raise_it` (CLI si el binario está; instalación si no).',
     });
   }
-  // engram se espera salvo que su integración esté apagada (story 8.7 del arnés, AC 20): afuera, sin la integración,
+  // engram se espera salvo que su integración esté apagada: afuera, sin la integración,
   // el arranque no avisa que falta una herramienta que nadie pidió.
   if (!integrationOff('engram')) {
     const bin = findBinary(KNOWN_CLI.engram.bin);
@@ -3631,7 +3605,7 @@ function computeToolingExpected(repo, opts = {}) {
     raise_it: 'sin CLI alternativo (es una tool del harness) — si no está, PREGUNTAR al user si sigue sin el pase adversarial.',
     if_unavailable: 'AVISAR al user — esto NO es un skip silencioso legítimo: "la tool Workflow no está disponible → el pase adversarial 5b no puede correr; el run queda solo con los advisors single-pass. ¿Sigo igual?" El user decide.',
   });
-  // Genérico (2026-07-06, caso codebase_memory en un producto del equipo — guides/maintaining/incident-log.md#case-declared-mcp-not-expected-2026-07-06): TODO MCP server que el
+  // Genérico: TODO MCP server que el
   // repo declare en su .mcp.json o en la config del proyecto (~/.claude.json →
   // projects[repo].mcpServers) es tooling esperado — cubre codebase_memory,
   // azure-devops, context7 y cualquier futuro sin tocar este script.
@@ -3671,13 +3645,13 @@ function computeToolingExpected(repo, opts = {}) {
 }
 
 // ── pipeline.js model-hint — sugerencia de modelo de sesión por complejidad ──
-// (decisión DevA 2026-07-06). Los steps 2-4 (plan BMAD + implementación) corren
+// Los steps 2-4 (plan BMAD + implementación) corren
 // INLINE en el main loop (tool Skill, no subagentes) → su modelo es el DE LA
 // SESIÓN y solo el user puede cambiarlo con /model. Este comando computa la
 // recomendación MECÁNICA para que el Step 0 (preflight) la compare con el modelo
 // real de la sesión (el orquestador lo sabe por su system prompt) y sugiera el
-// switch ANTES de gastar contexto — H.i (sesión fresca por pipeline) hace que el
-// preflight sea el momento exacto para elegir modelo; /model conserva sesión y
+// switch ANTES de gastar contexto — con sesión fresca por pipeline el
+// preflight es el momento exacto para elegir modelo; /model conserva sesión y
 // marker, no se pierde nada.
 //
 // Tiers (razón: el plan es el punto de mayor apalancamiento — un plan malo
@@ -3716,7 +3690,7 @@ function computeModelHint(args) {
 
   const heavyCount = signals.filter((s) => s.hit).length;
   const heavy = rc.risk === 'NORMAL' && heavyCount >= 2;
-  // los valores de hoy salen de lib/models.js (story 7.29); con `models.session` de la organización, ésos (y also_ok
+  // los valores salen de lib/models.js; con `models.session` de la organización, ésos (y also_ok
   // vacío); con techo obligatorio, recortados. La configuración llega por argumento: esta función no lee la máquina.
   const band = rc.risk === 'LOW' ? 'low' : (heavy ? 'heavy' : 'normal');
   const S = MODELOS.DEFAULTS.session;
@@ -3764,22 +3738,21 @@ function equivalenciasDeModelos() {
   catch (_) { return {}; }
 }
 
-// ── pipeline.js deep-review-gate — Step 5b adversarial (decisión DevA 2026-07-03) ──
+// ── pipeline.js deep-review-gate — Step 5b adversarial ──
 // Decide si corre el pase adversarial reproduce-or-refute (step-05b-adversarial-verify.md),
 // que EJECUTA el código (bundlea/parsea/probe) en vez de LEER el diff como los 6 advisors
-// single-pass. Encontró el falso negativo de traversal de Story 1.5 (bizuit:* en lanes/
-// participants) que los 6 advisors NO vieron — 4to caso en E1.
+// single-pass: así encuentra falsos negativos (p.ej. un traversal en lanes/participants) que ellos no ven.
 //
-// Gate (decisión DevA: "siempre en NORMAL") = REUSA risk-class:
+// Gate (siempre en NORMAL) = REUSA risk-class:
 //   NORMAL → corre (donde el juicio de correctitud-en-runtime paga) · LOW → skip (superficie
 //   chica ≤6 files, ya barata). Overrides, en orden de precedencia:
 //   1) --no-deep-review / TYCON_NO_DEEP_REVIEW=1 (kill-switch, gana sobre todo)
 //   2) .tycon/advisors.yaml `deep_review: always|off|auto`
 //   3) --deep-review (fuerza on aun en LOW) / --ultracode (el orquestador lo pasa si ultracode ON)
 //   4) .tycon/advisors.yaml `deep_review_always_paths:` — SUPERFICIE COMPARTIDA del repo: si el
-//      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW (2026-08-26). Está en el 4to
+//      diff toca una de esas rutas, corre AUNQUE el risk-class dé LOW. Está en el 4to
 //      lugar a propósito: no puede pisar el kill-switch ni el `off` del dueño del repo, pero sí
-//      gana sobre el criterio por tamaño de diff, que es el que dejó pasar el defecto de la 9.3.
+//      gana sobre el criterio por tamaño de diff, que puede dejar pasar un defecto en superficie compartida.
 //   5) default → risk-class (NORMAL run / LOW skip). Si el repo NO declaró superficie compartida,
 //      el skip por LOW se decide a ciegas y el veredicto lo dice (`shared_surface_declared:false`).
 // Corre UNA vez por corrida (default: se lanza al cierre del Step 4 y step-05b es el join; TYCON_5B_EARLY=0 → se lanza en 5b), NUNCA por re-loop D.i
@@ -3796,17 +3769,17 @@ function deepReviewConfig(repo) {
   return null;
 }
 
-// ── Superficie compartida declarada por repo (2026-08-26) ─────────────────────
+// ── Superficie compartida declarada por repo ─────────────────────
 // El gate por risk-class mide TAMAÑO de diff (≤6 archivos → LOW → se saltea el pase adversarial).
-// Los tres defectos del epic 9 del repo del framework no eran función del tamaño sino de QUIÉN
-// ejecuta el código roto: los tres terminan en terminación del proceso del host, o sea que se
+// Hay defectos que no son función del tamaño sino de QUIÉN
+// ejecuta el código roto: pueden terminar el proceso del host, o sea que se
 // llevan puestos a todos los plugins cargados. Dos archivos en Services/Plugins/ no tienen el
 // mismo radio de daño que dos archivos en una pantalla.
 //
 // Se declara POR REPO y no se adivina con una heurística global de nombres: el dueño del repo sabe
 // cuál es su superficie compartida, y una regla que adivina acierta en unos repos y molesta en
 // otros — un control que molesta se termina apagando. Costo de un falso positivo: un pase
-// adversarial de más (~25 min, en background). Costo de un falso negativo: el hotfix que ya se pagó.
+// adversarial de más (~25 min, en background). Costo de un falso negativo: un hotfix.
 //
 //   .tycon/advisors.yaml
 //   deep_review_always_paths:
@@ -3818,13 +3791,13 @@ function deepReviewAlwaysPaths(repo) {
   const txt = readText(path.join(repo, '.tycon', 'advisors.yaml')) ||
               readText(path.join(repo, '.tycon', 'advisors.yml'));
   if (!txt) return [];
-  // 🔴 Reescrito tras la revisión adversarial (2026-08-26). La 1ra versión entendía UNA sola forma
-  // de escribir la lista (bloque con guiones) y descartaba en silencio las otras dos que YAML
+  // 🔴 La lista se lee en sus tres formas, no sólo una. Leer UNA sola forma
+  // de escribir la lista (bloque con guiones) descartaría en silencio las otras dos que YAML
   // acepta — y que el propio lib/config-lint.js ya soporta en su helper `lista()`:
-  //     deep_review_always_paths: [Services/Plugins/**]      ← flow,    se leía VACÍA
-  //     deep_review_always_paths: Services/Plugins/**        ← escalar, se leía VACÍA
-  // Y un comentario al final del item quedaba pegado al glob (`- Services/Plugins/**  # el cargador`),
-  // así que el patrón no matcheaba nunca. Los tres casos terminan igual: el repo declaró su
+  //     deep_review_always_paths: [Services/Plugins/**]      ← flow,    se leería VACÍA
+  //     deep_review_always_paths: Services/Plugins/**        ← escalar, se leería VACÍA
+  // Y un comentario al final del item quedaría pegado al glob (`- Services/Plugins/**  # el cargador`),
+  // así que el patrón no matchearía nunca. Los tres casos terminan igual: el repo declaró su
   // superficie, el pase adversarial se saltea lo mismo, y el veredicto AFIRMA que no había nada
   // declarado. Una falla silenciosa en el control que existe para que no haya fallas silenciosas.
   const limpiar = (v) => String(v).replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '').trim();
@@ -3860,9 +3833,9 @@ function deepReviewAlwaysPaths(repo) {
 function tocaSuperficieCompartida(repo, files) {
   const patrones = deepReviewAlwaysPaths(repo);
   if (!Array.isArray(files) || !files.length) return null;
-  // 🔴 Stories de dos repos (2026-10-15): un archivo de un repo hermano se juzga contra la superficie compartida que
-  //    declara SU repo (su `.tycon/advisors.yaml`). Antes se salteaba («fuera del repo»): un cambio en la superficie
-  //    compartida del frontend hermano nunca pedía el pase adversarial.
+  // 🔴 Stories de dos repos: un archivo de un repo hermano se juzga contra la superficie compartida que
+  //    declara SU repo (su `.tycon/advisors.yaml`). Sin esto se saltearía («fuera del repo»): un cambio en la superficie
+  //    compartida del frontend hermano nunca pediría el pase adversarial.
   for (const f of files) {
     const o = companionLib.ownerOf(f, repo);
     if (o.propio || !o.root) continue;
@@ -3871,8 +3844,8 @@ function tocaSuperficieCompartida(repo, files) {
     }
   }
   if (!patrones.length) return null;
-  // Normalizar antes de comparar (revisión adversarial 2026-08-26): un absoluto con otro prefijo,
-  // un `./` adelante o un `..` en el medio no matcheaban NINGÚN patrón — falso negativo mudo, que
+  // Normalizar antes de comparar: un absoluto con otro prefijo,
+  // un `./` adelante o un `..` en el medio no matchearían NINGÚN patrón — falso negativo mudo, que
   // es justo el modo de falla que este control existe para cerrar.
   const raiz = path.resolve(repo);
   for (const f of files) {
@@ -3887,22 +3860,22 @@ function tocaSuperficieCompartida(repo, files) {
 }
 
 /**
- * Escribe una salida GRANDE por stdout y recién después sale (PIPE-DEBT-2.14, 2026-09-10).
+ * Escribe una salida GRANDE por stdout y recién después sale.
  * `process.exit()` inmediato trunca lo que todavía no se volcó al pipe: el `--json` de la vista de
- * corridas (~1 MB) se cortaba en 64 KB. El callback del write se dispara cuando ese chunk salió,
+ * corridas (~1 MB) se cortaría en 64 KB. El callback del write se dispara cuando ese chunk salió,
  * y como los writes a stdout son ordenados, todo lo anterior ya salió también.
  */
 function salidaGrande(texto, code) {
   // 🔴 `process.exitCode` + terminación natural, NUNCA `process.exit()` ni su callback.
   //
-  // Dos defectos en uno, los dos del mismo intento de no truncar la salida (b3b3147):
+  // Dos riesgos en uno, los dos al intentar no truncar la salida:
   //   · `process.exit()` a secas TRUNCA una salida grande por pipe (el `--json` real pesa ~1 MB) —
-  //     ése era el defecto original, y por eso no se vuelve a `exit()`.
-  //   · El callback de `write()` es ASÍNCRONO: `salidaGrande` retornaba en el acto, el flujo del
-  //     despachador seguía de largo, no matcheaba ningún otro comando y caía al texto de uso con
-  //     `exit(1)` — que le ganaba la carrera al callback. O sea: JSON correcto, uso pegado abajo y
-  //     salida 1. El orquestador parsea stdout e ignora el código, así que nadie lo vio; el que lo
-  //     cazó fue `tests/smart-reloop-blindness.test.js` (rojo desde b3b3147 → gate 79/80).
+  //     por eso no se vuelve a `exit()`.
+  //   · El callback de `write()` es ASÍNCRONO: si `salidaGrande` retornara en el acto, el flujo del
+  //     despachador seguiría de largo, no matchearía ningún otro comando y caería al texto de uso con
+  //     `exit(1)` — que le ganaría la carrera al callback. O sea: JSON correcto, uso pegado abajo y
+  //     salida 1. El orquestador parsea stdout e ignora el código, así que nadie lo vería; lo
+  //     caza `tests/smart-reloop-blindness.test.js`.
   //
   // Con `exitCode` node termina solo cuando drena stdout: ni trunca ni miente el código.
   // 🔴 El llamador DEBE hacer `return` inmediatamente después — sin eso el flujo se vuelve a
@@ -3918,17 +3891,17 @@ function computeDeepReviewGate(args) {
   if (args.noDeepReview) {
     return { run: false, model: null, reason: 'forzado OFF (--no-deep-review / TYCON_NO_DEEP_REVIEW=1)' };
   }
-  // Modelo — escalación mecánica por complejidad (decisión DevA 2026-07-06).
+  // Modelo — escalación mecánica por complejidad.
   // Default sonnet (recorta el $ ~5x vs Opus); story pesada (model-hint ≥2 señales)
   // → opus AUTOMÁTICO (anunciado). Fable NUNCA automático: --deep-review-fable es la
   // autorización EXPLÍCITA del user; sin el flag, el gate emite `fable_upsell` y el
   // orquestador PREGUNTA en 1 línea (el user decide). Precedencia:
   // fable(flag) > opus(flag) > opus(ultracode) > opus(story pesada) > sonnet.
   const hint = computeModelHint({ ...args, orgModels: null });
-  // story 7.29: el modelo y la pregunta salen de lib/models.js con la configuración de la organización y el pedido de
-  // la corrida, que llegan por argumento (`args.orgModels`, `args.modelRequests`); la clave de la 7.19 llega en
+  // El modelo y la pregunta salen de lib/models.js con la configuración de la organización y el pedido de
+  // la corrida, que llegan por argumento (`args.orgModels`, `args.modelRequests`); la clave de la pregunta llega en
   // `args.modelQuestion` (la lee la rama de línea de comandos con `preguntaDelModelo`). Esta función no lee la máquina.
-  // Precedencia de hoy: fable(flag) > opus(flag) > opus(ultracode) > pedido > organización > opus(pesada) > sonnet.
+  // Precedencia: fable(flag) > opus(flag) > opus(ultracode) > pedido > organización > opus(pesada) > sonnet.
   const org = args.orgModels && args.orgModels.declared ? args.orgModels.data : null;
   const avisos = [];
   const adv = MODELOS.resolveAdversarial({
@@ -3944,9 +3917,9 @@ function computeDeepReviewGate(args) {
   else if (args.ultracode) modelReason = 'ultracode ON → hunters en Opus';
   else if (hint.heavy) modelReason = `story pesada (${hint.heavy_signal_count} señales model-hint) → hunters escalan a Opus (anunciar)`;
   else modelReason = 'default (recorta $ ~5x vs Opus)';
-  // story 7.19 (AC 10): con la pregunta en `never` no se ofrece el modelo mayor ni se manda a preguntar; corre el que
+  // Con la pregunta en `never` no se ofrece el modelo mayor ni se manda a preguntar; corre el que
   // eligió el portón. Se dice en la salida (`model_question`, sólo con un valor que no es el de por defecto); la línea
-  // de gates.log la escribe la rama de línea de comandos. Con un techo debajo de fable, nunca (story 7.29, AC 14).
+  // de gates.log la escribe la rama de línea de comandos. Con un techo debajo de fable, nunca.
   const pregunta = adv.question;
   const fableUpsell = adv.upsell
     ? {
@@ -3956,11 +3929,11 @@ function computeDeepReviewGate(args) {
         how: `preguntar al user en 1 línea (COMM.i); si aprueba → pasar model:"${MODELOS.MODELS[3]}" al Workflow. Sin respuesta afirmativa → usar \`model\` de este output.`,
       }
     : null;
-  // Fase B (2026-07-30): lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
-  // kill-switch (decisión DevA 2026-07-30: "me voy a olvidar de ponerla en 1"; las mitigaciones
-  // del review Opus ya están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
+  // Lanzamiento temprano del 5b al cierre del Step 4 — DEFAULT ON con
+  // kill-switch (las mitigaciones
+  // están cableadas — cap 2 de ventana, verificadores en ventana de 3, candado
   // anti-full-suite — y la primera corrida NORMAL ES la medición del cap). El switch queda
-  // MECÁNICO acá (mismo patrón que TYCON_NO_DEEP_REVIEW), no en prosa que nadie lee (review G2):
+  // MECÁNICO acá (mismo patrón que TYCON_NO_DEEP_REVIEW), no en prosa que nadie lee:
   // export TYCON_5B_EARLY=0 → lanzamiento clásico en 5b; sin la env → temprano en el Step 4.
   const extras = {
     model_reason: modelReason,
@@ -3976,7 +3949,7 @@ function computeDeepReviewGate(args) {
   if (cfg === 'off') {
     // Si el repo apagó el 5b Y declaró superficie compartida, las dos cosas no pueden convivir en
     // silencio: la lista queda publicada y muerta, y el dueño del repo cree tener una protección
-    // que no tiene (revisión adversarial 2026-08-26). El `off` gana —es la decisión explícita del
+    // que no tiene. El `off` gana —es la decisión explícita del
     // dueño— pero se dice.
     const decl = deepReviewAlwaysPaths(args.repo);
     return {
@@ -4005,17 +3978,17 @@ function computeDeepReviewGate(args) {
   }
 
   // 4c) Corrida liviana: sólo documentación → sin pase adversarial. Las superficies del repo ya
-  //     decidieron arriba y además vuelven completa la corrida (lib/run-size.js, decisión 7).
+  //     decidieron arriba y además vuelven completa la corrida (lib/run-size.js).
   const runSize = computeRunSize(args);
   if (runSize.size === 'liviana') {
     return { run: false, risk: 'liviana', model: null, run_size: 'liviana', reason: `corrida liviana (${runSize.reason}) → sin pase adversarial; override: --deep-review o marker.js set-size completa --reason "<por qué>"` };
   }
-  // 5) Default: gate por risk-class (decisión "siempre en NORMAL").
+  // 5) Default: gate por risk-class (siempre en NORMAL).
   const rc = computeRiskClass(args);
   // `computeRiskClass` devuelve `{risk:'NORMAL', error, ...}` SIN `criteria` cuando --story es
-  // inválido/inexistente. Sin este guard, el `.filter` de abajo tiraba un TypeError con stack —
+  // inválido/inexistente. Sin este guard, el `.filter` de abajo tiraría un TypeError con stack —
   // fail-ugly en un GATE es justo lo que empuja al bypass. Fail-loud legible: run:true (NORMAL es
-  // el default seguro) + el error a la vista. (Story 4.18, 2026-07-24.)
+  // el default seguro) + el error a la vista.
   if (!Array.isArray(rc.criteria)) {
     return {
       run: true, risk: 'NORMAL', model, ...extras,
@@ -4029,19 +4002,18 @@ function computeDeepReviewGate(args) {
       reason: `risk-class NORMAL → deep-review corre (criterios NORMAL: ${failed.join(', ') || 'scope no declarado'})`,
     };
   }
-  // 4b) Densidad (PIPE-DEBT-2.14, 2026-09-10): el LOW por tamaño cuenta ARCHIVOS, no lógica. La
-  //     story 2.14 (4 archivos de código) salió LOW y el pase forzado a mano confirmó 6 defectos
-  //     reales sobre esos mismos 4 archivos. Un diff angosto pero denso —muchas líneas agregadas en
+  // 4b) Densidad: el LOW por tamaño cuenta ARCHIVOS, no lógica. Una
+  //     story de 4 archivos de código puede salir LOW y tener 6 defectos
+  //     reales en esos mismos 4 archivos. Un diff angosto pero denso —muchas líneas agregadas en
   //     archivos de código— corre igual. Umbral: `TYCON_DEEP_REVIEW_DENSE_LINES` (default 300); la
   //     medición viaja en el veredicto para que el skip también la muestre.
-  // 🔴 «No me dijiste qué mirar» NO es «no cambió nada» (2026-09-10).
+  // 🔴 «No me dijiste qué mirar» NO es «no cambió nada».
   //
-  // `densidadDelDiff` recorre `args.files`. Con la lista vacía el resultado es 0, y hasta hoy el
-  // gate lo publicaba como `lineas_agregadas: 0` y saltaba el pase con el motivo «0 líneas
-  // agregadas < 300». Eso se lee como una medición y no lo es. Caso real (story 4.1 de
-  // el arnés): se invocó sin `--files` sobre un cambio de 839 líneas y contestó cero;
-  // sólo no se salteó porque el dev había pedido la revisión a mano — y ese pase encontró seis
-  // defectos.
+  // `densidadDelDiff` recorre `args.files`. Con la lista vacía el resultado es 0, y el
+  // gate lo publicaría como `lineas_agregadas: 0` y saltaría el pase con el motivo «0 líneas
+  // agregadas < 300». Eso se lee como una medición y no lo es. Por ejemplo, una invocación
+  // sin `--files` sobre un cambio de 839 líneas contesta cero;
+  // el salto sólo se evita si el dev pidió la revisión a mano.
   //
   // Se CORTA en vez de «correr por las dudas»: una corrida del pase midió 6,5 M de tokens y 30
   // minutos, así que revisar de más no es el lado barato. El error está en la llamada y se arregla
@@ -4078,7 +4050,7 @@ function computeDeepReviewGate(args) {
               `${densidad.lineas} líneas agregadas en archivos de código (umbral ${densidad.umbral}) → deep-review corre`,
     };
   }
-  // 🔴 Un archivo que no se pudo medir no es «0 líneas» (2026-10-15, stories de dos repos). Lo medido
+  // 🔴 Un archivo que no se pudo medir no es «0 líneas». Lo medido
   //    es un piso: si ya pasa el umbral corre arriba; si no, saltear el pase con archivos sin medir sería
   //    decidir a ciegas, igual que sin `--files`. Se corta con las rutas y el motivo a la vista.
   if (densidad.noMedidos.length) {
@@ -4093,7 +4065,7 @@ function computeDeepReviewGate(args) {
         + 'explícito con `--deep-review` / `--no-deep-review`.',
     };
   }
-  // Constancia de que se decidió A CIEGAS (2026-08-26, 2da condición de la decisión del dev).
+  // Constancia de que se decidió A CIEGAS.
   // La lista de superficie compartida es opt-in por repo, así que un repo que nunca la declaró NO
   // está cubierto — y sin esta línea eso se lee igual que "no hacía falta". Queda escrito en el
   // veredicto y en gates.log: "no está cubierto" tiene que ser visible, no silencioso.
@@ -4119,15 +4091,15 @@ function computeDeepReviewGate(args) {
 }
 
 /**
- * Líneas AGREGADAS en los archivos de código del diff (PIPE-DEBT-2.14). Cada archivo se mide en SU
- * repo git, el de su propia carpeta (`companionLib.ownerOf`, la misma pieza que usa la story 7.26 para leer el diff de
+ * Líneas AGREGADAS en los archivos de código del diff. Cada archivo se mide en SU
+ * repo git, el de su propia carpeta (`companionLib.ownerOf`, la misma pieza que usa el pipeline para leer el diff de
  * un repo hermano): tracked → `git diff --numstat HEAD` (0 si no cambió); sin
  * trackear en su repo → el archivo entero (es nuevo). Sólo extensiones de código: un HTML generado o
  * un JSON de datos no es lógica que un hunter tenga que ejecutar.
  *
- * 🔴 Stories de dos repos (2026-10-15, GE-4 de un producto del equipo): la story vivía en el backend y el código en el
- *    frontend, un repo companion. Medido con `git -C <repo de la story>`, cada archivo del frontend daba
- *    «no trackeado» y se sumaba ENTERO: 1464 líneas contra 221 reales, y el portón corrió el pase por
+ * 🔴 Stories de dos repos: la story vive en el backend y el código en el
+ *    frontend, un repo companion. Medido con `git -C <repo de la story>`, cada archivo del frontend daría
+ *    «no trackeado» y se sumaría ENTERO (1464 líneas contra 221 reales), y el portón correría el pase por
  *    «denso». Lo que no se puede medir (fuera de todo repo git, git que no contesta, un numstat que no es
  *    un número) NO se cuenta como archivo entero ni como 0: vuelve en `noMedidos`, y el portón lo dice.
  */
@@ -4160,7 +4132,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
     const ls = sp('git', ['-C', o.root, 'ls-files', '--error-unmatch', '--', o.rel], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
     if (ls.error) { noMedidos.push({ file: f, motivo: `no pude correr git (${ls.error.message})` }); continue; }
     // `ls-files --error-unmatch`: 0 = trackeado, 1 = no trackeado. Cualquier otra salida (128 por safe.directory o un repo
-    // roto, una señal) es «git no pudo decir», no «no trackeado»: sumarlo entero era el error que esto arregla.
+    // roto, una señal) es «git no pudo decir», no «no trackeado»: sumarlo entero sería un error.
     if (ls.status !== 0 && ls.status !== 1) { noMedidos.push({ file: f, motivo: `git no pudo decir si está trackeado en ${o.root} (salida ${ls.status === null ? `señal ${ls.signal}` : ls.status})` }); continue; }
     const tracked = ls.status === 0;
     if (tracked) {
@@ -4176,7 +4148,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
       try { texto = fs.readFileSync(abs, 'utf8'); } catch (e) {
         // con `--allow-missing-files` quien llama ya dijo que puede haber archivos que no están (borrados): ausente = 0
         // borrado por el cambio (`git rm`, o el nombre viejo de un `git mv`): no está en el índice ni en el disco, pero
-        // sí en HEAD. Agrega 0 líneas, medido (revisión adversarial: cortaba stories de un solo repo).
+        // sí en HEAD. Agrega 0 líneas, medido (sin esto, cortaría stories de un solo repo).
         if (e.code === 'ENOENT' && sp('git', ['-C', o.root, 'cat-file', '-e', `HEAD:${o.rel}`], { stdio: 'ignore' }).status === 0) continue;
         if (allowMissing && e.code === 'ENOENT') { ausentes.push(f); continue; }
         noMedidos.push({ file: f, motivo: `no está trackeado en ${o.root} y no lo pude leer (${e.code || e.message})` });
@@ -4188,7 +4160,7 @@ function densidadDelDiff(repo, files, { allowMissing = false } = {}) {
   return { lineas, umbral, noMedidos, ausentes };
 }
 
-// ── pipeline.js timing-report — Fase 0 instrumentación (auditoría 2026-06-09) ─
+// ── pipeline.js timing-report — instrumentación ─
 // Desglosa dónde se fue el wall-clock de la corrida: steps (marker.stepTimings),
 // iteraciones del Step 5 (marker.iterations) y gates ejecutados (gates.log).
 // Sin esto, los "25 min" son anécdota y los speedups se priorizan a ciegas.
@@ -4201,7 +4173,7 @@ function computeTimingReport() {
   const events = [];
   if (marker.startedAt) events.push({ label: 'pipeline-start', ts: marker.startedAt });
   for (const [step, t] of Object.entries(timings)) {
-    // story 2.7: el arranque también es un evento — sin él, delta_min del paso incluía el hueco previo.
+    // El arranque también es un evento — sin él, delta_min del paso incluiría el hueco previo.
     if (t && t.startedAt) events.push({ label: `step-${step}-start`, ts: t.startedAt });
     if (t && t.completedAt) events.push({ label: `step-${step}-done`, ts: t.completedAt });
   }
@@ -4237,20 +4209,20 @@ function computeTimingReport() {
   };
 }
 
-// ── Validación de --files (fix auditoría 2026-06-11, run 9.4) ─────────────────
-// Un --files mal expandido por el shell (caso real: zsh NO hace word-split de
-// variables sin comillas → N paths llegaron como UN argumento inexistente) hacía
+// ── Validación de --files ─────────────────────────────
+// Un --files mal expandido por el shell (p.ej. zsh NO hace word-split de
+// variables sin comillas → N paths llegan como UN argumento inexistente) haría
 // que detectStack viera 0 archivos de código → onlyDocs=true → set degradado a 3
-// advisors, PERSISTIDO como expected[] (check-count validaba contra 3 con 13
+// advisors, PERSISTIDO como expected[] (check-count validaría contra 3 con 13
 // faltantes — fail-open silencioso). Acá: si >0 files no existen → ABORT exit 2.
 // Override consciente para diffs con archivos borrados: --allow-missing-files.
 /**
  * ¿`--files` llegó como UN solo argumento con espacios? (word-split del shell fallado)
  *
- * Vive aparte de `validateFilesExist` desde la revisión adversarial 2026-08-26: los gates
+ * Vive aparte de `validateFilesExist`: los gates
  * `risk-class` y `deep-review-gate` necesitan ESTA guarda y NO la validación de existencia
- * (un diff que borra archivos pasa paths que ya no existen — legítimo, y esos dos comandos
- * eran exit 0 siempre). `advisors` y `smart-reloop` siguen corriendo las dos.
+ * (un diff que borra archivos pasa paths que ya no existen — legítimo, y con la validación de existencia esos
+ * dos comandos abortarían en un diff válido). `advisors` y `smart-reloop` siguen corriendo las dos.
  *
  * @returns {string|null} el mensaje de error, o null si está bien
  */
@@ -4280,13 +4252,13 @@ function detectarWordSplit(args) {
 }
 
 /**
- * ¿Algún `--files` es un FANTASMA? (story 7.25 del arnés, 2026-10-15)
+ * ¿Algún `--files` es un FANTASMA?
  *
  * Fantasma = no está en el disco Y git no lo conoce en `HEAD` del repo que lo contiene. Un archivo que el cambio BORRÓ
- * está en `HEAD`: es legítimo y pasa (la cerca de la revisión adversarial 2026-08-26 sigue en pie). Lo que no está en
+ * está en `HEAD`: es legítimo y pasa. Lo que no está en
  * ningún lado es una lista rota: `--files a.cs,b.cs` en un solo argumento, sin espacios, que `detectarWordSplit` no ve.
- * Caso de un producto del equipo (2026-10-14): con esa entrada `densidadDelDiff` contó 0 líneas, el gate dio LOW y
- * `run:false` sobre un cambio de ~955 líneas, y nada lo dijo. Las rutas absolutas de otro repo se juzgan en SU repo.
+ * Con esa entrada `densidadDelDiff` contaría 0 líneas, el gate daría LOW y
+ * `run:false` sobre un cambio de ~955 líneas, y nada lo diría. Las rutas absolutas de otro repo se juzgan en SU repo.
  * Override consciente: `--allow-missing-files`.
  *
  * @returns {string|null} el mensaje de error, o null si está bien
@@ -4335,15 +4307,15 @@ function archivosFantasma(args) {
 }
 
 function validateFilesExist(args, opts) {
-  // `validarStory` (2026-08-26): los gates `risk-class` / `deep-review-gate` reusan esta
+  // `validarStory`: los gates `risk-class` / `deep-review-gate` reusan esta
   // validación SÓLO por los --files. La rama de --story NO se les aplica: para ellos, una story
-  // ilegible tiene una decisión propia y anterior (Story 4.18, 2026-07-24) — devolver el default
+  // ilegible tiene una decisión propia — devolver el default
   // SEGURO (`run:true` / NORMAL) con el error a la vista, porque un gate que aborta feo es justo
   // lo que empuja al bypass. Acá se respeta esa cerca en vez de pisarla de refilón.
   const validarStory = !opts || opts.validarStory !== false;
   if (args.allowMissingFiles) return null;
-  // FIX verificación adversarial 2026-06-11 (H2): la variante "expansión a CERO args"
-  // (`--files $VAR` con VAR vacía en zsh = empty removal) era el mismo fail-open que la
+  // La variante "expansión a CERO args"
+  // (`--files $VAR` con VAR vacía en zsh = empty removal) es el mismo fail-open que la
   // variante "1 arg fantasma" — set degradado a onlyDocs y expected[] corrupto persistido.
   if (!args.files.length) {
     return (
@@ -4378,10 +4350,10 @@ function validateFilesExist(args, opts) {
   );
 }
 
-// ── pipeline.js dep-gate — gate mecánico de dependencias nuevas (adopción BMAD 2026-07-02) ─
+// ── pipeline.js dep-gate — gate mecánico de dependencias nuevas ─
 // bmad-dev-story HALTea si la implementación agrega dependencias fuera del spec
 // ("new dependencies beyond story specifications → HALT: need user approval"). TYCON no
-// tenía check equivalente: los advisors de seguridad atrapan un paquete VULNERABLE, no un
+// tiene check equivalente: los advisors de seguridad atrapan un paquete VULNERABLE, no un
 // paquete legítimo que nadie aprobó. Corre en Step 4 (post-build): diffea las dependencias
 // AGREGADAS en package.json / *.csproj / Directory.Packages.props vs HEAD contra el texto de
 // la story. Un paquete nuevo cuyo nombre NO aparezca en la story → undeclared → PAUSA HITL.
@@ -4391,8 +4363,8 @@ function computeDepGate({ repo, story }) {
   const { execFileSync } = require('child_process');
   const storyAbs = story ? (path.isAbsolute(story) ? story : path.join(repo, story)) : null;
   const storyText = storyAbs ? readText(storyAbs) : '';
-  // 🔴 Stories de dos repos (2026-10-15): el código —y sus dependencias— pueden vivir en un repo hermano declarado
-  //    (`evidence.companion_repos`). Mirando sólo el repo de la story, un paquete nuevo del hermano no se veía.
+  // 🔴 Stories de dos repos: el código —y sus dependencias— pueden vivir en un repo hermano declarado
+  //    (`evidence.companion_repos`). Mirando sólo el repo de la story, un paquete nuevo del hermano no se vería.
   let raices = [repo];
   let hermanosError = null;
   const hermanosFaltan = [];
@@ -4499,16 +4471,16 @@ function computeDepGate({ repo, story }) {
   };
 }
 
-// ── pipeline.js next-story — auto-discovery de la próxima story (adopción BMAD 2026-07-02) ─
+// ── pipeline.js next-story — auto-discovery de la próxima story ─
 // bmad-dev-story Step 1 lee sprint-status.yaml y encuentra la primera ready-for-dev en orden,
-// con menú de recuperación si no hay ninguna. TYCON exigía pasar el path del spec a mano.
+// con menú de recuperación si no hay ninguna. Esto evita pasar el path del spec a mano.
 // Esto lo automatiza sobre la convención TYCON (specs/stories/N-M-*.md con status: en
 // frontmatter). NO arranca el pipeline — devuelve el path para que el orquestador corra
 // `start --story` (respeta la separación: discovery ≠ mutación).
 // "2-10-foo" → [2, 10]; orden NUMÉRICO (no lexicográfico: "2-10" va después de "2-9").
 // La clave sale de lib/story-discovery.js: el mismo criterio que usa el descubridor para ordenar
-// las stories que encuentra. Estaba escrito dos veces — dos copias de una regla de orden es la
-// versión chiquita del mismo problema que este archivo vino a arreglar.
+// las stories que encuentra. Dos copias de una regla de orden son la
+// versión chiquita del problema que este archivo existe para evitar.
 const { idSortKey: storyIdSortKey } = require('./lib/story-discovery.js');
 const { resolveSessionId, sessionIdFileKey } = require("./lib/session-id.js");
 function cmpStoryId(a, b) {
@@ -4520,10 +4492,10 @@ function cmpStoryId(a, b) {
   }
   return a < b ? -1 : (a > b ? 1 : 0);
 }
-// 2026-08-15 — next-story usa EL MISMO descubridor que el resto del arnés (lib/story-discovery.js).
-// Antes armaba su propia lista con `readdirSync(<repo>/specs/stories)` filtrando por nombre de
-// archivo (`/\d+-\d+/`): en todo repo con otro layout devolvía el error "no existe …/specs/stories"
-// — un repo del equipo entre ellos, donde las stories viven en `specs/bizuit-bpmn-mcp/`. Dos buscadores
+// next-story usa EL MISMO descubridor que el resto del arnés (lib/story-discovery.js).
+// Si armara su propia lista con `readdirSync(<repo>/specs/stories)` filtrando por nombre de
+// archivo (`/\d+-\d+/`): en todo repo con otro layout devolvería el error "no existe …/specs/stories"
+// — por ejemplo, donde las stories viven en `specs/bizuit-bpmn-mcp/`. Dos buscadores
 // distintos es garantía de que arreglar uno deje al otro roto.
 function computeNextStory(args) {
   const { discoverStories, findRepoRoot } = require('./lib/story-discovery.js');
@@ -4594,12 +4566,12 @@ function computeNextStory(args) {
   };
 }
 
-// ── Review Follow-ups persistidos EN la story (adopción BMAD 2026-07-02) ────────
+// ── Review Follow-ups persistidos EN la story ────────
 // La mejor idea de bmad-dev-story: el ciclo dev↔review vive DENTRO del artefacto
 // (su sección "Review Follow-ups (AI)" con checkboxes por severidad) y sobrevive
-// sesiones. En TYCON los findings vivían solo en .advisors/pipeline-runs/ — si el
-// pipeline moría post-Step 6 con un CRITICAL waived o WARNINGs abiertos, la próxima
-// sesión no tenía lista accionable en la story (había que arqueologizar el audit trail).
+// sesiones. Sin esto los findings viven solo en .advisors/pipeline-runs/ — si el
+// pipeline muere post-Step 6 con un CRITICAL waived o WARNINGs abiertos, la próxima
+// sesión no tiene lista accionable en la story (hay que arqueologizar el audit trail).
 // Step 6/7 escribe los no-resueltos acá (write-followups); Step 0/1 los detecta al
 // retomar (followups-status). Solo toca el BODY de la story — NUNCA el frontmatter
 // contractual (esa transición sigue siendo exclusiva del orquestador vía marker.js).
@@ -4660,26 +4632,24 @@ function computeFollowupsStatus(args) {
       : 'Todos los review follow-ups de la story están resueltos.',
   };
 }
-// ── Story 7.2 del arnés (2026-09-16) — los helpers mecánicos que reemplazan lo recortado del cierre ────
-// El cierre de una story soltó lo que relee la evidencia con un modelo (tasks/abogado-del-diablo-porton-
-// 2026-09-16.md). Lo que queda para decidir es mecánico y deja rastro: no lo infiere el orquestador (E.i).
+// ── Los helpers mecánicos del cierre de una story ────
+// El cierre de una story no relee la evidencia con un modelo. Lo que queda para decidir es mecánico y deja rastro: no lo infiere el orquestador (E.i).
 
 // Candidatos a worker: sólo fuentes .NET. `BackgroundService`/`IHostedService` son tipos de .NET: un `.md`, una guía
-// o un `.js` que los NOMBRA —este mismo archivo, que es el más tocado del arnés— no es un worker (revisión de la
-// vuelta 1 de la story 7.2: con la lista amplia, todo cambio a pipeline.js invocaba el checker caro).
+// o un `.js` que los NOMBRA —este mismo archivo, que es el más tocado del arnés— no es un worker (con la
+// lista amplia, todo cambio a pipeline.js invocaría el checker caro).
 const CODIGO_PARA_WORKER = /\.(cs|vb|fs)$/i;
 const TOPE_WORKER_BYTES = 20 * 1024 * 1024;
 const WORKER_RE = /\b(BackgroundService|IHostedService)\b/;
 const TX_RE = /TransactionScope|transacci[oó]n.*(rollback|compensa)/i;
 
-// Una cita en backticks con metacaracteres de regex es un PATRÓN nombrado, no una declaración: la story 7.2
-// escribe `TransactionScope|transacci[oó]n.*(rollback|compensa)` en su propio AC y no es una story con
+// Una cita en backticks con metacaracteres de regex es un PATRÓN nombrado, no una declaración: una story que
+// escribe `TransactionScope|transacci[oó]n.*(rollback|compensa)` en su propio AC no es una story con
 // transacciones. Una mención simple (`TransactionScope`) sigue contando.
 function sinPatronesCitados(linea) {
   // 🔴 Las citas se emparejan DE A DOS, de izquierda a derecha, y después se decide cuáles borrar. Una sola regex
-  // «backtick, algo con metacaracteres, backtick» emparejaba el backtick que CIERRA una cita con el que ABRE la
-  // siguiente y borraba la prosa del medio (con sus `**When**`): transacciones reales quedaban invisibles
-  // (pase adversarial de la vuelta 1: tres stories de Ceibo).
+  // «backtick, algo con metacaracteres, backtick» emparejaría el backtick que CIERRA una cita con el que ABRE la
+  // siguiente y borraría la prosa del medio (con sus `**When**`): transacciones reales quedarían invisibles.
   return linea.replace(/`[^`]*`/g, (cita) => (/[|[\]()*\\]/.test(cita.slice(1, -1)) ? '' : cita));
 }
 
@@ -4730,7 +4700,7 @@ function computeDodCheckerNeeded(args, deps = {}) {
     base = { ref: null, source: null, descartadas: [{ source: 'base', motivo: e.message }] };
   }
   // Lo que la corrida tocó en REPOS COMPAÑEROS (Backend/FrontEnd/Project) no está en el diff de --repo: lo trae el
-  // marcador de la misma story (pase adversarial de la vuelta 1: un worker creado en el backend salía «no invocar»).
+  // marcador de la misma story: un worker creado en el backend saldría «no invocar».
   const deLaCorrida = marcador && Array.isArray(marcador.filesTouched)
     && (!marcador.storyId || String(marcador.storyId) === String(storyId))
     ? marcador.filesTouched.filter((f) => typeof f === 'string' && path.isAbsolute(f) && CODIGO_PARA_WORKER.test(f))
@@ -4742,7 +4712,7 @@ function computeDodCheckerNeeded(args, deps = {}) {
   } else {
     const { spawnSync } = require('child_process');
     // Todo desde la RAÍZ del repo y sin comillas: `ls-files` desde una subcarpeta sólo lista esa subcarpeta, y con
-    // `core.quotePath` por defecto una ruta con tilde sale entre comillas y con escapes (pase adversarial, vuelta 1).
+    // `core.quotePath` por defecto una ruta con tilde sale entre comillas y con escapes.
     const t = spawnSync('git', ['-C', repo, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const top = t.error || t.status !== 0 ? null : t.stdout.trim();
     const git = (argv) => spawnSync('git', ['-C', top || repo, '-c', 'core.quotePath=false', ...argv], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
@@ -4787,12 +4757,12 @@ function leerMarcadorDeLaCorrida() {
 }
 
 /**
- * ¿Quedan deudas abiertas de la story? Reemplaza, en el step 9, a relanzar dos revisores con modelo para
+ * ¿Quedan deudas abiertas de la story? En el step 9 evita relanzar dos revisores con modelo para
  * contestar lo que es un grep: tags `[story-<id>-…]` vivos en `tasks/todo.md` (no tachados ni marcados
  * `[x]`) o tandas del bloque `pipelines:` con `status != done`. `open` en true = hay deuda.
  */
 // Lee la story SIN tragar el error: `readText` devuelve '' ante cualquier falla, y una story ilegible (una carpeta, un
-// permiso) leída como vacía es «sin tandas» → «sin deuda» (silent-failure-hunter, vuelta 2 de la story 7.2).
+// permiso) leída como vacía es «sin tandas» → «sin deuda».
 function leerStoryOError(storyPath) {
   if (!storyPath) return { error: 'falta --story' };
   try { return { texto: fs.readFileSync(storyPath, 'utf8') }; } catch (e) { return { error: `${storyPath}: ${e.code || e.message}` }; }
@@ -4811,10 +4781,10 @@ function computeDeferralsOpen(args) {
   if (exists(todoPath)) {
     let texto;
     try { texto = fs.readFileSync(todoPath, 'utf8'); } catch (e) { return { error: `no pude leer tasks/todo.md (${e.code || e.message}): no se puede afirmar que no haya deuda` }; }
-    // Dos formas reales del tag: con el id tal cual (`[story-4.29-…]`, un repo del equipo) y con guiones (`[story-2-9-…]`,
-    // Ceibo, donde nació ACCOV-C4). En la de guiones, un segmento numérico más es OTRA story (`[story-2-9-1-…]` es
-    // de la 2.9.1). Vivo = no marcado `[x]` y FUERA de todo par `~~…~~` (los pares se quitan de a dos: un `~~` de
-    // cierre anterior no puede tachar el tag — pase adversarial, vuelta 1).
+    // Dos formas del tag: con el id tal cual (`[story-<N.M>-…]`) y con guiones (`[story-<N-M>-…]`,
+    // ACCOV-C4). En la de guiones, un segmento numérico más es OTRA story (`[story-<N-M-K>-…]` es
+    // de la N.M.K). Vivo = no marcado `[x]` y FUERA de todo par `~~…~~` (los pares se quitan de a dos: un `~~` de
+    // cierre anterior no puede tachar el tag).
     const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const formas = [new RegExp(`\\[story-${esc(storyId)}-`)];
     if (storyId.includes('.')) formas.push(new RegExp(`\\[story-${esc(storyId.replace(/\./g, '-'))}-(?!\\d+[-\\]])`));
@@ -4855,9 +4825,9 @@ function writeFollowups(args) {
     merged.push(renderFollowupItem(f, checked));
   }
   // Conservar TODOS los items previos que no vienen en el nuevo set — resueltos [x] (historial)
-  // Y abiertos [ ] (deuda viva). BUG-PIPELINE-005 (2026-07-05): antes se conservaban SOLO los
-  // `it.checked`, así que un follow-up ABIERTO que el advisor deja de reportar (típico de un item
-  // deferred/gated como TEST-W4a, que el advisor no re-flaggea) se dropeaba SILENCIOSAMENTE →
+  // Y abiertos [ ] (deuda viva). Conservar SOLO los
+  // `it.checked` haría que un follow-up ABIERTO que el advisor deja de reportar (típico de un item
+  // deferred/gated como TEST-W4a, que el advisor no re-flaggea) se dropeara SILENCIOSAMENTE →
   // deuda técnica trackeada borrada sin rastro. Un item sale de [ ] SOLO explícitamente: viene en
   // un findings posterior con resolved:true (→ [x]), o un humano lo marca [x] a mano. Nunca por omisión.
   if (parsed) {
@@ -4883,15 +4853,15 @@ function writeFollowups(args) {
   return { wrote: true, story_path: storyPath, total: merged.length, open, resolved: merged.length - open };
 }
 
-// ── findings.json del Step 6 — write determinista + gate de existencia (BUG-PIPELINE-006) ──────
+// ── findings.json del Step 6 — write determinista + gate de existencia ──────
 // El findings.json ({rule_id, severity, advisor, file, disposition, reason}) es el insumo
 // machine-parseable del retrospective-capturer (advisor_warnings_per_story / actioned_ratio,
-// determinista sin LLM). Vivía como un WRITE MANUAL del orquestador en Step 6 → se olvidó 4
-// corridas seguidas (1.16-1.22), rompiendo el conteo (regresión vs 1.9-1.15). `write-findings` lo
+// determinista sin LLM). Como WRITE MANUAL del orquestador en Step 6 se olvidaría y rompería el conteo.
+// `write-findings` lo
 // vuelve una llamada de script validada + ubicada sola; `findings-status` lo enforcea como
 // pre-condición mecánica de Step 8 (exit 3 si falta → el orquestador lo escribe antes del commit).
 const VALID_SEVERITY = new Set(['CRITICAL', 'WARNING']);
-// 'refuted' (2026-08-27, propuesta FINDINGS-DISPOSITION-FALSE-POSITIVE-1): hallazgo reportado,
+// 'refuted': hallazgo reportado,
 // investigado y RETIRADO por falso (típicamente por el propio advisor). No es 'fixed' (no hubo
 // arreglo) ni 'open' (no queda deuda). Exige reason con la refutación — sin reason degrada a
 // 'open' con warning, porque un "es falso" sin evidencia es indistinguible de un "no lo miré".
@@ -4913,10 +4883,10 @@ function runDirKey(storyId, storyPath) {
 // Resuelve el dir de la corrida: el más reciente `<clave>-*` (o exactamente `<clave>`, o
 // `story-<clave>-*`) bajo <repo>/.advisors/pipeline-runs/. Con create=true y ninguno → crea
 // `<clave>-<UTC-stamp>`. Sin create y ninguno → null.
-// La clave es la de la evidencia (story 1.17.1, `lib/evidence-key.js`): el número solo si es único en el repo de la
+// La clave es la de la evidencia (`lib/evidence-key.js`): el número solo si es único en el repo de la
 // story, `<tema>__<número>` si se repite. Con número repetido, otra story del mismo número tiene SU carpeta y retomar
-// por el número elegía la más nueva de las dos. Sin `storyPath` (quien sólo tiene el número) es el número, como
-// siempre. Con `storyPath` y sin poder calcular la clave → null: no se elige ni se crea una carpeta a ciegas.
+// por el número elegiría la más nueva de las dos. Sin `storyPath` (quien sólo tiene el número) es el número.
+// Con `storyPath` y sin poder calcular la clave → null: no se elige ni se crea una carpeta a ciegas.
 function resolveRunDir(repo, storyId, create, storyPath) {
   const runsBase = path.join(repo, '.advisors', 'pipeline-runs');
   const { key } = runDirKey(storyId, storyPath);
@@ -4932,7 +4902,7 @@ function resolveRunDir(repo, storyId, create, storyPath) {
   if (names.length) {
     // Puntuar por [tiene-archivos, mtime del archivo interno más reciente] — así un dir vacío/stray
     // (ej. creado por un `mkdir` accidental con RUNDIR sin resolver) PIERDE contra el dir que tiene
-    // los reportes reales del run. Sin esto, "el dir con mtime más nuevo" elegía la carpeta equivocada.
+    // los reportes reales del run. Sin esto, "el dir con mtime más nuevo" elegiría la carpeta equivocada.
     let best = null; let bestHas = -1; let bestM = -1;
     for (const n of names) {
       const p = path.join(runsBase, n);
@@ -5087,7 +5057,7 @@ function rethinkGate(args) {
   // Una vuelta es un número de iteración que llegó a lanzar revisores (la foto que el arnés toma al lanzar el último).
   // Pedir de nuevo el set de la última vuelta servida, sin que se haya lanzado, es la MISMA vuelta; con sus revisores
   // lanzados, pedirla otra vez es una vuelta nueva: max(declarada, marcador, última servida + 1). Sin marcador con la story
-  // no hay fotos que mirar: ahí cada pedido es una vuelta nueva, como antes, para que repetir no esquive la nota.
+  // no hay fotos que mirar: ahí cada pedido es una vuelta nueva, para que repetir no esquive la nota.
   const rr = require('./lib/review-rounds.js');
   const ultimaLanzada = servidas.last > 0 && (!marcadorConStory || rr.lanzada(marcador, servidas.last));
   const iter = servidas.last > 0 ? Math.max(pedida, ultimaLanzada ? servidas.last + 1 : servidas.last) : pedida;
@@ -5126,16 +5096,15 @@ function rethinkGate(args) {
   return null;
 }
 
-// ── El firmante de un hallazgo se ELIGE, no se tipea (story 7.13, 2026-09-22) ──────────────────
-// El nombre del revisor se escribía en DOS lados con dos criterios: el roster lo proyecta un hook
-// desde el ledger de spawns (id pelado, kebab-case) y el `advisor` de acá lo tipeaba el orquestador
-// con la vuelta o el modelo pegados (`tycon-silent-failure-hunter (iter 3)`). El cruce comparaba
-// esos dos textos letra por letra: que coincidan era suerte, y la suerte se agotó cinco veces en el
-// Un pull request de un producto del equipo — cuatro de los cinco hallazgos del portón eran del propio control — guides/maintaining/incident-log.md#case-reviewer-name-mismatch-2026-09-22.
+// ── El firmante de un hallazgo se ELIGE, no se tipea ──────────────────
+// El nombre del revisor se escribe en DOS lados con dos criterios: el roster lo proyecta un hook
+// desde el ledger de spawns (id pelado, kebab-case) y el `advisor` de acá lo tipea el orquestador
+// con la vuelta o el modelo pegados (`tycon-silent-failure-hunter (iter 3)`). Si el cruce comparara
+// esos dos textos letra por letra, que coincidan sería suerte, y la suerte se agota.
 //
-// El arreglo va del lado de QUIEN ESCRIBE, no de quien compara: acá el id se valida contra los
+// Se resuelve del lado de QUIEN ESCRIBE, no de quien compara: acá el id se valida contra los
 // revisores que ESA corrida tuvo, la anotación se muda a campos propios, y el hallazgo queda con su
-// tramo. Perseguir cada adorno nuevo con una regex más en el cruce era el camino opuesto.
+// tramo. Perseguir cada adorno nuevo con una regex más en el cruce es el camino opuesto.
 // Es la misma familia que `severity` y `disposition` dos funciones más arriba: vocabulario cerrado,
 // y cuando no se puede decidir, se DICE.
 function resolverFirmante(crudo, roster) {
@@ -5213,14 +5182,14 @@ function normalizeFindingRecord(raw, warnings, ctx) {
   let severity = String(raw.severity || 'WARNING').toUpperCase().trim();
   if (!VALID_SEVERITY.has(severity)) severity = 'WARNING';
   let disposition = String(raw.disposition || 'open').toLowerCase().trim();
-  // Sinónimos de «refuted» (2026-09-10, propuesta MECH-CHECK-CONFIRMED-FALSE-POSITIVE-NOT-REFUTED-1):
+  // Sinónimos de «refuted»:
   // el orquestador escribe naturalmente «false-positive» cuando un CRITICAL de mech-check lo
-  // refuta el advisor especializado (caso 2.15: ACCOV-C1 sobre una suite bash). Sin el alias, se
-  // coaccionaba a 'open' con un aviso que nadie lee y la story quedaba con deuda fantasma.
+  // refuta el advisor especializado (p.ej. ACCOV-C1 sobre una suite bash). Sin el alias, se
+  // coaccionaría a 'open' con un aviso que nadie lee y la story quedaría con deuda fantasma.
   if (DISPOSITION_ALIAS[disposition]) disposition = DISPOSITION_ALIAS[disposition];
   if (!VALID_DISPOSITION.has(disposition)) {
-    // Antes esto aplanaba EN SILENCIO (caso real 1.24: 'refuted' → 'open' sin aviso, y el falso
-    // positivo quedó contando como deuda no accionada). Ahora se coacciona igual, pero se DICE.
+    // Aplanar EN SILENCIO ('refuted' → 'open' sin aviso) dejaría al falso
+    // positivo contando como deuda no accionada. Se coacciona igual, pero se DICE.
     if (Array.isArray(warnings)) warnings.push(`disposition desconocida '${disposition}' en ${raw.rule_id || raw.ruleId || raw.rule || '?'} → coaccionada a 'open'. Válidas: ${[...VALID_DISPOSITION].join('/')}`);
     disposition = 'open';
   }
@@ -5250,14 +5219,14 @@ function normalizeFindingRecord(raw, warnings, ctx) {
   }
   if (!crudo && Array.isArray(warnings)) {
     // Un hallazgo SIN firmante no es un firmante inválido (no hay nada contra qué validar), pero
-    // tampoco es un hallazgo completo: no se sabe quién lo vio. Atravesaba la validación nueva sin
-    // decir una palabra — lo cazó el revisor de fallos silenciosos. Avisa y no frena: hay
+    // tampoco es un hallazgo completo: no se sabe quién lo vio. Atravesaría la validación sin
+    // decir una palabra. Avisa y no frena: hay
     // llamadores legítimos que escriben hallazgos sin `advisor`.
     warnings.push(`${ruleId} no dice quién lo encontró (\`advisor\` vacío): queda sin firmante. `
       + 'El firmante se elige de los revisores que corrieron o de las fuentes propias del pipeline.');
   }
   if (ctx && ctx.roster && !firmante.tramo && crudo) {
-    // Firmante que esta corrida no tuvo. Es el AC 1: se FRENA y se dice con qué se puede firmar.
+    // Firmante que esta corrida no tuvo. Se FRENA y se dice con qué se puede firmar.
     const v = require('./lib/review-roster.js').firmantesValidos(ctx.roster);
     ctx.errores.push(
       `firmante desconocido '${crudo}' en ${ruleId}: esta corrida no lo tuvo. `
@@ -5293,7 +5262,7 @@ function normalizeFindingRecord(raw, warnings, ctx) {
 
 // write-findings: escribe (validado) el findings.json del Step 6 en el run dir. Input via --findings
 // (archivo JSON o '-' = stdin). Tolera el shape {ruleId|rule} y normaliza severity/disposition.
-// ── La constancia de los revisores viaja al repo de la STORY (2026-09-05, un producto del equipo — guides/maintaining/incident-log.md#evidencia-en-otro-repo-2026-09-05) ────────────────
+// ── La constancia de los revisores viaja al repo de la STORY ────────────────
 // El run dir (`.advisors/pipeline-runs/<story>-<sello>/`) nace en el repo donde CORRE el pipeline
 // —el del código—, y es pesado (reportes de cada advisor). Pero el portón de CI exige, para pasar
 // una story a `done`, que en el repo de la STORY exista ese run dir con `review-roster.json`
@@ -5316,10 +5285,10 @@ function projectRunToStoryRepo(runDir, storyPath) {
       const src = path.join(runDir, f);
       if (!fs.existsSync(src)) continue;
       if (f === 'review-roster.json') {
-        // 🔴 El roster proyectado dice DE DÓNDE viene (2026-09-05): el freno local del repo de la
+        // 🔴 El roster proyectado dice DE DÓNDE viene: el freno local del repo de la
         // story cruza el roster contra el ledger de spawns filtrando por repo, y los spawns están
-        // estampados con el repo del CÓDIGO. Sin esta anotación daba `sin-testigo` con el testigo
-        // en la misma máquina, bajo el otro repo (lo reprodujo la revisión adversarial).
+        // estampados con el repo del CÓDIGO. Sin esta anotación daría `sin-testigo` con el testigo
+        // en la misma máquina, bajo el otro repo.
         const roster = JSON.parse(fs.readFileSync(src, 'utf8'));
         roster.projected_from = { repo: runRepo || path.dirname(path.dirname(path.dirname(runDir))), run_dir: runDir };
         fs.writeFileSync(path.join(dest, f), `${JSON.stringify(roster, null, 2)}\n`, 'utf8');
@@ -5424,7 +5393,7 @@ function writeFindings(args) {
   }
   const outPath = path.join(runDir, 'findings.json');
   fs.writeFileSync(outPath, JSON.stringify(records, null, 2) + '\n', 'utf8');
-  // Story en otro repo → el portón de CI de ESE repo va a pedir esta constancia (2026-09-05).
+  // Story en otro repo → el portón de CI de ESE repo va a pedir esta constancia.
   const proyeccion = projectRunToStoryRepo(runDir, args.story);
   // La tasa de falsas alarmas por revisor (últimas 20 corridas del repo): sólo cuentan los «falsos» que un verificador
   // confirmó. Marcar no apaga a nadie; lo decide una persona.
@@ -5591,14 +5560,14 @@ function recordRefutation(args) {
       : "El verificador reprodujo el hallazgo: queda 'fixed' (con su prueba) u 'open'; 'refuted' y 'waived' se rechazan." };
 }
 
-// findings-status: pre-condición mecánica de Step 8 (BUG-PIPELINE-006). ¿El run tiene findings.json válido?
+// findings-status: pre-condición mecánica de Step 8. ¿El run tiene findings.json válido?
 function computeFindingsStatus(args) {
   const storyId = deriveStoryId(args.story);
   if (!storyId) return { error: `--story inválido o sin frontmatter: ${args.story}` };
   const runDir = args.runDir || resolveRunDir(args.repo, storyId, false, args.story);
   const sinClave = !runDir && !args.runDir ? runDirKey(storyId, args.story).error : null;
   if (sinClave) {
-    // «No pude calcular dónde buscar» no es «no hay carpeta»: el motivo se dice (pase de fallos silenciosos, 1.17.1).
+    // «No pude calcular dónde buscar» no es «no hay carpeta»: el motivo se dice.
     return { exists: false, valid: false, story_id: storyId, run_dir: null, key_error: sinClave,
       note: `⚠️ No pude calcular la clave de la carpeta de corrida de ${storyId}: ${sinClave}. No es «falta el findings.json»: es «no sé dónde mirar».` };
   }
@@ -5652,8 +5621,8 @@ function readabilityBrief({ scope = 'guide', opts } = {}) {
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
-  // AUTONOMY-DEFAULT-ON (2026-06-23, decisión DevA): el modo autónomo Nivel 1 viene PRENDIDO por
-  // default tras verificar el freno (test-stop-dod-gate.sh 15/15 + contrato Stop-hook validado).
+  // El modo autónomo Nivel 1 viene PRENDIDO por
+  // default: el freno lo cubre test-stop-dod-gate.sh.
   const a = { repo: process.cwd(), story: null, files: [], filesDeclarado: false, ran: [], iter: 1, forceFullReloop: false, storyPath: null, targetStatus: null, targetPipelineDone: null, costTier: null, trustRan: false, autonomous: true, allowMissingFiles: false, specsDir: null, findings: null, runDir: null, deepReview: false, noDeepReview: false, deepReviewOpus: false, deepReviewFable: false, ultracode: false, changed: [] };
   for (let i = 0; i < argv.length; i++) {
     const t = argv[i];
@@ -5669,7 +5638,7 @@ function parseArgs(argv) {
     else if (t === '--cost-tier') a.costTier = argv[++i];
     else if (t === '--trust-ran') a.trustRan = true;
     else if (t === '--autonomous') a.autonomous = true;
-    else if (t === '--no-autonomous') a.autonomous = false;   // opt-out por corrida (default ahora es ON)
+    else if (t === '--no-autonomous') a.autonomous = false;   // opt-out por corrida (default es ON)
     else if (t === '--allow-missing-files') a.allowMissingFiles = true;
     else if (t === '--session') a.session = argv[++i];   // cost-report
     else if (t === '--limit') a.limit = argv[++i];       // cost-report
@@ -5686,19 +5655,19 @@ function parseArgs(argv) {
     else if (t === '--deep-review') a.deepReview = true;           // fuerza ON el step-05b (aun en LOW)
     else if (t === '--no-deep-review') a.noDeepReview = true;      // fuerza OFF el step-05b
     else if (t === '--deep-review-opus') a.deepReviewOpus = true;  // hunters/verifiers en Opus (default sonnet)
-    else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user (2026-07-06)
+    else if (t === '--deep-review-fable') a.deepReviewFable = true; // hunters en Fable — SOLO con autorización explícita del user
     else if (t === '--ultracode') a.ultracode = true;             // el orquestador lo pasa si ultracode está ON
-    else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero (story 7.10)
-    else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión (story 7.29)
-    else if (t === '--run-dir') a.runDir = argv[++i];
+    else if (t === '--brief') a.breve = true;                      // start: salida recortada + ruta del JSON entero
+    else if (t === '--session-model') a.sessionModel = argv[++i] ?? '';   // start / model-hint: el modelo de la sesión
+    else if (t === '--run-dir') a.runDir = argv[++i];              // write-findings/findings-status: dir de la corrida (default: auto-resolve)
     else if (t === '--extra-round') a.extraRound = true;          // smart-reloop / advisors: la vuelta más allá del tope que autoriza una persona
     else if (t === '--approved-by') a.approvedBy = argv[++i];     // con --extra-round: quién la autorizó
     else if (t === '--quote') a.quote = argv[++i];                // con --extra-round: sus palabras, textuales
-    else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff (story 7.2)
-    else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla (story 7.24); sin valor no es «sin --scope»
-    else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas (story 7.2)             // write-findings/findings-status: dir de la corrida (default: auto-resolve)
+    else if (t === '--base') a.base = argv[++i];                  // dod-checker-needed: base explícita del diff
+    else if (t === '--scope') a.scope = argv[++i] ?? '';          // qa-readability: `ui` = la revisión de la pantalla; sin valor no es «sin --scope»
+    else if (t === '--marks') a.marcas = argv[++i];               // qa-readability: marcas resueltas
     // e2e-config: archivos que la entrega tocó (repo-relativos) para elegir qué apps del
-    // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c` (Story QA-1).
+    // monorepo ejerce el gate. Admite `--changed a b c` y `--changed a,b,c`.
     else if (t === '--changed') {
       while (argv[i + 1] && !argv[i + 1].startsWith('--')) {
         a.changed.push(...String(argv[++i]).split(',').map((s) => s.trim()).filter(Boolean));
@@ -5710,7 +5679,7 @@ function parseArgs(argv) {
   // Kill-switch global del modo autónomo sin editar código (gana sobre cualquier flag):
   // export TYCON_PIPELINE_NO_AUTONOMOUS=1 → todas las corridas vuelven a HITL puro.
   if (process.env.TYCON_PIPELINE_NO_AUTONOMOUS === '1') a.autonomous = false;
-  // COST-1: tier puede venir por flag --cost-tier O por env var TYCON_PIPELINE_COST_TIER.
+  // El tier puede venir por flag --cost-tier O por env var TYCON_PIPELINE_COST_TIER.
   // Flag gana sobre env. Valores válidos: lean | standard | deep. Cualquier otro → ignorado (null).
   if (!a.costTier && process.env.TYCON_PIPELINE_COST_TIER) {
     const env = String(process.env.TYCON_PIPELINE_COST_TIER).toLowerCase().trim();
@@ -5749,17 +5718,17 @@ function main() {
   }
 
   if (cmd === 'advisors') {
-    // FIX auditoría 2026-06-11: files fantasma (shell quoting roto) degradaban el set
-    // a onlyDocs y PERSISTÍAN un expected[] corrupto. Abort explícito, no fail-open.
+    // Files fantasma (shell quoting roto) degradarían el set
+    // a onlyDocs y PERSISTIRÍAN un expected[] corrupto. Abort explícito, no fail-open.
     // 🔴 La vuelta 3 en adelante pide su nota también por acá: `advisors --iter N` devuelve el set completo y es el
-    // fallback del re-loop; sin este freno la nota se esquivaba pidiendo el set por este camino.
+    // fallback del re-loop; sin este freno la nota se esquivaría pidiendo el set por este camino.
     // El freno corre DESPUÉS de las validaciones propias del comando: sus errores salen como siempre.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
     if (rethinkBlock) { process.stderr.write(rethinkBlock); process.exit(3); }
     const set = computeAdvisorSet(args);
-    // MECH-2: descuento automático de advisors cubiertos por mech-check (coherente
+    // Descuento automático de advisors cubiertos por mech-check (coherente
     // con el expected[] que se persiste abajo — check-count valida contra el set
     // YA descontado, así el orquestador no spawnea LLMs para checks que corren gratis).
     const disc = computeMechDiscount(set.all, args);
@@ -5774,41 +5743,41 @@ function main() {
       set.mech_findings = disc.mech_findings;
       set.mech_note = `⚠️ ${disc.mech_findings.length} finding(s) mecánicos CONFIRMADOS (mech-check) — van DIRECTO al reporte consolidado.`;
     }
-    // COST-1: enriquecer con model_hints solo si el caller pidió un tier opt-in.
-    // Default (tier=null o 'standard'): output IDÉNTICO al previo (zero regresión).
+    // Enriquecer con model_hints solo si el caller pidió un tier opt-in.
+    // Default (tier=null o 'standard'): output sin model_hints (zero regresión).
     const hints = modelHintsForSet({ all: set.all, tier: args.costTier });
     if (hints) {
       set.model_hints = hints;
       set.cost_tier = args.costTier;
     }
-    // FIX auditoría 2026-06-11: re-loop invocado vía `advisors --iter N>1` (el
-    // fallback típico cuando smart-reloop no aplica) ahora TAMBIÉN baja los tier
-    // deep a sonnet — antes este path corría spec-first/sibling a Opus pleno.
+    // Re-loop invocado vía `advisors --iter N>1` (el
+    // fallback típico cuando smart-reloop no aplica) TAMBIÉN baja los tier
+    // deep a sonnet — si no, este path correría spec-first/sibling a Opus pleno.
     const rHints = reloopHintsFor(set.all, args.iter, args.costTier);
     if (rHints) {
       set.reloop_model_hints = rHints;
       set.reloop_model_hints_note = 'tier deep (Opus) → sonnet en re-loop: el juicio de scope grande ya corrió en iter 1; ignorá el hint SOLO si el delta toca specs.';
     }
-    // story 7.29: con la configuración de la organización o un pedido de la corrida, un modelo por revisor
-    // (`reviewer_models`) en lugar de los campos de hoy. La decisión del validador de abajo puede sumar uno: se completa.
+    // Con la configuración de la organización o un pedido de la corrida, un modelo por revisor
+    // (`reviewer_models`) en lugar de `model_hints`. La decisión del validador de abajo puede sumar uno: se completa.
     const conModelos = conModelosDeLaCorrida(args);
     const avisosModelos = aplicarModelosDeRevisores(set, set.all, conModelos);
-    // Contexto compartido (auditoría 2026-06-09): UN artefacto por iteración con
+    // Contexto compartido: UN artefacto por iteración con
     // digest de story + file list + hunks. Los advisors lo reciben como input
     // primario en vez de re-leer story completa + re-correr git diff cada uno.
     const ctx = buildAdvisorContext({ repo: args.repo, story: args.story, files: args.files, iter: args.iter });
-    // story 7.5 — el estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
+    // El estado de la sección «Reglas para revisores» del repo (el orquestador avisa al
     // dev en una línea si no está `presente`; nunca frena — step-05 §Reglas del repo).
     set.reglas_revisores = resumenReglas(ctx && ctx.reglas ? ctx.reglas : reglasRevisores(args.repo));
     if (ctx) {
       set.context_file = ctx.context_file;
       // Overrides por advisor: si un advisor figura acá, se le pasa ESTE archivo en vez del
-      // compartido (hoy sólo `tycon-story-validator` — ver comentario en buildAdvisorContext).
+      // compartido (sólo `tycon-story-validator` — ver comentario en buildAdvisorContext).
       set.context_file_overrides = ctx.overrides;
     }
-    // Regla de batcheo (máquina dev 8c/16GB): ventana deslizante de ≤4 vivos (2026-07-30).
+    // Regla de batcheo (máquina dev 8c/16GB): ventana deslizante de ≤4 vivos.
     set.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB). Al llegar la notificación de que uno terminó, lanzar el siguiente del set en ese turno — no esperar a que termine el grupo entero. NUNCA lanzar el set completo en un solo mensaje paralelo si supera 4. ⚠️ Si el pase adversarial 5b fue lanzado en el Step 4 y sigue en vuelo, el cap baja a 2 — este string no conoce ese estado: el step-05 §Cap reducido manda. Avisos al dev agrupados por hito (mitad del set y set completo), no por advisor.';
-    // story 7.3 — el validador de stories en los re-loops: se decide ANTES de persistir el expected.
+    // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(set, 'all', args);
     if (set.reviewer_models) {
       const faltan = set.all.filter((r) => !set.reviewer_models[r]);
@@ -5823,12 +5792,12 @@ function main() {
     // set: el descuento mecánico de arriba no mira el tamaño).
     aplicarTamanoALosRevisores(set, { ...args, runSize: runSizeDelMarcador(args.story) });
     decirModelos(set, conModelos.orgModels, avisosModelos);
-    logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // CF-2 + expected persistido (post-descuento)
+    logStep5Start(set.all, { mode: 'advisors', iter: args.iter }); // expected persistido (post-descuento)
     salidaGrande(JSON.stringify(set, null, 2) + '\n', 0);
     return;
   }
 
-  // story 8.2 — los revisores de validación del paso 1 salen de acá, no de la prosa del step.
+  // Los revisores de validación del paso 1 salen de acá, no de la prosa del step.
   //   node pipeline.js validators --story <spec.md> --repo <dir>
   //     → { validadores: ['tycon-story-validator', ...], lanzamientos: [{agente, paquete, modelo, prompt, nota}], packs }
   // siblings — los hermanos declarados de los paquetes activos en el repo, en su ruta esperada (para el revisor que no
@@ -5855,7 +5824,7 @@ function main() {
     return;
   }
 
-  // SPEED-1 (2026-05-27) — smart re-loop de advisors en iter N>1.
+  // Smart re-loop de advisors en iter N>1.
   // Usage:
   //   node pipeline.js smart-reloop --iter 2 --repo <r> --story <s> --files a.cs b.tsx
   //     → JSON con { rerun: [...], skipped: [{name, reason}], delta_files }.
@@ -5872,8 +5841,8 @@ function main() {
   if (cmd === 'smart-reloop') {
     // Desde la tercera vuelta (y en cada una de las siguientes) hace falta la nota de «repensar el enfoque» de ESA vuelta,
     // también con --force-full-reloop. Sin ella no se devuelve ningún set.
-    // FIX auditoría 2026-06-11: misma validación que `advisors` — files fantasma
-    // corrompían el recompute de force-full-reloop (devolvió 3 en vez de 13 en 9.4).
+    // Misma validación que `advisors` — files fantasma
+    // corromperían el recompute de force-full-reloop.
     const filesErr = validateFilesExist(args);
     if (filesErr) { process.stderr.write(filesErr); process.exit(2); }
     const rethinkBlock = rethinkGate(args);
@@ -5881,7 +5850,7 @@ function main() {
     const conModelos = conModelosDeLaCorrida(args);
     const result = computeSmartReloop(conModelos);
     const avisosModelos = result._avisos || [];
-    // MECH-2: el descuento aplica también al subset rerun del re-loop.
+    // El descuento aplica también al subset rerun del re-loop.
     const disc = computeMechDiscount(result.rerun, args);
     if (disc && disc.discounted.length) {
       if (result.reviewer_models) for (const d of disc.discounted) delete result.reviewer_models[d.name];
@@ -5903,8 +5872,8 @@ function main() {
     }
     result.batch_rule = 'Ventana deslizante: MÁXIMO 4 subagentes VIVOS a la vez (máquina 8c/16GB); reponer el slot al llegar cada notificación de término. ⚠️ Cap 2 si el pase adversarial 5b sigue en vuelo (el step-05 §Cap reducido manda).';
     // expected = el SUBSET legítimo de esta iteración (rerun) — check-count valida
-    // contra esto, no contra el set completo (fix incoherencia smart-reloop↔check-count).
-    // story 7.3 — el validador de stories en los re-loops: se decide ANTES de persistir el expected.
+    // contra esto, no contra el set completo.
+    // El validador de stories en los re-loops: se decide ANTES de persistir el expected.
     aplicarDecisionValidador(result, 'rerun', args);
     if (result.reviewer_models) {
       // el validador de stories puede entrar o salir en la decisión de arriba: el modelo va para cada uno del rerun
@@ -5922,7 +5891,7 @@ function main() {
     return;
   }
 
-  // SPEED-2 (2026-05-27) — pre-flight hook validation (anti-retry).
+  // Pre-flight hook validation (anti-retry).
   // Usage:
   //   node pipeline.js preflight-frontmatter --story-path <spec.md> --target-status done
   //   node pipeline.js preflight-frontmatter --story-path <spec.md> --target-pipeline-done A-backend
@@ -5938,9 +5907,9 @@ function main() {
 
   if (cmd === 'check-count') {
     const state = advisorsRunSinceStart();
-    // Expected (auditoría 2026-06-09): el set persistido en el step5-start de ESTA
+    // Expected: el set persistido en el step5-start de ESTA
     // iteración — en smart-reloop legítimo es el subset `rerun`, así el gate y
-    // SPEED-1 dejan de anularse mutuamente. Fallback: recomputar set completo
+    // el smart-reloop no se anulan mutuamente. Fallback: recomputar set completo
     // (corridas viejas sin expected en el log).
     let expected;
     let expectedSource;
@@ -5949,20 +5918,20 @@ function main() {
       expectedSource = 'expected persistido en step5-start (coherente con smart-reloop)';
     } else if (state.sawStart && Array.isArray(state.expected) && state.expected.length === 0) {
       // Set VACÍO persistido (mech-check sin advisors aplicables): no hay nada que correr → OK, sin
-      // recompute. Antes caía al recompute y al fail-closed "CERO spawns" (hallazgo H6, review 2026-08-19).
+      // recompute: caer al recompute daría el fail-closed "CERO spawns".
       expected = [];
       expectedSource = 'set esperado VACÍO persistido en step5-start (mech-check: ningún advisor aplicable)';
     } else {
       // Fallback recompute — aplicar el MISMO descuento mech que advisors/smart-reloop
-      // (fix verificación adversarial 2026-06-11: sin esto, el fallback exigía advisors
+      // (sin esto, el fallback exigiría advisors
       // que el orquestador legítimamente no spawneó por descuento → exit 2 falso).
       const recomputed = computeAdvisorSet(args);
       const disc = computeMechDiscount(recomputed.all, args);
       expected = (disc && disc.discounted.length) ? disc.kept : recomputed.all;
       expectedSource = 'recomputado (step5-start sin expected — corrida pre-upgrade o log ausente)' +
         ((disc && disc.discounted.length) ? ` con descuento mech aplicado (${disc.discounted.map((d) => d.name).join(', ')})` : '');
-      // Story 7.3 (pase adversarial 2026-09-17): el mismo descuento del validador que aplicó el re-loop —sin él,
-      // el recálculo exigía al validador que el re-loop soltó y daba un rojo falso—. Sin anotar: no es una decisión nueva.
+      // El mismo descuento del validador que aplicó el re-loop —sin él,
+      // el recálculo exigiría al validador que el re-loop soltó y daría un rojo falso—. Sin anotar: no es una decisión nueva.
       const conValidador = { all: expected };
       aplicarDecisionValidador(conValidador, 'all', args, { anotar: false });
       if (conValidador.all.length !== expected.length) {
@@ -5982,9 +5951,9 @@ function main() {
       ran = [];
       source = 'set esperado vacío — nada que correr';
     } else if (state.ran.length === 0) {
-      // FAIL-CLOSED (auditoría 2026-06-09): pipeline.js corrió (hay step5-start) pero
+      // FAIL-CLOSED: pipeline.js corrió (hay step5-start) pero
       // el hook on-advisor-run.js no registró NINGÚN spawn. El fallback silencioso al
-      // --ran reabrió CF-2 en producción (sesión real: 6 step5-start, 0 spawns, todo
+      // --ran dejaría pasar un set sin spawns (ej.: 6 step5-start, 0 spawns, todo
       // "pasó"). Override consciente: --trust-ran (queda en el output, auditable).
       if (args.trustRan && args.ran.length) {
         ran = args.ran;
@@ -6040,9 +6009,9 @@ function main() {
     process.exit(0);
   }
 
-  // ── lint-config — la superficie de config, revisada sin modelo (FIX-4(c), 2026-08-25) ────────
-  // Cambiar `.tycon/advisors.yaml` cambia qué frenos corren y sobre qué, y hasta hoy nada la
-  // miraba. Determinístico, ~50ms, cero tokens, y AVISA: un lint de config que frena commits se
+  // ── lint-config — la superficie de config, revisada sin modelo ────────
+  // Cambiar `.tycon/advisors.yaml` cambia qué frenos corren y sobre qué, y nada la
+  // mira más que este lint. Determinístico, ~50ms, cero tokens, y AVISA: un lint de config que frena commits se
   // apaga en una semana y se lleva puestos los casos donde sí importaba.
   // Uso: pipeline.js lint-config [--repo <path>] [--json] [--strict]
   if (cmd === 'lint-config') {
@@ -6085,9 +6054,9 @@ function main() {
     process.exit(args.strict ? 1 : 0);
   }
 
-  // ── ¿Corrieron los revisores de la story X? (2026-08-25, Tema 2) ─────────────
+  // ── ¿Corrieron los revisores de la story X? ─────────────
   // El registro voluntario (gates.log check=advisors) sólo existe si alguien tipeó el comando,
-  // y 142 de sus 149 entradas históricas no tenían repo. Éste lee el registro AUTOMÁTICO —
+  // y muchas de sus entradas no tienen repo. Éste lee el registro AUTOMÁTICO —
   // los spawns REALES que anota on-advisor-run.js, imposibles de falsificar sin desinstalar el
   // hook— en sus dos capas: el detalle vivo (7 días) y el resumen durable (para siempre).
   // Uso: pipeline.js advisor-runs [--story X] [--repo /ruta] [--days N] [--json]
@@ -6136,9 +6105,9 @@ function main() {
     process.exit(0);
   }
 
-  // ── H17 §5 incremental + Nivel 2 + Fase 0 (auditoría 2026-06-09) ─────────────
+  // ── Máquina de estados incremental + Nivel 2 + instrumentación ─────────────
   if (cmd === 'next') {
-    // story 7.19 (AC 7): si este comando trae el interruptor del temprano explícito, queda para la corrida —en una
+    // Si este comando trae el interruptor del temprano explícito, queda para la corrida —en una
     // sesión de agente el entorno no pasa de un comando al siguiente—. Lo anota marker.js; sin corrida, nada.
     if (process.env.TYCON_5B_EARLY === '0' || process.env.TYCON_5B_EARLY === '1') {
       try {
@@ -6151,7 +6120,7 @@ function main() {
       }
     }
     const result = computeNext();
-    // story 2.7: consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
+    // Consultar `next` es el momento en que el orquestador ARRANCA ese paso — se anota la
     // hora. Lo escribe marker.js (un solo escritor del marker); él decide no mover un arranque ya
     // anotado ni arrancar un paso completo. Los sub-pasos (0b/0c/5b/7c) también: su trabajo no puede
     // caer como «tiempo entre pasos». Best-effort: medir nunca puede romper la consulta.
@@ -6171,29 +6140,29 @@ function main() {
     decirModelos(result, conModelos.orgModels, (result.model_hint && result.model_hint._avisos) || []);
     const salida = args.breve ? recortarStart(result) : result;
     process.stdout.write(JSON.stringify(salida, null, 2) + '\n');
-    // exitCode y no exit() (story 8.9 del arnés, tanda B3b): con la salida en un pipe, exit() corta lo que todavía no se
-    // escribió. Con un arnés presente el JSON de `start` pasa los ~8 KB y llegaba truncado (large-output.test.js 5 y 8).
+    // exitCode y no exit(): con la salida en un pipe, exit() corta lo que todavía no se
+    // escribió. Con un arnés presente el JSON de `start` pasa los ~8 KB y llegaría truncado (large-output.test.js 5 y 8).
     process.exitCode = result.ready ? 0 : 1;
     return;
   }
   if (cmd === 'risk-class') {
-    // Guarda de aridad/existencia (2026-08-26): sin esto un --files mal expandido cuenta 1
+    // Guarda de aridad/existencia: sin esto un --files mal expandido cuenta 1
     // archivo → LOW → `auto_approve_plan: true` (se saltea el checkpoint del plan) Y skip del
     // 5b, los dos en silencio. Sólo si vino --files: sin el flag, risk-class cae legítimamente
     // al frontmatter de la story (files_to_create/files_to_modify) y no hay nada que validar.
-    // SÓLO la guarda de aridad, no la validación de existencia completa (acotado tras la revisión
-    // adversarial 2026-08-26). Estos dos comandos eran `exit 0` SIEMPRE, y un diff que BORRA
+    // SÓLO la guarda de aridad, no la validación de existencia completa.
+    // Estos dos comandos salen `exit 0` salvo por esta guarda, y un diff que BORRA
     // archivos pasa `--files` con paths que ya no existen — un caso legítimo y frecuente que
-    // `advisors` cubre con `--allow-missing-files` pero que acá no tenía forma de declararse.
+    // `advisors` cubre con `--allow-missing-files` pero que acá no tiene forma de declararse.
     // Abortar por eso sería romper corridas válidas; lo que hay que atajar es el word-split, que
     // es el que produce un LOW falso y apaga dos frenos.
     const wsErr = detectarWordSplit(args);
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
-    // Story 7.25: tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
+    // Tampoco un archivo que no está ni en el disco ni en HEAD (la lista con comas). Un borrado pasa.
     const fantasmaErr = archivosFantasma(args);
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
     const result = computeRiskClass({ ...args, runSize: runSizeDelMarcador(args.story) });
-    // Story 7.30 (decisión 8 del dueño): una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
+    // Una story con pantalla pide aprobar la maqueta aunque el plan se apruebe
     // solo. `computeRiskClass` es pura (no sabe la raíz del repo): la maqueta se suma acá, sin tocar el riesgo.
     if (storyNeedsMockup(args.story)) {
       result.mockup_required = true;
@@ -6203,14 +6172,14 @@ function main() {
     process.exit(0);
   }
   if (cmd === 'tooling-expected') {
-    // PIPE-C9 (2026-07-06): qué tooling ESPERA el pipeline en este repo. El orquestador
+    // PIPE-C9: qué tooling ESPERA el pipeline en este repo. El orquestador
     // cruza contra su harness real y avisa al user si algo esperado no está disponible.
     const result = computeToolingExpected(args.repo);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(0);
   }
   if (cmd === 'model-hint') {
-    // Sugerencia de modelo de SESIÓN por complejidad (2026-07-06). Advisory puro:
+    // Sugerencia de modelo de SESIÓN por complejidad. Advisory puro:
     // exit 0 siempre; el orquestador compara con su propio modelo y sugiere /model.
     const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
     const result = computeModelHint(conModelos);
@@ -6221,17 +6190,17 @@ function main() {
   }
   if (cmd === 'deep-review-gate') {
     // Step 5b: ¿corre el pase adversarial reproduce-or-refute? {run, model, reason}. Gate = risk-class
-    // NORMAL (decisión DevA 2026-07-03) + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
-    // Misma guarda que risk-class (2026-08-26): el default de este gate ES risk-class, así que
+    // NORMAL + overrides. exit 0 siempre (informativo); el orquestador lee `run`.
+    // Misma guarda que risk-class: el default de este gate ES risk-class, así que
     // un --files mal expandido produce un LOW silencioso y sella el 5b como hecho
     // (`deepReviewDone`). Abortar es correcto AUNQUE el comando sea informativo: un veredicto
     // computado sobre entrada rota es peor que no tener veredicto.
     const wsErr = detectarWordSplit(args);   // ídem risk-class: la guarda de aridad…
     if (wsErr) { process.stderr.write(wsErr); process.exit(2); }
-    const fantasmaErr = archivosFantasma(args);   // …y la de archivos fantasma (story 7.25)
+    const fantasmaErr = archivosFantasma(args);   // …y la de archivos fantasma
     if (fantasmaErr) { process.stderr.write(fantasmaErr); process.exit(2); }
-    // story 7.29 (decisión 24): sólo esta rama lee la máquina —la configuración de la organización, el pedido de la
-    // corrida y la clave de la 7.19— y se los pasa al portón; la línea de gates.log y el aviso también salen de acá.
+    // Sólo esta rama lee la máquina —la configuración de la organización, el pedido de la
+    // corrida y la clave de la pregunta del modelo— y se los pasa al portón; la línea de gates.log y el aviso también salen de acá.
     const conModelos = conModelosDeLaCorrida({ ...args, runSize: runSizeDelMarcador(args.story) });
     const pregunta = preguntaDelModelo();
     if (pregunta.aviso) process.stderr.write(`deep-review-gate: ${pregunta.aviso}\n`);
@@ -6248,7 +6217,7 @@ function main() {
       process.stderr.write(`deep-review-gate: ${result.reason}\n`);
       process.exit(2);
     }
-    // story 7.19 (AC 1 y 7): con una corrida activa de ESTA story y el paso 4 cerrado, el veredicto queda anotado
+    // Con una corrida activa de ESTA story y el paso 4 cerrado, el veredicto queda anotado
     // (`adversarialGate`) para que `next` pida el lanzamiento sin recalcular el portón. Lo escribe marker.js (un
     // solo escritor del marker); `computeDeepReviewGate` sigue sin tocarlo. Sin corrida no se anota ni se avisa. El
     // temprano que se imprime es el que vale para la corrida: visto apagado una vez, sigue apagado.
@@ -6291,8 +6260,8 @@ function main() {
     process.exit(result.error ? 1 : 0);
   }
   if (cmd === 'cost-report') {
-    // Termómetro de costo del pipeline (2026-07-28). Lee los logs de spawns reales que
-    // escribe `on-advisor-run.js` y reporta lo que la medición del baseline identificó como
+    // Termómetro de costo del pipeline. Lee los logs de spawns reales que
+    // escribe `on-advisor-run.js` y reporta
     // la palanca real: CUÁNTOS agentes se abren, cuántos son de exploración libre, y en qué
     // fase. NO estima tokens — el dato de tokens por spawn no está en el log; la referencia
     // medida es ~60-100K por spawn, así que el conteo YA es el proxy de costo.
@@ -6318,7 +6287,7 @@ function main() {
         if (ADHOC_SET.has(d.advisor)) {
           s.adhoc++;
           if (!vistoStep5) s.adhoc_pre_step5++;
-          // `model` sólo existe desde el 2026-07-28: en líneas viejas es undefined y NO
+          // `model` no existe en las líneas viejas del log: es undefined y NO
           // se cuenta como "sin model" (sería ruido histórico, no una omisión real).
           if ('model' in d && !d.model) s.sin_model++;
         }
@@ -6397,7 +6366,7 @@ function main() {
     process.exit(0);
   }
   if (cmd === 'evidence-key') {
-    // Con qué CLAVE se nombra la evidencia de esta story (story 1.17): el número solo si es único en su
+    // Con qué CLAVE se nombra la evidencia de esta story: el número solo si es único en su
     // repo, `<tema>__<número>` si se repite. `--json` da además el tema y las stories que comparten número.
     if (!args.story) { process.stderr.write('uso: pipeline.js evidence-key --story <spec.md> [--json]\n'); process.exit(2); }
     try {
@@ -6411,9 +6380,9 @@ function main() {
     }
   }
   if (cmd === 'run-dir') {
-    // La carpeta de la corrida de ESTA story (story 1.17.1): `.advisors/pipeline-runs/<clave>-<sello>/`, la misma que
+    // La carpeta de la corrida de ESTA story: `.advisors/pipeline-runs/<clave>-<sello>/`, la misma que
     // usan el registro de revisores, el findings.json y los frenos. Los pasos del pipeline la piden acá en vez de armar
-    // `<número>-<sello>` a mano: con un número repetido, una corrida quedaba partida en dos carpetas.
+    // `<número>-<sello>` a mano: con un número repetido, una corrida quedaría partida en dos carpetas.
     // Imprime la ruta (exit 0) · sin carpeta y sin --create: exit 3, nada en stdout · sin clave calculable: exit 2 + motivo.
     if (!args.story) { process.stderr.write('uso: pipeline.js run-dir --story <spec.md> [--repo <repo>] [--create]\n'); process.exit(2); }
     const storyId = deriveStoryId(path.resolve(args.story));
@@ -6426,7 +6395,7 @@ function main() {
     process.exit(0);
   }
   if (cmd === 'evidence-dir') {
-    // Dónde va la evidencia de cierre de ESTA story (2026-09-05): el repo git que la contiene,
+    // Dónde va la evidencia de cierre de ESTA story: el repo git que la contiene,
     // aunque el código (y el cwd del pipeline) esté en otro. Es lo que el portón de CI del repo
     // de la story va a buscar. `--plain` imprime sólo la ruta, para meterla en un script.
     if (!args.story) { process.stderr.write('uso: pipeline.js evidence-dir --story <spec.md> [--repo <dir>] [--plain]\n'); process.exit(2); }
@@ -6451,7 +6420,7 @@ function main() {
     // {gate, frontend_dir, frontend_dirs, critical_manifest} con paths absolutos, o {} si el
     // repo no declara gate. Lo consumen step-07c (scoped) y tycon-merge-to-main (critical+full).
     //
-    // Con `--changed <archivos...>` (Story QA-1) agrega `frontend_dirs_selected`: las apps del
+    // Con `--changed <archivos...>` agrega `frontend_dirs_selected`: las apps del
     // monorepo que ESA entrega tocó. Sin el flag, `selected` == todas (fail-safe: correr de más
     // cuesta minutos, correr de menos deja pasar la regresión).
     const cfg = e2eConfig(args.repo);
@@ -6460,7 +6429,7 @@ function main() {
       // El consumidor hace `(selected || [frontend_dir])` y en JS `[] || x` devuelve `[]` (un
       // array vacío es truthy), así que un `selected` vacío NO cae al fallback: el loop del gate
       // itera cero veces y sale 0. Cuando eso pasa es porque la entrega de verdad no tocó
-      // ninguna app — legítimo, pero tiene que ser RUIDOSO, no un verde mudo (QA-1, 2026-08-15).
+      // ninguna app — legítimo, pero tiene que ser RUIDOSO, no un verde mudo.
       if (!cfg.frontend_dirs_selected.length) {
         cfg.warning = 'Ninguna de las apps declaradas fue tocada por los archivos de --changed → ' +
           'el gate E2E no va a correr NADA. Si eso te sorprende, revisá que los paths de --changed ' +
@@ -6471,7 +6440,7 @@ function main() {
     process.exit(0);
   }
 
-  // ── dep-gate — gate mecánico de dependencias nuevas (adopción BMAD 2026-07-02) ─
+  // ── dep-gate — gate mecánico de dependencias nuevas ─
   // Corre en Step 4 (post-build). exit 2 si hay dependencias no declaradas en la story
   // (PAUSA HITL), exit 0 si pass/skip. Ver computeDepGate.
   if (cmd === 'dep-gate') {
@@ -6495,14 +6464,14 @@ function main() {
     process.exit(result.gate === 'pause' ? 2 : 0);
   }
 
-  // ── next-story — auto-discovery de la próxima story ready-for-dev (adopción BMAD) ─
+  // ── next-story — auto-discovery de la próxima story ready-for-dev ─
   if (cmd === 'next-story') {
     const result = computeNextStory(args);
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
 
-  // ── Review Follow-ups persistidos en la story (adopción BMAD 2026-07-02) ────────
+  // ── Review Follow-ups persistidos en la story ────────
   // write-followups: Step 6/7 escribe los findings no resueltos como sección checkbox.
   // followups-status: Step 0/1 detecta los abiertos al retomar.
   if (cmd === 'write-followups') {
@@ -6510,7 +6479,7 @@ function main() {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : 0);
   }
-  // ── findings.json del Step 6 (BUG-PIPELINE-006) ─────────────────────────────────
+  // ── findings.json del Step 6 ─────────────────────────────────
   // write-findings: escribe el artefacto machine-parseable (Step 6). findings-status:
   // pre-condición de Step 8 — exit 3 si falta (para que el orquestador lo escriba).
   if (cmd === 'write-findings') {
@@ -6535,7 +6504,7 @@ function main() {
     process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     process.exit(result.error ? 1 : (result.exists && result.valid ? 0 : 3));
   }
-  // ── Story 7.2 del arnés: los helpers mecánicos del cierre recortado ──────────────────────────────
+  // ── Los helpers mecánicos del cierre recortado ──────────────────────────────
   // Uso: pipeline.js dod-checker-needed --story <spec> --repo <repo> [--base <ref>]   exit 0 = invocar · 3 = no
   if (cmd === 'dod-checker-needed') {
     let r;
@@ -6552,8 +6521,8 @@ function main() {
     process.exit(r.error ? 1 : (r.open ? 3 : 0));
   }
   // Uso: pipeline.js qa-readability --story <spec> --repo <repo> --marks <n> [--scope ui]   deja la marca de la capa 4
-  // de la guía de QA (la marca se sigue grabando como `qa-legibilidad` en gates.log: la lee qa-guide.js --check; story
-  // 8.9, tanda B3b). Con `--scope ui`, la de la revisión de la PANTALLA (`qa-legibilidad-ui`, story 7.24).
+  // de la guía de QA (la marca se graba como `qa-legibilidad` en gates.log: la lee qa-guide.js --check).
+  // Con `--scope ui`, la de la revisión de la PANTALLA (`qa-legibilidad-ui`).
   if (cmd === 'qa-readability') {
     const n = /^\d+$/.test(String(args.marcas || '')) ? Number(args.marcas) : NaN;
     if (!Number.isInteger(n)) { process.stderr.write(`--marks tiene que ser un entero ≥ 0 (vino «${args.marcas}»): no se anota nada\n`); process.exit(2); }
@@ -6572,8 +6541,8 @@ function main() {
     process.exit(result.error ? 1 : (result.open > 0 ? 3 : 0));
   }
 
-  // ── mech-check — executor determinista de los advisors 'lean' (auditoría 2026-06-09) ─
-  // Corre INLINE (~ms, 0 tokens) los checks mecánicos que hoy cuestan 3 subagentes
+  // ── mech-check — executor determinista de los advisors 'lean' ─
+  // Corre INLINE (~ms, 0 tokens) los checks mecánicos que de otro modo cuestan 3 subagentes
   // Sonnet por iteración: ACCOV-C1/C5, DEFTR-C1/C2, WIRING-C1. El orquestador invoca
   // el advisor LLM correspondiente SOLO si `ambiguous` no está vacío (escalation),
   // y los `findings` confirmados son infakeables (script, no self-report).
@@ -6689,28 +6658,28 @@ function main() {
   process.exit(cmd ? 1 : 0);
 }
 
-// Exports para la suite de tests de la capa determinista (auditoría 2026-06-09 —
-// las funciones más evadibles/sutiles no tenían tests). require() NO ejecuta main().
+// Exports para la suite de tests de la capa determinista (las funciones
+// más evadibles/sutiles tienen tests). require() NO ejecuta main().
 module.exports = {
   matchGlob,
-  // story 7.29 — la configuración `models` de la organización (la usa también on-advisor-run.js)
+  // La configuración `models` de la organización (la usa también on-advisor-run.js)
   orgModels,
   aplicarModelosDeRevisores,
-  // story 7.27 — el cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
+  // El cartel de la corrida (mods/harness-mods) copia la lista de pasos; harness-mods.test.js T16 la ata a ésta.
   STEP_SEQUENCE,
   SUBSTEP_FLAG,
-  // story 8.9 del arnés, tanda C4 — tests/unit.test.js «T43 ThirdPartyManifestPath_*».
+  // tests/unit.test.js «T43 ThirdPartyManifestPath_*».
   thirdPartyManifestPath,
   // El hook on-advisor-run.js escribe el review-roster en el MISMO run dir que usa el pipeline:
   // se exporta la función en vez de duplicar el criterio de scoring, para que las dos capas no
-  // puedan elegir carpetas distintas (2026-08-30, pieza "revisor ≠ autor").
+  // puedan elegir carpetas distintas (pieza "revisor ≠ autor").
   resolveRunDir,
-  // PIPE-C2 (2026-09-05) — tests: tests/unit.test.js "PipeC2_*".
+  // PIPE-C2 — tests: tests/unit.test.js "PipeC2_*".
   computeGitignoreNeeds,
   gitIgnoraProbe,
   GITIGNORE_ADVISORS,
   projectRunToStoryRepo,
-  // STORY-STALE-REVALIDATION-1 (2026-08-25) — test: tests/unit.test.js "SpecStale_*".
+  // Specs que envejecen — test: tests/unit.test.js "SpecStale_*".
   computeSpecStaleness,
   advisorAffectedByDelta,
   advisorsRunSinceStart,
@@ -6725,7 +6694,7 @@ module.exports = {
   revisoresDelNucleo,
   // tests/code-files.test.js — la densidad cuenta todos los archivos fuente
   densidadDelDiff,
-  // story 8.2 — paquetes de revisores: tests/packs.test.js y package-equivalence.js.
+  // Paquetes de revisores: tests/packs.test.js y package-equivalence.js.
   BANDERAS_DETECCION,
   computeValidadores,
   paquetesInstalados,
@@ -6733,14 +6702,14 @@ module.exports = {
   superficieDe,
   tierDe,
   buildStoryDigest,
-  // story 7.5 — tests/reviewer-rules.test.js (T5, T6): el contexto de cada revisor.
+  // tests/reviewer-rules.test.js (T5, T6): el contexto de cada revisor.
   buildAdvisorContext,
   parseFrontmatterList,
   computeRiskClass,
   computeRunSize,
   aplicarTamanoALosRevisores,
   notaDelTamano,
-  // fixes auditoría 2026-06-11 — exportadas para unit tests (lógica sutil: fail-open
+  // Exportadas para unit tests (lógica sutil: fail-open
   // por familia, orden mutación-vs-log, precedencia de tiers).
   validateFilesExist,
   archivosFantasma,
@@ -6748,7 +6717,7 @@ module.exports = {
   reloopHintsFor,
   computeSmartReloop,
   MECH_DISCOUNTABLE,
-  // adopciones BMAD (2026-07-02) — exportadas para unit tests.
+  // Adopciones BMAD — exportadas para unit tests.
   computeDepGate,
   computeNextStory,
   cmpStoryId,
@@ -6756,43 +6725,43 @@ module.exports = {
   computeFollowupsStatus,
   parseFollowupsSection,
   followupKey,
-  // fixes 2026-07-05 — exportados para regresión (BUG-PIPELINE-004/005).
+  // Exportados para regresión.
   findRepoRootsForStory,
   computePreflightFrontmatter,
-  // Step 5b adversarial (2026-07-03) — exportado para unit test del gate.
+  // Step 5b adversarial — exportado para unit test del gate.
   computeDeepReviewGate,
   deepReviewConfig,
-  // model-hint por complejidad (2026-07-06) — exportado para unit tests.
+  // model-hint por complejidad — exportado para unit tests.
   computeModelHint,
-  // tooling-expected PIPE-C9 (2026-07-06) — exportado para unit tests.
+  // tooling-expected PIPE-C9 — exportado para unit tests.
   computeToolingExpected,
-  // findings.json determinista (BUG-PIPELINE-006, 2026-07-06) — exportados para regresión.
+  // findings.json determinista — exportados para regresión.
   writeFindings,
   computeFindingsStatus,
   resolveRunDir,
   deriveStoryId,
   normalizeFindingRecord,
-  // gate E2E multi-app (Story QA-1 de un producto del equipo, 2026-08-15 — guides/maintaining/incident-log.md#case-shared-code-between-apps-2026-08-15) — exportados para unit tests.
+  // gate E2E multi-app — exportados para unit tests.
   e2eConfig,
   selectE2eApps,
-  // la 4ta fuente del delta (2026-08-26) — exportada para que `lib/late-snapshot.js` pregunte lo
+  // la 4ta fuente del delta — exportada para que `lib/late-snapshot.js` pregunte lo
   // MISMO que el consumidor de su resultado. Una guarda que mira menos que el re-loop deja pasar
   // en silencio justo lo que no ve.
   gitArchivosDelWorkingTree,
-  // story 7.2 del arnés — helpers del cierre recortado.
+  // helpers del cierre recortado.
   computeDodCheckerNeeded,
   computeDeferralsOpen,
-  // story 7.3 del arnés — el validador de stories en los re-loops.
+  // el validador de stories en los re-loops.
   decidirValidadorEnReloop,
 };
 
 if (require.main === module) {
-  // story 8.9 (tanda B3b): las opciones y subcomandos viejos siguen andando hasta el retiro
+  // Las opciones y subcomandos viejos siguen andando hasta el retiro
   require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/pipeline.js');
   try {
     main();
   } catch (e) {
-    // story 8.2 — un paquete de revisores roto o faltante frena CUALQUIER comando que lo cargue
+    // un paquete de revisores roto o faltante frena CUALQUIER comando que lo cargue
     // (advisors, smart-reloop, check-count, validators): exit 2 con archivo · revisor · motivo, y
     // nada en stdout — el orquestador no recibe un set a medias.
     if (e instanceof packsLib.PackError) {

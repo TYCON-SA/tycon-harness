@@ -1,11 +1,11 @@
 'use strict';
-// tar-reader.js — el lector propio de comprimidos `.tar.gz` del mecanismo de instalación (story 8.23, tanda B · AC 10).
+// tar-reader.js — el lector propio de comprimidos `.tar.gz` del mecanismo de instalación.
 //
-// ── POR QUÉ UNO PROPIO (revisión I4, 2026-10-06) ─────────────────────────────────────────────────────────────────
+// ── POR QUÉ UNO PROPIO ─────────────────────────────────────────────────────────────────
 // El `tar` del sistema escribe enlaces y rutas con `../` antes de que nadie pueda rechazarlos. Acá el comprimido se lee
-// ENTERO en memoria (el del arnés: 6,6 MB comprimido, 24 MB abierto), se juzga cada entrada, y recién si TODAS pasan se
+// ENTERO en memoria (el del arnés pesa unos 7 MB comprimido y 24 MB abierto), se juzga cada entrada, y recién si TODAS pasan se
 // escribe algo. Y el modo de cada archivo sale de la CABECERA, nunca del disco: Windows no guarda el bit de ejecutable
-// (medición del 2026-10-07: 162 archivos `100755` leídos del disco como `100644` daban otro árbol).
+// (los archivos `100755` leídos del disco como `100644` darían otro árbol).
 //
 // ── QUÉ ENTIENDE ─────────────────────────────────────────────────────────────────────────────────────────────────
 //   · `ustar` (nombre + `prefix`), las cabeceras extendidas de pax (`x` por archivo: `path`, `linkpath`, `size`; `g`
@@ -122,8 +122,8 @@ function parseTarGz(gzBuffer) {
 function plan(entries, { stripRoot = true, only = null } = {}) {
   let normalized = entries.map((e) => Object.assign({}, e, { path: e.path.replace(/\/+$/, '') }));
   // `only`: una subcarpeta (relativa a la raíz quitada): lo demás del comprimido no se juzga ni se escribe. Así una skill de
-  // terceros se restituye aunque su repo traiga un enlace en otra carpeta (pase adversarial de la 8.23 B: 47 de 70 skills
-  // quedaban afuera por enlaces de BMAD y de vercel fuera de su ruta)
+  // terceros se restituye aunque su repo traiga un enlace en otra carpeta (sin esto, las skills cuyo repo trae
+  // enlaces fuera de su ruta quedarían afuera)
   if (only) {
     const prefix = `${String(only).replace(/^\/+|\/+$/g, '')}/`;
     normalized = normalized.filter((e) => {

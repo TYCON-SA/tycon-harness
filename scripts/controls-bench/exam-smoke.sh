@@ -22,7 +22,7 @@
 set -u
 
 TCG="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-# El subcomando viejo sigue andando (story 8.9, tanda B3a): scripts/lib/renames.json
+# El subcomando con el nombre viejo sigue andando: scripts/lib/renames.json
 if [ -f "$TCG/scripts/lib/legacy-names.sh" ]; then
   LEGACY_NAMES_WHERE=scripts/controls-bench/exam-smoke.sh
   . "$TCG/scripts/lib/legacy-names.sh"
@@ -98,7 +98,7 @@ JS
 }
 
 # Corre el binario del examen tal como lo corre el sistema. La HOME del banco se declara la del usuario
-# (TYCON_EXAM_REAL_HOME, story 8.4 AC 28): sin eso --install-task no toca launchd desde una HOME que no es
+# (TYCON_EXAM_REAL_HOME): sin eso --install-task no toca launchd desde una HOME que no es
 # la real, y los criterios 3, 14/18 y 15 existen para ver el disparador que instala (con un launchctl de mentira).
 correr() {
   HOME="$W/casa" TYCON_EXAM_REAL_HOME="$W/casa" TYCON_EXAM_CONFIG="$W/cfg.json" TYCON_EXAM_RUNNER="$W/runner-falso.js" \
@@ -109,7 +109,7 @@ correr() {
 }
 
 # Corre el aviso del arranque de sesión tal como lo corre la herramienta, con la config del banco (con máquina
-# designada): desde la story 8.4 el aviso calla el examen si la config no designa máquina.
+# designada): el aviso calla el examen si la config no designa máquina.
 avisar() {
   echo '{"source":"startup"}' | HOME="$W/casa" TYCON_EXAM_CONFIG="$W/cfg.json" \
     TYCON_BENCH_DIR="$W/repo/scripts/controls-bench/.bench" TYCON_EXAM_REPORT="$REPORTE" \
@@ -132,12 +132,12 @@ case "$1" in
 
 1|2) armar
   correr --force >"$W/out" 2>&1 || fail "el examen no corrió: $(cat "$W/out")"
-  # AC 1 (reescrito el 2026-09-10): el nocturno es el CHEQUEO DE VIDA, sin acotar y sin las dos
-  # herramientas — el examen profundo (`--tool both --runs 3`) quedó a pedido el 31-08 (`bff1eab`).
+  # AC 1: el nocturno es el CHEQUEO DE VIDA, sin acotar y sin las dos
+  # herramientas — el examen profundo (`--tool both --runs 3`) es a pedido.
   grep -q '"--liveness"' "$W/invocado.json" || fail "no pidió el chequeo de vida"
   grep -q '"--only"' "$W/invocado.json" && fail "corrió acotado, y tiene que ser completo"
   grep -q '"both"' "$W/invocado.json" && fail "pidió las dos herramientas: eso es el examen profundo, y es a pedido"
-  # AC 2 (reescrito el 2026-09-10): lo que SÍ midió, con número; lo que NO pudo medir con una
+  # AC 2: lo que SÍ midió, con número; lo que NO pudo medir con una
   # corrida y una herramienta, en null con su motivo — nunca 0. Y el aviso lo dice.
   node -e "const r=require('$REPORTE');
     if (typeof r.criterio!=='number') { console.error('falta criterio'); process.exit(1); }
@@ -268,10 +268,9 @@ case "$1" in
   I="$TCG/scripts/install-tycon-hooks.sh"
   grep -q 'controls-bench-advisors-last-run' "$I" && fail "el lanzador viejo sigue en el instalador"
   grep -q 'periodic-exam.js' "$I" || fail "el instalador no invoca la pieza extraída"
-  # AC 20 (reescrito el 2026-09-10): live-fire bajo Codex sigue lanzándose; el banco determinista
-  # YA NO — corre en Azure DevOps desde el 05-09 (pipelines/azure-pipelines-banco.yml). Se verifica que la
-  # invocación EXISTA, no cómo está escrita: la versión anterior buscaba una línea textual y se
-  # rompió cuando se reescribió con otras comillas, aunque el comportamiento seguía.
+  # AC 20: live-fire bajo Codex se lanza; el banco determinista no — corre en Azure DevOps
+  # (pipelines/azure-pipelines-banco.yml). Se verifica que la invocación EXISTA, no cómo está escrita:
+  # buscar una línea textual se rompería con otras comillas aunque el comportamiento siguiera.
   grep -vE '^[[:space:]]*#' "$I" | grep -qE "live-fire\.js['\"[:space:]]+--tool codex" || fail "se llevó puesta la corrida de live-fire (una línea comentada no cuenta)"
   grep -vE '^[[:space:]]*#' "$I" | grep nohup | grep -qE 'BENCH_RUNNER|BENCH_JOB|run-controls-bench-job|runner\.js' \
     && fail "el instalador sigue lanzando el banco determinista: corre en Azure y su reporte viaja por git"

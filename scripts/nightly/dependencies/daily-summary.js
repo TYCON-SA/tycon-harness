@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * daily-summary.js — el resumen diario de quien mantiene el arnés (story 4.3).
+ * daily-summary.js — el resumen diario de quien mantiene el arnés.
  *
  * ── POR QUÉ EXISTE ──────────────────────────────────────────────────────────────────────────────
  * Las dos colas nocturnas (dependencias a las 04:00 UTC, vigilante a las 08:00) dejan fichas en el
- * repo, y hasta esta pieza nadie volvía a mirar las que ya tenían su pull request mergeado: las
- * aceptadas sin resolver, lo postergado por el tope de ruido, el aceptado sin story. Ninguna salía
+ * repo, y sin esta pieza nadie volvería a mirar las que ya tenían su pull request mergeado: las
+ * aceptadas sin resolver, lo postergado por el tope de ruido, el aceptado sin story. Ninguna sale
  * en el aviso del arranque. Esto arma UN mensaje por día con lo que ya publican las dos noches y lo
  * manda por el canal que declara la organización (`operations.json → notify`), con
  * `scripts/lib/notify.js`: Telegram por el script de siempre, Slack o Teams por su webhook.
  *
- * 🔴 ES UN AVISO, NO UN SEGUIMIENTO (decisión del dev, 2026-09-10). Un mensaje de Telegram no tiene
+ * 🔴 ES UN AVISO, NO UN SEGUIMIENTO. Un mensaje de Telegram no tiene
  * estado, no se asigna y no se cierra: el estado durable es la ficha, lo asignable es el pedido de
- * la 4.4, el agregado es `report`. Telegram es la campana, no la agenda.
+ * trabajo (el Bug), el agregado es `report`. Telegram es la campana, no la agenda.
  *
  * ── LAS REGLAS ─────────────────────────────────────────────────────────────────────────────────
  * · **LEE, NO MIDE.** Los rubros salen de los snapshots y las fichas que dejan
@@ -62,7 +62,7 @@
  *     --site-check: el resultado de scripts/site/check-deploy.js --out de esa mañana (sólo dependencias)
  *     [--out <snapshots>] [--pending <fichas>] [--config <repos.json>] [--summary-config <summary.json>]
  *     [--watcher-out <snapshots del vigilante>] [--deps-out <snapshots de dependencias>]
- *   (story 8.9: la fuente `dependencies` es, adentro, la de siempre: snapshots `dependencias-<fecha>.json` y
+ *   (la fuente `dependencies` es, adentro, `dependencias`: snapshots `dependencias-<fecha>.json` y
  *   `fuente: "dependencias"` en el `--json`)
  *
  * SALIDA: 0 hecho · 1 `build` no pudo (sin snapshot de hoy, ilegible) · 2 uso · 3 `deliver` no
@@ -77,15 +77,15 @@ const NOTIFY = require('../../lib/notify.js');
 const OPS = require('../../lib/operations-config.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
-// repos.json y summary.json viven al lado de este guion desde la tanda F de la story 8.9
+// repos.json y summary.json viven al lado de este guion
 const CONFIG_DEPS = path.join(RAIZ, 'scripts', 'nightly', 'dependencies');
 
 const RUBROS = {
-  // `pedidos_creados` (2026-09-15): los Bugs que la noche abrió. El primer resumen con pedidos reales
-  // no los nombraba — la noticia de la noche no estaba en el mensaje de la noche.
+  // `pedidos_creados`: los Bugs que la noche abrió.
+  // Sin este rubro, la noticia de la noche no estaría en el mensaje de la noche.
   dependencias: ['nuevos', 'pedidos_creados', 'pedidos_cerrados', 'pedidos_reabiertos', 'vivas_por_proyecto', 'edad_mas_vieja', 'aceptadas_sin_resolver', 'rechazadas_sin_deuda',
     'deuda_con_pedido_abierto', 'postergadas_por_presupuesto', 'proyectos_sin_iteracion', 'proyectos_con_tipo_de_fabrica',
-    // story 4.5: el cruce «pedido cerrado, vulnerabilidad viva» — se LEEN de `cruce`, no se recalculan
+    // El cruce «pedido cerrado, vulnerabilidad viva» — se LEEN de `cruce`, no se recalculan
     'pedidos_cerrados_con_vivas', 'resueltas_con_pedido_abierto'],
   vigilante: ['nuevos', 'pendientes', 'aceptadas_sin_story', 'no_medido', 'ignoradas_hoy'],
 };
@@ -126,7 +126,7 @@ function recortar(s, n) {
 }
 const nulo = (motivo, extra = {}) => ({ valor: null, de: null, motivo, ...extra });
 // Orden ORDINAL y no alfabético del idioma: el orden «de diccionario» depende de la máquina (en da_DK «aa»
-// va después de «z») y un resumen no puede cambiar según dónde corre (story 4.3, ADV-H).
+// va después de «z») y un resumen no puede cambiar según dónde corre.
 const cmp = (a, b) => (String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0);
 const sim = (r) => (r && r.simulado ? ' (simulado)' : '');
 
@@ -145,7 +145,7 @@ function leerSnap(dir, fuente, fecha) {
 /**
  * Las fichas de una cola, por carpeta. `null` si la carpeta raíz no se puede leer: eso es «no medido».
  * Una ficha suelta que no se puede leer NO tumba el resumen entero: queda en `ilegibles` y entra en los
- * fallos con su nombre (story 4.3, pase de fallos silenciosos) — callar el mensaje por un archivo roto
+ * fallos con su nombre — callar el mensaje por un archivo roto
  * sería justo el silencio que esta pieza existe para romper.
  */
 function leerFichas(dir) {
@@ -232,7 +232,7 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
     };
   }
 
-  // La 4.2 ya calcula esta lista con su regla (`rechazado:` sin deuda declarada en todos sus repos):
+  // Esta lista ya viene calculada con su regla (`rechazado:` sin deuda declarada en todos sus repos):
   // se LEE, no se recalcula — dos implementaciones de la misma regla se separan solas.
   R.rechazadas_sin_deuda = Array.isArray(snap.rechazadas_sin_deuda_ids)
     ? { valor: snap.rechazadas_sin_deuda_ids.map(idDe).filter(Boolean).map((id) => ({ id, paquete: paquete(id) })), de: null, motivo: null }
@@ -251,7 +251,7 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
       .map((x) => ({ ficha: x.ficha, proyecto: x.proyecto, id: Number.isInteger(x.id) ? x.id : null, adoptado: true })));
   }
   // Los Bugs que el arnés cerró esta noche (el arreglo llegó a main): la única acción que cambia el estado
-  // de un tablero ajeno, así que se nombra — la misma omisión que tenían los creados (2026-09-15).
+  // de un tablero ajeno, así que se nombra — la misma omisión que tendrían los creados.
   R.pedidos_cerrados = deLosPedidos('pagados_avisados', (x) => x);
   if (R.pedidos_cerrados.valor) {
     R.pedidos_cerrados.valor = R.pedidos_cerrados.valor.filter((x) => x.cerrado === true)
@@ -268,7 +268,7 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
       de: hall.size, motivo: null,
       motivo_pedidos: pp ? null : (p ? 'la sección `pedidos` no trae `postergados`' : 'el snapshot no trae `pedidos`'),
       // Sin sección `pedidos` no se sabe el modo: la clave no va (si fuera `false`, `cambioDeModo` diría
-      // «encendidos» la noche en que el paso de pedidos no corrió — revisión adversarial, 2026-09-15).
+      // «encendidos» la noche en que el paso de pedidos no corrió).
       ...(p ? { simulado: !!p.simulado } : {}),
     };
   }
@@ -280,7 +280,7 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
     ? { valor: [], de: null, motivo: null, simulado: !!p.simulado }
     : deLosPedidos('tipo_de_fabrica', (x) => ({ proyecto: x.proyecto, tipo: x.tipo || null, motivo: x.motivo || null }));
 
-  // 🔴 El cruce (story 4.5). Sin la clave, o con `consultado: false`, los dos rubros son `null` con el
+  // 🔴 El cruce. Sin la clave, o con `consultado: false`, los dos rubros son `null` con el
   // motivo: «ningún pedido cerrado con la vulnerabilidad viva» sólo se puede decir habiendo leído el estado.
   const cr = hasOwn(snap, 'cruce') && snap.cruce && typeof snap.cruce === 'object' ? snap.cruce : null;
   const delCruce = (clave, mapa) => {
@@ -292,7 +292,7 @@ function rubrosDependencias({ snap, fichas, cfg, hoy }) {
   R.pedidos_cerrados_con_vivas = delCruce('cerrados_vivos', (x) => ({ ficha: x.ficha, proyecto: x.proyecto, pedido: x.pedido, clase: x.clase || null }));
   R.resueltas_con_pedido_abierto = delCruce('resueltas_con_pedido_abierto', (x) => ({ ficha: x.ficha, proyecto: x.proyecto, pedido: x.pedido, dias: x.dias }));
   // 🔴 El cruce corre ANTES que el cierre y ve abierto el Bug que esta misma noche se cierra: no se lo cuenta
-  // como «resuelta con pedido abierto» (revisión adversarial del cierre).
+  // como «resuelta con pedido abierto».
   if (R.resueltas_con_pedido_abierto.valor && Array.isArray(R.pedidos_cerrados.valor)) {
     const cerradosHoy = new Set(R.pedidos_cerrados.valor.map((x) => `${x.ficha}|${x.proyecto}`));
     R.resueltas_con_pedido_abierto.valor = R.resueltas_con_pedido_abierto.valor.filter((x) => !cerradosHoy.has(`${x.ficha}|${x.proyecto}`));
@@ -347,8 +347,8 @@ function aplicarSinFuente(fuente, R, cfgResumen, fallos) {
 }
 
 // ── Comparación por identidad ──────────────────────────────────────────────────────────────────
-// 🔴 `simulado` NO es parte de la identidad (2026-09-15): la noche que se encendieron los pedidos, tres
-// rubros en 0 «cambiaron» sólo por esa marca y el mensaje dijo «5 cambios» sin que se moviera nada. El
+// 🔴 `simulado` NO es parte de la identidad: si lo fuera, la noche en que se encienden los pedidos, tres
+// rubros en 0 «cambiarían» sólo por esa marca y el mensaje diría «5 cambios» sin que se moviera nada. El
 // paso de simulado a real (o al revés) se dice UNA vez, en su propia línea (`cambioDeModo`).
 function identidad(nombre, r) {
   if (!r || typeof r !== 'object' || r.valor === null || r.valor === undefined) return 'null';
@@ -401,8 +401,8 @@ function cambioDeModo(rubros, base) {
  * Contra el último snapshot ANTERIOR de la misma fuente que trae `resumen.rubros`.
  *
  * 🔴 Un rubro que la constancia anterior NO TENÍA (nació después) y hoy viene medido y vacío no es un
- * cambio: va a `empezaron`, que el mensaje dice en una línea. El 2026-09-15 dos rubros nuevos en 0
- * salieron como «cambios (antes no medido)». Si el rubro nuevo trae algo, sí es un cambio.
+ * cambio: va a `empezaron`, que el mensaje dice en una línea. Si no, dos rubros nuevos en 0
+ * saldrían como «cambios (antes no medido)». Si el rubro nuevo trae algo, sí es un cambio.
  */
 function comparar(fuente, dir, hoy, rubros) {
   const anteriores = snapshots(dir, fuente).filter((f) => f < hoy).reverse();
@@ -423,15 +423,15 @@ function comparar(fuente, dir, hoy, rubros) {
 const NOCHES_HACIA_ATRAS = 7;
 
 /**
- * Las noches ANTERIORES cuyo resumen no llegó, desde la última que sí se entregó. Es la garantía del AC 6
- * —«un fallo de entrega queda escrito en el primer resumen que sí llega»—, y tiene tres formas que la
- * primera versión perdía (story 4.3, ADV-A): la noche que no dejó constancia (sin la clave `resumen`: el
+ * Las noches ANTERIORES cuyo resumen no llegó, desde la última que sí se entregó. Es la garantía de que
+ * «un fallo de entrega queda escrito en el primer resumen que sí llega», y tiene tres formas que hay que cubrir:
+ * la noche que no dejó constancia (sin la clave `resumen`: el
  * paso murió o faltó la fecha), la que dejó `resumen: null`, y la CADENA de varias noches seguidas (mirar
- * sólo la inmediata perdía la primera). El aviso del arranque sólo ve el último snapshot, así que sin esto
- * una noche fallida desaparecía de todos lados en cuanto la siguiente entregaba.
+ * sólo la inmediata pierde la primera). El aviso del arranque sólo ve el último snapshot, así que sin esto
+ * una noche fallida desaparece de todos lados en cuanto la siguiente entrega.
  *
- * 🔴 «Sin la clave» cuenta como fallo SÓLO desde la primera noche que dejó constancia: antes de que la
- * pieza existiera ninguna noche la tenía, y eso no es una cadena de fallas.
+ * 🔴 «Sin la clave» cuenta como fallo SÓLO desde la primera noche que dejó constancia: las
+ * noches anteriores no la tienen, y eso no es una cadena de fallas.
  */
 function fallosDeResumenAnterior(dir, fuente, hoy) {
   const leidos = snapshots(dir, fuente).filter((f) => f < hoy).map((f) => {
@@ -460,14 +460,14 @@ function fallosDependencias({ snap, dir, hoy, vigOut }) {
   F.push(...fallosDeResumenAnterior(dir, 'dependencias', hoy));
   const p = hasOwn(snap, 'pedidos') && snap.pedidos && typeof snap.pedidos === 'object' ? snap.pedidos : null;
   if (p) {
-    // Se cuentan PEDIDOS (pares ficha+proyecto), no entradas — la misma cuenta que el aviso de la 4.4.
+    // Se cuentan PEDIDOS (pares ficha+proyecto), no entradas — la misma cuenta que el aviso de pedidos.
     const fallidos = (Array.isArray(p.fallidos) ? p.fallidos : []).filter((x) => x && typeof x === 'object');
     const pares = new Set(fallidos.map((x) => `${x.ficha}|${x.proyecto}`));
     if (fallidos.length) F.push(`pedidos: ${pares.size} pedido(s) con fallos — ${fallidos[0].paso}: ${recortar(fallidos[0].motivo, 160)}`);
     const sinDueno = (Array.isArray(p.sin_dueno_unico) ? p.sin_dueno_unico : []).filter((x) => x && typeof x === 'object');
     if (sinDueno.length) F.push(`pedidos: ${sinDueno.length} proyecto(s) sin dueño único — ${sinDueno[0].proyecto}: ${recortar(sinDueno[0].motivo, 120)}`);
   }
-  // story 4.5: lo que el cruce no pudo mirar es un fallo de la noche, no un rubro en cero.
+  // Lo que el cruce no pudo mirar es un fallo de la noche, no un rubro en cero.
   const cr = hasOwn(snap, 'cruce') && snap.cruce && typeof snap.cruce === 'object' ? snap.cruce : null;
   if (cr) {
     const noLeidos = (Array.isArray(cr.no_leidos) ? cr.no_leidos : []).filter((x) => x && typeof x === 'object');
@@ -528,8 +528,8 @@ function antes(nombre, r) {
   } catch { return '?'; }
 }
 
-// 🔴 Un cambio dice qué había antes (2026-09-15): «postergadas: pedidos 0» no decía que ayer había uno
-// esperando, que era justo el Bug que salió esa noche.
+// 🔴 Un cambio dice qué había antes: sin eso, «postergadas: pedidos 0» no diría que ayer había uno
+// esperando.
 function detalleCambio(nombre, hoyR, antesR) {
   const hoyNulo = !hoyR || hoyR.valor === null || hoyR.valor === undefined;
   const antesNulo = !antesR || antesR.valor === null || antesR.valor === undefined;
@@ -698,7 +698,7 @@ function dependenciasDeHoy(a) {
       const c = comparar('dependencias', a.depsOut, a.hoy, r.rubros);
       // 🔴 Los fallos son los que se DIJERON a las 04:00 (guardados en la constancia), no recalculados: los
       // de config o fichas ilegibles no se pueden volver a ver desde acá, y la edición reemplaza el mensaje
-      // entero — recalcularlos borraba del teléfono lo que la noche sí había dicho (story 4.3, ADV-D).
+      // entero — recalcularlos borraría del teléfono lo que la noche sí dijo.
       const fallos = Array.isArray(r.fallos) ? r.fallos.map(String)
         : fallosDependencias({ snap: s, dir: a.depsOut, hoy: a.hoy, vigOut: a.out });
       seccion = texto({ fuente: 'dependencias', rubros: r.rubros, cambios: c.cambios, base: c.base, fallos, comparadoCon: c.comparado_con, hoy: a.hoy,
@@ -786,7 +786,7 @@ function escribirConstancia(archivo, resumen) {
 }
 
 /**
- * La sección que otro paso dejó en un archivo (story 4.6: `open-prs.js`), para el FINAL del mismo mensaje.
+ * La sección que otro paso dejó en un archivo (`open-prs.js`), para el FINAL del mismo mensaje.
  * 🔴 Si el archivo no está o no se puede leer, el mensaje sale igual pero LO DICE: que el paso de los PR haya
  * fallado antes de escribir no puede leerse como «no hay PR trabados». No toca rubros, comparación ni snapshot.
  */
@@ -1029,14 +1029,14 @@ function uso() {
     '       [--operations <operations.json>] [--site-check <resultado de check-deploy.js>] [--site-update <resultado de update-site.js>]');
 }
 
-// El nombre de la fuente en la línea de comandos (story 8.9, en inglés) → el de adentro, que no cambia: nombra los
+// El nombre de la fuente en la línea de comandos (en inglés) → el de adentro, que no cambia: nombra los
 // snapshots (`dependencias-<fecha>.json`) y es el valor de `fuente` en el `--json` y en las constancias.
 const FUENTE_DE_LA_OPCION = { dependencies: 'dependencias', vigilante: 'vigilante' };
 
 /**
  * Un error que nadie previó no puede llegar a Azure como un stack de Node: el paso del pipeline muestra la
- * ÚLTIMA línea de stderr como motivo, y la última línea de un stack es un «at …» (story 4.3, pase de
- * fallos silenciosos). Sale en UNA línea, y `deliver` deja la constancia con ese motivo si puede, para que
+ * ÚLTIMA línea de stderr como motivo, y la última línea de un stack es un «at …».
+ * Sale en UNA línea, y `deliver` deja la constancia con ese motivo si puede, para que
  * el arranque diga por qué y no sólo «NO consta».
  */
 function falloInesperado(a, e) {
@@ -1095,7 +1095,7 @@ function main(argv) {
 
 if (require.main === module) {
   let codigo;
-  // story 8.9: los nombres viejos (subcomandos, opciones y el valor de la fuente) siguen andando hasta el retiro
+  // Los nombres viejos (subcomandos, opciones y el valor de la fuente) siguen andando hasta el retiro
   require('../../lib/legacy-names.js').aliasArgv('scripts/nightly/dependencies/daily-summary.js', { exitCode: 2 });
   try { codigo = main(process.argv.slice(2)); } catch (e) { console.error(`🔴 resumen-diario: error inesperado del guion: ${recortar((e && e.message) || String(e), 200)}`); codigo = 1; }
   process.exit(codigo);

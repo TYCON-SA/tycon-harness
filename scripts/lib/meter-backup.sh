@@ -6,13 +6,11 @@
 # aparte del instalador para poder probarse sin correr el instalador
 # (scripts/tests/meter-backup.test.sh).
 #
-# 🔴 Por qué mira la HORA y no sólo «¿existe el archivo?» (2026-09-06): la primera versión lanzaba
-# el respaldo si el snapshot de hoy no había llegado con el pull. Pero antes de las 03:00 el archivo
-# de hoy NUNCA está —el nocturno todavía no corrió—, así que en toda sesión de madrugada el respaldo
-# corría aunque nada hubiera fallado, y a las 03:20 el nocturno commiteaba el suyo: dos escritores
-# del mismo archivo, y el `git pull` de la mañana rebotando contra el suelto. Medido: sesión a las
-# 01:38 → snapshot local a las 01:41. Antes de la hora del nocturno más un margen, la ausencia del
-# archivo no es una falla: es que todavía no es la hora.
+# 🔴 Por qué mira la HORA y no sólo «¿existe el archivo?»: lanzar el respaldo si el snapshot de hoy no llegó con el
+# pull es un error, porque antes de las 03:00 el archivo de hoy NUNCA está —el nocturno todavía no corrió—. En toda
+# sesión de madrugada el respaldo correría aunque nada hubiera fallado, y a las 03:20 el nocturno commitearía el
+# suyo: dos escritores del mismo archivo, y el `git pull` de la mañana rebotando contra el suelto. Antes de la hora
+# del nocturno más un margen, la ausencia del archivo no es una falla: es que todavía no es la hora.
 #
 # Uso: respaldo_medidor_debe_correr <hora_local_HH> <existe_snapshot_de_hoy 0|1> <sello_es_de_hoy 0|1>
 #   sale 0 = correr · 1 = no correr
@@ -22,11 +20,11 @@
 # y tarda minutos; el margen cubre una corrida lenta o encolada.
 RESPALDO_MEDIDOR_DESDE_HORA="${RESPALDO_MEDIDOR_DESDE_HORA:-05}"
 
-# 🔴 El respaldo escribe en el árbol del arnés, así que sólo tiene sentido donde ese árbol es un CLON (2026-10-13).
-# En una versión instalada el árbol no es un clon: el instalador buscaba la foto del día en `<árbol>/.dashboard/`, que
-# ahí no existe nunca, y el respaldo corría todos los días, barría la carpeta madre del árbol (sin repos) y dejaba una
-# foto vacía —medido: 939 bytes contra los 49.945 de la del nocturno, con el mismo nombre—. En el clon donde el
-# nocturno deja la suya, esa foto la pisa o traba el `pull` siguiente. El punto del día es del nocturno: donde el arnés
+# 🔴 El respaldo escribe en el árbol del arnés, así que sólo tiene sentido donde ese árbol es un CLON.
+# En una versión instalada el árbol no es un clon: la foto del día en `<árbol>/.dashboard/` ahí no existe nunca, y el
+# respaldo correría todos los días, barrería la carpeta madre del árbol (sin repos) y dejaría una foto vacía con el
+# mismo nombre que la del nocturno. En el clon donde el nocturno deja la suya, esa foto la pisa o traba el `pull`
+# siguiente. El punto del día es del nocturno: donde el arnés
 # no es un clon, no hay respaldo.
 #
 # Uso: meter_backup_has_own_tree <raíz del árbol del arnés>     sale 0 = es un clon (aplica) · 1 = no aplica

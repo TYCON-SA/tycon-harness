@@ -4,15 +4,14 @@
  * suites-exclusive.js — separa la lista de suites de un trabajo de la validación en las que pueden correr a la vez y
  * las `exclusive: true` de suites.json, que comparten estado con otras y corren solas, al final.
  *
- * POR QUÉ (2026-10-05, pedido del dueño: la validación entera en 15 min o menos). En serie, un trabajo de 214 suites
- * tardaba 18 min y el que llevaba la copia pública pasaba los 45 (corridas 12049, 12050 y 12051, cortadas sin
- * veredicto). El trabajo de suites de pipelines/azure-pipelines-maintainers-pr.yml las corre ahora de a varias, con el mismo
+ * POR QUÉ: la validación entera tiene que durar 15 min o menos, y en serie un trabajo de ~200 suites tarda más. El
+ * trabajo de suites de pipelines/azure-pipelines-maintainers-pr.yml las corre de a varias, con el mismo
  * criterio que el test-gate de cada story (skills/tycon-pipeline/scripts/lib/run-suites-json.js).
  *
- * DESDE EL TRAMO I DE LA STORY 8.22 (2026-10-08) las exclusivas ya no llegan en la lista de un trabajo de suites: el
- * repartidor las aparta (`suites-shard.js --exclusive-apart`) y las corre el trabajo del banco, después del banco, en
- * el carril que quedaba ocioso (la copia pública de verdad tardaba ~6 min sola al final de un trabajo de suites). Este
- * guion lo siguen llamando los dos trabajos, con los mismos pasos (pipelines/templates/run-suites.yml): en el de
+ * Las exclusivas no llegan en la lista de un trabajo de suites: el repartidor las aparta
+ * (`suites-shard.js --exclusive-apart`) y las corre el trabajo del banco, después del banco, en el carril que queda
+ * ocioso (la copia pública de verdad tarda ~6 min sola al final de un trabajo de suites). Este
+ * guion lo llaman los dos trabajos, con los mismos pasos (pipelines/templates/run-suites.yml): en el de
  * suites no encuentra ninguna, en el del banco son todas, y si el reparto fallara y llegaran mezcladas, las separa.
  *
  * Una suite es exclusiva si su `ruta` (de `diarias` o `semanales`) es el final de la ruta de la lista.

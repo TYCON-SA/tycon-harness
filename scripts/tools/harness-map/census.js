@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * census.js — ¿toda pieza del arnés tiene lugar en el mapa? (2026-09-15)
+ * census.js — ¿toda pieza del arnés tiene lugar en el mapa?
  *
  * El mapa (`artifacts/mapa-arnes.html`) se escribió a mano, y una lista escrita a mano sólo ve lo que
- * alguien se acordó de anotar. Medido el día que se armó: de 189 archivos del arnés, las fichas citaban
- * 82 — faltaban frenos activos, avisos, todo el CI de los productos. Nadie lo había notado porque el
- * diagrama se veía completo.
+ * alguien se acordó de anotar. Sin el censo, de 189 archivos del arnés las fichas citarían
+ * 82 — faltarían frenos activos, avisos, todo el CI de los productos. Nadie lo nota a simple vista porque el
+ * diagrama se ve completo.
  *
  * Esto recorre las carpetas donde viven las piezas y exige que cada una esté citada en el «Repo y
  * archivo» de alguna ficha, o declarada en `fuera-del-mapa.json` con su motivo. Un diagrama de bloques
@@ -25,7 +25,7 @@
  * Salida del censo: 0 todo ubicado · 1 hay piezas sin lugar o exclusiones que sobran · 2 no se pudo medir
  * (sin skills, mapa ilegible, exclusión sin motivo). «No medido» nunca sale 0.
  *
- * El tipo de cada pieza (story 8.12, tanda R7, 2026-09-30). Cada ficha lleva un `tipo` que no se tipea:
+ * El tipo de cada pieza. Cada ficha lleva un `tipo` que no se tipea:
  * sale de la ruta de su PRIMER archivo en `archivos` (sin la aclaración entre paréntesis y sin mirar el
  * repo). Si una ficha cita archivos de dos tipos —un hook y su biblioteca—, manda el primero de la lista:
  * el orden de `archivos` ya dice cuál es la pieza y cuál su apoyo. Reglas, en orden (gana la primera):
@@ -36,7 +36,7 @@
  *   guides/**                                                → guía
  *   claude-md-blocks/**                                      → bloque
  *   commands/**                                              → comando
- *   pipelines/**, azure-pipelines*.yml                       → pipeline (la R6 mudó los yml a pipelines/; la forma de la raíz
+ *   pipelines/**, azure-pipelines*.yml                       → pipeline (los yml viven en pipelines/; la forma de la raíz
  *                                                              queda por si un yml vuelve a nacer ahí)
  *   scripts/**, build/**, adapters/**                        → script
  *   specs/**                                                 → especificación
@@ -59,7 +59,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-// vive en scripts/tools/harness-map/ desde la story 8.12, tanda R4: la raíz del arnés está tres carpetas arriba
+// vive en scripts/tools/harness-map/: la raíz del arnés está tres carpetas arriba
 require('../../lib/legacy-names.js').aliasArgv('scripts/tools/harness-map/census.js', { exitCode: 2 });
 const args = process.argv.slice(2);
 const opcion = (n, d) => { const i = args.indexOf(n); return i >= 0 && args[i + 1] ? args[i + 1] : d; };
@@ -181,9 +181,9 @@ function listar(dir, filtro) {
 
 function piezas() {
   const out = [];
-  // un reemplazo generado (story 8.9: la ruta vieja de un archivo renombrado, idéntico a lo que escribe --write-shims) no
+  // un reemplazo generado (la ruta vieja de un archivo renombrado, idéntico a lo que escribe --write-shims) no
   // es una pieza: la pieza es el archivo nuevo, que tiene su ficha. Un archivo que no se deja leer no se da por reemplazo:
-  // sólo «no existe» es un no; lo demás, NO MEDIDO (revisor de fallos silenciosos, tanda C1)
+  // sólo «no existe» es un no; lo demás, NO MEDIDO
   const { isGeneratedShim } = require('../../lib/legacy-names.js');
   // `rel` es la ruta dentro de su repo (con la que se generó el reemplazo); `abs`, dónde leerlo si no es base + rel
   const reemplazo = (base, rel, abs = path.join(base, rel)) => {
@@ -203,38 +203,38 @@ function piezas() {
   archivos(TCG, 'scripts/hooks', codigo);
   archivos(TCG, 'scripts/ci', codigo);
   archivos(TCG, 'scripts', codigo);
-  // instalar y mantener cada máquina al día (story 8.12, tanda R1): lo que se muda acá desde scripts/ sigue censado —
+  // instalar y mantener cada máquina al día: lo que vive acá se censa —
   // si no, una pieza movida desaparecería del censo en silencio; en la ruta vieja quedan sólo reemplazos
   archivos(TCG, 'scripts/setup', codigo);
-  // los guiones de instincts (story 8.12, tanda R2): se mudaron de scripts/ a scripts/instincts/ y siguen censados ahí
+  // los guiones de instincts viven en scripts/instincts/ y se censan ahí
   archivos(TCG, 'scripts/instincts', codigo);
-  // el buzón de decisiones (tanda R2: inbox/instincts/; la F de la 8.9 trajo watcher/ y dependencies/) guarda sólo datos:
+  // el buzón de decisiones (inbox/instincts/, inbox/watcher/ e inbox/dependencies/) guarda sólo datos:
   // un ejecutable que caiga en cualquiera de sus carpetas es una pieza sin lugar, y el censo la nombra
   archivos(TCG, 'inbox', codigo);
   for (const d of listar(path.join(TCG, 'inbox'), (x) => x.isDirectory()) || []) archivos(TCG, `inbox/${d}`, codigo);
-  // el vigilante y el mapa del arnés ya no van en esta lista: desde la story 8.12, tanda R4, viven en
+  // el vigilante y el mapa del arnés no van en esta lista: viven en
   // scripts/nightly/watcher/ y scripts/tools/harness-map/, que recorren los bucles de abajo. Tampoco la carpeta vieja del
-  // nocturno de dependencias (story 8.9, tanda F): sus guiones y sus dos .json viven en scripts/nightly/dependencies/ y en
+  // nocturno de dependencias: sus guiones y sus dos .json viven en scripts/nightly/dependencies/ y en
   // la vieja quedan sólo reemplazos, que no son piezas
   for (const d of ['metrics', 'controls-bench', 'lib']) archivos(TCG, `scripts/${d}`, codigo);
-  // la etapa nocturna de la estructura destino (story 8.9): cada subcarpeta de scripts/nightly/, también las que llegan
-  // de a un archivo antes que el resto de su carpeta (el nocturno de dependencias en la tanda C1). El tablero vive en
-  // scripts/nightly/dashboard/ desde la C2; en su carpeta vieja quedan sólo reemplazos, que no son piezas (tanda C4)
+  // la etapa nocturna de la estructura destino: cada subcarpeta de scripts/nightly/, también las que llegan
+  // de a un archivo antes que el resto de su carpeta (el nocturno de dependencias). El tablero vive en
+  // scripts/nightly/dashboard/; en su carpeta vieja quedan sólo reemplazos, que no son piezas
   for (const d of listar(path.join(TCG, 'scripts', 'nightly'), (x) => x.isDirectory()) || []) archivos(TCG, `scripts/nightly/${d}`, codigo);
-  // las herramientas a mano de la estructura destino (story 8.9, tanda C3): scripts/tools/ y cada subcarpeta (la
-  // captura y, desde la story 8.12, tanda R4, el mapa del arnés en scripts/tools/harness-map/)
+  // las herramientas a mano de la estructura destino: scripts/tools/ y cada subcarpeta (la
+  // captura y el mapa del arnés en scripts/tools/harness-map/)
   archivos(TCG, 'scripts/tools', codigo);
   for (const d of listar(path.join(TCG, 'scripts', 'tools'), (x) => x.isDirectory()) || []) archivos(TCG, `scripts/tools/${d}`, codigo);
   archivos(TCG, 'build', codigo);
   archivos(TCG, 'commands', /\.md$/);
   archivos(TCG, '', /^azure-pipelines.*\.yml$/);
-  // las definiciones de Azure DevOps en su carpeta (story 8.12, tanda R6): si la carpeta no existe, listar() no da nada
+  // las definiciones de Azure DevOps en su carpeta: si la carpeta no existe, listar() no da nada
   archivos(TCG, 'pipelines', /\.ya?ml$/);
   archivos(TCG, 'pipelines/templates', /\.ya?ml$/);
 
   const pipeline = path.join(SKILLS, 'tycon-pipeline', 'scripts');
   if (!fs.existsSync(pipeline)) noMedido(`no encontré las skills en ${SKILLS} (se pasan con --skills)`);
-  // un reemplazo generado de agent-skills tampoco es pieza (el de la equivalencia de paquetes, tanda C3)
+  // un reemplazo generado de agent-skills tampoco es pieza (el de la equivalencia de paquetes)
   for (const n of listar(pipeline, (d) => d.isFile() && /\.(js|sh)$/.test(d.name)) || []) {
     const rel = `skills/tycon-pipeline/scripts/${n}`;
     if (!reemplazo(null, rel, path.join(pipeline, n))) out.push(rel);

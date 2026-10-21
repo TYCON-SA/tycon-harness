@@ -1,34 +1,33 @@
 #!/usr/bin/env node
 /**
- * rules-catalog.js — el ÚNICO parser de `guides/advisor-rules-catalog.md` (story 2.9).
+ * rules-catalog.js — el ÚNICO parser de `guides/advisor-rules-catalog.md`.
  *
  * POR QUÉ EXISTE
  * --------------
- * El mismo catálogo se contaba de tres maneras distintas: los censos del 2026-09-16 dieron **341,
- * 357 y 358** reglas porque cada uno escribió su propio parser. Dos listas del mismo vocabulario en
+ * Si cada censo escribe su propio parser, el mismo catálogo se cuenta de tres maneras distintas y dan
+ * tres totales. Dos listas del mismo vocabulario en
  * dos lugares se separan solas — el arnés ya lo pagó con los dos diccionarios de estados y con
  * `release-notes.sh` copiado en 8 repos. Acá hay uno, y `scripts/tools/rules-distill.js` lo consume.
  *
- * LAS TRES DECISIONES QUE LO ORDENAN
- * ----------------------------------
+ * LAS TRES REGLAS QUE LO ORDENAN
+ * ---------------------------------
  * 1. 🔴 **Una regla se DEFINE, no se menciona.** La definición es la primera columna en negrita de
  *    una fila de tabla (`| **VAL-C1** | … |`). Nombrarla en la prosa (`ver DOTNET-C4/C5`) es una
- *    REFERENCIA y no crea una regla. `rules-distill.js` escaneaba el texto entero, así que 27 reglas
- *    figuraban con varios "dueños" que en realidad sólo las citaban.
+ *    REFERENCIA y no crea una regla. Escanear el texto entero haría figurar reglas con varios
+ *    "dueños" que en realidad sólo las citan.
  *
- * 2. 🔴 **El identificador ADMITE DÍGITOS en el prefijo.** El regex viejo
- *    (`rules-distill.js:79`, `/\b([A-Z]{2,12})-([CW])(\d{1,2})\b/g`) sólo aceptaba letras, y el área
- *    `I18N` tiene un 1 y un 8: sus **7 reglas eran invisibles** y el revisor de textos sin traducir
- *    figuraba como dueño de nada. Peor: como no las veía, tampoco podía acusarlas de nada — el
- *    agujero se tapaba a sí mismo, y el total se publicaba como 351.
+ * 2. 🔴 **El identificador ADMITE DÍGITOS en el prefijo.** Un regex que sólo acepta
+ *    letras (`/\b([A-Z]{2,12})-([CW])(\d{1,2})\b/g`) no ve el área `I18N`, que tiene un 1 y un 8: sus
+ *    **reglas serían invisibles** y el revisor de textos sin traducir figuraría como dueño de nada. Peor: como no
+ *    las ve, tampoco puede acusarlas de nada — el agujero se tapa a sí mismo.
  *
  * 3. 🔴 **La clave es (dueño, regla), no el identificador.** `SEC-C1` y `SEC-C2` están DEFINIDOS dos
  *    veces, por dos dueños distintos y con contenido sin relación: el revisor de seguridad y el freno
  *    de mano. Contar por identificador los fusiona y arruina el número en las dos puntas. `PIPE-C5`,
  *    en cambio, está definida dos veces por el MISMO dueño (dos casos de la misma regla) y es UNA.
  *
- * POR ESO PUBLICA TRES NÚMEROS, Y SON TRES A PROPÓSITO (medido 2026-09-16, con el sufijo):
- *     filas 362  ·  reglas 361 (pares dueño+regla — LA UNIDAD DE LA TABLA)  ·  identificadores 359
+ * POR ESO PUBLICA TRES NÚMEROS, Y SON TRES A PROPÓSITO (con el sufijo):
+ *     filas  ·  reglas (pares dueño+regla — LA UNIDAD DE LA TABLA)  ·  identificadores
  * Y dos anomalías que se PUBLICAN en vez de esconderse: las colisiones (SEC-C1/SEC-C2, dos dueños) y
  * las reutilizaciones (SEC-W4, un identificador retirado que volvió a usarse para otra regla).
  *
@@ -64,8 +63,8 @@ const REVISORES_DEFAULT = path.join(RAIZ, 'adapters', 'codex', 'agents');
 const SECCION_CON_DUENO = /^##\s+.*?[—-]\s*`([^`]+)`\s*$/;
 /**
  * El identificador de una regla. El prefijo acepta dígitos después de la primera letra (`I18N`) y el
- * número acepta un SUFIJO (`ACCOV-C1-EXT`). Los dos son defectos que esta pieza cierra: sin el primero
- * desaparecían 7 reglas; sin el segundo, una (vuelta 1 de la revisión, 2026-09-16).
+ * número acepta un SUFIJO (`ACCOV-C1-EXT`). Sin el primero
+ * desaparecerían las reglas de `I18N`; sin el segundo, las que llevan sufijo.
  */
 const ID = '[A-Z][A-Z0-9]*-[CW]\\d+(?:-[A-Z0-9]+)*';
 /** Una DEFINICIÓN: primera columna de una fila, en negrita. */
@@ -206,8 +205,8 @@ function leer({ catalogo, revisores } = {}) {
     }
   }
 
-  // El revisor de un paquete no tiene .toml en la versión (Codex lo genera desde el paquete, story 8.41): es revisor si su
-  // paquete no está en este árbol (llega con él) o si está y trae su agente. Sin esto sus reglas salían «sin revisor».
+  // El revisor de un paquete no tiene .toml en la versión (Codex lo genera desde el paquete): es revisor si su
+  // paquete no está en este árbol (llega con él) o si está y trae su agente. Sin esto sus reglas saldrían «sin revisor».
   const instalado = (p) => fs.existsSync(path.join(RAIZ, 'packs', p, 'pack.json'));
   const agenteEnPaquete = (p, d) => {
     let dir = 'agents';
@@ -227,12 +226,12 @@ function leer({ catalogo, revisores } = {}) {
 
   // 🔴 Un identificador RETIRADO que vuelve a aparecer definido es una reutilización: el catálogo lo
   //    prohíbe («no reusar IDs retirados»). La regla viva SE CUENTA —esconderla sería perder una regla
-  //    activa, que es lo que hacía rules-distill— y la reutilización se publica. Medido: SEC-W4.
+  //    activa— y la reutilización se publica. Medido: SEC-W4.
   const reutilizadas = [...retiradasIds].filter((id) => duenosPorRegla.has(id)).sort();
 
   // Los dueños que no están en el padrón se nombran: así se ve un .toml de revisor que falta, en vez de
   // que sus reglas pasen a «sin revisor» en silencio.
-  // El revisor de un paquete que esta copia no trae no es un .toml que falta: llega con el paquete (story 8.41) y se
+  // El revisor de un paquete que esta copia no trae no es un .toml que falta: llega con el paquete y se
   // nombra aparte, con su paquete.
   // Con el paquete instalado en el árbol (`packs/<p>/pack.json`), su revisor sin su agente en el paquete SÍ es un faltante.
   const fueraDelPadron = [...new Set([...pares.values()].map((p) => p.dueno).filter((d) => d && !padron.has(d)))].sort();
@@ -309,7 +308,7 @@ function main() {
 }
 
 if (require.main === module) {
-  aliasArgv('scripts/lib/rules-catalog.js', { exitCode: 2, prefix: 'catalogo-de-reglas: ' });   // los nombres viejos siguen andando (story 8.9, tanda B3a)
+  aliasArgv('scripts/lib/rules-catalog.js', { exitCode: 2, prefix: 'catalogo-de-reglas: ' });   // los nombres viejos siguen andando
   main();
 }
 module.exports = { leer, porPar, ID, DEFINICION, SECCION_CON_DUENO };

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # =============================================================================
-# label-prs.sh — la corrida de main dice qué pull requests trae (story 2.17)
+# label-prs.sh — la corrida de main dice qué pull requests trae
 # =============================================================================
-# 🔴 POR QUÉ EXISTE (2026-09-15). En Azure DevOps la corrida del pull request se ve bien —título y
-# enlace—, pero la que dispara el push a main se titulaba «Merge pull request <id> from dev into
-# main» y no enlazaba a nada. Con `batch: true` una corrida junta varios merges y el título muestra,
+# 🔴 POR QUÉ EXISTE. En Azure DevOps la corrida del pull request se ve bien —título y
+# enlace—, pero la que dispara el push a main se titula «Merge pull request <id> from dev into
+# main» y no enlaza a nada. Con `batch: true` una corrida junta varios merges y el título muestra,
 # a lo sumo, el último. Este guion le pone a la corrida una etiqueta `PR-<id>` por cada pull request
 # que trae y un resumen en su página, con el enlace a cada uno.
 #
-# La contraparte es el skill tycon-merge-to-main, que desde la misma story fija el mensaje de merge
-# «Merged PR <id>: <título>». Este guion reconoce también los formatos viejos, así que etiqueta bien
-# PR anteriores o uno que se complete desde la pantalla. Y el de un repo que vive en GitHub, donde el
+# La contraparte es el skill tycon-merge-to-main, que fija el mensaje de merge
+# «Merged PR <id>: <título>». Este guion reconoce también otros formatos, así que etiqueta bien
+# un PR que se complete desde la pantalla. También etiqueta el de un repo que vive en GitHub, donde el
 # skill titula el merge «<título> (#<id>)» y el enlace va al pedido de GitHub.
 #
 # QUÉ TRAE UNA CORRIDA = los merges de la LÍNEA DE MAIN (`--first-parent`) desde la base hasta la
 # punta. Sin `--first-parent` también aparecen los PR que entraron a `dev` y llegan adentro del merge
-# de `dev` (medido en FRESNO: 4 etiquetas donde va 1). La base es la de run-base.sh, la misma que
+# de `dev` (varias etiquetas donde va 1). La base es la de run-base.sh, la misma que
 # usa forms-to-version.sh: el commit del que partió la corrida anterior (marca `Commit:` del
 # commit de versión del bot) — o sea, «qué trae esta versión respecto de la anterior».
 #
@@ -31,7 +31,7 @@
 #   --repo     el repo (default: .)
 #   --until    la punta de la corrida (default: HEAD; en Azure es el commit que se construye)
 #   --summary  dónde escribir el resumen markdown (default: $AGENT_TEMPDIRECTORY o una carpeta temporal)
-#   (--until y --summary se llamaban en castellano hasta la story 8.9, tanda B3a; los viejos siguen andando hasta el retiro)
+#   (--until y --summary tienen un nombre viejo en castellano que sigue andando hasta el retiro)
 # Salida (stdout): `##vso[build.addbuildtag]PR-<id>` por PR, `##vso[task.uploadsummary]<ruta>`, y el
 #   aviso si no pudo. Explicación por stderr. Exit: siempre 0.
 # =============================================================================
@@ -46,7 +46,7 @@ avisar(){ # nunca frena: dice por qué no etiquetó y sale 0
   exit 0
 }
 
-# Las opciones renombradas a inglés (story 8.9, tanda B3a): los pipelines de los productos siguen pasando las viejas
+# Las opciones renombradas a inglés: los pipelines de los productos siguen pasando las viejas
 # hasta el retiro. El traductor vive al lado (viaja en el artefacto arnes-ci). La vieja y la nueva juntas no frenan
 # la corrida, como cualquier otro argumento raro: se avisa y se sale 0.
 if [ -f "$AQUI/legacy-options.sh" ]; then
@@ -117,7 +117,7 @@ URL_BASE=""
 # no existe. La dirección del repo la da la corrida (BUILD_REPOSITORY_URI); sin ella, la de github.com.
 # Lo que va adentro de un enlace del resumen tiene que tener forma de dirección: un `)` o un espacio lo rompería. Si
 # no la tiene, el resumen sale sin enlace. Se mira el valor ENTERO con `case` —cualquier carácter fuera de la lista,
-# también un salto de línea, lo descarta—: un `grep` mira renglón por renglón y daba por bueno un valor de varias líneas
+# también un salto de línea, lo descarta—: un `grep` mira renglón por renglón y daría por bueno un valor de varias líneas
 # con la primera bien formada.
 es_direccion(){   # https://<servidor>/<ruta>, sólo con letras, números y . _ ~ / : -
   case "$1" in https://?*) ;; *) return 1 ;; esac

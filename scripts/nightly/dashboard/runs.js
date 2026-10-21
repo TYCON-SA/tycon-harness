@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 /*
- * runs.js — LA VISTA DE CORRIDAS DEL TABLERO, sesión por sesión (story 2.14, 2026-09-09)
+ * runs.js — LA VISTA DE CORRIDAS DEL TABLERO, sesión por sesión
  *
  * Una fila por corrida del pipeline —cuánto duró, dónde se fue el tiempo y los tokens, qué control
  * encontró un error o frenó, cuántas vueltas dio, cuántos agentes lanzó— y una capa ejecutiva
  * arriba que resume el conjunto. Segunda página de la misma pieza: la genera
  * `node scripts/nightly/dashboard/dashboard.js --view runs` y escribe `~/.claude/.tycon-pipeline/runs-dashboard.html`.
  *
- * 🔴 NO SE COMMITEA (2026-09-17): hasta ese día había una copia en `artifacts/`, armada con las corridas de
- * UNA máquina —la que la regeneraba—, así que mostraba 232 corridas o 18 según quién la hubiera armado
- * por última vez. La vista completa sale de la carpeta bajada del buzón, que cualquier máquina con la
+ * 🔴 NO SE COMMITEA: una copia en `artifacts/` mostraría las corridas de UNA máquina —la que la
+ * regenerara—, y el total cambiaría según quién la hubiera armado por última vez. La vista completa
+ * sale de la carpeta bajada del buzón, que cualquier máquina con la
  * sesión de Azure de quien tiene el permiso llena sola al arrancar.
  *
- * VARIAS MÁQUINAS (story 2.16): si en esta máquina está la carpeta bajada del buzón de corridas
+ * VARIAS MÁQUINAS: si en esta máquina está la carpeta bajada del buzón de corridas
  * (`~/.claude/.tycon-pipeline/corridas-buzon/`, la llena `scripts/metrics/download-runs.js` en las
  * máquinas de quienes pueden leer el buzón), la vista la lee también —`<carpeta>/<maquina>/`—, suma la
  * columna y el filtro por máquina, el sello dice qué máquinas cubre, y la página se escribe en
@@ -25,14 +25,14 @@
  * sin pipeline corrido NO rompe el tablero — la fuente se declara NO obligatoria en sources.json
  * y la página sale gris con motivo, exit 0.
  *
- * LO QUE LEE DEL HILO (2026-09-17): sólo las ediciones y escrituras de archivos con su cambio, y los
- * commits (`changes.js`). La 2.14 los había sacado porque la página se commiteaba y los cambios traen
- * código de cliente; desde el 2026-09-17 la página NO se commitea (vive en ~/.claude, o en la carpeta
+ * LO QUE LEE DEL HILO: sólo las ediciones y escrituras de archivos con su cambio, y los
+ * commits (`changes.js`). Como los cambios traen
+ * código de cliente, la página NO se commitea (vive en ~/.claude, o en la carpeta
  * bajada del buzón, que sólo leen quienes tienen permiso), así que el detalle de cada corrida los
  * muestra, saneados (credenciales tapadas) y con tope de largo. Los prompts y las respuestas del hilo
  * siguen sin publicarse. El cambio va comprimido adentro de la página y se abre a pedido.
  *
- * LO QUE LEE DE GIT (story 2.19): el `<volcado>.cambio.json.gz` que deja el archivador — los commits de la
+ * LO QUE LEE DE GIT: el `<volcado>.cambio.json.gz` que deja el archivador — los commits de la
  * corrida y lo que quedó sin commitear, en cada repo donde escribió. Es el «qué» completo y exacto (la
  * conversación no ve la consola ni los subagentes) y va ARRIBA; la lista del hilo queda abajo para el
  * «cuándo», con lo de consola marcado «aproximado» y sin los nombres que git no confirma. Los parches
@@ -58,25 +58,25 @@
  * filtro mostraría otra cosa que el encabezado. La suite la ejercita corriendo el cliente real
  * sobre un DOM mínimo en Node (sin navegador). Sin red: ni tipografías ni bibliotecas externas.
  *
- * EN EL SITIO DE LA ORGANIZACIÓN (story 2.27): la pestaña Corridas (scripts/site/tabs/runs.js) usa ESTE modelo y ESTE
+ * EN EL SITIO DE LA ORGANIZACIÓN: la pestaña Corridas (scripts/site/tabs/runs.js) usa ESTE modelo y ESTE
  * cliente, no una copia. Cada corrida lleva un id estable (`idEstable`: máquina + sesión, sin publicar la sesión), y el
  * modelo se parte en lo que viaja por separado: `paraLista` (lista blanca: la cabecera, las fichas, los gráficos y el
  * filtro), `paraDetalle` (al abrir una corrida) y `textosDe` (al abrir un cambio). La página se arma con `cabecera`,
- * `ejecutiva`, `tabla` y `pie`, que `render` compone igual que antes; el sitio las usa con `opts.sitio` y lo ya filtrado
- * para quien pide. El cliente lee sus datos de una FUENTE: embebida en la página local (como siempre) o por la red
+ * `ejecutiva`, `tabla` y `pie`, que `render` compone; el sitio las usa con `opts.sitio` y lo ya filtrado
+ * para quien pide. El cliente lee sus datos de una FUENTE: embebida en la página local o por la red
  * en el sitio (`#fuente-corridas`). `modelo()` acepta `soloBuzon`, `sinUnificar`, `sinHilos`, `umbralesArchivo` y
  * `skillsDir` para el sitio; sin ellas, la vista local es la de siempre.
  *
  * Contrato de salida (`main` devuelve el código; dashboard.js hace el exit):
  *   0 → midió (aunque haya rojos; registro ausente también es 0: la fuente no es obligatoria)
  *   2 → se negó a escribir una página con corridas del buzón dentro del repo del equipo, o se pidió
- *       `--clone` (retirado con el repo git de la primera implementación: ahora es `--mailbox`)
+ *       `--clone` (retirado: se usa `--mailbox`)
  *   3 → no pudo escribir la página
  */
 
 const fs = require('fs');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: este
 // archivo viaja suelto (al banco, a laboratorios de pruebas); ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -88,7 +88,7 @@ const { readEnv, prepareStateWrite } = require('../../lib/legacy-names.js');
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..');
 
-// El rescate (story 2.13) exporta el saneado del mensaje y el corte de pasos. Se importa, no se
+// El rescate exporta el saneado del mensaje y el corte de pasos. Se importa, no se
 // copia: dos saneados se separan solos. Si el módulo no está (arnés partido), se DICE y el
 // mensaje no se publica — un mensaje sin sanear es peor que ninguno.
 let rescate = null;
@@ -96,18 +96,18 @@ let motivoSinRescate = null;
 try { rescate = require('../../metrics/tokens-digest.js'); }
 catch (e) { motivoSinRescate = `scripts/metrics/tokens-digest.js no se pudo cargar (${e.code || e.message}): los mensajes de error no se publican y los pasos no se cortan`; }
 
-// Los archivos que tocó cada corrida y su cambio, leídos del hilo (2026-09-17). Sin el módulo, el detalle lo dice.
+// Los archivos que tocó cada corrida y su cambio, leídos del hilo. Sin el módulo, el detalle lo dice.
 let cambios = null;
 let motivoSinCambios = null;
 try { cambios = require('./changes.js'); }
 catch (e) { motivoSinCambios = `scripts/nightly/dashboard/changes.js no se pudo cargar (${e.code || e.message}): el detalle no muestra los archivos que tocó cada corrida`; }
 
-// La cuenta de trabajo, espera y hueco (story 2.7) vive en UN archivo, el mismo para la corrida nueva
-// (con arranque por paso) y la vieja (sin arranque: estimada). Sin él, los tramos se cortan como antes.
+// La cuenta de trabajo, espera y hueco vive en UN archivo, el mismo para la corrida nueva
+// (con arranque por paso) y la vieja (sin arranque: estimada). Sin él, los tramos se cortan sin esa cuenta.
 let cuentaTiempos = null;
 let motivoSinTiempos = null;
-// La cuenta de VUELTAS es la del latido (story 7.1: `vueltaDeVolcado`), no `costo.iteraciones` —
-// ése cuenta las veces que se calculó el set de revisores y acertaba 17 de 43 contra lo medido; se
+// La cuenta de VUELTAS es la del latido (`vueltaDeVolcado`), no `costo.iteraciones` —
+// ése cuenta las veces que se calculó el set de revisores y no coincide con lo medido; se
 // publica aparte, con su nombre. Sin el script la columna sale «—» y la página lo dice.
 let cuentaVueltas = null; let motivoSinVueltas = null;
 try { ({ vueltaDeVolcado: cuentaVueltas } = require('../../metrics/retro-heartbeat.js')); }
@@ -115,7 +115,7 @@ catch (e) { motivoSinVueltas = `scripts/metrics/retro-heartbeat.js no se pudo ca
 try { cuentaTiempos = require('../../metrics/step-times.js'); }
 catch (e) { motivoSinTiempos = `scripts/metrics/step-times.js no se pudo cargar (${e.code || e.message}): los pasos se cortan del fin del anterior al fin de éste, sin separar trabajo, espera ni tiempo entre pasos`; }
 
-// El nombre de esta máquina sale de la subida (story 2.16): la carpeta que la subida crea en el buzón
+// El nombre de esta máquina sale de la subida: la carpeta que la subida crea en el buzón
 // y la máquina que esta vista le atribuye a las corridas locales tienen que ser la MISMA
 // palabra. Sin el módulo, las corridas locales salen «sin declarar» con el motivo — nunca inventadas.
 let subida = null;
@@ -127,7 +127,7 @@ catch (e) { motivoSinSubida = `scripts/metrics/upload-runs.js no se pudo cargar 
 // definición que usa la subida (si el módulo no está, la copia de respaldo es idéntica).
 const FORMA_MAQUINA = (subida && subida.FORMA_MAQUINA) || /^[a-z0-9][a-z0-9._-]*$/;
 
-// Las uniones de carpetas (story 2.28): cada máquina sube a `<nombre>-<código>`, y el bajador declara qué carpeta vieja
+// Las uniones de carpetas: cada máquina sube a `<nombre>-<código>`, y el bajador declara qué carpeta vieja
 // es la historia de cuál nueva en `.carpetas-de-maquina.json`. Lo lee UNA función, la del reductor (la misma que usan
 // el reductor y la poda). Si no carga (este archivo viaja suelto), no se une nada y se dice, como sin el archivo.
 function leerUniones(buzon) {
@@ -155,15 +155,15 @@ const CONTROLES = {
   'story-skill-gate': 'la story entró por el pipeline', 'dep-gate': 'dependencias nuevas',
   'deep-review': 'pase adversarial',
   'adversarial-pass': 'pase adversarial (resultado)',
-  // story 1.8: el 5b sin pase lo anota el portón, y el paso 8 no cierra sin el pase atendido.
+  // El 5b sin pase lo anota el portón, y el paso 8 no cierra sin el pase atendido.
   'adversarial-skip': 'pase adversarial (salteado por el portón)',
   'adversarial-result-gate': 'pase adversarial con su resultado (paso 8)',
 };
 
-// La línea `adversarial-pass` (marker.js mark-adversarial-result, 2026-09-14) no trae `status`: trae
-// `veredicto` (`listo` = 0 confirmados · `no-listo` = hubo) y, desde el 2026-09-17, cuántos de los
-// confirmados quedaron con su prueba en la suite y cuántos se difirieron. Sin esto salía «sin estado»
-// —un pase con 13 confirmados dibujado igual que uno que no dejó constancia— y los números no se veían.
+// La línea `adversarial-pass` (marker.js mark-adversarial-result) no trae `status`: trae
+// `veredicto` (`listo` = 0 confirmados · `no-listo` = hubo) y cuántos de los
+// confirmados quedaron con su prueba en la suite y cuántos se difirieron. Sin esto sale «sin estado»
+// —un pase con 13 confirmados dibujado igual que uno que no dejó constancia— y los números no se ven.
 // La nota se arma SÓLO con enteros: el `motivo` del diferido es prosa del dev y no se publica.
 function resultadoAdversarial(g) {
   if (String(g.check || g.name || g.gate || '') !== 'adversarial-pass' || g.status !== undefined) return null;
@@ -181,8 +181,8 @@ function resultadoAdversarial(g) {
     nota = `${c} confirmado${c === 1 ? '' : 's'}`;
     if (c > 0) {
       const p = n('pruebas'), d = n('diferidos'), pr = n('propias');
-      // Desde la story 1.8 la línea trae `propias` (la prueba escrita a mano, verificada por el comando): con
-      // ese campo son cuatro números. Una línea anterior conserva su texto — no se reescribe la historia.
+      // La línea trae `propias` (la prueba escrita a mano, verificada por el comando): con
+      // ese campo son cuatro números. Una línea sin ese campo conserva su texto.
       nota += p === null && d === null
         ? ' · sin constancia de sus pruebas de regresión (pase anterior al 2026-09-17)'
         : pr !== null
@@ -199,7 +199,7 @@ function estadoDelPaseAdversarial(g) {
   return r ? r.cls : null;
 }
 
-// La nota del salteo del 5b (story 1.8): sale de los BOOLEANOS de la línea, nunca de su `motivo` — el `reason`
+// La nota del salteo del 5b: sale de los BOOLEANOS de la línea, nunca de su `motivo` — el `reason`
 // del portón es prosa y puede traer rutas. Un salteo forzado o un abandono lo dice; uno normal no necesita nota.
 function notaDelSalteo(g) {
   if (String(g.check || g.name || g.gate || '') !== 'adversarial-skip') return null;
@@ -217,8 +217,8 @@ function clasificar(status) {
   if (status === undefined || status === null || status === '') return 'sin_estado';
   const s = String(status).toLowerCase();
   if (s === 'green' || s === 'ok' || s === 'pass' || s === 'passed') return 'paso';
-  // Story 2.8: la guía de QA anota también cuando está al día (`presente`) y cuando no hacía falta
-  // (`no-aplica`). Las dos son «miró y dejó pasar»: sin esto caían en «estado no reconocido».
+  // La guía de QA anota también cuando está al día (`presente`) y cuando no hacía falta
+  // (`no-aplica`). Las dos son «miró y dejó pasar»: sin esto caen en «estado no reconocido».
   if (s === 'presente' || s === 'no-aplica') return 'paso';
   if (ERROR.some((x) => s.startsWith(x))) return 'error';
   if (FRENO.some((x) => s.startsWith(x))) return 'freno';
@@ -226,8 +226,8 @@ function clasificar(status) {
 }
 
 /**
- * Los nombres de los pasos salen de la tabla única del pipeline (`skills/tycon-pipeline/scripts/lib/steps.js`, story
- * 7.23), no se tipean ni se leen del título de cada archivo de paso. Son los de 0 a 8: los que tienen marca en
+ * Los nombres de los pasos salen de la tabla única del pipeline (`skills/tycon-pipeline/scripts/lib/steps.js`),
+ * no se tipean ni se leen del título de cada archivo de paso. Son los de 0 a 8: los que tienen marca en
  * `stepTimings`. Si la tabla no se puede cargar, van los números y la página lo declara con el motivo.
  */
 const TABLA_DE_PASOS = path.join(__dirname, '..', '..', '..', 'skills', 'tycon-pipeline', 'scripts', 'lib', 'steps.js');
@@ -237,13 +237,13 @@ function nombresDePasos(tabla = TABLA_DE_PASOS) {
   try {
     const T = require(tabla);
     // una tabla que carga pero está mal armada (exporta null, `stepName` que lanza) degrada igual que una que no
-    // carga: el tablero no se cae entero por los nombres (pase adversarial de la 7.23)
+    // carga: el tablero no se cae entero por los nombres
     for (let i = 0; i < nombres.length; i++) {
       const n = T && typeof T.stepName === 'function' ? T.stepName(i) : null;
       if (typeof n === 'string' && n) nombres[i] = n; else faltan.push(i);
     }
   } catch (e) {
-    // «No está» y «está rota» no son lo mismo (cazador de fallos silenciosos, 2.14): el motivo lleva el tipo de error,
+    // «No está» y «está rota» no son lo mismo: el motivo lleva el tipo de error,
     // nunca su mensaje (puede traer rutas de la máquina, y la página se publica); algo lanzado que no es un Error, igual.
     const codigo = (e && e.code) || (e instanceof SyntaxError ? 'SyntaxError' : (e && e.name) || 'error');
     const donde = String(tabla).split(/[\\/]/).slice(-5).join('/');
@@ -257,9 +257,9 @@ function nombresDePasos(tabla = TABLA_DE_PASOS) {
 
 /**
  * 🔴 Todo texto que llega de AFUERA de la lista blanca pasa por el saneado: el mensaje rescatado y
- * también los MOTIVOS. Medido en la corrida real (2026-09-09): el motivo de «conversación borrada»
- * que escribe el rescate dice «se buscó <sessionId>.jsonl en las 1970 carpetas» — 144 identificadores
- * de sesión llegaban a la página por un campo que parecía prosa inocente. Sin saneador, el texto no
+ * también los MOTIVOS: el motivo de «conversación borrada»
+ * que escribe el rescate dice «se buscó <sessionId>.jsonl en las 1970 carpetas», y por ahí llegarían los identificadores
+ * de sesión a la página por un campo que parece prosa inocente. Sin saneador, el texto no
  * se publica: sale la palabra «no medido» y el motivo genérico.
  */
 function limpio(txt, alternativa) {
@@ -271,10 +271,10 @@ function limpio(txt, alternativa) {
 /**
  * El REPO de la corrida, como nombre corto: nunca la ruta, nunca la carpeta donde estaba clonado.
  *
- * 🔴 2026-09-17: el filtro agrupaba por carpeta, así que el mismo repo salía partido según la máquina y el
- * clon (`Codigo/FRESNOBZExtBackend` en la de DevB y `FRESNO/FRESNOBZExtBackend` en la de DevA, un worktree
- * `…--wt-5-17-tanda-b`, catorce clones descartables `tcg-2.10`, `tcg-215`… del arnés) y se colaban `.` y
- * `tmp`. Ahora, en orden:
+ * 🔴 Agrupar por carpeta parte el mismo repo según la máquina y el
+ * clon (el mismo backend bajo dos carpetas distintas, un worktree
+ * `…--wt-<rama>`, clones descartables del arnés) y se colarían `.` y
+ * `tmp`. En orden:
  *  - sin ruta, `.` o una carpeta temporal pelada → null (sin registrar);
  *  - un clon del scratchpad de una sesión (`…/claude-NNN/-Users-u-SourceCode-<repo>/…`) → el repo de esa
  *    sesión, que es el que se clonó;
@@ -378,7 +378,7 @@ function modeloDeCorrida(d, nombresPasos) {
   };
 
   // Tramos: del fin del anterior al fin de éste. Pasos con marcas invertidas o empatadas salen
-  // FUSIONADOS (`5+6`) con la misma regla que `consumo.por_paso` (cortesDePaso de la 2.13): se
+  // FUSIONADOS (`5+6`) con la misma regla que `consumo.por_paso` (cortesDePaso): se
   // declara en vez de fingir un reparto que las marcas no sostienen.
   let tramos = [];
   let motivoTramos = null;
@@ -386,7 +386,7 @@ function modeloDeCorrida(d, nombresPasos) {
   if (!rescate) motivoTramos = 'los pasos no se cortan: el saneado y el corte de pasos (tokens-digest.js) no están en esta máquina';
   else if (!Number.isFinite(ini)) motivoTramos = 'la corrida no anotó su hora de inicio: sin eje de tiempo';
   else if (cuentaTiempos) {
-    // story 2.7: con arranque, el paso dura fin − arranque y el hueco previo es un tramo PROPIO
+    // Con arranque, el paso dura fin − arranque y el hueco previo es un tramo PROPIO
     // (`tipo: 'entre'`), nunca parte del paso. Sin arranque, la cuenta lo estima como siempre y lo dice.
     const t = cuentaTiempos.tiempos(m.stepTimings || {}, { inicio: m.startedAt });
     for (const p of t.pasos) {
@@ -430,9 +430,9 @@ function modeloDeCorrida(d, nombresPasos) {
       const cls = adv ? adv.cls : clasificar(g.status);
       const t = off(g.ts);
       // Una evaluación ANTERIOR al inicio es de otro pipeline de la misma sesión: se cuenta aparte y
-      // no entra en NINGUNA de las dos vistas (tabla y lista cuentan sobre el MISMO universo — pase
-      // adversarial 2.14, lente de contratos). Sin hora de inicio no hay «antes»: el evento se queda,
-      // sin minuto (t: null), y el detalle lo dice — antes desaparecían todos.
+      // no entra en NINGUNA de las dos vistas (tabla y lista cuentan sobre el MISMO universo).
+      // Sin hora de inicio no hay «antes»: el evento se queda,
+      // sin minuto (t: null), y el detalle lo dice; sin esto desaparecerían todos.
       if (t !== null && t < 0) { eventosPrevios += 1; continue; }
       controles.total += 1;
       controles[cls] += 1;
@@ -475,7 +475,7 @@ function modeloDeCorrida(d, nombresPasos) {
     };
   }
 
-  // Los REVISORES (story 2.15): lo medido con su número, lo estimado con la palabra. Lista blanca,
+  // Los REVISORES: lo medido con su número, lo estimado con la palabra. Lista blanca,
   // como todo lo demás: del bloque del volcado entran conteos, medianas y el estimado con su fecha;
   // NO entra `detalle` (por revisor) ni la `fuente` del supuesto (trae una ruta). Sin bloque no es
   // «0 tokens»: es «sin medir», con el comando que lo mide.
@@ -514,7 +514,7 @@ function modeloDeCorrida(d, nombresPasos) {
     };
   }
 
-  // El VALIDADOR DE STORIES por fase (story 7.3): sólo los conteos de las fases conocidas —lista blanca: ni
+  // El VALIDADOR DE STORIES por fase: sólo los conteos de las fases conocidas —lista blanca: ni
   // el `detalle`, ni campos que el volcado traiga de más— y las decisiones de los re-loops, contadas de las
   // líneas `validador-reloop` del registro de controles. Sin veredicto medido no es «0 hallazgos»: se dice.
   const FASES_VAL = ['antes-de-implementar', 'vuelta-1', 're-loop', 'sin-vuelta', 'otra-story'];
@@ -552,8 +552,8 @@ function modeloDeCorrida(d, nombresPasos) {
     tramos, sin_marca: sinMarca, motivo_tramos: motivoTramos,
     tiempos,
     pasos_completos: completados.length,
-    // El ÚLTIMO paso completado, no `length - 1`: stepsCompleted tiene huecos en 22 de 231 corridas
-    // reales ([0,1,4,5,6,7] decía «quedó en el 5» y quedó en el 7 — pase adversarial 2.14).
+    // El ÚLTIMO paso completado, no `length - 1`: stepsCompleted tiene huecos
+    // ([0,1,4,5,6,7] diría «quedó en el 5» y quedó en el 7).
     ultimo_paso: completados.length ? Math.max(...completados.map(Number).filter(Number.isFinite)) : null,
     llego_al_final: completados.map(Number).includes(8),
     dod: m.dodRuntime && m.dodRuntime.verdict ? String(m.dodRuntime.verdict) : null,
@@ -590,8 +590,8 @@ function aplicarEsperasDelHilo(c, marker) {
 
 /**
  * De qué fue la corrida, en una frase. En orden: el título de la story (del frontmatter, cuando la corrida
- * lo tuvo a la vista: 104 de 120 hilos medidos), el asunto de su primer commit (8 más), y si no hay hilo,
- * el nombre del archivo de la story sin su número. Nunca el prompt del dev: medido, suele ser «listo» o «seguí».
+ * lo tuvo a la vista), el asunto de su primer commit, y si no hay hilo,
+ * el nombre del archivo de la story sin su número. Nunca el prompt del dev: suele ser «listo» o «seguí».
  */
 function descripcionDe(marker, cz) {
   if (cz && cz.estado === 'leido') {
@@ -609,21 +609,21 @@ function descripcionDe(marker, cz) {
  * `_texto` (render lo saca del modelo y lo emite aparte, para abrirlo a pedido).
  */
 /**
- * El cambio de la corrida según git (story 2.19), compacto para el modelo: repos, commits (con su minuto de
+ * El cambio de la corrida según git, compacto para el modelo: repos, commits (con su minuto de
  * la corrida) y archivos con sus PARTES (una por commit, y la de «sin commitear»), sin sumar partes: una
  * suma de dos diffs no es un diff. Los parches van aparte, comprimidos, saneados OTRA VEZ (el archivo pudo
  * escribirlo el guion de otra máquina). Lo que no se pudo leer dice por qué.
  */
 function modeloGit(rutas, marker, cambioDelVolcado) {
   const conCambio = rutas.find((r) => fs.existsSync(cambios.rutaDeCambio(r)));
-  // 🔴 Sin el archivo, no da igual «esta corrida es anterior a la 2.19» que «el archivador lo intentó y no
+  // 🔴 Sin el archivo, no da igual «esta corrida es de un arnés sin ese archivo» que «el archivador lo intentó y no
   // pudo»: el volcado guarda el motivo (arnés atrasado, guion roto, tope de tiempo) y la vista lo dice.
   if (!conCambio) {
     const c = cambioDelVolcado;
     if (c && typeof c === 'object' && c.estado && c.estado !== 'medido') {
       const S0 = rescate && rescate.sanear;
-      // Sin el saneado NO se publica ningún texto de afuera, tampoco este motivo — era la única rama que lo
-      // dejaba pasar crudo (revisor de seguridad, vuelta 3). El resto del archivo ya se comporta así.
+      // Sin el saneado NO se publica ningún texto de afuera, tampoco este motivo — es la única rama que lo
+      // dejaría pasar crudo. El resto del archivo ya se comporta así.
       if (!S0) return { modelo: { estado: 'no_publicado', motivo: 'sin el saneado (scripts/metrics/tokens-digest.js) el cambio de git no se publica' }, texto: null };
       return { modelo: { estado: String(c.estado), motivo: S0(String(c.motivo || 'sin motivo declarado')), del_volcado: 1 }, texto: null };
     }
@@ -647,7 +647,7 @@ function modeloGit(rutas, marker, cambioDelVolcado) {
     repos.push({ n: nombre, p: r.principal ? 1 : 0, estado: String(r.estado || 'no_medido'), motivo: r.motivo ? S(String(r.motivo)) : null,
       otras: num(r.otras_sesiones), otras_motivo: r.otras_sesiones_motivo ? S(String(r.otras_sesiones_motivo)) : null,
       previo: num(r.sin_commitear_previo) || 0, commits_motivo: r.commits === null && r.commits_motivo ? S(String(r.commits_motivo)) : null,
-      // Copia compartida (arreglo del 2026-09-18): los commits que el hilo atribuye a otra sesión, y el motivo si no se pudo atribuir.
+      // Copia compartida: los commits que el hilo atribuye a otra sesión, y el motivo si no se pudo atribuir.
       de_otras: (Array.isArray(r.commits_de_otras_sesiones) ? r.commits_de_otras_sesiones : []).filter((k) => k && typeof k === 'object')
         .map((k) => ({ h: S(String(k.h || '')).slice(0, 12), s: S(String(k.asunto || '')).slice(0, 300) })),
       atrib_motivo: r.atribucion_motivo ? S(String(r.atribucion_motivo)) : null });
@@ -693,7 +693,7 @@ const RESUMEN = Object.freeze({
   nombre: (volcado) => (cambios ? cambios.rutaDeResumen(volcado) : String(volcado).replace(/\.json$/, '') + '.resumen.json.gz'),
 });
 
-/** El resumen guardado de una corrida, o null (no está, o no se puede leer: entonces la corrida se lee como hoy). */
+/** El resumen guardado de una corrida, o null (no está, o no se puede leer: entonces la corrida se lee sin resumen). */
 function leerResumen(volcado) {
   try {
     const r = JSON.parse(require('zlib').gunzipSync(fs.readFileSync(RESUMEN.nombre(volcado))).toString('utf8'));
@@ -704,7 +704,7 @@ function leerResumen(volcado) {
   }
 }
 
-/** Los cambios de una corrida: de su conversación si está en el disco; si no, de su resumen; si no, como hoy. */
+/** Los cambios de una corrida: de su conversación si está en el disco; si no, de su resumen; si no, sin cambios. */
 function cambiosDeLaCorrida(rutas, marker, nombresPasos, cambioDelVolcado) {
   const hayCrudo = cambios && rutas.some((r) => fs.existsSync(cambios.rutaDeHilo(r)) || fs.existsSync(cambios.rutaDeCambio(r)));
   if (!hayCrudo) {
@@ -784,11 +784,11 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
   const x = cambios.cambiosDeCorrida(conHilo, marker, { sanear: rescate && rescate.sanear, cortesDePaso: rescate && rescate.cortesDePaso });
   if (x.estado !== 'leido') return { estado: x.estado, motivo: x.motivo, git: git.modelo, _textoGit: git.texto };
   // Con git: un nombre que salió de la CONSOLA se muestra con la ruta de git si coincide con uno solo, y se
-  // oculta (contado) si git no lo confirma — `p.Id` salía como archivo porque `p => p.Id` parece `> archivo`.
+  // oculta (contado) si git no lo confirma — `p.Id` saldría como archivo porque `p => p.Id` parece `> archivo`.
   // Las ediciones con herramientas no se tocan: su nombre es exacto aunque git no lo tenga (un archivo revertido).
   // 🔴 `ids` sólo sirve para DESMENTIR un nombre de la consola, y para eso git tiene que haber medido algo:
-  // con la lista vacía (0 archivos, o repos que no se pudieron mirar) se ocultaba TODO lo hecho por consola
-  // rotulándolo «texto del comando que parecía un archivo» (pase adversarial).
+  // con la lista vacía (0 archivos, o repos que no se pudieron mirar) se ocultaría TODO lo hecho por consola
+  // rotulándolo «texto del comando que parecía un archivo».
   const gitMidioAlgo = git.modelo.estado === 'medido' && git.modelo.archivos.length > 0
     && !(git.modelo.repos || []).some((r) => r.estado !== 'medido');
   const ids = gitMidioAlgo ? git.modelo.archivos.map((a) => a.f) : null;
@@ -825,14 +825,14 @@ function leerCambios(rutas, marker, nombresPasos, cambioDelVolcado) {
 /**
  * El registro: una corrida por sesión (el archivo con `archivedAt` mayor); lo ilegible se cuenta.
  *
- * Con `opts.buzon` (story 2.16) lee además la carpeta bajada del buzón: `<buzon>/<maquina>/*.json`. La
+ * Con `opts.buzon` lee además la carpeta bajada del buzón: `<buzon>/<maquina>/*.json`. La
  * máquina de cada corrida sale de la CARPETA que la contiene —nunca del volcado, que no la trae: los
  * volcados archivados no se reescriben— y la de las locales, del nombre de esta máquina. Lo que no se
  * puede atribuir (un volcado suelto en la raíz, una carpeta sin forma de nombre de máquina) sale con
  * `maquina: null` y su motivo. 🔴 Cuando la misma sesión está en varias copias, gana la de
  * `archivedAt` mayor, pero la máquina es la de la primera copia que SÍ la declara: una copia suelta
- * más nueva no puede dejar «sin declarar» a una corrida atribuible (AC12).
- * Story 2.28: la corrida de una carpeta vieja que `.carpetas-de-maquina.json` declara `unida` es de su carpeta nueva
+ * más nueva no puede dejar «sin declarar» a una corrida atribuible.
+ * La corrida de una carpeta vieja que `.carpetas-de-maquina.json` declara `unida` es de su carpeta nueva
  * (`maquina_nota: «antes, <vieja>»`), y entre las dos copias de una sesión gana la de la nueva; una `compartida` o
  * `siguio_recibiendo` queda en su carpeta, con su marca. Sin el archivo, nada se une y `buzon.uniones` lo dice.
  */
@@ -842,7 +842,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
   const maquinaLocal = multi ? (opts.maquina || null) : null;
   const motivoLocal = multi && !maquinaLocal ? (motivoSinSubida || 'no se pudo saber el nombre de esta máquina') : null;
   const copias = [];   // { ruta, maquina, motivo }
-  // story 2.27: el sitio lee SÓLO el espejo del buzón; no tener registro propio no es un faltante (AC 18)
+  // El sitio lee SÓLO el espejo del buzón; no tener registro propio no es un faltante
   if (opts.soloBuzon) out.registro = { estado: 'no_aplica', motivo: null, dir: null };
   else try {
     for (const f of fs.readdirSync(dir).filter((x) => x.endsWith('.json')).sort()) copias.push({ ruta: path.join(dir, f), origen: maquinaLocal, maquina: maquinaLocal, motivo: motivoLocal });
@@ -856,7 +856,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     // 🔴 Ordenado: «la primera copia que declara la máquina» no puede depender del orden del disco.
     try { entradas = fs.readdirSync(opts.buzon, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)); }
     catch (e) { out.buzon = { estado: 'no_medido', motivo: `la carpeta bajada del buzón de corridas no se pudo leer (${e.code || 'ilegible'})`, carpetas_ilegibles: 0 }; }
-    // story 2.28: la corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
+    // La corrida de una carpeta vieja `unida` es de su nueva («antes, <vieja>»); una `compartida` o
     // `siguio_recibiendo` queda en su carpeta, marcada. Sin el archivo del bajador no se une nada, y se dice.
     const uniones = out.buzon.estado === 'leido' ? leerUniones(opts.buzon) : null;
     if (uniones) out.buzon.uniones = uniones.estado === 'medidas' ? { estado: 'medidas', motivo: null } : { estado: 'no_medidas', motivo: uniones.motivo };
@@ -865,7 +865,7 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
       if (en.name.startsWith('.')) continue;
       const ruta = path.join(opts.buzon, en.name);
       // 🔴 Un symlink no es ni archivo ni carpeta para el Dirent: se decide por statSync (sigue el enlace), y lo
-      //    que no se puede mirar (un enlace roto) se CUENTA — nunca desaparece en silencio (pase adversarial).
+      //    que no se puede mirar (un enlace roto) se CUENTA — nunca desaparece en silencio.
       let esArchivo = en.isFile(), esCarpeta = en.isDirectory();
       if (en.isSymbolicLink()) {
         try { const st = fs.statSync(ruta); esArchivo = st.isFile(); esCarpeta = st.isDirectory(); }
@@ -899,9 +899,9 @@ function leerRegistro(dir, nombresPasos, opts = {}) {
     const prev = porSesion.get(sid);
     if (!prev) { porSesion.set(sid, { d, maquina: cp.maquina, origen: cp.origen || null, motivo: cp.motivo, rutas: [cp.ruta], deVieja: Boolean(cp.deVieja), nota: cp.nota || null }); continue; }
     out.duplicados += 1;
-    // story 2.28 (decisión 12): entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
+    // Entre la copia de una carpeta vieja —unida, compartida o que siguió recibiendo— y la de
     // una carpeta nueva (o la local), gana la nueva, sea cual sea su fecha de archivo: la máquina volvió a subir ahí lo de
-    // su disco. Con una vieja compartida la sesión es de la carpeta nueva que la re-subió, no de la vieja (pase adversarial).
+    // su disco. Con una vieja compartida la sesión es de la carpeta nueva que la re-subió, no de la vieja.
     const misma = cp.maquina && cp.maquina === prev.maquina;
     if (prev.deVieja && !cp.deVieja) {
       // la sesión está también en la carpeta nueva: el origen es la nueva
@@ -951,10 +951,10 @@ function sinPasosAnotados(c, marker) {
 
 function umbrales(archivo = path.join(__dirname, 'sources.json')) {
   // El JUICIO vive en sources.json → thresholds (misma regla que la página de seis preguntas): sin fila,
-  // la ficha sale neutra. Antes el 80 % estaba escrito en el cliente (spec-first, SPEC-W7).
-  // 🔴 Un sources.json roto NO es «no hay umbral»: sin motivo, las fichas perdían el color en silencio
-  //    y eso se veía igual que «no hace falta umbral acá» (cazador de fallos silenciosos, iter 2).
-  // El modelo (y su `--json`) conserva el nombre de antes, `sentido` (story 8.9, pregunta decidida 2): la
+  // la ficha sale neutra.
+  // 🔴 Un sources.json roto NO es «no hay umbral»: sin motivo, las fichas pierden el color en silencio
+  //    y eso se ve igual que «no hace falta umbral acá».
+  // El modelo (y su `--json`) conserva el nombre `sentido`: la
   // configuración se lee en inglés y la salida no cambia.
   try {
     const cfg = JSON.parse(fs.readFileSync(archivo, 'utf8'));
@@ -970,7 +970,7 @@ function umbrales(archivo = path.join(__dirname, 'sources.json')) {
 }
 
 /**
- * La línea base de los pasos por corrida (story 7.12): sale del MEDIDOR, que es su única copia. Tipeada acá
+ * La línea base de los pasos por corrida: sale del MEDIDOR, que es su única copia. Tipeada acá
  * envejecería callada. 🔴 Si no se puede traer, NO vuelve un nulo mudo: vuelve el motivo, y la página lo dice —
  * «no la pude cargar» y «no hay línea base» no se pueden ver iguales. El motivo lleva el CÓDIGO del error,
  * nunca su mensaje (trae rutas del disco). `ruta` existe para que la suite pueda ejercitar los dos caminos malos.
@@ -988,7 +988,7 @@ function lineaBasePasos(ruta = '../../metrics/steps-per-run.js') {
 function modelo(runsDir, opts = {}) {
   const pasos = opts.skillsDir ? pasosDeLaImagen(opts.skillsDir) : nombresDePasos();
   const reg = leerRegistro(runsDir, pasos.nombres, opts);
-  // story 2.27 (decisión 13): el sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
+  // El sitio unifica los productos sobre lo que cada persona ve, nunca sobre todo
   if (!opts.sinUnificar) unificarProductos(reg.corridas);
   // Qué máquinas cubre lo que se leyó, y cuántas corridas de cada una: el sello sale de ACÁ, no de una
   // bandera. Una sola máquina y es ésta → «esta máquina», como siempre.
@@ -1023,13 +1023,13 @@ function modelo(runsDir, opts = {}) {
 }
 
 
-// ───────────────────────────── lo que viaja al sitio (story 2.27) ─────────────────────────────
+// ───────────────────────────── lo que viaja al sitio ─────────────────────────────
 
 // Lo que sale del hilo en un sitio que no baja las conversaciones (sin disco o con `site.mailbox.threads` apagado).
 const SIN_HILOS = 'no medido: este sitio no baja las conversaciones';
 
 /**
- * El id estable de una corrida (decisión 3): 16 hexadecimales del sha256 de «máquina \n sesión». Ni el índice de la lista
+ * El id estable de una corrida: 16 hexadecimales del sha256 de «máquina \n sesión». Ni el índice de la lista
  * (cambia con el filtro de cada persona) ni el id de sesión crudo (no se publica). Sin máquina, la máquina es ''.
  */
 function idEstable(maquina, sid) {
@@ -1047,7 +1047,7 @@ const copiar = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x
 const elegir = (o, claves) => (o && typeof o === 'object' ? Object.fromEntries(claves.map((k) => [k, k in o ? copiar(o[k]) : null])) : o === undefined ? null : o);
 
 /**
- * La corrida para la LISTA (AC 15): lista BLANCA, campo por campo — lo que usan la cabecera, las fichas, los gráficos y
+ * La corrida para la LISTA: lista BLANCA, campo por campo — lo que usan la cabecera, las fichas, los gráficos y
  * el filtro. La tabla, que usa más, se arma en el servidor. Nada del detalle ni de los textos.
  */
 function paraLista(c) {
@@ -1068,7 +1068,7 @@ function paraDetalle(c) {
   return JSON.parse(JSON.stringify(c, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v)));
 }
 
-/** Los TEXTOS de una corrida (los cambios y los parches), con la forma de hoy: gzip en base64, ya saneados. */
+/** Los TEXTOS de una corrida (los cambios y los parches), con su forma: gzip en base64, ya saneados. */
 function textosDe(c) {
   const x = c && c.cambios;
   return { texto: (x && x._texto) || null, textoGit: (x && x._textoGit) || null };
@@ -1091,7 +1091,7 @@ function barraTramos(c, escala) {
   return `<span class="bar" style="width:${ancho.toFixed(1)}%">${segs}${faltan ? `<i class="falta" style="width:6px" title="${faltan} paso(s) sin marca"></i>` : ''}</span>`;
 }
 
-// story 2.7: las dos columnas. Lo estimado lleva «~» y lo dice en el título; lo que no se midió es
+// Las dos columnas. Lo estimado lleva «~» y lo dice en el título; lo que no se midió es
 // «sin medir», nunca 0.
 function colTrabajo(c) {
   const t = c.tiempos;
@@ -1117,7 +1117,7 @@ function colArchivos(c) {
   if (x && x.git && x.git.estado === 'medido') {
     const nR = x.git.repos.length;
     const sinMedir = x.git.repos.filter((r) => r.estado !== 'medido');
-    // Un 0 con repos sin mirar es «no pude mirar» escrito como «no cambió nada» (pase adversarial).
+    // Un 0 con repos sin mirar es «no pude mirar» escrito como «no cambió nada».
     if (!x.git.total_archivos && sinMedir.length) {
       return `<span class="nd" title="${esc(`no se pudo mirar ${sinMedir.length} de ${nR} repo(s): ${sinMedir.map((r) => `${r.n} (${r.motivo || 'sin motivo'})`).join(' · ')}`)} — no es cero">—</span>`;
     }
@@ -1143,9 +1143,9 @@ function filaControles(c) {
 }
 
 /**
- * La cabecera de la vista (story 2.27, decisión 12): el título, el sello y las bandas. `opts.sitio` = { rol, version }
- * pone los textos fijos del modo sitio (decisión 14): la versión del sitio en lugar del commit y el eyebrow que enlaza el
- * tablero sólo para quien mantiene. Sin conteos globales en el modelo (el de un dev), el sello no los nombra (AC 8).
+ * La cabecera de la vista: el título, el sello y las bandas. `opts.sitio` = { rol, version }
+ * pone los textos fijos del modo sitio: la versión del sitio en lugar del commit y el eyebrow que enlaza el
+ * tablero sólo para quien mantiene. Sin conteos globales en el modelo (el de un dev), el sello no los nombra.
  */
 function cabecera(M, opts = {}) {
   const sitio = opts.sitio || null;
@@ -1161,26 +1161,26 @@ function cabecera(M, opts = {}) {
       : 'Sitio de la organización · tus corridas';
   const alcance = !M.multi || (M.maquinas && M.maquinas.solo_esta)
     ? 'esta máquina'
-    : [...M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`), ...(M.maquinas.sin_declarar ? [`sin declarar ${M.maquinas.sin_declarar}`] : [])].join(' · ') || (sitio ? 'ninguna máquina' : '');   // la vista local, igual que antes
+    : [...M.maquinas.lista.map((x) => `${x.nombre} ${x.corridas}`), ...(M.maquinas.sin_declarar ? [`sin declarar ${M.maquinas.sin_declarar}`] : [])].join(' · ') || (sitio ? 'ninguna máquina' : '');
   const bandaBuzon = !M.multi || !M.buzon ? ''
-    // al dev del sitio le llega sólo si se leyó entero, sin el número de carpetas (decisión 6, AC 19)
+    // al dev del sitio le llega sólo si se leyó entero, sin el número de carpetas
     : M.buzon.parcial !== undefined && !M.buzon.incompleto ? (M.buzon.estado !== 'leido' || M.buzon.parcial ? '<div class="banda gris"><b>Ojo:</b> puede faltar alguna corrida tuya: el buzón no se leyó entero. Lo que falta no es cero.</div>' : '')
     // quien mantiene, en el sitio, cuando la última bajada no terminó entera: se sirve el último armado entero
     : M.buzon.incompleto && M.buzon.estado === 'leido' && !M.buzon.carpetas_ilegibles ? '<div class="banda gris"><b>La última bajada del buzón no terminó entera.</b> Se muestra la última entera: pueden faltar las corridas más nuevas, y eso no es cero.</div>'
     : M.buzon.estado !== 'leido' ? `<div class="banda gris"><b>No se leyó la carpeta bajada del buzón.</b> ${esc(M.buzon.motivo)} — las corridas de otras máquinas faltan, no son cero.</div>`
     : M.buzon.carpetas_ilegibles ? `<div class="banda gris"><b>${M.buzon.carpetas_ilegibles} carpeta${M.buzon.carpetas_ilegibles === 1 ? '' : 's'} de máquina del buzón no se pudo leer.</b> Sus corridas no están en esta página ni en ningún número: faltan, no son cero.</div>`
     : '';
-  // story 2.28: sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
+  // Sin el archivo de uniones del bajador, la carpeta vieja de una máquina que se mudó sale como otra máquina
   const bandaUniones = M.multi && M.buzon && M.buzon.uniones && M.buzon.uniones.estado === 'no_medidas'
     ? `<div class="banda gris"><b>Carpetas de máquina:</b> uniones de carpetas no medidas (${esc(M.buzon.uniones.motivo)}). Cada carpeta del buzón sale como una máquina aparte, también la vieja de una máquina que se mudó a su carpeta con código.</div>`
     : '';
   // Con corridas del buzón, que esta máquina no tenga registro propio no deja las fichas sin medir: salen sólo
-  // con lo bajado. Decir «salen con trama» ahí era una alarma falsa al lado de números (pase adversarial de la 2.16).
+  // con lo bajado. Decir «salen con trama» ahí sería una alarma falsa al lado de números.
   const bandaRegistro = M.registro.estado === 'medido' || M.registro.estado === 'no_aplica' ? ''
     : M.multi && M.corridas.length
       ? `<div class="banda gris"><b>Sin registro de corridas propio en esta máquina.</b> ${esc(M.registro.motivo)} La página sale sólo con lo bajado del buzón: las corridas de esta máquina, si las hay, faltan.</div>`
       : `<div class="banda gris"><b>Sin registro de corridas en esta máquina.</b> ${esc(M.registro.motivo)} Las fichas salen con trama, y eso no es cero.</div>`;
-  // 'skill': la tabla de pasos que trae la imagen del sitio (story 2.27) — con nombre, como 'tabla'
+  // 'skill': la tabla de pasos que trae la imagen del sitio — con nombre, como 'tabla'
   const bandaPasos = (M.pasos.fuente !== 'tabla' && M.pasos.fuente !== 'skill') || M.pasos.motivo ? `<div class="banda gris">${esc(M.pasos.motivo)}</div>` : '';
   const bandaRescate = M.sin_rescate ? `<div class="banda gris">${esc(M.sin_rescate)}</div>` : '';
   const bandaTiempos = M.sin_tiempos ? `<div class="banda gris">${esc(M.sin_tiempos)}</div>` : '';
@@ -1232,7 +1232,7 @@ function ejecutiva(M, opts = {}) {
 `;
 }
 
-/** La tabla, armada en el servidor (decisión 12): usa campos que la lista no lleva (los archivos tocados). */
+/** La tabla, armada en el servidor: usa campos que la lista no lleva (los archivos tocados). */
 function tabla(M) {
   const C = M.corridas;
   const escala = Math.max(1, ...C.map((c) => c.tramos.reduce((a, t) => a + t.ms, 0))) * 0.55;
@@ -1269,7 +1269,7 @@ function tabla(M) {
 `;
 }
 
-/** El pie: las notas de la vista. En el sitio, «De dónde sale» dice el espejo del buzón (decisión 14). */
+/** El pie: las notas de la vista. En el sitio, «De dónde sale» dice el espejo del buzón. */
 function pie(M, opts = {}) {
   const deDondeSale = opts.sitio
     ? 'del espejo del buzón de corridas que el sitio baja con su identidad de sólo lectura; la máquina de cada corrida es su carpeta. Una corrida por sesión: si la misma corrida se subió dos veces, vale la más nueva.'
@@ -2377,7 +2377,7 @@ const SALIDA_DEFAULT = path.join(stateDirOf(os.homedir()), 'runs-dashboard.html'
 const BUZON_DEFAULT = path.join(stateDirOf(os.homedir()), 'corridas-buzon');
 
 /**
- * De dónde sale la carpeta bajada del buzón (story 2.16): `--mailbox` explícito, o la carpeta por defecto
+ * De dónde sale la carpeta bajada del buzón: `--mailbox` explícito, o la carpeta por defecto
  * (`TYCON_MAILBOX_DIR` o ~/.claude/.tycon-pipeline/corridas-buzon) si existe — pero SÓLO si no se pasó
  * `--runs-dir`: una suite que fabrica su registro nunca lee la carpeta real de la máquina. `--local-only`
  * la apaga siempre (la página sale sólo con las corridas de esta máquina).
@@ -2398,10 +2398,10 @@ function buzonDeclarado(opts) {
 /**
  * La ruta como la resuelve el sistema de archivos al ESCRIBIR: componente por componente, siguiendo cada
  * symlink ANTES de aplicar el «..» siguiente. path.resolve pliega «lnk/..» como texto y llega a otro lugar
- * que el kernel (pase adversarial de la 2.16). Lo que no existe se agrega tal cual. null = cadena de enlaces
+ * que el kernel. Lo que no existe se agrega tal cual. null = cadena de enlaces
  * que no termina.
- * 🔴 La raíz y el separador son los de la plataforma (pase adversarial de la 2.12): partiendo sólo por '/', en Windows
- *    ninguna ruta caía «dentro del repo» y la negativa del escritor único no se disparaba. En POSIX una '\' es parte
+ * 🔴 La raíz y el separador son los de la plataforma: partiendo sólo por '/', en Windows
+ *    ninguna ruta caería «dentro del repo» y la negativa del escritor único no se dispararía. En POSIX una '\' es parte
  *    del nombre; en Windows vale cualquiera de las dos barras. `dep` existe para probar Windows desde otra máquina.
  */
 function rutaComoLaEscribe(abs, saltos = 0, dep = { path, fs }) {
@@ -2421,7 +2421,7 @@ function rutaComoLaEscribe(abs, saltos = 0, dep = { path, fs }) {
     try { st = F.lstatSync(sig); }
     catch (e) {
       // Sólo «no existe» se agrega tal cual. Sin permiso, un bucle o un error de disco: no se sabe adónde
-      // escribiría → null → se niega (el mismo criterio que buzonDeclarado; cazador de fallos silenciosos, iter 5).
+      // escribiría → null → se niega (el mismo criterio que buzonDeclarado).
       if (!e || (e.code !== 'ENOENT' && e.code !== 'ENOTDIR')) return null;
     }
     if (st && st.isSymbolicLink()) {
@@ -2477,18 +2477,18 @@ function main(opts = {}) {
   if (opts.json) console.log(JSON.stringify(M, (k, v) => (k === '_texto' || k === '_textoGit' ? undefined : v), 2));
   if (opts.dryRun) { log('\n--dry-run: no se escribió nada.'); return 0; }
   // 🔴 La página va a una carpeta local, fuera de todo repo, y NUNCA al repo del equipo: con corridas del
-  //    buzón publicaría el trabajo de todo el equipo a todo el equipo (AC16 de la 2.16); sin buzón, dejaría
-  //    commiteada una foto de UNA máquina que cambia según quién la armó (retirada el 2026-09-17).
+  //    buzón publicaría el trabajo de todo el equipo a todo el equipo; sin buzón, dejaría
+  //    commiteada una foto de UNA máquina que cambia según quién la armó.
   const salida = path.resolve(opts.salida || (M.multi ? path.join(buzon, 'runs-dashboard.html') : SALIDA_DEFAULT));
   if (dentroDelRepoDelEquipo(salida)) {
     console.error(`se niega a escribir ${path.relative(RAIZ, salida) || salida}: esa ruta es del repo del equipo, que lo clona todo el equipo${M.multi ? ', y la página tiene corridas del buzón' : ''}. La vista de corridas no se commitea: sin --output va a ${M.multi ? '<carpeta bajada>/runs-dashboard.html' : '~/.claude/.tycon-pipeline/runs-dashboard.html'}.`);
     return 2;
   }
   if (!opts.salida) { try { fs.mkdirSync(path.dirname(salida), { recursive: true }); } catch (_) { /* lo dice el write */ } }
-  // story 8.9 (tanda D2, AC 43): una máquina que todavía tiene la página con su nombre de antes la lleva al nuevo antes
+  // Una máquina que todavía tiene la página con su nombre de antes la lleva al nuevo antes
   // de escribir, aunque la página se regenera entera (la vieja queda intacta hasta el retiro). Una ruta que no está en
   // el mapa —la de --output o la de la carpeta del buzón— pasa derecho. Como la página no tiene historia que perder, no
-  // poder llevar la vieja se dice y la página se escribe igual (pase adversarial de la D2).
+  // poder llevar la vieja se dice y la página se escribe igual.
   try { prepareStateWrite(salida, { where: 'scripts/nightly/dashboard/runs.js' }); }
   catch (e) { console.error(`⚠️  la página de antes del renombre no se pudo llevar (${e.message}); se escribe la nueva igual`); }
   try {
@@ -2499,9 +2499,9 @@ function main(opts = {}) {
   return 0;
 }
 
-// `dentroDelRepoDelEquipo` también la usa dashboard.js (story 2.12): la página de seis preguntas tiene un solo escritor en el repo.
+// `dentroDelRepoDelEquipo` también la usa dashboard.js: la página de seis preguntas tiene un solo escritor en el repo.
 module.exports = { main, modelo, leerRegistro, modeloDeCorrida, clasificar, agruparEventos, producto, unificarProductos, nombresDePasos, lineaBasePasos, render, CONTROLES, dentroDelRepoDelEquipo,
-  // story 2.27: lo que usa la pestaña Corridas del sitio
+  // Lo que usa la pestaña Corridas del sitio
   idEstable, paraLista, paraDetalle, textosDe, cabecera, ejecutiva, tabla, pie, CLIENTE, CSS_PROPIO, SIN_HILOS,
   // el sitio con las conversaciones prendidas: el resumen de cada corrida y los textos de una, a demanda
   RESUMEN, resumirEspejo, textosDeUnaCorrida,

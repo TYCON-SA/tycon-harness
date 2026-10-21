@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# El tablero del arnés — MODELO de GitHub Actions para una organización que vive en GitHub (story 8.31)
+# El tablero del arnés — MODELO de GitHub Actions para una organización que vive en GitHub
 #
 # Cómo darlo de alta: pipelines/operations/github/README.md. Se copia a `.github/workflows/` del repo de operaciones,
 # sin cambiar nada: qué arnés corre lo dice `team-repos.json` del repo de operaciones.
@@ -10,7 +10,7 @@
 # genera la página, verifica su sello (de hoy, de esta corrida y del snapshot de métricas más nuevo), la guarda en main
 # y verifica lo PUBLICADO. Corre después de las métricas: sin el punto del día, el sello no pasa. Lo que cambia a
 # propósito: no hay buzón de corridas (es un almacenamiento de Azure: las fichas del equipo salen «no leído»), y lo
-# «naranja» de Azure es un aviso (::warning::) con la corrida en verde. Para la foto de despliegues (story 2.22) acuña un
+# «naranja» de Azure es un aviso (::warning::) con la corrida en verde. Para la foto de despliegues acuña un
 # token de la GitHub App de operaciones, de sólo lectura (Deployments y Actions); sin la App, esa foto sale «no medido».
 # Efectos: una corrida programada SIEMPRE guarda (en ella `inputs` está vacío); una a mano, según `effects`.
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -115,7 +115,7 @@ jobs:
           fi
           echo "${OUT}"
 
-      # Lo que deja la noche para el sitio de la organización (story 2.23, AC 16). En GitHub, los pull requests y los
+      # Lo que deja la noche para el sitio de la organización. En GitHub, los pull requests y los
       # pedidos todavía no se leen: los dos archivos dicen `no_medido` con su frase, y el sitio lo muestra así.
       - name: Lo que deja la noche para el sitio (pull requests y pedidos asignados)
         working-directory: harness
@@ -126,7 +126,7 @@ jobs:
           node scripts/nightly/open-prs/open-prs.js --today "${DAY}" --provider github --json ".dashboard/open-prs/open-prs-${DAY}.json" 2>&1 | bash pipelines/operations/github/annotate.sh
           node scripts/nightly/assigned/assigned-items.js --today "${DAY}" --provider github --out .dashboard/assigned 2>&1 | bash pipelines/operations/github/annotate.sh
 
-      # La foto de despliegues (story 2.22): lee los deployments y environments de los repos de producto declarados en
+      # La foto de despliegues: lee los deployments y environments de los repos de producto declarados en
       # `operations.json → deployments`, con un token de la GitHub App de operaciones (sólo lectura: Deployments y
       # Actions; el token propio del workflow no lee otros repos). Sin la App, la foto sale «no medido» con
       # `sin_credencial`, no roja.
@@ -180,7 +180,7 @@ jobs:
           set -euo pipefail
           . pipelines/operations/github/operations-auth.sh
           DAY=$(date -u +%Y-%m-%d)
-          # la marca de la configuración aplicada (story 2.29): el paso que trajo los datos de main la pisó; prepare-tree.sh
+          # la marca de la configuración aplicada: el paso que trajo los datos de main la pisó; prepare-tree.sh
           # dejó la copia de esta corrida en la carpeta temporal. Viaja sólo con una noche verde, como lo demás
           mkdir -p .dashboard && cp "${RUNNER_TEMP}/applied-config.json" .dashboard/applied-config.json
           node scripts/ci/push-nightly-data.js save \

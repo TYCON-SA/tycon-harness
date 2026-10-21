@@ -1,20 +1,20 @@
 #!/usr/bin/env node
 'use strict';
-// third-party-coverage.js — nada ajeno sin declarar en agent-skills, nada declarado de más (story 8.5 · 2026-09-29)
+// third-party-coverage.js — nada ajeno sin declarar en agent-skills, nada declarado de más
 //
-// POR QUÉ EXISTE: agent-skills distribuía ~2.000 archivos ajenos —cuatro skills con licencia propietaria entre ellos—
-// y nada decía de quién era cada cosa. El manifiesto (third-party-skills.json, al lado) lo dice; este control verifica
-// que el manifiesto y el repo no se separen: una skill de internet copiada al árbol sin declarar se ve el día que se
+// POR QUÉ EXISTE: agent-skills distribuye ~2.000 archivos ajenos —cuatro skills con licencia propietaria entre ellos—
+// y sin manifiesto nada dice de quién es cada cosa. El manifiesto (third-party-skills.json, al lado) lo dice;
+// este control verifica que el manifiesto y el repo no se separen: una skill de internet copiada al árbol sin declarar se ve el día que se
 // copia (el pre-commit de agent-skills lo corre), no cuando alguien la publica.
 //
 // QUÉ MIRA, sobre lo VERSIONADO (el índice: `git ls-files -s`, nunca el disco — lo no versionado de cada máquina no es
 // asunto del repo). Sin red: no abre ninguna conexión.
-//   · Universos (AC 6): cada ruta cae en exactamente uno de own / derived / third_party. En ninguno o en dos → hallazgo.
-//   · Declaraciones (AC 7): con el retiro pendiente, cada entrada tiene que estar versionada (si no, está muerta); con el
+//   · Universos: cada ruta cae en exactamente uno de own / derived / third_party. En ninguno o en dos → hallazgo.
+//   · Declaraciones: con el retiro pendiente, cada entrada tiene que estar versionada (si no, está muerta); con el
 //     retiro hecho, ninguna puede estarlo y cada una tiene que estar en el .gitignore del repo.
-//   · Enlaces simbólicos (AC 8): uno versionado es hallazgo a cualquier profundidad, salvo que una entrada lo declare
+//   · Enlaces simbólicos: uno versionado es hallazgo a cualquier profundidad, salvo que una entrada lo declare
 //     en `links` con el retiro pendiente (se informa, sale con el retiro).
-//   · Contenido (AC 5, sólo con el retiro pendiente y sin --skip-content): cada entrada `download` da su `tree` con
+//   · Contenido (sólo con el retiro pendiente y sin --skip-content): cada entrada `download` da su `tree` con
 //     `HEAD:<target>`; si no, nombra la entrada y los archivos distintos, faltantes o de más.
 //
 // SALIDA: exit 0 = coincide · 1 = hay hallazgos · 2 = no pude mirar (manifiesto ilegible o mal formado, repo que no
@@ -32,7 +32,7 @@ const { spawnSync } = require('child_process');
 const DEFAULT_MANIFEST = path.join(__dirname, 'third-party-skills.json');
 const INSTALL_KINDS = ['download', 'official-plugin', 'retire'];
 const DERIVED_REPOS = ['agent-skills', 'tycon-claude-guides'];
-// Vocabulario CERRADO de licencias (AC 3): un identificador SPDX conocido, la propietaria o «no declarada». Un valor
+// Vocabulario CERRADO de licencias: un identificador SPDX conocido, la propietaria o «no declarada». Un valor
 // fuera de acá es un error del manifiesto, no una licencia nueva: se agrega a esta lista con su motivo.
 const LICENSES = new Set(['MIT', 'Apache-2.0', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', 'MPL-2.0', 'CC0-1.0', 'CC-BY-4.0',
   'CC-BY-SA-4.0', 'Unlicense', '0BSD', 'Zlib', 'BSL-1.0', 'GPL-2.0-only', 'GPL-3.0-only', 'LGPL-2.1-only', 'LGPL-3.0-only',
@@ -126,7 +126,7 @@ function validateManifest(m) {
       errors.push(`${t}: el campo «install» no puede ser download con licencia propietaria: el paso no la baja nunca (official-plugin o retire)`);
     }
     if (!Array.isArray(e.used_by)) errors.push(`${t}: el campo «used_by» tiene que ser una lista (puede ser vacía)`);
-    // `publish: true` (2026-10-05): la copia pública la baja aunque nada de lo que sale la use. Sólo en una que se baja
+    // `publish: true`: la copia pública la baja aunque nada de lo que sale la use. Sólo en una que se baja
     // y con licencia libre: en otra la transformación la poda igual, y la marca diría algo que no pasa.
     if (e.publish !== undefined && typeof e.publish !== 'boolean') errors.push(`${t}: el campo «publish» tiene que ser true o false`);
     else if (e.publish === true && (e.install !== 'download' || !['MIT', 'Apache-2.0'].includes(eff.license))) {
@@ -234,7 +234,7 @@ function unitOf(p) {
   return m ? m[1] : p;
 }
 
-// La copia pública de un solo repo (story 8.7, AC 11) trae el arnés en la misma raíz que agent-skills: se reconoce por
+// La copia pública de un solo repo trae el arnés en la misma raíz que agent-skills: se reconoce por
 // este mismo control versionado en su lugar del arnés. Ahí sólo se mira lo que aporta agent-skills.
 const AREA_AGENT_SKILLS = /^(?:skills|agents|packs|\.agents|\.claude)\//;
 const DEL_ARNES = 'scripts/publishing/third-party-coverage.js';
@@ -256,7 +256,7 @@ function checkCoverage({ repo, manifest, skipContent = false }) {
   for (const f of files) {
     const anc = ancestors(f.path);
     const universes = [];
-    // una derivada declarada por su ruta exacta gana sobre un patrón de las propias (story 8.7: la copia publica una
+    // una derivada declarada por su ruta exacta gana sobre un patrón de las propias (la copia publica una
     // derivada renombrada que también cae en `skills/tycon-*`); dos declaraciones exactas siguen siendo un hallazgo
     const esDerivada = anc.some((a) => derivedByTarget.has(a));
     if (!esDerivada && manifest.own.some((o) => anc.some((a) => o.re.test(a)))) universes.push('own');
@@ -313,7 +313,7 @@ function checkCoverage({ repo, manifest, skipContent = false }) {
     }
   }
 
-  // contenido: con el retiro pendiente, el manifiesto describe lo que hay hoy (AC 5)
+  // contenido: con el retiro pendiente, el manifiesto describe lo que hay hoy
   let contentChecked = 0;
   if (!skipContent && manifest.retirement === 'pending') {
     const downloads = manifest.thirdParty.filter((e) => e.install === 'download');

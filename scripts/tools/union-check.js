@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * union-check.js — ¿el repo unido es lo que dice que es? (story 8.18, tramo 0 · 2026-10-03)
+ * union-check.js — ¿el repo unido es lo que dice que es?
  *
- * POR QUÉ EXISTE. El arnés y agent-skills eran dos repos internos y se unieron en uno, el del arnés, con un
+ * POR QUÉ EXISTE. El arnés y agent-skills son dos repos internos que se unen en uno, el del arnés, con un
  * `git merge --allow-unrelated-histories` que no reescribe nada. Esa unión tiene cuatro promesas, y ninguna se ve a
  * simple vista en un árbol de tres mil archivos:
  *   · no se perdió ni se reescribió historia: cada punta de las dos historias es ancestro de la unión;
  *   · el árbol es la unión EXACTA de los dos lados, salvo una lista cerrada de excepciones (las tres rutas que se
- *     repetían: el `.gitignore`, el pre-commit y el `README.md`);
+ *     repiten: el `.gitignore`, el pre-commit y el `README.md`);
  *   · los papeles que acompañan a la unión están (la guía rescatada del README de agent-skills y su cita);
  *   · mientras tres sesiones trabajan en paralelo sobre esa base, ningún archivo lo tocan dos.
  * Este guion las comprueba. Sólo lee: nunca escribe en el repo, ni objetos de git.
@@ -23,15 +23,15 @@
  *   tree     `--harness` y `--skills` son los dos lados YA COMPUESTOS, antes de resolver los choques. Lo que se espera
  *            de la unión: cada archivo de cada lado en su misma ruta, con el mismo contenido y el mismo modo, y
  *              · `.gitignore`: las líneas de los dos, primero las del arnés y sin repetir —la regla con que el
- *                exportador las junta para la copia pública—, SIN el bloque `.advisors/` de agent-skills (dejaba de
+ *                exportador las junta para la copia pública—, SIN el bloque `.advisors/` de agent-skills (deja de
  *                versionar el registro de revisores, y `git add` no avisa);
  *              · `.githooks/pre-commit`: el despachador, con el texto que genera el exportador; el de cada lado pasa
  *                a `pre-commit-harness` y `pre-commit-skills`, byte a byte;
  *              · `README.md`: el del arnés; el de agent-skills no entra.
  *   history  cada `--tips` es ancestro de `--union`. Sirve igual para una re-mezcla: la punta anterior de la base
  *            tiene que seguir siendo ancestro de la nueva (nunca se rebasa).
- *   papers   en `--base`: existe `guides/maintaining/inactive-skills.md` y el `.gitignore` la cita (ya no al README que no
- *            entró). Con los dos lados, además: `.tycon/post-commit-ignore` es el de agent-skills tal cual, y los
+ *   papers   en `--base`: existe `guides/maintaining/inactive-skills.md` y el `.gitignore` la cita (y no el README, que no
+ *            entra). Con los dos lados, además: `.tycon/post-commit-ignore` es el de agent-skills tal cual, y los
  *            archivos de `.tycon/` del arnés no cambiaron.
  *   lanes    ningún archivo aparece tocado por dos carriles, salvo los compartidos a propósito (la story, `tasks/todo.md`,
  *            `tasks/orden-epica-8.md`, `specs/sprint-status.yaml` y `.engram/**`). De cada rama cuentan los commits que
@@ -58,7 +58,7 @@ const ADVISORS_LINE = '.advisors/';
 const GUIDE = 'guides/maintaining/inactive-skills.md';
 const OLD_CITE = 'README.md §«Skills que no se cargan»';
 const POST_COMMIT_IGNORE = '.tycon/post-commit-ignore';
-// lo que los tres carriles tocan a propósito (story 8.18, AC 3)
+// lo que los tres carriles tocan a propósito
 const SHARED_BETWEEN_LANES = Object.freeze({
   files: ['specs/story-8.18-un-solo-repo-interno.md', 'tasks/todo.md', 'tasks/orden-epica-8.md', 'specs/sprint-status.yaml'],
   folders: ['.engram/'],
@@ -120,7 +120,7 @@ function unifiedGitignore(harnessText, skillsText) {
 }
 
 /**
- * El texto del despachador con que se armó la unión. Un commit de la unión no cambia nunca, y el exportador de hoy ya no
+ * El texto del despachador con que se armó la unión. Un commit de la unión no cambia nunca, y el exportador no
  * trae el despachador (el arnés corre un solo control, .githooks/pre-commit-checks): el texto queda acá, fijo. Lo usa
  * `tree` cuando el lado del arnés no trae exportador (un repo de juguete).
  */

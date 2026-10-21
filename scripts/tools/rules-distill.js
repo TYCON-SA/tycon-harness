@@ -39,13 +39,12 @@ const JSON_OUT = process.argv.includes('--json');
 const VERBOSE = process.argv.includes('--verbose');
 
 // 🔴 El catálogo y los scripts se leen del REPO DONDE VIVE ESTE GUION (o de TYCON_GUIDES_DIR), no de una
-//    ruta fija bajo el home (story 2.9). Para quien usa la ruta canónica no cambia nada; un clon, en
-//    cambio, se lee a sí mismo — antes un clon leía el catálogo de otro checkout sin decirlo.
+//    ruta fija bajo el home: un clon se lee a sí mismo, y no el catálogo de otro checkout sin decirlo.
 const GUIDES_DIR = process.env.TYCON_GUIDES_DIR || path.resolve(__dirname, '..', '..');
 const CATALOG_PATH = path.join(GUIDES_DIR, 'guides/advisor-rules-catalog.md');
 const AGENTS_DIR = path.join(HOME, '.claude/agents');
 // los revisores de un paquete que trae este árbol (packs/<p>/agents/): citan reglas del catálogo igual que los del núcleo
-// (story 8.41, AC 26: con el paquete, una regla que sólo cita un revisor de paquete cuenta como cualquiera)
+// (con el paquete, una regla que sólo cita un revisor de paquete cuenta como cualquiera)
 const PACKS_DIR = path.join(GUIDES_DIR, 'packs');
 // Una carpeta de paquete sin pack.json es un paquete roto, no uno ausente: se dice una vez por stderr (las reglas que sólo
 // citan sus revisores van a contar como no citadas). Uno sin agents/ es legítimo: un paquete puede traer sólo skills.
@@ -97,13 +96,12 @@ function classifyOwner(ownerStr) {
 // Regex para rule IDs: PREFIX-Cn / PREFIX-Wn (1-2 dígitos). Acepta también
 // formas como `SEC-C1` y `**SEC-C1**` (markdown bold).
 //
-// 🔴 El prefijo admite DÍGITOS después de la primera letra (story 2.9, 2026-09-16). Hasta ese día
-//    era `[A-Z]{2,12}`, y el área `I18N` tiene un 1 y un 8: sus **7 reglas eran invisibles** para
-//    este guion, el revisor de textos sin traducir figuraba como dueño de nada, y el total se
-//    publicaba como 351 en vez de 358. Como no las veía, tampoco podía acusarlas de nada: el
-//    agujero se tapaba a sí mismo. El criterio vive ahora en scripts/lib/rules-catalog.js.
-// El catálogo se lee con la gramática del parser único (story 2.9): con dos gramáticas, un identificador
-// con sufijo (ACCOV-C1-EXT) se DEFINÍA con una y se CITABA con otra, y salía como zombi falso.
+// 🔴 El prefijo admite DÍGITOS después de la primera letra. Con `[A-Z]{2,12}`, el área `I18N` (tiene un 1 y un 8)
+//    quedaría invisible: sus reglas no figurarían, su revisor aparecería como dueño de nada y el total saldría
+//    corto. Como no las vería, tampoco podría acusarlas de nada: el agujero se taparía a sí mismo. El criterio
+//    vive en scripts/lib/rules-catalog.js.
+// El catálogo se lee con la gramática del parser único: con dos gramáticas, un identificador
+// con sufijo (ACCOV-C1-EXT) se definiría con una y se citaría con otra, y saldría como zombi falso.
 const catalogoDeReglas = require('../lib/rules-catalog.js');
 const RULE_ID_RE = new RegExp(`\\b(${catalogoDeReglas.ID})\\b`, 'g');
 
@@ -111,7 +109,7 @@ const RULE_ID_RE = new RegExp(`\\b(${catalogoDeReglas.ID})\\b`, 'g');
 // Estos NO cuentan como zombies — fueron retirados a propósito.
 const RETIRED_MARKER = new RegExp(`~~(${catalogoDeReglas.ID})~~`, 'g');
 
-// El parser ÚNICO del catálogo (story 2.9) es el que decide QUÉ reglas hay y DE QUIÉN son: una regla
+// El parser ÚNICO del catálogo es el que decide QUÉ reglas hay y DE QUIÉN son: una regla
 // existe si está DEFINIDA (primera columna en negrita de una fila). El escaneo por menciones de abajo se
 // conserva sólo para `owners[]`: «quién la cita» y «de quién es» son dos preguntas distintas.
 
@@ -184,9 +182,9 @@ function parseCatalog() {
     }
   }
 
-  // ── Overlay de DEFINICIONES (story 2.9) ──────────────────────────────────────────────────────
+  // ── Overlay de DEFINICIONES ──────────────────────────────────────────────────────
   // El dueño de una regla es quien la DEFINE, no quien la menciona primero. Y una regla definida
-  // que nadie menciona en prosa existe igual: sin este overlay, las 7 de `I18N` seguían fuera.
+  // que nadie menciona en prosa existe igual: sin este overlay, las de `I18N` quedarían fuera.
   const def = catalogoDeReglas.leer({ catalogo: CATALOG_PATH });
   let definedPairs = null, collisions = [];
   let reusedIds = [];
@@ -195,7 +193,7 @@ function parseCatalog() {
     collisions = def.colisiones;
     reusedIds = def.reutilizadas;
     // 🔴 Las retiradas las decide el lector, que ignora los bloques de código. El escaneo global de
-    //    arriba tomaba como retirada el EJEMPLO de la guía «Retirar una regla» y escondía a SEC-W4, una
+    //    arriba tomaría como retirada el EJEMPLO de la guía «Retirar una regla» y escondería a SEC-W4, una
     //    regla viva. Y un identificador retirado que volvió a definirse es una regla viva: no se retira.
     retired.clear();
     for (const r of def.retiradas) retired.add(r.regla);
@@ -203,7 +201,7 @@ function parseCatalog() {
     // 🔴 Sólo lo DEFINIDO es regla del catálogo. Un identificador que el catálogo sólo menciona no es
     //    una regla: si un revisor lo cita, eso es un huérfano (se cita y no está definido).
     // 🔴 Una fila definida fuera de una sección con dueño no tiene a quién atribuirse: queda afuera
-    //    (el lector la cuenta en `sin_dueno`). Copiarla con dueño null tumbaba classifyOwner.
+    //    (el lector la cuenta en `sin_dueno`). Copiarla con dueño null tumbaría classifyOwner.
     const conDueno = def.lista.filter((r) => typeof r.dueno === 'string' && r.dueno);
     const definidos = new Set(conDueno.map((r) => r.regla));
     for (const id of [...catalogIds.keys()]) if (!definidos.has(id)) catalogIds.delete(id);

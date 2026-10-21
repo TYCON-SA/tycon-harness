@@ -1,26 +1,26 @@
 #!/usr/bin/env node
 'use strict';
-// install-third-party.js — el paso del instalador que restituye las skills de terceros (story 8.5 · 2026-09-29)
+// install-third-party.js — el paso del instalador que restituye las skills de terceros
 //
 // POR QUÉ EXISTE: lo ajeno sale del árbol de agent-skills (se referencia, no se copia) y cada máquina tiene que seguir
 // teniendo, carpeta por carpeta, el mismo contenido. El manifiesto (third-party-skills.json) fija cada skill por commit
 // y por hash de árbol de git; este paso la pone en su lugar.
 //
-// DE DÓNDE, en este orden (AC 12):
+// DE DÓNDE, en este orden:
 //   1. La historia de git LOCAL de agent-skills: si el objeto `tree` está en el clon —el caso de toda máquina que lo tuvo
 //      versionado—, sin red. El pull del retiro borra los archivos pero no los objetos.
 //   2. El `origin` en su `commit` y `path`, menos `omit`, con `mode_fixes`: se baja a un temporal y se verifica que dé
 //      `tree` ANTES de escribir. Un origen que no lo da no se instala («el origen no coincide»). Sólo con el retiro hecho:
-//      mientras lo ajeno siga versionado, no hay nada que bajar (criterio aprobado de la tanda A).
+//      mientras lo ajeno siga versionado, no hay nada que bajar.
 //   3. Ninguna: se dice cuál de tres cosas pasó —no pude preguntar, el origen no existe, el commit ya no está—, el disco
 //      queda como estaba y el próximo arranque reintenta.
 //
-// LO QUE NUNCA HACE (AC 13-16): borrar; pisar un archivo que no escribió él (uno distinto se nombra como «modificado
+// LO QUE NUNCA HACE: borrar; pisar un archivo que no escribió él (uno distinto se nombra como «modificado
 // localmente»; lo que no pertenece a la entrada ni se mira); dejar un archivo a medias (temporal + renombre); escribir
 // con otro paso corriendo (cerrojo); pasar el tope de red (TYCON_THIRD_PARTY_NETWORK_BUDGET_S, 20 s: la extensión de
-// VS Code se rinde a los 60 s de arranque). Nunca baja una propietaria: esas vienen con el plugin oficial (AC 17).
+// VS Code se rinde a los 60 s de arranque). Nunca baja una propietaria: esas vienen con el plugin oficial.
 //
-// EL PULL DEL RETIRO, TRABADO (AC 27): si el retiro borró un archivo ajeno que el dev tenía modificado, el pull con
+// EL PULL DEL RETIRO, TRABADO: si el retiro borró un archivo ajeno que el dev tenía modificado, el pull con
 // --autostash de la línea de arranque deja el índice en conflicto y ningún pull vuelve a entrar. El paso saca del índice
 // SÓLO esas rutas (el archivo del dev queda en el disco, el stash también); cualquier otro conflicto lo nombra y no lo toca.
 //
@@ -40,7 +40,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -60,7 +60,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 // ── hashes de git, calculados acá (sin escribir objetos en ningún repo) ─────────────────────────────────────────────
 const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest('hex');
-// story 8.23 (tanda B): el hash de git vive en scripts/lib/git-tree-hash.js —lo usa también la versión bajada como
+// el hash de git vive en scripts/lib/git-tree-hash.js —lo usa también la versión bajada como
 // comprimido— y acá se re-exporta tal cual (tar-reader.test.js lo comprueba)
 const { blobSha, treeSha } = require('../lib/git-tree-hash.js');
 
@@ -230,7 +230,7 @@ function insideTarget(dest, rel) {
   return path.resolve(base, rel).startsWith(`${base}${path.sep}`);
 }
 
-// ── una versión bajada: verificar, no restituir (story 8.23, tanda G · AC 42) ──────────────────────────────────
+// ── una versión bajada: verificar, no restituir ──────────────────────────────────
 // el manifiesto de la instalación bajada (scripts/setup/harness/release.js, MANIFEST_NAME): escrito acá para que esta pieza
 // siga corriendo suelta (los laboratorios copian carpetas de scripts/ sin scripts/setup/)
 const RELEASE_MANIFEST = '.tycon-release.json';
@@ -243,7 +243,7 @@ function checkReleaseTree(repo, manifest, { home = os.homedir(), env = process.e
   // la caché de la bajada (~/.tycon/third-party/<commit>/<destino>): su manifiesto trae cada archivo con su hash. Con
   // ella la comparación es por CONTENIDO, archivo por archivo; sin ella, por el hash de árbol, probando los modos
   // posibles del disco (los modos no viajan a Windows, y la bajada deja un ejecutable con 755 donde el manifiesto declara
-  // 644 vía mode_fixes: comparar modos daba un aviso falso en cada arranque — pase adversarial de la tanda G, clase 8)
+  // 644 vía mode_fixes: comparar modos daría un aviso falso en cada arranque)
   let cacheRoot = null;
   try { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); if (fs.existsSync(lib)) cacheRoot = require(lib).ownPaths({ env }).thirdParty; } catch { cacheRoot = null; }
   const problems = [];
@@ -294,7 +294,7 @@ function unmergedPaths(repo) {
   }
   return byPath;
 }
-/** AC 27: la línea de arranque trae el retiro con `pull --ff-only --autostash`. Si el retiro borró un archivo ajeno que
+/** La línea de arranque trae el retiro con `pull --ff-only --autostash`. Si el retiro borró un archivo ajeno que
  *  el dev tenía modificado, git sale 0 pero deja el índice en conflicto (DU: HEAD lo borró, el stash lo modificó) y desde
  *  ahí ningún pull entra — en silencio, porque la línea descarta los errores. Se destraba SÓLO ese caso: cada conflicto
  *  es DU bajo un destino de third_party, el stash de arriba es un autostash y los trae a todos. Se sacan del índice
@@ -334,22 +334,20 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
     say(`⚠ ${TAG}: no pude leer el manifiesto — ${String(e.message).split('\n').slice(0, 3).join(' ')} · no toco nada`);
     return;
   }
-  // una versión BAJADA (story 8.23, tanda G · AC 42): el árbol trae su manifiesto de instalación y no es un clon; lo
-  // ajeno lo restituye la propia bajada (release.js) al instalar o actualizar. Acá sólo se VERIFICA, sin git y sin
-  // escribir: decir «no es un clon … no restituyo nada» en cada arranque era ruido, y nadie miraba si faltaba algo
-  // (la primera máquina migrada, 2026-10-08). Se mira ANTES de preguntarle a git: un ~/.tycon/harness dentro de una
+  // una versión BAJADA: el árbol trae su manifiesto de instalación y no es un clon; lo ajeno lo restituye la propia
+  // bajada (release.js) al instalar o actualizar. Acá sólo se VERIFICA, sin git y sin escribir: decir «no es un clon …
+  // no restituyo nada» en cada arranque sería ruido, y nadie miraría si falta algo. Se mira ANTES de preguntarle a git: un ~/.tycon/harness dentro de una
   // carpeta de usuario versionada con git (git init ~) contestaría «soy un clon» y el paso escribiría en el árbol bajado
-  // (pase adversarial de la tanda G, clase 6)
   if (fs.existsSync(path.join(repo, RELEASE_MANIFEST))) { checkReleaseTree(repo, manifest, { home: os.homedir(), env }); return; }
   if (git(repo, ['rev-parse', '--git-dir']).status !== 0) {
     say(`⚠ ${TAG}: ${repo} no es un clon de agent-skills que pueda leer — no restituyo nada`);
     return;
   }
-  // El cerrojo es del CLON, no de la ruta con que lo nombran (story 8.18, contrato C11): `~/.claude/agent-skills` puede
-  // ser un enlace al clon unido, y por el enlace y por su ruta real es el mismo árbol. Con la ruta tal cual eran dos
-  // cerrojos, y dos pasos a la vez escribían los dos (medido: 5 y 4 archivos de la misma skill, cada uno por su ruta).
+  // El cerrojo es del CLON, no de la ruta con que lo nombran: `~/.claude/agent-skills` puede ser un enlace al clon
+  // unido, y por el enlace y por su ruta real es el mismo árbol. Con la ruta tal cual serían dos cerrojos, y dos pasos
+  // a la vez escribirían los dos.
   let lockOf = path.resolve(repo);
-  try { lockOf = fs.realpathSync(repo); } catch { /* se acaba de leer con git: si ahora no resuelve, vale la ruta dada */ }
+  try { lockOf = fs.realpathSync(repo); } catch { /* se acaba de leer con git: si no resuelve, vale la ruta dada */ }
   const lockDir = path.join(path.dirname(statePath), `third-party-${sha1(Buffer.from(lockOf)).slice(0, 8)}.lock`);
   if (!check && !takeLock(lockDir)) {
     say(`ℹ ${TAG}: otro arranque está restituyendo en este agent-skills ahora — no escribo; el próximo arranque completa lo que falte`);
@@ -367,7 +365,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
     const listed = (paths, n) => paths.slice(0, n).join(', ') + (paths.length > n ? ` y ${paths.length - n} más` : '');
     if (stuck && stuck.unstuck) {
       // con sus rutas: el recorrido de abajo sólo nombra los del árbol NUEVO de una entrada `download`; uno de una
-      // propietaria, de una retirada o del árbol anterior de impeccable no lo nombraría nadie (pase adversarial, tanda B)
+      // propietaria, de una retirada o del árbol anterior de impeccable no lo nombraría nadie
       say(`✓ ${TAG}: destrabé agent-skills — el retiro borró ${plural(stuck.paths.length, 'archivo ajeno', 'archivos ajenos')} que tenías modificados (${listed(stuck.paths, 5)}); tus versiones quedaron en el disco (no las toco) y siguen en el stash «autostash» (git -C ${sh(repo)} stash list)`);
     } else if (stuck) {
       // un consejo que funcione: `checkout HEAD --` sobre un archivo que el retiro borró falla y no resuelve nada
@@ -411,7 +409,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
 
     for (const e of downloads) {
       // Cada entrada, aislada: un error del disco en una skill (una carpeta sin permiso, un archivo donde el árbol pide
-      // una carpeta) se nombra con la skill y el archivo, y las que siguen se restituyen igual (pase adversarial, tanda A).
+      // una carpeta) se nombra con la skill y el archivo, y las que siguen se restituyen igual.
       let touching = e.target;
       try {
       const dest = path.join(repo, e.target);
@@ -449,7 +447,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
           continue;
         }
         if (check) {
-          // a medias también se nombra (pase adversarial, tanda B): el arranque la completaría desde el origen
+          // a medias también se nombra: el arranque la completaría desde el origen
           report.missing.push(fs.existsSync(dest) ? `${e.target} (su contenido no da el árbol declarado y el árbol no está en la historia local: el arranque la baja del origen)` : `${e.target} (entera)`);
           continue;
         }
@@ -481,8 +479,8 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
         // el caché del estado vale sólo si tamaño, fecha, ctime (no se puede fijar a mano) e inodo son los mismos
         const cached = was && was.diskBlob && was.size === st.size && was.mtimeMs === st.mtimeMs && was.ctimeMs === st.ctimeMs && was.ino === st.ino;
         const disk = cached ? was.diskBlob : effectiveBlob(fs.readFileSync(abs), x.sha);
-        // `ours`: el contenido es el que el paso escribió o el que adoptó por ser idéntico al árbol declarado (AC 13:
-        // «lo escribió él y nadie lo tocó»). Uno distinto queda como no-suyo aunque después vuelva atrás a mano.
+        // `ours`: el contenido es el que el paso escribió o el que adoptó por ser idéntico al árbol declarado
+        // («lo escribió él y nadie lo tocó»). Uno distinto queda como no-suyo aunque después vuelva atrás a mano.
         const entry = { blob: x.sha, mode: x.mode, ...statKey(st), diskBlob: disk, ours: disk === x.sha };
         if (disk === x.sha) {
           if (!check && isExec(st) !== (x.mode === '100755')) { fs.chmodSync(abs, x.mode === '100755' ? 0o755 : 0o644); Object.assign(entry, statKey(fs.statSync(abs))); }
@@ -532,7 +530,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
     for (const [from, r] of report.restored) {
       say(`✓ ${TAG}: restituí ${plural(r.files, 'archivo', 'archivos')} en ${plural(r.targets, 'skill', 'skills')} ${from === 'local' ? 'desde la historia local de agent-skills (sin red)' : 'desde su origen, verificado por hash de árbol'}`);
     }
-    // agrupadas (pase adversarial, tanda B): sin red, la copia pública tiene ~70 skills que bajar, y 70 líneas en cada
+    // agrupadas: sin red, la copia pública tiene ~70 skills que bajar, y 70 líneas en cada
     // arranque entran al contexto de cada sesión. «No pude preguntar» va en una sola; las otras dos, por origen y commit.
     const groups = new Map();
     for (const f of report.failures) {
@@ -554,7 +552,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
     if (report.unsafe.length) say(`⚠ ${TAG}: ${report.unsafe.join(', ')} — ruta insegura (con .., absoluta o vacía): no escribo nada de esa skill`);
     if (report.unsupported.length) say(`⚠ ${TAG}: ${report.unsupported.join(', ')} — su árbol trae un enlace simbólico o un submódulo; el paso no instala eso`);
     if (report.missing.length) say(`⚠ ${TAG}: faltan ${report.missing.join(', ')} — corré el instalador`);
-    // El aviso diario es para el arranque; quien corre --check a mano pregunta y siempre se le contesta (2026-10-06)
+    // El aviso diario es para el arranque; quien corre --check a mano pregunta y siempre se le contesta
     const daily = (key, line) => {
       if (!check && state.notices[key] === today()) return;
       say(line);
@@ -578,7 +576,7 @@ function run({ repo, manifestPath, statePath, check = false, env = process.env }
   }
 }
 
-/** AC 17: las propietarias vienen con un plugin oficial; si no está, una línea por día con los dos comandos. */
+/** Las propietarias vienen con un plugin oficial; si no está, una línea por día con los dos comandos. */
 function proprietaryNotice(manifest, env, daily) {
   if (manifest.retirement !== 'done' || env.TYCON_THIRD_PARTY_PROPRIETARY_NOTICE === '0') return;
   const byPlugin = new Map();
@@ -599,7 +597,7 @@ function proprietaryNotice(manifest, env, daily) {
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────────────────────
-// `argv` (story 8.36): la tanda del aplicador (scripts/setup/applier-batch.js) la llama en su mismo proceso con sus
+// `argv`: la tanda del aplicador (scripts/setup/applier-batch.js) la llama en su mismo proceso con sus
 // argumentos; corrida como programa, los de la línea de comandos
 function main(argv = process.argv.slice(2)) {
   const opt = { check: false };

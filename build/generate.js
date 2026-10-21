@@ -11,10 +11,10 @@
  * Qué traduce (todo lo de nombre sale de build/equivalences.json — categoría ②):
  *   - model (sonnet/opus/haiku → slug de Codex)
  *   - tools: → sandbox_mode (la lista blanca por-tool no existe en Codex; asimetría
- *     declarada en el inventario §B.1)
+ *     declarada)
  *   - tools mcp__<etiqueta>__<tool> → tablas [mcp_servers.<etiqueta>]. La etiqueta se REPLICA
  *     de Claude a propósito: el modelo ve mcp__<etiqueta>__<tool>, así que el nombre sale
- *     idéntico en las dos herramientas y la prosa del advisor NO se traduce (sonda C 2026-08-21).
+ *     idéntico en las dos herramientas y la prosa del advisor NO se traduce.
  *     Un servidor que no se puede declarar en un perfil estático (codegraph: la ruta del índice
  *     cambia por repo) se OMITE y queda escrito en la cabecera del .toml — asimetría declarada,
  *     nunca silencio. Una etiqueta sin decisión hace fallar al generador.
@@ -28,7 +28,7 @@
  * acá, en el generador, en vez de a los minutos de un `codex exec` que no arranca.
  *
  * Qué NO hace: no toca hooks, ni skills, ni guías, ni CLAUDE.md (principio 2: un solo
- * generador para una sola familia — si esto crece a otra familia, se convirtió en un
+ * generador para una sola familia — si esto crece a otra familia, se convierte en un
  * compilador y hay que frenar).
  *
  * El set de advisors migrados vive en adapters/codex/agents/MANIFEST.json — un advisor
@@ -40,10 +40,10 @@
  *   node build/generate.js --check          ¿adapters al día con el canónico? exit 1 si no (pre-commit)
  *   node build/generate.js --deploy         copia los .toml generados a $CODEX_HOME/<name>.config.toml
  *   node build/generate.js --deploy-only    copia los .toml QUE YA ESTÁN en adapters/ a $CODEX_HOME, sin regenerar nada
- *                                           (story 8.23, tanda C: en una versión bajada el árbol no se escribe —cada
+ *                                           (en una versión bajada el árbol no se escribe —cada
  *                                           archivo tiene el hash con que se bajó, y regenerar un .toml lo dejaría
  *                                           «editado»—; lo publicado ya viene generado). Y los revisores de la capa del
- *                                           equipo (story 8.25, tanda A2b · AC 30): la capa no trae .toml —un .toml puede
+ *                                           equipo: la capa no trae .toml —un .toml puede
  *                                           declarar comandos que Codex lanza—, así que se GENERAN acá desde su .md, con
  *                                           el generador y las equivalencias de esta versión, directo a $CODEX_HOME
  *                                           (nunca al árbol). Un revisor de la capa que no se puede generar se dice y no
@@ -59,32 +59,31 @@ const path = require('path');
 const crypto = require('crypto');
 
 const ROOT = path.resolve(__dirname, '..');
-// Las equivalencias de una raíz (story 8.25, A2b: antes una constante del módulo; la capa del equipo se genera con las de
+// Las equivalencias de una raíz (la capa del equipo se genera con las de
 // la versión INSTALADA, y team-repo.js con las de la versión publicada). Guardado: si equivalences.json está roto
 // (mid-merge, truncado), REQUERIR este módulo no puede tirar — el audit de paridad lo importa y su regla es "el reporte se
 // escribe siempre". main() falla claro con el error; deployPairs() no lo necesita.
 function loadEq(root) { try { return JSON.parse(fs.readFileSync(path.join(root, 'build', 'equivalences.json'), 'utf8')); } catch (e) { return { __error: e.message }; } }
 const EQ = loadEq(ROOT);
 // La carpeta de agentes: TYCON_AGENTS_DIR, o la de agent-skills que resuelve el arnés (scripts/lib/skills-dir.js:
-// TYCON_SKILLS_DIR o ~/.claude/agent-skills). Antes ignoraba TYCON_SKILLS_DIR y comparaba las traducciones contra el
-// checkout compartido aunque las suites corrieran sobre un clon (story 8.3, gate del commit).
+// TYCON_SKILLS_DIR o ~/.claude/agent-skills). Si ignorara TYCON_SKILLS_DIR, compararía las traducciones contra el
+// checkout compartido aunque las suites corrieran sobre un clon.
 const AGENTS_DIR = process.env.TYCON_AGENTS_DIR
   || path.join(require(path.join(ROOT, 'scripts', 'lib', 'skills-dir.js')).resolveSkillsDirs(process.env.TYCON_SKILLS_DIR).repo, 'agents');
 const OUT_DIR = path.join(ROOT, 'adapters', 'codex', 'agents');
-// 2ª salida (Etapa G-2, decisión del dev 2026-08-22): el MISMO advisor, en formato de
+// 2ª salida: el MISMO advisor, en formato de
 // SUBAGENTE NATIVO de codex (~/.codex/agents/<name>.toml) — lo que una sesión codex spawnea
-// con collaborationspawn_agent. Mismo generador, misma familia, segundo FORMATO (la tensión
-// con el principio 2 quedó declarada en guides/decisions/codex-etapa-g-diseno.md Parte 2).
+// con collaborationspawn_agent. Mismo generador, misma familia, segundo FORMATO.
 const NATIVE_DIR = path.join(ROOT, 'adapters', 'codex', 'agents-native');
 const MANIFEST = path.join(OUT_DIR, 'MANIFEST.json');
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 
 // ---------- frontmatter ----------
-// El lector es el de la capa del equipo (scripts/setup/harness/team.js, tanda A2a): BOM, CRLF, claves entre comillas, el
-// comentario de un valor. Un agente que pasó la validación de la máquina no puede caerse acá por leerse distinto (story
-// 8.25, A2b · AC 30 b). Medido al cambiarlo: sobre todos los agentes del arnés da lo mismo que el lector plano de antes.
+// El lector es el de la capa del equipo (scripts/setup/harness/team.js): BOM, CRLF, claves entre comillas, el
+// comentario de un valor. Un agente que pasó la validación de la máquina no puede caerse acá por leerse distinto.
+// Sobre todos los agentes del arnés da lo mismo que el lector plano.
 // Un árbol sin el instalador (los árboles parciales de las pruebas del exportador, que copian sólo build/) no puede traer
-// una capa del equipo —la apila el instalador—: ahí se lee con el lector plano de antes, que da lo mismo sobre los agentes
+// una capa del equipo —la apila el instalador—: ahí se lee con el lector plano, que da lo mismo sobre los agentes
 // del arnés (medido). Sólo «no está»: cualquier otro error al cargar team.js sube.
 const FRONTMATTER = /^(?:﻿)?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
 const TEAM_JS = path.join(ROOT, 'scripts', 'setup', 'harness', 'team.js');
@@ -108,7 +107,7 @@ function parseAdvisor(mdPath) {
   const fm = {};
   for (const [k, v] of Object.entries(read.keys)) if (typeof v === 'string') fm[k] = v;
   // `tools:` (o `model:`) en forma de lista o de varias líneas se leería vacío y la traducción saldría con otros permisos sin
-  // decirlo (pase adversarial de la A2b): no se traduce, y se dice
+  // decirlo: no se traduce, y se dice
   for (const k of ['tools', 'model']) {
     if (Object.prototype.hasOwnProperty.call(read.keys, k) && (read.keys[k] === null || read.keys[k] === '')) {
       throw new Error(`${mdPath}: «${k}:» no está en una línea (lista o texto de varias líneas): el generador no lo traduce; escribilo como «${k}: a, b»`);
@@ -132,7 +131,7 @@ function parseAdvisor(mdPath) {
   return { name: fm.name, description: fm.description || '', model: fm.model || defaultReviewerModel(), tools, mcpServers, mcpToolsByServer, body: body.trim(), raw };
 }
 
-// ---------- el modelo de la organización (story 7.29) ----------
+// ---------- el modelo de la organización ----------
 // Los valores de hoy y la configuración de la organización viven en lib/models.js del skill: un árbol parcial (las pruebas
 // del exportador copian sólo build/) no lo trae, y ahí vale lo de siempre.
 const MODELS_JS = (root) => path.join(root, 'skills', 'tycon-pipeline', 'scripts', 'lib', 'models.js');
@@ -149,7 +148,7 @@ function defaultReviewerModel() {
 
 /**
  * La línea `model = …` de una traducción (antes de la primera tabla): reemplazada por `slug`, o sacada con `slug: null`
- * (el modelo por defecto de Codex, decisión 23). Las claves sueltas siguen antes de las tablas.
+ * (el modelo por defecto de Codex). Las claves sueltas siguen antes de las tablas.
  */
 function withCodexModel(toml, slug) {
   const lines = String(toml).split('\n');
@@ -239,9 +238,9 @@ function codexMcpServers(labels, eq) {
 /**
  * El gotcha del orden, cableado: TODA clave de RAÍZ tiene que quedar antes de la primera tabla.
  * (Las claves de adentro de una tabla son legítimas — lo que TOML se come es la clave de raíz
- * que quedó debajo de un [header]. La primera versión de este chequeo prohibía cualquier clave
- * después de una tabla y se disparó contra el `command` de [mcp_servers.*]: quedó como está
- * porque el freno tiene que atrapar el pecado real, no cualquier cosa que se le parezca.)
+ * que quedó debajo de un [header]. Prohibir cualquier clave después de una tabla se dispararía
+ * contra el `command` de [mcp_servers.*]: el freno tiene que atrapar el pecado real, no cualquier
+ * cosa que se le parezca.)
  */
 function assertLooseKeysFirst(toml, name, rootKeys) {
   const lines = toml.split('\n');
@@ -276,7 +275,7 @@ function substituteToolNames(text, eq) {
 
 // TOML multiline basic string: escapar \ y " vale siempre y no depende del contenido. Los caracteres de control que TOML no
 // admite crudos (en la de una línea, todos salvo el tabulador; en la de varias, además el salto de línea) salen como \uXXXX
-// (story 8.25, A2b: un escape en el frontmatter de un revisor de la capa los puede traer, y Codex no cargaría el .toml).
+// (un escape en el frontmatter de un revisor de la capa los puede traer, y Codex no cargaría el .toml).
 const ctl = (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`;
 function tomlMultiline(s) {
   // (un \r suelto no es salto de línea en TOML: CRLF se deja como LF y el resto sale como \r)
@@ -505,7 +504,7 @@ function advisorsToDeploy(root) {
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
 /**
- * Los revisores de la capa del equipo en Codex (story 8.25, A2b · AC 30): genera los dos archivos de cada uno con
+ * Los revisores de la capa del equipo en Codex: genera los dos archivos de cada uno con
  * `generateOne(root)` directo a `codexHome`, sin pasar por el árbol; no pisa un archivo que ya está, no lo escribió el arnés
  * (no está en el registro) y tiene otro contenido —es de la persona—; anota en el registro (`recordFile`) el nombre y el
  * hash de lo que escribió, después de cada escritura o borrado; y borra lo que la capa sacó sólo si su hash es el que
@@ -639,11 +638,11 @@ function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   fs.mkdirSync(NATIVE_DIR, { recursive: true });
   for (const name of manifest.advisors) {
-    // el canónico: en la carpeta de agentes, o en la de su paquete (story 8.41: los revisores de un stack viven ahí)
+    // el canónico: en la carpeta de agentes, o en la de su paquete (los revisores de un stack viven ahí)
     const agentsDir = fs.existsSync(path.join(AGENTS_DIR, `${name}.md`)) ? AGENTS_DIR
       : (require(path.join(ROOT, 'scripts', 'lib', 'pack-pieces.js')).agentDirInPacks(process.env.TYCON_PACKS_DIR || path.join(ROOT, 'packs'), name) || AGENTS_DIR);
     const { toml, nativeToml } = generateOne(ROOT, name, { agentsDir });
-    // lo desplegado lleva el modelo de la organización (story 7.29); lo generado en adapters/, el de hoy
+    // lo desplegado lleva el modelo de la organización; lo generado en adapters/, el de hoy
     const org = DEPLOY ? orgCodexModel(ROOT, name, { agentsDir }) : null;
     if (org) for (const l of org.lines) console.log(l);
     // las DOS salidas del mismo canónico se tratan igual: check, write, deploy
@@ -666,8 +665,8 @@ function main() {
         console.log(`📝 generado: ${path.relative(ROOT, o.outPath)}`);
       }
       if (DEPLOY) {
-        // Copiar sólo si los bytes difieren: esto corre en cada deploy y 56 copias
-        // incondicionales churneaban mtimes en ~/.codex sin cambiar nada (revisión 2026-08-23).
+        // Copiar sólo si los bytes difieren: esto corre en cada deploy y copiar todo
+        // sin condición churnearía mtimes en ~/.codex sin cambiar nada.
         const desplegado = fs.existsSync(o.deployTo) ? fs.readFileSync(o.deployTo, 'utf8') : null;
         const quiero = deployedContent(o.content, org);
         if (desplegado !== quiero) {
@@ -680,7 +679,7 @@ function main() {
     if (DEPLOY && copiados) console.log(`🚀 desplegado: ${name} (perfil + agent nativo)`);
   }
   if (!CHECK) {
-    // Sólo si cambió: reescribirlo incondicionalmente dejaba un archivo git-tracked con mtime
+    // Sólo si cambió: reescribirlo incondicionalmente dejaría un archivo git-tracked con mtime
     // fresco en cada corrida — ruido para watchers y para el staging selectivo del repo.
     const manifestNuevo = JSON.stringify(manifest, null, 2) + '\n';
     const manifestActual = fs.existsSync(MANIFEST) ? fs.readFileSync(MANIFEST, 'utf8') : null;
@@ -690,7 +689,7 @@ function main() {
 }
 
 /**
- * Sólo desplegar (story 8.23, tanda C): lo que ya está generado en adapters/ va a $CODEX_HOME tal cual. No lee el
+ * Sólo desplegar: lo que ya está generado en adapters/ va a $CODEX_HOME tal cual. No lee el
  * canónico, no escribe en el árbol. Un adapter que falta se dice y cuenta como falla (lo publicado tiene que traerlo).
  */
 function deployOnly(manifest) {
@@ -710,8 +709,8 @@ function deployOnly(manifest) {
     }
     if (copied) console.log(`🚀 desplegado: ${name} (perfil + agent nativo)`);
   }
-  // los revisores de la capa del equipo (story 8.25, A2b · AC 30): sólo con capa en el árbol. Lo que no se pudo se dice y
-  // NO suma a `missing`: un defecto de la capa no hace que la actualización vuelva atrás (D4 de la story)
+  // los revisores de la capa del equipo: sólo con capa en el árbol. Lo que no se pudo se dice y
+  // NO suma a `missing`: un defecto de la capa no hace que la actualización vuelva atrás
   // (también sin capa en el árbol si quedó un registro: una versión sin capa lo dice, y no borra nada)
   const toolsJs = path.join(ROOT, 'scripts', 'setup', 'harness', 'tools.js');
   const recorded = fs.existsSync(toolsJs) && fs.existsSync(toolsLib().codexTeamRecordPath({ home: os.homedir() }));
@@ -727,9 +726,9 @@ function deployOnly(manifest) {
 }
 
 /**
- * Lo que el arnés desplegó en Codex para un revisor que salió de la versión (`build/retired-reviewers.json`; story 8.41: los
- * revisores de un stack pasaron del MANIFEST a su paquete) y hoy no es de la versión ni de la capa: en una máquina sin ese
- * paquete activo, o sin capa, quedaba para siempre. Sólo esos nombres, sólo los archivos con la cabecera del generador —son
+ * Lo que el arnés desplegó en Codex para un revisor que salió de la versión (`build/retired-reviewers.json`: los
+ * revisores de un stack viven en su paquete, no en el MANIFEST) y hoy no es de la versión ni de la capa: en una máquina sin ese
+ * paquete activo, o sin capa, quedaría para siempre. Sólo esos nombres, sólo los archivos con la cabecera del generador —son
  * del arnés, no de la persona— y nunca uno que `deployTeam` acaba de dejar como de la persona (`kept`). Con un manifiesto de
  * la capa roto o a medio refrescar, o con el registro de la capa ilegible o de otra carpeta de Codex, no se borra nada, y se
  * dice. `{ removed, lines }`; nunca tira.
@@ -779,9 +778,8 @@ function removeRetired({ root = ROOT, codexHome = CODEX_HOME, manifest = [], rec
 }
 
 // El mapa src→dst del despliegue, EXPORTADO para que el audit de paridad itere el mismo layout
-// que este generador escribe — si mañana hay una tercera salida, el audit la hereda solo
-// (revisión adversarial 2026-08-23: el audit re-codificaba el layout a mano y un output nuevo
-// habría quedado sin superficie que lo mida).
+// que este generador escribe — si hay una tercera salida, el audit la hereda solo
+// (re-codificar el layout a mano dejaría un output nuevo sin superficie que lo mida).
 function deployPairs(name, codexHome) {
   return [
     { outPath: path.join(OUT_DIR, `${name}.toml`), deployTo: path.join(codexHome, `${name}.config.toml`) },

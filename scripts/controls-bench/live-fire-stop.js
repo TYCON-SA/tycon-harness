@@ -12,7 +12,7 @@
  * La aserción es sobre el EFECTO, no sobre el output (patrón live-fire-guard), y el
  * discriminador es un CONTADOR de eventos Stop propio del lab (no el `iter` del gate: el gate
  * está registrado también globalmente en las máquinas del equipo → corre ≥2 veces por Stop y
- * su iter cuenta invocaciones, no intentos — hallazgo H1 de la ronda adversarial):
+ * su iter cuenta invocaciones, no intentos):
  *   - Si la herramienta honra el block, el modelo sigue y reintenta cerrar → stops ≥ 2. El
  *     freno anti-thrashing del gate escala solo (`needs_human` + `autonomous: false`) → el
  *     intento siguiente cierra. La sesión termina SOLA en pocos intentos: no puede colgarse.
@@ -38,7 +38,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -51,8 +51,8 @@ const STATE_DIR = path.join(stateDirOf(os.homedir()));
 const ACTIVE_DIR = path.join(STATE_DIR, 'active');
 // Dónde va el reporte: lo decide scripts/lib/harness-parity.js (`benchDir()`), la misma función que usa quien cobra el
 // rojo (bench-notice.js). En un clon, `.bench/` al lado de este guion, como siempre; en una versión BAJADA, la carpeta
-// del estado: el árbol bajado se reemplaza entero en cada actualización y el reporte se perdía con él — un rojo que
-// desaparecía sin que nadie lo arreglara (2026-10-11). Sin la pieza (una copia suelta), donde siempre.
+// del estado: el árbol bajado se reemplaza entero en cada actualización y el reporte se perdería con él — un rojo que
+// desaparecería sin que nadie lo arreglara. Sin la pieza (una copia suelta), donde siempre.
 const OUT_DIR = (() => {
   try { const P = require('../lib/harness-parity.js'); if (typeof P.benchDir === 'function') return P.benchDir(); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') throw e; }
   return path.join(__dirname, '.bench');
@@ -72,7 +72,7 @@ function markerFile(sid) {
 }
 
 /** Hook del lab que siembra el marker para el sid REAL de la sesión. Va en UserPromptSubmit,
- *  NO en SessionStart: medido 2026-08-23 — con hooks de PROYECTO (.codex/hooks.json del cwd)
+ *  NO en SessionStart: con hooks de PROYECTO (.codex/hooks.json del cwd)
  *  el SessionStart de codex puede disparar antes de que ese archivo se cargue, y el seed no
  *  corre. UserPromptSubmit dispara con la sesión ya configurada, en las dos herramientas, y
  *  sigue siendo antes del primer Stop — que es lo único que el diseño necesita. */
@@ -101,7 +101,7 @@ try {
 /** Contador de intentos de cierre, PROPIO del lab. Es el discriminador del veredicto: el gate
  *  real ya está registrado GLOBALMENTE en las máquinas del equipo (settings globales + lab =
  *  corre 2 veces por Stop), así que su `iter` cuenta invocaciones, no intentos — un block
- *  ignorado igual llegaría a iter=2 (hallazgo H1 de la ronda adversarial). Este hook corre
+ *  ignorado igual llegaría a iter=2. Este hook corre
  *  1 vez por evento Stop, sin importar cuántas registraciones tenga el gate:
  *  stops ≥ 2 ⟺ el block fue honrado. */
 function writeStopCounter(sandbox) {
@@ -144,8 +144,8 @@ function runSession(tool, sandbox, fixture, autonomous) {
     fs.mkdirSync(path.join(fixture, '.codex'), { recursive: true });
     fs.writeFileSync(path.join(fixture, '.codex', 'hooks.json'),
       JSON.stringify({ description: 'controls-bench live-fire-stop', hooks: cfg }, null, 2));
-    // workspace-write, NO read-only: bajo read-only tampoco se escribió el sids.txt DEL
-    // workspace (medido 2026-08-23) — el sandbox alcanza también a los hooks. workspace-write
+    // workspace-write, NO read-only: bajo read-only tampoco se escribe el sids.txt DEL
+    // workspace — el sandbox alcanza también a los hooks. workspace-write
     // es el modo con el que live-fire-guard ya probó verde que los hooks escriben (incluso
     // fuera del workspace, a ~/.claude/safety-guard.log).
     return spawnSync('codex', ['exec', '--sandbox', 'workspace-write', '--dangerously-bypass-hook-trust', PROMPT],
@@ -197,7 +197,7 @@ function verifyBenign(tool, entry, res, stops) {
 }
 
 /** --prove-detection: una herramienta que IGNORA el block = un solo evento Stop y la sesión
- *  muere. Se simula el escenario PEOR (hallazgo H1): el gate corre DOS veces en ese único Stop
+ *  muere. Se simula el escenario PEOR: el gate corre DOS veces en ese único Stop
  *  (doble registración, como en las máquinas del equipo) → iter llega a 2 igual — y el
  *  verificador DEBE marcarlo rojo, porque el veredicto sale del contador (stops=1), no del
  *  iter. Sin LLM. */

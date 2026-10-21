@@ -5,12 +5,12 @@
  * viva en UN solo lugar. Exit 1 si alguna falla:
  *   1. generate.js --check — los .toml de adapters/codex/agents/ reflejan su canónico.
  *   2. check-hooks-registration.js — todo hook del banco está registrado en el lado Codex
- *      (o su divergencia declarada), y nada registrado carece de casos (Etapa E1; adelanta
+ *      (o su divergencia declarada), y nada registrado carece de casos (adelanta
  *      el check #2 de la Etapa H).
  *   3. check-bank-coverage.js — una pieza nueva entra CON sus casos o no entra (regla B2). Los
  *      dos anteriores cubren la migración; éste cubre el después: el advisor #29 que alguien
  *      cree cuando la migración ya sea historia y nadie recuerde la regla.
- *   4. check-hook-coverage.js — la misma regla, pero **censando el disco** (FIX-7, 2026-08-25).
+ *   4. check-hook-coverage.js — la misma regla, pero **censando el disco**.
  *      Los tres controles de arriba comparan contra listas escritas a mano: sólo detectan las
  *      piezas que alguien ya se acordó de anotar, justo lo contrario del caso que la regla existe
  *      para atrapar. Éste enumera `scripts/hooks/` y los `on-*`/`hook-*` del pipeline, y exige

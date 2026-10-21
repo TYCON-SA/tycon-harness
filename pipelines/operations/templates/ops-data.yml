@@ -1,5 +1,4 @@
-# pipelines/operations/templates/ops-data.yml — los datos y la configuración de la organización, encima del arnés
-# (story 8.30).
+# pipelines/operations/templates/ops-data.yml — los datos y la configuración de la organización, encima del arnés.
 #
 # Va JUSTO DESPUÉS de fetch-harness.yml. El repo de operaciones guarda sus archivos en las MISMAS rutas que los lee el
 # arnés, y esta plantilla los pone encima del checkout del arnés. Así los guiones leen su configuración y escriben sus
@@ -9,15 +8,15 @@
 #     o se borró allá, también acá). Si el repo no trae alguna —un repo recién creado no trae ninguna— no es un error:
 #     es la primera noche.
 #   · configuración, si está: `operations.json` (responsables y revisores), `team-repos.json` (la plataforma de la
-#     organización: con `operations.platform: github` los avisos de dependencias son issues; story 8.31),
+#     organización: con `operations.platform: github` los avisos de dependencias son issues),
 #     `scripts/nightly/dependencies/repos.json`
 #     (qué repos mira la revisión de dependencias) y `summary.json` (el resumen diario), y
 #     `scripts/nightly/dashboard/sources.json` y `declared.json` (qué espera el tablero), y `scripts/ci/product-parity.json`
-#     (los productos que tienen que hacer lo mismo; story 2.25: sin él, la paridad sale «sin productos»). Lo que no trae queda como lo
+#     (los productos que tienen que hacer lo mismo: sin él, la paridad sale «sin productos»). Lo que no trae queda como lo
 #     trae el arnés (los ejemplos públicos están en pipelines/operations/examples/).
 #   · cualquier otro archivo del repo de operaciones (salvo `pipelines/`, `README.md` y `.gitignore`) NO se trae, y se
 #     avisa nombrándolo: si hace falta, se suma a esta lista con un pedido al arnés.
-#   · la marca `.dashboard/applied-config.json` (story 2.29, decisión 12): qué archivos de configuración se aplicaron
+#   · la marca `.dashboard/applied-config.json`: qué archivos de configuración se aplicaron
 #     esta noche, con su identificador de objeto en el repo de operaciones —
 #     `{ "files": { "<ruta tal como la lee el arnés>": "<oid>" }, "ops_commit": "<sha corto>", "generated_at": "<UTC>" }`—.
 #     Sin configuración copiada, `files` queda `{}`. Así el sitio de la organización sabe qué configuración lee de
@@ -62,8 +61,8 @@ steps:
         OID=$(git -C "$O" rev-parse "HEAD:$F") || red "no pude leer el identificador de $F en el repo de operaciones"
         APPLIED+=("$F" "$OID")
       done
-      # la marca: qué configuración aplicó esta noche, con el identificador de cada archivo en operaciones (story 2.29,
-      # decisión 12). Sin configuración copiada, files queda {}. Viaja en el commit local; a operaciones la sube guardar.
+      # la marca: qué configuración aplicó esta noche, con el identificador de cada archivo en operaciones.
+      # Sin configuración copiada, files queda {}. Viaja en el commit local; a operaciones la sube guardar.
       mkdir -p "$S/.dashboard"
       node -e '
         const [commit, ...pairs] = process.argv.slice(1);
@@ -73,7 +72,7 @@ steps:
       ' "$(git -C "$O" rev-parse --short HEAD)" ${APPLIED[@]+"${APPLIED[@]}"} > "$S/.dashboard/applied-config.json" || red "no pude dejar la marca de la configuración aplicada"
       ENTRIES+=(.dashboard/applied-config.json)
       # y una copia en la carpeta temporal del trabajo: el tablero trae .dashboard de main antes de generar, lo que pisa la
-      # marca; la devuelve de acá justo antes de guardarla (tanda C de la 2.29)
+      # marca; la devuelve de acá justo antes de guardarla
       cp "$S/.dashboard/applied-config.json" "$(Agent.TempDirectory)/applied-config.json" || red "no pude dejar la copia de la marca en la carpeta temporal"
       # lo demás no se trae: se nombra, para que nadie crea que se está leyendo
       IGNORED=$(cd "$O" && git ls-files | grep -Ev '^(\.dashboard/|inbox/|artifacts/|pipelines/|README\.md$|\.gitignore$)' | grep -vxF -f <(printf '%s\n' "${CONFIG_FILES[@]}") | head -n 20 || true)

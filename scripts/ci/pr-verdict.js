@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
- * pr-verdict.js — ¿lo que salió rojo en este pull request YA estaba rojo en main? (2026-09-17)
+ * pr-verdict.js — ¿lo que salió rojo en este pull request YA estaba rojo en main?
  *
  * 🔴 POR QUÉ EXISTE. La validación de un pull request del arnés corre el banco de controles y las
- * suites de prueba. Si el veredicto fuera «cero rojos o no entra», la política habría frenado el
- * 100 % de los pull requests durante 11 días seguidos: `publish-bump.test.sh` está roja en el
- * nocturno desde el 7/9 por una causa de ENTORNO de Azure que no se reproduce en local (medido en
- * la etapa 0 del plan: 0 rojos con clones frescos). Un freno que muerde por algo que el cambio no
+ * suites de prueba. Si el veredicto fuera «cero rojos o no entra», la política frenaría el
+ * 100 % de los pull requests mientras una suite esté roja en el nocturno por una causa de ENTORNO
+ * de Azure que no se reproduce en local (por ejemplo `publish-bump.test.sh`). Un freno que muerde por algo que el cambio no
  * hizo es un freno que se apaga en una semana — y se lleva puestos los casos donde sí importaba.
  *
  * Entonces el veredicto se da CONTRA LA ÚLTIMA FOTO NOCTURNA, que viaja commiteada en main
@@ -18,28 +17,26 @@
  * Es la misma idea que el `--baseline check` del propio banco, aplicada también a las suites.
  *
  * 🔴 Las dos formas de «no saber» NO son la misma cosa, y por eso se resuelven distinto:
- *   · la FOTO no se puede leer (falta, JSON roto) → exit 2, «no pude decidir: sin foto», haya rojos o no
- *     (story 8.26, tanda C, AC 43). Hasta esa tanda todo rojo contaba como nuevo y frenaba, y sin rojos
- *     salía verde: con la validación sobre el repo público la foto viene de afuera (donde la deja el
- *     nocturno), y que no haya llegado no puede ser ni un freno con el motivo equivocado ni un verde en
+ *   · la FOTO no se puede leer (falta, JSON roto) → exit 2, «no pude decidir: sin foto», haya rojos o no.
+ *     Si todo rojo contara como nuevo, frenaría, y sin rojos saldría verde: con la validación sobre
+ *     el repo público la foto viene de afuera (donde la deja el nocturno), y que no haya llegado no puede ser ni un freno con el motivo equivocado ni un verde en
  *     blanco. La validación pasa las rutas siempre (`--suites-snapshot`, `--bench-snapshot`).
  *   · la foto se pudo leer pero está VIEJA (más de 2 días) → se usa igual, con un aviso que dice la
  *     edad. Sí midió; lo viejo es la lista de excusas, y lo único que puede tapar es un rojo que ya
  *     estaba rojo. Frenar todos los pull requests porque el nocturno se cayó es la misma enfermedad
  *     que esta pieza viene a evitar, y que el nocturno se detuvo ya lo grita el arranque de sesión.
  *   · el reporte de ESTA corrida no se puede leer → exit 2: no se midió, y «no medido» no es verde.
- *   · el reporte de ESTA corrida trae suites NO MEDIDAS (`unmeasured`: un trabajo de suites no terminó, 2026-10-04; o la
- *     suite pasó su tope, story 8.22 tramo D)
+ *   · el reporte de ESTA corrida trae suites NO MEDIDAS (`unmeasured`: un trabajo de suites no terminó, o la
+ *     suite pasó su tope)
  *     → no son un rojo que trajo el cambio ni un verde: se nombran aparte y, si nada frena, exit 2 —también en
  *     modo aviso—. Un rojo nuevo que frena sigue mandando: exit 1.
  *   · una suite que NO CORRIÓ porque el cambio no toca lo que mide (`notRun`, de suites-report.js; las dos más largas
  *     por scripts/ci/heavy-suites.json) → se lista como «no corrió: el cambio no toca lo que mide» y no cuenta como
  *     roja nueva, ni como «ya estaba roja», ni como verde.
  *   · una suite que NO VIAJA (`notTravelling`, de suites-report.js: está en la foto y en ningún registro del árbol; con
- *     el repo público como propio, las del repo de mantenimiento) → «no corrió: no viaja», contada aparte. Story 8.26,
- *     tanda C, AC 11.
+ *     el repo público como propio, las del repo de mantenimiento) → «no corrió: no viaja», contada aparte.
  *
- * 🔴 `--public-notices` (story 8.26, tanda C, AC 45): con un repo de GitHub como propio, lo que la corrida escribe como
+ * 🔴 `--public-notices`: con un repo de GitHub como propio, lo que la corrida escribe como
  * aviso de Azure llega al control del pedido, que es público. Con la bandera, cada aviso lleva un texto fijo y cuentas, y
  * el nombre y el motivo van en la línea de abajo (registro común, que sólo ve quien tiene permiso en Azure). Sin ella (la
  * validación del interno), los avisos nombran como siempre.
@@ -53,16 +50,15 @@
  *        [--suites-snapshot <json>] [--bench-snapshot <json>] [--baseline <json>] [--suites-warn] [--ado] [--json]
  *   Al menos uno de --suites-actual / --current-bench. Las fotos y la baseline tienen default:
  *   los archivos del propio repo (--tcg cambia la raíz).
- *   (--current-bench, --suites-snapshot, --bench-snapshot y --suites-warn tenían nombre en castellano hasta la
- *   story 8.9, tanda B3a; los viejos siguen andando hasta el retiro. La vieja y la nueva juntas salen 2.)
+ *   (--current-bench, --suites-snapshot, --bench-snapshot y --suites-warn tienen un nombre viejo en castellano que
+ *   sigue andando hasta el retiro. La vieja y la nueva juntas salen 2.)
  *
- * 🔴 `--suites-warn` (decisión del dev, 2026-09-17, mientras dure la Etapa 3 del plan): un rojo
- * NUEVO de una SUITE avisa y no frena; sólo frena el banco. Motivo medido en las corridas 10569 y
- * 10570: dos suites verdes en la máquina del dev salieron rojas en el agente de Azure, y NO fueron
- * las mismas en las dos corridas. Con 116 suites, aun poca intermitencia deja casi todo pull request
- * en rojo por algo que el cambio no hizo — la misma enfermedad que este guion existe para evitar, un
- * piso más abajo. La bandera es TEMPORAL y se saca cuando la Etapa 3 mida la tasa: el reporte de cada
- * corrida anota las dos pasadas de cada suite roja (`reintentos`) justamente para poder decidirlo.
+ * 🔴 `--suites-warn`: un rojo NUEVO de una SUITE avisa y no frena; sólo frena el banco. Motivo:
+ * suites verdes en la máquina del dev pueden salir rojas en el agente de Azure, y no siempre las
+ * mismas. Con muchas suites, aun poca intermitencia deja casi todo pull request en rojo por algo
+ * que el cambio no hizo — la misma enfermedad que este guion existe para evitar, un piso más
+ * abajo. La bandera es TEMPORAL y se saca cuando se mida la tasa: el reporte de cada corrida
+ * anota las dos pasadas de cada suite roja (`reintentos`) justamente para poder decidirlo.
  * El rojo del banco NO se reintenta y sigue frenando.
  *
  * Salida: 0 midió y no hay rojo NUEVO que frene (puede haber avisos) · 1 hay rojo nuevo · 2 no pude decidir.
@@ -78,7 +74,7 @@ const path = require('path');
 // una cambia, la otra no tiene por qué seguirla.
 const FOTO_VIEJA_MS = 2 * 24 * 60 * 60 * 1000;
 
-// Las opciones renombradas a inglés (story 8.9, tanda B3a): el traductor vive al lado y viaja con este archivo en el
+// Las opciones renombradas a inglés: el traductor vive al lado y viaja con este archivo en el
 // artefacto arnes-ci. Se traduce SÓLO en la línea de comandos (main), nunca al cargar el módulo.
 const { aliasLegacyOptions, LegacyOptionsError } = (() => {
   try { return require('./legacy-options.js'); } catch (e) { if (!e || e.code !== 'MODULE_NOT_FOUND') process.stderr.write(`⚠️  legacy-options.js no cargó (${e && e.message}): los nombres viejos de este guion no se traducen\n`); return { aliasLegacyOptions: (argv) => argv, LegacyOptionsError: Error }; }
@@ -98,7 +94,7 @@ function leerJson(ruta) {
   catch (e) { return { ok: false, motivo: e.code === 'ENOENT' ? 'no está' : `ilegible (${e.message})` }; }
 }
 
-// ── Los nombres renombrados (story 8.9, tanda C1, AC 33) ────────────────────────────────────────
+// ── Los nombres renombrados ────────────────────────────────────────
 // La clave de un caso del banco lleva el nombre de su script (`<script>::<id>`) y la de una suite es
 // el nombre de su archivo: un renombre cambia la clave, y un rojo viejo con la clave nueva se leería
 // como nuevo. Las dos fotos y la baseline pasan por el MISMO mapa (scripts/lib/renames.json) antes de
@@ -276,7 +272,7 @@ function main() {
       motivoFoto: foto.motivo,
       edad: foto.ok ? edadDias(foto.datos) : null,
     });
-    // Sin foto de suites no se sabe qué es nuevo: sus rojos son rojos, no «nuevos» (AC 43), estén o no en modo aviso.
+    // Sin foto de suites no se sabe qué es nuevo: sus rojos son rojos, no «nuevos», estén o no en modo aviso.
     (!foto.ok ? salida.rojosSinFoto : SUITES_AVISAN ? salida.nuevosQueAvisan : salida.nuevos).push(...r.nuevos.map((t) => `suite ${t}`));
     salida.viejos.push(...r.viejos.map((t) => `suite ${t}`));
     salida.avisos.push(...r.avisos);
@@ -320,7 +316,7 @@ function main() {
   if (args.includes('--json')) console.log(JSON.stringify(salida, null, 2));
 
   // Un aviso: en Azure, `##vso`; con `--public-notices`, el aviso lleva `fijo` (texto fijo y cuentas) y `completo` va en la
-  // línea de abajo, sin `##vso` (story 8.26, tanda C, AC 45). En la terminal, con su icono.
+  // línea de abajo, sin `##vso`. En la terminal, con su icono.
   const aviso = (tipo, icono, completo, fijo) => {
     if (!ADO) { console.log(`${icono} ${completo}`); return; }
     if (PUBLICO) {
@@ -347,13 +343,13 @@ function main() {
   for (const n of salida.nuevosQueAvisan) {
     aviso('warning', '🟠', `ROJO NUEVO (no está en la foto nocturna): ${n} — en MODO AVISO: no frena`, 'ROJO NUEVO de suite, en MODO AVISO: no frena (el nombre, en el registro)');
   }
-  // Sin la foto de una sección no se sabe qué es nuevo en ella: sus rojos se nombran como rojos, no como «nuevos» (AC 43);
-  // los de la otra sección, cuya foto sí se leyó, siguen siendo nuevos o viejos (pase adversarial de la tanda C).
+  // Sin la foto de una sección no se sabe qué es nuevo en ella: sus rojos se nombran como rojos, no como «nuevos»;
+  // los de la otra sección, cuya foto sí se leyó, siguen siendo nuevos o viejos.
   for (const n of salida.rojosSinFoto) aviso('warning', '🟡', `rojo, sin foto para saber si ya estaba en main: ${n}`, 'rojo, sin foto para saber si ya estaba en main: el nombre, en el registro');
   for (const n of salida.nuevos) aviso('error', '🔴', `ROJO NUEVO (no está en la foto nocturna): ${n}`, 'ROJO NUEVO (no está en la foto nocturna): el nombre, en el registro');
   if (salida.suitesSinMedir.length) {
     const lista = salida.suitesSinMedir.slice(0, 5).join(' · ') + (salida.suitesSinMedir.length > 5 ? ' …' : '');
-    // Story 8.22, tramo D: también llega no medida la suite que pasó su tope, desde un trabajo que sí terminó.
+    // También llega no medida la suite que pasó su tope, desde un trabajo que sí terminó.
     const m = `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta corrida (un trabajo de suites no terminó, o la suite pasó su tope: el motivo de cada una, en su salida): no son un rojo nuevo, pero tampoco un verde — ${lista}`;
     aviso('error', '⛔', m, `${salida.suitesSinMedir.length} suite(s) NO SE MIDIERON en esta corrida: no son un rojo nuevo, pero tampoco un verde (los nombres, en el registro)`);
   }
@@ -382,9 +378,8 @@ function main() {
 }
 
 // 🔴 `process.exitCode`, NO `process.exit()`: en Node las escrituras a una tubería son
-// ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Medido con
-// la forma de este guión (una escritura grande y salir): a 41 KB llega cortado en 8192 y el JSON
-// se rompe; el consumidor lo lee como «no pude», nunca como un error.
-// Caso: guides/maintaining/incident-log.md#informe-cortado-por-la-tuberia-2026-09-28
+// ASINCRÓNICAS y `process.exit()` mata el proceso con parte de lo escrito en el aire. Una
+// escritura grande seguida de salir llega cortada en 8192 bytes y el JSON se rompe; el
+// consumidor lo lee como «no pude», nunca como un error.
 if (require.main === module) process.exitCode = main();
 module.exports = { rojosDelBanco, rojosDeSuites, comparar, saneadoParaAzure, FOTO_VIEJA_MS };

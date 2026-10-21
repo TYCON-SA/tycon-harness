@@ -1,5 +1,5 @@
 'use strict';
-// legacy-options.js — que una opción vieja siga andando en un guion de scripts/ci (story 8.9, tanda B2 · 2026-09-30)
+// legacy-options.js — que una opción vieja siga andando en un guion de scripts/ci
 //
 // 🔴 POR QUÉ EXISTE, Y POR QUÉ NO ES aliasOptions DE scripts/lib/legacy-names.js. Los pipelines de los productos corren
 // los guiones de esta carpeta también desde el artefacto `arnes-ci`, que es SÓLO esta carpeta: en la etapa de
@@ -13,7 +13,7 @@
 //   argv = aliasLegacyOptions(argv, 'tipo:type proyecto:project type=formulario:form', 'scripts/ci/<guion>.js');
 //   (LegacyOptionsError con la vieja y la nueva juntas: el guion lo trata como a su opción desconocida)
 //
-// Qué hace: pasa `--viejo` y `--viejo=x` a `--nuevo` hasta un `--`; con un par `opcion=viejo:nuevo` (tanda B3a), el
+// Qué hace: pasa `--viejo` y `--viejo=x` a `--nuevo` hasta un `--`; con un par `opcion=viejo:nuevo`, el
 // valor viejo de esa opción —el argumento siguiente o lo que va tras `=`— pasa al nuevo. Cada nombre viejo usado se anota con la biblioteca
 // general si está (scripts/lib/legacy-names.js: registro de usos y, en Azure DevOps, el warning de la corrida); en el
 // artefacto, sin la biblioteca, deja igual el warning de la corrida. Guía: guides/maintaining/nombres-en-ingles.md.
@@ -27,7 +27,7 @@ class LegacyOptionsError extends Error {
 
 /**
  * Los pares de una declaración como [{ kind, old, new }]: «viejo:nuevo» es una opción; «opcion=viejo:nuevo» es un valor
- * viejo de esa opción (su nombre nuevo), con `option` (tanda B3a).
+ * viejo de esa opción (su nombre nuevo), con `option`.
  */
 function parsePairs(pairs) {
   return String(pairs || '').split(/\s+/).filter(Boolean).map((p) => {
@@ -39,7 +39,7 @@ function parsePairs(pairs) {
 }
 
 // 🔴 stdout y stderr al mismo lugar = quien llama guarda la salida como dato (`X=$(node … 2>&1)`): el warning de la
-// corrida terminaría adentro del dato. Lo encontró T32 con las notas de versión (ver legacy-options.sh).
+// corrida terminaría adentro del dato, por ejemplo en las notas de versión (ver legacy-options.sh).
 function sameOutput() {
   try { const a = require('fs').fstatSync(1); const b = require('fs').fstatSync(2); return a.dev === b.dev && a.ino === b.ino; } catch { return false; }
 }

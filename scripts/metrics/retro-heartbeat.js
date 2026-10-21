@@ -2,16 +2,15 @@
 'use strict';
 /**
  * retro-heartbeat.js — el latido de la retrospectiva: un archivo por merge a main, en un segundo y sin
- * modelo (story 7.1 del arnés, 2026-09-16).
+ * modelo.
  *
- * POR QUÉ EXISTE. El paso 10b de /tycon-merge-to-main lanzaba el `tycon-retrospective-capturer` por
- * cada merge. Medido en 30 días (2026-08-17 → 09-16): 87 lanzamientos, 4,9 min y 135 k tokens de
- * mediana — 8,3 h y 12,5 M tokens — para archivos que salían casi todo en null (un fix de 18 líneas
- * en un test produjo 5 de 8 métricas vacías). De las seis métricas del contrato, cuatro ya las
+ * POR QUÉ EXISTE. Lanzar el `tycon-retrospective-capturer` en el paso 10b de /tycon-merge-to-main por
+ * cada merge sale caro. Medido en 30 días: 87 lanzamientos, 4,9 min y 135 k tokens de
+ * mediana — 8,3 h y 12,5 M tokens — para archivos que salen casi todo en null (un fix de 18 líneas
+ * en un test produce 5 de 8 métricas vacías). De las seis métricas del contrato, cuatro ya las
  * publican otras piezas, y aguas abajo el archivo tiene DOS consumidores: `first_pass_ratio` del
  * nocturno SDLC (lee las vueltas) y `retro-pending.js` (el archivo es lo que da el merge por
  * cubierto). Este script alimenta a los dos y a nadie más. El agente queda a pedido.
- * Informes: tasks/revision-adversaria-cierre-2026-09-16.md, tasks/abogado-del-diablo-7.1-2026-09-16.md.
  *
  * QUÉ ESCRIBE. `<out>/metrics-<fecha>-<repo>-<story|adhoc>-<sha7>.json`, formato 2.0 validado por
  * scripts/lib/dashboard-metrics.js ANTES de escribir:
@@ -22,30 +21,30 @@
  *     campo no aparece. Se validan con lib/rethink.js (la misma regla de la nota) y se sanean; las que están y no cumplen
  *     los mínimos van en `rethink_notes_rotas` (no cuentan como nota) y se avisan.
  *
- * 🔴 DE DÓNDE SALEN LAS VUELTAS (salvaguarda de la story, decisión del dev 2026-09-16). La story
- * suponía «una sola cuenta», la de la vista de corridas. Hay tres y no coinciden: la columna de la
- * vista (`costo.iteraciones`, eventos step5-start) acertó 17 de 43 contra los revisores medidos por
+ * 🔴 DE DÓNDE SALEN LAS VUELTAS. Se podría suponer
+ * «una sola cuenta», la de la vista de corridas. Hay tres y no coinciden: la columna de la
+ * vista (`costo.iteraciones`, eventos step5-start) acierta 17 de 43 contra los revisores medidos por
  * vuelta; la cantidad de fotos, 37; la foto más alta, 39. Orden: la clave numérica ≥ 1 más alta de
- * `revisores.por_vuelta` (la vuelta de cada lanzamiento según el registro, story 2.15) y, si no hay,
+ * `revisores.por_vuelta` (la vuelta de cada lanzamiento según el registro) y, si no hay,
  * la de `marker.iterations`. Sin ninguna: null con motivo. NUNCA 0 (la métrica es `count1`, y un 0
  * pintado donde no hubo insumo es exactamente lo que `null ≠ 0` prohíbe).
  *
  * 🔴 QUÉ VOLCADO ES «DE ESTE REPO+STORY». En ~/.claude/.tycon-pipeline/timing-history/ sólo se abren
  * los archivos de esa story. Coincide si `marker.storyId` es la story y el repo es el mismo por ruta
- * real, o es un CLON DESCARTABLE: 15 de las 28 corridas del arnés corrieron en
- * `/private/tmp/claude-501/-Users-…-<repo>/…/scratchpad/tcg-2.7`, con el checkout
+ * real, o es un CLON DESCARTABLE: 15 de las 28 corridas del arnés corren en
+ * `/private/tmp/claude-501/-Users-…-<repo>/…/scratchpad/tcg-<story>`, con el checkout
  * codificado como carpeta de sesión. Y para el clon se exige además que su story exista en el repo
  * en el commit del merge: una sesión del arnés también arma proyectos de prueba con el mismo número
- * de story (medido: 7.1-2026-08-22, scratchpad/dorada/claude). Si el volcado más nuevo de la story es
+ * de story (medido: scratchpad/dorada/claude). Si el volcado más nuevo de la story es
  * ILEGIBLE y más nuevo que la coincidencia, la métrica sale null: no se salta para tomar uno viejo.
- * Límite declarado (decisión del dev, 2026-09-16): un ilegible no se puede atribuir a un repo, así que uno
+ * Límite declarado: un ilegible no se puede atribuir a un repo, así que uno
  * de OTRO repo con el mismo número de story también la deja en null. Null con motivo, nunca un número
- * falso; medido ese día, 0 volcados ilegibles en 313.
+ * falso; medido: 0 volcados ilegibles en 313.
  *
  * 🔴 NADA DEL VOLCADO VIAJA salvo números de vuelta y la fecha de archivado: el volcado trae rutas
  * absolutas (`filesSnapshot`), el prompt del dev y mensajes de error; este archivo va a git.
  * No lee `findings.json`, `gates.log` ni `hook-errors.log` (este último ni existe: el capturer
- * «midió» fallas leyéndolo en 110 de 118 archivos).
+ * «mide» fallas leyéndolo en 110 de 118 archivos).
  *
  * Uso:
  *   node scripts/metrics/retro-heartbeat.js --repo <dir> --merge <sha> [--story <id>] [--out <dir>]
@@ -59,7 +58,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -110,7 +109,7 @@ function real(p) {
 }
 
 // macOS y Windows no distinguen mayúsculas en el disco: la misma carpeta puede llegar escrita con otra caja
-// (medido por el pase adversarial: `git rev-parse` devuelve la caja real; un volcado puede traer otra).
+// (`git rev-parse` devuelve la caja real; un volcado puede traer otra).
 const SIN_CAJA = process.platform === 'darwin' || process.platform === 'win32';
 function caja(p) { return SIN_CAJA ? String(p).toLowerCase() : String(p); }
 
@@ -157,9 +156,9 @@ function runDirDe(repo, story) {
   const base = path.join(repo, '.advisors', 'pipeline-runs');
   let dirs = [];
   try {
-    // Con un número que se repite en el repo, la carpeta se llama `<tema>__<número>-<sello>` (story 1.17.1). Acá sólo
+    // Con un número que se repite en el repo, la carpeta se llama `<tema>__<número>-<sello>`. Acá sólo
     // se conoce el número: se aceptan las dos formas, para no quedar ciegos a las nuevas. Es un puntero de la retro,
-    // no un freno: con número repetido sigue siendo ambiguo, como antes.
+    // no un freno: con número repetido sigue siendo ambiguo.
     dirs = fs.readdirSync(base, { withFileTypes: true })
       .filter((d) => d.isDirectory() && (d.name.startsWith(`${story}-`) || d.name.includes(`__${story}-`))).map((d) => d.name).sort();
   } catch { return null; }
@@ -180,9 +179,9 @@ function storyEnElMerge(repo, merge, marker) {
 
 function esDeEsteRepo(repo, repoReal, merge, marker) {
   const rp = String(marker.repoPath || '');
-  // Una ruta RELATIVA ('.', 'mcp', 'CeiboBackend': volcados viejos, anteriores a que marker.js la guardara
-  // absoluta) no dice de qué repo es: resolverla contra la carpeta desde donde corre el latido tomaba las
-  // vueltas de otro proyecto desde adentro del repo y daba null desde afuera. No coincide con nada.
+  // Una ruta RELATIVA ('.', 'mcp', 'Backend': volcados viejos, anteriores a que marker.js la guardara
+  // absoluta) no dice de qué repo es: resolverla contra la carpeta desde donde corre el latido tomaría las
+  // vueltas de otro proyecto desde adentro del repo y daría null desde afuera. No coincide con nada.
   if (!rp || !path.isAbsolute(rp)) return false;
   if (identidadDeRuta(rp) === identidadDeRuta(repo)) return true;
   const rpReal = real(rp);
@@ -206,21 +205,21 @@ function ultimaVuelta(obj) {
 
 function nulo(motivo) { return { value: null, unavailable_reason: motivo }; }
 
-// 🔴 La fila del punto ciego deja de ser ciega (2026-09-18, DEEP-REVIEW-SKIP-SIN-STORY-1). La métrica
+// 🔴 La fila del punto ciego no queda ciega. La métrica
 // `deep_review_skipped_then_hotfixed` mide «cambios que saltearon la revisión profunda y después hubo
 // que arreglar», y sus dos señales presuponen una STORY (una hija con `followup_of:`, o un commit que
-// re-toca su File List). Un cambio que entra SIN story no encaja en ninguna, así que la fila imprimía
-// `0` — y el caso documentado es exactamente ése: 93 líneas operativas a main sin story, sin pipeline
+// re-toca su File List). Un cambio que entra SIN story no encaja en ninguna, así que la fila imprimiría
+// `0` — y un ejemplo es exactamente ése: 93 líneas operativas a main sin story, sin pipeline
 // y sin tests, incidente diez días después, fila en 0. Medido sobre la serie: 46 de 52 archivos
 // publican 0, tres de ellos diciendo en su propio detalle que la pregunta no aplicaba.
 //
 // Acá NO se inventa la correlación —«y después hubo que arreglarlo» necesita una observación posterior,
 // que es del nocturno—: `value` queda en null con su motivo. Lo que sí se publica es la SEÑAL CRUDA que
-// hoy no tenía nadie: de los commits del merge, cuántos entraron FUERA del pipeline y cuántos no
+// ninguna otra pieza publica: de los commits del merge, cuántos entraron FUERA del pipeline y cuántos no
 // declaran carril. El insumo ya existe y es durable: el hook `unpushed-work-notice.js` anota por commit
-// {sha, carril} en su registro de sesión desde la story 2.7.
-// 🔴 Límite declarado: ese registro nace el 2026-09-16 y es LOCAL a la máquina que commiteó. Un commit
-// de otra máquina, o anterior a esa fecha, sale en `commits_sin_carril` — que es el contador honesto de
+// {sha, carril} en su registro de sesión.
+// 🔴 Límite declarado: ese registro es LOCAL a la máquina que commiteó. Un commit
+// de otra máquina, o anterior al registro, sale en `commits_sin_carril` — que es el contador honesto de
 // «no lo sé», no un cero.
 function senialDeCarril({ repo, merge }) {
   const rango = git(repo, ['rev-list', '--no-merges', `${merge}^..${merge}`])
@@ -266,8 +265,8 @@ function metricaDeVueltas({ repo, repoReal, merge, story }) {
   for (const f of archivos) {
     // El resto del nombre TIENE que ser la fecha del archivado (AAAA-MM-DDTHHMM…, como la escribe
     // marker.js). Si no lo es, el archivo es de OTRA story cuyo id extiende a éste con un guion (real:
-    // 1.3 y 1.3-B-frontend) y no se mira: si estuviera ilegible, su «sello» no-fecha ordenaba después de
-    // cualquier fecha y anulaba la métrica de la story buscada.
+    // 1.3 y 1.3-B-frontend) y no se mira: si estuviera ilegible, su «sello» no-fecha ordenaría después de
+    // cualquier fecha y anularía la métrica de la story buscada.
     const resto = f.slice(prefijo.length, -'.json'.length);
     if (!/^\d{4}-\d{2}-\d{2}T\d{4}/.test(resto)) continue;
     const sello = claveDeFecha(resto);
@@ -282,7 +281,7 @@ function metricaDeVueltas({ repo, repoReal, merge, story }) {
     if (!esDeEsteRepo(repo, repoReal, merge, m)) continue;
     const cuando = String(d.archivedAt || '');
     // Una sola forma de clave para los dos casos (SILENT-W8 de la revisión): con archivedAt y sin él se
-    // comparaban `20260916100000` contra `2026-09-16T0900`, y el que no traía la fecha perdía siempre.
+    // compararían `20260916100000` contra `2026-09-16T0900`, y el que no trae la fecha perdería siempre.
     const clave = claveDeFecha(cuando) || sello;
     if (!elegido || clave > elegido.clave) elegido = { clave, d, cuando };
   }
@@ -302,7 +301,7 @@ function metricaDeVueltas({ repo, repoReal, merge, story }) {
 }
 
 // LA cuenta de vueltas de una corrida, sobre su volcado ya leído: la clave numérica ≥ 1 más alta de
-// `revisores.por_vuelta` (la vuelta de cada lanzamiento según el registro, story 2.15) y, si no hay,
+// `revisores.por_vuelta` (la vuelta de cada lanzamiento según el registro) y, si no hay,
 // la de `marker.iterations` (las fotos). Null si no registra ninguna. La usan este script y la vista
 // de corridas (scripts/nightly/dashboard/runs.js): una sola función, para que las dos páginas digan lo mismo.
 // Nota: `costo.iteraciones` del volcado NO son vueltas — cuenta las veces que se calculó el set de
@@ -435,7 +434,7 @@ function main() {
     merge_commit: merge,
     story,
     run_dir: runDirDe(repo, story),
-    // un campo del registro, no una ruta: no cambia con el renombre (story 8.9, AC 32), así la serie de .dashboard/ sigue
+    // un campo del registro, no una ruta: no cambia con el renombre, así la serie de .dashboard/ sigue
     // siendo una sola. Se arma por partes para que no se lea como la ruta vieja del archivo.
     generated_by: ['retro', 'latido.js'].join('-'),
     metrics,
@@ -451,11 +450,11 @@ function main() {
   const v = validate(doc);
   if (!v.ok) salir(`el validador de dashboard-metrics.js rechazó el archivo, no se escribió nada: ${v.errors.join(' · ')}`);
 
-  // Dónde escribe la máquina lo suyo lo sabe scripts/lib/night-data.js (story 8.26, tanda J): en un clon, su `.dashboard`;
+  // Dónde escribe la máquina lo suyo lo sabe scripts/lib/night-data.js: en un clon, su `.dashboard`;
   // en una versión bajada, el del clon de mantenimiento que la máquina declara —de ahí viaja— o, sin uno que sirva, la
-  // carpeta del estado, y se dice que no viaja. 🔴 Nunca el clon del público: medido el 2026-10-12, el registro de cada
-  // merge caía en una carpeta ignorada de ese clon y no llegaba a ningún repo. Sin esa biblioteca al lado, lo de antes.
-  // 🔴 Si la biblioteca ESTÁ y no carga, esto tira: volver callado a la ruta de antes sería escribir otra vez en el clon del
+  // carpeta del estado, y se dice que no viaja. 🔴 Nunca el clon del público: el registro de cada
+  // merge caería en una carpeta ignorada de ese clon y no llegaría a ningún repo. Sin esa biblioteca al lado, la carpeta de datos de la máquina o el `.dashboard` del arnés.
+  // 🔴 Si la biblioteca ESTÁ y no carga, esto tira: volver callado a esa otra ruta sería escribir otra vez en el clon del
   // público. Y si no pudo saber dónde escribe la máquina, no se escribe nada y se dice (el merge queda sin su archivo, que
   // es lo que cobra retro-pending.js).
   const nightLib = path.join(__dirname, '..', 'lib', 'night-data.js');
@@ -463,8 +462,8 @@ function main() {
   if (!a.out && machine && !machine.dir) salir(`no se escribió nada: ${machine.why}`);
   const dashboardDefault = machine && machine.dir ? machine.dir : (() => { try { const TH = require(path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js')); return (typeof TH.dashboardDir === 'function' && TH.dashboardDir(os.homedir(), ARNES)) || null; } catch (_) { return null; } })();
   const out = path.resolve(a.out || dashboardDefault || path.join(ARNES, '.dashboard'));
-  // El archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta desde la que se corrió
-  // (2026-09-17): un latido lanzado desde un clon descartable salía `metrics-…-tcg-adhoc-…`. Sin remoto
+  // El archivo se nombra por el REPO (lo que dice su remoto), no por la carpeta desde la que se corrió:
+  // un latido lanzado desde un clon descartable saldría `metrics-…-tcg-adhoc-…`. Sin remoto
   // legible, la carpeta, como siempre. El campo `repo` NO cambia: es la ruta con la que retro-pending.js
   // empareja el merge con su archivo.
   const nombre = `metrics-${hoy}-${slug(nombreDeRepo(repo) || path.basename(repo))}-${story ? slug(story) : 'adhoc'}-${merge.slice(0, 7)}.json`;

@@ -4,16 +4,14 @@
 # =============================================================================
 # Se carga con `source` (no se ejecuta). La usan dos guiones que se hacen la misma pregunta:
 #   · forms-to-version.sh — a qué formularios subirles la versión;
-#   · label-prs.sh        — qué pull requests trae la corrida (story 2.17).
+#   · label-prs.sh        — qué pull requests trae la corrida.
 #
-# 🔴 POR QUÉ ESTÁ APARTE (2026-09-15, story 2.17). La lógica vivía adentro de
-# forms-to-version.sh como `base_cambios`, con los mensajes del bot de formularios fijos. El
-# guion de etiquetas necesitaba la misma respuesta y con los mensajes de los backends
-# («chore: bump version to X [skip ci]»): copiarla era la deuda que el arnés ya pagó con
-# release-notes.sh en 8 repos. La lógica se comparte; los mensajes no — cada guion habla de lo suyo
-# (formularios de formularios, etiquetas de pull requests), por eso esta función NO imprime nada.
+# 🔴 POR QUÉ ESTÁ APARTE. Los dos guiones necesitan la misma respuesta pero con mensajes de bot distintos (los de
+# formularios en uno, «chore: bump version to X [skip ci]» de los backends en el otro): copiar la lógica llevaría a
+# una copia por repo que se desfasa. La lógica se comparte; los mensajes no — cada guion habla de lo suyo, por eso
+# esta función NO imprime nada.
 #
-# LA RESPUESTA (idéntica a la de `base_cambios` hasta hoy):
+# LA RESPUESTA:
 #   1. el último commit del bot (cualquiera de los patrones) alcanzable desde la punta;
 #   2. si anota `Commit: <sha>` y ese commit existe y es ancestro de la punta → ese sha: es el commit
 #      del que partió la corrida anterior, y ese hash NO lo mueve un rebase del commit del bot;

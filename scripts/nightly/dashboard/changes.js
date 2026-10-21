@@ -1,12 +1,10 @@
 'use strict';
 /*
- * changes.js — QUÉ ARCHIVOS TOCÓ UNA CORRIDA Y QUÉ LES CAMBIÓ (2026-09-17)
+ * changes.js — QUÉ ARCHIVOS TOCÓ UNA CORRIDA Y QUÉ LES CAMBIÓ
  *
- * Lee el hilo comprimido de la corrida (`<volcado>.hilo.jsonl.gz`, lo guarda la story 2.13 y viaja al
- * buzón con la 2.16) y devuelve, en orden, cada edición y escritura de archivo con su cambio, el paso
- * en que ocurrió y los commits que la corrida hizo. Es lo que el prototipo de la vista mostraba
- * (tasks/prototipo-vista-corridas/extraer.js: ediciones() y commits()) y la 2.14 sacó porque la página
- * se commiteaba: desde el 2026-09-17 la vista de corridas no se commitea, así que va.
+ * Lee el hilo comprimido de la corrida (`<volcado>.hilo.jsonl.gz`, lo guarda el archivador y viaja al
+ * buzón) y devuelve, en orden, cada edición y escritura de archivo con su cambio, el paso
+ * en que ocurrió y los commits que la corrida hizo. Es lo que la vista de corridas muestra por cada corrida.
  *
  * Tres reglas:
  *  - Una corrida SIN hilo dice «sin hilo», nunca «no tocó nada»: sin la conversación no hay de dónde
@@ -23,17 +21,16 @@
 const fs = require('fs');
 const zlib = require('zlib');
 
-// Sin corte para leer: el prototipo cortaba en 6.000 caracteres (3.000 si escribía el archivo entero) y
-// 150 cambios por corrida para que la página no pesara, y medido el 2026-09-17 eso dejaba cortados 895 de
-// 4.295 cambios (21 %). Comprimidos y abiertos a pedido, mostrarlos enteros lleva la página de 5,4 a
-// 7,1 MB (280 corridas, 120 con hilo). Queda sólo un límite de SEGURIDAD por cambio, para un archivo
-// generado gigante: lo pasa uno cada muchas corridas, y cuando pasa se dice.
+// Sin corte para leer: cortar los cambios en unos miles de caracteres, o limitarlos por corrida para que la página
+// no pese, dejaría cortada una parte grande de los cambios. Comprimidos y abiertos a pedido, mostrarlos enteros
+// pesa poco. Queda sólo un límite de SEGURIDAD por cambio, para un archivo generado gigante: lo pasa uno cada
+// muchas corridas, y cuando pasa se dice.
 const TOPE_EDICION = 200000;
 const TOPE_ESCRITURA = 200000;
 const TOPE_EDICIONES_CON_CAMBIO = Infinity;
 // Un comando de consola se muestra ENTERO, como una edición: un script de reemplazos trae adentro el antes y
-// el después de cada uno, y es lo único que queda de ese cambio. El tope de 4.000 caracteres que tuvo unas
-// horas cortaba justo eso (la AS-1 de Totora). Queda el mismo límite de seguridad que el resto.
+// el después de cada uno, y es lo único que queda de ese cambio. Un tope corto cortaría justo eso.
+// Rige el mismo límite de seguridad que el resto.
 const TOPE_CONSOLA = 200000;
 const MARGEN_CIERRE_MS = 60 * 60000;
 const ESPERA_MIN_MS = 2 * 60000;
@@ -42,7 +39,7 @@ function rutaDeHilo(volcado) { return String(volcado).replace(/\.json$/, '') + '
 // el resumen de la corrida que guarda el sitio cuando borra su conversación y su cambio (dashboard/runs.js → RESUMEN)
 function rutaDeResumen(volcado) { return String(volcado).replace(/\.json$/, '') + '.resumen.json.gz'; }
 
-// ─── El cambio según git (story 2.19) ────────────────────────────────────────────────────────────
+// ─── El cambio según git ────────────────────────────────────────────────────────────
 // Lo arma scripts/metrics/run-change.js al archivar: los commits de la corrida y lo que quedó sin
 // commitear, en cada repo donde escribió. Es el «qué» exacto y completo; el hilo queda para el «cuándo».
 function rutaDeCambio(volcado) { return String(volcado).replace(/\.json$/, '') + '.cambio.json.gz'; }
@@ -82,13 +79,13 @@ function emparejar(nombre, ids) {
 }
 
 /**
- * La ruta relativa al repo. Medido sobre 4.679 ediciones de 140 corridas con hilo: una story toca
- * también repos HERMANOS (Totora Backend y FrontEnd en la misma corrida), el arnés, y archivos de
+ * La ruta relativa al repo. Una story toca
+ * también repos HERMANOS (el backend y el frontend en la misma corrida), el arnés, y archivos de
  * trabajo fuera de todo repo (el scratchpad de la sesión, la memoria). En orden:
  *  1. dentro del repo de la corrida → relativa;
  *  2. un clon descartable (…/scratchpad/<clon>/) o un worktree (…/<Repo>--wt-x/, …--merge/) → lo que sigue;
  *  3. un repo hermano (misma carpeta padre que el de la corrida) → «<hermano>/…»;
- *  4. los repos del arnés → «agent-skills/…», «tycon-claude-guides/…» o el nombre público (story 8.19);
+ *  4. los repos del arnés → «agent-skills/…», «tycon-claude-guides/…» o el nombre público;
  *  5. el mismo nombre de repo en otra carpeta (otra máquina) → lo que sigue;
  *  6. cualquier otra cosa está fuera de un repo → «fuera del repo: <nombre del archivo>», sin carpeta.
  */
@@ -105,7 +102,7 @@ function relativa(ruta, repoPath) {
   const padre = repo.split('/').slice(0, -1).join('/');
   // Sólo si el padre es una carpeta de proyectos de verdad: bajo una carpeta temporal, el «hermano» es otra sesión.
   if (padre && padre.split('/').length > 3 && !/(^|\/)(tmp|claude-\d+)(\/|$)/.test(padre) && p.startsWith(padre + '/')) return p.slice(padre.length + 1);
-  // (los dos nombres del arnés, como segmento: story 8.19, AC 12 — reconocedor declarado en harness-place-names.json)
+  // (los dos nombres del arnés, como segmento: reconocedor declarado en harness-place-names.json)
   m = p.match(/\/(agent-skills|tycon-claude-guides|tycon-harness)\/(.+)$/);
   if (m) return `${m[1]}/${m[2]}`;
   const nombre = repo.split('/').pop();
@@ -172,8 +169,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
 
   const m = marker || {};
   const ini = Date.parse(m.startedAt || '');
-  // 🔴 La conversación SIGUE después de la corrida (otra story, un diagnóstico): medido en la AS-1 de Totora,
-  //    su hilo llega dos días más allá y traía los archivos de la PERF-1. Lo posterior al cierre (último toque
+  // 🔴 La conversación SIGUE después de la corrida (otra story, un diagnóstico): el hilo puede llegar días más allá
+  //    y traer los archivos de otro trabajo. Lo posterior al cierre (último toque
   //    + 1 h, para el commit y el merge) se cuenta aparte y no se muestra, igual que lo anterior al inicio.
   const finRaw = Date.parse(m.lastTouch || '');
   const fin = Number.isFinite(finRaw) ? finRaw + MARGEN_CIERRE_MS : Infinity;
@@ -189,8 +186,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   const ediciones = [];
   const commits = [];
   // El consumo minuto a minuto y qué se estaba haciendo (sólo NOMBRES de herramienta y tipos de agente,
-  // nunca el comando ni el prompt). Tokens NUEVOS, como el reparto por paso de la 2.13, y una vez por
-  // respuesta: Claude Code parte una respuesta en varias líneas con el mismo `usage` (inflaba 3,22×).
+  // nunca el comando ni el prompt). Tokens NUEVOS, como el reparto por paso, y una vez por
+  // respuesta: Claude Code parte una respuesta en varias líneas con el mismo `usage` (contarlo en cada una lo inflaría).
   const serie = {};
   const que = {};
   const respuestas = new Set();
@@ -198,9 +195,9 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
   const idStory = String(m.storyId || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const reTitulo = idStory ? new RegExp(`story:\\s*["']?${idStory}["']?\\s*\\n(?:[^\\n]*\\n){0,8}?\\s*\\d*\\s*title:\\s*["']?([^\\n]+?)["']?\\s*\\n`) : null;
   let titulo = null;
-  // 🔴 La espera por una persona, leída del hilo (2026-09-17). La cuenta por pasos sólo sabe que el 3 y el 7
-  //    esperan; la 2.10 le hizo una pregunta al dev en el paso 5 a las 03:32 y la respuesta llegó a las 11:44:
-  //    ocho horas que la página contaba como TRABAJO. Dos formas de esperar: una pregunta con opciones
+  // 🔴 La espera por una persona, leída del hilo. La cuenta por pasos sólo sabe qué pasos
+  //    esperan; una pregunta al dev en medio de un paso que se responde horas después contaría como TRABAJO esas
+  //    horas. Dos formas de esperar: una pregunta con opciones
   //    (del uso de AskUserQuestion a su resultado) y un turno que termina (del último evento al mensaje del dev,
   //    si pasaron 2 minutos o más). Sólo horas: ni la pregunta ni la respuesta.
   const esperas = [];
@@ -270,8 +267,8 @@ function cambiosDeCorrida(volcado, marker, deps = {}) {
     for (const b of cont) {
       if (!b) continue;
       // 🔴 Una corrida puede cambiar archivos SIN las herramientas de edición: desde la consola (un heredoc,
-      //    `sed -i`, un script). Medido: 14 de 120 corridas con hilo no tienen ni una edición, y 9 de ésas
-      //    commitearon (la AS-1 de Totora: 3,8 M tokens, 8 archivos en su commit, 0 ediciones). De eso el hilo
+      //    `sed -i`, un script). Hay corridas con hilo sin una sola edición que
+      //    igual commitearon archivos. De eso el hilo
       //    guarda el comando, no un antes y después: se CUENTA, para no decir «no tocó nada».
       const esConsola = b.type === 'tool_use' && b.name === 'Bash' && /<<-?\s*['"]?\w|\bsed\s+-i|\btee\b|\.write\(|\bgit apply\b|\bpatch\b|>\s*[\w./~"$-]+\.\w{1,5}\b/.test(String((b.input || {}).command || ''));
       if (esConsola) {

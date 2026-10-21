@@ -1,14 +1,14 @@
 'use strict';
-// git-tree-hash.js — el hash de git de un blob y de un árbol, calculado acá, sin git (story 8.23, tanda B).
+// git-tree-hash.js — el hash de git de un blob y de un árbol, calculado acá, sin git.
 //
-// Nació en install-third-party.js (story 8.5): las skills de terceros se fijan por hash de árbol y cada máquina verifica
-// lo que baja ANTES de escribirlo. La tanda B de la 8.23 lo necesita para otra cosa: una versión bajada como comprimido
+// Lo usa install-third-party.js: las skills de terceros se fijan por hash de árbol y cada máquina verifica
+// lo que baja ANTES de escribirlo. También lo usa la descarga de versiones: una versión bajada como comprimido
 // se da por buena sólo si el árbol que trae es el del commit publicado. Dos usos, una definición; install-third-party.js
 // lo re-exporta tal cual (tar-reader.test.js lo comprueba).
 //
 // Las entradas son archivos [{ mode, path, sha }] con rutas relativas separadas por `/`; las carpetas se deducen. El modo
 // es el de git (`100644`, `100755`, `120000`, `160000`): quien lo calcula lo toma de donde lo sepa de verdad —de la
-// cabecera del tar, no del disco: Windows no guarda el bit de ejecutable (medición del 2026-10-07)—.
+// cabecera del tar, no del disco: Windows no guarda el bit de ejecutable—.
 //
 // Sin dependencias: sólo `crypto`.
 

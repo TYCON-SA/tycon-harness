@@ -4,21 +4,20 @@
  * periodic-exam.js — el examen de los 28 revisores corre solo, en la máquina designada, y
  * cuando NO corre eso se nota.
  *
- * ── QUÉ REEMPLAZA (y por qué no es "una tarea programada más") ───────────────────────────────────
- * Ya existía un lanzador de este examen: cinco líneas adentro de `install-tycon-hooks.sh`. Es el
- * que produjo la última foto completa (24-08-2026) y tenía tres defectos medidos:
+ * ── POR QUÉ ES UNA PIEZA PROPIA (y no "una tarea programada más") ───────────────────────────────
+ * Un lanzador metido en el instalador de hooks (`install-tycon-hooks.sh`) tiene tres defectos:
  *
- *   1. Vivía bajo TRES condiciones anidadas —`TYCON_BENCH_DAILY`, el sello DIARIO del banco
- *      determinista, y `TYCON_CODEX=1`—. En la máquina del dev la última no está puesta, así que
- *      ahí no corrió nunca. El sello quedó en la semana 35 con el calendario en la 36.
- *   2. **Marcaba la semana como hecha ANTES de correr.** La corrida cancelada el 28-08 tras 5h30
- *      se comió igual el turno de esa semana: el sello decía "corrido" y no quedó ni una medición.
- *   3. Estaba enterrado en un script de instalación, lanzado con `nohup` y sin registro: nadie
- *      podía saber si terminó, ni volver a correrlo sin editar el instalador.
+ *   1. Vive bajo varias condiciones anidadas —`TYCON_BENCH_DAILY`, el sello DIARIO del banco determinista, y
+ *      `TYCON_CODEX=1`—. En una máquina donde la última no está puesta no corre nunca, y el sello se atrasa respecto
+ *      del calendario.
+ *   2. **Marca la semana como hecha ANTES de correr.** Una corrida cancelada tras 5h30 se come igual el turno de la
+ *      semana: el sello dice "corrido" y no queda ni una medición.
+ *   3. Está enterrado en un script de instalación, lanzado con `nohup` y sin registro: nadie puede saber si terminó,
+ *      ni volver a correrlo sin editar el instalador.
  *
- * Agregar una tarea programada NUEVA al lado habría dejado dos programadores para lo mismo,
- * gastando la cuota dos veces y escribiendo los dos en el mismo archivo. Entonces: el lanzador se
- * EXTRAJO acá, se arreglaron los tres defectos, y el instalador pasó a invocar esta pieza.
+ * Una tarea programada NUEVA al lado dejaría dos programadores para lo mismo, gastando la cuota dos veces y
+ * escribiendo los dos en el mismo archivo. Por eso esta pieza es el único lanzador, resuelve los tres defectos, y el
+ * instalador la invoca.
  *
  * ── LAS TRES DECISIONES QUE SOSTIENEN TODO ──────────────────────────────────────────────────────
  * · **El sello se escribe al TERMINAR, y sólo si la corrida fue completa.** Nunca al empezar.
@@ -35,9 +34,9 @@
  *   node periodic-exam.js --force      # corrida manual: saltea máquina designada y período
  *   node periodic-exam.js --help
  *
- * 🔴 `--help` y `--dry-run` salen ANTES de cualquier proceso hijo, a propósito: `advisor-runner.js`
- * no tiene handler de flags desconocidos y `advisor-runner.js --help` arranca el banco COMPLETO
- * (gotcha medido 2026-08-27). Una pieza que envuelve a otra no puede heredar esa forma.
+ * 🔴 `--help` y `--dry-run` salen ANTES de cualquier proceso hijo, a propósito: `advisor-runner.js` no tiene handler
+ * de flags desconocidos y `advisor-runner.js --help` arranca el banco COMPLETO. Una pieza que envuelve a otra no puede
+ * heredar esa forma.
  *
  * Después del examen, el mismo disparador lanza la revisión de la semana (`revisionSemanal`), que decide sola
  * si le toca y tiene su apagado propio (TYCON_NO_WEEKLY_REVIEW=1); su resultado no cambia el código de salida del examen.
@@ -50,7 +49,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-// story 8.23 (A2): la carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
+// La carpeta del estado la sabe scripts/setup/harness/tycon-home.js. Se carga SI ESTÁ, por su ruta: los
 // laboratorios copian carpetas sueltas de scripts/ sin scripts/setup/; ahí vale la ruta de siempre, que es la misma (T5 de
 // scripts/tests/tycon-home.test.js). Si está y no carga, tira.
 const stateDirOf = (() => { const lib = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js'); return require('fs').existsSync(lib) ? require(lib).stateDir : (h) => path.join(h || require('os').homedir(), '.claude', '.tycon-pipeline'); })();
@@ -58,9 +57,9 @@ const { spawn, spawnSync, execFileSync } = require('child_process');
 const { rutaDeHerramienta, seAlcanza, asegurarPathDeHerramientas, anotarCarpetas } = require('./tools-path.js');
 
 /**
- * El node que nombra el disparador (story 8.39, decisión 23): el propio del arnés por su enlace `current`
+ * El node que nombra el disparador: el propio del arnés por su enlace `current`
  * (`<casa>/node/current/bin/node`, la casa es TYCON_HOME o ~/.tycon), nunca la carpeta numerada ni `process.execPath`
- * —que por el enlace da la carpeta numerada, y ésa se borra al cambiar de versión—. Sin él (o apagado), el de siempre.
+ * —que por el enlace da la carpeta numerada, y ésa se borra al cambiar de versión—. Sin él (o apagado), el de este proceso.
  * La regla de la ruta es la de scripts/setup/harness/tycon-home.js#harnessNode; si ese archivo no está (los laboratorios
  * copian carpetas sueltas), va ESCRITA acá (copia declarada en scripts/tests/fixtures/harness-node-copies.json).
  */
@@ -73,17 +72,17 @@ function nodeDelDisparador(env = process.env) {
   }
   try { fs.accessSync(bin, fs.constants.X_OK); return bin; } catch (_) { return process.execPath; }
 }
-// Las variables renombradas a inglés (story 8.9): el nombre viejo sigue valiendo hasta el retiro — un interruptor de
+// Las variables renombradas a inglés: el nombre viejo sigue valiendo hasta el retiro — un interruptor de
 // apagado viejo en el .zshrc sigue apagando. Sin la biblioteca al lado (el banco copia este archivo a un arnés de
 // mentira sin scripts/lib): paso directo con el nombre nuevo.
-// Lo mismo con el estado de la máquina renombrado en la tanda D2 (el sello y el log de launchd): se lee el nombre nuevo
+// Lo mismo con el estado de la máquina renombrado (el sello y el log de launchd): se lee el nombre nuevo
 // y, si falta, el viejo; antes de escribir, el viejo pasa al nuevo con su historia. Sin la biblioteca: paso directo.
 const DONDE = 'scripts/controls-bench/periodic-exam.js';
 const { leerVariable, leerEstado, prepararEstado, diasDeAntes, anotarDiaDeAntes } = (() => {
   try {
     const { readEnv, resolveFile, prepareStateWrite, loadMap, usableEntries, recordUse } = require(path.join(__dirname, '..', 'lib', 'legacy-names.js'));
     return {
-      // Los días de `scheduled_days` con el nombre que tenían antes de la story 8.9 (tanda G): los dice el mapa de renombres
+      // Los días de `scheduled_days` con su nombre anterior (en castellano): los dice el mapa de renombres
       // (entradas `value` de este guion). Sin mapa —la copia pública, o la copia del banco sin scripts/lib— no hay ninguno.
       diasDeAntes: () => {
         const out = {};
@@ -104,7 +103,7 @@ const { leerVariable, leerEstado, prepararEstado, diasDeAntes, anotarDiaDeAntes 
   } catch (_) { return { leerVariable: (n) => process.env[n], leerEstado: (p) => p, prepararEstado: (p) => p, diasDeAntes: () => ({}), anotarDiaDeAntes: () => {} }; }
 })();
 
-// ── El ÚNICO umbral de vejez del examen (AC 24) ────────────────────────────────────────────────
+// ── El ÚNICO umbral de vejez del examen ────────────────────────────────────────────────────────
 // El período son 3-4 días; 8 deja lugar a UNA corrida perdida sin gritar. Lo consume también
 // `bench-notice.js`, que lo importa de acá — una sola definición, un solo lugar donde cambiarlo.
 // 🔴 NO es el `STALE_MS` de `lib/harness-parity.js` (3 días): ése contesta "¿cuán vieja es esta
@@ -112,7 +111,7 @@ const { leerVariable, leerEstado, prepararEstado, diasDeAntes, anotarDiaDeAntes 
 // distintos; unificarlas las rompe a las dos.
 const VEJEZ_MS = 8 * 24 * 60 * 60 * 1000;
 
-/** Relativa a la raíz del repo. FUERA de `.bench/`, que git ignora (AC 11). */
+/** Relativa a la raíz del repo. FUERA de `.bench/`, que git ignora. */
 const RUTA_REPORTE_QUE_VIAJA = 'scripts/controls-bench/ultimo-examen.json';
 
 // 🔴 48 h, no 12: el examen completo son ~5h30 y con la máquina cargada puede ser bastante más.
@@ -122,18 +121,16 @@ const RUTA_REPORTE_QUE_VIAJA = 'scripts/controls-bench/ultimo-examen.json';
 // un candado huérfano cuyo número volvió a estar en uso trabaría el examen para siempre.
 const CANDADO_VENCE_MS = 48 * 60 * 60 * 1000;
 
-// 🔴 Un candado que NO SE PUEDE LEER y se acaba de escribir está OCUPADO, no libre (2026-09-17).
+// 🔴 Un candado que NO SE PUEDE LEER y se acaba de escribir está OCUPADO, no libre.
 //
-// El defecto que este umbral cierra, medido: `tomarCandado` creaba el archivo con `wx` (vacío) y le
-// escribía el pid DESPUÉS, en dos actos. Un lector que caía en el medio leía un archivo vacío,
-// `JSON.parse` fallaba, `estadoDelCandado` contestaba "libre", borraba el candado del otro y lo
-// tomaba: las dos corridas arrancaban, que es exactamente lo que el candado existe para impedir.
-// T39 corrido 10 veces en la Mac del dev: 2 rojas ("arrancó 2"); en el agente de Azure, 2 de 3
-// corridas (10569). No era un test inestable: era el detector funcionando.
+// Sin este umbral, un candado publicado en dos actos (crear el archivo con `wx`, vacío, y escribir el pid DESPUÉS)
+// deja una ventana: un lector que cae en el medio lee un archivo vacío, `JSON.parse` falla, `estadoDelCandado`
+// contesta "libre", borra el candado del otro y lo toma: las dos corridas arrancan, que es exactamente lo que el
+// candado existe para impedir.
 //
-// La publicación ya no es en dos pasos (ver `tomarCandado`), así que un candado publicado nunca
+// La publicación no es en dos pasos (ver `tomarCandado`), así que un candado publicado nunca
 // está vacío. Este umbral es la SEGUNDA barrera, y hace falta por dos razones concretas: una máquina
-// del equipo con el arnés atrasado sigue publicando el candado en dos pasos (y el candado se comparte
+// del equipo con el arnés atrasado puede publicar el candado en dos pasos (y el candado se comparte
 // por el filesystem, no por la versión del código), y un archivo puede quedar a medias por otras
 // causas (disco lleno a mitad de una escritura). Ante "no sé", un candado no puede contestar "libre":
 // equivocarse hacia libre gasta la cuota del dev dos veces; hacia ocupado, pierde un turno que
@@ -145,18 +142,18 @@ const CANDADO_EN_ESCRITURA_MS = 10 * 1000;
 
 const REINTENTOS_DE_PUSH = 3;
 
-// Los días de `scheduled_days` se escriben en inglés (story 8.9, tanda G). Hasta entonces la tabla sólo conocía los nombres
-// en castellano y un `"friday"` no daba error: se descartaba callado y el examen quedaba programado un día menos.
+// Los días de `scheduled_days` se escriben en inglés. Un día que la tabla no conoce se denuncia: descartarlo callado
+// dejaría el examen programado un día menos.
 const DIAS = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
 const DIAS_POR_DEFECTO = ['tuesday', 'friday'];
 
 /**
  * Los días programados como números de launchd (0 = domingo) y los que no se reconocen, tal como estaban escritos.
- * Sin días, los de siempre. Mayúsculas, espacios y acentos no importan. Un nombre de antes (del mapa) vale por el de hoy.
+ * Sin días, los por defecto. Mayúsculas, espacios y acentos no importan. Un nombre anterior (del mapa) vale por el actual.
  */
 function diasProgramados(scheduled_days) {
-  // un valor que no es lista (un texto suelto, un objeto) no cae callado a los días de siempre: es desconocido (pase
-  // adversarial de la tanda G, causa 3 — con `"monday"` el disparador quedaba en martes y viernes sin decir nada)
+  // un valor que no es lista (un texto suelto, un objeto) no cae callado a los días por defecto: es desconocido (con
+  // `"monday"` el disparador quedaría en martes y viernes sin decir nada)
   if (scheduled_days !== undefined && scheduled_days !== null && !Array.isArray(scheduled_days)) {
     return { numeros: [], desconocidos: [`${JSON.stringify(scheduled_days)} (scheduled_days no es una lista)`] };
   }
@@ -183,15 +180,14 @@ function diasProgramados(scheduled_days) {
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * 🔴 DE QUÉ REPO SE LEE LA MÁQUINA DESIGNADA, Y ADÓNDE VA EL RESULTADO (2026-10-13).
+ * 🔴 DE QUÉ REPO SE LEE LA MÁQUINA DESIGNADA, Y ADÓNDE VA EL RESULTADO.
  *
- * La copia pública trae `exam-config.json` con la máquina designada vacía: afuera nadie corre este examen. La máquina
- * del equipo que lo corría pasó el 9 de octubre a la versión bajada (el árbol público, sin git), y desde esa noche el
- * instalador leía esa copia vacía, retiraba el disparador y el examen dejó de correr: el martes 13 no corrió, y el
- * arranque lo marcaba en rojo en cada sesión. La máquina designada y el resultado que viaja son del repo de
- * mantenimiento, el clon que la máquina declara en `paths.maintainers` (el mismo del que los avisos leen la noche:
- * scripts/lib/night-data.js). Por eso, en orden:
- *   · TYCON_EXAM_REPO / TYCON_EXAM_CONFIG, si vienen (cada una por su lado, como siempre);
+ * La copia pública trae `exam-config.json` con la máquina designada vacía: afuera nadie corre este examen. Una máquina
+ * del equipo que usa la versión bajada (el árbol público, sin git) leería esa copia vacía, retiraría el disparador y
+ * el examen dejaría de correr, con el arranque marcándolo en rojo en cada sesión. La máquina designada y el resultado
+ * que viaja son del repo de mantenimiento, el clon que la máquina declara en `paths.maintainers` (el mismo del que
+ * los avisos leen la noche: scripts/lib/night-data.js). Por eso, en orden:
+ *   · TYCON_EXAM_REPO / TYCON_EXAM_CONFIG, si vienen (cada una por su lado);
  *   · si no, la configuración de este árbol cuando designa una máquina (un clon completo del arnés): este árbol;
  *   · si no, y la máquina usa la versión bajada con su clon de mantenimiento sano: la configuración y el resultado de
  *     ese clon. El código sigue siendo el de este árbol, el instalado;
@@ -252,9 +248,9 @@ function identidadesDeMaquina() {
  */
 function esMaquinaDesignada(cfg, identidades) {
   // Se normalizan LOS DOS LADOS. `identidadesDeMaquina()` ya entrega minúsculas y sin `.local`,
-  // pero normalizar sólo la config dejaba la comparación a merced de quién llame: un llamador que
-  // pasara el nombre crudo del sistema ("Devas-Mac-mini.local") daba "no es la designada" y la
-  // máquina no corría el examen — en silencio, que es el modo de falla que esta story persigue.
+  // pero normalizar sólo la config dejaría la comparación a merced de quién llame: un llamador que
+  // pasara el nombre crudo del sistema ("Mi-Mac-mini.local") obtendría "no es la designada" y la
+  // máquina no correría el examen — en silencio, que es el modo de falla que este archivo persigue.
   const normal = (s) => String(s || '').trim().toLowerCase().replace(/\.local$/, '');
   const designada = normal(cfg && cfg.designated_machine);
   if (!designada) return false;
@@ -274,19 +270,18 @@ function periodoCumplido(selloIso, ahora, diasEntreCorridas) {
  * Toma el candado de forma ATÓMICA (`link` = falla si el nombre ya existe) — y el llamador lo hace
  * ANTES de la sonda de sesión, no después.
  *
- * 🔴 Antes se CHEQUEABA en `decidir()` y se ESCRIBÍA varios pasos más abajo, con la sonda en el
- * medio (hasta dos minutos). El pase adversarial reprodujo la ventana con dos PIDs reales: los dos
- * procesos leyeron "libre" y los dos arrancaron el examen completo en paralelo, gastando la cuota
- * del dev dos veces — justo lo que el candado existe para impedir. Chequear y tomar tienen que ser
- * el MISMO acto; si no, entre uno y otro cabe otra corrida.
+ * 🔴 Chequear en `decidir()` y escribir varios pasos más abajo, con la sonda en el medio (hasta dos minutos), deja
+ * una ventana: dos procesos leen "libre" y los dos arrancan el examen completo en paralelo, gastando la cuota del dev
+ * dos veces — justo lo que el candado existe para impedir. Chequear y tomar tienen que ser el MISMO acto; si no,
+ * entre uno y otro cabe otra corrida.
  *
- * 🔴 Y eso no alcanzaba: el acto también tiene que ser UNO desde afuera. `wx` decidía bien quién
- * gana, pero publicaba el candado VACÍO y le escribía el pid después — ver el cuerpo de la función.
+ * 🔴 Y el acto también tiene que ser UNO desde afuera: `wx` decide bien quién gana, pero publica el candado VACÍO y le
+ * escribe el pid después — ver el cuerpo de la función.
  */
 /**
  * El dueño refresca la marca de su candado mientras la corrida vive. Sin esto, el plazo de 48 h
- * —que existe para que un PID reciclado no trabe el examen para siempre— se aplicaba también a un
- * dueño VIVO: una corrida más larga que el plazo se dejaba robar el candado y arrancaba una segunda
+ * —que existe para que un PID reciclado no trabe el examen para siempre— se aplicaría también a un
+ * dueño VIVO: una corrida más larga que el plazo se dejaría robar el candado y arrancaría una segunda
  * encima. El latido separa las dos preguntas: "¿sigue vivo?" la contesta el proceso; "¿esto quedó
  * abandonado?" la contesta el tiempo desde su último latido, no desde que empezó.
  */
@@ -312,15 +307,14 @@ function latirCandado(ruta, maquina) {
 
 function tomarCandado(ruta, ahoraMs, maquina) {
   const cuerpo = JSON.stringify({ pid: process.pid, ts: new Date(ahoraMs).toISOString(), maquina }, null, 2) + '\n';
-  // 🔴 SE PUBLICA UN CANDADO YA COMPLETO, no uno vacío que se llena después (2026-09-17).
+  // 🔴 SE PUBLICA UN CANDADO YA COMPLETO, no uno vacío que se llena después.
   //
-  // Antes: `openSync(ruta, 'wx')` y el `writeFileSync` a continuación. El `wx` es atómico para
-  // decidir QUIÉN gana —eso estaba bien— pero deja el candado publicado y VACÍO durante el intervalo
-  // entre los dos actos, y en ese intervalo un lector no lo puede parsear, lo juzga libre, lo borra y
-  // lo toma. Arrancan las dos corridas. Medido: 2 de 10 en la Mac, 2 de 3 en el agente (ver el
-  // comentario de CANDADO_EN_ESCRITURA_MS).
+  // `openSync(ruta, 'wx')` y un `writeFileSync` a continuación: el `wx` es atómico para decidir QUIÉN gana, pero deja
+  // el candado publicado y VACÍO durante el intervalo entre los dos actos, y en ese intervalo un lector no lo puede
+  // parsear, lo juzga libre, lo borra y lo toma. Arrancan las dos corridas (ver el comentario de
+  // CANDADO_EN_ESCRITURA_MS).
   //
-  // Ahora: el cuerpo se escribe en un archivo aparte —con el pid en el nombre, así dos procesos no
+  // El cuerpo se escribe en un archivo aparte —con el pid en el nombre, así dos procesos no
   // se pisan— y se PUBLICA con `link`, que es UN solo acto: falla con EEXIST si el nombre ya existe
   // (el mismo desempate que daba `wx`) y, cuando existe, el contenido ya está entero adentro. No hay
   // instante en que el candado exista y no se pueda leer. `link` pide el mismo filesystem: el tmp va
@@ -363,10 +357,9 @@ function liberarCandado(ruta, pid) {
     const d = JSON.parse(fs.readFileSync(ruta, 'utf8'));
     if (Number(d && d.pid) !== Number(pid)) return false;   // ya no es nuestro: no se toca
   } catch (_) {
-    // 🔴 ILEGIBLE tampoco es "mío" (2026-09-17). Antes se borraba igual, y eso reabría por el otro
-    // lado la carrera que `estadoDelCandado` acaba de cerrar: un candado que otra corrida está
-    // publicando —o que quedó a medias— se sacaba del camino como si fuera propio, dejando la puerta
-    // abierta a una TERCERA. No queda trabado: pasados los 10 s de la ventana de escritura,
+    // 🔴 ILEGIBLE tampoco es "mío". Borrarlo igual reabriría por el otro lado la carrera que `estadoDelCandado`
+    // cierra: un candado que otra corrida está publicando —o que quedó a medias— se sacaría del camino como si fuera
+    // propio, dejando la puerta abierta a una TERCERA. No queda trabado: pasados los 10 s de la ventana de escritura,
     // `estadoDelCandado` lo declara libre y la corrida siguiente lo roba.
     return false;
   }
@@ -485,7 +478,7 @@ function registrarIntento(benchDir, datos) {
 }
 
 /**
- * ¿Hay sesión con qué correr el examen? Se prueba ANTES de gastar las ~580 consultas (AC 7).
+ * ¿Hay sesión con qué correr el examen? Se prueba ANTES de gastar las ~580 consultas.
  * Sin esto, una sesión vencida produce 5 horas de errores y un reporte que no mide nada.
  */
 function sondaDeSesion() {
@@ -499,17 +492,15 @@ function sondaDeSesion() {
 
   // 🔴 LAS DOS herramientas, y a cada una con una CONSULTA DE VERDAD — no con `--version`.
   //
-  // Lo encontró la primera corrida real en la máquina del equipo que corre el examen (2026-08-31): Codex sin credenciales
-  // contesta `--version` sin chistar y devuelve `401 Missing bearer` en cuanto se le pide algo.
-  // La sonda probaba Claude con una consulta real y a Codex sólo la versión, así que dio el visto
-  // bueno y el examen arrancó igual: la mitad de sus 582 invocaciones iban a ser error de corrida,
-  // 5h30 de reloj, y un sello que se come el turno de los 3 días siguientes. Preguntar "¿estás
-  // instalado?" cuando lo que hace falta saber es "¿podés trabajar?" es la forma más barata de que
-  // un control diga que sí cuando la respuesta es no.
+  // Codex sin credenciales contesta `--version` sin chistar y devuelve `401 Missing bearer` en cuanto se le pide
+  // algo. Una sonda que prueba Claude con una consulta real y a Codex sólo la versión da el visto bueno y el examen
+  // arranca igual: la mitad de sus ~580 invocaciones serían error de corrida, 5h30 de reloj, y un sello que se come el
+  // turno de los 3 días siguientes. Preguntar "¿estás instalado?" cuando lo que hace falta saber es "¿podés trabajar?"
+  // es la forma más barata de que un control diga que sí cuando la respuesta es no.
   //
-  // `TYCON_EVAL_SANDBOX=1` NO es opcional: sin él los hooks de arranque le inyectan a la sesión de
-  // sonda el aviso "controls-bench EN ROJO — Correr: node runner.js", el agente va y lo corre, y la
-  // sonda muere por permisos o por tiempo (incidente 2026-08-25; lo caza `bench-silence.test.sh`).
+  // `TYCON_EVAL_SANDBOX=1` NO es opcional: sin él los hooks de arranque le inyectan a la sesión de sonda el aviso
+  // "controls-bench EN ROJO — Correr: node runner.js", el agente va y lo corre, y la sonda muere por permisos o por
+  // tiempo (lo caza `bench-silence.test.sh`).
   const ENTORNO = Object.assign({}, process.env, { TYCON_EVAL_SANDBOX: '1' });
   const HERRAMIENTAS = [
     { nombre: 'Claude Code', env: 'TYCON_EXAM_PROBE_CLAUDE', bin: 'claude', args: ['-p', 'ok'] },
@@ -518,11 +509,10 @@ function sondaDeSesion() {
   ];
   for (const h of HERRAMIENTAS) {
     const inyectadaPropia = leerVariable(h.env);
-    // 🔴 RUTA ABSOLUTA, no nombre pelado (2026-09-04). Bajo launchd el PATH es el mínimo de macOS
-    // (`/usr/bin:/bin:/usr/sbin:/sbin`) y `claude` no está ahí: el examen del viernes murió
-    // EXACTAMENTE acá, a los 4 segundos, con `spawnSync claude ENOENT`. La ruta se deduce del node
-    // que está corriendo (ver `tools-path.js`) y si la herramienta no está a su lado, se
-    // devuelve el nombre pelado y lo resuelve el PATH como siempre.
+    // 🔴 RUTA ABSOLUTA, no nombre pelado. Bajo launchd el PATH es el mínimo de macOS
+    // (`/usr/bin:/bin:/usr/sbin:/sbin`) y `claude` no está ahí: con el nombre pelado la sonda muere con
+    // `spawnSync claude ENOENT`. La ruta se deduce del node que está corriendo (ver `tools-path.js`) y si la
+    // herramienta no está a su lado, se devuelve el nombre pelado y lo resuelve el PATH.
     const ruta = rutaDeHerramienta(h.bin);
     const r = inyectadaPropia
       ? spawnSync(inyectadaPropia, [], { encoding: 'utf8', timeout: 180000, env: ENTORNO })
@@ -546,20 +536,19 @@ function sondaDeSesion() {
  * ocupado — el examen dejaría de correr hasta que alguien lo note por la denuncia de los 8 días.
  * Colgar es peor que fallar.
  *
- * 🔴 `--ff-only` a propósito: si la máquina tiene un commit local sin pushear (el caso real: un
+ * 🔴 `--ff-only` a propósito: si la máquina tiene un commit local sin pushear (por ejemplo, un
  * push del examen que falló), el pull REHÚSA en vez de fabricar un merge a las 2 de la mañana.
  * Se corre con lo que hay, y se deja dicho.
  */
 /**
- * 🔴 EL MOTIVO SE QUEDA CON LA PRIMERA LÍNEA, NO CON LA ÚLTIMA (2026-09-01).
+ * 🔴 EL MOTIVO SE QUEDA CON LA PRIMERA LÍNEA, NO CON LA ÚLTIMA.
  *
- * Este texto va a parar a `codigo_desactualizado` del reporte que viaja: es lo ÚNICO que va a leer
- * el que el viernes se pregunte por qué la medición se hizo con código viejo. Antes se quedaba con
- * la última línea del error de git, y git escribe sus errores de arriba hacia abajo: lo accionable
- * va primero y abajo queda la coletilla. Medido contra un remote inexistente, el motivo que
- * quedaba era `pull: and the repository exists.` — el final de una frase partida, que no dice ni
- * qué falló ni dónde. Dejar constancia de algo que no se puede accionar es casi peor que no
- * dejarla: hace perder el tiempo del que la lee y encima parece que el control funcionó.
+ * Este texto va a parar a `codigo_desactualizado` del reporte que viaja: es lo ÚNICO que va a leer el que se
+ * pregunte por qué la medición se hizo con código viejo. Git escribe sus errores de arriba hacia abajo: lo accionable
+ * va primero y abajo queda la coletilla. Con un remote inexistente, la última línea es `pull: and the repository
+ * exists.` — el final de una frase partida, que no dice ni qué falló ni dónde. Dejar constancia de algo que no se
+ * puede accionar es casi peor que no dejarla: hace perder el tiempo del que la lee y encima parece que el control
+ * funcionó.
  *
  * No hay lista de mensajes de git mapeados a categorías propias, a propósito: esa lista envejece
  * mal —git cambia sus textos y traduce— y el día que un mensaje nuevo no matchee, el motivo sería
@@ -591,11 +580,11 @@ function actualizarRepo(repo, log) {
 }
 
 /**
- * Stagea SOLO el reporte (nunca `git add -A`) y pushea con reintento por rebase (AC 9, 10). `rutas` y `mensaje` los pasa
+ * Stagea SOLO el reporte (nunca `git add -A`) y pushea con reintento por rebase. `rutas` y `mensaje` los pasa
  * otra pieza que viaja por el mismo camino (la revisión de la semana); sin ellos, el reporte del examen.
  */
 function viajar(repo, log, rutas = [RUTA_REPORTE_QUE_VIAJA], mensaje = `chore(examen): resultado del examen de revisores ${new Date().toISOString().slice(0, 10)}`) {
-  // 🔴 `timeout` + `GIT_TERMINAL_PROMPT=0` (2026-09-01): bajo launchd no hay nadie que
+  // 🔴 `timeout` + `GIT_TERMINAL_PROMPT=0`: bajo launchd no hay nadie que
   // conteste un pedido de contraseña. Sin esto, un git que pregunta se queda esperando para
   // siempre, y el label de launchd queda ocupado — el examen deja de correr hasta que alguien
   // lo note por la denuncia de los 8 días. Colgar es peor que fallar.
@@ -631,19 +620,18 @@ function viajar(repo, log, rutas = [RUTA_REPORTE_QUE_VIAJA], mensaje = `chore(ex
 }
 
 /**
- * ¿La HOME de este proceso NO es la del usuario? (story 8.4, AC 28)
+ * ¿La HOME de este proceso NO es la del usuario?
  *
  * launchd es por USUARIO (`gui/<uid>`), no por HOME: una prueba que corre el instalador en una HOME
  * temporal y llega a launchctl escribe el plist en SU LaunchAgents pero registra la tarea en el dominio
- * del usuario real — y la tarea de la máquina designada queda apuntando a una copia que se borra
- * (pasó el 2026-09-27, en la revisión adversarial de la 8.4; se restauró el mismo día). La HOME real
+ * del usuario real — y la tarea de la máquina designada queda apuntando a una copia que se borra. La HOME real
  * sale de la cuenta del usuario (`os.userInfo().homedir`), no de $HOME. TYCON_EXAM_REAL_HOME la
  * declara SÓLO para las pruebas que instalan en una HOME de mentira con un launchctl de mentira.
  * «No pude saber» cuenta como ajena: ante la duda, launchd no se toca.
  */
 function homeAjena() {
-  // la ruta canónica del SISTEMA (story 8.4, AC 34): en APFS la misma carpeta escrita con otra caja es la misma HOME,
-  // y `fs.realpathSync` (la versión de JS) no normaliza la caja: la máquina designada nunca instalaba
+  // la ruta canónica del SISTEMA: en APFS la misma carpeta escrita con otra caja es la misma HOME,
+  // y `fs.realpathSync` (la versión de JS) no normaliza la caja: sin esto, la máquina designada nunca instalaría
   const canon = (p) => { try { return fs.realpathSync.native(p); } catch (_) { return path.resolve(p); } };
   let real = leerVariable('TYCON_EXAM_REAL_HOME') || null;
   if (!real) {
@@ -662,7 +650,7 @@ function homeAjena() {
  * 🔴 En una máquina que no es la designada no instala nada, y RETIRA el disparador si estaba: si
  * mañana se designa otra máquina, la vieja tiene que dejar de correr sola.
  *
- * 🔴 Y desde una HOME que no es la del usuario no toca launchd en absoluto (story 8.4, AC 28): ver `homeAjena`.
+ * 🔴 Y desde una HOME que no es la del usuario no toca launchd en absoluto: ver `homeAjena`.
  */
 function instalarTarea({ soloChequear } = {}) {
   const h = homeAjena();
@@ -686,10 +674,10 @@ function instalarTarea({ soloChequear } = {}) {
     return { cambio: true, designada: false };
   }
 
-  // 🔴 UN DÍA QUE NO EXISTE NO SE DESCARTA CALLADO (story 8.9, tanda G). Antes el disparador se escribía con los días que
-  // sí se entendían: con `["tuesday", "friyay"]` el examen corría la mitad de las veces y la configuración decía otra cosa.
+  // 🔴 UN DÍA QUE NO EXISTE NO SE DESCARTA CALLADO. Escribir el disparador con los días que sí se entienden haría que,
+  // con `["tuesday", "friyay"]`, el examen corriera la mitad de las veces y la configuración dijera otra cosa.
   // 🔴 La negativa va por la salida NORMAL, como los demás resultados de --install-task: el instalador llama a este guion
-  // con la salida de error tapada, y por ahí nadie se enteraba (pase adversarial de la tanda G, causas 4, 6 y 11).
+  // con la salida de error tapada, y por ahí nadie se enteraría.
   const { desconocidos } = diasProgramados(cfg.scheduled_days);
   if (desconocidos.length) {
     console.log([
@@ -702,8 +690,8 @@ function instalarTarea({ soloChequear } = {}) {
   }
 
   // 🔴 Se compara EXACTAMENTE lo que se escribe (con el salto final incluido). Comparar contra el
-  // texto sin el `\n` que sí se escribía hacía que nunca coincidiera: el plist se reescribía en
-  // CADA arranque de sesión y con él venían un `bootout` y un `bootstrap`, o sea reiniciar el
+  // texto sin el `\n` que sí se escribe haría que nunca coincidiera: el plist se reescribiría en
+  // CADA arranque de sesión y con él vendrían un `bootout` y un `bootstrap`, o sea reiniciar el
   // trabajo programado varias veces por día para dejarlo idéntico.
   const nodeBin = nodeDelDisparador();
   const contenido = `${plistDeseado({ label, nodeBin, script: __filename, ...cfg })}\n`;
@@ -712,23 +700,22 @@ function instalarTarea({ soloChequear } = {}) {
   if (actual === contenido) return { cambio: false, designada: true };
   if (soloChequear) { console.log('⚠ falta (o cambió) el disparador del examen periódico de revisores'); return { cambio: true, designada: true }; }
 
-  // 🔴 NO SE INSTALA UN DISPARADOR QUE NO PUEDE TRABAJAR (2026-09-04).
+  // 🔴 NO SE INSTALA UN DISPARADOR QUE NO PUEDE TRABAJAR.
   //
-  // El disparador del incidente estaba perfecto —día, hora, máquina, ruta de node— y era inútil:
-  // no alcanzaba a `claude` ni a `codex`. Arrancaba puntual cada martes y viernes, moría a los 4
-  // segundos, y lo único que lo delataba era la denuncia de los 8 días. Un disparador instalado es
-  // una PROMESA de que el examen va a correr; instalarlo sin verificar que puede es prometer algo
-  // que no se sabe si se puede cumplir, y encima callado.
+  // Un disparador con día, hora, máquina y ruta de node correctos es inútil si no alcanza a `claude` ni a `codex`:
+  // arranca puntual cada martes y viernes, muere a los 4 segundos, y lo único que lo delata es la denuncia de los 8
+  // días. Un disparador instalado es una PROMESA de que el examen va a correr; instalarlo sin verificar que puede es
+  // prometer algo que no se sabe si se puede cumplir, y encima callado.
   //
   // Se pregunta `--version`, y eso es DELIBERADO: acá la pregunta es "¿existe el binario?" (el
-  // ENOENT que pasó), no "¿la sesión puede trabajar?" — eso lo contesta la sonda a las 2 de la
+  // ENOENT), no "¿la sesión puede trabajar?" — eso lo contesta la sonda a las 2 de la
   // mañana, con una consulta de verdad, y lo tiene que contestar ENTONCES porque una sesión válida
   // hoy puede estar vencida el martes. Verificar la sesión acá gastaría dos consultas en cada
   // arranque sin probar nada sobre el día que importa.
   //
   // Va DESPUÉS del corto de idempotencia a propósito: en régimen el plist no cambia, así que este
   // freno no cuesta nada; sólo corre cuando efectivamente se va a escribir.
-  // dónde tiene a `claude` y `codex` el PATH de quien instala (story 8.39): bajo launchd, con el Node del arnés en el
+  // Se anota dónde tiene a `claude` y `codex` el PATH de quien instala: bajo launchd, con el Node del arnés en el
   // disparador, se buscan ahí (tools-path.js). Se anota ANTES de verificar, y se verifica como las va a buscar el disparador
   let anotadas = null;
   try { anotadas = anotarCarpetas(); } catch (e) { console.log(`examen: no pude anotar dónde están claude y codex (${e.message}): se buscan al lado de node y en el PATH`); }
@@ -748,7 +735,7 @@ function instalarTarea({ soloChequear } = {}) {
   }
 
   // 🔴 El log lo abre launchd, no este proceso: si el viejo no pasó al nombre nuevo ANTES de cargar la tarea, el nuevo
-  // nace vacío y la historia de las corridas anteriores queda en un archivo que nadie mira (story 8.9, tanda D2). Una
+  // nace vacío y la historia de las corridas anteriores queda en un archivo que nadie mira. Una
   // copia que falla no frena la instalación: la tarea igual corre y el log nuevo empieza de cero, pero queda dicho.
   try { prepararEstado(rutaLog()); } catch (e) { console.error(`examen: ${e && e.message}`); }
   fs.mkdirSync(dir, { recursive: true });
@@ -784,8 +771,8 @@ async function main(argv) {
   // 🔴 Antes de cualquier proceso hijo (ver la cabecera).
   if (argv.includes('--help') || argv.includes('-h')) { ayuda(); return 0; }
   // 🔴 Y antes que nada, el PATH del proceso: bajo launchd viene el mínimo de macOS, y con ése
-  // `codex` (script `#!/usr/bin/env node`) muere con 127 AUNQUE se lo lance por ruta absoluta —
-  // medido 2026-09-05. Se deduce del node corriendo; lo heredan la sonda, el runner y sus hijos.
+  // `codex` (script `#!/usr/bin/env node`) muere con 127 AUNQUE se lo lance por ruta absoluta.
+  // Se deduce del node corriendo; lo heredan la sonda, el runner y sus hijos.
   asegurarPathDeHerramientas();
   const dryRun = argv.includes('--dry-run');
   const forzar = argv.includes('--force');
@@ -825,10 +812,10 @@ async function main(argv) {
 
   if (!d.correr) { log(`${d.motivo}${d.detalle ? ` — ${d.detalle}` : ''}`); return d.exit; }
 
-  // 🔴 EL NOCTURNO SE ACTUALIZA SOLO (2026-09-01). launchd corre este script directo, sin pasar por
-  // ningún arranque de sesión — así que el repo sólo se actualizaba si un humano abría una sesión en
-  // esta máquina antes de la hora. Un caso nuevo escrito el jueves no entraba a la corrida del
-  // viernes, y NADA lo decía: el examen medía con código viejo y reportaba como si fuera el actual.
+  // 🔴 EL NOCTURNO SE ACTUALIZA SOLO. launchd corre este script directo, sin pasar por
+  // ningún arranque de sesión — así que el repo sólo se actualizaría si un humano abriera una sesión en
+  // esta máquina antes de la hora. Un caso nuevo escrito el jueves no entraría a la corrida del
+  // viernes, y NADA lo diría: el examen mediría con código viejo y reportaría como si fuera el actual.
   //
   // Va ACÁ y no antes: la cabecera de este archivo manda que ningún proceso hijo corra antes de los
   // early-exits (`--help`/`--dry-run`/"no le toca"), porque el instalador invoca esta pieza en CADA
@@ -841,7 +828,7 @@ async function main(argv) {
   const actualizacion = actualizarRepo(repo, log);
 
   // 🔴 El candado PRIMERO, y de forma atómica: la sonda de abajo puede tardar hasta dos minutos, y
-  // esa espera era la ventana por la que se colaba una segunda corrida.
+  // esa espera sería la ventana por la que se colaría una segunda corrida.
   fs.mkdirSync(benchDir, { recursive: true });
   const candado = tomarCandado(ctx.rutaCandado, Date.now(), ctx.identidades[0] || '?');
   if (!candado.ok) {
@@ -869,26 +856,22 @@ async function main(argv) {
     }
     const runner = leerVariable('TYCON_EXAM_RUNNER') || path.join(__dirname, 'advisor-runner.js');
     const scratch = path.join(benchDir, `examen-scratch-${process.pid}.json`);
-    // 🔴 EL TRABAJO NOCTURNO PASÓ A SER EL CHEQUEO DE VIDA (2026-09-01) — de ~3h a ~12 min.
+    // 🔴 EL TRABAJO NOCTURNO ES EL CHEQUEO DE VIDA — ~12 min en vez de ~3 h.
     //
-    // Por qué. El examen completo son 97 casos × 2 herramientas × 3 corridas = 582 consultas, dos
-    // veces por semana. Medido sobre TODAS sus corridas, lo que encontró de los revisores fue casi
-    // nada: la del 2026-08-31 tituló "92 razonan mal" y el recuento dio CERO —eran 93 fugas del
-    // corral— y las anteriores encontraron sobre todo defectos del propio banco. Un control caro
-    // cuyo hallazgo típico es un defecto suyo se achica hasta lo que sí paga: por cada revisor, un
-    // par de gemelos (grita / se calla), una corrida, una herramienta. Eso contesta la única
-    // pregunta que ninguna otra pieza del arnés contesta —¿este revisor sigue vivo?— y la contesta
-    // en 12 minutos.
+    // Por qué. El examen completo son 97 casos × 2 herramientas × 3 corridas = 582 consultas, dos veces por semana, y
+    // casi todo lo que encuentra son defectos del propio banco, no de los revisores. Un control caro cuyo hallazgo
+    // típico es un defecto suyo se achica hasta lo que sí paga: por cada revisor, un par de gemelos (grita / se calla),
+    // una corrida, una herramienta. Eso contesta la única pregunta que ninguna otra pieza del arnés contesta —¿este
+    // revisor sigue vivo?— y la contesta en 12 minutos.
     //
-    // Lo que se dejó de medir, a propósito y con lugar donde recuperarlo: si un revisor se
-    // contradice entre corridas (necesita N corridas) y si las dos herramientas coinciden (necesita
-    // las dos). Las dos siguen disponibles a pedido con `--tool both --baseline check`, para cuando
-    // se migra de herramienta o se sospecha de algo puntual. Si en un mes el chequeo de vida sostuvo
-    // el valor, el examen profundo se retira del todo.
+    // Lo que se deja de medir, a propósito y con lugar donde recuperarlo: si un revisor se contradice entre corridas
+    // (necesita N corridas) y si las dos herramientas coinciden (necesita las dos). Las dos siguen disponibles a pedido
+    // con `--tool both --baseline check`, para cuando se migra de herramienta o se sospecha de algo puntual. Si el
+    // chequeo de vida sostiene el valor, el examen profundo se retira del todo.
     log(`arranca el chequeo de vida de los revisores (~12 min) — el examen profundo quedó a pedido`);
     // 🔴 `spawn` y no `spawnSync`: con la variante bloqueante el hilo queda detenido durante las
     // ~5h30 del examen y NINGÚN reloj puede correr — así que el latido que mantiene vivo el candado
-    // era imposible por construcción. Esperar la promesa deja al proceso atender sus temporizadores.
+    // sería imposible por construcción. Esperar la promesa deja al proceso atender sus temporizadores.
     const r = await new Promise((res) => {
       const hijo = spawn(process.execPath, [runner, '--liveness', '--baseline', 'check', '--json', scratch],
         { stdio: 'inherit' });
@@ -915,18 +898,18 @@ async function main(argv) {
       return 3;
     }
 
-    // ¿Esta corrida midió ALGO? Tres formas de dejar un reporte que no midió nada y que igual se
-    // leían como una corrida buena — las tres reproducidas en vivo por el pase adversarial:
+    // ¿Esta corrida midió ALGO? Hay tres formas de dejar un reporte que no midió nada y que igual se
+    // lee como una corrida buena:
     //   · no hay ni un caso;
     //   · TODOS terminaron en error de corrida (la sesión se cayó a mitad; la sonda del arranque no
     //     puede atrapar eso, porque al empezar sí andaba);
-    //   · TODOS se SALTEARON por un servidor MCP ausente. Éste era el peor: `skippedMcp` no se
-    //     miraba, y como los casos salteados no suman criterio ni inestables ni paridad, un examen
-    //     con CERO revisores evaluados quedaba indistinguible de un verde perfecto.
+    //   · TODOS se SALTEARON por un servidor MCP ausente. Éste es el peor: los casos salteados no suman criterio ni
+    //     inestables ni paridad, así que un examen con CERO revisores evaluados es indistinguible de un verde
+    //     perfecto si no se mira `skippedMcp`.
     //
     // 🔴 Se cuenta en RANURAS, no en casos. Con `--tool both` cada caso tiene DOS (una por
     // herramienta), y tanto `erroresDeCorrida` como `skippedMcp` cuentan ranuras. Comparar ranuras
-    // contra casos mezclaba unidades: una herramienta entera caída daba "no midió" y tiraba a la
+    // contra casos mezclaría unidades: una herramienta entera caída daría "no midió" y tiraría a la
     // basura la medición perfectamente buena de la otra.
     const casos = Object.keys(medicion.results || {}).length;
     const porCaso = String(medicion.tool || '').toLowerCase() === 'both' ? 2 : 1;
@@ -954,14 +937,14 @@ async function main(argv) {
     escribirJsonAtomico(path.join(repo, RUTA_REPORTE_QUE_VIAJA), reporte);
     registrarIntento(benchDir, { estado: 'completo', motivo: 'terminó entero', inicio, fin: reporte.fin });
     fs.mkdirSync(path.dirname(rutaSello()), { recursive: true });
-    // El sello viejo pasa al nombre nuevo antes de pisarlo (story 8.9, D2). Si esa copia falla se sella igual: lo que
+    // El sello viejo pasa al nombre nuevo antes de pisarlo. Si esa copia falla se sella igual: lo que
     // se pisa es una fecha, y no sellar una corrida completa la repetiría entera (5h30) en la próxima sesión.
     let destinoSello = rutaSello();
     try { destinoSello = prepararEstado(destinoSello); } catch (e) { log(`el sello viejo no pasó al nombre nuevo: ${e && e.message}`); }
     fs.writeFileSync(destinoSello, `${reporte.fin}\n`);
-    // Un rubro que la corrida no pudo medir se registra como tal, no como 0 (Story 1.1). Se deriva
+    // Un rubro que la corrida no pudo medir se registra como tal, no como 0. Se deriva
     // de `tool`/`runs` con el MISMO criterio que el corredor y el aviso (un solo archivo): si
-    // este examen corre con un corredor viejo que todavía escribe ceros, el log igual dice la verdad.
+    // este examen corre con un corredor que todavía escribe ceros, el log igual dice la verdad.
     let nm = {};
     try { nm = require('./unmeasured-categories.js').rubrosNoMedidos(medicion); } catch (_) { nm = medicion.no_medido || {}; }
     log(`examen completo — criterio=${medicion.criterio}`
@@ -971,9 +954,9 @@ async function main(argv) {
 
     const v = viajar(repo, log);
     if (!v.ok) {
-      // 🔴 El sello y el reporte local quedaron frescos, así que en ESTA máquina —la única que
-      // puede arreglarlo— no se notaba nada: la denuncia vivía sólo en el log de launchd, el mismo
-      // canal invisible que esta story vino a reemplazar. Ahora queda como intento, y el aviso lo grita.
+      // 🔴 El sello y el reporte local quedan frescos, así que en ESTA máquina —la única que
+      // puede arreglarlo— no se notaría nada: la denuncia viviría sólo en el log de launchd, un canal invisible.
+      // Por eso queda como intento, y el aviso lo grita.
       log(`EL RESULTADO NO VIAJÓ: ${v.motivo}`);
       registrarIntento(benchDir, { estado: 'no-viajo', motivo: v.motivo, fase: 'viaje', inicio, fin: reporte.fin });
       return 5;
@@ -1015,7 +998,7 @@ module.exports = {
 };
 
 if (require.main === module) {
-  // Los nombres viejos siguen andando (story 8.9, tanda B3a). Sin la biblioteca al lado (la copia del banco), paso directo.
+  // Los nombres viejos siguen andando. Sin la biblioteca al lado (la copia del banco), paso directo.
   let legacy = null;
   try { legacy = require(path.join(__dirname, '..', 'lib', 'legacy-names.js')); } catch (_) { legacy = null; }
   if (legacy) legacy.aliasArgv('scripts/controls-bench/periodic-exam.js', { exitCode: 2, prefix: 'examen-periodico: ' });

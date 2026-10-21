@@ -2,14 +2,13 @@
 'use strict';
 /**
  * check-claude-md-blocks.js — el presupuesto de los bloques del CLAUDE.md que cada máquina carga en
- * cada sesión (CLAUDEMD-SIN-PRESUPUESTO, decidido por el dev el 2026-09-06).
+ * cada sesión.
  *
  * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
  * Cada `claude-md-blocks/<bloque>.md` se sincroniza al `~/.claude/CLAUDE.md` de todo el equipo y se
- * carga ENTERO en cada sesión. Nada medía cuánto pesaba: el bloque de estilo llegó a 17.034 bytes
- * (el 40 % del CLAUDE.md) con seis pasadas de la misma regla, cada una arrastrando su caso disparador,
- * su fecha y las citas del dev; la poda del 03-09 lo dejó en 6.270 sin perder una regla. Y el patrón
- * siguió: `ado-runs-list-lag` creció de 4.634 a 9.979 bytes en una madrugada por la misma vía.
+ * carga ENTERO en cada sesión. Sin una medida, un bloque crece con pasadas repetidas de la misma
+ * regla, cada una arrastrando su caso, su fecha y las citas del dev, y el peso que paga cada sesión
+ * sube sin que nadie lo decida.
  *
  * ── QUÉ HACE ─────────────────────────────────────────────────────────────────────────────────────
  * `claude-md-blocks/budget.json` declara el techo en BYTES de cada bloque, uno `default` para los
@@ -18,14 +17,12 @@
  * por encima del tamaño real, así que ninguno puede crecer sin que alguien lo decida AHÍ, con el
  * motivo al lado. Además AVISA (sin frenar) cuando lo que el commit AGREGA tiene forma de historia
  * —«caso disparador», pasada numerada, fecha de pasada, cita del dev—: la regla queda en el bloque; el
- * caso, la fecha y la cita van a la guía o al incident-log.
+ * caso, la fecha y la cita van a la guía.
  *
- * 🔴 En `--staged` TODO sale del ÍNDICE: el presupuesto, la lista de bloques y su contenido. La
- * primera versión leía el techo y la lista del DISCO y el contenido del índice, así que un techo
- * subido sin stagear dejaba entrar un bloque que en la máquina de cualquier otro estaba en rojo, y la
- * lista de bloques salía del disco (revisión adversarial 2026-09-06; el contenido siempre salió del
- * índice). Y lo que no se pudo medir NO es verde: un presupuesto ilegible, un techo
- * inválido (0, texto) o un git que no contesta salen 2.
+ * 🔴 En `--staged` TODO sale del ÍNDICE: el presupuesto, la lista de bloques y su contenido. Si el
+ * techo y la lista de bloques se leyeran del DISCO, un techo subido sin stagear dejaría entrar un
+ * bloque que en la máquina de cualquier otro está en rojo. Y lo que no se pudo medir NO es verde:
+ * un presupuesto ilegible, un techo inválido (0, texto) o un git que no contesta salen 2.
  *
  * Las VARIANTES de Codex (`claude-md-blocks/names/<bloque>.codex.md`) reemplazan al bloque en las
  * máquinas con TYCON_CODEX=1: se miden contra el techo del bloque que reemplazan, y el total del lado
@@ -53,20 +50,20 @@ const SENIALES = [
 const DIR = 'claude-md-blocks';
 const BUDGET = `${DIR}/budget.json`;
 // El tope de prosa más largo que acepta el lector (`response.max_chars`, scripts/lib/tycon-config.js): una variante de
-// estilo se mide con él puesto en `{{max_chars}}` (story 2.31, AC 20).
+// estilo se mide con él puesto en `{{max_chars}}`.
 const TOPE_MAXIMO = 4000;
 const VARIANTE_DE_ESTILO = /^[a-z]+\.[a-z]{2}\.md$/;
 
-// ── Los títulos sin fecha ni historia (story 2.31, AC 9) ────────────────────────────────────────
+// ── Los títulos sin fecha ni historia ────────────────────────────────────────
 // El título de un bloque es la línea que sigue a un `# ====` de su cabecera. Viaja a cada sesión de cada organización:
-// una fecha o «podada» ahí no le dice nada a nadie; la historia va a la guía del bloque o al incident-log.
+// una fecha o «podada» ahí no le dice nada a nadie; la historia va a la guía del bloque.
 const HISTORIA_EN_TITULO = /\d{4}-\d{2}-\d{2}|\b(?:podad[ao]|promovid[ao]|cablead[ao]|actualizad[ao])\b/iu;
 function titulosConHistoria(texto) {
   const lineas = String(texto).split('\n');
   return lineas.filter((l, i) => i > 0 && /^# =+\s*$/.test(lineas[i - 1]) && /^# \S/.test(l) && !/^# =+\s*$/.test(l) && HISTORIA_EN_TITULO.test(l));
 }
 
-// ── El presupuesto, por sus dos nombres (story 8.9, tanda D1) ───────────────────────────────────
+// ── El presupuesto, por sus dos nombres ───────────────────────────────────
 // Este guion mide el disco o el ÍNDICE de otro repo (`--repo`), que puede ser otra versión del arnés:
 // un clon atrasado tiene el presupuesto con su nombre y sus claves de antes. Se lee el nombre nuevo y,
 // si no está, el viejo —que sale del mapa de renombres, nunca escrito acá—; las claves pasan por
@@ -104,30 +101,29 @@ function leerPresupuesto(leer, staged) {
   return { pres: leidos[0].obj };
 }
 
-// ── Los archivos IMPORTADOS enteros en cada sesión (story 7.4, 2026-09-17) ──────────────────────
-// Los BLOQUES de arriba son 15.555 bytes. El README del arnés, que el `~/.claude/CLAUDE.md` de cada
-// dev importa ENTERO —y que por eso viaja también a cada subagente y a cada repo—, pesaba 235.771 y
-// no lo medía nada: medido, ~76 mil tokens, el 61 % del piso con el que arranca un revisor antes de
-// leer un archivo, y ningún revisor lo lee (2 de 154 lo abrieron). La sección `imported` del
-// presupuesto le pone el mismo tratamiento que a los bloques: techo en bytes con el motivo al lado.
-// Medición: tasks/medicion-7.4-piso-de-contexto-2026-09-17.md.
+// ── Los archivos IMPORTADOS enteros en cada sesión ──────────────────────────────────────────────
+// Un archivo como el README del arnés, que el `~/.claude/CLAUDE.md` de cada dev importa ENTERO
+// —y que por eso viaja también a cada subagente y a cada repo—, pesa mucho más que un bloque: son
+// decenas de miles de tokens que cada revisor paga antes de leer un archivo, y casi ninguno lo lee.
+// La sección `imported` del presupuesto le pone el mismo tratamiento que a los bloques: techo en
+// bytes con el motivo al lado.
 
 // El ancla de un encabezado `## …`, como la resuelve un visor de markdown.
 const slug = (h) => h.trim().toLowerCase().replace(/[^\p{L}\p{N} _-]/gu, '').replace(/ /g, '-');
 
 // Las ENTRADAS de un índice: líneas `- **…`.
-// 🔴 `- **` y NO `- **[`: cuatro de las 105 fichas del README nombran un COMANDO y arrancan con
-// `` - **` `` en vez de un enlace. El detector angosto las pierde EN SILENCIO —101 contra 105— y un
-// verificador de poda montado sobre él diría «no se perdió nada» habiendo dejado cuatro afuera.
-// Lo cazó el validador de stories en el Step 1 de la 7.4; lo fija el caso C-27b.
+// 🔴 `- **` y NO `- **[`: algunas fichas del README nombran un COMANDO y arrancan con
+// `` - **` `` en vez de un enlace. El detector angosto las pierde EN SILENCIO y un
+// verificador de poda montado sobre él diría «no se perdió nada» habiendo dejado fichas afuera.
+// Lo fija el caso C-27b.
 const entradasDe = (texto) => String(texto).split('\n').filter((l) => /^- \*\*/.test(l));
 
 // Una entrada COMPLETA, con sus líneas de continuación. En markdown una viñeta sigue en las líneas
 // indentadas que le siguen, y el README tiene una ficha así (`guides/que-hace-el-arnes.md`, 12
 // líneas de continuación). 🔴 `entradasDe` devuelve sólo el PRIMER renglón —que es lo que hace falta
-// para medir el tope por entrada— y con eso una mudanza perdería el resto EN SILENCIO: fue el
-// defecto real de la primera poda de la 7.4, y el verificador no lo vio porque comparaba el mismo
-// texto truncado en los dos lados. Quien mueva texto usa ESTA función, no la de arriba.
+// para medir el tope por entrada— y con eso una mudanza perdería el resto EN SILENCIO, sin que lo
+// vea un verificador que compara el mismo texto truncado en los dos lados. Quien mueva texto usa
+// ESTA función, no la de arriba.
 function entradasCompletasDe(texto) {
   const lineas = String(texto).split('\n');
   const out = [];
@@ -169,8 +165,8 @@ function validarPresupuesto(pres) {
 
 // Mide un archivo importado: su peso, sus entradas largas, y —si declara `detail`— que cada enlace
 // al detalle tenga su sección y cada sección su enlace. `leer` es el del `medir` que lo llama (en
-// `--staged` sale del índice, como todo lo demás). Las claves de la configuración pasaron a inglés
-// (story 8.9, tanda D1); las de la salida `--json` conservan sus nombres de antes, a propósito.
+// `--staged` sale del índice, como todo lo demás). Las claves de la configuración están en inglés;
+// las de la salida `--json` conservan sus nombres en castellano, a propósito.
 function medirImportado({ archivo, conf, leer }) {
   const contenido = leer(archivo);
   if (contenido === null) return { archivo, error: `no pude leer «${archivo}»` };
@@ -190,8 +186,8 @@ function medirImportado({ archivo, conf, leer }) {
     const enlazadas = new Set();
     for (const m of contenido.matchAll(new RegExp(`\\]\\((?:\\./)?(?:[\\w./-]*/)?${ruta.split('/').pop()}#([^)\\s]+)\\)`, 'g'))) enlazadas.add(m[1]);
     enlacesRotos = [...enlazadas].filter((a) => !anclas.has(a));
-    // `linked_sections: false` (story 7.7): el importado ya no es índice —las piezas se buscan en
-    // el detalle— y no se le exige un enlace por sección. Los enlaces que SÍ tiene siguen tener que
+    // `linked_sections: false`: el importado no es un índice —las piezas se buscan en
+    // el detalle— y no se le exige un enlace por sección. Los enlaces que SÍ tiene tienen que
     // resolver: eso es lo que evita que la guía y el importado se separen.
     if (conf.linked_sections !== false) seccionesSinEntrada = secciones.filter((s) => !enlazadas.has(slug(s)));
   }
@@ -226,7 +222,7 @@ function medir({ repo, staged }) {
   } else {
     rutas = [];
     try { rutas.push(...fs.readdirSync(path.join(repo, DIR)).filter((f) => f.endsWith('.md')).map((f) => `${DIR}/${f}`)); } catch { /* sin dir */ }
-    // las variantes de Codex (`names/`) y las carpetas de variantes de estilo (story 2.31: `response-style/<estilo>.<idioma>.md`)
+    // las variantes de Codex (`names/`) y las carpetas de variantes de estilo (`response-style/<estilo>.<idioma>.md`)
     let carpetas = [];
     try { carpetas = fs.readdirSync(path.join(repo, DIR), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name); } catch { /* sin dir */ }
     for (const d of carpetas) {
@@ -236,7 +232,7 @@ function medir({ repo, staged }) {
   }
   const filas = []; let sumaClaude = 0; const codex = new Map();   // bloque → bytes del lado Codex
   const estilos = new Map();   // bloque con variantes → la variante más pesada (es la que puede tocarle a una máquina)
-  const titulos = [];          // títulos con fecha o historia (story 2.31, AC 9)
+  const titulos = [];          // títulos con fecha o historia
   for (const rel of rutas.sort()) {
     const c0 = leer(rel);
     if (c0 === null) continue;

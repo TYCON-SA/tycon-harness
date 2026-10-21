@@ -4,8 +4,8 @@
  * scripts/lib/skills-dir.js — DÓNDE están las skills: la resolución de `TYCON_SKILLS_DIR`, tolerante a las dos
  * semánticas que conviven en el arnés, y —sin variable— el propio clon antes que lo instalado.
  *
- * ── LAS DOS LECTURAS DE LA VARIABLE (2026-08-23) ────────────────────────────────────────────────────────────────
- * La 2ª ronda adversarial encontró que la variable significa cosas OPUESTAS según quién la lea, y que las dos
+ * ── LAS DOS LECTURAS DE LA VARIABLE ────────────────────────────────────────────────────────────────
+ * La variable significa cosas OPUESTAS según quién la lea, y las dos
  * están DOCUMENTADAS en mensajes al dev: los deployers de Codex la toman como la RAÍZ del clon de agent-skills
  * (`deploy-shared-skills` le agrega `skills`), mientras el lint de stories y el backfill la toman como la CARPETA
  * de skills y sus propios errores instruyen exportarla así. Estandarizar hacia cualquiera de los dos lados rompe a
@@ -15,13 +15,13 @@
  *   - si no, y <valor> parece la carpeta de skills (termina en /skills o contiene un SKILL.md un nivel abajo) →
  *     era la carpeta, la raíz es su padre.
  *
- * ── EL PROPIO CLON PRIMERO (story 8.18, 2026-10-03) ─────────────────────────────────────────────────────────────
- * Los dos repos internos se unen en uno, con `skills/` y `agents/` en la raíz. Sin variable, esto contestaba
- * siempre `~/.claude/agent-skills`: una prueba corrida en un clon de trabajo del repo unido leía las skills
- * INSTALADAS en la máquina y daba verde sin haber probado el cambio. Ahora, sin variable, si el clon donde vive
- * este archivo es unido, las skills son las suyas.
+ * ── EL PROPIO CLON PRIMERO ─────────────────────────────────────────────────────────────
+ * Los dos repos internos se unen en uno, con `skills/` y `agents/` en la raíz. Sin variable, si el clon donde vive
+ * este archivo es unido, las skills son las suyas: contestar siempre `~/.claude/agent-skills` haría que una prueba
+ * corrida en un clon de trabajo del repo unido leyera las skills INSTALADAS en la máquina y diera verde sin haber
+ * probado el cambio.
  *
- * 🔴 CONTRATO C3 de la story 8.18 — lo usan los otros carriles, los pipelines y el instalador. NO se cambia sin
+ * 🔴 CONTRATO — lo usan los otros carriles, los pipelines y el instalador. NO se cambia sin
  *    avisar: ni la firma, ni el orden, ni los códigos de salida.
  *
  *   resolveSkillsDirs([valor]) → { repo, skills, source }                          ← para quien LEE las skills
@@ -36,13 +36,13 @@
  *     1. la variable                                                                      → 'variable'
  *     2. `~/.claude/agent-skills`, si existe (la carpeta, o el enlace: se devuelve su ruta) → 'installed'
  *     3. lo que diga resolveSkillsDirs() (el propio clon si es unido; si no, lo instalado)
- *     POR QUÉ (hallazgo I12 de la revisión adversarial): los desplegadores del lado Codex escriben esta ruta en
+ *     POR QUÉ: los desplegadores del lado Codex escriben esta ruta en
  *     `~/.codex/hooks.json` y enlazan `~/.codex/skills` hacia ella. Con «el propio clon primero», apenas el clon
- *     del arnés de una máquina del equipo trae `skills/` —después del corte, con el clon de skills de siempre
- *     todavía instalado— pasarían a escribir la ruta del clon del arnés, sin que nadie haya movido la llave. Medido
- *     en un laboratorio: los comandos de `hooks.json` que nombran las skills cambian todos (y Codex aprueba los
- *     hooks por hash: hay que re-aprobarlos), y los enlaces que apuntan a la ruta de siempre dejan de reconocerse
- *     como propios: quedan como «del dev», sin actualizarse ni limpiarse. Quien escribe en la máquina escribe la
+ *     del arnés de una máquina del equipo trae `skills/` —con el clon de skills de siempre
+ *     todavía instalado— pasarían a escribir la ruta del clon del arnés, sin que nadie haya movido la llave. Los
+ *     comandos de `hooks.json` que nombran las skills cambiarían todos (y Codex aprueba los
+ *     hooks por hash: habría que re-aprobarlos), y los enlaces que apuntan a la ruta de siempre dejarían de reconocerse
+ *     como propios: quedarían como «del dev», sin actualizarse ni limpiarse. Quien escribe en la máquina escribe la
  *     ruta INSTALADA mientras exista; es además la estable cuando el clon vive en cualquier carpeta.
  *
  *   Desde bash (el instalador, los pipelines):
@@ -59,7 +59,7 @@ const os = require('os');
 const path = require('path');
 
 const OWN_CLONE = path.resolve(__dirname, '..', '..');
-// dónde viven las skills instaladas lo sabe scripts/setup/harness/tycon-home.js (story 8.23, tanda D · AC 3 y 30). Se carga
+// dónde viven las skills instaladas lo sabe scripts/setup/harness/tycon-home.js. Se carga
 // SI ESTÁ, por su ruta relativa: la copia de este archivo que viaja al freno de producción (/opt/tycon/lib/) lo encuentra
 // en /opt/tycon/setup/harness/ (misma posición relativa; lo copia su instalador) y, si no está, vale la ruta de siempre.
 const TYCON_HOME_LIB = path.join(__dirname, '..', 'setup', 'harness', 'tycon-home.js');
@@ -88,11 +88,11 @@ const valueOf = (envValue) => (envValue !== undefined ? envValue : process.env.T
  * pruebas, y ahí tiene que contestar lo de siempre. Sólo «no está»: una biblioteca que está y no carga NO se lee
  * como «no es unido» (sería volver a leer las skills instaladas, callado).
  *
- * 🔴 «No está» es que falte canonical-path.js, y nada más (pase adversarial del tramo 1, hallazgo 19, 2026-10-04).
- *    Antes, un MODULE_NOT_FOUND de CUALQUIER `require` de su cadena se leía como «copia incompleta»: en un clon unido,
- *    un `require` a un archivo que el cambio bajo prueba movió (en canonical-path.js o en legacy-names.js) hacía que
- *    todos los lectores pasaran a las skills INSTALADAS con código 0 —el verde que no probó nada, por la puerta que
- *    este comentario decía cerrar—. Ahora, si la vecina está y no carga, por lo que sea, tira; y cuando lo que falta
+ * 🔴 «No está» es que falte canonical-path.js, y nada más.
+ *    Leer el MODULE_NOT_FOUND de CUALQUIER `require` de su cadena como «copia incompleta» sería un error: en un clon
+ *    unido, un `require` a un archivo que el cambio bajo prueba movió (en canonical-path.js o en legacy-names.js)
+ *    haría que todos los lectores pasaran a las skills INSTALADAS con código 0 —el verde que no probó nada—. Si la
+ *    vecina está y no carga, por lo que sea, tira; y cuando lo que falta
  *    es un archivo, el mensaje dice cuál y quién lo pide. Quien copia canonical-path.js copia también lo que importa.
  *
  * Por eso la vecina se carga SI ESTÁ, por su ruta, y no con un `require` literal: es una dependencia opcional. El
@@ -130,7 +130,7 @@ function resolveSkillsDirs(envValue) {
   return { repo, skills: path.join(repo, 'skills'), source: 'installed' };
 }
 
-/** Para quien ESCRIBE rutas en la máquina: la instalada mientras exista (ver la cabecera, hallazgo I12). */
+/** Para quien ESCRIBE rutas en la máquina: la instalada mientras exista (ver la cabecera). */
 function resolveInstalledSkillsDirs(envValue) {
   const v = valueOf(envValue);
   if (v) return fromVariable(v);
@@ -164,5 +164,5 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-// `cli` (story 8.36): la línea de comandos como función, para la tanda del aplicador (scripts/setup/applier-batch.js)
+// `cli`: la línea de comandos como función, para el aplicador (scripts/setup/applier-batch.js)
 module.exports = { resolveSkillsDirs, resolveInstalledSkillsDirs, cli: main };
