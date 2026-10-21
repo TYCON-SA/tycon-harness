@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * touched-files.test.js — ¿qué archivos toca la story, y SE SABE? (story 7.15 del arnés, 2026-09-29)
+ * touched-files.test.js — ¿qué archivos toca la story, y SE SABE?
  *
  * El test-gate del arnés deja de correr exportador-real (24-41 min) cuando la story no toca
  * su carpeta de publicación (en este laboratorio, `scripts/lab-pub/**`). Esa decisión se apoya en esta lib, así que la pregunta que importa no es
@@ -18,7 +18,7 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const LIB = path.join(__dirname, '..', 'lib', 'touched-files.js');
 // Los archivos del laboratorio llevan nombres que no existen en el arnés: la copia pública traduce las rutas del arnés
-// ya mudadas (story 8.9) y una ruta real aquí —el exportador lo era hasta la tanda C2— se traducía a medias.
+// ya renombradas, y una ruta real aquí se traduciría a medias.
 const PUBLICATION = ['scripts/lab-pub/**'];
 
 function git(dir, ...args) {
@@ -52,11 +52,11 @@ function lab() {
 }
 
 test('T1 TouchedFiles_DeclaredButUnchanged_DoesNotTouch — lo que la story declara y la corrida no cambió NO cuenta', () => {
-  // Decisión del dueño del arnés (2026-09-30): el corte es el cambio REAL, no la lista de la story. Una story
-  // de varias tandas declara archivos de las tandas que vienen; sumarlos hacía correr exportador-real (más de
-  // 10 min) en una tanda que no tocaba la publicación (8.12 R7: 23 min de suite). Lo commiteado antes de la
+  // El corte es el cambio REAL, no la lista de la story. Una story
+  // de varias tandas declara archivos de las tandas que vienen; sumarlos haría correr exportador-real (más de
+  // 10 min) en una tanda que no toca la publicación. Lo commiteado antes de la
   // base es de una tanda anterior, que ya pasó su control; lo que la corrida cambia lo ve el diff.
-  // 🔴 rojo previo: volver a sumar `sources.declared` a `files` → la declarada sin cambio «toca».
+  // 🔴 rojo si: volver a sumar `sources.declared` a `files` → la declarada sin cambio «toca».
   const { touchedFiles, touches } = require(LIB);
   const L = lab();
   const r = touchedFiles({ repo: L.repo, storyPath: L.story(['scripts/lab-pub/lab-tool.js']), baseRef: L.base });
@@ -67,7 +67,7 @@ test('T1 TouchedFiles_DeclaredButUnchanged_DoesNotTouch — lo que la story decl
 });
 
 test('T2 TouchedFiles_InDiffOrUntracked_Touches — un cambio real bajo la carpeta cuenta aunque la story no lo declare', () => {
-  // 🔴 rojo previo: mirar sólo lo declarado → la story que edita exportar.js sin declararlo se saltea
+  // 🔴 rojo si: mirar sólo lo declarado → la story que edita exportar.js sin declararlo se saltea
   //    la única prueba que mira la copia pública.
   const { touchedFiles, touches } = require(LIB);
   const modified = lab();
@@ -76,7 +76,7 @@ test('T2 TouchedFiles_InDiffOrUntracked_Touches — un cambio real bajo la carpe
   assert.equal(r1.known, true);
   assert.equal(touches(r1.files, PUBLICATION), true, 'el archivo modificado bajo la carpeta cuenta');
 
-  // 🔴 rojo previo: `git diff` sin `ls-files --others` → un archivo NUEVO sin agregar al índice no se ve.
+  // 🔴 rojo si: `git diff` sin `ls-files --others` → un archivo NUEVO sin agregar al índice no se ve.
   const untracked = lab();
   untracked.write('scripts/lab-pub/nuevo.js', 'module.exports = 3;\n');
   const r2 = touchedFiles({ repo: untracked.repo, storyPath: untracked.story(['scripts/hooks/x.js']), baseRef: untracked.base });
@@ -85,7 +85,7 @@ test('T2 TouchedFiles_InDiffOrUntracked_Touches — un cambio real bajo la carpe
 });
 
 test('T3 TouchedFiles_NothingUnderPrefix_DoesNotTouch — fuera de la carpeta, y lo de otro repo no confunde', () => {
-  // 🔴 rojo previo: un patrón que compara por substring (`includes('lab-pub')`) → `scripts/lab-pub-old/`
+  // 🔴 rojo si: un patrón que compara por substring (`includes('lab-pub')`) → `scripts/lab-pub-old/`
   //    o una entrada `(agent-skills) …/lab-pub/…` de OTRO repo harían correr la suite de más.
   const { touchedFiles, touches } = require(LIB);
   const L = lab();
@@ -99,7 +99,7 @@ test('T3 TouchedFiles_NothingUnderPrefix_DoesNotTouch — fuera de la carpeta, y
 });
 
 test('T4 TouchedFiles_NoStoryNoGit_Unknown — sin story y sin git, no se sabe (nunca «no toca»)', () => {
-  // 🔴 rojo previo: devolver `{ known: true, files: [] }` cuando no hay de dónde mirar → el gate
+  // 🔴 rojo si: devolver `{ known: true, files: [] }` cuando no hay de dónde mirar → el gate
   //    difiere exportador-real sin haber mirado nada.
   const { touchedFiles } = require(LIB);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'touched-files-nogit-'));
@@ -109,7 +109,7 @@ test('T4 TouchedFiles_NoStoryNoGit_Unknown — sin story y sin git, no se sabe (
 });
 
 test('T5 TouchedFiles_GitFails_Unknown — git que falla es «no sé», con el error de git', () => {
-  // 🔴 rojo previo: reusar `changedFiles` de test-scope.js, que traga el error y devuelve [] → «git falló»
+  // 🔴 rojo si: reusar `changedFiles` de test-scope.js, que traga el error y devuelve [] → «git falló»
   //    se lee igual que «no hay cambios».
   const { touchedFiles } = require(LIB);
   const L = lab();
@@ -119,7 +119,7 @@ test('T5 TouchedFiles_GitFails_Unknown — git que falla es «no sé», con el e
 });
 
 test('T5 — el CLI imprime el mismo JSON (lo consume test-gate.sh)', () => {
-  // 🔴 rojo previo: CLI que imprime texto o sale ≠ 0 cuando no sabe → test-gate no puede distinguir.
+  // 🔴 rojo si: CLI que imprime texto o sale ≠ 0 cuando no sabe → test-gate no puede distinguir.
   const L = lab();
   L.write('scripts/lab-pub/lab-tool.js', 'module.exports = 5;\n');
   const r = spawnSync(process.execPath, [LIB, L.repo, L.story([]), L.base], { encoding: 'utf8' });
@@ -129,10 +129,10 @@ test('T5 — el CLI imprime el mismo JSON (lo consume test-gate.sh)', () => {
   assert.ok(j.files.includes('scripts/lab-pub/lab-tool.js'));
 });
 
-// ── Pase adversarial de la 7.15 (2026-09-29): tres falsos «no toca» confirmados ejecutando el código ──
+// ── Tres falsos «no toca» que el código tiene que evitar ─────────────────────────────────────────
 
 test('T24 TouchedFiles_RenameOutOfFolder_Touches —mover un archivo FUERA de la carpeta también la toca', () => {
-  // 🔴 rojo previo: `git diff --name-only` colapsa el renombre a la ruta destino → la de origen (bajo
+  // 🔴 rojo si: `git diff --name-only` colapsa el renombre a la ruta destino → la de origen (bajo
   //    scripts/lab-pub/) desaparece y exportador-real se difiere aunque la carpeta perdió un archivo.
   const { touchedFiles, touches } = require(LIB);
   const L = lab();
@@ -146,7 +146,7 @@ test('T24 TouchedFiles_RenameOutOfFolder_Touches —mover un archivo FUERA de la
 });
 
 test('T25 TouchedFiles_BaseFallbackToHead_Unknown —si la base cayó a HEAD por defecto, no se sabe', () => {
-  // 🔴 rojo previo: con la base = HEAD (sin marcador ni TYCON_COVERAGE_BASE: test-gate corrido a mano sobre
+  // 🔴 rojo si: con la base = HEAD (sin marcador ni TYCON_COVERAGE_BASE: test-gate corrido a mano sobre
   //    un commit hecho) el diff no ve lo commiteado → known:true, «no toca», y se difiere con la carpeta tocada.
   const { touchedFiles } = require(LIB);
   const L = lab();
@@ -159,7 +159,7 @@ test('T25 TouchedFiles_BaseFallbackToHead_Unknown —si la base cayó a HEAD por
 });
 
 test('T26 Touches_DoubleSlashOrDotSegments_Invalid — una barra doble, un «.» o un «..» no son «<carpeta>/**»', () => {
-  // 🔴 rojo previo: la clase del segmento repetido no excluía «/» → «scripts//lab-pub/**» pasaba como válido,
+  // 🔴 rojo si: la clase del segmento repetido no excluía «/» → «scripts//lab-pub/**» pasaba como válido,
   //    nunca calzaba con nada y la suite quedaba diferida SIEMPRE, sin el aviso de campo mal formado.
   const { isValidPattern } = require(LIB);
   for (const p of ['scripts//lab-pub/**', '//scripts/**', 'scripts/./lab-pub/**', '../scripts/**', 'scripts/../x/**']) {
@@ -170,7 +170,7 @@ test('T26 Touches_DoubleSlashOrDotSegments_Invalid — una barra doble, un «.»
 });
 
 test('touches — sólo entiende «<carpeta>/**»; otra forma no se interpreta', () => {
-  // 🔴 rojo previo: tratar «scripts/lab-pub» (sin /**) como prefijo de texto → también calza
+  // 🔴 rojo si: tratar «scripts/lab-pub» (sin /**) como prefijo de texto → también calza
   //    «scripts/lab-pub-old/x.js».
   const { touches, isValidPattern } = require(LIB);
   assert.equal(isValidPattern('scripts/lab-pub/**'), true);

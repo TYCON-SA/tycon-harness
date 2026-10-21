@@ -3,17 +3,15 @@
  * large-output.test.js — el contrato de `pipeline.js advisors` y `smart-reloop`:
  * **emiten su JSON por stdout Y salen 0**, sin texto de uso pegado abajo.
  *
- * 🔴 POR QUÉ EXISTE (regresión b3b3147, cazada el 2026-09-10 en la story 2.15 del arnés):
- * al arreglar el truncado de salidas grandes se cambió `process.exit()` por
- * `process.stdout.write(texto, () => process.exit(code))`. El callback de `write` es
- * ASÍNCRONO: `salidaGrande` retornaba en el acto, el despachador seguía de largo, no
- * matcheaba ningún otro comando y caía al texto de uso con `exit(1)` — que le ganaba la
+ * 🔴 POR QUÉ EXISTE: para no truncar salidas grandes se emite con
+ * `process.stdout.write(texto, () => process.exit(code))` en vez de `process.exit()`. El callback de `write` es
+ * ASÍNCRONO: si `salidaGrande` retorna en el acto, el despachador sigue de largo, no
+ * matchea ningún otro comando y cae al texto de uso con `exit(1)` — que le gana la
  * carrera al callback. Resultado: JSON correcto, uso pegado abajo, salida 1.
  *
- * Nadie lo vio durante un día entero porque el orquestador parsea stdout e ignora el
- * código de salida. Lo delató `smart-reloop-blindness.test.js` (rojo → gate del arnés
- * 79/80, y de ahí un `set-check tests green --manual` en cada corrida). Este archivo
- * agrega lo que aquél no cubría: el mismo contrato para `advisors`, y la ausencia del
+ * Pasa inadvertido porque el orquestador parsea stdout e ignora el
+ * código de salida. Lo delata `smart-reloop-blindness.test.js`. Este archivo
+ * agrega lo que aquél no cubre: el mismo contrato para `advisors`, y la ausencia del
  * texto de uso en la salida — sin eso, un `return` de más volvería a colar el uso con
  * exit 0 y los asserts de código pasarían igual.
  *
@@ -27,8 +25,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert');
 
-// Story 8.7 (AC 8): un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
-// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados», como desde la 8.2: lo declara.
+// Un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
+// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados»: lo declara.
 process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all';   // recortada, como el cargador
 const { execFileSync, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -120,7 +118,7 @@ test('el JSON del set incluye lo que el orquestador consume (no es un objeto vac
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// `start --brief` (story 7.10) — el otro lado de la misma moneda: `advisors` y `smart-reloop` ya
+// `start --brief` — el otro lado de la misma moneda: `advisors` y `smart-reloop` ya
 // no truncan su salida grande; `start` directamente NO DEBERÍA emitirla. Devuelve ~4 KB de JSON del
 // que el orquestador usa una docena de campos, y ese texto vuelve a entrar en contexto en CADA
 // respuesta posterior del turno.
@@ -222,8 +220,8 @@ test('start --brief conserva el código de salida cuando el preflight FRENA', ()
 });
 
 test('start --brief: las ramas opcionales del recorte (riesgo, gap de E2E, spec vieja)', () => {
-  // Rojo previo: los asserts de abajo no existían y las cuatro ramas opcionales de `recortarStart`
-  // —`riesgo_por`, `effort`, `e2e_gap`, `spec_stale`— no las tocaba ningún caso. Una rama sin
+  // Los asserts de abajo cubren las cuatro ramas opcionales de `recortarStart`
+  // —`riesgo_por`, `effort`, `e2e_gap`, `spec_stale`—, que ningún otro caso toca. Una rama sin
   // assert es una rama que se puede romper sin que nadie se entere.
   const repo = mkRepoEnRama();
   const home = mkHomeLimpio();
@@ -258,8 +256,8 @@ test('start --brief: las ramas opcionales del recorte (riesgo, gap de E2E, spec 
 });
 
 test('start --brief: si no puede escribir el detalle, devuelve el objeto ENTERO', () => {
-  // Rojo previo: el `catch` de `recortarStart` —la red de seguridad del AC 5— no tenía ningún
-  // assert. La regla del fail-open es explícita: peor en tokens, NUNCA peor en información.
+  // El `catch` de `recortarStart` —la red de seguridad— tiene su assert.
+  // La regla del fail-open es explícita: peor en tokens, NUNCA peor en información.
   const repo = mkRepoEnRama();
   const home = mkHomeLimpio();
   // Un ARCHIVO donde el script espera poder crear la CARPETA de salidas: mkdirSync falla y el

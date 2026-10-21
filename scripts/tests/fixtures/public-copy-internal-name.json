@@ -499,11 +499,6 @@
    "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
   },
   {
-   "path": "skills/tycon-pipeline/scripts/tests/validator-reloop.test.js",
-   "kind": "test",
-   "why": "prueba: arma una máquina, una carpeta o un remoto con el nombre interno para probar un reconocimiento o una migración"
-  },
-  {
    "path": "skills/tycon-story-followup-link/scripts/on-story-create.js",
    "kind": "functional",
    "why": "reconocedor: salta las stories del propio arnés, por el nombre interno y el público"

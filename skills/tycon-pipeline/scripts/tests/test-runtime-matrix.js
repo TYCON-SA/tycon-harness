@@ -17,9 +17,8 @@ function check(name, cond, detail) {
 
 // ---------------------------------------------------------------- fixture builder
 // Workspace sintético: <ws>/Proj/ es un REPO GIT (con .git) que contiene la story, el código
-// y su evidencia — el layout real. Hasta 2026-08-14 el fixture separaba story (Proj/) de
-// evidencia (Repo/, un HERMANO): la suite entera dependía del barrido cross-repo que era
-// exactamente el bug de atribución (evidencia ajena contada como propia).
+// y su evidencia, como en un repo real. La evidencia de un repo hermano no entra acá: la
+// atribución no barre hermanos por vecindad.
 function makeWorkspace(opts = {}) {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rmx-'));
   const repo = path.join(ws, 'Proj');
@@ -44,7 +43,7 @@ function makeWorkspace(opts = {}) {
     'status: in-progress',
     'files_to_modify:',
     // repo-relativo (como las stories reales de un repo del equipo); ws-relativo con opts.wsRelFiles
-    // (como las de Ceibo, que nombran el repo hermano en el path).
+    // (como las de un producto cuyas stories nombran el repo hermano en el path).
     `  - ${opts.wsRelFiles ? 'Proj/src/Feature.cs' : 'src/Feature.cs'}`,
     ...(opts.ack || []),
     '---',
@@ -84,7 +83,7 @@ function addSiblingRepo(ws, name) {
 }
 
 // Smoke ledger espejado (la vía legítima completa: entry en el ledger + espejo en gates.log).
-// Armada por el ayudante compartido (story 1.19): una línea vieja, sin `v`, como la escribía el envoltorio.
+// Armada por el ayudante compartido: una línea sin `v`, como la escribía el envoltorio.
 // Los casos de forja de abajo escriben sus líneas a mano a propósito: lo que prueban es una línea que el envoltorio
 // nunca escribiría (registro y espejo que no coinciden).
 function writeMirroredSmoke(dodDir, gatesLog, sid, acs, cmd = 'curl -s http://app/x') {
@@ -115,8 +114,7 @@ function writeTestsResult(advDir, sid, green, tsIso) {
     JSON.stringify({ ts: tsIso, story_id: sid, suite_green: green }));
 }
 
-// Timestamp compacto RECIENTE (now − minsAgo). Se llamaba `futureCompact` y el nombre mentía:
-// produce PASADO cercano — posterior a la mtime del código (now − 1h), que es lo que importa.
+// Timestamp compacto RECIENTE (now − minsAgo): produce PASADO cercano — posterior a la mtime del código (now − 1h), que es lo que importa.
 function recentCompact(minsAgo = 1) {
   const d = new Date(Date.now() - minsAgo * 60 * 1000);
   return d.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
@@ -144,7 +142,7 @@ console.log('runtime-matrix — casos:');
   check('AC solo-unit (no declarado imposible) queda NOT-RUN y bloquea', r.perAc[2].verdict === 'NOT-RUN' && !r.green);
 }
 
-// 2d. DOS CATEGORÍAS (el dev, 2026-07-10): AC declarado runtime_not_verifiable CON test que lo
+// 2d. DOS CATEGORÍAS: AC declarado runtime_not_verifiable CON test que lo
 //     cubre → NOT-VERIFIABLE (waiveable); sin declarar → NOT-RUN (bloquea, no waiveable).
 {
   const f = makeWorkspace({ ack: ['runtime_not_verifiable:', '  - ac: 2', '    reason: "esquema, no observable"', '    covered_by: T2'] });
@@ -165,7 +163,7 @@ console.log('runtime-matrix — casos:');
     r.warnings.some((w) => /declaración inválida/.test(w)));
 }
 
-// 2b. VECTOR 1 (re-ataque 2026-07-10): gate .md forjado a mano SIN espejo en gates.log NO cuenta.
+// 2b. VECTOR 1: gate .md forjado a mano SIN espejo en gates.log NO cuenta.
 {
   const f = makeWorkspace();
   writeGate(f.dodDir, '9.9', recentCompact(), 'PASS', 'story-9-9.spec.ts', f.gatesLog, /* mirror */ false);
@@ -231,11 +229,11 @@ console.log('runtime-matrix — casos:');
   check('ledger con espejo da RUNTIME al AC', r.perAc[2].verdict === 'RUNTIME');
 }
 
-// 6b. Un smoke que corre TESTS no es evidencia runtime (fix 2026-07-25).
-// El bug: el ledger se leía sin mirar NUNCA el `cmd`, así que `node --test` y una sonda contra la
-// plataforma real contaban igual — 🟢 RUNTIME las dos. Eso vaciaba de sentido al gate, que existe
-// para cazar "los tests pasan pero en la plataforma no anda". Destapado por el sweep de drift de
-// un repo del equipo: 5 stories con matriz 🟢 "N/N en RUNTIME" y ledger 100% `node --test`.
+// 6b. Un smoke que corre TESTS no es evidencia runtime.
+// Si el ledger se leyera sin mirar el `cmd`, `node --test` y una sonda contra la plataforma real
+// contarían igual — 🟢 RUNTIME las dos. Eso vaciaría de sentido al gate, que existe para cazar
+// "los tests pasan pero en la plataforma no anda": una story con matriz 🟢 "N/N en RUNTIME" y ledger
+// 100% `node --test`.
 {
   const f = makeWorkspace();
   const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
@@ -374,9 +372,9 @@ withWaiverLog((log) => {
   check('legítimo previo cuenta, forjado posterior no (chainOk=false)', r2.green === true && r2.chainOk === false);
 });
 
-// ---- Story 7.17 — una firma descartada se DICE (no «esperan waiver» a secas) ----
-// Caso: épico 11 de un producto del equipo (2026-10-07). El dev firmó, la cadena del registro del repo se había roto al
-// unir dos ramas, y la matriz decía «esperan waiver»: parecía que no había firmado. Los registros se arman a mano con
+// ---- Una firma descartada se DICE (no «esperan waiver» a secas) ----
+// Caso: el dev firmó, la cadena del registro del repo se rompió al unir dos ramas, y la matriz diría
+// «esperan waiver»: parecería que no firmó. Los registros se arman a mano con
 // el hash y el canónico del verificador (copiados: son el formato que ya está firmado en los repos).
 const crypto717 = require('crypto');
 function canon717(e) {
@@ -406,7 +404,7 @@ withWaiverLog(() => {
   const f = workspaceConAc2Pendiente();
   const base = colgada717('', firma717('9.1', [1]));
   const editada = { ...colgada717(base.chain, firma717('9.9', [2], { declHashByAc: { 2: DECL2_HASH } })), approvedBy: 'deva' };
-  editada.ts = '2026-10-07T09:00:00.000Z';   // alguien la tocó a mano: ya no engancha
+  editada.ts = '2026-10-07T09:00:00.000Z';   // alguien la tocó a mano: no engancha
   registroDelRepo(f, [base, editada]);
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
   const w = (r.warnings || []).find((x) => /AC#2/.test(x) && /descart/i.test(x));
@@ -506,8 +504,8 @@ withWaiverLog(() => {
     /avisoFirmasDescartadas\(/.test(fuente('marker.js')) && /avisoFirmasDescartadas\(/.test(fuente('on-pre-commit.js')));
 });
 
-// T18 — Migrate_DiscardedLines_TextAndRetry: el migrador ya no dice «sólo migro lo anterior», y una migración que quedó
-// descartada en el destino se vuelve a escribir (antes la daba por hecha mirando también las líneas descartadas).
+// T18 — Migrate_DiscardedLines_TextAndRetry: el migrador no dice «sólo migro lo anterior», y una migración que quedó
+// descartada en el destino se vuelve a escribir (no la da por hecha mirando también las líneas descartadas).
 {
   const { spawnSync } = require('child_process');
   const MIGRATE = path.join(__dirname, '..', 'migrate-waivers-to-repo.js');
@@ -532,8 +530,8 @@ withWaiverLog(() => {
   const decl = waiverLib.declHashFor('esquema, no observable', 'T2');
   fs.writeFileSync(destino, JSON.stringify({ ts: valida.ts, story: '9.9', acs: [2], matrixHash: 'm', approvedBy: 'deva', tty: true,
     declHashByAc: { 2: decl }, migratedFrom: 'home-log-2026-07-29', chain: 'feedfacefeedface' }) + '\n');
-  // 🔴 Escribir pide la terminal del dev (2026-10-07): el migrador vuelve a firmar contra el texto ACTUAL de cada AC, y
-  // sin candado lo podía correr el agente — reescribir la razón de un AC y migrar daba una firma válida que nadie firmó.
+  // 🔴 Escribir pide la terminal del dev: el migrador vuelve a firmar contra el texto ACTUAL de cada AC, y
+  // sin candado lo podría correr el agente — reescribir la razón de un AC y migrar daría una firma válida que nadie firmó.
   const antes = fs.readFileSync(destino, 'utf8');
   if (!waiverLib.hasTty()) {
     const sinTerminal = correr('--apply');
@@ -581,8 +579,8 @@ withWaiverLog(() => {
   const f = makeWorkspace({ ack: ['dod_runtime_exempt: true'] });
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
   check('dod_runtime_exempt → verde', r.exempt === true && r.green === true);
-  // story 7.27: la exenta también dice de qué repo es y sus totales. Sin eso, el candado de la guía QA buscaba las
-  // pantallas en ningún lado («no están en el disco») y el generador de la guía se caía leyendo `stats.total`.
+  // La exenta también dice de qué repo es y sus totales. Sin eso, el candado de la guía QA buscaría las
+  // pantallas en ningún lado («no están en el disco») y el generador de la guía se caería leyendo `stats.total`.
   check('dod_runtime_exempt → trae el repo de la story', Boolean(r.repoRoot) && fs.realpathSync(r.repoRoot) === fs.realpathSync(f.repo), `repoRoot=${r.repoRoot} repo=${f.repo}`);
   check('dod_runtime_exempt → trae los totales en cero', r.stats && r.stats.total === 0 && r.stats.runtime === 0 && r.stats.waived === 0 && r.stats.notVerifiable === 0, JSON.stringify(r.stats));
 }
@@ -595,7 +593,7 @@ withWaiverLog(() => {
   const p = path.join(specsDir, '9-9-empty.md');
   fs.writeFileSync(p, '---\nstory: 9.9\n---\n\n## Notas\n\nnada\n');
   // gatesLogPath temp SIEMPRE: sin él, compute() cae al gates.log REAL del home — read-only e
-  // inocuo con este fixture, pero ahora que el instalador corre esta suite en cada máquina,
+  // inocuo con este fixture, pero el instalador corre esta suite en cada máquina,
   // acoplar un test al estado del HOME del dev es pedir un flaky.
   const r = rm.compute({ storyPath: p, gatesLogPath: path.join(ws, 'gates.log') });
   check('story sin ACs → structural error', !!r.structuralError);
@@ -611,20 +609,20 @@ withWaiverLog(() => {
   const r = rm.compute({ storyPath: f.storyPath, gatesLogPath: f.gatesLog });
   const w = r.warnings.find((x) => /SOLO la tabla/.test(x));
   check('AC solo-en-tabla entra al universo', r.acs.includes(4) && !!w);
-  // La REDACCIÓN es parte del contrato: este aviso decía "revisar formato de la story" y
-  // así fue como el bug del parser sobrevivió a la Story 4.21 (disparó con 31 ACs y se leyó
-  // como una rareza del spec). Tiene que mandar a descartar el parser ANTES que la story.
+  // La REDACCIÓN es parte del contrato: un aviso «revisar formato de la story» lleva a leer el
+  // bug del parser como una rareza del spec (dispara con 31 ACs). Tiene que mandar a descartar
+  // el parser ANTES que la story.
   check('el aviso manda a descartar el parser, no a culpar al formato de la story',
     !!w && /parser/.test(w) && !/revisar formato de la story/.test(w));
 }
 
 // 16. REGRESIÓN — storyPath RELATIVO computa IGUAL que absoluto.
 // `marker.js complete-step 8` pasa `marker.storyPath`, que `pipeline.js start` guarda RELATIVO al
-// repo. Con un path relativo, `discoverWorkspaceRoot` llegaba a basename==='specs' y devolvía
+// repo. Con un path relativo, `discoverWorkspaceRoot` llegaría a basename==='specs' y devolvería
 // `path.dirname(path.dirname('specs'))` === '.', o sea el repo en vez del workspace → la discovery
-// de evidencia buscaba en '<repo>/<hijo>/.advisors/dod-runtime' y no encontraba NADA. El gate del
-// commit-prep bloqueaba con la matriz realmente verde, para cualquier dev, en cualquier story.
-// Caso: Story 4.17 de un repo del equipo 2026-07-24 (standalone VERDE 8/8 vs gate ROJA 0/8, misma evidencia).
+// de evidencia buscaría en '<repo>/<hijo>/.advisors/dod-runtime' y no encontraría NADA. El gate del
+// commit-prep bloquearía con la matriz realmente verde, para cualquier dev, en cualquier story
+// (standalone VERDE 8/8 vs gate ROJA 0/8, misma evidencia).
 {
   const f = makeWorkspace();
   // Evidencia REAL (gate E2E con espejo run-check + tests-result) → hay algo que encontrar.
@@ -652,10 +650,10 @@ withWaiverLog(() => {
     `abs=${abs.hash} rel=${rel.hash}`);
 }
 
-// 17. Multi-tanda (Story M-1 de un producto del equipo, 2026-08-05): los acs_pending de una tanda `blocked` se
+// 17. Multi-tanda (una story de un producto del equipo): los acs_pending de una tanda `blocked` se
 //     EXCLUYEN del universo (deuda declarada con blocked_by — su superficie no existe todavía);
-//     los de una tanda `pending` (la que se está entregando) NO se excluyen. Sin el fix, los
-//     ACs del frontend bloqueado contaban como NOT-RUN y bloqueaban el commit-prep de toda
+//     los de una tanda `pending` (la que se está entregando) NO se excluyen. Sin esto, los
+//     ACs del frontend bloqueado contarían como NOT-RUN y bloquearían el commit-prep de toda
 //     story multi-tanda sin salida legítima (NOT-RUN no es waiveable).
 {
   const f = makeWorkspace({ ack: [
@@ -679,10 +677,10 @@ withWaiverLog(() => {
     JSON.stringify(r.pendientes));
 }
 
-// 18. DODRT-C8 (2026-08-05, caso disparador: la Story M-1 de un producto del equipo): un AC que describe una ACCIÓN
+// 18. DODRT-C8: un AC que describe una ACCIÓN
 //     ("puede asignar una ruta") no puede quedar 🟢 RUNTIME si la corrida sólo MIRÓ la pantalla.
-//     El bug real: el E2E asertaba que el botón "Iniciar ruta" era visible, la matriz lo dio
-//     verde, el pipeline cerró, y la acción fallaba en la app. El test debe FALLAR sin el fix.
+//     Sin la regla: el E2E asertaría que el botón "Iniciar ruta" es visible, la matriz lo daría
+//     verde, el pipeline cerraría, y la acción podría fallar en la app. El test debe FALLAR sin la regla.
 {
   const f = makeWorkspace();
   // Reescribo los ACs: #1 de lectura, #3 de ACCIÓN. Ambos cubiertos por el mismo E2E.
@@ -693,11 +691,9 @@ withWaiverLog(() => {
 
   // (a) El gate pasó pero NINGÚN test ejerció la acción (títulos sin @mutates)
   // 🔴 Los timestamps se DERIVAN del reloj de la corrida (futureCompact — posteriores a la mtime
-  // del código, que makeWorkspace setea a now-1h). La versión anterior los tenía HARDCODEADOS
-  // ('20260805T233000Z'): pasaban sólo el día en que se escribieron, y desde el 2026-08-06 el
-  // chequeo de frescura los rechazaba → 6 casos de esta sección estuvieron 8 días en rojo sin
-  // que nadie lo viera. Un test cuya expectativa compara una fecha fija contra «ahora» es una
-  // bomba de tiempo (detectado 2026-08-13, corrida de la Story 4.34 de un repo del equipo).
+  // del código, que makeWorkspace setea a now-1h). Una fecha fija acá no sirve: pasa sólo el
+  // día en que se escribió, y el chequeo de frescura la rechaza después. Un test cuya expectativa
+  // compara una fecha fija contra «ahora» es una bomba de tiempo.
   const ts18a = recentCompact(30);
   const ts18b = recentCompact(20);
   const ts18c = recentCompact(10);
@@ -753,11 +749,10 @@ withWaiverLog(() => {
   delete process.env.TYCON_RUNTIME_MATRIX_NO_MUTATION_CHECK;
 }
 
-// 20. DODRT-C8 — productos SIN superficie HTTP ni navegador (caso disparador: Story 4.34 de
-//     un repo del equipo, 2026-08-13). El MCP habla por stdio: sus smokes son `node <script>.mjs` y
+// 20. DODRT-C8 — productos SIN superficie HTTP ni navegador. Un MCP habla por stdio: sus smokes son `node <script>.mjs` y
 //     adentro MUTAN de verdad (borran procesos de la plataforma), pero el detector por-comando
-//     (`-X DELETE`/`--data`) no puede verlos → toda story de ese paquete que mutara quedaba
-//     RUNTIME-PARCIAL para siempre y salía por la escotilla. La salida honesta es el marcador
+//     (`-X DELETE`/`--data`) no puede verlos → toda story de ese paquete que mutara quedaría
+//     RUNTIME-PARCIAL para siempre y saldría por la escotilla. La salida honesta es el marcador
 //     explícito `--mutates` de smoke-run.sh — NO más débil que mirar el comando: un `-X DELETE`
 //     dentro de un curl también lo escribe el agente; la garantía real siempre fue el exit code
 //     que el wrapper captura. Anti-forja: el flag cuenta SOLO si el ESPEJO de gates.log (fuera
@@ -796,9 +791,9 @@ withWaiverLog(() => {
   check('el smoke sigue contando como evidencia runtime a secas (el AC queda parcial, no SIN-EVIDENCIA)',
     (r.perAc[3].runtime || []).length > 0, JSON.stringify(r.perAc[3].runtime));
 
-  // (c) 🔴 Anti-forja del EXIT (crítico de la revisión 2026-08-13): la corrida real FALLÓ (el
+  // (c) 🔴 Anti-forja del EXIT: la corrida real FALLÓ (el
   //     espejo tiene exit 1) y alguien edita el `exit` del ledger del repo a 0. Sin atar el exit
-  //     a la línea del espejo, la matriz daba RUNTIME verde diciendo «espejo verificado» — la
+  //     a la línea del espejo, la matriz daría RUNTIME verde diciendo «espejo verificado» — la
   //     garantía entera de la vía es el exit code, así que ES el campo que el espejo confirma.
   const f3 = makeWorkspace();
   fs.writeFileSync(f3.storyPath, fs.readFileSync(f3.storyPath, 'utf8')
@@ -847,11 +842,11 @@ withWaiverLog(() => {
     (r.perAc[3].runtime || []).length === 0, JSON.stringify(r.perAc[3].runtime));
 }
 
-// 21. REGRESIÓN — evidencia de un repo HERMANO no se atribuye a la story (2026-08-14, caso
-//     real: Story 4.36 de un repo del equipo reportada "cubierta" por el tests-result.json de
-//     el frontend de otro producto — otro repo, otra story 10.3.1, otro producto; el warning "es de OTRA
-//     story" disparaba y la evidencia contaba igual). Tercera falla de la familia F.iii:
-//     el gate se equivoca por plumbing (vecindad en el filesystem), no por el estado real.
+// 21. REGRESIÓN — evidencia de un repo HERMANO no se atribuye a la story.
+//     Sin esto, una story de un repo del equipo se reportaría "cubierta" por el tests-result.json del
+//     frontend de otro producto (otro repo, otra story; el warning "es de OTRA story" dispararía y la
+//     evidencia contaría igual): el gate se equivocaría por plumbing (vecindad en el filesystem), no
+//     por el estado real.
 //     La evidencia sale del repo git que CONTIENE la story; un hermano solo cuenta si está
 //     declarado en .tycon/advisors.yaml → evidence.companion_repos (caso 22).
 {
@@ -940,7 +935,7 @@ withWaiverLog(() => {
     r2.perAc[1].verdict === 'RUNTIME', r2.perAc[1].verdict);
 }
 
-// 24. Staleness con paths ws-relativos (estilo Ceibo: el frontmatter nombra el repo en el
+// 24. Staleness con paths ws-relativos (el frontmatter nombra el repo en el
 //     path). La resolución prueba repo-root Y workspace-root; si ninguna existiera, mtime=0
 //     y el chequeo de frescura quedaría ciego (gates viejos contando como frescos).
 {
@@ -954,9 +949,9 @@ withWaiverLog(() => {
 }
 
 // 25. Repo de UNA sola suite: la suite verde del propio repo cubre también las filas cuyo
-//     NOMBRE matchea el hint FE (`foo.test.js` clasifica 'fe'). Antes esas filas buscaban una
-//     suite "fe" que en un repo backend-only no existe — y la aportaba, mal, el tests-result
-//     de un repo hermano (el síntoma visible del bug de atribución en la 4.36 de un repo del equipo).
+//     NOMBRE matchea el hint FE (`foo.test.js` clasifica 'fe'). Sin esto, esas filas buscarían una
+//     suite "fe" que en un repo backend-only no existe — y la aportaría, mal, el tests-result
+//     de un repo hermano.
 //     El split fe/be sigue mandando cuando hay DOS suites en el scope.
 {
   const f = makeWorkspace();
@@ -991,10 +986,9 @@ withWaiverLog(() => {
     (r.perAc[1].code || []).some((c) => /Proj\/tests-result\.json/.test(c)), JSON.stringify(r.perAc[1].code));
 }
 
-// 27. `.test.js` es un test de BACKEND (node --test), no señal de frontend. Con el hint viejo
-//     (`.test.` a secas + `ceibo-deposito` EN DURO en el harness) una fila `foo.test.js`
-//     se apareaba con la suite del subproyecto FE — el mismo mecanismo por el que las filas de
-//     un repo del equipo "necesitaban" la suite de CeiboFrontEnd. Lo específico del producto ahora
+// 27. `.test.js` es un test de BACKEND (node --test), no señal de frontend. Un hint de
+//     `.test.` a secas, o un nombre de producto EN DURO en el harness, aparearía una fila `foo.test.js`
+//     con la suite del subproyecto FE. Lo específico del producto
 //     vive en su .tycon/advisors.yaml, no en el regex del harness.
 {
   const f = makeWorkspace();
@@ -1016,11 +1010,11 @@ withWaiverLog(() => {
     (r.perAc[3].code || []).some((c) => /ceibo-deposito\/tests-result\.json/.test(c)), JSON.stringify(r.perAc[3].code));
 }
 
-// 28. F1 del review ciego (2026-08-14): el fallback de "suite única" NO puede cubrir una fila
+// 28. El fallback de "suite única" NO puede cubrir una fila
 //     cuyo PROPIO lado tiene la suite EN ROJO. greenByKind filtra los rojos antes, así que
-//     "una sola suite verde" era indistinguible de "dos suites, una roja" — y la verde del
-//     otro lado validaba la declaración `covered_by` de un AC cuyo lado estaba roto (lo
-//     volvía waiveable cuando debía bloquear).
+//     "una sola suite verde" sería indistinguible de "dos suites, una roja" — y la verde del
+//     otro lado validaría la declaración `covered_by` de un AC cuyo lado está roto (lo
+//     volvería waiveable cuando debe bloquear).
 {
   const f = makeWorkspace();
   const feAdv = path.join(f.repo, 'feapp', '.advisors');
@@ -1036,7 +1030,7 @@ withWaiverLog(() => {
     `code=${JSON.stringify(r.perAc[2].code)} verdict=${r.perAc[2].verdict}`);
 }
 
-// 29. F3 del review ciego: si el bloque `evidence:` existe pero el parser no le sacó NINGUNA
+// 29. Si el bloque `evidence:` existe pero el parser no le sacó NINGUNA
 //     entrada, se avisa — un formato YAML válido que el parser mínimo no entiende no puede
 //     degradar la config en silencio (companion perdido = rojo falso; fe_paths perdido =
 //     detector de UI diluido).
@@ -1051,8 +1045,8 @@ withWaiverLog(() => {
     JSON.stringify(r.warnings));
 }
 
-// 30. M1 del review ciego: sin repo git (fail-closed) el warning 🚫 de "repos NO declarados"
-//     no puede acusar al PROPIO repo de la story — la evidencia ya no cuenta por el
+// 30. Sin repo git (fail-closed) el warning 🚫 de "repos NO declarados"
+//     no puede acusar al PROPIO repo de la story — la evidencia no cuenta por el
 //     fail-closed; acusarlo confunde al lector y apunta al lugar equivocado.
 {
   const f = makeWorkspace({ noGit: true });
@@ -1062,11 +1056,11 @@ withWaiverLog(() => {
     !r.warnings.some((w) => /🚫/.test(w) && /Proj/.test(w)), JSON.stringify(r.warnings));
 }
 
-// 31. DODRT-C8 — contexto del verbo de mutación (2026-08-25).
-//     Casos MEDIDOS sobre la Story 1.1 de un producto del equipo (consulta-de-cliente-ombu), una feature
-//     READ-ONLY: la lista léxica marcaba ACs de LECTURA como "acción sin ejecutar" y el
-//     pipeline quedaba sin salida limpia (no hay acción que ejecutar, y los dos escapes
-//     previstos —`--mutates` y `runtime_not_verifiable`— habrían declarado algo falso).
+// 31. DODRT-C8 — contexto del verbo de mutación.
+//     En una feature READ-ONLY, una lista léxica
+//     marcaría ACs de LECTURA como "acción sin ejecutar" y el
+//     pipeline quedaría sin salida limpia (no hay acción que ejecutar, y los dos escapes
+//     previstos —`--mutates` y `runtime_not_verifiable`— declararían algo falso).
 //
 //     La asimetría manda: neutralizar de más apaga el control. Por eso cada caso que
 //     NEUTRALIZA viene con su gemelo que SIGUE disparando.
@@ -1101,7 +1095,7 @@ withWaiverLog(() => {
 
   // gemelo del gemelo: el guard de lookup vale SÓLO para 'resolver'. Si se aplicara a
   // cualquier verbo, todo "se <muta> en/por <algo>" quedaría neutralizado — falso negativo
-  // caro y silencioso. (Estos dos casos nacieron de un mutante que sobrevivió al chequeo.)
+  // caro y silencioso.
   check('"se registra en la tabla" SÍ es acción (en/por no neutraliza a otros verbos)',
     esAccion('el movimiento se registra en la tabla de auditoría') === true);
   check('"se envía por mail" SÍ es acción',
@@ -1112,7 +1106,7 @@ withWaiverLog(() => {
   check('un verbo negado NO tapa a otro verbo sin negar en el mismo AC',
     esAccion('el lote no se elimina, pero se crea una contrapartida') === true);
 
-  // --- (d) El caso disparador ORIGINAL de DODRT-C8 (Story M-1) sigue detectándose.
+  // --- (d) El caso ORIGINAL de DODRT-C8 sigue detectándose.
   check('regresión del caso original: "puede asignar una ruta" SÍ es acción',
     esAccion('el encargado puede asignar una ruta a un repartidor de la zona') === true);
 
@@ -1121,9 +1115,9 @@ withWaiverLog(() => {
     esAccion('un usuario sin permisos de zona igualmente puede asignar el caso') === true);
 }
 
-// 32. DODRT-C8 — ENDURECIMIENTO: la negación no neutraliza un AC de RE-EJECUCIÓN (2026-08-25).
-//     El fix de contexto (caso 31) rescató 222 ACs sobre las 1222 stories del equipo. Nueve de
-//     esos rescates estaban MAL: criterios de idempotencia/concurrencia donde la acción SÍ se
+// 32. DODRT-C8 — ENDURECIMIENTO: la negación no neutraliza un AC de RE-EJECUCIÓN.
+//     El neutralizador de contexto (caso 31) rescata ACs de lectura, pero algunos rescates serían un
+//     error: criterios de idempotencia/concurrencia donde la acción SÍ se
 //     ejecuta (dos veces) y la negación califica al DUPLICADO, no a la acción. Son justo los ACs
 //     donde más vale exigir la mutación corrida de verdad: un duplicado sólo aparece corriendo.
 //
@@ -1133,7 +1127,7 @@ withWaiverLog(() => {
 {
   const esAccion = rm.acEsDeAccion;
 
-  // --- RE-BLOQUEA: los arquetipos medidos en el corpus real.
+  // --- RE-BLOQUEA: los arquetipos de acción que sí tienen que frenar.
   check('idempotencia: "ya iniciada … NO crea registro duplicado" SÍ es acción',
     esAccion('Doble inicio (idempotente): IniciarTransoperatorio con orden ya iniciada '
       + 'retorna 200 OK con etapaProcesoId existente — NO crea registro duplicado.') === true);
@@ -1148,7 +1142,7 @@ withWaiverLog(() => {
       + 'crea un script incremental nuevo: el baseline es la única fuente.') === true);
 
   // --- GEMELOS: una sola señal NO alcanza. Si alguno de estos se pone rojo, el guard se
-  //     ensanchó y volvimos a bloquear ACs de lectura — el problema que el caso 31 arregló.
+  //     ensanchó y vuelven a bloquearse ACs de lectura — el problema que el caso 31 resuelve.
   check('sólo duplicación (sin repetición): "NO duplicar ExportHelpers.cs" NO es acción',
     esAccion('NO duplicar Features/Listados/Services/ExportHelpers.cs: esta story es owner '
       + 'del archivo. Story 8.4 lo CONSUME (no crea, no duplica).') === false);
@@ -1158,18 +1152,18 @@ withWaiverLog(() => {
   check('sólo repetición: "ya está activo … no crea nada" NO es acción',
     esAccion('Given un id que no existe o que ya está activo When se reactiva Then responde '
       + '404 — no crea nada.') === false);
-  // "ya es" NO cuenta como repetición: fue el único falso positivo medido del primer intento.
+  // "ya es" NO cuenta como repetición: es un falso positivo medido.
   check('"ya es el WARNING … no se duplica el reporte" NO es acción',
     esAccion('Then no emite nada — el caso del nombre no declarado ya es el WARNING '
       + 'ir-undeclared-data-ref de 3.13, y no se duplica el reporte') === false);
 
-  // --- El endurecimiento NO toca el neutralizador de lookup (b): el caso de ese producto sigue verde.
+  // --- El endurecimiento NO toca el neutralizador de lookup (b): el caso de lookup sigue verde.
   check('AC 11 de FRESNO: "resuelve en Parameters" sigue sin ser acción',
     esAccion('un pedido con idEstadoPedidoActual que resuelve en Parameters') === false);
 }
 
-// 32b. DODRT-C8 — condicional y rechazo HTTP (2026-10-07, story 11.4 de un producto del equipo). Los dos
-//      AC que hubo que eximir a mano: uno describe lo que PASARÍA si el rollback cayera en la carpeta de
+// 32b. DODRT-C8 — condicional y rechazo HTTP. Los dos
+//      AC que sin esto habría que eximir a mano: uno describe lo que PASARÍA si el rollback cayera en la carpeta de
 //      deploy, el otro un pedido que se rechaza con 401. Cada neutralizador va con su gemelo que SIGUE
 //      disparando: el futuro y el rechazo de una persona sí son acciones.
 {
@@ -1188,7 +1182,7 @@ withWaiverLog(() => {
     esAccion('When el supervisor rechaza la solicitud. Un usuario sin rol recibe 403.') === true);
 }
 
-// 32c. DODRT-C8 — «sin» + infinitivo (2026-10-09, arreglo suelto que viaja con la story 7.18 del arnés).
+// 32c. DODRT-C8 — «sin» + infinitivo.
 //      «sus pruebas pasan SIN EDITAR» describe algo que no pasa. Cada caso va con su gemelo que SIGUE
 //      disparando: un verbo de acción en otra parte de la oración, y los criterios de idempotencia o
 //      repetición, donde la acción sí corre (con una sola señal alcanza).
@@ -1204,8 +1198,7 @@ withWaiverLog(() => {
     esAccion('el mismo pedido 2x → 200 sin crear duplicado') === true);
   check('gemelo: "llega de nuevo … sin crear acción ni mensaje" SÍ es acción',
     esAccion('When el evento llega de nuevo Then responde 200 sin crear acción ni mensaje') === true);
-  // Los gemelos de repetición que encontró la revisión adversarial antes de implementar: sin estas señales,
-  // los cinco pasaban a lectura.
+  // Gemelos de repetición: sin estas señales, los cinco pasarían a lectura.
   check('gemelo: "llega nuevamente con el mismo id … sin crear otro registro" SÍ es acción',
     esAccion('When el webhook llega nuevamente con el mismo id, Then responde 200 sin crear otro registro') === true);
   check('gemelo: "el job corre otra vez … sin enviar el mail" SÍ es acción',
@@ -1216,7 +1209,7 @@ withWaiverLog(() => {
     esAccion('Al reiniciar el worker, retoma la cola sin reprocesar los mensajes ya procesados') === true);
   check('gemelo: "SKU existente (upsert) → sin crear un producto nuevo" SÍ es acción',
     esAccion('When el import corre con un SKU existente (upsert) → sin crear un producto nuevo') === true);
-  // Más formas de escribir la repetición, que trajo el pase adversarial de la 7.18 (2026-10-09).
+  // Más formas de escribir la repetición.
   check('gemelo: "llega tres veces … sin crear otra orden" SÍ es acción',
     esAccion('When el webhook llega tres veces, Then responde 200 sin crear otra orden') === true);
   check('gemelo: "ante un retry … sin crear otra orden" SÍ es acción',
@@ -1230,16 +1223,16 @@ withWaiverLog(() => {
   // El «sin» tiene que estar PEGADO al infinitivo: una forma conjugada o un «sin» lejano no neutralizan.
   check('gemelo: "sin" lejano ("un usuario sin permisos intenta editar") no neutraliza',
     esAccion('When un usuario sin permisos intenta editar, Then 403') === true);
-  // El límite aceptado por el dueño (2026-10-09, opción A): un criterio cuyo verbo real no está en la lista
-  // («arrancar») marcaba sólo por el «sin» + infinitivo, y deja de marcar. Si un día se suman verbos a la
+  // Límite aceptado: un criterio cuyo verbo real no está en la lista
+  // («arrancar») que sólo se marcaba por el «sin» + infinitivo deja de marcarse. Si un día se suman verbos a la
   // lista, este caso cambia a propósito y la medición va aparte.
   check('límite aceptado: "se puede arrancar sin cerrar la anterior" deja de ser acción (el verbo real no está en la lista)',
     esAccion('la siguiente tanda se puede arrancar sin cerrar la anterior') === false);
 }
 
-// 33. DODRT-C8 — la EXENCIÓN declarada por AC: `@runtime-exempt(DODRT-C8): <motivo>` (2026-08-25).
-//     Tras los fixes de contexto (casos 31 y 32) quedan ~238 falsos positivos medidos en el
-//     corpus del equipo que NINGUNA heurística gramatical resuelve: el verbo NOMBRA un endpoint,
+// 33. DODRT-C8 — la EXENCIÓN declarada por AC: `@runtime-exempt(DODRT-C8): <motivo>`.
+//     Aun con los neutralizadores de contexto (casos 31 y 32) quedan falsos positivos que
+//     NINGUNA heurística gramatical resuelve: el verbo NOMBRA un endpoint,
 //     un botón o un permiso, en un AC que verifica que la acción se BLOQUEA ("los endpoints
 //     iniciar / cerrar retornan 403"). Ahí falta contexto que sólo tiene la persona.
 //
@@ -1323,9 +1316,8 @@ withWaiverLog(() => {
       r.warnings.some((w) => /🔴/.test(w) && /3 ACs exentos/.test(w) && /#1/.test(w) && /#3/.test(w)),
       JSON.stringify(r.warnings.filter((w) => /exent/.test(w))));
   }
-  // --- (d2) la marca al FINAL de un AC largo (más de 600 caracteres) cuenta igual. Antes se leía del texto
-  //     cortado a 600 y se perdía en silencio: el AC quedaba rojo sin decir por qué (deuda
-  //     PIPELINE-ACMATRIX-600-CARACTERES, story 7.6). 🔴 Rojo si la marca vuelve a leerse del texto cortado.
+  // --- (d2) la marca al FINAL de un AC largo (más de 600 caracteres) cuenta igual. Leerla del texto
+  //     cortado a 600 dejaría el AC rojo sin decir por qué. 🔴 Rojo si la marca vuelve a leerse del texto cortado.
   {
     const relleno = ' El rechazo se ve en la respuesta y en el registro de auditoría, con el rol que lo pidió.'.repeat(9);
     const acLargo = '3. Los endpoints asignar / cerrar retornan 403 para roles no autorizados.' + relleno
@@ -1358,8 +1350,8 @@ withWaiverLog(() => {
   // --- (f) El TEXTO de la marca no puede volverse en contra del AC. Una marca INVÁLIDA (motivo
   //     corto) no exime —correcto— pero su motivo tampoco debe entrar al clasificador: un AC de
   //     LECTURA quedaría marcado como de acción por una palabra que escribió el autor de la
-  //     marca, no el del criterio. Lo cazó el chequeo de mutantes: sin esto, reemplazar
-  //     `ex.texto` por el texto crudo no rompía ningún test.
+  //     marca, no el del criterio. Sin este caso, reemplazar
+  //     `ex.texto` por el texto crudo no rompería ningún test.
   {
     const f = makeWorkspace();
     const story = fs.readFileSync(f.storyPath, 'utf8')
@@ -1375,13 +1367,13 @@ withWaiverLog(() => {
   }
 }
 
-// ---------------------------------------------------------------- story 1.19
+// ---------------------------------------------------------------- humos con expectativa
 // La prueba dice qué esperaba y qué salió. Un humo nuevo (`"v":2`) trae su expectativa (`pass_if`) y la salida
 // guardada con su sha256 en el espejo del home. La matriz no lo cuenta si la salida falta o cambió después de correr,
-// y muestra la expectativa y la ruta. Las líneas viejas (sin `v`) cuentan como hasta hoy.
+// y muestra la expectativa y la ruta. Las líneas sin `v` cuentan con la regla de siempre.
 {
   const L = require(path.join(__dirname, 'lib', 'smoke-ledger-line.js'));
-  // Generado el 2026-10-15 con runtime-matrix.js de main (0000732), ANTES de tocarlo: la salida normalizada del caso T13.
+  // Dorado: salida normalizada del caso T13, generada con la versión de la matriz que lo define.
   // Si un cambio a la matriz lo rompe a propósito, se regenera con el código viejo, nunca con el nuevo.
   const DORADO_LINEAS_VIEJAS = "{\"perAc\":{\"1\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"E1 (9.9-e2e-gate-<TSC>.md)\"],\"code\":[],\"text\":\"Given algo, When pasa, Then resultado.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[\"9.9-e2e-gate-<TSC>.md\"],\"smoke\":[]}},\"2\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"smoke <TS>\"],\"code\":[],\"text\":\"ERROR_CASE: input inválido → 422.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[],\"smoke\":[\"<TS>\"]}},\"3\":{\"verdict\":\"RUNTIME\",\"runtime\":[\"E1 (9.9-e2e-gate-<TSC>.md)\",\"smoke <TS>\"],\"code\":[],\"text\":\"Given otra cosa, Then otro resultado.\",\"mutacion\":null,\"exentoC8\":null,\"fuentes\":{\"e2e\":[\"9.9-e2e-gate-<TSC>.md\"],\"smoke\":[\"<TS>\"]}}},\"green\":true,\"pendientes\":[],\"warnings\":[],\"md\":\"# Matriz de verificación runtime — Story 9.9 (DODRT-C6)\\n\\n**Generado**: <TS> · **matrix_hash**: `<HASH>` · **veredicto**: 🟢 VERDE\\n**Cobertura**: 3/3 ACs corridos en runtime · 0 sin correr (bloquean) · 0 imposibles-declarados (esperan waiver)\\n\\n| AC | Veredicto | Evidencia runtime | Evidencia código | Razón (si imposible) |\\n|---|---|---|---|---|\\n| #1 | 🟢 RUNTIME | E1 (9.9-e2e-gate-<TSC>.md) | — | — |\\n| #2 | 🟢 RUNTIME | smoke <TS> | — | — |\\n| #3 | 🟢 RUNTIME | E1 (9.9-e2e-gate-<TSC>.md); smoke <TS> | — | — |\\n\\n\"}";
 
@@ -1397,7 +1389,7 @@ withWaiverLog(() => {
   }
 
   // T13 — Matrix_OldLines_CountAsToday (AC 20, 21, 24): un registro sin `v`, con y sin `--mutates`, y un AC con E2E,
-  // dan EXACTAMENTE lo mismo que con el código anterior a la 1.19. El dorado se generó con ese código (Task 2).
+  // dan EXACTAMENTE lo mismo que el dorado de la sección de arriba.
   {
     const f = makeWorkspace();
     writeGate(f.dodDir, '9.9', recentCompact(20), 'PASS', 'story-9-9.spec.ts', f.gatesLog, true,
@@ -1493,7 +1485,7 @@ withWaiverLog(() => {
       `green=${r.green} pendientes=${JSON.stringify(r.pendientes)}`);
   }
 
-  // ── Lo que encontró la revisión de la 1.19 (pase adversarial y revisor de cobertura, 2026-10-15) ──
+  // ── Casos límite ──
   // Git reescribe los finales de línea de la salida al hacer checkout (autocrlf en Windows, `eol=lf` en el arnés): un
   // humo legítimo no puede pasar por evidencia editada.
   {

@@ -3,36 +3,35 @@
  * runtime-waiver.js — la ÚNICA puerta para saltear la verificación runtime por-AC
  * (DODRT-C6), y es USER-ONLY por construcción física, no por regla.
  *
- * Objetivo (pedido explícito DevA 2026-07-10): el pipeline OBLIGA al agente a correr
+ * Objetivo: el pipeline OBLIGA al agente a correr
  * los tests de cada AC; NO puede delegárselos al usuario. El único "obviar" lo decide
  * el humano — y sólo el humano.
  *
  * La asimetría que lo hace user-only: este proceso (el agente) corre SIN terminal
  * controladora — `open("/dev/tty")` devuelve ENXIO ("Device not configured"), verificado
- * empíricamente 2026-07-10. El usuario, sentado en su terminal, SÍ puede abrir /dev/tty.
+ * empíricamente. El usuario, sentado en su terminal, SÍ puede abrir /dev/tty.
  * `promptTty()` abre /dev/tty y lee la confirmación de AHÍ (no de stdin, que el agente sí
  * controla). Sin terminal → tira. El agente no puede satisfacerlo.
  *
- * ⚠️ LÍMITE HONESTO — hasta dónde llega y hasta dónde NO (verificado por 2 pases adversariales
- * 2026-07-10; este bloque NO puede sobre-vender la garantía, que es el pecado que todo esto combate):
+ * ⚠️ LÍMITE HONESTO — hasta dónde llega y hasta dónde NO (este bloque NO puede sobre-vender
+ * la garantía, que es el pecado que todo esto combate):
  *
  *   El agente corre con el MISMO UID y tiene Bash + el código fuente de este archivo. El hash-chain
  *   es SHA-256 SIN clave (keyless): no es un secreto, cualquiera que lea este archivo lo recalcula.
  *
- *   🔴 2026-10-07 (story 7.17, guides/maintaining/incident-log.md#case-firmas-ramas-paralelas-2026-10-07) — la cadena
- *   se lee como ÁRBOL, no como lista: cada entrada vale si engancha con ALGUNA entrada anterior válida del
- *   mismo archivo, o con el vacío (raíz). Y cada firma nueva se escribe como raíz. Con la lista, dos ramas
- *   que firmaban en paralelo enganchaban con la misma línea y al unirlas la segunda dejaba de enganchar con
- *   la anterior: desde ahí toda firma se descartaba en silencio y la matriz decía «esperan waiver». Una
+ *   🔴 La cadena se lee como ÁRBOL, no como lista: cada entrada vale si engancha con ALGUNA entrada anterior válida del
+ *   mismo archivo, o con el vacío (raíz). Y cada firma nueva se escribe como raíz. Con una lista, dos ramas
+ *   que firman en paralelo enganchan con la misma línea y al unirlas la segunda deja de enganchar con
+ *   la anterior: desde ahí toda firma se descartaría en silencio y la matriz diría «esperan waiver». Una
  *   lista lineal es un árbol, así que los registros existentes se leen igual, bit a bit.
  *
  *   QUÉ FRENA (detecta y descarta): una línea agregada o cambiada a mano sin recalcular su `chain`
  *     (inventada, copiada de otra con otro contenido, o editada); una línea que engancha con otra que vino
  *     DESPUÉS en el archivo; todo lo que cuelga de una entrada descartada; una línea que no es JSON.
- *   QUÉ NO FRENA, igual que antes: una firma fabricada A PROPÓSITO. El agente puede reimplementar `sha()` +
- *     `canonical()` (son estas ~4 líneas) y escribir una entrada con el chain correcto (el re-ataque VECTOR
- *     2/3 lo demostró). NO hay forma de impedirlo con hashing keyless.
- *   NUEVO Y ACEPTADO: (a) una línea idéntica a otra válida vale (duplicada al unir ramas, o copiada); (b) una
+ *   QUÉ NO FRENA: una firma fabricada A PROPÓSITO. El agente puede reimplementar `sha()` +
+ *     `canonical()` (son estas ~4 líneas) y escribir una entrada con el chain correcto.
+ *     NO hay forma de impedirlo con hashing keyless.
+ *   ACEPTADO: (a) una línea idéntica a otra válida vale (duplicada al unir ramas, o copiada); (b) una
  *     firma que se borró y se vuelve a pegar tal cual vuelve a valer — borrar una línea NO revoca una firma,
  *     lo que la vence es cambiar la declaración del AC (su `declHash`); (c) una raíz copiada de otro registro
  *     vale, y sólo aprueba un AC cuya story y declaración coincidan letra por letra con lo que un humano
@@ -40,7 +39,7 @@
  *
  *   No existe una llave que el agente no pueda leer en este modelo (mismo UID: un archivo 0600 lo
  *   leo; root/Keychain-con-Touch-ID lo tendría que montar el USUARIO). Así que la garantía REAL es:
- *   (a) NO hay vía cómoda/accidental — el ack agent-writable se eliminó, DOD_BYPASS/set-check/flags
+ *   (a) NO hay vía cómoda/accidental — no hay ack agent-writable, DOD_BYPASS/set-check/flags
  *       están cerrados; la ÚNICA vía SANCIONADA es el comando TTY que el agente no puede ejecutar.
  *   (b) Cada waiver se pinnea al `matrixHash`: si el código/evidencia cambian, deja de aplicar solo.
  *   (c) Una forja deliberada es un ACTO FLAGRANTE Y VISIBLE en el transcript (reimplementar crypto
@@ -54,7 +53,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // la carpeta del estado, de una sola pieza
 const crypto = require('crypto');
 
 const STATE_DIR = path.join(stateDirOf(os.homedir()));
@@ -64,8 +63,8 @@ function waiverLogPath() {
   return process.env.TYCON_WAIVER_LOG || path.join(STATE_DIR, 'runtime-waivers.jsonl');
 }
 
-// 🔴 2026-07-29 — el log firmado también vive DENTRO del repo, y ése es el que viaja.
-// El del home sigue existiendo (compatibilidad: 38 stories aprobadas ahí) y se lee como
+// 🔴 El log firmado también vive DENTRO del repo, y ése es el que viaja.
+// El del home sigue existiendo (compatibilidad con lo ya aprobado ahí) y se lee como
 // segunda fuente, pero lo nuevo se escribe acá para que la aprobación del humano llegue a
 // las otras máquinas y al CI junto con el código que aprueba.
 function repoWaiverLogPath(repoRoot) {
@@ -91,9 +90,9 @@ function declHashFor(reason, coveredBy) {
 function sha(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
 
 // Contenido canónico de un waiver para el hash-chain (excluye el propio campo `chain`).
-// 🔴 `declHashByAc` entra al canónico SÓLO si existe: así las 43 entries ya firmadas con el
+// 🔴 `declHashByAc` entra al canónico SÓLO si existe: así las entries ya firmadas con el
 // formato viejo siguen verificando bit a bit (agregarlo incondicionalmente rompería la cadena
-// entera y dejaría sin efecto todo lo aprobado hasta hoy).
+// entera y dejaría sin efecto todo lo ya aprobado).
 function canonical(e) {
   const base = [e.ts, String(e.story), [...e.acs].sort((a, b) => a - b), e.matrixHash, e.approvedBy || null];
   if (e.declHashByAc !== undefined) {
@@ -105,9 +104,9 @@ function canonical(e) {
   return JSON.stringify(base);
 }
 
-// ── WINDOWS: la firma vive en una VENTANA NUEVA (decisión del dueño, 2026-10-15, opción A) ─────────────────────────
-// En Windows nativo no hay /dev/tty: el candado de arriba frenaba SIEMPRE, también a la persona en PowerShell, y una story
-// con `runtime_not_verifiable` quedaba sin salida (caso real, un dev del equipo). Leer la consola propia (CONIN$) no sirve:
+// ── WINDOWS: la firma vive en una VENTANA NUEVA ─────────────────────────
+// En Windows nativo no hay /dev/tty: el candado de arriba frenaría SIEMPRE, también a la persona en PowerShell, y una story
+// con `runtime_not_verifiable` quedaría sin salida. Leer la consola propia (CONIN$) no sirve:
 // los procesos del agente en Windows suelen tener una consola OCULTA adjunta, así que abriría y quedaría esperando teclas que
 // nadie ve (o que el agente inyecta). Lo que se hace:
 //   1. el comando, en Windows, se vuelve a lanzar a sí mismo en una ventana de consola NUEVA y visible (`start … /wait`);
@@ -126,7 +125,7 @@ const PALABRAS = Object.freeze(['arbol', 'barco', 'campo', 'dedo', 'faro', 'gato
   'nieve', 'ola', 'perla', 'rama', 'sal', 'tinta', 'valle', 'yeso', 'cuerda']);
 
 /** ¿Esta corrida es la de Windows? `TYCON_WAIVER_PLATFORM` existe sólo para que las pruebas ejerciten la rama en Mac. */
-// 🔴 En un Windows de verdad la variable NO vale (revisión adversarial): con `TYCON_WAIVER_PLATFORM=linux` volvía a la rama de
+// 🔴 En un Windows de verdad la variable NO vale: con `TYCON_WAIVER_PLATFORM=linux` volvería a la rama de
 //    /dev/tty, que Windows lee como el archivo `C:\dev\tty` —el agente lo puede crear y escribirle «si»—, sin la frase.
 function esWindows() {
   if (process.platform === 'win32') return true;
@@ -147,15 +146,15 @@ function delSistema(...partes) {
  */
 function consolaNueva(opts = {}) {
   // 🔴 PowerShell tiene que CONECTARSE a esta consola: con `windowsHide` y sin heredar nada, Node le da una consola propia
-  //    oculta y la cuenta da 1 siempre — nadie firmaba, tampoco la persona (revisión adversarial). Hereda la entrada, que
+  //    oculta y la cuenta da 1 siempre — nadie podría firmar, tampoco la persona. Hereda la entrada, que
   //    acá es la consola de la ventana (enVentana ya comprobó que lo es), y no pide ventana oculta.
   const sp = opts.spawnSync || require('child_process').spawnSync;
   const run = opts.run || ((cmd, args) => sp(cmd, args, { encoding: 'utf8', windowsHide: false, timeout: 30000, stdio: ['inherit', 'pipe', 'pipe'] }));
-  // 🔴 Ensayo de Windows 13585: en una ventana nueva de verdad la cuenta dio 0 — PowerShell no quedaba conectado a esa
-  //    consola. Ahora se conecta EXPLÍCITO a la consola de este proceso (FreeConsole + AttachConsole(pid)) antes de contar:
-  //    la cuenta es la de NUESTRA consola, la arme Node como la arme. Sin consola a la que conectarse, no hay cuenta.
+  // 🔴 PowerShell se conecta EXPLÍCITO a la consola de este proceso (FreeConsole + AttachConsole(pid)) antes de contar:
+  //    si no, en una ventana nueva de verdad la cuenta da 0 (no queda conectado a esa consola).
+  //    La cuenta es la de NUESTRA consola, la arme Node como la arme. Sin consola a la que conectarse, no hay cuenta.
   const pid = opts.pid || process.pid;
-  // 🔴 Ensayo de Windows 13590: con la consola reconectada, PowerShell no imprimió nada y una salida vacía se leía como
+  // 🔴 Con la consola reconectada, PowerShell puede no imprimir nada, y una salida vacía se leería como
   //    «0 conectados». La cuenta viaja por un archivo (no depende de adónde quedó apuntando la salida) y sólo vale un
   //    número escrito: sin número, «no pude preguntar», con lo que PowerShell haya dicho.
   const archivo = path.join(os.tmpdir(), `tycon-waiver-consola-${process.pid}-${Date.now()}.txt`);
@@ -164,8 +163,8 @@ function consolaNueva(opts = {}) {
     + '[DllImport("kernel32.dll")] public static extern bool AttachConsole(uint p); '
     + '[DllImport("kernel32.dll", SetLastError = true)] public static extern uint GetConsoleProcessList(uint[] l, uint n); }\'; '
     + `[C]::FreeConsole() | Out-Null; if (-not [C]::AttachConsole(${Number(pid)})) { 'SIN-CONSOLA'; exit 3 }; `
-    // 🔴 Ensayo de Windows 13592: error 87 (parámetro inválido). `uint[]` no existe en el PowerShell de Windows (5.1; el
-    //    atajo `uint` llegó en la 6.2): New-Object fallaba, la lista quedaba nula y Windows rechazaba la pregunta.
+    // 🔴 `uint[]` no existe en el PowerShell de Windows (5.1; el atajo `uint` existe desde PowerShell 6.2): New-Object falla, la lista
+    //    queda nula y Windows rechaza la pregunta (error 87, parámetro inválido).
     + '$l = New-Object System.UInt32[] 64; $n = [C]::GetConsoleProcessList($l, 64); '
     + '$e = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); '
     + `[IO.File]::WriteAllText('${archivo.replace(/'/g, "''")}', "$n $e"); $n`;
@@ -340,8 +339,8 @@ function readRawLines(logPath) {
 }
 
 // Las líneas no vacías con su número FÍSICO (contado desde 1), para que un aviso pueda decir «archivo:línea».
-// Sin la marca de orden de bytes que agregan algunos editores de Windows: pegada a la primera línea, rompía su
-// JSON y, como todo cuelga de ahí, descartaba el registro entero (story 7.17).
+// Sin la marca de orden de bytes que agregan algunos editores de Windows: pegada a la primera línea, rompe su
+// JSON y, como todo cuelga de ahí, descartaría el registro entero.
 function readNumberedLines(logPath) {
   let raw;
   try { raw = fs.readFileSync(logPath || waiverLogPath(), 'utf8'); } catch { return []; }
@@ -351,7 +350,7 @@ function readNumberedLines(logPath) {
   return out;
 }
 
-// Verifica la cadena de hashes, leída como ÁRBOL (story 7.17). Devuelve
+// Verifica la cadena de hashes, leída como ÁRBOL. Devuelve
 // { ok, entries, brokenAt, total, discarded }:
 //   - `entries`: las válidas, en orden del archivo (lo que leían todos los llamadores, sin cambios).
 //   - `brokenAt`: índice (entre las líneas no vacías, como siempre) de la primera descartada, o -1.
@@ -364,7 +363,7 @@ function verifyChain(logPath) {
   const lines = readNumberedLines(logPath);
   const parsed = lines.map(({ text, line }) => { try { return { e: JSON.parse(text), line }; } catch { return { e: null, line }; } });
   // Una línea que no tiene la forma de una firma se descarta como `json`, nunca hace caer al lector: una sola línea
-  // así tumbaba la lectura entera, y con ella todas las firmas del registro (pase adversarial de la 7.17).
+  // así tumbaría la lectura entera, y con ella todas las firmas del registro.
   const linkOf = (padre, e) => { try { return sha(padre + canonical(e)).slice(0, 16); } catch { return null; } };
   const tieneForma = (e) => !!e && typeof e === 'object' && Array.isArray(e.acs)
     && (e.declHashByAc === undefined || (e.declHashByAc !== null && typeof e.declHashByAc === 'object'))
@@ -401,9 +400,9 @@ function verifyChain(logPath) {
 function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc, logPath, migratedFrom, ok }) {
   const destino = logPath || waiverLogPath();
   fs.mkdirSync(path.dirname(destino), { recursive: true });
-  // 🔴 Story 7.17: la firma nueva va SIN padre (raíz). Antes enganchaba con la última línea, y así un revert
+  // 🔴 La firma nueva va SIN padre (raíz). Si enganchara con la última línea, un revert
   // (la línea sale), un cherry-pick con la unión deduplicada (queda antes que su padre) o una línea rota más
-  // arriba la descartaban. El `chain` de una raíz es el hash de su propio contenido: editarla se sigue viendo.
+  // arriba la descartarían. El `chain` de una raíz es el hash de su propio contenido: editarla se sigue viendo.
   const prev = '';
   const e = { ts: nowIso, story: String(story), acs: [...acs].sort((a, b) => a - b), matrixHash, approvedBy: approvedBy || null, tty: true };
   if (declHashByAc !== undefined) e.declHashByAc = declHashByAc;
@@ -413,7 +412,7 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
   if (ok !== undefined) { e.tty = false; e.ok = ok; }
   e.chain = sha(prev + canonical(e)).slice(0, 16);
   // Si el archivo quedó sin salto final (recortado a mano en un editor, o una resolución de conflicto), la firma nueva
-  // se pegaba a la última línea y se perdían las dos, sin aviso (pase adversarial de la 7.17).
+  // se pegaría a la última línea y se perderían las dos, sin aviso.
   let sep = '';
   try { const st = fs.statSync(destino); if (st.size > 0) { const fd = fs.openSync(destino, 'r'); const b = Buffer.alloc(1); fs.readSync(fd, b, 0, 1, st.size - 1); fs.closeSync(fd); if (b[0] !== 0x0a) sep = '\n'; } } catch { /* no existe todavía: nada que separar */ }
   fs.appendFileSync(destino, sep + JSON.stringify(e) + '\n', 'utf8');
@@ -421,7 +420,7 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
 }
 
 // Set de ACs waiveados para (story, matrixHash) — SÓLO cuenta una entry válida de la cadena
-// (story 7.17: engancha con alguna anterior válida, o es raíz). Un waiver cuyo matrixHash no
+// (engancha con alguna anterior válida, o es raíz). Un waiver cuyo matrixHash no
 // matchea el actual NO cuenta (drift).
 /**
  * ACs waiveados para una story. Dos formas de llamarla, a propósito:
@@ -437,15 +436,15 @@ function appendWaiver({ story, acs, matrixHash, approvedBy, nowIso, declHashByAc
  *
  * Se leen DOS logs: el del repo (`.tycon/runtime-waivers.jsonl`, commiteado) y el del home
  * (legacy). Cada uno con su propia cadena — una entrada descartada invalida lo que cuelga de ella
- * EN ESE archivo, no en el otro (story 7.17: la cadena se lee como árbol).
+ * EN ESE archivo, no en el otro (la cadena se lee como árbol).
  *
- * `story` es la CLAVE de la story (story 1.17.1, `lib/evidence-key.js`), no el número a secas: con número único son
+ * `story` es la CLAVE de la story (`lib/evidence-key.js`), no el número a secas: con número único son
  * lo mismo, así que las firmas vigentes no cambian; con número repetido es `<tema>__<número>`. Quien computa la
  * matriz pregunta por la clave, y por el número solo únicamente para nombrar las firmas viejas que ya no cuentan.
  */
 // La declaración que la entrada ancló para el AC `n`. Las claves se comparan por NÚMERO, como las normaliza
-// `canonical()`: si no, renombrar «3» a «03» dejaba el `chain` válido y la entrada caía al camino viejo por
-// matrixHash, salteando el anclaje a la declaración (pase adversarial de la 7.17).
+// `canonical()`: si no, renombrar «3» a «03» dejaría el `chain` válido y la entrada caería al camino viejo por
+// matrixHash, salteando el anclaje a la declaración.
 function declDeLaEntrada(e, n) {
   if (!e.declHashByAc || typeof e.declHashByAc !== 'object') return undefined;
   for (const k of Object.keys(e.declHashByAc)) if (Number(k) === Number(n)) return e.declHashByAc[k];
@@ -472,11 +471,11 @@ function waivedAcs(story, arg2) {
           // 🔴 La entry declara anclaje por justificación → ÉSE manda, y el matrixHash NO lo
           // rescata. Si no fuera así, en la máquina donde se aprobó (donde el matrixHash sigue
           // matcheando) reescribir la razón no vencería nada — que es justo lo que el anclaje
-          // nuevo existe para lograr.
+          // por justificación existe para lograr.
           if (declHashByAc[n] !== undefined && declEntry === declHashByAc[n]) out.add(n);
           continue;
         }
-        if (porMatrix) out.add(n); // entry legacy (sin declaración): sigue valiendo como antes
+        if (porMatrix) out.add(n); // entry legacy (sin declaración): sigue valiendo
       }
     }
   }
@@ -484,10 +483,10 @@ function waivedAcs(story, arg2) {
 }
 
 /**
- * Las firmas DESCARTADAS de una story (story 7.17) — lo que la matriz tiene que NOMBRAR en vez de decir
+ * Las firmas DESCARTADAS de una story — lo que la matriz tiene que NOMBRAR en vez de decir
  * «esperan waiver» a secas. Mismos dos registros y mismas opciones que `waivedAcs`. Devuelve:
  *   - `acs`:   [{ ac, log, line, approvedBy, ts, motivo }] — cada AC de una firma descartada que HOY
- *              engancharía (por la declaración de hoy, o por matrixHash si la entrada es legacy). Una firma
+ *              engancharía (por la declaración vigente, o por matrixHash si la entrada es legacy). Una firma
  *              de una declaración vieja no está: volver a firmarla no aprobaría nada.
  *   - `lines`: [{ log, line, motivo }] — toda línea descartada de esta story, para el aviso de cadena. Las de
  *              otras stories no: el registro sólo crece, y un aviso global quedaría prendido para siempre.

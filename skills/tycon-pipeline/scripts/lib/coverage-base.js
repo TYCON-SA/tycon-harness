@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * coverage-base.js — ¿contra qué commit se miden las «líneas tocadas»? (story 2.4 del arnés, 2026-09-16)
+ * coverage-base.js — ¿contra qué commit se miden las «líneas tocadas»?
  *
  * test-gate.sh cruza la cobertura con las líneas que la story agregó o modificó. Para saber cuáles son
  * hace falta una base, y la elección no es obvia:
@@ -26,8 +26,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 // Devuelve { out } o { error } con el detalle de git: un git que FALLA (binario ausente, carpeta que no
-// existe, permisos) no puede leerse como «ref inválida» o «no es un repo» sin decir por qué
-// (revisor de fallos silenciosos, 2026-09-16).
+// existe, permisos) no puede leerse como «ref inválida» o «no es un repo» sin decir por qué.
 function git(cwd, args) {
   const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
   if (r.error) return { error: `git no se pudo ejecutar (${r.error.code || r.error.message})` };

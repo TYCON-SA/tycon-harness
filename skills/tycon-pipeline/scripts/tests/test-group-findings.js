@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
- * test-group-findings.js — el pase adversarial paga UNA verificación por problema (story 7.11).
+ * test-group-findings.js — el pase adversarial paga UNA verificación por problema.
  *
- * 🔴 Caso disparador, medido en la corrida de la story 7.10 (2026-09-20): el pase usó 25 agentes y
+ * 🔴 El caso que motiva la regla, medido en una corrida: el pase usa 25 agentes y
  *    2.668.124 tokens. Son 6 cazadores y 19 verificadores — uno por hallazgo. Pero los 19 hallazgos
- *    eran 9 problemas distintos: el mismo defecto reportado por varias lentes con otra redacción, y
- *    cada copia se llevó su propio verificador. ~10 agentes reprodujeron lo ya reproducido.
+ *    son 9 problemas distintos: el mismo defecto reportado por varias lentes con otra redacción, y
+ *    cada copia se lleva su propio verificador. ~10 agentes reproducen lo ya reproducido.
  *
- * 🔴 Y el riesgo que gobierna el diseño: agrupar dos hallazgos que en realidad eran distintos PIERDE
+ * 🔴 Y el riesgo que gobierna el diseño: agrupar dos hallazgos que en realidad son distintos PIERDE
  *    uno, y nadie se entera — el pase sale igual de verde. Por eso el criterio de «no perder nada» acá
  *    es mecánico y no un juicio: la partición que produce el agrupador tiene que ser un REFINAMIENTO
  *    de la partición real (puede separar de más, jamás juntar de más). Separar de más cuesta un
  *    verificador; juntar de más esconde un defecto.
  *
- * Los casos T3/T4/T5 corren contra el caso REAL de la 7.10 (fixtures/findings-7-10.json, con su
+ * Los casos T3/T4/T5 corren contra un caso tomado de una corrida (fixtures/findings-7-10.json, con su
  * procedencia adentro). Los T6/T7/T8 corren el guion REAL del pase bajo workflow-lite con un agente
  * de mentira, sin modelo — el mismo molde que adversarial-probes.test.js.
  *
@@ -182,7 +182,7 @@ test('T6 LanzaPorClase — con hallazgos de 3 clases se abren 3 verificadores, n
   assert.strictEqual(salida.clases, 3, 'que son 3 problemas distintos');
   assert.strictEqual(verificadores, 3, 'se abre UN verificador por clase, no uno por hallazgo');
 
-  // Cada hallazgo de la clase queda con el veredicto de su clase Y con cuál se reprodujo (AC 6).
+  // Cada hallazgo de la clase queda con el veredicto de su clase Y con cuál se reprodujo.
   assert.strictEqual(salida.confirmed.length, 6, 'los 6 hallazgos quedan confirmados, no sólo los 3 representantes');
   for (const c of salida.confirmed) {
     assert.ok(typeof c.clase === 'number' || typeof c.clase === 'string', 'cada hallazgo dice a qué clase pertenece');
@@ -208,7 +208,7 @@ test('T8 ApagadoPorVariable — con la variable puesta, un verificador por halla
   assert.strictEqual(salida.agentes_ahorrados, 0, 'apagado no ahorra nada, y lo dice');
 });
 
-// --------------------------------------- el volcado del marker guarda las clases (AC 7)
+// --------------------------------------- el volcado del marker guarda las clases
 
 test('AC7 — mark-adversarial-result acepta --classes y lo guarda en el volcado del pase', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'marker-clases-'));
@@ -251,13 +251,13 @@ test('AC7 — el volcado también guarda los hallazgos que quedaron sin verifica
   assert.strictEqual(imposible.status, 2, 'más sin verificar que confirmados es imposible');
 });
 
-// ------------------- las dos copias del criterio no se separan (la deuda que el propio pase cazó)
+// ------------------- las dos copias del criterio no se separan
 
 test('anti-deriva — el núcleo copiado dentro del pase es IDÉNTICO al de lib/group-findings.js', () => {
   // 🔴 Por qué existe este caso: el pase corre en una caja sin `require`, así que el criterio va
-  // copiado adentro del guion. Dos copias que se separan es exactamente el defecto que este mismo
-  // pase encontró en la corrida 7.10 («el contador acotadas usa una lista duplicada y
-  // desincronizada de CONFIG»): la copia vieja sigue andando y nadie se entera.
+  // copiado adentro del guion. Dos copias que se separan son un defecto del tipo «el contador
+  // acotadas usa una lista duplicada y desincronizada de CONFIG»: la copia vieja sigue andando y
+  // nadie se entera.
   const { nucleo } = require(LIB);
   const wf = fs.readFileSync(WORKFLOW, 'utf8');
   const i = wf.indexOf('// ===== NUCLEO-AGRUPAR: INICIO =====');
@@ -270,11 +270,11 @@ test('anti-deriva — el núcleo copiado dentro del pase es IDÉNTICO al de lib/
   );
 });
 
-// ------------- un verificador muerto NO arrastra a su clase en silencio (vuelta 2, SILENT-C2)
+// ------------- un verificador muerto NO arrastra a su clase en silencio (SILENT-C2)
 
 test('verificador muerto — la clase queda SIN VEREDICTO y el pase lo dice, no la da por refutada', () => {
-  // 🔴 Caso del cazador de fallos silenciosos (2026-09-20): `agent()` devuelve null cuando el agente
-  // muere o no contesta JSON válido, y eso se trataba igual que un REFUTED real. Antes costaba un
+  // 🔴 `agent()` devuelve null cuando el agente muere o no contesta JSON válido, y eso no
+  // puede tratarse igual que un REFUTED real. Sin agrupar, cada uno cuesta un
   // hallazgo; con la agrupación cuesta la CLASE ENTERA — varios hallazgos de lentes distintas
   // desaparecen del reporte y el pase sale verde. Agrupar sin contar esto multiplica el agujero.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agrupar-muerto-'));
@@ -325,7 +325,7 @@ test('AC7 — --classes rechaza lo que no es un entero y lo que supera a los con
   assert.strictEqual(imposible.status, 2, 'más causas que hallazgos es imposible');
   assert.match(imposible.stderr, /no puede haber m[aá]s causas que hallazgos/i, 'y lo dice en criollo');
 
-  // 🔴 Y el otro extremo, que el pase adversarial cazó: cero causas con hallazgos confirmados anota
+  // 🔴 Y el otro extremo: cero causas con hallazgos confirmados anota
   // un ahorro igual al total y deja el ratio mintiendo para siempre.
   const cero = correr('0');
   assert.strictEqual(cero.status, 2, 'cero causas con hallazgos es imposible');
@@ -336,15 +336,14 @@ test('AC7 — --classes rechaza lo que no es un entero y lo que supera a los con
   assert.strictEqual((m.adversarialPasses || []).length, 0, 'ninguno de los dos dejó nada anotado');
 });
 
-// ═══════════ vuelta 3: lo que encontró el pase adversarial sobre el propio criterio ═══════════
+// ═══════════ Casos de otros dominios sobre el propio criterio ═══════════
 //
-// 🔴 El criterio de la vuelta 1 estaba AJUSTADO AL ÚNICO CASO que tenía (la corrida 7.10, donde cada
-// problema vivía en una línea distinta). El pase lo ejecutó contra casos de otros dominios y mostró
-// que juntaba de más: el «veto por síntoma» sólo frena cuando las DOS descripciones caen en el
-// vocabulario cerrado de 8 categorías sacado de aquel archivo. Fuera de ahí el veto queda inerte y
+// 🔴 Un criterio ajustado al ÚNICO caso que lo originó junta de más: en ese caso cada problema vive
+// en una línea distinta. Contra casos de otros dominios, el «veto por síntoma» sólo frena cuando las
+// DOS descripciones caen en el vocabulario cerrado de 8 categorías sacado de aquel archivo. Fuera de ahí el veto queda inerte y
 // «mismo archivo + misma línea» funde cualquier par.
 //
-// El arreglo invierte la carga de la prueba: para juntar hace falta una señal POSITIVA de que son el
+// El criterio invierte la carga de la prueba: para juntar hace falta una señal POSITIVA de que son el
 // mismo defecto, no la ausencia de señal de que son distintos.
 
 test('vuelta 3 — mismo archivo y misma línea, sin NADA más en común, NO se juntan', () => {
@@ -381,8 +380,8 @@ test('vuelta 3 — el criterio SIGUE agrupando lo que sí es el mismo defecto (n
 });
 
 test('vuelta 3 — compararContra no canta "coincide" si la clase producida mezcla otra clase real', () => {
-  // 🔴 El pase lo cazó: alcanzaba con que los miembros de una clase real cayeran TODOS en una misma
-  // clase producida, sin mirar si esa clase producida traía además miembros de otra clase real.
+  // 🔴 No alcanza con que los miembros de una clase real caigan TODOS en una misma clase producida:
+  // hay que mirar también si esa clase producida trae miembros de otra clase real.
   const { compararContra } = require(LIB);
   const fabricado = {
     clases: [{ id: 1, miembros: [0, 1, 2], representante: 0, motivo: 'fabricado para el test' }],
@@ -396,10 +395,9 @@ test('vuelta 3 — compararContra no canta "coincide" si la clase producida mezc
 });
 
 test('vuelta 3 — si el verificador dice que uno NO es el mismo defecto, ese hallazgo no se da por verificado', () => {
-  // 🔴 El pase lo cazó: el prompt le pedía al verificador «si alguno NO es el mismo defecto, decilo»,
-  // pero su respuesta sólo tenía lugar para UN veredicto de clase y nadie leía ese texto. O sea: el
-  // escape hatch era decorativo, y un bug real quedaba marcado como verificado sin que nadie lo
-  // hubiera reproducido.
+  // 🔴 El prompt le pide al verificador «si alguno NO es el mismo defecto, decilo». Si su respuesta
+  // sólo tuviera lugar para UN veredicto de clase y nadie leyera ese texto, el escape hatch sería
+  // decorativo, y un bug real quedaría marcado como verificado sin que nadie lo hubiera reproducido.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agrupar-distinto-'));
   const stub = path.join(tmp, 'stub.js');
   fs.writeFileSync(stub, `
@@ -425,9 +423,9 @@ else { console.log(JSON.stringify({ lens: 'otra', findings: [] })); }
 });
 
 test('vuelta 3b — si la respuesta del verificador no es un SÍ limpio, no se hereda el veredicto', () => {
-  // 🔴 `=== false` dejaba pasar null, "" o el string "false": cualquier cosa que no fuera el booleano
-  // false se leía como «sí, son el mismo defecto» y TODOS los miembros heredaban CONFIRMED sin que
-  // nadie los hubiera reproducido. Invertía el principio de la story: ante la duda, heredaba.
+  // 🔴 Comparar con `=== false` dejaría pasar null, "" o el string "false": cualquier cosa que no
+  // fuera el booleano false se leería como «sí, son el mismo defecto» y TODOS los miembros
+  // heredarían CONFIRMED sin que nadie los hubiera reproducido. Ante la duda, no se hereda.
   const casos = ['null', '""', '"false"', 'undefined'];
   for (const valor of casos) {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'agrupar-turbio-'));

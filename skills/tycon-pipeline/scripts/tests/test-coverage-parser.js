@@ -1,21 +1,20 @@
 #!/usr/bin/env node
 /**
- * Guard del cálculo de COBERTURA de test-gate.sh (2026-08-25).
+ * Guard del cálculo de COBERTURA de test-gate.sh.
  *
  * 🔴 Por qué existe. El % de cobertura sobre los archivos nuevos es un gate del pipeline
- * (>75%), y lo calculaba un bloque Python embebido en test-gate.sh que NADIE testeaba —
- * medido: cero tests sobre él hasta hoy. Ese bloque tomaba el `max(line-rate)` por
- * filename, y en C# cada método `async` compila a una clase APARTE con el MISMO filename:
- * para un repository que los tests mockean, la clase "real" tiene sólo el constructor y da
- * line-rate=1, las máquinas de estado con las consultas dan 0, y el max() se quedaba con
- * el 1. Reproducido contra el cobertura REAL de un producto del equipo: un repository
- * (acá `OrderImportRepository.cs`, nombre cambiado) reportaba 100.0% y su valor real es 13.3% (8 líneas de 60);
- * 45 de sus 187 archivos con datos inflaban más de 5 puntos, el peor 86.7. El gate que
- * debía avisar "no probaste la capa de datos" decía que estaba cubierta.
+ * (>75%). Tomar el `max(line-rate)` por filename lo infla: en C# cada método `async`
+ * compila a una clase APARTE con el MISMO filename. Para un repository que los tests
+ * mockean, la clase "real" tiene sólo el constructor y da line-rate=1, las máquinas de
+ * estado con las consultas dan 0, y el max() se quedaría con el 1. Con un cobertura real de
+ * un producto del equipo, un repository (acá `OrderImportRepository.cs`, nombre cambiado)
+ * reportaría 100.0% y su valor real es 13.3% (8 líneas de 60); 45 de sus 187 archivos con
+ * datos se inflarían más de 5 puntos, el peor 86.7. El gate que debe avisar "no probaste la
+ * capa de datos" diría que está cubierta.
  *
- * Desde la story 8.17 (tanda W6) el cálculo ya no es un bloque de Python embebido: es
- * lib/test-gate-report.js, y este test lo corre como lo corre test-gate.sh (mismo argv). Que
- * el JSON sea el mismo que escribía el Python lo prueba tests/test-gate-report.test.js (T69).
+ * El cálculo es lib/test-gate-report.js, y este test lo corre como lo corre test-gate.sh
+ * (mismo argv). Que el JSON sea el mismo que escribía el cálculo anterior lo prueba
+ * tests/test-gate-report.test.js (T69).
  *
  * Correr: node tests/test-coverage-parser.js   (exit 0 OK, exit 1 fail).
  */
@@ -31,7 +30,7 @@ function check(name, cond, detail) {
   console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`);
 }
 
-// --- el informe de test-gate.sh, tal cual lo llama en producción (story 8.17: antes era un heredoc de Python).
+// --- el informe de test-gate.sh, tal cual lo llama en producción.
 const REPORT = path.join(__dirname, '..', 'lib', 'test-gate-report.js');
 
 // --- un cobertura.xml sintético: `clases` = [{name, filename, lines: [hits...]}, …]
@@ -84,7 +83,7 @@ function correr(nuevoArchivo, assemblies, opts = {}) {
 
 console.log('test-gate — cálculo de cobertura:');
 
-// 1. EL CASO REAL: async → una clase por método, todas con el mismo filename.
+// 1. El caso con varias clases por método: async → una clase por método, todas con el mismo filename.
 //    Números tomados del cobertura real de un producto del equipo (los nombres están cambiados).
 {
   const F = 'AcmeBackend/Features/Orders/Imports/OrderImportRepository.cs';
@@ -105,7 +104,7 @@ console.log('test-gate — cálculo de cobertura:');
     `basis=${c.threshold_basis}`);
 }
 
-// 2. La razón por la que el max() existe SIGUE cubierta: entre cobertura DISTINTOS (un
+// 2. La razón por la que el max() existe sigue cubierta: entre cobertura DISTINTOS (un
 //    assembly que no tocó el archivo lo reporta en 0) se toma el mejor, no el promedio.
 {
   const F = 'src/Servicio.cs';
@@ -145,12 +144,12 @@ console.log('test-gate — cálculo de cobertura:');
     JSON.stringify(c.per_new_file));
 }
 
-// --- Respaldo post-commit (hallazgo de otra persona del equipo, 2026-08-25) ------------------------------
+// --- Respaldo post-commit ------------------------------------------------------------------------------
 // El modo de falla: apenas la story se commitea, `--diff-filter=A` no reporta nada, el cruce
-// de cobertura no se hace, y el reporte publicaba `new_files_pct: null` SIN decir por qué —
+// de cobertura no se hace, y el reporte publicaría `new_files_pct: null` SIN decir por qué —
 // que se lee igual que "esto está bien".
 
-// 6. LA REGRESIÓN: post-commit, sin respaldo, el cruce se perdía en silencio.
+// 6. LA REGRESIÓN: post-commit, sin respaldo, el cruce se pierde en silencio.
 {
   const F = 'src/Servicio.cs';
   const cls = [{ name: 'Servicio', filename: F, lines: Array(50).fill(0).map((_, i) => (i < 45 ? 1 : 0)) }];
@@ -199,7 +198,7 @@ console.log('test-gate — cálculo de cobertura:');
 }
 
 // =============================================================================================
-// Story 2.4 — cobertura de las LÍNEAS TOCADAS (@story-2.4). El parser recibe la base del diff en
+// Cobertura de las LÍNEAS TOCADAS (@story-2.4). El parser recibe la base del diff en
 // argv 15 (ref) y 16 (JSON {source, descartadas}); con HOME falso, la línea de observación va al
 // gates.log de ese HOME y no al real.
 // =============================================================================================
@@ -280,7 +279,7 @@ function correrTocadas(opts) {
 }
 
 // T1 · 10 líneas medibles tocadas, 6 cubiertas → 60 % y el umbral NO se cumple. @ac-1 @ac-2
-// Rojo previo: con los archivos nuevos como denominador (el archivo no es nuevo) sale null.
+// Mutación: con los archivos nuevos como denominador (el archivo no es nuevo) sale null.
 const T1_OPTS = {
   base: { 'src/Calc.cs': lineas(20) },
   ahora: { 'src/Calc.cs': lineas(20, (i) => (i >= 3 && i <= 12 ? `cambio ${i}` : `linea ${i}`)) },
@@ -299,7 +298,7 @@ const T1_OPTS = {
 }
 
 // T2 · las líneas que el reporte no lista (vacías, comentarios) no entran al denominador. @ac-1
-// Rojo previo: contar toda línea del diff → 2 de 6 = 33.3.
+// Mutación: contar toda línea del diff → 2 de 6 = 33.3.
 {
   const { cov } = correrTocadas({
     base: { 'src/B.cs': lineas(5) },
@@ -312,7 +311,7 @@ const T1_OPTS = {
 }
 
 // T3 · vitest y jest: las líneas salen de statementMap (una línea es medible si una sentencia
-// EMPIEZA en ella). @ac-3 — Rojo previo: leer sólo `s` → no hay líneas → null.
+// EMPIEZA en ella). @ac-3 — Mutación: leer sólo `s` → no hay líneas → null.
 {
   const final = { 'src/foo.ts': {
     statementMap: { 0: { start: { line: 4, column: 0 }, end: { line: 4, column: 9 } },
@@ -354,7 +353,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
     JSON.stringify({ pct: cov.touched_lines_pct, m: cov.touched_no_cross_check }));
 }
 
-// T6 · un archivo tocado sin datos se lista aparte, fuera del %. @ac-1 — Rojo previo: contarlo como 0.
+// T6 · un archivo tocado sin datos se lista aparte, fuera del %. @ac-1 — Mutación: contarlo como 0.
 {
   const o = JSON.parse(JSON.stringify(T1_OPTS));
   o.base['src/Otro.cs'] = lineas(4);
@@ -385,8 +384,8 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
   check('T8 una línea cobertura-tocada con habria-frenado', g.length === 1 && g[0].status === 'habria-frenado', JSON.stringify(gates));
   // El repo va, como en toda línea de gates.log (appendLog de marker.js); lo que no va es el número ni
   // la ruta de un archivo: el reductor sólo lee nombre y estado. 🔴 Se mira la línea SIN sesión, fecha ni
-  // repo (story 2.19): buscar «60» en la línea entera lo encontraba en el identificador de sesión (`…f609f`)
-  // y el caso salía rojo según la sesión que lo corría. Mutación que lo pone rojo: escribir el porcentaje
+  // repo: buscar «60» en la línea entera lo encontraría en el identificador de sesión (`…f609f`)
+  // y el caso saldría rojo según la sesión que lo corre. Mutación que lo pone rojo: escribir el porcentaje
   // o la ruta del archivo en la línea de gates.log.
   const crudo = JSON.stringify(g.map(({ sessionId, ts, repoPath, ...resto }) => resto));
   check('T8 …sin porcentajes ni rutas de archivos', !/pct|60|Calc\.cs|touched/.test(crudo), crudo);
@@ -403,7 +402,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
 }
 
 // T8c · si bash no pudo resolver la sesión, el parser usa la cadena completa, no sólo la de Claude. @ac-7
-// Rojo previo: `GATE_SESSION_ID or CLAUDE_CODE_SESSION_ID` → null bajo Codex.
+// Mutación: `GATE_SESSION_ID or CLAUDE_CODE_SESSION_ID` → null bajo Codex.
 {
   const { gates } = correrTocadas({ ...T1_OPTS,
     env: { GATE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', TYCON_SESSION_ID: '', CODEX_SESSION_ID: 'codex-t8c' } });
@@ -411,7 +410,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
   check('T8c sesión por la cadena completa (Codex)', g.length === 1 && g[0].sessionId === 'codex-t8c', JSON.stringify(g));
 }
 
-// T10 · lo commiteado después de la base TAMBIÉN es tocado. @ac-6 — Rojo previo: diff contra HEAD.
+// T10 · lo commiteado después de la base TAMBIÉN es tocado. @ac-6 — Mutación: diff contra HEAD.
 {
   const { cov } = correrTocadas({
     base: { 'src/C.cs': lineas(6) },
@@ -441,11 +440,11 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
 }
 
 // ---------------------------------------------------------------------------------------------
-// Regresiones del pase adversarial (Step 5b, 2026-09-16). Cada caso reproduce un defecto confirmado.
+// Regresiones: cada caso reproduce un defecto confirmado.
 // ---------------------------------------------------------------------------------------------
 
 // T16 · el alcance de las tocadas es la carpeta que se TESTEÓ (repo_run), no el contenedor. @ac-1
-// Rojo previo: con `repo` como alcance, pkgB/b.cs (fuera de la corrida) salía como «sin datos».
+// Mutación: con `repo` como alcance, pkgB/b.cs (fuera de la corrida) sale como «sin datos».
 {
   const { cov } = correrTocadas({
     repoRunSub: 'pkgA',
@@ -460,7 +459,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
 }
 
 // T17 · dos entradas del reporte que calzan igual por sufijo = ambiguo: no se elige una, se dice. @ac-1
-// Rojo previo: se quedaba con la primera del orden de glob → 100 % o 0 % según la corrida.
+// Mutación: se queda con la primera del orden de glob → 100 % o 0 % según la corrida.
 {
   const opts = (orden) => ({
     base: { 'Calc.cs': lineas(5) },
@@ -478,7 +477,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
 }
 
 // T18 · una clave relativa del reporte que no corresponde al archivo tocado no le presta cobertura. @ac-1
-// Rojo previo: `moduleA/shared/util.ts` (sin tests) heredaba el 100 % de `shared/util.ts` de otro módulo.
+// Mutación: `moduleA/shared/util.ts` (sin tests) hereda el 100 % de `shared/util.ts` de otro módulo.
 {
   const stm = { statementMap: { 0: { start: { line: 1, column: 0 }, end: { line: 1, column: 1 } },
     1: { start: { line: 2, column: 0 }, end: { line: 2, column: 1 } } }, s: { 0: 3, 1: 3 } };
@@ -494,7 +493,7 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
 }
 
 // T19 · un archivo renombrado sólo aporta las líneas que cambiaron. @ac-1
-// Rojo previo: con --no-renames el archivo entero contaba como tocado (20 de 20).
+// Mutación: con --no-renames el archivo entero cuenta como tocado (20 de 20).
 {
   const cob = [{ name: 'L', filename: 'src/moved/Legacy.cs', numbered: Array.from({ length: 20 }, (_, k) => [k + 1, k < 2 ? 1 : 0]) }];
   const puro = correrTocadas({ base: { 'src/Legacy.cs': lineas(20) }, mover: [['src/Legacy.cs', 'src/moved/Legacy.cs']], dotnet: cob }).cov;
@@ -506,14 +505,14 @@ for (const [runner, motivo] of [['node-test', /no produce cobertura/], ['suites-
     JSON.stringify(con.touched_lines));
 }
 
-// T20 · la base mal formada se dice. @ac-5 — Rojo previo: se vaciaba a {} sin señal.
+// T20 · la base mal formada se dice. @ac-5 — Mutación: se vacía a {} sin señal.
 {
   const { cov } = correrTocadas({ ...T1_OPTS, baseJson: '{ roto' });
   check('T20 base ilegible queda en descartadas',
     (cov.touched_base.descartadas || []).some((d) => /base/i.test(d.motivo || '')), JSON.stringify(cov.touched_base));
 }
 
-// T21 · un archivo nuevo que no se puede leer se nombra. @ac-1 — Rojo previo: se caía del cálculo en silencio.
+// T21 · un archivo nuevo que no se puede leer se nombra. @ac-1 — Mutación: se cae del cálculo en silencio.
 if (process.getuid && process.getuid() !== 0) {
   const { cov } = correrTocadas({ ...T1_OPTS, ahora: { ...T1_OPTS.ahora, 'src/Nuevo.cs': 'x\n' }, ilegibles: ['src/Nuevo.cs'] });
   check('T21 archivo nuevo ilegible → touched_files_unreadable',
@@ -523,7 +522,7 @@ if (process.getuid && process.getuid() !== 0) {
 // T9 · la base se resuelve en orden y lo inválido se descarta con motivo. @ac-6
 {
   let cb = null;
-  try { cb = require('../lib/coverage-base.js'); } catch (e) { /* rojo previo: el módulo no existe */ }
+  try { cb = require('../lib/coverage-base.js'); } catch (e) { /* sin el módulo, cb queda en null y el chequeo de abajo lo dice */ }
   check('T9 existe lib/coverage-base.js con resolver()', cb && typeof cb.resolver === 'function', 'no se pudo cargar');
   if (cb && typeof cb.resolver === 'function') {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'covb-'));
@@ -584,7 +583,7 @@ if (process.getuid && process.getuid() !== 0) {
 }
 
 // T11b · pipeline.js start anota el commit de partida en el marcador (corrida real). @ac-6
-// Rojo previo: sin el campo en el payload, el marcador queda sin baseSha.
+// Mutación: sin el campo en el payload, el marcador queda sin baseSha.
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'covs-'));
   const home = path.join(tmp, 'home');
@@ -610,7 +609,7 @@ if (process.getuid && process.getuid() !== 0) {
 }
 
 // T11c · sin commit de partida, start no se calla: avisa y deja baseSha en null. @ac-5 @ac-6
-// Rojo previo: el catch devolvía null sin decir nada.
+// Mutación: el catch devuelve null sin decir nada.
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'covsv-'));
   const home = path.join(tmp, 'home');
@@ -633,7 +632,7 @@ if (process.getuid && process.getuid() !== 0) {
 }
 
 // T22 · el tramo bash de test-gate.sh lleva la base del marcador hasta el artefacto. @ac-6
-// Rojo previo: ningún test corría BASE_JSON/BASE_REF; un error ahí dejaba la base en HEAD sin que nadie lo viera.
+// Mutación: si ningún test corre BASE_JSON/BASE_REF, un error ahí deja la base en HEAD sin que nadie lo vea.
 {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'covg-'));
   const home = path.join(tmp, 'home');
@@ -665,7 +664,7 @@ if (process.getuid && process.getuid() !== 0) {
   } catch (e) { /* null */ }
   check('T22 …y la constancia lleva la sesión aunque no sea de Claude', linea && linea.sessionId === 'test-2-4-gate-codex',
     JSON.stringify(linea));
-  // Story 7.15: la forma de totals del runner suites-json. Rojo previo: el parser sin las claves nuevas.
+  // La forma de totals del runner suites-json. Mutación: el parser sin las claves nuevas.
   let tot = null;
   try { tot = JSON.parse(fs.readFileSync(path.join(repo, '.advisors', 'tests-result.json'), 'utf8')).totals; } catch (e) { /* null */ }
   check('T22b (7.15) totals de suites-json traen deferred, deferred_suites, workers y wall_ms',

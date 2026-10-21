@@ -1,20 +1,19 @@
 'use strict';
 
 /**
- * tooling-portable.test.js — las herramientas del pipeline se buscan y se lanzan igual en los tres sistemas (story 8.17
- * del arnés, tanda W6 · T72, AC 48).
+ * tooling-portable.test.js — las herramientas del pipeline se buscan y se lanzan igual en los tres sistemas (T72).
  *
- * LOS DOS AGUJEROS QUE CIERRA.
- *   · `pipeline.js tooling-expected` buscaba cada herramienta con la ruta fija `/usr/bin/which`. En Windows ese
- *     programa no existe: todas salían «no está», también las instaladas, y el pipeline mandaba a instalar lo que ya
- *     estaba. Ahora se busca con `where` en Windows y con `which` (por el PATH, sin ruta fija) en Mac y Linux.
- *   · `marker.js run-check <check> -- bash …` lanzaba `bash` por su nombre. En Windows el primero del PATH puede ser
- *     el lanzador de WSL (abre una distribución de Linux que no ve una ruta `C:/…`, o no está instalada). Ahora un
+ * LO QUE CUBRE.
+ *   · `pipeline.js tooling-expected` busca cada herramienta con `where` en Windows y con `which` (por el PATH, sin
+ *     ruta fija) en Mac y Linux. Con la ruta fija `/usr/bin/which`, que en Windows no existe, todas saldrían «no
+ *     está», también las instaladas, y el pipeline mandaría a instalar lo que ya está.
+ *   · `marker.js run-check <check> -- bash …` no lanza `bash` por su nombre. En Windows el primero del PATH puede ser
+ *     el lanzador de WSL (abre una distribución de Linux que no ve una ruta `C:/…`, o no está instalada). Un
  *     `bash` en Windows se lanza con el que devuelve `findGitBash()` del arnés (`scripts/lib/git-bash.js`); si no hay,
  *     el check sale rojo con el motivo, nunca con otro bash.
- *   · Pase adversarial de la W6: en Windows `npx` es un `.cmd` que Node no lanza sin shell (ahora va por el bash de
+ *   · En Windows `npx` es un `.cmd` que Node no lanza sin shell (va por el bash de
  *     Git, y `canLaunch()` —lo que mira test-gate.sh antes de la salida 5— lo ve igual); una ruta absoluta sin `.exe`
- *     salía «no está»; y estas pruebas no estaban en scripts/tests/suites.json.
+ *     tiene que probar las extensiones, o saldría «no está»; y estas pruebas tienen que estar en scripts/tests/suites.json.
  *
  * La plataforma se inyecta: se mide la lógica, no el sistema (lo que sólo se ve en Windows lo mide el agente).
  * 🔴 Nada acá toca el HOME real: el caso de la línea de comandos corre con un HOME propio.
@@ -128,8 +127,8 @@ test('Tooling_FindsToolsOnEveryPlatform_RunCheckUsesGitBash', async (t) => {
   });
 });
 
-// ── Pase adversarial de la W6 (hallazgos #1, #2, #8): en Windows `npx` es `npx.cmd`, y Node no lanza un `.cmd` sin
-// shell. run-check lo lanzaba tal cual: vitest y jest nunca corrían y el gate daba un rojo con totales vacíos. ──
+// ── Caso: en Windows `npx` es `npx.cmd`, y Node no lanza un `.cmd` sin
+// shell. run-check lo lanzaría tal cual: vitest y jest nunca correrían y el gate daría un rojo con totales vacíos. ──
 test('Tooling_WindowsCmdShim_LaunchedThroughGitBash_AndCanLaunchSeesIt', async (t) => {
   const gitBash = 'C:\\Program Files\\Git\\bin\\bash.exe';
   const found = () => ({ path: gitBash, source: 'default', reason: null });
@@ -192,8 +191,8 @@ test('Tooling_WindowsCmdShim_LaunchedThroughGitBash_AndCanLaunchSeesIt', async (
   });
 });
 
-// ── Pase adversarial de la W6 (hallazgo #12): esta prueba (T72) y la de tmp-path.js (T71) no estaban en
-// scripts/tests/suites.json, así que ni el nocturno ni el portón del PR las corrían. ──
+// ── Esta prueba (T72) y la de tmp-path.js (T71) tienen que estar en
+// scripts/tests/suites.json, si no, ni el nocturno ni el portón del PR las corren. ──
 test('Tooling_W6Suites_RegisteredInSuitesJson', (t) => {
   const suites = path.join(HARNESS, 'scripts', 'tests', 'suites.json');
   if (!fs.existsSync(suites)) { t.skip(`NO MEDIDO — no está ${suites} (la skill corre fuera del repo del arnés)`); return; }
@@ -206,8 +205,8 @@ test('Tooling_W6Suites_RegisteredInSuitesJson', (t) => {
   }
 });
 
-// ── Pase adversarial de la W6 (hallazgo #5): una ruta absoluta en Windows no probaba las extensiones. El
-// `codebase-memory-mcp` del arnés se declara por su ruta sin `.exe`, y en Windows salía «no está» aunque estuviera. ──
+// ── Una ruta absoluta en Windows tiene que probar las extensiones. El
+// `codebase-memory-mcp` del arnés se declara por su ruta sin `.exe`, y en Windows saldría «no está» aunque estuviera. ──
 test('Tooling_AbsolutePathOnWindows_TriesExecutableExtensions', async (t) => {
   await t.test('findBinary: la ruta sin extensión encuentra el .exe (y los de PATHEXT)', () => {
     const files = new Set(['C:/Users/x/.local/bin/codebase-memory-mcp.exe', 'C:/Users/x/bin/acme.cmd']);

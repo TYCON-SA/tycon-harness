@@ -8,12 +8,12 @@
  * 🔴 El ROJO se prueba, no se supone: los casos "sin el fix no frena" son (a) el mismo evento por el
  * handler viejo del carril (on-story-gate.js) → pasa, y (b) el mismo evento por el despachador entero
  * con SÓLO este freno apagado → pasa. Si alguno de esos dos bloqueara, el bloqueo del caso verde no
- * sería atribuible a esta pieza (la lección del gate de ATDD, que nació ciego y dio verde 15 corridas).
+ * sería atribuible a esta pieza (un gate ciego da verde siempre).
  *
  * Correr: node --test ~/.claude/agent-skills/skills/tycon-pipeline/scripts/tests/story-skill-gate.test.js
  */
 
-// Story 7.2 del arnés: estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
+// Estas pruebas llaman a los hooks del cierre con el HOME real (y el instalador las corre en
 // cada arranque). Sin esto, sus decisiones de mentira se anotarían en ~/.claude/.tycon-pipeline/frenos.jsonl, que
 // sube al buzón y alimenta la métrica «evidencias rechazadas por los hooks del cierre» del tablero.
 process.env.TYCON_CLOSURE_RECORD = 'off';
@@ -24,15 +24,15 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-// Story 7.16 del arnés: HOME temporal para TODO el proceso, devuelta en `test.after`. Va ANTES de los `require`
+// HOME temporal para TODO el proceso, devuelta en `test.after`. Va ANTES de los `require`
 // de abajo: story-discovery.js fija la ruta de su caché (story-dirs-cache.json) con os.homedir() al cargarse, y
-// con la HOME real la dejaba en la del dev. El arnés y agent-skills se fijan con lo que resolvían con la HOME
-// real, si no venían puestos (lo mismo que scripts/tests/lib/fake-home.sh del arnés para las suites bash).
+// con la HOME real la dejaría en la del dev. El arnés y agent-skills se fijan con lo que resuelven con la HOME
+// real, si no vienen puestos (lo mismo que scripts/tests/lib/fake-home.sh del arnés para las suites bash).
 const REAL_HOME = os.homedir();
 const FAKE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'ssg-home-'));
 const PREV_ENV = { HOME: process.env.HOME, TYCON_SKILLS_DIR: process.env.TYCON_SKILLS_DIR, TYCON_GUIDES_DIR: process.env.TYCON_GUIDES_DIR };
 const REAL_SKILLS = path.join(REAL_HOME, '.claude', 'agent-skills', 'skills');
-// el arnés de la máquina por su lugar y, si no, por el nombre viejo (story 8.19): los dos nombres, escritos (copia declarada)
+// el arnés de la máquina por su lugar y, si no, por el nombre viejo: los dos nombres, escritos (copia declarada)
 const REAL_GUIDES = [path.join(REAL_HOME, '.claude', 'tycon-harness'), path.join(REAL_HOME, '.claude', 'tycon-claude-guides')].find((p) => fs.existsSync(p)) || '';
 if (!process.env.TYCON_SKILLS_DIR && fs.existsSync(REAL_SKILLS)) process.env.TYCON_SKILLS_DIR = REAL_SKILLS;
 if (!process.env.TYCON_GUIDES_DIR && REAL_GUIDES) process.env.TYCON_GUIDES_DIR = REAL_GUIDES;
@@ -99,13 +99,11 @@ test('isCreatorSkill / ttlMsFrom / markState', () => {
   assert.equal(gate.isCreatorSkill('tycon-pipeline'), false);
   assert.equal(gate.isCreatorSkill(''), false);
 
-  // 🔴 Nombres CALIFICADOS por directorio (2026-09-21). Cuando un repo tiene skills en
+  // 🔴 Nombres CALIFICADOS por directorio. Cuando un repo tiene skills en
   // `<repo>/.claude/skills/`, Claude Code expone variantes `<dir>:<skill>` y su propio
   // system-reminder RECOMIENDA usarlas cuando los archivos están bajo ese subdirectorio.
-  // Antes de este caso, la comparación exacta no las reconocía: el skill corría, la marca no
-  // se escribía, y el portón seguía cerrado sin decir por qué. Caso real: OC-2a en
-  // PacaraBackend — se invocó `PacaraBackend:tycon-create-story` y hubo que repetir
-  // todo con el nombre pelado.
+  // Sin reconocerlas, el skill corre, la marca no se escribe, y el portón sigue cerrado sin decir por qué.
+  // Caso: se invoca `Backend:tycon-create-story` y habría que repetir todo con el nombre pelado.
   assert.equal(gate.isCreatorSkill('PacaraBackend:tycon-create-story'), true);
   assert.equal(gate.isCreatorSkill('Backend:bmad-correct-course'), true);
   assert.equal(gate.isCreatorSkill('apps/web:gds-create-story'), true);
@@ -187,8 +185,8 @@ test('evaluate: repo fuera del arnés y material tipo evals pasan y quedan MEDID
 test('evaluate: repo del harness y ~/.claude pasan; config commiteada del repo apaga (kill-switch por repo)', () => {
   const st = mkState();
   assert.equal(sio.evaluate({ absPath: '/x/tycon-claude-guides/casos/story-1.md', content: S99, sessionId: 's1', stateDir: st }).verdict.kind, 'harness');
-  // gemelo con el nombre público (story 8.19, tanda E, AC 39). El
-  // criterio es el del arnés INSTALADO en la máquina: si es anterior a la 8.19 A no conoce el nombre público, y se dice.
+  // gemelo con el nombre público. El
+  // criterio es el del arnés INSTALADO en la máquina: si es más viejo no conoce el nombre público, y se dice.
   // El nombre, de place.js del repo único (nunca escrito a mano).
   const pub = (() => { try { return require(path.join(SCRIPTS, '..', '..', '..', 'scripts', 'setup', 'harness', 'place.js')).PLACE_NAME; } catch (_) { return null; } })();
   const knowsPublic = !!pub && (() => { try { const r = require(path.join(SCRIPTS, 'lib', 'harness-path.js')).rutaArnesHook(); return !!r.dir && require(path.join(r.dir, 'scripts', 'lib', 'harness-repo.js')).SEGMENTOS_DEL_ARNES.includes(pub); } catch (_) { return false; } })();
@@ -350,9 +348,9 @@ test('hook-pre-edit.js e2e: bloquea (exit 2) y con SÓLO este freno apagado el m
   assert.equal(r2.status, 0, `ROJO atribuible: sin este freno el despachador deja pasar · stderr: ${r2.stderr.slice(0, 200)}`);
 });
 
-// ── T12 (story 7.16 del arnés): la caché de carpetas de stories va a la HOME temporal ───────────────
+// ── T12: la caché de carpetas de stories va a la HOME temporal ───────────────
 // Evidencia POSITIVA (la real no sirve de control: las sesiones del dev la escriben al mismo tiempo). Rojo
-// previo: con la HOME real, story-discovery.js fija CACHE_PATH al cargarse y la caché queda en la del dev.
+// si: con la HOME real, story-discovery.js fija CACHE_PATH al cargarse y la caché queda en la del dev.
 test('T12 StorySkillGate_NoRealHome — story-dirs-cache.json quedó en la HOME temporal', () => {
   const cache = path.join(FAKE_HOME, '.claude', '.tycon-pipeline', 'story-dirs-cache.json');
   assert.ok(fs.existsSync(cache), `la caché de carpetas de stories no está en la HOME temporal (${cache}): fue a la real`);

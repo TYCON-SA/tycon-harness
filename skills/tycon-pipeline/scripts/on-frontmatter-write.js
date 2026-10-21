@@ -2,7 +2,7 @@
 /**
  * tycon-pipeline PreToolUse hook (matcher: Edit|Write) — DoD frontmatter gate.
  *
- * Capa 2 de defense-in-depth (caso disparador Story 4.2 Sprint 4 2026-05-20).
+ * Capa 2 de defense-in-depth.
  * Atrapa el problema MÁS TEMPRANO que Capa 1 (`on-pre-commit.js`): cuando
  * Claude/dev hace Edit o Write de un spec Mary+GOLD y la modificación cambia
  * `status:` a `review`/`done` o pone `pipelines.X.status: done` sin que exista
@@ -16,7 +16,7 @@
  * Lógica:
  *   1. Lee el evento PreToolUse Edit|Write.
  *   2. Si el Edit/Write no es de un `.md` -> exit 0; que SEA una story lo decide
- *      el frontmatter, mas abajo (2026-08-15 — ya no se filtra por ruta).
+ *      el frontmatter, mas abajo (no se filtra por ruta).
  *   3. Si la operación es Edit → reconstruir el NEW state aplicando el patch
  *      sobre el current. Si Write → el new_string del tool_input ES el state final.
  *   4. Detectar transición de status frontmatter o líneas `status: done`/`review`
@@ -29,17 +29,17 @@
  *   0 → permitir Edit/Write
  *   2 → BLOQUEAR (stderr = mensaje al agente)
  *
- * H10 2026-05-21: refactor a `handle(event)` exportable (devuelve {block} en vez
- * de process.exit(2)) para que el dispatcher lo corra in-process. El shim CLI del
- * fondo preserva el comportamiento standalone idéntico (incl. fail-open H19).
+ * `handle(event)` es exportable (devuelve {block} en vez de process.exit(2)) para que
+ * el dispatcher lo corra in-process. El shim CLI del fondo preserva el comportamiento
+ * standalone idéntico (incl. fail-open).
  *
  * Fail-open: errores del hook propio no bloquean operaciones válidas (pero quedan
- * logueados — H19 2026-05-21 — para que un gate caído sea visible).
+ * logueados para que un gate caído sea visible).
  */
 
 const fs = require('fs');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // la carpeta del estado, de una sola pieza
 const os = require('os');
 const { sessionIdFileKey } = require('./lib/session-id.js');
 
@@ -86,17 +86,16 @@ function storyIsExempt(content) {
   return /^dod_runtime_exempt:\s*true\b/m.test(content);
 }
 
-// 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida (2026-09-06). Este hook
-// aceptaba cualquier `<id>-*.md` —matriz y self-audit incluidos— mientras el freno del commit y el
-// portón de CI los excluían: una story pasaba acá y rebotaba dos capas después. Ver
-// `lib/closing-evidence.js` (criterio y motivo de cada exclusión).
+// 🔴 Qué es «evidencia de cierre» lo decide UNA función compartida. Un hook que aceptara cualquier
+// `<id>-*.md` (matriz y self-audit incluidos) dejaría pasar una story que el freno del commit y el
+// portón de CI rechazan después. Ver `lib/closing-evidence.js` (criterio y motivo de cada exclusión).
 const { esEvidenciaDeCierre } = require('./lib/closing-evidence.js');
 
-// El prefijo de la evidencia de una story (story 1.17): con la ruta de la story, su CLAVE
+// El prefijo de la evidencia de una story: con la ruta de la story, su CLAVE
 // (lib/evidence-key.js) — con un número repetido en el repo, `<id>-*` es la evidencia de cualquiera de las
 // stories que lo comparten. Si la clave no se puede decidir: null = no hay evidencia (fail-closed). Sin ruta, el id.
-// La regla es `evidencePrefix`, la MISMA que el portón de Azure (story 1.17.1, tanda 2): antes, con la story todavía
-// fuera del disco (un Write que la crea ya en `done`), caía al número solo y aceptaba la evidencia de otra story.
+// La regla es `evidencePrefix`, la MISMA que el portón de Azure: con la story todavía fuera del disco
+// (un Write que la crea ya en `done`) no se cae al número solo, que aceptaría la evidencia de otra story.
 function prefijoDe(storyId, storyPath) {
   const { prefix, error } = require('./lib/evidence-key.js').evidencePrefix(storyPath, storyId);
   // «No pude calcular la clave» no es «no hay evidencia»: el motivo se dice (y el bloqueo lo repite).
@@ -133,25 +132,22 @@ function storyNeedsPlaywrightRun(content) {
          /tests\/e2e\//.test(content);
 }
 
-// FRESHNESS floor (auditoría 2026-06-09): pese al nombre, hasFreshPlaywrightPass
-// solo chequeaba substrings — evidencia VIEJA satisfacía el gate para siempre
-// (un run verde de hace 3 iteraciones "validaba" código que cambió después).
+// FRESHNESS floor: sin piso de frescura, evidencia VIEJA satisfaría el gate para siempre
+// (un run verde de hace 3 iteraciones "validaría" código que cambió después).
 // El floor = mtime más nuevo de los archivos de CÓDIGO tocados por el pipeline
 // (marker.filesTouched de la sesión). Evidencia con mtime anterior al último
 // cambio de código = STALE → no satisface el gate. Sin marker → sin floor
-// (comportamiento previo, no rompe edits fuera de pipeline).
+// (no rompe edits fuera de pipeline).
 /**
  * ¿Cuándo cambió DE VERDAD el código que esta sesión tocó? (el «piso de frescura»)
  *
- * 🔴 Se decide por CONTENIDO, no por fechas (tercera versión, 2026-09-06). Las dos anteriores
- * fallaban en direcciones opuestas y las dos las mostró la revisión adversarial:
+ * 🔴 Se decide por CONTENIDO, no por fechas. Las fechas fallan en las dos direcciones:
  *   - la fecha del DISCO (mtime) sube sola con un `git checkout`, un rebase o un `stash pop` que
- *     dejan el MISMO contenido → el freno rechazaba una corrida de Playwright válida
- *     (FRESHNESSFLOOR-CHECKOUT-MTIME-1, decidido por el dev el 2026-09-06);
+ *     dejan el MISMO contenido → el freno rechazaría una corrida de Playwright válida;
  *   - la fecha del COMMIT (%ct) es cuándo ALGUIEN commiteó, no cuándo ese contenido llegó a este
- *     disco: un `pull` que trae un commit ajeno fechado antes de la corrida dejaba pasar evidencia
- *     vieja como fresca (verde falso), un rebase o un --amend la ponían en «hoy», y un commit
- *     posterior a la evidencia —el orden normal del pipeline— la invalidaba.
+ *     disco: un `pull` que trae un commit ajeno fechado antes de la corrida dejaría pasar evidencia
+ *     vieja como fresca (verde falso), un rebase o un --amend la pondrían en «hoy», y un commit
+ *     posterior a la evidencia —el orden normal del pipeline— la invalidaría.
  *
  * El dato que sí responde la pregunta lo escribe `on-edit.js` en el marker en cada toque:
  * `filesTouchedAt[archivo] = { hash, ts }` — el sello del contenido que ESA edición dejó y su hora.
@@ -163,7 +159,7 @@ function storyNeedsPlaywrightRun(content) {
  *   - sin sello (marker viejo, archivo tocado por Bash) → fecha del disco, el comportamiento
  *     conservador de siempre.
  * Cero llamadas a git: un hash por archivo. Un archivo ignorado por git cuenta igual que cualquiera.
- * Y sigue valiendo lo de `ACCOV-C11`: la fecha del archivo no prueba frescura — acá sólo se usa
+ * Como dice `ACCOV-C11`, la fecha del archivo no prueba frescura: acá sólo se usa
  * cuando el contenido demuestra que cambió.
  */
 function pisoDeArchivos(files, registro) {
@@ -207,14 +203,12 @@ function computeFreshnessFloor(sessionId) {
 }
 
 // Verifica que exista AL MENOS un archivo de evidencia con un bloque
-// "## Playwright Run" verdict=PASS + failed=0 (macro backend) o "- failed: 0" (e2e-gate.sh genérico
-// — fix 2026-08-25: el gate genérico escribe `- failed: 0` y el regex literal `failed=0` lo rechazaba;
-// ninguna story verificada con el gate genérico podía pasar a review/done por Edit)
+// "## Playwright Run" verdict=PASS + failed=0 (macro backend) o "- failed: 0" (e2e-gate.sh genérico:
+// el regex acepta las dos formas)
 // Y (si hay freshnessFloor) con mtime POSTERIOR al último cambio de código.
 /**
  * ¿Cuándo se GENERÓ la evidencia? No es la fecha del archivo: un merge o un checkout la reescriben y
- * la rejuvenecen, y una corrida vieja pasaba en main lo que en dev era STALE (crítico del pase de
- * Fable 2026-09-06, D5). La evidencia lleva su hora adentro (`**Generado**: <iso>`, `ts: <iso>`, o el
+ * la rejuvenecen, y una corrida vieja pasaría en main lo que en dev es STALE. La evidencia lleva su hora adentro (`**Generado**: <iso>`, `ts: <iso>`, o el
  * sello compacto del nombre o del encabezado, `20260710T031538Z`, que es el que escribe e2e-gate.sh):
  * la más nueva de las que trae es la de generación, y la fecha del archivo sólo
  * puede ser POSTERIOR a ésa — así que vale la menor de las dos. Sin hora adentro, la del archivo.
@@ -226,8 +220,8 @@ function tiempoDeEvidencia(full, contenido) {
   const isos = texto.match(/\b20\d\d-\d\d-\d\dT\d\d:\d\d(?::\d\d)?(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?\b/g) || [];
   // 🔴 El sello COMPACTO `20260710T031538Z` es el que escribe `e2e-gate.sh` —el único productor de
   // evidencia Playwright del pipeline— en el nombre del archivo y en su encabezado, y no lo escribe
-  // en ningún otro formato. Sin esto, 234 de las 296 evidencias reales caían al mtime y el defecto
-  // que esta función vino a cerrar seguía abierto para el 79 % de la población (2do pase con Fable).
+  // en ningún otro formato. Sin esto, la mayoría de las evidencias caería al mtime y el defecto que
+  // esta función cierra quedaría abierto.
   for (const c of texto.match(/\b(20\d\d)(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z?\b/g) || []) {
     isos.push(`${c.slice(0, 4)}-${c.slice(4, 6)}-${c.slice(6, 8)}T${c.slice(9, 11)}:${c.slice(11, 13)}:${c.slice(13, 15)}Z`);
   }
@@ -271,17 +265,17 @@ function hasFreshPlaywrightPass(repoRoots, storyId, freshnessFloor, storyPath) {
   return { pass: false, stale: foundStale };
 }
 
-// Roots donde puede vivir la evidencia de ESTA story (fix atribución 2026-08-14): el repo git
+// Roots donde puede vivir la evidencia de ESTA story: el repo git
 // que contiene el spec + sus companions declarados (`.tycon/advisors.yaml →
 // evidence.companion_repos`) + subproyectos con evidencia — criterio único en
-// lib/evidence-config.js, el mismo de runtime-matrix.js y on-pre-commit.js. Antes se sumaban
-// TODOS los hermanos git del padre: los story-id colisionan entre productos y un `<sid>-*.md`
-// ajeno satisfacía el check de evidencia (falso pase del hook).
+// lib/evidence-config.js, el mismo de runtime-matrix.js y on-pre-commit.js. No se suman TODOS los
+// hermanos git del padre: los story-id colisionan entre productos y un `<sid>-*.md` ajeno
+// satisfaría el check de evidencia.
 function findRepoRoots(filePath) {
   const ec = require('./lib/evidence-config.js');
   const repo = ec.discoverRepoRoot(filePath);
   if (!repo) return []; // sin repo no hay atribución segura: el hook queda fail-closed
-  // Modo FRENO (FIX-1 — caso C3): los hermanos declarados sólo cuentan si están commiteados.
+  // Modo FRENO: los hermanos declarados sólo cuentan si están commiteados.
   for (const aviso of ec.parseEvidenceConfig(repo, { freno: true }).warnings) process.stderr.write(`${aviso}\n`);
   return ec.productEvidenceRoots(repo, { freno: true });
 }
@@ -290,7 +284,7 @@ function isCriticalStatus(s) {
   return s === 'review' || s === 'done';
 }
 
-// ── Constancia (story 7.2 del arnés, 2026-09-16) ─────────────────────────────────────────────────
+// ── Constancia ───────────────────────────────────────────────────────────────────────────────
 // Cada decisión sobre una transición a review/done deja UNA línea en frenos.jsonl (sólo la huella:
 // id de story + estado nuevo). Ayuda, no evidencia: no toca la decisión ni la salida del hook.
 // La lib se carga acá adentro y envuelta: si faltara (instalación a medias), el hook frena igual.
@@ -342,10 +336,8 @@ function handle(event) {
   const filePath = event.tool_input?.file_path;
   if (!filePath) return null;
 
-  // 2026-08-15 — sólo `.md`; que SEA una story lo decide el frontmatter, más abajo.
-  // Antes acá había `/\/specs\/stories\/[^/]+\.md$/`: en un repo con otro layout —un repo del equipo,
-  // `specs/bizuit-bpmn-mcp/`— este gate no se disparaba NUNCA. El freno que impide cerrar una
-  // story sin evidencia estaba apagado para todo el repo, sin un solo mensaje.
+  // Sólo `.md`; que SEA una story lo decide el frontmatter, más abajo. No se filtra por ruta: un
+  // filtro tipo `specs/stories/` apagaría el freno en los repos con otro layout, sin un solo mensaje.
   if (!/\.md$/i.test(filePath)) return null;
 
   // Reconstruir el NEW state.
@@ -363,7 +355,7 @@ function handle(event) {
       // — Claude Code va a reportar el error real.
       return null;
     }
-    // CF-5 2026-05-21: usar función de reemplazo — `String.replace(str, newStr)` interpreta
+    // Usar función de reemplazo — `String.replace(str, newStr)` interpreta
     // `$&`/`$1`/`$$` en newStr como patrones especiales, así que un new_string con `$` daría
     // un newContent distinto al que Edit escribe realmente. La forma `() => newStr` lo evita.
     newContent = event.tool_input.replace_all === true
@@ -389,8 +381,8 @@ function handle(event) {
   if (!declaredId || !newFm.status) return null;
   const { isWorkStoryId, storiesConfigForGate, findRepoRoot } = require('./lib/story-discovery.js');
   const repoOfStory = findRepoRoot(filePath);
-  // Modo FRENO — misma razón que en on-pre-commit.js (FIX-1, caso C1): este hook es la SEGUNDA
-  // capa del mismo control, y se apagaba con el mismo archivo sin commitear.
+  // Modo FRENO — misma razón que en on-pre-commit.js: este hook es la SEGUNDA
+  // capa del mismo control, y se apagaría con el mismo archivo sin commitear.
   const cfgFreno = storiesConfigForGate(repoOfStory);
   for (const aviso of cfgFreno.warnings) process.stderr.write(`${aviso}\n`);
   if (!isWorkStoryId(String(declaredId), cfgFreno.idPattern)) return null;
@@ -407,9 +399,9 @@ function handle(event) {
 
   // Trigger 2: pipeline.X.status: done en el new state que NO estaba antes.
   // Heurística: contamos ocurrencias de `status: done` indentado (block pipelines).
-  // H12 2026-05-21: contar SOLO dentro del bloque frontmatter (entre los dos `---`),
+  // Contar SOLO dentro del bloque frontmatter (entre los dos `---`),
   // no en todo el contenido — un spec que documente el pipeline con un `status: done`
-  // indentado en prosa/code-block NO debe disparar el gate (falso positivo que bloqueaba
+  // indentado en prosa/code-block NO debe disparar el gate (falso positivo que bloquearía
   // edits no relacionados).
   const oldDoneCount = (fmBlock(oldContent).match(/^\s+status:\s*done\b/gm) || []).length;
   const newDoneCount = (fmBlock(newContent).match(/^\s+status:\s*done\b/gm) || []).length;
@@ -431,7 +423,7 @@ function handle(event) {
   if (hasDodEvidence(repoRoots, storyId, filePath)) {
     // Evidencia genérica existe. Pero si la story tiene E2E reales, ADEMÁS exigir
     // un bloque "## Playwright Run" verdict=PASS (escrito por el gate E2E del proyecto)
-    // FRESCO (posterior al último cambio de código de esta corrida — auditoría 2026-06-09).
+    // FRESCO (posterior al último cambio de código de esta corrida).
     const freshnessFloor = computeFreshnessFloor(event.session_id);
     const pw = needsPlaywright ? hasFreshPlaywrightPass(repoRoots, storyId, freshnessFloor, filePath) : { pass: true };
     if (needsPlaywright && !pw.pass && deudaDeNavegador(newContent, filePath, storyId, newS)) return null;
@@ -454,14 +446,14 @@ function handle(event) {
       pl.push('');
       pl.push('Correr el gate determinístico del PROYECTO (.tycon/advisors.yaml → e2e.gate):');
       pl.push('');
-      // La ruta del archivo sale de tmp-path.js (story 8.17, W6): con una ruta fija bajo /tmp, en Windows bash escribía
-      // en la carpeta temporal del usuario y Node leía C:\tmp — quien escribe y quien lee usan "$E2ECFG".
+      // La ruta del archivo sale de tmp-path.js: con una ruta fija bajo /tmp, en Windows bash escribiría
+      // en la carpeta temporal del usuario y Node leería C:\tmp — quien escribe y quien lee usan "$E2ECFG".
       pl.push('  E2ECFG=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/lib/tmp-path.js e2ecfg <repo>)');
       pl.push('  node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js e2e-config --repo <repo> > "$E2ECFG"');
       pl.push('  GATE=$(node -e \'process.stdout.write(require(process.argv[1]).gate||"")\' "$E2ECFG")');
       pl.push('  FE=$(node -e \'process.stdout.write(require(process.argv[1]).frontend_dir||"")\' "$E2ECFG")');
-      // En un monorepo `APPS` puede traer MÁS DE UNA app: el gate va una vez por app tocada
-      // (Story QA-1, 2026-08-15). Sugerir el comando de una sola app manda a repetir el bug.
+      // En un monorepo `APPS` puede traer MÁS DE UNA app: el gate va una vez por app tocada.
+      // Sugerir el comando de una sola app dejaría sin gate a las demás.
       pl.push(`  EVID=$(node ~/.claude/agent-skills/skills/tycon-pipeline/scripts/pipeline.js evidence-dir --story <spec> --repo <repo> --plain)   # el repo de la STORY`);
       pl.push(`  echo "$APPS" | while read -r FE; do [ -n "$FE" ] || continue; \\`);
       pl.push(`    bash "$GATE" "$FE" ${storyId} "$EVID" || exit 1; done   # [spec-filter...] = scoped`);
@@ -530,7 +522,7 @@ function deudaDeNavegador(content, filePath, storyId, newS) {
 
 module.exports = { handle, prefijoDe, findRepoRoots, hasFreshPlaywrightPass, hasDodEvidence, fechaDeCambio, computeFreshnessFloor, tiempoDeEvidencia };
 
-// ── CLI shim (standalone) — preserva exit 2 (block) + fail-open logueado (H19) ──
+// ── CLI shim (standalone) — preserva exit 2 (block) + fail-open logueado ──
 if (require.main === module) {
   try {
     const r = handle(readEvent());
@@ -540,8 +532,8 @@ if (require.main === module) {
     }
     process.exit(0);
   } catch (e) {
-    // Fail-open (no bloquear edits válidos por un bug del hook) PERO visible (H19):
-    // un gate desactivado en silencio era el riesgo marcado por la auditoría.
+    // Fail-open (no bloquear edits válidos por un bug del hook) PERO visible:
+    // un gate desactivado en silencio es un riesgo.
     const msg = (e && (e.stack || e.message)) || String(e);
     process.stderr.write(`⚠ tycon-dod-runtime (frontmatter): hook error (FAILING OPEN — gate NO aplicado): ${msg}\n`);
     try {

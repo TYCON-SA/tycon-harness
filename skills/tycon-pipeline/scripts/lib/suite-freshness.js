@@ -2,18 +2,15 @@
 /**
  * suite-freshness.js — ¿el verde de la suite completa sigue midiendo ESTE código?
  *
- * Caso disparador MEDIDO (story 1.8 de un producto del equipo, 2026-08-28, guides/maintaining/incident-log.md#case-stale-green-suite-2026-08-28 — propuesta
- * TESTGATE-DEDUCTOR-LAYOUT-GAP-1 parte 2 en guide-update-proposals.md): la suite
- * completa corrió verde al cierre del Step 4, después hubo 2 iteraciones más de
- * fixes (guard T12 endurecido, T14/T15/T16, reversión de CreatedAt), y ese verde
- * quedó describiendo un código que ya no existía. Lo cazó el DoD checker (Step
- * 7c), no el orquestador — funcionó, pero de red, no de prevención. Este módulo
+ * Si la suite completa corre verde al cierre del Step 4 y después hay más
+ * iteraciones de fixes, ese verde describe un código que ya no existe. Lo caza el
+ * DoD checker (Step 7c), no el orquestador: de red, no de prevención. Este módulo
  * le da al orquestador la pregunta barata: "¿cambió ALGÚN archivo de código desde
  * la corrida verde?" — y sólo si la respuesta es sí se paga la re-corrida.
  *
  * Cómo se mide el estado, y por qué así:
  *   - `git ls-files -s -- <código>`: el blobhash de TODO el código trackeado, ya
- *     calculado en el index (30ms medidos en Pacara, 456 .cs). Un commit mueve
+ *     calculado en el index (30ms medidos con 456 .cs). Un commit mueve
  *     index→HEAD sin cambiar contenido, así que commitear la story NO invalida el
  *     verde — sólo un cambio real de bytes lo hace. (Comparar contra HEAD daría
  *     stale falso en cada commit; comparar mtimes daría stale falso en cada
@@ -22,7 +19,7 @@
  *     y los untracked se re-hashean con `git hash-object` (son pocos).
  *   - CÓDIGO = la misma extensión que cruza test-gate.sh para coverage
  *     (`.cs .ts .tsx .js .jsx`), tests INCLUIDOS a propósito: un test endurecido
- *     también invalida el verde anterior (en la 1.8, T12-T16 eran justo eso).
+ *     también invalida el verde anterior.
  *
  * CLI:
  *   node suite-freshness.js state <repo>                    → JSON {git, state_hash, code_files}
@@ -45,9 +42,8 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 // Las extensiones del cruce de coverage de test-gate.sh (code_re del bloque Python) MÁS los
-// manifests que cambian el resultado de la suite sin ser "código" (fix 2026-08-28, pase
-// adversarial: un bump de PackageReference en un .csproj o una migración .sql nueva en una
-// iteración de fix daban FRESCO). `.json` queda AFUERA a propósito: tests-result.json y
+// manifests que cambian el resultado de la suite sin ser "código" (un bump de PackageReference
+// en un .csproj o una migración .sql nueva en una iteración de fix darían FRESCO). `.json` queda AFUERA a propósito: tests-result.json y
 // configs mutables harían stale perpetuo.
 // El código es el de lib/code-files.js (con lo que sume la organización); acá se agregan `.sln` y `.sql`.
 const codeFiles = require('./code-files.js');
@@ -76,9 +72,9 @@ function lines(s) {
 /** Estado del CÓDIGO del working tree: { git, state_hash, code_files }. */
 function codeState(repoDir) {
   // 🔴 Frame único: SIEMPRE se mide desde la RAÍZ del repo git, sin importar desde qué
-  // subcarpeta se invoque (fix 2026-08-28, pase adversarial): test-gate.sh reasigna $REPO al
-  // subdir del alcance, así que el artefacto quedaba medido desde `mcp/` y el check del
-  // step-07b medía desde la raíz — paths y set de archivos distintos → STALE falso SIEMPRE
+  // subcarpeta se invoque (test-gate.sh reasigna $REPO al
+  // subdir del alcance, así que el artefacto quedaría medido desde `mcp/` y el check del
+  // step-07b mediría desde la raíz — paths y set de archivos distintos → STALE falso SIEMPRE
   // en repos con alcance de subcarpeta (una suite completa extra por story, sin un solo
   // cambio). Normalizar acá cubre a TODO caller sin depender del orden en bash.
   let root = null;

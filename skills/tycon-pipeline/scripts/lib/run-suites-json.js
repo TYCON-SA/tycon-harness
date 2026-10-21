@@ -3,16 +3,16 @@
 /**
  * run-suites-json.js — corre las suites declaradas en `<repo>/scripts/tests/suites.json`.
  *
- * Es el 5to stack del test-gate (2026-09-05). Los repos del equipo con package.json o .csproj ya
- * tenían gate; el repo del ARNÉS no tiene ninguno de los dos: sus suites son archivos sueltos
+ * Es el quinto stack del test-gate. Los repos del equipo con package.json o .csproj ya
+ * tienen gate; el repo del ARNÉS no tiene ninguno de los dos: sus suites son archivos sueltos
  * (`.js` que se corren con `node`, `.sh` con `bash`) declarados en `suites.json`, que el pipeline
- * de Azure ya recorre cada noche. Sin este runner el gate salía «no se detectó stack» y no escribía
- * `tests-result.json`, y sin ese artefacto la matriz de DoD marcaba como NOT-RUN criterios con la
+ * de Azure ya recorre cada noche. Sin este runner el gate diría «no se detectó stack» y no escribiría
+ * `tests-result.json`, y sin ese artefacto la matriz de DoD marcaría como NOT-RUN criterios con la
  * suite realmente verde. Es la MISMA lista que usa el pipeline — no una copia — así que lo que el
  * gate mide en la máquina es lo que el nocturno mide en el servidor.
  *
- * EN PARALELO desde la story 7.15 (2026-09-29): en serie el gate del arnés tardaba 49,5 y 67,9 min
- * (153 suites; exportador-real sola, 24-41). Ahora:
+ * EN PARALELO: en serie el gate del arnés tarda entre 50 y 68 min
+ * (153 suites; exportador-real sola, 24-41):
  *   · corren W a la vez: `TYCON_SUITES_MAX_WORKERS` (entero positivo) o la mitad de los núcleos —
  *     el mismo 50 % que el gate le pone a jest y a vitest para no fundir la máquina del dev;
  *   · `"exclusive": true` en la entrada → corre sola, al final, de a una (comparte estado con otras);
@@ -26,10 +26,10 @@
  * se sabe qué se tocó, o ninguna suite lo lee, no corre nada y sale 7 («sin acotar»), con el motivo en `unscoped`: correr
  * las ~400 suites del hermano en la máquina del dev no es la alternativa. `TYCON_GATE_ALL_SUITES=1` corre todo.
  *
- * LA RAÍZ `agent-skills` LA DICE EL REPO QUE SE MIDE (story 8.18 del arnés, 2026-10-03): los dos repos
- * internos se unieron y esas suites viven en `<repo>/skills`. Este runner las buscaba en
- * `TYCON_SKILLS_DIR` o en `~/.claude/agent-skills/skills`: en un clon de trabajo del repo unido corría
- * las suites INSTALADAS en la máquina y el gate daba verde sin haber probado el cambio. Ahora, sin
+ * LA RAÍZ `agent-skills` LA DICE EL REPO QUE SE MIDE: en el repo unido
+ * esas suites viven en `<repo>/skills`. Sin esto, este runner las buscaría en
+ * `TYCON_SKILLS_DIR` o en `~/.claude/agent-skills/skills`: en un clon de trabajo del repo unido correría
+ * las suites INSTALADAS en la máquina y el gate daría verde sin haber probado el cambio. Sin
  * `--skills`, la raíz la contesta `resolveSkillsDirs()` de `<repo>/scripts/lib/skills-dir.js` —la misma
  * función que usan los demás lectores de suites.json—: la variable › el propio clon si es unido › lo
  * instalado. Se le pregunta al repo que se mide y no al árbol donde vive este runner, porque el runner
@@ -40,12 +40,12 @@
  * prueba de Node que la lanza como hijo con el medidor de cobertura de Node prendido. La suite sale igual (su salida, su
  * código); cada una deja su lcov en la carpeta y al final quedan juntos en `<carpeta>/lcov.info`, que lee
  * test-gate-report.js. Una suite sin datos (una de bash que no lanza `node`, una que no arrancó) se nombra en
- * `coverage.without_data` y no rompe nada. Sin `--coverage`, todo igual que antes: ni envoltorio ni carpeta.
+ * `coverage.without_data` y no rompe nada. Sin `--coverage`: ni envoltorio ni carpeta.
  *
  * Uso:  node run-suites-json.js <repo> <resumen.json> [--skills <dir>] [--touched <archivo.json>] [--coverage <dir>]
  *   · `raiz: "arnes"`        → <repo>/scripts/<ruta>
  *   · `raiz: "agent-skills"` → <skills>/<ruta>   (`--skills`; si no, la función del repo; en un repo sin
- *                              esa función, lo de antes: TYCON_SKILLS_DIR, o ~/.claude/agent-skills/skills)
+ *                              esa función, TYCON_SKILLS_DIR, o ~/.claude/agent-skills/skills)
  *
  * Contrato de salida (regla de la casa):
  *   0 → TODAS verdes.  1 → alguna roja, AUSENTE o NO MEDIDA.  3 → no pude medir (suites.json ilegible o
@@ -76,8 +76,8 @@ const WRAPPER = path.join(__dirname, 'coverage-wrapper.js');
  * en la suya).
  */
 // Las variables con que test-gate.sh describe ESTA corrida (la clave de la copia sellada, las marcas del hermano y de la
-// corrida cruzada): una suite que corre su propio portón de juguete las tomaba como suyas. TYCON_TEST_GATE es la marca
-// con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaba de conducta
+// corrida cruzada): una suite que corre su propio portón de juguete las tomaría como suyas. TYCON_TEST_GATE es la marca
+// con que run-check anota la procedencia del check `tests`: heredada, la suite del freno de cierre cambiaría de conducta
 // (roja dentro del portón, verde sola; casos: tests/run-suites-json.test.js T15b).
 const DEL_PORTON = ['TYCON_EVIDENCE_KEY', 'TYCON_EVIDENCE_KEY_FAILED', 'TYCON_TEST_GATE_COMPANION', 'TYCON_TEST_GATE_STORY_REPO',
   'TYCON_TEST_GATE_CROSS_REPO', 'TYCON_TEST_GATE', 'TYCON_TEST_GATE_TREE_TOUCHED'];
@@ -126,7 +126,7 @@ function readTouched(file) {
 
 /**
  * La raíz de las suites `agent-skills`: { dir, source }. `--skills` manda; si no, la función del repo que se
- * mide (la variable › su propio clon si es unido › lo instalado); un repo sin esa función, lo de antes.
+ * mide (la variable › su propio clon si es unido › lo instalado); un repo sin esa función, la variable o lo instalado.
  * Tira si la función del repo no se deja usar: la raíz no se adivina.
  */
 function resolveSkillsRoot(repo, given, env) {
@@ -134,7 +134,7 @@ function resolveSkillsRoot(repo, given, env) {
   const lib = path.resolve(repo, 'scripts', 'lib', 'skills-dir.js');
   if (fs.existsSync(lib)) {
     const d = require(lib).resolveSkillsDirs(env.TYCON_SKILLS_DIR || '');
-    // un arnés anterior a la story 8.18 no dice de dónde salió: sólo conoce la variable y lo instalado
+    // un arnés anterior no dice de dónde salió: sólo conoce la variable y lo instalado
     return { dir: d.skills, source: d.source || (env.TYCON_SKILLS_DIR ? 'variable' : 'installed') };
   }
   if (env.TYCON_SKILLS_DIR) return { dir: env.TYCON_SKILLS_DIR, source: 'variable' };
@@ -148,16 +148,16 @@ const realOf = (p) => { try { return fs.realpathSync(p); } catch (_) { return pa
  * «La propia suite», como la nombra git: su ruta relativa a la raíz del repo. Devuelve las formas en que puede
  * figurar en lo tocado: la de las rutas TAL COMO LLEGARON y la de las rutas REALES de las dos puntas.
  *
- * Por qué las dos (pase adversarial del tramo 1 de la story 8.18, hallazgos 4, 5, 6, 7 y 16 — 2026-10-04): la raíz
+ * Por qué las dos: la raíz
  * de las skills sale ya resuelta a su ruta real (el `__dirname` de skills-dir.js) y el repo llega como lo escribió
  * quien llama (test-gate.sh lo pasa con `pwd`, que conserva los enlaces). Con el repo por un enlace —el canónico
- * `~/.claude/tycon-harness`, o `/tmp` en Mac— la ruta propia daba `../../…`, nunca coincidía con lo tocado y
- * la suite que la story editó se DIFERÍA con el gate en verde. Lo mismo al revés (el repo por su ruta real y la raíz
+ * `~/.claude/tycon-harness`, o `/tmp` en Mac— la ruta propia daría `../../…`, nunca coincidiría con lo tocado y
+ * la suite que la story editó se DIFERIRÍA con el gate en verde. Lo mismo al revés (el repo por su ruta real y la raíz
  * por el enlace instalado). Se resuelve el ARCHIVO entero y no sólo la raíz: la carpeta `~/.claude/skills` de la
- * máquina de un solo árbol es real y lo enlazado es cada skill. La forma «como llegó» se conserva: es la que ya
- * andaba, y de las dos alcanza con una —sumar una forma sólo puede hacer correr una suite, nunca diferirla—.
+ * máquina de un solo árbol es real y lo enlazado es cada skill. La forma «como llegó» se conserva: es la que cubre
+ * el caso común, y de las dos alcanza con una —sumar una forma sólo puede hacer correr una suite, nunca diferirla—.
  */
-// Una suite partida (story 8.22: `<suite>.p<k>.test.<js|sh>`, una línea que carga el archivo entero) se registra por sus
+// Una suite partida (`<suite>.p<k>.test.<js|sh>`, una línea que carga el archivo entero) se registra por sus
 // partes: «la propia suite» de una parte es también su archivo entero, donde viven sus casos, y lo que la reparte.
 // Acá alcanza con el nombre: lo propio sólo sirve para CORRER una suite que el criterio diferiría, así que una suite
 // común que se llame como una parte a lo sumo corre de más (el selector de la validación, que además lee de qué
@@ -180,7 +180,7 @@ function ownPaths(repo, ruta) {
 /**
  * Corrida cruzada: ¿la suite prueba algo tocado? Sí si es ella misma, o si su texto nombra un archivo tocado que no es
  * otra suite (por su ruta relativa o por su nombre). Más estricta que la corrida liviana: sin la regla de la carpeta,
- * tocar una suite de `scripts/tests/` arrastraba a las ~400 que viven ahí.
+ * tocar una suite de `scripts/tests/` arrastraría a las ~400 que viven ahí.
  */
 function namesTouched(repo, ruta, files) {
   const own = ownPaths(repo, ruta);
@@ -272,7 +272,7 @@ function main(argv, env = process.env) {
   const touched = readTouched(touchedFile);
   let light = argv.includes('--light');
   const onlyTouched = argv.includes('--only-touched') && !allSuites;
-  // el tamaño se fijó al arrancar: si el cambio real toca código, la corrida ya no es liviana y corre lo de siempre
+  // el tamaño se fija al arrancar: si el cambio real toca código, la corrida deja de ser liviana y corre lo de siempre
   if (light && touched.known) {
     const code = touched.files.find((f) => require('./run-size.js').classifyFile(f).kind === 'code');
     if (code) {
@@ -319,7 +319,7 @@ function main(argv, env = process.env) {
     }
     if (!fs.existsSync(p.ruta)) { resumen.ausentes.push(p.ruta); console.log(`AUSENTE  ${p.ruta}`); continue; }
     if (p.gate && !allSuites) {
-      // Editar la propia suite la hace correr aunque no toque sus carpetas (2026-09-30).
+      // Editar la propia suite la hace correr aunque no toque sus carpetas.
       const propia = ownPaths(repo, p.ruta);
       if (touched.known && !touches(touched.files, p.gate) && !propia.some((o) => touched.files.includes(o))) {
         const reason = `corre de noche y en el control del PR; esta story no toca ${p.gate.join(', ')}`;
@@ -481,7 +481,7 @@ if (require.main === module) {
   // Un rechazo al final (p. ej. no se pudo escribir el resumen) no puede quedar como «salió raro»:
   // se dice, y el exit es 3 — «no pude medir» —, nunca 0.
   // `Promise.resolve().then(...)`: una excepción SÍNCRONA de main (las salidas tempranas llaman a
-  // escribir() antes de la parte async) también cae acá y sale 3 — pase adversarial 2026-09-29.
+  // escribir() antes de la parte async) también cae acá y sale 3.
   Promise.resolve().then(() => main(process.argv.slice(2))).then((code) => process.exit(code), (e) => {
     console.error(`[suites.json] el runner falló antes de dejar el resumen: ${e && e.stack ? e.stack : e}`);
     process.exit(3);

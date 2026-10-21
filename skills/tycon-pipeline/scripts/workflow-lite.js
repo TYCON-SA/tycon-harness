@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * workflow-lite.js — runner propio del DSL de la tool Workflow, para correr el pase adversarial
- * (adversarial-verify.workflow.js) bajo CODEX (Etapa G-3 de la migración, decisión del dev
- * 2026-08-22 — guides/decisions/codex-etapa-g-diseno.md Parte 3; doctrina ③b del plan: "sacarlo afuera").
+ * (adversarial-verify.workflow.js) bajo CODEX, donde la tool Workflow no existe: el guion
+ * corre afuera de la tool, con este runner.
  *
  * Ejecuta EL MISMO archivo .workflow.js que corre la tool Workflow en Claude — el script no se
  * toca (fuente única). Implementa SOLO la superficie que ese script usa:
@@ -11,7 +11,7 @@
  *   como la tool) · parallel(thunks) → pool con errores→null · pipeline(items, s1, s2) → cadena
  *   por item SIN barrera (s2 recibe (resultado, itemOriginal)).
  *
- * Lo que NO imita (declarado en el diseño): resume por runId · journal · budget · workflow()
+ * Lo que NO imita: resume por runId · journal · budget · workflow()
  * anidado. El `export const meta` del script se neutraliza (el cuerpo corre como función async,
  * donde `export` es ilegal y `return` es legal — mismo contrato que el runtime real).
  *
@@ -45,15 +45,15 @@ const JOBS = Math.max(1, parseInt(process.env.TYCON_WFLITE_JOBS || '4', 10));
 
 function modelMap() {
   if (process.env.TYCON_WFLITE_MODEL_MAP) { try { return JSON.parse(process.env.TYCON_WFLITE_MODEL_MAP); } catch (_) {} }
-  // equivalences.json del arnés (por lib/harness-path.js: TYCON_GUIDES_DIR o el enlace — story 8.3)
+  // equivalences.json del arnés (por lib/harness-path.js: TYCON_GUIDES_DIR o el enlace)
   try {
     const TCG = require('./lib/harness-path.js').rutaArnes();
     const eq = JSON.parse(fs.readFileSync(path.join(TCG, 'build', 'equivalences.json'), 'utf8'));
-    // Sin reservas (story 7.29, decisión 23): un modelo que no está en equivalences.json no tiene equivalente y lo
-    // dice `slugFor`; antes `fable` caía al de `opus` y escondía la falta.
+    // Sin reservas: un modelo que no está en equivalences.json no tiene equivalente y lo
+    // dice `slugFor`; `fable` no cae al de `opus`, porque eso esconde la falta.
     return Object.assign({}, eq.models);
   } catch (e) {
-    // Un comando sin el arnés lo DICE (story 8.3, AC 5): el mapeo de modelos queda vacío y se sigue, pero no en silencio.
+    // Un comando sin el arnés lo DICE: el mapeo de modelos queda vacío y se sigue, pero no en silencio.
     if (e && e.name === 'RutaArnesError') process.stderr.write(`${e.message} — sin equivalences.json: el mapeo de modelos queda vacío\n`);
     return {};
   }
@@ -88,7 +88,7 @@ function lastJsonObject(text) {
 }
 
 /** El modo estricto del backend exige `required` = TODAS las claves de properties (error 400
- * textual medido G-3: "required is required ... including every key. Missing 'line'"). Esta
+ * textual: "required is required ... including every key. Missing 'line'"). Esta
  * transformación hace estricto CUALQUIER schema estilo-tool sin tocar el .workflow.js: las
  * propiedades originalmente opcionales pasan a required PERO nullable (type [T,'null']; si hay
  * enum, null se suma al enum) — la semántica del consumidor no cambia (line ausente ≈ null). */
@@ -125,21 +125,21 @@ function spawnAgent(cmdline, prompt, cwd, timeoutMs) {
   return new Promise((resolve) => {
     const [bin, ...pre] = cmdline;
     // El prompt viaja también por env: codex ya lo trae en su línea de comando y lo ignora; el stub
-    // de los tests lo lee de acá para poder verificar QUÉ se le pidió a cada agente (2026-09-17).
+    // de los tests lo lee de acá para poder verificar QUÉ se le pidió a cada agente.
     const ch = spawn(bin, pre, { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, TYCON_WFLITE_PROMPT: prompt } });
     let out = '', err = '';
     const killer = setTimeout(() => ch.kill('SIGKILL'), timeoutMs);
     ch.stdout.on('data', (d) => (out += d));
     ch.stderr.on('data', (d) => (err += d));
     ch.on('close', (code) => { clearTimeout(killer); resolve({ code, out, err }); });
-    // Sin el motivo (p. ej. `codex` no instalado: ENOENT) la causa decía «salió -1 sin escribir nada».
+    // Sin el motivo (p. ej. `codex` no instalado: ENOENT) la causa diría «salió -1 sin escribir nada».
     ch.on('error', (e) => { clearTimeout(killer); resolve({ code: -1, out, err: `${err}${err ? '\n' : ''}${(e && e.message) || 'no se pudo lanzar'}` }); });
   });
 }
 
 /**
- * El slug de Codex de un modelo (story 7.29, AC 17): un modelo de Claude se traduce con equivalences.json; uno ya
- * traducido (un valor del mapa) pasa tal cual; sin modelo, el del pase de hoy (`DEFAULTS.adversarial.model` de
+ * El slug de Codex de un modelo: un modelo de Claude se traduce con equivalences.json; uno ya
+ * traducido (un valor del mapa) pasa tal cual; sin modelo, el del pase (`DEFAULTS.adversarial.model` de
  * lib/models.js) traducido. Sin equivalente → null: `codex exec` corre sin `-m` (el modelo por defecto de Codex) y se
  * dice por `decir` (la salida de error).
  */
@@ -175,7 +175,7 @@ function causaDe(res) {
 /**
  * ¿Murió por el tope de uso? 🔴 Se mira el último renglón del error tal cual (antes de tapar: «Token rate limit» no
  * puede quedar «Token <REDACTED>»), y el de la salida sólo si el error vino vacío. Nunca toda la salida: `codex exec`
- * repite el pedido, y un pedido que habla de «rate limit» hacía pasar por tope cualquier falla (pase adversarial 8.56).
+ * repite el pedido, y un pedido que habla de «rate limit» haría pasar por tope cualquier falla.
  */
 function esTope(res) {
   const err = ultimoRenglon(res && res.err);
@@ -231,11 +231,11 @@ function makeAgent(opts, corredor) {
     // Con el tope ya visto, no se lanza nada más: se anota con la causa y la hora del tope.
     if (corredor.tope) return muerto(`no se lanzó: ${corredor.tope.causa}`, corredor.tope.hora);
     const slug = slugFor(aopts.model, models);
-    // 🔴 Salida estructurada NATIVA de codex (medido G-3, 2026-08-22): la v1 exigía el JSON por
-    // prompt y lo pescaba de stdout con un escáner de llaves balanceadas — que se rompe cuando el
-    // JSON trae llaves DESBALANCEADAS dentro de strings (los `repro` con snippets de código). Los
-    // 12 hunters de la primera corrida real fallaron el parseo JUSTO PORQUE encontraron el bug
-    // (sus repros traían código). codex exec tiene los primitivos exactos: --output-schema <file>
+    // 🔴 Salida estructurada NATIVA de codex: pedir el JSON por
+    // prompt y pescarlo de stdout con un escáner de llaves balanceadas se rompe cuando el
+    // JSON trae llaves DESBALANCEADAS dentro de strings (los `repro` con snippets de código).
+    // Los hunters fallan el parseo JUSTO PORQUE encuentran el bug
+    // (sus repros traen código). codex exec tiene los primitivos exactos: --output-schema <file>
     // (el harness fuerza la forma) y -o <file> (el mensaje final SOLO, sin scraping de stdout).
     const outFile = path.join(tmpBase, `out-${id}.txt`);
     const schemaFile = aopts.schema ? path.join(tmpBase, `schema-${id}.json`) : null;

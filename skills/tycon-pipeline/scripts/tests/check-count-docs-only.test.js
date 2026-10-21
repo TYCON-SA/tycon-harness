@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
  * check-count-docs-only.test.js — en una story con cambios sólo de documentación, el conteo de revisores controla
- * algo (deuda PIPELINE-CHECKCOUNT-VACIO, cerrada el 2026-10-16).
+ * algo.
  *
- * El caso: al cerrar la story 7.6 (2026-09-19), `pipeline.js advisors` calculó 3 revisores para un diff de sólo
- * documentación, pero el `step5-start` del registro guardó un `expected` VACÍO y `check-count` dio OK con 0 corridos.
- * Re-medido el 2026-10-16: el set se anota entero y el conteo frena; lo arregló el cambio que dejó de clasificar
- * esos diffs como `onlyDocs` (PIPE-DETECT). Estos casos lo fijan para que no vuelva.
+ * El caso: al cerrar una story, `pipeline.js advisors` calcula 3 revisores para un diff de sólo
+ * documentación, pero el `step5-start` del registro puede guardar un `expected` VACÍO, y `check-count` da OK con 0 corridos.
+ * Con el set anotado entero, el conteo frena. Estos casos lo fijan.
  *
  * 🔴 Mutación que los pone en rojo: persistir `[]` en `logStep5Start` cuando el diff es sólo de docs (T1), o que
  * `check-count` acepte un `expected` vacío sin que mech-check lo haya vaciado (T2).

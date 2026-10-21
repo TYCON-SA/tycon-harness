@@ -1,11 +1,11 @@
 'use strict';
 
 /**
- * equivalence-cases.js — los casos armados de la equivalencia de paquetes (story 8.2) y cómo se
+ * equivalence-cases.js — los casos armados de la equivalencia de paquetes y cómo se
  * mide un pipeline sobre un repo.
  *
  * Lo comparten dos consumidores para que midan EXACTAMENTE lo mismo:
- *   · `package-equivalence.js snapshot` — corre el pipeline.js de `main` (antes de la story) sobre
+ *   · `package-equivalence.js snapshot` — corre el pipeline.js de `main` (el de antes del cambio) sobre
  *     cada caso y guarda la foto dorada en tests/fixtures/equivalence-main.json;
  *   · `tests/package-equivalence.test.js` (T10) — corre el pipeline NUEVO con los paquetes
  *     instalados y compara contra esa foto, caso por caso.
@@ -13,10 +13,10 @@
  * Cada caso arma un repo git efímero con un commit base y un diff SIN commitear (así es como el
  * pipeline ve un diff en una corrida real: `git diff -U0 HEAD` + archivos nuevos untracked), y
  * devuelve la lista de archivos que se le pasa a `pipeline.js advisors --files`. Los casos recorren
- * cada rama de la matriz que el pipeline tenía escrita en su código (AC 9a de la story).
+ * cada rama de la matriz que el pipeline tiene escrita en su código.
  * Los casos que dependen de un paquete en particular los trae ese paquete (`casosDePaquetes`, abajo).
  *
- * `medir()` devuelve lo que la story declara como equivalencia: el set por grupo (como conjuntos:
+ * `medir()` devuelve lo que se declara como equivalencia: el set por grupo (como conjuntos:
  * el orden no es contrato), las indicaciones de modelo con `--cost-tier lean`, las de re-loop
  * (`reloopHintsFor(all, 2)`) y la superficie de vuelta (`advisorAffectedByDelta`) de cada revisor
  * del set contra los archivos del diff.
@@ -184,7 +184,7 @@ const NUCLEO = [
 ];
 
 /**
- * Los casos que trae un paquete de revisores (story 8.10.3 del arnés, tanda D). Un paquete que elige a un revisor por
+ * Los casos que trae un paquete de revisores. Un paquete que elige a un revisor por
  * algo propio —una ruta de su producto— trae sus casos y su foto en su carpeta, no acá:
  *   · `<packs>/<paquete>/equivalence-cases.js` exporta una función que recibe las piezas de armado de este archivo y
  *     devuelve `[{ nombre, armar }]`;
@@ -287,10 +287,10 @@ function medir({ pipeline, repo, files, story, env = {} }) {
     PATH: process.env.PATH, LANG: 'en_US.UTF-8',
     HOME: env.HOME || fs.mkdtempSync(path.join(os.tmpdir(), 'equiv-home-')),
     TYCON_SESSION_ID: 'equivalencia',
-    // story 8.7 (AC 8): sin `packs:` en el repo, el default sale de la configuración del arnés (el perfil del equipo dice
+    // Sin `packs:` en el repo, el default sale de la configuración del arnés (el perfil del equipo dice
     // «todos»); con la HOME aislada el cargador no lo encuentra solo
     TYCON_GUIDES_DIR: env.TYCON_GUIDES_DIR || process.env.TYCON_GUIDES_DIR || require('./harness-path.js').rutaArnesHook().dir || '',
-    // sin un arnés de quien llama, el default es el de la foto de la 8.2 («todos los instalados»): en la CI no hay perfil
+    // sin un arnés de quien llama, el default es el de la foto de la equivalencia («todos los instalados»): en la CI no hay perfil
     // ni enlace que lo diga. Con TYCON_GUIDES_DIR (la prueba del perfil real) manda la configuración de ese arnés.
     // (recortada, como la lee el cargador: sólo espacios = sin poner)
     ...(env.TYCON_GUIDES_DIR ? {} : { TYCON_PACKS_DEFAULT: (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all' }),

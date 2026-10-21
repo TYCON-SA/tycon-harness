@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# e2e-gate.sh — Gate E2E GENÉRICO del harness TYCON (2026-08-05)
+# e2e-gate.sh — Gate E2E GENÉRICO del harness TYCON
 # =============================================================================
-# Por qué vive acá y no en cada repo: hasta hoy el gate lo escribía cada proyecto, y el
+# Por qué vive acá y no en cada repo: si cada proyecto escribe su gate, el
 # CONTRATO de la evidencia (qué campos tiene que traer para que runtime-matrix.js la lea)
-# vivía sólo en la documentación. Resultado: N copias que se desincronizan solas. Cuando
-# DODRT-C8 sumó la sección "## Tests corridos", Totora la tuvo y Ceibo no — o sea que la
-# regla nueva habría bloqueado a Ceibo por un detalle del script, no por su calidad.
+# vive sólo en la documentación y las N copias se desincronizan solas. Si DODRT-C8 suma
+# la sección "## Tests corridos" y un repo la tiene y otro no, la regla bloquea al segundo
+# por un detalle del script, no por su calidad.
 # Mismo patrón que `lint-story-frontmatter.js` / `lint-wiki.sh`: el script vive UNA vez en
 # el harness y cada repo lo referencia; lo específico del proyecto viaja por configuración.
 #
 # Uso (contrato de tycon-pipeline): e2e-gate.sh <frontend-dir> <ruta-de-la-story.md | story-id> <evidence-dir> [spec-filter...]
-#   Con la RUTA de la story, la clave del archivo de evidencia la calcula lib/evidence-key.js (story 1.17):
+#   Con la RUTA de la story, la clave del archivo de evidencia la calcula lib/evidence-key.js:
 #   el número solo si es único en su repo, `<tema>__<número>` si se repite.
 #   - Con [spec-filter] corre SCOPED a esos specs; sin filtro, la suite completa.
 #   - Escribe <story-id>-e2e-gate-<tsUTC>.md con el bloque machine-parseable que consume
@@ -26,7 +26,7 @@
 #
 # Config del repo (.tycon/advisors.yaml), TODO opcional salvo frontend_dir:
 #   e2e:
-#     frontend_dir: totora-reserva      # dir con playwright.config.*
+#     frontend_dir: mi-frontend         # dir con playwright.config.*
 #     preconditions:                        # servicios que tienen que responder ANTES
 #       - "http://localhost:5001/api/health|DevHost backend — Backend/scripts/devhost.sh start"
 #       - "http://localhost:8083/dev.html|form servido — FrontEnd/start-all.sh"
@@ -42,7 +42,7 @@ set -uo pipefail
 FRONTEND_DIR="${1:?uso: e2e-gate.sh <frontend-dir> <story-id> <evidence-dir> [spec-filter...]}"
 STORY_ID="${2:?falta story-id o la ruta de la story}"
 EVIDENCE_DIR="${3:?falta evidence-dir}"
-# La clave de la evidencia (story 1.17): con la ruta de la story, la calcula lib/evidence-key.js. Si no se
+# La clave de la evidencia: con la ruta de la story, la calcula lib/evidence-key.js. Si no se
 # puede decidir, el gate no corre: un resultado bajo una clave adivinada puede contarle a otra story.
 # 2 y 4 ya significan «no ejerció nada» en el contrato del gate: todo esto sale 1 (una falla), sin escribir evidencia.
 case "$STORY_ID" in
@@ -101,7 +101,7 @@ escribir_evidencia() {
     echo "## Tests corridos (títulos completos — contrato DODRT-C8)"
     echo "${TITULOS:-}"
     echo ""
-    # Story 7.24: lo que el cierre le muestra al dev antes de pedir el commit. Va SIEMPRE, como las otras: sin
+    # Lo que el cierre le muestra al dev antes de pedir el commit. Va SIEMPRE, como las otras: sin
     # capturas dice por qué (una sección ausente no distingue «no hubo» de «este gate es viejo»).
     echo "## Capturas"
     if [ -n "${CAPTURAS_LISTA:-}" ]; then echo "$CAPTURAS_LISTA"
@@ -126,7 +126,7 @@ fail_precondition() {
 
 # --- Pre-condiciones declaradas por el repo -----------------------------------
 # Formato por línea: "<url>|<qué levantar si no responde>". curl -f: sin él un 404/500
-# devuelve exit 0 y la precondición sería un no-op (bug real, 2026-08-05).
+# devuelve exit 0 y la precondición sería un no-op.
 REPO_ROOT="$(cd "$FRONTEND_DIR" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null || echo "")"
 YAML="$REPO_ROOT/.tycon/advisors.yaml"
 [ -f "$YAML" ] || YAML="$REPO_ROOT/.tycon/advisors.yml"
@@ -143,20 +143,19 @@ if [ -f "$YAML" ]; then
 fi
 
 # --- La llave exigente: un spec que se saltea solo tiene que FALLAR ------------
-# 🔴 Caso disparador (2026-09-27, story FIX-Q1 de un producto del equipo — guides/maintaining/incident-log.md#case-critical-specs-skip-themselves-2026-09-27): los specs del set crítico se saltean
-# solos cuando la base no tiene datos (`test.skip(cantidad === 0, …)`). Playwright devuelve 0, y el
-# gate no tenía con qué distinguir "probé y anduvo" de "no probé nada". El veredicto SIN_EJERCER
-# frenó el caso extremo —CERO ejecutados—, pero 1 de 4 sigue siendo verde: el hueco no se cierra
+# 🔴 Los specs del set crítico se saltean solos cuando la base no tiene datos (`test.skip(cantidad === 0, …)`).
+# Playwright devuelve 0, y el gate no tiene con qué distinguir "probé y anduvo" de "no probé nada". El veredicto
+# SIN_EJERCER frena el caso extremo —CERO ejecutados—, pero 1 de 4 seguiría siendo verde: el hueco no se cierra
 # contando, se cierra haciendo que el salteo sea un rojo.
 #
-# La convención ya existe (`guides/definition-of-done.md` §2, regla REAL-C8 del advisor de realness):
-# una env var `<DOMAIN>_REQUIRED=1` cuya rama LANZA en vez de saltear. Lo que faltaba era quién la
+# La convención (`guides/definition-of-done.md` §2, regla REAL-C8 del advisor de realness):
+# una env var `<DOMAIN>_REQUIRED=1` cuya rama LANZA en vez de saltear. Falta decidir quién la
 # prende: pedirle al dev que se acuerde de exportarla es el mismo olvido corrido un casillero, así
 # que la prende el gate, SIEMPRE. `E2E_REQUIRED` es el nombre paraguas del arnés; los nombres por
 # dominio que ya usa cada repo se declaran en `e2e.required_env` y se prenden igual.
 #
 # Prenderla no rompe nada en un repo que todavía no la honra: es una env var que nadie lee. Lo que
-# cambia es que, a partir de acá, un spec que se saltea en silencio es una DEUDA VISIBLE — la
+# cambia es que un spec que se saltea en silencio es una DEUDA VISIBLE — la
 # evidencia dice con qué llaves corrió, y la línea de salida nombra los salteos que quedaron.
 LLAVES=("E2E_REQUIRED")
 if [ -f "$YAML" ]; then
@@ -174,17 +173,16 @@ LLAVE_NOTA="$(printf '%s=1 ' "${LLAVES[@]}")"
 LLAVE_NOTA="${LLAVE_NOTA% }"
 
 # --- Frescura del bundle que el navegador realmente carga ---------------------
-# 🔴 Caso disparador (3 veces: 2026-08-22, Story M-11, y el merge del 2026-08-27): la página de
+# 🔴 La página de
 # desarrollo carga `dist/form.dev.js` mientras el build del pipeline genera `dist/form.js`. Correr
 # los E2E sin recompilar prueba CÓDIGO VIEJO y sale VERDE — el peor resultado posible, porque un
-# verde sobre el artefacto equivocado se lee igual que un verde de verdad. Las tres veces se
-# resolvió acordándose a mano; un control que depende de que alguien se acuerde no es un control.
+# verde sobre el artefacto equivocado se lee igual que un verde de verdad. Acordarse a mano de
+# recompilar no alcanza: un control que depende de que alguien se acuerde no es un control.
 #
 # Declarado por repo (`e2e.bundle` en .tycon/advisors.yaml): con `rebuild:` recompila solo; sin
 # `rebuild:` falla ruidosamente diciendo qué comando correr.
-# 🔴 Y SIN declarar también se juzga (2026-09-18): nació opt-in y, medido doce días después, NINGÚN
-# repo lo declaraba — ni Totora FrontEnd, donde mordió tres veces y tiene cuatro apps con `dev.html`
-# + `dist/form.dev.js`. Un control que depende de que alguien se acuerde de DECLARARLO es el mismo
+# 🔴 Y SIN declarar también se juzga: si fuera sólo opt-in, NINGÚN repo lo declararía, ni uno con
+# varias apps con `dev.html` + `dist/form.dev.js`. Un control que depende de que alguien se acuerde de DECLARARLO es el mismo
 # olvido corrido un casillero. Si hay un `dev.html` que carga un bundle que existe en el disco y hay
 # un `src/`, la frescura se juzga igual; lo que no se puede juzgar (sin página, sin bundle en disco,
 # sin fuentes) se dice en la evidencia, nunca se calla. Casos C-07 a C-09 de e2e-gate-bundle.test.sh.

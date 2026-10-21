@@ -1,12 +1,10 @@
 #!/usr/bin/env node
 /**
  * adversarial-probes.test.js — el pase adversarial GUARDA la prueba que confirmó un hallazgo
- * (2026-09-17, pedido del dev).
  *
- * Caso disparador: story A-2 del backend de un producto del equipo. El verificador escribió una prueba de integración
- * que devolvía 200 donde la story pedía 403 —lista para volverse la prueba de regresión—, la borró
- * al terminar (bien) y a los 30 días Claude Code borró también su conversación. Del hallazgo quedó
- * el relato; el código, nunca.
+ * Caso que cubre: el verificador escribe una prueba de integración que devuelve 200 donde la story pedía 403 —lista
+ * para volverse la prueba de regresión—, la borra al terminar (bien) y a los 30 días Claude Code borra también su
+ * conversación. Del hallazgo queda el relato; el código, nunca.
  *
  * Corre el guion REAL (adversarial-verify.workflow.js) bajo workflow-lite con un agente de mentira,
  * sin modelo: el «hunter» devuelve un hallazgo por lente pedida y el «skeptic» graba el prompt que
@@ -67,8 +65,8 @@ function correr(args) {
   return { result: JSON.parse(fs.readFileSync(out, 'utf8')), skeptics, prompts, stderr: r.stderr, tmp };
 }
 
-// 2026-10-02: un guion del pase cuyo laboratorio no se armó llamó a git con la carpeta vacía (`git -C ""` no cambia de
-// carpeta) y creó una rama y dos commits en la copia de trabajo desde la que corría la sesión. La regla va en el texto
+// Un guion del pase cuyo laboratorio no se armó llama a git con la carpeta vacía (`git -C ""` no cambia de
+// carpeta) y crea una rama y dos commits en la copia de trabajo desde la que corre la sesión. La regla va en el texto
 // de TODOS los agentes del pase, no sólo en el step del orquestador: son ellos los que escriben y corren los guiones.
 test('todo agente del pase recibe dónde pararse, dónde armar el laboratorio y que git nunca va sin carpeta', () => {
   const { prompts, skeptics } = correr({ files: ['src/a.js'], runDir: '/repo/.advisors/pipeline-runs/9.9-20261002-1000' });

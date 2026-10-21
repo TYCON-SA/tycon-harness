@@ -1,15 +1,14 @@
 #!/usr/bin/env node
 /**
- * path-shape.test.js — una ruta de Windows llega escrita de tres formas, y los portones tienen que leer las tres
- * (story 8.17 del arnés, tanda W1, 2026-10-04).
+ * path-shape.test.js — una ruta de Windows llega escrita de tres formas, y los portones tienen que leer las tres.
  *
- * MEDIDO en un agente Windows (corrida 11694 del pipeline de Windows): los portones que deciden por la ruta de un
- * archivo daban el veredicto de siempre con `C:\a\b` y con `C:/a/b` (24 casos verdes), y con la forma de Git Bash,
- * `/c/a/b`, cuatro «NO bloqueó»: el portón de carril, el de frontmatter y el de story a mano en `hook-pre-edit.js`, y
+ * Los portones que deciden por la ruta de un
+ * archivo dan el veredicto de siempre con `C:\a\b` y con `C:/a/b`, y con la forma de Git Bash,
+ * `/c/a/b`, cuatro dejarían pasar lo que tienen que frenar: el portón de carril, el de frontmatter y el de story a mano en `hook-pre-edit.js`, y
  * el portón de la terminal (`on-bash-write-gate.js`). Para Node en Windows `/c/a/b` es `C:\c\a\b`: una carpeta que no
  * existe, fuera de cualquier repo — y un portón que no encuentra el repo deja pasar.
  *
- * El arreglo es UNA función (`lib/path-shape.js`) por la que pasa la ruta antes de que la mire cualquier portón: en el
+ * La solución es UNA función (`lib/path-shape.js`) por la que pasa la ruta antes de que la mire cualquier portón: en el
  * despachador de Edit|Write y en el portón de la terminal. Acá se prueba con la plataforma inyectada (no se toca
  * `process.platform`); que los portones frenan de verdad con las tres formas lo mide el banco del arnés en Windows
  * (`46-path-shapes.json`).
@@ -106,8 +105,8 @@ test('el portón de la terminal resuelve el destino de una escritura igual con l
 test('el aviso de colisión entre sesiones reconoce el mismo archivo aunque esté escrito de otra forma', () => {
   const collision = require(path.join(__dirname, '..', 'on-write-collision.js'));
   assert.strictEqual(typeof collision.samePath, 'function', 'on-write-collision.js exporta samePath');
-  // medido en Windows (corridas 11694 y 11699): la otra sesión había anotado `C:\\lab\\fixture/src/Foo.cs` y el evento
-  // llegaba como `C:\\lab\\fixture\\src\\Foo.cs` — el mismo archivo, dos textos, y el aviso no salía
+  // en Windows la otra sesión puede anotar `C:\\lab\\fixture/src/Foo.cs` y el evento
+  // llegar como `C:\\lab\\fixture\\src\\Foo.cs` — el mismo archivo, dos textos, y el aviso no sale
   assert.strictEqual(collision.samePath('C:\\lab\\fixture/src/Foo.cs', NATIVE, 'win32'), true);
   assert.strictEqual(collision.samePath('C:/lab/fixture/src/Foo.cs', NATIVE, 'win32'), true);
   assert.strictEqual(collision.samePath('/c/lab/fixture/src/Foo.cs', NATIVE, 'win32'), true);

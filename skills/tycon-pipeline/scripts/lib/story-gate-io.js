@@ -8,7 +8,7 @@
  * Fuentes de estado (todas bajo ~/.claude/.tycon-pipeline/):
  *   active/<sid>.json   marker del pipeline (lo escribe marker.js)
  *   adhoc/<sid>.json    carril ad-hoc de la sesión: { reason, maxFiles, files[], declaredAt, lastTouch }
- *   lane/<sid>.json     carril FIJADO POR EL PROMPT del user (2026-08-24): { lane, laneSetAt, lanePrompt,
+ *   lane/<sid>.json     carril FIJADO POR EL PROMPT del user: { lane, laneSetAt, lanePrompt,
  *                       recentPrompts[], lastTouch } — lo escribe on-prompt.js en cada prompt; marker.js
  *                       lo lee para denegar `adhoc set` con carril pipeline y para exigir que el motivo
  *                       sea un fragmento literal de lo que escribió el user.
@@ -25,7 +25,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // La carpeta del estado, de una sola pieza
 const { execFileSync } = require('child_process');
 
 const gate = require('./story-gate.js');
@@ -109,8 +109,7 @@ function readLane(stateDir, sessionId) {
 
 /**
  * Registra el prompt del user (ring de los últimos N). Lo llama on-prompt.js en CADA prompt humano.
- * 🔴 Ya NO fija carril (2026-08-27): la detección por regex se borró tras tres incidentes en tres
- * días — ver el comentario grande en story-gate.js. El ring es la evidencia que consumen
+ * 🔴 No fija carril: no hay detección por regex (ver el comentario grande en story-gate.js). El ring es la evidencia que consumen
  * reasonInPrompts (cita mecánica) y lane-classifier (el modelo que interpreta castellano); sólo
  * lo escribe este hook desde UserPromptSubmit, así que el agente no puede inyectar texto acá.
  */
@@ -120,7 +119,7 @@ function recordPrompt(stateDir, sessionId, prompt, { now = new Date().toISOStrin
   const recent = Array.isArray(prev.recentPrompts) ? prev.recentPrompts.slice() : [];
   if (text.trim()) recent.push(text);
   const obj = { ...prev, recentPrompts: recent.slice(-LANE_RECENT_PROMPTS), lastTouch: now };
-  // Estado viejo: un lane fijado por el regex borrado seguiría anulando ad-hocs para siempre.
+  // Estado de una versión que fijaba el carril por regex: ese lane seguiría anulando ad-hocs para siempre.
   delete obj.lane; delete obj.laneSetAt; delete obj.lanePrompt;
   const file = lanePath(stateDir, sessionId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -149,7 +148,7 @@ function listOtherMarkers(stateDir, sessionId, filePath) {
     if (!f.endsWith('.json') || f === `${safeSid(sessionId)}.json`) continue;
     const m = readJson(path.join(dir, f));
     if (!m || !m.storyId || isStale(m)) continue;
-    if (Array.isArray(m.stepsPending) && m.stepsPending.length === 0) continue; // pipeline terminado (H11)
+    if (Array.isArray(m.stepsPending) && m.stepsPending.length === 0) continue; // pipeline terminado
     if (m.repoPath && filePath && !isInside(m.repoPath, filePath)) continue;
     out.push({ sessionId: m.sessionId || f.replace(/\.json$/, ''), storyId: m.storyId, repoPath: m.repoPath || null });
   }
@@ -158,27 +157,28 @@ function listOtherMarkers(stateDir, sessionId, filePath) {
 
 // ── ¿repo del harness? lo dice el remoto, no la carpeta ─────────────────────────────────────────
 // El criterio es UNO y vive en el arnés (~/.claude/tycon-harness/scripts/lib/harness-repo.js,
-// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · el enlace ~/.claude/tycon-harness). Estaba escrito
-// tres veces —acá, en retro-pending.js y en unpushed-work-notice.js—, las tres por nombre de carpeta.
-// Si la lib no está (arnés atrasado en esta máquina) o no carga, decide la carpeta, que es la conducta de
-// siempre: nunca se rompe un Edit por esto. Pero lo dice por la salida de error, una vez por proceso.
+// referencia-por-path como dispatch.js: TYCON_GUIDES_DIR · TCG · el enlace ~/.claude/tycon-harness). Sin ese
+// lector estaría escrito tres veces —acá, en retro-pending.js y en unpushed-work-notice.js—, las tres por nombre de carpeta.
+// Si la lib no está (arnés atrasado en esta máquina) o no carga, decide la carpeta, que es el comportamiento
+// por defecto: nunca se rompe un Edit por esto. Pero lo dice por la salida de error, una vez por proceso.
 let repoDelArnes; // undefined = sin intentar · null = no está · objeto = la lib
 let criterioFallo = false; // ya se dijo que el criterio revienta (se dice una vez por proceso)
 function isHarnessRepo(filePath) {
   if (repoDelArnes === undefined) {
-    // Dónde está el arnés lo dice UN lector (harness-path.js, story 8.3): la variable o el enlace; sin ninguno, null.
+    // Dónde está el arnés lo dice UN lector (harness-path.js): la variable o el enlace; sin ninguno, null.
     try {
       const r = require('./harness-path.js').rutaArnesHook();
-      if (!r.dir) process.stderr.write(`${r.aviso} — el portón decide por nombre de carpeta mientras tanto\n`);   // AC 5: un hook lo dice y sigue
-      // por su nombre de hoy y, con un arnés un pull atrás, por el de antes de la story 8.9 (por pedazos: el viejo no se
-      // escribe entero). Sólo por el viejo, una copia sin reemplazos caía al nombre de carpeta sin decirlo.
+      if (!r.dir) process.stderr.write(`${r.aviso} — el portón decide por nombre de carpeta mientras tanto\n`);   // un hook lo dice y sigue
+      // El criterio se busca por su nombre actual y, con un arnés atrasado, por el nombre anterior (por pedazos:
+      // el viejo no se escribe entero). Sin esa segunda búsqueda, una copia sin reemplazos caería al nombre de
+      // carpeta sin decirlo.
       const lib = r.dir && ['harness-repo.js', `${['repo', 'del', 'arnes'].join('-')}.js`]
         .map((n) => path.join(r.dir, 'scripts', 'lib', n)).find((p) => fs.existsSync(p));
-      // El arnés está y no trae el criterio con ninguno de sus dos nombres: decide la carpeta, y se dice (AC 67 de la
-      // story 8.9; revisión de la tanda G: este camino era el único de la tanda que seguía cayendo callado).
+      // El arnés está y no trae el criterio con ninguno de sus dos nombres: decide la carpeta, y se dice.
+      // Sin este aviso, el camino caería callado.
       if (r.dir && !lib) process.stderr.write(`tycon: el arnés de ${r.dir} no trae scripts/lib/harness-repo.js (ni con su nombre de antes) — el portón decide por nombre de carpeta mientras tanto\n`);
       repoDelArnes = lib ? require(lib) : null;
-      // carga pero no trae la función: tampoco se cae callado (pase adversarial de la tanda G, causa 7)
+      // carga pero no trae la función: tampoco se cae callado
       if (repoDelArnes && typeof repoDelArnes.esRutaDelArnes !== 'function') {
         process.stderr.write(`tycon: el criterio del arnés (${lib}) no trae esRutaDelArnes — el portón decide por nombre de carpeta mientras tanto\n`);
         repoDelArnes = null;
@@ -191,7 +191,7 @@ function isHarnessRepo(filePath) {
   }
   if (repoDelArnes) {
     try { return !!repoDelArnes.esRutaDelArnes(filePath); } catch (e) {
-      // el criterio revienta: cae al respaldo y lo dice, una vez por proceso (pase adversarial de la tanda G, causa 7)
+      // el criterio revienta: cae al respaldo y lo dice, una vez por proceso
       if (!criterioFallo) {
         criterioFallo = true;
         process.stderr.write(`tycon: el criterio del arnés falló (${(e && e.message) || e}) — el portón decide por nombre de carpeta mientras tanto\n`);
@@ -234,7 +234,7 @@ function repoContext(filePath) {
  * Write a un yaml, el agente lo apagaría en un turno. Formato:
  *   pipeline:
  *     story_gate: false
- * `key` (2026-08-30): la misma lectura sirve para otros frenos del bloque `pipeline:` —
+ * `key`: la misma lectura sirve para otros frenos del bloque `pipeline:` —
  * `story_skill_gate` (freno de story-a-mano). Default: el del portón de carril.
  */
 function gateEnabledForRepo(repoRoot, key = 'story_gate') {
@@ -308,7 +308,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   const ctx = { filePath: abs, marker, adhoc, repo, via };
   if (verdict.action !== 'block') {
     // Pasó porque el repo "no trabaja con el arnés" pero el escaneo fue PARCIAL (sin .tycon/, bajo carga):
-    // que no sea silencioso (H14) — queda medido en gates.log como `unknown`.
+    // que no sea silencioso — queda medido en gates.log como `unknown`.
     if (repo.discoveryPartial && !repo.repoHasTycon && !repo.repoHasStories) {
       appendLog(stateDir, 'gates.log', sessionId, { repoPath: repo.repoRoot || null, name: 'story-gate', status: 'unknown', file: abs, via: via || null, reason: 'escaneo de stories parcial (presupuesto agotado) — el repo podría trabajar con stories' });
     }
@@ -316,7 +316,7 @@ function evaluate({ filePath, sessionId, cwd, via, stateDir = DEFAULT_STATE_DIR,
   }
 
   const otherMarkers = verdict.kind === 'no-lane' ? listOtherMarkers(stateDir, sessionId, abs) : [];
-  // repoPath: namespace por repo (GATESLOG-STORYID-NS-1) — misma key que marker.js.
+  // repoPath: namespace por repo — misma key que marker.js.
   appendLog(stateDir, 'gates.log', sessionId, {
     repoPath: repo.repoRoot || null,
     name: 'story-gate', status: 'blocked', kind: verdict.kind, file: abs, via: via || null,

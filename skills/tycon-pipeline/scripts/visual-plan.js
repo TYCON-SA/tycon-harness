@@ -21,7 +21,7 @@
  *   {
  *     "storyId": "8.3",
  *     "title":   "Historial de Auditoría + Export PDF/Excel",
- *     "chip":    { "cls": "warn|ok|bad", "text": "En progreso · tanda A-core" },
+ *     "chip":    { "cls": "warn|ok|bad", "text": "En progreso · parte A" },
  *     "metaLine":"texto chico bajo el título (fuente, alcance, etc.)",
  *     "pills":   ["P0", "Sprint 7", "Epic 8"],   // si falta y hay --story, se derivan
  *     "objetivo":"texto (acepta `code` y **bold**)",
@@ -387,8 +387,8 @@ const DEMO = {
 };
 
 /**
- * --open (story 8.17 del arnés, W6 · AC 47): el guion abre el plan en el navegador, en Mac, Linux y Windows. Antes el
- * paso 3 le pedía al asistente un `open <archivo>`, que sólo existe en Mac. Best-effort, como `qa-guide.js --open`:
+ * --open: el guion abre el plan en el navegador, en Mac, Linux y Windows (un `open <archivo>`
+ * pedido al asistente sólo existe en Mac). Best-effort, como `qa-guide.js --open`:
  * si no puede abrirlo lo dice con la ruta, y el plan ya quedó escrito.
  */
 function openInBrowser(file, what = 'el plan') {
@@ -448,6 +448,6 @@ function main() {
   console.error('comandos: render | demo | schema');
   process.exit(2);
 }
-// Story 7.30: la maqueta (mockup.js) reusa `esc` y `openInBrowser`; un `require` ya no corre `main()`.
+// La maqueta (mockup.js) reusa `esc` y `openInBrowser`; un `require` no corre `main()`.
 module.exports = { renderHtml, esc, openInBrowser };
 if (require.main === module) main();

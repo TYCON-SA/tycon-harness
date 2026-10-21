@@ -2,11 +2,11 @@
 'use strict';
 
 /**
- * package-equivalence.js — el equipo no nota el cambio (story 8.2 del arnés, 2026-09-26).
+ * package-equivalence.js — el equipo no nota el cambio.
  *
- * La 8.2 saca a los revisores de Bizuit y de clientes del código del pipeline y los pone en
- * manifiestos (packs/). La promesa es que, con los paquetes instalados, el pipeline nuevo elige
- * EXACTAMENTE los mismos revisores que el de `main` antes de la story: mismo set por grupo, misma
+ * Los revisores de Bizuit y de clientes no viven en el código del pipeline sino en manifiestos
+ * (packs/). La promesa es que, con los paquetes instalados, el pipeline elige EXACTAMENTE los mismos
+ * revisores que el de `main` antes de ese cambio: mismo set por grupo, misma
  * superficie de vuelta, mismas indicaciones de modelo. Eso no se supone: se mide, contra el
  * `pipeline.js` viejo sacado del git de agent-skills (`git archive <sha>`), sobre el mismo estado
  * de repo, en procesos separados con HOME aislado (no ensucia el registro de ninguna sesión).
@@ -36,7 +36,7 @@ const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');            // agent-skills
 const PIPELINE_NUEVO = path.join(SCRIPTS, 'pipeline.js');
 const PACKS_REALES = path.join(RAIZ, 'packs');
 
-/** La raíz de repos que resuelve el arnés (scripts/lib/repos-root.js, vía lib/harness-path.js — story 8.3). Sin raíz
+/** La raíz de repos que resuelve el arnés (scripts/lib/repos-root.js, vía lib/harness-path.js). Sin raíz
  *  no se pueden descubrir repos: se dice y se frena (nunca una carpeta escrita a mano). */
 function raizDeRepos() {
   try {
@@ -61,7 +61,7 @@ function git(dir, args, opts = {}) {
 }
 const log = (s) => process.stderr.write(s + '\n');
 
-/** El pipeline.js de `main` antes de la story, sacado del git de agent-skills. */
+/** El pipeline.js de `main` antes del cambio, sacado del git de agent-skills. */
 function pipelineViejo(sha) {
   const shaCompleto = git(RAIZ, ['rev-parse', `${sha}^{commit}`]).trim();
   const dir = tmp('equiv-viejo-');
@@ -103,7 +103,7 @@ function foto() {
   const { pipeline, sha } = pipelineViejo(base);
   const env = ambientes().viejo;
   const casos = {};
-  // story 8.10.3 (tanda D): la foto de los casos que trae un paquete se guarda en la carpeta de ese paquete, nunca en
+  // La foto de los casos que trae un paquete se guarda en la carpeta de ese paquete, nunca en
   // la que viaja — un paquete privado no deja su nombre en un archivo publicado. Con `--out` a otra ruta es una foto
   // de ENSAYO: todo queda al lado de esa ruta y la dorada de ningún paquete se toca (destinoDeFoto).
   const dePaquetes = new Map();   // dónde va la foto de cada paquete → { casos }
@@ -142,7 +142,7 @@ function foto() {
 // ── informe ───────────────────────────────────────────────────────────────────────────────────
 function descubrirRepos(root, excluir) {
   const out = [];
-  // (los dos nombres del arnés, el interno y el público: story 8.19, AC 12)
+  // (los dos nombres del arnés, el interno y el público)
   const SALTAR = new Set(['node_modules', 'tycon-claude-guides', 'tycon-harness', 'agent-skills', 'AgentSkills', 'BMAD', ...excluir]);
   const walk = (dir, depth) => {
     if (depth > 3) return;
@@ -303,7 +303,7 @@ function informe() {
   process.exit(rojoCasos + rojoCommits + errores === 0 ? 0 : 1);
 }
 
-// ── por repo: ningún repo pierde un revisor (story 8.41, AC 9) ──────────────────────────────────────────────────
+// ── por repo: ningún repo pierde un revisor ──────────────────────────────────────────────────
 /** Un árbol del arnés de `sha` (el pipeline, los paquetes y los agentes), sacado del git de este clon. */
 function arbolViejo(sha) {
   const shaCompleto = git(RAIZ, ['rev-parse', `${sha}^{commit}`]).trim();
@@ -346,7 +346,7 @@ function medirRepo({ repo, dias, viejo, nuevo }) {
       files = git(clon, ['diff', '--name-only', '--diff-filter=d', padre, c]).trim().split('\n').filter(Boolean).filter((f) => fs.existsSync(path.join(clon, f)));
     } catch (e) { fila.errores.push(`${c.slice(0, 7)} git: ${e.message.slice(0, 200)}`); continue; }
     if (!files.length) { fila.sinArchivos++; continue; }
-    // un repo que declara un paquete que la organización no activó frena el pipeline (AC 6): es un hallazgo, no un error
+    // un repo que declara un paquete que la organización no activó frena el pipeline: es un hallazgo, no un error
     const correr = (lado, cual) => {
       try { return medir({ pipeline: lado.pipeline, repo: clon, files, story: null, env: lado.env }); } catch (e) {
         if (NO_ACTIVO.test(e.message)) { const m = (e.message.match(/[^\n]*la organización no lo activó[^\n]*/) || [e.message])[0].trim(); if (!fila.noActivos.includes(m)) fila.noActivos.push(m); return null; }
@@ -418,7 +418,7 @@ function porRepo() {
   process.exit(sinMedir ? 2 : (pierden.length || noActivos.length || errores ? 1 : 0));
 }
 
-// story 8.9 (tanda B3b): los subcomandos y la opción viejos siguen andando hasta el retiro
+// Los subcomandos y la opción viejos siguen andando hasta el retiro
 require('./lib/legacy-names.js').aliasArgv('skills/tycon-pipeline/scripts/package-equivalence.js');
 const cmd = process.argv[2];
 if (cmd === 'snapshot') foto();

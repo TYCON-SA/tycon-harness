@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * ui-texts.js — lo que un usuario lee en una pantalla, sin el código alrededor (story 7.24).
+ * ui-texts.js — lo que un usuario lee en una pantalla, sin el código alrededor.
  *
- * Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
- * el dueño la vio «inentendible» en staging. La revisión de legibilidad leía sólo la guía del tester; las marcas que
- * hizo sobre textos de la pantalla se «resolvieron» reescribiendo la guía, y el texto malo siguió en el código.
+ * Qué cubre: una pantalla puede pasar todos los controles y aun así ser «inentendible» para quien la
+ * usa. Si la revisión de legibilidad lee sólo la guía del tester, las marcas sobre textos de la pantalla se
+ * «resuelven» reescribiendo la guía, y el texto malo sigue en el código.
  *
  * Cuatro piezas, todas sin modelo:
  *   screenFiles   — las pantallas de una story (`.tsx/.jsx/.vue/.svelte` de files_to_create, files_to_modify y del
@@ -65,7 +65,7 @@ function screenFiles(fm, body, roots, resolve) {
 const lineOf = (src, idx) => src.slice(0, idx).split('\n').length;
 const hasLetter = (s) => /[A-Za-zÀ-ÿ]/.test(s);
 // Una cadena con forma de clases CSS (`flex items-center gap-2`, `hidden md:block`) o de ruta no es texto para el
-// usuario. Una frase en minúsculas («no se pudo guardar el cambio») sí lo es (pase adversarial, clase 2): para ser
+// usuario. Una frase en minúsculas («no se pudo guardar el cambio») sí lo es: para ser
 // código, además de ir toda en minúsculas sin tildes, alguna palabra tiene que traer una marca de clase o de ruta.
 const looksLikeCode = (s) => {
   const t = s.trim();
@@ -73,12 +73,11 @@ const looksLikeCode = (s) => {
   const words = t.split(/\s+/);
   return words.every((w) => /^[a-z0-9:_./[\]#-]+$/.test(w)) && words.some((w) => /[-:_/[\]#]/.test(w) || /[a-z]\d|\d[a-z]/.test(w));
 };
-// Las entidades HTML se leen como la letra que ve el usuario (pase adversarial, clase 6): `Contrase&ntilde;a`.
+// Las entidades HTML se leen como la letra que ve el usuario: `Contrase&ntilde;a`.
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', iexcl: '¡', iquest: '¿', laquo: '«', raquo: '»',
   aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú', Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó',
   Uacute: 'Ú', ntilde: 'ñ', Ntilde: 'Ñ', uuml: 'ü', Uuml: 'Ü' };
-// Un número fuera de Unicode (o un sustituto) queda como está: `String.fromCodePoint` tira y tumbaba el candado
-// (revisor de seguridad, vuelta 2).
+// Un número fuera de Unicode (o un sustituto) queda como está: `String.fromCodePoint` tira y tumbaría el candado.
 const fromCode = (m, n) => (Number.isInteger(n) && n >= 0 && n <= 0x10ffff && !(n >= 0xd800 && n <= 0xdfff) ? String.fromCodePoint(n) : m);
 const decodeEntities = (s) => s
   .replace(/&#x([0-9a-f]{1,8});/gi, (m, h) => fromCode(m, parseInt(h, 16)))
@@ -87,10 +86,10 @@ const decodeEntities = (s) => s
 
 // Un tramo de texto entre `>` y `<`: lo que queda es lo que ve el usuario, con cada expresión como hueco `{…}`.
 // Un tramo puede empezar o terminar adentro de una expresión (`{err && <p>…</p>}`): lo que está antes de una `}` sin
-// abrir o después de una `{` sin cerrar es código (pase adversarial, clase 1).
+// abrir o después de una `{` sin cerrar es código.
 function jsxSegmentText(seg) {
   let s = seg
-    .replace(/\{\{[^{}]*\}\}/g, '{…}')                                      // interpolación de Vue (clase 4)
+    .replace(/\{\{[^{}]*\}\}/g, '{…}')                                      // interpolación de Vue
     .replace(/\{\s*(?:"([^"]*)"|'([^']*)')\s*\}/g, (_x, a, b) => a ?? b)   // {"texto"} es texto
     .replace(/\{\s*`[^`]*`\s*\}/g, ' ')                                    // una plantilla la lee el paso de cadenas
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');                           // comentarios de JSX
@@ -126,7 +125,7 @@ function visibleTexts(src) {
   // 2. texto de JSX (y de plantillas de Vue/Svelte) entre etiquetas; cada expresión adentro es un hueco del mensaje
   const jsx = />([^<>]*)</g;
   while ((m = jsx.exec(limpio)) !== null) add(jsxSegmentText(m[1]), m.index);
-  // 3. cadenas y plantillas con forma de frase (un espacio y una letra). Las plantillas pueden cruzar líneas (clase 5).
+  // 3. cadenas y plantillas con forma de frase (un espacio y una letra). Las plantillas pueden cruzar líneas.
   const strs = [/(["'])((?:\\.|(?!\1)[^\\\n])*)\1/g, /(`)((?:\\.|[^\\`])*)`/g];
   for (const str of strs) {
     while ((m = str.exec(limpio)) !== null) {
@@ -159,7 +158,7 @@ const HOLE_MAX_WORDS = 3;   // un hueco lo llena un número, un nombre o una fec
 
 // ¿El texto citado sale de este texto de pantalla? Sí si la cita ENTERA es un tramo del mensaje con los huecos
 // (`${…}` / `{…}`) llenos por una a tres palabras cualesquiera, y al menos dos palabras fijas del mensaje coinciden.
-// Pase adversarial, clase 8: una cita más larga que el mensaje no sale de él; y una plantilla de puros huecos
+// Una cita más larga que el mensaje no sale de él; y una plantilla de puros huecos
 // (`${a} ${b}`) no «contiene» cualquier frase.
 function quoteMatchesText(quote, text) {
   const q = norm(quote); const t = norm(text);
@@ -170,7 +169,7 @@ function quoteMatchesText(quote, text) {
   // Una cita no puede ser más larga que el mensaje con cada hueco lleno al máximo: corta antes de buscar.
   if (qw.length > tw.length * HOLE_MAX_WORDS) return false;
   // ¿qw[i..] se puede leer empezando en tw[j..]? Devuelve el máximo de palabras fijas que coincidieron, o -1.
-  // Con memoria por (i, j): sin ella, muchos huecos y una cita larga ramificaban sin tope (seguridad, vuelta 2).
+  // Con memoria por (i, j): sin ella, muchos huecos y una cita larga ramificarían sin tope.
   const memo = new Map();
   const desde = (i, j) => {
     if (i === qw.length) return 0;
@@ -195,7 +194,7 @@ function quoteMatchesText(quote, text) {
 
 /**
  * En qué pantallas sigue un texto citado: [{ rel, line }]. `screens`: [{ rel, abs }].
- * Una pantalla que no se puede leer vuelve como `{ rel, unreadable: <motivo> }`: no mirar no es «ya no está».
+ * Una pantalla que no se puede leer vuelve como `{ rel, unreadable: <motivo> }`: no mirar no es prueba de que la pantalla desapareció.
  */
 function whereInScreens(quote, screens) {
   const hits = [];

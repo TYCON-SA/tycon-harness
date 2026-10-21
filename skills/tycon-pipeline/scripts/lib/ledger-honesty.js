@@ -2,33 +2,32 @@
 /**
  * ledger-honesty.js — que el pipeline sepa CUÁNDO no sabe qué cambió.
  *
- * EL PROBLEMA (caso de la Story 9.3.1 del repo del framework, 2026-08-26). El re-loop de advisors decide a
- * quién re-correr comparando el estado actual contra una foto (`filesSnapshot`). Las tres fuentes
- * del delta salían, todas, del mismo lugar: `marker.filesTouched` / `marker.fileEvents`, que
- * escribe `on-edit.js` desde el hook PostToolUse matcher `Edit|Write`. Incluida la que se agregó
- * en 2026-06-11 como red para "ediciones hechas por Bash": el fallback por mtime **itera sobre
+ * EL PROBLEMA. El re-loop de advisors decide a quién
+ * re-correr comparando el estado actual contra una foto (`filesSnapshot`). Las tres fuentes
+ * del delta salen, todas, del mismo lugar: `marker.filesTouched` / `marker.fileEvents`, que
+ * escribe `on-edit.js` desde el hook PostToolUse matcher `Edit|Write`. Incluida la que se usa
+ * como red para "ediciones hechas por Bash": el fallback por mtime **itera sobre
  * `filesTouched`**, así que sólo cubre un archivo que el hook YA vio y se re-editó por fuera —
  * NO un archivo que el hook no vio nunca.
  *
- * Resultado medido: en la corrida de la 9.3.1 el registro de la sesión tenía 7 entradas y las 7
- * eran scratchpad de los probes del pase adversarial. Cero ediciones del repo — ni PluginManager,
- * ni EndpointRegistrar, ni los tests. `smart-reloop` devolvió un delta chico y **nadie avisó que
- * estaba ciego**: un archivo con contenido no despierta la sospecha de "esto no se está
- * escribiendo". Es la misma cadena causal de la auditoría 2026-06-11, viva de nuevo y más difícil
- * de ver, porque ahora el registro tiene ruido en vez de estar vacío.
+ * Ejemplo: el registro de la sesión puede tener 7 entradas y las 7 ser
+ * scratchpad de los probes del pase adversarial. Cero ediciones del repo — ni PluginManager,
+ * ni EndpointRegistrar, ni los tests. `smart-reloop` devuelve un delta chico y **nadie avisa que
+ * está ciego**: un archivo con contenido no despierta la sospecha de "esto no se está
+ * escribiendo". Es más difícil de ver que un registro vacío, porque el registro tiene ruido.
  *
  * LO QUE HACE ESTE MÓDULO. Dos cosas, las dos puras (sin fs, sin git — los insumos los junta el
  * llamador, así que esto se testea sin sandbox):
  *
  *   1. `esProbe` / `sinProbes` — los archivos de prueba descartables del pase adversarial no son
- *      trabajo del repo. Ensuciaban dos cosas a la vez: hacían parecer sano un registro que estaba
- *      ciego, y se colaban en el `filesSnapshot` del pipeline (medido también en Totora el mismo
- *      día). Convención de nombres reservados en `steps/step-05b-adversarial-verify.md`.
+ *      trabajo del repo. Ensucian dos cosas a la vez: hacen parecer sano un registro que está
+ *      ciego, y se cuelan en el `filesSnapshot` del pipeline. Convención de nombres reservados en
+ *      `steps/step-05b-adversarial-verify.md`.
  *
  *   2. `diagnosticar` — la pregunta honesta: ¿el registro vio algo del repo? Si git reporta N
  *      archivos cambiados y el registro aporta CERO, el delta no es "chico": es **ciego**, y el
- *      modo correcto es el set completo ANUNCIADO CON LA RAZÓN. Hoy el orquestador llega igual al
- *      set completo, pero a ciegas y 21 segundos más tarde, sin saber por qué.
+ *      modo correcto es el set completo ANUNCIADO CON LA RAZÓN. Sin el diagnóstico el orquestador llega igual
+ *      al set completo, pero a ciegas y más tarde, sin saber por qué.
  *
  * Por qué no alcanzaba con leer `suspect_empty_delta`: ya existe y es un campo que alguien tiene
  * que mirar. Mirarlo es justo lo que no pasa.
@@ -38,17 +37,17 @@ const path = require('path');
 
 /**
  * Nombres reservados para los probes transitorios del pase adversarial (step-05b).
- * Cubre lo observado en los dos repos + la convención que el step declara para lo que venga:
+ * Cubre los nombres que se ven en los repos + la convención que el step declara para lo que venga:
  *   .NET      ZZProbe*.cs · ZZVerify*.cs
  *   JS/TS     __probe*.test.ts · _probe_*.test.ts · __adv_probe*.test.ts · __adversarial_probe*
  * Ancla al principio del nombre de archivo a propósito: un test legítimo no empieza con `_` ni
  * con `zzprobe`, y un patrón suelto que matchee en el medio se comería trabajo real.
  */
-// 🔴 Acotado tras la revisión adversarial (2026-08-26): la 1ra versión matcheaba cualquier nombre
-// que empezara con `_adv` o `__adv`, y eso se come archivos REALES muy comunes — `_advanced.scss`
+// 🔴 Acotado: un patrón que matchee cualquier nombre que empiece con `_adv` o `__adv` se come
+// archivos REALES muy comunes — `_advanced.scss`
 // (partial de Sass), `__advisor.ts`, `_adapter.js` (módulo privado). Un falso positivo acá no es
-// cosmético: saca un archivo de trabajo real de la foto de la iteración, y el advisor que tenía que
-// re-auditarlo no se entera. Ahora se exige la palabra `probe` COMPLETA (con `adv`/`adversarial`
+// cosmético: saca un archivo de trabajo real de la foto de la iteración, y el advisor que tiene que
+// re-auditarlo no se entera. Por eso se exige la palabra `probe` COMPLETA (con `adv`/`adversarial`
 // como prefijo opcional), que es lo que la convención del step-05b declara.
 const PROBE_RE = /^(?:zz(?:probe|verify)|_{1,2}(?:adv|adversarial)?_?probe(?:[_.\d]|$))/i;
 // El prefijo `zz` va sin terminador a propósito: ningún archivo real empieza con `zzprobe`/
@@ -69,9 +68,9 @@ function sinProbes(files) {
 /** ¿El path cae DENTRO del repo bajo revisión? Un scratchpad en /tmp no es trabajo del repo. */
 function esDelRepo(p, repoPath) {
   if (!p || !repoPath) return false;
-  // 🔴 Resolver ANTES de comparar (revisión adversarial 2026-08-26): comparar los strings crudos
-  // hacía que un `--repo` escrito relativo (`.`, `./MiRepo`) o con `..` en el medio no matcheara
-  // NINGUNA entrada del registro → todo registro se declaraba ciego → force-full en cada iteración
+  // 🔴 Resolver ANTES de comparar: con los strings crudos,
+  // un `--repo` escrito relativo (`.`, `./MiRepo`) o con `..` en el medio no matchea
+  // NINGUNA entrada del registro → todo registro se declara ciego → force-full en cada iteración
   // y una línea `blind` falsa en gates.log. El diagnóstico de ceguera tiene que ser difícil de
   // disparar por accidente: un falso ciego cuesta el set completo, que es el camino más caro.
   // realpath primero (macOS: /tmp y os.tmpdir() son symlinks a /private/...), path.resolve como
@@ -147,7 +146,6 @@ function diagnosticar({ repoPath, registro, gitCambiados }) {
  * del repo" las ediciones al propio arnés). Consecuencia: en un repo que VIVE ahí —`agent-skills`
  * es el caso— el registro está vacío SIEMPRE, y sin este chequeo el diagnóstico lo declararía ciego
  * en cada iteración de cada corrida → force-full permanente sobre el repo que más se toca.
- * Detectado por la revisión adversarial (2026-08-26) antes de que llegara a nadie.
  *
  * No es "no sé": es "acá el registro no aplica", y por eso no se acusa.
  */

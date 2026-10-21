@@ -2,15 +2,15 @@
  * atdd-commit-gate.js — extiende el freno de ATDD al trabajo hecho FUERA del pipeline.
  *
  * ── EL AGUJERO QUE TAPA ──────────────────────────────────────────────────────────────────────────
- * El gate de ATDD del 2026-07-27 (`marker.js complete-step 4` + `lib/atdd-order.js`) lee
+ * El gate de ATDD (`marker.js complete-step 4` + `lib/atdd-order.js`) lee
  * `marker.fileEvents`, que sólo existe durante una corrida del pipeline. Si el trabajo se hace a
  * mano —sin `tycon-pipeline`— no hay marker, no hay eventos, y el gate no tiene nada que leer.
  * No falla: nunca se lo consulta.
  *
- * Caso disparador (2026-07-28, un producto del equipo — guides/maintaining/incident-log.md#case-atdd-gate-bypassed-by-hand-2026-07-28): dos stories implementadas a mano en la misma sesión.
- * Se escribió implementación y después tests, exactamente el orden que el gate de ayer bloquea —
- * y no bloqueó nada, porque el gate no estaba en el camino. Lo detectó el dev preguntando "¿por
- * qué no hicimos los test ATDD primero?". Otra vez la capa de control fue una persona.
+ * Caso que cubre: stories implementadas a mano en la misma sesión. Escribir la implementación y después
+ * los tests es el orden que el gate del pipeline bloquea, pero a mano no bloquea nada porque el gate no está
+ * en el camino. Sin este control, la única capa de detección es una persona que pregunte por qué no se
+ * hicieron los tests primero.
  *
  * ── CÓMO LO TAPA ─────────────────────────────────────────────────────────────────────────────────
  *   1. `recordFileEvent` — `on-edit.js` graba CADA edición por sesión aunque NO haya marker.
@@ -51,10 +51,10 @@ function eventsFile(stateDir, sessionId) {
  * sesiones concurrentes no se pisan ni necesitan lock.
  */
 function recordFileEvent(stateDir, sessionId, filePath, ts = new Date().toISOString()) {
-  // 🔴 El `ts` va como STRING ISO, no epoch: `computeAtddOrder` descarta todo evento cuyo `ts` no
+  // El `ts` va como STRING ISO, no epoch: `computeAtddOrder` descarta todo evento cuyo `ts` no
   // sea string (`typeof e.ts === 'string'`), y con la lista vacía devuelve `warn-unknown` — o sea
-  // que el gate quedaría siempre mudo sin que nada falle. Detectado en el smoke end-to-end del
-  // 2026-07-28: los eventos se grababan bien y el veredicto salía "pass" igual.
+  // que el gate quedaría siempre mudo sin que nada falle: los eventos se graban bien y el
+  // veredicto sale "pass" igual.
   const iso = typeof ts === 'string' ? ts : new Date(ts).toISOString();
   try {
     fs.mkdirSync(eventsDir(stateDir), { recursive: true });
@@ -98,7 +98,7 @@ function pruneFileEvents(stateDir, sessionId, repoRoot) {
   try {
     const file = eventsFile(stateDir, sessionId);
     if (keep.length === 0) {
-      try { fs.unlinkSync(file); } catch { /* ya no estaba */ }
+      try { fs.unlinkSync(file); } catch { /* si no existe, no hay nada que borrar */ }
       return;
     }
     const tmp = `${file}.${process.pid}.tmp`;
@@ -126,10 +126,10 @@ function modoDeArchivo(repoRoot, relativo) {
 /**
  * Modo del gate de ATDD ("la prueba antes que el código").
  *
- * 🔴 La escotilla se lee de lo COMMITEADO (FIX-2, 2026-08-25 — caso C2). Antes se leía de la
- * carpeta: `echo off > .tycon/atdd-gate` sin commitear apagaba el control, y crear ese archivo
+ * 🔴 La escotilla se lee de lo COMMITEADO, no de la carpeta: si se leyera de la carpeta,
+ * `echo off > .tycon/atdd-gate` sin commitear apagaría el control, y crear ese archivo
  * tampoco genera evento de implementación (`.tycon` está en NEVER_CODE_SEGMENTS y los archivos sin
- * extensión no están en CODE_EXTS) — o sea que nada lo miraba. Apagar es aflojar: va commiteado.
+ * extensión no están en CODE_EXTS) — o sea que nada lo miraría. Apagar es aflojar: va commiteado.
  */
 function resolveMode(repoRoot, env = process.env) {
   const fromEnv = String(env.TYCON_ATDD_COMMIT_GATE || '').toLowerCase();
@@ -140,16 +140,11 @@ function resolveMode(repoRoot, env = process.env) {
 /**
  * Modo del gate de EVIDENCIA DE STORY ("estos criterios de aceptación no están verificados").
  *
- * 🔴 LLAVE PROPIA (FIX-2 / decisión D1 del dev, 2026-08-25). Hasta hoy este control heredaba el
- * modo del gate de ATDD: **apagar "la prueba antes que el código" apagaba también, de yapa, el
- * aviso de criterios sin verificar** — y eso no estaba escrito en ningún lado. Un dev que apagaba
- * lo primero se llevaba lo segundo puesto sin saberlo; ése era el hallazgo reportable, no la
- * escotilla en sí. Ahora cada control se apaga por su cuenta:
+ * 🔴 LLAVE PROPIA: si este control heredara el modo del gate de ATDD, **apagar "la prueba antes que el
+ * código" apagaría también, de yapa, el aviso de criterios sin verificar**, sin que nada lo diga. Por eso
+ * cada control se apaga por su cuenta:
  *
  *   `.tycon/story-evidence-gate` (commiteado) · env `TYCON_STORY_EVIDENCE_GATE`
- *
- * Impacto de separar: **cero**. Verificado el 2026-08-25 con un barrido de la raíz de repos: ningún
- * repo del equipo tiene `.tycon/atdd-gate`, así que todos estaban en el modo por defecto.
  */
 function resolveEvidenceMode(repoRoot, env = process.env) {
   const fromEnv = String(env.TYCON_STORY_EVIDENCE_GATE || '').toLowerCase();
@@ -183,14 +178,13 @@ function computeCommitGate({ verdict, mode = 'warn' }) {
   return { action: mode === 'block' ? 'block' : 'warn', message };
 }
 
-// ── Guía de QA (2026-07-28) ──────────────────────────────────────────────────────────────────────
+// ── Guía de QA ───────────────────────────────────────────────────────────────────────────────────
 // `qa-guide.js` (regla DODRT-C7) genera la guía de prueba manual DERIVADA de los ACs de la story.
-// La genera un paso del pipeline; trabajando a mano nadie te dice que existe. En la sesión del
-// 2026-07-28 se escribió una guía a mano, con otro formato y sin derivarla de los ACs — el dev la
-// vio y preguntó "¿por qué lo hiciste? ¿cómo lo enforzamos?".
+// La genera un paso del pipeline; trabajando a mano nadie avisa que existe, y se escribe una guía a mano,
+// con otro formato y sin derivarla de los ACs.
 //
-// Decisión del dev: que **avise**, no que la genere sola. Generarla sola es cómodo pero vuelve a
-// esconder que te saliste del pipeline, que es el problema de fondo.
+// El control **avisa**, no la genera solo. Generarla sola es cómodo pero vuelve a esconder que se salió
+// del pipeline, que es el problema de fondo.
 
 /** Path de la guía para una story — la carpeta sale de la MISMA regla que usa qa-guide.js (`lib/qa-dir.js`). */
 function qaGuidePathFor(storyAbsPath) {
@@ -200,10 +194,10 @@ function qaGuidePathFor(storyAbsPath) {
   return path.join(dir, path.basename(storyAbsPath, '.md') + '-guia-qa.html');
 }
 
-// ── ¿Hay algo que una PERSONA pueda operar a mano? (2026-07-28, feedback DevA) ─────────────────
-// El aviso de arriba se disparaba con CUALQUIER story que tuviera criterios de aceptación, sin
-// preguntarse si había algo que probar a mano. En un paquete cuyo único cliente es un agente —el MCP
-// de un repo del equipo, sin una sola pantalla— la guía sale hablando de "usuarios" y "roles" que no
+// ── ¿Hay algo que una PERSONA pueda operar a mano? ──────────────────────────────────────────────
+// El aviso de arriba no puede dispararse con CUALQUIER story que tenga criterios de aceptación sin
+// preguntarse si hay algo que probar a mano. En un paquete cuyo único cliente es un agente —un MCP
+// sin una sola pantalla— la guía sale hablando de "usuarios" y "roles" que no
 // existen, y lo que de verdad verifica los criterios es un smoke que corre contra el binario
 // publicado. Un aviso que pide algo sin sentido es un aviso que se aprende a ignorar, y ahí se lleva
 // puestos también a los que sí importan.
@@ -213,11 +207,9 @@ function qaGuidePathFor(storyAbsPath) {
 // HTTP); una librería que sólo llama otro programa, no. Por eso la señal incluye la superficie HTTP
 // además de la de UI.
 //
-// Caso disparador: Story 3.29 de un repo del equipo — el dev preguntó "¿tiene sentido hacer la guía QA acá
-// que no tenemos front?". No lo tenía.
 
-/** Señales de UI: fuente única lib/ui-signal.js (fix 2026-08-14 — genérico + evidence.fe_paths
- *  del repo; los nombres de producto salieron del harness). */
+/** Señales de UI: fuente única lib/ui-signal.js (genérico + evidence.fe_paths
+ *  del repo; sin nombres de producto). */
 const uiSignal = require('./ui-signal.js');
 // Señales de superficie HTTP: algo que se puede ejercer con curl o un cliente, aunque no haya pantalla.
 const HTTP_FRONTMATTER_RE = /(Controllers?|Endpoints?|\/api\/|route\.ts|actions\.ts|Api\/)/;
@@ -248,16 +240,12 @@ function storyIsHandOperable(storyText, repoRoot) {
  */
 function qaGuideMode(advisorsYamlText) {
   if (typeof advisorsYamlText !== 'string') return 'auto';
-  // 🔴 ANCLADO AL PRIMER NIVEL (C8, 2026-08-25). El regex arrancaba con `^\s*`, o sea que
-  // ignoraba la indentación: `qa_guide: off` ANIDADO por error dentro de otro bloque (`e2e:`,
-  // o un item de lista) apagaba exactamente igual que puesto a propósito en el primer nivel.
-  // Un error de tipeo quedaba indistinguible de una decisión — y el efecto es silencioso:
-  // desaparece el aviso de guía de pruebas y un tercio del aviso de evidencia de story, sin
-  // que nada diga que se apagó. En YAML `qa_guide` sólo es una llave del documento si está en
-  // la columna 0; anidada es una llave de OTRO objeto, y el arnés no la lee de ahí.
-  // Riesgo de regresión cero: verificado que ninguno de los 13 archivos de config del equipo
-  // declara la llave (ni anidada ni al tope).
-  // Auditoría: ~/.claude/tycon-harness/guides/decisions/controles-apagables-por-config-2026-08-25.md §C8.
+  // 🔴 ANCLADO AL PRIMER NIVEL. Un regex que arrancara con `^\s*` ignoraría la indentación:
+  // `qa_guide: off` ANIDADO por error dentro de otro bloque (`e2e:`, o un item de lista) apagaría
+  // exactamente igual que puesto a propósito en el primer nivel. Un error de tipeo sería indistinguible
+  // de una decisión — y el efecto es silencioso: desaparece el aviso de guía de pruebas y un tercio del
+  // aviso de evidencia de story, sin que nada diga que se apagó. En YAML `qa_guide` sólo es una llave
+  // del documento si está en la columna 0; anidada es una llave de OTRO objeto, y el arnés no la lee de ahí.
   const m = advisorsYamlText.match(/^qa_guide\s*:\s*["']?(auto|off|always)["']?\s*(?:#.*)?$/mi);
   return m ? m[1].toLowerCase() : 'auto';
 }

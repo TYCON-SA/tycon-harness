@@ -1,18 +1,17 @@
 'use strict';
 
 /**
- * tmp-path.test.js — la ruta del archivo de configuración de las pruebas de punta a punta (story 8.17 del arnés, tanda
- * W6 · T71, AC 47).
+ * tmp-path.test.js — la ruta del archivo de configuración de las pruebas de punta a punta (T71).
  *
- * EL AGUJERO QUE CIERRA. El paso 7c y el aviso de `on-frontmatter-write.js` escribían la configuración de E2E con una
- * redirección de bash a `/tmp/e2ecfg.json` y la leían con `node -e 'require("/tmp/e2ecfg.json")'`. En Mac y Linux es
- * el mismo archivo. En Windows no: el bash de Git traduce `/tmp` a la carpeta temporal del usuario, y Node lee
- * `C:\tmp\e2ecfg.json`, que no existe — el portón E2E quedaba sin configuración y el paso se saltaba en silencio.
- * Ahora la ruta sale de UN lugar, `lib/tmp-path.js`, y quien escribe y quien lee usan la misma variable.
+ * EL AGUJERO QUE CIERRA. Escribir la configuración de E2E con una redirección de bash a `/tmp/e2ecfg.json` y leerla con
+ * `node -e 'require("/tmp/e2ecfg.json")'` anda en Mac y Linux (es el mismo archivo), pero no en Windows: el bash de Git
+ * traduce `/tmp` a la carpeta temporal del usuario, y Node lee `C:\tmp\e2ecfg.json`, que no existe — el portón E2E
+ * quedaría sin configuración y el paso se saltaría en silencio. Por eso la ruta sale de UN lugar, `lib/tmp-path.js`,
+ * y quien escribe y quien lee usan la misma variable.
  *
  *   · `tmpPath(nombre)` con las tres plataformas inyectadas: la misma ruta para el que escribe y el que lee, dentro
  *     de la carpeta temporal de esa plataforma; en Windows con barras `/` (las entienden el bash de Git y Node);
- *   · un archivo por repo y por sesión (pase adversarial de la W6, hallazgo #6): dos pipelines a la vez no se pisan
+ *   · un archivo por repo y por sesión: dos pipelines a la vez no se pisan
  *     la configuración, y otra llamada de la misma sesión sobre el mismo repo llega al mismo archivo;
  *   · por la línea de comandos, en esta máquina: bash escribe en la ruta que imprime, y Node lee lo mismo;
  *   · ningún paso ni guion de la skill nombra `/tmp/e2ecfg.json` a mano, ni lee la configuración con un `require`
@@ -73,8 +72,8 @@ test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {
     assert.ok(!win.startsWith('/tmp'), 'en Windows nunca /tmp: Node la leería como C:\\tmp');
   });
 
-  // Pase adversarial de la W6 (hallazgo #6): la ruta era la misma para todas las sesiones y todos los repos. Dos
-  // pipelines a la vez (worktrees) escribían el mismo archivo, y uno corría el portón E2E del repo del otro.
+  // Una ruta igual para todas las sesiones y todos los repos haría que dos
+  // pipelines a la vez (worktrees) escribieran el mismo archivo, y uno correría el portón E2E del repo del otro.
   await t.test('dos repos, o dos sesiones, nunca comparten el archivo; el mismo repo y sesión, siempre el mismo', () => {
     const base = { platform: 'linux', tmpdir: '/tmp' };
     const a = tmpPath('e2ecfg', { ...base, repo: '/acme/repo-a', session: 's1' });
@@ -156,7 +155,7 @@ test('TmpPath_OneWriterOneReader_NoFixedTmpInSteps_NoOpen', async (t) => {
     assert.ok(users.some((x) => x.file === path.join('scripts', 'on-frontmatter-write.js')), 'on-frontmatter-write.js la sugiere');
     for (const x of users.filter((u) => u.file !== path.join('scripts', 'lib', 'tmp-path.js'))) {
       assert.match(x.text, /E2ECFG=\$\(node [^\n)]*\/scripts\/lib\/tmp-path\.js e2ecfg <repo>\)/, `${x.file}: la ruta sale de tmp-path.js`);
-      // la ruta depende del repo (hallazgo #6): cada llamada se lo pasa, ninguna lo omite
+      // la ruta depende del repo: cada llamada se lo pasa, ninguna lo omite
       const sinRepo = x.text.split('\n').filter((l) => /tmp-path\.js e2ecfg/.test(l) && !/tmp-path\.js e2ecfg <repo>\)/.test(l));
       assert.deepStrictEqual(sinRepo.map((l) => l.trim()), [], `${x.file}: arma la ruta sin pasarle el repo`);
       // quien escribe: la salida de `pipeline.js e2e-config` va a "$E2ECFG" (también con la línea partida con «\»)

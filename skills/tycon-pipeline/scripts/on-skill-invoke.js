@@ -8,10 +8,9 @@
  * `~/.claude/.tycon-pipeline/skill-marks/<sid>.json` = { skill, at, sessionId, cwd }. Nada más.
  * Silencioso siempre; exit 0 siempre (PostToolUse no bloquea nada).
  *
- * Por qué la escribe el HARNESS y no el skill (diseño A del handoff, 2026-08-30): la constancia
- * tiene que ser mecánica, no declarativa. Verificado antes de escribir esto: Claude Code emite
- * PostToolUse con `tool_name: "Skill"` y `tool_input.skill` = nombre (823 eventos reales en el
- * grabador de instincts, 26 de tycon-create-story). El agente no puede fabricar la marca con
+ * Por qué la escribe el HARNESS y no el skill: la constancia
+ * tiene que ser mecánica, no declarativa. Claude Code emite
+ * PostToolUse con `tool_name: "Skill"` y `tool_input.skill` = nombre. El agente no puede fabricar la marca con
  * Write/heredoc: el directorio de estado está bloqueado en las dos puertas por el portón de carril.
  *
  * Límite conocido: Codex no expone la invocación de skills como tool call → este hook no tiene
@@ -25,7 +24,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
 const { isCreatorSkill } = require('./lib/story-skill-gate.js');
 const { resolveSessionId } = require('./lib/session-id.js');
 

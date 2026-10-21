@@ -2,13 +2,12 @@
  * story-skill-gate.js — el freno que impide CREAR una story Mary+GOLD a mano, sin pasar por el
  * skill que la crea (`tycon-create-story` y familia). Lógica PURA: sin fs, sin Date, sin process.
  *
- * ── POR QUÉ EXISTE (2026-08-30) ──────────────────────────────────────────────────────────────────
- * Dos veces en dos días, en la misma sesión de Totora, el agente escribió la story completa con un
+ * ── POR QUÉ EXISTE ───────────────────────────────────────────────────────────────────────────────
+ * Un agente puede escribir la story completa con un
  * heredoc de Bash (`cat > specs/story-as1-….md <<'STORYEOF'`), siguiendo `story-format.md` de
- * memoria — AS-1 el 2026-08-28 (nadie avisó) y PERF-1 el 2026-08-30 (lo cazó el dev leyendo el
- * chat: «¿estás escribiendo la story marygold con el skill, verdad?»). Las dos stories quedaron
+ * memoria, sin que nadie avise. Esas stories quedan
  * BIEN FORMADAS: pasan el lint de frontmatter y el validator no les encuentra un CRITICAL. O sea que
- * el resultado se ve igual y por eso ninguna capa existente lo notaba. Lo que se pierde al saltear
+ * el resultado se ve igual y por eso ninguna capa existente lo nota. Lo que se pierde al saltear
  * el skill no es el formato, es el PROCESO: el análisis de artefactos, la inteligencia de la story
  * previa y, sobre todo, el checklist de validación en contexto fresco (`checklist.md` del skill),
  * que existe justamente para atrapar lo que el que escribió la story no puede ver.
@@ -21,10 +20,10 @@
  * que no corre — así que esto DENIEGA, como el portón de carril y el gate de ATDD.
  *
  * ── DISEÑO A: la constancia la escribe el HARNESS, no el agente ─────────────────────────────────
- * Verificado el 2026-08-30 antes de escribir una línea (§4 del handoff): Claude Code SÍ emite
+ * Claude Code SÍ emite
  * PreToolUse/PostToolUse para la tool `Skill`, con `tool_name: "Skill"` y `tool_input.skill` = el
- * nombre del skill — 823 eventos reales en el grabador de instincts (`~/.claude/tycon-observations`,
- * un PostToolUse sin matcher), 26 de ellos `tycon-create-story`. Entonces `on-skill-invoke.js`
+ * nombre del skill (se ve en el grabador de instincts, `~/.claude/tycon-observations`,
+ * un PostToolUse sin matcher). Entonces `on-skill-invoke.js`
  * (PostToolUse, matcher `Skill`) deja una MARCA por sesión cuando el skill invocado es uno de los
  * que crean stories, y este freno exige esa marca para dejar nacer un `.md` con identidad de story.
  * El agente no puede fabricar la marca con Write/heredoc: vive bajo `~/.claude/.tycon-pipeline/`,
@@ -95,19 +94,18 @@ const MARKER_JS = '~/.claude/agent-skills/skills/tycon-pipeline/scripts/marker.j
 /**
  * ¿Este skill HABILITA crear stories?
  *
- * 🔴 Acepta el nombre PELADO y el CALIFICADO por directorio (2026-09-21). Cuando un repo tiene
+ * 🔴 Acepta el nombre PELADO y el CALIFICADO por directorio. Cuando un repo tiene
  * skills en `<repo>/.claude/skills/`, Claude Code expone variantes `<dir>:<skill>` —p. ej.
- * `PacaraBackend:tycon-create-story`— y su propio system-reminder RECOMIENDA usar la variante
- * cuando los archivos están bajo ese subdirectorio. Con la comparación exacta anterior, esa forma
- * —la que el sistema sugiere— dejaba ciego al control: el skill corría, `on-skill-invoke.js` no
- * escribía la marca, y el portón de story-a-mano seguía cerrado sin explicar por qué.
+ * `Backend:tycon-create-story`— y su propio system-reminder RECOMIENDA usar la variante
+ * cuando los archivos están bajo ese subdirectorio. Con una comparación exacta, esa forma
+ * —la que el sistema sugiere— dejaría ciego al control: el skill corre, `on-skill-invoke.js` no
+ * escribe la marca, y el portón de story-a-mano sigue cerrado sin explicar por qué.
  *
- * Caso real que lo destapó: la partición de la story OC-2 en el backend de un producto del equipo. Se invocó
- * `PacaraBackend:tycon-create-story`, el skill corrió entero, y la escritura se denegó igual;
- * hubo que repetir toda la invocación con el nombre pelado para que apareciera la marca.
+ * Caso: se invoca `Backend:tycon-create-story`, el skill corre entero, y la escritura se deniega igual;
+ * habría que repetir toda la invocación con el nombre pelado para que apareciera la marca.
  *
  * Sólo se recorta el prefijo hasta el ÚLTIMO `:`, y el resto tiene que ser un creator exacto: así
- * `PacaraBackend:tycon-pipeline` sigue siendo `false` y `tycon-create-story:algo-mas` también
+ * `Backend:tycon-pipeline` sigue siendo `false` y `tycon-create-story:algo-mas` también
  * (el sufijo es lo que manda, no el hecho de contener el nombre).
  */
 function isCreatorSkill(name) {
@@ -164,8 +162,7 @@ function computeStorySkillGate({
   if (idIsWork === false) return { action: 'pass', kind: 'unknown-material', reason: 'el id declarado no tiene forma de trabajo del repo (material tipo evals) — no se frena, queda medido' };
 
   // La marca vigente se mira ANTES de la excepción de Codex: un bypass declarado con marker.js (que
-  // en Codex también corre) tiene que quedar auditado como bypass, no diluido en `unknown-codex`
-  // (lo cazó el twin Codex del caso de bypass en el banco, 2026-08-30).
+  // en Codex también corre) tiene que quedar auditado como bypass, no diluido en `unknown-codex`.
   const st = markState(mark, nowMs, ttlMs);
   if (st === 'valid') {
     return mark.skill === 'bypass'

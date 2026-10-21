@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Contrato de la evidencia del gate E2E — la red que responde a dos preguntas del dev
- * (2026-08-05): "¿cómo nos aseguramos de que no quedaron instrucciones repetidas?" y
+ * Contrato de la evidencia del gate E2E — la red que responde a dos preguntas:
+ * "¿cómo nos aseguramos de que no quedaron instrucciones repetidas?" y
  * "¿cómo nos aseguramos de que el resultado es el mismo que teníamos localmente?".
  *
  * La respuesta a las dos es la misma pieza: UNA definición de qué tiene que traer la
  * evidencia (lib/e2e-evidence.js) que se usa para PRODUCIRLA y para VERIFICARLA. Así,
- * un repo que mantenga su gate propio (Ceibo levanta sus servidores, cosa que el gate
+ * un repo que mantenga su gate propio (uno que levanta sus servidores, cosa que el gate
  * genérico no hace) igual se puede chequear contra la misma vara, mecánicamente.
  *
  * Correr: node test-e2e-evidence-contract.js (exit 0 OK / 1 fail)
@@ -84,7 +84,7 @@ console.log('\n4. El gate genérico del harness produce evidencia que CUMPLE');
   check('el gate escribe las 3 marcas del contrato',
     /verdict=\$verdict/.test(gate) && /\*\*Spec filter\*\*/.test(gate) && /## Tests corridos/.test(gate));
   check('skipped se emite aparte', /- skipped: \$skipped/.test(gate));
-  // Decisión 2026-08-05 (pregunta del dev): omitir una sección cuando está vacía es
+  // Omitir una sección cuando está vacía es
   // AMBIGUO — no se distingue "no hubo errores" de "el gate no la escribe". Va siempre,
   // con texto explícito cuando no hay nada. Mismo criterio que "## Tests corridos".
   check('la sección de salida va SIEMPRE, con texto explícito si está vacía',

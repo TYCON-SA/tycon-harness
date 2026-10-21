@@ -18,7 +18,7 @@
  * instante. El modo autónomo es opt-in explícito (`/tycon-pipeline implement <story> --autonomous`).
  *
  * Fail-OPEN: cualquier excepción → deja parar. Un bug del hook NUNCA debe atrapar a Claude
- * sin poder terminar (sería el peor foot-gun). Igual que los demás hooks bloqueantes (H19).
+ * sin poder terminar (sería el peor foot-gun). Igual que los demás hooks bloqueantes.
  *
  * Contrato de salida (Stop hook Claude Code): sin output + exit 0 → Claude PARA.
  * `{"decision":"block","reason":"..."}` a stdout → Claude NO para, continúa con el reason.
@@ -28,7 +28,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./lib/state-dir.js');   // La carpeta del estado, de una sola pieza
 const { resolveSessionId } = require('./lib/session-id.js');
 
 const CAP = 6;               // máx iteraciones del loop antes de escalar
@@ -63,11 +63,10 @@ function blockStop(reason) {                              // Claude NO para, con
 // El pipeline los va poblando durante la corrida (build/tests = exit codes; advisors =
 // pipeline.js check-count; dod = evidencia). Acá solo se evalúan.
 //
-// 🔴 SEMÁNTICA: BLOQUEAR SOLO ANTE UN CHECK REGISTRADO EN ROJO (2026-05-21, pre-wire review).
+// 🔴 SEMÁNTICA: BLOQUEAR SOLO ANTE UN CHECK REGISTRADO EN ROJO.
 // Un check AUSENTE (todavía no medido) NO es rojo → NO bloquea. Razón crítica: el hook Stop
 // dispara en CADA fin de turno, incluido cuando Claude PAUSA para preguntarle al humano
-// (aprobar plan en Step 3, aprobar/waivear en Step 7). Si tratáramos "sin checks" como rojo
-// (como hacía el prototipo), el portón TRABARÍA esos checkpoints HITL legítimos — el peor
+// (aprobar plan en Step 3, aprobar/waivear en Step 7). Si tratáramos "sin checks" como rojo, el portón TRABARÍA esos checkpoints HITL legítimos — el peor
 // foot-gun (Claude nunca podría pedir aprobación en una corrida autónoma).
 //
 // El loop test→fix vive en "hay un check que MEDÍ y está rojo → no cierres, arreglá". La
@@ -121,12 +120,12 @@ function main() {
   // Scoping: solo el modo autónomo es atrapado por el portón.
   if (!marker || marker.autonomous !== true) return allowStop();
 
-  // EL TERCER ESTADO (2026-09-15): "le pregunté al dev y estoy esperando".
-  // El portón sabía decir "podés cerrar" y "no cierres, arreglá", y no tenía cómo decir esto —
-  // pero preguntar ES terminar el turno, así que con cualquier check en rojo el agente no podía
+  // EL TERCER ESTADO: "le pregunté al dev y estoy esperando".
+  // El portón distingue "podés cerrar" y "no cierres, arreglá"; falta decir esto —
+  // pero preguntar ES terminar el turno, así que con cualquier check en rojo el agente no podría
   // hablar. Peor: el único rojo que él NO puede poner en verde es el que necesita la firma del dev
-  // (la matriz esperando el waiver), o sea que el agujero estaba justo donde más falta hacía.
-  // La salida que quedaba era `STOP_AUTONOMY`, un archivo para TODA la máquina que además apagaba
+  // (la matriz esperando el waiver), o sea que el agujero estaría justo donde más falta hace.
+  // La otra salida sería `STOP_AUTONOMY`, un archivo para TODA la máquina que además apaga
   // el portón de la corrida para siempre. Acá se deja cerrar ESTE turno sin tocar `autonomous`: la
   // corrida sigue vigilada, y en el turno siguiente el portón vuelve a morder si el rojo sigue.
   // De un solo uso: se consume acá, igual que `ALLOW_DOD_EVIDENCE_WRITE`.
@@ -142,7 +141,7 @@ function main() {
   const gate = computeGate(marker);
   if (gate.green) return allowStop();   // objetivo cumplido → deja cerrar
 
-  // Rojo. ¿Progresó vs la vuelta anterior? (al menos un fallo previo ya no está)
+  // Rojo. ¿Progresó vs la vuelta anterior? (al menos un fallo previo desaparece)
   const last = Array.isArray(marker.lastFailures) ? marker.lastFailures : [];
   const progressed = last.length > 0 && last.some((f) => !gate.failures.includes(f));
   marker.noProgressStreak = progressed ? 0 : (marker.noProgressStreak || 0) + 1;
@@ -157,9 +156,9 @@ function main() {
 
   // Hay margen → forzar otra vuelta del loop.
   writeMarker(sessionId, marker);
-  // PIPE-DEBT-2.14 (2026-09-10): el ÚNICO rojo que el agente no puede poner en verde es la matriz
-  // esperando el waiver TTY del dev (marker.js runtime-waiver). Sin esta pista el hook loopeaba y
-  // el agente descubría STOP_AUTONOMY por prueba y error. Se dice, con la salida al lado.
+  // El ÚNICO rojo que el agente no puede poner en verde es la matriz
+  // esperando el waiver TTY del dev (marker.js runtime-waiver). Sin esta pista el hook loopearía y
+  // el agente descubriría STOP_AUTONOMY por prueba y error. Se dice, con la salida al lado.
   const soloMatriz = gate.failures.length > 0 && gate.failures.every((f) => /^acmatrix\b/.test(f));
   const pista = soloMatriz
     ? '\n  ℹ Si la matriz está roja SÓLO porque hay criterios declarados no verificables esperando el waiver ' +

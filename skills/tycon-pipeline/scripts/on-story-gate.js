@@ -8,9 +8,8 @@
  * estado del pipeline (~/.claude/.tycon-pipeline/). Lógica y porqué: `lib/story-gate.js`; I/O
  * compartido con el guard de Bash: `lib/story-gate-io.js`.
  *
- * Caso disparador 2026-08-19 (máquina de otro dev): el agente anunció "story + pipeline" y se largó a
- * codear; y en pipeline "tomaba confianza y se salteaba etapas". Antes de esto, todo lo previo al
- * marker era un system-reminder que se puede ignorar.
+ * Sin este portón, el agente puede anunciar "story + pipeline" y largarse a codear, o saltear etapas
+ * dentro del pipeline. Un system-reminder previo al marker se puede ignorar.
  *
  * Corre in-process vía dispatch.js ('pre-edit'). Contrato: handle(event) →
  *   null           → dejar pasar

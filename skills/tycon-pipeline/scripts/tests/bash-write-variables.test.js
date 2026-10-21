@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * bash-write-variables.test.js — story 7.25 del arnés (AC 3, 4 y 5; T5-T9).
+ * bash-write-variables.test.js — variables del comando en la puerta de la consola (T5-T9).
  *
  * QUÉ CUIDA: que la puerta de la consola (`on-bash-write-gate.js`) lea las variables del propio comando antes de decidir
- * dónde escribe. Caso de un producto del equipo (2026-10-14): `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` salió
- * frenado como «EDICIÓN INVISIBLE»: el freno armó `<repo>/$SP/x.cs` sin expandir y lo contó como código del repo de la
- * corrida. Y el escape del dev (`TYCON_LEDGER_VISIBLE=off`) prometía una constancia en gates.log que no se escribía.
+ * dónde escribe. Caso real de un producto del equipo: `SP=<scratchpad>; python3 -c "open('$SP/x.cs','w')"` sale
+ * frenado como «EDICIÓN INVISIBLE»: el freno arma `<repo>/$SP/x.cs` sin expandir y lo cuenta como código del repo de la
+ * corrida. Y el escape del dev (`TYCON_LEDGER_VISIBLE=off`) promete una constancia en gates.log, y esa constancia tiene que escribirse.
  *
- * Las variables las expande `lib/command-vars.js` (un lector propio de la skill desde el pase adversarial de la 7.25:
- * el compartido `scripts/lib/shell-parse.js` daba rutas falsas para esto — ver su cabecera).
+ * Las variables las expande `lib/command-vars.js` (un lector propio de la skill:
+ * el compartido `scripts/lib/shell-parse.js` da rutas falsas para esto — ver su cabecera).
  *
  * Correr: node --test skills/tycon-pipeline/scripts/tests/bash-write-variables.test.js
  */
@@ -91,7 +91,7 @@ test('T8 BashWrite_VariableSinDefinir_FrenaYLoDice', () => {
     assert.ok(r && r.block, 'sin saber adónde va, se frena del lado seguro');
     assert.match(r.block, /\$NADIE/, 'nombra la variable');
     assert.match(r.block, /sin resolver/i, 'y dice que no se pudo resolver');
-    // vuelta 7: si la variable es el nombre entero o la extensión, tampoco se sabe si es código
+    // Si la variable es el nombre entero o la extensión, tampoco se sabe si es código
     for (const cmd of ['cat > $NADIE <<EOF\nx\nEOF', 'cat > src/x.$NADIE <<EOF\nx\nEOF']) {
       const b = bash.handle(ev(cmd, repo), { stateDir: estado });
       assert.ok(b && b.block, `frena: ${cmd}`);
@@ -113,10 +113,9 @@ test('T9 BashWrite_EscapeDelDev_DejaConstancia — el escape pasa y queda en gat
   assert.ok((esc.paths || []).some((p) => p.endsWith('/src/y.cs')), 'con el archivo que pasó');
 });
 
-// T19 — los casos que confirmó el pase adversarial de la 7.25 (2026-10-15). La primera versión expandía con el lector
-// compartido (`shell-parse.js`), que está hecho para otro freno: guarda sólo la ÚLTIMA asignación, no mira el ambiente
-// y toma `$(mktemp -d)` como texto. Cada caso es un hallazgo reproducido; el lector propio tiene que resolver como el shell
-// o, si no puede, decir que no pudo (nunca una ruta inventada).
+// T19 — casos límite. Expandir con el lector compartido (`shell-parse.js`) no sirve: está hecho para otro freno,
+// guarda sólo la ÚLTIMA asignación, no mira el ambiente y toma `$(mktemp -d)` como texto. El lector propio tiene
+// que resolver como el shell o, si no puede, decir que no pudo (nunca una ruta inventada).
 test('T19 BashWrite_CasosDelPaseAdversarial_ResuelveComoElShellONoResuelve', () => {
   const home = os.homedir();
   conEnv({ ...ENV, SP: '/tmp/out', REPO: undefined, TMPDIR: '/tmp/zz' }, () => {
@@ -141,8 +140,8 @@ test('T19 BashWrite_CasosDelPaseAdversarial_ResuelveComoElShellONoResuelve', () 
     // reasignación: cada destino con el valor que la variable tenía EN ESE PUNTO del comando
     const dos = bash.destinosResueltos('SP=/tmp/a; echo 1 > $SP/1.cs; SP=/repo/src; echo 2 > $SP/2.cs', '/repo');
     assert.deepEqual(dos.map((d) => d.abs), ['/tmp/a/1.cs', '/repo/src/2.cs']);
-    // el MISMO destino escrito dos veces con la variable reasignada en el medio (re-loop de la 7.25): no se sabe cuál
-    // de los dos valores mirar → sin resolver, del lado seguro (antes se tomaba el primero y el que caía en el repo pasaba)
+    // el MISMO destino escrito dos veces con la variable reasignada en el medio: no se sabe cuál
+    // de los dos valores mirar → sin resolver, del lado seguro (tomar el primero dejaría pasar el que cae en el repo)
     const rep = bash.destinosResueltos('SP=/tmp/a; echo 1 > $SP/x.cs; SP=/repo; echo 2 > $SP/x.cs', '/repo');
     assert.equal(rep.length, 1, 'un destino (el texto es el mismo)');
     assert.deepEqual(rep[0].sinResolver, ['SP'], JSON.stringify(rep));
@@ -150,7 +149,7 @@ test('T19 BashWrite_CasosDelPaseAdversarial_ResuelveComoElShellONoResuelve', () 
   });
 });
 
-// T24 — vuelta 2 de revisores (seguridad, 2026-10-15): sólo cuenta una asignación que el shell de verdad deja puesta.
+// T24 — sólo cuenta una asignación que el shell de verdad deja puesta.
 // Lo que está entre comillas o en el cuerpo de un heredoc es texto; un `VAR=x cmd` vale sólo para ese comando; en un
 // subshell, después de `||` o dentro de un `then`/`else`/`do` puede no haber pasado. Esos casos son «no sé», nunca un valor.
 test('T24 BashWrite_SoloCuentanLasAsignacionesQueQuedanPuestas', () => {
@@ -175,7 +174,7 @@ test('T24 BashWrite_SoloCuentanLasAsignacionesQueQuedanPuestas', () => {
   assert.ok(Date.now() - t0 < 1000, `tardó ${Date.now() - t0} ms`);
 });
 
-// T26 — vuelta 3 de revisores (seguridad): el lector es CONSERVADOR. Una asignación cuenta sólo si seguro quedó puesta
+// T26 — el lector es CONSERVADOR. Una asignación cuenta sólo si seguro quedó puesta
 // en el shell de la sesión; ante cualquier forma que no sabe leer del todo, «no sé» (frena avisando). Y nunca tira: un
 // error adentro del freno es un freno apagado (el hook falla abierto).
 test('T26 BashWrite_LectorConservador_NoSeAnteLoQueNoLeeDelTodo', () => {
@@ -205,8 +204,8 @@ test('T26 BashWrite_LectorConservador_NoSeAnteLoQueNoLeeDelTodo', () => {
   }
 });
 
-// T28 — vuelta 4 de revisores (seguridad): imitar al shell no converge; el lector entiende una forma SIMPLE y todo lo
-// demás es «no sé». Cada caso de abajo, antes, resolvía afuera un destino que el shell escribe adentro.
+// T28 — imitar al shell no converge; el lector entiende una forma SIMPLE y todo lo
+// demás es «no sé». Cada caso de abajo resolvería afuera un destino que el shell escribe adentro.
 test('T28 BashWrite_SoloLaFormaSimple_TodoLoDemasNoSe', () => {
   conEnv({ ...ENV, SP: '/tmp/viejo', PWD: '/otra' }, () => {
     const uno = (cmd) => bash.destinosResueltos(cmd, '/repo').find((d) => /\$/.test(d.raw));
@@ -235,8 +234,8 @@ test('T28 BashWrite_SoloLaFormaSimple_TodoLoDemasNoSe', () => {
   });
 });
 
-// T29 — vuelta 5 de revisores (seguridad): `for`/`select`/`case` y las variables posiciones o especiales (`$1`, `$@`,
-// `$$`) son «no sé»; y lo que está ADENTRO de comillas no dispara las reglas de forma (el caso original de la story
+// T29 — `for`/`select`/`case` y las variables posiciones o especiales (`$1`, `$@`,
+// `$$`) son «no sé»; y lo que está ADENTRO de comillas no dispara las reglas de forma (un caso típico
 // escribe con `python3 -c "…f.close()"`, y `f.close()` no es una función de shell).
 test('T29 BashWrite_BuclesPosicionalesYLoQueEstaEntreComillas', () => {
   conEnv({ ...ENV, SP: '/tmp/viejo' }, () => {
@@ -252,14 +251,14 @@ test('T29 BashWrite_BuclesPosicionalesYLoQueEstaEntreComillas', () => {
     }
     const py = 'SP=/tmp/scratch; python3 -c "f=open(\'$SP/x.cs\',\'w\'); f.write(\'x\'); f.close()"';
     assert.equal(uno(py).abs, '/tmp/scratch/x.cs', 'el caso original: el destino al scratchpad se resuelve');
-    // vuelta 6: dos formas que asignan en el shell actual aunque vayan entre comillas dobles
+    // Dos formas que asignan en el shell actual aunque vayan entre comillas dobles
     for (const cmd of ['echo "$((SP=3))"; cat > $SP/a.cs', 'echo ${SP:=/repo/src}; cat > $SP/a.cs']) {
       assert.ok(uno(cmd).sinResolver.length > 0, `${cmd} → ${JSON.stringify(uno(cmd))}`);
     }
   });
 });
 
-// T31 — vuelta 6 de revisores (fallas silenciosas): un destino de código con una variable sin resolver frena aunque la
+// T31 — un destino de código con una variable sin resolver frena aunque la
 // sesión esté parada FUERA del repo de la corrida — no se sabe adónde va, así que no puede pasar callado.
 test('T31 BashWrite_SinResolverDesdeOtraCarpeta_FrenaIgual', () => {
   const { estado, raiz } = corral();
@@ -270,7 +269,7 @@ test('T31 BashWrite_SinResolverDesdeOtraCarpeta_FrenaIgual', () => {
   });
 });
 
-// T32 — vuelta 8 de revisores: un destino sin resolver con una extensión LITERAL que no es código (`$OUT/notes.md`)
+// T32 — un destino sin resolver con una extensión LITERAL que no es código (`$OUT/notes.md`)
 // sigue pasando sin fricción; y cuando un destino dudoso pasa (sin corrida abierta), no suma al cupo del carril ad-hoc
 // pero deja constancia en gates.log (`unresolved-passed`).
 test('T32 BashWrite_SinResolverQueNoEsCodigoYConstancia', () => {
@@ -290,7 +289,7 @@ test('T32 BashWrite_SinResolverQueNoEsCodigoYConstancia', () => {
   assert.deepEqual(adhoc.files, [], `el destino dudoso no suma al cupo: ${JSON.stringify(adhoc.files)}`);
   const log = fs.readFileSync(path.join(e2, 'gates.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   assert.ok(log.some((l) => l.name === 'ledger-visible' && l.status === 'unresolved-passed'), `constancia: ${JSON.stringify(log)}`);
-  // con la corrida abierta y el escape del dev: pasa y quedan LAS DOS constancias (vuelta 9 de revisores)
+  // con la corrida abierta y el escape del dev: pasa y quedan LAS DOS constancias
   const { estado: e3, repo: r3 } = corral();
   conEnv({ ...ENV, TYCON_LEDGER_VISIBLE: 'off' }, () => {
     assert.equal(bash.handle(ev('cat > $F <<EOF\nx\nEOF', r3), { stateDir: e3 }), null, 'con el escape, pasa');

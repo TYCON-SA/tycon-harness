@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * ui-readability.test.js — la pantalla se revisa con ojos de usuario (story 7.24).
+ * ui-readability.test.js — la pantalla se revisa con ojos de usuario.
  *
- * Caso disparador (2026-10-14, guides/maintaining/incident-log.md#case-screen-passed-all-controls-unreadable-2026-10-14): una ventana pasó todos los controles y
- * el dueño la vio «inentendible» en staging. La revisión de legibilidad sólo leía la guía del tester, y sus marcas se
- * resolvieron reescribiendo la guía: el texto malo siguió en la pantalla.
+ * Qué cubre: una pantalla puede pasar todos los controles y aun así ser «inentendible» para quien la
+ * usa. Si la revisión de legibilidad sólo lee la guía del tester, sus marcas se resuelven reescribiendo la guía y el
+ * texto malo sigue en la pantalla.
  *
  *   T1 story de pantalla sin `<clave>-legibilidad-ui.md` → `--check` falla nombrando el archivo
  *   T2 veredicto MARCAS / sin `captures:` / `screens:` incompleto → falla; el archivo completo pasa
@@ -108,7 +108,7 @@ test('T2 UiReadability_VeredictoMarcas_BloqueaEnLaPantalla', () => {
   assert.strictEqual(r.rc, 2, r.out);
   assert.match(r.out, /Detalle\.tsx/, r.out);
 
-  // Una captura nombrada que no existe frena (revisores del paso 5: rama sin prueba).
+  // Una captura nombrada que no existe frena.
   escribir(ui, UI_OK(ambas).replace(/captures:.*\n/, 'captures:\n  - /no/existe/01-lista.png\n'));
   r = check(s);
   assert.strictEqual(r.rc, 2, r.out);
@@ -119,7 +119,7 @@ test('T2 UiReadability_VeredictoMarcas_BloqueaEnLaPantalla', () => {
   r = check(s);
   assert.strictEqual(r.rc, 0, r.out);
 
-  // Las formas que un revisor escribe de verdad también pasan (pase adversarial, clases 7/11/12; revisores, negrita):
+  // Las formas que un revisor escribe de verdad también pasan:
   // la lista en una línea con comillas invertidas, y el veredicto en negrita.
   escribir(ui, '**veredicto**: OK\nscreens: `src/components/Facturas.tsx`, `src/components/Detalle.tsx`\ncaptures: ninguna — sin E2E en esta prueba\n');
   r = check(s);
@@ -129,21 +129,21 @@ test('T2 UiReadability_VeredictoMarcas_BloqueaEnLaPantalla', () => {
 test('T11 UiTexts_CasosDelPaseAdversarial', () => {
   const ui = require('../lib/ui-texts.js');
   const textos = (src) => ui.visibleTexts(src).map((t) => t.text);
-  // clase 1: JSX dentro de una expresión (render condicional)
+  // JSX dentro de una expresión (render condicional)
   assert.ok(textos('<div>{err && <p>Ocurrió un error al guardar</p>}</div>').includes('Ocurrió un error al guardar'));
   assert.ok(textos('<p>{ok ? <b>Todo salió bien</b> : null}</p>').includes('Todo salió bien'));
-  // clase 2: un mensaje en minúsculas no es una lista de clases CSS
+  // un mensaje en minúsculas no es una lista de clases CSS
   assert.ok(textos("setError('no se pudo guardar el cambio');").includes('no se pudo guardar el cambio'));
   assert.ok(!textos('<div className={cond ? "flex items-center" : "hidden md:block"} />').includes('flex items-center'));
-  // clase 5: una plantilla que cruza líneas
+  // una plantilla que cruza líneas
   assert.ok(textos('const m = `Error al guardar\n  el registro ahora`;').includes('Error al guardar el registro ahora'));
-  // clase 6: las entidades HTML se leen como la letra que ve el usuario
+  // las entidades HTML se leen como la letra que ve el usuario
   assert.ok(textos('<p>Contrase&ntilde;a no v&aacute;lida</p>').includes('Contraseña no válida'));
-  // clase 8 / revisores: la plantilla tiene que producir la cita ENTERA; una plantilla de puros huecos no produce nada
+  // la plantilla tiene que producir la cita ENTERA; una plantilla de puros huecos no produce nada
   assert.strictEqual(ui.quoteMatchesText('Tiene 1 facturas sin pagar', 'Tiene ${n} facturas sin pagar.'), true);
   assert.strictEqual(ui.quoteMatchesText('Tiene 1 facturas sin pagar desde marzo del año pasado', 'Tiene ${n} facturas'), false);
   assert.strictEqual(ui.quoteMatchesText('cualquier frase larga del revisor', '${a} ${b}'), false);
-  // clase 4: interpolación de Vue
+  // interpolación de Vue
   const tmp = fs.mkdtempSync(path.join(TMP, 'vue-'));
   const vue = path.join(tmp, 'Facturas.vue');
   fs.writeFileSync(vue, '<template>\n  <p>Tiene {{ n }} facturas pendientes</p>\n</template>\n');
@@ -153,7 +153,7 @@ test('T11 UiTexts_CasosDelPaseAdversarial', () => {
   const nada = ui.whereInScreens('Tiene 1 facturas pendientes', [{ rel: 'NoEsta.vue', abs: path.join(tmp, 'NoEsta.vue') }]);
   assert.ok(nada.some((h) => h.unreadable), JSON.stringify(nada));
 
-  // Vuelta 2 de revisores — ramas del extractor que no tenían prueba:
+  // Ramas del extractor:
   assert.ok(textos('<p>Contrase&#241;a no v&#xE1;lida</p>').includes('Contraseña no válida'));   // entidades numéricas
   assert.ok(textos('<p>{"Pagar todas juntas"}</p>').includes('Pagar todas juntas'));             // {"texto"} es texto
   assert.ok(!textos('<p>{/* esto no lo ve nadie */}Pagar ahora</p>').some((t) => /nadie/.test(t)));  // comentario de JSX
@@ -189,7 +189,7 @@ test('T12 UiReadability_PantallaDeclaradaQueNoEsta_Frena', () => {
   r = check(p);
   assert.strictEqual(r.rc, 0, r.out);
 
-  // Una pantalla que está pero no se puede leer también frena, haya o no marcas (revisores, vuelta 2). En Windows los
+  // Una pantalla que está pero no se puede leer también frena, haya o no marcas. En Windows los
   // permisos de archivo no se pueden quitar así: se saltea con constancia.
   if (process.platform === 'win32') { console.log('# T12: sin chmod en Windows — el caso de la pantalla ilegible no se midió'); return; }
   const nueva = path.join(repo, 'src', 'components', 'Nueva.tsx');
@@ -340,7 +340,7 @@ test('T10 PipelineQaReadability_ScopeUi_AnotaLaMarca', () => {
   assert.ok(lineas.some((l) => l.name === 'qa-legibilidad-ui' && l.marcas === 2 && l.storyId === '1.1'), JSON.stringify(lineas.slice(-2)));
   r = correr('--scope', 'pantalla');
   assert.strictEqual(r.status, 2, 'un --scope que no existe no se anota');
-  // pase adversarial, clase 14: `--scope` sin valor no se anota como la marca de la guía
+  // `--scope` sin valor no se anota como la marca de la guía
   r = correr('--scope');
   assert.strictEqual(r.status, 2, '--scope sin valor no se anota');
 });
@@ -356,7 +356,7 @@ test('T9 Step01_ValW16_NoAutoContinua', () => {
   assert.match(catalogo, /\*\*VAL-W16\*\*/);
 });
 
-// ── story 7.30: lo construido se compara contra la maqueta que el dueño aprobó con el plan ──────────────────────────
+// ── lo construido se compara contra la maqueta aprobada con el plan ──────────────────────────
 const MOCKUP = path.join(SK, 'mockup.js');
 const PANTALLA_730 = 'src/components/Facturas.tsx';
 // la maqueta la arma mockup.js; el archivo de aprobación lo escribe la prueba con la huella real (como marker.js)
@@ -531,7 +531,7 @@ test('7.30-T26 UiReadability_SinPantallasEnElDisco_TieneSalida @story-7.30 @ac-2
     r = checkCon(s);
     assert.strictEqual(r.rc, 0, `${archivo}\n${r.out}`);
     assert.match(r.out, /comparación con la maqueta declarada imposible: las pantallas son Razor/);
-    // pase adversarial: un `mockup-compare: no —` sin motivo no toma la línea de abajo como motivo
+    // un `mockup-compare: no —` sin motivo no toma la línea de abajo como motivo
     escribir(ui, `veredicto: OK\nscreens:\ncaptures: ninguna — sin E2E en esta prueba\nmockup: 1.1-mockup.html\nmockup-compare: no —\n- otra línea\n`);
     r = checkCon(s);
     assert.strictEqual(r.rc, 2, `${archivo}\n${r.out}`);
@@ -583,7 +583,7 @@ function hermanos({ declarada = 'Front/src/components/Facturas.tsx', frontRama =
 }
 
 test('UiReadability_PantallaEnElWorktreeDelHermano_Pasa @story-7.34 @ac-6 — la pantalla nueva del hermano se encuentra', () => {
-  // 🔴 rojo: la guía buscaba en el checkout principal de Front (otra rama): «(7) pantallas que no están en el disco».
+  // 🔴 rojo si la guía busca en el checkout principal de Front (otra rama): «(7) pantallas que no están en el disco».
   const lab = hermanos({ declarada: 'Front/src/components/Nueva.tsx' });
   const qa = guiaLista(lab.specsWt);
   escribir(path.join(qa, '1.1-legibilidad-ui.md'), UI_OK(['Front/src/components/Nueva.tsx']));
@@ -617,7 +617,7 @@ test('QaGuide_HermanoEnOtraRama_AvisaEnUnaLinea @story-7.34 @ac-5 — sin worktr
 });
 
 test('ScreenFiles_MismaRutaEnDosRepos_SeRevisanLasDos @story-7.34 @ac-6 — (A) x y (B) x son dos pantallas', () => {
-  // 🔴 rojo (pase adversarial): se deduplicaba por la ruta sin el repo y la segunda pantalla no se revisaba ni faltaba.
+  // 🔴 Sin el repo en la clave, se deduplicaría por la ruta y la segunda pantalla no se revisaba ni faltaba.
   const ui = require(path.join(SK, 'lib', 'ui-texts.js'));
   const dir = fs.mkdtempSync(path.join(TMP, 'dos-repos-'));
   escribir(path.join(dir, 'A', 'src', 'App.tsx'), 'export const A = () => <p>a</p>;\n');
@@ -633,7 +633,7 @@ test('ScreenFiles_MismaRutaEnDosRepos_SeRevisanLasDos @story-7.34 @ac-6 — (A) 
 });
 
 test('QaGuide_RepoPropioEntreParentesis_LeeElWorktree @story-7.34 @ac-6 — (<repo de la story>) x desde su worktree', () => {
-  // 🔴 rojo (pase adversarial): `(Specs) x` caía a la carpeta vecina `Specs`, el checkout principal en otra rama.
+  // 🔴 `(Specs) x` caería a la carpeta vecina `Specs`, que puede ser el checkout principal en otra rama.
   const lab = hermanos({ declarada: '(Specs) src/Propia.tsx' });
   escribir(path.join(lab.raiz, 'Specs', 'src', 'Propia.tsx'), 'export const P = () => <p>La de main.</p>;\n');
   escribir(path.join(lab.specsWt, 'src', 'Propia.tsx'), 'export const P = () => <p>La de la rama.</p>;\n');
@@ -645,7 +645,7 @@ test('QaGuide_RepoPropioEntreParentesis_LeeElWorktree @story-7.34 @ac-6 — (<re
 });
 
 test('QaGuide_RepoEntreParentesis_NoSaleDelRepo @story-7.34 @ac-6 — (<hermano>) ../../x no sale de su repo', () => {
-  // 🔴 rojo (revisor de seguridad): la forma con paréntesis unía la raíz y la ruta sin la guarda de las otras dos formas.
+  // 🔴 rojo si la forma con paréntesis une la raíz y la ruta sin la guarda de las otras dos formas.
   const lab = hermanos({ declarada: '(Front) ../Afuera.tsx' });
   escribir(path.join(lab.raiz, 'Afuera.tsx'), 'export const X = () => <p>Fuera del repo.</p>;\n');
   const env = { ...process.env, HOME };
@@ -655,7 +655,7 @@ test('QaGuide_RepoEntreParentesis_NoSaleDelRepo @story-7.34 @ac-6 — (<hermano>
 });
 
 test('QaGuide_RepoDeLaStorySinGit_LoDice @story-7.34 @ac-6 — si git no identifica el repo de la story, se dice', () => {
-  // 🔴 rojo (revisor de fallas silenciosas): sin git, `(<repo propio>) x` caía a la carpeta vecina sin aviso.
+  // 🔴 rojo si, sin git, `(<repo propio>) x` cae a la carpeta vecina sin aviso.
   const raiz = fs.realpathSync(fs.mkdtempSync(path.join(TMP, 'sin-git-')));
   const repo = path.join(raiz, 'Proj');
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true }); // una carpeta .git que git no reconoce

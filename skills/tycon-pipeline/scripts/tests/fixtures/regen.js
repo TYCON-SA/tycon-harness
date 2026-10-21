@@ -2,11 +2,10 @@
 /**
  * regen.js — deriva un fixture de `stories/` desde una story, y comprueba que mida lo mismo.
  *
- * 🔴 Hoy NO regenera ninguno: los nueve fixtures de `stories/` son stories de EJEMPLO inventadas, escritas
- * para la prueba y editadas en el propio archivo (story 8.10.3 del arnés, tanda D). Antes salían de stories
- * de un producto y este guion las volvía a copiar; de aquéllas quedó sólo la FORMA que la prueba mide,
- * fijada en `stories-shape.json`. No volver a sumar un fixture a CASOS con una story real de origen: lo
- * pisaría con su texto.
+ * 🔴 NO regenera ninguno: los nueve fixtures de `stories/` son stories de EJEMPLO inventadas, escritas
+ * para la prueba y editadas en el propio archivo. Lo que la prueba mide es su FORMA, fijada en
+ * `stories-shape.json`. No volver a
+ * sumar un fixture a CASOS con una story real de origen: lo pisaría con su texto.
  *
  * Por qué hay fixtures y no se leen stories de verdad: un test que se saltea cuando no encuentra el
  * archivo es exactamente el `skip-on-not-ok` que `guides/definition-of-done.md` prohíbe — el verde diría
@@ -57,11 +56,10 @@ function derive(src) {
   const fm = '---\n' + clip(keep.join('\n')) + '\n---\n';
   const ac = (body.match(/^##[ \t]+Acceptance Criteria[\s\S]*?(?=\n##[ \t]|(?![\s\S]))/m) || [''])[0];
   const tests = (body.match(/^#{2,6}[ \t]+Tests\b[\s\S]*?(?=\n#{1,3}[ \t]|(?![\s\S]))/m) || [''])[0];
-  // 🔴 Esta cabecera NO puede contener el literal del heading de ACs. Con el parser viejo
-  // (regex sin anclar) cualquier aparición del literal ANTES de la sección real la secuestra,
-  // así que un comentario que lo mencionara haría fallar a los 9 fixtures por la misma causa
-  // — incluidos los dos anti-regresión, que existen justamente para dar VERDE contra el
-  // parser viejo y probar que el fix no rompió el caso que el fix anterior había arreglado.
+  // 🔴 Esta cabecera NO puede contener el literal del heading de ACs: un parser con regex sin anclar
+  // lo tomaría de aquí en vez de la sección real, y los fixtures fallarían por la misma causa
+  // — incluidos los anti-regresión, que existen para dar VERDE contra ese parser y probar que la
+  // corrección no rompió lo que ya estaba arreglado.
   return `<!-- FIXTURE recién derivado de una story: falta reinventar el texto (ver la cabecera de regen.js).
      Contenido: frontmatter recortado (se conservan story/epic/status y toda línea que cite
      el heading de la sección de criterios, que es lo que dispara el falso match de sección)

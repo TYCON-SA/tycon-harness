@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * packs.test.js — los paquetes de revisores (story 8.2 del arnés, 2026-09-26).
+ * packs.test.js — los paquetes de revisores.
  *
  * EL AGUJERO QUE CIERRA: los revisores de Bizuit y de clientes vivían escritos en el código del
  * pipeline. Para publicar el núcleo hay que sacarlos, y sacarlos a mano tiene un modo de falla que
@@ -10,7 +10,7 @@
  * (2) un paquete roto, un nombre que no existe o una clave fuera del vocabulario FRENAN el comando
  * nombrando archivo, revisor y motivo — nunca degradan a «sin ese paquete».
  *
- * Cubre T1–T9, T12 y T14 de la story. Lanza `pipeline.js` → HOME y sesión aislados (mismo patrón que
+ * Cubre T1–T9, T12 y T14. Lanza `pipeline.js` → HOME y sesión aislados (mismo patrón que
  * `advisor-set-config.test.js`: sin esto cada invocación deja una marca `step5-start` falsa en el
  * registro de la sesión viva).
  */
@@ -27,7 +27,7 @@ const PIPELINE = path.join(SCRIPTS, 'pipeline.js');
 const RAIZ = path.resolve(SCRIPTS, '..', '..', '..');       // agent-skills
 const PACKS_REALES = path.join(RAIZ, 'packs');
 const HOME_AISLADO = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-home-'));
-// Story 8.7 (tanda B): la copia pública sale sin el paquete de clientes. Lo que tres casos miden contra ese paquete REAL
+// La copia pública sale sin el paquete de clientes. Lo que tres casos miden contra ese paquete REAL
 // no se puede medir ahí, y se dice; en el repo del equipo `SKIP_PUBLIC` es false y se mide todo, como siempre.
 const { SKIP_PUBLIC, clientPackReviewers, packReviewers } = require('./lib/public-copy.js');
 
@@ -36,14 +36,14 @@ const SB = 'tycon-plugin-security-basics';
 
 function tmp(prefijo) { return fs.mkdtempSync(path.join(os.tmpdir(), prefijo)); }
 
-// ── story 8.7 del arnés (AC 8, T37): sin `packs:` en el repo, los paquetes activos los dice `packs.default` ──
+// ── sin `packs:` en el repo, los paquetes activos los dice `packs.default` (AC 8, T37) ──
 // El default lo responde el lector de configuración del arnés (`scripts/lib/tycon-config.js`), ubicado con
 // lib/harness-path.js. El arnés de esta máquina se ubica ANTES de aislar la HOME (con la HOME de laboratorio el enlace
 // no existe). Las pruebas no le preguntan al arnés real: arman uno de laboratorio con SU lector (copiado) y el perfil
-// que cada caso declara — la lección de la 8.3: una prueba que cuenta con «todos los instalados» lo declara.
+// que cada caso declara: una prueba que cuenta con «todos los instalados» lo declara.
 const ARNES_DE_LA_MAQUINA = require('../lib/harness-path.js').rutaArnesHook().dir;
 const LECTOR_REAL = ARNES_DE_LA_MAQUINA ? path.join(ARNES_DE_LA_MAQUINA, 'scripts', 'lib', 'tycon-config.js') : null;
-/** ¿El lector del arnés de esta máquina ya conoce `packs.default`? (uno anterior a la 8.7 no: NO MEDIDO, nunca verde) */
+/** ¿El lector del arnés de esta máquina ya conoce `packs.default`? (uno más viejo no: NO MEDIDO, nunca verde) */
 const LECTOR_CONOCE_LA_CLAVE = (() => {
   try { const v = require(LECTOR_REAL).VOCABULARIO; return !!(v && v.packs && v.packs.default); } catch (_e) { return false; }
 })();
@@ -58,9 +58,9 @@ function arnesDeLaboratorio({ lector = 'real', perfil } = {}) {
   if (perfil !== undefined) fs.writeFileSync(path.join(d, 'perfil-equipo.json'), JSON.stringify(perfil, null, 2) + '\n');
   return d;
 }
-// Un lector anterior a la 8.7: no conoce la clave (la compatibilidad de orden de merge entre los dos repos).
+// Un lector más viejo: no conoce la clave (compatibilidad de orden de merge entre los dos repos).
 const LECTOR_ANTERIOR = "'use strict';\nmodule.exports = { VOCABULARIO: { update: { channel: 'opcion:latest|stable' } } };\n";
-// El default que declaran las pruebas de siempre: «todos los instalados», como antes de la 8.7.
+// El default que declaran las pruebas de siempre: «todos los instalados».
 const ARNES_TODOS = LECTOR_CONOCE_LA_CLAVE ? arnesDeLaboratorio({ perfil: { packs: { default: 'all' } } }) : arnesDeLaboratorio({ lector: LECTOR_ANTERIOR });
 function git(dir, ...args) { spawnSync('git', ['-C', dir, ...args], { stdio: 'ignore' }); }
 
@@ -108,7 +108,7 @@ const PRUEBA = {
   ],
 };
 
-/** El mismo manifiesto con las claves de antes de la D1 (story 8.9): salen de la tabla del puente, nunca escritas acá
+/** El mismo manifiesto con las claves anteriores a las del inglés: salen de la tabla del puente, nunca escritas acá
  *  (el freno y el termómetro cuentan los nombres de todo lo que se publica, pruebas incluidas). */
 const { OWN_PACK_KEYS } = require('../lib/legacy-names.js');
 const VIEJA_DE = new Map(Object.entries(OWN_PACK_KEYS).map(([viejo, nuevo]) => [nuevo, viejo]));
@@ -156,7 +156,7 @@ function pipeline(cmd, args, env = {}) {
       HOME: HOME_AISLADO,
       LANG: 'en_US.UTF-8',
       TYCON_SESSION_ID: 'packs-test',
-      // story 8.7: estas pruebas cuentan con «todos los instalados» en un repo sin `packs:` — lo declaran
+      // estas pruebas cuentan con «todos los instalados» en un repo sin `packs:` — lo declaran
       TYCON_GUIDES_DIR: ARNES_TODOS,
       ...env,
     },
@@ -312,7 +312,7 @@ test('Pack_ClaveOBanderaDesconocida_ManifiestoInvalido', () => {
   assert.deepEqual(packs.VOCABULARIO.grupos.slice().sort(), ['base', 'condicional', 'validacion']);
 });
 
-// ── Story 8.10 del arnés, AC 24 (T36): los hermanos del corral del banco viven en su paquete ─────
+// ── Los hermanos del corral del banco viven en su paquete ─────
 test('Pack_Siblings_FieldValidatedAndDelivered', () => {
   const packs = require('../lib/packs.js');
   const agentsDir = agentes(...AGENTES_PRUEBA);
@@ -324,7 +324,7 @@ test('Pack_Siblings_FieldValidatedAndDelivered', () => {
   ];
   packs.resetCache();
   const cargados = packs.cargarPaquetes({ packsDir: paquetes({ prueba: conHermanos }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] });
-  // lo que entrega la biblioteca conserva su forma de siempre (story 8.9, pregunta decidida 2): ruta y nombre
+  // lo que entrega la biblioteca conserva su forma de siempre: ruta y nombre
   assert.deepEqual(cargados[0].hermanos, conClavesViejas(conHermanos.siblings), 'el paquete entrega sus hermanos tal cual');
   packs.resetCache();
   const sin = packs.cargarPaquetes({ packsDir: paquetes({ prueba: PRUEBA }), agentsDir, nucleo: [TC, SB], banderas: ['csModified'] });
@@ -346,7 +346,7 @@ test('Pack_Siblings_FieldValidatedAndDelivered', () => {
   }
 });
 
-// ── Story 8.9 del arnés, tanda D1: las claves del manifiesto en inglés; uno de afuera con las de antes sigue andando ──
+// ── Las claves del manifiesto en inglés; uno de afuera con las de antes sigue andando ──
 test('D1 Pack_OldKeysOutsideTheRepo_SameAsNew — un manifiesto en TYCON_PACKS_DIR con las claves viejas carga igual que el nuevo', () => {
   const packs = require('../lib/packs.js');
   const agentsDir = agentes(...AGENTES_PRUEBA);
@@ -495,8 +495,8 @@ test('Pack_ListaDelRepo_RestringeYFallaSiFalta', () => {
   assert.ok(r4.stderr.includes(packsDir), `dice dónde buscó: ${r4.stderr}`);
   assert.equal(r4.json, null, 'sin set a medias en stdout');
 
-  // las formas YAML que el pase adversarial de la 8.2 encontró rotas: ítems en columna 0 (antes → [] y
-  // CERO paquetes en silencio; `- inexistente` sin indentar ni frenaba) y la clave sin lista
+  // formas YAML que no pueden dar CERO paquetes en silencio: ítems en columna 0
+  // (`- inexistente` sin indentar tiene que frenar) y la clave sin lista
   const col0 = repo({ yaml: 'packs:\n- prueba\n- inexistente\n' });
   agregar(col0, 'src/A.cs', 'class X {}\n');
   const r6 = advisors(col0, ['src/A.cs'], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
@@ -518,7 +518,7 @@ test('Pack_ListaDelRepo_RestringeYFallaSiFalta', () => {
   assert.ok(r8.stderr.includes(path.join(nula, '.tycon', 'advisors.yaml')));
 
   // una configuración ILEGIBLE (no ausente) tampoco se toma como «sin restricción»: frena nombrándola
-  // (lo cazó el revisor de fallos silenciosos: un `packs:` que se ignora cambia el set sin que se vea)
+  // (un `packs:` que se ignora cambia el set sin que se vea)
   const ilegible = repo();
   fs.mkdirSync(path.join(ilegible, '.tycon', 'advisors.yaml'), { recursive: true });   // es una carpeta → EISDIR
   agregar(ilegible, 'src/A.cs', 'class X {}\n');
@@ -528,7 +528,7 @@ test('Pack_ListaDelRepo_RestringeYFallaSiFalta', () => {
   assert.equal(r5.json, null);
 });
 
-// ── `packs:` en todas las formas YAML que el equipo escribe (pase adversarial 8.2, clase 1/6/8/9/10/14) ──
+// ── `packs:` en todas las formas YAML que el equipo escribe ──
 test('Pack_ListaDelRepo_FormasYaml', () => {
   const { paquetesDeclarados, PacksDeclaradosError, rendirPrompt } = require('../lib/packs.js');
   const tabla = [
@@ -545,7 +545,7 @@ test('Pack_ListaDelRepo_FormasYaml', () => {
     ['e2e:\n  packs: [bizuit]\n', null],                                                   // anidada no es la top-level
   ];
   for (const [txt, esperado] of tabla) assert.deepEqual(paquetesDeclarados(txt), esperado, JSON.stringify(txt));
-  // una clave sin lista NO es «ninguno» (antes apagaba todos los paquetes en silencio) ni «todos los paquetes»
+  // una clave sin lista NO es «ninguno» (apagaría todos los paquetes en silencio) ni «todos los paquetes»
   for (const txt of ['packs:\n', 'packs: ~\n', 'packs: null\n', 'packs:\n  # comentado\nmerge:\n  mode: pr\n', 'packs: [\n  bizuit\n']) {
     assert.throws(() => paquetesDeclarados(txt), PacksDeclaradosError, JSON.stringify(txt));
   }
@@ -605,9 +605,9 @@ test('Advisors_SalidaIncluyePaquetesCargados', () => {
   assert.deepEqual(s.json.packs.map((p) => p.nombre), ['prueba']);
 });
 
-// ── T8 · AC 7 — el núcleo no nombra a los revisores de paquete (story 8.41: ni trae paquetes) ─────────────────
-// (story 8.10.3 D: los revisores de paquete no se escriben acá: son los que declaran los manifiestos instalados. La copia
-// pública no trae ningún paquete (story 8.41: llegan con el perfil del equipo); el repo del equipo los suma leyéndolos de
+// ── T8 · AC 7 — el núcleo no nombra a los revisores de paquete (la copia pública ni trae paquetes) ─────────────────
+// (los revisores de paquete no se escriben acá: son los que declaran los manifiestos instalados. La copia
+// pública no trae ningún paquete (llegan con el perfil del equipo); el repo del equipo los suma leyéndolos de
 // sus manifiestos — sacar o sumar uno allá no toca esta suite)
 const LOS_DE_PAQUETE = packReviewers(PACKS_REALES);
 function archivosDelNucleo() {
@@ -633,7 +633,7 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
     });
   }
   assert.deepEqual(apariciones, [], `los revisores de paquete sólo viven en packs/:\n${apariciones.join('\n')}`);
-  // (pase adversarial de la 8.10.3 D: comparar la lista contra los mismos manifiestos de los que sale no mide nada)
+  // (comparar la lista contra los mismos manifiestos de los que sale no mide nada)
   // lo que sí se mide: cada revisor que un manifiesto declara tiene su definición —en la carpeta de agentes de su paquete
   // (clave `agents`) o en la de la raíz—, y ninguno vive a la vez en agents/ del núcleo
   if (SKIP_PUBLIC) {
@@ -652,7 +652,7 @@ test('Nucleo_SinNombresDePaquetes', (t) => {
   for (const n of clientPackReviewers()) assert.ok(LOS_DE_PAQUETE.includes(n), `${n} del paquete de clientes`);
 });
 
-// ── story 8.41 · T21 (AC 24): el núcleo no nombra a ningún revisor de un stack — cada revisor que pipeline.js escribe tiene su
+// ── T21 (AC 24): el núcleo no nombra a ningún revisor de un stack — cada revisor que pipeline.js escribe tiene su
 //    definición en agents/ del núcleo; y el escalamiento de mech-check de una familia que no es del núcleo (WIRING) va al
 //    revisor del paquete ACTIVO que declara ese prefijo, o queda sin escalar y se dice ───────────────────────────────────
 test('T21 Pipeline_NamesNoneOfThirteen', () => {
@@ -661,7 +661,7 @@ test('T21 Pipeline_NamesNoneOfThirteen', () => {
   assert.ok(nombrados.length >= 10, `pipeline.js nombra revisores del núcleo: ${nombrados.join(', ')}`);
   const sinDefinicion = nombrados.filter((n) => !fs.existsSync(path.join(RAIZ, 'agents', `${n}.md`)));
   assert.deepEqual(sinDefinicion, [], 'cada revisor que pipeline.js nombra es del núcleo (los de un stack viven en su paquete)');
-  // el control de commit que corre la paridad Codex y la vida del revisor tocado mira también los de un paquete (pase adversarial)
+  // el control de commit que corre la paridad Codex y la vida del revisor tocado mira también los de un paquete
   const hook = path.join(RAIZ, '.githooks', 'pre-commit-checks');
   if (fs.existsSync(hook)) assert.match(fs.readFileSync(hook, 'utf8'), /git diff --cached --name-only -- 'agents\/\*\.md' 'packs\/\*\/agents\/\*\.md'/);
   // el escalamiento: un componente nuevo sin uso es un ambiguo WIRING-C1
@@ -682,7 +682,7 @@ test('T21 Pipeline_NamesNoneOfThirteen', () => {
   assert.match(sin.json.note, /Sin escalar: WIRING \(ningún paquete activo trae su revisor\)/);
 });
 
-// ── story 8.41 · T17 (AC 16, 17) y T19 (AC 19): las skills de un stack no viven en el núcleo, y las del núcleo no nombran a la
+// ── T17 (AC 16, 17) y T19 (AC 19): las skills de un stack no viven en el núcleo, y las del núcleo no nombran a la
 //    organización. Las nueve llegan en el paquete del perfil del equipo; que estén ahí lo mide el repo del equipo ──────
 test('T17 Skills_LeavePublic_TravelInTeamLayer (lado público)', (t) => {
   const skillsDir = path.join(RAIZ, 'skills');
@@ -775,7 +775,7 @@ test('Validadores_ConYSinPaqueteClientes', (t) => {
   fs.writeFileSync(path.join(d, 'src', 'Foo.csproj'), '<Project />\n');
   const back = pipeline('validadores', ['--story', storyFront, '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
   assert.deepEqual(back.json.validadores, ['tycon-story-validator', 'rev-val']);
-  // una story o un repo que no existen no dan un set «válido» a medias: frenan (pase adversarial 8.2)
+  // una story o un repo que no existen no dan un set «válido» a medias: frenan
   const sinStory = pipeline('validadores', ['--story', path.join(d, 'no-existe.md'), '--repo', d], { TYCON_PACKS_DIR: packsDir, TYCON_AGENTS_DIR: agentsDir });
   assert.notEqual(sinStory.status, 0);
   assert.match(sinStory.stderr, /no se pudo leer la story/);
@@ -824,7 +824,7 @@ test('ConfigLint_ConoceClavePacks', () => {
     assert.equal(ciego.hallazgos[0].tipo, 'paquetes-ilegibles');
     assert.match(ciego.hallazgos[0].mensaje, /no se pudo leer/);
     // …pero la carpeta POR DEFECTO ausente (máquina sin paquetes, sin variable) es «ninguno instalado»,
-    // no «no pude leer» (cazado por el revisor de fallos silenciosos en la iteración 2)
+    // no «no pude leer»
     delete process.env.TYCON_PACKS_DIR;
     const { lintPaquetes } = require('../lib/config-lint.js');
     const sinPaquetes = lintPaquetes('packs: [bizuit]\n', { packsDir: path.join(packsDir, 'no-existe'), explicito: false });
@@ -836,7 +836,7 @@ test('ConfigLint_ConoceClavePacks', () => {
   }
 });
 
-// ── T37 de la story 8.7 del arnés · AC 8 — el paquete opcional viene apagado por defecto ─────────
+// ── T37 · AC 8 — el paquete opcional viene apagado por defecto ─────────
 test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
   otro.reviewers = [{ agent: 'rev-otro', group: 'base', when: { detection: 'csModified' }, surface: { paths: ['**/*.cs'] }, depth: 'standard', prefixes: ['RO'] }];
@@ -854,7 +854,7 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.match(perdido.stderr, /el arnés/, `nombra el arnés: ${perdido.stderr}`);
   assert.match(perdido.stderr, /packs\.default/, 'y dice para qué lo buscaba');
 
-  // un arnés anterior a la 8.7 (su lector no conoce la clave): como hoy, todos — el orden de merge entre repos no le
+  // un arnés más viejo (su lector no conoce la clave): como siempre, todos — el orden de merge entre repos no le
   // quita los revisores del paquete a nadie
   const anterior = correr(sinPacks, { TYCON_GUIDES_DIR: arnesDeLaboratorio({ lector: LECTOR_ANTERIOR }) });
   assert.equal(anterior.status, 0, anterior.stderr);
@@ -872,7 +872,7 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   const variableMala = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: 'algunos' });
   assert.equal(variableMala.status, 2, variableMala.stderr);
   assert.match(variableMala.stderr, /TYCON_PACKS_DEFAULT/);
-  // como la lee tycon-config.js (pase adversarial de la tanda A): recortada, y sólo espacios = sin poner (va al arnés)
+  // como la lee tycon-config.js: recortada, y sólo espacios = sin poner (va al arnés)
   const conEspacios = correr(sinPacks, { TYCON_GUIDES_DIR: sinArnes, TYCON_PACKS_DEFAULT: ' all ' });
   assert.equal(conEspacios.status, 0, conEspacios.stderr);
   assert.deepEqual(nombres(conEspacios), ['otro', 'prueba']);
@@ -880,7 +880,7 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.equal(blanca.status, 2, 'sólo espacios es «sin poner»: busca el arnés y no lo encuentra');
   assert.match(blanca.stderr, /el arnés/);
 
-  // un repo que declara `packs:` achica lo que activa la organización (story 8.41, AC 6): con la variable en all, ése; sin
+  // un repo que declara `packs:` achica lo que activa la organización (AC 6): con la variable en all, ése; sin
   // arnés ni variable no se sabe qué activó la organización, y frena nombrando el arnés
   const declarado = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: path.join(tmp('packs-nada-'), 'no-existe'), TYCON_PACKS_DEFAULT: 'all' });
   assert.equal(declarado.status, 0, declarado.stderr);
@@ -890,8 +890,8 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.match(declaradoSinArnes.stderr, /el arnés/);
 
   if (!LECTOR_CONOCE_LA_CLAVE) {
-    // TODO(Story-8.7-deferral: AC#8 | T37 | blocker: el arnés de esta máquina todavía no conoce packs.default) — guardia de
-    // arranque, no funcionalidad diferida: con el arnés al día (TYCON_GUIDES_DIR o el merge de la tanda A) corre entero
+    // Guardia de arranque, no funcionalidad diferida: si el arnés de esta máquina todavía no conoce packs.default no se
+    // puede medir, y se dice; con el arnés al día (TYCON_GUIDES_DIR) corre entero
     t.skip(`NO MEDIDO: el arnés de esta máquina (${ARNES_DE_LA_MAQUINA || 'no encontrado'}) no conoce packs.default — definí TYCON_GUIDES_DIR=<clon del arnés al día>`);
     return;
   }
@@ -914,7 +914,7 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.equal(r3.status, 0, r3.stderr);
   assert.deepEqual(nombres(r3), []);
   // un repo con `packs: [prueba]` sin configuración (la organización no activó ninguno): frena diciendo dónde se activa
-  // (story 8.41, AC 6: el repo achica lo que activa la organización, nunca suma)
+  // (el repo achica lo que activa la organización, nunca suma)
   const r4 = correr(conRepo('packs: [prueba]\n'), { TYCON_GUIDES_DIR: sinConfig });
   assert.equal(r4.status, 2, r4.stderr);
   assert.match(r4.stderr, /activalo en Configuración del sitio, sección Paquetes, o en el perfil del equipo/);
@@ -937,11 +937,11 @@ test('Packs_ApagadoPorDefectoSinPerfil', (t) => {
   assert.equal(v.status, 0, v.stderr);
   assert.deepEqual(v.json.validadores, ['tycon-story-validator'], 'apagado: el revisor de validación del paquete no entra');
 
-  // con el perfil REAL del equipo (el arnés de esta máquina, HOME de laboratorio): el set de la foto de la 8.2, igual
+  // con el perfil REAL del equipo (el arnés de esta máquina, HOME de laboratorio): el mismo set de la foto de la equivalencia
   const perfilReal = path.join(ARNES_DE_LA_MAQUINA, 'perfil-equipo.json');
   if (!fs.existsSync(perfilReal)) { t.diagnostic(`NO MEDIDO: ${perfilReal} no está (la copia pública no lo trae)`); return; }
-  // (story 8.10.3 D) en la copia pública, corrida en una máquina que SÍ tiene el arnés del equipo instalado, el perfil
-  // está pero el paquete de clientes no: la foto de la 8.2 nombra a sus revisores y no se puede comparar. Se dice.
+  // en la copia pública, corrida en una máquina que SÍ tiene el arnés del equipo instalado, el perfil
+  // está pero el paquete de clientes no: la foto de la equivalencia nombra a sus revisores y no se puede comparar. Se dice.
   if (SKIP_PUBLIC) { t.diagnostic(`NO MEDIDO: el set de la foto con el perfil del equipo (${SKIP_PUBLIC}); se mide en el repo del equipo`); return; }
   const { CASOS, medir, sinOrden, leerFoto } = require('../lib/equivalence-cases.js');
   const foto = leerFoto(path.join(__dirname, 'fixtures', 'equivalence-main.json'));   // la que viaja + la de cada paquete con casos
@@ -962,9 +962,9 @@ test('Pack_Banderas_SonLasDeDetectStack', () => {
   assert.deepEqual(banderas, BANDERAS_DETECCION.slice().sort());
 });
 
-// Story 8.23, tanda G (AC 44 d): «ningún paquete instalado» no es lo mismo que «ninguno activo». En la primera máquina
-// migrada (2026-10-08) el pipeline anunció «no hay paquetes instalados» con el paquete bizuit instalado y packs.default en
-// none (el perfil del equipo no viajó): la salida tiene que decir cuál de las dos cosas pasa, en `packs_nota`.
+// «ningún paquete instalado» no es lo mismo que «ninguno activo». Sin esa distinción el pipeline diría «no hay paquetes
+// instalados» con el paquete bizuit instalado y packs.default en none (el perfil del equipo no viajó): la salida tiene
+// que decir cuál de las dos cosas pasa, en `packs_nota`.
 test('Packs_NingunoActivo_SeDiceDistintoDeNingunoInstalado', (t) => {
   if (!LECTOR_CONOCE_LA_CLAVE) { t.skip('NO MEDIDO: el arnés de esta máquina no conoce packs.default'); return; }
   const otro = { ...JSON.parse(JSON.stringify(PRUEBA)), name: 'otro' };
@@ -996,20 +996,20 @@ test('Packs_NingunoActivo_SeDiceDistintoDeNingunoInstalado', (t) => {
   assert.match(String(r.json.packs_nota), /^2 paquetes instalados \(otro, prueba\) y ninguno activo: el repo declara packs: \[\]/);
 });
 
-// Story 8.29 (AC 6): el perfil del equipo gana sobre los paquetes que la máquina eligió al instalar. La página pública
-// instala con `--packs all`, eso queda en el archivo de la máquina, y hasta acá le ganaba al perfil. El pipeline no tiene
+// El perfil del equipo gana sobre los paquetes que la máquina eligió al instalar. Una instalación con `--packs all`
+// deja esa elección en el archivo de la máquina, y no le puede ganar al perfil. El pipeline no tiene
 // orden propio (le pregunta al lector del arnés): esta prueba sostiene que lo que activa en un repo sin `packs:` es lo que
 // dice el perfil, y que la nota de «ninguno activo» no le echa la culpa a un perfil ausente cuando el perfil está y dice none.
-// 🔴 rojo previo verificado: con el lector de antes ganaba la máquina (ningún paquete en el primer caso, los dos en el segundo).
+// Si ganara la máquina daría: ningún paquete en el primer caso, los dos en el segundo.
 test('8.29 · T6 Packs_DefaultFollowsTheProfile @story-8.29 @ac-6 — en un repo sin packs:, los paquetes activos son los del perfil aunque la máquina diga otra cosa', (t) => {
-  // el lector que se mide es el de ESTE árbol (el repo unido lo trae al lado; es el código que la story cambia). El de la
+  // el lector que se mide es el de ESTE árbol (el repo unido lo trae al lado; es el código que define la regla). El de la
   // máquina puede ser una versión instalada anterior a la regla: con ése no se puede medir, y se dice
   const delArbol = path.join(RAIZ, 'scripts', 'lib', 'tycon-config.js');
   const enElArbol = fs.existsSync(delArbol);
   const lector = enElArbol ? delArbol : LECTOR_REAL;
   const conoce = (m) => Array.isArray(m.PROFILE_WINS) && m.PROFILE_WINS.includes('packs.default');
   if (enElArbol) {
-    // el lector que viaja con este árbol es el que la story cambia: si no carga o perdió la regla, es ROJO, no «no medido»
+    // el lector que viaja con este árbol es el que define la regla: si no carga o perdió la regla, es ROJO, no «no medido»
     assert.ok(conoce(require(lector)), `${lector} no declara que el perfil gana en packs.default`);
   } else {
     let conoceLaRegla = false;

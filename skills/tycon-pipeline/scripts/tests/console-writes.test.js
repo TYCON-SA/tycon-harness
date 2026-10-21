@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * console-writes.test.js — T10 de la story 2.19 del arnés (2026-09-17).
+ * console-writes.test.js — la anotación de las escrituras por consola.
  *
  * QUÉ CUIDA: que la puerta de la consola (`on-bash-write-gate.js`) ANOTE dónde escribe cada comando, en
  * `<estado>/console-writes/<sesión>.jsonl`, para que el archivador sepa en qué repos buscar el cambio
@@ -49,7 +49,7 @@ function conEnv(vars, fn) {
   }
 }
 
-// rojo previo: la puerta no anota nada → la lista queda vacía.
+// Mutación: la puerta no anota nada → la lista queda vacía.
 test('T10a · un sed -i y un heredoc a archivo quedan anotados con ruta absoluta y hora', () => {
   const { raiz, estado, trabajo } = corral();
   const ev = (command) => ({ tool_name: 'Bash', session_id: 'sesion-consola', cwd: trabajo, tool_input: { command } });
@@ -65,7 +65,7 @@ test('T10a · un sed -i y un heredoc a archivo quedan anotados con ruta absoluta
   fs.rmSync(raiz, { recursive: true, force: true });
 });
 
-// rojo previo: la puerta hace `return null` antes de extraer cuando los dos frenos están apagados.
+// Mutación: la puerta hace `return null` antes de extraer cuando los dos frenos están apagados.
 test('T10b · con los dos frenos apagados también anota', () => {
   const { raiz, estado, trabajo } = corral();
   conEnv({ TYCON_STORY_GATE: 'off', TYCON_STORY_SKILL_GATE: 'off', TYCON_NO_RUN_CHANGE: undefined }, () => {
@@ -97,17 +97,17 @@ test('T10d · anotar no cambia la decisión y un estado no escribible no rompe',
   const archivo = path.join(raiz, 'estado-es-archivo');
   fs.writeFileSync(archivo, 'no soy una carpeta');
   let r;
-  // la falla queda en hook-errors.log de la HOME (tanda D2): una HOME de juguete, nunca la real
+  // la falla queda en hook-errors.log de la HOME: una HOME de juguete, nunca la real
   assert.doesNotThrow(() => { r = conEnv({ TYCON_NO_RUN_CHANGE: undefined, HOME: raiz }, () => bash.handle(ev, { stateDir: archivo })); });
   assert.deepStrictEqual(r, sin, 'con el estado roto la decisión es la misma');
   assert.ok(fs.existsSync(path.join(raiz, '.claude', '.tycon-pipeline', 'hook-errors.log')), 'y la falla al anotar queda dicha');
   fs.rmSync(raiz, { recursive: true, force: true });
 });
 
-// Story 8.9 del arnés, tanda D2: la carpeta tenía nombre en castellano. La primera anotación con el nombre nuevo se
+// La carpeta de estado tiene un nombre viejo, en castellano. La primera anotación con el nombre nuevo se
 // lleva la carpeta vieja entera (las otras sesiones también) y deja la vieja intacta. Corre en un proceso aparte con una
 // HOME de juguete: la carpeta por defecto se calcula al cargar el módulo. El nombre viejo sale de la tabla del puente.
-// Rojo previo: anotar en la nueva sin llevarse la vieja → lo de la otra sesión no está en la nueva.
+// Mutación: anotar en la nueva sin llevarse la vieja → lo de la otra sesión no está en la nueva.
 const { OWN_STATES } = require(path.join(SCRIPTS, 'lib', 'legacy-names.js'));
 function migrarEnHome(env) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'consola-home-'));
@@ -135,7 +135,7 @@ test('T10e · sin arnés: la primera anotación se lleva la carpeta vieja entera
   fs.rmSync(home, { recursive: true, force: true });
 });
 // Con el arnés al día (TYCON_GUIDES_DIR o el enlace de la máquina), el puente usa su biblioteca: la misma migración y
-// el uso anotado. Sin un arnés con la tanda D2, se saltea con motivo.
+// el uso anotado. Sin un arnés que conozca el nombre nuevo, se saltea con motivo.
 const ARNES = (() => {
   const cands = [process.env.TYCON_GUIDES_DIR, path.join(os.homedir(), '.claude', 'tycon-harness'), path.join(os.homedir(), '.claude', 'tycon-claude-guides')].filter(Boolean);
   return cands.find((d) => { try { return JSON.parse(fs.readFileSync(path.join(d, 'scripts', 'lib', 'renames.json'), 'utf8')).entries.some((e) => e.batch === 'D2'); } catch (_) { return false; } }) || null;
@@ -153,15 +153,15 @@ test('T10f · con el arnés al día: misma migración, por su biblioteca, y con 
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-// Pase adversarial de la D2 (traversal-completeness-1): con agent-skills al día y el arnés de la máquina ANTERIOR a la
-// D2, quien lee la carpeta (run-change.js de ese arnés) mira sólo la vieja. Migrar ahí dejaría las anotaciones donde
-// nadie las lee: se sigue escribiendo en la vieja hasta que el arnés conozca el nombre nuevo. Rojo previo: el puente
-// caía a su tabla propia, migraba y escribía en la nueva.
+// Con agent-skills al día y el arnés de la máquina anterior al nombre nuevo, quien lee la carpeta (run-change.js de
+// ese arnés) mira sólo la vieja. Migrar ahí dejaría las anotaciones donde nadie las lee: se sigue escribiendo en la
+// vieja hasta que el arnés conozca el nombre nuevo. Mutación: el puente cae a su tabla propia, migra y escribe en
+// la nueva.
 function arnesAnteriorALaD2() {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'arnes-pre-d2-'));
   fs.mkdirSync(path.join(d, 'scripts', 'lib'), { recursive: true });
   fs.writeFileSync(path.join(d, 'scripts', 'install-tycon-hooks.sh'), '#!/bin/sh\n');
-  // una biblioteca de nombres viejos de antes de la D2: lee variables, no conoce oldPathOf ni carpetas
+  // una biblioteca de nombres viejos que no conoce el nombre nuevo: lee variables, no conoce oldPathOf ni carpetas
   fs.writeFileSync(path.join(d, 'scripts', 'lib', 'legacy-names.js'),
     "'use strict';\nmodule.exports = { readEnv: (n, o = {}) => (o.env || process.env)[n], envNames: (n) => [n], prepareStateWrite: (p) => p };\n");
   return d;
@@ -178,8 +178,8 @@ test('T10g · con el arnés anterior a la D2: se sigue anotando en la carpeta vi
   fs.rmSync(arnes, { recursive: true, force: true });
 });
 
-// Revisor de fallos silenciosos (SILENT-C1): si la migración falla, queda en hook-errors.log y la anotación no se pierde:
-// va a la carpeta vieja (el lector de la D2 lee las dos). Rojo previo: un solo catch mudo, sin rastro ni anotación.
+// (SILENT-C1) Si la migración falla, queda en hook-errors.log y la anotación no se pierde:
+// va a la carpeta vieja (el lector del arnés al día lee las dos). Mutación: un solo catch mudo, sin rastro ni anotación.
 test('T10h · si la carpeta vieja no se puede llevar: rastro en hook-errors.log y la anotación va a la vieja', { skip: (typeof process.getuid === 'function' && process.getuid() === 0) && 'como root los permisos no frenan' }, () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'consola-home-'));
   const est = path.join(home, '.claude', '.tycon-pipeline');

@@ -74,9 +74,9 @@ test('classifyLane: el kill-switch del dev lo apaga sin consultar', () => {
   }
 });
 
-// ── T73 (c) · story 8.17, tanda W6 · AC 50 ─────────────────────────────────────────────────────────────────────────
-// En Windows `claude` instalado con npm es un `.cmd`, y Node no lo lanza sin shell. Antes eso daba un 'sin-modelo'
-// mudo; ahora el desempate se apaga DICIÉNDOLO. La plataforma y el PATH se inyectan: corre igual en Linux y en Mac.
+// ── El `claude` de npm en Windows ─────────────────────────────────────────────────────────────────────────────────
+// En Windows `claude` instalado con npm es un `.cmd`, y Node no lo lanza sin shell. Eso no puede dar un 'sin-modelo'
+// mudo: el desempate se apaga DICIÉNDOLO. La plataforma y el PATH se inyectan: corre igual en Linux y en Mac.
 test('T73 TestGate_MissingRunnerSaysCouldNotRun_OwnTimeoutAndRealpath_CmdClaudeOff — un `claude` que es un .cmd apaga el desempate y lo dice', () => {
   const fs = require('fs');
   const os = require('os');
@@ -133,6 +133,6 @@ test('buildPrompt: le pasa al modelo los mensajes del USER y le pide sesgo hacia
   assert.match(p, /ADHOC/); assert.match(p, /PIPELINE/); assert.match(p, /NINGUNO/);
   // La regla de sesgo es lo que hace tolerable meter un modelo en un control: ante la duda, no abre.
   assert.match(p, /duda.*NINGUNO/is);
-  // Y la negación explícita, que es la clase de fuga que el regex no supo cerrar.
+  // Y la negación explícita, que es la clase de fuga que el regex no puede cerrar.
   assert.match(p, /NEG/i);
 });

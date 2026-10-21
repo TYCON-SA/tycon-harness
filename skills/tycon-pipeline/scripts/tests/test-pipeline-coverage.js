@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Guard contra CF-1 (auditoría 2026-05-21): pipeline.js dropeó tycon-e2e-realness-checker
- * del selector en silencio. Este test falla si:
- *   (a) un advisor pipeline-selectable del NÚCLEO no aparece en pipeline.js (omisión tipo CF-1), o
+ * Guard contra la omisión silenciosa de un revisor: si pipeline.js suelta tycon-e2e-realness-checker
+ * del selector sin avisar, nada más lo nota. Este test falla si:
+ *   (a) un advisor pipeline-selectable del NÚCLEO no aparece en pipeline.js (omisión silenciosa), o
  *   (b) pipeline.js emite un nombre que NO corresponde a un agent .md real (typo), o
- *   (c) un revisor de un PAQUETE (packs/<nombre>/pack.json, story 8.2) no resuelve a un agent .md
+ *   (c) un revisor de un PAQUETE (packs/<nombre>/pack.json) no resuelve a un agent .md
  *       real, o pipeline.js lo nombra escrito en el código (tiene que venir del manifiesto).
  *
- * Desde la story 8.2 los revisores de Bizuit y de clientes NO se esperan en pipeline.js: se esperan
+ * Los revisores de Bizuit y de clientes NO se esperan en pipeline.js: se esperan
  * en los manifiestos de packs/, que esta prueba instala (lee) explícitamente.
  *
  * Correr: node test-pipeline-coverage.js   (exit 0 OK, exit 1 fail).
@@ -29,7 +29,7 @@ const EXPECTED_SELECTABLE = [
   'tycon-plugin-tests-coverage', 'tycon-plugin-security-basics',
   // completitud
   'tycon-story-validator', 'tycon-spec-first-checker', 'tycon-ac-coverage-checker', 'tycon-deferral-tracker',
-  // condicional LLM (los de un stack —.NET, Next.js + Postgres— vienen de su paquete, story 8.41)
+  // condicional LLM (los de un stack —.NET, Next.js + Postgres— vienen de su paquete)
   'llm-cost-reviewer',
   // stack-agnostic
   'tycon-e2e-realness-checker', 'tycon-silent-failure-hunter',
@@ -74,9 +74,9 @@ try {
   failed = true;
   console.error(`✗ no se pudo leer packs/ (${e.message}) — los paquetes del equipo tienen que estar en ${PACKS_DIR}`);
 }
-// Story 8.41: el núcleo público no trae paquetes (llegan con el perfil de cada equipo). Con el repo del equipo encima
+// El núcleo público no trae paquetes (llegan con el perfil de cada equipo). Con el repo del equipo encima
 // (la señal: el paquete de clientes) el paquete bizuit tiene que estar: una carpeta vacía ahí no es verde, es «el equipo
-// perdió sus revisores sin enterarse», lo que la story 8.2 existe para impedir.
+// perdió sus revisores sin enterarse», lo que los manifiestos de packs/ existen para impedir.
 const DEL_EQUIPO = fs.existsSync(path.join(PACKS_DIR, 'clients', 'pack.json'));
 if (DEL_EQUIPO && !paquetes.includes('bizuit')) {
   failed = true;

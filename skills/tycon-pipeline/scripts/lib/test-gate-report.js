@@ -2,28 +2,26 @@
 'use strict';
 /**
  * test-gate-report.js — el informe de test-gate.sh: lee lo que dejó el corredor de pruebas y escribe
- * `.advisors/tests-result.json` (story 8.17, tanda W6, AC 46).
+ * `.advisors/tests-result.json`.
  *
  * POR QUÉ ESTÁ EN NODE
- * Hasta la W6 esto era un bloque de Python embebido al final de test-gate.sh (`python3 - … <<'PY'`). En Windows
- * `python3` no es requisito del arnés —Node sí—, así que sin él el gate corría la suite y no dejaba artefacto: la
- * matriz de cierre marcaba todo NOT-RUN con la suite en verde. Se portó campo por campo: el mismo artefacto, la
- * misma copia que viaja, la misma línea de gates.log. La prueba (tests/test-gate-report.test.js, T69) compara la
- * salida contra la que escribía el bloque de Python sobre las mismas entradas, guardadas en
- * tests/fixtures/test-gate-report/.
+ * Corre en Node porque `python3` no es requisito del arnés en Windows (Node sí): sin él, el gate corre la suite
+ * y no deja artefacto, y la matriz de cierre marca todo NOT-RUN con la suite en verde. El artefacto, la copia que
+ * viaja y la línea de gates.log son los mismos. La prueba (tests/test-gate-report.test.js) compara la salida contra
+ * una referencia fijada sobre las mismas entradas, guardadas en tests/fixtures/test-gate-report/.
  *
  * Tampoco depende de `timeout` ni de `realpath` (en un Git Bash pueden faltar): el tiempo máximo de cada `git` lo
- * pone spawnSync y la ruta real la resuelve `rutaReal()`, que hace lo que hacía `os.path.realpath` —resuelve lo que
+ * pone spawnSync y la ruta real la resuelve `rutaReal()`, que hace lo que `os.path.realpath` de Python —resuelve lo que
  * existe y deja el resto como está—.
  *
- * Uso (los mismos argumentos posicionales que recibía el bloque de Python; los últimos son opcionales):
+ * Uso (argumentos posicionales; los últimos son opcionales):
  *   node test-gate-report.js <runner> <repo> <repo_run> <results_dir> <out_file> <suite_exit> <story_id> <cov_min>
  *        <ts> [test_project_count] [scope] [scope_source] [declared_new] [code_state_json] [base_ref] [base_json]
  *
  * Exit 0 aunque falte algo: cada problema queda DICHO en el artefacto (totals_error, parse_error,
  * no_cross_check, touched_no_cross_check). Sale ≠0 sólo si no pudo escribir el artefacto, y test-gate.sh lo avisa.
  *
- * Fidelidad con el Python que reemplaza (lo que importa para que el JSON sea el mismo):
+ * El formato del JSON sigue la semántica de Python, y estas reglas lo mantienen idéntico:
  *   - `dict.get(k, def)` devuelve el default sólo si la clave FALTA; un null presente queda null (`get()`).
  *   - el redondeo a un decimal es el de Python: el más cercano al valor exacto, y en un empate exacto (x,25 · x,75)
  *     el par (`redondear1()`);
@@ -34,7 +32,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { stateDir: stateDirOf } = require('./state-dir.js');   // story 8.23 (A2): la carpeta del estado, de una sola pieza
+const { stateDir: stateDirOf } = require('./state-dir.js');   // la carpeta del estado, de una sola pieza
 const { spawnSync } = require('child_process');
 const { readLcov } = require('./node-coverage.js');   // el lcov del corredor de suites.json
 
@@ -379,7 +377,7 @@ function correrGit(args, timeoutMs) {
 
 /**
  * Cuántas pruebas corrieron de verdad según los totales de cada corredor; null si no se pudo contar. Las `todo` no
- * corren: se descuentan (pase adversarial de la W6, hallazgo #7: una suite hecha sólo de `it.todo` salía 0 y verde).
+ * corren: se descuentan (una suite hecha sólo de `it.todo` no puede salir verde).
  */
 function pruebasCorridas(runner, t, todo = 0) {
   if (!esObjeto(t) || !Object.keys(t).length) return null;
@@ -395,9 +393,9 @@ function pruebasCorridas(runner, t, todo = 0) {
 const sinAnsi = (s) => String(s).replace(/\x1b\[[0-9;?]*[ -/]*[@-~]/g, '');
 
 /**
- * sum() de Python sobre números de punto flotante: desde la 3.12 es una suma compensada (Neumaier), y el promedio de
- * cobertura tiene que dar el mismo número (pase adversarial de la W6, hallazgo #9: 70,1 + 92,8 + 62,1 con una suma
- * simple da 224,99999999999997, y un promedio de 75 «no llegaba» al umbral de 75). Misma cuenta que CPython.
+ * sum() de Python sobre números de punto flotante es una suma compensada (Neumaier) desde Python 3.12, y el promedio de
+ * cobertura tiene que dar el mismo número: con una suma simple, 70,1 + 92,8 + 62,1 da 224,99999999999997 y un
+ * promedio de 75 «no llega» al umbral de 75. Misma cuenta que CPython.
  */
 function pySum(vals) {
   let s = 0; let c = 0;
@@ -433,7 +431,7 @@ function informe(argv) {
     ts, story_id: storyId, runner, repo: repoRun,
     suite_exit: suiteExit, suite_green: suiteExit === 0,
     // `scope` = qué proyecto se miró; `scope_source` = quién lo decidió (explicito | story | diff). Sin esto, un
-    // artefacto verde no dice QUÉ midió (2026-08-13).
+    // artefacto verde no dice QUÉ midió.
     scope: scope || null, scope_source: scope ? scopeSource : null,
     halted: false,
     totals: {},
@@ -450,7 +448,7 @@ function informe(argv) {
 
   // ── Totales ──
   // Las pruebas `todo` se cuentan aparte: no corren, pero jest y vitest las suman al total (y vitest, a las pasadas).
-  // No van a `totals`, que sigue igual al del Python; sólo las descuenta `pruebasCorridas()` (hallazgo #7).
+  // No van a `totals`, que conserva su formato; sólo las descuenta `pruebasCorridas()`.
   let todo = 0;
   // Una herramienta de lib/test-runners.js (pytest, Go, Maven, Gradle, Karma o una de la organización): test-gate.sh
   // deja su definición en runner.json; de ahí salen qué reporte y qué cobertura leer.
@@ -483,13 +481,13 @@ function informe(argv) {
         process.stderr.write(`[test-gate] 🔴 ${result.totals_error}\n`);
       }
     } else if (runner === 'dotnet') {
-      // Con corrida secuencial por proyecto hay UN trx por ensamblado: se suman TODOS (fix 2026-06-11).
+      // Con corrida secuencial por proyecto hay UN trx por ensamblado: se suman TODOS.
       const trx = buscarArchivos(resultsDir, (nm) => nm.endsWith('.trx'));
       if (trx.length) {
         const tot = { total: 0, passed: 0, failed: 0, executed: 0 };
         for (const tf of trx) {
           const t = leerXml(fs.readFileSync(tf, 'utf8'));
-          // `{ns}` de la raíz, como hacía el Python: `.//x:Counters` con el espacio de nombres de la raíz
+          // `{ns}` de la raíz, como en ElementTree de Python: `.//x:Counters` con el espacio de nombres de la raíz
           const ns = t.tag.split('}')[0].replace(/^\{+|\{+$/g, '');
           const buscado = `{${ns}}Counters`;
           const c = descendientes(t, buscado).find((e) => e !== t);
@@ -524,7 +522,7 @@ function informe(argv) {
             failed: pyLen(fallas), missing: pyLen(get(r, 'ausentes', [])),
             failures: fallas.map((f) => path.basename(f.ruta)),
             missing_paths: get(r, 'ausentes', []),
-            // story 7.15: lo que NO corrió a propósito (con el motivo), y cómo corrió el resto.
+            // Lo que NO corrió a propósito (con el motivo), y cómo corrió el resto.
             deferred: pyLen(get(r, 'deferred_suites', [])),
             deferred_suites: get(r, 'deferred_suites', []),
             workers: get(r, 'workers', null),
@@ -541,8 +539,7 @@ function informe(argv) {
       const nt = path.join(resultsDir, 'node-test.txt');
       if (existe(nt)) {
         // Sin las secuencias de color de la terminal (ANSI): con FORCE_COLOR, el `node --test` de Node ≥23 pinta el
-        // resumen (`\x1b[34mℹ tests 2\x1b[39m`), la expresión no lo leía y una suite verde salía 6 «no se pudo contar»
-        // (pase adversarial de la W6, hallazgos #3 y #4).
+        // resumen (`\x1b[34mℹ tests 2\x1b[39m`), la expresión no lo leería y una suite verde saldría como «no se pudo contar».
         const txt = sinAnsi(fs.readFileSync(nt, 'utf8'));
         const ult = (clave) => {
           const todas = [...txt.matchAll(new RegExp(`^\\s*(?:ℹ|#)\\s*${clave}\\s+(\\d+)\\s*$`, 'gm'))];
@@ -573,10 +570,10 @@ function informe(argv) {
     result.totals_error = String(e && e.message !== undefined ? e.message : e);
   }
 
-  // ── Cero pruebas corridas no es verde (story 8.17, AC 50) ──
-  // Acá el informe se aparta A PROPÓSITO del Python, que daba verde con cualquier salida 0. Caso de la tanda W6:
-  // lanzado desde una prueba de `node --test`, el hijo heredaba NODE_TEST_CONTEXT, la suite escribía en el formato
-  // interno de Node, no se contaba nada… y quedaba `suite_green: true`. La salida real de la suite se conserva.
+  // ── Cero pruebas corridas no es verde ──
+  // Acá el informe no da verde con cualquier salida 0. Ejemplo: lanzada desde una prueba de `node --test`,
+  // el hijo hereda NODE_TEST_CONTEXT, la suite escribe en el formato
+  // interno de Node, no se cuenta nada… y quedaría `suite_green: true`. La salida real de la suite se conserva.
   if (result.suite_green) {
     const corridas = pruebasCorridas(runner, result.totals, todo);
     if (!(corridas > 0)) {
@@ -597,7 +594,7 @@ function informe(argv) {
   // La cobertura se mide sobre archivos FUENTE (lib/code-files.js, con lo que sume la organización): un guion `.sh` o
   // un `.csproj` no aparecen en ningún informe de cobertura.
   const codeRe = { test: (f) => isCodeFile(f) };
-  // `.test.`/`.spec.` en cualquier lugar del nombre, como antes (`x.test.helpers.ts` es de pruebas)
+  // `.test.`/`.spec.` en cualquier lugar del nombre (`x.test.helpers.ts` es de pruebas)
   const testRe = { test: (f) => isTestFile(f) || /(\.test\.|\.spec\.|__tests__|test-utils)/.test(f) };
   // En el arnés, todo lo que vive en una carpeta de pruebas es prueba: los ayudantes (`scripts/tests/lib/`) y las suites
   // que no llevan `.test.` en el nombre (`test-*.js`). Con el lcov del corredor, contarlos como código mueve el número.
@@ -605,7 +602,7 @@ function informe(argv) {
   let newFiles = ordenar([...nuevos].filter((f) => codeRe.test(f) && !esPrueba(f)));
   let newFilesSource = newFiles.length ? 'git' : null;
 
-  // Respaldo post-commit (2026-08-25): apenas la story se commitea, `--diff-filter=A` no reporta nada; se cae a los
+  // Respaldo post-commit: apenas la story se commitea, `--diff-filter=A` no reporta nada; se cae a los
   // archivos que la story declara CREAR y se dice de dónde salió la lista.
   if (!newFiles.length && declaredNew.length) {
     const cand = ordenar([...new Set(declaredNew.map((f) => f.split('\\').join('/')))].filter((f) => codeRe.test(f) && !esPrueba(f)));
@@ -652,9 +649,9 @@ function informe(argv) {
         }
       }
     } else if (runner === 'dotnet') {
-      // Fix 2026-08-25 (guides/maintaining/incident-log.md#case-coverage-max-per-class-2026-08-25): SUMAR líneas por archivo
-      // DENTRO de cada cobertura (en C# cada método async es una clase aparte con el mismo archivo), y recién ahí
-      // max() ENTRE coberturas distintas (un ensamblado que no tocó el archivo lo reporta en 0).
+      // SUMAR líneas por archivo DENTRO de cada cobertura (en C# cada método async es una clase aparte con el
+      // mismo archivo), y recién ahí max() ENTRE coberturas distintas (un ensamblado que no tocó el archivo lo
+      // reporta en 0).
       for (const cobf of buscarArchivos(resultsDir, (nm) => nm === 'coverage.cobertura.xml')) {
         const root = leerXml(fs.readFileSync(cobf, 'utf8'));
         const local = new Map(); // archivo → [líneas cubiertas, líneas totales, mejor line-rate]
@@ -735,11 +732,11 @@ function informe(argv) {
     result.coverage.no_cross_check = 'sin cruce de cobertura: hay archivos nuevos pero ninguno aparece en el reporte de cobertura';
   }
 
-  // ── Cobertura de las LÍNEAS TOCADAS (story 2.4 del arnés, 2026-09-16) ──
+  // ── Cobertura de las LÍNEAS TOCADAS ──
   // El denominador son las líneas que la story agregó o modificó desde la BASE (argumentos 15 y 16) que el reporte
   // lista como ejecutables. Una línea que el reporte no lista no entra; un archivo tocado sin datos se lista aparte;
   // sin base, sin diff, sin reporte o con un corredor sin cobertura → null CON MOTIVO; no frena hasta OBS_HASTA.
-  const baseRef = arg(14) !== undefined ? arg(14) : null; // null = llamada vieja sin base
+  const baseRef = arg(14) !== undefined ? arg(14) : null; // null = llamada sin base
   let baseInfoError = null;
   let baseInfo;
   try {
@@ -784,7 +781,7 @@ function informe(argv) {
     let r = git(repoDir, ['rev-parse', '--show-toplevel']);
     if (r.returncode !== 0) throw new Error('la carpeta medida no es un repo git');
     const top = pyStrip(r.stdout);
-    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió (pase adversarial 2026-09-16).
+    // Con detección de renombres (-M): un archivo movido aporta sólo lo que cambió.
     r = git(top, ['diff', '--no-color', '--no-ext-diff', '-M', '-U0', ref, '--']);
     if (r.returncode !== 0) throw new Error(`git diff contra ${ref.slice(0, 12)} falló: ${pyStrip(r.stderr || '').slice(0, 200)}`);
     const out = new Map();
@@ -904,8 +901,7 @@ function informe(argv) {
 
   /**
    * (datos, "ok") · (null, "sin-datos") · (null, "ambiguo"). Una clave ABSOLUTA sólo calza por igualdad exacta; una
-   * relativa que no se pudo ubicar calza sólo si CONTIENE toda la ruta tocada y es la ÚNICA candidata (pase
-   * adversarial 2026-09-16).
+   * relativa que no se pudo ubicar calza sólo si CONTIENE toda la ruta tocada y es la ÚNICA candidata.
    */
   const buscar = (mapa, top, rel) => {
     const objetivo = real(path.join(top, rel));
@@ -936,7 +932,7 @@ function informe(argv) {
       const { top } = touched;
       const todas = touched.tocadas;
       cov.touched_files_unreadable = ordenar(ilegibles);
-      // El alcance es la carpeta que se TESTEÓ (repo_run), no el contenedor (pase adversarial 2026-09-16).
+      // El alcance es la carpeta que se TESTEÓ (repo_run), no el contenedor.
       const pref = path.relative(rutaReal(top), rutaReal(repoRun)).split('\\').join('/');
       const tocadas = new Map([...todas].filter(([f]) => codeRe.test(f) && !esPrueba(f)
         && (pref === '.' || pref === '' || f.startsWith(pref + '/'))));
@@ -983,7 +979,7 @@ function informe(argv) {
   }
 
   // Constancia de la observación en gates.log — sólo nombre y estado (lo único que lee el reductor), más el repo.
-  // Ni porcentajes ni rutas de archivos. Una llamada vieja sin base no escribe: no es una corrida del gate.
+  // Ni porcentajes ni rutas de archivos. Una llamada sin base no escribe: no es una corrida del gate.
   if (baseRef !== null) {
     try {
       const estado = cov.touched_lines_pct === null ? 'no-medido' : (cov.meets_threshold ? 'cumple' : 'habria-frenado');
@@ -1005,7 +1001,7 @@ function informe(argv) {
   fs.writeFileSync(outFile, JSON.stringify(result, null, 2), 'utf8');
   process.stdout.write(`[test-gate] Artefacto: ${outFile}\n`);
 
-  // La copia que VIAJA (2026-09-06): `.advisors/tests-result.json` está en el .gitignore, así que se pierde con
+  // La copia que VIAJA: `.advisors/tests-result.json` está en el .gitignore, así que se pierde con
   // cualquier limpieza y no existe en otra máquina ni en CI; sin él runtime-matrix.js no cuenta ningún test como
   // evidencia. La copia va al evidence-dir de la story y lleva SÓLO lo que la matriz lee.
   const claveCopia = process.env.TYCON_EVIDENCE_KEY || storyId;
@@ -1035,9 +1031,9 @@ function informe(argv) {
           + 'no se puede cerrar (caso 2026-09-06, stories 2.2 y 2.3 del arnés). Sólo los campos '
           + 'que runtime-matrix.js lee: sin rutas absolutas ni datos de la máquina.',
       };
-      // Nombrada con la CLAVE de la evidencia (story 1.17), que test-gate.sh calcula desde la ruta de la
+      // Nombrada con la CLAVE de la evidencia, que test-gate.sh calcula desde la ruta de la
       // story y deja en TYCON_EVIDENCE_KEY: con un número repetido en el repo, `<id>-tests-result.json`
-      // sería de cualquiera de las stories que lo comparten. Sin la variable, el id como siempre.
+      // sería de cualquiera de las stories que lo comparten. Sin la variable, el id.
       const dest = path.join(evDir, `${claveCopia}-tests-result.json`);
       fs.writeFileSync(dest, JSON.stringify(sellada, null, 2), 'utf8');
       process.stdout.write(`[test-gate] Copia que viaja: ${dest}\n`);
@@ -1052,7 +1048,7 @@ function informe(argv) {
   return result;
 }
 
-// OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció (story 2.21, AC 9)
+// OBS_HASTA sale de acá y de ningún otro lado: el tablero la importa para decir si la observación venció.
 module.exports = { informe, leerXml, descendientes, redondear1, rutaReal, buscarArchivos, OBS_HASTA, isCodeFile };
 
 if (require.main === module) {

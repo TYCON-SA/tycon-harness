@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * runtime-waiver-windows.test.js — la firma del waiver en Windows: una ventana NUEVA, una frase al azar, 5 minutos
- * (decisión del dueño, 2026-10-15, opción A). Caso disparador: un dev del equipo en Windows no podía firmar nunca
- * (`marker.js runtime-waiver` frenaba con «requiere /dev/tty» también corrido por la persona en PowerShell) y su story
- * quedó parada.
+ * runtime-waiver-windows.test.js — la firma del waiver en Windows: una ventana NUEVA, una frase al azar, 5 minutos.
+ * Sin esa vía, en Windows no se podría firmar
+ * (`marker.js runtime-waiver` frenaría con «requiere /dev/tty» también corrido por la persona en PowerShell) y la story
+ * quedaría parada.
  *
  * Acá se ejercita la rama de Windows en cualquier sistema (`TYCON_WAIVER_PLATFORM=win32` y las piezas inyectables de la
  * biblioteca). Lo que sólo se ve en un Windows de verdad —que sin persona la ventana vence y no firma— lo mide el ensayo
@@ -71,19 +71,19 @@ test('@story-waiver-windows la marca sola no alcanza: entrada redirigida, consol
 });
 
 test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su ruta del sistema (no oculto, no del repo)', () => {
-  // 🔴 rojo previo (revisión adversarial): con windowsHide y sin heredar nada, Node le daba a PowerShell una consola propia
-  //    oculta y la cuenta daba 1 siempre: nadie firmaba, ni la persona. Y sin ruta, Windows lo busca primero en el repo.
+  // 🔴 Caso cubierto: con windowsHide y sin heredar nada, Node le da a PowerShell una consola propia
+  //    oculta y la cuenta daría 1 siempre: nadie firmaría, ni la persona. Y sin ruta, Windows lo busca primero en el repo.
   conAmbiente({ ...WIN, SystemRoot: 'C:\\Windows' }, (W) => {
     let visto = null;
     W.consolaNueva({ pid: 4242, spawnSync: (cmd, args, o) => { visto = { cmd, args, o }; return { status: 0, stdout: '2' }; } });
     assert.match(visto.cmd, /System32[\\/]WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/);
     assert.equal(visto.o.windowsHide, false);
     assert.equal(visto.o.stdio[0], 'inherit', 'hereda la consola de la ventana');
-    // 🔴 rojo previo (ensayo de Windows 13585): en una ventana nueva de verdad la cuenta dio 0 — PowerShell no quedaba
+    // 🔴 Caso cubierto: en una ventana nueva de verdad la cuenta da 0 si PowerShell no queda
     //    conectado. Se conecta explícito a la consola de ESTE proceso antes de contar.
     assert.match(visto.args.join(' '), /AttachConsole\(4242\)/);
     assert.match(visto.args.join(' '), /FreeConsole\(\)/);
-    // 🔴 rojo previo (ensayo de Windows 13592, error 87): `uint[]` no existe en PowerShell 5.1 y la lista quedaba nula.
+    // 🔴 Caso cubierto (error 87): `uint[]` no existe en PowerShell 5.1 y la lista quedaría nula.
     assert.match(visto.args.join(' '), /New-Object System\.UInt32\[\] 64/);
     assert.doesNotMatch(visto.args.join(' '), /New-Object uint\[\]/);
     const sinConsola = W.consolaNueva({ run: () => ({ status: 3, stdout: 'SIN-CONSOLA\r\n' }) });
@@ -93,8 +93,8 @@ test('@story-waiver-windows PowerShell se lanza conectado a la consola y por su 
 });
 
 test('@story-waiver-windows la cuenta viaja por un archivo, y una salida vacía no es «0 conectados»', () => {
-  // 🔴 rojo previo (ensayo de Windows 13590): con la consola reconectada PowerShell no imprimió nada, y '' se leía como
-  //    0: la ventana de la persona quedaba como «sin consola» y no firmaba nadie.
+  // 🔴 Caso cubierto: con la consola reconectada PowerShell no imprime nada, y '' se leería como
+  //    0: la ventana de la persona quedaría como «sin consola» y no firmaría nadie.
   conAmbiente({ ...WIN }, (W) => {
     const vacia = W.consolaNueva({ run: () => ({ status: 0, stdout: '', stderr: 'algo dijo' }) });
     assert.equal(vacia.conectados, null, JSON.stringify(vacia));

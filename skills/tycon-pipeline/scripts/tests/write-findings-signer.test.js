@@ -1,19 +1,17 @@
 'use strict';
 /**
- * write-findings-signer — el firmante de un hallazgo se ELIGE, no se tipea (story 7.13).
+ * write-findings-signer — el firmante de un hallazgo se ELIGE, no se tipea.
  *
- * Caso disparador: un pull request de un producto del equipo (2026-09-22). El portón frenó cinco stories sanas con
- * `roster-incoherente` y cuatro eran suyas. La causa no era el cruce: el nombre del revisor se
- * escribe en DOS lados con dos criterios. El roster lo proyecta un hook desde el ledger de spawns
- * (id pelado, kebab-case); el `advisor` de `findings.json` lo tipeaba el orquestador con la vuelta
- * o el modelo pegados (`tycon-silent-failure-hunter (iter 3)`). Comparar esos dos textos letra por
- * letra es apostar a la suerte, y la suerte se agotó cinco veces en un pull request.
+ * El nombre del revisor se escribe en DOS lados con dos criterios. El roster lo proyecta un hook desde el ledger de
+ * spawns (id pelado, kebab-case); el `advisor` de `findings.json` lo tipea el orquestador, y puede llevar la vuelta
+ * o el modelo pegados (`tycon-silent-failure-hunter (iter 3)`). Comparar esos dos textos letra por letra es apostar
+ * a la suerte: el portón frenaría stories sanas con `roster-incoherente`.
  *
  * Acá se fija el lado del ESCRITOR: `write-findings` valida el firmante contra los revisores de
  * ESA corrida más las fuentes propias del pipeline, separa la anotación en campos propios, y anota
  * de qué TRAMO viene el hallazgo. Lo que el cruce recibe es un id comparable.
  *
- * 🔴 REGLA DE ADMISIÓN: cada caso trae escrito su rojo previo.
+ * 🔴 REGLA DE ADMISIÓN: cada caso trae escrito qué falla sin la guarda.
  */
 const test = require('node:test');
 const assert = require('node:assert');
@@ -68,8 +66,8 @@ const hallazgo = (advisor, extra = {}) => ({ rule_id: 'X-1', severity: 'WARNING'
 const leer = (L) => JSON.parse(fs.readFileSync(L.findings, 'utf8'));
 const limpiar = (L) => fs.rmSync(L.d, { recursive: true, force: true });
 
-// ── T1 (AC 1) ────────────────────────────────────────────────────────────────────────────────
-// ROJO PREVIO: hoy `advisor` pasa tal cual sin mirar nada — escribe el archivo y sale 0.
+// ── T1 ────────────────────────────────────────────────────────────────────────────────
+// ROJO SIN LA GUARDA: `advisor` pasa tal cual sin mirar nada — escribe el archivo y sale 0.
 test('WriteFindings_FirmanteQueNoCorrio_Falla', () => {
   const L = lab(rosterCon('tycon-plugin-security-basics', 'tycon-silent-failure-hunter', 'tycon-story-validator'));
   const r = escribir(L, [hallazgo('tycon-fantasma')]);
@@ -82,9 +80,9 @@ test('WriteFindings_FirmanteQueNoCorrio_Falla', () => {
   limpiar(L);
 });
 
-// ── T2 (AC 2) ────────────────────────────────────────────────────────────────────────────────
-// ROJO PREVIO: hoy `tycon-silent-failure-hunter (iter 3)` se escribe entero y el cruce no lo
-// reconoce — los cuatro falsos positivos de aquel pull request.
+// ── T2 ────────────────────────────────────────────────────────────────────────────────
+// ROJO SIN LA GUARDA: `tycon-silent-failure-hunter (iter 3)` se escribe entero y el cruce no lo
+// reconoce — falsos positivos de `roster-incoherente`.
 test('WriteFindings_VueltaPegadaAlNombre_SeSeparaEnCampos', () => {
   const L = lab(rosterCon('tycon-silent-failure-hunter', 'tycon-plugin-security-basics', 'http-resilience-reviewer'));
   const r = escribir(L, [
@@ -103,12 +101,12 @@ test('WriteFindings_VueltaPegadaAlNombre_SeSeparaEnCampos', () => {
   limpiar(L);
 });
 
-// ── Hallazgo del pase de revisión (SILENT-W2, iter 1) ────────────────────────────────────────
-// Un hallazgo SIN firmante atravesaba la validación nueva sin decir nada, aun con roster presente:
-// la guarda sólo miraba los firmantes no vacíos. No es un firmante inválido (no hay nada que
-// validar), pero tampoco es un hallazgo completo — y callarlo es justo lo que esta story combate.
+// ── Hallazgo sin firmante (SILENT-W2) ────────────────────────────────────────
+// Un hallazgo SIN firmante atravesaría la validación sin decir nada, aun con roster presente, si la guarda
+// sólo mirara los firmantes no vacíos. No es un firmante inválido (no hay nada que
+// validar), pero tampoco es un hallazgo completo — y callarlo es justo lo que esta guarda combate.
 // Avisa y no frena: hay llamadores legítimos que escriben hallazgos sin `advisor`.
-// ROJO PREVIO: exit 0 y `warnings` vacío.
+// ROJO SIN LA GUARDA: exit 0 y `warnings` vacío.
 test('WriteFindings_HallazgoSinFirmante_AvisaYNoFrena', () => {
   const L = lab(rosterCon('tycon-plugin-security-basics'));
   const r = escribir(L, [{ rule_id: 'SIN-1', severity: 'WARNING', file: 'x.js', disposition: 'open', reason: 'r' }]);
@@ -119,10 +117,10 @@ test('WriteFindings_HallazgoSinFirmante_AvisaYNoFrena', () => {
   limpiar(L);
 });
 
-// ── T3 (AC 3) ────────────────────────────────────────────────────────────────────────────────
+// ── T3 ────────────────────────────────────────────────────────────────────────────────
 // El caso se DERIVA de `FUENTES_SINTETICAS`: un patrón nuevo entra al test solo. Enumerar la lista
-// acá sería la tercera copia — es el defecto que la story vino a cerrar (el AC decía "las seis" y
-// el código tenía ocho).
+// acá sería la tercera copia — el defecto de una lista que se desfasa del código (decir "las seis"
+// cuando el código tiene ocho).
 function nombreDeMuestra(re) {
   return re.source.replace(/^\^/, '').replace(/\((?:[^()\\]|\\.)*\)$/, '').replace(/\$$/, '').replace(/\\(.)/g, '$1');
 }
@@ -141,9 +139,9 @@ test('WriteFindings_FuenteDelPipeline_SeAceptaSinRoster', () => {
   limpiar(L);
 });
 
-// ── T4 (AC 7, 8) ─────────────────────────────────────────────────────────────────────────────
+// ── T4 ─────────────────────────────────────────────────────────────────────────────
 // Un control que no puede correr no aprueba, pero tampoco puede dejar al dev sin escribir su
-// evidencia. ROJO PREVIO: hoy no hay aviso de ningún tipo.
+// evidencia. ROJO SIN LA GUARDA: no hay aviso de ningún tipo.
 test('WriteFindings_SinRoster_AvisaYNoFrena', () => {
   const casos = [
     ['sin roster', undefined, /no (existe|se encontr)/i],
@@ -163,11 +161,11 @@ test('WriteFindings_SinRoster_AvisaYNoFrena', () => {
   }
 });
 
-// ── T10 (AC 6b) ──────────────────────────────────────────────────────────────────────────────
-// La segunda causa de aquel pull request: el roster cubre la RONDA DEL PASO 5 y `findings.json` toda la
-// corrida. `tycon-sibling-pattern-reviewer` corrió en el paso 1 y quedaba fuera por diseño, así
-// que CUALQUIER story con un hallazgo del paso 1 disparaba `roster-incoherente`. Siempre.
-// ROJO PREVIO: reproducido abajo con un roster armado sin la pieza.
+// ── T10 ──────────────────────────────────────────────────────────────────────────────
+// El roster cubre la RONDA DEL PASO 5 y `findings.json` toda la corrida. `tycon-sibling-pattern-reviewer` corre
+// en el paso 1 y queda fuera por diseño, así que sin los tramos CUALQUIER story con un hallazgo del paso 1
+// dispararía `roster-incoherente`. Siempre.
+// ROJO SIN LA GUARDA: reproducido abajo con un roster armado sin la pieza.
 const ledgerDeLosDosTramos = () => ([
   { ts: '2026-09-22T10:00:00Z', advisor: 'general-purpose', repo: '/r', story: STORY_ID },
   { ts: '2026-09-22T10:01:00Z', advisor: 'Explore', repo: '/r', story: STORY_ID },
@@ -189,11 +187,11 @@ test('TramoDelHallazgo_Paso1_NoCuentaComoAusente', () => {
   assert.strictEqual(f[0].tramo, 'revision', 'el revisor de la ronda del paso 5 viene del tramo de revisión');
   assert.strictEqual(f[1].tramo, 'previo', 'el del paso 1 dice de qué tramo viene');
 
-  // Y el cruce, con los tramos escritos, ya no lo cuenta como revisor ausente.
+  // Y el cruce, con los tramos escritos, no lo cuenta como revisor ausente.
   const v = rlib.validate(roster, { advisoresEnFindings: f.map((x) => ({ advisor: x.advisor, tramo: x.tramo })) });
   assert.ok(v.ok, `el cruce tramo contra tramo no puede dar incoherencia: ${JSON.stringify(v.problemas)}`);
 
-  // ROJO PREVIO reproducido: el mismo hallazgo contra un roster SIN la pieza (como el de AG-2).
+  // ROJO SIN LA GUARDA, reproducido: el mismo hallazgo contra un roster SIN la pieza.
   const viejo = { ...roster }; delete viejo.agentes_previos;
   const vViejo = rlib.validate(viejo, { advisoresEnFindings: ['tycon-plugin-security-basics', 'tycon-sibling-pattern-reviewer'] });
   assert.ok(!vViejo.ok && vViejo.problemas.some((p) => p.regla === 'roster-incoherente'),
@@ -201,10 +199,10 @@ test('TramoDelHallazgo_Paso1_NoCuentaComoAusente', () => {
   limpiar(L);
 });
 
-// ── T11 (AC 6c) ──────────────────────────────────────────────────────────────────────────────
+// ── T11 ──────────────────────────────────────────────────────────────────────────────
 // 🔴 SALVAGUARDA: la ventana del paso 5 NO se ensancha. `general-purpose` tiene Write y en los
 // pasos 0-4 a veces IMPLEMENTA: certificarlo como revisor volvería falsa la afirmación central de
-// la pieza (lo cazó el pase adversarial). Un caso que lo certifique es un ROJO, no un avance.
+// la pieza. Un caso que lo certifique es un ROJO, no un avance.
 test('RosterNoAdoptaAgentesQueImplementan', () => {
   const roster = rlib.build({ lines: ledgerDeLosDosTramos(), story: STORY_ID, sessionId: 's1' });
   assert.deepEqual(roster.reviewers.map((x) => x.agent), ['tycon-plugin-security-basics'],
@@ -223,17 +221,16 @@ test('RosterNoAdoptaAgentesQueImplementan', () => {
   limpiar(L);
 });
 
-// ── Los 5 confirmados del pase adversarial (2026-09-22, run wf_4da83466-b36) ──────────────────
-// El pase EJECUTÓ el código y reprodujo cada uno; las pruebas que usó están en
-// `<run>/step-05b-probes/`. Estos casos son la promoción de esas pruebas a la suite: sin esto, del
+// ── Casos de regresión ───────────────────────────────────────────────
+// Estos casos son pruebas de un defecto reproducido, promovidas a la suite: sin esto, del
 // hallazgo queda el relato y no el código.
 
 // 🔴 EL MÁS GRAVE. `agentes_previos` es una lista que ALCANZA para dar por válido el firmante de un
 // hallazgo, y el cruce inverso contra el registro de subagentes sólo recorría `reviewers`. O sea
-// que escribiendo a mano un revisor inventado ahí, un hallazgo podía firmarlo y pasar por las dos
-// capas — derrotando la afirmación central de la pieza por la puerta que la propia story abrió.
+// que escribiendo a mano un revisor inventado ahí, un hallazgo podría firmarlo y pasar por las dos
+// capas — derrotando la afirmación central de la pieza.
 // El portón de CI no puede taparlo: no ve el registro. Se cruza en la máquina o no se cruza.
-// ROJO PREVIO: `revisarRosterLocal` devolvía null (commit limpio) con el agente inventado puesto.
+// ROJO SIN LA GUARDA: `revisarRosterLocal` devuelve null (commit limpio) con el agente inventado puesto.
 test('CruceInverso_AgenteInventadoEnTramoPrevio_TambienSeCaza', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'prev-fab-'));
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'prev-fab-repo-'));
@@ -270,10 +267,10 @@ test('CruceInverso_AgenteInventadoEnTramoPrevio_TambienSeCaza', () => {
 
 // Sin marca de ronda en el registro no se pueden afirmar tramos. Pasa de verdad: cuando el freno
 // local REGENERA el roster, las líneas vienen del registro ya filtrado y los eventos no están.
-// Publicar `agentes_previos` vacío ahí devolvía el defecto original por una puerta lateral (un
-// hallazgo del paso 1 volvía a contar como revisor ausente).
-// ROJO PREVIO: el roster salía con `agentes_previos` ausente pero con TODO en `reviewers`, sin
-// que nada dijera que el corte no se pudo ubicar.
+// Publicar `agentes_previos` vacío ahí devolvería el defecto original por una puerta lateral (un
+// hallazgo del paso 1 volvería a contar como revisor ausente).
+// ROJO SIN LA GUARDA: el roster sale con `agentes_previos` ausente pero con TODO en `reviewers`, sin
+// que nada diga que el corte no se pudo ubicar.
 test('SinMarcaDeRonda_ElRosterNoAfirmaTramos', () => {
   const l = (a) => ({ ts: '2026-09-22T10:00:00Z', advisor: a, repo: '/r', story: '9.9' });
   const conCorte = rlib.build({ lines: [l('tycon-story-validator'), { event: 'step5-start', iter: 1 }, l('tycon-plugin-security-basics')], story: '9.9', sessionId: 's1' });
@@ -285,11 +282,10 @@ test('SinMarcaDeRonda_ElRosterNoAfirmaTramos', () => {
 });
 
 // En un re-loop, los revisores de la vuelta anterior quedan ANTES del último `step5-start`. Con el
-// roster previo en mano el merge los conserva, pero en una regeneración desde cero salían de
-// `reviewers` y aparecían en `agentes_previos`: un revisor REAL degradado de tramo, y un
-// `roster-incoherente` falso contra él la próxima vez que firmara. El mismo falso positivo que la
-// story vino a matar, reencarnado.
-// ROJO PREVIO: `tycon-plugin-security-basics` aparecía en agentes_previos tras la 2da ronda.
+// roster previo en mano el merge los conserva, pero en una regeneración desde cero saldrían de
+// `reviewers` y aparecerían en `agentes_previos`: un revisor REAL degradado de tramo, y un
+// `roster-incoherente` falso contra él la próxima vez que firmara.
+// ROJO SIN LA GUARDA: `tycon-plugin-security-basics` aparece en agentes_previos tras la 2da ronda.
 test('ReLoop_UnRevisorRealNoSeDegradaATramoPrevio', () => {
   const l = (a) => ({ ts: '2026-09-22T10:00:00Z', advisor: a, repo: '/r', story: '9.9' });
   const lines = [

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * on-config-lint.js — handler PostToolUse (Edit|Write) del dispatcher: revisa
- * `.tycon/advisors.yaml` apenas alguien lo toca (FIX-4(c), 2026-08-25).
+ * `.tycon/advisors.yaml` apenas alguien lo toca.
  *
  * POR QUÉ ACÁ Y NO EN EL COMMIT: la config del repo es una superficie de control **que no
  * dispara a nadie**. Un commit que sólo la toca se clasifica como "sólo documentación" y el set de

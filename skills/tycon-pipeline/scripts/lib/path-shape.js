@@ -1,12 +1,10 @@
 'use strict';
 /**
- * path-shape.js — una ruta de Windows puede llegar escrita de tres formas; los portones miran UNA (story 8.17 del
- * arnés, tanda W1, 2026-10-04).
+ * path-shape.js — una ruta de Windows puede llegar escrita de tres formas; los portones miran UNA.
  *
- * EL CASO. En Windows la misma carpeta se escribe `C:\a\b` (la nativa), `C:/a/b` (la que escribe casi todo guion) y
- * `/c/a/b` (la de Git Bash, que es con lo que el asistente corre sus comandos). Medido en un agente Windows (corrida
- * 11694 del pipeline de Windows): con las dos primeras los portones daban el veredicto de siempre; con `/c/a/b`, cuatro
- * de ellos dejaban pasar lo que tenían que frenar. Para Node en Windows `/c/a/b` es `C:\c\a\b`: una carpeta que no
+ * EL PROBLEMA. En Windows la misma carpeta se escribe `C:\a\b` (la nativa), `C:/a/b` (la que escribe casi todo guion) y
+ * `/c/a/b` (la de Git Bash, que es con lo que el asistente corre sus comandos). Con las dos primeras los portones dan el veredicto de siempre; con `/c/a/b`, cuatro
+ * de ellos dejarían pasar lo que tienen que frenar. Para Node en Windows `/c/a/b` es `C:\c\a\b`: una carpeta que no
  * existe, fuera de cualquier repo — y un portón que no encuentra el repo no tiene nada que frenar.
  *
  * LA REGLA. Toda ruta que llega de afuera (el `file_path` y el `cwd` de un evento, el destino de una escritura por la

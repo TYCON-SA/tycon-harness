@@ -1,16 +1,14 @@
 #!/usr/bin/env node
 /**
  * smart-reloop-blindness.test.js — el re-loop deja de devolver un delta "chico" cuando en realidad
- * está ciego, y los probes del pase adversarial dejan de contaminar la foto de la iteración.
+ * está ciego, y los probes del pase adversarial no contaminan la foto de la iteración.
  *
- * Caso disparador (Story 9.3.1 del repo del framework + la M-10 de un producto del equipo, el mismo día 2026-08-26): las tres
- * fuentes del delta salían todas de `marker.filesTouched`, que escribe on-edit.js desde el hook
+ * Caso: las tres
+ * fuentes del delta salen todas de `marker.filesTouched`, que escribe on-edit.js desde el hook
  * PostToolUse matcher `Edit|Write`. Incluso el fallback por mtime ITERA sobre filesTouched, así que
- * cubría "archivo que el hook ya vio y se re-editó por fuera", NO "archivo que el hook no vio
- * nunca". En la corrida real el registro tenía 7 entradas y las 7 eran scratchpad del 5b: cero
- * ediciones del repo, delta chico, y nadie avisó. Es la misma cadena causal que la auditoría
- * 2026-06-11 dio por cerrada — viva de nuevo y MÁS difícil de ver, porque el archivo ya no está
- * vacío: tiene ruido.
+ * cubre "archivo que el hook ya vio y se re-editó por fuera", NO "archivo que el hook no vio
+ * nunca". Si el registro tiene sólo entradas de scratchpad del 5b: cero
+ * ediciones del repo, delta chico, y nadie avisa. El archivo tiene ruido, así que cuesta verlo.
  *
  * Correr: node --test .../scripts/tests/smart-reloop-blindness.test.js
  */
@@ -19,8 +17,8 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 
-// Story 8.7 (AC 8): un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
-// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados», como desde la 8.2: lo declara.
+// Un repo sin `packs:` activa los paquetes que diga `packs.default` (afuera, sin perfil: ninguno).
+// Esta suite corre el pipeline con una HOME aislada y cuenta con «todos los instalados».
 process.env.TYCON_PACKS_DEFAULT = (process.env.TYCON_PACKS_DEFAULT || '').trim() || 'all';   // recortada, como el cargador
 const os = require('os');
 const path = require('path');
@@ -157,10 +155,10 @@ test('snapshot-iter sin probes no reporta exclusiones (nada de ruido cuando no p
 });
 
 // ── La 4ta fuente (git) — el caso que NINGUNA de las otras tres puede ver ────
-// Las tres viejas iteran sobre `filesTouched`. Si el registro tiene UNA edición real, el
+// Las otras tres iteran sobre `filesTouched`. Si el registro tiene UNA edición real, el
 // diagnóstico de ceguera no dispara (y está bien: el registro mide algo) — pero un SEGUNDO archivo
-// editado por fuera del hook seguiría invisible sin esta fuente. Sin este test se podía borrar la
-// 4ta fuente entera y las suites quedaban verdes (lo señaló la revisión adversarial).
+// editado por fuera del hook seguiría invisible sin esta fuente. Sin este test se podría borrar la
+// 4ta fuente entera y las suites quedarían verdes.
 
 test('git ve un archivo que el registro NUNCA vio → entra al delta igual', () => {
   const repo = mkRepoGit();
@@ -203,7 +201,7 @@ test('lo escrito FUERA del repo no entra al delta, aunque no se llame como un pr
   const repo = mkRepoGit();
   const real = path.join(repo, 'src', 'PluginManager.cs');
   const afuera = fs.mkdtempSync(path.join(os.tmpdir(), 'cazador-5b-'));
-  const sonda = path.join(afuera, 'probe.sh');       // el nombre que usaron los cazadores: no es de la convención
+  const sonda = path.join(afuera, 'probe.sh');       // un nombre fuera de la convención de probes
   fs.writeFileSync(sonda, 'echo sonda\n');
   const reciente = new Date(Date.now() + 1000).toISOString();
   const home = mkHome({
@@ -241,11 +239,11 @@ test('la story en un repo de specs aparte SÍ cuenta en el delta (no es «fuera 
 });
 
 test('un fix en `.js` NO saltea a los advisors de código (el arnés es JavaScript)', () => {
-  // 🔴 La superficie auditada de security-basics y silent-failure-hunter listaba `.cs/.ts/.tsx` y
-  // NINGÚN `.js`. El arnés mismo es JavaScript sin transpilar: en la story 2.15, cuatro re-loops
-  // seguidos saltearon a los dos advisors por «superficie no tocada» — y el hallazgo que el
-  // cazador de fallos silenciosos había encontrado estaba arreglado justamente en un `.js`.
-  // O sea: el advisor que encontró el bug no volvía a mirar su propio fix.
+  // 🔴 La superficie auditada de security-basics y silent-failure-hunter tiene que incluir `.js`, no
+  // sólo `.cs/.ts/.tsx`. El arnés mismo es JavaScript sin transpilar: sin eso, varios re-loops
+  // seguidos saltearían a los dos advisors por «superficie no tocada», aunque el hallazgo del
+  // cazador de fallos silenciosos se arregle justamente en un `.js`.
+  // O sea: el advisor que encontró el bug no volvería a mirar su propio fix.
   const repo = mkRepoGit();
   const real = path.join(repo, 'src', 'medidor.js');
   fs.writeFileSync(real, '// fix del catch mudo\n');
@@ -282,14 +280,14 @@ test('un `--repo` relativo no inventa ceguera (force-full falso en cada iteraci�
     'comparar strings sin resolver hacía que `--repo .` no matcheara ninguna entrada del registro');
 });
 
-// ── La foto es de la vuelta; la versión que vio cada revisor, no (2026-10-14) ──────────────────
-// 🔴 El defecto: la foto de la vuelta se toma sola al lanzar el ÚLTIMO revisor. Un arreglo hecho
+// ── La foto es de la vuelta; la versión que vio cada revisor, no ──────────────────
+// 🔴 La foto de la vuelta se toma sola al lanzar el ÚLTIMO revisor. Un arreglo hecho
 // mientras corrían los revisores, pero ANTES de ese último lanzamiento, queda adentro de la foto: el
 // delta de la vuelta siguiente no lo trae, y el revisor que se había lanzado ANTES del arreglo —que
 // nunca lo vio— se saltea por «superficie no tocada». La corrección mira, por revisor, cuándo se
 // lanzó (el registro de lanzamientos que escribe el hook, no algo que el agente tipea), y trata como
 // no visto todo lo editado después de ESE lanzamiento.
-// ROJO PREVIO: `security-basics` (lanzado a t1, arreglo a t2, último revisor y foto a t3) salía en
+// Caso que cubre: `security-basics` (lanzado a t1, arreglo a t2, último revisor y foto a t3) saldría en
 // `skipped` con «superficie no tocada».
 
 /** Registro de lanzamientos de la sesión, como lo escribe on-advisor-run.js. */

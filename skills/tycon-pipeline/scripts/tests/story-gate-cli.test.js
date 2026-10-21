@@ -2,7 +2,7 @@
 /**
  * story-gate-cli.test.js — la parte del portón de carril que LANZA PROCESOS (git, marker.js CLI):
  * kill-switch commiteado, complete-step (orden / Step 3 / Step 5), marker set, adhoc. Corre en el throttle
- * DIARIO del instalador (hallazgo H8 del review 2026-08-19: en SessionStart sumaba ~1 min bajo carga).
+ * DIARIO del instalador: en SessionStart sumaría ~1 min bajo carga.
  * La parte pura vive en story-gate.test.js (cada arranque).
  *
  * Correr: node --test ~/.claude/agent-skills/skills/tycon-pipeline/scripts/tests/story-gate-cli.test.js
@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFileSync, spawnSync } = require('child_process');
-// el nombre público del arnés (el del lugar, story 8.19), de place.js del repo único; en un clon de skills suelto no está
+// el nombre público del arnés (el del lugar), de place.js del repo único; en un clon de skills suelto no está
 // y los gemelos con ese nombre no se miden (se dice). Nunca escrito a mano: vive sólo en public-repos.json y place.js.
 const PUBLIC_NAME = (() => { try { return require(path.join(__dirname, '..', '..', '..', '..', 'scripts', 'setup', 'harness', 'place.js')).PLACE_NAME; } catch (_) { return null; } })();
 const twin = (fn) => (PUBLIC_NAME ? fn() : console.log('⏭ gemelo con el nombre público: NO MEDIDO — sin scripts/setup/harness/place.js (clon de skills suelto)'));
@@ -119,7 +119,7 @@ test('complete-step: orden (3←1,2 · 4←3 · 5←4 · 8←5), --out-of-order 
   r = markerCli(home, sid, ['complete-step', '5', '--out-of-order']);
   assert.equal(r.status, 0, r.stderr);
   // frescura: un check con el MISMO instante que el cierre previo NO cuenta (> estricto)
-  // y el gate también cubre `4 sin 3` y `8 sin 5` (mutantes H16)
+  // y el gate también cubre `4 sin 3` y `8 sin 5`
   const mpath = path.join(home, '.claude', '.tycon-pipeline', 'active', `${sid}.json`);
   const m = JSON.parse(fs.readFileSync(mpath, 'utf8'));
   m.checksAt.advisors = m.stepTimings['5'].completedAt; fs.writeFileSync(mpath, JSON.stringify(m));
@@ -165,11 +165,11 @@ test('marker set: mismo storyId no reabre steps completados (R7); marker nuevo s
   assert.equal(r.status, 0); assert.match(r.stderr, /SIN el Step 3/);
   const bl = () => fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'bypass.log'), 'utf8');
   assert.match(bl(), /MARKER_SKIPS_PLAN/);
-  // MISMA story que OMITE el 3 que estaba pendiente → MARKER_DROPS_PLAN (H5)
+  // MISMA story que OMITE el 3 que estaba pendiente → MARKER_DROPS_PLAN
   r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '2.2', stepsPending: [5, 6, 7, 8] })]);
   assert.equal(r.status, 0); assert.match(r.stderr, /que estaba pendiente/);
   assert.match(bl(), /MARKER_DROPS_PLAN/);
-  // OTRA story sobre un marker viejo, sin 3 → MARKER_SKIPS_PLAN (H5)
+  // OTRA story sobre un marker viejo, sin 3 → MARKER_SKIPS_PLAN
   r = markerCli(home, sid, ['set', JSON.stringify({ storyId: '9.9', stepsPending: [5, 6, 7, 8] })]);
   assert.equal(r.status, 0);
   assert.equal((bl().match(/MARKER_SKIPS_PLAN/g) || []).length, 2);
@@ -181,7 +181,7 @@ test('marker set: mismo storyId no reabre steps completados (R7); marker nuevo s
 test('marker.js adhoc set/get/clear', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const sid = 'sess-a';
-  // H2a (2026-08-27): el ring vacío ya no es un pase libre — este test de mecánica lo puebla,
+  // El ring vacío no es un pase libre: este test de mecánica lo puebla,
   // porque set/get/clear es lo que prueba, no el juicio (eso vive en los tests de al lado).
   spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
     encoding: 'utf8',
@@ -219,9 +219,9 @@ test('check-count: set esperado VACÍO persistido en step5-start → exit 0 (H6)
   assert.match(r.stdout + r.stderr, /VACÍO|vacío/);
 });
 
-// ── Carril fijado por el prompt (2026-08-24): on-prompt.js real + marker.js adhoc set ─────────────
+// ── Carril fijado por el prompt: on-prompt.js real + marker.js adhoc set ─────────────
 test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cita del user permitida; kill-switch del dev', () => {
-  // 2026-08-27: el carril por regex se borró (tres incidentes en tres días — ver story-gate.js).
+  // No hay carril por regex (ver story-gate.js).
   // Sin modelo disponible (markerCli pasa TYCON_LANE_LLM=0) decide la capa mecánica sola:
   // el reason tiene que ser un fragmento literal de un prompt del user. No hay más deny por
   // "carril pipeline fijado" — ese deny hoy sólo puede dictarlo el clasificador leyendo los
@@ -235,7 +235,7 @@ test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cit
   });
   const adhocLog = () => { try { return fs.readFileSync(path.join(stateDir, 'adhoc.log'), 'utf8'); } catch { return ''; } };
 
-  // El prompt del caso disparador del 2026-08-24: el reminder de intent sigue avisando…
+  // Un prompt de ejemplo: el reminder de intent sigue avisando…
   let r = onPrompt('implementemos la story 2.3: exponer el provider, tests scoped');
   assert.equal(r.status, 0);
   assert.match(r.stdout, /INTENT-detect/, 'el reminder de pipeline sigue avisando');
@@ -260,9 +260,8 @@ test('adhoc set sin modelo: la cita literal decide — paráfrasis denegada, cit
   assert.equal(r.status, 0, r.stderr);
 });
 
-// H1/H2a de la revisión adversarial del rediseño (2026-08-27) — las cercas del caso crítico:
-// sin modelo, el rediseño había quedado MÁS DÉBIL que el regex borrado justo en el anti-pattern
-// fundacional. Estos tests son la razón de que no vuelva a pasar.
+// Las cercas del caso crítico: sin modelo, el carril por prompt quedaría MÁS DÉBIL que el regex que reemplazó
+// justo en el anti-pattern fundacional. Estos tests lo impiden.
 test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vacío no es un pase libre; el atajo sin juez deja constancia', () => {
   const onPrompt = (home, sid, prompt) => spawnSync('node', [path.join(SCRIPTS, 'on-prompt.js')], {
     encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt, session_id: sid }),
@@ -270,7 +269,7 @@ test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vac
   });
   const log = (home) => { try { return fs.readFileSync(path.join(home, '.claude', '.tycon-pipeline', 'adhoc.log'), 'utf8'); } catch { return ''; } };
 
-  // H1: el user pidió una story; el agente cita ESE pedido como motivo del atajo. La cita pasa la
+  // El user pidió una story; el agente cita ESE pedido como motivo del atajo. La cita pasa la
   // capa mecánica de literalidad — el veto tiene que venir de reconocer QUÉ está citando.
   let home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   onPrompt(home, 's-h1', 'implementemos la story 1.1 del sprint');
@@ -279,7 +278,7 @@ test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vac
   assert.match(r.stderr, /pedido de implementar/);
   assert.match(log(home), /ADHOC_DENIED_STORY_QUOTE/);
 
-  // H2a: ring vacío (hook de prompt roto / sesión sin prompts) — antes quoted=true y pasaba todo.
+  // Ring vacío (hook de prompt roto / sesión sin prompts): no cuenta como cita; si quoted fuera true, pasaba todo.
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   r = markerCli(home, 's-h2a', ['adhoc', 'set', '{"reason":"motivo inventado sin ring"}']);
   assert.equal(r.status, 2, 'H2a REABIERTO: ring vacío volvió a ser un pase libre');
@@ -288,8 +287,8 @@ test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vac
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   onPrompt(home, 's-unj', 'arreglá el bug del redirect en el login');
   // Un PATH con node y NADA más. `path.dirname(process.execPath)` no sirve: con node por nvm, `claude` vive en esa misma
-  // carpeta (…/.nvm/versions/node/<v>/bin/claude) y el clasificador lo encontraba — corría el binario real y anotaba
-  // `via: "error"` en vez de «sin modelo» (rojo local de esta suite desde la 8.3-A; en la CI node no convive con claude).
+  // carpeta (…/.nvm/versions/node/<v>/bin/claude) y el clasificador lo encontraría — correría el binario real y anotaría
+  // `via: "error"` en vez de «sin modelo» (en la CI node no convive con claude).
   const binVacio = fs.mkdtempSync(path.join(os.tmpdir(), 'nobin-'));
   fs.symlinkSync(process.execPath, path.join(binVacio, 'node'));
   r = spawnSync('node', [path.join(SCRIPTS, 'marker.js'), 'adhoc', 'set', '{"reason":"arreglá el bug del redirect"}'], {
@@ -301,7 +300,7 @@ test('adhoc set sin modelo: citar el PROPIO pedido de story se veta; el ring vac
   assert.match(log(home), /"via":"sin-modelo"/, 'sin claude ni codex en el PATH no es un error ni una respuesta');
 });
 
-// El clasificador como JUEZ del adhoc set (2026-08-27): con modelo disponible, su veredicto gana
+// El clasificador como JUEZ del adhoc set: con modelo disponible, su veredicto gana
 // sobre la cita. Se prueba con un `claude` falso en el PATH que contesta fijo — el binario real no
 // entra a una suite (no reproducible, lento, y castiga la máquina sin red).
 test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC abre una cita fallida y queda auditado', () => {
@@ -313,7 +312,7 @@ test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC a
     const f = path.join(bin, 'claude');
     // El falso exige el contrato real: sin --json-schema y --output-format json sale con error. Y, como el CLI real, lee
     // el prompt entero de la entrada antes de contestar: si sale sin leerlo, el clasificador recibe EPIPE de a ratos, lo
-    // toma como «claude falló» y decide la capa mecánica (public-ci, 2026-10-14: la APERTURA AUDITADA salió 2, no 0).
+    // toma como «claude falló» y decide la capa mecánica (la APERTURA AUDITADA saldría 2, no 0).
     fs.writeFileSync(f, `#!/bin/sh\n[ "$1" = --version ] && { echo 2.1.280; exit 0; }\ncat > /dev/null\ncase "$*" in *--json-schema*) ;; *) echo 'falta --json-schema' >&2; exit 9;; esac\ncase "$*" in *'--output-format json'*) ;; *) echo 'falta --output-format json' >&2; exit 9;; esac\ncat <<'FIN'\n${salida}\nFIN\n`);
     fs.chmodSync(f, 0o755);
     return bin;
@@ -330,7 +329,7 @@ test('adhoc set con modelo: PIPELINE veta aunque el reason cite al user; ADHOC a
   });
 
   // VETO: el user pidió una story; el agente la cita textual como motivo del atajo (el anti-pattern
-  // del 2026-08-24). La cita PASA la capa mecánica — el veto sólo puede venir del modelo.
+  // fundacional). La cita PASA la capa mecánica — el veto sólo puede venir del modelo.
   let home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   onPrompt(home, 's-veto', 'implementemos la story 2.3 con el pipeline completo');
   let r = run(home, 's-veto', 'implementemos la story 2.3', sobre('PIPELINE'));
@@ -382,7 +381,7 @@ test('on-prompt.js: un prompt sin señal no toca el carril; una pregunta sobre l
   assert.equal(r.status, 0, r.stderr);
 });
 
-// ── gates.log con namespace de repo (2026-08-24, GATESLOG-STORYID-NS-1) ─────────────────────────
+// ── gates.log con namespace de repo ─────────────────────────
 test('gates.log: cada entry de marker.js lleva repoPath del marker (dos repos con la misma "S1" no se mezclan)', () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
   const log = path.join(home, '.claude', '.tycon-pipeline', 'gates.log');
@@ -405,7 +404,7 @@ test('gates.log: cada entry de marker.js lleva repoPath del marker (dos repos co
   assert.notEqual(checks[0].repoPath, checks[1].repoPath, 'mismo storyId, repos distintos → entries distinguibles');
 });
 
-// ── quién es un repo del harness: lo dice el remoto, no la carpeta (2026-09-17) ──────────────────
+// ── quién es un repo del harness: lo dice el remoto, no la carpeta ──────────────────
 // El criterio vive en el arnés (tycon-claude-guides/scripts/lib/harness-repo.js) y el borde lo
 // carga UNA vez por proceso: cada escenario corre en un proceso hijo con su TYCON_GUIDES_DIR.
 const IO = path.join(SCRIPTS, 'lib', 'story-gate-io.js');
@@ -432,26 +431,26 @@ const porton = (tcg, file, extraEnv) => enHijo(tcg,
 const frenoDeStory = (tcg, file) => enHijo(tcg,
   `const sio=require(${JSON.stringify(SIO)});process.stdout.write(JSON.stringify(sio.evaluate({absPath:process.argv[1],content:${JSON.stringify(S99)},sessionId:'s-h',via:'Write',stateDir:process.argv[2]}).verdict))`, [file]);
 
-// `nombre`: con cuál de sus dos nombres trae el criterio ese arnés (el de antes de la story 8.9 del arnés, por defecto: un
-// arnés un pull atrás; `harness-repo.js`: el de hoy, que es el único que trae una copia sin reemplazos).
+// `nombre`: con cuál de sus dos nombres trae el criterio ese arnés (el anterior, por defecto: un
+// arnés un pull atrás; `harness-repo.js`: el actual, que es el único que trae una copia sin reemplazos).
 function tcgDeMentira(nombre = 'repo-del-arnes.js') { // un arnés cuyo criterio es: «es del arnés si la ruta dice ES-ARNES»
   const tcg = fs.mkdtempSync(path.join(os.tmpdir(), 'tcg-stub-'));
   fs.mkdirSync(path.join(tcg, 'scripts', 'lib'), { recursive: true });
   fs.writeFileSync(path.join(tcg, 'scripts', 'lib', nombre), 'module.exports={esRutaDelArnes:(p)=>/ES-ARNES/.test(String(p))};\n');
   // Un «clon del arnés» tiene scripts/install-tycon-hooks.sh: es lo que exige lib/harness-path.js antes de hacer
-  // require() de código en un hook (story 8.3, revisor de seguridad). Sin él, la variable se ignora, se cae al
-  // enlace del HOME temporal —que no existe— y el portón decide por la carpeta: `block` (rojo de la CI 11070).
+  // require() de código en un hook. Sin él, la variable se ignora, se cae al
+  // enlace del HOME temporal —que no existe— y el portón decide por la carpeta: `block`.
   fs.writeFileSync(path.join(tcg, 'scripts', 'install-tycon-hooks.sh'), '#!/usr/bin/env bash\nexit 0\n');
   return tcg;
 }
-// Las identidades del arnés se INYECTAN (story 8.3, AC 7): la CI corre con HOME temporal y sin TYCON_SKILLS_DIR,
+// Las identidades del arnés se INYECTAN: la CI corre con HOME temporal y sin TYCON_SKILLS_DIR,
 // así que repo-del-arnes.js no encuentra agent-skills para derivar su identidad del origin de la máquina.
-// La variable la lee sólo el arnés, con su nombre en inglés y el viejo andando por alias desde la story 8.9 (tanda B1).
+// La variable la lee sólo el arnés, con su nombre en inglés; el nombre viejo anda por alias.
 const IDENTIDADES_ARNES = { TYCON_HARNESS_IDENTITIES: 'https://dev.azure.com/org-del-equipo/tycon-claude-guides/_git/tycon-claude-guides,https://org-del-equipo.visualstudio.com/AgentSkills/_git/AgentSkills' };
 // La lib real, donde esté: variable, cwd (así corre el nocturno) o el arnés instalado. Se reconoce por el criterio con su
-// nombre de HOY: buscarlo por el de antes (`repo-del-arnes.js`) salteaba la prueba en la copia pública, y desde la carpeta del
-// repo privado —que todavía guarda ese archivo viejo y no el código del portón— la corría contra un árbol sin el criterio y
-// salía roja (2026-10-15).
+// nombre actual: buscarlo por el anterior (`repo-del-arnes.js`) saltearía la prueba en la copia pública, y desde la carpeta del
+// repo privado —que todavía guarda ese archivo viejo y no el código del portón— la correría contra un árbol sin el criterio y
+// saldría roja.
 function tcgDeVerdad() {
   const cand = [process.env.TYCON_GUIDES_DIR, process.env.TCG, process.cwd(), path.join(os.homedir(), '.tycon', 'harness')];
   return cand.find((d) => d && fs.existsSync(path.join(d, 'scripts', 'lib', 'harness-repo.js'))) || null;
@@ -462,13 +461,13 @@ test('harness: el portón le cree al criterio del arnés, no a la carpeta — en
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'porton-'));
   const clon = repoGit(path.join(base, 'ES-ARNES', 'clon'));
   const producto = repoGit(path.join(base, 'tycon-claude-guides', 'MiProducto'));
-  // ROJO PREVIO: la carpeta del clon no se llama como el arnés → `no-lane`.
+  // La carpeta del clon no se llama como el arnés y aun así es del arnés (si decidiera la carpeta daría `no-lane`).
   const a = porton(tcg, path.join(clon, 'src', 'a.js'));
   assert.equal(a.action, 'pass', JSON.stringify(a)); assert.match(a.reason, /harness/);
-  // ROJO PREVIO (la cara): un segmento con el nombre del arnés alcanzaba → código de producto sin carril, en silencio.
+  // Un segmento con el nombre del arnés no alcanza: si alcanzara, código de producto quedaría sin carril, en silencio.
   const b = porton(tcg, path.join(producto, 'src', 'a.js'));
   assert.equal(b.action, 'block', JSON.stringify(b)); assert.equal(b.kind, 'no-lane');
-  // gemelo con el nombre público (story 8.19, tanda E, AC 39): bajo una carpeta llamada como el lugar, tampoco
+  // gemelo con el nombre público: bajo una carpeta llamada como el lugar, tampoco
   twin(() => {
     const b2 = porton(tcg, path.join(repoGit(path.join(base, PUBLIC_NAME, 'MiProducto')), 'src', 'a.js'));
     assert.equal(b2.action, 'block', JSON.stringify(b2)); assert.equal(b2.kind, 'no-lane');
@@ -478,9 +477,9 @@ test('harness: el portón le cree al criterio del arnés, no a la carpeta — en
   assert.notEqual(frenoDeStory(tcg, path.join(producto, 'specs', '9-9.md')).kind, 'harness');
 });
 
-// Story 8.9 del arnés, tanda G: el criterio se buscaba sólo por su nombre de antes del renombre. En el equipo andaba por
-// el reemplazo que deja el renombre; en una copia sin reemplazos el portón caía al nombre de carpeta sin decirlo.
-// ROJO PREVIO: con un arnés que trae sólo `harness-repo.js`, el clon daba `no-lane` (decidía la carpeta).
+// El criterio se busca también por su nombre actual, no sólo por el de antes del renombre. En el equipo anda por
+// el reemplazo que deja el renombre; en una copia sin reemplazos el portón caería al nombre de carpeta sin decirlo.
+// Con un arnés que trae sólo `harness-repo.js`, el clon tiene que ser del arnés (si decidiera la carpeta daría `no-lane`).
 test('harness: el criterio del arnés se encuentra por su nombre de hoy, sin el reemplazo del nombre de antes', () => {
   const tcg = tcgDeMentira('harness-repo.js');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'porton-'));
@@ -490,17 +489,16 @@ test('harness: el criterio del arnés se encuentra por su nombre de hoy, sin el 
   assert.equal(a.action, 'pass', JSON.stringify(a)); assert.match(a.reason, /harness/);
   const b = porton(tcg, path.join(producto, 'src', 'a.js'));
   assert.equal(b.action, 'block', JSON.stringify(b)); assert.equal(b.kind, 'no-lane');
-  // gemelo con el nombre público (story 8.19, tanda E, AC 39)
+  // gemelo con el nombre público
   twin(() => {
     const b2 = porton(tcg, path.join(repoGit(path.join(base, PUBLIC_NAME, 'MiProducto')), 'src', 'a.js'));
     assert.equal(b2.action, 'block', JSON.stringify(b2)); assert.equal(b2.kind, 'no-lane');
   });
 });
 
-// Revisión de la tanda G (revisor de alcance): con el arnés UBICADO pero sin el archivo del criterio —ni con su nombre de
-// hoy ni con el de antes—, el portón caía al nombre de carpeta sin una palabra. El AC 67 de la story 8.9 dice que no cae
-// callado: decide la carpeta igual (nunca rompe un Edit), y lo dice por la salida de error.
-// ROJO PREVIO: la salida de error venía vacía.
+// Con el arnés UBICADO pero sin el archivo del criterio —ni con su nombre actual ni con el anterior—, el portón no cae al
+// nombre de carpeta callado: decide la carpeta igual (nunca rompe un Edit), y lo dice por la salida de error
+// (sin esto, la salida de error saldría vacía).
 test('harness: el arnés está pero no trae el criterio con ninguno de sus dos nombres — decide la carpeta y LO DICE', () => {
   const tcg = fs.mkdtempSync(path.join(os.tmpdir(), 'tcg-sin-criterio-'));
   fs.mkdirSync(path.join(tcg, 'scripts', 'lib'), { recursive: true });
@@ -536,9 +534,8 @@ test('harness: el arnés está pero no trae el criterio con ninguno de sus dos n
   assert.doesNotMatch(ok.stderr || '', /nombre de carpeta/, 'con el criterio a mano no avisa');
 });
 
-// Pase adversarial de la tanda G (causa 7): el criterio está y carga, pero no trae `esRutaDelArnes`, o la trae y revienta.
-// En los dos casos el portón decidía por la carpeta sin decirlo. Ahora decide la carpeta igual (nunca rompe un Edit) y lo dice.
-// ROJO PREVIO: la salida de error venía vacía en los dos.
+// El criterio está y carga, pero no trae `esRutaDelArnes`, o la trae y revienta. En los dos casos el portón decide
+// la carpeta igual (nunca rompe un Edit) y lo dice (sin esto, la salida de error saldría vacía).
 test('harness: el criterio carga pero no sirve (sin la función, o la función revienta) — decide la carpeta y LO DICE', () => {
   for (const [caso, cuerpo, aviso] of [
     ['sin la función', 'module.exports={otraCosa:()=>true};\n', /no trae esRutaDelArnes.*nombre de carpeta/],
@@ -577,14 +574,14 @@ test('harness: con el criterio REAL del arnés — clon por su remoto, producto 
   const producto = repoGit(path.join(base, 'tycon-claude-guides', 'MiProducto'), 'https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend');
   assert.equal(porton(tcg, path.join(clon, 'skills', 'x', 'a.js'), IDENTIDADES_ARNES).action, 'pass');
   assert.equal(porton(tcg, path.join(producto, 'src', 'a.js'), IDENTIDADES_ARNES).kind, 'no-lane');
-  // gemelo con el nombre público (story 8.19, tanda E, AC 39)
+  // gemelo con el nombre público
   twin(() => {
     const producto2 = repoGit(path.join(base, PUBLIC_NAME, 'MiProducto'), 'https://org-del-equipo@dev.azure.com/org-del-equipo/UnProducto/_git/Backend');
     assert.equal(porton(tcg, path.join(producto2, 'src', 'a.js'), IDENTIDADES_ARNES).kind, 'no-lane');
   });
 });
 
-// ── story 7.30: la maqueta de la pantalla en «Aprobar el plan», approve-mockup, set y el paso 8 ─────────────────────
+// ── La maqueta de la pantalla en «Aprobar el plan», approve-mockup, set y el paso 8 ─────────────────────
 // La story va en <repo>/specs/stories/ (la carpeta qa queda en <repo>/specs/qa, propia de cada prueba). Ejemplos inventados.
 const MOCKUP_JS = path.join(SCRIPTS, 'mockup.js');
 const MODELO_730 = (boton = 'Pagar seleccionadas') => JSON.stringify({ title: 'La lista de facturas', screens: [{ name: 'Lista de facturas',
@@ -738,7 +735,7 @@ test('7.30-T15 CompleteStep3_SinPantalla_ComoHoy @story-7.30 @ac-13', () => {
   m = leerMarker730(home, 's15b');
   assert.equal(m.mockupApproval, undefined);
   assert.equal(m.mockupDecision.screen, false);
-  // la palabra del frente sólo en la prosa (baja de la 7.18): la línea sale una vez
+  // la palabra del frente sólo en la prosa: la línea sale una vez
   const repo2 = mundo730();
   const s2 = story730(repo2, ['src/Servicio.cs'], { extra: ['signed_for_sprint: 3'], title: 'El servicio que usa el frontend' });
   marker730(home, 's15c', s2, repo2);
@@ -837,11 +834,11 @@ test('7.30-T27 CompleteStep8_PantallaNuevaDespuesDelPlan_PideLaMaqueta @story-7.
   assert.doesNotMatch(r.stderr, /ganó una pantalla/);
   const { mockupStep8 } = require(MOCKUP_JS);
   assert.equal(mockupStep8(m, s).compare, true);
-  // un marcador sin la decisión del paso 3 (cerrado antes de la 7.30): no frena por la maqueta
+  // un marcador sin la decisión del paso 3 (anterior a la maqueta): no frena por la maqueta
   marker730(home, 's27b', s, repo, { done: [0, 1, 2, 3, 4, 5, 6, 7] });
   r = markerCli(home, 's27b', ['complete-step', '8']);
   assert.doesNotMatch(r.stderr, /ganó una pantalla/);
-  // revisores, vuelta 2: con la maqueta aprobada y la story que ya no está, frena y lo dice (también con DOD_BYPASS)
+  // con la maqueta aprobada y la story que ya no está, frena y lo dice (también con DOD_BYPASS)
   const m2 = leerMarker730(home, 's27');
   m2.storyPath = path.join(repo, 'specs', 'stories', 'no-esta.md');
   fs.writeFileSync(markerFile730(home, 's27'), JSON.stringify(m2));
@@ -878,7 +875,7 @@ test('7.30-T28 PipelineNextRiskClassYPortonDePlan_NombranLaMaqueta @story-7.30 @
     const msg = gate.blockMessage({ kind: 'plan' }, { filePath: path.join(r0, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: s } });
     if (conMaqueta) assert.match(msg, /--mockup-approved/); else assert.doesNotMatch(msg, /--mockup-approved/);
   }
-  // pase adversarial: la ruta relativa se resuelve contra repoPath (como marker.js); una story que no está, el mensaje de hoy
+  // la ruta relativa se resuelve contra repoPath (como marker.js); una story que no está da el mensaje sin maqueta
   const rel = path.relative(repo, conPantalla);
   assert.match(gate.blockMessage({ kind: 'plan' }, { filePath: path.join(repo, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: rel, repoPath: repo } }), /--mockup-approved/);
   const roto = gate.blockMessage({ kind: 'plan' }, { filePath: path.join(repo, 'src', 'a.ts'), marker: { storyId: '1.1', storyPath: path.join(repo, 'no-existe.md') } });

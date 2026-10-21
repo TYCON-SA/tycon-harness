@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * marker-archive-change.test.js — T11 y T12 de la story 2.19 del arnés (2026-09-17).
+ * marker-archive-change.test.js — T11 y T12.
  *
  * QUÉ CUIDA: que el archivador del cierre (`marker.js clear`) guarde AL LADO del volcado el cambio real
  * de la corrida según git (`<volcado>.cambio.json.gz`, lo arma `scripts/metrics/run-change.js` de
  * el arnés) y anote en el volcado sólo el resumen — sin poder caerse por eso.
  *
- * 🔴 Mismo contrato que el rescate de la 2.13 (`marker-archive-rescue.test.js`): el guion vive en OTRO
+ * 🔴 Mismo contrato que el rescate (`marker-archive-rescue.test.js`): el guion vive en OTRO
  *    repo, que se actualiza por otro camino. Una máquina con el arnés atrasado tiene este marker.js y no
  *    el guion: el volcado se escribe igual, con el motivo adentro. T12 lo prueba en sus cuatro formas.
  *
@@ -15,9 +15,9 @@
  * (`BUILD_SOURCESDIRECTORY`). Si no está, el caso lo DICE y falla (no se da por bueno un archivador que no se
  * pudo probar).
  *
- * T13–T16 (story 8.7 del arnés, tanda B · 2026-10-03): con qué NOMBRES de opción llama el cierre a los dos guiones del
- * arnés (`run-change.js` y `tokens-digest.js`). Iban los de antes del renombre de la 8.9; en el repo del equipo los
- * traduce el mapa de renombres, y la copia pública no trae ese mapa: el guion salía 2 y cada cierre anotaba «no medido».
+ * T13–T16: con qué NOMBRES de opción llama el cierre a los dos guiones del
+ * arnés (`run-change.js` y `tokens-digest.js`). Tienen que ser los actuales y no los de antes del renombre; en el repo del equipo los
+ * traduce el mapa de renombres, y la copia pública no trae ese mapa: con los viejos el guion sale 2 y cada cierre anota «no medido».
  *
  * Correr: TYCON_GUIDES_DIR=<clon del arnés> node --test <este archivo>
  */
@@ -31,14 +31,14 @@ const zlib = require('zlib');
 const { spawnSync, execFileSync } = require('child_process');
 
 const MARKER = path.join(__dirname, '..', 'marker.js');
-// El guion con su nombre de hoy y con el de antes del renombre (story 8.9, tanda C1), armado por partes: un arnés
+// El guion con su nombre actual y con el anterior al renombre, armado por partes: un arnés
 // atrasado sólo tiene el viejo, y el marker lo usa si falta el nuevo.
 const GUION = 'run-change.js';
 const GUION_VIEJO = `${['cambio', 'de', 'corrida'].join('-')}.js`;
 // El guion real: la variable, el árbol de esta misma prueba, la carpeta actual, el arnés instalado o el checkout del
-// nocturno de Azure (BUILD_SOURCESDIRECTORY es el arnés en el job de suites). El primero que lo tenga. Antes el segundo
-// candidato era la carpeta vieja del clon (~/SourceCode/tycon-claude-guides): desde el renombre no existe, y en una Mac sin
-// la variable T11 salía rojo con «no está el guion real» (2026-10-15).
+// nocturno de Azure (BUILD_SOURCESDIRECTORY es el arnés en el job de suites). El primero que lo tenga. La carpeta
+// vieja del clon (~/SourceCode/tycon-claude-guides) no es candidata: no existe desde el renombre, y en una Mac sin
+// la variable T11 saldría rojo con «no está el guion real».
 const ARBOL = path.resolve(__dirname, '..', '..', '..', '..');
 const GUIAS_REALES = [process.env.TYCON_GUIDES_DIR, ARBOL, process.cwd(), path.join(os.homedir(), '.tycon', 'harness'), process.env.BUILD_SOURCESDIRECTORY]
   .filter(Boolean).find((d) => fs.existsSync(path.join(d, 'scripts', 'metrics', GUION)))
@@ -103,7 +103,7 @@ function volcados(raiz) {
 }
 
 // ── T11 · el archivador deja el cambio al lado y el resumen adentro, sin parches ──────────────────
-// rojo previo: marker.js no llama al guion → no hay .cambio.json.gz ni `cambio` en el volcado.
+// rojo si: marker.js no llama al guion → no hay .cambio.json.gz ni `cambio` en el volcado.
 test('T11 · marker.js clear deja <volcado>.cambio.json.gz y anota sólo el resumen', () => {
   const guion = path.join(GUIAS_REALES, 'scripts', 'metrics', GUION);
   assert.ok(fs.existsSync(guion), `no está el guion real en ${guion}: este caso no se puede probar en esta máquina (TYCON_GUIDES_DIR)`);
@@ -138,12 +138,12 @@ test('T11 · marker.js clear deja <volcado>.cambio.json.gz y anota sólo el resu
 });
 
 // ── T12 · arnés atrasado, roto, lento o apagado: se archiva igual ────────────────────────────────
-// rojo previo: sin la integración no hay `cambio` en el volcado. Mutaciones: propagar el error del guion,
+// rojo si: sin la integración no hay `cambio` en el volcado. Mutaciones: propagar el error del guion,
 // no poner timeout (el caso lento colgaría el cierre), o ignorar la variable de apagado → rojo.
 const CASOS = [
   { nombre: 'guion ausente', guion: null, env: {}, motivo: /run-change|no encontré|atrasado/i },
   { nombre: 'guion que sale 9', guion: 'process.stderr.write("me rompí\\n"); process.exit(9);', env: {}, motivo: /falló|9/i },
-  // story 8.9: un arnés atrasado sólo tiene el nombre viejo, y se usa (sale 9: se ve que lo llamó)
+  // un arnés atrasado sólo tiene el nombre viejo, y se usa (sale 9: se ve que lo llamó)
   { nombre: 'sólo el nombre viejo (arnés atrasado)', nombreDelGuion: GUION_VIEJO, guion: 'process.exit(9);', env: {}, motivo: /falló|9/i },
   // y con los dos, el nuevo: el viejo es el reemplazo, que en Azure avisa «nombre viejo» en cada corrida
   { nombre: 'los dos nombres: corre el nuevo', guion: 'process.exit(7);', otro: { nombre: GUION_VIEJO, guion: 'process.exit(9);' }, env: {}, motivo: /7/ },
@@ -175,14 +175,14 @@ for (const caso of CASOS) {
   });
 }
 
-// ── T13–T16 · story 8.7 B: los nombres de las opciones con las que el cierre llama al arnés ──────────────────────
-// El defecto: `marker.js` llamaba a `run-change.js` y a `tokens-digest.js` con los nombres de ANTES del renombre (story
-// 8.9). En el repo del equipo andaba porque el mapa de renombres los traduce; la copia pública no trae el mapa, el guion
-// salía 2 y el cierre no guardaba qué cambió la corrida ni rescataba el hilo y el consumo. Ahora van los nombres de hoy
-// y, si el guion sale 2 (su código de «argumentos inválidos»), UNA vuelta más con los de antes: un arnés atrasado, que
+// ── T13–T16 · los nombres de las opciones con las que el cierre llama al arnés ──────────────────────
+// El cierre llama a `run-change.js` y a `tokens-digest.js` con los nombres de opción actuales. Con los de ANTES del renombre,
+// el repo del equipo andaría igual (el mapa de renombres los traduce) pero la copia pública no trae el mapa: el guion saldría 2 y el cierre
+// no guardaría qué cambió la corrida ni rescataría el hilo y el consumo. Por eso van los nombres actuales y,
+// si el guion sale 2 (su código de «argumentos inválidos»), UNA vuelta más con los de antes: un arnés atrasado, que
 // sólo entiende los viejos, sigue andando. Los viejos se arman por partes: no son nombres a usar.
 // Los casos del rescate (T15, T16) viven acá y no en marker-archive-rescue.test.js: esta suite sí corre en la CI.
-// rojo previo (medido): T13 y T15 recibían la opción vieja en la primera llamada; T14 y T16 nunca veían la segunda.
+// rojo si el cierre usa los nombres viejos: T13 y T15 reciben la opción vieja en la primera llamada; T14 y T16 nunca ven la segunda.
 const OLD_OPTION = {
   dump: `--${['vol', 'cado'].join('')}`,
   state: `--${['es', 'tado'].join('')}`,

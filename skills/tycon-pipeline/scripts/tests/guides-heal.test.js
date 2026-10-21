@@ -1,11 +1,10 @@
 'use strict';
-// guides-heal.test.js — la sanadora del clon del arnés destraba de verdad y su consejo a mano funciona (story 8.5.1 del
-// arnés, T12-T14). Hasta esta story la sanadora no tenía pruebas propias.
+// guides-heal.test.js — la sanadora del clon del arnés destraba de verdad y su consejo a mano funciona (T12-T14).
 //
 // Lo que no se puede perder:
 //   · Con un conflicto que HEAD no tiene (DU: lo publicado borró un archivo que el dev había tocado), `unstick` destraba:
-//     `rm --cached` para ése (no trae marcadores y no se le piden) y `checkout HEAD --` para los UU. Antes exigía
-//     marcadores en todos y devolvía «parece resuelto a mano», falso, y el clon no se reparaba nunca.
+//     `rm --cached` para ése (no trae marcadores y no se le piden) y `checkout HEAD --` para los UU. Exigir
+//     marcadores en todos devolvería «parece resuelto a mano», falso, y el clon no se repararía nunca.
 //   · Los rechazos de siempre siguen: un UU sin marcadores (resuelto a mano) o un stash que no es un autostash.
 //   · El consejo a mano (`manualAdvice`) se CORRE, no se lee: un comando por tipo, rutas y carpeta citadas, y `git stash`
 //     antes del merge cuando un archivo tocado después choca con lo publicado.
@@ -170,9 +169,9 @@ test('T14 GuidesHeal_TrabadoYAtrasado_StashAntesDelMerge — un archivo tocado d
   assert.strictEqual(git(clone, ['rev-parse', 'HEAD']), git(up, ['rev-parse', 'HEAD']));
 });
 
-// story 8.13 (tanda A, T10): con el estado del mecanismo nuevo (`harness-state.json`, schema ≥ 1) la sanadora se hace a
-// un lado —registra `delegated` y no toca git—; sin estado hace lo de hoy. La referencia entre repos tolera las dos
-// situaciones hasta el retiro (regla «entre repos» de la 8.9).
+// T10: con el estado del mecanismo nuevo (`harness-state.json`, schema ≥ 1) la sanadora se hace a
+// un lado —registra `delegated` y no toca git—; sin estado hace lo de siempre. La referencia entre repos tolera las dos
+// situaciones hasta el retiro (regla «entre repos»).
 function behind({ parent = BASE } = {}) {
   const root = path.join(parent, `lab-${++n}`);
   const up = path.join(root, 'up');
@@ -213,7 +212,7 @@ test('T10 GuidesHeal_WithoutState_HealsAsToday — sin estado hace lo de hoy: av
   assert.strictEqual(sello.result, 'healed', JSON.stringify(sello));
 });
 
-// story 8.18 (AC 34, T35): la sanadora es el TERCER actualizador —avanza el clon del arnés por su cuenta en el primer
+// T35: la sanadora es el TERCER actualizador —avanza el clon del arnés por su cuenta en el primer
 // mensaje de la sesión—. Desde la unión de los dos repos ese clon puede ser el lugar del que salen las skills (la máquina
 // de un solo árbol): si `main` vuelve a un árbol de antes de la unión, avanzar deja a la máquina sin skills. No avanza, y
 // lo dice. Si las skills salen de OTRO clon (la máquina de dos clones), sigue a `main` como siempre: es el retorno.
@@ -275,11 +274,11 @@ test('T35 GuidesHeal_TipWithSkills_Advances — espejo: un solo árbol y una ver
   assert.strictEqual(git(clone, ['rev-parse', 'HEAD']), git(up, ['rev-parse', 'HEAD']), 'una versión con las skills tiene que avanzar');
 });
 
-// story 8.18 del arnés, tramo 3 (revisor de fallos silenciosos, 2026-10-04): «no pude mirar» no es «no trae las skills».
-// La guarda preguntaba con `git cat-file -e <commit>:skills/tycon-pipeline`, que contesta lo mismo si el árbol no trae la
+// T35: «no pude mirar» no es «no trae las skills».
+// Preguntar con `git cat-file -e <commit>:skills/tycon-pipeline` contesta lo mismo si el árbol no trae la
 // carpeta que si git no pudo leerlo (un objeto que falta, un candado, un tiempo agotado: la sanadora corre con 8 s por
-// llamada). Con el árbol de HEAD sin leer entendía «de esta copia no salen las skills» y avanzaba: a una punta sin
-// skills. Con el de lo publicado sin leer frenaba —bien—, pero diciendo «no trae las skills», que no era cierto.
+// llamada). Con el árbol de HEAD sin leer se entendería «de esta copia no salen las skills» y se avanzaría: a una punta sin
+// skills. Con el de lo publicado sin leer se frenaría —bien—, pero diciendo «no trae las skills», que no sería cierto.
 // Cómo se mide: un `git` de laboratorio delante del PATH que falla (128) sólo cuando le preguntan por el árbol de UN
 // commit; todo lo demás va al git de verdad.
 const NO_SH = process.platform === 'win32' ? 'el git de laboratorio es un guion de sh' : false;
@@ -339,9 +338,9 @@ test('T35 GuidesHeal_CannotReadTip_NotApplied — no se pudo leer el árbol de l
   assert.strictEqual(execFileSync('bash', ['-c', cmd[1]], { encoding: 'utf8', env: ENV }).trim(), 'skills/tycon-pipeline', cmd[1]);
 });
 
-// …y «de esta copia salen las skills» se decide por QUÉ carpeta es, no por cómo está escrita su ruta (clase 14 del pase
-// adversarial, en este archivo): en un disco que no distingue mayúsculas, un enlace `~/.claude/agent-skills` escrito con
-// otra caja que el del arnés es el MISMO clon. Letra por letra daba «son dos clones» y la guarda no corría.
+// …y «de esta copia salen las skills» se decide por QUÉ carpeta es, no por cómo está escrita su ruta:
+// en un disco que no distingue mayúsculas, un enlace `~/.claude/agent-skills` escrito con
+// otra caja que el del arnés es el MISMO clon. Letra por letra daría «son dos clones» y la guarda no correría.
 test('T35 GuidesHeal_SameCloneOtherCase_GuardApplies — el enlace de las skills nombra el mismo clon con otras mayúsculas: la guarda corre igual', (t) => {
   const { up, clone } = unified();
   const other = path.join(path.dirname(path.dirname(clone)), path.basename(path.dirname(clone)).toUpperCase(), path.basename(clone));   // …/LAB-N/clon
@@ -361,10 +360,10 @@ test('T35 GuidesHeal_SameCloneOtherCase_GuardApplies — el enlace de las skills
   assert.strictEqual(JSON.parse(fs.readFileSync(stampPath(stateDir, 'sesion-t35f'), 'utf8')).result, 'no-skills');
 });
 
-// …y «no pude mirar de dónde salen las skills» tampoco es «de acá no salen» (segunda vuelta del revisor de fallos
-// silenciosos, 2026-10-04). `skillsComeFrom` contestaba con dos respuestas: si `~/.claude/agent-skills` no se dejaba
-// resolver (un enlace a una carpeta sin permisos, un disco que no responde) daba «son dos clones» y la sanadora avanzaba
-// a una punta sin skills. Tres respuestas: sí · no · no pude mirar; con «no pude mirar» no avanza y lo dice.
+// …y «no pude mirar de dónde salen las skills» tampoco es «de acá no salen».
+// `skillsComeFrom` con dos respuestas, si `~/.claude/agent-skills` no se dejara
+// resolver (un enlace a una carpeta sin permisos, un disco que no responde), daría «son dos clones» y la sanadora avanzaría
+// a una punta sin skills. Por eso son tres respuestas: sí · no · no pude mirar; con «no pude mirar» no avanza y lo dice.
 test('T35 GuidesHeal_CannotTellWhereSkillsComeFrom_NotApplied — no se pudo resolver de dónde salen las skills: no avanza, y lo dice', { skip: process.platform === 'win32' ? 'los permisos de carpeta de este laboratorio son de POSIX' : false }, (t) => {
   const { up, clone } = unified();
   const locked = path.join(BASE, `locked-${++n}`);
