@@ -3215,9 +3215,14 @@ test('8.63 Seccion_ReenvioDelOk @story-8.63 @ac-12 — la sección valida con el
     const js = ORG.pantalla(idioma);
     assert.match(js, /aprobaciones: editorAprobaciones/);
     assert.match(js, /'respuesta', 'modelos', 'suites', 'cobertura', 'revision', 'tecnologia', 'aprobaciones'/);
+    // sólo sí o no: el «sí» escribe el rol que ya tenga o «coordinadora»; la sesión se designa en la máquina
+    assert.match(js, /selector\(T\('pantalla\.quienReenviaElOk'\), rol \? 'si' : ''/);
+    assert.match(js, /x === 'si' \? \(rol \|\| 'coordinadora'\) : ''/);
+    assert.doesNotMatch(js, /campo\(T\('pantalla\.quienReenviaElOk'\)/, 'ya no pide el nombre de una sesión');
   }
   const textos = require(path.join(ROOT, 'scripts', 'site', 'texts.js'));
-  for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
+  assert.match(textos.t('es', 'pantalla.quienReenviaElOkAyuda'), /se designa en cada máquina/);
+  for (const k of ['pantalla.quienReenviaElOk', 'pantalla.quienReenviaElOkNo', 'pantalla.quienReenviaElOkSi', 'pantalla.quienReenviaElOkAyuda', 'org.capaSinApprovals']) {
     assert.ok(textos.t('es', k, { req: 'x', version: 'y' }) !== textos.t('en', k, { req: 'x', version: 'y' }), `${k} en las dos lenguas`);
   }
 });

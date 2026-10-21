@@ -61,7 +61,8 @@ const SECCIONES = Object.freeze([
   // lo que cambia la experiencia de cada dev, en el perfil del equipo, validado por el mismo lector de la
   // máquina. `rutas` (opcional): las hojas que la sección cambia dentro de sus `claves`; lo demás de esas claves queda
   // como estaba (Telegram, de cada máquina, no se edita desde la sección de integraciones).
-  // quién puede reenviar el ok de un dev para eximir un crítico (approvals.relay_session; vale sólo desde el perfil)
+  // si la organización usa una sesión que reenvía el ok de un dev (approvals.relay_session; vale sólo desde el perfil;
+  // cuál sesión es, se designa en cada máquina)
   Object.freeze({ id: 'aprobaciones', titulo: 'Quién reenvía el ok de un dev', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['approvals'], rutas: Object.freeze(['approvals.relay_session']), idCorto: 'profile', necesita: ['approvals'] }),
   Object.freeze({ id: 'pruebaAMano', titulo: 'Prueba a mano de cada criterio', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['qa'], rutas: Object.freeze(['qa.manual_check']), idCorto: 'profile', necesita: ['qa'] }),
   Object.freeze({ id: 'respuesta', titulo: 'Cómo contesta el agente', archivo: 'team-profile.json', archivoViejo: 'perfil-equipo.json', repo: 'perfil', lector: 'harness-config', claves: ['response'], idCorto: 'profile', necesita: ['response'] }),
@@ -1644,7 +1645,9 @@ function pantalla(idioma = 'es') {
     return fila;
   }
   function editorAprobaciones(s, d, pr) {
-    var box = el('div', { class: 'pila' }, campo(T('pantalla.quienReenviaElOk'), (d.approvals || {}).relay_session, function (v) { hoja(d, 'approvals', 'relay_session', v); }, 'approvals.relay_session', pr));
+    // sólo sí o no: el valor es el nombre del rol (el que ya tenga, o «coordinadora»); la sesión se designa en la máquina
+    var rol = (d.approvals || {}).relay_session;
+    var box = el('div', { class: 'pila' }, selector(T('pantalla.quienReenviaElOk'), rol ? 'si' : '', [['', T('pantalla.quienReenviaElOkNo')], ['si', T('pantalla.quienReenviaElOkSi')]], function (x) { hoja(d, 'approvals', 'relay_session', x === 'si' ? (rol || 'coordinadora') : ''); }, 'approvals.relay_session', pr));
     box.appendChild(el('p', { class: 'muted', text: T('pantalla.quienReenviaElOkAyuda') }));
     return box;
   }

@@ -191,6 +191,81 @@ function sesionQueReenvia({ env = process.env, home, arnes } = {}) {
   }
 }
 
+// ── Cuál sesión reenvía, en cada máquina ──
+// El perfil dice SI la organización usa una sesión que reenvía el ok de un dev (`approvals.relay_session`: el nombre del
+// rol, por ejemplo «coordinadora»). CUÁL es se designa en la máquina: el dev escribe en el chat de esa sesión una frase
+// que la nombra («Esta sesión es la coordinadora») y la sesión corre `marker.js designate-relay` con esa cita. El renglón
+// queda en el gates.log, pero es sólo un puntero: al verificar cada reenvío se vuelve a buscar la frase del dev en la
+// conversación designada, así que un renglón sin esa frase no designa nada. La conversación se reconoce por su número de
+// sesión, que no cambia al reiniciar el proceso (sí con /clear o con un chat nuevo); el nombre visible no cuenta, porque
+// lo pone el sistema y otra sesión puede llevar el mismo.
+const DESIGNACION = 'relay-designation';
+const RE_ESTA_SESION = /(esta\s+(sesi[oó]n|conversaci[oó]n)|\bsos\b|this\s+(session|conversation))/i;
+const RE_NIEGA = /\b(no|nunca|jam[aá]s|not|never)\b|\bisn'?t\b|\bdeja\s+de\s+ser\b/i;
+
+/**
+ * El juez de la frase que designa: nombra el rol, dice que es ESTA sesión, no lo niega y no es una pregunta. Se aplica a
+ * la cita y al mensaje entero que la trae. `retracta`: un mensaje posterior del dev que nombra el rol y lo niega («esta
+ * sesión ya no es la coordinadora») tumba la designación. null = vale; si no, el motivo.
+ */
+function juezDesignacion(rol) {
+  const r = String(rol || '').trim().toLowerCase();
+  const juez = (texto) => {
+    const t = String(texto || '').toLowerCase();
+    if (!r || !t.includes(r)) return `la frase no nombra el rol «${String(rol || '').trim()}»`;
+    if (!RE_ESTA_SESION.test(t)) return `la frase no dice que es esta sesión (por ejemplo «Esta sesión es la ${r}»)`;
+    if (RE_NIEGA.test(t)) return 'la frase lo niega';
+    if (/[?¿]/.test(t)) return 'la frase es una pregunta';
+    return null;
+  };
+  juez.retracta = (texto) => {
+    const t = String(texto || '').toLowerCase();
+    return !!r && t.includes(r) && RE_ESTA_SESION.test(t) && RE_NIEGA.test(t);
+  };
+  return juez;
+}
+
+/**
+ * Designar la sesión que corre el comando como la que reenvía: la frase del dev, textual, en un mensaje que él escribió
+ * en esta conversación. `{ ok: true, entrada: { sesion, rol, quien, cita, cita_cuando } }` o `{ ok: false, motivo }`.
+ */
+function designar({ approvedBy, quote, env = process.env, home, arnes } = {}) {
+  const persona = noEsPersona(approvedBy);
+  if (persona) return { ok: false, motivo: persona };
+  const cita = String(quote || '').trim();
+  if (!cita) return { ok: false, motivo: 'falta la frase del dev (--quote "<sus palabras, textuales>")' };
+  const declarada = sesionQueReenvia({ env, home, arnes });
+  if (!declarada.valor) return { ok: false, motivo: `la organización no usa una sesión que reenvía el ok de un dev (approvals.relay_session del perfil del equipo)${declarada.aviso ? `: ${declarada.aviso}` : ''}` };
+  const sesion = String(env.CLAUDE_CODE_SESSION_ID || '');
+  if (!/^[\w-]+$/.test(sesion)) return { ok: false, sinConversacion: true, motivo: 'la sesión no dice su identificador' };
+  const juez = juezDesignacion(declarada.valor);
+  const mala = juez(cita);
+  if (mala) return { ok: false, motivo: mala };
+  const r = require('./person-ok.js').citaDeLaPersona(cita, { env, home, juzgar: juez });
+  if (!r.legible) return { ok: false, sinConversacion: true, motivo: `no puedo leer la conversación de esta sesión (${r.motivo})` };
+  if (r.corta) return { ok: false, motivo: 'la frase es muy corta' };
+  if (!r.encontrada) return { ok: false, motivo: r.rechazo || 'la frase no la encontré en un mensaje escrito por el dev en esta conversación' };
+  return { ok: true, entrada: { sesion, rol: declarada.valor, quien: String(approvedBy).trim(), cita, cita_cuando: r.cuando || null } };
+}
+
+/** La última designación anotada en el gates.log de esta máquina: `{ sesion, rol, quien, cita, ts }`, null o `{ error }`. */
+function designacionVigente({ home } = {}) {
+  let raw;
+  try { raw = fs.readFileSync(path.join(require('./state-dir.js').stateDir(home), 'gates.log'), 'utf8'); } catch (e) {
+    return e.code === 'ENOENT' ? null : { error: `no pude leer el registro del arnés (${e.code || e.message})` };
+  }
+  const lineas = raw.split('\n');
+  for (let i = lineas.length - 1; i >= 0; i--) {
+    if (!lineas[i].includes(DESIGNACION)) continue;
+    let g;
+    try { g = JSON.parse(lineas[i]); } catch (_e) { continue; }
+    if (g && g.name === DESIGNACION && g.status === 'ok' && /^[\w-]+$/.test(String(g.sesion || '')) && g.cita) {
+      return { sesion: g.sesion, rol: g.rol || null, quien: g.quien || null, cita: g.cita, ts: g.ts || null };
+    }
+  }
+  return null;
+}
+
 // Quién NO puede aprobar: nadie, «sin nombrar», el orquestador, una regla, o un agente (lib/approvals.js).
 function noEsPersona(quien) {
   const q = String(quien || '').trim();
@@ -309,4 +384,4 @@ function sesionActual(env) {
   return /^[\w-]+$/.test(s) ? s : null;
 }
 
-module.exports = { huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, okDeUnaPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };
+module.exports = { DESIGNACION, juezDesignacion, designar, designacionVigente, huella, fueraDelRegistro, constanciaInvalida, renglonesDeFaltantes, sh, reglaDe, revisar, noEsPersona, okDeUnaPersona, sesionQueReenvia, FILE, clave, esCriticoEximido, anotar, leer, faltantes, verificarExenciones, caminos };

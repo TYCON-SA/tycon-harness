@@ -502,9 +502,14 @@ en su repo.
   nombres de prueba, qué pantallas piden una prueba en el navegador y el idioma de la aplicación. Sin decir nada, el
   arnés no impone el estilo de ningún equipo. Queda en `team-repos.json` → `stack`, en el repo del perfil. Lo revisa quien
   mantiene. Una herramienta que no está en la lista se pide con «Pedíselo a tu agente» (abajo, §Tu tecnología).
-- **Quién reenvía el ok de un dev**: la sesión coordinadora que puede pasarle el ok de un dev a la sesión que
-  implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en vivo. Vacío, ninguna:
-  el ok lo escribe el dev en el chat de su sesión. Vale sólo desde acá, nunca desde una máquina.
+- **Quién reenvía el ok de un dev**: si la organización trabaja con una sesión coordinadora que le pasa el ok de un dev
+  a la sesión que implementa, para eximir un crítico de los revisores o firmar un criterio que no se puede probar en
+  vivo. «No» (de fábrica): el ok lo escribe el dev en el chat de su sesión. Acá se dice sólo sí o no, y vale sólo desde
+  acá, nunca desde una máquina. Cuál sesión es la coordinadora se designa en cada máquina: el dev escribe en el chat de
+  esa sesión «Esta sesión es la coordinadora», y la sesión lo anota con
+  `marker.js designate-relay --approved-by "<el dev>" --quote "<su frase>"`. Se la reconoce por su conversación, no por
+  su nombre: sigue valiendo si la sesión se reinicia, y hay que volver a designarla si se abre un chat nuevo o se hace
+  `/clear`. Una sesión que se llama igual no puede reenviar.
 - **Prueba a mano de cada criterio**: si, además de lo que prueba el arnés, una persona tiene que marcar cada criterio de
   la guía del tester antes de cerrar la historia. «No» (de fábrica): la guía dice qué probó el arnés. «Sí»: el cierre
   frena hasta que una persona marque cada criterio contestando en el chat de su sesión, nombrándolo; el arnés le muestra
